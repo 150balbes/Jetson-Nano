@@ -1,0 +1,972 @@
+/*
+ *   ..
+ * Tue April 13 CST 2015
+ **/
+#ifndef __MACH_DEINTERLACE_REG_ADDR_H_
+#define __MACH_DEINTERLACE_REG_ADDR_H_
+
+#define Wr(adr, val) aml_write_vcbus(adr, val)
+#define Rd(adr) aml_read_vcbus(adr)
+#define Wr_reg_bits(adr, val, start, len)  \
+		aml_vcbus_update_bits(adr, ((1<<len)-1)<<start, val<<start)
+#define Rd_reg_bits(adr, start, len)  \
+		(aml_read_vcbus(adr)&(((1<<len)-1)<<start))
+
+unsigned int RDMA_WR(unsigned int adr, unsigned int val);
+unsigned int RDMA_RD(unsigned int adr);
+unsigned int RDMA_WR_BITS(unsigned int adr, unsigned int val,
+		unsigned int start, unsigned int len);
+unsigned int RDMA_RD_BITS(unsigned int adr, unsigned int start,
+		unsigned int len);
+
+/* vdin */
+#define VDIN_WR_CTRL					0x1220
+		/* 0xd0104880 */
+/* timerc */
+#define ISA_TIMER_MUX					0x2650
+		/* 0xc1109940 */
+#define ISA_TIMERC						0x2653
+		/* 0xc110994c */
+#define ISA_TIMERE						0x2655
+		/* 0xc1109954 */
+/* vd1 */
+#define VD1_IF0_LUMA_FIFO_SIZE			0x1a63
+		/* 0xd010698c */
+#define VD2_IF0_LUMA_FIFO_SIZE			0x1a83
+		/* 0xd0106a0c */
+#define VD1_IF0_CANVAS0					0x1a51
+		/* 0xd0106944 */
+#define VD1_IF0_CANVAS1					0x1a52
+		/* 0xd0106948 */
+#define VD1_IF0_LUMA_X0					0x1a53
+		/* 0xd010694c */
+#define VD1_IF0_LUMA_Y0					0x1a54
+		/* 0xd0106950 */
+#define VD1_IF0_CHROMA_X0				0x1a55
+		/* 0xd0106954 */
+#define VD1_IF0_CHROMA_Y0				0x1a56
+		/* 0xd0106958 */
+#define VD1_IF0_RPT_LOOP				0x1a5b
+		/* 0xd010696c */
+#define VD1_IF0_LUMA0_RPT_PAT			0x1a5c
+		/* 0xd0106970 */
+#define VD1_IF0_CHROMA0_RPT_PAT			0x1a5d
+		/* 0xd0106974 */
+#define VIU_OSD1_CTRL_STAT				0x1a10
+		/* 0xd0106840 */
+/* afbc */
+#define AFBC_ENABLE						0x1ae0
+		/* 0xd0106b80 */
+#define AFBC_MODE						0x1ae1
+		/* 0xd0106b84 */
+#define AFBC_SIZE_IN					0x1ae2
+		/* 0xd0106b88 */
+#define AFBC_DEC_DEF_COLOR				0x1ae3
+		/* 0xd0106b8c */
+#define AFBC_CONV_CTRL					0x1ae4
+		/* 0xd0106b90 */
+#define AFBC_LBUF_DEPTH					0x1ae5
+		/* 0xd0106b94 */
+#define AFBC_HEAD_BADDR					0x1ae6
+		/* 0xd0106b98 */
+#define AFBC_BODY_BADDR					0x1ae7
+		/* 0xd0106b9c */
+#define AFBC_OUT_XSCOPE					0x1ae8
+		/* 0xd0106ba0 */
+#define AFBC_OUT_YSCOPE					0x1ae9
+		/* 0xd0106ba4 */
+#define AFBC_STAT						0x1aea
+		/* 0xd0106ba8 */
+#define AFBC_VD_CFMT_CTRL				0x1aeb
+		/* 0xd0106bac */
+#define AFBC_VD_CFMT_W					0x1aec
+		/* 0xd0106bb0 */
+#define AFBC_MIF_HOR_SCOPE				0x1aed
+		/* 0xd0106bb4 */
+#define AFBC_MIF_VER_SCOPE				0x1aee
+		/* 0xd0106bb8 */
+#define AFBC_PIXEL_HOR_SCOPE			0x1aef
+		/* 0xd0106bbc */
+#define AFBC_PIXEL_VER_SCOPE			0x1af0
+		/* 0xd0106bc0 */
+#define AFBC_VD_CFMT_H					0x1af1
+		/* 0xd0106bc4 */
+/* viu mux */
+#define VIU_MISC_CTRL0					0x1a06
+		/* 0xd0106818 */
+#define VIUB_MISC_CTRL0					0x2006
+		/* 0xd0108018 */
+/* di */
+#define DI_IF1_URGENT_CTRL				0x1aa3
+		/* 0xd0106a8c */
+#define DI_INP_URGENT_CTRL				0x1aa4
+		/* 0xd0106a90 */
+#define DI_MEM_URGENT_CTRL				0x1aa5
+		/* 0xd0106a94 */
+#define DI_CHAN2_URGENT_CTRL			0x1aa6
+		/* 0xd0106a98 */
+
+#define DI_PRE_CTRL						0x1700
+		/* 0xd0105c00 */
+#define DI_POST_CTRL					0x1701
+		/* 0xd0105c04 */
+#define DI_POST_SIZE					0x1702
+		/* 0xd0105c08 */
+#define DI_PRE_SIZE						0x1703
+		/* 0xd0105c0c */
+#define DI_EI_CTRL0						0x1704
+		/* 0xd0105c10 */
+#define DI_EI_CTRL1						0x1705
+		/* 0xd0105c14 */
+#define DI_EI_CTRL2						0x1706
+		/* 0xd0105c18 */
+#define DI_NR_CTRL0						0x1707
+		/* 0xd0105c1c */
+#define DI_NR_CTRL1						0x1708
+		/* 0xd0105c20 */
+#define DI_NR_CTRL2						0x1709
+		/* 0xd0105c24 */
+#define DI_NR_CTRL3						0x170a
+		/* 0xd0105c28 no use*/
+#define DI_MTN_CTRL						0x170b
+		/* 0xd0105c2c no use*/
+#define DI_CANVAS_URGENT0				0x170a
+		/* 0xd0105ee8 */
+#define DI_CANVAS_URGENT1				0x170b
+		/* 0xd0105eec */
+#define DI_MTN_CTRL1					0x170c
+		/* 0xd0105c30 */
+#define DI_BLEND_CTRL					0x170d
+		/* 0xd0105c34 */
+#define DI_BLEND_CTRL1					0x170e
+		/* 0xd0105c38 no use*/
+#define DI_CANVAS_URGENT2				0x170e
+		/* 0xd0105ef0 */
+#define DI_BLEND_CTRL2					0x170f
+		/* 0xd0105c3c no use*/
+#define DI_ARB_CTRL						0x170f
+		/* 0xd0105c3c */
+#define DI_BLEND_REG0_X					0x1710
+		/* 0xd0105c40 */
+#define DI_BLEND_REG0_Y					0x1711
+		/* 0xd0105c44 */
+#define DI_BLEND_REG1_X					0x1712
+		/* 0xd0105c48 */
+#define DI_BLEND_REG1_Y					0x1713
+		/* 0xd0105c4c */
+#define DI_BLEND_REG2_X					0x1714
+		/* 0xd0105c50 */
+#define DI_BLEND_REG2_Y					0x1715
+		/* 0xd0105c54 */
+#define DI_BLEND_REG3_X					0x1716
+		/* 0xd0105c58 */
+#define DI_BLEND_REG3_Y					0x1717
+		/* 0xd0105c5c */
+#define DI_CLKG_CTRL					0x1718
+		/* 0xd0105c60 */
+#define DI_EI_CTRL3						0x1719
+		/* 0xd0105c64 */
+#define DI_EI_CTRL4						0x171a
+		/* 0xd0105c68 */
+#define DI_EI_CTRL5						0x171b
+		/* 0xd0105c6c */
+#define DI_EI_CTRL6						0x171c
+		/* 0xd0105c70 */
+#define DI_EI_CTRL7						0x171d
+		/* 0xd0105c74 */
+#define DI_EI_CTRL8						0x171e
+		/* 0xd0105c78 */
+#define DI_EI_CTRL9						0x171f
+		/* 0xd0105c7c */
+/* pulldown */
+#define DI_MC_REG0_X					0x1720
+		/* 0xd0105c80 */
+#define DI_MC_REG0_Y					0x1721
+		/* 0xd0105c84 */
+#define DI_MC_REG1_X					0x1722
+		/* 0xd0105c88 */
+#define DI_MC_REG1_Y					0x1723
+		/* 0xd0105c8c */
+#define DI_MC_REG2_X					0x1724
+		/* 0xd0105c90 */
+#define DI_MC_REG2_Y					0x1725
+		/* 0xd0105c94 */
+#define DI_MC_REG3_X					0x1726
+		/* 0xd0105c98 */
+#define DI_MC_REG3_Y					0x1727
+		/* 0xd0105c9c */
+#define DI_MC_REG4_X					0x1728
+		/* 0xd0105ca0 */
+#define DI_MC_REG4_Y					0x1729
+		/* 0xd0105ca4 */
+#define DI_MC_32LVL0					0x172a
+		/* 0xd0105ca8 */
+#define DI_MC_32LVL1					0x172b
+		/* 0xd0105cac */
+#define DI_MC_22LVL0					0x172c
+		/* 0xd0105cb0 */
+#define DI_MC_22LVL1					0x172d
+		/* 0xd0105cb4 */
+#define DI_MC_22LVL2					0x172e
+		/* 0xd0105cb8 */
+#define DI_MC_CTRL						0x172f
+		/* 0xd0105cbc */
+
+#define DI_INTR_CTRL					0x1730
+		/* 0xd0105cc0 */
+#define DI_INFO_ADDR					0x1731
+		/* 0xd0105cc4 */
+#define DI_INFO_DATA					0x1732
+		/* 0xd0105cc8 */
+#define DI_PRE_HOLD						0x1733
+		/* 0xd0105ccc */
+/* 3d detection */
+#define DET3D_MOTN_CFG					0x1734
+		/* 0xd0105cd0 */
+#define DET3D_CB_CFG					0x1735
+		/* 0xd0105cd4 */
+#define DET3D_SPLT_CFG					0x1736
+		/* 0xd0105cd8 */
+#define DET3D_HV_MUTE					0x1737
+		/* 0xd0105cdc */
+#define DET3D_MAT_STA_P1M1				0x1738
+		/* 0xd0105ce0 */
+#define DET3D_MAT_STA_P1TH				0x1739
+		/* 0xd0105ce4 */
+#define DET3D_MAT_STA_M1TH				0x173a
+		/* 0xd0105ce8 */
+#define DET3D_MAT_STA_RSFT				0x173b
+		/* 0xd0105cec */
+#define DET3D_MAT_SYMTC_TH				0x173c
+		/* 0xd0105cf0 */
+#define DET3D_RO_DET_CB_HOR				0x173d
+		/* 0xd0105cf4 */
+#define DET3D_RO_DET_CB_VER				0x173e
+		/* 0xd0105cf8 */
+#define DET3D_RO_SPLT_HT				0x173f
+		/* 0xd0105cfc */
+
+#define DI_MTN_1_CTRL1					0x1740
+		/* 0xd0105d00 */
+#define DI_MTN_1_CTRL2					0x1741
+		/* 0xd0105d04 */
+#define DI_MTN_1_CTRL3					0x1742
+		/* 0xd0105d08 */
+#define DI_MTN_1_CTRL4					0x1743
+		/* 0xd0105d0c */
+#define DI_MTN_1_CTRL5					0x1744
+		/* 0xd0105d10 */
+/* nr */
+#define NR2_MET_NM_CTRL					0x1745
+		/* 0xd0105d14 */
+#define NR2_MET_NM_YCTRL				0x1746
+		/* 0xd0105d18 */
+#define NR2_MET_NM_CCTRL				0x1747
+		/* 0xd0105d1c */
+#define NR2_MET_NM_TNR					0x1748
+		/* 0xd0105d20 */
+#define NR2_MET_NMFRM_TNR_YLEV			0x1749
+		/* 0xd0105d24 */
+#define NR2_MET_NMFRM_TNR_YCNT			0x174a
+		/* 0xd0105d28 */
+#define NR2_MET_NMFRM_TNR_CLEV			0x174b
+		/* 0xd0105d2c */
+#define NR2_MET_NMFRM_TNR_CCNT			0x174c
+		/* 0xd0105d30 */
+#define NR2_3DEN_MODE					0x174d
+		/* 0xd0105d34 */
+#define NR2_IIR_CTRL					0x174e
+		/* 0xd0105d38 */
+#define NR2_SW_EN						0x174f
+		/* 0xd0105d3c */
+#define NR2_FRM_SIZE					0x1750
+		/* 0xd0105d40 */
+#define NR2_SNR_SAD_CFG					0x1751
+		/* 0xd0105d44 */
+#define NR2_MATNR_SNR_OS				0x1752
+		/* 0xd0105d48 */
+#define NR2_MATNR_SNR_NRM_CFG			0x1753
+		/* 0xd0105d4c */
+#define NR2_MATNR_SNR_NRM_GAIN			0x1754
+		/* 0xd0105d50 */
+#define NR2_MATNR_SNR_LPF_CFG			0x1755
+		/* 0xd0105d54 */
+#define NR2_MATNR_SNR_USF_GAIN			0x1756
+		/* 0xd0105d58 */
+#define NR2_MATNR_SNR_EDGE2B			0x1757
+		/* 0xd0105d5c */
+#define NR2_MATNR_BETA_EGAIN			0x1758
+		/* 0xd0105d60 */
+#define NR2_MATNR_BETA_BRT				0x1759
+		/* 0xd0105d64 */
+#define NR2_MATNR_XBETA_CFG				0x175a
+		/* 0xd0105d68 */
+#define NR2_MATNR_YBETA_SCL				0x175b
+		/* 0xd0105d6c */
+#define NR2_MATNR_CBETA_SCL				0x175c
+		/* 0xd0105d70 */
+#define NR2_SNR_MASK					0x175d
+		/* 0xd0105d74 */
+#define NR2_SAD2NORM_LUT0				0x175e
+		/* 0xd0105d78 */
+#define NR2_SAD2NORM_LUT1				0x175f
+		/* 0xd0105d7c */
+#define NR2_SAD2NORM_LUT2				0x1760
+		/* 0xd0105d80 */
+#define NR2_SAD2NORM_LUT3				0x1761
+		/* 0xd0105d84 */
+#define NR2_EDGE2BETA_LUT0				0x1762
+		/* 0xd0105d88 */
+#define NR2_EDGE2BETA_LUT1				0x1763
+		/* 0xd0105d8c */
+#define NR2_EDGE2BETA_LUT2				0x1764
+		/* 0xd0105d90 */
+#define NR2_EDGE2BETA_LUT3				0x1765
+		/* 0xd0105d94 */
+#define NR2_MOTION2BETA_LUT0			0x1766
+		/* 0xd0105d98 */
+#define NR2_MOTION2BETA_LUT1			0x1767
+		/* 0xd0105d9c */
+#define NR2_MOTION2BETA_LUT2			0x1768
+		/* 0xd0105da0 */
+#define NR2_MOTION2BETA_LUT3			0x1769
+		/* 0xd0105da4 */
+#define NR2_MATNR_MTN_CRTL				0x176a
+		/* 0xd0105da8 */
+#define NR2_MATNR_MTN_CRTL2				0x176b
+		/* 0xd0105dac */
+#define NR2_MATNR_MTN_COR				0x176c
+		/* 0xd0105db0 */
+#define NR2_MATNR_MTN_GAIN				0x176d
+		/* 0xd0105db4 */
+#define NR2_MATNR_DEGHOST				0x176e
+		/* 0xd0105dd8 */
+#define NR2_MATNR_ALPHALP_LUT0			0x176f
+		/* 0xd0105dbc */
+#define NR2_MATNR_ALPHALP_LUT1			0x1770
+		/* 0xd0105dc0 */
+#define NR2_MATNR_ALPHALP_LUT2			0x1771
+		/* 0xd0105dc4 */
+#define NR2_MATNR_ALPHALP_LUT3			0x1772
+		/* 0xd0105dc8 */
+#define NR2_MATNR_ALPHAHP_LUT0			0x1773
+		/* 0xd0105dcc */
+#define NR2_MATNR_ALPHAHP_LUT1			0x1774
+		/* 0xd0105dd0 */
+#define NR2_MATNR_ALPHAHP_LUT2			0x1775
+		/* 0xd0105dd4 */
+#define NR2_MATNR_ALPHAHP_LUT3			0x1776
+		/* 0xd0105dd8 */
+#define NR2_MATNR_MTNB_BRT				0x1777
+		/* 0xd0105ddc */
+#define NR2_CUE_MODE					0x1778
+		/* 0xd0105de0 */
+#define NR2_CUE_CON_MOT_TH				0x1779
+		/* 0xd0105de4 */
+#define NR2_CUE_CON_DIF0				0x177a
+		/* 0xd0105de8 */
+#define NR2_CUE_CON_DIF1				0x177b
+		/* 0xd0105dec */
+#define NR2_CUE_CON_DIF2				0x177c
+		/* 0xd0105df0 */
+#define NR2_CUE_CON_DIF3				0x177d
+		/* 0xd0105df4 */
+#define NR2_CUE_PRG_DIF					0x177e
+		/* 0xd0105df8 */
+#define NR2_CONV_MODE					0x177f
+		/* 0xd0105dfc */
+/* 3d detecton */
+#define DET3D_RO_SPLT_HB				0x1780
+		/* 0xd0105e00 */
+#define DET3D_RO_SPLT_VL				0x1781
+		/* 0xd0105e04 */
+#define DET3D_RO_SPLT_VR				0x1782
+		/* 0xd0105e08 */
+#define DET3D_RO_MAT_LUMA_LR			0x1783
+		/* 0xd0105e0c */
+#define DET3D_RO_MAT_LUMA_TB			0x1784
+		/* 0xd0105e10 */
+#define DET3D_RO_MAT_CHRU_LR			0x1785
+		/* 0xd0105e14 */
+#define DET3D_RO_MAT_CHRU_TB			0x1786
+		/* 0xd0105e18 */
+#define DET3D_RO_MAT_CHRV_LR			0x1787
+		/* 0xd0105e1c */
+#define DET3D_RO_MAT_CHRV_TB			0x1788
+		/* 0xd0105e20 */
+#define DET3D_RO_MAT_HEDG_LR			0x1789
+		/* 0xd0105e24 */
+#define DET3D_RO_MAT_HEDG_TB			0x178a
+		/* 0xd0105e28 */
+#define DET3D_RO_MAT_VEDG_LR			0x178b
+		/* 0xd0105e2c */
+#define DET3D_RO_MAT_VEDG_TB			0x178c
+		/* 0xd0105e30 */
+#define DET3D_RO_MAT_MOTN_LR			0x178d
+		/* 0xd0105e34 */
+#define DET3D_RO_MAT_MOTN_TB			0x178e
+		/* 0xd0105e38 */
+#define DET3D_RO_FRM_MOTN				0x178f
+		/* 0xd0105e3c */
+
+#define DI_IF1_GEN_REG2					0x1790
+		/* 0xd0105e40 */
+#define DI_INP_GEN_REG2					0x1791
+		/* 0xd0105e44 */
+#define DI_MEM_GEN_REG2					0x1792
+		/* 0xd0105e48 */
+#define DI_EI_CTRL10					0x1793
+		/* 0xd0105e4c */
+#define DI_NR_1_CTRL0					0x1794
+		/* 0xd0105e50 */
+#define DI_NR_1_CTRL1					0x1795
+		/* 0xd0105e54 */
+#define DI_NR_1_CTRL2					0x1796
+		/* 0xd0105e58 */
+#define DI_NR_1_CTRL3					0x1797
+		/* 0xd0105e5c */
+#define DI_EI_XWIN0						0x1798
+		/* 0xd0105e60 */
+#define DI_EI_XWIN1						0x1799
+		/* 0xd0105e64 */
+#define DET3D_RAMRD_ADDR_PORT			0x179a
+		/* 0xd0105e40 */
+#define DET3D_RAMRD_DATA_PORT			0x179b
+		/* 0xd0105e44 */
+#define NR2_CFR_PARA_CFG0				0x179c
+		/* 0xd0105e48 */
+#define NR2_CFR_PARA_CFG1				0x179d
+		/* 0xd0105e4c */
+#define DI_EI_CTRL11					0x179e
+		/* 0xd0105e78 */
+#define DI_EI_CTRL12					0x179f
+		/* 0xd0105e7c */
+/* di mif ctrl */
+#define DI_CONTWR_X						0x17a0
+		/* 0xd0105e80 */
+#define DI_CONTWR_Y						0x17a1
+		/* 0xd0105e84 */
+#define DI_CONTWR_CTRL					0x17a2
+		/* 0xd0105e88 */
+#define DI_CONTPRD_X					0x17a3
+		/* 0xd0105e8c */
+#define DI_CONTPRD_Y					0x17a4
+		/* 0xd0105e90 */
+#define DI_CONTP2RD_X					0x17a5
+		/* 0xd0105e94 */
+#define DI_CONTP2RD_Y					0x17a6
+		/* 0xd0105e98 */
+#define DI_CONTRD_CTRL					0x17a7
+		/* 0xd0105e9c */
+
+#define DI_EI_CTRL13					0x17a8
+		/* 0xd0105ea0 */
+#define DI_MTN_1_CTRL6					0x17a9
+		/* 0xd0105ea4 */
+#define DI_MTN_1_CTRL7					0x17aa
+		/* 0xd0105ea8 */
+#define DI_MTN_1_CTRL8					0x17ab
+		/* 0xd0105eac */
+#define DI_MTN_1_CTRL9					0x17ac
+		/* 0xd0105eb0 */
+#define DI_MTN_1_CTRL10					0x17ad
+		/* 0xd0105eb4 */
+#define DI_MTN_1_CTRL11					0x17ae
+		/* 0xd0105eb8 */
+#define DI_MTN_1_CTRL12					0x17af
+		/* 0xd0105ebc */
+
+#define DI_CHAN2_LUMA0_RPT_PAT			0x17b0
+		/* 0xd0105ec0 */
+#define DI_CHAN2_CHROMA0_RPT_PAT		0x17b1
+		/* 0xd0105ec4 */
+#define DI_CHAN2_DUMMY_PIXEL			0x17b2
+		/* 0xd0105ec8 */
+#define DI_CHAN2_LUMA_FIFO_SIZE			0x17b3
+		/* 0xd0105ecc */
+#define DI_CHAN2_RANGE_MAP_Y			0x17b4
+		/* 0xd0105ed0 */
+#define DI_CHAN2_RANGE_MAP_CB			0x17b5
+		/* 0xd0105ed4 */
+#define DI_CHAN2_RANGE_MAP_CR			0x17b6
+		/* 0xd0105ed8 */
+#define DI_CHAN2_GEN_REG2				0x17b7
+		/* 0xd0105edc */
+#define DI_CHAN2_FMT_CTRL				0x17b8
+		/* 0xd0105ee0 */
+#define DI_CHAN2_FMT_W					0x17b9
+		/* 0xd0105ee4 */
+#define DI_INP_RANGE_MAP_Y				0x17ba
+		/* 0xd0105ee8 */
+#define DI_INP_RANGE_MAP_CB				0x17bb
+		/* 0xd0105eec */
+#define DI_INP_RANGE_MAP_CR				0x17bc
+		/* 0xd0105ef0 */
+#define DI_MEM_RANGE_MAP_Y				0x17bd
+		/* 0xd0105ef4 */
+#define DI_MEM_RANGE_MAP_CB				0x17be
+		/* 0xd0105ef8 */
+#define DI_MEM_RANGE_MAP_CR				0x17bf
+		/* 0xd0105efc */
+#define DI_NRWR_X						0x17c0
+		/* 0xd0105f00 */
+#define DI_NRWR_Y						0x17c1
+		/* 0xd0105f04 */
+#define DI_NRWR_CTRL					0x17c2
+		/* 0xd0105f08 */
+#define DI_MTNWR_X						0x17c3
+		/* 0xd0105f0c */
+#define DI_MTNWR_Y						0x17c4
+		/* 0xd0105f10 */
+#define DI_MTNWR_CTRL					0x17c5
+		/* 0xd0105f14 */
+#define DI_DIWR_X						0x17c6
+		/* 0xd0105f18 */
+#define DI_DIWR_Y						0x17c7
+		/* 0xd0105f1c */
+#define DI_DIWR_CTRL					0x17c8
+		/* 0xd0105f20 */
+#define DI_MTNPRD_X						0x17cb
+		/* 0xd0105f2c */
+#define DI_MTNPRD_Y						0x17cc
+		/* 0xd0105f30 */
+#define DI_MTNRD_CTRL					0x17cd
+		/* 0xd0105f34 */
+#define DI_INP_GEN_REG					0x17ce
+		/* 0xd0105f38 */
+#define DI_INP_CANVAS0					0x17cf
+		/* 0xd0105f3c */
+#define DI_INP_LUMA_X0					0x17d0
+		/* 0xd0105f40 */
+#define DI_INP_LUMA_Y0					0x17d1
+		/* 0xd0105f44 */
+#define DI_INP_CHROMA_X0				0x17d2
+		/* 0xd0105f48 */
+#define DI_INP_CHROMA_Y0				0x17d3
+		/* 0xd0105f4c */
+#define DI_INP_RPT_LOOP					0x17d4
+		/* 0xd0105f50 */
+#define DI_INP_LUMA0_RPT_PAT			0x17d5
+		/* 0xd0105f54 */
+#define DI_INP_CHROMA0_RPT_PAT			0x17d6
+		/* 0xd0105f58 */
+#define DI_INP_DUMMY_PIXEL				0x17d7
+		/* 0xd0105f5c */
+#define DI_INP_LUMA_FIFO_SIZE			0x17d8
+		/* 0xd0105f60 */
+#define DI_INP_FMT_CTRL					0x17d9
+		/* 0xd0105f64 */
+#define DI_INP_FMT_W					0x17da
+		/* 0xd0105f68 */
+#define DI_MEM_GEN_REG					0x17db
+		/* 0xd0105f6c */
+#define DI_MEM_CANVAS0					0x17dc
+		/* 0xd0105f70 */
+#define DI_MEM_LUMA_X0					0x17dd
+		/* 0xd0105f74 */
+#define DI_MEM_LUMA_Y0					0x17de
+		/* 0xd0105f78 */
+#define DI_MEM_CHROMA_X0				0x17df
+		/* 0xd0105f7c */
+#define DI_MEM_CHROMA_Y0				0x17e0
+		/* 0xd0105f80 */
+#define DI_MEM_RPT_LOOP					0x17e1
+		/* 0xd0105f84 */
+#define DI_MEM_LUMA0_RPT_PAT			0x17e2
+		/* 0xd0105f88 */
+#define DI_MEM_CHROMA0_RPT_PAT			0x17e3
+		/* 0xd0105f8c */
+#define DI_MEM_DUMMY_PIXEL				0x17e4
+		/* 0xd0105f90 */
+#define DI_MEM_LUMA_FIFO_SIZE			0x17e5
+		/* 0xd0105f94 */
+#define DI_MEM_FMT_CTRL					0x17e6
+		/* 0xd0105f98 */
+#define DI_MEM_FMT_W					0x17e7
+		/* 0xd0105f9c */
+#define DI_IF1_GEN_REG					0x17e8
+		/* 0xd0105fa0 */
+#define DI_IF1_CANVAS0					0x17e9
+		/* 0xd0105fa4 */
+#define DI_IF1_LUMA_X0					0x17ea
+		/* 0xd0105fa8 */
+#define DI_IF1_LUMA_Y0					0x17eb
+		/* 0xd0105fac */
+#define DI_IF1_CHROMA_X0				0x17ec
+		/* 0xd0105fb0 */
+#define DI_IF1_CHROMA_Y0				0x17ed
+		/* 0xd0105fb4 */
+#define DI_IF1_RPT_LOOP					0x17ee
+		/* 0xd0105fb8 */
+#define DI_IF1_LUMA0_RPT_PAT			0x17ef
+		/* 0xd0105fbc */
+#define DI_IF1_CHROMA0_RPT_PAT			0x17f0
+		/* 0xd0105fc0 */
+#define DI_IF1_DUMMY_PIXEL				0x17f1
+		/* 0xd0105fc4 */
+#define DI_IF1_LUMA_FIFO_SIZE			0x17f2
+		/* 0xd0105fc8 */
+#define DI_IF1_FMT_CTRL					0x17f3
+		/* 0xd0105fcc */
+#define DI_IF1_FMT_W					0x17f4
+		/* 0xd0105fd0 */
+#define DI_CHAN2_GEN_REG				0x17f5
+		/* 0xd0105fd4 */
+#define DI_CHAN2_CANVAS0				0x17f6
+		/* 0xd0105fd8 */
+#define DI_CHAN2_LUMA_X0				0x17f7
+		/* 0xd0105fdc */
+#define DI_CHAN2_LUMA_Y0				0x17f8
+		/* 0xd0105fe0 */
+#define DI_CHAN2_CHROMA_X0				0x17f9
+		/* 0xd0105fe4 */
+#define DI_CHAN2_CHROMA_Y0				0x17fa
+		/* 0xd0105fe8 */
+#define DI_CHAN2_RPT_LOOP				0x17fb
+		/* 0xd0105fec */
+#define DI_IF1_RANGE_MAP_Y				0x17fc
+		/* 0xd0105fcc */
+#define DI_IF1_RANGE_MAP_CB				0x17fd
+		/* 0xd0105fd0 */
+#define DI_IF1_RANGE_MAP_CR				0x17fe
+		/* 0xd0105fd4 */
+
+#define VD1_IF0_GEN_REG3                0x1aa7
+		/* 0xd0106a9c */
+#define DI_IF1_GEN_REG3                 0x20a7
+		/* 0xd010829c */
+#define DI_INP_GEN_REG3                 0x20a8
+		/* 0xd01082a0 */
+#define DI_MEM_GEN_REG3                 0x20a9
+		/* 0xd01082a4 */
+#define DI_CHAN2_GEN_REG3               0x20aa
+		/* 0xd01082a8 */
+/* dnr */
+#define DNR_CTRL						0x2d00
+#define DNR_HVSIZE						0x2d01
+#define DNR_DBLK_BLANK_NUM				0x2d02
+#define DNR_BLK_OFFST					0x2d03
+#define DNR_GBS							0x2d04
+#define DNR_HBOFFST_STAT				0x2d05
+#define DNR_VBOFFST_STAT				0x2d06
+#define DNR_GBS_STAT					0x2d07
+#define DNR_STAT_X_START_END			0x2d08
+#define DNR_STAT_Y_START_END			0x2d09
+#define DNR_LUMA						0x2d0a
+#define DNR_DB_YEDGE_THD				0x2d0b
+#define DNR_DB_CEDGE_THD				0x2d0c
+#define DNR_DB_HGAP						0x2d0d
+#define DNR_DB_HBS						0x2d0e
+#define DNR_DB_HACT						0x2d0f
+#define DNR_DB_YHDELTA_GAIN				0x2d10
+#define DNR_DB_YHDELTA2_GAIN			0x2d11
+#define DNR_DB_CHDELTA_GAIN				0x2d12
+#define DNR_DB_CHDELTA2_GAIN			0x2d13
+#define DNR_DB_YC_VEDGE_THD				0x2d14
+#define DNR_DB_VBS_MISC					0x2d15
+#define DNR_DB_YVDELTA_GAIN				0x2d16
+#define DNR_DB_CVDELTA_GAIN				0x2d17
+#define DNR_RO_GBS_STAT_LR				0x2d18
+#define DNR_RO_GBS_STAT_LL				0x2d19
+#define DNR_RO_GBS_STAT_RR				0x2d1a
+#define DNR_RO_GBS_STAT_DIF				0x2d1b
+#define DNR_RO_GBS_STAT_CNT				0x2d1c
+#define DNR_RO_HBOF_STAT_CNT_0			0x2d1d
+#define DNR_RO_HBOF_STAT_CNT_1			0x2d1e
+#define DNR_RO_HBOF_STAT_CNT_2			0x2d1f
+#define DNR_RO_HBOF_STAT_CNT_3			0x2d20
+#define DNR_RO_HBOF_STAT_CNT_4			0x2d21
+#define DNR_RO_HBOF_STAT_CNT_5			0x2d22
+#define DNR_RO_HBOF_STAT_CNT_6			0x2d23
+#define DNR_RO_HBOF_STAT_CNT_7			0x2d24
+#define DNR_RO_HBOF_STAT_CNT_8			0x2d25
+#define DNR_RO_HBOF_STAT_CNT_9			0x2d26
+#define DNR_RO_HBOF_STAT_CNT_10			0x2d27
+#define DNR_RO_HBOF_STAT_CNT_11			0x2d28
+#define DNR_RO_HBOF_STAT_CNT_12			0x2d29
+#define DNR_RO_HBOF_STAT_CNT_13			0x2d2a
+#define DNR_RO_HBOF_STAT_CNT_14			0x2d2b
+#define DNR_RO_HBOF_STAT_CNT_15			0x2d2c
+#define DNR_RO_HBOF_STAT_CNT_16			0x2d2d
+#define DNR_RO_HBOF_STAT_CNT_17			0x2d2e
+#define DNR_RO_HBOF_STAT_CNT_18			0x2d2f
+#define DNR_RO_HBOF_STAT_CNT_19			0x2d30
+#define DNR_RO_HBOF_STAT_CNT_20			0x2d31
+#define DNR_RO_HBOF_STAT_CNT_21			0x2d32
+#define DNR_RO_HBOF_STAT_CNT_22			0x2d33
+#define DNR_RO_HBOF_STAT_CNT_23			0x2d34
+#define DNR_RO_HBOF_STAT_CNT_24			0x2d35
+#define DNR_RO_HBOF_STAT_CNT_25			0x2d36
+#define DNR_RO_HBOF_STAT_CNT_26			0x2d37
+#define DNR_RO_HBOF_STAT_CNT_27			0x2d38
+#define DNR_RO_HBOF_STAT_CNT_28			0x2d39
+#define DNR_RO_HBOF_STAT_CNT_29			0x2d3a
+#define DNR_RO_HBOF_STAT_CNT_30			0x2d3b
+#define DNR_RO_HBOF_STAT_CNT_31			0x2d3c
+#define DNR_RO_VBOF_STAT_CNT_0			0x2d3d
+#define DNR_RO_VBOF_STAT_CNT_1			0x2d3e
+#define DNR_RO_VBOF_STAT_CNT_2			0x2d3f
+#define DNR_RO_VBOF_STAT_CNT_3			0x2d40
+#define DNR_RO_VBOF_STAT_CNT_4			0x2d41
+#define DNR_RO_VBOF_STAT_CNT_5			0x2d42
+#define DNR_RO_VBOF_STAT_CNT_6			0x2d43
+#define DNR_RO_VBOF_STAT_CNT_7			0x2d44
+#define DNR_RO_VBOF_STAT_CNT_8			0x2d45
+#define DNR_RO_VBOF_STAT_CNT_9			0x2d46
+#define DNR_RO_VBOF_STAT_CNT_10			0x2d47
+#define DNR_RO_VBOF_STAT_CNT_11			0x2d48
+#define DNR_RO_VBOF_STAT_CNT_12			0x2d49
+#define DNR_RO_VBOF_STAT_CNT_13			0x2d4a
+#define DNR_RO_VBOF_STAT_CNT_14			0x2d4b
+#define DNR_RO_VBOF_STAT_CNT_15			0x2d4c
+#define DNR_RO_VBOF_STAT_CNT_16			0x2d4d
+#define DNR_RO_VBOF_STAT_CNT_17			0x2d4e
+#define DNR_RO_VBOF_STAT_CNT_18			0x2d4f
+#define DNR_RO_VBOF_STAT_CNT_19			0x2d50
+#define DNR_RO_VBOF_STAT_CNT_20			0x2d51
+#define DNR_RO_VBOF_STAT_CNT_21			0x2d52
+#define DNR_RO_VBOF_STAT_CNT_22			0x2d53
+#define DNR_RO_VBOF_STAT_CNT_23			0x2d54
+#define DNR_RO_VBOF_STAT_CNT_24			0x2d55
+#define DNR_RO_VBOF_STAT_CNT_25			0x2d56
+#define DNR_RO_VBOF_STAT_CNT_26			0x2d57
+#define DNR_RO_VBOF_STAT_CNT_27			0x2d58
+#define DNR_RO_VBOF_STAT_CNT_28			0x2d59
+#define DNR_RO_VBOF_STAT_CNT_29			0x2d5a
+#define DNR_RO_VBOF_STAT_CNT_30			0x2d5b
+#define DNR_RO_VBOF_STAT_CNT_31			0x2d5c
+#define VPU_VD1_MMC_CTRL				0x2703
+#define VPU_VD2_MMC_CTRL				0x2704
+#define VPU_DI_IF1_MMC_CTRL				0x2705
+#define VPU_DI_MEM_MMC_CTRL				0x2706
+#define VPU_DI_INP_MMC_CTRL				0x2707
+#define VPU_DI_MTNRD_MMC_CTRL			0x2708
+#define VPU_DI_CHAN2_MMC_CTRL			0x2709
+#define VPU_DI_MTNWR_MMC_CTRL			0x270a
+#define VPU_DI_NRWR_MMC_CTRL			0x270b
+#define VPU_DI_DIWR_MMC_CTRL			0x270c
+
+/* mc di */
+#define MCDI_HV_SIZEIN					0x2f00
+#define MCDI_HV_BLKSIZEIN				0x2f01
+#define MCDI_BLKTOTAL					0x2f02
+#define MCDI_MOTINEN					0x2f03
+#define MCDI_CTRL_MODE					0x2f04
+#define MCDI_UNI_MVDST					0x2f05
+#define MCDI_BI_MVDST					0x2f06
+#define MCDI_SAD_GAIN					0x2f07
+#define MCDI_TXT_THD					0x2f08
+#define MCDI_FLT_MODESEL				0x2f09
+#define MCDI_CHK_EDGE_THD				0x2f0a
+#define MCDI_CHK_EDGE_GAIN_OFFST		0x2f0b
+#define MCDI_LMV_RT						0x2f0c
+#define MCDI_LMV_GAINTHD				0x2f0d
+#define MCDI_RPTMV_THD0					0x2f0e
+#define MCDI_RPTMV_THD1					0x2f0f
+#define MCDI_RPTMV_THD2					0x2f10
+#define MCDI_RPTMV_SAD					0x2f11
+#define MCDI_RPTMV_FLG					0x2f12
+#define MCDI_RPTMV_GAIN					0x2f13
+#define MCDI_GMV_RT						0x2f14
+#define MCDI_GMV_GAIN					0x2f15
+#define MCDI_HOR_SADOFST				0x2f16
+#define MCDI_REF_MV_NUM					0x2f17
+#define MCDI_REF_BADW_THD_GAIN			0x2f18
+#define MCDI_REF_BADW_SUM_GAIN			0x2f19
+#define MCDI_REF_BS_THD_GAIN			0x2f1a
+#define MCDI_REF_ERR_GAIN0				0x2f1b
+#define MCDI_REF_ERR_GAIN1				0x2f1c
+#define MCDI_REF_ERR_FRQ_CHK			0x2f1d
+#define MCDI_QME_LPF_MSK				0x2f1e
+#define MCDI_REL_DIF_THD_02				0x2f1f
+#define MCDI_REL_DIF_THD_34				0x2f20
+#define MCDI_REL_BADW_GAIN_OFFST_01		0x2f21
+#define MCDI_REL_BADW_GAIN_OFFST_23		0x2f22
+#define MCDI_REL_BADW_THD_GAIN_OFFST	0x2f23
+#define MCDI_REL_BADW_THD_MIN_MAX		0x2f24
+#define MCDI_REL_SAD_GAIN_OFFST_01		0x2f25
+#define MCDI_REL_SAD_GAIN_OFFST_23		0x2f26
+#define MCDI_REL_SAD_THD_GAIN_OFFST		0x2f27
+#define MCDI_REL_SAD_THD_MIN_MAX		0x2f28
+#define MCDI_REL_DET_GAIN_00			0x2f29
+#define MCDI_REL_DET_GAIN_01			0x2f2a
+#define MCDI_REL_DET_GAIN_10			0x2f2b
+#define MCDI_REL_DET_GAIN_11			0x2f2c
+#define MCDI_REL_DET_GAIN_20			0x2f2d
+#define MCDI_REL_DET_GAIN_21			0x2f2e
+#define MCDI_REL_DET_GMV_DIF_CHK		0x2f2f
+#define MCDI_REL_DET_LMV_DIF_CHK		0x2f30
+#define MCDI_REL_DET_FRQ_CHK			0x2f31
+#define MCDI_REL_DET_PD22_CHK			0x2f32
+#define MCDI_REL_DET_RPT_CHK_ROW		0x2f33
+#define MCDI_REL_DET_RPT_CHK_GAIN_QMV	0x2f34
+#define MCDI_REL_DET_RPT_CHK_THD_0		0x2f35
+#define MCDI_REL_DET_RPT_CHK_THD_1		0x2f36
+#define MCDI_REL_DET_LPF_DIF_THD		0x2f37
+#define MCDI_REL_DET_LPF_MSK_04_12		0x2f39
+#define MCDI_REL_DET_LPF_MSK_13_21		0x2f3a
+#define MCDI_REL_DET_LPF_MSK_22_30		0x2f3b
+#define MCDI_REL_DET_LPF_MSK_31_34		0x2f3c
+#define MCDI_REL_DET_MIN				0x2f3d
+#define MCDI_REL_DET_LUT_0_3			0x2f3e
+#define MCDI_REL_DET_LUT_4_7			0x2f3f
+#define MCDI_REL_DET_LUT_8_11			0x2f40
+#define MCDI_REL_DET_LUT_12_15			0x2f41
+#define MCDI_REL_DET_COL_CFD_THD		0x2f42
+#define MCDI_REL_DET_COL_CFD_AVG_LUMA	0x2f43
+#define MCDI_REL_DET_BAD_THD_0			0x2f44
+#define MCDI_REL_DET_BAD_THD_1			0x2f45
+#define MCDI_PD22_CHK_THD				0x2f46
+#define MCDI_PD22_CHK_GAIN_OFFST_0		0x2f47
+#define MCDI_PD22_CHK_GAIN_OFFST_1		0x2f48
+#define MCDI_LMV_LOCK_CNT_THD_GAIN		0x2f49
+#define MCDI_LMV_LOCK_ABS_DIF_THD		0x2f4a
+#define MCDI_LMV_LOCK_ROW				0x2f4b
+#define MCDI_LMV_LOCK_RT_MODE			0x2f4c
+#define MCDI_GMV_LOCK_CNT_THD_GAIN		0x2f4d
+#define MCDI_GMV_LOCK_ABS_DIF_THD		0x2f4e
+#define MCDI_HIGH_VERT_FRQ_DIF_THD		0x2f4f
+#define MCDI_HIGH_VERT_FRQ_DIF_DIF_THD	0x2f50
+#define MCDI_HIGH_VERT_FRQ_RT_GAIN		0x2f51
+#define MCDI_MOTION_PARADOX_THD			0x2f52
+#define MCDI_MOTION_PARADOX_RT			0x2f53
+#define MCDI_MOTION_REF_THD				0x2f54
+#define MCDI_REL_COL_REF_RT				0x2f55
+#define MCDI_PD22_CHK_THD_RT			0x2f56
+#define MCDI_CHAR_DET_DIF_THD			0x2f57
+#define MCDI_CHAR_DET_CNT_THD			0x2f58
+#define MCDI_FIELD_MV					0x2f60
+#define MCDI_FIELD_HVF_PRDX_CNT			0x2f61
+#define MCDI_FIELD_LUMA_AVG_SUM_0		0x2f62
+#define MCDI_FIELD_LUMA_AVG_SUM_1		0x2f63
+#define MCDI_YCBCR_BLEND_CRTL			0x2f64
+#define MCDI_MCVECWR_CANVAS_SIZE		0x2f65
+#define MCDI_MCVECRD_CANVAS_SIZE		0x2f66
+#define MCDI_MCINFOWR_CANVAS_SIZE		0x2f67
+#define MCDI_MCINFORD_CANVAS_SIZE		0x2f68
+#define MCDI_MCVECWR_X					0x2f92
+#define MCDI_MCVECWR_Y					0x2f93
+#define MCDI_MCVECWR_CTRL				0x2f94
+#define MCDI_MCVECRD_X					0x2f95
+#define MCDI_MCVECRD_Y					0x2f96
+#define MCDI_MCVECRD_CTRL				0x2f97
+#define MCDI_MCINFOWR_X					0x2f98
+#define MCDI_MCINFOWR_Y					0x2f99
+#define MCDI_MCINFOWR_CTRL				0x2f9a
+#define MCDI_MCINFORD_X					0x2f9b
+#define MCDI_MCINFORD_Y					0x2f9c
+#define MCDI_MCINFORD_CTRL				0x2f9d
+#define MCDI_MC_CRTL					0x2f70
+#define MCDI_MC_LPF_MSK_0				0x2f71
+#define MCDI_MC_LPF_MSK_1				0x2f72
+#define MCDI_MC_LPF_MSK_2				0x2f73
+#define MCDI_MC_LPF_MSK_3				0x2f74
+#define MCDI_MC_LPF_MSK_4				0x2f75
+#define MCDI_MC_REL_GAIN_OFFST_0		0x2f76
+#define MCDI_MC_REL_GAIN_OFFST_1		0x2f77
+#define MCDI_MC_COL_CFD_0				0x2f78
+#define MCDI_MC_COL_CFD_1				0x2f79
+#define MCDI_MC_COL_CFD_2				0x2f7a
+#define MCDI_MC_COL_CFD_3				0x2f7b
+#define MCDI_MC_COL_CFD_4				0x2f7c
+#define MCDI_MC_COL_CFD_5				0x2f7d
+#define MCDI_MC_COL_CFD_6				0x2f7e
+#define MCDI_MC_COL_CFD_7				0x2f7f
+#define MCDI_MC_COL_CFD_8				0x2f80
+#define MCDI_MC_COL_CFD_9				0x2f81
+#define MCDI_MC_COL_CFD_10				0x2f82
+#define MCDI_MC_COL_CFD_11				0x2f83
+#define MCDI_MC_COL_CFD_12				0x2f84
+#define MCDI_MC_COL_CFD_13				0x2f85
+#define MCDI_MC_COL_CFD_14				0x2f86
+#define MCDI_MC_COL_CFD_15				0x2f87
+#define MCDI_MC_COL_CFD_16				0x2f88
+#define MCDI_MC_COL_CFD_17				0x2f89
+#define MCDI_MC_COL_CFD_18				0x2f8a
+#define MCDI_MC_COL_CFD_19				0x2f8b
+#define MCDI_MC_COL_CFD_20				0x2f8c
+#define MCDI_MC_COL_CFD_21				0x2f8d
+#define MCDI_MC_COL_CFD_22				0x2f8e
+#define MCDI_MC_COL_CFD_23				0x2f8f
+#define MCDI_MC_COL_CFD_24				0x2f90
+#define MCDI_MC_COL_CFD_25				0x2f91
+#define MCDI_RO_FLD_LUMA_AVG_SUM		0x2fa0
+#define MCDI_RO_GMV_VLD_CNT				0x2fa1
+#define MCDI_RO_RPT_FLG_CNT				0x2fa2
+#define MCDI_RO_FLD_BAD_SAD_CNT			0x2fa3
+#define MCDI_RO_FLD_BAD_BADW_CNT		0x2fa4
+#define MCDI_RO_FLD_BAD_REL_CNT			0x2fa5
+#define MCDI_RO_FLD_MTN_CNT				0x2fa6
+#define MCDI_RO_FLD_VLD_CNT				0x2fa7
+#define MCDI_RO_FLD_PD_22_PRE_CNT		0x2fa8
+#define MCDI_RO_FLD_PD_22_FOR_CNT		0x2fa9
+#define MCDI_RO_FLD_PD_22_FLT_CNT		0x2faa
+#define MCDI_RO_HIGH_VERT_FRQ_FLG		0x2fab
+#define MCDI_RO_GMV_LOCK_FLG			0x2fac
+#define MCDI_RO_RPT_MV					0x2fad
+#define MCDI_RO_MOTION_PARADOX_FLG		0x2fae
+#define MCDI_RO_PD_22_FLG				0x2faf
+#define MCDI_RO_COL_CFD_0				0x2fb0
+#define MCDI_RO_COL_CFD_1				0x2fb1
+#define MCDI_RO_COL_CFD_2				0x2fb2
+#define MCDI_RO_COL_CFD_3				0x2fb3
+#define MCDI_RO_COL_CFD_4				0x2fb4
+#define MCDI_RO_COL_CFD_5				0x2fb5
+#define MCDI_RO_COL_CFD_6				0x2fb6
+#define MCDI_RO_COL_CFD_7				0x2fb7
+#define MCDI_RO_COL_CFD_8				0x2fb8
+#define MCDI_RO_COL_CFD_9				0x2fb9
+#define MCDI_RO_COL_CFD_10				0x2fba
+#define MCDI_RO_COL_CFD_11				0x2fbb
+#define MCDI_RO_COL_CFD_12				0x2fbc
+#define MCDI_RO_COL_CFD_13				0x2fbd
+#define MCDI_RO_COL_CFD_14				0x2fbe
+#define MCDI_RO_COL_CFD_15				0x2fbf
+#define MCDI_RO_COL_CFD_16				0x2fc0
+#define MCDI_RO_COL_CFD_17				0x2fc1
+#define MCDI_RO_COL_CFD_18				0x2fc2
+#define MCDI_RO_COL_CFD_19				0x2fc3
+#define MCDI_RO_COL_CFD_20				0x2fc4
+#define MCDI_RO_COL_CFD_21				0x2fc5
+#define MCDI_RO_COL_CFD_22				0x2fc6
+#define MCDI_RO_COL_CFD_23				0x2fc7
+#define MCDI_RO_COL_CFD_24				0x2fc8
+#define MCDI_RO_COL_CFD_25				0x2fc9
+#define DIPD_COMB_CTRL0					0x2fd0
+#define DIPD_COMB_CTRL1					0x2fd1
+#define DIPD_COMB_CTRL2					0x2fd2
+#define DIPD_COMB_CTRL3					0x2fd3
+#define DIPD_COMB_CTRL4					0x2fd4
+#define DIPD_COMB_CTRL5					0x2fd5
+#define DIPD_RO_COMB_0					0x2fd6
+#define DIPD_RO_COMB_1					0x2fd7
+#define DIPD_RO_COMB_2					0x2fd8
+#define DIPD_RO_COMB_3					0x2fd9
+#define DIPD_RO_COMB_4					0x2fda
+#define DIPD_RO_COMB_5					0x2fdb
+#define DIPD_RO_COMB_6					0x2fdc
+#define DIPD_RO_COMB_7					0x2fdd
+#define DIPD_RO_COMB_8					0x2fde
+#define DIPD_RO_COMB_9					0x2fdf
+#define DIPD_RO_COMB_10					0x2fe0
+#define DIPD_RO_COMB_11					0x2fe1
+#define DIPD_RO_COMB_12					0x2fe2
+#define DIPD_RO_COMB_13					0x2fe3
+#define DIPD_RO_COMB_14					0x2fe4
+#define DIPD_RO_COMB_15					0x2fe5
+#define DIPD_RO_COMB_16					0x2fe6
+#define DIPD_RO_COMB_17					0x2fe7
+#define DIPD_RO_COMB_18					0x2fe8
+#define DIPD_RO_COMB_19					0x2fe9
+#define DIPD_RO_COMB_20					0x2fea
+/* nr3 */
+#define NR3_MODE						0x2ff0
+		/* d010bfc0 */
+#define NR3_COOP_PARA					0x2ff1
+#define NR3_CNOOP_GAIN					0x2ff2
+#define NR3_YMOT_PARA					0x2ff3
+#define NR3_CMOT_PARA					0x2ff4
+#define NR3_SUREMOT_YGAIN				0x2ff5
+#define NR3_SUREMOT_CGAIN				0x2ff6
+
+#endif

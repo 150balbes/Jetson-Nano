@@ -1,0 +1,15 @@
+#
+# Amlogic Ethernet Driver configuration
+#
+menu "Ethernet Support"
+config AM_PHY
+	tristate "Amloigc PHY support"
+	select NET
+	help
+		Ethernet controllers are usually attached to amlogic
+		PHY choose devices.
+if AM_PHY
+source "drivers/amlogic/ethernet/phy/Kconfig"
+endif
+endmenu
+

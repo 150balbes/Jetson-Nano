@@ -1,0 +1,28 @@
+
+menu "USB Support"
+
+config AMLOGIC_USB
+	tristate "Amlogic USB controller support"
+	select USB_HOST_ELECT_TEST
+	select OF_LM
+	depends on USB
+	help
+	   DWC_OTG
+	   USB
+	   host
+	   controller.
+
+config USB_DWC_OTG_HCD
+	tristate "USB Host controller dwc_otg support"
+	depends on AMLOGIC_USB
+	help
+	   USB Host
+	   controller
+	   dwc_otg
+	   support
+config USB_HOST_ELECT_TEST
+	bool
+	help
+	    Enable this config to support USB High speed electric test.
+
+endmenu
