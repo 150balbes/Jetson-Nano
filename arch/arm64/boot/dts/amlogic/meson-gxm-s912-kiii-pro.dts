@@ -1,0 +1,27 @@
+// SPDX-License-Identifier: (GPL-3.0+ OR MIT)
+/*
+ * Author: afl1 <afl2001@gmail.com>
+ */
+
+#include "meson-gxm-q200.dts"
+#include "meson-gxl-dvb.dtsi"
+/ {
+	model = "MeCool KIII Pro";
+
+	memory@0 {
+		device_type = "memory";
+		reg = <0x0 0x0 0x0 0xC0000000>;
+	};
+	dvb {
+		fec_reset_gpio-gpios = <&gpio GPIODV_13 GPIO_ACTIVE_HIGH>;
+		power_ctrl_gpio-gpios = <&gpio GPIODV_11 GPIO_ACTIVE_LOW>;
+	};
+};
+
+&i2c_B {
+	status = "okay";
+	clock-frequency = <300000>;
+	pinctrl-0 = <&i2c_b_pins>;
+	pinctrl-names = "default";
+};
+
