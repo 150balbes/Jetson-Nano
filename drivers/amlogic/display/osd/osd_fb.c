@@ -58,6 +58,8 @@ struct osd_info_s osd_info = {
 	.osd_reverse = 0,
 };
 
+extern void osd_wait_vsync_hw(void);
+
 const struct color_bit_define_s default_color_format_array[] = {
 	INVALID_BPP_ITEM,
 	INVALID_BPP_ITEM,
@@ -155,10 +157,26 @@ const struct color_bit_define_s default_color_format_array[] = {
 		FB_VISUAL_TRUECOLOR, 24
 	},
 	/*32 bit color*/
-	INVALID_BPP_ITEM,
-	INVALID_BPP_ITEM,
-	INVALID_BPP_ITEM,
-	INVALID_BPP_ITEM,
+	{
+		COLOR_INDEX_32_BGRX, 3, 5,
+		8, 8, 0, 16, 8, 0, 24, 8, 0, 0, 0, 0,
+		FB_VISUAL_TRUECOLOR, 32
+	},
+	{
+		COLOR_INDEX_32_XBGR, 2, 5,
+		0, 8, 0, 8, 8, 0, 16, 8, 0, 24, 0, 0,
+		FB_VISUAL_TRUECOLOR, 32
+	},
+	{
+		COLOR_INDEX_32_RGBX, 0, 5,
+		24, 8, 0, 16, 8, 0, 8, 8, 0, 0, 0, 0,
+		FB_VISUAL_TRUECOLOR, 32
+	},
+	{
+		COLOR_INDEX_32_XRGB, 1, 5,
+		16, 8, 0, 8, 8, 0, 0, 8, 0, 24, 0, 0,
+		FB_VISUAL_TRUECOLOR, 32
+	},
 	{
 		COLOR_INDEX_32_BGRA, 3, 5,
 		8, 8, 0, 16, 8, 0, 24, 8, 0, 0, 8, 0,
@@ -277,6 +295,188 @@ static phys_addr_t fb_rmem_paddr[2];
 static void __iomem *fb_rmem_vaddr[2];
 static u32 fb_rmem_size[2];
 
+#if defined(CONFIG_ARCH_MESON64_ODROIDC2)
+static int osd_set_res_bootargs(int index, enum vmode_e mode)
+{
+	osd_log_info("%s : mode %d\n", __func__, mode);
+
+	/* FIXME : need to adjust this routine */
+	switch (mode) {
+	case TVMODE_640x480p60hz:
+		fb_def_var[index].xres = 640;
+		fb_def_var[index].yres = 480;
+		fb_def_var[index].xres_virtual = 640;
+		fb_def_var[index].yres_virtual = 960;
+		fb_def_var[index].bits_per_pixel = 32;
+		break;
+	case TVMODE_800x480p60hz:
+		fb_def_var[index].xres = 800;
+		fb_def_var[index].yres = 480;
+		fb_def_var[index].xres_virtual = 800;
+		fb_def_var[index].yres_virtual = 960;
+		fb_def_var[index].bits_per_pixel = 32;
+		break;
+	case TVMODE_800x600p60hz:
+		fb_def_var[index].xres = 800;
+		fb_def_var[index].yres = 600;
+		fb_def_var[index].xres_virtual = 800;
+		fb_def_var[index].yres_virtual = 1200;
+		fb_def_var[index].bits_per_pixel = 32;
+		break;
+	case TVMODE_1024x600p60hz:
+		fb_def_var[index].xres = 1024;
+		fb_def_var[index].yres = 600;
+		fb_def_var[index].xres_virtual = 1024;
+		fb_def_var[index].yres_virtual = 1200;
+		fb_def_var[index].bits_per_pixel = 32;
+		break;
+	case TVMODE_1024x768p60hz:
+		fb_def_var[index].xres = 1024;
+		fb_def_var[index].yres = 768;
+		fb_def_var[index].xres_virtual = 1024;
+		fb_def_var[index].yres_virtual = 1536;
+		fb_def_var[index].bits_per_pixel = 32;
+		break;
+	case TVMODE_1280x800p60hz:
+		fb_def_var[index].xres = 1280;
+		fb_def_var[index].yres = 800;
+		fb_def_var[index].xres_virtual = 1280;
+		fb_def_var[index].yres_virtual = 1600;
+		fb_def_var[index].bits_per_pixel = 32;
+		break;
+	case TVMODE_1280x1024p60hz:
+		fb_def_var[index].xres = 1280;
+		fb_def_var[index].yres = 1024;
+		fb_def_var[index].xres_virtual = 1280;
+		fb_def_var[index].yres_virtual = 2048;
+		fb_def_var[index].bits_per_pixel = 32;
+		break;
+	case TVMODE_1360x768p60hz:
+		fb_def_var[index].xres = 1360;
+		fb_def_var[index].yres = 768;
+		fb_def_var[index].xres_virtual = 1360;
+		fb_def_var[index].yres_virtual = 1536;
+		fb_def_var[index].bits_per_pixel = 32;
+		break;
+	case TVMODE_1366x768p60hz:
+		fb_def_var[index].xres = 1366;
+		fb_def_var[index].yres = 768;
+		fb_def_var[index].xres_virtual = 1366;
+		fb_def_var[index].yres_virtual = 1536;
+		fb_def_var[index].bits_per_pixel = 32;
+		break;
+	case TVMODE_1440x900p60hz:
+		fb_def_var[index].xres = 1440;
+		fb_def_var[index].yres = 900;
+		fb_def_var[index].xres_virtual = 1440;
+		fb_def_var[index].yres_virtual = 1800;
+		fb_def_var[index].bits_per_pixel = 32;
+		break;
+	case TVMODE_1600x900p60hz:
+		fb_def_var[index].xres = 1600;
+		fb_def_var[index].yres = 900;
+		fb_def_var[index].xres_virtual = 1600;
+		fb_def_var[index].yres_virtual = 1800;
+		fb_def_var[index].bits_per_pixel = 32;
+		break;
+	case TVMODE_1680x1050p60hz:
+		fb_def_var[index].xres = 1680;
+		fb_def_var[index].yres = 1050;
+		fb_def_var[index].xres_virtual = 1680;
+		fb_def_var[index].yres_virtual = 2100;
+		fb_def_var[index].bits_per_pixel = 32;
+		break;
+	case TVMODE_1920x1200p60hz:
+		fb_def_var[index].xres = 1920;
+		fb_def_var[index].yres = 1200;
+		fb_def_var[index].xres_virtual = 1920;
+		fb_def_var[index].yres_virtual = 2400;
+		fb_def_var[index].bits_per_pixel = 32;
+		break;
+	case TVMODE_2560x1440p60hz:
+		fb_def_var[index].xres = 2560;
+		fb_def_var[index].yres = 1440;
+		fb_def_var[index].xres_virtual = 2560;
+		fb_def_var[index].yres_virtual = 2880;
+		fb_def_var[index].bits_per_pixel = 32;
+		break;
+	case TVMODE_2560x1600p60hz:
+		fb_def_var[index].xres = 2560;
+		fb_def_var[index].yres = 1600;
+		fb_def_var[index].xres_virtual = 2560;
+		fb_def_var[index].yres_virtual = 3200;
+		fb_def_var[index].bits_per_pixel = 32;
+		break;
+	case TVMODE_2560x1080p60hz:
+		fb_def_var[index].xres = 2560;
+		fb_def_var[index].yres = 1080;
+		fb_def_var[index].xres_virtual = 2560;
+		fb_def_var[index].yres_virtual = 2160;
+		fb_def_var[index].bits_per_pixel = 32;
+		break;
+	case TVMODE_3440x1440p60hz:
+		fb_def_var[index].xres = 3440;
+		fb_def_var[index].yres = 1440;
+		fb_def_var[index].xres_virtual = 3440;
+		fb_def_var[index].yres_virtual = 2880;
+		fb_def_var[index].bits_per_pixel = 32;
+		break;
+	case VMODE_480P:
+	case VMODE_480I:
+		fb_def_var[index].xres = 720;
+		fb_def_var[index].yres = 480;
+		fb_def_var[index].xres_virtual = 720;
+		fb_def_var[index].yres_virtual = 960;
+		fb_def_var[index].bits_per_pixel = 32;
+		break;
+	case VMODE_576P:
+	case VMODE_576I:
+		fb_def_var[index].xres = 720;
+		fb_def_var[index].yres = 576;
+		fb_def_var[index].xres_virtual = 720;
+		fb_def_var[index].yres_virtual = 1152;
+		fb_def_var[index].bits_per_pixel = 32;
+		break;
+	case VMODE_720P:
+	case VMODE_720P_50HZ:
+		fb_def_var[index].xres = 1280;
+		fb_def_var[index].yres = 720;
+		fb_def_var[index].xres_virtual = 1280;
+		fb_def_var[index].yres_virtual = 1440;
+		fb_def_var[index].bits_per_pixel = 32;
+		break;
+	case VMODE_1080P:
+	case VMODE_1080P_50HZ:
+	case VMODE_1080P_24HZ:
+	case VMODE_1080I:
+	case VMODE_1080I_50HZ:
+		fb_def_var[index].xres = 1920;
+		fb_def_var[index].yres = 1080;
+		fb_def_var[index].xres_virtual = 1920;
+		fb_def_var[index].yres_virtual = 2160;
+		fb_def_var[index].bits_per_pixel = 32;
+		break;
+	case VMODE_4K2K_30HZ:
+	case VMODE_4K2K_25HZ:
+	case VMODE_4K2K_60HZ:
+	case VMODE_4K2K_50HZ:
+	case VMODE_4K2K_60HZ_Y420:
+	case VMODE_4K2K_50HZ_Y420:
+		fb_def_var[index].xres = 1920;
+		fb_def_var[index].yres = 1080;
+		fb_def_var[index].xres_virtual = 1920;
+		fb_def_var[index].yres_virtual = 3240;
+		fb_def_var[index].bits_per_pixel = 32;
+		break;
+	default:
+		osd_log_info("%s, no available resolution info.", __func__);
+		return 1;
+	}
+
+	return 0;
+}
+#endif /* CONFIG_ARCH_MESON64_ODROIDC2 */
+
 phys_addr_t get_fb_rmem_paddr(int index)
 {
 	if (index < 0 || index > 1)
@@ -370,8 +570,15 @@ _find_color_format(struct fb_var_screeninfo *var)
 		lower_margin = COLOR_INDEX_24_6666_A;
 		break;
 	case 3:
-		upper_margin = COLOR_INDEX_32_ARGB;
-		lower_margin = COLOR_INDEX_32_BGRA;
+		if ((var->nonstd != 0)
+		    && (var->transp.length == 0)) {
+			/* RGBX Mode */
+			upper_margin = COLOR_INDEX_32_XRGB;
+			lower_margin = COLOR_INDEX_32_BGRX;
+		} else {
+			upper_margin = COLOR_INDEX_32_ARGB;
+			lower_margin = COLOR_INDEX_32_BGRA;
+		}
 		break;
 	case 4:
 		upper_margin = COLOR_INDEX_YUV_422;
@@ -385,7 +592,25 @@ _find_color_format(struct fb_var_screeninfo *var)
 	 * if not provide color component length
 	 * then we find the first depth match.
 	 */
-	if ((var->red.length == 0) || (var->green.length == 0)
+
+	if ((var->nonstd != 0) && (level == 3)
+	    && (var->transp.length == 0)) {
+		/* RGBX Mode */
+		for (i = upper_margin; i >= lower_margin; i--) {
+			color = &default_color_format_array[i];
+			if ((color->red_length == var->red.length) &&
+			    (color->green_length == var->green.length) &&
+			    (color->blue_length == var->blue.length) &&
+			    (color->transp_offset == var->transp.offset) &&
+			    (color->green_offset == var->green.offset) &&
+			    (color->blue_offset == var->blue.offset) &&
+			    (color->red_offset == var->red.offset)) {
+				found = color;
+				break;
+			}
+			color--;
+		}
+	} else if ((var->red.length == 0) || (var->green.length == 0)
 	    || (var->blue.length == 0) ||
 	    var->bits_per_pixel != (var->red.length + var->green.length +
 		    var->blue.length + var->transp.length)) {
@@ -597,6 +822,14 @@ static int osd_ioctl(struct fb_info *info, unsigned int cmd, unsigned long arg)
 	case FBIOPUT_OSD_WINDOW_AXIS:
 		ret = copy_from_user(&osd_dst_axis, argp, 4 * sizeof(s32));
 		break;
+#if defined(CONFIG_ARCH_MESON64_ODROIDC2) && defined(CONFIG_UMP)
+	case GET_UMP_SECURE_ID_BUF1:
+		return disp_get_ump_secure_id(info, fbdev, arg, 0);
+		break;
+	case GET_UMP_SECURE_ID_BUF2:
+		return disp_get_ump_secure_id(info, fbdev, arg, 1);
+		break;
+#endif
 	default:
 		osd_log_err("command 0x%x not supported (%s)\n",
 				cmd, current->comm);
@@ -754,7 +987,7 @@ static int osd_ioctl(struct fb_info *info, unsigned int cmd, unsigned long arg)
 			ret = -1;
 		break;
 	case FBIO_WAITFORVSYNC:
-		osd_wait_vsync_event();
+		osd_wait_vsync_hw();
 		ret = copy_to_user(argp, &ret, sizeof(u32));
 	default:
 		break;
@@ -2115,6 +2348,9 @@ static int osd_probe(struct platform_device *pdev)
 	case 3:
 		current_mode = VMODE_1080P;
 		break;
+	case 4:
+		current_mode = VMODE_720P;
+		break;
 	default:
 		current_mode = VMODE_MASK;
 		break;
@@ -2130,6 +2366,7 @@ static int osd_probe(struct platform_device *pdev)
 
 	vinfo = get_current_vinfo();
 	osd_log_info("%s vinfo:%p\n", __func__, vinfo);
+
 	for (index = 0; index < OSD_COUNT; index++) {
 		/* register frame buffer memory */
 		fbi = framebuffer_alloc(sizeof(struct osd_fb_dev_s),
@@ -2163,6 +2400,7 @@ static int osd_probe(struct platform_device *pdev)
 			fb_def_var[index].width = vinfo->screen_real_width;
 			fb_def_var[index].height = vinfo->screen_real_height;
 		}
+
 		/* setup fb0 display size */
 		if (index == DEV_OSD0) {
 			ret = of_property_read_u32_array(pdev->dev.of_node,
@@ -2171,6 +2409,7 @@ static int osd_probe(struct platform_device *pdev)
 			if (ret)
 				osd_log_info("not found display_size_default\n");
 			else {
+#if !defined(CONFIG_ARCH_MESON64_ODROIDC2)
 				fb_def_var[index].xres = var_screeninfo[0];
 				fb_def_var[index].yres = var_screeninfo[1];
 				fb_def_var[index].xres_virtual =
@@ -2183,6 +2422,37 @@ static int osd_probe(struct platform_device *pdev)
 					fb_def_var[index].bits_per_pixel);
 				if (fb_def_var[index].bits_per_pixel > 32)
 					fb_def_var[index].bits_per_pixel = 32;
+
+#else /* CONFIG_ARCH_MESON64_ODROIDC2 */
+
+				if (current_mode != logo_mode)
+					current_mode = logo_mode;
+
+				if (osd_set_res_bootargs(index, current_mode)) {
+					fb_def_var[index].xres =
+						var_screeninfo[0];
+					fb_def_var[index].yres =
+						var_screeninfo[1];
+					fb_def_var[index].xres_virtual =
+						var_screeninfo[2];
+					fb_def_var[index].yres_virtual =
+						var_screeninfo[3];
+					fb_def_var[index].bits_per_pixel =
+						var_screeninfo[4];
+				}
+				osd_log_info("fb def : %d %d %d %d %d\n",
+					fb_def_var[index].xres,
+					fb_def_var[index].yres,
+					fb_def_var[index].xres_virtual,
+					fb_def_var[index].yres_virtual,
+					fb_def_var[index].bits_per_pixel);
+
+				osd_log_info("init fbdev bpp is:%d\n",
+					fb_def_var[index].bits_per_pixel);
+
+				if (fb_def_var[index].bits_per_pixel > 32)
+					fb_def_var[index].bits_per_pixel = 32;
+#endif /* CONFIG_ARCH_MESON64_ODROIDC2 */
 			}
 		}
 		/* clear osd buffer if not logo layer */

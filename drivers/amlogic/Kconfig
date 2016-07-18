@@ -3,6 +3,8 @@
 #
 menu "Amlogic Device Drivers"
 
+source "drivers/amlogic/cec/Kconfig"
+
 source "drivers/amlogic/clocksource/Kconfig"
 
 source "drivers/amlogic/uart/Kconfig"
@@ -108,4 +110,7 @@ source "drivers/amlogic/camera/Kconfig"
 source "drivers/amlogic/codec_mm/Kconfig"
 
 source "drivers/amlogic/watchdog/Kconfig"
+
+source "drivers/amlogic/pwm/Kconfig"
+
 endmenu

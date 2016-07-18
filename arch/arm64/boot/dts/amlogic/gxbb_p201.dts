@@ -506,7 +506,7 @@
 		compatible = "amlogic, unifykey";
 		status = "ok";
 
-		unifykey-num = <11>;
+		unifykey-num = <10>;
 		unifykey-index-0 = <&keysn_0>;
 		unifykey-index-1 = <&keysn_1>;
 		unifykey-index-2 = <&keysn_2>;
@@ -517,7 +517,6 @@
 		unifykey-index-7 = <&keysn_7>;
 		unifykey-index-8 = <&keysn_8>;
 		unifykey-index-9 = <&keysn_9>;
-		unifykey-index-10= <&keysn_10>;
 
                 keysn_0: key_0{
 			key-name = "usid";
@@ -571,11 +570,6 @@
 		keysn_9:key_9{
 			key-name = "deviceid";
 			key-device = "normal";
-			key-permit = "read","write","del";
-		};
-		keysn_10:key_10{
-			key-name = "hdcp22_fw_private";
-			key-device = "secure";
 			key-permit = "read","write","del";
 		};
         };//End unifykey
@@ -703,11 +697,11 @@
 		pl-periph-id = <0>; /** lm name */
 		clock-src = "usb0"; /** clock src */
 		port-id = <0>;  /** ref to mach/usb.h */
-		port-type = <1>;	/** 0: otg, 1: host, 2: slave */
+		port-type = <0>;	/** 0: otg, 1: host, 2: slave */
 		port-speed = <0>; /** 0: default, high, 1: full */
 		port-config = <0>; /** 0: default */
 		port-dma = <0>; /** 0: default, 1: single, 2: incr, 3: incr4, 4: incr8, 5: incr16, 6: disable*/
-		port-id-mode = <1>; /** 0: hardware, 1: sw_host, 2: sw_slave*/
+		port-id-mode = <0>; /** 0: hardware, 1: sw_host, 2: sw_slave*/
 		gpio-vbus-power = "GPIODV_24";
 		gpios = <&gpio       GPIODV_24       GPIO_ACTIVE_HIGH>;
 		gpio-work-mask	= <1>; /**0: work on pulldown,1:work on pullup*/
@@ -871,6 +865,75 @@
 		status = "okay";
 		led_gpio = <&gpio_ao  GPIOAO_13  GPIO_ACTIVE_HIGH>;
 		led_active_low = <1>;
+	};
+	aml_sensor0: aml-sensor@0 {
+		compatible = "amlogic, aml-thermal";
+		#thermal-sensor-cells = <1>;
+		cpu_dyn_coeff = <140>;
+		/* cpu_freq gpu_freq cpu_core gpu_core */
+		min_state = <1000000 400 1 2>;
+		gpu_dyn_coeff = <437>;
+	};
+	cpucore:thermal_cpu_cores {
+		#cooling-cells = <2>; /* min followed by max */
+	};
+	gpucore:thermal_gpu_cores {
+		#cooling-cells = <2>; /* min followed by max */
+	};
+	thermal-zones {
+		soc_thermal {
+			polling-delay = <1000>;
+			polling-delay-passive = <100>;
+			sustainable-power = <2150>;
+
+			thermal-sensors = <&aml_sensor0 3>;
+
+			trips {
+				switch_on: trip-point@0 {
+					temperature = <70000>;
+					hysteresis = <1000>;
+					type = "passive";
+				};
+				control: trip-point@1 {
+					temperature = <80000>;
+					hysteresis = <1000>;
+					type = "passive";
+				};
+				hot: trip-point@2 {
+					temperature = <85000>;
+					hysteresis = <5000>;
+					type = "hot";
+				};
+				critical: trip-point@3 {
+					temperature = <260000>;
+					hysteresis = <1000>;
+					type = "critical";
+				};
+			};
+
+			cooling-maps {
+				cpufreq_cooling_map {
+					trip = <&control>;
+					cooling-device = <&cpus 0 4>;
+					contribution = <1024>;
+				};
+				cpucore_cooling_map {
+					trip = <&control>;
+					cooling-device = <&cpucore 0 3>;
+					contribution = <1024>;
+				};
+				gpufreq_cooling_map {
+					trip = <&control>;
+					cooling-device = <&gpu 0 4>;
+					contribution = <1024>;
+				};
+				gpucore_cooling_map {
+					trip = <&control>;
+					cooling-device = <&gpucore 0 2>;
+					contribution = <1024>;
+				};
+			};
+		};
 	};
 };
 

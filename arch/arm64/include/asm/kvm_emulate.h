@@ -38,6 +38,13 @@ void kvm_inject_undefined(struct kvm_vcpu *vcpu);
 void kvm_inject_dabt(struct kvm_vcpu *vcpu, unsigned long addr);
 void kvm_inject_pabt(struct kvm_vcpu *vcpu, unsigned long addr);
 
+static inline void vcpu_reset_hcr(struct kvm_vcpu *vcpu)
+{
+	vcpu->arch.hcr_el2 = HCR_GUEST_FLAGS;
+	if (test_bit(KVM_ARM_VCPU_EL1_32BIT, vcpu->arch.features))
+		vcpu->arch.hcr_el2 &= ~HCR_RW;
+}
+
 static inline unsigned long *vcpu_pc(const struct kvm_vcpu *vcpu)
 {
 	return (unsigned long *)&vcpu_gp_regs(vcpu)->regs.pc;
@@ -79,11 +86,13 @@ static inline void vcpu_set_thumb(struct kvm_vcpu *vcpu)
 	*vcpu_cpsr(vcpu) |= COMPAT_PSR_T_BIT;
 }
 
+/*
+ * vcpu_reg should always be passed a register number coming from a
+ * read of ESR_EL2. Otherwise, it may give the wrong result on AArch32
+ * with banked registers.
+ */
 static inline unsigned long *vcpu_reg(const struct kvm_vcpu *vcpu, u8 reg_num)
 {
-	if (vcpu_mode_is_32bit(vcpu))
-		return vcpu_reg32(vcpu, reg_num);
-
 	return (unsigned long *)&vcpu_gp_regs(vcpu)->regs.regs[reg_num];
 }
 

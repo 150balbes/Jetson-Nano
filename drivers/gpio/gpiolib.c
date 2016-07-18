@@ -408,7 +408,7 @@ static ssize_t gpio_value_store(struct device *dev,
 	return status;
 }
 
-static const DEVICE_ATTR(value, 0644,
+static DEVICE_ATTR(value, 0644,
 		gpio_value_show, gpio_value_store);
 
 static irqreturn_t gpio_sysfs_irq(int irq, void *priv)
@@ -419,13 +419,21 @@ static irqreturn_t gpio_sysfs_irq(int irq, void *priv)
 	return IRQ_HANDLED;
 }
 
+#if defined(CONFIG_ARCH_MESON64_ODROIDC2)
+	#include <linux/amlogic/pinctrl_amlogic.h>
+	/* AMLogic GPIO irq bank start offset */
+	#define	AMLGPIO_IRQ_BASE	96
+#endif
+
 static int gpio_setup_irq(struct gpio_desc *desc, struct device *dev,
 		unsigned long gpio_flags)
 {
 	struct kernfs_node	*value_sd;
 	unsigned long		irq_flags;
 	int			ret, irq, id;
-
+#if defined(CONFIG_ARCH_MESON64_ODROIDC2)
+	int			irq_banks[2] = {0, };
+#endif
 	if ((desc->flags & GPIO_TRIGGER_MASK) == gpio_flags)
 		return 0;
 
@@ -435,8 +443,21 @@ static int gpio_setup_irq(struct gpio_desc *desc, struct device *dev,
 
 	id = desc->flags >> ID_SHIFT;
 	value_sd = idr_find(&dirent_idr, id);
-	if (value_sd)
+	if (value_sd)	{
+#if defined(CONFIG_ARCH_MESON64_ODROIDC2)
+		meson_free_irq(irq, &irq_banks[0]);
+
+		/* rising irq bank */
+		if (irq_banks[0] != -1)
+			free_irq(irq_banks[0] + AMLGPIO_IRQ_BASE, value_sd);
+
+		/* falling irq bank */
+		if (irq_banks[1] != -1)
+			free_irq(irq_banks[1] + AMLGPIO_IRQ_BASE, value_sd);
+#else
 		free_irq(irq, value_sd);
+#endif
+	}
 
 	desc->flags &= ~GPIO_TRIGGER_MASK;
 
@@ -475,8 +496,37 @@ static int gpio_setup_irq(struct gpio_desc *desc, struct device *dev,
 		}
 	}
 
+#if defined(CONFIG_ARCH_MESON64_ODROIDC2)
+	ret = meson_setup_irq(desc->chip, irq, irq_flags, &irq_banks[0]);
+
+	if (ret < 0)
+		goto free_id;
+
+	/* rising irq bank */
+	if (irq_banks[0] != -1)	{
+		ret = request_any_context_irq(irq_banks[0] + AMLGPIO_IRQ_BASE,
+					gpio_sysfs_irq, IRQF_DISABLED,
+					"gpiolib", value_sd);
+		if (ret < 0)
+			goto free_id;
+	}
+	/* falling irq bank */
+	if (irq_banks[1] != -1)	{
+		ret = request_any_context_irq(irq_banks[1] + AMLGPIO_IRQ_BASE,
+					gpio_sysfs_irq, IRQF_DISABLED,
+					"gpiolib", value_sd);
+
+		if (ret < 0)	{
+			if (irq_banks[0] != -1)
+				free_irq(irq_banks[0] + AMLGPIO_IRQ_BASE,
+					 value_sd);
+			goto free_id;
+		}
+	}
+#else
 	ret = request_any_context_irq(irq, gpio_sysfs_irq, irq_flags,
 				"gpiolib", value_sd);
+#endif
 	if (ret < 0)
 		goto free_id;
 
@@ -633,18 +683,16 @@ static ssize_t gpio_active_low_store(struct device *dev,
 	return status ? : size;
 }
 
-static const DEVICE_ATTR(active_low, 0644,
+static DEVICE_ATTR(active_low, 0644,
 		gpio_active_low_show, gpio_active_low_store);
 
-static const struct attribute *gpio_attrs[] = {
+static struct attribute *gpio_attrs[] = {
 	&dev_attr_value.attr,
 	&dev_attr_active_low.attr,
 	NULL,
 };
 
-static const struct attribute_group gpio_attr_group = {
-	.attrs = (struct attribute **) gpio_attrs,
-};
+ATTRIBUTE_GROUPS(gpio);
 
 /*
  * /sys/class/gpio/gpiochipN/
@@ -680,16 +728,13 @@ static ssize_t chip_ngpio_show(struct device *dev,
 }
 static DEVICE_ATTR(ngpio, 0444, chip_ngpio_show, NULL);
 
-static const struct attribute *gpiochip_attrs[] = {
+static struct attribute *gpiochip_attrs[] = {
 	&dev_attr_base.attr,
 	&dev_attr_label.attr,
 	&dev_attr_ngpio.attr,
 	NULL,
 };
-
-static const struct attribute_group gpiochip_attr_group = {
-	.attrs = (struct attribute **) gpiochip_attrs,
-};
+ATTRIBUTE_GROUPS(gpiochip);
 
 /*
  * /sys/class/gpio/export ... write-only
@@ -805,6 +850,7 @@ static struct class gpio_class = {
  */
 int gpiod_export(struct gpio_desc *desc, bool direction_may_change)
 {
+	struct gpio_chip	*chip;
 	unsigned long		flags;
 	int			status;
 	const char		*ioname = NULL;
@@ -822,7 +868,15 @@ int gpiod_export(struct gpio_desc *desc, bool direction_may_change)
 		return -EINVAL;
 	}
 
+	chip = desc->chip;
+
 	mutex_lock(&sysfs_lock);
+
+	/* check if chip is being removed */
+	if (!chip || !chip->exported) {
+		status = -ENODEV;
+		goto fail_unlock;
+	}
 
 	spin_lock_irqsave(&gpio_lock, flags);
 	if (!test_bit(FLAG_REQUESTED, &desc->flags) ||
@@ -844,17 +898,14 @@ int gpiod_export(struct gpio_desc *desc, bool direction_may_change)
 	if (desc->chip->names && desc->chip->names[offset])
 		ioname = desc->chip->names[offset];
 
-	dev = device_create(&gpio_class, desc->chip->dev, MKDEV(0, 0),
-			    desc, ioname ? ioname : "gpio%u",
-			    desc_to_gpio(desc));
+	dev = device_create_with_groups(&gpio_class, desc->chip->dev,
+					MKDEV(0, 0), desc, gpio_groups,
+					ioname ? ioname : "gpio%u",
+					desc_to_gpio(desc));
 	if (IS_ERR(dev)) {
 		status = PTR_ERR(dev);
 		goto fail_unlock;
 	}
-
-	status = sysfs_create_group(&dev->kobj, &gpio_attr_group);
-	if (status)
-		goto fail_unregister_device;
 
 	if (direction_may_change) {
 		status = device_create_file(dev, &dev_attr_direction);
@@ -866,13 +917,15 @@ int gpiod_export(struct gpio_desc *desc, bool direction_may_change)
 				       !test_bit(FLAG_IS_OUT, &desc->flags))) {
 		status = device_create_file(dev, &dev_attr_edge);
 		if (status)
-			goto fail_unregister_device;
+			goto fail_remove_attr_direction;
 	}
 
 	set_bit(FLAG_EXPORT, &desc->flags);
 	mutex_unlock(&sysfs_lock);
 	return 0;
 
+fail_remove_attr_direction:
+	device_remove_file(dev, &dev_attr_direction);
 fail_unregister_device:
 	device_unregister(dev);
 fail_unlock:
@@ -917,6 +970,7 @@ int gpiod_export_link(struct device *dev, const char *name,
 		if (tdev != NULL) {
 			status = sysfs_create_link(&dev->kobj, &tdev->kobj,
 						name);
+			put_device(tdev);
 		} else {
 			status = -ENODEV;
 		}
@@ -964,7 +1018,7 @@ int gpiod_sysfs_set_active_low(struct gpio_desc *desc, int value)
 	}
 
 	status = sysfs_set_active_low(desc, dev, value);
-
+	put_device(dev);
 unlock:
 	mutex_unlock(&sysfs_lock);
 
@@ -1006,6 +1060,8 @@ void gpiod_unexport(struct gpio_desc *desc)
 	mutex_unlock(&sysfs_lock);
 
 	if (dev) {
+		device_remove_file(dev, &dev_attr_edge);
+		device_remove_file(dev, &dev_attr_direction);
 		device_unregister(dev);
 		put_device(dev);
 	}
@@ -1030,13 +1086,13 @@ static int gpiochip_export(struct gpio_chip *chip)
 
 	/* use chip->base for the ID; it's already known to be unique */
 	mutex_lock(&sysfs_lock);
-	dev = device_create(&gpio_class, chip->dev, MKDEV(0, 0), chip,
-				"gpiochip%d", chip->base);
-	if (!IS_ERR(dev)) {
-		status = sysfs_create_group(&dev->kobj,
-				&gpiochip_attr_group);
-	} else
+	dev = device_create_with_groups(&gpio_class, chip->dev, MKDEV(0, 0),
+					chip, gpiochip_groups,
+					"gpiochip%d", chip->base);
+	if (IS_ERR(dev))
 		status = PTR_ERR(dev);
+	else
+		status = 0;
 	chip->exported = (status == 0);
 	mutex_unlock(&sysfs_lock);
 
@@ -1060,12 +1116,15 @@ static void gpiochip_unexport(struct gpio_chip *chip)
 {
 	int			status;
 	struct device		*dev;
+	struct gpio_desc *desc;
+	unsigned int i;
 
 	mutex_lock(&sysfs_lock);
 	dev = class_find_device(&gpio_class, NULL, chip, match_export);
 	if (dev) {
 		put_device(dev);
 		device_unregister(dev);
+		/* prevent further gpiod exports */
 		chip->exported = false;
 		status = 0;
 	} else
@@ -1074,6 +1133,13 @@ static void gpiochip_unexport(struct gpio_chip *chip)
 
 	if (status)
 		chip_dbg(chip, "%s: status %d\n", __func__, status);
+
+	/* unregister gpiod class devices owned by sysfs */
+	for (i = 0; i < chip->ngpio; i++) {
+		desc = &chip->desc[i];
+		if (test_and_clear_bit(FLAG_SYSFS, &desc->flags))
+			gpiod_free(desc);
+	}
 }
 
 static int __init gpiolib_sysfs_init(void)
@@ -1222,6 +1288,9 @@ int gpiochip_add(struct gpio_chip *chip)
 
 	spin_unlock_irqrestore(&gpio_lock, flags);
 
+	if (status)
+		goto fail;
+
 #ifdef CONFIG_PINCTRL
 	INIT_LIST_HEAD(&chip->pin_ranges);
 #endif
@@ -1229,12 +1298,12 @@ int gpiochip_add(struct gpio_chip *chip)
 	of_gpiochip_add(chip);
 	acpi_gpiochip_add(chip);
 
-	if (status)
-		goto fail;
-
 	status = gpiochip_export(chip);
-	if (status)
+	if (status) {
+		acpi_gpiochip_remove(chip);
+		of_gpiochip_remove(chip);
 		goto fail;
+	}
 
 	pr_debug("%s: registered GPIOs %d to %d on device: %s\n", __func__,
 		chip->base, chip->base + chip->ngpio - 1,
@@ -1265,6 +1334,8 @@ int gpiochip_remove(struct gpio_chip *chip)
 	int		status = 0;
 	unsigned	id;
 
+	gpiochip_unexport(chip);
+
 	spin_lock_irqsave(&gpio_lock, flags);
 
 	gpiochip_remove_pin_ranges(chip);
@@ -1285,9 +1356,6 @@ int gpiochip_remove(struct gpio_chip *chip)
 	}
 
 	spin_unlock_irqrestore(&gpio_lock, flags);
-
-	if (status == 0)
-		gpiochip_unexport(chip);
 
 	return status;
 }
@@ -1928,15 +1996,15 @@ EXPORT_SYMBOL_GPL(gpiod_is_active_low);
  * that the GPIO was actually requested.
  */
 
-static int _gpiod_get_raw_value(const struct gpio_desc *desc)
+static bool _gpiod_get_raw_value(const struct gpio_desc *desc)
 {
 	struct gpio_chip	*chip;
-	int value;
+	bool value;
 	int offset;
 
 	chip = desc->chip;
 	offset = gpio_chip_hwgpio(desc);
-	value = chip->get ? chip->get(chip, offset) : 0;
+	value = chip->get ? chip->get(chip, offset) : false;
 	trace_gpio_value(desc_to_gpio(desc), 1, value);
 	return value;
 }
@@ -1992,7 +2060,7 @@ EXPORT_SYMBOL_GPL(gpiod_get_value);
  * @desc: gpio descriptor whose state need to be set.
  * @value: Non-zero for setting it HIGH otherise it will set to LOW.
  */
-static void _gpio_set_open_drain_value(struct gpio_desc *desc, int value)
+static void _gpio_set_open_drain_value(struct gpio_desc *desc, bool value)
 {
 	int err = 0;
 	struct gpio_chip *chip = desc->chip;
@@ -2019,7 +2087,7 @@ static void _gpio_set_open_drain_value(struct gpio_desc *desc, int value)
  * @desc: gpio descriptor whose state need to be set.
  * @value: Non-zero for setting it HIGH otherise it will set to LOW.
  */
-static void _gpio_set_open_source_value(struct gpio_desc *desc, int value)
+static void _gpio_set_open_source_value(struct gpio_desc *desc, bool value)
 {
 	int err = 0;
 	struct gpio_chip *chip = desc->chip;
@@ -2041,7 +2109,7 @@ static void _gpio_set_open_source_value(struct gpio_desc *desc, int value)
 			  __func__, err);
 }
 
-static void _gpiod_set_raw_value(struct gpio_desc *desc, int value)
+static void _gpiod_set_raw_value(struct gpio_desc *desc, bool value)
 {
 	struct gpio_chip	*chip;
 

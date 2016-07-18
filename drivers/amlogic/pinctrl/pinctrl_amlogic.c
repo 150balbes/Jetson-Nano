@@ -894,6 +894,13 @@ static int meson_gpio_set_pullup_down(struct gpio_chip *chip,
 	meson_config_pullup(pin, domain, bank, config);
 	return 0;
 }
+
+#if defined(CONFIG_ARCH_MESON64_ODROIDC2)
+	#define	AMLGPIO_IRQ_MAX	8
+
+	unsigned int meson_irq_desc[AMLGPIO_IRQ_MAX] = { 0, };
+#endif
+
 static int meson_gpio_to_irq(struct gpio_chip *chip,
 			     unsigned int gpio, unsigned gpio_flag)
 {
@@ -907,12 +914,23 @@ static int meson_gpio_to_irq(struct gpio_chip *chip,
 				0x1,	/*GPIO_IRQ_RISING*/
 				0x10001, /*GPIO_IRQ_FALLING*/
 				};
-	 /*set trigger type*/
+	/*set trigger type*/
 	struct meson_domain *domain = to_meson_domain(chip);
-	 pin = domain->data->pin_base + gpio;
-	 regmap_update_bits(int_reg, (GPIO_EDGE * 4),
-						0x10001<<irq_bank,
-						type[irq_type]<<irq_bank);
+
+#if defined(CONFIG_ARCH_MESON64_ODROIDC2)
+	if (meson_irq_desc[irq_bank])	{
+		pr_err("ERROR(%s) : already allocation irq bank!!\n",
+							 __func__);
+		pr_err("ERROR(%s) : gpio = %d, bank = %d\n", __func__,
+							    gpio,
+							    irq_bank);
+		return	-1;
+	}
+#endif
+	pin = domain->data->pin_base + gpio;
+	regmap_update_bits(int_reg, (GPIO_EDGE * 4),
+					0x10001<<irq_bank,
+					type[irq_type]<<irq_bank);
 	/*select pin*/
 	start_bit = (irq_bank&3)*8;
 	regmap_update_bits(int_reg,
@@ -924,8 +942,125 @@ static int meson_gpio_to_irq(struct gpio_chip *chip,
 
 	regmap_update_bits(int_reg,  (GPIO_FILTER_NUM*4),
 			0x7<<start_bit, filter<<start_bit);
+
+#if defined(CONFIG_ARCH_MESON64_ODROIDC2)
+	meson_irq_desc[irq_bank] = gpio;
+#endif
+
 	return 0;
 }
+
+#if defined(CONFIG_ARCH_MESON64_ODROIDC2)
+
+#include <linux/interrupt.h>
+
+static int find_free_irq_bank(void)
+{
+	unsigned int i;
+
+	for (i = 0; i < AMLGPIO_IRQ_MAX; i++)	{
+		if (!meson_irq_desc[i])
+			break;
+	}
+
+	if (i == AMLGPIO_IRQ_MAX)
+		pr_err("ERROR(%s) : Can't find free irq bank!!\n", __func__);
+
+	return	(i != AMLGPIO_IRQ_MAX) ? i : -1;
+}
+
+/* enable sysclass gpio edge */
+static int meson_to_irq(struct gpio_chip *chip,
+			unsigned int offset)
+{
+	return	offset;
+}
+
+/* find available irq bank */
+int meson_fix_irqbank(int bank)
+{
+	if (bank < AMLGPIO_IRQ_MAX)	{
+		if (!meson_irq_desc[bank])
+			return	bank;
+		else	{
+			pr_err("ERROR(%s):already allocation irq bank(%d)!!\n",
+							__func__, bank);
+		}
+
+		/* if irq bank is not empty then find free irq bank */
+		bank = find_free_irq_bank();
+		pr_err("%s : new allocation irq bank(%d)!!\n",
+						__func__, bank);
+		return	bank;
+	}
+	return	-1;
+}
+EXPORT_SYMBOL(meson_fix_irqbank);
+
+int meson_setup_irq(struct gpio_chip *chip, unsigned int gpio,
+			unsigned int irq_flags, int *irq_banks)
+{
+	int irq_rising = -1, irq_falling = -1;
+	unsigned int gpio_flag;
+
+	/* rising irq setup */
+	if (irq_flags & IRQF_TRIGGER_RISING)	{
+		irq_rising = find_free_irq_bank();
+		if (irq_rising < 0)
+			goto out;
+
+		gpio_flag = AML_GPIO_IRQ(irq_rising,
+					 FILTER_NUM0,
+					 GPIO_IRQ_RISING);
+
+		if (meson_gpio_to_irq(chip, gpio, gpio_flag) < 0)
+			goto out;
+	}
+
+	/* falling irq setup */
+	if (irq_flags & IRQF_TRIGGER_FALLING)	{
+		irq_falling = find_free_irq_bank();
+		if ((irq_falling) < 0)
+			goto out;
+
+		gpio_flag = AML_GPIO_IRQ(irq_falling,
+					 FILTER_NUM0,
+					 GPIO_IRQ_FALLING);
+
+		if (meson_gpio_to_irq(chip, gpio, gpio_flag) < 0)
+			goto out;
+	}
+
+	irq_banks[0] = irq_rising;	irq_banks[1] = irq_falling;
+	return	0;
+out:
+	if (irq_rising  != -1)
+		meson_irq_desc[irq_rising]  = 0;
+	if (irq_falling != -1)
+		meson_irq_desc[irq_falling] = 0;
+	return	-1;
+}
+EXPORT_SYMBOL(meson_setup_irq);
+
+void meson_free_irq(unsigned int gpio, int *irq_banks)
+{
+	int i, find;
+
+	irq_banks[0] = -1, irq_banks[1] = -1;
+
+	for (i = 0, find = 0; i < AMLGPIO_IRQ_MAX; i++)	{
+		if (gpio == meson_irq_desc[i])	{
+			irq_banks[find++] = i;
+			meson_irq_desc[i] = 0;
+		}
+		if (find == 2)
+			break;
+	}
+}
+EXPORT_SYMBOL(meson_free_irq);
+
+#endif
+
 struct pinctrl_dev *pctl;
 static int meson_gpiolib_register(struct amlogic_pmx  *pc)
 {
@@ -945,6 +1080,9 @@ static int meson_gpiolib_register(struct amlogic_pmx  *pc)
 		domain->chip.set = meson_gpio_set;
 		domain->chip.set_pullup_down = meson_gpio_set_pullup_down;
 		domain->chip.set_gpio_to_irq = meson_gpio_to_irq;
+#if defined(CONFIG_ARCH_MESON64_ODROIDC2)
+		domain->chip.to_irq = meson_to_irq;
+#endif
 		domain->chip.base = -1;
 		domain->chip.ngpio = domain->data->num_pins;
 		domain->chip.can_sleep = false;

@@ -132,9 +132,14 @@ static const struct min_max_quirk min_max_pnpid_table[] = {
 		1232, 5710, 1156, 4696
 	},
 	{
-		(const char * const []){"LEN0034", "LEN0036", "LEN0039",
-					"LEN2002", "LEN2004", NULL},
+		(const char * const []){"LEN0034", "LEN0036", "LEN0037",
+					"LEN0039", "LEN2002", "LEN2004",
+					NULL},
 		1024, 5112, 2024, 4832
+	},
+	{
+		(const char * const []){"LEN2000", NULL},
+		1024, 5113, 2021, 4832
 	},
 	{
 		(const char * const []){"LEN2001", NULL},
@@ -162,7 +167,7 @@ static const char * const topbuttonpad_pnp_ids[] = {
 	"LEN0034", /* T431s, L440, L540, T540, W540, X1 Carbon 2nd */
 	"LEN0035", /* X240 */
 	"LEN0036", /* T440 */
-	"LEN0037",
+	"LEN0037", /* X1 Carbon 2nd */
 	"LEN0038",
 	"LEN0039", /* T440s */
 	"LEN0041",
@@ -172,7 +177,7 @@ static const char * const topbuttonpad_pnp_ids[] = {
 	"LEN0047",
 	"LEN0048",
 	"LEN0049",
-	"LEN2000",
+	"LEN2000", /* S540 */
 	"LEN2001", /* Edge E431 */
 	"LEN2002", /* Edge E531 */
 	"LEN2003",

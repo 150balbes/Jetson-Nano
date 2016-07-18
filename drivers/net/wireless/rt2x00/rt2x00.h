@@ -1019,9 +1019,12 @@ struct rt2x00_bar_list_entry {
  * Register defines.
  * Some registers require multiple attempts before success,
  * in those cases REGISTER_BUSY_COUNT attempts should be
- * taken with a REGISTER_BUSY_DELAY interval.
+ * taken with a REGISTER_BUSY_DELAY interval. Due to USB
+ * bus delays, we do not have to loop so many times to wait
+ * for valid register value on that bus.
  */
 #define REGISTER_BUSY_COUNT	100
+#define REGISTER_USB_BUSY_COUNT 20
 #define REGISTER_BUSY_DELAY	100
 
 /*
@@ -1449,7 +1452,8 @@ int rt2x00mac_conf_tx(struct ieee80211_hw *hw,
 		      struct ieee80211_vif *vif, u16 queue,
 		      const struct ieee80211_tx_queue_params *params);
 void rt2x00mac_rfkill_poll(struct ieee80211_hw *hw);
-void rt2x00mac_flush(struct ieee80211_hw *hw, u32 queues, bool drop);
+void rt2x00mac_flush(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
+		     u32 queues, bool drop);
 int rt2x00mac_set_antenna(struct ieee80211_hw *hw, u32 tx_ant, u32 rx_ant);
 int rt2x00mac_get_antenna(struct ieee80211_hw *hw, u32 *tx_ant, u32 *rx_ant);
 void rt2x00mac_get_ringparam(struct ieee80211_hw *hw,

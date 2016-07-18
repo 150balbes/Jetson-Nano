@@ -137,6 +137,14 @@ unsigned int menu_lang_array[] = {
 static unsigned char *osd_name = "MBox";
 static unsigned int vendor_id = 0x00;
 
+static inline void wait_for_cec_rx(void)
+{
+
+	while (cec_global_info.cec_rx_msg_buf.rx_read_pos ==
+		cec_global_info.cec_rx_msg_buf.rx_write_pos)
+		msleep(20);
+}
+
 #ifdef CONFIG_HAS_EARLYSUSPEND
 #include <linux/earlysuspend.h>
 static struct early_suspend hdmitx_cec_early_suspend_handler;
@@ -309,9 +317,9 @@ int cec_node_init(struct hdmitx_dev *hdmitx_device)
 	int i, bool = 0;
 	int phy_addr_ok = 1;
 	const enum _cec_log_dev_addr_e player_dev[3] = {
-		CEC_PLAYBACK_DEVICE_1_ADDR,
-		CEC_PLAYBACK_DEVICE_2_ADDR,
-		CEC_PLAYBACK_DEVICE_3_ADDR,
+		CEC_RECORDING_DEVICE_1_ADDR,
+		CEC_RECORDING_DEVICE_2_ADDR,
+		CEC_RECORDING_DEVICE_3_ADDR,
 	};
 
 	unsigned long cec_phy_addr;
@@ -443,6 +451,18 @@ int cec_node_init(struct hdmitx_dev *hdmitx_device)
 				msleep(150);
 			}
 			cec_device_vendor_id((struct cec_rx_message_t *)0);
+
+			/* Disable switch TV on automatically */
+			if (!(hdmitx_device->cec_func_config &
+			     (1 << AUTO_POWER_ON_MASK))) {
+				cec_usrcmd_get_device_power_status(CEC_TV_ADDR);
+				msleep(200);
+				wait_for_cec_rx();
+				cec_isr_post_process();
+
+				if (cec_global_info.tv_power_status)
+					return 0;
+			}
 
 			cec_imageview_on_smp();
 
@@ -1251,7 +1271,7 @@ void cec_give_deck_status(struct cec_rx_message_t *pcec_message)
 
 	msg[0] = ((index & 0xf) << 4) | CEC_TV_ADDR;
 	msg[1] = CEC_OC_DECK_STATUS;
-	msg[2] = 0x1a;
+	msg[2] = 0x20;
 	cec_ll_tx(msg, 3);
 }
 
@@ -1403,6 +1423,8 @@ void cec_handle_message(struct cec_rx_message_t *pcec_message)
 		case CEC_OC_REPORT_PHYSICAL_ADDRESS:
 			break;
 		case CEC_OC_REPORT_POWER_STATUS:
+			cec_global_info.tv_power_status =
+				pcec_message->content.msg.operands[0];
 			break;
 		case CEC_OC_SET_OSD_NAME:
 			break;
@@ -1439,10 +1461,12 @@ void cec_handle_message(struct cec_rx_message_t *pcec_message)
 			if (cec_global_info.cec_node_info[cec_global_info
 			    .my_node_index].menu_status != DEVICE_MENU_ACTIVE)
 				break;
+#ifndef CONFIG_ARCH_MESON64_ODROIDC2
 			/* do not active soruce when standby */
 			if (cec_global_info.cec_node_info[cec_global_info.
 				my_node_index].power_status == POWER_STANDBY)
 				break;
+#endif
 			cec_active_source_smp();
 			break;
 		case CEC_OC_GIVE_DEVICE_POWER_STATUS:
@@ -1508,6 +1532,15 @@ void cec_handle_message(struct cec_rx_message_t *pcec_message)
 				break;
 			}
 			break;
+		case CEC_OC_VENDOR_COMMAND:
+			if (pcec_message->content.msg.operands[0] == 0x1) {
+				cec_report_power_status(pcec_message);
+				cec_send_simplink_alive(pcec_message);
+			} else if (pcec_message->content.msg.operands[0]
+					== 0x4) {
+				cec_send_simplink_ack(pcec_message);
+			}
+			break;
 		case CEC_OC_GET_MENU_LANGUAGE:
 		case CEC_OC_VENDOR_REMOTE_BUTTON_DOWN:
 		case CEC_OC_VENDOR_REMOTE_BUTTON_UP:
@@ -1527,7 +1560,6 @@ void cec_handle_message(struct cec_rx_message_t *pcec_message)
 		case CEC_OC_TUNER_DEVICE_STATUS:
 		case CEC_OC_TUNER_STEP_DECREMENT:
 		case CEC_OC_TUNER_STEP_INCREMENT:
-		case CEC_OC_VENDOR_COMMAND:
 		case CEC_OC_SELECT_ANALOGUE_SERVICE:
 		case CEC_OC_SELECT_DIGITAL_SERVICE:
 		case CEC_OC_SET_ANALOGUE_TIMER:
@@ -1840,6 +1872,33 @@ void cec_routing_information(struct cec_rx_message_t *pcec_message)
 		    .menu_status = DEVICE_MENU_INACTIVE;
 	}
 }
+
+void cec_send_simplink_alive(struct cec_rx_message_t *pcec_message)
+{
+	unsigned char index = cec_global_info.my_node_index;
+	unsigned char msg[4];
+
+	msg[0] = ((index & 0xf) << 4) | CEC_TV_ADDR;
+	msg[1] = CEC_OC_VENDOR_COMMAND;
+	msg[2] = 0x2;
+	msg[3] = 0x5;
+
+	cec_ll_tx(msg, 4);
+}
+
+void cec_send_simplink_ack(struct cec_rx_message_t *pcec_message)
+{
+	unsigned char index = cec_global_info.my_node_index;
+	unsigned char msg[4];
+
+	msg[0] = ((index & 0xf) << 4) | CEC_TV_ADDR;
+	msg[1] = CEC_OC_VENDOR_COMMAND;
+	msg[2] = 0x5;
+	msg[3] = 0x1;
+
+	cec_ll_tx(msg, 4);
+}
+
 /******************** cec middle level code end ***************************/
 
 static struct notifier_block cec_reboot_nb;
@@ -1852,6 +1911,8 @@ static int cec_reboot(struct notifier_block *nb, unsigned long state, void *cmd)
 		cec_menu_status_smp(DEVICE_MENU_INACTIVE);
 		cec_inactive_source();
 	}
+	cec_usrcmd_set_config("0", 1);
+
 	return 0;
 }
 

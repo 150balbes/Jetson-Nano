@@ -116,3 +116,6 @@ obj-$(CONFIG_AML_WDT)  		+= watchdog/
 
 obj-$(CONFIG_INSTABOOT)		+= instaboot/
 
+obj-$(CONFIG_MESON_PWM) += pwm/
+
+obj-$(CONFIG_AML_AO_CEC) += cec/

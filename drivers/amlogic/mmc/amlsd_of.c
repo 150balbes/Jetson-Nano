@@ -92,7 +92,7 @@ static const struct sd_caps host_caps2[] = {
 	SD_CAPS(MMC_CAP2_HS400_1_8V, "MMC_CAP2_HS400_1_8V"),
 	SD_CAPS(MMC_CAP2_HS400_1_2V, "MMC_CAP2_HS400_1_2V"),
 	SD_CAPS(MMC_CAP2_HS400, "MMC_CAP2_HS400"),
-	/*SD_CAPS(MMC_CAP2_BROKEN_VOLTAGE, "MMC_CAP2_BROKEN_VOLTAGE"),*/
+	SD_CAPS(MMC_CAP2_BROKEN_VOLTAGE, "MMC_CAP2_BROKEN_VOLTAGE"),
 	/* SD_CAPS(MMC_CAP2_DETECT_ON_ERR, "MMC_CAP2_DETECT_ON_ERR"), */
 	SD_CAPS(MMC_CAP2_HC_ERASE_SZ, "MMC_CAP2_HC_ERASE_SZ"),
 	SD_CAPS(MMC_CAP2_CD_ACTIVE_HIGH, "MMC_CAP2_CD_ACTIVE_HIGH"),
@@ -228,7 +228,10 @@ int amlsd_get_platform_data(struct platform_device *pdev,
 						str, pdata->gpio_dat3);
 		SD_PARSE_GPIO_NUM_PROP(child, "hw_reset",
 						str, pdata->hw_reset);
-
+#if defined(CONFIG_ARCH_MESON64_ODROIDC2)
+		SD_PARSE_GPIO_NUM_PROP(child, "gpio_volsw",
+						str, pdata->gpio_volsw);
+#endif
 		pdata->port_init = of_amlsd_init;
 		pdata->pwr_pre = of_amlsd_pwr_prepare;
 		pdata->pwr_on = of_amlsd_pwr_on;

@@ -1096,9 +1096,12 @@ int bio_uncopy_user(struct bio *bio)
 			ret = __bio_copy_iov(bio, bmd->sgvecs, bmd->nr_sgvecs,
 					     bio_data_dir(bio) == READ,
 					     0, bmd->is_our_pages);
-		else if (bmd->is_our_pages)
-			bio_for_each_segment_all(bvec, bio, i)
-				__free_page(bvec->bv_page);
+		else {
+			ret = -EINTR;
+			if (bmd->is_our_pages)
+				bio_for_each_segment_all(bvec, bio, i)
+					__free_page(bvec->bv_page);
+		}
 	}
 	kfree(bmd);
 	bio_put(bio);
@@ -1806,8 +1809,9 @@ EXPORT_SYMBOL(bio_endio_nodec);
  * Allocates and returns a new bio which represents @sectors from the start of
  * @bio, and updates @bio to represent the remaining sectors.
  *
- * The newly allocated bio will point to @bio's bi_io_vec; it is the caller's
- * responsibility to ensure that @bio is not freed before the split.
+ * Unless this is a discard request the newly allocated bio will point
+ * to @bio's bi_io_vec; it is the caller's responsibility to ensure that
+ * @bio is not freed before the split.
  */
 struct bio *bio_split(struct bio *bio, int sectors,
 		      gfp_t gfp, struct bio_set *bs)
@@ -1817,7 +1821,15 @@ struct bio *bio_split(struct bio *bio, int sectors,
 	BUG_ON(sectors <= 0);
 	BUG_ON(sectors >= bio_sectors(bio));
 
-	split = bio_clone_fast(bio, gfp, bs);
+	/*
+	 * Discards need a mutable bio_vec to accommodate the payload
+	 * required by the DSM TRIM and UNMAP commands.
+	 */
+	if (bio->bi_rw & REQ_DISCARD)
+		split = bio_clone_bioset(bio, gfp, bs);
+	else
+		split = bio_clone_fast(bio, gfp, bs);
+
 	if (!split)
 		return NULL;
 

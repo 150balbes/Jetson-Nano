@@ -1280,13 +1280,13 @@ void osd_enable_3d_mode_hw(u32 index, u32 enable)
 
 void osd_enable_hw(u32 index, u32 enable)
 {
-	if (index == 0) {
+/*	if (index == 0) {
 		osd_log_info("osd[%d] enable: %d (%s)\n",
 				index, enable, current->comm);
 	} else {
 		osd_log_dbg2("osd[%d] enable: %d (%s)\n",
 				index, enable, current->comm);
-	}
+	} */
 
 	osd_hw.enable[index] = enable;
 	add_to_update_list(index, OSD_ENABLE);
@@ -1641,7 +1641,9 @@ void osd_pan_display_hw(u32 index, unsigned int xoffset, unsigned int yoffset)
 		osd_hw.pandata[index].y_start += diff_y;
 		osd_hw.pandata[index].y_end   += diff_y;
 		add_to_update_list(index, DISP_GEOMETRY);
+#if !defined(CONFIG_ARCH_MESON64_ODROIDC2)
 		osd_wait_vsync_hw();
+#endif
 	}
 #ifdef CONFIG_AM_FB_EXT
 	osd_ext_clone_pan(index);
@@ -2071,6 +2073,19 @@ static   void  osd1_update_color_mode(void)
 		VSYNCOSD_WR_MPEG_REG(VIU_OSD1_BLK2_CFG_W0, data32);
 		VSYNCOSD_WR_MPEG_REG(VIU_OSD1_BLK3_CFG_W0, data32);
 	}
+		if (get_cpu_type() >= MESON_CPU_MAJOR_ID_GXBB) {
+			enum color_index_e idx =
+				osd_hw.color_info[OSD1]->color_index;
+			if (idx >= COLOR_INDEX_32_BGRX
+			    && idx <= COLOR_INDEX_32_XRGB)
+				VSYNCOSD_WR_MPEG_REG_BITS(
+					VIU_OSD1_CTRL_STAT2,
+					0x1ff, 6, 9);
+			else
+				VSYNCOSD_WR_MPEG_REG_BITS(
+					VIU_OSD1_CTRL_STAT2,
+					0, 6, 9);
+		}
 	remove_from_update_list(OSD1, OSD_COLOR_MODE);
 }
 static void osd2_update_color_mode(void)
@@ -2090,6 +2105,19 @@ static void osd2_update_color_mode(void)
 		/* osd_blk_mode */
 		data32 |=  osd_hw.color_info[OSD2]->hw_blkmode << 8;
 		VSYNCOSD_WR_MPEG_REG(VIU_OSD2_BLK0_CFG_W0, data32);
+		if (get_cpu_type() >= MESON_CPU_MAJOR_ID_GXBB) {
+			enum color_index_e idx =
+				osd_hw.color_info[OSD2]->color_index;
+			if (idx >= COLOR_INDEX_32_BGRX
+			    && idx <= COLOR_INDEX_32_XRGB)
+				VSYNCOSD_WR_MPEG_REG_BITS(
+					VIU_OSD2_CTRL_STAT2,
+					0x1ff, 6, 9);
+			else
+				VSYNCOSD_WR_MPEG_REG_BITS(
+					VIU_OSD2_CTRL_STAT2,
+					0, 6, 9);
+		}
 	}
 	remove_from_update_list(OSD2, OSD_COLOR_MODE);
 }

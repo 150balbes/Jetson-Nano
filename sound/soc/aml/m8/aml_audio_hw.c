@@ -576,16 +576,21 @@ void audio_util_set_dac_i2s_format(unsigned format)
 	aml_write_cbus(AIU_I2S_SOURCE_DESC, 0x0001);
 }
 
-/* set sclk and lrclk, mclk = 256fs. */
-void audio_set_i2s_clk_div(void)
+/* set sclk and lrclk, mclk = 256fs. if srate > 192000, than mclk = 128fs.*/
+void audio_set_i2s_clk_div(int srate)
 {
 	/* aiclk source */
 	aml_cbus_update_bits(AIU_CLK_CTRL, 1 << 10, 1 << 10);
 	/* Set mclk over sclk ratio */
 	aml_cbus_update_bits(AIU_CLK_CTRL_MORE, 0x3f << 8, (4 - 1) << 8);
 	/* set dac/adc lrclk ratio over sclk----64fs */
-	aml_cbus_update_bits(AIU_CODEC_DAC_LRCLK_CTRL, 0xfff, (64 - 1));
-	aml_cbus_update_bits(AIU_CODEC_ADC_LRCLK_CTRL, 0xfff, (64 - 1));
+	if (srate > 192000) {
+		aml_cbus_update_bits(AIU_CODEC_DAC_LRCLK_CTRL, 0xfff, (32 - 1));
+		aml_cbus_update_bits(AIU_CODEC_ADC_LRCLK_CTRL, 0xfff, (32 - 1));
+	} else {
+		aml_cbus_update_bits(AIU_CODEC_DAC_LRCLK_CTRL, 0xfff, (64 - 1));
+		aml_cbus_update_bits(AIU_CODEC_ADC_LRCLK_CTRL, 0xfff, (64 - 1));
+	}
 	/* Enable sclk */
 	aml_cbus_update_bits(AIU_CLK_CTRL_MORE, 1 << 14, 1 << 14);
 }

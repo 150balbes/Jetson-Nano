@@ -2135,6 +2135,9 @@ static  int __init hdmitx_boot_para_setup(char *s)
 			hdmitx_device.cec_func_config = list;
 		hdmi_print(INF, CEC "HDMI hdmi_cec_func_config:0x%x\n",
 			hdmitx_device.cec_func_config);
+		} else if (strcmp(token, "forcergb") == 0) {
+			hdmitx_output_rgb();
+			hdmi_print(IMP, "Forced RGB colorspace output\n");
 		}
 	}
 		offset = token_offset;

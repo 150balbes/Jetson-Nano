@@ -229,6 +229,12 @@ static struct dwc_otg_driver_module_params dwc_otg_module_params = {
 };
 
 bool force_device_mode = 0;
+static int __init force_otg_mode(char *str)
+{
+	force_device_mode = 1;
+	return 1;
+}
+__setup("otg_device", force_otg_mode);
 module_param_named(otg_device, force_device_mode,
 		bool, S_IRUGO | S_IWUSR);
 
@@ -976,6 +982,22 @@ static int dwc_otg_driver_probe(struct platform_device *pdev)
 					gpio_work_mask = of_read_ulong(prop, 1);
 			}
 
+#if defined(CONFIG_ARCH_MESON64_ODROIDC2)
+			gpio_name = of_get_property(of_node,
+						"gpio-hub-rst", NULL);
+			if (gpio_name) {
+				struct gpio_desc *hub_gd =
+					gpiod_get_index(&pdev->dev, NULL, 0);
+				if (IS_ERR(hub_gd))
+					return -1;
+
+				gpiod_direction_output(hub_gd, 0);
+				mdelay(20);
+				gpiod_direction_output(hub_gd, 1);
+				mdelay(20);
+				gpiod_put(hub_gd);
+			}
+#endif
 			prop = of_get_property(of_node, "host-only-core", NULL);
 			if (prop)
 				host_only_core = of_read_ulong(prop, 1);
@@ -1062,9 +1084,6 @@ static int dwc_otg_driver_probe(struct platform_device *pdev)
 	dwc_otg_device->dev_name = dev_name(dwc_otg_device->gen_dev);
 
 	pcore_para = &dwc_otg_module_params;
-
-	if (force_device_mode && (port_index == 0))
-		port_type = USB_PORT_TYPE_SLAVE;
 
 	if (port_type == USB_PORT_TYPE_HOST)
 		pcore_para->host_only = 1;
@@ -1182,6 +1201,9 @@ static int dwc_otg_driver_probe(struct platform_device *pdev)
 	} else {
 		dwc_otg_device->common_irq_installed = 1;
 	}
+
+	if (force_device_mode && (port_index == 0))
+		port_type = USB_PORT_TYPE_SLAVE;
 
 	switch (port_type) {
 	case USB_PORT_TYPE_OTG:

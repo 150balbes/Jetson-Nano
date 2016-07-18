@@ -34,6 +34,8 @@
 #include <linux/regulator/machine.h>
 #include <linux/amlogic/scpi_protocol.h>
 
+#include <linux/pm_opp.h>
+#include <linux/cpu.h>
 
 
 struct meson_cpufreq {
@@ -182,6 +184,9 @@ static int meson_cpufreq_init(struct cpufreq_policy *policy)
 	int idx, max_opp;
 	struct scpi_opp_entry *opp;
 
+	struct device *cpu_dev;
+	int ret;
+
 
 	if (policy->cpu != 0)
 		return -EINVAL;
@@ -197,12 +202,21 @@ static int meson_cpufreq_init(struct cpufreq_policy *policy)
 
 	opp = opps->opp;
 	max_opp = opps->count;
+	cpu_dev  = get_cpu_device(policy->cpu);
 	meson_freq_table = kzalloc(sizeof(*meson_freq_table) * (max_opp + 1),
 								GFP_KERNEL);
 	for (idx = 0; idx < max_opp; idx++, opp++) {
 			meson_freq_table[idx].driver_data = idx;
 			meson_freq_table[idx].frequency = opp->freq_hz/1000;
-		}
+			ret = dev_pm_opp_add(cpu_dev, opp->freq_hz,
+					     opp->volt_mv*1000);
+			if (ret) {
+				pr_warn("failed to add opp %uHz %umV\n",
+					opp->freq_hz, opp->volt_mv);
+				return ret;
+			}
+	}
+
 	meson_freq_table[idx].driver_data = idx;
 	meson_freq_table[idx].frequency = CPUFREQ_TABLE_END;
 	cpufreq_frequency_table_get_attr(meson_freq_table,
@@ -309,4 +323,4 @@ static int __init meson_cpufreq_parent_init(void)
 	return platform_driver_probe(&meson_cpufreq_parent_driver,
 							meson_cpufreq_probe);
 }
-late_initcall(meson_cpufreq_parent_init);
+device_initcall(meson_cpufreq_parent_init);

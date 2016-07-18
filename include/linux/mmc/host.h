@@ -334,6 +334,7 @@ struct mmc_host {
 				 MMC_CAP2_HS200_1_2V_SDR)
 
 /* Use the broken voltage */
+#define MMC_CAP2_BROKEN_VOLTAGE	(1 << 7)
 /* High-capacity erase size */
 #define MMC_CAP2_HC_ERASE_SZ	(1 << 9)
 /* Card-detect signal active high */

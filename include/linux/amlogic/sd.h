@@ -107,6 +107,9 @@ struct amlsd_platform {
 	unsigned int gpio_dat3;
 	unsigned int hw_reset;
 	unsigned int jtag_pin;
+#if defined(CONFIG_ARCH_MESON64_ODROIDC2)
+	unsigned int gpio_volsw;
+#endif
 	int is_sduart;
 	bool is_in;
 	bool is_tuned;		/* if card has been tuning */
@@ -116,6 +119,7 @@ struct amlsd_platform {
 	unsigned char caling;
 	unsigned char need_cali;
 	unsigned char calout[20][20];
+	struct delayed_work	calouting;
 #endif
 	/* we used this flag to filter
 	some unnecessary cmd before initialized flow */
@@ -170,13 +174,6 @@ struct amlsd_platform {
 
 };
 
-struct aml_emmc_adjust {
-	int adj_win_start;
-	int adj_win_len;
-	int adj_point;
-	int clk_div;
-};
-
 struct amlsd_host {
 	/* back-link to device */
 	struct device *dev;
@@ -202,7 +199,6 @@ struct amlsd_host {
 	unsigned int f_max_w;
 	unsigned int f_min;
 	int			sdio_irqen;
-	unsigned int error_bak;
 	/* struct tasklet_struct cmd_tlet; */
 	/* struct tasklet_struct data_tlet; */
 	/* struct tasklet_struct busy_tlet; */
@@ -283,8 +279,6 @@ struct amlsd_host {
 	/* bit[7-0]--minor version, bit[31-8]--major version */
 	int		 version;
 	unsigned long	clksrc_rate;
-	struct aml_emmc_adjust emmc_adj;
-	u32 error_flag;
 };
 
 /*-sdio-*/
@@ -1004,8 +998,7 @@ struct sd_emmc_config {
 	/*[26]	1: Use DS pin as SDIO IRQ input,
 	0: Use DAT1 pin as SDIO IRQ input..*/
 	u32 irq_ds:1;
-	u32 err_abort:1;
-	u32 revd:4;			/*[31:27]   reved*/
+	u32 revd:5;			/*[31:27]   reved*/
 };
 struct sd_emmc_status {
 	/*[7:0]	 RX data CRC error per wire, for multiple block read,

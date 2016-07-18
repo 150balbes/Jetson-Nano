@@ -116,6 +116,17 @@
 	.if	\el == 0
 	ct_user_enter
 	ldr	x23, [sp, #S_SP]		// load return stack pointer
+#ifdef CONFIG_ARM64_ERRATUM_845719
+	tbz	x22, #4, 1f
+#ifdef CONFIG_PID_IN_CONTEXTIDR
+	mrs 	x29, contextidr_el1
+	msr 	contextidr_el1, x29
+1:
+#else
+	msr 	contextidr_el1, xzr
+1:
+#endif
+#endif
 	.endif
 	.if	\ret
 	ldr	x1, [sp, #S_X1]			// preserve x0 (syscall return)
@@ -192,30 +203,18 @@ ENTRY(vectors)
 	ventry	el0_sync			// Synchronous 64-bit EL0
 	ventry	el0_irq				// IRQ 64-bit EL0
 	ventry	el0_fiq_invalid			// FIQ 64-bit EL0
-#ifdef CONFIG_AML_SERR
-	ventry	el0_error_64		// Error 64-bit EL0
-#else
-	ventry  el0_error_invalid         // Error 64-bit EL0
-#endif
+	ventry	el0_error_invalid		// Error 64-bit EL0
 
 #ifdef CONFIG_COMPAT
 	ventry	el0_sync_compat			// Synchronous 32-bit EL0
 	ventry	el0_irq_compat			// IRQ 32-bit EL0
 	ventry	el0_fiq_invalid_compat		// FIQ 32-bit EL0
-#ifdef CONFIG_AML_SERR
-	ventry	el0_error_invalid_compat_aml	// Error 32-bit EL0
-#else
 	ventry	el0_error_invalid_compat	// Error 32-bit EL0
-#endif
 #else
 	ventry	el0_sync_invalid		// Synchronous 32-bit EL0
 	ventry	el0_irq_invalid			// IRQ 32-bit EL0
 	ventry	el0_fiq_invalid			// FIQ 32-bit EL0
-#ifdef CONFIG_AML_SERR
-	ventry	el0_error_invalid_aml		// Error 32-bit EL0
-#else
 	ventry	el0_error_invalid		// Error 32-bit EL0
-#endif
 #endif
 END(vectors)
 
@@ -229,23 +228,6 @@ END(vectors)
 	mrs	x2, esr_el1
 	b	bad_mode
 	.endm
-
-#ifdef CONFIG_AML_SERR
-el0_error_64:
-	kernel_entry 0, 64
-	kernel_exit 0, 0
-ENDPROC(el0_error_64)
-
-el0_error_invalid_compat_aml:
-	kernel_entry 0, 32
-	kernel_exit 0, 0
-ENDPROC(el0_error_invalid_compat_aml)
-
-el0_error_invalid_aml:
-	kernel_entry 0, 64
-	kernel_exit 0, 0
-ENDPROC(el0_error_invalid_aml)
-#endif
 
 el0_sync_invalid:
 	inv_entry 0, BAD_SYNC
@@ -555,6 +537,7 @@ el0_dbg:
 	disable_step x1
 	mov	x1, x25
 	mov	x2, sp
+	adr	lr, ret_from_exception
 	b	do_debug_exception
 el0_inv:
 	ct_user_exit

@@ -189,9 +189,9 @@ static int __init aml_debug_init(void)
 	}
 	aml_dev.debugfs_reg_access = aml_reg_access;
 
-	debugfs_create_file("paddr", S_IFREG | S_IRUGO,
+	debugfs_create_file("paddr", 0666,
 			    debugfs_root, &aml_dev, &paddr_file_ops);
-	debugfs_create_file("dump", S_IFREG | S_IRUGO,
+	debugfs_create_file("dump", 0666,
 			    debugfs_root, &aml_dev, &dump_file_ops);
 	return 0;
 }

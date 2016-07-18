@@ -11,6 +11,15 @@ menuconfig SND_AML_M8
 #	select SND_SOC_AMLPMU4 if AML1220
 #	select SND_SOC_ES8323
 
+menuconfig SND_ODROID_HDMI
+	tristate "ODROID-SND-HDMI card"
+	depends on SND_AML_M8_SOC
+
+menuconfig SND_ODROID_DAC
+	tristate "ODROID-SND-DAC card"
+	depends on SND_AML_M8_SOC
+	select SND_SOC_PCM5102
+
 menuconfig SND_AML_G9TV
 	tristate "AML-SND-G9TV Board"
 	depends on SND_AML_M8_SOC && SWITCH

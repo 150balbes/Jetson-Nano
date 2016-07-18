@@ -422,8 +422,6 @@ static void sock_warn_obsolete_bsdism(const char *name)
 	}
 }
 
-#define SK_FLAGS_TIMESTAMP ((1UL << SOCK_TIMESTAMP) | (1UL << SOCK_TIMESTAMPING_RX_SOFTWARE))
-
 static void sock_disable_timestamp(struct sock *sk, unsigned long flags)
 {
 	if (sk->sk_flags & flags) {
@@ -658,6 +656,25 @@ static inline void sock_valbool_flag(struct sock *sk, int bit, int valbool)
 	else
 		sock_reset_flag(sk, bit);
 }
+
+bool sk_mc_loop(struct sock *sk)
+{
+	if (dev_recursion_level())
+		return false;
+	if (!sk)
+		return true;
+	switch (sk->sk_family) {
+	case AF_INET:
+		return inet_sk(sk)->mc_loop;
+#if IS_ENABLED(CONFIG_IPV6)
+	case AF_INET6:
+		return inet6_sk(sk)->mc_loop;
+#endif
+	}
+	WARN_ON(1);
+	return true;
+}
+EXPORT_SYMBOL(sk_mc_loop);
 
 /*
  *	This is meant for all protocols to use and covers goings on
@@ -1895,8 +1912,10 @@ bool skb_page_frag_refill(unsigned int sz, struct page_frag *pfrag, gfp_t prio)
 	do {
 		gfp_t gfp = prio;
 
-		if (order)
+		if (order) {
 			gfp |= __GFP_COMP | __GFP_NOWARN | __GFP_NORETRY;
+			gfp &= ~__GFP_WAIT;
+		}
 		pfrag->page = alloc_pages(gfp, order);
 		if (likely(pfrag->page)) {
 			pfrag->offset = 0;

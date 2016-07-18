@@ -25,6 +25,8 @@
 #include <linux/timex.h>
 
 struct delay_timer *delay_timer = NULL;
+EXPORT_SYMBOL(delay_timer);
+
 void __delay(unsigned long cycles)
 {
 	cycles_t start = get_cycles();

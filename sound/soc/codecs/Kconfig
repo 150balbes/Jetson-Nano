@@ -134,6 +134,7 @@ config SND_SOC_ALL_CODECS
 	select SND_SOC_WM9713 if SND_SOC_AC97_BUS
 	select SND_SOC_DUMMY_CODEC
 	select SND_SOC_PCM2BT
+	select SND_SOC_PCM5102
         help
           Normally ASoC codec drivers are only built if a machine driver which
           uses them is also built since they are only usable with a machine
@@ -561,4 +562,7 @@ config SND_SOC_DUMMY_CODEC
 	tristate
 
 config SND_SOC_PCM2BT
-   tristate
+	tristate
+
+config SND_SOC_PCM5102
+	tristate

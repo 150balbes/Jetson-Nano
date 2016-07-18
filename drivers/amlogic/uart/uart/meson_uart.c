@@ -492,15 +492,9 @@ static void meson_uart_change_speed(struct uart_port *port, unsigned long baud)
 	val = readl(port->membase + AML_UART_REG5);
 	val &= ~AML_UART_BAUD_MASK;
 	if (port->uartclk == 24000000) {
-		pr_info("ttyS%d use xtal %d change %ld to %ld\n",
-			port->line, port->uartclk,
-			mup->baud, baud);
 		val = (port->uartclk / 3) / baud  - 1;
 		val |= (AML_UART_BAUD_USE|AML_UART_BAUD_XTAL);
 	} else {
-		pr_info("ttyS%d use clk81 %d change %ld to %ld\n",
-			port->line, port->uartclk,
-			mup->baud, baud);
 		val = ((port->uartclk * 10 / (baud * 4) + 5) / 10) - 1;
 		val |= AML_UART_BAUD_USE;
 	}

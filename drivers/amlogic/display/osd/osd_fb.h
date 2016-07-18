@@ -29,6 +29,10 @@
 /* Local Headers */
 #include "osd.h"
 
+#if defined(CONFIG_ARCH_MESON64_ODROIDC2) && defined(CONFIG_UMP)
+#include <ump/ump_kernel_interface.h>
+#endif
+
 #ifdef CONFIG_FB_OSD2_ENABLE
 #define OSD_COUNT 2 /* enable two OSD layers */
 #else
@@ -53,6 +57,9 @@ struct osd_fb_dev_s {
 	u32 preblend_enable;
 	u32 enable_key_flag;
 	u32 color_key;
+#if defined(CONFIG_ARCH_MESON64_ODROIDC2) && defined(CONFIG_UMP)
+	ump_dd_handle ump_wrapped_buffer[OSD_COUNT][2];
+#endif
 };
 
 #define OSD_INVALID_INFO        0xffffffff
@@ -64,4 +71,11 @@ extern phys_addr_t get_fb_rmem_paddr(int index);
 extern int osd_blank(int blank_mode, struct fb_info *info);
 extern struct osd_fb_dev_s *gp_fbdev_list[];
 extern const struct color_bit_define_s default_color_format_array[];
+
+#if defined(CONFIG_ARCH_MESON64_ODROIDC2) && defined(CONFIG_UMP)
+extern int (*disp_get_ump_secure_id) (struct fb_info *info,
+        struct osd_fb_dev_s *g_fbi,     unsigned long arg, int buf);
+#define GET_UMP_SECURE_ID_BUF1 _IOWR('m', 311, unsigned int)
+#define GET_UMP_SECURE_ID_BUF2 _IOWR('m', 312, unsigned int)
+#endif
 #endif

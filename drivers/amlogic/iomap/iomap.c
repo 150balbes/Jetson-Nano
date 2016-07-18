@@ -278,7 +278,7 @@ void aml_dosbus_update_bits(unsigned int reg,
 EXPORT_SYMBOL(aml_dosbus_update_bits);
 
 #ifndef CONFIG_ARM64
-static noinline int __invoke_sec_fn_smc(u32 function_id, u32 arg0, u32 arg1,
+static noinline notrace int __invoke_sec_fn_smc(u32 function_id, u32 arg0, u32 arg1,
 					 u32 arg2)
 {
 	asm volatile(
@@ -293,7 +293,7 @@ static noinline int __invoke_sec_fn_smc(u32 function_id, u32 arg0, u32 arg1,
 	return function_id;
 }
 #else
-static noinline int __invoke_sec_fn_smc(u32 function_id, u32 arg0, u32 arg1,
+static noinline notrace int __invoke_sec_fn_smc(u32 function_id, u32 arg0, u32 arg1,
 					 u32 arg2)
 {
 	asm volatile(

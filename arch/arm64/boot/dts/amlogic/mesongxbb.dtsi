@@ -5,9 +5,10 @@
 #include <dt-bindings/thermal/thermal.h>
 #include <dt-bindings/interrupt-controller/arm-gic.h>
 / {
-	cpus {
+	cpus:cpus {
 		#address-cells = <2>;
 		#size-cells = <0>;
+		#cooling-cells = <2>; /* min followed by max */
 
 		cpu@0 {
 			device_type = "cpu";
@@ -43,7 +44,7 @@
 
 	};
 
-	timer{
+	meson_timer{
 		compatible = "arm, meson-timer";
 		#address-cells = <2>;
 		#size-cells = <2>;
@@ -94,7 +95,7 @@
 			reg=<0x0 0xc11099a0 0x0 0x4>;
 		};
 	};
-/*
+
 	timer {
 		compatible = "arm,armv8-timer";
 		interrupts = <GIC_PPI 13 0xff01>,
@@ -102,7 +103,7 @@
 			        <GIC_PPI 11 0xff01>,
 			        <GIC_PPI 10 0xff01>;
 	};
-*/
+
 	arm_pmu {
 		compatible = "arm,armv8-pmuv3";
 		interrupts = <0 137 4>,
@@ -117,6 +118,7 @@
 				0x0 0xc810023c 0x0 0x4>;
 	};
 	gpu:mali@d00c0000{
+		#cooling-cells = <2>; /* min followed by max */
 		compatible = "arm,mali-450";
 		interrupt-parent = <&gic>;
 		reg = <0 0xd00c0000 0 0x40000>, /*mali APB bus base address*/
@@ -131,8 +133,10 @@
 		pmu_domain_config = <0x1 0x2 0x4 0x4 0x0 0x0 0x0 0x0 0x0 0x1 0x2 0x0>;
 		pmu_switch_delay = <0xffff> ;
 		num_of_pp = <3> ;
-		def_clock = <3> ;
+		def_clk = <4> ;
 		sc_mpp = <3>;/* number of pp used most of time.*/
+		min_pp = <3>;
+		min_clk = <4>;
 		tbl = <&clk125_cfg &clk285_cfg &clk400_cfg &clk500_cfg &clk666_cfg &clk800_cfg>;
 
 		clocks = <&clock CLK_FPLL_DIV3>,
@@ -221,13 +225,15 @@
 		  };
 
 	};
-	gic: interrupt-controller@2c001000 {
-		compatible = "arm,cortex-a15-gic", "arm,cortex-a9-gic";
+	gic: interrupt-controller@c4301000{
+		compatible = "arm,gic-400", "arm,cortex-a15-gic", "arm,cortex-a9-gic";
 		#interrupt-cells = <3>;
 		#address-cells = <0>;
 		interrupt-controller;
 		reg = <0x0 0xc4301000 0 0x1000>,
-		      <0x0 0xc4302000 0 0x0100>;
+		      <0x0 0xc4302000 0 0x2000>,
+		      <0x0 0xc4304000 0 0x2000>,
+		      <0x0 0xc4306000 0 0x2000>;
 		interrupts = <GIC_PPI 9 0xf04>;
 	};
 
@@ -290,18 +296,13 @@
 		clock-names = "cpu_clk";
         };
 
-	amlogic-watchdog{
-		compatible = "amlogic, gx-wdt";
+	amlwatchdog: amlogic-watchdog{
+		compatible = "amlogic,meson-gxbb-wdt";
 		status = "disable";
-		default_timeout=<10>;
-		reset_watchdog_method=<1>;//0:sysfs,1:kernel
-		reset_watchdog_time=<2>;
-		shutdown_timeout=<10>;
-		firmware_timeout=<6>;
-		suspend_timeout=<6>;
 		reg = <0x0 0xc11098d0 0x0 0x10>;
 		clocks = <&clock CLK_XTAL>;
 	};
+
 	clock: meson_clock {
 		compatible = "amlogic, gxbb-clock";
 		reg = <0x0 0xc883c000 0x0 0x1000>,   /* HIU BUS*/
@@ -317,6 +318,14 @@
 		#address-cells = <2>;
 		#size-cells = <2>;
 		reg = <0x0 0xc1109880 0x0 0x10>;
+		interrupts = <	0 64 1	 /* gpio irq 0 = 64 + 32 = 96 */
+				0 65 1
+				0 66 1
+				0 67 1
+				0 68 1
+				0 69 1
+				0 70 1
+				0 71 1>; /* gpio irq bank 7 = 71 + 32 = 103 */
 		ranges;
 		gpio: banks@c11080b0 {
 			reg = <0x0 0xc88344b0 0x0 0x28>,
@@ -687,15 +696,6 @@
 			clock-output-names = "vcpu";
 		};
 
-	};
-	meson-remote {
-		compatible = "amlogic, aml_remote";
-		dev_name = "meson-remote";
-		status = "ok";
-		remote_ao_offset = <0x580>; /* 0x400 + (0x20 + idx)<<2 -- old ; 0x400 + (0x60 +idx)<<2 --new   */
-		interrupts = <0 196 1>;
-		pinctrl-names = "default";
-		pinctrl-0 = <&remote_pins>;
 	};
 
 	rng {

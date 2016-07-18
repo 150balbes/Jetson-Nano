@@ -43,9 +43,17 @@
 #include <linux/mmc/sd.h>
 
 #include <asm/uaccess.h>
+#include <mtd/mtd-abi.h>
+#include <linux/amlogic/sd.h>
 
 #include "queue.h"
+#if !defined(CONFIG_ARCH_MESON64_ODROIDC2)
 #include <linux/mmc/emmc_partitions.h>
+#endif
+
+#if defined(CONFIG_ARCH_MESON64_ODROIDC2)
+#include <linux/hardkernel/odroidc2.h>
+#endif
 
 MODULE_ALIAS("mmc:block");
 #ifdef MODULE_PARAM_PREFIX
@@ -63,8 +71,7 @@ MODULE_ALIAS("mmc:block");
 #define MMC_SANITIZE_REQ_TIMEOUT 240000
 #define MMC_EXTRACT_INDEX_FROM_ARG(x) ((x & 0x00FF0000) >> 16)
 
-#define mmc_req_rel_wr(req)	(((req->cmd_flags & REQ_FUA) || \
-				  (req->cmd_flags & REQ_META)) && \
+#define mmc_req_rel_wr(req)	((req->cmd_flags & REQ_FUA) && \
 				  (rq_data_dir(req) == WRITE))
 #define PACKED_CMD_VER	0x01
 #define PACKED_CMD_WR	0x02
@@ -205,6 +212,8 @@ static ssize_t power_ro_lock_show(struct device *dev,
 		locked = 1;
 
 	ret = snprintf(buf, PAGE_SIZE, "%d\n", locked);
+
+	mmc_blk_put(md);
 
 	return ret;
 }
@@ -617,9 +626,39 @@ cmd_err:
 static int mmc_blk_ioctl(struct block_device *bdev, fmode_t mode,
 	unsigned int cmd, unsigned long arg)
 {
+	void __user *argp = (void __user *)arg;
 	int ret = -EINVAL;
-	if (cmd == MMC_IOC_CMD)
+	struct mtd_info_user info;
+	struct gendisk *disk = bdev->bd_disk;
+	int part_num;
+
+	switch (cmd) {
+	case MMC_IOC_CMD:
 		ret = mmc_blk_ioctl_cmd(bdev, (struct mmc_ioc_cmd __user *)arg);
+		break;
+	case MEMGETINFO:
+		part_num = MINOR(bdev->bd_dev)-disk->first_minor;
+		BUG_ON(part_num < 0);
+		memset(&info, 0, sizeof(info));
+		info.type       = MTD_NORFLASH;
+		info.flags      = MTD_CAP_NORFLASH;
+		info.size       = (disk->part_tbl->part[part_num]->nr_sects<<9);
+		info.erasesize  = SDIO_BOUNCE_REQ_SIZE;
+		info.writesize  = SDIO_BOUNCE_REQ_SIZE;
+		info.oobsize    = 4096;
+		if (copy_to_user(argp, &info, sizeof(struct mtd_info_user)))
+			return -EFAULT;
+		ret = 0;
+		break;
+	case MEMERASE:
+	case MEMLOCK:
+	case MEMUNLOCK:
+	case MEMGETBADBLOCK:
+		return 0;
+	default:
+		ret = -EINVAL;
+	}
+
 	return ret;
 }
 
@@ -1029,6 +1068,18 @@ static inline void mmc_blk_reset_success(struct mmc_blk_data *md, int type)
 	md->reset_done &= ~type;
 }
 
+int mmc_access_rpmb(struct mmc_queue *mq)
+{
+	struct mmc_blk_data *md = mq->data;
+	/*
+	 * If this is a RPMB partition access, return ture
+	 */
+	if (md && md->part_type == EXT_CSD_PART_CONFIG_ACC_RPMB)
+		return true;
+
+	return false;
+}
+
 static int mmc_blk_issue_discard_rq(struct mmc_queue *mq, struct request *req)
 {
 	struct mmc_blk_data *md = mq->data;
@@ -1362,13 +1413,9 @@ static void mmc_blk_rw_rq_prep(struct mmc_queue_req *mqrq,
 
 	/*
 	 * Reliable writes are used to implement Forced Unit Access and
-	 * REQ_META accesses, and are supported only on MMCs.
-	 *
-	 * XXX: this really needs a good explanation of why REQ_META
-	 * is treated special.
+	 * are supported only on MMCs.
 	 */
-	bool do_rel_wr = ((req->cmd_flags & REQ_FUA) ||
-			  (req->cmd_flags & REQ_META)) &&
+	bool do_rel_wr = (req->cmd_flags & REQ_FUA) &&
 		(rq_data_dir(req) == WRITE) &&
 		(md->flags & MMC_BLK_REL_WR);
 
@@ -1902,9 +1949,11 @@ static int mmc_blk_issue_rw_rq(struct mmc_queue *mq, struct request *rqc)
 			break;
 		case MMC_BLK_CMD_ERR:
 			ret = mmc_blk_cmd_err(md, card, brq, req, ret);
-			if (!mmc_blk_reset(md, card->host, type))
-				break;
-			goto cmd_abort;
+			if (mmc_blk_reset(md, card->host, type))
+				goto cmd_abort;
+			if (!ret)
+				goto start_new_req;
+			break;
 		case MMC_BLK_RETRY:
 			if (retry++ < 5)
 				break;
@@ -2096,12 +2145,22 @@ static struct mmc_blk_data *mmc_blk_alloc_req(struct mmc_card *card,
 	 * partitions, devidx will not coincide with a per-physical card
 	 * index anymore so we keep track of a name index.
 	 */
+#if defined(CONFIG_ARCH_MESON64_ODROIDC2)
+	if (strncmp(dev_name(&card->host->class_dev), "sd", 2) == 0) {
+		md->name_idx = board_boot_from_emmc() ? 1 : 0;
+		__set_bit(md->name_idx, name_use);
+	} else if (strncmp(dev_name(&card->host->class_dev), "emmc", 4) == 0) {
+		md->name_idx = board_boot_from_emmc() ? 0 : 1;
+		__set_bit(md->name_idx, name_use);
+	}
+#else
 	if (!subname) {
 		md->name_idx = find_first_zero_bit(name_use, max_devices);
 		__set_bit(md->name_idx, name_use);
 	} else
 		md->name_idx = ((struct mmc_blk_data *)
 				dev_to_disk(parent)->private_data)->name_idx;
+#endif
 
 	md->area_type = area_type;
 
@@ -2465,7 +2524,9 @@ static int mmc_blk_probe(struct mmc_card *card)
 	if (mmc_add_disk(md))
 		goto out;
 
+#if !defined(CONFIG_ARCH_MESON64_ODROIDC2)
 	aml_emmc_partition_ops(card, md->disk); /* add by gch */
+#endif
 	atomic_set(&emmc_probe, 0);
 	wake_up(&emmc_probe_waitqueue);
 

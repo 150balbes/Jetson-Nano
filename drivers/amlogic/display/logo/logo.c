@@ -56,7 +56,25 @@ static struct para_pair_s logo_args[] = {
 	{"loaded", LOGO_LOADED},
 };
 
+/* FIXME : need to cover all of resolutions using general table */
 static struct para_pair_s mode_infos[] = {
+	{"640x480p60hz", TVMODE_640x480p60hz},
+	{"800x480p60hz", TVMODE_800x480p60hz},
+	{"800x600p60hz", TVMODE_800x600p60hz},
+	{"1024x600p60hz", TVMODE_1024x600p60hz},
+	{"1024x768p60hz", TVMODE_1024x768p60hz},
+	{"1280x800p60hz", TVMODE_1280x800p60hz},
+	{"1280x1024p60hz", TVMODE_1280x1024p60hz},
+	{"1360x768p60hz", TVMODE_1360x768p60hz},
+	{"1366x768p60hz", TVMODE_1366x768p60hz},
+	{"1440x900p60hz", TVMODE_1440x900p60hz},
+	{"1600x900p60hz", TVMODE_1600x900p60hz},
+	{"1680x1050p60hz", TVMODE_1680x1050p60hz},
+	{"1920x1200p60hz", TVMODE_1920x1200p60hz},
+	{"2560x1440p60hz", TVMODE_2560x1440p60hz},
+	{"2560x1600p60hz", TVMODE_2560x1600p60hz},
+	{"2560x1080p60hz", TVMODE_2560x1080p60hz},
+	{"3440x1440p60hz", TVMODE_3440x1440p60hz},
 	{"480cvbs", VMODE_480CVBS},
 	{"576cvbs", VMODE_576CVBS},
 	{"480i60hz", VMODE_480I},
@@ -181,8 +199,11 @@ static int refresh_mode_and_logo(bool first)
 {
 	enum vmode_e cur_mode = VMODE_MAX;
 	int cnt = sizeof(mode_infos) / sizeof(mode_infos[0]);
+#if defined(CONFIG_ARCH_MESON64_ODROIDC2)
+	int hdp_state = 1;
+#else
 	int hdp_state = get_hpd_state();
-
+#endif
 	if (!first && osd_get_logo_index() != logo_info.index)
 		return -1;
 

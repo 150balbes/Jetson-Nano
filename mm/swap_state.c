@@ -119,11 +119,12 @@ int __add_to_swap_cache(struct page *page, swp_entry_t entry)
 	return error;
 }
 
-#define COMPRESS_PREV_USE 1
+#define COMPRESS_PREV_USE 0
 struct prev_use {
 	unsigned long cmpr_len;
 	struct page *page;
 };
+
 int add_to_swap_cache(struct page *page, swp_entry_t entry, gfp_t gfp_mask)
 {
 	int error;
@@ -296,7 +297,7 @@ void free_pages_and_swap_cache(struct page **pages, int nr)
 
 		for (i = 0; i < todo; i++)
 			free_swap_cache(pagep[i]);
-		release_pages(pagep, todo, 0);
+		release_pages(pagep, todo, false);
 		pagep += todo;
 		nr -= todo;
 	}

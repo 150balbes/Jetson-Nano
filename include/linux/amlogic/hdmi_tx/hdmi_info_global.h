@@ -336,4 +336,13 @@ struct hdmitx_info {
 	/* ------------------------------------------------------- */
 };
 
+#if defined(CONFIG_ARCH_MESON64_ODROIDC2)
+#define VOUTMODE_HDMI           0x00
+#define VOUTMODE_DVI            0x01
+#define VOUTMODE_VGA            0x02
+#define VOUTMODE_NONHDMI        (VOUTMODE_DVI | VOUTMODE_VGA)
+
+int odroidc_voutmode(void);
+#endif
+
 #endif  /* _HDMI_RX_GLOBAL_H */

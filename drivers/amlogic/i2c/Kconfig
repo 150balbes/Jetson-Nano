@@ -1,7 +1,7 @@
 menu  "I2C Hardware Bus support"
 
 config I2C_AML
-	boolean "Amlogic I2C Driver"
+	tristate "Amlogic I2C Driver"
 	select I2C
 	select I2C_CHARDEV
 	select I2C_ALGOBIT

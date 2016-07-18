@@ -43,6 +43,7 @@
 #include "aml_i2s.h"
 #include "aml_audio_hw.h"
 #include <linux/amlogic/sound/aout_notify.h>
+#include <linux/amlogic/hdmi_tx/hdmi_tx_module.h>
 #include "aml_spdif_dai.h"
 
 struct aml_dai_info dai_info[3] = { {0} };
@@ -63,6 +64,7 @@ static int i2s_pos_sync;
 /* extern int set_i2s_iec958_samesource(int enable); */
 #define DEFAULT_SAMPLERATE 48000
 #define DEFAULT_MCLK_RATIO_SR 256
+#define MCLK_RATIO_128FS_SR 128
 static int i2sbuf[32 + 16];
 static void aml_i2s_play(void)
 {
@@ -162,7 +164,7 @@ static int aml_i2s_set_amclk(struct aml_i2s *i2s, unsigned long rate)
 		return ret;
 	}
 
-	audio_set_i2s_clk_div();
+	audio_set_i2s_clk_div(i2s->old_samplerate);
 
 	return 0;
 }
@@ -217,8 +219,19 @@ static int aml_dai_i2s_trigger(struct snd_pcm_substream *substream, int cmd,
 			       struct snd_soc_dai *dai)
 {
 	struct snd_pcm_runtime *rtd = substream->runtime;
+	struct snd_soc_pcm_runtime *prtd = substream->private_data;
+	struct snd_soc_dai *codec_dai = prtd->codec_dai;
 	int *ppp = NULL;
+	bool hdmi_out = false;
+
 	ALSA_TRACE();
+
+	if (!strncmp(codec_dai->name, "dit-hifi", strlen("dit-hifi"))) {
+		hdmi_out = true;
+	} else {
+		hdmi_out = false;
+	}
+
 	switch (cmd) {
 	case SNDRV_PCM_TRIGGER_START:
 	case SNDRV_PCM_TRIGGER_RESUME:
@@ -227,9 +240,16 @@ static int aml_dai_i2s_trigger(struct snd_pcm_substream *substream, int cmd,
 		if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK) {
 			pr_info("aiu i2s playback enable\n");
 			audio_out_i2s_enable(1);
-			if (IEC958_mode_codec == 0) {
-				pr_info("audio_hw_958_enable 1\n");
-				audio_hw_958_enable(1);
+			if (hdmi_out) {
+				aml_audio_i2s_mute();
+				hdmitx_audio_mute_op(1);
+				if (IEC958_mode_codec == 0) {
+					pr_info("audio_hw_958_enable 1\n");
+					audio_hw_958_enable(1);
+				}
+			} else {
+				aml_audio_i2s_unmute();
+				hdmitx_audio_mute_op(0);
 			}
 		} else {
 			audio_in_i2s_enable(1);
@@ -269,7 +289,10 @@ static int aml_dai_i2s_hw_params(struct snd_pcm_substream *substream,
 	srate = params_rate(params);
 	if (i2s->old_samplerate != srate) {
 		i2s->old_samplerate = srate;
-		mclk_rate = srate * DEFAULT_MCLK_RATIO_SR;
+		if (srate > 192000)
+			mclk_rate = srate * MCLK_RATIO_128FS_SR;
+		else
+			mclk_rate = srate * DEFAULT_MCLK_RATIO_SR;
 		aml_i2s_set_amclk(i2s, mclk_rate);
 	}
 
@@ -320,7 +343,7 @@ static int aml_dai_i2s_resume(struct snd_soc_dai *dai)
 #define aml_dai_i2s_resume	NULL
 #endif				/* CONFIG_PM */
 
-#define AML_DAI_I2S_RATES		(SNDRV_PCM_RATE_8000_192000)
+#define AML_DAI_I2S_RATES		(SNDRV_PCM_RATE_8000_384000)
 #define AML_DAI_I2S_FORMATS		(SNDRV_PCM_FMTBIT_S16_LE |\
 		SNDRV_PCM_FMTBIT_S24_LE | SNDRV_PCM_FMTBIT_S32_LE)
 

@@ -32,6 +32,36 @@
 #include <linux/amlogic/cpu_version.h>
 #include <asm/compiler.h>
 #include <linux/kdebug.h>
+
+#define AO_RTI_STATUS_REG1	((0x00 << 10) | (0x01 << 2))
+#define WATCHDOG_TC		0x2640
+static u32 psci_function_id_restart;
+static u32 psci_function_id_poweroff;
+static char *kernel_panic;
+
+#if defined(CONFIG_ARCH_MESON64_ODROIDC2)
+/* FIXME: Since S905 does use only 4 bits in AO_SEC_SD_CFG15, only valid
+ * reboot commands are within 0x00 ~ 0x0f.
+ */
+#define ODROID_REBOOT_CMD_COLD					0x0
+#define ODROID_REBOOT_CMD_NORMAL				0x1
+#define ODROID_REBOOT_CMD_FASTBOOT				0x5
+#define ODROID_REBOOT_CMD_RECOVERY				0x6
+
+static u32 parse_reason(const char *cmd)
+{
+	u32 reboot_reason = LINUX_REBOOT_CMD_RESTART;
+
+	if (cmd) {
+		if (strcmp(cmd, "recovery") == 0)
+			reboot_reason = ODROID_REBOOT_CMD_RECOVERY;
+		else if (strcmp(cmd, "fastboot") == 0)
+			reboot_reason = ODROID_REBOOT_CMD_FASTBOOT;
+	}
+
+	return reboot_reason;
+}
+#else
 /*
  * Commands accepted by the arm_machine_restart() system call.
  *
@@ -57,11 +87,6 @@
 #define	MESONGXBB_KERNEL_PANIC					12
 
 
-#define AO_RTI_STATUS_REG1	((0x00 << 10) | (0x01 << 2))
-#define WATCHDOG_TC		0x2640
-static u32 psci_function_id_restart;
-static u32 psci_function_id_poweroff;
-static char *kernel_panic;
 static u32 parse_reason(const char *cmd)
 {
 	u32 reboot_reason;
@@ -91,6 +116,8 @@ static u32 parse_reason(const char *cmd)
 	pr_info("reboot reason %d\n", reboot_reason);
 	return reboot_reason;
 }
+#endif
+
 static noinline int __invoke_psci_fn_smc(u64 function_id, u64 arg0, u64 arg1,
 					 u64 arg2)
 {

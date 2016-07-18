@@ -5858,16 +5858,17 @@ static void __mem_cgroup_usage_unregister_event(struct mem_cgroup *memcg,
 swap_buffers:
 	/* Swap primary and spare array */
 	thresholds->spare = thresholds->primary;
-	/* If all events are unregistered, free the spare array */
-	if (!new) {
-		kfree(thresholds->spare);
-		thresholds->spare = NULL;
-	}
 
 	rcu_assign_pointer(thresholds->primary, new);
 
 	/* To be sure that nobody uses thresholds */
 	synchronize_rcu();
+
+	/* If all events are unregistered, free the spare array */
+	if (!new) {
+		kfree(thresholds->spare);
+		thresholds->spare = NULL;
+	}
 unlock:
 	mutex_unlock(&memcg->thresholds_lock);
 }
@@ -7113,7 +7114,7 @@ static int mem_cgroup_can_attach(struct cgroup_subsys_state *css,
 static int mem_cgroup_allow_attach(struct cgroup_subsys_state *css,
 				   struct cgroup_taskset *tset)
 {
-	return subsys_cgroup_allow_attach(css->cgroup, tset);
+	return subsys_cgroup_allow_attach(css, tset);
 }
 
 static void mem_cgroup_cancel_attach(struct cgroup_subsys_state *css,

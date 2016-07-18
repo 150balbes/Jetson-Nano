@@ -106,6 +106,7 @@ static void *__dma_alloc_coherent(struct device *dev, size_t size,
 		flags |= GFP_DMA;
 	if (IS_ENABLED(CONFIG_DMA_CMA) && (flags & __GFP_WAIT)) {
 		struct page *page;
+		void *addr;
 
 		size = PAGE_ALIGN(size);
 		page = dma_alloc_from_contiguous(dev, size >> PAGE_SHIFT,
@@ -114,7 +115,9 @@ static void *__dma_alloc_coherent(struct device *dev, size_t size,
 			return NULL;
 
 		*dma_handle = phys_to_dma(dev, page_to_phys(page));
-		return page_address(page);
+		addr = page_address(page);
+		memset(addr, 0, size);
+		return addr;
 	} else {
 		return swiotlb_alloc_coherent(dev, size, dma_handle, flags);
 	}

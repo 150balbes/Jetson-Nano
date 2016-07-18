@@ -23,13 +23,22 @@
 #include <media/rc-core.h>
 #include <media/gpio-ir-recv.h>
 
-#define GPIO_IR_DRIVER_NAME	"gpio-rc-recv"
-#define GPIO_IR_DEVICE_NAME	"gpio_ir_recv"
+#if defined(CONFIG_ARCH_MESON64_ODROIDC2)
+#include <linux/amlogic/aml_gpio_consumer.h>
+#include <linux/amlogic/pinctrl_amlogic.h>
+
+#define MESON_GPIOIRQ_BASE	96
+#define GPIOIRQ_BANK_0		0
+#endif
 
 struct gpio_rc_dev {
 	struct rc_dev *rcdev;
 	int gpio_nr;
 	bool active_low;
+#if defined(CONFIG_ARCH_MESON64_ODROIDC2)
+	int irq0_bank;
+	int irq1_bank;
+#endif
 };
 
 #ifdef CONFIG_OF
@@ -169,10 +178,34 @@ static int gpio_ir_recv_probe(struct platform_device *pdev)
 
 	platform_set_drvdata(pdev, gpio_dev);
 
+#if !defined(CONFIG_ARCH_MESON64_ODROIDC2)
 	rc = request_any_context_irq(gpio_to_irq(pdata->gpio_nr),
 				gpio_ir_recv_irq,
 			IRQF_TRIGGER_FALLING | IRQF_TRIGGER_RISING,
 					"gpio-ir-recv-irq", gpio_dev);
+#else
+	gpio_dev->irq0_bank = meson_fix_irqbank(GPIOIRQ_BANK_0);
+
+	gpio_for_irq(pdata->gpio_nr,
+			AML_GPIO_IRQ(gpio_dev->irq0_bank,
+			FILTER_NUM0, GPIO_IRQ_FALLING));
+
+	rc = request_irq(gpio_dev->irq0_bank+MESON_GPIOIRQ_BASE,
+			gpio_ir_recv_irq, IRQF_DISABLED,
+			"gpio-ir-recv-irq0", gpio_dev);
+
+	gpio_dev->irq1_bank = meson_fix_irqbank(gpio_dev->irq0_bank+1);
+
+	gpio_for_irq(pdata->gpio_nr,
+			AML_GPIO_IRQ(gpio_dev->irq1_bank,
+			FILTER_NUM0, GPIO_IRQ_RISING));
+
+	rc = request_irq(gpio_dev->irq1_bank+MESON_GPIOIRQ_BASE,
+			gpio_ir_recv_irq, IRQF_DISABLED,
+			"gpio-ir-recv-irq1", gpio_dev);
+
+#endif /* defined(CONFIG_ARCH_MESON64_ODROIDC2) */
+
 	if (rc < 0)
 		goto err_request_irq;
 
@@ -195,7 +228,12 @@ static int gpio_ir_recv_remove(struct platform_device *pdev)
 {
 	struct gpio_rc_dev *gpio_dev = platform_get_drvdata(pdev);
 
+#if !defined(CONFIG_ARCH_MESON64_ODROIDC2)
 	free_irq(gpio_to_irq(gpio_dev->gpio_nr), gpio_dev);
+#else
+	free_irq(gpio_dev->irq0_bank+MESON_GPIOIRQ_BASE, gpio_dev);
+	free_irq(gpio_dev->irq1_bank+MESON_GPIOIRQ_BASE, gpio_dev);
+#endif
 	rc_unregister_device(gpio_dev->rcdev);
 	gpio_free(gpio_dev->gpio_nr);
 	kfree(gpio_dev);
