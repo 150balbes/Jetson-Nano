@@ -1,0 +1,137 @@
+#include "skeleton.dtsi"
+
+/ {
+	interrupt-parent = <&gic>;
+
+	L2:  cache-controller {
+          compatible = "arm,meson-pl310-cache";
+          reg = <0xc4200000 0x1000>;
+          arm,data-latency = <3 3 3>;
+          arm,tag-latency = <2 2 2>;
+          arm,filter-ranges = <0x100000 0xc0000000>;
+          cache-unified;
+          cache-level = <2>;
+          aux-instruction_prefetch;
+          aux-data_prefetch;
+          aux-ns_lockdown;
+          aux-force_no_write_alloc;
+          aux-cache_replace_policy_round_robin;
+          aux-early_write_response;
+          aux-full_line_of_zero;
+          aux-ns_int_ctrl;
+          aux-share_override;
+          prefetch-double_line_fill;
+          prefetch-prefetch_drop;
+          prefetch-prefetch_offset = <7>;
+          l2_ctrl=<0x82000001>;
+          l2_aux=<0x82000002>;
+          l2_prefetch=<0x82000003>;
+          l2_taglatency=<0x82000004>;
+          l2_datalatency=<0x82000005>;
+          l2_filterstart=<0x82000006>;
+          l2_filterend=<0x82000007>;
+          l2_debug=<0x82000008>;
+          l2_power=<0x82000009>;
+    };
+
+	gic: interrupt-controller@c4301000 {
+		compatible = "arm,cortex-a9-gic";
+		reg = <0xc4301000 0x1000>,
+		      <0xc4300100 0x0100>;
+		interrupt-controller;
+		#interrupt-cells = <3>;
+	};
+
+	uart_AO: serial@c81004c0 {
+		compatible = "amlogic, meson-uart";
+	};
+	uart_A: serial@c11084c0 {
+		compatible = "amlogic, meson-uart";
+	};
+	i2c_ao: i2c@c8100500{ /*I2C-AO*/
+		compatible = "amlogic, meson-i2c";
+		dev_name = "i2c-AO";
+		status = "disabled";
+		reg = <0xc8100500 0x1d>;
+		#address-cells = <1>;
+		#size-cells = <0>;
+		device_id = <0>;
+		pinctrl-names="default";
+		pinctrl-0=<&ao_i2c_master>;
+		use_pio = <0>;
+		master_i2c_speed = <100000>;
+	};
+	i2c_a: i2c@c1108500{ /*I2C-A*/
+		compatible = "amlogic, meson-i2c";
+		dev_name = "i2c-A";
+		status = "disabled";
+		reg = <0xc1108500 0x20>;
+		device_id = <1>;
+		pinctrl-names="default";
+		pinctrl-0=<&a_i2c_master>;
+		#address-cells = <1>;
+		#size-cells = <0>;
+		use_pio = <0>;
+		master_i2c_speed = <300000>;
+	};
+	i2c_b: i2c@c11087c0{ /*I2C-B*/
+		compatible = "amlogic, meson-i2c";
+		dev_name = "i2c-B";
+		status = "disabled";
+		reg = <0xc11087c0 0x20>;
+		device_id = <2>;
+		pinctrl-names="default";
+		pinctrl-0=<&b_i2c_master>;
+		#address-cells = <1>;
+		#size-cells = <0>;
+		use_pio = <0>;
+		master_i2c_speed = <300000>;
+	};
+	i2c_c: i2c@c11087e0{ /*I2C-C*/
+		compatible = "amlogic, meson-i2c";
+		dev_name = "i2c-C";
+		status = "disabled";
+		reg = <0xc11087e0 0x20>;
+		device_id = <3>;
+		pinctrl-names="default";
+//		pinctrl-0=<&c_i2c_master>;
+		#address-cells = <1>;
+		#size-cells = <0>;
+		use_pio = <0>;
+		master_i2c_speed = <300000>;
+	};
+	i2c_d: i2c@c1108d20{ /*I2C-D*/
+		compatible = "amlogic, meson-i2c";
+		dev_name = "i2c-D";
+		status = "disabled";
+		reg = <0xc1108d20 0x20>;
+		device_id = <4>;
+		pinctrl-names="default";
+		pinctrl-0=<&d_i2c_master>;
+		#address-cells = <1>;
+		#size-cells = <0>;
+		use_pio = <0>;
+		master_i2c_speed = <300000>;
+	};
+	rtc@0xc8100740 {
+		compatible = "amlogic,meson-rtc";
+		reg = <0xc8100740 0x14
+			0xc8100040 0x4>;
+	};
+	amhdmitx: amhdmitx{
+		compatible = "amlogic, amhdmitx";
+		dev_name = "amhdmitx";
+		status = "okay";
+		pinctrl-names="hdmitx_hpd", "hdmitx_ddc", "hdmitx_cec";
+		pinctrl-0=<&hdmitx_hpd>;
+		pinctrl-1=<&hdmitx_ddc>;
+		pinctrl-2=<&hdmitx_cec>;
+	};
+
+	saradc: saradc {
+		compatible = "amlogic, saradc";
+		dev_name = "saradc";
+		status = "disabled";
+};
+
+}; /* end of / */

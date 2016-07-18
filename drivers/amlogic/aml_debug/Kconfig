@@ -1,0 +1,8 @@
+# Amlogic DEBUG
+
+config AML_DEBUG
+    bool "Amlogic debug support"
+    default n
+    help
+      This is the Amlogic debug sysfs interface driver
+

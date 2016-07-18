@@ -1,0 +1,44 @@
+#
+# Video output configuration
+#
+menu "Amlogic VOUT Module"
+
+config AM_VOUT
+	boolean "Video Output Module"
+	default n
+	help
+		Select to enable VOUT module
+
+config AM_TV_OUTPUT
+	boolean "TV Output Module"
+	default n
+	depends on AM_VOUT
+	help
+		TV output module
+
+config AML_VOUT_FRAMERATE_AUTOMATION
+	boolean "Framerate Automation"
+	default n
+	depends on AM_TV_OUTPUT
+	help
+		framerate adjustment automatically from video source
+
+config AML_VDAC_HW_SWITCH
+	boolean "vdac hardware switch"
+	default n
+	depends on AM_TV_OUTPUT
+	help
+		vdac hardware switch of cvbs/ypbpr for mx.
+
+config AM_LCD_OUTPUT
+	boolean "LCD Output Module"
+	default n
+	depends on AM_VOUT
+	help
+		LCD output module
+
+if AM_LCD_OUTPUT
+source "drivers/amlogic/display/vout/lcd/Kconfig"
+endif
+
+endmenu

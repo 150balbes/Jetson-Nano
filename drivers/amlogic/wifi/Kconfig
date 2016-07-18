@@ -1,0 +1,24 @@
+comment "Amlogic Wifi Driver"
+
+menuconfig AM_WIFI
+	boolean "WiFi support"
+	default n
+	help
+		select y to support wifi
+
+if AM_WIFI
+config AM_WIFI_SD_MMC
+	boolean "Amlogic SDIO Wi-Fi support"
+	depends on AM_WIFI
+	default n
+
+config AM_WIFI_USB
+        boolean "Amlogic USB Wi-Fi Dongle Support"
+        depends on AM_WIFI
+        default n
+
+config DHD_USE_STATIC_BUF
+	boolean "broadcom wifi static buff support"
+	depends on AM_WIFI
+	default n
+endif # AM_WIFI
