@@ -1,1 +1,0 @@
-obj-$(CONFIG_AMLOGIC_USB) 				+= usbphy.o
