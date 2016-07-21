@@ -339,8 +339,8 @@
 			reg-names = "mux", "pull", "gpio";
 			gpio-controller;
 			#gpio-cells = <0x2>;
-			linux,phandle = <0x61>;
-			phandle = <0x61>;
+			linux,phandle = <0x5f>;
+			phandle = <0x5f>;
 		};
 
 		eth_pins {
@@ -371,8 +371,8 @@
 		a_uart {
 			amlogic,setmask = <0x4 0x3c00>;
 			amlogic,pins = "GPIOX_12", "GPIOX_13", "GPIOX_14", "GPIOX_15";
-			linux,phandle = <0x4f>;
-			phandle = <0x4f>;
+			linux,phandle = <0x4d>;
+			phandle = <0x4d>;
 		};
 
 		b_uart {
@@ -471,8 +471,6 @@
 			amlogic,enable-output = <0x1>;
 			amlogic,pullup = <0x1>;
 			amlogic,pullupen = <0x1>;
-			linux,phandle = <0x2c>;
-			phandle = <0x2c>;
 		};
 
 		emmc_all_pins {
@@ -481,8 +479,6 @@
 			amlogic,enable-output = <0x1>;
 			amlogic,pullup = <0x1>;
 			amlogic,pullupen = <0x1>;
-			linux,phandle = <0x2d>;
-			phandle = <0x2d>;
 		};
 
 		sdio_clk_cmd_pins {
@@ -491,8 +487,8 @@
 			amlogic,enable-output = <0x1>;
 			amlogic,pullup = <0x1>;
 			amlogic,pullupen = <0x1>;
-			linux,phandle = <0x2e>;
-			phandle = <0x2e>;
+			linux,phandle = <0x2c>;
+			phandle = <0x2c>;
 		};
 
 		sdio_all_pins {
@@ -501,24 +497,24 @@
 			amlogic,enable-output = <0x1>;
 			amlogic,pullup = <0x1>;
 			amlogic,pullupen = <0x1>;
-			linux,phandle = <0x2f>;
-			phandle = <0x2f>;
+			linux,phandle = <0x2d>;
+			phandle = <0x2d>;
 		};
 
 		conf_nand_pulldown {
 			amlogic,pins = "BOOT_0", "BOOT_1", "BOOT_2", "BOOT_3", "BOOT_4", "BOOT_5", "BOOT_6", "BOOT_7", "BOOT_15";
 			amlogic,pullup = <0x0>;
 			amlogic,pullupen = <0x1>;
-			linux,phandle = <0x30>;
-			phandle = <0x30>;
+			linux,phandle = <0x2e>;
+			phandle = <0x2e>;
 		};
 
 		conf_nand_pullup {
 			amlogic,pins = "BOOT_8", "BOOT_10";
 			amlogic,pullup = <0x1>;
 			amlogic,pullupen = <0x1>;
-			linux,phandle = <0x31>;
-			phandle = <0x31>;
+			linux,phandle = <0x2f>;
+			phandle = <0x2f>;
 		};
 
 		all_nand_pins {
@@ -526,38 +522,38 @@
 			amlogic,clrmask = <0x0 0x80000 0x4 0x800c0000 0x5 0xf>;
 			amlogic,pins = "BOOT_0", "BOOT_1", "BOOT_2", "BOOT_3", "BOOT_4", "BOOT_5", "BOOT_6", "BOOT_7", "BOOT_8", "BOOT_9", "BOOT_10", "BOOT_11", "BOOT_12", "BOOT_13", "BOOT_14", "BOOT_15", "BOOT_16", "BOOT_17";
 			amlogic,enable-output = <0x1>;
-			linux,phandle = <0x32>;
-			phandle = <0x32>;
+			linux,phandle = <0x30>;
+			phandle = <0x30>;
 		};
 
 		nand_cs {
 			amlogic,setmask = <0x4 0xc000000>;
 			amlogic,clrmask = <0x4 0x40000>;
 			amlogic,pins = "BOOT_8", "BOOT_9";
-			linux,phandle = <0x33>;
-			phandle = <0x33>;
+			linux,phandle = <0x31>;
+			phandle = <0x31>;
 		};
 
 		hdmitx_hpd {
 			amlogic,setmask = <0x1 0x4000000>;
 			amlogic,pins = "GPIOH_0";
-			linux,phandle = <0x4b>;
-			phandle = <0x4b>;
+			linux,phandle = <0x49>;
+			phandle = <0x49>;
 		};
 
 		hdmitx_ddc {
 			amlogic,setmask = <0x1 0x3000000>;
 			amlogic,pins = "GPIOH_1", "GPIOH_2";
-			linux,phandle = <0x4c>;
-			phandle = <0x4c>;
+			linux,phandle = <0x4a>;
+			phandle = <0x4a>;
 		};
 
 		hdmitx_aocec {
 			amlogic,setmask = <0x10 0x8000>;
 			amlogic,clrmask = <0x10 0x24000 0x11 0x1>;
 			amlogic,pins = "GPIOAO_12";
-			linux,phandle = <0x4e>;
-			phandle = <0x4e>;
+			linux,phandle = <0x4c>;
+			phandle = <0x4c>;
 		};
 
 		hdmitx_eecec {
@@ -602,36 +598,40 @@
 			amlogic,setmask = <0x3 0x37>;
 			amlogic,clrmask = <0x2 0xf0000 0x1 0x30ff>;
 			amlogic,pins = "GPIOY_0", "GPIOY_1", "GPIOY_2", "GPIOY_3", "GPIOY_4", "GPIOY_5", "GPIOY_6", "GPIOY_7", "GPIOY_8", "GPIOY_9", "GPIOY_10";
+			linux,phandle = <0x60>;
+			phandle = <0x60>;
 		};
 
 		dvb_s_ts0_pins {
 			amlogic,setmask = <0x3 0x17>;
 			amlogic,clrmask = <0x2 0xf0000 0x1 0x7>;
 			amlogic,pins = "GPIOY_0", "GPIOY_1", "GPIOY_2", "GPIOY_3";
+			linux,phandle = <0x61>;
+			phandle = <0x61>;
 		};
 
 		audio_pin {
 			amlogic,setmask = <0x10 0x78000000>;
 			amlogic,clrmask = <0x10 0x40000>;
 			amlogic,pins = "GPIOAO_8", "GPIOAO_9", "GPIOAO_10", "GPIOAO_11";
-			linux,phandle = <0x52>;
-			phandle = <0x52>;
+			linux,phandle = <0x50>;
+			phandle = <0x50>;
 		};
 
 		audio_pin1 {
 			amlogic,setmask = <0x1 0x200>;
 			amlogic,clrmask = <0x1 0x10000>;
 			amlogic,pins = "GPIOY_12";
-			linux,phandle = <0x51>;
-			phandle = <0x51>;
+			linux,phandle = <0x4f>;
+			phandle = <0x4f>;
 		};
 
 		audio_btpcm_pins {
 			amlogic,setmask = <0x3 0x78000000>;
 			amlogic,clrmask = <0x3 0x803280 0x4 0xc0>;
 			amlogic,pins = "GPIOX_8", "GPIOX_9", "GPIOX_10", "GPIOX_11";
-			linux,phandle = <0x50>;
-			phandle = <0x50>;
+			linux,phandle = <0x4e>;
+			phandle = <0x4e>;
 		};
 	};
 
@@ -647,7 +647,7 @@
 	i2c@c1108500 {
 		compatible = "amlogic, meson-i2c";
 		dev_name = "i2c-A";
-		status = "disabled";
+		status = "okay";
 		reg = <0x0 0xc1108500 0x0 0x20>;
 		device_id = <0x1>;
 		pinctrl-names = "default";
@@ -664,7 +664,7 @@
 	i2c@c11087c0 {
 		compatible = "amlogic, meson-i2c";
 		dev_name = "i2c-B";
-		status = "disabled";
+		status = "okay";
 		reg = <0x0 0xc11087c0 0x0 0x20>;
 		device_id = <0x2>;
 		pinctrl-names = "default";
@@ -681,7 +681,7 @@
 	i2c@c11087e0 {
 		compatible = "amlogic, meson-i2c";
 		dev_name = "i2c-C";
-		status = "disabled";
+		status = "okay";
 		reg = <0x0 0xc11087e0 0x0 0x20>;
 		device_id = <0x3>;
 		pinctrl-names = "default";
@@ -698,7 +698,7 @@
 	i2c@c1108d20 {
 		compatible = "amlogic, meson-i2c";
 		dev_name = "i2c-D";
-		status = "disabled";
+		status = "okay";
 		reg = <0x0 0xc1108d20 0x0 0x20>;
 		device_id = <0x4>;
 		pinctrl-names = "default";
@@ -835,7 +835,7 @@
 
 	memory@00000000 {
 		device_type = "memory";
-		linux,usable-memory = <0x0 0x1000000 0x0 0x7f000000>;
+		linux,usable-memory = <0x0 0x1000000 0x0 0x3f000000>;
 	};
 
 	reserved-memory {
@@ -867,7 +867,7 @@
 
 		linux,meson-fb {
 			compatible = "amlogic, fb-memory";
-			size = <0x0 0x4480000>;
+			size = <0x0 0x8000000>;
 			no-map;
 			linux,phandle = <0x1c>;
 			phandle = <0x1c>;
@@ -892,7 +892,7 @@
 		linux,codec_mm_cma {
 			compatible = "shared-dma-pool";
 			reusable;
-			size = <0x0 0xbc00000>;
+			size = <0x0 0xc000000>;
 			alignment = <0x0 0x400000>;
 			linux,contiguous-region;
 			linux,phandle = <0x1d>;
@@ -931,10 +931,9 @@
 		status = "okay";
 		interrupts = <0x0 0x3 0x1 0x0 0x59 0x1>;
 		interrupt-names = "viu-vsync", "rdma";
-		mem_size = <0x4380000 0x100000>;
+		mem_size = <0x6000000 0x100000>;
 		vmode = <0x3>;
 		scale_mode = <0x1>;
-		4k2k_fb = <0x1>;
 		display_size_default = <0x780 0x438 0x780 0xca8 0x20>;
 	};
 
@@ -989,14 +988,14 @@
 	};
 
 	ethernet@0xc9410000 {
-		compatible = "amlogic, gxbb-rgmii-dwmac";
+		compatible = "amlogic, gxbb-rmii-dwmac";
 		reg = <0x0 0xc9410000 0x0 0x10000 0x0 0xc8834540 0x0 0x8>;
 		interrupts = <0x0 0x8 0x1>;
-		phy-mode = "rgmii";
+		phy-mode = "rmii";
 		pinctrl-names = "eth_pins";
 		pinctrl-0 = <0x1f>;
 		rst_pin-gpios = <0x20 0xe 0x0>;
-		mc_val = <0x1621>;
+		mc_val = <0x1800>;
 		resets = <0xc 0x23>;
 		reset-names = "ethpower";
 		interrupt-names = "macirq";
@@ -1090,13 +1089,6 @@
 		clk_level = <0x7>;
 	};
 
-	bt-dev {
-		compatible = "amlogic, bt-dev";
-		dev_name = "bt-dev";
-		status = "ok";
-		gpio_reset = <0x20 0x70 0x0>;
-	};
-
 	rtc {
 		compatible = "amlogic, aml_vrtc";
 		alarm_reg_addr = <0xc81000a8>;
@@ -1111,18 +1103,11 @@
 		status = "okay";
 		interrupt_pin = <0x20 0x63 0x0>;
 		interrupts = <0x0 0x44 0x4>;
-		irq_trigger_type = "GPIO_IRQ_LOW";
+		irq_trigger_type = "GPIO_IRQ_HIGH";
 		power_on_pin = <0x20 0x62 0x0>;
-		dhd_static_buf;
+		power_on_pin2 = <0x20 0x70 0x0>;
 		pinctrl-names = "wifi_32k_pins";
 		pinctrl-0 = <0x24>;
-	};
-
-	wifi_power {
-		compatible = "amlogic, wifi_power";
-		dev_name = "wifi_power";
-		status = "okay";
-		power_gpio = <0x20 0x62 0x0>;
 	};
 
 	sd {
@@ -1158,46 +1143,21 @@
 		};
 	};
 
-	emmc {
-		compatible = "amlogic, aml_sd_emmc";
-		dev_name = "aml_newsd.0";
-		status = "okay";
-		reg = <0x0 0xd0074000 0x0 0x2000>;
-		interrupts = <0x0 0xda 0x1>;
-		pinctrl-names = "emmc_clk_cmd_pins", "emmc_all_pins";
-		pinctrl-0 = <0x2c>;
-		pinctrl-1 = <0x2d>;
-
-		emmc {
-			status = "okay";
-			pinname = "emmc";
-			ocr_avail = <0x200080>;
-			caps = "MMC_CAP_8_BIT_DATA", "MMC_CAP_MMC_HIGHSPEED", "MMC_CAP_SD_HIGHSPEED", "MMC_CAP_NONREMOVABLE", "MMC_CAP_1_8V_DDR", "MMC_CAP_HW_RESET", "MMC_CAP_ERASE", "MMC_CAP_CMD23";
-			caps2 = "MMC_CAP2_HS200";
-			f_min = <0x493e0>;
-			f_max = <0xbebc200>;
-			max_req_size = <0x20000>;
-			gpio_dat3 = <0x20 0x17 0x0>;
-			hw_reset = <0x20 0x1d 0x0>;
-			card_type = <0x1>;
-		};
-	};
-
 	sdio {
 		compatible = "amlogic, aml_sd_emmc";
 		dev_name = "aml_newsd.0";
 		status = "okay";
 		reg = <0x0 0xd0070000 0x0 0x2000>;
-		interrupts = <0x0 0xd8 0x1>;
+		interrupts = <0x0 0xd8 0x4>;
 		pinctrl-names = "sdio_clk_cmd_pins", "sdio_all_pins";
-		pinctrl-0 = <0x2e>;
-		pinctrl-1 = <0x2f>;
+		pinctrl-0 = <0x2c>;
+		pinctrl-1 = <0x2d>;
 
 		sdio {
 			status = "okay";
 			pinname = "sdio";
 			ocr_avail = <0x200080>;
-			caps = "MMC_CAP_4_BIT_DATA", "MMC_CAP_MMC_HIGHSPEED", "MMC_CAP_SD_HIGHSPEED", "MMC_CAP_NONREMOVABLE", "MMC_CAP_UHS_SDR12", "MMC_CAP_UHS_SDR25", "MMC_CAP_UHS_SDR50", "MMC_CAP_UHS_SDR104", "MMC_PM_KEEP_POWER";
+			caps = "MMC_CAP_4_BIT_DATA", "MMC_CAP_MMC_HIGHSPEED", "MMC_CAP_SD_HIGHSPEED", "MMC_CAP_NONREMOVABLE", "MMC_CAP_UHS_SDR12", "MMC_CAP_UHS_SDR25", "MMC_CAP_UHS_SDR50", "MMC_CAP_UHS_SDR104", "MMC_PM_KEEP_POWER", "MMC_CAP_SDIO_IRQ";
 			f_min = <0x61a80>;
 			f_max = <0xbebc200>;
 			max_req_size = <0x20000>;
@@ -1212,19 +1172,19 @@
 		reg = <0x0 0xd0074800 0x0 0x200>;
 		interrupts = <0x0 0x22 0x1>;
 		pinctrl-names = "nand_rb_mod", "nand_norb_mod", "nand_cs_pins_only";
-		pinctrl-0 = <0x30 0x31 0x32>;
-		pinctrl-1 = <0x30 0x31 0x32>;
-		pinctrl-2 = <0x33>;
+		pinctrl-0 = <0x2e 0x2f 0x30>;
+		pinctrl-1 = <0x2e 0x2f 0x30>;
+		pinctrl-2 = <0x31>;
 		device_id = <0x0>;
 		plat-names = "nandnormal";
 		plat-num = <0x1>;
-		plat-part-0 = <0x34>;
+		plat-part-0 = <0x32>;
 
 		normal {
 			enable_pad = "ce0", "ce1", "ce2", "ce3";
 			busy_pad = "rb0";
-			linux,phandle = <0x34>;
-			phandle = <0x34>;
+			linux,phandle = <0x32>;
+			phandle = <0x32>;
 		};
 	};
 
@@ -1234,104 +1194,104 @@
 
 	partitions {
 		parts = <0xb>;
-		part-0 = <0x35>;
-		part-1 = <0x36>;
-		part-2 = <0x37>;
-		part-3 = <0x38>;
-		part-4 = <0x39>;
-		part-5 = <0x3a>;
-		part-6 = <0x3b>;
-		part-7 = <0x3c>;
-		part-8 = <0x3d>;
-		part-9 = <0x3e>;
-		part-10 = <0x3f>;
+		part-0 = <0x33>;
+		part-1 = <0x34>;
+		part-2 = <0x35>;
+		part-3 = <0x36>;
+		part-4 = <0x37>;
+		part-5 = <0x38>;
+		part-6 = <0x39>;
+		part-7 = <0x3a>;
+		part-8 = <0x3b>;
+		part-9 = <0x3c>;
+		part-10 = <0x3d>;
 
 		logo {
 			pname = "logo";
 			size = <0x0 0x2000000>;
 			mask = <0x1>;
-			linux,phandle = <0x35>;
-			phandle = <0x35>;
+			linux,phandle = <0x33>;
+			phandle = <0x33>;
 		};
 
 		recovery {
 			pname = "recovery";
 			size = <0x0 0x2000000>;
 			mask = <0x1>;
-			linux,phandle = <0x36>;
-			phandle = <0x36>;
+			linux,phandle = <0x34>;
+			phandle = <0x34>;
 		};
 
 		rsv {
 			pname = "rsv";
 			size = <0x0 0x800000>;
 			mask = <0x1>;
-			linux,phandle = <0x37>;
-			phandle = <0x37>;
+			linux,phandle = <0x35>;
+			phandle = <0x35>;
 		};
 
 		tee {
 			pname = "tee";
 			size = <0x0 0x800000>;
 			mask = <0x1>;
-			linux,phandle = <0x38>;
-			phandle = <0x38>;
+			linux,phandle = <0x36>;
+			phandle = <0x36>;
 		};
 
 		crypt {
 			pname = "crypt";
 			size = <0x0 0x2000000>;
 			mask = <0x1>;
-			linux,phandle = <0x39>;
-			phandle = <0x39>;
+			linux,phandle = <0x37>;
+			phandle = <0x37>;
 		};
 
 		misc {
 			pname = "misc";
 			size = <0x0 0x2000000>;
 			mask = <0x1>;
-			linux,phandle = <0x3a>;
-			phandle = <0x3a>;
+			linux,phandle = <0x38>;
+			phandle = <0x38>;
 		};
 
 		instaboot {
 			pname = "instaboot";
 			size = <0x0 0x20000000>;
 			mask = <0x1>;
-			linux,phandle = <0x3b>;
-			phandle = <0x3b>;
+			linux,phandle = <0x39>;
+			phandle = <0x39>;
 		};
 
 		boot {
 			pname = "boot";
 			size = <0x0 0x2000000>;
 			mask = <0x1>;
-			linux,phandle = <0x3c>;
-			phandle = <0x3c>;
+			linux,phandle = <0x3a>;
+			phandle = <0x3a>;
 		};
 
 		system {
 			pname = "system";
-			size = <0x0 0x60000000>;
+			size = <0x0 0x40000000>;
 			mask = <0x1>;
-			linux,phandle = <0x3d>;
-			phandle = <0x3d>;
+			linux,phandle = <0x3b>;
+			phandle = <0x3b>;
 		};
 
 		cache {
 			pname = "cache";
 			size = <0x0 0x20000000>;
 			mask = <0x2>;
-			linux,phandle = <0x3e>;
-			phandle = <0x3e>;
+			linux,phandle = <0x3c>;
+			phandle = <0x3c>;
 		};
 
 		data {
 			pname = "data";
 			size = <0xffffffff 0xffffffff>;
 			mask = <0x4>;
-			linux,phandle = <0x3f>;
-			phandle = <0x3f>;
+			linux,phandle = <0x3d>;
+			phandle = <0x3d>;
 		};
 	};
 
@@ -1339,32 +1299,32 @@
 		compatible = "amlogic, unifykey";
 		status = "ok";
 		unifykey-num = <0xb>;
-		unifykey-index-0 = <0x40>;
-		unifykey-index-1 = <0x41>;
-		unifykey-index-2 = <0x42>;
-		unifykey-index-3 = <0x43>;
-		unifykey-index-4 = <0x44>;
-		unifykey-index-5 = <0x45>;
-		unifykey-index-6 = <0x46>;
-		unifykey-index-7 = <0x47>;
-		unifykey-index-8 = <0x48>;
-		unifykey-index-9 = <0x49>;
-		unifykey-index-10 = <0x4a>;
+		unifykey-index-0 = <0x3e>;
+		unifykey-index-1 = <0x3f>;
+		unifykey-index-2 = <0x40>;
+		unifykey-index-3 = <0x41>;
+		unifykey-index-4 = <0x42>;
+		unifykey-index-5 = <0x43>;
+		unifykey-index-6 = <0x44>;
+		unifykey-index-7 = <0x45>;
+		unifykey-index-8 = <0x46>;
+		unifykey-index-9 = <0x47>;
+		unifykey-index-10 = <0x48>;
 
 		key_0 {
 			key-name = "usid";
 			key-device = "normal";
 			key-permit = "read", "write", "del";
-			linux,phandle = <0x40>;
-			phandle = <0x40>;
+			linux,phandle = <0x3e>;
+			phandle = <0x3e>;
 		};
 
 		key_1 {
 			key-name = "mac";
 			key-device = "normal";
 			key-permit = "read", "write", "del";
-			linux,phandle = <0x41>;
-			phandle = <0x41>;
+			linux,phandle = <0x3f>;
+			phandle = <0x3f>;
 		};
 
 		key_2 {
@@ -1372,16 +1332,16 @@
 			key-device = "secure";
 			key-type = "sha1";
 			key-permit = "read", "write", "del";
-			linux,phandle = <0x42>;
-			phandle = <0x42>;
+			linux,phandle = <0x40>;
+			phandle = <0x40>;
 		};
 
 		key_3 {
 			key-name = "secure_boot_set";
 			key-device = "efuse";
 			key-permit = "write";
-			linux,phandle = <0x43>;
-			phandle = <0x43>;
+			linux,phandle = <0x41>;
+			phandle = <0x41>;
 		};
 
 		key_4 {
@@ -1389,8 +1349,8 @@
 			key-device = "normal";
 			key-permit = "read", "write", "del";
 			key-type = "mac";
-			linux,phandle = <0x44>;
-			phandle = <0x44>;
+			linux,phandle = <0x42>;
+			phandle = <0x42>;
 		};
 
 		key_5 {
@@ -1398,24 +1358,24 @@
 			key-device = "normal";
 			key-permit = "read", "write", "del";
 			key-type = "mac";
-			linux,phandle = <0x45>;
-			phandle = <0x45>;
+			linux,phandle = <0x43>;
+			phandle = <0x43>;
 		};
 
 		key_6 {
 			key-name = "hdcp2_tx";
 			key-device = "normal";
 			key-permit = "read", "write", "del";
-			linux,phandle = <0x46>;
-			phandle = <0x46>;
+			linux,phandle = <0x44>;
+			phandle = <0x44>;
 		};
 
 		key_7 {
 			key-name = "hdcp2_rx";
 			key-device = "normal";
 			key-permit = "read", "write", "del";
-			linux,phandle = <0x47>;
-			phandle = <0x47>;
+			linux,phandle = <0x45>;
+			phandle = <0x45>;
 		};
 
 		key_8 {
@@ -1423,24 +1383,24 @@
 			key-device = "secure";
 			key-type = "sha1";
 			key-permit = "read", "write", "del";
-			linux,phandle = <0x48>;
-			phandle = <0x48>;
+			linux,phandle = <0x46>;
+			phandle = <0x46>;
 		};
 
 		key_9 {
 			key-name = "deviceid";
 			key-device = "normal";
 			key-permit = "read", "write", "del";
-			linux,phandle = <0x49>;
-			phandle = <0x49>;
+			linux,phandle = <0x47>;
+			phandle = <0x47>;
 		};
 
 		key_10 {
 			key-name = "hdcp22_fw_private";
 			key-device = "secure";
 			key-permit = "read", "write", "del";
-			linux,phandle = <0x4a>;
-			phandle = <0x4a>;
+			linux,phandle = <0x48>;
+			phandle = <0x48>;
 		};
 	};
 
@@ -1449,15 +1409,14 @@
 		dev_name = "amhdmitx";
 		status = "okay";
 		pinctrl-names = "hdmitx_hpd", "hdmitx_ddc";
-		pinctrl-0 = <0x4b>;
-		pinctrl-1 = <0x4c>;
-		vend-data = <0x4d>;
+		pinctrl-0 = <0x49>;
+		pinctrl-1 = <0x4a>;
+		vend-data = <0x4b>;
 		interrupts = <0x0 0x39 0x1>;
 		interrupt-names = "hdmitx_hpd";
 		clocks = <0xc 0xb 0xc 0xc 0xc 0xd 0xc 0xe 0xc 0xf 0xc 0x16>;
 		clock-names = "hdmitx_clk_sys", "hdmitx_clk_encp", "hdmitx_clk_enci", "hdmitx_clk_pixel", "hdmitx_clk_phy", "hdmitx_clk_vid";
 		gpio_i2c_en = <0x1>;
-		ranges;
 		#address-cells = <0x2>;
 		#size-cells = <0x2>;
 
@@ -1471,10 +1430,10 @@
 			interrupts = <0x0 0xc7 0x1>;
 			interrupt-names = "hdmitx_cec";
 			pinctrl-names = "hdmitx_aocec";
-			pinctrl-0 = <0x4e>;
+			pinctrl-0 = <0x4c>;
 			reg = <0x0 0xc810023c 0x0 0x4>;
-			linux,phandle = <0x4d>;
-			phandle = <0x4d>;
+			linux,phandle = <0x4b>;
+			phandle = <0x4b>;
 		};
 	};
 
@@ -1512,7 +1471,7 @@
 		clock-names = "clk_uart";
 		fifosize = <0x80>;
 		pinctrl-names = "default";
-		pinctrl-0 = <0x4f>;
+		pinctrl-0 = <0x4d>;
 		resets = <0xc 0xd>;
 	};
 
@@ -1568,9 +1527,7 @@
 		port-speed = <0x0>;
 		port-config = <0x0>;
 		port-dma = <0x0>;
-		port-id-mode = <0x1>;
-		gpio-vbus-power = "GPIODV_24";
-		gpios = <0x20 0x45 0x0>;
+		port-id-mode = <0x0>;
 		gpio-work-mask = <0x1>;
 		phy-reg = <0xc0000000>;
 		phy-reg-size = <0x20>;
@@ -1587,8 +1544,8 @@
 		clocks = <0xc 0x1f 0xc 0x22>;
 		clock-names = "mpll0", "mclk";
 		compatible = "amlogic, aml-i2s-dai";
-		linux,phandle = <0x5b>;
-		phandle = <0x5b>;
+		linux,phandle = <0x59>;
+		phandle = <0x59>;
 	};
 
 	SPDIF {
@@ -1598,53 +1555,53 @@
 		reset-names = "iec958", "iec958_amclk";
 		clocks = <0xc 0x20 0xc 0x24 0xc 0x22 0xc 0x25>;
 		clock-names = "mpll1", "i958", "mclk", "spdif";
-		linux,phandle = <0x5c>;
-		phandle = <0x5c>;
+		linux,phandle = <0x5a>;
+		phandle = <0x5a>;
 	};
 
 	PCM {
 		#sound-dai-cells = <0x0>;
 		compatible = "amlogic, aml-pcm-dai";
 		pinctrl-names = "aml_audio_btpcm";
-		pinctrl-0 = <0x50>;
-		linux,phandle = <0x5d>;
-		phandle = <0x5d>;
+		pinctrl-0 = <0x4e>;
+		linux,phandle = <0x5b>;
+		phandle = <0x5b>;
 	};
 
 	i2s_platform {
 		compatible = "amlogic, aml-i2s";
-		linux,phandle = <0x59>;
-		phandle = <0x59>;
+		linux,phandle = <0x57>;
+		phandle = <0x57>;
 	};
 
 	pcm_platform {
 		compatible = "amlogic, aml-pcm";
-		linux,phandle = <0x5a>;
-		phandle = <0x5a>;
+		linux,phandle = <0x58>;
+		phandle = <0x58>;
 	};
 
 	spdif_codec {
 		#sound-dai-cells = <0x0>;
 		compatible = "amlogic, aml-spdif-codec";
 		pinctrl-names = "aml_audio_spdif";
-		pinctrl-0 = <0x51>;
-		linux,phandle = <0x5f>;
-		phandle = <0x5f>;
+		pinctrl-0 = <0x4f>;
+		linux,phandle = <0x5d>;
+		phandle = <0x5d>;
 	};
 
 	pcm_codec {
 		#sound-dai-cells = <0x0>;
 		compatible = "amlogic, pcm2BT-codec";
-		linux,phandle = <0x60>;
-		phandle = <0x60>;
+		linux,phandle = <0x5e>;
+		phandle = <0x5e>;
 	};
 
 	dummy {
 		#sound-dai-cells = <0x0>;
 		compatible = "amlogic, aml_dummy_codec";
 		status = "okay";
-		linux,phandle = <0x5e>;
-		phandle = <0x5e>;
+		linux,phandle = <0x5c>;
+		phandle = <0x5c>;
 	};
 
 	aml_m8_snd {
@@ -1657,52 +1614,52 @@
 		hp_disable;
 		hp_paraments = <0x320 0x12c 0x0 0x5 0x1>;
 		pinctrl-names = "aml_snd_m8";
-		pinctrl-0 = <0x52>;
-		cpu_list = <0x53 0x54 0x55>;
-		codec_list = <0x56 0x57 0x58>;
-		plat_list = <0x59 0x59 0x5a>;
+		pinctrl-0 = <0x50>;
+		cpu_list = <0x51 0x52 0x53>;
+		codec_list = <0x54 0x55 0x56>;
+		plat_list = <0x57 0x57 0x58>;
 
 		cpudai0 {
+			sound-dai = <0x59>;
+			linux,phandle = <0x51>;
+			phandle = <0x51>;
+		};
+
+		cpudai1 {
+			sound-dai = <0x5a>;
+			linux,phandle = <0x52>;
+			phandle = <0x52>;
+		};
+
+		cpudai2 {
 			sound-dai = <0x5b>;
 			linux,phandle = <0x53>;
 			phandle = <0x53>;
 		};
 
-		cpudai1 {
+		codec0 {
 			sound-dai = <0x5c>;
 			linux,phandle = <0x54>;
 			phandle = <0x54>;
 		};
 
-		cpudai2 {
+		codec1 {
 			sound-dai = <0x5d>;
 			linux,phandle = <0x55>;
 			phandle = <0x55>;
 		};
 
-		codec0 {
+		codec2 {
 			sound-dai = <0x5e>;
 			linux,phandle = <0x56>;
 			phandle = <0x56>;
-		};
-
-		codec1 {
-			sound-dai = <0x5f>;
-			linux,phandle = <0x57>;
-			phandle = <0x57>;
-		};
-
-		codec2 {
-			sound-dai = <0x60>;
-			linux,phandle = <0x58>;
-			phandle = <0x58>;
 		};
 	};
 
 	amlogic_thermals {
 		compatible = "amlogic, amlogic-thermal";
 		#thermal-cells = <0x7>;
-		device_name = "thermal";
+		dev_name = "aml_thermal";
 		trip_point = <0x46 0x177001 0x177001 0x1ff 0x1ff 0x3 0x2 0x50 0x13c681 0x13c681 0x1b3 0x1b3 0x2 0x1 0x5a 0xfbf41 0xfbf41 0x148 0x148 0x2 0x1 0x104 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff>;
 		cpu_cali_a = <0x0>;
 		idle_interval = <0x3e8>;
@@ -1718,7 +1675,7 @@
 		key_num = <0x1>;
 		key_name = "power";
 		key_code = <0x74>;
-		key_pin = <0x61 0x3 0x0>;
+		key_pin = <0x5f 0x3 0x0>;
 		irq_keyup = <0x6>;
 		irq_keydown = <0x7>;
 	};
@@ -1738,7 +1695,36 @@
 		compatible = "amlogic, sysled";
 		dev_name = "sysled";
 		status = "okay";
-		led_gpio = <0x61 0xd 0x1>;
-		led_active_low = <0x0>;
+		led_gpio = <0x5f 0xd 0x0>;
+		led_active_low = <0x1>;
+	};
+
+	dvb {
+		compatible = "amlogic,dvb";
+		status = "okay";
+		fec_reset_gpio-gpios = <0x20 0x58 0x0>;
+		power_ctrl_gpio-gpios = <0x20 0x56 0x1>;
+		ts0 = "parallel";
+		ts0_control = <0x0>;
+		ts0_invert = <0x0>;
+		pinctrl-names = "p_ts0", "s_ts0";
+		pinctrl-0 = <0x60>;
+		pinctrl-1 = <0x61>;
+		resets = <0xc 0x24 0xc 0x10 0xc 0x3d 0xc 0x39>;
+		reset-names = "demux", "asyncfifo", "ahbarb0", "uparsertop";
+	};
+
+	dvbfe {
+		compatible = "amlogic,dvbfe";
+		status = "okay";
+		dtv_demod0 = "Avl6211";
+		dtv_demod0_i2c_adap_id = <0x1>;
+		dtv_demod0_i2c_addr = <0xc0>;
+		dtv_demod0_reset_value = <0x0>;
+		dtv_demod0_reset_gpio-gpios = <0x20 0x58 0x1>;
+		dtv_demod0_power_gpio-gpios = <0x20 0x56 0x1>;
+		fe0_dtv_demod = <0x0>;
+		fe0_ts = <0x0>;
+		fe0_dev = <0x0>;
 	};
 };

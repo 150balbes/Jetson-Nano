@@ -1,6 +1,7 @@
 /dts-v1/;
 
 / {
+	amlogic-dt-id = "gxb_p200_1g";
 	model = "Amlogic";
 	compatible = "amlogic, Gxbb";
 	interrupt-parent = <0x1>;
@@ -835,7 +836,7 @@
 
 	memory@00000000 {
 		device_type = "memory";
-		linux,usable-memory = <0x0 0x1000000 0x0 0x7f000000>;
+		linux,usable-memory = <0x0 0x1000000 0x0 0x3f000000>;
 	};
 
 	reserved-memory {
@@ -1312,7 +1313,7 @@
 
 		system {
 			pname = "system";
-			size = <0x0 0x60000000>;
+			size = <0x0 0x40000000>;
 			mask = <0x1>;
 			linux,phandle = <0x3d>;
 			phandle = <0x3d>;

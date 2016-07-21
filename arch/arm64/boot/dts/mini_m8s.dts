@@ -867,7 +867,7 @@
 
 		linux,meson-fb {
 			compatible = "amlogic, fb-memory";
-			size = <0x0 0x4480000>;
+			size = <0x0 0x2000000>;
 			no-map;
 			linux,phandle = <0x1c>;
 			phandle = <0x1c>;
@@ -931,10 +931,9 @@
 		status = "okay";
 		interrupts = <0x0 0x3 0x1 0x0 0x59 0x1>;
 		interrupt-names = "viu-vsync", "rdma";
-		mem_size = <0x4380000 0x100000>;
+		mem_size = <0x1800000 0x800000>;
 		vmode = <0x3>;
 		scale_mode = <0x1>;
-		4k2k_fb = <0x1>;
 		display_size_default = <0x780 0x438 0x780 0xca8 0x20>;
 	};
 
@@ -989,14 +988,14 @@
 	};
 
 	ethernet@0xc9410000 {
-		compatible = "amlogic, gxbb-rgmii-dwmac";
+		compatible = "amlogic, gxbb-rmii-dwmac";
 		reg = <0x0 0xc9410000 0x0 0x10000 0x0 0xc8834540 0x0 0x8>;
 		interrupts = <0x0 0x8 0x1>;
-		phy-mode = "rgmii";
+		phy-mode = "rmii";
 		pinctrl-names = "eth_pins";
 		pinctrl-0 = <0x1f>;
 		rst_pin-gpios = <0x20 0xe 0x0>;
-		mc_val = <0x1621>;
+		mc_val = <0x1800>;
 		resets = <0xc 0x23>;
 		reset-names = "ethpower";
 		interrupt-names = "macirq";
@@ -1312,7 +1311,7 @@
 
 		system {
 			pname = "system";
-			size = <0x0 0x60000000>;
+			size = <0x0 0x40000000>;
 			mask = <0x1>;
 			linux,phandle = <0x3d>;
 			phandle = <0x3d>;
@@ -1738,7 +1737,7 @@
 		compatible = "amlogic, sysled";
 		dev_name = "sysled";
 		status = "okay";
-		led_gpio = <0x61 0xd 0x1>;
-		led_active_low = <0x0>;
+		led_gpio = <0x61 0xd 0x0>;
+		led_active_low = <0x1>;
 	};
 };

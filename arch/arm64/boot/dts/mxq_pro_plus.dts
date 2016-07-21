@@ -867,7 +867,7 @@
 
 		linux,meson-fb {
 			compatible = "amlogic, fb-memory";
-			size = <0x0 0x4480000>;
+			size = <0x0 0x2000000>;
 			no-map;
 			linux,phandle = <0x1c>;
 			phandle = <0x1c>;
@@ -892,7 +892,7 @@
 		linux,codec_mm_cma {
 			compatible = "shared-dma-pool";
 			reusable;
-			size = <0x0 0xbc00000>;
+			size = <0x0 0xc000000>;
 			alignment = <0x0 0x400000>;
 			linux,contiguous-region;
 			linux,phandle = <0x1d>;
@@ -931,10 +931,9 @@
 		status = "okay";
 		interrupts = <0x0 0x3 0x1 0x0 0x59 0x1>;
 		interrupt-names = "viu-vsync", "rdma";
-		mem_size = <0x4380000 0x100000>;
+		mem_size = <0x1800000 0x100000>;
 		vmode = <0x3>;
 		scale_mode = <0x1>;
-		4k2k_fb = <0x1>;
 		display_size_default = <0x780 0x438 0x780 0xca8 0x20>;
 	};
 
@@ -1188,7 +1187,7 @@
 		dev_name = "aml_newsd.0";
 		status = "okay";
 		reg = <0x0 0xd0070000 0x0 0x2000>;
-		interrupts = <0x0 0xd8 0x1>;
+		interrupts = <0x0 0xd8 0x4>;
 		pinctrl-names = "sdio_clk_cmd_pins", "sdio_all_pins";
 		pinctrl-0 = <0x2e>;
 		pinctrl-1 = <0x2f>;
@@ -1197,7 +1196,7 @@
 			status = "okay";
 			pinname = "sdio";
 			ocr_avail = <0x200080>;
-			caps = "MMC_CAP_4_BIT_DATA", "MMC_CAP_MMC_HIGHSPEED", "MMC_CAP_SD_HIGHSPEED", "MMC_CAP_NONREMOVABLE", "MMC_CAP_UHS_SDR12", "MMC_CAP_UHS_SDR25", "MMC_CAP_UHS_SDR50", "MMC_CAP_UHS_SDR104", "MMC_PM_KEEP_POWER";
+			caps = "MMC_CAP_4_BIT_DATA", "MMC_CAP_MMC_HIGHSPEED", "MMC_CAP_SD_HIGHSPEED", "MMC_CAP_NONREMOVABLE", "MMC_CAP_UHS_SDR12", "MMC_CAP_UHS_SDR25", "MMC_CAP_UHS_SDR50", "MMC_CAP_UHS_SDR104", "MMC_PM_KEEP_POWER", "MMC_CAP_SDIO_IRQ";
 			f_min = <0x61a80>;
 			f_max = <0xbebc200>;
 			max_req_size = <0x20000>;
@@ -1312,7 +1311,7 @@
 
 		system {
 			pname = "system";
-			size = <0x0 0x60000000>;
+			size = <0x0 0x80000000>;
 			mask = <0x1>;
 			linux,phandle = <0x3d>;
 			phandle = <0x3d>;
@@ -1457,9 +1456,9 @@
 		clocks = <0xc 0xb 0xc 0xc 0xc 0xd 0xc 0xe 0xc 0xf 0xc 0x16>;
 		clock-names = "hdmitx_clk_sys", "hdmitx_clk_encp", "hdmitx_clk_enci", "hdmitx_clk_pixel", "hdmitx_clk_phy", "hdmitx_clk_vid";
 		gpio_i2c_en = <0x1>;
-		ranges;
 		#address-cells = <0x2>;
 		#size-cells = <0x2>;
+		ranges;
 
 		vend_data {
 			compatible = "amlogic, amlogic-cec";
@@ -1709,6 +1708,7 @@
 		keep_mode;
 		keep_mode_threshold = <0x55>;
 		keep_mode_max_range = <0x1ec300 0x29a 0x4 0x3>;
+		keep_mode_min_range = <0x1f4 0x190 0x1 0x2>;
 	};
 
 	gpio_keypad {
@@ -1723,22 +1723,11 @@
 		irq_keydown = <0x7>;
 	};
 
-	adc_keypad {
-		compatible = "amlogic, adc_keypad";
-		status = "okay";
-		key_name = "menu", "vol-", "vol+", "esc", "home";
-		key_num = <0x5>;
-		key_code = <0x8b 0x72 0x73 0x1 0x66>;
-		key_chan = <0x0 0x0 0x0 0x0 0x0>;
-		key_val = <0x0 0x8f 0x10f 0x189 0x1fe>;
-		key_tolerance = <0x28 0x28 0x28 0x28 0x28>;
-	};
-
 	sysled {
 		compatible = "amlogic, sysled";
 		dev_name = "sysled";
 		status = "okay";
-		led_gpio = <0x61 0xd 0x1>;
-		led_active_low = <0x0>;
+		led_gpio = <0x61 0xd 0x0>;
+		led_active_low = <0x1>;
 	};
 };
