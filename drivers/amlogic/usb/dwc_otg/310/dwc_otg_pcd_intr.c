@@ -42,7 +42,7 @@
 extern void complete_xiso_ep(dwc_otg_pcd_ep_t *ep);
 #endif
 
-#define DEBUG_EP0
+/* #define DEBUG_EP0 */
 
 /**
  * This function updates OTG.

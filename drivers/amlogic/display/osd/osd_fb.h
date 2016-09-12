@@ -78,4 +78,8 @@ extern int (*disp_get_ump_secure_id) (struct fb_info *info,
 #define GET_UMP_SECURE_ID_BUF1 _IOWR('m', 311, unsigned int)
 #define GET_UMP_SECURE_ID_BUF2 _IOWR('m', 312, unsigned int)
 #endif
+
+#if defined(CONFIG_ARCH_MESON64_ODROIDC2)
+extern void control_hdmiphy(int on);
+#endif
 #endif

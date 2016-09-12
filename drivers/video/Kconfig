@@ -2550,3 +2550,4 @@ config FB_SSD1307
 endmenu
 
 source "drivers/gpu/arm/Kconfig"
+source "drivers/video/fbtft/Kconfig"

@@ -46,7 +46,7 @@ static ssize_t set_enable0(struct device *dev,
 	ret = sscanf(buf, "%u\n", &val);
 	if (!ret)
 		return -EINVAL;
-	dev_info(dev, "PWM_0 : %s [%d]\n", __func__, val);
+	dev_dbg(dev, "PWM_0 : %s [%d]\n", __func__, val);
 
 	mutex_lock(&ctrl->mutex);
 	if (val) {
@@ -94,7 +94,7 @@ static ssize_t set_duty0(struct device *dev,
 		dev_err(dev, "PWM_0 : Invalid param. Duty cycle range is 0 to 100\n");
 		return count;
 	}
-	dev_info(dev, "PWM_0 : %s [%d]\n", __func__, val);
+	dev_dbg(dev, "PWM_0 : %s [%d]\n", __func__, val);
 	ctrl->duty0 = val;
 
 	mutex_lock(&ctrl->mutex);
@@ -139,7 +139,7 @@ static ssize_t set_freq0(struct device *dev,
 		dev_err(dev, "PWM_0 : Invalid param. Frequency range is 46Hz to 1MHz\n");
 		return count;
 	}
-	dev_info(dev, "PWM_0 : %s [%d]\n", __func__, val);
+	dev_dbg(dev, "PWM_0 : %s [%d]\n", __func__, val);
 	ctrl->freq0 = val;
 
 	mutex_lock(&ctrl->mutex);
@@ -197,7 +197,7 @@ static ssize_t set_enable1(struct device *dev,
 	if (!ret)
 		return -EINVAL;
 
-	dev_info(dev, "PWM_1 : %s [%d]\n", __func__, val);
+	dev_dbg(dev, "PWM_1 : %s [%d]\n", __func__, val);
 	mutex_lock(&ctrl->mutex);
 	if (val) {
 		ctrl->pwm1_status = 1;
@@ -245,7 +245,7 @@ static	ssize_t set_duty1(
 		dev_err(dev, "PWM_1 : Invalid param. Duty cycle range is 0 to 100\n");
 		return count;
 	}
-	dev_info(dev, "PWM_1 : %s [%d]\n", __func__, val);
+	dev_dbg(dev, "PWM_1 : %s [%d]\n", __func__, val);
 	ctrl->duty1 = val;
 
 	mutex_lock(&ctrl->mutex);
@@ -290,7 +290,7 @@ static ssize_t set_freq1(struct device *dev,
 		dev_err(dev, "PWM_1 : Invalid param. Frequency range is 46Hz to 1MHz\n");
 		return count;
 	}
-	dev_info(dev, "PWM_1 : %s [%d]\n", __func__, val);
+	dev_dbg(dev, "PWM_1 : %s [%d]\n", __func__, val);
 	ctrl->freq1 = val;
 
 	mutex_lock(&ctrl->mutex);
@@ -333,7 +333,7 @@ static struct attribute_group pwm1_ctrl_attr_group = {
 static int pwm_ctrl_resume(struct platform_device *dev)
 {
 #if defined(DEBUG_PM_MSG)
-	dev_info(dev, "%s\n", __func__);
+	dev_dbg(dev, "%s\n", __func__);
 #endif
 	return  0;
 }

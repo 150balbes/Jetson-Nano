@@ -20,6 +20,11 @@ menuconfig SND_ODROID_DAC
 	depends on SND_AML_M8_SOC
 	select SND_SOC_PCM5102
 
+menuconfig SND_ODROID_DAC2
+	tristate "ODROID HiFi-Shield2(pcm5242) Support"
+	depends on SND_AML_M8_SOC
+	select SND_SOC_PCM512x_I2C
+
 menuconfig SND_AML_G9TV
 	tristate "AML-SND-G9TV Board"
 	depends on SND_AML_M8_SOC && SWITCH

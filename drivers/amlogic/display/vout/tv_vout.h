@@ -119,12 +119,14 @@ static struct vmode_tvmode_tab_s mode_tab[] = {
 	{TVMODE_1366x768p60hz, VMODE_1366x768p60hz},
 	{TVMODE_1440x900p60hz, VMODE_1440x900p60hz},
 	{TVMODE_1600x900p60hz, VMODE_1600x900p60hz},
+	{TVMODE_1600x1200p60hz, VMODE_1600x1200p60hz},
 	{TVMODE_1680x1050p60hz, VMODE_1680x1050p60hz},
 	{TVMODE_1920x1200p60hz, VMODE_1920x1200p60hz},
 	{TVMODE_2560x1440p60hz, VMODE_2560x1440p60hz},
 	{TVMODE_2560x1600p60hz, VMODE_2560x1600p60hz},
 	{TVMODE_2560x1080p60hz, VMODE_2560x1080p60hz},
 	{TVMODE_3440x1440p60hz, VMODE_3440x1440p60hz},
+	{TVMODE_CUSTOMBUILT, VMODE_CUSTOMBUILT},
 };
 
 #ifdef CONFIG_AML_VOUT_FRAMERATE_AUTOMATION
@@ -1060,6 +1062,18 @@ static struct vinfo_s tv_info[] = {
 		.video_clk         = 108000000,
 	},
 	{
+		.name              = "1600x1200p60hz",
+		.mode              = TVMODE_1600x1200p60hz,
+		.width             = 1600,
+		.height            = 1200,
+		.field_height      = 1200,
+		.aspect_ratio_num  = 4,
+		.aspect_ratio_den  = 3,
+		.sync_duration_num = 60,
+		.sync_duration_den = 1,
+		.video_clk         = 156000000,
+	},
+	{
 		.name              = "1680x1050p60hz",
 		.mode              = TVMODE_1680x1050p60hz,
 		.width             = 1680,
@@ -1202,6 +1216,18 @@ static struct vinfo_s tv_info[] = {
 		.sync_duration_num = 60,
 		.sync_duration_den = 1,
 		.video_clk         = 148500000,
+	},
+	{
+		.name              = "custombuilt",
+		.mode              = TVMODE_CUSTOMBUILT,
+		.width             = 0,
+		.height            = 0,
+		.field_height      = 0,
+		.aspect_ratio_num  = 0,
+		.aspect_ratio_den  = 0,
+		.sync_duration_num = 0,
+		.sync_duration_den = 0,
+		.video_clk         = 0,
 	},
 };
 

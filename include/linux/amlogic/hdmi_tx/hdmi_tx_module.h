@@ -381,6 +381,7 @@ void phy_pll_off(void);
 
 extern int get_hpd_state(void);
 
+extern struct hdmi_cea_timing *get_custom_timing(void);
 
 /***********************************************************************
  *    hdmitx hardware level interface

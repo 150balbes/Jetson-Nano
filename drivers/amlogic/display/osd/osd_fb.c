@@ -43,6 +43,7 @@
 #include <linux/dma-mapping.h>
 /* Amlogic Headers */
 #include <linux/amlogic/vout/vout_notify.h>
+#include <linux/amlogic/hdmi_tx/hdmi_tx_module.h>
 
 /* Local Headers */
 #include "osd.h"
@@ -275,6 +276,10 @@ static struct fb_fix_screeninfo fb_def_fix = {
 	.accel      = FB_ACCEL_NONE,
 };
 
+#if defined(CONFIG_ARCH_MESON64_ODROIDC2)
+static int monitor_onoff_flag;
+#endif
+
 #ifdef CONFIG_HAS_EARLYSUSPEND
 #include <linux/earlysuspend.h>
 static struct early_suspend early_suspend;
@@ -298,6 +303,8 @@ static u32 fb_rmem_size[2];
 #if defined(CONFIG_ARCH_MESON64_ODROIDC2)
 static int osd_set_res_bootargs(int index, enum vmode_e mode)
 {
+	struct hdmi_cea_timing *custom_timing = get_custom_timing();
+
 	osd_log_info("%s : mode %d\n", __func__, mode);
 
 	/* FIXME : need to adjust this routine */
@@ -466,6 +473,13 @@ static int osd_set_res_bootargs(int index, enum vmode_e mode)
 		fb_def_var[index].yres = 1080;
 		fb_def_var[index].xres_virtual = 1920;
 		fb_def_var[index].yres_virtual = 3240;
+		fb_def_var[index].bits_per_pixel = 32;
+		break;
+	case TVMODE_CUSTOMBUILT:
+		fb_def_var[index].xres = custom_timing->h_active;
+		fb_def_var[index].yres = custom_timing->v_active;
+		fb_def_var[index].xres_virtual = custom_timing->h_active;
+		fb_def_var[index].yres_virtual = (custom_timing->v_active * 2);
 		fb_def_var[index].bits_per_pixel = 32;
 		break;
 	default:
@@ -1070,6 +1084,28 @@ static int osd_open(struct fb_info *info, int arg)
 int osd_blank(int blank_mode, struct fb_info *info)
 {
 	osd_enable_hw(info->node, (blank_mode != 0) ? 0 : 1);
+#if defined(CONFIG_ARCH_MESON64_ODROIDC2)
+	if (!monitor_onoff_flag)
+		return 0;
+
+	switch (blank_mode) {
+	/* Display: On; HSync: On, VSync: On */
+	case FB_BLANK_UNBLANK:
+		control_hdmiphy(1);
+		break;
+	/* Display: Off; HSync: Off, VSync: Off */
+	case FB_BLANK_POWERDOWN:
+		control_hdmiphy(0);
+		break;
+	/* Display: Off; HSync: On, VSync: On */
+	case FB_BLANK_NORMAL:
+	/* Display: Off; HSync: Off, VSync: On */
+	case FB_BLANK_HSYNC_SUSPEND:
+	/* Display: Off; HSync: On, VSync: Off */
+	case FB_BLANK_VSYNC_SUSPEND:
+		break;
+	}
+#endif
 	return 0;
 }
 
@@ -2098,6 +2134,19 @@ static inline int install_osd_reverse_info(struct osd_info_s *init_osd_info,
 	}
 	return 0;
 }
+
+#if defined(CONFIG_ARCH_MESON64_ODROIDC2)
+static int __init osd_setup_monitor_onoff(char *str)
+{
+	if (!strcmp(str, "true") || !strcmp(str, "1"))
+		monitor_onoff_flag = 1;
+	else
+		monitor_onoff_flag = 0;
+
+	return 0;
+}
+__setup("monitor_onoff=", osd_setup_monitor_onoff);
+#endif
 
 static int __init osd_info_setup(char *str)
 {

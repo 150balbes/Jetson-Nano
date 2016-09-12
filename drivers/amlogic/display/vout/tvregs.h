@@ -432,6 +432,9 @@ static const struct reg_s tvregs_vesa_1440x900p_enc[] = {
 static const struct reg_s tvregs_vesa_1600x900p_enc[] = {
 };
 
+static const struct reg_s tvregs_vesa_1600x1200p_enc[] = {
+};
+
 static const struct reg_s tvregs_vesa_1680x1050p_enc[] = {
 };
 
@@ -490,6 +493,7 @@ static struct tvregs_set_t tvregsTab[] = {
 	{TVMODE_1366x768p60hz, NULL, tvregs_vesa_1366x768p_enc},
 	{TVMODE_1440x900p60hz, NULL, tvregs_vesa_1440x900p_enc},
 	{TVMODE_1600x900p60hz, NULL, tvregs_vesa_1600x900p_enc},
+	{TVMODE_1600x1200p60hz, NULL, tvregs_vesa_1600x1200p_enc},
 	{TVMODE_1680x1050p60hz, NULL, tvregs_vesa_1680x1050p_enc},
 	{TVMODE_1920x1200p60hz, NULL, tvregs_vesa_1920x1200p_enc},
 	{TVMODE_VGA, tvregs_vga_640x480_clk, tvregs_vga_640x480_enc},
@@ -688,6 +692,12 @@ static const struct tvinfo_s tvinfoTab[] = {
 		.xres = 1600,
 		.yres = 900,
 		.id = "1600x900p60hz"
+	},
+	{
+		.tvmode = TVMODE_1600x1200p60hz,
+		.xres = 1600,
+		.yres = 1200,
+		.id = "1600x1200p60hz"
 	},
 	{
 		.tvmode = TVMODE_1680x1050p60hz,

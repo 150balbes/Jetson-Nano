@@ -283,7 +283,7 @@ static int meson_pwm_probe(struct platform_device *pdev)
 		dev_err(&pdev->dev, "pinmux error\n");
 		return -ENODEV;
 	}
-	dev_info(&pdev->dev, "pinctrl_name = %s\n", prop_name);
+	dev_dbg(&pdev->dev, "pinctrl_name = %s\n", prop_name);
 
 	meson_pwm_init(dev, npwm);
 

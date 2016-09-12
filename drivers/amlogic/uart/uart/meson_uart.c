@@ -557,7 +557,7 @@ static void meson_uart_set_termios(struct uart_port *port,
 	writel(val, port->membase + AML_UART_CONTROL);
 	spin_unlock_irqrestore(&port->lock, flags);
 
-	baud = uart_get_baud_rate(port, termios, old, 9600, 4000000);
+	baud = uart_get_baud_rate(port, termios, old, 110, 4000000);
 	meson_uart_change_speed(port, baud);
 
 	port->read_status_mask = AML_UART_RX_FIFO_OVERFLOW;
@@ -582,7 +582,7 @@ static int meson_uart_verify_port(struct uart_port *port,
 		ret = -EINVAL;
 	if (port->irq != ser->irq)
 		ret = -EINVAL;
-	if (ser->baud_base < 9600)
+	if (ser->baud_base < 110)
 		ret = -EINVAL;
 	return ret;
 }

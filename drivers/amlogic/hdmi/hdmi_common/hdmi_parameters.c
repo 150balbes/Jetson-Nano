@@ -17,6 +17,7 @@
 
 #include <linux/kernel.h>
 #include <linux/amlogic/hdmi_tx/hdmi_common.h>
+#include <linux/amlogic/hdmi_tx/hdmi_tx_module.h>
 
 static struct hdmi_format_para fmt_para_1920x1080p60_16x9 = {
 	.vic = HDMI_1920x1080p60_16x9,
@@ -1041,6 +1042,36 @@ static struct hdmi_format_para fmt_para_vesa_1600x900p60_16x9 = {
 	},
 };
 
+static struct hdmi_format_para fmt_para_vesa_1600x1200p60_4x3 = {
+	.vic = HDMIV_1600x1200p60hz,
+	.name = "1600x1200p60hz",
+	.pixel_repetition_factor = 0,
+	.progress_mode = 1,
+	.scrambler_en = 0,
+	.tmds_clk_div40 = 0,
+	.tmds_clk = 156000,
+	.timing = {
+		.pixel_freq = 156000,
+		.h_freq = 76200,
+		.v_freq = 60000,
+		.vsync_polarity = 0,
+		.hsync_polarity = 0,
+		.h_active = 1600,
+		.h_total = 2048,
+		.h_blank = 448,
+		.h_front = 32,
+		.h_sync = 160,
+		.h_back = 256,
+		.v_active = 1200,
+		.v_total = 1270,
+		.v_blank = 70,
+		.v_front = 10,
+		.v_sync = 8,
+		.v_back = 52,
+		.v_sync_ln = 1,
+	},
+};
+
 static struct hdmi_format_para fmt_para_vesa_1680x1050p60_8x5 = {
 	.vic = HDMIV_1680x1050p60hz,
 	.name = "1680x1050p60hz",
@@ -1221,6 +1252,177 @@ static struct hdmi_format_para fmt_para_vesa_3440x1440p60_43x18 = {
 	},
 };
 
+#if defined(CONFIG_ARCH_MESON64_ODROIDC2)
+static struct hdmi_format_para fmt_para_custombuilt = {
+	.vic = HDMIV_CUSTOMBUILT,
+	.name = "custombuilt",
+	.pixel_repetition_factor = 0,
+	.scrambler_en = 0,
+	.tmds_clk_div40 = 0,
+};
+
+struct modeline_table {
+	/* resolutions */
+	unsigned int horpixels;
+	unsigned int verpixels;
+	/* clock and frequency */
+	unsigned int pixel_clock;
+	unsigned int hor_freq;
+	unsigned int ver_freq;
+	/* htimings */
+	unsigned int hdisp;
+	unsigned int hsyncstart;
+	unsigned int hsyncend;
+	unsigned int htotal;
+	/* vtiminigs */
+	unsigned int vdisp;
+	unsigned int vsyncstart;
+	unsigned int vsyncend;
+	unsigned int vtotal;
+	/* polarity and scan mode */
+	unsigned int hsync_polarity; /* 1:+hsync,0:-hsync */
+	unsigned int vsync_polarity; /* 1:+vsync,0:-vsync */
+	unsigned int progress_mode; /* 1: progress, 0: interlaced */
+};
+
+void debug_modeline(struct modeline_table tbl)
+{
+	pr_info("modeline - horpixels %d\n", tbl.horpixels);
+	pr_info("modeline - verpixels %d\n", tbl.verpixels);
+	pr_info("modeline - pixel_clock %d\n", tbl.pixel_clock);
+	pr_info("modeline - hor_freq %d\n", tbl.hor_freq);
+	pr_info("modeline - ver_freq %d\n", tbl.ver_freq);
+	pr_info("modeline - hdisp %d\n", tbl.hdisp);
+	pr_info("modeline - hsyncstart %d\n", tbl.hsyncstart);
+	pr_info("modeline - hsyncend %d\n", tbl.hsyncend);
+	pr_info("modeline - htotal %d\n", tbl.htotal);
+	pr_info("modeline - vdisp %d\n", tbl.vdisp);
+	pr_info("modeline - vsyncstart %d\n", tbl.vsyncstart);
+	pr_info("modeline - vsyncend %d\n", tbl.vsyncend);
+	pr_info("modeline - vtotal %d\n", tbl.vtotal);
+	pr_info("modeline - hsync_polarity %d\n", tbl.hsync_polarity);
+	pr_info("modeline - vsync_polarity %d\n", tbl.vsync_polarity);
+	pr_info("modeline - progress_mode %d\n", tbl.progress_mode);
+}
+
+void debug_hdmi_fmt_param(struct hdmi_format_para param)
+{
+	pr_info("fmt_para - vic %d\n", param.vic);
+	pr_info("fmt_para - name %s\n", param.name);
+	pr_info("fmt_para - pixel_repetition_factor %d\n",
+		param.pixel_repetition_factor);
+	pr_info("fmt_para - progress mode %d\n", param.progress_mode);
+	pr_info("fmt_para - scrambler_en %d\n", param.scrambler_en);
+	pr_info("fmt_para - tmds_clk_div40 %d\n", param.tmds_clk_div40);
+	pr_info("fmt_para - tmds_clk %d\n", param.tmds_clk);
+	pr_info("fmt_para - pixel_freq %d\n", param.timing.pixel_freq);
+	pr_info("fmt_para - h_freq %d\n", param.timing.h_freq);
+	pr_info("fmt_para - v_freq %d\n", param.timing.v_freq);
+	pr_info("fmt_para - hsync_polarity %d\n", param.timing.hsync_polarity);
+	pr_info("fmt_para - vsync_polarity %d\n", param.timing.vsync_polarity);
+	pr_info("fmt_para - h_active %d\n", param.timing.h_active);
+	pr_info("fmt_para - h_total %d\n", param.timing.h_total);
+	pr_info("fmt_para - h_blank %d\n", param.timing.h_blank);
+	pr_info("fmt_para - h_front %d\n", param.timing.h_front);
+	pr_info("fmt_para - h_sync %d\n", param.timing.h_sync);
+	pr_info("fmt_para - h_back %d\n", param.timing.h_back);
+	pr_info("fmt_para - v_active %d\n", param.timing.v_active);
+	pr_info("fmt_para - v_total %d\n", param.timing.v_total);
+	pr_info("fmt_para - v_blank %d\n", param.timing.v_blank);
+	pr_info("fmt_para - v_front %d\n", param.timing.v_front);
+	pr_info("fmt_para - v_sync %d\n", param.timing.v_sync);
+	pr_info("fmt_para - v_back %d\n", param.timing.v_back);
+}
+
+/*
+ * assuming modeline information from command line is as following.
+ * setenv modeline
+ * "horpixels,verpixels,pixel_clock,hor_freq,ver_freq
+ * ,hdisp,hsyncstart,hsyncend,htotal,vdisp,vsyncstart,vsyncend,vtotal
+ * ,hsync_polarity,vsync_polarity,progress_mode"
+ */
+static int __init setup_modeline(char *s)
+{
+	struct hdmi_cea_timing *custom_timing;
+	struct modeline_table tbl;
+	unsigned int *buf;
+	char *item = NULL;
+	unsigned long temp = 0;
+	int ret;
+	int i = 0;
+
+	/* 1. parsing modeline information from command line */
+	buf = (unsigned int *)&(tbl.horpixels);
+
+	while (s != NULL) {
+		item = strsep(&s, ",");
+		ret = kstrtoul(item, 0, &temp);
+		*(buf + i) = temp;
+		i++;
+		pr_info("modeline parsing - %ld\n", temp);
+	}
+
+	/* check parameters */
+	debug_modeline(tbl);
+
+	/* 2. build hdmi_format_para */
+	fmt_para_custombuilt.progress_mode = tbl.progress_mode;
+
+	fmt_para_custombuilt.tmds_clk = tbl.pixel_clock;
+	fmt_para_custombuilt.timing.pixel_freq = tbl.pixel_clock;
+
+	fmt_para_custombuilt.timing.h_freq = tbl.hor_freq;
+	fmt_para_custombuilt.timing.v_freq = (tbl.ver_freq * 1000);
+
+	/* check prototype of command line */
+	fmt_para_custombuilt.timing.hsync_polarity = tbl.hsync_polarity;
+	fmt_para_custombuilt.timing.vsync_polarity = tbl.vsync_polarity;
+
+	/* h_active = hdisp */
+	fmt_para_custombuilt.timing.h_active = tbl.hdisp;
+	/* h_total = htotal */
+	fmt_para_custombuilt.timing.h_total =  tbl.htotal;
+	/* h_blank = htotal - hdisp */
+	fmt_para_custombuilt.timing.h_blank = tbl.htotal - tbl.hdisp;
+	/* h_front = hsyncstart - hdisp */
+	fmt_para_custombuilt.timing.h_front = tbl.hsyncstart - tbl.hdisp;
+	/* h_sync = hsyncend - hsyncstart */
+	fmt_para_custombuilt.timing.h_sync = tbl.hsyncend - tbl.hsyncstart;
+	/* h_back = (h_blank - (h_front + h_sync))*/
+	fmt_para_custombuilt.timing.h_back
+		= fmt_para_custombuilt.timing.h_blank
+		- fmt_para_custombuilt.timing.h_front
+		- fmt_para_custombuilt.timing.h_sync;
+
+	/* v_active = vdisp */
+	fmt_para_custombuilt.timing.v_active = tbl.vdisp;
+	/* v_total = vtotal */
+	fmt_para_custombuilt.timing.v_total = tbl.vtotal;
+	/* v_blank = vtotal - vdisp */
+	fmt_para_custombuilt.timing.v_blank = tbl.vtotal - tbl.vdisp;
+	/* v_front = vsyncstart - vdisp */
+	fmt_para_custombuilt.timing.v_front = tbl.vsyncstart - tbl.vdisp;
+	/* v_sync = vsyncend - vsyncstart */
+	fmt_para_custombuilt.timing.v_sync = tbl.vsyncend - tbl.vsyncstart;
+	/* v_back = (v_blank - (v_front + v_sync)) */
+	fmt_para_custombuilt.timing.v_back
+		= fmt_para_custombuilt.timing.v_blank
+		- fmt_para_custombuilt.timing.v_front
+		- fmt_para_custombuilt.timing.v_sync;
+
+	/* check parameters */
+	debug_hdmi_fmt_param(fmt_para_custombuilt);
+
+	/* 3. copy custom-built timing information for backup */
+	custom_timing = get_custom_timing();
+	memcpy(custom_timing, &fmt_para_custombuilt.timing,
+		sizeof(fmt_para_custombuilt.timing));
+
+	return 0;
+}
+__setup("modeline=", setup_modeline);
+#endif /* CONFIG_ARCH_MESON64_ODROIDC2 */
+
 static struct hdmi_format_para *all_fmt_paras[] = {
 	&fmt_para_3840x2160p60_16x9,
 	&fmt_para_3840x2160p50_16x9,
@@ -1256,12 +1458,14 @@ static struct hdmi_format_para *all_fmt_paras[] = {
 	&fmt_para_vesa_1366x768p60_16x9,
 	&fmt_para_vesa_1440x900p60_8x5,
 	&fmt_para_vesa_1600x900p60_16x9,
+	&fmt_para_vesa_1600x1200p60_4x3,
 	&fmt_para_vesa_1680x1050p60_8x5,
 	&fmt_para_vesa_1920x1200p60_8x5,
 	&fmt_para_vesa_2560x1440p60_16x9,
 	&fmt_para_vesa_2560x1600p60_8x5,
 	&fmt_para_vesa_2560x1080p60_128x59,
 	&fmt_para_vesa_3440x1440p60_43x18,
+	&fmt_para_custombuilt,
 	NULL,
 };
 

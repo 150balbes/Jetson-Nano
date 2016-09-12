@@ -853,6 +853,32 @@ static const struct reg_s tvregs_vesa_1600x900p60hz[] = {
 	{MREG_END_MARKER, 0}
 };
 
+static const struct reg_s tvregs_vesa_1600x1200p60hz[] = {
+	{P_VENC_VDAC_SETTING, 0xff,},
+
+	{P_ENCP_VIDEO_EN, 0,},
+	{P_ENCI_VIDEO_EN, 0,},
+
+	{P_ENCP_VIDEO_MODE, 0x4040,},
+	{P_ENCP_VIDEO_MODE_ADV, 0x18,},
+	{P_ENCP_VIDEO_MAX_PXCNT, 0x7FF,},
+	{P_ENCP_VIDEO_MAX_LNCNT, 0x4F5,},
+	{P_ENCP_VIDEO_HAVON_BEGIN, 0x1A0,},
+	{P_ENCP_VIDEO_HAVON_END, 0x7DF,},
+	{P_ENCP_VIDEO_VAVON_BLINE, 0x3C,},
+	{P_ENCP_VIDEO_VAVON_ELINE, 0x4EB,},
+	{P_ENCP_VIDEO_HSO_BEGIN, 0x0,},
+	{P_ENCP_VIDEO_HSO_END, 0xA0,},
+	{P_ENCP_VIDEO_VSO_BEGIN, 0x1E,},
+	{P_ENCP_VIDEO_VSO_END, 0x32,},
+	{P_ENCP_VIDEO_VSO_BLINE, 0x0,},
+	{P_ENCP_VIDEO_VSO_ELINE, 0x8,},
+
+	{P_ENCP_VIDEO_EN, 1,},
+	{P_ENCI_VIDEO_EN, 0,},
+	{MREG_END_MARKER, 0}
+};
+
 static const struct reg_s tvregs_vesa_1680x1050p60hz[] = {
 	{P_VENC_VDAC_SETTING, 0xff,},
 	{P_ENCP_VIDEO_EN, 0,},
@@ -1050,6 +1076,7 @@ static struct vic_tvregs_set tvregsTab[] = {
 	{HDMIV_1366x768p60hz, tvregs_vesa_1366x768p60hz},
 	{HDMIV_1440x900p60hz, tvregs_vesa_1440x900p60hz},
 	{HDMIV_1600x900p60hz, tvregs_vesa_1600x900p60hz},
+	{HDMIV_1600x1200p60hz, tvregs_vesa_1600x1200p60hz},
 	{HDMIV_1680x1050p60hz, tvregs_vesa_1680x1050p60hz},
 	{HDMIV_1920x1200p60hz, tvregs_vesa_1920x1200p60hz},
 	{HDMIV_2560x1440p60hz, tvregs_2560x1440p60hz},
@@ -1074,16 +1101,58 @@ static const struct reg_s *tvregs_setting_mode(enum hdmi_vic vic)
 	return NULL;
 }
 
+void build_custom_vic_tvregs(void)
+{
+	struct hdmi_cea_timing *custom_timing = get_custom_timing();
+
+	hd_write_reg(P_VENC_VDAC_SETTING, 0xff);
+
+	hd_write_reg(P_ENCP_VIDEO_EN, 0);
+	hd_write_reg(P_ENCI_VIDEO_EN, 0);
+
+	hd_write_reg(P_ENCP_VIDEO_MODE, 0x4040);
+	hd_write_reg(P_ENCP_VIDEO_MODE_ADV, 0x18);
+
+	hd_write_reg(P_ENCP_VIDEO_MAX_PXCNT, (custom_timing->h_total - 1));
+	hd_write_reg(P_ENCP_VIDEO_MAX_LNCNT, (custom_timing->v_total - 1));
+
+	hd_write_reg(P_ENCP_VIDEO_HAVON_BEGIN, custom_timing->h_back);
+	hd_write_reg(P_ENCP_VIDEO_HAVON_END,
+		((custom_timing->h_back + custom_timing->h_active) - 1));
+	hd_write_reg(P_ENCP_VIDEO_VAVON_BLINE, custom_timing->v_back);
+	hd_write_reg(P_ENCP_VIDEO_VAVON_ELINE,
+		((custom_timing->v_back + custom_timing->v_active) - 1));
+
+	hd_write_reg(P_ENCP_VIDEO_HSO_BEGIN, 0);
+	hd_write_reg(P_ENCP_VIDEO_HSO_END, custom_timing->h_sync);
+	hd_write_reg(P_ENCP_VIDEO_VSO_BEGIN, 0x1E);
+	hd_write_reg(P_ENCP_VIDEO_VSO_END, 0x32);
+	hd_write_reg(P_ENCP_VIDEO_VSO_BLINE, 0x0);
+	hd_write_reg(P_ENCP_VIDEO_VSO_ELINE, custom_timing->v_sync);
+	hd_write_reg(P_ENCP_VIDEO_EN, 1);
+	hd_write_reg(P_ENCI_VIDEO_EN, 0);
+}
+
 void set_vmode_enc_hw(enum hdmi_vic vic)
 {
-	const struct reg_s *s = tvregs_setting_mode(vic);
-	/* Turn off VDAC, no need any more for HDMITX */
-	hd_set_reg_bits(P_VENC_VDAC_SETTING, 0x1f, 0, 5);
+	const struct reg_s *s;
 
-	if (s) {
-		pr_info("hdmitx: set enc for VIC: %d\n", vic);
-		while (MREG_END_MARKER != s->reg)
-			setreg(s++);
-	} else
-		pr_info("hdmitx: not find VIC: %d\n", vic);
+	if (vic != HDMIV_CUSTOMBUILT) {
+		s = tvregs_setting_mode(vic);
+
+		/* Turn off VDAC, no need any more for HDMITX */
+		hd_set_reg_bits(P_VENC_VDAC_SETTING, 0x1f, 0, 5);
+
+		if (s) {
+			pr_info("hdmitx: set enc for VIC: %d\n", vic);
+			while (MREG_END_MARKER != s->reg)
+				setreg(s++);
+		} else
+			pr_info("hdmitx: not find VIC: %d\n", vic);
+	} else {
+		/* Turn off VDAC, no need any more for HDMITX */
+		hd_set_reg_bits(P_VENC_VDAC_SETTING, 0x1f, 0, 5);
+
+		build_custom_vic_tvregs();
+	}
 }

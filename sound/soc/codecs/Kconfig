@@ -135,6 +135,8 @@ config SND_SOC_ALL_CODECS
 	select SND_SOC_DUMMY_CODEC
 	select SND_SOC_PCM2BT
 	select SND_SOC_PCM5102
+	select SND_SOC_PCM512x_I2C if I2C
+	select SND_SOC_PCM512x_SPI if SPI_MASTER
         help
           Normally ASoC codec drivers are only built if a machine driver which
           uses them is also built since they are only usable with a machine
@@ -566,3 +568,18 @@ config SND_SOC_PCM2BT
 
 config SND_SOC_PCM5102
 	tristate
+
+config SND_SOC_PCM512x
+	tristate
+
+config SND_SOC_PCM512x_I2C
+	tristate "Texas Instruments PCM512x CODECs - I2C"
+	depends on I2C
+	select SND_SOC_PCM512x
+	select REGMAP_I2C
+
+config SND_SOC_PCM512x_SPI
+	tristate "Texas Instruments PCM512x CODECs - SPI"
+	depends on SPI_MASTER
+	select SND_SOC_PCM512x
+	select REGMAP_SPI

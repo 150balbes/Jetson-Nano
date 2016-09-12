@@ -104,6 +104,14 @@ static struct hdmitx_dev hdmitx_device;
 static struct switch_dev sdev = { /* android ics switch device */
 	.name = "hdmi",
 };
+
+static struct hdmi_cea_timing custom_timing;
+struct hdmi_cea_timing *get_custom_timing(void)
+{
+	return &custom_timing;
+}
+EXPORT_SYMBOL(get_custom_timing);
+
 #ifdef CONFIG_HAS_EARLYSUSPEND
 #include <linux/earlysuspend.h>
 static void hdmitx_early_suspend(struct early_suspend *h)
@@ -220,6 +228,16 @@ static int hdmi_480p_force_clk; /* 200, 225, 250, 270 */
 static int hdmi_detect_when_booting = 1;
 /* 1: error  2: important  3: normal  4: detailed */
 static int debug_level = IMP;
+
+void control_hdmiphy(int on)
+{
+	if (on)
+		hdmitx_device.HWOp.CntlMisc(&hdmitx_device, MISC_TMDS_PHY_OP,
+			TMDS_PHY_ENABLE);
+	else
+		hdmitx_device.HWOp.CntlMisc(&hdmitx_device, MISC_TMDS_PHY_OP,
+			TMDS_PHY_DISABLE);
+}
 
 /*****************************
 *	hdmitx attr management :
@@ -979,12 +997,14 @@ const char *disp_mode_t[] = {
 	"1366x768p60hz",
 	"1440x900p60hz",
 	"1600x900p60hz",
+	"1600x1200p60hz",
 	"1680x1050p60hz",
 	"1920x1200p60hz",
 	"2560x1440p60hz",
 	"2560x1600p60hz",
 	"2560x1080p60hz",
 	"3440x1440p60hz",
+	"custombuilt",
 	NULL
 };
 

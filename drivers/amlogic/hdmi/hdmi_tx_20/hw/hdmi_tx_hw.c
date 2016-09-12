@@ -352,6 +352,7 @@ static struct hdmitx_clk hdmitx_clk[] = {
 	{HDMIV_1366x768p60hz, 24000, 858000, 85800, 85800, -1, 85800},
 	{HDMIV_1440x900p60hz, 24000, 1067000, 106700, 106700, -1, 106700},
 	{HDMIV_1600x900p60hz, 24000, 1080000, 108000, 108000, -1, 108000},
+	{HDMIV_1600x1200p60hz, 24000, 1560000, 156000, 156000, -1, 156000},
 	{HDMIV_1680x1050p60hz, 24000, 1463600, 146360, 146360, -1, 146360},
 	{HDMIV_1920x1200p60hz, 24000, 1540000, 154000, 154000, -1, 154000},
 	{HDMIV_2560x1440p60hz, 24000, 2415000, 241500, 241500, -1, 241500},
@@ -360,14 +361,31 @@ static struct hdmitx_clk hdmitx_clk[] = {
 	{HDMIV_3440x1440p60hz, 24000, 3197500, 319750, 319750, -1, 319750},
 };
 
+/* check the availability to handle pointer
+ * with local struct variable */
+struct hdmitx_clk custom_clk;
 static void set_vmode_clk(struct hdmitx_dev *hdev, enum hdmi_vic vic)
 {
 	int i;
 	struct hdmitx_clk *clk = NULL;
 
-	for (i = 0; i < ARRAY_SIZE(hdmitx_clk); i++) {
-		if (vic == hdmitx_clk[i].vic)
-			clk = &hdmitx_clk[i];
+	if (vic == HDMIV_CUSTOMBUILT) {
+		struct hdmi_cea_timing *timing = get_custom_timing();
+
+		custom_clk.vic = HDMIV_CUSTOMBUILT;
+		custom_clk.clk_sys = 24000;
+		custom_clk.clk_phy = (timing->pixel_freq * 10);
+		custom_clk.clk_vid = timing->pixel_freq;
+		custom_clk.clk_encp = timing->pixel_freq;
+		custom_clk.clk_enci = -1;
+		custom_clk.clk_pixel = timing->pixel_freq;
+
+		clk = &custom_clk;
+	} else {
+		for (i = 0; i < ARRAY_SIZE(hdmitx_clk); i++) {
+			if (vic == hdmitx_clk[i].vic)
+				clk = &hdmitx_clk[i];
+		}
 	}
 
 	if (!clk) {
@@ -1134,7 +1152,26 @@ static void hdmi_tvenc_set(struct hdmitx_vidpara *param)
 		vs_bline_odd = 0, vs_eline_odd = 0;
 	unsigned long vso_begin_evn = 0, vso_begin_odd = 0;
 
+	struct hdmi_cea_timing *custom_timing;
+
 	switch (param->VIC) {
+	case HDMIV_CUSTOMBUILT:
+		custom_timing = get_custom_timing();
+		INTERLACE_MODE      = 0;
+		PIXEL_REPEAT_VENC   = 0;
+		PIXEL_REPEAT_HDMI   = 0;
+		ACTIVE_PIXELS       = custom_timing->h_active;
+		ACTIVE_LINES        = custom_timing->v_active;
+		LINES_F0            = custom_timing->v_total;
+		LINES_F1            = custom_timing->v_total;
+		FRONT_PORCH         = custom_timing->h_front;
+		HSYNC_PIXELS        = custom_timing->h_sync;
+		BACK_PORCH          = custom_timing->h_back;
+		EOF_LINES           = custom_timing->v_front;
+		VSYNC_LINES         = custom_timing->v_sync;
+		SOF_LINES           = custom_timing->v_back;
+		TOTAL_FRAMES        = 4;
+		break;
 	case HDMI_3840x1080p120hz:
 		INTERLACE_MODE = 0;
 		PIXEL_REPEAT_VENC = 0;
@@ -1488,6 +1525,22 @@ static void hdmi_tvenc_set(struct hdmitx_vidpara *param)
 		EOF_LINES           = 1;
 		VSYNC_LINES         = 3;
 		SOF_LINES           = 96;
+		TOTAL_FRAMES        = 4;
+		break;
+	case HDMIV_1600x1200p60hz:
+		INTERLACE_MODE      = 0;
+		PIXEL_REPEAT_VENC   = 0;
+		PIXEL_REPEAT_HDMI   = 0;
+		ACTIVE_PIXELS       = 1600;
+		ACTIVE_LINES        = 1200;
+		LINES_F0            = 1270;
+		LINES_F1            = 1270;
+		FRONT_PORCH         = 32;
+		HSYNC_PIXELS        = 160;
+		BACK_PORCH          = 256;
+		EOF_LINES           = 10;
+		VSYNC_LINES         = 8;
+		SOF_LINES           = 52;
 		TOTAL_FRAMES        = 4;
 		break;
 	case HDMIV_1680x1050p60hz:
