@@ -279,4 +279,6 @@ struct hw_para_s {
 	u32 bot_type;
 };
 
+extern enum vmode_e get_initial_vmode(void);
+
 #endif /* _OSD_H_ */

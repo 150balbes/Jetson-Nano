@@ -159,8 +159,6 @@ static int init_pitch_v1(struct snd_usb_audio *chip, int iface,
 	unsigned char data[1];
 	int err;
 
-	if (get_iface_desc(alts)->bNumEndpoints < 1)
-		return -EINVAL;
 	ep = get_endpoint(alts, 0)->bEndpointAddress;
 
 	data[0] = 1;
@@ -243,17 +241,16 @@ static int start_endpoints(struct snd_usb_substream *subs, bool can_sleep)
 		struct snd_usb_endpoint *ep = subs->sync_endpoint;
 
 		if (subs->data_endpoint->iface != subs->sync_endpoint->iface ||
-		    subs->data_endpoint->altsetting != subs->sync_endpoint->altsetting) {
+		subs->data_endpoint->alt_idx != subs->sync_endpoint->alt_idx) {
 			err = usb_set_interface(subs->dev,
 						subs->sync_endpoint->iface,
-						subs->sync_endpoint->altsetting);
+						subs->sync_endpoint->alt_idx);
 			if (err < 0) {
-				clear_bit(SUBSTREAM_FLAG_SYNC_EP_STARTED, &subs->flags);
 				snd_printk(KERN_ERR
 					   "%d:%d:%d: cannot set interface (%d)\n",
 					   subs->dev->devnum,
 					   subs->sync_endpoint->iface,
-					   subs->sync_endpoint->altsetting, err);
+					   subs->sync_endpoint->alt_idx, err);
 				return -EIO;
 			}
 		}
@@ -283,6 +280,22 @@ static void stop_endpoints(struct snd_usb_substream *subs, bool wait)
 		snd_usb_endpoint_sync_pending_stop(subs->sync_endpoint);
 		snd_usb_endpoint_sync_pending_stop(subs->data_endpoint);
 	}
+}
+
+static int deactivate_endpoints(struct snd_usb_substream *subs)
+{
+	int reta, retb;
+
+	reta = snd_usb_endpoint_deactivate(subs->sync_endpoint);
+	retb = snd_usb_endpoint_deactivate(subs->data_endpoint);
+
+	if (reta < 0)
+		return reta;
+
+	if (retb < 0)
+		return retb;
+
+	return 0;
 }
 
 static int search_roland_implicit_fb(struct usb_device *dev, int ifnum,
@@ -582,7 +595,6 @@ static int configure_sync_endpoint(struct snd_usb_substream *subs)
 						   subs->pcm_format,
 						   subs->channels,
 						   subs->period_bytes,
-						   0, 0,
 						   subs->cur_rate,
 						   subs->cur_audiofmt,
 						   NULL);
@@ -619,7 +631,6 @@ static int configure_sync_endpoint(struct snd_usb_substream *subs)
 					  subs->pcm_format,
 					  sync_fp->channels,
 					  sync_period_bytes,
-					  0, 0,
 					  subs->cur_rate,
 					  sync_fp,
 					  NULL);
@@ -642,8 +653,6 @@ static int configure_endpoint(struct snd_usb_substream *subs)
 					  subs->pcm_format,
 					  subs->channels,
 					  subs->period_bytes,
-					  subs->period_frames,
-					  subs->buffer_periods,
 					  subs->cur_rate,
 					  subs->cur_audiofmt,
 					  subs->sync_endpoint);
@@ -680,8 +689,6 @@ static int snd_usb_hw_params(struct snd_pcm_substream *substream,
 
 	subs->pcm_format = params_format(hw_params);
 	subs->period_bytes = params_period_bytes(hw_params);
-	subs->period_frames = params_period_size(hw_params);
-	subs->buffer_periods = params_periods(hw_params);
 	subs->channels = params_channels(hw_params);
 	subs->cur_rate = params_rate(hw_params);
 
@@ -723,8 +730,7 @@ static int snd_usb_hw_free(struct snd_pcm_substream *substream)
 	down_read(&subs->stream->chip->shutdown_rwsem);
 	if (!subs->stream->chip->shutdown) {
 		stop_endpoints(subs, true);
-		snd_usb_endpoint_deactivate(subs->sync_endpoint);
-		snd_usb_endpoint_deactivate(subs->data_endpoint);
+		deactivate_endpoints(subs);
 	}
 	up_read(&subs->stream->chip->shutdown_rwsem);
 	return snd_pcm_lib_free_vmalloc_buffer(substream);
@@ -1357,7 +1363,6 @@ static void prepare_playback_urb(struct snd_usb_substream *subs,
 	frames = 0;
 	urb->number_of_packets = 0;
 	spin_lock_irqsave(&subs->lock, flags);
-	subs->frame_limit += ep->max_urb_frames;
 	for (i = 0; i < ctx->packets; i++) {
 		if (ctx->packet_size[i])
 			counts = ctx->packet_size[i];
@@ -1372,7 +1377,6 @@ static void prepare_playback_urb(struct snd_usb_substream *subs,
 		subs->transfer_done += counts;
 		if (subs->transfer_done >= runtime->period_size) {
 			subs->transfer_done -= runtime->period_size;
-			subs->frame_limit = 0;
 			period_elapsed = 1;
 			if (subs->fmt_type == UAC_FORMAT_TYPE_II) {
 				if (subs->transfer_done > 0) {
@@ -1395,10 +1399,10 @@ static void prepare_playback_urb(struct snd_usb_substream *subs,
 				break;
 			}
 		}
-		/* finish at the period boundary or after enough frames */
-		if ((period_elapsed ||
-				subs->transfer_done >= subs->frame_limit) &&
-		    !snd_usb_endpoint_implicit_feedback_sink(ep))
+		/* finish at the period boundary */
+		if (period_elapsed &&
+			!snd_usb_endpoint_implicit_feedback_sink(
+			subs->data_endpoint))
 			break;
 	}
 	bytes = frames * ep->stride;
@@ -1490,8 +1494,7 @@ static void retire_playback_urb(struct snd_usb_substream *subs,
 	 * on two reads of a counter updated every ms.
 	 */
 	if (abs(est_delay - subs->last_delay) * 1000 > runtime->rate * 2)
-		dev_dbg_ratelimited(&subs->dev->dev,
-			"delay: estimated %d, actual %d\n",
+		snd_printk(KERN_DEBUG "delay: estimated %d, actual %d\n",
 			est_delay, subs->last_delay);
 
 	if (!subs->running) {

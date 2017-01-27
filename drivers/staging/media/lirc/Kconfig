@@ -38,6 +38,18 @@ config LIRC_PARALLEL
 	help
 	  Driver for Homebrew Parallel Port Receivers
 
+config LIRC_ODROID
+	tristate "GPIO based IR Transmitter for ODROID"
+	depends on LIRC
+	help
+	  Say Y if you want to use GPIO-based IR transmitter
+	  connected on one of 40pin connector of ODROID-C1/C2.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called lirc_odroid.
+
+	  If unsure, say N.
+
 config LIRC_SASEM
 	tristate "Sasem USB IR Remote"
 	depends on LIRC && USB

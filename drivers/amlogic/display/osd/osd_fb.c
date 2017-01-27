@@ -212,11 +212,11 @@ static struct fb_var_screeninfo fb_def_var[] = {
 		.yoffset         = 0,
 		.bits_per_pixel = 32,
 		.grayscale       = 0,
-		.red             = {0, 0, 0},
-		.green           = {0, 0, 0},
-		.blue            = {0, 0, 0},
-		.transp          = {0, 0, 0},
-		.nonstd          = 0,
+		.red             = {16, 8, 0},
+		.green           = {8, 8, 0},
+		.blue            = {0, 8, 0},
+		.transp          = {24, 0, 0},
+		.nonstd          = 1,
 		.activate        = FB_ACTIVATE_NOW,
 		.height          = -1,
 		.width           = -1,
@@ -845,8 +845,6 @@ static int osd_ioctl(struct fb_info *info, unsigned int cmd, unsigned long arg)
 		break;
 #endif
 	default:
-		osd_log_err("command 0x%x not supported (%s)\n",
-				cmd, current->comm);
 		return -1;
 	}
 	mutex_lock(&fbdev->lock);
@@ -2328,6 +2326,7 @@ static int osd_probe(struct platform_device *pdev)
 	int  index, bpp;
 	struct osd_fb_dev_s *fbdev = NULL;
 	enum vmode_e current_mode = VMODE_MASK;
+	enum vmode_e initial_mode = VMODE_MASK;
 	enum vmode_e logo_mode = VMODE_MASK;
 	int logo_index = -1;
 	const void *prop;
@@ -2408,9 +2407,15 @@ static int osd_probe(struct platform_device *pdev)
 	logo_mode = get_logo_vmode();
 	logo_index = osd_get_logo_index();
 	if (logo_mode >= VMODE_MAX) {
-		if (current_mode < VMODE_MASK)
+		initial_mode = get_initial_vmode();
+		if (initial_mode < VMODE_MAX) {
+			current_mode = initial_mode;
 			set_current_vmode(current_mode);
+		}
 		osd_init_hw(0);
+		if (current_mode < VMODE_MAX)
+			vout_notifier_call_chain(VOUT_EVENT_MODE_CHANGE,
+				&current_mode);
 	}
 
 	vinfo = get_current_vinfo();
@@ -2473,9 +2478,6 @@ static int osd_probe(struct platform_device *pdev)
 					fb_def_var[index].bits_per_pixel = 32;
 
 #else /* CONFIG_ARCH_MESON64_ODROIDC2 */
-
-				if (current_mode != logo_mode)
-					current_mode = logo_mode;
 
 				if (osd_set_res_bootargs(index, current_mode)) {
 					fb_def_var[index].xres =

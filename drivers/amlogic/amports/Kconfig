@@ -31,6 +31,7 @@ config AM_VIDEO
 	select AM_PTSMGR
 	select AM_TIMESYNC
 	select AM_PTSSERVER
+	select AM_VOUT
 	---help---
 	  Driver for video display.
 

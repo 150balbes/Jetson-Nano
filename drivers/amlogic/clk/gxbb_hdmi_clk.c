@@ -143,8 +143,9 @@ static struct amlogic_pll_rate_table hpll_phy_tbl[] = {
 	HPLL_FVCO_RATE(650000, 0x6c, 0x1, 2, 1),
 	HPLL_FVCO_RATE(518300, 0x56, 0x1, 2, 1),
 	HPLL_FVCO_RATE(398000, 0x42, 0x1, 2, 1),
-	HPLL_FVCO_RATE(270000, 0x5a, 0x1, 2, 2),
+	HPLL_FVCO_RATE(320000, 0x35, 0x1, 2, 1),
 	HPLL_FVCO_RATE(297600, 0x63, 0x1, 2, 2),
+	HPLL_FVCO_RATE(270000, 0x5a, 0x1, 2, 2),
 	HPLL_FVCO_RATE(252000, 0x54, 0x1, 2, 2),
 };
 
@@ -174,6 +175,7 @@ static struct vid_clk_table vid_clk_tbl[] = {
 	VID_CLK(65000,  650000, 0, 1, DIV_5, 1),
 	VID_CLK(51830,  518300, 0, 1, DIV_5, 1),
 	VID_CLK(39800,  398000, 0, 1, DIV_5, 1),
+	VID_CLK(32000,  320000, 0, 1, DIV_5, 1),
 	VID_CLK(29760,  297600, 0, 1, DIV_5, 1),
 	VID_CLK(54000,  270000, 0, 1, DIV_5, 0),
 	VID_CLK(25200,  252000, 0, 1, DIV_5, 1),
@@ -388,6 +390,18 @@ static int	hpll_clk_set(struct clk_hw *hw, unsigned long drate,
 		set_pll(rate_tbl);
 		pr_info("hpll reg: 0x%x\n",
 			readl(hiu_base + HHI_HDMI_PLL_CNTL));
+		break;
+	case 320000:
+		writel(0x58000235, hiu_base + HHI_HDMI_PLL_CNTL);
+		writel(0x00000000, hiu_base + HHI_HDMI_PLL_CNTL2);
+		writel(0x0d5c5091, hiu_base + HHI_HDMI_PLL_CNTL3);
+		writel(0x801da72c, hiu_base + HHI_HDMI_PLL_CNTL4);
+		writel(0x71486980, hiu_base + HHI_HDMI_PLL_CNTL5);
+		writel(0x00000e55, hiu_base + HHI_HDMI_PLL_CNTL6);
+		set_pll(rate_tbl);
+		pr_info("hpll reg: 0x%x\n",
+			readl(hiu_base + HHI_HDMI_PLL_CNTL));
+		hdmi_update_bits(HHI_HDMI_PLL_CNTL2, 0xffff, 0x4e00);
 		break;
 	case 518300:
 		writel(0x58000256, hiu_base + HHI_HDMI_PLL_CNTL);
@@ -860,6 +874,7 @@ static struct cts_encx_table cts_encp_tbl[] = {
 	CTS_XXX_TBL(65000, 65000, 1, 1),
 	CTS_XXX_TBL(51830, 51830, 1, 1),
 	CTS_XXX_TBL(39800, 39800, 1, 1),
+	CTS_XXX_TBL(32000, 32000, 1, 1),
 	CTS_XXX_TBL(29760, 29760, 1, 1),
 	CTS_XXX_TBL(25200, 25200, 1, 1),
 };
@@ -893,6 +908,7 @@ static struct cts_encx_table cts_pixel_tbl[] = {
 	CTS_XXX_TBL(65000, 65000, 1, 1),
 	CTS_XXX_TBL(51830, 51830, 1, 1),
 	CTS_XXX_TBL(39800, 39800, 1, 1),
+	CTS_XXX_TBL(32000, 32000, 1, 1),
 	CTS_XXX_TBL(27000, 54000, 1, 2),
 	CTS_XXX_TBL(27000, 21600, 4, 2),
 	CTS_XXX_TBL(29760, 29760, 1, 1),

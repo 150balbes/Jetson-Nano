@@ -42,6 +42,12 @@
                         &clk800_cfg>;
 	};
 
+	gpiomem {
+		compatible = "amlogic,meson-gpiomem";
+		reg = <0x0 0xc8834000 0x0 0x1000>;
+		status = "okay";
+	};
+
 	memory@00000000 {
                 device_type = "memory";
                 linux,usable-memory = <0x0 0x1000000 0x0 0x7f000000>;
@@ -647,6 +653,14 @@
 			sound-dai = <&pcm5102_codec>;
 		};
 	};
+
+	odroid_dac2{
+		compatible = "sound_card, odroid_dac2";
+		aml,sound_card = "ODROID-DAC2";
+		pinctrl-names = "odroid_i2s";
+		pinctrl-0 = <&audio_pins>;
+		status = "okay";
+	};
 	/* END OF AUDIO board specific */
 
 	aml_sensor0: aml-sensor@0 {
@@ -670,22 +684,22 @@
 
 			trips {
 				warm: trip-point@0 {
-					temperature = <90000>;
+					temperature = <85000>;
 					hysteresis = <1000>;
 					type = "passive";
 				};
 				control: trip-point@1 {
-					temperature = <100000>;
+					temperature = <90000>;
 					hysteresis = <1000>;
 					type = "passive";
 				};
 				hot: trip-point@2 {
-					temperature = <110000>;
+					temperature = <100000>;
 					hysteresis = <1000>;
 					type = "passive";
 				};
 				critical: trip-point@3 {
-					temperature = <115000>;
+					temperature = <105000>;
 					hysteresis = <1000>;
 					type = "critical";
 				};
@@ -698,13 +712,13 @@
 				};
 				cpufreq_cooling_map1 {
 					trip = <&hot>;
-					cooling-device = <&cpus 3 5>;
+					cooling-device = <&cpus 3 4>;
 					contribution = <100>;
 				};
 
 				cpucore_cooling_map {
 					trip = <&control>;
-					cooling-device = <&cpucore 0 3>;
+					cooling-device = <&cpucore 0 2>;
 					contribution = <1024>;
 				};
 				gpufreq_cooling_map0 {
@@ -813,6 +827,24 @@
 
 &i2c_b {
 	status = "okay";
+
+	/* Hardkernel I2C 3.5" Touchscreen */
+	/* drivers/input/sx865x.c */
+	sx865x: sx865x@49	{
+		status = "okay";
+		compatible = "semtech,sx8650";
+		reg = <0x49>;
+		#clock-cells = <0>;
+
+		/* H/W Pin control setup */
+		gpio-pendown = <&gpio GPIOY_7 0>;
+		gpio-reset   = <&gpio GPIOY_13 0 >;
+
+		/* platform data setup */
+		invert-x = <0>;
+		invert-y = <1>;
+		swap-xy = <1>;
+	};
 };
 
 &pinmux {

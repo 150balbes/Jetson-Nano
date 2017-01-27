@@ -133,6 +133,7 @@ static int high_priority_cmds[] = {
 #define DVFS_COUNT_MAX		13
 #define DVFS_COUNT_1536		6
 static unsigned long max_freq_dvfs;
+static unsigned char dvfs_vcck;
 #endif
 
 static struct scpi_opp *scpi_opps[MAX_DVFS_DOMAINS];
@@ -368,6 +369,9 @@ int scpi_dvfs_set_idx(u8 domain, u8 idx)
 	buf.dvfs_idx = idx;
 	buf.dvfs_domain = domain;
 
+	if (dvfs_vcck)
+		buf.dvfs_domain |= 0x80;
+
 	if (domain >= MAX_DVFS_DOMAINS)
 		return -EINVAL;
 
@@ -468,4 +472,22 @@ static int __init get_max_freq(char *str)
 	return 0;
 }
 __setup("max_freq=", get_max_freq);
+
+static int __init get_dvfs_vcck(char *str)
+{
+	if (NULL == str) {
+		dvfs_vcck = 0;
+		return -EINVAL;
+	}
+
+	if (!strcmp(str, "true") || !strcmp(str, "1"))
+		dvfs_vcck = 1;
+	else
+		dvfs_vcck = 0;
+
+	pr_info("[%s] dvfs_vcck : %d\n", __func__, dvfs_vcck);
+
+	return 0;
+}
+__setup("dvfs_vcck=", get_dvfs_vcck);
 #endif

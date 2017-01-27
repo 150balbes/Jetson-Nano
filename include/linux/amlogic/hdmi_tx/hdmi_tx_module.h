@@ -369,6 +369,7 @@ extern int hdmi_print_buf(char *buf, int len);
 extern void hdmi_set_audio_para(int para);
 
 extern void hdmitx_output_rgb(void);
+extern unsigned char hdmi_output_rgb;
 
 extern int get_cur_vout_index(void);
 extern const struct vinfo_s *hdmi_get_current_vinfo(void);

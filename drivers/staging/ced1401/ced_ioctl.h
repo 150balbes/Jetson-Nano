@@ -17,6 +17,7 @@
 #define __CED_IOCTL_H__
 
 #include <linux/ioctl.h>
+#include "use1401.h"
 
 /* dma modes, only MODE_CHAR and MODE_LINEAR are used in this driver */
 #define MODE_CHAR		0

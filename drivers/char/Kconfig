@@ -617,5 +617,14 @@ config TILE_SROM
 	  device appear much like a simple EEPROM, and knows
 	  how to partition a single ROM for multiple purposes.
 
+config MESON_GPIOMEM
+	tristate "/dev/gpiomem rootless GPIO access via mmap() on the Meson"
+	default m
+	---help---
+	  Provides users with root-free access to the GPIO registers
+	  on Meson platform. Calling mmap(/dev/gpiomem) will map the GPIO
+	  register page to the user's pointer. This drvier can allow to access
+	  gpio memory area in user account.
+
 endmenu
 

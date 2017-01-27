@@ -9,6 +9,7 @@
 ****************************************************************************/
 #ifndef __USE1401_H__
 #define __USE1401_H__
+#define LINUX
 #include "machine.h"
 
 /*  Some definitions to make things compatible. If you want to use Use1401 directly */

@@ -7,9 +7,10 @@ comment "Amlogic VECM Drivers"
 menu "Amlogic amvecm Driver"
 
 config AM_VECM
-        boolean "Amlogic amvecm driver"
-        default n
-        help
-                "Amlogic amvecm module init"
+	boolean "Amlogic amvecm driver"
+	depends on AM_VOUT
+	default n
+	help
+	  Amlogic amvecm module init
 
 endmenu

@@ -19,6 +19,7 @@ config ARM64
 	select COMMON_CLK
 	select CPU_PM if (SUSPEND || CPU_IDLE)
 	select DCACHE_WORD_ACCESS
+	select GENERIC_ALLOCATOR
 	select GENERIC_CLOCKEVENTS
 	select GENERIC_CLOCKEVENTS_BROADCAST if SMP
 	select GENERIC_CPU_AUTOPROBE
@@ -158,10 +159,11 @@ config ARCH_XGENE
 	  This enables support for AppliedMicro X-Gene SOC Family
 
 config ARCH_MESON64_ODROIDC2
-        bool "Hardkernel's ODROID-C2 board"
-        help
-          This enables support for the board ODROID-C2 of Hardkernel
-          which is based on ARMv8 SoC of AMLogic, Inc.
+	bool "Hardkernel's ODROID-C2 board"
+	select EFUSE
+	help
+	  This enables support for the board ODROID-C2 of Hardkernel
+	  which is based on ARMv8 SoC of AMLogic, Inc.
 
 endmenu
 

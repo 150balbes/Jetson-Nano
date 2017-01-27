@@ -396,6 +396,7 @@ static struct fbtft_device_display displays[] = {
 			.release = fbtft_device_pdev_release,
 			.platform_data = &(struct fbtft_platform_data) {
 #if defined(CONFIG_ARCH_MESON64_ODROIDC2)
+				.bgr = true,
 				.gpios = (const struct fbtft_gpio []) {
 					{ "reset", 247 }, /* GPX.19 */
 					{ "dc",    228 }, /* GPX.0  */

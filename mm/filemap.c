@@ -90,11 +90,6 @@ bool has_cma_page(struct page *page)
 	return false;
 }
 EXPORT_SYMBOL(has_cma_page);
-#else
-void wakeup_wq(bool has_cma) {; }
-EXPORT_SYMBOL(wakeup_wq);
-bool has_cma_page(struct page *page) {return false; }
-EXPORT_SYMBOL(has_cma_page);
 #endif
 /*
  * Shared mappings implemented 30.11.1994. It's not fully working yet,
