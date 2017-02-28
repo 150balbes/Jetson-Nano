@@ -229,13 +229,6 @@ cifs_do_create(struct inode *inode, struct dentry *direntry, unsigned int xid,
 				goto cifs_create_get_file_info;
 			}
 
-			if (S_ISDIR(newinode->i_mode)) {
-				CIFSSMBClose(xid, tcon, fid->netfid);
-				iput(newinode);
-				rc = -EISDIR;
-				goto out;
-			}
-
 			if (!S_ISREG(newinode->i_mode)) {
 				/*
 				 * The server may allow us to open things like
@@ -406,14 +399,10 @@ cifs_create_set_dentry:
 	if (rc != 0) {
 		cifs_dbg(FYI, "Create worked, get_inode_info failed rc = %d\n",
 			 rc);
-		goto out_err;
+		if (server->ops->close)
+			server->ops->close(xid, tcon, fid);
+		goto out;
 	}
-
-	if (S_ISDIR(newinode->i_mode)) {
-		rc = -EISDIR;
-		goto out_err;
-	}
-
 	d_drop(direntry);
 	d_add(direntry, newinode);
 
@@ -421,13 +410,6 @@ out:
 	kfree(buf);
 	kfree(full_path);
 	return rc;
-
-out_err:
-	if (server->ops->close)
-		server->ops->close(xid, tcon, fid);
-	if (newinode)
-		iput(newinode);
-	goto out;
 }
 
 int

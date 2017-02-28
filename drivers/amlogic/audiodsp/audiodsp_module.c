@@ -14,6 +14,7 @@
  * more details.
  *
 */
+#define pr_fmt(fmt) "audio_dsp: " fmt
 
 #include <linux/version.h>
 #include <linux/module.h>
@@ -784,10 +785,11 @@ static ssize_t digital_raw_store(struct class *class,
 	return count;
 }
 
-#define SUPPORT_TYPE_NUM  9
+#define SUPPORT_TYPE_NUM  10
 static unsigned char *codec_str[SUPPORT_TYPE_NUM] = {
 	"2 CH PCM", "DTS RAW Mode", "Dolby Digital", "DTS",
-	"DD+", "DTSHD", "8 CH PCM", "TrueHD", "DTSLL"
+	"DD+", "DTS-HD", "8 CH PCM", "TrueHD", "DTS-HD MA",
+	"HIGH_SR_Stereo_PCM"
 };
 
 static ssize_t digital_codec_show(struct class *cla,
@@ -1122,7 +1124,7 @@ static struct class_attribute audiodsp_attrs[] = {
 	       codec_fatal_err_show, codec_fatal_err_store),
 	/* __ATTR_RO(swap_buf_ptr), */
 	/* __ATTR_RO(dsp_working_status), */
-	__ATTR(digital_raw, 0666, digital_raw_show,
+	__ATTR(digital_raw, S_IRUGO | S_IWUSR | S_IWGRP, digital_raw_show,
 	       digital_raw_store),
 	__ATTR(digital_codec, S_IRUGO | S_IWUSR | S_IWGRP, digital_codec_show,
 	       digital_codec_store),

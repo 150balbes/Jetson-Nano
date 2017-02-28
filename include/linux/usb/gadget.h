@@ -555,7 +555,7 @@ struct usb_gadget {
 	struct device			dev;
 	unsigned			out_epnum;
 	unsigned			in_epnum;
-
+	void		*priv_data;
 	unsigned			sg_supported:1;
 	unsigned			is_otg:1;
 	unsigned			is_a_peripheral:1;
@@ -923,7 +923,7 @@ extern int usb_add_gadget_udc(struct device *parent, struct usb_gadget *gadget);
 extern void usb_del_gadget_udc(struct usb_gadget *gadget);
 extern int udc_attach_driver(const char *name,
 		struct usb_gadget_driver *driver);
-
+extern int android_usb_init(void);
 /*-------------------------------------------------------------------------*/
 
 /* utility to simplify dealing with string descriptors */

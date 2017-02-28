@@ -18,9 +18,10 @@
 
 #ifndef _VINFO_H_
 #define _VINFO_H_
+#include <linux/amlogic/tvin/tvin.h>
 
-/* the MSB is represent vmode set by logo */
-#define	VMODE_LOGO_BIT_MASK	0x8000
+/* the MSB is represent vmode set by vmode_init */
+#define	VMODE_INIT_BIT_MASK	0x8000
 #define	VMODE_MODE_BIT_MASK	0xff
 
 enum vmode_e {
@@ -35,16 +36,33 @@ enum vmode_e {
 	VMODE_576P,
 	VMODE_576P_RPT,
 	VMODE_720P,
-	VMODE_1080I,
-	VMODE_1080P,
 	VMODE_720P_50HZ,
+	VMODE_768P,
+	VMODE_768P_50HZ,
+	VMODE_1080I,
 	VMODE_1080I_50HZ,
+	VMODE_1080P,
+	VMODE_1080P_30HZ,
 	VMODE_1080P_50HZ,
+	VMODE_1080P_25HZ,
 	VMODE_1080P_24HZ,
 	VMODE_4K2K_30HZ,
 	VMODE_4K2K_25HZ,
 	VMODE_4K2K_24HZ,
 	VMODE_4K2K_SMPTE,
+	VMODE_4K2K_SMPTE_25HZ,
+	VMODE_4K2K_SMPTE_30HZ,
+	VMODE_4K2K_SMPTE_50HZ,
+	VMODE_4K2K_SMPTE_50HZ_Y420,
+	VMODE_4K2K_SMPTE_60HZ,
+	VMODE_4K2K_SMPTE_60HZ_Y420,
+	VMODE_4K2K_50HZ_Y420_10BIT,
+	VMODE_4K2K_60HZ_Y420_10BIT,
+	VMODE_4K2K_50HZ_Y422_10BIT,
+	VMODE_4K2K_60HZ_Y422_10BIT,
+	VMODE_4K2K_24HZ_Y444_10BIT,
+	VMODE_4K2K_25HZ_Y444_10BIT,
+	VMODE_4K2K_30HZ_Y444_10BIT,
 	VMODE_4K2K_FAKE_5G,
 	VMODE_4K2K_60HZ,
 	VMODE_4K2K_60HZ_Y420,
@@ -59,25 +77,6 @@ enum vmode_e {
 	VMODE_4K05K_240HZ_Y420,
 	VMODE_4K05K_200HZ,
 	VMODE_4K05K_200HZ_Y420,
-	VMODE_640x480p60hz,
-	VMODE_800x480p60hz,
-	VMODE_480x800p60hz,
-	VMODE_800x600p60hz,
-	VMODE_1024x600p60hz,
-	VMODE_1024x768p60hz,
-	VMODE_1280x800p60hz,
-	VMODE_1280x1024p60hz,
-	VMODE_1360x768p60hz,
-	VMODE_1366x768p60hz,
-	VMODE_1440x900p60hz,
-	VMODE_1600x900p60hz,
-	VMODE_1600x1200p60hz,
-	VMODE_1680x1050p60hz,
-	VMODE_1920x1200p60hz,
-	VMODE_2560x1440p60hz,
-	VMODE_2560x1600p60hz,
-	VMODE_2560x1080p60hz,
-	VMODE_3440x1440p60hz,
 	VMODE_VGA,
 	VMODE_SVGA,
 	VMODE_XGA,
@@ -85,11 +84,6 @@ enum vmode_e {
 	VMODE_WSXGA,
 	VMODE_FHDVGA,
 	VMODE_LCD,
-	VMODE_LVDS_1080P,
-	VMODE_LVDS_1080P_50HZ,
-	VMODE_LVDS_768P,
-	VMODE_VX1_4K2K_60HZ,
-	VMODE_CUSTOMBUILT,
 	VMODE_MAX,
 	VMODE_INIT_NULL,
 	VMODE_MASK = 0xFF,
@@ -107,16 +101,33 @@ enum tvmode_e {
 	TVMODE_576P,
 	TVMODE_576P_RPT,
 	TVMODE_720P,
-	TVMODE_1080I,
-	TVMODE_1080P,
 	TVMODE_720P_50HZ,
+	TVMODE_768P,
+	TVMODE_768P_50HZ,
+	TVMODE_1080I,
 	TVMODE_1080I_50HZ,
+	TVMODE_1080P,
+	TVMODE_1080P_30HZ,
 	TVMODE_1080P_50HZ,
+	TVMODE_1080P_25HZ,
 	TVMODE_1080P_24HZ,
 	TVMODE_4K2K_30HZ,
 	TVMODE_4K2K_25HZ,
 	TVMODE_4K2K_24HZ,
 	TVMODE_4K2K_SMPTE,
+	TVMODE_4K2K_SMPTE_25HZ,
+	TVMODE_4K2K_SMPTE_30HZ,
+	TVMODE_4K2K_SMPTE_50HZ,
+	TVMODE_4K2K_SMPTE_50HZ_Y420,
+	TVMODE_4K2K_SMPTE_60HZ,
+	TVMODE_4K2K_SMPTE_60HZ_Y420,
+	TVMODE_4K2K_50HZ_Y420_10BIT,
+	TVMODE_4K2K_60HZ_Y420_10BIT,
+	TVMODE_4K2K_50HZ_Y422_10BIT,
+	TVMODE_4K2K_60HZ_Y422_10BIT,
+	TVMODE_4K2K_24HZ_Y444_10BIT,
+	TVMODE_4K2K_25HZ_Y444_10BIT,
+	TVMODE_4K2K_30HZ_Y444_10BIT,
 	TVMODE_4K2K_FAKE_5G,
 	TVMODE_4K2K_60HZ,
 	TVMODE_4K2K_60HZ_Y420,
@@ -131,38 +142,37 @@ enum tvmode_e {
 	TVMODE_4K05K_240HZ_Y420,
 	TVMODE_4K05K_200HZ,
 	TVMODE_4K05K_200HZ_Y420,
-	TVMODE_640x480p60hz,
-	TVMODE_800x480p60hz,
-	TVMODE_480x800p60hz,
-	TVMODE_800x600p60hz,
-	TVMODE_1024x600p60hz,
-	TVMODE_1024x768p60hz,
-	TVMODE_1280x800p60hz,
-	TVMODE_1280x1024p60hz,
-	TVMODE_1360x768p60hz,
-	TVMODE_1366x768p60hz,
-	TVMODE_1440x900p60hz,
-	TVMODE_1600x900p60hz,
-	TVMODE_1600x1200p60hz,
-	TVMODE_1680x1050p60hz,
-	TVMODE_1920x1200p60hz,
-	TVMODE_2560x1440p60hz,
-	TVMODE_2560x1600p60hz,
-	TVMODE_2560x1080p60hz,
-	TVMODE_3440x1440p60hz,
 	TVMODE_VGA ,
 	TVMODE_SVGA,
 	TVMODE_XGA,
 	TVMODE_SXGA,
 	TVMODE_WSXGA,
 	TVMODE_FHDVGA,
-	TVMODE_CUSTOMBUILT,
 	TVMODE_MAX
+};
+
+#define SUPPORT_2020	0x01
+
+/* master_display_info for display device */
+struct master_display_info_s {
+	u32 present_flag;
+	u32 features;			/* feature bits bt2020/2084 */
+	u32 primaries[3][2];		/* normalized 50000 in G,B,R order */
+	u32 white_point[2];		/* normalized 50000 */
+	u32 luminance[2];		/* max/min lumin, normalized 10000 */
+};
+
+struct hdr_info {
+	u32 hdr_support; /* RX EDID hdr support types */
+	u32 lumi_max; /* RX EDID Lumi Max value */
+	u32 lumi_avg; /* RX EDID Lumi Avg value */
+	u32 lumi_min; /* RX EDID Lumi Min value */
 };
 
 struct vinfo_s {
 	char *name;
 	enum vmode_e mode;
+	char ext_name[32];
 	u32 width;
 	u32 height;
 	u32 field_height;
@@ -173,6 +183,12 @@ struct vinfo_s {
 	u32 screen_real_width;
 	u32 screen_real_height;
 	u32 video_clk;
+	enum tvin_color_fmt_e viu_color_fmt;
+	struct hdr_info hdr_info;
+	struct master_display_info_s
+		master_display_info;
+	/* update hdmitx hdr packet, if data is NULL, disalbe packet */
+	void (*fresh_tx_hdr_pkt)(struct master_display_info_s *data);
 };
 
 struct disp_rect_s {
@@ -207,4 +223,10 @@ enum fine_tune_mode_e {
 	DOWN_HPLL,
 };
 #endif
+
+extern enum vmode_e vmode_name_to_mode(const char *);
+extern struct vinfo_s *get_invalid_vinfo(void);
+extern const char *vmode_mode_to_name(enum vmode_e vmode);
+extern struct vinfo_hdr *get_rx_hdr_info(void);
+
 #endif /* _VINFO_H_ */

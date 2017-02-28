@@ -1451,8 +1451,6 @@ static void i9xx_enable_pll(struct intel_crtc *crtc)
 
 	I915_WRITE(reg, dpll);
 
-	I915_WRITE(reg, dpll);
-
 	/* Wait for the clocks to stabilize. */
 	POSTING_READ(reg);
 	udelay(150);
@@ -5590,14 +5588,12 @@ static void ironlake_init_pch_refclk(struct drm_device *dev)
 	struct drm_i915_private *dev_priv = dev->dev_private;
 	struct drm_mode_config *mode_config = &dev->mode_config;
 	struct intel_encoder *encoder;
-	int i;
 	u32 val, final;
 	bool has_lvds = false;
 	bool has_cpu_edp = false;
 	bool has_panel = false;
 	bool has_ck505 = false;
 	bool can_ssc = false;
-	bool using_ssc_source = false;
 
 	/* We need to take the global config into account */
 	list_for_each_entry(encoder, &mode_config->encoder_list,
@@ -5623,22 +5619,8 @@ static void ironlake_init_pch_refclk(struct drm_device *dev)
 		can_ssc = true;
 	}
 
-	/* Check if any DPLLs are using the SSC source */
-	for (i = 0; i < dev_priv->num_shared_dpll; i++) {
-		u32 temp = I915_READ(PCH_DPLL(i));
-
-		if (!(temp & DPLL_VCO_ENABLE))
-			continue;
-
-		if ((temp & PLL_REF_INPUT_MASK) ==
-		    PLLB_REF_INPUT_SPREADSPECTRUMIN) {
-			using_ssc_source = true;
-			break;
-		}
-	}
-
-	DRM_DEBUG_KMS("has_panel %d has_lvds %d has_ck505 %d using_ssc_source %d\n",
-		      has_panel, has_lvds, has_ck505, using_ssc_source);
+	DRM_DEBUG_KMS("has_panel %d has_lvds %d has_ck505 %d\n",
+		      has_panel, has_lvds, has_ck505);
 
 	/* Ironlake: try to setup display ref clock before DPLL
 	 * enabling. This is only under driver's control after
@@ -5675,9 +5657,9 @@ static void ironlake_init_pch_refclk(struct drm_device *dev)
 				final |= DREF_CPU_SOURCE_OUTPUT_NONSPREAD;
 		} else
 			final |= DREF_CPU_SOURCE_OUTPUT_DISABLE;
-	} else if (using_ssc_source) {
-		final |= DREF_SSC_SOURCE_ENABLE;
-		final |= DREF_SSC1_ENABLE;
+	} else {
+		final |= DREF_SSC_SOURCE_DISABLE;
+		final |= DREF_CPU_SOURCE_OUTPUT_DISABLE;
 	}
 
 	if (final == val)
@@ -5724,7 +5706,7 @@ static void ironlake_init_pch_refclk(struct drm_device *dev)
 		POSTING_READ(PCH_DREF_CONTROL);
 		udelay(200);
 	} else {
-		DRM_DEBUG_KMS("Disabling CPU source output\n");
+		DRM_DEBUG_KMS("Disabling SSC entirely\n");
 
 		val &= ~DREF_CPU_SOURCE_OUTPUT_MASK;
 
@@ -5735,20 +5717,16 @@ static void ironlake_init_pch_refclk(struct drm_device *dev)
 		POSTING_READ(PCH_DREF_CONTROL);
 		udelay(200);
 
-		if (!using_ssc_source) {
-			DRM_DEBUG_KMS("Disabling SSC source\n");
+		/* Turn off the SSC source */
+		val &= ~DREF_SSC_SOURCE_MASK;
+		val |= DREF_SSC_SOURCE_DISABLE;
 
-			/* Turn off the SSC source */
-			val &= ~DREF_SSC_SOURCE_MASK;
-			val |= DREF_SSC_SOURCE_DISABLE;
+		/* Turn off SSC1 */
+		val &= ~DREF_SSC1_ENABLE;
 
-			/* Turn off SSC1 */
-			val &= ~DREF_SSC1_ENABLE;
-
-			I915_WRITE(PCH_DREF_CONTROL, val);
-			POSTING_READ(PCH_DREF_CONTROL);
-			udelay(200);
-		}
+		I915_WRITE(PCH_DREF_CONTROL, val);
+		POSTING_READ(PCH_DREF_CONTROL);
+		udelay(200);
 	}
 
 	BUG_ON(val != final);

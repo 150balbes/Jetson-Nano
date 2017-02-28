@@ -24,7 +24,6 @@
 #include <linux/amlogic/amports/amstream.h>
 #include <linux/amlogic/cpu_version.h>
 
-
 /* struct ve_dnlp_s          video_ve_dnlp; */
 
 #define FLAG_RSV31              (1 << 31)
@@ -41,8 +40,8 @@
 #define FLAG_VLOCK_EN          (1 << 20)
 #define FLAG_VE_DNLP_EN         (1 << 19)
 #define FLAG_VE_DNLP_DIS        (1 << 18)
-#define FLAG_RSV17              (1 << 17)
-#define FLAG_RSV16              (1 << 16)
+#define FLAG_VADJ1_CON			(1 << 17)
+#define FLAG_VADJ1_BRI			(1 << 16)
 #define FLAG_GAMMA_TABLE_EN     (1 << 15)
 #define FLAG_GAMMA_TABLE_DIS    (1 << 14)
 #define FLAG_GAMMA_TABLE_R      (1 << 13)
@@ -50,7 +49,7 @@
 #define FLAG_GAMMA_TABLE_B      (1 << 11)
 #define FLAG_RGB_OGO            (1 << 10)
 #define FLAG_RSV9               (1 <<  9)
-#define FLAG_RSV8               (1 <<  8)
+#define FLAG_MATRIX_UPDATE      (1 <<  8)
 #define FLAG_BRI_CON            (1 <<  7)
 #define FLAG_LVDS_FREQ_SW       (1 <<  6)
 #define FLAG_REG_MAP5           (1 <<  5)
@@ -72,6 +71,7 @@
 #define AMVECM_IOC_VE_DNLP_EN   _IO(_VE_CM, 0x23)
 #define AMVECM_IOC_VE_DNLP_DIS  _IO(_VE_CM, 0x24)
 #define AMVECM_IOC_VE_NEW_DNLP  _IOW(_VE_CM, 0x25, struct ve_dnlp_table_s)
+#define AMVECM_IOC_G_HIST_BIN   _IOW(_VE_CM, 0x26, struct vpp_hist_param_s)
 
 
 /* VPP.CM IOCTL command list */
@@ -140,7 +140,11 @@ static inline uint32_t READ_VPP_REG_BITS(uint32_t reg,
 	return val;
 }
 
+extern signed int vd1_brightness, vd1_contrast;
+
 extern void amvecm_on_vs(struct vframe_s *vf);
+extern void refresh_on_vs(struct vframe_s *vf);
+extern void pc_mode_process(void);
 
 #endif /* AMVECM_H */
 

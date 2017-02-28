@@ -28,10 +28,12 @@ TRACE_EVENT(mm_lru_insertion,
 
 	TP_PROTO(
 		struct page *page,
-		int lru
+		unsigned long pfn,
+		int lru,
+		unsigned long flags
 	),
 
-	TP_ARGS(page, lru),
+	TP_ARGS(page, pfn, lru, flags),
 
 	TP_STRUCT__entry(
 		__field(struct page *,	page	)
@@ -42,9 +44,9 @@ TRACE_EVENT(mm_lru_insertion,
 
 	TP_fast_assign(
 		__entry->page	= page;
-		__entry->pfn	= page_to_pfn(page);
+		__entry->pfn	= pfn;
 		__entry->lru	= lru;
-		__entry->flags	= trace_pagemap_flags(page);
+		__entry->flags	= flags;
 	),
 
 	/* Flag format is based on page-types.c formatting for pagemap */
@@ -62,9 +64,9 @@ TRACE_EVENT(mm_lru_insertion,
 
 TRACE_EVENT(mm_lru_activate,
 
-	TP_PROTO(struct page *page),
+	TP_PROTO(struct page *page, unsigned long pfn),
 
-	TP_ARGS(page),
+	TP_ARGS(page, pfn),
 
 	TP_STRUCT__entry(
 		__field(struct page *,	page	)
@@ -73,7 +75,7 @@ TRACE_EVENT(mm_lru_activate,
 
 	TP_fast_assign(
 		__entry->page	= page;
-		__entry->pfn	= page_to_pfn(page);
+		__entry->pfn	= pfn;
 	),
 
 	/* Flag format is based on page-types.c formatting for pagemap */

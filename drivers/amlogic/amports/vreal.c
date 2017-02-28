@@ -317,6 +317,7 @@ static irqreturn_t vreal_isr(int irq, void *dev_id)
 		/* pr_info("pts %d, picture type %d\n", vf->pts, pictype); */
 
 		info = READ_VREG(RV_PIC_INFO);
+		vf->signal_type = 0;
 		vf->index = buffer_index;
 		vf->width = info >> 16;
 		vf->height = (info >> 4) & 0xfff;
@@ -333,6 +334,7 @@ static irqreturn_t vreal_isr(int irq, void *dev_id)
 #endif
 		vf->canvas0Addr = vf->canvas1Addr = index2canvas(buffer_index);
 		vf->orientation = 0;
+		vf->type_original = vf->type;
 
 		vfbuf_use[buffer_index] = 1;
 
@@ -464,9 +466,10 @@ static void vreal_put_timer_func(unsigned long arg)
 	while (!kfifo_is_empty(&recycle_q) && (READ_VREG(TO_AMRISC) == 0)) {
 		struct vframe_s *vf;
 		if (kfifo_get(&recycle_q, &vf)) {
-			if ((vf->index >= 0) && (--vfbuf_use[vf->index] == 0)) {
+			if ((vf->index >= 0) && (vf->index < VF_BUF_NUM)
+				&& (--vfbuf_use[vf->index] == 0)) {
 				WRITE_VREG(TO_AMRISC, ~(1 << vf->index));
-				vf->index = -1;
+				vf->index = VF_BUF_NUM;
 			}
 
 			kfifo_put(&newframe_q, (const struct vframe_s *)vf);
@@ -509,7 +512,7 @@ static void vreal_canvas_init(void)
 	u32 canvas_width, canvas_height;
 	u32 decbuf_size, decbuf_y_size, decbuf_uv_size;
 	u32 disp_addr = 0xffffffff;
-
+	u32 buff_off = 0;
 	if (buf_size <= 0x00400000) {
 		/* SD only */
 		canvas_width = 768;
@@ -519,11 +522,49 @@ static void vreal_canvas_init(void)
 		decbuf_size = 0x100000;
 	} else {
 		/* HD & SD */
-		canvas_width = 1920;
+	#if 1
+		int w = vreal_amstream_dec_info.width;
+		int h = vreal_amstream_dec_info.height;
+		int align_w, align_h;
+		int max, min;
+		align_w = ALIGN(w, 64);
+		align_h = ALIGN(h, 64);
+		if (align_w > align_h) {
+			max = align_w;
+			min = align_h;
+		} else {
+			canvas_width = 1920;
+			canvas_height = 1088;
+			max = align_h;
+			min = align_w;
+		}
+		/* HD & SD */
+		if ((max > 1920 || min > 1088) &&
+			ALIGN(align_w * align_h * 3/2, SZ_64K) * 9 <=
+			buf_size) {
+			canvas_width = align_w;
+			canvas_height = align_h;
+			decbuf_y_size = ALIGN(align_w * align_h, SZ_64K);
+			decbuf_uv_size = ALIGN(align_w * align_h/4, SZ_64K);
+			decbuf_size = ALIGN(align_w * align_h * 3/2, SZ_64K);
+		} else { /*1080p*/
+			if (h > w) {
+				canvas_width = 1088;
+				canvas_height = 1920;
+			} else {
+				canvas_width = 1920;
+				canvas_height = 1088;
+			}
+			decbuf_y_size = 0x200000;
+			decbuf_uv_size = 0x80000;
+			decbuf_size = 0x300000;
+		}
+		#endif
+	/*	canvas_width = 1920;
 		canvas_height = 1088;
 		decbuf_y_size = 0x200000;
 		decbuf_uv_size = 0x80000;
-		decbuf_size = 0x300000;
+		decbuf_size = 0x300000;*/
 	}
 
 	if (is_vpp_postblend()) {
@@ -535,61 +576,57 @@ static void vreal_canvas_init(void)
 	}
 
 	for (i = 0; i < 4; i++) {
-		if (((buf_start + i * decbuf_size + 7) >> 3) == disp_addr) {
-#ifdef NV21
-			canvas_config(2 * i + 0,
-				buf_start + 4 * decbuf_size,
-				canvas_width, canvas_height,
-				CANVAS_ADDR_NOWRAP, CANVAS_BLKMODE_32X32);
-			canvas_config(2 * i + 1,
-				buf_start + 4 * decbuf_size +
-				decbuf_y_size, canvas_width,
-				canvas_height / 2, CANVAS_ADDR_NOWRAP,
-				CANVAS_BLKMODE_32X32);
-#else
-			canvas_config(3 * i + 0,
-				buf_start + 4 * decbuf_size,
-				canvas_width, canvas_height,
-				CANVAS_ADDR_NOWRAP, CANVAS_BLKMODE_32X32);
-			canvas_config(3 * i + 1,
-				buf_start + 4 * decbuf_size +
-				decbuf_y_size, canvas_width / 2,
-				canvas_height / 2, CANVAS_ADDR_NOWRAP,
-				CANVAS_BLKMODE_32X32);
-			canvas_config(3 * i + 2,
-				buf_start + 4 * decbuf_size +
-				decbuf_y_size + decbuf_uv_size,
-				canvas_width / 2, canvas_height / 2,
-				CANVAS_ADDR_NOWRAP, CANVAS_BLKMODE_32X32);
-#endif
-		} else {
-#ifdef NV21
-			canvas_config(2 * i + 0,
-				buf_start + i * decbuf_size,
-				canvas_width, canvas_height,
-				CANVAS_ADDR_NOWRAP, CANVAS_BLKMODE_32X32);
-			canvas_config(2 * i + 1,
-				buf_start + i * decbuf_size +
-				decbuf_y_size, canvas_width,
-				canvas_height / 2, CANVAS_ADDR_NOWRAP,
-				CANVAS_BLKMODE_32X32);
-#else
-			canvas_config(3 * i + 0,
-				buf_start + i * decbuf_size,
-				canvas_width, canvas_height,
-				CANVAS_ADDR_NOWRAP, CANVAS_BLKMODE_32X32);
-			canvas_config(3 * i + 1,
-				buf_start + i * decbuf_size +
-				decbuf_y_size, canvas_width / 2,
-				canvas_height / 2, CANVAS_ADDR_NOWRAP,
-				CANVAS_BLKMODE_32X32);
-			canvas_config(3 * i + 2,
-				buf_start + i * decbuf_size +
-				decbuf_y_size + decbuf_uv_size,
-				canvas_width / 2, canvas_height / 2,
-				CANVAS_ADDR_NOWRAP, CANVAS_BLKMODE_32X32);
-#endif
+		u32 one_buf_start = buf_start + buff_off;
+		if (((one_buf_start + 7) >> 3) == disp_addr) {
+			/*last disp buffer, to next..*/
+			buff_off += decbuf_size;
+			one_buf_start = buf_start + buff_off;
+			pr_info("one_buf_start %d,=== %x disp_addr %x",
+				i, one_buf_start, disp_addr);
 		}
+		if (buff_off < 0x01000000 &&
+			buff_off + decbuf_size > 0x0f00000){
+			/*0x01b00000 is references buffer.
+			to next 16M;*/
+			buff_off = 16 * SZ_1M;/*next 16M*/
+			one_buf_start = buf_start + buff_off;
+		}
+		if (buff_off + decbuf_size > buf_size) {
+			pr_err("ERROR::too small buffer for buf%d %d x%d ,size =%d\n",
+				i,
+				canvas_width,
+				canvas_height,
+				buf_size);
+		}
+		pr_info("alloced buffer %d at %x,%d\n",
+				i, one_buf_start, decbuf_size);
+ #ifdef NV21
+		canvas_config(2 * i + 0,
+			one_buf_start,
+			canvas_width, canvas_height,
+			CANVAS_ADDR_NOWRAP, CANVAS_BLKMODE_32X32);
+		canvas_config(2 * i + 1,
+			one_buf_start +
+			decbuf_y_size, canvas_width,
+			canvas_height / 2, CANVAS_ADDR_NOWRAP,
+			CANVAS_BLKMODE_32X32);
+ #else
+		canvas_config(3 * i + 0,
+			one_buf_start,
+			canvas_width, canvas_height,
+			CANVAS_ADDR_NOWRAP, CANVAS_BLKMODE_32X32);
+		canvas_config(3 * i + 1,
+			one_buf_start +
+			decbuf_y_size, canvas_width / 2,
+			canvas_height / 2, CANVAS_ADDR_NOWRAP,
+			CANVAS_BLKMODE_32X32);
+		canvas_config(3 * i + 2,
+			one_buf_start +
+			decbuf_y_size + decbuf_uv_size,
+			canvas_width / 2, canvas_height / 2,
+			CANVAS_ADDR_NOWRAP, CANVAS_BLKMODE_32X32);
+ #endif
+		buff_off = buff_off + decbuf_size;
 	}
 }
 
@@ -678,7 +715,7 @@ static void vreal_local_init(void)
 
 	for (i = 0; i < VF_POOL_SIZE; i++) {
 		const struct vframe_s *vf = &vfpool[i];
-		vfpool[i].index = -1;
+		vfpool[i].index = VF_BUF_NUM;
 		kfifo_put(&newframe_q, vf);
 	}
 
@@ -949,15 +986,15 @@ static struct platform_driver amvdec_real_driver = {
 
 static struct codec_profile_t amvdec_real_profile = {
 	.name = "real",
-	.profile = "rmvb,"
+	.profile = "rmvb,1080p+"
 };
 
 static int __init amvdec_real_driver_init_module(void)
 {
-	pr_info("amvdec_real module init\n");
+	pr_debug("amvdec_real module init\n");
 
 	if (platform_driver_register(&amvdec_real_driver)) {
-		pr_info("failed to register amvdec_real driver\n");
+		pr_err("failed to register amvdec_real driver\n");
 		return -ENODEV;
 	}
 	vcodec_profile_register(&amvdec_real_profile);
@@ -966,7 +1003,7 @@ static int __init amvdec_real_driver_init_module(void)
 
 static void __exit amvdec_real_driver_remove_module(void)
 {
-	pr_info("amvdec_real module remove.\n");
+	pr_debug("amvdec_real module remove.\n");
 
 	platform_driver_unregister(&amvdec_real_driver);
 }

@@ -98,6 +98,7 @@ enum _cec_log_dev_addr_e {
 #define CEC_IOC_CLR_LOGICAL_ADDR        _IOW(CEC_IOC_MAGIC, 0x0C, uint32_t)
 #define CEC_IOC_SET_DEV_TYPE            _IOW(CEC_IOC_MAGIC, 0x0D, uint32_t)
 #define CEC_IOC_SET_ARC_ENABLE          _IOW(CEC_IOC_MAGIC, 0x0E, uint32_t)
+#define CEC_IOC_SET_AUTO_DEVICE_OFF     _IOW(CEC_IOC_MAGIC, 0x0F, uint32_t)
 
 #define CEC_FAIL_NONE                   0
 #define CEC_FAIL_NACK                   1
@@ -311,7 +312,7 @@ struct cec_global_info_t {
 	unsigned int power_status;
 	unsigned int menu_lang;
 	unsigned int cec_version;
-	unsigned int log_addr[5];
+	unsigned int log_addr;
 	unsigned int menu_status;
 	unsigned char osd_name[16];
 	struct input_dev *remote_cec_dev;	/* cec input device */
@@ -331,9 +332,8 @@ void cec_pinmux_set(void);
 void cec_arbit_bit_time_set(unsigned , unsigned , unsigned);
 void cec_clear_buf(unsigned int flag);
 void cec_keep_reset(void);
-void cec_logicaddr_set(int logicaddr, int logreg);
+void cec_logicaddr_set(int logicaddr);
 void cec_logicaddr_clear(void);
-void cec_logicaddr_setByMask(unsigned int mask);
 void ao_cec_init(void);
 void tx_irq_handle(void);
 

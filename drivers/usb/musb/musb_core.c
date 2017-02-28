@@ -99,7 +99,6 @@
 #include <linux/platform_device.h>
 #include <linux/io.h>
 #include <linux/dma-mapping.h>
-#include <linux/usb.h>
 
 #include "musb_core.h"
 
@@ -132,7 +131,7 @@ static inline struct musb *dev_to_musb(struct device *dev)
 /*-------------------------------------------------------------------------*/
 
 #ifndef CONFIG_BLACKFIN
-static int musb_ulpi_read(struct usb_phy *phy, u32 reg)
+static int musb_ulpi_read(struct usb_phy *phy, u32 offset)
 {
 	void __iomem *addr = phy->io_priv;
 	int	i = 0;
@@ -151,7 +150,7 @@ static int musb_ulpi_read(struct usb_phy *phy, u32 reg)
 	 * ULPICarKitControlDisableUTMI after clearing POWER_SUSPENDM.
 	 */
 
-	musb_writeb(addr, MUSB_ULPI_REG_ADDR, (u8)reg);
+	musb_writeb(addr, MUSB_ULPI_REG_ADDR, (u8)offset);
 	musb_writeb(addr, MUSB_ULPI_REG_CONTROL,
 			MUSB_ULPI_REG_REQ | MUSB_ULPI_RDN_WR);
 
@@ -176,7 +175,7 @@ out:
 	return ret;
 }
 
-static int musb_ulpi_write(struct usb_phy *phy, u32 val, u32 reg)
+static int musb_ulpi_write(struct usb_phy *phy, u32 offset, u32 data)
 {
 	void __iomem *addr = phy->io_priv;
 	int	i = 0;
@@ -191,8 +190,8 @@ static int musb_ulpi_write(struct usb_phy *phy, u32 val, u32 reg)
 	power &= ~MUSB_POWER_SUSPENDM;
 	musb_writeb(addr, MUSB_POWER, power);
 
-	musb_writeb(addr, MUSB_ULPI_REG_ADDR, (u8)reg);
-	musb_writeb(addr, MUSB_ULPI_REG_DATA, (u8)val);
+	musb_writeb(addr, MUSB_ULPI_REG_ADDR, (u8)offset);
+	musb_writeb(addr, MUSB_ULPI_REG_DATA, (u8)data);
 	musb_writeb(addr, MUSB_ULPI_REG_CONTROL, MUSB_ULPI_REG_REQ);
 
 	while (!(musb_readb(addr, MUSB_ULPI_REG_CONTROL)
@@ -478,11 +477,10 @@ static irqreturn_t musb_stage0_irq(struct musb *musb, u8 int_usb,
 						(USB_PORT_STAT_C_SUSPEND << 16)
 						| MUSB_PORT_STAT_RESUME;
 				musb->rh_timer = jiffies
-					+ msecs_to_jiffies(USB_RESUME_TIMEOUT);
-
+						 + msecs_to_jiffies(20);
 				schedule_delayed_work(
 					&musb->finish_resume_work,
-					msecs_to_jiffies(USB_RESUME_TIMEOUT));
+					msecs_to_jiffies(20));
 
 				musb->xceiv->state = OTG_STATE_A_HOST;
 				musb->is_active = 1;

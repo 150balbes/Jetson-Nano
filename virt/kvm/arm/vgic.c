@@ -145,20 +145,6 @@ static void vgic_free_bitmap(struct vgic_bitmap *b)
 	b->shared = NULL;
 }
 
-/*
- * Call this function to convert a u64 value to an unsigned long * bitmask
- * in a way that works on both 32-bit and 64-bit LE and BE platforms.
- *
- * Warning: Calling this function may modify *val.
- */
-static unsigned long *u64_to_bitmask(u64 *val)
-{
-#if defined(CONFIG_CPU_BIG_ENDIAN) && BITS_PER_LONG == 32
-	*val = (*val >> 32) | (*val << 32);
-#endif
-	return (unsigned long *)val;
-}
-
 static u32 *vgic_bitmap_get_reg(struct vgic_bitmap *x,
 				int cpuid, u32 offset)
 {
@@ -1218,11 +1204,6 @@ static inline u64 vgic_get_eisr(struct kvm_vcpu *vcpu)
 	return vgic_ops->get_eisr(vcpu);
 }
 
-static inline void vgic_clear_eisr(struct kvm_vcpu *vcpu)
-{
-	vgic_ops->clear_eisr(vcpu);
-}
-
 static inline u32 vgic_get_interrupt_status(struct kvm_vcpu *vcpu)
 {
 	return vgic_ops->get_interrupt_status(vcpu);
@@ -1262,7 +1243,6 @@ static void vgic_retire_lr(int lr_nr, int irq, struct kvm_vcpu *vcpu)
 	vgic_set_lr(vcpu, lr_nr, vlr);
 	clear_bit(lr_nr, vgic_cpu->lr_used);
 	vgic_cpu->vgic_irq_lr_map[irq] = LR_EMPTY;
-	vgic_sync_lr_elrsr(vcpu, lr_nr, vlr);
 }
 
 /*
@@ -1318,7 +1298,6 @@ static bool vgic_queue_irq(struct kvm_vcpu *vcpu, u8 sgi_source_id, int irq)
 			BUG_ON(!test_bit(lr, vgic_cpu->lr_used));
 			vlr.state |= LR_STATE_PENDING;
 			vgic_set_lr(vcpu, lr, vlr);
-			vgic_sync_lr_elrsr(vcpu, lr, vlr);
 			return true;
 		}
 	}
@@ -1340,7 +1319,6 @@ static bool vgic_queue_irq(struct kvm_vcpu *vcpu, u8 sgi_source_id, int irq)
 		vlr.state |= LR_EOI_INT;
 
 	vgic_set_lr(vcpu, lr, vlr);
-	vgic_sync_lr_elrsr(vcpu, lr, vlr);
 
 	return true;
 }
@@ -1464,7 +1442,7 @@ static bool vgic_process_maintenance(struct kvm_vcpu *vcpu)
 		 * active bit.
 		 */
 		u64 eisr = vgic_get_eisr(vcpu);
-		unsigned long *eisr_ptr = u64_to_bitmask(&eisr);
+		unsigned long *eisr_ptr = (unsigned long *)&eisr;
 		int lr;
 
 		for_each_set_bit(lr, eisr_ptr, vgic->nr_lr) {
@@ -1509,14 +1487,6 @@ static bool vgic_process_maintenance(struct kvm_vcpu *vcpu)
 	if (status & INT_STATUS_UNDERFLOW)
 		vgic_disable_underflow(vcpu);
 
-	/*
-	 * In the next iterations of the vcpu loop, if we sync the vgic state
-	 * after flushing it, but before entering the guest (this happens for
-	 * pending signals and vmid rollovers), then make sure we don't pick
-	 * up any old maintenance interrupts here.
-	 */
-	vgic_clear_eisr(vcpu);
-
 	return level_pending;
 }
 
@@ -1535,7 +1505,7 @@ static void __kvm_vgic_sync_hwstate(struct kvm_vcpu *vcpu)
 
 	level_pending = vgic_process_maintenance(vcpu);
 	elrsr = vgic_get_elrsr(vcpu);
-	elrsr_ptr = u64_to_bitmask(&elrsr);
+	elrsr_ptr = (unsigned long *)&elrsr;
 
 	/* Clear mappings for empty LRs */
 	for_each_set_bit(lr, elrsr_ptr, vgic->nr_lr) {
@@ -1948,7 +1918,7 @@ out:
 
 int kvm_vgic_create(struct kvm *kvm)
 {
-	int i, vcpu_lock_idx = -1, ret;
+	int i, vcpu_lock_idx = -1, ret = 0;
 	struct kvm_vcpu *vcpu;
 
 	mutex_lock(&kvm->lock);
@@ -1963,7 +1933,6 @@ int kvm_vgic_create(struct kvm *kvm)
 	 * vcpu->mutex.  By grabbing the vcpu->mutex of all VCPUs we ensure
 	 * that no other VCPUs are run while we create the vgic.
 	 */
-	ret = -EBUSY;
 	kvm_for_each_vcpu(i, vcpu, kvm) {
 		if (!mutex_trylock(&vcpu->mutex))
 			goto out_unlock;
@@ -1971,10 +1940,11 @@ int kvm_vgic_create(struct kvm *kvm)
 	}
 
 	kvm_for_each_vcpu(i, vcpu, kvm) {
-		if (vcpu->arch.has_run_once)
+		if (vcpu->arch.has_run_once) {
+			ret = -EBUSY;
 			goto out_unlock;
+		}
 	}
-	ret = 0;
 
 	spin_lock_init(&kvm->arch.vgic.lock);
 	kvm->arch.vgic.in_kernel = true;

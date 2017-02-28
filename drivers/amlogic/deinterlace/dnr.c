@@ -5,12 +5,25 @@
 #include <linux/amlogic/iomap.h>
 #include "register.h"
 #include "dnr.h"
+#include "deinterlace.h"
 
 static DNR_PRM_t dnr_param;
 static DNR_PRM_t *pDnrPrm = &dnr_param;
 static bool dnr_pr;
 module_param(dnr_pr, bool, 0644);
 MODULE_PARM_DESC(dnr_pr, "/n print dnr debug information /n");
+
+bool dnr_dm_en;/*gxtvbb can't work normal,must set to 0*/
+module_param(dnr_dm_en, bool, 0644);
+MODULE_PARM_DESC(dnr_dm_en, "/n dnr dm enable debug /n");
+
+bool dnr_reg_update = 1;/*gxtvbb can't work normal,must set to 0*/
+module_param(dnr_reg_update, bool, 0644);
+MODULE_PARM_DESC(dnr_reg_update, "/n dnr dm enable debug /n");
+
+static unsigned int dnr_stat_coef = 3;/*gxtvbb default is 3*/
+module_param(dnr_stat_coef, uint, 0644);
+MODULE_PARM_DESC(dnr_stat_coef, "/n dnr stat coef /n");
 
 static int dnr_prm_init(DNR_PRM_t *pPrm)
 {
@@ -197,9 +210,9 @@ int hor_blk_ofst_calc_sw(int *pHbOfVldCnt,
 	}
 	*/
 	if (dnr_pr) {
-		pr_info("Max1 = %5d, Max2 = %5d, MaxIdx = %5d, Rat0 = %5d,Rat1 = %5d.\n",
+		pr_dbg("Max1 = %5d, Max2 = %5d, MaxIdx = %5d, Rat0 = %5d,Rat1 = %5d.\n",
 				nMax1, nMax2, nMaxIdx, nRat0, nRat1);
-		pr_info("CurHbOfst = %5d, HbOfVldFlg = %d, HbOfVldCnt = %d.\n",
+		pr_dbg("CurHbOfst = %5d, HbOfVldFlg = %d, HbOfVldCnt = %d.\n",
 				nCurHbOfst, *pHbOfVldFlg, *pHbOfVldCnt);
 	}
 
@@ -280,9 +293,16 @@ reg_dnr_stat_yst=0,reg_dnr_stat_yed=0; */
 #ifdef DNR_HV_SHIFT
 	int ro_hbof_stat_cnt[32], ro_vbof_stat_cnt[32], i = 0;
 #endif
-	Wr(DNR_HVSIZE, nCol<<16|nRow);
-	Wr(DNR_STAT_X_START_END, nCol-1);
-	Wr(DNR_STAT_Y_START_END, nRow-1);
+	if (dnr_reg_update == 0)
+		return;
+	DI_Wr(DNR_CTRL, 0x1df00);
+	DI_Wr(DNR_DM_CTRL, Rd(DNR_DM_CTRL)|(1 << 11));
+	DI_Wr_reg_bits(DNR_DM_CTRL, dnr_dm_en, 9, 1);
+	DI_Wr(DNR_HVSIZE, nCol<<16|nRow);
+	DI_Wr(DNR_STAT_X_START_END, (((8*dnr_stat_coef)&0x3fff) << 16)
+		|((nCol-(8*dnr_stat_coef+1))&0x3fff));
+	DI_Wr(DNR_STAT_Y_START_END, (((8*dnr_stat_coef)&0x3fff) << 16)
+		|((nRow-(8*dnr_stat_coef+1))&0x3fff));
 	ro_gbs_stat_lr = Rd(DNR_RO_GBS_STAT_LR);
 	ro_gbs_stat_ll = Rd(DNR_RO_GBS_STAT_LL);
 	ro_gbs_stat_rr = Rd(DNR_RO_GBS_STAT_RR);
@@ -337,25 +357,26 @@ reg_dnr_stat_yst=0,reg_dnr_stat_yed=0; */
 #endif
 	/* update hardware registers */
 	if (0 == pDnrPrm->prm_sw_gbs_ctrl) {
-		Wr(DNR_GBS, (1 == pDnrPrm->sw_gbs_vld_flg)?pDnrPrm->sw_gbs : 0);
+		DI_Wr(DNR_GBS,
+			(1 == pDnrPrm->sw_gbs_vld_flg)?pDnrPrm->sw_gbs : 0);
 	} else if (1 == pDnrPrm->prm_sw_gbs_ctrl) {
-		Wr_reg_bits(DNR_BLK_OFFST,
+		DI_Wr_reg_bits(DNR_BLK_OFFST,
 1 == pDnrPrm->sw_hbof_vld_flg?pDnrPrm->sw_hbof:0, 4, 3);
-		Wr(DNR_GBS,
+		DI_Wr(DNR_GBS,
 (1 == pDnrPrm->sw_hbof_vld_flg &&
 1 == pDnrPrm->sw_gbs_vld_flg)?pDnrPrm->sw_gbs:0);
 	} else if (2 == pDnrPrm->prm_sw_gbs_ctrl) {
-		Wr_reg_bits(DNR_BLK_OFFST,
+		DI_Wr_reg_bits(DNR_BLK_OFFST,
 1 == pDnrPrm->sw_vbof_vld_flg?pDnrPrm->sw_vbof:0, 0, 3);
-		Wr(DNR_GBS,
+		DI_Wr(DNR_GBS,
 (1 == pDnrPrm->sw_vbof_vld_flg &&
 1 == pDnrPrm->sw_gbs_vld_flg)?pDnrPrm->sw_gbs:0);
 	} else if (3 == pDnrPrm->prm_sw_gbs_ctrl) {
-		Wr_reg_bits(DNR_BLK_OFFST,
+		DI_Wr_reg_bits(DNR_BLK_OFFST,
 1 == pDnrPrm->sw_hbof_vld_flg ? pDnrPrm->sw_hbof : 0, 4, 3);
-	Wr_reg_bits(DNR_BLK_OFFST,
+	DI_Wr_reg_bits(DNR_BLK_OFFST,
 1 == pDnrPrm->sw_vbof_vld_flg ? pDnrPrm->sw_vbof : 0, 0, 3);
-	Wr(DNR_GBS,
+	DI_Wr(DNR_GBS,
 (1 == pDnrPrm->sw_hbof_vld_flg && 1 == pDnrPrm->sw_vbof_vld_flg &&
 1 == pDnrPrm->sw_gbs_vld_flg)?pDnrPrm->sw_gbs:0);
 	}
@@ -422,7 +443,7 @@ static ssize_t dnr_param_store(struct device *dev,
 		if (!strcmp(parm[0], dnr_params[i].name)) {
 			vaule = kstrtol(parm[1], 10, NULL);
 			*(dnr_params[i].addr) = vaule;
-			pr_info("%s=%d.\n", dnr_params[i].name,
+			pr_dbg("%s=%d.\n", dnr_params[i].name,
 *(dnr_params[i].addr));
 		}
 	}

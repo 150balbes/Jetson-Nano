@@ -33,9 +33,6 @@
 #include "hdmi_tx_reg.h"
 
 static int dbg_en;
-#ifndef CONFIG_AML_AO_CEC
-static DEFINE_SPINLOCK(reg_lock2);
-#endif
 
 /*
  * RePacket HDMI related registers rd/wr
@@ -193,16 +190,26 @@ unsigned int hdmitx_rd_reg(unsigned int addr)
 	unsigned long offset = (addr & DWC_OFFSET_MASK) >> 24;
 	unsigned long flags, fiq_flag;
 	if (addr & SEC_OFFSET) {
-		/* TODO */
-		/* LEAVE FOR LATER */
+		addr = addr & 0xffff;
+		sec_reg_write((unsigned *)(unsigned long)
+			(P_HDMITX_ADDR_PORT_SEC + offset), addr);
+		sec_reg_write((unsigned *)(unsigned long)
+			(P_HDMITX_ADDR_PORT_SEC + offset), addr);
+		data = sec_reg_read((unsigned *)(unsigned long)
+			(P_HDMITX_DATA_PORT_SEC + offset));
 	} else {
 		addr = addr & 0xffff;
 		spin_lock_irqsave(&reg_lock, flags);
 		raw_local_save_flags(fiq_flag);
 		local_fiq_disable();
 
+/*
+ * If addr is located at 0x5020 ~ 0x667e in DWC,
+ * then should operate twice
+ */
 		hd_write_reg(P_HDMITX_ADDR_PORT + offset, addr);
 		hd_write_reg(P_HDMITX_ADDR_PORT + offset, addr);
+		data = hd_read_reg(P_HDMITX_DATA_PORT + offset);
 		data = hd_read_reg(P_HDMITX_DATA_PORT + offset);
 
 		raw_local_irq_restore(fiq_flag);
@@ -220,8 +227,13 @@ void hdmitx_wr_reg(unsigned int addr, unsigned int data)
 	unsigned long offset = (addr & DWC_OFFSET_MASK) >> 24;
 
 	if (addr & SEC_OFFSET) {
-		/* TODO */
-		/* LEAVE FOR LATER */
+		addr = addr & 0xffff;
+		sec_reg_write((unsigned *)(unsigned long)
+			(P_HDMITX_ADDR_PORT_SEC + offset), addr);
+		sec_reg_write((unsigned *)(unsigned long)
+			(P_HDMITX_ADDR_PORT_SEC + offset), addr);
+		sec_reg_write((unsigned *)(unsigned long)
+			(P_HDMITX_DATA_PORT_SEC + offset), data);
 	} else {
 		addr = addr & 0xffff;
 		spin_lock_irqsave(&reg_lock, flags);
@@ -277,51 +289,17 @@ void hdmitx_rd_check_reg(unsigned int addr, unsigned int exp_data,
 	}
 }
 
-#define waiting_aocec_free() \
-	do {\
-		unsigned long cnt = 0;\
-		while (hd_read_reg(P_AO_CEC_RW_REG) & (1<<23)) {\
-			if (3500 == cnt++) { \
-				pr_info("waiting aocec free time out.\n");\
-				break;\
-			} \
-		} \
-	} while (0)
-
-#ifndef CONFIG_AML_AO_CEC
-unsigned long aocec_rd_reg(unsigned long addr)
+void hdcp22_wr_reg(uint32_t addr, uint32_t data)
 {
-	unsigned long data32;
-	unsigned long flags;
-	waiting_aocec_free();
-	spin_lock_irqsave(&reg_lock2, flags);
-	data32 = 0;
-	data32 |= 0 << 16; /* [16]	 cec_reg_wr */
-	data32 |= 0 << 8; /* [15:8]   cec_reg_wrdata */
-	data32 |= addr << 0; /* [7:0]	cec_reg_addr */
-	hd_write_reg(P_AO_CEC_RW_REG, data32);
+	sec_reg_write((unsigned *)(unsigned long)
+		(P_ELP_ESM_HPI_REG_BASE + addr), data);
+}
 
-	waiting_aocec_free();
-	data32 = ((hd_read_reg(P_AO_CEC_RW_REG)) >> 24) & 0xff;
-	spin_unlock_irqrestore(&reg_lock2, flags);
-	return data32;
-} /* aocec_rd_reg */
-
-void aocec_wr_reg(unsigned long addr, unsigned long data)
+uint32_t hdcp22_rd_reg(uint32_t addr)
 {
-	unsigned long data32;
-	unsigned long flags;
-	waiting_aocec_free();
-	spin_lock_irqsave(&reg_lock2, flags);
-	data32 = 0;
-	data32 |= 1 << 16; /* [16]	 cec_reg_wr */
-	data32 |= data << 8; /* [15:8]   cec_reg_wrdata */
-	data32 |= addr << 0; /* [7:0]	cec_reg_addr */
-	hd_write_reg(P_AO_CEC_RW_REG, data32);
-	spin_unlock_irqrestore(&reg_lock2, flags);
-} /* aocec_wr_only_reg */
-#endif
-
+	return (uint32_t)sec_reg_read((unsigned *)(unsigned long)
+		(P_ELP_ESM_HPI_REG_BASE + addr));
+}
 
 MODULE_PARM_DESC(dbg_en, "\n debug_level\n");
 module_param(dbg_en, int, 0664);

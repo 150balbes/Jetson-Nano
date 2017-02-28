@@ -30,6 +30,8 @@
 #include <linux/time.h>
 #include <linux/device.h>
 #include <linux/clk.h>
+#include <linux/switch.h>
+#include <linux/workqueue.h>
 
 /* Amlogic Headers */
 #include <linux/amlogic/cpu_version.h>
@@ -48,11 +50,12 @@
 #include "vdin_vf.h"
 #include "vdin_regs.h"
 
-#define VDIN_VER "Ref.2015/06/30a"
+#define VDIN_VER "Ref.2016/08/12a"
 
 /*the counter of vdin*/
 #define VDIN_MAX_DEVS			2
-#define VDIN_CRYSTAL                    24000000
+/* #define VDIN_CRYSTAL               24000000 */
+/* #define VDIN_MEAS_CLK              50000000 */
 /* values of vdin_dev_t.flags */
 #define VDIN_FLAG_NULL			0x00000000
 #define VDIN_FLAG_DEC_INIT		0x00000001
@@ -71,6 +74,10 @@
 #define VDIN_FLAG_MANUAL_CONVERTION     0x00001000
 /*flag for vdin rdma enable*/
 #define VDIN_FLAG_RDMA_ENABLE           0x00002000
+/*flag for vdin snow on&off*/
+#define VDIN_FLAG_SNOW_FLAG             0x00004000
+/*flag for disable vdin sm*/
+#define VDIN_FLAG_SM_DISABLE            0x00008000
 /*values of vdin isr bypass check flag */
 #define VDIN_BYPASS_STOP_CHECK          0x00000001
 #define VDIN_BYPASS_CYC_CHECK           0x00000002
@@ -84,6 +91,14 @@
 /* size for rdma table */
 #define RDMA_TABLE_SIZE (PAGE_SIZE>>3)
 /* #define VDIN_DEBUG */
+
+/*vdin write mem color-depth support*/
+#define VDIN_WR_COLOR_DEPTH_8BIT	1
+#define VDIN_WR_COLOR_DEPTH_9BIT	(1 << 1)
+#define VDIN_WR_COLOR_DEPTH_10BIT	(1 << 2)
+#define VDIN_WR_COLOR_DEPTH_12BIT	(1 << 3)
+/*TXL new add*/
+#define VDIN_WR_COLOR_DEPTH_10BIT_FULL_PCAK_MODE	(1 << 4)
 
 static inline const char *vdin_fmt_convert_str(
 		enum vdin_format_convert_e fmt_cvt)
@@ -134,7 +149,7 @@ struct vdin_debug_s {
 };
 struct vdin_dev_s {
 	unsigned int			index;
-
+	unsigned int			vdin_max_pixelclk;
 	dev_t					devt;
 	struct cdev				cdev;
 	struct device			*dev;
@@ -149,9 +164,9 @@ struct vdin_dev_s {
 
 	/* start address of captured frame data [8 bits] in memory */
 	/* for Component input, frame data [8 bits] order is
-	 * Y0Cb0Y1Cr0¡­Y2nCb2nY2n+1Cr2n¡­ */
+	 * Y0Cb0Y1Cr0ï¿½ï¿½Y2nCb2nY2n+1Cr2nï¿½ï¿½ */
 	/* for VGA       input, frame data [8 bits] order is
-	 * R0G0B0¡­RnGnBn¡­ */
+	 * R0G0B0ï¿½ï¿½RnGnBnï¿½ï¿½ */
 	unsigned int			cap_addr;
 	unsigned int			cap_size;
 
@@ -161,7 +176,7 @@ struct vdin_dev_s {
 
 	enum vframe_source_type_e	source_type;
 	enum vframe_source_mode_e	source_mode;
-
+	unsigned int			source_bitdepth;
 	unsigned int			*canvas_ids;
 	unsigned int			canvas_h;
 	unsigned int			canvas_w;
@@ -209,9 +224,49 @@ struct vdin_dev_s {
 	unsigned int			hcnt64_tag;
 	unsigned int			cycle_tag;
 	unsigned int			start_time;/* ms vdin start time */
+	bool                    send2di;
 		 int			    rdma_handle;
 	struct clk				*msr_clk;
+	unsigned int             msr_clk_val;
+
+	/* signal event */
+	struct delayed_work     sig_dwork;
+	struct workqueue_struct *sig_wq;
+	struct switch_dev       sig_sdev;
+	struct tvin_info_s      pre_info;
+
 	struct vdin_debug_s			debug;
+	unsigned int			cma_config_en;
+	/*cma_config_flag:1:share with codec_mm;0:cma alone*/
+	unsigned int			cma_config_flag;
+#ifdef CONFIG_CMA
+	struct platform_device	*this_pdev[2];
+	struct page			*venc_pages[2];
+	unsigned int			cma_mem_size[2];/*BYTE*/
+	unsigned int			cma_mem_alloc[2];
+#endif
+	/* bit0: enable/disable; bit4: luma range info */
+	unsigned int            csc_cfg;
+	/* duration of current timing */
+	unsigned int			duration;
+	/* color-depth for vdin write */
+	/*vdin write mem color depth support:
+	*bit0:support 8bit
+	*bit1:support 9bit
+	*bit2:support 10bit
+	*bit3:support 12bit
+	*bit4:support yuv422 10bit full pack mode (from txl new add)*/
+	unsigned int			color_depth_support;
+	/*color depth config
+	*0:auto config as frontend
+	*8:force config as 8bit
+	*10:force config as 10bit
+	*12:force config as 12bit*/
+	unsigned int			color_depth_config;
+	/* new add from txl:color depth mode for 10bit
+	*1: full pack mode;config 10bit as 10bit
+	*0: config 10bit as 12bit*/
+	unsigned int			color_depth_mode;
 };
 
 
@@ -223,6 +278,11 @@ int vdin_ctrl_start_fe(int no, struct vdin_parm_s *para);
 int vdin_ctrl_stop_fe(int no);
 enum tvin_sig_fmt_e vdin_ctrl_get_fmt(int no);
 #endif
+extern bool enable_reset;
+extern unsigned int max_buf_num;
+extern unsigned int   vdin_ldim_max_global[100];
+extern struct vframe_provider_s *vf_get_provider_by_name(
+		const char *provider_name);
 
 extern int start_tvin_service(int no, struct vdin_parm_s *para);
 extern int stop_tvin_service(int no);
@@ -241,6 +301,15 @@ extern void vdin_stop_dec(struct vdin_dev_s *devp);
 extern irqreturn_t vdin_isr_simple(int irq, void *dev_id);
 extern irqreturn_t vdin_isr(int irq, void *dev_id);
 extern irqreturn_t vdin_v4l2_isr(int irq, void *dev_id);
-
+extern void LDIM_Initial(int pic_h, int pic_v, int BLK_Vnum,
+	int BLK_Hnum, int BackLit_mode, int ldim_bl_en, int ldim_hvcnt_bypass);
+extern void ldim_get_matrix(int *data, int reg_sel);
+extern void ldim_set_matrix(int *data, int reg_sel);
+extern void tvafe_snow_config(unsigned int onoff);
+extern void tvafe_snow_config_clamp(unsigned int onoff);
+extern void vdin_vf_reg(struct vdin_dev_s *devp);
+extern void vdin_vf_unreg(struct vdin_dev_s *devp);
+extern void vdin_pause_dec(struct vdin_dev_s *devp);
+extern void vdin_resume_dec(struct vdin_dev_s *devp);
 #endif /* __TVIN_VDIN_DRV_H */
 

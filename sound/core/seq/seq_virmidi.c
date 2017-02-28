@@ -254,13 +254,9 @@ static int snd_virmidi_output_open(struct snd_rawmidi_substream *substream)
  */
 static int snd_virmidi_input_close(struct snd_rawmidi_substream *substream)
 {
-	struct snd_virmidi_dev *rdev = substream->rmidi->private_data;
 	struct snd_virmidi *vmidi = substream->runtime->private_data;
-
-	write_lock_irq(&rdev->filelist_lock);
-	list_del(&vmidi->list);
-	write_unlock_irq(&rdev->filelist_lock);
 	snd_midi_event_free(vmidi->parser);
+	list_del(&vmidi->list);
 	substream->runtime->private_data = NULL;
 	kfree(vmidi);
 	return 0;

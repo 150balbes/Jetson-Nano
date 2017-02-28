@@ -417,7 +417,7 @@ static struct vframe_s *vh264mvc_vf_get(void *op_arg)
 				spec2canvas(&buffer_spec1[view1_buf_id]);
 		} else {
 			vf->type = VIDTYPE_PROGRESSIVE | VIDTYPE_MVC;
-#ifdef CONFIG_POST_PROCESS_MANAGER_3D_PROCESS
+
 			vf->left_eye.start_x = 0;
 			vf->left_eye.start_y = 0;
 			vf->left_eye.width = vf->width;
@@ -427,12 +427,8 @@ static struct vframe_s *vh264mvc_vf_get(void *op_arg)
 			vf->right_eye.width = vf->width;
 			vf->right_eye.height = vf->height;
 			vf->trans_fmt = TVIN_TFMT_3D_TB;
-#endif
 
 			if (view_mode == 2) {
-#ifdef CONFIG_POST_PROCESS_MANAGER_3D_PROCESS
-				/* vf->trans_fmt = TVIN_TFMT_3D_LRH_OLER; */
-#endif
 				vf->canvas0Addr =
 					spec2canvas(&buffer_spec1[
 							view1_buf_id]);
@@ -440,9 +436,6 @@ static struct vframe_s *vh264mvc_vf_get(void *op_arg)
 					spec2canvas(&buffer_spec0[
 							view0_buf_id]);
 			} else {
-#ifdef CONFIG_POST_PROCESS_MANAGER_3D_PROCESS
-				/* vf->trans_fmt = TVIN_TFMT_3D_LRH_ELOR */
-#endif
 				vf->canvas0Addr =
 					spec2canvas(&buffer_spec0[
 							view0_buf_id]);
@@ -452,7 +445,7 @@ static struct vframe_s *vh264mvc_vf_get(void *op_arg)
 			}
 		}
 	}
-
+	vf->type_original = vf->type;
 	if (((vfpool_idx[get_ptr].view0_drop != 0)
 		 || (vfpool_idx[get_ptr].view1_drop != 0))
 		&& ((no_dropping_cnt >= DROPPING_FIRST_WAIT)))
@@ -1316,7 +1309,7 @@ static void vh264mvc_local_init(void)
 static s32 vh264mvc_init(void)
 {
 	int r1, r2, r3, r4;
-
+	unsigned int cpu_type = get_cpu_type();
 	pr_info("\nvh264mvc_init\n");
 	init_timer(&recycle_timer);
 
@@ -1336,26 +1329,48 @@ static s32 vh264mvc_init(void)
 	}
 
 	WRITE_VREG(UCODE_START_ADDR, mc_dma_handle);
+	if (cpu_type >= MESON_CPU_MAJOR_ID_GXM) {
+		r1 = amvdec_loadmc_ex(VFORMAT_H264MVC, "gxm_vh264mvc_mc", NULL);
 
-	r1 = amvdec_loadmc_ex(VFORMAT_H264MVC, "vh264mvc_mc", NULL);
+		/*memcpy(p, vh264mvc_header_mc, sizeof(vh264mvc_header_mc));*/
+		r2 = get_decoder_firmware_data(VFORMAT_H264MVC,
+			"gxm_vh264mvc_header_mc", mc_cpu_addr, 0x1000);
 
-	/*memcpy(p, vh264mvc_header_mc, sizeof(vh264mvc_header_mc));*/
-	r2 = get_decoder_firmware_data(VFORMAT_H264MVC, "vh264mvc_header_mc",
-					mc_cpu_addr, 0x1000);
+		/*memcpy((void *)((ulong) p + 0x1000),
+			   vh264mvc_mmco_mc, sizeof(vh264mvc_mmco_mc));
+		*/
+		r3 = get_decoder_firmware_data(VFORMAT_H264MVC,
+			"gxm_vh264mvc_mmco_mc",
+			(void *)((u8 *) mc_cpu_addr + 0x1000), 0x2000);
 
-	/*memcpy((void *)((ulong) p + 0x1000),
-		   vh264mvc_mmco_mc, sizeof(vh264mvc_mmco_mc));
-	*/
-	r3 = get_decoder_firmware_data(VFORMAT_H264MVC, "vh264mvc_mmco_mc",
-					(void *)((u8 *) mc_cpu_addr + 0x1000),
-					0x2000);
+		/*memcpy((void *)((ulong) p + 0x3000),
+			   vh264mvc_slice_mc, sizeof(vh264mvc_slice_mc));
+		*/
+		r4 = get_decoder_firmware_data(VFORMAT_H264MVC,
+			"gxm_vh264mvc_slice_mc",
+			(void *)((u8 *) mc_cpu_addr + 0x3000), 0x4000);
 
-	/*memcpy((void *)((ulong) p + 0x3000),
-		   vh264mvc_slice_mc, sizeof(vh264mvc_slice_mc));
-	*/
-	r4 = get_decoder_firmware_data(VFORMAT_H264MVC, "vh264mvc_slice_mc",
-					(void *)((u8 *) mc_cpu_addr + 0x3000),
-					0x4000);
+		} else {
+		r1 = amvdec_loadmc_ex(VFORMAT_H264MVC, "vh264mvc_mc", NULL);
+
+		/*memcpy(p, vh264mvc_header_mc, sizeof(vh264mvc_header_mc));*/
+		r2 = get_decoder_firmware_data(VFORMAT_H264MVC,
+			"vh264mvc_header_mc", mc_cpu_addr, 0x1000);
+
+		/*memcpy((void *)((ulong) p + 0x1000),
+			   vh264mvc_mmco_mc, sizeof(vh264mvc_mmco_mc));
+		*/
+		r3 = get_decoder_firmware_data(VFORMAT_H264MVC,
+			"vh264mvc_mmco_mc",
+			(void *)((u8 *) mc_cpu_addr + 0x1000), 0x2000);
+
+		/*memcpy((void *)((ulong) p + 0x3000),
+			   vh264mvc_slice_mc, sizeof(vh264mvc_slice_mc));
+		*/
+		r4 = get_decoder_firmware_data(VFORMAT_H264MVC,
+			"vh264mvc_slice_mc",
+			(void *)((u8 *) mc_cpu_addr + 0x3000), 0x4000);
+		}
 	if (r1 < 0 || r2 < 0 || r3 < 0 || r4 < 0) {
 		amvdec_disable();
 
@@ -1555,10 +1570,10 @@ static struct codec_profile_t amvdec_hmvc_profile = {
 
 static int __init amvdec_h264mvc_driver_init_module(void)
 {
-	pr_info("amvdec_h264mvc module init\n");
+	pr_debug("amvdec_h264mvc module init\n");
 
 	if (platform_driver_register(&amvdec_h264mvc_driver)) {
-		pr_info("failed to register amvdec_h264mvc driver\n");
+		pr_err("failed to register amvdec_h264mvc driver\n");
 		return -ENODEV;
 	}
 
@@ -1569,7 +1584,7 @@ static int __init amvdec_h264mvc_driver_init_module(void)
 
 static void __exit amvdec_h264mvc_driver_remove_module(void)
 {
-	pr_info("amvdec_h264mvc module remove.\n");
+	pr_debug("amvdec_h264mvc module remove.\n");
 
 	platform_driver_unregister(&amvdec_h264mvc_driver);
 }

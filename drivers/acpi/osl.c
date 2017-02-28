@@ -138,7 +138,7 @@ static struct osi_linux {
 	unsigned int	enable:1;
 	unsigned int	dmi:1;
 	unsigned int	cmdline:1;
-	u8		default_disabling;
+	unsigned int	default_disabling:1;
 } osi_linux = {0, 0, 0, 0};
 
 static u32 acpi_osi_handler(acpi_string interface, u32 supported)
@@ -172,7 +172,7 @@ static void __init acpi_request_region (struct acpi_generic_address *gas,
 		request_mem_region(addr, length, desc);
 }
 
-static void __init acpi_reserve_resources(void)
+static int __init acpi_reserve_resources(void)
 {
 	acpi_request_region(&acpi_gbl_FADT.xpm1a_event_block, acpi_gbl_FADT.pm1_event_length,
 		"ACPI PM1a_EVT_BLK");
@@ -201,7 +201,10 @@ static void __init acpi_reserve_resources(void)
 	if (!(acpi_gbl_FADT.gpe1_block_length & 0x1))
 		acpi_request_region(&acpi_gbl_FADT.xgpe1_block,
 			       acpi_gbl_FADT.gpe1_block_length, "ACPI GPE1_BLK");
+
+	return 0;
 }
+device_initcall(acpi_reserve_resources);
 
 void acpi_os_printf(const char *fmt, ...)
 {
@@ -1420,13 +1423,10 @@ void __init acpi_osi_setup(char *str)
 	if (*str == '!') {
 		str++;
 		if (*str == '\0') {
-			/* Do not override acpi_osi=!* */
-			if (!osi_linux.default_disabling)
-				osi_linux.default_disabling =
-					ACPI_DISABLE_ALL_VENDOR_STRINGS;
+			osi_linux.default_disabling = 1;
 			return;
 		} else if (*str == '*') {
-			osi_linux.default_disabling = ACPI_DISABLE_ALL_STRINGS;
+			acpi_update_interfaces(ACPI_DISABLE_ALL_STRINGS);
 			for (i = 0; i < OSI_STRING_ENTRIES_MAX; i++) {
 				osi = &osi_setup_entries[i];
 				osi->enable = false;
@@ -1499,13 +1499,10 @@ static void __init acpi_osi_setup_late(void)
 	acpi_status status;
 
 	if (osi_linux.default_disabling) {
-		status = acpi_update_interfaces(osi_linux.default_disabling);
+		status = acpi_update_interfaces(ACPI_DISABLE_ALL_VENDOR_STRINGS);
 
 		if (ACPI_SUCCESS(status))
-			printk(KERN_INFO PREFIX "Disabled all _OSI OS vendors%s\n",
-				osi_linux.default_disabling ==
-				ACPI_DISABLE_ALL_STRINGS ?
-				" and feature groups" : "");
+			printk(KERN_INFO PREFIX "Disabled all _OSI OS vendors\n");
 	}
 
 	for (i = 0; i < OSI_STRING_ENTRIES_MAX; i++) {
@@ -1795,7 +1792,6 @@ acpi_status __init acpi_os_initialize(void)
 
 acpi_status __init acpi_os_initialize1(void)
 {
-	acpi_reserve_resources();
 	kacpid_wq = alloc_workqueue("kacpid", 0, 1);
 	kacpi_notify_wq = alloc_workqueue("kacpi_notify", 0, 1);
 	kacpi_hotplug_wq = alloc_ordered_workqueue("kacpi_hotplug", 0);

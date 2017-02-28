@@ -57,7 +57,6 @@ config VIDEOBUF_RESOURCE
        select VIDEOBUF_GEN
         tristate
 
-
 config VIDEOBUF_DVB
 	tristate
 	select VIDEOBUF_GEN

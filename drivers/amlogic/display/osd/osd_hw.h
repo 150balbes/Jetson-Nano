@@ -24,15 +24,22 @@
 #define OSD_RELATIVE_BITS 0x33370
 #ifdef CONFIG_FB_OSD_VSYNC_RDMA
 #include "osd_rdma.h"
-
 #endif
+
+#define OSD_REG_BACKUP_COUNT 15
+#define OSD_AFBC_REG_BACKUP_COUNT 10
+
+extern const u16 osd_reg_backup[OSD_REG_BACKUP_COUNT];
+extern const u16 osd_afbc_reg_backup[OSD_AFBC_REG_BACKUP_COUNT];
 
 #ifdef CONFIG_HIBERNATION
 extern void osd_freeze_hw(void);
 extern void osd_thaw_hw(void);
 extern void osd_restore_hw(void);
+extern void osd_realdata_save_hw(void);
+extern void osd_realdata_restore_hw(void);
 #endif
-
+extern struct hw_para_s osd_hw;
 extern void osd_set_color_key_hw(u32 index, u32 bpp, u32 colorkey);
 extern void osd_srckey_enable_hw(u32  index, u8 enable);
 extern void osd_set_gbl_alpha_hw(u32 index, u32 gbl_alpha);
@@ -61,6 +68,7 @@ extern void osd_setup_hw(u32 index,
 			 u32 disp_end_x,
 			 u32 disp_end_y,
 			 u32 fbmem,
+			 phys_addr_t *afbc_fbmem,
 			 const struct color_bit_define_s *color);
 extern void osd_set_order_hw(u32 index, u32 order);
 extern void osd_get_order_hw(u32 index, u32 *order);
@@ -129,14 +137,24 @@ extern void osd_suspend_hw(void);
 extern void osd_resume_hw(void);
 extern void osd_init_hw(u32 logo_loaded);
 extern void osd_init_scan_mode(void);
-extern void osd_set_logo_index(u32 index);
+extern void osd_set_logo_index(int index);
 extern int osd_get_logo_index(void);
+extern int osd_get_init_hw_flag(void);
 extern void osd_get_hw_para(struct hw_para_s **para);
 extern int osd_set_debug_hw(const char *buf);
 extern char *osd_get_debug_hw(void);
+#ifdef CONFIG_VSYNC_RDMA
+extern void enable_rdma(int enable_flag);
+#endif
 
 #ifdef CONFIG_AM_FB_EXT
 extern void osd_ext_clone_pan(u32 index);
 #endif
-
+extern void osd_set_pxp_mode(u32 mode);
+extern void osd_set_afbc(u32 enable);
+extern u32 osd_get_afbc(void);
+extern u32 osd_get_reset_status(void);
+extern void osd_switch_free_scale(
+	u32 pre_index, u32 pre_enable, u32 pre_scale,
+	u32 next_index, u32 next_enable, u32 next_scale);
 #endif

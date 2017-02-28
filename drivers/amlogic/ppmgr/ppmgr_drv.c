@@ -37,6 +37,10 @@
 #include <linux/amlogic/ppmgr/ppmgr_status.h>
 #include <linux/amlogic/amports/video_prot.h>
 
+#define PPMGRDRV_INFO(fmt, args...) pr_info("PPMGRDRV: info: "fmt"", ## args)
+#define PPMGRDRV_DBG(fmt, args...) pr_debug("PPMGRDRV: dbg: "fmt"", ## args)
+#define PPMGRDRV_WARN(fmt, args...) pr_warn("PPMGRDRV: warn: "fmt"", ## args)
+#define PPMGRDRV_ERR(fmt, args...) pr_err("PPMGRDRV: err: "fmt"", ## args)
 
 /***********************************************************************
  *
@@ -200,10 +204,11 @@ static ssize_t _ppmgr_angle_write(unsigned long val)
 		else if (angle == 270)
 			angle = 3;
 		else {
-			pr_err("invalid orientation value\n");
-			pr_err("you should set 0 or 0 for 0 clock wise,");
-			pr_err("1 or 90 for 90 clockwise,2 or 180 for 180 clockwise");
-			pr_err("3 or 270 for 270 clockwise\n");
+			PPMGRDRV_ERR("invalid orientation value\n");
+			PPMGRDRV_ERR("you should set 0 or 0 for 0 clockwise\n");
+			PPMGRDRV_ERR("1 or 90 for 90 clockwise\n");
+			PPMGRDRV_ERR("2 or 180 for 180 clockwise\n");
+			PPMGRDRV_ERR("3 or 270 for 270 clockwise\n");
 			return -EINVAL;
 		}
 	}
@@ -211,14 +216,17 @@ static ssize_t _ppmgr_angle_write(unsigned long val)
 	ppmgr_device.global_angle = angle;
 	ppmgr_device.videoangle = (angle + ppmgr_device.orientation) % 4;
 	if (!ppmgr_device.use_prot) {
-		if (angle != ppmgr_device.angle)
+		if (angle != ppmgr_device.angle) {
 			property_change = 1;
-			pr_info("ppmgr angle:%x,orientation:%x,videoangle:%x\n",
-			ppmgr_device.angle, ppmgr_device.orientation,
-			ppmgr_device.videoangle);
+			PPMGRDRV_INFO("ppmgr angle:%x\n", ppmgr_device.angle);
+			PPMGRDRV_INFO("orient:%x\n", ppmgr_device.orientation);
+			PPMGRDRV_INFO("vidangl:%x\n", ppmgr_device.videoangle);
+		}
 	} else {
-		set_video_angle(angle);
-		pr_info("prot angle:%ld\n", angle);
+		if (angle != ppmgr_device.angle) {
+			set_video_angle(angle);
+			PPMGRDRV_INFO("prot angle:%ld\n", angle);
+		}
 	}
 	ppmgr_device.angle = angle;
 	return 0;
@@ -260,7 +268,7 @@ static int parse_para(const char *para, int para_num, int *result)
 
 		ret = kstrtol(startp, 0, &tmp);
 		if (ret != 0) {
-			pr_err("ERROR converting %s to long int!\n", startp);
+			PPMGRDRV_ERR("ERR convert %s to long int!\n", startp);
 			return ret;
 		}
 		*out++ = tmp;
@@ -277,12 +285,12 @@ static int parse_para(const char *para, int para_num, int *result)
 static ssize_t show_ppmgr_info(struct class *cla, struct class_attribute *attr,
 				char *buf)
 {
-	char *bstart;
+	unsigned int bstart;
 	unsigned int bsize;
 	get_ppmgr_buf_info(&bstart, &bsize);
 /* return snprintf(buf, 80, "buffer:\n start:%x.\tsize:%d\n", */
 /* (unsigned int)bstart, bsize / (1024 * 1024)); */
-	return snprintf(buf, 80, "buffer:\n start:%p.\tsize:%d\n",
+	return snprintf(buf, 80, "buffer:\n start:%x.\tsize:%d\n",
 		    bstart, bsize / (1024 * 1024));
 }
 
@@ -303,10 +311,9 @@ static ssize_t angle_write(struct class *cla, struct class_attribute *attr,
 	unsigned long angle;
 	int ret = kstrtoul(buf, 0, &angle);
 	if (ret != 0) {
-		pr_err("ERROR converting %s to long int!\n", buf);
+		PPMGRDRV_ERR("ERROR converting %s to long int!\n", buf);
 		return ret;
 	}
-
 	if (angle > 3 || angle < 0) {
 		size = endp - buf;
 		return count;
@@ -366,7 +373,7 @@ static ssize_t orientation_write(struct class *cla,
 	unsigned angle;
 	ret = kstrtoul(buf, 0, &tmp);
 	if (ret != 0) {
-		pr_err("ERROR converting %s to long int!\n", buf);
+		PPMGRDRV_ERR("ERROR converting %s to long int!\n", buf);
 		return ret;
 	}
 	angle = tmp;
@@ -379,17 +386,18 @@ static ssize_t orientation_write(struct class *cla,
 		else if (angle == 270)
 			angle = 3;
 		else {
-			pr_err("invalid orientation value\n");
-			pr_err("you should set 0 or 0 for 0 clock wise,");
-			pr_err("1 or 90 for 90 clockwise,2 or 180 for 180 clockwise");
-			pr_err("3 or 270 for 270 clockwise\n");
+			PPMGRDRV_ERR("invalid orientation value\n");
+			PPMGRDRV_ERR("you should set 0 or 0 for 0 clockwise\n");
+			PPMGRDRV_ERR("1 or 90 for 90 clockwise\n");
+			PPMGRDRV_ERR("2 or 180 for 180 clockwise\n");
+			PPMGRDRV_ERR("3 or 270 for 270 clockwise\n");
 			return ret;
 		}
 	}
 	ppmgr_device.orientation = angle;
 	ppmgr_device.videoangle =
 		(ppmgr_device.angle + ppmgr_device.orientation) % 4;
-	pr_info("angle:%d,orientation:%d,videoangle:%d\n",
+	PPMGRDRV_INFO("angle:%d,orientation:%d,videoangle:%d\n",
 		ppmgr_device.angle, ppmgr_device.orientation,
 		ppmgr_device.videoangle);
 	size = endp - buf;
@@ -413,7 +421,7 @@ static ssize_t bypass_write(struct class *cla, struct class_attribute *attr,
 	/* ppmgr_device.bypass = simple_strtoul(buf, &endp, 0); */
 	int ret = kstrtol(buf, 0, &tmp);
 	if (ret != 0) {
-		pr_err("ERROR converting %s to long int!\n", buf);
+		PPMGRDRV_ERR("ERROR converting %s to long int!\n", buf);
 		return ret;
 	}
 	ppmgr_device.bypass = tmp;
@@ -447,7 +455,7 @@ static ssize_t rect_write(struct class *cla, struct class_attribute *attr,
 
 	for (i = 0; i < 4; i++) {
 		if (buflen == 0) {
-			pr_err("%s\n", errstr);
+			PPMGRDRV_ERR("%s\n", errstr);
 			return -EINVAL;
 		}
 		tokenlen = strnchr(strp, buflen, ',');
@@ -456,7 +464,7 @@ static ssize_t rect_write(struct class *cla, struct class_attribute *attr,
 		/* value_array[i] = simple_strtoul(strp, &endp, 0); */
 		ret = kstrtol(strp, 0, &tmp);
 		if (ret != 0) {
-			pr_err("ERROR converting %s to long int!\n", strp);
+			PPMGRDRV_ERR("ERROR convert %s to long int!\n", strp);
 			return ret;
 		}
 		value_array[i] = tmp;
@@ -532,7 +540,7 @@ static ssize_t ppscaler_write(struct class *cla, struct class_attribute *attr,
 	int flag;
 	int ret = kstrtol(buf, 0, &tmp);
 	if (ret != 0) {
-		pr_err("ERROR converting %s to long int!\n", buf);
+		PPMGRDRV_ERR("ERROR converting %s to long int!\n", buf);
 		return ret;
 	}
 	flag = tmp;
@@ -607,15 +615,15 @@ static ssize_t receiver_write(struct class *cla, struct class_attribute *attr,
 	long tmp;
 	int ret;
 	if (buf[0] != '0' && buf[0] != '1') {
-		pr_err("device to whitch the video stream decoded\n");
-		pr_err("0: to video layer\n");
-		pr_err("1: to amlogic video4linux /dev/video10\n");
+		PPMGRDRV_ERR("device to whitch the video stream decoded\n");
+		PPMGRDRV_ERR("0: to video layer\n");
+		PPMGRDRV_ERR("1: to amlogic video4linux /dev/video10\n");
 		return 0;
 	}
 	/* ppmgr_device.receiver = simple_strtoul(buf, &endp, 0); */
 	ret = kstrtoul(buf, 0, &tmp);
 	if (ret != 0) {
-		pr_err("ERROR converting %s to long int!\n", buf);
+		PPMGRDRV_ERR("ERROR converting %s to long int!\n", buf);
 		return ret;
 	}
 	ppmgr_device.receiver = tmp;
@@ -647,7 +655,7 @@ static ssize_t platform_type_write(struct class *cla,
 	/* platform_type = simple_strtoul(buf, &endp, 0); */
 	int ret = kstrtoul(buf, 0, &tmp);
 	if (ret != 0) {
-		pr_err("ERROR converting %s to long int!\n", buf);
+		PPMGRDRV_ERR("ERROR converting %s to long int!\n", buf);
 		return ret;
 	}
 	platform_type = tmp;
@@ -669,9 +677,13 @@ static ssize_t _3dmode_write(struct class *cla,
 {
 	ssize_t size;
 	char *endp;
-	unsigned mode;
+	unsigned long mode;
 	/* unsigned mode = simple_strtoul(buf, &endp, 0); */
-	kstrtoul(buf, 0, &mode);
+	int ret = kstrtoul(buf, 0, &mode);
+	if (ret != 0) {
+		PPMGRDRV_ERR("ERROR converting %s to long int!\n", buf);
+		return ret;
+	}
 	set_ppmgr_3dmode(mode);
 	size = endp - buf;
 	return count;
@@ -693,9 +705,13 @@ static ssize_t viewmode_write(struct class *cla,
 {
 	ssize_t size;
 	char *endp;
-	unsigned mode;
+	unsigned long mode;
 	/* unsigned mode = simple_strtoul(buf, &endp, 0); */
-	kstrtoul(buf, 0, &mode);
+	int ret = kstrtoul(buf, 0, &mode);
+	if (ret != 0) {
+		PPMGRDRV_ERR("ERROR converting %s to long int!\n", buf);
+		return ret;
+	}
 	set_ppmgr_viewmode(mode);
 	size = endp - buf;
 	return count;
@@ -719,10 +735,15 @@ static ssize_t doublemode_write(struct class *cla,
 {
 	ssize_t size;
 	char *endp;
-	int flag;
+	unsigned long flag;
+	unsigned mode;
 	/* unsigned flag = simple_strtoul(buf, &endp, 0); */
-	kstrtoul(buf, 0, &flag);
-	unsigned mode = get_ppmgr_3dmode();
+	int ret = kstrtoul(buf, 0, &flag);
+	if (ret != 0) {
+		PPMGRDRV_ERR("ERROR converting %s to long int!\n", buf);
+		return ret;
+	}
+	mode = get_ppmgr_3dmode();
 	mode = (mode & (~PPMGR_3D_PROCESS_DOUBLE_TYPE)) |
 		((flag << PPMGR_3D_PROCESS_DOUBLE_TYPE_SHIFT) &
 		(PPMGR_3D_PROCESS_DOUBLE_TYPE));
@@ -747,10 +768,15 @@ static ssize_t switchmode_write(struct class *cla,
 {
 	ssize_t size;
 	char *endp;
-	int flag;
+	unsigned long flag;
+	unsigned mode;
 	/* int flag = simple_strtoul(buf, &endp, 0); */
-	kstrtoul(buf, 0, &flag);
-	unsigned mode = get_ppmgr_3dmode();
+	int ret = kstrtoul(buf, 0, &flag);
+	if (ret != 0) {
+		PPMGRDRV_ERR("ERROR converting %s to long int!\n", buf);
+		return ret;
+	}
+	mode = get_ppmgr_3dmode();
 	if (!flag)
 		mode = mode & (~PPMGR_3D_PROCESS_SWITCH_FLAG);
 	else
@@ -782,8 +808,12 @@ static ssize_t direction_3d_write(struct class *cla,
 	ssize_t size;
 	char *endp;
 	/* int flag = simple_strtoul(buf, &endp, 0); */
-	int flag;
-	kstrtoul(buf, 0, &flag);
+	unsigned long flag;
+	int ret = kstrtoul(buf, 0, &flag);
+	if (ret != 0) {
+		PPMGRDRV_ERR("ERROR converting %s to long int!\n", buf);
+		return ret;
+	}
 /*unsigned mode = get_ppmgr_3dmode();*/
 /*mode = (mode & (~PPMGR_3D_PROCESS_3D_ROTATE_DIRECTION_MASK))
  * |((flag<<PPMGR_3D_PROCESS_3D_ROTATE_DIRECTION_VAULE_SHIFT)&
@@ -810,8 +840,12 @@ static ssize_t scale_down_write(struct class *cla,
 	ssize_t size;
 	char *endp;
 	/* unsigned mode = simple_strtoul(buf, &endp, 0); */
-	unsigned mode;
-	kstrtoul(buf, 0, &mode);
+	unsigned long mode;
+	int ret = kstrtoul(buf, 0, &mode);
+	if (ret != 0) {
+		PPMGRDRV_ERR("ERROR converting %s to long int!\n", buf);
+		return ret;
+	}
 	set_ppmgr_scaledown(mode);
 	size = endp - buf;
 	return count;
@@ -869,12 +903,14 @@ static ssize_t write_depth(
 	struct class *cla, struct class_attribute *attr, const char *buf,
 	size_t count)
 {
-	int r;
-	char *endp;
+	unsigned long r;
 
 	/* r = simple_strtoul(buf, &endp, 0); */
-	kstrtoul(buf, 0, &r);
-	pr_warn("r is %d\n", r);
+	int ret = kstrtoul(buf, 0, &r);
+	if (ret != 0) {
+		PPMGRDRV_ERR("ERROR converting %s to long int!\n", buf);
+		return ret;
+	}
 	set_depth(r);
 	return count;
 }
@@ -887,11 +923,14 @@ static ssize_t write_view_mode(
 	struct class *cla, struct class_attribute *attr, const char *buf,
 	size_t count)
 {
-	int r;
-	char *endp;
+	unsigned long r;
 
 	/* r = simple_strtoul(buf, &endp, 0); */
-	kstrtoul(buf, 0, &r);
+	int ret = kstrtoul(buf, 0, &r);
+	if (ret != 0) {
+		PPMGRDRV_ERR("ERROR converting %s to long int!\n", buf);
+		return ret;
+	}
 	ppmgr_view_mode = r;
 	return count;
 }
@@ -906,11 +945,14 @@ static ssize_t write_vertical_sample(
 	struct class *cla, struct class_attribute *attr, const char *buf,
 	size_t count)
 {
-	int r;
-	char *endp;
+	unsigned long r;
 
 	/* r = simple_strtoul(buf, &endp, 0); */
-	kstrtoul(buf, 0, &r);
+	int ret = kstrtoul(buf, 0, &r);
+	if (ret != 0) {
+		PPMGRDRV_ERR("ERROR converting %s to long int!\n", buf);
+		return ret;
+	}
 	ppmgr_vertical_sample = r;
 	return count;
 }
@@ -923,11 +965,14 @@ static ssize_t read_scale_width(
 static ssize_t write_scale_width(struct class *cla,
 	struct class_attribute *attr, const char *buf, size_t count)
 {
-	int r;
-	char *endp;
+	unsigned long r;
 
 	/* r = simple_strtoul(buf, &endp, 0); */
-	kstrtoul(buf, 0, &r);
+	int ret = kstrtoul(buf, 0, &r);
+	if (ret != 0) {
+		PPMGRDRV_ERR("ERROR converting %s to long int!\n", buf);
+		return ret;
+	}
 	ppmgr_scale_width = r;
 	return count;
 }
@@ -992,7 +1037,7 @@ static ssize_t mirror_write(struct class *cla, struct class_attribute *attr,
 	int ret = kstrtol(buf, 0, &tmp);
 	/* ppmgr_device.mirror_flag = simple_strtoul(buf, &endp, 0); */
 	if (ret != 0) {
-		pr_err("ERROR converting %s to long int!\n", buf);
+		PPMGRDRV_ERR("ERROR converting %s to long int!\n", buf);
 		return ret;
 	}
 	ppmgr_device.mirror_flag = tmp;
@@ -1073,7 +1118,7 @@ __ATTR(orientation,
 		receiver_write),
 #ifdef CONFIG_POST_PROCESS_MANAGER_3D_PROCESS
 	__ATTR(ppmgr_3d_mode,
-		0666,
+		S_IRUGO | S_IWUSR | S_IWGRP,
 		_3dmode_read,
 		_3dmode_write),
 	__ATTR(viewmode,
@@ -1142,7 +1187,7 @@ struct class *init_ppmgr_cls(void)
 	int ret = 0;
 	ret = class_register(&ppmgr_class);
 	if (ret < 0) {
-		amlog_level(LOG_LEVEL_HIGH, "error create ppmgr class\n");
+		PPMGRDRV_ERR("error create ppmgr class\n");
 		return NULL;
 	}
 	return &ppmgr_class;
@@ -1154,21 +1199,21 @@ struct class *init_ppmgr_cls(void)
  *
  ************************************************************************/
 
-void set_ppmgr_buf_info(char *start, unsigned int size)
+void set_ppmgr_buf_info(unsigned int start, unsigned int size)
 {
-	ppmgr_device.buffer_start = (char *)start;
+	ppmgr_device.buffer_start = start;
 	ppmgr_device.buffer_size = size;
 }
 
 int ppmgr_set_resource(unsigned long start, unsigned long end, struct device *p)
 {
 	if (inited_ppmgr_num != 0) {
-		pr_err(
+		PPMGRDRV_ERR(
 		"We can't support the change resource at code running\n");
 		return -1;
 	}
 
-	set_ppmgr_buf_info((void *)start, end - start + 1);
+	set_ppmgr_buf_info(start, end - start + 1);
 	ppmgr_dev_reg.mem_start = start;
 	ppmgr_dev_reg.mem_end = end;
 	ppmgr_dev_reg.cma_dev = p;
@@ -1176,11 +1221,12 @@ int ppmgr_set_resource(unsigned long start, unsigned long end, struct device *p)
 	return 0;
 }
 
-void get_ppmgr_buf_info(char **start, unsigned int *size)
+void get_ppmgr_buf_info(unsigned int *start, unsigned int *size)
 {
 	*start = ppmgr_device.buffer_start;
 	*size = ppmgr_device.buffer_size;
 }
+EXPORT_SYMBOL(get_ppmgr_buf_info);
 
 static int ppmgr_open(struct inode *inode, struct file *file)
 {
@@ -1200,10 +1246,6 @@ static long ppmgr_ioctl(struct file *file, unsigned int cmd, ulong args)
 	int flag;
 	struct frame_info_t frame_info;
 #endif
-#ifdef CONFIG_POST_PROCESS_MANAGER_3D_PROCESS
-	unsigned mode = 0;
-	int flag = 0;
-#endif
 	switch (cmd) {
 #if 0
 	case PPMGR_IOC_CONFIG_FRAME:
@@ -1216,7 +1258,7 @@ static long ppmgr_ioctl(struct file *file, unsigned int cmd, ulong args)
 	case PPMGR_IOC_SET_ANGLE:
 		ret = _ppmgr_angle_write(args);
 		break;
-#ifdef CONFIG_POST_PROCESS_MANAGER_3D_PROCESS
+#if 0
 	case PPMGR_IOC_ENABLE_PP:
 		mode = (int)argp;
 		enum platform_type_t plarform_type;
@@ -1225,7 +1267,6 @@ static long ppmgr_ioctl(struct file *file, unsigned int cmd, ulong args)
 			set_ppmgr_status(mode);
 		else
 			set_ppmgr_3dmode(mode);
-
 		break;
 	case PPMGR_IOC_VIEW_MODE:
 		mode = (int)argp;
@@ -1290,7 +1331,8 @@ static int ppmgr_release(struct inode *inode, struct file *file)
 	if (context && (0 == destroy_ge2d_work_queue(context))) {
 		ppmgr_device.open_count--;
 		return 0;
-	} amlog_level(LOG_LEVEL_LOW, "release one ppmgr device\n");
+	}
+	PPMGRDRV_INFO("release one ppmgr device\n");
 	return -1;
 #else
 	return 0;
@@ -1324,7 +1366,7 @@ int init_ppmgr_device(void)
 	strcpy(ppmgr_device.name, "ppmgr");
 	ret = register_chrdev(0, ppmgr_device.name, &ppmgr_fops);
 	if (ret <= 0) {
-		amlog_level(LOG_LEVEL_HIGH, "register ppmgr device error\n");
+		PPMGRDRV_ERR("register ppmgr device error\n");
 		return ret;
 	}
 	ppmgr_device.major = ret;
@@ -1354,7 +1396,7 @@ int init_ppmgr_device(void)
 #endif
 	ppmgr_device.mirror_flag = 0;
 	ppmgr_device.canvas_width = ppmgr_device.canvas_height = 0;
-	amlog_level(LOG_LEVEL_LOW, "ppmgr_dev major:%d\n", ret);
+	PPMGRDRV_INFO("ppmgr_dev major:%d\n", ret);
 
 	ppmgr_device.cla = init_ppmgr_cls();
 	if (ppmgr_device.cla == NULL)
@@ -1363,13 +1405,16 @@ int init_ppmgr_device(void)
 						MKDEV(ppmgr_device.major, 0),
 						NULL, ppmgr_device.name);
 	if (IS_ERR(ppmgr_device.dev)) {
-		amlog_level(LOG_LEVEL_HIGH, "create ppmgr device error\n");
+		PPMGRDRV_ERR("create ppmgr device error\n");
 		goto unregister_dev;
 	}
 	buff_change = 0;
 	ppmgr_register();
+#if 0
 	if (ppmgr_buffer_init(0) < 0)
 		goto unregister_dev;
+	ppmgr_buffer_uninit();
+#endif
 	/*if (start_vpp_task()<0) return -1;*/
 	ppmgr_device.use_prot = 1;
 #if HAS_VPU_PROT
@@ -1414,13 +1459,13 @@ static struct platform_device *ppmgr_dev0;
 static int ppmgr_driver_probe(struct platform_device *pdev)
 {
 	s32 r;
-	pr_err("ppmgr_driver_probe called\n");
+	PPMGRDRV_ERR("ppmgr_driver_probe called\n");
 	r = of_reserved_mem_device_init(&pdev->dev);
-
+	ppmgr_device.pdev = pdev;
 	init_ppmgr_device();
 
 	if (r == 0)
-		pr_info("ppmgr_probe done\n");
+		PPMGRDRV_INFO("ppmgr_probe done\n");
 
 	return r;
 }
@@ -1430,7 +1475,7 @@ static int ppmgr_mem_device_init(struct reserved_mem *rmem, struct device *dev)
 	unsigned long start, end;
 	start = rmem->base;
 	end = rmem->base + rmem->size - 1;
-	pr_info("init ppmgr memsource %lx->%lx\n", start, end);
+	PPMGRDRV_INFO("init ppmgr memsource %lx->%lx\n", start, end);
 
 	ppmgr_set_resource(start, end, dev);
 	return 0;
@@ -1453,9 +1498,15 @@ static struct rmem_multi_user rmem_ppmgr_muser = {
 
 static int __init ppmgr_mem_setup(struct reserved_mem *rmem)
 {
-	pr_warn("ppmgr share mem setup\n");
+	PPMGRDRV_DBG("ppmgr share mem setup\n");
+	ppmgr_device.use_reserved = 0;
+	ppmgr_device.buffer_size = 0;
 	of_add_rmem_multi_user(rmem, &rmem_ppmgr_muser);
-
+	if (ppmgr_device.buffer_size > 0) {
+		ppmgr_device.use_reserved = 1;
+		pr_warn("ppmgr use reserved memory\n");
+	}
+	/* ppmgr_device.buffer_size = 0; */
 	return 0;
 }
 
@@ -1478,14 +1529,13 @@ static int __init
 ppmgr_init_module(void)
 {
 	int err;
-	pr_warn("ppmgr module init func called\n");
+	PPMGRDRV_WARN("ppmgr module init func called\n");
 	amlog_level(LOG_LEVEL_HIGH, "ppmgr_init\n");
 	err = platform_driver_register(&ppmgr_drv);
 	if (err)
 		return err;
 
 	return err;
-
 }
 
 static void __exit

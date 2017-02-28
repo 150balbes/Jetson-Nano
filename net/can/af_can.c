@@ -262,9 +262,6 @@ int can_send(struct sk_buff *skb, int loop)
 		goto inval_skb;
 	}
 
-	skb->ip_summed = CHECKSUM_UNNECESSARY;
-
-	skb_reset_mac_header(skb);
 	skb_reset_network_header(skb);
 	skb_reset_transport_header(skb);
 

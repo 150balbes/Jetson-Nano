@@ -4548,10 +4548,7 @@ static ssize_t tracing_splice_read_pipe(struct file *filp,
 
 	spd.nr_pages = i;
 
-	if (i)
-		ret = splice_to_pipe(pipe, &spd);
-	else
-		ret = 0;
+	ret = splice_to_pipe(pipe, &spd);
 out:
 	splice_shrink_spd(&spd);
 	return ret;
@@ -4788,7 +4785,7 @@ tracing_mark_write(struct file *filp, const char __user *ubuf,
 	*fpos += written;
 
  out_unlock:
-	for (i = nr_pages - 1; i >= 0; i--) {
+	for (i = 0; i < nr_pages; i++){
 		kunmap_atomic(map_page[i]);
 		put_page(pages[i]);
 	}
@@ -6252,7 +6249,7 @@ static int instance_mkdir (struct inode *inode, struct dentry *dentry, umode_t m
 	int ret;
 
 	/* Paranoid: Make sure the parent is the "instances" directory */
-	parent = hlist_entry(inode->i_dentry.first, struct dentry, d_u.d_alias);
+	parent = hlist_entry(inode->i_dentry.first, struct dentry, d_alias);
 	if (WARN_ON_ONCE(parent != trace_instance_dir))
 		return -ENOENT;
 
@@ -6279,7 +6276,7 @@ static int instance_rmdir(struct inode *inode, struct dentry *dentry)
 	int ret;
 
 	/* Paranoid: Make sure the parent is the "instances" directory */
-	parent = hlist_entry(inode->i_dentry.first, struct dentry, d_u.d_alias);
+	parent = hlist_entry(inode->i_dentry.first, struct dentry, d_alias);
 	if (WARN_ON_ONCE(parent != trace_instance_dir))
 		return -ENOENT;
 

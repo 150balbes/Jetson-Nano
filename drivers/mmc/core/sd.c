@@ -667,6 +667,7 @@ static int mmc_sd_init_uhs_card(struct mmc_card *card)
 		mmc_host_clk_hold(card->host);
 		err = card->host->ops->execute_tuning(card->host,
 						      MMC_SEND_TUNING_BLOCK);
+		card->host->uhs_speed = 1;
 		mmc_host_clk_release(card->host);
 	}
 
@@ -1088,12 +1089,17 @@ out:
  */
 static int mmc_sd_suspend(struct mmc_host *host)
 {
-	int err;
+	/* fix it after can control sd power: because when sd on uhs mode, if
+	 * no repower, it can not enter uhs mode after re-initial.
+	 */
+	int err = 0;
 
-	err = _mmc_sd_suspend(host);
-	if (!err) {
-		pm_runtime_disable(&host->card->dev);
-		pm_runtime_set_suspended(&host->card->dev);
+	if (!host->uhs_speed) {
+		err = _mmc_sd_suspend(host);
+		if (!err) {
+			pm_runtime_disable(&host->card->dev);
+			pm_runtime_set_suspended(&host->card->dev);
+		}
 	}
 
 	return err;
@@ -1129,14 +1135,19 @@ out:
  */
 static int mmc_sd_resume(struct mmc_host *host)
 {
+	/* fix it after can control sd power: because when sd on uhs mode, if
+	 * no repower, it can not enter uhs mode after re-initial.
+	 */
 	int err = 0;
 
-	if (!(host->caps & MMC_CAP_RUNTIME_RESUME)) {
-		err = _mmc_sd_resume(host);
-		pm_runtime_set_active(&host->card->dev);
-		pm_runtime_mark_last_busy(&host->card->dev);
+	if (!host->uhs_speed) {
+		if (!(host->caps & MMC_CAP_RUNTIME_RESUME)) {
+			err = _mmc_sd_resume(host);
+			pm_runtime_set_active(&host->card->dev);
+			pm_runtime_mark_last_busy(&host->card->dev);
+		}
+		pm_runtime_enable(&host->card->dev);
 	}
-	pm_runtime_enable(&host->card->dev);
 
 	return err;
 }

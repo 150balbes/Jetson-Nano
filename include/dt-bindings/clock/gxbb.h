@@ -30,9 +30,9 @@
 #define CLK_SYS_PLL 16
 #define CLK_FPLL_DIV5 17
 #define CLK_FPLL_DIV7 18
-#define CLK_MALI_0      19
-#define CLK_MALI_1      20
-#define CLK_MALI        21
+#define CLK_GPU_0      19
+#define CLK_GPU_1      20
+#define CLK_GPU        21
 #define CLK_VID		22
 #define CLK_VAPB_0      23
 #define CLK_VAPB_1      24
@@ -52,9 +52,14 @@
 #define CLK_BT656_CLK0		38
 #define CLK_BT656_CLK1		39
 #define CLK_VID_LOCK_CLK	40
-
+#define CLK_APB_P			41
+#define CLK_PCM_MCLK        42
+#define CLK_PCM_SCLK        43
 
 /* must be greater than maximal clock id */
 #define CLK_NR_CLKS		100
+#define CLK_MALI_0      CLK_GPU_0
+#define CLK_MALI_1      CLK_GPU_1
+#define CLK_MALI        CLK_GPU
 
 #endif /* _DT_BINDINGS_CLOCK_MESON_8_H */

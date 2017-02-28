@@ -112,6 +112,7 @@ static u32 stat;
 static unsigned long buf_start;
 static u32 buf_size, buf_offset;
 static u32 avi_flag;
+static u32 keyframe_pts_only;
 static u32 vvc1_ratio;
 static u32 vvc1_format;
 
@@ -282,11 +283,16 @@ static irqreturn_t vvc1_isr(int irq, void *dev_id)
 			frame_height = v_height;
 		}
 
+
+                repeat_count = READ_VREG(VC1_REPEAT_COUNT);
+                buffer_index = ((reg & 0x7) - 1) & 3;
+                picture_type = (reg >> 3) & 7;
+
 		if (pts_by_offset) {
 			offset = READ_VREG(VC1_OFFSET_REG);
-			if (pts_lookup_offset_us64(
-					PTS_TYPE_VIDEO,
-					offset, &pts, 0, &pts_us64) == 0) {
+			if (keyframe_pts_only && (picture_type != I_PICTURE)) {
+				pts_valid = 0;
+			} else if (pts_lookup_offset_us64(PTS_TYPE_VIDEO, offset, &pts, 0, &pts_us64) == 0) {
 				pts_valid = 1;
 #ifdef DEBUG_PTS
 				pts_hit++;
@@ -297,10 +303,6 @@ static irqreturn_t vvc1_isr(int irq, void *dev_id)
 #endif
 			}
 		}
-
-		repeat_count = READ_VREG(VC1_REPEAT_COUNT);
-		buffer_index = ((reg & 0x7) - 1) & 3;
-		picture_type = (reg >> 3) & 7;
 
 		if (buffer_index >= DECODE_BUFFER_NUM_MAX) {
 			pr_info("fatal error, invalid buffer index.");
@@ -389,6 +391,8 @@ static irqreturn_t vvc1_isr(int irq, void *dev_id)
 
 		if (frm.state != RATE_MEASURE_DONE)
 			frm.num += (repeat_count > 1) ? repeat_count : 1;
+		if (0 == vvc1_amstream_dec_info.rate)
+			vvc1_amstream_dec_info.rate = PTS2DUR(frm.rate);
 
 		if (reg & INTERLACE_FLAG) {	/* interlace */
 			if (kfifo_get(&newframe_q, &vf) == 0) {
@@ -396,7 +400,7 @@ static irqreturn_t vvc1_isr(int irq, void *dev_id)
 				("fatal error, no available buffer slot.");
 				return IRQ_HANDLED;
 			}
-
+			vf->signal_type = 0;
 			vf->index = buffer_index;
 			vf->width = vvc1_amstream_dec_info.width;
 			vf->height = vvc1_amstream_dec_info.height;
@@ -457,6 +461,7 @@ static irqreturn_t vvc1_isr(int irq, void *dev_id)
 			vf->canvas0Addr = vf->canvas1Addr =
 						index2canvas(buffer_index);
 			vf->orientation = 0;
+			vf->type_original = vf->type;
 			set_aspect_ratio(vf, READ_VREG(VC1_PIC_RATIO));
 
 			vfbuf_use[buffer_index]++;
@@ -473,7 +478,7 @@ static irqreturn_t vvc1_isr(int irq, void *dev_id)
 				("fatal error, no available buffer slot.");
 				return IRQ_HANDLED;
 			}
-
+			vf->signal_type = 0;
 			vf->index = buffer_index;
 			vf->width = vvc1_amstream_dec_info.width;
 			vf->height = vvc1_amstream_dec_info.height;
@@ -504,13 +509,14 @@ static irqreturn_t vvc1_isr(int irq, void *dev_id)
 
 			vf->duration_pulldown = 0;
 			vf->type = (reg & BOTTOM_FIELD_FIRST_FLAG) ?
-			VIDTYPE_INTERLACE_BOTTOM : VIDTYPE_INTERLACE_TOP;
+			VIDTYPE_INTERLACE_TOP : VIDTYPE_INTERLACE_BOTTOM;
 #ifdef NV21
 			vf->type |= VIDTYPE_VIU_NV21;
 #endif
 			vf->canvas0Addr = vf->canvas1Addr =
 					index2canvas(buffer_index);
 			vf->orientation = 0;
+			vf->type_original = vf->type;
 			set_aspect_ratio(vf, READ_VREG(VC1_PIC_RATIO));
 
 			vfbuf_use[buffer_index]++;
@@ -527,7 +533,7 @@ static irqreturn_t vvc1_isr(int irq, void *dev_id)
 				("fatal error, no available buffer slot.");
 				return IRQ_HANDLED;
 			}
-
+			vf->signal_type = 0;
 			vf->index = buffer_index;
 			vf->width = vvc1_amstream_dec_info.width;
 			vf->height = vvc1_amstream_dec_info.height;
@@ -591,6 +597,7 @@ static irqreturn_t vvc1_isr(int irq, void *dev_id)
 			vf->canvas0Addr = vf->canvas1Addr =
 						index2canvas(buffer_index);
 			vf->orientation = 0;
+			vf->type_original = vf->type;
 			set_aspect_ratio(vf, READ_VREG(VC1_PIC_RATIO));
 
 			vfbuf_use[buffer_index]++;
@@ -853,6 +860,7 @@ static void vvc1_local_init(void)
 	vvc1_ratio = 0x100;
 
 	avi_flag = (unsigned long) vvc1_amstream_dec_info.param;
+	keyframe_pts_only = (u32)vvc1_amstream_dec_info.param & 0x100;
 
 	total_frame = 0;
 
@@ -1114,10 +1122,10 @@ static struct codec_profile_t amvdec_vc1_profile = {
 
 static int __init amvdec_vc1_driver_init_module(void)
 {
-	pr_info("amvdec_vc1 module init\n");
+	pr_debug("amvdec_vc1 module init\n");
 
 	if (platform_driver_register(&amvdec_vc1_driver)) {
-		pr_info("failed to register amvdec_vc1 driver\n");
+		pr_err("failed to register amvdec_vc1 driver\n");
 		return -ENODEV;
 	}
 	vcodec_profile_register(&amvdec_vc1_profile);
@@ -1126,7 +1134,7 @@ static int __init amvdec_vc1_driver_init_module(void)
 
 static void __exit amvdec_vc1_driver_remove_module(void)
 {
-	pr_info("amvdec_vc1 module remove.\n");
+	pr_debug("amvdec_vc1 module remove.\n");
 
 	platform_driver_unregister(&amvdec_vc1_driver);
 }

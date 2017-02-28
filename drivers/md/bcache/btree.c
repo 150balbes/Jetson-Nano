@@ -199,7 +199,7 @@ void bch_btree_node_read_done(struct btree *b)
 	struct bset *i = btree_bset_first(b);
 	struct btree_iter *iter;
 
-	iter = mempool_alloc(b->c->fill_iter, GFP_NOIO);
+	iter = mempool_alloc(b->c->fill_iter, GFP_NOWAIT);
 	iter->size = b->c->sb.bucket_size / b->c->sb.block_size;
 	iter->used = 0;
 
@@ -1641,7 +1641,6 @@ static void bch_btree_gc(struct cache_set *c)
 	do {
 		ret = btree_root(gc_root, c, &op, &writes, &stats);
 		closure_sync(&writes);
-		cond_resched();
 
 		if (ret && ret != -EAGAIN)
 			pr_warn("gc failed!");
@@ -2038,10 +2037,8 @@ int bch_btree_insert_check_key(struct btree *b, struct btree_op *op,
 		rw_lock(true, b, b->level);
 
 		if (b->key.ptr[0] != btree_ptr ||
-                   b->seq != seq + 1) {
-                       op->lock = b->level;
+		    b->seq != seq + 1)
 			goto out;
-               }
 	}
 
 	SET_KEY_PTRS(check_key, 1);

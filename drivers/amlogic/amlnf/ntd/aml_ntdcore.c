@@ -301,8 +301,6 @@ int add_ntd_device(struct ntd_info *ntd)
 			"ntd%dro",
 			i);
 
-	aml_nand_msg("ntd: Giving out device %d to %s", i, ntd->name);
-
 	mutex_unlock(&ntd_table_mutex);
 	/* We _know_ we aren't being removed, because
 	   our caller is still holding us here. So none
@@ -695,8 +693,6 @@ static int init_ntd(void)
 {
 	int ret;
 
-	aml_nand_msg("------init_ntd");
-
 	ret = class_register(&ntd_class);
 	if (ret)
 		goto err_reg;
@@ -710,6 +706,9 @@ static int init_ntd(void)
 #ifdef CONFIG_PROC_FS
 	proc_ntd = proc_create("ntd", 0, NULL, &ntd_proc_ops);
 #endif /* CONFIG_PROC_FS */
+
+	register_chrdev_region(MKDEV(NTD_CHAR_MAJOR, 0), 20, "ntd");
+
 	return 0;
 
 	/* err_bdi1: */

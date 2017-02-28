@@ -376,6 +376,7 @@ void amlnand_release_device(struct amlnand_chip *aml_chip)
 	nand_release_chip(aml_chip);
 }
 
+#if 0
 void dump_pinmux_regs(struct hw_controller *controller)
 {
 	aml_nand_msg("-------------------------------------");
@@ -389,6 +390,7 @@ void dump_pinmux_regs(struct hw_controller *controller)
 		amlnf_read_reg32(controller->nand_clk_reg));
 	aml_nand_msg("-------------------------------------");
 }
+#endif
 
 void set_nand_core_clk(struct hw_controller *controller, int clk_freq)
 {
@@ -410,12 +412,9 @@ void set_nand_core_clk(struct hw_controller *controller, int clk_freq)
 			aml_nand_msg("%s() %d, use default setting!",
 				__func__, __LINE__);
 		}
-		aml_nand_msg("clk_reg %x",
-			AMLNF_READ_REG(controller->nand_clk_reg));
 		return;
-	} else {
+	} else
 		aml_nand_msg("cpu type can not support!\n");
-	}
 
 	return;
 }
@@ -436,21 +435,26 @@ void nand_boot_info_prepare(struct amlnand_phydev *phydev,
 {
 	struct amlnand_chip *aml_chip = (struct amlnand_chip *)phydev->priv;
 	struct nand_flash *flash = &(aml_chip->flash);
-	/* struct phydev_ops *devops = &(phydev->ops); */
+	struct phydev_ops *devops = &(phydev->ops);
 	struct hw_controller *controller = &(aml_chip->controller);
 	struct en_slc_info *slc_info = NULL;
 	int i;
 	unsigned int en_slc, configure_data, pages_per_blk;
 	int chip_num = 1, nand_read_info, new_nand_type;
+	unsigned int boot_num = 1, each_boot_pages;
+	unsigned int valid_pages = BOOT_COPY_NUM * BOOT_PAGES_PER_COPY;
+
 	struct nand_page0_cfg_t *info_cfg = NULL;
 	struct nand_page0_info_t *info = NULL;
 
 	slc_info = &(controller->slc_info);
 	i = 0;
 	info_cfg = (struct nand_page0_cfg_t *)page0_buf;
+	/*
 	info = (struct nand_page0_info_t *)((page0_buf + 384) -
 				sizeof(struct nand_page0_info_t));
-
+	*/
+	info = (struct nand_page0_info_t *)&info_cfg->nand_page0_info;
 	pages_per_blk = flash->blocksize / flash->pagesize;
 	new_nand_type = aml_chip->flash.new_type;
 	/* en_slc = (( flash->new_type < 10)&&( flash->new_type))? 1:0; */
@@ -496,10 +500,41 @@ void nand_boot_info_prepare(struct amlnand_phydev *phydev,
 		/* chip_num occupy the lowest 2 bit */
 		nand_read_info = chip_num;
 
+		/*
+		make it
+		1)calu the number of boot saved and pages each boot needs.
+		2)the number is 2*n but less than 4.
+		*/
+		aml_nand_msg("valid_pages = %d en_slc = %d devops->len = %llx",
+			valid_pages,
+			en_slc, devops->len);
+		valid_pages = (en_slc)?(valid_pages>>1):valid_pages;
+		for (i = 1;
+			i < ((valid_pages*flash->pagesize)/devops->len + 1);
+			i++) {
+			if (((valid_pages*flash->pagesize)/(2*i)
+					>= devops->len) && (boot_num < 4))
+				boot_num <<= 1;
+			else
+				break;
+		}
+		each_boot_pages = valid_pages/boot_num;
+		/*
+		each_boot_pages =
+			(en_slc)?(each_boot_pages<<1):each_boot_pages;
+		*/
+
 		info->ce_mask = aml_chip->ce_bit_mask;
 		info->nand_read_info = nand_read_info;
 		info->pages_in_block = pages_per_blk;
 		info->new_nand_type = new_nand_type;
+		info->boot_num = boot_num;
+		info->each_boot_pages = each_boot_pages;
+
+		aml_nand_msg("new_type = 0x%x\n", info->new_nand_type);
+		aml_nand_msg("page_per_blk = 0x%x\n", info->pages_in_block);
+		aml_nand_msg("boot_num = %d each_boot_pages = %d", boot_num,
+			each_boot_pages);
 
 	} else {
 		memset(page0_buf, 0xbb, flash->pagesize);
@@ -547,11 +582,7 @@ int aml_sys_info_init(struct amlnand_chip *aml_chip)
 	unsigned int buf_size = 0;
 	int ret = 0;
 
-	if (CONFIG_SECURE_SIZE > CONFIG_KEYSIZE)
-		buf_size = CONFIG_SECURE_SIZE;
-	else
-		buf_size = CONFIG_KEYSIZE;
-
+	buf_size = max_t(u32, CONFIG_SECURE_SIZE, CONFIG_KEY_MAX_SIZE);
 	buf = aml_nand_malloc(buf_size);
 	if (!buf)
 		aml_nand_msg("aml_sys_info_init : malloc failed");
@@ -601,7 +632,7 @@ int aml_sys_info_init(struct amlnand_chip *aml_chip)
 			(unsigned char *)(&(aml_chip->nand_key)),
 			buf,
 			KEY_INFO_HEAD_MAGIC,
-			CONFIG_KEYSIZE);
+			aml_chip->keysize);
 		if (ret < 0) {
 			aml_nand_msg("nand save default key failed");
 			goto exit_error;

@@ -1194,13 +1194,10 @@ static int rapl_detect_domains(struct rapl_package *rp, int cpu)
 
 	for (rd = rp->domains; rd < rp->domains + rp->nr_domains; rd++) {
 		/* check if the domain is locked by BIOS */
-		ret = rapl_read_data_raw(rd, FW_LOCK, false, &locked);
-		if (ret)
-			return ret;
-		if (locked) {
+		if (rapl_read_data_raw(rd, FW_LOCK, false, &locked)) {
 			pr_info("RAPL package %d domain %s locked by BIOS\n",
 				rp->id, rd->name);
-			rd->state |= DOMAIN_STATE_BIOS_LOCKED;
+				rd->state |= DOMAIN_STATE_BIOS_LOCKED;
 		}
 	}
 

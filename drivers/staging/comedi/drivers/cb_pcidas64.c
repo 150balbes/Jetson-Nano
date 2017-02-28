@@ -441,29 +441,6 @@ static const struct comedi_lrange ai_ranges_64xx = {
 	}
 };
 
-static const uint8_t ai_range_code_64xx[8] = {
-	0x0, 0x1, 0x2, 0x3,	/* bipolar 10, 5, 2,5, 1.25 */
-	0x8, 0x9, 0xa, 0xb	/* unipolar 10, 5, 2.5, 1.25 */
-};
-
-/* analog input ranges for 64-Mx boards */
-static const struct comedi_lrange ai_ranges_64_mx = {
-	7, {
-		BIP_RANGE(5),
-		BIP_RANGE(2.5),
-		BIP_RANGE(1.25),
-		BIP_RANGE(0.625),
-		UNI_RANGE(5),
-		UNI_RANGE(2.5),
-		UNI_RANGE(1.25)
-	}
-};
-
-static const uint8_t ai_range_code_64_mx[7] = {
-	0x0, 0x1, 0x2, 0x3,	/* bipolar 5, 2.5, 1.25, 0.625 */
-	0x9, 0xa, 0xb		/* unipolar 5, 2.5, 1.25 */
-};
-
 /* analog input ranges for 60xx boards */
 static const struct comedi_lrange ai_ranges_60xx = {
 	4, {
@@ -472,10 +449,6 @@ static const struct comedi_lrange ai_ranges_60xx = {
 		BIP_RANGE(0.5),
 		BIP_RANGE(0.05)
 	}
-};
-
-static const uint8_t ai_range_code_60xx[4] = {
-	0x0, 0x1, 0x4, 0x7	/* bipolar 10, 5, 0.5, 0.05 */
 };
 
 /* analog input ranges for 6030, etc boards */
@@ -498,11 +471,6 @@ static const struct comedi_lrange ai_ranges_6030 = {
 	}
 };
 
-static const uint8_t ai_range_code_6030[14] = {
-	0x0, 0x1, 0x2, 0x3, 0x4, 0x5, 0x6, /* bip 10, 5, 2, 1, 0.5, 0.2, 0.1 */
-	0x9, 0xa, 0xb, 0xc, 0xd, 0xe, 0xf  /* uni 10, 5, 2, 1, 0.5, 0.2, 0.1 */
-};
-
 /* analog input ranges for 6052, etc boards */
 static const struct comedi_lrange ai_ranges_6052 = {
 	15, {
@@ -522,11 +490,6 @@ static const struct comedi_lrange ai_ranges_6052 = {
 		UNI_RANGE(0.2),
 		UNI_RANGE(0.1)
 	}
-};
-
-static const uint8_t ai_range_code_6052[15] = {
-	0x0, 0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7,	/* bipolar 10 ... 0.05 */
-	0x9, 0xa, 0xb, 0xc, 0xd, 0xe, 0xf	/* unipolar 10 ... 0.1 */
 };
 
 /* analog input ranges for 4020 board */
@@ -632,7 +595,6 @@ struct pcidas64_board {
 	int ai_bits;		/*  analog input resolution */
 	int ai_speed;		/*  fastest conversion period in ns */
 	const struct comedi_lrange *ai_range_table;
-	const uint8_t *ai_range_code;
 	int ao_nchan;		/*  number of analog out channels */
 	int ao_bits;		/*  analog output resolution */
 	int ao_scan_speed;	/*  analog output scan speed */
@@ -691,7 +653,6 @@ static const struct pcidas64_board pcidas64_boards[] = {
 		.ao_scan_speed	= 10000,
 		.layout		= LAYOUT_64XX,
 		.ai_range_table	= &ai_ranges_64xx,
-		.ai_range_code	= ai_range_code_64xx,
 		.ao_range_table	= &ao_ranges_64xx,
 		.ao_range_code	= ao_range_code_64xx,
 		.ai_fifo	= &ai_fifo_64xx,
@@ -707,7 +668,6 @@ static const struct pcidas64_board pcidas64_boards[] = {
 		.ao_scan_speed	= 10000,
 		.layout		= LAYOUT_64XX,
 		.ai_range_table	= &ai_ranges_64xx,
-		.ai_range_code	= ai_range_code_64xx,
 		.ao_range_table	= &ao_ranges_64xx,
 		.ao_range_code	= ao_range_code_64xx,
 		.ai_fifo	= &ai_fifo_64xx,
@@ -722,8 +682,7 @@ static const struct pcidas64_board pcidas64_boards[] = {
 		.ao_bits	= 16,
 		.ao_scan_speed	= 10000,
 		.layout		= LAYOUT_64XX,
-		.ai_range_table	= &ai_ranges_64_mx,
-		.ai_range_code	= ai_range_code_64_mx,
+		.ai_range_table	= &ai_ranges_64xx,
 		.ao_range_table	= &ao_ranges_64xx,
 		.ao_range_code	= ao_range_code_64xx,
 		.ai_fifo	= &ai_fifo_64xx,
@@ -738,8 +697,7 @@ static const struct pcidas64_board pcidas64_boards[] = {
 		.ao_bits	= 16,
 		.ao_scan_speed	= 10000,
 		.layout		= LAYOUT_64XX,
-		.ai_range_table	= &ai_ranges_64_mx,
-		.ai_range_code	= ai_range_code_64_mx,
+		.ai_range_table	= &ai_ranges_64xx,
 		.ao_range_table	= &ao_ranges_64xx,
 		.ao_range_code	= ao_range_code_64xx,
 		.ai_fifo	= &ai_fifo_64xx,
@@ -754,8 +712,7 @@ static const struct pcidas64_board pcidas64_boards[] = {
 		.ao_bits	= 16,
 		.ao_scan_speed	= 10000,
 		.layout		= LAYOUT_64XX,
-		.ai_range_table	= &ai_ranges_64_mx,
-		.ai_range_code	= ai_range_code_64_mx,
+		.ai_range_table	= &ai_ranges_64xx,
 		.ao_range_table	= &ao_ranges_64xx,
 		.ao_range_code	= ao_range_code_64xx,
 		.ai_fifo	= &ai_fifo_64xx,
@@ -770,7 +727,6 @@ static const struct pcidas64_board pcidas64_boards[] = {
 		.ao_bits	= 16,
 		.layout		= LAYOUT_60XX,
 		.ai_range_table	= &ai_ranges_60xx,
-		.ai_range_code	= ai_range_code_60xx,
 		.ao_range_table	= &range_bipolar10,
 		.ao_range_code	= ao_range_code_60xx,
 		.ai_fifo	= &ai_fifo_60xx,
@@ -786,7 +742,6 @@ static const struct pcidas64_board pcidas64_boards[] = {
 		.ao_scan_speed	= 100000,
 		.layout		= LAYOUT_60XX,
 		.ai_range_table	= &ai_ranges_60xx,
-		.ai_range_code	= ai_range_code_60xx,
 		.ao_range_table	= &range_bipolar10,
 		.ao_range_code	= ao_range_code_60xx,
 		.ai_fifo	= &ai_fifo_60xx,
@@ -801,7 +756,6 @@ static const struct pcidas64_board pcidas64_boards[] = {
 		.ao_scan_speed	= 100000,
 		.layout		= LAYOUT_60XX,
 		.ai_range_table	= &ai_ranges_60xx,
-		.ai_range_code	= ai_range_code_60xx,
 		.ao_range_table	= &range_bipolar10,
 		.ao_range_code	= ao_range_code_60xx,
 		.ai_fifo	= &ai_fifo_60xx,
@@ -817,7 +771,6 @@ static const struct pcidas64_board pcidas64_boards[] = {
 		.ao_scan_speed	= 100000,
 		.layout		= LAYOUT_60XX,
 		.ai_range_table	= &ai_ranges_60xx,
-		.ai_range_code	= ai_range_code_60xx,
 		.ao_range_table	= &range_bipolar10,
 		.ao_range_code	= ao_range_code_60xx,
 		.ai_fifo	= &ai_fifo_60xx,
@@ -833,7 +786,6 @@ static const struct pcidas64_board pcidas64_boards[] = {
 		.ao_scan_speed	= 10000,
 		.layout		= LAYOUT_60XX,
 		.ai_range_table	= &ai_ranges_6030,
-		.ai_range_code	= ai_range_code_6030,
 		.ao_range_table	= &ao_ranges_6030,
 		.ao_range_code	= ao_range_code_6030,
 		.ai_fifo	= &ai_fifo_60xx,
@@ -849,7 +801,6 @@ static const struct pcidas64_board pcidas64_boards[] = {
 		.ao_scan_speed	= 10000,
 		.layout		= LAYOUT_60XX,
 		.ai_range_table	= &ai_ranges_6030,
-		.ai_range_code	= ai_range_code_6030,
 		.ao_range_table	= &ao_ranges_6030,
 		.ao_range_code	= ao_range_code_6030,
 		.ai_fifo	= &ai_fifo_60xx,
@@ -863,7 +814,6 @@ static const struct pcidas64_board pcidas64_boards[] = {
 		.ao_nchan	= 0,
 		.layout		= LAYOUT_60XX,
 		.ai_range_table	= &ai_ranges_6030,
-		.ai_range_code	= ai_range_code_6030,
 		.ai_fifo	= &ai_fifo_60xx,
 		.has_8255	= 0,
 	},
@@ -875,7 +825,6 @@ static const struct pcidas64_board pcidas64_boards[] = {
 		.ao_nchan	= 0,
 		.layout		= LAYOUT_60XX,
 		.ai_range_table	= &ai_ranges_6030,
-		.ai_range_code	= ai_range_code_6030,
 		.ai_fifo	= &ai_fifo_60xx,
 		.has_8255	= 0,
 	},
@@ -888,7 +837,6 @@ static const struct pcidas64_board pcidas64_boards[] = {
 		.ao_scan_speed	= 0,
 		.layout		= LAYOUT_60XX,
 		.ai_range_table	= &ai_ranges_60xx,
-		.ai_range_code	= ai_range_code_60xx,
 		.ai_fifo	= &ai_fifo_60xx,
 		.has_8255	= 0,
 	},
@@ -902,7 +850,6 @@ static const struct pcidas64_board pcidas64_boards[] = {
 		.ao_scan_speed	= 100000,
 		.layout		= LAYOUT_60XX,
 		.ai_range_table	= &ai_ranges_60xx,
-		.ai_range_code	= ai_range_code_60xx,
 		.ao_range_table	= &range_bipolar10,
 		.ao_range_code	= ao_range_code_60xx,
 		.ai_fifo	= &ai_fifo_60xx,
@@ -918,7 +865,6 @@ static const struct pcidas64_board pcidas64_boards[] = {
 		.ao_scan_speed	= 100000,
 		.layout		= LAYOUT_60XX,
 		.ai_range_table	= &ai_ranges_60xx,
-		.ai_range_code	= ai_range_code_60xx,
 		.ao_range_table	= &range_bipolar10,
 		.ao_range_code	= ao_range_code_60xx,
 		.ai_fifo	= &ai_fifo_60xx,
@@ -934,7 +880,6 @@ static const struct pcidas64_board pcidas64_boards[] = {
 		.ao_scan_speed	= 1000,
 		.layout		= LAYOUT_60XX,
 		.ai_range_table	= &ai_ranges_6052,
-		.ai_range_code	= ai_range_code_6052,
 		.ao_range_table	= &ao_ranges_6030,
 		.ao_range_code	= ao_range_code_6030,
 		.ai_fifo	= &ai_fifo_60xx,
@@ -950,7 +895,6 @@ static const struct pcidas64_board pcidas64_boards[] = {
 		.ao_scan_speed	= 3333,
 		.layout		= LAYOUT_60XX,
 		.ai_range_table	= &ai_ranges_6052,
-		.ai_range_code	= ai_range_code_6052,
 		.ao_range_table	= &ao_ranges_6030,
 		.ao_range_code	= ao_range_code_6030,
 		.ai_fifo	= &ai_fifo_60xx,
@@ -966,7 +910,6 @@ static const struct pcidas64_board pcidas64_boards[] = {
 		.ao_scan_speed	= 1000,
 		.layout		= LAYOUT_60XX,
 		.ai_range_table	= &ai_ranges_6052,
-		.ai_range_code	= ai_range_code_6052,
 		.ao_range_table	= &ao_ranges_6030,
 		.ao_range_code	= ao_range_code_6030,
 		.ai_fifo	= &ai_fifo_60xx,
@@ -982,7 +925,6 @@ static const struct pcidas64_board pcidas64_boards[] = {
 		.ao_scan_speed	= 1000,
 		.layout		= LAYOUT_60XX,
 		.ai_range_table	= &ai_ranges_6052,
-		.ai_range_code	= ai_range_code_6052,
 		.ao_range_table	= &ao_ranges_6030,
 		.ao_range_code	= ao_range_code_6030,
 		.ai_fifo	= &ai_fifo_60xx,
@@ -1017,7 +959,6 @@ static const struct pcidas64_board pcidas64_boards[] = {
 		.ao_scan_speed	= 10000,
 		.layout		= LAYOUT_64XX,
 		.ai_range_table	= &ai_ranges_64xx,
-		.ai_range_code	= ai_range_code_64xx,
 		.ai_fifo	= ai_fifo_64xx,
 		.has_8255	= 1,
 	},
@@ -1029,8 +970,7 @@ static const struct pcidas64_board pcidas64_boards[] = {
 		.ao_nchan	= 0,
 		.ao_scan_speed	= 10000,
 		.layout		= LAYOUT_64XX,
-		.ai_range_table	= &ai_ranges_64_mx,
-		.ai_range_code	= ai_range_code_64_mx,
+		.ai_range_table	= &ai_ranges_64xx,
 		.ai_fifo	= ai_fifo_64xx,
 		.has_8255	= 1,
 	},
@@ -1042,8 +982,7 @@ static const struct pcidas64_board pcidas64_boards[] = {
 		.ao_nchan	= 0,
 		.ao_scan_speed	= 10000,
 		.layout		= LAYOUT_64XX,
-		.ai_range_table	= &ai_ranges_64_mx,
-		.ai_range_code	= ai_range_code_64_mx,
+		.ai_range_table	= &ai_ranges_64xx,
 		.ai_fifo	= ai_fifo_64xx,
 		.has_8255	= 1,
 	},
@@ -1055,8 +994,7 @@ static const struct pcidas64_board pcidas64_boards[] = {
 		.ao_nchan	= 0,
 		.ao_scan_speed	= 10000,
 		.layout		= LAYOUT_64XX,
-		.ai_range_table	= &ai_ranges_64_mx,
-		.ai_range_code	= ai_range_code_64_mx,
+		.ai_range_table	= &ai_ranges_64xx,
 		.ai_fifo	= ai_fifo_64xx,
 		.has_8255	= 1,
 	},
@@ -1068,8 +1006,7 @@ static const struct pcidas64_board pcidas64_boards[] = {
 		.ao_nchan	= 2,
 		.ao_scan_speed	= 10000,
 		.layout		= LAYOUT_64XX,
-		.ai_range_table	= &ai_ranges_64_mx,
-		.ai_range_code	= ai_range_code_64_mx,
+		.ai_range_table	= &ai_ranges_64xx,
 		.ai_fifo	= ai_fifo_64xx,
 		.has_8255	= 1,
 	},
@@ -1081,8 +1018,7 @@ static const struct pcidas64_board pcidas64_boards[] = {
 		.ao_nchan	= 2,
 		.ao_scan_speed	= 10000,
 		.layout		= LAYOUT_64XX,
-		.ai_range_table	= &ai_ranges_64_mx,
-		.ai_range_code	= ai_range_code_64_mx,
+		.ai_range_table	= &ai_ranges_64xx,
 		.ai_fifo	= ai_fifo_64xx,
 		.has_8255	= 1,
 	},
@@ -1094,8 +1030,7 @@ static const struct pcidas64_board pcidas64_boards[] = {
 		.ao_nchan	= 2,
 		.ao_scan_speed	= 10000,
 		.layout		= LAYOUT_64XX,
-		.ai_range_table	= &ai_ranges_64_mx,
-		.ai_range_code	= ai_range_code_64_mx,
+		.ai_range_table	= &ai_ranges_64xx,
 		.ai_fifo	= ai_fifo_64xx,
 		.has_8255	= 1,
 	},
@@ -1192,8 +1127,45 @@ static unsigned int ai_range_bits_6xxx(const struct comedi_device *dev,
 				       unsigned int range_index)
 {
 	const struct pcidas64_board *thisboard = comedi_board(dev);
+	const struct comedi_krange *range =
+		&thisboard->ai_range_table->range[range_index];
+	unsigned int bits = 0;
 
-	return thisboard->ai_range_code[range_index] << 8;
+	switch (range->max) {
+	case 10000000:
+		bits = 0x000;
+		break;
+	case 5000000:
+		bits = 0x100;
+		break;
+	case 2000000:
+	case 2500000:
+		bits = 0x200;
+		break;
+	case 1000000:
+	case 1250000:
+		bits = 0x300;
+		break;
+	case 500000:
+		bits = 0x400;
+		break;
+	case 200000:
+	case 250000:
+		bits = 0x500;
+		break;
+	case 100000:
+		bits = 0x600;
+		break;
+	case 50000:
+		bits = 0x700;
+		break;
+	default:
+		comedi_error(dev, "bug! in ai_range_bits_6xxx");
+		break;
+	}
+	if (range->min == 0)
+		bits += 0x900;
+	return bits;
 }
 
 static unsigned int hw_revision(const struct comedi_device *dev,

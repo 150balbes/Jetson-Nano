@@ -15,7 +15,6 @@
 #include <linux/vmalloc.h>
 #include <linux/fs.h>
 #include <linux/bootmem.h>
-#include <asm/fpu.h>
 #include <asm/page.h>
 #include <asm/cacheflush.h>
 #include <asm/mmu_context.h>
@@ -313,7 +312,7 @@ struct kvm_vcpu *kvm_arch_vcpu_create(struct kvm *kvm, unsigned int id)
 
 	if (!gebase) {
 		err = -ENOMEM;
-		goto out_uninit_cpu;
+		goto out_free_cpu;
 	}
 	kvm_info("Allocated %d bytes for KVM Exception Handlers @ %p\n",
 		 ALIGN(size, PAGE_SIZE), gebase);
@@ -348,15 +347,6 @@ struct kvm_vcpu *kvm_arch_vcpu_create(struct kvm *kvm, unsigned int id)
 	memcpy(gebase + offset, mips32_GuestException,
 	       mips32_GuestExceptionEnd - mips32_GuestException);
 
-#ifdef MODULE
-	offset += mips32_GuestExceptionEnd - mips32_GuestException;
-	memcpy(gebase + offset, (char *)__kvm_mips_vcpu_run,
-	       __kvm_mips_vcpu_run_end - (char *)__kvm_mips_vcpu_run);
-	vcpu->arch.vcpu_run = gebase + offset;
-#else
-	vcpu->arch.vcpu_run = __kvm_mips_vcpu_run;
-#endif
-
 	/* Invalidate the icache for these ranges */
 	mips32_SyncICache((unsigned long) gebase, ALIGN(size, PAGE_SIZE));
 
@@ -381,9 +371,6 @@ struct kvm_vcpu *kvm_arch_vcpu_create(struct kvm *kvm, unsigned int id)
 
 out_free_gebase:
 	kfree(gebase);
-
-out_uninit_cpu:
-	kvm_vcpu_uninit(vcpu);
 
 out_free_cpu:
 	kfree(vcpu);
@@ -431,16 +418,14 @@ int kvm_arch_vcpu_ioctl_run(struct kvm_vcpu *vcpu, struct kvm_run *run)
 		vcpu->mmio_needed = 0;
 	}
 
-	lose_fpu(1);
-
-	local_irq_disable();
 	/* Check if we have any exceptions/interrupts pending */
 	kvm_mips_deliver_interrupts(vcpu,
 				    kvm_read_c0_guest_cause(vcpu->arch.cop0));
 
+	local_irq_disable();
 	kvm_guest_enter();
 
-	r = vcpu->arch.vcpu_run(run, vcpu);
+	r = __kvm_mips_vcpu_run(run, vcpu);
 
 	kvm_guest_exit();
 	local_irq_enable();
@@ -1035,6 +1020,9 @@ static
 void kvm_mips_set_c0_status(void)
 {
 	uint32_t status = read_c0_status();
+
+	if (cpu_has_fpu)
+		status |= (ST0_CU1);
 
 	if (cpu_has_dsp)
 		status |= (ST0_MX);

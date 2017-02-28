@@ -342,14 +342,4 @@ config RC_ST
 
 	 If you're not sure, select N here.
 
-config IR_GPIOPLUG_CIR
-	tristate "GPIOPLUG IR remote control"
-	depends on RC_CORE
-	select IR_GPIO_CIR
-	---help---
-	   Say Y if you want to use GPIOPLUG based IR Receiver.
-
-	   To compile this driver as a module, choose M here: the module will
-	   be called gpio-ir-recv.
-
 endif #RC_DEVICES

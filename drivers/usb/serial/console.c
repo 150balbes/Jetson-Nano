@@ -46,8 +46,6 @@ static struct console usbcons;
  * ------------------------------------------------------------
  */
 
-static const struct tty_operations usb_console_fake_tty_ops = {
-};
 
 /*
  * The parsing of the command line works exactly like the
@@ -139,17 +137,13 @@ static int usb_console_setup(struct console *co, char *options)
 				goto reset_open_count;
 			}
 			kref_init(&tty->kref);
+			tty_port_tty_set(&port->port, tty);
 			tty->driver = usb_serial_tty_driver;
 			tty->index = co->index;
-			init_ldsem(&tty->ldisc_sem);
-			INIT_LIST_HEAD(&tty->tty_files);
-			kref_get(&tty->driver->kref);
-			tty->ops = &usb_console_fake_tty_ops;
 			if (tty_init_termios(tty)) {
 				retval = -ENOMEM;
-				goto put_tty;
+				goto free_tty;
 			}
-			tty_port_tty_set(&port->port, tty);
 		}
 
 		/* only call the device specific open if this
@@ -167,7 +161,7 @@ static int usb_console_setup(struct console *co, char *options)
 			serial->type->set_termios(tty, port, &dummy);
 
 			tty_port_tty_set(&port->port, NULL);
-			tty_kref_put(tty);
+			kfree(tty);
 		}
 		set_bit(ASYNCB_INITIALIZED, &port->port.flags);
 	}
@@ -183,8 +177,8 @@ static int usb_console_setup(struct console *co, char *options)
 
  fail:
 	tty_port_tty_set(&port->port, NULL);
- put_tty:
-	tty_kref_put(tty);
+ free_tty:
+	kfree(tty);
  reset_open_count:
 	port->port.count = 0;
 	usb_autopm_put_interface(serial->interface);

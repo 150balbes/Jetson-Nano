@@ -30,7 +30,7 @@
 #define pr_info(fmt, ...)
 #endif
 
-static unsigned int max_buf_num = 4;
+unsigned int max_buf_num = 4;
 module_param(max_buf_num, uint, 0664);
 MODULE_PARM_DESC(max_buf_num, "vdin max buf num.\n");
 
@@ -112,6 +112,8 @@ void vdin_canvas_start_config(struct vdin_dev_s *devp)
 	} else{
 		devp->canvas_w = devp->h_active * 2;
 	}
+	if (devp->source_bitdepth > 8)
+		devp->canvas_w = devp->canvas_w * 3 / 2;
 #if 0
 	const struct tvin_format_s *fmt_info =
 			tvin_get_fmt_info(devp->parm.info.fmt);
@@ -155,6 +157,10 @@ void vdin_canvas_start_config(struct vdin_dev_s *devp)
 /*
 *this function used for configure canvas base on the input format
 *also used for input resalution over 1080p such as camera input 200M,500M
+*YUV422-8BIT:1pixel = 2byte;
+*YUV422-10BIT:1pixel = 3byte;
+*YUV444-8BIT:1pixel = 3byte;
+*YUV444-10BIT:1pixel = 4bypte
 */
 void vdin_canvas_auto_config(struct vdin_dev_s *devp)
 {
@@ -166,18 +172,35 @@ void vdin_canvas_auto_config(struct vdin_dev_s *devp)
 	unsigned int canvas_num = VDIN_CANVAS_MAX_CNT;
 
 	if ((devp->format_convert == VDIN_FORMAT_CONVERT_YUV_YUV444) ||
-	    (devp->format_convert == VDIN_FORMAT_CONVERT_YUV_RGB) ||
-	    (devp->format_convert == VDIN_FORMAT_CONVERT_RGB_YUV444) ||
-	    (devp->format_convert == VDIN_FORMAT_CONVERT_RGB_RGB)) {
-		devp->canvas_w = devp->h_active * 3;
-	} else if ((devp->prop.dest_cfmt == TVIN_NV12) ||
-		(devp->prop.dest_cfmt == TVIN_NV21)) {
+		(devp->format_convert == VDIN_FORMAT_CONVERT_YUV_RGB) ||
+		(devp->format_convert == VDIN_FORMAT_CONVERT_RGB_YUV444) ||
+		(devp->format_convert == VDIN_FORMAT_CONVERT_RGB_RGB)) {
+		if (devp->source_bitdepth > 8)
+			devp->canvas_w = devp->h_active * 4;
+		else
+			devp->canvas_w = devp->h_active * 3;
+	} else if (((devp->prop.dest_cfmt == TVIN_NV12) ||
+		(devp->prop.dest_cfmt == TVIN_NV21)) &&
+		(devp->source_bitdepth <= 8)) {
 		devp->canvas_w = devp->h_active;
 		canvas_num = canvas_num/2;
 		canvas_step = 2;
-	} else{
-		devp->canvas_w = devp->h_active * 2;
+	} else{/*YUV422*/
+		/* txl new add yuv422 pack mode:canvas-w=h*2*10/8*/
+		if ((devp->source_bitdepth > 8) &&
+		((devp->format_convert == VDIN_FORMAT_CONVERT_YUV_YUV422) ||
+		(devp->format_convert == VDIN_FORMAT_CONVERT_RGB_YUV422) ||
+		(devp->format_convert == VDIN_FORMAT_CONVERT_GBR_YUV422) ||
+		(devp->format_convert == VDIN_FORMAT_CONVERT_BRG_YUV422)) &&
+		(devp->color_depth_mode == 1))
+			devp->canvas_w = (devp->h_active * 5)/2;
+		else if ((devp->source_bitdepth > 8) &&
+			(devp->color_depth_mode == 0))
+			devp->canvas_w = devp->h_active * 3;
+		else
+			devp->canvas_w = devp->h_active * 2;
 	}
+	/*canvas_w must ensure divided exact by 256bit(32byte)*/
 	devp->canvas_w = roundup(devp->canvas_w, 32);
 	devp->canvas_h = devp->v_active;
 

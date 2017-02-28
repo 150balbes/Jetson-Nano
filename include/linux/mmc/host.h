@@ -334,7 +334,6 @@ struct mmc_host {
 				 MMC_CAP2_HS200_1_2V_SDR)
 
 /* Use the broken voltage */
-#define MMC_CAP2_BROKEN_VOLTAGE	(1 << 7)
 /* High-capacity erase size */
 #define MMC_CAP2_HC_ERASE_SZ	(1 << 9)
 /* Card-detect signal active high */
@@ -348,7 +347,8 @@ struct mmc_host {
 
 #define MMC_CAP2_PACKED_CMD	(MMC_CAP2_PACKED_RD | \
 				 MMC_CAP2_PACKED_WR)
-
+/*Host switch 1.8v delay time before detect card busy */
+	unsigned int vol_switch_delay;
 /* Don't power up before scan */
 #define MMC_CAP2_NO_PRESCAN_POWERUP (1 << 14)
 #define MMC_CAP2_HS400_1_8V	(1 << 15)	/* Can support HS400 1.8V */
@@ -426,7 +426,7 @@ struct mmc_host {
 
 	/* device attached to this host */
 	struct mmc_card		*card;
-
+	bool		uhs_speed;
 	wait_queue_head_t	wq;
 	/* task that has host claimed */
 	struct task_struct	*claimer;

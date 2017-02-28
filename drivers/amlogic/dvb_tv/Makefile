@@ -14,4 +14,49 @@ obj-$(CONFIG_AM_DTVDEMOD) += amldemod/
 
 obj-$(CONFIG_AM_ATVDEMOD) += amlatvdemod/
 
+obj-$(CONFIG_AML_SMARTCARD) += smartcard/
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 ccflags-y += -I.

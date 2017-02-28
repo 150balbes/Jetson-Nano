@@ -1004,25 +1004,21 @@ parse_lease_state(struct TCP_Server_Info *server, struct smb2_create_rsp *rsp,
 {
 	char *data_offset;
 	struct create_context *cc;
-	unsigned int next;
-	unsigned int remaining;
+	unsigned int next = 0;
 	char *name;
 
 	data_offset = (char *)rsp + 4 + le32_to_cpu(rsp->CreateContextsOffset);
-	remaining = le32_to_cpu(rsp->CreateContextsLength);
 	cc = (struct create_context *)data_offset;
-	while (remaining >= sizeof(struct create_context)) {
-		name = le16_to_cpu(cc->NameOffset) + (char *)cc;
-		if (le16_to_cpu(cc->NameLength) == 4 &&
-		    strncmp(name, "RqLs", 4) == 0)
-			return server->ops->parse_lease_buf(cc, epoch);
-
-		next = le32_to_cpu(cc->Next);
-		if (!next)
-			break;
-		remaining -= next;
+	do {
 		cc = (struct create_context *)((char *)cc + next);
-	}
+		name = le16_to_cpu(cc->NameOffset) + (char *)cc;
+		if (le16_to_cpu(cc->NameLength) != 4 ||
+		    strncmp(name, "RqLs", 4)) {
+			next = le32_to_cpu(cc->Next);
+			continue;
+		}
+		return server->ops->parse_lease_buf(cc, epoch);
+	} while (next != 0);
 
 	return 0;
 }
@@ -1589,33 +1585,6 @@ SMB2_echo(struct TCP_Server_Info *server)
 				 .rq_nvec = 1 };
 
 	cifs_dbg(FYI, "In echo request\n");
-
-	if (server->tcpStatus == CifsNeedNegotiate) {
-		struct list_head *tmp, *tmp2;
-		struct cifs_ses *ses;
-		struct cifs_tcon *tcon;
-
-		cifs_dbg(FYI, "Need negotiate, reconnecting tcons\n");
-		spin_lock(&cifs_tcp_ses_lock);
-		list_for_each(tmp, &server->smb_ses_list) {
-			ses = list_entry(tmp, struct cifs_ses, smb_ses_list);
-			list_for_each(tmp2, &ses->tcon_list) {
-				tcon = list_entry(tmp2, struct cifs_tcon,
-						  tcon_list);
-				/* add check for persistent handle reconnect */
-				if (tcon && tcon->need_reconnect) {
-					spin_unlock(&cifs_tcp_ses_lock);
-					rc = smb2_reconnect(SMB2_ECHO, tcon);
-					spin_lock(&cifs_tcp_ses_lock);
-				}
-			}
-		}
-		spin_unlock(&cifs_tcp_ses_lock);
-	}
-
-	/* if no session, renegotiate failed above */
-	if (server->tcpStatus == CifsNeedNegotiate)
-		return -EIO;
 
 	rc = small_smb2_init(SMB2_ECHO, NULL, (void **)&req);
 	if (rc)
@@ -2315,22 +2284,6 @@ SMB2_rename(const unsigned int xid, struct cifs_tcon *tcon,
 			   size);
 	kfree(data);
 	return rc;
-}
-
-int
-SMB2_rmdir(const unsigned int xid, struct cifs_tcon *tcon,
-		  u64 persistent_fid, u64 volatile_fid)
-{
-	__u8 delete_pending = 1;
-	void *data;
-	unsigned int size;
-
-	data = &delete_pending;
-	size = 1; /* sizeof __u8 */
-
-	return send_set_info(xid, tcon, persistent_fid, volatile_fid,
-			current->tgid, FILE_DISPOSITION_INFORMATION, 1, &data,
-			&size);
 }
 
 int

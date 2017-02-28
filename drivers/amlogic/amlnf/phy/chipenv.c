@@ -18,7 +18,7 @@
 #include "../include/phynand.h"
 
 
-static unsigned int aml_info_checksum(unsigned char *data, int lenth)
+unsigned int aml_info_checksum(unsigned char *data, int lenth)
 {
 	unsigned int checksum;
 	unsigned char *pdata;
@@ -40,6 +40,7 @@ static int aml_info_check_datasum(void *data, unsigned char *name)
 	struct block_status *blk_status = NULL;
 	struct shipped_bbt *bbt = NULL;
 	struct nand_config *config = NULL;
+	struct phy_partition_info *phy_part = NULL;
 
 	if (!memcmp(name, BBT_HEAD_MAGIC, 4)) {
 		blk_status = (struct block_status *)data;
@@ -68,6 +69,17 @@ static int aml_info_check_datasum(void *data, unsigned char *name)
 		if (aml_info_checksum((unsigned char *)(config->dev_para),
 			(MAX_DEVICE_NUM*sizeof(struct dev_para))) != crc) {
 			aml_nand_msg("%s : nand check config crc error",
+				__func__);
+			ret = -NAND_READ_FAILED;
+		}
+	}
+
+	if (!memcmp(name, PHY_PARTITION_HEAD_MAGIC, 4)) {
+		phy_part = (struct phy_partition_info *)data;
+		crc = phy_part->crc;
+		if (aml_info_checksum((unsigned char *)(phy_part->partition),
+		(MAX_DEVICE_NUM*sizeof(struct _phy_partition))) != crc) {
+			aml_nand_msg("%s : nand check phy partition crc error",
 				__func__);
 			ret = -NAND_READ_FAILED;
 		}
@@ -272,10 +284,9 @@ int get_last_reserve_block(struct amlnand_chip *aml_chip)
 	unsigned int tmp_value;
 	static u32 total_blk, scan_flag;/*add 150922*/
 
-	if ((total_blk > RESERVED_BLOCK_CNT) &&	(scan_flag == 1)) {
-		aml_nand_msg("total_blk:%d", total_blk);
+	if ((total_blk > RESERVED_BLOCK_CNT) &&	(scan_flag == 1))
 		return total_blk;
-	}
+
 	if (aml_chip->nand_bbtinfo.arg_valid)
 		scan_flag = 1;
 
@@ -823,14 +834,16 @@ int amlnand_save_info_by_name(struct amlnand_chip *aml_chip,
 	phys_page_shift =  ffs(flash->pagesize) - 1;
 	pages_per_blk = (1 << (phys_erase_shift - phys_page_shift));
 
-	aml_nand_msg("size:%d", size);
 	arg_pages = ((size>>phys_page_shift) + 1);
-	aml_nand_msg("arg_pages:%d", arg_pages);
 	if ((size%flash->pagesize) == 0)
 		extra_page = 1;
 	else
 		extra_page = 0;
-	aml_nand_msg("extra_page:%d", extra_page);
+
+	aml_nand_msg("size = %d arg_pages = %d extra_page = %d",
+		size,
+		arg_pages,
+		extra_page);
 
 	tmp_blk = (offset >> phys_erase_shift);
 
@@ -1099,10 +1112,11 @@ get_free_blk:
 
 					if (aml_chip->state == CHIP_READY)
 						nand_get_chip(aml_chip);
-
+			/*
 			aml_nand_msg("normal blk write,pgnum=%d pgaddr=%x",
 						temp_page_num,
 						ops_para->page_addr);
+			*/
 						ret =
 						operation->write_page(aml_chip);
 
@@ -1239,10 +1253,11 @@ get_free_blk:
 
 					if (aml_chip->state == CHIP_READY)
 						nand_get_chip(aml_chip);
-
+					/*
 					aml_nand_msg("pgnum=%d pgaddr=%x",
 						temp_page_num,
 						ops_para->page_addr);
+					*/
 					ret = operation->write_page(aml_chip);
 
 					if (aml_chip->state == CHIP_READY)
@@ -1460,7 +1475,8 @@ get_free_blk:
 			}
 		}
 
-		if (arg_info->arg_type == FULL_PAGE) {
+		if ((arg_info->arg_type == FULL_PAGE)
+			&& (flash->blocksize > CONFIG_KEY_MAX_SIZE)) {
 			if (write_page_cnt == 0) {
 				arg_info->arg_valid = 1;
 				full_page_flag = 0;
@@ -1558,11 +1574,11 @@ int amlnand_check_info_by_name(struct amlnand_chip *aml_chip,
 		/* yyh0704, avoid bbt mismatch block status! */
 		ret = operation->block_isbad(aml_chip);
 		if (ret) {
-			if (memcmp(name, DTD_INFO_HEAD_MAGIC, 4)) {
+			/*if (memcmp(name, DTD_INFO_HEAD_MAGIC, 4)) {*/
 				aml_nand_msg("nand block at blk %d is bad ",
 					start_blk);
 				continue;
-			}
+			/*}*/
 		}
 		for (i = 0; i < pages_read;) {
 			memset((unsigned char *)ops_para, 0x0,
@@ -2554,6 +2570,17 @@ static int amlnand_config_buf_malloc(struct amlnand_chip *aml_chip)
 	}
 	memset(aml_chip->config_ptr, 0x0, (sizeof(struct nand_config)));
 
+	aml_chip->phy_part_ptr =
+		aml_nand_malloc(sizeof(struct phy_partition_info));
+	if (aml_chip->phy_part_ptr == NULL) {
+		aml_nand_msg("malloc failed for phy_part_ptr ");
+		ret = -NAND_MALLOC_FAILURE;
+		goto exit_error0;
+	}
+	memset(aml_chip->phy_part_ptr,
+		0x0,
+		(sizeof(struct phy_partition_info)));
+
 	return ret;
 exit_error0:
 
@@ -2565,6 +2592,9 @@ exit_error0:
 
 	kfree(aml_chip->config_ptr);
 	aml_chip->config_ptr = NULL;
+
+	kfree(aml_chip->phy_part_ptr);
+	aml_chip->phy_part_ptr = NULL;
 
 	kfree(aml_chip->user_oob_buf);
 	aml_chip->user_oob_buf = NULL;
@@ -2584,6 +2614,7 @@ void amlnand_set_config_attribute(struct amlnand_chip *aml_chip)
 	aml_chip->nand_secure.arg_type = FULL_PAGE;
 	aml_chip->nand_key.arg_type = FULL_PAGE;
 	aml_chip->uboot_env.arg_type = FULL_PAGE;
+	aml_chip->nand_phy_partition.arg_type = FULL_PAGE;
 #if (AML_CFG_DTB_RSV_EN)
 	aml_chip->amlnf_dtb.arg_type = FULL_PAGE;
 #endif
@@ -2600,8 +2631,14 @@ void amlnand_set_config_attribute(struct amlnand_chip *aml_chip)
 int amlnand_get_dev_configs(struct amlnand_chip *aml_chip)
 {
 	int  ret = 0, i;
+	unsigned int use_min_size;
+	struct nand_flash *flash = &aml_chip->flash;
 
-	aml_nand_msg("boot_device_flag = %d", boot_device_flag);
+	use_min_size = min_t(u32, CONFIG_KEY_MAX_SIZE, flash->blocksize);
+	aml_chip->keysize = use_min_size;
+	aml_chip->dtbsize = use_min_size;
+
+	aml_nand_dbg("key size is : 0x%0x", use_min_size);
 
 	ret = amlnand_config_buf_malloc(aml_chip);
 	if (ret < 0) {
@@ -2665,8 +2702,6 @@ int amlnand_get_dev_configs(struct amlnand_chip *aml_chip)
 		if (aml_chip->config_msg.arg_valid == 1) {
 			aml_chip->shipped_bbtinfo.valid_blk_addr =
 				aml_chip->config_ptr->fbbt_blk_addr;
-			aml_nand_msg("nand shipped bbt at block %d",
-				aml_chip->shipped_bbtinfo.valid_blk_addr);
 			for (i = 0; i < RESERVED_BLOCK_CNT; i++) {
 				if (aml_chip->reserved_blk[i] == 0xff) {
 					aml_chip->reserved_blk[i] =
@@ -2676,6 +2711,19 @@ int amlnand_get_dev_configs(struct amlnand_chip *aml_chip)
 			}
 		}
 	}
+
+	/*
+	scan phy partition info here,
+	if we can't find phy partition,
+	we will calc and save it in phydev init stage.
+	*/
+	ret = amlnand_info_init(aml_chip,
+		(unsigned char *)&(aml_chip->nand_phy_partition),
+		(unsigned char *)aml_chip->phy_part_ptr,
+		PHY_PARTITION_HEAD_MAGIC,
+		sizeof(struct phy_partition_info));
+	if (ret < 0)
+		aml_nand_msg("nand scan phy partition failed and ret:%d", ret);
 
 	ret = aml_sys_info_init(aml_chip); /* key  and stoarge */
 	if (ret < 0) {
@@ -2709,6 +2757,9 @@ exit_error0:
 
 	kfree(aml_chip->config_ptr);
 	aml_chip->config_ptr = NULL;
+
+	kfree(aml_chip->phy_part_ptr);
+	aml_chip->phy_part_ptr = NULL;
 
 	kfree(aml_chip->user_oob_buf);
 	aml_chip->user_oob_buf = NULL;

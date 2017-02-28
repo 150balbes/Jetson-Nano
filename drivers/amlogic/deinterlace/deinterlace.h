@@ -3,11 +3,27 @@
 #include <linux/cdev.h>
 #include <linux/amlogic/amports/vframe.h>
 #include <linux/amlogic/amports/video.h>
+#include <linux/atomic.h>
+
 /* di hardware version m8m2*/
 #define NEW_DI_V1 0x00000002 /* from m6tvc */
 #define NEW_DI_V2 0x00000004 /* from m6tvd */
 #define NEW_DI_V3 0x00000008 /* from gx */
 #define NEW_DI_V4 0x00000010 /* dnr added */
+
+/*trigger_pre_di_process param*/
+#define TRIGGER_PRE_BY_PUT		'p'
+#define TRIGGER_PRE_BY_DE_IRQ		'i'
+#define TRIGGER_PRE_BY_UNREG		'u'
+/*di_timer_handle*/
+#define TRIGGER_PRE_BY_TIMER		't'
+#define TRIGGER_PRE_BY_FORCE_UNREG	'f'
+#define TRIGGER_PRE_BY_VFRAME_READY	'r'
+#define TRIGGER_PRE_BY_PROVERDER_UNREG	'n'
+#define TRIGGER_PRE_BY_DEBUG_DISABLE	'd'
+#define TRIGGER_PRE_BY_TIMERC		'T'
+#define TRIGGER_PRE_BY_PROVERDER_REG	'R'
+
 
 /*vframe define*/
 #define vframe_t struct vframe_s
@@ -19,7 +35,7 @@
 /* #if MESON_CPU_TYPE >= MESON_CPU_TYPE_MESON6 */
 #define NEW_KEEP_LAST_FRAME
 /* #endif */
-#undef DET3D
+#define	DET3D
 #undef SUPPORT_MPEG_TO_VDIN /* for all ic after m6c@20140731 */
 
 #ifndef CONFIG_VSYNC_RDMA
@@ -31,11 +47,15 @@
 #endif
 #endif
 
+#include "film_vof_soft.h"
+
 /************************************
 *	 di hardware level interface
 *************************************/
 #define MAX_WIN_NUM			5
-
+/* if post size < 80, filter of ei can't work */
+#define MIN_POST_WIDTH  80
+#define MIN_BLEND_WIDTH  27
 struct pulldown_detect_info_s {
 	unsigned field_diff;
 /* total pixels difference between current field and previous field */
@@ -109,11 +129,6 @@ enum pulldown_mode_e {
 };
 #define pulldown_mode_t enum pulldown_mode_e
 struct di_buf_s {
-#ifdef D2D3_SUPPORT
-	unsigned long dp_buf_adr;
-	unsigned int dp_buf_size;
-	unsigned int reverse_flag;
-#endif
 #ifdef USE_LIST
 	struct list_head list;
 #endif
@@ -141,7 +156,7 @@ struct di_buf_s {
 	int cnt_canvas_idx;
 #endif
 #ifdef NEW_DI_V3
-	unsigned int mcinfo_adr;
+	unsigned long mcinfo_adr;
 	int mcinfo_canvas_idx;
 	unsigned long mcvec_adr;
 	int mcvec_canvas_idx;
@@ -151,6 +166,21 @@ struct di_buf_s {
 	unsigned int regs[26];/* reg 0x2fb0~0x2fc9 */
 	} curr_field_mcinfo;
 #endif
+	/* blend window */
+	unsigned short reg0_s;
+	unsigned short reg0_e;
+	unsigned short reg0_bmode;
+	unsigned short reg1_s;
+	unsigned short reg1_e;
+	unsigned short reg1_bmode;
+	unsigned short reg2_s;
+	unsigned short reg2_e;
+	unsigned short reg2_bmode;
+	unsigned short reg3_s;
+	unsigned short reg3_e;
+	unsigned short reg3_bmode;
+	/* tff bff check result bit[1:0]*/
+	unsigned int privated;
 	unsigned int canvas_config_flag;
 	/* 0,configed; 1,config type 1 (prog);
 	2, config type 2 (interlace) */
@@ -168,8 +198,11 @@ struct di_buf_s {
 	struct di_buf_s *di_buf_dup_p[5];
 	/* 0~4: n-2, n-1, n, n+1, n+2;	n is the field to display*/
 	struct di_buf_s *di_wr_linked_buf;
+	/* debug for di-vf-get/put
+	1: after get
+	0: after put*/
+	atomic_t di_cnt;
 };
-#define di_buf_t struct di_buf_s
 extern uint di_mtn_1_ctrl1;
 #ifdef DET3D
 extern bool det3d_en;
@@ -186,7 +219,12 @@ extern void di_hw_init(void);
 
 extern void di_hw_uninit(void);
 
+extern void enable_di_pre_mif(int enable);
+
 extern int di_vscale_skip_count;
+
+extern unsigned int di_force_bit_mode;
+
 /*
 di hardware internal
 */
@@ -203,7 +241,7 @@ di hardware internal
 #define MAX_CANVAS_HEIGHT				1088
 #endif
 
-struct DI_MIF_TYPE {
+struct DI_MIF_s {
 	unsigned short	luma_x_start0;
 	unsigned short	luma_x_end0;
 	unsigned short	luma_y_start0;
@@ -214,8 +252,10 @@ struct DI_MIF_TYPE {
 	unsigned short	chroma_y_end0;
 	unsigned		set_separate_en:2;
 	unsigned		src_field_mode:1;
+	unsigned		src_prog:1;
 	unsigned		video_mode:1;
 	unsigned		output_field_num:1;
+	unsigned		bit_mode:2;
 	/*
 	unsigned		burst_size_y:2; set 3 as default
 	unsigned		burst_size_cb:2;set 1 as default
@@ -225,24 +265,23 @@ struct DI_MIF_TYPE {
 	unsigned		canvas0_addr1:8;
 	unsigned		canvas0_addr2:8;
 };
-#define DI_MIF_t struct DI_MIF_TYPE
-struct DI_SIM_MIF_TYPE {
+struct DI_SIM_MIF_s {
 	unsigned short	start_x;
 	unsigned short	end_x;
 	unsigned short	start_y;
 	unsigned short	end_y;
 	unsigned short	canvas_num;
+	unsigned short	bit_mode;
 };
-#define DI_SIM_MIF_t struct DI_SIM_MIF_TYPE
-struct DI_MC_MIF_TYPE {
+struct DI_MC_MIF_s {
 	unsigned short start_x;
 	unsigned short start_y;
 	unsigned short size_x;
 	unsigned short size_y;
 	unsigned short canvas_num;
 	unsigned short blend_mode;
+	unsigned short vecrd_offset;
 };
-#define DI_MC_MIF_t struct DI_MC_MIF_TYPE
 void disable_deinterlace(void);
 
 void disable_pre_deinterlace(void);
@@ -258,15 +297,15 @@ void enable_film_mode_check(unsigned int width, unsigned int height,
 		enum vframe_source_type_e);
 
 void enable_di_pre_aml(
-	DI_MIF_t		*di_inp_mif,
-	DI_MIF_t		*di_mem_mif,
-	DI_MIF_t		*di_chan2_mif,
-	DI_SIM_MIF_t	*di_nrwr_mif,
-	DI_SIM_MIF_t	*di_mtnwr_mif,
+	struct DI_MIF_s		*di_inp_mif,
+	struct DI_MIF_s		*di_mem_mif,
+	struct DI_MIF_s		*di_chan2_mif,
+	struct DI_SIM_MIF_s	*di_nrwr_mif,
+	struct DI_SIM_MIF_s	*di_mtnwr_mif,
 #ifdef NEW_DI_V1
-	DI_SIM_MIF_t    *di_contp2rd_mif,
-	DI_SIM_MIF_t    *di_contprd_mif,
-	DI_SIM_MIF_t    *di_contwr_mif,
+	struct DI_SIM_MIF_s    *di_contp2rd_mif,
+	struct DI_SIM_MIF_s    *di_contprd_mif,
+	struct DI_SIM_MIF_s    *di_contwr_mif,
 #endif
 	int nr_en, int mtn_en, int pd32_check_en, int pd22_check_en,
 	int hist_check_en, int pre_field_num, int pre_vdin_link,
@@ -274,10 +313,14 @@ void enable_di_pre_aml(
 	);
 void enable_afbc_input(struct vframe_s *vf);
 #ifdef NEW_DI_V3
-void enable_mc_di_pre(DI_MC_MIF_t *di_mcinford_mif,
-	DI_MC_MIF_t *di_mcinfowr_mif, DI_MC_MIF_t *di_mcvecwr_mif, int urgent);
-void enable_mc_di_post(DI_MC_MIF_t *di_mcvecrd_mif, int urgent, bool reverse);
+void enable_mc_di_pre(struct DI_MC_MIF_s *di_mcinford_mif,
+	struct DI_MC_MIF_s *di_mcinfowr_mif,
+	struct DI_MC_MIF_s *di_mcvecwr_mif, int urgent);
+void enable_mc_di_post(struct DI_MC_MIF_s *di_mcvecrd_mif,
+	int urgent, bool reverse);
 #endif
+
+void read_new_pulldown_info(struct FlmModReg_t *pFMRegp);
 
 void enable_region_blend(
 	int reg0_en, int reg0_start_x, int reg0_end_x, int reg0_start_y,
@@ -300,13 +343,14 @@ void initial_di_pre_aml(int hsize_pre, int vsize_pre, int hold_line);
 void initial_di_post_2(int hsize_post, int vsize_post, int hold_line);
 
 void enable_di_post_2(
-	DI_MIF_t		*di_buf0_mif,
-	DI_MIF_t		*di_buf1_mif,
-	DI_SIM_MIF_t	*di_diwr_mif,
+	struct DI_MIF_s		*di_buf0_mif,
+	struct DI_MIF_s		*di_buf1_mif,
+	struct DI_MIF_s		*di_buf2_mif,
+	struct DI_SIM_MIF_s	*di_diwr_mif,
 	#ifndef NEW_DI_V2
-	DI_SIM_MIF_t	*di_mtncrd_mif,
+	struct DI_SIM_MIF_s	*di_mtncrd_mif,
 	#endif
-	DI_SIM_MIF_t	*di_mtnprd_mif,
+	struct DI_SIM_MIF_s	*di_mtnprd_mif,
 	int ei_en, int blend_en, int blend_mtn_en, int blend_mode,
 	int di_vpp_en, int di_ddr_en,
 	int post_field_num, int hold_line , int urgent
@@ -316,16 +360,15 @@ void enable_di_post_2(
 );
 
 void di_post_switch_buffer(
-	DI_MIF_t		*di_buf0_mif,
-	DI_MIF_t		*di_buf1_mif,
-	DI_SIM_MIF_t	*di_diwr_mif,
+	struct DI_MIF_s		*di_buf0_mif,
+	struct DI_MIF_s		*di_buf1_mif,
+	struct DI_MIF_s		*di_buf2_mif,
+	struct DI_SIM_MIF_s	*di_diwr_mif,
 	#ifndef NEW_DI_V2
-	DI_SIM_MIF_t	*di_mtncrd_mif,
+	struct DI_SIM_MIF_s	*di_mtncrd_mif,
 	#endif
-	DI_SIM_MIF_t	*di_mtnprd_mif,
-	#ifdef MCDI_SUPPORT
-	DI_MC_MIF_t		*di_mcvecrd_mif,
-	#endif
+	struct DI_SIM_MIF_s	*di_mtnprd_mif,
+	struct DI_MC_MIF_s		*di_mcvecrd_mif,
 	int ei_en, int blend_en, int blend_mtn_en, int blend_mode,
 	int di_vpp_en, int di_ddr_en,
 	int post_field_num, int hold_line, int urgent
@@ -343,6 +386,7 @@ void read_mtn_info(unsigned long *mtn_info, unsigned long*);
 /* for video reverse */
 void di_post_read_reverse(bool reverse);
 void di_post_read_reverse_irq(bool reverse);
+extern void recycle_keep_buffer(void);
 
 #undef DI_DEBUG
 
@@ -356,6 +400,14 @@ void di_post_read_reverse_irq(bool reverse);
 
 extern unsigned int di_log_flag;
 extern unsigned int di_debug_flag;
+extern bool mcpre_en;
+extern bool dnr_reg_update;
+extern int mpeg2vdin_flag;
+extern int di_vscale_skip_count_real;
+extern unsigned int pulldown_enable;
+
+extern bool post_wr_en;
+extern unsigned int post_wr_surpport;
 
 int di_print(const char *fmt, ...);
 
@@ -385,8 +437,23 @@ struct reg_cfg_ {
 int get_current_vscale_skip_count(struct vframe_s *vf);
 
 void di_set_power_control(unsigned char type, unsigned char enable);
+void diwr_set_power_control(unsigned char enable);
 
 unsigned char di_get_power_control(unsigned char type);
+void config_di_bit_mode(vframe_t *vframe, unsigned int bypass_flag);
+void combing_pd22_window_config(unsigned int width, unsigned int height);
+int tff_bff_check(int height, int width);
+void tbff_init(void);
+#ifdef CONFIG_AM_ATVDEMOD
+extern int aml_atvdemod_get_snr_ex(void);
+#endif
+
+void DI_Wr(unsigned int addr, unsigned int val);
+void DI_Wr_reg_bits(unsigned int adr, unsigned int val,
+		unsigned int start, unsigned int len);
+void DI_VSYNC_WR_MPEG_REG(unsigned int addr, unsigned int val);
+void DI_VSYNC_WR_MPEG_REG_BITS(unsigned int addr, unsigned int val,
+	unsigned int start, unsigned int len);
 
 #define DI_COUNT   1
 
@@ -404,6 +471,17 @@ struct di_dev_s {
 	unsigned int	   buf_num_avail;
 	unsigned int	   hw_version;
 	int							rdma_handle;
+	/* is surpport nr10bit */
+	unsigned int	   nr10bit_surpport;
+	/* is DI surpport post wr to mem for OMX */
+	unsigned int       post_wr_surpport;
 };
 #define di_dev_t struct di_dev_s
+
+#define di_pr_info(fmt, args ...)   pr_info("DI: " fmt, ## args)
+
+#define pr_dbg(fmt, args ...)       pr_debug("DI: " fmt, ## args)
+
+#define pr_error(fmt, args ...)     pr_err("DI: " fmt, ## args)
+
 #endif

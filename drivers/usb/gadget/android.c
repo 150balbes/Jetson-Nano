@@ -46,7 +46,7 @@ MODULE_VERSION("1.0");
 
 static const char longname[] = "Gadget Android";
 static struct android_dev *_android_dev;
-
+int android_usb_inited = 0;
 #include "f_fs.c"
 
 /* Default vendor and product IDs, overridden by userspace */
@@ -151,6 +151,31 @@ static struct usb_configuration android_config_driver = {
 	.MaxPower	= 500, /* 500ma */
 };
 
+/* adjust the wake_lock to change action for system suspend */
+static void adjust_gadget_wake_lock(struct wake_lock *pwake_lock, int islock)
+{
+	struct usb_composite_dev *cdev;
+	cdev = container_of(pwake_lock, struct usb_composite_dev, wake_lock);
+
+	/* if disconnect to pc, we should unlock the android lock */
+	if (islock == -1) {
+		pr_info("%s unlock\n", __func__);
+		cdev->is_lock = 0;
+		wake_unlock(pwake_lock);
+		return;
+	}
+
+	if (!islock && cdev->is_lock && !--cdev->is_lock) {
+		pr_info("%s unlock\n", __func__);
+		wake_unlock(pwake_lock);
+	} else if (islock) {
+		pr_info("%s lock\n", __func__);
+		wake_lock(pwake_lock);
+		cdev->is_lock++;
+	}
+}
+
+
 static void android_work(struct work_struct *data)
 {
 	struct android_dev *dev = container_of(data, struct android_dev, work);
@@ -167,6 +192,11 @@ static void android_work(struct work_struct *data)
 	else if (dev->connected != dev->sw_connected)
 		uevent_envp = dev->connected ? connected : disconnected;
 	dev->sw_connected = dev->connected;
+	if (!dev->connected)
+		adjust_gadget_wake_lock(&cdev->wake_lock, -1);
+	else if (uevent_envp == configured)
+		adjust_gadget_wake_lock(&cdev->wake_lock, 1);
+
 	spin_unlock_irqrestore(&cdev->lock, flags);
 
 	if (uevent_envp) {
@@ -1499,6 +1529,34 @@ static int android_create_device(struct android_dev *dev)
 	return 0;
 }
 
+int android_usb_init(void)
+{
+	struct android_dev *dev;
+	int err;
+
+	dev = _android_dev;
+
+	err = usb_composite_probe(&android_usb_driver);
+	if (err) {
+		pr_err("%s: failed to probe driver %d", __func__, err);
+		goto err_probe;
+	}
+
+	/* HACK: exchange composite's setup with ours */
+	composite_setup_func = android_usb_driver.gadget_driver.setup;
+	android_usb_driver.gadget_driver.setup = android_setup;
+	android_usb_inited = 1;
+	return 0;
+
+err_probe:
+	device_destroy(android_class, dev->dev->devt);
+
+	kfree(dev);
+	_android_dev = NULL;
+	class_destroy(android_class);
+	return err;
+}
+EXPORT_SYMBOL(android_usb_init);
 
 static int __init init(void)
 {
@@ -1529,20 +1587,8 @@ static int __init init(void)
 
 	_android_dev = dev;
 
-	err = usb_composite_probe(&android_usb_driver);
-	if (err) {
-		pr_err("%s: failed to probe driver %d", __func__, err);
-		goto err_probe;
-	}
-
-	/* HACK: exchange composite's setup with ours */
-	composite_setup_func = android_usb_driver.gadget_driver.setup;
-	android_usb_driver.gadget_driver.setup = android_setup;
-
 	return 0;
 
-err_probe:
-	device_destroy(android_class, dev->dev->devt);
 err_create:
 	kfree(dev);
 	_android_dev = NULL;

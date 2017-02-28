@@ -50,7 +50,7 @@
 
 
 /*#define CONFIG_RDMA_IN_RDMAIRQ*/
-#define CONFIG_RDMA_IN_TASK
+/*#define CONFIG_RDMA_IN_TASK*/
 
 #define RDMA_TABLE_SIZE                    (2 * (PAGE_SIZE))
 
@@ -102,12 +102,12 @@ static int rdma_task_handle(void *data)
 			}
 		}
 		if (rdma_start_flag) {
-			rdma_start_flag = 0;
-			vsync_rdma_handle =
+			if (vsync_rdma_handle <= 0)
+				vsync_rdma_handle =
 				rdma_register(&vsync_rdma_op,
 				NULL, RDMA_TABLE_SIZE);
+			rdma_start_flag = 0;
 		}
-
 	}
 	return 0;
 }

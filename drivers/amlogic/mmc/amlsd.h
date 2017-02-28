@@ -36,6 +36,14 @@ extern const u8 tuning_blk_pattern_8bit[128];
 
 #define MODULE_NAME		"amlsd"
 
+#define A0_GP_CFG0			(0xc8100240)
+#define A0_GP_CFG2			(0xc8100248)
+#define STORAGE_DEV_NOSET	(0)
+#define STORAGE_DEV_EMMC	(1)
+#define STORAGE_DEV_NAND	(2)
+#define STORAGE_DEV_SPI		(3)
+#define STORAGE_DEV_SDCARD	(4)
+#define STORAGE_DEV_USB		(5)
 #define LDO4DAC_REG_ADDR        0x4f
 #define LDO4DAC_REG_1_8_V       0x24
 #define LDO4DAC_REG_2_8_V       0x4c
@@ -59,15 +67,13 @@ extern const u8 tuning_blk_pattern_8bit[128];
 #define     DETECT_CARD_OUT         2
 #define     DETECT_CARD_JTAG_IN     3
 #define     DETECT_CARD_JTAG_OUT    4
-void aml_sd_uart_detect(struct amlsd_platform *pdata);
-void aml_sd_uart_detect_clr(struct amlsd_platform *pdata);
 
 #define EMMC_DAT3_PINMUX_CLR    0
 #define EMMC_DAT3_PINMUX_SET    1
 
 #define CHECK_RET(ret) { \
 if (ret) \
-	pr_info("\033[0;47;33m [%s] gpio op failed(%d) at line %d \033[0m\n",\
+	pr_info("[%s] gpio op failed(%d) at line %d\n",\
 	__func__, ret, __LINE__); \
 }
 
@@ -77,7 +83,7 @@ if (ret) \
 } while (0)
 
 #define sdhc_err(fmt, args...) \
-	pr_info("[%s]\033[0;40;32m " fmt "\033[0m", __func__, ##args);
+	pr_info("[%s] " fmt , __func__, ##args);
 
 
 #define sdio_dbg(dbg_level, fmt, args...) do {\
@@ -86,15 +92,16 @@ if (ret) \
 } while (0)
 
 #define sdio_err(fmt, args...) \
-	pr_info("[%s]\033[0;40;33m " fmt "\033[0m", __func__, ##args);
+	pr_info("[%s] " fmt , __func__, ##args);
 
 #define sd_emmc_dbg(dbg_level, fmt, args...) do {\
 	if (dbg_level & sd_emmc_debug)	\
 		pr_info("[%s]" fmt , __func__, ##args);	\
 } while (0)
 #define sd_emmc_err(fmt, args...) \
-	pr_info("[%s]\033[0;40;32m " fmt "\033[0m", __func__, ##args);
-#define SD_PARSE_U32_PROP(node, prop_name, prop, value) {	\
+	pr_warn("[%s] " fmt , __func__, ##args);
+
+#define SD_PARSE_U32_PROP_HEX(node, prop_name, prop, value) do {	\
 	if (!of_property_read_u32(node, prop_name, &prop)) {\
 		value = prop;\
 		prop = 0;\
@@ -103,7 +110,18 @@ if (ret) \
 			prop_name, (unsigned int)value);	\
 		} \
 	} \
-}
+} while (0)
+
+#define SD_PARSE_U32_PROP_DEC(node, prop_name, prop, value) do {	\
+	if (!of_property_read_u32(node, prop_name, &prop)) {\
+		value = prop;\
+		prop = 0;\
+		if (DEBUG_SD_OF) {	\
+			pr_info("get property:%25s, value:%d\n",	\
+			prop_name, (unsigned int)value);	\
+		} \
+	} \
+} while (0)
 
 #define SD_PARSE_GPIO_NUM_PROP(node, prop_name, str, gpio_pin) {\
 	if (!of_property_read_string(node, prop_name, &str)) {\
@@ -170,7 +188,8 @@ void of_amlsd_xfer_pre(struct amlsd_platform *pdata);
 void of_amlsd_xfer_post(struct amlsd_platform *pdata);
 int of_amlsd_ro(struct amlsd_platform *pdata);
 
-void aml_sd_uart_detect(struct amlsd_platform *pdata);
+int aml_sd_uart_detect(struct amlsd_platform *pdata);
+void aml_sd_uart_detect_clr(struct amlsd_platform *pdata);
 irqreturn_t aml_sd_irq_cd(int irq, void *dev_id);
 irqreturn_t aml_irq_cd_thread(int irq, void *data);
 void aml_sduart_pre(struct amlsd_platform *pdata);

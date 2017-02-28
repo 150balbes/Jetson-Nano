@@ -103,6 +103,7 @@
 /* VPP.3D IOCTL command list^M */
 #define  AMSTREAM_IOC_SET_3D_TYPE  _IOW((_A_M), 0x3c, unsigned int)
 #define  AMSTREAM_IOC_GET_3D_TYPE  _IOW((_A_M), 0x3d, unsigned int)
+#define  AMSTREAM_IOC_GET_SOURCE_VIDEO_3D_TYPE  _IOW((_A_M), 0x3e, unsigned int)
 
 #define AMSTREAM_IOC_SUB_NUM	_IOR((_A_M), 0x50, int)
 #define AMSTREAM_IOC_SUB_INFO	_IOR((_A_M), 0x51, int)
@@ -483,7 +484,7 @@ struct am_ioctl_parm_ptr {
 };
 
 
-#define SUPPORT_VDEC_NUM	(10)
+#define SUPPORT_VDEC_NUM	(20)
 int vcodec_profile_register(const struct codec_profile_t *vdec_profile);
 ssize_t vcodec_profile_read(char *buf);
 

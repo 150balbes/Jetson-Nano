@@ -306,9 +306,11 @@ int aml_nftl_initialize(struct aml_nftl_dev *nftl_dev, int no)
 		nftl_dev->nftl_cfg.nftl_part_reserved_block_ratio = 10;
 
 	nftl_dev->nftl_cfg.nftl_part_adjust_block_num = get_adjust_block_num();
+	/*
 	PRINT("adjust_block_num : %d,reserved_block_ratio %d\n",
 		nftl_dev->nftl_cfg.nftl_part_adjust_block_num,
 		nftl_dev->nftl_cfg.nftl_part_reserved_block_ratio);
+	*/
 	nftl_dev->nftl_cfg.nftl_min_free_block_num = MIN_FREE_BLOCK_NUM;
 	nftl_dev->nftl_cfg.nftl_min_free_block = MIN_FREE_BLOCK;
 	nftl_dev->nftl_cfg.nftl_gc_threshold_free_block_num =
@@ -475,6 +477,7 @@ int aml_blktrans_initialize(struct aml_nftl_blk *nftl_blk,
 	size_t = size >> 9;
 
 	nftl_blk->nftl_dev = nftl_dev;
+	nftl_dev->nftl_blk = nftl_blk;
 
 	if (offset_t < nftl_dev->size)
 		nftl_blk->offset = offset_t;

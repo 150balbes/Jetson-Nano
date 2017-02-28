@@ -49,7 +49,7 @@ static int clock_source_wxhxfps_saved[VDEC_MAX + 1];
 
 #define IF_HAVE_RUN_P1_RET(p, fn, p1)\
 			do {\
-				pr_info("%s-----%d\n", __func__, clk);\
+				pr_debug("%s-----%d\n", __func__, clk);\
 				if (p && p->fn)\
 					return p->fn(p1);\
 				else\
@@ -218,7 +218,10 @@ int vdec_source_changed_for_clk_set(int format, int width, int height, int fps)
 	if (clk < 0) {
 		pr_info("can't get valid clk for source ,%d,%d,%d\n",
 			width, height, fps);
-		return -1;
+		if (format >= 1920 && width >= 1080 && fps >= 30)
+			clk = 2;/*default high clk*/
+		else
+			clk = 0;/*default clk.*/
 	}
 	if (width * height * fps == 0)
 		clk = 0;
@@ -229,7 +232,7 @@ int vdec_source_changed_for_clk_set(int format, int width, int height, int fps)
 		changed to default  min clk.
 	*/
 
-	if (format == VFORMAT_HEVC) {
+	if (format == VFORMAT_HEVC || format == VFORMAT_VP9) {
 		ret_clk = hevc_clock_set(clk);
 		clock_source_wxhxfps_saved[VDEC_HEVC] = width * height * fps;
 	} else if (format == VFORMAT_H264_ENC && format == VFORMAT_JPEG_ENC) {
@@ -237,8 +240,10 @@ int vdec_source_changed_for_clk_set(int format, int width, int height, int fps)
 		clock_source_wxhxfps_saved[VDEC_HCODEC] = width * height * fps;
 	} else if (format == VFORMAT_H264_4K2K &&
 			get_cpu_type() == MESON_CPU_MAJOR_ID_M8) {
-		ret_clk = hcodec_clock_set(clk);
-		clock_source_wxhxfps_saved[VDEC_HCODEC] = width * height * fps;
+		ret_clk = vdec2_clock_set(clk);
+		clock_source_wxhxfps_saved[VDEC_2] = width * height * fps;
+		ret_clk = vdec_clock_set(clk);
+		clock_source_wxhxfps_saved[VDEC_1] = width * height * fps;
 	} else{
 		ret_clk = vdec_clock_set(clk);
 		clock_source_wxhxfps_saved[VDEC_1] = width * height * fps;

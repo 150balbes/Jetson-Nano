@@ -426,8 +426,7 @@ static int hdmi_eld_ctl_get(struct snd_kcontrol *kcontrol,
 	eld = &per_pin->sink_eld;
 
 	mutex_lock(&per_pin->lock);
-	if (eld->eld_size > ARRAY_SIZE(ucontrol->value.bytes.data) ||
-	    eld->eld_size > ELD_MAX_SIZE) {
+	if (eld->eld_size > ARRAY_SIZE(ucontrol->value.bytes.data)) {
 		mutex_unlock(&per_pin->lock);
 		snd_BUG();
 		return -EINVAL;

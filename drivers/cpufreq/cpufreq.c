@@ -41,6 +41,7 @@ static DEFINE_PER_CPU(struct cpufreq_policy *, cpufreq_cpu_data_fallback);
 static DEFINE_RWLOCK(cpufreq_driver_lock);
 DEFINE_MUTEX(cpufreq_governor_lock);
 static LIST_HEAD(cpufreq_policy_list);
+static int cpufreq_hotplug_inprocess;
 
 #ifdef CONFIG_HOTPLUG_CPU
 /* This one keeps track of the previously set governor of a removed CPU */
@@ -490,6 +491,8 @@ static ssize_t store_##file_name					\
 	unsigned long freq;						\
 	struct cpufreq_policy new_policy;				\
 									\
+	if (cpufreq_hotplug_inprocess)		\
+		return -EBUSY;				\
 	ret = cpufreq_get_policy(&new_policy, policy->cpu);		\
 	if (ret)							\
 		return -EINVAL;						\
@@ -557,6 +560,9 @@ static ssize_t store_scaling_governor(struct cpufreq_policy *policy,
 	ret = sscanf(buf, "%15s", str_governor);
 	if (ret != 1)
 		return -EINVAL;
+
+	if (cpufreq_hotplug_inprocess)
+		return -EBUSY;
 
 	if (cpufreq_parse_governor(str_governor, &new_policy.policy,
 						&new_policy.governor))
@@ -681,6 +687,32 @@ static ssize_t show_bios_limit(struct cpufreq_policy *policy, char *buf)
 	return sprintf(buf, "%u\n", policy->cpuinfo.max_freq);
 }
 
+#ifdef CONFIG_SCHED_HMP
+int hmp_boost_en;
+static ssize_t show_hmp_boost(struct cpufreq_policy *policy, char *buf)
+{
+	return sprintf(buf, "%d\n", hmp_boost_en);
+}
+static ssize_t store_hmp_boost(struct cpufreq_policy *policy,
+					const char *buf, size_t count)
+{
+	int ret;
+	unsigned long val;
+
+	ret = kstrtoul(buf, 0, &val);
+	if (ret < 0)
+		return ret;
+	hmp_boost_en = val;
+	return count;
+}
+int get_hmp_boost(void)
+{
+	return hmp_boost_en;
+}
+cpufreq_freq_attr_rw(hmp_boost);
+#endif
+
+
 cpufreq_freq_attr_ro_perm(cpuinfo_cur_freq, 0400);
 cpufreq_freq_attr_ro(cpuinfo_min_freq);
 cpufreq_freq_attr_ro(cpuinfo_max_freq);
@@ -710,6 +742,9 @@ static struct attribute *default_attrs[] = {
 	&scaling_driver.attr,
 	&scaling_available_governors.attr,
 	&scaling_setspeed.attr,
+#ifdef CONFIG_SCHED_HMP
+	&hmp_boost.attr,
+#endif
 	NULL
 };
 
@@ -1081,6 +1116,7 @@ static int __cpufreq_add_dev(struct device *dev, struct subsys_interface *sif,
 	if (!down_read_trylock(&cpufreq_rwsem))
 		return 0;
 
+	cpufreq_hotplug_inprocess = 2;
 #ifdef CONFIG_HOTPLUG_CPU
 	/* Check if this cpu was hot-unplugged earlier and has siblings */
 	read_lock_irqsave(&cpufreq_driver_lock, flags);
@@ -1089,6 +1125,7 @@ static int __cpufreq_add_dev(struct device *dev, struct subsys_interface *sif,
 			read_unlock_irqrestore(&cpufreq_driver_lock, flags);
 			ret = cpufreq_add_policy_cpu(tpolicy, cpu, dev);
 			up_read(&cpufreq_rwsem);
+			cpufreq_hotplug_inprocess = 0;
 			return ret;
 		}
 	}
@@ -1242,6 +1279,7 @@ static int __cpufreq_add_dev(struct device *dev, struct subsys_interface *sif,
 
 	pr_debug("initialization complete\n");
 
+	cpufreq_hotplug_inprocess = 0;
 	return 0;
 
 err_out_unregister:
@@ -1266,6 +1304,7 @@ err_set_policy_cpu:
 nomem_out:
 	up_read(&cpufreq_rwsem);
 
+	cpufreq_hotplug_inprocess = 0;
 	return ret;
 }
 
@@ -1319,6 +1358,7 @@ static int __cpufreq_remove_dev_prepare(struct device *dev,
 	unsigned long flags;
 	struct cpufreq_policy *policy;
 
+	cpufreq_hotplug_inprocess = 1;
 	pr_debug("%s: unregistering CPU %u\n", __func__, cpu);
 
 	write_lock_irqsave(&cpufreq_driver_lock, flags);
@@ -1380,10 +1420,9 @@ static int __cpufreq_remove_dev_finish(struct device *dev,
 	unsigned long flags;
 	struct cpufreq_policy *policy;
 
-	write_lock_irqsave(&cpufreq_driver_lock, flags);
+	read_lock_irqsave(&cpufreq_driver_lock, flags);
 	policy = per_cpu(cpufreq_cpu_data, cpu);
-	per_cpu(cpufreq_cpu_data, cpu) = NULL;
-	write_unlock_irqrestore(&cpufreq_driver_lock, flags);
+	read_unlock_irqrestore(&cpufreq_driver_lock, flags);
 
 	if (!policy) {
 		pr_debug("%s: No cpu_data found\n", __func__);
@@ -1398,6 +1437,7 @@ static int __cpufreq_remove_dev_finish(struct device *dev,
 
 	/* If cpu is last user of policy, free policy */
 	if (cpus == 1) {
+		up_write(&policy->rwsem);
 		if (has_target()) {
 			ret = __cpufreq_governor(policy,
 					CPUFREQ_GOV_POLICY_EXIT);
@@ -1426,6 +1466,7 @@ static int __cpufreq_remove_dev_finish(struct device *dev,
 
 		if (!frozen)
 			cpufreq_policy_free(policy);
+		down_write(&policy->rwsem);
 	} else {
 		if (has_target()) {
 			if ((ret = __cpufreq_governor(policy, CPUFREQ_GOV_START)) ||
@@ -1438,6 +1479,8 @@ static int __cpufreq_remove_dev_finish(struct device *dev,
 	}
 	up_write(&policy->rwsem);
 
+	per_cpu(cpufreq_cpu_data, cpu) = NULL;
+	cpufreq_hotplug_inprocess = 0;
 	return 0;
 }
 
@@ -1450,6 +1493,7 @@ static int cpufreq_remove_dev(struct device *dev, struct subsys_interface *sif)
 {
 	unsigned int cpu = dev->id;
 	int ret;
+
 
 	if (cpu_is_offline(cpu))
 		return 0;
@@ -1478,7 +1522,7 @@ static void __ref handle_up_cpu(struct work_struct *work)
 	for (i = 0; i < num_possible_cpus(); i++) {
 		if (cpu_online(i))
 			continue;
-		cpu_up(i);
+		device_online(get_cpu_device(i));
 	}
 }
 #endif

@@ -430,42 +430,19 @@ static void amstream_change_vbufsize(struct stream_port_s *port,
 		pr_info("streambuf is alloced before\n");
 		return;
 	}
-	if (pvbuf->type == BUF_TYPE_VIDEO || pvbuf->type == BUF_TYPE_HEVC) {
-		if (port->vformat == VFORMAT_H264_4K2K ||
-			port->vformat == VFORMAT_HEVC) {
-			int framesize = amstream_dec_info.height *
-				amstream_dec_info.width;
-			pvbuf->buf_size = DEFAULT_VIDEO_BUFFER_SIZE_4K;
-			if ((framesize > 0) &&
-				(port->vformat == VFORMAT_HEVC) &&
-				(framesize <= 1920 * 1088)) {
-				/*if hevc not 4k used 15M streambuf.*/
-				pvbuf->buf_size = DEFAULT_VIDEO_BUFFER_SIZE;
-			}
-			if ((pvbuf->buf_size > 30 * SZ_1M) &&
-			(codec_mm_get_total_size() < 220 * SZ_1M)) {
-				/*if less than 250M, used 20M for 4K & 265*/
-				pvbuf->buf_size = pvbuf->buf_size >> 1;
-			}
-		/* pr_err(" amstream_change_vbufsize 4k2k
-		* bufsize[0x%x] defaultsize[0x%x]\n",
-		* bufs[BUF_TYPE_VIDEO].buf_size,pvbuf->default_buf_size); */
-		} else if (pvbuf->buf_size > DEFAULT_VIDEO_BUFFER_SIZE) {
-			pvbuf->buf_size = DEFAULT_VIDEO_BUFFER_SIZE;
-			/* pr_err(" amstream_change_vbufsize
-			 * MAX_STREAMBUFFER_SIZE-[0x%x]
-			 * defaultsize-[0x%x] vformat-[%d]\n",
-			 * bufs[BUF_TYPE_VIDEO].buf_size,
-			 * pvbuf->default_buf_size,port->vformat); */
-		} else {
-			/* pr_err(" amstream_change_vbufsize bufsize[0x%x]
-			 * defaultbufsize [0x%x]\n",
-			 * bufs[BUF_TYPE_VIDEO].buf_size,
-			 * pvbuf->default_buf_size); */
+	if (pvbuf->for_4k) {
+		pvbuf->buf_size = DEFAULT_VIDEO_BUFFER_SIZE_4K;
+		if ((pvbuf->buf_size > 30 * SZ_1M) &&
+		(codec_mm_get_total_size() < 220 * SZ_1M)) {
+			/*if less than 250M, used 20M for 4K & 265*/
+			pvbuf->buf_size = pvbuf->buf_size >> 1;
 		}
-
-		reset_canuse_buferlevel(10000);
+	} else if (pvbuf->buf_size > DEFAULT_VIDEO_BUFFER_SIZE) {
+		pvbuf->buf_size = DEFAULT_VIDEO_BUFFER_SIZE;
+	} else {
+		pvbuf->buf_size = DEFAULT_VIDEO_BUFFER_SIZE;
 	}
+	reset_canuse_buferlevel(10000);
 
 	return;
 }
@@ -502,6 +479,13 @@ static int video_port_init(struct stream_port_s *port,
 		return -EPERM;
 	}
 
+	if (port->vformat == VFORMAT_H264_4K2K ||
+		(amstream_dec_info.height *
+			amstream_dec_info.width) > 1920*1088) {
+		pbuf->for_4k = 1;
+	}
+
+
 	amstream_change_vbufsize(port, pbuf);
 
 	if (has_hevc_vdec()) {
@@ -512,7 +496,6 @@ static int video_port_init(struct stream_port_s *port,
 				vdec_poweroff(VDEC_HEVC);
 		}
 	}
-
 	r = stbuf_init(pbuf);
 	if (r < 0) {
 		pr_err("video_port_init %d, stbuf_init failed\n", __LINE__);
@@ -591,7 +574,7 @@ static int audio_port_reset(struct stream_port_s *port,
 	}
 
 	if (port->type & PORT_TYPE_ES)
-		esparser_audio_reset(pbuf);
+		esparser_audio_reset_s(pbuf);
 
 	if (port->type & PORT_TYPE_MPTS)
 		tsdemux_audio_reset();
@@ -736,12 +719,12 @@ static int amstream_port_init(struct stream_port_s *port)
 		pubuf->buf_start = 0;
 		pubuf->buf_wp = 0;
 		pubuf->buf_rp = 0;
-
+		pubuf->for_4k = 0;
 		if (has_hevc_vdec()) {
-			if (port->vformat == VFORMAT_HEVC)
+			if (port->vformat == VFORMAT_HEVC ||
+				port->vformat == VFORMAT_VP9)
 				pvbuf = &bufs[BUF_TYPE_HEVC];
 		}
-
 		r = video_port_init(port, pvbuf);
 		if (r < 0) {
 			pr_err("video_port_init  failed\n");
@@ -764,7 +747,8 @@ static int amstream_port_init(struct stream_port_s *port)
 			(port->flag & PORT_FLAG_AID) ? port->aid : 0xffff,
 			(port->flag & PORT_FLAG_SID) ? port->sid : 0xffff,
 			(port->pcr_inited == 1) ? port->pcrid : 0xffff,
-			(port->vformat == VFORMAT_HEVC));
+			(port->vformat == VFORMAT_HEVC) ||
+			(port->vformat == VFORMAT_VP9));
 		} else {
 			r = tsdemux_init(
 			(port->flag & PORT_FLAG_VID) ? port->vid : 0xffff,
@@ -829,7 +813,8 @@ static int amstream_port_release(struct stream_port_s *port)
 	struct stream_buf_s *psbuf = &bufs[BUF_TYPE_SUBTITLE];
 
 	if (has_hevc_vdec()) {
-		if (port->vformat == VFORMAT_HEVC)
+		if (port->vformat == VFORMAT_HEVC
+			|| port->vformat == VFORMAT_VP9)
 			pvbuf = &bufs[BUF_TYPE_HEVC];
 	}
 
@@ -901,6 +886,7 @@ static ssize_t amstream_vbuf_write(struct file *file, const char *buf,
 	struct stream_buf_s *pbuf = NULL;
 	int r;
 
+
 	if (has_hevc_vdec()) {
 		pbuf = (port->type & PORT_TYPE_HEVC) ? &bufs[BUF_TYPE_HEVC] :
 			&bufs[BUF_TYPE_VIDEO];
@@ -954,9 +940,9 @@ static ssize_t amstream_mpts_write(struct file *file, const char *buf,
 	int r = 0;
 
 	if (has_hevc_vdec()) {
-		pvbuf =	(port->vformat ==
-			VFORMAT_HEVC) ? &bufs[BUF_TYPE_HEVC] :
-			&bufs[BUF_TYPE_VIDEO];
+		pvbuf =	(port->vformat == VFORMAT_HEVC ||
+					port->vformat == VFORMAT_VP9) ?
+			&bufs[BUF_TYPE_HEVC] : &bufs[BUF_TYPE_VIDEO];
 	} else
 		pvbuf = &bufs[BUF_TYPE_VIDEO];
 
@@ -1092,7 +1078,6 @@ static ssize_t amstream_sub_write(struct file *file, const char *buf,
 		if (r < 0)
 			return r;
 	}
-	pr_err("amstream_sub_write\n");
 	r = esparser_write(file, pbuf, buf, count);
 	if (r < 0)
 		return r;
@@ -1786,8 +1771,9 @@ static long amstream_ioctl_get_ex(struct stream_port_s *this, ulong arg)
 			struct am_ioctl_parm_ex *p = &parm;
 			struct stream_buf_s *buf = NULL;
 
-			buf = (this->vformat ==
-				VFORMAT_HEVC) ? &bufs[BUF_TYPE_HEVC] :
+			buf = (this->vformat == VFORMAT_HEVC ||
+				this->vformat == VFORMAT_VP9) ?
+				&bufs[BUF_TYPE_HEVC] :
 				&bufs[BUF_TYPE_VIDEO];
 
 			if (p == NULL)
@@ -2127,8 +2113,9 @@ static long amstream_do_ioctl_old(struct stream_port_s *this,
 			struct am_io_param *p = &para;
 			struct stream_buf_s *buf = NULL;
 
-			buf = (this->vformat ==
-				VFORMAT_HEVC) ? &bufs[BUF_TYPE_HEVC] :
+			buf = (this->vformat == VFORMAT_HEVC ||
+					this->vformat == VFORMAT_VP9) ?
+				&bufs[BUF_TYPE_HEVC] :
 				&bufs[BUF_TYPE_VIDEO];
 
 			if (p == NULL)
@@ -3119,6 +3106,9 @@ static int amstream_probe(struct platform_device *pdev)
 	reset_canuse_buferlevel(10000);
 	amstream_pdev = pdev;
 	amports_clock_gate_init(&amstream_pdev->dev);
+
+	/*prealloc fetch buf to avoid no continue buffer later...*/
+	stbuf_fetch_init();
 	return 0;
 
 	/*

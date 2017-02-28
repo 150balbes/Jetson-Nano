@@ -67,12 +67,6 @@ static long cifs_ioctl_clone(unsigned int xid, struct file *dst_file,
 		goto out_drop_write;
 	}
 
-	if (src_file.file->f_op->unlocked_ioctl != cifs_ioctl) {
-		rc = -EBADF;
-		cifs_dbg(VFS, "src file seems to be from a different filesystem type\n");
-		goto out_fput;
-	}
-
 	if ((!src_file.file->private_data) || (!dst_file->private_data)) {
 		rc = -EBADF;
 		cifs_dbg(VFS, "missing cifsFileInfo on copy range src file\n");
@@ -92,16 +86,21 @@ static long cifs_ioctl_clone(unsigned int xid, struct file *dst_file,
 	}
 
 	src_inode = src_file.file->f_dentry->d_inode;
-	rc = -EINVAL;
-	if (S_ISDIR(src_inode->i_mode))
-		goto out_fput;
 
 	/*
 	 * Note: cifs case is easier than btrfs since server responsible for
 	 * checks for proper open modes and file type and if it wants
 	 * server could even support copy of range where source = target
 	 */
-	lock_two_nondirectories(target_inode, src_inode);
+
+	/* so we do not deadlock racing two ioctls on same files */
+	if (target_inode < src_inode) {
+		mutex_lock_nested(&target_inode->i_mutex, I_MUTEX_PARENT);
+		mutex_lock_nested(&src_inode->i_mutex, I_MUTEX_CHILD);
+	} else {
+		mutex_lock_nested(&src_inode->i_mutex, I_MUTEX_PARENT);
+		mutex_lock_nested(&target_inode->i_mutex, I_MUTEX_CHILD);
+	}
 
 	/* determine range to clone */
 	rc = -EINVAL;
@@ -125,7 +124,13 @@ static long cifs_ioctl_clone(unsigned int xid, struct file *dst_file,
 out_unlock:
 	/* although unlocking in the reverse order from locking is not
 	   strictly necessary here it is a little cleaner to be consistent */
-	unlock_two_nondirectories(src_inode, target_inode);
+	if (target_inode < src_inode) {
+		mutex_unlock(&src_inode->i_mutex);
+		mutex_unlock(&target_inode->i_mutex);
+	} else {
+		mutex_unlock(&target_inode->i_mutex);
+		mutex_unlock(&src_inode->i_mutex);
+	}
 out_fput:
 	fdput(src_file);
 out_drop_write:

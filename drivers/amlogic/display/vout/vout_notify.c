@@ -71,18 +71,23 @@ EXPORT_SYMBOL_GPL(vout_notifier_call_chain);
 /*
 *interface export to client who want to get current vinfo.
 */
-const struct vinfo_s *get_current_vinfo(void)
+struct vinfo_s *get_current_vinfo(void)
 {
-	const struct vinfo_s *info = NULL;
+	struct vinfo_s *info = NULL;
+	unsigned int atomic_flag = in_interrupt();
 
-	mutex_lock(&vout_mutex);
+	if (atomic_flag == 0)
+		mutex_lock(&vout_mutex);
 
 	if (vout_module.curr_vout_server) {
 		BUG_ON(vout_module.curr_vout_server->op.get_vinfo == NULL);
 		info = vout_module.curr_vout_server->op.get_vinfo();
 	}
+	if (info == NULL) /* avoid crash mistake */
+		info = get_invalid_vinfo();
 
-	mutex_unlock(&vout_mutex);
+	if (atomic_flag == 0)
+		mutex_unlock(&vout_mutex);
 
 	return info;
 }
@@ -109,6 +114,44 @@ enum vmode_e get_current_vmode(void)
 	return mode;
 }
 EXPORT_SYMBOL(get_current_vmode);
+
+/* fps = 9600/duration/100 hz */
+int get_vsource_fps(int duration)
+{
+	int fps = 6000;
+
+	switch (duration) {
+	case 1600:
+		fps = 6000;
+		break;
+	case 1601:
+	case 1602:
+		fps = 5994;
+		break;
+	case 1920:
+		fps = 5000;
+		break;
+	case 3200:
+		fps = 3000;
+		break;
+	case 3203:
+		fps = 2997;
+		break;
+	case 3840:
+		fps = 2500;
+		break;
+	case 4000:
+		fps = 2400;
+		break;
+	case 4004:
+		fps = 2397;
+		break;
+	default:
+		break;
+	}
+	return fps;
+}
+EXPORT_SYMBOL(get_vsource_fps);
 
 /*
 *interface export to client who want to notify about source frame rate.

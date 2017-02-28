@@ -43,16 +43,10 @@
 #include <linux/mmc/sd.h>
 
 #include <asm/uaccess.h>
-#include <mtd/mtd-abi.h>
-#include <linux/amlogic/sd.h>
 
 #include "queue.h"
 #if !defined(CONFIG_ARCH_MESON64_ODROIDC2)
 #include <linux/mmc/emmc_partitions.h>
-#endif
-
-#if defined(CONFIG_ARCH_MESON64_ODROIDC2)
-#include <linux/hardkernel/odroidc2.h>
 #endif
 
 MODULE_ALIAS("mmc:block");
@@ -71,7 +65,8 @@ MODULE_ALIAS("mmc:block");
 #define MMC_SANITIZE_REQ_TIMEOUT 240000
 #define MMC_EXTRACT_INDEX_FROM_ARG(x) ((x & 0x00FF0000) >> 16)
 
-#define mmc_req_rel_wr(req)	((req->cmd_flags & REQ_FUA) && \
+#define mmc_req_rel_wr(req)	(((req->cmd_flags & REQ_FUA) || \
+				  (req->cmd_flags & REQ_META)) && \
 				  (rq_data_dir(req) == WRITE))
 #define PACKED_CMD_VER	0x01
 #define PACKED_CMD_WR	0x02
@@ -212,8 +207,6 @@ static ssize_t power_ro_lock_show(struct device *dev,
 		locked = 1;
 
 	ret = snprintf(buf, PAGE_SIZE, "%d\n", locked);
-
-	mmc_blk_put(md);
 
 	return ret;
 }
@@ -626,39 +619,9 @@ cmd_err:
 static int mmc_blk_ioctl(struct block_device *bdev, fmode_t mode,
 	unsigned int cmd, unsigned long arg)
 {
-	void __user *argp = (void __user *)arg;
 	int ret = -EINVAL;
-	struct mtd_info_user info;
-	struct gendisk *disk = bdev->bd_disk;
-	int part_num;
-
-	switch (cmd) {
-	case MMC_IOC_CMD:
+	if (cmd == MMC_IOC_CMD)
 		ret = mmc_blk_ioctl_cmd(bdev, (struct mmc_ioc_cmd __user *)arg);
-		break;
-	case MEMGETINFO:
-		part_num = MINOR(bdev->bd_dev)-disk->first_minor;
-		BUG_ON(part_num < 0);
-		memset(&info, 0, sizeof(info));
-		info.type       = MTD_NORFLASH;
-		info.flags      = MTD_CAP_NORFLASH;
-		info.size       = (disk->part_tbl->part[part_num]->nr_sects<<9);
-		info.erasesize  = SDIO_BOUNCE_REQ_SIZE;
-		info.writesize  = SDIO_BOUNCE_REQ_SIZE;
-		info.oobsize    = 4096;
-		if (copy_to_user(argp, &info, sizeof(struct mtd_info_user)))
-			return -EFAULT;
-		ret = 0;
-		break;
-	case MEMERASE:
-	case MEMLOCK:
-	case MEMUNLOCK:
-	case MEMGETBADBLOCK:
-		return 0;
-	default:
-		ret = -EINVAL;
-	}
-
 	return ret;
 }
 
@@ -1068,18 +1031,6 @@ static inline void mmc_blk_reset_success(struct mmc_blk_data *md, int type)
 	md->reset_done &= ~type;
 }
 
-int mmc_access_rpmb(struct mmc_queue *mq)
-{
-	struct mmc_blk_data *md = mq->data;
-	/*
-	 * If this is a RPMB partition access, return ture
-	 */
-	if (md && md->part_type == EXT_CSD_PART_CONFIG_ACC_RPMB)
-		return true;
-
-	return false;
-}
-
 static int mmc_blk_issue_discard_rq(struct mmc_queue *mq, struct request *req)
 {
 	struct mmc_blk_data *md = mq->data;
@@ -1123,7 +1074,8 @@ out:
 	return err ? 0 : 1;
 }
 
-static int mmc_blk_issue_secdiscard_rq(struct mmc_queue *mq,
+static int __attribute__((unused)) mmc_blk_issue_secdiscard_rq(
+				       struct mmc_queue *mq,
 				       struct request *req)
 {
 	struct mmc_blk_data *md = mq->data;
@@ -1413,9 +1365,13 @@ static void mmc_blk_rw_rq_prep(struct mmc_queue_req *mqrq,
 
 	/*
 	 * Reliable writes are used to implement Forced Unit Access and
-	 * are supported only on MMCs.
+	 * REQ_META accesses, and are supported only on MMCs.
+	 *
+	 * XXX: this really needs a good explanation of why REQ_META
+	 * is treated special.
 	 */
-	bool do_rel_wr = (req->cmd_flags & REQ_FUA) &&
+	bool do_rel_wr = ((req->cmd_flags & REQ_FUA) ||
+			  (req->cmd_flags & REQ_META)) &&
 		(rq_data_dir(req) == WRITE) &&
 		(md->flags & MMC_BLK_REL_WR);
 
@@ -1701,8 +1657,8 @@ static void mmc_blk_packed_hdr_wrq_prep(struct mmc_queue_req *mqrq,
 
 	packed_cmd_hdr = packed->cmd_hdr;
 	memset(packed_cmd_hdr, 0, sizeof(packed->cmd_hdr));
-	packed_cmd_hdr[0] = cpu_to_le32((packed->nr_entries << 16) |
-		(PACKED_CMD_WR << 8) | PACKED_CMD_VER);
+	packed_cmd_hdr[0] = (packed->nr_entries << 16) |
+		(PACKED_CMD_WR << 8) | PACKED_CMD_VER;
 	hdr_blocks = mmc_large_sector(card) ? 8 : 1;
 
 	/*
@@ -1716,14 +1672,14 @@ static void mmc_blk_packed_hdr_wrq_prep(struct mmc_queue_req *mqrq,
 			((brq->data.blocks * brq->data.blksz) >=
 			 card->ext_csd.data_tag_unit_size);
 		/* Argument of CMD23 */
-		packed_cmd_hdr[(i * 2)] = cpu_to_le32(
+		packed_cmd_hdr[(i * 2)] =
 			(do_rel_wr ? MMC_CMD23_ARG_REL_WR : 0) |
 			(do_data_tag ? MMC_CMD23_ARG_TAG_REQ : 0) |
-			blk_rq_sectors(prq));
+			blk_rq_sectors(prq);
 		/* Argument of CMD18 or CMD25 */
-		packed_cmd_hdr[((i * 2)) + 1] = cpu_to_le32(
+		packed_cmd_hdr[((i * 2)) + 1] =
 			mmc_card_blockaddr(card) ?
-			blk_rq_pos(prq) : blk_rq_pos(prq) << 9);
+			blk_rq_pos(prq) : blk_rq_pos(prq) << 9;
 		packed->blocks += blk_rq_sectors(prq);
 		i++;
 	}
@@ -1949,11 +1905,9 @@ static int mmc_blk_issue_rw_rq(struct mmc_queue *mq, struct request *rqc)
 			break;
 		case MMC_BLK_CMD_ERR:
 			ret = mmc_blk_cmd_err(md, card, brq, req, ret);
-			if (mmc_blk_reset(md, card->host, type))
-				goto cmd_abort;
-			if (!ret)
-				goto start_new_req;
-			break;
+			if (!mmc_blk_reset(md, card->host, type))
+				break;
+			goto cmd_abort;
 		case MMC_BLK_RETRY:
 			if (retry++ < 5)
 				break;
@@ -2082,7 +2036,8 @@ static int mmc_blk_issue_rq(struct mmc_queue *mq, struct request *req)
 		if (card->host->areq)
 			mmc_blk_issue_rw_rq(mq, NULL);
 		if (req->cmd_flags & REQ_SECURE)
-			ret = mmc_blk_issue_secdiscard_rq(mq, req);
+			/*ret = mmc_blk_issue_secdiscard_rq(mq, req);*/
+			ret = mmc_blk_issue_discard_rq(mq, req);
 		else
 			ret = mmc_blk_issue_discard_rq(mq, req);
 	} else if (cmd_flags & REQ_FLUSH) {
@@ -2145,22 +2100,12 @@ static struct mmc_blk_data *mmc_blk_alloc_req(struct mmc_card *card,
 	 * partitions, devidx will not coincide with a per-physical card
 	 * index anymore so we keep track of a name index.
 	 */
-#if defined(CONFIG_ARCH_MESON64_ODROIDC2)
-	if (strncmp(dev_name(&card->host->class_dev), "sd", 2) == 0) {
-		md->name_idx = board_boot_from_emmc() ? 1 : 0;
-		__set_bit(md->name_idx, name_use);
-	} else if (strncmp(dev_name(&card->host->class_dev), "emmc", 4) == 0) {
-		md->name_idx = board_boot_from_emmc() ? 0 : 1;
-		__set_bit(md->name_idx, name_use);
-	}
-#else
 	if (!subname) {
 		md->name_idx = find_first_zero_bit(name_use, max_devices);
 		__set_bit(md->name_idx, name_use);
 	} else
 		md->name_idx = ((struct mmc_blk_data *)
 				dev_to_disk(parent)->private_data)->name_idx;
-#endif
 
 	md->area_type = area_type;
 
@@ -2452,11 +2397,10 @@ static const struct mmc_fixup blk_fixups[] =
 		  MMC_QUIRK_BLK_NO_CMD23),
 
 	/*
-	 * Some MMC cards need longer data read timeout than indicated in CSD.
+	 * Some Micron MMC cards needs longer data read timeout than
+	 * indicated in CSD.
 	 */
 	MMC_FIXUP(CID_NAME_ANY, CID_MANFID_MICRON, 0x200, add_quirk_mmc,
-		  MMC_QUIRK_LONG_READ_TIME),
-	MMC_FIXUP("008GE0", CID_MANFID_TOSHIBA, CID_OEMID_ANY, add_quirk_mmc,
 		  MMC_QUIRK_LONG_READ_TIME),
 
 	/*
@@ -2484,12 +2428,29 @@ static const struct mmc_fixup blk_fixups[] =
 	END_FIXUP
 };
 
-static atomic_t emmc_probe = ATOMIC_INIT(0);
+static atomic_t emmc_probe = ATOMIC_INIT(1);
 static DECLARE_WAIT_QUEUE_HEAD(emmc_probe_waitqueue);
 
+/*
+ * instaboot function must wait for emmc device ready
+ */
 void wait_for_emmc_probe(void)
 {
+	pr_info("wait for emmc probe\n");
 	wait_event(emmc_probe_waitqueue, atomic_read(&emmc_probe) == 0);
+}
+
+/*
+ * clear the emmc waiting flag emmc_probe
+ * and wakeup function wait_for_emmc_probe caller
+ */
+static inline void clear_emmc_wait_flag(struct mmc_card *card)
+{
+	if (card == NULL || card->type == MMC_TYPE_MMC) {
+		pr_info("clear_emmc_wait_flag\n");
+		atomic_set(&emmc_probe, 0);
+		wake_up(&emmc_probe_waitqueue);
+	}
 }
 
 static int mmc_blk_probe(struct mmc_card *card)
@@ -2497,19 +2458,21 @@ static int mmc_blk_probe(struct mmc_card *card)
 	struct mmc_blk_data *md, *part_md;
 	char cap_str[10];
 
-	atomic_set(&emmc_probe, 1);
-
 	/*
 	 * Check that the card supports the command class(es) we need.
 	 */
-	if (!(card->csd.cmdclass & CCC_BLOCK_READ))
+	if (!(card->csd.cmdclass & CCC_BLOCK_READ)) {
+		clear_emmc_wait_flag(card);
 		return -ENODEV;
+	}
 
 	mmc_fixup_device(card, blk_fixups);
 
 	md = mmc_blk_alloc(card);
-	if (IS_ERR(md))
+	if (IS_ERR(md)) {
+		clear_emmc_wait_flag(card);
 		return PTR_ERR(md);
+	}
 
 	string_get_size((u64)get_capacity(md->disk) << 9, STRING_UNITS_2,
 			cap_str, sizeof(cap_str));
@@ -2528,8 +2491,6 @@ static int mmc_blk_probe(struct mmc_card *card)
 #if !defined(CONFIG_ARCH_MESON64_ODROIDC2)
 	aml_emmc_partition_ops(card, md->disk); /* add by gch */
 #endif
-	atomic_set(&emmc_probe, 0);
-	wake_up(&emmc_probe_waitqueue);
 
 	list_for_each_entry(part_md, &md->part, part) {
 		if (mmc_add_disk(part_md))
@@ -2548,11 +2509,13 @@ static int mmc_blk_probe(struct mmc_card *card)
 		pm_runtime_enable(&card->dev);
 	}
 
+	clear_emmc_wait_flag(card);
 	return 0;
 
  out:
 	mmc_blk_remove_parts(card, md);
 	mmc_blk_remove_req(md);
+	clear_emmc_wait_flag(card);
 	return 0;
 }
 

@@ -15,56 +15,69 @@
  *
 */
 
-#ifndef __AMLOGIC_LCD_EXTERN_H_
-#define __AMLOGIC_LCD_EXTERN_H_
+#ifndef _INC_AML_LCD_EXTERN_H_
+#define _INC_AML_LCD_EXTERN_H_
 
-#include <linux/amlogic/aml_gpio_consumer.h>
-#include <linux/pinctrl/consumer.h>
-#include <linux/amlogic/vout/lcdoutc.h>
-
-enum Lcd_Extern_Type_e {
+enum lcd_extern_type_e {
 	LCD_EXTERN_I2C = 0,
 	LCD_EXTERN_SPI,
 	LCD_EXTERN_MIPI,
 	LCD_EXTERN_MAX,
 };
 
+enum lcd_extern_i2c_bus_e {
+	LCD_EXTERN_I2C_BUS_AO = 0,
+	LCD_EXTERN_I2C_BUS_A,
+	LCD_EXTERN_I2C_BUS_B,
+	LCD_EXTERN_I2C_BUS_C,
+	LCD_EXTERN_I2C_BUS_D,
+	LCD_EXTERN_I2C_BUS_MAX,
+};
+#define LCD_EXTERN_I2C_BUS_INVALID   0xff
+
+#define LCD_EXTERN_SPI_CLK_FREQ_DFT  10000 /* default 10k */
+
+#define LCD_EXTERN_INIT_TABLE_MAX    500
+
+#define LCD_EXTERN_INIT_CMD          0x00
+#define LCD_EXTERN_INIT_CMD2         0x01  /* only for special i2c device */
+#define LCD_EXTERN_INIT_GPIO         0x10
+#define LCD_EXTERN_INIT_NONE         0xf0
+#define LCD_EXTERN_INIT_END          0xff
+
+#define LCD_EXTERN_GPIO_NUM_MAX      6
+#define LCD_EXTERN_INDEX_INVALID     0xff
+#define LCD_EXTERN_NAME_LEN_MAX      30
+struct lcd_extern_config_s {
+	unsigned char index;
+	char name[LCD_EXTERN_NAME_LEN_MAX];
+	enum lcd_extern_type_e type;
+	unsigned char status;
+	unsigned char i2c_addr;
+	unsigned char i2c_addr2;
+	unsigned char i2c_bus;
+	unsigned char spi_gpio_cs;
+	unsigned char spi_gpio_clk;
+	unsigned char spi_gpio_data;
+	unsigned int spi_clk_freq;
+	unsigned char spi_clk_pol;
+	unsigned char cmd_size;
+	unsigned char table_init_loaded; /* internal use */
+	unsigned char *table_init_on;
+	unsigned char *table_init_off;
+};
+
 /* global API */
+#define LCD_EXT_DRIVER_MAX    10
 struct aml_lcd_extern_driver_s {
-	char *name;
-	enum Lcd_Extern_Type_e type;
+	struct lcd_extern_config_s config;
 	int (*reg_read)(unsigned char reg, unsigned char *buf);
 	int (*reg_write)(unsigned char reg, unsigned char value);
 	int (*power_on)(void);
 	int (*power_off)(void);
-	unsigned char *init_on_cmd_8;
-	unsigned char *init_off_cmd_8;
-	/* unsigned short *init_on_cmd_16; */
-	/* unsigned short *init_off_cmd_16; */
 };
 
-struct lcd_extern_config_s {
-	char *name;
-	enum Lcd_Extern_Type_e type;
-	int status;
-	int i2c_addr;
-	int i2c_bus;
-	struct gpio_desc *spi_cs;
-	struct gpio_desc *spi_clk;
-	struct gpio_desc *spi_data;
-};
-
-#define lcd_extern_gpio_request(dev, str)     gpiod_get(dev, str)
-#define lcd_extern_gpio_free(gdesc)           gpiod_put(gdesc)
-#define lcd_extern_gpio_input(gdesc)          gpiod_direction_input(gdesc)
-#define lcd_extern_gpio_output(gdesc, val)    gpiod_direction_output(gdesc, val)
-#define lcd_extern_gpio_get_value(gdesc)      gpiod_get_value(gdesc)
-#define lcd_extern_gpio_set_value(gdesc, val) gpiod_set_value(gdesc, val)
-
-extern struct aml_lcd_extern_driver_s *aml_lcd_extern_get_driver(void);
-extern enum Bool_check_e lcd_extern_driver_check(void);
-extern int get_lcd_extern_dt_data(struct platform_device *pdev,
-			struct lcd_extern_config_s *pdata);
+extern struct aml_lcd_extern_driver_s *aml_lcd_extern_get_driver(int index);
 
 #endif
 

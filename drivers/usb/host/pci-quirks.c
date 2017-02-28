@@ -571,8 +571,7 @@ static void quirk_usb_handoff_ohci(struct pci_dev *pdev)
 {
 	void __iomem *base;
 	u32 control;
-	u32 fminterval = 0;
-	bool no_fminterval = false;
+	u32 fminterval;
 	int cnt;
 
 	if (!mmio_resource_enabled(pdev, 0))
@@ -581,13 +580,6 @@ static void quirk_usb_handoff_ohci(struct pci_dev *pdev)
 	base = pci_ioremap_bar(pdev, 0);
 	if (base == NULL)
 		return;
-
-	/*
-	 * ULi M5237 OHCI controller locks the whole system when accessing
-	 * the OHCI_FMINTERVAL offset.
-	 */
-	if (pdev->vendor == PCI_VENDOR_ID_AL && pdev->device == 0x5237)
-		no_fminterval = true;
 
 	control = readl(base + OHCI_CONTROL);
 
@@ -627,9 +619,7 @@ static void quirk_usb_handoff_ohci(struct pci_dev *pdev)
 	}
 
 	/* software reset of the controller, preserving HcFmInterval */
-	if (!no_fminterval)
-		fminterval = readl(base + OHCI_FMINTERVAL);
-
+	fminterval = readl(base + OHCI_FMINTERVAL);
 	writel(OHCI_HCR, base + OHCI_CMDSTATUS);
 
 	/* reset requires max 10 us delay */
@@ -638,9 +628,7 @@ static void quirk_usb_handoff_ohci(struct pci_dev *pdev)
 			break;
 		udelay(1);
 	}
-
-	if (!no_fminterval)
-		writel(fminterval, base + OHCI_FMINTERVAL);
+	writel(fminterval, base + OHCI_FMINTERVAL);
 
 	/* Now the controller is safely in SUSPEND and nothing can wake it up */
 	iounmap(base);

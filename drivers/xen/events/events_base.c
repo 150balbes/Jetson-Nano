@@ -503,20 +503,9 @@ static void eoi_pirq(struct irq_data *data)
 	struct physdev_eoi eoi = { .irq = pirq_from_irq(data->irq) };
 	int rc = 0;
 
-	if (!VALID_EVTCHN(evtchn))
-		return;
+	irq_move_irq(data);
 
-	if (unlikely(irqd_is_setaffinity_pending(data)) &&
-	    likely(!irqd_irq_disabled(data))) {
-		int masked = test_and_set_mask(evtchn);
-
-		clear_evtchn(evtchn);
-
-		irq_move_masked_irq(data);
-
-		if (!masked)
-			unmask_evtchn(evtchn);
-	} else
+	if (VALID_EVTCHN(evtchn))
 		clear_evtchn(evtchn);
 
 	if (pirq_needs_eoi(data->irq)) {
@@ -558,25 +547,19 @@ static unsigned int __startup_pirq(unsigned int irq)
 	pirq_query_unmask(irq);
 
 	rc = set_evtchn_to_irq(evtchn, irq);
-	if (rc)
-		goto err;
-
-	info->evtchn = evtchn;
+	if (rc != 0) {
+		pr_err("irq%d: Failed to set port to irq mapping (%d)\n",
+		       irq, rc);
+		xen_evtchn_close(evtchn);
+		return 0;
+	}
 	bind_evtchn_to_cpu(evtchn, 0);
-
-	rc = xen_evtchn_port_setup(info);
-	if (rc)
-		goto err;
+	info->evtchn = evtchn;
 
 out:
 	unmask_evtchn(evtchn);
 	eoi_pirq(irq_get_irq_data(irq));
 
-	return 0;
-
-err:
-	pr_err("irq%d: Failed to set port to irq mapping (%d)\n", irq, rc);
-	xen_evtchn_close(evtchn);
 	return 0;
 }
 
@@ -984,7 +967,7 @@ unsigned xen_evtchn_nr_channels(void)
 }
 EXPORT_SYMBOL_GPL(xen_evtchn_nr_channels);
 
-int bind_virq_to_irq(unsigned int virq, unsigned int cpu, bool percpu)
+int bind_virq_to_irq(unsigned int virq, unsigned int cpu)
 {
 	struct evtchn_bind_virq bind_virq;
 	int evtchn, irq, ret;
@@ -998,12 +981,8 @@ int bind_virq_to_irq(unsigned int virq, unsigned int cpu, bool percpu)
 		if (irq < 0)
 			goto out;
 
-		if (percpu)
-			irq_set_chip_and_handler_name(irq, &xen_percpu_chip,
-						      handle_percpu_irq, "virq");
-		else
-			irq_set_chip_and_handler_name(irq, &xen_dynamic_chip,
-						      handle_edge_irq, "virq");
+		irq_set_chip_and_handler_name(irq, &xen_percpu_chip,
+					      handle_percpu_irq, "virq");
 
 		bind_virq.virq = virq;
 		bind_virq.vcpu = cpu;
@@ -1093,7 +1072,7 @@ int bind_virq_to_irqhandler(unsigned int virq, unsigned int cpu,
 {
 	int irq, retval;
 
-	irq = bind_virq_to_irq(virq, cpu, irqflags & IRQF_PERCPU);
+	irq = bind_virq_to_irq(virq, cpu);
 	if (irq < 0)
 		return irq;
 	retval = request_irq(irq, handler, irqflags, devname, dev_id);
@@ -1309,9 +1288,8 @@ void rebind_evtchn_irq(int evtchn, int irq)
 
 	mutex_unlock(&irq_mapping_update_lock);
 
-        bind_evtchn_to_cpu(evtchn, info->cpu);
-	/* This will be deferred until interrupt is processed */
-	irq_set_affinity(irq, cpumask_of(info->cpu));
+	/* new event channels are always bound to cpu 0 */
+	irq_set_affinity(irq, cpumask_of(0));
 
 	/* Unmask the event channel. */
 	enable_irq(irq);
@@ -1406,20 +1384,9 @@ static void ack_dynirq(struct irq_data *data)
 {
 	int evtchn = evtchn_from_irq(data->irq);
 
-	if (!VALID_EVTCHN(evtchn))
-		return;
+	irq_move_irq(data);
 
-	if (unlikely(irqd_is_setaffinity_pending(data)) &&
-	    likely(!irqd_irq_disabled(data))) {
-		int masked = test_and_set_mask(evtchn);
-
-		clear_evtchn(evtchn);
-
-		irq_move_masked_irq(data);
-
-		if (!masked)
-			unmask_evtchn(evtchn);
-	} else
+	if (VALID_EVTCHN(evtchn))
 		clear_evtchn(evtchn);
 }
 

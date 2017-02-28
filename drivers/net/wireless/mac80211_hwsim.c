@@ -1671,9 +1671,7 @@ static int mac80211_hwsim_ampdu_action(struct ieee80211_hw *hw,
 	return 0;
 }
 
-static void mac80211_hwsim_flush(struct ieee80211_hw *hw,
-				 struct ieee80211_vif *vif,
-				 u32 queues, bool drop)
+static void mac80211_hwsim_flush(struct ieee80211_hw *hw, u32 queues, bool drop)
 {
 	/* Not implemented, queues only on kernel side */
 }
@@ -2253,7 +2251,6 @@ static int hwsim_tx_info_frame_received_nl(struct sk_buff *skb_2,
 	if (!info->attrs[HWSIM_ATTR_ADDR_TRANSMITTER] ||
 	    !info->attrs[HWSIM_ATTR_FLAGS] ||
 	    !info->attrs[HWSIM_ATTR_COOKIE] ||
-	    !info->attrs[HWSIM_ATTR_SIGNAL] ||
 	    !info->attrs[HWSIM_ATTR_TX_INFO])
 		goto out;
 

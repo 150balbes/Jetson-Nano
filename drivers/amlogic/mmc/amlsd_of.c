@@ -30,6 +30,7 @@
 /* #include <mach/am_regs.h> */
 #include <linux/amlogic/aml_gpio_consumer.h>
 #include "amlsd.h"
+#include <linux/amlogic/cpu_version.h>
 
 static const struct sd_caps host_caps[] = {
 	SD_CAPS(MMC_CAP_4_BIT_DATA, "MMC_CAP_4_BIT_DATA"),
@@ -56,35 +57,10 @@ static const struct sd_caps host_caps[] = {
 	SD_CAPS(MMC_CAP_DRIVER_TYPE_D, "MMC_CAP_DRIVER_TYPE_D"),
 	SD_CAPS(MMC_CAP_CMD23, "MMC_CAP_CMD23"),
 	SD_CAPS(MMC_CAP_HW_RESET, "MMC_CAP_HW_RESET"),
+	SD_CAPS(MMC_CAP_RUNTIME_RESUME, "MMC_CAP_RUNTIME_RESUME"),
+	SD_CAPS(MMC_CAP_AGGRESSIVE_PM, "MMC_CAP_AGGRESSIVE_PM"),
 	SD_CAPS(MMC_PM_KEEP_POWER, "MMC_PM_KEEP_POWER"),
 };
-
-#if defined(CONFIG_ARCH_MESON64_ODROIDC2)
-int disable_uhs = 0;
-static int __init setup_disableuhs(char *s)
-{
-	disable_uhs = 0;
-	if (!strcmp(s, "true"))
-		disable_uhs = 1;
-	return 0;
-}
-__setup("disableuhs=", setup_disableuhs);
-
-/* Force to set "MMC_CAP_NONREMOVABLE" to prevent MMC card detection
- * by MicroSD card socket.
- */
-int mmc_removable = 0;
-static int __init setup_mmc_removable(char *s)
-{
-	mmc_removable = 0;
-	if (!strcmp(s, "true"))
-		mmc_removable = 1;
-
-	return 0;
-}
-__setup("mmc_removable=", setup_mmc_removable);
-
-#endif
 
 static int amlsd_get_host_caps(struct device_node *of_node,
 		struct amlsd_platform *pdata)
@@ -102,21 +78,8 @@ static int amlsd_get_host_caps(struct device_node *of_node,
 	if (caps & MMC_CAP_8_BIT_DATA)
 		caps |= MMC_CAP_4_BIT_DATA;
 
-#if defined(CONFIG_ARCH_MESON64_ODROIDC2)
-	if (disable_uhs) {
-		caps &= ~(MMC_CAP_UHS_SDR12 | MMC_CAP_UHS_SDR25 |
-			MMC_CAP_UHS_SDR50 | MMC_CAP_UHS_SDR104 |
-			MMC_CAP_UHS_DDR50);
-	}
-
-	if ((mmc_removable) && (!strcmp(of_node->name, "sd")))
-		caps &= ~MMC_CAP_NONREMOVABLE;
-	else
-		caps |= MMC_CAP_NONREMOVABLE;
-#endif
-
 	pdata->caps = caps;
-	pr_info("pdata->caps %x\n", pdata->caps);
+	pr_info("%s:pdata->caps = %x\n", pdata->pinname, pdata->caps);
 	return 0;
 }
 
@@ -132,7 +95,7 @@ static const struct sd_caps host_caps2[] = {
 	SD_CAPS(MMC_CAP2_HS400_1_8V, "MMC_CAP2_HS400_1_8V"),
 	SD_CAPS(MMC_CAP2_HS400_1_2V, "MMC_CAP2_HS400_1_2V"),
 	SD_CAPS(MMC_CAP2_HS400, "MMC_CAP2_HS400"),
-	SD_CAPS(MMC_CAP2_BROKEN_VOLTAGE, "MMC_CAP2_BROKEN_VOLTAGE"),
+	/*SD_CAPS(MMC_CAP2_BROKEN_VOLTAGE, "MMC_CAP2_BROKEN_VOLTAGE"),*/
 	/* SD_CAPS(MMC_CAP2_DETECT_ON_ERR, "MMC_CAP2_DETECT_ON_ERR"), */
 	SD_CAPS(MMC_CAP2_HC_ERASE_SZ, "MMC_CAP2_HC_ERASE_SZ"),
 	SD_CAPS(MMC_CAP2_CD_ACTIVE_HIGH, "MMC_CAP2_CD_ACTIVE_HIGH"),
@@ -153,7 +116,7 @@ static int amlsd_get_host_caps2(struct device_node *of_node,
 		}
 	};
 	pdata->caps2 = caps;
-	pr_info("pdata->caps2 %x\n", pdata->caps2);
+	pr_info("%s:pdata->caps2 = %x\n", pdata->pinname, pdata->caps2);
 	return 0;
 }
 
@@ -220,38 +183,35 @@ int amlsd_get_platform_data(struct platform_device *pdev,
 		if (!child)
 			return -EINVAL;
 
-	amlsd_get_host_caps(child, pdata);
-	amlsd_get_host_caps2(child, pdata);
-
 /*	amlsd_init_pins_input(child, pdata);*/
 
-		SD_PARSE_U32_PROP(child, "port",
+		SD_PARSE_U32_PROP_HEX(child, "port",
 						prop, pdata->port);
-		SD_PARSE_U32_PROP(child, "ocr_avail",
+		SD_PARSE_U32_PROP_HEX(child, "ocr_avail",
 						prop, pdata->ocr_avail);
 		BUG_ON(!pdata->ocr_avail);
-		SD_PARSE_U32_PROP(child, "f_min",
+		SD_PARSE_U32_PROP_DEC(child, "f_min",
 						prop, pdata->f_min);
-		SD_PARSE_U32_PROP(child, "f_max",
+		SD_PARSE_U32_PROP_DEC(child, "f_max",
 						prop, pdata->f_max);
-		SD_PARSE_U32_PROP(child, "f_max_w",
+		SD_PARSE_U32_PROP_DEC(child, "f_max_w",
 						prop, pdata->f_max_w);
-		SD_PARSE_U32_PROP(child, "max_req_size", prop,
+		SD_PARSE_U32_PROP_HEX(child, "max_req_size", prop,
 						pdata->max_req_size);
-		SD_PARSE_U32_PROP(child, "irq_in", prop,
+		SD_PARSE_U32_PROP_DEC(child, "irq_in", prop,
 						pdata->irq_in);
-		SD_PARSE_U32_PROP(child, "irq_in_edge",
+		SD_PARSE_U32_PROP_DEC(child, "irq_in_edge",
 						prop, pdata->irq_in_edge);
-		SD_PARSE_U32_PROP(child, "irq_out",
+		SD_PARSE_U32_PROP_DEC(child, "irq_out",
 						prop, pdata->irq_out);
-		SD_PARSE_U32_PROP(child, "irq_out_edge",
+		SD_PARSE_U32_PROP_DEC(child, "irq_out_edge",
 						prop, pdata->irq_out_edge);
-		SD_PARSE_U32_PROP(child, "power_level",
+		SD_PARSE_U32_PROP_HEX(child, "power_level",
 						prop, pdata->power_level);
 
 		SD_PARSE_GPIO_NUM_PROP(child, "gpio_cd",
 						str, pdata->gpio_cd);
-		SD_PARSE_U32_PROP(child, "gpio_cd_level",
+		SD_PARSE_U32_PROP_DEC(child, "gpio_cd_level",
 						prop, pdata->gpio_cd_level);
 		SD_PARSE_GPIO_NUM_PROP(child, "gpio_ro",
 						str, pdata->gpio_ro);
@@ -262,16 +222,37 @@ int amlsd_get_platform_data(struct platform_device *pdev,
 						str, pdata->pinname);
 		SD_PARSE_GPIO_NUM_PROP(child, "jtag_pin",
 						str, pdata->jtag_pin);
-		SD_PARSE_U32_PROP(child, "card_type",
+		SD_PARSE_U32_PROP_DEC(child, "auto_clk_close",
+						prop, pdata->auto_clk_close);
+		SD_PARSE_GPIO_NUM_PROP(child, "vol_switch",
+						str, pdata->vol_switch);
+		SD_PARSE_U32_PROP_DEC(child, "vol_switch_18",
+						prop, pdata->vol_switch_18);
+		SD_PARSE_U32_PROP_DEC(child, "vol_switch_delay",
+						prop, pdata->vol_switch_delay);
+		SD_PARSE_U32_PROP_DEC(child, "card_type",
 						prop, pdata->card_type);
+		if (aml_card_type_mmc(pdata)) {
+			/*tx_phase set default value first*/
+			if (get_cpu_type() == MESON_CPU_MAJOR_ID_GXTVBB)
+				pdata->tx_phase = 1;
+			if (get_cpu_type() == MESON_CPU_MAJOR_ID_TXL)
+				pdata->tx_delay = 3;
+			SD_PARSE_U32_PROP_DEC(child, "tx_phase",
+						prop, pdata->tx_phase);
+		}
+		if (aml_card_type_non_sdio(pdata)) {
+			/*card in default value*/
+			pdata->card_in_delay = 0;
+			SD_PARSE_U32_PROP_DEC(child, "card_in_delay",
+						prop, pdata->card_in_delay);
+		}
 		SD_PARSE_GPIO_NUM_PROP(child, "gpio_dat3",
 						str, pdata->gpio_dat3);
 		SD_PARSE_GPIO_NUM_PROP(child, "hw_reset",
 						str, pdata->hw_reset);
-#if defined(CONFIG_ARCH_MESON64_ODROIDC2)
-		SD_PARSE_GPIO_NUM_PROP(child, "gpio_volsw",
-						str, pdata->gpio_volsw);
-#endif
+		amlsd_get_host_caps(child, pdata);
+		amlsd_get_host_caps2(child, pdata);
 		pdata->port_init = of_amlsd_init;
 		pdata->pwr_pre = of_amlsd_pwr_prepare;
 		pdata->pwr_on = of_amlsd_pwr_on;
@@ -280,12 +261,8 @@ int amlsd_get_platform_data(struct platform_device *pdev,
 		pdata->xfer_post = of_amlsd_xfer_post;
 		/* pdata->cd = of_amlsd_detect; */
 		pdata->irq_init = of_amlsd_irq_init;
-		pdata->ro = of_amlsd_ro;
-
-#if defined(CONFIG_ARCH_MESON64_ODROIDC2)
-		if (disable_uhs)
-			pdata->f_max = 40000000;
-#endif
+	pdata->ro = of_amlsd_ro;
 	}
 	return 0;
 }
+

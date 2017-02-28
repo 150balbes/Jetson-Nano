@@ -61,6 +61,18 @@ struct nand_cmd_t {
 };
 
 /* read from page0, override default. */
+struct nand_page0_info_t {
+	unsigned nand_read_info;
+	unsigned new_nand_type;
+	unsigned pages_in_block;
+	unsigned secure_block;
+	unsigned ce_mask;
+	unsigned boot_num;
+	unsigned each_boot_pages;
+	unsigned reserved[2];
+};
+
+/* read from page0, override default. */
 struct nand_page0_cfg_t {
 	/* 26:pagelist, 24:a2, 23:no_rb, 22:large. 21-0:cmd. */
 	unsigned ext;
@@ -68,16 +80,8 @@ struct nand_page0_cfg_t {
 	/* id:0x100 user, max:0 disable. */
 	short max;
 	unsigned char list[NAND_PAGELIST_CNT];
-};
-
-/* read from page0, override default. */
-struct nand_page0_info_t {
-	unsigned nand_read_info;
-	unsigned new_nand_type;
-	unsigned pages_in_block;
-	unsigned secure_block;
-	unsigned ce_mask;
-	unsigned reserved[3];
+	struct nand_cmd_t retry_usr[32];
+	struct nand_page0_info_t nand_page0_info;
 };
 
 union nand_core_clk_t {
@@ -92,7 +96,13 @@ union nand_core_clk_t {
 		unsigned not_used:20;
 	} b;
 };
-
+/**********************storage *********************/
+#define STORAGE_DEV_NOSET	(0)
+#define STORAGE_DEV_EMMC	(1)
+#define STORAGE_DEV_NAND	(2)
+#define STORAGE_DEV_SPI		(3)
+#define STORAGE_DEV_SDCARD	(4)
+#define STORAGE_DEV_USB		(5)
 
 /***************ERROR CODING*******************/
 #define NAND_CHIP_ID_ERR            1
@@ -136,18 +146,15 @@ union nand_core_clk_t {
 #define	KEY_INFO_HEAD_MAGIC		"nkey"
 #define	SECURE_INFO_HEAD_MAGIC		"nsec"
 #define	ENV_INFO_HEAD_MAGIC		"nenv"
+#define PHY_PARTITION_HEAD_MAGIC	"phyp"
 #define	DTD_INFO_HEAD_MAGIC		"ndtb"
 
 #define	FBBT_COPY_NUM	1
 
-#define CONFIG_KEYSIZE		(256*1024)
-#define KEYSIZE	(CONFIG_KEYSIZE - (sizeof(uint)))
-
 #define CONFIG_SECURE_SIZE	(0x10000*2) /* 128k */
 #define SECURE_SIZE (CONFIG_SECURE_SIZE - 2*(sizeof(uint)))
-/* fixme, max dtd size is 256KBytes. */
-#define CONFIG_DTB_SIZE  (256*1024U)
-#define DTB_SIZE (CONFIG_DTB_SIZE - (sizeof(uint)))
+
+#define CONFIG_KEY_MAX_SIZE	0x40000
 
 #define FULL_BLK	0
 #define FULL_PAGE	1
@@ -377,6 +384,7 @@ union nand_core_clk_t {
 #define	NAND_CMD_TOSHIBA_PRE_CON1		0x5c
 #define	NAND_CMD_TOSHIBA_PRE_CON2		0xc5
 #define	NAND_CMD_TOSHIBA_SET_VALUE		0x55
+#define	NAND_CMD_TOSHIBA_BEF_COMMAND0		0xB3
 #define	NAND_CMD_TOSHIBA_BEF_COMMAND1		0x26
 #define	NAND_CMD_TOSHIBA_BEF_COMMAND2		0x5d
 #define NAND_CMD_SAMSUNG_SET_VALUE		0XA1
@@ -713,6 +721,13 @@ struct dev_para {
 	unsigned int option;
 };
 
+struct _phy_partition {
+	const char name[MAX_DEVICE_NAME_LEN];
+	uint64_t phy_off;
+	uint64_t phy_len;
+	uint64_t logic_len;
+};
+
 #define MAX_PART_NUM	16
 #define PART_NAME_LEN 16
 struct partitions {
@@ -736,6 +751,12 @@ struct nand_config {
 	unsigned short fbbt_blk_addr;
 };
 
+struct phy_partition_info {
+	unsigned int crc;
+	struct _phy_partition partition[MAX_DEVICE_NUM];
+	unsigned char dev_num;
+};
+
 struct nand_bbt {
 	unsigned short nand_bbt[MAX_CHIP_NUM][MAX_BAD_BLK_NUM];
 };
@@ -747,7 +768,7 @@ struct shipped_bbt {
 
 struct nand_menson_key {
 	uint crc;
-	unsigned char data[KEYSIZE];
+	unsigned char data[252];
 };
 
 struct secure_t {
@@ -802,6 +823,7 @@ struct amlnand_chip {
 
 	struct nand_arg_info config_msg;
 	struct nand_config *config_ptr;
+	struct phy_partition_info *phy_part_ptr;
 
 	struct nand_arg_info nand_bbtinfo;
 	struct nand_arg_info shipped_bbtinfo;
@@ -810,6 +832,7 @@ struct amlnand_chip {
 	struct nand_arg_info nand_key;
 	struct nand_arg_info nand_secure;
 	struct nand_arg_info uboot_env;
+	struct nand_arg_info nand_phy_partition;
 #if (AML_CFG_DTB_RSV_EN)
 	struct nand_arg_info amlnf_dtb;
 #endif
@@ -830,6 +853,9 @@ struct amlnand_chip {
 
 	void __iomem *reg_base;
 	void __iomem *nand_clk_reg;
+
+	u32 keysize;
+	u32 dtbsize;
 };
 
 extern struct nand_flash flash_ids_slc[];
@@ -881,6 +907,8 @@ extern int aml_secure_init(struct amlnand_chip *aml_chip);
 extern int amlnf_dtb_init(struct amlnand_chip *aml_chip);
 extern int amlnf_dtb_reinit(struct amlnand_chip *aml_chip);
 #endif
+
+extern unsigned int aml_info_checksum(unsigned char *data, int lenth);
 extern int amlnand_info_init(struct amlnand_chip *aml_chip,
 	unsigned char *info,
 	unsigned char *buf,
@@ -909,5 +937,7 @@ extern int aml_nand_update_ubootenv(struct amlnand_chip *aml_chip,
 
 
 extern void amlchip_dumpinfo(struct amlnand_chip *aml_chip);
+#if 0
 extern void dump_pinmux_regs(struct hw_controller *controller);
+#endif
 #endif /* NAND_H_INCLUDED */

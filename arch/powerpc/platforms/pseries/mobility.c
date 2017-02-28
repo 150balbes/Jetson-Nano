@@ -24,10 +24,10 @@
 static struct kobject *mobility_kobj;
 
 struct update_props_workarea {
-	__be32 phandle;
-	__be32 state;
-	__be64 reserved;
-	__be32 nprops;
+	u32 phandle;
+	u32 state;
+	u64 reserved;
+	u32 nprops;
 } __packed;
 
 #define NODE_ACTION_MASK	0xff000000
@@ -53,11 +53,11 @@ static int mobility_rtas_call(int token, char *buf, s32 scope)
 	return rc;
 }
 
-static int delete_dt_node(__be32 phandle)
+static int delete_dt_node(u32 phandle)
 {
 	struct device_node *dn;
 
-	dn = of_find_node_by_phandle(be32_to_cpu(phandle));
+	dn = of_find_node_by_phandle(phandle);
 	if (!dn)
 		return -ENOENT;
 
@@ -126,7 +126,7 @@ static int update_dt_property(struct device_node *dn, struct property **prop,
 	return 0;
 }
 
-static int update_dt_node(__be32 phandle, s32 scope)
+static int update_dt_node(u32 phandle, s32 scope)
 {
 	struct update_props_workarea *upwa;
 	struct device_node *dn;
@@ -135,7 +135,6 @@ static int update_dt_node(__be32 phandle, s32 scope)
 	char *prop_data;
 	char *rtas_buf;
 	int update_properties_token;
-	u32 nprops;
 	u32 vd;
 
 	update_properties_token = rtas_token("ibm,update-properties");
@@ -146,7 +145,7 @@ static int update_dt_node(__be32 phandle, s32 scope)
 	if (!rtas_buf)
 		return -ENOMEM;
 
-	dn = of_find_node_by_phandle(be32_to_cpu(phandle));
+	dn = of_find_node_by_phandle(phandle);
 	if (!dn) {
 		kfree(rtas_buf);
 		return -ENOENT;
@@ -162,7 +161,6 @@ static int update_dt_node(__be32 phandle, s32 scope)
 			break;
 
 		prop_data = rtas_buf + sizeof(*upwa);
-		nprops = be32_to_cpu(upwa->nprops);
 
 		/* On the first call to ibm,update-properties for a node the
 		 * the first property value descriptor contains an empty
@@ -171,17 +169,17 @@ static int update_dt_node(__be32 phandle, s32 scope)
 		 */
 		if (*prop_data == 0) {
 			prop_data++;
-			vd = be32_to_cpu(*(__be32 *)prop_data);
+			vd = *(u32 *)prop_data;
 			prop_data += vd + sizeof(vd);
-			nprops--;
+			upwa->nprops--;
 		}
 
-		for (i = 0; i < nprops; i++) {
+		for (i = 0; i < upwa->nprops; i++) {
 			char *prop_name;
 
 			prop_name = prop_data;
 			prop_data += strlen(prop_name) + 1;
-			vd = be32_to_cpu(*(__be32 *)prop_data);
+			vd = *(u32 *)prop_data;
 			prop_data += sizeof(vd);
 
 			switch (vd) {
@@ -213,13 +211,13 @@ static int update_dt_node(__be32 phandle, s32 scope)
 	return 0;
 }
 
-static int add_dt_node(__be32 parent_phandle, __be32 drc_index)
+static int add_dt_node(u32 parent_phandle, u32 drc_index)
 {
 	struct device_node *dn;
 	struct device_node *parent_dn;
 	int rc;
 
-	parent_dn = of_find_node_by_phandle(be32_to_cpu(parent_phandle));
+	parent_dn = of_find_node_by_phandle(parent_phandle);
 	if (!parent_dn)
 		return -ENOENT;
 
@@ -238,7 +236,7 @@ static int add_dt_node(__be32 parent_phandle, __be32 drc_index)
 int pseries_devicetree_update(s32 scope)
 {
 	char *rtas_buf;
-	__be32 *data;
+	u32 *data;
 	int update_nodes_token;
 	int rc;
 
@@ -255,17 +253,17 @@ int pseries_devicetree_update(s32 scope)
 		if (rc && rc != 1)
 			break;
 
-		data = (__be32 *)rtas_buf + 4;
-		while (be32_to_cpu(*data) & NODE_ACTION_MASK) {
+		data = (u32 *)rtas_buf + 4;
+		while (*data & NODE_ACTION_MASK) {
 			int i;
-			u32 action = be32_to_cpu(*data) & NODE_ACTION_MASK;
-			u32 node_count = be32_to_cpu(*data) & NODE_COUNT_MASK;
+			u32 action = *data & NODE_ACTION_MASK;
+			int node_count = *data & NODE_COUNT_MASK;
 
 			data++;
 
 			for (i = 0; i < node_count; i++) {
-				__be32 phandle = *data++;
-				__be32 drc_index;
+				u32 phandle = *data++;
+				u32 drc_index;
 
 				switch (action) {
 				case DELETE_DT_NODE:

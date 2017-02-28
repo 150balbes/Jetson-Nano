@@ -5,7 +5,7 @@ snd-soc-aml-i2s-dai-objs := aml_i2s_dai.o
 snd-soc-aml-pcm-dai-objs := aml_pcm_dai.o
 snd-soc-aml-spdif-dai-objs  := aml_spdif_dai.o
 snd-soc-aml-hw-objs  := aml_audio_hw.o
-snd-soc-aml-hw-pcm2bt-objs  := aml_audio_hw_pcm2bt.o
+snd-soc-aml-hw-pcm2bt-objs  := aml_audio_hw_pcm.o
 
 obj-$(CONFIG_SND_AML_M8_SOC) += snd-soc-aml-pcm.o
 obj-$(CONFIG_SND_AML_M8_SOC) += snd-soc-aml-i2s.o
@@ -24,14 +24,6 @@ obj-$(CONFIG_SND_AML_M8_SOC) += snd-soc-aml-spdif-codec.o
 snd-soc-aml-m8-objs := aml_m8.o
 obj-$(CONFIG_SND_AML_M8) += snd-soc-aml-m8.o
 
-#ODROID Machine support
-snd-soc-odroid-hdmi-objs := odroid_hdmi.o
-snd-soc-odroid-dac-objs := odroid_dac.o
-snd-soc-odroid-dac2-objs := odroid_dac2.o
-obj-$(CONFIG_SND_ODROID_HDMI) += snd-soc-odroid-hdmi.o
-obj-$(CONFIG_SND_ODROID_DAC) += snd-soc-odroid-dac.o
-obj-$(CONFIG_SND_ODROID_DAC2) += snd-soc-odroid-dac2.o
-
 #AML G9TV Machine support
 snd-soc-aml-g9tv-objs := aml_g9tv.o
-obj-$(CONFIG_SND_AML_G9TV) += snd-soc-aml-g9tv.o
+obj-$(CONFIG_SND_AML_M8) += snd-soc-aml-g9tv.o

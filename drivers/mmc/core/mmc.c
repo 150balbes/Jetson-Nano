@@ -1,14 +1,19 @@
 /*
- *  linux/drivers/mmc/core/mmc.c
+ * drivers/mmc/core/mmc.c
  *
- *  Copyright (C) 2003-2004 Russell King, All Rights Reserved.
- *  Copyright (C) 2005-2007 Pierre Ossman, All Rights Reserved.
- *  MMCv4 support Copyright (C) 2006 Philip Langdale, All Rights Reserved.
+ * Copyright (C) 2015 Amlogic, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
- */
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ *
+*/
 
 #include <linux/err.h>
 #include <linux/slab.h>
@@ -298,9 +303,6 @@ static void mmc_select_card_type(struct mmc_card *card)
 	card->mmc_avail_type = avail_type;
 }
 
-/* Minimum partition switch timeout in milliseconds */
-#define MMC_MIN_PART_SWITCH_TIME	300
-
 /*
  * Decode extended CSD.
  */
@@ -349,7 +351,7 @@ static int mmc_read_ext_csd(struct mmc_card *card, u8 *ext_csd)
 		if (card->ext_csd.sectors > (2u * 1024 * 1024 * 1024) / 512)
 			mmc_card_set_blockaddr(card);
 	}
-
+	card->ext_csd.driver_strength = ext_csd[EXT_CSD_DRIVER_STRENGTH];
 	card->ext_csd.raw_card_type = ext_csd[EXT_CSD_CARD_TYPE];
 	mmc_select_card_type(card);
 
@@ -364,10 +366,6 @@ static int mmc_read_ext_csd(struct mmc_card *card, u8 *ext_csd)
 
 		/* EXT_CSD value is in units of 10ms, but we store in ms */
 		card->ext_csd.part_time = 10 * ext_csd[EXT_CSD_PART_SWITCH_TIME];
-		/* Some eMMC set the value too low so set a minimum */
-		if (card->ext_csd.part_time &&
-		    card->ext_csd.part_time < MMC_MIN_PART_SWITCH_TIME)
-			card->ext_csd.part_time = MMC_MIN_PART_SWITCH_TIME;
 
 		/* Sleep / awake timeout in 100ns units */
 		if (sa_shift > 0 && sa_shift <= 0x17)
@@ -396,6 +394,12 @@ static int mmc_read_ext_csd(struct mmc_card *card, u8 *ext_csd)
 			}
 		}
 	}
+
+	/* device life time estimate type A/B */
+	card->ext_csd.raw_dev_lifetime_est_typ_a =
+		ext_csd[EXT_CSD_DEV_LIFETIME_EST_TYP_A];
+	card->ext_csd.raw_dev_lifetime_est_typ_b =
+		ext_csd[EXT_CSD_DEV_LIFETIME_EST_TYP_B];
 
 	card->ext_csd.raw_hc_erase_gap_size =
 		ext_csd[EXT_CSD_HC_WP_GRP_SIZE];
@@ -714,6 +718,13 @@ MMC_DEV_ATTR(serial, "0x%08x\n", card->cid.serial);
 MMC_DEV_ATTR(enhanced_area_offset, "%llu\n",
 		card->ext_csd.enhanced_area_offset);
 MMC_DEV_ATTR(enhanced_area_size, "%u\n", card->ext_csd.enhanced_area_size);
+MMC_DEV_ATTR(raw_erase_timeout_mult, "%d\n",
+		card->ext_csd.raw_erase_timeout_mult);
+MMC_DEV_ATTR(raw_sec_erase_mult, "%d\n", card->ext_csd.raw_sec_erase_mult);
+MMC_DEV_ATTR(dev_lifetime_est_typ_a, "0x%02x\n",
+		card->ext_csd.raw_dev_lifetime_est_typ_a);
+MMC_DEV_ATTR(dev_lifetime_est_typ_b, "0x%02x\n",
+		card->ext_csd.raw_dev_lifetime_est_typ_b);
 MMC_DEV_ATTR(raw_rpmb_size_mult, "%#x\n", card->ext_csd.raw_rpmb_size_mult);
 MMC_DEV_ATTR(rel_sectors, "%#x\n", card->ext_csd.rel_sectors);
 
@@ -732,6 +743,10 @@ static struct attribute *mmc_std_attrs[] = {
 	&dev_attr_serial.attr,
 	&dev_attr_enhanced_area_offset.attr,
 	&dev_attr_enhanced_area_size.attr,
+	&dev_attr_raw_sec_erase_mult.attr,
+	&dev_attr_raw_erase_timeout_mult.attr,
+	&dev_attr_dev_lifetime_est_typ_a.attr,
+	&dev_attr_dev_lifetime_est_typ_b.attr,
 	&dev_attr_raw_rpmb_size_mult.attr,
 	&dev_attr_rel_sectors.attr,
 	NULL,
@@ -1018,7 +1033,7 @@ static int mmc_select_hs400(struct mmc_card *card)
 {
 	struct mmc_host *host = card->host;
 	int err = 0;
-
+	u8 strength_and_hs400 = 0;
 	/*
 	 * HS400 mode requires 8-bit bus width
 	 */
@@ -1051,9 +1066,22 @@ static int mmc_select_hs400(struct mmc_card *card)
 			mmc_hostname(host), err);
 		return err;
 	}
+	if (card->ext_csd.driver_strength & (1 << 1)) {
+		strength_and_hs400 = (0x1 << 4) | EXT_CSD_TIMING_HS400;
+		pr_info("%s: support driver strength type 1\n",
+				mmc_hostname(host));
+	} else if (card->ext_csd.driver_strength & (1 << 4)) {
+		strength_and_hs400 = (0x4 << 4) | EXT_CSD_TIMING_HS400;
+		pr_info("%s: support driver strength type 4\n",
+				mmc_hostname(host));
+	} else	{
+		strength_and_hs400 = EXT_CSD_TIMING_HS400;
+		pr_info("%s: no support driver strength type 1 and 4\n",
+			mmc_hostname(host));
+	}
 
 	err = __mmc_switch(card, EXT_CSD_CMD_SET_NORMAL,
-			   EXT_CSD_HS_TIMING, EXT_CSD_TIMING_HS400,
+			   EXT_CSD_HS_TIMING, strength_and_hs400,
 			   card->ext_csd.generic_cmd6_time,
 			   true, true, true);
 	if (err) {
@@ -1064,12 +1092,6 @@ static int mmc_select_hs400(struct mmc_card *card)
 
 	mmc_set_timing(host, MMC_TIMING_MMC_HS400);
 	mmc_set_bus_speed(card);
-	mmc_host_clk_hold(host);
-	err = host->ops->execute_tuning(host, MMC_SEND_TUNING_BLOCK_HS200);
-	mmc_host_clk_release(host);
-
-	if (err)
-		return err;
 
 	return 0;
 }
@@ -1289,7 +1311,7 @@ static int mmc_init_card(struct mmc_host *host, u32 ocr,
 		if (err)
 			goto free_card;
 	}
-	host->card = card;
+
 	/*
 	 * Select card, as all following commands rely on that.
 	 */
@@ -1323,7 +1345,17 @@ static int mmc_init_card(struct mmc_host *host, u32 ocr,
 		/* Erase size depends on CSD and Extended CSD */
 		mmc_set_erase_size(card);
 	}
+	/* If emmc support HW reset so enable the function, when emmc
+	 * switch partition failed or programing stuck, can use this
+	 * function to reset emmc and reinitial.
+	*/
 
+	if (!card->ext_csd.rst_n_function
+		&& (host->caps & MMC_CAP_HW_RESET)) {
+		err = mmc_switch(card, EXT_CSD_CMD_SET_NORMAL,
+			EXT_CSD_RST_N_FUNCTION, 1,
+			 card->ext_csd.generic_cmd6_time);
+	}
 	/*
 	 * If enhanced_area_en is TRUE, host needs to enable ERASE_GRP_DEF
 	 * bit.  This bit will be lost every time after a reset or power off.

@@ -157,7 +157,6 @@ static void * unflatten_dt_node(struct boot_param_header *blob,
 				__alignof__(struct device_node));
 	if (allnextpp) {
 		char *fn;
-		of_node_init(np);
 		np->full_name = fn = ((char *)np) + sizeof(*np);
 		if (new_format) {
 			/* rebuild full path for new format */
@@ -188,6 +187,7 @@ static void * unflatten_dt_node(struct boot_param_header *blob,
 				dad->next->sibling = np;
 			dad->next = np;
 		}
+		kref_init(&np->kref);
 	}
 	/* process properties */
 	for (offset = fdt_first_property_offset(blob, *poffset);
@@ -683,7 +683,7 @@ static inline void early_init_dt_check_for_initrd(unsigned long node)
 #include <linux/version.h>
 
 int is_instabooting;
-inline void early_init_dt_check_for_instaboot(unsigned long node)
+void early_init_dt_check_for_instaboot(unsigned long node)
 {
 	unsigned long version_code;
 	int len;
@@ -894,19 +894,11 @@ int __init early_init_dt_scan_chosen(unsigned long node, const char *uname,
 		p = (char *)of_get_flat_dt_prop(node, "bootargs", &l);
 
 	if (p != NULL && l > 0) {
-		if (concat_cmdline) {
-			int cmdline_len;
-			int copy_len;
-			strlcat(cmdline, " ", COMMAND_LINE_SIZE);
-			cmdline_len = strlen(cmdline);
-			copy_len = COMMAND_LINE_SIZE - cmdline_len - 1;
-			copy_len = min((int)l, copy_len);
-			strncpy(cmdline + cmdline_len, p, copy_len);
-			cmdline[cmdline_len + copy_len] = '\0';
-		} else {
-			strlcpy(cmdline, p, min((int)l, COMMAND_LINE_SIZE));
-		}
+		strlcpy(cmdline, p, min((int)l, COMMAND_LINE_SIZE));
 	}
+
+	if (concat_cmdline)
+		strlcat(cmdline, config_cmdline, COMMAND_LINE_SIZE);
 
 	pr_debug("Command line is: %s\n", (char*)data);
 

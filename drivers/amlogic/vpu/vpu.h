@@ -18,16 +18,25 @@
 #ifndef __VPU_PARA_H__
 #define __VPU_PARA_H__
 
-enum VPU_Chip_e {
+/* #define VPU_DEBUG_PRINT */
+
+#define VPUPR(fmt, args...)     pr_info("vpu: "fmt"", ## args)
+#define VPUERR(fmt, args...)    pr_info("vpu: error: "fmt"", ## args)
+
+enum vpu_chip_e {
 	VPU_CHIP_M8 = 0,
 	VPU_CHIP_M8B,
 	VPU_CHIP_M8M2,
 	VPU_CHIP_G9TV,
 	VPU_CHIP_G9BB,
 	VPU_CHIP_GXBB,
+	VPU_CHIP_GXTVBB,
+	VPU_CHIP_GXL,
+	VPU_CHIP_GXM,
+	VPU_CHIP_TXL,
 	VPU_CHIP_MAX,
 };
-
+/*
 static char *vpu_chip_name[] = {
 	"m8",
 	"m8baby",
@@ -35,11 +44,11 @@ static char *vpu_chip_name[] = {
 	"g9tv",
 	"g9baby",
 	"gxbaby",
+	"gxtvbaby",
 	"invalid",
 };
-
-struct VPU_Conf_t {
-	/* enum VPU_Chip_e  chip_type; */
+*/
+struct vpu_conf_s {
 	unsigned int     clk_level_dft;
 	unsigned int     clk_level_max;
 	unsigned int     clk_level;
@@ -94,9 +103,29 @@ static unsigned int fclk_table[] = { /* unit: MHz */
 #define CLK_LEVEL_DFT_GXBB     3
 #define CLK_LEVEL_MAX_GXBB     8
 #define FCLK_TYPE_GXBB         FCLK_2000M
+/* GXTVBB */
+/* freq max=666M, default=666M */
+#define CLK_LEVEL_DFT_GXTVBB     3
+#define CLK_LEVEL_MAX_GXTVBB     8
+#define FCLK_TYPE_GXTVBB         FCLK_2000M
+/* GXL */
+/* freq max=666M, default=666M */
+#define CLK_LEVEL_DFT_GXL     3
+#define CLK_LEVEL_MAX_GXL     8
+#define FCLK_TYPE_GXL         FCLK_2000M
+/* GXM */
+/* freq max=666M, default=666M */
+#define CLK_LEVEL_DFT_GXM     3
+#define CLK_LEVEL_MAX_GXM     8
+#define FCLK_TYPE_GXM         FCLK_2000M
+/* TXL */
+/* freq max=666M, default=666M */
+#define CLK_LEVEL_DFT_TXL     3
+#define CLK_LEVEL_MAX_TXL     8
+#define FCLK_TYPE_TXL         FCLK_2000M
 
 /* vpu clk setting */
-enum VPU_mux_e {
+enum vpu_mux_e {
 	FCLK_DIV4 = 0,
 	FCLK_DIV3,
 	FCLK_DIV5,
@@ -129,7 +158,7 @@ static unsigned int vpu_clk_table[2][12][3] = {/* compatible for all chip */
 		{696000000,    GPLL_CLK,     0}, /* 8 */ /* G9TV use gp1_pll */
 		{850000000,    FCLK_DIV3,    0}, /* 9 */
 	},
-	{ /* gxbb, fpll=2000M */
+	{ /* gxbb, gxtvbb, gxl, txl, fpll=2000M */
 		/* frequency   clk_mux       div */
 		{100000000,    FCLK_DIV5,    3}, /* 0 */
 		{166667000,    FCLK_DIV3,    3}, /* 1 */
@@ -156,38 +185,45 @@ static char *vpu_mod_table[] = {
 	"viu_vd2",
 	"viu_chroma",
 	"viu_ofifo",
-	"viu_scale",
-	"viu_osd_scale",
+	"viu_scaler",
+	"viu_osd_scaler",
 	"viu_vdin0",
 	"viu_vdin1",
 	"pic_rot1",
 	"pic_rot2",
 	"pic_rot3",
+	"viu_super_scaler",
+	"viu_osd_super_scaler",
+	"afbc_dec",
 	"di_pre",
 	"di_post",
 	"viu_sharpness_line_buffer",
+
 	"viu2_osd1",
 	"viu2_osd2",
+	"d2d3",
 	"viu2_vd1",
 	"viu2_chroma",
 	"viu2_ofifo",
-	"viu2_scale",
-	"viu2_osd_scale",
-	"vdin_arbitor_am_sync",
+	"viu2_scaler",
+	"viu2_osd_scaler",
+	"vdin_arbitor_am_async",
 	"vpu_arb",
-	"display_arbitor_am_sync",
+	"display_arbitor_am_async",
+	"osd1_afbcd",
+	"afbc_dec0",
 	"afbc_dec",
-	"vpu_arbitor_am_sync",
+	"vpu_arbitor2_am_async",
 	"vencp",
 	"vencl",
 	"venci",
 	"isp",
 	"cvd2",
 	"atv_dmd",
-	"viu_video_super_scaler",
-	"viu_osd_super_scaler",
-	"reserved",
-	"d2d3",
+	"ldim_stts",
+	"xvycc_lut",
+
+	"viu1_water_mark",
 	"none",
 };
 

@@ -37,7 +37,7 @@ enum {
 	VIDEO_WIDEOPTION_MAX = 14
 };
 
-
+extern bool pre_scaler_en;
 #define VIDEO_NOTIFY_TRICK_WAIT   0x01
 #define VIDEO_NOTIFY_PROVIDER_GET 0x02
 #define VIDEO_NOTIFY_PROVIDER_PUT 0x04
@@ -166,6 +166,10 @@ enum {
 #define VPP_PHASECTL_INIRPTNUMT_BIT 5
 #define VPP_PHASECTL_INIRCVNUMT_BIT 0
 
+#define VPP_LINE_BUFFER_EN_BIT          21
+#define VPP_SC_PREHORZ_EN_BIT           20
+#define VPP_SC_PREVERT_EN_BIT           19
+#define VPP_LINE_BUFFER_EN          (1 << 21)
 #define VPP_SC_PREHORZ_EN           (1 << 20)
 #define VPP_SC_PREVERT_EN           (1 << 19)
 #define VPP_SC_VERT_EN              (1 << 18)
@@ -173,6 +177,8 @@ enum {
 #define VPP_SC_TOP_EN               (1 << 16)
 #define VPP_SC_V1OUT_EN             (1 << 15)
 #define VPP_SC_RGN14_HNOLINEAR      (1 << 12)
+#define VPP_SC_TOP_EN_WID	    1
+#define VPP_SC_TOP_EN_BIT	    16
 #define VPP_SC_BANK_LENGTH_WID      3
 #define VPP_SC_BANK_LENGTH_MASK     0x7
 #define VPP_SC_HBANK_LENGTH_BIT     8
@@ -206,9 +212,11 @@ enum {
 
 #define VPP_COEF_IDXINC         (1 << 15)
 #define VPP_COEF_RD_CBUS        (1 << 14)
+#define VPP_COEF_SEP_EN	        (1 << 13)
 #define VPP_COEF_9BIT           (1 << 9)
 #define VPP_COEF_TYPE           (1 << 8)
 #define VPP_COEF_VERT           (0 << 8)
+#define VPP_COEF_VERT_CHROMA    (1 << 7)
 #define VPP_COEF_HORZ           (1 << 8)
 #define VPP_COEF_INDEX_MASK     0x7f
 #define VPP_COEF_INDEX_BIT      0

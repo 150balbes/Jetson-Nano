@@ -2681,14 +2681,14 @@ void get_vmalloc_info(struct vmalloc_info *vmi)
 
 	prev_end = VMALLOC_START;
 
-	rcu_read_lock();
+	spin_lock(&vmap_area_lock);
 
 	if (list_empty(&vmap_area_list)) {
 		vmi->largest_chunk = VMALLOC_TOTAL;
 		goto out;
 	}
 
-	list_for_each_entry_rcu(va, &vmap_area_list, list) {
+	list_for_each_entry(va, &vmap_area_list, list) {
 		unsigned long addr = va->va_start;
 
 		/*
@@ -2718,7 +2718,7 @@ void get_vmalloc_info(struct vmalloc_info *vmi)
 		vmi->largest_chunk = VMALLOC_END - prev_end;
 
 out:
-	rcu_read_unlock();
+	spin_unlock(&vmap_area_lock);
 }
 #endif
 

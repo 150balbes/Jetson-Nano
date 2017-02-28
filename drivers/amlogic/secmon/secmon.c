@@ -40,7 +40,7 @@ static long phy_out_base;
  #define IN_SIZE	0x8000
 #endif
  #define OUT_SIZE 0x1000
-
+static DEFINE_MUTEX(sharemem_mutex);
 #ifdef CONFIG_ARM64
 static long get_sharemem_info(unsigned function_id)
 {
@@ -79,11 +79,12 @@ static int secmon_probe(struct platform_device *pdev)
 	ret = of_reserved_mem_device_init(&pdev->dev);
 	if (ret == 0)
 		pr_info("probe done\n");
+
 	return ret;
 }
 
 static const struct of_device_id secmon_dt_match[] = {
-	{ .compatible = "aml,secmon" },
+	{ .compatible = "amlogic, secmon" },
 	{ /* sentinel */ },
 };
 
@@ -102,35 +103,36 @@ int __init meson_secmon_init(void)
 }
 module_init(meson_secmon_init);
 
+void sharemem_mutex_lock(void)
+{
+	mutex_lock(&sharemem_mutex);
+}
+void sharemem_mutex_unlock(void)
+{
+	mutex_unlock(&sharemem_mutex);
+}
+
 void __iomem *get_secmon_sharemem_input_base(void)
 {
-	if (!sharemem_in_base) {
-		sharemem_in_base = ioremap_cache(phy_in_base, IN_SIZE);
-		if (!sharemem_in_base)
-			pr_info("secmon share mem in buffer remap fail!\n");
-		else
-			pr_info("secmon share mem in base: 0x%lx\n",
-							(long)sharemem_in_base);
-	}
 	return sharemem_in_base;
 }
 void __iomem *get_secmon_sharemem_output_base(void)
 {
-	if (!sharemem_out_base) {
-		sharemem_out_base = ioremap_cache(phy_out_base, OUT_SIZE);
-		if (!sharemem_out_base)
-			pr_info("secmon share mem out buffer remap fail!\n");
-		else
-			pr_info("secmon share mem out base: 0x%lx\n",
-				(long)sharemem_out_base);
-	}
 	return sharemem_out_base;
 }
 
 static int secmon_mem_device_init(struct reserved_mem *rmem, struct device *dev)
 {
 	sharemem_in_base = ioremap_cache(phy_in_base, IN_SIZE);
+	if (!sharemem_in_base) {
+		pr_info("secmon share mem in buffer remap fail!\n");
+		return -ENOMEM;
+	}
 	sharemem_out_base = ioremap_cache(phy_out_base, OUT_SIZE);
+	if (!sharemem_out_base) {
+		pr_info("secmon share mem out buffer remap fail!\n");
+		return -ENOMEM;
+	}
 	pr_info("share in base: 0x%lx, share out base: 0x%lx\n",
 			(long)sharemem_in_base, (long)sharemem_out_base);
 	return 0;
@@ -141,9 +143,10 @@ static const struct reserved_mem_ops rmem_secmon_ops = {
 static int __init secmon_mem_setup(struct reserved_mem *rmem)
 {
 	rmem->ops = &rmem_secmon_ops;
-	pr_info("share mem setup\n");
+	pr_debug("share mem setup\n");
 
 	return 0;
 }
 
-RESERVEDMEM_OF_DECLARE(secmonmem, "aml_secmon_memory", secmon_mem_setup);
+RESERVEDMEM_OF_DECLARE(secmonmem, "amlogic, aml_secmon_memory",
+					   secmon_mem_setup);

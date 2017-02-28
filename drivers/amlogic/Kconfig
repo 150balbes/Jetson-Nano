@@ -3,8 +3,6 @@
 #
 menu "Amlogic Device Drivers"
 
-source "drivers/amlogic/cec/Kconfig"
-
 source "drivers/amlogic/clocksource/Kconfig"
 
 source "drivers/amlogic/uart/Kconfig"
@@ -19,6 +17,8 @@ source "drivers/amlogic/usb/Kconfig"
 
 source "drivers/amlogic/i2c/Kconfig"
 
+source "drivers/amlogic/pwm/Kconfig"
+
 source "drivers/amlogic/hdmi/Kconfig"
 
 source "drivers/amlogic/rtc/Kconfig"
@@ -32,6 +32,8 @@ source "drivers/amlogic/aml_debug/Kconfig"
 source "drivers/amlogic/reg_access/Kconfig"
 
 source "drivers/amlogic/power/Kconfig"
+
+source "drivers/amlogic/pmu4/Kconfig"
 
 source "drivers/amlogic/ethernet/Kconfig"
 
@@ -111,6 +113,21 @@ source "drivers/amlogic/codec_mm/Kconfig"
 
 source "drivers/amlogic/watchdog/Kconfig"
 
-source "drivers/amlogic/pwm/Kconfig"
+source "drivers/amlogic/spicc/Kconfig"
 
+source "drivers/amlogic/jtag/Kconfig"
+
+source "drivers/amlogic/cpu_info/Kconfig"
+
+source "drivers/amlogic/defendkey/Kconfig"
+
+source "drivers/amlogic/cec/Kconfig"
+
+source "drivers/amlogic/crypto/Kconfig"
+
+source "drivers/amlogic/watchpoint/Kconfig"
+
+source "drivers/amlogic/gpu/mali/Kconfig"
+
+source "drivers/amlogic/gpu/ump/Kconfig"
 endmenu

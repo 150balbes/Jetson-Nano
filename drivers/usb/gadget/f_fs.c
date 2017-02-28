@@ -98,12 +98,15 @@ static struct ffs_function *ffs_func_from_usb(struct usb_function *f)
 	return container_of(f, struct ffs_function, function);
 }
 
+static void ffs_func_free(struct ffs_function *func);
 
 static void ffs_func_eps_disable(struct ffs_function *func);
 static int __must_check ffs_func_eps_enable(struct ffs_function *func);
 
 static int ffs_func_bind(struct usb_configuration *,
 			 struct usb_function *);
+static void old_ffs_func_unbind(struct usb_configuration *,
+			    struct usb_function *);
 static int ffs_func_set_alt(struct usb_function *, unsigned, unsigned);
 static void ffs_func_disable(struct usb_function *);
 static int ffs_func_setup(struct usb_function *,
@@ -242,7 +245,8 @@ static ssize_t ffs_ep0_write(struct file *file, const char __user *buf,
 	char *data;
 
 	ENTER();
-
+	if (!android_usb_inited)
+		return -EIDRM;
 	/* Fast check if setup was canceled */
 	if (FFS_SETUP_STATE(ffs) == FFS_SETUP_CANCELED)
 		return -EIDRM;
@@ -1024,6 +1028,7 @@ ffs_fs_mount(struct file_system_type *t, int flags,
 	ffs->file_perms = data.perms;
 
 	ffs->dev_name = kstrdup(dev_name, GFP_KERNEL);
+
 	if (unlikely(!ffs->dev_name)) {
 		ffs_data_put(ffs);
 		return ERR_PTR(-ENOMEM);
@@ -1304,6 +1309,73 @@ static void ffs_epfiles_destroy(struct ffs_epfile *epfiles, unsigned count)
 }
 
 
+static int functionfs_bind_config(struct usb_composite_dev *cdev,
+				  struct usb_configuration *c,
+				  struct ffs_data *ffs)
+{
+	struct ffs_function *func;
+	int ret;
+
+	ENTER();
+
+	func = kzalloc(sizeof *func, GFP_KERNEL);
+	if (unlikely(!func))
+		return -ENOMEM;
+
+	func->function.name    = "Function FS Gadget";
+	func->function.strings = ffs->stringtabs;
+
+	func->function.bind    = ffs_func_bind;
+	func->function.unbind  = old_ffs_func_unbind;
+	func->function.set_alt = ffs_func_set_alt;
+	func->function.disable = ffs_func_disable;
+	func->function.setup   = ffs_func_setup;
+	func->function.suspend = ffs_func_suspend;
+	func->function.resume  = ffs_func_resume;
+
+	func->conf   = c;
+	func->gadget = cdev->gadget;
+	func->ffs = ffs;
+	ffs_data_get(ffs);
+
+	ret = usb_add_function(c, &func->function);
+	if (unlikely(ret))
+		ffs_func_free(func);
+
+	return ret;
+}
+
+static void ffs_func_free(struct ffs_function *func)
+{
+	struct ffs_ep *ep         = func->eps;
+	unsigned count            = func->ffs->eps_count;
+	unsigned long flags;
+
+	ENTER();
+
+	/* cleanup after autoconfig */
+	spin_lock_irqsave(&func->ffs->eps_lock, flags);
+	do {
+		if (ep->ep && ep->req)
+			usb_ep_free_request(ep->ep, ep->req);
+		ep->req = NULL;
+		++ep;
+	} while (--count);
+	spin_unlock_irqrestore(&func->ffs->eps_lock, flags);
+
+	ffs_data_put(func->ffs);
+
+	kfree(func->eps);
+	/*
+	 * eps and interfaces_nums are allocated in the same chunk so
+	 * only one free is required.  Descriptors are also allocated
+	 * in the same chunk.
+	 */
+
+	kfree(func);
+}
+
+
 static void ffs_func_eps_disable(struct ffs_function *func)
 {
 	struct ffs_ep *ep         = func->eps;
@@ -1336,7 +1408,12 @@ static int ffs_func_eps_enable(struct ffs_function *func)
 	spin_lock_irqsave(&func->ffs->eps_lock, flags);
 	do {
 		struct usb_endpoint_descriptor *ds;
-		ds = ep->descs[ep->descs[1] ? 1 : 0];
+		int desc_idx = ffs->gadget->speed == USB_SPEED_HIGH ? 1 : 0;
+		ds = ep->descs[desc_idx];
+		if (!ds) {
+			ret = -EINVAL;
+			break;
+		}
 
 		ep->ep->driver_data = ep;
 		ep->ep->desc = ds;
@@ -2117,16 +2194,28 @@ error:
 static int ffs_func_bind(struct usb_configuration *c,
 			 struct usb_function *f)
 {
-	struct f_fs_opts *ffs_opts = ffs_do_functionfs_bind(f, c);
-
-	if (IS_ERR(ffs_opts))
-		return PTR_ERR(ffs_opts);
-
 	return _ffs_func_bind(c, f);
 }
 
 
 /* Other USB function hooks *************************************************/
+static void old_ffs_func_unbind(struct usb_configuration *c,
+			    struct usb_function *f)
+{
+	struct ffs_function *func = ffs_func_from_usb(f);
+	struct ffs_data *ffs = func->ffs;
+
+	ENTER();
+
+	if (ffs->func == func) {
+		ffs_func_eps_disable(func);
+		ffs->func = NULL;
+	}
+
+	ffs_event_add(ffs, FUNCTIONFS_UNBIND);
+
+	ffs_func_free(func);
+}
 
 static int ffs_func_set_alt(struct usb_function *f,
 			    unsigned interface, unsigned alt)
@@ -2383,6 +2472,11 @@ static struct usb_function_instance *ffs_alloc_inst(void)
 	struct f_fs_opts *opts;
 	struct ffs_dev *dev;
 
+	if (!_android_dev) {
+		pr_err("ffs_alloc_inst failed......\n");
+		return ERR_PTR(-ENODEV);
+	}
+
 	opts = kzalloc(sizeof(*opts), GFP_KERNEL);
 	if (!opts)
 		return ERR_PTR(-ENOMEM);
@@ -2398,6 +2492,10 @@ static struct usb_function_instance *ffs_alloc_inst(void)
 	}
 	opts->dev = dev;
 	dev->opts = opts;
+	opts->dev->ffs_ready_callback = functionfs_ready_callback;
+	opts->dev->ffs_closed_callback = functionfs_closed_callback;
+	opts->dev->ffs_acquire_dev_callback = functionfs_acquire_dev_callback;
+	opts->dev->ffs_release_dev_callback = functionfs_release_dev_callback;
 
 	config_group_init_type_name(&opts->func_inst.group, "",
 				    &ffs_func_type);

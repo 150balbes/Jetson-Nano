@@ -134,7 +134,9 @@ ENTRY(__hyp_stub_install_secondary)
 	mcr	p15, 4, r7, c1, c1, 3	@ HSTR
 
 THUMB(	orr	r7, #(1 << 30)	)	@ HSCTLR.TE
-ARM_BE8(orr	r7, r7, #(1 << 25))     @ HSCTLR.EE
+#ifdef CONFIG_CPU_BIG_ENDIAN
+	orr	r7, #(1 << 9)		@ HSCTLR.EE
+#endif
 	mcr	p15, 4, r7, c1, c0, 0	@ HSCTLR
 
 	mrc	p15, 4, r7, c1, c1, 1	@ HDCR

@@ -67,10 +67,6 @@ static bool i8042_notimeout;
 module_param_named(notimeout, i8042_notimeout, bool, 0);
 MODULE_PARM_DESC(notimeout, "Ignore timeouts signalled by i8042");
 
-static bool i8042_kbdreset;
-module_param_named(kbdreset, i8042_kbdreset, bool, 0);
-MODULE_PARM_DESC(kbdreset, "Reset device connected to KBD port");
-
 #ifdef CONFIG_X86
 static bool i8042_dritek;
 module_param_named(dritek, i8042_dritek, bool, 0);
@@ -794,16 +790,6 @@ static int __init i8042_check_aux(void)
 		return -1;
 
 /*
- * Reset keyboard (needed on some laptops to successfully detect
- * touchpad, e.g., some Gigabyte laptop models with Elantech
- * touchpads).
- */
-	if (i8042_kbdreset) {
-		pr_warn("Attempting to reset device connected to KBD port\n");
-		i8042_kbd_write(NULL, (unsigned char) 0xff);
-	}
-
-/*
  * Test AUX IRQ delivery to make sure BIOS did not grab the IRQ and
  * used it for a PCI card or somethig else.
  */
@@ -1230,7 +1216,6 @@ static int __init i8042_create_kbd_port(void)
 	serio->start		= i8042_start;
 	serio->stop		= i8042_stop;
 	serio->close		= i8042_port_close;
-	serio->ps2_cmd_mutex	= &i8042_mutex;
 	serio->port_data	= port;
 	serio->dev.parent	= &i8042_platform_device->dev;
 	strlcpy(serio->name, "i8042 KBD port", sizeof(serio->name));
@@ -1258,7 +1243,6 @@ static int __init i8042_create_aux_port(int idx)
 	serio->write		= i8042_aux_write;
 	serio->start		= i8042_start;
 	serio->stop		= i8042_stop;
-	serio->ps2_cmd_mutex	= &i8042_mutex;
 	serio->port_data	= port;
 	serio->dev.parent	= &i8042_platform_device->dev;
 	if (idx < 0) {
@@ -1322,6 +1306,21 @@ static void i8042_unregister_ports(void)
 		}
 	}
 }
+
+/*
+ * Checks whether port belongs to i8042 controller.
+ */
+bool i8042_check_port_owner(const struct serio *port)
+{
+	int i;
+
+	for (i = 0; i < I8042_NUM_PORTS; i++)
+		if (i8042_ports[i].serio == port)
+			return true;
+
+	return false;
+}
+EXPORT_SYMBOL(i8042_check_port_owner);
 
 static void i8042_free_irqs(void)
 {
@@ -1471,12 +1470,34 @@ static struct platform_driver i8042_driver = {
 	.shutdown	= i8042_shutdown,
 };
 
+#ifdef CONFIG_DMI
+static struct dmi_system_id __initdata dmi_system_table[] = {
+	{
+		.matches = {
+			DMI_MATCH(DMI_BIOS_VENDOR, "Apple Computer, Inc.")
+		},
+	},
+	{
+		.matches = {
+			DMI_MATCH(DMI_BIOS_VENDOR, "Apple Inc.")
+		},
+	},
+	{}
+};
+#endif /*CONFIG_DMI*/
+
 static int __init i8042_init(void)
 {
 	struct platform_device *pdev;
 	int err;
 
 	dbg_init();
+
+#ifdef CONFIG_DMI
+	/* Intel Apple Macs never have an i8042 controller */
+	if (dmi_check_system(dmi_system_table) > 0)
+		return -ENODEV;
+#endif /*CONFIG_DMI*/
 
 	err = i8042_platform_init();
 	if (err)

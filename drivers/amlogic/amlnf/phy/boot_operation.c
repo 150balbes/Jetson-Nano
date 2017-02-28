@@ -39,7 +39,9 @@ static int read_uboot(struct amlnand_phydev *phydev)
 	unsigned short tmp_ecc_unit, tmp_ecc_bytes, tmp_ecc_steps;
 	uint64_t addr, readlen = 0, len = 0;
 	int ret = 0;
-	unsigned int tmp_value;
+	unsigned int tmp_value, en_slc = 0, tmp_index;
+	unsigned int boot_num = 1, each_boot_pages, i;
+	unsigned int valid_pages = BOOT_COPY_NUM * BOOT_PAGES_PER_COPY;
 
 	if ((devops->addr + devops->len) >  phydev->size) {
 		aml_nand_msg("read uboot:out of space");
@@ -92,8 +94,28 @@ static int read_uboot(struct amlnand_phydev *phydev)
 		ops_para->option |= DEV_ECC_SOFT_MODE;
 
 	if ((flash->new_type) &&
-		((flash->new_type < 10) || (flash->new_type == SANDISK_19NM)))
+		((flash->new_type < 10) || (flash->new_type == SANDISK_19NM))) {
 		ops_para->option |= DEV_SLC_MODE;
+		en_slc = 1;
+	}
+
+	len = ((((u32)len + 0x100000)-1) / 0x100000) * 0x100000;
+	aml_nand_msg("valid_pages=%d en_slc=%d devops->len=%llx len=%llx",
+		valid_pages,
+		en_slc, devops->len, len);
+	valid_pages = (en_slc)?(valid_pages>>1):valid_pages;
+	for (i = 1;
+		i < ((valid_pages*flash->pagesize)/len + 1); i++) {
+		if (((valid_pages*flash->pagesize)/(2*i) >= len)
+				&& (boot_num < 4))
+			boot_num <<= 1;
+		else
+			break;
+	}
+	each_boot_pages = valid_pages/boot_num;
+	/*each_boot_pages = (en_slc)?(each_boot_pages<<1):each_boot_pages;*/
+	aml_nand_msg("boot_num = %d each_boot_pages = %d", boot_num,
+		each_boot_pages);
 
 	pages_per_blk = flash->blocksize / flash->pagesize;
 	configure_data = NFC_CMD_N2M(controller->ran_mode,
@@ -103,7 +125,7 @@ static int read_uboot(struct amlnand_phydev *phydev)
 		controller->ecc_steps);
 	while (1) {
 		if ((((unsigned int)addr / flash->pagesize) %
-			BOOT_PAGES_PER_COPY) == 0) {
+			each_boot_pages) == 0) {
 				uboot_set_ran_mode(phydev);
 				page_size = (flash->pagesize / 512) *
 					NAND_ECC_UNIT_SHORT;
@@ -125,13 +147,16 @@ static int read_uboot(struct amlnand_phydev *phydev)
 		ops_para->page_addr = ((unsigned int)addr / flash->pagesize);
 		if ((ops_para->option & DEV_SLC_MODE)) {
 			tmp_value = ops_para->page_addr;
-			tmp_value &= (~(pages_per_blk - 1));
+			tmp_value &= (~((pages_per_blk >> 1) - 1));
+			/*128-->256; 256-->512 ......*/
+			tmp_value <<= 0x01;
+			tmp_index = ops_para->page_addr % (pages_per_blk >> 1);
 			if ((flash->new_type > 0) && (flash->new_type < 10))
 				ops_para->page_addr = tmp_value |
-				(slc_info->pagelist[ops_para->page_addr % 256]);
+				(slc_info->pagelist[tmp_index]);
 			if (flash->new_type == SANDISK_19NM)
 				ops_para->page_addr = tmp_value |
-				((ops_para->page_addr % pages_per_blk) << 1);
+				(tmp_index << 1);
 		}
 
 		ret = operation->read_page(aml_chip);
@@ -142,10 +167,10 @@ static int read_uboot(struct amlnand_phydev *phydev)
 
 		/* check info page */
 		if ((!strncmp((char *)phydev->name,
-				NAND_BOOT_NAME,
-				strlen((const char *)NAND_BOOT_NAME)))
-				&& (((((unsigned int)addr / flash->pagesize))%
-				BOOT_PAGES_PER_COPY) == 0)) {
+			NAND_BOOT_NAME,
+			strlen((const char *)NAND_BOOT_NAME)))
+			&& ((((unsigned int)addr / flash->pagesize)%
+				each_boot_pages) == 0)) {
 			controller->ran_mode = 1;
 			memcpy((unsigned char *)(&configure_data_w),
 				ops_para->data_buf,
@@ -179,12 +204,11 @@ static int read_uboot(struct amlnand_phydev *phydev)
 #endif
 			continue;
 		}
-
 		addr += flash->pagesize;
 		ops_para->data_buf += phydev->writesize;
 		readlen += phydev->writesize;
 
-		if (readlen >= len)
+		if (readlen >= (len - flash->pagesize))
 			break;
 	}
 
@@ -264,7 +288,7 @@ static int write_uboot(struct amlnand_phydev *phydev)
 	unsigned char *fill_buf = NULL;
 	unsigned char *oob_buf = NULL, *page0_buf = NULL;
 	unsigned char tmp_bch_mode, tmp_user_mode, tmp_ecc_limit, tmp_ecc_max;
-	unsigned char tmp_rand;
+	unsigned char tmp_rand, tmp_index;
 	unsigned int configure_data, pages_per_blk;
 	unsigned int oobsize, page_size, tmp_size, priv_lsb, ops_tem;
 	unsigned short tmp_ecc_unit, tmp_ecc_bytes, tmp_ecc_steps;
@@ -274,6 +298,8 @@ static int write_uboot(struct amlnand_phydev *phydev)
 	/* unsigned char  *tmp_buf; */
 	char write_boot_status[BOOT_COPY_NUM] = {0}, err = 0;
 	unsigned int tmp_value;
+	struct nand_page0_cfg_t *p_nand_page0 = NULL;
+	struct nand_page0_info_t *p_ext_info = NULL;
 
 	if ((devops->addr + devops->len) >  phydev->size) {
 		aml_nand_msg("writeboot:out of space and addr:");
@@ -328,6 +354,8 @@ static int write_uboot(struct amlnand_phydev *phydev)
 		goto error_exit;
 	}
 	memset(page0_buf, 0x0, flash->pagesize);
+	devops->len =
+		((((u32)devops->len + 0x100000)-1) / 0x100000) * 0x100000;
 	len = devops->len;
 	for (i = 0; i < oobsize; i += 2) {
 		oob_buf[i] = 0x55;
@@ -372,15 +400,19 @@ static int write_uboot(struct amlnand_phydev *phydev)
 		pages_per_blk);
 
 	nand_boot_info_prepare(phydev, page0_buf);
-	for (i = 0; i < BOOT_COPY_NUM; i++) {
+
+	p_nand_page0 = (struct nand_page0_cfg_t *) page0_buf;
+	p_ext_info = &p_nand_page0->nand_page0_info;
+
+	for (i = 0; i < p_ext_info->boot_num; i++) {
 		writelen = 0;
 		addr = 0;
-		addr += flash->pagesize*(BOOT_PAGES_PER_COPY*i);
+		addr += flash->pagesize*(p_ext_info->each_boot_pages*i);
 		ops_para->data_buf = lazy_buf;
 		devops->datbuf = lazy_buf;
 		while (1) {
 			if (((((unsigned int)addr / flash->pagesize)) %
-				BOOT_PAGES_PER_COPY) == 0) {
+				p_ext_info->each_boot_pages) == 0) {
 				uboot_set_ran_mode(phydev);
 				ops_para->data_buf = page0_buf;
 
@@ -402,22 +434,29 @@ static int write_uboot(struct amlnand_phydev *phydev)
 			ops_tem = ops_para->page_addr;
 			if ((ops_para->option & DEV_SLC_MODE)) {
 				tmp_value = ops_para->page_addr;
-				tmp_value &= (~(pages_per_blk - 1));
+				tmp_value &= (~((pages_per_blk >> 1) - 1));
+				/*128-->256; 256-->512 ......*/
+				tmp_value <<= 0x01;
+				tmp_index =
+				ops_para->page_addr % (pages_per_blk >> 1);
 				if ((flash->new_type > 0)
 					&& (flash->new_type < 10))
 					ops_para->page_addr = tmp_value |
-				(slc_info->pagelist[ops_para->page_addr % 256]);
+						(slc_info->pagelist[tmp_index]);
 				if (flash->new_type == SANDISK_19NM)
 					ops_para->page_addr = tmp_value |
-				((ops_para->page_addr % pages_per_blk) << 1);
+						(tmp_index << 1);
 			}
 #if 1
 			if (flash->new_type == HYNIX_1YNM) {
-				if ((ops_tem % 256) > 1) {
+				if ((ops_tem % (pages_per_blk >> 1)) > 1) {
 					tmp_value = ops_tem;
-					tmp_value &= (~(pages_per_blk - 1));
+					tmp_value &= (~((pages_per_blk>>1)-1));
+					/*128-->256; 256-->512 ......*/
+					tmp_value <<= 0x01;
+					tmp_index = ops_tem%(pages_per_blk>>1);
 					priv_lsb = tmp_value |
-					(slc_info->pagelist[(ops_tem % 256)-1]);
+					(slc_info->pagelist[tmp_index - 1]);
 					ops_tem = ops_para->page_addr;
 					while (ops_tem > (priv_lsb+1)) {
 						ops_para->data_buf = fill_buf;
@@ -445,7 +484,7 @@ static int write_uboot(struct amlnand_phydev *phydev)
 			}
 #endif
 			if (((((unsigned)addr / flash->pagesize)) %
-				BOOT_PAGES_PER_COPY) != 0)
+				p_ext_info->each_boot_pages) != 0)
 				ops_para->data_buf = devops->datbuf;
 			ret = operation->write_page(aml_chip);
 			if (ret < 0) {
@@ -456,7 +495,7 @@ static int write_uboot(struct amlnand_phydev *phydev)
 			}
 
 			if ((((unsigned int)addr / flash->pagesize) %
-				BOOT_PAGES_PER_COPY) == 0) {
+				p_ext_info->each_boot_pages) == 0) {
 				controller->ran_mode = 1;
 				addr += flash->pagesize;
 				ops_para->data_buf = devops->datbuf;
@@ -480,17 +519,22 @@ static int write_uboot(struct amlnand_phydev *phydev)
 			if ((writelen >= devops->len)
 				&& (writelen < phydev->erasesize))
 				devops->datbuf = fill_buf;
-
+#if 0
 			if ((writelen >= (len-flash->pagesize))
 				|| ((ops_para->option & DEV_SLC_MODE)
 				&& ((u32)addr%(flash->blocksize>>1) == 0))
 				|| (((ops_para->option & DEV_SLC_MODE) == 0)
 				&& ((u32)addr%flash->blocksize == 0)))
 				break;
+#else
+			if (writelen >= (len-flash->pagesize))
+				break;
+
+#endif
 		}
 	}
 
-	for (i = 0; i < BOOT_COPY_NUM; i++)
+	for (i = 0; i < p_ext_info->boot_num; i++)
 		err += write_boot_status[i];
 
 	if (err < 2)
@@ -543,12 +587,15 @@ int roomboot_nand_write(struct amlnand_phydev *phydev)
 		aml_nand_msg("Wrong addr begin");
 		return -1;
 	}
+
+#if 0
 	if (write_len <  phydev->erasesize)
 		write_len =  phydev->erasesize;
 	if ((flash->new_type)
 		&& ((flash->new_type < 10)
 			|| (flash->new_type == SANDISK_19NM)))
 		write_len =  phydev->erasesize >> 1;
+#endif
 
 	write_len = ((((unsigned int)write_len + phydev->writesize)-1)/
 		phydev->writesize)*phydev->writesize;
@@ -559,10 +606,17 @@ int roomboot_nand_write(struct amlnand_phydev *phydev)
 		return -NAND_WRITE_FAILED;
 	}
 
+#if 0
 	if ((offset + write_len) > (phydev->size / BOOT_COPY_NUM)) {
 		aml_nand_msg("Attemp to write out side the dev area");
 		return -NAND_WRITE_FAILED;
 	}
+#else
+	if ((offset + write_len) > phydev->size) {
+		aml_nand_msg("Attemp to write out side the dev area");
+		return -NAND_WRITE_FAILED;
+	}
+#endif
 
 	if (controller->oob_mod) {
 		oob_set = controller->oob_mod;

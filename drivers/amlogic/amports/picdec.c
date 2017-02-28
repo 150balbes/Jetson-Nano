@@ -57,6 +57,7 @@
 #include <linux/ctype.h>
 #include <linux/of.h>
 #include <linux/sizes.h>
+#include <linux/amlogic/codec_mm/codec_mm.h>
 #include <linux/dma-mapping.h>
 #include <linux/of_fdt.h>
 #include <linux/dma-contiguous.h>
@@ -70,7 +71,8 @@
 /*class property info.*/
 /* #include "picdeccls.h" */
 static int debug_flag;
-
+static int p2p_mode = 2;
+/* #define MM_ALLOC_SIZE 48*SZ_1M */
 #define NO_TASK_MODE
 
 
@@ -124,12 +126,13 @@ static int task_running;
 /*same as tvin pool*/
 static int PICDEC_POOL_SIZE = 2;
 static int VF_POOL_SIZE = 2;
-
+static int ZOOM_WIDTH = 1280;
+static int ZOOM_HEIGHT = 720;
 /*same as tvin pool*/
 
 static struct picdec_device_s picdec_device;
 static struct source_input_s picdec_input;
-
+static int picdec_buffer_status;
 #define INCPTR(p) ptr_atomic_wrap_inc(&p)
 
 #define GE2D_ENDIAN_SHIFT        24
@@ -139,7 +142,7 @@ static struct source_input_s picdec_input;
 
 #define PROVIDER_NAME "decoder.pic"
 static DEFINE_SPINLOCK(lock);
-
+static struct vframe_receiver_op_s *picdec_stop(void);
 static inline void ptr_atomic_wrap_inc(u32 *ptr)
 {
 
@@ -255,16 +258,24 @@ static void picdec_vf_put(struct vframe_s *vf, void *op_arg)
 			pr_info
 			("**********recycle buffer index : %d *************\n",
 			 i);
-
 		}
-
 	}
+}
+
+static int picdec_event_cb(int type, void *data, void *private_data)
+{
+	if (type & VFRAME_EVENT_RECEIVER_FORCE_UNREG) {
+		picdec_stop();
+		aml_pr_info(0, "picdec device force to quit\n");
+	}
+	return 0;
 }
 
 static const struct vframe_operations_s picdec_vf_provider = {
 	.peek = picdec_vf_peek,
 	.get = picdec_vf_get,
 	.put = picdec_vf_put,
+	.event_cb = picdec_event_cb,
 	.vf_states = picdec_vf_states,
 };
 
@@ -298,6 +309,11 @@ static int render_frame(struct ge2d_context_s *context,
 	struct timeval end;
 
 	unsigned long time_use = 0;
+	int temp;
+	unsigned phase = 0;
+	unsigned h_phase , v_phase;
+	struct picdec_device_s *dev =  &picdec_device;
+	struct source_input_s *input = &picdec_input;
 
 	do_gettimeofday(&start);
 
@@ -311,15 +327,71 @@ static int render_frame(struct ge2d_context_s *context,
 		index = fill_ptr;
 
 	}
-
-	/* pr_info("render buffer index is %d!!!!!\n", index); */
+	dev->origin_width = input->frame_width;
+	dev->origin_height = input->frame_height;
+	if ((picdec_input.rotate == 90) || (picdec_input.rotate == 270)) {
+		temp = input->frame_width;
+		input->frame_width = input->frame_height;
+		input->frame_height = temp;
+	}
+	h_phase = (input->frame_width << 18) / dev->disp_width;
+	v_phase = (input->frame_height << 18) / dev->disp_height;
+	phase = max(h_phase, v_phase);
+	dev->p2p_mode = p2p_mode;
+	switch (dev->p2p_mode) {
+	case 0:
+		if ((input->frame_width < dev->disp_width) &&
+(input->frame_height < dev->disp_height)) {
+			dev->target_width  = input->frame_width;
+			dev->target_height = input->frame_height;
+		} else {
+			dev->target_width  = dev->disp_width;
+			dev->target_height = dev->disp_height;
+		}
+		break;
+	case 1:
+		if ((input->frame_width >=  ZOOM_WIDTH) &&
+			(input->frame_height >= ZOOM_HEIGHT)) {
+			if ((input->frame_width < dev->disp_width) &&
+(input->frame_height < dev->disp_height)) {
+				dev->target_width  = input->frame_width;
+				dev->target_height = input->frame_height;
+			} else {
+				dev->target_width  = dev->disp_width;
+				dev->target_height = dev->disp_height;
+			}
+		} else {
+			dev->target_width  = dev->disp_width;
+			dev->target_height = dev->disp_height;
+		}
+		break;
+	case 2:
+		if ((phase <= (1 << 18)) && (phase >= (1 << 16))) {
+			input->frame_width  =
+			(input->frame_width << 18) / phase;
+			input->frame_height =
+			(input->frame_height << 18) / phase;
+		} else if (phase < (1 << 16)) {
+			input->frame_width  <<= 2;
+			input->frame_height <<= 2;
+		}
+		dev->target_width = dev->disp_width;
+		dev->target_height = dev->disp_height;
+		break;
+	default:
+		dev->target_width  = dev->disp_width;
+		dev->target_height = dev->disp_height;
+		break;
+	}
+	aml_pr_info(1, "p2p_mode :%d ----render buffer index is %d\n",
+dev->p2p_mode, index);
+	aml_pr_info(1, "render target width: %d ; target height: %d\n",
+dev->target_width, dev->target_height);
 	new_vf = &vfpool[fill_ptr];
-
 	new_vf->canvas0Addr = new_vf->canvas1Addr = index2canvas(index);
 
-	new_vf->width = picdec_device.disp_width;
-
-	new_vf->height = picdec_device.disp_height;
+	new_vf->width =  dev->target_width;
+	new_vf->height = dev->target_height;
 
 	new_vf->type =
 		VIDTYPE_PROGRESSIVE | VIDTYPE_VIU_FIELD | VIDTYPE_VIU_NV21
@@ -332,7 +404,8 @@ static int render_frame(struct ge2d_context_s *context,
 	new_vf->pts = 0;
 
 	new_vf->pts_us64 = 0;
-
+	new_vf->ratio_control = DISP_RATIO_FORCECONFIG |
+	DISP_RATIO_FORCE_NORMALWIDE;
 	new_vf->ratio_control = 0;
 
 	vfbuf_use[index]++;
@@ -361,13 +434,16 @@ static int render_frame_block(void)
 	struct timeval start;
 
 	struct timeval end;
-
+	int temp;
+	unsigned phase = 0;
+	unsigned h_phase , v_phase;
 	unsigned long time_use = 0;
 
 	struct config_para_ex_s ge2d_config;
 
 	struct ge2d_context_s *context = picdec_device.context;
-
+	struct picdec_device_s	*dev =  &picdec_device;
+	struct source_input_s	*input = &picdec_input;
 	do_gettimeofday(&start);
 
 	memset(&ge2d_config, 0, sizeof(struct config_para_ex_s));
@@ -382,15 +458,72 @@ static int render_frame_block(void)
 		index = fill_ptr;
 
 	}
-
-	aml_pr_info(1, "render buffer index is %d$$$$$$$$$$$$$$$\n", index);
+	dev->origin_width = input->frame_width;
+	dev->origin_height = input->frame_height;
+	if ((picdec_input.rotate == 90) || (picdec_input.rotate == 270)) {
+		temp = input->frame_width;
+		input->frame_width = input->frame_height;
+		input->frame_height = temp;
+	}
+	h_phase = (input->frame_width << 18) / dev->disp_width;
+	v_phase = (input->frame_height << 18) / dev->disp_height;
+	phase = max(h_phase, v_phase);
+	dev->p2p_mode = p2p_mode;
+	switch (dev->p2p_mode) {
+	case 0:
+		if ((input->frame_width < dev->disp_width) &&
+(input->frame_height < dev->disp_height)) {
+			dev->target_width  = input->frame_width;
+			dev->target_height = input->frame_height;
+		} else {
+			dev->target_width  = dev->disp_width;
+			dev->target_height = dev->disp_height;
+		}
+		break;
+	case 1:
+		if ((input->frame_width >=  ZOOM_WIDTH) &&
+			(input->frame_height >= ZOOM_HEIGHT)) {
+			if ((input->frame_width < dev->disp_width) &&
+(input->frame_height < dev->disp_height)) {
+				dev->target_width  = input->frame_width;
+				dev->target_height = input->frame_height;
+			} else {
+				dev->target_width  = dev->disp_width;
+				dev->target_height = dev->disp_height;
+			}
+		} else {
+			dev->target_width  = dev->disp_width;
+			dev->target_height = dev->disp_height;
+		}
+		break;
+	case 2:
+		if ((phase <= (1 << 18)) && (phase >= (1 << 16))) {
+			input->frame_width  =
+			(input->frame_width << 18) / phase;
+			input->frame_height =
+			(input->frame_height << 18) / phase;
+		} else if (phase < (1 << 16)) {
+			input->frame_width  <<= 2;
+			input->frame_height <<= 2;
+		}
+		dev->target_width = dev->disp_width;
+		dev->target_height = dev->disp_height;
+		break;
+	default:
+		dev->target_width  = dev->disp_width;
+		dev->target_height = dev->disp_height;
+		break;
+	}
+	aml_pr_info(1, "p2p_mode :%d ----render buffer index is %d\n",
+dev->p2p_mode , index);
+	aml_pr_info(1, "render target width: %d ; target height: %d\n",
+dev->target_width , dev->target_height);
 	new_vf = &vfpool[fill_ptr];
 
 	new_vf->canvas0Addr = new_vf->canvas1Addr = index2canvas(index);
 
-	new_vf->width = picdec_device.disp_width;
-
-	new_vf->height = picdec_device.disp_height;
+	new_vf->width = picdec_device.target_width;
+	new_vf->height = picdec_device.target_height;
 
 	new_vf->type =
 		VIDTYPE_PROGRESSIVE | VIDTYPE_VIU_FIELD | VIDTYPE_VIU_NV21
@@ -404,7 +537,8 @@ static int render_frame_block(void)
 
 	new_vf->pts_us64 = 0;
 
-	new_vf->ratio_control = 0;
+	new_vf->ratio_control = DISP_RATIO_FORCECONFIG |
+	DISP_RATIO_FORCE_NORMALWIDE;
 
 	picdec_device.cur_index = index;
 
@@ -477,6 +611,7 @@ static struct vframe_receiver_op_s *picdec_stop(void)
 
 #endif				/*
 				 */
+	picdec_cma_buf_uninit();
 	set_freerun_mode(0);
 
 	picdec_local_init();
@@ -609,10 +744,10 @@ int picdec_pre_process(void)
 	char *q;
 
 	char *ref;
-
 	int ret = 0;
-
-	int bp = ((picdec_input.frame_width + 0x1f) & ~0x1f) * 3;
+	int frame_width = picdec_device.origin_width;
+	int frame_height = picdec_device.origin_height;
+	int bp = ((frame_width + 0x1f) & ~0x1f) * 3;
 
 	struct timeval start;
 
@@ -641,13 +776,13 @@ int picdec_pre_process(void)
 	}
 
 	aml_pr_info(1, "picdec_input width is %d , height is %d\n",
-		   picdec_input.frame_width, picdec_input.frame_height);
+		   frame_width, frame_height);
 
 	if (picdec_input.input == NULL) {
 
-		for (j = 0; j < picdec_input.frame_height; j++) {
+		for (j = 0; j < frame_height; j++) {
 
-			for (i = 0; i < picdec_input.frame_width * 3; i += 3) {
+			for (i = 0; i < frame_width * 3; i += 3) {
 
 				dst_addr_off = i + bp * j;
 
@@ -675,13 +810,13 @@ int picdec_pre_process(void)
 			("RGB user space address is %x################\n",
 			 (unsigned)q);*/
 
-			for (j = 0; j < picdec_input.frame_height; j++) {
+			for (j = 0; j < frame_height; j++) {
 
 				ret = copy_from_user(p, (void __user *)q,
-						picdec_input.frame_width *
+						frame_width *
 						3);
 
-				q += picdec_input.frame_width * 3;
+				q += frame_width * 3;
 
 				p += bp;
 
@@ -697,11 +832,11 @@ int picdec_pre_process(void)
 			("RGBA user space address is %x################\n",
 			 (unsigned)q);*/
 
-			for (j = 0; j < picdec_input.frame_height; j++) {
+			for (j = 0; j < frame_height; j++) {
 
 				p = ref;
 
-				for (i = 0; i < picdec_input.frame_width; i++) {
+				for (i = 0; i < frame_width; i++) {
 
 					ret = copy_from_user(p,
 							(void __user *)q, 3);
@@ -727,11 +862,11 @@ int picdec_pre_process(void)
 			("ARGB user space address is %x################\n",
 			 (unsigned)q);*/
 
-			for (j = 0; j < picdec_input.frame_height; j++) {
+			for (j = 0; j < frame_height; j++) {
 
 				p = ref;
 
-				for (i = 0; i < picdec_input.frame_width; i++) {
+				for (i = 0; i < frame_width; i++) {
 
 					ret = copy_from_user(p,
 							(void __user *)(q +
@@ -758,13 +893,13 @@ int picdec_pre_process(void)
 			/*pr_info("user space address is %x################\n",
 				   (unsigned)q);*/
 
-			for (j = 0; j < picdec_input.frame_height; j++) {
+			for (j = 0; j < frame_height; j++) {
 
 				ret = copy_from_user(p, (void __user *)q,
-						picdec_input.frame_width *
+						frame_width *
 						3);
 
-				q += picdec_input.frame_width * 3;
+				q += frame_width * 3;
 
 				p += bp;
 
@@ -778,7 +913,7 @@ int picdec_pre_process(void)
 		io_mapping_unmap_atomic(buffer_start);
 	} else {
 		dma_flush(picdec_device.assit_buf_start,
-		bp * picdec_input.frame_height);
+		bp * frame_height);
 	}
 
 	do_gettimeofday(&end);
@@ -943,10 +1078,8 @@ int fill_color(struct vframe_s *vf, struct ge2d_context_s *context,
 	ge2d_config->dst_para.top = 0;
 
 	ge2d_config->dst_para.left = 0;
-
-	ge2d_config->dst_para.width = picdec_device.disp_width;
-
-	ge2d_config->dst_para.height = picdec_device.disp_height;
+	ge2d_config->dst_para.width = picdec_device.target_width;
+	ge2d_config->dst_para.height = picdec_device.target_height;
 
 	if (ge2d_context_config_ex(context, ge2d_config) < 0) {
 
@@ -960,9 +1093,8 @@ int fill_color(struct vframe_s *vf, struct ge2d_context_s *context,
 
 	dst_left = 0;
 
-	dst_width = picdec_device.disp_width;
-
-	dst_height = picdec_device.disp_height;
+	dst_width =  picdec_device.target_width;
+	dst_height = picdec_device.target_height;
 
 	stretchblt_noalpha(context, 0, 0, 640, 480, dst_left, dst_top,
 					   dst_width, dst_height);
@@ -1153,9 +1285,9 @@ static void rotate_adjust(int w_in, int h_in, int *w_out, int *h_out, int angle)
 
 	int w = 0, h = 0, disp_w = 0, disp_h = 0;
 
-	disp_w = picdec_device.disp_width;
+	disp_w = *w_out;
 
-	disp_h = picdec_device.disp_height;
+	disp_h = *h_out;
 
 	if ((angle == 90) || (angle == 270)) {
 
@@ -1222,9 +1354,9 @@ int picdec_fill_buffer(struct vframe_s *vf, struct ge2d_context_s *context,
 
 	int canvas_id = PIC_DEC_SOURCE_CANVAS;
 
-	int canvas_width = (picdec_input.frame_width + 0x1f) & ~0x1f;
+	int canvas_width = (picdec_device.origin_width + 0x1f) & ~0x1f;
 
-	int canvas_height = (picdec_input.frame_height + 0xf) & ~0xf;
+	int canvas_height = (picdec_device.origin_height + 0xf) & ~0xf;
 
 	int frame_width = picdec_input.frame_width;
 
@@ -1400,18 +1532,47 @@ int picdec_fill_buffer(struct vframe_s *vf, struct ge2d_context_s *context,
 
 	dst_left = 0;
 
-	dst_width = picdec_device.disp_width;
-
-	dst_height = picdec_device.disp_height;
-
+	dst_width =  picdec_device.target_width;
+	dst_height = picdec_device.target_height;
+#if 0
 	rotate_adjust(frame_width, frame_height, &dst_width, &dst_height,
 				  picdec_input.rotate);
-
-	dst_left = (picdec_device.disp_width - dst_width) >> 1;
-
-	dst_top = (picdec_device.disp_height - dst_height) >> 1;
-
-	stretchblt_noalpha(context, 0, 0, frame_width, frame_height,
+#else
+	rotate_adjust(frame_width, frame_height, &dst_width, &dst_height,
+				  0);
+#endif
+	dst_width  = (dst_width + 0x1) & ~0x1;
+	dst_height = (dst_height + 0x1) & ~0x1;
+	switch (picdec_device.p2p_mode) {
+	case 0:
+		dst_left = 0;
+		dst_top = 0;
+		vf->width  = dst_width;
+		vf->height = dst_height;
+		break;
+	case 1:
+		if ((picdec_input.frame_width >=  ZOOM_WIDTH) &&
+		(picdec_input.frame_height >= ZOOM_HEIGHT)) {
+			dst_left = 0;
+			dst_top = 0;
+			vf->width  = dst_width;
+			vf->height = dst_height;
+		} else {
+			dst_left = (picdec_device.disp_width - dst_width) >> 1;
+			dst_top = (picdec_device.disp_height - dst_height) >> 1;
+		}
+		break;
+	case 2:
+		dst_left = (picdec_device.disp_width - dst_width) >> 1;
+		dst_top = (picdec_device.disp_height - dst_height) >> 1;
+		break;
+	default:
+		dst_left = (picdec_device.disp_width - dst_width) >> 1;
+		dst_top = (picdec_device.disp_height - dst_height) >> 1;
+		break;
+	}
+	stretchblt_noalpha(context, 0, 0, picdec_device.origin_width,
+	picdec_device.origin_height,
 			dst_left, dst_top, dst_width, dst_height);
 
 	return 0;
@@ -1487,6 +1648,7 @@ static int picdec_task(void *data)
 	}
 picdec_exit:
 	destroy_ge2d_work_queue(context);
+	picdec_cma_buf_uninit();
 	while (!kthread_should_stop()) {
 
 		/*         may not call stop, wait..
@@ -1528,6 +1690,80 @@ static int simulate_task(void *data)
 *   init functions.
 *
 *************************************************/
+int picdec_cma_buf_init(void)
+{
+	int flags;
+	if (!picdec_device.use_reserved) {
+		switch (picdec_buffer_status) {
+		case 0:/* not config */
+			break;
+		case 1:/* config before , return ok */
+			return 0;
+		case 2:/* config fail, won't retry , return failure */
+			return -1;
+		default:
+			return -1;
+		}
+		aml_pr_info(0, "reserved memory config fail , use CMA	.\n");
+		if (picdec_device.cma_mode == 0) {
+			picdec_device.cma_pages = dma_alloc_from_contiguous(
+					&(picdec_device.pdev->dev),
+					(48*SZ_1M) >> PAGE_SHIFT, 0);
+			picdec_device.buffer_start = page_to_phys(
+			picdec_device.cma_pages);
+			picdec_device.buffer_size = (48*SZ_1M);
+		} else{
+			flags = CODEC_MM_FLAGS_DMA_CPU|CODEC_MM_FLAGS_CMA_CLEAR;
+			picdec_device.buffer_start = codec_mm_alloc_for_dma(
+					"picdec",
+					(48*SZ_1M)/PAGE_SIZE, 0, flags);
+			picdec_device.buffer_size = (48*SZ_1M);
+		}
+		aml_pr_info(0, "cma memory is %x , size is  %x\n" ,
+		(unsigned)picdec_device.buffer_start ,
+		(unsigned)picdec_device.buffer_size);
+
+
+		if (picdec_device.buffer_start == 0) {
+			picdec_buffer_status = 2;
+			aml_pr_info(0, "cma memory allocate fail\n");
+			return -1;
+		} else {
+			picdec_buffer_status = 1;
+			aml_pr_info(0, "cma memory allocate succeed\n");
+			return 0;
+		}
+	}
+
+	return 0;
+}
+
+int picdec_cma_buf_uninit(void)
+{
+	if (!picdec_device.use_reserved) {
+		if (picdec_device.cma_mode == 0) {
+			if (picdec_device.cma_pages) {
+				dma_release_from_contiguous(
+					&picdec_device.pdev->dev,
+					picdec_device.cma_pages,
+					(48*SZ_1M) >> PAGE_SHIFT);
+				picdec_device.cma_pages = NULL;
+			}
+		} else {
+			if (picdec_device.buffer_start != 0) {
+				codec_mm_free_for_dma(
+				"picdec",
+				picdec_device.buffer_start);
+				picdec_device.buffer_start = 0;
+				picdec_device.buffer_size = 0;
+				aml_pr_info(0, "cma memory release succeed\n");
+			}
+		}
+	}
+	picdec_buffer_status = 0;
+	return 0;
+}
+
 int picdec_buffer_init(void)
 {
 	int i;
@@ -1539,7 +1775,8 @@ int picdec_buffer_init(void)
 	resource_size_t buf_start;
 	unsigned int buf_size;
 	unsigned offset = 0;
-
+	picdec_buffer_status = 0;
+	picdec_cma_buf_init();
 	get_picdec_buf_info(&buf_start, &buf_size, NULL);
 
 	aml_pr_info(1, "picdec buffer size is %x\n", buf_size);
@@ -2147,10 +2384,10 @@ int init_picdec_device(void)
 	dev_set_drvdata(picdec_device.dev, &picdec_device);
 
 	platform_set_drvdata(picdec_device.pdev, &picdec_device);
-
+#if 0
 	if (picdec_buffer_init() < 0)
 		goto unregister_dev;
-
+#endif
 	vf_provider_init(&picdec_vf_prov, PROVIDER_NAME, &picdec_vf_provider,
 					 NULL);
 	return 0;
@@ -2198,20 +2435,10 @@ static int picdec_driver_probe(struct platform_device *pdev)
 	r = of_reserved_mem_device_init(&pdev->dev);
 	if (r == 0)
 		aml_pr_info(0, "picdec_driver_probe done.\n");
-	if (!picdec_device.use_reserved) {
-		aml_pr_info(0, "reserved memory config fail , use CMA	.\n");
-		picdec_device.cma_pages = dma_alloc_from_contiguous(
-					&pdev->dev,
-					(48 * SZ_1M) >> PAGE_SHIFT, 0);
-		picdec_device.buffer_start = page_to_phys(
-		picdec_device.cma_pages);
-		picdec_device.buffer_size = 48 * SZ_1M;
-		aml_pr_info(0, "cma memory is %x , size is  %x\n" ,
-		(unsigned)picdec_device.buffer_start ,
-		(unsigned)picdec_device.buffer_size);
-	}
+	picdec_device.cma_mode = 1;
 	picdec_device.pdev = pdev;
 	init_picdec_device();
+	picdec_device.p2p_mode = 0;
 	return r;
 
 	/* char *buf_start; */
@@ -2259,13 +2486,7 @@ static int picdec_drv_remove(struct platform_device *plat_dev)
 		if (picdec_device.mapping)
 			io_mapping_free(picdec_device.mapping);
 	} else{
-		if (picdec_device.cma_pages) {
-			dma_release_from_contiguous(
-				&plat_dev->dev,
-				picdec_device.cma_pages,
-				(48 * SZ_1M) >> PAGE_SHIFT);
-			picdec_device.cma_pages = NULL;
-		}
+
 	}
 	return 0;
 }
@@ -2323,6 +2544,10 @@ module_exit(picdec_remove_module);
 RESERVEDMEM_OF_DECLARE(picdec, "amlogic, picdec_memory", picdec_mem_setup);
 MODULE_PARM_DESC(debug_flag, "\n debug_flag\n");
 module_param(debug_flag, uint, 0664);
+
+module_param(p2p_mode, uint, 0664);
+MODULE_PARM_DESC(p2p_mode, "\n picdec zoom mode\n");
+
 
 MODULE_DESCRIPTION("Amlogic picture decoder driver");
 MODULE_LICENSE("GPL");

@@ -703,12 +703,8 @@ int blkg_conf_prep(struct blkcg *blkcg, const struct blkcg_policy *pol,
 		return -EINVAL;
 
 	disk = get_gendisk(MKDEV(major, minor), &part);
-	if (!disk)
+	if (!disk || part)
 		return -EINVAL;
-	if (part) {
-		put_disk(disk);
-		return -EINVAL;
-	}
 
 	rcu_read_lock();
 	spin_lock_irq(disk->queue->queue_lock);

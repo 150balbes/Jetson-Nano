@@ -884,9 +884,7 @@ struct ipoib_neigh *ipoib_neigh_get(struct net_device *dev, u8 *daddr)
 				neigh = NULL;
 				goto out_unlock;
 			}
-
-			if (likely(skb_queue_len(&neigh->queue) < IPOIB_MAX_PATH_REC_QUEUE))
-				neigh->alive = jiffies;
+			neigh->alive = jiffies;
 			goto out_unlock;
 		}
 	}

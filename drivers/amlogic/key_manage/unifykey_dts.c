@@ -19,6 +19,10 @@
 #define KEY_PERMIT_WRITE	"write"
 #define KEY_PERMIT_DEL		"del"
 
+/* attribute */
+#define KEY_ATTR_TRUE		"true"
+#define KEY_ATTR_FALSE		"false"
+
 static struct key_info_t unify_key_info = {.key_num = 0, .key_flag = 0};
 static struct key_item_t *unifykey_item;
 
@@ -166,6 +170,19 @@ static int unifykey_item_parse_dt(struct device_node *node, int id)
 		temp_item->permit |= KEY_M_PERMIT_DEL;
 	temp_item->id = id;
 
+	temp_item->attr = 0;
+	ret = of_property_read_string(node, "key-encrypt", &propname);
+	if (ret < 0) {
+		goto _next_attr;
+	}
+	if (propname) {
+		if (strcmp(propname, KEY_ATTR_TRUE) == 0)
+			temp_item->attr = KEY_UNIFY_ATTR_ENCRYPT;
+	}
+
+_next_attr:
+	/*todo, add new attribute here*/
+
 	unifykey_add_to_list(temp_item);
 
 	return 0;
@@ -190,7 +207,7 @@ static int unifykey_item_create(struct platform_device *pdev, int num)
 		if (!ret)
 			index++;
 	}
-	pr_err("key unify fact unifykey-num is %d\n", index);
+	pr_info("key unify fact unifykey-num is %d\n", index);
 
 	return 0;
 }
@@ -213,7 +230,7 @@ int unifykey_dt_create(struct platform_device *pdev)
 	of_property_read_u32(pdev->dev.of_node, "efuse-version",
 		&unify_key_info.efuse_version);
 
-	pr_err("key unify config unifykey-num is %d\n", key_num);
+	pr_info("key unify config unifykey-num is %d\n", key_num);
 	unify_key_info.key_num = key_num;
 	if (!unify_key_info.key_flag) {
 		unifykey_item_create(pdev, key_num);

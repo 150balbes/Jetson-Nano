@@ -120,6 +120,9 @@ struct usb_hcd {
 #define HCD_FLAG_RH_RUNNING		5	/* root hub is running? */
 #define HCD_FLAG_DEAD			6	/* controller has died? */
 
+#define HCD_FLAG_DWC_OTG		28  /* dwc_otg controller */
+#define HCD_FLAG_DWC3			27  /* dwc3 controller */
+
 	/* The flags can be tested using these macros; they are likely to
 	 * be slightly faster than test_bit().
 	 */
@@ -129,6 +132,8 @@ struct usb_hcd {
 #define HCD_WAKEUP_PENDING(hcd)	((hcd)->flags & (1U << HCD_FLAG_WAKEUP_PENDING))
 #define HCD_RH_RUNNING(hcd)	((hcd)->flags & (1U << HCD_FLAG_RH_RUNNING))
 #define HCD_DEAD(hcd)		((hcd)->flags & (1U << HCD_FLAG_DEAD))
+#define HCD_DWC_OTG(hcd)	((hcd)->flags & (1U << HCD_FLAG_DWC_OTG))
+#define HCD_DWC3(hcd)		((hcd)->flags & (1U << HCD_FLAG_DWC3))
 
 	/* Flags that get set only during HCD registration or removal. */
 	unsigned		rh_registered:1;/* is root hub registered? */
@@ -447,7 +452,6 @@ extern const struct dev_pm_ops usb_hcd_pci_pm_ops;
 #endif /* CONFIG_PCI */
 
 /* pci-ish (pdev null is ok) buffer alloc/mapping support */
-void usb_init_pool_max(void);
 int hcd_buffer_create(struct usb_hcd *hcd);
 void hcd_buffer_destroy(struct usb_hcd *hcd);
 

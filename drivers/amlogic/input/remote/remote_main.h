@@ -24,6 +24,7 @@
 #define DURATION_REG2    0x9
 #define DURATION_REG3    0xa
 #define FRAME_BODY1 0xb
+#define OPERATION_CTRL_REG3 0xe
 #define CONFIG_END 0xff
 /*config remote register val*/
 struct reg_s {
@@ -71,6 +72,7 @@ enum {
 	DECODEMODE_SANYO,
 	DECODEMODE_NEC_RCA_2IN1 = 14,
 	DECODEMODE_NEC_TOSHIBA_2IN1 = 15,
+	DECODEMODE_NEC_RCMM_2IN1,
 	DECODEMODE_SW,
 	DECODEMODE_MAX ,
 	DECODEMODE_SW_NEC,
@@ -100,17 +102,22 @@ static const struct reg_s RDECODEMODE_NEC[] = {
 };
 /****************************************************************/
 static const struct reg_s RDECODEMODE_DUOKAN[] = {
-	{LDR_ACTIVE, ((65 << 16) | (40 << 0))},
-	{LDR_IDLE, ((37 << 16) | (15 << 0))},
+	{LDR_ACTIVE, ((70 << 16) | (30 << 0))},
+	{LDR_IDLE, ((50 << 16) | (15 << 0))},
 	{LDR_REPEAT, ((30 << 16) | (26 << 0))},
-	{DURATION_REG0, ((63 << 16) | (53 << 0))},
-	{OPERATION_CTRL_REG0, ((3 << 28) | (0x5DC << 12) | (0x13))},
+	{DURATION_REG0, ((66 << 16) | (40 << 0))},
+	{OPERATION_CTRL_REG0, ((3 << 28) | (0x4e2 << 12) | (0x13))},
+	/*logic '00' max=66*20us ,min=40*20us  */
 	/*body frame 30ms*/
-	{DURATION_REG1_AND_STATUS, ((78 << 20) | (68 << 10))},
+	{DURATION_REG1_AND_STATUS, ((80 << 20) | (66 << 10))},
+	/*logic '01' max=80*20us,min=66*20us */
 	{OPERATION_CTRL_REG1, 0x9300},
-	{OPERATION_CTRL_REG2, 0x10b},
-	{DURATION_REG2, ((96 << 16) | (80 << 0))},
-	{DURATION_REG3, ((112 << 16) | (92 << 0))},
+	{OPERATION_CTRL_REG2, 0xb90b},
+	{DURATION_REG2, ((97 << 16) | (80 << 0))},
+	/*logic '10' max=97*20us,min=80*20us */
+	{DURATION_REG3, ((120 << 16) | (97 << 0))},
+	/*logic '11' max=120*20us,min=97*20us */
+	{OPERATION_CTRL_REG3, 5000<<0},
 	{CONFIG_END,            0      }
 };
 /****************************************************************/
@@ -302,20 +309,20 @@ static const struct reg_s RDECODEMODE_NEC_RCA_2IN1[] = {
 };
 static const struct reg_s RDECODEMODE_NEC_TOSHIBA_2IN1[] = {
 	/* used old decode*/
-	{LDR_ACTIVE - 0x40, ((unsigned)477 << 16) | ((unsigned)400 << 0)},
+	{LDR_ACTIVE - 0x40, ((unsigned)500 << 16) | ((unsigned)400 << 0)},
 	/* NEC leader 9500us,max 477:
 	(477* timebase = 20) = 9540 ;min 400 = 8000us*/
-	{LDR_IDLE - 0x40, 248 << 16 | 202 << 0},
+	{LDR_IDLE - 0x40, 300 << 16 | 200 << 0},
 	/* leader idle*/
-	{LDR_REPEAT - 0x40, 130 << 16 | 110 << 0},
+	{LDR_REPEAT - 0x40, 150 << 16 | 80 << 0},
 	/* leader repeat*/
-	{DURATION_REG0 - 0x40, 60 << 16 | 48 << 0 },
+	{DURATION_REG0 - 0x40, 72 << 16 | 40 << 0 },
 	/* logic '0' or '00'*/
 	{OPERATION_CTRL_REG0 - 0x40, 3 << 28 | (0xFA0 << 12) | 0x13},
 	/* sys clock boby time.base time = 20 body frame 108ms*/
-	{DURATION_REG1_AND_STATUS - 0x40, (111 << 20) | (100 << 10)},
+	{DURATION_REG1_AND_STATUS - 0x40, (134 << 20) | (90 << 10)},
 	/* logic '1' or '01'*/
-	{OPERATION_CTRL_REG1 - 0x40, 0xbe00},
+	{OPERATION_CTRL_REG1 - 0x40, 0xbe10},
 	/* boby long decode (9-13)*/
 	/* used new decode*/
 	{LDR_ACTIVE, ((unsigned)300 << 16) | ((unsigned)160 << 0)},
@@ -337,6 +344,30 @@ static const struct reg_s RDECODEMODE_NEC_TOSHIBA_2IN1[] = {
 	{DURATION_REG3, 0},
 	{CONFIG_END,            0      }
 };
+static const struct reg_s RDECODEMODE_NEC_RCMM_2IN1[] = {
+	/*used old decode*/
+	{LDR_ACTIVE-0x40, ((unsigned)477<<16) | ((unsigned)400<<0)},/*leader*/
+	{LDR_IDLE-0x40, 248<<16 | 202<<0},/*leader idle*/
+	{LDR_REPEAT-0x40, 130<<16|110<<0}, /* leader repeat*/
+	{DURATION_REG0-0x40, 60<<16|48<<0 },/*logic '0' or '00'*/
+	{OPERATION_CTRL_REG0-0x40, 3<<28|(0xFA0<<12)|0x13}, /*base time = 20*/
+	{DURATION_REG1_AND_STATUS-0x40, (111<<20)|(100<<10)},/*logic '1'or'01'*/
+	{OPERATION_CTRL_REG1-0x40, 0xbe00},/*boby long decode (9-13)*/
+	/*used new decode*/
+	{LDR_ACTIVE, ((unsigned)35<<16) | ((unsigned)17<<0)},/*leader active*/
+	{LDR_IDLE, 17<<16 | 8<<0},/*leader idle*/
+	{LDR_REPEAT, 31<<16 | 11<<0},  /*leader repeat*/
+	{DURATION_REG0, 25<<16|21<<0 },/*logic '0' or '00' 1200us*/
+	{OPERATION_CTRL_REG0, 3<<28|(590<<12)|0x13},  /*time.base time = 20*/
+	{DURATION_REG1_AND_STATUS, (33<<20)|(29<<10)},/*logic '1' or '01'*/
+	{OPERATION_CTRL_REG1, 0x9f00},/*boby long decode (8-13)*/
+	{OPERATION_CTRL_REG2, 0x1150a},
+	{DURATION_REG2, 41<<16 | 36<<0},
+	{DURATION_REG3, 50<<16 | 44<<0},
+	{OPERATION_CTRL_REG3, 1200<<0},
+	{CONFIG_END,            0      }
+};
+
 static const struct reg_s RDECODEMODE_RC5[] = {
 	{LDR_ACTIVE,    },
 	{LDR_IDLE,     },
@@ -364,16 +395,22 @@ static const struct reg_s RDECODEMODE_RESERVED[] = {
 	{CONFIG_END,            0      }
 };
 static const struct reg_s RDECODEMODE_RC6[] = {
-	{LDR_ACTIVE,    },
-	{LDR_IDLE,     },
-	{LDR_REPEAT,    },
-	{DURATION_REG0, },
-	{OPERATION_CTRL_REG0,},
-	{DURATION_REG1_AND_STATUS,},
-	{OPERATION_CTRL_REG1,},
-	{OPERATION_CTRL_REG2,},
-	{DURATION_REG2,},
-	{DURATION_REG3,},
+	{LDR_ACTIVE, ((unsigned)210 << 16) | ((unsigned)125 << 0)},
+	/*rca leader 4000us,200* timebase*/
+	{LDR_IDLE, 50 << 16 | 38 << 0}, /* leader idle 400*/
+	{LDR_REPEAT, 145 << 16 | 125 << 0}, /* leader repeat*/
+	{DURATION_REG0, 51 << 16 | 38 << 0 }, /* logic '0' or '00' 1500us*/
+	{OPERATION_CTRL_REG0, (3 << 28)|(0xFA0 << 12)|0x13},
+	/* sys clock boby time.base time = 20 body frame*/
+	{DURATION_REG1_AND_STATUS, (94 << 20) | (82 << 10)},
+	/* logic '1' or '01'     2500us*/
+	{OPERATION_CTRL_REG1, 0xa440},/*20bit 9440  36bit a340 32bit 9f40*/
+	/* boby long decode (8-13) //framn len = 24bit*/
+	/*it may get the wrong customer value and key value from register if
+	the value is set to 0x4,so the register value must set to 0x104*/
+	{OPERATION_CTRL_REG2, 0x109},
+	{DURATION_REG2, ((28 << 16) | (16 << 0))},
+	{DURATION_REG3, ((51 << 16) | (38 << 0))},
 	{CONFIG_END,            0      }
 };
 
@@ -498,6 +535,11 @@ void setremotereg(const struct reg_s *r);
 #define REMOTE_LOG_BUF_ORDER        1
 
 
+enum rc_key_state {
+	RC_KEY_STATE_UP = 0,
+	RC_KEY_STATE_DN = 1,
+};
+
 typedef int (*type_printk)(const char *fmt, ...);
 /* this is a message of IR input device,include release timer repeat timer*/
 /*
@@ -551,6 +593,14 @@ struct remote {
 	unsigned int delay;
 	unsigned int step;
 	unsigned int send_data;
+
+	/* 0:up(default) 1:down */
+	unsigned int keystate;
+	/* store irq time */
+	unsigned long jiffies_irq;
+	unsigned long jiffies_old;
+	unsigned long jiffies_new;
+
 #ifdef REMOTE_FIQ
 	bridge_item_t fiq_handle_item;
 #endif
@@ -587,19 +637,23 @@ void remote_send_key(struct input_dev *dev, unsigned int scancode,
 		     unsigned int type, int event);
 extern irqreturn_t remote_bridge_isr(int irq, void *dev_id);
 extern irqreturn_t remote_null_bridge_isr(int irq, void *dev_id);
-extern int remote_hw_reprot_null_key(struct remote *remote_data);
-extern int remote_hw_reprot_key(struct remote *remote_data);
-extern int remote_duokan_reprot_key(struct remote *remote_data);
-extern int remote_hw_nec_rca_2in1_reprot_key(struct remote *remote_data);
-extern int remote_hw_nec_toshiba_2in1_reprot_key(struct remote *remote_data);
-extern int remote_sw_reprot_key(struct remote *remote_data);
+extern int remote_hw_report_null_key(struct remote *remote_data);
+extern int remote_hw_report_key(struct remote *remote_data);
+extern int remote_duokan_report_key(struct remote *remote_data);
+extern int remote_rc6_report_key(struct remote *remote_data);
+extern int remote_hw_nec_rca_2in1_report_key(struct remote *remote_data);
+extern int remote_hw_nec_toshiba_2in1_report_key(struct remote *remote_data);
+extern int remote_hw_nec_rcmm_2in1_report_key(struct remote *remote_data);
+extern int remote_sw_report_key(struct remote *remote_data);
 extern void remote_nec_report_release_key(struct remote *remote_data);
 extern void remote_nec_rca_2in1_report_release_key(struct remote *remote_data);
 extern void remote_nec_toshiba_2in1_report_release_key(struct remote
 		*remote_data);
+extern void remote_nec_rcmm_2in1_report_release_key(struct remote *remote_data);
 extern void remote_duokan_report_release_key(struct remote *remote_data);
-extern void remote_sw_reprot_release_key(struct remote *remote_data);
-extern void remote_null_reprot_release_key(struct remote *remote_data);
+extern void remote_rc6_report_release_key(struct remote *remote_data);
+extern void remote_sw_report_release_key(struct remote *remote_data);
+extern void remote_null_report_release_key(struct remote *remote_data);
 #ifdef REMOTE_FIQ
 extern int register_fiq_bridge_handle(bridge_item_t *c_item);
 extern int unregister_fiq_bridge_handle(bridge_item_t *c_item);

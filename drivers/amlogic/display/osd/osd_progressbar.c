@@ -14,6 +14,7 @@
 #include "osd_fb.h"
 #include "osd_hw.h"
 #include "osd_io.h"
+#include "osd_reg.h"
 
 struct src_dst_info_s {
 	struct rectangle_s  src_rect;
@@ -39,11 +40,15 @@ static int init_fb1_first(const struct vinfo_s *vinfo)
 	struct osd_ctl_s  osd_ctl;
 	const struct color_bit_define_s  *color;
 	u32 reg = 0, data32 = 0;
+	size_t osd_size;
+	void __iomem *osd_vaddr;
 
 	osd_ctl.index = 1;
 	color = &default_color_format_array[31];
 
 	osd_ctl.addr = get_fb_rmem_paddr(osd_ctl.index);
+	osd_vaddr = get_fb_rmem_vaddr(osd_ctl.index);
+	osd_size = get_fb_rmem_size(osd_ctl.index);
 
 	osd_ctl.xres = vinfo->width;
 	osd_ctl.yres = vinfo->height;
@@ -51,7 +56,7 @@ static int init_fb1_first(const struct vinfo_s *vinfo)
 	osd_ctl.yres_virtual = osd_ctl.yres;
 	osd_ctl.disp_start_x = 0;
 	osd_ctl.disp_end_x = osd_ctl.xres - 1;
-	osd_ctl.disp_start_y = 0;
+	osd_ctl.disp_start_y = (vinfo->height * 9) / 10;
 	osd_ctl.disp_end_y = osd_ctl.yres - 1;
 
 	reg = osd_ctl.index == 0 ? VIU_OSD1_BLK0_CFG_W0 : VIU_OSD2_BLK0_CFG_W0;
@@ -59,6 +64,7 @@ static int init_fb1_first(const struct vinfo_s *vinfo)
 	data32 |=  color->hw_blkmode << 8; /* osd_blk_mode */
 	VSYNCOSD_WR_MPEG_REG(reg, data32);
 
+	memset(osd_vaddr, 0, osd_size);
 	pr_debug("addr is 0x%08x, xres is %d, yres is %d\n",
 			osd_ctl.addr, osd_ctl.xres, osd_ctl.yres);
 	osd_setup_hw(osd_ctl.index,
@@ -74,6 +80,7 @@ static int init_fb1_first(const struct vinfo_s *vinfo)
 		osd_ctl.disp_end_x,
 		osd_ctl.disp_end_y,
 		osd_ctl.addr,
+		NULL,
 		color);
 
 	return 0;
@@ -187,28 +194,6 @@ int osd_init_progress_bar(void)
 		}
 		progress_bar.ge2d_context = context;
 		pr_debug("progress bar setup ge2d device OK\n");
-		/* clear dst rect */
-		op_info->color = 0x000000bf;
-		op_info->dst_rect.x = 0;
-		op_info->dst_rect.y = 0;
-		op_info->dst_rect.w = vinfo->width;
-		op_info->dst_rect.h =
-			vinfo->field_height ?
-			vinfo->field_height :
-			vinfo->height;
-
-		fillrect(context, op_info->dst_rect.x,
-			op_info->dst_rect.y,
-			op_info->dst_rect.w,
-			op_info->dst_rect.h,
-			op_info->color);
-
-		pr_debug("clear dstrect is - (%d, %d)-(%d, %d) -\n",
-			op_info->dst_rect.x,
-			op_info->dst_rect.y,
-			op_info->dst_rect.w,
-			op_info->dst_rect.h);
-
 		/* show fb1 */
 		console_lock();
 		osd_blank(0, fb_dev->fb_info);
@@ -216,10 +201,7 @@ int osd_init_progress_bar(void)
 		op_info->color = 0x555555ff;
 		op_info->dst_rect.x =
 			(vinfo->width / 2) - progress_bar.bar_width;
-		op_info->dst_rect.y =
-			((vinfo->field_height ?
-			vinfo->field_height :
-			vinfo->height) * 9) / 10;
+		op_info->dst_rect.y = 0;
 		op_info->dst_rect.w = progress_bar.bar_width * 2;
 		op_info->dst_rect.h = progress_bar.bar_height;
 

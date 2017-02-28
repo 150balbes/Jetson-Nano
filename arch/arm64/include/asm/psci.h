@@ -16,4 +16,7 @@
 
 int psci_init(void);
 
+int __invoke_psci_fn_hvc(u64 function_id, u64 arg0, u64 arg1, u64 arg2);
+int __invoke_psci_fn_smc(u64 function_id, u64 arg0, u64 arg1, u64 arg2);
+
 #endif /* __ASM_PSCI_H */

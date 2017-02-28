@@ -99,9 +99,32 @@ extern void lvds_freq_process(void);
 extern void ve_dnlp_param_update(void);
 extern void ve_new_dnlp_param_update(void);
 extern void ve_ogo_param_update(void);
+extern void am_set_regmap(struct am_regs_s *p);
+extern void sharpness_process(struct vframe_s *vf);
+extern void amvecm_bricon_process(unsigned int bri_val,
+				unsigned int cont_val, struct vframe_s *vf);
+extern void amvecm_3d_black_process(void);
+extern void amvecm_3d_sync_process(void);
+extern void amve_vlock_process(struct vframe_s *vf);
 
+int amvecm_hiu_reg_read(unsigned int reg, unsigned int *val);
+int amvecm_hiu_reg_write(unsigned int reg, unsigned int val);
 extern unsigned int vecm_latch_flag;
 extern unsigned int cm_size;
+extern unsigned int sync_3d_h_start;
+extern unsigned int sync_3d_h_end;
+extern unsigned int sync_3d_v_start;
+extern unsigned int sync_3d_v_end;
+extern unsigned int sync_3d_polarity;
+extern unsigned int sync_3d_out_inv;
+
+extern void __iomem *amvecm_hiu_reg_base;
+
+#ifdef CONFIG_VSYNC_RDMA
+extern int VSYNC_WR_MPEG_REG(u32 adr, u32 val);
+extern u32 VSYNC_RD_MPEG_REG(u32 adr);
+#endif
+
 /* #if defined(CONFIG_ARCH_MESON2) */
 /* unsigned long long ve_get_vs_cnt(void); */
 /* #endif */

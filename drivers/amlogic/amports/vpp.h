@@ -68,6 +68,12 @@ struct vppfilter_mode_s {
 	u32 vpp_sc_misc_;
 	u32 vpp_vsc_start_phase_step;
 	u32 vpp_hsc_start_phase_step;
+	bool vpp_pre_vsc_en;
+	bool vpp_pre_hsc_en;
+	u32 vpp_vert_filter;
+	u32 vpp_horz_filter;
+	const u32 *vpp_vert_chroma_coeff;
+	u32 vpp_vert_chroma_filter_en;
 };
 
 struct vpp_filters_s {
@@ -107,6 +113,7 @@ struct vpp_frame_par_s {
 	u32 vscale_skip_count;
 	u32 hscale_skip_count;
 	u32 vpp_3d_mode;
+	u32 trans_fmt;
 	u32 vpp_2pic_mode;
 	/* bit[1:0] 0: 1 pic,1:two pic one buf,2:tow pic two buf */
 	/* bit[2]0:select pic0,1:select pic1 */
@@ -120,24 +127,34 @@ struct vpp_frame_par_s {
 	u32 supsc1_hori_ratio;
 	u32 supsc0_vert_ratio;
 	u32 supsc1_vert_ratio;
+	u32 spsc0_w_in;
+	u32 spsc0_h_in;
+	u32 spsc1_w_in;
+	u32 spsc1_h_in;
+
+	bool nocomp;
+
 };
 
-#if 0
+#if 1
 /* (MESON_CPU_TYPE==MESON_CPU_TYPE_MESON6TV)||
 (MESON_CPU_TYPE==MESON_CPU_TYPE_MESONG9TV) */
 #define TV_3D_FUNCTION_OPEN
-#define TV_REVERSE
 #endif
 
-#if 0	/* (MESON_CPU_TYPE==MESON_CPU_TYPE_MESONG9TV) */
-#define SUPER_SCALER_OPEN
-enum select_scaler_path_e {
-	sup0_sp1_pp_scpath,
-	sup0_pp_sp1_scpath
-};
-#define SUPER_CORE0_WIDTH_MAX  1024
-#define SUPER_CORE1_WIDTH_MAX  2048
+#define TV_REVERSE
+
+#ifdef TV_REVERSE
+extern bool reverse;
 #endif
+extern bool platform_type;
+enum select_scaler_path_e {
+	sup0_pp_sp1_scpath,
+	sup0_pp_post_blender,
+};
+#define SUPER_CORE0_WIDTH_MAX  2048
+#define SUPER_CORE1_WIDTH_MAX  4096
+
 
 #ifdef TV_3D_FUNCTION_OPEN
 
@@ -155,6 +172,8 @@ enum select_scaler_path_e {
 #define MODE_3D_MVC	    0x00000800
 #define MODE_3D_OUT_TB	0x00010000
 #define MODE_3D_OUT_LR	0x00020000
+#define MODE_FORCE_3D_TO_2D_LR	0x00100000
+#define MODE_FORCE_3D_TO_2D_TB	0x00200000
 
 /*when the output mode is field alterlative*/
 /* LRLRLRLRL mode */
@@ -169,7 +188,8 @@ enum select_scaler_path_e {
 	MODE_3D_OUT_FA_R_FIRST|MODE_3D_OUT_FA_LB_FIRST|MODE_3D_OUT_FA_RB_FIRST)
 
 #define MODE_3D_TO_2D_MASK  \
-	(MODE_3D_TO_2D_L|MODE_3D_TO_2D_R|MODE_3D_OUT_FA_MASK)
+	(MODE_3D_TO_2D_L|MODE_3D_TO_2D_R|MODE_3D_OUT_FA_MASK | \
+	MODE_FORCE_3D_TO_2D_LR | MODE_FORCE_3D_TO_2D_TB)
 
 #define VPP_3D_MODE_NULL 0x0
 #define VPP_3D_MODE_LR   0x1
@@ -185,7 +205,8 @@ enum select_scaler_path_e {
 
 extern
 void vpp_set_3d_scale(bool enable);
-
+extern
+void get_vpp_3d_mode(u32 trans_fmt, u32 *vpp_3d_mode);
 #endif
 
 extern void
@@ -225,6 +246,8 @@ void vpp_set_video_speed_check(u32 h, u32 w);
 extern
 void vpp_get_video_speed_check(u32 *h, u32 *w);
 
+extern
+void vpp_super_scaler_support(void);
 
 #ifdef CONFIG_AM_VIDEO2
 extern void
@@ -240,5 +263,17 @@ extern void vpp2_set_zoom_ratio(u32 r);
 
 extern u32 vpp2_get_zoom_ratio(void);
 #endif
+
+extern int vpp_set_super_scaler_regs(int scaler_path_sel,
+		int reg_srscl0_enable,
+		int reg_srscl0_hsize,
+		int reg_srscl0_vsize,
+		int reg_srscl0_hori_ratio,
+		int reg_srscl0_vert_ratio,
+		int reg_srscl1_enable,
+		int reg_srscl1_hsize,
+		int reg_srscl1_vsize,
+		int reg_srscl1_hori_ratio,
+		int reg_srscl1_vert_ratio);
 
 #endif				/* VPP_H */

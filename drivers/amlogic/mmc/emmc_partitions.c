@@ -319,8 +319,7 @@ static int mmc_read_partition_tbl(struct mmc_card *card,
 				pt_fmt->part_num));
 		}
 
-		pr_info("\033[0;40;32m [%s]: partition verified error! \033[0m\n",
-		__func__);
+		pr_info("[%s]: partition verified error\n", __func__);
 		ret = -1; /* the partition infomation is invalid */
 	}
 
@@ -520,8 +519,8 @@ static ssize_t emmc_version_get(struct class *class,
 	struct class_attribute *attr, char *buf)
 {
 	int num = 0;
-	sprintf(buf, "%d", num);
-	return 0;
+
+	return sprintf(buf, "%d", num);
 }
 
 static void show_partition_table(struct partitions *table)
@@ -613,7 +612,7 @@ static ssize_t emmc_part_table_get(struct class *class,
 	kfree(part_table);
 	part_table = NULL;
 
-	return 0;
+	return MAX_MMC_PART_NUM*sizeof(struct partitions);
 }
 
 static int store_device = -1;
@@ -624,9 +623,26 @@ static ssize_t store_device_flag_get(struct class *class,
 		pr_info("[%s]  get store device flag something wrong !\n",
 			__func__);
 	}
-	sprintf(buf, "%d", store_device);
-	return 0;
+
+	return sprintf(buf, "%d", store_device);
 }
+
+static ssize_t get_bootloader_offset(struct class *class,
+	struct class_attribute *attr, char *buf)
+{
+	int offset = 0;
+	if (get_cpu_type() > MESON_CPU_MAJOR_ID_GXTVBB)
+		offset = 512;
+	return sprintf(buf, "%d", offset);
+}
+
+/* extern u32 cd_irq_cnt[2];
+
+static ssize_t get_cdirq_cnt(struct class *class,
+	struct class_attribute *attr, char *buf)
+{
+	return sprintf(buf, "in:%d, out:%d\n", cd_irq_cnt[1], cd_irq_cnt[0]);
+} */
 
 static struct class_attribute aml_version =
 	__ATTR(version, S_IRUGO, emmc_version_get, NULL);
@@ -634,6 +650,12 @@ static struct class_attribute aml_part_table =
 	__ATTR(part_table, S_IRUGO, emmc_part_table_get, NULL);
 static struct class_attribute aml_store_device =
 	__ATTR(store_device, S_IRUGO, store_device_flag_get, NULL);
+static struct class_attribute bootloader_offset =
+	__ATTR(bl_off_bytes, S_IRUGO, get_bootloader_offset, NULL);
+
+/* for irq cd dbg */
+/* static struct class_attribute cd_irq_cnt_ =
+	__ATTR(cdirq_cnt, S_IRUGO, get_cdirq_cnt, NULL); */
 
 int aml_emmc_partition_ops(struct mmc_card *card, struct gendisk *disk)
 {
@@ -712,6 +734,17 @@ int aml_emmc_partition_ops(struct mmc_card *card, struct gendisk *disk)
 		goto out_class3;
 	}
 
+	ret = class_create_file(aml_store_class, &bootloader_offset);
+	if (ret) {
+		pr_info("[%s] can't create aml_store_class file .\n", __func__);
+		goto out_class3;
+	}
+
+	/* ret = class_create_file(aml_store_class, &cd_irq_cnt_);
+	if (ret) {
+		pr_info("[%s] can't create aml_store_class file .\n", __func__);
+		goto out_class3;
+	} */
 	pr_info("Exit %s %s.\n", __func__, (ret == 0)?"OK":"ERROR");
 	return ret;
 

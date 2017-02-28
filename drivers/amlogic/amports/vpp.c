@@ -32,9 +32,6 @@
 #include <linux/amlogic/gpio-amlogic.h>
 
 #include <linux/amlogic/iomap.h>
-#ifdef CONFIG_AM_DEINTERLACE
-#include "deinterlace.h"
-#endif
 
 #include "videolog.h"
 /* #define CONFIG_VIDEO_LOG */
@@ -46,24 +43,24 @@
 #include "arch/register.h"
 #include "amports_priv.h"
 
-
 /* vpp filter coefficients */
 #define COEF_BICUBIC         0
 #define COEF_3POINT_TRIANGLE 1
 #define COEF_4POINT_TRIANGLE 2
 #define COEF_BILINEAR        3
-#if 1	/* MESON_CPU_TYPE >= MESON_CPU_TYPE_MESON8 */
 #define COEF_2POINT_BILINEAR 4
-#endif
+#define COEF_BICUBIC_SHARP   5
+#define COEF_3POINT_TRIANGLE_SHARP   6
+#define COEF_3POINT_BSPLINE  7
+#define COEF_4POINT_BSPLINE  8
+#define COEF_3D_FILTER       9
+#define COEF_NULL            0xff
+#define TOTAL_FILTERS        10
 
 #define MAX_NONLINEAR_FACTOR    0x40
 
-#if 1	/* MESON_CPU_TYPE >= MESON_CPU_TYPE_MESON8 */
 #define VPP_SPEED_FACTOR 0x110ULL
-#endif
-#ifdef TV_REVERSE
-/*extern bool reverse;*/
-#endif
+#define SUPER_SCALER_V_FACTOR  100
 
 const u32 vpp_filter_coefs_bicubic_sharp[] = {
 	3,
@@ -136,6 +133,7 @@ const u32 vpp_filter_coefs_3point_triangle[] = {
 	0x1a4c1a00
 };
 
+/* point_num =4, filt_len =4, group_num = 64, [1 2 1] */
 const u32 vpp_filter_coefs_4point_triangle[] = {
 	4,
 	33,
@@ -149,8 +147,51 @@ const u32 vpp_filter_coefs_4point_triangle[] = {
 	0x12322e0e, 0x12322e0e, 0x11312f0f, 0x11312f0f,
 	0x10303010
 };
+/*4th order (cubic) b-spline
+filt_cubic point_num =4, filt_len =4, group_num = 64, [1 5 1] */
+const u32 vpp_filter_coefs_4point_bspline[] = {
+	4,
+	33,
+	0x15561500, 0x14561600, 0x13561700, 0x12561800,
+	0x11551a00, 0x11541b00, 0x10541c00, 0x0f541d00,
+	0x0f531e00, 0x0e531f00, 0x0d522100, 0x0c522200,
+	0x0b522300, 0x0b512400, 0x0a502600, 0x0a4f2700,
+	0x094e2900, 0x084e2a00, 0x084d2b00, 0x074c2c01,
+	0x074b2d01, 0x064a2f01, 0x06493001, 0x05483201,
+	0x05473301, 0x05463401, 0x04453601, 0x04433702,
+	0x04423802, 0x03413a02, 0x03403b02, 0x033f3c02,
+	0x033d3d03
+};
+/*3rd order (quadratic) b-spline
+filt_quadratic, point_num =3, filt_len =3, group_num = 64, [1 6 1] */
+const u32 vpp_filter_coefs_3point_bspline[] = {
+	3,
+	33,
+	0x40400000, 0x3e420000, 0x3c440000, 0x3a460000,
+	0x38480000, 0x364a0000, 0x344b0100, 0x334c0100,
+	0x314e0100, 0x304f0100, 0x2e500200, 0x2c520200,
+	0x2a540200, 0x29540300, 0x27560300, 0x26570300,
+	0x24580400, 0x23590400, 0x215a0500, 0x205b0500,
+	0x1e5c0600, 0x1d5c0700, 0x1c5d0700, 0x1a5e0800,
+	0x195e0900, 0x185e0a00, 0x175f0a00, 0x15600b00,
+	0x14600c00, 0x13600d00, 0x12600e00, 0x11600f00,
+	0x10601000
+};
+/*filt_triangle, point_num =3, filt_len =2.6, group_num = 64, [1 7 1] */
+const u32 vpp_filter_coefs_3point_triangle_sharp[] = {
+	3,
+	33,
+	0x40400000, 0x3e420000, 0x3d430000, 0x3b450000,
+	0x3a460000, 0x38480000, 0x37490000, 0x354b0000,
+	0x344c0000, 0x324e0000, 0x314f0000, 0x2f510000,
+	0x2e520000, 0x2c540000, 0x2b550000, 0x29570000,
+	0x28580000, 0x265a0000, 0x245c0000, 0x235d0000,
+	0x215f0000, 0x20600000, 0x1e620000, 0x1d620100,
+	0x1b620300, 0x19630400, 0x17630600, 0x15640700,
+	0x14640800, 0x12640a00, 0x11640b00, 0x0f650c00,
+	0x0d660d00
+};
 
-#if 1	/* MESON_CPU_TYPE >= MESON_CPU_TYPE_MESON8 */
 const u32 vpp_filter_coefs_2point_binilear[] = {
 	2,
 	33,
@@ -164,17 +205,157 @@ const u32 vpp_filter_coefs_2point_binilear[] = {
 	0x48380000, 0x463a0000, 0x443c0000, 0x423e0000,
 	0x40400000
 };
-#endif
 
 static const u32 *filter_table[] = {
 	vpp_filter_coefs_bicubic,
 	vpp_filter_coefs_3point_triangle,
 	vpp_filter_coefs_4point_triangle,
 	vpp_filter_coefs_bilinear,
-#if 1	/* MESON_CPU_TYPE >= MESON_CPU_TYPE_MESON8 */
-	vpp_filter_coefs_2point_binilear
-#endif
+	vpp_filter_coefs_2point_binilear,
+	vpp_filter_coefs_bicubic_sharp,
+	vpp_filter_coefs_3point_triangle_sharp,
+	vpp_filter_coefs_3point_bspline,
+	vpp_filter_coefs_4point_bspline,
+	vpp_3d_filter_coefs_bilinear
 };
+
+static int chroma_filter_table[] = {
+	COEF_4POINT_TRIANGLE, /* bicubic */
+	COEF_3POINT_TRIANGLE,
+	COEF_4POINT_TRIANGLE,
+	COEF_4POINT_TRIANGLE, /* bilinear */
+	COEF_2POINT_BILINEAR,
+	COEF_3POINT_TRIANGLE, /* bicubic_sharp */
+	COEF_3POINT_TRIANGLE, /* 3point_triangle_sharp */
+	COEF_3POINT_TRIANGLE, /* 3point_bspline */
+	COEF_4POINT_TRIANGLE, /* 4point_bspline */
+	COEF_3D_FILTER		  /* can not change */
+};
+
+static unsigned int sharpness1_sr2_ctrl_32d7 = 0x00181008;
+MODULE_PARM_DESC(sharpness1_sr2_ctrl_32d7, "sharpness1_sr2_ctrl_32d7");
+module_param(sharpness1_sr2_ctrl_32d7, uint, 0664);
+/*0x3280 default val: 1920x1080*/
+static unsigned int sharpness1_sr2_ctrl_3280 = 0xffffffff;
+MODULE_PARM_DESC(sharpness1_sr2_ctrl_3280, "sharpness1_sr2_ctrl_3280");
+module_param(sharpness1_sr2_ctrl_3280, uint, 0664);
+
+#define MAX_COEFF_LEVEL 5
+uint num_coeff_level = MAX_COEFF_LEVEL;
+uint vert_coeff_settings[MAX_COEFF_LEVEL] = {
+	/* in:out */
+	COEF_BICUBIC,
+	/* ratio < 1 */
+	COEF_BICUBIC_SHARP,
+	/* ratio = 1 and phase = 0, */
+	/* use for MBX without sharpness HW module, */
+	/* TV use COEF_BICUBIC in function coeff */
+	COEF_BICUBIC,
+	/* ratio in (1~0.5) */
+	COEF_3POINT_BSPLINE,
+	/* ratio in [0.5~0.333) with pre-scaler on */
+	/* this setting is sharpness/smooth balanced */
+	/* if need more smooth(less sharp, could use */
+	/* COEF_4POINT_BSPLINE or COEF_4POINT_TRIANGLE */
+	COEF_4POINT_TRIANGLE,
+	/* ratio <= 0.333 with pre-scaler on */
+	/* this setting is most smooth */
+};
+
+uint horz_coeff_settings[MAX_COEFF_LEVEL] = {
+	/* in:out */
+	COEF_BICUBIC,
+	/* ratio < 1 */
+	COEF_BICUBIC_SHARP,
+	/* ratio = 1 and phase = 0, */
+	/* use for MBX without sharpness HW module, */
+	/* TV use COEF_BICUBIC in function coeff */
+	COEF_BICUBIC,
+	/* ratio in (1~0.5) */
+	COEF_3POINT_BSPLINE,
+	/* ratio in [0.5~0.333) with pre-scaler on */
+	/* this setting is sharpness/smooth balanced */
+	/* if need more smooth(less sharp, could use */
+	/* COEF_4POINT_BSPLINE or COEF_4POINT_TRIANGLE */
+	COEF_4POINT_TRIANGLE,
+	/* ratio <= 0.333 with pre-scaler on */
+	/* this setting is most smooth */
+};
+
+static uint coeff(uint *settings, uint ratio, uint phase, bool interlace)
+{
+	uint coeff_select = 0;
+	uint coeff_type = 0;
+	if (ratio >= (3 << 24))
+		coeff_select = 4;
+	else if (ratio >= (2 << 24))
+		coeff_select = 3;
+	else if (ratio > (1 << 24))
+		coeff_select = 2;
+	else if (ratio == (1 << 24)) {
+		if (phase == 0)
+			coeff_select = 1;
+		else
+			coeff_select = 2;
+	}
+	coeff_type = settings[coeff_select];
+	/* TODO: add future TV chips */
+	if ((get_cpu_type() == MESON_CPU_MAJOR_ID_GXTVBB) ||
+		(get_cpu_type() == MESON_CPU_MAJOR_ID_TXL)) {
+		if (coeff_type == COEF_BICUBIC_SHARP)
+			coeff_type = COEF_BICUBIC;
+	} else {
+		/* gxtvbb use dejaggy in SR0 to reduce intelace combing
+		   other chip no dejaggy, need swtich to more blur filter */
+		if (interlace && (coeff_select < 3))
+			coeff_type = COEF_4POINT_BSPLINE;
+	}
+	return coeff_type;
+}
+
+/* vertical and horizontal coeff settings */
+module_param_array(vert_coeff_settings, uint, &num_coeff_level, 0664);
+MODULE_PARM_DESC(vert_coeff_settings, "\n vert_coeff_settings\n");
+
+module_param_array(horz_coeff_settings, uint, &num_coeff_level, 0664);
+MODULE_PARM_DESC(horz_coeff_settings, "\n horz_coeff_settings\n");
+
+bool vert_chroma_filter_en = true;
+module_param(vert_chroma_filter_en, bool, 0664);
+MODULE_PARM_DESC(vert_chroma_filter_en, "enable vertical chromafilter\n");
+
+bool vert_chroma_filter_force_en;
+module_param(vert_chroma_filter_force_en, bool, 0664);
+MODULE_PARM_DESC(vert_chroma_filter_force_en,
+	"force enable vertical chromafilter\n");
+
+uint num_chroma_filter = TOTAL_FILTERS;
+module_param_array(chroma_filter_table, uint, &num_chroma_filter, 0664);
+MODULE_PARM_DESC(chroma_filter_table, "\n chroma_filter_table\n");
+
+uint cur_vert_chroma_filter;
+MODULE_PARM_DESC(cur_vert_chroma_filter, "cur_vert_chroma_filter");
+module_param(cur_vert_chroma_filter, int, 0444);
+
+uint cur_vert_filter;
+MODULE_PARM_DESC(cur_vert_filter, "cur_vert_filter");
+module_param(cur_vert_filter, int, 0444);
+uint cur_horz_filter;
+
+MODULE_PARM_DESC(cur_horz_filter, "cur_horz_filter");
+module_param(cur_horz_filter, int, 0444);
+uint cur_skip_line;
+
+MODULE_PARM_DESC(cur_skip_line, "cur_skip_line");
+module_param(cur_skip_line, int, 0444);
+
+unsigned int super_scaler_v_ratio = 133;
+MODULE_PARM_DESC(super_scaler_v_ratio, "super_scaler_v_ratio");
+module_param(super_scaler_v_ratio, uint, 0664);
+
+static u32 skip_policy = 0x81;
+module_param(skip_policy, uint, 0664);
+MODULE_PARM_DESC(skip_policy, "\n skip_policy\n");
 
 static u32 vpp_wide_mode;
 static u32 vpp_zoom_ratio = 100;
@@ -185,6 +366,8 @@ static s32 video_layer_top, video_layer_left, video_layer_width,
 	   video_layer_height;
 static u32 video_source_crop_top, video_source_crop_left,
 	   video_source_crop_bottom, video_source_crop_right;
+static u32 video_crop_top_resv, video_crop_left_resv,
+	   video_crop_bottom_resv, video_crop_right_resv;
 static s32 video_layer_global_offset_x, video_layer_global_offset_y;
 static s32 osd_layer_top, osd_layer_left, osd_layer_width, osd_layer_height;
 static u32 video_speed_check_width = 1800, video_speed_check_height = 1400;
@@ -194,20 +377,17 @@ static bool vpp_3d_scale;
 static int force_filter_mode = 1;
 MODULE_PARM_DESC(force_filter_mode, "force_filter_mode");
 module_param(force_filter_mode, int, 0664);
-
 #endif
 
 static unsigned int super_debug;
 module_param(super_debug, uint, 0664);
 MODULE_PARM_DESC(super_debug, "super_debug");
 
-#ifdef SUPER_SCALER_OPEN
-
 static unsigned int super_scaler = 1;
 module_param(super_scaler, uint, 0664);
 MODULE_PARM_DESC(super_scaler, "super_scaler");
 
-static unsigned int scaler_path_sel = 1;
+static unsigned int scaler_path_sel;
 module_param(scaler_path_sel, uint, 0664);
 MODULE_PARM_DESC(scaler_path_sel, "scaler_path_sel");
 
@@ -218,14 +398,30 @@ MODULE_PARM_DESC(bypass_spscl0, "bypass_spscl0");
 static unsigned int bypass_spscl1;
 module_param(bypass_spscl1, uint, 0664);
 MODULE_PARM_DESC(bypass_spscl1, "bypass_spscl1");
-#endif
-#if 0	/* (MESON_CPU_TYPE == MESON_CPU_TYPE_MESONG9TV) */
-static unsigned int bypass_ratio = 150;
-#else
-static unsigned int bypass_ratio = 196;
-#endif
+
+static unsigned int vert_scaler_filter = 0xff;
+module_param(vert_scaler_filter, uint, 0664);
+MODULE_PARM_DESC(vert_scaler_filter, "vert_scaler_filter");
+
+static unsigned int horz_scaler_filter = 0xff;
+module_param(horz_scaler_filter, uint, 0664);
+MODULE_PARM_DESC(horz_scaler_filter, "horz_scaler_filter");
+
+static unsigned int bypass_ratio = 205;
 module_param(bypass_ratio, uint, 0664);
 MODULE_PARM_DESC(bypass_ratio, "bypass_ratio");
+
+static unsigned int sr0_sr1_refresh = 1;
+module_param(sr0_sr1_refresh, uint, 0664);
+MODULE_PARM_DESC(sr0_sr1_refresh, "sr0_sr1_refresh");
+
+bool pre_scaler_en = true;
+module_param(pre_scaler_en, bool, 0664);
+MODULE_PARM_DESC(pre_scaler_en, "pre_scaler_en");
+
+unsigned int force_vskip_cnt;
+MODULE_PARM_DESC(force_vskip_cnt, "force_vskip_cnt");
+module_param(force_vskip_cnt, uint, 0664);
 
 #if 0
 #define DECL_PARM(name)\
@@ -339,6 +535,24 @@ calculate_non_linear_ratio(unsigned middle_ratio,
 	return;
 }
 
+/* We find that the minimum line the video can be scaled
+ * down without skip line for different modes as below:
+ * 4k2k mode:
+ * video source		minimus line		ratio(height_in/height_out)
+ * 3840 * 2160		1690			1.278
+ * 1920 * 1080		860			1.256
+ * 1280 * 720		390			1.846
+ * 720 * 480		160			3.000
+ * 1080p mode:
+ * video source		minimus line		ratio(height_in/height_out)
+ * 3840 * 2160		840			2.571
+ * 1920 * 1080		430			2.511
+ * 1280 * 720		200			3.600
+ * 720 * 480		80			6.000
+ * So the safe scal ratio is 1.25 for 4K2K mode and 2.5
+ * (1.25 * 3840 / 1920) for 1080p mode.
+ */
+#define MIN_RATIO_1000	1250
 static int
 vpp_process_speed_check(s32 width_in,
 		s32 height_in,
@@ -347,6 +561,11 @@ vpp_process_speed_check(s32 width_in,
 		struct vpp_frame_par_s *next_frame_par,
 		const struct vinfo_s *vinfo, struct vframe_s *vf)
 {
+	u32 cur_ratio;
+
+	if (next_frame_par->vscale_skip_count < force_vskip_cnt)
+		return SPEED_CHECK_VSKIP;
+
 	/* #if (MESON_CPU_TYPE >= MESON_CPU_TYPE_MESON8) */
 	if ((get_cpu_type() >= MESON_CPU_MAJOR_ID_M8) && !is_meson_mtvd_cpu()) {
 		if ((width_in <= 0) || (height_in <= 0) || (height_out <= 0)
@@ -354,18 +573,27 @@ vpp_process_speed_check(s32 width_in,
 			return SPEED_CHECK_DONE;
 
 		if (height_in > height_out) {
-
+			if (get_cpu_type() >=
+				MESON_CPU_MAJOR_ID_GXBB) {
+				cur_ratio = div_u64((u64)height_in *
+						(u64)vinfo->height *
+						1000,
+						height_out * 2160);
+				if ((cur_ratio > MIN_RATIO_1000) &&
+				(vf->source_type != VFRAME_SOURCE_TYPE_TUNER) &&
+				(vf->source_type != VFRAME_SOURCE_TYPE_CVBS))
+					return SPEED_CHECK_VSKIP;
+			}
 			if (vf->type & VIDTYPE_VIU_422) {
 				/*TODO vpu */
-				if (get_cpu_type() == MESON_CPU_MAJOR_ID_GXBB) {
+				if (get_cpu_type() == MESON_CPU_MAJOR_ID_GXBB)
 					bypass_ratio = 125;
-				}
 				if (height_out == 0
-					|| div_u64(
-						VPP_SPEED_FACTOR * width_in *
-						height_in *
-						vinfo->sync_duration_num *
-						height_screen,
+					|| div_u64((u64)VPP_SPEED_FACTOR *
+						(u64)width_in *
+						(u64)height_in *
+						(u64)vinfo->sync_duration_num *
+						(u64)height_screen,
 						height_out *
 						vinfo->sync_duration_den *
 						bypass_ratio) > get_vpu_clk())
@@ -375,27 +603,30 @@ vpp_process_speed_check(s32 width_in,
 			} else {
 				/*TODO vpu */
 				if (height_out == 0
-					|| div_u64(VPP_SPEED_FACTOR * width_in *
-					height_in *
-					vinfo->sync_duration_num *
-					height_screen,
+					|| div_u64((u64)VPP_SPEED_FACTOR *
+					(u64)width_in *
+					(u64)height_in *
+					(u64)vinfo->sync_duration_num *
+					(u64)height_screen,
 					height_out *
 					vinfo->sync_duration_den * 256)
 					> get_vpu_clk())
 					return SPEED_CHECK_VSKIP;
 				/* 4K down scaling to non 4K > 30hz,
 				   skip lines for memory bandwidth */
-				else if (((vf->type & VIDTYPE_COMPRESS)
-					   == 0) &&
+				else if ((((vf->type & VIDTYPE_COMPRESS)
+					   == 0) || (next_frame_par->nocomp))
+					&&
 					 (height_in > 2048) &&
 					 (height_out < 2048) &&
 					 (vinfo->sync_duration_num >
-					  (30 * vinfo->sync_duration_den)))
+					  (30 * vinfo->sync_duration_den)) &&
+					 (get_cpu_type() !=
+						MESON_CPU_MAJOR_ID_GXTVBB))
 					return SPEED_CHECK_VSKIP;
 				else
 					return SPEED_CHECK_DONE;
 			}
-
 		} else if (next_frame_par->hscale_skip_count == 0) {
 			/*TODO vpu */
 			if (div_u64(VPP_SPEED_FACTOR * width_in *
@@ -406,7 +637,6 @@ vpp_process_speed_check(s32 width_in,
 			else
 				return SPEED_CHECK_DONE;
 		}
-
 		return SPEED_CHECK_DONE;
 	}
 	/* #else */
@@ -429,13 +659,11 @@ vpp_process_speed_check(s32 width_in,
 	/* #endif */
 
 	amlog_mask(LOG_MASK_VPP, "vpp_process_speed_check failed\n");
-
 	return SPEED_CHECK_VSKIP;
-	/* #endif */
 }
 
 static void
-vpp_set_filters2(u32 width_in,
+vpp_set_filters2(u32 process_3d_type, u32 width_in,
 	u32 height_in,
 	u32 wid_out,
 	u32 hei_out,
@@ -450,6 +678,8 @@ vpp_set_filters2(u32 width_in,
 	u32 ratio_x = 0;
 	u32 ratio_y = 0;
 	u32 tmp_ratio_y = 0;
+	int temp_width;
+	int temp_height;
 	struct vppfilter_mode_s *filter = &next_frame_par->vpp_filter;
 	u32 wide_mode;
 	s32 height_shift = 0;
@@ -466,39 +696,45 @@ vpp_set_filters2(u32 width_in,
 	bool fill_match = true;
 	u32 orig_aspect = 0;
 	u32 screen_aspect = 0;
+	bool skip_policy_check = true;
 
-#ifdef SUPER_SCALER_OPEN
-	if ((likely(w_in > (video_source_crop_left + video_source_crop_right)))
-		&& (super_scaler == 0)) {
-		w_in -= video_source_crop_left + video_source_crop_right;
-		h_crop_enable = true;
+	if (get_cpu_type() >= MESON_CPU_MAJOR_ID_GXTVBB) {
+		if ((likely(w_in >
+			(video_source_crop_left + video_source_crop_right)))
+			&& (super_scaler == 0)) {
+			w_in -= video_source_crop_left;
+			w_in -= video_source_crop_right;
+			h_crop_enable = true;
+		}
+
+		if ((likely(h_in >
+			(video_source_crop_top + video_source_crop_bottom)))
+			&& (super_scaler == 0)) {
+			h_in -= video_source_crop_top;
+			h_in -= video_source_crop_bottom;
+			v_crop_enable = true;
+		}
+	} else {
+		if (likely(w_in >
+			(video_source_crop_left + video_source_crop_right))) {
+			w_in -= video_source_crop_left;
+			w_in -= video_source_crop_right;
+			h_crop_enable = true;
+		}
+
+		if (likely(h_in >
+			(video_source_crop_top + video_source_crop_bottom))) {
+			h_in -= video_source_crop_top;
+			h_in -= video_source_crop_bottom;
+			v_crop_enable = true;
+		}
 	}
 
-	if ((likely(h_in > (video_source_crop_top + video_source_crop_bottom)))
-		&& (super_scaler == 0)) {
-		h_in -= video_source_crop_top + video_source_crop_bottom;
-		v_crop_enable = true;
-	}
-#else
-	if (likely(w_in >
-		(video_source_crop_left + video_source_crop_right))) {
-		w_in -= video_source_crop_left + video_source_crop_right;
-		h_crop_enable = true;
-	}
-
-	if (likely(h_in >
-		(video_source_crop_top + video_source_crop_bottom))) {
-		h_in -= video_source_crop_top + video_source_crop_bottom;
-		v_crop_enable = true;
-	}
-#endif
-#ifdef CONFIG_AM_DEINTERLACE
-	int deinterlace_mode = get_deinterlace_mode();
-#endif
 #ifndef TV_3D_FUNCTION_OPEN
 	next_frame_par->vscale_skip_count = 0;
 	next_frame_par->hscale_skip_count = 0;
 #endif
+	next_frame_par->nocomp = false;
 	if (vpp_flags & VPP_FLAG_INTERLACE_IN)
 		next_frame_par->vscale_skip_count++;
 	if (vpp_flags & VPP_FLAG_INTERLACE_OUT)
@@ -573,8 +809,8 @@ RESTART:
 			video_height = osd_layer_height;
 		}
 	} else {
-#ifdef SUPER_SCALER_OPEN
-		if (next_frame_par->supscl_path) {
+		if ((get_cpu_type() >= MESON_CPU_MAJOR_ID_GXTVBB) &&
+			next_frame_par->supscl_path == sup0_pp_sp1_scpath) {
 			video_top = (video_layer_top >> next_frame_par->
 				 supsc1_vert_ratio);
 			video_height = (video_layer_height >> next_frame_par->
@@ -583,9 +819,7 @@ RESTART:
 				 supsc1_hori_ratio);
 			video_width = (video_layer_width >> next_frame_par->
 				 supsc1_hori_ratio);
-		} else
-#endif
-		{
+		} else {
 			video_top = video_layer_top;
 			video_left = video_layer_left;
 			video_width = video_layer_width;
@@ -729,11 +963,19 @@ RESTART:
 				(vpp_zoom_center_y << 10) +
 				(ratio_y >> 1)) / ratio_y;
 	end = ((h_in << 18) + (ratio_y >> 1)) / ratio_y + start - 1;
+	if (super_debug)
+		pr_info("top:start =%d,%d,%d,%d  %d,%d,%d\n",
+			start, end, video_top,
+			video_height, h_in, ratio_y, vpp_zoom_center_y);
 #else
 	start =
 		video_top + video_height / 2 - ((h_in << 17) +
 		(vpp_zoom_center_y << 10)) / ratio_y;
 	end = (h_in << 18) / ratio_y + start - 1;
+	if (super_debug)
+		pr_info("top:start =%d,%d,%d,%d  %d,%d,%d\n",
+			start, end, video_top,
+			video_height, h_in, ratio_y, vpp_zoom_center_y);
 #endif
 
 #ifdef TV_REVERSE
@@ -770,7 +1012,8 @@ RESTART:
 
 			} else
 				next_frame_par->VPP_vd_start_lines_ = 0;
-
+			temp_height = min((video_top + video_height - 1),
+			(vinfo->height - 1));
 		} else {
 			if (start < video_top) {
 				temp = ((video_top - start) * ratio_y) >> 18;
@@ -778,11 +1021,13 @@ RESTART:
 
 			} else
 				next_frame_par->VPP_vd_start_lines_ = 0;
+			temp_height = min((video_top + video_height - 1),
+			(vinfo->height - 1)) - video_top + 1;
 		}
 
 		temp =
 			next_frame_par->VPP_vd_start_lines_ +
-			(video_height * ratio_y >> 18);
+			(temp_height * ratio_y >> 18);
 		next_frame_par->VPP_vd_end_lines_ =
 			(temp <= (h_in - 1)) ? temp : (h_in - 1);
 	}
@@ -800,7 +1045,7 @@ RESTART:
 	[video_top, video_top+video_height-1]
 	*/
 	start = max(start, max(0, video_top));
-	end = min(end, min((s32) height_out - 1,
+	end = min(end, min((s32)(vinfo->height - 1),
 		(s32)(video_top + video_height - 1)));
 
 	if (start >= end) {
@@ -822,19 +1067,6 @@ RESTART:
 	ratio_y <<= height_shift;
 	ratio_y = ratio_y / (next_frame_par->vscale_skip_count + 1);
 
-	if (vpp_flags & VPP_FLAG_INTERLACE_OUT)
-		filter->vpp_vert_coeff = filter_table[COEF_BILINEAR];
-	else
-		filter->vpp_vert_coeff = filter_table[COEF_BICUBIC];
-#ifdef	TV_3D_FUNCTION_OPEN
-	if ((next_frame_par->vpp_3d_scale) && force_filter_mode)
-		filter->vpp_vert_coeff = vpp_3d_filter_coefs_bilinear;
-#endif
-
-#ifdef CONFIG_AM_DEINTERLACE
-	if (deinterlace_mode)
-		filter->vpp_vert_coeff = filter_table[COEF_3POINT_TRIANGLE];
-#endif
 	filter->vpp_vsc_start_phase_step = ratio_y << 6;
 
 	f2v_get_vertical_phase(ratio_y, ini_vphase,
@@ -849,15 +1081,8 @@ RESTART:
 	next_frame_par->VPP_hsc_linear_startp = next_frame_par->VPP_hsc_startp;
 	next_frame_par->VPP_hsc_linear_endp = next_frame_par->VPP_hsc_endp;
 
-	filter->vpp_horz_coeff = filter_table[COEF_BICUBIC];
-
 	filter->vpp_hsc_start_phase_step = ratio_x << 6;
 	next_frame_par->VPP_hf_ini_phase_ = vpp_zoom_center_x & 0xff;
-
-	if ((ratio_x == (1 << 18)) && (next_frame_par->VPP_hf_ini_phase_ == 0))
-		filter->vpp_horz_coeff = vpp_filter_coefs_bicubic_sharp;
-	else
-		filter->vpp_horz_coeff = filter_table[COEF_BICUBIC];
 
 	/* screen position for source */
 #ifdef TV_REVERSE
@@ -867,7 +1092,7 @@ RESTART:
 				(ratio_x >> 1)) / ratio_x;
 	end = ((w_in << 18) + (ratio_x >> 1)) / ratio_x + start - 1;
 	if (super_debug)
-		pr_info("start =%d,%d,%d,%d  %d,%d,%d\n",
+		pr_info("left:start =%d,%d,%d,%d  %d,%d,%d\n",
 			start, end, video_left,
 			video_width, w_in, ratio_x, vpp_zoom_center_x);
 #else
@@ -876,6 +1101,9 @@ RESTART:
 		(vpp_zoom_center_x << 10)) /
 		ratio_x;
 	end = (w_in << 18) / ratio_x + start - 1;
+	pr_info("left:start =%d,%d,%d,%d  %d,%d,%d\n",
+			start, end, video_left,
+			video_width, w_in, ratio_x, vpp_zoom_center_x);
 #endif
 	/* calculate source horizontal clip */
 #ifdef TV_REVERSE
@@ -908,7 +1136,8 @@ RESTART:
 
 			} else
 				next_frame_par->VPP_hd_start_lines_ = 0;
-
+			temp_width = min((video_left + video_width - 1),
+			(vinfo->width - 1));
 		} else {
 			if (start < video_left) {
 				temp = ((video_left - start) * ratio_x) >> 18;
@@ -916,11 +1145,12 @@ RESTART:
 
 			} else
 				next_frame_par->VPP_hd_start_lines_ = 0;
+			temp_width = min((video_left + video_width - 1),
+			(vinfo->width - 1)) - video_left + 1;
 		}
-
 		temp =
 			next_frame_par->VPP_hd_start_lines_ +
-			(video_width * ratio_x >> 18);
+			(temp_width * ratio_x >> 18);
 		next_frame_par->VPP_hd_end_lines_ =
 			(temp <= (w_in - 1)) ? temp : (w_in - 1);
 	}
@@ -939,28 +1169,21 @@ RESTART:
 	 */
 	start = max(start, max(0, video_left));
 	end = min(end,
-		min((s32) width_out - 1, (s32)(video_left + video_width - 1)));
+		min((s32)(vinfo->width - 1),
+		(s32)(video_left + video_width - 1)));
 
 	if (start >= end) {
 		/* nothing to display */
 		next_frame_par->VPP_hsc_startp = 0;
-
 		next_frame_par->VPP_hsc_endp = 0;
-
+		/* avoid mif set wrong or di out size overflow */
+		next_frame_par->VPP_hd_start_lines_ = 0;
+		next_frame_par->VPP_hd_end_lines_ = 0;
 	} else {
 		next_frame_par->VPP_hsc_startp = start;
 
 		next_frame_par->VPP_hsc_endp = end;
 	}
-
-	/* #if MESON_CPU_TYPE >= MESON_CPU_TYPE_MESON8 */
-	if ((get_cpu_type() >= MESON_CPU_MAJOR_ID_M8) && !is_meson_mtvd_cpu()) {
-		if (next_frame_par->VPP_line_in_length_ >= 2048) {
-			filter->vpp_vert_coeff =
-				filter_table[COEF_2POINT_BILINEAR];
-		}
-	}
-	/* #endif */
 
 	if ((wide_mode == VIDEO_WIDEOPTION_NONLINEAR) && (end > start)) {
 		calculate_non_linear_ratio(ratio_x, end - start,
@@ -996,8 +1219,9 @@ RESTART:
 				next_frame_par->vscale_skip_count += 2;
 			else {
 #ifdef TV_3D_FUNCTION_OPEN
-				if (next_frame_par->vpp_3d_mode ==
+				if ((next_frame_par->vpp_3d_mode ==
 					VPP_3D_MODE_LA)
+					&& (process_3d_type & MODE_3D_ENABLE))
 					next_frame_par->vscale_skip_count += 2;
 				else
 #endif
@@ -1009,14 +1233,158 @@ RESTART:
 			next_frame_par->hscale_skip_count = 1;
 	}
 
+	if ((vf->type & VIDTYPE_COMPRESS) &&
+		(vf->canvas0Addr != 0) &&
+		(next_frame_par->vscale_skip_count > 1) &&
+		(!next_frame_par->nocomp)) {
+		pr_info("Try DW buffer for compressed frame scaling.\n");
+
+		/* for VIDTYPE_COMPRESS, check if we can use double write
+		 * buffer when primary frame can not be scaled.
+		 */
+		next_frame_par->nocomp = true;
+		w_in = width_in = vf->width;
+		h_in = height_in = vf->height;
+		next_frame_par->hscale_skip_count = 0;
+		next_frame_par->vscale_skip_count = 0;
+
+		goto RESTART;
+	}
+
+	if ((skip_policy & 0xf0) && (skip_policy_check == true)) {
+		skip_policy_check = false;
+		if (skip_policy & 0x40) {
+			next_frame_par->vscale_skip_count = skip_policy & 0xf;
+			goto RESTART;
+		} else if (skip_policy & 0x80) {
+			if ((vf->width >= 4096) &&
+			(!(vf->type & VIDTYPE_COMPRESS))
+			&& (next_frame_par->vscale_skip_count == 0)) {
+				next_frame_par->vscale_skip_count =
+				skip_policy & 0xf;
+				goto RESTART;
+			}
+		}
+	}
+
 	filter->vpp_hsc_start_phase_step = ratio_x << 6;
 
+	/* coeff selection before skip and apply pre_scaler */
+	filter->vpp_vert_filter =
+		coeff(vert_coeff_settings,
+			filter->vpp_vsc_start_phase_step *
+				(next_frame_par->vscale_skip_count + 1),
+			1,
+			((vf->type_original & VIDTYPE_TYPEMASK)
+				!= VIDTYPE_PROGRESSIVE));
+	filter->vpp_vert_coeff =
+		filter_table[filter->vpp_vert_filter];
+
+	/* when local interlace or AV or ATV */
+	/* TODO: add 420 check for local */
+	if (vert_chroma_filter_force_en || (vert_chroma_filter_en
+	&& (((vf->source_type == VFRAME_SOURCE_TYPE_OTHERS)
+	 && ((vf->type_original & VIDTYPE_TYPEMASK) != VIDTYPE_PROGRESSIVE))
+	|| (vf->source_type == VFRAME_SOURCE_TYPE_CVBS)
+	|| (vf->source_type == VFRAME_SOURCE_TYPE_TUNER)))) {
+		cur_vert_chroma_filter
+			= chroma_filter_table[filter->vpp_vert_filter];
+		filter->vpp_vert_chroma_coeff
+			= filter_table[cur_vert_chroma_filter];
+		filter->vpp_vert_chroma_filter_en = true;
+	} else {
+		cur_vert_chroma_filter = COEF_NULL;
+		filter->vpp_vert_chroma_filter_en = false;
+	}
+
+	filter->vpp_horz_filter =
+		coeff(horz_coeff_settings,
+			filter->vpp_hf_start_phase_step,
+			next_frame_par->VPP_hf_ini_phase_,
+			((vf->type_original & VIDTYPE_TYPEMASK)
+				!= VIDTYPE_PROGRESSIVE));
+	/*for gxl cvbs out index*/
+	if ((vinfo->mode == VMODE_576CVBS) &&
+		(filter->vpp_hf_start_phase_step == (1 << 24)))
+		filter->vpp_horz_filter = COEF_BICUBIC_SHARP;
+	filter->vpp_horz_coeff =
+		filter_table[filter->vpp_horz_filter];
+
+	/* apply line skip */
 	if (next_frame_par->hscale_skip_count) {
 		filter->vpp_hf_start_phase_step >>= 1;
+		filter->vpp_hsc_start_phase_step >>= 1;
 		next_frame_par->VPP_line_in_length_ >>= 1;
 	}
 
+	/*pre hsc&vsc in pps for scaler down*/
+	if ((filter->vpp_hf_start_phase_step >= 0x2000000) &&
+		(filter->vpp_vsc_start_phase_step >= 0x2000000) &&
+		(get_cpu_type() != MESON_CPU_MAJOR_ID_GXBB) &&
+		pre_scaler_en) {
+		filter->vpp_pre_vsc_en = 1;
+		filter->vpp_vsc_start_phase_step >>= 1;
+		ratio_y >>= 1;
+		f2v_get_vertical_phase(ratio_y, ini_vphase,
+		next_frame_par->VPP_vf_ini_phase_,
+		vpp_flags & VPP_FLAG_INTERLACE_OUT);
+
+	} else
+		filter->vpp_pre_vsc_en = 0;
+
+	if ((filter->vpp_hf_start_phase_step >= 0x2000000) &&
+		(get_cpu_type() != MESON_CPU_MAJOR_ID_GXBB) &&
+		pre_scaler_en) {
+		filter->vpp_pre_hsc_en = 1;
+		filter->vpp_hf_start_phase_step >>= 1;
+		filter->vpp_hsc_start_phase_step >>= 1;
+	} else
+		filter->vpp_pre_hsc_en = 0;
+
 	next_frame_par->VPP_hf_ini_phase_ = vpp_zoom_center_x & 0xff;
+
+	/* overwrite filter setting for interlace output*/
+	/* TODO: not reasonable when 4K input to 480i output */
+	if (vpp_flags & VPP_FLAG_INTERLACE_OUT) {
+		filter->vpp_vert_coeff = filter_table[COEF_BILINEAR];
+		filter->vpp_vert_filter = COEF_BILINEAR;
+	}
+
+	/* force overwrite filter setting */
+	if ((vert_scaler_filter >= COEF_BICUBIC) &&
+		(vert_scaler_filter <= COEF_3D_FILTER)) {
+		filter->vpp_vert_coeff = filter_table[vert_scaler_filter];
+		filter->vpp_vert_filter = vert_scaler_filter;
+		if (vert_chroma_filter_force_en) {
+			cur_vert_chroma_filter
+				= chroma_filter_table[vert_scaler_filter];
+			filter->vpp_vert_chroma_coeff
+				= filter_table[cur_vert_chroma_filter];
+			filter->vpp_vert_chroma_filter_en = true;
+		} else {
+			cur_vert_chroma_filter = COEF_NULL;
+			filter->vpp_vert_chroma_filter_en = false;
+		}
+	}
+
+	if ((horz_scaler_filter >= COEF_BICUBIC) &&
+		(horz_scaler_filter <= COEF_3D_FILTER)) {
+		filter->vpp_horz_coeff = filter_table[horz_scaler_filter];
+		filter->vpp_horz_filter = horz_scaler_filter;
+	}
+
+#ifdef	TV_3D_FUNCTION_OPEN
+	/* final stage for 3D filter overwrite */
+	if ((next_frame_par->vpp_3d_scale) && force_filter_mode) {
+		filter->vpp_vert_coeff = filter_table[COEF_3D_FILTER];
+		filter->vpp_vert_filter = COEF_3D_FILTER;
+	}
+#endif
+
+	cur_vert_filter = filter->vpp_vert_filter;
+	cur_horz_filter = filter->vpp_horz_filter;
+	cur_skip_line = next_frame_par->vscale_skip_count;
+
 #if HAS_VPU_PROT
 	if (has_vpu_prot()) {
 		if (get_prot_status()) {
@@ -1077,10 +1445,13 @@ RESTART:
 	}
 #endif
 }
-
-#ifdef SUPER_SCALER_OPEN
-
-static int vpp_set_super_sclaer_regs(int scaler_path_sel,
+/*
+VPP_SRSHARP0_CTRL:0x1d91
+[0]srsharp0 enable for sharpness module reg r/w
+[1]if sharpness is enable or vscaler is enable,must set to 1,
+sharpness1;reg can only to be w
+*/
+int vpp_set_super_scaler_regs(int scaler_path_sel,
 		int reg_srscl0_enable,
 		int reg_srscl0_hsize,
 		int reg_srscl0_vsize,
@@ -1094,52 +1465,138 @@ static int vpp_set_super_sclaer_regs(int scaler_path_sel,
 {
 
 	int tmp_data = 0;
+	int tmp_data2 = 0;
 
-	tmp_data = (0xf << 4) |	/* enable y/c bic */
-		((reg_srscl0_vert_ratio & 0x1) << 2) |
-		((reg_srscl0_hori_ratio & 0x1) << 1) |
-		(reg_srscl0_enable & 0x1);
-	VSYNC_WR_MPEG_REG(SRSCL0_CTRL_MODE, tmp_data);
+	/* top config */
+	tmp_data = READ_VCBUS_REG(VPP_SRSHARP0_CTRL);
+	if (sr0_sr1_refresh) {
+		if (reg_srscl0_hsize > SUPER_CORE0_WIDTH_MAX) {
+			if (((tmp_data >> 1)&0x1) != 0)
+				VSYNC_WR_MPEG_REG_BITS(VPP_SRSHARP0_CTRL,
+					0, 1, 1);
+		} else {
+			if (((tmp_data >> 1)&0x1) != 1)
+				VSYNC_WR_MPEG_REG_BITS(VPP_SRSHARP0_CTRL,
+					1, 1, 1);
+		}
+		if ((tmp_data&0x1) != 1)
+			VSYNC_WR_MPEG_REG_BITS(VPP_SRSHARP0_CTRL, 1, 0, 1);
+	}
+	tmp_data = READ_VCBUS_REG(VPP_SRSHARP1_CTRL);
+	if (sr0_sr1_refresh) {
+		if (((tmp_data >> 1)&0x1) != 1)
+			VSYNC_WR_MPEG_REG_BITS(VPP_SRSHARP1_CTRL, 1, 1, 1);
+		if ((tmp_data&0x1) != 1)
+			VSYNC_WR_MPEG_REG_BITS(VPP_SRSHARP1_CTRL, 1, 0, 1);
+	}
+	/* core0 config */
+	tmp_data = READ_VCBUS_REG(SRSHARP0_SHARP_SR2_CTRL);
+	if (sr0_sr1_refresh) {
+		if (((tmp_data >> 5)&0x1) != (reg_srscl0_vert_ratio&0x1))
+			VSYNC_WR_MPEG_REG_BITS(SRSHARP0_SHARP_SR2_CTRL,
+				reg_srscl0_vert_ratio&0x1, 5, 1);
+		if (((tmp_data >> 4)&0x1) != (reg_srscl0_hori_ratio&0x1))
+			VSYNC_WR_MPEG_REG_BITS(SRSHARP0_SHARP_SR2_CTRL,
+				reg_srscl0_hori_ratio&0x1, 4, 1);
 
-	tmp_data = (0xf << 4) |	/* enable y/c bic */
-		((reg_srscl1_vert_ratio & 0x1) << 2) |
-		((reg_srscl1_hori_ratio & 0x1) << 1) |
-		(reg_srscl1_enable & 0x1);
-	VSYNC_WR_MPEG_REG(SRSCL1_CTRL_MODE, tmp_data);
+		if (reg_srscl0_hsize > SUPER_CORE0_WIDTH_MAX) {
+			if (((tmp_data >> 2)&0x1) != 0)
+				VSYNC_WR_MPEG_REG_BITS(SRSHARP0_SHARP_SR2_CTRL,
+					0, 2, 1);
+		} else {
+			if (((tmp_data >> 2)&0x1) != 1)
+				VSYNC_WR_MPEG_REG_BITS(SRSHARP0_SHARP_SR2_CTRL,
+					1, 2, 1);
+		}
 
+		if ((tmp_data & 0x1) == (reg_srscl0_hori_ratio&0x1))
+			VSYNC_WR_MPEG_REG_BITS(SRSHARP0_SHARP_SR2_CTRL,
+				((~(reg_srscl0_hori_ratio&0x1))&0x1), 0, 1);
+	}
+	/* core1 config */
+	tmp_data = sharpness1_sr2_ctrl_32d7;
+	/*if ((((tmp_data >> 5)&0x1) != (reg_srscl1_vert_ratio&0x1)) ||
+		(((tmp_data >> 4)&0x1) != (reg_srscl1_hori_ratio&0x1)) ||
+		((tmp_data & 0x1) == (reg_srscl1_hori_ratio&0x1)) ||
+		(((tmp_data >> 2)&0x1) != 1)) {*/
+	if (1) {/* modify for avoid reg not be write@20160505 */
+		tmp_data = tmp_data & (~(1 << 5));
+		tmp_data = tmp_data & (~(1 << 4));
+		tmp_data = tmp_data & (~(1 << 2));
+		tmp_data = tmp_data & (~(1 << 0));
+		tmp_data |= ((reg_srscl1_vert_ratio&0x1) << 5);
+		tmp_data |= ((reg_srscl1_hori_ratio&0x1) << 4);
+		tmp_data |= (1 << 2);
+		tmp_data |= (((~(reg_srscl1_hori_ratio&0x1))&0x1) << 0);
+		if (sr0_sr1_refresh) {
+			VSYNC_WR_MPEG_REG(SRSHARP1_SHARP_SR2_CTRL, tmp_data);
+			sharpness1_sr2_ctrl_32d7 = tmp_data;
+		}
+	}
+
+	/* size config */
 	tmp_data = ((reg_srscl0_hsize & 0x1fff) << 16) |
 			   (reg_srscl0_vsize & 0x1fff);
-	VSYNC_WR_MPEG_REG(SRSCL0_HV_SIZEIN, tmp_data);
+	tmp_data2 = READ_VCBUS_REG(SRSHARP0_SHARP_SR2_CTRL);
+	if (tmp_data != tmp_data2)
+		VSYNC_WR_MPEG_REG(SRSHARP0_SHARP_HVSIZE, tmp_data);
 
 	tmp_data = ((reg_srscl1_hsize & 0x1fff) << 16) |
 			   (reg_srscl1_vsize & 0x1fff);
-	VSYNC_WR_MPEG_REG(SRSCL1_HV_SIZEIN, tmp_data);
+	if (1) {/*(sharpness1_sr2_ctrl_3280 != tmp_data) {*/
+		VSYNC_WR_MPEG_REG(SRSHARP1_SHARP_HVSIZE, tmp_data);
+		sharpness1_sr2_ctrl_3280 = tmp_data;
+	}
 
-	VSYNC_WR_MPEG_REG_BITS(VPP_VE_ENABLE_CTRL, scaler_path_sel, 5, 1);
+	if (scaler_path_sel == sup0_pp_sp1_scpath) {
+		tmp_data = ((reg_srscl1_hsize & 0x1fff) << 16) |
+				   (reg_srscl1_vsize & 0x1fff);
+		tmp_data2 = READ_VCBUS_REG(VPP_VE_H_V_SIZE);
+		if (tmp_data != tmp_data2)
+			VSYNC_WR_MPEG_REG(VPP_VE_H_V_SIZE, tmp_data);
+	} else if (scaler_path_sel == sup0_pp_post_blender) {
+		tmp_data = ((reg_srscl1_hsize & 0x1fff) << 16) |
+				   (reg_srscl1_vsize & 0x1fff);
+		tmp_data2 = READ_VCBUS_REG(VPP_PSR_H_V_SIZE);
+		if (tmp_data != tmp_data2)
+			VSYNC_WR_MPEG_REG(VPP_PSR_H_V_SIZE, tmp_data);
+	}
+
+	/* path config */
+	tmp_data2 = (READ_VCBUS_REG(VPP_VE_ENABLE_CTRL) >> 5)&0x1;
+	if (tmp_data2 != scaler_path_sel)
+		VSYNC_WR_MPEG_REG_BITS(VPP_VE_ENABLE_CTRL,
+			scaler_path_sel, 5, 1);
 
 	return 0;
 }
 
-static void vpp_set_scaler(u32 src_width,
+static void vpp_set_scaler(u32 process_3d_type, u32 src_width,
 			u32 src_height,
 			const struct vinfo_s *vinfo,
 			u32 vpp_flags,
 			struct vpp_frame_par_s *next_frame_par,
 			struct vframe_s *vf)
 {
-
-	unsigned int spsc0_h_in, spsc0_w_in, spsc1_h_in, spsc1_w_in;
-	unsigned int spsc0_h_out, spsc0_w_out, spsc1_h_out, spsc1_w_out;
+	unsigned int spsc1_h_out, spsc1_w_out;
 	unsigned int ppsc_h_in, ppsc_w_in;
 	unsigned int ppsc_h_out, ppsc_w_out;
 	unsigned int hor_sc_multiple_num, ver_sc_multiple_num;
 	bool h_crop_enable = false, v_crop_enable = false;
 	u32 width_out = vinfo->width;
 	u32 height_out = vinfo->height;
+
+	if (video_layer_width > 0 && video_layer_width <= vinfo->width
+	&& ((video_layer_width + video_layer_left) <= vinfo->width))
+		width_out = video_layer_width;
+	if (video_layer_height > 0 && video_layer_height <= vinfo->height
+	&& ((video_layer_height + video_layer_top) <= vinfo->height))
+		height_out = video_layer_height;
+
 	if ((likely(src_width >
 		(video_source_crop_left + video_source_crop_right)))
 		&& (super_scaler == 1)) {
-		src_widh -= video_source_crop_left + video_source_crop_right;
+		src_width -= video_source_crop_left + video_source_crop_right;
 		h_crop_enable = true;
 	}
 
@@ -1151,17 +1608,28 @@ static void vpp_set_scaler(u32 src_width,
 		v_crop_enable = true;
 	}
 	hor_sc_multiple_num = width_out / src_width;
-	ver_sc_multiple_num = height_out / src_height;
+	ver_sc_multiple_num = height_out*SUPER_SCALER_V_FACTOR / src_height;
 
 	/* just calcuate the enable sclaer module */
-	if ((hor_sc_multiple_num >= 4) || (ver_sc_multiple_num >= 4)) {
-		next_frame_par->supsc0_enable = 1;
-		next_frame_par->supsc1_enable = 1;
-	} else if ((hor_sc_multiple_num >= 2) || (ver_sc_multiple_num >= 2)) {
-		if (src_width > SUPER_CORE0_WIDTH_MAX
-			&& src_width <= SUPER_CORE1_WIDTH_MAX) {
+	if ((hor_sc_multiple_num >= 4) || (ver_sc_multiple_num >=
+				(4*SUPER_SCALER_V_FACTOR))) {
+		if (bypass_spscl0 == 0)
+			next_frame_par->supsc0_enable = 1;
+		if (bypass_spscl1 == 0)
+			next_frame_par->supsc1_enable = 1;
+	} else if ((hor_sc_multiple_num >= 2) || (ver_sc_multiple_num >=
+				(2*SUPER_SCALER_V_FACTOR))) {
+		if (((src_width > SUPER_CORE0_WIDTH_MAX/2)
+			&& (src_width <= SUPER_CORE0_WIDTH_MAX)
+			&& (bypass_spscl1 == 0))
+			|| (bypass_spscl0 == 1)) {
 			next_frame_par->supsc0_enable = 0;
 			next_frame_par->supsc1_enable = 1;
+		} else if ((src_width > SUPER_CORE0_WIDTH_MAX/2)
+			&& (src_width <= SUPER_CORE0_WIDTH_MAX)
+			&& (bypass_spscl1 == 1)) {
+			next_frame_par->supsc0_enable = 0;
+			next_frame_par->supsc1_enable = 0;
 		} else {
 			next_frame_par->supsc0_enable = 1;
 			next_frame_par->supsc1_enable = 0;
@@ -1170,10 +1638,27 @@ static void vpp_set_scaler(u32 src_width,
 		next_frame_par->supsc0_enable = 0;
 		next_frame_par->supsc1_enable = 0;
 	}
-	if (hor_sc_multiple_num >= 4) {
-		next_frame_par->supsc0_hori_ratio = 1;
-		next_frame_par->supsc1_hori_ratio = 1;
-	} else if (hor_sc_multiple_num >= 2) {
+	if (src_width > SUPER_CORE0_WIDTH_MAX)
+		next_frame_par->supsc0_enable = 0;
+	if (width_out > SUPER_CORE1_WIDTH_MAX*2)
+		next_frame_par->supsc1_enable = 0;
+
+	if (ver_sc_multiple_num >= (2*SUPER_SCALER_V_FACTOR)) {
+		if (src_width > SUPER_CORE0_WIDTH_MAX/2)
+			next_frame_par->supsc0_vert_ratio = 0;
+		else
+			next_frame_par->supsc0_vert_ratio =
+				next_frame_par->supsc0_enable ? 1 : 0;
+		if (width_out > SUPER_CORE1_WIDTH_MAX*2)
+			next_frame_par->supsc1_vert_ratio = 0;
+		else
+			next_frame_par->supsc1_vert_ratio =
+				next_frame_par->supsc1_enable ? 1 : 0;
+	} else {
+		next_frame_par->supsc0_vert_ratio = 0;
+		next_frame_par->supsc1_vert_ratio = 0;
+	}
+	if (hor_sc_multiple_num >= 2) {
 		next_frame_par->supsc0_hori_ratio =
 			next_frame_par->supsc0_enable ? 1 : 0;
 		next_frame_par->supsc1_hori_ratio =
@@ -1181,19 +1666,20 @@ static void vpp_set_scaler(u32 src_width,
 	} else {
 		next_frame_par->supsc0_hori_ratio = 0;
 		next_frame_par->supsc1_hori_ratio = 0;
-	}
-
-	if (ver_sc_multiple_num >= 4) {
-		next_frame_par->supsc0_vert_ratio = 1;
-		next_frame_par->supsc1_vert_ratio = 1;
-	} else if (ver_sc_multiple_num >= 2) {
-		next_frame_par->supsc0_vert_ratio =
-			next_frame_par->supsc0_enable ? 1 : 0;
-		next_frame_par->supsc1_vert_ratio =
-			next_frame_par->supsc1_enable ? 1 : 0;
-	} else {
 		next_frame_par->supsc0_vert_ratio = 0;
 		next_frame_par->supsc1_vert_ratio = 0;
+	}
+	if ((ver_sc_multiple_num <= super_scaler_v_ratio) &&
+		(src_height >= SUPER_CORE0_WIDTH_MAX/2) &&
+		(src_height <= 1088) &&
+		(ver_sc_multiple_num > SUPER_SCALER_V_FACTOR) &&
+		(vinfo->height >= 2000)) {
+		next_frame_par->supsc0_enable = 0;
+		next_frame_par->supsc1_enable = 1;
+		next_frame_par->supsc0_hori_ratio = 0;
+		next_frame_par->supsc1_hori_ratio = 1;
+		next_frame_par->supsc0_vert_ratio = 0;
+		next_frame_par->supsc1_vert_ratio = 1;
 	}
 	if (bypass_spscl0) {
 		next_frame_par->supsc0_enable = 0;
@@ -1205,8 +1691,8 @@ static void vpp_set_scaler(u32 src_width,
 		next_frame_par->supsc1_hori_ratio = 0;
 		next_frame_par->supsc1_vert_ratio = 0;
 	}
-	spsc0_h_in = src_height;
-	spsc0_w_in = src_width;
+	next_frame_par->spsc0_h_in = src_height;
+	next_frame_par->spsc0_w_in = src_width;
 	if (super_debug)
 		pr_info(
 		"supsc0_hori=%d,supsc1_hori=%d,supsc0_v=%d,supsc1_v=%d\n",
@@ -1214,77 +1700,59 @@ static void vpp_set_scaler(u32 src_width,
 		 next_frame_par->supsc1_hori_ratio,
 		 next_frame_par->supsc0_vert_ratio,
 		 next_frame_par->supsc1_vert_ratio);
-	/* select the scaler path:[super 1   =>>
-	ppscaler  =>>  super 2 ]  or
-	[super 1   =>>   super 2  =>>  ppsaler] */
-	if (next_frame_par->supscl_path == sup0_sp1_pp_scpath) {
-		ppsc_h_out = height_out;
-		ppsc_w_out = width_out;
-		spsc1_h_in = spsc0_h_out =
-			(spsc0_h_in << next_frame_par->supsc0_vert_ratio);
-		spsc1_w_in = spsc0_w_out =
-			(spsc0_w_in << next_frame_par->supsc0_hori_ratio);
-		ppsc_h_in = spsc1_h_out =
-			(spsc1_h_in << next_frame_par->supsc1_vert_ratio);
-		ppsc_w_in = spsc1_w_out =
-			(spsc1_w_in << next_frame_par->supsc1_hori_ratio);
+	/* select the scaler path:[core0 =>>
+	ppscaler =>> core1]  or
+	[core0  =>> ppscaler =>> postblender =>> core1]*/
+	ppsc_h_in = (next_frame_par->spsc0_h_in <<
+		next_frame_par->supsc0_vert_ratio);
+	ppsc_w_in = (next_frame_par->spsc0_w_in <<
+		next_frame_par->supsc0_hori_ratio);
+	spsc1_h_out = height_out;
+	spsc1_w_out = width_out;
+	ppsc_h_out =
+		(spsc1_h_out >> next_frame_par->supsc1_vert_ratio);
+	ppsc_w_out =
+		(spsc1_w_out >> next_frame_par->supsc1_hori_ratio);
+	next_frame_par->spsc1_h_in = ppsc_h_out;
+	next_frame_par->spsc1_w_in = ppsc_w_out;
 
-	} else if (next_frame_par->supscl_path == sup0_pp_sp1_scpath) {
-		ppsc_h_in = (spsc0_h_in << next_frame_par->supsc0_vert_ratio);
-		ppsc_w_in = (spsc0_w_in << next_frame_par->supsc0_hori_ratio);
-		spsc1_h_out = height_out;
-		spsc1_w_out = width_out;
-		ppsc_h_out =
-			(spsc1_h_out >> next_frame_par->supsc1_vert_ratio);
-		ppsc_w_out =
-			(spsc1_w_out >> next_frame_par->supsc1_hori_ratio);
-		spsc1_h_in = ppsc_h_out;
-		spsc1_w_in = ppsc_w_out;
-
-	} else {
-		next_frame_par->supsc0_enable = 0;
-		next_frame_par->supsc1_enable = 0;
-		ppsc_h_in = src_height;
-		ppsc_w_in = src_width;
-		ppsc_h_out = height_out;
-		ppsc_w_out = width_out;
-		spsc1_h_in = 0;
-		spsc1_w_in = 0;
-		/* spsc1_h_in  spsc1_w_in are just iinitialized */
-	}
-	vpp_set_filters2(ppsc_w_in, ppsc_h_in, ppsc_w_out, ppsc_h_out, vinfo,
-					 vpp_flags, next_frame_par, vf);
+	vpp_set_filters2(process_3d_type, ppsc_w_in,
+	ppsc_h_in, ppsc_w_out, ppsc_h_out, vinfo,
+	vpp_flags, next_frame_par, vf);
 	if (next_frame_par->supscl_path == sup0_pp_sp1_scpath) {
-		spsc1_h_in = next_frame_par->VPP_vsc_endp -
+		next_frame_par->spsc1_h_in = next_frame_par->VPP_vsc_endp -
 			next_frame_par->VPP_vsc_startp + 1;
 		/* (ppsc_h_in<<18)/
 		(next_frame_par->vpp_filter.vpp_vsc_start_phase_step>>6); */
-		spsc1_w_in = next_frame_par->VPP_hsc_endp -
+		next_frame_par->spsc1_w_in = next_frame_par->VPP_hsc_endp -
 			next_frame_par->VPP_hsc_startp + 1;
 		/* (ppsc_w_in<<18)/
 		(next_frame_par->vpp_filter.vpp_hsc_start_phase_step>>6); */
 	}
-	vpp_set_super_sclaer_regs(next_frame_par->supscl_path,
+	/*vpp_set_super_sclaer_regs(next_frame_par->supscl_path,
 		next_frame_par->supsc0_enable,
-		spsc0_w_in,
-		spsc0_h_in,
+		next_frame_par->spsc0_w_in,
+		next_frame_par->spsc0_h_in,
 		next_frame_par->supsc0_hori_ratio,
 		next_frame_par->supsc0_vert_ratio,
 		next_frame_par->supsc1_enable,
-		spsc1_w_in,
-		spsc1_h_in,
+		next_frame_par->spsc1_w_in,
+		next_frame_par->spsc1_h_in,
 		next_frame_par->supsc1_hori_ratio,
-		next_frame_par->supsc1_vert_ratio);
-	if (super_debug)
+		next_frame_par->supsc1_vert_ratio);*/
+	if (super_debug) {
 		pr_info
 		("ppsc_w_in=%u, ppsc_h_in=%u, ppsc_w_out=%u, ppsc_h_out=%u.\n",
 		 ppsc_w_in, ppsc_h_in, ppsc_w_out, ppsc_h_out);
-
+		pr_info("spsc0_w_in=%u, spsc0_h_in=%u, spsc1_w_in=%u, spsc1_h_in=%u.\n",
+		 next_frame_par->spsc0_w_in, next_frame_par->spsc0_h_in,
+		 next_frame_par->spsc1_w_in, next_frame_par->spsc1_h_in);
+	}
 	/* vpp_set_ppsclaer(src_width,src_height,ppsc_w_in,
 	* ppsc_h_in,vinfo,vpp_flags,next_frame_par); */
 	/* cause the next_frame_par amlost were set at ppsclaer,
 	and new supper scaler maybe need to change the param . */
-	if ((next_frame_par->supscl_path == sup0_sp1_pp_scpath)
+	if ((next_frame_par->supscl_path == sup0_pp_post_blender)
 		&& (next_frame_par->supsc1_enable)) {
 		next_frame_par->VPP_hd_start_lines_ >>=
 			next_frame_par->supsc1_hori_ratio;
@@ -1310,8 +1778,8 @@ static void vpp_set_scaler(u32 src_width,
 	}
 	if (next_frame_par->supscl_path == sup0_pp_sp1_scpath) {
 		/* zoom in the under parm because super scaler1 is open */
-		next_frame_par->VPP_hsc_startp <<= next_frame_par->
-			supsc1_hori_ratio;
+		next_frame_par->VPP_hsc_startp <<=
+			next_frame_par->supsc1_hori_ratio;
 		next_frame_par->VPP_hsc_endp = (next_frame_par->VPP_hsc_endp <<
 			next_frame_par->supsc1_hori_ratio) +
 			next_frame_par->supsc1_hori_ratio;
@@ -1325,8 +1793,9 @@ static void vpp_set_scaler(u32 src_width,
 		next_frame_par->VPP_vsc_startp <<=
 			next_frame_par->supsc1_vert_ratio;
 		next_frame_par->VPP_vsc_endp =
-			(next_frame_par->VPP_vsc_endp << next_frame_par->
-			supsc1_vert_ratio) + next_frame_par->supsc1_vert_ratio;
+			(next_frame_par->VPP_vsc_endp <<
+			next_frame_par->supsc1_vert_ratio) +
+			next_frame_par->supsc1_vert_ratio;
 	}
 
 	if (h_crop_enable) {
@@ -1341,17 +1810,46 @@ static void vpp_set_scaler(u32 src_width,
 
 }
 
-#endif
 #ifdef TV_3D_FUNCTION_OPEN
-
+void get_vpp_3d_mode(u32 trans_fmt, u32 *vpp_3d_mode)
+{
+	switch (trans_fmt) {
+	case TVIN_TFMT_3D_LRH_OLOR:
+	case TVIN_TFMT_3D_LRH_OLER:
+	case TVIN_TFMT_3D_LRH_ELOR:
+	case TVIN_TFMT_3D_LRH_ELER:
+	case TVIN_TFMT_3D_DET_LR:
+		*vpp_3d_mode = VPP_3D_MODE_LR;
+		break;
+	case TVIN_TFMT_3D_FP:
+	case TVIN_TFMT_3D_TB:
+	case TVIN_TFMT_3D_DET_TB:
+	case TVIN_TFMT_3D_FA:
+		*vpp_3d_mode = VPP_3D_MODE_TB;
+		break;
+	case TVIN_TFMT_3D_LA:
+	case TVIN_TFMT_3D_DET_INTERLACE:
+		*vpp_3d_mode = VPP_3D_MODE_LA;
+		break;
+	case TVIN_TFMT_3D_DET_CHESSBOARD:
+	default:
+		*vpp_3d_mode = VPP_3D_MODE_NULL;
+		break;
+	}
+}
 static void
 vpp_get_video_source_size(u32 *src_width, u32 *src_height,
 	u32 process_3d_type, struct vframe_s *vf,
 	struct vpp_frame_par_s *next_frame_par)
 {
 
-	if (process_3d_type & MODE_3D_AUTO) {
-
+	if ((process_3d_type & MODE_3D_AUTO) ||
+	(((process_3d_type & MODE_3D_TO_2D_R) ||
+	(process_3d_type & MODE_3D_TO_2D_L) ||
+	(process_3d_type & MODE_3D_LR_SWITCH) ||
+	(process_3d_type & MODE_FORCE_3D_TO_2D_TB) ||
+	(process_3d_type & MODE_FORCE_3D_TO_2D_LR)) &&
+	(process_3d_type & MODE_3D_ENABLE))) {
 		if (vf->trans_fmt) {
 			if (process_3d_type & MODE_3D_TO_2D_MASK)
 				*src_height = vf->left_eye.height;
@@ -1391,7 +1889,7 @@ vpp_get_video_source_size(u32 *src_width, u32 *src_height,
 			*src_width = vf->width;
 			*src_height = vf->height;
 			next_frame_par->vpp_3d_mode = VPP_3D_MODE_NULL;
-			next_frame_par->vpp_3d_scale = 1;
+			next_frame_par->vpp_3d_scale = 0;
 			next_frame_par->vpp_2pic_mode = 0;
 			break;
 		}
@@ -1466,13 +1964,17 @@ vpp_get_video_source_size(u32 *src_width, u32 *src_height,
 	}
 	/*process 3d->2d or l/r switch case */
 	if ((VPP_3D_MODE_NULL != next_frame_par->vpp_3d_mode) &&
-		(VPP_3D_MODE_LA != next_frame_par->vpp_3d_mode)) {
+		(VPP_3D_MODE_LA != next_frame_par->vpp_3d_mode)
+		&& (process_3d_type & MODE_3D_ENABLE)) {
 		if (process_3d_type & MODE_3D_TO_2D_R)
 			next_frame_par->vpp_2pic_mode = VPP_SELECT_PIC1;
 		else if (process_3d_type & MODE_3D_TO_2D_L)
 			next_frame_par->vpp_2pic_mode = VPP_SELECT_PIC0;
 		else if (process_3d_type & MODE_3D_LR_SWITCH)
 			next_frame_par->vpp_2pic_mode |= VPP_PIC1_FIRST;
+		if ((process_3d_type & MODE_FORCE_3D_TO_2D_LR) ||
+		(process_3d_type & MODE_FORCE_3D_TO_2D_TB))
+			next_frame_par->vpp_2pic_mode = VPP_SELECT_PIC0;
 
 		/*only display one pic */
 		if ((next_frame_par->vpp_2pic_mode & 0x3) == 0)
@@ -1515,13 +2017,20 @@ vpp_set_filters(u32 process_3d_type, u32 wide_mode,
 		vpp_get_video_source_size(&src_width, &src_height,
 			process_3d_type, vf, next_frame_par);
 	} else {
-		src_width = vf->width;
-	src_height = vf->height;
+		if (vf->type & VIDTYPE_COMPRESS) {
+			src_width = vf->compWidth;
+			src_height = vf->compHeight;
+		} else {
+			src_width = vf->width;
+			src_height = vf->height;
+		}
 		next_frame_par->vpp_3d_mode = VPP_3D_MODE_NULL;
 		next_frame_par->vpp_2pic_mode = 0;
 		next_frame_par->vpp_3d_scale = 0;
 	}
-
+	next_frame_par->trans_fmt = vf->trans_fmt;
+	get_vpp_3d_mode(next_frame_par->trans_fmt,
+		&next_frame_par->vpp_3d_mode);
 	if (vpp_3d_scale)
 		next_frame_par->vpp_3d_scale = 1;
 	amlog_mask(LOG_MASK_VPP, "%s: src_width %u,src_height %u.\n", __func__,
@@ -1557,9 +2066,25 @@ vpp_set_filters(u32 process_3d_type, u32 wide_mode,
 	if (vf->type & VIDTYPE_VSCALE_DISABLE)
 		vpp_flags |= VPP_FLAG_VSCALE_DISABLE;
 #ifndef TV_3D_FUNCTION_OPEN
-	src_width = vf->width;
-	src_height = vf->height;
+	if (vf->type & VIDTYPE_COMPRESS) {
+		src_width = vf->compWidth;
+		src_height = vf->compHeight;
+	} else {
+		src_width = vf->width;
+		src_height = vf->height;
+	}
 #endif
+	if (vf->type & VIDTYPE_MVC) {
+		video_source_crop_top = 0;
+		video_source_crop_left = 0;
+		video_source_crop_bottom = 0;
+		video_source_crop_right = 0;
+	} else {
+		video_source_crop_top = video_crop_top_resv;
+		video_source_crop_left = video_crop_left_resv;
+		video_source_crop_bottom = video_crop_bottom_resv;
+		video_source_crop_right = video_crop_right_resv;
+	}
 	vpp_wide_mode = wide_mode;
 	vpp_flags |= wide_mode | (aspect_ratio << VPP_FLAG_AR_BITS);
 
@@ -1570,42 +2095,50 @@ vpp_set_filters(u32 process_3d_type, u32 wide_mode,
 	next_frame_par->VPP_post_blend_vd_h_end_ = vinfo->width - 1;
 	next_frame_par->VPP_post_blend_h_size_ = vinfo->width;
 
-#ifdef SUPER_SCALER_OPEN
-	if (super_scaler
-		&& (vpp_wide_mode != VIDEO_WIDEOPTION_NORMAL_NOSCALEUP)) {
-		next_frame_par->supscl_path = scaler_path_sel;
-		vpp_set_scaler(src_width, src_height,
-			vinfo, vpp_flags, next_frame_par, vf);
-	} else {
-		next_frame_par->supsc0_enable = 0;
-		next_frame_par->supsc0_hori_ratio = 0;
-		next_frame_par->supsc0_vert_ratio = 0;
+	if (get_cpu_type() >= MESON_CPU_MAJOR_ID_GXTVBB) {
+		if (super_scaler &&
+		(vpp_wide_mode != VIDEO_WIDEOPTION_NORMAL_NOSCALEUP)
+		&& (!(vf->type & VIDTYPE_PIC))
+		&& ((video_layer_width + video_layer_left) <= vinfo->width)) {
+			next_frame_par->supscl_path = scaler_path_sel;
+			vpp_set_scaler(process_3d_type, src_width, src_height,
+				vinfo, vpp_flags, next_frame_par, vf);
+		} else {
+			next_frame_par->supsc0_enable = 0;
+			next_frame_par->supsc0_hori_ratio = 0;
+			next_frame_par->supsc0_vert_ratio = 0;
 
 		next_frame_par->supsc1_enable = 0;
 		next_frame_par->supsc1_hori_ratio = 0;
 		next_frame_par->supsc1_vert_ratio = 0;
-		vpp_set_super_sclaer_regs(0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-				0);	/* disable super scaler */
-		vpp_set_filters2(src_width, src_height, vinfo->width,
-				vinfo->height, vinfo, vpp_flags,
-				next_frame_par, vf);
-	}
-	if (super_debug)
-		pr_info("VPP_hd_start_lines= %d,%d,%d,%d, %d,%d,%d,%d, %d,%d\n",
-		 next_frame_par->VPP_hd_start_lines_,
-		 next_frame_par->VPP_hd_end_lines_,
-		 next_frame_par->VPP_vd_start_lines_,
-		 next_frame_par->VPP_vd_end_lines_,
-		 next_frame_par->VPP_hsc_startp,
-		 next_frame_par->VPP_hsc_endp,
-		 next_frame_par->VPP_hsc_linear_startp,
-		 next_frame_par->VPP_hsc_linear_endp,
-		 next_frame_par->VPP_vsc_startp,
-		 next_frame_par->VPP_vsc_endp);
-#else
-	vpp_set_filters2(src_width, src_height, vinfo->width, vinfo->height,
+
+		next_frame_par->spsc0_w_in = src_width;
+		next_frame_par->spsc0_h_in = src_height;
+		next_frame_par->spsc1_w_in = vinfo->width;
+		next_frame_par->spsc1_h_in = vinfo->height;
+
+		vpp_set_filters2(process_3d_type, src_width,
+		src_height, vinfo->width,
+		vinfo->height, vinfo, vpp_flags,
+		next_frame_par, vf);
+		}
+		if (super_debug)
+			pr_info("VPP_hd_start_lines= %d,%d,%d,%d, %d,%d,%d,%d, %d,%d\n",
+			 next_frame_par->VPP_hd_start_lines_,
+			 next_frame_par->VPP_hd_end_lines_,
+			 next_frame_par->VPP_vd_start_lines_,
+			 next_frame_par->VPP_vd_end_lines_,
+			 next_frame_par->VPP_hsc_startp,
+			 next_frame_par->VPP_hsc_endp,
+			 next_frame_par->VPP_hsc_linear_startp,
+			 next_frame_par->VPP_hsc_linear_endp,
+			 next_frame_par->VPP_vsc_startp,
+			 next_frame_par->VPP_vsc_endp);
+	} else {
+		vpp_set_filters2(process_3d_type, src_width, src_height,
+			vinfo->width, vinfo->height,
 			vinfo, vpp_flags, next_frame_par, vf);
-#endif
+	}
 }
 
 void prot_get_parameter(u32 wide_mode,
@@ -1617,6 +2150,7 @@ void prot_get_parameter(u32 wide_mode,
 	u32 src_height = 0;
 	u32 vpp_flags = 0;
 	u32 aspect_ratio = 0;
+	u32 process_3d_type = VPP_3D_MODE_NULL;
 
 	BUG_ON(vinfo == NULL);
 
@@ -1664,12 +2198,15 @@ void prot_get_parameter(u32 wide_mode,
 	if (vinfo->field_height != vinfo->height)
 		vpp_flags |= VPP_FLAG_INTERLACE_OUT;
 
-	next_frame_par->VPP_post_blend_vd_v_end_ = vinfo->field_height - 1;
-	next_frame_par->VPP_post_blend_vd_h_end_ = vinfo->width - 1;
+	next_frame_par->VPP_post_blend_vd_v_end_ =
+	vinfo->field_height - 1;
+	next_frame_par->VPP_post_blend_vd_h_end_ =
+	vinfo->width - 1;
 	next_frame_par->VPP_post_blend_h_size_ = vinfo->width;
 
-	vpp_set_filters2(src_width, src_height, vinfo->width, vinfo->height,
-					 vinfo, vpp_flags, next_frame_par, vf);
+	vpp_set_filters2(process_3d_type, src_width, src_height,
+	vinfo->width, vinfo->height,
+	vinfo, vpp_flags, next_frame_par, vf);
 }
 
 void vpp_set_osd_layer_preblend(u32 *enable)
@@ -1694,18 +2231,18 @@ void vpp_set_osd_layer_position(s32 *para)
 
 void vpp_set_video_source_crop(u32 t, u32 l, u32 b, u32 r)
 {
-	video_source_crop_top = t;
-	video_source_crop_left = l;
-	video_source_crop_bottom = b;
-	video_source_crop_right = r;
+	video_crop_top_resv = t;
+	video_crop_left_resv = l;
+	video_crop_bottom_resv = b;
+	video_crop_right_resv = r;
 }
 
 void vpp_get_video_source_crop(u32 *t, u32 *l, u32 *b, u32 *r)
 {
-	*t = video_source_crop_top;
-	*l = video_source_crop_left;
-	*b = video_source_crop_bottom;
-	*r = video_source_crop_right;
+	*t = video_crop_top_resv;
+	*l = video_crop_left_resv;
+	*b = video_crop_bottom_resv;
+	*r = video_crop_right_resv;
 }
 
 void vpp_set_video_layer_position(s32 x, s32 y, s32 w, s32 h)
@@ -1781,3 +2318,15 @@ void vpp_set_3d_scale(bool enable)
 	vpp_3d_scale = enable;
 }
 #endif
+
+void vpp_super_scaler_support(void)
+{
+	if ((get_cpu_type() == MESON_CPU_MAJOR_ID_GXTVBB) ||
+		(get_cpu_type() == MESON_CPU_MAJOR_ID_TXL))
+		super_scaler = 1;
+	else
+		super_scaler = 0;
+}
+
+
+

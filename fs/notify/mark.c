@@ -109,7 +109,6 @@ void fsnotify_put_mark(struct fsnotify_mark *mark)
 		mark->free_mark(mark);
 	}
 }
-EXPORT_SYMBOL(fsnotify_put_mark);
 
 /*
  * Any time a mark is getting freed we end up here.
@@ -192,7 +191,6 @@ void fsnotify_destroy_mark(struct fsnotify_mark *mark,
 	fsnotify_destroy_mark_locked(mark, group);
 	mutex_unlock(&group->mark_mutex);
 }
-EXPORT_SYMBOL(fsnotify_destroy_mark);
 
 void fsnotify_set_mark_mask_locked(struct fsnotify_mark *mark, __u32 mask)
 {
@@ -277,7 +275,6 @@ err:
 
 	return ret;
 }
-EXPORT_SYMBOL(fsnotify_add_mark);
 
 int fsnotify_add_mark(struct fsnotify_mark *mark, struct fsnotify_group *group,
 		      struct inode *inode, struct vfsmount *mnt, int allow_dups)
@@ -296,36 +293,16 @@ void fsnotify_clear_marks_by_group_flags(struct fsnotify_group *group,
 					 unsigned int flags)
 {
 	struct fsnotify_mark *lmark, *mark;
-	LIST_HEAD(to_free);
 
-	/*
-	 * We have to be really careful here. Anytime we drop mark_mutex, e.g.
-	 * fsnotify_clear_marks_by_inode() can come and free marks. Even in our
-	 * to_free list so we have to use mark_mutex even when accessing that
-	 * list. And freeing mark requires us to drop mark_mutex. So we can
-	 * reliably free only the first mark in the list. That's why we first
-	 * move marks to free to to_free list in one go and then free marks in
-	 * to_free list one by one.
-	 */
 	mutex_lock_nested(&group->mark_mutex, SINGLE_DEPTH_NESTING);
 	list_for_each_entry_safe(mark, lmark, &group->marks_list, g_list) {
-		if (mark->flags & flags)
-			list_move(&mark->g_list, &to_free);
+		if (mark->flags & flags) {
+			fsnotify_get_mark(mark);
+			fsnotify_destroy_mark_locked(mark, group);
+			fsnotify_put_mark(mark);
+		}
 	}
 	mutex_unlock(&group->mark_mutex);
-
-	while (1) {
-		mutex_lock_nested(&group->mark_mutex, SINGLE_DEPTH_NESTING);
-		if (list_empty(&to_free)) {
-			mutex_unlock(&group->mark_mutex);
-			break;
-		}
-		mark = list_first_entry(&to_free, struct fsnotify_mark, g_list);
-		fsnotify_get_mark(mark);
-		fsnotify_destroy_mark_locked(mark, group);
-		mutex_unlock(&group->mark_mutex);
-		fsnotify_put_mark(mark);
-	}
 }
 
 /*
@@ -359,7 +336,6 @@ void fsnotify_init_mark(struct fsnotify_mark *mark,
 	atomic_set(&mark->refcnt, 1);
 	mark->free_mark = free_mark;
 }
-EXPORT_SYMBOL(fsnotify_init_mark);
 
 static int fsnotify_mark_destroy(void *ignored)
 {

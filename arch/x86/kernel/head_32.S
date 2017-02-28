@@ -477,22 +477,21 @@ is486:
 __INIT
 setup_once:
 	/*
-	 * Set up a idt with 256 interrupt gates that push zero if there
-	 * is no error code and then jump to early_idt_handler_common.
-	 * It doesn't actually load the idt - that needs to be done on
-	 * each CPU. Interrupts are enabled elsewhere, when we can be
-	 * relatively sure everything is ok.
+	 * Set up a idt with 256 entries pointing to ignore_int,
+	 * interrupt gates. It doesn't actually load idt - that needs
+	 * to be done on each CPU. Interrupts are enabled elsewhere,
+	 * when we can be relatively sure everything is ok.
 	 */
 
 	movl $idt_table,%edi
-	movl $early_idt_handler_array,%eax
+	movl $early_idt_handlers,%eax
 	movl $NUM_EXCEPTION_VECTORS,%ecx
 1:
 	movl %eax,(%edi)
 	movl %eax,4(%edi)
 	/* interrupt gate, dpl=0, present */
 	movl $(0x8E000000 + __KERNEL_CS),2(%edi)
-	addl $EARLY_IDT_HANDLER_SIZE,%eax
+	addl $9,%eax
 	addl $8,%edi
 	loop 1b
 
@@ -524,28 +523,26 @@ setup_once:
 	andl $0,setup_once_ref	/* Once is enough, thanks */
 	ret
 
-ENTRY(early_idt_handler_array)
+ENTRY(early_idt_handlers)
 	# 36(%esp) %eflags
 	# 32(%esp) %cs
 	# 28(%esp) %eip
 	# 24(%rsp) error code
 	i = 0
 	.rept NUM_EXCEPTION_VECTORS
-	.ifeq (EXCEPTION_ERRCODE_MASK >> i) & 1
+	.if (EXCEPTION_ERRCODE_MASK >> i) & 1
+	ASM_NOP2
+	.else
 	pushl $0		# Dummy error code, to make stack frame uniform
 	.endif
 	pushl $i		# 20(%esp) Vector number
-	jmp early_idt_handler_common
+	jmp early_idt_handler
 	i = i + 1
-	.fill early_idt_handler_array + i*EARLY_IDT_HANDLER_SIZE - ., 1, 0xcc
 	.endr
-ENDPROC(early_idt_handler_array)
+ENDPROC(early_idt_handlers)
 	
-early_idt_handler_common:
-	/*
-	 * The stack is the hardware frame, an error code or zero, and the
-	 * vector number.
-	 */
+	/* This is global to keep gas from relaxing the jumps */
+ENTRY(early_idt_handler)
 	cld
 
 	cmpl $2,(%esp)		# X86_TRAP_NMI
@@ -605,7 +602,7 @@ ex_entry:
 is_nmi:
 	addl $8,%esp		/* drop vector number and error code */
 	iret
-ENDPROC(early_idt_handler_common)
+ENDPROC(early_idt_handler)
 
 /* This is the default interrupt "handler" :-) */
 	ALIGN

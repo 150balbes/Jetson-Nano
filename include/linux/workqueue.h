@@ -71,8 +71,7 @@ enum {
 	/* data contains off-queue information when !WORK_STRUCT_PWQ */
 	WORK_OFFQ_FLAG_BASE	= WORK_STRUCT_COLOR_SHIFT,
 
-	__WORK_OFFQ_CANCELING	= WORK_OFFQ_FLAG_BASE,
-	WORK_OFFQ_CANCELING	= (1 << __WORK_OFFQ_CANCELING),
+	WORK_OFFQ_CANCELING	= (1 << WORK_OFFQ_FLAG_BASE),
 
 	/*
 	 * When a work item is off queue, its high bits point to the last

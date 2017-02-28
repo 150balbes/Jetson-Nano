@@ -943,23 +943,4 @@ config TOUCHSCREEN_ZFORCE
 	  To compile this driver as a module, choose M here: the
 	  module will be called zforce_ts.
 
-config TOUCHSCREEN_DWAV_USB_MT
-	tristate "D-WAV Scientific USB MultiTouch"
-	depends on USB_ARCH_HAS_HCD
-	select USB
-	help
-	  Say Y here if you have a D-WAV Scientific USB(HID) based MultiTouch
-	  controller.
-
-	  If unsure, say N.
-
-	  To compile this driver as a module, choose M here: the
-	  module will be called dwav-usb-mt.
-
-config TOUCHSCREEN_SX865X
-	tristate "Semtech multitouch resistive touchscreen"
-	depends on I2C
-	help
-	  This enables support for Semtech multitouch resistive touchscreen.
-
 endif

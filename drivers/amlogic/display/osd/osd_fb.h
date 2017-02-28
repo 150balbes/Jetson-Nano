@@ -22,16 +22,13 @@
 /* Linux Headers */
 #include <linux/list.h>
 #include <linux/fb.h>
+#include <linux/types.h>
 
 /* Amlogic Headers */
 #include <linux/amlogic/vout/vinfo.h>
 
 /* Local Headers */
 #include "osd.h"
-
-#if defined(CONFIG_ARCH_MESON64_ODROIDC2) && defined(CONFIG_UMP)
-#include <ump/ump_kernel_interface.h>
-#endif
 
 #ifdef CONFIG_FB_OSD2_ENABLE
 #define OSD_COUNT 2 /* enable two OSD layers */
@@ -45,9 +42,12 @@ struct osd_fb_dev_s {
 	struct mutex lock;
 	struct fb_info *fb_info;
 	struct platform_device *dev;
-	u32 fb_mem_paddr;
+	phys_addr_t fb_mem_paddr;
 	void __iomem *fb_mem_vaddr;
 	u32 fb_len;
+	phys_addr_t fb_mem_afbc_paddr[OSD_MAX_BUF_NUM];
+	void __iomem *fb_mem_afbc_vaddr[OSD_MAX_BUF_NUM];
+	u32 fb_afbc_len[OSD_MAX_BUF_NUM];
 	const struct color_bit_define_s *color;
 	enum vmode_e vmode;
 	struct osd_ctl_s osd_ctl;
@@ -57,9 +57,8 @@ struct osd_fb_dev_s {
 	u32 preblend_enable;
 	u32 enable_key_flag;
 	u32 color_key;
-#if defined(CONFIG_ARCH_MESON64_ODROIDC2) && defined(CONFIG_UMP)
-	ump_dd_handle ump_wrapped_buffer[OSD_COUNT][2];
-#endif
+	u32 fb_index;
+	bool dis_osd_mchange;
 };
 
 #define OSD_INVALID_INFO        0xffffffff
@@ -68,18 +67,9 @@ struct osd_fb_dev_s {
 #define OSD_END                 5
 
 extern phys_addr_t get_fb_rmem_paddr(int index);
+extern void __iomem *get_fb_rmem_vaddr(int index);
+extern size_t get_fb_rmem_size(int index);
 extern int osd_blank(int blank_mode, struct fb_info *info);
 extern struct osd_fb_dev_s *gp_fbdev_list[];
 extern const struct color_bit_define_s default_color_format_array[];
-
-#if defined(CONFIG_ARCH_MESON64_ODROIDC2) && defined(CONFIG_UMP)
-extern int (*disp_get_ump_secure_id) (struct fb_info *info,
-        struct osd_fb_dev_s *g_fbi,     unsigned long arg, int buf);
-#define GET_UMP_SECURE_ID_BUF1 _IOWR('m', 311, unsigned int)
-#define GET_UMP_SECURE_ID_BUF2 _IOWR('m', 312, unsigned int)
-#endif
-
-#if defined(CONFIG_ARCH_MESON64_ODROIDC2)
-extern void control_hdmiphy(int on);
-#endif
 #endif

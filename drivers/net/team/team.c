@@ -42,7 +42,9 @@
 
 static struct team_port *team_port_get_rcu(const struct net_device *dev)
 {
-	return rcu_dereference(dev->rx_handler_data);
+	struct team_port *port = rcu_dereference(dev->rx_handler_data);
+
+	return team_port_exists(dev) ? port : NULL;
 }
 
 static struct team_port *team_port_get_rtnl(const struct net_device *dev)
@@ -627,7 +629,6 @@ static int team_change_mode(struct team *team, const char *kind)
 static void team_notify_peers_work(struct work_struct *work)
 {
 	struct team *team;
-	int val;
 
 	team = container_of(work, struct team, notify_peers.dw.work);
 
@@ -635,14 +636,9 @@ static void team_notify_peers_work(struct work_struct *work)
 		schedule_delayed_work(&team->notify_peers.dw, 0);
 		return;
 	}
-	val = atomic_dec_if_positive(&team->notify_peers.count_pending);
-	if (val < 0) {
-		rtnl_unlock();
-		return;
-	}
 	call_netdevice_notifiers(NETDEV_NOTIFY_PEERS, team->dev);
 	rtnl_unlock();
-	if (val)
+	if (!atomic_dec_and_test(&team->notify_peers.count_pending))
 		schedule_delayed_work(&team->notify_peers.dw,
 				      msecs_to_jiffies(team->notify_peers.interval));
 }
@@ -673,7 +669,6 @@ static void team_notify_peers_fini(struct team *team)
 static void team_mcast_rejoin_work(struct work_struct *work)
 {
 	struct team *team;
-	int val;
 
 	team = container_of(work, struct team, mcast_rejoin.dw.work);
 
@@ -681,14 +676,9 @@ static void team_mcast_rejoin_work(struct work_struct *work)
 		schedule_delayed_work(&team->mcast_rejoin.dw, 0);
 		return;
 	}
-	val = atomic_dec_if_positive(&team->mcast_rejoin.count_pending);
-	if (val < 0) {
-		rtnl_unlock();
-		return;
-	}
 	call_netdevice_notifiers(NETDEV_RESEND_IGMP, team->dev);
 	rtnl_unlock();
-	if (val)
+	if (!atomic_dec_and_test(&team->mcast_rejoin.count_pending))
 		schedule_delayed_work(&team->mcast_rejoin.dw,
 				      msecs_to_jiffies(team->mcast_rejoin.interval));
 }
@@ -1723,11 +1713,11 @@ static int team_set_mac_address(struct net_device *dev, void *p)
 	if (dev->type == ARPHRD_ETHER && !is_valid_ether_addr(addr->sa_data))
 		return -EADDRNOTAVAIL;
 	memcpy(dev->dev_addr, addr->sa_data, dev->addr_len);
-	mutex_lock(&team->lock);
-	list_for_each_entry(port, &team->port_list, list)
+	rcu_read_lock();
+	list_for_each_entry_rcu(port, &team->port_list, list)
 		if (team->ops.port_change_dev_addr)
 			team->ops.port_change_dev_addr(team, port);
-	mutex_unlock(&team->lock);
+	rcu_read_unlock();
 	return 0;
 }
 
@@ -1838,10 +1828,10 @@ static int team_vlan_rx_kill_vid(struct net_device *dev, __be16 proto, u16 vid)
 	struct team *team = netdev_priv(dev);
 	struct team_port *port;
 
-	mutex_lock(&team->lock);
-	list_for_each_entry(port, &team->port_list, list)
+	rcu_read_lock();
+	list_for_each_entry_rcu(port, &team->port_list, list)
 		vlan_vid_del(port->dev, proto, vid);
-	mutex_unlock(&team->lock);
+	rcu_read_unlock();
 
 	return 0;
 }

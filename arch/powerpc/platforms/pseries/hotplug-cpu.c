@@ -338,17 +338,16 @@ static void pseries_remove_processor(struct device_node *np)
 }
 
 static int pseries_smp_notifier(struct notifier_block *nb,
-				unsigned long action, void *data)
+				unsigned long action, void *node)
 {
-	struct of_reconfig_data *rd = data;
 	int err = 0;
 
 	switch (action) {
 	case OF_RECONFIG_ATTACH_NODE:
-		err = pseries_add_processor(rd->dn);
+		err = pseries_add_processor(node);
 		break;
 	case OF_RECONFIG_DETACH_NODE:
-		pseries_remove_processor(rd->dn);
+		pseries_remove_processor(node);
 		break;
 	}
 	return notifier_from_errno(err);

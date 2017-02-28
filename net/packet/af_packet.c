@@ -1264,6 +1264,16 @@ static void packet_sock_destruct(struct sock *sk)
 	sk_refcnt_debug_dec(sk);
 }
 
+static int fanout_rr_next(struct packet_fanout *f, unsigned int num)
+{
+	int x = atomic_read(&f->rr_cur) + 1;
+
+	if (x >= num)
+		x = 0;
+
+	return x;
+}
+
 static unsigned int fanout_demux_hash(struct packet_fanout *f,
 				      struct sk_buff *skb,
 				      unsigned int num)
@@ -1275,9 +1285,13 @@ static unsigned int fanout_demux_lb(struct packet_fanout *f,
 				    struct sk_buff *skb,
 				    unsigned int num)
 {
-	unsigned int val = atomic_inc_return(&f->rr_cur);
+	int cur, old;
 
-	return val % num;
+	cur = atomic_read(&f->rr_cur);
+	while ((old = atomic_cmpxchg(&f->rr_cur, cur,
+				     fanout_rr_next(f, num))) != cur)
+		cur = old;
+	return cur;
 }
 
 static unsigned int fanout_demux_cpu(struct packet_fanout *f,
@@ -1331,7 +1345,7 @@ static int packet_rcv_fanout(struct sk_buff *skb, struct net_device *dev,
 			     struct packet_type *pt, struct net_device *orig_dev)
 {
 	struct packet_fanout *f = pt->af_packet_priv;
-	unsigned int num = ACCESS_ONCE(f->num_members);
+	unsigned int num = f->num_members;
 	struct packet_sock *po;
 	unsigned int idx;
 
@@ -2091,15 +2105,6 @@ static void tpacket_destruct_skb(struct sk_buff *skb)
 	sock_wfree(skb);
 }
 
-static void tpacket_set_protocol(const struct net_device *dev,
-				 struct sk_buff *skb)
-{
-	if (dev->type == ARPHRD_ETHER) {
-		skb_reset_mac_header(skb);
-		skb->protocol = eth_hdr(skb)->h_proto;
-	}
-}
-
 static int tpacket_fill_skb(struct packet_sock *po, struct sk_buff *skb,
 		void *frame, struct net_device *dev, int size_max,
 		__be16 proto, unsigned char *addr, int hlen)
@@ -2136,6 +2141,8 @@ static int tpacket_fill_skb(struct packet_sock *po, struct sk_buff *skb,
 	skb_reserve(skb, hlen);
 	skb_reset_network_header(skb);
 
+	if (!packet_use_direct_xmit(po))
+		skb_probe_transport_header(skb, 0);
 	if (unlikely(po->tp_tx_has_off)) {
 		int off_min, off_max, off;
 		off_min = po->tp_hdrlen - sizeof(struct sockaddr_ll);
@@ -2185,8 +2192,6 @@ static int tpacket_fill_skb(struct packet_sock *po, struct sk_buff *skb,
 				dev->hard_header_len);
 		if (unlikely(err))
 			return err;
-		if (!skb->protocol)
-			tpacket_set_protocol(dev, skb);
 
 		data += dev->hard_header_len;
 		to_write -= dev->hard_header_len;
@@ -2220,8 +2225,6 @@ static int tpacket_fill_skb(struct packet_sock *po, struct sk_buff *skb,
 		len_max = PAGE_SIZE;
 		len = ((to_write > len_max) ? len_max : to_write);
 	}
-
-	skb_probe_transport_header(skb, 0);
 
 	return tp_len;
 }
@@ -2548,8 +2551,8 @@ static int packet_snd(struct socket *sock, struct msghdr *msg, size_t len)
 		len += vnet_hdr_len;
 	}
 
-	skb_probe_transport_header(skb, reserve);
-
+	if (!packet_use_direct_xmit(po))
+		skb_probe_transport_header(skb, reserve);
 	if (unlikely(extra_len == 4))
 		skb->no_fcs = 1;
 
@@ -2653,40 +2656,22 @@ static int packet_release(struct socket *sock)
  *	Attach a packet hook.
  */
 
-static int packet_do_bind(struct sock *sk, const char *name, int ifindex,
-			  __be16 proto)
+static int packet_do_bind(struct sock *sk, struct net_device *dev, __be16 proto)
 {
 	struct packet_sock *po = pkt_sk(sk);
-	struct net_device *dev_curr;
+	const struct net_device *dev_curr;
 	__be16 proto_curr;
 	bool need_rehook;
-	struct net_device *dev = NULL;
-	int ret = 0;
-	bool unlisted = false;
 
-	if (po->fanout)
+	if (po->fanout) {
+		if (dev)
+			dev_put(dev);
+
 		return -EINVAL;
+	}
 
 	lock_sock(sk);
 	spin_lock(&po->bind_lock);
-	rcu_read_lock();
-
-	if (name) {
-		dev = dev_get_by_name_rcu(sock_net(sk), name);
-		if (!dev) {
-			ret = -ENODEV;
-			goto out_unlock;
-		}
-	} else if (ifindex) {
-		dev = dev_get_by_index_rcu(sock_net(sk), ifindex);
-		if (!dev) {
-			ret = -ENODEV;
-			goto out_unlock;
-		}
-	}
-
-	if (dev)
-		dev_hold(dev);
 
 	proto_curr = po->prot_hook.type;
 	dev_curr = po->prot_hook.dev;
@@ -2694,37 +2679,24 @@ static int packet_do_bind(struct sock *sk, const char *name, int ifindex,
 	need_rehook = proto_curr != proto || dev_curr != dev;
 
 	if (need_rehook) {
-		if (po->running) {
-			rcu_read_unlock();
-			__unregister_prot_hook(sk, true);
-			rcu_read_lock();
-			dev_curr = po->prot_hook.dev;
-			if (dev)
-				unlisted = !dev_get_by_index_rcu(sock_net(sk),
-								 dev->ifindex);
-		}
+		unregister_prot_hook(sk, true);
 
 		po->num = proto;
 		po->prot_hook.type = proto;
 
-		if (unlikely(unlisted)) {
-			dev_put(dev);
-			po->prot_hook.dev = NULL;
-			po->ifindex = -1;
-			packet_cached_dev_reset(po);
-		} else {
-			po->prot_hook.dev = dev;
-			po->ifindex = dev ? dev->ifindex : 0;
-			packet_cached_dev_assign(po, dev);
-		}
+		if (po->prot_hook.dev)
+			dev_put(po->prot_hook.dev);
+
+		po->prot_hook.dev = dev;
+
+		po->ifindex = dev ? dev->ifindex : 0;
+		packet_cached_dev_assign(po, dev);
 	}
-	if (dev_curr)
-		dev_put(dev_curr);
 
 	if (proto == 0 || !need_rehook)
 		goto out_unlock;
 
-	if (!unlisted && (!dev || (dev->flags & IFF_UP))) {
+	if (!dev || (dev->flags & IFF_UP)) {
 		register_prot_hook(sk);
 	} else {
 		sk->sk_err = ENETDOWN;
@@ -2733,10 +2705,9 @@ static int packet_do_bind(struct sock *sk, const char *name, int ifindex,
 	}
 
 out_unlock:
-	rcu_read_unlock();
 	spin_unlock(&po->bind_lock);
 	release_sock(sk);
-	return ret;
+	return 0;
 }
 
 /*
@@ -2748,6 +2719,8 @@ static int packet_bind_spkt(struct socket *sock, struct sockaddr *uaddr,
 {
 	struct sock *sk = sock->sk;
 	char name[15];
+	struct net_device *dev;
+	int err = -ENODEV;
 
 	/*
 	 *	Check legality
@@ -2757,13 +2730,19 @@ static int packet_bind_spkt(struct socket *sock, struct sockaddr *uaddr,
 		return -EINVAL;
 	strlcpy(name, uaddr->sa_data, sizeof(name));
 
-	return packet_do_bind(sk, name, 0, pkt_sk(sk)->num);
+	dev = dev_get_by_name(sock_net(sk), name);
+	if (dev)
+		err = packet_do_bind(sk, dev, pkt_sk(sk)->num);
+	return err;
 }
 
 static int packet_bind(struct socket *sock, struct sockaddr *uaddr, int addr_len)
 {
 	struct sockaddr_ll *sll = (struct sockaddr_ll *)uaddr;
 	struct sock *sk = sock->sk;
+	struct net_device *dev = NULL;
+	int err;
+
 
 	/*
 	 *	Check legality
@@ -2774,8 +2753,16 @@ static int packet_bind(struct socket *sock, struct sockaddr *uaddr, int addr_len
 	if (sll->sll_family != AF_PACKET)
 		return -EINVAL;
 
-	return packet_do_bind(sk, NULL, sll->sll_ifindex,
-			      sll->sll_protocol ? : pkt_sk(sk)->num);
+	if (sll->sll_ifindex) {
+		err = -ENODEV;
+		dev = dev_get_by_index(sock_net(sk), sll->sll_ifindex);
+		if (dev == NULL)
+			goto out;
+	}
+	err = packet_do_bind(sk, dev, sll->sll_protocol ? : pkt_sk(sk)->num);
+
+out:
+	return err;
 }
 
 static struct proto packet_proto = {
@@ -3153,7 +3140,6 @@ static int packet_mc_add(struct sock *sk, struct packet_mreq_max *mreq)
 	i->ifindex = mreq->mr_ifindex;
 	i->alen = mreq->mr_alen;
 	memcpy(i->addr, mreq->mr_address, i->alen);
-	memset(i->addr + i->alen, 0, sizeof(i->addr) - i->alen);
 	i->count = 1;
 	i->next = po->mclist;
 	po->mclist = i;
@@ -3291,25 +3277,19 @@ packet_setsockopt(struct socket *sock, int level, int optname, char __user *optv
 
 		if (optlen != sizeof(val))
 			return -EINVAL;
+		if (po->rx_ring.pg_vec || po->tx_ring.pg_vec)
+			return -EBUSY;
 		if (copy_from_user(&val, optval, sizeof(val)))
 			return -EFAULT;
 		switch (val) {
 		case TPACKET_V1:
 		case TPACKET_V2:
 		case TPACKET_V3:
-			break;
+			po->tp_version = val;
+			return 0;
 		default:
 			return -EINVAL;
 		}
-		lock_sock(sk);
-		if (po->rx_ring.pg_vec || po->tx_ring.pg_vec) {
-			ret = -EBUSY;
-		} else {
-			po->tp_version = val;
-			ret = 0;
-		}
-		release_sock(sk);
-		return ret;
 	}
 	case PACKET_RESERVE:
 	{
@@ -3772,7 +3752,6 @@ static int packet_set_ring(struct sock *sk, union tpacket_req_u *req_u,
 	/* Added to avoid minimal code churn */
 	struct tpacket_req *req = &req_u->req;
 
-	lock_sock(sk);
 	/* Opening a Tx-ring is NOT supported in TPACKET_V3 */
 	if (!closing && tx_ring && (po->tp_version > TPACKET_V2)) {
 		WARN(1, "Tx-ring is not supported.\n");
@@ -3854,6 +3833,7 @@ static int packet_set_ring(struct sock *sk, union tpacket_req_u *req_u,
 			goto out;
 	}
 
+	lock_sock(sk);
 
 	/* Detach socket from network */
 	spin_lock(&po->bind_lock);
@@ -3902,11 +3882,11 @@ static int packet_set_ring(struct sock *sk, union tpacket_req_u *req_u,
 		if (!tx_ring)
 			prb_shutdown_retire_blk_timer(po, tx_ring, rb_queue);
 	}
+	release_sock(sk);
 
 	if (pg_vec)
 		free_pg_vec(pg_vec, order, req->tp_block_nr);
 out:
-	release_sock(sk);
 	return err;
 }
 

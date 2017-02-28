@@ -127,7 +127,7 @@ static irqreturn_t stmmac_interrupt(int irq, void *dev_id);
 
 #ifdef CONFIG_STMMAC_DEBUG_FS
 static int stmmac_init_fs(struct net_device *dev);
-static void stmmac_exit_fs(struct net_device *dev);
+static void stmmac_exit_fs(void);
 #endif
 
 #define STMMAC_COAL_TIMER(x) (jiffies + usecs_to_jiffies(x))
@@ -803,10 +803,12 @@ static ssize_t set_phy_reg(struct device *dev,
 	struct device_attribute *attr, const char *buf, size_t count) {
 	int ovl;
 	int r = kstrtoint(buf, 0, &ovl);
-	if (r)
-		pr_debug("kstrtoint failed\n");
+	if (r) {
+		pr_err("kstrtoint failed\n");
+		return -1;
+	}
 	gPhyReg = ovl;
-	pr_debug("---ovl=0x%x\n", ovl);
+	pr_info("---ovl=0x%x\n", ovl);
 	return count;
 }
 
@@ -821,7 +823,7 @@ static ssize_t show_phy_regValue(struct device *dev,
 #else
 	int i = 0;
 	for (i = 0; i < 32; i++)
-		pr_debug("%d: 0x%x\n", i, phy_read(phy_dev, i));
+		pr_info("%d: 0x%x\n", i, phy_read(phy_dev, i));
 	val = phy_read(phy_dev, gPhyReg);
 	ret = snprintf(buf, PAGE_SIZE, "phy reg 0x%x = 0x%x\n",
 		gPhyReg, val);
@@ -837,7 +839,7 @@ static ssize_t set_phy_regValue(struct device *dev,
 
 	struct phy_device *phy_dev = dev_get_drvdata(dev);
 	ret = kstrtoint(buf, 0, &ovl);
-	pr_debug("---reg 0x%x: ovl=0x%x\n", gPhyReg, ovl);
+	pr_info("---reg 0x%x: ovl=0x%x\n", gPhyReg, ovl);
 	phy_write(phy_dev, gPhyReg, ovl);
 	return count;
 }
@@ -856,10 +858,10 @@ static void am_net_dump_phyreg(void)
 	if (c_phy_dev == NULL)
 		return;
 
-	pr_debug("========== ETH PHY new regs ==========\n");
+	pr_info("========== ETH PHY new regs ==========\n");
 	for (reg = 0; reg < 32; reg++) {
 		val = phy_read(c_phy_dev, reg);
-		pr_debug("[reg_%d] 0x%x\n", reg, val);
+		pr_info("[reg_%d] 0x%x\n", reg, val);
 	}
 }
 
@@ -873,17 +875,19 @@ static int am_net_read_phyreg(int argc, char **argv)
 		return -1;
 	if (argc < 2 || (argv == NULL) || (argv[0] == NULL)
 		|| (argv[1] == NULL)) {
-		pr_debug("Invalid syntax\n");
+		pr_err("Invalid syntax\n");
 		return -1;
 	}
 	r = kstrtoint(argv[1], 0, &reg);
-	if (r)
-		pr_debug("kstrtoint failed\n");
+	if (r) {
+		pr_err("kstrtoint failed\n");
+		return -1;
+	}
 	if (reg >= 0 && reg <= 31) {
 		val = phy_read(c_phy_dev, reg);
-		pr_debug("read phy [reg_%d] 0x%x\n", reg, val);
+		pr_info("read phy [reg_%d] 0x%x\n", reg, val);
 	} else
-		pr_debug("Invalid parameter\n");
+		pr_info("Invalid parameter\n");
 
 	return 0;
 }
@@ -897,21 +901,25 @@ static int am_net_write_phyreg(int argc, char **argv)
 		return -1;
 	if (argc < 3 || (argv == NULL) || (argv[0] == NULL)
 			|| (argv[1] == NULL) || (argv[2] == NULL)) {
-		pr_debug("Invalid syntax\n");
+		pr_err("Invalid syntax\n");
 		return -1;
 	}
 	r = kstrtoint(argv[1], 0, &reg);
-	if (r)
-		pr_debug("kstrtoint failed\n");
+	if (r) {
+		pr_err("kstrtoint failed\n");
+		return -1;
+	}
 	r = kstrtoint(argv[2], 0, &val);
-	if (r)
-		pr_debug("kstrtoint failed\n");
+	if (r) {
+		pr_err("kstrtoint failed\n");
+		return -1;
+	}
 	if (reg >= 0 && reg <= 31) {
 		phy_write(c_phy_dev, reg, val);
-		pr_debug("write phy [reg_%d] 0x%x, 0x%x\n",
+		pr_info("write phy [reg_%d] 0x%x, 0x%x\n",
 				reg, val, phy_read(c_phy_dev, reg));
 	} else {
-		pr_debug("Invalid parameter\n");
+		pr_info("Invalid parameter\n");
 	}
 
 	return 0;
@@ -920,18 +928,18 @@ static void am_net_dump_macreg(void)
 {
 	int reg = 0;
 	int val = 0;
-	pr_debug("========== ETH_MAC regs ==========\n");
+	pr_info("========== ETH_MAC regs ==========\n");
 	for (reg = ETH_MAC_0_Configuration;
 		reg <= ETH_MMC_rxicmp_err_octets; reg += 0x4) {
 		val = readl(c_ioaddr + reg);
-		pr_debug("[0x%04x] 0x%x\n", reg, val);
+		pr_info("[0x%04x] 0x%x\n", reg, val);
 	}
 
-	pr_debug("========== ETH_DMA regs ==========\n");
+	pr_info("========== ETH_DMA regs ==========\n");
 	for (reg = ETH_DMA_0_Bus_Mode;
 		reg <= ETH_DMA_21_Curr_Host_Re_Buffer_Addr; reg += 0x4) {
 		val = readl(c_ioaddr + reg);
-		pr_debug("[0x%04x] 0x%x\n", reg, val);
+		pr_info("[0x%04x] 0x%x\n", reg, val);
 	}
 }
 
@@ -943,17 +951,19 @@ static int am_net_read_macreg(int argc, char **argv)
 	int r = 0;
 	if (argc < 2 || (argv == NULL) || (argv[0] == NULL)
 		|| (argv[1] == NULL)) {
-		pr_debug("Invalid syntax\n");
+		pr_err("Invalid syntax\n");
 		return -1;
 	}
 	r  = kstrtoint(argv[1], 0, &reg);
-	if (r)
-		pr_debug("kstrtoint failed\n");
+	if (r) {
+		pr_err("kstrtoint failed\n");
+		return -1;
+	}
 	if (reg >= 0 && reg <= ETH_DMA_21_Curr_Host_Re_Buffer_Addr) {
 		val = readl(c_ioaddr + reg);
-		pr_debug("read mac [0x4%x] 0x%x\n", reg, val);
+		pr_info("read mac [0x4%x] 0x%x\n", reg, val);
 	} else {
-		pr_debug("Invalid parameter\n");
+		pr_info("Invalid parameter\n");
 	}
 
 	return 0;
@@ -967,21 +977,25 @@ static int am_net_write_macreg(int argc, char **argv)
 	int r = 0;
 	if ((argc < 3) || (argv == NULL) || (argv[0] == NULL)
 			|| (argv[1] == NULL) || (argv[2] == NULL)) {
-		pr_debug("Invalid syntax\n");
+		pr_err("Invalid syntax\n");
 		return -1;
 	}
 	r = kstrtoint(argv[1], 0, &reg);
-	if (r)
-		pr_debug("kstrtoint failed\n");
+	if (r) {
+		pr_err("kstrtoint failed\n");
+		return -1;
+	}
 	r = kstrtoint(argv[2], 0, &val);
-	if (r)
-		pr_debug("kstrtoint failed\n");
+	if (r) {
+		pr_err("kstrtoint failed\n");
+		return -1;
+	}
 	if (reg >= 0 && reg <= ETH_DMA_21_Curr_Host_Re_Buffer_Addr) {
 		writel(val, (c_ioaddr + reg));
-		pr_debug("write mac [0x%x] 0x%x, 0x%x\n",
+		pr_info("write mac [0x%x] 0x%x, 0x%x\n",
 			reg, val, readl(c_ioaddr + reg));
 	} else {
-		pr_debug("Invalid parameter\n");
+		pr_info("Invalid parameter\n");
 	}
 
 	return 0;
@@ -1133,7 +1147,7 @@ int auto_cali(void)
 	char path[20] = {0};
 	int cali_rise = 0;
 	int cali_sel = 0;
-	pr_debug("auto test cali\n");
+	pr_info("auto test cali\n");
 	for (cali_sel = 0; cali_sel < 4; cali_sel++) {
 		readl(PREG_ETH_REG1);
 		strcpy(problem, "no clock delay");
@@ -1172,20 +1186,20 @@ int auto_cali(void)
 					}
 				}
 			}
-		pr_debug
+		pr_info
 			(" I1 = %d; I2 = %d; I3 = %d; I4 = %d; I5 = %d;\n",
 			I1, I2, I3, I4, I5);
 		if ((I1 > 0) && (I2 > 0) && (I3 > 0) &&
 				(I4 > 0) && (I5 > 0))
 			strcpy(problem, "clock delay");
-		pr_debug(" RXDATA Line %d have %s problem\n",
+		pr_info(" RXDATA Line %d have %s problem\n",
 				cali_sel, problem);
 		if ((I2+I1+I3) > (I5+I4+I3))
 			strcpy(path, "positive");
 		else
 			strcpy(path, "opposite");
 		if (strcmp(problem, "clock delay") == 0)
-			pr_debug("Need debug to  delay %s direction\n",
+			pr_info("Need debug to  delay %s direction\n",
 					path);
 		}
 	}
@@ -1209,7 +1223,7 @@ static int am_net_cali(int argc, char **argv, int gate)
 	if ((argc < 4) || (argv == NULL) || (argv[0] == NULL)
 			|| (argv[1] == NULL) || (argv[2] == NULL) ||
 			(argv[3] == NULL)) {
-		pr_debug("Invalid syntax\n");
+		pr_err("Invalid syntax\n");
 		return -1;
 	}
 
@@ -1221,14 +1235,14 @@ static int am_net_cali(int argc, char **argv, int gate)
 	writel(readl(PREG_ETH_REG0)|
 		(cali_start << 25)|(cali_rise << 26)|
 		(cali_sel << 27), PREG_ETH_REG0);
-	pr_debug("rise :%d   sel: %d  time: %d   start:%d  cbus2050 = %x\n",
+	pr_info("rise :%d   sel: %d  time: %d   start:%d  cbus2050 = %x\n",
 		cali_rise, cali_sel, cali_time, cali_start,
 			readl(PREG_ETH_REG0));
 	for (ii = 0; ii < cali_time; ii++) {
 		mdelay(100);
 		value = readl(PREG_ETH_REG1);
 		if ((value>>15) & 0x1) {
-			pr_debug
+			pr_info
 			("value = %x,len = %d,idx = %d,sel=%d,rise = %d\n",
 			value, (value>>5)&0x1f, (value&0x1f),
 			(value>>11)&0x7, (value>>14)&0x1);
@@ -1248,7 +1262,7 @@ static ssize_t eth_cali_store(struct class *class, struct class_attribute *attr,
 	buff = kstrdup(buf, GFP_KERNEL);
 	p = buff;
 	if (get_cpu_type() < MESON_CPU_MAJOR_ID_M8B) {
-		pr_debug("Sorry ,this cpu is not support cali!\n");
+		pr_err("Sorry ,this cpu is not support cali!\n");
 		goto end;
 	}
 	for (argc = 0; argc < 6; argc++) {
@@ -1701,43 +1715,43 @@ static int alloc_dma_desc_resources(struct stmmac_priv *priv)
 		goto err_tx_skbuff;
 
 	if (priv->extend_desc) {
-		priv->dma_erx = dma_zalloc_coherent(priv->device, rxsize *
-						    sizeof(struct
-							   dma_extended_desc),
-						    &priv->dma_rx_phy,
-						    GFP_KERNEL);
+		priv->dma_erx = dma_alloc_coherent(priv->device, rxsize *
+						   sizeof(struct
+							  dma_extended_desc),
+						   &priv->dma_rx_phy,
+						   GFP_KERNEL);
 		if (!priv->dma_erx)
 			goto err_dma;
 
-		priv->dma_etx = dma_zalloc_coherent(priv->device, txsize *
-						    sizeof(struct
-							   dma_extended_desc),
-						    &priv->dma_tx_phy,
-						    GFP_KERNEL);
+		priv->dma_etx = dma_alloc_coherent(priv->device, txsize *
+						   sizeof(struct
+							  dma_extended_desc),
+						   &priv->dma_tx_phy,
+						   GFP_KERNEL);
 		if (!priv->dma_etx) {
 			dma_free_coherent(priv->device, priv->dma_rx_size *
-					  sizeof(struct dma_extended_desc),
-					  priv->dma_erx, priv->dma_rx_phy);
+					sizeof(struct dma_extended_desc),
+					priv->dma_erx, priv->dma_rx_phy);
 			goto err_dma;
 		}
 	} else {
-		priv->dma_rx = dma_zalloc_coherent(priv->device, rxsize *
-						   sizeof(struct dma_desc),
-						   &priv->dma_rx_phy,
-						   GFP_KERNEL);
+		priv->dma_rx = dma_alloc_coherent(priv->device, rxsize *
+						  sizeof(struct dma_desc),
+						  &priv->dma_rx_phy,
+						  GFP_KERNEL);
 		if (!priv->dma_rx)
 			goto err_dma;
 		memset((char *)priv->dma_rx, 0, rxsize *
 						sizeof(struct dma_desc));
 
-		priv->dma_tx = dma_zalloc_coherent(priv->device, txsize *
-						   sizeof(struct dma_desc),
-						   &priv->dma_tx_phy,
-						   GFP_KERNEL);
+		priv->dma_tx = dma_alloc_coherent(priv->device, txsize *
+						  sizeof(struct dma_desc),
+						  &priv->dma_tx_phy,
+						  GFP_KERNEL);
 		if (!priv->dma_tx) {
 			dma_free_coherent(priv->device, priv->dma_rx_size *
-					  sizeof(struct dma_desc),
-					  priv->dma_rx, priv->dma_rx_phy);
+					sizeof(struct dma_desc),
+					priv->dma_rx, priv->dma_rx_phy);
 			goto err_dma;
 		}
 		memset((char *)priv->dma_tx, 0, txsize *
@@ -2067,7 +2081,9 @@ static int stmmac_get_hw_features(struct stmmac_priv *priv)
 		priv->dma_cap.atime_stamp =
 		    (hw_cap & DMA_HW_FEAT_TSVER2SEL) >> 13;
 		/* 802.3az - Energy-Efficient Ethernet (EEE) */
-		priv->dma_cap.eee = (hw_cap & DMA_HW_FEAT_EEESEL) >> 14;
+		/* Disable EEE because it's causing network outage on WP2*/
+		//priv->dma_cap.eee = (hw_cap & DMA_HW_FEAT_EEESEL) >> 14;
+		priv->dma_cap.eee = 0;
 		priv->dma_cap.av = (hw_cap & DMA_HW_FEAT_AVSEL) >> 15;
 		/* TX and RX csum */
 		priv->dma_cap.tx_coe = (hw_cap & DMA_HW_FEAT_TXCOESEL) >> 16;
@@ -2399,7 +2415,7 @@ static int stmmac_release(struct net_device *dev)
 	netif_carrier_off(dev);
 
 #ifdef CONFIG_STMMAC_DEBUG_FS
-	stmmac_exit_fs(dev);
+	stmmac_exit_fs();
 #endif
 
 	stmmac_release_ptp(priv);
@@ -2991,6 +3007,8 @@ static int stmmac_ioctl(struct net_device *dev, struct ifreq *rq, int cmd)
 
 #ifdef CONFIG_STMMAC_DEBUG_FS
 static struct dentry *stmmac_fs_dir;
+static struct dentry *stmmac_rings_status;
+static struct dentry *stmmac_dma_cap;
 
 static void sysfs_display_ring(void *head, int size, int extend_desc,
 			       struct seq_file *seq)
@@ -3129,39 +3147,36 @@ static const struct file_operations stmmac_dma_cap_fops = {
 
 static int stmmac_init_fs(struct net_device *dev)
 {
-	struct stmmac_priv *priv = netdev_priv(dev);
+	/* Create debugfs entries */
+	stmmac_fs_dir = debugfs_create_dir(STMMAC_RESOURCE_NAME, NULL);
 
-	/* Create per netdev entries */
-	priv->dbgfs_dir = debugfs_create_dir(dev->name, stmmac_fs_dir);
-
-	if (!priv->dbgfs_dir || IS_ERR(priv->dbgfs_dir)) {
-		pr_err("ERROR %s/%s, debugfs create directory failed\n",
-			STMMAC_RESOURCE_NAME, dev->name);
+	if (!stmmac_fs_dir || IS_ERR(stmmac_fs_dir)) {
+		pr_err("ERROR %s, debugfs create directory failed\n",
+		       STMMAC_RESOURCE_NAME);
 
 		return -ENOMEM;
 	}
 
 	/* Entry to report DMA RX/TX rings */
-	priv->dbgfs_rings_status =
-		debugfs_create_file("descriptors_status", S_IRUGO,
-				    priv->dbgfs_dir, dev,
-				    &stmmac_rings_status_fops);
+	stmmac_rings_status = debugfs_create_file("descriptors_status",
+						  S_IRUGO, stmmac_fs_dir, dev,
+						  &stmmac_rings_status_fops);
 
-	if (!priv->dbgfs_rings_status || IS_ERR(priv->dbgfs_rings_status)) {
-		pr_info("ERROR creating stmmac ring debugfs file\n");
-		debugfs_remove_recursive(priv->dbgfs_dir);
+	if (!stmmac_rings_status || IS_ERR(stmmac_rings_status)) {
+		pr_debug("ERROR creating stmmac ring debugfs file\n");
+		debugfs_remove(stmmac_fs_dir);
 
 		return -ENOMEM;
 	}
 
 	/* Entry to report the DMA HW features */
-	priv->dbgfs_dma_cap = debugfs_create_file("dma_cap", S_IRUGO,
-					    priv->dbgfs_dir,
-					    dev, &stmmac_dma_cap_fops);
+	stmmac_dma_cap = debugfs_create_file("dma_cap", S_IRUGO, stmmac_fs_dir,
+					     dev, &stmmac_dma_cap_fops);
 
-	if (!priv->dbgfs_dma_cap || IS_ERR(priv->dbgfs_dma_cap)) {
-		pr_info("ERROR creating stmmac MMC debugfs file\n");
-		debugfs_remove_recursive(priv->dbgfs_dir);
+	if (!stmmac_dma_cap || IS_ERR(stmmac_dma_cap)) {
+		pr_debug("ERROR creating stmmac MMC debugfs file\n");
+		debugfs_remove(stmmac_rings_status);
+		debugfs_remove(stmmac_fs_dir);
 
 		return -ENOMEM;
 	}
@@ -3169,11 +3184,11 @@ static int stmmac_init_fs(struct net_device *dev)
 	return 0;
 }
 
-static void stmmac_exit_fs(struct net_device *dev)
+static void stmmac_exit_fs(void)
 {
-	struct stmmac_priv *priv = netdev_priv(dev);
-
-	debugfs_remove_recursive(priv->dbgfs_dir);
+	debugfs_remove(stmmac_rings_status);
+	debugfs_remove(stmmac_dma_cap);
+	debugfs_remove(stmmac_fs_dir);
 }
 #endif /* CONFIG_STMMAC_DEBUG_FS */
 
@@ -3564,6 +3579,34 @@ int stmmac_resume(struct net_device *ndev)
 }
 #endif /* CONFIG_PM */
 
+/* Driver can be configured w/ and w/ both PCI and Platf drivers
+ * depending on the configuration selected.
+ */
+static int __init stmmac_init(void)
+{
+	int ret;
+
+	ret = stmmac_register_platform();
+	if (ret)
+		goto err;
+	ret = stmmac_register_pci();
+	if (ret)
+		goto err_pci;
+	return 0;
+err_pci:
+	stmmac_unregister_platform();
+err:
+	pr_err("stmmac: driver registration failed\n");
+	return ret;
+}
+static void __exit stmmac_exit(void)
+{
+	stmmac_unregister_platform();
+	stmmac_unregister_pci();
+}
+
+module_init(stmmac_init);
+module_exit(stmmac_exit);
 
 #ifndef MODULE
 static int __init stmmac_cmdline_opt(char *str)
@@ -3617,53 +3660,6 @@ err:
 
 __setup("stmmaceth=", stmmac_cmdline_opt);
 #endif /* MODULE */
-
-/* Driver can be configured w/ and w/ both PCI and Platf drivers
- * depending on the configuration selected.
- */
-static int __init stmmac_init(void)
-{
-#ifdef CONFIG_STMMAC_DEBUG_FS
-	/* Create debugfs main directory if it doesn't exist yet */
-	if (!stmmac_fs_dir) {
-		stmmac_fs_dir = debugfs_create_dir(STMMAC_RESOURCE_NAME, NULL);
-
-		if (!stmmac_fs_dir || IS_ERR(stmmac_fs_dir)) {
-			pr_err("ERROR %s, debugfs create directory failed\n",
-			       STMMAC_RESOURCE_NAME);
-
-			return -ENOMEM;
-		}
-	}
-#endif
-	int ret;
-
-	ret = stmmac_register_platform();
-	if (ret)
-		goto err;
-	ret = stmmac_register_pci();
-	if (ret)
-		goto err_pci;
-	return 0;
-err_pci:
-	stmmac_unregister_platform();
-err:
-	pr_err("stmmac: driver registration failed\n");
-	return ret;
-}
-
-static void __exit stmmac_exit(void)
-{
-	stmmac_unregister_platform();
-	stmmac_unregister_pci();
-#ifdef CONFIG_STMMAC_DEBUG_FS
-	debugfs_remove_recursive(stmmac_fs_dir);
-#endif
-}
-
-module_init(stmmac_init)
-module_exit(stmmac_exit)
-
 
 MODULE_DESCRIPTION("STMMAC 10/100/1000 Ethernet device driver");
 MODULE_AUTHOR("Giuseppe Cavallaro <peppe.cavallaro@st.com>");

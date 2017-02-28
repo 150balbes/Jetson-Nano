@@ -40,8 +40,7 @@ int inet_ctl_sock_create(struct sock **sk, unsigned short family,
 
 static inline void inet_ctl_sock_destroy(struct sock *sk)
 {
-	if (sk)
-		sk_release_kernel(sk);
+	sk_release_kernel(sk);
 }
 
 #endif

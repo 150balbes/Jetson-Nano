@@ -1169,7 +1169,6 @@ static void __update_open_stateid(struct nfs4_state *state, nfs4_stateid *open_s
 	 * Protect the call to nfs4_state_set_mode_locked and
 	 * serialise the stateid update
 	 */
-	spin_lock(&state->owner->so_lock);
 	write_seqlock(&state->seqlock);
 	if (deleg_stateid != NULL) {
 		nfs4_stateid_copy(&state->stateid, deleg_stateid);
@@ -1178,6 +1177,7 @@ static void __update_open_stateid(struct nfs4_state *state, nfs4_stateid *open_s
 	if (open_stateid != NULL)
 		nfs_set_open_stateid_locked(state, open_stateid, fmode);
 	write_sequnlock(&state->seqlock);
+	spin_lock(&state->owner->so_lock);
 	update_open_stateflags(state, fmode);
 	spin_unlock(&state->owner->so_lock);
 }
@@ -2170,15 +2170,8 @@ static int _nfs4_open_and_get_state(struct nfs4_opendata *opendata,
 	seq = raw_seqcount_begin(&sp->so_reclaim_seqcount);
 
 	ret = _nfs4_proc_open(opendata);
-	if (ret != 0) {
-		if (ret == -ENOENT) {
-			d_drop(opendata->dentry);
-			d_add(opendata->dentry, NULL);
-			nfs_set_verifier(opendata->dentry,
-					 nfs_save_change_attribute(opendata->dir->d_inode));
-		}
+	if (ret != 0)
 		goto out;
-	}
 
 	state = nfs4_opendata_to_nfs4_state(opendata);
 	ret = PTR_ERR(state);
@@ -2194,9 +2187,9 @@ static int _nfs4_open_and_get_state(struct nfs4_opendata *opendata,
 		dentry = d_add_unique(dentry, igrab(state->inode));
 		if (dentry == NULL) {
 			dentry = opendata->dentry;
-		} else {
+		} else if (dentry != ctx->dentry) {
 			dput(ctx->dentry);
-			ctx->dentry = dentry;
+			ctx->dentry = dget(dentry);
 		}
 		nfs_set_verifier(dentry,
 				nfs_save_change_attribute(opendata->dir->d_inode));
@@ -2282,7 +2275,7 @@ static int _nfs4_do_open(struct inode *dir,
 		goto err_free_label;
 	state = ctx->state;
 
-	if ((opendata->o_arg.open_flags & (O_CREAT|O_EXCL)) == (O_CREAT|O_EXCL) &&
+	if ((opendata->o_arg.open_flags & O_EXCL) &&
 	    (opendata->o_arg.createmode != NFS4_CREATE_GUARDED)) {
 		nfs4_exclusive_attrset(opendata, sattr);
 
@@ -2590,10 +2583,11 @@ static void nfs4_close_prepare(struct rpc_task *task, void *data)
 			call_close |= is_wronly;
 		else if (is_wronly)
 			calldata->arg.fmode |= FMODE_WRITE;
-		if (calldata->arg.fmode != (FMODE_READ|FMODE_WRITE))
-			call_close |= is_rdwr;
 	} else if (is_rdwr)
 		calldata->arg.fmode |= FMODE_READ|FMODE_WRITE;
+
+	if (calldata->arg.fmode == 0)
+		call_close |= is_rdwr;
 
 	if (!nfs4_valid_open_stateid(state))
 		call_close = 0;
@@ -2970,16 +2964,13 @@ int nfs4_proc_get_rootfh(struct nfs_server *server, struct nfs_fh *fhandle,
 			 struct nfs_fsinfo *info,
 			 bool auth_probe)
 {
-	int status;
+	int status = 0;
 
-	switch (auth_probe) {
-	case false:
+	if (!auth_probe)
 		status = nfs4_lookup_root(server, fhandle, info);
-		if (status != -NFS4ERR_WRONGSEC)
-			break;
-	default:
+
+	if (auth_probe || status == NFS4ERR_WRONGSEC)
 		status = nfs4_do_find_root_sec(server, fhandle, info);
-	}
 
 	if (status == 0)
 		status = nfs4_server_capabilities(server, fhandle);
@@ -4912,20 +4903,6 @@ nfs4_init_uniform_client_string(const struct nfs_client *clp,
 				nodename);
 }
 
-/*
- * nfs4_callback_up_net() starts only "tcp" and "tcp6" callback
- * services.  Advertise one based on the address family of the
- * clientaddr.
- */
-static unsigned int
-nfs4_init_callback_netid(const struct nfs_client *clp, char *buf, size_t len)
-{
-	if (strchr(clp->cl_ipaddr, ':') != NULL)
-		return scnprintf(buf, len, "tcp6");
-	else
-		return scnprintf(buf, len, "tcp");
-}
-
 /**
  * nfs4_proc_setclientid - Negotiate client ID
  * @clp: state data structure
@@ -4967,10 +4944,12 @@ int nfs4_proc_setclientid(struct nfs_client *clp, u32 program,
 						setclientid.sc_name,
 						sizeof(setclientid.sc_name));
 	/* cb_client4 */
-	setclientid.sc_netid_len =
-				nfs4_init_callback_netid(clp,
-						setclientid.sc_netid,
-						sizeof(setclientid.sc_netid));
+	rcu_read_lock();
+	setclientid.sc_netid_len = scnprintf(setclientid.sc_netid,
+				sizeof(setclientid.sc_netid), "%s",
+				rpc_peeraddr2str(clp->cl_rpcclient,
+							RPC_DISPLAY_NETID));
+	rcu_read_unlock();
 	setclientid.sc_uaddr_len = scnprintf(setclientid.sc_uaddr,
 				sizeof(setclientid.sc_uaddr), "%s.%u.%u",
 				clp->cl_ipaddr, port >> 8, port & 255);
@@ -8386,7 +8365,6 @@ static const struct nfs4_minor_version_ops nfs_v4_2_minor_ops = {
 	.reboot_recovery_ops = &nfs41_reboot_recovery_ops,
 	.nograce_recovery_ops = &nfs41_nograce_recovery_ops,
 	.state_renewal_ops = &nfs41_state_renewal_ops,
-	.mig_recovery_ops = &nfs41_mig_recovery_ops,
 };
 #endif
 

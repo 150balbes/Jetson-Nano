@@ -33,7 +33,7 @@
 #define AOUT_EVENT_RAWDATA_MAT_MLP              0xC
 #define AOUT_EVENT_RAWDATA_DST                  0xD
 #define AOUT_EVENT_RAWDATA_WMA_PRO              0xE
-
+#define AOUT_EVENT_RAWDATA_DTS_HD_MA (AOUT_EVENT_RAWDATA_DTS_HD|(1<<8))
 extern unsigned int IEC958_mode_codec;
 
 /*
@@ -45,7 +45,7 @@ extern unsigned int IEC958_mode_codec;
 * 3)PCM  output for audios except ac3/dts,
 * when raw output mode is selected by user
 */
-void aml_hw_iec958_init(struct snd_pcm_substream *substream);
+void aml_hw_iec958_init(struct snd_pcm_substream *substream, int samesrc);
 int aml_set_spdif_clk(unsigned long rate, bool src_i2s);
-
+void aml_spdif_play(int samesrc);
 #endif  /* _AML_SPDIF_DAI_H */

@@ -17,6 +17,49 @@
 
 #include "internals.h"
 
+#ifdef CONFIG_CHECK_ISR_TIME
+#include <linux/sched.h>
+#define NR_IRQS_STAT	256
+int irq_times_stat = 1;
+int  irq_times_thresh	= 1000;
+static unsigned long irq_times[NR_IRQS_STAT][1];
+int proc_irq_times_stat_handler(struct ctl_table *table, int write,
+	void __user *buffer, size_t *lenp, loff_t *ppos)
+{
+	int ret, i = 0;
+
+	ret = proc_dointvec_minmax(table, write, buffer, lenp, ppos);
+	if (ret && write)
+		irq_times_stat = 0;
+
+	if (!irq_times_stat && write) {
+		pr_info("---------irq times clear----------\n");
+		for (i = 0; i < NR_IRQS_STAT; i++)
+			irq_times[i][0] = 0;
+	}
+
+	if (irq_times_stat == 1 && !write) {
+		pr_info("---------irq times start----------\n");
+		for (i = 0; i < NR_IRQS_STAT; i++) {
+			if (irq_times[i][0])
+				pr_info("irq:%u, times:%lu us\n", i,
+				irq_times[i][0]);
+		}
+		pr_info("---------irq times end----------\n");
+	}
+
+	return 0;
+}
+
+int proc_irq_times_thresh_handler(struct ctl_table *table, int write,
+	void __user *buffer, size_t *lenp, loff_t *ppos)
+{
+	proc_dointvec_minmax(table, write, buffer, lenp, ppos);
+
+	return 0;
+}
+#endif
+
 /*
  * lockdep: we want to handle all irq_desc locks as a single lock-class:
  */
@@ -131,16 +174,6 @@ static void free_masks(struct irq_desc *desc)
 static inline void free_masks(struct irq_desc *desc) { }
 #endif
 
-void irq_lock_sparse(void)
-{
-	mutex_lock(&sparse_irq_lock);
-}
-
-void irq_unlock_sparse(void)
-{
-	mutex_unlock(&sparse_irq_lock);
-}
-
 static struct irq_desc *alloc_desc(int irq, int node, struct module *owner)
 {
 	struct irq_desc *desc;
@@ -177,12 +210,6 @@ static void free_desc(unsigned int irq)
 
 	unregister_irq_proc(irq, desc);
 
-	/*
-	 * sparse_irq_lock protects also show_interrupts() and
-	 * kstat_irq_usr(). Once we deleted the descriptor from the
-	 * sparse tree we can free it. Access in proc will fail to
-	 * lookup the descriptor.
-	 */
 	mutex_lock(&sparse_irq_lock);
 	delete_irq_desc(irq);
 	mutex_unlock(&sparse_irq_lock);
@@ -325,10 +352,27 @@ static int irq_expand_nr_irqs(unsigned int nr)
 int generic_handle_irq(unsigned int irq)
 {
 	struct irq_desc *desc = irq_to_desc(irq);
+	__maybe_unused unsigned long time = 0, time1 = 0;
 
 	if (!desc)
 		return -EINVAL;
+
+#ifdef CONFIG_CHECK_ISR_TIME
+	time = sched_clock()/1000;
+#endif
+
 	generic_handle_irq_desc(irq, desc);
+
+#ifdef CONFIG_CHECK_ISR_TIME
+	time1 = (sched_clock()/1000);
+	if (irq < NR_IRQS_STAT) {
+		if ((time1 - time) > irq_times[irq][0])
+			irq_times[irq][0] = time1 - time;
+	}
+	if (((time1 - time) >= irq_times_thresh) && irq_times_stat)
+		pr_info("irq_too_long, irq:%d cur:%lu  max: %lu ms\n",
+			irq, (time1 - time),  irq_times[irq][0]);
+#endif
 	return 0;
 }
 EXPORT_SYMBOL_GPL(generic_handle_irq);
@@ -505,15 +549,6 @@ void dynamic_irq_cleanup(unsigned int irq)
 	raw_spin_unlock_irqrestore(&desc->lock, flags);
 }
 
-/**
- * kstat_irqs_cpu - Get the statistics for an interrupt on a cpu
- * @irq:	The interrupt number
- * @cpu:	The cpu number
- *
- * Returns the sum of interrupt counts on @cpu since boot for
- * @irq. The caller must ensure that the interrupt is not removed
- * concurrently.
- */
 unsigned int kstat_irqs_cpu(unsigned int irq, int cpu)
 {
 	struct irq_desc *desc = irq_to_desc(irq);
@@ -522,14 +557,6 @@ unsigned int kstat_irqs_cpu(unsigned int irq, int cpu)
 			*per_cpu_ptr(desc->kstat_irqs, cpu) : 0;
 }
 
-/**
- * kstat_irqs - Get the statistics for an interrupt
- * @irq:	The interrupt number
- *
- * Returns the sum of interrupt counts on all cpus since boot for
- * @irq. The caller must ensure that the interrupt is not removed
- * concurrently.
- */
 unsigned int kstat_irqs(unsigned int irq)
 {
 	struct irq_desc *desc = irq_to_desc(irq);
@@ -540,24 +567,5 @@ unsigned int kstat_irqs(unsigned int irq)
 		return 0;
 	for_each_possible_cpu(cpu)
 		sum += *per_cpu_ptr(desc->kstat_irqs, cpu);
-	return sum;
-}
-
-/**
- * kstat_irqs_usr - Get the statistics for an interrupt
- * @irq:	The interrupt number
- *
- * Returns the sum of interrupt counts on all cpus since boot for
- * @irq. Contrary to kstat_irqs() this can be called from any
- * preemptible context. It's protected against concurrent removal of
- * an interrupt descriptor when sparse irqs are enabled.
- */
-unsigned int kstat_irqs_usr(unsigned int irq)
-{
-	int sum;
-
-	irq_lock_sparse();
-	sum = kstat_irqs(irq);
-	irq_unlock_sparse();
 	return sum;
 }

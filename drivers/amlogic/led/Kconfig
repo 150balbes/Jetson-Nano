@@ -25,4 +25,46 @@ config AML_LED_SYS
 	  Enable this option to allow the userspace to control
 	  the system led.
 
+config AML_LED_PWM
+	tristate "pwm led module support"
+	depends on LEDS_CLASS
+	default n
+	help
+	  This option enables support for pwm led drivers.
+
+	  Enable this option to allow the userspace to control
+	  the pwm led.
+
+config AML_LED_TRIGGER_BREATHE
+	tristate "led breathe trigger support"
+	depends on LEDS_TRIGGERS
+	default n
+	help
+	  This option enables support for led breathe trigger drivers.
+
+	  Enable this option to allow the userspace to control
+	  the led breathe trigger.
+
+config AML_LED_TRIGGER_SCPI
+	tristate "led scpi trigger support"
+	depends on LEDS_TRIGGERS
+	depends on AML_LED_PWM
+	default n
+	help
+	  This option enables support for led scpi trigger drivers.
+
+	  Enable this option to allow the userspace to control
+	  the led scpi trigger for firmware.
+
+config AML_LED_TRIGGER_SCPISTOP
+	tristate "led scpistop trigger support"
+	depends on LEDS_TRIGGERS
+	depends on AML_LED_PWM
+	default n
+	help
+	  This option enables support for led scpistop trigger drivers.
+
+	  Enable this option to allow the userspace to scpi send to stop
+	  the led timer of firmware.
+
 endif

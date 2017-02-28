@@ -441,48 +441,6 @@ find_domain_name(struct cifs_ses *ses, const struct nls_table *nls_cp)
 	return 0;
 }
 
-/* Server has provided av pairs/target info in the type 2 challenge
- * packet and we have plucked it and stored within smb session.
- * We parse that blob here to find the server given timestamp
- * as part of ntlmv2 authentication (or local current time as
- * default in case of failure)
- */
-static __le64
-find_timestamp(struct cifs_ses *ses)
-{
-	unsigned int attrsize;
-	unsigned int type;
-	unsigned int onesize = sizeof(struct ntlmssp2_name);
-	unsigned char *blobptr;
-	unsigned char *blobend;
-	struct ntlmssp2_name *attrptr;
-
-	if (!ses->auth_key.len || !ses->auth_key.response)
-		return 0;
-
-	blobptr = ses->auth_key.response;
-	blobend = blobptr + ses->auth_key.len;
-
-	while (blobptr + onesize < blobend) {
-		attrptr = (struct ntlmssp2_name *) blobptr;
-		type = le16_to_cpu(attrptr->type);
-		if (type == NTLMSSP_AV_EOL)
-			break;
-		blobptr += 2; /* advance attr type */
-		attrsize = le16_to_cpu(attrptr->length);
-		blobptr += 2; /* advance attr size */
-		if (blobptr + attrsize > blobend)
-			break;
-		if (type == NTLMSSP_AV_TIMESTAMP) {
-			if (attrsize == sizeof(u64))
-				return *((__le64 *)blobptr);
-		}
-		blobptr += attrsize; /* advance attr value */
-	}
-
-	return cpu_to_le64(cifs_UnixTimeToNT(CURRENT_TIME));
-}
-
 static int calc_ntlmv2_hash(struct cifs_ses *ses, char *ntlmv2_hash,
 			    const struct nls_table *nls_cp)
 {
@@ -679,7 +637,6 @@ setup_ntlmv2_rsp(struct cifs_ses *ses, const struct nls_table *nls_cp)
 	struct ntlmv2_resp *ntlmv2;
 	char ntlmv2_hash[16];
 	unsigned char *tiblob = NULL; /* target info blob */
-	__le64 rsp_timestamp;
 
 	if (ses->server->negflavor == CIFS_NEGFLAVOR_EXTENDED) {
 		if (!ses->domainName) {
@@ -698,19 +655,13 @@ setup_ntlmv2_rsp(struct cifs_ses *ses, const struct nls_table *nls_cp)
 		}
 	}
 
-	/* Must be within 5 minutes of the server (or in range +/-2h
-	 * in case of Mac OS X), so simply carry over server timestamp
-	 * (as Windows 7 does)
-	 */
-	rsp_timestamp = find_timestamp(ses);
-
 	baselen = CIFS_SESS_KEY_SIZE + sizeof(struct ntlmv2_resp);
 	tilen = ses->auth_key.len;
 	tiblob = ses->auth_key.response;
 
 	ses->auth_key.response = kmalloc(baselen + tilen, GFP_KERNEL);
 	if (!ses->auth_key.response) {
-		rc = -ENOMEM;
+		rc = ENOMEM;
 		ses->auth_key.len = 0;
 		goto setup_ntlmv2_rsp_ret;
 	}
@@ -720,33 +671,31 @@ setup_ntlmv2_rsp(struct cifs_ses *ses, const struct nls_table *nls_cp)
 			(ses->auth_key.response + CIFS_SESS_KEY_SIZE);
 	ntlmv2->blob_signature = cpu_to_le32(0x00000101);
 	ntlmv2->reserved = 0;
-	ntlmv2->time = rsp_timestamp;
-
+	/* Must be within 5 minutes of the server */
+	ntlmv2->time = cpu_to_le64(cifs_UnixTimeToNT(CURRENT_TIME));
 	get_random_bytes(&ntlmv2->client_chal, sizeof(ntlmv2->client_chal));
 	ntlmv2->reserved2 = 0;
 
 	memcpy(ses->auth_key.response + baselen, tiblob, tilen);
 
-	mutex_lock(&ses->server->srv_mutex);
-
 	rc = crypto_hmacmd5_alloc(ses->server);
 	if (rc) {
 		cifs_dbg(VFS, "could not crypto alloc hmacmd5 rc %d\n", rc);
-		goto unlock;
+		goto setup_ntlmv2_rsp_ret;
 	}
 
 	/* calculate ntlmv2_hash */
 	rc = calc_ntlmv2_hash(ses, ntlmv2_hash, nls_cp);
 	if (rc) {
 		cifs_dbg(VFS, "could not get v2 hash rc %d\n", rc);
-		goto unlock;
+		goto setup_ntlmv2_rsp_ret;
 	}
 
 	/* calculate first part of the client response (CR1) */
 	rc = CalcNTLMv2_response(ses, ntlmv2_hash);
 	if (rc) {
 		cifs_dbg(VFS, "Could not calculate CR1 rc: %d\n", rc);
-		goto unlock;
+		goto setup_ntlmv2_rsp_ret;
 	}
 
 	/* now calculate the session key for NTLMv2 */
@@ -755,13 +704,13 @@ setup_ntlmv2_rsp(struct cifs_ses *ses, const struct nls_table *nls_cp)
 	if (rc) {
 		cifs_dbg(VFS, "%s: Could not set NTLMV2 Hash as a key\n",
 			 __func__);
-		goto unlock;
+		goto setup_ntlmv2_rsp_ret;
 	}
 
 	rc = crypto_shash_init(&ses->server->secmech.sdeschmacmd5->shash);
 	if (rc) {
 		cifs_dbg(VFS, "%s: Could not init hmacmd5\n", __func__);
-		goto unlock;
+		goto setup_ntlmv2_rsp_ret;
 	}
 
 	rc = crypto_shash_update(&ses->server->secmech.sdeschmacmd5->shash,
@@ -769,7 +718,7 @@ setup_ntlmv2_rsp(struct cifs_ses *ses, const struct nls_table *nls_cp)
 		CIFS_HMAC_MD5_HASH_SIZE);
 	if (rc) {
 		cifs_dbg(VFS, "%s: Could not update with response\n", __func__);
-		goto unlock;
+		goto setup_ntlmv2_rsp_ret;
 	}
 
 	rc = crypto_shash_final(&ses->server->secmech.sdeschmacmd5->shash,
@@ -777,8 +726,6 @@ setup_ntlmv2_rsp(struct cifs_ses *ses, const struct nls_table *nls_cp)
 	if (rc)
 		cifs_dbg(VFS, "%s: Could not generate md5 hash\n", __func__);
 
-unlock:
-	mutex_unlock(&ses->server->srv_mutex);
 setup_ntlmv2_rsp_ret:
 	kfree(tiblob);
 

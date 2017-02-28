@@ -290,7 +290,7 @@ int of_irq_parse_one(struct device_node *device, int index, struct of_phandle_ar
 	struct device_node *p;
 	const __be32 *intspec, *tmp, *addr;
 	u32 intsize, intlen;
-	int i, res;
+	int i, res = -EINVAL;
 
 	pr_debug("of_irq_parse_one: dev=%s, index=%d\n", of_node_full_name(device), index);
 
@@ -323,19 +323,15 @@ int of_irq_parse_one(struct device_node *device, int index, struct of_phandle_ar
 
 	/* Get size of interrupt specifier */
 	tmp = of_get_property(p, "#interrupt-cells", NULL);
-	if (tmp == NULL) {
-		res = -EINVAL;
+	if (tmp == NULL)
 		goto out;
-	}
 	intsize = be32_to_cpu(*tmp);
 
 	pr_debug(" intsize=%d intlen=%d\n", intsize, intlen);
 
 	/* Check index */
-	if ((index + 1) * intsize > intlen) {
-		res = -EINVAL;
+	if ((index + 1) * intsize > intlen)
 		goto out;
-	}
 
 	/* Copy intspec into irq structure */
 	intspec += index * intsize;

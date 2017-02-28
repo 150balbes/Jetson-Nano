@@ -159,7 +159,7 @@ static struct ibm_pa_feature {
 	{CPU_FTR_NOEXECUTE, 0, 0,	0, 6, 0},
 	{CPU_FTR_NODSISRALIGN, 0, 0,	1, 1, 1},
 	{0, MMU_FTR_CI_LARGE_PAGE, 0,	1, 2, 0},
-	{CPU_FTR_REAL_LE, 0, PPC_FEATURE_TRUE_LE, 5, 0, 0},
+	{CPU_FTR_REAL_LE, PPC_FEATURE_TRUE_LE, 5, 0, 0},
 };
 
 static void __init scan_features(unsigned long node, const unsigned char *ftrs,
@@ -837,6 +837,76 @@ int cpu_to_chip_id(int cpu)
 	return of_get_ibm_chip_id(np);
 }
 EXPORT_SYMBOL(cpu_to_chip_id);
+
+#ifdef CONFIG_PPC_PSERIES
+/*
+ * Fix up the uninitialized fields in a new device node:
+ * name, type and pci-specific fields
+ */
+
+static int of_finish_dynamic_node(struct device_node *node)
+{
+	struct device_node *parent = of_get_parent(node);
+	int err = 0;
+	const phandle *ibm_phandle;
+
+	node->name = of_get_property(node, "name", NULL);
+	node->type = of_get_property(node, "device_type", NULL);
+
+	if (!node->name)
+		node->name = "<NULL>";
+	if (!node->type)
+		node->type = "<NULL>";
+
+	if (!parent) {
+		err = -ENODEV;
+		goto out;
+	}
+
+	/* We don't support that function on PowerMac, at least
+	 * not yet
+	 */
+	if (machine_is(powermac))
+		return -ENODEV;
+
+	/* fix up new node's phandle field */
+	if ((ibm_phandle = of_get_property(node, "ibm,phandle", NULL)))
+		node->phandle = *ibm_phandle;
+
+out:
+	of_node_put(parent);
+	return err;
+}
+
+static int prom_reconfig_notifier(struct notifier_block *nb,
+				  unsigned long action, void *node)
+{
+	int err;
+
+	switch (action) {
+	case OF_RECONFIG_ATTACH_NODE:
+		err = of_finish_dynamic_node(node);
+		if (err < 0)
+			printk(KERN_ERR "finish_node returned %d\n", err);
+		break;
+	default:
+		err = 0;
+		break;
+	}
+	return notifier_from_errno(err);
+}
+
+static struct notifier_block prom_reconfig_nb = {
+	.notifier_call = prom_reconfig_notifier,
+	.priority = 10, /* This one needs to run first */
+};
+
+static int __init prom_reconfig_setup(void)
+{
+	return of_reconfig_notifier_register(&prom_reconfig_nb);
+}
+__initcall(prom_reconfig_setup);
+#endif
 
 bool arch_match_cpu_phys_id(int cpu, u64 phys_id)
 {

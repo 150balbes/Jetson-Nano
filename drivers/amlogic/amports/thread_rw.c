@@ -60,8 +60,10 @@ struct threadrw_write_task {
 	int buffered_data_size;
 	int passed_data_len;
 	int buffer_size;
+	int data_offset;
 	int writework_on;
 	unsigned long codec_mm_buffer;
+	int manual_write;
 	wait_queue_head_t wq;
 	ssize_t (*write)(struct file *,
 		struct stream_buf_s *,
@@ -177,7 +179,10 @@ static ssize_t threadrw_write_in(
 
 	/*end: */
 	spin_lock_irqsave(&task->lock, flags);
-	task->buffered_data_size += off;
+	if (off > 0) {
+		task->buffered_data_size += off;
+		task->data_offset += off;
+	}
 	spin_unlock_irqrestore(&task->lock, flags);
 	if (off > 0)
 		return off;
@@ -201,11 +206,17 @@ static int do_write_work_in(struct threadrw_write_task *task)
 		codec_mm_dma_flush(rwbuf->vbuffer,
 				rwbuf->data_size,
 				DMA_TO_DEVICE);
-
-	ret = task->write(task->file, task->sbuf,
+	if (task->manual_write) {
+		ret = task->write(task->file, task->sbuf,
+			(const char __user *)rwbuf->vbuffer + rwbuf->write_off,
+			rwbuf->data_size,
+			2);	/* noblock,virtual addr */
+	} else {
+		ret = task->write(task->file, task->sbuf,
 		(const char __user *)rwbuf->dma_handle + rwbuf->write_off,
 		rwbuf->data_size,
 		3);	/* noblock,phy addr */
+	}
 	if (ret == -EAGAIN) {
 		need_re_write = 0;
 		/*do later retry. */
@@ -230,8 +241,8 @@ static int do_write_work_in(struct threadrw_write_task *task)
 		task->errors = ret;
 	}
 	if (write_len > 0) {
-		task->passed_data_len += write_len;
 		spin_lock_irqsave(&task->lock, flags);
+		task->passed_data_len += write_len;
 		task->buffered_data_size -= write_len;
 		spin_unlock_irqrestore(&task->lock, flags);
 	}
@@ -326,7 +337,8 @@ static struct threadrw_write_task *threadrw_buf_alloc_in(int num,
 		int block_size,
 		ssize_t (*write)(struct file *,
 			struct stream_buf_s *,
-			const char __user *, size_t, int))
+			const char __user *, size_t, int),
+			int flags)
 {
 	int task_buffer_size = sizeof(struct threadrw_write_task) +
 				sizeof(struct threadrw_buf) * (num - 1) + 4;
@@ -349,6 +361,7 @@ static struct threadrw_write_task *threadrw_buf_alloc_in(int num,
 	task->write = write;
 	task->file = NULL;
 	task->buffer_size = 0;
+	task->manual_write = flags & 1;
 	ret = init_task_buffers(task, num, block_size);
 	if (ret < 0)
 		goto err3;
@@ -412,6 +425,18 @@ int threadrw_passed_len(struct stream_buf_s *stbuf)
 	return 0;
 
 }
+/*
+all data writed.;
+*/
+int threadrw_dataoffset(struct stream_buf_s *stbuf)
+{
+	struct threadrw_write_task *task = stbuf->write_thread;
+	int offset = 0;
+	if (task)
+		return task->data_offset;
+	return offset;
+
+}
 
 ssize_t threadrw_write(struct file *file, struct stream_buf_s *stbuf,
 					   const char __user *buf, size_t count)
@@ -424,14 +449,30 @@ ssize_t threadrw_write(struct file *file, struct stream_buf_s *stbuf,
 	return threadrw_write_in(task, stbuf, buf, count);
 }
 
+int threadrw_flush_buffers(struct stream_buf_s *stbuf)
+{
+	struct threadrw_write_task *task = stbuf->write_thread;
+	int max_retry = 20;
+	if (!task)
+		return 0;
+	while (!kfifo_is_empty(&task->datafifo) && max_retry-- > 0) {
+		threadrw_schedule_delayed_work(task, 0);
+		msleep(20);
+	}
+	if (!kfifo_is_empty(&task->datafifo))
+		return -1;/*data not flushed*/
+	return 0;
+}
+
 void *threadrw_alloc(int num,
 		int block_size,
 			ssize_t (*write)(struct file *,
 				struct stream_buf_s *,
 				const char __user *,
-				size_t, int))
+				size_t, int),
+				int flags)
 {
-	return threadrw_buf_alloc_in(num, block_size, write);
+	return threadrw_buf_alloc_in(num, block_size, write, flags);
 }
 
 void threadrw_release(struct stream_buf_s *stbuf)

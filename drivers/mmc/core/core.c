@@ -314,10 +314,8 @@ EXPORT_SYMBOL(mmc_start_bkops);
  */
 static void mmc_wait_data_done(struct mmc_request *mrq)
 {
-	struct mmc_context_info *context_info = &mrq->host->context_info;
-
-	context_info->is_done_rcv = true;
-	wake_up_interruptible(&context_info->wait);
+	mrq->host->context_info.is_done_rcv = true;
+	wake_up_interruptible(&mrq->host->context_info.wait);
 }
 
 static void mmc_wait_done(struct mmc_request *mrq)
@@ -811,11 +809,11 @@ void mmc_set_data_timeout(struct mmc_data *data, const struct mmc_card *card)
 	/*
 	 * Some cards require longer data read timeout than indicated in CSD.
 	 * Address this by setting the read timeout to a "reasonably high"
-	 * value. For the cards tested, 600ms has proven enough. If necessary,
+	 * value. For the cards tested, 300ms has proven enough. If necessary,
 	 * this value can be increased if other problematic cards require this.
 	 */
 	if (mmc_card_long_read_time(card) && data->flags & MMC_DATA_READ) {
-		data->timeout_ns = 600000000;
+		data->timeout_ns = 300000000;
 		data->timeout_clks = 0;
 	}
 
@@ -1469,7 +1467,10 @@ int mmc_set_signal_voltage(struct mmc_host *host, int signal_voltage, u32 ocr)
 	}
 
 	/* Keep clock gated for at least 5 ms */
-	mmc_delay(5);
+	if (host->vol_switch_delay)
+		mmc_delay(host->vol_switch_delay);
+	else
+		mmc_delay(5);
 	host->ios.clock = clock;
 	mmc_set_ios(host);
 
@@ -2062,26 +2063,26 @@ int _mmc_erase(struct mmc_card *card, unsigned int from, unsigned int nr,
 	return mmc_do_erase(card, from, to, arg);
 }
 
-#define		ERASE_512M		0x100000
+#define		ERASE_UNIT		0x14000	/* 40MBytes */
 int mmc_erase(struct mmc_card *card, unsigned int from, unsigned int nr,
 	      unsigned int arg)
 {
 	unsigned int group , start;
 	int ret = 0, count = 1;
-	if (nr > ERASE_512M) {
+	if (nr > ERASE_UNIT) {
 		do {
 			start = from;
-			group = ERASE_512M;
+			group = ERASE_UNIT;
 			ret = _mmc_erase(card, start, group, arg);
 			if (ret) {
 				pr_err("%s [%d] count = %x\n",
 					__func__, __LINE__, count);
 				return ret;
 			}
-			from += ERASE_512M;
-			nr -= ERASE_512M;
+			from += ERASE_UNIT;
+			nr -= ERASE_UNIT;
 			count++;
-		} while (nr > ERASE_512M);
+		} while (nr > ERASE_UNIT);
 		ret = _mmc_erase(card, from, nr, arg);
 		if (ret) {
 			pr_err("%s [%d] count = %x\n",
@@ -2658,7 +2659,6 @@ int mmc_pm_notify(struct notifier_block *notify_block,
 	switch (mode) {
 	case PM_HIBERNATION_PREPARE:
 	case PM_SUSPEND_PREPARE:
-	case PM_RESTORE_PREPARE:
 		spin_lock_irqsave(&host->lock, flags);
 		host->rescan_disable = 1;
 		spin_unlock_irqrestore(&host->lock, flags);

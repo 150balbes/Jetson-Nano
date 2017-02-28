@@ -42,7 +42,10 @@
 #define MESON_CPU_MAJOR_ID_MG9TV	0x1C
 #define MESON_CPU_MAJOR_ID_M8M2		0x1D
 #define MESON_CPU_MAJOR_ID_GXBB		0x1F
-
+#define MESON_CPU_MAJOR_ID_GXTVBB		0x20
+#define MESON_CPU_MAJOR_ID_GXL		0x21
+#define MESON_CPU_MAJOR_ID_GXM		0x22
+#define MESON_CPU_MAJOR_ID_TXL		0x23
 */
 struct type_name {
 
@@ -60,6 +63,10 @@ static const struct type_name cpu_type_name[] = {
 	{MESON_CPU_MAJOR_ID_MG9TV, "mg9tv"},
 	{MESON_CPU_MAJOR_ID_M8M2, "m8"},
 	{MESON_CPU_MAJOR_ID_GXBB, "gxbb"},
+	{MESON_CPU_MAJOR_ID_GXTVBB, "gxtvbb"},
+	{MESON_CPU_MAJOR_ID_GXL, "gxl"},
+	{MESON_CPU_MAJOR_ID_GXM, "gxm"},
+	{MESON_CPU_MAJOR_ID_TXL, "txl"},
 	{0, NULL},
 };
 
@@ -104,6 +111,9 @@ enum vformat_e {
 	VFORMAT_H264MVC,
 	VFORMAT_H264_4K2K,
 	VFORMAT_HEVC,
+	VFORMAT_H264_ENC,
+	VFORMAT_JPEG_ENC,
+	VFORMAT_VP9,
 	VFORMAT_MAX
 };
 */
@@ -120,6 +130,9 @@ static const struct type_name vformat_type_name[] = {
 	{VFORMAT_H264MVC, "h264mvc"},
 	{VFORMAT_H264_4K2K, "h264_4k"},
 	{VFORMAT_HEVC, "hevc"},
+	{VFORMAT_H264_ENC, "h264_enc"},
+	{VFORMAT_JPEG_ENC, "jpeg_enc"},
+	{VFORMAT_VP9, "vp9"},
 	{VFORMAT_YUV, "yuv"},
 	{0, NULL},
 };

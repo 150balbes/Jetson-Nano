@@ -57,9 +57,11 @@ static int early_resume_flag;
 
 static struct class *vout_class;
 static DEFINE_MUTEX(vout_mutex);
+static char vout_mode_uboot[64] __nosavedata;
 static char vout_mode[64] __nosavedata;
 static char vout_axis[64] __nosavedata;
-static u32 vout_logo_vmode = VMODE_INIT_NULL;
+static u32 vout_init_vmode = VMODE_INIT_NULL;
+static int uboot_display;
 
 void update_vout_mode_attr(const struct vinfo_s *vinfo)
 {
@@ -71,7 +73,7 @@ void update_vout_mode_attr(const struct vinfo_s *vinfo)
 	snprintf(vout_mode, 40, "%s", vinfo->name);
 }
 
-static void set_vout_mode(char *name);
+static int set_vout_mode(char *name);
 static void set_vout_axis(char *axis);
 static ssize_t mode_show(struct class *class, struct class_attribute *attr,
 			 char *buf);
@@ -97,9 +99,12 @@ static ssize_t mode_show(struct class *class, struct class_attribute *attr,
 static ssize_t mode_store(struct class *class, struct class_attribute *attr,
 			  const char *buf, size_t count)
 {
+	char mode[64];
+
 	mutex_lock(&vout_mutex);
-	snprintf(vout_mode, 64, "%s", buf);
-	set_vout_mode(vout_mode);
+	snprintf(mode, 64, "%s", buf);
+	if (set_vout_mode(mode) == 0)
+		strcpy(vout_mode, mode);
 	mutex_unlock(&vout_mutex);
 	return count;
 }
@@ -165,43 +170,105 @@ static int  meson_vout_suspend(struct platform_device *pdev,
 static int  meson_vout_resume(struct platform_device *pdev);
 #endif
 
-static void set_vout_mode(char *name)
-{
-	enum vmode_e mode;
-	vout_log_info("vmode set to %s\n", name);
-	mode = validate_vmode(name);
+static char local_name[32] = {0};
 
+static int set_vout_mode(char *name)
+{
+	struct hdmitx_dev *hdmitx_device = get_hdmitx_device();
+	enum vmode_e mode;
+	int ret = 0;
+
+	vout_log_info("vmode set to %s\n", name);
+
+	if (strcmp(name, local_name)) {
+		memset(local_name, 0, sizeof(local_name));
+		strcpy(local_name, name);
+		mode = validate_vmode(name);
+		goto next;
+	} else {
+		vout_log_info("don't set the same mode as current\n");
+		return -1;
+	}
+
+	mode = validate_vmode(name);
 	if (VMODE_MAX == mode) {
 		vout_log_info("no matched vout mode\n");
-		return;
+		return -1;
 	}
-
-	if (mode == get_current_vmode()) {
-		vout_log_info("don't set the same mode as current.\n");
-		return;
+next:
+	if (hdmitx_device->hdtx_dev) {
+		/*
+		 * On kernel booting, there happens call phy_pll_off() a time,
+		 * this will cause hdmitx disable output for a short while.
+		 * So, just using flag to prevent the first error call.
+		 * [    5.038667@0] vout_serve: vmode set to 1080p60hz
+		 * [    5.038711@0] vout_serve: disable HDMI PHY as soon as
+		*/
+		static int flag = 1;
+		if (flag == 1)
+			flag = 0;
+		else {
+			phy_pll_off();
+			vout_log_info("disable HDMI PHY as soon as possible\n");
+		}
 	}
-	phy_pll_off();
-	vout_log_info("disable HDMI PHY as soon as possible\n");
-	set_current_vmode(mode);
-	vout_log_info("new mode %s set ok\n", name);
+	vout_notifier_call_chain(VOUT_EVENT_MODE_CHANGE_PRE, &mode);
+	ret = set_current_vmode(mode);
+	if (ret)
+		vout_log_info("new mode %s set error\n", name);
+	else
+		vout_log_info("new mode %s set ok\n", name);
 	vout_notifier_call_chain(VOUT_EVENT_MODE_CHANGE, &mode);
+	return ret;
+}
+
+static int set_vout_init_mode(void)
+{
+	enum vmode_e vmode;
+	int ret = 0;
+
+	vout_init_vmode = validate_vmode(vout_mode_uboot);
+	if (vout_init_vmode >= VMODE_MAX) {
+		vout_log_info("no matched vout_init mode %s\n",
+			vout_mode_uboot);
+		return -1;
+	}
+#if 1
+	if (uboot_display)
+		vmode = vout_init_vmode | VMODE_INIT_BIT_MASK;
+	else
+		vmode = vout_init_vmode;
+#else
+	/* force to init display, for clk-gating disabled */
+	vmode = vout_init_vmode;
+#endif
+
+	memset(local_name, 0, sizeof(local_name));
+	strcpy(local_name, vout_mode_uboot);
+	ret = set_current_vmode(vmode);
+	vout_log_info("init mode %s\n", vout_mode_uboot);
+
+	return ret;
 }
 
 enum vmode_e get_logo_vmode(void)
 {
-	return vout_logo_vmode;
+	return vout_init_vmode;
 }
 EXPORT_SYMBOL(get_logo_vmode);
 
 int set_logo_vmode(enum vmode_e mode)
 {
+	const char *tmp;
+	char name[32] = {0};
 	int ret = 0;
 
 	if (mode == VMODE_INIT_NULL)
 		return -1;
-
-	vout_logo_vmode = mode;
-	set_current_vmode(mode);
+	tmp = vmode_mode_to_name(mode);
+	strncpy(&name[0], tmp, 32);
+	vout_init_vmode = mode;
+	set_vout_mode(name);
 
 	return ret;
 }
@@ -220,6 +287,12 @@ char *get_vout_mode_internal(void)
 	return vout_mode;
 }
 EXPORT_SYMBOL(get_vout_mode_internal);
+
+char *get_vout_mode_uboot(void)
+{
+	return vout_mode_uboot;
+}
+EXPORT_SYMBOL(get_vout_mode_uboot);
 
 static void set_vout_axis(char *para)
 {
@@ -241,6 +314,43 @@ static void set_vout_axis(char *para)
 	vout_notifier_call_chain(VOUT_EVENT_OSD_DISP_AXIS, &disp_rect[0]);
 }
 
+static ssize_t vout_attr_vinfo_show(struct class *class,
+		struct class_attribute *attr, char *buf)
+{
+	const struct vinfo_s *info = NULL;
+
+	info = get_current_vinfo();
+	if (info == NULL) {
+		pr_info("current vinfo is null\n");
+		return sprintf(buf, "\n");
+	}
+
+	pr_info("current vinfo:\n"
+		"    name:                  %s\n"
+		"    mode:                  %d\n"
+		"    width:                 %d\n"
+		"    height:                %d\n"
+		"    field_height:          %d\n"
+		"    aspect_ratio_num:      %d\n"
+		"    aspect_ratio_den:      %d\n"
+		"    sync_duration_num:     %d\n"
+		"    sync_duration_den:     %d\n"
+		"    screen_real_width:     %d\n"
+		"    screen_real_height:    %d\n"
+		"    video_clk:             %d\n"
+		"    viu_color_fmt:         %d\n",
+		info->name, info->mode,
+		info->width, info->height, info->field_height,
+		info->aspect_ratio_num, info->aspect_ratio_den,
+		info->sync_duration_num, info->sync_duration_den,
+		info->screen_real_width, info->screen_real_height,
+		info->video_clk, info->viu_color_fmt);
+	return sprintf(buf, "\n");
+}
+
+static struct  class_attribute  class_attr_vinfo =
+	__ATTR(vinfo, S_IRUGO|S_IWUSR|S_IWGRP, vout_attr_vinfo_show, NULL);
+
 static int create_vout_attr(void)
 {
 	int ret = 0;
@@ -261,6 +371,10 @@ static int create_vout_attr(void)
 
 	ret = class_create_file(vout_class, &class_attr_axis);
 
+	if (ret != 0)
+		vout_log_err("create class attr failed!\n");
+
+	ret = class_create_file(vout_class, &class_attr_vinfo);
 	if (ret != 0)
 		vout_log_err("create class attr failed!\n");
 
@@ -328,6 +442,16 @@ static int  meson_vout_restore(struct device *dev)
 
 	return 0;
 }
+static int meson_vout_pm_suspend(struct device *dev)
+{
+	struct platform_device *pdev = to_platform_device(dev);
+	return meson_vout_suspend(pdev, PMSG_SUSPEND);
+}
+static int meson_vout_pm_resume(struct device *dev)
+{
+	struct platform_device *pdev = to_platform_device(dev);
+	return meson_vout_resume(pdev);
+}
 #endif
 
 #ifdef CONFIG_SCREEN_ON_EARLY
@@ -371,13 +495,16 @@ static void meson_vout_late_resume(struct early_suspend *h)
 static int meson_vout_probe(struct platform_device *pdev)
 {
 	int ret = -1;
-	vout_log_info("%s\n", __func__);
+
 #ifdef CONFIG_HAS_EARLYSUSPEND
 	early_suspend.level = EARLY_SUSPEND_LEVEL_BLANK_SCREEN;
 	early_suspend.suspend = meson_vout_early_suspend;
 	early_suspend.resume = meson_vout_late_resume;
 	register_early_suspend(&early_suspend);
 #endif
+
+	set_vout_init_mode();
+
 	vout_class = NULL;
 	ret = create_vout_attr();
 
@@ -386,6 +513,7 @@ static int meson_vout_probe(struct platform_device *pdev)
 	else
 		vout_log_info("create vout attribute FAILED\n");
 
+	vout_log_info("%s OK\n", __func__);
 	return ret;
 }
 
@@ -399,6 +527,7 @@ static int meson_vout_remove(struct platform_device *pdev)
 #endif
 	class_remove_file(vout_class, &class_attr_mode);
 	class_remove_file(vout_class, &class_attr_axis);
+	class_remove_file(vout_class, &class_attr_vinfo);
 	class_destroy(vout_class);
 	return 0;
 }
@@ -413,6 +542,8 @@ const struct dev_pm_ops vout_pm = {
 	.freeze		= meson_vout_freeze,
 	.thaw		= meson_vout_thaw,
 	.restore	= meson_vout_restore,
+	.suspend	= meson_vout_pm_suspend,
+	.resume		= meson_vout_pm_resume,
 };
 #endif
 
@@ -452,8 +583,97 @@ static __exit void vout_exit_module(void)
 	platform_driver_unregister(&vout_driver);
 }
 
-module_init(vout_init_module);
+subsys_initcall(vout_init_module);
 module_exit(vout_exit_module);
+
+static int str2lower(char *str)
+{
+	while (*str != '\0') {
+		*str = tolower(*str);
+		str++;
+	}
+	return 0;
+}
+
+static void vout_init_mode_parse(char *str)
+{
+	/*enum vmode_e vmode;*/
+
+	/* detect vout mode */
+	if (strlen(str) <= 1) {
+		vout_log_info("%s: error\n", str);
+		return;
+	}
+
+	/* detect uboot display */
+	if (strncmp(str, "en", 2) == 0) { /* enable */
+		uboot_display = 1;
+		vout_log_info("%s: %d\n", str, uboot_display);
+		return;
+	} else if (strncmp(str, "dis", 3) == 0) { /* disable */
+		uboot_display = 0;
+		vout_log_info("%s: %d\n", str, uboot_display);
+		return;
+	}
+
+	/* just save the vmode_name,
+	convert to vmode when vout sever registered */
+	strcpy(vout_mode_uboot, str);
+	vout_log_info("%s\n", str);
+	/*vmode = vmode_name_to_mode(str);
+	if (vmode < VMODE_MAX) {
+		vout_init_vmode = vmode;
+		vout_log_info("%s: %d\n", str, vout_init_vmode);
+		return;
+	}*/
+	return;
+
+	vout_log_info("%s: error\n", str);
+}
+
+static int __init get_vout_init_mode(char *str)
+{
+	char *ptr = str;
+	char sep[2];
+	char *option;
+	int count = 3;
+	char find = 0;
+
+	/* init void vout_mode_uboot name */
+	memset(vout_mode_uboot, 0, sizeof(vout_mode_uboot));
+
+	if (NULL == str)
+		return -EINVAL;
+
+	do {
+		if (!isalpha(*ptr) && !isdigit(*ptr)) {
+			find = 1;
+			break;
+		}
+	} while (*++ptr != '\0');
+	if (!find)
+		return -EINVAL;
+
+	sep[0] = *ptr;
+	sep[1] = '\0';
+	while ((count--) && (option = strsep(&str, sep))) {
+		/* vout_log_info("%s\n", option); */
+		str2lower(option);
+		vout_init_mode_parse(option);
+	}
+
+	return 0;
+}
+//__setup("vout=", get_vout_init_mode);
+
+void set_vout_init_vmode(char *str)
+{
+	char str2[1024];
+	strcpy(str2, str);
+	strcat(str2, ",en"); // logo was already displayed by uboot
+	get_vout_init_mode(str2);
+}
+EXPORT_SYMBOL(set_vout_init_vmode);
 
 MODULE_AUTHOR("Platform-BJ <platform.bj@amlogic.com>");
 MODULE_DESCRIPTION("VOUT Server Module");

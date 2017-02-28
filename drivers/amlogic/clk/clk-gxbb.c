@@ -24,17 +24,25 @@
 #include "mpll_clk.h"
 
 #include "clk.h"
-void __iomem *reg_base_hiubus;
+
+#undef pr_fmt
+#define pr_fmt(fmt) "gxbb_clk: " fmt
+
+static void __iomem *reg_base_hiubus;
+static void __iomem *reg_base_aobus;
+
+
 #define	OFFSET(x)	(x << 2)
 #undef	HHI_GCLK_MPEG0
 #undef	HHI_MALI_CLK_CNTL
 #undef	HHI_VAPBCLK_CNTL
 #undef	HHI_XTAL_DIVN_CNTL
-
+#undef	HHI_SYS_CPU_CLK_CNTL1
 #define	HHI_GCLK_MPEG0			OFFSET(0x50)
 #define	HHI_MALI_CLK_CNTL		OFFSET(0x6c)
 #define	HHI_VAPBCLK_CNTL		OFFSET(0x7d)
 #define	HHI_XTAL_DIVN_CNTL		OFFSET(0x2f)
+#define	HHI_SYS_CPU_CLK_CNTL1		OFFSET(0x57)
 
 #undef HHI_MPLL_CNTL
 #define	HHI_MPLL_CNTL			OFFSET(0xa0)
@@ -46,6 +54,7 @@ void __iomem *reg_base_hiubus;
 #define	HHI_AUD_CLK_CNTL2		OFFSET(0x64)
 #define	HHI_BT656_CLK_CNTL		OFFSET(0xf5)
 #define	HHI_VID_LOCK_CLK_CNTL		OFFSET(0xf2)
+#define	HHI_PCM_CLK_CNTL		OFFSET(0x96)
 
 #define GXBB_RSTC_N_REGS	6
 #define GXBB_AO_OFF		((GXBB_RSTC_N_REGS - 1) * BITS_PER_LONG + 4)
@@ -60,6 +69,11 @@ PNAME(cts_am_p) = {"ddr_pll_clk", "mpll_clk_out0", "mpll_clk_out1",
 							"mpll_clk_out2"};
 PNAME(cts_i958_p) = {"NULL", "mpll_clk_out0", "mpll_clk_out1", "mpll_clk_out2"};
 PNAME(cts_spdif_p) = {"cts_amclk", "cts_i958"};
+
+PNAME(mux_pcm_0_p) = {"mpll_clk_out0", "fclk_div4", "fclk_div3", "fclk_div5"};
+PNAME(mux_pcm_1_p) = {"mux_pcm_0_p"};
+
+
 PNAME(mux_vapb_0_p) = {"fclk_div4", "fclk_div3", "fclk_div5", "fclk_div7"};
 PNAME(mux_vapb_1_p) = {"fclk_div4", "fclk_div3", "fclk_div5", "fclk_div7"};
 
@@ -78,14 +92,19 @@ static struct amlogic_fixed_rate_clock gxbb_fixed_rate_ext_clks[] __initdata = {
 	FRATE(CLK_81, "clk81", NULL, CLK_IS_ROOT, 166666666),
 	FRATE(CLK_FIXED_PLL, "fixed_pll", NULL, CLK_IS_ROOT, 2000000000),
 	FRATE(CLK_FPLL_DIV2, "fclk_div2", NULL, CLK_IS_ROOT, 1000000000),
-	FRATE(CLK_FPLL_DIV3, "fclk_div3", NULL, CLK_IS_ROOT,  666666000),
+	FRATE(CLK_FPLL_DIV3, "fclk_div3", NULL, CLK_IS_ROOT,  666666666),
 	FRATE(CLK_FPLL_DIV4, "fclk_div4", NULL, CLK_IS_ROOT,  500000000),
 	FRATE(CLK_FPLL_DIV5, "fclk_div5", NULL, CLK_IS_ROOT,  400000000),
-	FRATE(CLK_FPLL_DIV7, "fclk_div7", NULL, CLK_IS_ROOT,  285714000),
+	FRATE(CLK_FPLL_DIV7, "fclk_div7", NULL, CLK_IS_ROOT,  285714285),
 };
 static struct amlogic_mux_clock mux_clks[] __initdata = {
 	MUX(CLK_MALI, "clk_mali", mux_mali_p, HHI_MALI_CLK_CNTL, 31, 1, 0),
 	MUX(CLK_SPDIF, "clk_spdif", cts_spdif_p, HHI_AUD_CLK_CNTL2, 27, 1, 0)
+};
+
+/* divider clocks */
+static struct amlogic_div_clock gxbb_div_clks[] __initdata = {
+	DIV(CLK_APB_P, "apb_pclk", "vcpu", HHI_SYS_CPU_CLK_CNTL1, 3, 3, 0),
 };
 
 
@@ -141,6 +160,20 @@ static struct amlogic_clk_branch clk_branches[] __initdata = {
 			CLK_DIVIDER_ROUND_CLOSEST,
 			HHI_AUD_CLK_CNTL2, 24, 0),
 
+	COMPOSITE(CLK_PCM_MCLK, "clk_pcm_mclk", mux_pcm_0_p,
+			CLK_SET_RATE_NO_REPARENT,
+			HHI_PCM_CLK_CNTL, 10, 2, 0,
+			HHI_PCM_CLK_CNTL, 0, 9,
+			CLK_DIVIDER_ROUND_CLOSEST,
+			HHI_PCM_CLK_CNTL, 9, 0),
+
+	COMPOSITE_NOMUX(CLK_PCM_SCLK, "clk_pcm_sclk", mux_pcm_1_p,
+			CLK_SET_RATE_NO_REPARENT,
+			HHI_PCM_CLK_CNTL,
+			HHI_PCM_CLK_CNTL, 16, 5,
+			CLK_DIVIDER_ROUND_CLOSEST,
+			HHI_PCM_CLK_CNTL, 22, 0),
+
 	COMPOSITE(CLK_BT656_CLK0, "cts_bt656_clk0", cts_bt656_clk0_p,
 			CLK_SET_RATE_NO_REPARENT,
 			HHI_BT656_CLK_CNTL, 9, 2, 0,
@@ -189,8 +222,8 @@ static void __init gxbb_clk_init(struct device_node *np)
 	if ((!reg_base_hiubus) || (!reg_base_aobus))
 		panic("%s: failed to map registers\n", __func__);
 
-	pr_debug("gxbb clk HIU base is 0x%p\n", reg_base_hiubus);
-	pr_debug("gxbb clk ao base is 0x%p\n", reg_base_aobus);
+	pr_debug("HIU base is 0x%p\n", reg_base_hiubus);
+	pr_debug("ao base is 0x%p\n", reg_base_aobus);
 
 	amlogic_clk_init(np, reg_base_hiubus, reg_base_aobus,
 			CLK_NR_CLKS, NULL, 0, NULL, 0);
@@ -199,6 +232,8 @@ static void __init gxbb_clk_init(struct device_node *np)
 	mpll_clk_init(reg_base_hiubus, mpll_tab, ARRAY_SIZE(mpll_tab));
 	amlogic_clk_register_mux(mux_clks,
 			ARRAY_SIZE(mux_clks));
+	amlogic_clk_register_div(gxbb_div_clks,
+			ARRAY_SIZE(gxbb_div_clks));
 	amlogic_clk_register_branches(clk_branches,
 		  ARRAY_SIZE(clk_branches));
 	amlogic_clk_register_gate(clk_gates,
@@ -234,7 +269,7 @@ static void __init gxbb_clk_init(struct device_node *np)
 
 		for (i = 0; i < count; i++) {
 			char *clk_name = clks[i];
-			pr_info("clkrate [ %s \t] : %luHz\n", clk_name,
+			pr_info("[ %s \t] ->clockrate: %luHz\n", clk_name,
 				_get_rate(clk_name));
 		}
 
@@ -267,6 +302,6 @@ static void __init gxbb_clk_init(struct device_node *np)
 			clk_put(fixdiv5);
 
 	}
-	pr_info("gxbb clock initialization complete\n");
+	pr_info("clock initialization complete\n");
 }
 CLK_OF_DECLARE(gxbb, "amlogic, gxbb-clock", gxbb_clk_init);

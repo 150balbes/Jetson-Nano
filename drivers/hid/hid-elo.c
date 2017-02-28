@@ -37,7 +37,7 @@ static bool use_fw_quirk = true;
 module_param(use_fw_quirk, bool, S_IRUGO);
 MODULE_PARM_DESC(use_fw_quirk, "Do periodic pokes for broken M firmwares (default = true)");
 
-static int elo_input_configured(struct hid_device *hdev,
+static void elo_input_configured(struct hid_device *hdev,
 		struct hid_input *hidinput)
 {
 	struct input_dev *input = hidinput->input;
@@ -45,8 +45,6 @@ static int elo_input_configured(struct hid_device *hdev,
 	set_bit(BTN_TOUCH, input->keybit);
 	set_bit(ABS_PRESSURE, input->absbit);
 	input_set_abs_params(input, ABS_PRESSURE, 0, 256, 0, 0);
-
-	return 0;
 }
 
 static void elo_process_data(struct input_dev *input, const u8 *data, int size)
@@ -261,7 +259,7 @@ static void elo_remove(struct hid_device *hdev)
 	struct elo_priv *priv = hid_get_drvdata(hdev);
 
 	hid_hw_stop(hdev);
-	cancel_delayed_work_sync(&priv->work);
+	flush_workqueue(wq);
 	kfree(priv);
 }
 

@@ -332,7 +332,7 @@ struct phy_device *get_phy_device(struct mii_bus *bus, int addr, bool is_c45)
 		return ERR_PTR(r);
 
 	/* If the phy_id is mostly Fs, there is no device there */
-	if ((phy_id & 0x1fffffff) == 0x1fffffff)
+	if (phy_id == 0 || ((phy_id & 0x1fffffff) == 0x1fffffff))
 		return NULL;
 
 	return phy_device_create(bus, addr, phy_id, is_c45, &c45_ids);
@@ -698,7 +698,6 @@ int phy_suspend(struct phy_device *phydev)
 int phy_resume(struct phy_device *phydev)
 {
 	struct phy_driver *phydrv = to_phy_driver(phydev->dev.driver);
-
 	if (phydrv->resume)
 		return phydrv->resume(phydev);
 	return 0;
@@ -765,10 +764,9 @@ static int genphy_config_advert(struct phy_device *phydev)
 	if (phydev->supported & (SUPPORTED_1000baseT_Half |
 				 SUPPORTED_1000baseT_Full)) {
 		adv |= ethtool_adv_to_mii_ctrl1000_t(advertise);
+		if (adv != oldadv)
+			changed = 1;
 	}
-
-	if (adv != oldadv)
-		changed = 1;
 
 	err = phy_write(phydev, MII_CTRL1000, adv);
 	if (err < 0)
@@ -1084,7 +1082,6 @@ static int gen10g_config_init(struct phy_device *phydev)
 
 	return 0;
 }
-
 int genphy_suspend(struct phy_device *phydev)
 {
 	int value;
@@ -1282,7 +1279,6 @@ static int __init phy_init(void)
 				  ARRAY_SIZE(genphy_driver));
 	if (rc)
 		mdio_bus_exit();
-
 	return rc;
 }
 

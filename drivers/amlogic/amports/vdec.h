@@ -43,9 +43,9 @@ s32 vdec_dev_unregister(void);
 
 
 
-void vdec_source_changed(int format, int width, int height, int fps);
-void vdec2_source_changed(int format, int width, int height, int fps);
-void hevc_source_changed(int format, int width, int height, int fps);
+int vdec_source_changed(int format, int width, int height, int fps);
+int vdec2_source_changed(int format, int width, int height, int fps);
+int hevc_source_changed(int format, int width, int height, int fps);
 
 
 #define DEC_FLAG_HEVC_WORKAROUND 0x01
@@ -101,5 +101,8 @@ extern void set_vdec2_usage(enum vdec2_usage_e usage);
 extern enum vdec2_usage_e get_vdec2_usage(void);
 
 extern void dma_contiguous_early_fixup(phys_addr_t base, unsigned long size);
+unsigned int get_vdec_clk_config_settings(void);
+void update_vdec_clk_config_settings(unsigned int config);
+
 
 #endif				/* VDEC_H */

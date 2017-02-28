@@ -940,7 +940,7 @@ bool dev_valid_name(const char *name)
 		return false;
 
 	while (*name) {
-		if (*name == '/' || *name == ':' || isspace(*name))
+		if (*name == '/' || isspace(*name))
 			return false;
 		name++;
 	}
@@ -1709,7 +1709,6 @@ int dev_forward_skb(struct net_device *dev, struct sk_buff *skb)
 
 	skb_scrub_packet(skb, true);
 	skb->protocol = eth_type_trans(skb, dev);
-	skb_postpull_rcsum(skb, eth_hdr(skb), ETH_HLEN);
 
 	return netif_rx_internal(skb);
 }
@@ -2530,14 +2529,11 @@ netdev_features_t netif_skb_dev_features(struct sk_buff *skb,
 	if (skb_shinfo(skb)->gso_segs > dev->gso_max_segs)
 		features &= ~NETIF_F_GSO_MASK;
 
-	if (!vlan_tx_tag_present(skb)) {
-		if (unlikely(protocol == htons(ETH_P_8021Q) ||
-			     protocol == htons(ETH_P_8021AD))) {
-			struct vlan_ethhdr *veh = (struct vlan_ethhdr *)skb->data;
-			protocol = veh->h_vlan_encapsulated_proto;
-		} else {
-			return harmonize_features(skb, dev, features);
-		}
+	if (protocol == htons(ETH_P_8021Q) || protocol == htons(ETH_P_8021AD)) {
+		struct vlan_ethhdr *veh = (struct vlan_ethhdr *)skb->data;
+		protocol = veh->h_vlan_encapsulated_proto;
+	} else if (!vlan_tx_tag_present(skb)) {
+		return harmonize_features(skb, dev, features);
 	}
 
 	features &= (dev->vlan_features | NETIF_F_HW_VLAN_CTAG_TX |
@@ -2775,9 +2771,7 @@ static void skb_update_prio(struct sk_buff *skb)
 #define skb_update_prio(skb)
 #endif
 
-DEFINE_PER_CPU(int, xmit_recursion);
-EXPORT_SYMBOL(xmit_recursion);
-
+static DEFINE_PER_CPU(int, xmit_recursion);
 #define RECURSION_LIMIT 10
 
 /**
@@ -3214,8 +3208,6 @@ static int enqueue_to_backlog(struct sk_buff *skb, int cpu,
 	local_irq_save(flags);
 
 	rps_lock(sd);
-	if (!netif_running(skb->dev))
-		goto drop;
 	qlen = skb_queue_len(&sd->input_pkt_queue);
 	if (qlen <= netdev_max_backlog && !skb_flow_limit(skb, qlen)) {
 		if (skb_queue_len(&sd->input_pkt_queue)) {
@@ -3237,7 +3229,6 @@ enqueue:
 		goto enqueue;
 	}
 
-drop:
 	sd->dropped++;
 	rps_unlock(sd);
 
@@ -3554,6 +3545,8 @@ static int __netif_receive_skb_core(struct sk_buff *skb, bool pfmemalloc)
 
 	pt_prev = NULL;
 
+	rcu_read_lock();
+
 another_round:
 	skb->skb_iif = skb->dev->ifindex;
 
@@ -3563,7 +3556,7 @@ another_round:
 	    skb->protocol == cpu_to_be16(ETH_P_8021AD)) {
 		skb = skb_vlan_untag(skb);
 		if (unlikely(!skb))
-			goto out;
+			goto unlock;
 	}
 
 #ifdef CONFIG_NET_CLS_ACT
@@ -3588,7 +3581,7 @@ skip_taps:
 #ifdef CONFIG_NET_CLS_ACT
 	skb = handle_ing(skb, &pt_prev, &ret, orig_dev);
 	if (!skb)
-		goto out;
+		goto unlock;
 ncls:
 #endif
 
@@ -3603,7 +3596,7 @@ ncls:
 		if (vlan_do_receive(&skb))
 			goto another_round;
 		else if (unlikely(!skb))
-			goto out;
+			goto unlock;
 	}
 
 	rx_handler = rcu_dereference(skb->dev->rx_handler);
@@ -3615,7 +3608,7 @@ ncls:
 		switch (rx_handler(&skb)) {
 		case RX_HANDLER_CONSUMED:
 			ret = NET_RX_SUCCESS;
-			goto out;
+			goto unlock;
 		case RX_HANDLER_ANOTHER:
 			goto another_round;
 		case RX_HANDLER_EXACT:
@@ -3667,6 +3660,8 @@ drop:
 		ret = NET_RX_DROP;
 	}
 
+unlock:
+	rcu_read_unlock();
 out:
 	return ret;
 }
@@ -3698,30 +3693,29 @@ static int __netif_receive_skb(struct sk_buff *skb)
 
 static int netif_receive_skb_internal(struct sk_buff *skb)
 {
-	int ret;
-
 	net_timestamp_check(netdev_tstamp_prequeue, skb);
 
 	if (skb_defer_rx_timestamp(skb))
 		return NET_RX_SUCCESS;
 
-	rcu_read_lock();
-
 #ifdef CONFIG_RPS
 	if (static_key_false(&rps_needed)) {
 		struct rps_dev_flow voidflow, *rflow = &voidflow;
-		int cpu = get_rps_cpu(skb->dev, skb, &rflow);
+		int cpu, ret;
+
+		rcu_read_lock();
+
+		cpu = get_rps_cpu(skb->dev, skb, &rflow);
 
 		if (cpu >= 0) {
 			ret = enqueue_to_backlog(skb, cpu, &rflow->last_qtail);
 			rcu_read_unlock();
 			return ret;
 		}
+		rcu_read_unlock();
 	}
 #endif
-	ret = __netif_receive_skb(skb);
-	rcu_read_unlock();
-	return ret;
+	return __netif_receive_skb(skb);
 }
 
 /**
@@ -4177,14 +4171,13 @@ static int process_backlog(struct napi_struct *napi, int quota)
 #endif
 	napi->weight = weight_p;
 	local_irq_disable();
-	while (1) {
+	while (work < quota) {
 		struct sk_buff *skb;
+		unsigned int qlen;
 
 		while ((skb = __skb_dequeue(&sd->process_queue))) {
-			rcu_read_lock();
 			local_irq_enable();
 			__netif_receive_skb(skb);
-			rcu_read_unlock();
 			local_irq_disable();
 			input_queue_head_incr(sd);
 			if (++work >= quota) {
@@ -4194,24 +4187,24 @@ static int process_backlog(struct napi_struct *napi, int quota)
 		}
 
 		rps_lock(sd);
-		if (skb_queue_empty(&sd->input_pkt_queue)) {
+		qlen = skb_queue_len(&sd->input_pkt_queue);
+		if (qlen)
+			skb_queue_splice_tail_init(&sd->input_pkt_queue,
+						   &sd->process_queue);
+
+		if (qlen < quota - work) {
 			/*
 			 * Inline a custom version of __napi_complete().
 			 * only current cpu owns and manipulates this napi,
-			 * and NAPI_STATE_SCHED is the only possible flag set
-			 * on backlog.
-			 * We can use a plain write instead of clear_bit(),
+			 * and NAPI_STATE_SCHED is the only possible flag set on backlog.
+			 * we can use a plain write instead of clear_bit(),
 			 * and we dont need an smp_mb() memory barrier.
 			 */
 			list_del(&napi->poll_list);
 			napi->state = 0;
-			rps_unlock(sd);
 
-			break;
+			quota = work + qlen;
 		}
-
-		skb_queue_splice_tail_init(&sd->input_pkt_queue,
-					   &sd->process_queue);
 		rps_unlock(sd);
 	}
 	local_irq_enable();
@@ -4708,14 +4701,9 @@ static void netdev_adjacent_sysfs_del(struct net_device *dev,
 	sysfs_remove_link(&(dev->dev.kobj), linkname);
 }
 
-static inline bool netdev_adjacent_is_neigh_list(struct net_device *dev,
-						 struct net_device *adj_dev,
-						 struct list_head *dev_list)
-{
-	return (dev_list == &dev->adj_list.upper ||
-		dev_list == &dev->adj_list.lower) &&
-		net_eq(dev_net(dev), dev_net(adj_dev));
-}
+#define netdev_adjacent_is_neigh_list(dev, dev_list) \
+		(dev_list == &dev->adj_list.upper || \
+		 dev_list == &dev->adj_list.lower)
 
 static int __netdev_adjacent_dev_insert(struct net_device *dev,
 					struct net_device *adj_dev,
@@ -4745,7 +4733,7 @@ static int __netdev_adjacent_dev_insert(struct net_device *dev,
 	pr_debug("dev_hold for %s, because of link added from %s to %s\n",
 		 adj_dev->name, dev->name, adj_dev->name);
 
-	if (netdev_adjacent_is_neigh_list(dev, adj_dev, dev_list)) {
+	if (netdev_adjacent_is_neigh_list(dev, dev_list)) {
 		ret = netdev_adjacent_sysfs_add(dev, adj_dev, dev_list);
 		if (ret)
 			goto free_adj;
@@ -4766,7 +4754,7 @@ static int __netdev_adjacent_dev_insert(struct net_device *dev,
 	return 0;
 
 remove_symlinks:
-	if (netdev_adjacent_is_neigh_list(dev, adj_dev, dev_list))
+	if (netdev_adjacent_is_neigh_list(dev, dev_list))
 		netdev_adjacent_sysfs_del(dev, adj_dev->name, dev_list);
 free_adj:
 	kfree(adj);
@@ -4799,7 +4787,7 @@ static void __netdev_adjacent_dev_remove(struct net_device *dev,
 	if (adj->master)
 		sysfs_remove_link(&(dev->dev.kobj), "master");
 
-	if (netdev_adjacent_is_neigh_list(dev, adj_dev, dev_list))
+	if (netdev_adjacent_is_neigh_list(dev, dev_list))
 		netdev_adjacent_sysfs_del(dev, adj_dev->name, dev_list);
 
 	list_del_rcu(&adj->list);
@@ -4904,7 +4892,7 @@ static int __netdev_upper_dev_link(struct net_device *dev,
 	if (__netdev_find_adj(upper_dev, dev, &upper_dev->all_adj_list.upper))
 		return -EBUSY;
 
-	if (__netdev_find_adj(dev, upper_dev, &dev->adj_list.upper))
+	if (__netdev_find_adj(dev, upper_dev, &dev->all_adj_list.upper))
 		return -EEXIST;
 
 	if (master && netdev_master_upper_dev_get(dev))
@@ -5069,65 +5057,11 @@ void netdev_upper_dev_unlink(struct net_device *dev,
 }
 EXPORT_SYMBOL(netdev_upper_dev_unlink);
 
-void netdev_adjacent_add_links(struct net_device *dev)
-{
-	struct netdev_adjacent *iter;
-
-	struct net *net = dev_net(dev);
-
-	list_for_each_entry(iter, &dev->adj_list.upper, list) {
-		if (!net_eq(net,dev_net(iter->dev)))
-			continue;
-		netdev_adjacent_sysfs_add(iter->dev, dev,
-					  &iter->dev->adj_list.lower);
-		netdev_adjacent_sysfs_add(dev, iter->dev,
-					  &dev->adj_list.upper);
-	}
-
-	list_for_each_entry(iter, &dev->adj_list.lower, list) {
-		if (!net_eq(net,dev_net(iter->dev)))
-			continue;
-		netdev_adjacent_sysfs_add(iter->dev, dev,
-					  &iter->dev->adj_list.upper);
-		netdev_adjacent_sysfs_add(dev, iter->dev,
-					  &dev->adj_list.lower);
-	}
-}
-
-void netdev_adjacent_del_links(struct net_device *dev)
-{
-	struct netdev_adjacent *iter;
-
-	struct net *net = dev_net(dev);
-
-	list_for_each_entry(iter, &dev->adj_list.upper, list) {
-		if (!net_eq(net,dev_net(iter->dev)))
-			continue;
-		netdev_adjacent_sysfs_del(iter->dev, dev->name,
-					  &iter->dev->adj_list.lower);
-		netdev_adjacent_sysfs_del(dev, iter->dev->name,
-					  &dev->adj_list.upper);
-	}
-
-	list_for_each_entry(iter, &dev->adj_list.lower, list) {
-		if (!net_eq(net,dev_net(iter->dev)))
-			continue;
-		netdev_adjacent_sysfs_del(iter->dev, dev->name,
-					  &iter->dev->adj_list.upper);
-		netdev_adjacent_sysfs_del(dev, iter->dev->name,
-					  &dev->adj_list.lower);
-	}
-}
-
 void netdev_adjacent_rename_links(struct net_device *dev, char *oldname)
 {
 	struct netdev_adjacent *iter;
 
-	struct net *net = dev_net(dev);
-
 	list_for_each_entry(iter, &dev->adj_list.upper, list) {
-		if (!net_eq(net,dev_net(iter->dev)))
-			continue;
 		netdev_adjacent_sysfs_del(iter->dev, oldname,
 					  &iter->dev->adj_list.lower);
 		netdev_adjacent_sysfs_add(iter->dev, dev,
@@ -5135,8 +5069,6 @@ void netdev_adjacent_rename_links(struct net_device *dev, char *oldname)
 	}
 
 	list_for_each_entry(iter, &dev->adj_list.lower, list) {
-		if (!net_eq(net,dev_net(iter->dev)))
-			continue;
 		netdev_adjacent_sysfs_del(iter->dev, oldname,
 					  &iter->dev->adj_list.upper);
 		netdev_adjacent_sysfs_add(iter->dev, dev,
@@ -5695,7 +5627,6 @@ static void rollback_registered_many(struct list_head *head)
 		unlist_netdevice(dev);
 
 		dev->reg_state = NETREG_UNREGISTERING;
-		on_each_cpu(flush_backlog, dev, 1);
 	}
 
 	synchronize_net();
@@ -5953,8 +5884,7 @@ static int netif_alloc_netdev_queues(struct net_device *dev)
 	struct netdev_queue *tx;
 	size_t sz = count * sizeof(*tx);
 
-	if (count < 1 || count > 0xffff)
-		return -EINVAL;
+	BUG_ON(count < 1 || count > 0xffff);
 
 	tx = kzalloc(sz, GFP_KERNEL | __GFP_NOWARN | __GFP_REPEAT);
 	if (!tx) {
@@ -6311,6 +6241,8 @@ void netdev_run_todo(void)
 		}
 
 		dev->reg_state = NETREG_UNREGISTERED;
+
+		on_each_cpu(flush_backlog, dev, 1);
 
 		netdev_wait_allrefs(dev);
 
@@ -6743,7 +6675,6 @@ int dev_change_net_namespace(struct net_device *dev, struct net *net, const char
 
 	/* Send a netdev-removed uevent to the old namespace */
 	kobject_uevent(&dev->dev.kobj, KOBJ_REMOVE);
-	netdev_adjacent_del_links(dev);
 
 	/* Actually switch the network namespace */
 	dev_net_set(dev, net);
@@ -6758,7 +6689,6 @@ int dev_change_net_namespace(struct net_device *dev, struct net *net, const char
 
 	/* Send a netdev-add uevent to the new namespace */
 	kobject_uevent(&dev->dev.kobj, KOBJ_ADD);
-	netdev_adjacent_add_links(dev);
 
 	/* Fixup kobjects */
 	err = device_rename(&dev->dev, dev->name);
@@ -6815,20 +6745,10 @@ static int dev_cpu_callback(struct notifier_block *nfb,
 		oldsd->output_queue = NULL;
 		oldsd->output_queue_tailp = &oldsd->output_queue;
 	}
-	/* Append NAPI poll list from offline CPU, with one exception :
-	 * process_backlog() must be called by cpu owning percpu backlog.
-	 * We properly handle process_queue & input_pkt_queue later.
-	 */
-	while (!list_empty(&oldsd->poll_list)) {
-		struct napi_struct *napi = list_first_entry(&oldsd->poll_list,
-							    struct napi_struct,
-							    poll_list);
-
-		list_del_init(&napi->poll_list);
-		if (napi->poll == process_backlog)
-			napi->state = 0;
-		else
-			____napi_schedule(sd, napi);
+	/* Append NAPI poll list from offline CPU. */
+	if (!list_empty(&oldsd->poll_list)) {
+		list_splice_init(&oldsd->poll_list, &sd->poll_list);
+		raise_softirq_irqoff(NET_RX_SOFTIRQ);
 	}
 
 	raise_softirq_irqoff(NET_TX_SOFTIRQ);
@@ -6839,7 +6759,7 @@ static int dev_cpu_callback(struct notifier_block *nfb,
 		netif_rx_internal(skb);
 		input_queue_head_incr(oldsd);
 	}
-	while ((skb = skb_dequeue(&oldsd->input_pkt_queue))) {
+	while ((skb = __skb_dequeue(&oldsd->input_pkt_queue))) {
 		netif_rx_internal(skb);
 		input_queue_head_incr(oldsd);
 	}

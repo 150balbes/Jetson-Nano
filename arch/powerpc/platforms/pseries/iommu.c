@@ -826,8 +826,7 @@ machine_arch_initcall(pseries, find_existing_ddw_windows);
 static int query_ddw(struct pci_dev *dev, const u32 *ddw_avail,
 			struct ddw_query_response *query)
 {
-	struct device_node *dn;
-	struct pci_dn *pdn;
+	struct eeh_dev *edev;
 	u32 cfg_addr;
 	u64 buid;
 	int ret;
@@ -838,10 +837,11 @@ static int query_ddw(struct pci_dev *dev, const u32 *ddw_avail,
 	 * Retrieve them from the pci device, not the node with the
 	 * dma-window property
 	 */
-	dn = pci_device_to_OF_node(dev);
-	pdn = PCI_DN(dn);
-	buid = pdn->phb->buid;
-	cfg_addr = ((pdn->busno << 16) | (pdn->devfn << 8));
+	edev = pci_dev_to_eeh_dev(dev);
+	cfg_addr = edev->config_addr;
+	if (edev->pe_config_addr)
+		cfg_addr = edev->pe_config_addr;
+	buid = edev->phb->buid;
 
 	ret = rtas_call(ddw_avail[0], 3, 5, (u32 *)query,
 		  cfg_addr, BUID_HI(buid), BUID_LO(buid));
@@ -855,8 +855,7 @@ static int create_ddw(struct pci_dev *dev, const u32 *ddw_avail,
 			struct ddw_create_response *create, int page_shift,
 			int window_shift)
 {
-	struct device_node *dn;
-	struct pci_dn *pdn;
+	struct eeh_dev *edev;
 	u32 cfg_addr;
 	u64 buid;
 	int ret;
@@ -867,10 +866,11 @@ static int create_ddw(struct pci_dev *dev, const u32 *ddw_avail,
 	 * Retrieve them from the pci device, not the node with the
 	 * dma-window property
 	 */
-	dn = pci_device_to_OF_node(dev);
-	pdn = PCI_DN(dn);
-	buid = pdn->phb->buid;
-	cfg_addr = ((pdn->busno << 16) | (pdn->devfn << 8));
+	edev = pci_dev_to_eeh_dev(dev);
+	cfg_addr = edev->config_addr;
+	if (edev->pe_config_addr)
+		cfg_addr = edev->pe_config_addr;
+	buid = edev->phb->buid;
 
 	do {
 		/* extra outputs are LIOBN and dma-addr (hi, lo) */
@@ -1252,11 +1252,10 @@ static struct notifier_block iommu_mem_nb = {
 	.notifier_call = iommu_mem_notifier,
 };
 
-static int iommu_reconfig_notifier(struct notifier_block *nb, unsigned long action, void *data)
+static int iommu_reconfig_notifier(struct notifier_block *nb, unsigned long action, void *node)
 {
 	int err = NOTIFY_OK;
-	struct of_reconfig_data *rd = data;
-	struct device_node *np = rd->dn;
+	struct device_node *np = node;
 	struct pci_dn *pci = PCI_DN(np);
 	struct direct_window *window;
 

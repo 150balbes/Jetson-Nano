@@ -119,13 +119,12 @@
 #ifdef CONFIG_ARM64_ERRATUM_845719
 	tbz	x22, #4, 1f
 #ifdef CONFIG_PID_IN_CONTEXTIDR
-	mrs 	x29, contextidr_el1
-	msr 	contextidr_el1, x29
-1:
+	mrs	x29, contextidr_el1
+	msr	contextidr_el1, x29
 #else
-	msr 	contextidr_el1, xzr
-1:
+	msr contextidr_el1, xzr
 #endif
+1:
 #endif
 	.endif
 	.if	\ret
@@ -203,18 +202,30 @@ ENTRY(vectors)
 	ventry	el0_sync			// Synchronous 64-bit EL0
 	ventry	el0_irq				// IRQ 64-bit EL0
 	ventry	el0_fiq_invalid			// FIQ 64-bit EL0
-	ventry	el0_error_invalid		// Error 64-bit EL0
+#ifdef CONFIG_AML_SERR
+	ventry	el0_error_64		// Error 64-bit EL0
+#else
+	ventry  el0_error_invalid         // Error 64-bit EL0
+#endif
 
 #ifdef CONFIG_COMPAT
 	ventry	el0_sync_compat			// Synchronous 32-bit EL0
 	ventry	el0_irq_compat			// IRQ 32-bit EL0
 	ventry	el0_fiq_invalid_compat		// FIQ 32-bit EL0
+#ifdef CONFIG_AML_SERR
+	ventry	el0_error_invalid_compat_aml	// Error 32-bit EL0
+#else
 	ventry	el0_error_invalid_compat	// Error 32-bit EL0
+#endif
 #else
 	ventry	el0_sync_invalid		// Synchronous 32-bit EL0
 	ventry	el0_irq_invalid			// IRQ 32-bit EL0
 	ventry	el0_fiq_invalid			// FIQ 32-bit EL0
+#ifdef CONFIG_AML_SERR
+	ventry	el0_error_invalid_aml		// Error 32-bit EL0
+#else
 	ventry	el0_error_invalid		// Error 32-bit EL0
+#endif
 #endif
 END(vectors)
 
@@ -228,6 +239,23 @@ END(vectors)
 	mrs	x2, esr_el1
 	b	bad_mode
 	.endm
+
+#ifdef CONFIG_AML_SERR
+el0_error_64:
+	kernel_entry 0, 64
+	kernel_exit 0, 0
+ENDPROC(el0_error_64)
+
+el0_error_invalid_compat_aml:
+	kernel_entry 0, 32
+	kernel_exit 0, 0
+ENDPROC(el0_error_invalid_compat_aml)
+
+el0_error_invalid_aml:
+	kernel_entry 0, 64
+	kernel_exit 0, 0
+ENDPROC(el0_error_invalid_aml)
+#endif
 
 el0_sync_invalid:
 	inv_entry 0, BAD_SYNC
@@ -297,7 +325,7 @@ el1_da:
 	 * Data abort handling
 	 */
 	mrs	x0, far_el1
-	enable_dbg_if_not_stepping x2
+	enable_dbg
 	// re-enable interrupts if they were enabled in the aborted context
 	tbnz	x23, #7, 1f			// PSR_I_BIT
 	enable_irq
@@ -313,12 +341,14 @@ el1_sp_pc:
 	 * Stack or PC alignment exception handling
 	 */
 	mrs	x0, far_el1
+	enable_dbg
 	mov	x2, sp
 	b	do_sp_pc_abort
 el1_undef:
 	/*
 	 * Undefined instruction
 	 */
+	enable_dbg
 	mov	x0, sp
 	b	do_undefinstr
 el1_dbg:
@@ -335,6 +365,7 @@ el1_dbg:
 	kernel_exit 1
 el1_inv:
 	// TODO: add support for undefined instructions in kernel mode
+	enable_dbg
 	mov	x0, sp
 	mov	x1, #BAD_SYNC
 	mrs	x2, esr_el1
@@ -344,7 +375,7 @@ ENDPROC(el1_sync)
 	.align	6
 el1_irq:
 	kernel_entry 1
-	enable_dbg_if_not_stepping x0
+	enable_dbg
 #ifdef CONFIG_TRACE_IRQFLAGS
 	bl	trace_hardirqs_off
 #endif
@@ -488,6 +519,7 @@ el0_fpsimd_acc:
 	/*
 	 * Floating Point or Advanced SIMD access
 	 */
+	enable_dbg
 	ct_user_exit
 	mov	x0, x25
 	mov	x1, sp
@@ -497,6 +529,7 @@ el0_fpsimd_exc:
 	/*
 	 * Floating Point or Advanced SIMD exception
 	 */
+	enable_dbg
 	ct_user_exit
 	mov	x0, x25
 	mov	x1, sp
@@ -524,6 +557,7 @@ el0_undef:
 	// enable interrupts before calling the main handler
 	ct_user_exit
 	enable_irq
+	enable_dbg
 	mov	x0, sp
 	adr	lr, ret_from_exception
 	b	do_undefinstr
@@ -540,6 +574,7 @@ el0_dbg:
 	adr	lr, ret_from_exception
 	b	do_debug_exception
 el0_inv:
+	enable_dbg
 	ct_user_exit
 	mov	x0, sp
 	mov	x1, #BAD_SYNC

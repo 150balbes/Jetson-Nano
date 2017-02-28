@@ -1294,7 +1294,7 @@ static u64 f1x_get_norm_dct_addr(struct amd64_pvt *pvt, u8 range,
 	u64 chan_off;
 	u64 dram_base		= get_dram_base(pvt, range);
 	u64 hole_off		= f10_dhar_offset(pvt);
-	u64 dct_sel_base_off	= (u64)(pvt->dct_sel_hi & 0xFFFFFC00) << 16;
+	u64 dct_sel_base_off	= (pvt->dct_sel_hi & 0xFFFFFC00) << 16;
 
 	if (hi_rng) {
 		/*
@@ -2006,19 +2006,13 @@ static void __log_bus_error(struct mem_ctl_info *mci, struct err_info *err,
 
 static inline void decode_bus_error(int node_id, struct mce *m)
 {
-	struct mem_ctl_info *mci;
-	struct amd64_pvt *pvt;
+	struct mem_ctl_info *mci = mcis[node_id];
+	struct amd64_pvt *pvt = mci->pvt_info;
 	u8 ecc_type = (m->status >> 45) & 0x3;
 	u8 xec = XEC(m->status, 0x1f);
 	u16 ec = EC(m->status);
 	u64 sys_addr;
 	struct err_info err;
-
-	mci = edac_mc_find(node_id);
-	if (!mci)
-		return;
-
-	pvt = mci->pvt_info;
 
 	/* Bail out early if this was an 'observed' error */
 	if (PP(ec) == NBSL_PP_OBS)

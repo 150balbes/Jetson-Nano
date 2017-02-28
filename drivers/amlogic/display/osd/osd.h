@@ -230,6 +230,15 @@ struct osd_fence_map_s {
 	struct files_struct *files;
 };
 
+struct afbcd_data_s {
+	u32 enable;
+	u32 phy_addr;
+	u32 addr[OSD_MAX_BUF_NUM];
+	u32 frame_width;
+	u32 frame_height;
+	u32 conv_lbuf_len;
+};
+
 typedef void (*update_func_t)(void);
 struct hw_list_s {
 	struct list_head list;
@@ -277,8 +286,7 @@ struct hw_para_s {
 	u32 angle[HW_OSD_COUNT];
 	u32 clone[HW_OSD_COUNT];
 	u32 bot_type;
+	struct afbcd_data_s osd_afbcd[HW_OSD_COUNT];
 };
-
-extern enum vmode_e get_initial_vmode(void);
 
 #endif /* _OSD_H_ */

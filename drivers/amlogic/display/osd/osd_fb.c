@@ -41,9 +41,11 @@
 #include <linux/of_reserved_mem.h>
 #include <linux/uaccess.h>
 #include <linux/dma-mapping.h>
+#include <ion/ion.h>
+#include <meson_ion.h>
 /* Amlogic Headers */
 #include <linux/amlogic/vout/vout_notify.h>
-#include <linux/amlogic/hdmi_tx/hdmi_tx_module.h>
+#include <linux/amlogic/instaboot/instaboot.h>
 
 /* Local Headers */
 #include "osd.h"
@@ -58,8 +60,6 @@ struct osd_info_s osd_info = {
 	.index = 0,
 	.osd_reverse = 0,
 };
-
-extern void osd_wait_vsync_hw(void);
 
 const struct color_bit_define_s default_color_format_array[] = {
 	INVALID_BPP_ITEM,
@@ -157,7 +157,7 @@ const struct color_bit_define_s default_color_format_array[] = {
 		16, 8, 0, 8, 8, 0, 0, 8, 0, 0, 0, 0,
 		FB_VISUAL_TRUECOLOR, 24
 	},
-	/*32 bit color*/
+	/*32 bit color RGBX */
 	{
 		COLOR_INDEX_32_BGRX, 3, 5,
 		8, 8, 0, 16, 8, 0, 24, 8, 0, 0, 0, 0,
@@ -178,6 +178,7 @@ const struct color_bit_define_s default_color_format_array[] = {
 		16, 8, 0, 8, 8, 0, 0, 8, 0, 24, 0, 0,
 		FB_VISUAL_TRUECOLOR, 32
 	},
+	/*32 bit color RGBA */
 	{
 		COLOR_INDEX_32_BGRA, 3, 5,
 		8, 8, 0, 16, 8, 0, 24, 8, 0, 0, 8, 0,
@@ -212,11 +213,11 @@ static struct fb_var_screeninfo fb_def_var[] = {
 		.yoffset         = 0,
 		.bits_per_pixel = 32,
 		.grayscale       = 0,
-		.red             = {16, 8, 0},
-		.green           = {8, 8, 0},
-		.blue            = {0, 8, 0},
-		.transp          = {24, 0, 0},
-		.nonstd          = 1,
+		.red             = {0, 0, 0},
+		.green           = {0, 0, 0},
+		.blue            = {0, 0, 0},
+		.transp          = {0, 0, 0},
+		.nonstd          = 0,
 		.activate        = FB_ACTIVATE_NOW,
 		.height          = -1,
 		.width           = -1,
@@ -276,10 +277,6 @@ static struct fb_fix_screeninfo fb_def_fix = {
 	.accel      = FB_ACCEL_NONE,
 };
 
-#if defined(CONFIG_ARCH_MESON64_ODROIDC2)
-static int monitor_onoff_flag;
-#endif
-
 #ifdef CONFIG_HAS_EARLYSUSPEND
 #include <linux/earlysuspend.h>
 static struct early_suspend early_suspend;
@@ -295,201 +292,19 @@ int int_viu_vsync = -ENXIO;
 int int_rdma = INT_RDMA;
 #endif
 struct osd_fb_dev_s *gp_fbdev_list[OSD_COUNT] = {};
-static struct reserved_mem fb_rmem;
+static struct reserved_mem fb_rmem = {.base = 0, .size = 0};
+static u32 fb_memsize[2];
 static phys_addr_t fb_rmem_paddr[2];
-static void __iomem *fb_rmem_vaddr[2];
-static u32 fb_rmem_size[2];
+static void __iomem *fb_rmem_vaddr[OSD_COUNT];
+static size_t fb_rmem_size[OSD_COUNT];
+static phys_addr_t fb_rmem_afbc_paddr[OSD_COUNT][OSD_MAX_BUF_NUM];
+static void __iomem *fb_rmem_afbc_vaddr[OSD_COUNT][OSD_MAX_BUF_NUM];
+static size_t fb_rmem_afbc_size[OSD_COUNT][OSD_MAX_BUF_NUM];
 
-#if defined(CONFIG_ARCH_MESON64_ODROIDC2)
-static int osd_set_res_bootargs(int index, enum vmode_e mode)
-{
-	struct hdmi_cea_timing *custom_timing = get_custom_timing();
-
-	osd_log_info("%s : mode %d\n", __func__, mode);
-
-	/* FIXME : need to adjust this routine */
-	switch (mode) {
-	case TVMODE_640x480p60hz:
-		fb_def_var[index].xres = 640;
-		fb_def_var[index].yres = 480;
-		fb_def_var[index].xres_virtual = 640;
-		fb_def_var[index].yres_virtual = 960;
-		fb_def_var[index].bits_per_pixel = 32;
-		break;
-	case TVMODE_800x480p60hz:
-		fb_def_var[index].xres = 800;
-		fb_def_var[index].yres = 480;
-		fb_def_var[index].xres_virtual = 800;
-		fb_def_var[index].yres_virtual = 960;
-		fb_def_var[index].bits_per_pixel = 32;
-		break;
-	case TVMODE_800x600p60hz:
-		fb_def_var[index].xres = 800;
-		fb_def_var[index].yres = 600;
-		fb_def_var[index].xres_virtual = 800;
-		fb_def_var[index].yres_virtual = 1200;
-		fb_def_var[index].bits_per_pixel = 32;
-		break;
-	case TVMODE_1024x600p60hz:
-		fb_def_var[index].xres = 1024;
-		fb_def_var[index].yres = 600;
-		fb_def_var[index].xres_virtual = 1024;
-		fb_def_var[index].yres_virtual = 1200;
-		fb_def_var[index].bits_per_pixel = 32;
-		break;
-	case TVMODE_1024x768p60hz:
-		fb_def_var[index].xres = 1024;
-		fb_def_var[index].yres = 768;
-		fb_def_var[index].xres_virtual = 1024;
-		fb_def_var[index].yres_virtual = 1536;
-		fb_def_var[index].bits_per_pixel = 32;
-		break;
-	case TVMODE_1280x800p60hz:
-		fb_def_var[index].xres = 1280;
-		fb_def_var[index].yres = 800;
-		fb_def_var[index].xres_virtual = 1280;
-		fb_def_var[index].yres_virtual = 1600;
-		fb_def_var[index].bits_per_pixel = 32;
-		break;
-	case TVMODE_1280x1024p60hz:
-		fb_def_var[index].xres = 1280;
-		fb_def_var[index].yres = 1024;
-		fb_def_var[index].xres_virtual = 1280;
-		fb_def_var[index].yres_virtual = 2048;
-		fb_def_var[index].bits_per_pixel = 32;
-		break;
-	case TVMODE_1360x768p60hz:
-		fb_def_var[index].xres = 1360;
-		fb_def_var[index].yres = 768;
-		fb_def_var[index].xres_virtual = 1360;
-		fb_def_var[index].yres_virtual = 1536;
-		fb_def_var[index].bits_per_pixel = 32;
-		break;
-	case TVMODE_1366x768p60hz:
-		fb_def_var[index].xres = 1366;
-		fb_def_var[index].yres = 768;
-		fb_def_var[index].xres_virtual = 1366;
-		fb_def_var[index].yres_virtual = 1536;
-		fb_def_var[index].bits_per_pixel = 32;
-		break;
-	case TVMODE_1440x900p60hz:
-		fb_def_var[index].xres = 1440;
-		fb_def_var[index].yres = 900;
-		fb_def_var[index].xres_virtual = 1440;
-		fb_def_var[index].yres_virtual = 1800;
-		fb_def_var[index].bits_per_pixel = 32;
-		break;
-	case TVMODE_1600x900p60hz:
-		fb_def_var[index].xres = 1600;
-		fb_def_var[index].yres = 900;
-		fb_def_var[index].xres_virtual = 1600;
-		fb_def_var[index].yres_virtual = 1800;
-		fb_def_var[index].bits_per_pixel = 32;
-		break;
-	case TVMODE_1680x1050p60hz:
-		fb_def_var[index].xres = 1680;
-		fb_def_var[index].yres = 1050;
-		fb_def_var[index].xres_virtual = 1680;
-		fb_def_var[index].yres_virtual = 2100;
-		fb_def_var[index].bits_per_pixel = 32;
-		break;
-	case TVMODE_1920x1200p60hz:
-		fb_def_var[index].xres = 1920;
-		fb_def_var[index].yres = 1200;
-		fb_def_var[index].xres_virtual = 1920;
-		fb_def_var[index].yres_virtual = 2400;
-		fb_def_var[index].bits_per_pixel = 32;
-		break;
-	case TVMODE_2560x1440p60hz:
-		fb_def_var[index].xres = 2560;
-		fb_def_var[index].yres = 1440;
-		fb_def_var[index].xres_virtual = 2560;
-		fb_def_var[index].yres_virtual = 2880;
-		fb_def_var[index].bits_per_pixel = 32;
-		break;
-	case TVMODE_2560x1600p60hz:
-		fb_def_var[index].xres = 2560;
-		fb_def_var[index].yres = 1600;
-		fb_def_var[index].xres_virtual = 2560;
-		fb_def_var[index].yres_virtual = 3200;
-		fb_def_var[index].bits_per_pixel = 32;
-		break;
-	case TVMODE_2560x1080p60hz:
-		fb_def_var[index].xres = 2560;
-		fb_def_var[index].yres = 1080;
-		fb_def_var[index].xres_virtual = 2560;
-		fb_def_var[index].yres_virtual = 2160;
-		fb_def_var[index].bits_per_pixel = 32;
-		break;
-	case TVMODE_3440x1440p60hz:
-		fb_def_var[index].xres = 3440;
-		fb_def_var[index].yres = 1440;
-		fb_def_var[index].xres_virtual = 3440;
-		fb_def_var[index].yres_virtual = 2880;
-		fb_def_var[index].bits_per_pixel = 32;
-		break;
-	case VMODE_480P:
-	case VMODE_480I:
-		fb_def_var[index].xres = 720;
-		fb_def_var[index].yres = 480;
-		fb_def_var[index].xres_virtual = 720;
-		fb_def_var[index].yres_virtual = 960;
-		fb_def_var[index].bits_per_pixel = 32;
-		break;
-	case VMODE_576P:
-	case VMODE_576I:
-		fb_def_var[index].xres = 720;
-		fb_def_var[index].yres = 576;
-		fb_def_var[index].xres_virtual = 720;
-		fb_def_var[index].yres_virtual = 1152;
-		fb_def_var[index].bits_per_pixel = 32;
-		break;
-	case VMODE_720P:
-	case VMODE_720P_50HZ:
-		fb_def_var[index].xres = 1280;
-		fb_def_var[index].yres = 720;
-		fb_def_var[index].xres_virtual = 1280;
-		fb_def_var[index].yres_virtual = 1440;
-		fb_def_var[index].bits_per_pixel = 32;
-		break;
-	case VMODE_1080P:
-	case VMODE_1080P_50HZ:
-	case VMODE_1080P_24HZ:
-	case VMODE_1080I:
-	case VMODE_1080I_50HZ:
-		fb_def_var[index].xres = 1920;
-		fb_def_var[index].yres = 1080;
-		fb_def_var[index].xres_virtual = 1920;
-		fb_def_var[index].yres_virtual = 2160;
-		fb_def_var[index].bits_per_pixel = 32;
-		break;
-	case VMODE_4K2K_30HZ:
-	case VMODE_4K2K_25HZ:
-	case VMODE_4K2K_60HZ:
-	case VMODE_4K2K_50HZ:
-	case VMODE_4K2K_60HZ_Y420:
-	case VMODE_4K2K_50HZ_Y420:
-		fb_def_var[index].xres = 1920;
-		fb_def_var[index].yres = 1080;
-		fb_def_var[index].xres_virtual = 1920;
-		fb_def_var[index].yres_virtual = 3240;
-		fb_def_var[index].bits_per_pixel = 32;
-		break;
-	case TVMODE_CUSTOMBUILT:
-		fb_def_var[index].xres = custom_timing->h_active;
-		fb_def_var[index].yres = custom_timing->v_active;
-		fb_def_var[index].xres_virtual = custom_timing->h_active;
-		fb_def_var[index].yres_virtual = (custom_timing->v_active * 2);
-		fb_def_var[index].bits_per_pixel = 32;
-		break;
-	default:
-		osd_log_info("%s, no available resolution info.", __func__);
-		return 1;
-	}
-
-	return 0;
-}
-#endif /* CONFIG_ARCH_MESON64_ODROIDC2 */
+struct ion_client *fb_ion_client = NULL;
+struct ion_handle *fb_ion_handle[OSD_COUNT][OSD_MAX_BUF_NUM] = {
+	{NULL, NULL, NULL}, {NULL, NULL, NULL}
+};
 
 phys_addr_t get_fb_rmem_paddr(int index)
 {
@@ -497,6 +312,21 @@ phys_addr_t get_fb_rmem_paddr(int index)
 		return 0;
 	return fb_rmem_paddr[index];
 }
+
+void __iomem *get_fb_rmem_vaddr(int index)
+{
+	if (index < 0 || index > 1)
+		return 0;
+	return fb_rmem_vaddr[index];
+}
+
+size_t get_fb_rmem_size(int index)
+{
+	if (index < 0 || index > 1)
+		return 0;
+	return fb_rmem_size[index];
+}
+
 
 static void osddev_setup(struct osd_fb_dev_s *fbdev)
 {
@@ -513,7 +343,8 @@ static void osddev_setup(struct osd_fb_dev_s *fbdev)
 		     fbdev->osd_ctl.disp_start_y,
 		     fbdev->osd_ctl.disp_end_x,
 		     fbdev->osd_ctl.disp_end_y,
-		     fbdev->fb_mem_paddr,
+		     fbdev->fb_mem_paddr, /*phys_addr_t -> u32*/
+		     fbdev->fb_mem_afbc_paddr, /* afbc phys_addr_t* */
 		     fbdev->color);
 	mutex_unlock(&fbdev->lock);
 
@@ -658,6 +489,34 @@ static void __init _fbdev_set_default(struct osd_fb_dev_s *fbdev, int index)
 	fbdev->color = _find_color_format(&fbdev->fb_info->var);
 }
 
+static int osd_check_fbsize(struct fb_var_screeninfo *var, struct fb_info *info)
+{
+	struct osd_fb_dev_s *fbdev = (struct osd_fb_dev_s *)info->par;
+
+	if (fbdev->fb_index == 0 && osd_get_afbc()) {
+		/*fb_afbc_len = fbdev->fb_afbc_len[0] * ((info->node == 0) ?
+				OSD_MAX_BUF_NUM : 1);*/
+		if (var->xres_virtual * var->yres_virtual *
+				var->bits_per_pixel / 8 >
+				fbdev->fb_afbc_len[0] * OSD_MAX_BUF_NUM) {
+			osd_log_err("afbc no enough memory for %d*%d*%d\n",
+					var->xres,
+					var->yres,
+					var->bits_per_pixel);
+			return  -ENOMEM;
+		}
+	} else {
+		if (var->xres_virtual * var->yres_virtual *
+				var->bits_per_pixel / 8 > fbdev->fb_len) {
+			osd_log_err("no enough memory for %d*%d*%d\n",
+					var->xres,
+					var->yres,
+					var->bits_per_pixel);
+			return  -ENOMEM;
+		}
+	}
+	return 0;
+}
 static int osd_check_var(struct fb_var_screeninfo *var, struct fb_info *info)
 {
 	struct fb_fix_screeninfo *fix;
@@ -696,12 +555,7 @@ static int osd_check_var(struct fb_var_screeninfo *var, struct fb_info *info)
 	fix->line_length = var->xres_virtual * var->bits_per_pixel / 8;
 	osd_log_dbg("xvirtual=%d, bpp:%d, line_length=%d\n",
 		var->xres_virtual, var->bits_per_pixel, fix->line_length);
-	if (var->xres_virtual * var->yres_virtual * var->bits_per_pixel / 8 >
-			fbdev->fb_len) {
-		osd_log_err("no enough memory for %d*%d*%d\n", var->xres,
-			var->yres, var->bits_per_pixel);
-		return  -ENOMEM;
-	}
+
 	if (var->xres_virtual < var->xres)
 		var->xres_virtual = var->xres;
 	if (var->yres_virtual < var->yres)
@@ -787,6 +641,7 @@ static int osd_ioctl(struct fb_info *info, unsigned int cmd, unsigned long arg)
 	unsigned long ret;
 	u32 flush_rate;
 	struct fb_sync_request_s sync_request;
+	struct fb_dmabuf_export dmaexp;
 
 	switch (cmd) {
 	case  FBIOPUT_OSD_SRCKEY_ENABLE:
@@ -824,6 +679,10 @@ static int osd_ioctl(struct fb_info *info, unsigned int cmd, unsigned long arg)
 	case FBIOPUT_OSD_ROTATE_ON:
 	case FBIOPUT_OSD_ROTATE_ANGLE:
 		break;
+	case FBIOGET_DMABUF:
+		ret = copy_from_user(&dmaexp, argp,
+				sizeof(struct fb_dmabuf_export));
+		break;
 	case FBIOPUT_OSD_BLOCK_MODE:
 		ret = copy_from_user(&block_mode, argp, sizeof(u32));
 		break;
@@ -836,15 +695,9 @@ static int osd_ioctl(struct fb_info *info, unsigned int cmd, unsigned long arg)
 	case FBIOPUT_OSD_WINDOW_AXIS:
 		ret = copy_from_user(&osd_dst_axis, argp, 4 * sizeof(s32));
 		break;
-#if defined(CONFIG_ARCH_MESON64_ODROIDC2) && defined(CONFIG_UMP)
-	case GET_UMP_SECURE_ID_BUF1:
-		return disp_get_ump_secure_id(info, fbdev, arg, 0);
-		break;
-	case GET_UMP_SECURE_ID_BUF2:
-		return disp_get_ump_secure_id(info, fbdev, arg, 1);
-		break;
-#endif
 	default:
+		osd_log_err("command 0x%x not supported (%s)\n",
+				cmd, current->comm);
 		return -1;
 	}
 	mutex_lock(&fbdev->lock);
@@ -994,12 +847,36 @@ static int osd_ioctl(struct fb_info *info, unsigned int cmd, unsigned long arg)
 					sync_request.in_fen_fd);
 		ret = copy_to_user(argp, &sync_request,
 				sizeof(struct fb_sync_request_s));
-		if (sync_request.out_fen_fd  < 0)
+		if (sync_request.out_fen_fd  < 0) {
 			/* fence create fail. */
 			ret = -1;
+		} else {
+			info->var.xoffset = sync_request.xoffset;
+			info->var.yoffset = sync_request.yoffset;
+		}
 		break;
+	case FBIOGET_DMABUF:
+		{
+			if (info->node == DEV_OSD0 && osd_get_afbc()) {
+				dmaexp.fd =
+					ion_share_dma_buf_fd(
+						fb_ion_client,
+						fb_ion_handle[info->node]
+						[dmaexp.buffer_idx]);
+			} else {
+				dmaexp.fd =
+						ion_share_dma_buf_fd(
+						fb_ion_client,
+						fb_ion_handle[info->node][0]);
+			}
+			dmaexp.flags = O_CLOEXEC;
+
+			ret = copy_to_user(argp, &dmaexp, sizeof(dmaexp))
+				? -EFAULT : 0;
+			break;
+		}
 	case FBIO_WAITFORVSYNC:
-		osd_wait_vsync_hw();
+		osd_wait_vsync_event();
 		ret = copy_to_user(argp, &ret, sizeof(u32));
 	default:
 		break;
@@ -1076,34 +953,217 @@ static int osd_compat_ioctl(struct fb_info *info,
 
 static int osd_open(struct fb_info *info, int arg)
 {
+	int j;
+	int ret = 0;
+	u32 fb_index;
+	int logo_index = -1;
+	struct osd_fb_dev_s *fbdev;
+	struct fb_fix_screeninfo *fix = NULL;
+	struct fb_var_screeninfo *var = NULL;
+	struct platform_device *pdev = NULL;
+
+	fbdev = (struct osd_fb_dev_s *)info->par;
+	if (info->screen_base != NULL)
+		return 0;
+	pdev = fbdev->dev;
+	fb_index = fbdev->fb_index;
+	fix = &info->fix;
+	var = &info->var;
+	if (fb_rmem.base == 0) {
+		pr_info("use ion buffer for fb memory\n");
+		if (!fb_ion_client)
+			fb_ion_client = meson_ion_client_create(-1, "meson-fb");
+		if (fb_index == DEV_OSD0 && osd_get_afbc()) {
+			pr_info("OSD0 as afbcd mode\n");
+			for (j = 0; j < OSD_MAX_BUF_NUM; j++) {
+				fb_ion_handle[fb_index][j] =
+				ion_alloc(fb_ion_client,
+					PAGE_ALIGN(fb_memsize[fb_index]/
+					OSD_MAX_BUF_NUM),
+					0,
+					ION_HEAP_CARVEOUT_MASK,
+					0);
+				ret = ion_phys(fb_ion_client,
+					fb_ion_handle[fb_index][j],
+					(ion_phys_addr_t *)
+					&fb_rmem_afbc_paddr[fb_index][j],
+					(size_t *)
+					&fb_rmem_afbc_size[fb_index][j]);
+				fb_rmem_afbc_vaddr[fb_index][j] =
+					ion_map_kernel(fb_ion_client,
+					fb_ion_handle[fb_index][j]);
+				dev_alert(&pdev->dev,
+					"create ion_client %p, handle=%p\n",
+					fb_ion_client,
+					fb_ion_handle[fb_index][j]);
+				dev_alert(&pdev->dev,
+					"ion memory(%d): created fb at 0x%p, size %ld MiB\n",
+					fb_index,
+					(void *)fb_rmem_afbc_paddr
+					[fb_index][j],
+					(unsigned long)fb_rmem_afbc_size
+					[fb_index][j] / SZ_1M);
+				fbdev->fb_afbc_len[j] =
+					fb_rmem_afbc_size[fb_index][j];
+				fbdev->fb_mem_afbc_paddr[j] =
+					fb_rmem_afbc_paddr[fb_index][j];
+				fbdev->fb_mem_afbc_vaddr[j] =
+					fb_rmem_afbc_vaddr[fb_index][j];
+				if  (!fbdev->fb_mem_afbc_vaddr[j]) {
+					osd_log_err("failed to ioremap afbc frame buffer\n");
+					return -1;
+				}
+				osd_log_info(" %d, phy: 0x%p, vir:0x%p, size=%dK\n\n",
+					fb_index,
+					(void *)fbdev->fb_mem_afbc_paddr[j],
+					fbdev->fb_mem_afbc_vaddr[j],
+					fbdev->fb_afbc_len[j] >> 10);
+			}
+			fb_rmem_paddr[fb_index] =
+					fb_rmem_afbc_paddr[fb_index][0];
+			fb_rmem_vaddr[fb_index] =
+					fb_rmem_afbc_vaddr[fb_index][0];
+			fb_rmem_size[fb_index] =
+					fb_rmem_afbc_size[fb_index][0];
+		} else {
+			fb_ion_handle[fb_index][0] =
+						ion_alloc(fb_ion_client,
+							fb_memsize[fb_index],
+							0,
+							ION_HEAP_CARVEOUT_MASK,
+							0);
+			ret = ion_phys(fb_ion_client,
+				fb_ion_handle[fb_index][0],
+				(ion_phys_addr_t *)&fb_rmem_paddr[fb_index],
+				(size_t *)&fb_rmem_size[fb_index]);
+			fb_rmem_vaddr[fb_index] =
+				ion_map_kernel(fb_ion_client,
+						fb_ion_handle[fb_index][0]);
+			dev_notice(&pdev->dev,
+				"create ion_client %p, handle=%p\n",
+				fb_ion_client,
+				fb_ion_handle[fb_index][0]);
+			dev_notice(&pdev->dev,
+				"ion memory(%d): created fb at 0x%p, size %ld MiB\n",
+				fb_index,
+				(void *)fb_rmem_paddr[fb_index],
+				(unsigned long)fb_rmem_size[fb_index] / SZ_1M);
+		}
+	} else {
+		fb_rmem_size[fb_index] = fb_memsize[fb_index];
+		if (fb_index == DEV_OSD0)
+			fb_rmem_paddr[fb_index] = fb_rmem.base;
+		else if (fb_index == DEV_OSD1) {
+			if ((OSD_COUNT == 2) &&
+			((fb_memsize[0] + fb_memsize[1]) <= fb_rmem.size)) {
+				fb_rmem_paddr[fb_index] =
+					fb_rmem.base + fb_memsize[0];
+			}
+		}
+		if ((fb_rmem_paddr[fb_index] > 0) &&
+			(fb_rmem_size[fb_index] > 0)) {
+			fb_rmem_vaddr[fb_index] =
+					ioremap_wc(fb_rmem_paddr[fb_index],
+					fb_rmem_size[fb_index]);
+			if (!fb_rmem_vaddr[fb_index])
+				osd_log_err("fb[%d] ioremap error",
+						fb_index);
+		}
+	}
+	fbdev->fb_len = fb_rmem_size[fb_index];
+	fbdev->fb_mem_paddr = fb_rmem_paddr[fb_index];
+	fbdev->fb_mem_vaddr = fb_rmem_vaddr[fb_index];
+	if (!fbdev->fb_mem_vaddr) {
+		osd_log_err("failed to ioremap frame buffer\n");
+		ret = -ENOMEM;
+	}
+	osd_log_info("Frame buffer memory assigned at");
+	osd_log_info(" %d, phy: 0x%p, vir:0x%p, size=%dK\n\n",
+		fb_index, (void *)fbdev->fb_mem_paddr,
+		fbdev->fb_mem_vaddr, fbdev->fb_len >> 10);
+	if (fb_index == DEV_OSD0 && osd_get_afbc()) {
+		for (j = 0; j < OSD_MAX_BUF_NUM; j++) {
+			fbdev->fb_afbc_len[j] =
+				fb_rmem_afbc_size[fb_index][j];
+			fbdev->fb_mem_afbc_paddr[j] =
+				fb_rmem_afbc_paddr[fb_index][j];
+			fbdev->fb_mem_afbc_vaddr[j] =
+				fb_rmem_afbc_vaddr[fb_index][j];
+			if (!fbdev->fb_mem_afbc_vaddr[j]) {
+				osd_log_err("failed to ioremap afbc frame buffer\n");
+				return -ENOMEM;
+			}
+			osd_log_info(" %d, phy: 0x%p, vir:0x%p, size=%dK\n\n",
+					fb_index,
+					(void *)
+					fbdev->fb_mem_afbc_paddr[j],
+					fbdev->fb_mem_afbc_vaddr[j],
+					fbdev->fb_afbc_len[j] >> 10);
+		}
+	}
+	fix->smem_start = fbdev->fb_mem_paddr;
+	fix->smem_len = fbdev->fb_len;
+	info->screen_base = (char __iomem *)fbdev->fb_mem_vaddr;
+	info->screen_size = fix->smem_len;
+	logo_index = osd_get_logo_index();
+	if (osd_check_fbsize(var, info))
+		return -ENOMEM;
+	/* clear osd buffer if not logo layer */
+	if ((logo_index < 0) || (logo_index != fb_index)) {
+		osd_log_info("---------------clear fb%d memory %p\n",
+			fb_index, fbdev->fb_mem_vaddr);
+		memset(fbdev->fb_mem_vaddr, 0x0, fbdev->fb_len);
+		if (fb_index == DEV_OSD0 && osd_get_afbc()) {
+			for (j = 1; j < OSD_MAX_BUF_NUM; j++) {
+				osd_log_info(
+					"---------------clear fb%d memory %p\n",
+					fb_index,
+					fbdev->fb_mem_afbc_vaddr[j]);
+				memset(fbdev->fb_mem_afbc_vaddr[j],
+					0x0,
+					fbdev->fb_afbc_len[j]);
+			}
+		} else {
+			/*two case in one
+			 * 1. the big buffer ion alloc
+			 * 2. reserved memory
+			 */
+
+			memset(fb_rmem_vaddr[fb_index],
+					0x0,
+					fb_rmem_size[fb_index]);
+		}
+		/* setup osd if not logo layer */
+		osddev_setup(fbdev);
+	} else {
+		/* memset(fb_rmem_vaddr[fb_index],
+				0x0,
+				fb_rmem_size[fb_index]); */
+		osd_log_info("fb%d open, logo index:%d\n",
+			fb_index, logo_index);
+	}
 	return 0;
+}
+
+static ssize_t osd_clear(struct device *device, struct device_attribute *attr,
+		const char *buf, size_t count)
+{
+	u32 res = 0;
+	int ret = 0;
+
+	ret = kstrtoint(buf, 0, &res);
+	osd_log_info("clear: osd %d\n", res);
+
+	memset(fb_rmem_vaddr[res],
+			0x0,
+			fb_rmem_size[res]);
+
+	return count;
 }
 
 int osd_blank(int blank_mode, struct fb_info *info)
 {
 	osd_enable_hw(info->node, (blank_mode != 0) ? 0 : 1);
-#if defined(CONFIG_ARCH_MESON64_ODROIDC2)
-	if (!monitor_onoff_flag)
-		return 0;
-
-	switch (blank_mode) {
-	/* Display: On; HSync: On, VSync: On */
-	case FB_BLANK_UNBLANK:
-		control_hdmiphy(1);
-		break;
-	/* Display: Off; HSync: Off, VSync: Off */
-	case FB_BLANK_POWERDOWN:
-		control_hdmiphy(0);
-		break;
-	/* Display: Off; HSync: On, VSync: On */
-	case FB_BLANK_NORMAL:
-	/* Display: Off; HSync: Off, VSync: On */
-	case FB_BLANK_HSYNC_SUSPEND:
-	/* Display: Off; HSync: On, VSync: Off */
-	case FB_BLANK_VSYNC_SUSPEND:
-		break;
-	}
-#endif
 	return 0;
 }
 
@@ -1198,6 +1258,17 @@ int osd_notify_callback(struct notifier_block *block, unsigned long cmd,
 	}
 	osd_log_info("current vmode=%s\n", vinfo->name);
 	switch (cmd) {
+#if 0
+	case VOUT_EVENT_MODE_CHANGE_PRE:
+		for (i = 0; i < OSD_COUNT; i++) {
+			fb_dev = gp_fbdev_list[i];
+			if (osd_hw.enable[i]) {
+				fb_dev->dis_osd_mchange = true;
+				osd_enable_hw(i, false);
+			}
+		}
+		break;
+#endif
 	case  VOUT_EVENT_MODE_CHANGE:
 		for (i = 0; i < OSD_COUNT; i++) {
 			fb_dev = gp_fbdev_list[i];
@@ -1212,6 +1283,12 @@ int osd_notify_callback(struct notifier_block *block, unsigned long cmd,
 			       gp_fbdev_list[DEV_OSD1]->fb_info->var.yres);
 #endif
 			console_unlock();
+#if 0
+			if (fb_dev->dis_osd_mchange) {
+				fb_dev->dis_osd_mchange = false;
+				osd_enable_hw(i, true);
+			}
+#endif
 		}
 		break;
 	case VOUT_EVENT_OSD_BLANK:
@@ -1708,6 +1785,28 @@ static ssize_t store_debug(struct device *device, struct device_attribute *attr,
 	return ret;
 }
 
+static ssize_t show_afbcd(struct device *device, struct device_attribute *attr,
+			  char *buf)
+{
+	u32 enable = osd_get_afbc();
+
+	return snprintf(buf, PAGE_SIZE, "%d\n", enable);
+}
+
+static ssize_t store_afbcd(struct device *device, struct device_attribute *attr,
+			   const char *buf, size_t count)
+{
+	u32 res = 0;
+	int ret = 0;
+
+	ret = kstrtoint(buf, 0, &res);
+	osd_log_info("afbc: %d\n", res);
+
+	osd_set_afbc(res);
+
+	return count;
+}
+
 static ssize_t show_log_level(struct device *device,
 			  struct device_attribute *attr,
 			  char *buf)
@@ -2054,6 +2153,32 @@ static ssize_t store_ver_update_pan(struct device *device,
 	return count;
 }
 
+static ssize_t show_reset_status(struct device *device,
+	struct device_attribute *attr, char *buf)
+{
+	u32 status = osd_get_reset_status();
+
+	return snprintf(buf, PAGE_SIZE, "0x%x\n", status);
+}
+
+static ssize_t free_scale_switch(struct device *device,
+	struct device_attribute *attr,
+	const char *buf, size_t count)
+{
+	struct fb_info *fb_info = dev_get_drvdata(device);
+	u32 res = 0;
+	int ret = 0;
+	unsigned int free_scale_enable = 0;
+	ret = kstrtoint(buf, 0, &res);
+	free_scale_enable = res;
+	osd_switch_free_scale(
+		(fb_info->node == DEV_OSD0) ? DEV_OSD1 : DEV_OSD0,
+		0, 0, fb_info->node, 1, free_scale_enable);
+	osd_log_info("free_scale_switch to fb%d, mode: 0x%x\n",
+		fb_info->node, free_scale_enable);
+	return count;
+}
+
 static inline  int str2lower(char *str)
 {
 	while (*str != '\0') {
@@ -2132,19 +2257,6 @@ static inline int install_osd_reverse_info(struct osd_info_s *init_osd_info,
 	}
 	return 0;
 }
-
-#if defined(CONFIG_ARCH_MESON64_ODROIDC2)
-static int __init osd_setup_monitor_onoff(char *str)
-{
-	if (!strcmp(str, "true") || !strcmp(str, "1"))
-		monitor_onoff_flag = 1;
-	else
-		monitor_onoff_flag = 0;
-
-	return 0;
-}
-__setup("monitor_onoff=", osd_setup_monitor_onoff);
-#endif
 
 static int __init osd_info_setup(char *str)
 {
@@ -2235,7 +2347,16 @@ static struct device_attribute osd_attrs[] = {
 			show_ver_angle, store_ver_angle),
 	__ATTR(ver_clone, S_IRUGO | S_IWUSR,
 			show_ver_clone, store_ver_clone),
-	__ATTR(ver_update_pan, S_IWUGO | S_IWUSR, NULL, store_ver_update_pan),
+	__ATTR(ver_update_pan, S_IWUGO | S_IWUSR,
+			NULL, store_ver_update_pan),
+	__ATTR(osd_afbcd, S_IRUGO | S_IWUSR | S_IWGRP,
+			show_afbcd, store_afbcd),
+	__ATTR(osd_clear, S_IWUSR | S_IWGRP,
+			NULL, osd_clear),
+	__ATTR(reset_status, S_IRUGO | S_IRUSR,
+			show_reset_status, NULL),
+	__ATTR(free_scale_switch, S_IWUSR | S_IWGRP,
+			NULL, free_scale_switch),
 };
 
 #ifdef CONFIG_PM
@@ -2298,6 +2419,22 @@ EXPORT_SYMBOL(osd_resume_early);
 #endif
 
 #ifdef CONFIG_HIBERNATION
+static int osd_realdata_save(void)
+{
+	osd_realdata_save_hw();
+	return 0;
+}
+
+static void osd_realdata_restore(void)
+{
+	osd_realdata_restore_hw();
+}
+
+static struct instaboot_realdata_ops osd_realdata_ops = {
+	.save		= osd_realdata_save,
+	.restore	= osd_realdata_restore,
+};
+
 static int osd_freeze(struct device *dev)
 {
 	osd_freeze_hw();
@@ -2315,6 +2452,16 @@ static int osd_restore(struct device *dev)
 	osd_restore_hw();
 	return 0;
 }
+static int osd_pm_suspend(struct device *dev)
+{
+	struct platform_device *pdev = to_platform_device(dev);
+	return osd_suspend(pdev, PMSG_SUSPEND);
+}
+static int osd_pm_resume(struct device *dev)
+{
+	struct platform_device *pdev = to_platform_device(dev);
+	return osd_resume(pdev);
+}
 #endif
 
 static int osd_probe(struct platform_device *pdev)
@@ -2326,13 +2473,11 @@ static int osd_probe(struct platform_device *pdev)
 	int  index, bpp;
 	struct osd_fb_dev_s *fbdev = NULL;
 	enum vmode_e current_mode = VMODE_MASK;
-	enum vmode_e initial_mode = VMODE_MASK;
-	enum vmode_e logo_mode = VMODE_MASK;
-	int logo_index = -1;
+	enum vmode_e logo_init = 0;
 	const void *prop;
 	int prop_idx = 0;
 	int rotation = 0;
-	u32 memsize[2];
+	const char *str;
 	int i;
 	int ret = 0;
 
@@ -2352,27 +2497,20 @@ static int osd_probe(struct platform_device *pdev)
 #endif
 	/* get buffer size from dt */
 	ret = of_property_read_u32_array(pdev->dev.of_node,
-			"mem_size", memsize, 2);
+			"mem_size", fb_memsize, 2);
 	if (ret) {
 		osd_log_err("not found mem_size from dtd\n");
 		goto failed1;
-	} else {
-		osd_log_dbg("mem_size: 0x%x, 0x%x\n",
-				memsize[0], memsize[1]);
-		fb_rmem_size[0] = memsize[0];
-		fb_rmem_paddr[0] = fb_rmem.base;
-		if ((OSD_COUNT == 2) &&
-				((memsize[0] + memsize[1]) <= fb_rmem.size)) {
-			fb_rmem_size[1] = memsize[1];
-			fb_rmem_paddr[1] = fb_rmem.base + memsize[0];
-		}
 	}
+
 	/* init reserved memory */
 	ret = of_reserved_mem_device_init(&pdev->dev);
-	if (ret != 0) {
+	if ((ret != 0) && ((void *)fb_rmem.base == NULL))
 		osd_log_err("failed to init reserved memory\n");
-		goto failed1;
-	}
+
+	osd_log_dbg("%d, mem_size: 0x%x, 0x%x\n",
+			__LINE__, fb_memsize[0], fb_memsize[1]);
+
 	/* get meson-fb resource from dt */
 	prop = of_get_property(pdev->dev.of_node, "scale_mode", NULL);
 	if (prop)
@@ -2382,45 +2520,27 @@ static int osd_probe(struct platform_device *pdev)
 	if (prop)
 		prop_idx = of_read_ulong(prop, 1);
 	osd_set_4k2k_fb_mode_hw(prop_idx);
-	/* get vmode from dt */
-	prop = of_get_property(pdev->dev.of_node, "vmode", NULL);
+	/* get default display mode from dt */
+	ret = of_property_read_string(pdev->dev.of_node,
+		"display_mode_default", &str);
+	if (ret)
+		current_mode = VMODE_MASK;
+	else
+		current_mode = vmode_name_to_mode(str);
+	prop = of_get_property(pdev->dev.of_node, "pxp_mode", NULL);
 	if (prop)
 		prop_idx = of_read_ulong(prop, 1);
-	switch (prop_idx) {
-	case 1:
-		current_mode = VMODE_LCD;
-		break;
-	case 2:
-		current_mode = VMODE_LVDS_1080P;
-		break;
-	case 3:
-		current_mode = VMODE_1080P;
-		break;
-	case 4:
-		current_mode = VMODE_720P;
-		break;
-	default:
-		current_mode = VMODE_MASK;
-		break;
-	}
-	/* if logo vmode not set, set vmode and init osd hw */
-	logo_mode = get_logo_vmode();
-	logo_index = osd_get_logo_index();
-	if (logo_mode >= VMODE_MAX) {
-		initial_mode = get_initial_vmode();
-		if (initial_mode < VMODE_MAX) {
-			current_mode = initial_mode;
+	osd_set_pxp_mode(prop_idx);
+	/* if osd_init_hw is not set by logo, set vmode and init osd hw */
+	logo_init = osd_get_init_hw_flag();
+	if (logo_init == 0) {
+		if (current_mode < VMODE_MASK)
 			set_current_vmode(current_mode);
-		}
 		osd_init_hw(0);
-		if (current_mode < VMODE_MAX)
-			vout_notifier_call_chain(VOUT_EVENT_MODE_CHANGE,
-				&current_mode);
 	}
 
 	vinfo = get_current_vinfo();
 	osd_log_info("%s vinfo:%p\n", __func__, vinfo);
-
 	for (index = 0; index < OSD_COUNT; index++) {
 		/* register frame buffer memory */
 		fbi = framebuffer_alloc(sizeof(struct osd_fb_dev_s),
@@ -2430,31 +2550,20 @@ static int osd_probe(struct platform_device *pdev)
 			goto failed1;
 		}
 		fbdev = (struct osd_fb_dev_s *)fbi->par;
+		fbdev->fb_index = index;
 		fbdev->fb_info = fbi;
 		fbdev->dev = pdev;
 		mutex_init(&fbdev->lock);
 		var = &fbi->var;
 		fix = &fbi->fix;
 		gp_fbdev_list[index] = fbdev;
-		fbdev->fb_len = fb_rmem_size[index];
-		fbdev->fb_mem_paddr = fb_rmem_paddr[index];
-		fbdev->fb_mem_vaddr = fb_rmem_vaddr[index];
-
-		if (!fbdev->fb_mem_vaddr) {
-			osd_log_err("failed to ioremap frame buffer\n");
-			ret = -ENOMEM;
-			goto failed1;
-		}
-		osd_log_info("Frame buffer memory assigned at");
-		osd_log_info("    phy: 0x%08x, vir:0x%p, size=%dK\n",
-			     fbdev->fb_mem_paddr,
-			     fbdev->fb_mem_vaddr,
-			     fbdev->fb_len >> 10);
+		fbdev->fb_len = 0;
+		fbdev->fb_mem_paddr = 0;
+		fbdev->fb_mem_vaddr = 0;
 		if (vinfo) {
 			fb_def_var[index].width = vinfo->screen_real_width;
 			fb_def_var[index].height = vinfo->screen_real_height;
 		}
-
 		/* setup fb0 display size */
 		if (index == DEV_OSD0) {
 			ret = of_property_read_u32_array(pdev->dev.of_node,
@@ -2463,7 +2572,6 @@ static int osd_probe(struct platform_device *pdev)
 			if (ret)
 				osd_log_info("not found display_size_default\n");
 			else {
-#if !defined(CONFIG_ARCH_MESON64_ODROIDC2)
 				fb_def_var[index].xres = var_screeninfo[0];
 				fb_def_var[index].yres = var_screeninfo[1];
 				fb_def_var[index].xres_virtual =
@@ -2476,44 +2584,8 @@ static int osd_probe(struct platform_device *pdev)
 					fb_def_var[index].bits_per_pixel);
 				if (fb_def_var[index].bits_per_pixel > 32)
 					fb_def_var[index].bits_per_pixel = 32;
-
-#else /* CONFIG_ARCH_MESON64_ODROIDC2 */
-
-				if (osd_set_res_bootargs(index, current_mode)) {
-					fb_def_var[index].xres =
-						var_screeninfo[0];
-					fb_def_var[index].yres =
-						var_screeninfo[1];
-					fb_def_var[index].xres_virtual =
-						var_screeninfo[2];
-					fb_def_var[index].yres_virtual =
-						var_screeninfo[3];
-					fb_def_var[index].bits_per_pixel =
-						var_screeninfo[4];
-				}
-				osd_log_info("fb def : %d %d %d %d %d\n",
-					fb_def_var[index].xres,
-					fb_def_var[index].yres,
-					fb_def_var[index].xres_virtual,
-					fb_def_var[index].yres_virtual,
-					fb_def_var[index].bits_per_pixel);
-
-				osd_log_info("init fbdev bpp is:%d\n",
-					fb_def_var[index].bits_per_pixel);
-
-				if (fb_def_var[index].bits_per_pixel > 32)
-					fb_def_var[index].bits_per_pixel = 32;
-#endif /* CONFIG_ARCH_MESON64_ODROIDC2 */
 			}
 		}
-		/* clear osd buffer if not logo layer */
-		if ((logo_index < 0) || (logo_index != index)) {
-			osd_log_info("---------------clear fb%d memory\n",
-					index);
-			memset((char *)fbdev->fb_mem_vaddr, 0x0,
-					fbdev->fb_len);
-		}
-
 		/* get roataion from dtd */
 		if (index == DEV_OSD0) {
 			prop = of_get_property(pdev->dev.of_node,
@@ -2556,11 +2628,6 @@ static int osd_probe(struct platform_device *pdev)
 		osd_check_var(var, fbi);
 		/* register frame buffer */
 		register_framebuffer(fbi);
-
-		/* setup osd if not logo layer */
-		if ((logo_index < 0) || (logo_index != index))
-			osddev_setup(fbdev);
-
 		/* create device attribute files */
 		for (i = 0; i < ARRAY_SIZE(osd_attrs); i++)
 			ret = device_create_file(fbi->dev, &osd_attrs[i]);
@@ -2604,7 +2671,7 @@ failed1:
 static int osd_remove(struct platform_device *pdev)
 {
 	struct fb_info *fbi;
-	int i = 0;
+	int i;
 	osd_log_info("osd_remove.\n");
 	if (!pdev)
 		return -ENODEV;
@@ -2620,6 +2687,10 @@ static int osd_remove(struct platform_device *pdev)
 			for (j = 0; j < ARRAY_SIZE(osd_attrs); j++)
 				device_remove_file(fbi->dev, &osd_attrs[j]);
 			iounmap(fbdev->fb_mem_vaddr);
+			if (i == DEV_OSD0 && osd_get_afbc()) {
+				for (j = 1; j < OSD_MAX_BUF_NUM; j++)
+					iounmap(fbdev->fb_mem_afbc_vaddr[j]);
+			}
 			kfree(fbi->pseudo_palette);
 			fb_dealloc_cmap(&fbi->cmap);
 			unregister_framebuffer(fbi);
@@ -2656,15 +2727,6 @@ exit:
 
 static int rmem_fb_device_init(struct reserved_mem *rmem, struct device *dev)
 {
-	int i = 0;
-	for (i = 0; i < OSD_COUNT; i++) {
-		if ((fb_rmem_paddr[i] > 0) && (fb_rmem_size[i] > 0)) {
-			fb_rmem_vaddr[i] =
-				ioremap_wc(fb_rmem_paddr[i], fb_rmem_size[i]);
-			if (!fb_rmem_vaddr[i])
-				osd_log_err("fb[%d] ioremap error", i);
-		}
-	}
 	return 0;
 }
 
@@ -2683,7 +2745,7 @@ static int __init rmem_fb_setup(struct reserved_mem *rmem)
 	fb_rmem.base = rmem->base;
 	fb_rmem.size = rmem->size;
 	rmem->ops = &rmem_fb_ops;
-	osd_log_info("Reserved memory: created fb at 0x%p, size %ld MiB\n",
+	osd_log_dbg("Reserved memory: created fb at 0x%p, size %ld MiB\n",
 		     (void *)rmem->base, (unsigned long)rmem->size / SZ_1M);
 	return 0;
 }
@@ -2699,6 +2761,8 @@ const struct dev_pm_ops osd_pm = {
 	.freeze		= osd_freeze,
 	.thaw		= osd_thaw,
 	.restore	= osd_restore,
+	.suspend	= osd_pm_suspend,
+	.resume		= osd_pm_resume,
 };
 #endif
 
@@ -2731,6 +2795,10 @@ static int __init osd_init_module(void)
 		osd_log_err("failed to register OSD driver!\n");
 		return -ENODEV;
 	}
+#ifdef CONFIG_INSTABOOT
+	INIT_LIST_HEAD(&osd_realdata_ops.node);
+	register_instaboot_realdata_ops(&osd_realdata_ops);
+#endif
 	return 0;
 }
 

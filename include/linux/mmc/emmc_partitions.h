@@ -16,7 +16,7 @@
 #define	STORE_DATA				(1<<2)
 
 #define     MAX_PART_NAME_LEN               16
-#define     MAX_MMC_PART_NUM                16
+#define     MAX_MMC_PART_NUM                32
 
 /* MMC Partition Table */
 #define     MMC_PARTITIONS_MAGIC            "MPT"
@@ -73,3 +73,4 @@ int get_reserve_partition_off(struct mmc_card *card);/* byte unit */
 #endif
 
 extern int amlmmc_dtb_init(struct mmc_card *card);
+extern struct mmc_partitions_fmt *pt_fmt;

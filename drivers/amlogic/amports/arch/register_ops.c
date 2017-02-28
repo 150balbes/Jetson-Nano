@@ -94,7 +94,7 @@ static int register_reg_onebus_ops(struct chip_register_ops *ops)
 {
 	if (ops->bus_type >= BUS_MAX)
 		return -1;
-	pr_info("register amports ops for bus[%d]\n", ops->bus_type);
+	pr_debug("register amports ops for bus[%d]\n", ops->bus_type);
 	if (amports_ops[ops->bus_type] != NULL)
 		;
 	/*TODO.
@@ -110,7 +110,7 @@ int register_reg_ops_per_cpu(int cputype,
 	int i;
 
 	if (cputype != get_cpu_type()) {
-		pr_info("ignore bus ops for cpu=%d\n",
+		pr_debug("ignore bus ops for cpu=%d\n",
 			cputype);
 		return 0;	/* ignore don't needed firmare. */
 	}
@@ -129,6 +129,16 @@ int register_reg_ops_mgr(int cputype[],
 	int i = 0;
 	while (cputype[i] > 0) {
 		register_reg_ops_per_cpu(cputype[i], sops_list, ops_size);
+		i++;
+	}
+	return 0;
+}
+int register_reg_ex_ops_mgr(int cputype[],
+	struct chip_register_ops *ex_ops_list, int ops_size)
+{
+	int i = 0;
+	while (cputype[i] > 0) {
+		register_reg_ops_per_cpu(cputype[i], ex_ops_list, ops_size);
 		i++;
 	}
 	return 0;

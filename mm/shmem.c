@@ -1038,9 +1038,6 @@ repeat:
 		goto failed;
 	}
 
-	if (page && sgp == SGP_WRITE)
-		mark_page_accessed(page);
-
 	/* fallocated page? */
 	if (page && !PageUptodate(page)) {
 		if (sgp != SGP_READ)
@@ -1125,9 +1122,6 @@ repeat:
 		shmem_recalc_inode(inode);
 		spin_unlock(&info->lock);
 
-		if (sgp == SGP_WRITE)
-			mark_page_accessed(page);
-
 		delete_from_swap_cache(page);
 		set_page_dirty(page);
 		swap_free(swap);
@@ -1154,11 +1148,8 @@ repeat:
 		if (page && !has_cma)
 			has_cma = has_cma_page(page);
 
-		__SetPageSwapBacked(page);
+		SetPageSwapBacked(page);
 		__set_page_locked(page);
-		if (sgp == SGP_WRITE)
-			init_page_accessed(page);
-
 		error = mem_cgroup_cache_charge(page, current->mm,
 						gfp & GFP_RECLAIM_MASK);
 		if (error)
@@ -1908,11 +1899,9 @@ static long shmem_fallocate(struct file *file, int mode, loff_t offset,
 									NULL);
 		if (error) {
 			/* Remove the !PageUptodate pages we added */
-			if (index > start) {
-				shmem_undo_range(inode,
-				 (loff_t)start << PAGE_CACHE_SHIFT,
-				 ((loff_t)index << PAGE_CACHE_SHIFT) - 1, true);
-			}
+			shmem_undo_range(inode,
+				(loff_t)start << PAGE_CACHE_SHIFT,
+				(loff_t)index << PAGE_CACHE_SHIFT, true);
 			goto undone;
 		}
 

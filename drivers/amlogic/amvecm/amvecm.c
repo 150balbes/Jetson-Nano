@@ -16,6 +16,8 @@
 #include <linux/fs.h>
 #include <linux/device.h>
 #include <linux/cdev.h>
+#include <linux/platform_device.h>
+#include <linux/of.h>
 #include <linux/string.h>
 #include <linux/mm.h>
 #include <linux/slab.h>
@@ -27,14 +29,14 @@
 #include <linux/amlogic/amports/vframe.h>
 #include <linux/amlogic/amvecm/amvecm.h>
 #include <linux/amlogic/vout/vout_notify.h>
-
 #include "arch/vpp_regs.h"
 #include "arch/ve_regs.h"
 #include "arch/cm_regs.h"
+#include "../tvin/tvin_global.h"
 
 #include "amve.h"
 #include "amcm.h"
-#include "amvecm_vlock_regmap.h"
+#include "amcsc.h"
 
 #define pr_amvecm_dbg(fmt, args...)\
 	do {\
@@ -42,14 +44,14 @@
 			pr_info("AMVECM: " fmt, ## args);\
 	} while (0)
 #define pr_amvecm_error(fmt, args...)\
-	printk("AMVECM: " fmt, ## args)
-
+	pr_error("AMVECM: " fmt, ## args)
 
 #define AMVECM_NAME               "amvecm"
 #define AMVECM_DRIVER_NAME        "amvecm"
 #define AMVECM_MODULE_NAME        "amvecm"
 #define AMVECM_DEVICE_NAME        "amvecm"
 #define AMVECM_CLASS_NAME         "amvecm"
+
 struct amvecm_dev_s {
 	dev_t                       devt;
 	struct cdev                 cdev;
@@ -58,12 +60,23 @@ struct amvecm_dev_s {
 	struct class                *clsp;
 };
 
+static struct amvecm_dev_s amvecm_dev;
+
+
+signed int vd1_brightness = 0, vd1_contrast;
+
 static int hue_pre;  /*-25~25*/
 static int saturation_pre;  /*-128~127*/
 static int hue_post;  /*-25~25*/
 static int saturation_post;  /*-128~127*/
-static signed int vd1_brightness = 0, vd1_contrast;
-static struct amvecm_dev_s amvecm_dev;
+unsigned int sr1_reg_val[101];
+unsigned int sr1_ret_val[101];
+struct vpp_hist_param_s vpp_hist_param;
+static unsigned int pre_hist_height, pre_hist_width;
+static unsigned int pc_mode = 0xff;
+static unsigned int pc_mode_last = 0xff;
+
+void __iomem *amvecm_hiu_reg_base;/* = *ioremap(0xc883c000, 0x2000); */
 
 static bool debug_amvecm;
 module_param(debug_amvecm, bool, 0664);
@@ -73,88 +86,15 @@ unsigned int vecm_latch_flag;
 module_param(vecm_latch_flag, uint, 0664);
 MODULE_PARM_DESC(vecm_latch_flag, "\n vecm_latch_flag\n");
 
-/* #if (MESON_CPU_TYPE >= MESON_CPU_TYPE_MESONG9TV) */
-#define VLOCK_MODE_ENC          0
-#define VLOCK_MODE_PLL		1
-
-unsigned int vlock_mode = VLOCK_MODE_PLL;/* 0:enc;1:pll */
-module_param(vlock_mode, uint, 0664);
-MODULE_PARM_DESC(vlock_mode, "\n vlock_mode\n");
-
-unsigned int vlock_en = 0;
-module_param(vlock_en, uint, 0664);
-MODULE_PARM_DESC(vlock_en, "\n vlock_en\n");
-
-/*
-0:only support 50->50;60->60;24->24;30->30;
-1:support 24/30/50/60/100/120 mix,such as 50->60;
-*/
-unsigned int vlock_adapt = 0;
-module_param(vlock_adapt, uint, 0664);
-MODULE_PARM_DESC(vlock_adapt, "\n vlock_adapt\n");
-
-unsigned int vlock_dis_cnt_limit = 2;
-module_param(vlock_dis_cnt_limit, uint, 0664);
-MODULE_PARM_DESC(vlock_dis_cnt_limit, "\n vlock_dis_cnt_limit\n");
-
-static unsigned int vlock_sync_limit_flag;
-static enum vmode_e pre_vmode = VMODE_1080P;
-static enum vframe_source_type_e pre_source_type =
-		VFRAME_SOURCE_TYPE_OTHERS;
-static enum vframe_source_mode_e pre_source_mode =
-		VFRAME_SOURCE_MODE_OTHERS;
-static unsigned int pre_input_freq;
-static unsigned int pre_output_freq;
-static unsigned int vlock_dis_cnt;
-
-
-unsigned int sync_3d_h_start = 0;
-module_param(sync_3d_h_start, uint, 0664);
-MODULE_PARM_DESC(sync_3d_h_start, "\n sync_3d_h_start\n");
-
-unsigned int sync_3d_h_end = 0;
-module_param(sync_3d_h_end, uint, 0664);
-MODULE_PARM_DESC(sync_3d_h_end, "\n sync_3d_h_end\n");
-
-unsigned int sync_3d_v_start = 10;
-module_param(sync_3d_v_start, uint, 0664);
-MODULE_PARM_DESC(sync_3d_v_start, "\n sync_3d_v_start\n");
-
-unsigned int sync_3d_v_end = 20;
-module_param(sync_3d_v_end, uint, 0664);
-MODULE_PARM_DESC(sync_3d_v_end, "\n sync_3d_v_end\n");
-
-unsigned int sync_3d_polarity = 0;
-module_param(sync_3d_polarity, uint, 0664);
-MODULE_PARM_DESC(sync_3d_polarity, "\n sync_3d_polarity\n");
-
-unsigned int sync_3d_out_inv = 0;
-module_param(sync_3d_out_inv, uint, 0664);
-MODULE_PARM_DESC(sync_3d_out_inv, "\n sync_3d_out_inv\n");
-
-unsigned int sync_3d_black_color = 0x008080;/* yuv black */
-module_param(sync_3d_black_color, uint, 0664);
-MODULE_PARM_DESC(sync_3d_black_color, "\n sync_3d_black_color\n");
-
-/* 3d sync to v by one enable/disable */
-unsigned int sync_3d_sync_to_vbo = 0;
-module_param(sync_3d_sync_to_vbo, uint, 0664);
-MODULE_PARM_DESC(sync_3d_sync_to_vbo, "\n sync_3d_sync_to_vbo\n");
-/* #endif */
-
 unsigned int pq_load_en = 1;/* load pq table enable/disable */
 module_param(pq_load_en, uint, 0664);
 MODULE_PARM_DESC(pq_load_en, "\n pq_load_en\n");
 
-/* #if (MESON_CPU_TYPE == MESON_CPU_TYPE_MESONG9TV) */
-bool gamma_en = 0;  /* wb_gamma_en enable/disable */
-/* #else */
-/* bool gamma_en = 1; */
-/* #endif */
+bool gamma_en;  /* wb_gamma_en enable/disable */
 module_param(gamma_en, bool, 0664);
 MODULE_PARM_DESC(gamma_en, "\n gamma_en\n");
 
-bool wb_en = 1;  /* wb_en enable/disable */
+bool wb_en;  /* wb_en enable/disable */
 module_param(wb_en, bool, 0664);
 MODULE_PARM_DESC(wb_en, "\n wb_en\n");
 
@@ -178,54 +118,31 @@ static int wb_on_off = 2; /* 1 :on    0 :off */
 module_param(wb_on_off, uint, 0664);
 MODULE_PARM_DESC(wb_on_off, "\n wb_on_off\n");
 
+unsigned int probe_ok;/* probe ok or not */
+module_param(probe_ok, uint, 0664);
+MODULE_PARM_DESC(probe_ok, "\n probe_ok\n");
 
-/* extern unsigned int cm_size; */
-/* extern unsigned int ve_size; */
-/* extern unsigned int cm2_patch_flag; */
-/* extern struct ve_dnlp_s am_ve_dnlp; */
-/* extern struct ve_dnlp_table_s am_ve_new_dnlp; */
-/* extern int cm_en; //0:disabel;1:enable */
-/* extern struct tcon_gamma_table_s video_gamma_table_r; */
-/* extern struct tcon_gamma_table_s video_gamma_table_g; */
-/* extern struct tcon_gamma_table_s video_gamma_table_b; */
-/* extern struct tcon_gamma_table_s video_gamma_table_r_adj; */
-/* extern struct tcon_gamma_table_s video_gamma_table_g_adj; */
-/* extern struct tcon_gamma_table_s video_gamma_table_b_adj; */
-/* extern struct tcon_rgb_ogo_s     video_rgb_ogo; */
+static unsigned int sr1_index;/* for sr1 read */
+module_param(sr1_index, uint, 0664);
+MODULE_PARM_DESC(sr1_index, "\n sr1_index\n");
 
 static void amvecm_size_patch(void)
 {
 	unsigned int hs, he, vs, ve;
-	/* #if (MESON_CPU_TYPE==MESON_CPU_TYPE_MESONG9TV) */
-	if (is_meson_g9tv_cpu()) {
+	if (get_cpu_type() >= MESON_CPU_MAJOR_ID_GXTVBB) {
 		hs = READ_VPP_REG_BITS(VPP_HSC_REGION12_STARTP, 16, 12);
 		he = READ_VPP_REG_BITS(VPP_HSC_REGION4_ENDP, 0, 12);
 
 		vs = READ_VPP_REG_BITS(VPP_VSC_REGION12_STARTP, 16, 12);
 		ve = READ_VPP_REG_BITS(VPP_VSC_REGION4_ENDP, 0, 12);
-	} else {
-		/* #else */
-		hs = READ_VPP_REG_BITS(VPP_POSTBLEND_VD1_H_START_END, 16, 12);
-		he = READ_VPP_REG_BITS(VPP_POSTBLEND_VD1_H_START_END, 0, 12);
-
-		vs = READ_VPP_REG_BITS(VPP_POSTBLEND_VD1_V_START_END, 16, 12);
-		ve = READ_VPP_REG_BITS(VPP_POSTBLEND_VD1_V_START_END, 0, 12);
-	}
-	/* #endif */
-/* #if ((MESON_CPU_TYPE==MESON_CPU_TYPE_MESON8)|| */
-/* (MESON_CPU_TYPE==MESON_CPU_TYPE_MESON8B)) */
-/* if(cm_en) */
-/* #endif */
-/* cm2_frame_size_patch(he-hs+1,ve-vs+1); */
-	if ((is_meson_m8_cpu() || is_meson_m8m2_cpu() ||
-		is_meson_m8b_cpu() || is_meson_gxbb_cpu())
-		&& cm_en)
-		cm2_frame_size_patch(he-hs+1, ve-vs+1);
-/* #if (MESON_CPU_TYPE>=MESON_CPU_TYPE_MESON6TVD) */
-	if (is_meson_g9tv_cpu())
 		ve_frame_size_patch(he-hs+1, ve-vs+1);
-/* #endif */
+	}
+	hs = READ_VPP_REG_BITS(VPP_POSTBLEND_VD1_H_START_END, 16, 12);
+	he = READ_VPP_REG_BITS(VPP_POSTBLEND_VD1_H_START_END, 0, 12);
 
+	vs = READ_VPP_REG_BITS(VPP_POSTBLEND_VD1_V_START_END, 16, 12);
+	ve = READ_VPP_REG_BITS(VPP_POSTBLEND_VD1_V_START_END, 0, 12);
+	cm2_frame_size_patch(he-hs+1, ve-vs+1);
 }
 
 /* video adj1 */
@@ -345,444 +262,16 @@ static ssize_t amvecm_usage_show(struct class *cla,
 	pr_info("saturation_val range:-128~128\n");
 	pr_info("hue_val range:-25~25\n");
 	pr_info("************video brightness & contrast & saturation_hue adj as flow*************\n");
-	pr_info("	echo brightness_val > /sys/class/amvecm/brightness1\n");
-	pr_info("	echo contrast_val > /sys/class/amvecm/contrast1\n");
-	pr_info("	echo saturation_val hue_val > /sys/class/amvecm/saturation_hue_pre\n");
+	pr_info("echo brightness_val > /sys/class/amvecm/brightness1\n");
+	pr_info("echo contrast_val > /sys/class/amvecm/contrast1\n");
+	pr_info("echo saturation_val hue_val > /sys/class/amvecm/saturation_hue_pre\n");
 	pr_info("************after video+osd blender, brightness & contrast & saturation_hue adj as flow*************\n");
-	pr_info("	echo brightness_val > /sys/class/amvecm/brightness2\n");
-	pr_info("	echo contrast_val > /sys/class/amvecm/contrast2\n");
-	pr_info("	echo saturation_val hue_val > /sys/class/amvecm/saturation_hue_post\n");
+	pr_info("echo brightness_val > /sys/class/amvecm/brightness2\n");
+	pr_info("echo contrast_val > /sys/class/amvecm/contrast2\n");
+	pr_info("echo saturation_val hue_val > /sys/class/amvecm/saturation_hue_post\n");
 	return 0;
 }
 
-static void vd1_brightness_contrast(signed int brightness,
-		signed int contrast)
-{
-	signed int ao0 =  -64, g00 = 1024, g01 =    0, g02 =    0, po0 =  64;
-	signed int ao1 = -512, g10 =    0, g11 = 1024, g12 =    0, po1 = 512;
-	signed int ao2 = -512, g20 =    0, g21 =    0, g22 = 1024, po2 = 512;
-	unsigned int gc0 =    0, gc1 =    0, gc2 =    0, gc3 =    0, gc4 = 0;
-	unsigned int a01 =    0, a_2 =    0, p01 =    0, p_2 =    0;
-	/* enable vd0_csc */
-	unsigned int ori = READ_VPP_REG(VPP_MATRIX_CTRL) | 0x00000020;
-	/* point to vd0_csc */
-	unsigned int ctl = (ori & 0xfffffcff) | 0x00000100;
-
-	po0 += brightness >> 1;
-	if (po0 >  1023)
-		po0 =  1023;
-	if (po0 < -1024)
-		po0 = -1024;
-	g00  *= contrast + 2048;
-	g00 >>= 11;
-	if (g00 >  4095)
-		g00 =  4095;
-	if (g00 < -4096)
-		g00 = -4096;
-	if (contrast < 0) {
-		g11  *= contrast   + 2048;
-		g11 >>= 11;
-	}
-	if (brightness < 0) {
-		g11  += brightness >> 1;
-		if (g11 >  4095)
-			g11 =  4095;
-		if (g11 < -4096)
-			g11 = -4096;
-	}
-	if (contrast < 0) {
-		g22  *= contrast   + 2048;
-		g22 >>= 11;
-	}
-	if (brightness < 0) {
-		g22  += brightness >> 1;
-		if (g22 >  4095)
-			g22 =  4095;
-		if (g22 < -4096)
-			g22 = -4096;
-	}
-	gc0 = ((g00 << 16) & 0x1fff0000) | ((g01 <<  0) & 0x00001fff);
-	gc1 = ((g02 << 16) & 0x1fff0000) | ((g10 <<  0) & 0x00001fff);
-	gc2 = ((g11 << 16) & 0x1fff0000) | ((g12 <<  0) & 0x00001fff);
-	gc3 = ((g20 << 16) & 0x1fff0000) | ((g21 <<  0) & 0x00001fff);
-	gc4 = ((g22 <<  0) & 0x00001fff);
-	/* #if (MESON_CPU_TYPE >= MESON_CPU_TYPE_MESONG9TV) */
-	if (is_meson_g9tv_cpu()) {
-		a01 = ((ao0 << 16) & 0x0fff0000) |
-				((ao1 <<  0) & 0x00000fff);
-		a_2 = ((ao2 <<  0) & 0x00000fff);
-		p01 = ((po0 << 16) & 0x0fff0000) |
-				((po1 <<  0) & 0x00000fff);
-		p_2 = ((po2 <<  0) & 0x00000fff);
-	} else {
-		/* #else */
-		a01 = ((ao0 << 16) & 0x07ff0000) |
-				((ao1 <<  0) & 0x000007ff);
-		a_2 = ((ao2 <<  0) & 0x000007ff);
-		p01 = ((po0 << 16) & 0x07ff0000) |
-				((po1 <<  0) & 0x000007ff);
-		p_2 = ((po2 <<  0) & 0x000007ff);
-	}
-	/* #endif */
-	WRITE_VPP_REG(VPP_MATRIX_CTRL         , ctl);
-	WRITE_VPP_REG(VPP_MATRIX_COEF00_01    , gc0);
-	WRITE_VPP_REG(VPP_MATRIX_COEF02_10    , gc1);
-	WRITE_VPP_REG(VPP_MATRIX_COEF11_12    , gc2);
-	WRITE_VPP_REG(VPP_MATRIX_COEF20_21    , gc3);
-	WRITE_VPP_REG(VPP_MATRIX_COEF22       , gc4);
-	WRITE_VPP_REG(VPP_MATRIX_PRE_OFFSET0_1, a01);
-	WRITE_VPP_REG(VPP_MATRIX_PRE_OFFSET2  , a_2);
-	WRITE_VPP_REG(VPP_MATRIX_OFFSET0_1    , p01);
-	WRITE_VPP_REG(VPP_MATRIX_OFFSET2      , p_2);
-	WRITE_VPP_REG(VPP_MATRIX_CTRL         , ori);
-}
-
-static void amvecm_bricon_process(void)
-{
-	if (vecm_latch_flag & FLAG_BRI_CON) {
-		vecm_latch_flag &= ~FLAG_BRI_CON;
-		vd1_brightness_contrast(vd1_brightness, vd1_contrast);
-		pr_amvecm_dbg("\n[amvecm..] set vd1_brightness_contrast OK!!!\n");
-	}
-}
-
-/* #if (MESON_CPU_TYPE >= MESON_CPU_TYPE_MESONG9TV) */
-static unsigned int amvecm_vlock_check_input_hz(struct vframe_s *vf)
-{
-	unsigned int ret_hz = 0;
-	enum tvin_sig_fmt_e fmt = vf->sig_fmt;
-
-	if ((vf->source_type != VFRAME_SOURCE_TYPE_TUNER) &&
-		(vf->source_type != VFRAME_SOURCE_TYPE_CVBS) &&
-		(vf->source_type != VFRAME_SOURCE_TYPE_HDMI))
-		ret_hz = 0;
-	else if (vf->source_type == VFRAME_SOURCE_TYPE_HDMI) {
-		if (
-		((fmt >= TVIN_SIG_FMT_HDMI_640X480P_60HZ) &&
-		(fmt <= TVIN_SIG_FMT_HDMI_1920X1080P_60HZ)) ||
-		(fmt == TVIN_SIG_FMT_HDMI_2880X480P_60HZ) ||
-		(fmt == TVIN_SIG_FMT_HDMI_2880X576P_60HZ) ||
-		(fmt == TVIN_SIG_FMT_HDMI_1280X720P_60HZ_FRAME_PACKING) ||
-		(fmt == TVIN_SIG_FMT_HDMI_1920X1080I_60HZ_FRAME_PACKING) ||
-		(fmt == TVIN_SIG_FMT_HDMI_1920X1080I_60HZ_ALTERNATIVE) ||
-		(fmt == TVIN_SIG_FMT_HDMI_720X480P_60HZ_FRAME_PACKING)
-		)
-			ret_hz = 60;
-		else if (
-		((fmt >= TVIN_SIG_FMT_HDMI_720X576P_50HZ) &&
-		(fmt <= TVIN_SIG_FMT_HDMI_1920X1080P_50HZ)) ||
-		(fmt == TVIN_SIG_FMT_HDMI_1920X1080I_50HZ_B) ||
-		(fmt == TVIN_SIG_FMT_HDMI_1280X720P_50HZ_FRAME_PACKING) ||
-		(fmt == TVIN_SIG_FMT_HDMI_1920X1080I_50HZ_FRAME_PACKING) ||
-		(fmt == TVIN_SIG_FMT_HDMI_1920X1080I_50HZ_ALTERNATIVE) ||
-		(fmt == TVIN_SIG_FMT_HDMI_720X576P_50HZ_FRAME_PACKING)
-		)
-			ret_hz = 50;
-		else if (
-		(fmt == TVIN_SIG_FMT_HDMI_1920X1080P_24HZ) ||
-		(fmt == TVIN_SIG_FMT_HDMI_1280X720P_24HZ) ||
-		(fmt == TVIN_SIG_FMT_HDMI_1280X720P_24HZ_FRAME_PACKING) ||
-		(fmt == TVIN_SIG_FMT_HDMI_1920X1080P_24HZ_FRAME_PACKING) ||
-		(fmt == TVIN_SIG_FMT_HDMI_1920X1080P_24HZ_ALTERNATIVE)
-		)
-			ret_hz = 24;
-		else if (
-		(fmt == TVIN_SIG_FMT_HDMI_1920X1080P_30HZ) ||
-		(fmt == TVIN_SIG_FMT_HDMI_1280X720P_30HZ) ||
-		(fmt == TVIN_SIG_FMT_HDMI_1280X720P_30HZ_FRAME_PACKING) ||
-		(fmt == TVIN_SIG_FMT_HDMI_1920X1080P_30HZ_FRAME_PACKING) ||
-		(fmt == TVIN_SIG_FMT_HDMI_1920X1080P_30HZ_ALTERNATIVE)
-		)
-			ret_hz = 30;
-		else
-			ret_hz = 0;
-	} else if ((vf->source_type == VFRAME_SOURCE_TYPE_TUNER) ||
-		(vf->source_type == VFRAME_SOURCE_TYPE_CVBS)) {
-		if (vf->source_mode == VFRAME_SOURCE_MODE_NTSC)
-			ret_hz = 60;
-		else if ((vf->source_mode == VFRAME_SOURCE_MODE_PAL) ||
-			(vf->source_mode == VFRAME_SOURCE_MODE_SECAM))
-			ret_hz = 50;
-		else
-			ret_hz = 0;
-	}
-	return ret_hz;
-}
-
-static unsigned int
-amvecm_vlock_check_output_hz(unsigned int sync_duration_num)
-{
-	unsigned int ret_hz = 0;
-	switch (sync_duration_num) {
-	case 24:
-		ret_hz = 24;
-		break;
-	case 30:
-		ret_hz = 30;
-		break;
-	case 50:
-		ret_hz = 50;
-		break;
-	case 60:
-		ret_hz = 60;
-		break;
-	case 100:
-		ret_hz = 100;
-		break;
-	case 120:
-		ret_hz = 120;
-		break;
-	default:
-		ret_hz = 0;
-		break;
-	}
-	return ret_hz;
-}
-static void amvecm_vlock_setting(struct vframe_s *vf,
-		unsigned int input_hz, unsigned int output_hz)
-{
-	unsigned int freq_hz = 0;
-	if (((input_hz != output_hz) && (vlock_adapt == 0)) ||
-			(input_hz == 0) || (output_hz == 0)) {
-		/* VLOCK_CNTL_EN disable */
-		/* WRITE_CBUS_REG_BITS(HHI_HDMI_PLL_CNTL6,0,20,1); */
-		aml_cbus_update_bits(HHI_HDMI_PLL_CNTL6, 1<<20, 0);
-		vlock_dis_cnt = vlock_dis_cnt_limit;
-		pr_info("[%s]auto disable vlock module for no support case!!!\n",
-				__func__);
-		return;
-	}
-	aml_write_cbus(HHI_VID_LOCK_CLK_CNTL, 0x80);
-	if (vlock_mode == VLOCK_MODE_ENC) {
-		am_set_regmap(&vlock_enc_lcd720x480);
-		/* VLOCK_CNTL_EN disable */
-		/* WRITE_CBUS_REG_BITS(HHI_HDMI_PLL_CNTL6,0,20,1); */
-		aml_cbus_update_bits(HHI_HDMI_PLL_CNTL6, 1<<20, 0);
-		/* disable to adjust pll */
-		WRITE_VPP_REG_BITS(VPU_VLOCK_CTRL, 0, 29, 1);
-		/* CFG_VID_LOCK_ADJ_EN enable */
-		WRITE_VPP_REG_BITS(ENCL_MAX_LINE_SWITCH_POINT, 1, 13, 1);
-		/* enable to adjust pll */
-		WRITE_VPP_REG_BITS(VPU_VLOCK_CTRL, 1, 30, 1);
-	}
-	if (vlock_mode == VLOCK_MODE_PLL) {
-		/* av pal in,1080p60 hdmi out as default */
-		am_set_regmap(&vlock_pll_in50hz_out60hz);
-		/*
-		set input & output freq
-		bit0~7:input freq
-		bit8~15:output freq
-		*/
-		freq_hz = input_hz | (output_hz << 8);
-		WRITE_VPP_REG_BITS(VPU_VLOCK_MISC_CTRL, freq_hz, 0, 16);
-		/*
-		Ifrm_cnt_mod:0x3001(bit23~16);
-		(output_freq/input_freq)*Ifrm_cnt_mod must be integer
-		*/
-		if (vlock_adapt == 0)
-			WRITE_VPP_REG_BITS(VPU_VLOCK_MISC_CTRL,
-				1, 16, 8);
-		else
-			WRITE_VPP_REG_BITS(VPU_VLOCK_MISC_CTRL,
-				input_hz, 16, 8);
-		/*set PLL M_INT;PLL M_frac*/
-		/* WRITE_VPP_REG_BITS(VPU_VLOCK_MX4096, */
-		/* READ_CBUS_REG_BITS(HHI_HDMI_PLL_CNTL,0,9),12,9); */
-		WRITE_VPP_REG_BITS(VPU_VLOCK_MX4096,
-			(aml_read_cbus(HHI_HDMI_PLL_CNTL) & 0x3ff), 12, 9);
-		/* WRITE_VPP_REG_BITS(VPU_VLOCK_MX4096, */
-		/* READ_CBUS_REG_BITS(HHI_HDMI_PLL_CNTL,0,12),0,12); */
-		WRITE_VPP_REG_BITS(VPU_VLOCK_MX4096,
-			(aml_read_cbus(HHI_HDMI_PLL_CNTL) & 0x1fff), 0, 12);
-		/* vlock module output goes to which module */
-		switch (READ_VPP_REG_BITS(VPU_VIU_VENC_MUX_CTRL, 0, 2)) {
-		case 0:/* ENCL */
-			WRITE_VPP_REG_BITS(VPU_VLOCK_MISC_CTRL, 0, 26, 2);
-			break;
-		case 1:/* ENCI */
-			WRITE_VPP_REG_BITS(VPU_VLOCK_MISC_CTRL, 2, 26, 2);
-			break;
-		case 2: /* ENCP */
-			WRITE_VPP_REG_BITS(VPU_VLOCK_MISC_CTRL, 1, 26, 2);
-			break;
-		default:
-			break;
-		}
-		/*enable vlock to adj pll*/
-		/* CFG_VID_LOCK_ADJ_EN disable */
-		WRITE_VPP_REG_BITS(ENCL_MAX_LINE_SWITCH_POINT, 0, 13, 1);
-		/* disable to adjust pll */
-		WRITE_VPP_REG_BITS(VPU_VLOCK_CTRL, 0, 30, 1);
-		/* VLOCK_CNTL_EN enable */
-		/* WRITE_CBUS_REG_BITS(HHI_HDMI_PLL_CNTL6,1,20,1); */
-		aml_cbus_update_bits(HHI_HDMI_PLL_CNTL6, 1<<20, 1);
-		/* enable to adjust pll */
-		WRITE_VPP_REG_BITS(VPU_VLOCK_CTRL, 1, 29, 1);
-	}
-	if ((vf->source_type == VFRAME_SOURCE_TYPE_TUNER) ||
-		(vf->source_type == VFRAME_SOURCE_TYPE_CVBS))
-		/* Input Vsync source select from tv-decoder */
-		WRITE_VPP_REG_BITS(VPU_VLOCK_CTRL, 1, 16, 3);
-	else if (vf->source_type == VFRAME_SOURCE_TYPE_HDMI)
-		/* Input Vsync source select from hdmi-rx */
-		WRITE_VPP_REG_BITS(VPU_VLOCK_CTRL, 2, 16, 3);
-	WRITE_VPP_REG_BITS(VPU_VLOCK_CTRL, 1, 31, 1);
-}
-/* won't change this function internal seqence,
- * if really need change,please be carefull */
-static void amvecm_vlock_process(struct vframe_s *vf)
-{
-	const struct vinfo_s *vinfo;
-	unsigned int input_hz, output_hz, input_vs_cnt;
-
-	if (vecm_latch_flag & FLAG_VLOCK_DIS) {
-		/* VLOCK_CNTL_EN disable */
-		/* WRITE_CBUS_REG_BITS(HHI_HDMI_PLL_CNTL6,0,20,1); */
-		aml_cbus_update_bits(HHI_HDMI_PLL_CNTL6, 1<<20, 0);
-		vlock_dis_cnt = vlock_dis_cnt_limit;
-		vlock_en = 0;
-		vecm_latch_flag &= ~FLAG_VLOCK_DIS;
-		return;
-	}
-	if (vlock_en == 1) {
-		vinfo = get_current_vinfo();
-		input_hz = amvecm_vlock_check_input_hz(vf);
-		output_hz =
-			amvecm_vlock_check_output_hz(vinfo->sync_duration_num);
-		if ((vinfo->mode != pre_vmode) ||
-			(vf->source_type != pre_source_type) ||
-			(vf->source_mode != pre_source_mode) ||
-			(input_hz != pre_input_freq) ||
-			(output_hz != pre_output_freq)) {
-			amvecm_vlock_setting(vf, input_hz, output_hz);
-			pr_amvecm_dbg("%s:vmode/source_type/source_mode/",
-					__func__);
-			pr_amvecm_dbg("input_freq/output_freq change:");
-			pr_amvecm_dbg("%d/%d/%d/%d/%d=>%d/%d/%d/%d/%d\n",
-				pre_vmode, pre_source_type, pre_source_mode,
-				pre_input_freq, pre_output_freq, vinfo->mode,
-				vf->source_type, vf->source_mode,
-				input_hz, output_hz);
-			pre_vmode = vinfo->mode;
-			pre_source_type = vf->source_type;
-			pre_source_mode = vf->source_mode;
-			pre_input_freq = input_hz;
-			pre_output_freq = output_hz;
-			vlock_sync_limit_flag = 0;
-		}
-		if (vlock_sync_limit_flag < 5) {
-			vlock_sync_limit_flag++;
-			if (vlock_sync_limit_flag == 5) {
-				input_vs_cnt =
-				READ_VPP_REG_BITS(VPU_VLOCK_RO_VS_I_DIST,
-					0, 28);
-				WRITE_VPP_REG(VPU_VLOCK_LOOP1_IMISSYNC_MAX,
-						input_vs_cnt*103/100);
-				WRITE_VPP_REG(VPU_VLOCK_LOOP1_IMISSYNC_MIN,
-						input_vs_cnt*97/100);
-			}
-		}
-		return;
-	}
-	if (vlock_dis_cnt > 0) {
-		vlock_dis_cnt--;
-		if (vlock_dis_cnt == 0) {
-			/* disable to adjust pll */
-			WRITE_VPP_REG_BITS(VPU_VLOCK_CTRL, 0, 29, 1);
-			/* CFG_VID_LOCK_ADJ_EN disable */
-			WRITE_VPP_REG_BITS(ENCL_MAX_LINE_SWITCH_POINT,
-					0, 13, 1);
-			/* disable to adjust pll */
-			WRITE_VPP_REG_BITS(VPU_VLOCK_CTRL, 0, 30, 1);
-			/* disable vid_lock_en */
-			WRITE_VPP_REG_BITS(VPU_VLOCK_CTRL, 0, 31, 1);
-		}
-	}
-	if (vecm_latch_flag & FLAG_VLOCK_EN) {
-		vinfo = get_current_vinfo();
-		/* pr_info("[%s]vinfo->name:%s\n",__func__,vinfo->name); */
-		input_hz = amvecm_vlock_check_input_hz(vf);
-		output_hz =
-			amvecm_vlock_check_output_hz(vinfo->sync_duration_num);
-		amvecm_vlock_setting(vf, input_hz, output_hz);
-		pr_amvecm_dbg("%s:current vmode/source_type/source_mode/",
-				__func__);
-		pr_amvecm_dbg("input_freq/output_freq/sig_fmt is:");
-		pr_amvecm_dbg("%d/%d/%d/%d/%d/0x%x\n",
-				vinfo->mode, vf->source_type,
-				vf->source_mode, input_hz,
-				output_hz, vf->sig_fmt);
-		vinfo = get_current_vinfo();
-		pre_vmode = vinfo->mode;
-		pre_source_type = vf->source_type;
-		pre_source_mode = vf->source_mode;
-		pre_input_freq = input_hz;
-		pre_output_freq = output_hz;
-		vlock_en = 1;
-		vlock_sync_limit_flag = 0;
-		vecm_latch_flag &= ~FLAG_VLOCK_EN;
-	}
-}
-
-static void amvecm_3d_black_process(void)
-{
-	if (vecm_latch_flag & FLAG_3D_BLACK_DIS) {
-		/* disable reg_3dsync_enable */
-		WRITE_VPP_REG_BITS(VPU_VPU_3D_SYNC1, 0, 31, 1);
-		WRITE_VPP_REG_BITS(VIU_MISC_CTRL0, 0, 8, 1);
-		WRITE_VPP_REG_BITS(VPP_BLEND_ONECOLOR_CTRL, 0, 26, 1);
-		WRITE_VPP_REG_BITS(VPU_VPU_3D_SYNC1, 0, 13, 1);
-		WRITE_VPP_REG_BITS(VPU_VPU_3D_SYNC2, 0, 31, 1);
-		vecm_latch_flag &= ~FLAG_3D_BLACK_DIS;
-	}
-	if (vecm_latch_flag & FLAG_3D_BLACK_EN) {
-		WRITE_VPP_REG_BITS(VIU_MISC_CTRL0, 1, 8, 1);
-		WRITE_VPP_REG_BITS(VPP_BLEND_ONECOLOR_CTRL, 1, 26, 1);
-		WRITE_VPP_REG_BITS(VPU_VPU_3D_SYNC2, 1, 31, 1);
-		WRITE_VPP_REG_BITS(VPP_BLEND_ONECOLOR_CTRL,
-				sync_3d_black_color&0xffffff, 0, 24);
-		if (sync_3d_sync_to_vbo)
-			WRITE_VPP_REG_BITS(VPU_VPU_3D_SYNC1, 1, 13, 1);
-		WRITE_VPP_REG_BITS(VPU_VPU_3D_SYNC1, 1, 31, 1);
-		vecm_latch_flag &= ~FLAG_3D_BLACK_EN;
-	}
-}
-static void amvecm_3d_sync_process(void)
-{
-
-	if (vecm_latch_flag & FLAG_3D_SYNC_DIS) {
-		/* disable reg_3dsync_enable */
-		WRITE_VPP_REG_BITS(VPU_VPU_3D_SYNC1, 0, 31, 1);
-		vecm_latch_flag &= ~FLAG_3D_SYNC_DIS;
-	}
-	if (vecm_latch_flag & FLAG_3D_SYNC_EN) {
-		/*select vpu pwm source clock*/
-		switch (READ_VPP_REG_BITS(VPU_VIU_VENC_MUX_CTRL, 0, 2)) {
-		case 0:/* ENCL */
-			WRITE_VPP_REG_BITS(VPU_VPU_PWM_V0, 0, 29, 2);
-			break;
-		case 1:/* ENCI */
-			WRITE_VPP_REG_BITS(VPU_VPU_PWM_V0, 1, 29, 2);
-			break;
-		case 2:/* ENCP */
-			WRITE_VPP_REG_BITS(VPU_VPU_PWM_V0, 2, 29, 2);
-			break;
-		case 3:/* ENCT */
-			WRITE_VPP_REG_BITS(VPU_VPU_PWM_V0, 3, 29, 2);
-			break;
-		default:
-			break;
-		}
-		WRITE_VPP_REG_BITS(VPU_VPU_3D_SYNC2, sync_3d_h_start, 0, 13);
-		WRITE_VPP_REG_BITS(VPU_VPU_3D_SYNC2, sync_3d_h_end, 16, 13);
-		WRITE_VPP_REG_BITS(VPU_VPU_3D_SYNC1, sync_3d_v_start, 0, 13);
-		WRITE_VPP_REG_BITS(VPU_VPU_3D_SYNC1, sync_3d_v_end, 16, 13);
-		WRITE_VPP_REG_BITS(VPU_VPU_3D_SYNC1, sync_3d_polarity, 29, 1);
-		WRITE_VPP_REG_BITS(VPU_VPU_3D_SYNC1, sync_3d_out_inv, 15, 1);
-		WRITE_VPP_REG_BITS(VPU_VPU_3D_SYNC1, 1, 31, 1);
-		vecm_latch_flag &= ~FLAG_3D_SYNC_EN;
-	}
-}
 static void parse_param_amvecm(char *buf_orig, char **parm)
 {
 	char *ps, *token;
@@ -790,7 +279,7 @@ static void parse_param_amvecm(char *buf_orig, char **parm)
 
 	ps = buf_orig;
 	while (1) {
-		token = strsep(&ps, "\n");
+		token = strsep(&ps, " \n");
 		if (token == NULL)
 			break;
 		if (*token == '\0')
@@ -898,7 +387,7 @@ static ssize_t amvecm_3d_sync_store(struct class *cla,
 
 void pq_enable_disable(void)
 {
-
+	int reg_val;
 	if (pq_on_off == 1) {
 		pq_on_off = 2;
 		/* open dnlp clock gate */
@@ -909,12 +398,39 @@ void pq_enable_disable(void)
 		WRITE_VPP_REG_BITS(VPP_GCLK_CTRL0, 0, 4, 2);
 		cm_en = 1;
 		amcm_enable();
- /* #if (MESON_CPU_TYPE >= MESON_CPU_TYPE_MESONG9TV) */
-		if (is_meson_g9tv_cpu()) {
+		if (is_meson_gxtvbb_cpu()) {
 			/* open sharpness clock gate */
-			WRITE_VPP_REG_BITS(VPP_GCLK_CTRL0, 0, 30, 2);
+			/*WRITE_VPP_REG_BITS(VPP_GCLK_CTRL0, 0, 30, 2);*/
 			/* sharpness on */
-			WRITE_VPP_REG_BITS(VPP_VE_ENABLE_CTRL, 1, 1, 1);
+			WRITE_VPP_REG_BITS(
+				SRSHARP0_SHARP_PK_NR_ENABLE,
+				1, 1, 1);
+			WRITE_VPP_REG_BITS(
+				SRSHARP1_SHARP_PK_NR_ENABLE,
+				1, 1, 1);
+			reg_val = READ_VPP_REG(SRSHARP0_HCTI_FLT_CLP_DC);
+			WRITE_VPP_REG(SRSHARP0_HCTI_FLT_CLP_DC,
+					reg_val | 0x10000000);
+			WRITE_VPP_REG(SRSHARP1_HCTI_FLT_CLP_DC,
+					reg_val | 0x10000000);
+
+			reg_val = READ_VPP_REG(SRSHARP0_HLTI_FLT_CLP_DC);
+			WRITE_VPP_REG(SRSHARP0_HLTI_FLT_CLP_DC,
+					reg_val | 0x10000000);
+			WRITE_VPP_REG(SRSHARP1_HLTI_FLT_CLP_DC,
+					reg_val | 0x10000000);
+
+			reg_val = READ_VPP_REG(SRSHARP0_VLTI_FLT_CON_CLP);
+			WRITE_VPP_REG(SRSHARP0_VLTI_FLT_CON_CLP,
+					reg_val | 0x4000);
+			WRITE_VPP_REG(SRSHARP1_VLTI_FLT_CON_CLP,
+					reg_val | 0x4000);
+
+			reg_val = READ_VPP_REG(SRSHARP0_VCTI_FLT_CON_CLP);
+			WRITE_VPP_REG(SRSHARP0_VCTI_FLT_CON_CLP,
+					reg_val | 0x4000);
+			WRITE_VPP_REG(SRSHARP1_VCTI_FLT_CON_CLP,
+					reg_val | 0x4000);
 			/* wb on */
 			wb_en = 1;
 			WRITE_VPP_REG_BITS(VPP_GAINOFF_CTRL0, 1, 31, 1);
@@ -931,10 +447,36 @@ void pq_enable_disable(void)
 		cm_en = 0;
 		amcm_disable();
 		WRITE_VPP_REG_BITS(VPP_GCLK_CTRL0, 1, 4, 2);
-/* #if (MESON_CPU_TYPE >= MESON_CPU_TYPE_MESONG9TV) */
-		if (is_meson_g9tv_cpu()) {
-			WRITE_VPP_REG_BITS(VPP_VE_ENABLE_CTRL, 0, 1, 1);
-			WRITE_VPP_REG_BITS(VPP_GCLK_CTRL0, 1, 30, 2);
+		if (is_meson_gxtvbb_cpu()) {
+			WRITE_VPP_REG_BITS(
+				SRSHARP0_SHARP_PK_NR_ENABLE,
+				0, 1, 1);
+			WRITE_VPP_REG_BITS(
+				SRSHARP1_SHARP_PK_NR_ENABLE,
+				0, 1, 1);
+			reg_val = READ_VPP_REG(SRSHARP0_HCTI_FLT_CLP_DC);
+			WRITE_VPP_REG(SRSHARP0_HCTI_FLT_CLP_DC,
+					reg_val & 0xefffffff);
+			WRITE_VPP_REG(SRSHARP1_HCTI_FLT_CLP_DC,
+					reg_val & 0xefffffff);
+
+			reg_val = READ_VPP_REG(SRSHARP0_HLTI_FLT_CLP_DC);
+			WRITE_VPP_REG(SRSHARP0_HLTI_FLT_CLP_DC,
+					reg_val & 0xefffffff);
+			WRITE_VPP_REG(SRSHARP1_HLTI_FLT_CLP_DC,
+					reg_val & 0xefffffff);
+
+			reg_val = READ_VPP_REG(SRSHARP0_VLTI_FLT_CON_CLP);
+			WRITE_VPP_REG(SRSHARP0_VLTI_FLT_CON_CLP,
+					reg_val & 0xffffbfff);
+			WRITE_VPP_REG(SRSHARP1_VLTI_FLT_CON_CLP,
+					reg_val & 0xffffbfff);
+
+			reg_val = READ_VPP_REG(SRSHARP0_VCTI_FLT_CON_CLP);
+			WRITE_VPP_REG(SRSHARP0_VCTI_FLT_CON_CLP,
+					reg_val & 0xffffbfff);
+			WRITE_VPP_REG(SRSHARP1_VCTI_FLT_CON_CLP,
+					reg_val & 0xffffbfff);
 			wb_en = 0;
 			WRITE_VPP_REG_BITS(VPP_GAINOFF_CTRL0, 0, 31, 1);
 			vecm_latch_flag |= FLAG_GAMMA_TABLE_DIS;
@@ -967,15 +509,23 @@ void pq_enable_disable(void)
 	}
 
 /* #if (MESON_CPU_TYPE >= MESON_CPU_TYPE_MESONG9TV) */
-	if (is_meson_g9tv_cpu()) {
+	if (is_meson_gxtvbb_cpu()) {
 		if (sharpness_on_off == 1) {
 			sharpness_on_off = 2;
-			WRITE_VPP_REG_BITS(VPP_GCLK_CTRL0, 0, 30, 2);
-			WRITE_VPP_REG_BITS(VPP_VE_ENABLE_CTRL, 1, 1, 1);
+			WRITE_VPP_REG_BITS(
+				SRSHARP0_SHARP_PK_NR_ENABLE,
+				1, 1, 1);
+			WRITE_VPP_REG_BITS(
+				SRSHARP1_SHARP_PK_NR_ENABLE,
+				1, 1, 1);
 		} else if (sharpness_on_off == 0) {
 			sharpness_on_off = 2;
-			WRITE_VPP_REG_BITS(VPP_VE_ENABLE_CTRL, 0, 1, 1);
-			WRITE_VPP_REG_BITS(VPP_GCLK_CTRL0, 1, 30, 2);
+			WRITE_VPP_REG_BITS(
+				SRSHARP0_SHARP_PK_NR_ENABLE,
+				0, 1, 1);
+			WRITE_VPP_REG_BITS(
+				SRSHARP1_SHARP_PK_NR_ENABLE,
+				0, 1, 1);
 		}
 
 		if (wb_on_off == 1) {
@@ -993,15 +543,207 @@ void pq_enable_disable(void)
 
 }
 
-void amvecm_video_latch(struct vframe_s *vf)
+static void vpp_backup_histgram(struct vframe_s *vf)
 {
-	/* if (pq_load_en == 0) */
-	/* return; */
+	unsigned int i = 0;
+
+	vpp_hist_param.vpp_hist_pow = vf->prop.hist.hist_pow;
+	vpp_hist_param.vpp_luma_sum = vf->prop.hist.vpp_luma_sum;
+	vpp_hist_param.vpp_pixel_sum = vf->prop.hist.vpp_pixel_sum;
+	for (i = 0; i < 64; i++)
+		vpp_hist_param.vpp_histgram[i] = vf->prop.hist.vpp_gamma[i];
+}
+
+static void vpp_dump_histgram(void)
+{
+	uint i;
+	pr_info("%s:\n", __func__);
+	for (i = 0; i < 64; i++) {
+		pr_info("[%d]0x%-8x\t", i, vpp_hist_param.vpp_histgram[i]);
+		if ((i+1)%8 == 0)
+			pr_info("\n");
+	}
+}
+
+void vpp_get_hist_en(void)
+{
+	wr_bits(0, VI_HIST_CTRL, 0x1, 11, 3);
+	wr_bits(0, VI_HIST_CTRL, 0x1, 0, 1);
+	wr(0, VI_HIST_GCLK_CTRL, 0xffffffff);
+	wr_bits(0, VI_HIST_CTRL, 2, VI_HIST_POW_BIT, VI_HIST_POW_WID);
+}
+
+void vpp_get_vframe_hist_info(struct vframe_s *vf)
+{
+	unsigned int hist_height, hist_width;
+
+	hist_height = rd_bits(0, VPP_IN_H_V_SIZE, 0, 13);
+	hist_width = rd_bits(0, VPP_IN_H_V_SIZE, 16, 13);
+
+	if ((hist_height != pre_hist_height) ||
+		(hist_width != pre_hist_width)) {
+		pre_hist_height = hist_height;
+		pre_hist_width = hist_width;
+		wr_bits(0, VI_HIST_PIC_SIZE, hist_height, 16, 13);
+		wr_bits(0, VI_HIST_PIC_SIZE, hist_width, 0, 13);
+	}
+	/* fetch hist info */
+	/* vf->prop.hist.luma_sum   = READ_CBUS_REG_BITS(VDIN_HIST_SPL_VAL,
+	 * HIST_LUMA_SUM_BIT,    HIST_LUMA_SUM_WID   ); */
+	vf->prop.hist.hist_pow   = rd_bits(0, VI_HIST_CTRL,
+			VI_HIST_POW_BIT, VI_HIST_POW_WID);
+	vf->prop.hist.vpp_luma_sum   = rd(0, VI_HIST_SPL_VAL);
+	/* vf->prop.hist.chroma_sum = READ_CBUS_REG_BITS(VDIN_HIST_CHROMA_SUM,
+	 * HIST_CHROMA_SUM_BIT,  HIST_CHROMA_SUM_WID ); */
+	vf->prop.hist.vpp_chroma_sum = rd(0, VI_HIST_CHROMA_SUM);
+	vf->prop.hist.vpp_pixel_sum  = rd_bits(0, VI_HIST_SPL_PIX_CNT,
+			VI_HIST_PIX_CNT_BIT, VI_HIST_PIX_CNT_WID);
+	vf->prop.hist.vpp_height     = rd_bits(0, VI_HIST_PIC_SIZE,
+			VI_HIST_PIC_HEIGHT_BIT, VI_HIST_PIC_HEIGHT_WID);
+	vf->prop.hist.vpp_width      = rd_bits(0, VI_HIST_PIC_SIZE,
+			VI_HIST_PIC_WIDTH_BIT, VI_HIST_PIC_WIDTH_WID);
+	vf->prop.hist.vpp_luma_max   = rd_bits(0, VI_HIST_MAX_MIN,
+			VI_HIST_MAX_BIT, VI_HIST_MAX_WID);
+	vf->prop.hist.vpp_luma_min   = rd_bits(0, VI_HIST_MAX_MIN,
+			VI_HIST_MIN_BIT, VI_HIST_MIN_WID);
+	vf->prop.hist.vpp_gamma[0]   = rd_bits(0, VI_DNLP_HIST00,
+			VI_HIST_ON_BIN_00_BIT, VI_HIST_ON_BIN_00_WID);
+	vf->prop.hist.vpp_gamma[1]   = rd_bits(0, VI_DNLP_HIST00,
+			VI_HIST_ON_BIN_01_BIT, VI_HIST_ON_BIN_01_WID);
+	vf->prop.hist.vpp_gamma[2]   = rd_bits(0, VI_DNLP_HIST01,
+			VI_HIST_ON_BIN_02_BIT, VI_HIST_ON_BIN_02_WID);
+	vf->prop.hist.vpp_gamma[3]   = rd_bits(0, VI_DNLP_HIST01,
+			VI_HIST_ON_BIN_03_BIT, VI_HIST_ON_BIN_03_WID);
+	vf->prop.hist.vpp_gamma[4]   = rd_bits(0, VI_DNLP_HIST02,
+			VI_HIST_ON_BIN_04_BIT, VI_HIST_ON_BIN_04_WID);
+	vf->prop.hist.vpp_gamma[5]   = rd_bits(0, VI_DNLP_HIST02,
+			VI_HIST_ON_BIN_05_BIT, VI_HIST_ON_BIN_05_WID);
+	vf->prop.hist.vpp_gamma[6]   = rd_bits(0, VI_DNLP_HIST03,
+			VI_HIST_ON_BIN_06_BIT, VI_HIST_ON_BIN_06_WID);
+	vf->prop.hist.vpp_gamma[7]   = rd_bits(0, VI_DNLP_HIST03,
+			VI_HIST_ON_BIN_07_BIT, VI_HIST_ON_BIN_07_WID);
+	vf->prop.hist.vpp_gamma[8]   = rd_bits(0, VI_DNLP_HIST04,
+			VI_HIST_ON_BIN_08_BIT, VI_HIST_ON_BIN_08_WID);
+	vf->prop.hist.vpp_gamma[9]   = rd_bits(0, VI_DNLP_HIST04,
+			VI_HIST_ON_BIN_09_BIT, VI_HIST_ON_BIN_09_WID);
+	vf->prop.hist.vpp_gamma[10]  = rd_bits(0, VI_DNLP_HIST05,
+			VI_HIST_ON_BIN_10_BIT, VI_HIST_ON_BIN_10_WID);
+	vf->prop.hist.vpp_gamma[11]  = rd_bits(0, VI_DNLP_HIST05,
+			VI_HIST_ON_BIN_11_BIT, VI_HIST_ON_BIN_11_WID);
+	vf->prop.hist.vpp_gamma[12]  = rd_bits(0, VI_DNLP_HIST06,
+			VI_HIST_ON_BIN_12_BIT, VI_HIST_ON_BIN_12_WID);
+	vf->prop.hist.vpp_gamma[13]  = rd_bits(0, VI_DNLP_HIST06,
+			VI_HIST_ON_BIN_13_BIT, VI_HIST_ON_BIN_13_WID);
+	vf->prop.hist.vpp_gamma[14]  = rd_bits(0, VI_DNLP_HIST07,
+			VI_HIST_ON_BIN_14_BIT, VI_HIST_ON_BIN_14_WID);
+	vf->prop.hist.vpp_gamma[15]  = rd_bits(0, VI_DNLP_HIST07,
+			VI_HIST_ON_BIN_15_BIT, VI_HIST_ON_BIN_15_WID);
+	vf->prop.hist.vpp_gamma[16]  = rd_bits(0, VI_DNLP_HIST08,
+			VI_HIST_ON_BIN_16_BIT, VI_HIST_ON_BIN_16_WID);
+	vf->prop.hist.vpp_gamma[17]  = rd_bits(0, VI_DNLP_HIST08,
+			VI_HIST_ON_BIN_17_BIT, VI_HIST_ON_BIN_17_WID);
+	vf->prop.hist.vpp_gamma[18]  = rd_bits(0, VI_DNLP_HIST09,
+			VI_HIST_ON_BIN_18_BIT, VI_HIST_ON_BIN_18_WID);
+	vf->prop.hist.vpp_gamma[19]  = rd_bits(0, VI_DNLP_HIST09,
+			VI_HIST_ON_BIN_19_BIT, VI_HIST_ON_BIN_19_WID);
+	vf->prop.hist.vpp_gamma[20]  = rd_bits(0, VI_DNLP_HIST10,
+			VI_HIST_ON_BIN_20_BIT, VI_HIST_ON_BIN_20_WID);
+	vf->prop.hist.vpp_gamma[21]  = rd_bits(0, VI_DNLP_HIST10,
+			VI_HIST_ON_BIN_21_BIT, VI_HIST_ON_BIN_21_WID);
+	vf->prop.hist.vpp_gamma[22]  = rd_bits(0, VI_DNLP_HIST11,
+			VI_HIST_ON_BIN_22_BIT, VI_HIST_ON_BIN_22_WID);
+	vf->prop.hist.vpp_gamma[23]  = rd_bits(0, VI_DNLP_HIST11,
+			VI_HIST_ON_BIN_23_BIT, VI_HIST_ON_BIN_23_WID);
+	vf->prop.hist.vpp_gamma[24]  = rd_bits(0, VI_DNLP_HIST12,
+			VI_HIST_ON_BIN_24_BIT, VI_HIST_ON_BIN_24_WID);
+	vf->prop.hist.vpp_gamma[25]  = rd_bits(0, VI_DNLP_HIST12,
+			VI_HIST_ON_BIN_25_BIT, VI_HIST_ON_BIN_25_WID);
+	vf->prop.hist.vpp_gamma[26]  = rd_bits(0, VI_DNLP_HIST13,
+			VI_HIST_ON_BIN_26_BIT, VI_HIST_ON_BIN_26_WID);
+	vf->prop.hist.vpp_gamma[27]  = rd_bits(0, VI_DNLP_HIST13,
+			VI_HIST_ON_BIN_27_BIT, VI_HIST_ON_BIN_27_WID);
+	vf->prop.hist.vpp_gamma[28]  = rd_bits(0, VI_DNLP_HIST14,
+			VI_HIST_ON_BIN_28_BIT, VI_HIST_ON_BIN_28_WID);
+	vf->prop.hist.vpp_gamma[29]  = rd_bits(0, VI_DNLP_HIST14,
+			VI_HIST_ON_BIN_29_BIT, VI_HIST_ON_BIN_29_WID);
+	vf->prop.hist.vpp_gamma[30]  = rd_bits(0, VI_DNLP_HIST15,
+			VI_HIST_ON_BIN_30_BIT, VI_HIST_ON_BIN_30_WID);
+	vf->prop.hist.vpp_gamma[31]  = rd_bits(0, VI_DNLP_HIST15,
+			VI_HIST_ON_BIN_31_BIT, VI_HIST_ON_BIN_31_WID);
+	vf->prop.hist.vpp_gamma[32]  = rd_bits(0, VI_DNLP_HIST16,
+			VI_HIST_ON_BIN_32_BIT, VI_HIST_ON_BIN_32_WID);
+	vf->prop.hist.vpp_gamma[33]  = rd_bits(0, VI_DNLP_HIST16,
+			VI_HIST_ON_BIN_33_BIT, VI_HIST_ON_BIN_33_WID);
+	vf->prop.hist.vpp_gamma[34]  = rd_bits(0, VI_DNLP_HIST17,
+			VI_HIST_ON_BIN_34_BIT, VI_HIST_ON_BIN_34_WID);
+	vf->prop.hist.vpp_gamma[35]  = rd_bits(0, VI_DNLP_HIST17,
+			VI_HIST_ON_BIN_35_BIT, VI_HIST_ON_BIN_35_WID);
+	vf->prop.hist.vpp_gamma[36]  = rd_bits(0, VI_DNLP_HIST18,
+			VI_HIST_ON_BIN_36_BIT, VI_HIST_ON_BIN_36_WID);
+	vf->prop.hist.vpp_gamma[37]  = rd_bits(0, VI_DNLP_HIST18,
+			VI_HIST_ON_BIN_37_BIT, VI_HIST_ON_BIN_37_WID);
+	vf->prop.hist.vpp_gamma[38]  = rd_bits(0, VI_DNLP_HIST19,
+			VI_HIST_ON_BIN_38_BIT, VI_HIST_ON_BIN_38_WID);
+	vf->prop.hist.vpp_gamma[39]  = rd_bits(0, VI_DNLP_HIST19,
+			VI_HIST_ON_BIN_39_BIT, VI_HIST_ON_BIN_39_WID);
+	vf->prop.hist.vpp_gamma[40]  = rd_bits(0, VI_DNLP_HIST20,
+			VI_HIST_ON_BIN_40_BIT, VI_HIST_ON_BIN_40_WID);
+	vf->prop.hist.vpp_gamma[41]  = rd_bits(0, VI_DNLP_HIST20,
+			VI_HIST_ON_BIN_41_BIT, VI_HIST_ON_BIN_41_WID);
+	vf->prop.hist.vpp_gamma[42]  = rd_bits(0, VI_DNLP_HIST21,
+			VI_HIST_ON_BIN_42_BIT, VI_HIST_ON_BIN_42_WID);
+	vf->prop.hist.vpp_gamma[43]  = rd_bits(0, VI_DNLP_HIST21,
+			VI_HIST_ON_BIN_43_BIT, VI_HIST_ON_BIN_43_WID);
+	vf->prop.hist.vpp_gamma[44]  = rd_bits(0, VI_DNLP_HIST22,
+			VI_HIST_ON_BIN_44_BIT, VI_HIST_ON_BIN_44_WID);
+	vf->prop.hist.vpp_gamma[45]  = rd_bits(0, VI_DNLP_HIST22,
+			VI_HIST_ON_BIN_45_BIT, VI_HIST_ON_BIN_45_WID);
+	vf->prop.hist.vpp_gamma[46]  = rd_bits(0, VI_DNLP_HIST23,
+			VI_HIST_ON_BIN_46_BIT, VI_HIST_ON_BIN_46_WID);
+	vf->prop.hist.vpp_gamma[47]  = rd_bits(0, VI_DNLP_HIST23,
+			VI_HIST_ON_BIN_47_BIT, VI_HIST_ON_BIN_47_WID);
+	vf->prop.hist.vpp_gamma[48]  = rd_bits(0, VI_DNLP_HIST24,
+			VI_HIST_ON_BIN_48_BIT, VI_HIST_ON_BIN_48_WID);
+	vf->prop.hist.vpp_gamma[49]  = rd_bits(0, VI_DNLP_HIST24,
+			VI_HIST_ON_BIN_49_BIT, VI_HIST_ON_BIN_49_WID);
+	vf->prop.hist.vpp_gamma[50]  = rd_bits(0, VI_DNLP_HIST25,
+			VI_HIST_ON_BIN_50_BIT, VI_HIST_ON_BIN_50_WID);
+	vf->prop.hist.vpp_gamma[51]  = rd_bits(0, VI_DNLP_HIST25,
+			VI_HIST_ON_BIN_51_BIT, VI_HIST_ON_BIN_51_WID);
+	vf->prop.hist.vpp_gamma[52]  = rd_bits(0, VI_DNLP_HIST26,
+			VI_HIST_ON_BIN_52_BIT, VI_HIST_ON_BIN_52_WID);
+	vf->prop.hist.vpp_gamma[53]  = rd_bits(0, VI_DNLP_HIST26,
+			VI_HIST_ON_BIN_53_BIT, VI_HIST_ON_BIN_53_WID);
+	vf->prop.hist.vpp_gamma[54]  = rd_bits(0, VI_DNLP_HIST27,
+			VI_HIST_ON_BIN_54_BIT, VI_HIST_ON_BIN_54_WID);
+	vf->prop.hist.vpp_gamma[55]  = rd_bits(0, VI_DNLP_HIST27,
+			VI_HIST_ON_BIN_55_BIT, VI_HIST_ON_BIN_55_WID);
+	vf->prop.hist.vpp_gamma[56]  = rd_bits(0, VI_DNLP_HIST28,
+			VI_HIST_ON_BIN_56_BIT, VI_HIST_ON_BIN_56_WID);
+	vf->prop.hist.vpp_gamma[57]  = rd_bits(0, VI_DNLP_HIST28,
+			VI_HIST_ON_BIN_57_BIT, VI_HIST_ON_BIN_57_WID);
+	vf->prop.hist.vpp_gamma[58]  = rd_bits(0, VI_DNLP_HIST29,
+			VI_HIST_ON_BIN_58_BIT, VI_HIST_ON_BIN_58_WID);
+	vf->prop.hist.vpp_gamma[59]  = rd_bits(0, VI_DNLP_HIST29,
+			VI_HIST_ON_BIN_59_BIT, VI_HIST_ON_BIN_59_WID);
+	vf->prop.hist.vpp_gamma[60]  = rd_bits(0, VI_DNLP_HIST30,
+			VI_HIST_ON_BIN_60_BIT, VI_HIST_ON_BIN_60_WID);
+	vf->prop.hist.vpp_gamma[61]  = rd_bits(0, VI_DNLP_HIST30,
+			VI_HIST_ON_BIN_61_BIT, VI_HIST_ON_BIN_61_WID);
+	vf->prop.hist.vpp_gamma[62]  = rd_bits(0, VI_DNLP_HIST31,
+			VI_HIST_ON_BIN_62_BIT, VI_HIST_ON_BIN_62_WID);
+	vf->prop.hist.vpp_gamma[63]  = rd_bits(0, VI_DNLP_HIST31,
+			VI_HIST_ON_BIN_63_BIT, VI_HIST_ON_BIN_63_WID);
+}
+
+
+void amvecm_video_latch(void)
+{
+	pc_mode_process();
 	cm_latch_process();
 	amvecm_size_patch();
 	ve_dnlp_latch_process();
 	ve_lcd_gamma_process();
-	amvecm_bricon_process();
 	lvds_freq_process();
 /* #if (MESON_CPU_TYPE >= MESON_CPU_TYPE_MESONG9TV) */
 	if (is_meson_g9tv_cpu()) {
@@ -1010,17 +752,39 @@ void amvecm_video_latch(struct vframe_s *vf)
 	}
 /* #endif */
 }
+
 void amvecm_on_vs(struct vframe_s *vf)
 {
-	amvecm_video_latch(vf);
+	if (probe_ok == 0)
+		return;
+
 	if (vf != NULL) {
-		if (is_meson_g9tv_cpu())
-			amvecm_vlock_process(vf);
-		ve_on_vs(vf);
-	}
+		/* matrix ajust */
+		amvecm_matrix_process(vf);
+
+		amvecm_bricon_process(
+			vd1_brightness,
+			vd1_contrast + vd1_contrast_offset, vf);
+	} else
+		amvecm_matrix_process(NULL);
+
+	/* pq latch process */
+	amvecm_video_latch();
+
 	pq_enable_disable();
 }
 EXPORT_SYMBOL(amvecm_on_vs);
+
+
+void refresh_on_vs(struct vframe_s *vf)
+{
+	if (vf != NULL) {
+		vpp_get_vframe_hist_info(vf);
+		ve_on_vs(vf);
+		vpp_backup_histgram(vf);
+	}
+}
+EXPORT_SYMBOL(refresh_on_vs);
 
 static int amvecm_open(struct inode *inode, struct file *file)
 {
@@ -1047,6 +811,8 @@ static long amvecm_ioctl(struct file *file,
 	pr_amvecm_dbg("[amvecm..] %s: cmd_nr = 0x%x\n",
 			__func__, _IOC_NR(cmd));
 
+	if (probe_ok == 0)
+		return ret;
 	switch (cmd) {
 	case AMVECM_IOC_LOAD_REG:
 		if (pq_load_en == 0) {
@@ -1054,6 +820,7 @@ static long amvecm_ioctl(struct file *file,
 			pr_amvecm_dbg("[amvecm..] pq ioctl function disabled !!\n");
 			return ret;
 		}
+
 		if ((vecm_latch_flag & FLAG_REG_MAP0) &&
 			(vecm_latch_flag & FLAG_REG_MAP1) &&
 			(vecm_latch_flag & FLAG_REG_MAP2) &&
@@ -1098,15 +865,18 @@ static long amvecm_ioctl(struct file *file,
 		argp = (void __user *)arg;
 		if ((video_ve_hist.height == 0) || (video_ve_hist.width == 0))
 			ret = -EFAULT;
-		else {
-			video_ve_hist.ave =
-				video_ve_hist.sum/(video_ve_hist.height*
-						video_ve_hist.width);
-			if (copy_to_user(argp,
+		else if (copy_to_user(argp,
 					&video_ve_hist,
 					sizeof(struct ve_hist_s)))
 				ret = -EFAULT;
-		}
+		break;
+	case AMVECM_IOC_G_HIST_BIN:
+		argp = (void __user *)arg;
+		if (vpp_hist_param.vpp_pixel_sum == 0)
+			ret = -EFAULT;
+		else if (copy_to_user(argp, &vpp_hist_param,
+					sizeof(struct vpp_hist_param_s)))
+			ret = -EFAULT;
 		break;
 	/**********************************************************************
 	gamma ioctl
@@ -1182,7 +952,16 @@ static long amvecm_ioctl(struct file *file,
 	}
 	return ret;
 }
-
+#ifdef CONFIG_COMPAT
+static long amvecm_compat_ioctl(struct file *file, unsigned int cmd,
+	unsigned long arg)
+{
+	unsigned long ret;
+	arg = (unsigned long)compat_ptr(arg);
+	ret = amvecm_ioctl(file, cmd, arg);
+	return ret;
+}
+#endif
 static ssize_t amvecm_dnlp_show(struct class *cla,
 		struct class_attribute *attr, char *buf)
 {
@@ -1241,7 +1020,8 @@ static ssize_t amvecm_brightness_store(struct class *cla,
 		return -EINVAL;
 
 	vd1_brightness = val;
-	vecm_latch_flag |= FLAG_BRI_CON;
+	/*vecm_latch_flag |= FLAG_BRI_CON;*/
+	vecm_latch_flag |= FLAG_VADJ1_BRI;
 	return count;
 }
 
@@ -1262,7 +1042,8 @@ static ssize_t amvecm_contrast_store(struct class *cla,
 		return -EINVAL;
 
 	vd1_contrast = val;
-	vecm_latch_flag |= FLAG_BRI_CON;
+	/*vecm_latch_flag |= FLAG_BRI_CON;*/
+	vecm_latch_flag |= FLAG_VADJ1_CON;
 	return count;
 }
 
@@ -1492,7 +1273,7 @@ static ssize_t amvecm_cm2_store(struct class *cls,
 	buf_orig = kstrdup(buffer, GFP_KERNEL);
 	ps = buf_orig;
 	while (1) {
-		token = strsep(&ps, "\n");
+		token = strsep(&ps, " \n");
 		if (token == NULL)
 			break;
 		if (*token == '\0')
@@ -1592,7 +1373,7 @@ static ssize_t amvecm_pq_en_show(struct class *cla,
 	len += sprintf(buf+len, "cm_en = %d\n", cm_en);
 	len += sprintf(buf+len, "wb_en = %d\n", wb_en);
 /* #if (MESON_CPU_TYPE >= MESON_CPU_TYPE_MESONG9TV) */
-	if (is_meson_g9tv_cpu()) {
+	if (is_meson_gxtvbb_cpu()) {
 		len += sprintf(buf+len,
 				"sharpness_en = %d\n", sharpness_en_val);
 		len += sprintf(buf+len,
@@ -1612,10 +1393,23 @@ static ssize_t amvecm_pq_en_store(struct class *cla,
 	if ((r != 1) || ((val != 1) && (val != 0)))
 		return -EINVAL;
 
-	if (val == 1)
+	if (val == 1) {
 		pq_on_off = 1;
-	else
+		pr_amvecm_dbg("dnlp_en = 1 [0x1da1][bit2] = 1\n");
+		pr_amvecm_dbg("cm_en = 1  [0x1d26][bit28] = 1\n");
+		pr_amvecm_dbg("sharpness0_en = 1 [0x3227][bit1] = 1\n");
+		pr_amvecm_dbg("sharpness1_en = 1 [0x32a7][bit1] = 1\n");
+		pr_amvecm_dbg("wb_en = 1 [0x1d6a][bit31] = 1\n");
+		pr_amvecm_dbg("gamma_en = 1 [0x1400][bit0] = 1\n");
+	} else {
 		pq_on_off = 0;
+		pr_amvecm_dbg("dnlp_en = 0 [0x1da1][bit2] = 0\n");
+		pr_amvecm_dbg("cm_en = 0  [0x1d26][bit28] = 0\n");
+		pr_amvecm_dbg("sharpness0_en = 0 [0x3227][bit1] = 0\n");
+		pr_amvecm_dbg("sharpness1_en = 0 [0x32a7][bit1] = 0\n");
+		pr_amvecm_dbg("wb_en = 0 [0x1d6a][bit31] = 0\n");
+		pr_amvecm_dbg("gamma_en = 0 [0x1400][bit0] = 0\n");
+	}
 	return count;
 }
 
@@ -1785,7 +1579,7 @@ static ssize_t amvecm_gamma_store(struct class *cls,
 	buf_orig = kstrdup(buffer, GFP_KERNEL);
 	ps = buf_orig;
 	while (1) {
-		token = strsep(&ps, "\n");
+		token = strsep(&ps, " \n");
 		if (token == NULL)
 			break;
 		if (*token == '\0')
@@ -1836,6 +1630,63 @@ static ssize_t amvecm_gamma_store(struct class *cls,
 	kfree(gammaB);
 	return count;
 }
+
+static ssize_t set_gamma_pattern_show(struct class *cla,
+			struct class_attribute *attr, char *buf)
+{
+	pr_info("	echo r g b > /sys/class/amvecm/gamma_pattern\n");
+	pr_info("	r g b should be hex\n");
+	return 0;
+}
+
+static ssize_t set_gamma_pattern_store(struct class *cls,
+			struct class_attribute *attr,
+			const char *buffer, size_t count)
+{
+	unsigned short r_val[256], g_val[256], b_val[256];
+	int n = 0;
+	char *buf_orig, *ps, *token;
+	char *parm[3];
+	unsigned int gamma[3];
+	long val, i;
+
+	buf_orig = kstrdup(buffer, GFP_KERNEL);
+	ps = buf_orig;
+	while (1) {
+		token = strsep(&ps, " \n");
+		if (token == NULL)
+			break;
+		if (*token == '\0')
+			continue;
+		parm[n++] = token;
+	}
+	if (kstrtol(parm[0], 16, &val) < 0)
+		return -EINVAL;
+	gamma[0] = val << 2;
+
+	if (kstrtol(parm[1], 16, &val) < 0)
+		return -EINVAL;
+	gamma[1] = val << 2;
+
+	if (kstrtol(parm[2], 16, &val) < 0)
+		return -EINVAL;
+	gamma[2] = val << 2;
+
+	for (i = 0; i < 256; i++) {
+		r_val[i] = gamma[0];
+		g_val[i] = gamma[1];
+		b_val[i] = gamma[2];
+	}
+
+	vpp_set_lcd_gamma_table(r_val, H_SEL_R);
+
+	vpp_set_lcd_gamma_table(g_val, H_SEL_G);
+
+	vpp_set_lcd_gamma_table(b_val, H_SEL_B);
+	return count;
+
+}
+
 
 static ssize_t amvecm_set_post_matrix_show(struct class *cla,
 			struct class_attribute *attr, char *buf)
@@ -1888,6 +1739,7 @@ static ssize_t amvecm_post_matrix_data_show(struct class *cla,
 	len += sprintf(buf+len, "VPP_MATRIX_PROBE_COLOR %x\n", val2);
 	return len;
 }
+
 static ssize_t amvecm_post_matrix_data_store(struct class *cla,
 			struct class_attribute *attr,
 			const char *buf, size_t count)
@@ -1895,9 +1747,309 @@ static ssize_t amvecm_post_matrix_data_store(struct class *cla,
 	return 0;
 }
 
+static ssize_t amvecm_sr1_reg_show(struct class *cla,
+			struct class_attribute *attr, char *buf)
+{
+	unsigned int addr;
+	addr = ((sr1_index+0x3280) << 2) | 0xd0100000;
+	return sprintf(buf, "0x%x = 0x%x\n",
+			addr, sr1_ret_val[sr1_index]);
+}
+
+static ssize_t amvecm_sr1_reg_store(struct class *cla,
+			struct class_attribute *attr,
+			const char *buf, size_t count)
+{
+	size_t r;
+	unsigned int addr, off_addr = 0;
+	r = sscanf(buf, "0x%x", &addr);
+	addr = (addr&0xffff) >> 2;
+	if ((r != 1)  || (addr > 0x32e4) || (addr < 0x3280))
+		return -EINVAL;
+	off_addr = addr - 0x3280;
+	sr1_index = off_addr;
+	sr1_ret_val[off_addr] = sr1_reg_val[off_addr];
+
+	return count;
+
+}
+
+static ssize_t amvecm_write_sr1_reg_val_show(struct class *cla,
+			struct class_attribute *attr, char *buf)
+{
+	return 0;
+}
+
+static ssize_t amvecm_write_sr1_reg_val_store(struct class *cla,
+			struct class_attribute *attr,
+			const char *buf, size_t count)
+{
+	size_t r;
+	unsigned int val;
+	r = sscanf(buf, "0x%x", &val);
+	if (r != 1)
+		return -EINVAL;
+	sr1_reg_val[sr1_index] = val;
+
+	return count;
+
+}
+
+static ssize_t amvecm_dump_reg_show(struct class *cla,
+			struct class_attribute *attr, char *buf)
+{
+	unsigned int addr;
+
+	pr_info("----dump sharpness0 reg----\n");
+	for (addr = 0x3200;
+		addr <= 0x3264; addr++)
+		pr_info("[0x%x]vcbus[0x%04x]=0x%08x\n",
+				(0xd0100000+(addr<<2)), addr,
+				READ_VPP_REG(addr));
+	pr_info("----dump sharpness1 reg----\n");
+	for (addr = (0x3200+0x80);
+		addr <= (0x3264+0x80); addr++)
+		pr_info("[0x%x]vcbus[0x%04x]=0x%08x\n",
+				(0xd0100000+(addr<<2)), addr,
+				READ_VPP_REG(addr));
+	pr_info("----dump vd1 IF0 reg----\n");
+	for (addr = (0x1a50);
+		addr <= (0x1a69); addr++)
+		pr_info("[0x%x]vcbus[0x%04x]=0x%08x\n",
+				(0xd0100000+(addr<<2)), addr,
+				READ_VPP_REG(addr));
+	pr_info("----dump vpp1 part1 reg----\n");
+	for (addr = (0x1d00);
+		addr <= (0x1d6e); addr++)
+		pr_info("[0x%x]vcbus[0x%04x]=0x%08x\n",
+				(0xd0100000+(addr<<2)), addr,
+				READ_VPP_REG(addr));
+
+	pr_info("----dump vpp1 part2 reg----\n");
+	for (addr = (0x1d72);
+		addr <= (0x1de4); addr++)
+		pr_info("[0x%x]vcbus[0x%04x]=0x%08x\n",
+				(0xd0100000+(addr<<2)), addr,
+				READ_VPP_REG(addr));
+
+	pr_info("----dump ndr reg----\n");
+	for (addr = (0x2d00);
+		addr <= (0x2d78); addr++)
+		pr_info("[0x%x]vcbus[0x%04x]=0x%08x\n",
+				(0xd0100000+(addr<<2)), addr,
+				READ_VPP_REG(addr));
+	pr_info("----dump nr3 reg----\n");
+	for (addr = (0x2ff0);
+		addr <= (0x2ff6); addr++)
+		pr_info("[0x%x]vcbus[0x%04x]=0x%08x\n",
+				(0xd0100000+(addr<<2)), addr,
+				READ_VPP_REG(addr));
+	pr_info("----dump vlock reg----\n");
+	for (addr = (0x3000);
+		addr <= (0x3020); addr++)
+		pr_info("[0x%x]vcbus[0x%04x]=0x%08x\n",
+				(0xd0100000+(addr<<2)), addr,
+				READ_VPP_REG(addr));
+	pr_info("----dump super scaler0 reg----\n");
+	for (addr = (0x3100);
+		addr <= (0x3115); addr++)
+		pr_info("[0x%x]vcbus[0x%04x]=0x%08x\n",
+				(0xd0100000+(addr<<2)), addr,
+				READ_VPP_REG(addr));
+	pr_info("----dump super scaler1 reg----\n");
+	for (addr = (0x3118);
+		addr <= (0x312e); addr++)
+		pr_info("[0x%x]vcbus[0x%04x]=0x%08x\n",
+				(0xd0100000+(addr<<2)), addr,
+				READ_VPP_REG(addr));
+	pr_info("----dump xvycc reg----\n");
+	for (addr = (0x3158);
+		addr <= (0x3179); addr++)
+		pr_info("[0x%x]vcbus[0x%04x]=0x%08x\n",
+				(0xd0100000+(addr<<2)), addr,
+				READ_VPP_REG(addr));
+	pr_info("----dump reg done----\n");
+	return 0;
+}
+static ssize_t amvecm_dump_reg_store(struct class *cla,
+			struct class_attribute *attr,
+			const char *buf, size_t count)
+{
+	return 0;
+}
+static ssize_t amvecm_dump_vpp_hist_show(struct class *cla,
+		struct class_attribute *attr, char *buf)
+{
+	vpp_dump_histgram();
+	return 0;
+}
+
+static ssize_t amvecm_dump_vpp_hist_store(struct class *cla,
+		struct class_attribute *attr,
+		const char *buf, size_t count)
+{
+	return 0;
+}
+
+static ssize_t amvecm_hdr_dbg_show(struct class *cla,
+			struct class_attribute *attr, char *buf)
+{
+	int ret;
+
+	ret = amvecm_hdr_dbg(0);
+
+	return 0;
+}
+
+static ssize_t amvecm_hdr_dbg_store(struct class *cla,
+			struct class_attribute *attr,
+			const char *buf, size_t count)
+{
+	return 0;
+}
+
+static ssize_t amvecm_hdr_reg_show(struct class *cla,
+			struct class_attribute *attr, char *buf)
+{
+	int ret;
+
+	ret = amvecm_hdr_dbg(1);
+
+	return 0;
+}
+
+static ssize_t amvecm_hdr_reg_store(struct class *cla,
+			struct class_attribute *attr,
+			const char *buf, size_t count)
+{
+	return 0;
+}
+
+static ssize_t amvecm_pc_mode_show(struct class *cla,
+			struct class_attribute *attr, char *buf)
+{
+	pr_info("pc:echo 0x0 > /sys/class/amvecm/pc_mode\n");
+	pr_info("other:echo 0x1 > /sys/class/amvecm/pc_mode\n");
+	pr_info("pc_mode:%d,pc_mode_last:%d\n", pc_mode, pc_mode_last);
+	return 0;
+}
+
+static ssize_t amvecm_pc_mode_store(struct class *cla,
+			struct class_attribute *attr,
+			const char *buf, size_t count)
+{
+	size_t r;
+	int val;
+	r = sscanf(buf, "%x", &val);
+	if ((r != 1))
+		return -EINVAL;
+
+	if (val == 1) {
+		pc_mode = 1;
+		pc_mode_last = 0xff;
+	} else if (val == 0) {
+		pc_mode = 0;
+		pc_mode_last = 0xff;
+	}
+
+	return count;
+}
+
+void pc_mode_process(void)
+{
+	unsigned int reg_val;
+	if ((pc_mode == 1) && (pc_mode != pc_mode_last)) {
+		/* open dnlp clock gate */
+		dnlp_en = 1;
+		ve_enable_dnlp();
+		/* open cm clock gate */
+		cm_en = 1;
+		amcm_enable();
+			/* sharpness on */
+		WRITE_VPP_REG_BITS(
+			SRSHARP0_SHARP_PK_NR_ENABLE,
+			1, 1, 1);
+		WRITE_VPP_REG_BITS(
+			SRSHARP1_SHARP_PK_NR_ENABLE,
+			1, 1, 1);
+		reg_val = READ_VPP_REG(SRSHARP0_HCTI_FLT_CLP_DC);
+		WRITE_VPP_REG(SRSHARP0_HCTI_FLT_CLP_DC,
+				reg_val | 0x10000000);
+		WRITE_VPP_REG(SRSHARP1_HCTI_FLT_CLP_DC,
+				reg_val | 0x10000000);
+
+		reg_val = READ_VPP_REG(SRSHARP0_HLTI_FLT_CLP_DC);
+		WRITE_VPP_REG(SRSHARP0_HLTI_FLT_CLP_DC,
+				reg_val | 0x10000000);
+		WRITE_VPP_REG(SRSHARP1_HLTI_FLT_CLP_DC,
+				reg_val | 0x10000000);
+
+		reg_val = READ_VPP_REG(SRSHARP0_VLTI_FLT_CON_CLP);
+		WRITE_VPP_REG(SRSHARP0_VLTI_FLT_CON_CLP,
+				reg_val | 0x4000);
+		WRITE_VPP_REG(SRSHARP1_VLTI_FLT_CON_CLP,
+				reg_val | 0x4000);
+
+		reg_val = READ_VPP_REG(SRSHARP0_VCTI_FLT_CON_CLP);
+		WRITE_VPP_REG(SRSHARP0_VCTI_FLT_CON_CLP,
+				reg_val | 0x4000);
+		WRITE_VPP_REG(SRSHARP1_VCTI_FLT_CON_CLP,
+				reg_val | 0x4000);
+
+		WRITE_VPP_REG(VPP_VADJ_CTRL, 0xd);
+		pc_mode_last = pc_mode;
+	} else if ((pc_mode == 0) && (pc_mode != pc_mode_last)) {
+		dnlp_en = 0;
+		ve_disable_dnlp();
+		cm_en = 0;
+		amcm_disable();
+
+		WRITE_VPP_REG_BITS(
+			SRSHARP0_SHARP_PK_NR_ENABLE,
+			0, 1, 1);
+		WRITE_VPP_REG_BITS(
+			SRSHARP1_SHARP_PK_NR_ENABLE,
+			0, 1, 1);
+		reg_val = READ_VPP_REG(SRSHARP0_HCTI_FLT_CLP_DC);
+		WRITE_VPP_REG(SRSHARP0_HCTI_FLT_CLP_DC,
+				reg_val & 0xefffffff);
+		WRITE_VPP_REG(SRSHARP1_HCTI_FLT_CLP_DC,
+				reg_val & 0xefffffff);
+
+		reg_val = READ_VPP_REG(SRSHARP0_HLTI_FLT_CLP_DC);
+		WRITE_VPP_REG(SRSHARP0_HLTI_FLT_CLP_DC,
+				reg_val & 0xefffffff);
+		WRITE_VPP_REG(SRSHARP1_HLTI_FLT_CLP_DC,
+				reg_val & 0xefffffff);
+
+		reg_val = READ_VPP_REG(SRSHARP0_VLTI_FLT_CON_CLP);
+		WRITE_VPP_REG(SRSHARP0_VLTI_FLT_CON_CLP,
+				reg_val & 0xffffbfff);
+		WRITE_VPP_REG(SRSHARP1_VLTI_FLT_CON_CLP,
+				reg_val & 0xffffbfff);
+
+		reg_val = READ_VPP_REG(SRSHARP0_VCTI_FLT_CON_CLP);
+		WRITE_VPP_REG(SRSHARP0_VCTI_FLT_CON_CLP,
+				reg_val & 0xffffbfff);
+		WRITE_VPP_REG(SRSHARP1_VCTI_FLT_CON_CLP,
+				reg_val & 0xffffbfff);
+
+		WRITE_VPP_REG(VPP_VADJ_CTRL, 0x0);
+		pc_mode_last = pc_mode;
+	}
+}
+
 /* #if (MESON_CPU_TYPE == MESON_CPU_TYPE_MESONG9TV) */
-/* void init_sharpness(void) */
-/* { */
+void init_sharpness(void)
+{
+	/*probe close sr0 peaking for switch on video*/
+	WRITE_VPP_REG_BITS(VPP_SRSHARP0_CTRL, 1, 0, 1);
+	/*WRITE_VPP_REG_BITS(VPP_SRSHARP1_CTRL, 1,0,1);*/
+	WRITE_VPP_REG_BITS(SRSHARP0_SHARP_PK_NR_ENABLE, 0, 1, 1);
+
+	WRITE_VPP_REG_BITS(VPP_SRSHARP1_CTRL, 1, 0, 1);
+/* WRITE_VPP_REG_BITS(SRSHARP1_SHARP_PK_NR_ENABLE, 0,1,1);*/
+
 /* WRITE_VPP_REG_BITS(VPP_VE_ENABLE_CTRL, 1,1,1); */
 /* WRITE_VPP_REG(NR_GAUSSIAN_MODE, 0x0); */
 /* WRITE_VPP_REG(PK_HVCON_LPF_MODE, 0x11111111); */
@@ -1931,8 +2083,41 @@ static ssize_t amvecm_post_matrix_data_store(struct class *cla,
 /* WRITE_VPP_REG(PK_DRTFB_HP_CORING, 0x00043f04); */
 /* WRITE_VPP_REG(SHARP_HVBLANK_NUM, 0x00003c3c); */
 /* pr_info("**********sharpness init ok!*********\n"); */
-/* } */
-/* #endif */
+}
+/* #endif*/
+
+static void amvecm_gamma_init(bool en)
+{
+	unsigned int i;
+	unsigned short data[256];
+
+	if (en) {
+		for (i = 0; i < 256; i++)
+			data[i] = i << 2;
+		vpp_set_lcd_gamma_table(
+					data,
+					H_SEL_R);
+		vpp_set_lcd_gamma_table(
+					data,
+					H_SEL_G);
+		vpp_set_lcd_gamma_table(
+					data,
+					H_SEL_B);
+	}
+	WRITE_VPP_REG_BITS(L_GAMMA_CNTL_PORT,
+			en, GAMMA_EN, 1);
+}
+static void amvecm_wb_init(bool en)
+{
+	if (en) {
+		WRITE_VPP_REG(VPP_GAINOFF_CTRL0,
+			(1024 << 16) | 1024);
+		WRITE_VPP_REG(VPP_GAINOFF_CTRL1,
+			(1024 << 16));
+	}
+
+	WRITE_VPP_REG_BITS(VPP_GAINOFF_CTRL0, en, 31, 1);
+}
 
 static struct class_attribute amvecm_class_attrs[] = {
 	__ATTR(dnlp, S_IRUGO | S_IWUSR,
@@ -1990,6 +2175,22 @@ static struct class_attribute amvecm_class_attrs[] = {
 		amvecm_post_matrix_pos_show, amvecm_post_matrix_pos_store),
 	__ATTR(matrix_data, S_IRUGO | S_IWUSR,
 		amvecm_post_matrix_data_show, amvecm_post_matrix_data_store),
+	__ATTR(dump_reg, S_IRUGO | S_IWUSR,
+		amvecm_dump_reg_show, amvecm_dump_reg_store),
+	__ATTR(sr1_reg, S_IRUGO | S_IWUSR,
+		amvecm_sr1_reg_show, amvecm_sr1_reg_store),
+	__ATTR(write_sr1_reg_val, S_IRUGO | S_IWUSR,
+		amvecm_write_sr1_reg_val_show, amvecm_write_sr1_reg_val_store),
+	__ATTR(dump_vpp_hist, S_IRUGO | S_IWUSR,
+		amvecm_dump_vpp_hist_show, amvecm_dump_vpp_hist_store),
+	__ATTR(hdr_dbg, S_IRUGO | S_IWUSR,
+			amvecm_hdr_dbg_show, amvecm_hdr_dbg_store),
+	__ATTR(hdr_reg, S_IRUGO | S_IWUSR,
+			amvecm_hdr_reg_show, amvecm_hdr_reg_store),
+	__ATTR(gamma_pattern, S_IRUGO | S_IWUSR,
+		set_gamma_pattern_show, set_gamma_pattern_store),
+	__ATTR(pc_mode, S_IRUGO | S_IWUSR,
+		amvecm_pc_mode_show, amvecm_pc_mode_store),
 	__ATTR_NULL
 };
 
@@ -1998,16 +2199,48 @@ static const struct file_operations amvecm_fops = {
 	.open    = amvecm_open,
 	.release = amvecm_release,
 	.unlocked_ioctl   = amvecm_ioctl,
+#ifdef CONFIG_COMPAT
+	.compat_ioctl = amvecm_compat_ioctl,
+#endif
 };
+static void aml_vecm_dt_parse(struct platform_device *pdev)
+{
+	struct device_node *node;
+	unsigned int val;
+	int ret;
+	node = pdev->dev.of_node;
+	/* get interger value */
+	if (node) {
+		ret = of_property_read_u32(node, "gamma_en", &val);
+		if (ret)
+			pr_info("Can't find  gamma_en.\n");
+		else
+			gamma_en = val;
+		ret = of_property_read_u32(node, "wb_en", &val);
+		if (ret)
+			pr_info("Can't find  wb_en.\n");
+		else
+			wb_en = val;
+		ret = of_property_read_u32(node, "cm_en", &val);
+		if (ret)
+			pr_info("Can't find  cm_en.\n");
+		else
+			cm_en = val;
+	}
+	/* init module status */
+	amvecm_wb_init(wb_en);
+	amvecm_gamma_init(gamma_en);
+	WRITE_VPP_REG_BITS(VPP_MISC, cm_en, 28, 1);
+}
 
-static int __init amvecm_init(void)
+static int aml_vecm_probe(struct platform_device *pdev)
 {
 	int ret = 0;
 	int i = 0;
 	struct amvecm_dev_s *devp = &amvecm_dev;
 
 	memset(devp, 0, (sizeof(struct amvecm_dev_s)));
-	pr_info("\n\n VECM init\n\n");
+	pr_info("\n VECM probe start\n");
 	ret = alloc_chrdev_region(&devp->devno, 0, 1, AMVECM_NAME);
 	if (ret < 0)
 		goto fail_alloc_region;
@@ -2034,9 +2267,17 @@ static int __init amvecm_init(void)
 		goto fail_create_device;
 	}
 	/* #if (MESON_CPU_TYPE == MESON_CPU_TYPE_MESONG9TV) */
-	/* if (is_meson_g9tv_cpu()) */
-	/* init_sharpness(); */
+	if (is_meson_gxtvbb_cpu())
+		init_sharpness();
 	/* #endif */
+	vpp_get_hist_en();
+
+	memset(&vpp_hist_param.vpp_histgram[0],
+		0, sizeof(unsigned short) * 64);
+
+	aml_vecm_dt_parse(pdev);
+	probe_ok = 1;
+	pr_info("%s: ok\n", __func__);
 	return 0;
 
 fail_create_device:
@@ -2061,7 +2302,7 @@ fail_alloc_region:
 	return ret;
 }
 
-static void __exit amvecm_exit(void)
+static int __exit aml_vecm_remove(struct platform_device *pdev)
 {
 	struct amvecm_dev_s *devp = &amvecm_dev;
 	device_destroy(devp->clsp, devp->devno);
@@ -2069,11 +2310,75 @@ static void __exit amvecm_exit(void)
 	class_destroy(devp->clsp);
 	unregister_chrdev_region(devp->devno, 1);
 	kfree(devp);
+	probe_ok = 0;
 	pr_info("[amvecm.] : amvecm_exit.\n");
+	return 0;
 }
 
-module_init(amvecm_init);
-module_exit(amvecm_exit);
+#ifdef CONFIG_PM
+static int amvecm_drv_suspend(struct platform_device *pdev,
+		pm_message_t state)
+{
+	if (probe_ok == 1)
+		probe_ok = 0;
+	pr_info("amvecm: suspend module\n");
+	return 0;
+}
+
+static int amvecm_drv_resume(struct platform_device *pdev)
+{
+	if (probe_ok == 0)
+		probe_ok = 1;
+
+	pr_info("amvecm: resume module\n");
+	return 0;
+}
+#endif
+
+
+static const struct of_device_id aml_vecm_dt_match[] = {
+	{
+		.compatible = "amlogic, vecm",
+	},
+	{},
+};
+
+static struct platform_driver aml_vecm_driver = {
+	.driver = {
+		.name = "aml_vecm",
+		.owner = THIS_MODULE,
+		.of_match_table = aml_vecm_dt_match,
+	},
+	.probe = aml_vecm_probe,
+	.remove = __exit_p(aml_vecm_remove),
+#ifdef CONFIG_PM
+	.suspend    = amvecm_drv_suspend,
+	.resume     = amvecm_drv_resume,
+#endif
+
+};
+
+static int __init aml_vecm_init(void)
+{
+	pr_info("module init\n");
+	/* remap the hiu bus */
+	amvecm_hiu_reg_base = ioremap(0xc883c000, 0x2000);
+	if (platform_driver_register(&aml_vecm_driver)) {
+		pr_err("failed to register bl driver module\n");
+		return -ENODEV;
+	}
+
+	return 0;
+}
+
+static void __exit aml_vecm_exit(void)
+{
+	pr_info("module exit\n");
+	platform_driver_unregister(&aml_vecm_driver);
+}
+
+module_init(aml_vecm_init);
+module_exit(aml_vecm_exit);
 
 MODULE_DESCRIPTION("AMLOGIC amvecm driver");
 MODULE_LICENSE("GPL");

@@ -3,6 +3,7 @@
 #include <linux/bio.h>
 #include <linux/types.h>
 #include <linux/fs.h>
+#include <linux/list.h>
 struct snapshot_handle;
 typedef int (*aml_istbt_int_void_fun_t)(void);
 typedef void (*aml_istbt_void_fmode_fun_t)(fmode_t mode);
@@ -32,6 +33,16 @@ enum {
 	AML_ISTBT_COPY_PAGE,
 	AML_ISTBT_FUN_MAX,
 };
+
+struct instaboot_realdata_ops {
+	struct list_head node;
+	int (*save)(void);
+	void (*restore)(void);
+};
+void instaboot_realdata_save(void);
+void instaboot_realdata_restore(void);
+void register_instaboot_realdata_ops(struct instaboot_realdata_ops *ops);
+void unregister_instaboot_realdata_ops(struct instaboot_realdata_ops *ops);
 
 /* realized in module */
 extern int aml_istbt_dev_ready(void);
@@ -76,6 +87,28 @@ extern int osd_init_progress_bar(void);
 
 extern void wait_for_emmc_probe(void);
 
+extern struct page *aml_alloc_pages(gfp_t gfp_mask, unsigned int order);
+extern struct bio *aml_bio_alloc(gfp_t gfp_mask, unsigned int nr_iovecs);
+extern int aml_bio_add_page(struct bio *bio, struct page *page,
+			unsigned int len, unsigned int offset);
+extern void aml_bio_get(struct bio *bio);
+extern void aml_bio_put(struct bio *bio);
+extern void aml_submit_bio(int rw, struct bio *bio);
+extern void aml_wait_on_page_locked(struct page *page);
+extern void aml_lock_page(struct page *page);
+extern void aml_get_page(struct page *page);
+extern void aml_put_page(struct page *page);
+extern void __aml_free_page(struct page *page);
+extern unsigned long aml_get_zeroed_page(gfp_t gfp_mask);
+extern void aml_free_page(unsigned long addr);
+extern unsigned long __aml_get_free_page(gfp_t gfp_mask);
+extern void *aml_kmalloc(size_t size, gfp_t flags);
+extern void aml_kfree(const void *p);
+extern void *aml_vmalloc(unsigned long size);
+extern void aml_vfree(const void *addr);
+
 extern unsigned int is_instabooting;
+
+extern int is_storage_emmc(void);
 
 #endif /* _INSTABOOT_H__ */

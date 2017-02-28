@@ -20,7 +20,7 @@
 #include <net/route.h>
 #include <net/tcp_states.h>
 
-int __ip4_datagram_connect(struct sock *sk, struct sockaddr *uaddr, int addr_len)
+int ip4_datagram_connect(struct sock *sk, struct sockaddr *uaddr, int addr_len)
 {
 	struct inet_sock *inet = inet_sk(sk);
 	struct sockaddr_in *usin = (struct sockaddr_in *) uaddr;
@@ -38,6 +38,8 @@ int __ip4_datagram_connect(struct sock *sk, struct sockaddr *uaddr, int addr_len
 		return -EAFNOSUPPORT;
 
 	sk_dst_reset(sk);
+
+	lock_sock(sk);
 
 	oif = sk->sk_bound_dev_if;
 	saddr = inet->inet_saddr;
@@ -79,18 +81,8 @@ int __ip4_datagram_connect(struct sock *sk, struct sockaddr *uaddr, int addr_len
 	sk_dst_set(sk, &rt->dst);
 	err = 0;
 out:
-	return err;
-}
-EXPORT_SYMBOL(__ip4_datagram_connect);
-
-int ip4_datagram_connect(struct sock *sk, struct sockaddr *uaddr, int addr_len)
-{
-	int res;
-
-	lock_sock(sk);
-	res = __ip4_datagram_connect(sk, uaddr, addr_len);
 	release_sock(sk);
-	return res;
+	return err;
 }
 EXPORT_SYMBOL(ip4_datagram_connect);
 

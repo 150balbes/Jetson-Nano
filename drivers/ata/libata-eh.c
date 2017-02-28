@@ -604,7 +604,7 @@ void ata_scsi_error(struct Scsi_Host *host)
 	ata_scsi_port_error_handler(host, ap);
 
 	/* finish or retry handled scmd's and clean up */
-	WARN_ON(!list_empty(&eh_work_q));
+	WARN_ON(host->host_failed || !list_empty(&eh_work_q));
 
 	DPRINTK("EXIT\n");
 }
@@ -3487,9 +3487,6 @@ static int ata_eh_set_lpm(struct ata_link *link, enum ata_lpm_policy policy,
 			}
 		}
 	}
-
-	link->last_lpm_change = jiffies;
-	link->flags |= ATA_LFLAG_CHANGED;
 
 	return 0;
 

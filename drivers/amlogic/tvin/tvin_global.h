@@ -23,6 +23,8 @@
 /* #include <mach/io.h> */
 #include <linux/amlogic/tvin/tvin.h>
 /* #include <mach/am_regs.h> */
+#include <linux/amlogic/iomap.h>
+#include <linux/amlogic/cpu_version.h>
 
 #ifdef TVBUS_REG_ADDR
 #define R_APB_REG(reg) aml_read_reg32(TVBUS_REG_ADDR(reg))
@@ -32,13 +34,163 @@
 #define W_APB_BIT(reg, val, start, len) \
 	aml_set_reg32_bits(TVBUS_REG_ADDR(reg), val, start, len)
 #else
+#if 1
+extern int tvafe_reg_read(unsigned int reg, unsigned int *val);
+extern int tvafe_reg_write(unsigned int reg, unsigned int val);
+extern int tvafe_hiu_reg_read(unsigned int reg, unsigned int *val);
+extern int tvafe_hiu_reg_write(unsigned int reg, unsigned int val);
+#else
+static void __iomem *tvafe_reg_base;
+
+static int tvafe_reg_read(unsigned int reg, unsigned int *val)
+{
+	*val = readl(tvafe_reg_base+reg);
+	return 0;
+}
+
+static int tvafe_reg_write(unsigned int reg, unsigned int val)
+{
+	writel(val, (tvafe_reg_base+reg));
+	return 0;
+}
+#endif
+static inline uint32_t R_APB_REG(uint32_t reg)
+{
+	unsigned int val;
+	tvafe_reg_read(reg, &val);
+	return val;
+}
+
+static inline void W_APB_REG(uint32_t reg,
+				 const uint32_t val)
+{
+	tvafe_reg_write(reg, val);
+}
+
+static inline void W_APB_BIT(uint32_t reg,
+				    const uint32_t value,
+				    const uint32_t start,
+				    const uint32_t len)
+{
+	W_APB_REG(reg, ((R_APB_REG(reg) &
+			     ~(((1L << (len)) - 1) << (start))) |
+			    (((value) & ((1L << (len)) - 1)) << (start))));
+}
+
+static inline uint32_t R_APB_BIT(uint32_t reg,
+				    const uint32_t start,
+				    const uint32_t len)
+{
+	uint32_t val;
+
+	val = ((R_APB_REG(reg) >> (start)) & ((1L << (len)) - 1));
+
+	return val;
+}
+
+
+static inline void W_VCBUS_BIT(uint32_t reg,
+				    const uint32_t value,
+				    const uint32_t start,
+				    const uint32_t len)
+{
+	aml_write_vcbus(reg, ((aml_read_vcbus(reg) &
+			     ~(((1L << (len)) - 1) << (start))) |
+			    (((value) & ((1L << (len)) - 1)) << (start))));
+}
+
+static inline uint32_t R_VCBUS_BIT(uint32_t reg,
+				    const uint32_t start,
+				    const uint32_t len)
+{
+	uint32_t val;
+
+	val = ((aml_read_vcbus(reg) >> (start)) & ((1L << (len)) - 1));
+
+	return val;
+}
+
+static inline uint32_t R_HIU_REG(uint32_t reg)
+{
+	unsigned int val;
+	tvafe_hiu_reg_read(reg, &val);
+	return val;
+}
+
+static inline void W_HIU_REG(uint32_t reg,
+				 const uint32_t val)
+{
+	tvafe_hiu_reg_write(reg, val);
+}
+
+static inline void W_HIU_BIT(uint32_t reg,
+				    const uint32_t value,
+				    const uint32_t start,
+				    const uint32_t len)
+{
+	W_HIU_REG(reg, ((R_HIU_REG(reg) &
+			     ~(((1L << (len)) - 1) << (start))) |
+			    (((value) & ((1L << (len)) - 1)) << (start))));
+}
+
+static inline uint32_t R_HIU_BIT(uint32_t reg,
+				    const uint32_t start,
+				    const uint32_t len)
+{
+	uint32_t val;
+
+	val = ((R_HIU_REG(reg) >> (start)) & ((1L << (len)) - 1));
+
+	return val;
+}
+
+/*
 #define R_APB_REG(reg) READ_APB_REG(reg)
 #define W_APB_REG(reg, val) WRITE_APB_REG(reg, val)
 #define R_APB_BIT(reg, start, len) \
 	READ_APB_REG_BITS(reg, start, len)
 #define W_APB_BIT(reg, val, start, len) \
 	WRITE_APB_REG_BITS(reg, val, start, len)
+*/
 #endif
+
+
+static inline uint32_t rd(uint32_t offset,
+							uint32_t reg)
+{
+	return (uint32_t)aml_read_vcbus(reg+offset);
+}
+
+static inline void wr(uint32_t offset,
+						uint32_t reg,
+				 const uint32_t val)
+{
+	aml_write_vcbus(reg+offset, val);
+}
+
+static inline void wr_bits(uint32_t offset,
+							uint32_t reg,
+				    const uint32_t value,
+				    const uint32_t start,
+				    const uint32_t len)
+{
+	aml_write_vcbus(reg+offset, ((aml_read_vcbus(reg+offset) &
+			     ~(((1L << (len)) - 1) << (start))) |
+			    (((value) & ((1L << (len)) - 1)) << (start))));
+}
+
+static inline uint32_t rd_bits(uint32_t offset,
+							uint32_t reg,
+				    const uint32_t start,
+				    const uint32_t len)
+{
+	uint32_t val;
+
+	val = ((aml_read_vcbus(reg+offset) >> (start)) & ((1L << (len)) - 1));
+
+	return val;
+}
+
 /* ************************************************************************* */
 /* *** enum definitions ********************************************* */
 /* ************************************************************************* */
@@ -122,7 +274,7 @@
 #ifdef TVAFE_SET_CVBS_CDTO_EN
 #define TVAFE_SET_CVBS_CDTO_START   300
 #define TVAFE_SET_CVBS_CDTO_STEP    0
-#define HS_CNT_STANDARD             0x17a00
+#define HS_CNT_STANDARD             0x31380	/*0x17a00*/
 #endif
 
 enum tvin_sync_pol_e {
@@ -203,6 +355,36 @@ enum tvin_aspect_ratio_e {
 
 const char *tvin_aspect_ratio_str(enum tvin_aspect_ratio_e aspect_ratio);
 
+enum tvin_hdr_eotf_e {
+	EOTF_SDR,
+	EOTF_HDR,
+	EOTF_SMPTE_ST_2048,
+	EOTF_MAX,
+};
+
+enum tvin_hdr_state_e {
+	HDR_STATE_OLD,
+	HDR_STATE_READ,
+	HDR_STATE_NEW,
+};
+
+struct tvin_hdr_property_s {
+	unsigned int x;/* max */
+	unsigned int y;/* min */
+};
+
+struct tvin_hdr_data_s {
+	enum tvin_hdr_eotf_e eotf:8;
+	unsigned char metadata_id;
+	unsigned char lenght;
+	enum tvin_hdr_state_e data_status:8;
+	struct tvin_hdr_property_s primaries[3];
+	struct tvin_hdr_property_s white_points;
+	struct tvin_hdr_property_s master_lum;/* max min lum */
+	unsigned int mcll;
+	unsigned int mfall;
+};
+
 struct tvin_sig_property_s {
 	enum tvin_trans_fmt	trans_fmt;
 	enum tvin_color_fmt_e	color_format;
@@ -217,6 +399,10 @@ struct tvin_sig_property_s {
 	unsigned int		vs;	/* for vertical start cut window */
 	unsigned int		ve;	/* for vertical end cut window */
 	unsigned int		decimation_ratio;	/* for decimation */
+	unsigned int		colordepth; /* for color bit depth */
+	unsigned int		vdin_hdr_Flag;
+	enum tvin_color_fmt_range_e color_fmt_range;
+	struct tvin_hdr_data_s hdr_data;
 };
 
 #define TVAFE_VF_POOL_SIZE			6 /* 8 */

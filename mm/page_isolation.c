@@ -219,9 +219,15 @@ __test_page_isolated_in_pageblock(unsigned long pfn, unsigned long end_pfn,
 			 */
 			pfn++;
 			continue;
-		}
-		else
+		} else {
+			pr_debug("%s, page:%ld not isolate, flag:%lx, ",
+				__func__, pfn, page->flags);
+			pr_debug("page_cnt:%d, isolate:%d, mapcnt:%d\n",
+				page_count(page),
+				get_freepage_migratetype(page),
+				atomic_read(&page->_mapcount));
 			return -EBUSY;
+		}
 	}
 	if (pfn < end_pfn)
 		return 1;
@@ -265,7 +271,7 @@ int test_pages_isolated(unsigned long start_pfn, unsigned long end_pfn,
 			add_wait_queue(&iso_wq, &wait);
 			mutex_unlock(&iso_wait);
 
-			schedule_timeout_interruptible(20);
+			schedule_timeout_interruptible(msecs_to_jiffies(10));
 
 			mutex_lock(&iso_wait);
 			remove_wait_queue(&iso_wq, &wait);
@@ -295,11 +301,11 @@ struct page *alloc_migrate_target(struct page *page, unsigned long private,
 	 * now as a simple work-around, we use the next node for destination.
 	 */
 	if (PageHuge(page)) {
-		int node = next_online_node(page_to_nid(page));
-		if (node == MAX_NUMNODES)
-			node = first_online_node;
+		nodemask_t src = nodemask_of_node(page_to_nid(page));
+		nodemask_t dst;
+		nodes_complement(dst, src);
 		return alloc_huge_page_node(page_hstate(compound_head(page)),
-					    node);
+					    next_node(page_to_nid(page), dst));
 	}
 
 	if (PageHighMem(page))

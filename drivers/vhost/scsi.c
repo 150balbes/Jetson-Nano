@@ -539,11 +539,6 @@ static void tcm_vhost_queue_tm_rsp(struct se_cmd *se_cmd)
 	return;
 }
 
-static void tcm_vhost_aborted_task(struct se_cmd *se_cmd)
-{
-	return;
-}
-
 static void tcm_vhost_free_evt(struct vhost_scsi *vs, struct tcm_vhost_evt *evt)
 {
 	vs->vs_events_nr--;
@@ -866,23 +861,6 @@ vhost_scsi_map_iov_to_sgl(struct tcm_vhost_cmd *cmd,
 	return 0;
 }
 
-static int vhost_scsi_to_tcm_attr(int attr)
-{
-	switch (attr) {
-	case VIRTIO_SCSI_S_SIMPLE:
-		return MSG_SIMPLE_TAG;
-	case VIRTIO_SCSI_S_ORDERED:
-		return MSG_ORDERED_TAG;
-	case VIRTIO_SCSI_S_HEAD:
-		return MSG_HEAD_TAG;
-	case VIRTIO_SCSI_S_ACA:
-		return MSG_ACA_TAG;
-	default:
-		break;
-	}
-	return MSG_SIMPLE_TAG;
-}
-
 static void tcm_vhost_submission_work(struct work_struct *work)
 {
 	struct tcm_vhost_cmd *cmd =
@@ -909,10 +887,9 @@ static void tcm_vhost_submission_work(struct work_struct *work)
 	rc = target_submit_cmd_map_sgls(se_cmd, tv_nexus->tvn_se_sess,
 			cmd->tvc_cdb, &cmd->tvc_sense_buf[0],
 			cmd->tvc_lun, cmd->tvc_exp_data_len,
-			vhost_scsi_to_tcm_attr(cmd->tvc_task_attr),
-			cmd->tvc_data_direction, TARGET_SCF_ACK_KREF,
-			sg_ptr, cmd->tvc_sgl_count, sg_bidi_ptr, sg_no_bidi,
-			NULL, 0);
+			cmd->tvc_task_attr, cmd->tvc_data_direction,
+			TARGET_SCF_ACK_KREF, sg_ptr, cmd->tvc_sgl_count,
+			sg_bidi_ptr, sg_no_bidi, NULL, 0);
 	if (rc < 0) {
 		transport_send_check_condition_and_sense(se_cmd,
 				TCM_LOGICAL_UNIT_COMMUNICATION_FAILURE, 0);
@@ -1144,7 +1121,7 @@ tcm_vhost_send_evt(struct vhost_scsi *vs,
 		 * lun[4-7] need to be zero according to virtio-scsi spec.
 		 */
 		evt->event.lun[0] = 0x01;
-		evt->event.lun[1] = tpg->tport_tpgt;
+		evt->event.lun[1] = tpg->tport_tpgt & 0xFF;
 		if (lun->unpacked_lun >= 256)
 			evt->event.lun[2] = lun->unpacked_lun >> 8 | 0x40 ;
 		evt->event.lun[3] = lun->unpacked_lun & 0xFF;
@@ -2009,12 +1986,12 @@ tcm_vhost_make_tpg(struct se_wwn *wwn,
 			struct tcm_vhost_tport, tport_wwn);
 
 	struct tcm_vhost_tpg *tpg;
-	u16 tpgt;
+	unsigned long tpgt;
 	int ret;
 
 	if (strstr(name, "tpgt_") != name)
 		return ERR_PTR(-EINVAL);
-	if (kstrtou16(name + 5, 10, &tpgt) || tpgt >= VHOST_SCSI_MAX_TARGET)
+	if (kstrtoul(name + 5, 10, &tpgt) || tpgt > UINT_MAX)
 		return ERR_PTR(-EINVAL);
 
 	tpg = kzalloc(sizeof(struct tcm_vhost_tpg), GFP_KERNEL);
@@ -2178,7 +2155,6 @@ static struct target_core_fabric_ops tcm_vhost_ops = {
 	.queue_data_in			= tcm_vhost_queue_data_in,
 	.queue_status			= tcm_vhost_queue_status,
 	.queue_tm_rsp			= tcm_vhost_queue_tm_rsp,
-	.aborted_task			= tcm_vhost_aborted_task,
 	/*
 	 * Setup callers for generic logic in target_core_fabric_configfs.c
 	 */

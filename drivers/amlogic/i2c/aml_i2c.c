@@ -244,15 +244,6 @@ static void aml_i2c_xfer_prepare(struct aml_i2c *i2c, unsigned int speed)
 
 static void aml_i2c_start_token_xfer(struct aml_i2c *i2c)
 {
-	struct aml_i2c_reg_ctrl *ctrl =
-		(struct aml_i2c_reg_ctrl *)&(i2c->master_regs->i2c_ctrl);
-
-	if (ctrl->manual_en || ctrl->ack_ignore)	{
-		dev_err(&i2c->adap.dev, "Controller Error! manual_en = %d, ack_ignore = %d\n",
-				ctrl->manual_en, ctrl->ack_ignore);
-		/* Controller Error Fix. */
-		ctrl->manual_en = 0;	ctrl->ack_ignore = 0;
-	}
 	aml_i2c_dump(i2c);
 	i2c->master_regs->i2c_ctrl &= ~1;	/*clear*/
 	i2c->master_regs->i2c_ctrl |= 1;	/*set*/
@@ -297,7 +288,6 @@ static void aml_i2c_stop(struct aml_i2c *i2c)
 /* #endif */
 	}
 	aml_i2c_clear_token_list(i2c);
-	udelay(20);
 }
 
 static ssize_t aml_i2c_read(struct aml_i2c *i2c, unsigned char *buf,
@@ -361,19 +351,12 @@ static ssize_t aml_i2c_write(struct aml_i2c *i2c, unsigned char *buf,
 	int ret;
 	size_t wr_len;
 	int tagnum = 0;
-	if (!buf)
+	if (!buf || !len)
 		return -EINVAL;
 	aml_i2c_clear_token_list(i2c);
 	if (!(i2c->msg_flags & I2C_M_NOSTART)) {
 		i2c->token_tag[tagnum++] = TOKEN_START;
 		i2c->token_tag[tagnum++] = TOKEN_SLAVE_ADDR_WRITE;
-
-		if (!len)	{
-			i2c->token_tag[tagnum++] = TOKEN_STOP;
-			aml_i2c_set_token_list(i2c);
-			aml_i2c_start_token_xfer(i2c);
-			return	aml_i2c_wait_ack(i2c);
-		}
 	}
 	while (len) {
 		wr_len = min_t(size_t, len, AML_I2C_MAX_TOKENS-tagnum);
@@ -616,8 +599,9 @@ static int aml_i2c_xfer(struct i2c_adapter *i2c_adap, struct i2c_msg *msgs,
 			i2c->msg_flags = p->flags;
 			aml_i2c_dbg(i2c, "msg%d: addr=0x%x, flag=0x%x, len=%d\n",
 						i, p->addr, p->flags, p->len);
-			i2c->ops->do_address(i2c, p->addr);
-
+			ret = i2c->ops->do_address(i2c, p->addr);
+			if (ret || !p->len)
+				continue;
 			if (p->flags & I2C_M_RD)
 				ret = i2c->ops->read(i2c, p->buf, p->len);
 			else
@@ -637,10 +621,10 @@ static int aml_i2c_xfer(struct i2c_adapter *i2c_adap, struct i2c_msg *msgs,
 			gpiod_direction_output(i2c->i2c_gdesc, !i);
 		}
 #endif
-		dev_err(&i2c->adap.dev,
+		dev_err(&i2c_adap->dev,
 			"[aml_i2c_xfer] error ret = %d (%s)",
 			ret, ret == -EIO ? "-EIO" : "-ETIMEOUT");
-		dev_err(&i2c->adap.dev,
+		dev_err(&i2c_adap->dev,
 			"token %d, master_no(%d) %dK addr 0x%x\n",
 			i2c->cur_token, i2c->master_no,
 			i2c->master_i2c_speed/1000,
@@ -839,18 +823,14 @@ static ssize_t store_aml_i2c(struct class *class,
 			break;
 		/* pr_info("argv[%d]=%s\n", argn, argv[argn]); */
 	}
-
 	status = kstrtol(argv[0], 0, &value);
 	if (status == 0)
 		val = (unsigned int)value;
 	val = argn ? val : 0;
-
-	if (argn > 1)	{
-		status = kstrtol(argv[1], 0, &value);
-		val2 = (status == 0) ? (unsigned int)value : 0;
-	} else {
-		val2 = 0;
-	}
+	status = kstrtol(argv[1], 0, &value);
+	if (status == 0)
+		val2 = (unsigned int)value;
+	val2 = (argn > 1) ? val2 : 0;
 
 	if (!strcmp(attr->attr.name, "speed")) {
 		mutex_lock(i2c->lock);
@@ -1105,29 +1085,20 @@ if (get_meson_cpu_version(MESON_CPU_VERSION_LVL_MAJOR)
 	if (ret)
 		dev_err(&pdev->dev, " class register i2c_class fail!\n");
 
-	platform_set_drvdata(pdev, i2c);
-
 	return 0;
 }
 
 static int aml_i2c_remove(struct platform_device *pdev)
 {
 	struct aml_i2c *i2c = platform_get_drvdata(pdev);
-
-	if (i2c == NULL) {
-		dev_err(&pdev->dev, "aml_i2c is NULL!\n");
-		goto out;
-	}
 	if (i2c->mode == I2C_INTERRUPT_MODE)
 		free_irq(i2c->irq, i2c);
 	if (i2c->mode == I2C_TIMER_POLLING_MODE)
 		hrtimer_cancel(&i2c->aml_i2c_hrtimer);
 	mutex_destroy(i2c->lock);
 	i2c_del_adapter(&i2c->adap);
-	class_unregister(&i2c->cls);
 	kzfree(i2c);
 	i2c = NULL;
-out:
 	return 0;
 }
 

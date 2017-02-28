@@ -250,7 +250,7 @@ static int spi_gpio_setup(struct spi_device *spi)
 		/*
 		 * ... otherwise, take it from spi->controller_data
 		 */
-		cs = (unsigned int)(uintptr_t) spi->controller_data;
+		cs = (unsigned int) spi->controller_data;
 	}
 
 	if (!spi->controller_state) {
@@ -391,14 +391,6 @@ static int spi_gpio_probe_dt(struct platform_device *pdev)
 	}
 
 	pdata->num_chipselect = tmp;
-
-	ret = of_property_read_u32(np, "id", &tmp);
-	if (ret < 0) {
-		dev_err(&pdev->dev, "num-chipselects property not found\n");
-		goto error_free;
-	}
-	pdev->id = tmp;
-
 	pdev->dev.platform_data = pdata;
 
 	return 1;

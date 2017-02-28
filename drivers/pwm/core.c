@@ -407,10 +407,8 @@ int pwm_config(struct pwm_device *pwm, int duty_ns, int period_ns)
 {
 	int err;
 
-#if !defined(CONFIG_ARCH_MESON64_ODROIDC2)
 	if (!pwm || duty_ns < 0 || period_ns <= 0 || duty_ns > period_ns)
 		return -EINVAL;
-#endif
 
 	err = pwm->chip->ops->config(pwm->chip, pwm, duty_ns, period_ns);
 	if (err)

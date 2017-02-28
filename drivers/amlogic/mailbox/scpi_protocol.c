@@ -61,50 +61,6 @@ enum scpi_error_codes {
 	SCPI_ERR_MAX
 };
 
-enum scpi_client_id {
-	SCPI_CL_NONE,
-	SCPI_CL_CLOCKS,
-	SCPI_CL_DVFS,
-	SCPI_CL_POWER,
-	SCPI_CL_THERMAL,
-	SCPI_MAX,
-};
-
-enum scpi_std_cmd {
-	SCPI_CMD_INVALID		= 0x00,
-	SCPI_CMD_SCPI_READY		= 0x01,
-	SCPI_CMD_SCPI_CAPABILITIES	= 0x02,
-	SCPI_CMD_EVENT			= 0x03,
-	SCPI_CMD_SET_CSS_PWR_STATE	= 0x04,
-	SCPI_CMD_GET_CSS_PWR_STATE	= 0x05,
-	SCPI_CMD_CFG_PWR_STATE_STAT	= 0x06,
-	SCPI_CMD_GET_PWR_STATE_STAT	= 0x07,
-	SCPI_CMD_SYS_PWR_STATE		= 0x08,
-	SCPI_CMD_L2_READY		= 0x09,
-	SCPI_CMD_SET_AP_TIMER		= 0x0a,
-	SCPI_CMD_CANCEL_AP_TIME		= 0x0b,
-	SCPI_CMD_DVFS_CAPABILITIES	= 0x0c,
-	SCPI_CMD_GET_DVFS_INFO		= 0x0d,
-	SCPI_CMD_SET_DVFS		= 0x0e,
-	SCPI_CMD_GET_DVFS		= 0x0f,
-	SCPI_CMD_GET_DVFS_STAT		= 0x10,
-	SCPI_CMD_SET_RTC		= 0x11,
-	SCPI_CMD_GET_RTC		= 0x12,
-	SCPI_CMD_CLOCK_CAPABILITIES	= 0x13,
-	SCPI_CMD_SET_CLOCK_INDEX	= 0x14,
-	SCPI_CMD_SET_CLOCK_VALUE	= 0x15,
-	SCPI_CMD_GET_CLOCK_VALUE	= 0x16,
-	SCPI_CMD_PSU_CAPABILITIES	= 0x17,
-	SCPI_CMD_SET_PSU		= 0x18,
-	SCPI_CMD_GET_PSU		= 0x19,
-	SCPI_CMD_SENSOR_CAPABILITIES	= 0x1a,
-	SCPI_CMD_SENSOR_INFO		= 0x1b,
-	SCPI_CMD_SENSOR_VALUE		= 0x1c,
-	SCPI_CMD_SENSOR_CFG_PERIODIC	= 0x1d,
-	SCPI_CMD_SENSOR_CFG_BOUNDS	= 0x1e,
-	SCPI_CMD_SENSOR_ASYNC_VALUE	= 0x1f,
-	SCPI_CMD_COUNT
-};
 
 struct scpi_data_buf {
 	int client_id;
@@ -128,13 +84,6 @@ static int high_priority_cmds[] = {
 	SCPI_CMD_SENSOR_CFG_PERIODIC,
 	SCPI_CMD_SENSOR_CFG_BOUNDS,
 };
-
-#if defined(CONFIG_ARCH_MESON64_ODROIDC2)
-#define DVFS_COUNT_MAX		13
-#define DVFS_COUNT_1536		6
-static unsigned long max_freq_dvfs;
-static unsigned char dvfs_vcck;
-#endif
 
 static struct scpi_opp *scpi_opps[MAX_DVFS_DOMAINS];
 
@@ -209,6 +158,19 @@ do {						\
 	scpi_buf.data = pdata;			\
 } while (0)
 
+#define SCPI_SETUP_DBUF_SIZE(scpi_buf, mhu_buf, _client_id,\
+			_cmd, _tx_buf, _tx_size, _rx_buf, _rx_size) \
+do {						\
+	struct mhu_data_buf *pdata = &mhu_buf;	\
+	pdata->cmd = _cmd;			\
+	pdata->tx_buf = _tx_buf;		\
+	pdata->tx_size = _tx_size;	\
+	pdata->rx_buf = _rx_buf;		\
+	pdata->rx_size = _rx_size;	\
+	scpi_buf.client_id = _client_id;	\
+	scpi_buf.data = pdata;			\
+} while (0)
+
 static int scpi_execute_cmd(struct scpi_data_buf *scpi_buf)
 {
 	struct mhu_data_buf *data;
@@ -274,9 +236,6 @@ struct scpi_opp *scpi_dvfs_get_opps(u8 domain)
 	struct scpi_opp *opps;
 	size_t opps_sz;
 	int count, ret;
-#if defined(CONFIG_ARCH_MESON64_ODROIDC2)
-	int i, max_index;
-#endif
 
 	if (domain >= MAX_DVFS_DOMAINS)
 		return ERR_PTR(-EINVAL);
@@ -295,27 +254,6 @@ struct scpi_opp *scpi_dvfs_get_opps(u8 domain)
 		return ERR_PTR(-ENOMEM);
 
 	count = DVFS_OPP_COUNT(buf.header);
-
-#if defined(CONFIG_ARCH_MESON64_ODROIDC2)
-	max_index = 0;
-	if (max_freq_dvfs) {
-		for (i = 0; i < count; i++)	{
-			if (buf.opp[i].freq_hz == max_freq_dvfs)
-				break;
-			else
-				max_index++;
-		}
-		count = max_index + 1;
-	}
-	/* if no param "max_freq_dvfs or wrong "max_freq_dvfs"
-	 * from boot.ini, consider stable max value */
-	if ((max_freq_dvfs == 0) || (count > DVFS_COUNT_MAX))
-		count = DVFS_COUNT_1536; /* default max : 1.536GHz */
-
-	pr_info("dvfs [%s] - new count %d, max_freq %ld\n", __func__,
-		count, max_freq_dvfs);
-#endif
-
 	opps_sz = count * sizeof(*(opps->opp));
 
 	opps->count = count;
@@ -368,9 +306,6 @@ int scpi_dvfs_set_idx(u8 domain, u8 idx)
 
 	buf.dvfs_idx = idx;
 	buf.dvfs_domain = domain;
-
-	if (dvfs_vcck)
-		buf.dvfs_domain |= 0x80;
 
 	if (domain >= MAX_DVFS_DOMAINS)
 		return -EINVAL;
@@ -451,43 +386,39 @@ int scpi_get_sensor_value(u16 sensor, u32 *val)
 }
 EXPORT_SYMBOL_GPL(scpi_get_sensor_value);
 
-#if defined(CONFIG_ARCH_MESON64_ODROIDC2)
-static int __init get_max_freq(char *str)
+/****Send fail when data size > 0x1fd.      ***
+	Because of USER_LOW_TASK_SHARE_MEM_BASE ***
+	size limitation.
+	You can call scpi_send_usr_data()
+	multi-times when your data is bigger
+	than 0x1fe
+****/
+int scpi_send_usr_data(u32 client_id, u32 *val, u32 size)
 {
+	struct scpi_data_buf sdata;
+	struct mhu_data_buf mdata;
+	struct __packed {
+		u32 status;
+		u32 val;
+	} buf;
 	int ret;
 
-	if (NULL == str) {
-		/* consider default set */
-		max_freq_dvfs = 1536000000;
-		return -EINVAL;
-	}
+	/*client_id bit map should locates @ 0xff.
+	  bl30 will send client_id via half-Word*/
+	if (client_id & ~0xff)
+		return -E2BIG;
 
-	ret = kstrtoul(str, 0, &max_freq_dvfs);
+	/*Check size here because of USER_LOW_TASK_SHARE_MEM_BASE
+	  size limitation, and first Word is used as command,
+	  second word is used as tx_size.*/
+	if (size > 0x1fd)
+		return -EPERM;
 
-	/* in unit Hz */
-	max_freq_dvfs *= 1000000;
+	SCPI_SETUP_DBUF_SIZE(sdata, mdata, client_id, SCPI_CMD_SET_USR_DATA,
+			val, size, &buf, sizeof(buf));
+	ret = scpi_execute_cmd(&sdata);
 
-	pr_info("dvfs [%s] - max_freq : %ld\n", __func__, max_freq_dvfs);
-
-	return 0;
+	return ret;
 }
-__setup("max_freq=", get_max_freq);
+EXPORT_SYMBOL_GPL(scpi_send_usr_data);
 
-static int __init get_dvfs_vcck(char *str)
-{
-	if (NULL == str) {
-		dvfs_vcck = 0;
-		return -EINVAL;
-	}
-
-	if (!strcmp(str, "true") || !strcmp(str, "1"))
-		dvfs_vcck = 1;
-	else
-		dvfs_vcck = 0;
-
-	pr_info("[%s] dvfs_vcck : %d\n", __func__, dvfs_vcck);
-
-	return 0;
-}
-__setup("dvfs_vcck=", get_dvfs_vcck);
-#endif

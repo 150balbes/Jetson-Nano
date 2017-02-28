@@ -447,36 +447,19 @@ static void build_ge2d_config(struct config_para_s *cfg,
 
 		if (cfg->src_planes[0].addr) {
 			src->canvas_index = index;
-
-			if (cfg->src_planes[1].addr ||
-				cfg->src_planes[2].addr ||
-				cfg->src_planes[3].addr)
-			{
-				// Multi plane
-				canvas_config(index++,
-					cfg->src_planes[0].addr,
-					cfg->src_planes[0].w,
-					cfg->src_planes[0].h,
-					CANVAS_ADDR_NOWRAP,
-					CANVAS_BLKMODE_LINEAR);
-			}
-			else
-			{
-				// Single plane
-				canvas_config(index++,
-					cfg->src_planes[0].addr,
-					cfg->src_planes[0].w * src->bpp / 8,
-					cfg->src_planes[0].h,
-					CANVAS_ADDR_NOWRAP,
-					CANVAS_BLKMODE_LINEAR);
-			}
+			canvas_config(index++,
+				      cfg->src_planes[0].addr,
+				      cfg->src_planes[0].w * src->bpp / 8,
+				      cfg->src_planes[0].h,
+				      CANVAS_ADDR_NOWRAP,
+				      CANVAS_BLKMODE_LINEAR);
 		}
 		/* multi-src_planes */
 		if (cfg->src_planes[1].addr) {
 			src->canvas_index |= index << 8;
 			canvas_config(index++,
 				      cfg->src_planes[1].addr,
-				      cfg->src_planes[1].w,
+				      cfg->src_planes[1].w * src->bpp / 8,
 				      cfg->src_planes[1].h,
 				      CANVAS_ADDR_NOWRAP,
 				      CANVAS_BLKMODE_LINEAR);
@@ -485,7 +468,7 @@ static void build_ge2d_config(struct config_para_s *cfg,
 			src->canvas_index |= index << 16;
 			canvas_config(index++,
 				      cfg->src_planes[2].addr,
-				      cfg->src_planes[2].w,
+				      cfg->src_planes[2].w * src->bpp / 8,
 				      cfg->src_planes[2].h,
 				      CANVAS_ADDR_NOWRAP,
 				      CANVAS_BLKMODE_LINEAR);
@@ -494,7 +477,7 @@ static void build_ge2d_config(struct config_para_s *cfg,
 			src->canvas_index |= index << 24;
 			canvas_config(index++,
 				      cfg->src_planes[3].addr,
-				      cfg->src_planes[3].w,
+				      cfg->src_planes[3].w * src->bpp / 8,
 				      cfg->src_planes[3].h,
 				      CANVAS_ADDR_NOWRAP,
 				      CANVAS_BLKMODE_LINEAR);
@@ -506,32 +489,14 @@ static void build_ge2d_config(struct config_para_s *cfg,
 		dst->yres = cfg->dst_planes[0].h;
 		dst->ge2d_color_index = cfg->dst_format;
 		dst->bpp = bpp(cfg->dst_format);
-
 		if (cfg->dst_planes[0].addr) {
 			dst->canvas_index = index;
-
-			if (cfg->dst_planes[1].addr ||
-				cfg->dst_planes[2].addr ||
-				cfg->dst_planes[3].addr)
-			{
-				// Multi plane
-				canvas_config(index++ & 0xff,
-					cfg->dst_planes[0].addr,
-					cfg->dst_planes[0].w,
-					cfg->dst_planes[0].h,
-					CANVAS_ADDR_NOWRAP,
-					CANVAS_BLKMODE_LINEAR);
-			}
-			else
-			{
-				// Single plane
-				canvas_config(index++ & 0xff,
-					cfg->dst_planes[0].addr,
-					cfg->dst_planes[0].w * dst->bpp / 8,
-					cfg->dst_planes[0].h,
-					CANVAS_ADDR_NOWRAP,
-					CANVAS_BLKMODE_LINEAR);
-			}
+			canvas_config(index++ & 0xff,
+				      cfg->dst_planes[0].addr,
+				      cfg->dst_planes[0].w,
+				      cfg->dst_planes[0].h,
+				      CANVAS_ADDR_NOWRAP,
+				      CANVAS_BLKMODE_LINEAR);
 		}
 
 		/* multi-src_planes */

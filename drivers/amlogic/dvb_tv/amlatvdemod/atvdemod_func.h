@@ -17,32 +17,105 @@
 /*#include "../aml_fe.h"*/
 #include <linux/amlogic/tvin/tvin.h>
 #include "../aml_fe.h"
+#include <linux/amlogic/iomap.h>
 
 /*#define TVFE_APB_BASE_ADDR 0xd0046000*/
 #define ATV_DMD_APB_BASE_ADDR 0xc8008000
+#define ATV_DMD_APB_BASE_ADDR_GXTVBB 0xc8840000
+
+#define HHI_ATV_DMD_SYS_CLK_CNTL		0x10f3
+
 extern int atvdemod_debug_en;
+extern struct amlatvdemod_device_s *amlatvdemod_devp;
+extern unsigned int reg_23cf; /* IIR filter */
+extern int broad_std_except_pal_m;
 #undef pr_info
 #define pr_info(args...)\
 	do {\
 		if (atvdemod_debug_en)\
 			printk(args);\
 	} while (0)
+#undef pr_dbg
+#define pr_dbg(a...) \
+	do {\
+		if (1)\
+			printk(a);\
+	} while (0)
 
-#ifdef TVBUS_REG_ADDR
-#define R_APB_REG(reg) aml_read_reg32(TVBUS_REG_ADDR(reg))
-#define W_APB_REG(reg, val) aml_write_reg32(TVBUS_REG_ADDR(reg), val)
-#define R_APB_BIT(reg, start, len) \
-	aml_get_reg32_bits(TVBUS_REG_ADDR(reg), start, len)
-#define W_APB_BIT(reg, val, start, len) \
-	aml_set_reg32_bits(TVBUS_REG_ADDR(reg), val, start, len)
-#else
-#define R_APB_REG(reg) READ_APB_REG(reg)
-#define W_APB_REG(reg, val) WRITE_APB_REG(reg, val)
-#define R_APB_BIT(reg, start, len) \
-	READ_APB_REG_BITS(reg, start, len)
-#define W_APB_BIT(reg, val, start, len) \
-	WRITE_APB_REG_BITS(reg, val, start, len)
-#endif
+#define ATVDEMOD_INTERVAL	(HZ/100)	/*10ms, #define HZ 100*/
+
+extern int amlatvdemod_reg_read(unsigned int reg, unsigned int *val);
+extern int amlatvdemod_reg_write(unsigned int reg, unsigned int val);
+extern int amlatvdemod_hiu_reg_read(unsigned int reg, unsigned int *val);
+extern int amlatvdemod_hiu_reg_write(unsigned int reg, unsigned int val);
+
+static inline uint32_t R_ATVDEMOD_REG(uint32_t reg)
+{
+	unsigned int val;
+	amlatvdemod_reg_read(reg, &val);
+	return val;
+}
+
+static inline void W_ATVDEMOD_REG(uint32_t reg,
+				 const uint32_t val)
+{
+	amlatvdemod_reg_write(reg, val);
+}
+
+static inline void W_ATVDEMOD_BIT(uint32_t reg,
+				    const uint32_t value,
+				    const uint32_t start,
+				    const uint32_t len)
+{
+	W_ATVDEMOD_REG(reg, ((R_ATVDEMOD_REG(reg) &
+			     ~(((1L << (len)) - 1) << (start))) |
+			    (((value) & ((1L << (len)) - 1)) << (start))));
+}
+
+static inline uint32_t R_ATVDEMOD_BIT(uint32_t reg,
+				    const uint32_t start,
+				    const uint32_t len)
+{
+	uint32_t val;
+
+	val = ((R_ATVDEMOD_REG(reg) >> (start)) & ((1L << (len)) - 1));
+
+	return val;
+}
+
+static inline uint32_t R_HIU_REG(uint32_t reg)
+{
+	unsigned int val;
+	amlatvdemod_hiu_reg_read(reg, &val);
+	return val;
+}
+
+static inline void W_HIU_REG(uint32_t reg,
+				 const uint32_t val)
+{
+	amlatvdemod_hiu_reg_write(reg, val);
+}
+
+static inline void W_HIU_BIT(uint32_t reg,
+				    const uint32_t value,
+				    const uint32_t start,
+				    const uint32_t len)
+{
+	W_HIU_REG(reg, ((R_HIU_REG(reg) &
+			     ~(((1L << (len)) - 1) << (start))) |
+			    (((value) & ((1L << (len)) - 1)) << (start))));
+}
+
+static inline uint32_t R_HIU_BIT(uint32_t reg,
+				    const uint32_t start,
+				    const uint32_t len)
+{
+	uint32_t val;
+
+	val = ((R_HIU_REG(reg) >> (start)) & ((1L << (len)) - 1));
+
+	return val;
+}
 
 enum broadcast_standard_e {
 	ATVDEMOD_STD_NTSC = 0,
@@ -71,8 +144,9 @@ enum sound_format_e {
 	ATVDEMOD_SOUND_STD_NICAM,
 	ATVDEMOD_SOUND_STD_MAX,
 };
-extern void atv_dmd_wr_reg(unsigned long addr, unsigned long data);
-extern unsigned long atv_dmd_rd_reg(unsigned long addr);
+extern void atv_dmd_wr_reg(unsigned char block, unsigned char reg,
+	unsigned long data);
+extern unsigned long atv_dmd_rd_reg(unsigned char block, unsigned char reg);
 extern unsigned long atv_dmd_rd_byte(unsigned long block_address,
 				     unsigned long reg_addr);
 extern unsigned long atv_dmd_rd_word(unsigned long block_address,
@@ -88,6 +162,8 @@ extern void atv_dmd_wr_word(unsigned long block_address,
 extern void atv_dmd_wr_byte(unsigned long block_address,
 				unsigned long reg_addr,
 				unsigned long data);
+extern void set_audio_gain_val(int val);
+extern void set_video_gain_val(int val);
 extern void atv_dmd_soft_reset(void);
 extern void atv_dmd_input_clk_32m(void);
 extern void read_version_register(void);
@@ -98,10 +174,16 @@ extern void configure_receiver(int Broadcast_Standard,
 			       unsigned int Tuner_IF_Frequency,
 			       int Tuner_Input_IF_inverted, int GDE_Curve,
 			       int sound_format);
+extern int atvdemod_clk_init(void);
 extern int atvdemod_init(void);
+extern void atvdemod_uninit(void);
 extern void atv_dmd_set_std(void);
 extern void retrieve_vpll_carrier_lock(int *lock);
 extern void retrieve_video_lock(int *lock);
+extern int retrieve_vpll_carrier_afc(void);
+
+extern int get_atvdemod_snr_val(void);
+extern int aml_atvdemod_get_snr(struct dvb_frontend *fe);
 
 /*atv demod block address*/
 /*address interval is 4, because it's 32bit interface,
@@ -168,6 +250,12 @@ extern void retrieve_video_lock(int *lock);
 #define AML_ATV_DEMOD_VIDEO_MODE_PROP_SECAM_L	9
 #define AML_ATV_DEMOD_VIDEO_MODE_PROP_PAL_I	10
 #define AML_ATV_DEMOD_VIDEO_MODE_PROP_PAL_DK1	11
+/* new add @20150813 begin */
+#define AML_ATV_DEMOD_VIDEO_MODE_PROP_NTSC_DK		12
+#define AML_ATV_DEMOD_VIDEO_MODE_PROP_NTSC_BG	13
+#define AML_ATV_DEMOD_VIDEO_MODE_PROP_NTSC_I	14
+#define AML_ATV_DEMOD_VIDEO_MODE_PROP_NTSC_M    15
+/* new add @20150813 end */
 
 /*GDE_Curve*/
 /*                      0: CURVE-M*/
@@ -193,12 +281,38 @@ vs_freq==60,freq_hz=15734,freq_hz_cvrt=0x101c9
 #define AML_ATV_DEMOD_FREQ_50HZ_VERT	0xffff	/*65535*/
 #define AML_ATV_DEMOD_FREQ_60HZ_VERT	0x101c9	/*65993*/
 
-struct amlatvdemod_device_s {
-	struct class *clsp;
-	struct analog_parameters parm;
-	int fre_offset;
+#define CARR_AFC_DEFAULT_VAL 0xffff
+
+enum amlatvdemod_snr_level_e {
+	very_low = 1,
+	low,
+	ok_minus,
+	ok_plus,
+	high,
 };
 
+enum audio_detect_mode {
+	AUDIO_AUTO_DETECT = 0,
+	AUDIO_MANUAL_DETECT,
+};
+
+struct amlatvdemod_device_s {
+	struct class *clsp;
+	struct device *dev;
+	struct analog_parameters parm;
+	int fre_offset;
+	struct pinctrl *pin;
+	const char *pin_name;
+};
+
+extern void amlatvdemod_set_std(int val);
 extern struct amlatvdemod_device_s *amlatvdemod_devp;
+extern void aml_fix_PWM_adjust(int enable);
+extern void aml_audio_valume_gain_set(unsigned int audio_gain);
+extern unsigned int aml_audio_valume_gain_get(void);
+extern void aml_atvdemod_overmodule_det(void);
+extern int aml_audiomode_autodet(struct dvb_frontend *fe);
+extern void retrieve_frequency_offset(int *freq_offset);
+extern int aml_atvdemod_get_snr_ex(void);
 
 #endif /* __ATVDEMOD_FUN_H */

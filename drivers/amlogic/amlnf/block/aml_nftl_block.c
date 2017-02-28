@@ -45,6 +45,7 @@
 #include <linux/blkdev.h>
 #include <linux/reboot.h>
 #include <linux/kmod.h>
+#include <linux/platform_device.h>
 #include "aml_nftl_block.h"
 
 
@@ -63,6 +64,7 @@ int get_adjust_block_num(void)
 	return	ret;
 }
 
+LIST_HEAD(nftl_device_list);
 
 /*****************************************************************************
 *Name         :
@@ -314,8 +316,7 @@ static int do_nftltrans_request(struct ntd_blktrans_ops *tr,
 	/* aml_nftl_dbg("nftl segments: %d\n", segments+1); */
 
 	mutex_lock(nftl_blk->nftl_dev->aml_nftl_lock);
-	switch (rq_data_dir(req)) {
-	case READ:
+	if (rq_data_dir(req) == READ) {
 	for (i = 0; i < (segments+1); i++) {
 		blk_addr = (block + (offset_addr[i] >> tr->blkshift));
 		blk_cnt = ((offset_addr[i+1] - offset_addr[i]) >> tr->blkshift);
@@ -329,9 +330,7 @@ static int do_nftltrans_request(struct ntd_blktrans_ops *tr,
 		}
 	}
 	bio_flush_dcache_pages(nftl_blk->req->bio);
-	break;
-
-	case WRITE:
+	} else if (rq_data_dir(req) == WRITE) {
 	bio_flush_dcache_pages(nftl_blk->req->bio);
 	nftl_blk->nftl_dev->sync_flag = 0;
 	for (i = 0; i < (segments+1); i++) {
@@ -350,11 +349,8 @@ static int do_nftltrans_request(struct ntd_blktrans_ops *tr,
 	if (nftl_blk->req->cmd_flags & REQ_SYNC)
 		nftl_blk->flush_write_cache(nftl_blk);
 
-	break;
-
-	default:
-	aml_nftl_dbg(KERN_NOTICE "Unknown request %u\n", rq_data_dir(req));
-	break;
+	} else {
+		aml_nftl_dbg(KERN_NOTICE "Unknown request %u\n", rq_data_dir(req));
 	}
 
 	mutex_unlock(nftl_blk->nftl_dev->aml_nftl_lock);
@@ -432,6 +428,7 @@ static int aml_nftl_thread(void *arg)
 *Return       :
 *Note         :
 *****************************************************************************/
+#if 0
 static int aml_nftl_reboot_notifier(struct notifier_block *nb,
 				unsigned long priority,
 				void *arg)
@@ -466,6 +463,59 @@ static int aml_nftl_reboot_notifier(struct notifier_block *nb,
 	nftl_dev->reboot_flag = 1;
 
 	return error;
+}
+#else
+static int aml_nftl_reboot_notifier(struct notifier_block *nb,
+				unsigned long priority,
+				void *arg)
+{
+	return 0;
+}
+#endif
+
+int aml_nftl_dev_shutdown(struct aml_nftl_dev *nftl_dev)
+{
+	int ret = 0;
+	struct aml_nftl_blk *nftl_blk = nftl_dev->nftl_blk;
+	struct ntd_blktrans_dev *nbd = &nftl_blk->nbd;
+
+	/* just return since notifier only need once */
+	if (nftl_dev->reboot_flag) {
+		PRINT("nand reboot notify Just ignore here for %s\n",
+				nftl_dev->ntd->name);
+		goto _out;
+	}
+	PRINT("shutdown: %s\n", nftl_dev->ntd->name);
+	/* stop back ground GC */
+	if (nftl_dev->nftl_thread != NULL) {
+		/* add stop thread to ensure nftl quit safely */
+		kthread_stop(nftl_dev->nftl_thread);
+		nftl_dev->nftl_thread = NULL;
+	}
+
+	/* cleanup queue. */
+	blk_cleanup_queue(nbd->rq);
+
+	/* stop trans thread */
+	if (nbd->thread != NULL) {
+		/*add stop thread to ensure nftl quit safely*/
+		kthread_stop(nbd->thread);
+		nbd->thread = NULL;
+	}
+	/* flush write cache */
+	mutex_lock(nftl_dev->aml_nftl_lock);
+	ret = nftl_dev->flush_write_cache(nftl_dev);
+	ret |= nftl_dev->flush_discard_cache(nftl_dev);
+	mutex_unlock(nftl_dev->aml_nftl_lock);
+
+	/* write paired page */
+	mutex_lock(nftl_dev->aml_nftl_lock);
+	ret |= nftl_dev->write_pair_page(nftl_dev);
+	mutex_unlock(nftl_dev->aml_nftl_lock);
+	nftl_dev->reboot_flag = 1;
+
+_out:
+	return ret;
 }
 
 int aml_nftl_reinit_part(struct aml_nftl_blk *nftl_blk)
@@ -801,8 +851,10 @@ static void aml_nftl_add_ntd(struct ntd_blktrans_ops *tr, struct ntd_info *ntd)
 	dev_set_drvdata(&nftl_dev->dev, nftl_dev);
 	blk_device_register(&nftl_dev->dev, nftl_num);
 #endif
+	/* add myself into list! */
+	list_add_tail(&nftl_dev->list, &nftl_device_list);
+
 	nftl_num++;
-	aml_nftl_dbg("aml_nftl_add_ntd ok\n");
 
 	return;
 }
@@ -816,7 +868,7 @@ static void aml_nftl_add_ntd(struct ntd_blktrans_ops *tr, struct ntd_info *ntd)
 *****************************************************************************/
 static int aml_nftl_open(struct ntd_blktrans_dev *nbd)
 {
-	aml_nftl_dbg("aml_nftl_open ok!\n");
+	/*aml_nftl_dbg("aml_nftl_open ok!\n");*/
 	return 0;
 }
 
@@ -902,22 +954,78 @@ static struct ntd_blktrans_ops aml_nftl_tr = {
 *Return       :
 *Note         :
 *****************************************************************************/
+#define AML_NFTL_DEVICE_NAME	"aml_nftl"
+/* device probe */
+static int aml_nftl_probe(struct platform_device *pdev)
+{
+	int ret = 0;
+
+	/* init glb params */
+	nftl_num = 0;
+	dev_num = 0;
+
+	ret = register_ntd_blktrans(&aml_nftl_tr);
+	/* PRINT("init_aml_nftl end return %d\n", ret); */
+
+	return ret;
+}
+
+/* device remove */
+static int aml_nftl_remove(struct platform_device *pdev)
+{
+	int ret = 0;
+
+	PRINT("%s\n", __func__);
+	return ret;
+}
+
+/* device shutdown */
+static void aml_nftl_shutdown(struct platform_device *pdev)
+{
+	struct aml_nftl_dev *nftl_dev;
+	int ret = 0;
+
+	PRINT("%s\n", __func__);
+
+	list_for_each_entry(nftl_dev, &nftl_device_list, list) {
+		ret |= aml_nftl_dev_shutdown(nftl_dev);
+	}
+	if (ret)
+		PRINT("warning: %s() may fail!\n", __func__);
+	return;
+}
+
+static const struct of_device_id aml_nftl_dt_match[] = {
+	{	.compatible = "amlogic, nftl",
+		.data		= NULL,
+	},
+	{},
+};
+
+static struct platform_driver nftl_platform_driver = {
+	.probe = aml_nftl_probe,
+	.remove = aml_nftl_remove,
+	.shutdown = aml_nftl_shutdown,
+	.driver = {
+		.name = AML_NFTL_DEVICE_NAME,
+		.owner = THIS_MODULE,
+		.of_match_table = aml_nftl_dt_match,
+	},
+};
+
 static int __init init_aml_nftl(void)
 {
 	int ret;
-
-	/* aml_nftl_lock = aml_nftl_malloc(sizeof(struct mutex)); */
-	/* if (!aml_nftl_lock) */
-	/* return -1; */
-	PRINT("sync %d\n", sync);
-	/* mutex_init(&aml_nftl_lock); */
-	if (check_storage_device() < 0)
+	/*PRINT("sync %d\n", sync);*/
+	if (check_nand_on_board() < 0)
 		return 0;
 
-	nftl_num = 0;
-	dev_num = 0;
-	ret = register_ntd_blktrans(&aml_nftl_tr);
-	PRINT("init_aml_nftl end\n");
+	ret = aml_platform_driver_register(&nftl_platform_driver);
+	if (ret != 0) {
+		pr_err("failed to register unifykey driver, error %d\n", ret);
+		return -ENODEV;
+	}
+	/* pr_info(KERN_INFO "%s done!\n", __func__); */
 
 	return ret;
 }

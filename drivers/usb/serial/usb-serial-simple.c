@@ -47,17 +47,8 @@ DEVICE(funsoft, FUNSOFT_IDS);
 
 /* Infineon Flashloader driver */
 #define FLASHLOADER_IDS()		\
-	{ USB_DEVICE_INTERFACE_CLASS(0x058b, 0x0041, USB_CLASS_CDC_DATA) }, \
 	{ USB_DEVICE(0x8087, 0x0716) }
 DEVICE(flashloader, FLASHLOADER_IDS);
-
-/* Google Serial USB SubClass */
-#define GOOGLE_IDS()						\
-	{ USB_VENDOR_AND_INTERFACE_INFO(0x18d1,			\
-					USB_CLASS_VENDOR_SPEC,	\
-					0x50,			\
-					0x01) }
-DEVICE(google, GOOGLE_IDS);
 
 /* ViVOpay USB Serial Driver */
 #define VIVOPAY_IDS()			\
@@ -94,7 +85,6 @@ static struct usb_serial_driver * const serial_drivers[] = {
 	&zio_device,
 	&funsoft_device,
 	&flashloader_device,
-	&google_device,
 	&vivopay_device,
 	&moto_modem_device,
 	&hp4x_device,
@@ -107,7 +97,6 @@ static const struct usb_device_id id_table[] = {
 	ZIO_IDS(),
 	FUNSOFT_IDS(),
 	FLASHLOADER_IDS(),
-	GOOGLE_IDS(),
 	VIVOPAY_IDS(),
 	MOTO_IDS(),
 	HP4X_IDS(),

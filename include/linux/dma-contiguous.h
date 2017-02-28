@@ -144,12 +144,7 @@ int dma_declare_contiguous(struct device *dev, phys_addr_t size,
 	return -ENOSYS;
 }
 
-static inline
-unsigned long dma_get_cma_size_int_byte(struct device *dev)
-{
-	return 0;
-}
-
+unsigned long dma_get_cma_size_int_byte(struct device *dev) {return 0};
 static inline
 struct page *dma_alloc_from_contiguous(struct device *dev, int count,
 				       unsigned int order)

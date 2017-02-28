@@ -28,7 +28,7 @@
 #include "vinfo.h"
 
 struct vout_op_s {
-	const struct vinfo_s* (*get_vinfo)(void);
+	struct vinfo_s* (*get_vinfo)(void);
 	int (*set_vmode)(enum vmode_e);
 	enum vmode_e (*validate_vmode)(char *);
 	int (*vmode_is_supported)(enum vmode_e);
@@ -56,12 +56,21 @@ extern int vout_register_server(struct vout_server_s *);
 extern int vout_unregister_server(struct vout_server_s *);
 extern int vout_notifier_call_chain(unsigned long, void *);
 
-extern const struct vinfo_s *get_current_vinfo(void);
+extern struct vinfo_s *get_current_vinfo(void);
 extern enum vmode_e get_current_vmode(void);
 extern int set_current_vmode(enum vmode_e);
 extern enum vmode_e validate_vmode(char *);
+extern int get_vsource_fps(int duration);
 extern int set_vframe_rate_hint(int);
 extern int set_vframe_rate_end_hint(void);
+
+/* vdac ctrl,adc/dac ref signal,cvbs out signal
+ * module index: atv demod:0x01; dtv demod:0x02; tvafe:0x4; dac:0x8
+*/
+extern void vdac_enable(bool on, unsigned int module_sel);
+
+/*set vdac HHI_VDAC_CNTL0 HHI_VDAC_CNTL1*/
+extern void vdac_set_ctrl0_ctrl1(unsigned int ctrl0, unsigned int ctrl1);
 
 #ifdef CONFIG_AML_VOUT_FRAMERATE_AUTOMATION
 extern void update_vmode_status(char *name);
@@ -77,6 +86,7 @@ extern int get_power_level(void);
 #define VOUT_EVENT_OSD_BLANK           0x00020000
 #define VOUT_EVENT_OSD_DISP_AXIS       0x00030000
 #define VOUT_EVENT_OSD_PREBLEND_ENABLE 0x00040000
+#define VOUT_EVENT_MODE_CHANGE_PRE     0x00050000
 
 /* vout2 */
 extern int vout2_register_client(struct notifier_block *);
@@ -92,6 +102,7 @@ extern enum vmode_e validate_vmode2(char *);
 extern void set_vout2_mode_internal(char *name);
 extern enum vmode_e get_logo_vmode(void);
 extern int set_logo_vmode(enum vmode_e);
+extern void set_vout_init_vmode(char *);
 
 extern int vout2_suspend(void);
 extern int vout2_resume(void);
@@ -99,5 +110,6 @@ extern int vout2_resume(void);
 extern void update_vout_mode_attr(const struct vinfo_s *vinfo);
 
 extern char *get_vout_mode_internal(void);
+extern char *get_vout_mode_uboot(void);
 
 #endif /* _VOUT_NOTIFY_H_ */

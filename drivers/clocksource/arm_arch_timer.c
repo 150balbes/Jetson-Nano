@@ -133,7 +133,6 @@ u32 arch_timer_reg_read(int access, enum arch_timer_reg reg,
 
 	return val;
 }
-
 static __always_inline irqreturn_t timer_handler(const int access,
 					struct clock_event_device *evt)
 {

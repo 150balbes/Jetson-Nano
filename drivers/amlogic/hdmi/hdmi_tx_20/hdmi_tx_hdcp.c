@@ -60,7 +60,7 @@ static struct switch_dev hdcp_dev = {
  * write /sys/module/hdmitx/parameters/hdmi_output_force 0
  */
 static int hdmi_output_force = 1;
-static int hdmi_authenticated = -1;
+static int hdmi_authenticated;
 static int hdmi_hdcp_process = 1;
 
 /* Notic: the HDCP key setting has been moved to uboot
@@ -86,22 +86,16 @@ static struct timer_list hdcp_monitor_timer;
 static void hdcp_monitor_func(unsigned long arg)
 {
 	/* static int hdcp_auth_flag = 0; */
-	struct hdmitx_dev *hdmitx_device =
-		(struct hdmitx_dev *)hdcp_monitor_timer.data;
-	if ((hdmitx_device->HWOp.Cntl) && (hdmitx_device->log &
-		(HDMI_LOG_HDCP))) {
-		hdmitx_device->HWOp.Cntl(hdmitx_device,
-		HDMITX_HDCP_MONITOR, 1);
-	}
+	struct hdmitx_dev *hdev = (struct hdmitx_dev *)hdcp_monitor_timer.data;
+	if ((hdev->HWOp.Cntl) && (hdev->log & (HDMI_LOG_HDCP)))
+		hdev->HWOp.Cntl(hdev, HDMITX_HDCP_MONITOR, 1);
 
 	mod_timer(&hdcp_monitor_timer, jiffies + 2 * HZ);
 }
 
 static int hdmitx_hdcp_task(void *data)
 {
-	static int err_cnt;
-	static int time_cnt;
-	struct hdmitx_dev *hdmitx_device = (struct hdmitx_dev *)data;
+	struct hdmitx_dev *hdev = (struct hdmitx_dev *)data;
 
 	init_timer(&hdcp_monitor_timer);
 	hdcp_monitor_timer.data = (ulong) data;
@@ -109,58 +103,11 @@ static int hdmitx_hdcp_task(void *data)
 	hdcp_monitor_timer.expires = jiffies + HZ;
 	add_timer(&hdcp_monitor_timer);
 
-	while (hdmitx_device->hpd_event != 0xff) {
-		hdmi_authenticated = hdmitx_device->HWOp.CntlDDC(
-			hdmitx_device, DDC_HDCP_GET_AUTH, 0);
-		if ((hdmitx_device->output_blank_flag == 1) &&
-			(hdmitx_device->hpd_state == 1) &&
-			(hdmitx_device->cur_VIC != HDMI_Unkown)) {
-			err_cnt = 0;
-		time_cnt = 1;
-		hdmitx_device->output_blank_flag = 0;
-#ifdef CONFIG_AML_HDMI_TX_HDCP
-		hdmi_print(INF, HDCP "start hdcp\n");
-		hdmitx_device->HWOp.CntlDDC(hdmitx_device, AVMUTE_OFF, 0);
-		hdmitx_device->HWOp.CntlDDC(hdmitx_device, DDC_RESET_EDID, 0);
-		hdmitx_device->HWOp.CntlDDC(hdmitx_device,
-			DDC_EDID_READ_DATA, 0);
-		hdmitx_device->HWOp.CntlDDC(hdmitx_device, DDC_RESET_HDCP, 0);
-		hdmitx_device->HWOp.CntlDDC(hdmitx_device, DDC_HDCP_OP,
-			HDCP_ON);
-		msleep(100);
-		while ((hdmitx_device->hpd_state == 1) &&
-			(hdmitx_device->cur_VIC != HDMI_Unkown)) {
-			hdmi_authenticated = hdmitx_device->HWOp.CntlDDC(
-				hdmitx_device, DDC_HDCP_GET_AUTH, 0);
-			switch_set_state(&hdcp_dev, hdmi_authenticated);
-			hdmitx_device->HWOp.CntlConfig(hdmitx_device,
-				CONF_VIDEO_BLANK_OP,
-				hdmi_authenticated ? VIDEO_UNBLANK :
-				VIDEO_BLANK);
-			hdmitx_device->HWOp.CntlConfig(hdmitx_device,
-				CONF_AUDIO_MUTE_OP,
-				hdmi_authenticated ? AUDIO_UNMUTE : AUDIO_MUTE);
-			if (!hdmi_authenticated) {
-				err_cnt++;
-				if (err_cnt & (3 << time_cnt)) {
-					time_cnt++;
-					hdmi_print(ERR, HDCP
-						"authenticated failed\n");
-				}
-			}
-			msleep(20);
-			if (hdmitx_device->output_blank_flag == 1)
-				break;
-		}
-#else
-		hdmitx_device->HWOp.CntlConfig(hdmitx_device,
-			CONF_VIDEO_BLANK_OP, VIDEO_UNBLANK);
-		/* hdmitx_device->HWOp.CntlConfig(hdmitx_device,
-			CONF_AUDIO_MUTE_OP, AUDIO_UNMUTE); */
-		hdmitx_device->audio_step = 1;
-#endif
-	 }
-	 msleep_interruptible(100);
+	while (hdev->hpd_event != 0xff) {
+		hdmi_authenticated = hdev->HWOp.CntlDDC(hdev,
+			DDC_HDCP_GET_AUTH, 0);
+		switch_set_state(&hdcp_dev, hdmi_authenticated);
+		msleep_interruptible(200);
 	}
 
 	return 0;
@@ -168,15 +115,18 @@ static int hdmitx_hdcp_task(void *data)
 
 static int __init hdmitx_hdcp_init(void)
 {
-	struct hdmitx_dev *hdmitx_device = get_hdmitx_device();
+	struct hdmitx_dev *hdev = get_hdmitx_device();
+
+	hdmi_print(IMP, SYS "hdmitx_hdcp_init\n");
+	if (hdev->hdtx_dev == NULL) {
+		hdmi_print(IMP, SYS "exit for null device of hdmitx!\n");
+		return -ENODEV;
+	}
 
 	switch_dev_register(&hdcp_dev);
 
-	if(hdmitx_device->HWOp.CntlDDC == NULL)
-		return 0;
-
-	hdmitx_device->task_hdcp = kthread_run(hdmitx_hdcp_task,
-		(void *)hdmitx_device, "kthread_hdcp");
+	hdev->task_hdcp = kthread_run(hdmitx_hdcp_task,	(void *)hdev,
+		"kthread_hdcp");
 
 	return 0;
 }

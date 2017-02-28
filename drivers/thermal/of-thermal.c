@@ -284,11 +284,21 @@ static int of_thermal_set_mode(struct thermal_zone_device *tz,
 
 	mutex_lock(&tz->lock);
 
-	if (mode == THERMAL_DEVICE_ENABLED)
+	/* passive_delay should be cleared if disabled */
+	if (mode == THERMAL_DEVICE_ENABLED) {
 		tz->polling_delay = data->polling_delay;
-	else
+		tz->passive_delay = data->passive_delay;
+	} else {
 		tz->polling_delay = 0;
+		tz->passive_delay = 0;
+	}
 
+	/*
+	 * give opportunity that theraml device can
+	 * do something when mode change
+	 */
+	if (data->ops && data->ops->set_mode)
+		data->ops->set_mode(tz, mode);
 	mutex_unlock(&tz->lock);
 
 	data->mode = mode;
@@ -926,7 +936,7 @@ int __init of_parse_thermal_zones(void)
 		}
 
 		/* No hwmon because there might be hwmon drivers registering */
-		tzp->no_hwmon = false;
+		tzp->no_hwmon = true;
 
 		if (!of_property_read_u32(child, "sustainable-power", &prop))
 			tzp->sustainable_power = prop;

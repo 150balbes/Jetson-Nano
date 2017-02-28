@@ -22,6 +22,7 @@
 #include <linux/platform_device.h>
 #include <linux/amba/bus.h>
 #include <linux/coresight.h>
+#include <linux/cpumask.h>
 #include <asm/smp_plat.h>
 
 
@@ -36,7 +37,7 @@ of_coresight_get_endpoint_device(struct device_node *endpoint)
 	struct device *dev = NULL;
 
 	/*
-	 * If we have a non-configuable replicator, it will be found on the
+	 * If we have a non-configurable replicator, it will be found on the
 	 * platform bus.
 	 */
 	dev = bus_find_device(&platform_bus_type, NULL,
@@ -52,15 +53,6 @@ of_coresight_get_endpoint_device(struct device_node *endpoint)
 			       endpoint, of_dev_node_match);
 }
 
-static struct device_node *of_get_coresight_endpoint(
-		const struct device_node *parent, struct device_node *prev)
-{
-	struct device_node *node = of_graph_get_next_endpoint(parent, prev);
-
-	of_node_put(prev);
-	return node;
-}
-
 static void of_coresight_get_ports(struct device_node *node,
 				   int *nr_inport, int *nr_outport)
 {
@@ -68,7 +60,7 @@ static void of_coresight_get_ports(struct device_node *node,
 	int in = 0, out = 0;
 
 	do {
-		ep = of_get_coresight_endpoint(node, ep);
+		ep = of_graph_get_next_endpoint(node, ep);
 		if (!ep)
 			break;
 
@@ -113,7 +105,7 @@ static int of_coresight_alloc_memory(struct device *dev,
 struct coresight_platform_data *of_get_coresight_platform_data(
 				struct device *dev, struct device_node *node)
 {
-	int i = 0, ret = 0;
+	int i = 0, ret = 0, cpu;
 	struct coresight_platform_data *pdata;
 	struct of_endpoint endpoint, rendpoint;
 	struct device *rdev;
@@ -140,7 +132,7 @@ struct coresight_platform_data *of_get_coresight_platform_data(
 		/* Iterate through each port to discover topology */
 		do {
 			/* Get a handle on a port */
-			ep = of_get_coresight_endpoint(node, ep);
+			ep = of_graph_get_next_endpoint(node, ep);
 			if (!ep)
 				break;
 
@@ -187,17 +179,10 @@ struct coresight_platform_data *of_get_coresight_platform_data(
 	/* Affinity defaults to CPU0 */
 	pdata->cpu = 0;
 	dn = of_parse_phandle(node, "cpu", 0);
-	if (dn) {
-		const u32 *cell;
-		int len, index;
-		u64 hwid;
-
-		cell = of_get_property(dn, "reg", &len);
-		if (cell) {
-			hwid = of_read_number(cell, of_n_addr_cells(dn));
-			index = get_logical_index(hwid);
-			if (index != -EINVAL)
-				pdata->cpu = index;
+	for (cpu = 0; dn && cpu < nr_cpu_ids; cpu++) {
+		if (dn == of_get_cpu_node(cpu, NULL)) {
+			pdata->cpu = cpu;
+			break;
 		}
 	}
 

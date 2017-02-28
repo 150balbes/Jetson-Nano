@@ -41,7 +41,7 @@
 #define VIDTYPE_PRE_INTERLACE           0x40000
 #define VIDTYPE_HIGHRUN                 0x80000
 #define VIDTYPE_COMPRESS                0x100000
-#define VIDTYPE_PIC	 	                0x200000
+#define VIDTYPE_PIC		                0x200000
 
 #define DISP_RATIO_FORCECONFIG          0x80000000
 #define DISP_RATIO_FORCE_NORMALWIDE     0x40000000
@@ -77,6 +77,14 @@ struct vframe_hist_s {
 	unsigned char luma_max;
 	unsigned char luma_min;
 	unsigned short gamma[64];
+	unsigned int vpp_luma_sum;/*vpp hist info*/
+	unsigned int vpp_chroma_sum;
+	unsigned int vpp_pixel_sum;
+	unsigned int vpp_height;
+	unsigned int vpp_width;
+	unsigned char vpp_luma_max;
+	unsigned char vpp_luma_min;
+	unsigned short vpp_gamma[64];
 #ifdef AML_LOCAL_DIMMING
 	unsigned int ldim_max[100];
 #endif
@@ -114,12 +122,36 @@ struct vframe_view_s {
 	unsigned int height;
 } /*vframe_view_t */;
 
+struct vframe_master_display_colour_s {
+	u32 present_flag;
+	u32 primaries[3][2];
+	u32 white_point[2];
+	u32 luminance[2];
+}; /* master_display_colour_info_volume from SEI */
+
 /* vframe properties */
 struct vframe_prop_s {
 	struct vframe_hist_s hist;
 	struct vframe_bbar_s bbar;
 	struct vframe_meas_s meas;
+	struct vframe_master_display_colour_s
+		master_display_colour;
 } /*vframe_prop_t */;
+
+struct vdisplay_info_s {
+	u32 frame_hd_start_lines_;
+	u32 frame_hd_end_lines_;
+	u32 frame_vd_start_lines_;
+	u32 frame_vd_end_lines_;
+	u32 display_vsc_startp;
+	u32 display_vsc_endp;
+	u32 display_hsc_startp;
+	u32 display_hsc_endp;
+	u32 screen_vd_v_start_;
+	u32 screen_vd_v_end_;
+	u32 screen_vd_h_start_;
+	u32 screen_vd_h_end_;
+};
 
 enum vframe_source_type_e {
 	VFRAME_SOURCE_TYPE_OTHERS = 0,
@@ -165,11 +197,12 @@ enum vframe_secam_phase_e {
 
 #define BITDEPTH_MASK (BITDEPTH_YMASK | BITDEPTH_UMASK | BITDEPTH_VMASK)
 #define BITDEPTH_SAVING_MODE	0x1
-
+#define FULL_PACK_422_MODE		0x2
 struct vframe_s {
 	u32 index;
 	u32 type;
 	u32 type_backup;
+	u32 type_original;
 	u32 blend_mode;
 	u32 duration;
 	u32 duration_pulldown;
@@ -179,13 +212,39 @@ struct vframe_s {
 
 	u32 canvas0Addr;
 	u32 canvas1Addr;
+	u32 compHeadAddr;
+	u32 compBodyAddr;
 
 	u32 bufWidth;
 	u32 width;
 	u32 height;
+	u32 compWidth;
+	u32 compHeight;
 	u32 ratio_control;
 	u32 bitdepth;
-
+	u32 signal_type;
+	/*
+		bit 29: present_flag
+		bit 28-26: video_format
+			"component", "PAL", "NTSC", "SECAM",
+			"MAC", "unspecified"
+		bit 25: range "limited", "full_range"
+		bit 24: color_description_present_flag
+		bit 23-16: color_primaries
+			"unknown", "bt709", "undef", "bt601",
+			"bt470m", "bt470bg", "smpte170m", "smpte240m",
+			"film", "bt2020"
+		bit 15-8: transfer_characteristic
+			"unknown", "bt709", "undef", "bt601",
+			"bt470m", "bt470bg", "smpte170m", "smpte240m",
+			"linear", "log100", "log316", "iec61966-2-4",
+			"bt1361e", "iec61966-2-1", "bt2020-10", "bt2020-12",
+			"smpte-st-2084", "smpte-st-428"
+		bit 7-0: matrix_coefficient
+			"GBR", "bt709", "undef", "bt601",
+			"fcc", "bt470bg", "smpte170m", "smpte240m",
+			"YCgCo", "bt2020nc", "bt2020c"
+	*/
 	u32 orientation;
 	u32 video_angle;
 	enum vframe_source_type_e source_type;
@@ -216,6 +275,10 @@ struct vframe_s {
 	u64 ready_jiffies64;	/* ready from decode on  jiffies_64 */
 	atomic_t use_cnt;
 	u32 frame_dirty;
+	/* prog_proc_config:
+	 *1: process p from decoder as filed;
+	 *0: process p from decoder as frame*/
+	u32 prog_proc_config;
 } /*vframe_t */;
 
 #if 0

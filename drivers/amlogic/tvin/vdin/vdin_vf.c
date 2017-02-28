@@ -274,11 +274,15 @@ void isr_log(struct vf_pool *p)
 #endif
 struct vf_entry *vf_get_master(struct vf_pool *p, int index)
 {
+	if (index >= p->max_size)
+		return NULL;
 	return &p->master[index];
 }
 
 struct vf_entry *vf_get_slave(struct vf_pool *p, int index)
 {
+	if (index >= p->max_size)
+		return NULL;
 	return &p->slave[index];
 }
 
@@ -322,6 +326,7 @@ struct vf_pool *vf_pool_alloc(int size)
 /* size: valid canvas quantity*/
 int vf_pool_init(struct vf_pool *p, int size)
 {
+	bool log_state = true;
 	int i = 0;
 	unsigned long flags;
 	struct vf_entry *master, *slave;
@@ -374,6 +379,10 @@ int vf_pool_init(struct vf_pool *p, int size)
 	/* initialize provider write list */
 	for (i = 0; i < size; i++) {
 		master = vf_get_master(p, i);
+		if (master == NULL) {
+			log_state = false;
+			break;
+		}
 		master->status = VF_STATUS_WL;
 		master->flag |= VF_FLAG_NORMAL_FRAME;
 		master->flag &= (~VF_FLAG_FREEZED_FRAME);
@@ -385,12 +394,16 @@ int vf_pool_init(struct vf_pool *p, int size)
 
 	for (i = 0; i < size; i++) {
 		slave = vf_get_slave(p, i);
+		if (slave == NULL) {
+			log_state = false;
+			break;
+		}
 		slave->status = VF_STATUS_SL;
 	}
-
+	atomic_set(&p->buffer_cnt, 0);
 #ifdef VF_LOG_EN
 	vf_log_init(p);
-	vf_log(p, VF_OPERATION_INIT, true);
+	vf_log(p, VF_OPERATION_INIT, log_state);
 #endif
 	return 0;
 }
@@ -579,7 +592,21 @@ struct vf_entry *receiver_vf_get(struct vf_pool *p)
 	vf_log(p, VF_OPERATION_BGET, true);
 	return vfe;
 }
-
+/*check vf point,0:nornal;1:bad*/
+unsigned int check_vf_put(struct vframe_s *vf, struct vf_pool *p)
+{
+	struct vf_entry *master;
+	unsigned int i;
+	if (!vf || !p)
+		return 1;
+	for (i = 0; i < p->size; i++) {
+		master = vf_get_master(p, i);
+		if (&(master->vf) == vf)
+			return 0;
+	}
+	pr_info("[%s]vf:%p!!!!\n", __func__, vf);
+	return 1;
+}
 void receiver_vf_put(struct vframe_s *vf, struct vf_pool *p)
 {
 	struct vf_entry *master, *slave;
@@ -587,9 +614,13 @@ void receiver_vf_put(struct vframe_s *vf, struct vf_pool *p)
 	struct vf_entry *pos = NULL, *tmp = NULL;
 	int found_in_wt_list = 0;
 
-
+	if (check_vf_put(vf, p))
+		return;
 	master = vf_get_master(p, vf->index);
-
+	if (master == NULL) {
+		vf_log(p, VF_OPERATION_BPUT, false);
+		return;
+	}
 	/*keep the frozen frame in rd list&recycle the
 	 * frame which not in fz list when unfreeze*/
 	if (master->flag & VF_FLAG_FREEZED_FRAME) {
@@ -630,6 +661,11 @@ void receiver_vf_put(struct vframe_s *vf, struct vf_pool *p)
 		 * the entry 'pos' found in wt_list maybe
 		 * entry 'master' or 'slave' */
 		slave = vf_get_slave(p, vf->index);
+		if (slave == NULL) {
+			spin_unlock_irqrestore(&p->wt_lock, flags);
+			vf_log(p, VF_OPERATION_BPUT, false);
+			return;
+		}
 		/* if found associated entry in wait list */
 		if (found_in_wt_list) {
 			/* remove from wait list,
@@ -666,6 +702,7 @@ void receiver_vf_put(struct vframe_s *vf, struct vf_pool *p)
 			vf_log(p, VF_OPERATION_BPUT, true);
 		}
 	}
+	atomic_dec(&p->buffer_cnt);
 }
 
 struct vframe_s *vdin_vf_peek(void *op_arg)
@@ -691,6 +728,7 @@ struct vframe_s *vdin_vf_get(void *op_arg)
 	vfe =  receiver_vf_get(p);
 	if (!vfe)
 		return NULL;
+	atomic_inc(&p->buffer_cnt);
 	return &vfe->vf;
 }
 
@@ -709,8 +747,8 @@ int vdin_vf_states(struct vframe_states *vf_ste, void *op_arg)
 		return -1;
 	p = (struct vf_pool *)op_arg;
 	vf_ste->vf_pool_size = p->size;
-	vf_ste->buf_free_num = p->wr_list_size - 1;
-	vf_ste->buf_avail_num = p->wr_list_size;
+	vf_ste->buf_free_num = p->wr_list_size;
+	vf_ste->buf_avail_num = p->rd_list_size;
 	vf_ste->buf_recycle_num = p->size - p->wr_list_size - p->rd_list_size;
 	return 0;
 }
@@ -830,6 +868,7 @@ void vdin_dump_vf_state(struct vf_pool *p)
 			pos->vf.canvas1Addr, pos->vf.type);
 	}
 	spin_unlock_irqrestore(&p->tmp_lock, flags);
+	pr_info("buffer get count %d.\n", atomic_read(&p->buffer_cnt));
 
 }
 

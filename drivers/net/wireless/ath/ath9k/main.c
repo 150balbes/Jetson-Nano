@@ -205,13 +205,11 @@ static bool ath_prepare_reset(struct ath_softc *sc)
 	ath_stop_ani(sc);
 	ath9k_hw_disable_interrupts(ah);
 
-	if (AR_SREV_9300_20_OR_LATER(ah)) {
-		ret &= ath_stoprecv(sc);
-		ret &= ath_drain_all_txq(sc);
-	} else {
-		ret &= ath_drain_all_txq(sc);
-		ret &= ath_stoprecv(sc);
-	}
+	if (!ath_drain_all_txq(sc))
+		ret = false;
+
+	if (!ath_stoprecv(sc))
+		ret = false;
 
 	return ret;
 }
@@ -1885,8 +1883,7 @@ static bool ath9k_has_tx_pending(struct ath_softc *sc)
 	return !!npend;
 }
 
-static void ath9k_flush(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
-			u32 queues, bool drop)
+static void ath9k_flush(struct ieee80211_hw *hw, u32 queues, bool drop)
 {
 	struct ath_softc *sc = hw->priv;
 	struct ath_hw *ah = sc->sc_ah;

@@ -32,7 +32,11 @@ obj-$(CONFIG_AM_IRBLASTER)	+= irblaster/
 
 obj-$(CONFIG_I2C_AML)		+= i2c/
 
+obj-$(CONFIG_AML_PWM)		+= pwm/
+
 obj-$(CONFIG_AML_POWER_SUPPORT)	+= power/
+
+obj-$(CONFIG_AML_PMU4)		+= pmu4/
 
 obj-$(CONFIG_AML_DEBUG)		+= aml_debug/
 
@@ -114,8 +118,22 @@ obj-$(CONFIG_AML_CODEC_MM)  	+= codec_mm/
 
 obj-$(CONFIG_AML_WDT)  		+= watchdog/
 
+obj-$(CONFIG_AMLOGIC_JTAG)     += jtag/
+
 obj-$(CONFIG_INSTABOOT)		+= instaboot/
 
-obj-$(CONFIG_MESON_PWM) += pwm/
+obj-$(CONFIG_AMLOGIC_SPICC_MASTER) += spicc/
+
+obj-$(CONFIG_AMLOGIC_CPU_INFO)	+=cpu_info/
+
+obj-$(CONFIG_DEFEND_IMG)	+= defendkey/
 
 obj-$(CONFIG_AML_AO_CEC) += cec/
+
+obj-$(CONFIG_CRYPTO_AML)	+= crypto/
+
+obj-$(CONFIG_AMLOGIC_WATCHPOINT) += watchpoint/
+
+obj-$(CONFIG_UMP)			+= gpu/ump/
+
+obj-$(CONFIG_MALI400)		+= gpu/mali/

@@ -113,7 +113,7 @@ EXPORT_SYMBOL(storage_ops_write);
 int32_t amlkey_init(uint8_t *seed, uint32_t len)
 {
 	int32_t ret = 0;
-	uint32_t buffer_size;
+	uint32_t buffer_size, actual_size;
 
 #ifndef OTHER_METHOD_CALL
 	ret = store_operation_init();
@@ -138,21 +138,18 @@ int32_t amlkey_init(uint8_t *seed, uint32_t len)
 		ret = -1;
 		goto _out;
 	}
-	if (buffer_size != storagekey_info.size) {
-		pr_err("%s() %d: warnning! %d/%d\n",
-			__func__, __LINE__, buffer_size, storagekey_info.size);
-		/* using innor size!*/
-		storagekey_info.size = buffer_size;
-	}
 
-	pr_err("%s() storagekey_info.buffer=%p, storagekey_info.size = %0x!\n",
-		__func__,
-		storagekey_info.buffer,
-		storagekey_info.size);
 	/* full fill key infos from storage. */
 	if (store_key_read)
 		ret = store_key_read(storagekey_info.buffer,
-					storagekey_info.size);
+					storagekey_info.size, &actual_size);
+
+	storagekey_info.size = actual_size;
+	pr_info("%s() storagekey_info.buffer=%p, storagekey_info.size = %0x!\n",
+		__func__,
+		storagekey_info.buffer,
+		storagekey_info.size);
+
 	if (ret) {
 		/* memset head info for bl31 */
 		memset(storagekey_info.buffer, 0, SECUESTORAGE_HEAD_SIZE);
@@ -190,7 +187,7 @@ int32_t amlkey_isexsit(const uint8_t *name)
  * 3. query if the prgrammed key is secure
  * return secure 1, non 0;
  */
-int32_t amlkey_issecure(const uint8_t *name)
+int32_t amlkey_get_attr(const uint8_t *name)
 {
 	int32_t ret = 0;
 	uint32_t retval;
@@ -207,6 +204,24 @@ int32_t amlkey_issecure(const uint8_t *name)
 	}
 
 	return (int32_t)retval;
+}
+
+/**
+ * 3.1 query if the prgrammed key is secure
+ * return secure 1, non 0;
+ */
+int32_t amlkey_issecure(const uint8_t *name)
+{
+	return amlkey_get_attr(name) & KEY_UNIFY_ATTR_SECURE_MASK;
+}
+
+/**
+ * 3.2 query if the prgrammed key is encrypt
+ * return encrypt 1, non 0;
+ */
+int32_t amlkey_isencrypt(const uint8_t *name)
+{
+	return amlkey_get_attr(name) & KEY_UNIFY_ATTR_ENCRYPT_MASK;
 }
 
 /**
@@ -259,16 +274,19 @@ _out:
 }
 
 /**
- * 6.write secure/non-secure key in bytes , return bytes readback actully
+ * 6.write key with attr in bytes , return bytes readback actully
+ * attr: bit0, secure/non-secure
+ *       bit8, encrypt/non-encrypt
  * return actual size write down.
  */
 ssize_t amlkey_write(const uint8_t *name,
 	uint8_t *buffer,
 	uint32_t len,
-	uint32_t secure)
+	uint32_t attr)
 {
 	int32_t ret = 0;
 	ssize_t retval = 0;
+	uint32_t actual_lenth;
 
 	if (NULL == name) {
 		pr_err("%s() %d, invalid key ", __func__, __LINE__);
@@ -276,7 +294,7 @@ ssize_t amlkey_write(const uint8_t *name,
 	}
 	ret = secure_storage_write((uint8_t *)name,
 		buffer, len,
-		secure);
+		attr);
 	if (ret) {
 		pr_err("%s() %d: return %d\n", __func__, __LINE__, ret);
 		retval = 0;
@@ -287,7 +305,7 @@ ssize_t amlkey_write(const uint8_t *name,
 		if (storagekey_info.buffer != NULL) {
 			if (store_key_write)
 				ret = store_key_write(storagekey_info.buffer,
-							storagekey_info.size);
+					storagekey_info.size, &actual_lenth);
 			if (ret) {
 				pr_err("%s() %d, store_key_write fail\n",
 					__func__, __LINE__);
@@ -318,6 +336,7 @@ int32_t amlkey_hash_4_secure(const uint8_t *name, uint8_t *hash)
 int32_t amlkey_del(const uint8_t *name)
 {
 	int32_t ret = 0;
+	uint32_t actual_lenth;
 
 	/* ret = secure_storage_remove((uint8_t *)name);
 	??????????????????????
@@ -326,7 +345,7 @@ int32_t amlkey_del(const uint8_t *name)
 		/* flush back */
 		if (store_key_write)
 			ret = store_key_write(storagekey_info.buffer,
-						storagekey_info.size);
+				storagekey_info.size, &actual_lenth);
 		if (ret) {
 			pr_err("%s() %d, store_key_write fail\n",
 				 __func__,

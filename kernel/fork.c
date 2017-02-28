@@ -146,18 +146,89 @@ void __weak arch_release_thread_info(struct thread_info *ti)
  * kmemcache based allocator.
  */
 # if THREAD_SIZE >= PAGE_SIZE
+bool stack_mem_create = false;
+bool stack_mem_create_try = false;
+struct list_head stack_mem_list;
+DEFINE_SPINLOCK(stack_lock);
 static struct thread_info *alloc_thread_info_node(struct task_struct *tsk,
 						  int node)
 {
-	struct page *page = alloc_pages_node(node, THREADINFO_GFP_ACCOUNTED,
-					     THREAD_SIZE_ORDER);
+	struct page *page = NULL;
+#if 1
+	void *vaddr = NULL;
+	if (!stack_mem_create_try && !stack_mem_create) {
+		struct page *tmp_page1 = NULL;
+		struct page *tmp_page2 = NULL;
+		int i = 0;
+		int total = (1 << (MAX_ORDER - 1)) >> THREAD_SIZE_ORDER;
 
+		spin_lock_irq(&stack_lock);
+		INIT_LIST_HEAD(&stack_mem_list);
+		tmp_page1 = alloc_pages_node(node, THREADINFO_GFP_ACCOUNTED,
+						 MAX_ORDER - 1);
+		if (!tmp_page1) {
+			stack_mem_create_try = true;
+			spin_unlock_irq(&stack_lock);
+			page = alloc_pages_node(node, THREADINFO_GFP_ACCOUNTED,
+						 THREAD_SIZE_ORDER);
+			goto out;
+		}
+		tmp_page2 = alloc_pages_node(node, THREADINFO_GFP_ACCOUNTED,
+					 MAX_ORDER - 1);
+		if (!tmp_page2) {
+			stack_mem_create_try = true;
+			__free_pages(tmp_page1, MAX_ORDER - 1);
+			spin_unlock_irq(&stack_lock);
+			page = alloc_pages_node(node, THREADINFO_GFP_ACCOUNTED,
+						 THREAD_SIZE_ORDER);
+			goto out;
+		}
+		vaddr = page_address(tmp_page1);
+		for (i = 0; i < (total << 1); i++) {
+			list_add((struct list_head *)vaddr, &stack_mem_list);
+			vaddr += THREAD_SIZE;
+			if (i == (total - 1))
+				vaddr = page_address(tmp_page2);
+		}
+		stack_mem_create = true;
+		spin_unlock_irq(&stack_lock);
+	}
+	if (stack_mem_create) {
+		spin_lock_irq(&stack_lock);
+		if (!list_empty(&stack_mem_list)) {
+			vaddr = (void *)stack_mem_list.next;
+			list_del(stack_mem_list.next);
+			page = phys_to_page(__pa(vaddr));
+			spin_unlock_irq(&stack_lock);
+		} else {
+			spin_unlock_irq(&stack_lock);
+			page = alloc_pages_node(node, THREADINFO_GFP_ACCOUNTED,
+						 THREAD_SIZE_ORDER);
+		}
+	}
+out:
+#else
+	page = alloc_pages_node(node, THREADINFO_GFP_ACCOUNTED,
+						 THREAD_SIZE_ORDER);
+#endif
 	return page ? page_address(page) : NULL;
 }
 
 static inline void free_thread_info(struct thread_info *ti)
 {
+#if 1
+	struct list_head *list = NULL;
+
+	if (ti) {
+		list = (struct list_head *)(ti);
+		spin_lock_irq(&stack_lock);
+		list_add_tail(list, &stack_mem_list);
+		stack_mem_create = true;
+		spin_unlock_irq(&stack_lock);
+	}
+#else
 	free_memcg_kmem_pages((unsigned long)ti, THREAD_SIZE_ORDER);
+#endif
 }
 # else
 static struct kmem_cache *thread_info_cache;
@@ -439,7 +510,7 @@ static int dup_mmap(struct mm_struct *mm, struct mm_struct *oldmm)
 			struct inode *inode = file_inode(file);
 			struct address_space *mapping = file->f_mapping;
 
-			vma_get_file(tmp);
+			get_file(file);
 			if (tmp->vm_flags & VM_DENYWRITE)
 				atomic_dec(&inode->i_writecount);
 			mutex_lock(&mapping->i_mmap_mutex);
@@ -1301,6 +1372,7 @@ static struct task_struct *copy_process(unsigned long clone_flags,
 
 	p->utime = p->stime = p->gtime = 0;
 	p->utimescaled = p->stimescaled = 0;
+	p->cpu_power = 0;
 #ifndef CONFIG_VIRT_CPU_ACCOUNTING_NATIVE
 	p->prev_cputime.utime = p->prev_cputime.stime = 0;
 #endif
@@ -1820,21 +1892,13 @@ static int check_unshare_flags(unsigned long unshare_flags)
 				CLONE_NEWUSER|CLONE_NEWPID))
 		return -EINVAL;
 	/*
-	 * Not implemented, but pretend it works if there is nothing
-	 * to unshare.  Note that unsharing the address space or the
-	 * signal handlers also need to unshare the signal queues (aka
-	 * CLONE_THREAD).
+	 * Not implemented, but pretend it works if there is nothing to
+	 * unshare. Note that unsharing CLONE_THREAD or CLONE_SIGHAND
+	 * needs to unshare vm.
 	 */
 	if (unshare_flags & (CLONE_THREAD | CLONE_SIGHAND | CLONE_VM)) {
-		if (!thread_group_empty(current))
-			return -EINVAL;
-	}
-	if (unshare_flags & (CLONE_SIGHAND | CLONE_VM)) {
-		if (atomic_read(&current->sighand->count) > 1)
-			return -EINVAL;
-	}
-	if (unshare_flags & CLONE_VM) {
-		if (!current_is_single_threaded())
+		/* FIXME: get_task_mm() increments ->mm_users */
+		if (atomic_read(&current->mm->mm_users) > 1)
 			return -EINVAL;
 	}
 
@@ -1903,15 +1967,15 @@ SYSCALL_DEFINE1(unshare, unsigned long, unshare_flags)
 	if (unshare_flags & CLONE_NEWUSER)
 		unshare_flags |= CLONE_THREAD | CLONE_FS;
 	/*
+	 * If unsharing a thread from a thread group, must also unshare vm.
+	 */
+	if (unshare_flags & CLONE_THREAD)
+		unshare_flags |= CLONE_VM;
+	/*
 	 * If unsharing vm, must also unshare signal handlers.
 	 */
 	if (unshare_flags & CLONE_VM)
 		unshare_flags |= CLONE_SIGHAND;
-	/*
-	 * If unsharing a signal handlers, must also unshare the signal queues.
-	 */
-	if (unshare_flags & CLONE_SIGHAND)
-		unshare_flags |= CLONE_THREAD;
 	/*
 	 * If unsharing namespace, must also unshare filesystem information.
 	 */

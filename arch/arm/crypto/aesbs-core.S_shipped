@@ -58,18 +58,14 @@
 # define VFP_ABI_FRAME	0
 # define BSAES_ASM_EXTENDED_KEY
 # define XTS_CHAIN_TWEAK
-# define __ARM_ARCH__ __LINUX_ARM_ARCH__
-# define __ARM_MAX_ARCH__ 7
+# define __ARM_ARCH__	7
 #endif
 
 #ifdef __thumb__
 # define adrl adr
 #endif
 
-#if __ARM_MAX_ARCH__>=7
-.arch	armv7-a
-.fpu	neon
-
+#if __ARM_ARCH__>=7
 .text
 .syntax	unified 	@ ARMv7-capable assembler is expected to handle this
 #ifdef __thumb2__
@@ -77,6 +73,8 @@
 #else
 .code   32
 #endif
+
+.fpu	neon
 
 .type	_bsaes_decrypt8,%function
 .align	4
@@ -2097,11 +2095,9 @@ bsaes_xts_decrypt:
 	vld1.8	{q8}, [r0]			@ initial tweak
 	adr	r2, .Lxts_magic
 
-#ifndef	XTS_CHAIN_TWEAK
 	tst	r9, #0xf			@ if not multiple of 16
 	it	ne				@ Thumb2 thing, sanity check in ARM
 	subne	r9, #0x10			@ subtract another 16 bytes
-#endif
 	subs	r9, #0x80
 
 	blo	.Lxts_dec_short

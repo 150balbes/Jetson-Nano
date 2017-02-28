@@ -52,7 +52,7 @@
 #include <linux/amlogic/sound/aout_notify.h>
 #include <linux/amlogic/hdmi_tx/hdmi_info_global.h>
 #include <linux/amlogic/hdmi_tx/hdmi_tx_module.h>
-#include <linux/amlogic/hdmi_tx/hdmi_tx_cec.h>
+#include <linux/amlogic/hdmi_tx/hdmi_tx_cec_14.h>
 #include <linux/amlogic/hdmi_tx/hdmi_config.h>
 
 #include "ts/tvenc_conf.h"
@@ -69,7 +69,7 @@ static struct device *hdmitx_dev;
 static struct gpio_desc *hdmi_gd;
 static struct device *hdmi_dev;
 static int set_disp_mode_auto(void);
-const struct vinfo_s *hdmi_get_current_vinfo(void);
+struct vinfo_s *hdmi_get_current_vinfo(void);
 
 #ifndef CONFIG_AM_TV_OUTPUT
 /* Fake vinfo */
@@ -117,7 +117,7 @@ static void hdmitx_early_suspend(struct early_suspend *h)
 		HDMITX_EARLY_SUSPEND_RESUME_CNTL, HDMITX_EARLY_SUSPEND);
 	phdmi->cur_VIC = HDMI_Unkown;
 	phdmi->output_blank_flag = 0;
-	phdmi->HWOp.CntlDDC(phdmi, DDC_HDCP_OP, HDCP_OFF);
+	phdmi->HWOp.CntlDDC(phdmi, DDC_HDCP_OP, HDCP14_OFF);
 	phdmi->HWOp.CntlDDC(phdmi, DDC_HDCP_OP, DDC_RESET_HDCP);
 	phdmi->HWOp.CntlConfig(&hdmitx_device, CONF_CLR_AVI_PACKET, 0);
 	phdmi->HWOp.CntlConfig(&hdmitx_device, CONF_CLR_VSDB_PACKET, 0);
@@ -141,7 +141,7 @@ static void hdmitx_late_resume(struct early_suspend *h)
 	hdmitx_device.HWOp.CntlConfig(&hdmitx_device,
 		CONF_AUDIO_MUTE_OP, AUDIO_MUTE);
 	hdmitx_device.HWOp.CntlDDC(&hdmitx_device, DDC_HDCP_OP,
-		HDCP_OFF);
+		HDCP14_OFF);
 	hdmitx_device.internal_mode_change = 0;
 	set_disp_mode_auto();
 #ifdef CONFIG_AML_VOUT_FRAMERATE_AUTOMATION
@@ -256,9 +256,9 @@ return value: 1, vout; 2, vout2;
 	return vout_index;
 }
 
-const struct vinfo_s *hdmi_get_current_vinfo(void)
+struct vinfo_s *hdmi_get_current_vinfo(void)
 {
-	const struct vinfo_s *info;
+	struct vinfo_s *info;
 #ifdef CONFIG_AM_TV_OUTPUT2
 	if (get_cur_vout_index() == 2) {
 		info = get_current_vinfo2();
@@ -351,7 +351,7 @@ static void hdmitx_pre_display_init(void)
 	hdmitx_device.HWOp.CntlConfig(&hdmitx_device,
 		CONF_AUDIO_MUTE_OP, AUDIO_MUTE);
 	hdmitx_device.HWOp.CntlDDC(&hdmitx_device, DDC_HDCP_OP,
-		HDCP_OFF);
+		HDCP14_OFF);
 	/* msleep(10); */
 	hdmitx_device.HWOp.CntlMisc(&hdmitx_device, MISC_TMDS_PHY_OP,
 		TMDS_PHY_DISABLE);
@@ -1350,7 +1350,6 @@ static int hdmi_task_handle(void *data)
 	hdmitx_device->HWOp.SetupIRQ(hdmitx_device);
 	if (init_flag&INIT_FLAG_POWERDOWN) {
 		/* power down */
-		hdmitx_device->HWOp.SetDispMode(hdmitx_device, NULL);
 		hdmitx_device->unplug_powerdown = 1;
 		if (hdmitx_device->HWOp.Cntl) {
 			hdmitx_device->HWOp.Cntl(hdmitx_device,
@@ -1482,7 +1481,7 @@ edid_op:
 		}
 		#endif
 		hdmitx_device->HWOp.CntlDDC(hdmitx_device, DDC_HDCP_OP,
-			HDCP_OFF);
+			HDCP14_OFF);
 		hdmitx_device->HWOp.CntlMisc(hdmitx_device,
 			MISC_TMDS_PHY_OP, TMDS_PHY_DISABLE);
 		hdmitx_device->HWOp.Cntl(hdmitx_device,
@@ -2135,9 +2134,6 @@ static  int __init hdmitx_boot_para_setup(char *s)
 			hdmitx_device.cec_func_config = list;
 		hdmi_print(INF, CEC "HDMI hdmi_cec_func_config:0x%x\n",
 			hdmitx_device.cec_func_config);
-		} else if (strcmp(token, "forcergb") == 0) {
-			hdmitx_output_rgb();
-			hdmi_print(IMP, "Forced RGB colorspace output\n");
 		}
 	}
 		offset = token_offset;

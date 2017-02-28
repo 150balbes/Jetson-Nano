@@ -29,7 +29,7 @@
 
 
 #include "register_ops.h"
-#define debug_print pr_info
+#define debug_print pr_debug
 /*
 HHI_VDEC_CLK_CNTL
 0x1078[11:9] (fclk = 2000MHz)
@@ -138,11 +138,21 @@ int vdec_set_clk(int dec, int source, int div)
 	return 0;
 }
 
-/* 648M <-- (1296/2) */
+static bool is_gp0_div2 = true;
+
+
+/* set gp0 648M vdec use gp0 clk*/
 #define VDEC1_648M() \
-	WRITE_HHI_REG_BITS(HHI_VDEC_CLK_CNTL,  (6 << 9) | (1), 0, 16)
+	WRITE_HHI_REG_BITS(HHI_VDEC_CLK_CNTL,  (6 << 9) | (0), 0, 16)
 
 #define HEVC_648M() \
+	WRITE_HHI_REG_BITS(HHI_VDEC2_CLK_CNTL, (6 << 9) | (0), 16, 16)
+
+/*set gp0 1296M vdec use gp0 clk div2*/
+#define VDEC1_648M_DIV() \
+	WRITE_HHI_REG_BITS(HHI_VDEC_CLK_CNTL,  (6 << 9) | (1), 0, 16)
+
+#define HEVC_648M_DIV() \
 	WRITE_HHI_REG_BITS(HHI_VDEC2_CLK_CNTL, (6 << 9) | (1), 16, 16)
 
 #define VDEC1_WITH_GP_PLL() \
@@ -213,10 +223,17 @@ static int gp_pll_user_cb_vdec(struct gp_pll_user_handle_s *user,
 	if (event == GP_PLL_USER_EVENT_GRANT) {
 		struct clk *clk = clk_get(NULL, "gp0_pll");
 		if (!IS_ERR(clk)) {
-			clk_set_rate(clk, 1296000000UL);
+			if (is_gp0_div2)
+				clk_set_rate(clk, 1296000000UL);
+			else
+				clk_set_rate(clk, 648000000UL);
 			VDEC1_SAFE_CLOCK();
 			VDEC1_CLOCK_OFF();
-			VDEC1_648M();
+			if (is_gp0_div2)
+				VDEC1_648M_DIV();
+			else
+				VDEC1_648M();
+
 			VDEC1_CLOCK_ON();
 			debug_print("gp_pll_user_cb_vdec call set\n");
 		}
@@ -240,6 +257,7 @@ enum vformat_e {
 	VFORMAT_HEVC,
 	VFORMAT_H264_ENC,
 	VFORMAT_JPEG_ENC,
+	VFORMAT_VP9,
 	VFORMAT_MAX
 };
 sample:
@@ -261,11 +279,11 @@ static  struct clk_set_setting clks_for_formats[] = {
 		{4096*2048*30, 600}, {4096*2048*60, 600}, {INT_MAX, 600},}
 	},
 	{/*[VFORMAT_H264]*/
-		{{1280*720*30, 100}, {1920*1080*30, 166}, {1920*1080*60, 333},
-		{4096*2048*30, 600}, {4096*2048*60, 600}, {INT_MAX, 600},}
+		{{1280*720*30, 100}, {1920*1080*21, 166}, {1920*1080*30, 333},
+		{1920*1080*60, 600}, {4096*2048*60, 600}, {INT_MAX, 600},}
 	},
 	{/*[VFORMAT_MJPEG]*/
-		{{1280*720*30, 100}, {1920*1080*30, 166}, {1920*1080*60, 333},
+		{{1280*720*30, 200}, {1920*1080*30, 200}, {1920*1080*60, 333},
 		{4096*2048*30, 600}, {4096*2048*60, 600}, {INT_MAX, 600},}
 	},
 	{/*[VFORMAT_REAL]*/
@@ -297,8 +315,8 @@ static  struct clk_set_setting clks_for_formats[] = {
 			{0, 0}, {0, 0}, {0, 0},}
 	},
 	{/*VFORMAT_HEVC*/
-		{{1280*720*30, 100}, {1920*1080*30, 100}, {1920*1080*60, 166},
-		{4096*2048*30, 333}, {4096*2048*60, 630}, {INT_MAX, 630},}
+		{{1280*720*30, 100}, {1920*1080*60, 600}, {4096*2048*25, 630},
+		{4096*2048*30, 630}, {4096*2048*60, 630}, {INT_MAX, 630},}
 	},
 	{/*VFORMAT_H264_ENC*/
 		{{1280*720*30, 0}, {INT_MAX, 0},
@@ -308,6 +326,11 @@ static  struct clk_set_setting clks_for_formats[] = {
 		{{1280*720*30, 0}, {INT_MAX, 0},
 		{0, 0}, {0, 0}, {0, 0}, {0, 0},}
 	},
+	{/*VFORMAT_VP9*/
+		{{1280*720*30, 100}, {1920*1080*30, 100}, {1920*1080*60, 166},
+		{4096*2048*30, 333}, {4096*2048*60, 630}, {INT_MAX, 630},}
+	},
+
 };
 
 
@@ -319,10 +342,34 @@ static int vdec_clock_init(void)
 {
 	gp_pll_user_vdec = gp_pll_user_register("vdec", 0,
 		gp_pll_user_cb_vdec);
+	if (get_cpu_type() >= MESON_CPU_MAJOR_ID_GXL)
+		is_gp0_div2 = false;
+	else
+		is_gp0_div2 = true;
 
+	if (get_cpu_type() >= MESON_CPU_MAJOR_ID_GXL) {
+		pr_info("used fix clk for vdec clk source!\n");
+		update_vdec_clk_config_settings(1);
+	}
 	return (gp_pll_user_vdec) ? 0 : -ENOMEM;
 }
 
+static void update_clk_with_clk_configs(
+	int clk, int *source, int *div, int *rclk)
+{
+	unsigned int config = get_vdec_clk_config_settings();
+
+	if (!config)
+		return;
+	if (config >= 10) {
+		int wantclk;
+		wantclk = config;
+		vdec_get_clk_source(wantclk, source, div, rclk);
+	}
+	return;
+}
+#define NO_GP0_PLL (get_vdec_clk_config_settings() == 1)
+#define ALWAYS_GP0_PLL (get_vdec_clk_config_settings() == 2)
 
 static int vdec_clock_set(int clk)
 {
@@ -332,26 +379,33 @@ static int vdec_clock_set(int clk)
 	int gp_pll_wait = 0;
 	if (clk == 1)
 		clk = 200;
-	else if (clk == 2)
-		clk = 500;
-	else if (clk == 0) {
+	else if (clk == 2) {
+		if (clock_real_clk[VDEC_1] != 648)
+			clk = 500;
+		else
+			clk = 648;
+	} else if (clk == 0) {
 		/*used for release gp pull.
 		   if used, release it.
 		   if not used gp pll
 		   do nothing.
 		 */
-		if (clock_real_clk[VDEC_1] == 648 ||
+		if (clock_real_clk[VDEC_1] == 667 ||
+		    (clock_real_clk[VDEC_1] == 648) ||
 			clock_real_clk[VDEC_1] <= 0)
 			clk = 200;
 		else
 			clk = clock_real_clk[VDEC_1];
 	}
 	vdec_get_clk_source(clk, &source, &div, &rclk);
+	update_clk_with_clk_configs(clk, &source, &div, &rclk);
 
 	if (clock_real_clk[VDEC_1] == rclk)
 		return rclk;
-
-	if (rclk > 500 && clk != 667) {/*default used gp_pull.*/
+	if (NO_GP0_PLL) {
+		use_gpll = 0;
+		clk_seted = 0;
+	} else if ((rclk > 500 && clk != 667) || ALWAYS_GP0_PLL) {
 		if (clock_real_clk[VDEC_1] == 648)
 			return 648;
 		use_gpll = 1;
@@ -378,7 +432,7 @@ static int vdec_clock_set(int clk)
 	if (!use_gpll)
 		gp_pll_release(gp_pll_user_vdec);
 	clock_real_clk[VDEC_1] = rclk;
-		debug_print("vdec_clock_set 2 to %d\n", rclk);
+	debug_print("vdec_clock_set 2 to %d\n", rclk);
 	return rclk;
 }
 
@@ -422,10 +476,16 @@ static int gp_pll_user_cb_hevc(struct gp_pll_user_handle_s *user,
 	if (event == GP_PLL_USER_EVENT_GRANT) {
 		struct clk *clk = clk_get(NULL, "gp0_pll");
 		if (!IS_ERR(clk)) {
-			clk_set_rate(clk, 1296000000UL);
+			if (is_gp0_div2)
+				clk_set_rate(clk, 1296000000UL);
+			else
+				clk_set_rate(clk, 648000000UL);
 			HEVC_SAFE_CLOCK();
 			HEVC_CLOCK_OFF();
-			HEVC_648M();
+			if (is_gp0_div2)
+				HEVC_648M_DIV();
+			else
+				HEVC_648M();
 			HEVC_CLOCK_ON();
 			debug_print("gp_pll_user_cb_hevc callback2\n");
 		}
@@ -443,7 +503,6 @@ static int hevc_clock_init(void)
 
 	return (gp_pll_user_hevc) ? 0 : -ENOMEM;
 }
-
 static int hevc_clock_set(int clk)
 {
 	int use_gpll = 0;
@@ -451,29 +510,36 @@ static int hevc_clock_set(int clk)
 	int gp_pll_wait = 0;
 	int clk_seted = 0;
 
+	debug_print("hevc_clock_set 1 to clk %d\n", clk);
 	if (clk == 1)
 		clk = 200;
-	else if (clk == 2)
-		clk = 500;
-	else if (clk == 0) {
+	else if (clk == 2) {
+		if (clock_real_clk[VDEC_HEVC] != 648)
+			clk = 500;
+		else
+			clk = 648;
+	} else if (clk == 0) {
 		/*used for release gp pull.
 		   if used, release it.
 		   if not used gp pll
 		   do nothing.
 		 */
 		if ((clock_real_clk[VDEC_HEVC] == 667) ||
+			(clock_real_clk[VDEC_HEVC] == 648) ||
 			(clock_real_clk[VDEC_HEVC] <= 0))
 			clk = 200;
 		else
 			clk = clock_real_clk[VDEC_HEVC];
 	}
-
 	vdec_get_clk_source(clk, &source, &div, &rclk);
+	update_clk_with_clk_configs(clk, &source, &div, &rclk);
 
 	if (rclk == clock_real_clk[VDEC_HEVC])
 		return rclk;/*clk not changed,*/
-
-	if (rclk > 500 && clk != 667) {/*500 up default used gp_pull.*/
+	if (NO_GP0_PLL) {
+		use_gpll = 0;
+		clk_seted = 0;
+	} else if ((rclk > 500 && clk != 667) || ALWAYS_GP0_PLL) {
 		if (clock_real_clk[VDEC_HEVC] == 648)
 			return 648;
 		use_gpll = 1;
@@ -498,6 +564,9 @@ static int hevc_clock_set(int clk)
 	if (!use_gpll)
 		gp_pll_release(gp_pll_user_hevc);
 	clock_real_clk[VDEC_HEVC] = rclk;
+	debug_print("hevc_clock_set 2 to rclk=%d, configs=%d\n",
+		rclk,
+		get_vdec_clk_config_settings());
 	return rclk;
 }
 
@@ -529,7 +598,11 @@ static int vdec_clock_get(enum vdec_type_e core)
 #define VDEC_HAS_VDEC_HCODEC
 #define VDEC_HAS_CLK_SETTINGS
 #define CLK_FOR_CPU {\
-			MESON_CPU_MAJOR_ID_GXBB,\
-			0}
+	MESON_CPU_MAJOR_ID_GXBB,\
+	MESON_CPU_MAJOR_ID_GXTVBB,\
+	MESON_CPU_MAJOR_ID_GXL,\
+	MESON_CPU_MAJOR_ID_GXM,\
+	MESON_CPU_MAJOR_ID_TXL,\
+	0}
 #include "clk.h"
 ARCH_VDEC_CLK_INIT();

@@ -13,5 +13,6 @@ aml_nftl_core-objs  += aml_nftl_common.o
 aml_nftl_core-objs  += aml_nftl_create_list.o
 aml_nftl_core-objs  += aml_nftl_start.o
 aml_nftl_core-objs  += aml_nftl_interface.o
+aml_nftl_core-objs  += aml_nftl_tbl_trans.o
 
 

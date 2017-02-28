@@ -195,10 +195,6 @@ SYSCALL_DEFINE2(settimeofday, struct timeval __user *, tv,
 	if (tv) {
 		if (copy_from_user(&user_tv, tv, sizeof(*tv)))
 			return -EFAULT;
-
-		if (!timeval_valid(&user_tv))
-			return -EINVAL;
-
 		new_ts.tv_sec = user_tv.tv_sec;
 		new_ts.tv_nsec = user_tv.tv_usec * NSEC_PER_USEC;
 	}
@@ -704,6 +700,7 @@ unsigned long nsecs_to_jiffies(u64 n)
 {
 	return (unsigned long)nsecs_to_jiffies64(n);
 }
+EXPORT_SYMBOL_GPL(nsecs_to_jiffies);
 
 /*
  * Add two timespec values and do a safety check for overflow.

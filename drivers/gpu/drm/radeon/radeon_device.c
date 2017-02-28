@@ -548,23 +548,6 @@ void radeon_gtt_location(struct radeon_device *rdev, struct radeon_mc *mc)
 /*
  * GPU helpers function.
  */
-
-/**
- * radeon_device_is_virtual - check if we are running is a virtual environment
- *
- * Check if the asic has been passed through to a VM (all asics).
- * Used at driver startup.
- * Returns true if virtual or false if not.
- */
-static bool radeon_device_is_virtual(void)
-{
-#ifdef CONFIG_X86
-	return boot_cpu_has(X86_FEATURE_HYPERVISOR);
-#else
-	return false;
-#endif
-}
-
 /**
  * radeon_card_posted - check if the hw has already been initialized
  *
@@ -577,10 +560,6 @@ static bool radeon_device_is_virtual(void)
 bool radeon_card_posted(struct radeon_device *rdev)
 {
 	uint32_t reg;
-
-	/* for pass through, always force asic_init */
-	if (radeon_device_is_virtual())
-		return false;
 
 	/* required for EFI mode on macbook2,1 which uses an r5xx asic */
 	if (efi_enabled(EFI_BOOT) &&
@@ -1356,21 +1335,6 @@ int radeon_device_init(struct radeon_device *rdev,
 		r = radeon_init(rdev);
 		if (r)
 			goto failed;
-	}
-
-	/*
-	 * Turks/Thames GPU will freeze whole laptop if DPM is not restarted
-	 * after the CP ring have chew one packet at least. Hence here we stop
-	 * and restart DPM after the radeon_ib_ring_tests().
-	 */
-	if (rdev->pm.dpm_enabled &&
-	    (rdev->pm.pm_method == PM_METHOD_DPM) &&
-	    (rdev->family == CHIP_TURKS) &&
-	    (rdev->flags & RADEON_IS_MOBILITY)) {
-		mutex_lock(&rdev->pm.mutex);
-		radeon_dpm_disable(rdev);
-		radeon_dpm_enable(rdev);
-		mutex_unlock(&rdev->pm.mutex);
 	}
 
 	if ((radeon_testing & 1)) {

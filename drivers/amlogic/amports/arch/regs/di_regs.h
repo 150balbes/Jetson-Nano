@@ -275,6 +275,9 @@
 #define DI_CHAN2_FMT_CTRL 0x17b8
 #define DI_CHAN2_FMT_W 0x17b9
 
+#define VD1_IF0_GEN_REG3 0x1aa7
+#define DI_IF1_GEN_REG3  0x20a7
+#define DI_IF2_GEN_REG3  0x2022
 #endif
 
 

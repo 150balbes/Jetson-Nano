@@ -480,8 +480,7 @@ int32_t dwc_otg_hcd_handle_port_intr(dwc_otg_hcd_t *dwc_otg_hcd)
 				/* Port has been enabled set the reset change flag */
 				dwc_otg_hcd->flags.b.port_reset_change = 1;
 		} else {
-			DWC_TASK_SCHEDULE(dwc_otg_hcd->reset_tasklet);
-			/*dwc_otg_hcd->flags.b.port_enable_change = 1;*/
+			dwc_otg_hcd->flags.b.port_enable_change = 1;
 		}
 		retval |= 1;
 	}
@@ -1303,7 +1302,7 @@ static int32_t handle_hc_nak_intr(dwc_otg_hcd_t *hcd,
 			hcd->ssplit_lock = 0;
 
 		qtd->complete_split = 0;
-		if (qtd->error_count > 20000) {
+		if (qtd->error_count > 200) {
 			DWC_ERROR("Can not read device info from hub.We take it error\n");
 			halt_channel(hcd, hc, qtd, DWC_OTG_HC_XFER_XACT_ERR);
 		} else {

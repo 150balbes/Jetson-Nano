@@ -110,29 +110,129 @@ static const struct reg_s *tvregs_576cvbs_performance_m8b[] = {
 
 static const struct reg_s tvregs_576cvbs_china_sarft_gxbb[] = {
 	{VENC_VDAC_DAC0_GAINCTRL,	0x9  },
+	{ENCI_YC_DELAY,				0x343},
+	{ENCI_VIDEO_SAT,			0x9	 },
 	{MREG_END_MARKER,			0    }
 };
 
 static const struct reg_s tvregs_576cvbs_china_telecom_gxbb[] = {
-	{VENC_VDAC_DAC0_GAINCTRL,		0x9		},
-	{ENCI_SYNC_ADJ,					0x8060	},
-	{ENCI_VIDEO_SAT,				0x2		},
-	{VENC_VDAC_DAC0_FILT_CTRL1,		0xf94e	},
-	{MREG_END_MARKER,				0		}
+	{VENC_VDAC_DAC0_GAINCTRL,	0x9		},
+	{ENCI_YC_DELAY,				0x343   },
+	{ENCI_SYNC_ADJ,				0x8080	},
+	{ENCI_VIDEO_SAT,			0xfd	},
+	{VENC_VDAC_DAC0_FILT_CTRL1,	0xf850	},
+	{MREG_END_MARKER,			0		}
 };
 
 static const struct reg_s tvregs_576cvbs_china_mobile_gxbb[] = {
-	{VENC_VDAC_DAC0_GAINCTRL,		0x9		},
-	{ENCI_SYNC_ADJ,					0x8060	},
-	{ENCI_VIDEO_SAT,				0x2		},
-	{VENC_VDAC_DAC0_FILT_CTRL1,		0xf94e	},
-	{MREG_END_MARKER,				0		}
+	{VENC_VDAC_DAC0_GAINCTRL,	0x9		},
+	{ENCI_YC_DELAY,				0x343   },
+	{ENCI_SYNC_ADJ,				0x8080	},
+	{ENCI_VIDEO_SAT,			0xfd	},
+	{VENC_VDAC_DAC0_FILT_CTRL1,	0xf850	},
+	{MREG_END_MARKER,			0		}
 };
 
 static const struct reg_s *tvregs_576cvbs_performance_gxbb[] = {
 	tvregs_576cvbs_china_sarft_gxbb,
 	tvregs_576cvbs_china_telecom_gxbb,
 	tvregs_576cvbs_china_mobile_gxbb
+};
+
+static const struct reg_s tvregs_576cvbs_china_sarft_gxtvbb[] = {
+	{ENCI_YC_DELAY,				0x333	},
+	{ENCI_VIDEO_SAT,			0xfb	},
+	{VENC_VDAC_DAC0_FILT_CTRL1,	0xff42	},
+	{ENCI_SYNC_ADJ,				0x8c00	},
+	{MREG_END_MARKER,			0		}
+};
+
+static const struct reg_s tvregs_576cvbs_china_telecom_gxtvbb[] = {
+	{ENCI_YC_DELAY,				0x333	},
+	{ENCI_VIDEO_SAT,			0xfb	},
+	{VENC_VDAC_DAC0_FILT_CTRL1,	0xff42	},
+	{ENCI_SYNC_ADJ,				0x8c00	},
+	{MREG_END_MARKER,			0		}
+};
+
+static const struct reg_s tvregs_576cvbs_china_mobile_gxtvbb[] = {
+	{ENCI_YC_DELAY,				0x333	},
+	{ENCI_VIDEO_SAT,			0xfb	},
+	{VENC_VDAC_DAC0_FILT_CTRL1,	0xff42	},
+	{ENCI_SYNC_ADJ,				0x8c00	},
+	{MREG_END_MARKER,			0		}
+};
+
+static const struct reg_s *tvregs_576cvbs_performance_gxtvbb[] = {
+	tvregs_576cvbs_china_sarft_gxtvbb,
+	tvregs_576cvbs_china_telecom_gxtvbb,
+	tvregs_576cvbs_china_mobile_gxtvbb
+};
+
+static const struct reg_s tvregs_576cvbs_china_sarft_905x[] = {
+	{VENC_VDAC_DAC0_GAINCTRL,	0x9		},
+	{ENCI_YC_DELAY,				0x343	},
+	{ENCI_SYNC_ADJ,				0x0		},
+	{ENCI_VIDEO_SAT,			0x9		},
+	{VENC_VDAC_DAC0_FILT_CTRL1,	0xfc48	},
+	{MREG_END_MARKER,			0		}
+};
+
+static const struct reg_s tvregs_576cvbs_china_telecom_905x[] = {
+	{VENC_VDAC_DAC0_GAINCTRL,	0x9		},
+	{ENCI_YC_DELAY,				0x343   },
+	{ENCI_SYNC_ADJ,				0x8080	},
+	{ENCI_VIDEO_SAT,			0xfd	},
+	{VENC_VDAC_DAC0_FILT_CTRL1,	0xf752	},
+	{MREG_END_MARKER,			0		}
+};
+
+static const struct reg_s tvregs_576cvbs_china_mobile_905x[] = {
+	{VENC_VDAC_DAC0_GAINCTRL,	0x9		},
+	{ENCI_YC_DELAY,				0x343   },
+	{ENCI_SYNC_ADJ,				0x8080	},
+	{ENCI_VIDEO_SAT,			0xfd	},
+	{VENC_VDAC_DAC0_FILT_CTRL1,	0xf752	},
+	{MREG_END_MARKER,			0		}
+};
+
+static const struct reg_s *tvregs_576cvbs_performance_905x[] = {
+	tvregs_576cvbs_china_sarft_905x,
+	tvregs_576cvbs_china_telecom_905x,
+	tvregs_576cvbs_china_mobile_905x
+};
+
+static const struct reg_s tvregs_576cvbs_china_sarft_905l[] = {
+	{VENC_VDAC_DAC0_GAINCTRL,	0x9		},
+	{ENCI_YC_DELAY,				0x343	},
+	{ENCI_SYNC_ADJ,				0x0		},
+	{ENCI_VIDEO_SAT,			0x9		},
+	{VENC_VDAC_DAC0_FILT_CTRL1,	0xfc48	},
+	{MREG_END_MARKER,			0		}
+};
+
+static const struct reg_s tvregs_576cvbs_china_telecom_905l[] = {
+	{VENC_VDAC_DAC0_GAINCTRL,	0x9		},
+	{ENCI_YC_DELAY,				0x343   },
+	{ENCI_SYNC_ADJ,				0x8080	},
+	{ENCI_VIDEO_SAT,			0xfd	},
+	{VENC_VDAC_DAC0_FILT_CTRL1,	0xf850	},
+	{MREG_END_MARKER,			0		}
+};
+
+static const struct reg_s tvregs_576cvbs_china_mobile_905l[] = {
+	{VENC_VDAC_DAC0_GAINCTRL,	0x9		},
+	{ENCI_YC_DELAY,				0x343   },
+	{ENCI_SYNC_ADJ,				0x8080	},
+	{ENCI_VIDEO_SAT,			0xfd	},
+	{VENC_VDAC_DAC0_FILT_CTRL1,	0xf850	},
+	{MREG_END_MARKER,			0		}
+};
+
+static const struct reg_s *tvregs_576cvbs_performance_905l[] = {
+	tvregs_576cvbs_china_sarft_905l,
+	tvregs_576cvbs_china_telecom_905l,
+	tvregs_576cvbs_china_mobile_905l
 };
 
 #endif
@@ -344,7 +444,23 @@ static const struct reg_s tvregs_1080p_enc[] = {
 	{MREG_END_MARKER,            0      }
 };
 
+static const struct reg_s tvregs_1080p_30hz_enc[] = {
+	{MREG_END_MARKER,            0      }
+};
+
+static const struct reg_s tvregs_1080p_25hz_enc[] = {
+	{MREG_END_MARKER,            0      }
+};
+
 static const struct reg_s tvregs_1080p_50hz_clk[] = {
+	{MREG_END_MARKER,            0      }
+};
+
+static const struct reg_s tvregs_1080p_25hz_clk[] = {
+	{MREG_END_MARKER,            0      }
+};
+
+static const struct reg_s tvregs_1080p_30hz_clk[] = {
 	{MREG_END_MARKER,            0      }
 };
 
@@ -376,6 +492,22 @@ static const struct reg_s tvregs_4k2k_smpte_enc[] = {
 	{MREG_END_MARKER,            0      },
 };
 
+static const struct reg_s tvregs_4k2k_smpte_25hz_enc[] = {
+	{MREG_END_MARKER,            0      },
+};
+
+static const struct reg_s tvregs_4k2k_smpte_30hz_enc[] = {
+	{MREG_END_MARKER,            0      },
+};
+
+static const struct reg_s tvregs_4k2k_smpte_50hz_enc[] = {
+	{MREG_END_MARKER,            0      },
+};
+
+static const struct reg_s tvregs_4k2k_smpte_60hz_enc[] = {
+	{MREG_END_MARKER,            0      },
+};
+
 static const struct reg_s tvregs_vga_640x480_clk[] = { /* 25.17mhz 800 *525 */
 	{MREG_END_MARKER,            0      },
 };
@@ -399,69 +531,6 @@ static const struct reg_s tvregs_xga_1024x768_enc[] = {
 	{MREG_END_MARKER,            0      }
 };
 
-static const struct reg_s tvregs_vesa_640x480p_enc[] = {
-};
-
-static const struct reg_s tvregs_vesa_800x480p_enc[] = {
-};
-
-static const struct reg_s tvregs_vesa_480x800p_enc[] = {
-};
-
-static const struct reg_s tvregs_vesa_800x600p_enc[] = {
-};
-
-static const struct reg_s tvregs_vesa_1024x600p_enc[] = {
-};
-
-static const struct reg_s tvregs_vesa_1024x768p_enc[] = {
-};
-
-static const struct reg_s tvregs_vesa_1280x800p_enc[] = {
-};
-
-static const struct reg_s tvregs_vesa_1280x1024p_enc[] = {
-};
-
-static const struct reg_s tvregs_vesa_1360x768p_enc[] = {
-};
-
-static const struct reg_s tvregs_vesa_1366x768p_enc[] = {
-};
-
-static const struct reg_s tvregs_vesa_1440x900p_enc[] = {
-};
-
-static const struct reg_s tvregs_vesa_1600x900p_enc[] = {
-};
-
-static const struct reg_s tvregs_vesa_1600x1200p_enc[] = {
-};
-
-static const struct reg_s tvregs_vesa_1680x1050p_enc[] = {
-};
-
-static const struct reg_s tvregs_vesa_1920x1200p_enc[] = {
-	{MREG_END_MARKER,            0      }
-};
-
-static const struct reg_s tvregs_vesa_2560x1440_enc[] = {
-	{MREG_END_MARKER,            0      }
-};
-
-static const struct reg_s tvregs_vesa_2560x1600_enc[] = {
-	{MREG_END_MARKER,            0      }
-};
-
-static const struct reg_s tvregs_vesa_2560x1080_enc[] = {
-	{MREG_END_MARKER,            0      }
-};
-
-static const struct reg_s tvregs_vesa_3440x1440_enc[] = {
-	{MREG_END_MARKER,            0      }
-};
-
-
 /* Using tvmode as index */
 static struct tvregs_set_t tvregsTab[] = {
 	{TVMODE_480I, tvregs_480i_clk, tvregs_480i_enc},
@@ -479,27 +548,18 @@ static struct tvregs_set_t tvregsTab[] = {
 	{TVMODE_1080P, tvregs_1080p_clk, tvregs_1080p_enc},
 	{TVMODE_720P_50HZ, tvregs_720p_50hz_clk, tvregs_720p_50hz_enc},
 	{TVMODE_1080I_50HZ, tvregs_1080i_50hz_clk, tvregs_1080i_50hz_enc},
+	{TVMODE_1080P_30HZ, tvregs_1080p_30hz_clk, tvregs_1080p_30hz_enc},
 	{TVMODE_1080P_50HZ, tvregs_1080p_50hz_clk, tvregs_1080p_50hz_enc},
+	{TVMODE_1080P_25HZ, tvregs_1080p_25hz_clk, tvregs_1080p_25hz_enc},
 	{TVMODE_1080P_24HZ, tvregs_1080p_24hz_clk, tvregs_1080p_24hz_enc},
 	{TVMODE_4K2K_30HZ, NULL, tvregs_4k2k_30hz_enc},
 	{TVMODE_4K2K_25HZ, NULL, tvregs_4k2k_25hz_enc},
 	{TVMODE_4K2K_24HZ, NULL, tvregs_4k2k_24hz_enc},
 	{TVMODE_4K2K_SMPTE, NULL, tvregs_4k2k_smpte_enc},
-	{TVMODE_640x480p60hz, NULL, tvregs_vesa_640x480p_enc},
-	{TVMODE_800x480p60hz, NULL, tvregs_vesa_800x480p_enc},
-	{TVMODE_480x800p60hz, NULL, tvregs_vesa_480x800p_enc},
-	{TVMODE_800x600p60hz, NULL, tvregs_vesa_800x600p_enc},
-	{TVMODE_1024x600p60hz, NULL, tvregs_vesa_1024x600p_enc},
-	{TVMODE_1024x768p60hz, NULL, tvregs_vesa_1024x768p_enc},
-	{TVMODE_1280x800p60hz, NULL, tvregs_vesa_1280x800p_enc},
-	{TVMODE_1280x1024p60hz, NULL, tvregs_vesa_1280x1024p_enc},
-	{TVMODE_1360x768p60hz, NULL, tvregs_vesa_1360x768p_enc},
-	{TVMODE_1366x768p60hz, NULL, tvregs_vesa_1366x768p_enc},
-	{TVMODE_1440x900p60hz, NULL, tvregs_vesa_1440x900p_enc},
-	{TVMODE_1600x900p60hz, NULL, tvregs_vesa_1600x900p_enc},
-	{TVMODE_1600x1200p60hz, NULL, tvregs_vesa_1600x1200p_enc},
-	{TVMODE_1680x1050p60hz, NULL, tvregs_vesa_1680x1050p_enc},
-	{TVMODE_1920x1200p60hz, NULL, tvregs_vesa_1920x1200p_enc},
+	{TVMODE_4K2K_SMPTE_25HZ, NULL, tvregs_4k2k_smpte_25hz_enc},
+	{TVMODE_4K2K_SMPTE_30HZ, NULL, tvregs_4k2k_smpte_30hz_enc},
+	{TVMODE_4K2K_SMPTE_50HZ, NULL, tvregs_4k2k_smpte_50hz_enc},
+	{TVMODE_4K2K_SMPTE_60HZ, NULL, tvregs_4k2k_smpte_60hz_enc},
 	{TVMODE_VGA, tvregs_vga_640x480_clk, tvregs_vga_640x480_enc},
 	{TVMODE_SVGA, tvregs_svga_800x600_clk, tvregs_svga_800x600_enc},
 	{TVMODE_XGA, tvregs_xga_1024x768_clk, tvregs_xga_1024x768_enc},
@@ -602,6 +662,18 @@ static const struct tvinfo_s tvinfoTab[] = {
 		.id = "1080p50hz"
 	},
 	{
+		.tvmode = TVMODE_1080P_30HZ,
+		.xres = 1920,
+		.yres = 1080,
+		.id = "1080p30hz"
+	},
+	{
+		.tvmode = TVMODE_1080P_25HZ,
+		.xres = 1920,
+		.yres = 1080,
+		.id = "1080p25hz"
+	},
+	{
 		.tvmode = TVMODE_1080P_24HZ,
 		.xres = 1920,
 		.yres = 1080,
@@ -632,94 +704,28 @@ static const struct tvinfo_s tvinfoTab[] = {
 		.id = "smpte24hz"
 	},
 	{
-		.tvmode = TVMODE_640x480p60hz,
-		.xres = 640,
-		.yres = 480,
-		.id = "640x480p60hz"
+		.tvmode = TVMODE_4K2K_SMPTE_25HZ,
+		.xres = 4096,
+		.yres = 2160,
+		.id = "smpte25hz"
 	},
 	{
-		.tvmode = TVMODE_800x480p60hz,
-		.xres = 800,
-		.yres = 480,
-		.id = "800x480p60hz"
+		.tvmode = TVMODE_4K2K_SMPTE_30HZ,
+		.xres = 4096,
+		.yres = 2160,
+		.id = "smpte30hz"
 	},
 	{
-		.tvmode = TVMODE_480x800p60hz,
-		.xres = 480,
-		.yres = 800,
-		.id = "480x800p60hz"
+		.tvmode = TVMODE_4K2K_SMPTE_50HZ,
+		.xres = 4096,
+		.yres = 2160,
+		.id = "smpte50hz"
 	},
 	{
-		.tvmode = TVMODE_800x600p60hz,
-		.xres = 800,
-		.yres = 600,
-		.id = "800x600p60hz"
-	},
-	{
-		.tvmode = TVMODE_1024x600p60hz,
-		.xres = 1024,
-		.yres = 600,
-		.id = "1024x600p60hz"
-	},
-	{
-		.tvmode = TVMODE_1024x768p60hz,
-		.xres = 1024,
-		.yres = 768,
-		.id = "1024x768p60hz"
-	},
-	{
-		.tvmode = TVMODE_1280x800p60hz,
-		.xres = 1280,
-		.yres = 800,
-		.id = "1280x800p60hz"
-	},
-	{
-		.tvmode = TVMODE_1280x1024p60hz,
-		.xres = 1280,
-		.yres = 1024,
-		.id = "1280x1024p60hz"
-	},
-	{
-		.tvmode = TVMODE_1360x768p60hz,
-		.xres = 1360,
-		.yres = 768,
-		.id = "1360x768p60hz"
-	},
-	{
-		.tvmode = TVMODE_1366x768p60hz,
-		.xres = 1366,
-		.yres = 768,
-		.id = "1366x768p60hz"
-	},
-	{
-		.tvmode = TVMODE_1440x900p60hz,
-		.xres = 1440,
-		.yres = 900,
-		.id = "1440x900p60hz"
-	},
-	{
-		.tvmode = TVMODE_1600x900p60hz,
-		.xres = 1600,
-		.yres = 900,
-		.id = "1600x900p60hz"
-	},
-	{
-		.tvmode = TVMODE_1600x1200p60hz,
-		.xres = 1600,
-		.yres = 1200,
-		.id = "1600x1200p60hz"
-	},
-	{
-		.tvmode = TVMODE_1680x1050p60hz,
-		.xres = 1680,
-		.yres = 1050,
-		.id = "1680x1050p60hz"
-	},
-	{
-		.tvmode = TVMODE_1920x1200p60hz,
-		.xres = 1920,
-		.yres = 1200,
-		.id = "1920x1200p60hz"
+		.tvmode = TVMODE_4K2K_SMPTE_60HZ,
+		.xres = 4096,
+		.yres = 2160,
+		.id = "smpte60hz"
 	},
 	{
 		.tvmode = TVMODE_VGA,

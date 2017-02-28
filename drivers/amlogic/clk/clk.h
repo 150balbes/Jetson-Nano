@@ -28,14 +28,7 @@
 #include "clk-pll.h"
 
 #define PNAME(x) static char const *x[] __initconst
-#ifdef pr_debug
-#undef pr_debug
-#define pr_debug(fmt, ...) \
-	pr_info(pr_fmt(fmt), ##__VA_ARGS__)
-#else
-#define pr_debug(fmt, ...) \
-	do {} while (0)
-#endif
+
 
 /**
  * struct amlogic_clk_provider: information about clock provider
@@ -307,7 +300,7 @@ enum amlogic_clk_branch_type {
 		.id		= _id,				\
 		.branch_type	= branch_composite,		\
 		.name		= cname,			\
-		.parent_names	= (const char *[]){ pname },	\
+		.parent_names	= pname,	\
 		.num_parents	= 1,				\
 		.flags		= f,				\
 		.mux_offset	= mo,				\
@@ -452,6 +445,7 @@ extern void __init sys_pll_init(void __iomem *base,
 void amlogic_clk_register_branches(struct amlogic_clk_branch *clk_list,
 				    unsigned int nr_clk);
 extern void __init gp0_clk_init(void __iomem *reg_base, unsigned int id);
+extern void __init gp0_clk_gxl_init(void __iomem *reg_base, unsigned int id);
 extern unsigned long _get_rate(const char *clk_name);
 #ifdef CONFIG_RESET_CONTROLLER
 void meson_register_rstc(struct device_node *np, unsigned int num_regs,

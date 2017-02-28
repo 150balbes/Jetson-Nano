@@ -332,7 +332,7 @@ SYSCALL_DEFINE6(sparc_ipc, unsigned int, call, int, first, unsigned long, second
 	long err;
 
 	/* No need for backward compatibility. We can start fresh... */
-	if (call <= SEMTIMEDOP) {
+	if (call <= SEMCTL) {
 		switch (call) {
 		case SEMOP:
 			err = sys_semtimedop(first, ptr,
@@ -412,7 +412,7 @@ out:
 
 SYSCALL_DEFINE1(sparc64_personality, unsigned long, personality)
 {
-	long ret;
+	int ret;
 
 	if (personality(current->personality) == PER_LINUX32 &&
 	    personality(personality) == PER_LINUX)

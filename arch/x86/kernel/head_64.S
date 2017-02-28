@@ -65,9 +65,6 @@ startup_64:
 	 * tables and then reload them.
 	 */
 
-	/* Sanitize CPU configuration */
-	call verify_cpu
-
 	/*
 	 * Compute the delta between the address I am compiled to run at and the
 	 * address I am actually running at.
@@ -176,9 +173,6 @@ ENTRY(secondary_startup_64)
 	 * to have any identity mapped pages in the kernel page table
 	 * after the boot processor executes this code.
 	 */
-
-	/* Sanitize CPU configuration */
-	call verify_cpu
 
 	movq	$(init_level4_pgt - __START_KERNEL_map), %rax
 1:
@@ -294,8 +288,6 @@ ENTRY(secondary_startup_64)
 	pushq	%rax		# target address in negative space
 	lretq
 
-#include "verify_cpu.S"
-
 #ifdef CONFIG_HOTPLUG_CPU
 /*
  * Boot CPU0 entry point. It's called from play_dead(). Everything has been set
@@ -329,28 +321,26 @@ bad_address:
 	jmp bad_address
 
 	__INIT
-ENTRY(early_idt_handler_array)
+	.globl early_idt_handlers
+early_idt_handlers:
 	# 104(%rsp) %rflags
 	#  96(%rsp) %cs
 	#  88(%rsp) %rip
 	#  80(%rsp) error code
 	i = 0
 	.rept NUM_EXCEPTION_VECTORS
-	.ifeq (EXCEPTION_ERRCODE_MASK >> i) & 1
+	.if (EXCEPTION_ERRCODE_MASK >> i) & 1
+	ASM_NOP2
+	.else
 	pushq $0		# Dummy error code, to make stack frame uniform
 	.endif
 	pushq $i		# 72(%rsp) Vector number
-	jmp early_idt_handler_common
+	jmp early_idt_handler
 	i = i + 1
-	.fill early_idt_handler_array + i*EARLY_IDT_HANDLER_SIZE - ., 1, 0xcc
 	.endr
-ENDPROC(early_idt_handler_array)
 
-early_idt_handler_common:
-	/*
-	 * The stack is the hardware frame, an error code or zero, and the
-	 * vector number.
-	 */
+/* This is global to keep gas from relaxing the jumps */
+ENTRY(early_idt_handler)
 	cld
 
 	cmpl $2,(%rsp)		# X86_TRAP_NMI
@@ -422,7 +412,7 @@ early_idt_handler_common:
 is_nmi:
 	addq $16,%rsp		# drop vector number and error code
 	INTERRUPT_RETURN
-ENDPROC(early_idt_handler_common)
+ENDPROC(early_idt_handler)
 
 	__INITDATA
 

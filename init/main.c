@@ -643,7 +643,6 @@ asmlinkage void __init start_kernel(void)
 
 	check_bugs();
 
-	acpi_subsystem_init();
 	sfi_init_late();
 
 	if (efi_enabled(EFI_RUNTIME_SERVICES)) {

@@ -21,6 +21,8 @@
 
 struct aml_nand_device *aml_nand_dev = NULL;
 int boot_device_flag = -1;
+/* for nftl running. */
+int amlnf_init_flag = 0;
 
 
 static struct class_attribute phydev_class_attrs[] = {
@@ -142,7 +144,6 @@ int amlnf_logic_init(unsigned flag)
 	struct amlnand_phydev *phydev = NULL;
 	int ret = 0;
 
-	aml_nand_msg("amlnand_add_nftl:");
 	/* amlnand_show_dev_partition(aml_chip); */
 	list_for_each_entry(phydev, &nphy_dev_list, list) {
 		if (phydev == NULL)
@@ -461,8 +462,8 @@ static int get_nand_platform(struct aml_nand_device *aml_nand_dev,
 *boot_device_flag = 0 ; indicate spi+nand boot
 *boot_device_flag = 1;  indicate nand  boot
 ***/
-#if 1
-int port_cfg_prase(void)
+#if 0
+int poc_cfg_parse(void)
 {
 	int boot_flag;
 	u32 cpu_type, poc_value;
@@ -510,22 +511,22 @@ int port_cfg_prase(void)
 
 int check_storage_device(void)
 {
-	int value = -1, port_cfg = -1;
+	int value = -1, poc_cfg = -1;
 
-	port_cfg = port_cfg_prase();
+	poc_cfg = poc_cfg_parse();
 	value = boot_device_flag;
 
 	if ((value == 0)
 		|| (value == SPI_NAND_FLAG)
 		|| (value == NAND_BOOT_FLAG)) {
 		if ((value == 0) || (value == -1)) {
-			if (port_cfg == NAND_BOOT_FLAG)
+			if (poc_cfg == NAND_BOOT_FLAG)
 				boot_device_flag = 1;
-			else if (port_cfg == EMMC_BOOT_FLAG)
+			else if (poc_cfg == EMMC_BOOT_FLAG)
 				boot_device_flag = -1;
-			else if (port_cfg == SPI_BOOT_FLAG)
+			else if (poc_cfg == SPI_BOOT_FLAG)
 				boot_device_flag = 0;
-			else if (port_cfg == CARD_BOOT_FLAG)
+			else if (poc_cfg == CARD_BOOT_FLAG)
 				boot_device_flag = 1;
 		} else if (value == SPI_NAND_FLAG)
 			boot_device_flag = 0;
@@ -533,10 +534,9 @@ int check_storage_device(void)
 			boot_device_flag = 1;
 	} else
 		boot_device_flag = -1;
-	/* fixme, debug code.... */
+	/* fixme, debug code... */
 	boot_device_flag = 1;
 
-	aml_nand_msg("boot_device_flag : %d", boot_device_flag);
 	if ((boot_device_flag == 0) || (boot_device_flag == 1))
 		return 0;
 	else {
@@ -546,6 +546,99 @@ int check_storage_device(void)
 }
 EXPORT_SYMBOL(check_storage_device);
 #endif
+/* return storage device */
+static u32 _get_storage_dev_by_gp(void)
+{
+	u32 storage_dev, boot_dev;
+	u32 ret = 0;
+	void __iomem *gp_cfg0;
+	void __iomem *gp_cfg2;
+
+	gp_cfg0 = ioremap_nocache(A0_GP_CFG0, sizeof(u32));
+	gp_cfg2 = ioremap_nocache(A0_GP_CFG2, sizeof(u32));
+
+	storage_dev = (amlnf_read_reg32(gp_cfg2) >> 28) & 0x7;
+	boot_dev = amlnf_read_reg32(gp_cfg0) & 0xF;
+
+	aml_nand_msg("storage %d, boot %d\n", storage_dev, boot_dev);
+
+	switch (storage_dev) {
+
+	case STORAGE_DEV_NOSET:
+	/* old uboot, storage_dev was not set by bl3, check boot dev */
+		switch (boot_dev) {
+		case STORAGE_DEV_NAND:
+		case STORAGE_DEV_EMMC:
+			ret = boot_dev;
+		break;
+
+		case STORAGE_DEV_SDCARD:
+		/* fixme, any other ways to identify main media? */
+			aml_nand_msg("warning you may need update your uboot!");
+			/* BUG(); */
+		break;
+
+		default:
+
+		break;
+		}
+	break;
+	/* new uboot, already set by bl3 */
+	case STORAGE_DEV_NAND:
+	case STORAGE_DEV_EMMC:
+		ret = storage_dev;
+	break;
+	default:
+	/*do nothing.*/
+	break;
+	}
+
+	aml_nand_dbg("%s return %d\n", __func__, ret);
+	return ret;
+}
+
+/* fixme, yyh */
+static u32 get_storage_dev_by_clk(void)
+{
+	u32 ret = 0;
+	/*BUG();*/
+	return ret;
+}
+
+/*
+ return  1: emmc
+		 2: nand
+ */
+u32 get_storage_dev(void)
+{
+	u32 ret;
+
+	ret = _get_storage_dev_by_gp();
+	if (ret == 0) {
+		/*get storage media by clock reg */
+		ret = get_storage_dev_by_clk();
+	}
+	aml_nand_msg("%s return %d\n", __func__, ret);
+	return ret;
+}
+
+int check_storage_device(void)
+{
+	int ret = -NAND_FAILED;
+
+	if (get_storage_dev() == STORAGE_DEV_NAND) {
+		boot_device_flag = 1;
+		ret = 1;
+	}
+
+	return ret;
+}
+int check_nand_on_board(void)
+{
+	return amlnf_init_flag;
+}
+EXPORT_SYMBOL(check_nand_on_board);
+
 
 static int  __init get_storage_device(char *str)
 {
@@ -585,14 +678,14 @@ static int amlnf_get_resource(struct platform_device *pdev)
 	/*aml_nand_dev = pdev->dev.platform_data;*/
 	aml_nand_dev = kzalloc(sizeof(struct aml_nand_device), GFP_KERNEL);
 	if (!aml_nand_dev) {
-		aml_nand_msg("aml_nand_dev not exist\n");
+		dev_err(&pdev->dev, "aml_nand_dev not exist\n");
 		return -ENODEV;
 	}
 
 	aml_nand_dev->platform_data =
 		kzalloc(sizeof(struct amlnf_platform_data), GFP_KERNEL);
 	if (!aml_nand_dev->platform_data) {
-		aml_nand_msg("malloc platform data fail\n");
+		dev_err(&pdev->dev, "malloc platform data fail\n");
 		return -ENOMEM;
 	}
 
@@ -603,18 +696,15 @@ static int amlnf_get_resource(struct platform_device *pdev)
 		dev_err(&pdev->dev, "ioremap External poc Config IO fail\n");
 		return -ENOMEM;
 	}
-	aml_nand_msg("poc_cfg_reg = %p\n",
-		aml_nand_dev->platform_data->poc_cfg_reg);
 
 	/*getting nand platform device IORESOURCE_MEM*/
 	res_mem = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	if (!res_mem) {
-		dev_err(&pdev->dev, "cannot obtain I/O memory region");
+		dev_err(&pdev->dev, "cannot obtain I/O memory region\n");
 		return -ENODEV;
 	}
 
 	size = resource_size(res_mem);
-	aml_nand_msg("%s : %llx  %0x\n", __func__, res_mem->start , size);
 
 	/*mapping Nand Flash Controller register address*/
 	/*request mem erea*/
@@ -681,23 +771,27 @@ static int amlnf_init(struct platform_device *pdev)
 	/*Creating physical partition, offset and size*/
 	ret = amlnf_phy_init(flag, pdev);
 	if (ret) {
-		aml_nand_msg("nandphy_init failed and ret=0x%x", ret);
+		dev_err(&pdev->dev, "nandphy_init failed and ret=0x%x\n",
+			ret);
 		goto exit_error0;
 	}
 
 	/*Nand logic init*/
 	ret = amlnf_logic_init(flag);
 	if (ret < 0) {
-		aml_nand_msg("amlnf_add_nftl failed and ret=0x%x", ret);
+		dev_err(&pdev->dev, "amlnf_add_nftl failed and ret=0x%x\n",
+			ret);
 		goto exit_error0;
 	}
-	aml_nand_msg("%s() %d", __func__, __LINE__);
+
 	ret = amlnf_dev_init(flag);
 	if (ret < 0) {
-		aml_nand_msg("amlnf_add_nftl failed and ret=0x%x", ret);
+		dev_err(&pdev->dev, "amlnf_add_nftl failed and ret=0x%x\n",
+			ret);
 		goto exit_error0;
 	}
-	aml_nand_msg("%s() %d", __func__, __LINE__);
+	amlnf_init_flag = 1;
+
 exit_error0:
 	return 0;/* ret;   //fix crash bug for error case. */
 }
@@ -708,14 +802,14 @@ static int amlnf_driver_probe(struct platform_device *pdev)
 
 	ret = amlnf_get_resource(pdev);
 	if (ret < 0) {
-		aml_nand_msg("get resource fail!");
+		dev_err(&pdev->dev, "get resource fail!\n");
 		return 0;
 	}
 
 	/*judge if it is nand boot device*/
 	ret = check_storage_device();
 	if (ret < 0) {
-		aml_nand_msg("do not init nand");
+		dev_err(&pdev->dev, "do not init nand\n");
 		return 0;
 	}
 
@@ -773,6 +867,18 @@ static void __exit amlnf_module_exit(void)
 {
 	platform_driver_unregister(&amlnf_driver);
 }
+
+int aml_platform_driver_register(struct platform_driver *driver)
+{
+	return platform_driver_register(driver);
+}
+EXPORT_SYMBOL(aml_platform_driver_register);
+
+void aml_platform_driver_unregister(struct platform_driver *driver)
+{
+	platform_driver_unregister(driver);
+}
+EXPORT_SYMBOL(aml_platform_driver_unregister);
 
 module_init(amlnf_module_init);
 module_exit(amlnf_module_exit);

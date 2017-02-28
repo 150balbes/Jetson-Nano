@@ -18,11 +18,10 @@
 
 #ifndef __AMLOGIC_CLK_PLL_H
 #define __AMLOGIC_CLK_PLL_H
-extern void __iomem *reg_base_cbus;
-extern void __iomem *reg_base_aobus;
+
 extern void __init hdmi_clk_init(void __iomem *reg_base_cbus);
 extern void __init gxbb_hdmi_clk_init(void __iomem *reg_base_cbus);
-
+extern void __init gxtvbb_hdmi_clk_init(void __iomem *reg_base_cbus);
 
 enum amlogic_pll_type {
 	pll_1500,

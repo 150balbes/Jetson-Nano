@@ -89,6 +89,7 @@ if BLOCK
 menu "DOS/FAT/NT Filesystems"
 
 source "fs/fat/Kconfig"
+source "fs/exfat/Kconfig"
 source "fs/ntfs/Kconfig"
 
 endmenu
@@ -209,7 +210,6 @@ source "fs/ufs/Kconfig"
 source "fs/exofs/Kconfig"
 source "fs/f2fs/Kconfig"
 source "fs/efivarfs/Kconfig"
-source "fs/aufs/Kconfig"
 
 endif # MISC_FILESYSTEMS
 

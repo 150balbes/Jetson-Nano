@@ -91,43 +91,45 @@ static  irqreturn_t (*remote_bridge_sw_isr[])(int irq, void *dev_id) = {
 };
 #endif
 static  int (*remote_report_key[])(struct remote *remote_data) = {
-	remote_hw_reprot_key,
-	remote_duokan_reprot_key,
-	remote_hw_reprot_null_key,
-	remote_hw_reprot_null_key,
-	remote_hw_reprot_null_key,
-	remote_hw_reprot_null_key,
-	remote_hw_reprot_null_key,
-	remote_hw_reprot_null_key,
-	remote_hw_reprot_null_key,
-	remote_hw_reprot_null_key,
-	remote_hw_reprot_null_key,
-	remote_hw_reprot_null_key,
-	remote_hw_reprot_null_key,
-	remote_hw_reprot_null_key,
-	remote_hw_nec_rca_2in1_reprot_key,
-	remote_hw_nec_toshiba_2in1_reprot_key,
-	remote_sw_reprot_key
+	remote_hw_report_key,
+	remote_duokan_report_key,
+	remote_hw_report_null_key,
+	remote_hw_report_null_key,
+	remote_hw_report_null_key,
+	remote_hw_report_null_key,
+	remote_hw_report_null_key,
+	remote_hw_report_null_key,
+	remote_rc6_report_key,
+	remote_hw_report_null_key,
+	remote_hw_report_null_key,
+	remote_hw_report_null_key,
+	remote_hw_report_null_key,
+	remote_hw_report_null_key,
+	remote_hw_nec_rca_2in1_report_key,
+	remote_hw_nec_toshiba_2in1_report_key,
+	remote_hw_nec_rcmm_2in1_report_key,
+	remote_sw_report_key
 };
 
 static  void (*remote_report_release_key[])(struct remote *remote_data) = {
 	remote_nec_report_release_key,
 	remote_duokan_report_release_key,
-	remote_null_reprot_release_key,
-	remote_null_reprot_release_key,
-	remote_null_reprot_release_key,
-	remote_null_reprot_release_key,
-	remote_null_reprot_release_key,
-	remote_null_reprot_release_key,
-	remote_null_reprot_release_key,
-	remote_null_reprot_release_key,
-	remote_null_reprot_release_key,
-	remote_null_reprot_release_key,
-	remote_null_reprot_release_key,
-	remote_null_reprot_release_key,
+	remote_null_report_release_key,
+	remote_null_report_release_key,
+	remote_null_report_release_key,
+	remote_null_report_release_key,
+	remote_null_report_release_key,
+	remote_null_report_release_key,
+	remote_rc6_report_release_key,
+	remote_null_report_release_key,
+	remote_null_report_release_key,
+	remote_null_report_release_key,
+	remote_null_report_release_key,
+	remote_null_report_release_key,
 	remote_nec_rca_2in1_report_release_key,
 	remote_nec_toshiba_2in1_report_release_key,
-	remote_sw_reprot_release_key
+	remote_nec_rcmm_2in1_report_release_key,
+	remote_sw_report_release_key
 };
 static __u16 mouse_map[20][6];
 int remote_printk(const char *fmt, ...)
@@ -264,7 +266,7 @@ void remote_send_key(struct input_dev *dev, unsigned int scancode,
 			return;
 		}
 
-		if (type == 2 && scancode == 0x1a &&
+		if (type == 2 &&
 			key_map[gp_remote->map_num][scancode] == 0x0074)
 			return;
 		else {
@@ -335,6 +337,8 @@ static void remote_release_timer_sr(unsigned long data)
 
 static irqreturn_t remote_interrupt(int irq, void *dev_id)
 {
+	gp_remote->jiffies_irq = jiffies;
+
 	tasklet_schedule(&tasklet);
 	return IRQ_HANDLED;
 }
@@ -403,8 +407,12 @@ static int hardware_init(struct platform_device *pdev)
 		input_dbg("hardware init fail, %ld\n", PTR_ERR(p));
 		return -1;
 	}
-	set_remote_mode(DECODEMODE_NEC_RCA_2IN1);
-	gp_remote->work_mode = gp_remote->save_mode = DECODEMODE_NEC_RCA_2IN1;
+	set_remote_mode(DECODEMODE_NEC);
+
+	gp_remote->jiffies_old = jiffies;
+	gp_remote->jiffies_new = jiffies;
+	gp_remote->keystate = RC_KEY_STATE_UP;
+
 	return request_irq(NEC_REMOTE_IRQ_NO, remote_interrupt, IRQF_SHARED,
 				"keypad",
 				(void *)remote_interrupt);
@@ -797,6 +805,8 @@ static int remote_probe(struct platform_device *pdev)
 		goto err2;
 	}
 	input_dbg("input_register_device completed \r\n");
+
+
 	if (hardware_init(pdev))
 		goto err3;
 	register_remote_dev(gp_remote);
@@ -860,11 +870,6 @@ static int remote_resume(struct platform_device *pdev)
 	if (is_meson_m8m2_cpu()) {
 #define  AO_RTI_STATUS_REG2 ((0x00 << 10) | (0x02 << 2))
 		if (aml_read_aobus(AO_RTI_STATUS_REG2) == 0x1234abcd) {
-			input_event(gp_remote->input, EV_KEY, KEY_POWER, 1);
-			input_sync(gp_remote->input);
-			input_event(gp_remote->input, EV_KEY, KEY_POWER, 0);
-			input_sync(gp_remote->input);
-
 			/*aml_write_reg32(P_AO_RTC_ADDR0,
 			(aml_read_reg32(P_AO_RTC_ADDR0) | (0x0000f000)));*/
 			aml_write_aobus(AO_RTI_STATUS_REG2, 0);
@@ -872,10 +877,6 @@ static int remote_resume(struct platform_device *pdev)
 	} else {
 		if (get_resume_method() == REMOTE_WAKEUP) {
 			input_dbg("remote_wakeup\n");
-			input_event(gp_remote->input, EV_KEY, KEY_POWER, 1);
-			input_sync(gp_remote->input);
-			input_event(gp_remote->input, EV_KEY, KEY_POWER, 0);
-			input_sync(gp_remote->input);
 		}
 	}
 	gp_remote->sleep = 0;

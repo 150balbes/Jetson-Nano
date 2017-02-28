@@ -48,6 +48,17 @@ extern int sysctl_legacy_va_layout;
 #define sysctl_legacy_va_layout 0
 #endif
 
+#ifdef CONFIG_HAVE_ARCH_MMAP_RND_BITS
+extern const int mmap_rnd_bits_min;
+extern const int mmap_rnd_bits_max;
+extern int mmap_rnd_bits __read_mostly;
+#endif
+#ifdef CONFIG_HAVE_ARCH_MMAP_RND_COMPAT_BITS
+extern const int mmap_rnd_compat_bits_min;
+extern const int mmap_rnd_compat_bits_max;
+extern int mmap_rnd_compat_bits __read_mostly;
+#endif
+
 #ifdef CONFIG_CMA
 #define MIGRATE_CMA_HOLD  1
 #define MIGRATE_CMA_ALLOC 2
@@ -63,12 +74,9 @@ extern int migrate_status;
 extern int mutex_status;
 extern int migrate_refcount;
 extern wait_queue_head_t migrate_wq;
-#else
-static inline bool has_cma_page(struct page *page)
-{
-	return false;
-}
-static inline void wakeup_wq(bool has_cma) { }
+extern int cma_alloc_ref(void);
+extern void get_cma_alloc_ref(void);
+extern void put_cma_alloc_ref(void);
 #endif
 #include <asm/page.h>
 #include <asm/pgtable.h>
@@ -1034,7 +1042,6 @@ static inline int page_mapped(struct page *page)
 #define VM_FAULT_WRITE	0x0008	/* Special case for get_user_pages */
 #define VM_FAULT_HWPOISON 0x0010	/* Hit poisoned small page */
 #define VM_FAULT_HWPOISON_LARGE 0x0020  /* Hit poisoned large page. Index encoded in upper bits */
-#define VM_FAULT_SIGSEGV 0x0040
 
 #define VM_FAULT_NOPAGE	0x0100	/* ->fault installed the pte, not return page */
 #define VM_FAULT_LOCKED	0x0200	/* ->fault locked the returned page */
@@ -1043,9 +1050,8 @@ static inline int page_mapped(struct page *page)
 
 #define VM_FAULT_HWPOISON_LARGE_MASK 0xf000 /* encodes hpage index for large hwpoison */
 
-#define VM_FAULT_ERROR	(VM_FAULT_OOM | VM_FAULT_SIGBUS | VM_FAULT_SIGSEGV | \
-			 VM_FAULT_HWPOISON | VM_FAULT_HWPOISON_LARGE | \
-			 VM_FAULT_FALLBACK)
+#define VM_FAULT_ERROR	(VM_FAULT_OOM | VM_FAULT_SIGBUS | VM_FAULT_HWPOISON | \
+			 VM_FAULT_FALLBACK | VM_FAULT_HWPOISON_LARGE)
 
 /* Encode hstate index for a hwpoisoned large page */
 #define VM_FAULT_SET_HINDEX(x) ((x) << 12)
@@ -1188,28 +1194,6 @@ static inline int fixup_user_fault(struct task_struct *tsk,
 	return -EFAULT;
 }
 #endif
-
-extern void vma_do_file_update_time(struct vm_area_struct *, const char[], int);
-extern struct file *vma_do_pr_or_file(struct vm_area_struct *, const char[],
-				      int);
-extern void vma_do_get_file(struct vm_area_struct *, const char[], int);
-extern void vma_do_fput(struct vm_area_struct *, const char[], int);
-
-#define vma_file_update_time(vma)	vma_do_file_update_time(vma, __func__, \
-								__LINE__)
-#define vma_pr_or_file(vma)		vma_do_pr_or_file(vma, __func__, \
-							  __LINE__)
-#define vma_get_file(vma)		vma_do_get_file(vma, __func__, __LINE__)
-#define vma_fput(vma)			vma_do_fput(vma, __func__, __LINE__)
-
-#ifndef CONFIG_MMU
-extern struct file *vmr_do_pr_or_file(struct vm_region *, const char[], int);
-extern void vmr_do_fput(struct vm_region *, const char[], int);
-
-#define vmr_pr_or_file(region)		vmr_do_pr_or_file(region, __func__, \
-							  __LINE__)
-#define vmr_fput(region)		vmr_do_fput(region, __func__, __LINE__)
-#endif /* !CONFIG_MMU */
 
 extern int access_process_vm(struct task_struct *tsk, unsigned long addr, void *buf, int len, int write);
 extern int access_remote_vm(struct mm_struct *mm, unsigned long addr,

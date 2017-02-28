@@ -2152,13 +2152,13 @@ static int gfar_start_xmit(struct sk_buff *skb, struct net_device *dev)
 		skb_new = skb_realloc_headroom(skb, fcb_len);
 		if (!skb_new) {
 			dev->stats.tx_errors++;
-			dev_kfree_skb_any(skb);
+			kfree_skb(skb);
 			return NETDEV_TX_OK;
 		}
 
 		if (skb->sk)
 			skb_set_owner_w(skb_new, skb->sk);
-		dev_consume_skb_any(skb);
+		consume_skb(skb);
 		skb = skb_new;
 	}
 

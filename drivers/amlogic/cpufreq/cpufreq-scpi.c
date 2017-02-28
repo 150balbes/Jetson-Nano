@@ -33,10 +33,9 @@
 #include <linux/of.h>
 #include <linux/regulator/machine.h>
 #include <linux/amlogic/scpi_protocol.h>
-
 #include <linux/pm_opp.h>
 #include <linux/cpu.h>
-
+#include <linux/amlogic/cpu_version.h>
 
 struct meson_cpufreq {
 	struct device *dev;
@@ -183,11 +182,8 @@ static int meson_cpufreq_init(struct cpufreq_policy *policy)
 	struct scpi_opp *opps;
 	int idx, max_opp;
 	struct scpi_opp_entry *opp;
-
 	struct device *cpu_dev;
 	int ret;
-
-
 	if (policy->cpu != 0)
 		return -EINVAL;
 
@@ -213,10 +209,9 @@ static int meson_cpufreq_init(struct cpufreq_policy *policy)
 			if (ret) {
 				pr_warn("failed to add opp %uHz %umV\n",
 					opp->freq_hz, opp->volt_mv);
-				return ret;
-			}
+			return ret;
+		}
 	}
-
 	meson_freq_table[idx].driver_data = idx;
 	meson_freq_table[idx].frequency = CPUFREQ_TABLE_END;
 	cpufreq_frequency_table_get_attr(meson_freq_table,
@@ -278,14 +273,16 @@ static struct cpufreq_driver meson_cpufreq_driver = {
 
 static int __init meson_cpufreq_probe(struct platform_device *pdev)
 {
-	pr_info("enter  cpufreq\n");
+	if (is_meson_gxm_cpu())
+		return -1;
+	dev_info(&pdev->dev, "enter  cpufreq\n");
 	cpufreq.dev = &pdev->dev;
 	cpufreq.armclk = clk_get(&pdev->dev, "cpu_clk");
 	if (IS_ERR(cpufreq.armclk)) {
 		dev_err(cpufreq.dev, "Unable to get ARM clock\n");
 		return PTR_ERR(cpufreq.armclk);
 	}
-	pr_info("probe  cpufreq okay\n");
+	dev_info(&pdev->dev, "probe  cpufreq okay\n");
 	return cpufreq_register_driver(&meson_cpufreq_driver);
 }
 
@@ -323,4 +320,4 @@ static int __init meson_cpufreq_parent_init(void)
 	return platform_driver_probe(&meson_cpufreq_parent_driver,
 							meson_cpufreq_probe);
 }
-device_initcall(meson_cpufreq_parent_init);
+late_initcall(meson_cpufreq_parent_init);

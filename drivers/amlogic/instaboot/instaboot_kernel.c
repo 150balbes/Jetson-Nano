@@ -4,9 +4,14 @@
 #include <linux/init.h>
 #include <linux/printk.h>
 #include <linux/list.h>
-#include <linux/slab.h>
+#include <linux/gfp.h>
 #include <asm/memory.h>
 #include <linux/utsname.h>
+#include <linux/pagemap.h>
+#include <linux/mm.h>
+#include <linux/bio.h>
+#include <linux/slab.h>
+#include <linux/vmalloc.h>
 #include "instaboot_kernel.h"
 
 static void *nftl_info_trans_buffer[3]  __nosavedata;
@@ -87,6 +92,114 @@ int ib_show_progress_bar(u32 percent)
 }
 EXPORT_SYMBOL(ib_show_progress_bar);
 
+struct page *aml_alloc_pages(gfp_t gfp_mask, unsigned int order)
+{
+	return alloc_pages(gfp_mask, order);
+}
+EXPORT_SYMBOL(aml_alloc_pages);
+
+struct bio *aml_bio_alloc(gfp_t gfp_mask, unsigned int nr_iovecs)
+{
+	return bio_alloc(gfp_mask, nr_iovecs);
+}
+EXPORT_SYMBOL(aml_bio_alloc);
+
+int aml_bio_add_page(struct bio *bio, struct page *page, unsigned int len,
+			unsigned int offset)
+{
+	return bio_add_page(bio, page, len, offset);
+}
+EXPORT_SYMBOL(aml_bio_add_page);
+
+void aml_bio_get(struct bio *bio)
+{
+	bio_get(bio);
+}
+EXPORT_SYMBOL(aml_bio_get);
+
+void aml_bio_put(struct bio *bio)
+{
+	bio_put(bio);
+}
+EXPORT_SYMBOL(aml_bio_put);
+
+void aml_submit_bio(int rw, struct bio *bio)
+{
+	submit_bio(rw, bio);
+}
+EXPORT_SYMBOL(aml_submit_bio);
+
+void aml_wait_on_page_locked(struct page *page)
+{
+	wait_on_page_locked(page);
+}
+EXPORT_SYMBOL(aml_wait_on_page_locked);
+
+void aml_lock_page(struct page *page)
+{
+	lock_page(page);
+}
+EXPORT_SYMBOL(aml_lock_page);
+
+void aml_get_page(struct page *page)
+{
+	get_page(page);
+}
+EXPORT_SYMBOL(aml_get_page);
+
+void aml_put_page(struct page *page)
+{
+	put_page(page);
+}
+EXPORT_SYMBOL(aml_put_page);
+
+void __aml_free_page(struct page *page)
+{
+	__free_page(page);
+}
+EXPORT_SYMBOL(__aml_free_page);
+
+void aml_free_page(unsigned long addr)
+{
+	free_pages(addr, 0);
+}
+EXPORT_SYMBOL(aml_free_page);
+
+unsigned long __aml_get_free_page(gfp_t gfp_mask)
+{
+	return __get_free_pages(gfp_mask, 0);
+}
+EXPORT_SYMBOL(__aml_get_free_page);
+
+unsigned long aml_get_zeroed_page(gfp_t gfp_mask)
+{
+	return get_zeroed_page(gfp_mask);
+}
+EXPORT_SYMBOL(aml_get_zeroed_page);
+
+void *aml_kmalloc(size_t size, gfp_t flags)
+{
+	return kmalloc(size, flags);
+}
+EXPORT_SYMBOL(aml_kmalloc);
+
+void aml_kfree(const void *p)
+{
+	kfree(p);
+}
+EXPORT_SYMBOL(aml_kfree);
+
+void *aml_vmalloc(unsigned long size)
+{
+	return vmalloc(size);
+}
+EXPORT_SYMBOL(aml_vmalloc);
+
+void aml_vfree(const void *addr)
+{
+	vfree(addr);
+}
+EXPORT_SYMBOL(aml_vfree);
 /*
    in kernel booting process, acquire some memory for device probe,
    which will not be crush when recovery the instaboot image.
@@ -200,6 +313,39 @@ static int __init aml_boot_mem_init(void)
 	return 0;
 }
 core_initcall(aml_boot_mem_init);
+
+static LIST_HEAD(instaboot_realdata_ops_list);
+static DEFINE_MUTEX(instaboot_realdata_ops_lock);
+
+void register_instaboot_realdata_ops(struct instaboot_realdata_ops *ops)
+{
+	mutex_lock(&instaboot_realdata_ops_lock);
+	list_add_tail(&ops->node, &instaboot_realdata_ops_list);
+	mutex_unlock(&instaboot_realdata_ops_lock);
+}
+
+void unregister_instaboot_realdata_ops(struct instaboot_realdata_ops *ops)
+{
+	mutex_lock(&instaboot_realdata_ops_lock);
+	list_del(&ops->node);
+	mutex_unlock(&instaboot_realdata_ops_lock);
+}
+
+void instaboot_realdata_save(void)
+{
+	struct instaboot_realdata_ops *ops;
+	list_for_each_entry_reverse(ops, &instaboot_realdata_ops_list, node)
+		if (ops->save)
+			ops->save();
+}
+
+void instaboot_realdata_restore(void)
+{
+	struct instaboot_realdata_ops *ops;
+	list_for_each_entry_reverse(ops, &instaboot_realdata_ops_list, node)
+		if (ops->restore)
+			ops->restore();
+}
 
 #else
 void *aml_boot_alloc_mem(size_t size)

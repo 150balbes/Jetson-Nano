@@ -89,7 +89,7 @@ ex_saved_reg1:
 #ifdef CONFIG_SMP
 	sr  r0, [ARC_REG_SCRATCH_DATA0]	; freeup r0 to code with
 	GET_CPU_ID  r0			; get to per cpu scratch mem,
-	asl r0, r0, L1_CACHE_SHIFT	; cache line wide per cpu
+	lsl r0, r0, L1_CACHE_SHIFT	; cache line wide per cpu
 	add r0, @ex_saved_reg1, r0
 #else
 	st    r0, [@ex_saved_reg1]
@@ -108,7 +108,7 @@ ex_saved_reg1:
 .macro TLBMISS_RESTORE_REGS
 #ifdef CONFIG_SMP
 	GET_CPU_ID  r0			; get to per cpu scratch mem
-	asl r0, r0, L1_CACHE_SHIFT	; each is cache line wide
+	lsl r0, r0, L1_CACHE_SHIFT	; each is cache line wide
 	add r0, @ex_saved_reg1, r0
 	ld_s  r3, [r0,12]
 	ld_s  r2, [r0, 8]
@@ -220,7 +220,7 @@ ex_saved_reg1:
 
 .macro CONV_PTE_TO_TLB
 	and    r3, r0, PTE_BITS_RWX	;       r w x
-	asl    r2, r3, 3		; Kr Kw Kx 0  0  0 (GLOBAL, kernel only)
+	lsl    r2, r3, 3		; r w x 0 0 0
 	and.f  0,  r0, _PAGE_GLOBAL
 	or.z   r2, r2, r3		; r w x r w x
 
@@ -260,7 +260,7 @@ ARCFP_CODE	;Fast Path Code, candidate for ICCM
 ; I-TLB Miss Exception Handler
 ;-----------------------------------------------------------------------------
 
-ENTRY(EV_TLBMissI)
+ARC_ENTRY EV_TLBMissI
 
 	TLBMISS_FREEUP_REGS
 
@@ -293,13 +293,13 @@ ENTRY(EV_TLBMissI)
 	TLBMISS_RESTORE_REGS
 	rtie
 
-END(EV_TLBMissI)
+ARC_EXIT EV_TLBMissI
 
 ;-----------------------------------------------------------------------------
 ; D-TLB Miss Exception Handler
 ;-----------------------------------------------------------------------------
 
-ENTRY(EV_TLBMissD)
+ARC_ENTRY EV_TLBMissD
 
 	TLBMISS_FREEUP_REGS
 
@@ -381,4 +381,6 @@ do_slow_path_pf:
 	bl  do_page_fault
 	b   ret_from_exception
 
-END(EV_TLBMissD)
+ARC_EXIT EV_TLBMissD
+
+ARC_ENTRY EV_TLBMissB   ; Bogus entry to measure sz of DTLBMiss hdlr
