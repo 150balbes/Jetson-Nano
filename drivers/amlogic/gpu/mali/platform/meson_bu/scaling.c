@@ -32,7 +32,7 @@ static int lastStep;
 static struct work_struct wq_work;
 static mali_plat_info_t* pmali_plat = NULL;
 #endif
-static int  scaling_mode = MALI_PP_FS_SCALING;
+static int  scaling_mode = MALI_TURBO_MODE;
 //static int  scaling_mode = MALI_SCALING_DISABLE;
 //static int  scaling_mode = MALI_PP_SCALING;
 
@@ -405,6 +405,16 @@ static void mali_decide_next_status(struct mali_gpu_utilization_data *data, int*
 			*pp_change_flag = -1;
 		}
 	}
+
+	if (decided_fs_idx < 0 ) {
+		printk("gpu debug, next index below 0\n");
+		decided_fs_idx = 0;
+	}
+	if (decided_fs_idx > pmali_plat->scale_info.maxclk) {
+		decided_fs_idx = pmali_plat->scale_info.maxclk;
+		printk("gpu debug, next index above max, set to %d\n", decided_fs_idx);
+	}
+
 	if (change_mode)
 		mali_stay_count = pmali_plat->dvfs_table[decided_fs_idx].keep_count;
 	*next_fs_idx = decided_fs_idx;
