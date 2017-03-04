@@ -130,4 +130,7 @@ source "drivers/amlogic/watchpoint/Kconfig"
 source "drivers/amlogic/gpu/mali/Kconfig"
 
 source "drivers/amlogic/gpu/ump/Kconfig"
+
+source "drivers/amlogic/qca9377/Kconfig"
+
 endmenu
