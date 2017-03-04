@@ -70,8 +70,6 @@ else
 ccflags-y += -I$(src)/linux/license/gpl -I$(src)/../mali/linux/license/gpl
 endif
 
-
-
 ump-y = common/ump_kernel_common.o \
 	common/ump_kernel_descriptor_mapping.o \
 	common/ump_kernel_api.o \
@@ -86,17 +84,11 @@ ump-y = common/ump_kernel_common.o \
 	linux/ump_osk_low_level_mem.o \
 	linux/ump_osk_misc.o \
 	linux/ump_kernel_random_mapping.o \
-
-
-
-
 	$(UDD_FILE_PREFIX)linux/mali_osk_atomics.o \
 	$(UDD_FILE_PREFIX)linux/mali_osk_locks.o \
 	$(UDD_FILE_PREFIX)linux/mali_osk_memory.o \
 	$(UDD_FILE_PREFIX)linux/mali_osk_math.o \
 	$(UDD_FILE_PREFIX)linux/mali_osk_misc.o
-
-
 
 obj-$(CONFIG_UMP) := ump.o
 
