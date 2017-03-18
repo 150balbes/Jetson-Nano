@@ -1,3 +1,20 @@
+/*
+ * drivers/amlogic/amlnf/ntd/aml_ntdcore.c
+ *
+ * Copyright (C) 2015 Amlogic, Inc. All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ *
+*/
+
 #include <linux/module.h>
 #include <linux/kernel.h>
 #include <linux/ptrace.h>
@@ -21,9 +38,9 @@
  * backing device capabilities for non-mappable devices (such as NAND flash)
  * - permits private mappings, copies are taken of the data
  */
-//static struct backing_dev_info ntd_bdi_unmappable = {
-//	.capabilities	= BDI_CAP_MAP_COPY,
-//};
+/* static struct backing_dev_info ntd_bdi_unmappable = { */
+/* .capabilities	= BDI_CAP_MAP_COPY, */
+/* }; */
 
 static int ntd_cls_suspend(struct device *dev, pm_message_t state);
 static int ntd_cls_resume(struct device *dev);
@@ -85,13 +102,11 @@ static int ntd_cls_suspend(struct device *dev, pm_message_t state)
 {
 	struct ntd_info *ntd = dev_to_ntd(dev);
 
-	if (ntd && ntd->suspend)
-	{
-
+	if (ntd && ntd->suspend) {
+		aml_nand_msg("ntd_cls_suspend %s", ntd->name);
 		return ntd->suspend(ntd);
-	}
-	else
-	{
+	} else {
+		aml_nand_msg("ntd_cls_suspend null");
 		return 0;
 	}
 }
@@ -107,13 +122,12 @@ static int ntd_cls_resume(struct device *dev)
 {
 	struct ntd_info *ntd = dev_to_ntd(dev);
 
-	if (ntd && ntd->resume)
-	{
+	if (ntd && ntd->resume) {
+		aml_nand_msg("ntd_cls_resume %s", ntd->name);
 		ntd->resume(ntd);
-	}
-	else
-	{
-	}
+	} else
+		aml_nand_msg("ntd_cls_resume null");
+
 	return 0;
 }
 
@@ -124,7 +138,9 @@ static int ntd_cls_resume(struct device *dev)
 *Return       :
 *Note         :
 *****************************************************************************/
-static ssize_t ntd_flags_show(struct device *dev,struct device_attribute *attr, char *buf)
+static ssize_t ntd_flags_show(struct device *dev,
+	struct device_attribute *attr,
+	char *buf)
 {
 	struct ntd_info *ntd = dev_to_ntd(dev);
 
@@ -140,11 +156,16 @@ static DEVICE_ATTR(flags, S_IRUGO, ntd_flags_show, NULL);
 *Return       :
 *Note         :
 *****************************************************************************/
-static ssize_t ntd_size_show(struct device *dev,struct device_attribute *attr, char *buf)
+static ssize_t ntd_size_show(struct device *dev,
+	struct device_attribute *attr,
+	char *buf)
 {
 	struct ntd_info *ntd = dev_to_ntd(dev);
 
-	return snprintf(buf, PAGE_SIZE, "%llu\n",(unsigned long long)ntd->size);
+	return snprintf(buf,
+		PAGE_SIZE,
+		"%llu\n",
+		(unsigned long long)ntd->size);
 
 }
 static DEVICE_ATTR(size, S_IRUGO, ntd_size_show, NULL);
@@ -156,7 +177,9 @@ static DEVICE_ATTR(size, S_IRUGO, ntd_size_show, NULL);
 *Return       :
 *Note         :
 *****************************************************************************/
-static ssize_t ntd_name_show(struct device *dev,struct device_attribute *attr, char *buf)
+static ssize_t ntd_name_show(struct device *dev,
+	struct device_attribute *attr,
+	char *buf)
 {
 	struct ntd_info *ntd = dev_to_ntd(dev);
 
@@ -173,20 +196,20 @@ static DEVICE_ATTR(name, S_IRUGO, ntd_name_show, NULL);
 *Note         :
 *****************************************************************************/
 static struct attribute *ntd_attrs[] = {
-//	&dev_attr_type.attr,
+	/* &dev_attr_type.attr, */
 	&dev_attr_flags.attr,
 	&dev_attr_size.attr,
-//	&dev_attr_blocksize.attr,
-//	&dev_attr_pagesize.attr,
-//	&dev_attr_subpagesize.attr,
-//	&dev_attr_oobsize.attr,
-//	&dev_attr_numeraseregions.attr,
+	/* &dev_attr_blocksize.attr, */
+	/* &dev_attr_pagesize.attr, */
+	/* &dev_attr_subpagesize.attr, */
+	/* &dev_attr_oobsize.attr, */
+	/* &dev_attr_numeraseregions.attr, */
 	&dev_attr_name.attr,
 	NULL,
 };
 
 static struct attribute_group ntd_group = {
-	.attrs		= ntd_attrs,
+	.attrs = ntd_attrs,
 };
 
 static const struct attribute_group *ntd_groups[] = {
@@ -195,9 +218,9 @@ static const struct attribute_group *ntd_groups[] = {
 };
 
 static struct device_type ntd_devtype = {
-	.name		= "ntd",
-	.groups		= ntd_groups,
-	.release	= ntd_release,
+	.name = "ntd",
+	.groups = ntd_groups,
+	.release = ntd_release,
 };
 
 /*****************************************************************************
@@ -215,71 +238,78 @@ int add_ntd_device(struct ntd_info *ntd)
 {
 	int i, error;
 
-//	if (!ntd->backing_dev_info) {
-//        ntd->backing_dev_info = &ntd_bdi_unmappable;
-//	}
+	/*
+	if (!ntd->backing_dev_info) {
+		ntd->backing_dev_info = &ntd_bdi_unmappable;
+	}
+	*/
 
 	BUG_ON(ntd->pagesize == 0);
 
 	mutex_lock(&ntd_table_mutex);
-/*
+	/*
 	do {
 		if (!idr_pre_get(&ntd_idr, GFP_KERNEL))
 			goto fail_locked;
 		error = idr_get_new(&ntd_idr, ntd, &i);
 	} while (error == -EAGAIN);
-*/
+	*/
 	idr_preload(GFP_KERNEL);
 	spin_lock_irq(&ntd_idr_lock);
 	i = idr_alloc(&ntd_idr, ntd, 0, 0, GFP_NOWAIT);
 	spin_unlock_irq(&ntd_idr_lock);
 	idr_preload_end();
-	if (i < 0){
+	if (i < 0)
 		goto fail_locked;
-	}
 
 	ntd->index = i;
 	ntd->usecount = 0;
 
-//	/* Some chips always power up locked. Unlock them now */
-//	if ((ntd->flags & NTD_WRITEABLE) && (ntd->flags & NTD_POWERUP_LOCK)) {
-////		if (ntd->unlock(ntd, 0, ntd->blocksize))
-////			printk(KERN_WARNING"%s: unlock failed, writes may not work\n",ntd->name);
-//	}
-    if (!atomic_dec_and_test (&ntd_init_available))
-    {
-        atomic_inc(&ntd_init_available);
-    }
-    else
-    {
-        error = init_ntd();
-        if(error != 0)
-            goto fail_locked;
-    }
+	/* Some chips always power up locked. Unlock them now */
+	/*
+	if ((ntd->flags & NTD_WRITEABLE) && (ntd->flags & NTD_POWERUP_LOCK)) {
+		if (ntd->unlock(ntd, 0, ntd->blocksize))
+			printk(KERN_WARNING"%s: unlock failed,
+			writes may not work\n",ntd->name);
+	}
+	*/
+	if (!atomic_dec_and_test(&ntd_init_available))
+		atomic_inc(&ntd_init_available);
+	else {
+		error = init_ntd();
+		if (error != 0)
+			goto fail_locked;
+	}
 
-    /* Caller should have set dev.parent to match the physical device.*/
-    ntd->dev.class = &ntd_class;
-    ntd->dev.devt = NTD_DEVT(i);
-    ntd->dev.parent = &platform_bus;
-    ntd->dev.type = &ntd_devtype;
+	/* Caller should have set dev.parent to match the physical device.*/
+	ntd->dev.class = &ntd_class;
+	ntd->dev.devt = NTD_DEVT(i);
+	ntd->dev.parent = &platform_bus;
+	ntd->dev.type = &ntd_devtype;
 
-    dev_set_name(&ntd->dev, "ntd%d", i);
-    dev_set_drvdata(&ntd->dev, ntd);
-    error = device_register(&ntd->dev);
-    if (error != 0){
-        goto fail_added;
-    }
+	dev_set_name(&ntd->dev, "ntd%d", i);
+	dev_set_drvdata(&ntd->dev, ntd);
+	error = device_register(&ntd->dev);
+	if (error != 0)
+		goto fail_added;
+
 	if (NTD_DEVT(i))
-		device_create(&ntd_class, ntd->dev.parent,NTD_DEVT(i) + 1,NULL, "ntd%dro", i);
-
-	printk(KERN_NOTICE "ntd: Giving out device %d to %s\n", i, ntd->name);
+		device_create(&ntd_class,
+			ntd->dev.parent,
+			NTD_DEVT(i) + 1,
+			NULL,
+			"ntd%dro",
+			i);
 
 	mutex_unlock(&ntd_table_mutex);
 	/* We _know_ we aren't being removed, because
 	   our caller is still holding us here. So none
 	   of this try_ nonsense, and no bitching about it
-	   either. :) */
-//	__module_get(THIS_MODULE);
+	   either. :)
+	*/
+	/*
+	__module_get(THIS_MODULE);
+	*/
 	return 0;
 
 fail_added:
@@ -312,14 +342,15 @@ int del_ntd_device(struct ntd_info *ntd)
 	}
 
 	if (ntd->usecount) {
-		printk(KERN_NOTICE "Removing NTD device #%ld (%s) with use count %d\n",ntd->index, ntd->name, ntd->usecount);
+		aml_nand_msg("Removing NTD device#%ld (%s) with use count %d\n",
+			ntd->index,
+			ntd->name,
+			ntd->usecount);
 		ret = -EBUSY;
 	} else {
 		device_unregister(&ntd->dev);
-
 		idr_remove(&ntd_idr, ntd->index);
-
-//		module_put(THIS_MODULE);
+		/* module_put(THIS_MODULE); */
 		ret = 0;
 	}
 
@@ -344,11 +375,13 @@ out_error:
  * the partitions, call ntd_device_register() twice, once with nr_parts == 0
  * and once equal to the number of partitions.
 *****************************************************************************/
-//int ntd_device_register(struct ntd_info *master,const struct ntd_partition *parts,int nr_parts)
-//{
-//	return parts ? add_ntd_partitions(master) : add_ntd_device(master);
-//}
-//EXPORT_SYMBOL_GPL(ntd_device_register);
+/* int ntd_device_register(struct ntd_info *master,
+	const struct ntd_partition *parts,
+	int nr_parts) */
+/* { */
+/* return parts ? add_ntd_partitions(master) : add_ntd_device(master); */
+/* } */
+/* EXPORT_SYMBOL_GPL(ntd_device_register); */
 
 /*****************************************************************************
 *Name         :ntd_device_unregister
@@ -359,20 +392,20 @@ out_error:
 *Return       :
 *Note         :
 *****************************************************************************/
-//int ntd_device_unregister(struct ntd_info *master)
-//{
-//	int err;
-//
-//	err = del_ntd_partitions(master);
-//	if (err)
-//		return err;
-//
-//	if (!device_is_registered(&master->dev))
-//		return 0;
-//
-//	return del_ntd_device(master);
-//}
-//EXPORT_SYMBOL_GPL(ntd_device_unregister);
+/* int ntd_device_unregister(struct ntd_info *master) */
+/* { */
+/* int err; */
+/*  */
+/* err = del_ntd_partitions(master); */
+/* if (err) */
+/* return err; */
+/*  */
+/* if (!device_is_registered(&master->dev)) */
+/* return 0; */
+/*  */
+/* return del_ntd_device(master); */
+/* } */
+/* EXPORT_SYMBOL_GPL(ntd_device_unregister); */
 
 /*****************************************************************************
 *Name         : get_ntd_device
@@ -390,7 +423,7 @@ out_error:
 *****************************************************************************/
 struct ntd_info *get_ntd_device(struct ntd_info *ntd, int num)
 {
-	struct ntd_info *ret = NULL, *other=NULL;
+	struct ntd_info *ret = NULL, *other = NULL;
 	int err = -ENODEV;
 
 	mutex_lock(&ntd_table_mutex);
@@ -438,10 +471,10 @@ int __get_ntd_device(struct ntd_info *ntd)
 	if (ntd->get_device) {
 		err = ntd->get_device(ntd);
 
-//		if (err) {
-//			module_put(ntd->owner);
-//			return err;
-//		}
+	/* if (err) { */
+	/* module_put(ntd->owner); */
+	/* return err; */
+	/* } */
 	}
 
 	ntd->usecount++;
@@ -456,13 +489,13 @@ int __get_ntd_device(struct ntd_info *ntd)
 *Parameter    :  @name: NTD device name to open
 *Return       :
 *Note         :
- * 	This function returns NTD device description structure in case of
- * 	success and an error code in case of failure.
+ *	This function returns NTD device description structure in case of
+ *	success and an error code in case of failure.
 *****************************************************************************/
 struct ntd_info *get_ntd_device_nm(const char *name)
 {
 	int err = -ENODEV;
-	struct ntd_info *ntd = NULL, *other=NULL;
+	struct ntd_info *ntd = NULL, *other = NULL;
 
 	mutex_lock(&ntd_table_mutex);
 
@@ -549,10 +582,11 @@ void __put_ntd_device(struct ntd_info *ntd)
 *****************************************************************************/
 void *ntd_kmalloc_up_to(const struct ntd_info *ntd, size_t *size)
 {
-	gfp_t flags = __GFP_NOWARN | __GFP_WAIT | __GFP_NORETRY | __GFP_NO_KSWAPD;
+	gfp_t flags;
 	size_t min_alloc = max_t(size_t, ntd->pagesize, PAGE_SIZE);
 	void *kbuf;
 
+	flags = __GFP_NOWARN | __GFP_WAIT | __GFP_NORETRY | __GFP_NO_KSWAPD;
 	*size = min_t(size_t, *size, KMALLOC_MAX_SIZE);
 
 	while (*size > min_alloc) {
@@ -571,11 +605,11 @@ void *ntd_kmalloc_up_to(const struct ntd_info *ntd, size_t *size)
 	return kmalloc(*size, GFP_KERNEL);
 }
 
-//EXPORT_SYMBOL_GPL(get_ntd_device);
-//EXPORT_SYMBOL_GPL(get_ntd_device_nm);
-//EXPORT_SYMBOL_GPL(__get_ntd_device);
-//EXPORT_SYMBOL_GPL(put_ntd_device);
-//EXPORT_SYMBOL_GPL(__put_ntd_device);
+/* EXPORT_SYMBOL_GPL(get_ntd_device); */
+/* EXPORT_SYMBOL_GPL(get_ntd_device_nm); */
+/* EXPORT_SYMBOL_GPL(__get_ntd_device); */
+/* EXPORT_SYMBOL_GPL(put_ntd_device); */
+/* EXPORT_SYMBOL_GPL(__put_ntd_device); */
 EXPORT_SYMBOL_GPL(ntd_kmalloc_up_to);
 
 #ifdef CONFIG_PROC_FS
@@ -599,7 +633,11 @@ static int ntd_proc_show(struct seq_file *m, void *v)
 	seq_puts(m, "dev:    block_num   blocksize  name\n");
 	mutex_lock(&ntd_table_mutex);
 	ntd_for_each_device(ntd) {
-		seq_printf(m, "ntd%ld: %8.8llx %8.8lx \"%s\"\n",ntd->index, (unsigned long long)ntd->size,ntd->blocksize, ntd->name);
+		seq_printf(m, "ntd%ld: %8.8llx %8.8lx \"%s\"\n",
+			ntd->index,
+			(unsigned long long)ntd->size,
+			ntd->blocksize,
+			ntd->name);
 	}
 	mutex_unlock(&ntd_table_mutex);
 	return 0;
@@ -618,29 +656,30 @@ static int ntd_proc_open(struct inode *inode, struct file *file)
 }
 
 static const struct file_operations ntd_proc_ops = {
-	.open		= ntd_proc_open,
-	.read		= seq_read,
-	.llseek		= seq_lseek,
-	.release	= single_release,
+	.open = ntd_proc_open,
+	.read = seq_read,
+	.llseek = seq_lseek,
+	.release = single_release,
 };
 #endif /* CONFIG_PROC_FS */
 
 /*====================================================================*/
 /* Init code */
 
-//static int __init ntd_bdi_init(struct backing_dev_info *bdi, const char *name)
-//{
-//	int ret;
-//
-//	ret = bdi_init(bdi);
-//	if (!ret)
-//		ret = bdi_register(bdi, NULL, name);
-//
-//	if (ret)
-//		bdi_destroy(bdi);
-//
-//	return ret;
-//}
+/* static int __init ntd_bdi_init(struct backing_dev_info *bdi,
+	const char *name) */
+/* { */
+/* int ret; */
+/*  */
+/* ret = bdi_init(bdi); */
+/* if (!ret) */
+/* ret = bdi_register(bdi, NULL, name); */
+/*  */
+/* if (ret) */
+/* bdi_destroy(bdi); */
+/*  */
+/* return ret; */
+/* } */
 
 /*****************************************************************************
 *Name         :
@@ -649,29 +688,31 @@ static const struct file_operations ntd_proc_ops = {
 *Return       :
 *Note         :
 *****************************************************************************/
-//static int __init init_ntd(void)
+/* static int __init init_ntd(void) */
 static int init_ntd(void)
 {
 	int ret;
-
-	printk("------init_ntd\n");
 
 	ret = class_register(&ntd_class);
 	if (ret)
 		goto err_reg;
 
-//	ret = ntd_bdi_init(&ntd_bdi_unmappable, "ntd-unmap");
-//	if (ret)
-//		goto err_bdi1;
+	/*
+	ret = ntd_bdi_init(&ntd_bdi_unmappable, "ntd-unmap");
+	if (ret)
+		goto err_bdi1;
+	*/
 
 #ifdef CONFIG_PROC_FS
 	proc_ntd = proc_create("ntd", 0, NULL, &ntd_proc_ops);
 #endif /* CONFIG_PROC_FS */
+
 	register_chrdev_region(MKDEV(NTD_CHAR_MAJOR, 0), 20, "ntd");
+
 	return 0;
 
-//err_bdi1:
-//	class_unregister(&ntd_class);
+	/* err_bdi1: */
+	/* class_unregister(&ntd_class); */
 err_reg:
 	pr_err("Error registering ntd class or bdi: %d\n", ret);
 	return ret;
@@ -684,21 +725,21 @@ err_reg:
 *Return       :
 *Note         :
 *****************************************************************************/
-//static void __exit cleanup_ntd(void)
+/* static void __exit cleanup_ntd(void) */
 /*
 static void cleanup_ntd(void)
 {
 #ifdef CONFIG_PROC_FS
 	if (proc_ntd)
 		remove_proc_entry( "ntd", NULL);
-#endif 
+#endif
 	class_unregister(&ntd_class);
 //	bdi_destroy(&ntd_bdi_unmappable);
 }
 */
-//module_init(init_ntd);
-//module_exit(cleanup_ntd);
+/* module_init(init_ntd); */
+/* module_exit(cleanup_ntd); */
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("David Woodhouse <dwmw2@infradead.org>");
-//MODULE_DESCRIPTION("Core NTD registration and access routines");
+/* MODULE_DESCRIPTION("Core NTD registration and access routines"); */
