@@ -1,24 +1,20 @@
-/*
- * drivers/amlogic/amlnf/include/amlnf_type.h
- *
- * Copyright (C) 2015 Amlogic, Inc. All rights reserved.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
- * more details.
- *
-*/
 
-#ifndef __AML_NF_TYPE_H__
-#define __AML_NF_TYPE_H__
 #include "amlnf_cfg.h"
 
+#ifdef AML_NAND_UBOOT
+#include <common.h>
+#include <environment.h>
+#include <asm/io.h>
+#include <malloc.h>
+#include <linux/err.h>
+#include <asm/cache.h>
+#include <asm/arch/pinmux.h>
+#include <asm/arch/reboot.h>
+#include <asm/arch/clock.h>
+#include <linux/list.h>
+#include <asm/sizes.h>
+#include <amlogic/securitykey.h>
+#else
 #include <linux/module.h>
 #include <linux/types.h>
 #include <linux/init.h>
@@ -33,22 +29,20 @@
 #include<linux/delay.h>
 #include <linux/cdev.h>
 #include <linux/sched.h>
-/*
 #include <linux/earlysuspend.h>
 #include <mach/pinmux.h>
-*/
 #include <linux/err.h>
-/*#include <linux/io.h>*/
+#include <linux/io.h>
 #include <linux/bitops.h>
 #include <linux/crc32.h>
 #include <linux/fs.h>
-#include <linux/uaccess.h>
+#include <asm/uaccess.h>
 #include <linux/reboot.h>
-#include <asm/div64.h>
-/*#include <mach/clock.h>*/
+#include <asm/div64.h>	
+#include <mach/clock.h>
 #include <linux/list.h>
-#include <linux/sizes.h>
-/*#include <mach/am_regs.h>*/
+#include <asm/sizes.h>
+#include <mach/am_regs.h>
 #include <linux/kthread.h>
 #include <linux/kmod.h>
 #include <linux/blkdev.h>
@@ -63,7 +57,7 @@
 #include <linux/mutex.h>
 
 #ifdef AML_NAND_RB_IRQ
-/*#include <mach/irqs.h>*/
+#include <mach/irqs.h>
 #include <linux/interrupt.h>
 #endif
 
@@ -74,26 +68,41 @@
 #endif
 #endif
 
-#undef pr_fmt
-#define pr_fmt(fmt) "nandphy: " fmt
+#endif
+
+#if MESON_CPU_TYPE >= MESON_CPU_TYPE_MESON8
+//#ifdef CONFIG_ARCH_MESON8
+#define CONFIG_NAND_AML_M8   
+#define	AML_NAND_DBG_M8
+#endif
+
+#if MESON_CPU_TYPE >= MESON_CPU_TYPE_MESON8B
+//#ifdef CONFIG_ARCH_MESON8
+#define CONFIG_NAND_AML_M8B   
+#endif
+
+//#define aml_nftl_malloc(n)		kzalloc(n, GFP_KERNEL)
+//#define aml_nftl_free			kfree
 
 
 #ifdef AML_NAND_DBG
+#define aml_nand_dbg(fmt, ...) printk( "%s: line:%d " fmt "\n", \
+				  __func__, __LINE__, ##__VA_ARGS__)
 
-#define aml_nand_dbg(fmt, ...) pr_info("%s: line:%d " fmt "\n", \
-		__func__, __LINE__, ##__VA_ARGS__)
-
-#define aml_nand_msg(fmt, ...) pr_info("%s: line:%d " fmt "\n", \
-		__func__, __LINE__, ##__VA_ARGS__)
-#define nprint(fmt, ...) pr_info(fmt , \
-		##__VA_ARGS__)
+#define aml_nand_msg(fmt, ...) printk( "%s: line:%d " fmt "\n", \
+				  __func__, __LINE__, ##__VA_ARGS__)				  
 #else
 #define aml_nand_dbg(fmt, ...)
-#define aml_nand_msg(fmt, ...) pr_info(fmt "\n",  ##__VA_ARGS__)
-#define nprint(fmt, ...) pr_info(fmt,  ##__VA_ARGS__)
+#define aml_nand_msg(fmt, ...) printk( fmt "\n",  ##__VA_ARGS__)
 #endif
 
+//typedef unsigned char         uchar;
+typedef unsigned short        uint16;
+typedef unsigned long         uint32;
+typedef unsigned long long	uint64;
+typedef long                  sint32;
+typedef long long              sint64;
+typedef short            	  sint16;
 
-#endif
 
 
