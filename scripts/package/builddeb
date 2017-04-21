@@ -102,11 +102,11 @@ kernel_headers_dir="$objtree/debian/hdrtmp"
 libc_headers_dir="$objtree/debian/headertmp"
 dtb_dir="$objtree/debian/dtbtmp"
 dbg_dir="$objtree/debian/dbgtmp"
-packagename=linux-image"$LOCALVERSION"
-fwpackagename=linux-firmware-image"$LOCALVERSION"
-kernel_headers_packagename=linux-headers"$LOCALVERSION"
-dtb_packagename=linux-dtb"$LOCALVERSION"
-libc_headers_packagename=linux-libc-dev"$LOCALVERSION"
+packagename=linux-image"$LOCAL_VERSION"
+fwpackagename=linux-firmware-image"$LOCAL_VERSION"
+kernel_headers_packagename=linux-headers"$LOCAL_VERSION"
+dtb_packagename=linux-dtb"$LOCAL_VERSION"
+libc_headers_packagename=linux-libc-dev"$LOCAL_VERSION"
 dbg_packagename=$packagename-dbg
 
 if [ "$ARCH" = "um" ] ; then
