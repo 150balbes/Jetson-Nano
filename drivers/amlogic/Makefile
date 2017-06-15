@@ -134,6 +134,8 @@ obj-$(CONFIG_CRYPTO_AML)	+= crypto/
 
 obj-$(CONFIG_AMLOGIC_WATCHPOINT) += watchpoint/
 
-obj-$(CONFIG_UMP)			+= gpu/ump/
-
 obj-$(CONFIG_MALI400)		+= gpu/mali/
+
+obj-$(CONFIG_UMP)		+= gpu/ump/
+
+obj-$(CONFIG_UMP)		+= gpu/umplock/
