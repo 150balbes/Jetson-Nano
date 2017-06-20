@@ -139,6 +139,8 @@ struct qxl_crtc {
 	int index;
 	int cur_x;
 	int cur_y;
+	int hot_spot_x;
+	int hot_spot_y;
 };
 
 struct qxl_output {
@@ -325,6 +327,8 @@ struct qxl_device {
 	struct work_struct fb_work;
 
 	struct drm_property *hotplug_mode_update_property;
+	int monitors_config_width;
+	int monitors_config_height;
 };
 
 /* forward declaration for QXL_INFO_IO */
