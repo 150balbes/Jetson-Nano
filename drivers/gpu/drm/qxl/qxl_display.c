@@ -136,34 +136,8 @@ static int qxl_add_monitors_config_modes(struct drm_connector *connector,
 	*pwidth = head->width;
 	*pheight = head->height;
 	drm_mode_probed_add(connector, mode);
-	/* remember the last custom size for mode validation */
-	qdev->monitors_config_width = mode->hdisplay;
-	qdev->monitors_config_height = mode->vdisplay;
 	return 1;
 }
-
-static struct mode_size {
-	int w;
-	int h;
-} common_modes[] = {
-	{ 640,  480},
-	{ 720,  480},
-	{ 800,  600},
-	{ 848,  480},
-	{1024,  768},
-	{1152,  768},
-	{1280,  720},
-	{1280,  800},
-	{1280,  854},
-	{1280,  960},
-	{1280, 1024},
-	{1440,  900},
-	{1400, 1050},
-	{1680, 1050},
-	{1600, 1200},
-	{1920, 1080},
-	{1920, 1200}
-};
 
 static int qxl_add_common_modes(struct drm_connector *connector,
                                 unsigned pwidth,
@@ -172,6 +146,29 @@ static int qxl_add_common_modes(struct drm_connector *connector,
 	struct drm_device *dev = connector->dev;
 	struct drm_display_mode *mode = NULL;
 	int i;
+	struct mode_size {
+		int w;
+		int h;
+	} common_modes[] = {
+		{ 640,  480},
+		{ 720,  480},
+		{ 800,  600},
+		{ 848,  480},
+		{1024,  768},
+		{1152,  768},
+		{1280,  720},
+		{1280,  800},
+		{1280,  854},
+		{1280,  960},
+		{1280, 1024},
+		{1440,  900},
+		{1400, 1050},
+		{1680, 1050},
+		{1600, 1200},
+		{1920, 1080},
+		{1920, 1200}
+	};
+
 	for (i = 0; i < ARRAY_SIZE(common_modes); i++) {
 		mode = drm_cvt_mode(dev, common_modes[i].w, common_modes[i].h,
 				    60, false, false, false);
@@ -295,15 +292,10 @@ static int qxl_crtc_cursor_set2(struct drm_crtc *crtc,
 
 	qxl_bo_kunmap(user_bo);
 
-	qcrtc->cur_x += qcrtc->hot_spot_x - hot_x;
-	qcrtc->cur_y += qcrtc->hot_spot_y - hot_y;
-	qcrtc->hot_spot_x = hot_x;
-	qcrtc->hot_spot_y = hot_y;
-
 	cmd = (struct qxl_cursor_cmd *)qxl_release_map(qdev, release);
 	cmd->type = QXL_CURSOR_SET;
-	cmd->u.set.position.x = qcrtc->cur_x + qcrtc->hot_spot_x;
-	cmd->u.set.position.y = qcrtc->cur_y + qcrtc->hot_spot_y;
+	cmd->u.set.position.x = qcrtc->cur_x;
+	cmd->u.set.position.y = qcrtc->cur_y;
 
 	cmd->u.set.shape = qxl_bo_physical_address(qdev, cursor_bo, 0);
 
@@ -366,8 +358,8 @@ static int qxl_crtc_cursor_move(struct drm_crtc *crtc,
 
 	cmd = (struct qxl_cursor_cmd *)qxl_release_map(qdev, release);
 	cmd->type = QXL_CURSOR_MOVE;
-	cmd->u.position.x = qcrtc->cur_x + qcrtc->hot_spot_x;
-	cmd->u.position.y = qcrtc->cur_y + qcrtc->hot_spot_y;
+	cmd->u.position.x = qcrtc->cur_x;
+	cmd->u.position.y = qcrtc->cur_y;
 	qxl_release_unmap(qdev, release, &cmd->release_info);
 
 	qxl_push_cursor_ring_release(qdev, release, QXL_CMD_CURSOR, false);
@@ -557,7 +549,7 @@ static int qxl_crtc_mode_set(struct drm_crtc *crtc,
 		  adjusted_mode->hdisplay,
 		  adjusted_mode->vdisplay);
 
-	if (bo->is_primary == false)
+	if (qcrtc->index == 0)
 		recreate_primary = true;
 
 	if (bo->surf.stride * bo->surf.height > qdev->vram_size) {
@@ -761,22 +753,11 @@ static int qxl_conn_get_modes(struct drm_connector *connector)
 static int qxl_conn_mode_valid(struct drm_connector *connector,
 			       struct drm_display_mode *mode)
 {
-	struct drm_device *ddev = connector->dev;
-	struct qxl_device *qdev = ddev->dev_private;
-	int i;
-
 	/* TODO: is this called for user defined modes? (xrandr --add-mode)
 	 * TODO: check that the mode fits in the framebuffer */
-
-	if(qdev->monitors_config_width == mode->hdisplay &&
-	   qdev->monitors_config_height == mode->vdisplay)
-		return MODE_OK;
-
-	for (i = 0; i < ARRAY_SIZE(common_modes); i++) {
-		if (common_modes[i].w == mode->hdisplay && common_modes[i].h == mode->vdisplay)
-			return MODE_OK;
-	}
-	return MODE_BAD;
+	DRM_DEBUG("%s: %dx%d status=%d\n", mode->name, mode->hdisplay,
+		  mode->vdisplay, mode->status);
+	return MODE_OK;
 }
 
 static struct drm_encoder *qxl_best_encoder(struct drm_connector *connector)
@@ -821,15 +802,13 @@ static enum drm_connector_status qxl_conn_detect(
 		drm_connector_to_qxl_output(connector);
 	struct drm_device *ddev = connector->dev;
 	struct qxl_device *qdev = ddev->dev_private;
-	bool connected = false;
+	int connected;
 
 	/* The first monitor is always connected */
-	if (!qdev->client_monitors_config) {
-		if (output->index == 0)
-			connected = true;
-	} else
-		connected = qdev->client_monitors_config->count > output->index &&
-		     qxl_head_enabled(&qdev->client_monitors_config->heads[output->index]);
+	connected = (output->index == 0) ||
+		    (qdev->client_monitors_config &&
+		     qdev->client_monitors_config->count > output->index &&
+		     qxl_head_enabled(&qdev->client_monitors_config->heads[output->index]));
 
 	DRM_DEBUG("#%d connected: %d\n", output->index, connected);
 	if (!connected)

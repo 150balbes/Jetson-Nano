@@ -411,12 +411,11 @@ static void ttm_dma_page_put(struct dma_pool *pool, struct dma_page *d_page)
  *
  * @pool: to free the pages from
  * @nr_free: If set to true will free all pages in pool
- * @use_static: Safe to use static buffer
+ * @gfp: GFP flags.
  **/
 static unsigned ttm_dma_page_pool_free(struct dma_pool *pool, unsigned nr_free,
-				       bool use_static)
+				       gfp_t gfp)
 {
-	static struct page *static_buf[NUM_PAGES_TO_ALLOC];
 	unsigned long irq_flags;
 	struct dma_page *dma_p, *tmp;
 	struct page **pages_to_free;
@@ -433,11 +432,7 @@ static unsigned ttm_dma_page_pool_free(struct dma_pool *pool, unsigned nr_free,
 			 npages_to_free, nr_free);
 	}
 #endif
-	if (use_static)
-		pages_to_free = static_buf;
-	else
-		pages_to_free = kmalloc(npages_to_free * sizeof(struct page *),
-					GFP_KERNEL);
+	pages_to_free = kmalloc(npages_to_free * sizeof(struct page *), gfp);
 
 	if (!pages_to_free) {
 		pr_err("%s: Failed to allocate memory for pool free operation\n",
@@ -507,8 +502,7 @@ restart:
 	if (freed_pages)
 		ttm_dma_pages_put(pool, &d_pages, pages_to_free, freed_pages);
 out:
-	if (pages_to_free != static_buf)
-		kfree(pages_to_free);
+	kfree(pages_to_free);
 	return nr_free;
 }
 
@@ -537,8 +531,7 @@ static void ttm_dma_free_pool(struct device *dev, enum pool_type type)
 		if (pool->type != type)
 			continue;
 		/* Takes a spinlock.. */
-		/* OK to use static buffer since global mutex is held. */
-		ttm_dma_page_pool_free(pool, FREE_ALL_PAGES, true);
+		ttm_dma_page_pool_free(pool, FREE_ALL_PAGES, GFP_KERNEL);
 		WARN_ON(((pool->npages_in_use + pool->npages_free) != 0));
 		/* This code path is called after _all_ references to the
 		 * struct device has been dropped - so nobody should be
@@ -991,7 +984,7 @@ void ttm_dma_unpopulate(struct ttm_dma_tt *ttm_dma, struct device *dev)
 
 	/* shrink pool if necessary (only on !is_cached pools)*/
 	if (npages)
-		ttm_dma_page_pool_free(pool, npages, false);
+		ttm_dma_page_pool_free(pool, npages, GFP_KERNEL);
 	ttm->state = tt_unpopulated;
 }
 EXPORT_SYMBOL_GPL(ttm_dma_unpopulate);
@@ -1000,6 +993,8 @@ EXPORT_SYMBOL_GPL(ttm_dma_unpopulate);
  * Callback for mm to request pool to reduce number of page held.
  *
  * XXX: (dchinner) Deadlock warning!
+ *
+ * We need to pass sc->gfp_mask to ttm_dma_page_pool_free().
  *
  * I'm getting sadder as I hear more pathetical whimpers about needing per-pool
  * shrinkers
@@ -1033,8 +1028,8 @@ ttm_dma_pool_shrink_scan(struct shrinker *shrink, struct shrink_control *sc)
 		if (++idx < pool_offset)
 			continue;
 		nr_free = shrink_pages;
-		/* OK to use static buffer since global mutex is held. */
-		shrink_pages = ttm_dma_page_pool_free(p->pool, nr_free, true);
+		shrink_pages = ttm_dma_page_pool_free(p->pool, nr_free,
+						      sc->gfp_mask);
 		freed += nr_free - shrink_pages;
 
 		pr_debug("%s: (%s:%d) Asked to shrink %d, have %d more to go\n",

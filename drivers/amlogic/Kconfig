@@ -127,8 +127,7 @@ source "drivers/amlogic/crypto/Kconfig"
 
 source "drivers/amlogic/watchpoint/Kconfig"
 
-#source "drivers/amlogic/gpu/mali/Kconfig"
+source "drivers/amlogic/gpu/mali/Kconfig"
 
-#source "drivers/amlogic/gpu/ump/Kconfig"
-
+source "drivers/amlogic/gpu/ump/Kconfig"
 endmenu
