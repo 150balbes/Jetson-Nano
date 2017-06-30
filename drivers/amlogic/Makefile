@@ -137,5 +137,3 @@ obj-$(CONFIG_AMLOGIC_WATCHPOINT) += watchpoint/
 obj-$(CONFIG_UMP)			+= gpu/ump/
 
 obj-$(CONFIG_MALI400)		+= gpu/mali/
-
-obj-$(CONFIG_CLD_HL_SDIO_CORE)		+= qca9377/
