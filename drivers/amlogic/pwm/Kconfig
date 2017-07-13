@@ -18,3 +18,25 @@ config GX_PWM
 	help
 	  say y to enable Amlogic PWM driver.
 endif
+
+config MESON_PWM
+
+    tristate "Amlogic PWM support"
+    default n
+    select PWM
+    help
+      Say yes here to build support for Generic PWM framework
+      driver for AMLOGIC.
+
+      To compile this driver as a module, choose M here: the
+      module will be called pwm-meson.
+
+config MESON_PWM_CTRL
+    tristate "Amlogic PWM Control driver"
+    depends on MESON_PWM
+    help
+      Say yes here to build support for PWM control to
+      Hardkernel devices.
+
+      To compile this driver as a module, choose M here: the
+      module will be called pwm-ctrl.

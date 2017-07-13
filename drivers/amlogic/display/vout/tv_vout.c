@@ -758,8 +758,8 @@ static int tv_set_current_vmode(enum vmode_e mode)
 		if (DOWN_HPLL == fine_tune_mode)
 			update_tv_info_duration(fps_target_mode, UP_HPLL);
 	}
-	fps_auto_adjust_mode(&tvmode);
-	update_vmode_status(get_name_from_vmode(tvmode));
+	// fps_auto_adjust_mode(&tvmode);
+	// update_vmode_status(get_name_from_vmode(tvmode));
 	vout_log_info("%s[%d]fps_target_mode=%d\n",
 		      __func__, __LINE__, tvmode);
 
@@ -1153,7 +1153,7 @@ static int tv_set_vframe_rate_end_hint(void)
 		fps_playing_flag = 0;
 		if (DOWN_HPLL == fine_tune_mode)
 			fine_tune_mode = UP_HPLL;
-		framerate_automation_set_mode(mode_by_user, END_HINT);
+		// framerate_automation_set_mode(mode_by_user, END_HINT);
 		fine_tune_mode = KEEP_HPLL;
 		fps_target_mode = VMODE_INIT_NULL;
 		mode_by_user = VMODE_INIT_NULL;

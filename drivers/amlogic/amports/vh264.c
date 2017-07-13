@@ -771,6 +771,7 @@ static void vh264_set_params(struct work_struct *work)
 	} else {
 		actual_dpb_size = (frame_buffer_size - mb_total * mb_mv_byte *
 				max_reference_size) / (mb_total * 384);
+		actual_dpb_size = max(actual_dpb_size, max_reference_size + 6);
 		actual_dpb_size = min(actual_dpb_size, VF_BUF_NUM);
 		max_dpb_size = get_max_dpb_size(level_idc, mb_width, mb_height);
 		if (actual_dpb_size < (max_dpb_size + 4)) {

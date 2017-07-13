@@ -123,6 +123,8 @@ static u32 pts_by_offset = 1;
 static u32 total_frame;
 static u32 next_pts;
 static u64 next_pts_us64;
+static u32 next_IP_pts;
+static u64 next_IP_pts_us64;
 
 #ifdef DEBUG_PTS
 static u32 pts_hit, pts_missed, pts_i_hit, pts_i_missed;
@@ -259,7 +261,7 @@ static irqreturn_t vvc1_isr(int irq, void *dev_id)
 	u32 picture_type;
 	u32 buffer_index;
 	unsigned int pts, pts_valid = 0, offset;
-	u32 v_width, v_height;
+	u32 v_width, v_height, dur;
 	u64 pts_us64 = 0;
 
 	reg = READ_VREG(VC1_BUFFEROUT);
@@ -290,10 +292,27 @@ static irqreturn_t vvc1_isr(int irq, void *dev_id)
 
 		if (pts_by_offset) {
 			offset = READ_VREG(VC1_OFFSET_REG);
-			if (keyframe_pts_only && (picture_type != I_PICTURE)) {
-				pts_valid = 0;
-			} else if (pts_lookup_offset_us64(PTS_TYPE_VIDEO, offset, &pts, 0, &pts_us64) == 0) {
+			if (pts_lookup_offset_us64(PTS_TYPE_VIDEO, offset, &pts, 0, &pts_us64) == 0) {
 				pts_valid = 1;
+				if (keyframe_pts_only)
+				{
+					//pr_info("PT:%d rpc:%d pts64:%lld\n", picture_type , repeat_count, pts_us64);
+					dur = DUR2PTS(vvc1_amstream_dec_info.rate);
+					if (picture_type == B_PICTURE)
+					{
+						next_IP_pts = pts;
+						next_IP_pts_us64 = pts_us64;
+						pts -= dur;
+						pts_us64 -= (dur * 100) / 9;
+					}
+					else if (next_IP_pts)
+					{
+						pts = next_IP_pts;
+						next_IP_pts = 0;
+						pts_us64 = next_IP_pts_us64;
+						next_IP_pts_us64 = 0;
+					}
+				}
 #ifdef DEBUG_PTS
 				pts_hit++;
 #endif
@@ -859,14 +878,15 @@ static void vvc1_local_init(void)
 	/* vvc1_ratio = vvc1_amstream_dec_info.ratio; */
 	vvc1_ratio = 0x100;
 
-	avi_flag = (unsigned long) vvc1_amstream_dec_info.param;
+	avi_flag = (unsigned long) vvc1_amstream_dec_info.param & 0x1;
 	keyframe_pts_only = (u32)vvc1_amstream_dec_info.param & 0x100;
-
 	total_frame = 0;
 
 	next_pts = 0;
-
 	next_pts_us64 = 0;
+	next_IP_pts = 0;
+	next_IP_pts_us64 = 0;
+
 	saved_resolution = 0;
 	frame_width = frame_height = frame_dur = 0;
 #ifdef DEBUG_PTS

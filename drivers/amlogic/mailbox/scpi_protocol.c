@@ -85,6 +85,12 @@ static int high_priority_cmds[] = {
 	SCPI_CMD_SENSOR_CFG_BOUNDS,
 };
 
+#if defined(CONFIG_ARCH_MESON64_ODROIDC2)
+#define DVFS_COUNT_MAX		13
+#define DVFS_COUNT_1536		6
+static unsigned long max_freq_dvfs;
+#endif
+
 static struct scpi_opp *scpi_opps[MAX_DVFS_DOMAINS];
 
 static int scpi_linux_errmap[SCPI_ERR_MAX] = {
@@ -236,6 +242,9 @@ struct scpi_opp *scpi_dvfs_get_opps(u8 domain)
 	struct scpi_opp *opps;
 	size_t opps_sz;
 	int count, ret;
+#if defined(CONFIG_ARCH_MESON64_ODROIDC2)
+	int i, max_index;
+#endif
 
 	if (domain >= MAX_DVFS_DOMAINS)
 		return ERR_PTR(-EINVAL);
@@ -254,6 +263,27 @@ struct scpi_opp *scpi_dvfs_get_opps(u8 domain)
 		return ERR_PTR(-ENOMEM);
 
 	count = DVFS_OPP_COUNT(buf.header);
+
+#if defined(CONFIG_ARCH_MESON64_ODROIDC2)
+	max_index = 0;
+	if (max_freq_dvfs) {
+		for (i = 0; i < count; i++)	{
+			if (buf.opp[i].freq_hz == max_freq_dvfs)
+				break;
+			else
+				max_index++;
+		}
+		count = max_index + 1;
+	}
+	/* if no param "max_freq_dvfs or wrong "max_freq_dvfs"
+	 * from boot.ini, consider stable max value */
+	if ((max_freq_dvfs == 0) || (count > DVFS_COUNT_MAX))
+		count = DVFS_COUNT_1536; /* default max : 1.536GHz */
+
+	pr_info("dvfs [%s] - new count %d, max_freq %ld\n", __func__,
+		count, max_freq_dvfs);
+#endif
+
 	opps_sz = count * sizeof(*(opps->opp));
 
 	opps->count = count;
@@ -422,3 +452,25 @@ int scpi_send_usr_data(u32 client_id, u32 *val, u32 size)
 }
 EXPORT_SYMBOL_GPL(scpi_send_usr_data);
 
+#if defined(CONFIG_ARCH_MESON64_ODROIDC2)
+static int __init get_max_freq(char *str)
+{
+	int ret;
+
+	if (NULL == str) {
+		/* consider default set */
+		max_freq_dvfs = 1536000000;
+		return -EINVAL;
+	}
+
+	ret = kstrtoul(str, 0, &max_freq_dvfs);
+
+	/* in unit Hz */
+	max_freq_dvfs *= 1000000;
+
+	pr_info("dvfs [%s] - max_freq : %ld\n", __func__, max_freq_dvfs);
+
+	return 0;
+}
+__setup("max_freq=", get_max_freq);
+#endif

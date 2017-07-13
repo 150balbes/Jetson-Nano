@@ -175,7 +175,7 @@ static int receiver_is_amvideo = 1;
 
 static unsigned char new_keep_last_frame_enable;
 static int bypass_state = 1;
-static int bypass_prog;
+static int bypass_prog = 1;
 static int bypass_hd_prog;
 static int bypass_interlace_output;
 #ifdef CONFIG_AM_DEINTERLACE_SD_ONLY

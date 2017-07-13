@@ -77,7 +77,7 @@ void tsdemux_set_ops(struct tsdemux_ops *ops)
 	demux_ops = ops;
 	spin_unlock_irqrestore(&demux_ops_lock, flags);
 }
-EXPORT_SYMBOL(tsdemux_set_ops);
+EXPORT_SYMBOL_GPL(tsdemux_set_ops);
 
 int tsdemux_set_reset_flag_ext(void)
 {

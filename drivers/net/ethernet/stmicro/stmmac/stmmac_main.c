@@ -58,6 +58,13 @@
 #define STMMAC_XMIT_DEBUG
 #endif
 #include <linux/reset.h>
+#include <linux/amlogic/securitykey.h>
+
+extern unsigned int g_mac_addr_setup;
+
+#if defined (CONFIG_EFUSE)
+extern char *efuse_get_mac(char *addr);
+#endif
 
 #define STMMAC_ALIGN(x)	L1_CACHE_ALIGN(x)
 
@@ -2186,6 +2193,28 @@ static void stmmac_init_tx_coalesce(struct stmmac_priv *priv)
 	add_timer(&priv->txtimer);
 }
 
+#if defined (CONFIG_AML_NAND_KEY) || defined (CONFIG_SECURITYKEY)
+static char print_buff[1025];
+int read_mac_from_nand(struct net_device *ndev)
+{
+	int ret;
+	u8 mac[ETH_ALEN];
+	char *endp;
+	int j;
+	ret = get_aml_key_kernel("mac", print_buff, 0);
+	extenal_api_key_set_version("auto");
+	printk("%s: ret = %d print_buff=%s\n", __FUNCTION__, ret, print_buff);
+	if (ret >= 0) {
+		strcpy(ndev->dev_addr, print_buff);
+		for(j = 0; j < ETH_ALEN; j++)
+			mac[j] = simple_strtol(&ndev->dev_addr[3 * j], &endp, 16);
+		memcpy(ndev->dev_addr, mac, ETH_ALEN);
+	}
+
+	return ret;
+}
+#endif
+
 /**
  * stmmac_hw_setup: setup mac in a usable state.
  *  @dev : pointer to the device structure.
@@ -2278,7 +2307,21 @@ static int stmmac_hw_setup(struct net_device *dev)
 static int stmmac_open(struct net_device *dev)
 {
 	struct stmmac_priv *priv = netdev_priv(dev);
-	int ret;
+
+	int ret = 0;
+
+	if (g_mac_addr_setup == 0) {
+#if defined (CONFIG_AML_NAND_KEY) || defined (CONFIG_SECURITYKEY)
+		ret = read_mac_from_nand(dev);
+		if (ret < 0)
+#endif
+		{
+#if defined CONFIG_EFUSE
+			efuse_get_mac(dev->dev_addr);
+#endif
+		}
+	}
+
 	stmmac_check_ether_addr(priv);
 
 	if (priv->pcs != STMMAC_PCS_RGMII && priv->pcs != STMMAC_PCS_TBI &&

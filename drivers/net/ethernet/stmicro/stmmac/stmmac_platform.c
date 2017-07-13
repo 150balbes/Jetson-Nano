@@ -75,7 +75,7 @@ static const struct of_device_id stmmac_dt_ids[] = {
 MODULE_DEVICE_TABLE(of, stmmac_dt_ids);
 #ifdef CONFIG_DWMAC_MESON
 static u8 DEFMAC[] = {0, 0, 0, 0, 0, 0};
-static unsigned int g_mac_addr_setup;
+unsigned int g_mac_addr_setup = 0;
 static unsigned char chartonum(char c)
 {
 	if (c >= '0' && c <= '9')
@@ -161,10 +161,6 @@ static int dwmac1000_validate_ucast_entries(int ucast_entries)
 	return x;
 }
 
-#if defined (CONFIG_EFUSE)
-extern char *efuse_get_mac(char *addr);
-#endif
-
 static int platdata_copy_from_machine_data(const struct of_device_id *device,
 					   struct plat_stmmacenet_data *plat)
 {
@@ -192,12 +188,6 @@ static int setup_mac_addr(struct platform_device *pdev, const char **mac)
 {
 	struct device_node *np = pdev->dev.of_node;
 #ifdef CONFIG_DWMAC_MESON
-#if defined (CONFIG_EFUSE)
-	if (g_mac_addr_setup == 0) {
-		efuse_get_mac(DEFMAC);
-		g_mac_addr_setup++;
-	}
-#endif
 	if (g_mac_addr_setup)	/*so uboot mac= is first priority.*/
 		*mac = DEFMAC;
 	else

@@ -1111,6 +1111,8 @@ struct hdmi_format_para *hdmi_get_fmt_name(char const *name)
 
 	for (i = 0; i < sizeof(all_fmt_paras) /
 		sizeof(struct hdmi_format_para *); i++) {
+		if (!all_fmt_paras[i])
+			break;
 		lname = all_fmt_paras[i]->name;
 		if (lname && (strncmp(name, lname, strlen(lname)) == 0)) {
 			vic = all_fmt_paras[i]->vic;

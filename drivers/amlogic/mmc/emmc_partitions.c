@@ -672,6 +672,9 @@ int aml_emmc_partition_ops(struct mmc_card *card, struct gendisk *disk)
 	if (!is_card_emmc(card)) /* not emmc, nothing to do */
 		return 0;
 
+	if (!of_find_node_by_path("/partitions"))
+		return 0;
+
 	store_device = host->storage_flag;
 	pt_fmt = kmalloc(sizeof(struct mmc_partitions_fmt), GFP_KERNEL);
 	if (pt_fmt == NULL) {

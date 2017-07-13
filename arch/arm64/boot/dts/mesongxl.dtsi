@@ -655,6 +655,14 @@
 		pinctrl-names = "default";
 		pinctrl-0 = <&remote_pins>;
 	};
+	meson_ir:meson-ir {
+		compatible = "amlogic,meson-gxbb-ir";
+		status = "disabled";
+		reg = <0x0 0xc8100580 0x0 0x40>;
+		interrupts = <0 196 1>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&remote_pins>;
+	};
 
 	rng {
 		compatible = "amlogic,meson-rng";
