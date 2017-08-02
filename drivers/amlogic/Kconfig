@@ -131,4 +131,6 @@ source "drivers/amlogic/gpu/mali/Kconfig"
 
 source "drivers/amlogic/gpu/ump/Kconfig"
 
+source "drivers/amlogic/esm/Kconfig"
+
 endmenu

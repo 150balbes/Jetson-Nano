@@ -394,26 +394,28 @@ static int aml_dai_i2s_prepare(struct snd_pcm_substream *substream,
 	struct snd_pcm_runtime *runtime = substream->runtime;
 	struct aml_runtime_data *prtd = runtime->private_data;
 	struct audio_stream *s = &prtd->s;
+	struct aml_i2s *i2s = snd_soc_dai_get_drvdata(dai);
 
-	if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK) {
-		audio_out_i2s_enable(0);
-		audio_util_set_dac_i2s_format(AUDIO_ALGOUT_DAC_FORMAT_DSP);
-	}
 	if (substream->stream == SNDRV_PCM_STREAM_CAPTURE) {
 		s->i2s_mode = dai_info[dai->id].i2s_mode;
-		audio_in_i2s_set_buf(runtime->dma_addr, runtime->dma_bytes * 2,
-				     0, i2s_pos_sync);
-		memset((void *)runtime->dma_area, 0, runtime->dma_bytes * 2);
-		{
-			int *ppp =
-			    (int *)(runtime->dma_area + runtime->dma_bytes * 2 -
-				    8);
-			ppp[0] = 0x78787878;
-			ppp[1] = 0x78787878;
+		if (runtime->format == SNDRV_PCM_FORMAT_S16_LE) {
+			audio_in_i2s_set_buf(runtime->dma_addr,
+					runtime->dma_bytes * 2,
+					0, i2s_pos_sync, i2s->audin_fifo_src);
+			memset((void *)runtime->dma_area, 0,
+					runtime->dma_bytes * 2);
+		} else {
+			audio_in_i2s_set_buf(runtime->dma_addr,
+					runtime->dma_bytes,
+					0, i2s_pos_sync, i2s->audin_fifo_src);
+			memset((void *)runtime->dma_area, 0,
+					runtime->dma_bytes);
 		}
 		s->device_type = AML_AUDIO_I2SIN;
 	} else {
 		s->device_type = AML_AUDIO_I2SOUT;
+		audio_out_i2s_enable(0);
+		audio_util_set_dac_i2s_format(AUDIO_ALGOUT_DAC_FORMAT_DSP);
 		IEC958_mode_codec = 0;
 		aml_hw_i2s_init(runtime);
 		/* i2s/958 share the same audio hw buffer when PCM mode */
@@ -421,13 +423,14 @@ static int aml_dai_i2s_prepare(struct snd_pcm_substream *substream,
 			aml_hw_iec958_init(substream, 1);
 			/* use the hw same sync for i2s/958 */
 			dev_info(substream->pcm->card->dev, "i2s/958 same source\n");
-			/* aml_set_spdif_clk(runtime->rate*512, 0); */
 			audio_i2s_958_same_source(1);
 		}
-	}
-	if (runtime->channels == 8) {
-		dev_info(substream->pcm->card->dev, "8ch PCM output->notify HDMI\n");
-		aout_notifier_call_chain(AOUT_EVENT_IEC_60958_PCM, substream);
+		if (runtime->channels == 8) {
+			dev_info(substream->pcm->card->dev,
+				"8ch PCM output->notify HDMI\n");
+			aout_notifier_call_chain(AOUT_EVENT_IEC_60958_PCM,
+				substream);
+		}
 	}
 	return 0;
 }
@@ -435,9 +438,6 @@ static int aml_dai_i2s_prepare(struct snd_pcm_substream *substream,
 static int aml_dai_i2s_trigger(struct snd_pcm_substream *substream, int cmd,
 			       struct snd_soc_dai *dai)
 {
-	struct snd_pcm_runtime *rtd = substream->runtime;
-	int *ppp = NULL;
-
 	switch (cmd) {
 	case SNDRV_PCM_TRIGGER_START:
 	case SNDRV_PCM_TRIGGER_RESUME:
@@ -452,9 +452,6 @@ static int aml_dai_i2s_trigger(struct snd_pcm_substream *substream, int cmd,
 			}
 		} else {
 			audio_in_i2s_enable(1);
-			ppp = (int *)(rtd->dma_area + rtd->dma_bytes * 2 - 8);
-			ppp[0] = 0x78787878;
-			ppp[1] = 0x78787878;
 		}
 		break;
 	case SNDRV_PCM_TRIGGER_STOP:
@@ -539,9 +536,8 @@ static int aml_dai_i2s_resume(struct snd_soc_dai *dai)
 	return 0;
 }
 
-#define AML_DAI_I2S_RATES		(SNDRV_PCM_RATE_8000_192000)
-#define AML_DAI_I2S_FORMATS		(SNDRV_PCM_FMTBIT_S16_LE |\
-		SNDRV_PCM_FMTBIT_S24_LE | SNDRV_PCM_FMTBIT_S32_LE)
+#define AML_DAI_I2S_RATES		SNDRV_PCM_RATE_32000 | SNDRV_PCM_RATE_44100 | SNDRV_PCM_RATE_48000 | SNDRV_PCM_RATE_88200 | SNDRV_PCM_RATE_96000 | SNDRV_PCM_RATE_176400 | SNDRV_PCM_RATE_192000
+#define AML_DAI_I2S_FORMATS		SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S32_LE
 
 static struct snd_soc_dai_ops aml_dai_i2s_ops = {
 	.startup = aml_dai_i2s_startup,
@@ -637,6 +633,14 @@ static int aml_i2s_dai_probe(struct platform_device *pdev)
 	if (ret) {
 		dev_err(&pdev->dev, "Can't enable I2S mclk clock: %d\n", ret);
 		goto err;
+	}
+
+	if (of_property_read_bool(pdev->dev.of_node, "DMIC")) {
+		i2s->audin_fifo_src = 3;
+		dev_info(&pdev->dev, "DMIC is in platform!\n");
+	} else {
+		i2s->audin_fifo_src = 1;
+		dev_info(&pdev->dev, "I2S Mic is in platform!\n");
 	}
 
 	ret = snd_soc_register_component(&pdev->dev, &aml_component,

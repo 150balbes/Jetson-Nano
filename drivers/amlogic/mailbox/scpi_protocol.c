@@ -83,6 +83,7 @@ static int high_priority_cmds[] = {
 	SCPI_CMD_GET_PSU,
 	SCPI_CMD_SENSOR_CFG_PERIODIC,
 	SCPI_CMD_SENSOR_CFG_BOUNDS,
+	SCPI_CMD_WAKEUP_REASON_GET,
 };
 
 #if defined(CONFIG_ARCH_MESON64_ODROIDC2)
@@ -451,6 +452,90 @@ int scpi_send_usr_data(u32 client_id, u32 *val, u32 size)
 	return ret;
 }
 EXPORT_SYMBOL_GPL(scpi_send_usr_data);
+
+int scpi_get_usr_data(u32 client_id, u32 *val, u32 size)
+{
+	struct scpi_data_buf sdata;
+	struct mhu_data_buf mdata;
+	struct __packed {
+		u32 status;
+		u32 count;
+		unsigned int buf1[MAX_DVFS_OPPS];
+	} buf;
+	int  ret;
+	size_t opps_sz;
+	unsigned int domain = 0;
+
+	SCPI_SETUP_DBUF(sdata, mdata, client_id,
+			SCPI_CMD_GET_USR_DATA, domain, buf);
+	ret = scpi_execute_cmd(&sdata);
+	if (IS_ERR_VALUE(ret))
+		return ret;
+
+	if (size > buf.count)
+		size = buf.count;
+	opps_sz = size * sizeof(unsigned int);
+	memcpy(val, &buf.buf1[0], opps_sz);
+	return size;
+}
+EXPORT_SYMBOL_GPL(scpi_get_usr_data);
+
+int scpi_get_vrtc(u32 *p_vrtc)
+{
+	struct scpi_data_buf sdata;
+	struct mhu_data_buf mdata;
+	u32 temp = 0;
+	struct __packed {
+		u32 status;
+		u32 vrtc;
+	} buf;
+
+	SCPI_SETUP_DBUF(sdata, mdata, SCPI_CL_NONE,
+			SCPI_CMD_GET_RTC, temp, buf);
+	if (scpi_execute_cmd(&sdata))
+		return -EPERM;
+
+	*p_vrtc = buf.vrtc;
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(scpi_get_vrtc);
+
+int scpi_set_vrtc(u32 vrtc_val)
+{
+	struct scpi_data_buf sdata;
+	struct mhu_data_buf mdata;
+	int state;
+
+	SCPI_SETUP_DBUF(sdata, mdata, SCPI_CL_NONE,
+			SCPI_CMD_SET_RTC, vrtc_val, state);
+	if (scpi_execute_cmd(&sdata))
+		return -EPERM;
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(scpi_set_vrtc);
+
+int scpi_get_wakeup_reason(u32 *wakeup_reason)
+{
+	struct scpi_data_buf sdata;
+	struct mhu_data_buf mdata;
+	u32 temp = 0;
+	struct __packed {
+		u32 status;
+		u32 reason;
+	} buf;
+
+	SCPI_SETUP_DBUF(sdata, mdata, SCPI_CL_NONE,
+			SCPI_CMD_WAKEUP_REASON_GET, temp, buf);
+	if (scpi_execute_cmd(&sdata))
+		return -EPERM;
+
+	*wakeup_reason = buf.reason;
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(scpi_get_wakeup_reason);
 
 #if defined(CONFIG_ARCH_MESON64_ODROIDC2)
 static int __init get_max_freq(char *str)

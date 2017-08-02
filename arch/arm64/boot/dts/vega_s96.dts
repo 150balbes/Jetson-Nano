@@ -1,5 +1,8 @@
 /dts-v1/;
 
+#include <dt-bindings/pwm/pwm.h>
+#include <dt-bindings/pwm/meson.h>
+
 / {
 	model = "Amlogic";
 	compatible = "amlogic, Gxm";
@@ -1133,7 +1136,7 @@
 
 	memory@00000000 {
 		device_type = "memory";
-		linux,usable-memory = <0x0 0x100000 0x0 0x7ff00000>;
+		linux,usable-memory = <0x0 0x100000 0x0 0x7f000000>;
 	};
 
 	reserved-memory {
@@ -1169,11 +1172,24 @@
 			phandle = <0x2b>;
 		};
 
+		linux,chunk-reserve {
+			compatible = "amlogic, chunk-reserve";
+			size = <0x0 0x4000000>;
+		};
+
 		linux,ion-dev {
 			compatible = "amlogic, idev-mem";
 			size = <0x0 0x4000000>;
 			linux,phandle = <0x28>;
 			phandle = <0x28>;
+		};
+
+		linux,vdin1_cma {
+			compatible = "shared-dma-pool";
+			reusable;
+			/* 1920x1080x2x4  =16 M */
+			size = <0x0 0x01000000>;
+			alignment = <0x0 0x400000>;
 		};
 
 		linux,ppmgr {
@@ -1220,6 +1236,13 @@
 		led_active_low = <0x1>;
 	};
 
+/*
+	chunk-reserve {
+		compatible = "amlogic, chunk-reserve";
+		memory-region = <&chunk_reserved>;
+		status = "okay";
+	};
+*/
 	meson-vout {
 		compatible = "amlogic, meson-vout";
 		dev_name = "meson-vout";
@@ -1236,7 +1259,7 @@
 		display_mode_default = "1080p60hz";
 		scale_mode = <0x1>;
 		display_size_default = <0x780 0x438 0x780 0xca8 0x20>;
-		logo_addr = "0x3d851000";
+		logo_addr = "0x7d851000";
 	};
 
 	ge2d {
@@ -1307,6 +1330,7 @@
 		clocks = <0x6 0xa>;
 		clock-names = "ethclk81";
 		internal_phy = <0x0>;
+		wol=<0>;
 	};
 
 	mesonstream {
@@ -1370,6 +1394,40 @@
 		clock-names = "fclk_div2", "cts_bt656_clk0";
 		bt656_id = <0x0>;
 	};
+
+/*
+	vdin0 {
+		compatible = "amlogic, vdin";
+		dev_name = "vdin0";
+		status = "ok";
+		reserve-iomap = "true";
+		flag_cma = <1>;
+		cma_size = <16>;
+		interrupts = <0 83 1>;
+		rdma-irq = <2>;
+		clocks = <&clock CLK_FPLL_DIV5>,
+			<&clock CLK_VDIN_MEAS_CLK>;
+		clock-names = "fclk_div5", "cts_vdin_meas_clk";
+		vdin_id = <0>;
+		tv_bit_mode = <1>;
+	};
+
+	vdin1 {
+		compatible = "amlogic, vdin";
+		memory-region = <&vdin1_cma_reserved>;
+		dev_name = "vdin1";
+		status = "ok";
+		reserve-iomap = "true";
+		flag_cma = <0>;
+		interrupts = <0 85 1>;
+		rdma-irq = <4>;
+		clocks = <&clock CLK_FPLL_DIV5>,
+			<&clock CLK_VDIN_MEAS_CLK>;
+		clock-names = "fclk_div5", "cts_vdin_meas_clk";
+		vdin_id = <1>;
+		tv_bit_mode = <1>;
+	};
+*/
 
 	amvdec_656in1 {
 		compatible = "amlogic, amvdec_656in";
@@ -1446,7 +1504,17 @@
 		dhd_static_buf;
 		pinctrl-names = "wifi_32k_pins";
 		pinctrl-0 = <0x2c>;
+//		pwm_config = <&wifi_pwm_conf>;
 	};
+
+/* 
+	wifi_pwm_conf{
+		pwm_channel1 = <PWM_E>;
+		pwm_channel2 = <PWM_E2>;
+		pwm_channel1_conf = <30541 15270 6>;
+		pwm_channel2_conf = <30518 15259 9>;
+	};
+*/
 
 	emmc {
 		compatible = "amlogic, aml_sd_emmc";
@@ -1798,7 +1866,11 @@
 		compatible = "amlogic, amhdmitx";
 		dev_name = "amhdmitx";
 		status = "okay";
+		vend-data = <&vend_data>;
+/*
+		hdmi5v_pwr_ctrl = <&gpio GPIOH_3 GPIO_ACTIVE_LOW>;
 		pinctrl-names = "hdmitx_hpd", "hdmitx_ddc";
+*/
 		pinctrl-0 = <0x5a>;
 		pinctrl-1 = <0x5b>;
 		interrupts = <0x0 0x39 0x1>;
@@ -1809,6 +1881,11 @@
 		#address-cells = <0x2>;
 		#size-cells = <0x2>;
 		ranges;
+		vend_data: vend_data{ /* Should modified by Customer */
+		    vendor_name = "Amlogic";           /* Max Chars: 8     */
+		    vendor_id = <0x000000>;            /* Refer to http://standards.ieee.org/develop/regauth/oui/oui.txt */
+		    product_desc = "MBox Meson Ref";    /* Max Chars: 16    */
+		};
 	};
 
 	aocec {
@@ -2107,6 +2184,36 @@
 			phandle = <0x6b>;
 		};
 	};
+
+/*
+	pwm {
+		compatible = "amlogic, meson-pwm";
+		status = "okay";
+		pwm-outputs 	= <PWM_A>,<PWM_B>,<PWM_C>,<PWM_D>,
+			      	  <PWM_E>,<PWM_F>,<PWM_AO_A>,<PWM_AO_B>;
+		pwm-outputs-new = <PWM_A>,<PWM_B>,<PWM_C>,<PWM_D>,
+				  <PWM_E>,<PWM_F>,<PWM_AO_A>,<PWM_AO_B>,
+			          <PWM_A2>,<PWM_B2>,<PWM_C2>,<PWM_D2>,
+			          <PWM_E2>,<PWM_F2>,<PWM_AO_A2>,<PWM_AO_B2>;
+		reg = <0x0 0xc1108550 0x0 0x30>,
+		      <0x0 0xc8100550  0x0 0x10>;
+		clocks = <&clock CLK_XTAL>,
+			 <&clock CLK_VID_PLL>,
+			 <&clock CLK_FPLL_DIV4>,
+			 <&clock CLK_FPLL_DIV3>;
+		clock-names = "xtal",
+			      "vid_pll_clk",
+			      "fclk_div4",
+			      "fclk_div3";
+		clock-select = <XTAL_CLK>,<XTAL_CLK>,<XTAL_CLK>,<XTAL_CLK>,
+			       	   <XTAL_CLK>,<XTAL_CLK>,<XTAL_CLK>,<XTAL_CLK>;
+		clock-select-new = <XTAL_CLK>,<XTAL_CLK>,<XTAL_CLK>,<XTAL_CLK>,
+		                   <XTAL_CLK>,<XTAL_CLK>,<XTAL_CLK>,<XTAL_CLK>,
+		                   <XTAL_CLK>,<XTAL_CLK>,<XTAL_CLK>,<XTAL_CLK>,
+		                   <XTAL_CLK>,<XTAL_CLK>,<XTAL_CLK>,<XTAL_CLK>;
+	};
+*/
+
 
 	gpio_keypad {
 		compatible = "amlogic, gpio_keypad";

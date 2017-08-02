@@ -46,6 +46,7 @@
 #include "aml_i2s.h"
 #include <linux/amlogic/sound/aout_notify.h>
 #include <linux/amlogic/sound/aiu_regs.h>
+#include <linux/amlogic/sound/audin_regs.h>
 #include <linux/amlogic/cpu_version.h>
 
 /*
@@ -64,6 +65,10 @@ struct aml_spdif {
 	struct clk *clk_spdif;
 	struct clk *clk_81;
 	int old_samplerate;
+	/* spdif dai data in source select.
+	* !Check this with chip spec.
+	*/
+	uint src;
 };
 struct aml_spdif *spdif_p;
 unsigned int clk81 = 0;
@@ -412,15 +417,8 @@ static int aml_dai_spdif_prepare(struct snd_pcm_substream *substream,
 		aml_hw_iec958_init(substream, 0);
 	} else {
 		audio_in_spdif_set_buf(runtime->dma_addr,
-				       runtime->dma_bytes * 2);
+				       runtime->dma_bytes * 2, spdif_p->src);
 		memset((void *)runtime->dma_area, 0, runtime->dma_bytes * 2);
-		{
-			int *ppp =
-			    (int *)(runtime->dma_area + runtime->dma_bytes * 2 -
-				    8);
-			ppp[0] = 0x78787878;
-			ppp[1] = 0x78787878;
-		}
 	}
 
 	return 0;
@@ -625,6 +623,9 @@ static int aml_dai_spdif_probe(struct platform_device *pdev)
 	}
 	clk81 = clk_get_rate(spdif_priv->clk_81);
 
+	/*In PAO mode, audio data from hdmi-rx has no channel order,
+	set default mode from spdif-in*/
+	spdif_priv->src = SPDIF_IN;
 	aml_spdif_play(0);
 	ret = snd_soc_register_component(&pdev->dev, &aml_component,
 					  aml_spdif_dai,

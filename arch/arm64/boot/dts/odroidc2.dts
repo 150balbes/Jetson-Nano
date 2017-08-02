@@ -829,7 +829,7 @@
 
     /* Hardkernel I2C RTC */
     pcf8563: pcf8563@51    {
-        status = "okay";
+        status = "disabled";
         compatible = "nxp,pcf8563";
         reg = <0x51>;
         #clock-cells = <0>;
