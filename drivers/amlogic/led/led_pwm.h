@@ -35,7 +35,6 @@ struct aml_pwmled_dev {
 	enum led_brightness new_brightness;
 
 	struct pwm_device *pwmd;
-	struct pwm_device *pwmd2;
 	unsigned int pwm;
 	enum pwm_polarity polarity;
 	unsigned int period;

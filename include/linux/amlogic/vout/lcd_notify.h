@@ -39,8 +39,6 @@
 /* lcd backlight pwm_vs vfreq change occurred */
 #define LCD_EVENT_BACKLIGHT_UPDATE  (1 << 5)
 
-#define LCD_EVENT_GAMMA_UPDATE  (1 << 6)
-
 /* lcd frame rate change occurred */
 #define LCD_EVENT_FRAME_RATE_ADJUST (1 << 8)
 /* lcd config change occurred */

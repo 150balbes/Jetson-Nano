@@ -103,14 +103,5 @@ struct led_timer_data {
 	unsigned int led_mode;
 };
 
-struct led_disturb_data {
-	unsigned int mode;
-	unsigned int poweron_time;
-	unsigned int suspend_time;
-	unsigned int resume_time;
-	unsigned int count;
-};
-
-
 #endif
 

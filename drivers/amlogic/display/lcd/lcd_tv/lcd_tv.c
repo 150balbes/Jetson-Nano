@@ -45,6 +45,8 @@
 static unsigned int lcd_output_vmode;
 static char lcd_output_name[30];
 
+static DEFINE_MUTEX(lcd_vout_mutex);
+
 /* ************************************************** *
    lcd mode function
  * ************************************************** */
@@ -224,8 +226,6 @@ static void lcd_vmode_vinfo_update(enum vmode_e mode)
 	lcd_drv->lcd_info->sync_duration_num = info->frame_rate;
 	lcd_drv->lcd_info->sync_duration_den = 1;
 	lcd_drv->lcd_info->video_clk = pconf->lcd_timing.lcd_clk;
-
-	lcd_hdr_vinfo_update();
 }
 
 /* ************************************************** *
@@ -280,7 +280,8 @@ static int lcd_set_current_vmode(enum vmode_e mode)
 	if (!(mode & VMODE_INIT_BIT_MASK)) {
 		switch (mode & VMODE_MODE_BIT_MASK) {
 		case VMODE_LCD:
-			ret = lcd_drv->driver_change();
+			lcd_drv->driver_init_pre();
+			ret = lcd_drv->driver_init();
 			break;
 		default:
 			ret = -EINVAL;
@@ -299,11 +300,8 @@ static int lcd_vmode_is_supported(enum vmode_e mode)
 
 	mode &= VMODE_MODE_BIT_MASK;
 	lcd_vmode = lcd_get_vmode(mode);
-	if (lcd_debug_print_flag) {
-		LCDPR("%s vmode = %d, lcd_vmode = %d(%s)\n",
-			__func__, mode, lcd_vmode,
-			lcd_vmode_info[lcd_vmode].name);
-	}
+	LCDPR("%s vmode = %d, lcd_vmode = %d(%s)\n",
+		__func__, mode, lcd_vmode, lcd_vmode_info[lcd_vmode].name);
 
 	if (lcd_vmode < LCD_VMODE_MAX)
 		return true;
@@ -387,16 +385,11 @@ static int lcd_set_vframe_rate_hint(int duration)
 #ifdef CONFIG_AML_VOUT_FRAMERATE_AUTOMATION
 	struct aml_lcd_drv_s *lcd_drv = aml_lcd_get_driver();
 	struct vinfo_s *info;
-	int fr_policy;
+	unsigned char fr_policy;
 	unsigned int frame_rate = 6000;
 	unsigned int duration_num = 60, duration_den = 1;
 	struct lcd_vframe_match_s *vtable = lcd_vframe_match_table_1;
 	int fps, i, n;
-
-	if (lcd_drv->lcd_status == 0) {
-		LCDPR("%s: lcd is disabled, exit\n", __func__);
-		return 0;
-	}
 
 	info = lcd_drv->lcd_info;
 
@@ -427,13 +420,6 @@ static int lcd_set_vframe_rate_hint(int duration)
 	LCDPR("%s: policy = %d, duration = %d, fps = %d, frame_rate = %d\n",
 		__func__, fr_policy, duration, fps, frame_rate);
 
-	/* if the sync_duration is same as current */
-	if ((duration_num == info->sync_duration_num) &&
-		(duration_den == info->sync_duration_den)) {
-		LCDPR("%s: sync_duration is the same, exit\n", __func__);
-		return 0;
-	}
-
 	/* update vinfo */
 	info->sync_duration_num = duration_num;
 	info->sync_duration_den = duration_den;
@@ -448,11 +434,6 @@ static int lcd_set_vframe_rate_end_hint(void)
 #ifdef CONFIG_AML_VOUT_FRAMERATE_AUTOMATION
 	struct aml_lcd_drv_s *lcd_drv = aml_lcd_get_driver();
 	struct vinfo_s *info;
-
-	if (lcd_drv->lcd_status == 0) {
-		LCDPR("%s: lcd is disabled, exit\n", __func__);
-		return 0;
-	}
 
 	if (lcd_debug_print_flag)
 		LCDPR("fr_auto_policy = %d\n", lcd_drv->fr_auto_policy);
@@ -471,48 +452,19 @@ static int lcd_set_vframe_rate_end_hint(void)
 	return 0;
 }
 
-static int lcd_set_vframe_rate_policy(int policy)
-{
-#ifdef CONFIG_AML_VOUT_FRAMERATE_AUTOMATION
-	struct aml_lcd_drv_s *lcd_drv = aml_lcd_get_driver();
-
-	lcd_drv->fr_auto_policy = policy;
-	LCDPR("%s: %d\n", __func__, lcd_drv->fr_auto_policy);
-#endif
-	return 0;
-}
-
-static int lcd_get_vframe_rate_policy(void)
-{
-#ifdef CONFIG_AML_VOUT_FRAMERATE_AUTOMATION
-	struct aml_lcd_drv_s *lcd_drv = aml_lcd_get_driver();
-
-	return lcd_drv->fr_auto_policy;
-#else
-	return 0;
-#endif
-}
-
 #ifdef CONFIG_PM
 static int lcd_suspend(void)
 {
 	aml_lcd_notifier_call_chain(LCD_EVENT_POWER_OFF, NULL);
-	lcd_resume_flag = 0;
 	LCDPR("%s finished\n", __func__);
 	return 0;
 }
-
 static int lcd_resume(void)
 {
-	if (lcd_resume_flag == 0) {
-		lcd_resume_flag = 1;
-		aml_lcd_notifier_call_chain(LCD_EVENT_POWER_ON, NULL);
-		LCDPR("%s finished\n", __func__);
-	}
-
+	aml_lcd_notifier_call_chain(LCD_EVENT_POWER_ON, NULL);
+	LCDPR("%s finished\n", __func__);
 	return 0;
 }
-
 #endif
 
 static struct vout_server_s lcd_vout_server = {
@@ -525,8 +477,6 @@ static struct vout_server_s lcd_vout_server = {
 		.disable = lcd_vout_disable,
 		.set_vframe_rate_hint = lcd_set_vframe_rate_hint,
 		.set_vframe_rate_end_hint = lcd_set_vframe_rate_end_hint,
-		.set_vframe_rate_policy = lcd_set_vframe_rate_policy,
-		.get_vframe_rate_policy = lcd_get_vframe_rate_policy,
 #ifdef CONFIG_PM
 		.vout_suspend = lcd_suspend,
 		.vout_resume = lcd_resume,
@@ -631,8 +581,6 @@ static void lcd_config_print(struct lcd_config_s *pconf)
 			pconf->lcd_control.lvds_config->dual_port);
 		LCDPR("port_swap = %d\n",
 			pconf->lcd_control.lvds_config->port_swap);
-		LCDPR("lane_reverse = %d\n",
-			pconf->lcd_control.lvds_config->lane_reverse);
 	}
 }
 
@@ -746,27 +694,14 @@ static int lcd_config_load_from_dts(struct lcd_config_s *pconf,
 	case LCD_LVDS:
 		lvdsconf = pconf->lcd_control.lvds_config;
 		ret = of_property_read_u32_array(child, "lvds_attr",
-			&para[0], 5);
+			&para[0], 4);
 		if (ret) {
-			if (lcd_debug_print_flag)
-				LCDERR("load 4 parameters in lvds_attr\n");
-			ret = of_property_read_u32_array(child, "lvds_attr",
-				&para[0], 4);
-			if (ret) {
-				if (lcd_debug_print_flag)
-					LCDPR("failed to get lvds_attr\n");
-			} else {
-				lvdsconf->lvds_repack = para[0];
-				lvdsconf->dual_port = para[1];
-				lvdsconf->pn_swap = para[2];
-				lvdsconf->port_swap = para[3];
-			}
+			LCDERR("failed to get lvds_attr\n");
 		} else {
-				lvdsconf->lvds_repack = para[0];
-				lvdsconf->dual_port = para[1];
-				lvdsconf->pn_swap = para[2];
-				lvdsconf->port_swap = para[3];
-				lvdsconf->lane_reverse = para[4];
+			lvdsconf->lvds_repack = para[0];
+			lvdsconf->dual_port = para[1];
+			lvdsconf->pn_swap = para[2];
+			lvdsconf->port_swap = para[3];
 		}
 		ret = of_property_read_u32_array(child, "phy_attr",
 			&para[0], 4);
@@ -783,25 +718,20 @@ static int lcd_config_load_from_dts(struct lcd_config_s *pconf,
 				lvdsconf->phy_preem = para[1];
 				lvdsconf->phy_clk_vswing = 0;
 				lvdsconf->phy_clk_preem = 0;
-				if (lcd_debug_print_flag) {
-					LCDPR("phy vswing=0x%x, preem=0x%x\n",
+				LCDPR("set phy vswing=%d, preemphasis=%d\n",
 					lvdsconf->phy_vswing,
 					lvdsconf->phy_preem);
-				}
 			}
 		} else {
 			lvdsconf->phy_vswing = para[0];
 			lvdsconf->phy_preem = para[1];
 			lvdsconf->phy_clk_vswing = para[2];
 			lvdsconf->phy_clk_preem = para[3];
-			if (lcd_debug_print_flag) {
-				LCDPR("phy vswing=0x%x, preemphasis=0x%x\n",
-					lvdsconf->phy_vswing,
-					lvdsconf->phy_preem);
-				LCDPR("phy_clk vswing=0x%x, preemphasis=0x%x\n",
-					lvdsconf->phy_clk_vswing,
-					lvdsconf->phy_clk_preem);
-			}
+			LCDPR("set phy vswing=%d, preemphasis=%d\n",
+				lvdsconf->phy_vswing, lvdsconf->phy_preem);
+			LCDPR("set phy_clk vswing=%d, preemphasis=%d\n",
+				lvdsconf->phy_clk_vswing,
+				lvdsconf->phy_clk_preem);
 		}
 		break;
 	case LCD_VBYONE:
@@ -815,15 +745,6 @@ static int lcd_config_load_from_dts(struct lcd_config_s *pconf,
 			pconf->lcd_control.vbyone_config->byte_mode = para[2];
 			pconf->lcd_control.vbyone_config->color_fmt = para[3];
 		}
-		ret = of_property_read_u32_array(child, "vbyone_intr_enable",
-			&para[0], 2);
-		if (ret) {
-			LCDERR("failed to get vbyone_intr_enable\n");
-		} else {
-			pconf->lcd_control.vbyone_config->intr_en = para[0];
-			pconf->lcd_control.vbyone_config->vsync_intr_en =
-				para[1];
-		}
 		ret = of_property_read_u32_array(child, "phy_attr",
 			&para[0], 2);
 		if (ret) {
@@ -832,11 +753,9 @@ static int lcd_config_load_from_dts(struct lcd_config_s *pconf,
 		} else {
 			pconf->lcd_control.vbyone_config->phy_vswing = para[0];
 			pconf->lcd_control.vbyone_config->phy_preem = para[1];
-			if (lcd_debug_print_flag) {
-				LCDPR("phy vswing=0x%x, preemphasis=0x%x\n",
+			LCDPR("set phy vswing=%d, preemphasis=%d\n",
 				pconf->lcd_control.vbyone_config->phy_vswing,
 				pconf->lcd_control.vbyone_config->phy_preem);
-			}
 		}
 		break;
 	default:
@@ -871,31 +790,22 @@ static int lcd_config_load_from_unifykey(struct lcd_config_s *pconf)
 		return -1;
 	}
 
-	/* step 1: check header */
-	len = LCD_UKEY_HEAD_SIZE;
+	/* check lcd unifykey length */
+	len = 10 + 36 + 18 + 31 + 20;
 	ret = lcd_unifykey_len_check(key_len, len);
 	if (ret < 0) {
-		LCDERR("unifykey header length is incorrect\n");
 		kfree(para);
 		return -1;
 	}
 
+	/* header: 10byte */
 	lcd_unifykey_header_check(para, &lcd_header);
-	len = 10 + 36 + 18 + 31 + 20;
 	if (lcd_debug_print_flag) {
 		LCDPR("unifykey header:\n");
 		LCDPR("crc32             = 0x%08x\n", lcd_header.crc32);
 		LCDPR("data_len          = %d\n", lcd_header.data_len);
 		LCDPR("version           = 0x%04x\n", lcd_header.version);
 		LCDPR("reserved          = 0x%04x\n", lcd_header.reserved);
-	}
-
-	/* step 2: check lcd parameters */
-	ret = lcd_unifykey_len_check(key_len, len);
-	if (ret < 0) {
-		LCDERR("unifykey parameters length is incorrect\n");
-		kfree(para);
-		return -1;
 	}
 
 	/* basic: 36byte */
@@ -979,80 +889,42 @@ static int lcd_config_load_from_unifykey(struct lcd_config_s *pconf)
 		pconf->lcd_control.vbyone_config->phy_vswing =
 				(*p | ((*(p + 1)) << 8)) & 0xff;
 		p += LCD_UKEY_IF_ATTR_4;
-		pconf->lcd_control.vbyone_config->phy_preem =
+		pconf->lcd_control.vbyone_config->phy_preem  =
 				(*p | ((*(p + 1)) << 8)) & 0xff;
 		p += LCD_UKEY_IF_ATTR_5;
-		pconf->lcd_control.vbyone_config->intr_en =
+		/* dummy pointer */
+		p += LCD_UKEY_IF_ATTR_6;
+		p += LCD_UKEY_IF_ATTR_7;
+		p += LCD_UKEY_IF_ATTR_8;
+		p += LCD_UKEY_IF_ATTR_9;
+	} else if (pconf->lcd_basic.lcd_type == LCD_LVDS) {
+		pconf->lcd_control.lvds_config->lvds_repack =
+				(*p | ((*(p + 1)) << 8)) & 0xff;
+		p += LCD_UKEY_IF_ATTR_0;
+		pconf->lcd_control.lvds_config->dual_port =
+				(*p | ((*(p + 1)) << 8)) & 0xff;
+		p += LCD_UKEY_IF_ATTR_1;
+		pconf->lcd_control.lvds_config->pn_swap  =
+				(*p | ((*(p + 1)) << 8)) & 0xff;
+		p += LCD_UKEY_IF_ATTR_2;
+		pconf->lcd_control.lvds_config->port_swap  =
+				(*p | ((*(p + 1)) << 8)) & 0xff;
+		p += LCD_UKEY_IF_ATTR_3;
+		pconf->lcd_control.lvds_config->phy_vswing =
+				(*p | ((*(p + 1)) << 8)) & 0xff;
+		p += LCD_UKEY_IF_ATTR_4;
+		pconf->lcd_control.lvds_config->phy_vswing =
+				(*p | ((*(p + 1)) << 8)) & 0xff;
+		p += LCD_UKEY_IF_ATTR_5;
+		pconf->lcd_control.lvds_config->phy_clk_vswing =
 				(*p | ((*(p + 1)) << 8)) & 0xff;
 		p += LCD_UKEY_IF_ATTR_6;
-		pconf->lcd_control.vbyone_config->vsync_intr_en =
+		pconf->lcd_control.lvds_config->phy_clk_preem  =
 				(*p | ((*(p + 1)) << 8)) & 0xff;
 		p += LCD_UKEY_IF_ATTR_7;
 		/* dummy pointer */
 		p += LCD_UKEY_IF_ATTR_8;
 		p += LCD_UKEY_IF_ATTR_9;
-	} else if (pconf->lcd_basic.lcd_type == LCD_LVDS) {
-		if (lcd_header.version == 1) {
-			pconf->lcd_control.lvds_config->lvds_repack =
-					(*p | ((*(p + 1)) << 8)) & 0xff;
-			p += LCD_UKEY_IF_ATTR_0;
-			pconf->lcd_control.lvds_config->dual_port =
-					(*p | ((*(p + 1)) << 8)) & 0xff;
-			p += LCD_UKEY_IF_ATTR_1;
-			pconf->lcd_control.lvds_config->pn_swap  =
-					(*p | ((*(p + 1)) << 8)) & 0xff;
-			p += LCD_UKEY_IF_ATTR_2;
-			pconf->lcd_control.lvds_config->port_swap  =
-					(*p | ((*(p + 1)) << 8)) & 0xff;
-			p += LCD_UKEY_IF_ATTR_3;
-			pconf->lcd_control.lvds_config->phy_vswing =
-					(*p | ((*(p + 1)) << 8)) & 0xff;
-			p += LCD_UKEY_IF_ATTR_4;
-			pconf->lcd_control.lvds_config->phy_preem =
-					(*p | ((*(p + 1)) << 8)) & 0xff;
-			p += LCD_UKEY_IF_ATTR_5;
-			pconf->lcd_control.lvds_config->phy_clk_vswing =
-					(*p | ((*(p + 1)) << 8)) & 0xff;
-			p += LCD_UKEY_IF_ATTR_6;
-			pconf->lcd_control.lvds_config->phy_clk_preem  =
-					(*p | ((*(p + 1)) << 8)) & 0xff;
-			p += LCD_UKEY_IF_ATTR_7;
-			pconf->lcd_control.lvds_config->lane_reverse = 0;
-			p += LCD_UKEY_IF_ATTR_8;
-			/* dummy pointer */
-			p += LCD_UKEY_IF_ATTR_9;
-			}
-		else if (lcd_header.version == 2) {
-			pconf->lcd_control.lvds_config->lvds_repack =
-					(*p | ((*(p + 1)) << 8)) & 0xff;
-			p += LCD_UKEY_IF_ATTR_0;
-			pconf->lcd_control.lvds_config->dual_port =
-					(*p | ((*(p + 1)) << 8)) & 0xff;
-			p += LCD_UKEY_IF_ATTR_1;
-			pconf->lcd_control.lvds_config->pn_swap  =
-					(*p | ((*(p + 1)) << 8)) & 0xff;
-			p += LCD_UKEY_IF_ATTR_2;
-			pconf->lcd_control.lvds_config->port_swap  =
-					(*p | ((*(p + 1)) << 8)) & 0xff;
-			p += LCD_UKEY_IF_ATTR_3;
-			pconf->lcd_control.lvds_config->lane_reverse  =
-					(*p | ((*(p + 1)) << 8)) & 0xff;
-			p += LCD_UKEY_IF_ATTR_4;
-			pconf->lcd_control.lvds_config->phy_vswing =
-					(*p | ((*(p + 1)) << 8)) & 0xff;
-			p += LCD_UKEY_IF_ATTR_5;
-			pconf->lcd_control.lvds_config->phy_preem =
-					(*p | ((*(p + 1)) << 8)) & 0xff;
-			p += LCD_UKEY_IF_ATTR_6;
-			pconf->lcd_control.lvds_config->phy_clk_vswing =
-					(*p | ((*(p + 1)) << 8)) & 0xff;
-			p += LCD_UKEY_IF_ATTR_7;
-			pconf->lcd_control.lvds_config->phy_clk_preem  =
-					(*p | ((*(p + 1)) << 8)) & 0xff;
-			p += LCD_UKEY_IF_ATTR_8;
-			/* dummy pointer */
-			p += LCD_UKEY_IF_ATTR_9;
-			}
 	} else {
 		LCDERR("unsupport lcd_type: %d\n", pconf->lcd_basic.lcd_type);
 		p += LCD_UKEY_IF_ATTR_0;
@@ -1067,8 +939,7 @@ static int lcd_config_load_from_unifykey(struct lcd_config_s *pconf)
 		p += LCD_UKEY_IF_ATTR_9;
 	}
 
-	/* step 3: check power sequence */
-	ret = lcd_power_load_from_unifykey(pconf, para, key_len, len);
+	ret = lcd_power_load_from_unifykey(pconf, para, key_len);
 	if (ret < 0) {
 		kfree(para);
 		return -1;
@@ -1105,10 +976,10 @@ static void lcd_config_init(struct lcd_config_s *pconf)
 	pconf->lcd_timing.lcd_clk_dft = pconf->lcd_timing.lcd_clk;
 	pconf->lcd_timing.h_period_dft = pconf->lcd_basic.h_period;
 	pconf->lcd_timing.v_period_dft = pconf->lcd_basic.v_period;
-	lcd_tcon_config(pconf); /* before vmode_init to avoid period changing */
 
 	lcd_vmode_init(pconf);
 
+	lcd_tcon_config(pconf);
 	lcd_clk_generate_parameter(pconf);
 	ss_level = pconf->lcd_timing.ss_level;
 	cconf->ss_level = (ss_level >= cconf->ss_level_max) ? 0 : ss_level;
@@ -1132,13 +1003,11 @@ static int lcd_get_config(struct lcd_config_s *pconf, struct device *dev)
 			load_id = 1;
 	}
 	if (load_id) {
-		if (lcd_debug_print_flag)
-			LCDPR("%s from unifykey\n", __func__);
+		LCDPR("%s from unifykey\n", __func__);
 		lcd_drv->lcd_config_load = 1;
 		lcd_config_load_from_unifykey(pconf);
 	} else {
-		if (lcd_debug_print_flag)
-			LCDPR("%s from dts\n", __func__);
+		LCDPR("%s from dts\n", __func__);
 		lcd_drv->lcd_config_load = 0;
 		lcd_config_load_from_dts(pconf, dev);
 	}
@@ -1226,9 +1095,6 @@ int lcd_tv_probe(struct device *dev)
 	lcd_drv->driver_init_pre = lcd_tv_driver_init_pre;
 	lcd_drv->driver_init = lcd_tv_driver_init;
 	lcd_drv->driver_disable = lcd_tv_driver_disable;
-	lcd_drv->driver_change = lcd_tv_driver_change;
-	lcd_drv->driver_tiny_enable = lcd_tv_driver_tiny_enable;
-	lcd_drv->driver_tiny_disable = lcd_tv_driver_tiny_disable;
 
 	lcd_get_config(lcd_drv->lcd_config, dev);
 

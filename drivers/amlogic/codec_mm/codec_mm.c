@@ -35,20 +35,12 @@
 #include <linux/dma-contiguous.h>
 
 #include <linux/amlogic/codec_mm/codec_mm.h>
-#include <linux/amlogic/codec_mm/codec_mm_scatter.h>
 
 #include "codec_mm_priv.h"
-#include "codec_mm_scatter_priv.h"
-#include "codec_mm_keeper_priv.h"
 
 #define TVP_POOL_NAME "TVP_POOL"
-#define CMA_RES_POOL_NAME "CMA_RES"
-
-
 
 #define RES_IS_MAPED
-#define DEFAULT_TVP_SIZE_FOR_4K (256 * SZ_1M)
-#define DEFAULT_TVP_SIZE_FOR_NO4K (160 * SZ_1M)
 
 #define ALLOC_MAX_RETRY 1
 
@@ -82,27 +74,13 @@ trace memory alloc/free info:0x20,
 */
 static u32 debug_mode;
 
-static u32 debug_sc_mode;
-u32 codec_mm_get_sc_debug_mode(void)
-{
-	return debug_sc_mode;
-}
-static u32 debug_keep_mode;
-u32 codec_mm_get_keep_debug_mode(void)
-{
-	return debug_keep_mode;
-}
-
-
 #define TVP_MAX_SLOT 8
-struct extpool_mgt_s {
+struct tvp_pool_mgt_s {
 	struct gen_pool *gen_pool[TVP_MAX_SLOT];
 	struct codec_mm_s *mm[TVP_MAX_SLOT];
 	int slot_num;
 	int default_size;
 	int default_4k_size;
-	int alloced_size;
-	int total_size;
 	spinlock_t lock;
 };
 
@@ -111,29 +89,26 @@ struct codec_mm_mgt_s {
 	struct device *dev;
 	struct list_head mem_list;
 	struct gen_pool *res_pool;
-	struct extpool_mgt_s tvp_pool;
-	struct extpool_mgt_s cma_res_pool;
+	struct tvp_pool_mgt_s tvp_pool;
 	struct reserved_mem rmem;
 	int total_codec_mem_size;
 	int total_alloced_size;
 	int total_cma_size;
 	int total_reserved_size;
+	int total_tvp_size;
 	int max_used_mem_size;
 
 	int alloced_res_size;
 	int alloced_cma_size;
 	int alloced_sys_size;
-	int alloced_for_sc_size;
-	int alloced_for_sc_cnt;
+	int alloced_tvp_size;
 
 	int alloc_from_sys_pages_max;
 	int enable_kmalloc_on_nomem;
 	int res_mem_flags;
-	int global_memid;
+
 	/*1:for 1080p,2:for 4k*/
 	int tvp_enable;
-	/*1:for 1080p,2:for 4k*/
-	int fastplay_enable;
 	spinlock_t lock;
 };
 
@@ -155,8 +130,8 @@ static struct codec_mm_mgt_s *get_mem_mgt(void)
 };
 
 
-static void *codec_mm_extpool_alloc(
-	struct extpool_mgt_s *tvp_pool,
+static void *codec_mm_tvp_alloc(
+	struct tvp_pool_mgt_s *tvp_pool,
 	void **from_pool, int size)
 {
 	int i = 0;
@@ -175,30 +150,12 @@ static void *codec_mm_extpool_alloc(
 	return NULL;
 }
 
-static void *codec_mm_extpool_free(struct gen_pool *from_pool,
+static void *codec_mm_tvp_free(struct gen_pool *from_pool,
 	void *handle, int size)
 {
 	gen_pool_free(from_pool,
 			(unsigned long)handle, size);
 	return 0;
-}
-
-
-static int codec_mm_valid_mm_locked(struct codec_mm_s *mmhandle)
-{
-	struct codec_mm_mgt_s *mgt = get_mem_mgt();
-	struct codec_mm_s *mem;
-	int have_found = 0;
-
-	if (!list_empty(&mgt->mem_list)) {
-		list_for_each_entry(mem, &mgt->mem_list, list) {
-			if (mem == mmhandle) {
-				have_found =  1;
-				break;
-			}
-		}
-	}
-	return have_found;
 }
 
 
@@ -220,23 +177,18 @@ static int codec_mm_alloc_pre_check_in(
 	int aligned_size = PAGE_ALIGN(need_size);
 	if (aligned_size <= mgt->total_reserved_size - mgt->alloced_res_size)
 		have_space |= 1;
-	if (aligned_size <= mgt->cma_res_pool.total_size -
-			mgt->cma_res_pool.alloced_size)
-		have_space |= 1;
-
 	if (aligned_size <= mgt->total_cma_size - mgt->alloced_cma_size)
 		have_space |= 2;
-
 	if (aligned_size/PAGE_SIZE <= mgt->alloc_from_sys_pages_max)
 		have_space |= 4;
-	if (aligned_size <= mgt->tvp_pool.total_size -
-			mgt->tvp_pool.alloced_size)
+	if (aligned_size <= mgt->total_tvp_size - mgt->alloced_tvp_size)
 		have_space |= 8;
 
 	if (flags & 1) {
 		have_space = have_space & 8;
 	}
 	if (debug_mode & 0xf) {
+		pr_info("codec mm is enabled debug_mode:%d\n", debug_mode);
 		have_space = have_space & (~(debug_mode & 1));
 		have_space = have_space & (~(debug_mode & 2));
 		have_space = have_space & (~(debug_mode & 4));
@@ -318,31 +270,9 @@ static int codec_mm_alloc_in(
 			}
 			try_alloced_from_sys = 1;
 		}
-		/*cma first.*/
-		if (try_cma_first && can_from_cma) {
-			/*
-				normal cma.
-			*/
-			mem->mem_handle = dma_alloc_from_contiguous(mgt->dev,
-					mem->page_count,
-					align_2n - PAGE_SHIFT);
-			mem->from_flags = AMPORTS_MEM_FLAGS_FROM_GET_FROM_CMA;
-			if (mem->mem_handle) {
-				mem->vbuffer = mem->mem_handle;
-				mem->phy_addr =
-				 page_to_phys((struct page *)mem->mem_handle);
-#ifdef CONFIG_ARM64
-				if (mem->flags & CODEC_MM_FLAGS_CMA_CLEAR) {
-					dma_clear_buffer(
-						(struct page *)mem->vbuffer,
-						mem->buffer_size);
-				}
-#endif
-				break;
-			}
-		}
-		/*reserved alloc..*/
-		if (can_from_res &&
+		/*reserved first..*/
+		if (!try_cma_first && /*if cma first, ignore this alloc.*/
+			can_from_res &&
 			(align_2n <= RESERVE_MM_ALIGNED_2N)) {
 			int aligned_buffer_size = ALIGN(mem->buffer_size,
 					(1 << RESERVE_MM_ALIGNED_2N));
@@ -359,40 +289,8 @@ static int codec_mm_alloc_in(
 			}
 			try_alloced_from_reserved = 1;
 		}
-		/*can_from_res is reserved..*/
-		if (can_from_res) {
-			if (mgt->cma_res_pool.total_size > 0 &&
-				(mgt->cma_res_pool.alloced_size +
-					mem->buffer_size) <
-				mgt->cma_res_pool.total_size) {
-				/*
-				from cma res first.
-				*/
-				int aligned_buffer_size =
-					ALIGN(mem->buffer_size,
-						(1 << RESERVE_MM_ALIGNED_2N));
-				mem->mem_handle =
-					(void *)codec_mm_extpool_alloc(
-						&mgt->cma_res_pool,
-						&mem->from_ext,
-						aligned_buffer_size);
-				mem->from_flags =
-					AMPORTS_MEM_FLAGS_FROM_GET_FROM_CMA_RES;
-				if (mem->mem_handle) {
-					/*no vaddr for TVP MEMORY */
-					mem->vbuffer = NULL;
-					mem->phy_addr =
-						(unsigned long)mem->mem_handle;
-					mem->buffer_size = aligned_buffer_size;
-					break;
-				}
-			}
-
-		}
+		/*cma first..*/
 		if (can_from_cma) {
-			/*
-				normal cma.
-			*/
 			mem->mem_handle = dma_alloc_from_contiguous(mgt->dev,
 					mem->page_count,
 					align_2n - PAGE_SHIFT);
@@ -411,12 +309,31 @@ static int codec_mm_alloc_in(
 				break;
 			}
 		}
+		/*reserved later.*/
+		if (!try_alloced_from_reserved &&
+			can_from_res &&
+			(align_2n <= RESERVE_MM_ALIGNED_2N)) {
+			int aligned_buffer_size = ALIGN(mem->buffer_size,
+					(1 << RESERVE_MM_ALIGNED_2N));
+			mem->mem_handle = (void *)gen_pool_alloc(mgt->res_pool,
+							aligned_buffer_size);
+			mem->from_flags =
+				AMPORTS_MEM_FLAGS_FROM_GET_FROM_REVERSED;
+			if (mem->mem_handle) {
+				/*default is no maped */
+				mem->vbuffer = NULL;
+				mem->phy_addr = (unsigned long)mem->mem_handle;
+				mem->buffer_size = aligned_buffer_size;
+				break;
+			}
+		}
+
 		if (can_from_tvp &&
 				align_2n <= RESERVE_MM_ALIGNED_2N) {
 			/* 64k,aligend */
 			int aligned_buffer_size = ALIGN(mem->buffer_size,
 					(1 << RESERVE_MM_ALIGNED_2N));
-			mem->mem_handle = (void *)codec_mm_extpool_alloc(
+			mem->mem_handle = (void *)codec_mm_tvp_alloc(
 					&mgt->tvp_pool,
 					&mem->from_ext,
 					aligned_buffer_size);
@@ -455,12 +372,8 @@ static int codec_mm_alloc_in(
 static void codec_mm_free_in(struct codec_mm_mgt_s *mgt,
 		struct codec_mm_s *mem)
 {
-	if (!(mem->flags & CODEC_MM_FLAGS_FOR_LOCAL_MGR))
+	if (!(mem->flags & CODEC_MM_FLAGS_FOR_TVP_POOL))
 		mgt->total_alloced_size -= mem->buffer_size;
-	if (mem->flags & CODEC_MM_FLAGS_FOR_SCATTER) {
-		mgt->alloced_for_sc_size -= mem->buffer_size;
-		mgt->alloced_for_sc_cnt--;
-	}
 
 	if (mem->from_flags == AMPORTS_MEM_FLAGS_FROM_GET_FROM_CMA) {
 		dma_release_from_contiguous(mgt->dev,
@@ -472,27 +385,21 @@ static void codec_mm_free_in(struct codec_mm_mgt_s *mgt,
 			(unsigned long)mem->mem_handle, mem->buffer_size);
 		mgt->alloced_res_size -= mem->buffer_size;
 	} else if (mem->from_flags == AMPORTS_MEM_FLAGS_FROM_GET_FROM_TVP) {
-		codec_mm_extpool_free(
+		codec_mm_tvp_free(
 			(struct gen_pool *)mem->from_ext,
 			mem->mem_handle,
 			mem->buffer_size);
-		mgt->tvp_pool.alloced_size -= mem->buffer_size;
+		mgt->alloced_tvp_size -= mem->buffer_size;
 	} else if (mem->from_flags == AMPORTS_MEM_FLAGS_FROM_GET_FROM_PAGES) {
-		free_pages((unsigned long)mem->mem_handle,
+		__free_pages((struct page *)mem->mem_handle,
 			get_order(mem->buffer_size));
 		mgt->alloced_sys_size -= mem->buffer_size;
-	} else if (mem->from_flags == AMPORTS_MEM_FLAGS_FROM_GET_FROM_CMA_RES) {
-		codec_mm_extpool_free(
-			(struct gen_pool *)mem->from_ext,
-			mem->mem_handle,
-			mem->buffer_size);
-		mgt->cma_res_pool.alloced_size -= mem->buffer_size;
 	}
 
 	return;
 }
 
-struct codec_mm_s *codec_mm_alloc(const char *owner, int size,
+static struct codec_mm_s *codec_mm_alloc(const char *owner, int size,
 		int align2n, int memflags)
 {
 	struct codec_mm_mgt_s *mgt = get_mem_mgt();
@@ -507,20 +414,13 @@ struct codec_mm_s *codec_mm_alloc(const char *owner, int size,
 		return NULL;
 	}
 
-	if (mgt->tvp_enable & 3) {
+	if ((mgt->tvp_enable & 3) &&
+		(memflags & CODEC_MM_FLAGS_FOR_VDECODER)) {
 		/*if tvp & video decoder used tvp memory.
 		   Audio don't protect for default now.
 		*/
-		if (memflags & CODEC_MM_FLAGS_TVP) {
-			/*clear other flags, when tvp mode.*/
-			memflags = memflags & (~CODEC_MM_FLAGS_FROM_MASK);
-			memflags |= CODEC_MM_FLAGS_TVP;
-		}
-	} else { /*tvp not enabled*/
-		if (memflags & CODEC_MM_FLAGS_TVP) {
-			pr_err("TVP not enabled, when alloc from tvp %s need %d\n",
-				owner, size);
-		}
+		memflags = memflags & (~CODEC_MM_FLAGS_FROM_MASK);
+		memflags |= CODEC_MM_FLAGS_TVP;
 	}
 	if ((memflags & CODEC_MM_FLAGS_FROM_MASK) == 0)
 		memflags |= CODEC_MM_FLAGS_DMA;
@@ -532,14 +432,6 @@ struct codec_mm_s *codec_mm_alloc(const char *owner, int size,
 	mem->align2n = align2n;
 	mem->flags = memflags;
 	ret = codec_mm_alloc_in(mgt, mem);
-	if (ret == -10003 &&
-		mgt->alloced_for_sc_cnt > 0 && /*have used for scatter.*/
-		!(memflags & CODEC_MM_FLAGS_FOR_SCATTER)) {
-		/*if not scatter, free scatter caches.*/
-		pr_err(" No mem ret=%d, clear scatter cache!!\n", ret);
-		codec_mm_scatter_free_all_ignorecache(1);
-		ret = codec_mm_alloc_in(mgt, mem);
-	}
 	if (ret < 0) {
 		pr_err("not enough mem for %s size %d, ret=%d\n",
 				owner, size, ret);
@@ -553,7 +445,6 @@ struct codec_mm_s *codec_mm_alloc(const char *owner, int size,
 	mem->owner[0] = owner;
 	spin_lock_init(&mem->lock);
 	spin_lock_irqsave(&mgt->lock, flags);
-	mem->mem_id = mgt->global_memid++;
 	list_add_tail(&mem->list, &mgt->mem_list);
 	switch (mem->from_flags) {
 	case AMPORTS_MEM_FLAGS_FROM_GET_FROM_PAGES:
@@ -563,25 +454,18 @@ struct codec_mm_s *codec_mm_alloc(const char *owner, int size,
 		mgt->alloced_cma_size += mem->buffer_size;
 		break;
 	case AMPORTS_MEM_FLAGS_FROM_GET_FROM_TVP:
-		mgt->tvp_pool.alloced_size += mem->buffer_size;
+		mgt->alloced_tvp_size += mem->buffer_size;
 		break;
 	case AMPORTS_MEM_FLAGS_FROM_GET_FROM_REVERSED:
 		mgt->alloced_res_size += mem->buffer_size;
 		break;
-	case AMPORTS_MEM_FLAGS_FROM_GET_FROM_CMA_RES:
-		mgt->cma_res_pool.alloced_size += mem->buffer_size;
-		break;
 	default:
 		pr_err("error alloc flags %d\n", mem->from_flags);
 	}
-	if (!(mem->flags & CODEC_MM_FLAGS_FOR_LOCAL_MGR)) {
+	if (!(mem->flags & CODEC_MM_FLAGS_FOR_TVP_POOL)) {
 		mgt->total_alloced_size += mem->buffer_size;
 		if (mgt->total_alloced_size > mgt->max_used_mem_size)
 			mgt->max_used_mem_size = mgt->total_alloced_size;
-	}
-	if ((mem->flags & CODEC_MM_FLAGS_FOR_SCATTER)) {
-		mgt->alloced_for_sc_size += mem->buffer_size;
-		mgt->alloced_for_sc_cnt++;
 	}
 	spin_unlock_irqrestore(&mgt->lock, flags);
 	if (debug_mode & 0x20)
@@ -591,7 +475,7 @@ struct codec_mm_s *codec_mm_alloc(const char *owner, int size,
 	return mem;
 }
 
-void codec_mm_release(struct codec_mm_s *mem, const char *owner)
+static void codec_mm_release(struct codec_mm_s *mem, const char *owner)
 {
 
 	int index;
@@ -625,21 +509,6 @@ void codec_mm_release(struct codec_mm_s *mem, const char *owner)
 	return;
 }
 
-void codec_mm_release_with_check(struct codec_mm_s *mem, const char *owner)
-{
-	struct codec_mm_mgt_s *mgt = get_mem_mgt();
-	unsigned long flags;
-	int ret;
-	spin_lock_irqsave(&mgt->lock, flags);
-	ret = codec_mm_valid_mm_locked(mem);
-	spin_unlock_irqrestore(&mgt->lock, flags);
-	if (ret) {
-		/*for check,*/
-		return codec_mm_release(mem, owner);
-	}
-	return;
-}
-
 void codec_mm_dma_flush(void *vaddr,
 	int size,
 	enum dma_data_direction dir)
@@ -652,27 +521,11 @@ void codec_mm_dma_flush(void *vaddr,
 	return;
 }
 
-
 int codec_mm_request_shared_mem(struct codec_mm_s *mem, const char *owner)
 {
-	struct codec_mm_mgt_s *mgt = get_mem_mgt();
-	unsigned long flags;
-	int ret = -1;
-	spin_lock_irqsave(&mgt->lock, flags);
-	if (!codec_mm_valid_mm_locked(mem)) {
-		ret = -2;
-		goto out;
-	}
-	if (atomic_read(&mem->use_cnt) > 7) {
-		ret = -3;
-		goto out;
-	}
-	ret = 0;
+	if (!mem || atomic_read(&mem->use_cnt) > 7)
+		return -1;
 	mem->owner[atomic_inc_return(&mem->use_cnt) - 1] = owner;
-
-out:
-	spin_unlock_irqrestore(&mgt->lock, flags);
-
 	return 0;
 }
 
@@ -693,8 +546,6 @@ static struct codec_mm_s *codec_mm_get_by_val_off(unsigned long val, int off)
 	spin_unlock_irqrestore(&mgt->lock, flags);
 	return want_mem;
 }
-
-
 
 unsigned long codec_mm_alloc_for_dma(const char *owner, int page_cnt,
 		int align2n, int memflags)
@@ -719,7 +570,7 @@ int codec_mm_free_for_dma(const char *owner, unsigned long phy_addr)
 }
 
 static int codec_mm_init_tvp_pool(
-			struct extpool_mgt_s *tvp_pool,
+			struct tvp_pool_mgt_s *tvp_pool,
 			struct codec_mm_s *mm)
 {
 	struct gen_pool *pool;
@@ -739,25 +590,24 @@ static int codec_mm_init_tvp_pool(
 
 
 
-int codec_mm_extpool_pool_alloc(
-	struct extpool_mgt_s *tvp_pool,
-	int size, int memflags, int for_tvp)
+int codec_mm_tvp_before_alloc(int size, int memflags)
 {
 	struct codec_mm_mgt_s *mgt = get_mem_mgt();
+	struct tvp_pool_mgt_s *tvp_pool =  &mgt->tvp_pool;
 	struct codec_mm_s *mem;
-	int alloced_size = tvp_pool->alloced_size;
+	int alloced_size = mgt->total_tvp_size;
 	int try_alloced_size = size;
 	int ret;
 
 /*alloced from reserved*/
 	try_alloced_size = mgt->total_reserved_size - mgt->alloced_res_size;
-	if (try_alloced_size > 0 && for_tvp) {
+	if (try_alloced_size > 0) {
 		try_alloced_size = min_t(int,
 			size - alloced_size, try_alloced_size);
 		mem = codec_mm_alloc(TVP_POOL_NAME,
 					try_alloced_size,
 					0,
-					CODEC_MM_FLAGS_FOR_LOCAL_MGR |
+					CODEC_MM_FLAGS_FOR_TVP_POOL |
 					CODEC_MM_FLAGS_RESERVED);
 
 		if (mem) {
@@ -782,13 +632,10 @@ int codec_mm_extpool_pool_alloc(
 	if (try_alloced_size > 0) {
 		try_alloced_size = min_t(int, size -
 				alloced_size, try_alloced_size);
-		mem = codec_mm_alloc(
-					for_tvp ?
-						TVP_POOL_NAME :
-						CMA_RES_POOL_NAME,
+		mem = codec_mm_alloc(TVP_POOL_NAME,
 					try_alloced_size,
 					0,
-					CODEC_MM_FLAGS_FOR_LOCAL_MGR |
+					CODEC_MM_FLAGS_FOR_TVP_POOL |
 					CODEC_MM_FLAGS_CMA);
 
 		if (mem) {
@@ -806,7 +653,7 @@ int codec_mm_extpool_pool_alloc(
 
 alloced_finished:
 	if (alloced_size > 0) {
-		tvp_pool->total_size = alloced_size;
+		mgt->total_tvp_size = alloced_size;
 		return alloced_size;
 	}
 	return -1;
@@ -819,9 +666,10 @@ alloced TVP memory;
 it not free,some memory may free ignore.
 return :
 */
-static int codec_mm_extpool_pool_release(struct extpool_mgt_s *tvp_pool)
+static int codec_mm_tvp_after_release(void)
 {
 	struct codec_mm_mgt_s *mgt = get_mem_mgt();
+	struct tvp_pool_mgt_s *tvp_pool =  &mgt->tvp_pool;
 	int i;
 	int ignored = 0;
 
@@ -841,7 +689,7 @@ static int codec_mm_extpool_pool_release(struct extpool_mgt_s *tvp_pool)
 						TVP_POOL_NAME);
 			}
 		}
-		mgt->tvp_pool.total_size -= slot_mem_size;
+		mgt->total_tvp_size -= slot_mem_size;
 		tvp_pool->gen_pool[i] = NULL;
 		tvp_pool->mm[i] = NULL;
 	}
@@ -884,7 +732,7 @@ return n;
 static int codec_mm_tvp_get_mem_resource(ulong *res, int victor_size)
 {
 	struct codec_mm_mgt_s *mgt = get_mem_mgt();
-	struct extpool_mgt_s *tvp_pool =  &mgt->tvp_pool;
+	struct tvp_pool_mgt_s *tvp_pool =  &mgt->tvp_pool;
 	int i;
 
 	for (i = 0; i < tvp_pool->slot_num && i < victor_size/2; i++) {
@@ -900,7 +748,7 @@ static int codec_mm_tvp_get_mem_resource(ulong *res, int victor_size)
 static int codec_mm_is_in_tvp_region(ulong phy_addr)
 {
 	struct codec_mm_mgt_s *mgt = get_mem_mgt();
-	struct extpool_mgt_s *tvp_pool =  &mgt->tvp_pool;
+	struct tvp_pool_mgt_s *tvp_pool =  &mgt->tvp_pool;
 	int i;
 	int in = 0, in2 = 0;
 
@@ -923,8 +771,6 @@ static int codec_mm_is_in_tvp_region(ulong phy_addr)
 void *codec_mm_phys_to_virt(unsigned long phy_addr)
 {
 	struct codec_mm_mgt_s *mgt = get_mem_mgt();
-	if (codec_mm_is_in_tvp_region(phy_addr))
-		return NULL;	/* no virt for tvp memory; */
 
 	if (phy_addr >= mgt->rmem.base &&
 			phy_addr < mgt->rmem.base + mgt->rmem.size) {
@@ -932,7 +778,8 @@ void *codec_mm_phys_to_virt(unsigned long phy_addr)
 			return phys_to_virt(phy_addr);
 		return NULL;	/* no virt for reserved memory; */
 	}
-
+	if (codec_mm_is_in_tvp_region(phy_addr))
+		return NULL;	/* no virt for tvp memory; */
 	return phys_to_virt(phy_addr);
 }
 
@@ -968,7 +815,7 @@ static int dump_mem_infos(void *buf, int size)
 	s = sprintf(pbuf, "\tCMA:%d,RES:%d,TVP:%d,SYS:%d MB\n",
 		mgt->alloced_cma_size / SZ_1M,
 		mgt->alloced_res_size / SZ_1M,
-		mgt->tvp_pool.alloced_size / SZ_1M,
+		mgt->alloced_tvp_size / SZ_1M,
 		mgt->alloced_sys_size / SZ_1M);
 	tsize += s;
 	pbuf += s;
@@ -997,21 +844,10 @@ static int dump_mem_infos(void *buf, int size)
 		s = sprintf(pbuf,
 			"\t[%d]TVP size:%d MB,alloced:%d MB free:%d MB\n",
 				AMPORTS_MEM_FLAGS_FROM_GET_FROM_TVP,
-				(int)(mgt->tvp_pool.total_size / SZ_1M),
-				(int)(mgt->tvp_pool.alloced_size / SZ_1M),
-				(int)((mgt->tvp_pool.total_size -
-				mgt->tvp_pool.alloced_size) / SZ_1M));
-		tsize += s;
-		pbuf += s;
-	}
-	if (mgt->cma_res_pool.slot_num > 0) {
-		s = sprintf(pbuf,
-			"\t[%d]CMA_RES size:%d MB,alloced:%d MB free:%d MB\n",
-				AMPORTS_MEM_FLAGS_FROM_GET_FROM_CMA_RES,
-				(int)(mgt->cma_res_pool.total_size / SZ_1M),
-				(int)(mgt->cma_res_pool.alloced_size / SZ_1M),
-				(int)((mgt->cma_res_pool.total_size -
-				mgt->cma_res_pool.alloced_size) / SZ_1M));
+				(int)(mgt->total_tvp_size / SZ_1M),
+				(int)(mgt->alloced_tvp_size / SZ_1M),
+				(int)((mgt->total_tvp_size -
+				mgt->alloced_tvp_size) / SZ_1M));
 		tsize += s;
 		pbuf += s;
 	}
@@ -1029,21 +865,17 @@ static int dump_mem_infos(void *buf, int size)
 	}
 	list_for_each_entry(mem, &mgt->mem_list, list) {
 		s = sprintf(pbuf,
-		"\towner:[%d] %s:%s,addr=%p,s=%d,from=%d,cnt=%d\n",
-		mem->mem_id,
+		"\towner: %s:%s,addr=%p,s=%d,from=%d,cnt=%d\n",
 		mem->owner[0] ? mem->owner[0] : "no",
 		mem->owner[1] ? mem->owner[1] : "no",
 		(void *)mem->phy_addr,
 		mem->buffer_size, mem->from_flags,
 		atomic_read(&mem->use_cnt));
 
-		if (buf) {
+		if (buf)
 			pbuf += s;
-			if (tsize + s > size - 128)
-				break;/*no memory for dump now.*/
-		} else {
+		else
 			pr_info("%s", sbuf);
-		}
 		tsize += s;
 	}
 	spin_unlock_irqrestore(&mgt->lock, flags);
@@ -1060,34 +892,14 @@ int codec_mm_video_tvp_enabled(void)
 int codec_mm_get_total_size(void)
 {
 	struct codec_mm_mgt_s *mgt = get_mem_mgt();
-	int total_size = mgt->total_codec_mem_size;
-	if ((debug_mode & 0xf) == 0) {/*no debug memory mode.*/
-		return total_size;
-	}
-	/*
-	disable reserved:1
-	disable cma:2
-	disable sys memory:4
-	disable half memory:8,
-	*/
-	if (debug_mode & 0x8)
-		total_size -=  mgt->total_codec_mem_size/2;
-	if (debug_mode & 0x1) {
-		total_size -= mgt->total_reserved_size;
-		total_size -= mgt->cma_res_pool.total_size;
-	}
-	if (debug_mode & 0x2)
-		total_size -=  mgt->total_cma_size;
-	if (total_size < 0)
-		total_size = 0;
-	return total_size;
+	return mgt->total_codec_mem_size;
 }
 
 int codec_mm_get_free_size(void)
 {
 	struct codec_mm_mgt_s *mgt = get_mem_mgt();
-	return codec_mm_get_total_size() -
-		mgt->total_alloced_size;
+	return mgt->total_codec_mem_size -
+	mgt->total_alloced_size;
 }
 
 int codec_mm_get_reserved_size(void)
@@ -1095,28 +907,19 @@ int codec_mm_get_reserved_size(void)
 	struct codec_mm_mgt_s *mgt = get_mem_mgt();
 	return mgt->total_reserved_size;
 }
-/*
-with_wait:
-1: if no mem, do wait and free some cache.
-0: do not wait.
-*/
-int codec_mm_enough_for_size(int size, int with_wait)
+
+int codec_mm_enough_for_size(int size)
 {
 	struct codec_mm_mgt_s *mgt = get_mem_mgt();
 	int have_mem = codec_mm_alloc_pre_check_in(mgt, size, 0);
-	if (!have_mem && with_wait && mgt->alloced_for_sc_cnt > 0) {
-		pr_err(" No mem, clear scatter cache!!\n");
-		codec_mm_scatter_free_all_ignorecache(1);
-		have_mem = codec_mm_alloc_pre_check_in(mgt, size, 0);
-		if (have_mem)
-			return 1;
-
+	if (!have_mem) {
 		if (debug_mode & 0x20)
 			dump_mem_infos(NULL, 0);
 		return 0;
 	}
 	return 1;
 }
+
 
 
 
@@ -1152,19 +955,9 @@ int codec_mm_mgt_init(struct device *dev)
 	}
 	mgt->total_cma_size = dma_get_cma_size_int_byte(mgt->dev);
 	mgt->total_codec_mem_size += mgt->total_cma_size;
+	mgt->tvp_pool.default_size = mgt->total_reserved_size + SZ_1M*32;
 	/*2M for audio not protect.*/
 	mgt->tvp_pool.default_4k_size = mgt->total_codec_mem_size - SZ_1M * 2;
-	if (mgt->tvp_pool.default_4k_size > DEFAULT_TVP_SIZE_FOR_4K)
-		mgt->tvp_pool.default_4k_size = DEFAULT_TVP_SIZE_FOR_4K;
-	/*97MB -> 160MB, may not enough for h265*/
-	mgt->tvp_pool.default_size = (mgt->total_codec_mem_size - (SZ_1M * 2)) >
-			DEFAULT_TVP_SIZE_FOR_NO4K ?
-				DEFAULT_TVP_SIZE_FOR_NO4K :
-				mgt->tvp_pool.default_4k_size;
-
-	mgt->cma_res_pool.default_size = mgt->total_cma_size;
-	mgt->cma_res_pool.default_4k_size = mgt->total_cma_size;
-	mgt->global_memid = 0;
 	spin_lock_init(&mgt->lock);
 	return 0;
 }
@@ -1232,21 +1025,7 @@ static ssize_t codec_mm_dump_show(struct class *class,
 	ret = dump_mem_infos(buf, PAGE_SIZE);
 	return ret;
 }
-static ssize_t codec_mm_scatter_dump_show(struct class *class,
-	struct class_attribute *attr, char *buf)
-{
-	size_t ret;
-	ret = codec_mm_scatter_info_dump(buf, PAGE_SIZE);
-	return ret;
-}
 
-static ssize_t codec_mm_keeper_dump_show(struct class *class,
-	struct class_attribute *attr, char *buf)
-{
-	size_t ret;
-	ret = codec_mm_keeper_dump_info(buf, PAGE_SIZE);
-	return ret;
-}
 
 static ssize_t tvp_enable_help_show(struct class *class,
 		struct class_attribute *attr,
@@ -1276,81 +1055,27 @@ static ssize_t tvp_enable_store(struct class *class,
 	ret = sscanf(buf, "%d", &val);
 	if (ret != 1)
 		return -EINVAL;
-	/*
-	always free all scatter cache for
-	tvp changes.
-	*/
-	codec_mm_keeper_free_all_keep(2);
-	codec_mm_scatter_free_all_ignorecache(3);
 	switch (val) {
 	case 0:
-		ret = codec_mm_extpool_pool_release(&mgt->tvp_pool);
+		ret = codec_mm_tvp_after_release();
 		mgt->tvp_enable = 0;
-		pr_info("disalbe tvp\n");
+		pr_err("disalbe tvp\n");
 		break;
 	case 1:
-		codec_mm_extpool_pool_alloc(
-			&mgt->tvp_pool,
-			mgt->tvp_pool.default_size, 0, 1);
+		codec_mm_tvp_before_alloc(mgt->tvp_pool.default_size, 0);
 		mgt->tvp_enable = 1;
-		pr_info("enable tvp for 1080p\n");
+		pr_err("enable tvp for 1080p\n");
 		break;
 	case 2:
-		codec_mm_extpool_pool_alloc(
-			&mgt->tvp_pool,
-			mgt->tvp_pool.default_4k_size, 0, 1);
+		codec_mm_tvp_before_alloc(mgt->tvp_pool.default_4k_size, 0);
 		mgt->tvp_enable = 2;
-		pr_info("enable tvp for 4k\n");
+		pr_err("enable tvp for 4k\n");
 		break;
 	default:
 		pr_err("unknow cmd! %d\n", val);
 	}
 	return size;
 }
-
-static ssize_t fastplay_enable_help_show(struct class *class,
-		struct class_attribute *attr,
-		char *buf)
-{
-	ssize_t size = 0;
-	size += sprintf(buf, "fastplay enable help:\n");
-	size += sprintf(buf + size, "echo n > tvp_enable\n");
-	size += sprintf(buf + size, "0: disable fastplay\n");
-	size += sprintf(buf + size,
-	"1: enable fastplay for 1080p playing(use default size)\n");
-	return size;
-}
-
-static ssize_t fastplay_enable_store(struct class *class,
-		struct class_attribute *attr,
-		const char *buf, size_t size)
-{
-	struct codec_mm_mgt_s *mgt = get_mem_mgt();
-	unsigned val;
-	ssize_t ret;
-	val = -1;
-	ret = sscanf(buf, "%d", &val);
-	if (ret != 1)
-		return -EINVAL;
-	switch (val) {
-	case 0:
-		ret = codec_mm_extpool_pool_release(&mgt->cma_res_pool);
-		mgt->fastplay_enable = 0;
-		pr_err("disalbe fastplay\n");
-		break;
-	case 1:
-		codec_mm_extpool_pool_alloc(
-			&mgt->cma_res_pool,
-			mgt->cma_res_pool.default_4k_size, 0, 0);
-		mgt->fastplay_enable = 1;
-		pr_err("enable fastplay\n");
-		break;
-	default:
-		pr_err("unknow cmd! %d\n", val);
-	}
-	return size;
-}
-
 
 
 
@@ -1370,7 +1095,6 @@ static ssize_t codec_mm_config_show(struct class *class,
 		"default_tvp_4k_size:0x%x(%d MB)\n",
 		mgt->tvp_pool.default_4k_size,
 		mgt->tvp_pool.default_4k_size / SZ_1M);
-	ret += codec_mm_scatter_mgt_get_config(buf + ret);
 	return ret;
 }
 
@@ -1391,7 +1115,7 @@ static ssize_t codec_mm_config_store(struct class *class,
 		mgt->tvp_pool.default_4k_size = val;
 		return size;
 	}
-	return codec_mm_scatter_mgt_set_config(buf, size);
+	return -1;
 }
 
 static ssize_t tvp_region_show(struct class *class,
@@ -1414,152 +1138,16 @@ static ssize_t tvp_region_show(struct class *class,
 	return off;
 }
 
-static ssize_t codec_mm_debug_show(struct class *class,
-		struct class_attribute *attr,
-		char *buf)
-{
-	ssize_t size = 0;
-	size += sprintf(buf, "mm_scatter help:\n");
-	size += sprintf(buf + size, "echo n > mm_scatter_debug\n");
-	size += sprintf(buf + size, "n==0: clear all debugs)\n");
-	size += sprintf(buf + size,
-	"n=1: dump all alloced scatters\n");
-	size += sprintf(buf + size,
-	"n=2: dump all slots\n");
 
-	size += sprintf(buf + size,
-	"n=3: dump all free slots\n");
-
-	size += sprintf(buf + size,
-	"n=4: dump all sid hash table\n");
-
-	size += sprintf(buf + size,
-	"n=5: free all free slot now!\n");
-
-	size += sprintf(buf + size,
-	"n=6: clear all time infos!\n");
-
-	size += sprintf(buf + size,
-	"n=10: force free all keeper\n");
-
-	size += sprintf(buf + size,
-	"n=20: dump memory,# 20 #addr(hex) #len\n");
-
-	size += sprintf(buf + size,
-	"n==100: cmd mode p1 p ##mode:0,dump, 1,alloc 2,more,3,free some,4,free all\n");
-	return size;
-}
-
-static int codec_mm_mem_dump(unsigned long addr, int isphy, int len)
-{
-	void *vaddr;
-	int is_map = 0;
-	pr_info("start dump addr: %p %d\n", (void *)addr, len);
-	if (!isphy) {
-		vaddr = (void *)addr;
-	} else {
-		vaddr = ioremap_nocache(
-					addr, len);
-		if (!vaddr) {
-			pr_info("map addr: %p len: %d, failed\n",
-				(void *)addr, len);
-			vaddr = codec_mm_phys_to_virt(addr);
-		} else {
-			is_map = 1;
-		}
-	}
-	if (vaddr) {
-		unsigned int *p, *vint;
-		int i;
-		vint = (unsigned int *)vaddr;
-		for (i = 0; i <= len - 32; i += sizeof(int) * 8) {
-			p = (int *)&vint[i];
-			pr_info("%p: %08x %08x %08x %08x %08x %08x %08x %08x\n",
-			p,
-			p[0], p[1], p[2], p[3],
-			p[4], p[5], p[6], p[7]);
-		}
-	}
-	if (vaddr && is_map) {
-		/*maped free...*/
-		iounmap(vaddr);
-	}
-	return 0;
-}
-
-static ssize_t codec_mm_debug_store(struct class *class,
-		struct class_attribute *attr,
-		const char *buf, size_t size)
-{
-	unsigned val;
-	ssize_t ret;
-	val = -1;
-	ret = sscanf(buf, "%d", &val);
-	if (ret != 1)
-		return -EINVAL;
-	switch (val) {
-	case 0:
-		pr_info("clear debug!\n");
-		break;
-	case 1:
-		codec_mm_dump_all_scatters();
-		break;
-	case 2:
-		codec_mm_dump_all_slots();
-		break;
-	case 3:
-		codec_mm_dump_free_slots();
-		break;
-	case 4:
-		codec_mm_dump_all_hash_table();
-		break;
-	case 5:
-		codec_mm_free_all_free_slots();
-		break;
-	case 6:
-		codec_mm_clear_alloc_infos();
-		break;
-	case 10:
-		codec_mm_keeper_free_all_keep(1);
-		break;
-	case 20: {
-		int cmd, len;
-		unsigned int addr;
-		cmd = len = 0;
-		addr = 0;
-		ret = sscanf(buf, "%d %x %d", &cmd, &addr, &len);
-		if (addr > 0 && len > 0)
-			codec_mm_mem_dump(addr, 1, len);
-		}
-		break;
-	case 100: {
-		int cmd, mode, p1, p2;
-		mode = p1 = p2 = 0;
-		ret = sscanf(buf, "%d %d %d %d", &cmd, &mode, &p1, &p2);
-		codec_mm_scatter_test(mode, p1, p2);
-		}
-		break;
-	default:
-		pr_err("unknow cmd! %d\n", val);
-	}
-	return size;
-
-}
 
 
 static struct class_attribute codec_mm_class_attrs[] = {
 	__ATTR_RO(codec_mm_dump),
-	__ATTR_RO(codec_mm_scatter_dump),
-	__ATTR_RO(codec_mm_keeper_dump),
 	__ATTR_RO(tvp_region),
 	__ATTR(tvp_enable, S_IRUGO | S_IWUSR | S_IWGRP,
 		tvp_enable_help_show, tvp_enable_store),
-	__ATTR(fastplay_enable, S_IRUGO | S_IWUSR | S_IWGRP,
-		fastplay_enable_help_show, fastplay_enable_store),
 	__ATTR(config, S_IRUGO | S_IWUSR | S_IWGRP,
 		codec_mm_config_show, codec_mm_config_store),
-	__ATTR(debug, S_IRUGO | S_IWUSR | S_IWGRP,
-		codec_mm_debug_show, codec_mm_debug_store),
 	__ATTR_NULL
 };
 
@@ -1588,11 +1176,8 @@ static int codec_mm_probe(struct platform_device *pdev)
 		pr_debug("codec_mm reserved memory probed done\n");
 
 	pr_debug("codec_mm_probe ok\n");
-
-	codec_mm_scatter_mgt_init();
-	codec_mm_keeper_mgr_init();
 	amstream_test_init();
-	codec_mm_scatter_mgt_test();
+
 	return 0;
 }
 
@@ -1689,9 +1274,4 @@ RESERVEDMEM_OF_DECLARE(codec_mm_reserved, "amlogic, codec-mm-reserved",
 
 module_param(debug_mode, uint, 0664);
 MODULE_PARM_DESC(debug_mode, "\n debug module\n");
-module_param(debug_sc_mode, uint, 0664);
-MODULE_PARM_DESC(debug_sc_mode, "\n debug scatter module\n");
-module_param(debug_keep_mode, uint, 0664);
-MODULE_PARM_DESC(debug_keep_mode, "\n debug keep module\n");
-
 

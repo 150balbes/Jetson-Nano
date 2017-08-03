@@ -169,7 +169,6 @@ struct amlogic_pinctrl_soc_data {
 
 	int (*soc_extern_gpio_get)(struct meson_domain *domain,
 				   unsigned int pin);
-	int (*is_od_domain)(unsigned int pin);
 };
 
 struct amlogic_pmx {
@@ -193,9 +192,4 @@ static inline struct meson_domain *to_meson_domain(struct gpio_chip *chip)
 }
 
 extern struct amlogic_pmx *gl_pmx;
-
-int meson_setup_irq(struct gpio_chip *chip, unsigned int gpio,
-			unsigned int irq_flags, int *irq_banks);
-int meson_fix_irqbank(int bank);
-void meson_free_irq(unsigned int gpio, int *irq_banks);
 #endif

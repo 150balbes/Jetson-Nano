@@ -153,7 +153,6 @@ static u32 pts_hit, pts_missed, pts_i_hit, pts_i_missed;
 
 static u32 radr, rval;
 static struct dec_sysinfo vavs_amstream_dec_info;
-static struct vdec_info *gvs;
 
 #ifdef AVSP_LONG_CABAC
 static struct work_struct long_cabac_wd_work;
@@ -538,10 +537,6 @@ static void vavs_isr(void)
 			total_frame++;
 		}
 
-		/*count info*/
-		gvs->frame_dur = frame_dur;
-		vdec_count_info(gvs, 0, offset);
-
 		/* pr_info("PicType = %d, PTS = 0x%x\n",
 		   picture_type, vf->pts); */
 		WRITE_VREG(AVS_BUFFEROUT, 0);
@@ -610,39 +605,17 @@ static void vavs_vf_put(struct vframe_s *vf, void *op_arg)
 
 }
 
-int vavs_dec_status(struct vdec_s *vdec, struct vdec_info *vstatus)
+int vavs_dec_status(struct vdec_status *vstatus)
 {
-	vstatus->frame_width = frame_width;
-	vstatus->frame_height = frame_height;
-	if (frame_dur != 0)
-		vstatus->frame_rate = 96000 / frame_dur;
+	vstatus->width = frame_width;	/* vavs_amstream_dec_info.width; */
+	vstatus->height = frame_height;	/* vavs_amstream_dec_info.height; */
+	if (0 != frame_dur /*vavs_amstream_dec_info.rate */)
+		vstatus->fps = 96000 / frame_dur;
 	else
-		vstatus->frame_rate = -1;
-	vstatus->error_count = READ_VREG(AV_SCRATCH_C);
+		vstatus->fps = 96000;
+	vstatus->error_count = READ_VREG(AVS_ERROR_COUNT);
 	vstatus->status = stat;
-	vstatus->bit_rate = gvs->bit_rate;
-	vstatus->frame_dur = frame_dur;
-	vstatus->frame_data = gvs->frame_data;
-	vstatus->total_data = gvs->total_data;
-	vstatus->frame_count = gvs->frame_count;
-	vstatus->error_frame_count = gvs->error_frame_count;
-	vstatus->drop_frame_count = gvs->drop_frame_count;
-	vstatus->total_data = gvs->total_data;
-	vstatus->samp_cnt = gvs->samp_cnt;
-	vstatus->offset = gvs->offset;
-	snprintf(vstatus->vdec_name, sizeof(vstatus->vdec_name),
-		"%s", DRIVER_NAME);
 
-	return 0;
-}
-
-static int vavs_vdec_info_init(void)
-{
-	gvs = kzalloc(sizeof(struct vdec_info), GFP_KERNEL);
-	if (NULL == gvs) {
-		pr_info("the struct of vdec status malloc failed.\n");
-		return -ENOMEM;
-	}
 	return 0;
 }
 
@@ -790,14 +763,11 @@ void vavs_recover(void)
 
 	WRITE_VREG(DOS_SW_RESET0, (1 << 9) | (1 << 8));
 	WRITE_VREG(DOS_SW_RESET0, 0);
-
-	if (firmware_sel == 1) {
-		WRITE_VREG(POWER_CTL_VLD, 0x10);
-		WRITE_VREG_BITS(VLD_MEM_VIFIFO_CONTROL, 2,
-			MEM_FIFO_CNT_BIT, 2);
-		WRITE_VREG_BITS(VLD_MEM_VIFIFO_CONTROL, 8,
-			MEM_LEVEL_CNT_BIT, 6);
-	}
+	/*
+	WRITE_VREG(POWER_CTL_VLD, 0x10);
+	WRITE_VREG_BITS(VLD_MEM_VIFIFO_CONTROL, 2, MEM_FIFO_CNT_BIT, 2);
+	WRITE_VREG_BITS(VLD_MEM_VIFIFO_CONTROL, 8, MEM_LEVEL_CNT_BIT, 6);
+	*/
 	if (firmware_sel == 0)
 		WRITE_VREG(AV_SCRATCH_5, 0);
 
@@ -1264,17 +1234,17 @@ static s32 vavs_init(void)
 
 	vavs_local_init();
 
-	if (get_cpu_type() >= MESON_CPU_MAJOR_ID_GXM) {
+	if (get_cpu_type() >= MESON_CPU_MAJOR_ID_TXL) {
 		if (debug_flag & 2) {
 			if (amvdec_loadmc_ex(VFORMAT_AVS,
-				"gxm_vavs_mc_debug", NULL) < 0) {
+				"txl_vavs_mc_debug", NULL) < 0) {
 				amvdec_disable();
 				pr_info("failed\n");
 				return -EBUSY;
 			}
 		} else {
 			if (amvdec_loadmc_ex(VFORMAT_AVS,
-				"gxm_vavs_mc", NULL) < 0) {
+				"txl_vavs_mc", NULL) < 0) {
 				amvdec_disable();
 				pr_info("failed\n");
 				return -EBUSY;
@@ -1361,19 +1331,23 @@ static s32 vavs_init(void)
 
 	stat |= STAT_VDEC_RUN;
 
+	set_vdec_func(&vavs_dec_status);
+
 	return 0;
 }
 
 static int amvdec_avs_probe(struct platform_device *pdev)
 {
-	struct vdec_s *pdata = *(struct vdec_s **)pdev->dev.platform_data;
+	struct vdec_dev_reg_s *pdata =
+		(struct vdec_dev_reg_s *)pdev->dev.platform_data;
 
 	if (pdata == NULL) {
 		pr_info("amvdec_avs memory resource undefined.\n");
 		return -EFAULT;
 	}
-	if (get_cpu_type() >= MESON_CPU_MAJOR_ID_GXM)
+	if (get_cpu_type() >= MESON_CPU_MAJOR_ID_TXL) {
 		firmware_sel = 1;
+	}
 
 	if (firmware_sel == 1) {
 		vf_buf_num = 4;
@@ -1409,15 +1383,8 @@ static int amvdec_avs_probe(struct platform_device *pdev)
 
 	pr_info("%s (%d,%d) %d\n", __func__, vavs_amstream_dec_info.width,
 		   vavs_amstream_dec_info.height, vavs_amstream_dec_info.rate);
-
-	pdata->dec_status = vavs_dec_status;
-
-	vavs_vdec_info_init();
-
 	if (vavs_init() < 0) {
 		pr_info("amvdec_avs init failed.\n");
-		kfree(gvs);
-		gvs = NULL;
 
 		return -ENODEV;
 	}
@@ -1494,8 +1461,6 @@ static int amvdec_avs_remove(struct platform_device *pdev)
 	pr_info("total frame %d, avi_flag %d, rate %d\n", total_frame, avi_flag,
 		   vavs_amstream_dec_info.rate);
 #endif
-	kfree(gvs);
-	gvs = NULL;
 
 	return 0;
 }

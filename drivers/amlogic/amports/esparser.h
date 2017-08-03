@@ -18,13 +18,15 @@
 #ifndef ESPARSER_H
 #define ESPARSER_H
 
-#include "vdec.h"
+extern s32 esparser_init(struct stream_buf_s *buf);
+
+extern void esparser_release(struct stream_buf_s *buf);
 
 extern ssize_t drm_write(struct file *file,
 		struct stream_buf_s *stbuf,
 		const char __user *buf, size_t count);
 
-extern s32 esparser_init(struct stream_buf_s *buf, struct vdec_s *vdec);
+extern s32 esparser_init(struct stream_buf_s *buf);
 extern s32 esparser_init_s(struct stream_buf_s *buf);
 extern void esparser_release(struct stream_buf_s *buf);
 extern ssize_t esparser_write(struct file *file,

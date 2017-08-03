@@ -51,6 +51,7 @@ static int dvb_dmxdev_buffer_write(struct dvb_ringbuffer *buf,
 	free = dvb_ringbuffer_free(buf);
 	if (len > free) {
 		dprintk("dmxdev: buffer overflow\n");
+		pr_err("dmxdev: buffer overflow, bs=%zd\n", buf->size);
 		return -EOVERFLOW;
 	}
 
@@ -206,6 +207,8 @@ static int dvb_dvr_release(struct inode *inode, struct file *file)
 	/* TODO */
 	dvbdev->users--;
 	if (dvbdev->users == 1 && dmxdev->exit == 1) {
+		fops_put(file->f_op);
+		file->f_op = NULL;
 		mutex_unlock(&dmxdev->mutex);
 		wake_up(&dvbdev->wait_queue);
 	} else
@@ -560,7 +563,7 @@ static int dvb_dmxdev_start_feed(struct dmxdev *dmxdev,
 {
 	struct timespec timeout = { 0 };
 	struct dmx_pes_filter_params *para = &filter->params.pes;
-	dmx_output_t otype;
+	enum dmx_output_t otype;
 	int ret;
 	int ts_type;
 	enum dmx_ts_pes ts_pes;
@@ -785,7 +788,7 @@ static int dvb_dmxdev_filter_free(struct dmxdev *dmxdev,
 	return 0;
 }
 
-static inline void invert_mode(dmx_filter_t *filter)
+static inline void invert_mode(struct dmx_filter *filter)
 {
 	int i;
 
@@ -1118,6 +1121,8 @@ static int dvb_demux_release(struct inode *inode, struct file *file)
 	mutex_lock(&dmxdev->mutex);
 	dmxdev->dvbdev->users--;
 	if(dmxdev->dvbdev->users==1 && dmxdev->exit==1) {
+		fops_put(file->f_op);
+		file->f_op = NULL;
 		mutex_unlock(&dmxdev->mutex);
 		wake_up(&dmxdev->dvbdev->wait_queue);
 	} else
@@ -1125,6 +1130,17 @@ static int dvb_demux_release(struct inode *inode, struct file *file)
 
 	return ret;
 }
+
+#ifdef CONFIG_COMPAT
+static long dvb_demux_compat_ioctl(struct file *filp,
+			unsigned int cmd, unsigned long args)
+{
+	unsigned long ret;
+	args = (unsigned long)compat_ptr(args);
+	ret = dvb_demux_ioctl(filp, cmd, args);
+	return ret;
+}
+#endif
 
 static const struct file_operations dvb_demux_fops = {
 	.owner = THIS_MODULE,
@@ -1134,6 +1150,9 @@ static const struct file_operations dvb_demux_fops = {
 	.release = dvb_demux_release,
 	.poll = dvb_demux_poll,
 	.llseek = default_llseek,
+#ifdef CONFIG_COMPAT
+	.compat_ioctl	= dvb_demux_compat_ioctl,
+#endif
 };
 
 static struct dvb_device dvbdev_demux = {
@@ -1195,6 +1214,18 @@ static unsigned int dvb_dvr_poll(struct file *file, poll_table *wait)
 	return mask;
 }
 
+#ifdef CONFIG_COMPAT
+static long dvb_dvr_compat_ioctl(struct file *filp,
+			unsigned int cmd, unsigned long args)
+{
+	unsigned long ret;
+
+	args = (unsigned long)compat_ptr(args);
+	ret = dvb_dvr_ioctl(filp, cmd, args);
+	return ret;
+}
+#endif
+
 static const struct file_operations dvb_dvr_fops = {
 	.owner = THIS_MODULE,
 	.read = dvb_dvr_read,
@@ -1204,6 +1235,9 @@ static const struct file_operations dvb_dvr_fops = {
 	.release = dvb_dvr_release,
 	.poll = dvb_dvr_poll,
 	.llseek = default_llseek,
+#ifdef CONFIG_COMPAT
+	.compat_ioctl	= dvb_dvr_compat_ioctl,
+#endif
 };
 
 static struct dvb_device dvbdev_dvr = {

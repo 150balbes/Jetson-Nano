@@ -32,7 +32,7 @@ obj-$(CONFIG_AM_IRBLASTER)	+= irblaster/
 
 obj-$(CONFIG_I2C_AML)		+= i2c/
 
-obj-$(CONFIG_AMLOGIC_PWM)		+= pwm/
+obj-$(CONFIG_AML_PWM)		+= pwm/
 
 obj-$(CONFIG_AML_POWER_SUPPORT)	+= power/
 
@@ -137,6 +137,3 @@ obj-$(CONFIG_AMLOGIC_WATCHPOINT) += watchpoint/
 obj-$(CONFIG_UMP)			+= gpu/ump/
 
 obj-$(CONFIG_MALI400)		+= gpu/mali/
-
-obj-$(CONFIG_AML_ESM) += esm/
-

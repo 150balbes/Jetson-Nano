@@ -193,7 +193,8 @@ void tty_port_tty_set(struct tty_port *port, struct tty_struct *tty)
 	unsigned long flags;
 
 	spin_lock_irqsave(&port->lock, flags);
-	tty_kref_put(port->tty);
+	if (port->tty)
+		tty_kref_put(port->tty);
 	port->tty = tty_kref_get(tty);
 	spin_unlock_irqrestore(&port->lock, flags);
 }
@@ -226,8 +227,6 @@ out:
  *
  *	Perform port level tty hangup flag and count changes. Drop the tty
  *	reference.
- *
- *	Caller holds tty lock.
  */
 
 void tty_port_hangup(struct tty_port *port)
@@ -349,11 +348,6 @@ EXPORT_SYMBOL(tty_port_lower_dtr_rts);
  *	do carrier detect and the dtr_rts method if it supports software
  *	management of these lines. Note that the dtr/rts raise is done each
  *	iteration as a hangup may have previously dropped them while we wait.
- *
- *	Caller holds tty lock.
- *
- *      NB: May drop and reacquire tty lock when blocking, so tty and tty_port
- *      may have changed state (eg., may have been hung up).
  */
 
 int tty_port_block_til_ready(struct tty_port *port,
@@ -364,7 +358,7 @@ int tty_port_block_til_ready(struct tty_port *port,
 	DEFINE_WAIT(wait);
 
 	/* block if port is in the process of being closed */
-	if (port->flags & ASYNC_CLOSING) {
+	if (tty_hung_up_p(filp) || port->flags & ASYNC_CLOSING) {
 		wait_event_interruptible_tty(tty, port->close_wait,
 				!(port->flags & ASYNC_CLOSING));
 		if (port->flags & ASYNC_HUP_NOTIFY)
@@ -398,7 +392,8 @@ int tty_port_block_til_ready(struct tty_port *port,
 
 	/* The port lock protects the port counts */
 	spin_lock_irqsave(&port->lock, flags);
-	port->count--;
+	if (!tty_hung_up_p(filp))
+		port->count--;
 	port->blocked_open++;
 	spin_unlock_irqrestore(&port->lock, flags);
 
@@ -463,19 +458,17 @@ static void tty_port_drain_delay(struct tty_port *port, struct tty_struct *tty)
 	schedule_timeout_interruptible(timeout);
 }
 
-/* Caller holds tty lock.
- * NB: may drop and reacquire tty lock (in tty_wait_until_sent_from_close())
- * so tty and tty port may have changed state (but not hung up or reopened).
- */
 int tty_port_close_start(struct tty_port *port,
 				struct tty_struct *tty, struct file *filp)
 {
 	unsigned long flags;
 
-	if (tty_hung_up_p(filp))
-		return 0;
-
 	spin_lock_irqsave(&port->lock, flags);
+	if (tty_hung_up_p(filp)) {
+		spin_unlock_irqrestore(&port->lock, flags);
+		return 0;
+	}
+
 	if (tty->count == 1 && port->count != 1) {
 		printk(KERN_WARNING
 		    "tty_port_close_start: tty->count = 1 port count = %d.\n",
@@ -493,9 +486,8 @@ int tty_port_close_start(struct tty_port *port,
 		return 0;
 	}
 	set_bit(ASYNCB_CLOSING, &port->flags);
-	spin_unlock_irqrestore(&port->lock, flags);
-
 	tty->closing = 1;
+	spin_unlock_irqrestore(&port->lock, flags);
 
 	if (test_bit(ASYNCB_INITIALIZED, &port->flags)) {
 		/* Don't block on a stalled port, just pull the chain */
@@ -514,15 +506,12 @@ int tty_port_close_start(struct tty_port *port,
 }
 EXPORT_SYMBOL(tty_port_close_start);
 
-/* Caller holds tty lock */
 void tty_port_close_end(struct tty_port *port, struct tty_struct *tty)
 {
 	unsigned long flags;
 
-	tty_ldisc_flush(tty);
-	tty->closing = 0;
-
 	spin_lock_irqsave(&port->lock, flags);
+	tty->closing = 0;
 
 	if (port->blocked_open) {
 		spin_unlock_irqrestore(&port->lock, flags);
@@ -539,15 +528,6 @@ void tty_port_close_end(struct tty_port *port, struct tty_struct *tty)
 }
 EXPORT_SYMBOL(tty_port_close_end);
 
-/**
- * tty_port_close
- *
- * Caller holds tty lock
- *
- * NB: may drop and reacquire tty lock (in tty_port_close_start()->
- * tty_wait_until_sent_from_close()) so tty and tty_port may have changed
- * state (but not hung up or reopened).
- */
 void tty_port_close(struct tty_port *port, struct tty_struct *tty,
 							struct file *filp)
 {
@@ -578,19 +558,12 @@ int tty_port_install(struct tty_port *port, struct tty_driver *driver,
 }
 EXPORT_SYMBOL_GPL(tty_port_install);
 
-/**
- * tty_port_open
- *
- * Caller holds tty lock.
- *
- * NB: may drop and reacquire tty lock (in tty_port_block_til_ready()) so
- * tty and tty_port may have changed state (eg., may be hung up now)
- */
 int tty_port_open(struct tty_port *port, struct tty_struct *tty,
 							struct file *filp)
 {
 	spin_lock_irq(&port->lock);
-	++port->count;
+	if (!tty_hung_up_p(filp))
+		++port->count;
 	spin_unlock_irq(&port->lock);
 	tty_port_tty_set(port, tty);
 

@@ -75,7 +75,7 @@ static const struct of_device_id stmmac_dt_ids[] = {
 MODULE_DEVICE_TABLE(of, stmmac_dt_ids);
 #ifdef CONFIG_DWMAC_MESON
 static u8 DEFMAC[] = {0, 0, 0, 0, 0, 0};
-unsigned int g_mac_addr_setup = 0;
+static unsigned int g_mac_addr_setup;
 static unsigned char chartonum(char c)
 {
 	if (c >= '0' && c <= '9')
@@ -87,13 +87,6 @@ static unsigned char chartonum(char c)
 	return 0;
 
 }
-int chip_simulation = 0;
-static int __init get_chip_simulation(char *chip_simulation_status)
-{
-	chip_simulation = chartonum(chip_simulation_status[0]);
-	return 1;
-}
-__setup("chip_simulation_status=", get_chip_simulation);
 
 static int __init mac_addr_set(char *line)
 {
@@ -168,6 +161,10 @@ static int dwmac1000_validate_ucast_entries(int ucast_entries)
 	return x;
 }
 
+#if defined (CONFIG_EFUSE)
+extern char *efuse_get_mac(char *addr);
+#endif
+
 static int platdata_copy_from_machine_data(const struct of_device_id *device,
 					   struct plat_stmmacenet_data *plat)
 {
@@ -195,6 +192,12 @@ static int setup_mac_addr(struct platform_device *pdev, const char **mac)
 {
 	struct device_node *np = pdev->dev.of_node;
 #ifdef CONFIG_DWMAC_MESON
+#if defined (CONFIG_EFUSE)
+	if (g_mac_addr_setup == 0) {
+		efuse_get_mac(DEFMAC);
+		g_mac_addr_setup++;
+	}
+#endif
 	if (g_mac_addr_setup)	/*so uboot mac= is first priority.*/
 		*mac = DEFMAC;
 	else
@@ -252,8 +255,7 @@ static int misc_property_setup(struct platform_device *pdev,
 
 	/* Set default value for unicast filter entries */
 	plat->unicast_filter_entries = 1;
-	plat->mdio_bus_data->probed_phy_irq =
-		platform_get_irq_byname(pdev, "phyirq");
+
 	/*
 	 * Currently only the properties needed on SPEAr600
 	 * are provided. All other properties should be added
@@ -361,7 +363,7 @@ static int stmmac_pltfr_probe(struct platform_device *pdev)
 	struct stmmac_priv *priv = NULL;
 	struct plat_stmmacenet_data *plat_dat = NULL;
 	const char *mac = NULL;
-	struct device_node *np = pdev->dev.of_node;
+
 	pr_debug("..........enter ethernet probe\n");
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	addr = devm_ioremap_resource(dev, res);
@@ -418,10 +420,7 @@ static int stmmac_pltfr_probe(struct platform_device *pdev)
 		       "information not found\n", __func__);
 		return -ENXIO;
 	}
-	if (of_property_read_u32(np, "wol", &priv->phy_wol))
-		pr_debug("wol not set\n");
-	else
-		pr_debug("Ethernet :got wol %d .set it\n", priv->phy_wol);
+
 	/*
 	 * On some platforms e.g. SPEAr the wake up irq differs from the mac irq
 	 * The external wake up irq can be passed through the platform code
@@ -501,7 +500,7 @@ static void stmmac_pltfr_shutdown(struct device *dev)
 
 	/* Stop phy immediately instead call phy_stop() */
 	if (priv->phydev)
-		priv->phydev->drv->suspend(priv->phydev);
+		genphy_suspend(ndev->phydev);
 
 	if (priv->plat->exit)
 		priv->plat->exit(pdev, priv->plat->bsp_priv);

@@ -204,15 +204,7 @@ static ssize_t efuse_read(struct file *file, char __user *buf,
 {
 	int ret;
 	int local_count = 0;
-	unsigned char *local_buf;
-
-	if (count > efuse_get_max()) {
-		pr_err("%s: can not read %Zd bytes from efuse\n",
-			   __func__, count);
-		return -EINVAL;
-	}
-
-	local_buf = kzalloc(sizeof(char)*count, GFP_KERNEL);
+	unsigned char *local_buf = kzalloc(sizeof(char)*count, GFP_KERNEL);
 	if (!local_buf) {
 		pr_info("memory not enough\n");
 		return -ENOMEM;
@@ -384,12 +376,13 @@ error_exit:
 char *efuse_get_mac(char *addr)
 {
 	char buf[6];
+	loff_t offset = 0x34;
 	int ret;
 
 	/* Copy H/W MAC address from eFuse programmed on production.
 	 * If missing or an error, C0:FF:EE:00:01:9F will be used.
 	 */
-	ret = efuse_user_attr_show("mac", buf);
+	ret = efuse_read_usr(buf, sizeof(buf), &offset);
 	if (ret < 0) {
 		pr_err("hwmac: error to read MAC address, use default address\n");
 		memcpy(buf, "\xc0\xff\xee\x00\x01\x9f", 6);

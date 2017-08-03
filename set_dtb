@@ -6,4 +6,4 @@ export CROSS_COMPILE=aarch64-linux-gnu-
 export PATH=/opt/gcc-linaro-4.9-2016.02-x86_64_aarch64-linux-gnu/bin/:$PATH
 
 
-make dtbs
+make gxbb_p200_2G.dtb gxbb_p200.dtb gxbb_p201.dtb gxl_p212_1g.dtb gxl_p212_2g.dtb

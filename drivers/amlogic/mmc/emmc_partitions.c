@@ -619,7 +619,12 @@ static int store_device = -1;
 static ssize_t store_device_flag_get(struct class *class,
 	struct class_attribute *attr, char *buf)
 {
-	return sprintf(buf, "%d", get_storage_dev());
+	if (store_device == -1) {
+		pr_info("[%s]  get store device flag something wrong !\n",
+			__func__);
+	}
+
+	return sprintf(buf, "%d", store_device);
 }
 
 static ssize_t get_bootloader_offset(struct class *class,
@@ -665,9 +670,6 @@ int aml_emmc_partition_ops(struct mmc_card *card, struct gendisk *disk)
 	/* pr_info("Enter %s\n", __FUNCTION__); */
 
 	if (!is_card_emmc(card)) /* not emmc, nothing to do */
-		return 0;
-
-	if (!of_find_node_by_path("/partitions"))
 		return 0;
 
 	store_device = host->storage_flag;

@@ -92,10 +92,7 @@
  *	This function is called by the low-level tty driver to signal
  *	that line discpline should try to send more characters to the
  *	low-level driver for transmission.  If the line discpline does
- *	not have any more data to send, it can just return. If the line
- *	discipline does have some data to send, please arise a tasklet
- *	or workqueue to do the real data transfer. Do not send data in
- *	this hook, it may leads to a deadlock.
+ *	not have any more data to send, it can just return.
  *
  * int (*hangup)(struct tty_struct *)
  *
@@ -128,6 +125,7 @@
  */
 
 #include <linux/fs.h>
+#include <linux/wait.h>
 #include <linux/wait.h>
 
 

@@ -367,13 +367,13 @@ static int check_periodic_bandwidth(dwc_otg_hcd_t *hcd, dwc_otg_qh_t *qh)
 		 * Max periodic usecs is 80% x 125 usec = 100 usec.
 		 */
 
-		max_claimed_usecs = 100 - qh->usecs;
+		max_claimed_usecs = 125 - qh->usecs;
 	else
 		/*
 		 * Full speed mode.
 		 * Max periodic usecs is 90% x 1000 usec = 900 usec.
 		 */
-		max_claimed_usecs = 900 - qh->usecs;
+		max_claimed_usecs = 1000 - qh->usecs;
 
 	if (hcd->periodic_usecs > max_claimed_usecs) {
 		DWC_INFO("%s: already claimed usecs %d, required usecs %d\n", __func__, hcd->periodic_usecs, qh->usecs);

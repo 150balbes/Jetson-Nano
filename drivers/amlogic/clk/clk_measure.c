@@ -822,10 +822,6 @@ CLK_OF_DECLARE(m8m2_clk_msr, "amlogic,m8m2_measure", clock_msr_init);
 static void __init gxl_clock_msr_init(struct device_node *np)
 {
 	static struct dentry *debugfs_root;
-	msr_clk_reg0 = of_iomap(np, 0);
-	msr_clk_reg2 = of_iomap(np, 1);
-	pr_info("Gxl msr_clk_reg0=%p,msr_clk_reg2=%p\n",
-		msr_clk_reg0, msr_clk_reg2);
 	debugfs_root = debugfs_create_dir("aml_clkmsr", NULL);
 	if (IS_ERR(debugfs_root) || !debugfs_root) {
 		pr_warn("failed to create debugfs directory\n");
@@ -835,15 +831,16 @@ static void __init gxl_clock_msr_init(struct device_node *np)
 
 	debugfs_create_file("clkmsr", S_IFREG | S_IRUGO,
 			    debugfs_root, NULL, &clkmsr_file_ops);
+
+	msr_clk_reg0 = of_iomap(np, 0);
+	msr_clk_reg2 = of_iomap(np, 1);
+	pr_info("Gxl msr_clk_reg0=%p,msr_clk_reg2=%p\n",
+		msr_clk_reg0, msr_clk_reg2);
 }
 CLK_OF_DECLARE(gxl_clk_msr, "amlogic, gxl_measure", gxl_clock_msr_init);
 static void __init txl_clock_msr_init(struct device_node *np)
 {
 	static struct dentry *debugfs_root;
-	msr_clk_reg0 = of_iomap(np, 0);
-	msr_clk_reg2 = of_iomap(np, 1);
-	pr_info("Txl msr_clk_reg0=%p,msr_clk_reg2=%p\n",
-		msr_clk_reg0, msr_clk_reg2);
 	debugfs_root = debugfs_create_dir("aml_clkmsr", NULL);
 	if (IS_ERR(debugfs_root) || !debugfs_root) {
 		pr_warn("failed to create debugfs directory\n");
@@ -854,16 +851,16 @@ static void __init txl_clock_msr_init(struct device_node *np)
 	debugfs_create_file("clkmsr", S_IFREG | S_IRUGO,
 			    debugfs_root, NULL, &clkmsr_file_ops);
 
+	msr_clk_reg0 = of_iomap(np, 0);
+	msr_clk_reg2 = of_iomap(np, 1);
+	pr_info("Txl msr_clk_reg0=%p,msr_clk_reg2=%p\n",
+		msr_clk_reg0, msr_clk_reg2);
 }
 CLK_OF_DECLARE(txl_clk_msr, "amlogic, txl_measure", txl_clock_msr_init);
 
 static void __init gxbb_clock_msr_init(struct device_node *np)
 {
 	static struct dentry *debugfs_root;
-	msr_clk_reg0 = of_iomap(np, 0);
-	msr_clk_reg2 = of_iomap(np, 1);
-	pr_info("msr_clk_reg0=%p,msr_clk_reg2=%p\n",
-		msr_clk_reg0, msr_clk_reg2);
 	debugfs_root = debugfs_create_dir("aml_clkmsr", NULL);
 	if (IS_ERR(debugfs_root) || !debugfs_root) {
 		pr_warn("failed to create debugfs directory\n");
@@ -873,19 +870,17 @@ static void __init gxbb_clock_msr_init(struct device_node *np)
 
 	debugfs_create_file("clkmsr", S_IFREG | S_IRUGO,
 			    debugfs_root, NULL, &clkmsr_file_ops);
+
+	msr_clk_reg0 = of_iomap(np, 0);
+	msr_clk_reg2 = of_iomap(np, 1);
+	pr_info("msr_clk_reg0=%p,msr_clk_reg2=%p\n",
+		msr_clk_reg0, msr_clk_reg2);
 }
 CLK_OF_DECLARE(gxbb_clk_msr, "amlogic, gxbb_measure", gxbb_clock_msr_init);
 
 static void __init gxtvbb_clock_msr_init(struct device_node *np)
 {
 	static struct dentry *debugfs_root;
-
-	msr_clk_reg0 = of_iomap(np, 0);
-	msr_clk_reg2 = of_iomap(np, 1);
-	msr_clk_reg3 = of_iomap(np, 2);
-	pr_info("msr_clk_reg0=%p,msr_clk_reg2=%p msr_clk_reg2=%p\n",
-		msr_clk_reg0, msr_clk_reg2, msr_clk_reg3);
-
 	debugfs_root = debugfs_create_dir("aml_clkmsr", NULL);
 	if (IS_ERR(debugfs_root) || !debugfs_root) {
 		pr_warn("failed to create debugfs directory\n");
@@ -895,6 +890,12 @@ static void __init gxtvbb_clock_msr_init(struct device_node *np)
 
 	debugfs_create_file("clkmsr", S_IFREG | S_IRUGO,
 			    debugfs_root, NULL, &clkmsr_file_ops);
+
+	msr_clk_reg0 = of_iomap(np, 0);
+	msr_clk_reg2 = of_iomap(np, 1);
+	msr_clk_reg3 = of_iomap(np, 2);
+	pr_info("msr_clk_reg0=%p,msr_clk_reg2=%p msr_clk_reg2=%p\n",
+		msr_clk_reg0, msr_clk_reg2, msr_clk_reg3);
 }
 
 CLK_OF_DECLARE(gxtvbb_clk_msr, "amlogic, gxtvbb_measure",
