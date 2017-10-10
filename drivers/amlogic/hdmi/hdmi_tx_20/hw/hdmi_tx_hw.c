@@ -3781,7 +3781,7 @@ static int hdmitx_hdmi_dvi_config(struct hdmitx_dev *hdev,
 		hdmitx_set_reg_bits(HDMITX_DWC_FC_AVICONF0, 0, 0, 2);
 #else
 		hdmitx_csc_config(TX_INPUT_COLOR_FORMAT,
-			COLORSPACE_RGB444, TX_COLOR_DEPTH);
+			TX_OUTPUT_COLOR_FORMAT, TX_COLOR_DEPTH);
 #endif
 
 		/* set dvi flag */

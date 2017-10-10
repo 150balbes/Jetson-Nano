@@ -15,6 +15,7 @@
 #include "mesongxbb.dtsi"
 / {
 	model = "Amlogic";
+	amlogic-dt-id = "gxb_p201_1g";
 	compatible = "amlogic, Gxbb";
 	interrupt-parent = <&gic>;
 	#address-cells = <2>;

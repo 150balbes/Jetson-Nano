@@ -62,6 +62,7 @@ void pwm_write_reg(void __iomem *reg,
 	tmp |= val;
 	writel(tmp, reg);
 };
+EXPORT_SYMBOL(pwm_write_reg);
 
 void pwm_clear_reg_bits(void __iomem *reg, const unsigned int val)
 {
@@ -70,6 +71,7 @@ void pwm_clear_reg_bits(void __iomem *reg, const unsigned int val)
 	tmp = orig & ~val;
 	writel(tmp, reg);
 }
+EXPORT_SYMBOL(pwm_clear_reg_bits);
 
 void pwm_write_reg1(void __iomem *reg, const unsigned int  val)
 {
@@ -84,6 +86,7 @@ struct aml_pwm_chip *to_aml_pwm_chip(struct pwm_chip *chip)
 {
 	return container_of(chip, struct aml_pwm_chip, chip);
 }
+EXPORT_SYMBOL(to_aml_pwm_chip);
 
 static
 struct aml_pwm_channel *pwm_aml_calc(struct aml_pwm_chip *chip,

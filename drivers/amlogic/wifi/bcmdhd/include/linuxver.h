@@ -586,10 +586,16 @@ static inline bool binary_sema_up(tsk_ctl_t *tsk)
 	(tsk_ctl)->proc_name = name;  \
 	(tsk_ctl)->terminated = FALSE; \
 	(tsk_ctl)->p_task  = kthread_run(thread_func, tsk_ctl, (char*)name); \
-	(tsk_ctl)->thr_pid = (tsk_ctl)->p_task->pid; \
+	if (!IS_ERR((tsk_ctl)->p_task)) { \
+		(tsk_ctl)->thr_pid = (tsk_ctl)->p_task->pid; \
+		DBG_THR(("%s(): thread:%s:%lx started\n", __FUNCTION__, \
+			(tsk_ctl)->proc_name, (tsk_ctl)->thr_pid)); \
+	} else {\
+		(tsk_ctl)->thr_pid = -1; \
+		DBG_THR(("%s(): thread:%s:%lx create fail\n", __FUNCTION__, \
+			(tsk_ctl)->proc_name, (tsk_ctl)->thr_pid)); \
+	}\
 	spin_lock_init(&((tsk_ctl)->spinlock)); \
-	DBG_THR(("%s(): thread:%s:%lx started\n", __FUNCTION__, \
-		(tsk_ctl)->proc_name, (tsk_ctl)->thr_pid)); \
 }
 
 #define PROC_STOP(tsk_ctl) \

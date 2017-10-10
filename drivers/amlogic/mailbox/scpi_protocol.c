@@ -86,11 +86,7 @@ static int high_priority_cmds[] = {
 	SCPI_CMD_WAKEUP_REASON_GET,
 };
 
-#if defined(CONFIG_ARCH_MESON64_ODROIDC2)
-#define DVFS_COUNT_MAX		13
-#define DVFS_COUNT_1536		6
-static unsigned long max_freq_dvfs;
-#endif
+static unsigned long max_freq_dvfs = 1500000000;
 
 static struct scpi_opp *scpi_opps[MAX_DVFS_DOMAINS];
 
@@ -243,9 +239,7 @@ struct scpi_opp *scpi_dvfs_get_opps(u8 domain)
 	struct scpi_opp *opps;
 	size_t opps_sz;
 	int count, ret;
-#if defined(CONFIG_ARCH_MESON64_ODROIDC2)
-	int i, max_index;
-#endif
+	int i, max_count;
 
 	if (domain >= MAX_DVFS_DOMAINS)
 		return ERR_PTR(-EINVAL);
@@ -264,26 +258,24 @@ struct scpi_opp *scpi_dvfs_get_opps(u8 domain)
 		return ERR_PTR(-ENOMEM);
 
 	count = DVFS_OPP_COUNT(buf.header);
+	max_count = count;
 
-#if defined(CONFIG_ARCH_MESON64_ODROIDC2)
-	max_index = 0;
 	if (max_freq_dvfs) {
 		for (i = 0; i < count; i++)	{
-			if (buf.opp[i].freq_hz == max_freq_dvfs)
+			pr_info("dvfs [%s] - buf.opp[%d].freq_hz = %ld\n",
+				__func__, i, buf.opp[i].freq_hz);
+			if (buf.opp[i].freq_hz >= max_freq_dvfs)
 				break;
-			else
-				max_index++;
 		}
-		count = max_index + 1;
-	}
-	/* if no param "max_freq_dvfs or wrong "max_freq_dvfs"
-	 * from boot.ini, consider stable max value */
-	if ((max_freq_dvfs == 0) || (count > DVFS_COUNT_MAX))
-		count = DVFS_COUNT_1536; /* default max : 1.536GHz */
+		count = i + 1;
+		/* if no param "max_freq_dvfs or wrong "max_freq_dvfs"
+		 * from boot.ini, consider stable max value */
+		if ((max_freq_dvfs == 0) || (count > max_count))
+			count = max_count;
 
-	pr_info("dvfs [%s] - new count %d, max_freq %ld\n", __func__,
-		count, max_freq_dvfs);
-#endif
+		pr_info("dvfs [%s] - new count %d, max_freq %ld\n", __func__,
+			count, buf.opp[count - 1].freq_hz);
+	}
 
 	opps_sz = count * sizeof(*(opps->opp));
 
@@ -537,7 +529,6 @@ int scpi_get_wakeup_reason(u32 *wakeup_reason)
 }
 EXPORT_SYMBOL_GPL(scpi_get_wakeup_reason);
 
-#if defined(CONFIG_ARCH_MESON64_ODROIDC2)
 static int __init get_max_freq(char *str)
 {
 	int ret;
@@ -558,4 +549,3 @@ static int __init get_max_freq(char *str)
 	return 0;
 }
 __setup("max_freq=", get_max_freq);
-#endif

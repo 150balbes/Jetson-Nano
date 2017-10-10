@@ -223,11 +223,9 @@ for script in postinst postrm preinst prerm ; do
 set -e
 
 # Pass maintainer script parameters to hook scripts
-
 export DEB_MAINT_PARAMS="\$*"
 
 # Tell initramfs builder whether it's wanted
-
 export INITRD=$want_initrd
 
 test -d $debhookdir/$script.d && run-parts --arg="$version" --arg="/$installed_image_path" $debhookdir/$script.d
@@ -437,7 +435,7 @@ EOF
 
 if [ "$ARCH" != "um" ]; then
 	create_package "$kernel_headers_packagename" "$kernel_headers_dir"
-#	create_package "$libc_headers_packagename" "$libc_headers_dir"
+	create_package "$libc_headers_packagename" "$libc_headers_dir"
 fi
 
 create_package "$packagename" "$tmpdir"
