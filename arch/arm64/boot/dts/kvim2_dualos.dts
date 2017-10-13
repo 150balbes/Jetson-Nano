@@ -1241,7 +1241,7 @@
 	};
 
 	partitions {
-		parts = <0xc>;
+		parts = <0xb>;
 		part-0 = <0x2c>;
 		part-1 = <0x2d>;
 		part-2 = <0x2e>;
@@ -1253,7 +1253,6 @@
 		part-8 = <0x34>;
 		part-9 = <0x35>;
 		part-10 = <0x36>;
-		part-11 = <0x90>;
 
 		logo {
 			pname = "logo";
@@ -1327,9 +1326,9 @@
 			phandle = <0x34>;
 		};
 
-		libreelec {
-			pname = "libreelec";
-			size = <0x0 0x20000000>;
+		data {
+			pname = "data";
+			size = <0x0 0xffffffff>;
 			mask = <0x4>;
 			linux,phandle = <0x35>;
 			phandle = <0x35>;
@@ -1337,20 +1336,11 @@
 
 		rootfs {
 			pname = "rootfs";
-			size = <0x0 0xfffffe00>;
+			size = <0xffffffff 0xffffffff>;
 			mask = <0x4>;
 			linux,phandle = <0x36>;
 			phandle = <0x36>;
 		};
-
-		data {
-			pname = "data";
-			size = <0xffffffff 0xffffffff>;
-			mask = <0x4>;
-			linux,phandle = <0x90>;
-			phandle = <0x90>;
-		};
-
 	};
 
 	aliases {

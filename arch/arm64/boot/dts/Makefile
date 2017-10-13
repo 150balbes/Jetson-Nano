@@ -11,6 +11,7 @@ dtb-$(CONFIG_ARM64) += gxbb_p200.dtb gxbb_p200_2G.dtb \
 				nexbox_a95x_s905.dtb \
 				gxbb_p200_2g_1.dtb gxbb_p200_2g_100m_realtekwifi.dtb \
 				kvim2_nougat.dtb \
+				kvim2_dualos.dtb \
 				kvim2_multios.dtb
 
 targets += dtbs
