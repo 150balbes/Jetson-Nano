@@ -1,0 +1,10 @@
+#include "gxl_p212_2g.dts"
+
+/{
+	le-dt-id = "gxl_p212_2g_slowemmc";
+	emmc {
+		emmc {
+			caps2 = "MMC_CAP2_HS200";
+		};
+	};
+};

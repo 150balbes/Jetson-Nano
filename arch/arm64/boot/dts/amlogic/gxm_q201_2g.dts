@@ -1276,3 +1276,6 @@
 &t82x_gpu {
         tbl = <&dvfs285_cfg &dvfs400_cfg &dvfs500_cfg &dvfs666_cfg &dvfs666_cfg>;
 };
+/ {
+	le-dt-id = "gxm_q201_2g";
+};

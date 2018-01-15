@@ -1109,3 +1109,6 @@
 &defendkey {
 	status = "okay";
 };
+/ {
+	le-dt-id = "gxbb_p201";
+};

@@ -1,0 +1,79 @@
+#include "gxm_q200_2g.dts"
+
+/{
+	le-dt-id = "gxm_q200_2g_minix_neo_u9";
+	sysled {
+		led_gpio = <&gpio GPIOAO_9 GPIO_ACTIVE_HIGH>;
+	};
+
+	rtc {
+		status = "disabled";
+	};
+
+	partitions:partitions {
+		system:system {
+			size = <0x0 0x80000000>;
+		};
+	};
+
+	unifykey {
+		keysn_8:key_8 {
+			key-type = "sha1";
+		};
+	};
+
+	amhdmitx: amhdmitx {
+		pwr-ctrl = <&pwr_ctrl>;
+	};
+
+	pwr_ctrl: pwr_ctrl{
+		pwr_5v_on = <&gpio	   GPIODV_7	   GPIO_ACTIVE_HIGH>;
+		PWR_STBY_PWREN = <&gpio	   GPIODV_4	   GPIO_ACTIVE_HIGH>;
+		vol_switch = <&gpio GPIOH_5 GPIO_ACTIVE_HIGH>;
+	};
+
+	amlogic_codec:t9015 {
+		status = "disable";
+	};
+
+	aml_m8_snd {
+		mute_gpio-gpios = <&gpio GPIODV_22 0>;
+
+		codec0: codec0 {
+			sound-dai = <&es8323>;
+		};
+	};
+};
+
+&i2c_a {
+	status = "okay";
+	es8323: es8323@10 {
+		#sound-dai-cells = <0>;
+		compatible = "es, es8323";
+		reg = <0x10>;
+	};
+};
+
+&i2c_b {
+	status = "okay";
+	
+	rtc_hym8563 {
+		compatible = "amlogic, rtc_hym8563";
+		dev_name = "rtc_hym8563";
+		status = "okay";
+		reg = <0x51>;
+		interrupts = <0 64 1>;
+		gpio-rtc-irq = <&gpio	   GPIODV_3	   GPIO_ACTIVE_HIGH>;
+	};
+
+	minix_mcu{
+		compatible = "amlogic,minix_mcu";
+		status = "okay";
+		reg = <0x15>;
+	};
+
+	minix_mcu_isp{
+		compatible = "amlogic,minix_mcu_isp";
+		reg = <0x35>;
+	};
+};

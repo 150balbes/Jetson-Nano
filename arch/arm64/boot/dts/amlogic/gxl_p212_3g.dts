@@ -1,0 +1,10 @@
+#include "gxl_p212_2g.dts"
+
+/{
+	le-dt-id = "gxl_p212_3g";
+	amlogic-dt-id = "gxl_p212_3g";
+
+	memory@00000000 {
+		linux,usable-memory = <0x0 0x100000 0x0 0xbf000000>;
+	};
+};

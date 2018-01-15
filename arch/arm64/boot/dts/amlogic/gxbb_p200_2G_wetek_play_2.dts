@@ -1207,3 +1207,6 @@
 &defendkey {
 	status = "okay";
 };
+/ {
+	le-dt-id = "gxbb_p200_2G_wetek_play_2";
+};

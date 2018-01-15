@@ -1,0 +1,11 @@
+#include "gxbb_p200_2G.dts"
+
+/{
+	le-dt-id = "gxbb_p200_2G_1Gbit_OTG_Port";
+	dwc2_a {
+		port-type = <0>;	/** 0: otg, 1: host, 2: slave */
+		port-id-mode = <0>; /** 0: hardware, 1: sw_host, 2: sw_slave*/
+		gpio-vbus-power = "GPIOY_15";
+		gpios = <&gpio	   GPIOY_15	   GPIO_ACTIVE_HIGH>;
+	};
+};

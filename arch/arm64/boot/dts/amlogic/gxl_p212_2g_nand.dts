@@ -1,0 +1,8 @@
+#include "gxl_p212_1g.dts"
+
+/ {
+	le-dt-id = "gxl_p212_2g_nand";
+	nand {
+		status = "okay";
+	};
+};

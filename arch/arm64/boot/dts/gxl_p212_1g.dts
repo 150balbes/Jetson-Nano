@@ -1217,3 +1217,6 @@
 &defendkey {
 	status = "okay";
 };
+/ {
+	le-dt-id = "gxl_p212_1g";
+};

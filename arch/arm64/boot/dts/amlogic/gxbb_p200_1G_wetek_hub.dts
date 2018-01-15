@@ -1245,3 +1245,6 @@
 &defendkey {
 	status = "okay";
 };
+/ {
+	le-dt-id = "gxbb_p200_1G_wetek_hub";
+};

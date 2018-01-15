@@ -1,0 +1,14 @@
+#include "gxbb_p200_2G.dts"
+
+/{
+	le-dt-id = "gxbb_p200_2G_100M";
+	ethmac: ethernet@0xc9410000 {
+		compatible = "amlogic, gxbb-rmii-dwmac";
+		phy-mode= "rmii";
+		mc_val = <0x1800>;
+	};
+
+	sdio {
+		interrupts = <	0 216 4>;
+	};
+};
