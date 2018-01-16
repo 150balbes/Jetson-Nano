@@ -19,7 +19,7 @@
 #include <dt-bindings/gpio/gxbb.h>
 #include <dt-bindings/gpio/gpio.h>
 #include <dt-bindings/reset/aml_gxbb.h>
-#include "amlogic/mesongxbb.dtsi"
+#include "mesongxbb.dtsi"
 / {
 	model = "ODROID-C2";
 	amlogic-dt-id = "odroidc2_2g";
