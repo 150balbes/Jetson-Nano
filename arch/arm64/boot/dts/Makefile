@@ -79,14 +79,13 @@ dtb-$(CONFIG_ARM64) += gxtvbb_skt.dtb
 dtb-$(CONFIG_ARM64) += gxtvbb_t966_skt.dtb
 dtb-$(CONFIG_ARM64) += i7_pro.dtb
 dtb-$(CONFIG_ARM64) += kvim2_dualos.dtb
-#dtb-$(CONFIG_ARM64) += kvim2_libre.dtb
 dtb-$(CONFIG_ARM64) += kvim2_libreelec.dtb
 dtb-$(CONFIG_ARM64) += kvim2_linux.dtb
-#dtb-$(CONFIG_ARM64) += kvim2_multiboot.dtb
 dtb-$(CONFIG_ARM64) += kvim2_multios.dtb
 dtb-$(CONFIG_ARM64) += kvim2_nougat.dtb
-#dtb-$(CONFIG_ARM64) += kvim2_volumio.dtb
 dtb-$(CONFIG_ARM64) += kvim.dtb
+dtb-$(CONFIG_ARM64) += kvim_multios.dtb
+dtb-$(CONFIG_ARM64) += kvim_nougat.dtb
 dtb-$(CONFIG_ARM64) += meson64_odroidc2.dtb
 dtb-$(CONFIG_ARM64) += mxq_s905.dtb
 dtb-$(CONFIG_ARM64) += nexbox_a95x_s905.dtb
@@ -102,6 +101,7 @@ dtb-$(CONFIG_ARM64) += txl_t950_skt.dtb
 dtb-$(CONFIG_ARM64) += txl_t960_p346.dtb
 dtb-$(CONFIG_ARM64) += txl_t960_skt.dtb
 dtb-$(CONFIG_ARM64) += vega_s96.dtb
+#dtb-$(CONFIG_ARM64) += kvim2_libre.dtb
 
 targets += dtbs
 
