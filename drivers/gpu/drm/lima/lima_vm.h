@@ -38,7 +38,7 @@ struct lima_vm {
 	struct lima_vm_page bts[LIMA_VM_NUM_BT];
 };
 
-int lima_vm_bo_add(struct lima_vm *vm, struct lima_bo *bo);
+int lima_vm_bo_add(struct lima_vm *vm, struct lima_bo *bo, bool create);
 void lima_vm_bo_del(struct lima_vm *vm, struct lima_bo *bo);
 
 u32 lima_vm_get_va(struct lima_vm *vm, struct lima_bo *bo);

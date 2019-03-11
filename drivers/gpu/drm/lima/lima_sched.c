@@ -110,12 +110,15 @@ int lima_sched_task_init(struct lima_sched_task *task,
 			 struct lima_bo **bos, int num_bos,
 			 struct lima_vm *vm)
 {
-	int err;
+	int err, i;
 
 	task->bos = kmalloc(sizeof(*bos) * num_bos, GFP_KERNEL);
 	if (!task->bos)
 		return -ENOMEM;
 	memcpy(task->bos, bos, sizeof(*bos) * num_bos);
+
+	for (i = 0; i < num_bos; i++)
+		drm_gem_object_get(&bos[i]->gem);
 
 	err = drm_sched_job_init(&task->base, &context->base, vm);
 	if (err) {
@@ -142,8 +145,11 @@ void lima_sched_task_fini(struct lima_sched_task *task)
 	if (task->dep)
 		kfree(task->dep);
 
-	if (task->bos)
+	if (task->bos) {
+		for (i = 0; i < task->num_bos; i++)
+			drm_gem_object_put_unlocked(&task->bos[i]->gem);
 		kfree(task->bos);
+	}
 
 	lima_vm_put(task->vm);
 }
@@ -339,10 +345,8 @@ static void lima_sched_free_job(struct drm_sched_job *job)
 
 	dma_fence_put(task->fence);
 
-	for (i = 0; i < task->num_bos; i++) {
+	for (i = 0; i < task->num_bos; i++)
 		lima_vm_bo_del(vm, bos[i]);
-		drm_gem_object_put_unlocked(&bos[i]->gem);
-	}
 
 	lima_sched_task_fini(task);
 	kmem_cache_free(pipe->task_slab, task);

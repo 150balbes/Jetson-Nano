@@ -50,7 +50,7 @@ int lima_gem_object_open(struct drm_gem_object *obj, struct drm_file *file)
 	struct lima_drm_priv *priv = to_lima_drm_priv(file);
 	struct lima_vm *vm = priv->vm;
 
-	return lima_vm_bo_add(vm, bo);
+	return lima_vm_bo_add(vm, bo, true);
 }
 
 void lima_gem_object_close(struct drm_gem_object *obj, struct drm_file *file)
@@ -289,7 +289,7 @@ int lima_gem_submit(struct drm_file *file, struct lima_submit *submit)
 
 		/* increase refcnt of gpu va map to prevent unmapped when executing,
 		 * will be decreased when task done */
-		err = lima_vm_bo_add(vm, bo);
+		err = lima_vm_bo_add(vm, bo, false);
 		if (err) {
 			drm_gem_object_put_unlocked(obj);
 			goto err_out0;
@@ -332,6 +332,9 @@ int lima_gem_submit(struct drm_file *file, struct lima_submit *submit)
 	}
 
 	lima_gem_unlock_bos(bos, submit->nr_bos, &ctx);
+
+	for (i = 0; i < submit->nr_bos; i++)
+		drm_gem_object_put_unlocked(&bos[i]->gem);
 
 	if (out_sync) {
 		drm_syncobj_replace_fence(out_sync, fence);

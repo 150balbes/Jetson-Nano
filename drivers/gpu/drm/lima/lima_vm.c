@@ -97,7 +97,7 @@ lima_vm_bo_find(struct lima_vm *vm, struct lima_bo *bo)
 	return ret;
 }
 
-int lima_vm_bo_add(struct lima_vm *vm, struct lima_bo *bo)
+int lima_vm_bo_add(struct lima_vm *vm, struct lima_bo *bo, bool create)
 {
 	struct lima_bo_va *bo_va;
 	int err;
@@ -109,6 +109,12 @@ int lima_vm_bo_add(struct lima_vm *vm, struct lima_bo *bo)
 		bo_va->ref_count++;
 		mutex_unlock(&bo->lock);
 		return 0;
+	}
+
+	/* should not create new bo_va if not asked by caller */
+	if (!create) {
+		mutex_unlock(&bo->lock);
+		return -ENOENT;
 	}
 
 	bo_va = kzalloc(sizeof(*bo_va), GFP_KERNEL);
@@ -165,7 +171,7 @@ void lima_vm_bo_del(struct lima_vm *vm, struct lima_bo *bo)
 	lima_vm_unmap_page_table(vm, bo_va->node.start,
 				 bo_va->node.start + bo_va->node.size - 1);
 
-        drm_mm_remove_node(&bo_va->node);
+	drm_mm_remove_node(&bo_va->node);
 
 	mutex_unlock(&vm->lock);
 

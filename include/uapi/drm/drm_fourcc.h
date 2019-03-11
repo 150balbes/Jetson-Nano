@@ -644,15 +644,6 @@ extern "C" {
  */
 #define AFBC_FORMAT_MOD_SC      (1ULL <<  9)
 
-/*
- * ARM tiled format
- *
- * This is used by ARM Mali Utgard/Midgard GPU. It divides buffer into
- * 16x16 pixel blocks. Blocks are stored linearly in order, but pixels
- * in the block are reordered.
- */
-#define DRM_FORMAT_MOD_ARM_TILED fourcc_mod_code(ARM, 1)
-
 #if defined(__cplusplus)
 }
 #endif
