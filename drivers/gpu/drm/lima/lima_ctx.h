@@ -1,10 +1,10 @@
 /* SPDX-License-Identifier: GPL-2.0 OR MIT */
-/* Copyright 2018 Qiang Yu <yuq825@gmail.com> */
+/* Copyright 2018-2019 Qiang Yu <yuq825@gmail.com> */
 
 #ifndef __LIMA_CTX_H__
 #define __LIMA_CTX_H__
 
-#include <linux/idr.h>
+#include <linux/xarray.h>
 
 #include "lima_device.h"
 
@@ -16,8 +16,8 @@ struct lima_ctx {
 };
 
 struct lima_ctx_mgr {
-	spinlock_t lock;
-	struct idr handles;
+	struct mutex lock;
+	struct xarray handles;
 };
 
 int lima_ctx_create(struct lima_device *dev, struct lima_ctx_mgr *mgr, u32 *id);

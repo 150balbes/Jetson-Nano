@@ -1,15 +1,14 @@
 /* SPDX-License-Identifier: GPL-2.0 OR MIT */
-/* Copyright 2017-2018 Qiang Yu <yuq825@gmail.com> */
+/* Copyright 2017-2019 Qiang Yu <yuq825@gmail.com> */
 
 #ifndef __LIMA_DRV_H__
 #define __LIMA_DRV_H__
 
-#include <drm/drmP.h>
+#include <drm/drm_file.h>
 
 #include "lima_ctx.h"
 
 extern int lima_sched_timeout_ms;
-extern int lima_sched_max_tasks;
 
 struct lima_vm;
 struct lima_bo;

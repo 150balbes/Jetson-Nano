@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0 OR MIT
-/* Copyright 2017-2018 Qiang Yu <yuq825@gmail.com> */
+/* Copyright 2017-2019 Qiang Yu <yuq825@gmail.com> */
 
 #include <linux/kthread.h>
 #include <linux/slab.h>
@@ -31,8 +31,7 @@ int lima_sched_slab_init(void)
 
 void lima_sched_slab_fini(void)
 {
-	if (lima_fence_slab)
-		kmem_cache_destroy(lima_fence_slab);
+	kmem_cache_destroy(lima_fence_slab);
 }
 
 static inline struct lima_fence *to_lima_fence(struct dma_fence *fence)
@@ -112,10 +111,9 @@ int lima_sched_task_init(struct lima_sched_task *task,
 {
 	int err, i;
 
-	task->bos = kmalloc(sizeof(*bos) * num_bos, GFP_KERNEL);
+	task->bos = kmemdup(bos, sizeof(*bos) * num_bos, GFP_KERNEL);
 	if (!task->bos)
-		return -ENOMEM;
-	memcpy(task->bos, bos, sizeof(*bos) * num_bos);
+		return -ENOMEM;	
 
 	for (i = 0; i < num_bos; i++)
 		drm_gem_object_get(&bos[i]->gem);
@@ -137,13 +135,10 @@ void lima_sched_task_fini(struct lima_sched_task *task)
 
 	drm_sched_job_cleanup(&task->base);
 
-	for (i = 0; i < task->num_dep; i++) {
-		if (task->dep[i])
-			dma_fence_put(task->dep[i]);
-	}
+	for (i = 0; i < task->num_dep; i++)
+		dma_fence_put(task->dep[i]);
 
-	if (task->dep)
-		kfree(task->dep);
+	kfree(task->dep);
 
 	if (task->bos) {
 		for (i = 0; i < task->num_bos; i++)

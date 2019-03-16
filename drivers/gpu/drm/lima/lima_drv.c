@@ -1,9 +1,12 @@
 // SPDX-License-Identifier: GPL-2.0 OR MIT
-/* Copyright 2017-2018 Qiang Yu <yuq825@gmail.com> */
+/* Copyright 2017-2019 Qiang Yu <yuq825@gmail.com> */
 
 #include <linux/module.h>
 #include <linux/of_platform.h>
-#include <linux/log2.h>
+#include <linux/uaccess.h>
+#include <linux/slab.h>
+#include <drm/drm_ioctl.h>
+#include <drm/drm_drv.h>
 #include <drm/drm_prime.h>
 #include <drm/lima_drm.h>
 
@@ -13,31 +16,38 @@
 #include "lima_vm.h"
 
 int lima_sched_timeout_ms = 0;
-int lima_sched_max_tasks = 32;
 
 MODULE_PARM_DESC(sched_timeout_ms, "task run timeout in ms (0 = no timeout (default))");
 module_param_named(sched_timeout_ms, lima_sched_timeout_ms, int, 0444);
 
-MODULE_PARM_DESC(sched_max_tasks, "max queued task num in a context (default 32)");
-module_param_named(sched_max_tasks, lima_sched_max_tasks, int, 0444);
-
-static int lima_ioctl_info(struct drm_device *dev, void *data, struct drm_file *file)
+static int lima_ioctl_get_param(struct drm_device *dev, void *data, struct drm_file *file)
 {
-	struct drm_lima_info *info = data;
+	struct drm_lima_get_param *args = data;
 	struct lima_device *ldev = to_lima_dev(dev);
 
-	switch (ldev->id) {
-	case lima_gpu_mali400:
-		info->gpu_id = LIMA_INFO_GPU_MALI400;
+	switch (args->param) {
+	case DRM_LIMA_PARAM_GPU_ID:
+		switch (ldev->id) {
+		case lima_gpu_mali400:
+			args->value = DRM_LIMA_PARAM_GPU_ID_MALI400;
+			break;
+		case lima_gpu_mali450:
+			args->value = DRM_LIMA_PARAM_GPU_ID_MALI450;
+			break;
+		default:
+			args->value = DRM_LIMA_PARAM_GPU_ID_UNKNOWN;
+			break;
+		}
 		break;
-	case lima_gpu_mali450:
-		info->gpu_id = LIMA_INFO_GPU_MALI450;
+
+	case DRM_LIMA_PARAM_NUM_PP:
+		args->value = ldev->pipe[lima_pipe_pp].num_processor;
 		break;
+
 	default:
-		return -ENODEV;
+		return -EINVAL;
 	}
-	info->num_pp = ldev->pipe[lima_pipe_pp].num_processor;
-	info->valid = 0;
+
 	return 0;
 }
 
@@ -148,18 +158,21 @@ static int lima_ioctl_gem_wait(struct drm_device *dev, void *data, struct drm_fi
 	return lima_gem_wait(file, args->handle, args->op, args->timeout_ns);
 }
 
-static int lima_ioctl_ctx(struct drm_device *dev, void *data, struct drm_file *file)
+static int lima_ioctl_ctx_create(struct drm_device *dev, void *data, struct drm_file *file)
 {
-	struct drm_lima_ctx *args = data;
+	struct drm_lima_ctx_create *args = data;
 	struct lima_drm_priv *priv = file->driver_priv;
 	struct lima_device *ldev = to_lima_dev(dev);
 
-	if (args->op == LIMA_CTX_OP_CREATE)
-		return lima_ctx_create(ldev, &priv->ctx_mgr, &args->id);
-	else if (args->op == LIMA_CTX_OP_FREE)
-		return lima_ctx_free(&priv->ctx_mgr, args->id);
+	return lima_ctx_create(ldev, &priv->ctx_mgr, &args->id);
+}
 
-	return -EINVAL;
+static int lima_ioctl_ctx_free(struct drm_device *dev, void *data, struct drm_file *file)
+{
+	struct drm_lima_ctx_create *args = data;
+	struct lima_drm_priv *priv = file->driver_priv;
+
+	return lima_ctx_free(&priv->ctx_mgr, args->id);
 }
 
 static int lima_drm_driver_open(struct drm_device *dev, struct drm_file *file)
@@ -198,12 +211,13 @@ static void lima_drm_driver_postclose(struct drm_device *dev, struct drm_file *f
 }
 
 static const struct drm_ioctl_desc lima_drm_driver_ioctls[] = {
-	DRM_IOCTL_DEF_DRV(LIMA_INFO, lima_ioctl_info, DRM_AUTH|DRM_RENDER_ALLOW),
+	DRM_IOCTL_DEF_DRV(LIMA_GET_PARAM, lima_ioctl_get_param, DRM_AUTH|DRM_RENDER_ALLOW),
 	DRM_IOCTL_DEF_DRV(LIMA_GEM_CREATE, lima_ioctl_gem_create, DRM_AUTH|DRM_RENDER_ALLOW),
 	DRM_IOCTL_DEF_DRV(LIMA_GEM_INFO, lima_ioctl_gem_info, DRM_AUTH|DRM_RENDER_ALLOW),
 	DRM_IOCTL_DEF_DRV(LIMA_GEM_SUBMIT, lima_ioctl_gem_submit, DRM_AUTH|DRM_RENDER_ALLOW),
 	DRM_IOCTL_DEF_DRV(LIMA_GEM_WAIT, lima_ioctl_gem_wait, DRM_AUTH|DRM_RENDER_ALLOW),
-	DRM_IOCTL_DEF_DRV(LIMA_CTX, lima_ioctl_ctx, DRM_AUTH|DRM_RENDER_ALLOW),
+	DRM_IOCTL_DEF_DRV(LIMA_CTX_CREATE, lima_ioctl_ctx_create, DRM_AUTH|DRM_RENDER_ALLOW),
+	DRM_IOCTL_DEF_DRV(LIMA_CTX_FREE, lima_ioctl_ctx_free, DRM_AUTH|DRM_RENDER_ALLOW),
 };
 
 static const struct file_operations lima_drm_driver_fops = {
@@ -316,19 +330,10 @@ static struct platform_driver lima_platform_driver = {
 	},
 };
 
-static void lima_check_module_param(void)
-{
-	if (lima_sched_max_tasks < 4)
-		lima_sched_max_tasks = 4;
-	else
-		lima_sched_max_tasks = roundup_pow_of_two(lima_sched_max_tasks);
-}
-
 static int __init lima_init(void)
 {
 	int ret;
 
-	lima_check_module_param();
 	ret = lima_sched_slab_init();
 	if (ret)
 		return ret;

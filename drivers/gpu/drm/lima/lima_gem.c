@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: GPL-2.0 OR MIT
-/* Copyright 2017-2018 Qiang Yu <yuq825@gmail.com> */
+/* Copyright 2017-2019 Qiang Yu <yuq825@gmail.com> */
 
-#include <drm/drmP.h>
-#include <drm/drm_syncobj.h>
-#include <drm/drm_utils.h>
+#include <linux/idr.h>
 #include <linux/sync_file.h>
 #include <linux/pfn_t.h>
+
+#include <drm/drm_file.h>
+#include <drm/drm_syncobj.h>
+#include <drm/drm_utils.h>
 
 #include <drm/lima_drm.h>
 

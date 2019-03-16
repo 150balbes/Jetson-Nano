@@ -283,7 +283,7 @@
 
 	bluetooth {
 		compatible = "brcm,bcm43438-bt";
-//		shutdown-gpios = <&gpio GPIOX_17 GPIO_ACTIVE_HIGH>;
+//		shutdown-gpios = <&gpio GPIOX_20 GPIO_ACTIVE_HIGH>;
 	};
 };
 
