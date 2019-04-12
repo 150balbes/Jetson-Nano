@@ -87,8 +87,7 @@
 
 	sdio_pwrseq: sdio-pwrseq {
 		compatible = "mmc-pwrseq-simple";
-		reset-gpios = <&gpio GPIOX_6 GPIO_ACTIVE_LOW>,
-				<&gpio GPIOX_20 GPIO_ACTIVE_LOW>;
+		reset-gpios = <&gpio GPIOX_6 GPIO_ACTIVE_LOW>;
 		clocks = <&wifi32k>;
 		clock-names = "ext_clock";
 	};
@@ -182,6 +181,7 @@
 	status = "okay";
 	pinctrl-0 = <&hdmi_hpd_pins>, <&hdmi_i2c_pins>;
 	pinctrl-names = "default";
+	hdmi-supply = <&hdmi_5v>;
 };
 
 &hdmi_tx_tmds_port {
@@ -193,8 +193,8 @@
 &ir {
 	status = "okay";
 	pinctrl-0 = <&remote_input_ao_pins>;
-	pinctrl-names = "default";
 	linux,rc-map-name = "rc-geekbox";
+	pinctrl-names = "default";
 };
 
 &pwm_ef {
@@ -213,7 +213,7 @@
 /* Wireless SDIO Module */
 &sd_emmc_a {
 	status = "okay";
-	pinctrl-0 = <&sdio_pins>, <&sdio_irq_pins>;
+	pinctrl-0 = <&sdio_pins>;
 	pinctrl-1 = <&sdio_clk_gate_pins>;
 	pinctrl-names = "default", "clk-gate";
 	#address-cells = <1>;
@@ -264,7 +264,7 @@
 
 	bus-width = <8>;
 	cap-mmc-highspeed;
-	max-frequency = <200000000>;
+	max-frequency = <100000000>;
 	non-removable;
 	disable-wp;
 	mmc-ddr-1_8v;
@@ -283,7 +283,7 @@
 
 	bluetooth {
 		compatible = "brcm,bcm43438-bt";
-//		shutdown-gpios = <&gpio GPIOX_20 GPIO_ACTIVE_HIGH>;
+		shutdown-gpios = <&gpio GPIOX_20 GPIO_ACTIVE_HIGH>;
 	};
 };
 

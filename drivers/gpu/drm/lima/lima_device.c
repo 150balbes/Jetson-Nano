@@ -23,8 +23,8 @@ struct lima_ip_desc {
 	bool must_have[lima_gpu_num];
 	int offset[lima_gpu_num];
 
-	int (*init)(struct lima_ip *);
-	void (*fini)(struct lima_ip *);
+	int (*init)(struct lima_ip *ip);
+	void (*fini)(struct lima_ip *ip);
 };
 
 #define LIMA_IP_DESC(ipname, mst0, mst1, off0, off1, func, irq) \
@@ -100,9 +100,12 @@ static int lima_clk_init(struct lima_device *dev)
 	gpu_rate = clk_get_rate(dev->clk_gpu);
 	dev_info(dev->dev, "mod rate = %lu", gpu_rate);
 
-	if ((err = clk_prepare_enable(dev->clk_bus)))
+	err = clk_prepare_enable(dev->clk_bus);
+	if (err)
 		return err;
-	if ((err = clk_prepare_enable(dev->clk_gpu)))
+
+	err = clk_prepare_enable(dev->clk_gpu);
+	if (err)
 		goto error_out0;
 
 	dev->reset = devm_reset_control_get_optional(dev->dev, NULL);
@@ -110,7 +113,8 @@ static int lima_clk_init(struct lima_device *dev)
 		err = PTR_ERR(dev->reset);
 		goto error_out1;
 	} else if (dev->reset != NULL) {
-		if ((err = reset_control_deassert(dev->reset)))
+		err = reset_control_deassert(dev->reset);
+		if (err)
 			goto error_out1;
 	}
 
@@ -134,6 +138,7 @@ static void lima_clk_fini(struct lima_device *dev)
 static int lima_regulator_init(struct lima_device *dev)
 {
 	int ret;
+
 	dev->regulator = devm_regulator_get_optional(dev->dev, "mali");
 	if (IS_ERR(dev->regulator)) {
 		ret = PTR_ERR(dev->regulator);
@@ -204,14 +209,16 @@ static int lima_init_gp_pipe(struct lima_device *dev)
 	struct lima_sched_pipe *pipe = dev->pipe + lima_pipe_gp;
 	int err;
 
-	if ((err = lima_sched_pipe_init(pipe, "gp")))
+	err = lima_sched_pipe_init(pipe, "gp");
+	if (err)
 		return err;
 
 	pipe->l2_cache[pipe->num_l2_cache++] = dev->ip + lima_ip_l2_cache0;
 	pipe->mmu[pipe->num_mmu++] = dev->ip + lima_ip_gpmmu;
 	pipe->processor[pipe->num_processor++] = dev->ip + lima_ip_gp;
 
-	if ((err = lima_gp_pipe_init(dev))) {
+	err = lima_gp_pipe_init(dev);
+	if (err) {
 		lima_sched_pipe_fini(pipe);
 		return err;
 	}
@@ -232,7 +239,8 @@ static int lima_init_pp_pipe(struct lima_device *dev)
 	struct lima_sched_pipe *pipe = dev->pipe + lima_pipe_pp;
 	int err, i;
 
-	if ((err = lima_sched_pipe_init(pipe, "pp")))
+	err = lima_sched_pipe_init(pipe, "pp");
+	if (err)
 		return err;
 
 	for (i = 0; i < LIMA_SCHED_PIPE_MAX_PROCESSOR; i++) {
@@ -258,7 +266,8 @@ static int lima_init_pp_pipe(struct lima_device *dev)
 		pipe->bcast_mmu = dev->ip + lima_ip_ppmmu_bcast;
 	}
 
-	if ((err = lima_pp_pipe_init(dev))) {
+	err = lima_pp_pipe_init(dev);
+	if (err) {
 		lima_sched_pipe_fini(pipe);
 		return err;
 	}
@@ -287,7 +296,8 @@ int lima_device_init(struct lima_device *ldev)
 		return err;
 	}
 
-	if ((err = lima_regulator_init(ldev))) {
+	err = lima_regulator_init(ldev);
+	if (err) {
 		dev_err(ldev->dev, "regulator init fail %d\n", err);
 		goto err_out0;
 	}
@@ -308,15 +318,14 @@ int lima_device_init(struct lima_device *ldev)
 			err = -ENOMEM;
 			goto err_out2;
 		}
-	}
-	else
+	} else
 		ldev->va_end = LIMA_VA_RESERVE_END;
 
 	res = platform_get_resource(ldev->pdev, IORESOURCE_MEM, 0);
 	ldev->iomem = devm_ioremap_resource(ldev->dev, res);
 	if (IS_ERR(ldev->iomem)) {
 		dev_err(ldev->dev, "fail to ioremap iomem\n");
-	        err = PTR_ERR(ldev->iomem);
+		err = PTR_ERR(ldev->iomem);
 		goto err_out3;
 	}
 

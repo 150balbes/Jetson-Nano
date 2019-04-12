@@ -9,11 +9,10 @@
 
 void lima_bo_destroy(struct lima_bo *bo)
 {
-        if (bo->sgt) {
+	if (bo->sgt) {
 		kfree(bo->pages);
 		drm_prime_gem_destroy(&bo->gem, bo->sgt);
-	}
-	else {
+	} else {
 		if (bo->pages_dma_addr) {
 			int i, npages = bo->gem.size >> PAGE_SHIFT;
 
@@ -73,7 +72,7 @@ struct lima_bo *lima_bo_create(struct lima_device *dev, u32 size,
 
 	npages = bo->gem.size >> PAGE_SHIFT;
 
-	bo->pages_dma_addr = kzalloc(npages * sizeof(dma_addr_t), GFP_KERNEL);
+	bo->pages_dma_addr = kcalloc(npages, sizeof(dma_addr_t), GFP_KERNEL);
 	if (!bo->pages_dma_addr) {
 		ret = ERR_PTR(-ENOMEM);
 		goto err_out;
@@ -82,7 +81,7 @@ struct lima_bo *lima_bo_create(struct lima_device *dev, u32 size,
 	if (sgt) {
 		bo->sgt = sgt;
 
-		bo->pages = kzalloc(npages * sizeof(*bo->pages), GFP_KERNEL);
+		bo->pages = kcalloc(npages, sizeof(*bo->pages), GFP_KERNEL);
 		if (!bo->pages) {
 			ret = ERR_PTR(-ENOMEM);
 			goto err_out;
@@ -94,10 +93,9 @@ struct lima_bo *lima_bo_create(struct lima_device *dev, u32 size,
 			ret = ERR_PTR(err);
 			goto err_out;
 		}
-	}
-	else {
+	} else {
 		mapping_set_gfp_mask(bo->gem.filp->f_mapping, GFP_DMA32);
-	        bo->pages = drm_gem_get_pages(&bo->gem);
+		bo->pages = drm_gem_get_pages(&bo->gem);
 		if (IS_ERR(bo->pages)) {
 			ret = ERR_CAST(bo->pages);
 			bo->pages = NULL;

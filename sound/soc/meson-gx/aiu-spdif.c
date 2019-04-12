@@ -332,9 +332,11 @@ static int meson_aiu_spdif_dma_new(struct snd_soc_pcm_runtime *rtd)
 	struct snd_card *card = rtd->card->snd_card;
 	size_t size = meson_aiu_spdif_dma_hw.buffer_bytes_max;
 
-	return snd_pcm_lib_preallocate_pages_for_all(rtd->pcm,
-						     SNDRV_DMA_TYPE_DEV,
-						     card->dev, size, size);
+	snd_pcm_lib_preallocate_pages_for_all(rtd->pcm,
+					      SNDRV_DMA_TYPE_DEV,
+					      card->dev, size, size);
+
+	return 0;
 }
 
 #define AIU_CLK_CTRL_958_DIV_EN			BIT(1)

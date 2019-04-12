@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0 OR MIT
 /* Copyright 2017-2019 Qiang Yu <yuq825@gmail.com> */
 
-#include <linux/idr.h>
 #include <linux/sync_file.h>
 #include <linux/pfn_t.h>
 
@@ -167,9 +166,9 @@ static int lima_gem_sync_bo(struct lima_sched_task *task, struct lima_bo *bo,
 			dma_fence_put(fences[i]);
 
 		kfree(fences);
-	}
-	else {
+	} else {
 		struct dma_fence *fence;
+
 		fence = reservation_object_get_excl_rcu(bo->gem.resv);
 		if (fence) {
 			err = lima_sched_task_add_dep(task, fence);
@@ -290,7 +289,8 @@ int lima_gem_submit(struct drm_file *file, struct lima_submit *submit)
 		bo = to_lima_bo(obj);
 
 		/* increase refcnt of gpu va map to prevent unmapped when executing,
-		 * will be decreased when task done */
+		 * will be decreased when task done
+		 */
 		err = lima_vm_bo_add(vm, bo, false);
 		if (err) {
 			drm_gem_object_put_unlocked(obj);

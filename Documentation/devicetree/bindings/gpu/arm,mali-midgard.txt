@@ -37,8 +37,6 @@ Optional properties:
 - operating-points-v2 : Refer to Documentation/devicetree/bindings/opp/opp.txt
   for details.
 
-- resets : Phandle to the reset controls for the Mali Midgard device.
-
 
 Example for a Mali-T760:
 

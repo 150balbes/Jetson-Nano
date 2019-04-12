@@ -16,22 +16,29 @@ struct lima_fence {
 	struct lima_sched_pipe *pipe;
 };
 
-static struct kmem_cache *lima_fence_slab = NULL;
+static struct kmem_cache *lima_fence_slab;
+static int lima_fence_slab_refcnt;
 
 int lima_sched_slab_init(void)
 {
-	lima_fence_slab = kmem_cache_create(
-		"lima_fence", sizeof(struct lima_fence), 0,
-		SLAB_HWCACHE_ALIGN, NULL);
-	if (!lima_fence_slab)
-		return -ENOMEM;
+	if (!lima_fence_slab) {
+		lima_fence_slab = kmem_cache_create(
+			"lima_fence", sizeof(struct lima_fence), 0,
+			SLAB_HWCACHE_ALIGN, NULL);
+		if (!lima_fence_slab)
+			return -ENOMEM;
+	}
 
+	lima_fence_slab_refcnt++;
 	return 0;
 }
 
 void lima_sched_slab_fini(void)
 {
-	kmem_cache_destroy(lima_fence_slab);
+	if (!--lima_fence_slab_refcnt) {
+		kmem_cache_destroy(lima_fence_slab);
+		lima_fence_slab = NULL;
+	}
 }
 
 static inline struct lima_fence *to_lima_fence(struct dma_fence *fence)
@@ -49,11 +56,6 @@ static const char *lima_fence_get_timeline_name(struct dma_fence *fence)
 	struct lima_fence *f = to_lima_fence(fence);
 
 	return f->pipe->base.name;
-}
-
-static bool lima_fence_enable_signaling(struct dma_fence *fence)
-{
-	return true;
 }
 
 static void lima_fence_release_rcu(struct rcu_head *rcu)
@@ -74,8 +76,6 @@ static void lima_fence_release(struct dma_fence *fence)
 static const struct dma_fence_ops lima_fence_ops = {
 	.get_driver_name = lima_fence_get_driver_name,
 	.get_timeline_name = lima_fence_get_timeline_name,
-	.enable_signaling = lima_fence_enable_signaling,
-	.wait = dma_fence_default_wait,
 	.release = lima_fence_release,
 };
 
@@ -85,7 +85,7 @@ static struct lima_fence *lima_fence_create(struct lima_sched_pipe *pipe)
 
 	fence = kmem_cache_zalloc(lima_fence_slab, GFP_KERNEL);
 	if (!fence)
-	       return NULL;
+		return NULL;
 
 	fence->pipe = pipe;
 	dma_fence_init(&fence->base, &lima_fence_ops, &pipe->fence_lock,
@@ -113,7 +113,7 @@ int lima_sched_task_init(struct lima_sched_task *task,
 
 	task->bos = kmemdup(bos, sizeof(*bos) * num_bos, GFP_KERNEL);
 	if (!task->bos)
-		return -ENOMEM;	
+		return -ENOMEM;
 
 	for (i = 0; i < num_bos; i++)
 		drm_gem_object_get(&bos[i]->gem);
@@ -164,8 +164,10 @@ int lima_sched_task_add_dep(struct lima_sched_task *task, struct dma_fence *fenc
 
 	if (task->max_dep < new_dep) {
 		void *dep = krealloc(task->dep, sizeof(*task->dep) * new_dep, GFP_KERNEL);
+
 		if (!dep)
 			return -ENOMEM;
+
 		task->max_dep = new_dep;
 		task->dep = dep;
 	}
@@ -248,8 +250,9 @@ static struct dma_fence *lima_sched_run_job(struct drm_sched_job *job)
 		return NULL;
 	task->fence = &fence->base;
 
-	/* for caller usage of the fence, otherwise irq handler 
-	 * may consume the fence before caller use it */
+	/* for caller usage of the fence, otherwise irq handler
+	 * may consume the fence before caller use it
+	 */
 	ret = dma_fence_get(task->fence);
 
 	pipe->current_task = task;
@@ -297,8 +300,10 @@ static struct dma_fence *lima_sched_run_job(struct drm_sched_job *job)
 static void lima_sched_handle_error_task(struct lima_sched_pipe *pipe,
 					 struct lima_sched_task *task)
 {
-	kthread_park(pipe->base.thread);
-	drm_sched_hw_job_reset(&pipe->base, &task->base);
+	drm_sched_stop(&pipe->base);
+
+	if (task)
+		drm_sched_increase_karma(&task->base);
 
 	pipe->task_error(pipe);
 
@@ -306,6 +311,7 @@ static void lima_sched_handle_error_task(struct lima_sched_pipe *pipe,
 		lima_mmu_page_fault_resume(pipe->bcast_mmu);
 	else {
 		int i;
+
 		for (i = 0; i < pipe->num_mmu; i++)
 			lima_mmu_page_fault_resume(pipe->mmu[i]);
 	}
@@ -316,8 +322,8 @@ static void lima_sched_handle_error_task(struct lima_sched_pipe *pipe,
 	pipe->current_vm = NULL;
 	pipe->current_task = NULL;
 
-	drm_sched_job_recovery(&pipe->base);
-	kthread_unpark(pipe->base.thread);
+	drm_sched_resubmit_jobs(&pipe->base);
+	drm_sched_start(&pipe->base, true);
 }
 
 static void lima_sched_timedout_job(struct drm_sched_job *job)
@@ -388,7 +394,7 @@ void lima_sched_pipe_fini(struct lima_sched_pipe *pipe)
 void lima_sched_pipe_task_done(struct lima_sched_pipe *pipe)
 {
 	if (pipe->error)
-	        schedule_work(&pipe->error_work);
+		schedule_work(&pipe->error_work);
 	else {
 		struct lima_sched_task *task = pipe->current_task;
 

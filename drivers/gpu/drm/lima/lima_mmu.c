@@ -40,15 +40,15 @@ static irqreturn_t lima_mmu_irq_handler(int irq, void *data)
 
 	if (status & LIMA_MMU_INT_PAGE_FAULT) {
 		u32 fault = mmu_read(LIMA_MMU_PAGE_FAULT_ADDR);
+
 		dev_err(dev->dev, "mmu page fault at 0x%x from bus id %d of type %s on %s\n",
 			fault, LIMA_MMU_STATUS_BUS_ID(status),
 			status & LIMA_MMU_STATUS_PAGE_FAULT_IS_WRITE ? "write" : "read",
 			lima_ip_name(ip));
 	}
 
-	if (status & LIMA_MMU_INT_READ_BUS_ERROR) {
+	if (status & LIMA_MMU_INT_READ_BUS_ERROR)
 		dev_err(dev->dev, "mmu %s irq bus error\n", lima_ip_name(ip));
-	}
 
 	/* mask all interrupts before resume */
 	mmu_write(LIMA_MMU_INT_MASK, 0);
@@ -133,7 +133,7 @@ void lima_mmu_page_fault_resume(struct lima_ip *ip)
 		mmu_write(LIMA_MMU_DTE_ADDR, 0xCAFEBABE);
 		lima_mmu_send_command(LIMA_MMU_COMMAND_HARD_RESET,
 				      LIMA_MMU_DTE_ADDR, v, v == 0);
-	        mmu_write(LIMA_MMU_INT_MASK, LIMA_MMU_INT_PAGE_FAULT | LIMA_MMU_INT_READ_BUS_ERROR);
+		mmu_write(LIMA_MMU_INT_MASK, LIMA_MMU_INT_PAGE_FAULT | LIMA_MMU_INT_READ_BUS_ERROR);
 		mmu_write(LIMA_MMU_DTE_ADDR, dev->empty_vm->pd.dma);
 		lima_mmu_send_command(LIMA_MMU_COMMAND_ENABLE_PAGING,
 				      LIMA_MMU_STATUS, v,

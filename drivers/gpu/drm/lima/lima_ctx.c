@@ -23,7 +23,7 @@ int lima_ctx_create(struct lima_device *dev, struct lima_ctx_mgr *mgr, u32 *id)
 			goto err_out0;
 	}
 
-	err = xa_alloc(&mgr->handles, id, UINT_MAX, ctx, GFP_KERNEL);
+	err = xa_alloc(&mgr->handles, id, ctx, xa_limit_32b, GFP_KERNEL);
 	if (err < 0)
 		goto err_out0;
 
@@ -49,15 +49,16 @@ static void lima_ctx_do_release(struct kref *ref)
 int lima_ctx_free(struct lima_ctx_mgr *mgr, u32 id)
 {
 	struct lima_ctx *ctx;
+	int ret = 0;
 
 	mutex_lock(&mgr->lock);
 	ctx = xa_erase(&mgr->handles, id);
-	if (ctx) {
+	if (ctx)
 		kref_put(&ctx->refcnt, lima_ctx_do_release);
-		return 0;
-	}
+	else
+		ret = -EINVAL;
 	mutex_unlock(&mgr->lock);
-	return -EINVAL;
+	return ret;
 }
 
 struct lima_ctx *lima_ctx_get(struct lima_ctx_mgr *mgr, u32 id)
@@ -89,7 +90,7 @@ void lima_ctx_mgr_fini(struct lima_ctx_mgr *mgr)
 	unsigned long id;
 
 	xa_for_each(&mgr->handles, id, ctx) {
-	        kref_put(&ctx->refcnt, lima_ctx_do_release);
+		kref_put(&ctx->refcnt, lima_ctx_do_release);
 	}
 
 	xa_destroy(&mgr->handles);

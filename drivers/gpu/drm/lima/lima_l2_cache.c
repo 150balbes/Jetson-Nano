@@ -21,8 +21,8 @@ static int lima_l2_cache_wait_idle(struct lima_ip *ip)
 				 !(v & LIMA_L2_CACHE_STATUS_COMMAND_BUSY),
 				 0, 1000);
 	if (err) {
-	    dev_err(dev->dev, "l2 cache wait command timeout\n");
-	    return err;
+		dev_err(dev->dev, "l2 cache wait command timeout\n");
+		return err;
 	}
 	return 0;
 }

@@ -61,6 +61,10 @@ Boards with the Amlogic Meson G12A S905D2 SoC shall have the following propertie
   Required root node property:
     compatible: "amlogic,g12a";
 
+Boards with the Amlogic Meson G12B S922X SoC shall have the following properties:
+  Required root node property:
+    compatible: "amlogic,g12b";
+
 Board compatible values (alphabetically, grouped by SoC):
 
   - "geniatech,atv1200" (Meson6)
@@ -109,6 +113,10 @@ Board compatible values (alphabetically, grouped by SoC):
   - "amlogic,s400" (Meson axg a113d)
 
   - "amlogic,u200" (Meson g12a s905d2)
+  - "amediatech,x96-max" (Meson g12a s905x2)
+  - "seirobotics,sei510" (Meson g12a s905x2)
+
+  - "hardkernel,odroid-n2" (Meson g12b s922x)
 
 Amlogic Meson Firmware registers Interface
 ------------------------------------------

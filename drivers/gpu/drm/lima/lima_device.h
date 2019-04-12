@@ -75,6 +75,8 @@ struct lima_device {
 	struct platform_device *pdev;
 
 	enum lima_gpu_id id;
+	u32 gp_version;
+	u32 pp_version;
 	int num_pp;
 
 	void __iomem *iomem;

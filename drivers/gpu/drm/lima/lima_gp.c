@@ -37,8 +37,7 @@ static irqreturn_t lima_gp_irq_handler(int irq, void *data)
 
 		pipe->error = true;
 		done = true;
-	}
-	else {
+	} else {
 		bool valid = state & (LIMA_GP_IRQ_VS_END_CMD_LST |
 				      LIMA_GP_IRQ_PLBU_END_CMD_LST);
 		bool active = status & (LIMA_GP_STATUS_VS_ACTIVE |
@@ -207,15 +206,15 @@ static void lima_gp_print_version(struct lima_ip *ip)
 		name = "mali450";
 		break;
 	default:
-		name = "unknow";
+		name = "unknown";
 		break;
 	}
 	dev_info(ip->dev->dev, "%s - %s version major %d minor %d\n",
 		 lima_ip_name(ip), name, major, minor);
 }
 
-static struct kmem_cache *lima_gp_task_slab = NULL;
-static int lima_gp_task_slab_refcnt = 0;
+static struct kmem_cache *lima_gp_task_slab;
+static int lima_gp_task_slab_refcnt;
 
 int lima_gp_init(struct lima_ip *ip)
 {
@@ -237,6 +236,8 @@ int lima_gp_init(struct lima_ip *ip)
 			lima_ip_name(ip));
 		return err;
 	}
+
+	dev->gp_version = gp_read(LIMA_GP_VERSION);
 
 	return 0;
 }

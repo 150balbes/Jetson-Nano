@@ -15,7 +15,7 @@
 #include "lima_gem_prime.h"
 #include "lima_vm.h"
 
-int lima_sched_timeout_ms = 0;
+int lima_sched_timeout_ms;
 
 MODULE_PARM_DESC(sched_timeout_ms, "task run timeout in ms (0 = no timeout (default))");
 module_param_named(sched_timeout_ms, lima_sched_timeout_ms, int, 0444);
@@ -24,6 +24,9 @@ static int lima_ioctl_get_param(struct drm_device *dev, void *data, struct drm_f
 {
 	struct drm_lima_get_param *args = data;
 	struct lima_device *ldev = to_lima_dev(dev);
+
+	if (args->pad)
+		return -EINVAL;
 
 	switch (args->param) {
 	case DRM_LIMA_PARAM_GPU_ID:
@@ -44,6 +47,14 @@ static int lima_ioctl_get_param(struct drm_device *dev, void *data, struct drm_f
 		args->value = ldev->pipe[lima_pipe_pp].num_processor;
 		break;
 
+	case DRM_LIMA_PARAM_GP_VERSION:
+		args->value = ldev->gp_version;
+		break;
+
+	case DRM_LIMA_PARAM_PP_VERSION:
+		args->value = ldev->pp_version;
+		break;
+
 	default:
 		return -EINVAL;
 	}
@@ -54,6 +65,9 @@ static int lima_ioctl_get_param(struct drm_device *dev, void *data, struct drm_f
 static int lima_ioctl_gem_create(struct drm_device *dev, void *data, struct drm_file *file)
 {
 	struct drm_lima_gem_create *args = data;
+
+	if (args->pad)
+		return -EINVAL;
 
 	if (args->flags)
 		return -EINVAL;
@@ -164,6 +178,9 @@ static int lima_ioctl_ctx_create(struct drm_device *dev, void *data, struct drm_
 	struct lima_drm_priv *priv = file->driver_priv;
 	struct lima_device *ldev = to_lima_dev(dev);
 
+	if (args->_pad)
+		return -EINVAL;
+
 	return lima_ctx_create(ldev, &priv->ctx_mgr, &args->id);
 }
 
@@ -171,6 +188,9 @@ static int lima_ioctl_ctx_free(struct drm_device *dev, void *data, struct drm_fi
 {
 	struct drm_lima_ctx_create *args = data;
 	struct lima_drm_priv *priv = file->driver_priv;
+
+	if (args->_pad)
+		return -EINVAL;
 
 	return lima_ctx_free(&priv->ctx_mgr, args->id);
 }
@@ -262,9 +282,15 @@ static int lima_pdev_probe(struct platform_device *pdev)
 	struct drm_device *ddev;
 	int err;
 
+	err = lima_sched_slab_init();
+	if (err)
+		return err;
+
 	ldev = devm_kzalloc(&pdev->dev, sizeof(*ldev), GFP_KERNEL);
-	if (!ldev)
-		return -ENOMEM;
+	if (!ldev) {
+		err = -ENOMEM;
+		goto err_out0;
+	}
 
 	ldev->pdev = pdev;
 	ldev->dev = &pdev->dev;
@@ -283,7 +309,7 @@ static int lima_pdev_probe(struct platform_device *pdev)
 	err = lima_device_init(ldev);
 	if (err) {
 		dev_err(&pdev->dev, "Fatal error during GPU init\n");
-		goto err_out0;
+		goto err_out1;
 	}
 
 	/*
@@ -292,14 +318,16 @@ static int lima_pdev_probe(struct platform_device *pdev)
 	 */
 	err = drm_dev_register(ddev, 0);
 	if (err < 0)
-		goto err_out1;
+		goto err_out2;
 
 	return 0;
 
-err_out1:
+err_out2:
 	lima_device_fini(ldev);
-err_out0:
+err_out1:
 	drm_dev_put(ddev);
+err_out0:
+	lima_sched_slab_fini();
 	return err;
 }
 
@@ -311,6 +339,7 @@ static int lima_pdev_remove(struct platform_device *pdev)
 	drm_dev_unregister(ddev);
 	lima_device_fini(ldev);
 	drm_dev_put(ddev);
+	lima_sched_slab_fini();
 	return 0;
 }
 
@@ -332,24 +361,13 @@ static struct platform_driver lima_platform_driver = {
 
 static int __init lima_init(void)
 {
-	int ret;
-
-	ret = lima_sched_slab_init();
-	if (ret)
-		return ret;
-
-	ret = platform_driver_register(&lima_platform_driver);
-	if (ret)
-		lima_sched_slab_fini();
-
-	return ret;
+	return platform_driver_register(&lima_platform_driver);
 }
 module_init(lima_init);
 
 static void __exit lima_exit(void)
 {
 	platform_driver_unregister(&lima_platform_driver);
-	lima_sched_slab_fini();
 }
 module_exit(lima_exit);
 

@@ -322,7 +322,11 @@ static int m88ds3103_set_frontend(struct dvb_frontend *fe)
 	}
 
 	/* reset */
-	ret = regmap_multi_reg_write(dev->regmap, reset_buf, 2);
+	ret = regmap_write(dev->regmap, 0x07, 0x80);
+	if (ret)
+		goto err;
+
+	ret = regmap_write(dev->regmap, 0x07, 0x00);
 	if (ret)
 		goto err;
 

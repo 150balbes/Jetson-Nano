@@ -11,7 +11,7 @@
 
 struct lima_bo_va {
 	struct list_head list;
-	unsigned ref_count;
+	unsigned int ref_count;
 
 	struct drm_mm_node node;
 
@@ -135,7 +135,7 @@ int lima_vm_bo_add(struct lima_vm *vm, struct lima_bo *bo, bool create)
 	err = lima_vm_map_page_table(vm, bo->pages_dma_addr, bo_va->node.start,
 				     bo_va->node.start + bo_va->node.size - 1);
 	if (err)
-	        goto err_out2;
+		goto err_out2;
 
 	mutex_unlock(&vm->lock);
 
@@ -246,7 +246,7 @@ void lima_vm_release(struct kref *kref)
 				    vm->bts[i].cpu, vm->bts[i].dma);
 	}
 
-        if (vm->pd.cpu)
+	if (vm->pd.cpu)
 		dma_free_wc(vm->dev->dev, LIMA_PAGE_SIZE, vm->pd.cpu, vm->pd.dma);
 
 	kfree(vm);
@@ -268,10 +268,12 @@ void lima_vm_print(struct lima_vm *vm)
 		pt = vm->bts[i].cpu;
 		for (j = 0; j < LIMA_VM_NUM_PT_PER_BT; j++) {
 			int idx = (i << LIMA_VM_NUM_PT_PER_BT_SHIFT) + j;
+
 			printk(KERN_INFO "lima vm pd %03x:%08x\n", idx, pd[idx]);
 
 			for (k = 0; k < LIMA_PAGE_ENT_NUM; k++) {
 				u32 pte = *pt++;
+
 				if (pte)
 					printk(KERN_INFO "  pt %03x:%08x\n", k, pte);
 			}

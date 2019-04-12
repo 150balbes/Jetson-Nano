@@ -37,7 +37,8 @@ int lima_pmu_init(struct lima_ip *ip)
 	pmu_write(LIMA_PMU_INT_MASK, 0);
 
 	/* If this value is too low, when in high GPU clk freq,
-	 * GPU will be in unstable state. */
+	 * GPU will be in unstable state.
+	 */
 	pmu_write(LIMA_PMU_SW_DELAY, 0xffff);
 
 	/* status reg 1=off 0=on */

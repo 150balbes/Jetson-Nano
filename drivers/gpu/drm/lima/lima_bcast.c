@@ -19,6 +19,7 @@ void lima_bcast_enable(struct lima_device *dev, int num_pp)
 
 	for (i = 0; i < num_pp; i++) {
 		struct lima_ip *pp = pipe->processor[i];
+
 		mask |= 1 << (pp->id - lima_ip_pp0);
 	}
 
@@ -41,6 +42,6 @@ int lima_bcast_init(struct lima_ip *ip)
 
 void lima_bcast_fini(struct lima_ip *ip)
 {
-	
+
 }
 

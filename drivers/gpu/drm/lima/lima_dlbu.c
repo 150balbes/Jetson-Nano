@@ -20,6 +20,7 @@ void lima_dlbu_enable(struct lima_device *dev, int num_pp)
 
 	for (i = 0; i < num_pp; i++) {
 		struct lima_ip *pp = pipe->processor[i];
+
 		mask |= 1 << (pp->id - lima_ip_pp0);
 	}
 
@@ -29,6 +30,7 @@ void lima_dlbu_enable(struct lima_device *dev, int num_pp)
 void lima_dlbu_disable(struct lima_device *dev)
 {
 	struct lima_ip *ip = dev->ip + lima_ip_dlbu;
+
 	dlbu_write(LIMA_DLBU_PP_ENABLE_MASK, 0);
 }
 
@@ -52,5 +54,5 @@ int lima_dlbu_init(struct lima_ip *ip)
 
 void lima_dlbu_fini(struct lima_ip *ip)
 {
-	
+
 }
