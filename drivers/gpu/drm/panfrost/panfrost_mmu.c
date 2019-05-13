@@ -7,6 +7,7 @@
 #include <linux/io-pgtable.h>
 #include <linux/iommu.h>
 #include <linux/platform_device.h>
+#include <linux/pm_runtime.h>
 #include <linux/sizes.h>
 
 #include "panfrost_device.h"
@@ -30,7 +31,7 @@ static int wait_ready(struct panfrost_device *pfdev, u32 as_nr)
 	u32 val;
 
 	/* Wait for the MMU status to indicate there is no active command, in
-	 * case one is pending. Do not log remaining register accesses. */
+	 * case one is pending. */
 	ret = readl_relaxed_poll_timeout_atomic(pfdev->iomem + AS_STATUS(as_nr),
 		val, !(val & AS_STATUS_AS_ACTIVE), 10, 1000);
 
@@ -58,7 +59,7 @@ static void lock_region(struct panfrost_device *pfdev, u32 as_nr,
 	u8 region_width;
 	u64 region = iova & PAGE_MASK;
 	/*
-	 * fls returns (given the ASSERT above):
+	 * fls returns:
 	 * 1 .. 32
 	 *
 	 * 10 + fls(num_pages)
@@ -106,22 +107,20 @@ static int mmu_hw_do_operation(struct panfrost_device *pfdev, u32 as_nr,
 void panfrost_mmu_enable(struct panfrost_device *pfdev, u32 as_nr)
 {
 	struct io_pgtable_cfg *cfg = &pfdev->mmu->pgtbl_cfg;
-	u64 pgt_base = cfg->arm_lpae_s1_cfg.ttbr[0];
-	u64 mem_attr = cfg->arm_lpae_s1_cfg.mair[0];
+	u64 transtab = cfg->arm_mali_lpae_cfg.transtab;
+	u64 memattr = cfg->arm_mali_lpae_cfg.memattr;
 
-//	if (kbdev->system_coherency == COHERENCY_ACE)
-//		current_setup->transtab |= AS_TRANSTAB_LPAE_SHARE_OUTER;
+	mmu_write(pfdev, MMU_INT_CLEAR, ~0);
+	mmu_write(pfdev, MMU_INT_MASK, ~0);
 
-	pgt_base &= AS_TRANSTAB_LPAE_ADDR_SPACE_MASK;
-	pgt_base |= AS_TRANSTAB_LPAE_ADRMODE_TABLE | AS_TRANSTAB_LPAE_READ_INNER;
-	mmu_write(pfdev, AS_TRANSTAB_LO(as_nr), pgt_base & 0xffffffffUL);
-	mmu_write(pfdev, AS_TRANSTAB_HI(as_nr), pgt_base >> 32);
+	mmu_write(pfdev, AS_TRANSTAB_LO(as_nr), transtab & 0xffffffffUL);
+	mmu_write(pfdev, AS_TRANSTAB_HI(as_nr), transtab >> 32);
 
 	/* Need to revisit mem attrs.
 	 * NC is the default, Mali driver is inner WT.
 	 */
-	mmu_write(pfdev, AS_MEMATTR_LO(as_nr), mem_attr & 0xffffffffUL);
-	mmu_write(pfdev, AS_MEMATTR_HI(as_nr), mem_attr >> 32);
+	mmu_write(pfdev, AS_MEMATTR_LO(as_nr), memattr & 0xffffffffUL);
+	mmu_write(pfdev, AS_MEMATTR_HI(as_nr), memattr >> 32);
 
 	write_cmd(pfdev, as_nr, AS_COMMAND_UPDATE);
 }
@@ -137,6 +136,14 @@ static void mmu_disable(struct panfrost_device *pfdev, u32 as_nr)
 	write_cmd(pfdev, as_nr, AS_COMMAND_UPDATE);
 }
 
+static size_t get_pgsize(u64 addr, size_t size)
+{
+	if (addr & (SZ_2M - 1) || size < SZ_2M)
+		return SZ_4K;
+
+	return SZ_2M;
+}
+
 int panfrost_mmu_map(struct panfrost_gem_object *bo)
 {
 	struct drm_gem_object *obj = &bo->base.base;
@@ -146,10 +153,15 @@ int panfrost_mmu_map(struct panfrost_gem_object *bo)
 	unsigned int count;
 	struct scatterlist *sgl;
 	struct sg_table *sgt;
+	int ret;
 
 	sgt = drm_gem_shmem_get_pages_sgt(obj);
 	if (WARN_ON(IS_ERR(sgt)))
 		return PTR_ERR(sgt);
+
+	ret = pm_runtime_get_sync(pfdev->dev);
+	if (ret < 0)
+		return ret;
 
 	mutex_lock(&pfdev->mmu->lock);
 
@@ -157,16 +169,26 @@ int panfrost_mmu_map(struct panfrost_gem_object *bo)
 		unsigned long paddr = sg_dma_address(sgl);
 		size_t len = sg_dma_len(sgl);
 
+		dev_dbg(pfdev->dev, "map: iova=%llx, paddr=%lx, len=%zx", iova, paddr, len);
+
 		while (len) {
-			dev_dbg(pfdev->dev, "map: iova=%llx, paddr=%lx, len=%zx", iova, paddr, len);
-			ops->map(ops, iova, paddr, SZ_4K, IOMMU_WRITE | IOMMU_READ);
-			iova += SZ_4K;
-			paddr += SZ_4K;
-			len -= SZ_4K;
+			size_t pgsize = get_pgsize(iova | paddr, len);
+
+			ops->map(ops, iova, paddr, pgsize, IOMMU_WRITE | IOMMU_READ);
+			iova += pgsize;
+			paddr += pgsize;
+			len -= pgsize;
 		}
 	}
 
+	mmu_hw_do_operation(pfdev, 0, bo->node.start << PAGE_SHIFT,
+			    bo->node.size << PAGE_SHIFT, AS_COMMAND_FLUSH_PT);
+
 	mutex_unlock(&pfdev->mmu->lock);
+
+	pm_runtime_mark_last_busy(pfdev->dev);
+	pm_runtime_put_autosuspend(pfdev->dev);
+
 	return 0;
 }
 
@@ -178,16 +200,35 @@ void panfrost_mmu_unmap(struct panfrost_gem_object *bo)
 	u64 iova = bo->node.start << PAGE_SHIFT;
 	size_t len = bo->node.size << PAGE_SHIFT;
 	size_t unmapped_len = 0;
+	int ret;
+
+	dev_dbg(pfdev->dev, "unmap: iova=%llx, len=%zx", iova, len);
+
+	ret = pm_runtime_get_sync(pfdev->dev);
+	if (ret < 0)
+		return;
 
 	mutex_lock(&pfdev->mmu->lock);
 
 	while (unmapped_len < len) {
-		ops->unmap(ops, iova, SZ_4K);
-		iova += SZ_4K;
-		unmapped_len += SZ_4K;
+		size_t unmapped_page;
+		size_t pgsize = get_pgsize(iova, len - unmapped_len);
+
+		unmapped_page = ops->unmap(ops, iova, pgsize);
+		if (!unmapped_page)
+			break;
+
+		iova += unmapped_page;
+		unmapped_len += unmapped_page;
 	}
 
+	mmu_hw_do_operation(pfdev, 0, bo->node.start << PAGE_SHIFT,
+			    bo->node.size << PAGE_SHIFT, AS_COMMAND_FLUSH_PT);
+
 	mutex_unlock(&pfdev->mmu->lock);
+
+	pm_runtime_mark_last_busy(pfdev->dev);
+	pm_runtime_put_autosuspend(pfdev->dev);
 }
 
 static void mmu_tlb_inv_context_s1(void *cookie)
@@ -199,17 +240,12 @@ static void mmu_tlb_inv_context_s1(void *cookie)
 
 static void mmu_tlb_inv_range_nosync(unsigned long iova, size_t size,
 				     size_t granule, bool leaf, void *cookie)
-{
-	struct panfrost_device *pfdev = cookie;
+{}
 
-	dev_dbg(pfdev->dev, "inv_range: iova=%lx, size=%zx, granule=%zx, leaf=%d",
-		iova, size, granule, leaf);
-	mmu_hw_do_operation(pfdev, 0, iova, size, AS_COMMAND_FLUSH_PT);
-}
 static void mmu_tlb_sync_context(void *cookie)
 {
 	//struct panfrost_device *pfdev = cookie;
-	// Wait 1000 GPU cycles!?
+	// TODO: Wait 1000 GPU cycles for HW_ISSUE_6367/T60X
 }
 
 static const struct iommu_gather_ops mmu_tlb_ops = {
@@ -321,9 +357,9 @@ int panfrost_mmu_init(struct panfrost_device *pfdev)
 	mmu_write(pfdev, MMU_INT_MASK, ~0);
 
 	pfdev->mmu->pgtbl_cfg = (struct io_pgtable_cfg) {
-		.pgsize_bitmap	= SZ_4K, // | SZ_2M | SZ_1G),
+		.pgsize_bitmap	= SZ_4K | SZ_2M,
 		.ias		= 48,
-		.oas		= 40,	/* Should come from dma mask? */
+		.oas		= 40,
 		.tlb		= &mmu_tlb_ops,
 		.iommu_dev	= pfdev->dev,
 	};

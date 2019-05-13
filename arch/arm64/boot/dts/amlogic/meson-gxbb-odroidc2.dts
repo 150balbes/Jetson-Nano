@@ -45,8 +45,7 @@
 		blue {
 			label = "c2:blue:alive";
 			gpios = <&gpio_ao GPIOAO_13 GPIO_ACTIVE_LOW>;
-			linux,default-trigger = "heartbeat";
-			default-state = "off";
+			default-state = "on";
 		};
 	};
 
@@ -126,7 +125,7 @@
 		simple-audio-card,dai-link@0 {
 			/* HDMI Output */
 			format = "i2s";
-			mclk-fs = <128>;
+			mclk-fs = <256>;
 			bitclock-master = <&aiu_i2s>;
 			frame-master = <&aiu_i2s>;
 
@@ -221,6 +220,7 @@
 	status = "okay";
 	pinctrl-0 = <&remote_input_ao_pins>;
 	pinctrl-names = "default";
+	linux,rc-map-name = "rc-odroid";
 };
 
 &gpio_ao {

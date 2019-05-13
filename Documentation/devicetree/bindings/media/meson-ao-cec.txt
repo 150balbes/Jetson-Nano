@@ -5,8 +5,8 @@ to handle communication between HDMI connected devices over the CEC bus.
 
 Required properties:
   - compatible : value should be following depending on the SoC :
-  	For GXBB, GXL, GXM and G12A (AO_CEC_A module) :
-  	"amlogic,meson-gx-ao-cec"
+	For GXBB, GXL, GXM and G12A (AO_CEC_A module) :
+	"amlogic,meson-gx-ao-cec"
 	For G12A (AO_CEC_B module) :
 	"amlogic,meson-g12a-ao-cec"
 

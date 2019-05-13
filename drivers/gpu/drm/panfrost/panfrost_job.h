@@ -45,5 +45,7 @@ int panfrost_job_open(struct panfrost_file_priv *panfrost_priv);
 void panfrost_job_close(struct panfrost_file_priv *panfrost_priv);
 int panfrost_job_push(struct panfrost_job *job);
 void panfrost_job_put(struct panfrost_job *job);
+void panfrost_job_enable_interrupts(struct panfrost_device *pfdev);
+int panfrost_job_is_idle(struct panfrost_device *pfdev);
 
 #endif

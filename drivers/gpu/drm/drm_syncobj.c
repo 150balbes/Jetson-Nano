@@ -755,6 +755,7 @@ static signed long drm_timeout_abs_to_jiffies(int64_t timeout_nsec)
 
 	return timeout_jiffies64 + 1;
 }
+EXPORT_SYMBOL(drm_timeout_abs_to_jiffies);
 
 static int drm_syncobj_array_wait(struct drm_device *dev,
 				  struct drm_file *file_private,

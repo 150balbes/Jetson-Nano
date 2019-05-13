@@ -3,17 +3,16 @@
  * Author: Jerome Brunet <jbrunet@baylibre.com>
  */
 
-#include <linux/io.h>
-#include <linux/module.h>
-#include <linux/platform_device.h>
+#include <linux/bitfield.h>
+#include <linux/clk.h>
+#include <linux/clk-provider.h>
 #include <linux/device.h>
+#include <linux/io.h>
+#include <linux/iopoll.h>
+#include <linux/mdio-mux.h>
 #include <linux/module.h>
 #include <linux/phy.h>
-#include <linux/mdio-mux.h>
-#include <linux/clk-provider.h>
-#include <linux/clk.h>
-#include <linux/bitfield.h>
-#include <linux/iopoll.h>
+#include <linux/platform_device.h>
 
 #define ETH_PLL_STS		0x40
 #define ETH_PLL_CTL0		0x44
@@ -53,20 +52,20 @@
 #define MESON_G12A_MDIO_INTERNAL_ID 1
 
 struct g12a_mdio_mux {
+	bool pll_is_enabled;
 	void __iomem *regs;
+	void *mux_handle;
 	struct clk *pclk;
 	struct clk *pll;
-	bool pll_is_enabled;
-	void *mux_handle;
 };
 
 struct g12a_ephy_pll {
-	struct clk_hw hw;
 	void __iomem *base;
+	struct clk_hw hw;
 };
 
 #define g12a_ephy_pll_to_dev(_hw)			\
-	container_of(_hw, struct g12a_ephy_pll, hw)	\
+	container_of(_hw, struct g12a_ephy_pll, hw)
 
 static unsigned long g12a_ephy_pll_recalc_rate(struct clk_hw *hw,
 					       unsigned long parent_rate)
@@ -147,7 +146,7 @@ static const struct clk_ops g12a_ephy_pll_ops = {
 	.init		= g12a_ephy_pll_init,
 };
 
-static int _g12a_enable_internal_mdio(struct g12a_mdio_mux *priv)
+static int g12a_enable_internal_mdio(struct g12a_mdio_mux *priv)
 {
 	int ret;
 
@@ -177,7 +176,7 @@ static int _g12a_enable_internal_mdio(struct g12a_mdio_mux *priv)
 	return 0;
 }
 
-static int _g12a_enable_external_mdio(struct g12a_mdio_mux *priv)
+static int g12a_enable_external_mdio(struct g12a_mdio_mux *priv)
 {
 	/* Reset the mdio bus mux */
 	writel_relaxed(0x0, priv->regs + ETH_PHY_CNTL2);
@@ -194,17 +193,16 @@ static int _g12a_enable_external_mdio(struct g12a_mdio_mux *priv)
 static int g12a_mdio_switch_fn(int current_child, int desired_child,
 			       void *data)
 {
-	struct device *dev = data;
-	struct g12a_mdio_mux *priv = dev_get_drvdata(dev);
+	struct g12a_mdio_mux *priv = dev_get_drvdata(data);
 
 	if (current_child == desired_child)
 		return 0;
 
 	switch (desired_child) {
 	case MESON_G12A_MDIO_EXTERNAL_ID:
-		return _g12a_enable_external_mdio(priv);
+		return g12a_enable_external_mdio(priv);
 	case MESON_G12A_MDIO_INTERNAL_ID:
-		return _g12a_enable_internal_mdio(priv);
+		return g12a_enable_internal_mdio(priv);
 	default:
 		return -EINVAL;
 	}
@@ -221,8 +219,8 @@ static int g12a_ephy_glue_clk_register(struct device *dev)
 	struct g12a_mdio_mux *priv = dev_get_drvdata(dev);
 	const char *parent_names[PLL_MUX_NUM_PARENT];
 	struct clk_init_data init;
-	struct clk_mux *mux;
 	struct g12a_ephy_pll *pll;
+	struct clk_mux *mux;
 	struct clk *clk;
 	char *name;
 	int i;
@@ -303,8 +301,8 @@ static int g12a_ephy_glue_clk_register(struct device *dev)
 static int g12a_mdio_mux_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
-	struct resource *res;
 	struct g12a_mdio_mux *priv;
+	struct resource *res;
 	int ret;
 
 	priv = devm_kzalloc(dev, sizeof(*priv), GFP_KERNEL);
@@ -336,10 +334,21 @@ static int g12a_mdio_mux_probe(struct platform_device *pdev)
 	/* Register PLL in CCF */
 	ret = g12a_ephy_glue_clk_register(dev);
 	if (ret)
-		return ret;
+		goto err;
 
-	return mdio_mux_init(dev, dev->of_node, g12a_mdio_switch_fn,
-			     &priv->mux_handle, dev, NULL);
+	ret = mdio_mux_init(dev, dev->of_node, g12a_mdio_switch_fn,
+			    &priv->mux_handle, dev, NULL);
+	if (ret) {
+		if (ret != -EPROBE_DEFER)
+			dev_err(dev, "mdio multiplexer init failed: %d", ret);
+		goto err;
+	}
+
+	return 0;
+
+err:
+	clk_disable_unprepare(priv->pclk);
+	return ret;
 }
 
 static int g12a_mdio_mux_remove(struct platform_device *pdev)

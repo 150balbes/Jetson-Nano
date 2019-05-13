@@ -4,23 +4,19 @@ ARM Mali Bifrost GPU
 Required properties:
 
 - compatible :
-  * Must contain one of the following:
-    + "arm,mali-g31"
-    + "arm,mali-g51"
-    + "arm,mali-g52"
-    + "arm,mali-g71"
-    + "arm,mali-g72"
-    + "arm,mali-g76"
+  * Since Mali Bifrost GPU model/revision is fully discoverable by reading
+    some determined registers, must contain the following:
+    + "arm,mali-bifrost"
   * which must be preceded by one of the following vendor specifics:
     + "amlogic,meson-g12a-mali"
 
 - reg : Physical base address of the device and length of the register area.
 
-- interrupts : Contains the three IRQ lines required by Mali Bifrost devices.
+- interrupts : Contains the three IRQ lines required by Mali Bifrost devices,
+  in the following defined order.
 
-- interrupt-names : Contains the names of IRQ resources in the order they were
-  provided in the interrupts property. Must contain: "job", "mmu", "gpu".
-
+- interrupt-names : Contains the names of IRQ resources in this exact defined
+  order: "job", "mmu", "gpu".
 
 Optional properties:
 
@@ -38,7 +34,7 @@ Vendor-specific bindings
 ------------------------
 
 The Mali GPU is integrated very differently from one SoC to
-another. In order to accomodate those differences, you have the option
+another. In order to accommodate those differences, you have the option
 to specify one more vendor-specific compatible, among:
 
 - "amlogic,meson-g12a-mali"
@@ -50,7 +46,7 @@ to specify one more vendor-specific compatible, among:
 Example for a Mali-G31:
 
 gpu@ffa30000 {
-	compatible = "amlogic,meson-g12a-mali", "arm,mali-g31";
+	compatible = "amlogic,meson-g12a-mali", "arm,mali-bifrost";
 	reg = <0xffe40000 0x10000>;
 	interrupts = <GIC_SPI 160 IRQ_TYPE_LEVEL_HIGH>,
 		     <GIC_SPI 161 IRQ_TYPE_LEVEL_HIGH>,

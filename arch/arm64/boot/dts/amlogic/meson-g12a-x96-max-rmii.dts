@@ -10,7 +10,7 @@
 #include <dt-bindings/gpio/meson-g12a-gpio.h>
 
 / {
-	compatible = "amediatech,x96-max", "amlogic,u200", "amlogic,g12a";
+	compatible = "amediatech,x96-max-rmii", "amlogic,u200", "amlogic,g12a";
 	model = "Shenzhen Amediatech Technology Co., Ltd X96 Max";
 
 	aliases {
@@ -64,7 +64,7 @@
 		regulator-name = "FLASH_1V8";
 		regulator-min-microvolt = <1800000>;
 		regulator-max-microvolt = <1800000>;
-		vin-supply = <&vddao_3v3>;
+		vin-supply = <&vcc_3v3>;
 		regulator-always-on;
 	};
 
@@ -115,15 +115,6 @@
 		regulator-always-on;
 	};
 
-	vddio_ao1v8: regulator-vddio_ao1v8 {
-		compatible = "regulator-fixed";
-		regulator-name = "VDDIO_AO1V8";
-		regulator-min-microvolt = <1800000>;
-		regulator-max-microvolt = <1800000>;
-		vin-supply = <&vddao_3v3>;
-		regulator-always-on;
-	};
-
 	vddao_3v3: regulator-vddao_3v3 {
 		compatible = "regulator-fixed";
 		regulator-name = "VDDAO_3V3";
@@ -131,16 +122,6 @@
 		regulator-max-microvolt = <3300000>;
 		vin-supply = <&dc_in>;
 		regulator-always-on;
-	};
-
-	vddao_3v3_t: regultor-vddao_3v3_t {
-		compatible = "regulator-fixed";
-		regulator-name = "VDDAO_3V3_T";
-		regulator-min-microvolt = <3300000>;
-		regulator-max-microvolt = <3300000>;
-		vin-supply = <&vddao_3v3>;
-		gpio = <&gpio GPIOH_8 GPIO_OPEN_DRAIN>;
-		enable-active-high;
 	};
 
 	wifi32k: wifi32k {
@@ -153,6 +134,13 @@
 
 &cec_AO {
 	pinctrl-0 = <&cec_ao_a_h_pins>;
+	pinctrl-names = "default";
+	status = "disabled";
+	hdmi-phandle = <&hdmi_tx>;
+};
+
+&cecb_AO {
+	pinctrl-0 = <&cec_ao_b_h_pins>;
 	pinctrl-names = "default";
 	status = "okay";
 	hdmi-phandle = <&hdmi_tx>;
@@ -177,6 +165,13 @@
 	};
 };
 
+&ir {
+	status = "okay";
+	pinctrl-0 = <&remote_input_ao_pins>;
+	pinctrl-names = "default";
+	linux,rc-map-name = "rc-x96max";
+};
+
 &ext_mdio {
 	external_phy: ethernet-phy@0 {
 	      compatible = "ethernet-phy-id001c.c916", "ethernet-phy-ieee802.3-c22";
@@ -186,37 +181,18 @@
 	};
 };
 
-//&ethmac {
-//	pinctrl-0 = <&eth_rmii_pins>, <&eth_rgmii_pins>;
-//	pinctrl-names = "default";
-//	status = "okay";
-//	phy-mode = "rgmii";
-//	phy-handle = <&external_phy>;
-//	amlogic,tx-delay-ns = <2>;
-//	snps,reset-gpio = <&gpio GPIOZ_14 0>;
-//	snps,reset-delays-us = <0 10000 1000000>;
-//	snps,reset-active-low;
-//};
-
 &ethmac {
-	status = "okay";
-	pinctrl-0 = <&eth_leds_pins>;
-	pinctrl-names = "default";
-	phy-handle = <&internal_ephy>;
-	phy-mode = "rmii";
+        pinctrl-0 = <&eth_rmii_pins>;
+        pinctrl-names = "default";
+        status = "okay";
+        phy-mode = "rmii";
+        phy-handle = <&internal_ephy>;
 };
 
 &pwm_ef {
 	status = "okay";
 	pinctrl-0 = <&pwm_e_pins>;
 	pinctrl-names = "default";
-};
-
-&ir {
-	status = "okay";
-	pinctrl-0 = <&remote_input_ao_pins>;
-	pinctrl-names = "default";
-	linux,rc-map-name = "rc-geekbox";
 };
 
 &uart_A {
@@ -262,7 +238,7 @@
 	mmc-pwrseq = <&sdio_pwrseq>;
 
 	vmmc-supply = <&vddao_3v3>;
-	vqmmc-supply = <&vddio_ao1v8>;
+	vqmmc-supply = <&vddao_1v8>;
 
 	brcmf: wifi@1 {
 		reg = <1>;
@@ -299,9 +275,8 @@
 	max-frequency = <100000000>;
 	non-removable;
 	disable-wp;
-	mmc-ddr-1_8v;
 
 	mmc-pwrseq = <&emmc_pwrseq>;
-	vmmc-supply = <&vddao_3v3>;
+	vmmc-supply = <&vcc_3v3>;
 	vqmmc-supply = <&flash_1v8>;
 };

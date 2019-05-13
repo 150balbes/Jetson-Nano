@@ -47,6 +47,13 @@ struct panfrost_features {
 	unsigned long hw_issues[64 / BITS_PER_LONG];
 };
 
+struct panfrost_devfreq_slot {
+	ktime_t busy_time;
+	ktime_t idle_time;
+	ktime_t time_last_update;
+	bool busy;
+};
+
 struct panfrost_device {
 	struct device *dev;
 	struct drm_device *ddev;
@@ -71,6 +78,15 @@ struct panfrost_device {
 	struct list_head scheduled_jobs;
 
 	struct mutex sched_lock;
+	struct mutex reset_lock;
+
+	struct {
+		struct devfreq *devfreq;
+		struct thermal_cooling_device *cooling;
+		unsigned long cur_freq;
+		unsigned long cur_volt;
+		struct panfrost_devfreq_slot slot[NUM_JOB_SLOTS];
+	} devfreq;
 };
 
 struct panfrost_file_priv {
@@ -100,6 +116,9 @@ static inline bool panfrost_model_eq(struct panfrost_device *pfdev, s32 id)
 
 int panfrost_device_init(struct panfrost_device *pfdev);
 void panfrost_device_fini(struct panfrost_device *pfdev);
+
+int panfrost_device_resume(struct device *dev);
+int panfrost_device_suspend(struct device *dev);
 
 const char *panfrost_exception_name(struct panfrost_device *pfdev, u32 exception_code);
 

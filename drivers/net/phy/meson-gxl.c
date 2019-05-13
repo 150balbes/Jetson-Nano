@@ -201,7 +201,6 @@ static int meson_gxl_ack_interrupt(struct phy_device *phydev)
 static int meson_gxl_config_intr(struct phy_device *phydev)
 {
 	u16 val;
-	int ret;
 
 	if (phydev->interrupts == PHY_INTERRUPT_ENABLED) {
 		val = INTSRC_ANEG_PR
@@ -213,11 +212,6 @@ static int meson_gxl_config_intr(struct phy_device *phydev)
 	} else {
 		val = 0;
 	}
-
-	/* Ack any pending IRQ */
-	ret = meson_gxl_ack_interrupt(phydev);
-	if (ret)
-		return ret;
 
 	return phy_write(phydev, INTSRC_MASK, val);
 }
@@ -237,25 +231,11 @@ static struct phy_driver meson_gxl_phy[] = {
 		.config_intr	= meson_gxl_config_intr,
 		.suspend        = genphy_suspend,
 		.resume         = genphy_resume,
-	}, {
-		.phy_id		= 0x01803301,
-		.phy_id_mask	= 0xffffffff,
-		.name		= "Meson G12A Internal PHY",
-		.features	= PHY_BASIC_FEATURES,
-		.flags		= PHY_IS_INTERNAL,
-		.soft_reset     = genphy_soft_reset,
-		.aneg_done      = genphy_aneg_done,
-		.read_status	= genphy_read_status,
-		.ack_interrupt	= meson_gxl_ack_interrupt,
-		.config_intr	= meson_gxl_config_intr,
-		.suspend        = genphy_suspend,
-		.resume         = genphy_resume,
 	},
 };
 
 static struct mdio_device_id __maybe_unused meson_gxl_tbl[] = {
 	{ 0x01814400, 0xfffffff0 },
-	{ 0x01803301, 0xffffffff },
 	{ }
 };
 

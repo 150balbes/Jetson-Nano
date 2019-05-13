@@ -5,11 +5,13 @@
 
 #include <dt-bindings/phy/phy.h>
 #include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/clock/axg-audio-clkc.h>
 #include <dt-bindings/clock/g12a-clkc.h>
 #include <dt-bindings/clock/g12a-aoclkc.h>
 #include <dt-bindings/reset/g12a-aoclkc.h>
 #include <dt-bindings/interrupt-controller/irq.h>
 #include <dt-bindings/interrupt-controller/arm-gic.h>
+#include <dt-bindings/reset/amlogic,meson-axg-audio-arb.h>
 #include <dt-bindings/reset/amlogic,meson-g12a-reset.h>
 #include <dt-bindings/input/input.h>
 
@@ -19,6 +21,39 @@
 	interrupt-parent = <&gic>;
 	#address-cells = <2>;
 	#size-cells = <2>;
+
+	tdmif_a: audio-controller-0 {
+		compatible = "amlogic,axg-tdm-iface";
+		#sound-dai-cells = <0>;
+		sound-name-prefix = "TDM_A";
+		clocks = <&clkc_audio AUD_CLKID_MST_A_MCLK>,
+			 <&clkc_audio AUD_CLKID_MST_A_SCLK>,
+			 <&clkc_audio AUD_CLKID_MST_A_LRCLK>;
+		clock-names = "mclk", "sclk", "lrclk";
+		status = "disabled";
+	};
+
+	tdmif_b: audio-controller-1 {
+		compatible = "amlogic,axg-tdm-iface";
+		#sound-dai-cells = <0>;
+		sound-name-prefix = "TDM_B";
+		clocks = <&clkc_audio AUD_CLKID_MST_B_MCLK>,
+			 <&clkc_audio AUD_CLKID_MST_B_SCLK>,
+			 <&clkc_audio AUD_CLKID_MST_B_LRCLK>;
+		clock-names = "mclk", "sclk", "lrclk";
+		status = "disabled";
+	};
+
+	tdmif_c: audio-controller-2 {
+		compatible = "amlogic,axg-tdm-iface";
+		#sound-dai-cells = <0>;
+		sound-name-prefix = "TDM_C";
+		clocks = <&clkc_audio AUD_CLKID_MST_C_MCLK>,
+			 <&clkc_audio AUD_CLKID_MST_C_SCLK>,
+			 <&clkc_audio AUD_CLKID_MST_C_LRCLK>;
+		clock-names = "mclk", "sclk", "lrclk";
+		status = "disabled";
+	};
 
 	cpus {
 		#address-cells = <0x2>;
@@ -199,6 +234,14 @@
 						};
 					};
 
+					cec_ao_b_h_pins: cec_ao_b_h {
+						mux {
+							groups = "cec_ao_b_h";
+							function = "cec_ao_b_h";
+							bias-disable;
+						};
+					};
+
 					hdmitx_ddc_pins: hdmitx_ddc {
 						mux {
 							groups = "hdmitx_sda",
@@ -213,14 +256,6 @@
 						mux {
 							groups = "hdmitx_hpd_in";
 							function = "hdmitx";
-						};
-					};
-
-					cec_ao_b_h_pins: cec_ao_b_h {
-						mux {
-							groups = "cec_ao_b_h";
-							function = "cec_ao_b_h";
-							bias-disable;
 						};
 					};
 
@@ -354,15 +389,7 @@
 						};
 					};
 
-					sdio_clk_gate_pins: sdio_clk_gate {
-						mux {
-							groups = "GPIOX_4";
-							function = "gpio_periphs";
-							bias-pull-down;
-						};
-					};
-
-					pwm_a_pins: pwm_a {
+					pwm_a_pins: pwm-a {
 						mux {
 							groups = "pwm_a";
 							function = "pwm_a";
@@ -370,7 +397,7 @@
 						};
 					};
 
-					pwm_b_x7_pins: pwm_b_x7 {
+					pwm_b_x7_pins: pwm-b-x7 {
 						mux {
 							groups = "pwm_b_x7";
 							function = "pwm_b";
@@ -378,7 +405,7 @@
 						};
 					};
 
-					pwm_b_x19_pins: pwm_b_x19 {
+					pwm_b_x19_pins: pwm-b-x19 {
 						mux {
 							groups = "pwm_b_x19";
 							function = "pwm_b";
@@ -386,7 +413,7 @@
 						};
 					};
 
-					pwm_c_c_pins: pwm_c_c {
+					pwm_c_c_pins: pwm-c-c {
 						mux {
 							groups = "pwm_c_c";
 							function = "pwm_c";
@@ -394,7 +421,7 @@
 						};
 					};
 
-					pwm_c_x5_pins: pwm_c_x5 {
+					pwm_c_x5_pins: pwm-c-x5 {
 						mux {
 							groups = "pwm_c_x5";
 							function = "pwm_c";
@@ -402,7 +429,7 @@
 						};
 					};
 
-					pwm_c_x8_pins: pwm_c_x8 {
+					pwm_c_x8_pins: pwm-c-x8 {
 						mux {
 							groups = "pwm_c_x8";
 							function = "pwm_c";
@@ -410,7 +437,7 @@
 						};
 					};
 
-					pwm_d_x3_pins: pwm_d_x3 {
+					pwm_d_x3_pins: pwm-d-x3 {
 						mux {
 							groups = "pwm_d_x3";
 							function = "pwm_d";
@@ -418,7 +445,7 @@
 						};
 					};
 
-					pwm_d_x6_pins: pwm_d_x6 {
+					pwm_d_x6_pins: pwm-d-x6 {
 						mux {
 							groups = "pwm_d_x6";
 							function = "pwm_d";
@@ -426,7 +453,7 @@
 						};
 					};
 
-					pwm_e_pins: pwm_e {
+					pwm_e_pins: pwm-e {
 						mux {
 							groups = "pwm_e";
 							function = "pwm_e";
@@ -434,7 +461,7 @@
 						};
 					};
 
-					pwm_f_x_pins: pwm_f_x {
+					pwm_f_x_pins: pwm-f-x {
 						mux {
 							groups = "pwm_f_x";
 							function = "pwm_f";
@@ -442,11 +469,19 @@
 						};
 					};
 
-					pwm_f_h_pins: pwm_f_h {
+					pwm_f_h_pins: pwm-f-h {
 						mux {
 							groups = "pwm_f_h";
 							function = "pwm_f";
 							bias-disable;
+						};
+					};
+
+					sdio_clk_gate_pins: sdio_clk_gate {
+						mux {
+							groups = "GPIOX_4";
+							function = "gpio_periphs";
+							bias-pull-down;
 						};
 					};
 
@@ -672,6 +707,274 @@
 					};
 				};
 			};
+
+			pdm: audio-controller@40000 {
+				compatible = "amlogic,g12a-pdm",
+					     "amlogic,axg-pdm";
+				reg = <0x0 0x40000 0x0 0x34>;
+				#sound-dai-cells = <0>;
+				sound-name-prefix = "PDM";
+				clocks = <&clkc_audio AUD_CLKID_PDM>,
+					 <&clkc_audio AUD_CLKID_PDM_DCLK>,
+					 <&clkc_audio AUD_CLKID_PDM_SYSCLK>;
+				clock-names = "pclk", "dclk", "sysclk";
+				status = "disabled";
+			};
+
+			audio: bus@42000 {
+				compatible = "simple-bus";
+				reg = <0x0 0x42000 0x0 0x2000>;
+				#address-cells = <2>;
+				#size-cells = <2>;
+				ranges = <0x0 0x0 0x0 0x42000 0x0 0x2000>;
+
+				clkc_audio: clock-controller@0 {
+					status = "disabled";
+					compatible = "amlogic,g12a-audio-clkc";
+					reg = <0x0 0x0 0x0 0xb4>;
+					#clock-cells = <1>;
+
+					clocks = <&clkc CLKID_AUDIO>,
+						 <&clkc CLKID_MPLL0>,
+						 <&clkc CLKID_MPLL1>,
+						 <&clkc CLKID_MPLL2>,
+						 <&clkc CLKID_MPLL3>,
+						 <&clkc CLKID_HIFI_PLL>,
+						 <&clkc CLKID_FCLK_DIV3>,
+						 <&clkc CLKID_FCLK_DIV4>,
+						 <&clkc CLKID_GP0_PLL>;
+					clock-names = "pclk",
+						      "mst_in0",
+						      "mst_in1",
+						      "mst_in2",
+						      "mst_in3",
+						      "mst_in4",
+						      "mst_in5",
+						      "mst_in6",
+						      "mst_in7";
+
+					resets = <&reset RESET_AUDIO>;
+				};
+
+				toddr_a: audio-controller@100 {
+					compatible = "amlogic,g12a-toddr",
+						     "amlogic,axg-toddr";
+					reg = <0x0 0x100 0x0 0x1c>;
+					#sound-dai-cells = <0>;
+					sound-name-prefix = "TODDR_A";
+					interrupts = <GIC_SPI 148 IRQ_TYPE_EDGE_RISING>;
+					clocks = <&clkc_audio AUD_CLKID_TODDR_A>;
+					resets = <&arb AXG_ARB_TODDR_A>;
+					status = "disabled";
+				};
+
+				toddr_b: audio-controller@140 {
+					compatible = "amlogic,g12a-toddr",
+						     "amlogic,axg-toddr";
+					reg = <0x0 0x140 0x0 0x1c>;
+					#sound-dai-cells = <0>;
+					sound-name-prefix = "TODDR_B";
+					interrupts = <GIC_SPI 149 IRQ_TYPE_EDGE_RISING>;
+					clocks = <&clkc_audio AUD_CLKID_TODDR_B>;
+					resets = <&arb AXG_ARB_TODDR_B>;
+					status = "disabled";
+				};
+
+				toddr_c: audio-controller@180 {
+					compatible = "amlogic,g12a-toddr",
+						     "amlogic,axg-toddr";
+					reg = <0x0 0x180 0x0 0x1c>;
+					#sound-dai-cells = <0>;
+					sound-name-prefix = "TODDR_C";
+					interrupts = <GIC_SPI 150 IRQ_TYPE_EDGE_RISING>;
+					clocks = <&clkc_audio AUD_CLKID_TODDR_C>;
+					resets = <&arb AXG_ARB_TODDR_C>;
+					status = "disabled";
+				};
+
+				frddr_a: audio-controller@1c0 {
+					compatible = "amlogic,g12a-frddr",
+						     "amlogic,axg-frddr";
+					reg = <0x0 0x1c0 0x0 0x1c>;
+					#sound-dai-cells = <0>;
+					sound-name-prefix = "FRDDR_A";
+					interrupts = <GIC_SPI 152 IRQ_TYPE_EDGE_RISING>;
+					clocks = <&clkc_audio AUD_CLKID_FRDDR_A>;
+					resets = <&arb AXG_ARB_FRDDR_A>;
+					status = "disabled";
+				};
+
+				frddr_b: audio-controller@200 {
+					compatible = "amlogic,g12a-frddr",
+						     "amlogic,axg-frddr";
+					reg = <0x0 0x200 0x0 0x1c>;
+					#sound-dai-cells = <0>;
+					sound-name-prefix = "FRDDR_B";
+					interrupts = <GIC_SPI 153 IRQ_TYPE_EDGE_RISING>;
+					clocks = <&clkc_audio AUD_CLKID_FRDDR_B>;
+					resets = <&arb AXG_ARB_FRDDR_B>;
+					status = "disabled";
+				};
+
+				frddr_c: audio-controller@240 {
+					compatible = "amlogic,g12a-frddr",
+						     "amlogic,axg-frddr";
+					reg = <0x0 0x240 0x0 0x1c>;
+					#sound-dai-cells = <0>;
+					sound-name-prefix = "FRDDR_C";
+					interrupts = <GIC_SPI 154 IRQ_TYPE_EDGE_RISING>;
+					clocks = <&clkc_audio AUD_CLKID_FRDDR_C>;
+					resets = <&arb AXG_ARB_FRDDR_C>;
+					status = "disabled";
+				};
+
+				arb: reset-controller@280 {
+					status = "disabled";
+					compatible = "amlogic,meson-axg-audio-arb";
+					reg = <0x0 0x280 0x0 0x4>;
+					#reset-cells = <1>;
+					clocks = <&clkc_audio AUD_CLKID_DDR_ARB>;
+				};
+
+				tdmin_a: audio-controller@300 {
+					compatible = "amlogic,g12a-tdmin",
+						     "amlogic,axg-tdmin";
+					reg = <0x0 0x300 0x0 0x40>;
+					sound-name-prefix = "TDMIN_A";
+					clocks = <&clkc_audio AUD_CLKID_TDMIN_A>,
+						 <&clkc_audio AUD_CLKID_TDMIN_A_SCLK>,
+						 <&clkc_audio AUD_CLKID_TDMIN_A_SCLK_SEL>,
+						 <&clkc_audio AUD_CLKID_TDMIN_A_LRCLK>,
+						 <&clkc_audio AUD_CLKID_TDMIN_A_LRCLK>;
+					clock-names = "pclk", "sclk", "sclk_sel",
+						      "lrclk", "lrclk_sel";
+					status = "disabled";
+				};
+
+				tdmin_b: audio-controller@340 {
+					compatible = "amlogic,g12a-tdmin",
+						     "amlogic,axg-tdmin";
+					reg = <0x0 0x340 0x0 0x40>;
+					sound-name-prefix = "TDMIN_B";
+					clocks = <&clkc_audio AUD_CLKID_TDMIN_B>,
+						 <&clkc_audio AUD_CLKID_TDMIN_B_SCLK>,
+						 <&clkc_audio AUD_CLKID_TDMIN_B_SCLK_SEL>,
+						 <&clkc_audio AUD_CLKID_TDMIN_B_LRCLK>,
+						 <&clkc_audio AUD_CLKID_TDMIN_B_LRCLK>;
+					clock-names = "pclk", "sclk", "sclk_sel",
+						      "lrclk", "lrclk_sel";
+					status = "disabled";
+				};
+
+				tdmin_c: audio-controller@380 {
+					compatible = "amlogic,g12a-tdmin",
+						     "amlogic,axg-tdmin";
+					reg = <0x0 0x380 0x0 0x40>;
+					sound-name-prefix = "TDMIN_C";
+					clocks = <&clkc_audio AUD_CLKID_TDMIN_C>,
+						 <&clkc_audio AUD_CLKID_TDMIN_C_SCLK>,
+						 <&clkc_audio AUD_CLKID_TDMIN_C_SCLK_SEL>,
+						 <&clkc_audio AUD_CLKID_TDMIN_C_LRCLK>,
+						 <&clkc_audio AUD_CLKID_TDMIN_C_LRCLK>;
+					clock-names = "pclk", "sclk", "sclk_sel",
+						      "lrclk", "lrclk_sel";
+					status = "disabled";
+				};
+
+				tdmin_lb: audio-controller@3c0 {
+					compatible = "amlogic,g12a-tdmin",
+						     "amlogic,axg-tdmin";
+					reg = <0x0 0x3c0 0x0 0x40>;
+					sound-name-prefix = "TDMIN_LB";
+					clocks = <&clkc_audio AUD_CLKID_TDMIN_LB>,
+						 <&clkc_audio AUD_CLKID_TDMIN_LB_SCLK>,
+						 <&clkc_audio AUD_CLKID_TDMIN_LB_SCLK_SEL>,
+						 <&clkc_audio AUD_CLKID_TDMIN_LB_LRCLK>,
+						 <&clkc_audio AUD_CLKID_TDMIN_LB_LRCLK>;
+					clock-names = "pclk", "sclk", "sclk_sel",
+						      "lrclk", "lrclk_sel";
+					status = "disabled";
+				};
+
+				spdifin: audio-controller@400 {
+					compatible = "amlogic,g12a-spdifin",
+						     "amlogic,axg-spdifin";
+					reg = <0x0 0x400 0x0 0x30>;
+					#sound-dai-cells = <0>;
+					sound-name-prefix = "SPDIFIN";
+					interrupts = <GIC_SPI 151 IRQ_TYPE_EDGE_RISING>;
+					clocks = <&clkc_audio AUD_CLKID_SPDIFIN>,
+						 <&clkc_audio AUD_CLKID_SPDIFIN_CLK>;
+					clock-names = "pclk", "refclk";
+					status = "disabled";
+				};
+
+				spdifout: audio-controller@480 {
+					compatible = "amlogic,g12a-spdifout",
+						     "amlogic,axg-spdifout";
+					reg = <0x0 0x480 0x0 0x50>;
+					#sound-dai-cells = <0>;
+					sound-name-prefix = "SPDIFOUT";
+					clocks = <&clkc_audio AUD_CLKID_SPDIFOUT>,
+						 <&clkc_audio AUD_CLKID_SPDIFOUT_CLK>;
+					clock-names = "pclk", "mclk";
+					status = "disabled";
+				};
+
+				tdmout_a: audio-controller@500 {
+					compatible = "amlogic,g12a-tdmout";
+					reg = <0x0 0x500 0x0 0x40>;
+					sound-name-prefix = "TDMOUT_A";
+					clocks = <&clkc_audio AUD_CLKID_TDMOUT_A>,
+						 <&clkc_audio AUD_CLKID_TDMOUT_A_SCLK>,
+						 <&clkc_audio AUD_CLKID_TDMOUT_A_SCLK_SEL>,
+						 <&clkc_audio AUD_CLKID_TDMOUT_A_LRCLK>,
+						 <&clkc_audio AUD_CLKID_TDMOUT_A_LRCLK>;
+					clock-names = "pclk", "sclk", "sclk_sel",
+						      "lrclk", "lrclk_sel";
+					status = "disabled";
+				};
+
+				tdmout_b: audio-controller@540 {
+					compatible = "amlogic,g12a-tdmout";
+					reg = <0x0 0x540 0x0 0x40>;
+					sound-name-prefix = "TDMOUT_B";
+					clocks = <&clkc_audio AUD_CLKID_TDMOUT_B>,
+						 <&clkc_audio AUD_CLKID_TDMOUT_B_SCLK>,
+						 <&clkc_audio AUD_CLKID_TDMOUT_B_SCLK_SEL>,
+						 <&clkc_audio AUD_CLKID_TDMOUT_B_LRCLK>,
+						 <&clkc_audio AUD_CLKID_TDMOUT_B_LRCLK>;
+					clock-names = "pclk", "sclk", "sclk_sel",
+						      "lrclk", "lrclk_sel";
+					status = "disabled";
+				};
+
+				tdmout_c: audio-controller@580 {
+					compatible = "amlogic,g12a-tdmout";
+					reg = <0x0 0x580 0x0 0x40>;
+					sound-name-prefix = "TDMOUT_C";
+					clocks = <&clkc_audio AUD_CLKID_TDMOUT_C>,
+						 <&clkc_audio AUD_CLKID_TDMOUT_C_SCLK>,
+						 <&clkc_audio AUD_CLKID_TDMOUT_C_SCLK_SEL>,
+						 <&clkc_audio AUD_CLKID_TDMOUT_C_LRCLK>,
+						 <&clkc_audio AUD_CLKID_TDMOUT_C_LRCLK>;
+					clock-names = "pclk", "sclk", "sclk_sel",
+						      "lrclk", "lrclk_sel";
+					status = "disabled";
+				};
+
+//				spdifout_b: audio-controller@680 {
+//					compatible = "amlogic,g12a-spdifout",
+//						     "amlogic,axg-spdifout";
+//					reg = <0x0 0x680 0x0 0x50>;
+//					#sound-dai-cells = <0>;
+//					sound-name-prefix = "SPDIFOUT_B";
+//					clocks = <&clkc_audio AUD_CLKID_SPDIFOUT_B>,
+//						 <&clkc_audio AUD_CLKID_SPDIFOUT_B_CLK>;
+//					clock-names = "pclk", "mclk";
+//					status = "disabled";
+//				};
+			};
 		};
 
 		aobus: bus@ff800000 {
@@ -777,23 +1080,7 @@
 						};
 					};
 
-					remote_input_ao_pins: remote_input_ao {
-						mux {
-							groups = "remote_ao_input";
-							function = "remote_ao_input";
-							bias-disable;
-						};
-					};
-
-					remote_output_ao_pins: remote_output_ao {
-						mux {
-							groups = "remote_ao_out";
-							function = "remote_ao_out";
-							bias-disable;
-						};
-					};
-
-					pwm_ao_a_pins: pwm_ao_a {
+					pwm_ao_a_pins: pwm-ao-a {
 						mux {
 							groups = "pwm_ao_a";
 							function = "pwm_ao_a";
@@ -801,7 +1088,7 @@
 						};
 					};
 
-					pwm_ao_b_pins: pwm_ao_b {
+					pwm_ao_b_pins: pwm-ao-b {
 						mux {
 							groups = "pwm_ao_b";
 							function = "pwm_ao_b";
@@ -809,7 +1096,7 @@
 						};
 					};
 
-					pwm_ao_c_4_pins: pwm_ao_c_4 {
+					pwm_ao_c_4_pins: pwm-ao-c-4 {
 						mux {
 							groups = "pwm_ao_c_4";
 							function = "pwm_ao_c";
@@ -817,7 +1104,7 @@
 						};
 					};
 
-					pwm_ao_c_6_pins: pwm_ao_c_6 {
+					pwm_ao_c_6_pins: pwm-ao-c-6 {
 						mux {
 							groups = "pwm_ao_c_6";
 							function = "pwm_ao_c";
@@ -825,7 +1112,7 @@
 						};
 					};
 
-					pwm_ao_d_5_pins: pwm_ao_d_5 {
+					pwm_ao_d_5_pins: pwm-ao-d-5 {
 						mux {
 							groups = "pwm_ao_d_5";
 							function = "pwm_ao_d";
@@ -833,7 +1120,7 @@
 						};
 					};
 
-					pwm_ao_d_10_pins: pwm_ao_d_10 {
+					pwm_ao_d_10_pins: pwm-ao-d-10 {
 						mux {
 							groups = "pwm_ao_d_10";
 							function = "pwm_ao_d";
@@ -841,10 +1128,17 @@
 						};
 					};
 
-					pwm_ao_d_e_pins: pwm_ao_d_e {
+					pwm_ao_d_e_pins: pwm-ao-d-e {
 						mux {
 							groups = "pwm_ao_d_e";
 							function = "pwm_ao_d";
+						};
+					};
+
+					remote_input_ao_pins: remote-input-ao {
+						mux {
+							groups = "remote_ao_input";
+							function = "remote_ao_input";
 							bias-disable;
 						};
 					};
@@ -900,7 +1194,7 @@
 			};
 
 			cecb_AO: cec@280 {
-				compatible = "amlogic,meson-g12a-ao-cec-b";
+				compatible = "amlogic,meson-g12a-ao-cec";
 				reg = <0x0 0x00280 0x0 0x1c>;
 				interrupts = <GIC_SPI 203 IRQ_TYPE_EDGE_RISING>;
 				clocks = <&clkc_AO CLKID_AO_CTS_OSCIN>;
@@ -909,8 +1203,7 @@
 			};
 
 			pwm_AO_cd: pwm@2000 {
-				compatible = "amlogic,meson-g12a-ao-pwm",
-					     "amlogic,meson-axo-ao-pwm";
+				compatible = "amlogic,meson-g12a-ao-pwm-cd";
 				reg = <0x0 0x2000 0x0 0x20>;
 				#pwm-cells = <3>;
 				status = "disabled";
@@ -939,8 +1232,7 @@
 			};
 
 			pwm_AO_ab: pwm@7000 {
-				compatible = "amlogic,meson-g12a-ao-pwm",
-					     "amlogic,meson-axo-ao-pwm";
+				compatible = "amlogic,meson-g12a-ao-pwm-ab";
 				reg = <0x0 0x7000 0x0 0x20>;
 				#pwm-cells = <3>;
 				status = "disabled";
@@ -1040,24 +1332,21 @@
 			};
 
 			pwm_ef: pwm@19000 {
-				compatible = "amlogic,meson-g12a-ee-pwm",
-					     "amlogic,meson-gxbb-pwm";
+				compatible = "amlogic,meson-g12a-ee-pwm";
 				reg = <0x0 0x19000 0x0 0x20>;
 				#pwm-cells = <3>;
 				status = "disabled";
 			};
 
 			pwm_cd: pwm@1a000 {
-				compatible = "amlogic,meson-g12a-ee-pwm",
-					     "amlogic,meson-gxbb-pwm";
+				compatible = "amlogic,meson-g12a-ee-pwm";
 				reg = <0x0 0x1a000 0x0 0x20>;
 				#pwm-cells = <3>;
 				status = "disabled";
 			};
 
 			pwm_ab: pwm@1b000 {
-				compatible = "amlogic,meson-g12a-ee-pwm",
-					     "amlogic,meson-gxbb-pwm";
+				compatible = "amlogic,meson-g12a-ee-pwm";
 				reg = <0x0 0x1b000 0x0 0x20>;
 				#pwm-cells = <3>;
 				status = "disabled";
@@ -1066,29 +1355,6 @@
 			clk_msr: clock-measure@18000 {
 				compatible = "amlogic,meson-g12a-clk-measure";
 				reg = <0x0 0x18000 0x0 0x10>;
-			};
-
-			audio: audio@5400 {
-				compatible = "amlogic,meson-gx-audio-core";
-				reg = <0x0 0x5400 0x0 0x2ac>,
-				      <0x0 0xa000 0x0 0x304>;
-				reg-names = "aiu", "audin";
-				status = "disabled";
-
-				aiu_i2s: audio-controller-0 {
-					#sound-dai-cells = <0>;
-					compatible = "amlogic,meson-aiu-i2s";
-					interrupts = <GIC_SPI 48 IRQ_TYPE_EDGE_RISING>;
-					status = "disabled";
-				};
-
-				aiu_spdif: audio-controller-1 {
-					#sound-dai-cells = <0>;
-					compatible = "amlogic,meson-aiu-spdif";
-					interrupts = <GIC_SPI 50 IRQ_TYPE_EDGE_RISING>;
-					status = "disabled";
-				};
-
 			};
 
 			uart_C: serial@22000 {
@@ -1244,4 +1510,3 @@
 	};
 
 };
-

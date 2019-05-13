@@ -5,9 +5,11 @@
 #include <linux/clk.h>
 #include <linux/reset.h>
 #include <linux/platform_device.h>
+#include <linux/pm_runtime.h>
 #include <linux/regulator/consumer.h>
 
 #include "panfrost_device.h"
+#include "panfrost_devfreq.h"
 #include "panfrost_features.h"
 #include "panfrost_gpu.h"
 #include "panfrost_job.h"
@@ -19,7 +21,7 @@ static int panfrost_reset_init(struct panfrost_device *pfdev)
 
 	pfdev->rstc = devm_reset_control_array_get(pfdev->dev, false, true);
 	if (IS_ERR(pfdev->rstc)) {
-		dev_err(pfdev->dev, "get reset failed %ld\n", PTR_ERR(pfdev->clock));
+		dev_err(pfdev->dev, "get reset failed %ld\n", PTR_ERR(pfdev->rstc));
 		return PTR_ERR(pfdev->rstc);
 	}
 
@@ -71,7 +73,7 @@ static int panfrost_regulator_init(struct panfrost_device *pfdev)
 		pfdev->regulator = NULL;
 		if (ret == -ENODEV)
 			return 0;
-		dev_err(pfdev->dev, "failed to get regulator: %ld\n", PTR_ERR(pfdev->regulator));
+		dev_err(pfdev->dev, "failed to get regulator: %d\n", ret);
 		return ret;
 	}
 
@@ -90,13 +92,13 @@ static void panfrost_regulator_fini(struct panfrost_device *pfdev)
 		regulator_disable(pfdev->regulator);
 }
 
-
 int panfrost_device_init(struct panfrost_device *pfdev)
 {
 	int err;
 	struct resource *res;
 
 	mutex_init(&pfdev->sched_lock);
+	mutex_init(&pfdev->reset_lock);
 	INIT_LIST_HEAD(&pfdev->scheduled_jobs);
 
 	spin_lock_init(&pfdev->hwaccess_lock);
@@ -139,6 +141,14 @@ int panfrost_device_init(struct panfrost_device *pfdev)
 	if (err)
 		goto err_out4;
 
+	/* runtime PM will wake us up later */
+	panfrost_gpu_power_off(pfdev);
+
+	pm_runtime_set_active(pfdev->dev);
+	pm_runtime_get_sync(pfdev->dev);
+	pm_runtime_mark_last_busy(pfdev->dev);
+	pm_runtime_put_autosuspend(pfdev->dev);
+
 	return 0;
 err_out4:
 	panfrost_mmu_fini(pfdev);
@@ -155,11 +165,7 @@ err_out0:
 
 void panfrost_device_fini(struct panfrost_device *pfdev)
 {
-	panfrost_job_fini(pfdev);
-	panfrost_mmu_fini(pfdev);
-	panfrost_gpu_fini(pfdev);
 	panfrost_regulator_fini(pfdev);
-
 	panfrost_clk_fini(pfdev);
 }
 
@@ -200,21 +206,48 @@ const char *panfrost_exception_name(struct panfrost_device *pfdev, u32 exception
 	case 0xC3: return "TRANSLATION_FAULT_LEVEL3";
 	case 0xC4: return "TRANSLATION_FAULT_LEVEL4";
 	case 0xC8: return "PERMISSION_FAULT";
+	case 0xC9 ... 0xCF: return "PERMISSION_FAULT";
 	case 0xD1: return "TRANSTAB_BUS_FAULT_LEVEL1";
 	case 0xD2: return "TRANSTAB_BUS_FAULT_LEVEL2";
 	case 0xD3: return "TRANSTAB_BUS_FAULT_LEVEL3";
 	case 0xD4: return "TRANSTAB_BUS_FAULT_LEVEL4";
 	case 0xD8: return "ACCESS_FLAG";
-	}
-
-	if (panfrost_has_hw_feature(pfdev, HW_FEATURE_AARCH64_MMU)) {
-		switch (exception_code) {
-		case 0xC9 ... 0xCF: return "PERMISSION_FAULT";
-		case 0xD9 ... 0xDF: return "ACCESS_FLAG";
-		case 0xE0 ... 0xE7: return "ADDRESS_SIZE_FAULT";
-		case 0xE8 ... 0xEF: return "MEMORY_ATTRIBUTES_FAULT";
-		};
+	case 0xD9 ... 0xDF: return "ACCESS_FLAG";
+	case 0xE0 ... 0xE7: return "ADDRESS_SIZE_FAULT";
+	case 0xE8 ... 0xEF: return "MEMORY_ATTRIBUTES_FAULT";
 	}
 
 	return "UNKNOWN";
 }
+
+#ifdef CONFIG_PM
+int panfrost_device_resume(struct device *dev)
+{
+	struct platform_device *pdev = to_platform_device(dev);
+	struct panfrost_device *pfdev = platform_get_drvdata(pdev);
+
+	panfrost_gpu_soft_reset(pfdev);
+
+	/* TODO: Re-enable all other address spaces */
+	panfrost_gpu_power_on(pfdev);
+	panfrost_mmu_enable(pfdev, 0);
+	panfrost_job_enable_interrupts(pfdev);
+	panfrost_devfreq_resume(pfdev);
+
+	return 0;
+}
+
+int panfrost_device_suspend(struct device *dev)
+{
+	struct platform_device *pdev = to_platform_device(dev);
+	struct panfrost_device *pfdev = platform_get_drvdata(pdev);
+
+	if (!panfrost_job_is_idle(pfdev))
+		return -EBUSY;
+
+	panfrost_devfreq_suspend(pfdev);
+	panfrost_gpu_power_off(pfdev);
+
+	return 0;
+}
+#endif

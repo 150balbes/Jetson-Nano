@@ -96,6 +96,7 @@ Board compatible values (alphabetically, grouped by SoC):
   - "amlogic,p230" (Meson gxl s905d)
   - "amlogic,p231" (Meson gxl s905d)
   - "phicomm,n1" (Meson gxl s905d)
+  - "smartlabs,sml5442tw" (Meson gxl s905d)
 
   - "amlogic,p241" (Meson gxl s805x)
   - "libretech,aml-s805x-ac" (Meson gxl s805x)
@@ -113,7 +114,8 @@ Board compatible values (alphabetically, grouped by SoC):
   - "amlogic,s400" (Meson axg a113d)
 
   - "amlogic,u200" (Meson g12a s905d2)
-  - "amediatech,x96-max" (Meson g12a s905x2)
+  - "amediatech,x96-max" (Meson g12a s905x2 using external PHY)
+  - "amediatech,x96-max-rmii" (Meson g12a s905x2 using internal PHY)
   - "seirobotics,sei510" (Meson g12a s905x2)
 
   - "hardkernel,odroid-n2" (Meson g12b s922x)

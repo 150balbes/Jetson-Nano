@@ -15,7 +15,7 @@ Required properties in addition to the generic multiplexer properties:
 
 Example :
 
-mdio-mux: mdio-multiplexer@4c000 {
+mdio_mux: mdio-multiplexer@4c000 {
 	compatible = "amlogic,g12a-mdio-mux";
 	reg = <0x0 0x4c000 0x0 0xa4>;
 	clocks = <&clkc CLKID_ETH_PHY>,
@@ -37,7 +37,7 @@ mdio-mux: mdio-multiplexer@4c000 {
 		#address-cells = <1>;
 		#size-cells = <0>;
 
-		internal_ephy: ethernet_phy@8 {
+		internal_ephy: ethernet-phy@8 {
 			compatible = "ethernet-phy-id0180.3301",
 				     "ethernet-phy-ieee802.3-c22";
 			interrupts = <GIC_SPI 9 IRQ_TYPE_LEVEL_HIGH>;

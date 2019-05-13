@@ -956,6 +956,8 @@ struct ath10k {
 	bool nlo_enabled;
 	bool p2p;
 
+	bool is_started;
+
 	struct {
 		enum ath10k_bus bus;
 		const struct ath10k_hif_ops *ops;

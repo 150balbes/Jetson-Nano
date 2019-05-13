@@ -173,4 +173,4 @@ static inline bool panfrost_has_hw_issue(struct panfrost_device *pfdev,
 	return test_bit(issue, pfdev->features.hw_issues);
 }
 
-#endif /* _HWCONFIG_ISSUES_H_ */
+#endif /* __PANFROST_ISSUES_H__ */

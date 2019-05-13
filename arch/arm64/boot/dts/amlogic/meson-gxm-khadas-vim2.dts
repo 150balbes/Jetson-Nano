@@ -63,8 +63,6 @@
 
 	gpio-keys-polled {
 		compatible = "gpio-keys-polled";
-		#address-cells = <1>;
-		#size-cells = <0>;
 		poll-interval = <100>;
 
 		button@0 {
@@ -89,20 +87,20 @@
 		compatible = "simple-audio-card";
 		simple-audio-card,name = "HDMI";
 
+		assigned-clocks = <&clkc CLKID_MPLL2>,
+				  <&clkc CLKID_MPLL0>,
+				  <&clkc CLKID_MPLL1>;
+		assigned-clock-parents = <0>, <0>, <0>;
+		assigned-clock-rates = <294912000>,
+				       <270950400>,
+				       <393216000>;
+
 		simple-audio-card,dai-link@0 {
 			/* HDMI Output */
 			format = "i2s";
-			mclk-fs = <128>;
+			mclk-fs = <256>;
 			bitclock-master = <&aiu_i2s>;
 			frame-master = <&aiu_i2s>;
-
-			assigned-clocks = <&clkc CLKID_MPLL2>,
-					  <&clkc CLKID_MPLL0>,
-					  <&clkc CLKID_MPLL1>;
-			assigned-clock-parents = <0>, <0>, <0>;
-			assigned-clock-rates = <294912000>,
-					       <270950400>,
-					       <393216000>;
 
 			cpu {
 				sound-dai = <&aiu_i2s>;
@@ -362,13 +360,11 @@
 &sd_emmc_a {
 	status = "okay";
 	pinctrl-0 = <&sdio_pins>;
-	pinctrl-1 = <&sdio_clk_gate_pins>;
-	pinctrl-names = "default", "clk-gate";
+	pinctrl-names = "default";
 	#address-cells = <1>;
 	#size-cells = <0>;
 
 	bus-width = <4>;
-	cap-sd-highspeed;
 	max-frequency = <100000000>;
 
 	non-removable;
@@ -416,6 +412,7 @@
 	disable-wp;
 	mmc-ddr-1_8v;
 	mmc-hs200-1_8v;
+	mmc-hs400-1_8v;
 
 	mmc-pwrseq = <&emmc_pwrseq>;
 	vmmc-supply = <&vcc_3v3>;

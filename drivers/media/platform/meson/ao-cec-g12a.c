@@ -371,6 +371,8 @@ static int meson_ao_cec_g12a_read(void *context, unsigned int addr,
 	spin_lock_irqsave(&ao_cec->cec_reg_lock, flags);
 
 	ret = regmap_write(ao_cec->regmap, CECB_RW_REG, reg);
+	if (ret)
+		goto read_out;
 
 	ret = regmap_read_poll_timeout(ao_cec->regmap, CECB_RW_REG, reg,
 				       !(reg & CECB_RW_BUS_BUSY),
@@ -489,13 +491,13 @@ static irqreturn_t meson_ao_cec_g12a_irq_thread(int irq, void *data)
 		cec_transmit_attempt_done(ao_cec->adap, CEC_TX_STATUS_ARB_LOST);
 	}
 
+	/* Initiator reports an error on the CEC bus */
 	if (stat & CECB_INTR_INITIATOR_ERR)
-		cec_transmit_attempt_done(ao_cec->adap, CEC_TX_STATUS_NACK);
+		cec_transmit_attempt_done(ao_cec->adap, CEC_TX_STATUS_ERROR);
 
-	if (stat & CECB_INTR_FOLLOWER_ERR) {
+	/* Follower reports a receive error, just reset RX buffer */
+	if (stat & CECB_INTR_FOLLOWER_ERR)
 		regmap_write(ao_cec->regmap_cec, CECB_LOCK_BUF, 0);
-		cec_transmit_attempt_done(ao_cec->adap, CEC_TX_STATUS_NACK);
-	}
 
 	return IRQ_HANDLED;
 }
@@ -507,8 +509,11 @@ meson_ao_cec_g12a_set_log_addr(struct cec_adapter *adap, u8 logical_addr)
 	int ret = 0;
 
 	if (logical_addr == CEC_LOG_ADDR_INVALID) {
-		ret = regmap_write(ao_cec->regmap_cec, CECB_LADD_LOW, 0);
-		ret = regmap_write(ao_cec->regmap_cec, CECB_LADD_HIGH, 0);
+		/* Assume this will allways succeed */
+		regmap_write(ao_cec->regmap_cec, CECB_LADD_LOW, 0);
+		regmap_write(ao_cec->regmap_cec, CECB_LADD_HIGH, 0);
+
+		return 0;
 	} else if (logical_addr < 8) {
 		ret = regmap_update_bits(ao_cec->regmap_cec, CECB_LADD_LOW,
 					 BIT(logical_addr),
@@ -524,7 +529,7 @@ meson_ao_cec_g12a_set_log_addr(struct cec_adapter *adap, u8 logical_addr)
 				  BIT(CEC_LOG_ADDR_UNREGISTERED - 8),
 				  BIT(CEC_LOG_ADDR_UNREGISTERED - 8));
 
-	return ret;
+	return ret ? -EIO : 0;
 }
 
 static int meson_ao_cec_g12a_transmit(struct cec_adapter *adap, u8 attempts,
@@ -568,6 +573,9 @@ static int meson_ao_cec_g12a_transmit(struct cec_adapter *adap, u8 attempts,
 				    msg->msg[i]);
 
 	ret |= regmap_write(ao_cec->regmap_cec, CECB_TX_CNT, msg->len);
+	if (ret)
+		return -EIO;
+
 	ret = regmap_update_bits(ao_cec->regmap_cec, CECB_CTRL,
 				 CECB_CTRL_SEND |
 				 CECB_CTRL_TYPE,
@@ -626,24 +634,15 @@ static const struct cec_adap_ops meson_ao_cec_g12a_ops = {
 static int meson_ao_cec_g12a_probe(struct platform_device *pdev)
 {
 	struct meson_ao_cec_g12a_device *ao_cec;
-	struct platform_device *hdmi_dev;
-	struct device_node *np;
+	struct device *hdmi_dev;
 	struct resource *res;
 	void __iomem *base;
 	int ret, irq;
 
-	np = of_parse_phandle(pdev->dev.of_node, "hdmi-phandle", 0);
-	if (!np) {
-		dev_err(&pdev->dev, "Failed to find hdmi node\n");
-		return -ENODEV;
-	}
+	hdmi_dev = cec_notifier_parse_hdmi_phandle(&pdev->dev);
+	if (IS_ERR(hdmi_dev))
+		return PTR_ERR(hdmi_dev);
 
-	hdmi_dev = of_find_device_by_node(np);
-	of_node_put(np);
-	if (hdmi_dev == NULL)
-		return -EPROBE_DEFER;
-
-	put_device(&hdmi_dev->dev);
 	ao_cec = devm_kzalloc(&pdev->dev, sizeof(*ao_cec), GFP_KERNEL);
 	if (!ao_cec)
 		return -ENOMEM;
@@ -651,7 +650,7 @@ static int meson_ao_cec_g12a_probe(struct platform_device *pdev)
 	spin_lock_init(&ao_cec->cec_reg_lock);
 	ao_cec->pdev = pdev;
 
-	ao_cec->notify = cec_notifier_get(&hdmi_dev->dev);
+	ao_cec->notify = cec_notifier_get(hdmi_dev);
 	if (!ao_cec->notify)
 		return -ENOMEM;
 
@@ -706,12 +705,12 @@ static int meson_ao_cec_g12a_probe(struct platform_device *pdev)
 
 	ret = meson_ao_cec_g12a_setup_clk(ao_cec);
 	if (ret)
-		goto out_probe_clk;
+		goto out_probe_adapter;
 
 	ret = clk_prepare_enable(ao_cec->core);
 	if (ret) {
 		dev_err(&pdev->dev, "core clock enable failed\n");
-		goto out_probe_clk;
+		goto out_probe_adapter;
 	}
 
 	device_reset_optional(&pdev->dev);
@@ -734,9 +733,6 @@ static int meson_ao_cec_g12a_probe(struct platform_device *pdev)
 out_probe_core_clk:
 	clk_disable_unprepare(ao_cec->core);
 
-out_probe_clk:
-	clk_disable_unprepare(ao_cec->oscin);
-
 out_probe_adapter:
 	cec_delete_adapter(ao_cec->adap);
 
@@ -752,7 +748,7 @@ static int meson_ao_cec_g12a_remove(struct platform_device *pdev)
 {
 	struct meson_ao_cec_g12a_device *ao_cec = platform_get_drvdata(pdev);
 
-	clk_disable_unprepare(ao_cec->oscin);
+	clk_disable_unprepare(ao_cec->core);
 
 	cec_unregister_adapter(ao_cec->adap);
 
@@ -762,7 +758,7 @@ static int meson_ao_cec_g12a_remove(struct platform_device *pdev)
 }
 
 static const struct of_device_id meson_ao_cec_g12a_of_match[] = {
-	{ .compatible = "amlogic,meson-g12a-ao-cec-b", },
+	{ .compatible = "amlogic,meson-g12a-ao-cec", },
 	{ /* sentinel */ }
 };
 MODULE_DEVICE_TABLE(of, meson_ao_cec_g12a_of_match);

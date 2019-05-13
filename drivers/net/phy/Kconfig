@@ -77,8 +77,9 @@ config MDIO_BUS_MUX_GPIO
 config MDIO_BUS_MUX_MESON_G12A
 	tristate "Amlogic G12a based MDIO bus multiplexer"
 	depends on ARCH_MESON || COMPILE_TEST
-	depends on OF_MDIO && HAS_IOMEM
+	depends on OF_MDIO && HAS_IOMEM && COMMON_CLK
 	select MDIO_BUS_MUX
+	default m if ARCH_MESON
 	help
 	  This module provides a driver for the MDIO multiplexer/glue of
 	  the amlogic g12a SoC. The multiplexers connects either the external

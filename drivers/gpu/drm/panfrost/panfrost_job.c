@@ -5,11 +5,13 @@
 #include <linux/interrupt.h>
 #include <linux/io.h>
 #include <linux/platform_device.h>
+#include <linux/pm_runtime.h>
 #include <linux/reservation.h>
 #include <drm/gpu_scheduler.h>
 #include <drm/panfrost_drm.h>
 
 #include "panfrost_device.h"
+#include "panfrost_devfreq.h"
 #include "panfrost_job.h"
 #include "panfrost_features.h"
 #include "panfrost_issues.h"
@@ -142,10 +144,16 @@ static void panfrost_job_hw_submit(struct panfrost_job *job, int js)
 	unsigned long flags;
 	u32 cfg;
 	u64 jc_head = job->jc;
+	int ret;
 
-	if (WARN_ON(job_read(pfdev, JS_COMMAND_NEXT(js))))
+	ret = pm_runtime_get_sync(pfdev->dev);
+	if (ret < 0)
 		return;
 
+	if (WARN_ON(job_read(pfdev, JS_COMMAND_NEXT(js))))
+		goto end;
+
+	panfrost_devfreq_record_transition(pfdev, js);
 	spin_lock_irqsave(&pfdev->hwaccess_lock, flags);
 
 	job_write(pfdev, JS_HEAD_NEXT_LO(js), jc_head & 0xFFFFFFFF);
@@ -155,7 +163,7 @@ static void panfrost_job_hw_submit(struct panfrost_job *job, int js)
 
 	/* start MMU, medium priority, cache clean/flush on end, clean/flush on
 	 * start */
-	// TODO: different address spaces
+	/* TODO: different address spaces */
 	cfg = JS_CONFIG_THREAD_PRI(8) |
 		JS_CONFIG_START_FLUSH_CLEAN_INVALIDATE |
 		JS_CONFIG_END_FLUSH_CLEAN_INVALIDATE;
@@ -178,6 +186,10 @@ static void panfrost_job_hw_submit(struct panfrost_job *job, int js)
 	job_write(pfdev, JS_COMMAND_NEXT(js), JS_COMMAND_START);
 
 	spin_unlock_irqrestore(&pfdev->hwaccess_lock, flags);
+
+end:
+	pm_runtime_mark_last_busy(pfdev->dev);
+	pm_runtime_put_autosuspend(pfdev->dev);
 }
 
 static void panfrost_acquire_object_fences(struct drm_gem_object **bos,
@@ -227,12 +239,12 @@ int panfrost_job_push(struct panfrost_job *job)
 
 	kref_get(&job->refcount); /* put by scheduler job completion */
 
+	panfrost_acquire_object_fences(job->bos, job->bo_count,
+				       job->implicit_fences);
+
 	drm_sched_entity_push_job(&job->base, entity);
 
 	mutex_unlock(&pfdev->sched_lock);
-
-	panfrost_acquire_object_fences(job->bos, job->bo_count,
-				       job->implicit_fences);
 
 	panfrost_attach_object_fences(job->bos, job->bo_count,
 				      job->render_done_fence);
@@ -249,20 +261,24 @@ static void panfrost_job_cleanup(struct kref *ref)
 						refcount);
 	unsigned int i;
 
-	for (i = 0; i < job->in_fence_count; i++)
-		dma_fence_put(job->in_fences[i]);
-	kvfree(job->in_fences);
-
-	for (i = 0; i < job->bo_count; i++)
-		dma_fence_put(job->implicit_fences[i]);
-	kvfree(job->implicit_fences);
-
+	if (job->in_fences) {
+		for (i = 0; i < job->in_fence_count; i++)
+			dma_fence_put(job->in_fences[i]);
+		kvfree(job->in_fences);
+	}
+	if (job->implicit_fences) {
+		for (i = 0; i < job->bo_count; i++)
+			dma_fence_put(job->implicit_fences[i]);
+		kvfree(job->implicit_fences);
+	}
 	dma_fence_put(job->done_fence);
 	dma_fence_put(job->render_done_fence);
 
-	for (i = 0; i < job->bo_count; i++)
-		drm_gem_object_put_unlocked(job->bos[i]);
-	kvfree(job->bos);
+	if (job->bos) {
+		for (i = 0; i < job->bo_count; i++)
+			drm_gem_object_put_unlocked(job->bos[i]);
+		kvfree(job->bos);
+	}
 
 	kfree(job);
 }
@@ -334,7 +350,7 @@ static struct dma_fence *panfrost_job_run(struct drm_sched_job *sched_job)
 	return fence;
 }
 
-static void panfrost_job_enable_interrupts(struct panfrost_device *pfdev)
+void panfrost_job_enable_interrupts(struct panfrost_device *pfdev)
 {
 	int j;
 	u32 irq_mask = 0;
@@ -368,14 +384,17 @@ static void panfrost_job_timedout(struct drm_sched_job *sched_job)
 		job_read(pfdev, JS_TAIL_LO(js)),
 		sched_job);
 
+	mutex_lock(&pfdev->reset_lock);
+
 	for (i = 0; i < NUM_JOB_SLOTS; i++)
 		drm_sched_stop(&pfdev->js->queue[i].sched);
 
-	if(sched_job)
+	if (sched_job)
 		drm_sched_increase_karma(sched_job);
 
-	//panfrost_core_dump(pfdev);
+	/* panfrost_core_dump(pfdev); */
 
+	panfrost_devfreq_record_transition(pfdev, js);
 	panfrost_gpu_soft_reset(pfdev);
 
 	/* TODO: Re-enable all other address spaces */
@@ -389,6 +408,8 @@ static void panfrost_job_timedout(struct drm_sched_job *sched_job)
 	/* restart scheduler after GPU is usable again */
 	for (i = 0; i < NUM_JOB_SLOTS; i++)
 		drm_sched_start(&pfdev->js->queue[i].sched, true);
+
+	mutex_unlock(&pfdev->reset_lock);
 }
 
 static const struct drm_sched_backend_ops panfrost_sched_ops = {
@@ -409,6 +430,8 @@ static irqreturn_t panfrost_job_irq_handler(int irq, void *data)
 	if (!status)
 		return IRQ_NONE;
 
+	pm_runtime_mark_last_busy(pfdev->dev);
+
 	for (j = 0; status; j++) {
 		u32 mask = MK_JS_MASK(j);
 
@@ -419,16 +442,18 @@ static irqreturn_t panfrost_job_irq_handler(int irq, void *data)
 
 		if (status & JOB_INT_MASK_ERR(j)) {
 			job_write(pfdev, JS_COMMAND_NEXT(j), JS_COMMAND_NOP);
-			job_write(pfdev, JS_COMMAND(j), JS_COMMAND_HARD_STOP_0);
 
 			dev_err(pfdev->dev, "js fault, js=%d, status=%s, head=0x%x, tail=0x%x",
 				j,
 				panfrost_exception_name(pfdev, job_read(pfdev, JS_STATUS(j))),
 				job_read(pfdev, JS_HEAD_LO(j)),
 				job_read(pfdev, JS_TAIL_LO(j)));
+
+			drm_sched_fault(&pfdev->js->queue[j].sched);
 		}
 
 		if (status & JOB_INT_MASK_DONE(j)) {
+			panfrost_devfreq_record_transition(pfdev, j);
 			dma_fence_signal(pfdev->jobs[j]->done_fence);
 		}
 
@@ -518,4 +543,22 @@ void panfrost_job_close(struct panfrost_file_priv *panfrost_priv)
 
 	for (i = 0; i < NUM_JOB_SLOTS; i++)
 		drm_sched_entity_destroy(&panfrost_priv->sched_entity[i]);
+}
+
+int panfrost_job_is_idle(struct panfrost_device *pfdev)
+{
+	struct panfrost_job_slot *js = pfdev->js;
+	int i;
+
+	for (i = 0; i < NUM_JOB_SLOTS; i++) {
+		/* If there are any jobs in the HW queue, we're not idle */
+		if (atomic_read(&js->queue[i].sched.hw_rq_count))
+			return false;
+
+		/* Check whether the hardware is idle */
+		if (pfdev->devfreq.slot[i].busy)
+			return false;
+	}
+
+	return true;
 }

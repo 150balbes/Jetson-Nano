@@ -64,7 +64,7 @@
 		regulator-name = "FLASH_1V8";
 		regulator-min-microvolt = <1800000>;
 		regulator-max-microvolt = <1800000>;
-		vin-supply = <&vddao_3v3>;
+		vin-supply = <&vcc_3v3>;
 		regulator-always-on;
 	};
 
@@ -115,15 +115,6 @@
 		regulator-always-on;
 	};
 
-	vddio_ao1v8: regulator-vddio_ao1v8 {
-		compatible = "regulator-fixed";
-		regulator-name = "VDDIO_AO1V8";
-		regulator-min-microvolt = <1800000>;
-		regulator-max-microvolt = <1800000>;
-		vin-supply = <&vddao_3v3>;
-		regulator-always-on;
-	};
-
 	vddao_3v3: regulator-vddao_3v3 {
 		compatible = "regulator-fixed";
 		regulator-name = "VDDAO_3V3";
@@ -131,16 +122,6 @@
 		regulator-max-microvolt = <3300000>;
 		vin-supply = <&dc_in>;
 		regulator-always-on;
-	};
-
-	vddao_3v3_t: regultor-vddao_3v3_t {
-		compatible = "regulator-fixed";
-		regulator-name = "VDDAO_3V3_T";
-		regulator-min-microvolt = <3300000>;
-		regulator-max-microvolt = <3300000>;
-		vin-supply = <&vddao_3v3>;
-		gpio = <&gpio GPIOH_8 GPIO_OPEN_DRAIN>;
-		enable-active-high;
 	};
 
 	wifi32k: wifi32k {
@@ -153,6 +134,13 @@
 
 &cec_AO {
 	pinctrl-0 = <&cec_ao_a_h_pins>;
+	pinctrl-names = "default";
+	status = "disabled";
+	hdmi-phandle = <&hdmi_tx>;
+};
+
+&cecb_AO {
+	pinctrl-0 = <&cec_ao_b_h_pins>;
 	pinctrl-names = "default";
 	status = "okay";
 	hdmi-phandle = <&hdmi_tx>;
@@ -175,6 +163,13 @@
 	hdmi_tx_tmds_out: endpoint {
 		remote-endpoint = <&hdmi_connector_in>;
 	};
+};
+
+&ir {
+	status = "okay";
+	pinctrl-0 = <&remote_input_ao_pins>;
+	pinctrl-names = "default";
+	linux,rc-map-name = "rc-x96max";
 };
 
 &ext_mdio {
@@ -202,13 +197,6 @@
 	status = "okay";
 	pinctrl-0 = <&pwm_e_pins>;
 	pinctrl-names = "default";
-};
-
-&ir {
-	status = "okay";
-	pinctrl-0 = <&remote_input_ao_pins>;
-	pinctrl-names = "default";
-	linux,rc-map-name = "rc-geekbox";
 };
 
 &uart_A {
@@ -254,7 +242,7 @@
 	mmc-pwrseq = <&sdio_pwrseq>;
 
 	vmmc-supply = <&vddao_3v3>;
-	vqmmc-supply = <&vddio_ao1v8>;
+	vqmmc-supply = <&vddao_1v8>;
 
 	brcmf: wifi@1 {
 		reg = <1>;
@@ -291,9 +279,8 @@
 	max-frequency = <100000000>;
 	non-removable;
 	disable-wp;
-	mmc-ddr-1_8v;
 
 	mmc-pwrseq = <&emmc_pwrseq>;
-	vmmc-supply = <&vddao_3v3>;
+	vmmc-supply = <&vcc_3v3>;
 	vqmmc-supply = <&flash_1v8>;
 };

@@ -14,7 +14,7 @@
 /* Called DRM core on the last userspace/kernel unreference of the
  * BO.
  */
-void panfrost_gem_free_object(struct drm_gem_object *obj)
+static void panfrost_gem_free_object(struct drm_gem_object *obj)
 {
 	struct panfrost_gem_object *bo = to_panfrost_bo(obj);
 	struct panfrost_device *pfdev = obj->dev->dev_private;
@@ -82,6 +82,9 @@ panfrost_gem_prime_import_sg_table(struct drm_device *dev,
 	struct panfrost_gem_object *pobj;
 
 	obj = drm_gem_shmem_prime_import_sg_table(dev, attach, sgt);
+	if (IS_ERR(obj))
+		return ERR_CAST(obj);
+
 	pobj = to_panfrost_bo(obj);
 
 	obj->resv = attach->dmabuf->resv;

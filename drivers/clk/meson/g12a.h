@@ -203,18 +203,19 @@
 #define CLKID_VDEC_HEVC_DIV			206
 #define CLKID_VDEC_HEVCF_SEL			208
 #define CLKID_VDEC_HEVCF_DIV			209
-#define CLKID_SYS1_PLL_DCO			211
-#define CLKID_SYS1_PLL				212
-#define CLKID_CPUB_CLK_DYN0_SEL			213
-#define CLKID_CPUB_CLK_DYN0_DIV			214
-#define CLKID_CPUB_CLK_DYN0			215
-#define CLKID_CPUB_CLK_DYN1_SEL			216
-#define CLKID_CPUB_CLK_DYN1_DIV			217
-#define CLKID_CPUB_CLK_DYN1			218
-#define CLKID_CPUB_CLK_DYN			219
-#define CLKID_CPUB_CLK				220
+#define CLKID_TS_DIV				211
+#define CLKID_SYS1_PLL_DCO			213
+#define CLKID_SYS1_PLL				214
+#define CLKID_CPUB_CLK_DYN0_SEL			215
+#define CLKID_CPUB_CLK_DYN0_DIV			216
+#define CLKID_CPUB_CLK_DYN0			217
+#define CLKID_CPUB_CLK_DYN1_SEL			218
+#define CLKID_CPUB_CLK_DYN1_DIV			219
+#define CLKID_CPUB_CLK_DYN1			220
+#define CLKID_CPUB_CLK_DYN			221
+#define CLKID_CPUB_CLK				222
 
-#define NR_CLKS					221
+#define NR_CLKS					223
 
 /* include the CLKIDs that have been made part of the DT binding */
 #include <dt-bindings/clock/g12a-clkc.h>

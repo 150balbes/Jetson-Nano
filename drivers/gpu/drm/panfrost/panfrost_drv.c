@@ -7,6 +7,7 @@
 #include <linux/module.h>
 #include <linux/of_platform.h>
 #include <linux/pagemap.h>
+#include <linux/pm_runtime.h>
 #include <drm/panfrost_drm.h>
 #include <drm/drm_drv.h>
 #include <drm/drm_ioctl.h>
@@ -14,6 +15,7 @@
 #include <drm/drm_utils.h>
 
 #include "panfrost_device.h"
+#include "panfrost_devfreq.h"
 #include "panfrost_gem.h"
 #include "panfrost_mmu.h"
 #include "panfrost_job.h"
@@ -28,7 +30,7 @@ static int panfrost_ioctl_get_param(struct drm_device *ddev, void *data, struct 
 		return -EINVAL;
 
 	switch (param->param) {
-	case DRM_PANFROST_PARAM_GPU_ID:
+	case DRM_PANFROST_PARAM_GPU_PROD_ID:
 		param->value = pfdev->features.id;
 		break;
 	default:
@@ -85,19 +87,10 @@ panfrost_lookup_bos(struct drm_device *dev,
 		  struct drm_panfrost_submit *args,
 		  struct panfrost_job *job)
 {
-	u32 *handles;
-	int ret = 0;
-
 	job->bo_count = args->bo_handle_count;
 
 	if (!job->bo_count)
 		return 0;
-
-	job->bos = kvmalloc_array(job->bo_count,
-				  sizeof(struct drm_gem_object *),
-				  GFP_KERNEL | __GFP_ZERO);
-	if (!job->bos)
-		return -ENOMEM;
 
 	job->implicit_fences = kvmalloc_array(job->bo_count,
 				  sizeof(struct dma_fence *),
@@ -105,25 +98,9 @@ panfrost_lookup_bos(struct drm_device *dev,
 	if (!job->implicit_fences)
 		return -ENOMEM;
 
-	handles = kvmalloc_array(job->bo_count, sizeof(u32), GFP_KERNEL);
-	if (!handles) {
-		ret = -ENOMEM;
-		goto fail;
-	}
-
-	if (copy_from_user(handles,
-			   (void __user *)(uintptr_t)args->bo_handles,
-			   job->bo_count * sizeof(u32))) {
-		ret = -EFAULT;
-		DRM_DEBUG("Failed to copy in GEM handles\n");
-		goto fail;
-	}
-
-	ret = drm_gem_objects_lookup(file_priv, handles, job->bo_count, job->bos);
-
-fail:
-	kvfree(handles);
-	return ret;
+	return drm_gem_objects_lookup(file_priv,
+				      (void __user *)(uintptr_t)args->bo_handles,
+				      job->bo_count, &job->bos);
 }
 
 /**
@@ -155,8 +132,8 @@ panfrost_copy_in_sync(struct drm_device *dev,
 		return 0;
 
 	job->in_fences = kvmalloc_array(job->in_fence_count,
-				  sizeof(struct drm_panfrost_gem_object *),
-				  GFP_KERNEL | __GFP_ZERO);
+					sizeof(struct dma_fence *),
+					GFP_KERNEL | __GFP_ZERO);
 	if (!job->in_fences) {
 		DRM_DEBUG("Failed to allocate job in fences\n");
 		return -ENOMEM;
@@ -386,6 +363,7 @@ static int panfrost_probe(struct platform_device *pdev)
 	pfdev->dev = &pdev->dev;
 
 	platform_set_drvdata(pdev, pfdev);
+	dma_set_mask_and_coherent(&pdev->dev, DMA_BIT_MASK(40));
 
 	/* Allocate and initialze the DRM device. */
 	ddev = drm_dev_alloc(&panfrost_drm_driver, &pdev->dev);
@@ -400,10 +378,20 @@ static int panfrost_probe(struct platform_device *pdev)
 	/* 4G enough for now. can be 48-bit */
 	drm_mm_init(&pfdev->mm, SZ_32M >> PAGE_SHIFT, SZ_4G);
 
+	pm_runtime_use_autosuspend(pfdev->dev);
+	pm_runtime_set_autosuspend_delay(pfdev->dev, 50); /* ~3 frames */
+	pm_runtime_enable(pfdev->dev);
+
 	err = panfrost_device_init(pfdev);
 	if (err) {
 		dev_err(&pdev->dev, "Fatal error during GPU init\n");
 		goto err_out0;
+	}
+
+	err = panfrost_devfreq_init(pfdev);
+	if (err) {
+		dev_err(&pdev->dev, "Fatal error during devfreq init\n");
+		goto err_out1;
 	}
 
 	/*
@@ -429,6 +417,9 @@ static int panfrost_remove(struct platform_device *pdev)
 	struct drm_device *ddev = pfdev->ddev;
 
 	drm_dev_unregister(ddev);
+	pm_runtime_get_sync(pfdev->dev);
+	pm_runtime_put_sync_autosuspend(pfdev->dev);
+	pm_runtime_disable(pfdev->dev);
 	panfrost_device_fini(pfdev);
 	drm_dev_put(ddev);
 	return 0;
@@ -448,11 +439,17 @@ static const struct of_device_id dt_match[] = {
 };
 MODULE_DEVICE_TABLE(of, dt_match);
 
+static const struct dev_pm_ops panfrost_pm_ops = {
+	SET_SYSTEM_SLEEP_PM_OPS(pm_runtime_force_suspend, pm_runtime_force_resume)
+	SET_RUNTIME_PM_OPS(panfrost_device_suspend, panfrost_device_resume, NULL)
+};
+
 static struct platform_driver panfrost_driver = {
 	.probe		= panfrost_probe,
 	.remove		= panfrost_remove,
 	.driver		= {
 		.name	= "panfrost",
+		.pm	= &panfrost_pm_ops,
 		.of_match_table = dt_match,
 	},
 };

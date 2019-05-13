@@ -25,14 +25,12 @@ static irqreturn_t panfrost_gpu_irq_handler(int irq, void *data)
 	struct panfrost_device *pfdev = data;
 	u32 state = gpu_read(pfdev, GPU_INT_STAT);
 	u32 fault_status = gpu_read(pfdev, GPU_FAULT_STATUS);
-	u64 address;
-	bool done = false;
 
 	if (!state)
 		return IRQ_NONE;
 
 	if (state & GPU_IRQ_MASK_ERROR) {
-		address = (u64) gpu_read(pfdev, GPU_FAULT_ADDRESS_HI) << 32;
+		u64 address = (u64) gpu_read(pfdev, GPU_FAULT_ADDRESS_HI) << 32;
 		address |= gpu_read(pfdev, GPU_FAULT_ADDRESS_LO);
 
 		dev_warn(pfdev->dev, "GPU Fault 0x%08x (%s) at 0x%016llx\n",
@@ -43,8 +41,6 @@ static irqreturn_t panfrost_gpu_irq_handler(int irq, void *data)
 			dev_warn(pfdev->dev, "There were multiple GPU faults - some have not been reported\n");
 
 		gpu_write(pfdev, GPU_INT_MASK, 0);
-
-		done = true;
 	}
 
 	gpu_write(pfdev, GPU_INT_CLEAR, state);
@@ -131,14 +127,6 @@ static void panfrost_gpu_init_quirks(struct panfrost_device *pfdev)
 		quirks &= ~(L2_MMU_CONFIG_LIMIT_EXTERNAL_READS |
 			    L2_MMU_CONFIG_LIMIT_EXTERNAL_WRITES);
 
-#if 0
-	if (kbdev->system_coherency == COHERENCY_ACE) {
-		/* Allow memory configuration disparity to be ignored, we
-		 * optimize the use of shared memory and thus we expect
-		 * some disparity in the memory configuration */
-		quirks |= L2_MMU_CONFIG_ALLOW_SNOOP_DISPARITY;
-	}
-#endif
 	gpu_write(pfdev, GPU_L2_MMU_CONFIG, quirks);
 
 	quirks = 0;
@@ -317,32 +305,32 @@ void panfrost_gpu_power_on(struct panfrost_device *pfdev)
 	u32 val;
 
 	/* Just turn on everything for now */
-	gpu_write(pfdev, SHADER_PWRON_LO, pfdev->features.shader_present);
-	ret = readl_relaxed_poll_timeout(pfdev->iomem + SHADER_READY_LO,
-		val, val == pfdev->features.shader_present, 100, 1000);
-
-	gpu_write(pfdev, TILER_PWRON_LO, pfdev->features.tiler_present);
-	ret |= readl_relaxed_poll_timeout(pfdev->iomem + TILER_READY_LO,
-		val, val == pfdev->features.tiler_present, 100, 1000);
-
 	gpu_write(pfdev, L2_PWRON_LO, pfdev->features.l2_present);
-	ret |= readl_relaxed_poll_timeout(pfdev->iomem + L2_READY_LO,
+	ret = readl_relaxed_poll_timeout(pfdev->iomem + L2_READY_LO,
 		val, val == pfdev->features.l2_present, 100, 1000);
 
 	gpu_write(pfdev, STACK_PWRON_LO, pfdev->features.stack_present);
 	ret |= readl_relaxed_poll_timeout(pfdev->iomem + STACK_READY_LO,
 		val, val == pfdev->features.stack_present, 100, 1000);
 
+	gpu_write(pfdev, SHADER_PWRON_LO, pfdev->features.shader_present);
+	ret |= readl_relaxed_poll_timeout(pfdev->iomem + SHADER_READY_LO,
+		val, val == pfdev->features.shader_present, 100, 1000);
+
+	gpu_write(pfdev, TILER_PWRON_LO, pfdev->features.tiler_present);
+	ret |= readl_relaxed_poll_timeout(pfdev->iomem + TILER_READY_LO,
+		val, val == pfdev->features.tiler_present, 100, 1000);
+
 	if (ret)
 		dev_err(pfdev->dev, "error powering up gpu");
 }
 
-static void panfrost_gpu_power_off(struct panfrost_device *pfdev)
+void panfrost_gpu_power_off(struct panfrost_device *pfdev)
 {
-	gpu_write(pfdev, SHADER_PWROFF_LO, 0);
 	gpu_write(pfdev, TILER_PWROFF_LO, 0);
-	gpu_write(pfdev, L2_PWROFF_LO, 0);
+	gpu_write(pfdev, SHADER_PWROFF_LO, 0);
 	gpu_write(pfdev, STACK_PWROFF_LO, 0);
+	gpu_write(pfdev, L2_PWROFF_LO, 0);
 }
 
 int panfrost_gpu_init(struct panfrost_device *pfdev)

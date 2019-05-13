@@ -230,7 +230,7 @@ static struct clk_fixed_factor g12a_sys_pll_div16 = {
 };
 
 /* Datasheet names this field as "premux0" */
-static struct clk_regmap g12a_cpu_clk_dyn0_sel = {
+static struct clk_regmap g12a_cpu_clk_premux0 = {
 	.data = &(struct clk_regmap_mux_data){
 		.offset = HHI_SYS_CPU_CLK_CNTL0,
 		.mask = 0x3,
@@ -247,7 +247,7 @@ static struct clk_regmap g12a_cpu_clk_dyn0_sel = {
 };
 
 /* Datasheet names this field as "mux0_divn_tcnt" */
-static struct clk_regmap g12a_cpu_clk_dyn0_div = {
+static struct clk_regmap g12a_cpu_clk_mux0_div = {
 	.data = &(struct clk_regmap_div_data){
 		.offset = HHI_SYS_CPU_CLK_CNTL0,
 		.shift = 4,
@@ -262,7 +262,7 @@ static struct clk_regmap g12a_cpu_clk_dyn0_div = {
 };
 
 /* Datasheet names this field as "postmux0" */
-static struct clk_regmap g12a_cpu_clk_dyn0 = {
+static struct clk_regmap g12a_cpu_clk_postmux0 = {
 	.data = &(struct clk_regmap_mux_data){
 		.offset = HHI_SYS_CPU_CLK_CNTL0,
 		.mask = 0x1,
@@ -278,7 +278,7 @@ static struct clk_regmap g12a_cpu_clk_dyn0 = {
 };
 
 /* Datasheet names this field as "premux1" */
-static struct clk_regmap g12a_cpu_clk_dyn1_sel = {
+static struct clk_regmap g12a_cpu_clk_premux1 = {
 	.data = &(struct clk_regmap_mux_data){
 		.offset = HHI_SYS_CPU_CLK_CNTL0,
 		.mask = 0x3,
@@ -295,7 +295,7 @@ static struct clk_regmap g12a_cpu_clk_dyn1_sel = {
 };
 
 /* Datasheet names this field as "Mux1_divn_tcnt" */
-static struct clk_regmap g12a_cpu_clk_dyn1_div = {
+static struct clk_regmap g12a_cpu_clk_mux1_div = {
 	.data = &(struct clk_regmap_div_data){
 		.offset = HHI_SYS_CPU_CLK_CNTL0,
 		.shift = 20,
@@ -310,7 +310,7 @@ static struct clk_regmap g12a_cpu_clk_dyn1_div = {
 };
 
 /* Datasheet names this field as "postmux1" */
-static struct clk_regmap g12a_cpu_clk_dyn1 = {
+static struct clk_regmap g12a_cpu_clk_postmux1 = {
 	.data = &(struct clk_regmap_mux_data){
 		.offset = HHI_SYS_CPU_CLK_CNTL0,
 		.mask = 0x1,
@@ -354,11 +354,6 @@ static struct clk_regmap g12a_cpu_clk = {
 		.parent_names = (const char *[]){ "cpu_clk_dyn",
 						  "sys_pll" },
 		.num_parents = 2,
-		/*
-		 * Until we add support for DVFS, this clock tree feeds
-		 * the second CPU cluster and should not be disabled
-		 */
-		.flags = CLK_IS_CRITICAL,
 	},
 };
 
@@ -375,16 +370,11 @@ static struct clk_regmap g12b_cpu_clk = {
 		.parent_names = (const char *[]){ "cpu_clk_dyn",
 						  "sys1_pll" },
 		.num_parents = 2,
-		/*
-		 * Until we add support for DVFS, this clock tree feeds
-		 * the second CPU cluster and should not be disabled
-		 */
-		.flags = CLK_IS_CRITICAL,
 	},
 };
 
 /* Datasheet names this field as "premux0" */
-static struct clk_regmap g12b_cpub_clk_dyn0_sel = {
+static struct clk_regmap g12b_cpub_clk_premux0 = {
 	.data = &(struct clk_regmap_mux_data){
 		.offset = HHI_SYS_CPUB_CLK_CNTL,
 		.mask = 0x3,
@@ -401,7 +391,7 @@ static struct clk_regmap g12b_cpub_clk_dyn0_sel = {
 };
 
 /* Datasheet names this field as "mux0_divn_tcnt" */
-static struct clk_regmap g12b_cpub_clk_dyn0_div = {
+static struct clk_regmap g12b_cpub_clk_mux0_div = {
 	.data = &(struct clk_regmap_div_data){
 		.offset = HHI_SYS_CPUB_CLK_CNTL,
 		.shift = 4,
@@ -416,7 +406,7 @@ static struct clk_regmap g12b_cpub_clk_dyn0_div = {
 };
 
 /* Datasheet names this field as "postmux0" */
-static struct clk_regmap g12b_cpub_clk_dyn0 = {
+static struct clk_regmap g12b_cpub_clk_postmux0 = {
 	.data = &(struct clk_regmap_mux_data){
 		.offset = HHI_SYS_CPUB_CLK_CNTL,
 		.mask = 0x1,
@@ -432,7 +422,7 @@ static struct clk_regmap g12b_cpub_clk_dyn0 = {
 };
 
 /* Datasheet names this field as "premux1" */
-static struct clk_regmap g12b_cpub_clk_dyn1_sel = {
+static struct clk_regmap g12b_cpub_clk_premux1 = {
 	.data = &(struct clk_regmap_mux_data){
 		.offset = HHI_SYS_CPUB_CLK_CNTL,
 		.mask = 0x3,
@@ -449,7 +439,7 @@ static struct clk_regmap g12b_cpub_clk_dyn1_sel = {
 };
 
 /* Datasheet names this field as "Mux1_divn_tcnt" */
-static struct clk_regmap g12b_cpub_clk_dyn1_div = {
+static struct clk_regmap g12b_cpub_clk_mux1_div = {
 	.data = &(struct clk_regmap_div_data){
 		.offset = HHI_SYS_CPUB_CLK_CNTL,
 		.shift = 20,
@@ -464,7 +454,7 @@ static struct clk_regmap g12b_cpub_clk_dyn1_div = {
 };
 
 /* Datasheet names this field as "postmux1" */
-static struct clk_regmap g12b_cpub_clk_dyn1 = {
+static struct clk_regmap g12b_cpub_clk_postmux1 = {
 	.data = &(struct clk_regmap_mux_data){
 		.offset = HHI_SYS_CPUB_CLK_CNTL,
 		.mask = 0x1,
@@ -508,11 +498,6 @@ static struct clk_regmap g12b_cpub_clk = {
 		.parent_names = (const char *[]){ "cpub_clk_dyn",
 						  "sys_pll" },
 		.num_parents = 2,
-		/*
-		 * Until we add support for DVFS, this clock tree feeds
-		 * the second CPU cluster and should not be disabled
-		 */
-		.flags = CLK_IS_CRITICAL,
 	},
 };
 
@@ -1062,16 +1047,6 @@ static struct clk_fixed_factor g12a_fclk_div3_div = {
 		.ops = &clk_fixed_factor_ops,
 		.parent_names = (const char *[]){ "fixed_pll" },
 		.num_parents = 1,
-		/*
-		 * This clock is used by the resident firmware and is required
-		 * by the platform to operate correctly.
-		 * Until the following condition are met, we need this clock to
-		 * be marked as critical:
-		 * a) Mark the clock used by a firmware resource, if possible
-		 * b) CCF has a clock hand-off mechanism to make the sure the
-		 *    clock stays on until the proper driver comes along
-		 */
-		.flags = CLK_IS_CRITICAL,
 	},
 };
 
@@ -1085,6 +1060,16 @@ static struct clk_regmap g12a_fclk_div3 = {
 		.ops = &clk_regmap_gate_ops,
 		.parent_names = (const char *[]){ "fclk_div3_div" },
 		.num_parents = 1,
+		/*
+		 * This clock is used by the resident firmware and is required
+		 * by the platform to operate correctly.
+		 * Until the following condition are met, we need this clock to
+		 * be marked as critical:
+		 * a) Mark the clock used by a firmware resource, if possible
+		 * b) CCF has a clock hand-off mechanism to make the sure the
+		 *    clock stays on until the proper driver comes along
+		 */
+		.flags = CLK_IS_CRITICAL,
 	},
 };
 
@@ -1221,6 +1206,10 @@ static struct clk_fixed_factor g12a_mpll_prediv = {
 	},
 };
 
+static const struct reg_sequence g12a_mpll0_init_regs[] = {
+	{ .reg = HHI_MPLL_CNTL2,	.def = 0x40000033 },
+};
+
 static struct clk_regmap g12a_mpll0_div = {
 	.data = &(struct meson_clk_mpll_data){
 		.sdm = {
@@ -1244,6 +1233,8 @@ static struct clk_regmap g12a_mpll0_div = {
 			.width	 = 1,
 		},
 		.lock = &meson_clk_lock,
+		.init_regs = g12a_mpll0_init_regs,
+		.init_count = ARRAY_SIZE(g12a_mpll0_init_regs),
 	},
 	.hw.init = &(struct clk_init_data){
 		.name = "mpll0_div",
@@ -1265,6 +1256,10 @@ static struct clk_regmap g12a_mpll0 = {
 		.num_parents = 1,
 		.flags = CLK_SET_RATE_PARENT,
 	},
+};
+
+static const struct reg_sequence g12a_mpll1_init_regs[] = {
+	{ .reg = HHI_MPLL_CNTL4,	.def = 0x40000033 },
 };
 
 static struct clk_regmap g12a_mpll1_div = {
@@ -1290,6 +1285,8 @@ static struct clk_regmap g12a_mpll1_div = {
 			.width	 = 1,
 		},
 		.lock = &meson_clk_lock,
+		.init_regs = g12a_mpll1_init_regs,
+		.init_count = ARRAY_SIZE(g12a_mpll1_init_regs),
 	},
 	.hw.init = &(struct clk_init_data){
 		.name = "mpll1_div",
@@ -1311,6 +1308,10 @@ static struct clk_regmap g12a_mpll1 = {
 		.num_parents = 1,
 		.flags = CLK_SET_RATE_PARENT,
 	},
+};
+
+static const struct reg_sequence g12a_mpll2_init_regs[] = {
+	{ .reg = HHI_MPLL_CNTL6,	.def = 0x40000033 },
 };
 
 static struct clk_regmap g12a_mpll2_div = {
@@ -1336,6 +1337,8 @@ static struct clk_regmap g12a_mpll2_div = {
 			.width	 = 1,
 		},
 		.lock = &meson_clk_lock,
+		.init_regs = g12a_mpll2_init_regs,
+		.init_count = ARRAY_SIZE(g12a_mpll2_init_regs),
 	},
 	.hw.init = &(struct clk_init_data){
 		.name = "mpll2_div",
@@ -1357,6 +1360,10 @@ static struct clk_regmap g12a_mpll2 = {
 		.num_parents = 1,
 		.flags = CLK_SET_RATE_PARENT,
 	},
+};
+
+static const struct reg_sequence g12a_mpll3_init_regs[] = {
+	{ .reg = HHI_MPLL_CNTL8,	.def = 0x40000033 },
 };
 
 static struct clk_regmap g12a_mpll3_div = {
@@ -1382,6 +1389,8 @@ static struct clk_regmap g12a_mpll3_div = {
 			.width	 = 1,
 		},
 		.lock = &meson_clk_lock,
+		.init_regs = g12a_mpll3_init_regs,
+		.init_count = ARRAY_SIZE(g12a_mpll3_init_regs),
 	},
 	.hw.init = &(struct clk_init_data){
 		.name = "mpll3_div",
@@ -2700,6 +2709,33 @@ static struct clk_regmap g12a_mali = {
 	},
 };
 
+static struct clk_regmap g12a_ts_div = {
+	.data = &(struct clk_regmap_div_data){
+		.offset = HHI_TS_CLK_CNTL,
+		.shift = 0,
+		.width = 8,
+	},
+	.hw.init = &(struct clk_init_data){
+		.name = "ts_div",
+		.ops = &clk_regmap_divider_ro_ops,
+		.parent_names = (const char *[]){ "xtal" },
+		.num_parents = 1,
+	},
+};
+
+static struct clk_regmap g12a_ts = {
+	.data = &(struct clk_regmap_gate_data){
+		.offset = HHI_TS_CLK_CNTL,
+		.bit_idx = 8,
+	},
+	.hw.init = &(struct clk_init_data){
+		.name = "ts",
+		.ops = &clk_regmap_gate_ops,
+		.parent_names = (const char *[]){ "ts_div" },
+		.num_parents = 1,
+	},
+};
+
 /* Everything Else (EE) domain gates */
 static MESON_GATE(g12a_ddr,			HHI_GCLK_MPEG0,	0);
 static MESON_GATE(g12a_dos,			HHI_GCLK_MPEG0,	1);
@@ -2958,12 +2994,12 @@ static struct clk_hw_onecell_data g12a_hw_onecell_data = {
 		[CLKID_MPLL_5OM]		= &g12a_mpll_50m.hw,
 		[CLKID_SYS_PLL_DIV16_EN]	= &g12a_sys_pll_div16_en.hw,
 		[CLKID_SYS_PLL_DIV16]		= &g12a_sys_pll_div16.hw,
-		[CLKID_CPU_CLK_DYN0_SEL]	= &g12a_cpu_clk_dyn0_sel.hw,
-		[CLKID_CPU_CLK_DYN0_DIV]	= &g12a_cpu_clk_dyn0_div.hw,
-		[CLKID_CPU_CLK_DYN0]		= &g12a_cpu_clk_dyn0.hw,
-		[CLKID_CPU_CLK_DYN1_SEL]	= &g12a_cpu_clk_dyn1_sel.hw,
-		[CLKID_CPU_CLK_DYN1_DIV]	= &g12a_cpu_clk_dyn1_div.hw,
-		[CLKID_CPU_CLK_DYN1]		= &g12a_cpu_clk_dyn1.hw,
+		[CLKID_CPU_CLK_DYN0_SEL]	= &g12a_cpu_clk_premux0.hw,
+		[CLKID_CPU_CLK_DYN0_DIV]	= &g12a_cpu_clk_mux0_div.hw,
+		[CLKID_CPU_CLK_DYN0]		= &g12a_cpu_clk_postmux0.hw,
+		[CLKID_CPU_CLK_DYN1_SEL]	= &g12a_cpu_clk_premux1.hw,
+		[CLKID_CPU_CLK_DYN1_DIV]	= &g12a_cpu_clk_mux1_div.hw,
+		[CLKID_CPU_CLK_DYN1]		= &g12a_cpu_clk_postmux1.hw,
 		[CLKID_CPU_CLK_DYN]		= &g12a_cpu_clk_dyn.hw,
 		[CLKID_CPU_CLK]			= &g12a_cpu_clk.hw,
 		[CLKID_CPU_CLK_DIV16_EN]	= &g12a_cpu_clk_div16_en.hw,
@@ -2989,6 +3025,8 @@ static struct clk_hw_onecell_data g12a_hw_onecell_data = {
 		[CLKID_VDEC_HEVCF_SEL]		= &g12a_vdec_hevcf_sel.hw,
 		[CLKID_VDEC_HEVCF_DIV]		= &g12a_vdec_hevcf_div.hw,
 		[CLKID_VDEC_HEVCF]		= &g12a_vdec_hevcf.hw,
+		[CLKID_TS_DIV]			= &g12a_ts_div.hw,
+		[CLKID_TS]			= &g12a_ts.hw,
 		[NR_CLKS]			= NULL,
 	},
 	.num = NR_CLKS,
@@ -3176,12 +3214,12 @@ static struct clk_hw_onecell_data g12b_hw_onecell_data = {
 		[CLKID_MPLL_5OM]		= &g12a_mpll_50m.hw,
 		[CLKID_SYS_PLL_DIV16_EN]	= &g12a_sys_pll_div16_en.hw,
 		[CLKID_SYS_PLL_DIV16]		= &g12a_sys_pll_div16.hw,
-		[CLKID_CPU_CLK_DYN0_SEL]	= &g12a_cpu_clk_dyn0_sel.hw,
-		[CLKID_CPU_CLK_DYN0_DIV]	= &g12a_cpu_clk_dyn0_div.hw,
-		[CLKID_CPU_CLK_DYN0]		= &g12a_cpu_clk_dyn0.hw,
-		[CLKID_CPU_CLK_DYN1_SEL]	= &g12a_cpu_clk_dyn1_sel.hw,
-		[CLKID_CPU_CLK_DYN1_DIV]	= &g12a_cpu_clk_dyn1_div.hw,
-		[CLKID_CPU_CLK_DYN1]		= &g12a_cpu_clk_dyn1.hw,
+		[CLKID_CPU_CLK_DYN0_SEL]	= &g12a_cpu_clk_premux0.hw,
+		[CLKID_CPU_CLK_DYN0_DIV]	= &g12a_cpu_clk_mux0_div.hw,
+		[CLKID_CPU_CLK_DYN0]		= &g12a_cpu_clk_postmux0.hw,
+		[CLKID_CPU_CLK_DYN1_SEL]	= &g12a_cpu_clk_premux1.hw,
+		[CLKID_CPU_CLK_DYN1_DIV]	= &g12a_cpu_clk_mux1_div.hw,
+		[CLKID_CPU_CLK_DYN1]		= &g12a_cpu_clk_postmux1.hw,
 		[CLKID_CPU_CLK_DYN]		= &g12a_cpu_clk_dyn.hw,
 		[CLKID_CPU_CLK]			= &g12b_cpu_clk.hw,
 		[CLKID_CPU_CLK_DIV16_EN]	= &g12a_cpu_clk_div16_en.hw,
@@ -3207,14 +3245,16 @@ static struct clk_hw_onecell_data g12b_hw_onecell_data = {
 		[CLKID_VDEC_HEVCF_SEL]		= &g12a_vdec_hevcf_sel.hw,
 		[CLKID_VDEC_HEVCF_DIV]		= &g12a_vdec_hevcf_div.hw,
 		[CLKID_VDEC_HEVCF]		= &g12a_vdec_hevcf.hw,
+		[CLKID_TS_DIV]			= &g12a_ts_div.hw,
+		[CLKID_TS]			= &g12a_ts.hw,
 		[CLKID_SYS1_PLL_DCO]		= &g12b_sys1_pll_dco.hw,
 		[CLKID_SYS1_PLL]		= &g12b_sys1_pll.hw,
-		[CLKID_CPUB_CLK_DYN0_SEL]	= &g12b_cpub_clk_dyn0_sel.hw,
-		[CLKID_CPUB_CLK_DYN0_DIV]	= &g12b_cpub_clk_dyn0_div.hw,
-		[CLKID_CPUB_CLK_DYN0]		= &g12b_cpub_clk_dyn0.hw,
-		[CLKID_CPUB_CLK_DYN1_SEL]	= &g12b_cpub_clk_dyn1_sel.hw,
-		[CLKID_CPUB_CLK_DYN1_DIV]	= &g12b_cpub_clk_dyn1_div.hw,
-		[CLKID_CPUB_CLK_DYN1]		= &g12b_cpub_clk_dyn1.hw,
+		[CLKID_CPUB_CLK_DYN0_SEL]	= &g12b_cpub_clk_premux0.hw,
+		[CLKID_CPUB_CLK_DYN0_DIV]	= &g12b_cpub_clk_mux0_div.hw,
+		[CLKID_CPUB_CLK_DYN0]		= &g12b_cpub_clk_postmux0.hw,
+		[CLKID_CPUB_CLK_DYN1_SEL]	= &g12b_cpub_clk_premux1.hw,
+		[CLKID_CPUB_CLK_DYN1_DIV]	= &g12b_cpub_clk_mux1_div.hw,
+		[CLKID_CPUB_CLK_DYN1]		= &g12b_cpub_clk_postmux1.hw,
 		[CLKID_CPUB_CLK_DYN]		= &g12b_cpub_clk_dyn.hw,
 		[CLKID_CPUB_CLK]		= &g12b_cpub_clk.hw,
 		[NR_CLKS]			= NULL,
@@ -3386,12 +3426,12 @@ static struct clk_regmap *const g12a_clk_regmaps[] = {
 	&g12a_mali,
 	&g12a_mpll_50m,
 	&g12a_sys_pll_div16_en,
-	&g12a_cpu_clk_dyn0_sel,
-	&g12a_cpu_clk_dyn0_div,
-	&g12a_cpu_clk_dyn0,
-	&g12a_cpu_clk_dyn1_sel,
-	&g12a_cpu_clk_dyn1_div,
-	&g12a_cpu_clk_dyn1,
+	&g12a_cpu_clk_premux0,
+	&g12a_cpu_clk_mux0_div,
+	&g12a_cpu_clk_postmux0,
+	&g12a_cpu_clk_premux1,
+	&g12a_cpu_clk_mux1_div,
+	&g12a_cpu_clk_postmux1,
 	&g12a_cpu_clk_dyn,
 	&g12a_cpu_clk,
 	&g12a_cpu_clk_div16_en,
@@ -3414,23 +3454,31 @@ static struct clk_regmap *const g12a_clk_regmaps[] = {
 	&g12a_vdec_hevcf_sel,
 	&g12a_vdec_hevcf_div,
 	&g12a_vdec_hevcf,
+	&g12a_ts_div,
+	&g12a_ts,
 	&g12b_cpu_clk,
 	&g12b_sys1_pll_dco,
 	&g12b_sys1_pll,
-	&g12b_cpub_clk_dyn0_sel,
-	&g12b_cpub_clk_dyn0_div,
-	&g12b_cpub_clk_dyn0,
-	&g12b_cpub_clk_dyn1_sel,
-	&g12b_cpub_clk_dyn1_div,
-	&g12b_cpub_clk_dyn1,
+	&g12b_cpub_clk_premux0,
+	&g12b_cpub_clk_mux0_div,
+	&g12b_cpub_clk_postmux0,
+	&g12b_cpub_clk_premux1,
+	&g12b_cpub_clk_mux1_div,
+	&g12b_cpub_clk_postmux1,
 	&g12b_cpub_clk_dyn,
 	&g12b_cpub_clk,
+};
+
+static const struct reg_sequence g12a_init_regs[] = {
+	{ .reg = HHI_MPLL_CNTL0,	.def = 0x00000543 },
 };
 
 static const struct meson_eeclkc_data g12a_clkc_data = {
 	.regmap_clks = g12a_clk_regmaps,
 	.regmap_clk_num = ARRAY_SIZE(g12a_clk_regmaps),
-	.hw_onecell_data = &g12a_hw_onecell_data
+	.hw_onecell_data = &g12a_hw_onecell_data,
+	.init_regs = g12a_init_regs,
+	.init_count = ARRAY_SIZE(g12a_init_regs),
 };
 
 static const struct meson_eeclkc_data g12b_clkc_data = {

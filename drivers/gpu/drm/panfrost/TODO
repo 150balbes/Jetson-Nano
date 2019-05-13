@@ -1,12 +1,4 @@
-- Add support for GPU reset on job hangs. Possibly need to handle restarting
-  jobs. (Tomeu, DONE)
-
-- RuntimePM support. Power on and off the shader cores, caches, etc. on
-  demand. (Tomeu)
-
-- Frequency scaling and thermal support. (Tomeu)
-
-- Testing on other Midgard variants. Only T860 is tested. (Tomeu, DONE)
+- Thermal support.
 
 - Bifrost support:
   - DT bindings (Neil, WIP)
@@ -31,5 +23,5 @@
 - Compute job support. So called 'compute only' jobs need to be plumbed up to
   userspace.
 
-- Performance counter support. (Boris, WIP)
+- Performance counter support. (Boris)
 
