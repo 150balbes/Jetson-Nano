@@ -591,6 +591,9 @@ config VIDEO_MESON_AO_CEC
 config VIDEO_MESON_G12A_AO_CEC
 	tristate "Amlogic Meson G12A AO CEC driver"
 	depends on ARCH_MESON || COMPILE_TEST
+	depends on COMMON_CLK && OF
+	select REGMAP
+	select REGMAP_MMIO
 	select CEC_CORE
 	select CEC_NOTIFIER
 	---help---

@@ -153,6 +153,17 @@ static void dw_hdmi_i2s_audio_shutdown(struct device *dev, void *data)
 	hdmi_write(audio, (u8)~HDMI_MC_SWRSTZ_I2SSWRST_REQ, HDMI_MC_SWRSTZ);
 }
 
+static int dw_hdmi_i2s_digital_mute(struct device *dev, void *data, bool enable)
+{
+	struct dw_hdmi_i2s_audio_data *audio = data;
+
+	hdmi_update_bits(audio, enable ? 0 : 0xf,
+			 HDMI_FC_AUDSCONF_AUD_PACKET_SAMPFIT_MASK,
+			 HDMI_FC_AUDSCONF);
+
+	return 0;
+}
+
 static void dw_hdmi_i2s_update_eld(struct device *dev, u8 *eld)
 {
 	struct dw_hdmi_i2s_audio_data *audio = dev_get_platdata(dev);
@@ -202,6 +213,7 @@ static int dw_hdmi_i2s_get_dai_id(struct snd_soc_component *component,
 static struct hdmi_codec_ops dw_hdmi_i2s_ops = {
 	.hw_params	= dw_hdmi_i2s_hw_params,
 	.audio_shutdown	= dw_hdmi_i2s_audio_shutdown,
+	.digital_mute	= dw_hdmi_i2s_digital_mute,
 	.get_eld	= dw_hdmi_i2s_get_eld,
 	.get_dai_id	= dw_hdmi_i2s_get_dai_id,
 };

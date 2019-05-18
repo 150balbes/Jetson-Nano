@@ -731,7 +731,7 @@ cleanup_entries:
  *
  * Calculate the timeout in jiffies from an absolute time in sec/nsec.
  */
-static signed long drm_timeout_abs_to_jiffies(int64_t timeout_nsec)
+signed long drm_timeout_abs_to_jiffies(int64_t timeout_nsec)
 {
 	ktime_t abs_timeout, now;
 	u64 timeout_ns, timeout_jiffies64;

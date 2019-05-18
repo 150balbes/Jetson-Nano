@@ -13,31 +13,6 @@
 / {
 	compatible = "amlogic,meson-gxbb";
 
-	chosen {
-		#address-cells = <2>;
-		#size-cells = <2>;
-		ranges;
-
-		framebuffer@0 {
-			compatible = "amlogic,simple-framebuffer",
-				     "simple-framebuffer";
-			amlogic,pipeline = "vpu-cvbs";
-			power-domains = <&pwrc_vpu>;
-			status = "disabled";
-		};
-
-		framebuffer@1 {
-			compatible = "amlogic,simple-framebuffer",
-				     "simple-framebuffer";
-			amlogic,pipeline = "vpu-hdmi";
-			clocks = <&clkc CLKID_HDMI_PCLK>,
-				 <&clkc CLKID_CLK81>,
-				 <&clkc CLKID_GCLK_VENCI_INT0>;
-			power-domains = <&pwrc_vpu>;
-			status = "disabled";
-		};
-	};
-
 	soc {
 		usb0_phy: phy@c0000000 {
 			compatible = "amlogic,meson-gxbb-usb2-phy";

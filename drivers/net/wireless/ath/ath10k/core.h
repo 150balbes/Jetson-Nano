@@ -956,8 +956,6 @@ struct ath10k {
 	bool nlo_enabled;
 	bool p2p;
 
-	bool is_started;
-
 	struct {
 		enum ath10k_bus bus;
 		const struct ath10k_hif_ops *ops;
@@ -1064,6 +1062,9 @@ struct ath10k {
 
 	/* prevents concurrent FW reconfiguration */
 	struct mutex conf_mutex;
+
+	/* protects coredump data */
+	struct mutex dump_mutex;
 
 	/* protects shared structure data */
 	spinlock_t data_lock;

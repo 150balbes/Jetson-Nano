@@ -120,8 +120,6 @@ enum qca9377_chip_id_rev {
 /* QCA9377 1.0 definitions */
 #define QCA9377_HW_1_0_FW_DIR          ATH10K_FW_DIR "/QCA9377/hw1.0"
 #define QCA9377_HW_1_0_BOARD_DATA_FILE "board.bin"
-#define QCA9377_HW_1_0_BOARD_DATA_FILE_USB "board-usb.bin"
-#define QCA9377_HW_1_0_BOARD_DATA_FILE_SDIO "board-sdio.bin"
 #define QCA9377_HW_1_0_PATCH_LOAD_ADDR	0x1234
 
 /* QCA4019 1.0 definitions */
@@ -608,12 +606,6 @@ struct ath10k_hw_params {
 
 	/* target supporting fw download via diag ce */
 	bool fw_diag_ce_download;
-
-	/* Specifies whether or not the device should be started once.
-	 * If set, the device will be started once by the early fw probe
-	 * and it will not be terminated afterwards.
-	 */
-	bool start_once;
 };
 
 struct htt_rx_desc;
@@ -763,9 +755,6 @@ ath10k_is_rssi_enable(struct ath10k_hw_params *hw,
 #define TARGET_HL_TLV_NUM_PEERS			33
 #define TARGET_HL_TLV_AST_SKID_LIMIT		16
 #define TARGET_HL_TLV_NUM_WDS_ENTRIES		2
-
-/* Target specific defines for QCA9377 high latency firmware */
-#define TARGET_QCA9377_HL_NUM_PEERS		15
 
 /* Diagnostic Window */
 #define CE_DIAG_PIPE	7

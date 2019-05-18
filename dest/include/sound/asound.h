@@ -31,6 +31,7 @@
 #endif
 
 #include <stdlib.h>
+#include <time.h>
 
 /*
  *  protocol version

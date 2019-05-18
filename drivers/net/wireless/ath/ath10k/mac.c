@@ -953,12 +953,8 @@ static void ath10k_mac_vif_beacon_cleanup(struct ath10k_vif *arvif)
 	ath10k_mac_vif_beacon_free(arvif);
 
 	if (arvif->beacon_buf) {
-		if (ar->dev_type == ATH10K_DEV_TYPE_HL)
-			kfree(arvif->beacon_buf);
-		else
-			dma_free_coherent(ar->dev, IEEE80211_MAX_FRAME_LEN,
-					  arvif->beacon_buf,
-					  arvif->beacon_paddr);
+		dma_free_coherent(ar->dev, IEEE80211_MAX_FRAME_LEN,
+				  arvif->beacon_buf, arvif->beacon_paddr);
 		arvif->beacon_buf = NULL;
 	}
 }
@@ -4093,7 +4089,7 @@ static int ath10k_mac_schedule_txq(struct ieee80211_hw *hw, u32 ac)
 			if (ret < 0)
 				break;
 		}
-		ieee80211_return_txq(hw, txq);
+		ieee80211_return_txq(hw, txq, false);
 		ath10k_htt_tx_txq_update(hw, txq);
 		if (ret == -EBUSY)
 			break;
@@ -4360,6 +4356,7 @@ static void ath10k_mac_op_wake_tx_queue(struct ieee80211_hw *hw,
 					struct ieee80211_txq *txq)
 {
 	struct ath10k *ar = hw->priv;
+	int ret;
 	u8 ac;
 
 	ath10k_htt_tx_txq_update(hw, txq);
@@ -4372,10 +4369,12 @@ static void ath10k_mac_op_wake_tx_queue(struct ieee80211_hw *hw,
 	if (!txq)
 		goto out;
 
-	if (ath10k_mac_tx_can_push(hw, txq))
-		ath10k_mac_tx_push_txq(hw, txq);
-
-	ieee80211_return_txq(hw, txq);
+	while (ath10k_mac_tx_can_push(hw, txq)) {
+		ret = ath10k_mac_tx_push_txq(hw, txq);
+		if (ret < 0)
+			break;
+	}
+	ieee80211_return_txq(hw, txq, false);
 	ath10k_htt_tx_txq_update(hw, txq);
 out:
 	ieee80211_txq_schedule_end(hw, ac);
@@ -5214,17 +5213,10 @@ static int ath10k_add_interface(struct ieee80211_hw *hw,
 	if (vif->type == NL80211_IFTYPE_ADHOC ||
 	    vif->type == NL80211_IFTYPE_MESH_POINT ||
 	    vif->type == NL80211_IFTYPE_AP) {
-		if (ar->dev_type == ATH10K_DEV_TYPE_HL) {
-			arvif->beacon_buf = kmalloc(IEEE80211_MAX_FRAME_LEN,
-						    GFP_KERNEL);
-			arvif->beacon_paddr = (dma_addr_t)arvif->beacon_buf;
-		} else {
-			arvif->beacon_buf =
-				dma_alloc_coherent(ar->dev,
-						   IEEE80211_MAX_FRAME_LEN,
-						   &arvif->beacon_paddr,
-						   GFP_ATOMIC);
-		}
+		arvif->beacon_buf = dma_alloc_coherent(ar->dev,
+						       IEEE80211_MAX_FRAME_LEN,
+						       &arvif->beacon_paddr,
+						       GFP_ATOMIC);
 		if (!arvif->beacon_buf) {
 			ret = -ENOMEM;
 			ath10k_warn(ar, "failed to allocate beacon buffer: %d\n",
@@ -5435,12 +5427,8 @@ err_vdev_delete:
 
 err:
 	if (arvif->beacon_buf) {
-		if (ar->dev_type == ATH10K_DEV_TYPE_HL)
-			kfree(arvif->beacon_buf);
-		else
-			dma_free_coherent(ar->dev, IEEE80211_MAX_FRAME_LEN,
-					  arvif->beacon_buf,
-					  arvif->beacon_paddr);
+		dma_free_coherent(ar->dev, IEEE80211_MAX_FRAME_LEN,
+				  arvif->beacon_buf, arvif->beacon_paddr);
 		arvif->beacon_buf = NULL;
 	}
 
@@ -5786,7 +5774,7 @@ static void ath10k_bss_info_changed(struct ieee80211_hw *hw,
 	}
 
 	if (changed & BSS_CHANGED_MCAST_RATE &&
-	    !WARN_ON(ath10k_mac_vif_chan(arvif->vif, &def))) {
+	    !ath10k_mac_vif_chan(arvif->vif, &def)) {
 		band = def.chan->band;
 		rateidx = vif->bss_conf.mcast_rate[band] - 1;
 
@@ -5824,7 +5812,7 @@ static void ath10k_bss_info_changed(struct ieee80211_hw *hw,
 	}
 
 	if (changed & BSS_CHANGED_BASIC_RATES) {
-		if (WARN_ON(ath10k_mac_vif_chan(vif, &def))) {
+		if (ath10k_mac_vif_chan(vif, &def)) {
 			mutex_unlock(&ar->conf_mutex);
 			return;
 		}

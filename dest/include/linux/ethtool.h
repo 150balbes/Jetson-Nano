@@ -1589,7 +1589,7 @@ enum ethtool_link_mode_bit_indices {
 
 static __inline__ int ethtool_validate_speed(__u32 speed)
 {
-	return speed <= INT_MAX || speed == SPEED_UNKNOWN;
+	return speed <= INT_MAX || speed == (__u32)SPEED_UNKNOWN;
 }
 
 /* Duplex, half or full. */

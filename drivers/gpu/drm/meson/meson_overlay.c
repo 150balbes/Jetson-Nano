@@ -22,7 +22,6 @@
 #include "meson_overlay.h"
 #include "meson_vpp.h"
 #include "meson_viu.h"
-#include "meson_canvas.h"
 #include "meson_registers.h"
 
 /* VD1_IF0_GEN_REG */
@@ -350,13 +349,6 @@ static void meson_overlay_atomic_update(struct drm_plane *plane,
 
 	DRM_DEBUG_DRIVER("\n");
 
-	/* Fallback is canvas provider is not available */
-	if (!priv->canvas) {
-		priv->canvas_id_vd1_0 = MESON_CANVAS_ID_VD1_0;
-		priv->canvas_id_vd1_1 = MESON_CANVAS_ID_VD1_1;
-		priv->canvas_id_vd1_2 = MESON_CANVAS_ID_VD1_2;
-	}
-
 	interlace_mode = state->crtc->mode.flags & DRM_MODE_FLAG_INTERLACE;
 
 	spin_lock_irqsave(&priv->drm->event_lock, flags);
@@ -585,6 +577,9 @@ int meson_overlay_create(struct meson_drm *priv)
 				 DRM_PLANE_TYPE_OVERLAY, "meson_overlay_plane");
 
 	drm_plane_helper_add(plane, &meson_overlay_helper_funcs);
+
+	/* For now, VD Overlay plane is always on the back */
+	drm_plane_create_zpos_immutable_property(plane, 0);
 
 	priv->overlay_plane = plane;
 
