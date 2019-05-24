@@ -1,11 +1,13 @@
 /*
  * QLogic Fibre Channel HBA Driver
- * Copyright (c)  2003-2013 QLogic Corporation
+ * Copyright (c)  2003-2014 QLogic Corporation
  *
  * See LICENSE.qla2xxx for copyright and licensing details.
  */
 #ifndef __QLA_NX_H
 #define __QLA_NX_H
+
+#include <linux/io-64-nonatomic-lo-hi.h>
 
 /*
  * Following are the states of the Phantom. Phantom will set them and
@@ -332,9 +334,6 @@
 #define ROMUSB_ROM				(QLA82XX_CRB_ROMUSB + 0x10000)
 #define QLA82XX_ROMUSB_ROM_INSTR_OPCODE		(ROMUSB_ROM + 0x0004)
 #define QLA82XX_ROMUSB_GLB_CAS_RST		(ROMUSB_GLB + 0x0038)
-
-/* Lock IDs for ROM lock */
-#define ROM_LOCK_DRIVER       0x0d417340
 
 #define QLA82XX_PCI_CRB_WINDOWSIZE 0x00100000	 /* all are 1MB windows */
 #define QLA82XX_PCI_CRB_WINDOW(A) \
@@ -822,21 +821,6 @@ struct qla82xx_uri_data_desc{
 #define MIU_TEST_AGT_WRDATA_UPPER_LO		(0x0b0)
 #define	MIU_TEST_AGT_WRDATA_UPPER_HI		(0x0b4)
 
-#ifndef readq
-static inline u64 readq(void __iomem *addr)
-{
-	return readl(addr) | (((u64) readl(addr + 4)) << 32LL);
-}
-#endif
-
-#ifndef writeq
-static inline void writeq(u64 val, void __iomem *addr)
-{
-	writel(((u32) (val)), (addr));
-	writel(((u32) (val >> 32)), (addr + 4));
-}
-#endif
-
 /* Request and response queue size */
 #define REQUEST_ENTRY_CNT_82XX		128	/* Number of request entries. */
 #define RESPONSE_ENTRY_CNT_82XX		128	/* Number of response entries.*/
@@ -1179,8 +1163,7 @@ struct qla82xx_md_entry_queue {
 #define MD_MIU_TEST_AGT_ADDR_LO		0x41000094
 #define MD_MIU_TEST_AGT_ADDR_HI		0x41000098
 
-static const int MD_MIU_TEST_AGT_RDDATA[] = { 0x410000A8, 0x410000AC,
-	0x410000B8, 0x410000BC };
+extern const int MD_MIU_TEST_AGT_RDDATA[4];
 
 #define CRB_NIU_XG_PAUSE_CTL_P0        0x1
 #define CRB_NIU_XG_PAUSE_CTL_P1        0x8

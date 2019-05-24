@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 /* 32-bit atomic xchg() and cmpxchg() definitions.
  *
  * Copyright (C) 1996 David S. Miller (davem@davemloft.net)
@@ -11,8 +12,8 @@
 #ifndef __ARCH_SPARC_CMPXCHG__
 #define __ARCH_SPARC_CMPXCHG__
 
-extern unsigned long __xchg_u32(volatile u32 *m, u32 new);
-extern void __xchg_called_with_bad_pointer(void);
+unsigned long __xchg_u32(volatile u32 *m, u32 new);
+void __xchg_called_with_bad_pointer(void);
 
 static inline unsigned long __xchg(unsigned long x, __volatile__ void * ptr, int size)
 {
@@ -34,12 +35,11 @@ static inline unsigned long __xchg(unsigned long x, __volatile__ void * ptr, int
  *
  * Cribbed from <asm-parisc/atomic.h>
  */
-#define __HAVE_ARCH_CMPXCHG	1
 
 /* bug catcher for when unsupported size is used - won't link */
-extern void __cmpxchg_called_with_bad_pointer(void);
+void __cmpxchg_called_with_bad_pointer(void);
 /* we only need to support cmpxchg of a u32 on sparc */
-extern unsigned long __cmpxchg_u32(volatile u32 *m, u32 old, u32 new_);
+unsigned long __cmpxchg_u32(volatile u32 *m, u32 old, u32 new_);
 
 /* don't worry...optimizer will get rid of most of this */
 static inline unsigned long
@@ -62,6 +62,9 @@ __cmpxchg(volatile void *ptr, unsigned long old, unsigned long new_, int size)
 	(__typeof__(*(ptr))) __cmpxchg((ptr), (unsigned long)_o_,	\
 			(unsigned long)_n_, sizeof(*(ptr)));		\
 })
+
+u64 __cmpxchg_u64(u64 *ptr, u64 old, u64 new);
+#define cmpxchg64(ptr, old, new)	__cmpxchg_u64(ptr, old, new)
 
 #include <asm-generic/cmpxchg-local.h>
 

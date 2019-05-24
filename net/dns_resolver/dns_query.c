@@ -37,8 +37,10 @@
 
 #include <linux/module.h>
 #include <linux/slab.h>
+#include <linux/cred.h>
 #include <linux/dns_resolver.h>
 #include <linux/err.h>
+
 #include <keys/dns_resolver-type.h>
 #include <keys/user-type.h>
 
@@ -50,11 +52,11 @@
  * @name: Name to look up
  * @namelen: Length of name
  * @options: Request options (or NULL if no options)
- * @_result: Where to place the returned data.
+ * @_result: Where to place the returned data (or NULL)
  * @_expiry: Where to store the result expiry time (or NULL)
  *
- * The data will be returned in the pointer at *result, and the caller is
- * responsible for freeing it.
+ * The data will be returned in the pointer at *result, if provided, and the
+ * caller is responsible for freeing it.
  *
  * The description should be of the form "[<query_type>:]<domain_name>", and
  * the options need to be appropriate for the query type requested.  If no
@@ -67,7 +69,7 @@
  * Returns the size of the result on success, -ve error code otherwise.
  */
 int dns_query(const char *type, const char *name, size_t namelen,
-	      const char *options, char **_result, time_t *_expiry)
+	      const char *options, char **_result, time64_t *_expiry)
 {
 	struct key *rkey;
 	struct user_key_payload *upayload;
@@ -79,7 +81,7 @@ int dns_query(const char *type, const char *name, size_t namelen,
 	kenter("%s,%*.*s,%zu,%s",
 	       type, (int)namelen, (int)namelen, name, namelen, options);
 
-	if (!name || namelen == 0 || !_result)
+	if (!name || namelen == 0)
 		return -EINVAL;
 
 	/* construct the query key description as "[<type>:]<name>" */
@@ -93,8 +95,8 @@ int dns_query(const char *type, const char *name, size_t namelen,
 	}
 
 	if (!namelen)
-		namelen = strlen(name);
-	if (namelen < 3)
+		namelen = strnlen(name, 256);
+	if (namelen < 3 || namelen > 255)
 		return -EINVAL;
 	desclen += namelen + 1;
 
@@ -129,6 +131,7 @@ int dns_query(const char *type, const char *name, size_t namelen,
 	}
 
 	down_read(&rkey->sem);
+	set_bit(KEY_FLAG_ROOT_CAN_INVAL, &rkey->flags);
 	rkey->perm |= KEY_USR_VIEW;
 
 	ret = key_validate(rkey);
@@ -136,21 +139,19 @@ int dns_query(const char *type, const char *name, size_t namelen,
 		goto put;
 
 	/* If the DNS server gave an error, return that to the caller */
-	ret = rkey->type_data.x[0];
+	ret = PTR_ERR(rkey->payload.data[dns_key_error]);
 	if (ret)
 		goto put;
 
-	upayload = rcu_dereference_protected(rkey->payload.data,
-					     lockdep_is_held(&rkey->sem));
+	upayload = user_key_payload_locked(rkey);
 	len = upayload->datalen;
 
-	ret = -ENOMEM;
-	*_result = kmalloc(len + 1, GFP_KERNEL);
-	if (!*_result)
-		goto put;
-
-	memcpy(*_result, upayload->data, len);
-	(*_result)[len] = '\0';
+	if (_result) {
+		ret = -ENOMEM;
+		*_result = kmemdup_nul(upayload->data, len, GFP_KERNEL);
+		if (!*_result)
+			goto put;
+	}
 
 	if (_expiry)
 		*_expiry = rkey->expiry;

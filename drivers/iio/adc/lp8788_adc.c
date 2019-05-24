@@ -125,7 +125,6 @@ static int lp8788_adc_read_raw(struct iio_dev *indio_dev,
 
 static const struct iio_info lp8788_adc_info = {
 	.read_raw = &lp8788_adc_read_raw,
-	.driver_module = THIS_MODULE,
 };
 
 #define LP8788_CHAN(_id, _type) {				\
@@ -244,7 +243,6 @@ static struct platform_driver lp8788_adc_driver = {
 	.remove = lp8788_adc_remove,
 	.driver = {
 		.name = LP8788_DEV_ADC,
-		.owner = THIS_MODULE,
 	},
 };
 module_platform_driver(lp8788_adc_driver);

@@ -4,6 +4,7 @@
 # for more details.
 #
 # Copyright (C) 2001 - 2005  Tensilica Inc.
+# Copyright (C) 2014 Cadence Design Systems Inc.
 #
 # This file is included by the global makefile so that you can add your own
 # architecture-specific flags and dependencies. Remember to do have actions
@@ -13,11 +14,7 @@
 # Core configuration.
 # (Use VAR=<xtensa_config> to use another default compiler.)
 
-variant-$(CONFIG_XTENSA_VARIANT_FSF)		:= fsf
-variant-$(CONFIG_XTENSA_VARIANT_DC232B)		:= dc232b
-variant-$(CONFIG_XTENSA_VARIANT_DC233C)		:= dc233c
-variant-$(CONFIG_XTENSA_VARIANT_S6000)		:= s6000
-variant-$(CONFIG_XTENSA_VARIANT_LINUX_CUSTOM)	:= custom
+variant-y := $(patsubst "%",%,$(CONFIG_XTENSA_VARIANT_NAME))
 
 VARIANT = $(variant-y)
 export VARIANT
@@ -38,7 +35,6 @@ endif
 
 platform-$(CONFIG_XTENSA_PLATFORM_XT2000)	:= xt2000
 platform-$(CONFIG_XTENSA_PLATFORM_ISS)		:= iss
-platform-$(CONFIG_XTENSA_PLATFORM_S6105)	:= s6105
 platform-$(CONFIG_XTENSA_PLATFORM_XTFPGA)	:= xtfpga
 
 PLATFORM = $(platform-y)
@@ -46,30 +42,29 @@ export PLATFORM
 
 # temporarily until string.h is fixed
 KBUILD_CFLAGS += -ffreestanding -D__linux__
-
-KBUILD_CFLAGS += -pipe -mlongcalls
-
+KBUILD_CFLAGS += -pipe -mlongcalls -mtext-section-literals
 KBUILD_CFLAGS += $(call cc-option,-mforce-no-pic,)
+KBUILD_CFLAGS += $(call cc-option,-mno-serialize-volatile,)
+
+KBUILD_AFLAGS += -mlongcalls -mtext-section-literals
 
 ifneq ($(CONFIG_LD_NO_RELAX),)
-LDFLAGS := --no-relax
+KBUILD_LDFLAGS := --no-relax
 endif
 
 ifeq ($(shell echo __XTENSA_EB__ | $(CC) -E - | grep -v "\#"),1)
 CHECKFLAGS += -D__XTENSA_EB__
+KBUILD_CPPFLAGS += -DCONFIG_CPU_BIG_ENDIAN
 endif
 ifeq ($(shell echo __XTENSA_EL__ | $(CC) -E - | grep -v "\#"),1)
 CHECKFLAGS += -D__XTENSA_EL__
+KBUILD_CPPFLAGS += -DCONFIG_CPU_LITTLE_ENDIAN
 endif
 
 vardirs := $(patsubst %,arch/xtensa/variants/%/,$(variant-y))
 plfdirs := $(patsubst %,arch/xtensa/platforms/%/,$(platform-y))
 
-ifeq ($(KBUILD_SRC),)
-KBUILD_CPPFLAGS += $(patsubst %,-I%include,$(vardirs) $(plfdirs))
-else
 KBUILD_CPPFLAGS += $(patsubst %,-I$(srctree)/%include,$(vardirs) $(plfdirs))
-endif
 
 KBUILD_DEFCONFIG := iss_defconfig
 
@@ -85,26 +80,21 @@ LIBGCC := $(shell $(CC) $(KBUILD_CFLAGS) -print-libgcc-file-name)
 head-y		:= arch/xtensa/kernel/head.o
 core-y		+= arch/xtensa/kernel/ arch/xtensa/mm/
 core-y		+= $(buildvar) $(buildplf)
+core-y 		+= arch/xtensa/boot/dts/
 
 libs-y		+= arch/xtensa/lib/ $(LIBGCC)
 drivers-$(CONFIG_OPROFILE)	+= arch/xtensa/oprofile/
 
-ifneq ($(CONFIG_BUILTIN_DTB),"")
-core-$(CONFIG_OF) += arch/xtensa/boot/dts/
-endif
-
 boot		:= arch/xtensa/boot
 
-all: zImage
-
-bzImage : zImage
-
-zImage: vmlinux
+all Image zImage uImage: vmlinux
 	$(Q)$(MAKE) $(build)=$(boot) $@
 
-%.dtb:
-	$(Q)$(MAKE) $(build)=$(boot)/dts $(boot)/dts/$@
+archheaders:
+	$(Q)$(MAKE) $(build)=arch/xtensa/kernel/syscalls all
 
 define archhelp
+  @echo '* Image       - Kernel ELF image with reset vector'
   @echo '* zImage      - Compressed kernel image (arch/xtensa/boot/images/zImage.*)'
+  @echo '* uImage      - U-Boot wrapped image'
 endef

@@ -7,10 +7,6 @@
  *  Free Software Foundation;  either version 2 of the License, or (at your
  *  option) any later version.
  *
- *  You should have received a copy of the GNU General Public License along
- *  with this program; if not, write to the Free Software Foundation, Inc.,
- *  675 Mass Ave, Cambridge, MA 02139, USA.
- *
  */
 
 #include <linux/dmaengine.h>
@@ -24,8 +20,6 @@
 #include <linux/spinlock.h>
 #include <linux/irq.h>
 #include <linux/clk.h>
-
-#include <asm/mach-jz4740/dma.h>
 
 #include "virt-dma.h"
 
@@ -119,6 +113,7 @@ struct jz4740_dma_desc {
 struct jz4740_dmaengine_chan {
 	struct virt_dma_chan vchan;
 	unsigned int id;
+	struct dma_slave_config config;
 
 	dma_addr_t fifo_addr;
 	unsigned int transfer_shift;
@@ -209,8 +204,9 @@ static enum jz4740_dma_transfer_size jz4740_dma_maxburst(u32 maxburst)
 	return JZ4740_DMA_TRANSFER_SIZE_32BYTE;
 }
 
-static int jz4740_dma_slave_config(struct dma_chan *c,
-	const struct dma_slave_config *config)
+static int jz4740_dma_slave_config_write(struct dma_chan *c,
+				   struct dma_slave_config *config,
+				   enum dma_transfer_direction direction)
 {
 	struct jz4740_dmaengine_chan *chan = to_jz4740_dma_chan(c);
 	struct jz4740_dma_dev *dmadev = jz4740_dma_chan_get_dev(chan);
@@ -220,7 +216,7 @@ static int jz4740_dma_slave_config(struct dma_chan *c,
 	enum jz4740_dma_flags flags;
 	uint32_t cmd;
 
-	switch (config->direction) {
+	switch (direction) {
 	case DMA_MEM_TO_DEV:
 		flags = JZ4740_DMA_SRC_AUTOINC;
 		transfer_size = jz4740_dma_maxburst(config->dst_maxburst);
@@ -271,6 +267,15 @@ static int jz4740_dma_slave_config(struct dma_chan *c,
 	return 0;
 }
 
+static int jz4740_dma_slave_config(struct dma_chan *c,
+				   struct dma_slave_config *config)
+{
+	struct jz4740_dmaengine_chan *chan = to_jz4740_dma_chan(c);
+
+	memcpy(&chan->config, config, sizeof(*config));
+	return 0;
+}
+
 static int jz4740_dma_terminate_all(struct dma_chan *c)
 {
 	struct jz4740_dmaengine_chan *chan = to_jz4740_dma_chan(c);
@@ -288,21 +293,6 @@ static int jz4740_dma_terminate_all(struct dma_chan *c)
 	vchan_dma_desc_free_list(&chan->vchan, &head);
 
 	return 0;
-}
-
-static int jz4740_dma_control(struct dma_chan *chan, enum dma_ctrl_cmd cmd,
-	unsigned long arg)
-{
-	struct dma_slave_config *config = (struct dma_slave_config *)arg;
-
-	switch (cmd) {
-	case DMA_SLAVE_CONFIG:
-		return jz4740_dma_slave_config(chan, config);
-	case DMA_TERMINATE_ALL:
-		return jz4740_dma_terminate_all(chan);
-	default:
-		return -ENOSYS;
-	}
 }
 
 static int jz4740_dma_start_transfer(struct jz4740_dmaengine_chan *chan)
@@ -358,12 +348,13 @@ static void jz4740_dma_chan_irq(struct jz4740_dmaengine_chan *chan)
 {
 	spin_lock(&chan->vchan.lock);
 	if (chan->desc) {
-		if (chan->desc && chan->desc->cyclic) {
+		if (chan->desc->cyclic) {
 			vchan_cyclic_callback(&chan->desc->vdesc);
 		} else {
 			if (chan->next_sg == chan->desc->num_sgs) {
-				chan->desc = NULL;
+				list_del(&chan->desc->vdesc.node);
 				vchan_cookie_complete(&chan->desc->vdesc);
+				chan->desc = NULL;
 			}
 		}
 	}
@@ -427,13 +418,15 @@ static struct dma_async_tx_descriptor *jz4740_dma_prep_slave_sg(
 	desc->direction = direction;
 	desc->cyclic = false;
 
+	jz4740_dma_slave_config_write(c, &chan->config, direction);
+
 	return vchan_tx_prep(&chan->vchan, &desc->vdesc, flags);
 }
 
 static struct dma_async_tx_descriptor *jz4740_dma_prep_dma_cyclic(
 	struct dma_chan *c, dma_addr_t buf_addr, size_t buf_len,
 	size_t period_len, enum dma_transfer_direction direction,
-	unsigned long flags, void *context)
+	unsigned long flags)
 {
 	struct jz4740_dmaengine_chan *chan = to_jz4740_dma_chan(c);
 	struct jz4740_dma_desc *desc;
@@ -457,6 +450,8 @@ static struct dma_async_tx_descriptor *jz4740_dma_prep_dma_cyclic(
 	desc->num_sgs = num_periods;
 	desc->direction = direction;
 	desc->cyclic = true;
+
+	jz4740_dma_slave_config_write(c, &chan->config, direction);
 
 	return vchan_tx_prep(&chan->vchan, &desc->vdesc, flags);
 }
@@ -510,11 +505,6 @@ static enum dma_status jz4740_dma_tx_status(struct dma_chan *c,
 	return status;
 }
 
-static int jz4740_dma_alloc_chan_resources(struct dma_chan *c)
-{
-	return 0;
-}
-
 static void jz4740_dma_free_chan_resources(struct dma_chan *c)
 {
 	vchan_free_chan_resources(to_virt_chan(c));
@@ -524,6 +514,9 @@ static void jz4740_dma_desc_free(struct virt_dma_desc *vdesc)
 {
 	kfree(container_of(vdesc, struct jz4740_dma_desc, vdesc));
 }
+
+#define JZ4740_DMA_BUSWIDTHS (BIT(DMA_SLAVE_BUSWIDTH_1_BYTE) | \
+	BIT(DMA_SLAVE_BUSWIDTH_2_BYTES) | BIT(DMA_SLAVE_BUSWIDTH_4_BYTES))
 
 static int jz4740_dma_probe(struct platform_device *pdev)
 {
@@ -554,18 +547,21 @@ static int jz4740_dma_probe(struct platform_device *pdev)
 
 	dma_cap_set(DMA_SLAVE, dd->cap_mask);
 	dma_cap_set(DMA_CYCLIC, dd->cap_mask);
-	dd->device_alloc_chan_resources = jz4740_dma_alloc_chan_resources;
 	dd->device_free_chan_resources = jz4740_dma_free_chan_resources;
 	dd->device_tx_status = jz4740_dma_tx_status;
 	dd->device_issue_pending = jz4740_dma_issue_pending;
 	dd->device_prep_slave_sg = jz4740_dma_prep_slave_sg;
 	dd->device_prep_dma_cyclic = jz4740_dma_prep_dma_cyclic;
-	dd->device_control = jz4740_dma_control;
+	dd->device_config = jz4740_dma_slave_config;
+	dd->device_terminate_all = jz4740_dma_terminate_all;
+	dd->src_addr_widths = JZ4740_DMA_BUSWIDTHS;
+	dd->dst_addr_widths = JZ4740_DMA_BUSWIDTHS;
+	dd->directions = BIT(DMA_DEV_TO_MEM) | BIT(DMA_MEM_TO_DEV);
+	dd->residue_granularity = DMA_RESIDUE_GRANULARITY_BURST;
 	dd->dev = &pdev->dev;
-	dd->chancnt = JZ_DMA_NR_CHANS;
 	INIT_LIST_HEAD(&dd->channels);
 
-	for (i = 0; i < dd->chancnt; i++) {
+	for (i = 0; i < JZ_DMA_NR_CHANS; i++) {
 		chan = &dmadev->chan[i];
 		chan->id = i;
 		chan->vchan.desc_free = jz4740_dma_desc_free;
@@ -574,7 +570,7 @@ static int jz4740_dma_probe(struct platform_device *pdev)
 
 	ret = dma_async_device_register(dd);
 	if (ret)
-		return ret;
+		goto err_clk;
 
 	irq = platform_get_irq(pdev, 0);
 	ret = request_irq(irq, jz4740_dma_irq, 0, dev_name(&pdev->dev), dmadev);
@@ -587,8 +583,22 @@ static int jz4740_dma_probe(struct platform_device *pdev)
 
 err_unregister:
 	dma_async_device_unregister(dd);
+err_clk:
+	clk_disable_unprepare(dmadev->clk);
 	return ret;
 }
+
+static void jz4740_cleanup_vchan(struct dma_device *dmadev)
+{
+	struct jz4740_dmaengine_chan *chan, *_chan;
+
+	list_for_each_entry_safe(chan, _chan,
+				&dmadev->channels, vchan.chan.device_node) {
+		list_del(&chan->vchan.chan.device_node);
+		tasklet_kill(&chan->vchan.task);
+	}
+}
+
 
 static int jz4740_dma_remove(struct platform_device *pdev)
 {
@@ -596,6 +606,8 @@ static int jz4740_dma_remove(struct platform_device *pdev)
 	int irq = platform_get_irq(pdev, 0);
 
 	free_irq(irq, dmadev);
+
+	jz4740_cleanup_vchan(&dmadev->ddev);
 	dma_async_device_unregister(&dmadev->ddev);
 	clk_disable_unprepare(dmadev->clk);
 
@@ -607,11 +619,10 @@ static struct platform_driver jz4740_dma_driver = {
 	.remove = jz4740_dma_remove,
 	.driver = {
 		.name = "jz4740-dma",
-		.owner = THIS_MODULE,
 	},
 };
 module_platform_driver(jz4740_dma_driver);
 
 MODULE_AUTHOR("Lars-Peter Clausen <lars@metafoo.de>");
 MODULE_DESCRIPTION("JZ4740 DMA driver");
-MODULE_LICENSE("GPLv2");
+MODULE_LICENSE("GPL v2");

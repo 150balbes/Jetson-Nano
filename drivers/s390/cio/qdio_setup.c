@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  * qdio queue initialization
  *
@@ -17,6 +18,8 @@
 #include "qdio.h"
 #include "qdio_debug.h"
 
+#define QBUFF_PER_PAGE (PAGE_SIZE / sizeof(struct qdio_buffer))
+
 static struct kmem_cache *qdio_q_cache;
 static struct kmem_cache *qdio_aob_cache;
 
@@ -24,7 +27,6 @@ struct qaob *qdio_allocate_aob(void)
 {
 	return kmem_cache_zalloc(qdio_aob_cache, GFP_ATOMIC);
 }
-EXPORT_SYMBOL_GPL(qdio_allocate_aob);
 
 void qdio_release_aob(struct qaob *aob)
 {
@@ -32,16 +34,64 @@ void qdio_release_aob(struct qaob *aob)
 }
 EXPORT_SYMBOL_GPL(qdio_release_aob);
 
+/**
+ * qdio_free_buffers() - free qdio buffers
+ * @buf: array of pointers to qdio buffers
+ * @count: number of qdio buffers to free
+ */
+void qdio_free_buffers(struct qdio_buffer **buf, unsigned int count)
+{
+	int pos;
+
+	for (pos = 0; pos < count; pos += QBUFF_PER_PAGE)
+		free_page((unsigned long) buf[pos]);
+}
+EXPORT_SYMBOL_GPL(qdio_free_buffers);
+
+/**
+ * qdio_alloc_buffers() - allocate qdio buffers
+ * @buf: array of pointers to qdio buffers
+ * @count: number of qdio buffers to allocate
+ */
+int qdio_alloc_buffers(struct qdio_buffer **buf, unsigned int count)
+{
+	int pos;
+
+	for (pos = 0; pos < count; pos += QBUFF_PER_PAGE) {
+		buf[pos] = (void *) get_zeroed_page(GFP_KERNEL);
+		if (!buf[pos]) {
+			qdio_free_buffers(buf, count);
+			return -ENOMEM;
+		}
+	}
+	for (pos = 0; pos < count; pos++)
+		if (pos % QBUFF_PER_PAGE)
+			buf[pos] = buf[pos - 1] + 1;
+	return 0;
+}
+EXPORT_SYMBOL_GPL(qdio_alloc_buffers);
+
+/**
+ * qdio_reset_buffers() - reset qdio buffers
+ * @buf: array of pointers to qdio buffers
+ * @count: number of qdio buffers that will be zeroed
+ */
+void qdio_reset_buffers(struct qdio_buffer **buf, unsigned int count)
+{
+	int pos;
+
+	for (pos = 0; pos < count; pos++)
+		memset(buf[pos], 0, sizeof(struct qdio_buffer));
+}
+EXPORT_SYMBOL_GPL(qdio_reset_buffers);
+
 /*
  * qebsm is only available under 64bit but the adapter sets the feature
  * flag anyway, so we manually override it.
  */
 static inline int qebsm_possible(void)
 {
-#ifdef CONFIG_64BIT
 	return css_general_characteristics.qebsm;
-#endif
-	return 0;
 }
 
 /*
@@ -90,7 +140,7 @@ static int __qdio_allocate_qs(struct qdio_q **irq_ptr_qs, int nr_queues)
 	int i;
 
 	for (i = 0; i < nr_queues; i++) {
-		q = kmem_cache_alloc(qdio_q_cache, GFP_KERNEL);
+		q = kmem_cache_zalloc(qdio_q_cache, GFP_KERNEL);
 		if (!q)
 			return -ENOMEM;
 
@@ -131,7 +181,7 @@ static void setup_queues_misc(struct qdio_q *q, struct qdio_irq *irq_ptr,
 }
 
 static void setup_storage_lists(struct qdio_q *q, struct qdio_irq *irq_ptr,
-				void **sbals_array, int i)
+				struct qdio_buffer **sbals_array, int i)
 {
 	struct qdio_q *prev;
 	int j;
@@ -162,8 +212,8 @@ static void setup_queues(struct qdio_irq *irq_ptr,
 			 struct qdio_initialize *qdio_init)
 {
 	struct qdio_q *q;
-	void **input_sbal_array = qdio_init->input_sbal_addr_array;
-	void **output_sbal_array = qdio_init->output_sbal_addr_array;
+	struct qdio_buffer **input_sbal_array = qdio_init->input_sbal_addr_array;
+	struct qdio_buffer **output_sbal_array = qdio_init->output_sbal_addr_array;
 	struct qdio_outbuf_state *output_sbal_state_array =
 				  qdio_init->output_sbal_state_array;
 	int i;
@@ -202,8 +252,7 @@ static void setup_queues(struct qdio_irq *irq_ptr,
 
 		tasklet_init(&q->tasklet, qdio_outbound_processing,
 			     (unsigned long) q);
-		setup_timer(&q->u.out.timer, (void(*)(unsigned long))
-			    &qdio_outbound_timer, (unsigned long)q);
+		timer_setup(&q->u.out.timer, qdio_outbound_timer, 0);
 	}
 }
 
@@ -406,7 +455,6 @@ int qdio_setup_irq(struct qdio_initialize *init_data)
 {
 	struct ciw *ciw;
 	struct qdio_irq *irq_ptr = init_data->cdev->private->qdio_data;
-	int rc;
 
 	memset(&irq_ptr->qib, 0, sizeof(irq_ptr->qib));
 	memset(&irq_ptr->siga_flag, 0, sizeof(irq_ptr->siga_flag));
@@ -443,26 +491,23 @@ int qdio_setup_irq(struct qdio_initialize *init_data)
 	ciw = ccw_device_get_ciw(init_data->cdev, CIW_TYPE_EQUEUE);
 	if (!ciw) {
 		DBF_ERROR("%4x NO EQ", irq_ptr->schid.sch_no);
-		rc = -EINVAL;
-		goto out_err;
+		return -EINVAL;
 	}
 	irq_ptr->equeue = *ciw;
 
 	ciw = ccw_device_get_ciw(init_data->cdev, CIW_TYPE_AQUEUE);
 	if (!ciw) {
 		DBF_ERROR("%4x NO AQ", irq_ptr->schid.sch_no);
-		rc = -EINVAL;
-		goto out_err;
+		return -EINVAL;
 	}
 	irq_ptr->aqueue = *ciw;
 
 	/* set new interrupt handler */
+	spin_lock_irq(get_ccwdev_lock(irq_ptr->cdev));
 	irq_ptr->orig_handler = init_data->cdev->handler;
 	init_data->cdev->handler = qdio_int_handler;
+	spin_unlock_irq(get_ccwdev_lock(irq_ptr->cdev));
 	return 0;
-out_err:
-	qdio_release_memory(irq_ptr);
-	return rc;
 }
 
 void qdio_print_subchannel_info(struct qdio_irq *irq_ptr,
@@ -490,7 +535,7 @@ void qdio_print_subchannel_info(struct qdio_irq *irq_ptr,
 
 int qdio_enable_async_operation(struct qdio_output_q *outq)
 {
-	outq->aobs = kzalloc(sizeof(struct qaob *) * QDIO_MAX_BUFFERS_PER_Q,
+	outq->aobs = kcalloc(QDIO_MAX_BUFFERS_PER_Q, sizeof(struct qaob *),
 			     GFP_ATOMIC);
 	if (!outq->aobs) {
 		outq->use_cq = 0;

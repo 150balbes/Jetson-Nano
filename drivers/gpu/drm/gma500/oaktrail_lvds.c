@@ -255,15 +255,15 @@ static void oaktrail_lvds_get_configuration_mode(struct drm_device *dev,
 				((ti->vblank_hi << 8) | ti->vblank_lo);
 		mode->clock = ti->pixel_clock * 10;
 #if 0
-		printk(KERN_INFO "hdisplay is %d\n", mode->hdisplay);
-		printk(KERN_INFO "vdisplay is %d\n", mode->vdisplay);
-		printk(KERN_INFO "HSS is %d\n", mode->hsync_start);
-		printk(KERN_INFO "HSE is %d\n", mode->hsync_end);
-		printk(KERN_INFO "htotal is %d\n", mode->htotal);
-		printk(KERN_INFO "VSS is %d\n", mode->vsync_start);
-		printk(KERN_INFO "VSE is %d\n", mode->vsync_end);
-		printk(KERN_INFO "vtotal is %d\n", mode->vtotal);
-		printk(KERN_INFO "clock is %d\n", mode->clock);
+		pr_info("hdisplay is %d\n", mode->hdisplay);
+		pr_info("vdisplay is %d\n", mode->vdisplay);
+		pr_info("HSS is %d\n", mode->hsync_start);
+		pr_info("HSE is %d\n", mode->hsync_end);
+		pr_info("htotal is %d\n", mode->htotal);
+		pr_info("VSS is %d\n", mode->vsync_start);
+		pr_info("VSE is %d\n", mode->vsync_end);
+		pr_info("vtotal is %d\n", mode->vtotal);
+		pr_info("clock is %d\n", mode->clock);
 #endif
 		mode_dev->panel_fixed_mode = mode;
 	}
@@ -323,7 +323,7 @@ void oaktrail_lvds_init(struct drm_device *dev,
 			   DRM_MODE_CONNECTOR_LVDS);
 
 	drm_encoder_init(dev, encoder, &psb_intel_lvds_enc_funcs,
-			 DRM_MODE_ENCODER_LVDS);
+			 DRM_MODE_ENCODER_LVDS, NULL);
 
 	gma_connector_attach_encoder(gma_connector, gma_encoder);
 	gma_encoder->type = INTEL_OUTPUT_LVDS;
@@ -359,21 +359,26 @@ void oaktrail_lvds_init(struct drm_device *dev,
 	 *    if closed, act like it's not there for now
 	 */
 
+	edid = NULL;
+	mutex_lock(&dev->mode_config.mutex);
 	i2c_adap = i2c_get_adapter(dev_priv->ops->i2c_bus);
-	if (i2c_adap == NULL)
-		dev_err(dev->dev, "No ddc adapter available!\n");
+	if (i2c_adap)
+		edid = drm_get_edid(connector, i2c_adap);
+	if (edid == NULL && dev_priv->lpc_gpio_base) {
+		oaktrail_lvds_i2c_init(encoder);
+		if (gma_encoder->ddc_bus != NULL) {
+			i2c_adap = &gma_encoder->ddc_bus->adapter;
+			edid = drm_get_edid(connector, i2c_adap);
+		}
+	}
 	/*
 	 * Attempt to get the fixed panel mode from DDC.  Assume that the
 	 * preferred mode is the right one.
 	 */
-	if (i2c_adap) {
-		edid = drm_get_edid(connector, i2c_adap);
-		if (edid) {
-			drm_mode_connector_update_edid_property(connector,
-									edid);
-			drm_add_edid_modes(connector, edid);
-			kfree(edid);
-		}
+	if (edid) {
+		drm_connector_update_edid_property(connector, edid);
+		drm_add_edid_modes(connector, edid);
+		kfree(edid);
 
 		list_for_each_entry(scan, &connector->probed_modes, head) {
 			if (scan->type & DRM_MODE_TYPE_PREFERRED) {
@@ -382,7 +387,8 @@ void oaktrail_lvds_init(struct drm_device *dev,
 				goto out;	/* FIXME: check for quirks */
 			}
 		}
-	}
+	} else
+		dev_err(dev->dev, "No ddc adapter available!\n");
 	/*
 	 * If we didn't get EDID, try geting panel timing
 	 * from configuration data
@@ -401,13 +407,19 @@ void oaktrail_lvds_init(struct drm_device *dev,
 	}
 
 out:
-	drm_sysfs_connector_add(connector);
+	mutex_unlock(&dev->mode_config.mutex);
+
+	drm_connector_register(connector);
 	return;
 
 failed_find:
+	mutex_unlock(&dev->mode_config.mutex);
+
 	dev_dbg(dev->dev, "No LVDS modes found, disabling.\n");
-	if (gma_encoder->ddc_bus)
+	if (gma_encoder->ddc_bus) {
 		psb_intel_i2c_destroy(gma_encoder->ddc_bus);
+		gma_encoder->ddc_bus = NULL;
+	}
 
 /* failed_ddc: */
 

@@ -23,20 +23,17 @@
 /*
  * User space memory access functions
  */
-#include <linux/sched.h>
 #include <linux/mm.h>
 #include <asm/segment.h>
 #include <asm/sections.h>
 
 /*
  * access_ok: - Checks if a user space pointer is valid
- * @type: Type of access: %VERIFY_READ or %VERIFY_WRITE.  Note that
- *        %VERIFY_WRITE is a superset of %VERIFY_READ - if it is safe
- *        to write to a block, it is always safe to read from it.
  * @addr: User space pointer to start of block to check
  * @size: Size of block to check
  *
- * Context: User context only.  This function may sleep.
+ * Context: User context only. This function may sleep if pagefaults are
+ *          enabled.
  *
  * Checks if a pointer to a block of memory in user space is valid.
  *
@@ -49,8 +46,6 @@
  * reasonably simple and not *too* slow.  After all, we've got the
  * MMU for backup.
  */
-#define VERIFY_READ     0
-#define VERIFY_WRITE    1
 
 #define __access_ok(addr, size) \
 	((get_fs().seg == KERNEL_DS.seg) || \
@@ -67,19 +62,12 @@
  */
 
 /*  Assembly somewhat optimized copy routines  */
-unsigned long __copy_from_user_hexagon(void *to, const void __user *from,
+unsigned long raw_copy_from_user(void *to, const void __user *from,
 				     unsigned long n);
-unsigned long __copy_to_user_hexagon(void __user *to, const void *from,
+unsigned long raw_copy_to_user(void __user *to, const void *from,
 				   unsigned long n);
-
-#define __copy_from_user(to, from, n) __copy_from_user_hexagon(to, from, n)
-#define __copy_to_user(to, from, n) __copy_to_user_hexagon(to, from, n)
-
-/*
- * XXX todo: some additonal performance gain is possible by
- * implementing __copy_to/from_user_inatomic, which is much
- * like __copy_to/from_user, but performs slightly less checking.
- */
+#define INLINE_COPY_FROM_USER
+#define INLINE_COPY_TO_USER
 
 __kernel_size_t __clear_user_hexagon(void __user *dest, unsigned long count);
 #define __clear_user(a, s) __clear_user_hexagon((a), (s))
@@ -102,13 +90,18 @@ static inline long hexagon_strncpy_from_user(char *dst, const char __user *src,
 {
 	long res = __strnlen_user(src, n);
 
-	/* return from strnlen can't be zero -- that would be rubbish. */
+	if (unlikely(!res))
+		return -EFAULT;
 
 	if (res > n) {
-		copy_from_user(dst, src, n);
+		long left = raw_copy_from_user(dst, src, n);
+		if (unlikely(left))
+			memset(dst + (n - left), 0, left);
 		return n;
 	} else {
-		copy_from_user(dst, src, res);
+		long left = raw_copy_from_user(dst, src, res);
+		if (unlikely(left))
+			memset(dst + (res - left), 0, left);
 		return res-1;
 	}
 }

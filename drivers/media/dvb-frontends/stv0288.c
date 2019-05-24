@@ -33,7 +33,7 @@
 #include <linux/jiffies.h>
 #include <asm/div64.h>
 
-#include "dvb_frontend.h"
+#include <media/dvb_frontend.h>
 #include "stv0288.h"
 
 struct stv0288_state {
@@ -44,7 +44,7 @@ struct stv0288_state {
 	u8 initialised:1;
 	u32 tuner_frequency;
 	u32 symbol_rate;
-	fe_code_rate_t fec_inner;
+	enum fe_code_rate fec_inner;
 	int errmode;
 };
 
@@ -74,8 +74,8 @@ static int stv0288_writeregI(struct stv0288_state *state, u8 reg, u8 data)
 	ret = i2c_transfer(state->i2c, &msg, 1);
 
 	if (ret != 1)
-		dprintk("%s: writereg error (reg == 0x%02x, val == 0x%02x, "
-			"ret == %i)\n", __func__, reg, data, ret);
+		dprintk("%s: writereg error (reg == 0x%02x, val == 0x%02x, ret == %i)\n",
+			__func__, reg, data, ret);
 
 	return (ret != 1) ? -EREMOTEIO : 0;
 }
@@ -134,20 +134,20 @@ static int stv0288_set_symbolrate(struct dvb_frontend *fe, u32 srate)
 
 	temp = (unsigned int)srate / 1000;
 
-		temp = temp * 32768;
-		temp = temp / 25;
-		temp = temp / 125;
-		b[0] = (unsigned char)((temp >> 12) & 0xff);
-		b[1] = (unsigned char)((temp >> 4) & 0xff);
-		b[2] = (unsigned char)((temp << 4) & 0xf0);
-		stv0288_writeregI(state, 0x28, 0x80); /* SFRH */
-		stv0288_writeregI(state, 0x29, 0); /* SFRM */
-		stv0288_writeregI(state, 0x2a, 0); /* SFRL */
+	temp = temp * 32768;
+	temp = temp / 25;
+	temp = temp / 125;
+	b[0] = (unsigned char)((temp >> 12) & 0xff);
+	b[1] = (unsigned char)((temp >> 4) & 0xff);
+	b[2] = (unsigned char)((temp << 4) & 0xf0);
+	stv0288_writeregI(state, 0x28, 0x80); /* SFRH */
+	stv0288_writeregI(state, 0x29, 0); /* SFRM */
+	stv0288_writeregI(state, 0x2a, 0); /* SFRL */
 
-		stv0288_writeregI(state, 0x28, b[0]);
-		stv0288_writeregI(state, 0x29, b[1]);
-		stv0288_writeregI(state, 0x2a, b[2]);
-		dprintk("stv0288: stv0288_set_symbolrate\n");
+	stv0288_writeregI(state, 0x28, b[0]);
+	stv0288_writeregI(state, 0x29, b[1]);
+	stv0288_writeregI(state, 0x2a, b[2]);
+	dprintk("stv0288: stv0288_set_symbolrate\n");
 
 	return 0;
 }
@@ -174,7 +174,7 @@ static int stv0288_send_diseqc_msg(struct dvb_frontend *fe,
 }
 
 static int stv0288_send_diseqc_burst(struct dvb_frontend *fe,
-						fe_sec_mini_cmd_t burst)
+				     enum fe_sec_mini_cmd burst)
 {
 	struct stv0288_state *state = fe->demodulator_priv;
 
@@ -193,7 +193,7 @@ static int stv0288_send_diseqc_burst(struct dvb_frontend *fe,
 	return 0;
 }
 
-static int stv0288_set_tone(struct dvb_frontend *fe, fe_sec_tone_mode_t tone)
+static int stv0288_set_tone(struct dvb_frontend *fe, enum fe_sec_tone_mode tone)
 {
 	struct stv0288_state *state = fe->demodulator_priv;
 
@@ -323,7 +323,8 @@ static u8 stv0288_inittab[] = {
 	0xff, 0xff,
 };
 
-static int stv0288_set_voltage(struct dvb_frontend *fe, fe_sec_voltage_t volt)
+static int stv0288_set_voltage(struct dvb_frontend *fe,
+			       enum fe_sec_voltage volt)
 {
 	dprintk("%s: %s\n", __func__,
 		volt == SEC_VOLTAGE_13 ? "SEC_VOLTAGE_13" :
@@ -361,7 +362,7 @@ static int stv0288_init(struct dvb_frontend *fe)
 	return 0;
 }
 
-static int stv0288_read_status(struct dvb_frontend *fe, fe_status_t *status)
+static int stv0288_read_status(struct dvb_frontend *fe, enum fe_status *status)
 {
 	struct stv0288_state *state = fe->demodulator_priv;
 
@@ -446,12 +447,6 @@ static int stv0288_read_ucblocks(struct dvb_frontend *fe, u32 *ucblocks)
 	return 0;
 }
 
-static int stv0288_set_property(struct dvb_frontend *fe, struct dtv_property *p)
-{
-	dprintk("%s(..)\n", __func__);
-	return 0;
-}
-
 static int stv0288_set_frontend(struct dvb_frontend *fe)
 {
 	struct stv0288_state *state = fe->demodulator_priv;
@@ -464,10 +459,9 @@ static int stv0288_set_frontend(struct dvb_frontend *fe)
 	dprintk("%s : FE_SET_FRONTEND\n", __func__);
 
 	if (c->delivery_system != SYS_DVBS) {
-			dprintk("%s: unsupported delivery "
-				"system selected (%d)\n",
-				__func__, c->delivery_system);
-			return -EOPNOTSUPP;
+		dprintk("%s: unsupported delivery system selected (%d)\n",
+			__func__, c->delivery_system);
+		return -EOPNOTSUPP;
 	}
 
 	if (state->config->set_ts_params)
@@ -535,14 +529,13 @@ static void stv0288_release(struct dvb_frontend *fe)
 	kfree(state);
 }
 
-static struct dvb_frontend_ops stv0288_ops = {
+static const struct dvb_frontend_ops stv0288_ops = {
 	.delsys = { SYS_DVBS },
 	.info = {
 		.name			= "ST STV0288 DVB-S",
-		.frequency_min		= 950000,
-		.frequency_max		= 2150000,
-		.frequency_stepsize	= 1000,	 /* kHz for QPSK frontends */
-		.frequency_tolerance	= 0,
+		.frequency_min_hz	=  950 * MHz,
+		.frequency_max_hz	= 2150 * MHz,
+		.frequency_stepsize_hz	=    1 * MHz,
 		.symbol_rate_min	= 1000000,
 		.symbol_rate_max	= 45000000,
 		.symbol_rate_tolerance	= 500,	/* ppm */
@@ -567,7 +560,6 @@ static struct dvb_frontend_ops stv0288_ops = {
 	.set_tone = stv0288_set_tone,
 	.set_voltage = stv0288_set_voltage,
 
-	.set_property = stv0288_set_property,
 	.set_frontend = stv0288_set_frontend,
 };
 

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 /* cpu.c: Dinky routines to look for the kind of Sparc cpu
  *        we are on.
  *
@@ -22,6 +23,7 @@
 #include <asm/cpudata.h>
 
 #include "kernel.h"
+#include "entry.h"
 
 DEFINE_PER_CPU(cpuinfo_sparc, __cpu_data) = { 0 };
 EXPORT_PER_CPU_SYMBOL(__cpu_data);
@@ -503,6 +505,18 @@ static void __init sun4v_cpu_probe(void)
 		sparc_cpu_type = "SPARC-M7";
 		sparc_fpu_type = "SPARC-M7 integrated FPU";
 		sparc_pmu_type = "sparc-m7";
+		break;
+
+	case SUN4V_CHIP_SPARC_M8:
+		sparc_cpu_type = "SPARC-M8";
+		sparc_fpu_type = "SPARC-M8 integrated FPU";
+		sparc_pmu_type = "sparc-m8";
+		break;
+
+	case SUN4V_CHIP_SPARC_SN:
+		sparc_cpu_type = "SPARC-SN";
+		sparc_fpu_type = "SPARC-SN integrated FPU";
+		sparc_pmu_type = "sparc-sn";
 		break;
 
 	case SUN4V_CHIP_SPARC64X:

@@ -1,11 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  * SH5-101/SH5-103 CPU Setup
  *
  *  Copyright (C) 2009  Paul Mundt
- *
- * This file is subject to the terms and conditions of the GNU General Public
- * License.  See the file "COPYING" in the main directory of this archive
- * for more details.
  */
 #include <linux/platform_device.h>
 #include <linux/init.h>
@@ -17,8 +14,8 @@
 #include <asm/addrspace.h>
 
 static struct plat_sci_port scif0_platform_data = {
-	.flags		= UPF_BOOT_AUTOCONF | UPF_IOREMAP,
-	.scscr		= SCSCR_RE | SCSCR_TE | SCSCR_REIE,
+	.flags		= UPF_IOREMAP,
+	.scscr		= SCSCR_REIE,
 	.type		= PORT_SCIF,
 };
 
@@ -71,30 +68,20 @@ static struct platform_device rtc_device = {
 
 #define	TMU_BLOCK_OFF	0x01020000
 #define TMU_BASE	PHYS_PERIPHERAL_BLOCK + TMU_BLOCK_OFF
-#define TMU0_BASE	(TMU_BASE + 0x8 + (0xc * 0x0))
-#define TMU1_BASE	(TMU_BASE + 0x8 + (0xc * 0x1))
-#define TMU2_BASE	(TMU_BASE + 0x8 + (0xc * 0x2))
 
 static struct sh_timer_config tmu0_platform_data = {
-	.channel_offset = 0x04,
-	.timer_bit = 0,
-	.clockevent_rating = 200,
+	.channels_mask = 7,
 };
 
 static struct resource tmu0_resources[] = {
-	[0] = {
-		.start	= TMU0_BASE,
-		.end	= TMU0_BASE + 0xc - 1,
-		.flags	= IORESOURCE_MEM,
-	},
-	[1] = {
-		.start	= IRQ_TUNI0,
-		.flags	= IORESOURCE_IRQ,
-	},
+	DEFINE_RES_MEM(TMU_BASE, 0x30),
+	DEFINE_RES_IRQ(IRQ_TUNI0),
+	DEFINE_RES_IRQ(IRQ_TUNI1),
+	DEFINE_RES_IRQ(IRQ_TUNI2),
 };
 
 static struct platform_device tmu0_device = {
-	.name		= "sh_tmu",
+	.name		= "sh-tmu",
 	.id		= 0,
 	.dev = {
 		.platform_data	= &tmu0_platform_data,
@@ -103,66 +90,9 @@ static struct platform_device tmu0_device = {
 	.num_resources	= ARRAY_SIZE(tmu0_resources),
 };
 
-static struct sh_timer_config tmu1_platform_data = {
-	.channel_offset = 0x10,
-	.timer_bit = 1,
-	.clocksource_rating = 200,
-};
-
-static struct resource tmu1_resources[] = {
-	[0] = {
-		.start	= TMU1_BASE,
-		.end	= TMU1_BASE + 0xc - 1,
-		.flags	= IORESOURCE_MEM,
-	},
-	[1] = {
-		.start	= IRQ_TUNI1,
-		.flags	= IORESOURCE_IRQ,
-	},
-};
-
-static struct platform_device tmu1_device = {
-	.name		= "sh_tmu",
-	.id		= 1,
-	.dev = {
-		.platform_data	= &tmu1_platform_data,
-	},
-	.resource	= tmu1_resources,
-	.num_resources	= ARRAY_SIZE(tmu1_resources),
-};
-
-static struct sh_timer_config tmu2_platform_data = {
-	.channel_offset = 0x1c,
-	.timer_bit = 2,
-};
-
-static struct resource tmu2_resources[] = {
-	[0] = {
-		.start	= TMU2_BASE,
-		.end	= TMU2_BASE + 0xc - 1,
-		.flags	= IORESOURCE_MEM,
-	},
-	[1] = {
-		.start	= IRQ_TUNI2,
-		.flags	= IORESOURCE_IRQ,
-	},
-};
-
-static struct platform_device tmu2_device = {
-	.name		= "sh_tmu",
-	.id		= 2,
-	.dev = {
-		.platform_data	= &tmu2_platform_data,
-	},
-	.resource	= tmu2_resources,
-	.num_resources	= ARRAY_SIZE(tmu2_resources),
-};
-
 static struct platform_device *sh5_early_devices[] __initdata = {
 	&scif0_device,
 	&tmu0_device,
-	&tmu1_device,
-	&tmu2_device,
 };
 
 static struct platform_device *sh5_devices[] __initdata = {

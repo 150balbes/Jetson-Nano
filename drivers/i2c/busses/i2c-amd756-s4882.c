@@ -12,10 +12,6 @@
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  */
  
 /*
@@ -173,12 +169,12 @@ static int __init amd756_s4882_init(void)
 
 	printk(KERN_INFO "Enabling SMBus multiplexing for Tyan S4882\n");
 	/* Define the 5 virtual adapters and algorithms structures */
-	if (!(s4882_adapter = kzalloc(5 * sizeof(struct i2c_adapter),
+	if (!(s4882_adapter = kcalloc(5, sizeof(struct i2c_adapter),
 				      GFP_KERNEL))) {
 		error = -ENOMEM;
 		goto ERROR1;
 	}
-	if (!(s4882_algo = kzalloc(5 * sizeof(struct i2c_algorithm),
+	if (!(s4882_algo = kcalloc(5, sizeof(struct i2c_algorithm),
 				   GFP_KERNEL))) {
 		error = -ENOMEM;
 		goto ERROR2;

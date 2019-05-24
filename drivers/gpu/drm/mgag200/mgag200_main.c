@@ -17,8 +17,8 @@
 static void mga_user_framebuffer_destroy(struct drm_framebuffer *fb)
 {
 	struct mga_framebuffer *mga_fb = to_mga_framebuffer(fb);
-	if (mga_fb->obj)
-		drm_gem_object_unreference_unlocked(mga_fb->obj);
+
+	drm_gem_object_put_unlocked(mga_fb->obj);
 	drm_framebuffer_cleanup(fb);
 	kfree(fb);
 }
@@ -29,12 +29,12 @@ static const struct drm_framebuffer_funcs mga_fb_funcs = {
 
 int mgag200_framebuffer_init(struct drm_device *dev,
 			     struct mga_framebuffer *gfb,
-			     struct drm_mode_fb_cmd2 *mode_cmd,
+			     const struct drm_mode_fb_cmd2 *mode_cmd,
 			     struct drm_gem_object *obj)
 {
 	int ret;
-	
-	drm_helper_mode_fill_fb_struct(&gfb->base, mode_cmd);
+
+	drm_helper_mode_fill_fb_struct(dev, &gfb->base, mode_cmd);
 	gfb->obj = obj;
 	ret = drm_framebuffer_init(dev, &gfb->base, &mga_fb_funcs);
 	if (ret) {
@@ -47,25 +47,25 @@ int mgag200_framebuffer_init(struct drm_device *dev,
 static struct drm_framebuffer *
 mgag200_user_framebuffer_create(struct drm_device *dev,
 				struct drm_file *filp,
-				struct drm_mode_fb_cmd2 *mode_cmd)
+				const struct drm_mode_fb_cmd2 *mode_cmd)
 {
 	struct drm_gem_object *obj;
 	struct mga_framebuffer *mga_fb;
 	int ret;
 
-	obj = drm_gem_object_lookup(dev, filp, mode_cmd->handles[0]);
+	obj = drm_gem_object_lookup(filp, mode_cmd->handles[0]);
 	if (obj == NULL)
 		return ERR_PTR(-ENOENT);
 
 	mga_fb = kzalloc(sizeof(*mga_fb), GFP_KERNEL);
 	if (!mga_fb) {
-		drm_gem_object_unreference_unlocked(obj);
+		drm_gem_object_put_unlocked(obj);
 		return ERR_PTR(-ENOMEM);
 	}
 
 	ret = mgag200_framebuffer_init(dev, mga_fb, mode_cmd, obj);
 	if (ret) {
-		drm_gem_object_unreference_unlocked(obj);
+		drm_gem_object_put_unlocked(obj);
 		kfree(mga_fb);
 		return ERR_PTR(ret);
 	}
@@ -82,12 +82,19 @@ static int mga_probe_vram(struct mga_device *mdev, void __iomem *mem)
 	int orig;
 	int test1, test2;
 	int orig1, orig2;
+	unsigned int vram_size;
 
 	/* Probe */
 	orig = ioread16(mem);
 	iowrite16(0, mem);
 
-	for (offset = 0x100000; offset < mdev->mc.vram_window; offset += 0x4000) {
+	vram_size = mdev->mc.vram_window;
+
+	if ((mdev->type == G200_EW3) && (vram_size >= 0x1000000)) {
+		vram_size = vram_size - 0x400000;
+	}
+
+	for (offset = 0x100000; offset < vram_size; offset += 0x4000) {
 		orig1 = ioread8(mem + offset);
 		orig2 = ioread8(mem + offset + 0x100);
 
@@ -117,19 +124,10 @@ static int mga_probe_vram(struct mga_device *mdev, void __iomem *mem)
 static int mga_vram_init(struct mga_device *mdev)
 {
 	void __iomem *mem;
-	struct apertures_struct *aper = alloc_apertures(1);
-	if (!aper)
-		return -ENOMEM;
 
 	/* BAR 0 is VRAM */
 	mdev->mc.vram_base = pci_resource_start(mdev->dev->pdev, 0);
 	mdev->mc.vram_window = pci_resource_len(mdev->dev->pdev, 0);
-
-	aper->ranges[0].base = mdev->mc.vram_base;
-	aper->ranges[0].size = mdev->mc.vram_window;
-
-	remove_conflicting_framebuffers(aper, "mgafb", true);
-	kfree(aper);
 
 	if (!devm_request_mem_region(mdev->dev->dev, mdev->mc.vram_base, mdev->mc.vram_window,
 				"mgadrmfb_vram")) {
@@ -138,6 +136,8 @@ static int mga_vram_init(struct mga_device *mdev)
 	}
 
 	mem = pci_iomap(mdev->dev->pdev, 0, 0);
+	if (!mem)
+		return -ENOMEM;
 
 	mdev->mc.vram_size = mga_probe_vram(mdev, mem);
 
@@ -213,7 +213,7 @@ int mgag200_driver_load(struct drm_device *dev, unsigned long flags)
 	}
 	r = mgag200_mm_init(mdev);
 	if (r)
-		goto out;
+		goto err_mm;
 
 	drm_mode_config_init(dev);
 	dev->mode_config.funcs = (void *)&mga_mode_funcs;
@@ -226,7 +226,7 @@ int mgag200_driver_load(struct drm_device *dev, unsigned long flags)
 	r = mgag200_modeset_init(mdev);
 	if (r) {
 		dev_err(&dev->pdev->dev, "Fatal error during modeset init: %d\n", r);
-		goto out;
+		goto err_modeset;
 	}
 
 	/* Make small buffers to store a hardware cursor (double buffered icon updates) */
@@ -234,35 +234,38 @@ int mgag200_driver_load(struct drm_device *dev, unsigned long flags)
 					  &mdev->cursor.pixels_1);
 	mgag200_bo_create(dev, roundup(48*64, PAGE_SIZE), 0, 0,
 					  &mdev->cursor.pixels_2);
-	if (!mdev->cursor.pixels_2 || !mdev->cursor.pixels_1)
-		goto cursor_nospace;
-	mdev->cursor.pixels_current = mdev->cursor.pixels_1;
-	mdev->cursor.pixels_prev = mdev->cursor.pixels_2;
-	goto cursor_done;
- cursor_nospace:
-	mdev->cursor.pixels_1 = NULL;
-	mdev->cursor.pixels_2 = NULL;
-	dev_warn(&dev->pdev->dev, "Could not allocate space for cursors. Not doing hardware cursors.\n");
- cursor_done:
+	if (!mdev->cursor.pixels_2 || !mdev->cursor.pixels_1) {
+		mdev->cursor.pixels_1 = NULL;
+		mdev->cursor.pixels_2 = NULL;
+		dev_warn(&dev->pdev->dev,
+			"Could not allocate space for cursors. Not doing hardware cursors.\n");
+	} else {
+		mdev->cursor.pixels_current = mdev->cursor.pixels_1;
+		mdev->cursor.pixels_prev = mdev->cursor.pixels_2;
+	}
 
-out:
-	if (r)
-		mgag200_driver_unload(dev);
+	return 0;
+
+err_modeset:
+	drm_mode_config_cleanup(dev);
+	mgag200_mm_fini(mdev);
+err_mm:
+	dev->dev_private = NULL;
+
 	return r;
 }
 
-int mgag200_driver_unload(struct drm_device *dev)
+void mgag200_driver_unload(struct drm_device *dev)
 {
 	struct mga_device *mdev = dev->dev_private;
 
 	if (mdev == NULL)
-		return 0;
+		return;
 	mgag200_modeset_fini(mdev);
 	mgag200_fbdev_fini(mdev);
 	drm_mode_config_cleanup(dev);
 	mgag200_mm_fini(mdev);
 	dev->dev_private = NULL;
-	return 0;
 }
 
 int mgag200_gem_create(struct drm_device *dev,
@@ -305,7 +308,7 @@ int mgag200_dumb_create(struct drm_file *file,
 		return ret;
 
 	ret = drm_gem_handle_create(file, gobj, &handle);
-	drm_gem_object_unreference_unlocked(gobj);
+	drm_gem_object_put_unlocked(gobj);
 	if (ret)
 		return ret;
 
@@ -315,24 +318,16 @@ int mgag200_dumb_create(struct drm_file *file,
 
 static void mgag200_bo_unref(struct mgag200_bo **bo)
 {
-	struct ttm_buffer_object *tbo;
-
 	if ((*bo) == NULL)
 		return;
-
-	tbo = &((*bo)->bo);
-	ttm_bo_unref(&tbo);
-	if (tbo == NULL)
-		*bo = NULL;
-
+	ttm_bo_put(&((*bo)->bo));
+	*bo = NULL;
 }
 
 void mgag200_gem_free_object(struct drm_gem_object *obj)
 {
 	struct mgag200_bo *mgag200_bo = gem_to_mga_bo(obj);
 
-	if (!mgag200_bo)
-		return;
 	mgag200_bo_unref(&mgag200_bo);
 }
 
@@ -349,23 +344,15 @@ mgag200_dumb_mmap_offset(struct drm_file *file,
 		     uint64_t *offset)
 {
 	struct drm_gem_object *obj;
-	int ret;
 	struct mgag200_bo *bo;
 
-	mutex_lock(&dev->struct_mutex);
-	obj = drm_gem_object_lookup(dev, file, handle);
-	if (obj == NULL) {
-		ret = -ENOENT;
-		goto out_unlock;
-	}
+	obj = drm_gem_object_lookup(file, handle);
+	if (obj == NULL)
+		return -ENOENT;
 
 	bo = gem_to_mga_bo(obj);
 	*offset = mgag200_bo_mmap_offset(bo);
 
-	drm_gem_object_unreference(obj);
-	ret = 0;
-out_unlock:
-	mutex_unlock(&dev->struct_mutex);
-	return ret;
-
+	drm_gem_object_put_unlocked(obj);
+	return 0;
 }

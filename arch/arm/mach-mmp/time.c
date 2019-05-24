@@ -22,6 +22,7 @@
 #include <linux/kernel.h>
 #include <linux/interrupt.h>
 #include <linux/clockchips.h>
+#include <linux/clk.h>
 
 #include <linux/io.h>
 #include <linux/irq.h>
@@ -29,14 +30,13 @@
 #include <linux/of_address.h>
 #include <linux/of_irq.h>
 #include <linux/sched_clock.h>
-
-#include <mach/addr-map.h>
-#include <mach/regs-timers.h>
-#include <mach/regs-apbc.h>
-#include <mach/irqs.h>
-#include <mach/cputype.h>
 #include <asm/mach/time.h>
 
+#include "addr-map.h"
+#include "regs-timers.h"
+#include "regs-apbc.h"
+#include "irqs.h"
+#include "cputype.h"
 #include "clock.h"
 
 #define TIMERS_VIRT_BASE	TIMERS1_VIRT_BASE
@@ -118,35 +118,28 @@ static int timer_set_next_event(unsigned long delta,
 	return 0;
 }
 
-static void timer_set_mode(enum clock_event_mode mode,
-			   struct clock_event_device *dev)
+static int timer_set_shutdown(struct clock_event_device *evt)
 {
 	unsigned long flags;
 
 	local_irq_save(flags);
-	switch (mode) {
-	case CLOCK_EVT_MODE_ONESHOT:
-	case CLOCK_EVT_MODE_UNUSED:
-	case CLOCK_EVT_MODE_SHUTDOWN:
-		/* disable the matching interrupt */
-		__raw_writel(0x00, mmp_timer_base + TMR_IER(0));
-		break;
-	case CLOCK_EVT_MODE_RESUME:
-	case CLOCK_EVT_MODE_PERIODIC:
-		break;
-	}
+	/* disable the matching interrupt */
+	__raw_writel(0x00, mmp_timer_base + TMR_IER(0));
 	local_irq_restore(flags);
+
+	return 0;
 }
 
 static struct clock_event_device ckevt = {
-	.name		= "clockevent",
-	.features	= CLOCK_EVT_FEAT_ONESHOT,
-	.rating		= 200,
-	.set_next_event	= timer_set_next_event,
-	.set_mode	= timer_set_mode,
+	.name			= "clockevent",
+	.features		= CLOCK_EVT_FEAT_ONESHOT,
+	.rating			= 200,
+	.set_next_event		= timer_set_next_event,
+	.set_state_shutdown	= timer_set_shutdown,
+	.set_state_oneshot	= timer_set_shutdown,
 };
 
-static cycle_t clksrc_read(struct clocksource *cs)
+static u64 clksrc_read(struct clocksource *cs)
 {
 	return timer_read();
 }
@@ -186,28 +179,27 @@ static void __init timer_config(void)
 
 static struct irqaction timer_irq = {
 	.name		= "timer",
-	.flags		= IRQF_DISABLED | IRQF_TIMER | IRQF_IRQPOLL,
+	.flags		= IRQF_TIMER | IRQF_IRQPOLL,
 	.handler	= timer_interrupt,
 	.dev_id		= &ckevt,
 };
 
-void __init timer_init(int irq)
+void __init mmp_timer_init(int irq, unsigned long rate)
 {
 	timer_config();
 
-	sched_clock_register(mmp_read_sched_clock, 32, CLOCK_TICK_RATE);
+	sched_clock_register(mmp_read_sched_clock, 32, rate);
 
 	ckevt.cpumask = cpumask_of(0);
 
 	setup_irq(irq, &timer_irq);
 
-	clocksource_register_hz(&cksrc, CLOCK_TICK_RATE);
-	clockevents_config_and_register(&ckevt, CLOCK_TICK_RATE,
-					MIN_DELTA, MAX_DELTA);
+	clocksource_register_hz(&cksrc, rate);
+	clockevents_config_and_register(&ckevt, rate, MIN_DELTA, MAX_DELTA);
 }
 
 #ifdef CONFIG_OF
-static struct of_device_id mmp_timer_dt_ids[] = {
+static const struct of_device_id mmp_timer_dt_ids[] = {
 	{ .compatible = "mrvl,mmp-timer", },
 	{}
 };
@@ -215,12 +207,26 @@ static struct of_device_id mmp_timer_dt_ids[] = {
 void __init mmp_dt_init_timer(void)
 {
 	struct device_node *np;
+	struct clk *clk;
 	int irq, ret;
+	unsigned long rate;
 
 	np = of_find_matching_node(NULL, mmp_timer_dt_ids);
 	if (!np) {
 		ret = -ENODEV;
 		goto out;
+	}
+
+	clk = of_clk_get(np, 0);
+	if (!IS_ERR(clk)) {
+		ret = clk_prepare_enable(clk);
+		if (ret)
+			goto out;
+		rate = clk_get_rate(clk) / 2;
+	} else if (cpu_is_pj4()) {
+		rate = 6500000;
+	} else {
+		rate = 3250000;
 	}
 
 	irq = irq_of_parse_and_map(np, 0);
@@ -233,7 +239,7 @@ void __init mmp_dt_init_timer(void)
 		ret = -ENOMEM;
 		goto out;
 	}
-	timer_init(irq);
+	mmp_timer_init(irq, rate);
 	return;
 out:
 	pr_err("Failed to get timer from device tree with error:%d\n", ret);

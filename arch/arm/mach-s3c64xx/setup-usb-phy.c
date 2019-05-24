@@ -1,13 +1,7 @@
-/*
- * Copyright (C) 2011 Samsung Electronics Co.Ltd
- * Author: Joonyoung Shim <jy0922.shim@samsung.com>
- *
- *  This program is free software; you can redistribute  it and/or modify it
- *  under  the terms of  the GNU General  Public License as published by the
- *  Free Software Foundation;  either version 2 of the  License, or (at your
- *  option) any later version.
- *
- */
+// SPDX-License-Identifier: GPL-2.0+
+//
+// Copyright (C) 2011 Samsung Electronics Co.Ltd
+// Author: Joonyoung Shim <jy0922.shim@samsung.com>
 
 #include <linux/clk.h>
 #include <linux/delay.h>
@@ -16,10 +10,10 @@
 #include <linux/platform_device.h>
 #include <mach/map.h>
 #include <plat/cpu.h>
-#include <plat/regs-usb-hsotg-phy.h>
 #include <plat/usb-phy.h>
 
 #include "regs-sys.h"
+#include "regs-usb-hsotg-phy.h"
 
 static int s3c_usb_otgphy_init(struct platform_device *pdev)
 {

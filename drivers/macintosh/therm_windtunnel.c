@@ -408,6 +408,7 @@ static const struct i2c_device_id therm_windtunnel_id[] = {
 	{ "therm_adm1030", adm1030 },
 	{ }
 };
+MODULE_DEVICE_TABLE(i2c, therm_windtunnel_id);
 
 static int
 do_probe(struct i2c_client *cl, const struct i2c_device_id *id)
@@ -431,7 +432,6 @@ static struct i2c_driver g4fan_driver = {
 	.driver = {
 		.name	= "therm_windtunnel",
 	},
-	.attach_adapter = do_attach,
 	.probe		= do_probe,
 	.remove		= do_remove,
 	.id_table	= therm_windtunnel_id,
@@ -444,7 +444,29 @@ static struct i2c_driver g4fan_driver = {
 
 static int therm_of_probe(struct platform_device *dev)
 {
-	return i2c_add_driver( &g4fan_driver );
+	struct i2c_adapter *adap;
+	int ret, i = 0;
+
+	adap = i2c_get_adapter(0);
+	if (!adap)
+		return -EPROBE_DEFER;
+
+	ret = i2c_add_driver(&g4fan_driver);
+	if (ret) {
+		i2c_put_adapter(adap);
+		return ret;
+	}
+
+	/* We assume Macs have consecutive I2C bus numbers starting at 0 */
+	while (adap) {
+		do_attach(adap);
+		if (x.running)
+			return 0;
+		i2c_put_adapter(adap);
+		adap = i2c_get_adapter(++i);
+	}
+
+	return -ENODEV;
 }
 
 static int
@@ -459,11 +481,11 @@ static const struct of_device_id therm_of_match[] = {{
 	.compatible	= "adm1030"
     }, {}
 };
+MODULE_DEVICE_TABLE(of, therm_of_match);
 
 static struct platform_driver therm_of_driver = {
 	.driver = {
 		.name = "temperature",
-		.owner = THIS_MODULE,
 		.of_match_table = therm_of_match,
 	},
 	.probe		= therm_of_probe,

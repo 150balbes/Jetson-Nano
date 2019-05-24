@@ -517,7 +517,7 @@ static int qla4_83xx_wait_for_loopback_config_comp(struct scsi_qla_host *ha,
 						(ha->idc_extend_tmo * HZ))) {
 				ha->notify_idc_comp = 0;
 				ha->notify_link_up_comp = 0;
-				ql4_printk(KERN_WARNING, ha, "%s: IDC Complete notification not received",
+				ql4_printk(KERN_WARNING, ha, "%s: Aborting: IDC Complete notification not received",
 					   __func__);
 				status = QLA_ERROR;
 				goto exit_wait;
@@ -538,7 +538,7 @@ static int qla4_83xx_wait_for_loopback_config_comp(struct scsi_qla_host *ha,
 		if (!wait_for_completion_timeout(&ha->link_up_comp,
 						 (IDC_COMP_TOV * HZ))) {
 			ha->notify_link_up_comp = 0;
-			ql4_printk(KERN_WARNING, ha, "%s: LINK UP notification not received",
+			ql4_printk(KERN_WARNING, ha, "%s: Aborting: LINK UP notification not received",
 				   __func__);
 			status = QLA_ERROR;
 			goto exit_wait;
@@ -571,7 +571,7 @@ static int qla4_83xx_pre_loopback_config(struct scsi_qla_host *ha,
 
 	if ((config & ENABLE_INTERNAL_LOOPBACK) ||
 	    (config & ENABLE_EXTERNAL_LOOPBACK)) {
-		ql4_printk(KERN_INFO, ha, "%s: Loopback diagnostics already in progress. Invalid requiest\n",
+		ql4_printk(KERN_INFO, ha, "%s: Loopback diagnostics already in progress. Invalid request\n",
 			   __func__);
 		goto exit_pre_loopback_config;
 	}

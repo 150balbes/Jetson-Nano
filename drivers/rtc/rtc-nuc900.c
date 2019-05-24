@@ -93,7 +93,7 @@ static int *check_rtc_access_enable(struct nuc900_rtc *nuc900_rtc)
 	__raw_writel(AERPOWERON, nuc900_rtc->rtc_reg + REG_RTC_AER);
 
 	while (!(__raw_readl(nuc900_rtc->rtc_reg + REG_RTC_AER) & AERRWENB)
-								&& timeout--)
+								&& --timeout)
 		mdelay(1);
 
 	if (!timeout)
@@ -102,8 +102,8 @@ static int *check_rtc_access_enable(struct nuc900_rtc *nuc900_rtc)
 	return NULL;
 }
 
-static int nuc900_rtc_bcd2bin(unsigned int timereg,
-				unsigned int calreg, struct rtc_time *tm)
+static void nuc900_rtc_bcd2bin(unsigned int timereg,
+			       unsigned int calreg, struct rtc_time *tm)
 {
 	tm->tm_mday	= bcd2bin(calreg >> 0);
 	tm->tm_mon	= bcd2bin(calreg >> 8);
@@ -112,8 +112,6 @@ static int nuc900_rtc_bcd2bin(unsigned int timereg,
 	tm->tm_sec	= bcd2bin(timereg >> 0);
 	tm->tm_min	= bcd2bin(timereg >> 8);
 	tm->tm_hour	= bcd2bin(timereg >> 16);
-
-	return rtc_valid_tm(tm);
 }
 
 static void nuc900_rtc_bin2bcd(struct device *dev, struct rtc_time *settm,
@@ -156,7 +154,9 @@ static int nuc900_rtc_read_time(struct device *dev, struct rtc_time *tm)
 	timeval = __raw_readl(rtc->rtc_reg + REG_RTC_TLR);
 	clrval	= __raw_readl(rtc->rtc_reg + REG_RTC_CLR);
 
-	return nuc900_rtc_bcd2bin(timeval, clrval, tm);
+	nuc900_rtc_bcd2bin(timeval, clrval, tm);
+
+	return 0;
 }
 
 static int nuc900_rtc_set_time(struct device *dev, struct rtc_time *tm)
@@ -189,7 +189,9 @@ static int nuc900_rtc_read_alarm(struct device *dev, struct rtc_wkalrm *alrm)
 	timeval = __raw_readl(rtc->rtc_reg + REG_RTC_TAR);
 	carval	= __raw_readl(rtc->rtc_reg + REG_RTC_CAR);
 
-	return nuc900_rtc_bcd2bin(timeval, carval, &alrm->time);
+	nuc900_rtc_bcd2bin(timeval, carval, &alrm->time);
+
+	return rtc_valid_tm(&alrm->time);
 }
 
 static int nuc900_rtc_set_alarm(struct device *dev, struct rtc_wkalrm *alrm)
@@ -214,7 +216,7 @@ static int nuc900_rtc_set_alarm(struct device *dev, struct rtc_wkalrm *alrm)
 	return 0;
 }
 
-static struct rtc_class_ops nuc900_rtc_ops = {
+static const struct rtc_class_ops nuc900_rtc_ops = {
 	.read_time = nuc900_rtc_read_time,
 	.set_time = nuc900_rtc_set_time,
 	.read_alarm = nuc900_rtc_read_alarm,
@@ -229,10 +231,9 @@ static int __init nuc900_rtc_probe(struct platform_device *pdev)
 
 	nuc900_rtc = devm_kzalloc(&pdev->dev, sizeof(struct nuc900_rtc),
 				GFP_KERNEL);
-	if (!nuc900_rtc) {
-		dev_err(&pdev->dev, "kzalloc nuc900_rtc failed\n");
+	if (!nuc900_rtc)
 		return -ENOMEM;
-	}
+
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	nuc900_rtc->rtc_reg = devm_ioremap_resource(&pdev->dev, res);
 	if (IS_ERR(nuc900_rtc->rtc_reg))
@@ -263,7 +264,6 @@ static int __init nuc900_rtc_probe(struct platform_device *pdev)
 static struct platform_driver nuc900_rtc_driver = {
 	.driver		= {
 		.name	= "nuc900-rtc",
-		.owner	= THIS_MODULE,
 	},
 };
 

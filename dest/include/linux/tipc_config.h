@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: ((GPL-2.0 WITH Linux-syscall-note) OR BSD-3-Clause) */
 /*
  * include/uapi/linux/tipc_config.h: Header for TIPC configuration interface
  *
@@ -39,6 +40,7 @@
 
 #include <linux/types.h>
 #include <linux/string.h>
+#include <linux/tipc.h>
 #include <asm/byteorder.h>
 
 #include <arpa/inet.h> /* for ntohs etc. */
@@ -153,15 +155,6 @@
 #define TIPC_TLV_PORT_REF	26	/* 32-bit port reference */
 
 /*
- * Maximum sizes of TIPC bearer-related names (including terminating NUL)
- */
-
-#define TIPC_MAX_MEDIA_NAME	16	/* format = media */
-#define TIPC_MAX_IF_NAME	16	/* format = interface */
-#define TIPC_MAX_BEARER_NAME	32	/* format = media:interface */
-#define TIPC_MAX_LINK_NAME	60	/* format = Z.C.N:interface-Z.C.N:interface */
-
-/*
  * Link priority limits (min, default, max, media default)
  */
 
@@ -188,8 +181,13 @@
 
 #define TIPC_MIN_LINK_WIN 16
 #define TIPC_DEF_LINK_WIN 50
-#define TIPC_MAX_LINK_WIN 150
+#define TIPC_MAX_LINK_WIN 8191
 
+/*
+ * Default MTU for UDP media
+ */
+
+#define TIPC_DEF_LINK_UDP_MTU 14000
 
 struct tipc_node_info {
 	__be32 addr;			/* network address of node */
@@ -276,6 +274,26 @@ static __inline__ int TLV_CHECK(const void *tlv, __u16 space, __u16 exp_type)
 {
 	return TLV_OK(tlv, space) &&
 		(ntohs(((struct tlv_desc *)tlv)->tlv_type) == exp_type);
+}
+
+static __inline__ int TLV_GET_LEN(struct tlv_desc *tlv)
+{
+	return ntohs(tlv->tlv_len);
+}
+
+static __inline__ void TLV_SET_LEN(struct tlv_desc *tlv, __u16 len)
+{
+	tlv->tlv_len = htons(len);
+}
+
+static __inline__ int TLV_CHECK_TYPE(struct tlv_desc *tlv,  __u16 type)
+{
+	return (ntohs(tlv->tlv_type) == type);
+}
+
+static __inline__ void TLV_SET_TYPE(struct tlv_desc *tlv, __u16 type)
+{
+	tlv->tlv_type = htons(type);
 }
 
 static __inline__ int TLV_SET(void *tlv, __u16 type, void *data, __u16 len)

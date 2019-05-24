@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 /* include/asm/processor.h
  *
  * Copyright (C) 1994 David S. Miller (davem@caip.rutgers.edu)
@@ -6,23 +7,11 @@
 #ifndef __ASM_SPARC_PROCESSOR_H
 #define __ASM_SPARC_PROCESSOR_H
 
-/*
- * Sparc32 implementation of macro that returns current
- * instruction pointer ("program counter").
- */
-#define current_text_addr() ({ void *pc; __asm__("sethi %%hi(1f), %0; or %0, %%lo(1f), %0;\n1:" : "=r" (pc)); pc; })
-
 #include <asm/psr.h>
 #include <asm/ptrace.h>
 #include <asm/head.h>
 #include <asm/signal.h>
 #include <asm/page.h>
-
-/*
- * The sparc has no problems with write protection
- */
-#define wp_works_ok 1
-#define wp_works_ok__is_a_macro /* for versions in ksyms.c */
 
 /* Whee, this is STACK_TOP + PAGE_SIZE and the lowest kernel address too...
  * That one page is used to protect kernel from intruders, so that
@@ -73,9 +62,6 @@ struct thread_struct {
 	.current_ds = KERNEL_DS, \
 }
 
-/* Return saved PC of a blocked thread. */
-extern unsigned long thread_saved_pc(struct task_struct *t);
-
 /* Do necessary setup to start up a newly executed thread. */
 static inline void start_thread(struct pt_regs * regs, unsigned long pc,
 				    unsigned long sp)
@@ -107,7 +93,7 @@ static inline void start_thread(struct pt_regs * regs, unsigned long pc,
 /* Free all resources held by a thread. */
 #define release_thread(tsk)		do { } while(0)
 
-extern unsigned long get_wchan(struct task_struct *);
+unsigned long get_wchan(struct task_struct *);
 
 #define task_pt_regs(tsk) ((tsk)->thread.kregs)
 #define KSTK_EIP(tsk)  ((tsk)->thread.kregs->pc)
@@ -116,8 +102,10 @@ extern unsigned long get_wchan(struct task_struct *);
 #ifdef __KERNEL__
 
 extern struct task_struct *last_task_used_math;
+int do_mathemu(struct pt_regs *regs, struct task_struct *fpt);
 
 #define cpu_relax()	barrier()
+
 extern void (*sparc_idle)(void);
 
 #endif

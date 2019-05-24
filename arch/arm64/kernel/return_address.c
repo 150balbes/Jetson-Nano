@@ -12,6 +12,7 @@
 #include <linux/export.h>
 #include <linux/ftrace.h>
 
+#include <asm/stack_pointer.h>
 #include <asm/stacktrace.h>
 
 struct return_address_data {
@@ -36,16 +37,17 @@ void *return_address(unsigned int level)
 {
 	struct return_address_data data;
 	struct stackframe frame;
-	register unsigned long current_sp asm ("sp");
 
 	data.level = level + 2;
 	data.addr = NULL;
 
 	frame.fp = (unsigned long)__builtin_frame_address(0);
-	frame.sp = current_sp;
 	frame.pc = (unsigned long)return_address; /* dummy */
+#ifdef CONFIG_FUNCTION_GRAPH_TRACER
+	frame.graph = 0;
+#endif
 
-	walk_stackframe(&frame, save_return_addr, &data);
+	walk_stackframe(current, &frame, save_return_addr, &data);
 
 	if (!data.level)
 		return data.addr;

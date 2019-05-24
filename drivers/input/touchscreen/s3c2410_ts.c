@@ -102,7 +102,7 @@ static inline bool get_down(unsigned long data0, unsigned long data1)
 		!(data1 & S3C2410_ADCDAT0_UPDOWN));
 }
 
-static void touch_timer_fire(unsigned long data)
+static void touch_timer_fire(struct timer_list *unused)
 {
 	unsigned long data0;
 	unsigned long data1;
@@ -145,7 +145,7 @@ static void touch_timer_fire(unsigned long data)
 	}
 }
 
-static DEFINE_TIMER(touch_timer, touch_timer_fire, 0, 0);
+static DEFINE_TIMER(touch_timer, touch_timer_fire);
 
 /**
  * stylus_irq - touchscreen stylus event interrupt
@@ -250,7 +250,7 @@ static int s3c2410ts_probe(struct platform_device *pdev)
 
 	ts.dev = dev;
 
-	info = dev_get_platdata(&pdev->dev);
+	info = dev_get_platdata(dev);
 	if (!info) {
 		dev_err(dev, "no platform data, cannot attach\n");
 		return -EINVAL;
@@ -264,7 +264,11 @@ static int s3c2410ts_probe(struct platform_device *pdev)
 		return -ENOENT;
 	}
 
-	clk_enable(ts.clock);
+	ret = clk_prepare_enable(ts.clock);
+	if (ret) {
+		dev_err(dev, "Failed! to enabled clocks\n");
+		goto err_clk_get;
+	}
 	dev_dbg(dev, "got and enabled clocks\n");
 
 	ts.irq_tc = ret = platform_get_irq(pdev, 0);
@@ -353,7 +357,9 @@ static int s3c2410ts_probe(struct platform_device *pdev)
  err_iomap:
 	iounmap(ts.io);
  err_clk:
+	clk_disable_unprepare(ts.clock);
 	del_timer_sync(&touch_timer);
+ err_clk_get:
 	clk_put(ts.clock);
 	return ret;
 }
@@ -369,7 +375,7 @@ static int s3c2410ts_remove(struct platform_device *pdev)
 	free_irq(ts.irq_tc, ts.input);
 	del_timer_sync(&touch_timer);
 
-	clk_disable(ts.clock);
+	clk_disable_unprepare(ts.clock);
 	clk_put(ts.clock);
 
 	input_unregister_device(ts.input);
@@ -411,7 +417,7 @@ static const struct dev_pm_ops s3c_ts_pmops = {
 };
 #endif
 
-static struct platform_device_id s3cts_driver_ids[] = {
+static const struct platform_device_id s3cts_driver_ids[] = {
 	{ "s3c2410-ts", 0 },
 	{ "s3c2440-ts", 0 },
 	{ "s3c64xx-ts", FEAT_PEN_IRQ },
@@ -422,7 +428,6 @@ MODULE_DEVICE_TABLE(platform, s3cts_driver_ids);
 static struct platform_driver s3c_ts_driver = {
 	.driver         = {
 		.name   = "samsung-ts",
-		.owner  = THIS_MODULE,
 #ifdef CONFIG_PM
 		.pm	= &s3c_ts_pmops,
 #endif

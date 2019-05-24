@@ -1,8 +1,8 @@
 /*
  * Routines for doing kexec-based kdump
  *
- * Copyright (C) 2014 Linaro Limited
- * Author: AKASHI Takahiro <takahiro.akashi@xxxxxxxxxx>
+ * Copyright (C) 2017 Linaro Limited
+ * Author: AKASHI Takahiro <takahiro.akashi@linaro.org>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -37,20 +37,20 @@ ssize_t copy_oldmem_page(unsigned long pfn, char *buf,
 	if (!csize)
 		return 0;
 
-	vaddr = ioremap_cache(pfn << PAGE_SHIFT, PAGE_SIZE);
+	vaddr = memremap(__pfn_to_phys(pfn), PAGE_SIZE, MEMREMAP_WB);
 	if (!vaddr)
 		return -ENOMEM;
 
 	if (userbuf) {
-		if (copy_to_user(buf, vaddr + offset, csize)) {
-			iounmap(vaddr);
+		if (copy_to_user((char __user *)buf, vaddr + offset, csize)) {
+			memunmap(vaddr);
 			return -EFAULT;
 		}
 	} else {
 		memcpy(buf, vaddr + offset, csize);
 	}
 
-	iounmap(vaddr);
+	memunmap(vaddr);
 
 	return csize;
 }
@@ -58,8 +58,11 @@ ssize_t copy_oldmem_page(unsigned long pfn, char *buf,
 /**
  * elfcorehdr_read - read from ELF core header
  * @buf: buffer where the data is placed
- * @csize: number of bytes to read
+ * @count: number of bytes to read
  * @ppos: address in the memory
+ *
+ * This function reads @count bytes from elf core header which exists
+ * on crash dump kernel's memory.
  */
 ssize_t elfcorehdr_read(char *buf, size_t count, u64 *ppos)
 {

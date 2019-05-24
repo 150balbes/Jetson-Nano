@@ -1,12 +1,10 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  * Freescale QUICC Engine UART device driver
  *
  * Author: Timur Tabi <timur@freescale.com>
  *
- * Copyright 2007 Freescale Semiconductor, Inc.  This file is licensed under
- * the terms of the GNU General Public License version 2.  This program
- * is licensed "as is" without any warranty of any kind, whether express
- * or implied.
+ * Copyright 2007 Freescale Semiconductor, Inc.
  *
  * This driver adds support for UART devices via Freescale's QUICC Engine
  * found on some Freescale SOCs.
@@ -31,7 +29,7 @@
 #include <linux/dma-mapping.h>
 
 #include <linux/fs_uart_pd.h>
-#include <asm/ucc_slow.h>
+#include <soc/fsl/qe/ucc_slow.h>
 
 #include <linux/firmware.h>
 #include <asm/reg.h>
@@ -433,16 +431,6 @@ static void qe_uart_stop_rx(struct uart_port *port)
 		container_of(port, struct uart_qe_port, port);
 
 	clrbits16(&qe_port->uccp->uccm, UCC_UART_UCCE_RX);
-}
-
-/*
- * Enable status change interrupts
- *
- * We don't support status change interrupts, but we need to define this
- * function otherwise the kernel will panic.
- */
-static void qe_uart_enable_ms(struct uart_port *port)
-{
 }
 
 /* Start or stop sending  break signal
@@ -960,7 +948,7 @@ static void qe_uart_set_termios(struct uart_port *port,
 	if ((termios->c_cflag & CREAD) == 0)
 		port->read_status_mask &= ~BD_SC_EMPTY;
 
-	baud = uart_get_baud_rate(port, termios, old, 0, 115200);
+	baud = uart_get_baud_rate(port, termios, old, 0, port->uartclk / 16);
 
 	/* Do we really need a spinlock here? */
 	spin_lock_irqsave(&port->lock, flags);
@@ -1095,14 +1083,13 @@ static int qe_uart_verify_port(struct uart_port *port,
  *
  * Details on these functions can be found in Documentation/serial/driver
  */
-static struct uart_ops qe_uart_pops = {
+static const struct uart_ops qe_uart_pops = {
 	.tx_empty       = qe_uart_tx_empty,
 	.set_mctrl      = qe_uart_set_mctrl,
 	.get_mctrl      = qe_uart_get_mctrl,
 	.stop_tx	= qe_uart_stop_tx,
 	.start_tx       = qe_uart_start_tx,
 	.stop_rx	= qe_uart_stop_rx,
-	.enable_ms      = qe_uart_enable_ms,
 	.break_ctl      = qe_uart_break_ctl,
 	.startup	= qe_uart_startup,
 	.shutdown       = qe_uart_shutdown,
@@ -1484,10 +1471,13 @@ static int ucc_uart_remove(struct platform_device *ofdev)
 	return 0;
 }
 
-static struct of_device_id ucc_uart_match[] = {
+static const struct of_device_id ucc_uart_match[] = {
 	{
 		.type = "serial",
 		.compatible = "ucc_uart",
+	},
+	{
+		.compatible = "fsl,t1040-ucc-uart",
 	},
 	{},
 };
@@ -1496,7 +1486,6 @@ MODULE_DEVICE_TABLE(of, ucc_uart_match);
 static struct platform_driver ucc_uart_of_driver = {
 	.driver = {
 		.name = "ucc_uart",
-		.owner = THIS_MODULE,
 		.of_match_table    = ucc_uart_match,
 	},
 	.probe  	= ucc_uart_probe,

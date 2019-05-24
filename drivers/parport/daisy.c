@@ -23,10 +23,10 @@
 #include <linux/parport.h>
 #include <linux/delay.h>
 #include <linux/slab.h>
-#include <linux/sched.h>
+#include <linux/sched/signal.h>
 
 #include <asm/current.h>
-#include <asm/uaccess.h>
+#include <linux/uaccess.h>
 
 #undef DEBUG
 
@@ -44,7 +44,7 @@ static struct daisydev {
 } *topology = NULL;
 static DEFINE_SPINLOCK(topology_lock);
 
-static int numdevs = 0;
+static int numdevs;
 
 /* Forward-declaration of lower-level functions. */
 static int mux_present(struct parport *port);
@@ -213,10 +213,12 @@ void parport_daisy_fini(struct parport *port)
 struct pardevice *parport_open(int devnum, const char *name)
 {
 	struct daisydev *p = topology;
+	struct pardev_cb par_cb;
 	struct parport *port;
 	struct pardevice *dev;
 	int daisy;
 
+	memset(&par_cb, 0, sizeof(par_cb));
 	spin_lock(&topology_lock);
 	while (p && p->devnum != devnum)
 		p = p->next;
@@ -230,7 +232,7 @@ struct pardevice *parport_open(int devnum, const char *name)
 	port = parport_get_port(p->port);
 	spin_unlock(&topology_lock);
 
-	dev = parport_register_device(port, name, NULL, NULL, NULL, 0, NULL);
+	dev = parport_register_dev_model(port, name, &par_cb, devnum);
 	parport_put_port(port);
 	if (!dev)
 		return NULL;
@@ -479,4 +481,32 @@ static int assign_addrs(struct parport *port)
 
 	kfree(deviceid);
 	return detected;
+}
+
+static int daisy_drv_probe(struct pardevice *par_dev)
+{
+	struct device_driver *drv = par_dev->dev.driver;
+
+	if (strcmp(drv->name, "daisy_drv"))
+		return -ENODEV;
+	if (strcmp(par_dev->name, daisy_dev_name))
+		return -ENODEV;
+
+	return 0;
+}
+
+static struct parport_driver daisy_driver = {
+	.name = "daisy_drv",
+	.probe = daisy_drv_probe,
+	.devmodel = true,
+};
+
+int daisy_drv_init(void)
+{
+	return parport_register_driver(&daisy_driver);
+}
+
+void daisy_drv_exit(void)
+{
+	parport_unregister_driver(&daisy_driver);
 }

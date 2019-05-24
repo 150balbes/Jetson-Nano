@@ -22,15 +22,6 @@
 extern spinlock_t rtc_lock;
 
 /*
- * RTC ops.  By default, they point to weak no-op RTC functions.
- *	rtc_mips_set_time - reverse the above translation and set time to RTC.
- *	rtc_mips_set_mmss - similar to rtc_set_time, but only min and sec need
- *			to be set.  Used by RTC sync-up.
- */
-extern int rtc_mips_set_time(unsigned long);
-extern int rtc_mips_set_mmss(unsigned long);
-
-/*
  * board specific routines required by time_init().
  */
 extern void plat_time_init(void);
@@ -46,22 +37,17 @@ extern unsigned int mips_hpt_frequency;
  * so it lives here.
  */
 extern int (*perf_irq)(void);
+extern int __weak get_c0_perfcount_int(void);
 
 /*
  * Initialize the calling CPU's compare interrupt as clockevent device
  */
-extern unsigned int __weak get_c0_compare_int(void);
+extern unsigned int get_c0_compare_int(void);
 extern int r4k_clockevent_init(void);
-extern int smtc_clockevent_init(void);
-extern int gic_clockevent_init(void);
 
 static inline int mips_clockevent_init(void)
 {
-#ifdef CONFIG_MIPS_MT_SMTC
-	return smtc_clockevent_init();
-#elif defined(CONFIG_CEVT_GIC)
-	return (gic_clockevent_init() | r4k_clockevent_init());
-#elif defined(CONFIG_CEVT_R4K)
+#ifdef CONFIG_CEVT_R4K
 	return r4k_clockevent_init();
 #else
 	return -ENXIO;

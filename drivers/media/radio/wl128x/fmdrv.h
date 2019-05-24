@@ -14,10 +14,6 @@
  *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  *  GNU General Public License for more details.
  *
- *  You should have received a copy of the GNU General Public License
- *  along with this program; if not, write to the Free Software
- *  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
- *
  */
 
 #ifndef _FM_DRV_H
@@ -137,7 +133,7 @@ struct fm_rds {
 /*
  * Current RX channel Alternate Frequency cache.
  * This info is used to switch to other freq (AF)
- * when current channel signal strengh is below RSSI threshold.
+ * when current channel signal strength is below RSSI threshold.
  */
 struct tuned_station_info {
 	u16 picode;
@@ -210,7 +206,7 @@ struct fmdev {
 	spinlock_t resp_skb_lock; /* To protect access to received SKB */
 
 	long flag;		/*  FM driver state machine info */
-	u8 streg_cbdata; /* status of ST registration */
+	int streg_cbdata; /* status of ST registration */
 
 	struct sk_buff_head rx_q;	/* RX queue */
 	struct tasklet_struct rx_task;	/* RX Tasklet */
@@ -232,7 +228,7 @@ struct fmdev {
 	struct fm_rx rx;	/* FM receiver info */
 	struct fmtx_data tx_data;
 
-	/* V4L2 ctrl framwork handler*/
+	/* V4L2 ctrl framework handler*/
 	struct v4l2_ctrl_handler ctrl_handler;
 
 	/* For core assisted locking */

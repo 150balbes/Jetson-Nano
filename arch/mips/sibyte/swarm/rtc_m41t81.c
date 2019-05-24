@@ -109,7 +109,7 @@ static int m41t81_read(uint8_t addr)
 		return -1;
 	}
 
-	return (__raw_readq(SMB_CSR(R_SMB_DATA)) & 0xff);
+	return __raw_readq(SMB_CSR(R_SMB_DATA)) & 0xff;
 }
 
 static int m41t81_write(uint8_t addr, int b)
@@ -141,13 +141,13 @@ static int m41t81_write(uint8_t addr, int b)
 	return 0;
 }
 
-int m41t81_set_time(unsigned long t)
+int m41t81_set_time(time64_t t)
 {
 	struct rtc_time tm;
 	unsigned long flags;
 
 	/* Note we don't care about the century */
-	rtc_time_to_tm(t, &tm);
+	rtc_time64_to_tm(t, &tm);
 
 	/*
 	 * Note the write order matters as it ensures the correctness.
@@ -188,7 +188,7 @@ int m41t81_set_time(unsigned long t)
 	return 0;
 }
 
-unsigned long m41t81_get_time(void)
+time64_t m41t81_get_time(void)
 {
 	unsigned int year, mon, day, hour, min, sec;
 	unsigned long flags;
@@ -218,7 +218,7 @@ unsigned long m41t81_get_time(void)
 
 	year += 2000;
 
-	return mktime(year, mon, day, hour, min, sec);
+	return mktime64(year, mon, day, hour, min, sec);
 }
 
 int m41t81_probe(void)
@@ -229,5 +229,5 @@ int m41t81_probe(void)
 	tmp = m41t81_read(M41T81REG_SC);
 	m41t81_write(M41T81REG_SC, tmp & 0x7f);
 
-	return (m41t81_read(M41T81REG_SC) != -1);
+	return m41t81_read(M41T81REG_SC) != -1;
 }

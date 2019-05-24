@@ -1,32 +1,13 @@
-/* linux/arch/arm/mach-s3c2410/mach-smdk2410.c
- *
- * linux/arch/arm/mach-s3c2410/mach-smdk2410.c
- *
- * Copyright (C) 2004 by FS Forth-Systeme GmbH
- * All rights reserved.
- *
- * @Author: Jonas Dietsche
- *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License as
- * published by the Free Software Foundation; either version 2 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
- * MA 02111-1307 USA
- *
- * @History:
- * derived from linux/arch/arm/mach-s3c2410/mach-bast.c, written by
- * Ben Dooks <ben@simtec.co.uk>
- *
- ***********************************************************************/
+// SPDX-License-Identifier: GPL-2.0+
+//
+// Copyright (C) 2004 by FS Forth-Systeme GmbH
+// All rights reserved.
+//
+// @Author: Jonas Dietsche
+//
+// @History:
+// derived from linux/arch/arm/mach-s3c2410/mach-bast.c, written by
+// Ben Dooks <ben@simtec.co.uk>
 
 #include <linux/kernel.h>
 #include <linux/types.h>
@@ -35,6 +16,7 @@
 #include <linux/timer.h>
 #include <linux/init.h>
 #include <linux/serial_core.h>
+#include <linux/serial_s3c.h>
 #include <linux/platform_device.h>
 #include <linux/io.h>
 
@@ -46,7 +28,6 @@
 #include <asm/irq.h>
 #include <asm/mach-types.h>
 
-#include <plat/regs-serial.h>
 #include <linux/platform_data/i2c-s3c2410.h>
 
 #include <plat/devs.h>
@@ -99,9 +80,14 @@ static struct platform_device *smdk2410_devices[] __initdata = {
 static void __init smdk2410_map_io(void)
 {
 	s3c24xx_init_io(smdk2410_iodesc, ARRAY_SIZE(smdk2410_iodesc));
-	s3c24xx_init_clocks(0);
 	s3c24xx_init_uarts(smdk2410_uartcfgs, ARRAY_SIZE(smdk2410_uartcfgs));
 	samsung_set_timer_source(SAMSUNG_PWM3, SAMSUNG_PWM4);
+}
+
+static void __init smdk2410_init_time(void)
+{
+	s3c2410_init_clocks(12000000);
+	samsung_timer_init();
 }
 
 static void __init smdk2410_init(void)
@@ -118,6 +104,5 @@ MACHINE_START(SMDK2410, "SMDK2410") /* @TODO: request a new identifier and switc
 	.map_io		= smdk2410_map_io,
 	.init_irq	= s3c2410_init_irq,
 	.init_machine	= smdk2410_init,
-	.init_time	= samsung_timer_init,
-	.restart	= s3c2410_restart,
+	.init_time	= smdk2410_init_time,
 MACHINE_END

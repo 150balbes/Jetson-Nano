@@ -15,7 +15,6 @@
  */
 
 #include <linux/io.h>
-#include <linux/clk.h>
 #include <linux/clk-provider.h>
 #include <linux/clkdev.h>
 #include <linux/of.h>
@@ -96,7 +95,8 @@ void __init tegra_pmc_clk_init(void __iomem *pmc_base,
 			continue;
 
 		clk = clk_register_mux(NULL, data->mux_name, data->parents,
-				data->num_parents, CLK_SET_RATE_NO_REPARENT,
+				data->num_parents,
+				CLK_SET_RATE_NO_REPARENT | CLK_SET_RATE_PARENT,
 				pmc_base + PMC_CLK_OUT_CNTRL, data->mux_shift,
 				3, 0, &clk_out_lock);
 		*dt_clk = clk;
@@ -107,7 +107,8 @@ void __init tegra_pmc_clk_init(void __iomem *pmc_base,
 			continue;
 
 		clk = clk_register_gate(NULL, data->gate_name, data->mux_name,
-					0, pmc_base + PMC_CLK_OUT_CNTRL,
+					CLK_SET_RATE_PARENT,
+					pmc_base + PMC_CLK_OUT_CNTRL,
 					data->gate_shift, 0, &clk_out_lock);
 		*dt_clk = clk;
 		clk_register_clkdev(clk, data->dev_name, data->gate_name);

@@ -12,10 +12,6 @@
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 */
 
 #include <linux/kernel.h>
@@ -77,10 +73,8 @@ static int simtec_i2c_probe(struct platform_device *dev)
 	int ret;
 
 	pd = kzalloc(sizeof(struct simtec_i2c_data), GFP_KERNEL);
-	if (pd == NULL) {
-		dev_err(&dev->dev, "cannot allocate private data\n");
+	if (pd == NULL)
 		return -ENOMEM;
-	}
 
 	platform_set_drvdata(dev, pd);
 
@@ -133,8 +127,7 @@ static int simtec_i2c_probe(struct platform_device *dev)
 	iounmap(pd->reg);
 
  err_res:
-	release_resource(pd->ioarea);
-	kfree(pd->ioarea);
+	release_mem_region(pd->ioarea->start, size);
 
  err:
 	kfree(pd);
@@ -148,8 +141,7 @@ static int simtec_i2c_remove(struct platform_device *dev)
 	i2c_del_adapter(&pd->adap);
 
 	iounmap(pd->reg);
-	release_resource(pd->ioarea);
-	kfree(pd->ioarea);
+	release_mem_region(pd->ioarea->start, resource_size(pd->ioarea));
 	kfree(pd);
 
 	return 0;
@@ -160,7 +152,6 @@ static int simtec_i2c_remove(struct platform_device *dev)
 static struct platform_driver simtec_i2c_driver = {
 	.driver		= {
 		.name		= "simtec-i2c",
-		.owner		= THIS_MODULE,
 	},
 	.probe		= simtec_i2c_probe,
 	.remove		= simtec_i2c_remove,

@@ -70,7 +70,7 @@ int queue_initialise (Queue_t *queue)
 	 * need to keep free lists or allocate this
 	 * memory.
 	 */
-	queue->alloc = q = kmalloc(sizeof(QE_t) * nqueues, GFP_KERNEL);
+	queue->alloc = q = kmalloc_array(nqueues, sizeof(QE_t), GFP_KERNEL);
 	if (q) {
 		for (; nqueues; q++, nqueues--) {
 			SET_MAGIC(q, QUEUE_MAGIC_FREE);
@@ -167,7 +167,8 @@ struct scsi_cmnd *queue_remove_exclude(Queue_t *queue, unsigned long *exclude)
 	spin_lock_irqsave(&queue->queue_lock, flags);
 	list_for_each(l, &queue->head) {
 		QE_t *q = list_entry(l, QE_t, list);
-		if (!test_bit(q->SCpnt->device->id * 8 + q->SCpnt->device->lun, exclude)) {
+		if (!test_bit(q->SCpnt->device->id * 8 +
+			      (u8)(q->SCpnt->device->lun & 0x7), exclude)) {
 			SCpnt = __queue_remove(queue, l);
 			break;
 		}

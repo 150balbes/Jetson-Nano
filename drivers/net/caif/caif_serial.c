@@ -40,20 +40,20 @@ static LIST_HEAD(ser_list);
 static LIST_HEAD(ser_release_list);
 
 static bool ser_loop;
-module_param(ser_loop, bool, S_IRUGO);
+module_param(ser_loop, bool, 0444);
 MODULE_PARM_DESC(ser_loop, "Run in simulated loopback mode.");
 
 static bool ser_use_stx = true;
-module_param(ser_use_stx, bool, S_IRUGO);
+module_param(ser_use_stx, bool, 0444);
 MODULE_PARM_DESC(ser_use_stx, "STX enabled or not.");
 
 static bool ser_use_fcs = true;
 
-module_param(ser_use_fcs, bool, S_IRUGO);
+module_param(ser_use_fcs, bool, 0444);
 MODULE_PARM_DESC(ser_use_fcs, "FCS enabled or not.");
 
 static int ser_write_chunk = MAX_WRITE_CHUNK;
-module_param(ser_write_chunk, int, S_IRUGO);
+module_param(ser_write_chunk, int, 0444);
 
 MODULE_PARM_DESC(ser_write_chunk, "Maximum size of data written to UART.");
 
@@ -70,7 +70,6 @@ struct ser_device {
 	struct tty_struct *tty;
 	bool tx_started;
 	unsigned long state;
-	char *tty_name;
 #ifdef CONFIG_DEBUG_FS
 	struct dentry *debugfs_tty_dir;
 	struct debugfs_blob_wrapper tx_blob;
@@ -98,21 +97,21 @@ static inline void debugfs_init(struct ser_device *ser, struct tty_struct *tty)
 	ser->debugfs_tty_dir =
 			debugfs_create_dir(tty->name, debugfsdir);
 	if (!IS_ERR(ser->debugfs_tty_dir)) {
-		debugfs_create_blob("last_tx_msg", S_IRUSR,
-				ser->debugfs_tty_dir,
-				&ser->tx_blob);
+		debugfs_create_blob("last_tx_msg", 0400,
+				    ser->debugfs_tty_dir,
+				    &ser->tx_blob);
 
-		debugfs_create_blob("last_rx_msg", S_IRUSR,
-				ser->debugfs_tty_dir,
-				&ser->rx_blob);
+		debugfs_create_blob("last_rx_msg", 0400,
+				    ser->debugfs_tty_dir,
+				    &ser->rx_blob);
 
-		debugfs_create_x32("ser_state", S_IRUSR,
-				ser->debugfs_tty_dir,
-				(u32 *)&ser->state);
+		debugfs_create_x32("ser_state", 0400,
+				   ser->debugfs_tty_dir,
+				   (u32 *)&ser->state);
 
-		debugfs_create_x8("tty_status", S_IRUSR,
-				ser->debugfs_tty_dir,
-				&ser->tty_status);
+		debugfs_create_x8("tty_status", 0400,
+				  ser->debugfs_tty_dir,
+				  &ser->tty_status);
 
 	}
 	ser->tx_blob.data = ser->tx_data;
@@ -172,7 +171,6 @@ static void ldisc_receive(struct tty_struct *tty, const u8 *data,
 	struct sk_buff *skb = NULL;
 	struct ser_device *ser;
 	int ret;
-	u8 *p;
 
 	ser = tty->disc_data;
 
@@ -199,12 +197,10 @@ static void ldisc_receive(struct tty_struct *tty, const u8 *data,
 	skb = netdev_alloc_skb(ser->dev, count+1);
 	if (skb == NULL)
 		return;
-	p = skb_put(skb, count);
-	memcpy(p, data, count);
+	skb_put_data(skb, data, count);
 
 	skb->protocol = htons(ETH_P_CAIF);
 	skb_reset_mac_header(skb);
-	skb->dev = ser->dev;
 	debugfs_rx(ser, data, count);
 	/* Push received packet up the stack. */
 	ret = netif_rx_ni(skb);
@@ -261,10 +257,7 @@ static int handle_tx(struct ser_device *ser)
 		if (skb->len == 0) {
 			struct sk_buff *tmp = skb_dequeue(&ser->head);
 			WARN_ON(tmp != skb);
-			if (in_interrupt())
-				dev_kfree_skb_irq(skb);
-			else
-				kfree_skb(skb);
+			dev_consume_skb_any(skb);
 		}
 	}
 	/* Send flow off if queue is empty */
@@ -350,7 +343,8 @@ static int ldisc_open(struct tty_struct *tty)
 	result = snprintf(name, sizeof(name), "cf%s", tty->name);
 	if (result >= IFNAMSIZ)
 		return -EINVAL;
-	dev = alloc_netdev(sizeof(*ser), name, caifdev_setup);
+	dev = alloc_netdev(sizeof(*ser), name, NET_NAME_UNKNOWN,
+			   caifdev_setup);
 	if (!dev)
 		return -ENOMEM;
 
@@ -428,8 +422,8 @@ static void caifdev_setup(struct net_device *dev)
 	dev->type = ARPHRD_CAIF;
 	dev->flags = IFF_POINTOPOINT | IFF_NOARP;
 	dev->mtu = CAIF_MAX_MTU;
-	dev->tx_queue_len = 0;
-	dev->destructor = free_netdev;
+	dev->priv_flags |= IFF_NO_QUEUE;
+	dev->needs_free_netdev = true;
 	skb_queue_head_init(&serdev->head);
 	serdev->common.link_select = CAIF_LINK_LOW_LATENCY;
 	serdev->common.use_frag = true;

@@ -52,10 +52,7 @@ static const struct w6692map  w6692_map[] =
 	{W6692_USR, "USR W6692"}
 };
 
-#ifndef PCI_VENDOR_ID_USR
-#define PCI_VENDOR_ID_USR	0x16ec
 #define PCI_DEVICE_ID_USR_6692	0x3409
-#endif
 
 struct w6692_ch {
 	struct bchannel		bch;
@@ -101,7 +98,7 @@ _set_debug(struct w6692_hw *card)
 }
 
 static int
-set_debug(const char *val, struct kernel_param *kp)
+set_debug(const char *val, const struct kernel_param *kp)
 {
 	int ret;
 	struct w6692_hw *card;
@@ -311,7 +308,6 @@ W6692_fill_Dfifo(struct w6692_hw *card)
 		pr_debug("%s: fill_Dfifo dbusytimer running\n", card->name);
 		del_timer(&dch->timer);
 	}
-	init_timer(&dch->timer);
 	dch->timer.expires = jiffies + ((DBUSY_TIMER_VALUE * HZ) / 1000);
 	add_timer(&dch->timer);
 	if (debug & DEBUG_HW_DFIFO) {
@@ -819,8 +815,9 @@ w6692_irq(int intno, void *dev_id)
 }
 
 static void
-dbusy_timer_handler(struct dchannel *dch)
+dbusy_timer_handler(struct timer_list *t)
 {
+	struct dchannel *dch = from_timer(dch, t, timer);
 	struct w6692_hw	*card = dch->hw;
 	int		rbch, star;
 	u_long		flags;
@@ -848,13 +845,11 @@ dbusy_timer_handler(struct dchannel *dch)
 	}
 }
 
-void initW6692(struct w6692_hw *card)
+static void initW6692(struct w6692_hw *card)
 {
 	u8	val;
 
-	card->dch.timer.function = (void *)dbusy_timer_handler;
-	card->dch.timer.data = (u_long)&card->dch;
-	init_timer(&card->dch.timer);
+	timer_setup(&card->dch.timer, dbusy_timer_handler, 0);
 	w6692_mode(&card->bc[0], ISDN_P_NONE);
 	w6692_mode(&card->bc[1], ISDN_P_NONE);
 	WriteW6692(card, W_D_CTL, 0x00);
@@ -1176,10 +1171,10 @@ w6692_l1callback(struct dchannel *dch, u32 cmd)
 }
 
 static int
-open_dchannel(struct w6692_hw *card, struct channel_req *rq)
+open_dchannel(struct w6692_hw *card, struct channel_req *rq, void *caller)
 {
 	pr_debug("%s: %s dev(%d) open from %p\n", card->name, __func__,
-		 card->dch.dev.id, __builtin_return_address(1));
+		 card->dch.dev.id, caller);
 	if (rq->protocol != ISDN_P_TE_S0)
 		return -EINVAL;
 	if (rq->adr.channel == 1)
@@ -1207,7 +1202,7 @@ w6692_dctrl(struct mISDNchannel *ch, u32 cmd, void *arg)
 	case OPEN_CHANNEL:
 		rq = arg;
 		if (rq->protocol == ISDN_P_TE_S0)
-			err = open_dchannel(card, rq);
+			err = open_dchannel(card, rq, __builtin_return_address(0));
 		else
 			err = open_bchannel(card, rq);
 		if (err)
@@ -1399,7 +1394,7 @@ w6692_remove_pci(struct pci_dev *pdev)
 			pr_notice("%s: drvdata already removed\n", __func__);
 }
 
-static struct pci_device_id w6692_ids[] = {
+static const struct pci_device_id w6692_ids[] = {
 	{ PCI_VENDOR_ID_DYNALINK, PCI_DEVICE_ID_DYNALINK_IS64PH,
 	  PCI_ANY_ID, PCI_ANY_ID, 0, 0, (ulong)&w6692_map[0]},
 	{ PCI_VENDOR_ID_WINBOND2, PCI_DEVICE_ID_WINBOND2_6692,

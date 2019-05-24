@@ -16,7 +16,7 @@
 #include <asm/openprom.h>
 #include <asm/oplib.h>
 #include <asm/prom.h>
-#include <asm/uaccess.h>
+#include <linux/uaccess.h>
 
 static DEFINE_MUTEX(op_mutex);
 
@@ -166,7 +166,7 @@ static int openpromfs_readdir(struct file *, struct dir_context *);
 
 static const struct file_operations openprom_operations = {
 	.read		= generic_read_dir,
-	.iterate	= openpromfs_readdir,
+	.iterate_shared	= openpromfs_readdir,
 	.llseek		= generic_file_llseek,
 };
 
@@ -199,10 +199,11 @@ static struct dentry *openpromfs_lookup(struct inode *dir, struct dentry *dentry
 
 	child = dp->child;
 	while (child) {
-		int n = strlen(child->path_component_name);
+		const char *node_name = kbasename(child->full_name);
+		int n = strlen(node_name);
 
 		if (len == n &&
-		    !strncmp(child->path_component_name, name, len)) {
+		    !strncmp(node_name, name, len)) {
 			ent_type = op_inode_node;
 			ent_data.node = child;
 			ino = child->unique_id;
@@ -245,7 +246,7 @@ found:
 		set_nlink(inode, 2);
 		break;
 	case op_inode_prop:
-		if (!strcmp(dp->name, "options") && (len == 17) &&
+		if (of_node_name_eq(dp, "options") && (len == 17) &&
 		    !strncmp (name, "security-password", 17))
 			inode->i_mode = S_IFREG | S_IRUSR | S_IWUSR;
 		else
@@ -256,8 +257,7 @@ found:
 		break;
 	}
 
-	d_add(dentry, inode);
-	return NULL;
+	return d_splice_alias(inode, dentry);
 }
 
 static int openpromfs_readdir(struct file *file, struct dir_context *ctx)
@@ -294,8 +294,8 @@ static int openpromfs_readdir(struct file *file, struct dir_context *ctx)
 	}
 	while (child) {
 		if (!dir_emit(ctx,
-			    child->path_component_name,
-			    strlen(child->path_component_name),
+			    kbasename(child->full_name),
+			    strlen(kbasename(child->full_name)),
 			    child->unique_id, DT_DIR))
 			goto out;
 
@@ -355,7 +355,7 @@ static struct inode *openprom_iget(struct super_block *sb, ino_t ino)
 	if (!inode)
 		return ERR_PTR(-ENOMEM);
 	if (inode->i_state & I_NEW) {
-		inode->i_mtime = inode->i_atime = inode->i_ctime = CURRENT_TIME;
+		inode->i_mtime = inode->i_atime = inode->i_ctime = current_time(inode);
 		if (inode->i_ino == OPENPROM_ROOT_INO) {
 			inode->i_op = &openprom_inode_operations;
 			inode->i_fop = &openprom_operations;
@@ -368,7 +368,8 @@ static struct inode *openprom_iget(struct super_block *sb, ino_t ino)
 
 static int openprom_remount(struct super_block *sb, int *flags, char *data)
 {
-	*flags |= MS_NOATIME;
+	sync_filesystem(sb);
+	*flags |= SB_NOATIME;
 	return 0;
 }
 
@@ -385,7 +386,7 @@ static int openprom_fill_super(struct super_block *s, void *data, int silent)
 	struct op_inode_info *oi;
 	int ret;
 
-	s->s_flags |= MS_NOATIME;
+	s->s_flags |= SB_NOATIME;
 	s->s_blocksize = 1024;
 	s->s_blocksize_bits = 10;
 	s->s_magic = OPENPROM_SUPER_MAGIC;
@@ -442,7 +443,7 @@ static int __init init_openprom_fs(void)
 					    sizeof(struct op_inode_info),
 					    0,
 					    (SLAB_RECLAIM_ACCOUNT |
-					     SLAB_MEM_SPREAD),
+					     SLAB_MEM_SPREAD | SLAB_ACCOUNT),
 					    op_inode_init_once);
 	if (!op_inode_cachep)
 		return -ENOMEM;

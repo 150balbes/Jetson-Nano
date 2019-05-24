@@ -51,20 +51,25 @@ As an alternative, the boot loader can pass the relevant 'console='
 option to the kernel via the tagged lists specifying the port, and
 serial format options as described in
 
-       Documentation/kernel-parameters.txt.
+       Documentation/admin-guide/kernel-parameters.rst.
 
 
 3. Detect the machine type
 --------------------------
 
 Existing boot loaders:		OPTIONAL
-New boot loaders:		MANDATORY
+New boot loaders:		MANDATORY except for DT-only platforms
 
 The boot loader should detect the machine type its running on by some
 method.  Whether this is a hard coded value or some algorithm that
 looks at the connected hardware is beyond the scope of this document.
 The boot loader must ultimately be able to provide a MACH_TYPE_xxx
-value to the kernel. (see linux/arch/arm/tools/mach-types).
+value to the kernel. (see linux/arch/arm/tools/mach-types).  This
+should be passed to the kernel in register r1.
+
+For DT-only platforms, the machine type will be determined by device
+tree.  set the machine type to all ones (~0).  This is not strictly
+necessary, but assures that it will not match any existing types.
 
 4. Setup boot data
 ------------------
@@ -121,7 +126,7 @@ tagged list.
 The boot loader must pass at a minimum the size and location of the
 system memory, and the root filesystem location.  The dtb must be
 placed in a region of memory where the kernel decompressor will not
-overwrite it, whilst remaining within the region which will be covered
+overwrite it, while remaining within the region which will be covered
 by the kernel's low-memory mapping.
 
 A safe location is just above the 128MiB boundary from start of RAM.

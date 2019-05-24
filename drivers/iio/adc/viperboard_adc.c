@@ -107,7 +107,6 @@ error:
 
 static const struct iio_info vprbrd_adc_iio_info = {
 	.read_raw = &vprbrd_iio_read_raw,
-	.driver_module = THIS_MODULE,
 };
 
 static int vprbrd_adc_probe(struct platform_device *pdev)
@@ -139,15 +138,12 @@ static int vprbrd_adc_probe(struct platform_device *pdev)
 		return ret;
 	}
 
-	platform_set_drvdata(pdev, indio_dev);
-
 	return 0;
 }
 
 static struct platform_driver vprbrd_adc_driver = {
 	.driver = {
 		.name	= "viperboard-adc",
-		.owner	= THIS_MODULE,
 	},
 	.probe		= vprbrd_adc_probe,
 };

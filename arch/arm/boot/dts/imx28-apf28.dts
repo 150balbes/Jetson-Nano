@@ -16,7 +16,8 @@
 	model = "Armadeus Systems APF28 module";
 	compatible = "armadeus,imx28-apf28", "fsl,imx28";
 
-	memory {
+	memory@40000000 {
+		device_type = "memory";
 		reg = <0x40000000 0x08000000>;
 	};
 
@@ -78,7 +79,7 @@
 			phy-mode = "rmii";
 			pinctrl-names = "default";
 			pinctrl-0 = <&mac0_pins_a>;
-			phy-reset-gpios = <&gpio4 13 0>;
+			phy-reset-gpios = <&gpio4 13 GPIO_ACTIVE_LOW>;
 			status = "okay";
 		};
 	};

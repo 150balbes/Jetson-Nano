@@ -1,17 +1,15 @@
+// SPDX-License-Identifier: GPL-2.0+
 /*
  * Device tree based initialization code for reserved memory.
  *
- * Copyright (c) 2013, The Linux Foundation. All Rights Reserved.
+ * Copyright (c) 2013, 2015 The Linux Foundation. All Rights Reserved.
  * Copyright (c) 2013,2014 Samsung Electronics Co., Ltd.
  *		http://www.samsung.com
  * Author: Marek Szyprowski <m.szyprowski@samsung.com>
  * Author: Josh Cartwright <joshc@codeaurora.org>
- *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License as
- * published by the Free Software Foundation; either version 2 of the
- * License or (at your optional) any later version of the license.
  */
+
+#define pr_fmt(fmt)	"OF: reserved mem: " fmt
 
 #include <linux/err.h>
 #include <linux/of.h>
@@ -20,56 +18,32 @@
 #include <linux/mm.h>
 #include <linux/sizes.h>
 #include <linux/of_reserved_mem.h>
+#include <linux/sort.h>
+#include <linux/slab.h>
+#include <linux/memblock.h>
 
-#define MAX_RESERVED_REGIONS	16
+#define MAX_RESERVED_REGIONS	32
 static struct reserved_mem reserved_mem[MAX_RESERVED_REGIONS];
 static int reserved_mem_count;
 
-void get_reserved_mem_info(struct reserved_mem **rsv_mem, int *rsv_mem_cnt)
-{
-	*rsv_mem = reserved_mem;
-	*rsv_mem_cnt = reserved_mem_count;
-	return;
-}
-EXPORT_SYMBOL(get_reserved_mem_info);
-
-#if defined(CONFIG_HAVE_MEMBLOCK)
-#include <linux/memblock.h>
-int __init __weak early_init_dt_alloc_reserved_memory_arch(phys_addr_t size,
+static int __init early_init_dt_alloc_reserved_memory_arch(phys_addr_t size,
 	phys_addr_t align, phys_addr_t start, phys_addr_t end, bool nomap,
 	phys_addr_t *res_base)
 {
-	/*
-	 * We use __memblock_alloc_base() because memblock_alloc_base()
-	 * panic()s on allocation failure.
-	 */
-	phys_addr_t base = __memblock_alloc_base(size, align, end);
+	phys_addr_t base;
+
+	end = !end ? MEMBLOCK_ALLOC_ANYWHERE : end;
+	align = !align ? SMP_CACHE_BYTES : align;
+	base = memblock_find_in_range(start, end, size, align);
 	if (!base)
 		return -ENOMEM;
-
-	/*
-	 * Check if the allocated region fits in to start..end window
-	 */
-	if (base < start) {
-		memblock_free(base, size);
-		return -ENOMEM;
-	}
 
 	*res_base = base;
 	if (nomap)
 		return memblock_remove(base, size);
-	return 0;
+
+	return memblock_reserve(base, size);
 }
-#else
-int __init __weak early_init_dt_alloc_reserved_memory_arch(phys_addr_t size,
-	phys_addr_t align, phys_addr_t start, phys_addr_t end, bool nomap,
-	phys_addr_t *res_base)
-{
-	pr_err("Reserved memory not supported, ignoring region 0x%llx%s\n",
-		  size, nomap ? " (nomap)" : "");
-	return -ENOSYS;
-}
-#endif
 
 /**
  * res_mem_save_node() - save fdt node for second pass initialization
@@ -80,7 +54,7 @@ void __init fdt_reserved_mem_save_node(unsigned long node, const char *uname,
 	struct reserved_mem *rmem = &reserved_mem[reserved_mem_count];
 
 	if (reserved_mem_count == ARRAY_SIZE(reserved_mem)) {
-		pr_err("Reserved memory: not enough space all defined regions.\n");
+		pr_err("not enough space all defined regions.\n");
 		return;
 	}
 
@@ -98,8 +72,7 @@ void __init fdt_reserved_mem_save_node(unsigned long node, const char *uname,
  *			  and 'alloc-ranges' properties
  */
 static int __init __reserved_mem_alloc_size(unsigned long node,
-	const char *uname, phys_addr_t *res_base, phys_addr_t *res_size,
-	unsigned long *flags)
+	const char *uname, phys_addr_t *res_base, phys_addr_t *res_size)
 {
 	int t_len = (dt_root_addr_cells + dt_root_size_cells) * sizeof(__be32);
 	phys_addr_t start = 0, end = 0;
@@ -108,43 +81,45 @@ static int __init __reserved_mem_alloc_size(unsigned long node,
 	const __be32 *prop;
 	int nomap;
 	int ret;
-	int multi_use;
-
-	pr_debug("__reserved_mem_alloc_size: %s\n", uname);
 
 	prop = of_get_flat_dt_prop(node, "size", &len);
 	if (!prop)
 		return -EINVAL;
 
 	if (len != dt_root_size_cells * sizeof(__be32)) {
-		pr_err("Reserved memory: invalid size property in '%s' node.\n",
-				uname);
+		pr_err("invalid size property in '%s' node.\n", uname);
 		return -EINVAL;
 	}
 	size = dt_mem_next_cell(dt_root_size_cells, &prop);
 
 	nomap = of_get_flat_dt_prop(node, "no-map", NULL) != NULL;
 
-	multi_use = of_get_flat_dt_prop(node, "multi-use", NULL) != NULL;
-	if (!nomap && multi_use)
-		*flags |= 1;
-
-
 	prop = of_get_flat_dt_prop(node, "alignment", &len);
 	if (prop) {
 		if (len != dt_root_addr_cells * sizeof(__be32)) {
-			pr_err("Reserved memory: invalid alignment property in '%s' node.\n",
+			pr_err("invalid alignment property in '%s' node.\n",
 				uname);
 			return -EINVAL;
 		}
 		align = dt_mem_next_cell(dt_root_addr_cells, &prop);
 	}
 
+	/* Need adjust the alignment to satisfy the CMA requirement */
+	if (IS_ENABLED(CONFIG_CMA)
+	    && of_flat_dt_is_compatible(node, "shared-dma-pool")
+	    && of_get_flat_dt_prop(node, "reusable", NULL)
+	    && !of_get_flat_dt_prop(node, "no-map", NULL)) {
+		unsigned long order =
+			max_t(unsigned long, MAX_ORDER - 1, pageblock_order);
+
+		align = max(align, (phys_addr_t)PAGE_SIZE << order);
+	}
+
 	prop = of_get_flat_dt_prop(node, "alloc-ranges", &len);
 	if (prop) {
 
 		if (len % t_len != 0) {
-			pr_err("Reserved memory: invalid alloc-ranges property in '%s', skipping node.\n",
+			pr_err("invalid alloc-ranges property in '%s', skipping node.\n",
 			       uname);
 			return -EINVAL;
 		}
@@ -159,7 +134,7 @@ static int __init __reserved_mem_alloc_size(unsigned long node,
 			ret = early_init_dt_alloc_reserved_memory_arch(size,
 					align, start, end, nomap, &base);
 			if (ret == 0) {
-				pr_debug("Reserved memory: allocated memory for '%s' node: base %pa, size %ld MiB\n",
+				pr_debug("allocated memory for '%s' node: base %pa, size %ld MiB\n",
 					uname, &base,
 					(unsigned long)size / SZ_1M);
 				break;
@@ -171,20 +146,17 @@ static int __init __reserved_mem_alloc_size(unsigned long node,
 		ret = early_init_dt_alloc_reserved_memory_arch(size, align,
 							0, 0, nomap, &base);
 		if (ret == 0)
-			pr_debug("Reserved memory: allocated memory for '%s' node: base %pa, size %ld MiB\n",
+			pr_debug("allocated memory for '%s' node: base %pa, size %ld MiB\n",
 				uname, &base, (unsigned long)size / SZ_1M);
 	}
 
 	if (base == 0) {
-		pr_info("Reserved memory: failed to allocate memory for node '%s'\n",
-			uname);
+		pr_info("failed to allocate memory for node '%s'\n", uname);
 		return -ENOMEM;
 	}
 
 	*res_base = base;
 	*res_size = size;
-	pr_info("%25s: %pa - 0x%016lx  (%ld MiB)\n", uname, &base,
-		(unsigned long)(base+size), (unsigned long)size / SZ_1M);
 
 	return 0;
 }
@@ -199,7 +171,6 @@ static int __init __reserved_mem_init_node(struct reserved_mem *rmem)
 {
 	extern const struct of_device_id __reservedmem_of_table[];
 	const struct of_device_id *i;
-	int ret = 0;
 
 	for (i = __reservedmem_of_table; i < &__rmem_of_table_sentinel; i++) {
 		reservedmem_of_init_fn initfn = i->data;
@@ -208,17 +179,54 @@ static int __init __reserved_mem_init_node(struct reserved_mem *rmem)
 		if (!of_flat_dt_is_compatible(rmem->fdt_node, compat))
 			continue;
 
-		/*
-		 * scan whole table to set up all initfn, if one memory region
-		 * is used by multi-users.
-		 */
 		if (initfn(rmem) == 0) {
-			pr_debug("Reserved memory: initialized node %s, compatible id %s\n",
+			pr_info("initialized node %s, compatible id %s\n",
 				rmem->name, compat);
-		} else
-			ret--;
+			return 0;
+		}
 	}
-	return ret;
+	return -ENOENT;
+}
+
+static int __init __rmem_cmp(const void *a, const void *b)
+{
+	const struct reserved_mem *ra = a, *rb = b;
+
+	if (ra->base < rb->base)
+		return -1;
+
+	if (ra->base > rb->base)
+		return 1;
+
+	return 0;
+}
+
+static void __init __rmem_check_for_overlap(void)
+{
+	int i;
+
+	if (reserved_mem_count < 2)
+		return;
+
+	sort(reserved_mem, reserved_mem_count, sizeof(reserved_mem[0]),
+	     __rmem_cmp, NULL);
+	for (i = 0; i < reserved_mem_count - 1; i++) {
+		struct reserved_mem *this, *next;
+
+		this = &reserved_mem[i];
+		next = &reserved_mem[i + 1];
+		if (!(this->base && next->base))
+			continue;
+		if (this->base + this->size > next->base) {
+			phys_addr_t this_end, next_end;
+
+			this_end = this->base + this->size;
+			next_end = next->base + next->size;
+			pr_err("OVERLAP DETECTED!\n%s (%pa--%pa) overlaps with %s (%pa--%pa)\n",
+			       this->name, &this->base, &this_end,
+			       next->name, &next->base, &next_end);
+		}
+	}
 }
 
 /**
@@ -227,7 +235,9 @@ static int __init __reserved_mem_init_node(struct reserved_mem *rmem)
 void __init fdt_init_reserved_mem(void)
 {
 	int i;
-	unsigned long totalsize = 0;
+
+	/* check for overlapping reserved regions */
+	__rmem_check_for_overlap();
 
 	for (i = 0; i < reserved_mem_count; i++) {
 		struct reserved_mem *rmem = &reserved_mem[i];
@@ -241,17 +251,13 @@ void __init fdt_init_reserved_mem(void)
 			prop = of_get_flat_dt_prop(node, "linux,phandle", &len);
 		if (prop)
 			rmem->phandle = of_read_number(prop, len/4);
-		if (i == 0)
-			pr_info("fdt Reserved memory table:\n");
+
 		if (rmem->size == 0)
 			err = __reserved_mem_alloc_size(node, rmem->name,
-					&rmem->base, &rmem->size, &rmem->flags);
+						 &rmem->base, &rmem->size);
 		if (err == 0)
 			__reserved_mem_init_node(rmem);
-		totalsize += rmem->size;
 	}
-	pr_info("fdt Reserved memory total:  %ld MiB\n",
-		(unsigned long)totalsize / SZ_1M);
 }
 
 static inline struct reserved_mem *__find_rmem(struct device_node *node)
@@ -267,149 +273,125 @@ static inline struct reserved_mem *__find_rmem(struct device_node *node)
 	return NULL;
 }
 
-static int of_rmem_multi_init(struct device *dev, struct reserved_mem *rmem)
-{
-	struct rmem_multi_user *u;
-	int ret = -1;
+struct rmem_assigned_device {
+	struct device *dev;
+	struct reserved_mem *rmem;
+	struct list_head list;
+};
 
-	if (!rmem || !dev || !rmem->user)
-		return -EINVAL;
-
-	u = rmem->user;
-	while (u) {
-		if (of_match_node(u->of_match_table, dev->of_node) &&
-		    u->ops->device_init) {
-			ret = u->ops->device_init(rmem, dev);
-			return ret;
-		}
-		u = u->next;
-	}
-	return ret;
-}
-
-static int of_rmem_multi_release(struct device *dev, struct reserved_mem *rmem)
-{
-	struct rmem_multi_user *u;
-	int ret = 0;
-
-	if (!rmem || !dev || !rmem->user)
-		return -EINVAL;
-
-	u = rmem->user;
-	while (u) {
-		if (of_match_node(u->of_match_table, dev->of_node) &&
-		    u->ops->device_release) {
-			u->ops->device_release(rmem, dev);
-			return ret;
-		}
-		u = u->next;
-	}
-	return ret;
-}
-
-
-int of_add_rmem_multi_user(struct reserved_mem *rmem,
-			   struct rmem_multi_user *user)
-{
-	struct rmem_multi_user *u;
-
-	if (!rmem || !user)
-		return -EINVAL;
-	if (!rmem->user) {
-		rmem->user = user;
-		pr_debug("%s add multi user:%p\n", rmem->name, user);
-		return 0;
-	}
-
-	u = rmem->user;
-	while (u->next)
-		u = u->next;
-	pr_debug("%s add multi user:%p\n", rmem->name, user);
-	u->next = user;
-	user->next = NULL;
-
-	return 0;
-}
+static LIST_HEAD(of_rmem_assigned_device_list);
+static DEFINE_MUTEX(of_rmem_assigned_device_mutex);
 
 /**
- * of_reserved_mem_device_init() - assign reserved memory region to given device
+ * of_reserved_mem_device_init_by_idx() - assign reserved memory region to
+ *					  given device
+ * @dev:	Pointer to the device to configure
+ * @np:		Pointer to the device_node with 'reserved-memory' property
+ * @idx:	Index of selected region
  *
- * This function assign memory region pointed by "memory-region" device tree
- * property to the given device.
+ * This function assigns respective DMA-mapping operations based on reserved
+ * memory region specified by 'memory-region' property in @np node to the @dev
+ * device. When driver needs to use more than one reserved memory region, it
+ * should allocate child devices and initialize regions by name for each of
+ * child device.
+ *
+ * Returns error code or zero on success.
  */
-int of_reserved_mem_device_init(struct device *dev)
+int of_reserved_mem_device_init_by_idx(struct device *dev,
+				       struct device_node *np, int idx)
 {
+	struct rmem_assigned_device *rd;
+	struct device_node *target;
 	struct reserved_mem *rmem;
-	struct device_node *np;
-	struct property *prop = NULL;
-	int len;
-	int ret = 0, i;
+	int ret;
 
-	prop = of_find_property(dev->of_node, "memory-region", &len);
-	if (prop) {
-		len = len / sizeof(__be32);
-		pr_info("%s has %d memory regions\n", dev->of_node->name, len);
-	} else
+	if (!np || !dev)
+		return -EINVAL;
+
+	target = of_parse_phandle(np, "memory-region", idx);
+	if (!target)
 		return -ENODEV;
 
-	for (i = 0; i < len; i++) {
-		np = of_parse_phandle(dev->of_node, "memory-region", i);
-		if (!np)
-			continue;
+	rmem = __find_rmem(target);
+	of_node_put(target);
 
-		rmem = __find_rmem(np);
-		of_node_put(np);
+	if (!rmem || !rmem->ops || !rmem->ops->device_init)
+		return -EINVAL;
 
-		if (!of_rmem_multi_init(dev, rmem))
-			continue;
+	rd = kmalloc(sizeof(struct rmem_assigned_device), GFP_KERNEL);
+	if (!rd)
+		return -ENOMEM;
 
-		if (!rmem || !rmem->ops || !rmem->ops->device_init)
-			continue;
+	ret = rmem->ops->device_init(rmem, dev);
+	if (ret == 0) {
+		rd->dev = dev;
+		rd->rmem = rmem;
 
-		ret = rmem->ops->device_init(rmem, dev);
-		dev_info(dev, "assigned reserved memory node %s %s\n",
-			rmem->name, ret ? "failed" : "ok");
-		if (ret)
-			return ret;
+		mutex_lock(&of_rmem_assigned_device_mutex);
+		list_add(&rd->list, &of_rmem_assigned_device_list);
+		mutex_unlock(&of_rmem_assigned_device_mutex);
+
+		dev_info(dev, "assigned reserved memory node %s\n", rmem->name);
+	} else {
+		kfree(rd);
 	}
-	return 0;
+
+	return ret;
 }
+EXPORT_SYMBOL_GPL(of_reserved_mem_device_init_by_idx);
 
 /**
  * of_reserved_mem_device_release() - release reserved memory device structures
+ * @dev:	Pointer to the device to deconfigure
  *
  * This function releases structures allocated for memory region handling for
  * the given device.
  */
 void of_reserved_mem_device_release(struct device *dev)
 {
-	struct reserved_mem *rmem;
-	struct device_node *np;
-	struct property *prop = NULL;
-	int len;
-	int i;
+	struct rmem_assigned_device *rd;
+	struct reserved_mem *rmem = NULL;
 
-	prop = of_find_property(dev->of_node, "memory-region", &len);
-	if (prop) {
-		len = len / sizeof(__be32);
-		pr_info("%s has %d memory regions\n", dev->of_node->name, len);
-	} else
+	mutex_lock(&of_rmem_assigned_device_mutex);
+	list_for_each_entry(rd, &of_rmem_assigned_device_list, list) {
+		if (rd->dev == dev) {
+			rmem = rd->rmem;
+			list_del(&rd->list);
+			kfree(rd);
+			break;
+		}
+	}
+	mutex_unlock(&of_rmem_assigned_device_mutex);
+
+	if (!rmem || !rmem->ops || !rmem->ops->device_release)
 		return;
 
-	for (i = 0; i < len; i++) {
-		np = of_parse_phandle(dev->of_node, "memory-region", i);
-		if (!np)
-			continue;
-
-		rmem = __find_rmem(np);
-		of_node_put(np);
-
-		if (!of_rmem_multi_release(dev, rmem))
-			continue;
-
-		if (!rmem || !rmem->ops || !rmem->ops->device_release)
-			continue;
-
-		rmem->ops->device_release(rmem, dev);
-	}
+	rmem->ops->device_release(rmem, dev);
 }
+EXPORT_SYMBOL_GPL(of_reserved_mem_device_release);
+
+/**
+ * of_reserved_mem_lookup() - acquire reserved_mem from a device node
+ * @np:		node pointer of the desired reserved-memory region
+ *
+ * This function allows drivers to acquire a reference to the reserved_mem
+ * struct based on a device node handle.
+ *
+ * Returns a reserved_mem reference, or NULL on error.
+ */
+struct reserved_mem *of_reserved_mem_lookup(struct device_node *np)
+{
+	const char *name;
+	int i;
+
+	if (!np->full_name)
+		return NULL;
+
+	name = kbasename(np->full_name);
+	for (i = 0; i < reserved_mem_count; i++)
+		if (!strcmp(reserved_mem[i].name, name))
+			return &reserved_mem[i];
+
+	return NULL;
+}
+EXPORT_SYMBOL_GPL(of_reserved_mem_lookup);

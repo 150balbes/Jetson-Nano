@@ -16,11 +16,15 @@ Required properties:
 Optional properties:
 - ti,enable-ext-control: This is applicable for DCDC1, DCDC2 and DCDC3.
   If DCDCs are externally controlled then this property should be there.
-- "dcdc-ext-control-gpios: This is applicable for DCDC1, DCDC2 and DCDC3.
+- dcdc-ext-control-gpios: This is applicable for DCDC1, DCDC2 and DCDC3.
   If DCDCs are externally controlled and if it is from GPIO then GPIO
   number should be provided. If it is externally controlled and no GPIO
   entry then driver will just configure this rails as external control
   and will not provide any enable/disable APIs.
+- ti,overcurrent-wait: This is applicable to FET registers, which have a
+  poorly defined "overcurrent wait" field.  If this property is present it
+  should be between 0 - 3.  If this property isn't present we won't touch the
+  "overcurrent wait" field and we'll leave it to the BIOS/EC to deal with.
 
 Each regulator is defined using the standard binding for regulators.
 
@@ -41,8 +45,8 @@ Example:
 		infet5-supply = <&some_reg>;
 		infet6-supply = <&some_reg>;
 		infet7-supply = <&some_reg>;
-		vsys_l1-supply = <&some_reg>;
-		vsys_l2-supply = <&some_reg>;
+		vsys-l1-supply = <&some_reg>;
+		vsys-l2-supply = <&some_reg>;
 
 		regulators {
 			dcdc1 {

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  * Generic wait-for-completion handler;
  *
@@ -10,9 +11,7 @@
  * typically be used for exclusion which gives rise to priority inversion.
  * Waiting for completion is a typically sync point, but not an exclusion point.
  */
-
-#include <linux/sched.h>
-#include <linux/completion.h>
+#include "sched.h"
 
 /**
  * complete: - signals a single thread waiting on this completion
@@ -23,15 +22,17 @@
  *
  * See also complete_all(), wait_for_completion() and related routines.
  *
- * It may be assumed that this function implies a write memory barrier before
- * changing the task state if and only if any tasks are woken up.
+ * If this function wakes up a task, it executes a full memory barrier before
+ * accessing the task state.
  */
 void complete(struct completion *x)
 {
 	unsigned long flags;
 
 	spin_lock_irqsave(&x->wait.lock, flags);
-	x->done++;
+
+	if (x->done != UINT_MAX)
+		x->done++;
 	__wake_up_locked(&x->wait, TASK_NORMAL, 1);
 	spin_unlock_irqrestore(&x->wait.lock, flags);
 }
@@ -43,15 +44,22 @@ EXPORT_SYMBOL(complete);
  *
  * This will wake up all threads waiting on this particular completion event.
  *
- * It may be assumed that this function implies a write memory barrier before
- * changing the task state if and only if any tasks are woken up.
+ * If this function wakes up a task, it executes a full memory barrier before
+ * accessing the task state.
+ *
+ * Since complete_all() sets the completion of @x permanently to done
+ * to allow multiple waiters to finish, a call to reinit_completion()
+ * must be used on @x if @x is to be used again. The code must make
+ * sure that all waiters have woken and finished before reinitializing
+ * @x. Also note that the function completion_done() can not be used
+ * to know if there are still waiters after complete_all() has been called.
  */
 void complete_all(struct completion *x)
 {
 	unsigned long flags;
 
 	spin_lock_irqsave(&x->wait.lock, flags);
-	x->done += UINT_MAX/2;
+	x->done = UINT_MAX;
 	__wake_up_locked(&x->wait, TASK_NORMAL, 0);
 	spin_unlock_irqrestore(&x->wait.lock, flags);
 }
@@ -64,7 +72,7 @@ do_wait_for_common(struct completion *x,
 	if (!x->done) {
 		DECLARE_WAITQUEUE(wait, current);
 
-		__add_wait_queue_tail_exclusive(&x->wait, &wait);
+		__add_wait_queue_entry_tail_exclusive(&x->wait, &wait);
 		do {
 			if (signal_pending_state(state, current)) {
 				timeout = -ERESTARTSYS;
@@ -79,7 +87,8 @@ do_wait_for_common(struct completion *x,
 		if (!x->done)
 			return timeout;
 	}
-	x->done--;
+	if (x->done != UINT_MAX)
+		x->done--;
 	return timeout ?: 1;
 }
 
@@ -89,9 +98,14 @@ __wait_for_common(struct completion *x,
 {
 	might_sleep();
 
+	complete_acquire(x);
+
 	spin_lock_irq(&x->wait.lock);
 	timeout = do_wait_for_common(x, action, timeout, state);
 	spin_unlock_irq(&x->wait.lock);
+
+	complete_release(x);
+
 	return timeout;
 }
 
@@ -148,7 +162,7 @@ EXPORT_SYMBOL(wait_for_completion_timeout);
  *
  * This waits to be signaled for completion of a specific task. It is NOT
  * interruptible and there is no timeout. The caller is accounted as waiting
- * for IO.
+ * for IO (which traditionally means blkio only).
  */
 void __sched wait_for_completion_io(struct completion *x)
 {
@@ -163,7 +177,8 @@ EXPORT_SYMBOL(wait_for_completion_io);
  *
  * This waits for either a completion of a specific task to be signaled or for a
  * specified timeout to expire. The timeout is in jiffies. It is not
- * interruptible. The caller is accounted as waiting for IO.
+ * interruptible. The caller is accounted as waiting for IO (which traditionally
+ * means blkio only).
  *
  * Return: 0 if timed out, and positive (at least 1, or number of jiffies left
  * till timeout) if completed.
@@ -265,12 +280,21 @@ EXPORT_SYMBOL(wait_for_completion_killable_timeout);
 bool try_wait_for_completion(struct completion *x)
 {
 	unsigned long flags;
-	int ret = 1;
+	bool ret = true;
+
+	/*
+	 * Since x->done will need to be locked only
+	 * in the non-blocking case, we check x->done
+	 * first without taking the lock so we can
+	 * return early in the blocking case.
+	 */
+	if (!READ_ONCE(x->done))
+		return false;
 
 	spin_lock_irqsave(&x->wait.lock, flags);
 	if (!x->done)
-		ret = 0;
-	else
+		ret = false;
+	else if (x->done != UINT_MAX)
 		x->done--;
 	spin_unlock_irqrestore(&x->wait.lock, flags);
 	return ret;
@@ -284,16 +308,22 @@ EXPORT_SYMBOL(try_wait_for_completion);
  *	Return: 0 if there are waiters (wait_for_completion() in progress)
  *		 1 if there are no waiters.
  *
+ *	Note, this will always return true if complete_all() was called on @X.
  */
 bool completion_done(struct completion *x)
 {
 	unsigned long flags;
-	int ret = 1;
 
+	if (!READ_ONCE(x->done))
+		return false;
+
+	/*
+	 * If ->done, we need to wait for complete() to release ->wait.lock
+	 * otherwise we can end up freeing the completion before complete()
+	 * is done referencing it.
+	 */
 	spin_lock_irqsave(&x->wait.lock, flags);
-	if (!x->done)
-		ret = 0;
 	spin_unlock_irqrestore(&x->wait.lock, flags);
-	return ret;
+	return true;
 }
 EXPORT_SYMBOL(completion_done);

@@ -11,6 +11,7 @@
 #ifndef _ASM_SGIALIB_H
 #define _ASM_SGIALIB_H
 
+#include <linux/compiler.h>
 #include <asm/sgiarcs.h>
 
 extern struct linux_romvec *romvec;
@@ -30,7 +31,6 @@ extern int prom_flags;
 #define PROM_FLAG_DONT_FREE_TEMP	4
 
 /* Simple char-by-char console I/O. */
-extern void prom_putchar(char c);
 extern char prom_getchar(void);
 
 /* Get next memory descriptor after CURR, returns first descriptor
@@ -70,8 +70,11 @@ extern LONG ArcRead(ULONG fd, PVOID buf, ULONG num, PULONG cnt);
 extern LONG ArcWrite(ULONG fd, PVOID buf, ULONG num, PULONG cnt);
 
 /* Misc. routines. */
-extern VOID ArcReboot(VOID) __attribute__((noreturn));
-extern VOID ArcEnterInteractiveMode(VOID) __attribute__((noreturn));
+extern VOID ArcHalt(VOID) __noreturn;
+extern VOID ArcPowerDown(VOID) __noreturn;
+extern VOID ArcRestart(VOID) __noreturn;
+extern VOID ArcReboot(VOID) __noreturn;
+extern VOID ArcEnterInteractiveMode(VOID) __noreturn;
 extern VOID ArcFlushAllCaches(VOID);
 extern DISPLAY_STATUS *ArcGetDisplayStatus(ULONG FileID);
 

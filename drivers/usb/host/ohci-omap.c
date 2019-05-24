@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-1.0+
 /*
  * OHCI HCD (Host Controller Driver) for USB.
  *
@@ -36,7 +37,6 @@
 #include <mach/mux.h>
 
 #include <mach/hardware.h>
-#include <mach/irqs.h>
 #include <mach/usb.h>
 
 
@@ -54,7 +54,7 @@
 #define DRIVER_DESC "OHCI OMAP driver"
 
 #ifdef CONFIG_TPS65010
-#include <linux/i2c/tps65010.h>
+#include <linux/mfd/tps65010.h>
 #else
 
 #define LOW	0
@@ -68,9 +68,6 @@ static inline int tps65010_set_gpio_out_value(unsigned gpio, unsigned value)
 }
 
 #endif
-
-extern int usb_disabled(void);
-extern int ocpi_enable(void);
 
 static struct clk *usb_host_ck;
 static struct clk *usb_dc_ck;
@@ -180,10 +177,10 @@ static void start_hnp(struct ohci_hcd *ohci)
 	unsigned long	flags;
 	u32 l;
 
-	otg_start_hnp(hcd->phy->otg);
+	otg_start_hnp(hcd->usb_phy->otg);
 
 	local_irq_save(flags);
-	hcd->phy->state = OTG_STATE_A_SUSPEND;
+	hcd->usb_phy->otg->state = OTG_STATE_A_SUSPEND;
 	writel (RH_PS_PSS, &ohci->regs->roothub.portstatus [port]);
 	l = omap_readl(OTG_CTRL);
 	l &= ~OTG_A_BUSREQ;
@@ -220,20 +217,20 @@ static int ohci_omap_reset(struct usb_hcd *hcd)
 
 #ifdef	CONFIG_USB_OTG
 	if (need_transceiver) {
-		hcd->phy = usb_get_phy(USB_PHY_TYPE_USB2);
-		if (!IS_ERR_OR_NULL(hcd->phy)) {
-			int	status = otg_set_host(hcd->phy->otg,
+		hcd->usb_phy = usb_get_phy(USB_PHY_TYPE_USB2);
+		if (!IS_ERR_OR_NULL(hcd->usb_phy)) {
+			int	status = otg_set_host(hcd->usb_phy->otg,
 						&ohci_to_hcd(ohci)->self);
 			dev_dbg(hcd->self.controller, "init %s phy, status %d\n",
-					hcd->phy->label, status);
+					hcd->usb_phy->label, status);
 			if (status) {
-				usb_put_phy(hcd->phy);
+				usb_put_phy(hcd->usb_phy);
 				return status;
 			}
 		} else {
-			dev_err(hcd->self.controller, "can't find phy\n");
-			return -ENODEV;
+			return -EPROBE_DEFER;
 		}
+		hcd->skip_phy_initialization = 1;
 		ohci->start_hnp = start_hnp;
 	}
 #endif
@@ -283,7 +280,7 @@ static int ohci_omap_reset(struct usb_hcd *hcd)
 		ohci_to_hcd(ohci)->power_budget = 0;
 	}
 
-	/* FIXME khubd hub requests should manage power switching */
+	/* FIXME hub_wq hub requests should manage power switching */
 	omap_ohci_transceiver_power(1);
 
 	/* board init will have already handled HMC and mux setup.
@@ -297,15 +294,14 @@ static int ohci_omap_reset(struct usb_hcd *hcd)
 /*-------------------------------------------------------------------------*/
 
 /**
- * usb_hcd_omap_probe - initialize OMAP-based HCDs
+ * ohci_hcd_omap_probe - initialize OMAP-based HCDs
  * Context: !in_interrupt()
  *
  * Allocates basic resources for this USB host controller, and
  * then invokes the start() method for the HCD associated with it
  * through the hotplug entry's driver_data.
  */
-static int usb_hcd_omap_probe (const struct hc_driver *driver,
-			  struct platform_device *pdev)
+static int ohci_hcd_omap_probe(struct platform_device *pdev)
 {
 	int retval, irq;
 	struct usb_hcd *hcd = 0;
@@ -337,7 +333,8 @@ static int usb_hcd_omap_probe (const struct hc_driver *driver,
 	}
 
 
-	hcd = usb_create_hcd (driver, &pdev->dev, dev_name(&pdev->dev));
+	hcd = usb_create_hcd(&ohci_omap_hc_driver, &pdev->dev,
+			dev_name(&pdev->dev));
 	if (!hcd) {
 		retval = -ENOMEM;
 		goto err0;
@@ -385,23 +382,24 @@ err0:
 /* may be called with controller, bus, and devices active */
 
 /**
- * usb_hcd_omap_remove - shutdown processing for OMAP-based HCDs
+ * ohci_hcd_omap_remove - shutdown processing for OMAP-based HCDs
  * @dev: USB Host Controller being removed
  * Context: !in_interrupt()
  *
- * Reverses the effect of usb_hcd_omap_probe(), first invoking
+ * Reverses the effect of ohci_hcd_omap_probe(), first invoking
  * the HCD's stop() method.  It is always called from a thread
  * context, normally "rmmod", "apmd", or something similar.
  */
-static inline void
-usb_hcd_omap_remove (struct usb_hcd *hcd, struct platform_device *pdev)
+static int ohci_hcd_omap_remove(struct platform_device *pdev)
 {
+	struct usb_hcd	*hcd = platform_get_drvdata(pdev);
+
 	dev_dbg(hcd->self.controller, "stopping USB Controller\n");
 	usb_remove_hcd(hcd);
 	omap_ohci_clock_power(0);
-	if (!IS_ERR_OR_NULL(hcd->phy)) {
-		(void) otg_set_host(hcd->phy->otg, 0);
-		usb_put_phy(hcd->phy);
+	if (!IS_ERR_OR_NULL(hcd->usb_phy)) {
+		(void) otg_set_host(hcd->usb_phy->otg, 0);
+		usb_put_phy(hcd->usb_phy);
 	}
 	if (machine_is_omap_osk())
 		gpio_free(9);
@@ -410,21 +408,6 @@ usb_hcd_omap_remove (struct usb_hcd *hcd, struct platform_device *pdev)
 	usb_put_hcd(hcd);
 	clk_put(usb_dc_ck);
 	clk_put(usb_host_ck);
-}
-
-/*-------------------------------------------------------------------------*/
-
-static int ohci_hcd_omap_drv_probe(struct platform_device *dev)
-{
-	return usb_hcd_omap_probe(&ohci_omap_hc_driver, dev);
-}
-
-static int ohci_hcd_omap_drv_remove(struct platform_device *dev)
-{
-	struct usb_hcd		*hcd = platform_get_drvdata(dev);
-
-	usb_hcd_omap_remove(hcd, dev);
-
 	return 0;
 }
 
@@ -473,15 +456,14 @@ static int ohci_omap_resume(struct platform_device *dev)
  * Driver definition to register with the OMAP bus
  */
 static struct platform_driver ohci_hcd_omap_driver = {
-	.probe		= ohci_hcd_omap_drv_probe,
-	.remove		= ohci_hcd_omap_drv_remove,
+	.probe		= ohci_hcd_omap_probe,
+	.remove		= ohci_hcd_omap_remove,
 	.shutdown	= usb_hcd_platform_shutdown,
 #ifdef	CONFIG_PM
 	.suspend	= ohci_omap_suspend,
 	.resume		= ohci_omap_resume,
 #endif
 	.driver		= {
-		.owner	= THIS_MODULE,
 		.name	= "ohci",
 	},
 };

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 #include <linux/hardirq.h>
 
 #include <asm/x86_init.h>
@@ -23,7 +24,7 @@ void xen_force_evtchn_callback(void)
 	(void)HYPERVISOR_xen_version(0, NULL);
 }
 
-asmlinkage unsigned long xen_save_fl(void)
+asmlinkage __visible unsigned long xen_save_fl(void)
 {
 	struct vcpu_info *vcpu;
 	unsigned long flags;
@@ -63,7 +64,7 @@ __visible void xen_restore_fl(unsigned long flags)
 }
 PV_CALLEE_SAVE_REGS_THUNK(xen_restore_fl);
 
-asmlinkage void xen_irq_disable(void)
+asmlinkage __visible void xen_irq_disable(void)
 {
 	/* There's a one instruction preempt window here.  We need to
 	   make sure we're don't switch CPUs between getting the vcpu
@@ -74,7 +75,7 @@ asmlinkage void xen_irq_disable(void)
 }
 PV_CALLEE_SAVE_REGS_THUNK(xen_irq_disable);
 
-asmlinkage void xen_irq_enable(void)
+asmlinkage __visible void xen_irq_enable(void)
 {
 	struct vcpu_info *vcpu;
 
@@ -109,7 +110,8 @@ static void xen_safe_halt(void)
 static void xen_halt(void)
 {
 	if (irqs_disabled())
-		HYPERVISOR_vcpu_op(VCPUOP_down, smp_processor_id(), NULL);
+		HYPERVISOR_vcpu_op(VCPUOP_down,
+				   xen_vcpu_nr(smp_processor_id()), NULL);
 	else
 		xen_safe_halt();
 }
@@ -122,15 +124,10 @@ static const struct pv_irq_ops xen_irq_ops __initconst = {
 
 	.safe_halt = xen_safe_halt,
 	.halt = xen_halt,
-#ifdef CONFIG_X86_64
-	.adjust_exception_frame = xen_adjust_exception_frame,
-#endif
 };
 
 void __init xen_init_irq_ops(void)
 {
-	/* For PVH we use default pv_irq_ops settings. */
-	if (!xen_feature(XENFEAT_hvm_callback_vector))
-		pv_irq_ops = xen_irq_ops;
+	pv_ops.irq = xen_irq_ops;
 	x86_init.irqs.intr_init = xen_init_IRQ;
 }

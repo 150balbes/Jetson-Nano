@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * This file holds USB constants and structures that are needed for
  * USB device APIs.  These are used by the USB device model, which is
@@ -32,8 +33,8 @@
 #ifndef __LINUX_USB_CH9_H
 #define __LINUX_USB_CH9_H
 
+#include <linux/device.h>
 #include <uapi/linux/usb/ch9.h>
-
 
 /**
  * usb_speed_string() - Returns human readable-name of the speed.
@@ -43,6 +44,15 @@
  */
 extern const char *usb_speed_string(enum usb_device_speed speed);
 
+/**
+ * usb_get_maximum_speed - Get maximum requested speed for a given USB
+ * controller.
+ * @dev: Pointer to the given USB controller device
+ *
+ * The function gets the maximum speed string from property "maximum-speed",
+ * and returns the corresponding enum usb_device_speed.
+ */
+extern enum usb_device_speed usb_get_maximum_speed(struct device *dev);
 
 /**
  * usb_state_string - Returns human readable name for the state.

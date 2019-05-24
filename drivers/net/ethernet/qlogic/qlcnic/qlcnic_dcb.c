@@ -167,7 +167,7 @@ struct qlcnic_dcb_cfg {
 	u32 version;
 };
 
-static struct qlcnic_dcb_ops qlcnic_83xx_dcb_ops = {
+static const struct qlcnic_dcb_ops qlcnic_83xx_dcb_ops = {
 	.init_dcbnl_ops		= __qlcnic_init_dcbnl_ops,
 	.free			= __qlcnic_dcb_free,
 	.attach			= __qlcnic_dcb_attach,
@@ -180,7 +180,7 @@ static struct qlcnic_dcb_ops qlcnic_83xx_dcb_ops = {
 	.aen_handler		= qlcnic_83xx_dcb_aen_handler,
 };
 
-static struct qlcnic_dcb_ops qlcnic_82xx_dcb_ops = {
+static const struct qlcnic_dcb_ops qlcnic_82xx_dcb_ops = {
 	.init_dcbnl_ops		= __qlcnic_init_dcbnl_ops,
 	.free			= __qlcnic_dcb_free,
 	.attach			= __qlcnic_dcb_attach,
@@ -329,8 +329,6 @@ static int __qlcnic_dcb_attach(struct qlcnic_dcb *dcb)
 		err = -ENOMEM;
 		goto out_free_cfg;
 	}
-
-	qlcnic_dcb_get_info(dcb);
 
 	return 0;
 out_free_cfg:
@@ -885,7 +883,7 @@ static u8 qlcnic_dcb_get_capability(struct net_device *netdev, int capid,
 	struct qlcnic_adapter *adapter = netdev_priv(netdev);
 
 	if (!test_bit(QLCNIC_DCB_STATE, &adapter->dcb->state))
-		return 0;
+		return 1;
 
 	switch (capid) {
 	case DCB_CAP_ATTR_PG:
@@ -928,7 +926,7 @@ static int qlcnic_dcb_get_num_tcs(struct net_device *netdev, int attr, u8 *num)
 	}
 }
 
-static u8 qlcnic_dcb_get_app(struct net_device *netdev, u8 idtype, u16 id)
+static int qlcnic_dcb_get_app(struct net_device *netdev, u8 idtype, u16 id)
 {
 	struct qlcnic_adapter *adapter = netdev_priv(netdev);
 	struct dcb_app app = {
@@ -937,7 +935,7 @@ static u8 qlcnic_dcb_get_app(struct net_device *netdev, u8 idtype, u16 id)
 			     };
 
 	if (!test_bit(QLCNIC_DCB_STATE, &adapter->dcb->state))
-		return 0;
+		return -EINVAL;
 
 	return dcb_getapp(netdev, &app);
 }

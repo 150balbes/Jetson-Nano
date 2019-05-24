@@ -1,7 +1,7 @@
+// SPDX-License-Identifier: GPL-2.0 OR MIT
 /**************************************************************************
  *
- * Copyright © 2009-2012 VMware, Inc., Palo Alto, CA., USA
- * All Rights Reserved.
+ * Copyright 2009-2015 VMware, Inc., Palo Alto, CA., USA
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the
@@ -25,16 +25,18 @@
  *
  **************************************************************************/
 
+#include <drm/ttm/ttm_placement.h>
+
 #include "vmwgfx_drv.h"
 #include "vmwgfx_resource_priv.h"
-#include "ttm/ttm_placement.h"
-
-#define VMW_COMPAT_SHADER_HT_ORDER 12
+#include "vmwgfx_binding.h"
 
 struct vmw_shader {
 	struct vmw_resource res;
 	SVGA3dShaderType type;
 	uint32_t size;
+	uint8_t num_input_sig;
+	uint8_t num_output_sig;
 };
 
 struct vmw_user_shader {
@@ -42,49 +44,18 @@ struct vmw_user_shader {
 	struct vmw_shader shader;
 };
 
-/**
- * enum vmw_compat_shader_state - Staging state for compat shaders
- */
-enum vmw_compat_shader_state {
-	VMW_COMPAT_COMMITED,
-	VMW_COMPAT_ADD,
-	VMW_COMPAT_DEL
+struct vmw_dx_shader {
+	struct vmw_resource res;
+	struct vmw_resource *ctx;
+	struct vmw_resource *cotable;
+	u32 id;
+	bool committed;
+	struct list_head cotable_head;
 };
 
-/**
- * struct vmw_compat_shader - Metadata for compat shaders.
- *
- * @handle: The TTM handle of the guest backed shader.
- * @tfile: The struct ttm_object_file the guest backed shader is registered
- * with.
- * @hash: Hash item for lookup.
- * @head: List head for staging lists or the compat shader manager list.
- * @state: Staging state.
- *
- * The structure is protected by the cmdbuf lock.
- */
-struct vmw_compat_shader {
-	u32 handle;
-	struct ttm_object_file *tfile;
-	struct drm_hash_item hash;
-	struct list_head head;
-	enum vmw_compat_shader_state state;
-};
-
-/**
- * struct vmw_compat_shader_manager - Compat shader manager.
- *
- * @shaders: Hash table containing staged and commited compat shaders
- * @list: List of commited shaders.
- * @dev_priv: Pointer to a device private structure.
- *
- * @shaders and @list are protected by the cmdbuf mutex for now.
- */
-struct vmw_compat_shader_manager {
-	struct drm_open_hash shaders;
-	struct list_head list;
-	struct vmw_private *dev_priv;
-};
+static uint64_t vmw_user_shader_size;
+static uint64_t vmw_shader_size;
+static size_t vmw_shader_dx_size;
 
 static void vmw_user_shader_free(struct vmw_resource *res);
 static struct vmw_resource *
@@ -98,6 +69,16 @@ static int vmw_gb_shader_unbind(struct vmw_resource *res,
 				 struct ttm_validate_buffer *val_buf);
 static int vmw_gb_shader_destroy(struct vmw_resource *res);
 
+static int vmw_dx_shader_create(struct vmw_resource *res);
+static int vmw_dx_shader_bind(struct vmw_resource *res,
+			       struct ttm_validate_buffer *val_buf);
+static int vmw_dx_shader_unbind(struct vmw_resource *res,
+				 bool readback,
+				 struct ttm_validate_buffer *val_buf);
+static void vmw_dx_shader_commit_notify(struct vmw_resource *res,
+					enum vmw_cmdbuf_res_state state);
+static bool vmw_shader_id_ok(u32 user_key, SVGA3dShaderType shader_type);
+static u32 vmw_shader_key(u32 user_key, SVGA3dShaderType shader_type);
 static uint64_t vmw_user_shader_size;
 
 static const struct vmw_user_resource_conv user_shader_conv = {
@@ -122,6 +103,24 @@ static const struct vmw_res_func vmw_gb_shader_func = {
 	.unbind = vmw_gb_shader_unbind
 };
 
+static const struct vmw_res_func vmw_dx_shader_func = {
+	.res_type = vmw_res_shader,
+	.needs_backup = true,
+	.may_evict = false,
+	.type_name = "dx shaders",
+	.backup_placement = &vmw_mob_placement,
+	.create = vmw_dx_shader_create,
+	/*
+	 * The destroy callback is only called with a committed resource on
+	 * context destroy, in which case we destroy the cotable anyway,
+	 * so there's no need to destroy DX shaders separately.
+	 */
+	.destroy = NULL,
+	.bind = vmw_dx_shader_bind,
+	.unbind = vmw_dx_shader_unbind,
+	.commit_notify = vmw_dx_shader_commit_notify,
+};
+
 /**
  * Shader management:
  */
@@ -132,25 +131,42 @@ vmw_res_to_shader(struct vmw_resource *res)
 	return container_of(res, struct vmw_shader, res);
 }
 
+/**
+ * vmw_res_to_dx_shader - typecast a struct vmw_resource to a
+ * struct vmw_dx_shader
+ *
+ * @res: Pointer to the struct vmw_resource.
+ */
+static inline struct vmw_dx_shader *
+vmw_res_to_dx_shader(struct vmw_resource *res)
+{
+	return container_of(res, struct vmw_dx_shader, res);
+}
+
 static void vmw_hw_shader_destroy(struct vmw_resource *res)
 {
-	(void) vmw_gb_shader_destroy(res);
+	if (likely(res->func->destroy))
+		(void) res->func->destroy(res);
+	else
+		res->id = -1;
 }
+
 
 static int vmw_gb_shader_init(struct vmw_private *dev_priv,
 			      struct vmw_resource *res,
 			      uint32_t size,
 			      uint64_t offset,
 			      SVGA3dShaderType type,
-			      struct vmw_dma_buffer *byte_code,
+			      uint8_t num_input_sig,
+			      uint8_t num_output_sig,
+			      struct vmw_buffer_object *byte_code,
 			      void (*res_free) (struct vmw_resource *res))
 {
 	struct vmw_shader *shader = vmw_res_to_shader(res);
 	int ret;
 
-	ret = vmw_resource_init(dev_priv, res, true,
-				res_free, &vmw_gb_shader_func);
-
+	ret = vmw_resource_init(dev_priv, res, true, res_free,
+				&vmw_gb_shader_func);
 
 	if (unlikely(ret != 0)) {
 		if (res_free)
@@ -162,15 +178,21 @@ static int vmw_gb_shader_init(struct vmw_private *dev_priv,
 
 	res->backup_size = size;
 	if (byte_code) {
-		res->backup = vmw_dmabuf_reference(byte_code);
+		res->backup = vmw_bo_reference(byte_code);
 		res->backup_offset = offset;
 	}
 	shader->size = size;
 	shader->type = type;
+	shader->num_input_sig = num_input_sig;
+	shader->num_output_sig = num_output_sig;
 
-	vmw_resource_activate(res, vmw_hw_shader_destroy);
+	res->hw_destroy = vmw_hw_shader_destroy;
 	return 0;
 }
+
+/*
+ * GB shader code:
+ */
 
 static int vmw_gb_shader_create(struct vmw_resource *res)
 {
@@ -210,7 +232,7 @@ static int vmw_gb_shader_create(struct vmw_resource *res)
 	cmd->body.type = shader->type;
 	cmd->body.sizeInBytes = shader->size;
 	vmw_fifo_commit(dev_priv, sizeof(*cmd));
-	(void) vmw_3d_resource_inc(dev_priv, false);
+	vmw_fifo_resource_inc(dev_priv);
 
 	return 0;
 
@@ -243,7 +265,7 @@ static int vmw_gb_shader_bind(struct vmw_resource *res,
 	cmd->header.size = sizeof(cmd->body);
 	cmd->body.shid = res->id;
 	cmd->body.mobid = bo->mem.start;
-	cmd->body.offsetInBytes = 0;
+	cmd->body.offsetInBytes = res->backup_offset;
 	res->backup_dirty = false;
 	vmw_fifo_commit(dev_priv, sizeof(*cmd));
 
@@ -284,7 +306,7 @@ static int vmw_gb_shader_unbind(struct vmw_resource *res,
 	(void) vmw_execbuf_fence_commands(NULL, dev_priv,
 					  &fence, NULL);
 
-	vmw_fence_single_bo(val_buf->bo, fence);
+	vmw_bo_fence_single(val_buf->bo, fence);
 
 	if (likely(fence != NULL))
 		vmw_fence_obj_unreference(&fence);
@@ -304,7 +326,7 @@ static int vmw_gb_shader_destroy(struct vmw_resource *res)
 		return 0;
 
 	mutex_lock(&dev_priv->binding_mutex);
-	vmw_context_binding_res_list_scrub(&res->binding_head);
+	vmw_binding_res_list_scrub(&res->binding_head);
 
 	cmd = vmw_fifo_reserve(dev_priv, sizeof(*cmd));
 	if (unlikely(cmd == NULL)) {
@@ -320,10 +342,330 @@ static int vmw_gb_shader_destroy(struct vmw_resource *res)
 	vmw_fifo_commit(dev_priv, sizeof(*cmd));
 	mutex_unlock(&dev_priv->binding_mutex);
 	vmw_resource_release_id(res);
-	vmw_3d_resource_dec(dev_priv, false);
+	vmw_fifo_resource_dec(dev_priv);
 
 	return 0;
 }
+
+/*
+ * DX shader code:
+ */
+
+/**
+ * vmw_dx_shader_commit_notify - Notify that a shader operation has been
+ * committed to hardware from a user-supplied command stream.
+ *
+ * @res: Pointer to the shader resource.
+ * @state: Indicating whether a creation or removal has been committed.
+ *
+ */
+static void vmw_dx_shader_commit_notify(struct vmw_resource *res,
+					enum vmw_cmdbuf_res_state state)
+{
+	struct vmw_dx_shader *shader = vmw_res_to_dx_shader(res);
+	struct vmw_private *dev_priv = res->dev_priv;
+
+	if (state == VMW_CMDBUF_RES_ADD) {
+		mutex_lock(&dev_priv->binding_mutex);
+		vmw_cotable_add_resource(shader->cotable,
+					 &shader->cotable_head);
+		shader->committed = true;
+		res->id = shader->id;
+		mutex_unlock(&dev_priv->binding_mutex);
+	} else {
+		mutex_lock(&dev_priv->binding_mutex);
+		list_del_init(&shader->cotable_head);
+		shader->committed = false;
+		res->id = -1;
+		mutex_unlock(&dev_priv->binding_mutex);
+	}
+}
+
+/**
+ * vmw_dx_shader_unscrub - Have the device reattach a MOB to a DX shader.
+ *
+ * @res: The shader resource
+ *
+ * This function reverts a scrub operation.
+ */
+static int vmw_dx_shader_unscrub(struct vmw_resource *res)
+{
+	struct vmw_dx_shader *shader = vmw_res_to_dx_shader(res);
+	struct vmw_private *dev_priv = res->dev_priv;
+	struct {
+		SVGA3dCmdHeader header;
+		SVGA3dCmdDXBindShader body;
+	} *cmd;
+
+	if (!list_empty(&shader->cotable_head) || !shader->committed)
+		return 0;
+
+	cmd = vmw_fifo_reserve_dx(dev_priv, sizeof(*cmd),
+				  shader->ctx->id);
+	if (unlikely(cmd == NULL)) {
+		DRM_ERROR("Failed reserving FIFO space for shader "
+			  "scrubbing.\n");
+		return -ENOMEM;
+	}
+
+	cmd->header.id = SVGA_3D_CMD_DX_BIND_SHADER;
+	cmd->header.size = sizeof(cmd->body);
+	cmd->body.cid = shader->ctx->id;
+	cmd->body.shid = shader->id;
+	cmd->body.mobid = res->backup->base.mem.start;
+	cmd->body.offsetInBytes = res->backup_offset;
+	vmw_fifo_commit(dev_priv, sizeof(*cmd));
+
+	vmw_cotable_add_resource(shader->cotable, &shader->cotable_head);
+
+	return 0;
+}
+
+/**
+ * vmw_dx_shader_create - The DX shader create callback
+ *
+ * @res: The DX shader resource
+ *
+ * The create callback is called as part of resource validation and
+ * makes sure that we unscrub the shader if it's previously been scrubbed.
+ */
+static int vmw_dx_shader_create(struct vmw_resource *res)
+{
+	struct vmw_private *dev_priv = res->dev_priv;
+	struct vmw_dx_shader *shader = vmw_res_to_dx_shader(res);
+	int ret = 0;
+
+	WARN_ON_ONCE(!shader->committed);
+
+	if (!list_empty(&res->mob_head)) {
+		mutex_lock(&dev_priv->binding_mutex);
+		ret = vmw_dx_shader_unscrub(res);
+		mutex_unlock(&dev_priv->binding_mutex);
+	}
+
+	res->id = shader->id;
+	return ret;
+}
+
+/**
+ * vmw_dx_shader_bind - The DX shader bind callback
+ *
+ * @res: The DX shader resource
+ * @val_buf: Pointer to the validate buffer.
+ *
+ */
+static int vmw_dx_shader_bind(struct vmw_resource *res,
+			      struct ttm_validate_buffer *val_buf)
+{
+	struct vmw_private *dev_priv = res->dev_priv;
+	struct ttm_buffer_object *bo = val_buf->bo;
+
+	BUG_ON(bo->mem.mem_type != VMW_PL_MOB);
+	mutex_lock(&dev_priv->binding_mutex);
+	vmw_dx_shader_unscrub(res);
+	mutex_unlock(&dev_priv->binding_mutex);
+
+	return 0;
+}
+
+/**
+ * vmw_dx_shader_scrub - Have the device unbind a MOB from a DX shader.
+ *
+ * @res: The shader resource
+ *
+ * This function unbinds a MOB from the DX shader without requiring the
+ * MOB dma_buffer to be reserved. The driver still considers the MOB bound.
+ * However, once the driver eventually decides to unbind the MOB, it doesn't
+ * need to access the context.
+ */
+static int vmw_dx_shader_scrub(struct vmw_resource *res)
+{
+	struct vmw_dx_shader *shader = vmw_res_to_dx_shader(res);
+	struct vmw_private *dev_priv = res->dev_priv;
+	struct {
+		SVGA3dCmdHeader header;
+		SVGA3dCmdDXBindShader body;
+	} *cmd;
+
+	if (list_empty(&shader->cotable_head))
+		return 0;
+
+	WARN_ON_ONCE(!shader->committed);
+	cmd = vmw_fifo_reserve(dev_priv, sizeof(*cmd));
+	if (unlikely(cmd == NULL)) {
+		DRM_ERROR("Failed reserving FIFO space for shader "
+			  "scrubbing.\n");
+		return -ENOMEM;
+	}
+
+	cmd->header.id = SVGA_3D_CMD_DX_BIND_SHADER;
+	cmd->header.size = sizeof(cmd->body);
+	cmd->body.cid = shader->ctx->id;
+	cmd->body.shid = res->id;
+	cmd->body.mobid = SVGA3D_INVALID_ID;
+	cmd->body.offsetInBytes = 0;
+	vmw_fifo_commit(dev_priv, sizeof(*cmd));
+	res->id = -1;
+	list_del_init(&shader->cotable_head);
+
+	return 0;
+}
+
+/**
+ * vmw_dx_shader_unbind - The dx shader unbind callback.
+ *
+ * @res: The shader resource
+ * @readback: Whether this is a readback unbind. Currently unused.
+ * @val_buf: MOB buffer information.
+ */
+static int vmw_dx_shader_unbind(struct vmw_resource *res,
+				bool readback,
+				struct ttm_validate_buffer *val_buf)
+{
+	struct vmw_private *dev_priv = res->dev_priv;
+	struct vmw_fence_obj *fence;
+	int ret;
+
+	BUG_ON(res->backup->base.mem.mem_type != VMW_PL_MOB);
+
+	mutex_lock(&dev_priv->binding_mutex);
+	ret = vmw_dx_shader_scrub(res);
+	mutex_unlock(&dev_priv->binding_mutex);
+
+	if (ret)
+		return ret;
+
+	(void) vmw_execbuf_fence_commands(NULL, dev_priv,
+					  &fence, NULL);
+	vmw_bo_fence_single(val_buf->bo, fence);
+
+	if (likely(fence != NULL))
+		vmw_fence_obj_unreference(&fence);
+
+	return 0;
+}
+
+/**
+ * vmw_dx_shader_cotable_list_scrub - The cotable unbind_func callback for
+ * DX shaders.
+ *
+ * @dev_priv: Pointer to device private structure.
+ * @list: The list of cotable resources.
+ * @readback: Whether the call was part of a readback unbind.
+ *
+ * Scrubs all shader MOBs so that any subsequent shader unbind or shader
+ * destroy operation won't need to swap in the context.
+ */
+void vmw_dx_shader_cotable_list_scrub(struct vmw_private *dev_priv,
+				      struct list_head *list,
+				      bool readback)
+{
+	struct vmw_dx_shader *entry, *next;
+
+	lockdep_assert_held_once(&dev_priv->binding_mutex);
+
+	list_for_each_entry_safe(entry, next, list, cotable_head) {
+		WARN_ON(vmw_dx_shader_scrub(&entry->res));
+		if (!readback)
+			entry->committed = false;
+	}
+}
+
+/**
+ * vmw_dx_shader_res_free - The DX shader free callback
+ *
+ * @res: The shader resource
+ *
+ * Frees the DX shader resource and updates memory accounting.
+ */
+static void vmw_dx_shader_res_free(struct vmw_resource *res)
+{
+	struct vmw_private *dev_priv = res->dev_priv;
+	struct vmw_dx_shader *shader = vmw_res_to_dx_shader(res);
+
+	vmw_resource_unreference(&shader->cotable);
+	kfree(shader);
+	ttm_mem_global_free(vmw_mem_glob(dev_priv), vmw_shader_dx_size);
+}
+
+/**
+ * vmw_dx_shader_add - Add a shader resource as a command buffer managed
+ * resource.
+ *
+ * @man: The command buffer resource manager.
+ * @ctx: Pointer to the context resource.
+ * @user_key: The id used for this shader.
+ * @shader_type: The shader type.
+ * @list: The list of staged command buffer managed resources.
+ */
+int vmw_dx_shader_add(struct vmw_cmdbuf_res_manager *man,
+		      struct vmw_resource *ctx,
+		      u32 user_key,
+		      SVGA3dShaderType shader_type,
+		      struct list_head *list)
+{
+	struct vmw_dx_shader *shader;
+	struct vmw_resource *res;
+	struct vmw_private *dev_priv = ctx->dev_priv;
+	struct ttm_operation_ctx ttm_opt_ctx = {
+		.interruptible = true,
+		.no_wait_gpu = false
+	};
+	int ret;
+
+	if (!vmw_shader_dx_size)
+		vmw_shader_dx_size = ttm_round_pot(sizeof(*shader));
+
+	if (!vmw_shader_id_ok(user_key, shader_type))
+		return -EINVAL;
+
+	ret = ttm_mem_global_alloc(vmw_mem_glob(dev_priv), vmw_shader_dx_size,
+				   &ttm_opt_ctx);
+	if (ret) {
+		if (ret != -ERESTARTSYS)
+			DRM_ERROR("Out of graphics memory for shader "
+				  "creation.\n");
+		return ret;
+	}
+
+	shader = kmalloc(sizeof(*shader), GFP_KERNEL);
+	if (!shader) {
+		ttm_mem_global_free(vmw_mem_glob(dev_priv), vmw_shader_dx_size);
+		return -ENOMEM;
+	}
+
+	res = &shader->res;
+	shader->ctx = ctx;
+	shader->cotable = vmw_resource_reference
+		(vmw_context_cotable(ctx, SVGA_COTABLE_DXSHADER));
+	shader->id = user_key;
+	shader->committed = false;
+	INIT_LIST_HEAD(&shader->cotable_head);
+	ret = vmw_resource_init(dev_priv, res, true,
+				vmw_dx_shader_res_free, &vmw_dx_shader_func);
+	if (ret)
+		goto out_resource_init;
+
+	/*
+	 * The user_key name-space is not per shader type for DX shaders,
+	 * so when hashing, use a single zero shader type.
+	 */
+	ret = vmw_cmdbuf_res_add(man, vmw_cmdbuf_res_shader,
+				 vmw_shader_key(user_key, 0),
+				 res, list);
+	if (ret)
+		goto out_resource_init;
+
+	res->id = shader->id;
+	res->hw_destroy = vmw_hw_shader_destroy;
+
+out_resource_init:
+	vmw_resource_unreference(&res);
+
+	return ret;
+}
+
+
 
 /**
  * User-space shader management:
@@ -345,6 +687,16 @@ static void vmw_user_shader_free(struct vmw_resource *res)
 	ttm_base_object_kfree(ushader, base);
 	ttm_mem_global_free(vmw_mem_glob(dev_priv),
 			    vmw_user_shader_size);
+}
+
+static void vmw_shader_free(struct vmw_resource *res)
+{
+	struct vmw_shader *shader = vmw_res_to_shader(res);
+	struct vmw_private *dev_priv = res->dev_priv;
+
+	kfree(shader);
+	ttm_mem_global_free(vmw_mem_glob(dev_priv),
+			    vmw_shader_size);
 }
 
 /**
@@ -371,29 +723,32 @@ int vmw_shader_destroy_ioctl(struct drm_device *dev, void *data,
 					 TTM_REF_USAGE);
 }
 
-static int vmw_shader_alloc(struct vmw_private *dev_priv,
-			    struct vmw_dma_buffer *buffer,
-			    size_t shader_size,
-			    size_t offset,
-			    SVGA3dShaderType shader_type,
-			    struct ttm_object_file *tfile,
-			    u32 *handle)
+static int vmw_user_shader_alloc(struct vmw_private *dev_priv,
+				 struct vmw_buffer_object *buffer,
+				 size_t shader_size,
+				 size_t offset,
+				 SVGA3dShaderType shader_type,
+				 uint8_t num_input_sig,
+				 uint8_t num_output_sig,
+				 struct ttm_object_file *tfile,
+				 u32 *handle)
 {
 	struct vmw_user_shader *ushader;
 	struct vmw_resource *res, *tmp;
+	struct ttm_operation_ctx ctx = {
+		.interruptible = true,
+		.no_wait_gpu = false
+	};
 	int ret;
 
-	/*
-	 * Approximate idr memory usage with 128 bytes. It will be limited
-	 * by maximum number_of shaders anyway.
-	 */
 	if (unlikely(vmw_user_shader_size == 0))
 		vmw_user_shader_size =
-			ttm_round_pot(sizeof(struct vmw_user_shader)) + 128;
+			ttm_round_pot(sizeof(struct vmw_user_shader)) +
+			VMW_IDA_ACC_SIZE + TTM_OBJ_EXTRA_SIZE;
 
 	ret = ttm_mem_global_alloc(vmw_mem_glob(dev_priv),
 				   vmw_user_shader_size,
-				   false, true);
+				   &ctx);
 	if (unlikely(ret != 0)) {
 		if (ret != -ERESTARTSYS)
 			DRM_ERROR("Out of graphics memory for shader "
@@ -402,7 +757,7 @@ static int vmw_shader_alloc(struct vmw_private *dev_priv,
 	}
 
 	ushader = kzalloc(sizeof(*ushader), GFP_KERNEL);
-	if (unlikely(ushader == NULL)) {
+	if (unlikely(!ushader)) {
 		ttm_mem_global_free(vmw_mem_glob(dev_priv),
 				    vmw_user_shader_size);
 		ret = -ENOMEM;
@@ -418,7 +773,8 @@ static int vmw_shader_alloc(struct vmw_private *dev_priv,
 	 */
 
 	ret = vmw_gb_shader_init(dev_priv, res, shader_size,
-				 offset, shader_type, buffer,
+				 offset, shader_type, num_input_sig,
+				 num_output_sig, buffer,
 				 vmw_user_shader_free);
 	if (unlikely(ret != 0))
 		goto out;
@@ -434,7 +790,7 @@ static int vmw_shader_alloc(struct vmw_private *dev_priv,
 	}
 
 	if (handle)
-		*handle = ushader->base.hash.key;
+		*handle = ushader->base.handle;
 out_err:
 	vmw_resource_unreference(&res);
 out:
@@ -442,21 +798,72 @@ out:
 }
 
 
-int vmw_shader_define_ioctl(struct drm_device *dev, void *data,
-			     struct drm_file *file_priv)
+static struct vmw_resource *vmw_shader_alloc(struct vmw_private *dev_priv,
+					     struct vmw_buffer_object *buffer,
+					     size_t shader_size,
+					     size_t offset,
+					     SVGA3dShaderType shader_type)
+{
+	struct vmw_shader *shader;
+	struct vmw_resource *res;
+	struct ttm_operation_ctx ctx = {
+		.interruptible = true,
+		.no_wait_gpu = false
+	};
+	int ret;
+
+	if (unlikely(vmw_shader_size == 0))
+		vmw_shader_size =
+			ttm_round_pot(sizeof(struct vmw_shader)) +
+			VMW_IDA_ACC_SIZE;
+
+	ret = ttm_mem_global_alloc(vmw_mem_glob(dev_priv),
+				   vmw_shader_size,
+				   &ctx);
+	if (unlikely(ret != 0)) {
+		if (ret != -ERESTARTSYS)
+			DRM_ERROR("Out of graphics memory for shader "
+				  "creation.\n");
+		goto out_err;
+	}
+
+	shader = kzalloc(sizeof(*shader), GFP_KERNEL);
+	if (unlikely(!shader)) {
+		ttm_mem_global_free(vmw_mem_glob(dev_priv),
+				    vmw_shader_size);
+		ret = -ENOMEM;
+		goto out_err;
+	}
+
+	res = &shader->res;
+
+	/*
+	 * From here on, the destructor takes over resource freeing.
+	 */
+	ret = vmw_gb_shader_init(dev_priv, res, shader_size,
+				 offset, shader_type, 0, 0, buffer,
+				 vmw_shader_free);
+
+out_err:
+	return ret ? ERR_PTR(ret) : res;
+}
+
+
+static int vmw_shader_define(struct drm_device *dev, struct drm_file *file_priv,
+			     enum drm_vmw_shader_type shader_type_drm,
+			     u32 buffer_handle, size_t size, size_t offset,
+			     uint8_t num_input_sig, uint8_t num_output_sig,
+			     uint32_t *shader_handle)
 {
 	struct vmw_private *dev_priv = vmw_priv(dev);
-	struct drm_vmw_shader_create_arg *arg =
-		(struct drm_vmw_shader_create_arg *)data;
 	struct ttm_object_file *tfile = vmw_fpriv(file_priv)->tfile;
-	struct vmw_master *vmaster = vmw_master(file_priv->master);
-	struct vmw_dma_buffer *buffer = NULL;
+	struct vmw_buffer_object *buffer = NULL;
 	SVGA3dShaderType shader_type;
 	int ret;
 
-	if (arg->buffer_handle != SVGA3D_INVALID_ID) {
-		ret = vmw_user_dmabuf_lookup(tfile, arg->buffer_handle,
-					     &buffer);
+	if (buffer_handle != SVGA3D_INVALID_ID) {
+		ret = vmw_user_bo_lookup(tfile, buffer_handle,
+					     &buffer, NULL);
 		if (unlikely(ret != 0)) {
 			DRM_ERROR("Could not find buffer for shader "
 				  "creation.\n");
@@ -464,22 +871,19 @@ int vmw_shader_define_ioctl(struct drm_device *dev, void *data,
 		}
 
 		if ((u64)buffer->base.num_pages * PAGE_SIZE <
-		    (u64)arg->size + (u64)arg->offset) {
+		    (u64)size + (u64)offset) {
 			DRM_ERROR("Illegal buffer- or shader size.\n");
 			ret = -EINVAL;
 			goto out_bad_arg;
 		}
 	}
 
-	switch (arg->shader_type) {
+	switch (shader_type_drm) {
 	case drm_vmw_shader_type_vs:
 		shader_type = SVGA3D_SHADERTYPE_VS;
 		break;
 	case drm_vmw_shader_type_ps:
 		shader_type = SVGA3D_SHADERTYPE_PS;
-		break;
-	case drm_vmw_shader_type_gs:
-		shader_type = SVGA3D_SHADERTYPE_GS;
 		break;
 	default:
 		DRM_ERROR("Illegal shader type.\n");
@@ -487,229 +891,113 @@ int vmw_shader_define_ioctl(struct drm_device *dev, void *data,
 		goto out_bad_arg;
 	}
 
-	ret = ttm_read_lock(&vmaster->lock, true);
+	ret = ttm_read_lock(&dev_priv->reservation_sem, true);
 	if (unlikely(ret != 0))
 		goto out_bad_arg;
 
-	ret = vmw_shader_alloc(dev_priv, buffer, arg->size, arg->offset,
-			       shader_type, tfile, &arg->shader_handle);
+	ret = vmw_user_shader_alloc(dev_priv, buffer, size, offset,
+				    shader_type, num_input_sig,
+				    num_output_sig, tfile, shader_handle);
 
-	ttm_read_unlock(&vmaster->lock);
+	ttm_read_unlock(&dev_priv->reservation_sem);
 out_bad_arg:
-	vmw_dmabuf_unreference(&buffer);
+	vmw_bo_unreference(&buffer);
 	return ret;
 }
 
 /**
- * vmw_compat_shader_lookup - Look up a compat shader
+ * vmw_shader_id_ok - Check whether a compat shader user key and
+ * shader type are within valid bounds.
  *
- * @man: Pointer to the compat shader manager.
- * @shader_type: The shader type, that combined with the user_key identifies
- * the shader.
- * @user_key: On entry, this should be a pointer to the user_key.
- * On successful exit, it will contain the guest-backed shader's TTM handle.
+ * @user_key: User space id of the shader.
+ * @shader_type: Shader type.
  *
- * Returns 0 on success. Non-zero on failure, in which case the value pointed
- * to by @user_key is unmodified.
+ * Returns true if valid false if not.
  */
-int vmw_compat_shader_lookup(struct vmw_compat_shader_manager *man,
-			     SVGA3dShaderType shader_type,
-			     u32 *user_key)
+static bool vmw_shader_id_ok(u32 user_key, SVGA3dShaderType shader_type)
 {
-	struct drm_hash_item *hash;
-	int ret;
-	unsigned long key = *user_key | (shader_type << 24);
-
-	ret = drm_ht_find_item(&man->shaders, key, &hash);
-	if (unlikely(ret != 0))
-		return ret;
-
-	*user_key = drm_hash_entry(hash, struct vmw_compat_shader,
-				   hash)->handle;
-
-	return 0;
+	return user_key <= ((1 << 20) - 1) && (unsigned) shader_type < 16;
 }
 
 /**
- * vmw_compat_shader_free - Free a compat shader.
+ * vmw_shader_key - Compute a hash key suitable for a compat shader.
  *
- * @man: Pointer to the compat shader manager.
- * @entry: Pointer to a struct vmw_compat_shader.
+ * @user_key: User space id of the shader.
+ * @shader_type: Shader type.
  *
- * Frees a struct vmw_compat_shder entry and drops its reference to the
- * guest backed shader.
+ * Returns a hash key suitable for a command buffer managed resource
+ * manager hash table.
  */
-static void vmw_compat_shader_free(struct vmw_compat_shader_manager *man,
-				   struct vmw_compat_shader *entry)
+static u32 vmw_shader_key(u32 user_key, SVGA3dShaderType shader_type)
 {
-	list_del(&entry->head);
-	WARN_ON(drm_ht_remove_item(&man->shaders, &entry->hash));
-	WARN_ON(ttm_ref_object_base_unref(entry->tfile, entry->handle,
-					  TTM_REF_USAGE));
-	kfree(entry);
+	return user_key | (shader_type << 20);
 }
 
 /**
- * vmw_compat_shaders_commit - Commit a list of compat shader actions.
+ * vmw_shader_remove - Stage a compat shader for removal.
  *
- * @man: Pointer to the compat shader manager.
- * @list: Caller's list of compat shader actions.
- *
- * This function commits a list of compat shader additions or removals.
- * It is typically called when the execbuf ioctl call triggering these
- * actions has commited the fifo contents to the device.
- */
-void vmw_compat_shaders_commit(struct vmw_compat_shader_manager *man,
-			       struct list_head *list)
-{
-	struct vmw_compat_shader *entry, *next;
-
-	list_for_each_entry_safe(entry, next, list, head) {
-		list_del(&entry->head);
-		switch (entry->state) {
-		case VMW_COMPAT_ADD:
-			entry->state = VMW_COMPAT_COMMITED;
-			list_add_tail(&entry->head, &man->list);
-			break;
-		case VMW_COMPAT_DEL:
-			ttm_ref_object_base_unref(entry->tfile, entry->handle,
-						  TTM_REF_USAGE);
-			kfree(entry);
-			break;
-		default:
-			BUG();
-			break;
-		}
-	}
-}
-
-/**
- * vmw_compat_shaders_revert - Revert a list of compat shader actions
- *
- * @man: Pointer to the compat shader manager.
- * @list: Caller's list of compat shader actions.
- *
- * This function reverts a list of compat shader additions or removals.
- * It is typically called when the execbuf ioctl call triggering these
- * actions failed for some reason, and the command stream was never
- * submitted.
- */
-void vmw_compat_shaders_revert(struct vmw_compat_shader_manager *man,
-			       struct list_head *list)
-{
-	struct vmw_compat_shader *entry, *next;
-	int ret;
-
-	list_for_each_entry_safe(entry, next, list, head) {
-		switch (entry->state) {
-		case VMW_COMPAT_ADD:
-			vmw_compat_shader_free(man, entry);
-			break;
-		case VMW_COMPAT_DEL:
-			ret = drm_ht_insert_item(&man->shaders, &entry->hash);
-			list_del(&entry->head);
-			list_add_tail(&entry->head, &man->list);
-			entry->state = VMW_COMPAT_COMMITED;
-			break;
-		default:
-			BUG();
-			break;
-		}
-	}
-}
-
-/**
- * vmw_compat_shader_remove - Stage a compat shader for removal.
- *
- * @man: Pointer to the compat shader manager
+ * @man: Pointer to the compat shader manager identifying the shader namespace.
  * @user_key: The key that is used to identify the shader. The key is
  * unique to the shader type.
  * @shader_type: Shader type.
- * @list: Caller's list of staged shader actions.
- *
- * This function stages a compat shader for removal and removes the key from
- * the shader manager's hash table. If the shader was previously only staged
- * for addition it is completely removed (But the execbuf code may keep a
- * reference if it was bound to a context between addition and removal). If
- * it was previously commited to the manager, it is staged for removal.
+ * @list: Caller's list of staged command buffer resource actions.
  */
-int vmw_compat_shader_remove(struct vmw_compat_shader_manager *man,
-			     u32 user_key, SVGA3dShaderType shader_type,
-			     struct list_head *list)
+int vmw_shader_remove(struct vmw_cmdbuf_res_manager *man,
+		      u32 user_key, SVGA3dShaderType shader_type,
+		      struct list_head *list)
 {
-	struct vmw_compat_shader *entry;
-	struct drm_hash_item *hash;
-	int ret;
+	struct vmw_resource *dummy;
 
-	ret = drm_ht_find_item(&man->shaders, user_key | (shader_type << 24),
-			       &hash);
-	if (likely(ret != 0))
+	if (!vmw_shader_id_ok(user_key, shader_type))
 		return -EINVAL;
 
-	entry = drm_hash_entry(hash, struct vmw_compat_shader, hash);
-
-	switch (entry->state) {
-	case VMW_COMPAT_ADD:
-		vmw_compat_shader_free(man, entry);
-		break;
-	case VMW_COMPAT_COMMITED:
-		(void) drm_ht_remove_item(&man->shaders, &entry->hash);
-		list_del(&entry->head);
-		entry->state = VMW_COMPAT_DEL;
-		list_add_tail(&entry->head, list);
-		break;
-	default:
-		BUG();
-		break;
-	}
-
-	return 0;
+	return vmw_cmdbuf_res_remove(man, vmw_cmdbuf_res_shader,
+				     vmw_shader_key(user_key, shader_type),
+				     list, &dummy);
 }
 
 /**
- * vmw_compat_shader_add - Create a compat shader and add the
- * key to the manager
+ * vmw_compat_shader_add - Create a compat shader and stage it for addition
+ * as a command buffer managed resource.
  *
- * @man: Pointer to the compat shader manager
+ * @man: Pointer to the compat shader manager identifying the shader namespace.
  * @user_key: The key that is used to identify the shader. The key is
  * unique to the shader type.
  * @bytecode: Pointer to the bytecode of the shader.
  * @shader_type: Shader type.
  * @tfile: Pointer to a struct ttm_object_file that the guest-backed shader is
  * to be created with.
- * @list: Caller's list of staged shader actions.
+ * @list: Caller's list of staged command buffer resource actions.
  *
- * Note that only the key is added to the shader manager's hash table.
- * The shader is not yet added to the shader manager's list of shaders.
  */
-int vmw_compat_shader_add(struct vmw_compat_shader_manager *man,
+int vmw_compat_shader_add(struct vmw_private *dev_priv,
+			  struct vmw_cmdbuf_res_manager *man,
 			  u32 user_key, const void *bytecode,
 			  SVGA3dShaderType shader_type,
 			  size_t size,
-			  struct ttm_object_file *tfile,
 			  struct list_head *list)
 {
-	struct vmw_dma_buffer *buf;
+	struct ttm_operation_ctx ctx = { false, true };
+	struct vmw_buffer_object *buf;
 	struct ttm_bo_kmap_obj map;
 	bool is_iomem;
-	struct vmw_compat_shader *compat;
-	u32 handle;
 	int ret;
+	struct vmw_resource *res;
 
-	if (user_key > ((1 << 24) - 1) || (unsigned) shader_type > 16)
+	if (!vmw_shader_id_ok(user_key, shader_type))
 		return -EINVAL;
 
 	/* Allocate and pin a DMA buffer */
 	buf = kzalloc(sizeof(*buf), GFP_KERNEL);
-	if (unlikely(buf == NULL))
+	if (unlikely(!buf))
 		return -ENOMEM;
 
-	ret = vmw_dmabuf_init(man->dev_priv, buf, size, &vmw_sys_ne_placement,
-			      true, vmw_dmabuf_bo_free);
+	ret = vmw_bo_init(dev_priv, buf, size, &vmw_sys_ne_placement,
+			      true, vmw_bo_bo_free);
 	if (unlikely(ret != 0))
 		goto out;
 
-	ret = ttm_bo_reserve(&buf->base, false, true, false, NULL);
+	ret = ttm_bo_reserve(&buf->base, false, true, NULL);
 	if (unlikely(ret != 0))
 		goto no_reserve;
 
@@ -725,88 +1013,56 @@ int vmw_compat_shader_add(struct vmw_compat_shader_manager *man,
 	WARN_ON(is_iomem);
 
 	ttm_bo_kunmap(&map);
-	ret = ttm_bo_validate(&buf->base, &vmw_sys_placement, false, true);
+	ret = ttm_bo_validate(&buf->base, &vmw_sys_placement, &ctx);
 	WARN_ON(ret != 0);
 	ttm_bo_unreserve(&buf->base);
 
-	/* Create a guest-backed shader container backed by the dma buffer */
-	ret = vmw_shader_alloc(man->dev_priv, buf, size, 0, shader_type,
-			       tfile, &handle);
-	vmw_dmabuf_unreference(&buf);
+	res = vmw_shader_alloc(dev_priv, buf, size, 0, shader_type);
 	if (unlikely(ret != 0))
 		goto no_reserve;
-	/*
-	 * Create a compat shader structure and stage it for insertion
-	 * in the manager
-	 */
-	compat = kzalloc(sizeof(*compat), GFP_KERNEL);
-	if (compat == NULL)
-		goto no_compat;
 
-	compat->hash.key = user_key |  (shader_type << 24);
-	ret = drm_ht_insert_item(&man->shaders, &compat->hash);
-	if (unlikely(ret != 0))
-		goto out_invalid_key;
-
-	compat->state = VMW_COMPAT_ADD;
-	compat->handle = handle;
-	compat->tfile = tfile;
-	list_add_tail(&compat->head, list);
-
-	return 0;
-
-out_invalid_key:
-	kfree(compat);
-no_compat:
-	ttm_ref_object_base_unref(tfile, handle, TTM_REF_USAGE);
+	ret = vmw_cmdbuf_res_add(man, vmw_cmdbuf_res_shader,
+				 vmw_shader_key(user_key, shader_type),
+				 res, list);
+	vmw_resource_unreference(&res);
 no_reserve:
+	vmw_bo_unreference(&buf);
 out:
 	return ret;
 }
 
 /**
- * vmw_compat_shader_man_create - Create a compat shader manager
+ * vmw_shader_lookup - Look up a compat shader
  *
- * @dev_priv: Pointer to a device private structure.
+ * @man: Pointer to the command buffer managed resource manager identifying
+ * the shader namespace.
+ * @user_key: The user space id of the shader.
+ * @shader_type: The shader type.
  *
- * Typically done at file open time. If successful returns a pointer to a
- * compat shader manager. Otherwise returns an error pointer.
+ * Returns a refcounted pointer to a struct vmw_resource if the shader was
+ * found. An error pointer otherwise.
  */
-struct vmw_compat_shader_manager *
-vmw_compat_shader_man_create(struct vmw_private *dev_priv)
+struct vmw_resource *
+vmw_shader_lookup(struct vmw_cmdbuf_res_manager *man,
+		  u32 user_key,
+		  SVGA3dShaderType shader_type)
 {
-	struct vmw_compat_shader_manager *man;
-	int ret;
+	if (!vmw_shader_id_ok(user_key, shader_type))
+		return ERR_PTR(-EINVAL);
 
-	man = kzalloc(sizeof(*man), GFP_KERNEL);
-	if (man == NULL)
-		return ERR_PTR(-ENOMEM);
-
-	man->dev_priv = dev_priv;
-	INIT_LIST_HEAD(&man->list);
-	ret = drm_ht_create(&man->shaders, VMW_COMPAT_SHADER_HT_ORDER);
-	if (ret == 0)
-		return man;
-
-	kfree(man);
-	return ERR_PTR(ret);
+	return vmw_cmdbuf_res_lookup(man, vmw_cmdbuf_res_shader,
+				     vmw_shader_key(user_key, shader_type));
 }
 
-/**
- * vmw_compat_shader_man_destroy - Destroy a compat shader manager
- *
- * @man: Pointer to the shader manager to destroy.
- *
- * Typically done at file close time.
- */
-void vmw_compat_shader_man_destroy(struct vmw_compat_shader_manager *man)
+int vmw_shader_define_ioctl(struct drm_device *dev, void *data,
+			     struct drm_file *file_priv)
 {
-	struct vmw_compat_shader *entry, *next;
+	struct drm_vmw_shader_create_arg *arg =
+		(struct drm_vmw_shader_create_arg *)data;
 
-	mutex_lock(&man->dev_priv->cmdbuf_mutex);
-	list_for_each_entry_safe(entry, next, &man->list, head)
-		vmw_compat_shader_free(man, entry);
-
-	mutex_unlock(&man->dev_priv->cmdbuf_mutex);
-	kfree(man);
+	return vmw_shader_define(dev, file_priv, arg->shader_type,
+				 arg->buffer_handle,
+				 arg->size, arg->offset,
+				 0, 0,
+				 &arg->shader_handle);
 }

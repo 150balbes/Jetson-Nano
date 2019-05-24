@@ -60,7 +60,7 @@ static int mpic_msi_reserve_u3_hwirqs(struct mpic *mpic)
 
 	np = NULL;
 	while ((np = of_find_all_nodes(np))) {
-		pr_debug("mpic: mapping hwirqs for %s\n", np->full_name);
+		pr_debug("mpic: mapping hwirqs for %pOF\n", np);
 
 		index = 0;
 		while (of_irq_parse_one(np, index++, &oirq) == 0) {
@@ -84,7 +84,7 @@ int mpic_msi_init_allocator(struct mpic *mpic)
 	int rc;
 
 	rc = msi_bitmap_alloc(&mpic->msi_bitmap, mpic->num_sources,
-			      mpic->irqhost->of_node);
+			      irq_domain_get_of_node(mpic->irqhost));
 	if (rc)
 		return rc;
 

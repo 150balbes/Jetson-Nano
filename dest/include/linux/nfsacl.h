@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note */
 /*
  * File: linux/nfsacl.h
  *
@@ -22,6 +23,7 @@
 #define NFS_ACLCNT		0x0002
 #define NFS_DFACL		0x0004
 #define NFS_DFACLCNT		0x0008
+#define NFS_ACL_MASK		0x000f
 
 /* Flag for Default ACL entries */
 #define NFS_ACL_DEFAULT		0x1000

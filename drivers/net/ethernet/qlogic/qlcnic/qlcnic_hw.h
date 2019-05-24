@@ -98,6 +98,7 @@ enum qlcnic_regs {
 #define QLCNIC_CMD_GET_LINK_EVENT		0x48
 #define QLCNIC_CMD_CONFIGURE_MAC_RX_MODE	0x49
 #define QLCNIC_CMD_CONFIGURE_HW_LRO		0x4A
+#define QLCNIC_CMD_SET_INGRESS_ENCAP		0x4E
 #define QLCNIC_CMD_INIT_NIC_FUNC		0x60
 #define QLCNIC_CMD_STOP_NIC_FUNC		0x61
 #define QLCNIC_CMD_IDC_ACK			0x63
@@ -108,6 +109,7 @@ enum qlcnic_regs {
 #define QLCNIC_CMD_GET_LED_CONFIG		0x6A
 #define QLCNIC_CMD_83XX_SET_DRV_VER		0x6F
 #define QLCNIC_CMD_ADD_RCV_RINGS		0x0B
+#define QLCNIC_CMD_83XX_EXTEND_ISCSI_DUMP_CAP	0x37
 
 #define QLCNIC_INTRPT_INTX			1
 #define QLCNIC_INTRPT_MSIX			3
@@ -161,6 +163,7 @@ struct qlcnic_host_sds_ring;
 struct qlcnic_host_tx_ring;
 struct qlcnic_hardware_context;
 struct qlcnic_adapter;
+struct qlcnic_fw_dump;
 
 int qlcnic_82xx_hw_read_wx_2M(struct qlcnic_adapter *adapter, ulong, int *);
 int qlcnic_82xx_hw_write_wx_2M(struct qlcnic_adapter *, ulong, u32);
@@ -170,7 +173,8 @@ int qlcnic_82xx_napi_add(struct qlcnic_adapter *adapter,
 			 struct net_device *netdev);
 void qlcnic_82xx_get_beacon_state(struct qlcnic_adapter *);
 void qlcnic_82xx_change_filter(struct qlcnic_adapter *adapter,
-			       u64 *uaddr, u16 vlan_id);
+			       u64 *uaddr, u16 vlan_id,
+			       struct qlcnic_host_tx_ring *tx_ring);
 int qlcnic_82xx_config_intr_coalesce(struct qlcnic_adapter *,
 				     struct ethtool_coalesce *);
 int qlcnic_82xx_set_rx_coalesce(struct qlcnic_adapter *);
@@ -213,4 +217,11 @@ int qlcnic_82xx_shutdown(struct pci_dev *);
 int qlcnic_82xx_resume(struct qlcnic_adapter *);
 void qlcnic_clr_all_drv_state(struct qlcnic_adapter *adapter, u8 failed);
 void qlcnic_fw_poll_work(struct work_struct *work);
+
+u32 qlcnic_82xx_get_saved_state(void *, u32);
+void qlcnic_82xx_set_saved_state(void *, u32, u32);
+void qlcnic_82xx_cache_tmpl_hdr_values(struct qlcnic_fw_dump *);
+u32 qlcnic_82xx_get_cap_size(void *, int);
+void qlcnic_82xx_set_sys_info(void *, int, u32);
+void qlcnic_82xx_store_cap_mask(void *, u32);
 #endif				/* __QLCNIC_HW_H_ */

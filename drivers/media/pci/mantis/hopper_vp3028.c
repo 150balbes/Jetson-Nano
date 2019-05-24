@@ -22,11 +22,11 @@
 #include <linux/sched.h>
 #include <linux/interrupt.h>
 
-#include "dmxdev.h"
-#include "dvbdev.h"
-#include "dvb_demux.h"
-#include "dvb_frontend.h"
-#include "dvb_net.h"
+#include <media/dmxdev.h>
+#include <media/dvbdev.h>
+#include <media/dvb_demux.h>
+#include <media/dvb_frontend.h>
+#include <media/dvb_net.h>
 
 #include "zl10353.h"
 #include "mantis_common.h"
@@ -34,7 +34,7 @@
 #include "mantis_dvb.h"
 #include "hopper_vp3028.h"
 
-struct zl10353_config hopper_vp3028_config = {
+static struct zl10353_config hopper_vp3028_config = {
 	.demod_address	= 0x0f,
 };
 

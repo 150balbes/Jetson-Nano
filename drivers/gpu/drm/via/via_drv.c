@@ -62,18 +62,15 @@ static const struct file_operations via_driver_fops = {
 	.open = drm_open,
 	.release = drm_release,
 	.unlocked_ioctl = drm_ioctl,
-	.mmap = drm_mmap,
+	.mmap = drm_legacy_mmap,
 	.poll = drm_poll,
-#ifdef CONFIG_COMPAT
 	.compat_ioctl = drm_compat_ioctl,
-#endif
 	.llseek = noop_llseek,
 };
 
 static struct drm_driver driver = {
 	.driver_features =
-	    DRIVER_USE_AGP | DRIVER_HAVE_IRQ |
-	    DRIVER_IRQ_SHARED,
+	    DRIVER_USE_AGP | DRIVER_HAVE_IRQ | DRIVER_LEGACY,
 	.load = via_driver_load,
 	.unload = via_driver_unload,
 	.open = via_driver_open,
@@ -108,12 +105,12 @@ static int __init via_init(void)
 {
 	driver.num_ioctls = via_max_ioctl;
 	via_init_command_verifier();
-	return drm_pci_init(&driver, &via_pci_driver);
+	return drm_legacy_pci_init(&driver, &via_pci_driver);
 }
 
 static void __exit via_exit(void)
 {
-	drm_pci_exit(&driver, &via_pci_driver);
+	drm_legacy_pci_exit(&driver, &via_pci_driver);
 }
 
 module_init(via_init);

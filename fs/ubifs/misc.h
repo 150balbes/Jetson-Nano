@@ -105,25 +105,27 @@ static inline struct ubifs_inode *ubifs_inode(const struct inode *inode)
 /**
  * ubifs_compr_present - check if compressor was compiled in.
  * @compr_type: compressor type to check
+ * @c: the UBIFS file-system description object
  *
  * This function returns %1 of compressor of type @compr_type is present, and
  * %0 if not.
  */
-static inline int ubifs_compr_present(int compr_type)
+static inline int ubifs_compr_present(struct ubifs_info *c, int compr_type)
 {
-	ubifs_assert(compr_type >= 0 && compr_type < UBIFS_COMPR_TYPES_CNT);
+	ubifs_assert(c, compr_type >= 0 && compr_type < UBIFS_COMPR_TYPES_CNT);
 	return !!ubifs_compressors[compr_type]->capi_name;
 }
 
 /**
  * ubifs_compr_name - get compressor name string by its type.
  * @compr_type: compressor type
+ * @c: the UBIFS file-system description object
  *
  * This function returns compressor type string.
  */
-static inline const char *ubifs_compr_name(int compr_type)
+static inline const char *ubifs_compr_name(struct ubifs_info *c, int compr_type)
 {
-	ubifs_assert(compr_type >= 0 && compr_type < UBIFS_COMPR_TYPES_CNT);
+	ubifs_assert(c, compr_type >= 0 && compr_type < UBIFS_COMPR_TYPES_CNT);
 	return ubifs_compressors[compr_type]->name;
 }
 
@@ -155,13 +157,8 @@ static inline int ubifs_wbuf_sync(struct ubifs_wbuf *wbuf)
  */
 static inline int ubifs_encode_dev(union ubifs_dev_desc *dev, dev_t rdev)
 {
-	if (new_valid_dev(rdev)) {
-		dev->new = cpu_to_le32(new_encode_dev(rdev));
-		return sizeof(dev->new);
-	} else {
-		dev->huge = cpu_to_le64(huge_encode_dev(rdev));
-		return sizeof(dev->huge);
-	}
+	dev->new = cpu_to_le32(new_encode_dev(rdev));
+	return sizeof(dev->new);
 }
 
 /**
@@ -200,7 +197,8 @@ static inline int ubifs_return_leb(struct ubifs_info *c, int lnum)
  */
 static inline int ubifs_idx_node_sz(const struct ubifs_info *c, int child_cnt)
 {
-	return UBIFS_IDX_NODE_SZ + (UBIFS_BRANCH_SZ + c->key_len) * child_cnt;
+	return UBIFS_IDX_NODE_SZ + (UBIFS_BRANCH_SZ + c->key_len + c->hash_len)
+				   * child_cnt;
 }
 
 /**
@@ -215,7 +213,7 @@ struct ubifs_branch *ubifs_idx_branch(const struct ubifs_info *c,
 				      int bnum)
 {
 	return (struct ubifs_branch *)((void *)idx->branches +
-				       (UBIFS_BRANCH_SZ + c->key_len) * bnum);
+			(UBIFS_BRANCH_SZ + c->key_len + c->hash_len) * bnum);
 }
 
 /**
@@ -227,16 +225,6 @@ static inline void *ubifs_idx_key(const struct ubifs_info *c,
 				  const struct ubifs_idx_node *idx)
 {
 	return (void *)((struct ubifs_branch *)idx->branches)->key;
-}
-
-/**
- * ubifs_current_time - round current time to time granularity.
- * @inode: inode
- */
-static inline struct timespec ubifs_current_time(struct inode *inode)
-{
-	return (inode->i_sb->s_time_gran < NSEC_PER_SEC) ?
-		current_fs_time(inode->i_sb) : CURRENT_TIME_SEC;
 }
 
 /**
@@ -277,8 +265,8 @@ static inline void ubifs_get_lprops(struct ubifs_info *c)
  */
 static inline void ubifs_release_lprops(struct ubifs_info *c)
 {
-	ubifs_assert(mutex_is_locked(&c->lp_mutex));
-	ubifs_assert(c->lst.empty_lebs >= 0 &&
+	ubifs_assert(c, mutex_is_locked(&c->lp_mutex));
+	ubifs_assert(c, c->lst.empty_lebs >= 0 &&
 		     c->lst.empty_lebs <= c->main_lebs);
 	mutex_unlock(&c->lp_mutex);
 }
@@ -299,5 +287,7 @@ static inline int ubifs_next_log_lnum(const struct ubifs_info *c, int lnum)
 
 	return lnum;
 }
+
+const char *ubifs_assert_action_name(struct ubifs_info *c);
 
 #endif /* __UBIFS_MISC_H__ */

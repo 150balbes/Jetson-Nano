@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  * devtmpfs - kernel-maintained tmpfs-based /dev
  *
@@ -24,6 +25,7 @@
 #include <linux/sched.h>
 #include <linux/slab.h>
 #include <linux/kthread.h>
+#include <uapi/linux/mount.h>
 #include "base.h"
 
 static struct task_struct *thread;
@@ -157,10 +159,10 @@ static int dev_mkdir(const char *name, umode_t mode)
 	if (IS_ERR(dentry))
 		return PTR_ERR(dentry);
 
-	err = vfs_mkdir(path.dentry->d_inode, dentry, mode);
+	err = vfs_mkdir(d_inode(path.dentry), dentry, mode);
 	if (!err)
 		/* mark as kernel-created inode */
-		dentry->d_inode->i_private = &thread;
+		d_inode(dentry)->i_private = &thread;
 	done_path_create(&path, dentry);
 	return err;
 }
@@ -207,7 +209,7 @@ static int handle_create(const char *nodename, umode_t mode, kuid_t uid,
 	if (IS_ERR(dentry))
 		return PTR_ERR(dentry);
 
-	err = vfs_mknod(path.dentry->d_inode, dentry, mode, dev->devt);
+	err = vfs_mknod(d_inode(path.dentry), dentry, mode, dev->devt);
 	if (!err) {
 		struct iattr newattrs;
 
@@ -215,12 +217,12 @@ static int handle_create(const char *nodename, umode_t mode, kuid_t uid,
 		newattrs.ia_uid = uid;
 		newattrs.ia_gid = gid;
 		newattrs.ia_valid = ATTR_MODE|ATTR_UID|ATTR_GID;
-		mutex_lock(&dentry->d_inode->i_mutex);
+		inode_lock(d_inode(dentry));
 		notify_change(dentry, &newattrs, NULL);
-		mutex_unlock(&dentry->d_inode->i_mutex);
+		inode_unlock(d_inode(dentry));
 
 		/* mark as kernel-created inode */
-		dentry->d_inode->i_private = &thread;
+		d_inode(dentry)->i_private = &thread;
 	}
 	done_path_create(&path, dentry);
 	return err;
@@ -235,23 +237,23 @@ static int dev_rmdir(const char *name)
 	dentry = kern_path_locked(name, &parent);
 	if (IS_ERR(dentry))
 		return PTR_ERR(dentry);
-	if (dentry->d_inode) {
-		if (dentry->d_inode->i_private == &thread)
-			err = vfs_rmdir(parent.dentry->d_inode, dentry);
+	if (d_really_is_positive(dentry)) {
+		if (d_inode(dentry)->i_private == &thread)
+			err = vfs_rmdir(d_inode(parent.dentry), dentry);
 		else
 			err = -EPERM;
 	} else {
 		err = -ENOENT;
 	}
 	dput(dentry);
-	mutex_unlock(&parent.dentry->d_inode->i_mutex);
+	inode_unlock(d_inode(parent.dentry));
 	path_put(&parent);
 	return err;
 }
 
 static int delete_path(const char *nodepath)
 {
-	const char *path;
+	char *path;
 	int err = 0;
 
 	path = kstrdup(nodepath, GFP_KERNEL);
@@ -306,11 +308,12 @@ static int handle_remove(const char *nodename, struct device *dev)
 	if (IS_ERR(dentry))
 		return PTR_ERR(dentry);
 
-	if (dentry->d_inode) {
+	if (d_really_is_positive(dentry)) {
 		struct kstat stat;
 		struct path p = {.mnt = parent.mnt, .dentry = dentry};
-		err = vfs_getattr(&p, &stat);
-		if (!err && dev_mynode(dev, dentry->d_inode, &stat)) {
+		err = vfs_getattr(&p, &stat, STATX_TYPE | STATX_MODE,
+				  AT_STATX_SYNC_AS_STAT);
+		if (!err && dev_mynode(dev, d_inode(dentry), &stat)) {
 			struct iattr newattrs;
 			/*
 			 * before unlinking this node, reset permissions
@@ -321,10 +324,10 @@ static int handle_remove(const char *nodename, struct device *dev)
 			newattrs.ia_mode = stat.mode & ~0777;
 			newattrs.ia_valid =
 				ATTR_UID|ATTR_GID|ATTR_MODE;
-			mutex_lock(&dentry->d_inode->i_mutex);
+			inode_lock(d_inode(dentry));
 			notify_change(dentry, &newattrs, NULL);
-			mutex_unlock(&dentry->d_inode->i_mutex);
-			err = vfs_unlink(parent.dentry->d_inode, dentry, NULL);
+			inode_unlock(d_inode(dentry));
+			err = vfs_unlink(d_inode(parent.dentry), dentry, NULL);
 			if (!err || err == -ENOENT)
 				deleted = 1;
 		}
@@ -332,7 +335,7 @@ static int handle_remove(const char *nodename, struct device *dev)
 		err = -ENOENT;
 	}
 	dput(dentry);
-	mutex_unlock(&parent.dentry->d_inode->i_mutex);
+	inode_unlock(d_inode(parent.dentry));
 
 	path_put(&parent);
 	if (deleted && strchr(nodename, '/'))
@@ -354,7 +357,8 @@ int devtmpfs_mount(const char *mntdir)
 	if (!thread)
 		return 0;
 
-	err = sys_mount("devtmpfs", (char *)mntdir, "devtmpfs", MS_SILENT, NULL);
+	err = ksys_mount("devtmpfs", (char *)mntdir, "devtmpfs", MS_SILENT,
+			 NULL);
 	if (err)
 		printk(KERN_INFO "devtmpfs: error mounting %i\n", err);
 	else
@@ -377,14 +381,14 @@ static int devtmpfsd(void *p)
 {
 	char options[] = "mode=0755";
 	int *err = p;
-	*err = sys_unshare(CLONE_NEWNS);
+	*err = ksys_unshare(CLONE_NEWNS);
 	if (*err)
 		goto out;
-	*err = sys_mount("devtmpfs", "/", "devtmpfs", MS_SILENT, options);
+	*err = ksys_mount("devtmpfs", "/", "devtmpfs", MS_SILENT, options);
 	if (*err)
 		goto out;
-	sys_chdir("/.."); /* will traverse into overmounted root */
-	sys_chroot(".");
+	ksys_chdir("/.."); /* will traverse into overmounted root */
+	ksys_chroot(".");
 	complete(&setup_done);
 	while (1) {
 		spin_lock(&req_lock);

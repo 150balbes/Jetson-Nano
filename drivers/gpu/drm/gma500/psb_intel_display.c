@@ -21,6 +21,7 @@
 #include <linux/i2c.h>
 
 #include <drm/drmP.h>
+#include <drm/drm_plane_helper.h>
 #include "framebuffer.h"
 #include "psb_drv.h"
 #include "psb_intel_drv.h"
@@ -107,7 +108,7 @@ static int psb_intel_crtc_mode_set(struct drm_crtc *crtc,
 	struct drm_device *dev = crtc->dev;
 	struct drm_psb_private *dev_priv = dev->dev_private;
 	struct gma_crtc *gma_crtc = to_gma_crtc(crtc);
-	struct drm_crtc_helper_funcs *crtc_funcs = crtc->helper_private;
+	const struct drm_crtc_helper_funcs *crtc_funcs = crtc->helper_private;
 	int pipe = gma_crtc->pipe;
 	const struct psb_offset *map = &dev_priv->regmap[pipe];
 	int refclk;
@@ -120,7 +121,7 @@ static int psb_intel_crtc_mode_set(struct drm_crtc *crtc,
 	const struct gma_limit_t *limit;
 
 	/* No scan out no play */
-	if (crtc->fb == NULL) {
+	if (crtc->primary->fb == NULL) {
 		crtc_funcs->mode_set_base(crtc, x, y, old_fb);
 		return 0;
 	}
@@ -429,7 +430,6 @@ struct drm_display_mode *psb_intel_crtc_mode_get(struct drm_device *dev,
 
 const struct drm_crtc_helper_funcs psb_intel_helper_funcs = {
 	.dpms = gma_crtc_dpms,
-	.mode_fixup = gma_crtc_mode_fixup,
 	.mode_set = psb_intel_crtc_mode_set,
 	.mode_set_base = gma_pipe_set_base,
 	.prepare = gma_crtc_prepare,
@@ -438,8 +438,6 @@ const struct drm_crtc_helper_funcs psb_intel_helper_funcs = {
 };
 
 const struct drm_crtc_funcs psb_intel_crtc_funcs = {
-	.save = gma_crtc_save,
-	.restore = gma_crtc_restore,
 	.cursor_set = gma_crtc_cursor_set,
 	.cursor_move = gma_crtc_cursor_move,
 	.gamma_set = gma_crtc_gamma_set,
@@ -469,7 +467,8 @@ static void psb_intel_cursor_init(struct drm_device *dev,
 		/* Allocate 4 pages of stolen mem for a hardware cursor. That
 		 * is enough for the 64 x 64 ARGB cursors we support.
 		 */
-		cursor_gt = psb_gtt_alloc_range(dev, 4 * PAGE_SIZE, "cursor", 1);
+		cursor_gt = psb_gtt_alloc_range(dev, 4 * PAGE_SIZE, "cursor", 1,
+						PAGE_SIZE);
 		if (!cursor_gt) {
 			gma_crtc->cursor_gt = NULL;
 			goto out;
@@ -492,7 +491,6 @@ void psb_intel_crtc_init(struct drm_device *dev, int pipe,
 	struct drm_psb_private *dev_priv = dev->dev_private;
 	struct gma_crtc *gma_crtc;
 	int i;
-	uint16_t *r_base, *g_base, *b_base;
 
 	/* We allocate a extra array of drm_connector pointers
 	 * for fbdev after the crtc */
@@ -520,19 +518,8 @@ void psb_intel_crtc_init(struct drm_device *dev, int pipe,
 	gma_crtc->pipe = pipe;
 	gma_crtc->plane = pipe;
 
-	r_base = gma_crtc->base.gamma_store;
-	g_base = r_base + 256;
-	b_base = g_base + 256;
-	for (i = 0; i < 256; i++) {
-		gma_crtc->lut_r[i] = i;
-		gma_crtc->lut_g[i] = i;
-		gma_crtc->lut_b[i] = i;
-		r_base[i] = i << 8;
-		g_base[i] = i << 8;
-		b_base[i] = i << 8;
-
+	for (i = 0; i < 256; i++)
 		gma_crtc->lut_adj[i] = 0;
-	}
 
 	gma_crtc->mode_dev = mode_dev;
 	gma_crtc->cursor_addr = 0;
@@ -552,33 +539,6 @@ void psb_intel_crtc_init(struct drm_device *dev, int pipe,
 
 	/* Set to true so that the pipe is forced off on initial config. */
 	gma_crtc->active = true;
-}
-
-int psb_intel_get_pipe_from_crtc_id(struct drm_device *dev, void *data,
-				struct drm_file *file_priv)
-{
-	struct drm_psb_private *dev_priv = dev->dev_private;
-	struct drm_psb_get_pipe_from_crtc_id_arg *pipe_from_crtc_id = data;
-	struct drm_mode_object *drmmode_obj;
-	struct gma_crtc *crtc;
-
-	if (!dev_priv) {
-		dev_err(dev->dev, "called with no initialization\n");
-		return -EINVAL;
-	}
-
-	drmmode_obj = drm_mode_object_find(dev, pipe_from_crtc_id->crtc_id,
-			DRM_MODE_OBJECT_CRTC);
-
-	if (!drmmode_obj) {
-		dev_err(dev->dev, "no such CRTC id\n");
-		return -ENOENT;
-	}
-
-	crtc = to_gma_crtc(obj_to_crtc(drmmode_obj));
-	pipe_from_crtc_id->pipe = crtc->pipe;
-
-	return 0;
 }
 
 struct drm_crtc *psb_intel_get_crtc_from_pipe(struct drm_device *dev, int pipe)

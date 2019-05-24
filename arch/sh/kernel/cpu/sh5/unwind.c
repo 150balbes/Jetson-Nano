@@ -1,12 +1,9 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  * arch/sh/kernel/cpu/sh5/unwind.c
  *
  * Copyright (C) 2004  Paul Mundt
  * Copyright (C) 2004  Richard Curnow
- *
- * This file is subject to the terms and conditions of the GNU General Public
- * License.  See the file "COPYING" in the main directory of this archive
- * for more details.
  */
 #include <linux/kallsyms.h>
 #include <linux/kernel.h>
@@ -159,7 +156,7 @@ static int lookup_prev_stack_frame(unsigned long fp, unsigned long pc,
 
 			/* Sign extend */
 			regcache[dest] =
-				((((s64)(u64)op >> 10) & 0xffff) << 54) >> 54;
+				sign_extend64((((u64)op >> 10) & 0xffff), 9);
 			break;
 		case (0xd0 >> 2): /* addi */
 		case (0xd4 >> 2): /* addi.l */

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: ((GPL-2.0 WITH Linux-syscall-note) OR BSD-3-Clause) */
 /******************************************************************************
  * Intel Management Engine Interface (Intel MEI) Linux driver
  * Intel MEI Interface Header
@@ -106,5 +107,24 @@ struct mei_connect_client_data {
 		struct mei_client out_client_properties;
 	};
 };
+
+/**
+ * DOC: set and unset event notification for a connected client
+ *
+ * The IOCTL argument is 1 for enabling event notification and 0 for
+ * disabling the service
+ * Return:  -EOPNOTSUPP if the devices doesn't support the feature
+ */
+#define IOCTL_MEI_NOTIFY_SET _IOW('H', 0x02, __u32)
+
+/**
+ * DOC: retrieve notification
+ *
+ * The IOCTL output argument is 1 if an event was is pending and 0 otherwise
+ * the ioctl has to be called in order to acknowledge pending event
+ *
+ * Return:  -EOPNOTSUPP if the devices doesn't support the feature
+ */
+#define IOCTL_MEI_NOTIFY_GET _IOR('H', 0x03, __u32)
 
 #endif /* _LINUX_MEI_H  */

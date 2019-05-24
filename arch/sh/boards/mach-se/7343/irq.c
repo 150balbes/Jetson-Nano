@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  * Hitachi UL SolutionEngine 7343 FPGA IRQ Support.
  *
@@ -6,16 +7,9 @@
  *
  * Based on linux/arch/sh/boards/se/7343/irq.c
  * Copyright (C) 2007  Nobuhiro Iwamatsu
- *
- * This file is subject to the terms and conditions of the GNU General Public
- * License.  See the file "COPYING" in the main directory of this archive
- * for more details.
  */
 #define DRV_NAME "SE7343-FPGA"
 #define pr_fmt(fmt) DRV_NAME ": " fmt
-
-#define irq_reg_readl	ioread16
-#define irq_reg_writel	iowrite16
 
 #include <linux/init.h>
 #include <linux/irq.h>
@@ -32,9 +26,9 @@
 static void __iomem *se7343_irq_regs;
 struct irq_domain *se7343_irq_domain;
 
-static void se7343_irq_demux(unsigned int irq, struct irq_desc *desc)
+static void se7343_irq_demux(struct irq_desc *desc)
 {
-	struct irq_data *data = irq_get_irq_data(irq);
+	struct irq_data *data = irq_desc_get_irq_data(desc);
 	struct irq_chip *chip = irq_data_get_irq_chip(data);
 	unsigned long mask;
 	int bit;

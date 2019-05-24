@@ -148,10 +148,7 @@ static void pdacf_proc_read(struct snd_info_entry * entry,
 
 static void pdacf_proc_init(struct snd_pdacf *chip)
 {
-	struct snd_info_entry *entry;
-
-	if (! snd_card_proc_new(chip->card, "pdaudiocf", &entry))
-		snd_info_set_text_ops(entry, chip, pdacf_proc_read);
+	snd_card_ro_proc_new(chip->card, "pdaudiocf", chip, pdacf_proc_read);
 }
 
 struct snd_pdacf *snd_pdacf_create(struct snd_card *card)
@@ -162,9 +159,8 @@ struct snd_pdacf *snd_pdacf_create(struct snd_card *card)
 	if (chip == NULL)
 		return NULL;
 	chip->card = card;
-	spin_lock_init(&chip->reg_lock);
+	mutex_init(&chip->reg_lock);
 	spin_lock_init(&chip->ak4117_lock);
-	tasklet_init(&chip->tq, pdacf_tasklet, (unsigned long)chip);
 	card->private_data = chip;
 
 	pdacf_proc_init(chip);
@@ -174,19 +170,18 @@ struct snd_pdacf *snd_pdacf_create(struct snd_card *card)
 static void snd_pdacf_ak4117_change(struct ak4117 *ak4117, unsigned char c0, unsigned char c1)
 {
 	struct snd_pdacf *chip = ak4117->change_callback_private;
-	unsigned long flags;
 	u16 val;
 
 	if (!(c0 & AK4117_UNLCK))
 		return;
-	spin_lock_irqsave(&chip->reg_lock, flags);
+	mutex_lock(&chip->reg_lock);
 	val = chip->regmap[PDAUDIOCF_REG_SCR>>1];
 	if (ak4117->rcs0 & AK4117_UNLCK)
 		val |= PDAUDIOCF_BLUE_LED_OFF;
 	else
 		val &= ~PDAUDIOCF_BLUE_LED_OFF;
 	pdacf_reg_write(chip, PDAUDIOCF_REG_SCR, val);
-	spin_unlock_irqrestore(&chip->reg_lock, flags);
+	mutex_unlock(&chip->reg_lock);
 }
 
 int snd_pdacf_ak4117_create(struct snd_pdacf *chip)
@@ -267,7 +262,6 @@ int snd_pdacf_suspend(struct snd_pdacf *chip)
 	u16 val;
 	
 	snd_power_change_state(chip->card, SNDRV_CTL_POWER_D3hot);
-	snd_pcm_suspend_all(chip->pcm);
 	/* disable interrupts, but use direct write to preserve old register value in chip->regmap */
 	val = inw(chip->port + PDAUDIOCF_REG_IER);
 	val &= ~(PDAUDIOCF_IRQOVREN|PDAUDIOCF_IRQAKMEN|PDAUDIOCF_IRQLVLEN0|PDAUDIOCF_IRQLVLEN1);

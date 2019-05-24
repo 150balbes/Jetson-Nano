@@ -10,6 +10,7 @@
  */
 
 #include <linux/linkage.h>
+#include <asm/assembler.h>
 #include <asm/ftrace.h>
 #include <asm/insn.h>
 
@@ -78,7 +79,6 @@
 	.macro mcount_get_lr reg
 	ldr	\reg, [x29]
 	ldr	\reg, [\reg, #8]
-	mcount_adjust_addr	\reg, \reg
 	.endm
 
 	.macro mcount_get_lr_addr reg
@@ -96,15 +96,9 @@
  *     - ftrace_graph_caller to set up an exit hook
  */
 ENTRY(_mcount)
-#ifdef CONFIG_HAVE_FUNCTION_TRACE_MCOUNT_TEST
-	ldr	x0, =ftrace_trace_stop
-	ldr	x0, [x0]		// if ftrace_trace_stop
-	ret				//   return;
-#endif
 	mcount_enter
 
-	ldr	x0, =ftrace_trace_function
-	ldr	x2, [x0]
+	ldr_l	x2, ftrace_trace_function
 	adr	x0, ftrace_stub
 	cmp	x0, x2			// if (ftrace_trace_function
 	b.eq	skip_ftrace_call	//     != ftrace_stub) {
@@ -113,27 +107,21 @@ ENTRY(_mcount)
 	mcount_get_lr	x1		//       function's lr (= parent's pc)
 	blr	x2			//   (*ftrace_trace_function)(pc, lr);
 
-#ifndef CONFIG_FUNCTION_GRAPH_TRACER
-skip_ftrace_call:			//   return;
-	mcount_exit			// }
-#else
-	mcount_exit			//   return;
-					// }
-skip_ftrace_call:
-	ldr	x1, =ftrace_graph_return
-	ldr	x2, [x1]		//   if ((ftrace_graph_return
-	cmp	x0, x2			//        != ftrace_stub)
-	b.ne	ftrace_graph_caller
+skip_ftrace_call:			// }
+#ifdef CONFIG_FUNCTION_GRAPH_TRACER
+	ldr_l	x2, ftrace_graph_return
+	cmp	x0, x2			//   if ((ftrace_graph_return
+	b.ne	ftrace_graph_caller	//        != ftrace_stub)
 
-	ldr	x1, =ftrace_graph_entry	//     || (ftrace_graph_entry
-	ldr	x2, [x1]		//        != ftrace_graph_entry_stub))
-	ldr	x0, =ftrace_graph_entry_stub
+	ldr_l	x2, ftrace_graph_entry	//     || (ftrace_graph_entry
+	adr_l	x0, ftrace_graph_entry_stub //     != ftrace_graph_entry_stub))
 	cmp	x0, x2
 	b.ne	ftrace_graph_caller	//     ftrace_graph_caller();
-
-	mcount_exit
 #endif /* CONFIG_FUNCTION_GRAPH_TRACER */
+	mcount_exit
 ENDPROC(_mcount)
+EXPORT_SYMBOL(_mcount)
+NOKPROBE(_mcount)
 
 #else /* CONFIG_DYNAMIC_FTRACE */
 /*
@@ -145,6 +133,8 @@ ENDPROC(_mcount)
 ENTRY(_mcount)
 	ret
 ENDPROC(_mcount)
+EXPORT_SYMBOL(_mcount)
+NOKPROBE(_mcount)
 
 /*
  * void ftrace_caller(unsigned long return_address)
@@ -161,14 +151,12 @@ ENTRY(ftrace_caller)
 	mcount_get_pc0	x0		//     function's pc
 	mcount_get_lr	x1		//     function's lr
 
-	.global ftrace_call
-ftrace_call:				// tracer(pc, lr);
+GLOBAL(ftrace_call)			// tracer(pc, lr);
 	nop				// This will be replaced with "bl xxx"
 					// where xxx can be any kind of tracer.
 
 #ifdef CONFIG_FUNCTION_GRAPH_TRACER
-	.global ftrace_graph_call
-ftrace_graph_call:			// ftrace_graph_caller();
+GLOBAL(ftrace_graph_call)		// ftrace_graph_caller();
 	nop				// If enabled, this will be replaced
 					// "b ftrace_graph_caller"
 #endif
@@ -192,10 +180,10 @@ ENDPROC(ftrace_stub)
  * and run return_to_handler() later on its exit.
  */
 ENTRY(ftrace_graph_caller)
-	mcount_get_lr_addr	  x0	//     pointer to function's saved lr
-	mcount_get_pc		  x1	//     function's pc
+	mcount_get_pc		  x0	//     function's pc
+	mcount_get_lr_addr	  x1	//     pointer to function's saved lr
 	mcount_get_parent_fp	  x2	//     parent's fp
-	bl	prepare_ftrace_return	// prepare_ftrace_return(&lr, pc, fp)
+	bl	prepare_ftrace_return	// prepare_ftrace_return(pc, &lr, fp)
 
 	mcount_exit
 ENDPROC(ftrace_graph_caller)
@@ -204,15 +192,27 @@ ENDPROC(ftrace_graph_caller)
  * void return_to_handler(void)
  *
  * Run ftrace_return_to_handler() before going back to parent.
- * @fp is checked against the value passed by ftrace_graph_caller()
- * only when CONFIG_FUNCTION_GRAPH_FP_TEST is enabled.
+ * @fp is checked against the value passed by ftrace_graph_caller().
  */
 ENTRY(return_to_handler)
-	str	x0, [sp, #-16]!
+	/* save return value regs */
+	sub sp, sp, #64
+	stp x0, x1, [sp]
+	stp x2, x3, [sp, #16]
+	stp x4, x5, [sp, #32]
+	stp x6, x7, [sp, #48]
+
 	mov	x0, x29			//     parent's fp
 	bl	ftrace_return_to_handler// addr = ftrace_return_to_hander(fp);
 	mov	x30, x0			// restore the original return address
-	ldr	x0, [sp], #16
+
+	/* restore return value regs */
+	ldp x0, x1, [sp]
+	ldp x2, x3, [sp, #16]
+	ldp x4, x5, [sp, #32]
+	ldp x6, x7, [sp, #48]
+	add sp, sp, #64
+
 	ret
 END(return_to_handler)
 #endif /* CONFIG_FUNCTION_GRAPH_TRACER */

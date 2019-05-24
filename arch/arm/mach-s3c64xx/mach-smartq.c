@@ -1,21 +1,17 @@
-/*
- * linux/arch/arm/mach-s3c64xx/mach-smartq.c
- *
- * Copyright (C) 2010 Maurus Cuelenaere
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
- *
- */
+// SPDX-License-Identifier: GPL-2.0
+//
+// Copyright (C) 2010 Maurus Cuelenaere
 
 #include <linux/delay.h>
 #include <linux/fb.h>
 #include <linux/gpio.h>
+#include <linux/gpio/machine.h>
 #include <linux/init.h>
 #include <linux/platform_device.h>
+#include <linux/pwm.h>
 #include <linux/pwm_backlight.h>
 #include <linux/serial_core.h>
+#include <linux/serial_s3c.h>
 #include <linux/spi/spi_gpio.h>
 #include <linux/usb/gpio_vbus.h>
 #include <linux/platform_data/s3c-hsotg.h>
@@ -27,13 +23,11 @@
 #include <mach/regs-gpio.h>
 #include <mach/gpio-samsung.h>
 
-#include <plat/clock.h>
 #include <plat/cpu.h>
 #include <plat/devs.h>
 #include <linux/platform_data/i2c-s3c2410.h>
 #include <plat/gpio-cfg.h>
 #include <linux/platform_data/hwmon-s3c.h>
-#include <plat/regs-serial.h>
 #include <linux/platform_data/usb-ohci-s3c2410.h>
 #include <plat/sdhci.h>
 #include <linux/platform_data/touchscreen-s3c2410.h>
@@ -42,6 +36,7 @@
 #include <plat/samsung-time.h>
 
 #include "common.h"
+#include "mach-smartq.h"
 #include "regs-modem.h"
 
 #define UCON S3C2410_UCON_DEFAULT
@@ -140,6 +135,11 @@ static struct platform_device smartq_usb_otg_vbus_dev = {
 	.dev.platform_data	= &smartq_usb_otg_vbus_pdata,
 };
 
+static struct pwm_lookup smartq_pwm_lookup[] = {
+	PWM_LOOKUP("samsung-pwm", 1, "pwm-backlight.0", NULL,
+		   1000000000 / (1000 * 20), PWM_POLARITY_NORMAL),
+};
+
 static int smartq_bl_init(struct device *dev)
 {
     s3c_gpio_cfgpin(S3C64XX_GPF(15), S3C_GPIO_SFN(2));
@@ -148,10 +148,8 @@ static int smartq_bl_init(struct device *dev)
 }
 
 static struct platform_pwm_backlight_data smartq_backlight_data = {
-	.pwm_id		= 1,
 	.max_brightness	= 1000,
 	.dft_brightness	= 600,
-	.pwm_period_ns	= 1000000000 / (1000 * 20),
 	.enable_gpio	= -1,
 	.init		= smartq_bl_init,
 };
@@ -190,7 +188,7 @@ static struct s3c_hwmon_pdata smartq_hwmon_pdata __initdata = {
 	},
 };
 
-static struct s3c_hsotg_plat smartq_hsotg_pdata;
+static struct dwc2_hsotg_plat smartq_hsotg_pdata;
 
 static int __init smartq_lcd_setup_gpio(void)
 {
@@ -208,15 +206,28 @@ static int __init smartq_lcd_setup_gpio(void)
 
 /* GPM0 -> CS */
 static struct spi_gpio_platform_data smartq_lcd_control = {
-	.sck			= S3C64XX_GPM(1),
-	.mosi			= S3C64XX_GPM(2),
-	.miso			= S3C64XX_GPM(2),
+	.num_chipselect	= 1,
 };
 
 static struct platform_device smartq_lcd_control_device = {
-	.name			= "spi-gpio",
+	.name			= "spi_gpio",
 	.id			= 1,
 	.dev.platform_data	= &smartq_lcd_control,
+};
+
+static struct gpiod_lookup_table smartq_lcd_control_gpiod_table = {
+	.dev_id         = "spi_gpio",
+	.table          = {
+		GPIO_LOOKUP("GPIOM", 1,
+			    "sck", GPIO_ACTIVE_HIGH),
+		GPIO_LOOKUP("GPIOM", 2,
+			    "mosi", GPIO_ACTIVE_HIGH),
+		GPIO_LOOKUP("GPIOM", 3,
+			    "miso", GPIO_ACTIVE_HIGH),
+		GPIO_LOOKUP("GPIOM", 0,
+			    "cs", GPIO_ACTIVE_HIGH),
+		{ },
+	},
 };
 
 static void smartq_lcd_power_set(struct plat_lcd_data *pd, unsigned int power)
@@ -249,7 +260,6 @@ static struct platform_device *smartq_devices[] __initdata = {
 	&s3c_device_ohci,
 	&s3c_device_rtc,
 	&samsung_device_pwm,
-	&s3c_device_ts,
 	&s3c_device_usb_hsotg,
 	&s3c64xx_device_iis0,
 	&smartq_backlight_device,
@@ -380,14 +390,23 @@ void __init smartq_map_io(void)
 	smartq_lcd_mode_set();
 }
 
+static struct gpiod_lookup_table smartq_audio_gpios = {
+	.dev_id = "smartq-audio",
+	.table = {
+		GPIO_LOOKUP("GPL", 12, "headphone detect", 0),
+		GPIO_LOOKUP("GPK", 12, "amplifiers shutdown", 0),
+		{ },
+	},
+};
+
 void __init smartq_machine_init(void)
 {
 	s3c_i2c0_set_platdata(NULL);
-	s3c_hsotg_set_platdata(&smartq_hsotg_pdata);
+	dwc2_hsotg_set_platdata(&smartq_hsotg_pdata);
 	s3c_hwmon_set_platdata(&smartq_hwmon_pdata);
 	s3c_sdhci1_set_platdata(&smartq_internal_hsmmc_pdata);
 	s3c_sdhci2_set_platdata(&smartq_internal_hsmmc_pdata);
-	s3c24xx_ts_set_platdata(&smartq_touchscreen_pdata);
+	s3c64xx_ts_set_platdata(&smartq_touchscreen_pdata);
 
 	i2c_register_board_info(0, smartq_i2c_devs,
 				ARRAY_SIZE(smartq_i2c_devs));
@@ -397,5 +416,10 @@ void __init smartq_machine_init(void)
 	WARN_ON(smartq_usb_host_init());
 	WARN_ON(smartq_wifi_init());
 
+	pwm_add_table(smartq_pwm_lookup, ARRAY_SIZE(smartq_pwm_lookup));
+	gpiod_add_lookup_table(&smartq_lcd_control_gpiod_table);
 	platform_add_devices(smartq_devices, ARRAY_SIZE(smartq_devices));
+
+	gpiod_add_lookup_table(&smartq_audio_gpios);
+	platform_device_register_simple("smartq-audio", -1, NULL, 0);
 }

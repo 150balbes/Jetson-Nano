@@ -1,14 +1,8 @@
-/*
- * arch/arm/mach-s3c2410/h1940-bluetooth.c
- * Copyright (c) Arnaud Patard <arnaud.patard@rtp-net.org>
- *
- * This file is subject to the terms and conditions of the GNU General Public
- * License.  See the file COPYING in the main directory of this archive for
- * more details.
- *
- *	    S3C2410 bluetooth "driver"
- *
- */
+// SPDX-License-Identifier: GPL-1.0+
+//
+// Copyright (c) Arnaud Patard <arnaud.patard@rtp-net.org>
+//
+//	    S3C2410 bluetooth "driver"
 
 #include <linux/module.h>
 #include <linux/platform_device.h>
@@ -41,7 +35,7 @@ static void h1940bt_enable(int on)
 		mdelay(10);
 		gpio_set_value(S3C2410_GPH(1), 0);
 
-		h1940_led_blink_set(-EINVAL, GPIO_LED_BLINK, NULL, NULL);
+		h1940_led_blink_set(NULL, GPIO_LED_BLINK, NULL, NULL);
 	}
 	else {
 		gpio_set_value(S3C2410_GPH(1), 1);
@@ -50,7 +44,7 @@ static void h1940bt_enable(int on)
 		mdelay(10);
 		gpio_set_value(H1940_LATCH_BLUETOOTH_POWER, 0);
 
-		h1940_led_blink_set(-EINVAL, GPIO_LED_NO_BLINK_LOW, NULL, NULL);
+		h1940_led_blink_set(NULL, GPIO_LED_NO_BLINK_LOW, NULL, NULL);
 	}
 }
 

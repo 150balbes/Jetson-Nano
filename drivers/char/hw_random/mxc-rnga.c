@@ -16,16 +16,13 @@
  * This driver is based on other RNG drivers.
  */
 
-#include <linux/module.h>
-#include <linux/init.h>
-#include <linux/kernel.h>
 #include <linux/clk.h>
-#include <linux/err.h>
-#include <linux/ioport.h>
-#include <linux/platform_device.h>
-#include <linux/hw_random.h>
 #include <linux/delay.h>
+#include <linux/hw_random.h>
 #include <linux/io.h>
+#include <linux/module.h>
+#include <linux/of.h>
+#include <linux/platform_device.h>
 
 /* RNGA Registers */
 #define RNGA_CONTROL			0x00
@@ -141,12 +138,11 @@ static void mxc_rnga_cleanup(struct hwrng *rng)
 
 static int __init mxc_rnga_probe(struct platform_device *pdev)
 {
-	int err = -ENODEV;
+	int err;
 	struct resource *res;
 	struct mxc_rng *mxc_rng;
 
-	mxc_rng = devm_kzalloc(&pdev->dev, sizeof(struct mxc_rng),
-					GFP_KERNEL);
+	mxc_rng = devm_kzalloc(&pdev->dev, sizeof(*mxc_rng), GFP_KERNEL);
 	if (!mxc_rng)
 		return -ENOMEM;
 
@@ -160,13 +156,12 @@ static int __init mxc_rnga_probe(struct platform_device *pdev)
 	mxc_rng->clk = devm_clk_get(&pdev->dev, NULL);
 	if (IS_ERR(mxc_rng->clk)) {
 		dev_err(&pdev->dev, "Could not get rng_clk!\n");
-		err = PTR_ERR(mxc_rng->clk);
-		goto out;
+		return PTR_ERR(mxc_rng->clk);
 	}
 
 	err = clk_prepare_enable(mxc_rng->clk);
 	if (err)
-		goto out;
+		return err;
 
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	mxc_rng->mem = devm_ioremap_resource(&pdev->dev, res);
@@ -181,14 +176,10 @@ static int __init mxc_rnga_probe(struct platform_device *pdev)
 		goto err_ioremap;
 	}
 
-	dev_info(&pdev->dev, "MXC RNGA Registered.\n");
-
 	return 0;
 
 err_ioremap:
 	clk_disable_unprepare(mxc_rng->clk);
-
-out:
 	return err;
 }
 
@@ -203,11 +194,18 @@ static int __exit mxc_rnga_remove(struct platform_device *pdev)
 	return 0;
 }
 
+static const struct of_device_id mxc_rnga_of_match[] = {
+	{ .compatible = "fsl,imx21-rnga", },
+	{ .compatible = "fsl,imx31-rnga", },
+	{ /* sentinel */ },
+};
+MODULE_DEVICE_TABLE(of, mxc_rnga_of_match);
+
 static struct platform_driver mxc_rnga_driver = {
 	.driver = {
-		   .name = "mxc_rnga",
-		   .owner = THIS_MODULE,
-		   },
+		.name = "mxc_rnga",
+		.of_match_table = mxc_rnga_of_match,
+	},
 	.remove = __exit_p(mxc_rnga_remove),
 };
 

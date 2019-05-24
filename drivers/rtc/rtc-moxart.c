@@ -247,10 +247,8 @@ static int moxart_rtc_probe(struct platform_device *pdev)
 	int ret = 0;
 
 	moxart_rtc = devm_kzalloc(&pdev->dev, sizeof(*moxart_rtc), GFP_KERNEL);
-	if (!moxart_rtc) {
-		dev_err(&pdev->dev, "devm_kzalloc failed\n");
+	if (!moxart_rtc)
 		return -ENOMEM;
-	}
 
 	moxart_rtc->gpio_data = of_get_named_gpio(pdev->dev.of_node,
 						  "gpio-rtc-data", 0);
@@ -314,12 +312,12 @@ static const struct of_device_id moxart_rtc_match[] = {
 	{ .compatible = "moxa,moxart-rtc" },
 	{ },
 };
+MODULE_DEVICE_TABLE(of, moxart_rtc_match);
 
 static struct platform_driver moxart_rtc_driver = {
 	.probe	= moxart_rtc_probe,
 	.driver	= {
 		.name		= "moxart-rtc",
-		.owner		= THIS_MODULE,
 		.of_match_table	= moxart_rtc_match,
 	},
 };

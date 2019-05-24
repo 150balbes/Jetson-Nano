@@ -170,6 +170,15 @@ static void hv_kbd_on_receive(struct hv_device *hv_dev,
 			serio_interrupt(kbd_dev->hv_serio, scan_code, 0);
 		}
 		spin_unlock_irqrestore(&kbd_dev->lock, flags);
+
+		/*
+		 * Only trigger a wakeup on key down, otherwise
+		 * "echo freeze > /sys/power/state" can't really enter the
+		 * state because the Enter-UP can trigger a wakeup at once.
+		 */
+		if (!(info & IS_BREAK))
+			pm_wakeup_hard_event(&hv_dev->device);
+
 		break;
 
 	default:
@@ -376,6 +385,9 @@ static int hv_kbd_probe(struct hv_device *hv_dev,
 		goto err_close_vmbus;
 
 	serio_register_port(kbd_dev->hv_serio);
+
+	device_init_wakeup(&hv_dev->device, true);
+
 	return 0;
 
 err_close_vmbus:
@@ -399,16 +411,6 @@ static int hv_kbd_remove(struct hv_device *hv_dev)
 	return 0;
 }
 
-/*
- * Keyboard GUID
- * {f912ad6d-2b17-48ea-bd65-f927a61c7684}
- */
-#define HV_KBD_GUID \
-	.guid = { \
-			0x6d, 0xad, 0x12, 0xf9, 0x17, 0x2b, 0xea, 0x48, \
-			0xbd, 0x65, 0xf9, 0x27, 0xa6, 0x1c, 0x76, 0x84 \
-	}
-
 static const struct hv_vmbus_device_id id_table[] = {
 	/* Keyboard guid */
 	{ HV_KBD_GUID, },
@@ -422,6 +424,9 @@ static struct  hv_driver hv_kbd_drv = {
 	.id_table = id_table,
 	.probe = hv_kbd_probe,
 	.remove = hv_kbd_remove,
+	.driver = {
+		.probe_type = PROBE_PREFER_ASYNCHRONOUS,
+	},
 };
 
 static int __init hv_kbd_init(void)

@@ -13,6 +13,8 @@
  *	2005-03-30: - initial revision
  */
 
+#define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
+
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/init.h>
@@ -30,12 +32,10 @@
 
 static __u8 __iomem *cpuctl;
 
-#define PFX "sc520_freq: "
-
 static struct cpufreq_frequency_table sc520_freq_table[] = {
-	{0x01,	100000},
-	{0x02,	133000},
-	{0,	CPUFREQ_TABLE_END},
+	{0, 0x01,	100000},
+	{0, 0x02,	133000},
+	{0, 0,	CPUFREQ_TABLE_END},
 };
 
 static unsigned int sc520_freq_get_cpu_frequency(unsigned int cpu)
@@ -44,8 +44,8 @@ static unsigned int sc520_freq_get_cpu_frequency(unsigned int cpu)
 
 	switch (clockspeed_reg & 0x03) {
 	default:
-		printk(KERN_ERR PFX "error: cpuctl register has unexpected "
-				"value %02x\n", clockspeed_reg);
+		pr_err("error: cpuctl register has unexpected value %02x\n",
+		       clockspeed_reg);
 	case 0x01:
 		return 100000;
 	case 0x02:
@@ -83,8 +83,9 @@ static int sc520_freq_cpu_init(struct cpufreq_policy *policy)
 
 	/* cpuinfo and default policy values */
 	policy->cpuinfo.transition_latency = 1000000; /* 1ms */
+	policy->freq_table = sc520_freq_table;
 
-	return cpufreq_table_validate_and_show(policy, sc520_freq_table);
+	return 0;
 }
 
 
@@ -93,7 +94,6 @@ static struct cpufreq_driver sc520_freq_driver = {
 	.verify	= cpufreq_generic_frequency_table_verify,
 	.target_index = sc520_freq_target,
 	.init	= sc520_freq_cpu_init,
-	.exit	= cpufreq_generic_exit,
 	.name	= "sc520_freq",
 	.attr	= cpufreq_generic_attr,
 };
@@ -113,7 +113,7 @@ static int __init sc520_freq_init(void)
 
 	cpuctl = ioremap((unsigned long)(MMCR_BASE + OFFS_CPUCTL), 1);
 	if (!cpuctl) {
-		printk(KERN_ERR "sc520_freq: error: failed to remap memory\n");
+		pr_err("sc520_freq: error: failed to remap memory\n");
 		return -ENOMEM;
 	}
 

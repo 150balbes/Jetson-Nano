@@ -15,6 +15,8 @@
 #include <linux/device.h>
 #include <linux/i2c.h>
 #include <linux/err.h>
+#include <linux/of.h>
+#include <linux/of_device.h>
 
 #include <linux/mfd/da9055/core.h>
 
@@ -60,11 +62,16 @@ static int da9055_i2c_remove(struct i2c_client *i2c)
  * purposes separate). As a result there are specific DA9055 ids for PMIC
  * and CODEC, which must be different to operate together.
  */
-static struct i2c_device_id da9055_i2c_id[] = {
+static const struct i2c_device_id da9055_i2c_id[] = {
 	{"da9055-pmic", 0},
 	{ }
 };
 MODULE_DEVICE_TABLE(i2c, da9055_i2c_id);
+
+static const struct of_device_id da9055_of_match[] = {
+	{ .compatible = "dlg,da9055-pmic", },
+	{ }
+};
 
 static struct i2c_driver da9055_i2c_driver = {
 	.probe = da9055_i2c_probe,
@@ -72,7 +79,7 @@ static struct i2c_driver da9055_i2c_driver = {
 	.id_table = da9055_i2c_id,
 	.driver = {
 		.name = "da9055-pmic",
-		.owner = THIS_MODULE,
+		.of_match_table = of_match_ptr(da9055_of_match),
 	},
 };
 

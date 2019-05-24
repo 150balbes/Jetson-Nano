@@ -8,17 +8,13 @@
 
 #include <linux/gfp.h>
 #include <linux/suspend.h>
-#include <linux/bootmem.h>
+#include <linux/memblock.h>
 
 #include <asm/page.h>
 #include <asm/pgtable.h>
 #include <asm/mmzone.h>
-
-/* Defined in hibernate_asm_32.S */
-extern int restore_image(void);
-
-/* References to section boundaries */
-extern const void __nosave_begin, __nosave_end;
+#include <asm/sections.h>
+#include <asm/suspend.h>
 
 /* Pointer to the temporary resume page tables */
 pgd_t *resume_pg_dir;
@@ -34,6 +30,7 @@ pgd_t *resume_pg_dir;
  */
 static pmd_t *resume_one_md_table_init(pgd_t *pgd)
 {
+	p4d_t *p4d;
 	pud_t *pud;
 	pmd_t *pmd_table;
 
@@ -43,11 +40,13 @@ static pmd_t *resume_one_md_table_init(pgd_t *pgd)
 		return NULL;
 
 	set_pgd(pgd, __pgd(__pa(pmd_table) | _PAGE_PRESENT));
-	pud = pud_offset(pgd, 0);
+	p4d = p4d_offset(pgd, 0);
+	pud = pud_offset(p4d, 0);
 
 	BUG_ON(pmd_table != pmd_offset(pud, 0));
 #else
-	pud = pud_offset(pgd, 0);
+	p4d = p4d_offset(pgd, 0);
+	pud = pud_offset(p4d, 0);
 	pmd_table = pmd_offset(pud, 0);
 #endif
 
@@ -108,7 +107,7 @@ static int resume_physical_mapping_init(pgd_t *pgd_base)
 			 * normal page tables.
 			 * NOTE: We can mark everything as executable here
 			 */
-			if (cpu_has_pse) {
+			if (boot_cpu_has(X86_FEATURE_PSE)) {
 				set_pmd(pmd, pfn_pmd(pfn, PAGE_KERNEL_LARGE_EXEC));
 				pfn += PTRS_PER_PTE;
 			} else {
@@ -144,7 +143,33 @@ static inline void resume_init_first_level_page_table(pgd_t *pg_dir)
 #endif
 }
 
-int swsusp_arch_resume(void)
+static int set_up_temporary_text_mapping(pgd_t *pgd_base)
+{
+	pgd_t *pgd;
+	pmd_t *pmd;
+	pte_t *pte;
+
+	pgd = pgd_base + pgd_index(restore_jump_address);
+
+	pmd = resume_one_md_table_init(pgd);
+	if (!pmd)
+		return -ENOMEM;
+
+	if (boot_cpu_has(X86_FEATURE_PSE)) {
+		set_pmd(pmd + pmd_index(restore_jump_address),
+		__pmd((jump_address_phys & PMD_MASK) | pgprot_val(PAGE_KERNEL_LARGE_EXEC)));
+	} else {
+		pte = resume_one_page_table_init(pmd);
+		if (!pte)
+			return -ENOMEM;
+		set_pte(pte + pte_index(restore_jump_address),
+		__pte((jump_address_phys & PAGE_MASK) | pgprot_val(PAGE_KERNEL_EXEC)));
+	}
+
+	return 0;
+}
+
+asmlinkage int swsusp_arch_resume(void)
 {
 	int error;
 
@@ -153,22 +178,22 @@ int swsusp_arch_resume(void)
 		return -ENOMEM;
 
 	resume_init_first_level_page_table(resume_pg_dir);
+
+	error = set_up_temporary_text_mapping(resume_pg_dir);
+	if (error)
+		return error;
+
 	error = resume_physical_mapping_init(resume_pg_dir);
+	if (error)
+		return error;
+
+	temp_pgt = __pa(resume_pg_dir);
+
+	error = relocate_restore_code();
 	if (error)
 		return error;
 
 	/* We have got enough memory and from now on we cannot recover */
 	restore_image();
 	return 0;
-}
-
-/*
- *	pfn_is_nosave - check if given pfn is in the 'nosave' section
- */
-
-int pfn_is_nosave(unsigned long pfn)
-{
-	unsigned long nosave_begin_pfn = __pa_symbol(&__nosave_begin) >> PAGE_SHIFT;
-	unsigned long nosave_end_pfn = PAGE_ALIGN(__pa_symbol(&__nosave_end)) >> PAGE_SHIFT;
-	return (pfn >= nosave_begin_pfn) && (pfn < nosave_end_pfn);
 }

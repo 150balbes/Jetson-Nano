@@ -63,7 +63,7 @@ EXPORT_SYMBOL_GPL(fsnotify_get_cookie);
 /* return true if the notify queue is empty, false otherwise */
 bool fsnotify_notify_queue_is_empty(struct fsnotify_group *group)
 {
-	BUG_ON(!mutex_is_locked(&group->notification_mutex));
+	assert_spin_locked(&group->notification_lock);
 	return list_empty(&group->notification_list) ? true : false;
 }
 
@@ -71,9 +71,19 @@ void fsnotify_destroy_event(struct fsnotify_group *group,
 			    struct fsnotify_event *event)
 {
 	/* Overflow events are per-group and we don't want to free them */
-	if (!event || event->mask == FS_Q_OVERFLOW)
+	if (!event || event == group->overflow_event)
 		return;
-
+	/*
+	 * If the event is still queued, we have a problem... Do an unreliable
+	 * lockless check first to avoid locking in the common case. The
+	 * locking may be necessary for permission events which got removed
+	 * from the list by a different CPU than the one freeing the event.
+	 */
+	if (!list_empty(&event->list)) {
+		spin_lock(&group->notification_lock);
+		WARN_ON(!list_empty(&event->list));
+		spin_unlock(&group->notification_lock);
+	}
 	group->ops->free_event(event);
 }
 
@@ -81,25 +91,32 @@ void fsnotify_destroy_event(struct fsnotify_group *group,
  * Add an event to the group notification queue.  The group can later pull this
  * event off the queue to deal with.  The function returns 0 if the event was
  * added to the queue, 1 if the event was merged with some other queued event,
- * 2 if the queue of events has overflown.
+ * 2 if the event was not queued - either the queue of events has overflown
+ * or the group is shutting down.
  */
-int fsnotify_add_notify_event(struct fsnotify_group *group,
-			      struct fsnotify_event *event,
-			      int (*merge)(struct list_head *,
-					   struct fsnotify_event *))
+int fsnotify_add_event(struct fsnotify_group *group,
+		       struct fsnotify_event *event,
+		       int (*merge)(struct list_head *,
+				    struct fsnotify_event *))
 {
 	int ret = 0;
 	struct list_head *list = &group->notification_list;
 
 	pr_debug("%s: group=%p event=%p\n", __func__, group, event);
 
-	mutex_lock(&group->notification_mutex);
+	spin_lock(&group->notification_lock);
 
-	if (group->q_len >= group->max_events) {
+	if (group->shutdown) {
+		spin_unlock(&group->notification_lock);
+		return 2;
+	}
+
+	if (event == group->overflow_event ||
+	    group->q_len >= group->max_events) {
 		ret = 2;
 		/* Queue overflow event only if it isn't already queued */
 		if (!list_empty(&group->overflow_event->list)) {
-			mutex_unlock(&group->notification_mutex);
+			spin_unlock(&group->notification_lock);
 			return ret;
 		}
 		event = group->overflow_event;
@@ -109,7 +126,7 @@ int fsnotify_add_notify_event(struct fsnotify_group *group,
 	if (!list_empty(list) && merge) {
 		ret = merge(list, event);
 		if (ret) {
-			mutex_unlock(&group->notification_mutex);
+			spin_unlock(&group->notification_lock);
 			return ret;
 		}
 	}
@@ -117,43 +134,50 @@ int fsnotify_add_notify_event(struct fsnotify_group *group,
 queue:
 	group->q_len++;
 	list_add_tail(&event->list, list);
-	mutex_unlock(&group->notification_mutex);
+	spin_unlock(&group->notification_lock);
 
 	wake_up(&group->notification_waitq);
 	kill_fasync(&group->fsn_fa, SIGIO, POLL_IN);
 	return ret;
 }
 
+void fsnotify_remove_queued_event(struct fsnotify_group *group,
+				  struct fsnotify_event *event)
+{
+	assert_spin_locked(&group->notification_lock);
+	/*
+	 * We need to init list head for the case of overflow event so that
+	 * check in fsnotify_add_event() works
+	 */
+	list_del_init(&event->list);
+	group->q_len--;
+}
+
 /*
  * Remove and return the first event from the notification list.  It is the
  * responsibility of the caller to destroy the obtained event
  */
-struct fsnotify_event *fsnotify_remove_notify_event(struct fsnotify_group *group)
+struct fsnotify_event *fsnotify_remove_first_event(struct fsnotify_group *group)
 {
 	struct fsnotify_event *event;
 
-	BUG_ON(!mutex_is_locked(&group->notification_mutex));
+	assert_spin_locked(&group->notification_lock);
 
 	pr_debug("%s: group=%p\n", __func__, group);
 
 	event = list_first_entry(&group->notification_list,
 				 struct fsnotify_event, list);
-	/*
-	 * We need to init list head for the case of overflow event so that
-	 * check in fsnotify_add_notify_events() works
-	 */
-	list_del_init(&event->list);
-	group->q_len--;
-
+	fsnotify_remove_queued_event(group, event);
 	return event;
 }
 
 /*
- * This will not remove the event, that must be done with fsnotify_remove_notify_event()
+ * This will not remove the event, that must be done with
+ * fsnotify_remove_first_event()
  */
-struct fsnotify_event *fsnotify_peek_notify_event(struct fsnotify_group *group)
+struct fsnotify_event *fsnotify_peek_first_event(struct fsnotify_group *group)
 {
-	BUG_ON(!mutex_is_locked(&group->notification_mutex));
+	assert_spin_locked(&group->notification_lock);
 
 	return list_first_entry(&group->notification_list,
 				struct fsnotify_event, list);
@@ -167,30 +191,12 @@ void fsnotify_flush_notify(struct fsnotify_group *group)
 {
 	struct fsnotify_event *event;
 
-	mutex_lock(&group->notification_mutex);
+	spin_lock(&group->notification_lock);
 	while (!fsnotify_notify_queue_is_empty(group)) {
-		event = fsnotify_remove_notify_event(group);
+		event = fsnotify_remove_first_event(group);
+		spin_unlock(&group->notification_lock);
 		fsnotify_destroy_event(group, event);
+		spin_lock(&group->notification_lock);
 	}
-	mutex_unlock(&group->notification_mutex);
-}
-
-/*
- * fsnotify_create_event - Allocate a new event which will be sent to each
- * group's handle_event function if the group was interested in this
- * particular event.
- *
- * @inode the inode which is supposed to receive the event (sometimes a
- *	parent of the inode to which the event happened.
- * @mask what actually happened.
- * @data pointer to the object which was actually affected
- * @data_type flag indication if the data is a file, path, inode, nothing...
- * @name the filename, if available
- */
-void fsnotify_init_event(struct fsnotify_event *event, struct inode *inode,
-			 u32 mask)
-{
-	INIT_LIST_HEAD(&event->list);
-	event->inode = inode;
-	event->mask = mask;
+	spin_unlock(&group->notification_lock);
 }

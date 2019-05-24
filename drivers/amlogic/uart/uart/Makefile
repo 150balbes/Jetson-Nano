@@ -1,1 +1,0 @@
-obj-$(CONFIG_AM_UART) += meson_uart.o

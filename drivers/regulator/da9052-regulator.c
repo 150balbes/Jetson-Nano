@@ -240,7 +240,32 @@ static int da9052_regulator_set_voltage_sel(struct regulator_dev *rdev,
 	return ret;
 }
 
-static struct regulator_ops da9052_dcdc_ops = {
+static int da9052_regulator_set_voltage_time_sel(struct regulator_dev *rdev,
+						 unsigned int old_sel,
+						 unsigned int new_sel)
+{
+	struct da9052_regulator *regulator = rdev_get_drvdata(rdev);
+	struct da9052_regulator_info *info = regulator->info;
+	int id = rdev_get_id(rdev);
+	int ret = 0;
+
+	/* The DVC controlled LDOs and DCDCs ramp with 6.25mV/µs after enabling
+	 * the activate bit.
+	 */
+	switch (id) {
+	case DA9052_ID_BUCK1:
+	case DA9052_ID_BUCK2:
+	case DA9052_ID_BUCK3:
+	case DA9052_ID_LDO2:
+	case DA9052_ID_LDO3:
+		ret = (new_sel - old_sel) * info->step_uV / 6250;
+		break;
+	}
+
+	return ret;
+}
+
+static const struct regulator_ops da9052_dcdc_ops = {
 	.get_current_limit = da9052_dcdc_get_current_limit,
 	.set_current_limit = da9052_dcdc_set_current_limit,
 
@@ -248,25 +273,27 @@ static struct regulator_ops da9052_dcdc_ops = {
 	.map_voltage = da9052_map_voltage,
 	.get_voltage_sel = regulator_get_voltage_sel_regmap,
 	.set_voltage_sel = da9052_regulator_set_voltage_sel,
+	.set_voltage_time_sel = da9052_regulator_set_voltage_time_sel,
 	.is_enabled = regulator_is_enabled_regmap,
 	.enable = regulator_enable_regmap,
 	.disable = regulator_disable_regmap,
 };
 
-static struct regulator_ops da9052_ldo_ops = {
+static const struct regulator_ops da9052_ldo_ops = {
 	.list_voltage = da9052_list_voltage,
 	.map_voltage = da9052_map_voltage,
 	.get_voltage_sel = regulator_get_voltage_sel_regmap,
 	.set_voltage_sel = da9052_regulator_set_voltage_sel,
+	.set_voltage_time_sel = da9052_regulator_set_voltage_time_sel,
 	.is_enabled = regulator_is_enabled_regmap,
 	.enable = regulator_enable_regmap,
 	.disable = regulator_disable_regmap,
 };
 
-#define DA9052_LDO(_id, step, min, max, sbits, ebits, abits) \
+#define DA9052_LDO(_id, _name, step, min, max, sbits, ebits, abits) \
 {\
 	.reg_desc = {\
-		.name = #_id,\
+		.name = #_name,\
 		.ops = &da9052_ldo_ops,\
 		.type = REGULATOR_VOLTAGE,\
 		.id = DA9052_ID_##_id,\
@@ -283,10 +310,10 @@ static struct regulator_ops da9052_ldo_ops = {
 	.activate_bit = (abits),\
 }
 
-#define DA9052_DCDC(_id, step, min, max, sbits, ebits, abits) \
+#define DA9052_DCDC(_id, _name, step, min, max, sbits, ebits, abits) \
 {\
 	.reg_desc = {\
-		.name = #_id,\
+		.name = #_name,\
 		.ops = &da9052_dcdc_ops,\
 		.type = REGULATOR_VOLTAGE,\
 		.id = DA9052_ID_##_id,\
@@ -304,37 +331,37 @@ static struct regulator_ops da9052_ldo_ops = {
 }
 
 static struct da9052_regulator_info da9052_regulator_info[] = {
-	DA9052_DCDC(BUCK1, 25, 500, 2075, 6, 6, DA9052_SUPPLY_VBCOREGO),
-	DA9052_DCDC(BUCK2, 25, 500, 2075, 6, 6, DA9052_SUPPLY_VBPROGO),
-	DA9052_DCDC(BUCK3, 25, 925, 2500, 6, 6, DA9052_SUPPLY_VBMEMGO),
-	DA9052_DCDC(BUCK4, 50, 1800, 3600, 5, 6, 0),
-	DA9052_LDO(LDO1, 50, 600, 1800, 5, 6, 0),
-	DA9052_LDO(LDO2, 25, 600, 1800, 6, 6, DA9052_SUPPLY_VLDO2GO),
-	DA9052_LDO(LDO3, 25, 1725, 3300, 6, 6, DA9052_SUPPLY_VLDO3GO),
-	DA9052_LDO(LDO4, 25, 1725, 3300, 6, 6, 0),
-	DA9052_LDO(LDO5, 50, 1200, 3600, 6, 6, 0),
-	DA9052_LDO(LDO6, 50, 1200, 3600, 6, 6, 0),
-	DA9052_LDO(LDO7, 50, 1200, 3600, 6, 6, 0),
-	DA9052_LDO(LDO8, 50, 1200, 3600, 6, 6, 0),
-	DA9052_LDO(LDO9, 50, 1250, 3650, 6, 6, 0),
-	DA9052_LDO(LDO10, 50, 1200, 3600, 6, 6, 0),
+	DA9052_DCDC(BUCK1, buck1, 25, 500, 2075, 6, 6, DA9052_SUPPLY_VBCOREGO),
+	DA9052_DCDC(BUCK2, buck2, 25, 500, 2075, 6, 6, DA9052_SUPPLY_VBPROGO),
+	DA9052_DCDC(BUCK3, buck3, 25, 950, 2525, 6, 6, DA9052_SUPPLY_VBMEMGO),
+	DA9052_DCDC(BUCK4, buck4, 50, 1800, 3600, 5, 6, 0),
+	DA9052_LDO(LDO1, ldo1, 50, 600, 1800, 5, 6, 0),
+	DA9052_LDO(LDO2, ldo2, 25, 600, 1800, 6, 6, DA9052_SUPPLY_VLDO2GO),
+	DA9052_LDO(LDO3, ldo3, 25, 1725, 3300, 6, 6, DA9052_SUPPLY_VLDO3GO),
+	DA9052_LDO(LDO4, ldo4, 25, 1725, 3300, 6, 6, 0),
+	DA9052_LDO(LDO5, ldo5, 50, 1200, 3600, 6, 6, 0),
+	DA9052_LDO(LDO6, ldo6, 50, 1200, 3600, 6, 6, 0),
+	DA9052_LDO(LDO7, ldo7, 50, 1200, 3600, 6, 6, 0),
+	DA9052_LDO(LDO8, ldo8, 50, 1200, 3600, 6, 6, 0),
+	DA9052_LDO(LDO9, ldo9, 50, 1250, 3650, 6, 6, 0),
+	DA9052_LDO(LDO10, ldo10, 50, 1200, 3600, 6, 6, 0),
 };
 
 static struct da9052_regulator_info da9053_regulator_info[] = {
-	DA9052_DCDC(BUCK1, 25, 500, 2075, 6, 6, DA9052_SUPPLY_VBCOREGO),
-	DA9052_DCDC(BUCK2, 25, 500, 2075, 6, 6, DA9052_SUPPLY_VBPROGO),
-	DA9052_DCDC(BUCK3, 25, 925, 2500, 6, 6, DA9052_SUPPLY_VBMEMGO),
-	DA9052_DCDC(BUCK4, 25, 925, 2500, 6, 6, 0),
-	DA9052_LDO(LDO1, 50, 600, 1800, 5, 6, 0),
-	DA9052_LDO(LDO2, 25, 600, 1800, 6, 6, DA9052_SUPPLY_VLDO2GO),
-	DA9052_LDO(LDO3, 25, 1725, 3300, 6, 6, DA9052_SUPPLY_VLDO3GO),
-	DA9052_LDO(LDO4, 25, 1725, 3300, 6, 6, 0),
-	DA9052_LDO(LDO5, 50, 1200, 3600, 6, 6, 0),
-	DA9052_LDO(LDO6, 50, 1200, 3600, 6, 6, 0),
-	DA9052_LDO(LDO7, 50, 1200, 3600, 6, 6, 0),
-	DA9052_LDO(LDO8, 50, 1200, 3600, 6, 6, 0),
-	DA9052_LDO(LDO9, 50, 1250, 3650, 6, 6, 0),
-	DA9052_LDO(LDO10, 50, 1200, 3600, 6, 6, 0),
+	DA9052_DCDC(BUCK1, buck1, 25, 500, 2075, 6, 6, DA9052_SUPPLY_VBCOREGO),
+	DA9052_DCDC(BUCK2, buck2, 25, 500, 2075, 6, 6, DA9052_SUPPLY_VBPROGO),
+	DA9052_DCDC(BUCK3, buck3, 25, 950, 2525, 6, 6, DA9052_SUPPLY_VBMEMGO),
+	DA9052_DCDC(BUCK4, buck4, 25, 950, 2525, 6, 6, 0),
+	DA9052_LDO(LDO1, ldo1, 50, 600, 1800, 5, 6, 0),
+	DA9052_LDO(LDO2, ldo2, 25, 600, 1800, 6, 6, DA9052_SUPPLY_VLDO2GO),
+	DA9052_LDO(LDO3, ldo3, 25, 1725, 3300, 6, 6, DA9052_SUPPLY_VLDO3GO),
+	DA9052_LDO(LDO4, ldo4, 25, 1725, 3300, 6, 6, 0),
+	DA9052_LDO(LDO5, ldo5, 50, 1200, 3600, 6, 6, 0),
+	DA9052_LDO(LDO6, ldo6, 50, 1200, 3600, 6, 6, 0),
+	DA9052_LDO(LDO7, ldo7, 50, 1200, 3600, 6, 6, 0),
+	DA9052_LDO(LDO8, ldo8, 50, 1200, 3600, 6, 6, 0),
+	DA9052_LDO(LDO9, ldo9, 50, 1250, 3650, 6, 6, 0),
+	DA9052_LDO(LDO10, ldo10, 50, 1200, 3600, 6, 6, 0),
 };
 
 static inline struct da9052_regulator_info *find_regulator_info(u8 chip_id,
@@ -354,6 +381,7 @@ static inline struct da9052_regulator_info *find_regulator_info(u8 chip_id,
 	case DA9053_AA:
 	case DA9053_BA:
 	case DA9053_BB:
+	case DA9053_BC:
 		for (i = 0; i < ARRAY_SIZE(da9053_regulator_info); i++) {
 			info = &da9053_regulator_info[i];
 			if (info->reg_desc.id == id)
@@ -367,6 +395,7 @@ static inline struct da9052_regulator_info *find_regulator_info(u8 chip_id,
 
 static int da9052_regulator_probe(struct platform_device *pdev)
 {
+	const struct mfd_cell *cell = mfd_get_cell(pdev);
 	struct regulator_config config = { };
 	struct da9052_regulator *regulator;
 	struct da9052 *da9052;
@@ -382,7 +411,7 @@ static int da9052_regulator_probe(struct platform_device *pdev)
 	regulator->da9052 = da9052;
 
 	regulator->info = find_regulator_info(regulator->da9052->chip_id,
-					      pdev->id);
+					      cell->id);
 	if (regulator->info == NULL) {
 		dev_err(&pdev->dev, "invalid regulator ID specified\n");
 		return -EINVAL;
@@ -391,25 +420,26 @@ static int da9052_regulator_probe(struct platform_device *pdev)
 	config.dev = &pdev->dev;
 	config.driver_data = regulator;
 	config.regmap = da9052->regmap;
-	if (pdata && pdata->regulators) {
-		config.init_data = pdata->regulators[pdev->id];
+	if (pdata) {
+		config.init_data = pdata->regulators[cell->id];
 	} else {
 #ifdef CONFIG_OF
-		struct device_node *nproot, *np;
+		struct device_node *nproot = da9052->dev->of_node;
+		struct device_node *np;
 
-		nproot = of_node_get(da9052->dev->of_node);
 		if (!nproot)
 			return -ENODEV;
 
-		nproot = of_find_node_by_name(nproot, "regulators");
+		nproot = of_get_child_by_name(nproot, "regulators");
 		if (!nproot)
 			return -ENODEV;
 
 		for_each_child_of_node(nproot, np) {
-			if (!of_node_cmp(np->name,
+			if (of_node_name_eq(np,
 					 regulator->info->reg_desc.name)) {
 				config.init_data = of_get_regulator_init_data(
-					&pdev->dev, np);
+					&pdev->dev, np,
+					&regulator->info->reg_desc);
 				config.of_node = np;
 				break;
 			}
@@ -436,7 +466,6 @@ static struct platform_driver da9052_regulator_driver = {
 	.probe = da9052_regulator_probe,
 	.driver = {
 		.name = "da9052-regulator",
-		.owner = THIS_MODULE,
 	},
 };
 

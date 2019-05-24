@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 /dts-v1/;
 
 #include "kirkwood.dtsi"
@@ -14,19 +15,16 @@
 
 	chosen {
 		bootargs = "console=ttyS0,115200n8 earlyprintk";
+		stdout-path = &uart0;
 	};
 
 	ocp@f1000000 {
 		serial@12000 {
-			status = "ok";
-			pinctrl-0 = <&pmx_uart0>;
-			pinctrl-names = "default";
+			status = "okay";
 		};
 
 		serial@12100 {
-			status = "ok";
-			pinctrl-0 = <&pmx_uart1>;
-			pinctrl-names = "default";
+			status = "okay";
 		};
 
 		sata@80000 {
@@ -36,17 +34,15 @@
 
 		i2c@11100 {
 			status = "okay";
-			pinctrl-0 = <&pmx_twsi1>;
-			pinctrl-names = "default";
 
 			s35390a: s35390a@30 {
-				compatible = "s35390a";
+				compatible = "sii,s35390a";
 				reg = <0x30>;
 			};
 		};
 
-		pinctrl: pinctrl@10000 {
-			pinctrl-0 = <&pmx_dip_switches &pmx_gpio_header>;
+		pinctrl: pin-controller@10000 {
+			pinctrl-0 = <&pmx_dip_switches>;
 			pinctrl-names = "default";
 
 			pmx_uart0: pmx-uart0 {
@@ -122,7 +118,7 @@
 		#address-cells = <1>;
 		#size-cells = <0>;
 
-		button@1 {
+		power {
 			label = "Init Button";
 			linux,code = <KEY_POWER>;
 			gpios = <&gpio1 6 GPIO_ACTIVE_HIGH>;
@@ -133,8 +129,6 @@
 &nand {
 	chip-delay = <25>;
 	status = "okay";
-	pinctrl-0 = <&pmx_nand>;
-	pinctrl-names = "default";
 
 	partition@0 {
 		label = "uboot";
@@ -148,7 +142,7 @@
 
 	partition@d4000 {
 		label = "test";
-		reg = <0xd4000 0x24000>;
+		reg = <0xd4000 0x20000>;
 	};
 
 	partition@f4000 {
@@ -180,4 +174,11 @@
 	ethernet0-port@0 {
 		phy-handle = <&ethphy0>;
 	};
+};
+
+&gpio0 {
+	status = "okay";
+
+	pinctrl-0 = <&pmx_gpio_header>;
+	pinctrl-names = "default";
 };

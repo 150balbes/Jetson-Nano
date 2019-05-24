@@ -9,99 +9,63 @@
 
 #include "omap36xx.dtsi"
 #include "omap3-evm-common.dtsi"
-
+#include "omap3-evm-processor-common.dtsi"
 
 / {
 	model = "TI OMAP37XX EVM (TMDSEVM3730)";
-	compatible = "ti,omap3-evm-37xx", "ti,omap36xx";
-
-	memory {
-		device_type = "memory";
-		reg = <0x80000000 0x10000000>; /* 256 MB */
-	};
-
-	wl12xx_vmmc: wl12xx_vmmc {
-		pinctrl-names = "default";
-		pinctrl-0 = <&wl12xx_gpio>;
-	};
+	compatible = "ti,omap3-evm-37xx", "ti,omap3630", "ti,omap3";
 };
 
-&omap3_pmx_core {
-	mmc1_pins: pinmux_mmc1_pins {
-		pinctrl-single,pins = <
-			0x114 (PIN_OUTPUT_PULLUP | MUX_MODE0)	/* sdmmc1_clk.sdmmc1_clk */
-			0x116 (PIN_INPUT_PULLUP | MUX_MODE0)	/* sdmmc1_cmd.sdmmc1_cmd */
-			0x118 (PIN_INPUT_PULLUP | MUX_MODE0) 	/* sdmmc1_dat0.sdmmc1_dat0 */
-			0x11a (PIN_INPUT_PULLUP | MUX_MODE0) 	/* sdmmc1_dat1.sdmmc1_dat1 */
-			0x11c (PIN_INPUT_PULLUP | MUX_MODE0) 	/* sdmmc1_dat2.sdmmc1_dat2 */
-			0x11e (PIN_INPUT_PULLUP | MUX_MODE0) 	/* sdmmc1_dat3.sdmmc1_dat3 */
-			0x120 (PIN_INPUT_PULLUP | MUX_MODE0) 	/* sdmmc1_dat4.sdmmc1_dat4 */
-			0x122 (PIN_INPUT_PULLUP | MUX_MODE0) 	/* sdmmc1_dat5.sdmmc1_dat5 */
-			0x124 (PIN_INPUT_PULLUP | MUX_MODE0) 	/* sdmmc1_dat6.sdmmc1_dat6 */
-			0x126 (PIN_INPUT_PULLUP | MUX_MODE0) 	/* sdmmc1_dat7.sdmmc1_dat7 */
-		>;
-	};
-
-	/* NOTE: Clocked externally, needs INPUT also for sdmmc2_clk.sdmmc2_clk */
-	mmc2_pins: pinmux_mmc2_pins {
-		pinctrl-single,pins = <
-			0x128 (PIN_INPUT_PULLUP | MUX_MODE0)	/* sdmmc2_clk.sdmmc2_clk */
-			0x12a (PIN_INPUT_PULLUP | MUX_MODE0)	/* sdmmc2_cmd.sdmmc2_cmd */
-			0x12c (PIN_INPUT_PULLUP | MUX_MODE0)	/* sdmmc2_dat0.sdmmc2_dat0 */
-			0x12e (WAKEUP_EN | PIN_INPUT_PULLUP | MUX_MODE0) /* sdmmc2_dat1.sdmmc2_dat1 */
-			0x130 (PIN_INPUT_PULLUP | MUX_MODE0)	/* sdmmc2_dat2.sdmmc2_dat2 */
-			0x132 (PIN_INPUT_PULLUP | MUX_MODE0)	/* sdmmc2_dat3.sdmmc2_dat3 */
-		>;
-	};
-
-	uart3_pins: pinmux_uart3_pins {
-		pinctrl-single,pins = <
-			0x16e (WAKEUP_EN | PIN_INPUT | MUX_MODE0) /* uart3_rx_irrx.uart3_rx_irrx */
-			0x170 (PIN_OUTPUT | MUX_MODE0)		/* uart3_tx_irtx.uart3_tx_irtx */
-		>;
-	};
-
-	wl12xx_gpio: pinmux_wl12xx_gpio {
-		pinctrl-single,pins = <
-			0x150 (PIN_OUTPUT | MUX_MODE4)		/* uart1_cts.gpio_150 */
-			0x14e (PIN_INPUT | MUX_MODE4)		/* uart1_rts.gpio_149 */
-		>;
-	};
-
-	smsc911x_pins: pinmux_smsc911x_pins {
-		pinctrl-single,pins = <
-			0x1a2 (PIN_INPUT | MUX_MODE4)		/* mcspi1_cs2.gpio_176 */
-		>;
-	};
-};
-
-&mmc1 {
+&omap3_pmx_core2 {
 	pinctrl-names = "default";
-	pinctrl-0 = <&mmc1_pins>;
-};
+	pinctrl-0 = <&hsusb2_2_pins>;
 
-&mmc2 {
-	pinctrl-names = "default";
-	pinctrl-0 = <&mmc2_pins>;
-};
+	ehci_phy_pins: pinmux_ehci_phy_pins {
+		pinctrl-single,pins = <
 
-&mmc3 {
-	status = "disabled";
-};
+		/* EHCI PHY reset GPIO etk_d7.gpio_21 */
+		OMAP3630_CORE2_IOPAD(0x25ea, PIN_OUTPUT | MUX_MODE4)
 
-&uart3 {
-	pinctrl-names = "default";
-	pinctrl-0 = <&uart3_pins>;
+		/* EHCI VBUS etk_d8.gpio_22 */
+		OMAP3630_CORE2_IOPAD(0x25ec, PIN_OUTPUT | MUX_MODE4)
+		>;
+	};
+
+	/* Used by OHCI and EHCI. OHCI won't work without external phy */
+	hsusb2_2_pins: pinmux_hsusb2_2_pins {
+		pinctrl-single,pins = <
+
+		/* etk_d10.hsusb2_clk */
+		OMAP3630_CORE2_IOPAD(0x25f0, PIN_OUTPUT | MUX_MODE3)
+
+		/* etk_d11.hsusb2_stp */
+		OMAP3630_CORE2_IOPAD(0x25f2, PIN_OUTPUT | MUX_MODE3)
+
+		/* etk_d12.hsusb2_dir */
+		OMAP3630_CORE2_IOPAD(0x25f4, PIN_INPUT_PULLDOWN | MUX_MODE3)
+
+		/* etk_d13.hsusb2_nxt */
+		OMAP3630_CORE2_IOPAD(0x25f6, PIN_INPUT_PULLDOWN | MUX_MODE3)
+
+		/* etk_d14.hsusb2_data0 */
+		OMAP3630_CORE2_IOPAD(0x25f8, PIN_INPUT_PULLDOWN | MUX_MODE3)
+
+		/* etk_d15.hsusb2_data1 */
+		OMAP3630_CORE2_IOPAD(0x25fa, PIN_INPUT_PULLDOWN | MUX_MODE3)
+		>;
+	};
 };
 
 &gpmc {
-	ranges = <0 0 0x00000000 0x20000000>,
-		 <5 0 0x2c000000 0x01000000>;
-
 	nand@0,0 {
+		compatible = "ti,omap2-nand";
+		reg = <0 0 4>; /* CS0, offset 0, IO size 4 */
+		interrupt-parent = <&gpmc>;
+		interrupts = <0 IRQ_TYPE_NONE>, /* fifoevent */
+			     <1 IRQ_TYPE_NONE>;	/* termcount */
 		linux,mtd-name= "hynix,h8kds0un0mer-4em";
-		reg = <0 0 0>;
 		nand-bus-width = <16>;
+		gpmc,device-width = <2>;
 		ti,nand-ecc-opt = "bch8";
 
 		gpmc,sync-clk-ps = <0>;
@@ -126,26 +90,21 @@
 			label = "X-Loader";
 			reg = <0 0x80000>;
 		};
-		partition@0x80000 {
+		partition@80000 {
 			label = "U-Boot";
 			reg = <0x80000 0x1c0000>;
 		};
-		partition@0x1c0000 {
+		partition@1c0000 {
 			label = "Environment";
 			reg = <0x240000 0x40000>;
 		};
-		partition@0x280000 {
+		partition@280000 {
 			label = "Kernel";
 			reg = <0x280000 0x500000>;
 		};
-		partition@0x780000 {
+		partition@780000 {
 			label = "Filesystem";
 			reg = <0x780000 0x1f880000>;
 		};
-	};
-
-	ethernet@gpmc {
-		pinctrl-names = "default";
-		pinctrl-0 = <&smsc911x_pins>;
 	};
 };

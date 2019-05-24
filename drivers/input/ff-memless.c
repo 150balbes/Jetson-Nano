@@ -237,6 +237,18 @@ static u16 ml_calculate_direction(u16 direction, u16 force,
 		(force + new_force)) << 1;
 }
 
+#define FRAC_N 8
+static inline s16 fixp_new16(s16 a)
+{
+	return ((s32)a) >> (16 - FRAC_N);
+}
+
+static inline s16 fixp_mult(s16 a, s16 b)
+{
+	a = ((s32)a * 0x100) / 0x7fff;
+	return ((s32)(a * b)) >> FRAC_N;
+}
+
 /*
  * Combine two effects and apply gain.
  */
@@ -247,7 +259,7 @@ static void ml_combine_effects(struct ff_effect *effect,
 	struct ff_effect *new = state->effect;
 	unsigned int strong, weak, i;
 	int x, y;
-	fixp_t level;
+	s16 level;
 
 	switch (new->type) {
 	case FF_CONSTANT:
@@ -255,8 +267,8 @@ static void ml_combine_effects(struct ff_effect *effect,
 		level = fixp_new16(apply_envelope(state,
 					new->u.constant.level,
 					&new->u.constant.envelope));
-		x = fixp_mult(fixp_sin(i), level) * gain / 0xffff;
-		y = fixp_mult(-fixp_cos(i), level) * gain / 0xffff;
+		x = fixp_mult(fixp_sin16(i), level) * gain / 0xffff;
+		y = fixp_mult(-fixp_cos16(i), level) * gain / 0xffff;
 		/*
 		 * here we abuse ff_ramp to hold x and y of constant force
 		 * If in future any driver wants something else than x and y
@@ -400,10 +412,10 @@ static void ml_play_effects(struct ml_device *ml)
 	ml_schedule_timer(ml);
 }
 
-static void ml_effect_timer(unsigned long timer_data)
+static void ml_effect_timer(struct timer_list *t)
 {
-	struct input_dev *dev = (struct input_dev *)timer_data;
-	struct ml_device *ml = dev->ff->private;
+	struct ml_device *ml = from_timer(ml, t, timer);
+	struct input_dev *dev = ml->dev;
 	unsigned long flags;
 
 	pr_debug("timer: updating effects\n");
@@ -514,7 +526,7 @@ int input_ff_create_memless(struct input_dev *dev, void *data,
 	ml->private = data;
 	ml->play_effect = play_effect;
 	ml->gain = 0xffff;
-	setup_timer(&ml->timer, ml_effect_timer, (unsigned long)dev);
+	timer_setup(&ml->timer, ml_effect_timer, 0);
 
 	set_bit(FF_GAIN, dev->ffbit);
 

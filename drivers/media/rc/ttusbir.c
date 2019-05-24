@@ -12,10 +12,6 @@
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
  */
 
 #include <linux/module.h>
@@ -121,11 +117,9 @@ static void ttusbir_bulk_complete(struct urb *urb)
  */
 static void ttusbir_process_ir_data(struct ttusbir *tt, uint8_t *buf)
 {
-	struct ir_raw_event rawir;
+	struct ir_raw_event rawir = {};
 	unsigned i, v, b;
 	bool event = false;
-
-	init_ir_raw_event(&rawir);
 
 	for (i = 0; i < 128; i++) {
 		v = buf[i] & 0xfe;
@@ -205,7 +199,7 @@ static int ttusbir_probe(struct usb_interface *intf,
 	int altsetting = -1;
 
 	tt = kzalloc(sizeof(*tt), GFP_KERNEL);
-	rc = rc_allocate_device();
+	rc = rc_allocate_device(RC_DRIVER_IR_RAW);
 	if (!tt || !rc) {
 		ret = -ENOMEM;
 		goto out;
@@ -313,16 +307,18 @@ static int ttusbir_probe(struct usb_interface *intf,
 
 	usb_make_path(tt->udev, tt->phys, sizeof(tt->phys));
 
-	rc->input_name = DRIVER_DESC;
+	rc->device_name = DRIVER_DESC;
 	rc->input_phys = tt->phys;
 	usb_to_input_id(tt->udev, &rc->input_id);
 	rc->dev.parent = &intf->dev;
-	rc->driver_type = RC_DRIVER_IR_RAW;
-	rc->allowed_protos = RC_BIT_ALL;
+	rc->allowed_protocols = RC_PROTO_BIT_ALL_IR_DECODER;
 	rc->priv = tt;
 	rc->driver_name = DRIVER_NAME;
 	rc->map_name = RC_MAP_TT_1500;
-	rc->timeout = MS_TO_NS(100);
+	rc->min_timeout = 1;
+	rc->timeout = IR_DEFAULT_TIMEOUT;
+	rc->max_timeout = 10 * IR_DEFAULT_TIMEOUT;
+
 	/*
 	 * The precision is NS_PER_BIT, but since every 8th bit can be
 	 * overwritten with garbage the accuracy is at best 2 * NS_PER_BIT.

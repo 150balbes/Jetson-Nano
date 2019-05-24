@@ -10,6 +10,7 @@
 #define pr_fmt(fmt)	KBUILD_MODNAME ": " fmt
 
 #include <linux/module.h>
+#include <linux/mod_devicetable.h>
 #include <linux/kernel.h>
 #include <linux/platform_device.h>
 #include <linux/random.h>
@@ -61,7 +62,7 @@ static int powernv_rng_probe(struct platform_device *pdev)
 	return 0;
 }
 
-static struct of_device_id powernv_rng_match[] = {
+static const struct of_device_id powernv_rng_match[] = {
 	{ .compatible	= "ibm,power-rng",},
 	{},
 };

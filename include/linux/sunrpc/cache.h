@@ -46,10 +46,12 @@
  * 
  */
 struct cache_head {
-	struct cache_head * next;
+	struct hlist_node	cache_list;
 	time_t		expiry_time;	/* After time time, don't use the data */
-	time_t		last_refresh;   /* If CACHE_PENDING, this is when upcall 
-					 * was sent, else this is when update was received
+	time_t		last_refresh;   /* If CACHE_PENDING, this is when upcall was
+					 * sent, else this is when update was
+					 * received, though it is alway set to
+					 * be *after* ->flush_time.
 					 */
 	struct kref	ref;
 	unsigned long	flags;
@@ -61,22 +63,11 @@ struct cache_head {
 
 #define	CACHE_NEW_EXPIRY 120	/* keep new things pending confirmation for 120 seconds */
 
-struct cache_detail_procfs {
-	struct proc_dir_entry	*proc_ent;
-	struct proc_dir_entry   *flush_ent, *channel_ent, *content_ent;
-};
-
-struct cache_detail_pipefs {
-	struct dentry *dir;
-};
-
 struct cache_detail {
 	struct module *		owner;
 	int			hash_size;
-	struct cache_head **	hash_table;
-	rwlock_t		hash_lock;
-
-	atomic_t		inuse; /* active user-space update or lookup */
+	struct hlist_head *	hash_table;
+	spinlock_t		hash_lock;
 
 	char			*name;
 	void			(*cache_put)(struct kref *);
@@ -105,8 +96,12 @@ struct cache_detail {
 	/* fields below this comment are for internal use
 	 * and should not be touched by cache owners
 	 */
-	time_t			flush_time;		/* flush all cache items with last_refresh
-							 * earlier than this */
+	time_t			flush_time;		/* flush all cache items with
+							 * last_refresh at or earlier
+							 * than this.  last_refresh
+							 * is never set at or earlier
+							 * than this.
+							 */
 	struct list_head	others;
 	time_t			nextcheck;
 	int			entries;
@@ -119,9 +114,9 @@ struct cache_detail {
 	time_t			last_warn;		/* when we last warned about no readers */
 
 	union {
-		struct cache_detail_procfs procfs;
-		struct cache_detail_pipefs pipefs;
-	} u;
+		struct proc_dir_entry	*procfs;
+		struct dentry		*pipefs;
+	};
 	struct net		*net;
 };
 
@@ -173,8 +168,8 @@ extern const struct file_operations content_file_operations_pipefs;
 extern const struct file_operations cache_flush_operations_pipefs;
 
 extern struct cache_head *
-sunrpc_cache_lookup(struct cache_detail *detail,
-		    struct cache_head *key, int hash);
+sunrpc_cache_lookup_rcu(struct cache_detail *detail,
+			struct cache_head *key, int hash);
 extern struct cache_head *
 sunrpc_cache_update(struct cache_detail *detail,
 		    struct cache_head *new, struct cache_head *old, int hash);
@@ -191,19 +186,28 @@ static inline struct cache_head  *cache_get(struct cache_head *h)
 	return h;
 }
 
+static inline struct cache_head  *cache_get_rcu(struct cache_head *h)
+{
+	if (kref_get_unless_zero(&h->ref))
+		return h;
+	return NULL;
+}
 
 static inline void cache_put(struct cache_head *h, struct cache_detail *cd)
 {
-	if (atomic_read(&h->ref.refcount) <= 2 &&
+	if (kref_read(&h->ref) <= 2 &&
 	    h->expiry_time < cd->nextcheck)
 		cd->nextcheck = h->expiry_time;
 	kref_put(&h->ref, cd->cache_put);
 }
 
-static inline int cache_is_expired(struct cache_detail *detail, struct cache_head *h)
+static inline bool cache_is_expired(struct cache_detail *detail, struct cache_head *h)
 {
+	if (!test_bit(CACHE_VALID, &h->flags))
+		return false;
+
 	return  (h->expiry_time < seconds_since_boot()) ||
-		(detail->flush_time > h->last_refresh);
+		(detail->flush_time >= h->last_refresh);
 }
 
 extern int cache_check(struct cache_detail *detail,
@@ -215,7 +219,7 @@ extern void __init cache_initialize(void);
 extern int cache_register_net(struct cache_detail *cd, struct net *net);
 extern void cache_unregister_net(struct cache_detail *cd, struct net *net);
 
-extern struct cache_detail *cache_create_net(struct cache_detail *tmpl, struct net *net);
+extern struct cache_detail *cache_create_net(const struct cache_detail *tmpl, struct net *net);
 extern void cache_destroy_net(struct cache_detail *cd, struct net *net);
 
 extern void sunrpc_init_cache_detail(struct cache_detail *cd);
@@ -223,6 +227,12 @@ extern void sunrpc_destroy_cache_detail(struct cache_detail *cd);
 extern int sunrpc_cache_register_pipefs(struct dentry *parent, const char *,
 					umode_t, struct cache_detail *);
 extern void sunrpc_cache_unregister_pipefs(struct cache_detail *);
+extern void sunrpc_cache_unhash(struct cache_detail *, struct cache_head *);
+
+/* Must store cache_detail in seq_file->private if using next three functions */
+extern void *cache_seq_start_rcu(struct seq_file *file, loff_t *pos);
+extern void *cache_seq_next_rcu(struct seq_file *file, void *p, loff_t *pos);
+extern void cache_seq_stop_rcu(struct seq_file *file, void *p);
 
 extern void qword_add(char **bpp, int *lp, char *str);
 extern void qword_addhex(char **bpp, int *lp, char *buf, int blen);

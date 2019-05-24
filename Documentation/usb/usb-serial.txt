@@ -145,7 +145,7 @@ Keyspan PDA Serial Adapter
   Single port DB-9 serial adapter, pushed as a PDA adapter for iMacs (mostly
   sold in Macintosh catalogs, comes in a translucent white/green dongle).
   Fairly simple device. Firmware is homebrew.
-  This driver also works for the Xircom/Entrgra single port serial adapter.
+  This driver also works for the Xircom/Entrega single port serial adapter.
 
   Current status:
    Things that work:
@@ -418,15 +418,6 @@ Current status:
   why it is wise to cut down on the rate used is wise for large
   transfers until this is settled.
   
-Options supported:
-  If this driver is compiled as a module you can pass the following
-  options to it:
-  debug			- extra verbose debugging info
-  			  (default: 0; nonzero enables)
-  use_lowlatency	- use low_latency flag to speed up tty layer
-			  when reading from the device.
-			  (default: 0; nonzero enables)
-
   See http://www.uuhaus.de/linux/palmconnect.html for up-to-date
   information on this driver.
 
@@ -465,12 +456,14 @@ Generic Serial driver
   device, and does not support any kind of device flow control. All that
   is required of your device is that it has at least one bulk in endpoint,
   or one bulk out endpoint. 
-  
-  To enable the generic driver to recognize your device, build the driver
-  as a module and load it by the following invocation:
+
+  To enable the generic driver to recognize your device, provide
+	echo <vid> <pid> >/sys/bus/usb-serial/drivers/generic/new_id
+  where the <vid> and <pid> is replaced with the hex representation of your
+  device's vendor id and product id.
+  If the driver is compiled as a module you can also provide one id when
+  loading the module
 	insmod usbserial vendor=0x#### product=0x####
-  where the #### is replaced with the hex representation of your device's
-  vendor id and product id.
 
   This driver has been successfully used to connect to the NetChip USB
   development board, providing a way to develop USB firmware without

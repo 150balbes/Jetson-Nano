@@ -18,7 +18,7 @@
 #include <linux/memory.h>
 #include <linux/platform_device.h>
 #include <linux/mtd/physmap.h>
-#include <linux/mtd/nand.h>
+#include <linux/mtd/platnand.h>
 #include <linux/gpio.h>
 
 #include <asm/mach-types.h>
@@ -129,30 +129,29 @@ static void qong_init_nor_mtd(void)
 /*
  * Hardware specific access to control-lines
  */
-static void qong_nand_cmd_ctrl(struct mtd_info *mtd, int cmd, unsigned int ctrl)
+static void qong_nand_cmd_ctrl(struct nand_chip *nand_chip, int cmd,
+			       unsigned int ctrl)
 {
-	struct nand_chip *nand_chip = mtd->priv;
-
 	if (cmd == NAND_CMD_NONE)
 		return;
 
 	if (ctrl & NAND_CLE)
-		writeb(cmd, nand_chip->IO_ADDR_W + (1 << 24));
+		writeb(cmd, nand_chip->legacy.IO_ADDR_W + (1 << 24));
 	else
-		writeb(cmd, nand_chip->IO_ADDR_W + (1 << 23));
+		writeb(cmd, nand_chip->legacy.IO_ADDR_W + (1 << 23));
 }
 
 /*
  * Read the Device Ready pin.
  */
-static int qong_nand_device_ready(struct mtd_info *mtd)
+static int qong_nand_device_ready(struct nand_chip *chip)
 {
 	return gpio_get_value(IOMUX_TO_GPIO(MX31_PIN_NFRB));
 }
 
-static void qong_nand_select_chip(struct mtd_info *mtd, int chip)
+static void qong_nand_select_chip(struct nand_chip *chip, int cs)
 {
-	if (chip >= 0)
+	if (cs >= 0)
 		gpio_set_value(IOMUX_TO_GPIO(MX31_PIN_NFCE_B), 0);
 	else
 		gpio_set_value(IOMUX_TO_GPIO(MX31_PIN_NFCE_B), 1);
@@ -190,9 +189,9 @@ static struct platform_device qong_nand_device = {
 static void __init qong_init_nand_mtd(void)
 {
 	/* init CS */
-	__raw_writel(0x00004f00, MX31_IO_ADDRESS(MX31_WEIM_CSCRxU(3)));
-	__raw_writel(0x20013b31, MX31_IO_ADDRESS(MX31_WEIM_CSCRxL(3)));
-	__raw_writel(0x00020800, MX31_IO_ADDRESS(MX31_WEIM_CSCRxA(3)));
+	imx_writel(0x00004f00, MX31_IO_ADDRESS(MX31_WEIM_CSCRxU(3)));
+	imx_writel(0x20013b31, MX31_IO_ADDRESS(MX31_WEIM_CSCRxL(3)));
+	imx_writel(0x00020800, MX31_IO_ADDRESS(MX31_WEIM_CSCRxA(3)));
 
 	mxc_iomux_set_gpr(MUX_SDCTL_CSD1_SEL, true);
 
@@ -251,7 +250,6 @@ static void __init qong_init(void)
 
 	mxc_init_imx_uart();
 	qong_init_nor_mtd();
-	qong_init_fpga();
 	imx31_add_imx2_wdt();
 }
 
@@ -266,8 +264,8 @@ MACHINE_START(QONG, "Dave/DENX QongEVB-LITE")
 	.map_io = mx31_map_io,
 	.init_early = imx31_init_early,
 	.init_irq = mx31_init_irq,
-	.handle_irq = imx31_handle_irq,
 	.init_time	= qong_timer_init,
 	.init_machine = qong_init,
+	.init_late	= qong_init_fpga,
 	.restart	= mxc_restart,
 MACHINE_END

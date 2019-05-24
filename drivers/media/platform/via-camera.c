@@ -18,7 +18,8 @@
 #include <media/v4l2-device.h>
 #include <media/v4l2-ioctl.h>
 #include <media/v4l2-ctrls.h>
-#include <media/ov7670.h>
+#include <media/v4l2-image-sizes.h>
+#include <media/i2c/ov7670.h>
 #include <media/videobuf-dma-sg.h>
 #include <linux/delay.h>
 #include <linux/dma-mapping.h>
@@ -26,7 +27,12 @@
 #include <linux/via-core.h>
 #include <linux/via-gpio.h>
 #include <linux/via_i2c.h>
+
+#ifdef CONFIG_X86
 #include <asm/olpc.h>
+#else
+#define machine_is_olpc(x) 0
+#endif
 
 #include "via-camera.h"
 
@@ -38,23 +44,12 @@ MODULE_LICENSE("GPL");
 static bool flip_image;
 module_param(flip_image, bool, 0444);
 MODULE_PARM_DESC(flip_image,
-		"If set, the sensor will be instructed to flip the image "
-		"vertically.");
+		"If set, the sensor will be instructed to flip the image vertically.");
 
 static bool override_serial;
 module_param(override_serial, bool, 0444);
 MODULE_PARM_DESC(override_serial,
-		"The camera driver will normally refuse to load if "
-		"the XO 1.5 serial port is enabled.  Set this option "
-		"to force-enable the camera.");
-
-/*
- * Basic window sizes.
- */
-#define VGA_WIDTH	640
-#define VGA_HEIGHT	480
-#define QCIF_WIDTH	176
-#define	QCIF_HEIGHT	144
+		"The camera driver will normally refuse to load if the XO 1.5 serial port is enabled.  Set this option to force-enable the camera.");
 
 /*
  * The structure describing our camera.
@@ -89,7 +84,7 @@ struct via_camera {
 	 * live in frame buffer memory, so we don't call them "DMA".
 	 */
 	unsigned int cb_offsets[3];	/* offsets into fb mem */
-	u8 *cb_addrs[3];		/* Kernel-space addresses */
+	u8 __iomem *cb_addrs[3];		/* Kernel-space addresses */
 	int n_cap_bufs;			/* How many are we using? */
 	int next_buf;
 	struct videobuf_queue vb_queue;
@@ -108,7 +103,7 @@ struct via_camera {
 	 */
 	struct v4l2_pix_format sensor_format;
 	struct v4l2_pix_format user_format;
-	enum v4l2_mbus_pixelcode mbus_code;
+	u32 mbus_code;
 };
 
 /*
@@ -150,12 +145,12 @@ static struct via_format {
 	__u8 *desc;
 	__u32 pixelformat;
 	int bpp;   /* Bytes per pixel */
-	enum v4l2_mbus_pixelcode mbus_code;
+	u32 mbus_code;
 } via_formats[] = {
 	{
 		.desc		= "YUYV 4:2:2",
 		.pixelformat	= V4L2_PIX_FMT_YUYV,
-		.mbus_code	= V4L2_MBUS_FMT_YUYV8_2X8,
+		.mbus_code	= MEDIA_BUS_FMT_YUYV8_2X8,
 		.bpp		= 2,
 	},
 	/* RGB444 and Bayer should be doable, but have never been
@@ -188,7 +183,7 @@ static int via_sensor_power_setup(struct via_camera *cam)
 
 	cam->power_gpio = viafb_gpio_lookup("VGPIO3");
 	cam->reset_gpio = viafb_gpio_lookup("VGPIO2");
-	if (cam->power_gpio < 0 || cam->reset_gpio < 0) {
+	if (!gpio_is_valid(cam->power_gpio) || !gpio_is_valid(cam->reset_gpio)) {
 		dev_err(&cam->platdev->dev, "Unable to find GPIO lines\n");
 		return -EINVAL;
 	}
@@ -247,7 +242,7 @@ static int viacam_set_flip(struct via_camera *cam)
 	memset(&ctrl, 0, sizeof(ctrl));
 	ctrl.id = V4L2_CID_VFLIP;
 	ctrl.value = flip_image;
-	return sensor_call(cam, core, s_ctrl, &ctrl);
+	return v4l2_s_ctrl(NULL, cam->sensor->ctrl_handler, &ctrl);
 }
 
 /*
@@ -256,13 +251,15 @@ static int viacam_set_flip(struct via_camera *cam)
  */
 static int viacam_configure_sensor(struct via_camera *cam)
 {
-	struct v4l2_mbus_framefmt mbus_fmt;
+	struct v4l2_subdev_format format = {
+		.which = V4L2_SUBDEV_FORMAT_ACTIVE,
+	};
 	int ret;
 
-	v4l2_fill_mbus_format(&mbus_fmt, &cam->sensor_format, cam->mbus_code);
+	v4l2_fill_mbus_format(&format.format, &cam->sensor_format, cam->mbus_code);
 	ret = sensor_call(cam, core, init, 0);
 	if (ret == 0)
-		ret = sensor_call(cam, video, s_mbus_fmt, &mbus_fmt);
+		ret = sensor_call(cam, pad, set_fmt, NULL, &format);
 	/*
 	 * OV7670 does weird things if flip is set *before* format...
 	 */
@@ -772,7 +769,7 @@ out_unlock:
 }
 
 
-static unsigned int viacam_poll(struct file *filp, struct poll_table_struct *pt)
+static __poll_t viacam_poll(struct file *filp, struct poll_table_struct *pt)
 {
 	struct via_camera *cam = video_drvdata(filp);
 
@@ -815,7 +812,7 @@ static int viacam_enum_input(struct file *filp, void *priv,
 
 	input->type = V4L2_INPUT_TYPE_CAMERA;
 	input->std = V4L2_STD_ALL; /* Not sure what should go here */
-	strcpy(input->name, "Camera");
+	strscpy(input->name, "Camera", sizeof(input->name));
 	return 0;
 }
 
@@ -856,15 +853,15 @@ static const struct v4l2_pix_format viacam_def_pix_format = {
 	.sizeimage	= VGA_WIDTH * VGA_HEIGHT * 2,
 };
 
-static const enum v4l2_mbus_pixelcode via_def_mbus_code = V4L2_MBUS_FMT_YUYV8_2X8;
+static const u32 via_def_mbus_code = MEDIA_BUS_FMT_YUYV8_2X8;
 
 static int viacam_enum_fmt_vid_cap(struct file *filp, void *priv,
 		struct v4l2_fmtdesc *fmt)
 {
 	if (fmt->index >= N_VIA_FMTS)
 		return -EINVAL;
-	strlcpy(fmt->description, via_formats[fmt->index].desc,
-			sizeof(fmt->description));
+	strscpy(fmt->description, via_formats[fmt->index].desc,
+		sizeof(fmt->description));
 	fmt->pixelformat = via_formats[fmt->index].pixelformat;
 	return 0;
 }
@@ -910,14 +907,17 @@ static int viacam_do_try_fmt(struct via_camera *cam,
 		struct v4l2_pix_format *upix, struct v4l2_pix_format *spix)
 {
 	int ret;
-	struct v4l2_mbus_framefmt mbus_fmt;
+	struct v4l2_subdev_pad_config pad_cfg;
+	struct v4l2_subdev_format format = {
+		.which = V4L2_SUBDEV_FORMAT_TRY,
+	};
 	struct via_format *f = via_find_format(upix->pixelformat);
 
 	upix->pixelformat = f->pixelformat;
 	viacam_fmt_pre(upix, spix);
-	v4l2_fill_mbus_format(&mbus_fmt, spix, f->mbus_code);
-	ret = sensor_call(cam, video, try_mbus_fmt, &mbus_fmt);
-	v4l2_fill_pix_format(spix, &mbus_fmt);
+	v4l2_fill_mbus_format(&format.format, spix, f->mbus_code);
+	ret = sensor_call(cam, pad, set_fmt, &pad_cfg, &format);
+	v4l2_fill_pix_format(spix, &format.format);
 	viacam_fmt_post(upix, spix);
 	return ret;
 }
@@ -990,11 +990,11 @@ out:
 static int viacam_querycap(struct file *filp, void *priv,
 		struct v4l2_capability *cap)
 {
-	strcpy(cap->driver, "via-camera");
-	strcpy(cap->card, "via-camera");
-	cap->version = 1;
-	cap->capabilities = V4L2_CAP_VIDEO_CAPTURE |
+	strscpy(cap->driver, "via-camera", sizeof(cap->driver));
+	strscpy(cap->card, "via-camera", sizeof(cap->card));
+	cap->device_caps = V4L2_CAP_VIDEO_CAPTURE |
 		V4L2_CAP_READWRITE | V4L2_CAP_STREAMING;
+	cap->capabilities = cap->device_caps | V4L2_CAP_DEVICE_CAPS;
 	return 0;
 }
 
@@ -1117,7 +1117,7 @@ static int viacam_g_parm(struct file *filp, void *priv,
 	int ret;
 
 	mutex_lock(&cam->lock);
-	ret = sensor_call(cam, video, g_parm, parm);
+	ret = v4l2_g_parm_cap(video_devdata(filp), cam->sensor, parm);
 	mutex_unlock(&cam->lock);
 	parm->parm.capture.readbuffers = cam->n_cap_bufs;
 	return ret;
@@ -1130,7 +1130,7 @@ static int viacam_s_parm(struct file *filp, void *priv,
 	int ret;
 
 	mutex_lock(&cam->lock);
-	ret = sensor_call(cam, video, s_parm, parm);
+	ret = v4l2_s_parm_cap(video_devdata(filp), cam->sensor, parm);
 	mutex_unlock(&cam->lock);
 	parm->parm.capture.readbuffers = cam->n_cap_bufs;
 	return ret;
@@ -1154,12 +1154,23 @@ static int viacam_enum_frameintervals(struct file *filp, void *priv,
 		struct v4l2_frmivalenum *interval)
 {
 	struct via_camera *cam = priv;
+	struct v4l2_subdev_frame_interval_enum fie = {
+		.index = interval->index,
+		.code = cam->mbus_code,
+		.width = cam->sensor_format.width,
+		.height = cam->sensor_format.height,
+		.which = V4L2_SUBDEV_FORMAT_ACTIVE,
+	};
 	int ret;
 
 	mutex_lock(&cam->lock);
-	ret = sensor_call(cam, video, enum_frameintervals, interval);
+	ret = sensor_call(cam, pad, enum_frame_interval, NULL, &fie);
 	mutex_unlock(&cam->lock);
-	return ret;
+	if (ret)
+		return ret;
+	interval->type = V4L2_FRMIVAL_TYPE_DISCRETE;
+	interval->discrete = fie.interval;
+	return 0;
 }
 
 
@@ -1253,7 +1264,7 @@ static struct viafb_pm_hooks viacam_pm_hooks = {
  * Setup stuff.
  */
 
-static struct video_device viacam_v4l_template = {
+static const struct video_device viacam_v4l_template = {
 	.name		= "via-camera",
 	.minor		= -1,
 	.tvnorms	= V4L2_STD_NTSC_M,
@@ -1283,7 +1294,7 @@ static bool viacam_serial_is_enabled(void)
 			VIACAM_SERIAL_CREG, &cbyte);
 	if ((cbyte & VIACAM_SERIAL_BIT) == 0)
 		return false; /* Not enabled */
-	if (override_serial == 0) {
+	if (!override_serial) {
 		printk(KERN_NOTICE "Via camera: serial port is enabled, " \
 				"refusing to load.\n");
 		printk(KERN_NOTICE "Specify override_serial=1 to force " \

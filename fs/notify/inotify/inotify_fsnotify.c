@@ -30,6 +30,8 @@
 #include <linux/slab.h> /* kmem_* */
 #include <linux/types.h>
 #include <linux/sched.h>
+#include <linux/sched/user.h>
+#include <linux/sched/mm.h>
 
 #include "inotify.h"
 
@@ -41,11 +43,11 @@ static bool event_compare(struct fsnotify_event *old_fsn,
 {
 	struct inotify_event_info *old, *new;
 
-	if (old_fsn->mask & FS_IN_IGNORED)
-		return false;
 	old = INOTIFY_E(old_fsn);
 	new = INOTIFY_E(new_fsn);
-	if ((old_fsn->mask == new_fsn->mask) &&
+	if (old->mask & FS_IN_IGNORED)
+		return false;
+	if ((old->mask == new->mask) &&
 	    (old_fsn->inode == new_fsn->inode) &&
 	    (old->name_len == new->name_len) &&
 	    (!old->name_len || !strcmp(old->name, new->name)))
@@ -64,11 +66,11 @@ static int inotify_merge(struct list_head *list,
 
 int inotify_handle_event(struct fsnotify_group *group,
 			 struct inode *inode,
-			 struct fsnotify_mark *inode_mark,
-			 struct fsnotify_mark *vfsmount_mark,
-			 u32 mask, void *data, int data_type,
-			 const unsigned char *file_name, u32 cookie)
+			 u32 mask, const void *data, int data_type,
+			 const unsigned char *file_name, u32 cookie,
+			 struct fsnotify_iter_info *iter_info)
 {
+	struct fsnotify_mark *inode_mark = fsnotify_iter_inode_mark(iter_info);
 	struct inotify_inode_mark *i_mark;
 	struct inotify_event_info *event;
 	struct fsnotify_event *fsn_event;
@@ -76,11 +78,12 @@ int inotify_handle_event(struct fsnotify_group *group,
 	int len = 0;
 	int alloc_len = sizeof(struct inotify_event_info);
 
-	BUG_ON(vfsmount_mark);
+	if (WARN_ON(fsnotify_iter_vfsmount_mark(iter_info)))
+		return 0;
 
 	if ((inode_mark->mask & FS_EXCL_UNLINK) &&
 	    (data_type == FSNOTIFY_EVENT_PATH)) {
-		struct path *path = data;
+		const struct path *path = data;
 
 		if (d_unlinked(path->dentry))
 			return 0;
@@ -96,19 +99,39 @@ int inotify_handle_event(struct fsnotify_group *group,
 	i_mark = container_of(inode_mark, struct inotify_inode_mark,
 			      fsn_mark);
 
-	event = kmalloc(alloc_len, GFP_KERNEL);
-	if (unlikely(!event))
+	/* Whoever is interested in the event, pays for the allocation. */
+	memalloc_use_memcg(group->memcg);
+	event = kmalloc(alloc_len, GFP_KERNEL_ACCOUNT);
+	memalloc_unuse_memcg();
+
+	if (unlikely(!event)) {
+		/*
+		 * Treat lost event due to ENOMEM the same way as queue
+		 * overflow to let userspace know event was lost.
+		 */
+		fsnotify_queue_overflow(group);
 		return -ENOMEM;
+	}
+
+	/*
+	 * We now report FS_ISDIR flag with MOVE_SELF and DELETE_SELF events
+	 * for fanotify. inotify never reported IN_ISDIR with those events.
+	 * It looks like an oversight, but to avoid the risk of breaking
+	 * existing inotify programs, mask the flag out from those events.
+	 */
+	if (mask & (IN_MOVE_SELF | IN_DELETE_SELF))
+		mask &= ~IN_ISDIR;
 
 	fsn_event = &event->fse;
-	fsnotify_init_event(fsn_event, inode, mask);
+	fsnotify_init_event(fsn_event, inode);
+	event->mask = mask;
 	event->wd = i_mark->wd;
 	event->sync_cookie = cookie;
 	event->name_len = len;
 	if (len)
 		strcpy(event->name, file_name);
 
-	ret = fsnotify_add_notify_event(group, fsn_event, inotify_merge);
+	ret = fsnotify_add_event(group, fsn_event, inotify_merge);
 	if (ret) {
 		/* Our event wasn't used in the end. Free it. */
 		fsnotify_destroy_event(group, fsn_event);
@@ -155,8 +178,8 @@ static int idr_callback(int id, void *p, void *data)
 	 * BUG() that was here.
 	 */
 	if (fsn_mark)
-		printk(KERN_WARNING "fsn_mark->group=%p inode=%p wd=%d\n",
-			fsn_mark->group, fsn_mark->i.inode, i_mark->wd);
+		printk(KERN_WARNING "fsn_mark->group=%p wd=%d\n",
+			fsn_mark->group, i_mark->wd);
 	return 0;
 }
 
@@ -165,8 +188,8 @@ static void inotify_free_group_priv(struct fsnotify_group *group)
 	/* ideally the idr is empty and we won't hit the BUG in the callback */
 	idr_for_each(&group->inotify_data.idr, idr_callback, group);
 	idr_destroy(&group->inotify_data.idr);
-	atomic_dec(&group->inotify_data.user->inotify_devs);
-	free_uid(group->inotify_data.user);
+	if (group->inotify_data.ucounts)
+		dec_inotify_instances(group->inotify_data.ucounts);
 }
 
 static void inotify_free_event(struct fsnotify_event *fsn_event)
@@ -174,9 +197,20 @@ static void inotify_free_event(struct fsnotify_event *fsn_event)
 	kfree(INOTIFY_E(fsn_event));
 }
 
+/* ding dong the mark is dead */
+static void inotify_free_mark(struct fsnotify_mark *fsn_mark)
+{
+	struct inotify_inode_mark *i_mark;
+
+	i_mark = container_of(fsn_mark, struct inotify_inode_mark, fsn_mark);
+
+	kmem_cache_free(inotify_inode_mark_cachep, i_mark);
+}
+
 const struct fsnotify_ops inotify_fsnotify_ops = {
 	.handle_event = inotify_handle_event,
 	.free_group_priv = inotify_free_group_priv,
 	.free_event = inotify_free_event,
 	.freeing_mark = inotify_freeing_mark,
+	.free_mark = inotify_free_mark,
 };

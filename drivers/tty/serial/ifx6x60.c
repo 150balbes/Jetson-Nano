@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 /****************************************************************************
  *
  * Driver for the IFX 6x60 spi modem.
@@ -9,20 +10,6 @@
  *
  * Copyright (C) 2009, 2010 Intel Corp
  * Russ Gorby <russ.gorby@intel.com>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.	 See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301,
- * USA
  *
  * Driver modified by Intel from Option gtm501l_spi.c
  *
@@ -276,9 +263,9 @@ static void mrdy_assert(struct ifx_spi_device *ifx_dev)
  *	The SPI has timed out: hang up the tty. Users will then see a hangup
  *	and error events.
  */
-static void ifx_spi_timeout(unsigned long arg)
+static void ifx_spi_timeout(struct timer_list *t)
 {
-	struct ifx_spi_device *ifx_dev = (struct ifx_spi_device *)arg;
+	struct ifx_spi_device *ifx_dev = from_timer(ifx_dev, t, spi_timer);
 
 	dev_warn(&ifx_dev->spi_dev->dev, "*** SPI Timeout ***");
 	tty_port_tty_hangup(&ifx_dev->tty_port, false);
@@ -395,8 +382,10 @@ static int ifx_spi_decode_spi_header(unsigned char *buffer, int *length,
 
 	if (h1 == 0 && h2 == 0) {
 		*received_cts = 0;
+		*more = 0;
 		return IFX_SPI_HEADER_0;
 	} else if (h1 == 0xffff && h2 == 0xffff) {
+		*more = 0;
 		/* spi_slave_cts remains as it was */
 		return IFX_SPI_HEADER_F;
 	}
@@ -649,7 +638,7 @@ static void ifx_spi_complete(void *ctx)
 	struct ifx_spi_device *ifx_dev = ctx;
 	int length;
 	int actual_length;
-	unsigned char more;
+	unsigned char more = 0;
 	unsigned char cts;
 	int local_write_pending = 0;
 	int queue_length;
@@ -688,6 +677,7 @@ static void ifx_spi_complete(void *ctx)
 			ifx_dev->rx_buffer + IFX_SPI_HEADER_OVERHEAD,
 			(size_t)actual_length);
 	} else {
+		more = 0;
 		dev_dbg(&ifx_dev->spi_dev->dev, "SPI transfer error %d",
 		       ifx_dev->spi_msg.status);
 	}
@@ -1026,9 +1016,7 @@ static int ifx_spi_spi_probe(struct spi_device *spi)
 	spin_lock_init(&ifx_dev->write_lock);
 	spin_lock_init(&ifx_dev->power_lock);
 	ifx_dev->power_status = 0;
-	init_timer(&ifx_dev->spi_timer);
-	ifx_dev->spi_timer.function = ifx_spi_timeout;
-	ifx_dev->spi_timer.data = (unsigned long)ifx_dev;
+	timer_setup(&ifx_dev->spi_timer, ifx_spi_timeout, 0);
 	ifx_dev->modem = pl_data->modem_type;
 	ifx_dev->use_dma = pl_data->use_dma;
 	ifx_dev->max_hz = pl_data->max_hz;
@@ -1039,6 +1027,7 @@ static int ifx_spi_spi_probe(struct spi_device *spi)
 	ret = spi_setup(spi);
 	if (ret) {
 		dev_err(&spi->dev, "SPI setup wasn't successful %d", ret);
+		kfree(ifx_dev);
 		return -ENODEV;
 	}
 
@@ -1175,7 +1164,7 @@ static int ifx_spi_spi_probe(struct spi_device *spi)
 	ret = request_irq(gpio_to_irq(ifx_dev->gpio.reset_out),
 			  ifx_spi_reset_interrupt,
 			  IRQF_TRIGGER_RISING|IRQF_TRIGGER_FALLING, DRVNAME,
-		(void *)ifx_dev);
+			  ifx_dev);
 	if (ret) {
 		dev_err(&spi->dev, "Unable to get irq %x\n",
 			gpio_to_irq(ifx_dev->gpio.reset_out));
@@ -1185,9 +1174,8 @@ static int ifx_spi_spi_probe(struct spi_device *spi)
 	ret = ifx_spi_reset(ifx_dev);
 
 	ret = request_irq(gpio_to_irq(ifx_dev->gpio.srdy),
-			  ifx_spi_srdy_interrupt,
-			  IRQF_TRIGGER_RISING, DRVNAME,
-			  (void *)ifx_dev);
+			  ifx_spi_srdy_interrupt, IRQF_TRIGGER_RISING, DRVNAME,
+			  ifx_dev);
 	if (ret) {
 		dev_err(&spi->dev, "Unable to get irq %x",
 			gpio_to_irq(ifx_dev->gpio.srdy));
@@ -1212,7 +1200,7 @@ static int ifx_spi_spi_probe(struct spi_device *spi)
 	return 0;
 
 error_ret7:
-	free_irq(gpio_to_irq(ifx_dev->gpio.reset_out), (void *)ifx_dev);
+	free_irq(gpio_to_irq(ifx_dev->gpio.reset_out), ifx_dev);
 error_ret6:
 	gpio_free(ifx_dev->gpio.srdy);
 error_ret5:
@@ -1243,8 +1231,8 @@ static int ifx_spi_spi_remove(struct spi_device *spi)
 	/* stop activity */
 	tasklet_kill(&ifx_dev->io_work_tasklet);
 	/* free irq */
-	free_irq(gpio_to_irq(ifx_dev->gpio.reset_out), (void *)ifx_dev);
-	free_irq(gpio_to_irq(ifx_dev->gpio.srdy), (void *)ifx_dev);
+	free_irq(gpio_to_irq(ifx_dev->gpio.reset_out), ifx_dev);
+	free_irq(gpio_to_irq(ifx_dev->gpio.srdy), ifx_dev);
 
 	gpio_free(ifx_dev->gpio.srdy);
 	gpio_free(ifx_dev->gpio.mrdy);
@@ -1363,7 +1351,7 @@ static struct spi_driver ifx_spi_driver = {
 	.driver = {
 		.name = DRVNAME,
 		.pm = &ifx_spi_pm,
-		.owner = THIS_MODULE},
+	},
 	.probe = ifx_spi_spi_probe,
 	.shutdown = ifx_spi_spi_shutdown,
 	.remove = ifx_spi_spi_remove,
@@ -1379,9 +1367,9 @@ static struct spi_driver ifx_spi_driver = {
 static void __exit ifx_spi_exit(void)
 {
 	/* unregister */
+	spi_unregister_driver(&ifx_spi_driver);
 	tty_unregister_driver(tty_drv);
 	put_tty_driver(tty_drv);
-	spi_unregister_driver((void *)&ifx_spi_driver);
 	unregister_reboot_notifier(&ifx_modem_reboot_notifier_block);
 }
 
@@ -1420,7 +1408,7 @@ static int __init ifx_spi_init(void)
 		goto err_free_tty;
 	}
 
-	result = spi_register_driver((void *)&ifx_spi_driver);
+	result = spi_register_driver(&ifx_spi_driver);
 	if (result) {
 		pr_err("%s: spi_register_driver failed(%d)",
 			DRVNAME, result);
@@ -1436,7 +1424,7 @@ static int __init ifx_spi_init(void)
 
 	return 0;
 err_unreg_spi:
-	spi_unregister_driver((void *)&ifx_spi_driver);
+	spi_unregister_driver(&ifx_spi_driver);
 err_unreg_tty:
 	tty_unregister_driver(tty_drv);
 err_free_tty:

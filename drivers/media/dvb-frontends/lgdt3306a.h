@@ -19,7 +19,7 @@
 #define _LGDT3306A_H_
 
 #include <linux/i2c.h>
-#include "dvb_frontend.h"
+#include <media/dvb_frontend.h>
 
 
 enum lgdt3306a_mpeg_mode {
@@ -56,9 +56,13 @@ struct lgdt3306a_config {
 
 	/* demod clock freq in MHz; 24 or 25 supported */
 	int  xtalMHz;
+
+	/* returned by driver if using i2c bus multiplexing */
+	struct dvb_frontend **fe;
+	struct i2c_adapter **i2c_adapter;
 };
 
-#if IS_ENABLED(CONFIG_DVB_LGDT3306A)
+#if IS_REACHABLE(CONFIG_DVB_LGDT3306A)
 struct dvb_frontend *lgdt3306a_attach(const struct lgdt3306a_config *config,
 				      struct i2c_adapter *i2c_adap);
 #else
@@ -66,7 +70,7 @@ static inline
 struct dvb_frontend *lgdt3306a_attach(const struct lgdt3306a_config *config,
 				      struct i2c_adapter *i2c_adap)
 {
-	pr_warn(KERN_WARNING "%s: driver disabled by Kconfig\n", __func__);
+	printk(KERN_WARNING "%s: driver disabled by Kconfig\n", __func__);
 	return NULL;
 }
 #endif /* CONFIG_DVB_LGDT3306A */

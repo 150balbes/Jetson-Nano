@@ -1,13 +1,8 @@
-/* linux/arch/arm/mach-s3c64xx/cpuidle.c
- *
- * Copyright (c) 2011 Wolfson Microelectronics, plc
- * Copyright (c) 2011 Samsung Electronics Co., Ltd.
- *		http://www.samsung.com
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
-*/
+// SPDX-License-Identifier: GPL-2.0
+//
+// Copyright (c) 2011 Wolfson Microelectronics, plc
+// Copyright (c) 2011 Samsung Electronics Co., Ltd.
+//		http://www.samsung.com
 
 #include <linux/kernel.h>
 #include <linux/init.h>
@@ -16,8 +11,9 @@
 #include <linux/export.h>
 #include <linux/time.h>
 
-#include <asm/proc-fns.h>
+#include <asm/cpuidle.h>
 
+#include <plat/cpu.h>
 #include <mach/map.h>
 
 #include "regs-sys.h"
@@ -48,7 +44,6 @@ static struct cpuidle_driver s3c64xx_cpuidle_driver = {
 			.enter            = s3c64xx_enter_idle,
 			.exit_latency     = 1,
 			.target_residency = 1,
-			.flags            = CPUIDLE_FLAG_TIME_VALID,
 			.name             = "IDLE",
 			.desc             = "System active, ARM gated",
 		},
@@ -58,6 +53,8 @@ static struct cpuidle_driver s3c64xx_cpuidle_driver = {
 
 static int __init s3c64xx_init_cpuidle(void)
 {
-	return cpuidle_register(&s3c64xx_cpuidle_driver, NULL);
+	if (soc_is_s3c64xx())
+		return cpuidle_register(&s3c64xx_cpuidle_driver, NULL);
+	return 0;
 }
 device_initcall(s3c64xx_init_cpuidle);

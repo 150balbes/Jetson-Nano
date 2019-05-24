@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  * Bitbanged MDIO support.
  *
@@ -11,10 +12,6 @@
  *
  * 2005 (c) MontaVista Software, Inc.
  * Vitaly Bordug <vbordug@ru.mvista.com>
- *
- * This file is licensed under the terms of the GNU General Public License
- * version 2. This program is licensed "as is" without any warranty of any
- * kind, whether express or implied.
  */
 
 #include <linux/module.h>
@@ -113,7 +110,7 @@ static void mdiobb_cmd(struct mdiobb_ctrl *ctrl, int op, u8 phy, u8 reg)
 	for (i = 0; i < 32; i++)
 		mdiobb_send_bit(ctrl, 1);
 
-	/* send the start bit (01) and the read opcode (10) or write (10).
+	/* send the start bit (01) and the read opcode (10) or write (01).
 	   Clause 45 operation uses 00 for the start and 11, 10 for
 	   read/write */
 	mdiobb_send_bit(ctrl, 0);
@@ -165,8 +162,11 @@ static int mdiobb_read(struct mii_bus *bus, int phy, int reg)
 
 	ctrl->ops->set_mdio_dir(ctrl, 0);
 
-	/* check the turnaround bit: the PHY should be driving it to zero */
-	if (mdiobb_get_bit(ctrl) != 0) {
+	/* check the turnaround bit: the PHY should be driving it to zero, if this
+	 * PHY is listed in phy_ignore_ta_mask as having broken TA, skip that
+	 */
+	if (mdiobb_get_bit(ctrl) != 0 &&
+	    !(bus->phy_ignore_ta_mask & (1 << phy))) {
 		/* PHY didn't drive TA low -- flush any bits it
 		 * may be trying to send.
 		 */
@@ -202,14 +202,6 @@ static int mdiobb_write(struct mii_bus *bus, int phy, int reg, u16 val)
 	return 0;
 }
 
-static int mdiobb_reset(struct mii_bus *bus)
-{
-	struct mdiobb_ctrl *ctrl = bus->priv;
-	if (ctrl->reset)
-		ctrl->reset(bus);
-	return 0;
-}
-
 struct mii_bus *alloc_mdio_bitbang(struct mdiobb_ctrl *ctrl)
 {
 	struct mii_bus *bus;
@@ -222,7 +214,6 @@ struct mii_bus *alloc_mdio_bitbang(struct mdiobb_ctrl *ctrl)
 
 	bus->read = mdiobb_read;
 	bus->write = mdiobb_write;
-	bus->reset = mdiobb_reset;
 	bus->priv = ctrl;
 
 	return bus;
@@ -238,4 +229,4 @@ void free_mdio_bitbang(struct mii_bus *bus)
 }
 EXPORT_SYMBOL(free_mdio_bitbang);
 
-MODULE_LICENSE("GPL");
+MODULE_LICENSE("GPL v2");

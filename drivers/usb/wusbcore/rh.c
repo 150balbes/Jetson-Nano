@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  * Wireless USB Host Controller
  * Root Hub operations
@@ -5,21 +6,6 @@
  *
  * Copyright (C) 2005-2006 Intel Corporation
  * Inaky Perez-Gonzalez <inaky.perez-gonzalez@intel.com>
- *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License version
- * 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
- * 02110-1301, USA.
- *
  *
  * We fake a root hub that has fake ports (as many as simultaneous
  * devices the Wireless USB Host Controller can deal with). For each
@@ -182,12 +168,12 @@ static int wusbhc_rh_get_hub_descr(struct wusbhc *wusbhc, u16 wValue,
 	if (wLength < length)
 		return -ENOSPC;
 	descr->bDescLength = 7 + 2 * temp;
-	descr->bDescriptorType = 0x29;	/* HUB type */
+	descr->bDescriptorType = USB_DT_HUB; /* HUB type */
 	descr->bNbrPorts = wusbhc->ports_max;
 	descr->wHubCharacteristics = cpu_to_le16(
-		0x00			/* All ports power at once */
+		HUB_CHAR_COMMON_LPSM	/* All ports power at once */
 		| 0x00			/* not part of compound device */
-		| 0x10			/* No overcurrent protection */
+		| HUB_CHAR_NO_OCPM	/* No overcurrent protection */
 		| 0x00			/* 8 FS think time FIXME ?? */
 		| 0x00);		/* No port indicators */
 	descr->bPwrOn2PwrGood = 0;

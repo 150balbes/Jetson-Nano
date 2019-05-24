@@ -18,72 +18,12 @@
 #include <net/ipv6.h>
 #include <net/xfrm.h>
 
-/* Informational hook. The decap is still done here. */
-static struct xfrm_tunnel_notifier __rcu *rcv_notify_handlers __read_mostly;
-static DEFINE_MUTEX(xfrm6_mode_tunnel_input_mutex);
-
-int xfrm6_mode_tunnel_input_register(struct xfrm_tunnel_notifier *handler)
-{
-	struct xfrm_tunnel_notifier __rcu **pprev;
-	struct xfrm_tunnel_notifier *t;
-	int ret = -EEXIST;
-	int priority = handler->priority;
-
-	mutex_lock(&xfrm6_mode_tunnel_input_mutex);
-
-	for (pprev = &rcv_notify_handlers;
-	     (t = rcu_dereference_protected(*pprev,
-	     lockdep_is_held(&xfrm6_mode_tunnel_input_mutex))) != NULL;
-	     pprev = &t->next) {
-		if (t->priority > priority)
-			break;
-		if (t->priority == priority)
-			goto err;
-
-	}
-
-	handler->next = *pprev;
-	rcu_assign_pointer(*pprev, handler);
-
-	ret = 0;
-
-err:
-	mutex_unlock(&xfrm6_mode_tunnel_input_mutex);
-	return ret;
-}
-EXPORT_SYMBOL_GPL(xfrm6_mode_tunnel_input_register);
-
-int xfrm6_mode_tunnel_input_deregister(struct xfrm_tunnel_notifier *handler)
-{
-	struct xfrm_tunnel_notifier __rcu **pprev;
-	struct xfrm_tunnel_notifier *t;
-	int ret = -ENOENT;
-
-	mutex_lock(&xfrm6_mode_tunnel_input_mutex);
-	for (pprev = &rcv_notify_handlers;
-	     (t = rcu_dereference_protected(*pprev,
-	     lockdep_is_held(&xfrm6_mode_tunnel_input_mutex))) != NULL;
-	     pprev = &t->next) {
-		if (t == handler) {
-			*pprev = handler->next;
-			ret = 0;
-			break;
-		}
-	}
-	mutex_unlock(&xfrm6_mode_tunnel_input_mutex);
-	synchronize_net();
-
-	return ret;
-}
-EXPORT_SYMBOL_GPL(xfrm6_mode_tunnel_input_deregister);
-
 static inline void ipip6_ecn_decapsulate(struct sk_buff *skb)
 {
-	const struct ipv6hdr *outer_iph = ipv6_hdr(skb);
 	struct ipv6hdr *inner_iph = ipipv6_hdr(skb);
 
-	if (INET_ECN_is_ce(ipv6_get_dsfield(outer_iph)))
-		IP6_ECN_set_ce(inner_iph);
+	if (INET_ECN_is_ce(XFRM_MODE_SKB_CB(skb)->tos))
+		IP6_ECN_set_ce(skb, inner_iph);
 }
 
 /* Add encapsulation header.
@@ -95,6 +35,9 @@ static int xfrm6_mode_tunnel_output(struct xfrm_state *x, struct sk_buff *skb)
 	struct dst_entry *dst = skb_dst(skb);
 	struct ipv6hdr *top_iph;
 	int dsfield;
+
+	skb_set_inner_network_header(skb, skb_network_offset(skb));
+	skb_set_inner_transport_header(skb, skb_transport_offset(skb));
 
 	skb_set_network_header(skb, -x->props.header_len);
 	skb->mac_header = skb->network_header +
@@ -116,7 +59,7 @@ static int xfrm6_mode_tunnel_output(struct xfrm_state *x, struct sk_buff *skb)
 	if (x->props.flags & XFRM_STATE_NOECN)
 		dsfield &= ~INET_ECN_MASK;
 	ipv6_change_dsfield(top_iph, 0, dsfield);
-	top_iph->hop_limit = ip6_dst_hoplimit(dst->child);
+	top_iph->hop_limit = ip6_dst_hoplimit(xfrm_dst_child(dst));
 	top_iph->saddr = *(struct in6_addr *)&x->props.saddr;
 	top_iph->daddr = *(struct in6_addr *)&x->id.daddr;
 	return 0;
@@ -130,16 +73,12 @@ static int xfrm6_mode_tunnel_output(struct xfrm_state *x, struct sk_buff *skb)
 
 static int xfrm6_mode_tunnel_input(struct xfrm_state *x, struct sk_buff *skb)
 {
-	struct xfrm_tunnel_notifier *handler;
 	int err = -EINVAL;
 
 	if (XFRM_MODE_SKB_CB(skb)->protocol != IPPROTO_IPV6)
 		goto out;
 	if (!pskb_may_pull(skb, sizeof(struct ipv6hdr)))
 		goto out;
-
-	for_each_input_rcu(rcv_notify_handlers, handler)
-		handler->handler(skb);
 
 	err = skb_unclone(skb, GFP_ATOMIC);
 	if (err)
@@ -153,6 +92,8 @@ static int xfrm6_mode_tunnel_input(struct xfrm_state *x, struct sk_buff *skb)
 
 	skb_reset_network_header(skb);
 	skb_mac_header_rebuild(skb);
+	if (skb->mac_len)
+		eth_hdr(skb)->h_proto = skb->protocol;
 
 	err = 0;
 
@@ -160,11 +101,32 @@ out:
 	return err;
 }
 
+static struct sk_buff *xfrm6_mode_tunnel_gso_segment(struct xfrm_state *x,
+						     struct sk_buff *skb,
+						     netdev_features_t features)
+{
+	__skb_push(skb, skb->mac_len);
+	return skb_mac_gso_segment(skb, features);
+}
+
+static void xfrm6_mode_tunnel_xmit(struct xfrm_state *x, struct sk_buff *skb)
+{
+	struct xfrm_offload *xo = xfrm_offload(skb);
+
+	if (xo->flags & XFRM_GSO_SEGMENT)
+		skb->transport_header = skb->network_header + sizeof(struct ipv6hdr);
+
+	skb_reset_mac_len(skb);
+	pskb_pull(skb, skb->mac_len + x->props.header_len);
+}
+
 static struct xfrm_mode xfrm6_tunnel_mode = {
 	.input2 = xfrm6_mode_tunnel_input,
 	.input = xfrm_prepare_input,
 	.output2 = xfrm6_mode_tunnel_output,
 	.output = xfrm6_prepare_output,
+	.gso_segment = xfrm6_mode_tunnel_gso_segment,
+	.xmit = xfrm6_mode_tunnel_xmit,
 	.owner = THIS_MODULE,
 	.encap = XFRM_MODE_TUNNEL,
 	.flags = XFRM_MODE_FLAG_TUNNEL,

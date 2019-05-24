@@ -21,9 +21,9 @@
 #define _PSB_DRV_H_
 
 #include <linux/kref.h>
+#include <linux/mm_types.h>
 
 #include <drm/drmP.h>
-#include <drm/drm_global.h>
 #include <drm/gma_drm.h>
 #include "psb_reg.h"
 #include "psb_intel_drv.h"
@@ -33,6 +33,17 @@
 #include "power.h"
 #include "opregion.h"
 #include "oaktrail.h"
+#include "mmu.h"
+
+#define DRIVER_AUTHOR "Alan Cox <alan@linux.intel.com> and others"
+
+#define DRIVER_NAME "gma500"
+#define DRIVER_DESC "DRM driver for the Intel GMA500, GMA600, GMA3600, GMA3650"
+#define DRIVER_DATE "20140314"
+
+#define DRIVER_MAJOR 1
+#define DRIVER_MINOR 0
+#define DRIVER_PATCHLEVEL 0
 
 /* Append new drm mode definition here, align with libdrm definition */
 #define DRM_MODE_SCALE_NO_SCALE   	2
@@ -49,21 +60,7 @@ enum {
 #define IS_MFLD(dev) (((dev)->pdev->device & 0xfff8) == 0x0130)
 #define IS_CDV(dev) (((dev)->pdev->device & 0xfff0) == 0x0be0)
 
-/*
- * Driver definitions
- */
-
-#define DRIVER_NAME "gma500"
-#define DRIVER_DESC "DRM driver for the Intel GMA500"
-
-#define PSB_DRM_DRIVER_DATE "2011-06-06"
-#define PSB_DRM_DRIVER_MAJOR 1
-#define PSB_DRM_DRIVER_MINOR 0
-#define PSB_DRM_DRIVER_PATCHLEVEL 0
-
-/*
- *	Hardware offsets
- */
+/* Hardware offsets */
 #define PSB_VDC_OFFSET		 0x00000000
 #define PSB_VDC_SIZE		 0x000080000
 #define MRST_MMIO_SIZE		 0x0000C0000
@@ -71,54 +68,45 @@ enum {
 #define PSB_SGX_SIZE		 0x8000
 #define PSB_SGX_OFFSET		 0x00040000
 #define MRST_SGX_OFFSET		 0x00080000
-/*
- *	PCI resource identifiers
- */
+
+/* PCI resource identifiers */
 #define PSB_MMIO_RESOURCE	 0
 #define PSB_AUX_RESOURCE	 0
 #define PSB_GATT_RESOURCE	 2
 #define PSB_GTT_RESOURCE	 3
-/*
- *	PCI configuration
- */
+
+/* PCI configuration */
 #define PSB_GMCH_CTRL		 0x52
 #define PSB_BSM			 0x5C
 #define _PSB_GMCH_ENABLED	 0x4
 #define PSB_PGETBL_CTL		 0x2020
 #define _PSB_PGETBL_ENABLED	 0x00000001
 #define PSB_SGX_2D_SLAVE_PORT	 0x4000
+#define PSB_LPC_GBA		 0x44
 
-/* To get rid of */
+/* TODO: To get rid of */
 #define PSB_TT_PRIV0_LIMIT	 (256*1024*1024)
 #define PSB_TT_PRIV0_PLIMIT	 (PSB_TT_PRIV0_LIMIT >> PAGE_SHIFT)
 
-/*
- *	SGX side MMU definitions (these can probably go)
- */
+/* SGX side MMU definitions (these can probably go) */
 
-/*
- *	Flags for external memory type field.
- */
+/* Flags for external memory type field */
 #define PSB_MMU_CACHED_MEMORY	  0x0001	/* Bind to MMU only */
 #define PSB_MMU_RO_MEMORY	  0x0002	/* MMU RO memory */
 #define PSB_MMU_WO_MEMORY	  0x0004	/* MMU WO memory */
-/*
- *	PTE's and PDE's
- */
+
+/* PTE's and PDE's */
 #define PSB_PDE_MASK		  0x003FFFFF
 #define PSB_PDE_SHIFT		  22
 #define PSB_PTE_SHIFT		  12
-/*
- *	Cache control
- */
+
+/* Cache control */
 #define PSB_PTE_VALID		  0x0001	/* PTE / PDE valid */
 #define PSB_PTE_WO		  0x0002	/* Write only */
 #define PSB_PTE_RO		  0x0004	/* Read only */
 #define PSB_PTE_CACHED		  0x0008	/* CPU cache coherent */
 
-/*
- *	VDC registers and bits
- */
+/* VDC registers and bits */
 #define PSB_MSVDX_CLOCKGATING	  0x2064
 #define PSB_TOPAZ_CLOCKGATING	  0x2068
 #define PSB_HWSTAM		  0x2098
@@ -265,6 +253,7 @@ struct psb_intel_opregion {
 	struct opregion_asle *asle;
 	void *vbt;
 	u32 __iomem *lid_state;
+	struct work_struct asle_work;
 };
 
 struct sdvo_device_mapping {
@@ -283,10 +272,7 @@ struct intel_gmbus {
 	u32 reg0;
 };
 
-/*
- *	Register offset maps
- */
-
+/* Register offset maps */
 struct psb_offset {
 	u32	fp0;
 	u32	fp1;
@@ -320,9 +306,7 @@ struct psb_offset {
  *	update the register cache instead.
  */
 
-/*
- *	Common status for pipes.
- */
+/* Common status for pipes */
 struct psb_pipe {
 	u32	fp0;
 	u32	fp1;
@@ -457,6 +441,7 @@ struct psb_ops;
 struct drm_psb_private {
 	struct drm_device *dev;
 	struct pci_dev *aux_pdev; /* Currently only used by mrst */
+	struct pci_dev *lpc_pdev; /* Currently only used by mrst */
 	const struct psb_ops *ops;
 	const struct psb_offset *regmap;
 	
@@ -479,38 +464,30 @@ struct drm_psb_private {
 	struct mutex gtt_mutex;
 	struct resource *gtt_mem;	/* Our PCI resource */
 
+	struct mutex mmap_mutex;
+
 	struct psb_mmu_driver *mmu;
 	struct psb_mmu_pd *pf_pd;
 
-	/*
-	 * Register base
-	 */
-
+	/* Register base */
 	uint8_t __iomem *sgx_reg;
 	uint8_t __iomem *vdc_reg;
 	uint8_t __iomem *aux_reg; /* Auxillary vdc pipe regs */
+	uint16_t lpc_gpio_base;
 	uint32_t gatt_free_offset;
 
-	/*
-	 * Fencing / irq.
-	 */
-
+	/* Fencing / irq */
 	uint32_t vdc_irq_mask;
 	uint32_t pipestat[PSB_NUM_PIPE];
 
 	spinlock_t irqmask_lock;
 
-	/*
-	 * Power
-	 */
-
+	/* Power */
 	bool suspended;
 	bool display_power;
 	int display_count;
 
-	/*
-	 * Modesetting
-	 */
+	/* Modesetting */
 	struct psb_intel_mode_device mode_dev;
 	bool modeset;	/* true if we have done the mode_device setup */
 
@@ -518,15 +495,10 @@ struct drm_psb_private {
 	struct drm_crtc *pipe_to_crtc_mapping[PSB_NUM_PIPE];
 	uint32_t num_pipe;
 
-	/*
-	 * OSPM info (Power management base) (can go ?)
-	 */
+	/* OSPM info (Power management base) (TODO: can go ?) */
 	uint32_t ospm_base;
 
-	/*
-	 * Sizes info
-	 */
-
+	/* Sizes info */
 	u32 fuse_reg_value;
 	u32 video_device_fuse;
 
@@ -546,9 +518,7 @@ struct drm_psb_private {
 	struct drm_property *broadcast_rgb_property;
 	struct drm_property *force_audio_property;
 
-	/*
-	 * LVDS info
-	 */
+	/* LVDS info */
 	int backlight_duty_cycle;	/* restore backlight to this value */
 	bool panel_wants_dither;
 	struct drm_display_mode *panel_fixed_mode;
@@ -582,34 +552,23 @@ struct drm_psb_private {
 	/* Oaktrail HDMI state */
 	struct oaktrail_hdmi_dev *hdmi_priv;
 	
-	/*
-	 * Register state
-	 */
-
+	/* Register state */
 	struct psb_save_area regs;
 
 	/* MSI reg save */
 	uint32_t msi_addr;
 	uint32_t msi_data;
 
-	/*
-	 * Hotplug handling
-	 */
-
+	/* Hotplug handling */
 	struct work_struct hotplug_work;
 
-	/*
-	 * LID-Switch
-	 */
+	/* LID-Switch */
 	spinlock_t lid_lock;
 	struct timer_list lid_timer;
 	struct psb_intel_opregion opregion;
 	u32 lid_last_state;
 
-	/*
-	 * Watchdog
-	 */
-
+	/* Watchdog */
 	uint32_t apm_reg;
 	uint16_t apm_base;
 
@@ -629,9 +588,7 @@ struct drm_psb_private {
 	/* 2D acceleration */
 	spinlock_t lock_2d;
 
-	/*
-	 * Panel brightness
-	 */
+	/* Panel brightness */
 	int brightness;
 	int brightness_adjusted;
 
@@ -664,10 +621,7 @@ struct drm_psb_private {
 };
 
 
-/*
- *	Operations for each board type
- */
- 
+/* Operations for each board type */
 struct psb_ops {
 	const char *name;
 	unsigned int accel_2d:1;
@@ -698,6 +652,8 @@ struct psb_ops {
 	void (*init_pm)(struct drm_device *dev);
 	int (*save_regs)(struct drm_device *dev);
 	int (*restore_regs)(struct drm_device *dev);
+	void (*save_crtc)(struct drm_crtc *crtc);
+	void (*restore_crtc)(struct drm_crtc *crtc);
 	int (*power_up)(struct drm_device *dev);
 	int (*power_down)(struct drm_device *dev);
 	void (*update_wm)(struct drm_device *dev, struct drm_crtc *crtc);
@@ -713,8 +669,6 @@ struct psb_ops {
 
 
 
-struct psb_mmu_driver;
-
 extern int drm_crtc_probe_output_modes(struct drm_device *dev, int, int);
 extern int drm_pick_crtcs(struct drm_device *dev);
 
@@ -723,52 +677,7 @@ static inline struct drm_psb_private *psb_priv(struct drm_device *dev)
 	return (struct drm_psb_private *) dev->dev_private;
 }
 
-/*
- * MMU stuff.
- */
-
-extern struct psb_mmu_driver *psb_mmu_driver_init(uint8_t __iomem * registers,
-					int trap_pagefaults,
-					int invalid_type,
-					struct drm_psb_private *dev_priv);
-extern void psb_mmu_driver_takedown(struct psb_mmu_driver *driver);
-extern struct psb_mmu_pd *psb_mmu_get_default_pd(struct psb_mmu_driver
-						 *driver);
-extern void psb_mmu_mirror_gtt(struct psb_mmu_pd *pd, uint32_t mmu_offset,
-			       uint32_t gtt_start, uint32_t gtt_pages);
-extern struct psb_mmu_pd *psb_mmu_alloc_pd(struct psb_mmu_driver *driver,
-					   int trap_pagefaults,
-					   int invalid_type);
-extern void psb_mmu_free_pagedir(struct psb_mmu_pd *pd);
-extern void psb_mmu_flush(struct psb_mmu_driver *driver, int rc_prot);
-extern void psb_mmu_remove_pfn_sequence(struct psb_mmu_pd *pd,
-					unsigned long address,
-					uint32_t num_pages);
-extern int psb_mmu_insert_pfn_sequence(struct psb_mmu_pd *pd,
-				       uint32_t start_pfn,
-				       unsigned long address,
-				       uint32_t num_pages, int type);
-extern int psb_mmu_virtual_to_pfn(struct psb_mmu_pd *pd, uint32_t virtual,
-				  unsigned long *pfn);
-
-/*
- * Enable / disable MMU for different requestors.
- */
-
-
-extern void psb_mmu_set_pd_context(struct psb_mmu_pd *pd, int hw_context);
-extern int psb_mmu_insert_pages(struct psb_mmu_pd *pd, struct page **pages,
-				unsigned long address, uint32_t num_pages,
-				uint32_t desired_tile_stride,
-				uint32_t hw_tile_stride, int type);
-extern void psb_mmu_remove_pages(struct psb_mmu_pd *pd,
-				 unsigned long address, uint32_t num_pages,
-				 uint32_t desired_tile_stride,
-				 uint32_t hw_tile_stride);
-/*
- *psb_irq.c
- */
-
+/* psb_irq.c */
 extern irqreturn_t psb_irq_handler(int irq, void *arg);
 extern int psb_irq_enable_dpst(struct drm_device *dev);
 extern int psb_irq_disable_dpst(struct drm_device *dev);
@@ -781,34 +690,27 @@ extern void psb_irq_turn_off_dpst(struct drm_device *dev);
 extern void psb_irq_uninstall_islands(struct drm_device *dev, int hw_islands);
 extern int psb_vblank_wait2(struct drm_device *dev, unsigned int *sequence);
 extern int psb_vblank_wait(struct drm_device *dev, unsigned int *sequence);
-extern int psb_enable_vblank(struct drm_device *dev, int crtc);
-extern void psb_disable_vblank(struct drm_device *dev, int crtc);
+extern int psb_enable_vblank(struct drm_device *dev, unsigned int pipe);
+extern void psb_disable_vblank(struct drm_device *dev, unsigned int pipe);
 void
 psb_enable_pipestat(struct drm_psb_private *dev_priv, int pipe, u32 mask);
 
 void
 psb_disable_pipestat(struct drm_psb_private *dev_priv, int pipe, u32 mask);
 
-extern u32 psb_get_vblank_counter(struct drm_device *dev, int crtc);
+extern u32 psb_get_vblank_counter(struct drm_device *dev, unsigned int pipe);
 
-/*
- * framebuffer.c
- */
+/* framebuffer.c */
 extern int psbfb_probed(struct drm_device *dev);
 extern int psbfb_remove(struct drm_device *dev,
 			struct drm_framebuffer *fb);
-/*
- * accel_2d.c
- */
+/* accel_2d.c */
 extern void psbfb_copyarea(struct fb_info *info,
 					const struct fb_copyarea *region);
 extern int psbfb_sync(struct fb_info *info);
 extern void psb_spank(struct drm_psb_private *dev_priv);
 
-/*
- * psb_reset.c
- */
-
+/* psb_reset.c */
 extern void psb_lid_timer_init(struct drm_psb_private *dev_priv);
 extern void psb_lid_timer_takedown(struct drm_psb_private *dev_priv);
 extern void psb_print_pagefault(struct drm_psb_private *dev_priv);
@@ -847,13 +749,7 @@ extern int psb_gem_get_aperture(struct drm_device *dev, void *data,
 			struct drm_file *file);
 extern int psb_gem_dumb_create(struct drm_file *file, struct drm_device *dev,
 			struct drm_mode_create_dumb *args);
-extern int psb_gem_dumb_map_gtt(struct drm_file *file, struct drm_device *dev,
-			uint32_t handle, uint64_t *offset);
-extern int psb_gem_fault(struct vm_area_struct *vma, struct vm_fault *vmf);
-extern int psb_gem_create_ioctl(struct drm_device *dev, void *data,
-			struct drm_file *file);
-extern int psb_gem_mmap_ioctl(struct drm_device *dev, void *data,
-					struct drm_file *file);
+extern vm_fault_t psb_gem_fault(struct vm_fault *vmf);
 
 /* psb_device.c */
 extern const struct psb_ops psb_chip_ops;
@@ -867,9 +763,7 @@ extern const struct psb_ops mdfld_chip_ops;
 /* cdv_device.c */
 extern const struct psb_ops cdv_chip_ops;
 
-/*
- * Debug print bits setting
- */
+/* Debug print bits setting */
 #define PSB_D_GENERAL (1 << 0)
 #define PSB_D_INIT    (1 << 1)
 #define PSB_D_IRQ     (1 << 2)
@@ -885,42 +779,41 @@ extern const struct psb_ops cdv_chip_ops;
 
 extern int drm_idle_check_interval;
 
-/*
- *	Utilities
- */
-
-static inline u32 MRST_MSG_READ32(uint port, uint offset)
+/* Utilities */
+static inline u32 MRST_MSG_READ32(int domain, uint port, uint offset)
 {
 	int mcr = (0xD0<<24) | (port << 16) | (offset << 8);
 	uint32_t ret_val = 0;
-	struct pci_dev *pci_root = pci_get_bus_and_slot(0, 0);
+	struct pci_dev *pci_root = pci_get_domain_bus_and_slot(domain, 0, 0);
 	pci_write_config_dword(pci_root, 0xD0, mcr);
 	pci_read_config_dword(pci_root, 0xD4, &ret_val);
 	pci_dev_put(pci_root);
 	return ret_val;
 }
-static inline void MRST_MSG_WRITE32(uint port, uint offset, u32 value)
+static inline void MRST_MSG_WRITE32(int domain, uint port, uint offset,
+				    u32 value)
 {
 	int mcr = (0xE0<<24) | (port << 16) | (offset << 8) | 0xF0;
-	struct pci_dev *pci_root = pci_get_bus_and_slot(0, 0);
+	struct pci_dev *pci_root = pci_get_domain_bus_and_slot(domain, 0, 0);
 	pci_write_config_dword(pci_root, 0xD4, value);
 	pci_write_config_dword(pci_root, 0xD0, mcr);
 	pci_dev_put(pci_root);
 }
-static inline u32 MDFLD_MSG_READ32(uint port, uint offset)
+static inline u32 MDFLD_MSG_READ32(int domain, uint port, uint offset)
 {
 	int mcr = (0x10<<24) | (port << 16) | (offset << 8);
 	uint32_t ret_val = 0;
-	struct pci_dev *pci_root = pci_get_bus_and_slot(0, 0);
+	struct pci_dev *pci_root = pci_get_domain_bus_and_slot(domain, 0, 0);
 	pci_write_config_dword(pci_root, 0xD0, mcr);
 	pci_read_config_dword(pci_root, 0xD4, &ret_val);
 	pci_dev_put(pci_root);
 	return ret_val;
 }
-static inline void MDFLD_MSG_WRITE32(uint port, uint offset, u32 value)
+static inline void MDFLD_MSG_WRITE32(int domain, uint port, uint offset,
+				     u32 value)
 {
 	int mcr = (0x11<<24) | (port << 16) | (offset << 8) | 0xF0;
-	struct pci_dev *pci_root = pci_get_bus_and_slot(0, 0);
+	struct pci_dev *pci_root = pci_get_domain_bus_and_slot(domain, 0, 0);
 	pci_write_config_dword(pci_root, 0xD4, value);
 	pci_write_config_dword(pci_root, 0xD0, mcr);
 	pci_dev_put(pci_root);
@@ -1011,9 +904,8 @@ static inline void REGISTER_WRITE8(struct drm_device *dev,
 #define PSB_RSGX32(_offs)						\
 ({									\
 	if (inl(dev_priv->apm_base + PSB_APM_STS) & 0x3) {		\
-		printk(KERN_ERR						\
-			"access sgx when it's off!! (READ) %s, %d\n",	\
-	       __FILE__, __LINE__);					\
+		pr_err("access sgx when it's off!! (READ) %s, %d\n",	\
+		       __FILE__, __LINE__);				\
 		melay(1000);						\
 	}								\
 	ioread32(dev_priv->sgx_reg + (_offs));				\

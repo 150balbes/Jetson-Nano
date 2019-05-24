@@ -1,10 +1,12 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __ASM_GENERIC_CMPXCHG_LOCAL_H
 #define __ASM_GENERIC_CMPXCHG_LOCAL_H
 
 #include <linux/types.h>
 #include <linux/irqflags.h>
 
-extern unsigned long wrong_size_cmpxchg(volatile void *ptr);
+extern unsigned long wrong_size_cmpxchg(volatile void *ptr)
+	__noreturn;
 
 /*
  * Generic version of __cmpxchg_local (disables interrupts). Takes an unsigned

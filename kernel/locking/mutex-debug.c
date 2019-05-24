@@ -36,7 +36,7 @@ void debug_mutex_lock_common(struct mutex *lock, struct mutex_waiter *waiter)
 
 void debug_mutex_wake_waiter(struct mutex *lock, struct mutex_waiter *waiter)
 {
-	SMP_DEBUG_LOCKS_WARN_ON(!spin_is_locked(&lock->wait_lock));
+	lockdep_assert_held(&lock->wait_lock);
 	DEBUG_LOCKS_WARN_ON(list_empty(&lock->wait_list));
 	DEBUG_LOCKS_WARN_ON(waiter->magic != waiter);
 	DEBUG_LOCKS_WARN_ON(list_empty(&waiter->list));
@@ -49,21 +49,21 @@ void debug_mutex_free_waiter(struct mutex_waiter *waiter)
 }
 
 void debug_mutex_add_waiter(struct mutex *lock, struct mutex_waiter *waiter,
-			    struct thread_info *ti)
+			    struct task_struct *task)
 {
-	SMP_DEBUG_LOCKS_WARN_ON(!spin_is_locked(&lock->wait_lock));
+	lockdep_assert_held(&lock->wait_lock);
 
 	/* Mark the current thread as blocked on the lock: */
-	ti->task->blocked_on = waiter;
+	task->blocked_on = waiter;
 }
 
 void mutex_remove_waiter(struct mutex *lock, struct mutex_waiter *waiter,
-			 struct thread_info *ti)
+			 struct task_struct *task)
 {
 	DEBUG_LOCKS_WARN_ON(list_empty(&waiter->list));
-	DEBUG_LOCKS_WARN_ON(waiter->task != ti->task);
-	DEBUG_LOCKS_WARN_ON(ti->task->blocked_on != waiter);
-	ti->task->blocked_on = NULL;
+	DEBUG_LOCKS_WARN_ON(waiter->task != task);
+	DEBUG_LOCKS_WARN_ON(task->blocked_on != waiter);
+	task->blocked_on = NULL;
 
 	list_del_init(&waiter->list);
 	waiter->task = NULL;
@@ -71,18 +71,10 @@ void mutex_remove_waiter(struct mutex *lock, struct mutex_waiter *waiter,
 
 void debug_mutex_unlock(struct mutex *lock)
 {
-	if (unlikely(!debug_locks))
-		return;
-
-	DEBUG_LOCKS_WARN_ON(lock->magic != lock);
-
-	if (!lock->owner)
-		DEBUG_LOCKS_WARN_ON(!lock->owner);
-	else
-		DEBUG_LOCKS_WARN_ON(lock->owner != current);
-
-	DEBUG_LOCKS_WARN_ON(!lock->wait_list.prev && !lock->wait_list.next);
-	mutex_clear_owner(lock);
+	if (likely(debug_locks)) {
+		DEBUG_LOCKS_WARN_ON(lock->magic != lock);
+		DEBUG_LOCKS_WARN_ON(!lock->wait_list.prev && !lock->wait_list.next);
+	}
 }
 
 void debug_mutex_init(struct mutex *lock, const char *name,

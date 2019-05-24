@@ -649,8 +649,8 @@ static int pn544_hci_im_transceive(struct nfc_hci_dev *hdev,
 		} else
 			return 1;
 	case PN544_RF_READER_F_GATE:
-		*skb_push(skb, 1) = 0;
-		*skb_push(skb, 1) = 0;
+		*(u8 *)skb_push(skb, 1) = 0;
+		*(u8 *)skb_push(skb, 1) = 0;
 
 		info->async_cb_type = PN544_CB_TYPE_READER_F;
 		info->async_cb = cb;
@@ -665,7 +665,7 @@ static int pn544_hci_im_transceive(struct nfc_hci_dev *hdev,
 					      PN544_JEWEL_RAW_CMD, skb->data,
 					      skb->len, cb, cb_context);
 	case PN544_RF_READER_NFCIP1_INITIATOR_GATE:
-		*skb_push(skb, 1) = 0;
+		*(u8 *)skb_push(skb, 1) = 0;
 
 		return nfc_hci_send_event(hdev, target->hci_reader_gate,
 					PN544_HCI_EVT_SND_DATA, skb->data,
@@ -680,7 +680,7 @@ static int pn544_hci_tm_send(struct nfc_hci_dev *hdev, struct sk_buff *skb)
 	int r;
 
 	/* Set default false for multiple information chaining */
-	*skb_push(skb, 1) = 0;
+	*(u8 *)skb_push(skb, 1) = 0;
 
 	r = nfc_hci_send_event(hdev, PN544_RF_READER_NFCIP1_TARGET_GATE,
 			       PN544_HCI_EVT_SND_DATA, skb->data, skb->len);
@@ -724,10 +724,11 @@ static int pn544_hci_check_presence(struct nfc_hci_dev *hdev,
  * <= 0: driver handled the event, skb consumed
  *    1: driver does not handle the event, please do standard processing
  */
-static int pn544_hci_event_received(struct nfc_hci_dev *hdev, u8 gate, u8 event,
+static int pn544_hci_event_received(struct nfc_hci_dev *hdev, u8 pipe, u8 event,
 				    struct sk_buff *skb)
 {
 	struct sk_buff *rgb_skb = NULL;
+	u8 gate = hdev->pipes[pipe].gate;
 	int r;
 
 	pr_debug("hci event %d\n", event);
@@ -786,7 +787,7 @@ static int pn544_hci_fw_download(struct nfc_hci_dev *hdev,
 	if (info->fw_download == NULL)
 		return -ENOTSUPP;
 
-	return info->fw_download(info->phy_id, firmware_name);
+	return info->fw_download(info->phy_id, firmware_name, hdev->sw_romlib);
 }
 
 static int pn544_hci_discover_se(struct nfc_hci_dev *hdev)

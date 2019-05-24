@@ -419,7 +419,7 @@ static int microread_im_transceive(struct nfc_hci_dev *hdev,
 	pr_info("data exchange to gate 0x%x\n", target->hci_reader_gate);
 
 	if (target->hci_reader_gate == MICROREAD_GATE_ID_P2P_INITIATOR) {
-		*skb_push(skb, 1) = 0;
+		*(u8 *)skb_push(skb, 1) = 0;
 
 		return nfc_hci_send_event(hdev, target->hci_reader_gate,
 				     MICROREAD_EVT_P2P_INITIATOR_EXCHANGE_TO_RF,
@@ -441,8 +441,8 @@ static int microread_im_transceive(struct nfc_hci_dev *hdev,
 
 		crc = crc_ccitt(0xffff, skb->data, skb->len);
 		crc = ~crc;
-		*skb_put(skb, 1) = crc & 0xff;
-		*skb_put(skb, 1) = crc >> 8;
+		skb_put_u8(skb, crc & 0xff);
+		skb_put_u8(skb, crc >> 8);
 		break;
 	case MICROREAD_GATE_ID_MREAD_NFC_T3:
 		control_bits = 0xDB;
@@ -453,7 +453,7 @@ static int microread_im_transceive(struct nfc_hci_dev *hdev,
 		return 1;
 	}
 
-	*skb_push(skb, 1) = control_bits;
+	*(u8 *)skb_push(skb, 1) = control_bits;
 
 	info->async_cb_type = MICROREAD_CB_TYPE_READER_ALL;
 	info->async_cb = cb;
@@ -557,10 +557,11 @@ exit:
 		pr_err("Failed to handle discovered target err=%d\n", r);
 }
 
-static int microread_event_received(struct nfc_hci_dev *hdev, u8 gate,
+static int microread_event_received(struct nfc_hci_dev *hdev, u8 pipe,
 				     u8 event, struct sk_buff *skb)
 {
 	int r;
+	u8 gate = hdev->pipes[pipe].gate;
 	u8 mode;
 
 	pr_info("Microread received event 0x%x to gate 0x%x\n", event, gate);

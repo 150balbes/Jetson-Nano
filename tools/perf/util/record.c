@@ -1,9 +1,13 @@
+// SPDX-License-Identifier: GPL-2.0
 #include "evlist.h"
 #include "evsel.h"
 #include "cpumap.h"
 #include "parse-events.h"
-#include "fs.h"
+#include <errno.h>
+#include <api/fs/fs.h>
+#include <subcmd/parse-options.h>
 #include "util.h"
+#include "cloexec.h"
 
 typedef void (*setup_probe_fn_t)(struct perf_evsel *evsel);
 
@@ -11,25 +15,35 @@ static int perf_do_probe_api(setup_probe_fn_t fn, int cpu, const char *str)
 {
 	struct perf_evlist *evlist;
 	struct perf_evsel *evsel;
+	unsigned long flags = perf_event_open_cloexec_flag();
 	int err = -EAGAIN, fd;
+	static pid_t pid = -1;
 
 	evlist = perf_evlist__new();
 	if (!evlist)
 		return -ENOMEM;
 
-	if (parse_events(evlist, str))
+	if (parse_events(evlist, str, NULL))
 		goto out_delete;
 
 	evsel = perf_evlist__first(evlist);
 
-	fd = sys_perf_event_open(&evsel->attr, -1, cpu, -1, 0);
-	if (fd < 0)
-		goto out_delete;
+	while (1) {
+		fd = sys_perf_event_open(&evsel->attr, pid, cpu, -1, flags);
+		if (fd < 0) {
+			if (pid == -1 && errno == EACCES) {
+				pid = 0;
+				continue;
+			}
+			goto out_delete;
+		}
+		break;
+	}
 	close(fd);
 
 	fn(evsel);
 
-	fd = sys_perf_event_open(&evsel->attr, -1, cpu, -1, 0);
+	fd = sys_perf_event_open(&evsel->attr, pid, cpu, -1, flags);
 	if (fd < 0) {
 		if (errno == EINVAL)
 			err = -EINVAL;
@@ -45,7 +59,7 @@ out_delete:
 
 static bool perf_probe_api(setup_probe_fn_t fn)
 {
-	const char *try[] = {"cycles:u", "instructions:u", "cpu-clock", NULL};
+	const char *try[] = {"cycles:u", "instructions:u", "cpu-clock:u", NULL};
 	struct cpu_map *cpus;
 	int cpu, ret, i = 0;
 
@@ -53,7 +67,7 @@ static bool perf_probe_api(setup_probe_fn_t fn)
 	if (!cpus)
 		return false;
 	cpu = cpus->map[0];
-	cpu_map__delete(cpus);
+	cpu_map__put(cpus);
 
 	do {
 		ret = perf_do_probe_api(fn, cpu, try[i++]);
@@ -69,15 +83,62 @@ static void perf_probe_sample_identifier(struct perf_evsel *evsel)
 	evsel->attr.sample_type |= PERF_SAMPLE_IDENTIFIER;
 }
 
+static void perf_probe_comm_exec(struct perf_evsel *evsel)
+{
+	evsel->attr.comm_exec = 1;
+}
+
+static void perf_probe_context_switch(struct perf_evsel *evsel)
+{
+	evsel->attr.context_switch = 1;
+}
+
 bool perf_can_sample_identifier(void)
 {
 	return perf_probe_api(perf_probe_sample_identifier);
 }
 
-void perf_evlist__config(struct perf_evlist *evlist, struct record_opts *opts)
+static bool perf_can_comm_exec(void)
+{
+	return perf_probe_api(perf_probe_comm_exec);
+}
+
+bool perf_can_record_switch_events(void)
+{
+	return perf_probe_api(perf_probe_context_switch);
+}
+
+bool perf_can_record_cpu_wide(void)
+{
+	struct perf_event_attr attr = {
+		.type = PERF_TYPE_SOFTWARE,
+		.config = PERF_COUNT_SW_CPU_CLOCK,
+		.exclude_kernel = 1,
+	};
+	struct cpu_map *cpus;
+	int cpu, fd;
+
+	cpus = cpu_map__new(NULL);
+	if (!cpus)
+		return false;
+	cpu = cpus->map[0];
+	cpu_map__put(cpus);
+
+	fd = sys_perf_event_open(&attr, -1, cpu, -1, 0);
+	if (fd < 0)
+		return false;
+	close(fd);
+
+	return true;
+}
+
+void perf_evlist__config(struct perf_evlist *evlist, struct record_opts *opts,
+			 struct callchain_param *callchain)
 {
 	struct perf_evsel *evsel;
 	bool use_sample_identifier = false;
+	bool use_comm_exec;
+	bool sample_id = opts->sample_id;
 
 	/*
 	 * Set the evsel leader links before we configure attributes,
@@ -89,19 +150,36 @@ void perf_evlist__config(struct perf_evlist *evlist, struct record_opts *opts)
 	if (evlist->cpus->map[0] < 0)
 		opts->no_inherit = true;
 
-	evlist__for_each(evlist, evsel)
-		perf_evsel__config(evsel, opts);
+	use_comm_exec = perf_can_comm_exec();
 
-	if (evlist->nr_entries > 1) {
+	evlist__for_each_entry(evlist, evsel) {
+		perf_evsel__config(evsel, opts, callchain);
+		if (evsel->tracking && use_comm_exec)
+			evsel->attr.comm_exec = 1;
+	}
+
+	if (opts->full_auxtrace) {
+		/*
+		 * Need to be able to synthesize and parse selected events with
+		 * arbitrary sample types, which requires always being able to
+		 * match the id.
+		 */
+		use_sample_identifier = perf_can_sample_identifier();
+		sample_id = true;
+	} else if (evlist->nr_entries > 1) {
 		struct perf_evsel *first = perf_evlist__first(evlist);
 
-		evlist__for_each(evlist, evsel) {
+		evlist__for_each_entry(evlist, evsel) {
 			if (evsel->attr.sample_type == first->attr.sample_type)
 				continue;
 			use_sample_identifier = perf_can_sample_identifier();
 			break;
 		}
-		evlist__for_each(evlist, evsel)
+		sample_id = true;
+	}
+
+	if (sample_id) {
+		evlist__for_each_entry(evlist, evsel)
 			perf_evsel__set_sample_id(evsel, use_sample_identifier);
 	}
 
@@ -110,16 +188,7 @@ void perf_evlist__config(struct perf_evlist *evlist, struct record_opts *opts)
 
 static int get_max_rate(unsigned int *rate)
 {
-	char path[PATH_MAX];
-	const char *procfs = procfs__mountpoint();
-
-	if (!procfs)
-		return -1;
-
-	snprintf(path, PATH_MAX,
-		 "%s/sys/kernel/perf_event_max_sample_rate", procfs);
-
-	return filename__read_int(path, (int *) rate);
+	return sysctl__read_int("kernel/perf_event_max_sample_rate", (int *)rate);
 }
 
 static int record_opts__config_freq(struct record_opts *opts)
@@ -151,11 +220,21 @@ static int record_opts__config_freq(struct record_opts *opts)
 	 * User specified frequency is over current maximum.
 	 */
 	if (user_freq && (max_rate < opts->freq)) {
-		pr_err("Maximum frequency rate (%u) reached.\n"
-		   "Please use -F freq option with lower value or consider\n"
-		   "tweaking /proc/sys/kernel/perf_event_max_sample_rate.\n",
-		   max_rate);
-		return -1;
+		if (opts->strict_freq) {
+			pr_err("error: Maximum frequency rate (%'u Hz) exceeded.\n"
+			       "       Please use -F freq option with a lower value or consider\n"
+			       "       tweaking /proc/sys/kernel/perf_event_max_sample_rate.\n",
+			       max_rate);
+			return -1;
+		} else {
+			pr_warning("warning: Maximum frequency rate (%'u Hz) exceeded, throttling from %'u Hz to %'u Hz.\n"
+				   "         The limit can be raised via /proc/sys/kernel/perf_event_max_sample_rate.\n"
+				   "         The kernel will lower it when perf's interrupts take too long.\n"
+				   "         Use --strict-freq to disable this throttling, refusing to record.\n",
+				   max_rate, opts->freq, max_rate);
+
+			opts->freq = max_rate;
+		}
 	}
 
 	/*
@@ -183,12 +262,13 @@ bool perf_evlist__can_select_event(struct perf_evlist *evlist, const char *str)
 	struct perf_evsel *evsel;
 	int err, fd, cpu;
 	bool ret = false;
+	pid_t pid = -1;
 
 	temp_evlist = perf_evlist__new();
 	if (!temp_evlist)
 		return false;
 
-	err = parse_events(temp_evlist, str);
+	err = parse_events(temp_evlist, str, NULL);
 	if (err)
 		goto out_delete;
 
@@ -198,18 +278,49 @@ bool perf_evlist__can_select_event(struct perf_evlist *evlist, const char *str)
 		struct cpu_map *cpus = cpu_map__new(NULL);
 
 		cpu =  cpus ? cpus->map[0] : 0;
-		cpu_map__delete(cpus);
+		cpu_map__put(cpus);
 	} else {
 		cpu = evlist->cpus->map[0];
 	}
 
-	fd = sys_perf_event_open(&evsel->attr, -1, cpu, -1, 0);
-	if (fd >= 0) {
-		close(fd);
-		ret = true;
+	while (1) {
+		fd = sys_perf_event_open(&evsel->attr, pid, cpu, -1,
+					 perf_event_open_cloexec_flag());
+		if (fd < 0) {
+			if (pid == -1 && errno == EACCES) {
+				pid = 0;
+				continue;
+			}
+			goto out_delete;
+		}
+		break;
 	}
+	close(fd);
+	ret = true;
 
 out_delete:
 	perf_evlist__delete(temp_evlist);
 	return ret;
+}
+
+int record__parse_freq(const struct option *opt, const char *str, int unset __maybe_unused)
+{
+	unsigned int freq;
+	struct record_opts *opts = opt->value;
+
+	if (!str)
+		return -EINVAL;
+
+	if (strcasecmp(str, "max") == 0) {
+		if (get_max_rate(&freq)) {
+			pr_err("couldn't read /proc/sys/kernel/perf_event_max_sample_rate\n");
+			return -1;
+		}
+		pr_info("info: Using a maximum frequency rate of %'d Hz\n", freq);
+	} else {
+		freq = atoi(str);
+	}
+
+	opts->user_freq = freq;
+	return 0;
 }

@@ -168,10 +168,8 @@ static int lms283gf05_probe(struct spi_device *spi)
 
 	st = devm_kzalloc(&spi->dev, sizeof(struct lms283gf05_state),
 				GFP_KERNEL);
-	if (st == NULL) {
-		dev_err(&spi->dev, "No memory for device state\n");
+	if (st == NULL)
 		return -ENOMEM;
-	}
 
 	ld = devm_lcd_device_register(&spi->dev, "lms283gf05", &spi->dev, st,
 					&lms_ops);
@@ -194,7 +192,6 @@ static int lms283gf05_probe(struct spi_device *spi)
 static struct spi_driver lms283gf05_driver = {
 	.driver = {
 		.name	= "lms283gf05",
-		.owner	= THIS_MODULE,
 	},
 	.probe		= lms283gf05_probe,
 };

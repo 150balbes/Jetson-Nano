@@ -25,15 +25,12 @@
  *  but WITHOUT ANY WARRANTY; without even the implied warranty of
  *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  *  GNU General Public License for more details.
- *
- *  You should have received a copy of the GNU General Public License
- *  along with this program; if not, write to the Free Software
- *  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
 
 #include <linux/device.h>
 #include <linux/module.h>
 #include <linux/slab.h>
+#include <linux/ktime.h>
 #include <linux/usb.h>
 #include <linux/usb/input.h>
 #include <media/rc-core.h>
@@ -42,17 +39,11 @@
 #define DRIVER_NAME	"streamzap"
 #define DRIVER_DESC	"Streamzap Remote Control driver"
 
-#ifdef CONFIG_USB_DEBUG
-static bool debug = 1;
-#else
-static bool debug;
-#endif
-
 #define USB_STREAMZAP_VENDOR_ID		0x0e9c
 #define USB_STREAMZAP_PRODUCT_ID	0x0000
 
 /* table of devices that work with this driver */
-static struct usb_device_id streamzap_table[] = {
+static const struct usb_device_id streamzap_table[] = {
 	/* Streamzap Remote Control */
 	{ USB_DEVICE(USB_STREAMZAP_VENDOR_ID, USB_STREAMZAP_PRODUCT_ID) },
 	/* Terminating entry */
@@ -68,13 +59,6 @@ MODULE_DEVICE_TABLE(usb, streamzap_table);
 
 /* number of samples buffered */
 #define SZ_BUF_LEN 128
-
-/* from ir-rc5-sz-decoder.c */
-#ifdef CONFIG_IR_RC5_SZ_DECODER_MODULE
-#define load_rc5_sz_decode()    request_module("ir-rc5-sz-decoder")
-#else
-#define load_rc5_sz_decode()    {}
-#endif
 
 enum StreamzapDecoderState {
 	PulseSpace,
@@ -109,8 +93,8 @@ struct streamzap_ir {
 	/* sum of signal lengths received since signal start */
 	unsigned long		sum;
 	/* start time of signal; necessary for gap tracking */
-	struct timeval		signal_last;
-	struct timeval		signal_start;
+	ktime_t			signal_last;
+	ktime_t			signal_start;
 	bool			timeout_enabled;
 
 	char			name[128];
@@ -146,26 +130,25 @@ static void sz_push(struct streamzap_ir *sz, struct ir_raw_event rawir)
 static void sz_push_full_pulse(struct streamzap_ir *sz,
 			       unsigned char value)
 {
-	DEFINE_IR_RAW_EVENT(rawir);
+	struct ir_raw_event rawir = {};
 
 	if (sz->idle) {
-		long deltv;
+		int delta;
 
 		sz->signal_last = sz->signal_start;
-		do_gettimeofday(&sz->signal_start);
+		sz->signal_start = ktime_get_real();
 
-		deltv = sz->signal_start.tv_sec - sz->signal_last.tv_sec;
+		delta = ktime_us_delta(sz->signal_start, sz->signal_last);
 		rawir.pulse = false;
-		if (deltv > 15) {
+		if (delta > (15 * USEC_PER_SEC)) {
 			/* really long time */
 			rawir.duration = IR_MAX_DURATION;
 		} else {
-			rawir.duration = (int)(deltv * 1000000 +
-				sz->signal_start.tv_usec -
-				sz->signal_last.tv_usec);
+			rawir.duration = delta;
 			rawir.duration -= sz->sum;
 			rawir.duration = US_TO_NS(rawir.duration);
-			rawir.duration &= IR_MAX_DURATION;
+			rawir.duration = (rawir.duration > IR_MAX_DURATION) ?
+					 IR_MAX_DURATION : rawir.duration;
 		}
 		sz_push(sz, rawir);
 
@@ -178,7 +161,8 @@ static void sz_push_full_pulse(struct streamzap_ir *sz,
 	rawir.duration += SZ_RESOLUTION / 2;
 	sz->sum += rawir.duration;
 	rawir.duration = US_TO_NS(rawir.duration);
-	rawir.duration &= IR_MAX_DURATION;
+	rawir.duration = (rawir.duration > IR_MAX_DURATION) ?
+			 IR_MAX_DURATION : rawir.duration;
 	sz_push(sz, rawir);
 }
 
@@ -191,7 +175,7 @@ static void sz_push_half_pulse(struct streamzap_ir *sz,
 static void sz_push_full_space(struct streamzap_ir *sz,
 			       unsigned char value)
 {
-	DEFINE_IR_RAW_EVENT(rawir);
+	struct ir_raw_event rawir = {};
 
 	rawir.pulse = false;
 	rawir.duration = ((int) value) * SZ_RESOLUTION;
@@ -207,7 +191,7 @@ static void sz_push_half_space(struct streamzap_ir *sz,
 	sz_push_full_space(sz, value & SZ_SPACE_MASK);
 }
 
-/**
+/*
  * streamzap_callback - usb IRQ handler callback
  *
  * This procedure is invoked on reception of data from
@@ -265,10 +249,10 @@ static void streamzap_callback(struct urb *urb)
 			break;
 		case FullSpace:
 			if (sz->buf_in[i] == SZ_TIMEOUT) {
-				DEFINE_IR_RAW_EVENT(rawir);
-
-				rawir.pulse = false;
-				rawir.duration = sz->rdev->timeout;
+				struct ir_raw_event rawir = {
+					.pulse = false,
+					.duration = sz->rdev->timeout
+				};
 				sz->idle = true;
 				if (sz->timeout_enabled)
 					sz_push(sz, rawir);
@@ -303,26 +287,24 @@ static struct rc_dev *streamzap_init_rc_dev(struct streamzap_ir *sz)
 	struct device *dev = sz->dev;
 	int ret;
 
-	rdev = rc_allocate_device();
+	rdev = rc_allocate_device(RC_DRIVER_IR_RAW);
 	if (!rdev) {
 		dev_err(dev, "remote dev allocation failed\n");
 		goto out;
 	}
 
-	snprintf(sz->name, sizeof(sz->name), "Streamzap PC Remote Infrared "
-		 "Receiver (%04x:%04x)",
+	snprintf(sz->name, sizeof(sz->name), "Streamzap PC Remote Infrared Receiver (%04x:%04x)",
 		 le16_to_cpu(sz->usbdev->descriptor.idVendor),
 		 le16_to_cpu(sz->usbdev->descriptor.idProduct));
 	usb_make_path(sz->usbdev, sz->phys, sizeof(sz->phys));
 	strlcat(sz->phys, "/input0", sizeof(sz->phys));
 
-	rdev->input_name = sz->name;
+	rdev->device_name = sz->name;
 	rdev->input_phys = sz->phys;
 	usb_to_input_id(sz->usbdev, &rdev->input_id);
 	rdev->dev.parent = dev;
 	rdev->priv = sz;
-	rdev->driver_type = RC_DRIVER_IR_RAW;
-	rdev->allowed_protos = RC_BIT_ALL;
+	rdev->allowed_protocols = RC_PROTO_BIT_ALL_IR_DECODER;
 	rdev->driver_name = DRIVER_NAME;
 	rdev->map_name = RC_MAP_STREAMZAP;
 
@@ -339,7 +321,7 @@ out:
 	return NULL;
 }
 
-/**
+/*
  *	streamzap_probe
  *
  *	Called by usb-core to associated with a candidate device
@@ -375,18 +357,16 @@ static int streamzap_probe(struct usb_interface *intf,
 	}
 
 	sz->endpoint = &(iface_host->endpoint[0].desc);
-	if ((sz->endpoint->bEndpointAddress & USB_ENDPOINT_DIR_MASK)
-	    != USB_DIR_IN) {
-		dev_err(&intf->dev, "%s: endpoint doesn't match input device "
-			"02%02x\n", __func__, sz->endpoint->bEndpointAddress);
+	if (!usb_endpoint_dir_in(sz->endpoint)) {
+		dev_err(&intf->dev, "%s: endpoint doesn't match input device 02%02x\n",
+			__func__, sz->endpoint->bEndpointAddress);
 		retval = -ENODEV;
 		goto free_sz;
 	}
 
-	if ((sz->endpoint->bmAttributes & USB_ENDPOINT_XFERTYPE_MASK)
-	    != USB_ENDPOINT_XFER_INT) {
-		dev_err(&intf->dev, "%s: endpoint attributes don't match xfer "
-			"02%02x\n", __func__, sz->endpoint->bmAttributes);
+	if (!usb_endpoint_xfer_int(sz->endpoint)) {
+		dev_err(&intf->dev, "%s: endpoint attributes don't match xfer 02%02x\n",
+			__func__, sz->endpoint->bmAttributes);
 		retval = -ENODEV;
 		goto free_sz;
 	}
@@ -416,7 +396,7 @@ static int streamzap_probe(struct usb_interface *intf,
 	if (usbdev->descriptor.iManufacturer
 	    && usb_string(usbdev, usbdev->descriptor.iManufacturer,
 			  buf, sizeof(buf)) > 0)
-		strlcpy(name, buf, sizeof(name));
+		strscpy(name, buf, sizeof(name));
 
 	if (usbdev->descriptor.iProduct
 	    && usb_string(usbdev, usbdev->descriptor.iProduct,
@@ -441,7 +421,7 @@ static int streamzap_probe(struct usb_interface *intf,
 	sz->max_timeout = US_TO_NS(SZ_TIMEOUT * SZ_RESOLUTION);
 	#endif
 
-	do_gettimeofday(&sz->signal_start);
+	sz->signal_start = ktime_get_real();
 
 	/* Complete final initialisations */
 	usb_fill_int_urb(sz->urb_in, usbdev, pipe, sz->buf_in,
@@ -458,9 +438,6 @@ static int streamzap_probe(struct usb_interface *intf,
 	dev_info(sz->dev, "Registered %s on usb%d:%d\n", name,
 		 usbdev->bus->busnum, usbdev->devnum);
 
-	/* Load the streamzap not-quite-rc5 decoder too */
-	load_rc5_sz_decode();
-
 	return 0;
 
 rc_dev_fail:
@@ -473,7 +450,7 @@ free_sz:
 	return retval;
 }
 
-/**
+/*
  * streamzap_disconnect
  *
  * Called by the usb core when the device is removed from the system.
@@ -516,7 +493,7 @@ static int streamzap_resume(struct usb_interface *intf)
 	struct streamzap_ir *sz = usb_get_intfdata(intf);
 
 	if (usb_submit_urb(sz->urb_in, GFP_ATOMIC)) {
-		dev_err(sz->dev, "Error sumbiting urb\n");
+		dev_err(sz->dev, "Error submitting urb\n");
 		return -EIO;
 	}
 
@@ -528,6 +505,3 @@ module_usb_driver(streamzap_driver);
 MODULE_AUTHOR("Jarod Wilson <jarod@wilsonet.com>");
 MODULE_DESCRIPTION(DRIVER_DESC);
 MODULE_LICENSE("GPL");
-
-module_param(debug, bool, S_IRUGO | S_IWUSR);
-MODULE_PARM_DESC(debug, "Enable debugging messages");

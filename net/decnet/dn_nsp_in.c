@@ -491,6 +491,7 @@ static void dn_nsp_disc_conf(struct sock *sk, struct sk_buff *skb)
 		break;
 	case DN_RUN:
 		sk->sk_shutdown |= SHUTDOWN_MASK;
+		/* fall through */
 	case DN_CC:
 		scp->state = DN_CN;
 	}
@@ -585,7 +586,6 @@ out:
 static __inline__ int dn_queue_skb(struct sock *sk, struct sk_buff *skb, int sig, struct sk_buff_head *queue)
 {
 	int err;
-	int skb_len;
 
 	/* Cast skb->rcvbuf to unsigned... It's pointless, but reduces
 	   number of warnings when compiling with -W --ANK
@@ -600,12 +600,11 @@ static __inline__ int dn_queue_skb(struct sock *sk, struct sk_buff *skb, int sig
 	if (err)
 		goto out;
 
-	skb_len = skb->len;
 	skb_set_owner_r(skb, sk);
 	skb_queue_tail(queue, skb);
 
 	if (!sock_flag(sk, SOCK_DEAD))
-		sk->sk_data_ready(sk, skb_len);
+		sk->sk_data_ready(sk);
 out:
 	return err;
 }
@@ -716,7 +715,8 @@ out:
 	return ret;
 }
 
-static int dn_nsp_rx_packet(struct sk_buff *skb)
+static int dn_nsp_rx_packet(struct net *net, struct sock *sk2,
+			    struct sk_buff *skb)
 {
 	struct dn_skb_cb *cb = DN_SKB_CB(skb);
 	struct sock *sk = NULL;
@@ -777,12 +777,8 @@ static int dn_nsp_rx_packet(struct sk_buff *skb)
 	 * Swap src & dst and look up in the normal way.
 	 */
 	if (unlikely(cb->rt_flags & DN_RT_F_RTS)) {
-		__le16 tmp = cb->dst_port;
-		cb->dst_port = cb->src_port;
-		cb->src_port = tmp;
-		tmp = cb->dst;
-		cb->dst = cb->src;
-		cb->src = tmp;
+		swap(cb->dst_port, cb->src_port);
+		swap(cb->dst, cb->src);
 	}
 
 	/*
@@ -816,7 +812,8 @@ free_out:
 
 int dn_nsp_rx(struct sk_buff *skb)
 {
-	return NF_HOOK(NFPROTO_DECNET, NF_DN_LOCAL_IN, skb, skb->dev, NULL,
+	return NF_HOOK(NFPROTO_DECNET, NF_DN_LOCAL_IN,
+		       &init_net, NULL, skb, skb->dev, NULL,
 		       dn_nsp_rx_packet);
 }
 
@@ -915,4 +912,3 @@ free_out:
 
 	return NET_RX_SUCCESS;
 }
-

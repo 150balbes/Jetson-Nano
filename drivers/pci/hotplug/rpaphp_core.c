@@ -1,23 +1,9 @@
+// SPDX-License-Identifier: GPL-2.0+
 /*
  * PCI Hot Plug Controller Driver for RPA-compliant PPC64 platform.
  * Copyright (C) 2003 Linda Xie <lxie@us.ibm.com>
  *
  * All rights reserved.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or (at
- * your option) any later version.
- *
- * This program is distributed in the hope that it will be useful, but
- * WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE, GOOD TITLE or
- * NON INFRINGEMENT.  See the GNU General Public License for more
- * details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  *
  * Send feedback to <lxie@us.ibm.com>
  *
@@ -30,6 +16,7 @@
 #include <linux/smp.h>
 #include <linux/init.h>
 #include <linux/vmalloc.h>
+#include <asm/firmware.h>
 #include <asm/eeh.h>       /* for eeh_add_device() */
 #include <asm/rtas.h>		/* rtas_call */
 #include <asm/pci-bridge.h>	/* for pci_controller */
@@ -39,6 +26,7 @@
 
 bool rpaphp_debug;
 LIST_HEAD(rpaphp_slot_head);
+EXPORT_SYMBOL_GPL(rpaphp_slot_head);
 
 #define DRIVER_VERSION	"0.1"
 #define DRIVER_AUTHOR	"Linda Xie <lxie@us.ibm.com>"
@@ -64,7 +52,7 @@ module_param_named(debug, rpaphp_debug, bool, 0644);
 static int set_attention_status(struct hotplug_slot *hotplug_slot, u8 value)
 {
 	int rc;
-	struct slot *slot = (struct slot *)hotplug_slot->private;
+	struct slot *slot = to_slot(hotplug_slot);
 
 	switch (value) {
 	case 0:
@@ -78,7 +66,7 @@ static int set_attention_status(struct hotplug_slot *hotplug_slot, u8 value)
 
 	rc = rtas_set_indicator(DR_INDICATOR, slot->index, value);
 	if (!rc)
-		hotplug_slot->info->attention_status = value;
+		slot->attention_status = value;
 
 	return rc;
 }
@@ -88,12 +76,12 @@ static int set_attention_status(struct hotplug_slot *hotplug_slot, u8 value)
  * @hotplug_slot: slot to get status
  * @value: pointer to store status
  */
-static int get_power_status(struct hotplug_slot *hotplug_slot, u8 * value)
+static int get_power_status(struct hotplug_slot *hotplug_slot, u8 *value)
 {
 	int retval, level;
-	struct slot *slot = (struct slot *)hotplug_slot->private;
+	struct slot *slot = to_slot(hotplug_slot);
 
-	retval = rtas_get_power_level (slot->power_domain, &level);
+	retval = rtas_get_power_level(slot->power_domain, &level);
 	if (!retval)
 		*value = level;
 	return retval;
@@ -104,16 +92,16 @@ static int get_power_status(struct hotplug_slot *hotplug_slot, u8 * value)
  * @hotplug_slot: slot to get status
  * @value: pointer to store status
  */
-static int get_attention_status(struct hotplug_slot *hotplug_slot, u8 * value)
+static int get_attention_status(struct hotplug_slot *hotplug_slot, u8 *value)
 {
-	struct slot *slot = (struct slot *)hotplug_slot->private;
-	*value = slot->hotplug_slot->info->attention_status;
+	struct slot *slot = to_slot(hotplug_slot);
+	*value = slot->attention_status;
 	return 0;
 }
 
-static int get_adapter_status(struct hotplug_slot *hotplug_slot, u8 * value)
+static int get_adapter_status(struct hotplug_slot *hotplug_slot, u8 *value)
 {
-	struct slot *slot = (struct slot *)hotplug_slot->private;
+	struct slot *slot = to_slot(hotplug_slot);
 	int rc, state;
 
 	rc = rpaphp_get_sensor_state(slot, &state);
@@ -195,24 +183,20 @@ static int get_children_props(struct device_node *dn, const int **drc_indexes,
 	return 0;
 }
 
-/* To get the DRC props describing the current node, first obtain it's
- * my-drc-index property.  Next obtain the DRC list from it's parent.  Use
- * the my-drc-index for correlation, and obtain the requested properties.
+
+/* Verify the existence of 'drc_name' and/or 'drc_type' within the
+ * current node.  First obtain it's my-drc-index property.  Next,
+ * obtain the DRC info from it's parent.  Use the my-drc-index for
+ * correlation, and obtain/validate the requested properties.
  */
-int rpaphp_get_drc_props(struct device_node *dn, int *drc_index,
-		char **drc_name, char **drc_type, int *drc_power_domain)
+
+static int rpaphp_check_drc_props_v1(struct device_node *dn, char *drc_name,
+				char *drc_type, unsigned int my_index)
 {
+	char *name_tmp, *type_tmp;
 	const int *indexes, *names;
 	const int *types, *domains;
-	const unsigned int *my_index;
-	char *name_tmp, *type_tmp;
 	int i, rc;
-
-	my_index = of_get_property(dn, "ibm,my-drc-index", NULL);
-	if (!my_index) {
-		/* Node isn't DLPAR/hotplug capable */
-		return -EINVAL;
-	}
 
 	rc = get_children_props(dn->parent, &indexes, &names, &types, &domains);
 	if (rc < 0) {
@@ -223,24 +207,85 @@ int rpaphp_get_drc_props(struct device_node *dn, int *drc_index,
 	type_tmp = (char *) &types[1];
 
 	/* Iterate through parent properties, looking for my-drc-index */
-	for (i = 0; i < indexes[0]; i++) {
-		if ((unsigned int) indexes[i + 1] == *my_index) {
-			if (drc_name)
-				*drc_name = name_tmp;
-			if (drc_type)
-				*drc_type = type_tmp;
-			if (drc_index)
-				*drc_index = *my_index;
-			if (drc_power_domain)
-				*drc_power_domain = domains[i+1];
-			return 0;
-		}
+	for (i = 0; i < be32_to_cpu(indexes[0]); i++) {
+		if ((unsigned int) indexes[i + 1] == my_index)
+			break;
+
 		name_tmp += (strlen(name_tmp) + 1);
 		type_tmp += (strlen(type_tmp) + 1);
 	}
 
+	if (((drc_name == NULL) || (drc_name && !strcmp(drc_name, name_tmp))) &&
+	    ((drc_type == NULL) || (drc_type && !strcmp(drc_type, type_tmp))))
+		return 0;
+
 	return -EINVAL;
 }
+
+static int rpaphp_check_drc_props_v2(struct device_node *dn, char *drc_name,
+				char *drc_type, unsigned int my_index)
+{
+	struct property *info;
+	unsigned int entries;
+	struct of_drc_info drc;
+	const __be32 *value;
+	char cell_drc_name[MAX_DRC_NAME_LEN];
+	int j, fndit;
+
+	info = of_find_property(dn->parent, "ibm,drc-info", NULL);
+	if (info == NULL)
+		return -EINVAL;
+
+	value = of_prop_next_u32(info, NULL, &entries);
+	if (!value)
+		return -EINVAL;
+
+	for (j = 0; j < entries; j++) {
+		of_read_drc_info_cell(&info, &value, &drc);
+
+		/* Should now know end of current entry */
+
+		if (my_index > drc.last_drc_index)
+			continue;
+
+		fndit = 1;
+		break;
+	}
+	/* Found it */
+
+	if (fndit)
+		sprintf(cell_drc_name, "%s%d", drc.drc_name_prefix, 
+			my_index);
+
+	if (((drc_name == NULL) ||
+	     (drc_name && !strcmp(drc_name, cell_drc_name))) &&
+	    ((drc_type == NULL) ||
+	     (drc_type && !strcmp(drc_type, drc.drc_type))))
+		return 0;
+
+	return -EINVAL;
+}
+
+int rpaphp_check_drc_props(struct device_node *dn, char *drc_name,
+			char *drc_type)
+{
+	const unsigned int *my_index;
+
+	my_index = of_get_property(dn, "ibm,my-drc-index", NULL);
+	if (!my_index) {
+		/* Node isn't DLPAR/hotplug capable */
+		return -EINVAL;
+	}
+
+	if (firmware_has_feature(FW_FEATURE_DRC_INFO))
+		return rpaphp_check_drc_props_v2(dn, drc_name, drc_type,
+						*my_index);
+	else
+		return rpaphp_check_drc_props_v1(dn, drc_name, drc_type,
+						*my_index);
+}
+EXPORT_SYMBOL_GPL(rpaphp_check_drc_props);
+
 
 static int is_php_type(char *drc_type)
 {
@@ -316,21 +361,24 @@ int rpaphp_add_slot(struct device_node *dn)
 	if (!is_php_dn(dn, &indexes, &names, &types, &power_domains))
 		return 0;
 
-	dbg("Entry %s: dn->full_name=%s\n", __func__, dn->full_name);
+	dbg("Entry %s: dn=%pOF\n", __func__, dn);
 
 	/* register PCI devices */
 	name = (char *) &names[1];
 	type = (char *) &types[1];
-	for (i = 0; i < indexes[0]; i++) {
+	for (i = 0; i < be32_to_cpu(indexes[0]); i++) {
+		int index;
 
-		slot = alloc_slot_struct(dn, indexes[i + 1], name, power_domains[i + 1]);
+		index = be32_to_cpu(indexes[i + 1]);
+		slot = alloc_slot_struct(dn, index, name,
+					 be32_to_cpu(power_domains[i + 1]));
 		if (!slot)
 			return -ENOMEM;
 
 		slot->type = simple_strtoul(type, NULL, 10);
 
 		dbg("Found drc-index:0x%x drc-name:%s drc-type:%s\n",
-				indexes[i + 1], name, type);
+				index, name, type);
 
 		retval = rpaphp_enable_slot(slot);
 		if (!retval)
@@ -347,33 +395,33 @@ int rpaphp_add_slot(struct device_node *dn)
 	/* XXX FIXME: reports a failure only if last entry in loop failed */
 	return retval;
 }
+EXPORT_SYMBOL_GPL(rpaphp_add_slot);
 
 static void __exit cleanup_slots(void)
 {
-	struct list_head *tmp, *n;
-	struct slot *slot;
+	struct slot *slot, *next;
 
 	/*
 	 * Unregister all of our slots with the pci_hotplug subsystem,
 	 * and free up all memory that we had allocated.
-	 * memory will be freed in release_slot callback.
 	 */
 
-	list_for_each_safe(tmp, n, &rpaphp_slot_head) {
-		slot = list_entry(tmp, struct slot, rpaphp_slot_list);
+	list_for_each_entry_safe(slot, next, &rpaphp_slot_head,
+				 rpaphp_slot_list) {
 		list_del(&slot->rpaphp_slot_list);
-		pci_hp_deregister(slot->hotplug_slot);
+		pci_hp_deregister(&slot->hotplug_slot);
+		dealloc_slot_struct(slot);
 	}
 	return;
 }
 
 static int __init rpaphp_init(void)
 {
-	struct device_node *dn = NULL;
+	struct device_node *dn;
 
 	info(DRIVER_DESC " version: " DRIVER_VERSION "\n");
 
-	while ((dn = of_find_node_by_name(dn, "pci")))
+	for_each_node_by_name(dn, "pci")
 		rpaphp_add_slot(dn);
 
 	return 0;
@@ -386,7 +434,7 @@ static void __exit rpaphp_exit(void)
 
 static int enable_slot(struct hotplug_slot *hotplug_slot)
 {
-	struct slot *slot = (struct slot *)hotplug_slot->private;
+	struct slot *slot = to_slot(hotplug_slot);
 	int state;
 	int retval;
 
@@ -399,7 +447,7 @@ static int enable_slot(struct hotplug_slot *hotplug_slot)
 
 	if (state == PRESENT) {
 		pci_lock_rescan_remove();
-		pcibios_add_pci_devices(slot->bus);
+		pci_hp_add_devices(slot->bus);
 		pci_unlock_rescan_remove();
 		slot->state = CONFIGURED;
 	} else if (state == EMPTY) {
@@ -416,12 +464,12 @@ static int enable_slot(struct hotplug_slot *hotplug_slot)
 
 static int disable_slot(struct hotplug_slot *hotplug_slot)
 {
-	struct slot *slot = (struct slot *)hotplug_slot->private;
+	struct slot *slot = to_slot(hotplug_slot);
 	if (slot->state == NOT_CONFIGURED)
 		return -EINVAL;
 
 	pci_lock_rescan_remove();
-	pcibios_remove_pci_devices(slot->bus);
+	pci_hp_remove_devices(slot->bus);
 	pci_unlock_rescan_remove();
 	vm_unmap_aliases();
 
@@ -429,7 +477,7 @@ static int disable_slot(struct hotplug_slot *hotplug_slot)
 	return 0;
 }
 
-struct hotplug_slot_ops rpaphp_hotplug_slot_ops = {
+const struct hotplug_slot_ops rpaphp_hotplug_slot_ops = {
 	.enable_slot = enable_slot,
 	.disable_slot = disable_slot,
 	.set_attention_status = set_attention_status,
@@ -440,7 +488,3 @@ struct hotplug_slot_ops rpaphp_hotplug_slot_ops = {
 
 module_init(rpaphp_init);
 module_exit(rpaphp_exit);
-
-EXPORT_SYMBOL_GPL(rpaphp_add_slot);
-EXPORT_SYMBOL_GPL(rpaphp_slot_head);
-EXPORT_SYMBOL_GPL(rpaphp_get_drc_props);

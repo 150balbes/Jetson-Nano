@@ -158,7 +158,7 @@ static int device_irq_init_805(struct pm80x_chip *chip)
 	 * PM805_INT_STATUS is under 32K clock domain, so need to
 	 * add proper delay before the next I2C register access.
 	 */
-	msleep(1);
+	usleep_range(1000, 3000);
 
 	if (ret < 0)
 		goto out;
@@ -267,7 +267,6 @@ static int pm805_remove(struct i2c_client *client)
 static struct i2c_driver pm805_driver = {
 	.driver = {
 		.name = "88PM805",
-		.owner = THIS_MODULE,
 		.pm = &pm80x_pm_ops,
 		},
 	.probe = pm805_probe,

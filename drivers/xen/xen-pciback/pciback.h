@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * PCI Backend Common Data Structures & Function Declarations
  *
@@ -37,6 +38,7 @@ struct xen_pcibk_device {
 	struct xen_pci_sharedinfo *sh_info;
 	unsigned long flags;
 	struct work_struct op_work;
+	struct xen_pci_op op;
 };
 
 struct xen_pcibk_dev_data {
@@ -54,7 +56,6 @@ struct xen_pcibk_dev_data {
 
 /* Used by XenBus and xen_pcibk_ops.c */
 extern wait_queue_head_t xen_pcibk_aer_wait_queue;
-extern struct workqueue_struct *xen_pcibk_wq;
 /* Used by pcistub.c and conf_space_quirks.c */
 extern struct list_head xen_pcibk_quirks;
 
@@ -99,7 +100,8 @@ struct xen_pcibk_backend {
 		    unsigned int *domain, unsigned int *bus,
 		    unsigned int *devfn);
 	int (*publish)(struct xen_pcibk_device *pdev, publish_pci_root_cb cb);
-	void (*release)(struct xen_pcibk_device *pdev, struct pci_dev *dev);
+	void (*release)(struct xen_pcibk_device *pdev, struct pci_dev *dev,
+                        bool lock);
 	int (*add)(struct xen_pcibk_device *pdev, struct pci_dev *dev,
 		   int devid, publish_pci_dev_cb publish_cb);
 	struct pci_dev *(*get)(struct xen_pcibk_device *pdev,
@@ -122,10 +124,10 @@ static inline int xen_pcibk_add_pci_dev(struct xen_pcibk_device *pdev,
 }
 
 static inline void xen_pcibk_release_pci_dev(struct xen_pcibk_device *pdev,
-					     struct pci_dev *dev)
+					     struct pci_dev *dev, bool lock)
 {
 	if (xen_pcibk_backend && xen_pcibk_backend->release)
-		return xen_pcibk_backend->release(pdev, dev);
+		return xen_pcibk_backend->release(pdev, dev, lock);
 }
 
 static inline struct pci_dev *

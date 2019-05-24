@@ -103,11 +103,13 @@ out_nomem:
 
 static void hw_queue_dtor(struct hw_queue *queue)
 {
-	int pages_per_kpage = PAGE_SIZE / queue->pagesize;
+	int pages_per_kpage;
 	int i, nr_pages;
 
 	if (!queue || !queue->queue_pages)
 		return;
+
+	pages_per_kpage = PAGE_SIZE / queue->pagesize;
 
 	nr_pages = queue->queue_length / queue->pagesize;
 
@@ -123,7 +125,7 @@ struct ehea_cq *ehea_create_cq(struct ehea_adapter *adapter,
 	struct ehea_cq *cq;
 	struct h_epa epa;
 	u64 *cq_handle_ref, hret, rpage;
-	u32 act_nr_of_entries, act_pages, counter;
+	u32 counter;
 	int ret;
 	void *vpage;
 
@@ -138,8 +140,6 @@ struct ehea_cq *ehea_create_cq(struct ehea_adapter *adapter,
 	cq->adapter = adapter;
 
 	cq_handle_ref = &cq->fw_handle;
-	act_nr_of_entries = 0;
-	act_pages = 0;
 
 	hret = ehea_h_alloc_resource_cq(adapter->handle, &cq->attr,
 					&cq->fw_handle, &cq->epas);

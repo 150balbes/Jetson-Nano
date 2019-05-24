@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  * Driver for the PSC of the Freescale MPC52xx PSCs configured as UARTs.
  *
@@ -23,10 +24,6 @@
  *                    Grant Likely <grant.likely@secretlab.ca>
  * Copyright (C) 2004-2006 Sylvain Munaut <tnt@246tNt.com>
  * Copyright (C) 2003 MontaVista, Software, Inc.
- *
- * This file is licensed under the terms of the GNU General Public License
- * version 2. This program is licensed "as is" without any warranty of any
- * kind, whether express or implied.
  */
 
 #undef DEBUG
@@ -239,8 +236,9 @@ static int mpc52xx_psc_tx_rdy(struct uart_port *port)
 
 static int mpc52xx_psc_tx_empty(struct uart_port *port)
 {
-	return in_be16(&PSC(port)->mpc52xx_psc_status)
-	    & MPC52xx_PSC_SR_TXEMP;
+	u16 sts = in_be16(&PSC(port)->mpc52xx_psc_status);
+
+	return (sts & MPC52xx_PSC_SR_TXEMP) ? TIOCSER_TEMT : 0;
 }
 
 static void mpc52xx_psc_start_tx(struct uart_port *port)
@@ -345,7 +343,7 @@ static irqreturn_t mpc52xx_psc_handle_irq(struct uart_port *port)
 	return mpc5xxx_uart_process_int(port);
 }
 
-static struct psc_ops mpc52xx_psc_ops = {
+static const struct psc_ops mpc52xx_psc_ops = {
 	.fifo_init = mpc52xx_psc_fifo_init,
 	.raw_rx_rdy = mpc52xx_psc_raw_rx_rdy,
 	.raw_tx_rdy = mpc52xx_psc_raw_tx_rdy,
@@ -375,7 +373,7 @@ static struct psc_ops mpc52xx_psc_ops = {
 	.get_mr1 = mpc52xx_psc_get_mr1,
 };
 
-static struct psc_ops mpc5200b_psc_ops = {
+static const struct psc_ops mpc5200b_psc_ops = {
 	.fifo_init = mpc52xx_psc_fifo_init,
 	.raw_rx_rdy = mpc52xx_psc_raw_rx_rdy,
 	.raw_tx_rdy = mpc52xx_psc_raw_tx_rdy,
@@ -405,7 +403,7 @@ static struct psc_ops mpc5200b_psc_ops = {
 	.get_mr1 = mpc52xx_psc_get_mr1,
 };
 
-#endif /* CONFIG_MPC52xx */
+#endif /* CONFIG_PPC_MPC52xx */
 
 #ifdef CONFIG_PPC_MPC512x
 #define FIFO_512x(port) ((struct mpc512x_psc_fifo __iomem *)(PSC(port)+1))
@@ -968,7 +966,7 @@ static u8 mpc5125_psc_get_mr1(struct uart_port *port)
 	return in_8(&PSC_5125(port)->mr1);
 }
 
-static struct psc_ops mpc5125_psc_ops = {
+static const struct psc_ops mpc5125_psc_ops = {
 	.fifo_init = mpc5125_psc_fifo_init,
 	.raw_rx_rdy = mpc5125_psc_raw_rx_rdy,
 	.raw_tx_rdy = mpc5125_psc_raw_tx_rdy,
@@ -1003,7 +1001,7 @@ static struct psc_ops mpc5125_psc_ops = {
 	.get_mr1 = mpc5125_psc_get_mr1,
 };
 
-static struct psc_ops mpc512x_psc_ops = {
+static const struct psc_ops mpc512x_psc_ops = {
 	.fifo_init = mpc512x_psc_fifo_init,
 	.raw_rx_rdy = mpc512x_psc_raw_rx_rdy,
 	.raw_tx_rdy = mpc512x_psc_raw_tx_rdy,
@@ -1087,22 +1085,6 @@ mpc52xx_uart_start_tx(struct uart_port *port)
 }
 
 static void
-mpc52xx_uart_send_xchar(struct uart_port *port, char ch)
-{
-	unsigned long flags;
-	spin_lock_irqsave(&port->lock, flags);
-
-	port->x_char = ch;
-	if (ch) {
-		/* Make sure tx interrupts are on */
-		/* Truly necessary ??? They should be anyway */
-		psc_ops->start_tx(port);
-	}
-
-	spin_unlock_irqrestore(&port->lock, flags);
-}
-
-static void
 mpc52xx_uart_stop_rx(struct uart_port *port)
 {
 	/* port->lock taken by caller */
@@ -1149,6 +1131,13 @@ mpc52xx_uart_startup(struct uart_port *port)
 	/* Reset/activate the port, clear and enable interrupts */
 	psc_ops->command(port, MPC52xx_PSC_RST_RX);
 	psc_ops->command(port, MPC52xx_PSC_RST_TX);
+
+	/*
+	 * According to Freescale's support the RST_TX command can produce a
+	 * spike on the TX pin. So they recommend to delay "for one character".
+	 * One millisecond should be enough for everyone.
+	 */
+	msleep(1);
 
 	psc_ops->set_sicr(port, 0);	/* UART mode DCD ignored */
 
@@ -1355,13 +1344,12 @@ mpc52xx_uart_verify_port(struct uart_port *port, struct serial_struct *ser)
 }
 
 
-static struct uart_ops mpc52xx_uart_ops = {
+static const struct uart_ops mpc52xx_uart_ops = {
 	.tx_empty	= mpc52xx_uart_tx_empty,
 	.set_mctrl	= mpc52xx_uart_set_mctrl,
 	.get_mctrl	= mpc52xx_uart_get_mctrl,
 	.stop_tx	= mpc52xx_uart_stop_tx,
 	.start_tx	= mpc52xx_uart_start_tx,
-	.send_xchar	= mpc52xx_uart_send_xchar,
 	.stop_rx	= mpc52xx_uart_stop_rx,
 	.enable_ms	= mpc52xx_uart_enable_ms,
 	.break_ctl	= mpc52xx_uart_break_ctl,
@@ -1643,8 +1631,8 @@ mpc52xx_console_setup(struct console *co, char *options)
 		return -EINVAL;
 	}
 
-	pr_debug("Console on ttyPSC%x is %s\n",
-		 co->index, mpc52xx_uart_nodes[co->index]->full_name);
+	pr_debug("Console on ttyPSC%x is %pOF\n",
+		 co->index, mpc52xx_uart_nodes[co->index]);
 
 	/* Fetch register locations */
 	ret = of_address_to_resource(np, 0, &res);
@@ -1734,7 +1722,7 @@ static struct uart_driver mpc52xx_uart_driver = {
 /* OF Platform Driver                                                       */
 /* ======================================================================== */
 
-static struct of_device_id mpc52xx_uart_of_match[] = {
+static const struct of_device_id mpc52xx_uart_of_match[] = {
 #ifdef CONFIG_PPC_MPC52xx
 	{ .compatible = "fsl,mpc5200b-psc-uart", .data = &mpc5200b_psc_ops, },
 	{ .compatible = "fsl,mpc5200-psc-uart", .data = &mpc52xx_psc_ops, },
@@ -1764,8 +1752,8 @@ static int mpc52xx_uart_of_probe(struct platform_device *op)
 			break;
 	if (idx >= MPC52xx_PSC_MAXNUM)
 		return -EINVAL;
-	pr_debug("Found %s assigned to ttyPSC%x\n",
-		 mpc52xx_uart_nodes[idx]->full_name, idx);
+	pr_debug("Found %pOF assigned to ttyPSC%x\n",
+		 mpc52xx_uart_nodes[idx], idx);
 
 	/* set the uart clock to the input clock of the psc, the different
 	 * prescalers are taken into account in the set_baudrate() methods
@@ -1890,8 +1878,8 @@ mpc52xx_uart_of_enumerate(void)
 
 	for (i = 0; i < MPC52xx_PSC_MAXNUM; i++) {
 		if (mpc52xx_uart_nodes[i])
-			pr_debug("%s assigned to ttyPSC%x\n",
-				 mpc52xx_uart_nodes[i]->full_name, i);
+			pr_debug("%pOF assigned to ttyPSC%x\n",
+				 mpc52xx_uart_nodes[i], i);
 	}
 }
 
@@ -1906,7 +1894,6 @@ static struct platform_driver mpc52xx_uart_of_driver = {
 #endif
 	.driver = {
 		.name = "mpc52xx-psc-uart",
-		.owner = THIS_MODULE,
 		.of_match_table = mpc52xx_uart_of_match,
 	},
 };

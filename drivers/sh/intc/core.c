@@ -65,9 +65,9 @@ void intc_set_prio_level(unsigned int irq, unsigned int level)
 	raw_spin_unlock_irqrestore(&intc_big_lock, flags);
 }
 
-static void intc_redirect_irq(unsigned int irq, struct irq_desc *desc)
+static void intc_redirect_irq(struct irq_desc *desc)
 {
-	generic_handle_irq((unsigned int)irq_get_handler_data(irq));
+	generic_handle_irq((unsigned int)irq_desc_get_handler_data(desc));
 }
 
 static void __init intc_register_irq(struct intc_desc *desc,
@@ -79,12 +79,6 @@ static void __init intc_register_irq(struct intc_desc *desc,
 	struct irq_data *irq_data;
 	unsigned int data[2], primary;
 	unsigned long flags;
-
-	/*
-	 * Register the IRQ position with the global IRQ map, then insert
-	 * it in to the radix tree.
-	 */
-	irq_reserve_irq(irq);
 
 	raw_spin_lock_irqsave(&intc_big_lock, flags);
 	radix_tree_insert(&d->tree, enum_id, intc_irq_xlate_get(irq));
@@ -209,7 +203,7 @@ int __init register_intc_controller(struct intc_desc *desc)
 
 	if (desc->num_resources) {
 		d->nr_windows = desc->num_resources;
-		d->window = kzalloc(d->nr_windows * sizeof(*d->window),
+		d->window = kcalloc(d->nr_windows, sizeof(*d->window),
 				    GFP_NOWAIT);
 		if (!d->window)
 			goto err1;
@@ -236,12 +230,12 @@ int __init register_intc_controller(struct intc_desc *desc)
 	d->nr_reg += hw->ack_regs ? hw->nr_ack_regs : 0;
 	d->nr_reg += hw->subgroups ? hw->nr_subgroups : 0;
 
-	d->reg = kzalloc(d->nr_reg * sizeof(*d->reg), GFP_NOWAIT);
+	d->reg = kcalloc(d->nr_reg, sizeof(*d->reg), GFP_NOWAIT);
 	if (!d->reg)
 		goto err2;
 
 #ifdef CONFIG_SMP
-	d->smp = kzalloc(d->nr_reg * sizeof(*d->smp), GFP_NOWAIT);
+	d->smp = kcalloc(d->nr_reg, sizeof(*d->smp), GFP_NOWAIT);
 	if (!d->smp)
 		goto err3;
 #endif
@@ -259,7 +253,7 @@ int __init register_intc_controller(struct intc_desc *desc)
 	}
 
 	if (hw->prio_regs) {
-		d->prio = kzalloc(hw->nr_vectors * sizeof(*d->prio),
+		d->prio = kcalloc(hw->nr_vectors, sizeof(*d->prio),
 				  GFP_NOWAIT);
 		if (!d->prio)
 			goto err4;
@@ -275,7 +269,7 @@ int __init register_intc_controller(struct intc_desc *desc)
 	}
 
 	if (hw->sense_regs) {
-		d->sense = kzalloc(hw->nr_vectors * sizeof(*d->sense),
+		d->sense = kcalloc(hw->nr_vectors, sizeof(*d->sense),
 				   GFP_NOWAIT);
 		if (!d->sense)
 			goto err5;
@@ -372,8 +366,9 @@ int __init register_intc_controller(struct intc_desc *desc)
 
 			/* redirect this interrupts to the first one */
 			irq_set_chip(irq2, &dummy_irq_chip);
-			irq_set_chained_handler(irq2, intc_redirect_irq);
-			irq_set_handler_data(irq2, (void *)irq);
+			irq_set_chained_handler_and_data(irq2,
+							 intc_redirect_irq,
+							 (void *)irq);
 		}
 	}
 

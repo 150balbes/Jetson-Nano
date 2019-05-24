@@ -21,8 +21,8 @@
 atomic_t fscache_n_op_pend;
 atomic_t fscache_n_op_run;
 atomic_t fscache_n_op_enqueue;
-atomic_t fscache_n_op_requeue;
 atomic_t fscache_n_op_deferred_release;
+atomic_t fscache_n_op_initialised;
 atomic_t fscache_n_op_release;
 atomic_t fscache_n_op_gc;
 atomic_t fscache_n_op_cancelled;
@@ -130,10 +130,15 @@ atomic_t fscache_n_cop_write_page;
 atomic_t fscache_n_cop_uncache_page;
 atomic_t fscache_n_cop_dissociate_pages;
 
+atomic_t fscache_n_cache_no_space_reject;
+atomic_t fscache_n_cache_stale_objects;
+atomic_t fscache_n_cache_retired_objects;
+atomic_t fscache_n_cache_culled_objects;
+
 /*
  * display the general statistics
  */
-static int fscache_stats_show(struct seq_file *m, void *v)
+int fscache_stats_show(struct seq_file *m, void *v)
 {
 	seq_puts(m, "FS-Cache statistics\n");
 
@@ -246,7 +251,8 @@ static int fscache_stats_show(struct seq_file *m, void *v)
 		   atomic_read(&fscache_n_op_enqueue),
 		   atomic_read(&fscache_n_op_cancelled),
 		   atomic_read(&fscache_n_op_rejected));
-	seq_printf(m, "Ops    : dfr=%u rel=%u gc=%u\n",
+	seq_printf(m, "Ops    : ini=%u dfr=%u rel=%u gc=%u\n",
+		   atomic_read(&fscache_n_op_initialised),
 		   atomic_read(&fscache_n_op_deferred_release),
 		   atomic_read(&fscache_n_op_release),
 		   atomic_read(&fscache_n_op_gc));
@@ -271,21 +277,10 @@ static int fscache_stats_show(struct seq_file *m, void *v)
 		   atomic_read(&fscache_n_cop_write_page),
 		   atomic_read(&fscache_n_cop_uncache_page),
 		   atomic_read(&fscache_n_cop_dissociate_pages));
+	seq_printf(m, "CacheEv: nsp=%d stl=%d rtr=%d cul=%d\n",
+		   atomic_read(&fscache_n_cache_no_space_reject),
+		   atomic_read(&fscache_n_cache_stale_objects),
+		   atomic_read(&fscache_n_cache_retired_objects),
+		   atomic_read(&fscache_n_cache_culled_objects));
 	return 0;
 }
-
-/*
- * open "/proc/fs/fscache/stats" allowing provision of a statistical summary
- */
-static int fscache_stats_open(struct inode *inode, struct file *file)
-{
-	return single_open(file, fscache_stats_show, NULL);
-}
-
-const struct file_operations fscache_stats_fops = {
-	.owner		= THIS_MODULE,
-	.open		= fscache_stats_open,
-	.read		= seq_read,
-	.llseek		= seq_lseek,
-	.release        = single_release,
-};

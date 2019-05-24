@@ -181,11 +181,8 @@ static int l4f00242t03_probe(struct spi_device *spi)
 
 	priv = devm_kzalloc(&spi->dev, sizeof(struct l4f00242t03_priv),
 				GFP_KERNEL);
-
-	if (priv == NULL) {
-		dev_err(&spi->dev, "No memory for this device.\n");
+	if (priv == NULL)
 		return -ENOMEM;
-	}
 
 	spi_set_drvdata(spi, priv);
 	spi->bits_per_word = 9;
@@ -258,7 +255,6 @@ static void l4f00242t03_shutdown(struct spi_device *spi)
 static struct spi_driver l4f00242t03_driver = {
 	.driver = {
 		.name	= "l4f00242t03",
-		.owner	= THIS_MODULE,
 	},
 	.probe		= l4f00242t03_probe,
 	.remove		= l4f00242t03_remove,

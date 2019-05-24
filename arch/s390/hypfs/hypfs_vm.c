@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  *    Hypervisor filesystem for Linux on s390. z/VM implementation.
  *
@@ -9,6 +10,7 @@
 #include <linux/errno.h>
 #include <linux/string.h>
 #include <linux/vmalloc.h>
+#include <asm/diag.h>
 #include <asm/ebcdic.h>
 #include <asm/timex.h>
 #include "hypfs.h"
@@ -32,7 +34,7 @@ struct diag2fc_data {
 	__u32 pcpus;
 	__u32 lcpus;
 	__u32 vcpus;
-	__u32 cpu_min;
+	__u32 ocpus;
 	__u32 cpu_max;
 	__u32 cpu_shares;
 	__u32 cpu_use_samp;
@@ -66,9 +68,10 @@ static int diag2fc(int size, char* query, void *addr)
 	memset(parm_list.aci_grp, 0x40, NAME_LEN);
 	rc = -1;
 
+	diag_stat_inc(DIAG_STAT_X2FC);
 	asm volatile(
 		"	diag    %0,%1,0x2fc\n"
-		"0:\n"
+		"0:	nopr	%%r7\n"
 		EX_TABLE(0b,0b)
 		: "=d" (residual_cnt), "+d" (rc) : "0" (&parm_list) : "memory");
 
@@ -142,7 +145,12 @@ static int hpyfs_vm_create_guest(struct dentry *systems_dir,
 	ATTRIBUTE(cpus_dir, "capped", capped_value);
 	ATTRIBUTE(cpus_dir, "dedicated", dedicated_flag);
 	ATTRIBUTE(cpus_dir, "count", data->vcpus);
-	ATTRIBUTE(cpus_dir, "weight_min", data->cpu_min);
+	/*
+	 * Note: The "weight_min" attribute got the wrong name.
+	 * The value represents the number of non-stopped (operating)
+	 * CPUS.
+	 */
+	ATTRIBUTE(cpus_dir, "weight_min", data->ocpus);
 	ATTRIBUTE(cpus_dir, "weight_max", data->cpu_max);
 	ATTRIBUTE(cpus_dir, "weight_cur", data->cpu_shares);
 
@@ -226,7 +234,7 @@ failed:
 struct dbfs_d2fc_hdr {
 	u64	len;		/* Length of d2fc buffer without header */
 	u16	version;	/* Version of header */
-	char	tod_ext[16];	/* TOD clock for d2fc */
+	char	tod_ext[STORE_CLOCK_EXT_SIZE]; /* TOD clock for d2fc */
 	u64	count;		/* Number of VM guests in d2fc buffer */
 	char	reserved[30];
 } __attribute__ ((packed));
@@ -271,7 +279,8 @@ int hypfs_vm_init(void)
 		guest_query = local_guest;
 	else
 		return -EACCES;
-	return hypfs_dbfs_create_file(&dbfs_file_2fc);
+	hypfs_dbfs_create_file(&dbfs_file_2fc);
+	return 0;
 }
 
 void hypfs_vm_exit(void)

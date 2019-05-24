@@ -1,8 +1,12 @@
+config DVB_AV7110_IR
+	bool
+
 config DVB_AV7110
 	tristate "AV7110 cards"
 	depends on DVB_CORE && PCI && I2C
 	select TTPCI_EEPROM
 	select VIDEO_SAA7146_VV
+	select DVB_AV7110_IR if INPUT_EVDEV=y || INPUT_EVDEV=DVB_AV7110
 	depends on VIDEO_DEV	# dependencies of VIDEO_SAA7146_VV
 	select DVB_VES1820 if MEDIA_SUBDRV_AUTOSELECT
 	select DVB_VES1X93 if MEDIA_SUBDRV_AUTOSELECT
@@ -20,7 +24,7 @@ config DVB_AV7110
 	  onboard MPEG2 decoder.
 
 	  This driver needs an external firmware. Please use the script
-	  "<kerneldir>/Documentation/dvb/get_dvb_firmware av7110" to
+	  "<kerneldir>/scripts/get_dvb_firmware av7110" to
 	  download/extract it, and then copy it to /usr/lib/hotplug/firmware
 	  or /lib/firmware (depending on configuration of firmware hotplug).
 

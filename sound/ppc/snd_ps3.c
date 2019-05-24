@@ -564,9 +564,7 @@ static int snd_ps3_pcm_hw_params(struct snd_pcm_substream *substream,
 
 static int snd_ps3_pcm_hw_free(struct snd_pcm_substream *substream)
 {
-	int ret;
-	ret = snd_pcm_lib_free_pages(substream);
-	return ret;
+	return snd_pcm_lib_free_pages(substream);
 };
 
 static int snd_ps3_delay_to_bytes(struct snd_pcm_substream *substream,
@@ -774,7 +772,7 @@ static struct snd_kcontrol_new spdif_ctls[] = {
 	},
 };
 
-static struct snd_pcm_ops snd_ps3_pcm_spdif_ops = {
+static const struct snd_pcm_ops snd_ps3_pcm_spdif_ops = {
 	.open = snd_ps3_pcm_open,
 	.close = snd_ps3_pcm_close,
 	.ioctl = snd_pcm_lib_ioctl,
@@ -885,7 +883,7 @@ static void snd_ps3_audio_set_base_addr(uint64_t ioaddr_start)
 static void snd_ps3_audio_fixup(struct snd_ps3_card_info *card)
 {
 	/*
-	 * avsetting driver seems to never change the followings
+	 * avsetting driver seems to never change the following
 	 * so, init them here once
 	 */
 
@@ -932,6 +930,7 @@ static int snd_ps3_driver_probe(struct ps3_system_bus_device *dev)
 {
 	int i, ret;
 	u64 lpar_addr, lpar_size;
+	static u64 dummy_mask;
 
 	if (WARN_ON(!firmware_has_feature(FW_FEATURE_PS3_LV1)))
 		return -ENODEV;
@@ -972,6 +971,10 @@ static int snd_ps3_driver_probe(struct ps3_system_bus_device *dev)
 		goto clean_mmio;
 	}
 
+	dummy_mask = DMA_BIT_MASK(32);
+	dev->core.dma_mask = &dummy_mask;
+	dma_set_coherent_mask(&dev->core, dummy_mask);
+
 	snd_ps3_audio_set_base_addr(dev->d_region->bus_addr);
 
 	/* CONFIG_SND_PS3_DEFAULT_START_DELAY */
@@ -984,7 +987,8 @@ static int snd_ps3_driver_probe(struct ps3_system_bus_device *dev)
 	}
 
 	/* create card instance */
-	ret = snd_card_create(index, id, THIS_MODULE, 0, &the_card.card);
+	ret = snd_card_new(&dev->core, index, id, THIS_MODULE,
+			   0, &the_card.card);
 	if (ret < 0)
 		goto clean_irq;
 
@@ -1020,15 +1024,11 @@ static int snd_ps3_driver_probe(struct ps3_system_bus_device *dev)
 
 	the_card.pcm->info_flags = SNDRV_PCM_INFO_NONINTERLEAVED;
 	/* pre-alloc PCM DMA buffer*/
-	ret = snd_pcm_lib_preallocate_pages_for_all(the_card.pcm,
+	snd_pcm_lib_preallocate_pages_for_all(the_card.pcm,
 					SNDRV_DMA_TYPE_DEV,
 					&dev->core,
 					SND_PS3_PCM_PREALLOC_SIZE,
 					SND_PS3_PCM_PREALLOC_SIZE);
-	if (ret < 0) {
-		pr_info("%s: prealloc failed\n", __func__);
-		goto clean_card;
-	}
 
 	/*
 	 * allocate null buffer
@@ -1043,7 +1043,7 @@ static int snd_ps3_driver_probe(struct ps3_system_bus_device *dev)
 	if (!the_card.null_buffer_start_vaddr) {
 		pr_info("%s: nullbuffer alloc failed\n", __func__);
 		ret = -ENOMEM;
-		goto clean_preallocate;
+		goto clean_card;
 	}
 	pr_debug("%s: null vaddr=%p dma=%#llx\n", __func__,
 		 the_card.null_buffer_start_vaddr,
@@ -1052,7 +1052,6 @@ static int snd_ps3_driver_probe(struct ps3_system_bus_device *dev)
 	snd_ps3_init_avsetting(&the_card);
 
 	/* register the card */
-	snd_card_set_dev(the_card.card, &dev->core);
 	ret = snd_card_register(the_card.card);
 	if (ret < 0)
 		goto clean_dma_map;
@@ -1066,8 +1065,6 @@ clean_dma_map:
 			  PAGE_SIZE,
 			  the_card.null_buffer_start_vaddr,
 			  the_card.null_buffer_start_dma_addr);
-clean_preallocate:
-	snd_pcm_lib_preallocate_free_for_all(the_card.pcm);
 clean_card:
 	snd_card_free(the_card.card);
 clean_irq:

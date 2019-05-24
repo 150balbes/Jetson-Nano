@@ -34,6 +34,7 @@
  */
 
 #include "core.h"
+#include "trace.h"
 
 #include <linux/sysctl.h>
 
@@ -46,6 +47,20 @@ static struct ctl_table tipc_table[] = {
 		.maxlen		= sizeof(sysctl_tipc_rmem),
 		.mode		= 0644,
 		.proc_handler	= proc_dointvec,
+	},
+	{
+		.procname	= "named_timeout",
+		.data		= &sysctl_tipc_named_timeout,
+		.maxlen		= sizeof(sysctl_tipc_named_timeout),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec,
+	},
+	{
+		.procname       = "sk_filter",
+		.data           = &sysctl_tipc_sk_filter,
+		.maxlen         = sizeof(sysctl_tipc_sk_filter),
+		.mode           = 0644,
+		.proc_handler   = proc_doulongvec_minmax,
 	},
 	{}
 };

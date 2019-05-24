@@ -1,17 +1,29 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __CGROUP_H__
 #define __CGROUP_H__
 
+#include <linux/refcount.h>
+
 struct option;
 
-struct cgroup_sel {
+struct cgroup {
 	char *name;
 	int fd;
-	int refcnt;
+	refcount_t refcnt;
 };
 
 
 extern int nr_cgroups; /* number of explicit cgroups defined */
-extern void close_cgroup(struct cgroup_sel *cgrp);
-extern int parse_cgroups(const struct option *opt, const char *str, int unset);
+
+struct cgroup *cgroup__get(struct cgroup *cgroup);
+void cgroup__put(struct cgroup *cgroup);
+
+struct perf_evlist;
+
+struct cgroup *evlist__findnew_cgroup(struct perf_evlist *evlist, const char *name);
+
+void evlist__set_default_cgroup(struct perf_evlist *evlist, struct cgroup *cgroup);
+
+int parse_cgroups(const struct option *opt, const char *str, int unset);
 
 #endif /* __CGROUP_H__ */

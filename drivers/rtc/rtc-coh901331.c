@@ -8,6 +8,7 @@
  */
 #include <linux/init.h>
 #include <linux/module.h>
+#include <linux/mod_devicetable.h>
 #include <linux/rtc.h>
 #include <linux/clk.h>
 #include <linux/interrupt.h>
@@ -43,8 +44,6 @@
 struct coh901331_port {
 	struct rtc_device *rtc;
 	struct clk *clk;
-	u32 phybase;
-	u32 physize;
 	void __iomem *virtbase;
 	int irq;
 #ifdef CONFIG_PM_SLEEP
@@ -84,7 +83,7 @@ static int coh901331_read_time(struct device *dev, struct rtc_time *tm)
 	if (readl(rtap->virtbase + COH901331_VALID)) {
 		rtc_time_to_tm(readl(rtap->virtbase + COH901331_CUR_TIME), tm);
 		clk_disable(rtap->clk);
-		return rtc_valid_tm(tm);
+		return 0;
 	}
 	clk_disable(rtap->clk);
 	return -EINVAL;
@@ -142,7 +141,7 @@ static int coh901331_alarm_irq_enable(struct device *dev, unsigned int enabled)
 	return 0;
 }
 
-static struct rtc_class_ops coh901331_ops = {
+static const struct rtc_class_ops coh901331_ops = {
 	.read_time = coh901331_read_time,
 	.set_mmss = coh901331_set_mmss,
 	.read_alarm = coh901331_read_alarm,
@@ -173,19 +172,9 @@ static int __init coh901331_probe(struct platform_device *pdev)
 		return -ENOMEM;
 
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
-	if (!res)
-		return -ENOENT;
-
-	rtap->phybase = res->start;
-	rtap->physize = resource_size(res);
-
-	if (devm_request_mem_region(&pdev->dev, rtap->phybase, rtap->physize,
-				    "rtc-coh901331") == NULL)
-		return -EBUSY;
-
-	rtap->virtbase = devm_ioremap(&pdev->dev, rtap->phybase, rtap->physize);
-	if (!rtap->virtbase)
-		return -ENOMEM;
+	rtap->virtbase  = devm_ioremap_resource(&pdev->dev, res);
+	if (IS_ERR(rtap->virtbase))
+		return PTR_ERR(rtap->virtbase);
 
 	rtap->irq = platform_get_irq(pdev, 0);
 	if (devm_request_irq(&pdev->dev, rtap->irq, coh901331_interrupt, 0,
@@ -246,9 +235,13 @@ static int coh901331_suspend(struct device *dev)
 
 static int coh901331_resume(struct device *dev)
 {
+	int ret;
 	struct coh901331_port *rtap = dev_get_drvdata(dev);
 
-	clk_prepare(rtap->clk);
+	ret = clk_prepare(rtap->clk);
+	if (ret)
+		return ret;
+
 	if (device_may_wakeup(dev)) {
 		disable_irq_wake(rtap->irq);
 	} else {
@@ -275,11 +268,11 @@ static const struct of_device_id coh901331_dt_match[] = {
 	{ .compatible = "stericsson,coh901331" },
 	{},
 };
+MODULE_DEVICE_TABLE(of, coh901331_dt_match);
 
 static struct platform_driver coh901331_driver = {
 	.driver = {
 		.name = "rtc-coh901331",
-		.owner = THIS_MODULE,
 		.pm = &coh901331_pm_ops,
 		.of_match_table = coh901331_dt_match,
 	},

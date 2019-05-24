@@ -79,6 +79,18 @@ ADT7490:
   * 2 GPIO pins (not implemented)
   * system acoustics optimizations (not implemented)
 
+Sysfs Mapping
+-------------
+
+     ADT7490     ADT7476     ADT7475   ADT7473
+     -------     -------     -------   -------
+in0  2.5VIN (22) 2.5VIN (22) -         -
+in1  VCCP   (23) VCCP   (23) VCCP (14) VCCP (14)
+in2  VCC    (4)  VCC    (4)  VCC  (4)  VCC  (3)
+in3  5VIN   (20) 5VIN   (20)
+in4  12VIN  (21) 12VIN  (21)
+in5  VTT    (8)
+
 Special Features
 ----------------
 
@@ -108,6 +120,15 @@ fan speed) is applied. PWM values range from 0 (off) to 255 (full speed).
 
 Fan speed may be set to maximum when the temperature sensor associated with
 the PWM control exceeds temp#_max.
+
+At Tmin - hysteresis the PWM output can either be off (0% duty cycle) or at the
+minimum (i.e. auto_point1_pwm). This behaviour can be configured using the
+pwm[1-*]_stall_disable sysfs attribute. A value of 0 means the fans will shut
+off. A value of 1 means the fans will run at auto_point1_pwm.
+
+The responsiveness of the ADT747x to temperature changes can be configured.
+This allows smoothing of the fan speed transition. To set the transition time
+set the value in ms in the temp[1-*]_smoothing sysfs attribute.
 
 Notes
 -----

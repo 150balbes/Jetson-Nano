@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  *  linux/arch/m68k/hp300/config.c
  *
@@ -12,6 +13,7 @@
 #include <linux/string.h>
 #include <linux/kernel.h>
 #include <linux/console.h>
+#include <linux/rtc.h>
 
 #include <asm/bootinfo.h>
 #include <asm/bootinfo-hp300.h>
@@ -20,7 +22,6 @@
 #include <asm/blinken.h>
 #include <asm/io.h>                               /* readb() and writeb() */
 #include <asm/hp300hw.h>
-#include <asm/rtc.h>
 
 #include "time.h"
 
@@ -87,7 +88,7 @@ int __init hp300_parse_bootinfo(const struct bi_record *record)
 		/* serial port address: ignored here */
 		break;
 
-        default:
+	default:
 		unknown = 1;
 	}
 
@@ -262,11 +263,12 @@ void __init config_hp300(void)
 #endif
 	mach_max_dma_address = 0xffffffff;
 
-	if (hp300_model >= HP_330 && hp300_model <= HP_433S && hp300_model != HP_350) {
-		printk(KERN_INFO "Detected HP9000 model %s\n", hp300_models[hp300_model-HP_320]);
+	if (hp300_model >= HP_330 && hp300_model <= HP_433S &&
+	    hp300_model != HP_350) {
+		pr_info("Detected HP9000 model %s\n",
+			hp300_models[hp300_model-HP_320]);
 		strcat(hp300_model_name, hp300_models[hp300_model-HP_320]);
-	}
-	else {
+	} else {
 		panic("Unknown HP9000 Model");
 	}
 #ifdef CONFIG_SERIAL_8250_CONSOLE

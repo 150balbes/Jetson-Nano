@@ -19,6 +19,7 @@
 	Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 */
 
+#include <linux/bitops.h>
 #include "stb0899_drv.h"
 #include "stb0899_priv.h"
 #include "stb0899_reg.h"
@@ -834,8 +835,8 @@ static u32 stb0899_dvbs2_calc_dev(struct stb0899_state *state)
 	dec_ratio = (internal->master_clk * 2) / (5 * internal->srate);
 	dec_ratio = (dec_ratio == 0) ? 1 : dec_ratio;
 
-	master_clk = internal->master_clk / 1000;	/* for integer Caculation*/
-	srate = internal->srate / 1000;	/* for integer Caculation*/
+	master_clk = internal->master_clk / 1000;	/* for integer Calculation*/
+	srate = internal->srate / 1000;	/* for integer Calculation*/
 	correction = (512 * master_clk) / (2 * dec_ratio * srate);
 
 	return	correction;
@@ -863,7 +864,7 @@ static void stb0899_dvbs2_set_srate(struct stb0899_state *state)
 		win_sel = dec_rate - 4;
 
 	decim = (1 << dec_rate);
-	/* (FSamp/Fsymbol *100) for integer Caculation */
+	/* (FSamp/Fsymbol *100) for integer Calculation */
 	f_sym = internal->master_clk / ((decim * internal->srate) / 1000);
 
 	if (f_sym <= 2250)	/* don't band limit signal going into btr block*/
@@ -924,8 +925,7 @@ static void stb0899_dvbs2_set_btr_loopbw(struct stb0899_state *state)
 		wn = (4 * zeta * zeta) + 1000000;
 		wn = (2 * (loopbw_percent * 1000) * 40 * zeta) /wn;  /*wn =wn 10^-8*/
 
-		k_indirect = (wn * wn) / K;
-		k_indirect = k_indirect;	  /*kindirect = kindirect 10^-6*/
+		k_indirect = (wn * wn) / K;	/*kindirect = kindirect 10^-6*/
 		k_direct   = (2 * wn * zeta) / K;	/*kDirect = kDirect 10^-2*/
 		k_direct  *= 100;
 
@@ -1490,9 +1490,7 @@ enum stb0899_status stb0899_dvbs2_algo(struct stb0899_state *state)
 		/* Store signal parameters	*/
 		offsetfreq = STB0899_READ_S2REG(STB0899_S2DEMOD, CRL_FREQ);
 
-		/* sign extend 30 bit value before using it in calculations */
-		if (offsetfreq & (1 << 29))
-			offsetfreq |= -1 << 30;
+		offsetfreq = sign_extend32(offsetfreq, 29);
 
 		offsetfreq = offsetfreq / ((1 << 30) / 1000);
 		offsetfreq *= (internal->master_clk / 1000000);

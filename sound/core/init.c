@@ -28,6 +28,7 @@
 #include <linux/time.h>
 #include <linux/ctype.h>
 #include <linux/pm.h>
+#include <linux/completion.h>
 
 #include <sound/core.h>
 #include <sound/control.h>
@@ -94,41 +95,9 @@ static int module_slot_match(struct module *module, int idx)
 	return match;
 }
 
-#if defined(CONFIG_SND_MIXER_OSS) || defined(CONFIG_SND_MIXER_OSS_MODULE)
+#if IS_ENABLED(CONFIG_SND_MIXER_OSS)
 int (*snd_mixer_oss_notify_callback)(struct snd_card *card, int free_flag);
 EXPORT_SYMBOL(snd_mixer_oss_notify_callback);
-#endif
-
-#ifdef CONFIG_PROC_FS
-static void snd_card_id_read(struct snd_info_entry *entry,
-			     struct snd_info_buffer *buffer)
-{
-	snd_iprintf(buffer, "%s\n", entry->card->id);
-}
-
-static inline int init_info_for_card(struct snd_card *card)
-{
-	int err;
-	struct snd_info_entry *entry;
-
-	if ((err = snd_info_card_register(card)) < 0) {
-		snd_printd("unable to create card info\n");
-		return err;
-	}
-	if ((entry = snd_info_create_card_entry(card, "id", card->proc_root)) == NULL) {
-		snd_printd("unable to create card entry\n");
-		return err;
-	}
-	entry->c.text.read = snd_card_id_read;
-	if (snd_info_register(entry) < 0) {
-		snd_info_free_entry(entry);
-		entry = NULL;
-	}
-	card->proc_id = entry;
-	return 0;
-}
-#else /* !CONFIG_PROC_FS */
-#define init_info_for_card(card)
 #endif
 
 static int check_empty_slot(struct module *module, int slot)
@@ -156,8 +125,40 @@ static int get_slot_from_bitmask(int mask, int (*check)(struct module *, int),
 	return mask; /* unchanged */
 }
 
+/* the default release callback set in snd_device_initialize() below;
+ * this is just NOP for now, as almost all jobs are already done in
+ * dev_free callback of snd_device chain instead.
+ */
+static void default_release(struct device *dev)
+{
+}
+
 /**
- *  snd_card_create - create and initialize a soundcard structure
+ * snd_device_initialize - Initialize struct device for sound devices
+ * @dev: device to initialize
+ * @card: card to assign, optional
+ */
+void snd_device_initialize(struct device *dev, struct snd_card *card)
+{
+	device_initialize(dev);
+	if (card)
+		dev->parent = &card->card_dev;
+	dev->class = sound_class;
+	dev->release = default_release;
+}
+EXPORT_SYMBOL_GPL(snd_device_initialize);
+
+static int snd_card_do_free(struct snd_card *card);
+static const struct attribute_group card_dev_attr_group;
+
+static void release_card_device(struct device *dev)
+{
+	snd_card_do_free(dev_to_snd_card(dev));
+}
+
+/**
+ *  snd_card_new - create and initialize a soundcard structure
+ *  @parent: the parent device object
  *  @idx: card index (address) [0 ... (SNDRV_CARDS-1)]
  *  @xid: card identification (ASCII string)
  *  @module: top level module for locking
@@ -172,7 +173,7 @@ static int get_slot_from_bitmask(int mask, int (*check)(struct module *, int),
  *
  *  Return: Zero if successful or a negative error code.
  */
-int snd_card_create(int idx, const char *xid,
+int snd_card_new(struct device *parent, int idx, const char *xid,
 		    struct module *module, int extra_size,
 		    struct snd_card **card_ret)
 {
@@ -188,6 +189,8 @@ int snd_card_create(int idx, const char *xid,
 	card = kzalloc(sizeof(*card) + extra_size, GFP_KERNEL);
 	if (!card)
 		return -ENOMEM;
+	if (extra_size > 0)
+		card->private_data = (char *)card + sizeof(struct snd_card);
 	if (xid)
 		strlcpy(card->id, xid, sizeof(card->id));
 	err = 0;
@@ -205,54 +208,65 @@ int snd_card_create(int idx, const char *xid,
 		err = -ENODEV;
 	if (err < 0) {
 		mutex_unlock(&snd_card_mutex);
-		snd_printk(KERN_ERR "cannot find the slot for index %d (range 0-%i), error: %d\n",
+		dev_err(parent, "cannot find the slot for index %d (range 0-%i), error: %d\n",
 			 idx, snd_ecards_limit - 1, err);
-		goto __error;
+		kfree(card);
+		return err;
 	}
 	set_bit(idx, snd_cards_lock);		/* lock it */
 	if (idx >= snd_ecards_limit)
 		snd_ecards_limit = idx + 1; /* increase the limit */
 	mutex_unlock(&snd_card_mutex);
+	card->dev = parent;
 	card->number = idx;
 	card->module = module;
 	INIT_LIST_HEAD(&card->devices);
 	init_rwsem(&card->controls_rwsem);
 	rwlock_init(&card->ctl_files_rwlock);
-	mutex_init(&card->user_ctl_lock);
 	INIT_LIST_HEAD(&card->controls);
 	INIT_LIST_HEAD(&card->ctl_files);
 	spin_lock_init(&card->files_lock);
 	INIT_LIST_HEAD(&card->files_list);
-	init_waitqueue_head(&card->shutdown_sleep);
-	atomic_set(&card->refcount, 0);
 #ifdef CONFIG_PM
-	mutex_init(&card->power_lock);
 	init_waitqueue_head(&card->power_sleep);
 #endif
+	init_waitqueue_head(&card->remove_sleep);
+
+	device_initialize(&card->card_dev);
+	card->card_dev.parent = parent;
+	card->card_dev.class = sound_class;
+	card->card_dev.release = release_card_device;
+	card->card_dev.groups = card->dev_groups;
+	card->dev_groups[0] = &card_dev_attr_group;
+	err = kobject_set_name(&card->card_dev.kobj, "card%d", idx);
+	if (err < 0)
+		goto __error;
+
+	snprintf(card->irq_descr, sizeof(card->irq_descr), "%s:%s",
+		 dev_driver_string(card->dev), dev_name(&card->card_dev));
+
 	/* the control interface cannot be accessed from the user space until */
 	/* snd_cards_bitmask and snd_cards are set with snd_card_register */
 	err = snd_ctl_create(card);
 	if (err < 0) {
-		snd_printk(KERN_ERR "unable to register control minors\n");
+		dev_err(parent, "unable to register control minors\n");
 		goto __error;
 	}
 	err = snd_info_card_create(card);
 	if (err < 0) {
-		snd_printk(KERN_ERR "unable to create card info\n");
+		dev_err(parent, "unable to create card info\n");
 		goto __error_ctl;
 	}
-	if (extra_size > 0)
-		card->private_data = (char *)card + sizeof(struct snd_card);
 	*card_ret = card;
 	return 0;
 
       __error_ctl:
-	snd_device_free_all(card, SNDRV_DEV_CMD_PRE);
+	snd_device_free_all(card);
       __error:
-	kfree(card);
+	put_device(&card->card_dev);
   	return err;
 }
-EXPORT_SYMBOL(snd_card_create);
+EXPORT_SYMBOL(snd_card_new);
 
 /* return non-zero if a card is already locked */
 int snd_card_locked(int card)
@@ -305,9 +319,9 @@ static int snd_disconnect_release(struct inode *inode, struct file *file)
 	panic("%s(%p, %p) failed!", __func__, inode, file);
 }
 
-static unsigned int snd_disconnect_poll(struct file * file, poll_table * wait)
+static __poll_t snd_disconnect_poll(struct file * file, poll_table * wait)
 {
-	return POLLERR | POLLNVAL;
+	return EPOLLERR | EPOLLNVAL;
 }
 
 static long snd_disconnect_ioctl(struct file *file,
@@ -356,7 +370,6 @@ static const struct file_operations snd_shutdown_f_ops =
 int snd_card_disconnect(struct snd_card *card)
 {
 	struct snd_monitor_file *mfile;
-	int err;
 
 	if (!card)
 		return -EINVAL;
@@ -395,117 +408,120 @@ int snd_card_disconnect(struct snd_card *card)
 	/* phase 3: notify all connected devices about disconnection */
 	/* at this point, they cannot respond to any calls except release() */
 
-#if defined(CONFIG_SND_MIXER_OSS) || defined(CONFIG_SND_MIXER_OSS_MODULE)
+#if IS_ENABLED(CONFIG_SND_MIXER_OSS)
 	if (snd_mixer_oss_notify_callback)
 		snd_mixer_oss_notify_callback(card, SND_MIXER_OSS_NOTIFY_DISCONNECT);
 #endif
 
 	/* notify all devices that we are disconnected */
-	err = snd_device_disconnect_all(card);
-	if (err < 0)
-		snd_printk(KERN_ERR "not all devices for card %i can be disconnected\n", card->number);
+	snd_device_disconnect_all(card);
 
 	snd_info_card_disconnect(card);
-	if (card->card_dev) {
-		device_unregister(card->card_dev);
-		card->card_dev = NULL;
+	if (card->registered) {
+		device_del(&card->card_dev);
+		card->registered = false;
 	}
 #ifdef CONFIG_PM
 	wake_up(&card->power_sleep);
 #endif
 	return 0;	
 }
-
 EXPORT_SYMBOL(snd_card_disconnect);
 
 /**
- *  snd_card_free - frees given soundcard structure
- *  @card: soundcard structure
+ * snd_card_disconnect_sync - disconnect card and wait until files get closed
+ * @card: card object to disconnect
  *
- *  This function releases the soundcard structure and the all assigned
- *  devices automatically.  That is, you don't have to release the devices
- *  by yourself.
- *
- *  Return: Zero. Frees all associated devices and frees the control
- *  interface associated to given soundcard.
+ * This calls snd_card_disconnect() for disconnecting all belonging components
+ * and waits until all pending files get closed.
+ * It assures that all accesses from user-space finished so that the driver
+ * can release its resources gracefully.
  */
+void snd_card_disconnect_sync(struct snd_card *card)
+{
+	int err;
+
+	err = snd_card_disconnect(card);
+	if (err < 0) {
+		dev_err(card->dev,
+			"snd_card_disconnect error (%d), skipping sync\n",
+			err);
+		return;
+	}
+
+	spin_lock_irq(&card->files_lock);
+	wait_event_lock_irq(card->remove_sleep,
+			    list_empty(&card->files_list),
+			    card->files_lock);
+	spin_unlock_irq(&card->files_lock);
+}
+EXPORT_SYMBOL_GPL(snd_card_disconnect_sync);
+
 static int snd_card_do_free(struct snd_card *card)
 {
-#if defined(CONFIG_SND_MIXER_OSS) || defined(CONFIG_SND_MIXER_OSS_MODULE)
+#if IS_ENABLED(CONFIG_SND_MIXER_OSS)
 	if (snd_mixer_oss_notify_callback)
 		snd_mixer_oss_notify_callback(card, SND_MIXER_OSS_NOTIFY_FREE);
 #endif
-	if (snd_device_free_all(card, SNDRV_DEV_CMD_PRE) < 0) {
-		snd_printk(KERN_ERR "unable to free all devices (pre)\n");
-		/* Fatal, but this situation should never occur */
-	}
-	if (snd_device_free_all(card, SNDRV_DEV_CMD_NORMAL) < 0) {
-		snd_printk(KERN_ERR "unable to free all devices (normal)\n");
-		/* Fatal, but this situation should never occur */
-	}
-	if (snd_device_free_all(card, SNDRV_DEV_CMD_POST) < 0) {
-		snd_printk(KERN_ERR "unable to free all devices (post)\n");
-		/* Fatal, but this situation should never occur */
-	}
+	snd_device_free_all(card);
 	if (card->private_free)
 		card->private_free(card);
-	snd_info_free_entry(card->proc_id);
 	if (snd_info_card_free(card) < 0) {
-		snd_printk(KERN_WARNING "unable to free card info\n");
+		dev_warn(card->dev, "unable to free card info\n");
 		/* Not fatal error */
 	}
+	if (card->release_completion)
+		complete(card->release_completion);
 	kfree(card);
 	return 0;
 }
 
 /**
- * snd_card_unref - release the reference counter
- * @card: the card instance
+ * snd_card_free_when_closed - Disconnect the card, free it later eventually
+ * @card: soundcard structure
  *
- * Decrements the reference counter.  When it reaches to zero, wake up
- * the sleeper and call the destructor if needed.
+ * Unlike snd_card_free(), this function doesn't try to release the card
+ * resource immediately, but tries to disconnect at first.  When the card
+ * is still in use, the function returns before freeing the resources.
+ * The card resources will be freed when the refcount gets to zero.
  */
-void snd_card_unref(struct snd_card *card)
-{
-	if (atomic_dec_and_test(&card->refcount)) {
-		wake_up(&card->shutdown_sleep);
-		if (card->free_on_last_close)
-			snd_card_do_free(card);
-	}
-}
-EXPORT_SYMBOL(snd_card_unref);
-
 int snd_card_free_when_closed(struct snd_card *card)
-{
-	int ret;
-
-	atomic_inc(&card->refcount);
-	ret = snd_card_disconnect(card);
-	if (ret) {
-		atomic_dec(&card->refcount);
-		return ret;
-	}
-
-	card->free_on_last_close = 1;
-	if (atomic_dec_and_test(&card->refcount))
-		snd_card_do_free(card);
-	return 0;
-}
-
-EXPORT_SYMBOL(snd_card_free_when_closed);
-
-int snd_card_free(struct snd_card *card)
 {
 	int ret = snd_card_disconnect(card);
 	if (ret)
 		return ret;
-
-	/* wait, until all devices are ready for the free operation */
-	wait_event(card->shutdown_sleep, !atomic_read(&card->refcount));
-	snd_card_do_free(card);
+	put_device(&card->card_dev);
 	return 0;
 }
+EXPORT_SYMBOL(snd_card_free_when_closed);
 
+/**
+ * snd_card_free - frees given soundcard structure
+ * @card: soundcard structure
+ *
+ * This function releases the soundcard structure and the all assigned
+ * devices automatically.  That is, you don't have to release the devices
+ * by yourself.
+ *
+ * This function waits until the all resources are properly released.
+ *
+ * Return: Zero. Frees all associated devices and frees the control
+ * interface associated to given soundcard.
+ */
+int snd_card_free(struct snd_card *card)
+{
+	struct completion released;
+	int ret;
+
+	init_completion(&released);
+	card->release_completion = &released;
+	ret = snd_card_free_when_closed(card);
+	if (ret)
+		return ret;
+	/* wait, until all devices are ready for the free operation */
+	wait_for_completion(&released);
+	return 0;
+}
 EXPORT_SYMBOL(snd_card_free);
 
 /* retrieve the last word of shortname or longname */
@@ -599,7 +615,7 @@ static void snd_card_set_id_no_lock(struct snd_card *card, const char *src,
 		goto again;
 	}
 	/* last resort... */
-	snd_printk(KERN_ERR "unable to set card id (%s)\n", id);
+	dev_err(card->dev, "unable to set card id (%s)\n", id);
 	if (card->proc_root->name)
 		strlcpy(card->id, card->proc_root->name, sizeof(card->id));
 }
@@ -627,15 +643,15 @@ static ssize_t
 card_id_show_attr(struct device *dev,
 		  struct device_attribute *attr, char *buf)
 {
-	struct snd_card *card = dev_get_drvdata(dev);
-	return snprintf(buf, PAGE_SIZE, "%s\n", card ? card->id : "(null)");
+	struct snd_card *card = container_of(dev, struct snd_card, card_dev);
+	return scnprintf(buf, PAGE_SIZE, "%s\n", card->id);
 }
 
 static ssize_t
 card_id_store_attr(struct device *dev, struct device_attribute *attr,
 		   const char *buf, size_t count)
 {
-	struct snd_card *card = dev_get_drvdata(dev);
+	struct snd_card *card = container_of(dev, struct snd_card, card_dev);
 	char buf1[sizeof(card->id)];
 	size_t copy = count > sizeof(card->id) - 1 ?
 					sizeof(card->id) - 1 : count;
@@ -661,19 +677,50 @@ card_id_store_attr(struct device *dev, struct device_attribute *attr,
 	return count;
 }
 
-static struct device_attribute card_id_attrs =
-	__ATTR(id, S_IRUGO | S_IWUSR, card_id_show_attr, card_id_store_attr);
+static DEVICE_ATTR(id, 0644, card_id_show_attr, card_id_store_attr);
 
 static ssize_t
 card_number_show_attr(struct device *dev,
 		     struct device_attribute *attr, char *buf)
 {
-	struct snd_card *card = dev_get_drvdata(dev);
-	return snprintf(buf, PAGE_SIZE, "%i\n", card ? card->number : -1);
+	struct snd_card *card = container_of(dev, struct snd_card, card_dev);
+	return scnprintf(buf, PAGE_SIZE, "%i\n", card->number);
 }
 
-static struct device_attribute card_number_attrs =
-	__ATTR(number, S_IRUGO, card_number_show_attr, NULL);
+static DEVICE_ATTR(number, 0444, card_number_show_attr, NULL);
+
+static struct attribute *card_dev_attrs[] = {
+	&dev_attr_id.attr,
+	&dev_attr_number.attr,
+	NULL
+};
+
+static const struct attribute_group card_dev_attr_group = {
+	.attrs	= card_dev_attrs,
+};
+
+/**
+ * snd_card_add_dev_attr - Append a new sysfs attribute group to card
+ * @card: card instance
+ * @group: attribute group to append
+ */
+int snd_card_add_dev_attr(struct snd_card *card,
+			  const struct attribute_group *group)
+{
+	int i;
+
+	/* loop for (arraysize-1) here to keep NULL at the last entry */
+	for (i = 0; i < ARRAY_SIZE(card->dev_groups) - 1; i++) {
+		if (!card->dev_groups[i]) {
+			card->dev_groups[i] = group;
+			return 0;
+		}
+	}
+
+	dev_err(card->dev, "Too many groups assigned\n");
+	return -ENOSPC;
+}
+EXPORT_SYMBOL_GPL(snd_card_add_dev_attr);
 
 /**
  *  snd_card_register - register the soundcard
@@ -693,12 +740,11 @@ int snd_card_register(struct snd_card *card)
 	if (snd_BUG_ON(!card))
 		return -EINVAL;
 
-	if (!card->card_dev) {
-		card->card_dev = device_create(sound_class, card->dev,
-					       MKDEV(0, 0), card,
-					       "card%i", card->number);
-		if (IS_ERR(card->card_dev))
-			card->card_dev = NULL;
+	if (!card->registered) {
+		err = device_add(&card->card_dev);
+		if (err < 0)
+			return err;
+		card->registered = true;
 	}
 
 	if ((err = snd_device_register_all(card)) < 0)
@@ -707,7 +753,7 @@ int snd_card_register(struct snd_card *card)
 	if (snd_cards[card->number]) {
 		/* already registered */
 		mutex_unlock(&snd_card_mutex);
-		return 0;
+		return snd_info_card_register(card); /* register pending info */
 	}
 	if (*card->id) {
 		/* make a unique id name from the given string */
@@ -723,28 +769,19 @@ int snd_card_register(struct snd_card *card)
 	}
 	snd_cards[card->number] = card;
 	mutex_unlock(&snd_card_mutex);
-	init_info_for_card(card);
-#if defined(CONFIG_SND_MIXER_OSS) || defined(CONFIG_SND_MIXER_OSS_MODULE)
+	err = snd_info_card_register(card);
+	if (err < 0)
+		return err;
+
+#if IS_ENABLED(CONFIG_SND_MIXER_OSS)
 	if (snd_mixer_oss_notify_callback)
 		snd_mixer_oss_notify_callback(card, SND_MIXER_OSS_NOTIFY_REGISTER);
 #endif
-	if (card->card_dev) {
-		err = device_create_file(card->card_dev, &card_id_attrs);
-		if (err < 0)
-			return err;
-		err = device_create_file(card->card_dev, &card_number_attrs);
-		if (err < 0)
-			return err;
-	}
-
 	return 0;
 }
-
 EXPORT_SYMBOL(snd_card_register);
 
-#ifdef CONFIG_PROC_FS
-static struct snd_info_entry *snd_card_info_entry;
-
+#ifdef CONFIG_SND_PROC_FS
 static void snd_card_info_read(struct snd_info_entry *entry,
 			       struct snd_info_buffer *buffer)
 {
@@ -770,7 +807,6 @@ static void snd_card_info_read(struct snd_info_entry *entry,
 }
 
 #ifdef CONFIG_SND_OSSEMUL
-
 void snd_card_info_read_oss(struct snd_info_buffer *buffer)
 {
 	int idx, count;
@@ -792,7 +828,6 @@ void snd_card_info_read_oss(struct snd_info_buffer *buffer)
 #endif
 
 #ifdef MODULE
-static struct snd_info_entry *snd_card_module_info_entry;
 static void snd_card_module_info_read(struct snd_info_entry *entry,
 				      struct snd_info_buffer *buffer)
 {
@@ -817,36 +852,21 @@ int __init snd_card_info_init(void)
 	if (! entry)
 		return -ENOMEM;
 	entry->c.text.read = snd_card_info_read;
-	if (snd_info_register(entry) < 0) {
-		snd_info_free_entry(entry);
-		return -ENOMEM;
-	}
-	snd_card_info_entry = entry;
+	if (snd_info_register(entry) < 0)
+		return -ENOMEM; /* freed in error path */
 
 #ifdef MODULE
 	entry = snd_info_create_module_entry(THIS_MODULE, "modules", NULL);
-	if (entry) {
-		entry->c.text.read = snd_card_module_info_read;
-		if (snd_info_register(entry) < 0)
-			snd_info_free_entry(entry);
-		else
-			snd_card_module_info_entry = entry;
-	}
+	if (!entry)
+		return -ENOMEM;
+	entry->c.text.read = snd_card_module_info_read;
+	if (snd_info_register(entry) < 0)
+		return -ENOMEM; /* freed in error path */
 #endif
 
 	return 0;
 }
-
-int __exit snd_card_info_done(void)
-{
-	snd_info_free_entry(snd_card_info_entry);
-#ifdef MODULE
-	snd_info_free_entry(snd_card_module_info_entry);
-#endif
-	return 0;
-}
-
-#endif /* CONFIG_PROC_FS */
+#endif /* CONFIG_SND_PROC_FS */
 
 /**
  *  snd_component_add - add a component string
@@ -878,7 +898,6 @@ int snd_component_add(struct snd_card *card, const char *component)
 	strcat(card->components, component);
 	return 0;
 }
-
 EXPORT_SYMBOL(snd_component_add);
 
 /**
@@ -909,11 +928,10 @@ int snd_card_file_add(struct snd_card *card, struct file *file)
 		return -ENODEV;
 	}
 	list_add(&mfile->list, &card->files_list);
-	atomic_inc(&card->refcount);
+	get_device(&card->card_dev);
 	spin_unlock(&card->files_lock);
 	return 0;
 }
-
 EXPORT_SYMBOL(snd_card_file_add);
 
 /**
@@ -946,16 +964,17 @@ int snd_card_file_remove(struct snd_card *card, struct file *file)
 			break;
 		}
 	}
+	if (list_empty(&card->files_list))
+		wake_up_all(&card->remove_sleep);
 	spin_unlock(&card->files_lock);
 	if (!found) {
-		snd_printk(KERN_ERR "ALSA card file remove problem (%p)\n", file);
+		dev_err(card->dev, "card file remove problem (%p)\n", file);
 		return -ENOENT;
 	}
 	kfree(found);
-	snd_card_unref(card);
+	put_device(&card->card_dev);
 	return 0;
 }
-
 EXPORT_SYMBOL(snd_card_file_remove);
 
 #ifdef CONFIG_PM
@@ -967,12 +986,10 @@ EXPORT_SYMBOL(snd_card_file_remove);
  *  Waits until the power-state is changed.
  *
  *  Return: Zero if successful, or a negative error code.
- *
- *  Note: the power lock must be active before call.
  */
 int snd_power_wait(struct snd_card *card, unsigned int power_state)
 {
-	wait_queue_t wait;
+	wait_queue_entry_t wait;
 	int result = 0;
 
 	/* fastpath */
@@ -988,13 +1005,10 @@ int snd_power_wait(struct snd_card *card, unsigned int power_state)
 		if (snd_power_get_state(card) == power_state)
 			break;
 		set_current_state(TASK_UNINTERRUPTIBLE);
-		snd_power_unlock(card);
 		schedule_timeout(30 * HZ);
-		snd_power_lock(card);
 	}
 	remove_wait_queue(&card->power_sleep, &wait);
 	return result;
 }
-
 EXPORT_SYMBOL(snd_power_wait);
 #endif /* CONFIG_PM */

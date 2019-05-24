@@ -1,14 +1,10 @@
+/* SPDX-License-Identifier: GPL-2.0+ */
 /*
  * OF helpers for the GPIO API
  *
  * Copyright (c) 2007-2008  MontaVista Software, Inc.
  *
  * Author: Anton Vorontsov <avorontsov@ru.mvista.com>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
  */
 
 #ifndef __LINUX_OF_GPIO_H
@@ -19,7 +15,6 @@
 #include <linux/errno.h>
 #include <linux/gpio.h>
 #include <linux/of.h>
-#include <linux/gpio/consumer.h>
 
 struct device_node;
 
@@ -30,6 +25,11 @@ struct device_node;
  */
 enum of_gpio_flags {
 	OF_GPIO_ACTIVE_LOW = 0x1,
+	OF_GPIO_SINGLE_ENDED = 0x2,
+	OF_GPIO_OPEN_DRAIN = 0x4,
+	OF_GPIO_TRANSITORY = 0x8,
+	OF_GPIO_PULL_UP = 0x10,
+	OF_GPIO_PULL_DOWN = 0x20,
 };
 
 #ifdef CONFIG_OF_GPIO
@@ -48,14 +48,19 @@ static inline struct of_mm_gpio_chip *to_of_mm_gpio_chip(struct gpio_chip *gc)
 	return container_of(gc, struct of_mm_gpio_chip, gc);
 }
 
-extern struct gpio_desc *of_get_named_gpiod_flags(struct device_node *np,
+extern int of_get_named_gpio_flags(struct device_node *np,
 		const char *list_name, int index, enum of_gpio_flags *flags);
 
-extern int of_mm_gpiochip_add(struct device_node *np,
-			      struct of_mm_gpio_chip *mm_gc);
+extern int of_mm_gpiochip_add_data(struct device_node *np,
+				   struct of_mm_gpio_chip *mm_gc,
+				   void *data);
+static inline int of_mm_gpiochip_add(struct device_node *np,
+				     struct of_mm_gpio_chip *mm_gc)
+{
+	return of_mm_gpiochip_add_data(np, mm_gc, NULL);
+}
+extern void of_mm_gpiochip_remove(struct of_mm_gpio_chip *mm_gc);
 
-extern void of_gpiochip_add(struct gpio_chip *gc);
-extern void of_gpiochip_remove(struct gpio_chip *gc);
 extern int of_gpio_simple_xlate(struct gpio_chip *gc,
 				const struct of_phandle_args *gpiospec,
 				u32 *flags);
@@ -63,10 +68,13 @@ extern int of_gpio_simple_xlate(struct gpio_chip *gc,
 #else /* CONFIG_OF_GPIO */
 
 /* Drivers may not strictly depend on the GPIO support, so let them link. */
-static inline struct gpio_desc *of_get_named_gpiod_flags(struct device_node *np,
+static inline int of_get_named_gpio_flags(struct device_node *np,
 		const char *list_name, int index, enum of_gpio_flags *flags)
 {
-	return ERR_PTR(-ENOSYS);
+	if (flags)
+		*flags = 0;
+
+	return -ENOSYS;
 }
 
 static inline int of_gpio_simple_xlate(struct gpio_chip *gc,
@@ -76,22 +84,7 @@ static inline int of_gpio_simple_xlate(struct gpio_chip *gc,
 	return -ENOSYS;
 }
 
-static inline void of_gpiochip_add(struct gpio_chip *gc) { }
-static inline void of_gpiochip_remove(struct gpio_chip *gc) { }
-
 #endif /* CONFIG_OF_GPIO */
-
-static inline int of_get_named_gpio_flags(struct device_node *np,
-		const char *list_name, int index, enum of_gpio_flags *flags)
-{
-	struct gpio_desc *desc;
-	desc = of_get_named_gpiod_flags(np, list_name, index, flags);
-
-	if (IS_ERR(desc))
-		return PTR_ERR(desc);
-	else
-		return desc_to_gpio(desc);
-}
 
 /**
  * of_gpio_named_count() - Count GPIOs for a device
@@ -127,22 +120,6 @@ static inline int of_gpio_named_count(struct device_node *np, const char* propna
 static inline int of_gpio_count(struct device_node *np)
 {
 	return of_gpio_named_count(np, "gpios");
-}
-
-/**
- * of_get_gpiod_flags() - Get a GPIO descriptor and flags to use with GPIO API
- * @np:		device node to get GPIO from
- * @index:	index of the GPIO
- * @flags:	a flags pointer to fill in
- *
- * Returns GPIO descriptor to use with Linux generic GPIO API, or a errno
- * value on the error condition. If @flags is not NULL the function also fills
- * in flags for the GPIO.
- */
-static inline struct gpio_desc *of_get_gpiod_flags(struct device_node *np,
-					int index, enum of_gpio_flags *flags)
-{
-	return of_get_named_gpiod_flags(np, "gpios", index, flags);
 }
 
 static inline int of_get_gpio_flags(struct device_node *np, int index,

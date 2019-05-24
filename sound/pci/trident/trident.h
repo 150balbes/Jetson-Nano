@@ -264,7 +264,7 @@ struct snd_trident_memblk_arg {
 };
 
 struct snd_trident_tlb {
-	unsigned int * entries;		/* 16k-aligned TLB table */
+	__le32 *entries;		/* 16k-aligned TLB table */
 	dma_addr_t entries_dmaaddr;	/* 16k-aligned PCI address to TLB table */
 	unsigned long * shadow_entries;	/* shadow entries with virtual addresses */
 	struct snd_dma_buffer buffer;
@@ -420,9 +420,9 @@ int snd_trident_create(struct snd_card *card,
 		       struct snd_trident ** rtrident);
 int snd_trident_create_gameport(struct snd_trident *trident);
 
-int snd_trident_pcm(struct snd_trident * trident, int device, struct snd_pcm **rpcm);
-int snd_trident_foldback_pcm(struct snd_trident * trident, int device, struct snd_pcm **rpcm);
-int snd_trident_spdif_pcm(struct snd_trident * trident, int device, struct snd_pcm **rpcm);
+int snd_trident_pcm(struct snd_trident *trident, int device);
+int snd_trident_foldback_pcm(struct snd_trident *trident, int device);
+int snd_trident_spdif_pcm(struct snd_trident *trident, int device);
 int snd_trident_attach_synthesizer(struct snd_trident * trident);
 struct snd_trident_voice *snd_trident_alloc_voice(struct snd_trident * trident, int type,
 					     int client, int port);

@@ -277,6 +277,16 @@ static struct key_entry keymap_fs_amilo_pro_v3505[] __initdata = {
 	{ KE_END,       0 }
 };
 
+static struct key_entry keymap_fs_amilo_pro_v8210[] __initdata = {
+	{ KE_KEY,       0x01, {KEY_HELP} },          /* Fn+F1 */
+	{ KE_KEY,       0x06, {KEY_DISPLAYTOGGLE} }, /* Fn+F4 */
+	{ KE_BLUETOOTH, 0x30 },                      /* Fn+F10 */
+	{ KE_KEY,       0x31, {KEY_MAIL} },          /* mail button */
+	{ KE_KEY,       0x36, {KEY_WWW} },           /* www button */
+	{ KE_WIFI,      0x78 },                      /* satelite dish button */
+	{ KE_END,       FE_WIFI_LED }
+};
+
 static struct key_entry keymap_fujitsu_n3510[] __initdata = {
 	{ KE_KEY, 0x11, {KEY_PROG1} },
 	{ KE_KEY, 0x12, {KEY_PROG2} },
@@ -652,6 +662,15 @@ static const struct dmi_system_id dmi_ids[] __initconst = {
 			DMI_MATCH(DMI_PRODUCT_NAME, "AMILO Pro Edition V3505"),
 		},
 		.driver_data = keymap_fs_amilo_pro_v3505
+	},
+	{
+		/* Fujitsu-Siemens Amilo Pro Edition V8210 */
+		.callback = dmi_matched,
+		.matches = {
+			DMI_MATCH(DMI_SYS_VENDOR, "FUJITSU SIEMENS"),
+			DMI_MATCH(DMI_PRODUCT_NAME, "AMILO Pro Series V8210"),
+		},
+		.driver_data = keymap_fs_amilo_pro_v8210
 	},
 	{
 		/* Fujitsu-Siemens Amilo M7400 */
@@ -1224,12 +1243,10 @@ static int setup_input_dev(void)
 
 	error = input_register_polled_device(wistron_idev);
 	if (error)
-		goto err_free_keymap;
+		goto err_free_dev;
 
 	return 0;
 
- err_free_keymap:
-	sparse_keymap_free(input_dev);
  err_free_dev:
 	input_free_polled_device(wistron_idev);
 	return error;
@@ -1281,7 +1298,6 @@ static int wistron_remove(struct platform_device *dev)
 {
 	wistron_led_remove();
 	input_unregister_polled_device(wistron_idev);
-	sparse_keymap_free(wistron_idev->input);
 	input_free_polled_device(wistron_idev);
 	bios_detach();
 
@@ -1328,7 +1344,6 @@ static const struct dev_pm_ops wistron_pm_ops = {
 static struct platform_driver wistron_driver = {
 	.driver		= {
 		.name	= "wistron-bios",
-		.owner	= THIS_MODULE,
 #ifdef CONFIG_PM
 		.pm	= &wistron_pm_ops,
 #endif

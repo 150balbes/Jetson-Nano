@@ -26,6 +26,7 @@
 #include "psb_intel_reg.h"
 #include "intel_bios.h"
 #include "cdv_device.h"
+#include "gma_device.h"
 
 #define VGA_SR_INDEX		0x3c4
 #define VGA_SR_DATA		0x3c5
@@ -184,21 +185,22 @@ static int cdv_backlight_init(struct drm_device *dev)
  *	for this and the MID devices.
  */
 
-static inline u32 CDV_MSG_READ32(uint port, uint offset)
+static inline u32 CDV_MSG_READ32(int domain, uint port, uint offset)
 {
 	int mcr = (0x10<<24) | (port << 16) | (offset << 8);
 	uint32_t ret_val = 0;
-	struct pci_dev *pci_root = pci_get_bus_and_slot(0, 0);
+	struct pci_dev *pci_root = pci_get_domain_bus_and_slot(domain, 0, 0);
 	pci_write_config_dword(pci_root, 0xD0, mcr);
 	pci_read_config_dword(pci_root, 0xD4, &ret_val);
 	pci_dev_put(pci_root);
 	return ret_val;
 }
 
-static inline void CDV_MSG_WRITE32(uint port, uint offset, u32 value)
+static inline void CDV_MSG_WRITE32(int domain, uint port, uint offset,
+				   u32 value)
 {
 	int mcr = (0x11<<24) | (port << 16) | (offset << 8) | 0xF0;
-	struct pci_dev *pci_root = pci_get_bus_and_slot(0, 0);
+	struct pci_dev *pci_root = pci_get_domain_bus_and_slot(domain, 0, 0);
 	pci_write_config_dword(pci_root, 0xD4, value);
 	pci_write_config_dword(pci_root, 0xD0, mcr);
 	pci_dev_put(pci_root);
@@ -215,11 +217,12 @@ static void cdv_init_pm(struct drm_device *dev)
 {
 	struct drm_psb_private *dev_priv = dev->dev_private;
 	u32 pwr_cnt;
+	int domain = pci_domain_nr(dev->pdev->bus);
 	int i;
 
-	dev_priv->apm_base = CDV_MSG_READ32(PSB_PUNIT_PORT,
+	dev_priv->apm_base = CDV_MSG_READ32(domain, PSB_PUNIT_PORT,
 							PSB_APMBA) & 0xFFFF;
-	dev_priv->ospm_base = CDV_MSG_READ32(PSB_PUNIT_PORT,
+	dev_priv->ospm_base = CDV_MSG_READ32(domain, PSB_PUNIT_PORT,
 							PSB_OSPMBA) & 0xFFFF;
 
 	/* Power status */
@@ -250,7 +253,7 @@ static void cdv_errata(struct drm_device *dev)
 	 *	Bonus Launch to work around the issue, by degrading
 	 *	performance.
 	 */
-	 CDV_MSG_WRITE32(3, 0x30, 0x08027108);
+	 CDV_MSG_WRITE32(pci_domain_nr(dev->pdev->bus), 3, 0x30, 0x08027108);
 }
 
 /**
@@ -426,43 +429,6 @@ static int cdv_power_up(struct drm_device *dev)
 	return 0;
 }
 
-/* FIXME ? - shared with Poulsbo */
-static void cdv_get_core_freq(struct drm_device *dev)
-{
-	uint32_t clock;
-	struct pci_dev *pci_root = pci_get_bus_and_slot(0, 0);
-	struct drm_psb_private *dev_priv = dev->dev_private;
-
-	pci_write_config_dword(pci_root, 0xD0, 0xD0050300);
-	pci_read_config_dword(pci_root, 0xD4, &clock);
-	pci_dev_put(pci_root);
-
-	switch (clock & 0x07) {
-	case 0:
-		dev_priv->core_freq = 100;
-		break;
-	case 1:
-		dev_priv->core_freq = 133;
-		break;
-	case 2:
-		dev_priv->core_freq = 150;
-		break;
-	case 3:
-		dev_priv->core_freq = 178;
-		break;
-	case 4:
-		dev_priv->core_freq = 200;
-		break;
-	case 5:
-	case 6:
-	case 7:
-		dev_priv->core_freq = 266;
-		break;
-	default:
-		dev_priv->core_freq = 0;
-	}
-}
-
 static void cdv_hotplug_work_func(struct work_struct *work)
 {
         struct drm_psb_private *dev_priv = container_of(work, struct drm_psb_private,
@@ -519,7 +485,7 @@ void cdv_intel_attach_force_audio_property(struct drm_connector *connector)
 			return;
 
 		for (i = 0; i < ARRAY_SIZE(force_audio_names); i++)
-			drm_property_add_enum(prop, i, i-1, force_audio_names[i]);
+			drm_property_add_enum(prop, i-1, force_audio_names[i]);
 
 		dev_priv->force_audio_property = prop;
 	}
@@ -548,7 +514,7 @@ void cdv_intel_attach_broadcast_rgb_property(struct drm_connector *connector)
 			return;
 
 		for (i = 0; i < ARRAY_SIZE(broadcast_rgb_names); i++)
-			drm_property_add_enum(prop, i, i, broadcast_rgb_names[i]);
+			drm_property_add_enum(prop, i, broadcast_rgb_names[i]);
 
 		dev_priv->broadcast_rgb_property = prop;
 	}
@@ -618,7 +584,7 @@ static int cdv_chip_setup(struct drm_device *dev)
 	if (pci_enable_msi(dev->pdev))
 		dev_warn(dev->dev, "Enabling MSI failed!\n");
 	dev_priv->regmap = cdv_regmap;
-	cdv_get_core_freq(dev);
+	gma_get_core_freq(dev);
 	psb_intel_opregion_init(dev);
 	psb_intel_init_bios(dev);
 	cdv_hotplug_enable(dev, false);
@@ -655,6 +621,8 @@ const struct psb_ops cdv_chip_ops = {
 	.init_pm = cdv_init_pm,
 	.save_regs = cdv_save_display_registers,
 	.restore_regs = cdv_restore_display_registers,
+	.save_crtc = gma_crtc_save,
+	.restore_crtc = gma_crtc_restore,
 	.power_down = cdv_power_down,
 	.power_up = cdv_power_up,
 	.update_wm = cdv_update_wm,

@@ -7,6 +7,8 @@
  * Copyright (C) 2008 Florian Fainelli <florian@openwrt.org>
  */
 
+#define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
+
 #include <linux/init.h>
 #include <linux/kernel.h>
 #include <linux/string.h>
@@ -21,7 +23,6 @@
 #include <bcm63xx_nvram.h>
 #include <bcm63xx_dev_pci.h>
 #include <bcm63xx_dev_enet.h>
-#include <bcm63xx_dev_dsp.h>
 #include <bcm63xx_dev_flash.h>
 #include <bcm63xx_dev_hsspi.h>
 #include <bcm63xx_dev_pcmcia.h>
@@ -31,7 +32,6 @@
 
 #include <uapi/linux/bcm933xx_hcs.h>
 
-#define PFX	"board_bcm963xx: "
 
 #define HCS_OFFSET_128K			0x20000
 
@@ -288,14 +288,6 @@ static struct board_info __initdata board_96348gw_10 = {
 	.has_pccard			= 1,
 	.has_ehci0			= 1,
 
-	.has_dsp			= 1,
-	.dsp = {
-		.gpio_rst		= 6,
-		.gpio_int		= 34,
-		.cs			= 2,
-		.ext_irq		= 2,
-	},
-
 	.leds = {
 		{
 			.name		= "adsl-fail",
@@ -399,14 +391,6 @@ static struct board_info __initdata board_96348gw = {
 	},
 
 	.has_ohci0 = 1,
-
-	.has_dsp			= 1,
-	.dsp = {
-		.gpio_rst		= 6,
-		.gpio_int		= 34,
-		.ext_irq		= 2,
-		.cs			= 2,
-	},
 
 	.leds = {
 		{
@@ -740,7 +724,7 @@ int bcm63xx_get_fallback_sprom(struct ssb_bus *bus, struct ssb_sprom *out)
 		memcpy(out, &bcm63xx_sprom, sizeof(struct ssb_sprom));
 		return 0;
 	} else {
-		printk(KERN_ERR PFX "unable to fill SPROM for given bustype.\n");
+		pr_err("unable to fill SPROM for given bustype\n");
 		return -EINVAL;
 	}
 }
@@ -784,7 +768,7 @@ void __init board_prom_init(void)
 			 cfe[5], cfe[6], cfe[7], cfe[8], cfe[9]);
 	else
 		strcpy(cfe_version, "unknown");
-	printk(KERN_INFO PFX "CFE version: %s\n", cfe_version);
+	pr_info("CFE version: %s\n", cfe_version);
 
 	bcm63xx_nvram_init(boot_addr + BCM963XX_NVRAM_OFFSET);
 
@@ -808,8 +792,7 @@ void __init board_prom_init(void)
 		char name[17];
 		memcpy(name, board_name, 16);
 		name[16] = 0;
-		printk(KERN_ERR PFX "unknown bcm963xx board: %s\n",
-		       name);
+		pr_err("unknown bcm963xx board: %s\n", name);
 		return;
 	}
 
@@ -854,7 +837,7 @@ void __init board_setup(void)
 {
 	if (!board.name[0])
 		panic("unable to detect bcm963xx board");
-	printk(KERN_INFO PFX "board name: %s\n", board.name);
+	pr_info("board name: %s\n", board.name);
 
 	/* make sure we're running on expected cpu */
 	if (bcm63xx_get_cpu_id() != board.expected_cpu_id)
@@ -898,9 +881,6 @@ int __init board_register_devices(void)
 	if (board.has_usbd)
 		bcm63xx_usbd_register(&board.usbd);
 
-	if (board.has_dsp)
-		bcm63xx_dsp_register(&board.dsp);
-
 	/* Generate MAC address for WLAN and register our SPROM,
 	 * do this after registering enet devices
 	 */
@@ -910,7 +890,7 @@ int __init board_register_devices(void)
 		memcpy(bcm63xx_sprom.et1mac, bcm63xx_sprom.il0mac, ETH_ALEN);
 		if (ssb_arch_register_fallback_sprom(
 				&bcm63xx_get_fallback_sprom) < 0)
-			pr_err(PFX "failed to register fallback SPROM\n");
+			pr_err("failed to register fallback SPROM\n");
 	}
 #endif
 

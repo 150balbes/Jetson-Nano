@@ -1,9 +1,20 @@
+/* SPDX-License-Identifier: GPL-2.0 */
+/*
+ * <linux/gpio.h>
+ *
+ * This is the LEGACY GPIO bulk include file, including legacy APIs. It is
+ * used for GPIO drivers still referencing the global GPIO numberspace,
+ * and should not be included in new code.
+ *
+ * If you're implementing a GPIO driver, only include <linux/gpio/driver.h>
+ * If you're implementing a GPIO consumer, only include <linux/gpio/consumer.h>
+ */
 #ifndef __LINUX_GPIO_H
 #define __LINUX_GPIO_H
 
 #include <linux/errno.h>
 
-/* see Documentation/gpio.txt */
+/* see Documentation/driver-api/gpio/legacy.rst */
 
 /* make these flag values available regardless of GPIO kconfig options */
 #define GPIOF_DIR_OUT	(0 << 0)
@@ -196,13 +207,6 @@ static inline int gpio_export_link(struct device *dev, const char *name,
 	return -EINVAL;
 }
 
-static inline int gpio_sysfs_set_active_low(unsigned gpio, int value)
-{
-	/* GPIO can never have been requested */
-	WARN_ON(1);
-	return -EINVAL;
-}
-
 static inline void gpio_unexport(unsigned gpio)
 {
 	/* GPIO can never have been exported */
@@ -216,14 +220,15 @@ static inline int gpio_to_irq(unsigned gpio)
 	return -EINVAL;
 }
 
-static inline int gpio_lock_as_irq(struct gpio_chip *chip, unsigned int offset)
+static inline int gpiochip_lock_as_irq(struct gpio_chip *chip,
+				       unsigned int offset)
 {
 	WARN_ON(1);
 	return -EINVAL;
 }
 
-static inline void gpio_unlock_as_irq(struct gpio_chip *chip,
-				      unsigned int offset)
+static inline void gpiochip_unlock_as_irq(struct gpio_chip *chip,
+					  unsigned int offset)
 {
 	WARN_ON(1);
 }

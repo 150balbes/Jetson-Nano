@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-2.0
 #
 # USB Storage driver configuration
 #
@@ -18,23 +19,21 @@ config USB_STORAGE
 
 	  This option depends on 'SCSI' support being enabled, but you
 	  probably also need 'SCSI device support: SCSI disk support'
-	  (BLK_DEV_SD) for most USB storage devices.  Some devices also
-	  will require 'Probe all LUNs on each SCSI device'
-	  (SCSI_MULTI_LUN).
+	  (BLK_DEV_SD) for most USB storage devices.
 
 	  To compile this driver as a module, choose M here: the
 	  module will be called usb-storage.
 
+if USB_STORAGE
+
 config USB_STORAGE_DEBUG
 	bool "USB Mass Storage verbose debug"
-	depends on USB_STORAGE
 	help
 	  Say Y here in order to have the USB Mass Storage code generate
 	  verbose debugging messages.
 
 config USB_STORAGE_REALTEK
 	tristate "Realtek Card Reader support"
-	depends on USB_STORAGE
 	help
 	  Say Y here to include additional code to support the power-saving function
 	  for Realtek RTS51xx USB card readers.
@@ -43,12 +42,11 @@ config USB_STORAGE_REALTEK
 
 config REALTEK_AUTOPM
 	bool "Realtek Card Reader autosuspend support"
-	depends on USB_STORAGE_REALTEK && PM_RUNTIME
+	depends on USB_STORAGE_REALTEK && PM
 	default y
 
 config USB_STORAGE_DATAFAB
 	tristate "Datafab Compact Flash Reader support"
-	depends on USB_STORAGE
 	help
 	  Support for certain Datafab CompactFlash readers.
 	  Datafab has a web page at <http://www.datafab.com/>.
@@ -57,7 +55,6 @@ config USB_STORAGE_DATAFAB
 
 config USB_STORAGE_FREECOM
 	tristate "Freecom USB/ATAPI Bridge support"
-	depends on USB_STORAGE
 	help
 	  Support for the Freecom USB to IDE/ATAPI adaptor.
 	  Freecom has a web page at <http://www.freecom.de/>.
@@ -66,7 +63,6 @@ config USB_STORAGE_FREECOM
 
 config USB_STORAGE_ISD200
 	tristate "ISD-200 USB/ATA Bridge support"
-	depends on USB_STORAGE
 	---help---
 	  Say Y here if you want to use USB Mass Store devices based
 	  on the In-Systems Design ISD-200 USB/ATA bridge.
@@ -84,7 +80,6 @@ config USB_STORAGE_ISD200
 
 config USB_STORAGE_USBAT
 	tristate "USBAT/USBAT02-based storage support"
-	depends on USB_STORAGE
 	help
 	  Say Y here to include additional code to support storage devices
 	  based on the SCM/Shuttle USBAT/USBAT02 processors.
@@ -107,7 +102,6 @@ config USB_STORAGE_USBAT
 
 config USB_STORAGE_SDDR09
 	tristate "SanDisk SDDR-09 (and other SmartMedia, including DPCM) support"
-	depends on USB_STORAGE
 	help
 	  Say Y here to include additional code to support the Sandisk SDDR-09
 	  SmartMedia reader in the USB Mass Storage driver.
@@ -117,7 +111,6 @@ config USB_STORAGE_SDDR09
 
 config USB_STORAGE_SDDR55
 	tristate "SanDisk SDDR-55 SmartMedia support"
-	depends on USB_STORAGE
 	help
 	  Say Y here to include additional code to support the Sandisk SDDR-55
 	  SmartMedia reader in the USB Mass Storage driver.
@@ -126,7 +119,6 @@ config USB_STORAGE_SDDR55
 
 config USB_STORAGE_JUMPSHOT
 	tristate "Lexar Jumpshot Compact Flash Reader"
-	depends on USB_STORAGE
 	help
 	  Say Y here to include additional code to support the Lexar Jumpshot
 	  USB CompactFlash reader.
@@ -135,7 +127,6 @@ config USB_STORAGE_JUMPSHOT
 
 config USB_STORAGE_ALAUDA
 	tristate "Olympus MAUSB-10/Fuji DPC-R1 support"
-	depends on USB_STORAGE
 	help
 	  Say Y here to include additional code to support the Olympus MAUSB-10
 	  and Fujifilm DPC-R1 USB Card reader/writer devices.
@@ -147,7 +138,6 @@ config USB_STORAGE_ALAUDA
 
 config USB_STORAGE_ONETOUCH
 	tristate "Support OneTouch Button on Maxtor Hard Drives"
-	depends on USB_STORAGE
 	depends on INPUT=y || INPUT=USB_STORAGE
 	help
 	  Say Y here to include additional code to support the Maxtor OneTouch
@@ -162,7 +152,6 @@ config USB_STORAGE_ONETOUCH
 
 config USB_STORAGE_KARMA
 	tristate "Support for Rio Karma music player"
-	depends on USB_STORAGE
 	help
 	  Say Y here to include additional code to support the Rio Karma
 	  USB interface.
@@ -176,7 +165,6 @@ config USB_STORAGE_KARMA
 
 config USB_STORAGE_CYPRESS_ATACB
 	tristate "SAT emulation on Cypress USB/ATA Bridge with ATACB"
-	depends on USB_STORAGE
 	---help---
 	  Say Y here if you want to use SAT (ata pass through) on devices based
 	  on the Cypress USB/ATA bridge supporting ATACB. This will allow you
@@ -189,22 +177,18 @@ config USB_STORAGE_CYPRESS_ATACB
 
 config USB_STORAGE_ENE_UB6250
 	tristate "USB ENE card reader support"
-	depends on SCSI
-	depends on USB_STORAGE
 	---help---
 	  Say Y here if you wish to control a ENE SD/MS Card reader.
-	  To use SM card, please build driver/staging/keucr/keucr.ko
-
-	  This option depends on 'SCSI' support being enabled, but you
-	  probably also need 'SCSI device support: SCSI disk support'
-	  (BLK_DEV_SD) for most USB storage devices.
+	  Note that this driver does not support SM cards.
 
 	  To compile this driver as a module, choose M here: the
 	  module will be called ums-eneub6250.
 
+endif # USB_STORAGE
+
 config USB_UAS
 	tristate "USB Attached SCSI"
-	depends on SCSI && BROKEN
+	depends on SCSI && USB_STORAGE
 	help
 	  The USB Attached SCSI protocol is supported by some USB
 	  storage devices.  It permits higher performance by supporting

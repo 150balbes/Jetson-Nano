@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  * DECnet       An implementation of the DECnet protocol suite for the LINUX
  *              operating system.  DECnet is implemented using the  BSD Socket
@@ -23,6 +24,7 @@
 #include <linux/spinlock.h>
 #include <net/sock.h>
 #include <linux/atomic.h>
+#include <linux/jiffies.h>
 #include <net/flow.h>
 #include <net/dn.h>
 
@@ -32,11 +34,11 @@
 
 #define SLOW_INTERVAL (HZ/2)
 
-static void dn_slow_timer(unsigned long arg);
+static void dn_slow_timer(struct timer_list *t);
 
 void dn_start_slow_timer(struct sock *sk)
 {
-	setup_timer(&sk->sk_timer, dn_slow_timer, (unsigned long)sk);
+	timer_setup(&sk->sk_timer, dn_slow_timer, 0);
 	sk_reset_timer(sk, &sk->sk_timer, jiffies + SLOW_INTERVAL);
 }
 
@@ -45,9 +47,9 @@ void dn_stop_slow_timer(struct sock *sk)
 	sk_stop_timer(sk, &sk->sk_timer);
 }
 
-static void dn_slow_timer(unsigned long arg)
+static void dn_slow_timer(struct timer_list *t)
 {
-	struct sock *sk = (struct sock *)arg;
+	struct sock *sk = from_timer(sk, t, sk_timer);
 	struct dn_scp *scp = DN_SK(sk);
 
 	bh_lock_sock(sk);
@@ -91,7 +93,7 @@ static void dn_slow_timer(unsigned long arg)
 	 * since the last successful transmission.
 	 */
 	if (scp->keepalive && scp->keepalive_fxn && (scp->state == DN_RUN)) {
-		if ((jiffies - scp->stamp) >= scp->keepalive)
+		if (time_after_eq(jiffies, scp->stamp + scp->keepalive))
 			scp->keepalive_fxn(sk);
 	}
 

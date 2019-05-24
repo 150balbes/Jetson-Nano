@@ -20,7 +20,7 @@
 #include <linux/platform_device.h>
 #include <linux/io.h>
 #include <linux/i2c.h>
-#include <linux/platform_data/at24.h>
+#include <linux/property.h>
 #include <linux/dma-mapping.h>
 #include <linux/spi/spi.h>
 #include <linux/spi/eeprom.h>
@@ -36,6 +36,7 @@
 
 #include "common.h"
 #include "devices-imx27.h"
+#include "ehci.h"
 #include "hardware.h"
 #include "iomux-mx27.h"
 #include "ulpi.h"
@@ -167,16 +168,15 @@ static const struct imxi2c_platform_data pca100_i2c1_data __initconst = {
 	.bitrate = 100000,
 };
 
-static struct at24_platform_data board_eeprom = {
-	.byte_len = 4096,
-	.page_size = 32,
-	.flags = AT24_FLAG_ADDR16,
+static const struct property_entry board_eeprom_properties[] = {
+	PROPERTY_ENTRY_U32("pagesize", 32),
+	{ }
 };
 
 static struct i2c_board_info pca100_i2c_devices[] = {
 	{
-		I2C_BOARD_INFO("at24", 0x52), /* E0=0, E1=1, E2=0 */
-		.platform_data = &board_eeprom,
+		I2C_BOARD_INFO("24c32", 0x52), /* E0=0, E1=1, E2=0 */
+		.properties = board_eeprom_properties,
 	}, {
 		I2C_BOARD_INFO("pcf8563", 0x51),
 	}, {
@@ -245,8 +245,7 @@ static int pca100_sdhc2_init(struct device *dev, irq_handler_t detect_irq,
 	int ret;
 
 	ret = request_irq(gpio_to_irq(IMX_GPIO_NR(3, 29)), detect_irq,
-			  IRQF_DISABLED | IRQF_TRIGGER_FALLING,
-			  "imx-mmc-detect", data);
+			  IRQF_TRIGGER_FALLING, "imx-mmc-detect", data);
 	if (ret)
 		printk(KERN_ERR
 			"pca100: Failed to request irq for sd/mmc detection\n");
@@ -362,11 +361,7 @@ static void __init pca100_init(void)
 	if (ret)
 		printk(KERN_ERR "pca100: Failed to setup pins (%d)\n", ret);
 
-	imx27_add_imx_ssi(0, &pca100_ssi_pdata);
-
 	imx27_add_imx_uart0(&uart_pdata);
-
-	imx27_add_mxc_mmc(1, &sdhc_pdata);
 
 	imx27_add_mxc_nand(&pca100_nand_board_info);
 
@@ -381,6 +376,19 @@ static void __init pca100_init(void)
 	spi_register_board_info(pca100_spi_board_info,
 				ARRAY_SIZE(pca100_spi_board_info));
 	imx27_add_spi_imx0(&pca100_spi0_data);
+
+	imx27_add_imx_fb(&pca100_fb_data);
+
+	imx27_add_fec(NULL);
+	imx27_add_imx2_wdt();
+	imx27_add_mxc_w1();
+}
+
+static void __init pca100_late_init(void)
+{
+	imx27_add_imx_ssi(0, &pca100_ssi_pdata);
+
+	imx27_add_mxc_mmc(1, &sdhc_pdata);
 
 	gpio_request(OTG_PHY_CS_GPIO, "usb-otg-cs");
 	gpio_direction_output(OTG_PHY_CS_GPIO, 1);
@@ -403,12 +411,6 @@ static void __init pca100_init(void)
 
 	if (usbh2_pdata.otg)
 		imx27_add_mxc_ehci_hs(2, &usbh2_pdata);
-
-	imx27_add_imx_fb(&pca100_fb_data);
-
-	imx27_add_fec(NULL);
-	imx27_add_imx2_wdt();
-	imx27_add_mxc_w1();
 }
 
 static void __init pca100_timer_init(void)
@@ -421,8 +423,8 @@ MACHINE_START(PCA100, "phyCARD-i.MX27")
 	.map_io = mx27_map_io,
 	.init_early = imx27_init_early,
 	.init_irq = mx27_init_irq,
-	.handle_irq = imx27_handle_irq,
-	.init_machine = pca100_init,
+	.init_machine	= pca100_init,
+	.init_late	= pca100_late_init,
 	.init_time	= pca100_timer_init,
 	.restart	= mxc_restart,
 MACHINE_END

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  * Procedures for drawing on the screen early on in the boot process.
  *
@@ -137,7 +138,7 @@ static void scrollscreen(void)
 }
 #endif /* ndef NO_SCROLL */
 
-void btext_drawchar(char c)
+static void btext_drawchar(char c)
 {
 	int cline = 0;
 #ifdef NO_SCROLL

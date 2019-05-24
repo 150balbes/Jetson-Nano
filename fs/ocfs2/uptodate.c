@@ -67,7 +67,7 @@ struct ocfs2_meta_cache_item {
 	sector_t	c_block;
 };
 
-static struct kmem_cache *ocfs2_uptodate_cachep = NULL;
+static struct kmem_cache *ocfs2_uptodate_cachep;
 
 u64 ocfs2_metadata_cache_owner(struct ocfs2_caching_info *ci)
 {
@@ -633,6 +633,5 @@ int __init init_ocfs2_uptodate_cache(void)
 
 void exit_ocfs2_uptodate_cache(void)
 {
-	if (ocfs2_uptodate_cachep)
-		kmem_cache_destroy(ocfs2_uptodate_cachep);
+	kmem_cache_destroy(ocfs2_uptodate_cachep);
 }

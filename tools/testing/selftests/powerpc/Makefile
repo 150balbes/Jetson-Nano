@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-2.0
 # Makefile for powerpc selftests
 
 # ARCH can be overridden by the user for cross compiling
@@ -8,32 +9,67 @@ ifeq ($(ARCH),powerpc)
 
 GIT_VERSION = $(shell git describe --always --long --dirty || echo "unknown")
 
-CC := $(CROSS_COMPILE)$(CC)
-CFLAGS := -Wall -O2 -flto -Wall -Werror -DGIT_VERSION='"$(GIT_VERSION)"' -I$(CURDIR) $(CFLAGS)
+CFLAGS := -std=gnu99 -O2 -Wall -Werror -DGIT_VERSION='"$(GIT_VERSION)"' -I$(CURDIR)/include $(CFLAGS)
 
-export CC CFLAGS
+export CFLAGS
 
-TARGETS = pmu
+SUB_DIRS = alignment		\
+	   benchmarks		\
+	   cache_shape		\
+	   copyloops		\
+	   dscr			\
+	   mm			\
+	   pmu			\
+	   signal		\
+	   primitives		\
+	   stringloops		\
+	   switch_endian	\
+	   syscalls		\
+	   tm			\
+	   vphn         \
+	   math		\
+	   ptrace	\
+	   security
 
 endif
 
-all:
-	@for TARGET in $(TARGETS); do \
-		$(MAKE) -C $$TARGET all; \
-	done;
+all: $(SUB_DIRS)
 
-run_tests: all
-	@for TARGET in $(TARGETS); do \
-		$(MAKE) -C $$TARGET run_tests; \
-	done;
+$(SUB_DIRS):
+	BUILD_TARGET=$(OUTPUT)/$@; mkdir -p $$BUILD_TARGET; $(MAKE) OUTPUT=$$BUILD_TARGET -k -C $@ all
 
-clean:
-	@for TARGET in $(TARGETS); do \
-		$(MAKE) -C $$TARGET clean; \
+include ../lib.mk
+
+override define RUN_TESTS
+	@for TARGET in $(SUB_DIRS); do \
+		BUILD_TARGET=$(OUTPUT)/$$TARGET;	\
+		$(MAKE) OUTPUT=$$BUILD_TARGET -C $$TARGET run_tests;\
+	done;
+endef
+
+override define INSTALL_RULE
+	@for TARGET in $(SUB_DIRS); do \
+		BUILD_TARGET=$(OUTPUT)/$$TARGET;	\
+		$(MAKE) OUTPUT=$$BUILD_TARGET -C $$TARGET install;\
+	done;
+endef
+
+override define EMIT_TESTS
+	@for TARGET in $(SUB_DIRS); do \
+		BUILD_TARGET=$(OUTPUT)/$$TARGET;	\
+		$(MAKE) OUTPUT=$$BUILD_TARGET -s -C $$TARGET emit_tests;\
+	done;
+endef
+
+override define CLEAN
+	@for TARGET in $(SUB_DIRS); do \
+		BUILD_TARGET=$(OUTPUT)/$$TARGET;	\
+		$(MAKE) OUTPUT=$$BUILD_TARGET -C $$TARGET clean; \
 	done;
 	rm -f tags
+endef
 
 tags:
 	find . -name '*.c' -o -name '*.h' | xargs ctags
 
-.PHONY: all run_tests clean tags
+.PHONY: tags $(SUB_DIRS)

@@ -13,10 +13,6 @@
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
  */
 
 #include <linux/delay.h>
@@ -134,7 +130,13 @@ static int taos_smbus_xfer(struct i2c_adapter *adapter, u16 addr,
 			return 0;
 	} else {
 		if (p[0] == 'x') {
-			data->byte = simple_strtol(p + 1, NULL, 16);
+			/*
+			 * Voluntarily dropping error code of kstrtou8 since all
+			 * error code that it could return are invalid according
+			 * to Documentation/i2c/fault-codes.
+			 */
+			if (kstrtou8(p + 1, 16, &data->byte))
+				return -EPROTO;
 			return 0;
 		}
 	}
@@ -280,8 +282,7 @@ static void taos_disconnect(struct serio *serio)
 {
 	struct taos_data *taos = serio_get_drvdata(serio);
 
-	if (taos->client)
-		i2c_unregister_device(taos->client);
+	i2c_unregister_device(taos->client);
 	i2c_del_adapter(&taos->adapter);
 	serio_close(serio);
 	kfree(taos);
@@ -289,7 +290,7 @@ static void taos_disconnect(struct serio *serio)
 	dev_info(&serio->dev, "Disconnected from TAOS EVM\n");
 }
 
-static struct serio_device_id taos_serio_ids[] = {
+static const struct serio_device_id taos_serio_ids[] = {
 	{
 		.type	= SERIO_RS232,
 		.proto	= SERIO_TAOSEVM,
@@ -311,19 +312,8 @@ static struct serio_driver taos_drv = {
 	.interrupt	= taos_interrupt,
 };
 
-static int __init taos_init(void)
-{
-	return serio_register_driver(&taos_drv);
-}
-
-static void __exit taos_exit(void)
-{
-	serio_unregister_driver(&taos_drv);
-}
+module_serio_driver(taos_drv);
 
 MODULE_AUTHOR("Jean Delvare <jdelvare@suse.de>");
 MODULE_DESCRIPTION("TAOS evaluation module driver");
 MODULE_LICENSE("GPL");
-
-module_init(taos_init);
-module_exit(taos_exit);

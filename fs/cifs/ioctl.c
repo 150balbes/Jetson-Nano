@@ -31,23 +31,60 @@
 #include "cifsproto.h"
 #include "cifs_debug.h"
 #include "cifsfs.h"
+#include "cifs_ioctl.h"
+#include "smb2proto.h"
+#include <linux/btrfs.h>
 
-#define CIFS_IOCTL_MAGIC	0xCF
-#define CIFS_IOC_COPYCHUNK_FILE	_IOW(CIFS_IOCTL_MAGIC, 3, int)
+static long cifs_ioctl_query_info(unsigned int xid, struct file *filep,
+				  unsigned long p)
+{
+	struct inode *inode = file_inode(filep);
+	struct cifs_sb_info *cifs_sb = CIFS_SB(inode->i_sb);
+	struct cifs_tcon *tcon = cifs_sb_master_tcon(cifs_sb);
+	struct dentry *dentry = filep->f_path.dentry;
+	unsigned char *path;
+	__le16 *utf16_path = NULL, root_path;
+	int rc = 0;
 
-static long cifs_ioctl_clone(unsigned int xid, struct file *dst_file,
-			unsigned long srcfd, u64 off, u64 len, u64 destoff)
+	path = build_path_from_dentry(dentry);
+	if (path == NULL)
+		return -ENOMEM;
+
+	cifs_dbg(FYI, "%s %s\n", __func__, path);
+
+	if (!path[0]) {
+		root_path = 0;
+		utf16_path = &root_path;
+	} else {
+		utf16_path = cifs_convert_path_to_utf16(path + 1, cifs_sb);
+		if (!utf16_path) {
+			rc = -ENOMEM;
+			goto ici_exit;
+		}
+	}
+
+	if (tcon->ses->server->ops->ioctl_query_info)
+		rc = tcon->ses->server->ops->ioctl_query_info(
+				xid, tcon, utf16_path,
+				filep->private_data ? 0 : 1, p);
+	else
+		rc = -EOPNOTSUPP;
+
+ ici_exit:
+	if (utf16_path != &root_path)
+		kfree(utf16_path);
+	kfree(path);
+	return rc;
+}
+
+static long cifs_ioctl_copychunk(unsigned int xid, struct file *dst_file,
+			unsigned long srcfd)
 {
 	int rc;
-	struct cifsFileInfo *smb_file_target = dst_file->private_data;
-	struct inode *target_inode = file_inode(dst_file);
-	struct cifs_tcon *target_tcon;
 	struct fd src_file;
-	struct cifsFileInfo *smb_file_src;
 	struct inode *src_inode;
-	struct cifs_tcon *src_tcon;
 
-	cifs_dbg(FYI, "ioctl clone range\n");
+	cifs_dbg(FYI, "ioctl copychunk range\n");
 	/* the destination must be opened for writing */
 	if (!(dst_file->f_mode & FMODE_WRITE)) {
 		cifs_dbg(FYI, "file target not open for write\n");
@@ -67,74 +104,60 @@ static long cifs_ioctl_clone(unsigned int xid, struct file *dst_file,
 		goto out_drop_write;
 	}
 
-	if ((!src_file.file->private_data) || (!dst_file->private_data)) {
+	if (src_file.file->f_op->unlocked_ioctl != cifs_ioctl) {
 		rc = -EBADF;
-		cifs_dbg(VFS, "missing cifsFileInfo on copy range src file\n");
+		cifs_dbg(VFS, "src file seems to be from a different filesystem type\n");
 		goto out_fput;
 	}
 
-	rc = -EXDEV;
-	smb_file_target = dst_file->private_data;
-	smb_file_src = src_file.file->private_data;
-	src_tcon = tlink_tcon(smb_file_src->tlink);
-	target_tcon = tlink_tcon(smb_file_target->tlink);
-
-	/* check if source and target are on same tree connection */
-	if (src_tcon != target_tcon) {
-		cifs_dbg(VFS, "file copy src and target on different volume\n");
-		goto out_fput;
-	}
-
-	src_inode = src_file.file->f_dentry->d_inode;
-
-	/*
-	 * Note: cifs case is easier than btrfs since server responsible for
-	 * checks for proper open modes and file type and if it wants
-	 * server could even support copy of range where source = target
-	 */
-
-	/* so we do not deadlock racing two ioctls on same files */
-	if (target_inode < src_inode) {
-		mutex_lock_nested(&target_inode->i_mutex, I_MUTEX_PARENT);
-		mutex_lock_nested(&src_inode->i_mutex, I_MUTEX_CHILD);
-	} else {
-		mutex_lock_nested(&src_inode->i_mutex, I_MUTEX_PARENT);
-		mutex_lock_nested(&target_inode->i_mutex, I_MUTEX_CHILD);
-	}
-
-	/* determine range to clone */
+	src_inode = file_inode(src_file.file);
 	rc = -EINVAL;
-	if (off + len > src_inode->i_size || off + len < off)
-		goto out_unlock;
-	if (len == 0)
-		len = src_inode->i_size - off;
+	if (S_ISDIR(src_inode->i_mode))
+		goto out_fput;
 
-	cifs_dbg(FYI, "about to flush pages\n");
-	/* should we flush first and last page first */
-	truncate_inode_pages_range(&target_inode->i_data, destoff,
-				   PAGE_CACHE_ALIGN(destoff + len)-1);
-
-	if (target_tcon->ses->server->ops->clone_range)
-		rc = target_tcon->ses->server->ops->clone_range(xid,
-			smb_file_src, smb_file_target, off, len, destoff);
-
-	/* force revalidate of size and timestamps of target file now
-	   that target is updated on the server */
-	CIFS_I(target_inode)->time = 0;
-out_unlock:
-	/* although unlocking in the reverse order from locking is not
-	   strictly necessary here it is a little cleaner to be consistent */
-	if (target_inode < src_inode) {
-		mutex_unlock(&src_inode->i_mutex);
-		mutex_unlock(&target_inode->i_mutex);
-	} else {
-		mutex_unlock(&target_inode->i_mutex);
-		mutex_unlock(&src_inode->i_mutex);
-	}
+	rc = cifs_file_copychunk_range(xid, src_file.file, 0, dst_file, 0,
+					src_inode->i_size, 0);
+	if (rc > 0)
+		rc = 0;
 out_fput:
 	fdput(src_file);
 out_drop_write:
 	mnt_drop_write_file(dst_file);
+	return rc;
+}
+
+static long smb_mnt_get_fsinfo(unsigned int xid, struct cifs_tcon *tcon,
+				void __user *arg)
+{
+	int rc = 0;
+	struct smb_mnt_fs_info *fsinf;
+
+	fsinf = kzalloc(sizeof(struct smb_mnt_fs_info), GFP_KERNEL);
+	if (fsinf == NULL)
+		return -ENOMEM;
+
+	fsinf->version = 1;
+	fsinf->protocol_id = tcon->ses->server->vals->protocol_id;
+	fsinf->device_characteristics =
+			le32_to_cpu(tcon->fsDevInfo.DeviceCharacteristics);
+	fsinf->device_type = le32_to_cpu(tcon->fsDevInfo.DeviceType);
+	fsinf->fs_attributes = le32_to_cpu(tcon->fsAttrInfo.Attributes);
+	fsinf->max_path_component =
+		le32_to_cpu(tcon->fsAttrInfo.MaxPathNameComponentLength);
+	fsinf->vol_serial_number = tcon->vol_serial_number;
+	fsinf->vol_create_time = le64_to_cpu(tcon->vol_create_time);
+	fsinf->share_flags = tcon->share_flags;
+	fsinf->share_caps = le32_to_cpu(tcon->capabilities);
+	fsinf->sector_flags = tcon->ss_flags;
+	fsinf->optimal_sector_size = tcon->perf_sector_size;
+	fsinf->max_bytes_chunk = tcon->max_bytes_chunk;
+	fsinf->maximal_access = tcon->maximal_access;
+	fsinf->cifs_posix_caps = le64_to_cpu(tcon->fsUnixInfo.Capability);
+
+	if (copy_to_user(arg, fsinf, sizeof(struct smb_mnt_fs_info)))
+		rc = -EFAULT;
+
+	kfree(fsinf);
 	return rc;
 }
 
@@ -143,7 +166,6 @@ long cifs_ioctl(struct file *filep, unsigned int command, unsigned long arg)
 	struct inode *inode = file_inode(filep);
 	int rc = -ENOTTY; /* strange error - but the precedent */
 	unsigned int xid;
-	struct cifs_sb_info *cifs_sb;
 	struct cifsFileInfo *pSMBFile = filep->private_data;
 	struct cifs_tcon *tcon;
 	__u64	ExtAttrBits = 0;
@@ -151,10 +173,7 @@ long cifs_ioctl(struct file *filep, unsigned int command, unsigned long arg)
 
 	xid = get_xid();
 
-	cifs_dbg(FYI, "ioctl file %p  cmd %u  arg %lu\n", filep, command, arg);
-
-	cifs_sb = CIFS_SB(inode->i_sb);
-
+	cifs_dbg(FYI, "cifs ioctl 0x%x\n", command);
 	switch (command) {
 		case FS_IOC_GETFLAGS:
 			if (pSMBFile == NULL)
@@ -216,13 +235,46 @@ long cifs_ioctl(struct file *filep, unsigned int command, unsigned long arg)
 			}
 			break;
 		case CIFS_IOC_COPYCHUNK_FILE:
-			rc = cifs_ioctl_clone(xid, filep, arg, 0, 0, 0);
+			rc = cifs_ioctl_copychunk(xid, filep, arg);
+			break;
+		case CIFS_QUERY_INFO:
+			rc = cifs_ioctl_query_info(xid, filep, arg);
+			break;
+		case CIFS_IOC_SET_INTEGRITY:
+			if (pSMBFile == NULL)
+				break;
+			tcon = tlink_tcon(pSMBFile->tlink);
+			if (tcon->ses->server->ops->set_integrity)
+				rc = tcon->ses->server->ops->set_integrity(xid,
+						tcon, pSMBFile);
+			else
+				rc = -EOPNOTSUPP;
+			break;
+		case CIFS_IOC_GET_MNT_INFO:
+			if (pSMBFile == NULL)
+				break;
+			tcon = tlink_tcon(pSMBFile->tlink);
+			rc = smb_mnt_get_fsinfo(xid, tcon, (void __user *)arg);
+			break;
+		case CIFS_ENUMERATE_SNAPSHOTS:
+			if (pSMBFile == NULL)
+				break;
+			if (arg == 0) {
+				rc = -EINVAL;
+				goto cifs_ioc_exit;
+			}
+			tcon = tlink_tcon(pSMBFile->tlink);
+			if (tcon->ses->server->ops->enum_snapshots)
+				rc = tcon->ses->server->ops->enum_snapshots(xid, tcon,
+						pSMBFile, (void __user *)arg);
+			else
+				rc = -EOPNOTSUPP;
 			break;
 		default:
 			cifs_dbg(FYI, "unsupported ioctl\n");
 			break;
 	}
-
+cifs_ioc_exit:
 	free_xid(xid);
 	return rc;
 }

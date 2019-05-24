@@ -21,7 +21,7 @@
 #include <linux/isapnp.h>
 #include <linux/proc_fs.h>
 #include <linux/init.h>
-#include <asm/uaccess.h>
+#include <linux/uaccess.h>
 
 extern struct pnp_protocol isapnp_protocol;
 
@@ -47,7 +47,7 @@ static ssize_t isapnp_proc_bus_read(struct file *file, char __user * buf,
 		nbytes = size - pos;
 	cnt = nbytes;
 
-	if (!access_ok(VERIFY_WRITE, buf, cnt))
+	if (!access_ok(buf, cnt))
 		return -EINVAL;
 
 	isapnp_cfg_begin(dev->card->number, dev->number);

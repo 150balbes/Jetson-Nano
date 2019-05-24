@@ -1,7 +1,7 @@
 /*
  * Driver for Texas Instruments / National Semiconductor LM95234
  *
- * Copyright (c) 2013 Guenter Roeck <linux@roeck-us.net>
+ * Copyright (c) 2013, 2014 Guenter Roeck <linux@roeck-us.net>
  *
  * Derived from lm95241.c
  * Copyright (C) 2008, 2010 Davide Rizzo <elpa.rizzo@gmail.com>
@@ -30,7 +30,10 @@
 
 #define DRVNAME "lm95234"
 
-static const unsigned short normal_i2c[] = { 0x18, 0x4d, 0x4e, I2C_CLIENT_END };
+enum chips { lm95233, lm95234 };
+
+static const unsigned short normal_i2c[] = {
+	0x18, 0x2a, 0x2b, 0x4d, 0x4e, I2C_CLIENT_END };
 
 /* LM95234 registers */
 #define LM95234_REG_MAN_ID		0xFE
@@ -53,11 +56,13 @@ static const unsigned short normal_i2c[] = { 0x18, 0x4d, 0x4e, I2C_CLIENT_END };
 #define LM95234_REG_TCRIT_HYST		0x5a
 
 #define NATSEMI_MAN_ID			0x01
+#define LM95233_CHIP_ID			0x89
 #define LM95234_CHIP_ID			0x79
 
 /* Client data (each client gets its own) */
 struct lm95234_data {
 	struct i2c_client *client;
+	const struct attribute_group *groups[3];
 	struct mutex update_lock;
 	unsigned long last_updated, interval;	/* in jiffies */
 	bool valid;		/* false until following fields are valid */
@@ -206,7 +211,7 @@ abort:
 	return ret;
 }
 
-static ssize_t show_temp(struct device *dev, struct device_attribute *attr,
+static ssize_t temp_show(struct device *dev, struct device_attribute *attr,
 			 char *buf)
 {
 	struct lm95234_data *data = dev_get_drvdata(dev);
@@ -220,8 +225,8 @@ static ssize_t show_temp(struct device *dev, struct device_attribute *attr,
 		       DIV_ROUND_CLOSEST(data->temp[index] * 125, 32));
 }
 
-static ssize_t show_alarm(struct device *dev,
-			  struct device_attribute *attr, char *buf)
+static ssize_t alarm_show(struct device *dev, struct device_attribute *attr,
+			  char *buf)
 {
 	struct lm95234_data *data = dev_get_drvdata(dev);
 	u32 mask = to_sensor_dev_attr(attr)->index;
@@ -233,7 +238,7 @@ static ssize_t show_alarm(struct device *dev,
 	return sprintf(buf, "%u", !!(data->status & mask));
 }
 
-static ssize_t show_type(struct device *dev, struct device_attribute *attr,
+static ssize_t type_show(struct device *dev, struct device_attribute *attr,
 			 char *buf)
 {
 	struct lm95234_data *data = dev_get_drvdata(dev);
@@ -246,8 +251,8 @@ static ssize_t show_type(struct device *dev, struct device_attribute *attr,
 	return sprintf(buf, data->sensor_type & mask ? "1\n" : "2\n");
 }
 
-static ssize_t set_type(struct device *dev, struct device_attribute *attr,
-			const char *buf, size_t count)
+static ssize_t type_store(struct device *dev, struct device_attribute *attr,
+			  const char *buf, size_t count)
 {
 	struct lm95234_data *data = dev_get_drvdata(dev);
 	unsigned long val;
@@ -277,7 +282,7 @@ static ssize_t set_type(struct device *dev, struct device_attribute *attr,
 	return count;
 }
 
-static ssize_t show_tcrit2(struct device *dev, struct device_attribute *attr,
+static ssize_t tcrit2_show(struct device *dev, struct device_attribute *attr,
 			   char *buf)
 {
 	struct lm95234_data *data = dev_get_drvdata(dev);
@@ -290,8 +295,8 @@ static ssize_t show_tcrit2(struct device *dev, struct device_attribute *attr,
 	return sprintf(buf, "%u", data->tcrit2[index] * 1000);
 }
 
-static ssize_t set_tcrit2(struct device *dev, struct device_attribute *attr,
-			  const char *buf, size_t count)
+static ssize_t tcrit2_store(struct device *dev, struct device_attribute *attr,
+			    const char *buf, size_t count)
 {
 	struct lm95234_data *data = dev_get_drvdata(dev);
 	int index = to_sensor_dev_attr(attr)->index;
@@ -315,7 +320,7 @@ static ssize_t set_tcrit2(struct device *dev, struct device_attribute *attr,
 	return count;
 }
 
-static ssize_t show_tcrit2_hyst(struct device *dev,
+static ssize_t tcrit2_hyst_show(struct device *dev,
 				struct device_attribute *attr, char *buf)
 {
 	struct lm95234_data *data = dev_get_drvdata(dev);
@@ -330,7 +335,7 @@ static ssize_t show_tcrit2_hyst(struct device *dev,
 		       ((int)data->tcrit2[index] - (int)data->thyst) * 1000);
 }
 
-static ssize_t show_tcrit1(struct device *dev, struct device_attribute *attr,
+static ssize_t tcrit1_show(struct device *dev, struct device_attribute *attr,
 			   char *buf)
 {
 	struct lm95234_data *data = dev_get_drvdata(dev);
@@ -339,8 +344,8 @@ static ssize_t show_tcrit1(struct device *dev, struct device_attribute *attr,
 	return sprintf(buf, "%u", data->tcrit1[index] * 1000);
 }
 
-static ssize_t set_tcrit1(struct device *dev, struct device_attribute *attr,
-			  const char *buf, size_t count)
+static ssize_t tcrit1_store(struct device *dev, struct device_attribute *attr,
+			    const char *buf, size_t count)
 {
 	struct lm95234_data *data = dev_get_drvdata(dev);
 	int index = to_sensor_dev_attr(attr)->index;
@@ -364,7 +369,7 @@ static ssize_t set_tcrit1(struct device *dev, struct device_attribute *attr,
 	return count;
 }
 
-static ssize_t show_tcrit1_hyst(struct device *dev,
+static ssize_t tcrit1_hyst_show(struct device *dev,
 				struct device_attribute *attr, char *buf)
 {
 	struct lm95234_data *data = dev_get_drvdata(dev);
@@ -379,9 +384,9 @@ static ssize_t show_tcrit1_hyst(struct device *dev,
 		       ((int)data->tcrit1[index] - (int)data->thyst) * 1000);
 }
 
-static ssize_t set_tcrit1_hyst(struct device *dev,
-			       struct device_attribute *attr,
-			       const char *buf, size_t count)
+static ssize_t tcrit1_hyst_store(struct device *dev,
+				 struct device_attribute *attr,
+				 const char *buf, size_t count)
 {
 	struct lm95234_data *data = dev_get_drvdata(dev);
 	int index = to_sensor_dev_attr(attr)->index;
@@ -406,7 +411,7 @@ static ssize_t set_tcrit1_hyst(struct device *dev,
 	return count;
 }
 
-static ssize_t show_offset(struct device *dev, struct device_attribute *attr,
+static ssize_t offset_show(struct device *dev, struct device_attribute *attr,
 			   char *buf)
 {
 	struct lm95234_data *data = dev_get_drvdata(dev);
@@ -419,8 +424,8 @@ static ssize_t show_offset(struct device *dev, struct device_attribute *attr,
 	return sprintf(buf, "%d", data->toffset[index] * 500);
 }
 
-static ssize_t set_offset(struct device *dev, struct device_attribute *attr,
-			  const char *buf, size_t count)
+static ssize_t offset_store(struct device *dev, struct device_attribute *attr,
+			    const char *buf, size_t count)
 {
 	struct lm95234_data *data = dev_get_drvdata(dev);
 	int index = to_sensor_dev_attr(attr)->index;
@@ -445,8 +450,8 @@ static ssize_t set_offset(struct device *dev, struct device_attribute *attr,
 	return count;
 }
 
-static ssize_t show_interval(struct device *dev, struct device_attribute *attr,
-			     char *buf)
+static ssize_t update_interval_show(struct device *dev,
+				    struct device_attribute *attr, char *buf)
 {
 	struct lm95234_data *data = dev_get_drvdata(dev);
 	int ret = lm95234_update_device(data);
@@ -458,8 +463,9 @@ static ssize_t show_interval(struct device *dev, struct device_attribute *attr,
 		       DIV_ROUND_CLOSEST(data->interval * 1000, HZ));
 }
 
-static ssize_t set_interval(struct device *dev, struct device_attribute *attr,
-			    const char *buf, size_t count)
+static ssize_t update_interval_store(struct device *dev,
+				     struct device_attribute *attr,
+				     const char *buf, size_t count)
 {
 	struct lm95234_data *data = dev_get_drvdata(dev);
 	int ret = lm95234_update_device(data);
@@ -486,113 +492,73 @@ static ssize_t set_interval(struct device *dev, struct device_attribute *attr,
 	return count;
 }
 
-static SENSOR_DEVICE_ATTR(temp1_input, S_IRUGO, show_temp, NULL, 0);
-static SENSOR_DEVICE_ATTR(temp2_input, S_IRUGO, show_temp, NULL, 1);
-static SENSOR_DEVICE_ATTR(temp3_input, S_IRUGO, show_temp, NULL, 2);
-static SENSOR_DEVICE_ATTR(temp4_input, S_IRUGO, show_temp, NULL, 3);
-static SENSOR_DEVICE_ATTR(temp5_input, S_IRUGO, show_temp, NULL, 4);
+static SENSOR_DEVICE_ATTR_RO(temp1_input, temp, 0);
+static SENSOR_DEVICE_ATTR_RO(temp2_input, temp, 1);
+static SENSOR_DEVICE_ATTR_RO(temp3_input, temp, 2);
+static SENSOR_DEVICE_ATTR_RO(temp4_input, temp, 3);
+static SENSOR_DEVICE_ATTR_RO(temp5_input, temp, 4);
 
-static SENSOR_DEVICE_ATTR(temp2_fault, S_IRUGO, show_alarm, NULL,
-			  BIT(0) | BIT(1));
-static SENSOR_DEVICE_ATTR(temp3_fault, S_IRUGO, show_alarm, NULL,
-			  BIT(2) | BIT(3));
-static SENSOR_DEVICE_ATTR(temp4_fault, S_IRUGO, show_alarm, NULL,
-			  BIT(4) | BIT(5));
-static SENSOR_DEVICE_ATTR(temp5_fault, S_IRUGO, show_alarm, NULL,
-			  BIT(6) | BIT(7));
+static SENSOR_DEVICE_ATTR_RO(temp2_fault, alarm, BIT(0) | BIT(1));
+static SENSOR_DEVICE_ATTR_RO(temp3_fault, alarm, BIT(2) | BIT(3));
+static SENSOR_DEVICE_ATTR_RO(temp4_fault, alarm, BIT(4) | BIT(5));
+static SENSOR_DEVICE_ATTR_RO(temp5_fault, alarm, BIT(6) | BIT(7));
 
-static SENSOR_DEVICE_ATTR(temp2_type, S_IWUSR | S_IRUGO, show_type, set_type,
-			  BIT(1));
-static SENSOR_DEVICE_ATTR(temp3_type, S_IWUSR | S_IRUGO, show_type, set_type,
-			  BIT(2));
-static SENSOR_DEVICE_ATTR(temp4_type, S_IWUSR | S_IRUGO, show_type, set_type,
-			  BIT(3));
-static SENSOR_DEVICE_ATTR(temp5_type, S_IWUSR | S_IRUGO, show_type, set_type,
-			  BIT(4));
+static SENSOR_DEVICE_ATTR_RW(temp2_type, type, BIT(1));
+static SENSOR_DEVICE_ATTR_RW(temp3_type, type, BIT(2));
+static SENSOR_DEVICE_ATTR_RW(temp4_type, type, BIT(3));
+static SENSOR_DEVICE_ATTR_RW(temp5_type, type, BIT(4));
 
-static SENSOR_DEVICE_ATTR(temp1_max, S_IWUSR | S_IRUGO, show_tcrit1,
-			  set_tcrit1, 0);
-static SENSOR_DEVICE_ATTR(temp2_max, S_IWUSR | S_IRUGO, show_tcrit2,
-			  set_tcrit2, 0);
-static SENSOR_DEVICE_ATTR(temp3_max, S_IWUSR | S_IRUGO, show_tcrit2,
-			  set_tcrit2, 1);
-static SENSOR_DEVICE_ATTR(temp4_max, S_IWUSR | S_IRUGO, show_tcrit1,
-			  set_tcrit1, 3);
-static SENSOR_DEVICE_ATTR(temp5_max, S_IWUSR | S_IRUGO, show_tcrit1,
-			  set_tcrit1, 4);
+static SENSOR_DEVICE_ATTR_RW(temp1_max, tcrit1, 0);
+static SENSOR_DEVICE_ATTR_RW(temp2_max, tcrit2, 0);
+static SENSOR_DEVICE_ATTR_RW(temp3_max, tcrit2, 1);
+static SENSOR_DEVICE_ATTR_RW(temp4_max, tcrit1, 3);
+static SENSOR_DEVICE_ATTR_RW(temp5_max, tcrit1, 4);
 
-static SENSOR_DEVICE_ATTR(temp1_max_hyst, S_IWUSR | S_IRUGO, show_tcrit1_hyst,
-			  set_tcrit1_hyst, 0);
-static SENSOR_DEVICE_ATTR(temp2_max_hyst, S_IRUGO, show_tcrit2_hyst, NULL, 0);
-static SENSOR_DEVICE_ATTR(temp3_max_hyst, S_IRUGO, show_tcrit2_hyst, NULL, 1);
-static SENSOR_DEVICE_ATTR(temp4_max_hyst, S_IRUGO, show_tcrit1_hyst, NULL, 3);
-static SENSOR_DEVICE_ATTR(temp5_max_hyst, S_IRUGO, show_tcrit1_hyst, NULL, 4);
+static SENSOR_DEVICE_ATTR_RW(temp1_max_hyst, tcrit1_hyst, 0);
+static SENSOR_DEVICE_ATTR_RO(temp2_max_hyst, tcrit2_hyst, 0);
+static SENSOR_DEVICE_ATTR_RO(temp3_max_hyst, tcrit2_hyst, 1);
+static SENSOR_DEVICE_ATTR_RO(temp4_max_hyst, tcrit1_hyst, 3);
+static SENSOR_DEVICE_ATTR_RO(temp5_max_hyst, tcrit1_hyst, 4);
 
-static SENSOR_DEVICE_ATTR(temp1_max_alarm, S_IRUGO, show_alarm, NULL,
-			  BIT(0 + 8));
-static SENSOR_DEVICE_ATTR(temp2_max_alarm, S_IRUGO, show_alarm, NULL,
-			  BIT(1 + 16));
-static SENSOR_DEVICE_ATTR(temp3_max_alarm, S_IRUGO, show_alarm, NULL,
-			  BIT(2 + 16));
-static SENSOR_DEVICE_ATTR(temp4_max_alarm, S_IRUGO, show_alarm, NULL,
-			  BIT(3 + 8));
-static SENSOR_DEVICE_ATTR(temp5_max_alarm, S_IRUGO, show_alarm, NULL,
-			  BIT(4 + 8));
+static SENSOR_DEVICE_ATTR_RO(temp1_max_alarm, alarm, BIT(0 + 8));
+static SENSOR_DEVICE_ATTR_RO(temp2_max_alarm, alarm, BIT(1 + 16));
+static SENSOR_DEVICE_ATTR_RO(temp3_max_alarm, alarm, BIT(2 + 16));
+static SENSOR_DEVICE_ATTR_RO(temp4_max_alarm, alarm, BIT(3 + 8));
+static SENSOR_DEVICE_ATTR_RO(temp5_max_alarm, alarm, BIT(4 + 8));
 
-static SENSOR_DEVICE_ATTR(temp2_crit, S_IWUSR | S_IRUGO, show_tcrit1,
-			  set_tcrit1, 1);
-static SENSOR_DEVICE_ATTR(temp3_crit, S_IWUSR | S_IRUGO, show_tcrit1,
-			  set_tcrit1, 2);
+static SENSOR_DEVICE_ATTR_RW(temp2_crit, tcrit1, 1);
+static SENSOR_DEVICE_ATTR_RW(temp3_crit, tcrit1, 2);
 
-static SENSOR_DEVICE_ATTR(temp2_crit_hyst, S_IRUGO, show_tcrit1_hyst, NULL, 1);
-static SENSOR_DEVICE_ATTR(temp3_crit_hyst, S_IRUGO, show_tcrit1_hyst, NULL, 2);
+static SENSOR_DEVICE_ATTR_RO(temp2_crit_hyst, tcrit1_hyst, 1);
+static SENSOR_DEVICE_ATTR_RO(temp3_crit_hyst, tcrit1_hyst, 2);
 
-static SENSOR_DEVICE_ATTR(temp2_crit_alarm, S_IRUGO, show_alarm, NULL,
-			  BIT(1 + 8));
-static SENSOR_DEVICE_ATTR(temp3_crit_alarm, S_IRUGO, show_alarm, NULL,
-			  BIT(2 + 8));
+static SENSOR_DEVICE_ATTR_RO(temp2_crit_alarm, alarm, BIT(1 + 8));
+static SENSOR_DEVICE_ATTR_RO(temp3_crit_alarm, alarm, BIT(2 + 8));
 
-static SENSOR_DEVICE_ATTR(temp2_offset, S_IWUSR | S_IRUGO, show_offset,
-			  set_offset, 0);
-static SENSOR_DEVICE_ATTR(temp3_offset, S_IWUSR | S_IRUGO, show_offset,
-			  set_offset, 1);
-static SENSOR_DEVICE_ATTR(temp4_offset, S_IWUSR | S_IRUGO, show_offset,
-			  set_offset, 2);
-static SENSOR_DEVICE_ATTR(temp5_offset, S_IWUSR | S_IRUGO, show_offset,
-			  set_offset, 3);
+static SENSOR_DEVICE_ATTR_RW(temp2_offset, offset, 0);
+static SENSOR_DEVICE_ATTR_RW(temp3_offset, offset, 1);
+static SENSOR_DEVICE_ATTR_RW(temp4_offset, offset, 2);
+static SENSOR_DEVICE_ATTR_RW(temp5_offset, offset, 3);
 
-static DEVICE_ATTR(update_interval, S_IWUSR | S_IRUGO, show_interval,
-		   set_interval);
+static DEVICE_ATTR_RW(update_interval);
 
-static struct attribute *lm95234_attrs[] = {
+static struct attribute *lm95234_common_attrs[] = {
 	&sensor_dev_attr_temp1_input.dev_attr.attr,
 	&sensor_dev_attr_temp2_input.dev_attr.attr,
 	&sensor_dev_attr_temp3_input.dev_attr.attr,
-	&sensor_dev_attr_temp4_input.dev_attr.attr,
-	&sensor_dev_attr_temp5_input.dev_attr.attr,
 	&sensor_dev_attr_temp2_fault.dev_attr.attr,
 	&sensor_dev_attr_temp3_fault.dev_attr.attr,
-	&sensor_dev_attr_temp4_fault.dev_attr.attr,
-	&sensor_dev_attr_temp5_fault.dev_attr.attr,
 	&sensor_dev_attr_temp2_type.dev_attr.attr,
 	&sensor_dev_attr_temp3_type.dev_attr.attr,
-	&sensor_dev_attr_temp4_type.dev_attr.attr,
-	&sensor_dev_attr_temp5_type.dev_attr.attr,
 	&sensor_dev_attr_temp1_max.dev_attr.attr,
 	&sensor_dev_attr_temp2_max.dev_attr.attr,
 	&sensor_dev_attr_temp3_max.dev_attr.attr,
-	&sensor_dev_attr_temp4_max.dev_attr.attr,
-	&sensor_dev_attr_temp5_max.dev_attr.attr,
 	&sensor_dev_attr_temp1_max_hyst.dev_attr.attr,
 	&sensor_dev_attr_temp2_max_hyst.dev_attr.attr,
 	&sensor_dev_attr_temp3_max_hyst.dev_attr.attr,
-	&sensor_dev_attr_temp4_max_hyst.dev_attr.attr,
-	&sensor_dev_attr_temp5_max_hyst.dev_attr.attr,
 	&sensor_dev_attr_temp1_max_alarm.dev_attr.attr,
 	&sensor_dev_attr_temp2_max_alarm.dev_attr.attr,
 	&sensor_dev_attr_temp3_max_alarm.dev_attr.attr,
-	&sensor_dev_attr_temp4_max_alarm.dev_attr.attr,
-	&sensor_dev_attr_temp5_max_alarm.dev_attr.attr,
 	&sensor_dev_attr_temp2_crit.dev_attr.attr,
 	&sensor_dev_attr_temp3_crit.dev_attr.attr,
 	&sensor_dev_attr_temp2_crit_hyst.dev_attr.attr,
@@ -601,18 +567,44 @@ static struct attribute *lm95234_attrs[] = {
 	&sensor_dev_attr_temp3_crit_alarm.dev_attr.attr,
 	&sensor_dev_attr_temp2_offset.dev_attr.attr,
 	&sensor_dev_attr_temp3_offset.dev_attr.attr,
-	&sensor_dev_attr_temp4_offset.dev_attr.attr,
-	&sensor_dev_attr_temp5_offset.dev_attr.attr,
 	&dev_attr_update_interval.attr,
 	NULL
 };
-ATTRIBUTE_GROUPS(lm95234);
+
+static const struct attribute_group lm95234_common_group = {
+	.attrs = lm95234_common_attrs,
+};
+
+static struct attribute *lm95234_attrs[] = {
+	&sensor_dev_attr_temp4_input.dev_attr.attr,
+	&sensor_dev_attr_temp5_input.dev_attr.attr,
+	&sensor_dev_attr_temp4_fault.dev_attr.attr,
+	&sensor_dev_attr_temp5_fault.dev_attr.attr,
+	&sensor_dev_attr_temp4_type.dev_attr.attr,
+	&sensor_dev_attr_temp5_type.dev_attr.attr,
+	&sensor_dev_attr_temp4_max.dev_attr.attr,
+	&sensor_dev_attr_temp5_max.dev_attr.attr,
+	&sensor_dev_attr_temp4_max_hyst.dev_attr.attr,
+	&sensor_dev_attr_temp5_max_hyst.dev_attr.attr,
+	&sensor_dev_attr_temp4_max_alarm.dev_attr.attr,
+	&sensor_dev_attr_temp5_max_alarm.dev_attr.attr,
+	&sensor_dev_attr_temp4_offset.dev_attr.attr,
+	&sensor_dev_attr_temp5_offset.dev_attr.attr,
+	NULL
+};
+
+static const struct attribute_group lm95234_group = {
+	.attrs = lm95234_attrs,
+};
 
 static int lm95234_detect(struct i2c_client *client,
 			  struct i2c_board_info *info)
 {
 	struct i2c_adapter *adapter = client->adapter;
+	int address = client->addr;
+	u8 config_mask, model_mask;
 	int mfg_id, chip_id, val;
+	const char *name;
 
 	if (!i2c_check_functionality(adapter, I2C_FUNC_SMBUS_BYTE_DATA))
 		return -ENODEV;
@@ -622,15 +614,31 @@ static int lm95234_detect(struct i2c_client *client,
 		return -ENODEV;
 
 	chip_id = i2c_smbus_read_byte_data(client, LM95234_REG_CHIP_ID);
-	if (chip_id != LM95234_CHIP_ID)
+	switch (chip_id) {
+	case LM95233_CHIP_ID:
+		if (address != 0x18 && address != 0x2a && address != 0x2b)
+			return -ENODEV;
+		config_mask = 0xbf;
+		model_mask = 0xf9;
+		name = "lm95233";
+		break;
+	case LM95234_CHIP_ID:
+		if (address != 0x18 && address != 0x4d && address != 0x4e)
+			return -ENODEV;
+		config_mask = 0xbc;
+		model_mask = 0xe1;
+		name = "lm95234";
+		break;
+	default:
 		return -ENODEV;
+	}
 
 	val = i2c_smbus_read_byte_data(client, LM95234_REG_STATUS);
 	if (val & 0x30)
 		return -ENODEV;
 
 	val = i2c_smbus_read_byte_data(client, LM95234_REG_CONFIG);
-	if (val & 0xbc)
+	if (val & config_mask)
 		return -ENODEV;
 
 	val = i2c_smbus_read_byte_data(client, LM95234_REG_CONVRATE);
@@ -638,14 +646,14 @@ static int lm95234_detect(struct i2c_client *client,
 		return -ENODEV;
 
 	val = i2c_smbus_read_byte_data(client, LM95234_REG_REM_MODEL);
-	if (val & 0xe1)
+	if (val & model_mask)
 		return -ENODEV;
 
 	val = i2c_smbus_read_byte_data(client, LM95234_REG_REM_MODEL_STS);
-	if (val & 0xe1)
+	if (val & model_mask)
 		return -ENODEV;
 
-	strlcpy(info->type, "lm95234", I2C_NAME_SIZE);
+	strlcpy(info->type, name, I2C_NAME_SIZE);
 	return 0;
 }
 
@@ -698,15 +706,19 @@ static int lm95234_probe(struct i2c_client *client,
 	if (err < 0)
 		return err;
 
+	data->groups[0] = &lm95234_common_group;
+	if (id->driver_data == lm95234)
+		data->groups[1] = &lm95234_group;
+
 	hwmon_dev = devm_hwmon_device_register_with_groups(dev, client->name,
-							   data,
-							   lm95234_groups);
+							   data, data->groups);
 	return PTR_ERR_OR_ZERO(hwmon_dev);
 }
 
 /* Driver data (common to all clients) */
 static const struct i2c_device_id lm95234_id[] = {
-	{ "lm95234", 0 },
+	{ "lm95233", lm95233 },
+	{ "lm95234", lm95234 },
 	{ }
 };
 MODULE_DEVICE_TABLE(i2c, lm95234_id);
@@ -725,5 +737,5 @@ static struct i2c_driver lm95234_driver = {
 module_i2c_driver(lm95234_driver);
 
 MODULE_AUTHOR("Guenter Roeck <linux@roeck-us.net>");
-MODULE_DESCRIPTION("LM95234 sensor driver");
+MODULE_DESCRIPTION("LM95233/LM95234 sensor driver");
 MODULE_LICENSE("GPL");

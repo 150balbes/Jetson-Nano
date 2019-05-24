@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  *  linux/fs/ext4/block_validity.c
  *
@@ -16,7 +17,6 @@
 #include <linux/swap.h>
 #include <linux/pagemap.h>
 #include <linux/blkdev.h>
-#include <linux/mutex.h>
 #include <linux/slab.h>
 #include "ext4.h"
 
@@ -129,12 +129,12 @@ static void debug_print_tree(struct ext4_sb_info *sbi)
 	node = rb_first(&sbi->system_blks);
 	while (node) {
 		entry = rb_entry(node, struct ext4_system_zone, node);
-		printk("%s%llu-%llu", first ? "" : ", ",
+		printk(KERN_CONT "%s%llu-%llu", first ? "" : ", ",
 		       entry->start_blk, entry->start_blk + entry->count - 1);
 		first = 0;
 		node = rb_next(node);
 	}
-	printk("\n");
+	printk(KERN_CONT "\n");
 }
 
 int ext4_setup_system_zone(struct super_block *sb)
@@ -147,11 +147,11 @@ int ext4_setup_system_zone(struct super_block *sb)
 	int ret;
 
 	if (!test_opt(sb, BLOCK_VALIDITY)) {
-		if (EXT4_SB(sb)->system_blks.rb_node)
+		if (sbi->system_blks.rb_node)
 			ext4_release_system_zone(sb);
 		return 0;
 	}
-	if (EXT4_SB(sb)->system_blks.rb_node)
+	if (sbi->system_blks.rb_node)
 		return 0;
 
 	for (i=0; i < ngroups; i++) {
@@ -173,7 +173,7 @@ int ext4_setup_system_zone(struct super_block *sb)
 	}
 
 	if (test_opt(sb, DEBUG))
-		debug_print_tree(EXT4_SB(sb));
+		debug_print_tree(sbi);
 	return 0;
 }
 
@@ -235,7 +235,7 @@ int ext4_check_blockref(const char *function, unsigned int line,
 			es->s_last_error_block = cpu_to_le64(blk);
 			ext4_error_inode(inode, function, line, blk,
 					 "invalid block");
-			return -EIO;
+			return -EFSCORRUPTED;
 		}
 	}
 	return 0;

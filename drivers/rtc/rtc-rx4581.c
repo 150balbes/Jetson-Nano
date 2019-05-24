@@ -172,11 +172,7 @@ static int rx4581_get_datetime(struct device *dev, struct rtc_time *tm)
 		tm->tm_sec, tm->tm_min, tm->tm_hour,
 		tm->tm_mday, tm->tm_mon, tm->tm_year, tm->tm_wday);
 
-	err = rtc_valid_tm(tm);
-	if (err < 0)
-		dev_err(dev, "retrieved date/time is not valid.\n");
-
-	return err;
+	return 0;
 }
 
 static int rx4581_set_datetime(struct device *dev, struct rtc_time *tm)
@@ -291,7 +287,6 @@ MODULE_DEVICE_TABLE(spi, rx4581_id);
 static struct spi_driver rx4581_driver = {
 	.driver = {
 		.name	= "rtc-rx4581",
-		.owner	= THIS_MODULE,
 	},
 	.probe	= rx4581_probe,
 	.id_table = rx4581_id,

@@ -130,11 +130,6 @@ static int esas2r_log_master(const long level,
 
 		spin_lock_irqsave(&event_buffer_lock, flags);
 
-		if (buffer == NULL) {
-			spin_unlock_irqrestore(&event_buffer_lock, flags);
-			return -1;
-		}
-
 		memset(buffer, 0, buflen);
 
 		/*
@@ -165,13 +160,9 @@ static int esas2r_log_master(const long level,
 
 		/*
 		 * Put a line break at the end of the formatted string so that
-		 * we don't wind up with run-on messages.  only append if there
-		 * is enough space in the buffer.
+		 * we don't wind up with run-on messages.
 		 */
-		if (strlen(event_buffer) < buflen)
-			strcat(buffer, "\n");
-
-		printk(event_buffer);
+		printk("%s\n", event_buffer);
 
 		spin_unlock_irqrestore(&event_buffer_lock, flags);
 	}

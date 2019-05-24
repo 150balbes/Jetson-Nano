@@ -30,7 +30,7 @@
 #include <asm/div64.h>
 #include "lm49453.h"
 
-static struct reg_default lm49453_reg_defs[] = {
+static const struct reg_default lm49453_reg_defs[] = {
 	{ 0, 0x00 },
 	{ 1, 0x00 },
 	{ 2, 0x00 },
@@ -188,40 +188,37 @@ static struct reg_default lm49453_reg_defs[] = {
 /* codec private data */
 struct lm49453_priv {
 	struct regmap *regmap;
-	int fs_rate;
 };
 
 /* capture path controls */
 
 static const char *lm49453_mic2mode_text[] = {"Single Ended", "Differential"};
 
-static const SOC_ENUM_SINGLE_DECL(lm49453_mic2mode_enum, LM49453_P0_MICR_REG, 5,
-				  lm49453_mic2mode_text);
+static SOC_ENUM_SINGLE_DECL(lm49453_mic2mode_enum, LM49453_P0_MICR_REG, 5,
+			    lm49453_mic2mode_text);
 
 static const char *lm49453_dmic_cfg_text[] = {"DMICDAT1", "DMICDAT2"};
 
-static const SOC_ENUM_SINGLE_DECL(lm49453_dmic12_cfg_enum,
-				  LM49453_P0_DIGITAL_MIC1_CONFIG_REG,
-				  7, lm49453_dmic_cfg_text);
+static SOC_ENUM_SINGLE_DECL(lm49453_dmic12_cfg_enum,
+			    LM49453_P0_DIGITAL_MIC1_CONFIG_REG, 7,
+			    lm49453_dmic_cfg_text);
 
-static const SOC_ENUM_SINGLE_DECL(lm49453_dmic34_cfg_enum,
-				  LM49453_P0_DIGITAL_MIC2_CONFIG_REG,
-				  7, lm49453_dmic_cfg_text);
+static SOC_ENUM_SINGLE_DECL(lm49453_dmic34_cfg_enum,
+			    LM49453_P0_DIGITAL_MIC2_CONFIG_REG, 7,
+			    lm49453_dmic_cfg_text);
 
 /* MUX Controls */
 static const char *lm49453_adcl_mux_text[] = { "MIC1", "Aux_L" };
 
 static const char *lm49453_adcr_mux_text[] = { "MIC2", "Aux_R" };
 
-static const struct soc_enum lm49453_adcl_enum =
-	SOC_ENUM_SINGLE(LM49453_P0_ANALOG_MIXER_ADC_REG, 0,
-			ARRAY_SIZE(lm49453_adcl_mux_text),
-			lm49453_adcl_mux_text);
+static SOC_ENUM_SINGLE_DECL(lm49453_adcl_enum,
+			    LM49453_P0_ANALOG_MIXER_ADC_REG, 0,
+			    lm49453_adcl_mux_text);
 
-static const struct soc_enum lm49453_adcr_enum =
-	SOC_ENUM_SINGLE(LM49453_P0_ANALOG_MIXER_ADC_REG, 1,
-			ARRAY_SIZE(lm49453_adcr_mux_text),
-			lm49453_adcr_mux_text);
+static SOC_ENUM_SINGLE_DECL(lm49453_adcr_enum,
+			    LM49453_P0_ANALOG_MIXER_ADC_REG, 1,
+			    lm49453_adcr_mux_text);
 
 static const struct snd_kcontrol_new lm49453_adcl_mux_control =
 	SOC_DAPM_ENUM("ADC Left Mux", lm49453_adcl_enum);
@@ -1113,14 +1110,11 @@ static int lm49453_hw_params(struct snd_pcm_substream *substream,
 			     struct snd_pcm_hw_params *params,
 			     struct snd_soc_dai *dai)
 {
-	struct snd_soc_codec *codec = dai->codec;
-	struct lm49453_priv *lm49453 = snd_soc_codec_get_drvdata(codec);
+	struct snd_soc_component *component = dai->component;
 	u16 clk_div = 0;
 
-	lm49453->fs_rate = params_rate(params);
-
 	/* Setting DAC clock dividers based on substream sample rate. */
-	switch (lm49453->fs_rate) {
+	switch (params_rate(params)) {
 	case 8000:
 	case 16000:
 	case 32000:
@@ -1140,15 +1134,15 @@ static int lm49453_hw_params(struct snd_pcm_substream *substream,
 		return -EINVAL;
 	}
 
-	snd_soc_write(codec, LM49453_P0_ADC_CLK_DIV_REG, clk_div);
-	snd_soc_write(codec, LM49453_P0_DAC_HP_CLK_DIV_REG, clk_div);
+	snd_soc_component_write(component, LM49453_P0_ADC_CLK_DIV_REG, clk_div);
+	snd_soc_component_write(component, LM49453_P0_DAC_HP_CLK_DIV_REG, clk_div);
 
 	return 0;
 }
 
 static int lm49453_set_dai_fmt(struct snd_soc_dai *codec_dai, unsigned int fmt)
 {
-	struct snd_soc_codec *codec = codec_dai->codec;
+	struct snd_soc_component *component = codec_dai->component;
 
 	u16 aif_val;
 	int mode = 0;
@@ -1191,11 +1185,11 @@ static int lm49453_set_dai_fmt(struct snd_soc_dai *codec_dai, unsigned int fmt)
 		return -EINVAL;
 	}
 
-	snd_soc_update_bits(codec, LM49453_P0_AUDIO_PORT1_BASIC_REG,
+	snd_soc_component_update_bits(component, LM49453_P0_AUDIO_PORT1_BASIC_REG,
 			    LM49453_AUDIO_PORT1_BASIC_FMT_MASK|BIT(0)|BIT(5),
 			    (aif_val | mode | clk_phase));
 
-	snd_soc_write(codec, LM49453_P0_AUDIO_PORT1_RX_MSB_REG, clk_shift);
+	snd_soc_component_write(component, LM49453_P0_AUDIO_PORT1_RX_MSB_REG, clk_shift);
 
 	return 0;
 }
@@ -1203,7 +1197,7 @@ static int lm49453_set_dai_fmt(struct snd_soc_dai *codec_dai, unsigned int fmt)
 static int lm49453_set_dai_sysclk(struct snd_soc_dai *dai, int clk_id,
 				  unsigned int freq, int dir)
 {
-	struct snd_soc_codec *codec = dai->codec;
+	struct snd_soc_component *component = dai->component;
 	u16 pll_clk = 0;
 
 	switch (freq) {
@@ -1222,50 +1216,50 @@ static int lm49453_set_dai_sysclk(struct snd_soc_dai *dai, int clk_id,
 		return -EINVAL;
 	}
 
-	snd_soc_update_bits(codec, LM49453_P0_PMC_SETUP_REG, BIT(4), pll_clk);
+	snd_soc_component_update_bits(component, LM49453_P0_PMC_SETUP_REG, BIT(4), pll_clk);
 
 	return 0;
 }
 
 static int lm49453_hp_mute(struct snd_soc_dai *dai, int mute)
 {
-	snd_soc_update_bits(dai->codec, LM49453_P0_DAC_DSP_REG, BIT(1)|BIT(0),
+	snd_soc_component_update_bits(dai->component, LM49453_P0_DAC_DSP_REG, BIT(1)|BIT(0),
 			    (mute ? (BIT(1)|BIT(0)) : 0));
 	return 0;
 }
 
 static int lm49453_lo_mute(struct snd_soc_dai *dai, int mute)
 {
-	snd_soc_update_bits(dai->codec, LM49453_P0_DAC_DSP_REG, BIT(3)|BIT(2),
+	snd_soc_component_update_bits(dai->component, LM49453_P0_DAC_DSP_REG, BIT(3)|BIT(2),
 			    (mute ? (BIT(3)|BIT(2)) : 0));
 	return 0;
 }
 
 static int lm49453_ls_mute(struct snd_soc_dai *dai, int mute)
 {
-	snd_soc_update_bits(dai->codec, LM49453_P0_DAC_DSP_REG, BIT(5)|BIT(4),
+	snd_soc_component_update_bits(dai->component, LM49453_P0_DAC_DSP_REG, BIT(5)|BIT(4),
 			    (mute ? (BIT(5)|BIT(4)) : 0));
 	return 0;
 }
 
 static int lm49453_ep_mute(struct snd_soc_dai *dai, int mute)
 {
-	snd_soc_update_bits(dai->codec, LM49453_P0_DAC_DSP_REG, BIT(4),
+	snd_soc_component_update_bits(dai->component, LM49453_P0_DAC_DSP_REG, BIT(4),
 			    (mute ? BIT(4) : 0));
 	return 0;
 }
 
 static int lm49453_ha_mute(struct snd_soc_dai *dai, int mute)
 {
-	snd_soc_update_bits(dai->codec, LM49453_P0_DAC_DSP_REG, BIT(7)|BIT(6),
+	snd_soc_component_update_bits(dai->component, LM49453_P0_DAC_DSP_REG, BIT(7)|BIT(6),
 			    (mute ? (BIT(7)|BIT(6)) : 0));
 	return 0;
 }
 
-static int lm49453_set_bias_level(struct snd_soc_codec *codec,
+static int lm49453_set_bias_level(struct snd_soc_component *component,
 				  enum snd_soc_bias_level level)
 {
-	struct lm49453_priv *lm49453 = snd_soc_codec_get_drvdata(codec);
+	struct lm49453_priv *lm49453 = snd_soc_component_get_drvdata(component);
 
 	switch (level) {
 	case SND_SOC_BIAS_ON:
@@ -1273,20 +1267,18 @@ static int lm49453_set_bias_level(struct snd_soc_codec *codec,
 		break;
 
 	case SND_SOC_BIAS_STANDBY:
-		if (codec->dapm.bias_level == SND_SOC_BIAS_OFF)
+		if (snd_soc_component_get_bias_level(component) == SND_SOC_BIAS_OFF)
 			regcache_sync(lm49453->regmap);
 
-		snd_soc_update_bits(codec, LM49453_P0_PMC_SETUP_REG,
+		snd_soc_component_update_bits(component, LM49453_P0_PMC_SETUP_REG,
 				    LM49453_PMC_SETUP_CHIP_EN, LM49453_CHIP_EN);
 		break;
 
 	case SND_SOC_BIAS_OFF:
-		snd_soc_update_bits(codec, LM49453_P0_PMC_SETUP_REG,
+		snd_soc_component_update_bits(component, LM49453_P0_PMC_SETUP_REG,
 				    LM49453_PMC_SETUP_CHIP_EN, 0);
 		break;
 	}
-
-	codec->dapm.bias_level = level;
 
 	return 0;
 }
@@ -1295,35 +1287,35 @@ static int lm49453_set_bias_level(struct snd_soc_codec *codec,
 #define LM49453_FORMATS (SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S20_3LE |\
 			 SNDRV_PCM_FMTBIT_S24_LE | SNDRV_PCM_FMTBIT_S32_LE)
 
-static struct snd_soc_dai_ops lm49453_headset_dai_ops = {
+static const struct snd_soc_dai_ops lm49453_headset_dai_ops = {
 	.hw_params	= lm49453_hw_params,
 	.set_sysclk	= lm49453_set_dai_sysclk,
 	.set_fmt	= lm49453_set_dai_fmt,
 	.digital_mute	= lm49453_hp_mute,
 };
 
-static struct snd_soc_dai_ops lm49453_speaker_dai_ops = {
+static const struct snd_soc_dai_ops lm49453_speaker_dai_ops = {
 	.hw_params	= lm49453_hw_params,
 	.set_sysclk	= lm49453_set_dai_sysclk,
 	.set_fmt	= lm49453_set_dai_fmt,
 	.digital_mute	= lm49453_ls_mute,
 };
 
-static struct snd_soc_dai_ops lm49453_haptic_dai_ops = {
+static const struct snd_soc_dai_ops lm49453_haptic_dai_ops = {
 	.hw_params	= lm49453_hw_params,
 	.set_sysclk	= lm49453_set_dai_sysclk,
 	.set_fmt	= lm49453_set_dai_fmt,
 	.digital_mute	= lm49453_ha_mute,
 };
 
-static struct snd_soc_dai_ops lm49453_ep_dai_ops = {
+static const struct snd_soc_dai_ops lm49453_ep_dai_ops = {
 	.hw_params	= lm49453_hw_params,
 	.set_sysclk	= lm49453_set_dai_sysclk,
 	.set_fmt	= lm49453_set_dai_fmt,
 	.digital_mute	= lm49453_ep_mute,
 };
 
-static struct snd_soc_dai_ops lm49453_lineout_dai_ops = {
+static const struct snd_soc_dai_ops lm49453_lineout_dai_ops = {
 	.hw_params	= lm49453_hw_params,
 	.set_sysclk	= lm49453_set_dai_sysclk,
 	.set_fmt	= lm49453_set_dai_fmt,
@@ -1397,54 +1389,17 @@ static struct snd_soc_dai_driver lm49453_dai[] = {
 	},
 };
 
-static int lm49453_suspend(struct snd_soc_codec *codec)
-{
-	lm49453_set_bias_level(codec, SND_SOC_BIAS_OFF);
-	return 0;
-}
-
-static int lm49453_resume(struct snd_soc_codec *codec)
-{
-	lm49453_set_bias_level(codec, SND_SOC_BIAS_STANDBY);
-	return 0;
-}
-
-static int lm49453_probe(struct snd_soc_codec *codec)
-{
-	struct lm49453_priv *lm49453 = snd_soc_codec_get_drvdata(codec);
-	int ret = 0;
-
-	codec->control_data = lm49453->regmap;
-
-	ret = snd_soc_codec_set_cache_io(codec, 8, 8, SND_SOC_REGMAP);
-	if (ret < 0) {
-		dev_err(codec->dev, "Failed to set cache I/O: %d\n", ret);
-		return ret;
-	}
-
-	return 0;
-}
-
-/* power down chip */
-static int lm49453_remove(struct snd_soc_codec *codec)
-{
-	lm49453_set_bias_level(codec, SND_SOC_BIAS_OFF);
-	return 0;
-}
-
-static struct snd_soc_codec_driver soc_codec_dev_lm49453 = {
-	.probe = lm49453_probe,
-	.remove = lm49453_remove,
-	.suspend = lm49453_suspend,
-	.resume = lm49453_resume,
-	.set_bias_level = lm49453_set_bias_level,
-	.controls = lm49453_snd_controls,
-	.num_controls = ARRAY_SIZE(lm49453_snd_controls),
-	.dapm_widgets = lm49453_dapm_widgets,
-	.num_dapm_widgets = ARRAY_SIZE(lm49453_dapm_widgets),
-	.dapm_routes = lm49453_audio_map,
-	.num_dapm_routes = ARRAY_SIZE(lm49453_audio_map),
-	.idle_bias_off = true,
+static const struct snd_soc_component_driver soc_component_dev_lm49453 = {
+	.set_bias_level		= lm49453_set_bias_level,
+	.controls		= lm49453_snd_controls,
+	.num_controls		= ARRAY_SIZE(lm49453_snd_controls),
+	.dapm_widgets		= lm49453_dapm_widgets,
+	.num_dapm_widgets	= ARRAY_SIZE(lm49453_dapm_widgets),
+	.dapm_routes		= lm49453_audio_map,
+	.num_dapm_routes	= ARRAY_SIZE(lm49453_audio_map),
+	.use_pmdown_time	= 1,
+	.endianness		= 1,
+	.non_legacy_dai_naming	= 1,
 };
 
 static const struct regmap_config lm49453_regmap_config = {
@@ -1479,18 +1434,17 @@ static int lm49453_i2c_probe(struct i2c_client *i2c,
 		return ret;
 	}
 
-	ret =  snd_soc_register_codec(&i2c->dev,
-				      &soc_codec_dev_lm49453,
+	ret =  devm_snd_soc_register_component(&i2c->dev,
+				      &soc_component_dev_lm49453,
 				      lm49453_dai, ARRAY_SIZE(lm49453_dai));
 	if (ret < 0)
-		dev_err(&i2c->dev, "Failed to register codec: %d\n", ret);
+		dev_err(&i2c->dev, "Failed to register component: %d\n", ret);
 
 	return ret;
 }
 
 static int lm49453_i2c_remove(struct i2c_client *client)
 {
-	snd_soc_unregister_codec(&client->dev);
 	return 0;
 }
 
@@ -1503,7 +1457,6 @@ MODULE_DEVICE_TABLE(i2c, lm49453_i2c_id);
 static struct i2c_driver lm49453_i2c_driver = {
 	.driver = {
 		.name = "lm49453",
-		.owner = THIS_MODULE,
 	},
 	.probe = lm49453_i2c_probe,
 	.remove = lm49453_i2c_remove,

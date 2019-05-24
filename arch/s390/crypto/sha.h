@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0+ */
 /*
  * Cryptographic API.
  *
@@ -5,12 +6,6 @@
  *
  * Copyright IBM Corp. 2007
  * Author(s): Jan Glauber (jang@de.ibm.com)
- *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU General Public License as published by the Free
- * Software Foundation; either version 2 of the License, or (at your option)
- * any later version.
- *
  */
 #ifndef _CRYPTO_ARCH_S390_SHA_H
 #define _CRYPTO_ARCH_S390_SHA_H
@@ -19,7 +14,7 @@
 #include <crypto/sha.h>
 
 /* must be big enough for the largest SHA variant */
-#define SHA_MAX_STATE_SIZE	16
+#define SHA_MAX_STATE_SIZE	(SHA512_DIGEST_SIZE / 4)
 #define SHA_MAX_BLOCK_SIZE      SHA512_BLOCK_SIZE
 
 struct s390_sha_ctx {

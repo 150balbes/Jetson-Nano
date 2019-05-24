@@ -5,7 +5,7 @@ This documents the basic principles of the glock state machine
 internals. Each glock (struct gfs2_glock in fs/gfs2/incore.h)
 has two main (internal) locks:
 
- 1. A spinlock (gl_spin) which protects the internal state such
+ 1. A spinlock (gl_lockref.lock) which protects the internal state such
     as gl_state, gl_target and the list of holders (gl_holders)
  2. A non-blocking bit lock, GLF_LOCK, which is used to prevent other
     threads from making calls to the DLM, etc. at the same time. If a
@@ -82,8 +82,8 @@ rather than via the glock.
 
 Locking rules for glock operations:
 
-Operation     |  GLF_LOCK bit lock held |  gl_spin spinlock held
------------------------------------------------------------------
+Operation     |  GLF_LOCK bit lock held |  gl_lockref.lock spinlock held
+-------------------------------------------------------------------------
 go_xmote_th   |       Yes               |       No
 go_xmote_bh   |       Yes               |       No
 go_inval      |       Yes               |       No
@@ -100,14 +100,15 @@ indicates that it is caching uptodate data.
 
 Glock locking order within GFS2:
 
- 1. i_mutex (if required)
+ 1. i_rwsem (if required)
  2. Rename glock (for rename only)
  3. Inode glock(s)
     (Parents before children, inodes at "same level" with same parent in
      lock number order)
  4. Rgrp glock(s) (for (de)allocation operations)
  5. Transaction glock (via gfs2_trans_begin) for non-read operations
- 6. Page lock  (always last, very important!)
+ 6. i_rw_mutex (if required)
+ 7. Page lock  (always last, very important!)
 
 There are two glocks per inode. One deals with access to the inode
 itself (locking order as above), and the other, known as the iopen

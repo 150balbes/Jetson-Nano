@@ -70,7 +70,7 @@ static int lpc32xx_rtc_read_time(struct device *dev, struct rtc_time *time)
 	elapsed_sec = rtc_readl(rtc, LPC32XX_RTC_UCOUNT);
 	rtc_time_to_tm(elapsed_sec, time);
 
-	return rtc_valid_tm(time);
+	return 0;
 }
 
 static int lpc32xx_rtc_set_mmss(struct device *dev, unsigned long secs)
@@ -205,16 +205,15 @@ static int lpc32xx_rtc_probe(struct platform_device *pdev)
 	u32 tmp;
 
 	rtcirq = platform_get_irq(pdev, 0);
-	if (rtcirq < 0 || rtcirq >= NR_IRQS) {
+	if (rtcirq < 0) {
 		dev_warn(&pdev->dev, "Can't get interrupt resource\n");
 		rtcirq = -1;
 	}
 
 	rtc = devm_kzalloc(&pdev->dev, sizeof(*rtc), GFP_KERNEL);
-	if (unlikely(!rtc)) {
-		dev_err(&pdev->dev, "Can't allocate memory\n");
+	if (unlikely(!rtc))
 		return -ENOMEM;
-	}
+
 	rtc->irq = rtcirq;
 
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
@@ -295,11 +294,10 @@ static int lpc32xx_rtc_remove(struct platform_device *pdev)
 #ifdef CONFIG_PM
 static int lpc32xx_rtc_suspend(struct device *dev)
 {
-	struct platform_device *pdev = to_platform_device(dev);
-	struct lpc32xx_rtc *rtc = platform_get_drvdata(pdev);
+	struct lpc32xx_rtc *rtc = dev_get_drvdata(dev);
 
 	if (rtc->irq >= 0) {
-		if (device_may_wakeup(&pdev->dev))
+		if (device_may_wakeup(dev))
 			enable_irq_wake(rtc->irq);
 		else
 			disable_irq_wake(rtc->irq);
@@ -310,10 +308,9 @@ static int lpc32xx_rtc_suspend(struct device *dev)
 
 static int lpc32xx_rtc_resume(struct device *dev)
 {
-	struct platform_device *pdev = to_platform_device(dev);
-	struct lpc32xx_rtc *rtc = platform_get_drvdata(pdev);
+	struct lpc32xx_rtc *rtc = dev_get_drvdata(dev);
 
-	if (rtc->irq >= 0 && device_may_wakeup(&pdev->dev))
+	if (rtc->irq >= 0 && device_may_wakeup(dev))
 		disable_irq_wake(rtc->irq);
 
 	return 0;
@@ -322,8 +319,7 @@ static int lpc32xx_rtc_resume(struct device *dev)
 /* Unconditionally disable the alarm */
 static int lpc32xx_rtc_freeze(struct device *dev)
 {
-	struct platform_device *pdev = to_platform_device(dev);
-	struct lpc32xx_rtc *rtc = platform_get_drvdata(pdev);
+	struct lpc32xx_rtc *rtc = dev_get_drvdata(dev);
 
 	spin_lock_irq(&rtc->lock);
 
@@ -338,8 +334,7 @@ static int lpc32xx_rtc_freeze(struct device *dev)
 
 static int lpc32xx_rtc_thaw(struct device *dev)
 {
-	struct platform_device *pdev = to_platform_device(dev);
-	struct lpc32xx_rtc *rtc = platform_get_drvdata(pdev);
+	struct lpc32xx_rtc *rtc = dev_get_drvdata(dev);
 
 	if (rtc->alarm_enabled) {
 		spin_lock_irq(&rtc->lock);
@@ -380,7 +375,6 @@ static struct platform_driver lpc32xx_rtc_driver = {
 	.remove		= lpc32xx_rtc_remove,
 	.driver = {
 		.name	= RTC_NAME,
-		.owner	= THIS_MODULE,
 		.pm	= LPC32XX_RTC_PM_OPS,
 		.of_match_table = of_match_ptr(lpc32xx_rtc_match),
 	},

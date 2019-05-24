@@ -1,5 +1,5 @@
-/* linux/arch/arm/plat-samsung/include/plat/sdhci.h
- *
+/* SPDX-License-Identifier: GPL-2.0 */
+/*
  * Copyright (c) 2011 Samsung Electronics Co., Ltd.
  *		http://www.samsung.com
  *
@@ -9,11 +9,7 @@
  *	Ben Dooks <ben@simtec.co.uk>
  *
  * S3C Platform - SDHCI (HSMMC) platform data definitions
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
-*/
+ */
 
 #ifndef __PLAT_S3C_SDHCI_H
 #define __PLAT_S3C_SDHCI_H __FILE__
@@ -56,22 +52,7 @@ extern void s3c2416_setup_sdhci0_cfg_gpio(struct platform_device *, int w);
 extern void s3c2416_setup_sdhci1_cfg_gpio(struct platform_device *, int w);
 extern void s3c64xx_setup_sdhci0_cfg_gpio(struct platform_device *, int w);
 extern void s3c64xx_setup_sdhci1_cfg_gpio(struct platform_device *, int w);
-extern void s5pc100_setup_sdhci0_cfg_gpio(struct platform_device *, int w);
-extern void s5pc100_setup_sdhci1_cfg_gpio(struct platform_device *, int w);
-extern void s5pc100_setup_sdhci2_cfg_gpio(struct platform_device *, int w);
 extern void s3c64xx_setup_sdhci2_cfg_gpio(struct platform_device *, int w);
-extern void s5pv210_setup_sdhci0_cfg_gpio(struct platform_device *, int w);
-extern void s5pv210_setup_sdhci1_cfg_gpio(struct platform_device *, int w);
-extern void s5pv210_setup_sdhci2_cfg_gpio(struct platform_device *, int w);
-extern void s5pv210_setup_sdhci3_cfg_gpio(struct platform_device *, int w);
-extern void exynos4_setup_sdhci0_cfg_gpio(struct platform_device *, int w);
-extern void exynos4_setup_sdhci1_cfg_gpio(struct platform_device *, int w);
-extern void exynos4_setup_sdhci2_cfg_gpio(struct platform_device *, int w);
-extern void exynos4_setup_sdhci3_cfg_gpio(struct platform_device *, int w);
-extern void s5p64x0_setup_sdhci0_cfg_gpio(struct platform_device *, int w);
-extern void s5p64x0_setup_sdhci1_cfg_gpio(struct platform_device *, int w);
-extern void s5p6440_setup_sdhci2_cfg_gpio(struct platform_device *, int w);
-extern void s5p6450_setup_sdhci2_cfg_gpio(struct platform_device *, int w);
 
 /* S3C2416 SDHCI setup */
 
@@ -150,115 +131,6 @@ static inline void s3c6400_default_sdhci1(void) { }
 static inline void s3c6400_default_sdhci2(void) { }
 
 #endif /* CONFIG_S3C64XX_SETUP_SDHCI */
-
-/* S5P64X0 SDHCI setup */
-
-#ifdef CONFIG_S5P64X0_SETUP_SDHCI_GPIO
-static inline void s5p64x0_default_sdhci0(void)
-{
-#ifdef CONFIG_S3C_DEV_HSMMC
-	s3c_hsmmc0_def_platdata.cfg_gpio = s5p64x0_setup_sdhci0_cfg_gpio;
-#endif
-}
-
-static inline void s5p64x0_default_sdhci1(void)
-{
-#ifdef CONFIG_S3C_DEV_HSMMC1
-	s3c_hsmmc1_def_platdata.cfg_gpio = s5p64x0_setup_sdhci1_cfg_gpio;
-#endif
-}
-
-static inline void s5p6440_default_sdhci2(void)
-{
-#ifdef CONFIG_S3C_DEV_HSMMC2
-	s3c_hsmmc2_def_platdata.cfg_gpio = s5p6440_setup_sdhci2_cfg_gpio;
-#endif
-}
-
-static inline void s5p6450_default_sdhci2(void)
-{
-#ifdef CONFIG_S3C_DEV_HSMMC2
-	s3c_hsmmc2_def_platdata.cfg_gpio = s5p6450_setup_sdhci2_cfg_gpio;
-#endif
-}
-
-#else
-static inline void s5p64x0_default_sdhci0(void) { }
-static inline void s5p64x0_default_sdhci1(void) { }
-static inline void s5p6440_default_sdhci2(void) { }
-static inline void s5p6450_default_sdhci2(void) { }
-
-#endif /* CONFIG_S5P64X0_SETUP_SDHCI_GPIO */
-
-/* S5PC100 SDHCI setup */
-
-#ifdef CONFIG_S5PC100_SETUP_SDHCI
-static inline void s5pc100_default_sdhci0(void)
-{
-#ifdef CONFIG_S3C_DEV_HSMMC
-	s3c_hsmmc0_def_platdata.cfg_gpio = s5pc100_setup_sdhci0_cfg_gpio;
-#endif
-}
-
-static inline void s5pc100_default_sdhci1(void)
-{
-#ifdef CONFIG_S3C_DEV_HSMMC1
-	s3c_hsmmc1_def_platdata.cfg_gpio = s5pc100_setup_sdhci1_cfg_gpio;
-#endif
-}
-
-static inline void s5pc100_default_sdhci2(void)
-{
-#ifdef CONFIG_S3C_DEV_HSMMC2
-	s3c_hsmmc2_def_platdata.cfg_gpio = s5pc100_setup_sdhci2_cfg_gpio;
-#endif
-}
-
-#else
-static inline void s5pc100_default_sdhci0(void) { }
-static inline void s5pc100_default_sdhci1(void) { }
-static inline void s5pc100_default_sdhci2(void) { }
-
-#endif /* CONFIG_S5PC100_SETUP_SDHCI */
-
-/* S5PV210 SDHCI setup */
-
-#ifdef CONFIG_S5PV210_SETUP_SDHCI
-static inline void s5pv210_default_sdhci0(void)
-{
-#ifdef CONFIG_S3C_DEV_HSMMC
-	s3c_hsmmc0_def_platdata.cfg_gpio = s5pv210_setup_sdhci0_cfg_gpio;
-#endif
-}
-
-static inline void s5pv210_default_sdhci1(void)
-{
-#ifdef CONFIG_S3C_DEV_HSMMC1
-	s3c_hsmmc1_def_platdata.cfg_gpio = s5pv210_setup_sdhci1_cfg_gpio;
-#endif
-}
-
-static inline void s5pv210_default_sdhci2(void)
-{
-#ifdef CONFIG_S3C_DEV_HSMMC2
-	s3c_hsmmc2_def_platdata.cfg_gpio = s5pv210_setup_sdhci2_cfg_gpio;
-#endif
-}
-
-static inline void s5pv210_default_sdhci3(void)
-{
-#ifdef CONFIG_S3C_DEV_HSMMC3
-	s3c_hsmmc3_def_platdata.cfg_gpio = s5pv210_setup_sdhci3_cfg_gpio;
-#endif
-}
-
-#else
-static inline void s5pv210_default_sdhci0(void) { }
-static inline void s5pv210_default_sdhci1(void) { }
-static inline void s5pv210_default_sdhci2(void) { }
-static inline void s5pv210_default_sdhci3(void) { }
-
-#endif /* CONFIG_S5PV210_SETUP_SDHCI */
 
 static inline void s3c_sdhci_setname(int id, char *name)
 {

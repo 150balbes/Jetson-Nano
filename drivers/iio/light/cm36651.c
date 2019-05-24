@@ -268,7 +268,7 @@ static irqreturn_t cm36651_irq_handler(int irq, void *data)
 				CM36651_CMD_READ_RAW_PROXIMITY,
 				IIO_EV_TYPE_THRESH, ev_dir);
 
-	iio_push_event(indio_dev, ev_code, iio_get_time_ns());
+	iio_push_event(indio_dev, ev_code, iio_get_time_ns(indio_dev));
 
 	return IRQ_HANDLED;
 }
@@ -612,7 +612,6 @@ static const struct attribute_group cm36651_attribute_group = {
 };
 
 static const struct iio_info cm36651_info = {
-	.driver_module		= THIS_MODULE,
 	.read_raw		= &cm36651_read_raw,
 	.write_raw		= &cm36651_write_raw,
 	.read_event_value	= &cm36651_read_prox_thresh,
@@ -731,12 +730,12 @@ static const struct of_device_id cm36651_of_match[] = {
 	{ .compatible = "capella,cm36651" },
 	{ }
 };
+MODULE_DEVICE_TABLE(of, cm36651_of_match);
 
 static struct i2c_driver cm36651_driver = {
 	.driver = {
 		.name	= "cm36651",
 		.of_match_table = cm36651_of_match,
-		.owner	= THIS_MODULE,
 	},
 	.probe		= cm36651_probe,
 	.remove		= cm36651_remove,

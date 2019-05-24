@@ -1,14 +1,10 @@
-/* arch/arm/mach-s3c2410/include/mach/regs-clock.h
- *
+/* SPDX-License-Identifier: GPL-2.0 */
+/*
  * Copyright (c) 2003-2006 Simtec Electronics <linux@simtec.co.uk>
  *	http://armlinux.simtec.co.uk/
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
- *
  * S3C2410 clock register definitions
-*/
+ */
 
 #ifndef __ASM_ARM_REGS_CLOCK
 #define __ASM_ARM_REGS_CLOCK
@@ -41,24 +37,6 @@
 #define S3C2410_CLKCON_IIC	     (1<<16)
 #define S3C2410_CLKCON_IIS	     (1<<17)
 #define S3C2410_CLKCON_SPI	     (1<<18)
-
-/* DCLKCON register addresses in gpio.h */
-
-#define S3C2410_DCLKCON_DCLK0EN	     (1<<0)
-#define S3C2410_DCLKCON_DCLK0_PCLK   (0<<1)
-#define S3C2410_DCLKCON_DCLK0_UCLK   (1<<1)
-#define S3C2410_DCLKCON_DCLK0_DIV(x) (((x) - 1 )<<4)
-#define S3C2410_DCLKCON_DCLK0_CMP(x) (((x) - 1 )<<8)
-#define S3C2410_DCLKCON_DCLK0_DIV_MASK ((0xf)<<4)
-#define S3C2410_DCLKCON_DCLK0_CMP_MASK ((0xf)<<8)
-
-#define S3C2410_DCLKCON_DCLK1EN	     (1<<16)
-#define S3C2410_DCLKCON_DCLK1_PCLK   (0<<17)
-#define S3C2410_DCLKCON_DCLK1_UCLK   (1<<17)
-#define S3C2410_DCLKCON_DCLK1_DIV(x) (((x) - 1) <<20)
-#define S3C2410_DCLKCON_DCLK1_CMP(x) (((x) - 1) <<24)
-#define S3C2410_DCLKCON_DCLK1_DIV_MASK ((0xf) <<20)
-#define S3C2410_DCLKCON_DCLK1_CMP_MASK ((0xf) <<24)
 
 #define S3C2410_CLKDIVN_PDIVN	     (1<<0)
 #define S3C2410_CLKDIVN_HDIVN	     (1<<1)
@@ -95,7 +73,7 @@
 
 #endif /* CONFIG_CPU_S3C2440 or CONFIG_CPU_S3C2442 */
 
-#if defined(CONFIG_CPU_S3C2412) || defined(CONFIG_CPU_S3C2413)
+#if defined(CONFIG_CPU_S3C2412)
 
 #define S3C2412_OSCSET		S3C2410_CLKREG(0x18)
 #define S3C2412_CLKSRC		S3C2410_CLKREG(0x1C)
@@ -159,7 +137,7 @@
 #define S3C2412_CLKSRC_UREFCLK_EXTCLK	(1<<12)
 #define S3C2412_CLKSRC_EREFCLK_EXTCLK	(1<<14)
 
-#endif /* CONFIG_CPU_S3C2412 | CONFIG_CPU_S3C2413 */
+#endif /* CONFIG_CPU_S3C2412 */
 
 #define S3C2416_CLKDIV2		S3C2410_CLKREG(0x28)
 

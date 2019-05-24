@@ -14,20 +14,21 @@
  *
  */
 
+#include <linux/bitops.h>
+#include <linux/cpumask.h>
 #include <linux/init.h>
 #include <linux/io.h>
-#include <linux/cpumask.h>
-#include <linux/bitops.h>
+
+#include <soc/tegra/fuse.h>
 
 #include <asm/cacheflush.h>
-#include <asm/hardware/cache-l2x0.h>
 #include <asm/firmware.h>
+#include <asm/hardware/cache-l2x0.h>
 
 #include "iomap.h"
 #include "irammap.h"
 #include "reset.h"
 #include "sleep.h"
-#include "fuse.h"
 
 #define TEGRA_IRAM_RESET_BASE (TEGRA_IRAM_BASE + \
 				TEGRA_IRAM_RESET_HANDLER_OFFSET)
@@ -53,12 +54,10 @@ static void __init tegra_cpu_reset_handler_set(const u32 reset_address)
 	 * Prevent further modifications to the physical reset vector.
 	 *  NOTE: Has no effect on chips prior to Tegra30.
 	 */
-	if (tegra_chip_id != TEGRA20) {
-		reg = readl(sb_ctrl);
-		reg |= 2;
-		writel(reg, sb_ctrl);
-		wmb();
-	}
+	reg = readl(sb_ctrl);
+	reg |= 2;
+	writel(reg, sb_ctrl);
+	wmb();
 }
 
 static void __init tegra_cpu_reset_handler_enable(void)
@@ -95,14 +94,14 @@ void __init tegra_cpu_reset_handler_init(void)
 	__tegra_cpu_reset_handler_data[TEGRA_RESET_MASK_PRESENT] =
 		*((u32 *)cpu_possible_mask);
 	__tegra_cpu_reset_handler_data[TEGRA_RESET_STARTUP_SECONDARY] =
-		virt_to_phys((void *)tegra_secondary_startup);
+		__pa_symbol((void *)secondary_startup);
 #endif
 
 #ifdef CONFIG_PM_SLEEP
 	__tegra_cpu_reset_handler_data[TEGRA_RESET_STARTUP_LP1] =
 		TEGRA_IRAM_LPx_RESUME_AREA;
 	__tegra_cpu_reset_handler_data[TEGRA_RESET_STARTUP_LP2] =
-		virt_to_phys((void *)tegra_resume);
+		__pa_symbol((void *)tegra_resume);
 #endif
 
 	tegra_cpu_reset_handler_enable();

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 #include <linux/libata.h>
 #include <linux/cdrom.h>
 #include <linux/pm_runtime.h>
@@ -34,7 +35,7 @@ struct zpodd {
 static int eject_tray(struct ata_device *dev)
 {
 	struct ata_taskfile tf;
-	const char cdb[] = {  GPCMD_START_STOP_UNIT,
+	static const char cdb[ATAPI_CDB_LEN] = {  GPCMD_START_STOP_UNIT,
 		0, 0, 0,
 		0x02,     /* LoEj */
 		0, 0, 0, 0, 0, 0, 0,
@@ -55,7 +56,7 @@ static enum odd_mech_type zpodd_get_mech_type(struct ata_device *dev)
 	unsigned int ret;
 	struct rm_feature_desc *desc = (void *)(buf + 8);
 	struct ata_taskfile tf;
-	char cdb[] = {  GPCMD_GET_CONFIGURATION,
+	static const char cdb[] = {  GPCMD_GET_CONFIGURATION,
 			2,      /* only 1 feature descriptor requested */
 			0, 3,   /* 3, removable medium feature */
 			0, 0, 0,/* reserved */
@@ -83,21 +84,6 @@ static enum odd_mech_type zpodd_get_mech_type(struct ata_device *dev)
 		return ODD_MECH_TYPE_DRAWER;
 	else
 		return ODD_MECH_TYPE_UNSUPPORTED;
-}
-
-static bool odd_can_poweroff(struct ata_device *ata_dev)
-{
-	acpi_handle handle;
-	struct acpi_device *acpi_dev;
-
-	handle = ata_dev_acpi_handle(ata_dev);
-	if (!handle)
-		return false;
-
-	if (acpi_bus_get_device(handle, &acpi_dev))
-		return false;
-
-	return acpi_device_can_poweroff(acpi_dev);
 }
 
 /* Test if ODD is zero power ready by sense code */
@@ -189,8 +175,7 @@ void zpodd_enable_run_wake(struct ata_device *dev)
 	sdev_disable_disk_events(dev->sdev);
 
 	zpodd->powered_off = true;
-	device_set_run_wake(&dev->tdev, true);
-	acpi_pm_device_run_wake(&dev->tdev, true);
+	acpi_pm_set_device_wakeup(&dev->tdev, true);
 }
 
 /* Disable runtime wake capability if it is enabled */
@@ -198,10 +183,8 @@ void zpodd_disable_run_wake(struct ata_device *dev)
 {
 	struct zpodd *zpodd = dev->zpodd;
 
-	if (zpodd->powered_off) {
-		acpi_pm_device_run_wake(&dev->tdev, false);
-		device_set_run_wake(&dev->tdev, false);
-	}
+	if (zpodd->powered_off)
+		acpi_pm_set_device_wakeup(&dev->tdev, false);
 }
 
 /*
@@ -267,13 +250,11 @@ static void ata_acpi_remove_pm_notifier(struct ata_device *dev)
 
 void zpodd_init(struct ata_device *dev)
 {
+	struct acpi_device *adev = ACPI_COMPANION(&dev->tdev);
 	enum odd_mech_type mech_type;
 	struct zpodd *zpodd;
 
-	if (dev->zpodd)
-		return;
-
-	if (!odd_can_poweroff(dev))
+	if (dev->zpodd || !adev || !acpi_device_can_poweroff(adev))
 		return;
 
 	mech_type = zpodd_get_mech_type(dev);

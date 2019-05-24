@@ -23,9 +23,14 @@
 #include <asm/page.h>
 #include <asm/asm-offsets.h>
 #include <asm/exception-64s.h>
+#include <asm/asm-compat.h>
 
 #if defined(CONFIG_PPC_BOOK3S_64)
+#ifdef PPC64_ELF_ABI_v2
+#define FUNC(name) 		name
+#else
 #define FUNC(name) 		GLUE(.,name)
+#endif
 #define GET_SHADOW_VCPU(reg)    addi	reg, r13, PACA_SVCPU
 
 #elif defined(CONFIG_PPC_BOOK3S_32)
@@ -92,7 +97,7 @@ kvm_start_entry:
 
 kvm_start_lightweight:
 	/* Copy registers into shadow vcpu so we can access them in real mode */
-	GET_SHADOW_VCPU(r3)
+	mr	r3, r4
 	bl	FUNC(kvmppc_copy_to_svcpu)
 	nop
 	REST_GPR(4, r1)
@@ -104,8 +109,27 @@ kvm_start_lightweight:
 	stb	r3, HSTATE_RESTORE_HID5(r13)
 
 	/* Load up guest SPRG3 value, since it's user readable */
-	ld	r3, VCPU_SHARED(r4)
-	ld	r3, VCPU_SHARED_SPRG3(r3)
+	lwz	r3, VCPU_SHAREDBE(r4)
+	cmpwi	r3, 0
+	ld	r5, VCPU_SHARED(r4)
+	beq	sprg3_little_endian
+sprg3_big_endian:
+#ifdef __BIG_ENDIAN__
+	ld	r3, VCPU_SHARED_SPRG3(r5)
+#else
+	addi	r5, r5, VCPU_SHARED_SPRG3
+	ldbrx	r3, 0, r5
+#endif
+	b	after_sprg3_load
+sprg3_little_endian:
+#ifdef __LITTLE_ENDIAN__
+	ld	r3, VCPU_SHARED_SPRG3(r5)
+#else
+	addi	r5, r5, VCPU_SHARED_SPRG3
+	ldbrx	r3, 0, r5
+#endif
+
+after_sprg3_load:
 	mtspr	SPRN_SPRG3, r3
 #endif /* CONFIG_PPC_BOOK3S_64 */
 
@@ -142,9 +166,7 @@ kvm_start_lightweight:
 	stw	r12, VCPU_TRAP(r3)
 
 	/* Transfer reg values from shadow vcpu back to vcpu struct */
-	/* On 64-bit, interrupts are still off at this point */
 
-	GET_SHADOW_VCPU(r4)
 	bl	FUNC(kvmppc_copy_from_svcpu)
 	nop
 
@@ -153,8 +175,8 @@ kvm_start_lightweight:
 	 * Reload kernel SPRG3 value.
 	 * No need to save guest value as usermode can't modify SPRG3.
 	 */
-	ld	r3, PACA_SPRG3(r13)
-	mtspr	SPRN_SPRG3, r3
+	ld	r3, PACA_SPRG_VDSO(r13)
+	mtspr	SPRN_SPRG_VDSO_WRITE, r3
 #endif /* CONFIG_PPC_BOOK3S_64 */
 
 	/* R7 = vcpu */

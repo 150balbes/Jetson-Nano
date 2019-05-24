@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  * arch/alpha/boot/tools/objstrip.c
  *
@@ -27,6 +28,9 @@
 #include <linux/param.h>
 #ifdef __ELF__
 # include <linux/elf.h>
+# define elfhdr elf64_hdr
+# define elf_phdr elf64_phdr
+# define elf_check_arch(x) ((x)->e_machine == EM_ALPHA)
 #endif
 
 /* bootfile size must be multiple of BLOCK_SIZE: */

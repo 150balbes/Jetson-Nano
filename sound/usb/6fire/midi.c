@@ -41,8 +41,9 @@ static void usb6fire_midi_out_handler(struct urb *urb)
 
 			ret = usb_submit_urb(urb, GFP_ATOMIC);
 			if (ret < 0)
-				snd_printk(KERN_ERR PREFIX "midi out urb "
-						"submit failed: %d\n", ret);
+				dev_err(&urb->dev->dev,
+					"midi out urb submit failed: %d\n",
+					ret);
 		} else /* no more data to transmit */
 			rt->out = NULL;
 	}
@@ -94,8 +95,9 @@ static void usb6fire_midi_out_trigger(
 
 			ret = usb_submit_urb(urb, GFP_ATOMIC);
 			if (ret < 0)
-				snd_printk(KERN_ERR PREFIX "midi out urb "
-						"submit failed: %d\n", ret);
+				dev_err(&urb->dev->dev,
+					"midi out urb submit failed: %d\n",
+					ret);
 			else
 				rt->out = alsa_sub;
 		}
@@ -137,14 +139,14 @@ static void usb6fire_midi_in_trigger(
 	spin_unlock_irqrestore(&rt->in_lock, flags);
 }
 
-static struct snd_rawmidi_ops out_ops = {
+static const struct snd_rawmidi_ops out_ops = {
 	.open = usb6fire_midi_out_open,
 	.close = usb6fire_midi_out_close,
 	.trigger = usb6fire_midi_out_trigger,
 	.drain = usb6fire_midi_out_drain
 };
 
-static struct snd_rawmidi_ops in_ops = {
+static const struct snd_rawmidi_ops in_ops = {
 	.open = usb6fire_midi_in_open,
 	.close = usb6fire_midi_in_close,
 	.trigger = usb6fire_midi_in_trigger
@@ -181,7 +183,7 @@ int usb6fire_midi_init(struct sfire_chip *chip)
 	if (ret < 0) {
 		kfree(rt->out_buffer);
 		kfree(rt);
-		snd_printk(KERN_ERR PREFIX "unable to create midi.\n");
+		dev_err(&chip->dev->dev, "unable to create midi.\n");
 		return ret;
 	}
 	rt->instance->private_data = rt;

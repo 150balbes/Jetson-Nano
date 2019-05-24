@@ -52,7 +52,7 @@
 #define MLOG_MASK_PREFIX ML_DLM
 #include "cluster/masklog.h"
 
-static struct kmem_cache *dlm_lock_cache = NULL;
+static struct kmem_cache *dlm_lock_cache;
 
 static DEFINE_SPINLOCK(dlm_cookie_lock);
 static u64 dlm_next_cookie = 1;
@@ -77,8 +77,7 @@ int dlm_init_lock_cache(void)
 
 void dlm_destroy_lock_cache(void)
 {
-	if (dlm_lock_cache)
-		kmem_cache_destroy(dlm_lock_cache);
+	kmem_cache_destroy(dlm_lock_cache);
 }
 
 /* Tell us whether we can grant a new lock request.

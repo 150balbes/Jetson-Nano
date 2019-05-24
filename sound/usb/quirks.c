@@ -19,6 +19,7 @@
 #include <linux/usb.h>
 #include <linux/usb/audio.h>
 #include <linux/usb/midi.h>
+#include <linux/bits.h>
 
 #include <sound/control.h>
 #include <sound/core.h>
@@ -43,12 +44,13 @@
 static int create_composite_quirk(struct snd_usb_audio *chip,
 				  struct usb_interface *iface,
 				  struct usb_driver *driver,
-				  const struct snd_usb_audio_quirk *quirk)
+				  const struct snd_usb_audio_quirk *quirk_comp)
 {
 	int probed_ifnum = get_iface_desc(iface->altsetting)->bInterfaceNumber;
+	const struct snd_usb_audio_quirk *quirk;
 	int err;
 
-	for (quirk = quirk->data; quirk->ifnum >= 0; ++quirk) {
+	for (quirk = quirk_comp->data; quirk->ifnum >= 0; ++quirk) {
 		iface = usb_ifnum_to_if(chip->dev, quirk->ifnum);
 		if (!iface)
 			continue;
@@ -58,9 +60,17 @@ static int create_composite_quirk(struct snd_usb_audio *chip,
 		err = snd_usb_create_quirk(chip, iface, driver, quirk);
 		if (err < 0)
 			return err;
-		if (quirk->ifnum != probed_ifnum)
+	}
+
+	for (quirk = quirk_comp->data; quirk->ifnum >= 0; ++quirk) {
+		iface = usb_ifnum_to_if(chip->dev, quirk->ifnum);
+		if (!iface)
+			continue;
+		if (quirk->ifnum != probed_ifnum &&
+		    !usb_interface_claimed(iface))
 			usb_driver_claim_interface(driver, iface, (void *)-1L);
 	}
+
 	return 0;
 }
 
@@ -106,11 +116,14 @@ static int create_standard_audio_quirk(struct snd_usb_audio *chip,
 	struct usb_interface_descriptor *altsd;
 	int err;
 
+	if (chip->usb_id == USB_ID(0x1686, 0x00dd)) /* Zoom R16/24 */
+		chip->tx_length_quirk = 1;
+
 	alts = &iface->altsetting[0];
 	altsd = get_iface_desc(alts);
 	err = snd_usb_parse_audio_interface(chip, altsd->bInterfaceNumber);
 	if (err < 0) {
-		snd_printk(KERN_ERR "cannot setup if %d: error %d\n",
+		usb_audio_err(chip, "cannot setup if %d: error %d\n",
 			   altsd->bInterfaceNumber, err);
 		return err;
 	}
@@ -134,10 +147,10 @@ static int create_fixed_stream_quirk(struct snd_usb_audio *chip,
 	unsigned *rate_table = NULL;
 
 	fp = kmemdup(quirk->data, sizeof(*fp), GFP_KERNEL);
-	if (!fp) {
-		snd_printk(KERN_ERR "cannot memdup\n");
+	if (!fp)
 		return -ENOMEM;
-	}
+
+	INIT_LIST_HEAD(&fp->list);
 	if (fp->nr_rates > MAX_NR_RATES) {
 		kfree(fp);
 		return -EINVAL;
@@ -155,19 +168,20 @@ static int create_fixed_stream_quirk(struct snd_usb_audio *chip,
 	stream = (fp->endpoint & USB_DIR_IN)
 		? SNDRV_PCM_STREAM_CAPTURE : SNDRV_PCM_STREAM_PLAYBACK;
 	err = snd_usb_add_audio_stream(chip, stream, fp);
-	if (err < 0) {
-		kfree(fp);
-		kfree(rate_table);
-		return err;
-	}
+	if (err < 0)
+		goto error;
 	if (fp->iface != get_iface_desc(&iface->altsetting[0])->bInterfaceNumber ||
 	    fp->altset_idx >= iface->num_altsetting) {
-		kfree(fp);
-		kfree(rate_table);
-		return -EINVAL;
+		err = -EINVAL;
+		goto error;
 	}
 	alts = &iface->altsetting[fp->altset_idx];
 	altsd = get_iface_desc(alts);
+	if (altsd->bNumEndpoints < 1) {
+		err = -EINVAL;
+		goto error;
+	}
+
 	fp->protocol = altsd->bInterfaceProtocol;
 
 	if (fp->datainterval == 0)
@@ -178,6 +192,12 @@ static int create_fixed_stream_quirk(struct snd_usb_audio *chip,
 	snd_usb_init_pitch(chip, fp->iface, alts, fp);
 	snd_usb_init_sample_rate(chip, fp->iface, alts, fp, fp->rate_max);
 	return 0;
+
+ error:
+	list_del(&fp->list); /* unlink for avoiding double-free */
+	kfree(fp);
+	kfree(rate_table);
+	return err;
 }
 
 static int create_auto_pcm_quirk(struct snd_usb_audio *chip,
@@ -434,8 +454,9 @@ static int create_uaxx_quirk(struct snd_usb_audio *chip,
 		const struct snd_usb_audio_quirk *quirk =
 			chip->usb_id == USB_ID(0x0582, 0x002b)
 			? &ua700_quirk : &uaxx_quirk;
-		return snd_usbmidi_create(chip->card, iface,
-					  &chip->midi_list, quirk);
+		return __snd_usbmidi_create(chip->card, iface,
+					  &chip->midi_list, quirk,
+					  chip->usb_id);
 	}
 
 	if (altsd->bNumEndpoints != 1)
@@ -450,6 +471,7 @@ static int create_uaxx_quirk(struct snd_usb_audio *chip,
 	fp->ep_attr = get_endpoint(alts, 0)->bmAttributes;
 	fp->datainterval = 0;
 	fp->maxpacksize = le16_to_cpu(get_endpoint(alts, 0)->wMaxPacketSize);
+	INIT_LIST_HEAD(&fp->list);
 
 	switch (fp->maxpacksize) {
 	case 0x120:
@@ -464,7 +486,7 @@ static int create_uaxx_quirk(struct snd_usb_audio *chip,
 		fp->rate_max = fp->rate_min = 96000;
 		break;
 	default:
-		snd_printk(KERN_ERR "unknown sample rate\n");
+		usb_audio_err(chip, "unknown sample rate\n");
 		kfree(fp);
 		return -ENXIO;
 	}
@@ -473,6 +495,7 @@ static int create_uaxx_quirk(struct snd_usb_audio *chip,
 		? SNDRV_PCM_STREAM_CAPTURE : SNDRV_PCM_STREAM_PLAYBACK;
 	err = snd_usb_add_audio_stream(chip, stream, fp);
 	if (err < 0) {
+		list_del(&fp->list); /* unlink for avoiding double-free */
 		kfree(fp);
 		return err;
 	}
@@ -526,6 +549,7 @@ int snd_usb_create_quirk(struct snd_usb_audio *chip,
 		[QUIRK_MIDI_CME] = create_any_midi_quirk,
 		[QUIRK_MIDI_AKAI] = create_any_midi_quirk,
 		[QUIRK_MIDI_FTDI] = create_any_midi_quirk,
+		[QUIRK_MIDI_CH345] = create_any_midi_quirk,
 		[QUIRK_AUDIO_STANDARD_INTERFACE] = create_standard_audio_quirk,
 		[QUIRK_AUDIO_FIXED_ENDPOINT] = create_fixed_stream_quirk,
 		[QUIRK_AUDIO_EDIROL_UAXX] = create_uaxx_quirk,
@@ -536,7 +560,7 @@ int snd_usb_create_quirk(struct snd_usb_audio *chip,
 	if (quirk->type < QUIRK_TYPE_COUNT) {
 		return quirk_funcs[quirk->type](chip, iface, driver, quirk);
 	} else {
-		snd_printd(KERN_ERR "invalid quirk type %d\n", quirk->type);
+		usb_audio_err(chip, "invalid quirk type %d\n", quirk->type);
 		return -ENXIO;
 	}
 }
@@ -555,18 +579,21 @@ static int snd_usb_extigy_boot_quirk(struct usb_device *dev, struct usb_interfac
 
 	if (le16_to_cpu(get_cfg_desc(config)->wTotalLength) == EXTIGY_FIRMWARE_SIZE_OLD ||
 	    le16_to_cpu(get_cfg_desc(config)->wTotalLength) == EXTIGY_FIRMWARE_SIZE_NEW) {
-		snd_printdd("sending Extigy boot sequence...\n");
+		dev_dbg(&dev->dev, "sending Extigy boot sequence...\n");
 		/* Send message to force it to reconnect with full interface. */
 		err = snd_usb_ctl_msg(dev, usb_sndctrlpipe(dev,0),
 				      0x10, 0x43, 0x0001, 0x000a, NULL, 0);
-		if (err < 0) snd_printdd("error sending boot message: %d\n", err);
+		if (err < 0)
+			dev_dbg(&dev->dev, "error sending boot message: %d\n", err);
 		err = usb_get_descriptor(dev, USB_DT_DEVICE, 0,
 				&dev->descriptor, sizeof(dev->descriptor));
 		config = dev->actconfig;
-		if (err < 0) snd_printdd("error usb_get_descriptor: %d\n", err);
+		if (err < 0)
+			dev_dbg(&dev->dev, "error usb_get_descriptor: %d\n", err);
 		err = usb_reset_configuration(dev);
-		if (err < 0) snd_printdd("error usb_reset_configuration: %d\n", err);
-		snd_printdd("extigy_boot: new boot length = %d\n",
+		if (err < 0)
+			dev_dbg(&dev->dev, "error usb_reset_configuration: %d\n", err);
+		dev_dbg(&dev->dev, "extigy_boot: new boot length = %d\n",
 			    le16_to_cpu(get_cfg_desc(config)->wTotalLength));
 		return -ENODEV; /* quit this anyway */
 	}
@@ -594,7 +621,7 @@ static int snd_usb_fasttrackpro_boot_quirk(struct usb_device *dev)
 	int err;
 
 	if (dev->actconfig->desc.bConfigurationValue == 1) {
-		snd_printk(KERN_INFO "usb-audio: "
+		dev_info(&dev->dev,
 			   "Fast Track Pro switching to config #2\n");
 		/* This function has to be available by the usb core module.
 		 * if it is not avialable the boot quirk has to be left out
@@ -603,14 +630,15 @@ static int snd_usb_fasttrackpro_boot_quirk(struct usb_device *dev)
 		 */
 		err = usb_driver_set_configuration(dev, 2);
 		if (err < 0)
-			snd_printdd("error usb_driver_set_configuration: %d\n",
-				    err);
+			dev_dbg(&dev->dev,
+				"error usb_driver_set_configuration: %d\n",
+				err);
 		/* Always return an error, so that we stop creating a device
 		   that will just be destroyed and recreated with a new
 		   configuration */
 		return -ENODEV;
 	} else
-		snd_printk(KERN_INFO "usb-audio: Fast Track Pro config OK\n");
+		dev_info(&dev->dev, "Fast Track Pro config OK\n");
 
 	return 0;
 }
@@ -641,15 +669,133 @@ static int snd_usb_cm106_boot_quirk(struct usb_device *dev)
 }
 
 /*
- * C-Media CM6206 is based on CM106 with two additional
- * registers that are not documented in the data sheet.
- * Values here are chosen based on sniffing USB traffic
- * under Windows.
+ * CM6206 registers from the CM6206 datasheet rev 2.1
  */
+#define CM6206_REG0_DMA_MASTER BIT(15)
+#define CM6206_REG0_SPDIFO_RATE_48K (2 << 12)
+#define CM6206_REG0_SPDIFO_RATE_96K (7 << 12)
+/* Bit 4 thru 11 is the S/PDIF category code */
+#define CM6206_REG0_SPDIFO_CAT_CODE_GENERAL (0 << 4)
+#define CM6206_REG0_SPDIFO_EMPHASIS_CD BIT(3)
+#define CM6206_REG0_SPDIFO_COPYRIGHT_NA BIT(2)
+#define CM6206_REG0_SPDIFO_NON_AUDIO BIT(1)
+#define CM6206_REG0_SPDIFO_PRO_FORMAT BIT(0)
+
+#define CM6206_REG1_TEST_SEL_CLK BIT(14)
+#define CM6206_REG1_PLLBIN_EN BIT(13)
+#define CM6206_REG1_SOFT_MUTE_EN BIT(12)
+#define CM6206_REG1_GPIO4_OUT BIT(11)
+#define CM6206_REG1_GPIO4_OE BIT(10)
+#define CM6206_REG1_GPIO3_OUT BIT(9)
+#define CM6206_REG1_GPIO3_OE BIT(8)
+#define CM6206_REG1_GPIO2_OUT BIT(7)
+#define CM6206_REG1_GPIO2_OE BIT(6)
+#define CM6206_REG1_GPIO1_OUT BIT(5)
+#define CM6206_REG1_GPIO1_OE BIT(4)
+#define CM6206_REG1_SPDIFO_INVALID BIT(3)
+#define CM6206_REG1_SPDIF_LOOP_EN BIT(2)
+#define CM6206_REG1_SPDIFO_DIS BIT(1)
+#define CM6206_REG1_SPDIFI_MIX BIT(0)
+
+#define CM6206_REG2_DRIVER_ON BIT(15)
+#define CM6206_REG2_HEADP_SEL_SIDE_CHANNELS (0 << 13)
+#define CM6206_REG2_HEADP_SEL_SURROUND_CHANNELS (1 << 13)
+#define CM6206_REG2_HEADP_SEL_CENTER_SUBW (2 << 13)
+#define CM6206_REG2_HEADP_SEL_FRONT_CHANNELS (3 << 13)
+#define CM6206_REG2_MUTE_HEADPHONE_RIGHT BIT(12)
+#define CM6206_REG2_MUTE_HEADPHONE_LEFT BIT(11)
+#define CM6206_REG2_MUTE_REAR_SURROUND_RIGHT BIT(10)
+#define CM6206_REG2_MUTE_REAR_SURROUND_LEFT BIT(9)
+#define CM6206_REG2_MUTE_SIDE_SURROUND_RIGHT BIT(8)
+#define CM6206_REG2_MUTE_SIDE_SURROUND_LEFT BIT(7)
+#define CM6206_REG2_MUTE_SUBWOOFER BIT(6)
+#define CM6206_REG2_MUTE_CENTER BIT(5)
+#define CM6206_REG2_MUTE_RIGHT_FRONT BIT(3)
+#define CM6206_REG2_MUTE_LEFT_FRONT BIT(3)
+#define CM6206_REG2_EN_BTL BIT(2)
+#define CM6206_REG2_MCUCLKSEL_1_5_MHZ (0)
+#define CM6206_REG2_MCUCLKSEL_3_MHZ (1)
+#define CM6206_REG2_MCUCLKSEL_6_MHZ (2)
+#define CM6206_REG2_MCUCLKSEL_12_MHZ (3)
+
+/* Bit 11..13 sets the sensitivity to FLY tuner volume control VP/VD signal */
+#define CM6206_REG3_FLYSPEED_DEFAULT (2 << 11)
+#define CM6206_REG3_VRAP25EN BIT(10)
+#define CM6206_REG3_MSEL1 BIT(9)
+#define CM6206_REG3_SPDIFI_RATE_44_1K BIT(0 << 7)
+#define CM6206_REG3_SPDIFI_RATE_48K BIT(2 << 7)
+#define CM6206_REG3_SPDIFI_RATE_32K BIT(3 << 7)
+#define CM6206_REG3_PINSEL BIT(6)
+#define CM6206_REG3_FOE BIT(5)
+#define CM6206_REG3_ROE BIT(4)
+#define CM6206_REG3_CBOE BIT(3)
+#define CM6206_REG3_LOSE BIT(2)
+#define CM6206_REG3_HPOE BIT(1)
+#define CM6206_REG3_SPDIFI_CANREC BIT(0)
+
+#define CM6206_REG5_DA_RSTN BIT(13)
+#define CM6206_REG5_AD_RSTN BIT(12)
+#define CM6206_REG5_SPDIFO_AD2SPDO BIT(12)
+#define CM6206_REG5_SPDIFO_SEL_FRONT (0 << 9)
+#define CM6206_REG5_SPDIFO_SEL_SIDE_SUR (1 << 9)
+#define CM6206_REG5_SPDIFO_SEL_CEN_LFE (2 << 9)
+#define CM6206_REG5_SPDIFO_SEL_REAR_SUR (3 << 9)
+#define CM6206_REG5_CODECM BIT(8)
+#define CM6206_REG5_EN_HPF BIT(7)
+#define CM6206_REG5_T_SEL_DSDA4 BIT(6)
+#define CM6206_REG5_T_SEL_DSDA3 BIT(5)
+#define CM6206_REG5_T_SEL_DSDA2 BIT(4)
+#define CM6206_REG5_T_SEL_DSDA1 BIT(3)
+#define CM6206_REG5_T_SEL_DSDAD_NORMAL 0
+#define CM6206_REG5_T_SEL_DSDAD_FRONT 4
+#define CM6206_REG5_T_SEL_DSDAD_S_SURROUND 5
+#define CM6206_REG5_T_SEL_DSDAD_CEN_LFE 6
+#define CM6206_REG5_T_SEL_DSDAD_R_SURROUND 7
+
 static int snd_usb_cm6206_boot_quirk(struct usb_device *dev)
 {
 	int err  = 0, reg;
-	int val[] = {0x2004, 0x3000, 0xf800, 0x143f, 0x0000, 0x3000};
+	int val[] = {
+		/*
+		 * Values here are chosen based on sniffing USB traffic
+		 * under Windows.
+		 *
+		 * REG0: DAC is master, sample rate 48kHz, no copyright
+		 */
+		CM6206_REG0_SPDIFO_RATE_48K |
+		CM6206_REG0_SPDIFO_COPYRIGHT_NA,
+		/*
+		 * REG1: PLL binary search enable, soft mute enable.
+		 */
+		CM6206_REG1_PLLBIN_EN |
+		CM6206_REG1_SOFT_MUTE_EN,
+		/*
+		 * REG2: enable output drivers,
+		 * select front channels to the headphone output,
+		 * then mute the headphone channels, run the MCU
+		 * at 1.5 MHz.
+		 */
+		CM6206_REG2_DRIVER_ON |
+		CM6206_REG2_HEADP_SEL_FRONT_CHANNELS |
+		CM6206_REG2_MUTE_HEADPHONE_RIGHT |
+		CM6206_REG2_MUTE_HEADPHONE_LEFT,
+		/*
+		 * REG3: default flyspeed, set 2.5V mic bias
+		 * enable all line out ports and enable SPDIF
+		 */
+		CM6206_REG3_FLYSPEED_DEFAULT |
+		CM6206_REG3_VRAP25EN |
+		CM6206_REG3_FOE |
+		CM6206_REG3_ROE |
+		CM6206_REG3_CBOE |
+		CM6206_REG3_LOSE |
+		CM6206_REG3_HPOE |
+		CM6206_REG3_SPDIFI_CANREC,
+		/* REG4 is just a bunch of GPIO lines */
+		0x0000,
+		/* REG5: de-assert AD/DA reset signals */
+		CM6206_REG5_DA_RSTN |
+		CM6206_REG5_AD_RSTN };
 
 	for (reg = 0; reg < ARRAY_SIZE(val); reg++) {
 		err = snd_usb_cm106_write_int_reg(dev, reg, val[reg]);
@@ -779,11 +925,11 @@ static int snd_usb_mbox2_boot_quirk(struct usb_device *dev)
 	fwsize = le16_to_cpu(get_cfg_desc(config)->wTotalLength);
 
 	if (fwsize != MBOX2_FIRMWARE_SIZE) {
-		snd_printk(KERN_ERR "usb-audio: Invalid firmware size=%d.\n", fwsize);
+		dev_err(&dev->dev, "Invalid firmware size=%d.\n", fwsize);
 		return -ENODEV;
 	}
 
-	snd_printd("usb-audio: Sending Digidesign Mbox 2 boot sequence...\n");
+	dev_dbg(&dev->dev, "Sending Digidesign Mbox 2 boot sequence...\n");
 
 	count = 0;
 	bootresponse[0] = MBOX2_BOOT_LOADING;
@@ -794,34 +940,163 @@ static int snd_usb_mbox2_boot_quirk(struct usb_device *dev)
 			0x85, 0xc0, 0x0001, 0x0000, &bootresponse, 0x0012);
 		if (bootresponse[0] == MBOX2_BOOT_READY)
 			break;
-		snd_printd("usb-audio: device not ready, resending boot sequence...\n");
+		dev_dbg(&dev->dev, "device not ready, resending boot sequence...\n");
 		count++;
 	}
 
 	if (bootresponse[0] != MBOX2_BOOT_READY) {
-		snd_printk(KERN_ERR "usb-audio: Unknown bootresponse=%d, or timed out, ignoring device.\n", bootresponse[0]);
+		dev_err(&dev->dev, "Unknown bootresponse=%d, or timed out, ignoring device.\n", bootresponse[0]);
 		return -ENODEV;
 	}
 
-	snd_printdd("usb-audio: device initialised!\n");
+	dev_dbg(&dev->dev, "device initialised!\n");
 
 	err = usb_get_descriptor(dev, USB_DT_DEVICE, 0,
 		&dev->descriptor, sizeof(dev->descriptor));
 	config = dev->actconfig;
 	if (err < 0)
-		snd_printd("error usb_get_descriptor: %d\n", err);
+		dev_dbg(&dev->dev, "error usb_get_descriptor: %d\n", err);
 
 	err = usb_reset_configuration(dev);
 	if (err < 0)
-		snd_printd("error usb_reset_configuration: %d\n", err);
-	snd_printdd("mbox2_boot: new boot length = %d\n",
+		dev_dbg(&dev->dev, "error usb_reset_configuration: %d\n", err);
+	dev_dbg(&dev->dev, "mbox2_boot: new boot length = %d\n",
 		le16_to_cpu(get_cfg_desc(config)->wTotalLength));
 
 	mbox2_setup_48_24_magic(dev);
 
-	snd_printk(KERN_INFO "usb-audio: Digidesign Mbox 2: 24bit 48kHz");
+	dev_info(&dev->dev, "Digidesign Mbox 2: 24bit 48kHz");
 
 	return 0; /* Successful boot */
+}
+
+static int snd_usb_axefx3_boot_quirk(struct usb_device *dev)
+{
+	int err;
+
+	dev_dbg(&dev->dev, "Waiting for Axe-Fx III to boot up...\n");
+
+	/* If the Axe-Fx III has not fully booted, it will timeout when trying
+	 * to enable the audio streaming interface. A more generous timeout is
+	 * used here to detect when the Axe-Fx III has finished booting as the
+	 * set interface message will be acked once it has
+	 */
+	err = usb_control_msg(dev, usb_sndctrlpipe(dev, 0),
+				USB_REQ_SET_INTERFACE, USB_RECIP_INTERFACE,
+				1, 1, NULL, 0, 120000);
+	if (err < 0) {
+		dev_err(&dev->dev,
+			"failed waiting for Axe-Fx III to boot: %d\n", err);
+		return err;
+	}
+
+	dev_dbg(&dev->dev, "Axe-Fx III is now ready\n");
+
+	err = usb_set_interface(dev, 1, 0);
+	if (err < 0)
+		dev_dbg(&dev->dev,
+			"error stopping Axe-Fx III interface: %d\n", err);
+
+	return 0;
+}
+
+
+#define MICROBOOK_BUF_SIZE 128
+
+static int snd_usb_motu_microbookii_communicate(struct usb_device *dev, u8 *buf,
+						int buf_size, int *length)
+{
+	int err, actual_length;
+
+	err = usb_interrupt_msg(dev, usb_sndintpipe(dev, 0x01), buf, *length,
+				&actual_length, 1000);
+	if (err < 0)
+		return err;
+
+	print_hex_dump(KERN_DEBUG, "MicroBookII snd: ", DUMP_PREFIX_NONE, 16, 1,
+		       buf, actual_length, false);
+
+	memset(buf, 0, buf_size);
+
+	err = usb_interrupt_msg(dev, usb_rcvintpipe(dev, 0x82), buf, buf_size,
+				&actual_length, 1000);
+	if (err < 0)
+		return err;
+
+	print_hex_dump(KERN_DEBUG, "MicroBookII rcv: ", DUMP_PREFIX_NONE, 16, 1,
+		       buf, actual_length, false);
+
+	*length = actual_length;
+	return 0;
+}
+
+static int snd_usb_motu_microbookii_boot_quirk(struct usb_device *dev)
+{
+	int err, actual_length, poll_attempts = 0;
+	static const u8 set_samplerate_seq[] = { 0x00, 0x00, 0x00, 0x00,
+						 0x00, 0x00, 0x0b, 0x14,
+						 0x00, 0x00, 0x00, 0x01 };
+	static const u8 poll_ready_seq[] = { 0x00, 0x04, 0x00, 0x00,
+					     0x00, 0x00, 0x0b, 0x18 };
+	u8 *buf = kzalloc(MICROBOOK_BUF_SIZE, GFP_KERNEL);
+
+	if (!buf)
+		return -ENOMEM;
+
+	dev_info(&dev->dev, "Waiting for MOTU Microbook II to boot up...\n");
+
+	/* First we tell the device which sample rate to use. */
+	memcpy(buf, set_samplerate_seq, sizeof(set_samplerate_seq));
+	actual_length = sizeof(set_samplerate_seq);
+	err = snd_usb_motu_microbookii_communicate(dev, buf, MICROBOOK_BUF_SIZE,
+						   &actual_length);
+
+	if (err < 0) {
+		dev_err(&dev->dev,
+			"failed setting the sample rate for Motu MicroBook II: %d\n",
+			err);
+		goto free_buf;
+	}
+
+	/* Then we poll every 100 ms until the device informs of its readiness. */
+	while (true) {
+		if (++poll_attempts > 100) {
+			dev_err(&dev->dev,
+				"failed booting Motu MicroBook II: timeout\n");
+			err = -ENODEV;
+			goto free_buf;
+		}
+
+		memset(buf, 0, MICROBOOK_BUF_SIZE);
+		memcpy(buf, poll_ready_seq, sizeof(poll_ready_seq));
+
+		actual_length = sizeof(poll_ready_seq);
+		err = snd_usb_motu_microbookii_communicate(
+			dev, buf, MICROBOOK_BUF_SIZE, &actual_length);
+		if (err < 0) {
+			dev_err(&dev->dev,
+				"failed booting Motu MicroBook II: communication error %d\n",
+				err);
+			goto free_buf;
+		}
+
+		/* the device signals its readiness through a message of the
+		 * form
+		 *           XX 06 00 00 00 00 0b 18  00 00 00 01
+		 * If the device is not yet ready to accept audio data, the
+		 * last byte of that sequence is 00.
+		 */
+		if (actual_length == 12 && buf[actual_length - 1] == 1)
+			break;
+
+		msleep(100);
+	}
+
+	dev_info(&dev->dev, "MOTU MicroBook II ready\n");
+
+free_buf:
+	kfree(buf);
+	return err;
 }
 
 /*
@@ -865,7 +1140,7 @@ static int quattro_skip_setting_quirk(struct snd_usb_audio *chip,
 				return 1; /* skip this altsetting */
 		}
 	}
-	snd_printdd(KERN_INFO
+	usb_audio_dbg(chip,
 		    "using altsetting %d for interface %d config %d\n",
 		    altno, iface, chip->setup);
 	return 0; /* keep this altsetting */
@@ -932,7 +1207,7 @@ static int fasttrackpro_skip_setting_quirk(struct snd_usb_audio *chip,
 			return 1;
 	}
 
-	snd_printdd(KERN_INFO
+	usb_audio_dbg(chip,
 		    "using altsetting %d for interface %d config %d\n",
 		    altno, iface, chip->setup);
 	return 0; /* keep this altsetting */
@@ -957,11 +1232,9 @@ int snd_usb_apply_interface_quirk(struct snd_usb_audio *chip,
 
 int snd_usb_apply_boot_quirk(struct usb_device *dev,
 			     struct usb_interface *intf,
-			     const struct snd_usb_audio_quirk *quirk)
+			     const struct snd_usb_audio_quirk *quirk,
+			     unsigned int id)
 {
-	u32 id = USB_ID(le16_to_cpu(dev->descriptor.idVendor),
-			le16_to_cpu(dev->descriptor.idProduct));
-
 	switch (id) {
 	case USB_ID(0x041e, 0x3000):
 		/* SB Extigy needs special boot-up sequence */
@@ -1001,6 +1274,10 @@ int snd_usb_apply_boot_quirk(struct usb_device *dev,
 		return snd_usb_fasttrackpro_boot_quirk(dev);
 	case USB_ID(0x047f, 0xc010): /* Plantronics Gamecom 780 */
 		return snd_usb_gamecon780_boot_quirk(dev);
+	case USB_ID(0x2466, 0x8010): /* Fractal Audio Axe-Fx 3 */
+		return snd_usb_axefx3_boot_quirk(dev);
+	case USB_ID(0x07fd, 0x0004): /* MOTU MicroBook II */
+		return snd_usb_motu_microbookii_boot_quirk(dev);
 	}
 
 	return 0;
@@ -1098,13 +1375,97 @@ void snd_usb_set_format_quirk(struct snd_usb_substream *subs,
 	}
 }
 
+bool snd_usb_get_sample_rate_quirk(struct snd_usb_audio *chip)
+{
+	/* devices which do not support reading the sample rate. */
+	switch (chip->usb_id) {
+	case USB_ID(0x041E, 0x4080): /* Creative Live Cam VF0610 */
+	case USB_ID(0x04D8, 0xFEEA): /* Benchmark DAC1 Pre */
+	case USB_ID(0x0556, 0x0014): /* Phoenix Audio TMX320VC */
+	case USB_ID(0x05A3, 0x9420): /* ELP HD USB Camera */
+	case USB_ID(0x074D, 0x3553): /* Outlaw RR2150 (Micronas UAC3553B) */
+	case USB_ID(0x1395, 0x740a): /* Sennheiser DECT */
+	case USB_ID(0x1901, 0x0191): /* GE B850V3 CP2114 audio interface */
+	case USB_ID(0x21B4, 0x0081): /* AudioQuest DragonFly */
+		return true;
+	}
+
+	/* devices of these vendors don't support reading rate, either */
+	switch (USB_ID_VENDOR(chip->usb_id)) {
+	case 0x045E: /* MS Lifecam */
+	case 0x047F: /* Plantronics */
+	case 0x1de7: /* Phoenix Audio */
+		return true;
+	}
+
+	return false;
+}
+
+/* ITF-USB DSD based DACs need a vendor cmd to switch
+ * between PCM and native DSD mode
+ */
+static bool is_itf_usb_dsd_dac(unsigned int id)
+{
+	switch (id) {
+	case USB_ID(0x154e, 0x1003): /* Denon DA-300USB */
+	case USB_ID(0x154e, 0x3005): /* Marantz HD-DAC1 */
+	case USB_ID(0x154e, 0x3006): /* Marantz SA-14S1 */
+	case USB_ID(0x1852, 0x5065): /* Luxman DA-06 */
+	case USB_ID(0x0644, 0x8043): /* TEAC UD-501/UD-501V2/UD-503/NT-503 */
+	case USB_ID(0x0644, 0x8044): /* Esoteric D-05X */
+	case USB_ID(0x0644, 0x804a): /* TEAC UD-301 */
+		return true;
+	}
+	return false;
+}
+
+int snd_usb_select_mode_quirk(struct snd_usb_substream *subs,
+			      struct audioformat *fmt)
+{
+	struct usb_device *dev = subs->dev;
+	int err;
+
+	if (is_itf_usb_dsd_dac(subs->stream->chip->usb_id)) {
+		/* First switch to alt set 0, otherwise the mode switch cmd
+		 * will not be accepted by the DAC
+		 */
+		err = usb_set_interface(dev, fmt->iface, 0);
+		if (err < 0)
+			return err;
+
+		msleep(20); /* Delay needed after setting the interface */
+
+		/* Vendor mode switch cmd is required. */
+		if (fmt->formats & SNDRV_PCM_FMTBIT_DSD_U32_BE) {
+			/* DSD mode (DSD_U32) requested */
+			err = snd_usb_ctl_msg(dev, usb_sndctrlpipe(dev, 0), 0,
+					      USB_DIR_OUT|USB_TYPE_VENDOR|USB_RECIP_INTERFACE,
+					      1, 1, NULL, 0);
+			if (err < 0)
+				return err;
+
+		} else {
+			/* PCM or DOP mode (S32) requested */
+			/* PCM mode (S16) requested */
+			err = snd_usb_ctl_msg(dev, usb_sndctrlpipe(dev, 0), 0,
+					      USB_DIR_OUT|USB_TYPE_VENDOR|USB_RECIP_INTERFACE,
+					      0, 1, NULL, 0);
+			if (err < 0)
+				return err;
+
+		}
+		msleep(20);
+	}
+	return 0;
+}
+
 void snd_usb_endpoint_start_quirk(struct snd_usb_endpoint *ep)
 {
 	/*
 	 * "Playback Design" products send bogus feedback data at the start
 	 * of the stream. Ignore them.
 	 */
-	if ((le16_to_cpu(ep->chip->dev->descriptor.idVendor) == 0x23ba) &&
+	if (USB_ID_VENDOR(ep->chip->usb_id) == 0x23ba &&
 	    ep->type == SND_USB_ENDPOINT_TYPE_SYNC)
 		ep->skip_packets = 4;
 
@@ -1119,43 +1480,73 @@ void snd_usb_endpoint_start_quirk(struct snd_usb_endpoint *ep)
 	     ep->chip->usb_id == USB_ID(0x0763, 0x2031)) &&
 	    ep->type == SND_USB_ENDPOINT_TYPE_DATA)
 		ep->skip_packets = 16;
+
+	/* Work around devices that report unreasonable feedback data */
+	if ((ep->chip->usb_id == USB_ID(0x0644, 0x8038) ||  /* TEAC UD-H01 */
+	     ep->chip->usb_id == USB_ID(0x1852, 0x5034)) && /* T+A Dac8 */
+	    ep->syncmaxsize == 4)
+		ep->tenor_fb_quirk = 1;
 }
 
 void snd_usb_set_interface_quirk(struct usb_device *dev)
 {
+	struct snd_usb_audio *chip = dev_get_drvdata(&dev->dev);
+
+	if (!chip)
+		return;
 	/*
 	 * "Playback Design" products need a 50ms delay after setting the
 	 * USB interface.
 	 */
-	if (le16_to_cpu(dev->descriptor.idVendor) == 0x23ba)
-		mdelay(50);
+	switch (USB_ID_VENDOR(chip->usb_id)) {
+	case 0x23ba: /* Playback Design */
+	case 0x0644: /* TEAC Corp. */
+		msleep(50);
+		break;
+	}
 }
 
+/* quirk applied after snd_usb_ctl_msg(); not applied during boot quirks */
 void snd_usb_ctl_msg_quirk(struct usb_device *dev, unsigned int pipe,
 			   __u8 request, __u8 requesttype, __u16 value,
 			   __u16 index, void *data, __u16 size)
 {
+	struct snd_usb_audio *chip = dev_get_drvdata(&dev->dev);
+
+	if (!chip)
+		return;
 	/*
 	 * "Playback Design" products need a 20ms delay after each
 	 * class compliant request
 	 */
-	if ((le16_to_cpu(dev->descriptor.idVendor) == 0x23ba) &&
+	if (USB_ID_VENDOR(chip->usb_id) == 0x23ba &&
 	    (requesttype & USB_TYPE_MASK) == USB_TYPE_CLASS)
-		mdelay(20);
+		msleep(20);
 
-	/* Marantz/Denon devices with USB DAC functionality need a delay
+	/*
+	 * "TEAC Corp." products need a 20ms delay after each
+	 * class compliant request
+	 */
+	if (USB_ID_VENDOR(chip->usb_id) == 0x0644 &&
+	    (requesttype & USB_TYPE_MASK) == USB_TYPE_CLASS)
+		msleep(20);
+
+	/* ITF-USB DSD based DACs functionality need a delay
 	 * after each class compliant request
 	 */
-	if ((le16_to_cpu(dev->descriptor.idVendor) == 0x154e) &&
-	    (requesttype & USB_TYPE_MASK) == USB_TYPE_CLASS) {
+	if (is_itf_usb_dsd_dac(chip->usb_id)
+	    && (requesttype & USB_TYPE_MASK) == USB_TYPE_CLASS)
+		msleep(20);
 
-		switch (le16_to_cpu(dev->descriptor.idProduct)) {
-		case 0x3005: /* Marantz HD-DAC1 */
-		case 0x3006: /* Marantz SA-14S1 */
-			mdelay(20);
-			break;
-		}
-	}
+	/* Zoom R16/24, Logitech H650e, Jabra 550a needs a tiny delay here,
+	 * otherwise requests like get/set frequency return as failed despite
+	 * actually succeeding.
+	 */
+	if ((chip->usb_id == USB_ID(0x1686, 0x00dd) ||
+	     chip->usb_id == USB_ID(0x046d, 0x0a46) ||
+	     chip->usb_id == USB_ID(0x0b0e, 0x0349)) &&
+	    (requesttype & USB_TYPE_MASK) == USB_TYPE_CLASS)
+		usleep_range(1000, 2000);
 }
 
 /*
@@ -1169,8 +1560,10 @@ u64 snd_usb_interface_dsd_format_quirks(struct snd_usb_audio *chip,
 					struct audioformat *fp,
 					unsigned int sample_bytes)
 {
+	struct usb_interface *iface;
+
 	/* Playback Designs */
-	if (le16_to_cpu(chip->dev->descriptor.idVendor) == 0x23ba) {
+	if (USB_ID_VENDOR(chip->usb_id) == 0x23ba) {
 		switch (fp->altsetting) {
 		case 1:
 			fp->dsd_dop = true;
@@ -1184,5 +1577,125 @@ u64 snd_usb_interface_dsd_format_quirks(struct snd_usb_audio *chip,
 		}
 	}
 
+	/* XMOS based USB DACs */
+	switch (chip->usb_id) {
+	case USB_ID(0x1511, 0x0037): /* AURALiC VEGA */
+	case USB_ID(0x22d9, 0x0416): /* OPPO HA-1 */
+	case USB_ID(0x22d9, 0x0436): /* OPPO Sonica */
+	case USB_ID(0x22d9, 0x0461): /* OPPO UDP-205 */
+	case USB_ID(0x2522, 0x0012): /* LH Labs VI DAC Infinity */
+	case USB_ID(0x2772, 0x0230): /* Pro-Ject Pre Box S2 Digital */
+		if (fp->altsetting == 2)
+			return SNDRV_PCM_FMTBIT_DSD_U32_BE;
+		break;
+
+	case USB_ID(0x0d8c, 0x0316): /* Hegel HD12 DSD */
+	case USB_ID(0x10cb, 0x0103): /* The Bit Opus #3; with fp->dsd_raw */
+	case USB_ID(0x16b0, 0x06b2): /* NuPrime DAC-10 */
+	case USB_ID(0x16d0, 0x09dd): /* Encore mDSD */
+	case USB_ID(0x16d0, 0x0733): /* Furutech ADL Stratos */
+	case USB_ID(0x16d0, 0x09db): /* NuPrime Audio DAC-9 */
+	case USB_ID(0x1db5, 0x0003): /* Bryston BDA3 */
+	case USB_ID(0x22d9, 0x0426): /* OPPO HA-2 */
+	case USB_ID(0x22e1, 0xca01): /* HDTA Serenade DSD */
+	case USB_ID(0x249c, 0x9326): /* M2Tech Young MkIII */
+	case USB_ID(0x2616, 0x0106): /* PS Audio NuWave DAC */
+	case USB_ID(0x2622, 0x0041): /* Audiolab M-DAC+ */
+	case USB_ID(0x27f7, 0x3002): /* W4S DAC-2v2SE */
+	case USB_ID(0x29a2, 0x0086): /* Mutec MC3+ USB */
+	case USB_ID(0x6b42, 0x0042): /* MSB Technology */
+		if (fp->altsetting == 3)
+			return SNDRV_PCM_FMTBIT_DSD_U32_BE;
+		break;
+
+	/* Amanero Combo384 USB based DACs with native DSD support */
+	case USB_ID(0x16d0, 0x071a):  /* Amanero - Combo384 */
+	case USB_ID(0x2ab6, 0x0004):  /* T+A DAC8DSD-V2.0, MP1000E-V2.0, MP2000R-V2.0, MP2500R-V2.0, MP3100HV-V2.0 */
+	case USB_ID(0x2ab6, 0x0005):  /* T+A USB HD Audio 1 */
+	case USB_ID(0x2ab6, 0x0006):  /* T+A USB HD Audio 2 */
+		if (fp->altsetting == 2) {
+			switch (le16_to_cpu(chip->dev->descriptor.bcdDevice)) {
+			case 0x199:
+				return SNDRV_PCM_FMTBIT_DSD_U32_LE;
+			case 0x19b:
+			case 0x203:
+				return SNDRV_PCM_FMTBIT_DSD_U32_BE;
+			default:
+				break;
+			}
+		}
+		break;
+	case USB_ID(0x16d0, 0x0a23):
+		if (fp->altsetting == 2)
+			return SNDRV_PCM_FMTBIT_DSD_U32_BE;
+		break;
+
+	default:
+		break;
+	}
+
+	/* ITF-USB DSD based DACs */
+	if (is_itf_usb_dsd_dac(chip->usb_id)) {
+		iface = usb_ifnum_to_if(chip->dev, fp->iface);
+
+		/* Altsetting 2 support native DSD if the num of altsets is
+		 * three (0-2),
+		 * Altsetting 3 support native DSD if the num of altsets is
+		 * four (0-3).
+		 */
+		if (fp->altsetting == iface->num_altsetting - 1)
+			return SNDRV_PCM_FMTBIT_DSD_U32_BE;
+	}
+
+	/* Mostly generic method to detect many DSD-capable implementations -
+	 * from XMOS/Thesycon
+	 */
+	switch (USB_ID_VENDOR(chip->usb_id)) {
+	case 0x20b1:  /* XMOS based devices */
+	case 0x152a:  /* Thesycon devices */
+	case 0x25ce:  /* Mytek devices */
+	case 0x2ab6:  /* T+A devices */
+		if (fp->dsd_raw)
+			return SNDRV_PCM_FMTBIT_DSD_U32_BE;
+		break;
+	default:
+		break;
+
+	}
+
 	return 0;
+}
+
+void snd_usb_audioformat_attributes_quirk(struct snd_usb_audio *chip,
+					  struct audioformat *fp,
+					  int stream)
+{
+	switch (chip->usb_id) {
+	case USB_ID(0x0a92, 0x0053): /* AudioTrak Optoplay */
+		/* Optoplay sets the sample rate attribute although
+		 * it seems not supporting it in fact.
+		 */
+		fp->attributes &= ~UAC_EP_CS_ATTR_SAMPLE_RATE;
+		break;
+	case USB_ID(0x041e, 0x3020): /* Creative SB Audigy 2 NX */
+	case USB_ID(0x0763, 0x2003): /* M-Audio Audiophile USB */
+		/* doesn't set the sample rate attribute, but supports it */
+		fp->attributes |= UAC_EP_CS_ATTR_SAMPLE_RATE;
+		break;
+	case USB_ID(0x0763, 0x2001):  /* M-Audio Quattro USB */
+	case USB_ID(0x0763, 0x2012):  /* M-Audio Fast Track Pro USB */
+	case USB_ID(0x047f, 0x0ca1): /* plantronics headset */
+	case USB_ID(0x077d, 0x07af): /* Griffin iMic (note that there is
+					an older model 77d:223) */
+	/*
+	 * plantronics headset and Griffin iMic have set adaptive-in
+	 * although it's really not...
+	 */
+		fp->ep_attr &= ~USB_ENDPOINT_SYNCTYPE;
+		if (stream == SNDRV_PCM_STREAM_PLAYBACK)
+			fp->ep_attr |= USB_ENDPOINT_SYNC_ADAPTIVE;
+		else
+			fp->ep_attr |= USB_ENDPOINT_SYNC_SYNC;
+		break;
+	}
 }

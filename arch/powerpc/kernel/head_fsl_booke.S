@@ -42,6 +42,8 @@
 #include <asm/asm-offsets.h>
 #include <asm/cache.h>
 #include <asm/ptrace.h>
+#include <asm/export.h>
+#include <asm/feature-fixups.h>
 #include "head_booke.h"
 
 /* As with the other PowerPC ports, it is expected that when code
@@ -192,13 +194,6 @@ set_ivor:
 #endif
 	mtspr	SPRN_MAS4, r2
 
-#if 0
-	/* Enable DOZE */
-	mfspr	r2,SPRN_HID0
-	oris	r2,r2,HID0_DOZE@h
-	mtspr	SPRN_HID0, r2
-#endif
-
 #if !defined(CONFIG_BDI_SWITCH)
 	/*
 	 * The Abatron BDI JTAG debugger does not tolerate others
@@ -241,8 +236,9 @@ set_ivor:
 	li	r0,0
 	stwu	r0,THREAD_SIZE-STACK_FRAME_OVERHEAD(r1)
 
-	CURRENT_THREAD_INFO(r22, r1)
-	stw	r24, TI_CPU(r22)
+#ifdef CONFIG_SMP
+	stw	r24, TASK_CPU(r2)
+#endif
 
 	bl	early_init
 
@@ -451,6 +447,13 @@ END_FTR_SECTION_IFSET(CPU_FTR_EMB_HV)
 	mfcr	r13
 	stw	r13, THREAD_NORMSAVE(3)(r10)
 	DO_KVM	BOOKE_INTERRUPT_DTLB_MISS SPRN_SRR1
+START_BTB_FLUSH_SECTION
+	mfspr r11, SPRN_SRR1
+	andi. r10,r11,MSR_PR
+	beq 1f
+	BTB_FLUSH(r10)
+1:
+END_BTB_FLUSH_SECTION
 	mfspr	r10, SPRN_DEAR		/* Get faulting address */
 
 	/* If we are faulting a kernel address, we have to use the
@@ -545,6 +548,14 @@ END_FTR_SECTION_IFSET(CPU_FTR_EMB_HV)
 	mfcr	r13
 	stw	r13, THREAD_NORMSAVE(3)(r10)
 	DO_KVM	BOOKE_INTERRUPT_ITLB_MISS SPRN_SRR1
+START_BTB_FLUSH_SECTION
+	mfspr r11, SPRN_SRR1
+	andi. r10,r11,MSR_PR
+	beq 1f
+	BTB_FLUSH(r10)
+1:
+END_BTB_FLUSH_SECTION
+
 	mfspr	r10, SPRN_SRR0		/* Get faulting address */
 
 	/* If we are faulting a kernel address, we have to use the
@@ -613,34 +624,36 @@ END_FTR_SECTION_IFSET(CPU_FTR_EMB_HV)
 	mfspr	r10, SPRN_SPRG_RSCRATCH0
 	b	InstructionStorage
 
+/* Define SPE handlers for e200 and e500v2 */
 #ifdef CONFIG_SPE
 	/* SPE Unavailable */
 	START_EXCEPTION(SPEUnavailable)
-	NORMAL_EXCEPTION_PROLOG(SPE_ALTIVEC_UNAVAIL)
+	NORMAL_EXCEPTION_PROLOG(SPE_UNAVAIL)
 	beq	1f
 	bl	load_up_spe
 	b	fast_exception_return
 1:	addi	r3,r1,STACK_FRAME_OVERHEAD
 	EXC_XFER_EE_LITE(0x2010, KernelSPE)
-#else
-	EXCEPTION(0x2020, SPE_ALTIVEC_UNAVAIL, SPEUnavailable, \
+#elif defined(CONFIG_SPE_POSSIBLE)
+	EXCEPTION(0x2020, SPE_UNAVAIL, SPEUnavailable, \
 		  unknown_exception, EXC_XFER_EE)
-#endif /* CONFIG_SPE */
+#endif /* CONFIG_SPE_POSSIBLE */
 
 	/* SPE Floating Point Data */
 #ifdef CONFIG_SPE
-	EXCEPTION(0x2030, SPE_FP_DATA_ALTIVEC_ASSIST, SPEFloatingPointData,
+	EXCEPTION(0x2030, SPE_FP_DATA, SPEFloatingPointData,
 		  SPEFloatingPointException, EXC_XFER_EE)
 
 	/* SPE Floating Point Round */
 	EXCEPTION(0x2050, SPE_FP_ROUND, SPEFloatingPointRound, \
 		  SPEFloatingPointRoundException, EXC_XFER_EE)
-#else
-	EXCEPTION(0x2040, SPE_FP_DATA_ALTIVEC_ASSIST, SPEFloatingPointData,
+#elif defined(CONFIG_SPE_POSSIBLE)
+	EXCEPTION(0x2040, SPE_FP_DATA, SPEFloatingPointData,
 		  unknown_exception, EXC_XFER_EE)
 	EXCEPTION(0x2050, SPE_FP_ROUND, SPEFloatingPointRound, \
 		  unknown_exception, EXC_XFER_EE)
-#endif /* CONFIG_SPE */
+#endif /* CONFIG_SPE_POSSIBLE */
+
 
 	/* Performance Monitor */
 	EXCEPTION(0x2060, PERFORMANCE_MONITOR, PerformanceMonitor, \
@@ -698,8 +711,7 @@ finish_tlb_load:
 
 	/* Get the next_tlbcam_idx percpu var */
 #ifdef CONFIG_SMP
-	lwz	r12, THREAD_INFO-THREAD(r12)
-	lwz	r15, TI_CPU(r12)
+	lwz	r15, TASK_CPU-THREAD(r12)
 	lis     r14, __per_cpu_offset@h
 	ori     r14, r14, __per_cpu_offset@l
 	rlwinm  r15, r15, 2, 0, 29
@@ -855,29 +867,6 @@ _GLOBAL(load_up_spe)
 	oris	r5,r5,MSR_SPE@h
 	mtmsr	r5			/* enable use of SPE now */
 	isync
-/*
- * For SMP, we don't do lazy SPE switching because it just gets too
- * horrendously complex, especially when a task switches from one CPU
- * to another.  Instead we call giveup_spe in switch_to.
- */
-#ifndef CONFIG_SMP
-	lis	r3,last_task_used_spe@ha
-	lwz	r4,last_task_used_spe@l(r3)
-	cmpi	0,r4,0
-	beq	1f
-	addi	r4,r4,THREAD	/* want THREAD of last_task_used_spe */
-	SAVE_32EVRS(0,r10,r4,THREAD_EVR0)
-	evxor	evr10, evr10, evr10	/* clear out evr10 */
-	evmwumiaa evr10, evr10, evr10	/* evr10 <- ACC = 0 * 0 + ACC */
-	li	r5,THREAD_ACC
-	evstddx	evr10, r4, r5		/* save off accumulator */
-	lwz	r5,PT_REGS(r4)
-	lwz	r4,_MSR-STACK_FRAME_OVERHEAD(r5)
-	lis	r10,MSR_SPE@h
-	andc	r4,r4,r10	/* disable SPE for previous task */
-	stw	r4,_MSR-STACK_FRAME_OVERHEAD(r5)
-1:
-#endif /* !CONFIG_SMP */
 	/* enable use of SPE after return */
 	oris	r9,r9,MSR_SPE@h
 	mfspr	r5,SPRN_SPRG_THREAD	/* current task's THREAD (phys) */
@@ -887,10 +876,6 @@ _GLOBAL(load_up_spe)
 	evlddx	evr4,r10,r5
 	evmra	evr4,evr4
 	REST_32EVRS(0,r10,r5,THREAD_EVR0)
-#ifndef CONFIG_SMP
-	subi	r4,r5,THREAD
-	stw	r4,last_task_used_spe@l(r3)
-#endif /* !CONFIG_SMP */
 	blr
 
 /*
@@ -947,6 +932,7 @@ get_phys_addr:
  * Global functions
  */
 
+#ifdef CONFIG_E200
 /* Adjust or setup IVORs for e200 */
 _GLOBAL(__setup_e200_ivors)
 	li	r3,DebugDebug@l
@@ -959,7 +945,10 @@ _GLOBAL(__setup_e200_ivors)
 	mtspr	SPRN_IVOR34,r3
 	sync
 	blr
+#endif
 
+#ifdef CONFIG_E500
+#ifndef CONFIG_PPC_E500MC
 /* Adjust or setup IVORs for e500v1/v2 */
 _GLOBAL(__setup_e500_ivors)
 	li	r3,DebugCrit@l
@@ -974,7 +963,7 @@ _GLOBAL(__setup_e500_ivors)
 	mtspr	SPRN_IVOR35,r3
 	sync
 	blr
-
+#else
 /* Adjust or setup IVORs for e500mc */
 _GLOBAL(__setup_e500mc_ivors)
 	li	r3,DebugDebug@l
@@ -1000,19 +989,15 @@ _GLOBAL(__setup_ehv_ivors)
 	mtspr	SPRN_IVOR41,r3
 	sync
 	blr
+#endif /* CONFIG_PPC_E500MC */
+#endif /* CONFIG_E500 */
 
 #ifdef CONFIG_SPE
 /*
- * extern void giveup_spe(struct task_struct *prev)
+ * extern void __giveup_spe(struct task_struct *prev)
  *
  */
-_GLOBAL(giveup_spe)
-	mfmsr	r5
-	oris	r5,r5,MSR_SPE@h
-	mtmsr	r5			/* enable use of SPE now */
-	isync
-	cmpi	0,r3,0
-	beqlr-				/* if no previous owner, done */
+_GLOBAL(__giveup_spe)
 	addi	r3,r3,THREAD		/* want THREAD of task */
 	lwz	r5,PT_REGS(r3)
 	cmpi	0,r5,0
@@ -1027,11 +1012,6 @@ _GLOBAL(giveup_spe)
 	andc	r4,r4,r3		/* disable SPE for previous task */
 	stw	r4,_MSR-STACK_FRAME_OVERHEAD(r5)
 1:
-#ifndef CONFIG_SMP
-	li	r5,0
-	lis	r4,last_task_used_spe@ha
-	stw	r5,last_task_used_spe@l(r4)
-#endif /* !CONFIG_SMP */
 	blr
 #endif /* CONFIG_SPE */
 
@@ -1065,80 +1045,6 @@ _GLOBAL(set_context)
 #endif
 	mtspr	SPRN_PID,r3
 	isync			/* Force context change */
-	blr
-
-_GLOBAL(flush_dcache_L1)
-	mfspr	r3,SPRN_L1CFG0
-
-	rlwinm	r5,r3,9,3	/* Extract cache block size */
-	twlgti	r5,1		/* Only 32 and 64 byte cache blocks
-				 * are currently defined.
-				 */
-	li	r4,32
-	subfic	r6,r5,2		/* r6 = log2(1KiB / cache block size) -
-				 *      log2(number of ways)
-				 */
-	slw	r5,r4,r5	/* r5 = cache block size */
-
-	rlwinm	r7,r3,0,0xff	/* Extract number of KiB in the cache */
-	mulli	r7,r7,13	/* An 8-way cache will require 13
-				 * loads per set.
-				 */
-	slw	r7,r7,r6
-
-	/* save off HID0 and set DCFA */
-	mfspr	r8,SPRN_HID0
-	ori	r9,r8,HID0_DCFA@l
-	mtspr	SPRN_HID0,r9
-	isync
-
-	lis	r4,KERNELBASE@h
-	mtctr	r7
-
-1:	lwz	r3,0(r4)	/* Load... */
-	add	r4,r4,r5
-	bdnz	1b
-
-	msync
-	lis	r4,KERNELBASE@h
-	mtctr	r7
-
-1:	dcbf	0,r4		/* ...and flush. */
-	add	r4,r4,r5
-	bdnz	1b
-	
-	/* restore HID0 */
-	mtspr	SPRN_HID0,r8
-	isync
-
-	blr
-
-/* Flush L1 d-cache, invalidate and disable d-cache and i-cache */
-_GLOBAL(__flush_disable_L1)
-	mflr	r10
-	bl	flush_dcache_L1	/* Flush L1 d-cache */
-	mtlr	r10
-
-	mfspr	r4, SPRN_L1CSR0	/* Invalidate and disable d-cache */
-	li	r5, 2
-	rlwimi	r4, r5, 0, 3
-
-	msync
-	isync
-	mtspr	SPRN_L1CSR0, r4
-	isync
-
-1:	mfspr	r4, SPRN_L1CSR0	/* Wait for the invalidate to finish */
-	andi.	r4, r4, 2
-	bne	1b
-
-	mfspr	r4, SPRN_L1CSR1	/* Invalidate and disable i-cache */
-	li	r5, 2
-	rlwimi	r4, r5, 0, 3
-
-	mtspr	SPRN_L1CSR1, r4
-	isync
-
 	blr
 
 #ifdef CONFIG_SMP
@@ -1176,10 +1082,10 @@ __secondary_start:
 	mr	r4,r24		/* Why? */
 	bl	call_setup_cpu
 
-	/* get current_thread_info and current */
-	lis	r1,secondary_ti@ha
-	lwz	r1,secondary_ti@l(r1)
-	lwz	r2,TI_TASK(r1)
+	/* get current's stack and current */
+	lis	r2,secondary_current@ha
+	lwz	r2,secondary_current@l(r2)
+	lwz	r1,TASK_STACK(r2)
 
 	/* stack */
 	addi	r1,r1,THREAD_SIZE-STACK_FRAME_OVERHEAD
@@ -1327,6 +1233,7 @@ sdata:
 	.globl	empty_zero_page
 empty_zero_page:
 	.space	4096
+EXPORT_SYMBOL(empty_zero_page)
 	.globl	swapper_pg_dir
 swapper_pg_dir:
 	.space	PGD_TABLE_SIZE

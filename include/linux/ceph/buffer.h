@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __FS_CEPH_BUFFER_H
 #define __FS_CEPH_BUFFER_H
 
@@ -10,8 +11,7 @@
 /*
  * a simple reference counted buffer.
  *
- * use kmalloc for small sizes (<= one page), vmalloc for larger
- * sizes.
+ * use kmalloc for smaller sizes, vmalloc for larger sizes.
  */
 struct ceph_buffer {
 	struct kref kref;

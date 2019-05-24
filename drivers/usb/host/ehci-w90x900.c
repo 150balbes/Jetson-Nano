@@ -1,14 +1,10 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  * linux/driver/usb/host/ehci-w90x900.c
  *
  * Copyright (c) 2008 Nuvoton technology corporation.
  *
  * Wan ZongShun <mcuos.com@gmail.com>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation;version 2 of the License.
- *
  */
 
 #include <linux/dma-mapping.h>
@@ -33,8 +29,7 @@ static const char hcd_name[] = "ehci-w90x900 ";
 
 static struct hc_driver __read_mostly ehci_w90x900_hc_driver;
 
-static int usb_w90x900_probe(const struct hc_driver *driver,
-		      struct platform_device *pdev)
+static int ehci_w90x900_probe(struct platform_device *pdev)
 {
 	struct usb_hcd *hcd;
 	struct ehci_hcd *ehci;
@@ -42,27 +37,21 @@ static int usb_w90x900_probe(const struct hc_driver *driver,
 	int retval = 0, irq;
 	unsigned long val;
 
-
-	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
-	if (!res) {
-		retval = -ENXIO;
-		goto err1;
-	}
-
-	hcd = usb_create_hcd(driver, &pdev->dev, "w90x900 EHCI");
+	hcd = usb_create_hcd(&ehci_w90x900_hc_driver,
+			&pdev->dev, "w90x900 EHCI");
 	if (!hcd) {
 		retval = -ENOMEM;
 		goto err1;
 	}
 
-	hcd->rsrc_start = res->start;
-	hcd->rsrc_len = resource_size(res);
-
+	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	hcd->regs = devm_ioremap_resource(&pdev->dev, res);
 	if (IS_ERR(hcd->regs)) {
 		retval = PTR_ERR(hcd->regs);
 		goto err2;
 	}
+	hcd->rsrc_start = res->start;
+	hcd->rsrc_len = resource_size(res);
 
 	ehci = hcd_to_ehci(hcd);
 	ehci->caps = hcd->regs;
@@ -70,9 +59,9 @@ static int usb_w90x900_probe(const struct hc_driver *driver,
 		HC_LENGTH(ehci, ehci_readl(ehci, &ehci->caps->hc_capbase));
 
 	/* enable PHY 0,1,the regs only apply to w90p910
-	*  0xA4,0xA8 were offsets of PHY0 and PHY1 controller of
-	*  w90p910 IC relative to ehci->regs.
-	*/
+	 *  0xA4,0xA8 were offsets of PHY0 and PHY1 controller of
+	 *  w90p910 IC relative to ehci->regs.
+	 */
 	val = __raw_readl(ehci->regs+PHY0_CTR);
 	val |= ENPHY;
 	__raw_writel(val, ehci->regs+PHY0_CTR);
@@ -82,8 +71,10 @@ static int usb_w90x900_probe(const struct hc_driver *driver,
 	__raw_writel(val, ehci->regs+PHY1_CTR);
 
 	irq = platform_get_irq(pdev, 0);
-	if (irq < 0)
+	if (irq < 0) {
+		retval = irq;
 		goto err2;
+	}
 
 	retval = usb_add_hcd(hcd, irq, IRQF_SHARED);
 	if (retval != 0)
@@ -97,26 +88,12 @@ err1:
 	return retval;
 }
 
-static void usb_w90x900_remove(struct usb_hcd *hcd,
-			struct platform_device *pdev)
-{
-	usb_remove_hcd(hcd);
-	usb_put_hcd(hcd);
-}
-
-static int ehci_w90x900_probe(struct platform_device *pdev)
-{
-	if (usb_disabled())
-		return -ENODEV;
-
-	return usb_w90x900_probe(&ehci_w90x900_hc_driver, pdev);
-}
-
 static int ehci_w90x900_remove(struct platform_device *pdev)
 {
 	struct usb_hcd *hcd = platform_get_drvdata(pdev);
 
-	usb_w90x900_remove(hcd, pdev);
+	usb_remove_hcd(hcd);
+	usb_put_hcd(hcd);
 
 	return 0;
 }
@@ -126,7 +103,6 @@ static struct platform_driver ehci_hcd_w90x900_driver = {
 	.remove = ehci_w90x900_remove,
 	.driver = {
 		.name = "w90x900-ehci",
-		.owner = THIS_MODULE,
 	},
 };
 

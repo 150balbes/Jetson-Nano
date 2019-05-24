@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  * security/tomoyo/realpath.c
  *
@@ -89,15 +90,17 @@ char *tomoyo_encode(const char *str)
  *
  * If dentry is a directory, trailing '/' is appended.
  */
-static char *tomoyo_get_absolute_path(struct path *path, char * const buffer,
+static char *tomoyo_get_absolute_path(const struct path *path, char * const buffer,
 				      const int buflen)
 {
 	char *pos = ERR_PTR(-ENOMEM);
+
 	if (buflen >= 256) {
 		/* go to whatever namespace root we are under */
 		pos = d_absolute_path(path, buffer, buflen - 1);
 		if (!IS_ERR(pos) && *pos == '/' && pos[1]) {
-			struct inode *inode = path->dentry->d_inode;
+			struct inode *inode = d_backing_inode(path->dentry);
+
 			if (inode && S_ISDIR(inode->i_mode)) {
 				buffer[buflen - 2] = '/';
 				buffer[buflen - 1] = '\0';
@@ -122,10 +125,12 @@ static char *tomoyo_get_dentry_path(struct dentry *dentry, char * const buffer,
 				    const int buflen)
 {
 	char *pos = ERR_PTR(-ENOMEM);
+
 	if (buflen >= 256) {
 		pos = dentry_path_raw(dentry, buffer, buflen - 1);
 		if (!IS_ERR(pos) && *pos == '/' && pos[1]) {
-			struct inode *inode = dentry->d_inode;
+			struct inode *inode = d_backing_inode(dentry);
+
 			if (inode && S_ISDIR(inode->i_mode)) {
 				buffer[buflen - 2] = '/';
 				buffer[buflen - 1] = '\0';
@@ -149,12 +154,14 @@ static char *tomoyo_get_local_path(struct dentry *dentry, char * const buffer,
 {
 	struct super_block *sb = dentry->d_sb;
 	char *pos = tomoyo_get_dentry_path(dentry, buffer, buflen);
+
 	if (IS_ERR(pos))
 		return pos;
 	/* Convert from $PID to self if $PID is current thread. */
 	if (sb->s_magic == PROC_SUPER_MAGIC && *pos == '/') {
 		char *ep;
 		const pid_t pid = (pid_t) simple_strtoul(pos + 1, &ep, 10);
+
 		if (*ep == '/' && pid && pid ==
 		    task_tgid_nr_ns(current, sb->s_fs_info)) {
 			pos = ep - 5;
@@ -168,12 +175,13 @@ static char *tomoyo_get_local_path(struct dentry *dentry, char * const buffer,
 	if (!MAJOR(sb->s_dev))
 		goto prepend_filesystem_name;
 	{
-		struct inode *inode = sb->s_root->d_inode;
+		struct inode *inode = d_backing_inode(sb->s_root);
+
 		/*
 		 * Use filesystem name if filesystem does not support rename()
 		 * operation.
 		 */
-		if (!inode->i_op->rename && !inode->i_op->rename2)
+		if (!inode->i_op->rename)
 			goto prepend_filesystem_name;
 	}
 	/* Prepend device name. */
@@ -181,6 +189,7 @@ static char *tomoyo_get_local_path(struct dentry *dentry, char * const buffer,
 		char name[64];
 		int name_len;
 		const dev_t dev = sb->s_dev;
+
 		name[sizeof(name) - 1] = '\0';
 		snprintf(name, sizeof(name) - 1, "dev(%u,%u):", MAJOR(dev),
 			 MINOR(dev));
@@ -196,6 +205,7 @@ prepend_filesystem_name:
 	{
 		const char *name = sb->s_type->name;
 		const int name_len = strlen(name);
+
 		pos -= name_len + 1;
 		if (pos < buffer)
 			goto out;
@@ -216,16 +226,16 @@ out:
  *
  * Returns the buffer.
  */
-static char *tomoyo_get_socket_name(struct path *path, char * const buffer,
+static char *tomoyo_get_socket_name(const struct path *path, char * const buffer,
 				    const int buflen)
 {
-	struct inode *inode = path->dentry->d_inode;
+	struct inode *inode = d_backing_inode(path->dentry);
 	struct socket *sock = inode ? SOCKET_I(inode) : NULL;
 	struct sock *sk = sock ? sock->sk : NULL;
+
 	if (sk) {
-		snprintf(buffer, buflen, "socket:[family=%u:type=%u:"
-			 "protocol=%u]", sk->sk_family, sk->sk_type,
-			 sk->sk_protocol);
+		snprintf(buffer, buflen, "socket:[family=%u:type=%u:protocol=%u]",
+			 sk->sk_family, sk->sk_type, sk->sk_protocol);
 	} else {
 		snprintf(buffer, buflen, "socket:[unknown]");
 	}
@@ -247,19 +257,21 @@ static char *tomoyo_get_socket_name(struct path *path, char * const buffer,
  * These functions use kzalloc(), so the caller must call kfree()
  * if these functions didn't return NULL.
  */
-char *tomoyo_realpath_from_path(struct path *path)
+char *tomoyo_realpath_from_path(const struct path *path)
 {
 	char *buf = NULL;
 	char *name = NULL;
 	unsigned int buf_len = PAGE_SIZE / 2;
 	struct dentry *dentry = path->dentry;
 	struct super_block *sb;
+
 	if (!dentry)
 		return NULL;
 	sb = dentry->d_sb;
 	while (1) {
 		char *pos;
 		struct inode *inode;
+
 		buf_len <<= 1;
 		kfree(buf);
 		buf = kmalloc(buf_len, GFP_NOFS);
@@ -277,13 +289,13 @@ char *tomoyo_realpath_from_path(struct path *path)
 			pos = dentry->d_op->d_dname(dentry, buf, buf_len - 1);
 			goto encode;
 		}
-		inode = sb->s_root->d_inode;
+		inode = d_backing_inode(sb->s_root);
 		/*
 		 * Get local name for filesystems without rename() operation
 		 * or dentry without vfsmount.
 		 */
 		if (!path->mnt ||
-		    (!inode->i_op->rename && !inode->i_op->rename2))
+		    (!inode->i_op->rename))
 			pos = tomoyo_get_local_path(path->dentry, buf,
 						    buf_len - 1);
 		/* Get absolute name for the rest. */
@@ -322,6 +334,7 @@ char *tomoyo_realpath_nofollow(const char *pathname)
 
 	if (pathname && kern_path(pathname, 0, &path) == 0) {
 		char *buf = tomoyo_realpath_from_path(&path);
+
 		path_put(&path);
 		return buf;
 	}

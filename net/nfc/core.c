@@ -280,9 +280,6 @@ static struct nfc_target *nfc_find_target(struct nfc_dev *dev, u32 target_idx)
 {
 	int i;
 
-	if (dev->n_targets == 0)
-		return NULL;
-
 	for (i = 0; i < dev->n_targets; i++) {
 		if (dev->targets[i].idx == target_idx)
 			return &dev->targets[i];
@@ -452,7 +449,7 @@ error:
  * @dev: The nfc device that found the target
  * @target_idx: index of the target that must be deactivated
  */
-int nfc_deactivate_target(struct nfc_dev *dev, u32 target_idx)
+int nfc_deactivate_target(struct nfc_dev *dev, u32 target_idx, u8 mode)
 {
 	int rc = 0;
 
@@ -479,7 +476,7 @@ int nfc_deactivate_target(struct nfc_dev *dev, u32 target_idx)
 	if (dev->ops->check_presence)
 		del_timer_sync(&dev->check_pres_timer);
 
-	dev->ops->deactivate_target(dev, dev->active_target);
+	dev->ops->deactivate_target(dev, dev->active_target, mode);
 	dev->active_target = NULL;
 
 error:
@@ -546,9 +543,9 @@ error:
 
 struct nfc_se *nfc_find_se(struct nfc_dev *dev, u32 se_idx)
 {
-	struct nfc_se *se, *n;
+	struct nfc_se *se;
 
-	list_for_each_entry_safe(se, n, &dev->secure_elements, list)
+	list_for_each_entry(se, &dev->secure_elements, list)
 		if (se->idx == se_idx)
 			return se;
 
@@ -558,7 +555,6 @@ EXPORT_SYMBOL(nfc_find_se);
 
 int nfc_enable_se(struct nfc_dev *dev, u32 se_idx)
 {
-
 	struct nfc_se *se;
 	int rc;
 
@@ -608,7 +604,6 @@ error:
 
 int nfc_disable_se(struct nfc_dev *dev, u32 se_idx)
 {
-
 	struct nfc_se *se;
 	int rc;
 
@@ -654,9 +649,6 @@ error:
 int nfc_set_remote_general_bytes(struct nfc_dev *dev, u8 *gb, u8 gb_len)
 {
 	pr_debug("dev_name=%s gb_len=%d\n", dev_name(&dev->dev), gb_len);
-
-	if (gb_len > NFC_MAX_GT_LEN)
-		return -EINVAL;
 
 	return nfc_llcp_set_remote_gb(dev, gb, gb_len);
 }
@@ -940,6 +932,40 @@ int nfc_remove_se(struct nfc_dev *dev, u32 se_idx)
 }
 EXPORT_SYMBOL(nfc_remove_se);
 
+int nfc_se_transaction(struct nfc_dev *dev, u8 se_idx,
+		       struct nfc_evt_transaction *evt_transaction)
+{
+	int rc;
+
+	pr_debug("transaction: %x\n", se_idx);
+
+	device_lock(&dev->dev);
+
+	if (!evt_transaction) {
+		rc = -EPROTO;
+		goto out;
+	}
+
+	rc = nfc_genl_se_transaction(dev, se_idx, evt_transaction);
+out:
+	device_unlock(&dev->dev);
+	return rc;
+}
+EXPORT_SYMBOL(nfc_se_transaction);
+
+int nfc_se_connectivity(struct nfc_dev *dev, u8 se_idx)
+{
+	int rc;
+
+	pr_debug("connectivity: %x\n", se_idx);
+
+	device_lock(&dev->dev);
+	rc = nfc_genl_se_connectivity(dev, se_idx);
+	device_unlock(&dev->dev);
+	return rc;
+}
+EXPORT_SYMBOL(nfc_se_connectivity);
+
 static void nfc_release(struct device *d)
 {
 	struct nfc_dev *dev = to_nfc_dev(d);
@@ -955,6 +981,8 @@ static void nfc_release(struct device *d)
 			list_del(&se->list);
 			kfree(se);
 	}
+
+	ida_simple_remove(&nfc_index_ida, dev->idx);
 
 	kfree(dev);
 }
@@ -987,9 +1015,9 @@ exit:
 	device_unlock(&dev->dev);
 }
 
-static void nfc_check_pres_timeout(unsigned long data)
+static void nfc_check_pres_timeout(struct timer_list *t)
 {
-	struct nfc_dev *dev = (struct nfc_dev *)data;
+	struct nfc_dev *dev = from_timer(dev, t, check_pres_timer);
 
 	schedule_work(&dev->check_pres_work);
 }
@@ -1030,6 +1058,7 @@ struct nfc_dev *nfc_allocate_device(struct nfc_ops *ops,
 				    int tx_headroom, int tx_tailroom)
 {
 	struct nfc_dev *dev;
+	int rc;
 
 	if (!ops->start_poll || !ops->stop_poll || !ops->activate_target ||
 	    !ops->deactivate_target || !ops->im_transceive)
@@ -1041,6 +1070,15 @@ struct nfc_dev *nfc_allocate_device(struct nfc_ops *ops,
 	dev = kzalloc(sizeof(struct nfc_dev), GFP_KERNEL);
 	if (!dev)
 		return NULL;
+
+	rc = ida_simple_get(&nfc_index_ida, 0, 0, GFP_KERNEL);
+	if (rc < 0)
+		goto err_free_dev;
+	dev->idx = rc;
+
+	dev->dev.class = &nfc_class;
+	dev_set_name(&dev->dev, "nfc%d", dev->idx);
+	device_initialize(&dev->dev);
 
 	dev->ops = ops;
 	dev->supported_protocols = supported_protocols;
@@ -1056,14 +1094,16 @@ struct nfc_dev *nfc_allocate_device(struct nfc_ops *ops,
 	dev->targets_generation = 1;
 
 	if (ops->check_presence) {
-		init_timer(&dev->check_pres_timer);
-		dev->check_pres_timer.data = (unsigned long)dev;
-		dev->check_pres_timer.function = nfc_check_pres_timeout;
-
+		timer_setup(&dev->check_pres_timer, nfc_check_pres_timeout, 0);
 		INIT_WORK(&dev->check_pres_work, nfc_check_pres_work);
 	}
 
 	return dev;
+
+err_free_dev:
+	kfree(dev);
+
+	return NULL;
 }
 EXPORT_SYMBOL(nfc_allocate_device);
 
@@ -1077,14 +1117,6 @@ int nfc_register_device(struct nfc_dev *dev)
 	int rc;
 
 	pr_debug("dev_name=%s\n", dev_name(&dev->dev));
-
-	dev->idx = ida_simple_get(&nfc_index_ida, 0, 0, GFP_KERNEL);
-	if (dev->idx < 0)
-		return dev->idx;
-
-	dev->dev.class = &nfc_class;
-	dev_set_name(&dev->dev, "nfc%d", dev->idx);
-	device_initialize(&dev->dev);
 
 	mutex_lock(&nfc_devlist_mutex);
 	nfc_devlist_generation++;
@@ -1123,11 +1155,9 @@ EXPORT_SYMBOL(nfc_register_device);
  */
 void nfc_unregister_device(struct nfc_dev *dev)
 {
-	int rc, id;
+	int rc;
 
 	pr_debug("dev_name=%s\n", dev_name(&dev->dev));
-
-	id = dev->idx;
 
 	if (dev->rfkill) {
 		rfkill_unregister(dev->rfkill);
@@ -1153,8 +1183,6 @@ void nfc_unregister_device(struct nfc_dev *dev)
 	nfc_devlist_generation++;
 	device_del(&dev->dev);
 	mutex_unlock(&nfc_devlist_mutex);
-
-	ida_simple_remove(&nfc_index_ida, id);
 }
 EXPORT_SYMBOL(nfc_unregister_device);
 

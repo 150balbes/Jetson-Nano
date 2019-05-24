@@ -16,6 +16,7 @@
 #include <linux/of_platform.h>
 #include <linux/io.h>
 #include <linux/rtc/sirfsoc_rtciobrg.h>
+#include <asm/outercache.h>
 #include <asm/suspend.h>
 #include <asm/hardware/cache-l2x0.h>
 
@@ -53,7 +54,7 @@ static void sirfsoc_set_sleep_mode(u32 mode)
 
 static int sirfsoc_pre_suspend_power_off(void)
 {
-	u32 wakeup_entry = virt_to_phys(cpu_resume);
+	u32 wakeup_entry = __pa_symbol(cpu_resume);
 
 	sirfsoc_rtc_iobrg_writel(wakeup_entry, sirfsoc_pwrc_base +
 		SIRFSOC_PWRC_SCRATCH_PAD1);
@@ -71,7 +72,6 @@ static int sirfsoc_pm_enter(suspend_state_t state)
 	case PM_SUSPEND_MEM:
 		sirfsoc_pre_suspend_power_off();
 
-		outer_flush_all();
 		outer_disable();
 		/* go zzz */
 		cpu_suspend(0, sirfsoc_finish_suspend);
@@ -136,7 +136,6 @@ static struct platform_driver sirfsoc_memc_driver = {
 	.probe		= sirfsoc_memc_probe,
 	.driver = {
 		.name = "sirfsoc-memc",
-		.owner = THIS_MODULE,
 		.of_match_table	= memc_ids,
 	},
 };

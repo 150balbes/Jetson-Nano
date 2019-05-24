@@ -16,9 +16,13 @@
 
 #include <linux/init.h>
 #include <linux/io.h>
+#include <linux/irqchip.h>
 #include <linux/kernel.h>
+#include <linux/libfdt.h>
+#include <linux/of_fdt.h>
 
 #include <asm/bootinfo.h>
+#include <asm/prom.h>
 
 #include <asm/mach-jz4740/base.h>
 
@@ -27,12 +31,11 @@
 
 #define JZ4740_EMC_SDRAM_CTRL 0x80
 
-
 static void __init jz4740_detect_mem(void)
 {
 	void __iomem *jz_emc_base;
 	u32 ctrl, bus, bank, rows, cols;
-	phys_t size;
+	phys_addr_t size;
 
 	jz_emc_base = ioremap(JZ4740_EMC_BASE_ADDR, 0x100);
 	ctrl = readl(jz_emc_base + JZ4740_EMC_SDRAM_CTRL);
@@ -49,13 +52,58 @@ static void __init jz4740_detect_mem(void)
 	add_memory_region(0, size, BOOT_MEM_RAM);
 }
 
+static unsigned long __init get_board_mach_type(const void *fdt)
+{
+	if (!fdt_node_check_compatible(fdt, 0, "ingenic,jz4780"))
+		return MACH_INGENIC_JZ4780;
+	if (!fdt_node_check_compatible(fdt, 0, "ingenic,jz4770"))
+		return MACH_INGENIC_JZ4770;
+
+	return MACH_INGENIC_JZ4740;
+}
+
 void __init plat_mem_setup(void)
 {
+	int offset;
+	void *dtb;
+
 	jz4740_reset_init();
-	jz4740_detect_mem();
+
+	if (__dtb_start != __dtb_end)
+		dtb = __dtb_start;
+	else
+		dtb = (void *)fw_passed_dtb;
+
+	__dt_setup_arch(dtb);
+
+	offset = fdt_path_offset(dtb, "/memory");
+	if (offset < 0)
+		jz4740_detect_mem();
+
+	mips_machtype = get_board_mach_type(dtb);
+}
+
+void __init device_tree_init(void)
+{
+	if (!initial_boot_params)
+		return;
+
+	unflatten_and_copy_device_tree();
 }
 
 const char *get_system_type(void)
 {
-	return "JZ4740";
+	switch (mips_machtype) {
+	case MACH_INGENIC_JZ4780:
+		return "JZ4780";
+	case MACH_INGENIC_JZ4770:
+		return "JZ4770";
+	default:
+		return "JZ4740";
+	}
+}
+
+void __init arch_init_irq(void)
+{
+	irqchip_init();
 }

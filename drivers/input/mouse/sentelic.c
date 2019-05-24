@@ -432,7 +432,7 @@ static int fsp_onpad_hscr(struct psmouse *psmouse, bool enable)
 static ssize_t fsp_attr_set_setreg(struct psmouse *psmouse, void *data,
 				   const char *buf, size_t count)
 {
-	int reg, val;
+	unsigned int reg, val;
 	char *rest;
 	ssize_t retval;
 
@@ -440,7 +440,7 @@ static ssize_t fsp_attr_set_setreg(struct psmouse *psmouse, void *data,
 	if (rest == buf || *rest != ' ' || reg > 0xff)
 		return -EINVAL;
 
-	retval = kstrtoint(rest + 1, 16, &val);
+	retval = kstrtouint(rest + 1, 16, &val);
 	if (retval)
 		return retval;
 
@@ -476,9 +476,10 @@ static ssize_t fsp_attr_set_getreg(struct psmouse *psmouse, void *data,
 					const char *buf, size_t count)
 {
 	struct fsp_data *pad = psmouse->private;
-	int reg, val, err;
+	unsigned int reg, val;
+	int err;
 
-	err = kstrtoint(buf, 16, &reg);
+	err = kstrtouint(buf, 16, &reg);
 	if (err)
 		return err;
 
@@ -511,9 +512,10 @@ static ssize_t fsp_attr_show_pagereg(struct psmouse *psmouse,
 static ssize_t fsp_attr_set_pagereg(struct psmouse *psmouse, void *data,
 					const char *buf, size_t count)
 {
-	int val, err;
+	unsigned int val;
+	int err;
 
-	err = kstrtoint(buf, 16, &val);
+	err = kstrtouint(buf, 16, &val);
 	if (err)
 		return err;
 
@@ -708,7 +710,6 @@ static psmouse_ret_t fsp_process_byte(struct psmouse *psmouse)
 	unsigned char *packet = psmouse->packet;
 	unsigned char button_status = 0, lscroll = 0, rscroll = 0;
 	unsigned short abs_x, abs_y, fgrs = 0;
-	int rel_x, rel_y;
 
 	if (psmouse->pktcnt < 4)
 		return PSMOUSE_GOOD_DATA;
@@ -838,15 +839,7 @@ static psmouse_ret_t fsp_process_byte(struct psmouse *psmouse)
 		/*
 		 * Standard PS/2 Mouse
 		 */
-		input_report_key(dev, BTN_LEFT, packet[0] & 1);
-		input_report_key(dev, BTN_MIDDLE, (packet[0] >> 2) & 1);
-		input_report_key(dev, BTN_RIGHT, (packet[0] >> 1) & 1);
-
-		rel_x = packet[1] ? (int)packet[1] - (int)((packet[0] << 4) & 0x100) : 0;
-		rel_y = packet[2] ? (int)((packet[0] << 3) & 0x100) - (int)packet[2] : 0;
-
-		input_report_rel(dev, REL_X, rel_x);
-		input_report_rel(dev, REL_Y, rel_y);
+		psmouse_report_standard_packet(dev, packet);
 		break;
 	}
 

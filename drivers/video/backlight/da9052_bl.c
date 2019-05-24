@@ -152,7 +152,7 @@ static int da9052_backlight_remove(struct platform_device *pdev)
 	return 0;
 }
 
-static struct platform_device_id da9052_wled_ids[] = {
+static const struct platform_device_id da9052_wled_ids[] = {
 	{
 		.name		= "da9052-wled1",
 		.driver_data	= DA9052_TYPE_WLED1,
@@ -165,7 +165,9 @@ static struct platform_device_id da9052_wled_ids[] = {
 		.name		= "da9052-wled3",
 		.driver_data	= DA9052_TYPE_WLED3,
 	},
+	{ },
 };
+MODULE_DEVICE_TABLE(platform, da9052_wled_ids);
 
 static struct platform_driver da9052_wled_driver = {
 	.probe		= da9052_backlight_probe,
@@ -173,7 +175,6 @@ static struct platform_driver da9052_wled_driver = {
 	.id_table	= da9052_wled_ids,
 	.driver	= {
 		.name	= "da9052-wled",
-		.owner	= THIS_MODULE,
 	},
 };
 
@@ -182,4 +183,3 @@ module_platform_driver(da9052_wled_driver);
 MODULE_AUTHOR("David Dajun Chen <dchen@diasemi.com>");
 MODULE_DESCRIPTION("Backlight driver for DA9052 PMIC");
 MODULE_LICENSE("GPL");
-MODULE_ALIAS("platform:da9052-backlight");

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 #include <fcntl.h>
 #include <stdio.h>
 #include <errno.h>
@@ -5,9 +6,57 @@
 #include <unistd.h>
 #include <inttypes.h>
 
+#include "map.h"
+#include "map_groups.h"
 #include "symbol.h"
-#include <symbol/kallsyms.h>
+#include "demangle-java.h"
+#include "demangle-rust.h"
+#include "machine.h"
+#include "vdso.h"
 #include "debug.h"
+#include "sane_ctype.h"
+#include <symbol/kallsyms.h>
+
+#ifndef EM_AARCH64
+#define EM_AARCH64	183  /* ARM 64 bit */
+#endif
+
+#ifndef ELF32_ST_VISIBILITY
+#define ELF32_ST_VISIBILITY(o)	((o) & 0x03)
+#endif
+
+/* For ELF64 the definitions are the same.  */
+#ifndef ELF64_ST_VISIBILITY
+#define ELF64_ST_VISIBILITY(o)	ELF32_ST_VISIBILITY (o)
+#endif
+
+/* How to extract information held in the st_other field.  */
+#ifndef GELF_ST_VISIBILITY
+#define GELF_ST_VISIBILITY(val)	ELF64_ST_VISIBILITY (val)
+#endif
+
+typedef Elf64_Nhdr GElf_Nhdr;
+
+#ifdef HAVE_CPLUS_DEMANGLE_SUPPORT
+extern char *cplus_demangle(const char *, int);
+
+static inline char *bfd_demangle(void __maybe_unused *v, const char *c, int i)
+{
+	return cplus_demangle(c, i);
+}
+#else
+#ifdef NO_DEMANGLE
+static inline char *bfd_demangle(void __maybe_unused *v,
+				 const char __maybe_unused *c,
+				 int __maybe_unused i)
+{
+	return NULL;
+}
+#else
+#define PACKAGE 'perf'
+#include <bfd.h>
+#endif
+#endif
 
 #ifndef HAVE_ELF_GETPHDRNUM_SUPPORT
 static int elf_getphdrnum(Elf *elf, size_t *dst)
@@ -22,6 +71,14 @@ static int elf_getphdrnum(Elf *elf, size_t *dst)
 	*dst = ehdr->e_phnum;
 
 	return 0;
+}
+#endif
+
+#ifndef HAVE_ELF_GETSHDRSTRNDX_SUPPORT
+static int elf_getshdrstrndx(Elf *elf __maybe_unused, size_t *dst __maybe_unused)
+{
+	pr_err("%s: update your libelf to > 0.140, this one lacks elf_getshdrstrndx().\n", __func__);
+	return -1;
 }
 #endif
 
@@ -46,9 +103,19 @@ static inline uint8_t elf_sym__type(const GElf_Sym *sym)
 	return GELF_ST_TYPE(sym->st_info);
 }
 
+static inline uint8_t elf_sym__visibility(const GElf_Sym *sym)
+{
+	return GELF_ST_VISIBILITY(sym->st_other);
+}
+
+#ifndef STT_GNU_IFUNC
+#define STT_GNU_IFUNC 10
+#endif
+
 static inline int elf_sym__is_function(const GElf_Sym *sym)
 {
-	return elf_sym__type(sym) == STT_FUNC &&
+	return (elf_sym__type(sym) == STT_FUNC ||
+		elf_sym__type(sym) == STT_GNU_IFUNC) &&
 	       sym->st_name != 0 &&
 	       sym->st_shndx != SHN_UNDEF;
 }
@@ -65,19 +132,14 @@ static inline int elf_sym__is_label(const GElf_Sym *sym)
 	return elf_sym__type(sym) == STT_NOTYPE &&
 		sym->st_name != 0 &&
 		sym->st_shndx != SHN_UNDEF &&
-		sym->st_shndx != SHN_ABS;
+		sym->st_shndx != SHN_ABS &&
+		elf_sym__visibility(sym) != STV_HIDDEN &&
+		elf_sym__visibility(sym) != STV_INTERNAL;
 }
 
-static bool elf_sym__is_a(GElf_Sym *sym, enum map_type type)
+static bool elf_sym__filter(GElf_Sym *sym)
 {
-	switch (type) {
-	case MAP__FUNCTION:
-		return elf_sym__is_function(sym);
-	case MAP__VARIABLE:
-		return elf_sym__is_object(sym);
-	default:
-		return false;
-	}
+	return elf_sym__is_function(sym) || elf_sym__is_object(sym);
 }
 
 static inline const char *elf_sym__name(const GElf_Sym *sym,
@@ -104,17 +166,10 @@ static inline bool elf_sec__is_data(const GElf_Shdr *shdr,
 	return strstr(elf_sec__name(shdr, secstrs), "data") != NULL;
 }
 
-static bool elf_sec__is_a(GElf_Shdr *shdr, Elf_Data *secstrs,
-			  enum map_type type)
+static bool elf_sec__filter(GElf_Shdr *shdr, Elf_Data *secstrs)
 {
-	switch (type) {
-	case MAP__FUNCTION:
-		return elf_sec__is_text(shdr, secstrs);
-	case MAP__VARIABLE:
-		return elf_sec__is_data(shdr, secstrs);
-	default:
-		return false;
-	}
+	return elf_sec__is_text(shdr, secstrs) || 
+	       elf_sec__is_data(shdr, secstrs);
 }
 
 static size_t elf_addr_to_index(Elf *elf, GElf_Addr addr)
@@ -162,6 +217,37 @@ Elf_Scn *elf_section_by_name(Elf *elf, GElf_Ehdr *ep,
 	return NULL;
 }
 
+static bool want_demangle(bool is_kernel_sym)
+{
+	return is_kernel_sym ? symbol_conf.demangle_kernel : symbol_conf.demangle;
+}
+
+static char *demangle_sym(struct dso *dso, int kmodule, const char *elf_name)
+{
+	int demangle_flags = verbose > 0 ? (DMGL_PARAMS | DMGL_ANSI) : DMGL_NO_OPTS;
+	char *demangled = NULL;
+
+	/*
+	 * We need to figure out if the object was created from C++ sources
+	 * DWARF DW_compile_unit has this, but we don't always have access
+	 * to it...
+	 */
+	if (!want_demangle(dso->kernel || kmodule))
+	    return demangled;
+
+	demangled = bfd_demangle(NULL, elf_name, demangle_flags);
+	if (demangled == NULL)
+		demangled = java_demangle_sym(elf_name, JAVA_DEMANGLE_NORET);
+	else if (rust_is_mangled(demangled))
+		/*
+		    * Input to Rust demangling is the BFD-demangled
+		    * name which it Rust-demangles in place.
+		    */
+		rust_demangle_sym(demangled);
+
+	return demangled;
+}
+
 #define elf_section__for_each_rel(reldata, pos, pos_mem, idx, nr_entries) \
 	for (idx = 0, pos = gelf_getrel(reldata, 0, &pos_mem); \
 	     idx < nr_entries; \
@@ -179,12 +265,11 @@ Elf_Scn *elf_section_by_name(Elf *elf, GElf_Ehdr *ep,
  * And always look at the original dso, not at debuginfo packages, that
  * have the PLT data stripped out (shdr_rel_plt.sh_type == SHT_NOBITS).
  */
-int dso__synthesize_plt_symbols(struct dso *dso, struct symsrc *ss, struct map *map,
-				symbol_filter_t filter)
+int dso__synthesize_plt_symbols(struct dso *dso, struct symsrc *ss)
 {
 	uint32_t nr_rel_entries, idx;
 	GElf_Sym sym;
-	u64 plt_offset;
+	u64 plt_offset, plt_header_size, plt_entry_size;
 	GElf_Shdr shdr_plt;
 	struct symbol *f;
 	GElf_Shdr shdr_rel_plt, shdr_dynsym;
@@ -251,51 +336,86 @@ int dso__synthesize_plt_symbols(struct dso *dso, struct symsrc *ss, struct map *
 
 	nr_rel_entries = shdr_rel_plt.sh_size / shdr_rel_plt.sh_entsize;
 	plt_offset = shdr_plt.sh_offset;
+	switch (ehdr.e_machine) {
+		case EM_ARM:
+			plt_header_size = 20;
+			plt_entry_size = 12;
+			break;
+
+		case EM_AARCH64:
+			plt_header_size = 32;
+			plt_entry_size = 16;
+			break;
+
+		case EM_SPARC:
+			plt_header_size = 48;
+			plt_entry_size = 12;
+			break;
+
+		case EM_SPARCV9:
+			plt_header_size = 128;
+			plt_entry_size = 32;
+			break;
+
+		default: /* FIXME: s390/alpha/mips/parisc/poperpc/sh/xtensa need to be checked */
+			plt_header_size = shdr_plt.sh_entsize;
+			plt_entry_size = shdr_plt.sh_entsize;
+			break;
+	}
+	plt_offset += plt_header_size;
 
 	if (shdr_rel_plt.sh_type == SHT_RELA) {
 		GElf_Rela pos_mem, *pos;
 
 		elf_section__for_each_rela(reldata, pos, pos_mem, idx,
 					   nr_rel_entries) {
+			const char *elf_name = NULL;
+			char *demangled = NULL;
 			symidx = GELF_R_SYM(pos->r_info);
-			plt_offset += shdr_plt.sh_entsize;
 			gelf_getsym(syms, symidx, &sym);
-			snprintf(sympltname, sizeof(sympltname),
-				 "%s@plt", elf_sym__name(&sym, symstrs));
 
-			f = symbol__new(plt_offset, shdr_plt.sh_entsize,
-					STB_GLOBAL, sympltname);
+			elf_name = elf_sym__name(&sym, symstrs);
+			demangled = demangle_sym(dso, 0, elf_name);
+			if (demangled != NULL)
+				elf_name = demangled;
+			snprintf(sympltname, sizeof(sympltname),
+				 "%s@plt", elf_name);
+			free(demangled);
+
+			f = symbol__new(plt_offset, plt_entry_size,
+					STB_GLOBAL, STT_FUNC, sympltname);
 			if (!f)
 				goto out_elf_end;
 
-			if (filter && filter(map, f))
-				symbol__delete(f);
-			else {
-				symbols__insert(&dso->symbols[map->type], f);
-				++nr;
-			}
+			plt_offset += plt_entry_size;
+			symbols__insert(&dso->symbols, f);
+			++nr;
 		}
 	} else if (shdr_rel_plt.sh_type == SHT_REL) {
 		GElf_Rel pos_mem, *pos;
 		elf_section__for_each_rel(reldata, pos, pos_mem, idx,
 					  nr_rel_entries) {
+			const char *elf_name = NULL;
+			char *demangled = NULL;
 			symidx = GELF_R_SYM(pos->r_info);
-			plt_offset += shdr_plt.sh_entsize;
 			gelf_getsym(syms, symidx, &sym);
-			snprintf(sympltname, sizeof(sympltname),
-				 "%s@plt", elf_sym__name(&sym, symstrs));
 
-			f = symbol__new(plt_offset, shdr_plt.sh_entsize,
-					STB_GLOBAL, sympltname);
+			elf_name = elf_sym__name(&sym, symstrs);
+			demangled = demangle_sym(dso, 0, elf_name);
+			if (demangled != NULL)
+				elf_name = demangled;
+			snprintf(sympltname, sizeof(sympltname),
+				 "%s@plt", elf_name);
+			free(demangled);
+
+			f = symbol__new(plt_offset, plt_entry_size,
+					STB_GLOBAL, STT_FUNC, sympltname);
 			if (!f)
 				goto out_elf_end;
 
-			if (filter && filter(map, f))
-				symbol__delete(f);
-			else {
-				symbols__insert(&dso->symbols[map->type], f);
-				++nr;
-			}
+			plt_offset += plt_entry_size;
+			symbols__insert(&dso->symbols, f);
+			++nr;
 		}
 	}
 
@@ -306,6 +426,11 @@ out_elf_end:
 	pr_debug("%s: problems reading %s PLT info.\n",
 		 __func__, dso->long_name);
 	return 0;
+}
+
+char *dso__demangle_sym(struct dso *dso, int kmodule, const char *elf_name)
+{
+	return demangle_sym(dso, kmodule, elf_name);
 }
 
 /*
@@ -455,6 +580,12 @@ int sysfs__read_build_id(const char *filename, void *build_id, size_t size)
 				break;
 		} else {
 			int n = namesz + descsz;
+
+			if (n > (int)sizeof(bf)) {
+				n = sizeof(bf);
+				pr_debug("%s: truncating reading of build id in sysfs file %s: n_namesz=%u, n_descsz=%u.\n",
+					 __func__, filename, nhdr.n_namesz, nhdr.n_descsz);
+			}
 			if (read(fd, bf, n) != n)
 				break;
 		}
@@ -505,6 +636,8 @@ int filename__read_debuglink(const char *filename, char *debuglink,
 
 	/* the start of this section is a zero-terminated string */
 	strncpy(debuglink, data->d_buf, size);
+
+	err = 0;
 
 out_elf_end:
 	elf_end(elf);
@@ -558,6 +691,11 @@ void symsrc__destroy(struct symsrc *ss)
 	close(ss->fd);
 }
 
+bool __weak elf__needs_adjust_symbols(GElf_Ehdr ehdr)
+{
+	return ehdr.e_type == ET_EXEC || ehdr.e_type == ET_REL;
+}
+
 int symsrc__init(struct symsrc *ss, struct dso *dso, const char *name,
 		 enum dso_binary_type type)
 {
@@ -566,34 +704,55 @@ int symsrc__init(struct symsrc *ss, struct dso *dso, const char *name,
 	Elf *elf;
 	int fd;
 
-	fd = open(name, O_RDONLY);
-	if (fd < 0)
-		return -1;
+	if (dso__needs_decompress(dso)) {
+		fd = dso__decompress_kmodule_fd(dso, name);
+		if (fd < 0)
+			return -1;
+
+		type = dso->symtab_type;
+	} else {
+		fd = open(name, O_RDONLY);
+		if (fd < 0) {
+			dso->load_errno = errno;
+			return -1;
+		}
+	}
 
 	elf = elf_begin(fd, PERF_ELF_C_READ_MMAP, NULL);
 	if (elf == NULL) {
 		pr_debug("%s: cannot read %s ELF file.\n", __func__, name);
+		dso->load_errno = DSO_LOAD_ERRNO__INVALID_ELF;
 		goto out_close;
 	}
 
 	if (gelf_getehdr(elf, &ehdr) == NULL) {
+		dso->load_errno = DSO_LOAD_ERRNO__INVALID_ELF;
 		pr_debug("%s: cannot get elf header.\n", __func__);
 		goto out_elf_end;
 	}
 
-	if (dso__swap_init(dso, ehdr.e_ident[EI_DATA]))
+	if (dso__swap_init(dso, ehdr.e_ident[EI_DATA])) {
+		dso->load_errno = DSO_LOAD_ERRNO__INTERNAL_ERROR;
 		goto out_elf_end;
+	}
 
 	/* Always reject images with a mismatched build-id: */
-	if (dso->has_build_id) {
+	if (dso->has_build_id && !symbol_conf.ignore_vmlinux_buildid) {
 		u8 build_id[BUILD_ID_SIZE];
 
-		if (elf_read_build_id(elf, build_id, BUILD_ID_SIZE) < 0)
+		if (elf_read_build_id(elf, build_id, BUILD_ID_SIZE) < 0) {
+			dso->load_errno = DSO_LOAD_ERRNO__CANNOT_READ_BUILDID;
 			goto out_elf_end;
+		}
 
-		if (!dso__build_id_equal(dso, build_id))
+		if (!dso__build_id_equal(dso, build_id)) {
+			pr_debug("%s: build id mismatch for %s.\n", __func__, name);
+			dso->load_errno = DSO_LOAD_ERRNO__MISMATCHING_BUILDID;
 			goto out_elf_end;
+		}
 	}
+
+	ss->is_64_bit = (gelf_getclass(elf) == ELFCLASS64);
 
 	ss->symtab = elf_section_by_name(elf, &ehdr, &ss->symshdr, ".symtab",
 			NULL);
@@ -612,21 +771,16 @@ int symsrc__init(struct symsrc *ss, struct dso *dso, const char *name,
 	if (ss->opdshdr.sh_type != SHT_PROGBITS)
 		ss->opdsec = NULL;
 
-	if (dso->kernel == DSO_TYPE_USER) {
-		GElf_Shdr shdr;
-		ss->adjust_symbols = (ehdr.e_type == ET_EXEC ||
-				ehdr.e_type == ET_REL ||
-				elf_section_by_name(elf, &ehdr, &shdr,
-						     ".gnu.prelink_undo",
-						     NULL) != NULL);
-	} else {
-		ss->adjust_symbols = ehdr.e_type == ET_EXEC ||
-				     ehdr.e_type == ET_REL;
-	}
+	if (dso->kernel == DSO_TYPE_USER)
+		ss->adjust_symbols = true;
+	else
+		ss->adjust_symbols = elf__needs_adjust_symbols(ehdr);
 
 	ss->name   = strdup(name);
-	if (!ss->name)
+	if (!ss->name) {
+		dso->load_errno = errno;
 		goto out_elf_end;
+	}
 
 	ss->elf    = elf;
 	ss->fd     = fd;
@@ -673,11 +827,118 @@ static u64 ref_reloc(struct kmap *kmap)
 	return 0;
 }
 
-int dso__load_sym(struct dso *dso, struct map *map,
-		  struct symsrc *syms_ss, struct symsrc *runtime_ss,
-		  symbol_filter_t filter, int kmodule)
+void __weak arch__sym_update(struct symbol *s __maybe_unused,
+		GElf_Sym *sym __maybe_unused) { }
+
+static int dso__process_kernel_symbol(struct dso *dso, struct map *map,
+				      GElf_Sym *sym, GElf_Shdr *shdr,
+				      struct map_groups *kmaps, struct kmap *kmap,
+				      struct dso **curr_dsop, struct map **curr_mapp,
+				      const char *section_name,
+				      bool adjust_kernel_syms, bool kmodule, bool *remap_kernel)
+{
+	struct dso *curr_dso = *curr_dsop;
+	struct map *curr_map;
+	char dso_name[PATH_MAX];
+
+	/* Adjust symbol to map to file offset */
+	if (adjust_kernel_syms)
+		sym->st_value -= shdr->sh_addr - shdr->sh_offset;
+
+	if (strcmp(section_name, (curr_dso->short_name + dso->short_name_len)) == 0)
+		return 0;
+
+	if (strcmp(section_name, ".text") == 0) {
+		/*
+		 * The initial kernel mapping is based on
+		 * kallsyms and identity maps.  Overwrite it to
+		 * map to the kernel dso.
+		 */
+		if (*remap_kernel && dso->kernel) {
+			*remap_kernel = false;
+			map->start = shdr->sh_addr + ref_reloc(kmap);
+			map->end = map->start + shdr->sh_size;
+			map->pgoff = shdr->sh_offset;
+			map->map_ip = map__map_ip;
+			map->unmap_ip = map__unmap_ip;
+			/* Ensure maps are correctly ordered */
+			if (kmaps) {
+				map__get(map);
+				map_groups__remove(kmaps, map);
+				map_groups__insert(kmaps, map);
+				map__put(map);
+			}
+		}
+
+		/*
+		 * The initial module mapping is based on
+		 * /proc/modules mapped to offset zero.
+		 * Overwrite it to map to the module dso.
+		 */
+		if (*remap_kernel && kmodule) {
+			*remap_kernel = false;
+			map->pgoff = shdr->sh_offset;
+		}
+
+		*curr_mapp = map;
+		*curr_dsop = dso;
+		return 0;
+	}
+
+	if (!kmap)
+		return 0;
+
+	snprintf(dso_name, sizeof(dso_name), "%s%s", dso->short_name, section_name);
+
+	curr_map = map_groups__find_by_name(kmaps, dso_name);
+	if (curr_map == NULL) {
+		u64 start = sym->st_value;
+
+		if (kmodule)
+			start += map->start + shdr->sh_offset;
+
+		curr_dso = dso__new(dso_name);
+		if (curr_dso == NULL)
+			return -1;
+		curr_dso->kernel = dso->kernel;
+		curr_dso->long_name = dso->long_name;
+		curr_dso->long_name_len = dso->long_name_len;
+		curr_map = map__new2(start, curr_dso);
+		dso__put(curr_dso);
+		if (curr_map == NULL)
+			return -1;
+
+		if (adjust_kernel_syms) {
+			curr_map->start  = shdr->sh_addr + ref_reloc(kmap);
+			curr_map->end	 = curr_map->start + shdr->sh_size;
+			curr_map->pgoff	 = shdr->sh_offset;
+		} else {
+			curr_map->map_ip = curr_map->unmap_ip = identity__map_ip;
+		}
+		curr_dso->symtab_type = dso->symtab_type;
+		map_groups__insert(kmaps, curr_map);
+		/*
+		 * Add it before we drop the referece to curr_map, i.e. while
+		 * we still are sure to have a reference to this DSO via
+		 * *curr_map->dso.
+		 */
+		dsos__add(&map->groups->machine->dsos, curr_dso);
+		/* kmaps already got it */
+		map__put(curr_map);
+		dso__set_loaded(curr_dso);
+		*curr_mapp = curr_map;
+		*curr_dsop = curr_dso;
+	} else
+		*curr_dsop = curr_map->dso;
+
+	return 0;
+}
+
+int dso__load_sym(struct dso *dso, struct map *map, struct symsrc *syms_ss,
+		  struct symsrc *runtime_ss, int kmodule)
 {
 	struct kmap *kmap = dso->kernel ? map__kmap(map) : NULL;
+	struct map_groups *kmaps = kmap ? map__kmaps(map) : NULL;
 	struct map *curr_map = map;
 	struct dso *curr_dso = dso;
 	Elf_Data *symstrs, *secstrs;
@@ -686,6 +947,7 @@ int dso__load_sym(struct dso *dso, struct map *map,
 	uint32_t idx;
 	GElf_Ehdr ehdr;
 	GElf_Shdr shdr;
+	GElf_Shdr tshdr;
 	Elf_Data *syms, *opddata = NULL;
 	GElf_Sym sym;
 	Elf_Scn *sec, *sec_strndx;
@@ -693,7 +955,11 @@ int dso__load_sym(struct dso *dso, struct map *map,
 	int nr = 0;
 	bool remap_kernel = false, adjust_kernel_syms = false;
 
+	if (kmap && !kmaps)
+		return -1;
+
 	dso->symtab_type = syms_ss->type;
+	dso->is_64_bit = syms_ss->is_64_bit;
 	dso->rel = syms_ss->ehdr.e_type == ET_REL;
 
 	/*
@@ -701,9 +967,17 @@ int dso__load_sym(struct dso *dso, struct map *map,
 	 * have the wrong values for the dso maps, so remove them.
 	 */
 	if (kmodule && syms_ss->symtab)
-		symbols__delete(&dso->symbols[map->type]);
+		symbols__delete(&dso->symbols);
 
 	if (!syms_ss->symtab) {
+		/*
+		 * If the vmlinux is stripped, fail so we will fall back
+		 * to using kallsyms. The vmlinux runtime symbols aren't
+		 * of much use.
+		 */
+		if (dso->kernel)
+			goto out_elf_end;
+
 		syms_ss->symtab  = syms_ss->dynsym;
 		syms_ss->symshdr = syms_ss->dynshdr;
 	}
@@ -712,6 +986,10 @@ int dso__load_sym(struct dso *dso, struct map *map,
 	ehdr = syms_ss->ehdr;
 	sec = syms_ss->symtab;
 	shdr = syms_ss->symshdr;
+
+	if (elf_section_by_name(runtime_ss->elf, &runtime_ss->ehdr, &tshdr,
+				".text", NULL))
+		dso->text_offset = tshdr.sh_addr - tshdr.sh_offset;
 
 	if (runtime_ss->opdsec)
 		opddata = elf_rawdata(runtime_ss->opdsec, NULL);
@@ -728,7 +1006,7 @@ int dso__load_sym(struct dso *dso, struct map *map,
 	if (symstrs == NULL)
 		goto out_elf_end;
 
-	sec_strndx = elf_getscn(elf, ehdr.e_shstrndx);
+	sec_strndx = elf_getscn(runtime_ss->elf, runtime_ss->ehdr.e_shstrndx);
 	if (sec_strndx == NULL)
 		goto out_elf_end;
 
@@ -757,12 +1035,19 @@ int dso__load_sym(struct dso *dso, struct map *map,
 		}
 	}
 
+	/*
+	 * Handle any relocation of vdso necessary because older kernels
+	 * attempted to prelink vdso to its virtual address.
+	 */
+	if (dso__is_vdso(dso))
+		map->reloc = map->start - dso->text_offset;
+
 	dso->adjust_symbols = runtime_ss->adjust_symbols || ref_reloc(kmap);
 	/*
-	 * Initial kernel and module mappings do not map to the dso.  For
-	 * function mappings, flag the fixups.
+	 * Initial kernel and module mappings do not map to the dso.
+	 * Flag the fixups.
 	 */
-	if (map->type == MAP__FUNCTION && (dso->kernel || kmodule)) {
+	if (dso->kernel || kmodule) {
 		remap_kernel = true;
 		adjust_kernel_syms = dso->adjust_symbols;
 	}
@@ -774,16 +1059,15 @@ int dso__load_sym(struct dso *dso, struct map *map,
 		const char *section_name;
 		bool used_opd = false;
 
-		if (!is_label && !elf_sym__is_a(&sym, map->type))
+		if (!is_label && !elf_sym__filter(&sym))
 			continue;
 
 		/* Reject ARM ELF "mapping symbols": these aren't unique and
 		 * don't identify functions, so will confuse the profile
 		 * output: */
-		if (ehdr.e_machine == EM_ARM) {
-			if (!strcmp(elf_name, "$a") ||
-			    !strcmp(elf_name, "$d") ||
-			    !strcmp(elf_name, "$t"))
+		if (ehdr.e_machine == EM_ARM || ehdr.e_machine == EM_AARCH64) {
+			if (elf_name[0] == '$' && strchr("adtx", elf_name[1])
+			    && (elf_name[2] == '\0' || elf_name[2] == '.'))
 				continue;
 		}
 
@@ -813,7 +1097,7 @@ int dso__load_sym(struct dso *dso, struct map *map,
 
 		gelf_getshdr(sec, &shdr);
 
-		if (is_label && !elf_sec__is_a(&shdr, secstrs, map->type))
+		if (is_label && !elf_sec__filter(&shdr, secstrs))
 			continue;
 
 		section_name = elf_sec__name(&shdr, secstrs);
@@ -821,147 +1105,52 @@ int dso__load_sym(struct dso *dso, struct map *map,
 		/* On ARM, symbols for thumb functions have 1 added to
 		 * the symbol address as a flag - remove it */
 		if ((ehdr.e_machine == EM_ARM) &&
-		    (map->type == MAP__FUNCTION) &&
+		    (GELF_ST_TYPE(sym.st_info) == STT_FUNC) &&
 		    (sym.st_value & 1))
 			--sym.st_value;
 
 		if (dso->kernel || kmodule) {
-			char dso_name[PATH_MAX];
-
-			/* Adjust symbol to map to file offset */
-			if (adjust_kernel_syms)
-				sym.st_value -= shdr.sh_addr - shdr.sh_offset;
-
-			if (strcmp(section_name,
-				   (curr_dso->short_name +
-				    dso->short_name_len)) == 0)
-				goto new_symbol;
-
-			if (strcmp(section_name, ".text") == 0) {
-				/*
-				 * The initial kernel mapping is based on
-				 * kallsyms and identity maps.  Overwrite it to
-				 * map to the kernel dso.
-				 */
-				if (remap_kernel && dso->kernel) {
-					remap_kernel = false;
-					map->start = shdr.sh_addr +
-						     ref_reloc(kmap);
-					map->end = map->start + shdr.sh_size;
-					map->pgoff = shdr.sh_offset;
-					map->map_ip = map__map_ip;
-					map->unmap_ip = map__unmap_ip;
-					/* Ensure maps are correctly ordered */
-					map_groups__remove(kmap->kmaps, map);
-					map_groups__insert(kmap->kmaps, map);
-				}
-
-				/*
-				 * The initial module mapping is based on
-				 * /proc/modules mapped to offset zero.
-				 * Overwrite it to map to the module dso.
-				 */
-				if (remap_kernel && kmodule) {
-					remap_kernel = false;
-					map->pgoff = shdr.sh_offset;
-				}
-
-				curr_map = map;
-				curr_dso = dso;
-				goto new_symbol;
-			}
-
-			if (!kmap)
-				goto new_symbol;
-
-			snprintf(dso_name, sizeof(dso_name),
-				 "%s%s", dso->short_name, section_name);
-
-			curr_map = map_groups__find_by_name(kmap->kmaps, map->type, dso_name);
-			if (curr_map == NULL) {
-				u64 start = sym.st_value;
-
-				if (kmodule)
-					start += map->start + shdr.sh_offset;
-
-				curr_dso = dso__new(dso_name);
-				if (curr_dso == NULL)
-					goto out_elf_end;
-				curr_dso->kernel = dso->kernel;
-				curr_dso->long_name = dso->long_name;
-				curr_dso->long_name_len = dso->long_name_len;
-				curr_map = map__new2(start, curr_dso,
-						     map->type);
-				if (curr_map == NULL) {
-					dso__delete(curr_dso);
-					goto out_elf_end;
-				}
-				if (adjust_kernel_syms) {
-					curr_map->start = shdr.sh_addr +
-							  ref_reloc(kmap);
-					curr_map->end = curr_map->start +
-							shdr.sh_size;
-					curr_map->pgoff = shdr.sh_offset;
-				} else {
-					curr_map->map_ip = identity__map_ip;
-					curr_map->unmap_ip = identity__map_ip;
-				}
-				curr_dso->symtab_type = dso->symtab_type;
-				map_groups__insert(kmap->kmaps, curr_map);
-				dsos__add(&dso->node, curr_dso);
-				dso__set_loaded(curr_dso, map->type);
-			} else
-				curr_dso = curr_map->dso;
-
-			goto new_symbol;
-		}
-
-		if ((used_opd && runtime_ss->adjust_symbols)
-				|| (!used_opd && syms_ss->adjust_symbols)) {
+			if (dso__process_kernel_symbol(dso, map, &sym, &shdr, kmaps, kmap, &curr_dso, &curr_map,
+						       section_name, adjust_kernel_syms, kmodule, &remap_kernel))
+				goto out_elf_end;
+		} else if ((used_opd && runtime_ss->adjust_symbols) ||
+			   (!used_opd && syms_ss->adjust_symbols)) {
 			pr_debug4("%s: adjusting symbol: st_value: %#" PRIx64 " "
 				  "sh_addr: %#" PRIx64 " sh_offset: %#" PRIx64 "\n", __func__,
 				  (u64)sym.st_value, (u64)shdr.sh_addr,
 				  (u64)shdr.sh_offset);
 			sym.st_value -= shdr.sh_addr - shdr.sh_offset;
 		}
-new_symbol:
-		/*
-		 * We need to figure out if the object was created from C++ sources
-		 * DWARF DW_compile_unit has this, but we don't always have access
-		 * to it...
-		 */
-		if (symbol_conf.demangle) {
-			demangled = bfd_demangle(NULL, elf_name,
-						 DMGL_PARAMS | DMGL_ANSI);
-			if (demangled != NULL)
-				elf_name = demangled;
-		}
+
+		demangled = demangle_sym(dso, kmodule, elf_name);
+		if (demangled != NULL)
+			elf_name = demangled;
+
 		f = symbol__new(sym.st_value, sym.st_size,
-				GELF_ST_BIND(sym.st_info), elf_name);
+				GELF_ST_BIND(sym.st_info),
+				GELF_ST_TYPE(sym.st_info), elf_name);
 		free(demangled);
 		if (!f)
 			goto out_elf_end;
 
-		if (filter && filter(curr_map, f))
-			symbol__delete(f);
-		else {
-			symbols__insert(&curr_dso->symbols[curr_map->type], f);
-			nr++;
-		}
+		arch__sym_update(f, &sym);
+
+		__symbols__insert(&curr_dso->symbols, f, dso->kernel);
+		nr++;
 	}
 
 	/*
 	 * For misannotated, zeroed, ASM function sizes.
 	 */
 	if (nr > 0) {
-		symbols__fixup_duplicate(&dso->symbols[map->type]);
-		symbols__fixup_end(&dso->symbols[map->type]);
+		symbols__fixup_end(&dso->symbols);
+		symbols__fixup_duplicate(&dso->symbols);
 		if (kmap) {
 			/*
 			 * We need to fixup this here too because we create new
 			 * maps here, for things like vsyscall sections.
 			 */
-			__map_groups__fixup_end(kmap->kmaps, map->type);
+			map_groups__fixup_end(kmaps);
 		}
 	}
 	err = nr;
@@ -1018,6 +1207,39 @@ int file__read_maps(int fd, bool exe, mapfn_t mapfn, void *data,
 
 	elf_end(elf);
 	return err;
+}
+
+enum dso_type dso__type_fd(int fd)
+{
+	enum dso_type dso_type = DSO__TYPE_UNKNOWN;
+	GElf_Ehdr ehdr;
+	Elf_Kind ek;
+	Elf *elf;
+
+	elf = elf_begin(fd, PERF_ELF_C_READ_MMAP, NULL);
+	if (elf == NULL)
+		goto out;
+
+	ek = elf_kind(elf);
+	if (ek != ELF_K_ELF)
+		goto out_end;
+
+	if (gelf_getclass(elf) == ELFCLASS64) {
+		dso_type = DSO__TYPE_64BIT;
+		goto out_end;
+	}
+
+	if (gelf_getehdr(elf, &ehdr) == NULL)
+		goto out_end;
+
+	if (ehdr.e_machine == EM_X86_64)
+		dso_type = DSO__TYPE_X32BIT;
+	else
+		dso_type = DSO__TYPE_32BIT;
+out_end:
+	elf_end(elf);
+out:
+	return dso_type;
 }
 
 static int copy_bytes(int from, off_t from_offs, int to, off_t to_offs, u64 len)
@@ -1100,8 +1322,6 @@ out_close:
 static int kcore__init(struct kcore *kcore, char *filename, int elfclass,
 		       bool temp)
 {
-	GElf_Ehdr *ehdr;
-
 	kcore->elfclass = elfclass;
 
 	if (temp)
@@ -1118,9 +1338,7 @@ static int kcore__init(struct kcore *kcore, char *filename, int elfclass,
 	if (!gelf_newehdr(kcore->elf, elfclass))
 		goto out_end;
 
-	ehdr = gelf_getehdr(kcore->elf, &kcore->ehdr);
-	if (!ehdr)
-		goto out_end;
+	memset(&kcore->ehdr, 0, sizeof(GElf_Ehdr));
 
 	return 0;
 
@@ -1177,23 +1395,18 @@ static int kcore__copy_hdr(struct kcore *from, struct kcore *to, size_t count)
 static int kcore__add_phdr(struct kcore *kcore, int idx, off_t offset,
 			   u64 addr, u64 len)
 {
-	GElf_Phdr gphdr;
-	GElf_Phdr *phdr;
+	GElf_Phdr phdr = {
+		.p_type		= PT_LOAD,
+		.p_flags	= PF_R | PF_W | PF_X,
+		.p_offset	= offset,
+		.p_vaddr	= addr,
+		.p_paddr	= 0,
+		.p_filesz	= len,
+		.p_memsz	= len,
+		.p_align	= page_size,
+	};
 
-	phdr = gelf_getphdr(kcore->elf, idx, &gphdr);
-	if (!phdr)
-		return -1;
-
-	phdr->p_type	= PT_LOAD;
-	phdr->p_flags	= PF_R | PF_W | PF_X;
-	phdr->p_offset	= offset;
-	phdr->p_vaddr	= addr;
-	phdr->p_paddr	= 0;
-	phdr->p_filesz	= len;
-	phdr->p_memsz	= len;
-	phdr->p_align	= page_size;
-
-	if (!gelf_update_phdr(kcore->elf, idx, phdr))
+	if (!gelf_update_phdr(kcore->elf, idx, &phdr))
 		return -1;
 
 	return 0;
@@ -1206,8 +1419,16 @@ static off_t kcore__write(struct kcore *kcore)
 
 struct phdr_data {
 	off_t offset;
+	off_t rel;
 	u64 addr;
 	u64 len;
+	struct list_head node;
+	struct phdr_data *remaps;
+};
+
+struct sym_data {
+	u64 addr;
+	struct list_head node;
 };
 
 struct kcore_copy_info {
@@ -1217,16 +1438,78 @@ struct kcore_copy_info {
 	u64 last_symbol;
 	u64 first_module;
 	u64 last_module_symbol;
-	struct phdr_data kernel_map;
-	struct phdr_data modules_map;
+	size_t phnum;
+	struct list_head phdrs;
+	struct list_head syms;
 };
+
+#define kcore_copy__for_each_phdr(k, p) \
+	list_for_each_entry((p), &(k)->phdrs, node)
+
+static struct phdr_data *phdr_data__new(u64 addr, u64 len, off_t offset)
+{
+	struct phdr_data *p = zalloc(sizeof(*p));
+
+	if (p) {
+		p->addr   = addr;
+		p->len    = len;
+		p->offset = offset;
+	}
+
+	return p;
+}
+
+static struct phdr_data *kcore_copy_info__addnew(struct kcore_copy_info *kci,
+						 u64 addr, u64 len,
+						 off_t offset)
+{
+	struct phdr_data *p = phdr_data__new(addr, len, offset);
+
+	if (p)
+		list_add_tail(&p->node, &kci->phdrs);
+
+	return p;
+}
+
+static void kcore_copy__free_phdrs(struct kcore_copy_info *kci)
+{
+	struct phdr_data *p, *tmp;
+
+	list_for_each_entry_safe(p, tmp, &kci->phdrs, node) {
+		list_del(&p->node);
+		free(p);
+	}
+}
+
+static struct sym_data *kcore_copy__new_sym(struct kcore_copy_info *kci,
+					    u64 addr)
+{
+	struct sym_data *s = zalloc(sizeof(*s));
+
+	if (s) {
+		s->addr = addr;
+		list_add_tail(&s->node, &kci->syms);
+	}
+
+	return s;
+}
+
+static void kcore_copy__free_syms(struct kcore_copy_info *kci)
+{
+	struct sym_data *s, *tmp;
+
+	list_for_each_entry_safe(s, tmp, &kci->syms, node) {
+		list_del(&s->node);
+		free(s);
+	}
+}
 
 static int kcore_copy__process_kallsyms(void *arg, const char *name, char type,
 					u64 start)
 {
 	struct kcore_copy_info *kci = arg;
 
-	if (!symbol_type__is_a(type, MAP__FUNCTION))
+	if (!kallsyms__is_function(type))
 		return 0;
 
 	if (strchr(name, '[')) {
@@ -1251,6 +1534,9 @@ static int kcore_copy__process_kallsyms(void *arg, const char *name, char type,
 		return 0;
 	}
 
+	if (is_entry_trampoline(name) && !kcore_copy__new_sym(kci, start))
+		return -1;
+
 	return 0;
 }
 
@@ -1273,7 +1559,7 @@ static int kcore_copy__parse_kallsyms(struct kcore_copy_info *kci,
 
 static int kcore_copy__process_modules(void *arg,
 				       const char *name __maybe_unused,
-				       u64 start)
+				       u64 start, u64 size __maybe_unused)
 {
 	struct kcore_copy_info *kci = arg;
 
@@ -1300,27 +1586,39 @@ static int kcore_copy__parse_modules(struct kcore_copy_info *kci,
 	return 0;
 }
 
-static void kcore_copy__map(struct phdr_data *p, u64 start, u64 end, u64 pgoff,
-			    u64 s, u64 e)
+static int kcore_copy__map(struct kcore_copy_info *kci, u64 start, u64 end,
+			   u64 pgoff, u64 s, u64 e)
 {
-	if (p->addr || s < start || s >= end)
-		return;
+	u64 len, offset;
 
-	p->addr = s;
-	p->offset = (s - start) + pgoff;
-	p->len = e < end ? e - s : end - s;
+	if (s < start || s >= end)
+		return 0;
+
+	offset = (s - start) + pgoff;
+	len = e < end ? e - s : end - s;
+
+	return kcore_copy_info__addnew(kci, s, len, offset) ? 0 : -1;
 }
 
 static int kcore_copy__read_map(u64 start, u64 len, u64 pgoff, void *data)
 {
 	struct kcore_copy_info *kci = data;
 	u64 end = start + len;
+	struct sym_data *sdat;
 
-	kcore_copy__map(&kci->kernel_map, start, end, pgoff, kci->stext,
-			kci->etext);
+	if (kcore_copy__map(kci, start, end, pgoff, kci->stext, kci->etext))
+		return -1;
 
-	kcore_copy__map(&kci->modules_map, start, end, pgoff, kci->first_module,
-			kci->last_module_symbol);
+	if (kcore_copy__map(kci, start, end, pgoff, kci->first_module,
+			    kci->last_module_symbol))
+		return -1;
+
+	list_for_each_entry(sdat, &kci->syms, node) {
+		u64 s = round_down(sdat->addr, page_size);
+
+		if (kcore_copy__map(kci, start, end, pgoff, s, s + len))
+			return -1;
+	}
 
 	return 0;
 }
@@ -1331,6 +1629,64 @@ static int kcore_copy__read_maps(struct kcore_copy_info *kci, Elf *elf)
 		return -1;
 
 	return 0;
+}
+
+static void kcore_copy__find_remaps(struct kcore_copy_info *kci)
+{
+	struct phdr_data *p, *k = NULL;
+	u64 kend;
+
+	if (!kci->stext)
+		return;
+
+	/* Find phdr that corresponds to the kernel map (contains stext) */
+	kcore_copy__for_each_phdr(kci, p) {
+		u64 pend = p->addr + p->len - 1;
+
+		if (p->addr <= kci->stext && pend >= kci->stext) {
+			k = p;
+			break;
+		}
+	}
+
+	if (!k)
+		return;
+
+	kend = k->offset + k->len;
+
+	/* Find phdrs that remap the kernel */
+	kcore_copy__for_each_phdr(kci, p) {
+		u64 pend = p->offset + p->len;
+
+		if (p == k)
+			continue;
+
+		if (p->offset >= k->offset && pend <= kend)
+			p->remaps = k;
+	}
+}
+
+static void kcore_copy__layout(struct kcore_copy_info *kci)
+{
+	struct phdr_data *p;
+	off_t rel = 0;
+
+	kcore_copy__find_remaps(kci);
+
+	kcore_copy__for_each_phdr(kci, p) {
+		if (!p->remaps) {
+			p->rel = rel;
+			rel += p->len;
+		}
+		kci->phnum += 1;
+	}
+
+	kcore_copy__for_each_phdr(kci, p) {
+		struct phdr_data *k = p->remaps;
+
+		if (k)
+			p->rel = p->offset - k->offset + k->rel;
+	}
 }
 
 static int kcore_copy__calc_maps(struct kcore_copy_info *kci, const char *dir,
@@ -1368,7 +1724,12 @@ static int kcore_copy__calc_maps(struct kcore_copy_info *kci, const char *dir,
 	if (kci->first_module && !kci->last_module_symbol)
 		return -1;
 
-	return kcore_copy__read_maps(kci, elf);
+	if (kcore_copy__read_maps(kci, elf))
+		return -1;
+
+	kcore_copy__layout(kci);
+
+	return 0;
 }
 
 static int kcore_copy__copy_file(const char *from_dir, const char *to_dir,
@@ -1491,12 +1852,15 @@ int kcore_copy(const char *from_dir, const char *to_dir)
 {
 	struct kcore kcore;
 	struct kcore extract;
-	size_t count = 2;
 	int idx = 0, err = -1;
-	off_t offset = page_size, sz, modules_offset = 0;
+	off_t offset, sz;
 	struct kcore_copy_info kci = { .stext = 0, };
 	char kcore_filename[PATH_MAX];
 	char extract_filename[PATH_MAX];
+	struct phdr_data *p;
+
+	INIT_LIST_HEAD(&kci.phdrs);
+	INIT_LIST_HEAD(&kci.syms);
 
 	if (kcore_copy__copy_file(from_dir, to_dir, "kallsyms"))
 		return -1;
@@ -1516,20 +1880,17 @@ int kcore_copy(const char *from_dir, const char *to_dir)
 	if (kcore__init(&extract, extract_filename, kcore.elfclass, false))
 		goto out_kcore_close;
 
-	if (!kci.modules_map.addr)
-		count -= 1;
-
-	if (kcore__copy_hdr(&kcore, &extract, count))
+	if (kcore__copy_hdr(&kcore, &extract, kci.phnum))
 		goto out_extract_close;
 
-	if (kcore__add_phdr(&extract, idx++, offset, kci.kernel_map.addr,
-			    kci.kernel_map.len))
-		goto out_extract_close;
+	offset = gelf_fsize(extract.elf, ELF_T_EHDR, 1, EV_CURRENT) +
+		 gelf_fsize(extract.elf, ELF_T_PHDR, kci.phnum, EV_CURRENT);
+	offset = round_up(offset, page_size);
 
-	if (kci.modules_map.addr) {
-		modules_offset = offset + kci.kernel_map.len;
-		if (kcore__add_phdr(&extract, idx, modules_offset,
-				    kci.modules_map.addr, kci.modules_map.len))
+	kcore_copy__for_each_phdr(&kci, p) {
+		off_t offs = p->rel + offset;
+
+		if (kcore__add_phdr(&extract, idx++, offs, p->addr, p->len))
 			goto out_extract_close;
 	}
 
@@ -1537,14 +1898,14 @@ int kcore_copy(const char *from_dir, const char *to_dir)
 	if (sz < 0 || sz > offset)
 		goto out_extract_close;
 
-	if (copy_bytes(kcore.fd, kci.kernel_map.offset, extract.fd, offset,
-		       kci.kernel_map.len))
-		goto out_extract_close;
+	kcore_copy__for_each_phdr(&kci, p) {
+		off_t offs = p->rel + offset;
 
-	if (modules_offset && copy_bytes(kcore.fd, kci.modules_map.offset,
-					 extract.fd, modules_offset,
-					 kci.modules_map.len))
-		goto out_extract_close;
+		if (p->remaps)
+			continue;
+		if (copy_bytes(kcore.fd, p->offset, extract.fd, offs, p->len))
+			goto out_extract_close;
+	}
 
 	if (kcore_copy__compare_file(from_dir, to_dir, "modules"))
 		goto out_extract_close;
@@ -1566,6 +1927,9 @@ out_unlink_modules:
 out_unlink_kallsyms:
 	if (err)
 		kcore_copy__unlink(to_dir, "kallsyms");
+
+	kcore_copy__free_phdrs(&kci);
+	kcore_copy__free_syms(&kci);
 
 	return err;
 }
@@ -1614,6 +1978,303 @@ void kcore_extract__delete(struct kcore_extract *kce)
 {
 	unlink(kce->extract_filename);
 }
+
+#ifdef HAVE_GELF_GETNOTE_SUPPORT
+
+static void sdt_adjust_loc(struct sdt_note *tmp, GElf_Addr base_off)
+{
+	if (!base_off)
+		return;
+
+	if (tmp->bit32)
+		tmp->addr.a32[SDT_NOTE_IDX_LOC] =
+			tmp->addr.a32[SDT_NOTE_IDX_LOC] + base_off -
+			tmp->addr.a32[SDT_NOTE_IDX_BASE];
+	else
+		tmp->addr.a64[SDT_NOTE_IDX_LOC] =
+			tmp->addr.a64[SDT_NOTE_IDX_LOC] + base_off -
+			tmp->addr.a64[SDT_NOTE_IDX_BASE];
+}
+
+static void sdt_adjust_refctr(struct sdt_note *tmp, GElf_Addr base_addr,
+			      GElf_Addr base_off)
+{
+	if (!base_off)
+		return;
+
+	if (tmp->bit32 && tmp->addr.a32[SDT_NOTE_IDX_REFCTR])
+		tmp->addr.a32[SDT_NOTE_IDX_REFCTR] -= (base_addr - base_off);
+	else if (tmp->addr.a64[SDT_NOTE_IDX_REFCTR])
+		tmp->addr.a64[SDT_NOTE_IDX_REFCTR] -= (base_addr - base_off);
+}
+
+/**
+ * populate_sdt_note : Parse raw data and identify SDT note
+ * @elf: elf of the opened file
+ * @data: raw data of a section with description offset applied
+ * @len: note description size
+ * @type: type of the note
+ * @sdt_notes: List to add the SDT note
+ *
+ * Responsible for parsing the @data in section .note.stapsdt in @elf and
+ * if its an SDT note, it appends to @sdt_notes list.
+ */
+static int populate_sdt_note(Elf **elf, const char *data, size_t len,
+			     struct list_head *sdt_notes)
+{
+	const char *provider, *name, *args;
+	struct sdt_note *tmp = NULL;
+	GElf_Ehdr ehdr;
+	GElf_Shdr shdr;
+	int ret = -EINVAL;
+
+	union {
+		Elf64_Addr a64[NR_ADDR];
+		Elf32_Addr a32[NR_ADDR];
+	} buf;
+
+	Elf_Data dst = {
+		.d_buf = &buf, .d_type = ELF_T_ADDR, .d_version = EV_CURRENT,
+		.d_size = gelf_fsize((*elf), ELF_T_ADDR, NR_ADDR, EV_CURRENT),
+		.d_off = 0, .d_align = 0
+	};
+	Elf_Data src = {
+		.d_buf = (void *) data, .d_type = ELF_T_ADDR,
+		.d_version = EV_CURRENT, .d_size = dst.d_size, .d_off = 0,
+		.d_align = 0
+	};
+
+	tmp = (struct sdt_note *)calloc(1, sizeof(struct sdt_note));
+	if (!tmp) {
+		ret = -ENOMEM;
+		goto out_err;
+	}
+
+	INIT_LIST_HEAD(&tmp->note_list);
+
+	if (len < dst.d_size + 3)
+		goto out_free_note;
+
+	/* Translation from file representation to memory representation */
+	if (gelf_xlatetom(*elf, &dst, &src,
+			  elf_getident(*elf, NULL)[EI_DATA]) == NULL) {
+		pr_err("gelf_xlatetom : %s\n", elf_errmsg(-1));
+		goto out_free_note;
+	}
+
+	/* Populate the fields of sdt_note */
+	provider = data + dst.d_size;
+
+	name = (const char *)memchr(provider, '\0', data + len - provider);
+	if (name++ == NULL)
+		goto out_free_note;
+
+	tmp->provider = strdup(provider);
+	if (!tmp->provider) {
+		ret = -ENOMEM;
+		goto out_free_note;
+	}
+	tmp->name = strdup(name);
+	if (!tmp->name) {
+		ret = -ENOMEM;
+		goto out_free_prov;
+	}
+
+	args = memchr(name, '\0', data + len - name);
+
+	/*
+	 * There is no argument if:
+	 * - We reached the end of the note;
+	 * - There is not enough room to hold a potential string;
+	 * - The argument string is empty or just contains ':'.
+	 */
+	if (args == NULL || data + len - args < 2 ||
+		args[1] == ':' || args[1] == '\0')
+		tmp->args = NULL;
+	else {
+		tmp->args = strdup(++args);
+		if (!tmp->args) {
+			ret = -ENOMEM;
+			goto out_free_name;
+		}
+	}
+
+	if (gelf_getclass(*elf) == ELFCLASS32) {
+		memcpy(&tmp->addr, &buf, 3 * sizeof(Elf32_Addr));
+		tmp->bit32 = true;
+	} else {
+		memcpy(&tmp->addr, &buf, 3 * sizeof(Elf64_Addr));
+		tmp->bit32 = false;
+	}
+
+	if (!gelf_getehdr(*elf, &ehdr)) {
+		pr_debug("%s : cannot get elf header.\n", __func__);
+		ret = -EBADF;
+		goto out_free_args;
+	}
+
+	/* Adjust the prelink effect :
+	 * Find out the .stapsdt.base section.
+	 * This scn will help us to handle prelinking (if present).
+	 * Compare the retrieved file offset of the base section with the
+	 * base address in the description of the SDT note. If its different,
+	 * then accordingly, adjust the note location.
+	 */
+	if (elf_section_by_name(*elf, &ehdr, &shdr, SDT_BASE_SCN, NULL))
+		sdt_adjust_loc(tmp, shdr.sh_offset);
+
+	/* Adjust reference counter offset */
+	if (elf_section_by_name(*elf, &ehdr, &shdr, SDT_PROBES_SCN, NULL))
+		sdt_adjust_refctr(tmp, shdr.sh_addr, shdr.sh_offset);
+
+	list_add_tail(&tmp->note_list, sdt_notes);
+	return 0;
+
+out_free_args:
+	free(tmp->args);
+out_free_name:
+	free(tmp->name);
+out_free_prov:
+	free(tmp->provider);
+out_free_note:
+	free(tmp);
+out_err:
+	return ret;
+}
+
+/**
+ * construct_sdt_notes_list : constructs a list of SDT notes
+ * @elf : elf to look into
+ * @sdt_notes : empty list_head
+ *
+ * Scans the sections in 'elf' for the section
+ * .note.stapsdt. It, then calls populate_sdt_note to find
+ * out the SDT events and populates the 'sdt_notes'.
+ */
+static int construct_sdt_notes_list(Elf *elf, struct list_head *sdt_notes)
+{
+	GElf_Ehdr ehdr;
+	Elf_Scn *scn = NULL;
+	Elf_Data *data;
+	GElf_Shdr shdr;
+	size_t shstrndx, next;
+	GElf_Nhdr nhdr;
+	size_t name_off, desc_off, offset;
+	int ret = 0;
+
+	if (gelf_getehdr(elf, &ehdr) == NULL) {
+		ret = -EBADF;
+		goto out_ret;
+	}
+	if (elf_getshdrstrndx(elf, &shstrndx) != 0) {
+		ret = -EBADF;
+		goto out_ret;
+	}
+
+	/* Look for the required section */
+	scn = elf_section_by_name(elf, &ehdr, &shdr, SDT_NOTE_SCN, NULL);
+	if (!scn) {
+		ret = -ENOENT;
+		goto out_ret;
+	}
+
+	if ((shdr.sh_type != SHT_NOTE) || (shdr.sh_flags & SHF_ALLOC)) {
+		ret = -ENOENT;
+		goto out_ret;
+	}
+
+	data = elf_getdata(scn, NULL);
+
+	/* Get the SDT notes */
+	for (offset = 0; (next = gelf_getnote(data, offset, &nhdr, &name_off,
+					      &desc_off)) > 0; offset = next) {
+		if (nhdr.n_namesz == sizeof(SDT_NOTE_NAME) &&
+		    !memcmp(data->d_buf + name_off, SDT_NOTE_NAME,
+			    sizeof(SDT_NOTE_NAME))) {
+			/* Check the type of the note */
+			if (nhdr.n_type != SDT_NOTE_TYPE)
+				goto out_ret;
+
+			ret = populate_sdt_note(&elf, ((data->d_buf) + desc_off),
+						nhdr.n_descsz, sdt_notes);
+			if (ret < 0)
+				goto out_ret;
+		}
+	}
+	if (list_empty(sdt_notes))
+		ret = -ENOENT;
+
+out_ret:
+	return ret;
+}
+
+/**
+ * get_sdt_note_list : Wrapper to construct a list of sdt notes
+ * @head : empty list_head
+ * @target : file to find SDT notes from
+ *
+ * This opens the file, initializes
+ * the ELF and then calls construct_sdt_notes_list.
+ */
+int get_sdt_note_list(struct list_head *head, const char *target)
+{
+	Elf *elf;
+	int fd, ret;
+
+	fd = open(target, O_RDONLY);
+	if (fd < 0)
+		return -EBADF;
+
+	elf = elf_begin(fd, PERF_ELF_C_READ_MMAP, NULL);
+	if (!elf) {
+		ret = -EBADF;
+		goto out_close;
+	}
+	ret = construct_sdt_notes_list(elf, head);
+	elf_end(elf);
+out_close:
+	close(fd);
+	return ret;
+}
+
+/**
+ * cleanup_sdt_note_list : free the sdt notes' list
+ * @sdt_notes: sdt notes' list
+ *
+ * Free up the SDT notes in @sdt_notes.
+ * Returns the number of SDT notes free'd.
+ */
+int cleanup_sdt_note_list(struct list_head *sdt_notes)
+{
+	struct sdt_note *tmp, *pos;
+	int nr_free = 0;
+
+	list_for_each_entry_safe(pos, tmp, sdt_notes, note_list) {
+		list_del(&pos->note_list);
+		free(pos->name);
+		free(pos->provider);
+		free(pos);
+		nr_free++;
+	}
+	return nr_free;
+}
+
+/**
+ * sdt_notes__get_count: Counts the number of sdt events
+ * @start: list_head to sdt_notes list
+ *
+ * Returns the number of SDT notes in a list
+ */
+int sdt_notes__get_count(struct list_head *start)
+{
+	struct sdt_note *sdt_ptr;
+	int count = 0;
+
+	list_for_each_entry(sdt_ptr, start, note_list)
+		count++;
+	return count;
+}
+#endif
 
 void symbol__elf_init(void)
 {

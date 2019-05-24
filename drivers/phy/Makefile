@@ -1,11 +1,30 @@
+# SPDX-License-Identifier: GPL-2.0
 #
 # Makefile for the phy drivers.
 #
 
 obj-$(CONFIG_GENERIC_PHY)		+= phy-core.o
-obj-$(CONFIG_BCM_KONA_USB2_PHY)		+= phy-bcm-kona-usb2.o
-obj-$(CONFIG_PHY_EXYNOS_DP_VIDEO)	+= phy-exynos-dp-video.o
-obj-$(CONFIG_PHY_EXYNOS_MIPI_VIDEO)	+= phy-exynos-mipi-video.o
-obj-$(CONFIG_PHY_MVEBU_SATA)		+= phy-mvebu-sata.o
-obj-$(CONFIG_OMAP_USB2)			+= phy-omap-usb2.o
-obj-$(CONFIG_TWL4030_USB)		+= phy-twl4030-usb.o
+obj-$(CONFIG_GENERIC_PHY_MIPI_DPHY)	+= phy-core-mipi-dphy.o
+obj-$(CONFIG_PHY_LPC18XX_USB_OTG)	+= phy-lpc18xx-usb-otg.o
+obj-$(CONFIG_PHY_XGENE)			+= phy-xgene.o
+obj-$(CONFIG_PHY_PISTACHIO_USB)		+= phy-pistachio-usb.o
+obj-$(CONFIG_ARCH_SUNXI)		+= allwinner/
+obj-$(CONFIG_ARCH_MESON)		+= amlogic/
+obj-$(CONFIG_LANTIQ)			+= lantiq/
+obj-$(CONFIG_ARCH_MEDIATEK)		+= mediatek/
+obj-$(CONFIG_ARCH_RENESAS)		+= renesas/
+obj-$(CONFIG_ARCH_ROCKCHIP)		+= rockchip/
+obj-$(CONFIG_ARCH_TEGRA)		+= tegra/
+obj-y					+= broadcom/	\
+					   cadence/	\
+					   freescale/	\
+					   hisilicon/	\
+					   marvell/	\
+					   motorola/	\
+					   mscc/	\
+					   qualcomm/	\
+					   ralink/	\
+					   samsung/	\
+					   socionext/	\
+					   st/		\
+					   ti/

@@ -22,7 +22,6 @@
 
 #include "i2s.h"
 #include "idma.h"
-#include "dma.h"
 #include "i2s-regs.h"
 
 #define ST_RUNNING		(1<<0)
@@ -261,10 +260,9 @@ static int idma_mmap(struct snd_pcm_substream *substream,
 static irqreturn_t iis_irq(int irqno, void *dev_id)
 {
 	struct idma_ctrl *prtd = (struct idma_ctrl *)dev_id;
-	u32 iiscon, iisahb, val, addr;
+	u32 iisahb, val, addr;
 
 	iisahb  = readl(idma.regs + I2SAHB);
-	iiscon  = readl(idma.regs + I2SCON);
 
 	val = (iisahb & AHB_LVL0INT) ? AHB_CLRLVL0INT : 0;
 
@@ -274,7 +272,7 @@ static irqreturn_t iis_irq(int irqno, void *dev_id)
 
 		addr = readl(idma.regs + I2SLVL0ADDR) - idma.lp_tx_addr;
 		addr += prtd->periodsz;
-		addr %= (prtd->end - prtd->start);
+		addr %= (u32)(prtd->end - prtd->start);
 		addr += idma.lp_tx_addr;
 
 		writel(addr, idma.regs + I2SLVL0ADDR);
@@ -327,7 +325,7 @@ static int idma_close(struct snd_pcm_substream *substream)
 	return 0;
 }
 
-static struct snd_pcm_ops idma_ops = {
+static const struct snd_pcm_ops idma_ops = {
 	.open		= idma_open,
 	.close		= idma_close,
 	.ioctl		= snd_pcm_lib_ioctl,
@@ -352,7 +350,7 @@ static void idma_free(struct snd_pcm *pcm)
 	if (!buf->area)
 		return;
 
-	iounmap(buf->area);
+	iounmap((void __iomem *)buf->area);
 
 	buf->area = NULL;
 	buf->addr = 0;
@@ -370,7 +368,7 @@ static int preallocate_idma_buffer(struct snd_pcm *pcm, int stream)
 	buf->dev.type = SNDRV_DMA_TYPE_CONTINUOUS;
 	buf->addr = idma.lp_tx_addr;
 	buf->bytes = idma_hardware.buffer_bytes_max;
-	buf->area = (unsigned char *)ioremap(buf->addr, buf->bytes);
+	buf->area = (unsigned char * __force)ioremap(buf->addr, buf->bytes);
 
 	return 0;
 }
@@ -401,7 +399,7 @@ void idma_reg_addr_init(void __iomem *regs, dma_addr_t addr)
 }
 EXPORT_SYMBOL_GPL(idma_reg_addr_init);
 
-static struct snd_soc_platform_driver asoc_idma_platform = {
+static const struct snd_soc_component_driver asoc_idma_platform = {
 	.ops = &idma_ops,
 	.pcm_new = idma_new,
 	.pcm_free = idma_free,
@@ -413,23 +411,16 @@ static int asoc_idma_platform_probe(struct platform_device *pdev)
 	if (idma_irq < 0)
 		return idma_irq;
 
-	return snd_soc_register_platform(&pdev->dev, &asoc_idma_platform);
-}
-
-static int asoc_idma_platform_remove(struct platform_device *pdev)
-{
-	snd_soc_unregister_platform(&pdev->dev);
-	return 0;
+	return devm_snd_soc_register_component(&pdev->dev, &asoc_idma_platform,
+					       NULL, 0);
 }
 
 static struct platform_driver asoc_idma_driver = {
 	.driver = {
 		.name = "samsung-idma",
-		.owner = THIS_MODULE,
 	},
 
 	.probe = asoc_idma_platform_probe,
-	.remove = asoc_idma_platform_remove,
 };
 
 module_platform_driver(asoc_idma_driver);

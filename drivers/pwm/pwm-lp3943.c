@@ -225,7 +225,7 @@ static int lp3943_pwm_parse_dt(struct device *dev,
 		if (num_outputs == 0)
 			continue;
 
-		output = devm_kzalloc(dev, sizeof(*output) * num_outputs,
+		output = devm_kcalloc(dev, num_outputs, sizeof(*output),
 				      GFP_KERNEL);
 		if (!output)
 			return -ENOMEM;
@@ -304,7 +304,6 @@ static struct platform_driver lp3943_pwm_driver = {
 	.remove = lp3943_pwm_remove,
 	.driver = {
 		.name = "lp3943-pwm",
-		.owner = THIS_MODULE,
 		.of_match_table = of_match_ptr(lp3943_pwm_of_match),
 	},
 };

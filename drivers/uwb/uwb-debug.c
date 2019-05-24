@@ -55,7 +55,7 @@
 struct uwb_dbg {
 	struct uwb_pal pal;
 
-	u32 accept;
+	bool accept;
 	struct list_head rsvs;
 
 	struct dentry *root_d;
@@ -206,7 +206,7 @@ static const struct file_operations command_fops = {
 	.owner  = THIS_MODULE,
 };
 
-static int reservations_print(struct seq_file *s, void *p)
+static int reservations_show(struct seq_file *s, void *p)
 {
 	struct uwb_rc *rc = s->private;
 	struct uwb_rsv *rsv;
@@ -217,7 +217,6 @@ static int reservations_print(struct seq_file *s, void *p)
 		struct uwb_dev_addr devaddr;
 		char owner[UWB_ADDR_STRSIZE], target[UWB_ADDR_STRSIZE];
 		bool is_owner;
-		char buf[72];
 
 		uwb_dev_addr_print(owner, sizeof(owner), &rsv->owner->dev_addr);
 		if (rsv->target.type == UWB_RSV_TARGET_DEV) {
@@ -234,55 +233,26 @@ static int reservations_print(struct seq_file *s, void *p)
 			   owner, target, uwb_rsv_state_str(rsv->state));
 		seq_printf(s, "  stream: %d  type: %s\n",
 			   rsv->stream, uwb_rsv_type_str(rsv->type));
-		bitmap_scnprintf(buf, sizeof(buf), rsv->mas.bm, UWB_NUM_MAS);
-		seq_printf(s, "  %s\n", buf);
+		seq_printf(s, "  %*pb\n", UWB_NUM_MAS, rsv->mas.bm);
 	}
 
 	mutex_unlock(&rc->rsvs_mutex);
 
 	return 0;
 }
+DEFINE_SHOW_ATTRIBUTE(reservations);
 
-static int reservations_open(struct inode *inode, struct file *file)
-{
-	return single_open(file, reservations_print, inode->i_private);
-}
-
-static const struct file_operations reservations_fops = {
-	.open    = reservations_open,
-	.read    = seq_read,
-	.llseek  = seq_lseek,
-	.release = single_release,
-	.owner   = THIS_MODULE,
-};
-
-static int drp_avail_print(struct seq_file *s, void *p)
+static int drp_avail_show(struct seq_file *s, void *p)
 {
 	struct uwb_rc *rc = s->private;
-	char buf[72];
 
-	bitmap_scnprintf(buf, sizeof(buf), rc->drp_avail.global, UWB_NUM_MAS);
-	seq_printf(s, "global:  %s\n", buf);
-	bitmap_scnprintf(buf, sizeof(buf), rc->drp_avail.local, UWB_NUM_MAS);
-	seq_printf(s, "local:   %s\n", buf);
-	bitmap_scnprintf(buf, sizeof(buf), rc->drp_avail.pending, UWB_NUM_MAS);
-	seq_printf(s, "pending: %s\n", buf);
+	seq_printf(s, "global:  %*pb\n", UWB_NUM_MAS, rc->drp_avail.global);
+	seq_printf(s, "local:   %*pb\n", UWB_NUM_MAS, rc->drp_avail.local);
+	seq_printf(s, "pending: %*pb\n", UWB_NUM_MAS, rc->drp_avail.pending);
 
 	return 0;
 }
-
-static int drp_avail_open(struct inode *inode, struct file *file)
-{
-	return single_open(file, drp_avail_print, inode->i_private);
-}
-
-static const struct file_operations drp_avail_fops = {
-	.open    = drp_avail_open,
-	.read    = seq_read,
-	.llseek  = seq_lseek,
-	.release = single_release,
-	.owner   = THIS_MODULE,
-};
+DEFINE_SHOW_ATTRIBUTE(drp_avail);
 
 static void uwb_dbg_channel_changed(struct uwb_pal *pal, int channel)
 {

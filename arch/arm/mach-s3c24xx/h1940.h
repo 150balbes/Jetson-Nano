@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * Copyright 2006 Ben Dooks <ben-linux@fluff.org>
  *
@@ -6,11 +7,7 @@
  *	Ben Dooks <ben@simtec.co.uk>
  *
  * iPAQ H1940 series definitions
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
-*/
+ */
 
 #ifndef __MACH_S3C24XX_H1940_H
 #define __MACH_S3C24XX_H1940_H __FILE__
@@ -19,8 +16,10 @@
 #define H1940_SUSPEND_RESUMEAT		(0x30081000)
 #define H1940_SUSPEND_CHECK		(0x30080000)
 
+struct gpio_desc;
+
 extern void h1940_pm_return(void);
-extern int h1940_led_blink_set(unsigned gpio, int state,
+extern int h1940_led_blink_set(struct gpio_desc *desc, int state,
 			       unsigned long *delay_on,
 			       unsigned long *delay_off);
 

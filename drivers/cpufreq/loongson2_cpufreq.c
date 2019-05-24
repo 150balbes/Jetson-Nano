@@ -3,13 +3,16 @@
  *
  * The 2E revision of loongson processor not support this feature.
  *
- * Copyright (C) 2006 - 2008 Lemote Inc. & Insititute of Computing Technology
+ * Copyright (C) 2006 - 2008 Lemote Inc. & Institute of Computing Technology
  * Author: Yanhua, yanh@lemote.com
  *
  * This file is subject to the terms and conditions of the GNU General Public
  * License.  See the file "COPYING" in the main directory of this archive
  * for more details.
  */
+
+#define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
+
 #include <linux/cpufreq.h>
 #include <linux/module.h>
 #include <linux/err.h>
@@ -20,7 +23,7 @@
 #include <asm/clock.h>
 #include <asm/idle.h>
 
-#include <asm/mach-loongson/loongson.h>
+#include <asm/mach-loongson64/loongson.h>
 
 static uint nowait;
 
@@ -48,18 +51,11 @@ static int loongson2_cpu_freq_notifier(struct notifier_block *nb,
 static int loongson2_cpufreq_target(struct cpufreq_policy *policy,
 				     unsigned int index)
 {
-	unsigned int cpu = policy->cpu;
-	cpumask_t cpus_allowed;
 	unsigned int freq;
-
-	cpus_allowed = current->cpus_allowed;
-	set_cpus_allowed_ptr(current, cpumask_of(cpu));
 
 	freq =
 	    ((cpu_clock_freq / 1000) *
 	     loongson2_clockmod_table[index].driver_data) / 8;
-
-	set_cpus_allowed_ptr(current, &cpus_allowed);
 
 	/* setting the cpu frequency */
 	clk_set_rate(policy->clk, freq * 1000);
@@ -76,7 +72,7 @@ static int loongson2_cpufreq_cpu_init(struct cpufreq_policy *policy)
 
 	cpuclk = clk_get(NULL, "cpu_clk");
 	if (IS_ERR(cpuclk)) {
-		printk(KERN_ERR "cpufreq: couldn't get CPU clk\n");
+		pr_err("couldn't get CPU clk\n");
 		return PTR_ERR(cpuclk);
 	}
 
@@ -104,7 +100,6 @@ static int loongson2_cpufreq_cpu_init(struct cpufreq_policy *policy)
 
 static int loongson2_cpufreq_exit(struct cpufreq_policy *policy)
 {
-	cpufreq_frequency_table_put_attr(policy->cpu);
 	clk_put(policy->clk);
 	return 0;
 }
@@ -119,7 +114,7 @@ static struct cpufreq_driver loongson2_cpufreq_driver = {
 	.attr = cpufreq_generic_attr,
 };
 
-static struct platform_device_id platform_device_ids[] = {
+static const struct platform_device_id platform_device_ids[] = {
 	{
 		.name = "loongson2_cpufreq",
 	},
@@ -131,7 +126,6 @@ MODULE_DEVICE_TABLE(platform, platform_device_ids);
 static struct platform_driver platform_driver = {
 	.driver = {
 		.name = "loongson2_cpufreq",
-		.owner = THIS_MODULE,
 	},
 	.id_table = platform_device_ids,
 };
@@ -149,9 +143,9 @@ static void loongson2_cpu_wait(void)
 	u32 cpu_freq;
 
 	spin_lock_irqsave(&loongson2_wait_lock, flags);
-	cpu_freq = LOONGSON_CHIPCFG0;
-	LOONGSON_CHIPCFG0 &= ~0x7;	/* Put CPU into wait mode */
-	LOONGSON_CHIPCFG0 = cpu_freq;	/* Restore CPU state */
+	cpu_freq = LOONGSON_CHIPCFG(0);
+	LOONGSON_CHIPCFG(0) &= ~0x7;	/* Put CPU into wait mode */
+	LOONGSON_CHIPCFG(0) = cpu_freq;	/* Restore CPU state */
 	spin_unlock_irqrestore(&loongson2_wait_lock, flags);
 	local_irq_enable();
 }
@@ -165,7 +159,7 @@ static int __init cpufreq_init(void)
 	if (ret)
 		return ret;
 
-	pr_info("cpufreq: Loongson-2F CPU frequency driver.\n");
+	pr_info("Loongson-2F CPU frequency driver\n");
 
 	cpufreq_register_notifier(&loongson2_cpufreq_notifier_block,
 				  CPUFREQ_TRANSITION_NOTIFIER);

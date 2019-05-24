@@ -18,6 +18,8 @@
  *                        SPEEDSTEP - DEFINITIONS                    *
  *********************************************************************/
 
+#define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
+
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/init.h>
@@ -49,9 +51,9 @@ static u32 pmbase;
  * are in kHz for the time being.
  */
 static struct cpufreq_frequency_table speedstep_freqs[] = {
-	{SPEEDSTEP_HIGH,	0},
-	{SPEEDSTEP_LOW,		0},
-	{0,			CPUFREQ_TABLE_END},
+	{0, SPEEDSTEP_HIGH,	0},
+	{0, SPEEDSTEP_LOW,	0},
+	{0, 0,			CPUFREQ_TABLE_END},
 };
 
 
@@ -68,13 +70,13 @@ static int speedstep_find_register(void)
 	/* get PMBASE */
 	pci_read_config_dword(speedstep_chipset_dev, 0x40, &pmbase);
 	if (!(pmbase & 0x01)) {
-		printk(KERN_ERR "speedstep-ich: could not find speedstep register\n");
+		pr_err("could not find speedstep register\n");
 		return -ENODEV;
 	}
 
 	pmbase &= 0xFFFFFFFE;
 	if (!pmbase) {
-		printk(KERN_ERR "speedstep-ich: could not find speedstep register\n");
+		pr_err("could not find speedstep register\n");
 		return -ENODEV;
 	}
 
@@ -136,7 +138,7 @@ static void speedstep_set_state(unsigned int state)
 		pr_debug("change to %u MHz succeeded\n",
 			speedstep_get_frequency(speedstep_processor) / 1000);
 	else
-		printk(KERN_ERR "cpufreq: change failed - I/O error\n");
+		pr_err("change failed - I/O error\n");
 
 	return;
 }
@@ -205,7 +207,7 @@ static unsigned int speedstep_detect_chipset(void)
 		 * 8100 which use a pretty old revision of the 82815
 		 * host bridge. Abort on these systems.
 		 */
-		static struct pci_dev *hostbridge;
+		struct pci_dev *hostbridge;
 
 		hostbridge  = pci_get_subsys(PCI_VENDOR_ID_INTEL,
 			      PCI_DEVICE_ID_INTEL_82815_MC,
@@ -241,8 +243,7 @@ static unsigned int speedstep_get(unsigned int cpu)
 	unsigned int speed;
 
 	/* You're supposed to ensure CPU is online. */
-	if (smp_call_function_single(cpu, get_freq_data, &speed, 1) != 0)
-		BUG();
+	BUG_ON(smp_call_function_single(cpu, get_freq_data, &speed, 1));
 
 	pr_debug("detected %u kHz as current frequency\n", speed);
 	return speed;
@@ -292,7 +293,7 @@ static int speedstep_cpu_init(struct cpufreq_policy *policy)
 
 	/* only run on CPU to be set, or on its sibling */
 #ifdef CONFIG_SMP
-	cpumask_copy(policy->cpus, cpu_sibling_mask(policy->cpu));
+	cpumask_copy(policy->cpus, topology_sibling_cpumask(policy->cpu));
 #endif
 	policy_cpu = cpumask_any_and(policy->cpus, cpu_online_mask);
 
@@ -302,7 +303,9 @@ static int speedstep_cpu_init(struct cpufreq_policy *policy)
 	if (gf.ret)
 		return gf.ret;
 
-	return cpufreq_table_validate_and_show(policy, speedstep_freqs);
+	policy->freq_table = speedstep_freqs;
+
+	return 0;
 }
 
 
@@ -311,7 +314,6 @@ static struct cpufreq_driver speedstep_driver = {
 	.verify	= cpufreq_generic_frequency_table_verify,
 	.target_index = speedstep_target,
 	.init	= speedstep_cpu_init,
-	.exit	= cpufreq_generic_exit,
 	.get	= speedstep_get,
 	.attr	= cpufreq_generic_attr,
 };
@@ -379,8 +381,7 @@ static void __exit speedstep_exit(void)
 }
 
 
-MODULE_AUTHOR("Dave Jones <davej@redhat.com>, "
-		"Dominik Brodowski <linux@brodo.de>");
+MODULE_AUTHOR("Dave Jones, Dominik Brodowski <linux@brodo.de>");
 MODULE_DESCRIPTION("Speedstep driver for Intel mobile processors on chipsets "
 		"with ICH-M southbridges.");
 MODULE_LICENSE("GPL");

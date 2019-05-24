@@ -48,7 +48,7 @@ static const struct of_device_id mc13xxx_dt_ids[] = {
 };
 MODULE_DEVICE_TABLE(of, mc13xxx_dt_ids);
 
-static struct regmap_config mc13xxx_regmap_spi_config = {
+static const struct regmap_config mc13xxx_regmap_spi_config = {
 	.reg_bits = 7,
 	.pad_bits = 1,
 	.val_bits = 24,
@@ -57,7 +57,8 @@ static struct regmap_config mc13xxx_regmap_spi_config = {
 	.max_register = MC13XXX_NUMREGS,
 
 	.cache_type = REGCACHE_NONE,
-	.use_single_rw = 1,
+	.use_single_read = true,
+	.use_single_write = true,
 };
 
 static int mc13xxx_spi_read(void *context, const void *reg, size_t reg_size,
@@ -140,6 +141,11 @@ static int mc13xxx_spi_probe(struct spi_device *spi)
 
 	mc13xxx->irq = spi->irq;
 
+	spi->max_speed_hz = spi->max_speed_hz ? : 26000000;
+	ret = spi_setup(spi);
+	if (ret)
+		return ret;
+
 	mc13xxx->regmap = devm_regmap_init(&spi->dev, &regmap_mc13xxx_bus,
 					   &spi->dev,
 					   &mc13xxx_regmap_spi_config);
@@ -172,7 +178,6 @@ static struct spi_driver mc13xxx_spi_driver = {
 	.id_table = mc13xxx_device_id,
 	.driver = {
 		.name = "mc13xxx",
-		.owner = THIS_MODULE,
 		.of_match_table = mc13xxx_dt_ids,
 	},
 	.probe = mc13xxx_spi_probe,

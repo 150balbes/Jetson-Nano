@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0+
 /*
  *  das08_pci.c
  *  comedi driver for DAS08 PCI boards
@@ -6,22 +7,12 @@
  *  Copyright (C) 2000 David A. Schleef <ds@schleef.org>
  *  Copyright (C) 2001,2002,2003 Frank Mori Hess <fmhess@users.sourceforge.net>
  *  Copyright (C) 2004 Salvador E. Tropea <set@users.sf.net> <set@ieee.org>
- *
- *  This program is free software; you can redistribute it and/or modify
- *  it under the terms of the GNU General Public License as published by
- *  the Free Software Foundation; either version 2 of the License, or
- *  (at your option) any later version.
- *
- *  This program is distributed in the hope that it will be useful,
- *  but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *  GNU General Public License for more details.
  */
 
 /*
  * Driver: das08_pci
  * Description: DAS-08 PCI compatible boards
- * Devices: (ComputerBoards) PCI-DAS08 [pci-das08]
+ * Devices: [ComputerBoards] PCI-DAS08 (pci-das08)
  * Author: Warren Jasper, ds, Frank Hess
  * Updated: Fri, 31 Aug 2012 19:19:06 +0100
  * Status: works
@@ -32,13 +23,10 @@
  */
 
 #include <linux/module.h>
-#include <linux/pci.h>
 
-#include "../comedidev.h"
+#include "../comedi_pci.h"
 
 #include "das08.h"
-
-#define PCI_DEVICE_ID_PCIDAS08		0x0029
 
 static const struct das08_board_struct das08_pci_boards[] = {
 	{
@@ -79,7 +67,7 @@ static struct comedi_driver das08_pci_comedi_driver = {
 	.driver_name	= "pci-das08",
 	.module		= THIS_MODULE,
 	.auto_attach	= das08_pci_auto_attach,
-	.detach		= comedi_pci_disable,
+	.detach		= comedi_pci_detach,
 };
 
 static int das08_pci_probe(struct pci_dev *dev,
@@ -90,7 +78,7 @@ static int das08_pci_probe(struct pci_dev *dev,
 }
 
 static const struct pci_device_id das08_pci_table[] = {
-	{ PCI_DEVICE(PCI_VENDOR_ID_CB, PCI_DEVICE_ID_PCIDAS08) },
+	{ PCI_DEVICE(PCI_VENDOR_ID_CB, 0x0029) },
 	{ 0 }
 };
 MODULE_DEVICE_TABLE(pci, das08_pci_table);

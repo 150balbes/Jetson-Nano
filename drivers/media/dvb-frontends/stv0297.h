@@ -22,7 +22,7 @@
 #define STV0297_H
 
 #include <linux/dvb/frontend.h>
-#include "dvb_frontend.h"
+#include <media/dvb_frontend.h>
 
 struct stv0297_config
 {
@@ -42,7 +42,7 @@ struct stv0297_config
 	u8 stop_during_read:1;
 };
 
-#if IS_ENABLED(CONFIG_DVB_STV0297)
+#if IS_REACHABLE(CONFIG_DVB_STV0297)
 extern struct dvb_frontend* stv0297_attach(const struct stv0297_config* config,
 					   struct i2c_adapter* i2c);
 #else

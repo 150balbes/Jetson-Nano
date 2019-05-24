@@ -446,7 +446,7 @@ int probe_thermal_sysfs(void)
 		return -1;
 	}
 
-	ptdata.tzi = calloc(sizeof(struct tz_info), ptdata.max_tz_instance+1);
+	ptdata.tzi = calloc(ptdata.max_tz_instance+1, sizeof(struct tz_info));
 	if (!ptdata.tzi) {
 		fprintf(stderr, "Err: allocate tz_info\n");
 		return -1;
@@ -454,8 +454,8 @@ int probe_thermal_sysfs(void)
 
 	/* we still show thermal zone information if there is no cdev */
 	if (ptdata.nr_cooling_dev) {
-		ptdata.cdi = calloc(sizeof(struct cdev_info),
-				ptdata.max_cdev_instance + 1);
+		ptdata.cdi = calloc(ptdata.max_cdev_instance + 1,
+				sizeof(struct cdev_info));
 		if (!ptdata.cdi) {
 			free(ptdata.tzi);
 			fprintf(stderr, "Err: allocate cdev_info\n");
@@ -486,6 +486,7 @@ int zone_instance_to_index(int zone_inst)
 int update_thermal_data()
 {
 	int i;
+	int next_thermal_record = cur_thermal_record + 1;
 	char tz_name[256];
 	static unsigned long samples;
 
@@ -495,9 +496,9 @@ int update_thermal_data()
 	}
 
 	/* circular buffer for keeping historic data */
-	if (cur_thermal_record >= NR_THERMAL_RECORDS)
-		cur_thermal_record = 0;
-	gettimeofday(&trec[cur_thermal_record].tv, NULL);
+	if (next_thermal_record >= NR_THERMAL_RECORDS)
+		next_thermal_record = 0;
+	gettimeofday(&trec[next_thermal_record].tv, NULL);
 	if (tmon_log) {
 		fprintf(tmon_log, "%lu ", ++samples);
 		fprintf(tmon_log, "%3.1f ", p_param.t_target);
@@ -507,11 +508,12 @@ int update_thermal_data()
 		snprintf(tz_name, 256, "%s/%s%d", THERMAL_SYSFS, TZONE,
 			ptdata.tzi[i].instance);
 		sysfs_get_ulong(tz_name, "temp",
-				&trec[cur_thermal_record].temp[i]);
+				&trec[next_thermal_record].temp[i]);
 		if (tmon_log)
 			fprintf(tmon_log, "%lu ",
-				trec[cur_thermal_record].temp[i]/1000);
+				trec[next_thermal_record].temp[i] / 1000);
 	}
+	cur_thermal_record = next_thermal_record;
 	for (i = 0; i < ptdata.nr_cooling_dev; i++) {
 		char cdev_name[256];
 		unsigned long val;

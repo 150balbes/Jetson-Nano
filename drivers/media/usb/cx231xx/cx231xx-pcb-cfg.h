@@ -86,7 +86,7 @@ enum TS_PORT{
 #define EAVP_MASK       0x8
 enum EAV_PRESENT{
 	NO_EXTERNAL_AV = 0x0,	/* 0: No External A/V inputs
-						(no need for i2s blcok),
+						(no need for i2s block),
 						Analog Tuner must be present */
 	EXTERNAL_AV = 0x8	/* 1: External A/V inputs
 						present (requires i2s blk) */
@@ -144,7 +144,7 @@ enum AVDEC_STATUS{
 #define SOURCE_EXTERNAL         0x8
 #define SOURCE_TS_BDA			0x10
 #define SOURCE_TS_ENCODE		0x20
-#define SOURCE_TS_EXTERNAL   	0x40
+#define SOURCE_TS_EXTERNAL	0x40
 
 /***************************************************************************
 				* interface information define *
@@ -221,6 +221,6 @@ enum INDEX_PCB_CONFIG{
 /***************************************************************************/
 struct cx231xx;
 
-u32 initialize_cx231xx(struct cx231xx *p_dev);
+int initialize_cx231xx(struct cx231xx *p_dev);
 
 #endif

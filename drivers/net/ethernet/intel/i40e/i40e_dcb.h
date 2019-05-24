@@ -1,28 +1,5 @@
-/*******************************************************************************
- *
- * Intel Ethernet Controller XL710 Family Linux Driver
- * Copyright(c) 2013 - 2014 Intel Corporation.
- *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms and conditions of the GNU General Public License,
- * version 2, as published by the Free Software Foundation.
- *
- * This program is distributed in the hope it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
- * more details.
- *
- * You should have received a copy of the GNU General Public License along
- * with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * The full GNU General Public License is included in this distribution in
- * the file called "COPYING".
- *
- * Contact Information:
- * e1000-devel Mailing List <e1000-devel@lists.sourceforge.net>
- * Intel Corporation, 5200 N.E. Elam Young Parkway, Hillsboro, OR 97124-6497
- *
- ******************************************************************************/
+/* SPDX-License-Identifier: GPL-2.0 */
+/* Copyright(c) 2013 - 2018 Intel Corporation. */
 
 #ifndef _I40E_DCB_H_
 #define _I40E_DCB_H_
@@ -44,6 +21,15 @@
 #define I40E_IEEE_SUBTYPE_PFC_CFG	11
 #define I40E_IEEE_SUBTYPE_APP_PRI	12
 
+#define I40E_CEE_DCBX_OUI		0x001b21
+#define I40E_CEE_DCBX_TYPE		2
+
+#define I40E_CEE_SUBTYPE_CTRL		1
+#define I40E_CEE_SUBTYPE_PG_CFG		2
+#define I40E_CEE_SUBTYPE_PFC_CFG	3
+#define I40E_CEE_SUBTYPE_APP_PRI	4
+
+#define I40E_CEE_MAX_FEAT_TYPE		3
 /* Defines for LLDP TLV header */
 #define I40E_LLDP_TLV_LEN_SHIFT		0
 #define I40E_LLDP_TLV_LEN_MASK		(0x01FF << I40E_LLDP_TLV_LEN_SHIFT)
@@ -58,13 +44,18 @@
 #define I40E_IEEE_ETS_MAXTC_SHIFT	0
 #define I40E_IEEE_ETS_MAXTC_MASK	(0x7 << I40E_IEEE_ETS_MAXTC_SHIFT)
 #define I40E_IEEE_ETS_CBS_SHIFT		6
-#define I40E_IEEE_ETS_CBS_MASK		(0x1 << I40E_IEEE_ETS_CBS_SHIFT)
+#define I40E_IEEE_ETS_CBS_MASK		BIT(I40E_IEEE_ETS_CBS_SHIFT)
 #define I40E_IEEE_ETS_WILLING_SHIFT	7
-#define I40E_IEEE_ETS_WILLING_MASK	(0x1 << I40E_IEEE_ETS_WILLING_SHIFT)
+#define I40E_IEEE_ETS_WILLING_MASK	BIT(I40E_IEEE_ETS_WILLING_SHIFT)
 #define I40E_IEEE_ETS_PRIO_0_SHIFT	0
 #define I40E_IEEE_ETS_PRIO_0_MASK	(0x7 << I40E_IEEE_ETS_PRIO_0_SHIFT)
 #define I40E_IEEE_ETS_PRIO_1_SHIFT	4
 #define I40E_IEEE_ETS_PRIO_1_MASK	(0x7 << I40E_IEEE_ETS_PRIO_1_SHIFT)
+#define I40E_CEE_PGID_PRIO_0_SHIFT	0
+#define I40E_CEE_PGID_PRIO_0_MASK	(0xF << I40E_CEE_PGID_PRIO_0_SHIFT)
+#define I40E_CEE_PGID_PRIO_1_SHIFT	4
+#define I40E_CEE_PGID_PRIO_1_MASK	(0xF << I40E_CEE_PGID_PRIO_1_SHIFT)
+#define I40E_CEE_PGID_STRICT		15
 
 /* Defines for IEEE TSA types */
 #define I40E_IEEE_TSA_STRICT		0
@@ -74,9 +65,9 @@
 #define I40E_IEEE_PFC_CAP_SHIFT		0
 #define I40E_IEEE_PFC_CAP_MASK		(0xF << I40E_IEEE_PFC_CAP_SHIFT)
 #define I40E_IEEE_PFC_MBC_SHIFT		6
-#define I40E_IEEE_PFC_MBC_MASK		(0x1 << I40E_IEEE_PFC_MBC_SHIFT)
+#define I40E_IEEE_PFC_MBC_MASK		BIT(I40E_IEEE_PFC_MBC_SHIFT)
 #define I40E_IEEE_PFC_WILLING_SHIFT	7
-#define I40E_IEEE_PFC_WILLING_MASK	(0x1 << I40E_IEEE_PFC_WILLING_SHIFT)
+#define I40E_IEEE_PFC_WILLING_MASK	BIT(I40E_IEEE_PFC_WILLING_SHIFT)
 
 /* Defines for IEEE APP TLV */
 #define I40E_IEEE_APP_SEL_SHIFT		0
@@ -92,6 +83,36 @@ struct i40e_lldp_org_tlv {
 	__be16 typelength;
 	__be32 ouisubtype;
 	u8 tlvinfo[1];
+};
+
+struct i40e_cee_tlv_hdr {
+	__be16 typelen;
+	u8 operver;
+	u8 maxver;
+};
+
+struct i40e_cee_ctrl_tlv {
+	struct i40e_cee_tlv_hdr hdr;
+	__be32 seqno;
+	__be32 ackno;
+};
+
+struct i40e_cee_feat_tlv {
+	struct i40e_cee_tlv_hdr hdr;
+	u8 en_will_err; /* Bits: |En|Will|Err|Reserved(5)| */
+#define I40E_CEE_FEAT_TLV_ENABLE_MASK	0x80
+#define I40E_CEE_FEAT_TLV_WILLING_MASK	0x40
+#define I40E_CEE_FEAT_TLV_ERR_MASK	0x20
+	u8 subtype;
+	u8 tlvinfo[1];
+};
+
+struct i40e_cee_app_prio {
+	__be16 protocol;
+	u8 upper_oui_sel; /* Bits: |Upper OUI(6)|Selector(2)| */
+#define I40E_CEE_APP_SELECTOR_MASK	0x03
+	__be16 lower_oui;
+	u8 prio_map;
 };
 #pragma pack()
 

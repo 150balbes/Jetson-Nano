@@ -1,9 +1,10 @@
 /*
- * Copyright (c) 2005-2010 Brocade Communications Systems, Inc.
+ * Copyright (c) 2005-2014 Brocade Communications Systems, Inc.
+ * Copyright (c) 2014- QLogic Corporation.
  * All rights reserved
- * www.brocade.com
+ * www.qlogic.com
  *
- * Linux driver for Brocade Fibre Channel Host Bus Adapter.
+ * Linux driver for QLogic BR-series Fibre Channel Host Bus Adapter.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License (GPL) Version 2 as
@@ -977,9 +978,7 @@ bfa_iocpf_sm_enabling(struct bfa_iocpf_s *iocpf, enum iocpf_event event)
 
 	case IOCPF_E_INITFAIL:
 		bfa_iocpf_timer_stop(ioc);
-		/*
-		 * !!! fall through !!!
-		 */
+		/* fall through */
 
 	case IOCPF_E_TIMEOUT:
 		writel(1, ioc->ioc_regs.ioc_sem_reg);
@@ -1055,9 +1054,7 @@ bfa_iocpf_sm_disabling(struct bfa_iocpf_s *iocpf, enum iocpf_event event)
 
 	case IOCPF_E_FAIL:
 		bfa_iocpf_timer_stop(ioc);
-		/*
-		 * !!! fall through !!!
-		 */
+		/* fall through */
 
 	case IOCPF_E_TIMEOUT:
 		bfa_ioc_set_cur_ioc_fwstate(ioc, BFI_IOC_FAIL);
@@ -1808,13 +1805,12 @@ static void
 bfa_ioc_send_enable(struct bfa_ioc_s *ioc)
 {
 	struct bfi_ioc_ctrl_req_s enable_req;
-	struct timeval tv;
 
 	bfi_h2i_set(enable_req.mh, BFI_MC_IOC, BFI_IOC_H2I_ENABLE_REQ,
 		    bfa_ioc_portid(ioc));
 	enable_req.clscode = cpu_to_be16(ioc->clscode);
-	do_gettimeofday(&tv);
-	enable_req.tv_sec = be32_to_cpu(tv.tv_sec);
+	/* unsigned 32-bit time_t overflow in y2106 */
+	enable_req.tv_sec = be32_to_cpu(ktime_get_real_seconds());
 	bfa_ioc_mbox_send(ioc, &enable_req, sizeof(struct bfi_ioc_ctrl_req_s));
 }
 
@@ -1825,6 +1821,9 @@ bfa_ioc_send_disable(struct bfa_ioc_s *ioc)
 
 	bfi_h2i_set(disable_req.mh, BFI_MC_IOC, BFI_IOC_H2I_DISABLE_REQ,
 		    bfa_ioc_portid(ioc));
+	disable_req.clscode = cpu_to_be16(ioc->clscode);
+	/* unsigned 32-bit time_t overflow in y2106 */
+	disable_req.tv_sec = be32_to_cpu(ktime_get_real_seconds());
 	bfa_ioc_mbox_send(ioc, &disable_req, sizeof(struct bfi_ioc_ctrl_req_s));
 }
 
@@ -2697,7 +2696,7 @@ bfa_ioc_reset_fwstate(struct bfa_ioc_s *ioc)
 	bfa_ioc_set_alt_ioc_fwstate(ioc, BFI_IOC_UNINIT);
 }
 
-#define BFA_MFG_NAME "Brocade"
+#define BFA_MFG_NAME "QLogic"
 void
 bfa_ioc_get_adapter_attr(struct bfa_ioc_s *ioc,
 			 struct bfa_adapter_attr_s *ad_attr)
@@ -2802,7 +2801,7 @@ void
 bfa_ioc_get_adapter_manufacturer(struct bfa_ioc_s *ioc, char *manufacturer)
 {
 	memset((void *)manufacturer, 0, BFA_ADAPTER_MFG_NAME_LEN);
-	memcpy(manufacturer, BFA_MFG_NAME, BFA_ADAPTER_MFG_NAME_LEN);
+	strlcpy(manufacturer, BFA_MFG_NAME, BFA_ADAPTER_MFG_NAME_LEN);
 }
 
 void
@@ -3665,19 +3664,19 @@ bfa_cb_sfp_state_query(struct bfa_sfp_s *sfp)
 		if (sfp->state_query_cbfn)
 			sfp->state_query_cbfn(sfp->state_query_cbarg,
 					sfp->status);
-			sfp->media = NULL;
-		}
+		sfp->media = NULL;
+	}
 
-		if (sfp->portspeed) {
-			sfp->status = bfa_sfp_speed_valid(sfp, sfp->portspeed);
-			if (sfp->state_query_cbfn)
-				sfp->state_query_cbfn(sfp->state_query_cbarg,
-						sfp->status);
-				sfp->portspeed = BFA_PORT_SPEED_UNKNOWN;
-		}
+	if (sfp->portspeed) {
+		sfp->status = bfa_sfp_speed_valid(sfp, sfp->portspeed);
+		if (sfp->state_query_cbfn)
+			sfp->state_query_cbfn(sfp->state_query_cbarg,
+					sfp->status);
+		sfp->portspeed = BFA_PORT_SPEED_UNKNOWN;
+	}
 
-		sfp->state_query_lock = 0;
-		sfp->state_query_cbfn = NULL;
+	sfp->state_query_lock = 0;
+	sfp->state_query_cbfn = NULL;
 }
 
 /*
@@ -3816,7 +3815,7 @@ bfa_sfp_scn(struct bfa_sfp_s *sfp, struct bfi_mbmsg_s *msg)
 		sfp->state = BFA_SFP_STATE_REMOVED;
 		sfp->data_valid = 0;
 		bfa_sfp_scn_aen_post(sfp, rsp);
-		 break;
+		break;
 	case BFA_SFP_SCN_FAILED:
 		sfp->state = BFA_SFP_STATE_FAILED;
 		sfp->data_valid = 0;
@@ -3878,7 +3877,7 @@ bfa_sfp_show_comp(struct bfa_sfp_s *sfp, struct bfi_mbmsg_s *msg)
 		bfa_trc(sfp, sfp->data_valid);
 		if (sfp->data_valid) {
 			u32	size = sizeof(struct sfp_mem_s);
-			u8 *des = (u8 *) &(sfp->sfpmem->srlid_base);
+			u8 *des = (u8 *)(sfp->sfpmem);
 			memcpy(des, sfp->dbuf_kva, size);
 		}
 		/*
@@ -5760,7 +5759,7 @@ bfa_phy_intr(void *phyarg, struct bfi_mbmsg_s *msg)
 				(struct bfa_phy_stats_s *) phy->ubuf;
 			bfa_phy_ntoh32((u32 *)stats, (u32 *)phy->dbuf_kva,
 				sizeof(struct bfa_phy_stats_s));
-				bfa_trc(phy, stats->status);
+			bfa_trc(phy, stats->status);
 		}
 
 		phy->status = status;
@@ -5819,12 +5818,6 @@ bfa_phy_intr(void *phyarg, struct bfi_mbmsg_s *msg)
 		WARN_ON(1);
 	}
 }
-
-/*
- *	DCONF module specific
- */
-
-BFA_MODULE(dconf);
 
 /*
  * DCONF state machine events
@@ -6010,6 +6003,7 @@ bfa_dconf_sm_final_sync(struct bfa_dconf_mod_s *dconf,
 	case BFA_DCONF_SM_IOCDISABLE:
 	case BFA_DCONF_SM_FLASH_COMP:
 		bfa_timer_stop(&dconf->timer);
+		/* fall through */
 	case BFA_DCONF_SM_TIMEOUT:
 		bfa_sm_set_state(dconf, bfa_dconf_sm_uninit);
 		bfa_fsm_send_event(&dconf->bfa->iocfc, IOCFC_E_DCONF_DONE);
@@ -6072,7 +6066,7 @@ bfa_dconf_sm_iocdown_dirty(struct bfa_dconf_mod_s *dconf,
 /*
  * Compute and return memory needed by DRV_CFG module.
  */
-static void
+void
 bfa_dconf_meminfo(struct bfa_iocfc_cfg_s *cfg, struct bfa_meminfo_s *meminfo,
 		  struct bfa_s *bfa)
 {
@@ -6086,9 +6080,8 @@ bfa_dconf_meminfo(struct bfa_iocfc_cfg_s *cfg, struct bfa_meminfo_s *meminfo,
 				sizeof(struct bfa_dconf_s));
 }
 
-static void
-bfa_dconf_attach(struct bfa_s *bfa, void *bfad, struct bfa_iocfc_cfg_s *cfg,
-		struct bfa_pcidev_s *pcidev)
+void
+bfa_dconf_attach(struct bfa_s *bfa, void *bfad, struct bfa_iocfc_cfg_s *cfg)
 {
 	struct bfa_dconf_mod_s *dconf = BFA_DCONF_MOD(bfa);
 
@@ -6133,31 +6126,18 @@ bfa_dconf_modinit(struct bfa_s *bfa)
 	struct bfa_dconf_mod_s *dconf = BFA_DCONF_MOD(bfa);
 	bfa_sm_send_event(dconf, BFA_DCONF_SM_INIT);
 }
-static void
-bfa_dconf_start(struct bfa_s *bfa)
-{
-}
-
-static void
-bfa_dconf_stop(struct bfa_s *bfa)
-{
-}
 
 static void bfa_dconf_timer(void *cbarg)
 {
 	struct bfa_dconf_mod_s *dconf = cbarg;
 	bfa_sm_send_event(dconf, BFA_DCONF_SM_TIMEOUT);
 }
-static void
+
+void
 bfa_dconf_iocdisable(struct bfa_s *bfa)
 {
 	struct bfa_dconf_mod_s *dconf = BFA_DCONF_MOD(bfa);
 	bfa_sm_send_event(dconf, BFA_DCONF_SM_IOCDISABLE);
-}
-
-static void
-bfa_dconf_detach(struct bfa_s *bfa)
-{
 }
 
 static bfa_status_t
@@ -6851,7 +6831,7 @@ static u32
 bfa_flash_status_read(void __iomem *pci_bar)
 {
 	union bfa_flash_dev_status_reg_u	dev_status;
-	u32				status;
+	int				status;
 	u32			ret_status;
 	int				i;
 
@@ -6899,7 +6879,7 @@ static u32
 bfa_flash_read_start(void __iomem *pci_bar, u32 offset, u32 len,
 			 char *buf)
 {
-	u32 status;
+	int status;
 
 	/*
 	 * len must be mutiple of 4 and not exceeding fifo size
@@ -7006,7 +6986,7 @@ bfa_flash_sem_get(void __iomem *bar)
 	while (!bfa_raw_sem_get(bar)) {
 		if (--n <= 0)
 			return BFA_STATUS_BADFLASH;
-		udelay(10000);
+		mdelay(10);
 	}
 	return BFA_STATUS_OK;
 }
@@ -7021,7 +7001,8 @@ bfa_status_t
 bfa_flash_raw_read(void __iomem *pci_bar, u32 offset, char *buf,
 		       u32 len)
 {
-	u32 n, status;
+	u32 n;
+	int status;
 	u32 off, l, s, residue, fifo_sz;
 
 	residue = len;

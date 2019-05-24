@@ -5,8 +5,10 @@
 #include <linux/mod_devicetable.h>
 #include <linux/errno.h>
 #include <linux/irq.h>
-#include <linux/of_device.h>
 #include <linux/of_platform.h>
+#include <linux/of_address.h>
+#include <linux/of_device.h>
+#include <linux/of_irq.h>
 
 #include "of_device_common.h"
 
@@ -149,8 +151,8 @@ int of_bus_sbus_match(struct device_node *np)
 	struct device_node *dp = np;
 
 	while (dp) {
-		if (!strcmp(dp->name, "sbus") ||
-		    !strcmp(dp->name, "sbi"))
+		if (of_node_name_eq(dp, "sbus") ||
+		    of_node_name_eq(dp, "sbi"))
 			return 1;
 
 		/* Have a look at use_1to1_mapping().  We're trying

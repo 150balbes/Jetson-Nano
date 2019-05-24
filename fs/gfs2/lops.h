@@ -26,8 +26,11 @@ extern const struct gfs2_log_operations gfs2_revoke_lops;
 extern const struct gfs2_log_operations gfs2_databuf_lops;
 
 extern const struct gfs2_log_operations *gfs2_log_ops[];
+extern u64 gfs2_log_bmap(struct gfs2_sbd *sdp);
+extern void gfs2_log_write(struct gfs2_sbd *sdp, struct page *page,
+			   unsigned size, unsigned offset, u64 blkno);
 extern void gfs2_log_write_page(struct gfs2_sbd *sdp, struct page *page);
-extern void gfs2_log_flush_bio(struct gfs2_sbd *sdp, int rw);
+extern void gfs2_log_submit_bio(struct bio **biop, int op, int op_flags);
 extern void gfs2_pin(struct gfs2_sbd *sdp, struct buffer_head *bh);
 
 static inline unsigned int buf_limit(struct gfs2_sbd *sdp)
@@ -46,12 +49,13 @@ static inline unsigned int databuf_limit(struct gfs2_sbd *sdp)
 	return limit;
 }
 
-static inline void lops_before_commit(struct gfs2_sbd *sdp)
+static inline void lops_before_commit(struct gfs2_sbd *sdp,
+				      struct gfs2_trans *tr)
 {
 	int x;
 	for (x = 0; gfs2_log_ops[x]; x++)
 		if (gfs2_log_ops[x]->lo_before_commit)
-			gfs2_log_ops[x]->lo_before_commit(sdp);
+			gfs2_log_ops[x]->lo_before_commit(sdp, tr);
 }
 
 static inline void lops_after_commit(struct gfs2_sbd *sdp,

@@ -38,7 +38,7 @@ struct spear_thermal_dev {
 };
 
 static inline int thermal_get_temp(struct thermal_zone_device *thermal,
-				unsigned long *temp)
+				int *temp)
 {
 	struct spear_thermal_dev *stdev = thermal->devdata;
 
@@ -54,11 +54,9 @@ static struct thermal_zone_device_ops ops = {
 	.get_temp = thermal_get_temp,
 };
 
-#ifdef CONFIG_PM
-static int spear_thermal_suspend(struct device *dev)
+static int __maybe_unused spear_thermal_suspend(struct device *dev)
 {
-	struct platform_device *pdev = to_platform_device(dev);
-	struct thermal_zone_device *spear_thermal = platform_get_drvdata(pdev);
+	struct thermal_zone_device *spear_thermal = dev_get_drvdata(dev);
 	struct spear_thermal_dev *stdev = spear_thermal->devdata;
 	unsigned int actual_mask = 0;
 
@@ -72,17 +70,16 @@ static int spear_thermal_suspend(struct device *dev)
 	return 0;
 }
 
-static int spear_thermal_resume(struct device *dev)
+static int __maybe_unused spear_thermal_resume(struct device *dev)
 {
-	struct platform_device *pdev = to_platform_device(dev);
-	struct thermal_zone_device *spear_thermal = platform_get_drvdata(pdev);
+	struct thermal_zone_device *spear_thermal = dev_get_drvdata(dev);
 	struct spear_thermal_dev *stdev = spear_thermal->devdata;
 	unsigned int actual_mask = 0;
 	int ret = 0;
 
 	ret = clk_enable(stdev->clk);
 	if (ret) {
-		dev_err(&pdev->dev, "Can't enable clock\n");
+		dev_err(dev, "Can't enable clock\n");
 		return ret;
 	}
 
@@ -94,7 +91,6 @@ static int spear_thermal_resume(struct device *dev)
 
 	return 0;
 }
-#endif
 
 static SIMPLE_DEV_PM_OPS(spear_thermal_pm_ops, spear_thermal_suspend,
 		spear_thermal_resume);
@@ -113,10 +109,8 @@ static int spear_thermal_probe(struct platform_device *pdev)
 	}
 
 	stdev = devm_kzalloc(&pdev->dev, sizeof(*stdev), GFP_KERNEL);
-	if (!stdev) {
-		dev_err(&pdev->dev, "kzalloc fail\n");
+	if (!stdev)
 		return -ENOMEM;
-	}
 
 	/* Enable thermal sensor */
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
@@ -188,7 +182,6 @@ static struct platform_driver spear_thermal_driver = {
 	.remove = spear_thermal_exit,
 	.driver = {
 		.name = "spear_thermal",
-		.owner = THIS_MODULE,
 		.pm = &spear_thermal_pm_ops,
 		.of_match_table = spear_thermal_id_table,
 	},

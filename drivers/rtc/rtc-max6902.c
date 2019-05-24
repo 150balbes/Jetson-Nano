@@ -85,7 +85,7 @@ static int max6902_read_time(struct device *dev, struct rtc_time *dt)
 	dt->tm_year += century;
 	dt->tm_year -= 1900;
 
-	return rtc_valid_tm(dt);
+	return 0;
 }
 
 static int max6902_set_time(struct device *dev, struct rtc_time *dt)
@@ -146,7 +146,6 @@ static int max6902_probe(struct spi_device *spi)
 static struct spi_driver max6902_driver = {
 	.driver = {
 		.name	= "rtc-max6902",
-		.owner	= THIS_MODULE,
 	},
 	.probe	= max6902_probe,
 };

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  *	Precise Delay Loops for i386
  *
@@ -11,7 +12,7 @@
  *	we have to worry about.
  */
 
-#include <linux/module.h>
+#include <linux/export.h>
 #include <linux/sched.h>
 #include <linux/timex.h>
 #include <linux/preempt.h>
@@ -20,6 +21,7 @@
 #include <asm/processor.h>
 #include <asm/delay.h>
 #include <asm/timer.h>
+#include <asm/mwait.h>
 
 #ifdef CONFIG_SMP
 # include <asm/smp.h>
@@ -49,16 +51,14 @@ static void delay_loop(unsigned long loops)
 /* TSC based delay: */
 static void delay_tsc(unsigned long __loops)
 {
-	u32 bclock, now, loops = __loops;
+	u64 bclock, now, loops = __loops;
 	int cpu;
 
 	preempt_disable();
 	cpu = smp_processor_id();
-	rdtsc_barrier();
-	rdtscl(bclock);
+	bclock = rdtsc_ordered();
 	for (;;) {
-		rdtsc_barrier();
-		rdtscl(now);
+		now = rdtsc_ordered();
 		if ((now - bclock) >= loops)
 			break;
 
@@ -79,11 +79,55 @@ static void delay_tsc(unsigned long __loops)
 		if (unlikely(cpu != smp_processor_id())) {
 			loops -= (now - bclock);
 			cpu = smp_processor_id();
-			rdtsc_barrier();
-			rdtscl(bclock);
+			bclock = rdtsc_ordered();
 		}
 	}
 	preempt_enable();
+}
+
+/*
+ * On some AMD platforms, MWAITX has a configurable 32-bit timer, that
+ * counts with TSC frequency. The input value is the loop of the
+ * counter, it will exit when the timer expires.
+ */
+static void delay_mwaitx(unsigned long __loops)
+{
+	u64 start, end, delay, loops = __loops;
+
+	/*
+	 * Timer value of 0 causes MWAITX to wait indefinitely, unless there
+	 * is a store on the memory monitored by MONITORX.
+	 */
+	if (loops == 0)
+		return;
+
+	start = rdtsc_ordered();
+
+	for (;;) {
+		delay = min_t(u64, MWAITX_MAX_LOOPS, loops);
+
+		/*
+		 * Use cpu_tss_rw as a cacheline-aligned, seldomly
+		 * accessed per-cpu variable as the monitor target.
+		 */
+		__monitorx(raw_cpu_ptr(&cpu_tss_rw), 0, 0);
+
+		/*
+		 * AMD, like Intel, supports the EAX hint and EAX=0xf
+		 * means, do not enter any deep C-state and we use it
+		 * here in delay() to minimize wakeup latency.
+		 */
+		__mwaitx(MWAITX_DISABLE_CSTATES, delay, MWAITX_ECX_TIMER_ENABLE);
+
+		end = rdtsc_ordered();
+
+		if (loops <= end - start)
+			break;
+
+		loops -= end - start;
+
+		start = end;
+	}
 }
 
 /*
@@ -94,13 +138,19 @@ static void (*delay_fn)(unsigned long) = delay_loop;
 
 void use_tsc_delay(void)
 {
-	delay_fn = delay_tsc;
+	if (delay_fn == delay_loop)
+		delay_fn = delay_tsc;
+}
+
+void use_mwaitx_delay(void)
+{
+	delay_fn = delay_mwaitx;
 }
 
 int read_current_timer(unsigned long *timer_val)
 {
 	if (delay_fn == delay_tsc) {
-		rdtscll(*timer_val);
+		*timer_val = rdtsc();
 		return 0;
 	}
 	return -1;
@@ -112,15 +162,15 @@ void __delay(unsigned long loops)
 }
 EXPORT_SYMBOL(__delay);
 
-inline void __const_udelay(unsigned long xloops)
+void __const_udelay(unsigned long xloops)
 {
+	unsigned long lpj = this_cpu_read(cpu_info.loops_per_jiffy) ? : loops_per_jiffy;
 	int d0;
 
 	xloops *= 4;
 	asm("mull %%edx"
 		:"=d" (xloops), "=&a" (d0)
-		:"1" (xloops), "0"
-		(this_cpu_read(cpu_info.loops_per_jiffy) * (HZ/4)));
+		:"1" (xloops), "0" (lpj * (HZ / 4)));
 
 	__delay(++xloops);
 }

@@ -25,7 +25,6 @@ Required Properties:
     - "nxp,pcf8574": For the NXP PCF8574
     - "nxp,pcf8574a": For the NXP PCF8574A
     - "nxp,pcf8575": For the NXP PCF8575
-    - "ti,tca9554": For the TI TCA9554
 
   - reg: I2C slave address.
 
@@ -39,7 +38,7 @@ Optional Properties:
   - lines-initial-states: Bitmask that specifies the initial state of each
   line. When a bit is set to zero, the corresponding line will be initialized to
   the input (pulled-up) state. When the  bit is set to one, the line will be
-  initialized the the low-level output state. If the property is not specified
+  initialized the low-level output state. If the property is not specified
   all lines will be initialized to the input state.
 
   The I/O expander can detect input state changes, and thus optionally act as
@@ -50,7 +49,6 @@ Optional Properties:
 
   - interrupt-controller: Identifies the node as an interrupt controller.
   - #interrupt-cells: Number of cells to encode an interrupt source, shall be 2.
-  - interrupt-parent: phandle of the parent interrupt controller.
   - interrupts: Interrupt specifier for the controllers interrupt.
 
 

@@ -1,14 +1,9 @@
-/* linux/arch/arm/mach-s3c2440/s3c2440.c
- *
- * Copyright (c) 2004-2006 Simtec Electronics
- *   Ben Dooks <ben@simtec.co.uk>
- *
- * Samsung S3C2440 Mobile CPU support
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
-*/
+// SPDX-License-Identifier: GPL-2.0
+//
+// Copyright (c) 2004-2006 Simtec Electronics
+//   Ben Dooks <ben@simtec.co.uk>
+//
+// Samsung S3C2440 Mobile CPU support
 
 #include <linux/kernel.h>
 #include <linux/types.h>
@@ -57,11 +52,11 @@ int __init s3c2440_init(void)
 
 	/* register suspend/resume handlers */
 
-#ifdef CONFIG_PM
+#ifdef CONFIG_PM_SLEEP
 	register_syscore_ops(&s3c2410_pm_syscore_ops);
 	register_syscore_ops(&s3c24xx_irq_syscore_ops);
-#endif
 	register_syscore_ops(&s3c244x_pm_syscore_ops);
+#endif
 
 	/* register our system device for everything else */
 

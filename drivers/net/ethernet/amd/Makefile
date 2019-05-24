@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-2.0
 #
 # Makefile for the AMD network device drivers.
 #
@@ -17,3 +18,4 @@ obj-$(CONFIG_NI65) += ni65.o
 obj-$(CONFIG_PCNET32) += pcnet32.o
 obj-$(CONFIG_SUN3LANCE) += sun3lance.o
 obj-$(CONFIG_SUNLANCE) += sunlance.o
+obj-$(CONFIG_AMD_XGBE) += xgbe/

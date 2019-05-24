@@ -19,6 +19,7 @@
 #include <linux/netdevice.h>
 #include <linux/ppp_channel.h>
 #include <linux/skbuff.h>
+#include <linux/workqueue.h>
 #include <uapi/linux/if_pppox.h>
 
 static inline struct pppoe_hdr *pppoe_hdr(const struct sk_buff *skb)
@@ -32,6 +33,7 @@ struct pppoe_opt {
 	struct pppoe_addr	pa;	  /* what this socket is bound to*/
 	struct sockaddr_pppox	relay;	  /* what socket data will be
 					     relayed to (PPPoE relaying) */
+	struct work_struct      padt_work;/* Work item for handling PADT */
 };
 
 struct pptp_opt {
@@ -41,25 +43,6 @@ struct pptp_opt {
 	u32 seq_sent, seq_recv;
 	int ppp_flags;
 };
-
-struct pppolac_opt {
-	__u32		local;
-	__u32		remote;
-	__u32		recv_sequence;
-	__u32		xmit_sequence;
-	atomic_t	sequencing;
-	int		(*backlog_rcv)(struct sock *sk_udp, struct sk_buff *skb);
-};
-
-struct pppopns_opt {
-	__u16		local;
-	__u16		remote;
-	__u32		recv_sequence;
-	__u32		xmit_sequence;
-	void		(*data_ready)(struct sock *sk_raw, int length);
-	int		(*backlog_rcv)(struct sock *sk_raw, struct sk_buff *skb);
-};
-
 #include <net/sock.h>
 
 struct pppox_sock {
@@ -70,8 +53,6 @@ struct pppox_sock {
 	union {
 		struct pppoe_opt pppoe;
 		struct pptp_opt  pptp;
-		struct pppolac_opt lac;
-		struct pppopns_opt pns;
 	} proto;
 	__be16			num;
 };
@@ -93,7 +74,7 @@ static inline struct sock *sk_pppox(struct pppox_sock *po)
 struct module;
 
 struct pppox_proto {
-	int		(*create)(struct net *net, struct socket *sock);
+	int		(*create)(struct net *net, struct socket *sock, int kern);
 	int		(*ioctl)(struct socket *sock, unsigned int cmd,
 				 unsigned long arg);
 	struct module	*owner;
@@ -110,7 +91,6 @@ enum {
     PPPOX_CONNECTED	= 1,  /* connection established ==TCP_ESTABLISHED */
     PPPOX_BOUND		= 2,  /* bound to ppp device */
     PPPOX_RELAY		= 4,  /* forwarding is enabled */
-    PPPOX_ZOMBIE	= 8,  /* dead, but still bound to ppp device */
     PPPOX_DEAD		= 16  /* dead, useless, please clean me up!*/
 };
 

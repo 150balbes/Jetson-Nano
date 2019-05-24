@@ -22,11 +22,11 @@
 #include <linux/interrupt.h>
 #include <linux/slab.h>
 #include <linux/ioport.h>
+#include <linux/io.h>
 #include <sound/core.h>
 #include <sound/tlv.h>
 #include <sound/ad1816a.h>
 
-#include <asm/io.h>
 #include <asm/dma.h>
 
 static inline int snd_ad1816a_busy_wait(struct snd_ad1816a *chip)
@@ -85,7 +85,8 @@ static void snd_ad1816a_write_mask(struct snd_ad1816a *chip, unsigned char reg,
 
 
 static unsigned char snd_ad1816a_get_format(struct snd_ad1816a *chip,
-					    unsigned int format, int channels)
+					    snd_pcm_format_t format,
+					    int channels)
 {
 	unsigned char retval = AD1816A_FMT_LINEAR_8;
 
@@ -339,7 +340,7 @@ static irqreturn_t snd_ad1816a_interrupt(int irq, void *dev_id)
 }
 
 
-static struct snd_pcm_hardware snd_ad1816a_playback = {
+static const struct snd_pcm_hardware snd_ad1816a_playback = {
 	.info =			(SNDRV_PCM_INFO_MMAP | SNDRV_PCM_INFO_INTERLEAVED |
 				 SNDRV_PCM_INFO_MMAP_VALID),
 	.formats =		(SNDRV_PCM_FMTBIT_MU_LAW | SNDRV_PCM_FMTBIT_A_LAW |
@@ -358,7 +359,7 @@ static struct snd_pcm_hardware snd_ad1816a_playback = {
 	.fifo_size =		0,
 };
 
-static struct snd_pcm_hardware snd_ad1816a_capture = {
+static const struct snd_pcm_hardware snd_ad1816a_capture = {
 	.info =			(SNDRV_PCM_INFO_MMAP | SNDRV_PCM_INFO_INTERLEAVED |
 				 SNDRV_PCM_INFO_MMAP_VALID),
 	.formats =		(SNDRV_PCM_FMTBIT_MU_LAW | SNDRV_PCM_FMTBIT_A_LAW |
@@ -517,7 +518,6 @@ void snd_ad1816a_suspend(struct snd_ad1816a *chip)
 	int reg;
 	unsigned long flags;
 
-	snd_pcm_suspend_all(chip->pcm);
 	spin_lock_irqsave(&chip->lock, flags);
 	for (reg = 0; reg < 48; reg++)
 		chip->image[reg] = snd_ad1816a_read(chip, reg);
@@ -653,7 +653,7 @@ int snd_ad1816a_create(struct snd_card *card,
 	return 0;
 }
 
-static struct snd_pcm_ops snd_ad1816a_playback_ops = {
+static const struct snd_pcm_ops snd_ad1816a_playback_ops = {
 	.open =		snd_ad1816a_playback_open,
 	.close =	snd_ad1816a_playback_close,
 	.ioctl =	snd_pcm_lib_ioctl,
@@ -664,7 +664,7 @@ static struct snd_pcm_ops snd_ad1816a_playback_ops = {
 	.pointer =	snd_ad1816a_playback_pointer,
 };
 
-static struct snd_pcm_ops snd_ad1816a_capture_ops = {
+static const struct snd_pcm_ops snd_ad1816a_capture_ops = {
 	.open =		snd_ad1816a_capture_open,
 	.close =	snd_ad1816a_capture_close,
 	.ioctl =	snd_pcm_lib_ioctl,
@@ -675,7 +675,7 @@ static struct snd_pcm_ops snd_ad1816a_capture_ops = {
 	.pointer =	snd_ad1816a_capture_pointer,
 };
 
-int snd_ad1816a_pcm(struct snd_ad1816a *chip, int device, struct snd_pcm **rpcm)
+int snd_ad1816a_pcm(struct snd_ad1816a *chip, int device)
 {
 	int error;
 	struct snd_pcm *pcm;
@@ -693,17 +693,14 @@ int snd_ad1816a_pcm(struct snd_ad1816a *chip, int device, struct snd_pcm **rpcm)
 	snd_ad1816a_init(chip);
 
 	snd_pcm_lib_preallocate_pages_for_all(pcm, SNDRV_DMA_TYPE_DEV,
-					      snd_dma_isa_data(),
+					      chip->card->dev,
 					      64*1024, chip->dma1 > 3 || chip->dma2 > 3 ? 128*1024 : 64*1024);
 
 	chip->pcm = pcm;
-	if (rpcm)
-		*rpcm = pcm;
 	return 0;
 }
 
-int snd_ad1816a_timer(struct snd_ad1816a *chip, int device,
-		      struct snd_timer **rtimer)
+int snd_ad1816a_timer(struct snd_ad1816a *chip, int device)
 {
 	struct snd_timer *timer;
 	struct snd_timer_id tid;
@@ -720,8 +717,6 @@ int snd_ad1816a_timer(struct snd_ad1816a *chip, int device,
 	timer->private_data = chip;
 	chip->timer = timer;
 	timer->hw = snd_ad1816a_timer_table;
-	if (rtimer)
-		*rtimer = timer;
 	return 0;
 }
 
@@ -731,18 +726,12 @@ int snd_ad1816a_timer(struct snd_ad1816a *chip, int device,
 
 static int snd_ad1816a_info_mux(struct snd_kcontrol *kcontrol, struct snd_ctl_elem_info *uinfo)
 {
-	static char *texts[8] = {
+	static const char * const texts[8] = {
 		"Line", "Mix", "CD", "Synth", "Video",
 		"Mic", "Phone",
 	};
 
-	uinfo->type = SNDRV_CTL_ELEM_TYPE_ENUMERATED;
-	uinfo->count = 2;
-	uinfo->value.enumerated.items = 7;
-	if (uinfo->value.enumerated.item > 6)
-		uinfo->value.enumerated.item = 6;
-	strcpy(uinfo->value.enumerated.name, texts[uinfo->value.enumerated.item]);
-	return 0;
+	return snd_ctl_enum_info(uinfo, 2, 7, texts);
 }
 
 static int snd_ad1816a_get_mux(struct snd_kcontrol *kcontrol, struct snd_ctl_elem_value *ucontrol)

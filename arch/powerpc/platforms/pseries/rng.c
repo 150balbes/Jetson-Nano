@@ -38,8 +38,8 @@ static __init int rng_init(void)
 
 	pr_info("Registering arch random hook.\n");
 
-	ppc_md.get_random_long = pseries_get_random_long;
+	ppc_md.get_random_seed = pseries_get_random_long;
 
 	return 0;
 }
-subsys_initcall(rng_init);
+machine_subsys_initcall(pseries, rng_init);

@@ -14,8 +14,24 @@
 #include <linux/types.h>
 #include <linux/iio/common/st_sensors.h>
 
+enum st_press_type {
+	LPS001WP,
+	LPS25H,
+	LPS331AP,
+	LPS22HB,
+	LPS33HW,
+	LPS35HW,
+	LPS22HH,
+	ST_PRESS_MAX,
+};
+
 #define LPS001WP_PRESS_DEV_NAME		"lps001wp"
+#define LPS25H_PRESS_DEV_NAME		"lps25h"
 #define LPS331AP_PRESS_DEV_NAME		"lps331ap"
+#define LPS22HB_PRESS_DEV_NAME		"lps22hb"
+#define LPS33HW_PRESS_DEV_NAME		"lps33hw"
+#define LPS35HW_PRESS_DEV_NAME		"lps35hw"
+#define LPS22HH_PRESS_DEV_NAME		"lps22hh"
 
 /**
  * struct st_sensors_platform_data - default press platform data
@@ -25,8 +41,7 @@ static const struct st_sensors_platform_data default_press_pdata = {
 	.drdy_int_pin = 1,
 };
 
-int st_press_common_probe(struct iio_dev *indio_dev,
-					struct st_sensors_platform_data *pdata);
+int st_press_common_probe(struct iio_dev *indio_dev);
 void st_press_common_remove(struct iio_dev *indio_dev);
 
 #ifdef CONFIG_IIO_BUFFER

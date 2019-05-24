@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 /* leon_pmc.c: LEON Power-down cpu_idle() handler
  *
  * Copyright (C) 2011 Daniel Hellstrom (daniel@gaisler.com) Aeroflex Gaisler AB
@@ -12,14 +13,14 @@
 #include <asm/processor.h>
 
 /* List of Systems that need fixup instructions around power-down instruction */
-unsigned int pmc_leon_fixup_ids[] = {
+static unsigned int pmc_leon_fixup_ids[] = {
 	AEROFLEX_UT699,
 	GAISLER_GR712RC,
 	LEON4_NEXTREME1,
 	0
 };
 
-int pmc_leon_need_fixup(void)
+static int pmc_leon_need_fixup(void)
 {
 	unsigned int systemid = amba_system_id >> 16;
 	unsigned int *id;
@@ -38,7 +39,7 @@ int pmc_leon_need_fixup(void)
  * CPU idle callback function for systems that need some extra handling
  * See .../arch/sparc/kernel/process.c
  */
-void pmc_leon_idle_fixup(void)
+static void pmc_leon_idle_fixup(void)
 {
 	/* Prepare an address to a non-cachable region. APB is always
 	 * none-cachable. One instruction is executed after the Sleep
@@ -62,7 +63,7 @@ void pmc_leon_idle_fixup(void)
  * CPU idle callback function
  * See .../arch/sparc/kernel/process.c
  */
-void pmc_leon_idle(void)
+static void pmc_leon_idle(void)
 {
 	/* Interrupts need to be enabled to not hang the CPU */
 	local_irq_enable();

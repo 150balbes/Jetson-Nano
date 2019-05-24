@@ -140,7 +140,7 @@ executed to make module versioning work.
 		make -C $KDIR M=$PWD bar.lst
 		make -C $KDIR M=$PWD baz.o
 		make -C $KDIR M=$PWD foo.ko
-		make -C $KDIR M=$PWD /
+		make -C $KDIR M=$PWD ./
 
 
 === 3. Creating a Kbuild File for an External Module
@@ -470,7 +470,7 @@ build.
 
 	Sometimes, an external module uses exported symbols from
 	another external module. kbuild needs to have full knowledge of
-	all symbols to avoid spliitting out warnings about undefined
+	all symbols to avoid spitting out warnings about undefined
 	symbols. Three solutions exist for this situation.
 
 	NOTE: The method with a top-level kbuild file is recommended

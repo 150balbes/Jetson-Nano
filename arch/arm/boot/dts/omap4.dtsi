@@ -6,15 +6,19 @@
  * published by the Free Software Foundation.
  */
 
+#include <dt-bindings/bus/ti-sysc.h>
+#include <dt-bindings/clock/omap4.h>
 #include <dt-bindings/gpio/gpio.h>
 #include <dt-bindings/interrupt-controller/arm-gic.h>
 #include <dt-bindings/pinctrl/omap.h>
-
-#include "skeleton.dtsi"
+#include <dt-bindings/clock/omap4.h>
 
 / {
 	compatible = "ti,omap4430", "ti,omap4";
-	interrupt-parent = <&gic>;
+	interrupt-parent = <&wakeupgen>;
+	#address-cells = <1>;
+	#size-cells = <1>;
+	chosen { };
 
 	aliases {
 		i2c0 = &i2c1;
@@ -36,6 +40,11 @@
 			device_type = "cpu";
 			next-level-cache = <&L2>;
 			reg = <0x0>;
+
+			clocks = <&dpll_mpu_ck>;
+			clock-names = "cpu";
+
+			clock-latency = <300000>; /* From omap-cpufreq driver */
 		};
 		cpu@1 {
 			compatible = "arm,cortex-a9";
@@ -45,12 +54,24 @@
 		};
 	};
 
+	/*
+	 * Note that 4430 needs cross trigger interface (CTI) supported
+	 * before we can configure the interrupts. This means sampling
+	 * events are not supported for pmu. Note that 4460 does not use
+	 * CTI, see also 4460.dtsi.
+	 */
+	pmu {
+		compatible = "arm,cortex-a9-pmu";
+		ti,hwmods = "debugss";
+	};
+
 	gic: interrupt-controller@48241000 {
 		compatible = "arm,cortex-a9-gic";
 		interrupt-controller;
 		#interrupt-cells = <3>;
 		reg = <0x48241000 0x1000>,
 		      <0x48240100 0x0100>;
+		interrupt-parent = <&gic>;
 	};
 
 	L2: l2-cache-controller@48242000 {
@@ -62,12 +83,22 @@
 
 	local-timer@48240600 {
 		compatible = "arm,cortex-a9-twd-timer";
+		clocks = <&mpu_periphclk>;
 		reg = <0x48240600 0x20>;
-		interrupts = <GIC_PPI 13 (GIC_CPU_MASK_RAW(3) | IRQ_TYPE_LEVEL_HIGH)>;
+		interrupts = <GIC_PPI 13 (GIC_CPU_MASK_RAW(3) | IRQ_TYPE_EDGE_RISING)>;
+		interrupt-parent = <&gic>;
+	};
+
+	wakeupgen: interrupt-controller@48281000 {
+		compatible = "ti,omap4-wugen-mpu";
+		interrupt-controller;
+		#interrupt-cells = <3>;
+		reg = <0x48281000 0x1000>;
+		interrupt-parent = <&gic>;
 	};
 
 	/*
-	 * The soc node represents the soc top level view. It is uses for IPs
+	 * The soc node represents the soc top level view. It is used for IPs
 	 * that are not memory mapped in the MPU view or for the MPU itself.
 	 */
 	soc {
@@ -75,6 +106,7 @@
 		mpu {
 			compatible = "ti,omap4-mpu";
 			ti,hwmods = "mpu";
+			sram = <&ocmcram>;
 		};
 
 		dsp {
@@ -91,7 +123,7 @@
 	/*
 	 * XXX: Use a flat representation of the OMAP4 interconnect.
 	 * The real OMAP interconnect network is quite complex.
-	 * Since that will not bring real advantage to represent that in DT for
+	 * Since it will not bring real advantage to represent that in DT for
 	 * the moment, just use a fake OCP bus entry to represent the whole bus
 	 * hierarchy.
 	 */
@@ -107,162 +139,18 @@
 		interrupts = <GIC_SPI 9 IRQ_TYPE_LEVEL_HIGH>,
 			     <GIC_SPI 10 IRQ_TYPE_LEVEL_HIGH>;
 
-		cm1: cm1@4a004000 {
-			compatible = "ti,omap4-cm1";
-			reg = <0x4a004000 0x2000>;
-
-			cm1_clocks: clocks {
-				#address-cells = <1>;
-				#size-cells = <0>;
-			};
-
-			cm1_clockdomains: clockdomains {
-			};
+		l4_wkup: interconnect@4a300000 {
 		};
 
-		prm: prm@4a306000 {
-			compatible = "ti,omap4-prm";
-			reg = <0x4a306000 0x3000>;
-
-			prm_clocks: clocks {
-				#address-cells = <1>;
-				#size-cells = <0>;
-			};
-
-			prm_clockdomains: clockdomains {
-			};
+		l4_cfg: interconnect@4a000000 {
 		};
 
-		cm2: cm2@4a008000 {
-			compatible = "ti,omap4-cm2";
-			reg = <0x4a008000 0x3000>;
-
-			cm2_clocks: clocks {
-				#address-cells = <1>;
-				#size-cells = <0>;
-			};
-
-			cm2_clockdomains: clockdomains {
-			};
+		l4_per: interconnect@48000000 {
 		};
 
-		scrm: scrm@4a30a000 {
-			compatible = "ti,omap4-scrm";
-			reg = <0x4a30a000 0x2000>;
-
-			scrm_clocks: clocks {
-				#address-cells = <1>;
-				#size-cells = <0>;
-			};
-
-			scrm_clockdomains: clockdomains {
-			};
-		};
-
-		counter32k: counter@4a304000 {
-			compatible = "ti,omap-counter32k";
-			reg = <0x4a304000 0x20>;
-			ti,hwmods = "counter_32k";
-		};
-
-		omap4_pmx_core: pinmux@4a100040 {
-			compatible = "ti,omap4-padconf", "pinctrl-single";
-			reg = <0x4a100040 0x0196>;
-			#address-cells = <1>;
-			#size-cells = <0>;
-			#interrupt-cells = <1>;
-			interrupt-controller;
-			pinctrl-single,register-width = <16>;
-			pinctrl-single,function-mask = <0x7fff>;
-		};
-		omap4_pmx_wkup: pinmux@4a31e040 {
-			compatible = "ti,omap4-padconf", "pinctrl-single";
-			reg = <0x4a31e040 0x0038>;
-			#address-cells = <1>;
-			#size-cells = <0>;
-			#interrupt-cells = <1>;
-			interrupt-controller;
-			pinctrl-single,register-width = <16>;
-			pinctrl-single,function-mask = <0x7fff>;
-		};
-
-		sdma: dma-controller@4a056000 {
-			compatible = "ti,omap4430-sdma";
-			reg = <0x4a056000 0x1000>;
-			interrupts = <GIC_SPI 12 IRQ_TYPE_LEVEL_HIGH>,
-				     <GIC_SPI 13 IRQ_TYPE_LEVEL_HIGH>,
-				     <GIC_SPI 14 IRQ_TYPE_LEVEL_HIGH>,
-				     <GIC_SPI 15 IRQ_TYPE_LEVEL_HIGH>;
-			#dma-cells = <1>;
-			#dma-channels = <32>;
-			#dma-requests = <127>;
-		};
-
-		gpio1: gpio@4a310000 {
-			compatible = "ti,omap4-gpio";
-			reg = <0x4a310000 0x200>;
-			interrupts = <GIC_SPI 29 IRQ_TYPE_LEVEL_HIGH>;
-			ti,hwmods = "gpio1";
-			ti,gpio-always-on;
-			gpio-controller;
-			#gpio-cells = <2>;
-			interrupt-controller;
-			#interrupt-cells = <2>;
-		};
-
-		gpio2: gpio@48055000 {
-			compatible = "ti,omap4-gpio";
-			reg = <0x48055000 0x200>;
-			interrupts = <GIC_SPI 30 IRQ_TYPE_LEVEL_HIGH>;
-			ti,hwmods = "gpio2";
-			gpio-controller;
-			#gpio-cells = <2>;
-			interrupt-controller;
-			#interrupt-cells = <2>;
-		};
-
-		gpio3: gpio@48057000 {
-			compatible = "ti,omap4-gpio";
-			reg = <0x48057000 0x200>;
-			interrupts = <GIC_SPI 31 IRQ_TYPE_LEVEL_HIGH>;
-			ti,hwmods = "gpio3";
-			gpio-controller;
-			#gpio-cells = <2>;
-			interrupt-controller;
-			#interrupt-cells = <2>;
-		};
-
-		gpio4: gpio@48059000 {
-			compatible = "ti,omap4-gpio";
-			reg = <0x48059000 0x200>;
-			interrupts = <GIC_SPI 32 IRQ_TYPE_LEVEL_HIGH>;
-			ti,hwmods = "gpio4";
-			gpio-controller;
-			#gpio-cells = <2>;
-			interrupt-controller;
-			#interrupt-cells = <2>;
-		};
-
-		gpio5: gpio@4805b000 {
-			compatible = "ti,omap4-gpio";
-			reg = <0x4805b000 0x200>;
-			interrupts = <GIC_SPI 33 IRQ_TYPE_LEVEL_HIGH>;
-			ti,hwmods = "gpio5";
-			gpio-controller;
-			#gpio-cells = <2>;
-			interrupt-controller;
-			#interrupt-cells = <2>;
-		};
-
-		gpio6: gpio@4805d000 {
-			compatible = "ti,omap4-gpio";
-			reg = <0x4805d000 0x200>;
-			interrupts = <GIC_SPI 34 IRQ_TYPE_LEVEL_HIGH>;
-			ti,hwmods = "gpio6";
-			gpio-controller;
-			#gpio-cells = <2>;
-			interrupt-controller;
-			#interrupt-cells = <2>;
+		ocmcram: ocmcram@40304000 {
+			compatible = "mmio-sram";
+			reg = <0x40304000 0xa000>; /* 40k */
 		};
 
 		gpmc: gpmc@50000000 {
@@ -271,203 +159,88 @@
 			#address-cells = <2>;
 			#size-cells = <1>;
 			interrupts = <GIC_SPI 20 IRQ_TYPE_LEVEL_HIGH>;
+			dmas = <&sdma 4>;
+			dma-names = "rxtx";
 			gpmc,num-cs = <8>;
 			gpmc,num-waitpins = <4>;
 			ti,hwmods = "gpmc";
 			ti,no-idle-on-init;
 			clocks = <&l3_div_ck>;
 			clock-names = "fck";
+			interrupt-controller;
+			#interrupt-cells = <2>;
+			gpio-controller;
+			#gpio-cells = <2>;
 		};
 
-		uart1: serial@4806a000 {
-			compatible = "ti,omap4-uart";
-			reg = <0x4806a000 0x100>;
-			interrupts = <GIC_SPI 72 IRQ_TYPE_LEVEL_HIGH>;
-			ti,hwmods = "uart1";
-			clock-frequency = <48000000>;
+		mmu_dsp: mmu@4a066000 {
+			compatible = "ti,omap4-iommu";
+			reg = <0x4a066000 0x100>;
+			interrupts = <GIC_SPI 28 IRQ_TYPE_LEVEL_HIGH>;
+			ti,hwmods = "mmu_dsp";
+			#iommu-cells = <0>;
 		};
 
-		uart2: serial@4806c000 {
-			compatible = "ti,omap4-uart";
-			reg = <0x4806c000 0x100>;
-			interrupts = <GIC_SPI 73 IRQ_TYPE_LEVEL_HIGH>;
-			ti,hwmods = "uart2";
-			clock-frequency = <48000000>;
-		};
-
-		uart3: serial@48020000 {
-			compatible = "ti,omap4-uart";
-			reg = <0x48020000 0x100>;
-			interrupts = <GIC_SPI 74 IRQ_TYPE_LEVEL_HIGH>;
-			ti,hwmods = "uart3";
-			clock-frequency = <48000000>;
-		};
-
-		uart4: serial@4806e000 {
-			compatible = "ti,omap4-uart";
-			reg = <0x4806e000 0x100>;
-			interrupts = <GIC_SPI 70 IRQ_TYPE_LEVEL_HIGH>;
-			ti,hwmods = "uart4";
-			clock-frequency = <48000000>;
-		};
-
-		hwspinlock: spinlock@4a0f6000 {
-			compatible = "ti,omap4-hwspinlock";
-			reg = <0x4a0f6000 0x1000>;
-			ti,hwmods = "spinlock";
-		};
-
-		i2c1: i2c@48070000 {
-			compatible = "ti,omap4-i2c";
-			reg = <0x48070000 0x100>;
-			interrupts = <GIC_SPI 56 IRQ_TYPE_LEVEL_HIGH>;
+		target-module@52000000 {
+			compatible = "ti,sysc-omap4", "ti,sysc";
+			ti,hwmods = "iss";
+			reg = <0x52000000 0x4>,
+			      <0x52000010 0x4>;
+			reg-names = "rev", "sysc";
+			ti,sysc-mask = <SYSC_OMAP4_SOFTRESET>;
+			ti,sysc-midle = <SYSC_IDLE_FORCE>,
+					<SYSC_IDLE_NO>,
+					<SYSC_IDLE_SMART>,
+					<SYSC_IDLE_SMART_WKUP>;
+			ti,sysc-sidle = <SYSC_IDLE_FORCE>,
+					<SYSC_IDLE_NO>,
+					<SYSC_IDLE_SMART>,
+					<SYSC_IDLE_SMART_WKUP>;
+			ti,sysc-delay-us = <2>;
+			clocks = <&iss_clkctrl OMAP4_ISS_CLKCTRL 0>;
+			clock-names = "fck";
 			#address-cells = <1>;
-			#size-cells = <0>;
-			ti,hwmods = "i2c1";
+			#size-cells = <1>;
+			ranges = <0 0x52000000 0x1000000>;
+
+			/* No child device binding, driver in staging */
 		};
 
-		i2c2: i2c@48072000 {
-			compatible = "ti,omap4-i2c";
-			reg = <0x48072000 0x100>;
-			interrupts = <GIC_SPI 57 IRQ_TYPE_LEVEL_HIGH>;
+		mmu_ipu: mmu@55082000 {
+			compatible = "ti,omap4-iommu";
+			reg = <0x55082000 0x100>;
+			interrupts = <GIC_SPI 100 IRQ_TYPE_LEVEL_HIGH>;
+			ti,hwmods = "mmu_ipu";
+			#iommu-cells = <0>;
+			ti,iommu-bus-err-back;
+		};
+		target-module@40130000 {
+			compatible = "ti,sysc-omap2", "ti,sysc";
+			ti,hwmods = "wd_timer3";
+			reg = <0x40130000 0x4>,
+			      <0x40130010 0x4>,
+			      <0x40130014 0x4>;
+			reg-names = "rev", "sysc", "syss";
+			ti,sysc-mask = <(SYSC_OMAP2_EMUFREE |
+					 SYSC_OMAP2_SOFTRESET)>;
+			ti,sysc-sidle = <SYSC_IDLE_FORCE>,
+					<SYSC_IDLE_NO>,
+					<SYSC_IDLE_SMART>,
+					<SYSC_IDLE_SMART_WKUP>;
+			ti,syss-mask = <1>;
+			/* Domains (V, P, C): abe, abe_pwrdm, abe_clkdm */
+			clocks = <&abe_clkctrl OMAP4_WD_TIMER3_CLKCTRL 0>;
+			clock-names = "fck";
 			#address-cells = <1>;
-			#size-cells = <0>;
-			ti,hwmods = "i2c2";
-		};
+			#size-cells = <1>;
+			ranges = <0x00000000 0x40130000 0x1000>, /* MPU private access */
+				 <0x49030000 0x49030000 0x0080>; /* L3 Interconnect */
 
-		i2c3: i2c@48060000 {
-			compatible = "ti,omap4-i2c";
-			reg = <0x48060000 0x100>;
-			interrupts = <GIC_SPI 61 IRQ_TYPE_LEVEL_HIGH>;
-			#address-cells = <1>;
-			#size-cells = <0>;
-			ti,hwmods = "i2c3";
-		};
-
-		i2c4: i2c@48350000 {
-			compatible = "ti,omap4-i2c";
-			reg = <0x48350000 0x100>;
-			interrupts = <GIC_SPI 62 IRQ_TYPE_LEVEL_HIGH>;
-			#address-cells = <1>;
-			#size-cells = <0>;
-			ti,hwmods = "i2c4";
-		};
-
-		mcspi1: spi@48098000 {
-			compatible = "ti,omap4-mcspi";
-			reg = <0x48098000 0x200>;
-			interrupts = <GIC_SPI 65 IRQ_TYPE_LEVEL_HIGH>;
-			#address-cells = <1>;
-			#size-cells = <0>;
-			ti,hwmods = "mcspi1";
-			ti,spi-num-cs = <4>;
-			dmas = <&sdma 35>,
-			       <&sdma 36>,
-			       <&sdma 37>,
-			       <&sdma 38>,
-			       <&sdma 39>,
-			       <&sdma 40>,
-			       <&sdma 41>,
-			       <&sdma 42>;
-			dma-names = "tx0", "rx0", "tx1", "rx1",
-				    "tx2", "rx2", "tx3", "rx3";
-		};
-
-		mcspi2: spi@4809a000 {
-			compatible = "ti,omap4-mcspi";
-			reg = <0x4809a000 0x200>;
-			interrupts = <GIC_SPI 66 IRQ_TYPE_LEVEL_HIGH>;
-			#address-cells = <1>;
-			#size-cells = <0>;
-			ti,hwmods = "mcspi2";
-			ti,spi-num-cs = <2>;
-			dmas = <&sdma 43>,
-			       <&sdma 44>,
-			       <&sdma 45>,
-			       <&sdma 46>;
-			dma-names = "tx0", "rx0", "tx1", "rx1";
-		};
-
-		mcspi3: spi@480b8000 {
-			compatible = "ti,omap4-mcspi";
-			reg = <0x480b8000 0x200>;
-			interrupts = <GIC_SPI 91 IRQ_TYPE_LEVEL_HIGH>;
-			#address-cells = <1>;
-			#size-cells = <0>;
-			ti,hwmods = "mcspi3";
-			ti,spi-num-cs = <2>;
-			dmas = <&sdma 15>, <&sdma 16>;
-			dma-names = "tx0", "rx0";
-		};
-
-		mcspi4: spi@480ba000 {
-			compatible = "ti,omap4-mcspi";
-			reg = <0x480ba000 0x200>;
-			interrupts = <GIC_SPI 48 IRQ_TYPE_LEVEL_HIGH>;
-			#address-cells = <1>;
-			#size-cells = <0>;
-			ti,hwmods = "mcspi4";
-			ti,spi-num-cs = <1>;
-			dmas = <&sdma 70>, <&sdma 71>;
-			dma-names = "tx0", "rx0";
-		};
-
-		mmc1: mmc@4809c000 {
-			compatible = "ti,omap4-hsmmc";
-			reg = <0x4809c000 0x400>;
-			interrupts = <GIC_SPI 83 IRQ_TYPE_LEVEL_HIGH>;
-			ti,hwmods = "mmc1";
-			ti,dual-volt;
-			ti,needs-special-reset;
-			dmas = <&sdma 61>, <&sdma 62>;
-			dma-names = "tx", "rx";
-		};
-
-		mmc2: mmc@480b4000 {
-			compatible = "ti,omap4-hsmmc";
-			reg = <0x480b4000 0x400>;
-			interrupts = <GIC_SPI 86 IRQ_TYPE_LEVEL_HIGH>;
-			ti,hwmods = "mmc2";
-			ti,needs-special-reset;
-			dmas = <&sdma 47>, <&sdma 48>;
-			dma-names = "tx", "rx";
-		};
-
-		mmc3: mmc@480ad000 {
-			compatible = "ti,omap4-hsmmc";
-			reg = <0x480ad000 0x400>;
-			interrupts = <GIC_SPI 94 IRQ_TYPE_LEVEL_HIGH>;
-			ti,hwmods = "mmc3";
-			ti,needs-special-reset;
-			dmas = <&sdma 77>, <&sdma 78>;
-			dma-names = "tx", "rx";
-		};
-
-		mmc4: mmc@480d1000 {
-			compatible = "ti,omap4-hsmmc";
-			reg = <0x480d1000 0x400>;
-			interrupts = <GIC_SPI 96 IRQ_TYPE_LEVEL_HIGH>;
-			ti,hwmods = "mmc4";
-			ti,needs-special-reset;
-			dmas = <&sdma 57>, <&sdma 58>;
-			dma-names = "tx", "rx";
-		};
-
-		mmc5: mmc@480d5000 {
-			compatible = "ti,omap4-hsmmc";
-			reg = <0x480d5000 0x400>;
-			interrupts = <GIC_SPI 59 IRQ_TYPE_LEVEL_HIGH>;
-			ti,hwmods = "mmc5";
-			ti,needs-special-reset;
-			dmas = <&sdma 59>, <&sdma 60>;
-			dma-names = "tx", "rx";
-		};
-
-		wdt2: wdt@4a314000 {
-			compatible = "ti,omap4-wdt", "ti,omap3-wdt";
-			reg = <0x4a314000 0x80>;
-			interrupts = <GIC_SPI 80 IRQ_TYPE_LEVEL_HIGH>;
-			ti,hwmods = "wd_timer2";
+			wdt3: wdt@0 {
+				compatible = "ti,omap4-wdt", "ti,omap3-wdt";
+				reg = <0x0 0x80>;
+				interrupts = <GIC_SPI 80 IRQ_TYPE_LEVEL_HIGH>;
+			};
 		};
 
 		mcpdm: mcpdm@40132000 {
@@ -480,6 +253,7 @@
 			dmas = <&sdma 65>,
 			       <&sdma 66>;
 			dma-names = "up_link", "dn_link";
+			status = "disabled";
 		};
 
 		dmic: dmic@4012e000 {
@@ -491,6 +265,7 @@
 			ti,hwmods = "dmic";
 			dmas = <&sdma 67>;
 			dma-names = "up_link";
+			status = "disabled";
 		};
 
 		mcbsp1: mcbsp@40122000 {
@@ -505,6 +280,7 @@
 			dmas = <&sdma 33>,
 			       <&sdma 34>;
 			dma-names = "tx", "rx";
+			status = "disabled";
 		};
 
 		mcbsp2: mcbsp@40124000 {
@@ -519,6 +295,7 @@
 			dmas = <&sdma 17>,
 			       <&sdma 18>;
 			dma-names = "tx", "rx";
+			status = "disabled";
 		};
 
 		mcbsp3: mcbsp@40126000 {
@@ -533,27 +310,87 @@
 			dmas = <&sdma 19>,
 			       <&sdma 20>;
 			dma-names = "tx", "rx";
+			status = "disabled";
 		};
 
-		mcbsp4: mcbsp@48096000 {
-			compatible = "ti,omap4-mcbsp";
-			reg = <0x48096000 0xff>; /* L4 Interconnect */
-			reg-names = "mpu";
-			interrupts = <GIC_SPI 16 IRQ_TYPE_LEVEL_HIGH>;
-			interrupt-names = "common";
-			ti,buffer-size = <128>;
-			ti,hwmods = "mcbsp4";
-			dmas = <&sdma 31>,
-			       <&sdma 32>;
-			dma-names = "tx", "rx";
+		target-module@40128000 {
+			compatible = "ti,sysc-mcasp", "ti,sysc";
+			ti,hwmods = "mcasp";
+			reg = <0x40128000 0x4>,
+			      <0x40128004 0x4>;
+			reg-names = "rev", "sysc";
+			ti,sysc-sidle = <SYSC_IDLE_FORCE>,
+					<SYSC_IDLE_NO>,
+					<SYSC_IDLE_SMART>,
+					<SYSC_IDLE_SMART_WKUP>;
+			clocks = <&abe_clkctrl OMAP4_MCASP_CLKCTRL 0>;
+			clock-names = "fck";
+			#address-cells = <1>;
+			#size-cells = <1>;
+			ranges = <0x00000000 0x40128000 0x1000>, /* MPU */
+				 <0x49028000 0x49028000 0x1000>; /* L3 */
+
+			/*
+			 * Child device unsupported by davinci-mcasp. At least
+			 * RX path is disabled for omap4, and only DIT mode
+			 * works with no I2S. See also old Android kernel
+			 * omap-mcasp driver for more information.
+			 */
 		};
 
-		keypad: keypad@4a31c000 {
-			compatible = "ti,omap4-keypad";
-			reg = <0x4a31c000 0x80>;
-			interrupts = <GIC_SPI 120 IRQ_TYPE_LEVEL_HIGH>;
-			reg-names = "mpu";
-			ti,hwmods = "kbd";
+		target-module@4012c000 {
+			compatible = "ti,sysc-omap4", "ti,sysc";
+			ti,hwmods = "slimbus1";
+			reg = <0x4012c000 0x4>,
+			      <0x4012c010 0x4>;
+			reg-names = "rev", "sysc";
+			ti,sysc-mask = <SYSC_OMAP4_SOFTRESET>;
+			ti,sysc-sidle = <SYSC_IDLE_FORCE>,
+					<SYSC_IDLE_NO>,
+					<SYSC_IDLE_SMART>,
+					<SYSC_IDLE_SMART_WKUP>;
+			clocks = <&abe_clkctrl OMAP4_SLIMBUS1_CLKCTRL 0>;
+			clock-names = "fck";
+			#address-cells = <1>;
+			#size-cells = <1>;
+			ranges = <0x00000000 0x4012c000 0x1000>, /* MPU */
+				 <0x4902c000 0x4902c000 0x1000>; /* L3 */
+
+			/* No child device binding or driver in mainline */
+		};
+
+		target-module@401f1000 {
+			compatible = "ti,sysc-omap4", "ti,sysc";
+			ti,hwmods = "aess";
+			reg = <0x401f1000 0x4>,
+			      <0x401f1010 0x4>;
+			reg-names = "rev", "sysc";
+			ti,sysc-midle = <SYSC_IDLE_FORCE>,
+					<SYSC_IDLE_NO>,
+					<SYSC_IDLE_SMART>,
+					<SYSC_IDLE_SMART_WKUP>;
+			ti,sysc-sidle = <SYSC_IDLE_FORCE>,
+					<SYSC_IDLE_NO>,
+					<SYSC_IDLE_SMART>;
+			clocks = <&abe_clkctrl OMAP4_AESS_CLKCTRL 0>;
+			clock-names = "fck";
+			#address-cells = <1>;
+			#size-cells = <1>;
+			ranges = <0x00000000 0x401f1000 0x1000>, /* MPU */
+				 <0x490f1000 0x490f1000 0x1000>; /* L3 */
+
+			/*
+			 * No child device binding or driver in mainline.
+			 * See Android tree and related upstreaming efforts
+			 * for the old driver.
+			 */
+		};
+
+		dmm@4e000000 {
+			compatible = "ti,omap4-dmm";
+			reg = <0x4e000000 0x800>;
+			interrupts = <0 113 0x4>;
+			ti,hwmods = "dmm";
 		};
 
 		emif1: emif@4c000000 {
@@ -578,50 +415,6 @@
 			hw-caps-read-idle-ctrl;
 			hw-caps-ll-interface;
 			hw-caps-temp-alert;
-		};
-
-		ocp2scp@4a0ad000 {
-			compatible = "ti,omap-ocp2scp";
-			reg = <0x4a0ad000 0x1f>;
-			#address-cells = <1>;
-			#size-cells = <1>;
-			ranges;
-			ti,hwmods = "ocp2scp_usb_phy";
-			usb2_phy: usb2phy@4a0ad080 {
-				compatible = "ti,omap-usb2";
-				reg = <0x4a0ad080 0x58>;
-				ctrl-module = <&omap_control_usb2phy>;
-				#phy-cells = <0>;
-			};
-		};
-
-		timer1: timer@4a318000 {
-			compatible = "ti,omap3430-timer";
-			reg = <0x4a318000 0x80>;
-			interrupts = <GIC_SPI 37 IRQ_TYPE_LEVEL_HIGH>;
-			ti,hwmods = "timer1";
-			ti,timer-alwon;
-		};
-
-		timer2: timer@48032000 {
-			compatible = "ti,omap3430-timer";
-			reg = <0x48032000 0x80>;
-			interrupts = <GIC_SPI 38 IRQ_TYPE_LEVEL_HIGH>;
-			ti,hwmods = "timer2";
-		};
-
-		timer3: timer@48034000 {
-			compatible = "ti,omap4430-timer";
-			reg = <0x48034000 0x80>;
-			interrupts = <GIC_SPI 39 IRQ_TYPE_LEVEL_HIGH>;
-			ti,hwmods = "timer3";
-		};
-
-		timer4: timer@48036000 {
-			compatible = "ti,omap4430-timer";
-			reg = <0x48036000 0x80>;
-			interrupts = <GIC_SPI 40 IRQ_TYPE_LEVEL_HIGH>;
-			ti,hwmods = "timer4";
 		};
 
 		timer5: timer@40138000 {
@@ -661,93 +454,21 @@
 			ti,timer-dsp;
 		};
 
-		timer9: timer@4803e000 {
-			compatible = "ti,omap4430-timer";
-			reg = <0x4803e000 0x80>;
-			interrupts = <GIC_SPI 45 IRQ_TYPE_LEVEL_HIGH>;
-			ti,hwmods = "timer9";
-			ti,timer-pwm;
-		};
-
-		timer10: timer@48086000 {
-			compatible = "ti,omap3430-timer";
-			reg = <0x48086000 0x80>;
-			interrupts = <GIC_SPI 46 IRQ_TYPE_LEVEL_HIGH>;
-			ti,hwmods = "timer10";
-			ti,timer-pwm;
-		};
-
-		timer11: timer@48088000 {
-			compatible = "ti,omap4430-timer";
-			reg = <0x48088000 0x80>;
-			interrupts = <GIC_SPI 47 IRQ_TYPE_LEVEL_HIGH>;
-			ti,hwmods = "timer11";
-			ti,timer-pwm;
-		};
-
-		usbhstll: usbhstll@4a062000 {
-			compatible = "ti,usbhs-tll";
-			reg = <0x4a062000 0x1000>;
-			interrupts = <GIC_SPI 78 IRQ_TYPE_LEVEL_HIGH>;
-			ti,hwmods = "usb_tll_hs";
-		};
-
-		usbhshost: usbhshost@4a064000 {
-			compatible = "ti,usbhs-host";
-			reg = <0x4a064000 0x800>;
-			ti,hwmods = "usb_host_hs";
-			#address-cells = <1>;
-			#size-cells = <1>;
-			ranges;
-
-			usbhsohci: ohci@4a064800 {
-				compatible = "ti,ohci-omap3", "usb-ohci";
-				reg = <0x4a064800 0x400>;
-				interrupt-parent = <&gic>;
-				interrupts = <GIC_SPI 76 IRQ_TYPE_LEVEL_HIGH>;
-			};
-
-			usbhsehci: ehci@4a064c00 {
-				compatible = "ti,ehci-omap", "usb-ehci";
-				reg = <0x4a064c00 0x400>;
-				interrupt-parent = <&gic>;
-				interrupts = <GIC_SPI 77 IRQ_TYPE_LEVEL_HIGH>;
-			};
-		};
-
-		omap_control_usb2phy: control-phy@4a002300 {
-			compatible = "ti,control-phy-usb2";
-			reg = <0x4a002300 0x4>;
-			reg-names = "power";
-		};
-
-		omap_control_usbotg: control-phy@4a00233c {
-			compatible = "ti,control-phy-otghs";
-			reg = <0x4a00233c 0x4>;
-			reg-names = "otghs_control";
-		};
-
-		usb_otg_hs: usb_otg_hs@4a0ab000 {
-			compatible = "ti,omap4-musb";
-			reg = <0x4a0ab000 0x7ff>;
-			interrupts = <GIC_SPI 92 IRQ_TYPE_LEVEL_HIGH>, <GIC_SPI 93 IRQ_TYPE_LEVEL_HIGH>;
-			interrupt-names = "mc", "dma";
-			ti,hwmods = "usb_otg_hs";
-			usb-phy = <&usb2_phy>;
-			phys = <&usb2_phy>;
-			phy-names = "usb2-phy";
-			multipoint = <1>;
-			num-eps = <16>;
-			ram-bits = <12>;
-			ctrl-module = <&omap_control_usbotg>;
-		};
-
-		aes: aes@4b501000 {
+		aes1: aes@4b501000 {
 			compatible = "ti,omap4-aes";
-			ti,hwmods = "aes";
+			ti,hwmods = "aes1";
 			reg = <0x4b501000 0xa0>;
 			interrupts = <GIC_SPI 85 IRQ_TYPE_LEVEL_HIGH>;
 			dmas = <&sdma 111>, <&sdma 110>;
+			dma-names = "tx", "rx";
+		};
+
+		aes2: aes@4b701000 {
+			compatible = "ti,omap4-aes";
+			ti,hwmods = "aes2";
+			reg = <0x4b701000 0xa0>;
+			interrupts = <GIC_SPI 64 IRQ_TYPE_LEVEL_HIGH>;
+			dmas = <&sdma 114>, <&sdma 113>;
 			dma-names = "tx", "rx";
 		};
 
@@ -759,7 +480,153 @@
 			dmas = <&sdma 117>, <&sdma 116>;
 			dma-names = "tx", "rx";
 		};
+
+		sham: sham@4b100000 {
+			compatible = "ti,omap4-sham";
+			ti,hwmods = "sham";
+			reg = <0x4b100000 0x300>;
+			interrupts = <GIC_SPI 51 IRQ_TYPE_LEVEL_HIGH>;
+			dmas = <&sdma 119>;
+			dma-names = "rx";
+		};
+
+		abb_mpu: regulator-abb-mpu {
+			compatible = "ti,abb-v2";
+			regulator-name = "abb_mpu";
+			#address-cells = <0>;
+			#size-cells = <0>;
+			ti,tranxdone-status-mask = <0x80>;
+			clocks = <&sys_clkin_ck>;
+			ti,settling-time = <50>;
+			ti,clock-cycles = <16>;
+
+			status = "disabled";
+		};
+
+		abb_iva: regulator-abb-iva {
+			compatible = "ti,abb-v2";
+			regulator-name = "abb_iva";
+			#address-cells = <0>;
+			#size-cells = <0>;
+			ti,tranxdone-status-mask = <0x80000000>;
+			clocks = <&sys_clkin_ck>;
+			ti,settling-time = <50>;
+			ti,clock-cycles = <16>;
+
+			status = "disabled";
+		};
+
+		target-module@56000000 {
+			compatible = "ti,sysc-omap4", "ti,sysc";
+			ti,hwmods = "gpu";
+			reg = <0x5601fc00 0x4>,
+			      <0x5601fc10 0x4>;
+			reg-names = "rev", "sysc";
+			ti,sysc-midle = <SYSC_IDLE_FORCE>,
+					<SYSC_IDLE_NO>,
+					<SYSC_IDLE_SMART>,
+					<SYSC_IDLE_SMART_WKUP>;
+			ti,sysc-sidle = <SYSC_IDLE_FORCE>,
+					<SYSC_IDLE_NO>,
+					<SYSC_IDLE_SMART>,
+					<SYSC_IDLE_SMART_WKUP>;
+			clocks = <&l3_gfx_clkctrl OMAP4_GPU_CLKCTRL 0>;
+			clock-names = "fck";
+			#address-cells = <1>;
+			#size-cells = <1>;
+			ranges = <0 0x56000000 0x2000000>;
+
+			/*
+			 * Closed source PowerVR driver, no child device
+			 * binding or driver in mainline
+			 */
+		};
+
+		dss: dss@58000000 {
+			compatible = "ti,omap4-dss";
+			reg = <0x58000000 0x80>;
+			status = "disabled";
+			ti,hwmods = "dss_core";
+			clocks = <&l3_dss_clkctrl OMAP4_DSS_CORE_CLKCTRL 8>;
+			clock-names = "fck";
+			#address-cells = <1>;
+			#size-cells = <1>;
+			ranges;
+
+			dispc@58001000 {
+				compatible = "ti,omap4-dispc";
+				reg = <0x58001000 0x1000>;
+				interrupts = <GIC_SPI 25 IRQ_TYPE_LEVEL_HIGH>;
+				ti,hwmods = "dss_dispc";
+				clocks = <&l3_dss_clkctrl OMAP4_DSS_CORE_CLKCTRL 8>;
+				clock-names = "fck";
+			};
+
+			rfbi: encoder@58002000  {
+				compatible = "ti,omap4-rfbi";
+				reg = <0x58002000 0x1000>;
+				status = "disabled";
+				ti,hwmods = "dss_rfbi";
+				clocks = <&l3_dss_clkctrl OMAP4_DSS_CORE_CLKCTRL 8>, <&l3_div_ck>;
+				clock-names = "fck", "ick";
+			};
+
+			venc: encoder@58003000 {
+				compatible = "ti,omap4-venc";
+				reg = <0x58003000 0x1000>;
+				status = "disabled";
+				ti,hwmods = "dss_venc";
+				clocks = <&l3_dss_clkctrl OMAP4_DSS_CORE_CLKCTRL 11>;
+				clock-names = "fck";
+			};
+
+			dsi1: encoder@58004000 {
+				compatible = "ti,omap4-dsi";
+				reg = <0x58004000 0x200>,
+				      <0x58004200 0x40>,
+				      <0x58004300 0x20>;
+				reg-names = "proto", "phy", "pll";
+				interrupts = <GIC_SPI 53 IRQ_TYPE_LEVEL_HIGH>;
+				status = "disabled";
+				ti,hwmods = "dss_dsi1";
+				clocks = <&l3_dss_clkctrl OMAP4_DSS_CORE_CLKCTRL 8>,
+					 <&l3_dss_clkctrl OMAP4_DSS_CORE_CLKCTRL 10>;
+				clock-names = "fck", "sys_clk";
+			};
+
+			dsi2: encoder@58005000 {
+				compatible = "ti,omap4-dsi";
+				reg = <0x58005000 0x200>,
+				      <0x58005200 0x40>,
+				      <0x58005300 0x20>;
+				reg-names = "proto", "phy", "pll";
+				interrupts = <GIC_SPI 84 IRQ_TYPE_LEVEL_HIGH>;
+				status = "disabled";
+				ti,hwmods = "dss_dsi2";
+				clocks = <&l3_dss_clkctrl OMAP4_DSS_CORE_CLKCTRL 8>,
+					 <&l3_dss_clkctrl OMAP4_DSS_CORE_CLKCTRL 10>;
+				clock-names = "fck", "sys_clk";
+			};
+
+			hdmi: encoder@58006000 {
+				compatible = "ti,omap4-hdmi";
+				reg = <0x58006000 0x200>,
+				      <0x58006200 0x100>,
+				      <0x58006300 0x100>,
+				      <0x58006400 0x1000>;
+				reg-names = "wp", "pll", "phy", "core";
+				interrupts = <GIC_SPI 101 IRQ_TYPE_LEVEL_HIGH>;
+				status = "disabled";
+				ti,hwmods = "dss_hdmi";
+				clocks = <&l3_dss_clkctrl OMAP4_DSS_CORE_CLKCTRL 9>,
+					 <&l3_dss_clkctrl OMAP4_DSS_CORE_CLKCTRL 10>;
+				clock-names = "fck", "sys_clk";
+				dmas = <&sdma 76>;
+				dma-names = "audio_tx";
+			};
+		};
 	};
 };
 
-/include/ "omap44xx-clocks.dtsi"
+#include "omap4-l4.dtsi"
+#include "omap44xx-clocks.dtsi"

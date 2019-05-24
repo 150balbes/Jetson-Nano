@@ -1,20 +1,28 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __NOUVEAU_CHAN_H__
 #define __NOUVEAU_CHAN_H__
-
-struct nouveau_cli;
+#include <nvif/object.h>
+#include <nvif/notify.h>
+struct nvif_device;
 
 struct nouveau_channel {
-	struct nouveau_cli *cli;
+	struct nvif_device *device;
 	struct nouveau_drm *drm;
+	struct nouveau_vmm *vmm;
 
-	u32 handle;
-	u32 vram;
-	u32 gart;
+	int chid;
+	u64 inst;
+	u32 token;
+
+	struct nvif_object vram;
+	struct nvif_object gart;
+	struct nvif_object nvsw;
 
 	struct {
 		struct nouveau_bo *buffer;
-		struct nouveau_vma vma;
-		u32 handle;
+		struct nouveau_vma *vma;
+		struct nvif_object ctxdma;
+		u64 addr;
 	} push;
 
 	/* TODO: this will be reworked in the near future */
@@ -34,14 +42,20 @@ struct nouveau_channel {
 	u32 user_get;
 	u32 user_put;
 
-	struct nouveau_object *object;
+	struct nvif_object user;
+
+	struct nvif_notify kill;
+	atomic_t killed;
 };
 
+int nouveau_channels_init(struct nouveau_drm *);
 
-int  nouveau_channel_new(struct nouveau_drm *, struct nouveau_cli *,
-			 u32 parent, u32 handle, u32 arg0, u32 arg1,
+int  nouveau_channel_new(struct nouveau_drm *, struct nvif_device *,
+			 u32 arg0, u32 arg1, bool priv,
 			 struct nouveau_channel **);
 void nouveau_channel_del(struct nouveau_channel **);
 int  nouveau_channel_idle(struct nouveau_channel *);
+
+extern int nouveau_vram_pushbuf;
 
 #endif

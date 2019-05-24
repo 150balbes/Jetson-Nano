@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _IOP13XX_IRQS_H_
 #define _IOP13XX_IRQS_H_
 
@@ -190,7 +191,5 @@ static inline u32 read_intpnd_3(void)
 #else
 #define NR_IOP13XX_IRQS	(IRQ_IOP13XX_HPI + 1)
 #endif
-
-#define NR_IRQS		NR_IOP13XX_IRQS
 
 #endif /* _IOP13XX_IRQ_H_ */

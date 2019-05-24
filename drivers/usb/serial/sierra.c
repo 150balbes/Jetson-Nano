@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
   USB Driver for Sierra Wireless
 
@@ -8,10 +9,6 @@
 
   IMPORTANT DISCLAIMER: This driver is not commercially supported by
   Sierra Wireless. Use at your own risk.
-
-  This driver is free software; you can redistribute it and/or modify
-  it under the terms of Version 2 of the GNU General Public License as
-  published by the Free Software Foundation.
 
   Portions based on the option driver by Matthias Urlichs <smurf@smurf.noris.de>
   Whom based his on the Keyspan driver by Hugh Blemings <hugh@blemings.org>
@@ -85,7 +82,8 @@ static int sierra_vsc_set_nmea(struct usb_device *udev, __u16 enable)
 			USB_CTRL_SET_TIMEOUT);		/* int timeout       */
 }
 
-static int sierra_calc_num_ports(struct usb_serial *serial)
+static int sierra_calc_num_ports(struct usb_serial *serial,
+					struct usb_serial_endpoints *epds)
 {
 	int num_ports = 0;
 	u8 ifnum, numendpoints;
@@ -137,24 +135,9 @@ static int is_himemory(const u8 ifnum,
 	return 0;
 }
 
-static int sierra_calc_interface(struct usb_serial *serial)
+static u8 sierra_interface_num(struct usb_serial *serial)
 {
-	int interface;
-	struct usb_interface *p_interface;
-	struct usb_host_interface *p_host_interface;
-
-	/* Get the interface structure pointer from the serial struct */
-	p_interface = serial->interface;
-
-	/* Get a pointer to the host interface structure */
-	p_host_interface = p_interface->cur_altsetting;
-
-	/* read the interface descriptor for this active altsetting
-	 * to find out the interface number we are on
-	*/
-	interface = p_host_interface->desc.bInterfaceNumber;
-
-	return interface;
+	return serial->interface->cur_altsetting->desc.bInterfaceNumber;
 }
 
 static int sierra_probe(struct usb_serial *serial,
@@ -165,7 +148,7 @@ static int sierra_probe(struct usb_serial *serial,
 	u8 ifnum;
 
 	udev = serial->dev;
-	ifnum = sierra_calc_interface(serial);
+	ifnum = sierra_interface_num(serial);
 
 	/*
 	 * If this interface supports more than 1 alternate
@@ -177,9 +160,6 @@ static int sierra_probe(struct usb_serial *serial,
 		/* We know the alternate setting is 1 for the MC8785 */
 		usb_set_interface(udev, ifnum, 1);
 	}
-
-	/* ifnum could have changed - by calling usb_set_interface */
-	ifnum = sierra_calc_interface(serial);
 
 	if (is_blacklisted(ifnum,
 				(struct sierra_iface_info *)id->driver_info)) {
@@ -289,6 +269,7 @@ static const struct usb_device_id id_table[] = {
 	{ USB_DEVICE_AND_INTERFACE_INFO(0x1199, 0x68AA, 0xFF, 0xFF, 0xFF),
 	  .driver_info = (kernel_ulong_t)&direct_ip_interface_blacklist
 	},
+	{ USB_DEVICE(0x1199, 0x68AB) }, /* Sierra Wireless AR8550 */
 	/* AT&T Direct IP LTE modems */
 	{ USB_DEVICE_AND_INTERFACE_INFO(0x0F3D, 0x68AA, 0xFF, 0xFF, 0xFF),
 	  .driver_info = (kernel_ulong_t)&direct_ip_interface_blacklist
@@ -321,7 +302,6 @@ struct sierra_port_private {
 	int dsr_state;
 	int dcd_state;
 	int ri_state;
-	unsigned int opened:1;
 };
 
 static int sierra_send_setup(struct usb_serial_port *port)
@@ -342,7 +322,7 @@ static int sierra_send_setup(struct usb_serial_port *port)
 
 	/* If composite device then properly report interface */
 	if (serial->num_ports == 1) {
-		interface = sierra_calc_interface(serial);
+		interface = sierra_interface_num(serial);
 		/* Control message is sent only to interfaces with
 		 * interrupt_in endpoints
 		 */
@@ -370,18 +350,11 @@ static int sierra_send_setup(struct usb_serial_port *port)
 	if (retval < 0)
 		return retval;
 
-	retval = usb_control_msg(serial->dev, usb_rcvctrlpipe(serial->dev, 0),
+	retval = usb_control_msg(serial->dev, usb_sndctrlpipe(serial->dev, 0),
 		0x22, 0x21, val, interface, NULL, 0, USB_CTRL_SET_TIMEOUT);
 	usb_autopm_put_interface(serial->interface);
 
 	return retval;
-}
-
-static void sierra_set_termios(struct tty_struct *tty,
-		struct usb_serial_port *port, struct ktermios *old_termios)
-{
-	tty_termios_copy_hw(&tty->termios, old_termios);
-	sierra_send_setup(port);
 }
 
 static int sierra_tiocmget(struct tty_struct *tty)
@@ -424,9 +397,7 @@ static int sierra_tiocmset(struct tty_struct *tty,
 
 static void sierra_release_urb(struct urb *urb)
 {
-	struct usb_serial_port *port;
 	if (urb) {
-		port = urb->context;
 		kfree(urb->transfer_buffer);
 		usb_free_urb(urb);
 	}
@@ -438,8 +409,9 @@ static void sierra_outdat_callback(struct urb *urb)
 	struct sierra_port_private *portdata = usb_get_serial_port_data(port);
 	struct sierra_intf_private *intfdata;
 	int status = urb->status;
+	unsigned long flags;
 
-	intfdata = port->serial->private;
+	intfdata = usb_get_serial_data(port->serial);
 
 	/* free up the transfer buffer, as usb_free_urb() does not do this */
 	kfree(urb->transfer_buffer);
@@ -448,12 +420,12 @@ static void sierra_outdat_callback(struct urb *urb)
 		dev_dbg(&port->dev, "%s - nonzero write bulk status "
 		    "received: %d\n", __func__, status);
 
-	spin_lock(&portdata->lock);
+	spin_lock_irqsave(&portdata->lock, flags);
 	--portdata->outstanding_urbs;
-	spin_unlock(&portdata->lock);
-	spin_lock(&intfdata->susp_lock);
+	spin_unlock_irqrestore(&portdata->lock, flags);
+	spin_lock_irqsave(&intfdata->susp_lock, flags);
 	--intfdata->in_flight;
-	spin_unlock(&intfdata->susp_lock);
+	spin_unlock_irqrestore(&intfdata->susp_lock, flags);
 
 	usb_serial_port_softint(port);
 }
@@ -476,7 +448,7 @@ static int sierra_write(struct tty_struct *tty, struct usb_serial_port *port,
 		return 0;
 
 	portdata = usb_get_serial_port_data(port);
-	intfdata = serial->private;
+	intfdata = usb_get_serial_data(serial);
 
 	dev_dbg(&port->dev, "%s: write (%zd bytes)\n", __func__, writesize);
 	spin_lock_irqsave(&portdata->lock, flags);
@@ -680,6 +652,23 @@ static int sierra_write_room(struct tty_struct *tty)
 	return 2048;
 }
 
+static int sierra_chars_in_buffer(struct tty_struct *tty)
+{
+	struct usb_serial_port *port = tty->driver_data;
+	struct sierra_port_private *portdata = usb_get_serial_port_data(port);
+	unsigned long flags;
+	int chars;
+
+	/* NOTE: This overcounts somewhat. */
+	spin_lock_irqsave(&portdata->lock, flags);
+	chars = portdata->outstanding_urbs * MAX_TRANSFER;
+	spin_unlock_irqrestore(&portdata->lock, flags);
+
+	dev_dbg(&port->dev, "%s - %d\n", __func__, chars);
+
+	return chars;
+}
+
 static void sierra_stop_rx_urbs(struct usb_serial_port *port)
 {
 	int i;
@@ -735,9 +724,6 @@ static struct urb *sierra_setup_urb(struct usb_serial *serial, int endpoint,
 	struct urb	*urb;
 	u8		*buf;
 
-	if (endpoint == -1)
-		return NULL;
-
 	urb = usb_alloc_urb(0, mem_flags);
 	if (!urb)
 		return NULL;
@@ -764,26 +750,16 @@ static void sierra_close(struct usb_serial_port *port)
 	int i;
 	struct usb_serial *serial = port->serial;
 	struct sierra_port_private *portdata;
-	struct sierra_intf_private *intfdata = port->serial->private;
+	struct sierra_intf_private *intfdata = usb_get_serial_data(serial);
 	struct urb *urb;
 
 	portdata = usb_get_serial_port_data(port);
 
-	portdata->rts_state = 0;
-	portdata->dtr_state = 0;
-
-	mutex_lock(&serial->disc_mutex);
-	if (!serial->disconnected) {
-		/* odd error handling due to pm counters */
-		if (!usb_autopm_get_interface(serial->interface))
-			sierra_send_setup(port);
-		else
-			usb_autopm_get_interface_no_resume(serial->interface);
-
-	}
-	mutex_unlock(&serial->disc_mutex);
+	/*
+	 * Need to take susp_lock to make sure port is not already being
+	 * resumed, but no need to hold it due to initialized
+	 */
 	spin_lock_irq(&intfdata->susp_lock);
-	portdata->opened = 0;
 	if (--intfdata->open_ports == 0)
 		serial->interface->needs_remote_wakeup = 0;
 	spin_unlock_irq(&intfdata->susp_lock);
@@ -795,34 +771,33 @@ static void sierra_close(struct usb_serial_port *port)
 		kfree(urb->transfer_buffer);
 		usb_free_urb(urb);
 		usb_autopm_put_interface_async(serial->interface);
-		spin_lock(&portdata->lock);
+		spin_lock_irq(&portdata->lock);
 		portdata->outstanding_urbs--;
-		spin_unlock(&portdata->lock);
+		spin_unlock_irq(&portdata->lock);
 	}
 
 	sierra_stop_rx_urbs(port);
+	usb_kill_anchored_urbs(&portdata->active);
+
 	for (i = 0; i < portdata->num_in_urbs; i++) {
 		sierra_release_urb(portdata->in_urbs[i]);
 		portdata->in_urbs[i] = NULL;
 	}
+
+	usb_autopm_get_interface_no_resume(serial->interface);
 }
 
 static int sierra_open(struct tty_struct *tty, struct usb_serial_port *port)
 {
 	struct sierra_port_private *portdata;
 	struct usb_serial *serial = port->serial;
-	struct sierra_intf_private *intfdata = serial->private;
+	struct sierra_intf_private *intfdata = usb_get_serial_data(serial);
 	int i;
 	int err;
 	int endpoint;
 	struct urb *urb;
 
 	portdata = usb_get_serial_port_data(port);
-
-	/* Set some sane defaults */
-	portdata->rts_state = 1;
-	portdata->dtr_state = 1;
-
 
 	endpoint = port->bulk_in_endpointAddress;
 	for (i = 0; i < portdata->num_in_urbs; i++) {
@@ -839,10 +814,7 @@ static int sierra_open(struct tty_struct *tty, struct usb_serial_port *port)
 	if (err)
 		goto err_submit;
 
-	sierra_send_setup(port);
-
 	spin_lock_irq(&intfdata->susp_lock);
-	portdata->opened = 1;
 	if (++intfdata->open_ports == 1)
 		serial->interface->needs_remote_wakeup = 1;
 	spin_unlock_irq(&intfdata->susp_lock);
@@ -925,7 +897,7 @@ static int sierra_port_probe(struct usb_serial_port *port)
 	/* Determine actual memory requirements */
 	if (serial->num_ports == 1) {
 		/* Get interface number for composite device */
-		ifnum = sierra_calc_interface(serial);
+		ifnum = sierra_interface_num(serial);
 		himemoryp = &typeB_interface_list;
 	} else {
 		/* This is really the usb-serial port number of the interface
@@ -980,23 +952,59 @@ static void stop_read_write_urbs(struct usb_serial *serial)
 
 static int sierra_suspend(struct usb_serial *serial, pm_message_t message)
 {
-	struct sierra_intf_private *intfdata;
-	int b;
+	struct sierra_intf_private *intfdata = usb_get_serial_data(serial);
 
+	spin_lock_irq(&intfdata->susp_lock);
 	if (PMSG_IS_AUTO(message)) {
-		intfdata = serial->private;
-		spin_lock_irq(&intfdata->susp_lock);
-		b = intfdata->in_flight;
-
-		if (b) {
+		if (intfdata->in_flight) {
 			spin_unlock_irq(&intfdata->susp_lock);
 			return -EBUSY;
-		} else {
-			intfdata->suspended = 1;
-			spin_unlock_irq(&intfdata->susp_lock);
 		}
 	}
+	intfdata->suspended = 1;
+	spin_unlock_irq(&intfdata->susp_lock);
+
 	stop_read_write_urbs(serial);
+
+	return 0;
+}
+
+/* Caller must hold susp_lock. */
+static int sierra_submit_delayed_urbs(struct usb_serial_port *port)
+{
+	struct sierra_port_private *portdata = usb_get_serial_port_data(port);
+	struct sierra_intf_private *intfdata;
+	struct urb *urb;
+	int ec = 0;
+	int err;
+
+	intfdata = usb_get_serial_data(port->serial);
+
+	for (;;) {
+		urb = usb_get_from_anchor(&portdata->delayed);
+		if (!urb)
+			break;
+
+		usb_anchor_urb(urb, &portdata->active);
+		intfdata->in_flight++;
+		err = usb_submit_urb(urb, GFP_ATOMIC);
+		if (err) {
+			dev_err(&port->dev, "%s - submit urb failed: %d",
+					__func__, err);
+			ec++;
+			intfdata->in_flight--;
+			usb_unanchor_urb(urb);
+			kfree(urb->transfer_buffer);
+			usb_free_urb(urb);
+
+			spin_lock(&portdata->lock);
+			portdata->outstanding_urbs--;
+			spin_unlock(&portdata->lock);
+		}
+	}
+
+	if (ec)
+		return -EIO;
 
 	return 0;
 }
@@ -1004,41 +1012,24 @@ static int sierra_suspend(struct usb_serial *serial, pm_message_t message)
 static int sierra_resume(struct usb_serial *serial)
 {
 	struct usb_serial_port *port;
-	struct sierra_intf_private *intfdata = serial->private;
-	struct sierra_port_private *portdata;
-	struct urb *urb;
+	struct sierra_intf_private *intfdata = usb_get_serial_data(serial);
 	int ec = 0;
 	int i, err;
 
 	spin_lock_irq(&intfdata->susp_lock);
 	for (i = 0; i < serial->num_ports; i++) {
 		port = serial->port[i];
-		portdata = usb_get_serial_port_data(port);
 
-		if (!portdata)
+		if (!tty_port_initialized(&port->port))
 			continue;
 
-		while ((urb = usb_get_from_anchor(&portdata->delayed))) {
-			usb_anchor_urb(urb, &portdata->active);
-			intfdata->in_flight++;
-			err = usb_submit_urb(urb, GFP_ATOMIC);
-			if (err < 0) {
-				intfdata->in_flight--;
-				usb_unanchor_urb(urb);
-				kfree(urb->transfer_buffer);
-				usb_free_urb(urb);
-				spin_lock(&portdata->lock);
-				portdata->outstanding_urbs--;
-				spin_unlock(&portdata->lock);
-				continue;
-			}
-		}
+		err = sierra_submit_delayed_urbs(port);
+		if (err)
+			ec++;
 
-		if (portdata->opened) {
-			err = sierra_submit_rx_urbs(port, GFP_ATOMIC);
-			if (err)
-				ec++;
-		}
+		err = sierra_submit_rx_urbs(port, GFP_ATOMIC);
+		if (err)
+			ec++;
 	}
 	intfdata->suspended = 0;
 	spin_unlock_irq(&intfdata->susp_lock);
@@ -1065,7 +1056,7 @@ static struct usb_serial_driver sierra_device = {
 	.dtr_rts	   = sierra_dtr_rts,
 	.write             = sierra_write,
 	.write_room        = sierra_write_room,
-	.set_termios       = sierra_set_termios,
+	.chars_in_buffer   = sierra_chars_in_buffer,
 	.tiocmget          = sierra_tiocmget,
 	.tiocmset          = sierra_tiocmset,
 	.attach            = sierra_startup,
@@ -1085,7 +1076,7 @@ module_usb_serial_driver(serial_drivers, id_table);
 
 MODULE_AUTHOR(DRIVER_AUTHOR);
 MODULE_DESCRIPTION(DRIVER_DESC);
-MODULE_LICENSE("GPL");
+MODULE_LICENSE("GPL v2");
 
 module_param(nmea, bool, S_IRUGO | S_IWUSR);
 MODULE_PARM_DESC(nmea, "NMEA streaming");

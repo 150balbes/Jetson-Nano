@@ -50,7 +50,8 @@ snd_emu10k1_sample_new(struct snd_emux *rec, struct snd_sf_sample *sp,
 		return -EINVAL;
 
 	if (sp->v.size == 0) {
-		snd_printd("emu: rom font for sample %d\n", sp->v.sample);
+		dev_dbg(emu->card->dev,
+			"emu: rom font for sample %d\n", sp->v.sample);
 		return 0;
 	}
 
@@ -69,11 +70,8 @@ snd_emu10k1_sample_new(struct snd_emux *rec, struct snd_sf_sample *sp,
 		loopend = sampleend;
 
 	/* be sure loop points start < end */
-	if (sp->v.loopstart >= sp->v.loopend) {
-		int tmp = sp->v.loopstart;
-		sp->v.loopstart = sp->v.loopend;
-		sp->v.loopend = tmp;
-	}
+	if (sp->v.loopstart >= sp->v.loopend)
+		swap(sp->v.loopstart, sp->v.loopend);
 
 	/* compute true data size to be loaded */
 	truesize = sp->v.size + BLANK_HEAD_SIZE;
@@ -92,7 +90,8 @@ snd_emu10k1_sample_new(struct snd_emux *rec, struct snd_sf_sample *sp,
 		blocksize *= 2;
 	sp->block = snd_emu10k1_synth_alloc(emu, blocksize);
 	if (sp->block == NULL) {
-		snd_printd("emu10k1: synth malloc failed (size=%d)\n", blocksize);
+		dev_dbg(emu->card->dev,
+			"synth malloc failed (size=%d)\n", blocksize);
 		/* not ENOMEM (for compatibility with OSS) */
 		return -ENOSPC;
 	}

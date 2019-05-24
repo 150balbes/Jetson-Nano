@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  * tracing clocks
  *
@@ -18,6 +19,7 @@
 #include <linux/module.h>
 #include <linux/percpu.h>
 #include <linux/sched.h>
+#include <linux/sched/clock.h>
 #include <linux/ktime.h>
 #include <linux/trace_clock.h>
 
@@ -56,6 +58,7 @@ u64 notrace trace_clock(void)
 {
 	return local_clock();
 }
+EXPORT_SYMBOL_GPL(trace_clock);
 
 /*
  * trace_jiffy_clock(): Simply use jiffies as a clock counter.
@@ -68,6 +71,7 @@ u64 notrace trace_clock_jiffies(void)
 {
 	return jiffies_64_to_clock_t(jiffies_64 - INITIAL_JIFFIES);
 }
+EXPORT_SYMBOL_GPL(trace_clock_jiffies);
 
 /*
  * trace_clock_global(): special globally coherent trace clock
@@ -93,7 +97,7 @@ u64 notrace trace_clock_global(void)
 	int this_cpu;
 	u64 now;
 
-	local_irq_save(flags);
+	raw_local_irq_save(flags);
 
 	this_cpu = raw_smp_processor_id();
 	now = sched_clock_cpu(this_cpu);
@@ -119,10 +123,11 @@ u64 notrace trace_clock_global(void)
 	arch_spin_unlock(&trace_clock_struct.lock);
 
  out:
-	local_irq_restore(flags);
+	raw_local_irq_restore(flags);
 
 	return now;
 }
+EXPORT_SYMBOL_GPL(trace_clock_global);
 
 static atomic64_t trace_counter;
 

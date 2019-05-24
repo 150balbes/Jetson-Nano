@@ -26,7 +26,8 @@
  * Possibly called several times to iterate over an sk_buff and copy
  * data out of it.
  */
-size_t xdr_skb_read_bits(struct xdr_skb_reader *desc, void *to, size_t len)
+static size_t
+xdr_skb_read_bits(struct xdr_skb_reader *desc, void *to, size_t len)
 {
 	if (len > desc->count)
 		len = desc->count;
@@ -36,7 +37,6 @@ size_t xdr_skb_read_bits(struct xdr_skb_reader *desc, void *to, size_t len)
 	desc->offset += len;
 	return len;
 }
-EXPORT_SYMBOL_GPL(xdr_skb_read_bits);
 
 /**
  * xdr_skb_read_and_csum_bits - copy and checksum from skb to buffer
@@ -69,7 +69,8 @@ static size_t xdr_skb_read_and_csum_bits(struct xdr_skb_reader *desc, void *to, 
  * @copy_actor: virtual method for copying data
  *
  */
-ssize_t xdr_partial_copy_from_skb(struct xdr_buf *xdr, unsigned int base, struct xdr_skb_reader *desc, xdr_skb_read_actor copy_actor)
+static ssize_t
+xdr_partial_copy_from_skb(struct xdr_buf *xdr, unsigned int base, struct xdr_skb_reader *desc, xdr_skb_read_actor copy_actor)
 {
 	struct page	**ppage = xdr->pages;
 	unsigned int	len, pglen = xdr->page_len;
@@ -96,15 +97,15 @@ ssize_t xdr_partial_copy_from_skb(struct xdr_buf *xdr, unsigned int base, struct
 	if (base || xdr->page_base) {
 		pglen -= base;
 		base += xdr->page_base;
-		ppage += base >> PAGE_CACHE_SHIFT;
-		base &= ~PAGE_CACHE_MASK;
+		ppage += base >> PAGE_SHIFT;
+		base &= ~PAGE_MASK;
 	}
 	do {
 		char *kaddr;
 
 		/* ACL likes to be lazy in allocating pages - ACLs
 		 * are small by default but can get huge. */
-		if (unlikely(*ppage == NULL)) {
+		if ((xdr->flags & XDRBUF_SPARSE_PAGES) && *ppage == NULL) {
 			*ppage = alloc_page(GFP_ATOMIC);
 			if (unlikely(*ppage == NULL)) {
 				if (copied == 0)
@@ -113,7 +114,7 @@ ssize_t xdr_partial_copy_from_skb(struct xdr_buf *xdr, unsigned int base, struct
 			}
 		}
 
-		len = PAGE_CACHE_SIZE;
+		len = PAGE_SIZE;
 		kaddr = kmap_atomic(*ppage);
 		if (base) {
 			len -= base;
@@ -140,7 +141,6 @@ copy_tail:
 out:
 	return copied;
 }
-EXPORT_SYMBOL_GPL(xdr_partial_copy_from_skb);
 
 /**
  * csum_partial_copy_to_xdr - checksum and copy data
@@ -155,7 +155,7 @@ int csum_partial_copy_to_xdr(struct xdr_buf *xdr, struct sk_buff *skb)
 	struct xdr_skb_reader	desc;
 
 	desc.skb = skb;
-	desc.offset = sizeof(struct udphdr);
+	desc.offset = 0;
 	desc.count = skb->len - desc.offset;
 
 	if (skb_csum_unnecessary(skb))
@@ -173,8 +173,9 @@ int csum_partial_copy_to_xdr(struct xdr_buf *xdr, struct sk_buff *skb)
 		return -1;
 	if (csum_fold(desc.csum))
 		return -1;
-	if (unlikely(skb->ip_summed == CHECKSUM_COMPLETE))
-		netdev_rx_csum_fault(skb->dev);
+	if (unlikely(skb->ip_summed == CHECKSUM_COMPLETE) &&
+	    !skb->csum_complete_sw)
+		netdev_rx_csum_fault(skb->dev, skb);
 	return 0;
 no_checksum:
 	if (xdr_partial_copy_from_skb(xdr, 0, &desc, xdr_skb_read_bits) < 0)

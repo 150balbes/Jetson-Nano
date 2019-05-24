@@ -3,7 +3,7 @@
  * Copyright (c) 2011 Samsung Electronics Co., Ltd.
  *		http://www.samsung.com
  *
- * Author: Andrzej Pietrasiewicz <andrzej.p@samsung.com>
+ * Author: Andrzej Pietrasiewicz <andrzejtp2010@gmail.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -29,7 +29,6 @@
 void s5p_jpeg_reset(void __iomem *regs);
 void s5p_jpeg_poweron(void __iomem *regs);
 void s5p_jpeg_input_raw_mode(void __iomem *regs, unsigned long mode);
-void s5p_jpeg_input_raw_y16(void __iomem *regs, bool y16);
 void s5p_jpeg_proc_mode(void __iomem *regs, unsigned long mode);
 void s5p_jpeg_subsampling_mode(void __iomem *regs, unsigned int mode);
 unsigned int s5p_jpeg_get_subsampling_mode(void __iomem *regs);
@@ -42,8 +41,6 @@ void s5p_jpeg_x(void __iomem *regs, unsigned int x);
 void s5p_jpeg_rst_int_enable(void __iomem *regs, bool enable);
 void s5p_jpeg_data_num_int_enable(void __iomem *regs, bool enable);
 void s5p_jpeg_final_mcu_num_int_enable(void __iomem *regs, bool enbl);
-void s5p_jpeg_timer_enable(void __iomem *regs, unsigned long val);
-void s5p_jpeg_timer_disable(void __iomem *regs);
 int s5p_jpeg_timer_stat(void __iomem *regs);
 void s5p_jpeg_clear_timer_stat(void __iomem *regs);
 void s5p_jpeg_enc_stream_int(void __iomem *regs, unsigned long size);

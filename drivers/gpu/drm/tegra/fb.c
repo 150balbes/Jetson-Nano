@@ -10,15 +10,14 @@
  * published by the Free Software Foundation.
  */
 
+#include <linux/console.h>
+
 #include "drm.h"
 #include "gem.h"
+#include <drm/drm_gem_framebuffer_helper.h>
+#include <drm/drm_modeset_helper.h>
 
-static inline struct tegra_fb *to_tegra_fb(struct drm_framebuffer *fb)
-{
-	return container_of(fb, struct tegra_fb, base);
-}
-
-#ifdef CONFIG_DRM_TEGRA_FBDEV
+#ifdef CONFIG_DRM_FBDEV_EMULATION
 static inline struct tegra_fbdev *to_tegra_fbdev(struct drm_fb_helper *helper)
 {
 	return container_of(helper, struct tegra_fbdev, base);
@@ -28,70 +27,83 @@ static inline struct tegra_fbdev *to_tegra_fbdev(struct drm_fb_helper *helper)
 struct tegra_bo *tegra_fb_get_plane(struct drm_framebuffer *framebuffer,
 				    unsigned int index)
 {
-	struct tegra_fb *fb = to_tegra_fb(framebuffer);
-
-	if (index >= drm_format_num_planes(framebuffer->pixel_format))
-		return NULL;
-
-	return fb->planes[index];
+	return to_tegra_bo(drm_gem_fb_get_obj(framebuffer, index));
 }
 
 bool tegra_fb_is_bottom_up(struct drm_framebuffer *framebuffer)
 {
-	struct tegra_fb *fb = to_tegra_fb(framebuffer);
+	struct tegra_bo *bo = tegra_fb_get_plane(framebuffer, 0);
 
-	if (fb->planes[0]->flags & TEGRA_BO_BOTTOM_UP)
+	if (bo->flags & TEGRA_BO_BOTTOM_UP)
 		return true;
 
 	return false;
 }
 
-bool tegra_fb_is_tiled(struct drm_framebuffer *framebuffer)
+int tegra_fb_get_tiling(struct drm_framebuffer *framebuffer,
+			struct tegra_bo_tiling *tiling)
 {
-	struct tegra_fb *fb = to_tegra_fb(framebuffer);
+	uint64_t modifier = framebuffer->modifier;
 
-	if (fb->planes[0]->flags & TEGRA_BO_TILED)
-		return true;
+	switch (modifier) {
+	case DRM_FORMAT_MOD_LINEAR:
+		tiling->mode = TEGRA_BO_TILING_MODE_PITCH;
+		tiling->value = 0;
+		break;
 
-	return false;
-}
+	case DRM_FORMAT_MOD_NVIDIA_TEGRA_TILED:
+		tiling->mode = TEGRA_BO_TILING_MODE_TILED;
+		tiling->value = 0;
+		break;
 
-static void tegra_fb_destroy(struct drm_framebuffer *framebuffer)
-{
-	struct tegra_fb *fb = to_tegra_fb(framebuffer);
-	unsigned int i;
+	case DRM_FORMAT_MOD_NVIDIA_16BX2_BLOCK(0):
+		tiling->mode = TEGRA_BO_TILING_MODE_BLOCK;
+		tiling->value = 0;
+		break;
 
-	for (i = 0; i < fb->num_planes; i++) {
-		struct tegra_bo *bo = fb->planes[i];
+	case DRM_FORMAT_MOD_NVIDIA_16BX2_BLOCK(1):
+		tiling->mode = TEGRA_BO_TILING_MODE_BLOCK;
+		tiling->value = 1;
+		break;
 
-		if (bo)
-			drm_gem_object_unreference_unlocked(&bo->gem);
+	case DRM_FORMAT_MOD_NVIDIA_16BX2_BLOCK(2):
+		tiling->mode = TEGRA_BO_TILING_MODE_BLOCK;
+		tiling->value = 2;
+		break;
+
+	case DRM_FORMAT_MOD_NVIDIA_16BX2_BLOCK(3):
+		tiling->mode = TEGRA_BO_TILING_MODE_BLOCK;
+		tiling->value = 3;
+		break;
+
+	case DRM_FORMAT_MOD_NVIDIA_16BX2_BLOCK(4):
+		tiling->mode = TEGRA_BO_TILING_MODE_BLOCK;
+		tiling->value = 4;
+		break;
+
+	case DRM_FORMAT_MOD_NVIDIA_16BX2_BLOCK(5):
+		tiling->mode = TEGRA_BO_TILING_MODE_BLOCK;
+		tiling->value = 5;
+		break;
+
+	default:
+		return -EINVAL;
 	}
 
-	drm_framebuffer_cleanup(framebuffer);
-	kfree(fb->planes);
-	kfree(fb);
+	return 0;
 }
 
-static int tegra_fb_create_handle(struct drm_framebuffer *framebuffer,
-				  struct drm_file *file, unsigned int *handle)
-{
-	struct tegra_fb *fb = to_tegra_fb(framebuffer);
-
-	return drm_gem_handle_create(file, &fb->planes[0]->gem, handle);
-}
-
-static struct drm_framebuffer_funcs tegra_fb_funcs = {
-	.destroy = tegra_fb_destroy,
-	.create_handle = tegra_fb_create_handle,
+static const struct drm_framebuffer_funcs tegra_fb_funcs = {
+	.destroy = drm_gem_fb_destroy,
+	.create_handle = drm_gem_fb_create_handle,
 };
 
-static struct tegra_fb *tegra_fb_alloc(struct drm_device *drm,
-				       struct drm_mode_fb_cmd2 *mode_cmd,
-				       struct tegra_bo **planes,
-				       unsigned int num_planes)
+static struct drm_framebuffer *tegra_fb_alloc(struct drm_device *drm,
+					      const struct drm_mode_fb_cmd2 *mode_cmd,
+					      struct tegra_bo **planes,
+					      unsigned int num_planes)
 {
-	struct tegra_fb *fb;
+	struct drm_framebuffer *fb;
 	unsigned int i;
 	int err;
 
@@ -99,24 +111,15 @@ static struct tegra_fb *tegra_fb_alloc(struct drm_device *drm,
 	if (!fb)
 		return ERR_PTR(-ENOMEM);
 
-	fb->planes = kzalloc(num_planes * sizeof(*planes), GFP_KERNEL);
-	if (!fb->planes) {
-		kfree(fb);
-		return ERR_PTR(-ENOMEM);
-	}
+	drm_helper_mode_fill_fb_struct(drm, fb, mode_cmd);
 
-	fb->num_planes = num_planes;
+	for (i = 0; i < fb->format->num_planes; i++)
+		fb->obj[i] = &planes[i]->gem;
 
-	drm_helper_mode_fill_fb_struct(&fb->base, mode_cmd);
-
-	for (i = 0; i < fb->num_planes; i++)
-		fb->planes[i] = planes[i];
-
-	err = drm_framebuffer_init(drm, &fb->base, &tegra_fb_funcs);
+	err = drm_framebuffer_init(drm, fb, &tegra_fb_funcs);
 	if (err < 0) {
 		dev_err(drm->dev, "failed to initialize framebuffer: %d\n",
 			err);
-		kfree(fb->planes);
 		kfree(fb);
 		return ERR_PTR(err);
 	}
@@ -124,14 +127,14 @@ static struct tegra_fb *tegra_fb_alloc(struct drm_device *drm,
 	return fb;
 }
 
-static struct drm_framebuffer *tegra_fb_create(struct drm_device *drm,
-					       struct drm_file *file,
-					       struct drm_mode_fb_cmd2 *cmd)
+struct drm_framebuffer *tegra_fb_create(struct drm_device *drm,
+					struct drm_file *file,
+					const struct drm_mode_fb_cmd2 *cmd)
 {
 	unsigned int hsub, vsub, i;
 	struct tegra_bo *planes[4];
 	struct drm_gem_object *gem;
-	struct tegra_fb *fb;
+	struct drm_framebuffer *fb;
 	int err;
 
 	hsub = drm_format_horz_chroma_subsampling(cmd->pixel_format);
@@ -142,7 +145,7 @@ static struct drm_framebuffer *tegra_fb_create(struct drm_device *drm,
 		unsigned int height = cmd->height / (i ? vsub : 1);
 		unsigned int size, bpp;
 
-		gem = drm_gem_object_lookup(drm, file, cmd->handles[i]);
+		gem = drm_gem_object_lookup(file, cmd->handles[i]);
 		if (!gem) {
 			err = -ENXIO;
 			goto unreference;
@@ -167,32 +170,45 @@ static struct drm_framebuffer *tegra_fb_create(struct drm_device *drm,
 		goto unreference;
 	}
 
-	return &fb->base;
+	return fb;
 
 unreference:
 	while (i--)
-		drm_gem_object_unreference_unlocked(&planes[i]->gem);
+		drm_gem_object_put_unlocked(&planes[i]->gem);
 
 	return ERR_PTR(err);
 }
 
-#ifdef CONFIG_DRM_TEGRA_FBDEV
+#ifdef CONFIG_DRM_FBDEV_EMULATION
+static int tegra_fb_mmap(struct fb_info *info, struct vm_area_struct *vma)
+{
+	struct drm_fb_helper *helper = info->par;
+	struct tegra_bo *bo;
+	int err;
+
+	bo = tegra_fb_get_plane(helper->fb, 0);
+
+	err = drm_gem_mmap_obj(&bo->gem, bo->gem.size, vma);
+	if (err < 0)
+		return err;
+
+	return __tegra_gem_mmap(&bo->gem, vma);
+}
+
 static struct fb_ops tegra_fb_ops = {
 	.owner = THIS_MODULE,
-	.fb_fillrect = sys_fillrect,
-	.fb_copyarea = sys_copyarea,
-	.fb_imageblit = sys_imageblit,
-	.fb_check_var = drm_fb_helper_check_var,
-	.fb_set_par = drm_fb_helper_set_par,
-	.fb_blank = drm_fb_helper_blank,
-	.fb_pan_display = drm_fb_helper_pan_display,
-	.fb_setcmap = drm_fb_helper_setcmap,
+	DRM_FB_HELPER_DEFAULT_OPS,
+	.fb_fillrect = drm_fb_helper_sys_fillrect,
+	.fb_copyarea = drm_fb_helper_sys_copyarea,
+	.fb_imageblit = drm_fb_helper_sys_imageblit,
+	.fb_mmap = tegra_fb_mmap,
 };
 
 static int tegra_fbdev_probe(struct drm_fb_helper *helper,
 			     struct drm_fb_helper_surface_size *sizes)
 {
 	struct tegra_fbdev *fbdev = to_tegra_fbdev(helper);
+	struct tegra_drm *tegra = helper->dev->dev_private;
 	struct drm_device *drm = helper->dev;
 	struct drm_mode_fb_cmd2 cmd = { 0 };
 	unsigned int bytes_per_pixel;
@@ -207,7 +223,9 @@ static int tegra_fbdev_probe(struct drm_fb_helper *helper,
 
 	cmd.width = sizes->surface_width;
 	cmd.height = sizes->surface_height;
-	cmd.pitches[0] = sizes->surface_width * bytes_per_pixel;
+	cmd.pitches[0] = round_up(sizes->surface_width * bytes_per_pixel,
+				  tegra->pitch_align);
+
 	cmd.pixel_format = drm_mode_legacy_fb_format(sizes->surface_bpp,
 						     sizes->surface_depth);
 
@@ -217,39 +235,44 @@ static int tegra_fbdev_probe(struct drm_fb_helper *helper,
 	if (IS_ERR(bo))
 		return PTR_ERR(bo);
 
-	info = framebuffer_alloc(0, drm->dev);
-	if (!info) {
+	info = drm_fb_helper_alloc_fbi(helper);
+	if (IS_ERR(info)) {
 		dev_err(drm->dev, "failed to allocate framebuffer info\n");
-		tegra_bo_free_object(&bo->gem);
-		return -ENOMEM;
+		drm_gem_object_put_unlocked(&bo->gem);
+		return PTR_ERR(info);
 	}
 
 	fbdev->fb = tegra_fb_alloc(drm, &cmd, &bo, 1);
 	if (IS_ERR(fbdev->fb)) {
-		dev_err(drm->dev, "failed to allocate DRM framebuffer\n");
 		err = PTR_ERR(fbdev->fb);
-		goto release;
+		dev_err(drm->dev, "failed to allocate DRM framebuffer: %d\n",
+			err);
+		drm_gem_object_put_unlocked(&bo->gem);
+		return PTR_ERR(fbdev->fb);
 	}
 
-	fb = &fbdev->fb->base;
+	fb = fbdev->fb;
 	helper->fb = fb;
 	helper->fbdev = info;
 
 	info->par = helper;
-	info->flags = FBINFO_FLAG_DEFAULT;
 	info->fbops = &tegra_fb_ops;
 
-	err = fb_alloc_cmap(&info->cmap, 256, 0);
-	if (err < 0) {
-		dev_err(drm->dev, "failed to allocate color map: %d\n", err);
-		goto destroy;
-	}
-
-	drm_fb_helper_fill_fix(info, fb->pitches[0], fb->depth);
+	drm_fb_helper_fill_fix(info, fb->pitches[0], fb->format->depth);
 	drm_fb_helper_fill_var(info, helper, fb->width, fb->height);
 
 	offset = info->var.xoffset * bytes_per_pixel +
 		 info->var.yoffset * fb->pitches[0];
+
+	if (bo->pages) {
+		bo->vaddr = vmap(bo->pages, bo->num_pages, VM_MAP,
+				 pgprot_writecombine(PAGE_KERNEL));
+		if (!bo->vaddr) {
+			dev_err(drm->dev, "failed to vmap() framebuffer\n");
+			err = -ENOMEM;
+			goto destroy;
+		}
+	}
 
 	drm->mode_config.fb_base = (resource_size_t)bo->paddr;
 	info->screen_base = (void __iomem *)bo->vaddr + offset;
@@ -260,25 +283,17 @@ static int tegra_fbdev_probe(struct drm_fb_helper *helper,
 	return 0;
 
 destroy:
-	drm_framebuffer_unregister_private(fb);
-	tegra_fb_destroy(fb);
-release:
-	framebuffer_release(info);
+	drm_framebuffer_remove(fb);
 	return err;
 }
 
-static struct drm_fb_helper_funcs tegra_fb_helper_funcs = {
+static const struct drm_fb_helper_funcs tegra_fb_helper_funcs = {
 	.fb_probe = tegra_fbdev_probe,
 };
 
-static struct tegra_fbdev *tegra_fbdev_create(struct drm_device *drm,
-					      unsigned int preferred_bpp,
-					      unsigned int num_crtc,
-					      unsigned int max_connectors)
+static struct tegra_fbdev *tegra_fbdev_create(struct drm_device *drm)
 {
-	struct drm_fb_helper *helper;
 	struct tegra_fbdev *fbdev;
-	int err;
 
 	fbdev = kzalloc(sizeof(*fbdev), GFP_KERNEL);
 	if (!fbdev) {
@@ -286,106 +301,78 @@ static struct tegra_fbdev *tegra_fbdev_create(struct drm_device *drm,
 		return ERR_PTR(-ENOMEM);
 	}
 
-	fbdev->base.funcs = &tegra_fb_helper_funcs;
-	helper = &fbdev->base;
-
-	err = drm_fb_helper_init(drm, &fbdev->base, num_crtc, max_connectors);
-	if (err < 0) {
-		dev_err(drm->dev, "failed to initialize DRM FB helper\n");
-		goto free;
-	}
-
-	err = drm_fb_helper_single_add_all_connectors(&fbdev->base);
-	if (err < 0) {
-		dev_err(drm->dev, "failed to add connectors\n");
-		goto fini;
-	}
-
-	drm_helper_disable_unused_functions(drm);
-
-	err = drm_fb_helper_initial_config(&fbdev->base, preferred_bpp);
-	if (err < 0) {
-		dev_err(drm->dev, "failed to set initial configuration\n");
-		goto fini;
-	}
+	drm_fb_helper_prepare(drm, &fbdev->base, &tegra_fb_helper_funcs);
 
 	return fbdev;
-
-fini:
-	drm_fb_helper_fini(&fbdev->base);
-free:
-	kfree(fbdev);
-	return ERR_PTR(err);
 }
 
 static void tegra_fbdev_free(struct tegra_fbdev *fbdev)
 {
-	struct fb_info *info = fbdev->base.fbdev;
-
-	if (info) {
-		int err;
-
-		err = unregister_framebuffer(info);
-		if (err < 0)
-			DRM_DEBUG_KMS("failed to unregister framebuffer\n");
-
-		if (info->cmap.len)
-			fb_dealloc_cmap(&info->cmap);
-
-		framebuffer_release(info);
-	}
-
-	if (fbdev->fb) {
-		drm_framebuffer_unregister_private(&fbdev->fb->base);
-		tegra_fb_destroy(&fbdev->fb->base);
-	}
-
-	drm_fb_helper_fini(&fbdev->base);
 	kfree(fbdev);
 }
 
-void tegra_fbdev_restore_mode(struct tegra_fbdev *fbdev)
+static int tegra_fbdev_init(struct tegra_fbdev *fbdev,
+			    unsigned int preferred_bpp,
+			    unsigned int num_crtc,
+			    unsigned int max_connectors)
 {
-	if (fbdev) {
-		drm_modeset_lock_all(fbdev->base.dev);
-		drm_fb_helper_restore_fbdev_mode(&fbdev->base);
-		drm_modeset_unlock_all(fbdev->base.dev);
+	struct drm_device *drm = fbdev->base.dev;
+	int err;
+
+	err = drm_fb_helper_init(drm, &fbdev->base, max_connectors);
+	if (err < 0) {
+		dev_err(drm->dev, "failed to initialize DRM FB helper: %d\n",
+			err);
+		return err;
 	}
+
+	err = drm_fb_helper_single_add_all_connectors(&fbdev->base);
+	if (err < 0) {
+		dev_err(drm->dev, "failed to add connectors: %d\n", err);
+		goto fini;
+	}
+
+	err = drm_fb_helper_initial_config(&fbdev->base, preferred_bpp);
+	if (err < 0) {
+		dev_err(drm->dev, "failed to set initial configuration: %d\n",
+			err);
+		goto fini;
+	}
+
+	return 0;
+
+fini:
+	drm_fb_helper_fini(&fbdev->base);
+	return err;
 }
 
-static void tegra_fb_output_poll_changed(struct drm_device *drm)
+static void tegra_fbdev_exit(struct tegra_fbdev *fbdev)
 {
-	struct tegra_drm *tegra = drm->dev_private;
+	drm_fb_helper_unregister_fbi(&fbdev->base);
 
-	if (tegra->fbdev)
-		drm_fb_helper_hotplug_event(&tegra->fbdev->base);
+	if (fbdev->fb) {
+		struct tegra_bo *bo = tegra_fb_get_plane(fbdev->fb, 0);
+
+		/* Undo the special mapping we made in fbdev probe. */
+		if (bo && bo->pages) {
+			vunmap(bo->vaddr);
+			bo->vaddr = NULL;
+		}
+
+		drm_framebuffer_remove(fbdev->fb);
+	}
+
+	drm_fb_helper_fini(&fbdev->base);
+	tegra_fbdev_free(fbdev);
 }
 #endif
 
-static const struct drm_mode_config_funcs tegra_drm_mode_funcs = {
-	.fb_create = tegra_fb_create,
-#ifdef CONFIG_DRM_TEGRA_FBDEV
-	.output_poll_changed = tegra_fb_output_poll_changed,
-#endif
-};
-
-int tegra_drm_fb_init(struct drm_device *drm)
+int tegra_drm_fb_prepare(struct drm_device *drm)
 {
-#ifdef CONFIG_DRM_TEGRA_FBDEV
+#ifdef CONFIG_DRM_FBDEV_EMULATION
 	struct tegra_drm *tegra = drm->dev_private;
-#endif
 
-	drm->mode_config.min_width = 0;
-	drm->mode_config.min_height = 0;
-
-	drm->mode_config.max_width = 4096;
-	drm->mode_config.max_height = 4096;
-
-	drm->mode_config.funcs = &tegra_drm_mode_funcs;
-
-#ifdef CONFIG_DRM_TEGRA_FBDEV
-	tegra->fbdev = tegra_fbdev_create(drm, 32, drm->mode_config.num_crtc,
-					  drm->mode_config.num_connector);
+	tegra->fbdev = tegra_fbdev_create(drm);
 	if (IS_ERR(tegra->fbdev))
 		return PTR_ERR(tegra->fbdev);
 #endif
@@ -393,11 +380,35 @@ int tegra_drm_fb_init(struct drm_device *drm)
 	return 0;
 }
 
-void tegra_drm_fb_exit(struct drm_device *drm)
+void tegra_drm_fb_free(struct drm_device *drm)
 {
-#ifdef CONFIG_DRM_TEGRA_FBDEV
+#ifdef CONFIG_DRM_FBDEV_EMULATION
 	struct tegra_drm *tegra = drm->dev_private;
 
 	tegra_fbdev_free(tegra->fbdev);
+#endif
+}
+
+int tegra_drm_fb_init(struct drm_device *drm)
+{
+#ifdef CONFIG_DRM_FBDEV_EMULATION
+	struct tegra_drm *tegra = drm->dev_private;
+	int err;
+
+	err = tegra_fbdev_init(tegra->fbdev, 32, drm->mode_config.num_crtc,
+			       drm->mode_config.num_connector);
+	if (err < 0)
+		return err;
+#endif
+
+	return 0;
+}
+
+void tegra_drm_fb_exit(struct drm_device *drm)
+{
+#ifdef CONFIG_DRM_FBDEV_EMULATION
+	struct tegra_drm *tegra = drm->dev_private;
+
+	tegra_fbdev_exit(tegra->fbdev);
 #endif
 }

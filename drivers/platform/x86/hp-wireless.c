@@ -1,7 +1,7 @@
 /*
- *  hp-wireless button for Windows 8
+ *  Airplane mode button for HP & Xiaomi laptops
  *
- *  Copyright (C) 2014 Alex Hung <alex.hung@canonical.com>
+ *  Copyright (C) 2014-2017 Alex Hung <alex.hung@canonical.com>
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -29,11 +29,13 @@
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Alex Hung");
 MODULE_ALIAS("acpi*:HPQ6001:*");
+MODULE_ALIAS("acpi*:WSTADEF:*");
 
 static struct input_dev *hpwl_input_dev;
 
 static const struct acpi_device_id hpwl_ids[] = {
 	{"HPQ6001", 0},
+	{"WSTADEF", 0},
 	{"", 0},
 };
 
@@ -85,6 +87,9 @@ static int hpwl_add(struct acpi_device *device)
 	int err;
 
 	err = hp_wireless_input_setup();
+	if (err)
+		pr_err("Failed to setup hp wireless hotkeys\n");
+
 	return err;
 }
 
@@ -105,28 +110,4 @@ static struct acpi_driver hpwl_driver = {
 	},
 };
 
-static int __init hpwl_init(void)
-{
-	int err;
-
-	pr_info("Initializing HPQ6001 module\n");
-	err = acpi_bus_register_driver(&hpwl_driver);
-	if (err) {
-		pr_err("Unable to register HP wireless control driver.\n");
-		goto error_acpi_register;
-	}
-
-	return 0;
-
-error_acpi_register:
-	return err;
-}
-
-static void __exit hpwl_exit(void)
-{
-	pr_info("Exiting HPQ6001 module\n");
-	acpi_bus_unregister_driver(&hpwl_driver);
-}
-
-module_init(hpwl_init);
-module_exit(hpwl_exit);
+module_acpi_driver(hpwl_driver);

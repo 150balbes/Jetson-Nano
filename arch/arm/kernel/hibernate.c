@@ -21,14 +21,15 @@
 #include <asm/idmap.h>
 #include <asm/suspend.h>
 #include <asm/memory.h>
-#include "arch_hib.h"
+#include <asm/sections.h>
+#include "reboot.h"
 
 int pfn_is_nosave(unsigned long pfn)
 {
-	unsigned long nosave_begin_pfn = __pa(&__nosave_begin) >> PAGE_SHIFT;
-	unsigned long nosave_end_pfn =
-			PAGE_ALIGN(__pa(&__nosave_end)) >> PAGE_SHIFT;
-	return (pfn >= nosave_begin_pfn) && (pfn < nosave_end_pfn);
+	unsigned long nosave_begin_pfn = virt_to_pfn(&__nosave_begin);
+	unsigned long nosave_end_pfn = virt_to_pfn(&__nosave_end - 1);
+
+	return (pfn >= nosave_begin_pfn) && (pfn <= nosave_end_pfn);
 }
 
 void notrace save_processor_state(void)
@@ -61,7 +62,7 @@ static int notrace arch_save_image(unsigned long unused)
 
 	ret = swsusp_save();
 	if (ret == 0)
-		soft_restart(virt_to_phys(cpu_resume));
+		_soft_restart(virt_to_idmap(cpu_resume), false);
 	return ret;
 }
 
@@ -86,7 +87,7 @@ static void notrace arch_restore_image(void *unused)
 	for (pbe = restore_pblist; pbe; pbe = pbe->next)
 		copy_page(pbe->orig_address, pbe->address);
 
-	soft_restart(virt_to_phys(cpu_resume));
+	_soft_restart(virt_to_idmap(cpu_resume), false);
 }
 
 static u64 resume_stack[PAGE_SIZE/2/sizeof(u64)] __nosavedata;

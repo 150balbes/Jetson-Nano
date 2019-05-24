@@ -7,11 +7,13 @@
  * 2 of the License, or (at your option) any later version.
 **/
 
+#include <linux/time.h>
 #include <linux/oprofile.h>
 #include <linux/sched.h>
 #include <asm/processor.h>
-#include <asm/uaccess.h>
+#include <linux/uaccess.h>
 #include <asm/compat.h>
+#include <asm/oprofile_impl.h>
 
 #define STACK_SP(STACK)		*(STACK)
 
@@ -29,7 +31,7 @@ static unsigned int user_getsp32(unsigned int sp, int is_first)
 	unsigned int stack_frame[2];
 	void __user *p = compat_ptr(sp);
 
-	if (!access_ok(VERIFY_READ, p, sizeof(stack_frame)))
+	if (!access_ok(p, sizeof(stack_frame)))
 		return 0;
 
 	/*
@@ -55,7 +57,7 @@ static unsigned long user_getsp64(unsigned long sp, int is_first)
 {
 	unsigned long stack_frame[3];
 
-	if (!access_ok(VERIFY_READ, (void __user *)sp, sizeof(stack_frame)))
+	if (!access_ok((void __user *)sp, sizeof(stack_frame)))
 		return 0;
 
 	if (__copy_from_user_inatomic(stack_frame, (void __user *)sp,
@@ -104,6 +106,7 @@ void op_powerpc_backtrace(struct pt_regs * const regs, unsigned int depth)
 			first_frame = 0;
 		}
 	} else {
+		pagefault_disable();
 #ifdef CONFIG_PPC64
 		if (!is_32bit_task()) {
 			while (depth--) {
@@ -112,7 +115,7 @@ void op_powerpc_backtrace(struct pt_regs * const regs, unsigned int depth)
 					break;
 				first_frame = 0;
 			}
-
+			pagefault_enable();
 			return;
 		}
 #endif
@@ -123,5 +126,6 @@ void op_powerpc_backtrace(struct pt_regs * const regs, unsigned int depth)
 				break;
 			first_frame = 0;
 		}
+		pagefault_enable();
 	}
 }

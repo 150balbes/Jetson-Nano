@@ -1,7 +1,0 @@
-#
-#Smart card driver configuration
-#
-
-config AML_SMARTCARD
-	bool "Amlogic Smartcard driver"
-	default n

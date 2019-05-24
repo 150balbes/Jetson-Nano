@@ -1,22 +1,7 @@
+// SPDX-License-Identifier: LGPL-2.1
 /*
  * Copyright (C) 2009, 2010 Red Hat Inc, Steven Rostedt <srostedt@redhat.com>
  *
- * ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation;
- * version 2.1 of the License (not later!)
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this program; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
- *
- * ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -24,8 +9,8 @@
 
 #include "kbuffer.h"
 
-#define MISSING_EVENTS (1 << 31)
-#define MISSING_STORED (1 << 30)
+#define MISSING_EVENTS (1UL << 31)
+#define MISSING_STORED (1UL << 30)
 
 #define COMMIT_MASK ((1 << 27) - 1)
 
@@ -315,6 +300,7 @@ static unsigned int old_update_pointers(struct kbuffer *kbuf)
 		extend += delta;
 		delta = extend;
 		ptr += 4;
+		length = 0;
 		break;
 
 	case OLD_RINGBUF_TYPE_TIME_STAMP:
@@ -372,7 +358,6 @@ translate_data(struct kbuffer *kbuf, void *data, void **rptr,
 	switch (type_len) {
 	case KBUFFER_TYPE_PADDING:
 		*length = read_4(kbuf, data);
-		data += *length;
 		break;
 
 	case KBUFFER_TYPE_TIME_EXTEND:
@@ -623,6 +608,7 @@ void *kbuffer_read_at_offset(struct kbuffer *kbuf, int offset,
 
 	/* Reset the buffer */
 	kbuffer_load_subbuffer(kbuf, kbuf->subbuffer);
+	data = kbuffer_read_event(kbuf, ts);
 
 	while (kbuf->curr < offset) {
 		data = kbuffer_next_event(kbuf, ts);
@@ -729,4 +715,15 @@ void kbuffer_set_old_format(struct kbuffer *kbuf)
 	kbuf->flags |= KBUFFER_FL_OLD_FORMAT;
 
 	kbuf->next_event = __old_next_event;
+}
+
+/**
+ * kbuffer_start_of_data - return offset of where data starts on subbuffer
+ * @kbuf:	The kbuffer
+ *
+ * Returns the location on the subbuffer where the data starts.
+ */
+int kbuffer_start_of_data(struct kbuffer *kbuf)
+{
+	return kbuf->start;
 }

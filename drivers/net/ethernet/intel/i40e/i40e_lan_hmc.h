@@ -1,28 +1,5 @@
-/*******************************************************************************
- *
- * Intel Ethernet Controller XL710 Family Linux Driver
- * Copyright(c) 2013 - 2014 Intel Corporation.
- *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms and conditions of the GNU General Public License,
- * version 2, as published by the Free Software Foundation.
- *
- * This program is distributed in the hope it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
- * more details.
- *
- * You should have received a copy of the GNU General Public License along
- * with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * The full GNU General Public License is included in this distribution in
- * the file called "COPYING".
- *
- * Contact Information:
- * e1000-devel Mailing List <e1000-devel@lists.sourceforge.net>
- * Intel Corporation, 5200 N.E. Elam Young Parkway, Hillsboro, OR 97124-6497
- *
- ******************************************************************************/
+/* SPDX-License-Identifier: GPL-2.0 */
+/* Copyright(c) 2013 - 2018 Intel Corporation. */
 
 #ifndef _I40E_LAN_HMC_H_
 #define _I40E_LAN_HMC_H_
@@ -32,16 +9,22 @@ struct i40e_hw;
 
 /* HMC element context information */
 
-/* Rx queue context data */
+/* Rx queue context data
+ *
+ * The sizes of the variables may be larger than needed due to crossing byte
+ * boundaries. If we do not have the width of the variable set to the correct
+ * size then we could end up shifting bits off the top of the variable when the
+ * variable is at the top of a byte and crosses over into the next byte.
+ */
 struct i40e_hmc_obj_rxq {
 	u16 head;
-	u8  cpuid;
+	u16 cpuid; /* bigger than needed, see above for reason */
 	u64 base;
 	u16 qlen;
 #define I40E_RXQ_CTX_DBUFF_SHIFT 7
-	u8  dbuff;
+	u16 dbuff; /* bigger than needed, see above for reason */
 #define I40E_RXQ_CTX_HBUFF_SHIFT 6
-	u8  hbuff;
+	u16 hbuff; /* bigger than needed, see above for reason */
 	u8  dtype;
 	u8  dsize;
 	u8  crcstrip;
@@ -50,15 +33,22 @@ struct i40e_hmc_obj_rxq {
 	u8  hsplit_0;
 	u8  hsplit_1;
 	u8  showiv;
-	u16 rxmax;
+	u32 rxmax; /* bigger than needed, see above for reason */
 	u8  tphrdesc_ena;
 	u8  tphwdesc_ena;
 	u8  tphdata_ena;
 	u8  tphhead_ena;
-	u8  lrxqthresh;
+	u16 lrxqthresh; /* bigger than needed, see above for reason */
+	u8  prefena;	/* NOTE: normally must be set to 1 at init */
 };
 
-/* Tx queue context data */
+/* Tx queue context data
+*
+* The sizes of the variables may be larger than needed due to crossing byte
+* boundaries. If we do not have the width of the variable set to the correct
+* size then we could end up shifting bits off the top of the variable when the
+* variable is at the top of a byte and crosses over into the next byte.
+*/
 struct i40e_hmc_obj_txq {
 	u16 head;
 	u8  new_context;
@@ -68,7 +58,7 @@ struct i40e_hmc_obj_txq {
 	u8  fd_ena;
 	u8  alt_vlan_ena;
 	u16 thead_wb;
-	u16 cpuid;
+	u8  cpuid;
 	u8  head_wb_ena;
 	u16 qlen;
 	u8  tphrdesc_ena;

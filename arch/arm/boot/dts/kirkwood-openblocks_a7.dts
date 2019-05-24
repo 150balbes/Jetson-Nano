@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  * Device Tree file for OpenBlocks A7 board
  *
@@ -5,9 +6,6 @@
  *
  * Thomas Petazzoni <thomas.petazzoni@free-electrons.com>
  *
- * This file is licensed under the terms of the GNU General Public
- * License version 2.  This program is licensed "as is" without any
- * warranty of any kind, whether express or implied.
  */
 
 /dts-v1/;
@@ -26,19 +24,16 @@
 
 	chosen {
 		bootargs = "console=ttyS0,115200n8 earlyprintk";
+		stdout-path = &uart0;
 	};
 
 	ocp@f1000000 {
 		serial@12000 {
-			status = "ok";
-			pinctrl-0 = <&pmx_uart0>;
-			pinctrl-names = "default";
+			status = "okay";
 		};
 
 		serial@12100 {
-			status = "ok";
-			pinctrl-0 = <&pmx_uart1>;
-			pinctrl-names = "default";
+			status = "okay";
 		};
 
 		sata@80000 {
@@ -48,17 +43,16 @@
 
 		i2c@11100 {
 			status = "okay";
-			pinctrl-0 = <&pmx_twsi1>;
-			pinctrl-names = "default";
 
 			s24c02: s24c02@50 {
-				compatible = "24c02";
+				compatible = "atmel,24c02";
 				reg = <0x50>;
 			};
 		};
 
-		pinctrl: pinctrl@10000 {
-			pinctrl-0 = <&pmx_dip_switches &pmx_gpio_header>;
+		pinctrl: pin-controller@10000 {
+			pinctrl-0 = <&pmx_dip_switches &pmx_gpio_header
+				     &pmx_gpio_header_gpo>;
 			pinctrl-names = "default";
 
 			pmx_uart0: pmx-uart0 {
@@ -90,9 +84,14 @@
 			 * ground.
 			 */
 			pmx_gpio_header: pmx-gpio-header {
-				marvell,pins = "mpp17", "mpp7", "mpp29", "mpp28",
+				marvell,pins = "mpp17", "mpp29", "mpp28",
 					       "mpp35", "mpp34", "mpp40";
 				marvell,function = "gpio";
+			};
+
+			pmx_gpio_header_gpo: pxm-gpio-header-gpo {
+				marvell,pins = "mpp7";
+				marvell,function = "gpo";
 			};
 
 			pmx_gpio_init: pmx-init {
@@ -108,13 +107,6 @@
 			pmx_leds: pmx-leds {
 				marvell,pins = "mpp41", "mpp42", "mpp43";
 				marvell,function = "gpio";
-			};
-
-			pmx_ge1: pmx-ge1 {
-				marvell,pins = "mpp20", "mpp21", "mpp22", "mpp23",
-					       "mpp24", "mpp25", "mpp26", "mpp27",
-					       "mpp30", "mpp31", "mpp32", "mpp33";
-				marvell,function = "ge1";
 			};
 		};
 	};
@@ -147,7 +139,7 @@
 		#address-cells = <1>;
 		#size-cells = <0>;
 
-		button@1 {
+		button {
 			label = "Init Button";
 			linux,code = <KEY_POWER>;
 			gpios = <&gpio1 6 GPIO_ACTIVE_HIGH>;
@@ -158,8 +150,6 @@
 &nand {
 	chip-delay = <25>;
 	status = "okay";
-	pinctrl-0 = <&pmx_nand>;
-	pinctrl-names = "default";
 
 	partition@0 {
 		label = "uboot";
@@ -213,8 +203,6 @@
 
 &eth1 {
 	status = "okay";
-	pinctrl-0 = <&pmx_ge1>;
-	pinctrl-names = "default";
 	ethernet1-port@0 {
 		phy-handle = <&ethphy1>;
 	};

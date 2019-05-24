@@ -283,7 +283,7 @@ struct snd_msnd {
 
 };
 
-void snd_msnd_init_queue(void *base, int start, int size);
+void snd_msnd_init_queue(void __iomem *base, int start, int size);
 
 int snd_msnd_send_dsp_cmd(struct snd_msnd *chip, u8 cmd);
 int snd_msnd_send_word(struct snd_msnd *chip,
@@ -297,7 +297,7 @@ int snd_msnd_disable_irq(struct snd_msnd *chip);
 void snd_msnd_dsp_halt(struct snd_msnd *chip, struct file *file);
 int snd_msnd_DAPQ(struct snd_msnd *chip, int start);
 int snd_msnd_DARQ(struct snd_msnd *chip, int start);
-int snd_msnd_pcm(struct snd_card *card, int device, struct snd_pcm **rpcm);
+int snd_msnd_pcm(struct snd_card *card, int device);
 
 int snd_msndmidi_new(struct snd_card *card, int device);
 void snd_msndmidi_input_read(void *mpu);

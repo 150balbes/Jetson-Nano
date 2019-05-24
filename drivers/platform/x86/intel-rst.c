@@ -1,26 +1,11 @@
+// SPDX-License-Identifier: GPL-2.0+
 /*
  *  Copyright 2013 Matthew Garrett <mjg59@srcf.ucam.org>
- *
- *  This program is free software; you can redistribute it and/or modify
- *  it under the terms of the GNU General Public License as published by
- *  the Free Software Foundation; either version 2 of the License, or
- *  (at your option) any later version.
- *
- *  This program is distributed in the hope that it will be useful,
- *  but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *  GNU General Public License for more details.
- *
- *  You should have received a copy of the GNU General Public License along
- *  with this program; if not, write to the Free Software Foundation, Inc.,
- *  51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
-
-#include <linux/init.h>
+#include <linux/acpi.h>
 #include <linux/module.h>
 #include <linux/slab.h>
-#include <linux/acpi.h>
 
 MODULE_LICENSE("GPL");
 
@@ -35,7 +20,7 @@ static ssize_t irst_show_wakeup_events(struct device *dev,
 	acpi = to_acpi_device(dev);
 
 	status = acpi_evaluate_integer(acpi->handle, "GFFS", NULL, &value);
-	if (!ACPI_SUCCESS(status))
+	if (ACPI_FAILURE(status))
 		return -EINVAL;
 
 	return sprintf(buf, "%lld\n", value);
@@ -53,13 +38,11 @@ static ssize_t irst_store_wakeup_events(struct device *dev,
 	acpi = to_acpi_device(dev);
 
 	error = kstrtoul(buf, 0, &value);
-
 	if (error)
 		return error;
 
 	status = acpi_execute_simple_method(acpi->handle, "SFFS", value);
-
-	if (!ACPI_SUCCESS(status))
+	if (ACPI_FAILURE(status))
 		return -EINVAL;
 
 	return count;
@@ -81,7 +64,7 @@ static ssize_t irst_show_wakeup_time(struct device *dev,
 	acpi = to_acpi_device(dev);
 
 	status = acpi_evaluate_integer(acpi->handle, "GFTV", NULL, &value);
-	if (!ACPI_SUCCESS(status))
+	if (ACPI_FAILURE(status))
 		return -EINVAL;
 
 	return sprintf(buf, "%lld\n", value);
@@ -99,13 +82,11 @@ static ssize_t irst_store_wakeup_time(struct device *dev,
 	acpi = to_acpi_device(dev);
 
 	error = kstrtoul(buf, 0, &value);
-
 	if (error)
 		return error;
 
 	status = acpi_execute_simple_method(acpi->handle, "SFTV", value);
-
-	if (!ACPI_SUCCESS(status))
+	if (ACPI_FAILURE(status))
 		return -EINVAL;
 
 	return count;
@@ -119,21 +100,16 @@ static struct device_attribute irst_timeout_attr = {
 
 static int irst_add(struct acpi_device *acpi)
 {
-	int error = 0;
+	int error;
 
 	error = device_create_file(&acpi->dev, &irst_timeout_attr);
-	if (error)
-		goto out;
+	if (unlikely(error))
+		return error;
 
 	error = device_create_file(&acpi->dev, &irst_wakeup_attr);
-	if (error)
-		goto out_timeout;
+	if (unlikely(error))
+		device_remove_file(&acpi->dev, &irst_timeout_attr);
 
-	return 0;
-
-out_timeout:
-	device_remove_file(&acpi->dev, &irst_timeout_attr);
-out:
 	return error;
 }
 

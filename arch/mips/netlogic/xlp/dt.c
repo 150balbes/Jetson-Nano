@@ -33,7 +33,7 @@
  */
 
 #include <linux/kernel.h>
-#include <linux/bootmem.h>
+#include <linux/memblock.h>
 
 #include <linux/of_fdt.h>
 #include <linux/of_platform.h>
@@ -41,14 +41,19 @@
 
 #include <asm/prom.h>
 
-extern u32 __dtb_xlp_evp_begin[], __dtb_xlp_svp_begin[],
-	__dtb_xlp_fvp_begin[], __dtb_xlp_gvp_begin[], __dtb_start[];
+extern u32 __dtb_xlp_evp_begin[], __dtb_xlp_svp_begin[], __dtb_xlp_fvp_begin[],
+	__dtb_xlp_gvp_begin[], __dtb_xlp_rvp_begin[];
 static void *xlp_fdt_blob;
 
 void __init *xlp_dt_init(void *fdtp)
 {
 	if (!fdtp) {
-		switch (current_cpu_data.processor_id & 0xff00) {
+		switch (current_cpu_data.processor_id & PRID_IMP_MASK) {
+#ifdef CONFIG_DT_XLP_RVP
+		case PRID_IMP_NETLOGIC_XLP5XX:
+			fdtp = __dtb_xlp_rvp_begin;
+			break;
+#endif
 #ifdef CONFIG_DT_XLP_GVP
 		case PRID_IMP_NETLOGIC_XLP9XX:
 			fdtp = __dtb_xlp_gvp_begin;
@@ -82,39 +87,9 @@ void __init *xlp_dt_init(void *fdtp)
 void __init xlp_early_init_devtree(void)
 {
 	__dt_setup_arch(xlp_fdt_blob);
-	strlcpy(arcs_cmdline, boot_command_line, COMMAND_LINE_SIZE);
 }
 
 void __init device_tree_init(void)
 {
-	unsigned long base, size;
-	struct boot_param_header *fdtp = xlp_fdt_blob;
-
-	if (!fdtp)
-		return;
-
-	base = virt_to_phys(fdtp);
-	size = be32_to_cpu(fdtp->totalsize);
-
-	/* Before we do anything, lets reserve the dt blob */
-	reserve_bootmem(base, size, BOOTMEM_DEFAULT);
-
-	unflatten_device_tree();
-
-	/* free the space reserved for the dt blob */
-	free_bootmem(base, size);
+	unflatten_and_copy_device_tree();
 }
-
-static struct of_device_id __initdata xlp_ids[] = {
-	{ .compatible = "simple-bus", },
-	{},
-};
-
-int __init xlp8xx_ds_publish_devices(void)
-{
-	if (!of_have_populated_dt())
-		return 0;
-	return of_platform_bus_probe(NULL, xlp_ids, NULL);
-}
-
-device_initcall(xlp8xx_ds_publish_devices);

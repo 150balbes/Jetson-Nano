@@ -17,6 +17,7 @@
 #include <asm/entry.h>
 #include <asm/arcregs.h>
 #include <asm/cache.h>
+#include <asm/irqflags.h>
 
 .macro CPU_EARLY_SETUP
 
@@ -47,58 +48,65 @@
 	sr	r5, [ARC_REG_DC_CTRL]
 
 1:
+
+#ifdef CONFIG_ISA_ARCV2
+	; Unaligned access is disabled at reset, so re-enable early as
+	; gcc 7.3.1 (ARC GNU 2018.03) onwards generates unaligned access
+	; by default
+	lr	r5, [status32]
+	bset	r5, r5, STATUS_AD_BIT
+	kflag	r5
+#endif
 .endm
 
-	.cpu A7
-
 	.section .init.text, "ax",@progbits
-	.type stext, @function
-	.globl stext
-stext:
-	;-------------------------------------------------------------------
-	; Don't clobber r0-r2 yet. It might have bootloader provided info
-	;-------------------------------------------------------------------
+
+;----------------------------------------------------------------
+; Default Reset Handler (jumped into from Reset vector)
+; - Don't clobber r0,r1,r2 as they might have u-boot provided args
+; - Platforms can override this weak version if needed
+;----------------------------------------------------------------
+WEAK(res_service)
+	j	stext
+END(res_service)
+
+;----------------------------------------------------------------
+; Kernel Entry point
+;----------------------------------------------------------------
+ENTRY(stext)
 
 	CPU_EARLY_SETUP
 
 #ifdef CONFIG_SMP
-	; Ensure Boot (Master) proceeds. Others wait in platform dependent way
-	;	IDENTITY Reg [ 3  2  1  0 ]
-	;	(cpu-id)             ^^^	=> Zero for UP ARC700
-	;					=> #Core-ID if SMP (Master 0)
-	; Note that non-boot CPUs might not land here if halt-on-reset and
-	; instead breath life from @first_lines_of_secondary, but we still
-	; need to make sure only boot cpu takes this path.
 	GET_CPU_ID  r5
 	cmp	r5, 0
-	mov.ne	r0, r5
-	jne	arc_platform_smp_wait_to_boot
+	mov.nz	r0, r5
+	bz	.Lmaster_proceed
+
+	; Non-Masters wait for Master to boot enough and bring them up
+	; when they resume, tail-call to entry point
+	mov	blink, @first_lines_of_secondary
+	j	arc_platform_smp_wait_to_boot
+
+.Lmaster_proceed:
 #endif
+
 	; Clear BSS before updating any globals
 	; XXX: use ZOL here
 	mov	r5, __bss_start
-	mov	r6, __bss_stop
+	sub	r6, __bss_stop, r5
+	lsr.f	lp_count, r6, 2
+	lpnz	1f
+	st.ab   0, [r5, 4]
 1:
-	st.ab   0, [r5,4]
-	brlt    r5, r6, 1b
 
 	; Uboot - kernel ABI
 	;    r0 = [0] No uboot interaction, [1] cmdline in r2, [2] DTB in r2
-	;    r1 = magic number (board identity, unused as of now
+	;    r1 = magic number (always zero as of now)
 	;    r2 = pointer to uboot provided cmdline or external DTB in mem
-	; These are handled later in setup_arch()
+	; These are handled later in handle_uboot_args()
 	st	r0, [@uboot_tag]
 	st	r2, [@uboot_arg]
-
-	; Identify if running on ISS vs Silicon
-	; 	IDENTITY Reg [ 3  2  1  0 ]
-	;	(chip-id)      ^^^^^		==> 0xffff for ISS
-	lr	r0, [identity]
-	lsr	r3, r0, 16
-	cmp	r3, 0xffff
-	mov.z	r4, 0
-	mov.nz	r4, 1
-	st	r4, [@running_on_hw]
 
 	; setup "current" tsk and optionally cache it in dedicated r25
 	mov	r9, @init_task
@@ -111,18 +119,14 @@ stext:
 	GET_TSK_STACK_BASE r9, sp	; r9 = tsk, sp = stack base(output)
 
 	j	start_kernel	; "C" entry point
+END(stext)
 
 #ifdef CONFIG_SMP
 ;----------------------------------------------------------------
 ;     First lines of code run by secondary before jumping to 'C'
 ;----------------------------------------------------------------
 	.section .text, "ax",@progbits
-	.type first_lines_of_secondary, @function
-	.globl first_lines_of_secondary
-
-first_lines_of_secondary:
-
-	CPU_EARLY_SETUP
+ENTRY(first_lines_of_secondary)
 
 	; setup per-cpu idle task as "current" on this CPU
 	ld	r0, [@secondary_idle_tsk]
@@ -135,5 +139,5 @@ first_lines_of_secondary:
 	GET_TSK_STACK_BASE r0, sp
 
 	j	start_kernel_secondary
-
+END(first_lines_of_secondary)
 #endif

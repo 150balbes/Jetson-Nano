@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * Communication Processor Module v2.
  *
@@ -488,7 +489,6 @@ typedef struct scc_trans {
 #define FCC_GFMR_DIAG_ALE	((uint)0xc0000000)
 #define FCC_GFMR_TCI		((uint)0x20000000)
 #define FCC_GFMR_TRX		((uint)0x10000000)
-#define FCC_GFMR_TTX		((uint)0x08000000)
 #define FCC_GFMR_TTX		((uint)0x08000000)
 #define FCC_GFMR_CDP		((uint)0x04000000)
 #define FCC_GFMR_CTSP		((uint)0x02000000)

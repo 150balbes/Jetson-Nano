@@ -29,6 +29,9 @@
 #include <net/sock.h>
 #include <linux/seq_file.h>
 
+#define BT_SUBSYS_VERSION	2
+#define BT_SUBSYS_REVISION	22
+
 #ifndef AF_BLUETOOTH
 #define AF_BLUETOOTH	31
 #define PF_BLUETOOTH	AF_BLUETOOTH
@@ -65,6 +68,7 @@ struct bt_security {
 #define BT_SECURITY_LOW		1
 #define BT_SECURITY_MEDIUM	2
 #define BT_SECURITY_HIGH	3
+#define BT_SECURITY_FIPS	4
 
 #define BT_DEFER_SETUP	7
 
@@ -119,13 +123,32 @@ struct bt_voice {
 #define BT_RCVMTU		13
 
 __printf(1, 2)
-int bt_info(const char *fmt, ...);
+void bt_info(const char *fmt, ...);
 __printf(1, 2)
-int bt_err(const char *fmt, ...);
+void bt_warn(const char *fmt, ...);
+__printf(1, 2)
+void bt_err(const char *fmt, ...);
+__printf(1, 2)
+void bt_err_ratelimited(const char *fmt, ...);
 
 #define BT_INFO(fmt, ...)	bt_info(fmt "\n", ##__VA_ARGS__)
+#define BT_WARN(fmt, ...)	bt_warn(fmt "\n", ##__VA_ARGS__)
 #define BT_ERR(fmt, ...)	bt_err(fmt "\n", ##__VA_ARGS__)
 #define BT_DBG(fmt, ...)	pr_debug(fmt "\n", ##__VA_ARGS__)
+
+#define BT_ERR_RATELIMITED(fmt, ...) bt_err_ratelimited(fmt "\n", ##__VA_ARGS__)
+
+#define bt_dev_info(hdev, fmt, ...)				\
+	BT_INFO("%s: " fmt, (hdev)->name, ##__VA_ARGS__)
+#define bt_dev_warn(hdev, fmt, ...)				\
+	BT_WARN("%s: " fmt, (hdev)->name, ##__VA_ARGS__)
+#define bt_dev_err(hdev, fmt, ...)				\
+	BT_ERR("%s: " fmt, (hdev)->name, ##__VA_ARGS__)
+#define bt_dev_dbg(hdev, fmt, ...)				\
+	BT_DBG("%s: " fmt, (hdev)->name, ##__VA_ARGS__)
+
+#define bt_dev_err_ratelimited(hdev, fmt, ...)			\
+	BT_ERR_RATELIMITED("%s: " fmt, (hdev)->name, ##__VA_ARGS__)
 
 /* Connection and socket states */
 enum {
@@ -177,7 +200,7 @@ typedef struct {
 #define BDADDR_LE_PUBLIC	0x01
 #define BDADDR_LE_RANDOM	0x02
 
-static inline bool bdaddr_type_is_valid(__u8 type)
+static inline bool bdaddr_type_is_valid(u8 type)
 {
 	switch (type) {
 	case BDADDR_BREDR:
@@ -189,7 +212,7 @@ static inline bool bdaddr_type_is_valid(__u8 type)
 	return false;
 }
 
-static inline bool bdaddr_type_is_le(__u8 type)
+static inline bool bdaddr_type_is_le(u8 type)
 {
 	switch (type) {
 	case BDADDR_LE_PUBLIC:
@@ -213,7 +236,7 @@ static inline void bacpy(bdaddr_t *dst, const bdaddr_t *src)
 	memcpy(dst, src, sizeof(bdaddr_t));
 }
 
-void baswap(bdaddr_t *dst, bdaddr_t *src);
+void baswap(bdaddr_t *dst, const bdaddr_t *src);
 
 /* Common socket structures and functions */
 
@@ -244,64 +267,78 @@ int  bt_sock_register(int proto, const struct net_proto_family *ops);
 void bt_sock_unregister(int proto);
 void bt_sock_link(struct bt_sock_list *l, struct sock *s);
 void bt_sock_unlink(struct bt_sock_list *l, struct sock *s);
-int  bt_sock_recvmsg(struct kiocb *iocb, struct socket *sock,
-				struct msghdr *msg, size_t len, int flags);
-int  bt_sock_stream_recvmsg(struct kiocb *iocb, struct socket *sock,
-			struct msghdr *msg, size_t len, int flags);
-uint bt_sock_poll(struct file *file, struct socket *sock, poll_table *wait);
+int  bt_sock_recvmsg(struct socket *sock, struct msghdr *msg, size_t len,
+		     int flags);
+int  bt_sock_stream_recvmsg(struct socket *sock, struct msghdr *msg,
+			    size_t len, int flags);
+__poll_t bt_sock_poll(struct file *file, struct socket *sock, poll_table *wait);
 int  bt_sock_ioctl(struct socket *sock, unsigned int cmd, unsigned long arg);
 int  bt_sock_wait_state(struct sock *sk, int state, unsigned long timeo);
 int  bt_sock_wait_ready(struct sock *sk, unsigned long flags);
 
-void bt_accept_enqueue(struct sock *parent, struct sock *sk);
+void bt_accept_enqueue(struct sock *parent, struct sock *sk, bool bh);
 void bt_accept_unlink(struct sock *sk);
 struct sock *bt_accept_dequeue(struct sock *parent, struct socket *newsock);
 
 /* Skb helpers */
 struct l2cap_ctrl {
-	unsigned int	sframe:1,
-			poll:1,
-			final:1,
-			fcs:1,
-			sar:2,
-			super:2;
-	__u16		reqseq;
-	__u16		txseq;
-	__u8		retries;
+	u8	sframe:1,
+		poll:1,
+		final:1,
+		fcs:1,
+		sar:2,
+		super:2;
+
+	u16	reqseq;
+	u16	txseq;
+	u8	retries;
+	__le16  psm;
+	bdaddr_t bdaddr;
+	struct l2cap_chan *chan;
 };
 
 struct hci_dev;
 
-typedef void (*hci_req_complete_t)(struct hci_dev *hdev, u8 status);
+typedef void (*hci_req_complete_t)(struct hci_dev *hdev, u8 status, u16 opcode);
+typedef void (*hci_req_complete_skb_t)(struct hci_dev *hdev, u8 status,
+				       u16 opcode, struct sk_buff *skb);
 
-struct hci_req_ctrl {
-	bool			start;
-	u8			event;
-	hci_req_complete_t	complete;
+#define HCI_REQ_START	BIT(0)
+#define HCI_REQ_SKB	BIT(1)
+
+struct hci_ctrl {
+	u16 opcode;
+	u8 req_flags;
+	u8 req_event;
+	union {
+		hci_req_complete_t req_complete;
+		hci_req_complete_skb_t req_complete_skb;
+	};
 };
 
 struct bt_skb_cb {
-	__u8 pkt_type;
-	__u8 incoming;
-	__u16 expect;
-	__u8 force_active;
-	struct l2cap_chan *chan;
-	struct l2cap_ctrl control;
-	struct hci_req_ctrl req;
-	bdaddr_t bdaddr;
-	__le16 psm;
+	u8 pkt_type;
+	u8 force_active;
+	u16 expect;
+	u8 incoming:1;
+	union {
+		struct l2cap_ctrl l2cap;
+		struct hci_ctrl hci;
+	};
 };
 #define bt_cb(skb) ((struct bt_skb_cb *)((skb)->cb))
+
+#define hci_skb_pkt_type(skb) bt_cb((skb))->pkt_type
+#define hci_skb_expect(skb) bt_cb((skb))->expect
+#define hci_skb_opcode(skb) bt_cb((skb))->hci.opcode
 
 static inline struct sk_buff *bt_skb_alloc(unsigned int len, gfp_t how)
 {
 	struct sk_buff *skb;
 
 	skb = alloc_skb(len + BT_SKB_RESERVE, how);
-	if (skb) {
+	if (skb)
 		skb_reserve(skb, BT_SKB_RESERVE);
-		bt_cb(skb)->incoming  = 0;
-	}
 	return skb;
 }
 
@@ -311,10 +348,8 @@ static inline struct sk_buff *bt_skb_send_alloc(struct sock *sk,
 	struct sk_buff *skb;
 
 	skb = sock_alloc_send_skb(sk, len + BT_SKB_RESERVE, nb, err);
-	if (skb) {
+	if (skb)
 		skb_reserve(skb, BT_SKB_RESERVE);
-		bt_cb(skb)->incoming  = 0;
-	}
 
 	if (!skb && *err)
 		return NULL;
@@ -335,7 +370,13 @@ out:
 	return NULL;
 }
 
-int bt_to_errno(__u16 code);
+int bt_to_errno(u16 code);
+
+void hci_sock_set_flag(struct sock *sk, int nr);
+void hci_sock_clear_flag(struct sock *sk, int nr);
+int hci_sock_test_flag(struct sock *sk, int nr);
+unsigned short hci_sock_get_channel(struct sock *sk);
+u32 hci_sock_get_cookie(struct sock *sk);
 
 int hci_sock_init(void);
 void hci_sock_cleanup(void);
@@ -353,8 +394,22 @@ extern struct dentry *bt_debugfs;
 int l2cap_init(void);
 void l2cap_exit(void);
 
+#if IS_ENABLED(CONFIG_BT_BREDR)
 int sco_init(void);
 void sco_exit(void);
+#else
+static inline int sco_init(void)
+{
+	return 0;
+}
+
+static inline void sco_exit(void)
+{
+}
+#endif
+
+int mgmt_init(void);
+void mgmt_exit(void);
 
 void bt_sock_reclassify_lock(struct sock *sk, int proto);
 

@@ -9,10 +9,13 @@
 #include <linux/backlight.h>
 #include <linux/err.h>
 #include <linux/fb.h>
-#include <linux/gpio.h>
+#include <linux/gpio.h> /* Only for legacy support */
+#include <linux/gpio/consumer.h>
 #include <linux/init.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
+#include <linux/of.h>
+#include <linux/of_gpio.h>
 #include <linux/platform_data/gpio_backlight.h>
 #include <linux/platform_device.h>
 #include <linux/slab.h>
@@ -21,8 +24,8 @@ struct gpio_backlight {
 	struct device *dev;
 	struct device *fbdev;
 
-	int gpio;
-	int active;
+	struct gpio_desc *gpiod;
+	int def_value;
 };
 
 static int gpio_backlight_update_status(struct backlight_device *bl)
@@ -35,14 +38,9 @@ static int gpio_backlight_update_status(struct backlight_device *bl)
 	    bl->props.state & (BL_CORE_SUSPENDED | BL_CORE_FBBLANK))
 		brightness = 0;
 
-	gpio_set_value(gbl->gpio, brightness ? gbl->active : !gbl->active);
+	gpiod_set_value_cansleep(gbl->gpiod, brightness);
 
 	return 0;
-}
-
-static int gpio_backlight_get_brightness(struct backlight_device *bl)
-{
-	return bl->props.brightness;
 }
 
 static int gpio_backlight_check_fb(struct backlight_device *bl,
@@ -56,9 +54,33 @@ static int gpio_backlight_check_fb(struct backlight_device *bl,
 static const struct backlight_ops gpio_backlight_ops = {
 	.options	= BL_CORE_SUSPENDRESUME,
 	.update_status	= gpio_backlight_update_status,
-	.get_brightness	= gpio_backlight_get_brightness,
 	.check_fb	= gpio_backlight_check_fb,
 };
+
+static int gpio_backlight_probe_dt(struct platform_device *pdev,
+				   struct gpio_backlight *gbl)
+{
+	struct device *dev = &pdev->dev;
+	struct device_node *np = dev->of_node;
+	enum gpiod_flags flags;
+	int ret;
+
+	gbl->def_value = of_property_read_bool(np, "default-on");
+	flags = gbl->def_value ? GPIOD_OUT_HIGH : GPIOD_OUT_LOW;
+
+	gbl->gpiod = devm_gpiod_get(dev, NULL, flags);
+	if (IS_ERR(gbl->gpiod)) {
+		ret = PTR_ERR(gbl->gpiod);
+
+		if (ret != -EPROBE_DEFER) {
+			dev_err(dev,
+				"Error: The gpios parameter is missing or invalid.\n");
+		}
+		return ret;
+	}
+
+	return 0;
+}
 
 static int gpio_backlight_probe(struct platform_device *pdev)
 {
@@ -67,10 +89,12 @@ static int gpio_backlight_probe(struct platform_device *pdev)
 	struct backlight_properties props;
 	struct backlight_device *bl;
 	struct gpio_backlight *gbl;
+	struct device_node *np = pdev->dev.of_node;
 	int ret;
 
-	if (!pdata) {
-		dev_err(&pdev->dev, "failed to find platform data\n");
+	if (!pdata && !np) {
+		dev_err(&pdev->dev,
+			"failed to find platform data or device tree node.\n");
 		return -ENODEV;
 	}
 
@@ -79,17 +103,32 @@ static int gpio_backlight_probe(struct platform_device *pdev)
 		return -ENOMEM;
 
 	gbl->dev = &pdev->dev;
-	gbl->fbdev = pdata->fbdev;
-	gbl->gpio = pdata->gpio;
-	gbl->active = pdata->active_low ? 0 : 1;
 
-	ret = devm_gpio_request_one(gbl->dev, gbl->gpio, GPIOF_DIR_OUT |
-				    (gbl->active ? GPIOF_INIT_LOW
-						 : GPIOF_INIT_HIGH),
-				    pdata->name);
-	if (ret < 0) {
-		dev_err(&pdev->dev, "unable to request GPIO\n");
-		return ret;
+	if (np) {
+		ret = gpio_backlight_probe_dt(pdev, gbl);
+		if (ret)
+			return ret;
+	} else {
+		/*
+		 * Legacy platform data GPIO retrieveal. Do not expand
+		 * the use of this code path, currently only used by one
+		 * SH board.
+		 */
+		unsigned long flags = GPIOF_DIR_OUT;
+
+		gbl->fbdev = pdata->fbdev;
+		gbl->def_value = pdata->def_value;
+		flags |= gbl->def_value ? GPIOF_INIT_HIGH : GPIOF_INIT_LOW;
+
+		ret = devm_gpio_request_one(gbl->dev, pdata->gpio, flags,
+					    pdata ? pdata->name : "backlight");
+		if (ret < 0) {
+			dev_err(&pdev->dev, "unable to request GPIO\n");
+			return ret;
+		}
+		gbl->gpiod = gpio_to_desc(pdata->gpio);
+		if (!gbl->gpiod)
+			return -EINVAL;
 	}
 
 	memset(&props, 0, sizeof(props));
@@ -103,17 +142,26 @@ static int gpio_backlight_probe(struct platform_device *pdev)
 		return PTR_ERR(bl);
 	}
 
-	bl->props.brightness = pdata->def_value;
+	bl->props.brightness = gbl->def_value;
 	backlight_update_status(bl);
 
 	platform_set_drvdata(pdev, bl);
 	return 0;
 }
 
+#ifdef CONFIG_OF
+static struct of_device_id gpio_backlight_of_match[] = {
+	{ .compatible = "gpio-backlight" },
+	{ /* sentinel */ }
+};
+
+MODULE_DEVICE_TABLE(of, gpio_backlight_of_match);
+#endif
+
 static struct platform_driver gpio_backlight_driver = {
 	.driver		= {
 		.name		= "gpio-backlight",
-		.owner		= THIS_MODULE,
+		.of_match_table = of_match_ptr(gpio_backlight_of_match),
 	},
 	.probe		= gpio_backlight_probe,
 };

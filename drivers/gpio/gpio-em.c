@@ -27,11 +27,10 @@
 #include <linux/irqdomain.h>
 #include <linux/bitops.h>
 #include <linux/err.h>
-#include <linux/gpio.h>
+#include <linux/gpio/driver.h>
 #include <linux/slab.h>
 #include <linux/module.h>
 #include <linux/pinctrl/consumer.h>
-#include <linux/platform_data/gpio-em.h>
 
 struct em_gio_priv {
 	void __iomem *base0;
@@ -99,24 +98,26 @@ static void em_gio_irq_enable(struct irq_data *d)
 	em_gio_write(p, GIO_IEN, BIT(irqd_to_hwirq(d)));
 }
 
-static unsigned int em_gio_irq_startup(struct irq_data *d)
+static int em_gio_irq_reqres(struct irq_data *d)
 {
 	struct em_gio_priv *p = irq_data_get_irq_chip_data(d);
+	int ret;
 
-	if (gpio_lock_as_irq(&p->gpio_chip, irqd_to_hwirq(d)))
-		dev_err(p->gpio_chip.dev,
+	ret = gpiochip_lock_as_irq(&p->gpio_chip, irqd_to_hwirq(d));
+	if (ret) {
+		dev_err(p->gpio_chip.parent,
 			"unable to lock HW IRQ %lu for IRQ\n",
 			irqd_to_hwirq(d));
-	em_gio_irq_enable(d);
+		return ret;
+	}
 	return 0;
 }
 
-static void em_gio_irq_shutdown(struct irq_data *d)
+static void em_gio_irq_relres(struct irq_data *d)
 {
 	struct em_gio_priv *p = irq_data_get_irq_chip_data(d);
 
-	em_gio_irq_disable(d);
-	gpio_unlock_as_irq(&p->gpio_chip, irqd_to_hwirq(d));
+	gpiochip_unlock_as_irq(&p->gpio_chip, irqd_to_hwirq(d));
 }
 
 
@@ -193,7 +194,7 @@ static irqreturn_t em_gio_irq_handler(int irq, void *dev_id)
 
 static inline struct em_gio_priv *gpio_to_priv(struct gpio_chip *chip)
 {
-	return container_of(chip, struct em_gio_priv, gpio_chip);
+	return gpiochip_get_data(chip);
 }
 
 static int em_gio_direction_input(struct gpio_chip *chip, unsigned offset)
@@ -204,7 +205,7 @@ static int em_gio_direction_input(struct gpio_chip *chip, unsigned offset)
 
 static int em_gio_get(struct gpio_chip *chip, unsigned offset)
 {
-	return (int)(em_gio_read(gpio_to_priv(chip), GIO_I) & BIT(offset));
+	return !!(em_gio_read(gpio_to_priv(chip), GIO_I) & BIT(offset));
 }
 
 static void __em_gio_set(struct gpio_chip *chip, unsigned int reg,
@@ -212,7 +213,7 @@ static void __em_gio_set(struct gpio_chip *chip, unsigned int reg,
 {
 	/* upper 16 bits contains mask and lower 16 actual value */
 	em_gio_write(gpio_to_priv(chip), reg,
-		     (1 << (shift + 16)) | (value << shift));
+		     (BIT(shift + 16)) | (value << shift));
 }
 
 static void em_gio_set(struct gpio_chip *chip, unsigned offset, int value)
@@ -240,12 +241,12 @@ static int em_gio_to_irq(struct gpio_chip *chip, unsigned offset)
 
 static int em_gio_request(struct gpio_chip *chip, unsigned offset)
 {
-	return pinctrl_request_gpio(chip->base + offset);
+	return pinctrl_gpio_request(chip->base + offset);
 }
 
 static void em_gio_free(struct gpio_chip *chip, unsigned offset)
 {
-	pinctrl_free_gpio(chip->base + offset);
+	pinctrl_gpio_free(chip->base + offset);
 
 	/* Set the GPIO as an input to ensure that the next GPIO request won't
 	* drive the GPIO pin as an output.
@@ -262,29 +263,26 @@ static int em_gio_irq_domain_map(struct irq_domain *h, unsigned int irq,
 
 	irq_set_chip_data(irq, h->host_data);
 	irq_set_chip_and_handler(irq, &p->irq_chip, handle_level_irq);
-	set_irq_flags(irq, IRQF_VALID); /* kill me now */
 	return 0;
 }
 
-static struct irq_domain_ops em_gio_irq_domain_ops = {
+static const struct irq_domain_ops em_gio_irq_domain_ops = {
 	.map	= em_gio_irq_domain_map,
 	.xlate	= irq_domain_xlate_twocell,
 };
 
 static int em_gio_probe(struct platform_device *pdev)
 {
-	struct gpio_em_config pdata_dt;
-	struct gpio_em_config *pdata = dev_get_platdata(&pdev->dev);
 	struct em_gio_priv *p;
 	struct resource *io[2], *irq[2];
 	struct gpio_chip *gpio_chip;
 	struct irq_chip *irq_chip;
 	const char *name = dev_name(&pdev->dev);
+	unsigned int ngpios;
 	int ret;
 
 	p = devm_kzalloc(&pdev->dev, sizeof(*p), GFP_KERNEL);
 	if (!p) {
-		dev_err(&pdev->dev, "failed to allocate driver data\n");
 		ret = -ENOMEM;
 		goto err0;
 	}
@@ -320,23 +318,10 @@ static int em_gio_probe(struct platform_device *pdev)
 		goto err0;
 	}
 
-	if (!pdata) {
-		memset(&pdata_dt, 0, sizeof(pdata_dt));
-		pdata = &pdata_dt;
-
-		if (of_property_read_u32(pdev->dev.of_node, "ngpios",
-					 &pdata->number_of_pins)) {
-			dev_err(&pdev->dev, "Missing ngpios OF property\n");
-			ret = -EINVAL;
-			goto err0;
-		}
-
-		ret = of_alias_get_id(pdev->dev.of_node, "gpio");
-		if (ret < 0) {
-			dev_err(&pdev->dev, "Couldn't get OF id\n");
-			goto err0;
-		}
-		pdata->gpio_base = ret * 32; /* 32 GPIOs per instance */
+	if (of_property_read_u32(pdev->dev.of_node, "ngpios", &ngpios)) {
+		dev_err(&pdev->dev, "Missing ngpios OF property\n");
+		ret = -EINVAL;
+		goto err0;
 	}
 
 	gpio_chip = &p->gpio_chip;
@@ -349,23 +334,21 @@ static int em_gio_probe(struct platform_device *pdev)
 	gpio_chip->request = em_gio_request;
 	gpio_chip->free = em_gio_free;
 	gpio_chip->label = name;
-	gpio_chip->dev = &pdev->dev;
+	gpio_chip->parent = &pdev->dev;
 	gpio_chip->owner = THIS_MODULE;
-	gpio_chip->base = pdata->gpio_base;
-	gpio_chip->ngpio = pdata->number_of_pins;
+	gpio_chip->base = -1;
+	gpio_chip->ngpio = ngpios;
 
 	irq_chip = &p->irq_chip;
 	irq_chip->name = name;
 	irq_chip->irq_mask = em_gio_irq_disable;
 	irq_chip->irq_unmask = em_gio_irq_enable;
 	irq_chip->irq_set_type = em_gio_irq_set_type;
-	irq_chip->irq_startup = em_gio_irq_startup;
-	irq_chip->irq_shutdown = em_gio_irq_shutdown;
+	irq_chip->irq_request_resources = em_gio_irq_reqres;
+	irq_chip->irq_release_resources = em_gio_irq_relres;
 	irq_chip->flags	= IRQCHIP_SKIP_SET_WAKE | IRQCHIP_MASK_ON_SUSPEND;
 
-	p->irq_domain = irq_domain_add_simple(pdev->dev.of_node,
-					      pdata->number_of_pins,
-					      pdata->irq_base,
+	p->irq_domain = irq_domain_add_simple(pdev->dev.of_node, ngpios, 0,
 					      &em_gio_irq_domain_ops, p);
 	if (!p->irq_domain) {
 		ret = -ENXIO;
@@ -387,18 +370,12 @@ static int em_gio_probe(struct platform_device *pdev)
 		goto err1;
 	}
 
-	ret = gpiochip_add(gpio_chip);
+	ret = gpiochip_add_data(gpio_chip, p);
 	if (ret) {
 		dev_err(&pdev->dev, "failed to add GPIO controller\n");
 		goto err1;
 	}
 
-	if (pdata->pctl_name) {
-		ret = gpiochip_add_pin_range(gpio_chip, pdata->pctl_name, 0,
-					     gpio_chip->base, gpio_chip->ngpio);
-		if (ret < 0)
-			dev_warn(&pdev->dev, "failed to add pin range\n");
-	}
 	return 0;
 
 err1:
@@ -410,11 +387,8 @@ err0:
 static int em_gio_remove(struct platform_device *pdev)
 {
 	struct em_gio_priv *p = platform_get_drvdata(pdev);
-	int ret;
 
-	ret = gpiochip_remove(&p->gpio_chip);
-	if (ret)
-		return ret;
+	gpiochip_remove(&p->gpio_chip);
 
 	irq_domain_remove(p->irq_domain);
 	return 0;
@@ -432,7 +406,6 @@ static struct platform_driver em_gio_device_driver = {
 	.driver		= {
 		.name	= "em_gio",
 		.of_match_table = em_gio_dt_ids,
-		.owner		= THIS_MODULE,
 	}
 };
 

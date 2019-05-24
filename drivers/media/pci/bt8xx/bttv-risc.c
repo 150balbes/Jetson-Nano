@@ -84,7 +84,7 @@ bttv_risc_packed(struct bttv *btv, struct btcx_riscmem *risc,
 			continue;
 		while (offset && offset >= sg_dma_len(sg)) {
 			offset -= sg_dma_len(sg);
-			sg++;
+			sg = sg_next(sg);
 		}
 		if (bpl <= sg_dma_len(sg)-offset) {
 			/* fits into current chunk */
@@ -93,20 +93,20 @@ bttv_risc_packed(struct bttv *btv, struct btcx_riscmem *risc,
 			*(rp++)=cpu_to_le32(sg_dma_address(sg)+offset);
 			offset+=bpl;
 		} else {
-			/* scanline needs to be splitted */
+			/* scanline needs to be split */
 			todo = bpl;
 			*(rp++)=cpu_to_le32(BT848_RISC_WRITE|BT848_RISC_SOL|
 					    (sg_dma_len(sg)-offset));
 			*(rp++)=cpu_to_le32(sg_dma_address(sg)+offset);
 			todo -= (sg_dma_len(sg)-offset);
 			offset = 0;
-			sg++;
+			sg = sg_next(sg);
 			while (todo > sg_dma_len(sg)) {
 				*(rp++)=cpu_to_le32(BT848_RISC_WRITE|
 						    sg_dma_len(sg));
 				*(rp++)=cpu_to_le32(sg_dma_address(sg));
 				todo -= sg_dma_len(sg);
-				sg++;
+				sg = sg_next(sg);
 			}
 			*(rp++)=cpu_to_le32(BT848_RISC_WRITE|BT848_RISC_EOL|
 					    todo);
@@ -187,15 +187,7 @@ bttv_risc_planar(struct bttv *btv, struct btcx_riscmem *risc,
 			/* go to next sg entry if needed */
 			while (yoffset && yoffset >= sg_dma_len(ysg)) {
 				yoffset -= sg_dma_len(ysg);
-				ysg++;
-			}
-			while (uoffset && uoffset >= sg_dma_len(usg)) {
-				uoffset -= sg_dma_len(usg);
-				usg++;
-			}
-			while (voffset && voffset >= sg_dma_len(vsg)) {
-				voffset -= sg_dma_len(vsg);
-				vsg++;
+				ysg = sg_next(ysg);
 			}
 
 			/* calculate max number of bytes we can write */
@@ -203,6 +195,15 @@ bttv_risc_planar(struct bttv *btv, struct btcx_riscmem *risc,
 			if (yoffset + ylen > sg_dma_len(ysg))
 				ylen = sg_dma_len(ysg) - yoffset;
 			if (chroma) {
+				while (uoffset && uoffset >= sg_dma_len(usg)) {
+					uoffset -= sg_dma_len(usg);
+					usg = sg_next(usg);
+				}
+				while (voffset && voffset >= sg_dma_len(vsg)) {
+					voffset -= sg_dma_len(vsg);
+					vsg = sg_next(vsg);
+				}
+
 				if (uoffset + (ylen>>hshift) > sg_dma_len(usg))
 					ylen = (sg_dma_len(usg) - uoffset) << hshift;
 				if (voffset + (ylen>>hshift) > sg_dma_len(vsg))
@@ -255,7 +256,8 @@ bttv_risc_overlay(struct bttv *btv, struct btcx_riscmem *risc,
 	u32 addr;
 
 	/* skip list for window clipping */
-	if (NULL == (skips = kmalloc(sizeof(*skips) * ov->nclips,GFP_KERNEL)))
+	skips = kmalloc_array(ov->nclips, sizeof(*skips),GFP_KERNEL);
+	if (NULL == skips)
 		return -ENOMEM;
 
 	/* estimate risc mem: worst case is (1.5*clip+1) * lines instructions
@@ -901,9 +903,3 @@ bttv_overlay_risc(struct bttv *btv,
 	buf->vb.field = ov->field;
 	return 0;
 }
-
-/*
- * Local variables:
- * c-basic-offset: 8
- * End:
- */

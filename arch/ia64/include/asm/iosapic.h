@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __ASM_IA64_IOSAPIC_H
 #define __ASM_IA64_IOSAPIC_H
 
@@ -55,14 +56,10 @@
 
 #define NR_IOSAPICS			256
 
-#ifdef CONFIG_PARAVIRT_GUEST
-#include <asm/paravirt.h>
-#else
 #define iosapic_pcat_compat_init	ia64_native_iosapic_pcat_compat_init
 #define __iosapic_read			__ia64_native_iosapic_read
 #define __iosapic_write			__ia64_native_iosapic_write
 #define iosapic_get_irq_chip		ia64_native_iosapic_get_irq_chip
-#endif
 
 extern void __init ia64_native_iosapic_pcat_compat_init(void);
 extern struct irq_chip *ia64_native_iosapic_get_irq_chip(unsigned long trigger);

@@ -30,7 +30,7 @@
  * Returns:
  *	x0 - address of first occurrence of 'c' or 0
  */
-ENTRY(memchr)
+WEAK(memchr)
 	and	w1, w1, #0xff
 1:	subs	x2, x2, #1
 	b.mi	2f
@@ -41,4 +41,5 @@ ENTRY(memchr)
 	ret
 2:	mov	x0, #0
 	ret
-ENDPROC(memchr)
+ENDPIPROC(memchr)
+EXPORT_SYMBOL_NOKASAN(memchr)

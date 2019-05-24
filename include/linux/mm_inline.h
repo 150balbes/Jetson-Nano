@@ -1,9 +1,9 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef LINUX_MM_INLINE_H
 #define LINUX_MM_INLINE_H
 
 #include <linux/huge_mm.h>
 #include <linux/swap.h>
-#include <linux/page-isolation.h>
 
 /**
  * page_is_file_cache - should the page be on a file LRU or anon LRU?
@@ -23,63 +23,46 @@ static inline int page_is_file_cache(struct page *page)
 	return !PageSwapBacked(page);
 }
 
+static __always_inline void __update_lru_size(struct lruvec *lruvec,
+				enum lru_list lru, enum zone_type zid,
+				int nr_pages)
+{
+	struct pglist_data *pgdat = lruvec_pgdat(lruvec);
+
+	__mod_node_page_state(pgdat, NR_LRU_BASE + lru, nr_pages);
+	__mod_zone_page_state(&pgdat->node_zones[zid],
+				NR_ZONE_LRU_BASE + lru, nr_pages);
+}
+
+static __always_inline void update_lru_size(struct lruvec *lruvec,
+				enum lru_list lru, enum zone_type zid,
+				int nr_pages)
+{
+	__update_lru_size(lruvec, lru, zid, nr_pages);
+#ifdef CONFIG_MEMCG
+	mem_cgroup_update_lru_size(lruvec, lru, zid, nr_pages);
+#endif
+}
+
 static __always_inline void add_page_to_lru_list(struct page *page,
 				struct lruvec *lruvec, enum lru_list lru)
 {
-	int nr_pages = hpage_nr_pages(page);
-	int num = NR_INACTIVE_ANON_CMA - NR_INACTIVE_ANON;
-	int migrate_type = 0;
-
-	mem_cgroup_update_lru_size(lruvec, lru, nr_pages);
+	update_lru_size(lruvec, lru, page_zonenum(page), hpage_nr_pages(page));
 	list_add(&page->lru, &lruvec->lists[lru]);
-	__mod_zone_page_state(lruvec_zone(lruvec), NR_LRU_BASE + lru, nr_pages);
-	__mod_zone_page_state(lruvec_zone(lruvec),
-			  NR_INACTIVE_ANON_TEST + lru, nr_pages);
+}
 
-	migrate_type = get_pageblock_migratetype(page);
-	if (is_migrate_cma(migrate_type) ||
-				is_migrate_isolate(migrate_type))
-		__mod_zone_page_state(lruvec_zone(lruvec),
-					  NR_LRU_BASE + lru + num, nr_pages);
-	else {
-		num = NR_INACTIVE_ANON_NORMAL - NR_INACTIVE_ANON;
-		if (page->lru_normal.next != LIST_POISON1
-			&& !list_empty(&page->lru_normal)) {
-			pr_err("-----------------%s %d, %p\n",
-				   __func__, __LINE__, page->lru_normal.next);
-			BUG();
-		}
-		BUG_ON(!PageLRU(page));
-		list_add(&page->lru_normal,
-			 &lruvec->lists[lru - LRU_BASE + LRU_BASE_NORMAL]);
-		__mod_zone_page_state(lruvec_zone(lruvec),
-					  NR_LRU_BASE + lru + num, nr_pages);
-	}
+static __always_inline void add_page_to_lru_list_tail(struct page *page,
+				struct lruvec *lruvec, enum lru_list lru)
+{
+	update_lru_size(lruvec, lru, page_zonenum(page), hpage_nr_pages(page));
+	list_add_tail(&page->lru, &lruvec->lists[lru]);
 }
 
 static __always_inline void del_page_from_lru_list(struct page *page,
 				struct lruvec *lruvec, enum lru_list lru)
 {
-	int nr_pages = hpage_nr_pages(page);
-	int num = NR_INACTIVE_ANON_CMA - NR_INACTIVE_ANON;
-	int migrate_type = 0;
-
-	mem_cgroup_update_lru_size(lruvec, lru, -nr_pages);
 	list_del(&page->lru);
-	__mod_zone_page_state(lruvec_zone(lruvec), NR_LRU_BASE + lru, -nr_pages);
-	__mod_zone_page_state(lruvec_zone(lruvec),
-				  NR_INACTIVE_ANON_TEST + lru, -nr_pages);
-	migrate_type = get_pageblock_migratetype(page);
-	if (is_migrate_cma(migrate_type) ||
-				is_migrate_isolate(migrate_type))
-		__mod_zone_page_state(lruvec_zone(lruvec),
-					  NR_LRU_BASE + lru + num, -nr_pages);
-	else {
-		num = NR_INACTIVE_ANON_NORMAL - NR_INACTIVE_ANON;
-		list_del(&page->lru_normal);
-		__mod_zone_page_state(lruvec_zone(lruvec),
-					  NR_LRU_BASE + lru + num, -nr_pages);
-	}
+	update_lru_size(lruvec, lru, page_zonenum(page), -hpage_nr_pages(page));
 }
 
 /**
@@ -141,5 +124,4 @@ static __always_inline enum lru_list page_lru(struct page *page)
 	}
 	return lru;
 }
-
 #endif

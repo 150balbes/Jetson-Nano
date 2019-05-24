@@ -173,9 +173,9 @@ static void battery_flat(struct appleir *appleir)
 	dev_err(&appleir->input_dev->dev, "possible flat battery?\n");
 }
 
-static void key_up_tick(unsigned long data)
+static void key_up_tick(struct timer_list *t)
 {
-	struct appleir *appleir = (struct appleir *)data;
+	struct appleir *appleir = from_timer(appleir, t, key_up_timer);
 	struct hid_device *hid = appleir->hid;
 	unsigned long flags;
 
@@ -275,6 +275,7 @@ static int appleir_input_configured(struct hid_device *hid,
 	for (i = 0; i < ARRAY_SIZE(appleir_key_table); i++)
 		set_bit(appleir->keymap[i], input_dev->keybit);
 	clear_bit(KEY_RESERVED, input_dev->keybit);
+
 	return 0;
 }
 
@@ -302,8 +303,7 @@ static int appleir_probe(struct hid_device *hid, const struct hid_device_id *id)
 	hid->quirks |= HID_QUIRK_HIDINPUT_FORCE;
 
 	spin_lock_init(&appleir->lock);
-	setup_timer(&appleir->key_up_timer,
-		    key_up_tick, (unsigned long) appleir);
+	timer_setup(&appleir->key_up_timer, key_up_tick, 0);
 
 	hid_set_drvdata(hid, appleir);
 

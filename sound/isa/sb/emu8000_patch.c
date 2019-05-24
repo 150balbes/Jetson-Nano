@@ -20,7 +20,9 @@
  */
 
 #include "emu8000_local.h"
-#include <asm/uaccess.h>
+
+#include <linux/sched/signal.h>
+#include <linux/uaccess.h>
 #include <linux/moduleparam.h>
 
 static int emu8000_reset_addr;
@@ -163,11 +165,8 @@ snd_emu8000_sample_new(struct snd_emux *rec, struct snd_sf_sample *sp,
 		return 0;
 
 	/* be sure loop points start < end */
-	if (sp->v.loopstart > sp->v.loopend) {
-		int tmp = sp->v.loopstart;
-		sp->v.loopstart = sp->v.loopend;
-		sp->v.loopend = tmp;
-	}
+	if (sp->v.loopstart > sp->v.loopend)
+		swap(sp->v.loopstart, sp->v.loopend);
 
 	/* compute true data size to be loaded */
 	truesize = sp->v.size;
@@ -184,10 +183,10 @@ snd_emu8000_sample_new(struct snd_emux *rec, struct snd_sf_sample *sp,
 	}
 
 	if (sp->v.mode_flags & SNDRV_SFNT_SAMPLE_8BITS) {
-		if (!access_ok(VERIFY_READ, data, sp->v.size))
+		if (!access_ok(data, sp->v.size))
 			return -EFAULT;
 	} else {
-		if (!access_ok(VERIFY_READ, data, sp->v.size * 2))
+		if (!access_ok(data, sp->v.size * 2))
 			return -EFAULT;
 	}
 

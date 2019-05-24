@@ -1,12 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0+
 /*
  * Device Tree file for NETGEAR ReadyNAS Duo v2
  *
  * Copyright (C) 2013, Arnaud EBALARD <arno@natisbad.org>
- *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version
- * 2 of the License, or (at your option) any later version.
  */
 
 /dts-v1/;
@@ -25,20 +21,11 @@
 
 	chosen {
 		bootargs = "console=ttyS0,115200n8 earlyprintk";
-	};
-
-	mbus {
-		pcie-controller {
-			status = "okay";
-
-			pcie@1,0 {
-				status = "okay";
-			};
-		};
+		stdout-path = &uart0;
 	};
 
 	ocp@f1000000 {
-		pinctrl: pinctrl@10000 {
+		pinctrl: pin-controller@10000 {
 			pmx_button_power: pmx-button-power {
 				marvell,pins = "mpp47";
 				marvell,function = "gpio";
@@ -112,8 +99,6 @@
 		};
 
 		serial@12000 {
-			pinctrl-0 = <&pmx_uart0>;
-			pinctrl-names = "default";
 			status = "okay";
 		};
 
@@ -194,7 +179,7 @@
 		#address-cells = <1>;
 		#size-cells = <0>;
 
-		usb3_regulator: usb3-regulator {
+		usb3_regulator: usb3-regulator@1 {
 			compatible = "regulator-fixed";
 			reg = <1>;
 			regulator-name = "USB 3.0 Power";
@@ -251,4 +236,12 @@
 	ethernet0-port@0 {
 		phy-handle = <&ethphy0>;
 	};
+};
+
+&pciec {
+        status = "okay";
+};
+
+&pcie0 {
+	status = "okay";
 };

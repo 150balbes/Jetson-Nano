@@ -70,6 +70,7 @@ struct pccard_resource_ops {
 /* Flags in socket state */
 #define SOCKET_PRESENT		0x0008
 #define SOCKET_INUSE		0x0010
+#define SOCKET_IN_RESUME	0x0040
 #define SOCKET_SUSPEND		0x0080
 #define SOCKET_WIN_REQ(i)	(0x0100<<(i))
 #define SOCKET_CARDBUS		0x8000
@@ -80,9 +81,9 @@ struct pccard_resource_ops {
  * Stuff internal to module "pcmcia_rsrc":
  */
 extern int static_init(struct pcmcia_socket *s);
-extern struct resource *pcmcia_make_resource(unsigned long start,
-					unsigned long end,
-					int flags, const char *name);
+extern struct resource *pcmcia_make_resource(resource_size_t start,
+					resource_size_t end,
+					unsigned long flags, const char *name);
 
 /*
  * Stuff internal to module "pcmcia_core":
@@ -152,7 +153,7 @@ void pcmcia_cleanup_irq(struct pcmcia_socket *s);
 int pcmcia_setup_irq(struct pcmcia_device *p_dev);
 
 /* cistpl.c */
-extern struct bin_attribute pccard_cis_attr;
+extern const struct bin_attribute pccard_cis_attr;
 
 int pcmcia_read_cis_mem(struct pcmcia_socket *s, int attr,
 			u_int addr, u_int len, void *ptr);

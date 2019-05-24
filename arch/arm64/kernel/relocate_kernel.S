@@ -10,16 +10,15 @@
  */
 
 #include <linux/kexec.h>
+#include <linux/linkage.h>
 
 #include <asm/assembler.h>
 #include <asm/kexec.h>
-#include <asm/memory.h>
 #include <asm/page.h>
-
+#include <asm/sysreg.h>
 
 /*
- * arm64_relocate_new_kernel - Put a 2nd stage kernel image in place and
- * boot it.
+ * arm64_relocate_new_kernel - Put a 2nd stage image in place and boot it.
  *
  * The memory that the old kernel occupies may be overwritten when coping the
  * new image to its final location.  To assure that the
@@ -30,136 +29,104 @@
  * control_code_page, a special page which has been set up to be preserved
  * during the copy operation.
  */
-.globl arm64_relocate_new_kernel
-arm64_relocate_new_kernel:
+ENTRY(arm64_relocate_new_kernel)
 
 	/* Setup the list loop variables. */
-	ldr	x18, .Lkimage_head		/* x18 = list entry */
-	dcache_line_size x17, x0		/* x17 = dcache line size */
-	mov	x16, xzr			/* x16 = segment start */
-	mov	x15, xzr			/* x15 = entry ptr */
-	mov	x14, xzr			/* x14 = copy dest */
+	mov	x18, x2				/* x18 = dtb address */
+	mov	x17, x1				/* x17 = kimage_start */
+	mov	x16, x0				/* x16 = kimage_head */
+	raw_dcache_line_size x15, x0		/* x15 = dcache line size */
+	mov	x14, xzr			/* x14 = entry ptr */
+	mov	x13, xzr			/* x13 = copy dest */
+
+	/* Clear the sctlr_el2 flags. */
+	mrs	x0, CurrentEL
+	cmp	x0, #CurrentEL_EL2
+	b.ne	1f
+	mrs	x0, sctlr_el2
+	ldr	x1, =SCTLR_ELx_FLAGS
+	bic	x0, x0, x1
+	pre_disable_mmu_workaround
+	msr	sctlr_el2, x0
+	isb
+1:
 
 	/* Check if the new image needs relocation. */
-	cbz	x18, .Ldone
-	tbnz	x18, IND_DONE_BIT, .Ldone
+	tbnz	x16, IND_DONE_BIT, .Ldone
 
 .Lloop:
-	and	x13, x18, PAGE_MASK		/* x13 = addr */
+	and	x12, x16, PAGE_MASK		/* x12 = addr */
 
 	/* Test the entry flags. */
 .Ltest_source:
-	tbz	x18, IND_SOURCE_BIT, .Ltest_indirection
-
-	mov x20, x14				/*  x20 = copy dest */
-	mov x21, x13				/*  x21 = copy src */
+	tbz	x16, IND_SOURCE_BIT, .Ltest_indirection
 
 	/* Invalidate dest page to PoC. */
-	mov	x0, x20
-	add	x19, x0, #PAGE_SIZE
-	sub	x1, x17, #1
-	bic	x0, x0, x1
-1:	dc	ivac, x0
-	add	x0, x0, x17
-	cmp	x0, x19
-	b.lo	1b
-	dsb	sy
+	mov     x0, x13
+	add     x20, x0, #PAGE_SIZE
+	sub     x1, x15, #1
+	bic     x0, x0, x1
+2:	dc      ivac, x0
+	add     x0, x0, x15
+	cmp     x0, x20
+	b.lo    2b
+	dsb     sy
 
-	/* Copy page. */
-1:	ldp	x22, x23, [x21]
-	ldp	x24, x25, [x21, #16]
-	ldp	x26, x27, [x21, #32]
-	ldp	x28, x29, [x21, #48]
-	add	x21, x21, #64
-	stnp	x22, x23, [x20]
-	stnp	x24, x25, [x20, #16]
-	stnp	x26, x27, [x20, #32]
-	stnp	x28, x29, [x20, #48]
-	add	x20, x20, #64
-	tst	x21, #(PAGE_SIZE - 1)
-	b.ne	1b
+	mov x20, x13
+	mov x21, x12
+	copy_page x20, x21, x0, x1, x2, x3, x4, x5, x6, x7
 
 	/* dest += PAGE_SIZE */
-	add	x14, x14, PAGE_SIZE
+	add	x13, x13, PAGE_SIZE
 	b	.Lnext
 
 .Ltest_indirection:
-	tbz	x18, IND_INDIRECTION_BIT, .Ltest_destination
+	tbz	x16, IND_INDIRECTION_BIT, .Ltest_destination
 
 	/* ptr = addr */
-	mov	x15, x13
+	mov	x14, x12
 	b	.Lnext
 
 .Ltest_destination:
-	tbz	x18, IND_DESTINATION_BIT, .Lnext
-
-	mov	x16, x13
+	tbz	x16, IND_DESTINATION_BIT, .Lnext
 
 	/* dest = addr */
-	mov	x14, x13
+	mov	x13, x12
 
 .Lnext:
 	/* entry = *ptr++ */
-	ldr	x18, [x15], #8
+	ldr	x16, [x14], #8
 
 	/* while (!(entry & DONE)) */
-	tbz	x18, IND_DONE_BIT, .Lloop
+	tbz	x16, IND_DONE_BIT, .Lloop
 
 .Ldone:
-	dsb	sy
-	isb
-	ic	ialluis
-	dsb	sy
+	/* wait for writes from copy_page to finish */
+	dsb	nsh
+	ic	iallu
+	dsb	nsh
 	isb
 
 	/* Start new image. */
-	ldr	x4, .Lkimage_start
-	mov	x0, xzr
+	mov	x0, x18
 	mov	x1, xzr
 	mov	x2, xzr
 	mov	x3, xzr
-	br	x4
+	br	x17
+
+ENDPROC(arm64_relocate_new_kernel)
+
+.ltorg
 
 .align 3	/* To keep the 64-bit values below naturally aligned. */
-
-/* The machine_kexec routine sets these variables via offsets from
- * arm64_relocate_new_kernel.
- */
-
-/*
- * .Lkimage_start - Copy of image->start, the entry point of the new
- * image.
- */
-.Lkimage_start:
-	.quad	0x0
-
-/*
- * .Lkimage_head - Copy of image->head, the list of kimage entries.
- */
-.Lkimage_head:
-	.quad	0x0
 
 .Lcopy_end:
 .org	KEXEC_CONTROL_PAGE_SIZE
 
 /*
- * arm64_relocate_new_kernel_size - Number of bytes
- * to copy to the control_code_page.
+ * arm64_relocate_new_kernel_size - Number of bytes to copy to the
+ * control_code_page.
  */
 .globl arm64_relocate_new_kernel_size
 arm64_relocate_new_kernel_size:
 	.quad	.Lcopy_end - arm64_relocate_new_kernel
-
-/*
- * arm64_kexec_kimage_start_offset - Offset for writing .Lkimage_start.
- */
-.globl arm64_kexec_kimage_start_offset
-arm64_kexec_kimage_start_offset:
-	.quad	.Lkimage_start - arm64_relocate_new_kernel
-
-/*
- * arm64_kexec_kimage_head_offset - Offset for writing .Lkimage_head.
- */
-.globl arm64_kexec_kimage_head_offset
-arm64_kexec_kimage_head_offset:
-	.quad	.Lkimage_head - arm64_relocate_new_kernel

@@ -1,18 +1,6 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  *Copyright (C) 2011 LAPIS Semiconductor Co., Ltd.
- *
- *This program is free software; you can redistribute it and/or modify
- *it under the terms of the GNU General Public License as published by
- *the Free Software Foundation; version 2 of the License.
- *
- *This program is distributed in the hope that it will be useful,
- *but WITHOUT ANY WARRANTY; without even the implied warranty of
- *MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *GNU General Public License for more details.
- *
- *You should have received a copy of the GNU General Public License
- *along with this program; if not, write to the Free Software
- *Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307, USA.
  */
 #if defined(CONFIG_SERIAL_PCH_UART_CONSOLE) && defined(CONFIG_MAGIC_SYSRQ)
 #define SUPPORT_SYSRQ
@@ -31,6 +19,7 @@
 #include <linux/dmi.h>
 #include <linux/nmi.h>
 #include <linux/delay.h>
+#include <linux/of.h>
 
 #include <linux/debugfs.h>
 #include <linux/dmaengine.h>
@@ -43,11 +32,6 @@ enum {
 	PCH_UART_HANDLED_RX_TRG_INT_SHIFT,
 	PCH_UART_HANDLED_MS_INT_SHIFT,
 	PCH_UART_HANDLED_LS_INT_SHIFT,
-};
-
-enum {
-	PCH_UART_8LINE,
-	PCH_UART_2LINE,
 };
 
 #define PCH_UART_DRIVER_DEVICE "ttyPCH"
@@ -208,8 +192,6 @@ enum {
 #define PCH_UART_HAL_LOOP		(PCH_UART_MCR_LOOP)
 #define PCH_UART_HAL_AFE		(PCH_UART_MCR_AFE)
 
-#define PCI_VENDOR_ID_ROHM		0x10DB
-
 #define BOTH_EMPTY (UART_LSR_TEMT | UART_LSR_THRE)
 
 #define DEFAULT_UARTCLK   1843200 /*   1.8432 MHz */
@@ -257,6 +239,8 @@ struct eg20t_port {
 	dma_addr_t			rx_buf_dma;
 
 	struct dentry	*debugfs;
+#define IRQ_NAME_SIZE 17
+	char				irq_name[IRQ_NAME_SIZE];
 
 	/* protect the eg20t_port private structure and io access to membase */
 	spinlock_t lock;
@@ -264,7 +248,7 @@ struct eg20t_port {
 
 /**
  * struct pch_uart_driver_data - private data structure for UART-DMA
- * @port_type:			The number of DMA channel
+ * @port_type:			The type of UART port
  * @line_no:			UART port line number (0, 1, 2...)
  */
 struct pch_uart_driver_data {
@@ -287,17 +271,17 @@ enum pch_uart_num_t {
 };
 
 static struct pch_uart_driver_data drv_dat[] = {
-	[pch_et20t_uart0] = {PCH_UART_8LINE, 0},
-	[pch_et20t_uart1] = {PCH_UART_2LINE, 1},
-	[pch_et20t_uart2] = {PCH_UART_2LINE, 2},
-	[pch_et20t_uart3] = {PCH_UART_2LINE, 3},
-	[pch_ml7213_uart0] = {PCH_UART_8LINE, 0},
-	[pch_ml7213_uart1] = {PCH_UART_2LINE, 1},
-	[pch_ml7213_uart2] = {PCH_UART_2LINE, 2},
-	[pch_ml7223_uart0] = {PCH_UART_8LINE, 0},
-	[pch_ml7223_uart1] = {PCH_UART_2LINE, 1},
-	[pch_ml7831_uart0] = {PCH_UART_8LINE, 0},
-	[pch_ml7831_uart1] = {PCH_UART_2LINE, 1},
+	[pch_et20t_uart0] = {PORT_PCH_8LINE, 0},
+	[pch_et20t_uart1] = {PORT_PCH_2LINE, 1},
+	[pch_et20t_uart2] = {PORT_PCH_2LINE, 2},
+	[pch_et20t_uart3] = {PORT_PCH_2LINE, 3},
+	[pch_ml7213_uart0] = {PORT_PCH_8LINE, 0},
+	[pch_ml7213_uart1] = {PORT_PCH_2LINE, 1},
+	[pch_ml7213_uart2] = {PORT_PCH_2LINE, 2},
+	[pch_ml7223_uart0] = {PORT_PCH_8LINE, 0},
+	[pch_ml7223_uart1] = {PORT_PCH_2LINE, 1},
+	[pch_ml7831_uart0] = {PORT_PCH_8LINE, 0},
+	[pch_ml7831_uart1] = {PORT_PCH_2LINE, 1},
 };
 
 #ifdef CONFIG_SERIAL_PCH_UART_CONSOLE
@@ -373,7 +357,7 @@ static const struct file_operations port_regs_ops = {
 };
 #endif	/* CONFIG_DEBUG_FS */
 
-static struct dmi_system_id pch_uart_dmi_table[] = {
+static const struct dmi_system_id pch_uart_dmi_table[] = {
 	{
 		.ident = "CM-iTC",
 		{
@@ -416,6 +400,7 @@ static struct dmi_system_id pch_uart_dmi_table[] = {
 		},
 		(void *)MINNOW_UARTCLK,
 	},
+	{ }
 };
 
 /* Return UART clock, checking for board specific clocks. */
@@ -734,9 +719,10 @@ static void pch_request_dma(struct uart_port *port)
 	dma_cap_zero(mask);
 	dma_cap_set(DMA_SLAVE, mask);
 
-	dma_dev = pci_get_bus_and_slot(priv->pdev->bus->number,
-				       PCI_DEVFN(0xa, 0)); /* Get DMA's dev
-								information */
+	/* Get DMA's dev information */
+	dma_dev = pci_get_slot(priv->pdev->bus,
+			PCI_DEVFN(PCI_SLOT(priv->pdev->devfn), 0));
+
 	/* Set Tx DMA */
 	param = &priv->param_tx;
 	param->dma_dev = &dma_dev->dev;
@@ -873,8 +859,7 @@ static int dma_handle_rx(struct eg20t_port *priv)
 	sg_dma_len(sg) = priv->trigger_level;
 
 	sg_set_page(&priv->sg_rx, virt_to_page(priv->rx_buf_virt),
-		     sg_dma_len(sg), (unsigned long)priv->rx_buf_virt &
-		     ~PAGE_MASK);
+		     sg_dma_len(sg), offset_in_page(priv->rx_buf_virt));
 
 	sg_dma_address(sg) = priv->rx_buf_dma;
 
@@ -946,7 +931,6 @@ static unsigned int dma_handle_tx(struct eg20t_port *priv)
 	struct scatterlist *sg;
 	int nent;
 	int fifo_size;
-	int tx_empty;
 	struct dma_async_tx_descriptor *desc;
 	int num;
 	int i;
@@ -971,11 +955,9 @@ static unsigned int dma_handle_tx(struct eg20t_port *priv)
 	}
 
 	fifo_size = max(priv->fifo_size, 1);
-	tx_empty = 1;
 	if (pop_tx_x(priv, xmit->buf)) {
 		pch_uart_hal_write(priv, xmit->buf, 1);
 		port->icount.tx++;
-		tx_empty = 0;
 		fifo_size--;
 	}
 
@@ -1004,7 +986,7 @@ static unsigned int dma_handle_tx(struct eg20t_port *priv)
 
 	priv->tx_dma_use = 1;
 
-	priv->sg_tx_p = kzalloc(sizeof(struct scatterlist)*num, GFP_ATOMIC);
+	priv->sg_tx_p = kcalloc(num, sizeof(struct scatterlist), GFP_ATOMIC);
 	if (!priv->sg_tx_p) {
 		dev_err(priv->port.dev, "%s:kzalloc Failed\n", __func__);
 		return 0;
@@ -1045,7 +1027,7 @@ static unsigned int dma_handle_tx(struct eg20t_port *priv)
 					priv->sg_tx_p, nent, DMA_MEM_TO_DEV,
 					DMA_PREP_INTERRUPT | DMA_CTRL_ACK);
 	if (!desc) {
-		dev_err(priv->port.dev, "%s:device_prep_slave_sg Failed\n",
+		dev_err(priv->port.dev, "%s:dmaengine_prep_slave_sg Failed\n",
 			__func__);
 		return 0;
 	}
@@ -1343,7 +1325,7 @@ static int pch_uart_startup(struct uart_port *port)
 		return ret;
 
 	ret = request_irq(priv->port.irq, pch_uart_interrupt, IRQF_SHARED,
-			KBUILD_MODNAME, priv);
+			priv->irq_name, priv);
 	if (ret < 0)
 		return ret;
 
@@ -1588,13 +1570,8 @@ static void pch_uart_put_poll_char(struct uart_port *port,
 	wait_for_xmitr(priv, UART_LSR_THRE);
 	/*
 	 * Send the character out.
-	 * If a LF, also do CR...
 	 */
 	iowrite8(c, priv->membase + PCH_UART_THR);
-	if (c == 10) {
-		wait_for_xmitr(priv, UART_LSR_THRE);
-		iowrite8(13, priv->membase + PCH_UART_THR);
-	}
 
 	/*
 	 * Finally, wait for transmitter to become empty
@@ -1605,7 +1582,7 @@ static void pch_uart_put_poll_char(struct uart_port *port,
 }
 #endif /* CONFIG_CONSOLE_POLL */
 
-static struct uart_ops pch_uart_ops = {
+static const struct uart_ops pch_uart_ops = {
 	.tx_empty = pch_uart_tx_empty,
 	.set_mctrl = pch_uart_set_mctrl,
 	.get_mctrl = pch_uart_get_mctrl,
@@ -1762,7 +1739,9 @@ static struct eg20t_port *pch_uart_init_port(struct pci_dev *pdev,
 	int fifosize;
 	int port_type;
 	struct pch_uart_driver_data *board;
+#ifdef CONFIG_DEBUG_FS
 	char name[32];	/* for debugfs file name */
+#endif
 
 	board = &drv_dat[id->driver_data];
 	port_type = board->port_type;
@@ -1776,10 +1755,10 @@ static struct eg20t_port *pch_uart_init_port(struct pci_dev *pdev,
 		goto init_port_free_txbuf;
 
 	switch (port_type) {
-	case PORT_UNKNOWN:
+	case PORT_PCH_8LINE:
 		fifosize = 256; /* EG20T/ML7213: UART0 */
 		break;
-	case PORT_8250:
+	case PORT_PCH_2LINE:
 		fifosize = 64; /* EG20T:UART1~3  ML7213: UART1~2*/
 		break;
 	default:
@@ -1803,7 +1782,7 @@ static struct eg20t_port *pch_uart_init_port(struct pci_dev *pdev,
 
 	priv->fifo_size = fifosize;
 	priv->uartclk = pch_uart_get_uartclk();
-	priv->port_type = PORT_MAX_8250 + port_type + 1;
+	priv->port_type = port_type;
 	priv->port.dev = &pdev->dev;
 	priv->port.iobase = iobase;
 	priv->port.membase = NULL;
@@ -1816,11 +1795,19 @@ static struct eg20t_port *pch_uart_init_port(struct pci_dev *pdev,
 	priv->port.line = board->line_no;
 	priv->trigger = PCH_UART_HAL_TRIGGER_M;
 
+	snprintf(priv->irq_name, IRQ_NAME_SIZE,
+		 KBUILD_MODNAME ":" PCH_UART_DRIVER_DEVICE "%d",
+		 priv->port.line);
+
 	spin_lock_init(&priv->port.lock);
 
 	pci_set_drvdata(pdev, priv);
 	priv->trigger_level = 1;
 	priv->fcr = 0;
+
+	if (pdev->dev.of_node)
+		of_property_read_u32(pdev->dev.of_node, "clock-frequency"
+					 , &user_uartclk);
 
 #ifdef CONFIG_SERIAL_PCH_UART_CONSOLE
 	pch_uart_ports[board->line_no] = priv;
@@ -1853,8 +1840,7 @@ static void pch_uart_exit_port(struct eg20t_port *priv)
 {
 
 #ifdef CONFIG_DEBUG_FS
-	if (priv->debugfs)
-		debugfs_remove(priv->debugfs);
+	debugfs_remove(priv->debugfs);
 #endif
 	uart_remove_one_port(&pch_uart_driver, &priv->port);
 	free_page((unsigned long)priv->rxbuf.buf);

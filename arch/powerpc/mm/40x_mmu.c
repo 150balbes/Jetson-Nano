@@ -43,7 +43,7 @@
 #include <asm/mmu_context.h>
 #include <asm/pgtable.h>
 #include <asm/mmu.h>
-#include <asm/uaccess.h>
+#include <linux/uaccess.h>
 #include <asm/smp.h>
 #include <asm/bootx.h>
 #include <asm/machdep.h>
@@ -93,7 +93,7 @@ void __init MMU_init_hw(void)
 #define LARGE_PAGE_SIZE_16M	(1<<24)
 #define LARGE_PAGE_SIZE_4M	(1<<22)
 
-unsigned long __init mmu_mapin_ram(unsigned long top)
+unsigned long __init mmu_mapin_ram(unsigned long base, unsigned long top)
 {
 	unsigned long v, s, mapped;
 	phys_addr_t p;
@@ -110,10 +110,10 @@ unsigned long __init mmu_mapin_ram(unsigned long top)
 		unsigned long val = p | _PMD_SIZE_16M | _PAGE_EXEC | _PAGE_HWWRITE;
 
 		pmdp = pmd_offset(pud_offset(pgd_offset_k(v), v), v);
-		pmd_val(*pmdp++) = val;
-		pmd_val(*pmdp++) = val;
-		pmd_val(*pmdp++) = val;
-		pmd_val(*pmdp++) = val;
+		*pmdp++ = __pmd(val);
+		*pmdp++ = __pmd(val);
+		*pmdp++ = __pmd(val);
+		*pmdp++ = __pmd(val);
 
 		v += LARGE_PAGE_SIZE_16M;
 		p += LARGE_PAGE_SIZE_16M;
@@ -125,7 +125,7 @@ unsigned long __init mmu_mapin_ram(unsigned long top)
 		unsigned long val = p | _PMD_SIZE_4M | _PAGE_EXEC | _PAGE_HWWRITE;
 
 		pmdp = pmd_offset(pud_offset(pgd_offset_k(v), v), v);
-		pmd_val(*pmdp) = val;
+		*pmdp = __pmd(val);
 
 		v += LARGE_PAGE_SIZE_4M;
 		p += LARGE_PAGE_SIZE_4M;

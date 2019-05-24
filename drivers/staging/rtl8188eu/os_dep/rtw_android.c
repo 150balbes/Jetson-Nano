@@ -1,20 +1,7 @@
+// SPDX-License-Identifier: GPL-2.0
 /******************************************************************************
  *
  * Copyright(c) 2007 - 2011 Realtek Corporation. All rights reserved.
- *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of version 2 of the GNU General Public License as
- * published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
- * more details.
- *
- * You should have received a copy of the GNU General Public License along with
- * this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110, USA
- *
  *
  ******************************************************************************/
 
@@ -24,7 +11,6 @@
 #include <rtw_android.h>
 #include <osdep_service.h>
 #include <rtw_debug.h>
-#include <ioctl_cfg80211.h>
 #include <rtw_ioctl_set.h>
 
 static const char *android_wifi_cmd_str[ANDROID_WIFI_CMD_MAX] = {
@@ -79,8 +65,9 @@ static int g_wifi_on = true;
 int rtw_android_cmdstr_to_num(char *cmdstr)
 {
 	int cmd_num;
+
 	for (cmd_num = 0; cmd_num < ANDROID_WIFI_CMD_MAX; cmd_num++)
-		if (0 == strnicmp(cmdstr , android_wifi_cmd_str[cmd_num],
+		if (0 == strncasecmp(cmdstr, android_wifi_cmd_str[cmd_num],
 				  strlen(android_wifi_cmd_str[cmd_num])))
 			break;
 	return cmd_num;
@@ -97,7 +84,7 @@ static int rtw_android_get_rssi(struct net_device *net, char *command,
 	if (check_fwstate(pmlmepriv, _FW_LINKED)) {
 		bytes_written += snprintf(&command[bytes_written], total_len,
 					  "%s rssi %d",
-					  pcur_network->network.Ssid.Ssid,
+					  pcur_network->network.ssid.ssid,
 					  padapter->recvpriv.rssi);
 	}
 	return bytes_written;
@@ -107,23 +94,18 @@ static int rtw_android_get_link_speed(struct net_device *net, char *command,
 				      int total_len)
 {
 	struct adapter *padapter = (struct adapter *)rtw_netdev_priv(net);
-	int bytes_written;
 	u16 link_speed;
 
 	link_speed = rtw_get_cur_max_rate(padapter) / 10;
-	bytes_written = snprintf(command, total_len, "LinkSpeed %d",
+	return snprintf(command, total_len, "LinkSpeed %d",
 				 link_speed);
-	return bytes_written;
 }
 
 static int rtw_android_get_macaddr(struct net_device *net, char *command,
 				   int total_len)
 {
-	int bytes_written;
-
-	bytes_written = snprintf(command, total_len, "Macaddr = %pM",
+	return snprintf(command, total_len, "Macaddr = %pM",
 				 net->dev_addr);
-	return bytes_written;
 }
 
 static int android_set_cntry(struct net_device *net, char *command,
@@ -145,45 +127,24 @@ static int android_get_p2p_addr(struct net_device *net, char *command,
 	return ETH_ALEN;
 }
 
-static int rtw_android_set_block(struct net_device *net, char *command,
-				 int total_len)
-{
-	return 0;
-}
-
 int rtw_android_priv_cmd(struct net_device *net, struct ifreq *ifr, int cmd)
 {
 	int ret = 0;
-	char *command = NULL;
+	char *command;
 	int cmd_num;
 	int bytes_written = 0;
 	struct android_wifi_priv_cmd priv_cmd;
 
-	if (!ifr->ifr_data) {
-		ret = -EINVAL;
-		goto exit;
-	}
-	if (copy_from_user(&priv_cmd, ifr->ifr_data,
-			   sizeof(struct android_wifi_priv_cmd))) {
-		ret = -EFAULT;
-		goto exit;
-	}
-	command = kmalloc(priv_cmd.total_len, GFP_KERNEL);
-	if (!command) {
-		DBG_88E("%s: failed to allocate memory\n", __func__);
-		ret = -ENOMEM;
-		goto exit;
-	}
-	if (!access_ok(VERIFY_READ, priv_cmd.buf, priv_cmd.total_len)) {
-		DBG_88E("%s: failed to access memory\n", __func__);
-		ret = -EFAULT;
-		goto exit;
-	}
-	if (copy_from_user(command, (char __user *)priv_cmd.buf,
-			   priv_cmd.total_len)) {
-		ret = -EFAULT;
-		goto exit;
-	}
+	if (!ifr->ifr_data)
+		return -EINVAL;
+	if (copy_from_user(&priv_cmd, ifr->ifr_data, sizeof(priv_cmd)))
+		return -EFAULT;
+	if (priv_cmd.total_len < 1)
+		return -EINVAL;
+	command = memdup_user(priv_cmd.buf, priv_cmd.total_len);
+	if (IS_ERR(command))
+		return PTR_ERR(command);
+	command[priv_cmd.total_len - 1] = 0;
 	DBG_88E("%s: Android private cmd \"%s\" on %s\n",
 		__func__, command, ifr->ifr_name);
 	cmd_num = rtw_android_cmdstr_to_num(command);
@@ -197,7 +158,7 @@ int rtw_android_priv_cmd(struct net_device *net, struct ifreq *ifr, int cmd)
 		DBG_88E("%s: Ignore private cmd \"%s\" - iface %s is down\n",
 			__func__, command, ifr->ifr_name);
 		ret = 0;
-		goto exit;
+		goto free;
 	}
 	switch (cmd_num) {
 	case ANDROID_WIFI_CMD_STOP:
@@ -219,8 +180,6 @@ int rtw_android_priv_cmd(struct net_device *net, struct ifreq *ifr, int cmd)
 							priv_cmd.total_len);
 		break;
 	case ANDROID_WIFI_CMD_BLOCK:
-		bytes_written = rtw_android_set_block(net, command,
-						      priv_cmd.total_len);
 		break;
 	case ANDROID_WIFI_CMD_RXFILTER_START:
 		break;
@@ -285,7 +244,7 @@ response:
 	} else {
 		ret = bytes_written;
 	}
-exit:
+free:
 	kfree(command);
 	return ret;
 }

@@ -205,7 +205,7 @@ GT4: /* r11 contains the rest - will be either 1 or 4 */
 GT16: /* TLB0 is 16MB */
 	addik	r9, r0, 0x1000000 /* means TLB0 is 16MB */
 TLB1:
-	/* must be used r2 because of substract if failed */
+	/* must be used r2 because of subtract if failed */
 	addik	r2, r11, -0x0400000
 	bgei	r2, GT20 /* size is greater than 16MB */
 	/* size is >16MB and <20MB */
@@ -341,11 +341,6 @@ start_here:
 	/* Initialize r31 with current task address */
 	addik	r31, r0, init_task
 
-	/*
-	 * Call platform dependent initialize function.
-	 * Please see $(ARCH)/mach-$(SUBARCH)/setup.c for
-	 * the function.
-	 */
 	addik	r11, r0, machine_early_init
 	brald	r15, r11
 	nop

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * Copyright (C) 2012 Texas Instruments Inc
  *
@@ -9,10 +10,6 @@
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
  *
  * Contributors:
  *      Manjunath Hadli <manjunath.hadli@ti.com>
@@ -159,9 +156,9 @@ struct isif_oper_config {
 	struct isif_params_raw bayer;
 	enum isif_data_pack data_pack;
 	struct isif_gain_values isif_gain_params;
-	void *__iomem base_addr;
-	void *__iomem linear_tbl0_addr;
-	void *__iomem linear_tbl1_addr;
+	void __iomem *base_addr;
+	void __iomem *linear_tbl0_addr;
+	void __iomem *linear_tbl1_addr;
 };
 
 #define ISIF_PAD_SINK      0

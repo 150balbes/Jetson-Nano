@@ -15,7 +15,7 @@
 
 #include "fimc-is-errno.h"
 
-const char * const fimc_is_param_strerr(unsigned int error)
+const char *fimc_is_param_strerr(unsigned int error)
 {
 	switch (error) {
 	case ERROR_COMMON_CMD:
@@ -90,8 +90,8 @@ const char * const fimc_is_param_strerr(unsigned int error)
 		return "ERROR_SENSOR_INVALID_SIZE";
 	case ERROR_SENSOR_INVALID_SETTING:
 		return "ERROR_SENSOR_INVALID_SETTING";
-	case ERROR_SENSOR_ACTURATOR_INIT_FAIL:
-		return "ERROR_SENSOR_ACTURATOR_INIT_FAIL";
+	case ERROR_SENSOR_ACTUATOR_INIT_FAIL:
+		return "ERROR_SENSOR_ACTUATOR_INIT_FAIL";
 	case ERROR_SENSOR_INVALID_AF_POS:
 		return "ERROR_SENSOR_INVALID_AF_POS";
 	case ERROR_SENSOR_UNSUPPORT_FUNC:
@@ -146,7 +146,7 @@ const char * const fimc_is_param_strerr(unsigned int error)
 	}
 }
 
-const char * const fimc_is_strerr(unsigned int error)
+const char *fimc_is_strerr(unsigned int error)
 {
 	error &= ~IS_ERROR_TIME_OUT_FLAG;
 

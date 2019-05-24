@@ -20,7 +20,7 @@
 #define __HOST1X_CDMA_H
 
 #include <linux/sched.h>
-#include <linux/semaphore.h>
+#include <linux/completion.h>
 #include <linux/list.h>
 
 struct host1x_syncpt;
@@ -42,11 +42,13 @@ struct host1x_job;
  */
 
 struct push_buffer {
-	u32 *mapped;			/* mapped pushbuffer memory */
+	void *mapped;			/* mapped pushbuffer memory */
+	dma_addr_t dma;			/* device address of pushbuffer */
 	dma_addr_t phys;		/* physical address of pushbuffer */
 	u32 fence;			/* index we've written */
 	u32 pos;			/* index to write to */
-	u32 size_bytes;
+	u32 size;
+	u32 alloc_size;
 };
 
 struct buffer_timeout {
@@ -56,7 +58,7 @@ struct buffer_timeout {
 	u32 syncpt_val;			/* syncpt value when completed */
 	ktime_t start_ktime;		/* starting time */
 	/* context timeout information */
-	int client;
+	struct host1x_client *client;
 };
 
 enum cdma_event {
@@ -67,8 +69,8 @@ enum cdma_event {
 
 struct host1x_cdma {
 	struct mutex lock;		/* controls access to shared state */
-	struct semaphore sem;		/* signalled when event occurs */
-	enum cdma_event event;		/* event that sem is waiting for */
+	struct completion complete;	/* signalled when event occurs */
+	enum cdma_event event;		/* event that complete is waiting for */
 	unsigned int slots_used;	/* pb slots used in current submit */
 	unsigned int slots_free;	/* pb slots free in current submit */
 	unsigned int first_get;		/* DMAGET value, where submit begins */
@@ -86,9 +88,10 @@ struct host1x_cdma {
 
 int host1x_cdma_init(struct host1x_cdma *cdma);
 int host1x_cdma_deinit(struct host1x_cdma *cdma);
-void host1x_cdma_stop(struct host1x_cdma *cdma);
 int host1x_cdma_begin(struct host1x_cdma *cdma, struct host1x_job *job);
 void host1x_cdma_push(struct host1x_cdma *cdma, u32 op1, u32 op2);
+void host1x_cdma_push_wide(struct host1x_cdma *cdma, u32 op1, u32 op2,
+			   u32 op3, u32 op4);
 void host1x_cdma_end(struct host1x_cdma *cdma, struct host1x_job *job);
 void host1x_cdma_update(struct host1x_cdma *cdma);
 void host1x_cdma_peek(struct host1x_cdma *cdma, u32 dmaget, int slot,

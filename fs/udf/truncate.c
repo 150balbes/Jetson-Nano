@@ -22,7 +22,6 @@
 #include "udfdecl.h"
 #include <linux/fs.h>
 #include <linux/mm.h>
-#include <linux/buffer_head.h>
 
 #include "udf_i.h"
 #include "udf_sb.h"
@@ -49,7 +48,7 @@ static void extent_trunc(struct inode *inode, struct extent_position *epos,
 
 	if (elen != nelen) {
 		udf_write_aext(inode, epos, &neloc, nelen, 0);
-		if (last_block - first_block > 0) {
+		if (last_block > first_block) {
 			if (etype == (EXT_RECORDED_ALLOCATED >> 30))
 				mark_inode_dirty(inode);
 

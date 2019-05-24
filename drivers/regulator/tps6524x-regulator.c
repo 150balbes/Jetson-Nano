@@ -593,15 +593,14 @@ static int pmic_probe(struct spi_device *spi)
 	}
 
 	hw = devm_kzalloc(&spi->dev, sizeof(struct tps6524x), GFP_KERNEL);
-	if (!hw) {
-		dev_err(dev, "cannot allocate regulator private data\n");
+	if (!hw)
 		return -ENOMEM;
-	}
+
 	spi_set_drvdata(spi, hw);
 
 	memset(hw, 0, sizeof(struct tps6524x));
 	hw->dev = dev;
-	hw->spi = spi_dev_get(spi);
+	hw->spi = spi;
 	mutex_init(&hw->lock);
 
 	for (i = 0; i < N_REGULATORS; i++, info++, init_data++) {
@@ -630,7 +629,6 @@ static struct spi_driver pmic_driver = {
 	.probe		= pmic_probe,
 	.driver		= {
 		.name	= "tps6524x",
-		.owner	= THIS_MODULE,
 	},
 };
 

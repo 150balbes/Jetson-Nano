@@ -22,32 +22,54 @@
 
 #define TF_SET_CPU_BOOT_ADDR_SMC 0xfffff200
 
-static void __naked tf_generic_smc(u32 type, u32 arg1, u32 arg2)
+#define TF_CPU_PM		0xfffffffc
+#define TF_CPU_PM_S3		0xffffffe3
+#define TF_CPU_PM_S2		0xffffffe6
+#define TF_CPU_PM_S2_NO_MC_CLK	0xffffffe5
+#define TF_CPU_PM_S1		0xffffffe4
+#define TF_CPU_PM_S1_NOFLUSH_L2	0xffffffe7
+
+static unsigned long cpu_boot_addr;
+
+static void tf_generic_smc(u32 type, u32 arg1, u32 arg2)
 {
+	register u32 r0 asm("r0") = type;
+	register u32 r1 asm("r1") = arg1;
+	register u32 r2 asm("r2") = arg2;
+
 	asm volatile(
 		".arch_extension	sec\n\t"
-		"stmfd	sp!, {r4 - r11, lr}\n\t"
+		"stmfd	sp!, {r4 - r11}\n\t"
 		__asmeq("%0", "r0")
 		__asmeq("%1", "r1")
 		__asmeq("%2", "r2")
 		"mov	r3, #0\n\t"
 		"mov	r4, #0\n\t"
 		"smc	#0\n\t"
-		"ldmfd	sp!, {r4 - r11, pc}"
+		"ldmfd	sp!, {r4 - r11}\n\t"
 		:
-		: "r" (type), "r" (arg1), "r" (arg2)
-		: "memory");
+		: "r" (r0), "r" (r1), "r" (r2)
+		: "memory", "r3", "r12", "lr");
 }
 
 static int tf_set_cpu_boot_addr(int cpu, unsigned long boot_addr)
 {
-	tf_generic_smc(TF_SET_CPU_BOOT_ADDR_SMC, boot_addr, 0);
+	cpu_boot_addr = boot_addr;
+	tf_generic_smc(TF_SET_CPU_BOOT_ADDR_SMC, cpu_boot_addr, 0);
+
+	return 0;
+}
+
+static int tf_prepare_idle(void)
+{
+	tf_generic_smc(TF_CPU_PM, TF_CPU_PM_S1_NOFLUSH_L2, cpu_boot_addr);
 
 	return 0;
 }
 
 static const struct firmware_ops trusted_foundations_ops = {
 	.set_cpu_boot_addr = tf_set_cpu_boot_addr,
+	.prepare_idle = tf_prepare_idle,
 };
 
 void register_trusted_foundations(struct trusted_foundations_platform_data *pd)

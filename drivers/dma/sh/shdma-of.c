@@ -1,12 +1,9 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  * SHDMA Device Tree glue
  *
  * Copyright (C) 2013 Renesas Electronics Inc.
  * Author: Guennadi Liakhovetski <g.liakhovetski@gmx.de>
- *
- * This is free software; you can redistribute it and/or modify
- * it under the terms of version 2 of the GNU General Public License as
- * published by the Free Software Foundation.
  */
 
 #include <linux/dmaengine.h>
@@ -33,7 +30,8 @@ static struct dma_chan *shdma_of_xlate(struct of_phandle_args *dma_spec,
 	/* Only slave DMA channels can be allocated via DT */
 	dma_cap_set(DMA_SLAVE, mask);
 
-	chan = dma_request_channel(mask, shdma_chan_filter, (void *)id);
+	chan = dma_request_channel(mask, shdma_chan_filter,
+				   (void *)(uintptr_t)id);
 	if (chan)
 		to_shdma_chan(chan)->hw_req = id;
 
@@ -65,7 +63,6 @@ MODULE_DEVICE_TABLE(of, sh_dmae_of_match);
 
 static struct platform_driver shdma_of = {
 	.driver		= {
-		.owner	= THIS_MODULE,
 		.name	= "shdma-of",
 		.of_match_table = shdma_of_match,
 	},

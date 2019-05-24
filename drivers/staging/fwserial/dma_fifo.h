@@ -1,21 +1,8 @@
+/* SPDX-License-Identifier: GPL-2.0+ */
 /*
  * DMA-able FIFO interface
  *
  * Copyright (C) 2012 Peter Hurley <peter@hurleysoftware.com>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
  */
 
 #ifndef _DMA_FIFO_H_
@@ -49,9 +36,9 @@
 #define DMA_FIFO_GUARD 3   /* # of cache lines to reserve for the guard area */
 
 struct dma_fifo {
-	unsigned	 in;
-	unsigned	 out;		/* updated when dma is pended         */
-	unsigned	 done;		/* updated upon dma completion        */
+	unsigned int	 in;
+	unsigned int	 out;		/* updated when dma is pended         */
+	unsigned int	 done;		/* updated upon dma completion        */
 	struct {
 		unsigned corrupt:1;
 	};
@@ -59,7 +46,7 @@ struct dma_fifo {
 	int		 guard;		/* ofs of guard area		      */
 	int		 capacity;	/* size + reserved                    */
 	int		 avail;		/* # of unused bytes in fifo          */
-	unsigned	 align;		/* must be power of 2                 */
+	unsigned int	 align;		/* must be power of 2                 */
 	int		 tx_limit;	/* max # of bytes per dma transaction */
 	int		 open_limit;	/* max # of outstanding allowed       */
 	int		 open;		/* # of outstanding dma transactions  */
@@ -70,9 +57,9 @@ struct dma_fifo {
 struct dma_pending {
 	struct list_head link;
 	void		 *data;
-	unsigned	 len;
-	unsigned         next;
-	unsigned         out;
+	unsigned int	 len;
+	unsigned int	 next;
+	unsigned int	 out;
 };
 
 static inline void dp_mark_completed(struct dma_pending *dp)
@@ -85,15 +72,15 @@ static inline bool dp_is_completed(struct dma_pending *dp)
 	return (unsigned long)dp->data & 1UL;
 }
 
-extern void dma_fifo_init(struct dma_fifo *fifo);
-extern int dma_fifo_alloc(struct dma_fifo *fifo, int size, unsigned align,
-			  int tx_limit, int open_limit, gfp_t gfp_mask);
-extern void dma_fifo_free(struct dma_fifo *fifo);
-extern void dma_fifo_reset(struct dma_fifo *fifo);
-extern int dma_fifo_in(struct dma_fifo *fifo, const void *src, int n);
-extern int dma_fifo_out_pend(struct dma_fifo *fifo, struct dma_pending *pended);
-extern int dma_fifo_out_complete(struct dma_fifo *fifo,
-				 struct dma_pending *complete);
+void dma_fifo_init(struct dma_fifo *fifo);
+int dma_fifo_alloc(struct dma_fifo *fifo, int size, unsigned int align,
+		   int tx_limit, int open_limit, gfp_t gfp_mask);
+void dma_fifo_free(struct dma_fifo *fifo);
+void dma_fifo_reset(struct dma_fifo *fifo);
+int dma_fifo_in(struct dma_fifo *fifo, const void *src, int n);
+int dma_fifo_out_pend(struct dma_fifo *fifo, struct dma_pending *pended);
+int dma_fifo_out_complete(struct dma_fifo *fifo,
+			  struct dma_pending *complete);
 
 /* returns the # of used bytes in the fifo */
 static inline int dma_fifo_level(struct dma_fifo *fifo)

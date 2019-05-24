@@ -102,7 +102,7 @@
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/parport.h>
-#include <linux/sched.h>
+#include <linux/sched/signal.h>
 #include <linux/slab.h>
 #include <linux/spinlock.h>
 #include <linux/stddef.h>
@@ -138,7 +138,7 @@ static unsigned int features =	~0U;
 static bool verbose_probing =	DEFAULT_VERBOSE_PROBING;
 
 /* We do not support more than one port. */
-static struct parport *this_port = NULL;
+static struct parport *this_port;
 
 /* Timing constants for FIFO modes.  */
 #define FIFO_NFAULT_TIMEOUT	100	/* milliseconds */
@@ -1769,7 +1769,7 @@ stop:
 
 /*--- Default parport operations ---------------------------------------*/
 
-static __initdata struct parport_operations parport_ip32_ops = {
+static const struct parport_operations parport_ip32_ops __initconst = {
 	.write_data		= parport_ip32_write_data,
 	.read_data		= parport_ip32_read_data,
 
@@ -2204,7 +2204,7 @@ static int __init parport_ip32_init(void)
 {
 	pr_info(PPIP32 "SGI IP32 built-in parallel port driver v0.6\n");
 	this_port = parport_ip32_probe_port();
-	return IS_ERR(this_port) ? PTR_ERR(this_port) : 0;
+	return PTR_ERR_OR_ZERO(this_port);
 }
 
 /**

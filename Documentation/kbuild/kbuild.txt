@@ -50,9 +50,26 @@ LDFLAGS_MODULE
 --------------------------------------------------
 Additional options used for $(LD) when linking modules.
 
-LDFLAGS_vmlinux
+HOSTCFLAGS
 --------------------------------------------------
-Additional options passed to final link of vmlinux.
+Additional flags to be passed to $(HOSTCC) when building host programs.
+
+HOSTCXXFLAGS
+--------------------------------------------------
+Additional flags to be passed to $(HOSTCXX) when building host programs.
+
+HOSTLDFLAGS
+--------------------------------------------------
+Additional flags to be passed when linking host programs.
+
+HOSTLDLIBS
+--------------------------------------------------
+Additional libraries to link against when building host programs.
+
+KBUILD_KCONFIG
+--------------------------------------------------
+Set the top-level Kconfig file to the value of this environment
+variable.  The default name is "Kconfig".
 
 KBUILD_VERBOSE
 --------------------------------------------------
@@ -64,12 +81,7 @@ KBUILD_EXTMOD
 --------------------------------------------------
 Set the directory to look for the kernel source when building external
 modules.
-The directory can be specified in several ways:
-1) Use "M=..." on the command line
-2) Environment variable KBUILD_EXTMOD
-3) Environment variable SUBDIRS
-The possibilities are listed in the order they take precedence.
-Using "M=..." will always override the others.
+Setting "M=..." takes precedence over KBUILD_EXTMOD.
 
 KBUILD_OUTPUT
 --------------------------------------------------
@@ -92,7 +104,8 @@ In most cases the name of the architecture is the same as the
 directory name found in the arch/ directory.
 But some architectures such as x86 and sparc have aliases.
 x86: i386 for 32 bit, x86_64 for 64 bit
-sparc: sparc for 32 bit, sparc64 for 64 bit
+sh: sh for 32 bit, sh64 for 64 bit
+sparc: sparc32 for 32 bit, sparc64 for 64 bit
 
 CROSS_COMPILE
 --------------------------------------------------
@@ -152,15 +165,6 @@ stripped after they are installed.  If INSTALL_MOD_STRIP is '1', then
 the default option --strip-debug will be used.  Otherwise,
 INSTALL_MOD_STRIP value will be used as the options to the strip command.
 
-INSTALL_FW_PATH
---------------------------------------------------
-INSTALL_FW_PATH specifies where to install the firmware blobs.
-The default value is:
-
-    $(INSTALL_MOD_PATH)/lib/firmware
-
-The value can be overridden in which case the default value is ignored.
-
 INSTALL_HDR_PATH
 --------------------------------------------------
 INSTALL_HDR_PATH specifies where to install user space headers when
@@ -173,6 +177,11 @@ $(objtree) is the directory where output files are saved.
 The output directory is often set using "O=..." on the commandline.
 
 The value can be overridden in which case the default value is ignored.
+
+KBUILD_SIGN_PIN
+--------------------------------------------------
+This variable allows a passphrase or PIN to be passed to the sign-file
+utility when signing kernel modules, if the private key requires such.
 
 KBUILD_MODPOST_WARN
 --------------------------------------------------
@@ -223,13 +232,12 @@ KBUILD_LDS
 --------------------------------------------------
 The linker script with full path. Assigned by the top-level Makefile.
 
-KBUILD_VMLINUX_INIT
+KBUILD_VMLINUX_OBJS
 --------------------------------------------------
-All object files for the init (first) part of vmlinux.
-Files specified with KBUILD_VMLINUX_INIT are linked first.
+All object files for vmlinux. They are linked to vmlinux in the same
+order as listed in KBUILD_VMLINUX_OBJS.
 
-KBUILD_VMLINUX_MAIN
+KBUILD_VMLINUX_LIBS
 --------------------------------------------------
-All object files for the main part of vmlinux.
-KBUILD_VMLINUX_INIT and KBUILD_VMLINUX_MAIN together specify
-all the object files used to link vmlinux.
+All .a "lib" files for vmlinux. KBUILD_VMLINUX_OBJS and KBUILD_VMLINUX_LIBS
+together specify all the object files used to link vmlinux.

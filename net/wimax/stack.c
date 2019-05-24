@@ -191,8 +191,8 @@ void __check_new_state(enum wimax_st old_state, enum wimax_st new_state,
 		       unsigned int allowed_states_bm)
 {
 	if (WARN_ON(((1 << new_state) & allowed_states_bm) == 0)) {
-		printk(KERN_ERR "SW BUG! Forbidden state change %u -> %u\n",
-			old_state, new_state);
+		pr_err("SW BUG! Forbidden state change %u -> %u\n",
+		       old_state, new_state);
 	}
 }
 
@@ -486,7 +486,8 @@ int wimax_dev_add(struct wimax_dev *wimax_dev, struct net_device *net_dev)
 	d_fnstart(3, dev, "(wimax_dev %p net_dev %p)\n", wimax_dev, net_dev);
 
 	/* Do the RFKILL setup before locking, as RFKILL will call
-	 * into our functions. */
+	 * into our functions.
+	 */
 	wimax_dev->net_dev = net_dev;
 	result = wimax_rfkill_add(wimax_dev);
 	if (result < 0)
@@ -572,16 +573,20 @@ struct d_level D_LEVEL[] = {
 size_t D_LEVEL_SIZE = ARRAY_SIZE(D_LEVEL);
 
 
-struct genl_family wimax_gnl_family = {
-	.id = GENL_ID_GENERATE,
+static const struct genl_multicast_group wimax_gnl_mcgrps[] = {
+	{ .name = "msg", },
+};
+
+struct genl_family wimax_gnl_family __ro_after_init = {
 	.name = "WiMAX",
 	.version = WIMAX_GNL_VERSION,
 	.hdrsize = 0,
 	.maxattr = WIMAX_GNL_ATTR_MAX,
-};
-
-static const struct genl_multicast_group wimax_gnl_mcgrps[] = {
-	{ .name = "msg", },
+	.module = THIS_MODULE,
+	.ops = wimax_gnl_ops,
+	.n_ops = ARRAY_SIZE(wimax_gnl_ops),
+	.mcgrps = wimax_gnl_mcgrps,
+	.n_mcgrps = ARRAY_SIZE(wimax_gnl_mcgrps),
 };
 
 
@@ -596,14 +601,9 @@ int __init wimax_subsys_init(void)
 	d_parse_params(D_LEVEL, D_LEVEL_SIZE, wimax_debug_params,
 		       "wimax.debug");
 
-	snprintf(wimax_gnl_family.name, sizeof(wimax_gnl_family.name),
-		 "WiMAX");
-	result = genl_register_family_with_ops_groups(&wimax_gnl_family,
-						      wimax_gnl_ops,
-						      wimax_gnl_mcgrps);
+	result = genl_register_family(&wimax_gnl_family);
 	if (unlikely(result < 0)) {
-		printk(KERN_ERR "cannot register generic netlink family: %d\n",
-		       result);
+		pr_err("cannot register generic netlink family: %d\n", result);
 		goto error_register_family;
 	}
 
@@ -630,4 +630,3 @@ module_exit(wimax_subsys_exit);
 MODULE_AUTHOR("Intel Corporation <linux-wimax@intel.com>");
 MODULE_DESCRIPTION("Linux WiMAX stack");
 MODULE_LICENSE("GPL");
-

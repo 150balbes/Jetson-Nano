@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * IRQ flags handling
  */
@@ -20,9 +21,9 @@
  */
 #define TRACE_WITH_FRAME_BUFFER(func)		\
 	mflr	r0;				\
-	stdu	r1, -32(r1);			\
+	stdu	r1, -STACK_FRAME_OVERHEAD(r1);	\
 	std	r0, 16(r1);			\
-	stdu	r1, -32(r1);			\
+	stdu	r1, -STACK_FRAME_OVERHEAD(r1);	\
 	bl func;				\
 	ld	r1, 0(r1);			\
 	ld	r1, 0(r1);
@@ -32,26 +33,28 @@
 #endif
 
 /*
- * Most of the CPU's IRQ-state tracing is done from assembly code; we
- * have to call a C function so call a wrapper that saves all the
- * C-clobbered registers.
+ * These are calls to C code, so the caller must be prepared for volatiles to
+ * be clobbered.
  */
-#define TRACE_ENABLE_INTS	TRACE_WITH_FRAME_BUFFER(.trace_hardirqs_on)
-#define TRACE_DISABLE_INTS	TRACE_WITH_FRAME_BUFFER(.trace_hardirqs_off)
+#define TRACE_ENABLE_INTS	TRACE_WITH_FRAME_BUFFER(trace_hardirqs_on)
+#define TRACE_DISABLE_INTS	TRACE_WITH_FRAME_BUFFER(trace_hardirqs_off)
 
 /*
  * This is used by assembly code to soft-disable interrupts first and
  * reconcile irq state.
+ *
+ * NB: This may call C code, so the caller must be prepared for volatiles to
+ * be clobbered.
  */
 #define RECONCILE_IRQ_STATE(__rA, __rB)		\
-	lbz	__rA,PACASOFTIRQEN(r13);	\
+	lbz	__rA,PACAIRQSOFTMASK(r13);	\
 	lbz	__rB,PACAIRQHAPPENED(r13);	\
-	cmpwi	cr0,__rA,0;			\
-	li	__rA,0;				\
+	andi.	__rA,__rA,IRQS_DISABLED;	\
+	li	__rA,IRQS_DISABLED;		\
 	ori	__rB,__rB,PACA_IRQ_HARD_DIS;	\
 	stb	__rB,PACAIRQHAPPENED(r13);	\
-	beq	44f;				\
-	stb	__rA,PACASOFTIRQEN(r13);	\
+	bne	44f;				\
+	stb	__rA,PACAIRQSOFTMASK(r13);	\
 	TRACE_DISABLE_INTS;			\
 44:
 
@@ -61,9 +64,9 @@
 
 #define RECONCILE_IRQ_STATE(__rA, __rB)		\
 	lbz	__rA,PACAIRQHAPPENED(r13);	\
-	li	__rB,0;				\
+	li	__rB,IRQS_DISABLED;		\
 	ori	__rA,__rA,PACA_IRQ_HARD_DIS;	\
-	stb	__rB,PACASOFTIRQEN(r13);	\
+	stb	__rB,PACAIRQSOFTMASK(r13);	\
 	stb	__rA,PACAIRQHAPPENED(r13)
 #endif
 #endif

@@ -23,6 +23,8 @@
 		compatible = "ti,twl4030-bci";
 		interrupts = <9>, <2>;
 		bci3v1-supply = <&vusb3v1>;
+		io-channels = <&twl_madc 11>;
+		io-channel-names = "vac";
 	};
 
 	watchdog {
@@ -144,5 +146,18 @@
 	twl_pwrbutton: pwrbutton {
 		compatible = "ti,twl4030-pwrbutton";
 		interrupts = <8>;
+	};
+
+	twl_keypad: keypad {
+		compatible = "ti,twl4030-keypad";
+		interrupts = <1>;
+		keypad,num-rows = <8>;
+		keypad,num-columns = <8>;
+	};
+
+	twl_madc: madc {
+		compatible = "ti,twl4030-madc";
+		interrupts = <3>;
+		#io-channel-cells = <1>;
 	};
 };

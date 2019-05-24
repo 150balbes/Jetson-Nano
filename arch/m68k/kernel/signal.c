@@ -42,11 +42,11 @@
 #include <linux/personality.h>
 #include <linux/tty.h>
 #include <linux/binfmts.h>
-#include <linux/module.h>
+#include <linux/extable.h>
 #include <linux/tracehook.h>
 
 #include <asm/setup.h>
-#include <asm/uaccess.h>
+#include <linux/uaccess.h>
 #include <asm/pgtable.h>
 #include <asm/traps.h>
 #include <asm/ucontext.h>
@@ -88,7 +88,7 @@ static inline int frame_extra_sizes(int f)
 	return frame_size_change[f];
 }
 
-int handle_kernel_fault(struct pt_regs *regs)
+int fixup_exception(struct pt_regs *regs)
 {
 	const struct exception_table_entry *fixup;
 	struct pt_regs *tregs;
@@ -107,22 +107,6 @@ int handle_kernel_fault(struct pt_regs *regs)
 	tregs->sr = regs->sr;
 
 	return 1;
-}
-
-void ptrace_signal_deliver(void)
-{
-	struct pt_regs *regs = signal_pt_regs();
-	if (regs->orig_d0 < 0)
-		return;
-	switch (regs->d0) {
-	case -ERESTARTNOHAND:
-	case -ERESTARTSYS:
-	case -ERESTARTNOINTR:
-		regs->d0 = regs->orig_d0;
-		regs->orig_d0 = -1;
-		regs->pc -= 2;
-		break;
-	}
 }
 
 static inline void push_cache (unsigned long vaddr)
@@ -213,7 +197,6 @@ static inline int frame_extra_sizes(int f)
 
 static inline void adjustformat(struct pt_regs *regs)
 {
-	((struct switch_stack *)regs - 1)->a5 = current->mm->start_data;
 	/*
 	 * set format byte to make stack appear modulo 4, which it will
 	 * be when doing the rte
@@ -591,6 +574,67 @@ static inline int rt_save_fpu_state(struct ucontext __user *uc, struct pt_regs *
 
 #endif /* CONFIG_FPU */
 
+static inline void siginfo_build_tests(void)
+{
+	/*
+	 * This needs to be tested on m68k as it has a lesser
+	 * alignment requirement than x86 and that can cause surprises.
+	 */
+
+	/* This is part of the ABI and can never change in size: */
+	BUILD_BUG_ON(sizeof(siginfo_t) != 128);
+
+	/* Ensure the known fields never change in location */
+	BUILD_BUG_ON(offsetof(siginfo_t, si_signo) != 0);
+	BUILD_BUG_ON(offsetof(siginfo_t, si_errno) != 4);
+	BUILD_BUG_ON(offsetof(siginfo_t, si_code)  != 8);
+
+	/* _kill */
+	BUILD_BUG_ON(offsetof(siginfo_t, si_pid) != 0x0c);
+	BUILD_BUG_ON(offsetof(siginfo_t, si_uid) != 0x10);
+
+	/* _timer */
+	BUILD_BUG_ON(offsetof(siginfo_t, si_tid)     != 0x0c);
+	BUILD_BUG_ON(offsetof(siginfo_t, si_overrun) != 0x10);
+	BUILD_BUG_ON(offsetof(siginfo_t, si_value)   != 0x14);
+
+	/* _rt */
+	BUILD_BUG_ON(offsetof(siginfo_t, si_pid)   != 0x0c);
+	BUILD_BUG_ON(offsetof(siginfo_t, si_uid)   != 0x10);
+	BUILD_BUG_ON(offsetof(siginfo_t, si_value) != 0x14);
+
+	/* _sigchld */
+	BUILD_BUG_ON(offsetof(siginfo_t, si_pid)    != 0x0c);
+	BUILD_BUG_ON(offsetof(siginfo_t, si_uid)    != 0x10);
+	BUILD_BUG_ON(offsetof(siginfo_t, si_status) != 0x14);
+	BUILD_BUG_ON(offsetof(siginfo_t, si_utime)  != 0x18);
+	BUILD_BUG_ON(offsetof(siginfo_t, si_stime)  != 0x1c);
+
+	/* _sigfault */
+	BUILD_BUG_ON(offsetof(siginfo_t, si_addr) != 0x0c);
+
+	/* _sigfault._mcerr */
+	BUILD_BUG_ON(offsetof(siginfo_t, si_addr_lsb) != 0x10);
+
+	/* _sigfault._addr_bnd */
+	BUILD_BUG_ON(offsetof(siginfo_t, si_lower) != 0x12);
+	BUILD_BUG_ON(offsetof(siginfo_t, si_upper) != 0x16);
+
+	/* _sigfault._addr_pkey */
+	BUILD_BUG_ON(offsetof(siginfo_t, si_pkey) != 0x12);
+
+	/* _sigpoll */
+	BUILD_BUG_ON(offsetof(siginfo_t, si_band)   != 0x0c);
+	BUILD_BUG_ON(offsetof(siginfo_t, si_fd)     != 0x10);
+
+	/* _sigsys */
+	BUILD_BUG_ON(offsetof(siginfo_t, si_call_addr) != 0x0c);
+	BUILD_BUG_ON(offsetof(siginfo_t, si_syscall)   != 0x10);
+	BUILD_BUG_ON(offsetof(siginfo_t, si_arch)      != 0x14);
+
+	/* any new si_fields should be added here */
+}
+
 static int mangle_kernel_stack(struct pt_regs *regs, int formatvec,
 			       void __user *fp)
 {
@@ -599,9 +643,7 @@ static int mangle_kernel_stack(struct pt_regs *regs, int formatvec,
 		/*
 		 * user process trying to return with weird frame format
 		 */
-#ifdef DEBUG
-		printk("user process returning with weird frame format\n");
-#endif
+		pr_debug("user process returning with weird frame format\n");
 		return 1;
 	}
 	if (!fsize) {
@@ -609,7 +651,8 @@ static int mangle_kernel_stack(struct pt_regs *regs, int formatvec,
 		regs->vector = formatvec & 0xfff;
 	} else {
 		struct switch_stack *sw = (struct switch_stack *)regs - 1;
-		unsigned long buf[fsize / 2]; /* yes, twice as much */
+		/* yes, twice as much as max(sizeof(frame.un.fmt<x>)) */
+		unsigned long buf[sizeof(((struct frame *)0)->un) / 2];
 
 		/* that'll make sure that expansion won't crap over data */
 		if (copy_from_user(buf + fsize / 4, fp, fsize))
@@ -654,8 +697,10 @@ restore_sigcontext(struct pt_regs *regs, struct sigcontext __user *usc, void __u
 	struct sigcontext context;
 	int err = 0;
 
+	siginfo_build_tests();
+
 	/* Always make any pending restarted system calls return -EINTR */
-	current_thread_info()->restart_block.fn = do_no_restart_syscall;
+	current->restart_block.fn = do_no_restart_syscall;
 
 	/* get previous context */
 	if (copy_from_user(&context, usc, sizeof(context)))
@@ -693,7 +738,7 @@ rt_restore_ucontext(struct pt_regs *regs, struct switch_stack *sw,
 	int err;
 
 	/* Always make any pending restarted system calls return -EINTR */
-	current_thread_info()->restart_block.fn = do_no_restart_syscall;
+	current->restart_block.fn = do_no_restart_syscall;
 
 	err = __get_user(temp, &uc->uc_mcontext.version);
 	if (temp != MCONTEXT_VERSION)
@@ -737,15 +782,13 @@ badframe:
 	return 1;
 }
 
-asmlinkage int do_sigreturn(unsigned long __unused)
+asmlinkage int do_sigreturn(struct pt_regs *regs, struct switch_stack *sw)
 {
-	struct switch_stack *sw = (struct switch_stack *) &__unused;
-	struct pt_regs *regs = (struct pt_regs *) (sw + 1);
 	unsigned long usp = rdusp();
 	struct sigframe __user *frame = (struct sigframe __user *)(usp - 4);
 	sigset_t set;
 
-	if (!access_ok(VERIFY_READ, frame, sizeof(*frame)))
+	if (!access_ok(frame, sizeof(*frame)))
 		goto badframe;
 	if (__get_user(set.sig[0], &frame->sc.sc_mask) ||
 	    (_NSIG_WORDS > 1 &&
@@ -764,15 +807,13 @@ badframe:
 	return 0;
 }
 
-asmlinkage int do_rt_sigreturn(unsigned long __unused)
+asmlinkage int do_rt_sigreturn(struct pt_regs *regs, struct switch_stack *sw)
 {
-	struct switch_stack *sw = (struct switch_stack *) &__unused;
-	struct pt_regs *regs = (struct pt_regs *) (sw + 1);
 	unsigned long usp = rdusp();
 	struct rt_sigframe __user *frame = (struct rt_sigframe __user *)(usp - 4);
 	sigset_t set;
 
-	if (!access_ok(VERIFY_READ, frame, sizeof(*frame)))
+	if (!access_ok(frame, sizeof(*frame)))
 		goto badframe;
 	if (__copy_from_user(&set, &frame->uc.uc_sigmask, sizeof(set)))
 		goto badframe;
@@ -835,48 +876,33 @@ static inline int rt_setup_ucontext(struct ucontext __user *uc, struct pt_regs *
 }
 
 static inline void __user *
-get_sigframe(struct k_sigaction *ka, struct pt_regs *regs, size_t frame_size)
+get_sigframe(struct ksignal *ksig, size_t frame_size)
 {
-	unsigned long usp;
+	unsigned long usp = sigsp(rdusp(), ksig);
 
-	/* Default to using normal stack.  */
-	usp = rdusp();
-
-	/* This is the X/Open sanctioned signal stack switching.  */
-	if (ka->sa.sa_flags & SA_ONSTACK) {
-		if (!sas_ss_flags(usp))
-			usp = current->sas_ss_sp + current->sas_ss_size;
-	}
 	return (void __user *)((usp - frame_size) & -8UL);
 }
 
-static int setup_frame (int sig, struct k_sigaction *ka,
-			 sigset_t *set, struct pt_regs *regs)
+static int setup_frame(struct ksignal *ksig, sigset_t *set,
+			struct pt_regs *regs)
 {
 	struct sigframe __user *frame;
 	int fsize = frame_extra_sizes(regs->format);
 	struct sigcontext context;
-	int err = 0;
+	int err = 0, sig = ksig->sig;
 
 	if (fsize < 0) {
-#ifdef DEBUG
-		printk ("setup_frame: Unknown frame format %#x\n",
-			regs->format);
-#endif
-		goto give_sigsegv;
+		pr_debug("setup_frame: Unknown frame format %#x\n",
+			 regs->format);
+		return -EFAULT;
 	}
 
-	frame = get_sigframe(ka, regs, sizeof(*frame) + fsize);
+	frame = get_sigframe(ksig, sizeof(*frame) + fsize);
 
 	if (fsize)
 		err |= copy_to_user (frame + 1, regs + 1, fsize);
 
-	err |= __put_user((current_thread_info()->exec_domain
-			   && current_thread_info()->exec_domain->signal_invmap
-			   && sig < 32
-			   ? current_thread_info()->exec_domain->signal_invmap[sig]
-			   : sig),
-			  &frame->sig);
+	err |= __put_user(sig, &frame->sig);
 
 	err |= __put_user(regs->vector, &frame->code);
 	err |= __put_user(&frame->sc, &frame->psc);
@@ -899,7 +925,7 @@ static int setup_frame (int sig, struct k_sigaction *ka,
 #endif
 
 	if (err)
-		goto give_sigsegv;
+		return -EFAULT;
 
 	push_cache ((unsigned long) &frame->retcode);
 
@@ -908,7 +934,7 @@ static int setup_frame (int sig, struct k_sigaction *ka,
 	 * to destroy is successfully copied to sigframe.
 	 */
 	wrusp ((unsigned long) frame);
-	regs->pc = (unsigned long) ka->sa.sa_handler;
+	regs->pc = (unsigned long) ksig->ka.sa.sa_handler;
 	adjustformat(regs);
 
 	/*
@@ -923,9 +949,7 @@ static int setup_frame (int sig, struct k_sigaction *ka,
 	if (regs->stkadj) {
 		struct pt_regs *tregs =
 			(struct pt_regs *)((ulong)regs + regs->stkadj);
-#ifdef DEBUG
-		printk("Performing stackadjust=%04x\n", regs->stkadj);
-#endif
+		pr_debug("Performing stackadjust=%04lx\n", regs->stkadj);
 		/* This must be copied with decreasing addresses to
                    handle overlaps.  */
 		tregs->vector = 0;
@@ -934,41 +958,30 @@ static int setup_frame (int sig, struct k_sigaction *ka,
 		tregs->sr = regs->sr;
 	}
 	return 0;
-
-give_sigsegv:
-	force_sigsegv(sig, current);
-	return err;
 }
 
-static int setup_rt_frame (int sig, struct k_sigaction *ka, siginfo_t *info,
-			    sigset_t *set, struct pt_regs *regs)
+static int setup_rt_frame(struct ksignal *ksig, sigset_t *set,
+			   struct pt_regs *regs)
 {
 	struct rt_sigframe __user *frame;
 	int fsize = frame_extra_sizes(regs->format);
-	int err = 0;
+	int err = 0, sig = ksig->sig;
 
 	if (fsize < 0) {
-#ifdef DEBUG
-		printk ("setup_frame: Unknown frame format %#x\n",
-			regs->format);
-#endif
-		goto give_sigsegv;
+		pr_debug("setup_frame: Unknown frame format %#x\n",
+			 regs->format);
+		return -EFAULT;
 	}
 
-	frame = get_sigframe(ka, regs, sizeof(*frame));
+	frame = get_sigframe(ksig, sizeof(*frame));
 
 	if (fsize)
 		err |= copy_to_user (&frame->uc.uc_extra, regs + 1, fsize);
 
-	err |= __put_user((current_thread_info()->exec_domain
-			   && current_thread_info()->exec_domain->signal_invmap
-			   && sig < 32
-			   ? current_thread_info()->exec_domain->signal_invmap[sig]
-			   : sig),
-			  &frame->sig);
+	err |= __put_user(sig, &frame->sig);
 	err |= __put_user(&frame->info, &frame->pinfo);
 	err |= __put_user(&frame->uc, &frame->puc);
-	err |= copy_siginfo_to_user(&frame->info, info);
+	err |= copy_siginfo_to_user(&frame->info, &ksig->info);
 
 	/* Create the ucontext.  */
 	err |= __put_user(0, &frame->uc.uc_flags);
@@ -996,7 +1009,7 @@ static int setup_rt_frame (int sig, struct k_sigaction *ka, siginfo_t *info,
 #endif /* CONFIG_MMU */
 
 	if (err)
-		goto give_sigsegv;
+		return -EFAULT;
 
 	push_cache ((unsigned long) &frame->retcode);
 
@@ -1005,7 +1018,7 @@ static int setup_rt_frame (int sig, struct k_sigaction *ka, siginfo_t *info,
 	 * to destroy is successfully copied to sigframe.
 	 */
 	wrusp ((unsigned long) frame);
-	regs->pc = (unsigned long) ka->sa.sa_handler;
+	regs->pc = (unsigned long) ksig->ka.sa.sa_handler;
 	adjustformat(regs);
 
 	/*
@@ -1020,9 +1033,7 @@ static int setup_rt_frame (int sig, struct k_sigaction *ka, siginfo_t *info,
 	if (regs->stkadj) {
 		struct pt_regs *tregs =
 			(struct pt_regs *)((ulong)regs + regs->stkadj);
-#ifdef DEBUG
-		printk("Performing stackadjust=%04x\n", regs->stkadj);
-#endif
+		pr_debug("Performing stackadjust=%04lx\n", regs->stkadj);
 		/* This must be copied with decreasing addresses to
                    handle overlaps.  */
 		tregs->vector = 0;
@@ -1031,10 +1042,6 @@ static int setup_rt_frame (int sig, struct k_sigaction *ka, siginfo_t *info,
 		tregs->sr = regs->sr;
 	}
 	return 0;
-
-give_sigsegv:
-	force_sigsegv(sig, current);
-	return err;
 }
 
 static inline void
@@ -1074,26 +1081,22 @@ handle_restart(struct pt_regs *regs, struct k_sigaction *ka, int has_handler)
  * OK, we're invoking a handler
  */
 static void
-handle_signal(int sig, struct k_sigaction *ka, siginfo_t *info,
-	      struct pt_regs *regs)
+handle_signal(struct ksignal *ksig, struct pt_regs *regs)
 {
 	sigset_t *oldset = sigmask_to_save();
 	int err;
 	/* are we from a system call? */
 	if (regs->orig_d0 >= 0)
 		/* If so, check system call restarting.. */
-		handle_restart(regs, ka, 1);
+		handle_restart(regs, &ksig->ka, 1);
 
 	/* set up the stack frame */
-	if (ka->sa.sa_flags & SA_SIGINFO)
-		err = setup_rt_frame(sig, ka, info, oldset, regs);
+	if (ksig->ka.sa.sa_flags & SA_SIGINFO)
+		err = setup_rt_frame(ksig, oldset, regs);
 	else
-		err = setup_frame(sig, ka, oldset, regs);
+		err = setup_frame(ksig, oldset, regs);
 
-	if (err)
-		return;
-
-	signal_delivered(sig, info, ka, regs, 0);
+	signal_setup_done(err, ksig, 0);
 
 	if (test_thread_flag(TIF_DELAYED_TRACE)) {
 		regs->sr &= ~0x8000;
@@ -1108,16 +1111,13 @@ handle_signal(int sig, struct k_sigaction *ka, siginfo_t *info,
  */
 static void do_signal(struct pt_regs *regs)
 {
-	siginfo_t info;
-	struct k_sigaction ka;
-	int signr;
+	struct ksignal ksig;
 
 	current->thread.esp0 = (unsigned long) regs;
 
-	signr = get_signal_to_deliver(&info, &ka, regs, NULL);
-	if (signr > 0) {
+	if (get_signal(&ksig)) {
 		/* Whee!  Actually deliver the signal.  */
-		handle_signal(signr, &ka, &info, regs);
+		handle_signal(&ksig, regs);
 		return;
 	}
 

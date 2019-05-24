@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0+
 /*
   * icom.c
   *
@@ -6,23 +7,7 @@
   * Serial device driver.
   *
   * Based on code from serial.c
-  *
-  * This program is free software; you can redistribute it and/or modify
-  * it under the terms of the GNU General Public License as published by
-  * the Free Software Foundation; either version 2 of the License, or
-  * (at your option) any later version.
-  *
-  * This program is distributed in the hope that it will be useful,
-  * but WITHOUT ANY WARRANTY; without even the implied warranty of
-  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-  * GNU General Public License for more details.
-  *
-  * You should have received a copy of the GNU General Public License
-  * along with this program; if not, write to the Free Software
-  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
-  *
   */
-#define SERIAL_DO_RESTART
 #include <linux/module.h>
 #include <linux/kernel.h>
 #include <linux/errno.h>
@@ -54,7 +39,7 @@
 
 #include <asm/io.h>
 #include <asm/irq.h>
-#include <asm/uaccess.h>
+#include <linux/uaccess.h>
 
 #include "icom.h"
 
@@ -1052,11 +1037,6 @@ static void icom_stop_rx(struct uart_port *port)
 	writeb(cmdReg & ~CMD_RCV_ENABLE, &ICOM_PORT->dram->CmdReg);
 }
 
-static void icom_enable_ms(struct uart_port *port)
-{
-	/* no-op */
-}
-
 static void icom_break(struct uart_port *port, int break_state)
 {
 	unsigned char cmdReg;
@@ -1292,7 +1272,7 @@ static void icom_config_port(struct uart_port *port, int flags)
 	port->type = PORT_ICOM;
 }
 
-static struct uart_ops icom_ops = {
+static const struct uart_ops icom_ops = {
 	.tx_empty = icom_tx_empty,
 	.set_mctrl = icom_set_mctrl,
 	.get_mctrl = icom_get_mctrl,
@@ -1300,7 +1280,6 @@ static struct uart_ops icom_ops = {
 	.start_tx = icom_start_tx,
 	.send_xchar = icom_send_xchar,
 	.stop_rx = icom_stop_rx,
-	.enable_ms = icom_enable_ms,
 	.break_ctl = icom_break,
 	.startup = icom_open,
 	.shutdown = icom_close,
@@ -1510,7 +1489,8 @@ static int icom_probe(struct pci_dev *dev,
 		return retval;
 	}
 
-	if ( (retval = pci_request_regions(dev, "icom"))) {
+	retval = pci_request_regions(dev, "icom");
+	if (retval) {
 		 dev_err(&dev->dev, "pci_request_regions FAILED\n");
 		 pci_disable_device(dev);
 		 return retval;
@@ -1518,7 +1498,8 @@ static int icom_probe(struct pci_dev *dev,
 
 	pci_set_master(dev);
 
-	if ( (retval = pci_read_config_dword(dev, PCI_COMMAND, &command_reg))) {
+	retval = pci_read_config_dword(dev, PCI_COMMAND, &command_reg);
+	if (retval) {
 		dev_err(&dev->dev, "PCI Config read FAILED\n");
 		return retval;
 	}
@@ -1556,13 +1537,14 @@ static int icom_probe(struct pci_dev *dev,
 
 	icom_adapter->base_addr = pci_ioremap_bar(dev, 0);
 
-	if (!icom_adapter->base_addr)
+	if (!icom_adapter->base_addr) {
+		retval = -ENOMEM;
 		goto probe_exit1;
+	}
 
 	 /* save off irq and request irq line */
-	 if ( (retval = request_irq(dev->irq, icom_interrupt,
-				   IRQF_SHARED, ICOM_DRIVER_NAME,
-				   (void *) icom_adapter))) {
+	 retval = request_irq(dev->irq, icom_interrupt, IRQF_SHARED, ICOM_DRIVER_NAME, (void *)icom_adapter);
+	 if (retval) {
 		  goto probe_exit2;
 	 }
 

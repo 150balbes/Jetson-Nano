@@ -8,7 +8,7 @@
  */
 
 /dts-v1/;
-/include/ "mmp2.dtsi"
+#include "mmp2.dtsi"
 
 / {
 	model = "Marvell MMP2 Brownstone Development Board";
@@ -19,6 +19,7 @@
 	};
 
 	memory {
+		device_type = "memory";
 		reg = <0x00000000 0x08000000>;
 	};
 

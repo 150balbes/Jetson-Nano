@@ -80,7 +80,7 @@
 ENTRY(stext)
  ARM_BE8(setend	be )			@ ensure we are in BE8 mode
 
- THUMB(	adr	r9, BSYM(1f)	)	@ Kernel is always entered in ARM.
+ THUMB(	badr	r9, 1f		)	@ Kernel is always entered in ARM.
  THUMB(	bx	r9		)	@ If this is a Thumb-2 kernel,
  THUMB(	.thumb			)	@ switch to Thumb now.
  THUMB(1:			)
@@ -131,16 +131,33 @@ ENTRY(stext)
 	 * The following calls CPU specific code in a position independent
 	 * manner.  See arch/arm/mm/proc-*.S for details.  r10 = base of
 	 * xxx_proc_info structure selected by __lookup_processor_type
-	 * above.  On return, the CPU will be ready for the MMU to be
-	 * turned on, and r0 will hold the CPU control register value.
+	 * above.
+	 *
+	 * The processor init function will be called with:
+	 *  r1 - machine type
+	 *  r2 - boot data (atags/dt) pointer
+	 *  r4 - translation table base (low word)
+	 *  r5 - translation table base (high word, if LPAE)
+	 *  r8 - translation table base 1 (pfn if LPAE)
+	 *  r9 - cpuid
+	 *  r13 - virtual address for __enable_mmu -> __turn_mmu_on
+	 *
+	 * On return, the CPU will be ready for the MMU to be turned on,
+	 * r0 will hold the CPU control register value, r1, r2, r4, and
+	 * r9 will be preserved.  r5 will also be preserved if LPAE.
 	 */
 	ldr	r13, =__mmap_switched		@ address to jump to after
 						@ mmu has been enabled
-	adr	lr, BSYM(1f)			@ return (PIC) address
+	badr	lr, 1f				@ return (PIC) address
+#ifdef CONFIG_ARM_LPAE
+	mov	r5, #0				@ high TTBR0
+	mov	r8, r4, lsr #12			@ TTBR1 is swapper_pg_dir pfn
+#else
 	mov	r8, r4				@ set TTBR1 to swapper_pg_dir
- ARM(	add	pc, r10, #PROCINFO_INITFUNC	)
- THUMB(	add	r12, r10, #PROCINFO_INITFUNC	)
- THUMB(	mov	pc, r12				)
+#endif
+	ldr	r12, [r10, #PROCINFO_INITFUNC]
+	add	r12, r12, r10
+	ret	r12
 1:	b	__enable_mmu
 ENDPROC(stext)
 	.ltorg
@@ -158,7 +175,7 @@ ENDPROC(stext)
  *
  * Returns:
  *  r0, r3, r5-r7 corrupted
- *  r4 = page table (see ARCH_PGD_SHIFT in asm/memory.h)
+ *  r4 = physical page table address
  */
 __create_page_tables:
 	pgtbl	r4, r8				@ page table address
@@ -333,9 +350,8 @@ __create_page_tables:
 #endif
 #ifdef CONFIG_ARM_LPAE
 	sub	r4, r4, #0x1000		@ point to the PGD table
-	mov	r4, r4, lsr #ARCH_PGD_SHIFT
 #endif
-	mov	pc, lr
+	ret	lr
 ENDPROC(__create_page_tables)
 	.ltorg
 	.align
@@ -346,6 +362,12 @@ __turn_mmu_on_loc:
 
 #if defined(CONFIG_SMP)
 	.text
+	.arm
+ENTRY(secondary_startup_arm)
+ THUMB(	badr	r9, 1f		)	@ Kernel is entered in ARM.
+ THUMB(	bx	r9		)	@ If this is a Thumb-2 kernel,
+ THUMB(	.thumb			)	@ switch to Thumb now.
+ THUMB(1:			)
 ENTRY(secondary_startup)
 	/*
 	 * Common entry point for secondary CPUs.
@@ -375,22 +397,26 @@ ENTRY(secondary_startup)
 	adr	r4, __secondary_data
 	ldmia	r4, {r5, r7, r12}		@ address to jump to after
 	sub	lr, r4, r5			@ mmu has been enabled
-	ldr	r4, [r7, lr]			@ get secondary_data.pgdir
-	add	r7, r7, #4
-	ldr	r8, [r7, lr]			@ get secondary_data.swapper_pg_dir
-	adr	lr, BSYM(__enable_mmu)		@ return address
+	add	r3, r7, lr
+	ldrd	r4, r5, [r3, #0]		@ get secondary_data.pgdir
+ARM_BE8(eor	r4, r4, r5)			@ Swap r5 and r4 in BE:
+ARM_BE8(eor	r5, r4, r5)			@ it can be done in 3 steps
+ARM_BE8(eor	r4, r4, r5)			@ without using a temp reg.
+	ldr	r8, [r3, #8]			@ get secondary_data.swapper_pg_dir
+	badr	lr, __enable_mmu		@ return address
 	mov	r13, r12			@ __secondary_switched address
- ARM(	add	pc, r10, #PROCINFO_INITFUNC	) @ initialise processor
-						  @ (return control reg)
- THUMB(	add	r12, r10, #PROCINFO_INITFUNC	)
- THUMB(	mov	pc, r12				)
+	ldr	r12, [r10, #PROCINFO_INITFUNC]
+	add	r12, r12, r10			@ initialise processor
+						@ (return control reg)
+	ret	r12
 ENDPROC(secondary_startup)
+ENDPROC(secondary_startup_arm)
 
 	/*
 	 * r6  = &secondary_data
 	 */
 ENTRY(__secondary_switched)
-	ldr	sp, [r7, #4]			@ get secondary_data.stack
+	ldr	sp, [r7, #12]			@ get secondary_data.stack
 	mov	fp, #0
 	b	secondary_start_kernel
 ENDPROC(__secondary_switched)
@@ -409,12 +435,14 @@ __secondary_data:
 /*
  * Setup common bits before finally enabling the MMU.  Essentially
  * this is just loading the page table pointer and domain access
- * registers.
+ * registers.  All these registers need to be preserved by the
+ * processor setup function (or set in the case of r0)
  *
  *  r0  = cp#15 control register
  *  r1  = machine ID
  *  r2  = atags or dtb pointer
- *  r4  = page table (see ARCH_PGD_SHIFT in asm/memory.h)
+ *  r4  = TTBR pointer (low word)
+ *  r5  = TTBR pointer (high word if LPAE)
  *  r9  = processor ID
  *  r13 = *virtual* address to jump to upon completion
  */
@@ -433,28 +461,12 @@ __enable_mmu:
 #ifdef CONFIG_CPU_ICACHE_DISABLE
 	bic	r0, r0, #CR_I
 #endif
-#ifndef CONFIG_ARM_LPAE
-	mov	r5, #(domain_val(DOMAIN_USER, DOMAIN_MANAGER) | \
-		      domain_val(DOMAIN_KERNEL, DOMAIN_MANAGER) | \
-		      domain_val(DOMAIN_TABLE, DOMAIN_MANAGER) | \
-		      domain_val(DOMAIN_IO, DOMAIN_CLIENT))
+#ifdef CONFIG_ARM_LPAE
+	mcrr	p15, 0, r4, r5, c2		@ load TTBR0
+#else
+	mov	r5, #DACR_INIT
 	mcr	p15, 0, r5, c3, c0, 0		@ load domain access register
 	mcr	p15, 0, r4, c2, c0, 0		@ load page table pointer
-
-	@ Invalidate BTAC/ICache/TLB
-	MOV r5,#0
-	MCR p15,0,r5,c7,c5,6		@ Invalidate BTAC
-	MCR p15,0,r5,c7,c5,0		@ Invalidate ICache
-	DSB
-	MCR p15,0,r5,c8,c7,0		@ Invalidate TLBs
-	DSB
-
-	@ Enable Branch Prediction
-	MRC p15, 0, r5, c1, c0, 0	@ get control register
-	ORR r5, r5, #1 << 11		@ enable Branch Prediction
-	MCR p15, 0, r5, c1, c0, 0	@ write control register
-	DSB
-	ISB
 #endif
 	b	__turn_mmu_on
 ENDPROC(__enable_mmu)
@@ -483,14 +495,14 @@ ENTRY(__turn_mmu_on)
 	instr_sync
 	mov	r3, r3
 	mov	r3, r13
-	mov	pc, r3
+	ret	r3
 __turn_mmu_on_end:
 ENDPROC(__turn_mmu_on)
 	.popsection
 
 
 #ifdef CONFIG_SMP_ON_UP
-	__INIT
+	__HEAD
 __fixup_smp:
 	and	r3, r9, #0x000f0000	@ architecture version
 	teq	r3, #0x000f0000		@ CPU ID supported?
@@ -502,7 +514,7 @@ __fixup_smp:
 	orr	r4, r4, #0x0000b000
 	orr	r4, r4, #0x00000020	@ val 0x4100b020
 	teq	r3, r4			@ ARM 11MPCore?
-	moveq	pc, lr			@ yes, assume SMP
+	reteq	lr			@ yes, assume SMP
 
 	mrc	p15, 0, r0, c0, c0, 5	@ read MPIDR
 	and	r0, r0, #0xc0000000	@ multiprocessing extensions and
@@ -515,7 +527,7 @@ __fixup_smp:
 	orr	r4, r4, #0x0000c000
 	orr	r4, r4, #0x00000090
 	teq	r3, r4			@ Check for ARM Cortex-A9
-	movne	pc, lr			@ Not ARM Cortex-A9,
+	retne	lr			@ Not ARM Cortex-A9,
 
 	@ If a future SoC *does* use 0x0 as the PERIPH_BASE, then the
 	@ below address check will need to be #ifdef'd or equivalent
@@ -527,7 +539,7 @@ __fixup_smp:
 ARM_BE8(rev	r0, r0)			@ byteswap if big endian
 	and	r0, r0, #0x3		@ number of CPUs
 	teq	r0, #0x0		@ is 1?
-	movne	pc, lr
+	retne	lr
 
 __fixup_smp_on_up:
 	adr	r0, 1f
@@ -544,6 +556,7 @@ ENDPROC(__fixup_smp)
 	.word	__smpalt_end
 
 	.pushsection .data
+	.align	2
 	.globl	smp_on_up
 smp_on_up:
 	ALT_SMP(.long	1)
@@ -554,7 +567,7 @@ smp_on_up:
 	.text
 __do_fixup_smp_on_up:
 	cmp	r4, r5
-	movhs	pc, lr
+	reths	lr
 	ldmia	r4!, {r0, r6}
  ARM(	str	r6, [r0, r3]	)
  THUMB(	add	r0, r0, r3	)
@@ -599,9 +612,10 @@ __fixup_pv_table:
 	subs	r3, r0, r3	@ PHYS_OFFSET - PAGE_OFFSET
 	add	r4, r4, r3	@ adjust table start address
 	add	r5, r5, r3	@ adjust table end address
-	add	r6, r6, r3	@ adjust __pv_phys_offset address
+	add	r6, r6, r3	@ adjust __pv_phys_pfn_offset address
 	add	r7, r7, r3	@ adjust __pv_offset address
-	str	r8, [r6, #LOW_OFFSET]	@ save computed PHYS_OFFSET to __pv_phys_offset
+	mov	r0, r8, lsr #PAGE_SHIFT	@ convert to PFN
+	str	r0, [r6]	@ save computed PHYS_OFFSET to __pv_phys_pfn_offset
 	strcc	ip, [r7, #HIGH_OFFSET]	@ save to __pv_offset high bits
 	mov	r6, r3, lsr #24	@ constant for add/sub instructions
 	teq	r3, r6, lsl #24 @ must be 16MiB aligned
@@ -615,7 +629,7 @@ ENDPROC(__fixup_pv_table)
 1:	.long	.
 	.long	__pv_table_begin
 	.long	__pv_table_end
-2:	.long	__pv_phys_offset
+2:	.long	__pv_phys_pfn_offset
 	.long	__pv_offset
 
 	.text
@@ -686,7 +700,7 @@ ARM_BE8(rev16	ip, ip)
 2:	cmp	r4, r5
 	ldrcc	r7, [r4], #4	@ use branch for delay slot
 	bcc	1b
-	mov	pc, lr
+	ret	lr
 #endif
 ENDPROC(__fixup_a_pv_table)
 
@@ -703,11 +717,12 @@ ENTRY(fixup_pv_table)
 ENDPROC(fixup_pv_table)
 
 	.data
-	.globl	__pv_phys_offset
-	.type	__pv_phys_offset, %object
-__pv_phys_offset:
-	.quad	0
-	.size	__pv_phys_offset, . -__pv_phys_offset
+	.align	2
+	.globl	__pv_phys_pfn_offset
+	.type	__pv_phys_pfn_offset, %object
+__pv_phys_pfn_offset:
+	.word	0
+	.size	__pv_phys_pfn_offset, . -__pv_phys_pfn_offset
 
 	.globl	__pv_offset
 	.type	__pv_offset, %object

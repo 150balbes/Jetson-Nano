@@ -89,6 +89,8 @@ enum wiimote_exttype {
 	WIIMOTE_EXT_CLASSIC_CONTROLLER,
 	WIIMOTE_EXT_BALANCE_BOARD,
 	WIIMOTE_EXT_PRO_CONTROLLER,
+	WIIMOTE_EXT_DRUMS,
+	WIIMOTE_EXT_GUITAR,
 	WIIMOTE_EXT_NUM,
 };
 
@@ -137,6 +139,7 @@ struct wiimote_state {
 	/* calibration/cache data */
 	__u16 calib_bboard[4][3];
 	__s16 calib_pro_sticks[4];
+	__u8 pressure_drums[7];
 	__u8 cache_rumble;
 };
 
@@ -147,7 +150,8 @@ struct wiimote_data {
 	struct led_classdev *leds[4];
 	struct input_dev *accel;
 	struct input_dev *ir;
-	struct power_supply battery;
+	struct power_supply *battery;
+	struct power_supply_desc battery_desc;
 	struct input_dev *mp;
 	struct timer_list timer;
 	struct wiimote_debug *debug;
@@ -255,8 +259,7 @@ enum wiiproto_reqs {
 	WIIPROTO_REQ_MAX
 };
 
-#define dev_to_wii(pdev) hid_get_drvdata(container_of(pdev, struct hid_device, \
-									dev))
+#define dev_to_wii(pdev) hid_get_drvdata(to_hid_device(pdev))
 
 void __wiimote_schedule(struct wiimote_data *wdata);
 

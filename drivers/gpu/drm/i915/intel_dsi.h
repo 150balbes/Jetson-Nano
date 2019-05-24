@@ -24,60 +24,30 @@
 #ifndef _INTEL_DSI_H
 #define _INTEL_DSI_H
 
-#include <drm/drmP.h>
 #include <drm/drm_crtc.h>
+#include <drm/drm_mipi_dsi.h>
 #include "intel_drv.h"
 
-struct intel_dsi_device {
-	unsigned int panel_id;
-	const char *name;
-	int type;
-	const struct intel_dsi_dev_ops *dev_ops;
-	void *dev_priv;
-};
+/* Dual Link support */
+#define DSI_DUAL_LINK_NONE		0
+#define DSI_DUAL_LINK_FRONT_BACK	1
+#define DSI_DUAL_LINK_PIXEL_ALT		2
 
-struct intel_dsi_dev_ops {
-	bool (*init)(struct intel_dsi_device *dsi);
-
-	void (*panel_reset)(struct intel_dsi_device *dsi);
-
-	void (*disable_panel_power)(struct intel_dsi_device *dsi);
-
-	/* one time programmable commands if needed */
-	void (*send_otp_cmds)(struct intel_dsi_device *dsi);
-
-	/* This callback must be able to assume DSI commands can be sent */
-	void (*enable)(struct intel_dsi_device *dsi);
-
-	/* This callback must be able to assume DSI commands can be sent */
-	void (*disable)(struct intel_dsi_device *dsi);
-
-	int (*mode_valid)(struct intel_dsi_device *dsi,
-			  struct drm_display_mode *mode);
-
-	bool (*mode_fixup)(struct intel_dsi_device *dsi,
-			   const struct drm_display_mode *mode,
-			   struct drm_display_mode *adjusted_mode);
-
-	void (*mode_set)(struct intel_dsi_device *dsi,
-			 struct drm_display_mode *mode,
-			 struct drm_display_mode *adjusted_mode);
-
-	enum drm_connector_status (*detect)(struct intel_dsi_device *dsi);
-
-	bool (*get_hw_state)(struct intel_dsi_device *dev);
-
-	struct drm_display_mode *(*get_modes)(struct intel_dsi_device *dsi);
-
-	void (*destroy) (struct intel_dsi_device *dsi);
-};
+struct intel_dsi_host;
 
 struct intel_dsi {
 	struct intel_encoder base;
 
-	struct intel_dsi_device dev;
+	struct intel_dsi_host *dsi_hosts[I915_MAX_PORTS];
+	intel_wakeref_t io_wakeref[I915_MAX_PORTS];
+
+	/* GPIO Desc for CRC based Panel control */
+	struct gpio_desc *gpio_panel;
 
 	struct intel_connector *attached_connector;
+
+	/* bit mask of ports being driven */
+	u16 ports;
 
 	/* if true, use HS mode, otherwise LP */
 	bool hs;
@@ -85,39 +55,143 @@ struct intel_dsi {
 	/* virtual channel */
 	int channel;
 
+	/* Video mode or command mode */
+	u16 operation_mode;
+
 	/* number of DSI lanes */
 	unsigned int lane_count;
 
-	/* video mode pixel format for MIPI_DSI_FUNC_PRG register */
-	u32 pixel_format;
+	/*
+	 * video mode pixel format
+	 *
+	 * XXX: consolidate on .format in struct mipi_dsi_device.
+	 */
+	enum mipi_dsi_pixel_format pixel_format;
 
 	/* video mode format for MIPI_VIDEO_MODE_FORMAT register */
 	u32 video_mode_format;
 
 	/* eot for MIPI_EOT_DISABLE register */
-	u32 eot_disable;
+	u8 eotp_pkt;
+	u8 clock_stop;
 
+	u8 escape_clk_div;
+	u8 dual_link;
+
+	u16 dcs_backlight_ports;
+	u16 dcs_cabc_ports;
+
+	/* RGB or BGR */
+	bool bgr_enabled;
+
+	u8 pixel_overlap;
 	u32 port_bits;
 	u32 bw_timer;
 	u32 dphy_reg;
+
+	/* data lanes dphy timing */
+	u32 dphy_data_lane_reg;
 	u32 video_frmt_cfg_bits;
 	u16 lp_byte_clk;
 
 	/* timeouts in byte clocks */
+	u16 hs_tx_timeout;
 	u16 lp_rx_timeout;
 	u16 turn_arnd_val;
 	u16 rst_timer_val;
 	u16 hs_to_lp_count;
 	u16 clk_lp_to_hs_count;
 	u16 clk_hs_to_lp_count;
+
+	u16 init_count;
+	u32 pclk;
+	u16 burst_mode_ratio;
+
+	/* all delays in ms */
+	u16 backlight_off_delay;
+	u16 backlight_on_delay;
+	u16 panel_on_delay;
+	u16 panel_off_delay;
+	u16 panel_pwr_cycle_delay;
 };
+
+struct intel_dsi_host {
+	struct mipi_dsi_host base;
+	struct intel_dsi *intel_dsi;
+	enum port port;
+
+	/* our little hack */
+	struct mipi_dsi_device *device;
+};
+
+static inline struct intel_dsi_host *to_intel_dsi_host(struct mipi_dsi_host *h)
+{
+	return container_of(h, struct intel_dsi_host, base);
+}
+
+#define for_each_dsi_port(__port, __ports_mask) for_each_port_masked(__port, __ports_mask)
 
 static inline struct intel_dsi *enc_to_intel_dsi(struct drm_encoder *encoder)
 {
 	return container_of(encoder, struct intel_dsi, base.base);
 }
 
-extern void vlv_enable_dsi_pll(struct intel_encoder *encoder);
-extern void vlv_disable_dsi_pll(struct intel_encoder *encoder);
+static inline bool is_vid_mode(struct intel_dsi *intel_dsi)
+{
+	return intel_dsi->operation_mode == INTEL_DSI_VIDEO_MODE;
+}
+
+static inline bool is_cmd_mode(struct intel_dsi *intel_dsi)
+{
+	return intel_dsi->operation_mode == INTEL_DSI_COMMAND_MODE;
+}
+
+static inline u16 intel_dsi_encoder_ports(struct intel_encoder *encoder)
+{
+	return enc_to_intel_dsi(&encoder->base)->ports;
+}
+
+/* intel_dsi.c */
+int intel_dsi_bitrate(const struct intel_dsi *intel_dsi);
+int intel_dsi_tlpx_ns(const struct intel_dsi *intel_dsi);
+enum drm_panel_orientation
+intel_dsi_get_panel_orientation(struct intel_connector *connector);
+
+/* vlv_dsi.c */
+void vlv_dsi_wait_for_fifo_empty(struct intel_dsi *intel_dsi, enum port port);
+enum mipi_dsi_pixel_format pixel_format_from_register_bits(u32 fmt);
+int intel_dsi_get_modes(struct drm_connector *connector);
+enum drm_mode_status intel_dsi_mode_valid(struct drm_connector *connector,
+					  struct drm_display_mode *mode);
+struct intel_dsi_host *intel_dsi_host_init(struct intel_dsi *intel_dsi,
+					   const struct mipi_dsi_host_ops *funcs,
+					   enum port port);
+
+/* vlv_dsi_pll.c */
+int vlv_dsi_pll_compute(struct intel_encoder *encoder,
+			struct intel_crtc_state *config);
+void vlv_dsi_pll_enable(struct intel_encoder *encoder,
+			const struct intel_crtc_state *config);
+void vlv_dsi_pll_disable(struct intel_encoder *encoder);
+u32 vlv_dsi_get_pclk(struct intel_encoder *encoder,
+		     struct intel_crtc_state *config);
+void vlv_dsi_reset_clocks(struct intel_encoder *encoder, enum port port);
+
+bool bxt_dsi_pll_is_enabled(struct drm_i915_private *dev_priv);
+int bxt_dsi_pll_compute(struct intel_encoder *encoder,
+			struct intel_crtc_state *config);
+void bxt_dsi_pll_enable(struct intel_encoder *encoder,
+			const struct intel_crtc_state *config);
+void bxt_dsi_pll_disable(struct intel_encoder *encoder);
+u32 bxt_dsi_get_pclk(struct intel_encoder *encoder,
+		     struct intel_crtc_state *config);
+void bxt_dsi_reset_clocks(struct intel_encoder *encoder, enum port port);
+
+/* intel_dsi_vbt.c */
+bool intel_dsi_vbt_init(struct intel_dsi *intel_dsi, u16 panel_id);
+int intel_dsi_vbt_get_modes(struct intel_dsi *intel_dsi);
+void intel_dsi_vbt_exec_sequence(struct intel_dsi *intel_dsi,
+				 enum mipi_seq seq_id);
+void intel_dsi_msleep(struct intel_dsi *intel_dsi, int msec);
 
 #endif /* _INTEL_DSI_H */

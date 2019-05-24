@@ -20,14 +20,18 @@
 #include <linux/init.h>
 #include <linux/of.h>
 #include <linux/smp.h>
+#include <linux/types.h>
+#include <linux/mm.h>
 
 #include <asm/cacheflush.h>
 #include <asm/cpu_ops.h>
 #include <asm/cputype.h>
+#include <asm/io.h>
 #include <asm/smp_plat.h>
 
 extern void secondary_holding_pen(void);
-volatile unsigned long secondary_holding_pen_release = INVALID_HWID;
+volatile unsigned long __section(".mmuoff.data.read")
+secondary_holding_pen_release = INVALID_HWID;
 
 static phys_addr_t cpu_release_addr[NR_CPUS];
 
@@ -47,30 +51,46 @@ static void write_pen_release(u64 val)
 }
 
 
-static int smp_spin_table_cpu_init(struct device_node *dn, unsigned int cpu)
+static int smp_spin_table_cpu_init(unsigned int cpu)
 {
+	struct device_node *dn;
+	int ret;
+
+	dn = of_get_cpu_node(cpu, NULL);
+	if (!dn)
+		return -ENODEV;
+
 	/*
 	 * Determine the address from which the CPU is polling.
 	 */
-	if (of_property_read_u64(dn, "cpu-release-addr",
-				 &cpu_release_addr[cpu])) {
+	ret = of_property_read_u64(dn, "cpu-release-addr",
+				   &cpu_release_addr[cpu]);
+	if (ret)
 		pr_err("CPU %d: missing or invalid cpu-release-addr property\n",
 		       cpu);
 
-		return -1;
-	}
+	of_node_put(dn);
 
-	return 0;
+	return ret;
 }
 
 static int smp_spin_table_cpu_prepare(unsigned int cpu)
 {
-	void **release_addr;
+	__le64 __iomem *release_addr;
 
 	if (!cpu_release_addr[cpu])
 		return -ENODEV;
 
-	release_addr = __va(cpu_release_addr[cpu]);
+	/*
+	 * The cpu-release-addr may or may not be inside the linear mapping.
+	 * As ioremap_cache will either give us a new mapping or reuse the
+	 * existing linear mapping, we can use it to cover both cases. In
+	 * either case the memory will be MT_NORMAL.
+	 */
+	release_addr = ioremap_cache(cpu_release_addr[cpu],
+				     sizeof(*release_addr));
+	if (!release_addr)
+		return -ENOMEM;
 
 	/*
 	 * We write the release address as LE regardless of the native
@@ -79,14 +99,16 @@ static int smp_spin_table_cpu_prepare(unsigned int cpu)
 	 * boot-loader's endianess before jumping. This is mandated by
 	 * the boot protocol.
 	 */
-	release_addr[0] = (void *) cpu_to_le64(__pa(secondary_holding_pen));
-
-	__flush_dcache_area(release_addr, sizeof(release_addr[0]));
+	writeq_relaxed(__pa_symbol(secondary_holding_pen), release_addr);
+	__flush_dcache_area((__force void *)release_addr,
+			    sizeof(*release_addr));
 
 	/*
 	 * Send an event to wake up the secondary CPU.
 	 */
 	sev();
+
+	iounmap(release_addr);
 
 	return 0;
 }

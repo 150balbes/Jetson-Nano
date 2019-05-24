@@ -91,8 +91,8 @@ static int pdc_console_setup(struct console *co, char *options)
 
 #define PDC_CONS_POLL_DELAY (30 * HZ / 1000)
 
-static void pdc_console_poll(unsigned long unused);
-static DEFINE_TIMER(pdc_console_timer, pdc_console_poll, 0, 0);
+static void pdc_console_poll(struct timer_list *unused);
+static DEFINE_TIMER(pdc_console_timer, pdc_console_poll);
 static struct tty_port tty_port;
 
 static int pdc_console_tty_open(struct tty_struct *tty, struct file *filp)
@@ -135,7 +135,7 @@ static const struct tty_operations pdc_console_tty_ops = {
 	.chars_in_buffer = pdc_console_tty_chars_in_buffer,
 };
 
-static void pdc_console_poll(unsigned long unused)
+static void pdc_console_poll(struct timer_list *unused)
 {
 	int data, count = 0;
 
@@ -207,8 +207,7 @@ static int __init pdc_console_tty_driver_init(void)
 
 	return 0;
 }
-
-module_init(pdc_console_tty_driver_init);
+device_initcall(pdc_console_tty_driver_init);
 
 static struct tty_driver * pdc_console_device (struct console *c, int *index)
 {

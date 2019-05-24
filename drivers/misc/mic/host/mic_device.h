@@ -24,19 +24,14 @@
 #include <linux/cdev.h>
 #include <linux/idr.h>
 #include <linux/notifier.h>
-
+#include <linux/irqreturn.h>
+#include <linux/dmaengine.h>
+#include <linux/miscdevice.h>
+#include <linux/mic_bus.h>
+#include "../bus/scif_bus.h"
+#include "../bus/vop_bus.h"
+#include "../bus/cosm_bus.h"
 #include "mic_intr.h"
-
-/* The maximum number of MIC devices supported in a single host system. */
-#define MIC_MAX_NUM_DEVS 256
-
-/**
- * enum mic_hw_family - The hardware family to which a device belongs.
- */
-enum mic_hw_family {
-	MIC_FAMILY_X100 = 0,
-	MIC_FAMILY_UNKNOWN
-};
 
 /**
  * enum mic_stepping - MIC stepping ids.
@@ -48,6 +43,8 @@ enum mic_stepping {
 	MIC_C0_STEP = 0x20,
 };
 
+extern struct cosm_hw_ops cosm_hw_ops;
+
 /**
  * struct mic_device -  MIC device information for each card.
  *
@@ -57,8 +54,7 @@ enum mic_stepping {
  * @ops: MIC HW specific operations.
  * @id: The unique device id for this MIC device.
  * @stepping: Stepping ID.
- * @attr_group: Pointer to list of sysfs attribute groups.
- * @sdev: Device for sysfs entries.
+ * @pdev: Underlying PCI device.
  * @mic_mutex: Mutex for synchronizing access to mic_device.
  * @intr_ops: HW specific interrupt operations.
  * @smpt_ops: Hardware specific SMPT operations.
@@ -66,26 +62,15 @@ enum mic_stepping {
  * @intr_info: H/W specific interrupt information.
  * @irq_info: The OS specific irq information
  * @dbg_dir: debugfs directory of this MIC device.
- * @cmdline: Kernel command line.
- * @firmware: Firmware file name.
- * @ramdisk: Ramdisk file name.
- * @bootmode: Boot mode i.e. "linux" or "elf" for flash updates.
  * @bootaddr: MIC boot address.
- * @reset_trigger_work: Work for triggering reset requests.
- * @shutdown_work: Work for handling shutdown interrupts.
- * @state: MIC state.
- * @shutdown_status: MIC status reported by card for shutdown/crashes.
- * @state_sysfs: Sysfs dirent for notifying ring 3 about MIC state changes.
- * @reset_wait: Waitqueue for sleeping while reset completes.
- * @log_buf_addr: Log buffer address for MIC.
- * @log_buf_len: Log buffer length address for MIC.
  * @dp: virtio device page
  * @dp_dma_addr: virtio device page DMA address.
- * @shutdown_db: shutdown doorbell.
- * @shutdown_cookie: shutdown cookie.
- * @cdev: Character device for MIC.
- * @vdev_list: list of virtio devices.
- * @pm_notifier: Handles PM notifications from the OS.
+ * @dma_mbdev: MIC BUS DMA device.
+ * @dma_ch - Array of DMA channels
+ * @num_dma_ch - Number of DMA channels available
+ * @scdev: SCIF device on the SCIF virtual bus.
+ * @vpdev: Virtio over PCIe device on the VOP virtual bus.
+ * @cosm_dev: COSM device
  */
 struct mic_device {
 	struct mic_mw mmio;
@@ -94,8 +79,7 @@ struct mic_device {
 	struct mic_hw_ops *ops;
 	int id;
 	enum mic_stepping stepping;
-	const struct attribute_group **attr_group;
-	struct device *sdev;
+	struct pci_dev *pdev;
 	struct mutex mic_mutex;
 	struct mic_hw_intr_ops *intr_ops;
 	struct mic_smpt_ops *smpt_ops;
@@ -103,26 +87,15 @@ struct mic_device {
 	struct mic_intr_info *intr_info;
 	struct mic_irq_info irq_info;
 	struct dentry *dbg_dir;
-	char *cmdline;
-	char *firmware;
-	char *ramdisk;
-	char *bootmode;
 	u32 bootaddr;
-	struct work_struct reset_trigger_work;
-	struct work_struct shutdown_work;
-	u8 state;
-	u8 shutdown_status;
-	struct kernfs_node *state_sysfs;
-	struct completion reset_wait;
-	void *log_buf_addr;
-	int *log_buf_len;
 	void *dp;
 	dma_addr_t dp_dma_addr;
-	int shutdown_db;
-	struct mic_irq *shutdown_cookie;
-	struct cdev cdev;
-	struct list_head vdev_list;
-	struct notifier_block pm_notifier;
+	struct mbus_device *dma_mbdev;
+	struct dma_chan *dma_ch[MIC_MAX_DMA_CHAN];
+	int num_dma_ch;
+	struct scif_hw_dev *scdev;
+	struct vop_device *vpdev;
+	struct cosm_device *cosm_dev;
 };
 
 /**
@@ -143,6 +116,7 @@ struct mic_device {
  * @load_mic_fw: Load firmware segments required to boot the card
  * into card memory. This includes the kernel, command line, ramdisk etc.
  * @get_postcode: Get post code status from firmware.
+ * @dma_filter: DMA filter function to be used.
  */
 struct mic_hw_ops {
 	u8 aper_bar;
@@ -158,6 +132,7 @@ struct mic_hw_ops {
 	void (*send_firmware_intr)(struct mic_device *mdev);
 	int (*load_mic_fw)(struct mic_device *mdev, const char *buf);
 	u32 (*get_postcode)(struct mic_device *mdev);
+	bool (*dma_filter)(struct dma_chan *chan, void *param);
 };
 
 /**
@@ -186,21 +161,9 @@ mic_mmio_write(struct mic_mw *mw, u32 val, u32 offset)
 	iowrite32(val, mw->va + offset);
 }
 
-void mic_sysfs_init(struct mic_device *mdev);
-int mic_start(struct mic_device *mdev, const char *buf);
-void mic_stop(struct mic_device *mdev, bool force);
-void mic_shutdown(struct mic_device *mdev);
-void mic_reset_delayed_work(struct work_struct *work);
-void mic_reset_trigger_work(struct work_struct *work);
-void mic_shutdown_work(struct work_struct *work);
 void mic_bootparam_init(struct mic_device *mdev);
-void mic_set_state(struct mic_device *mdev, u8 state);
-void mic_set_shutdown_status(struct mic_device *mdev, u8 status);
 void mic_create_debug_dir(struct mic_device *dev);
 void mic_delete_debug_dir(struct mic_device *dev);
 void __init mic_init_debugfs(void);
 void mic_exit_debugfs(void);
-void mic_prepare_suspend(struct mic_device *mdev);
-void mic_complete_resume(struct mic_device *mdev);
-void mic_suspend(struct mic_device *mdev);
 #endif

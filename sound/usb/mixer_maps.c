@@ -107,8 +107,10 @@ static struct usbmix_name_map extigy_map[] = {
  * e.g. no Master and fake PCM volume
  *			Pavel Mihaylov <bin@bash.info>
  */
-static struct usbmix_dB_map mp3plus_dB_1 = {-4781, 0};	/* just guess */
-static struct usbmix_dB_map mp3plus_dB_2 = {-1781, 618}; /* just guess */
+static struct usbmix_dB_map mp3plus_dB_1 = {.min = -4781, .max = 0};
+						/* just guess */
+static struct usbmix_dB_map mp3plus_dB_2 = {.min = -1781, .max = 618};
+						/* just guess */
 
 static struct usbmix_name_map mp3plus_map[] = {
 	/* 1: IT pcm */
@@ -176,6 +178,11 @@ static struct usbmix_name_map audigy2nx_map[] = {
 	{ 29, "Digital Out Source" }, /* SU */
 	{ 30, "Headphone Playback" }, /* FU */
 	{ 31, "Headphone Source" }, /* SU */
+	{ 0 } /* terminator */
+};
+
+static struct usbmix_name_map mbox1_map[] = {
+	{ 1, "Clock" },
 	{ 0 } /* terminator */
 };
 
@@ -336,6 +343,26 @@ static const struct usbmix_name_map scms_usb3318_map[] = {
 	{ 0 }
 };
 
+/* Bose companion 5, the dB conversion factor is 16 instead of 256 */
+static struct usbmix_dB_map bose_companion5_dB = {-5006, -6};
+static struct usbmix_name_map bose_companion5_map[] = {
+	{ 3, NULL, .dB = &bose_companion5_dB },
+	{ 0 }	/* terminator */
+};
+
+/*
+ * Dell usb dock with ALC4020 codec had a firmware problem where it got
+ * screwed up when zero volume is passed; just skip it as a workaround
+ *
+ * Also the extension unit gives an access error, so skip it as well.
+ */
+static const struct usbmix_name_map dell_alc4020_map[] = {
+	{ 4, NULL },	/* extension unit */
+	{ 16, NULL },
+	{ 19, NULL },
+	{ 0 }
+};
+
 /*
  * Control map entries
  */
@@ -419,6 +446,14 @@ static struct usbmix_ctl_map usbmix_ctl_maps[] = {
 		.map = aureon_51_2_map,
 	},
 	{
+		.id = USB_ID(0x0bda, 0x4014),
+		.map = dell_alc4020_map,
+	},
+	{
+		.id = USB_ID(0x0dba, 0x1000),
+		.map = mbox1_map,
+	},
+	{
 		.id = USB_ID(0x13e5, 0x0001),
 		.map = scratch_live_map,
 		.ignore_ctl_error = 1,
@@ -426,6 +461,11 @@ static struct usbmix_ctl_map usbmix_ctl_maps[] = {
 	{
 		.id = USB_ID(0x200c, 0x1018),
 		.map = ebox44_map,
+	},
+	{
+		/* MAYA44 USB+ */
+		.id = USB_ID(0x2573, 0x0008),
+		.map = maya44_map,
 	},
 	{
 		/* KEF X300A */
@@ -437,6 +477,76 @@ static struct usbmix_ctl_map usbmix_ctl_maps[] = {
 		.id = USB_ID(0x25c4, 0x0003),
 		.map = scms_usb3318_map,
 	},
+	{
+		/* Bose Companion 5 */
+		.id = USB_ID(0x05a7, 0x1020),
+		.map = bose_companion5_map,
+	},
 	{ 0 } /* terminator */
 };
 
+/*
+ * Control map entries for UAC3 BADD profiles
+ */
+
+static struct usbmix_name_map uac3_badd_generic_io_map[] = {
+	{ UAC3_BADD_FU_ID2, "Generic Out Playback" },
+	{ UAC3_BADD_FU_ID5, "Generic In Capture" },
+	{ 0 }					/* terminator */
+};
+static struct usbmix_name_map uac3_badd_headphone_map[] = {
+	{ UAC3_BADD_FU_ID2, "Headphone Playback" },
+	{ 0 }					/* terminator */
+};
+static struct usbmix_name_map uac3_badd_speaker_map[] = {
+	{ UAC3_BADD_FU_ID2, "Speaker Playback" },
+	{ 0 }					/* terminator */
+};
+static struct usbmix_name_map uac3_badd_microphone_map[] = {
+	{ UAC3_BADD_FU_ID5, "Mic Capture" },
+	{ 0 }					/* terminator */
+};
+/* Covers also 'headset adapter' profile */
+static struct usbmix_name_map uac3_badd_headset_map[] = {
+	{ UAC3_BADD_FU_ID2, "Headset Playback" },
+	{ UAC3_BADD_FU_ID5, "Headset Capture" },
+	{ UAC3_BADD_FU_ID7, "Sidetone Mixing" },
+	{ 0 }					/* terminator */
+};
+static struct usbmix_name_map uac3_badd_speakerphone_map[] = {
+	{ UAC3_BADD_FU_ID2, "Speaker Playback" },
+	{ UAC3_BADD_FU_ID5, "Mic Capture" },
+	{ 0 }					/* terminator */
+};
+
+static struct usbmix_ctl_map uac3_badd_usbmix_ctl_maps[] = {
+	{
+		.id = UAC3_FUNCTION_SUBCLASS_GENERIC_IO,
+		.map = uac3_badd_generic_io_map,
+	},
+	{
+		.id = UAC3_FUNCTION_SUBCLASS_HEADPHONE,
+		.map = uac3_badd_headphone_map,
+	},
+	{
+		.id = UAC3_FUNCTION_SUBCLASS_SPEAKER,
+		.map = uac3_badd_speaker_map,
+	},
+	{
+		.id = UAC3_FUNCTION_SUBCLASS_MICROPHONE,
+		.map = uac3_badd_microphone_map,
+	},
+	{
+		.id = UAC3_FUNCTION_SUBCLASS_HEADSET,
+		.map = uac3_badd_headset_map,
+	},
+	{
+		.id = UAC3_FUNCTION_SUBCLASS_HEADSET_ADAPTER,
+		.map = uac3_badd_headset_map,
+	},
+	{
+		.id = UAC3_FUNCTION_SUBCLASS_SPEAKERPHONE,
+		.map = uac3_badd_speakerphone_map,
+	},
+	{ 0 } /* terminator */
+};

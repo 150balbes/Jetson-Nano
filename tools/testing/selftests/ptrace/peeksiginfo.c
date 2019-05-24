@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 #define _GNU_SOURCE
 #include <stdio.h>
 #include <signal.h>
@@ -30,6 +31,10 @@ static int sys_ptrace(int request, pid_t pid, void *addr, void *data)
 #define SIGNR 10
 #define TEST_SICODE_PRIV	-1
 #define TEST_SICODE_SHARE	-2
+
+#ifndef PAGE_SIZE
+#define PAGE_SIZE sysconf(_SC_PAGESIZE)
+#endif
 
 #define err(fmt, ...)						\
 		fprintf(stderr,					\

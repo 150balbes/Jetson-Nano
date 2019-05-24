@@ -9,26 +9,28 @@
  */
 #include <linux/clk.h>
 #include <linux/io.h>
-#include <drm/drmP.h>
-#include <drm/drm_crtc_helper.h>
+#include <drm/drm_probe_helper.h>
 #include "armada_crtc.h"
 #include "armada_drm.h"
 #include "armada_hw.h"
 
-static int armada510_init(struct armada_private *priv, struct device *dev)
+static int armada510_crtc_init(struct armada_crtc *dcrtc, struct device *dev)
 {
-	priv->extclk[0] = devm_clk_get(dev, "ext_ref_clk_1");
+	struct clk *clk;
 
-	if (IS_ERR(priv->extclk[0]) && PTR_ERR(priv->extclk[0]) == -ENOENT)
-		priv->extclk[0] = ERR_PTR(-EPROBE_DEFER);
+	clk = devm_clk_get(dev, "ext_ref_clk1");
+	if (IS_ERR(clk))
+		return PTR_ERR(clk) == -ENOENT ? -EPROBE_DEFER : PTR_ERR(clk);
 
-	return PTR_RET(priv->extclk[0]);
-}
+	dcrtc->extclk[0] = clk;
 
-static int armada510_crtc_init(struct armada_crtc *dcrtc)
-{
 	/* Lower the watermark so to eliminate jitter at higher bandwidths */
 	armada_updatel(0x20, (1 << 11) | 0xff, dcrtc->base + LCD_CFG_RDREG4F);
+
+	/* Initialise SPU register */
+	writel_relaxed(ADV_HWC32ENABLE | ADV_HWC32ARGB | ADV_HWC32BLEND,
+		       dcrtc->base + LCD_SPU_ADV_REG);
+
 	return 0;
 }
 
@@ -45,8 +47,7 @@ static int armada510_crtc_init(struct armada_crtc *dcrtc)
 static int armada510_crtc_compute_clock(struct armada_crtc *dcrtc,
 	const struct drm_display_mode *mode, uint32_t *sclk)
 {
-	struct armada_private *priv = dcrtc->crtc.dev->dev_private;
-	struct clk *clk = priv->extclk[0];
+	struct clk *clk = dcrtc->extclk[0];
 	int ret;
 
 	if (dcrtc->num == 1)
@@ -78,10 +79,27 @@ static int armada510_crtc_compute_clock(struct armada_crtc *dcrtc,
 	return 0;
 }
 
+static void armada510_crtc_disable(struct armada_crtc *dcrtc)
+{
+	if (!IS_ERR(dcrtc->clk)) {
+		clk_disable_unprepare(dcrtc->clk);
+		dcrtc->clk = ERR_PTR(-EINVAL);
+	}
+}
+
+static void armada510_crtc_enable(struct armada_crtc *dcrtc,
+	const struct drm_display_mode *mode)
+{
+	if (IS_ERR(dcrtc->clk)) {
+		dcrtc->clk = dcrtc->extclk[0];
+		WARN_ON(clk_prepare_enable(dcrtc->clk));
+	}
+}
+
 const struct armada_variant armada510_ops = {
 	.has_spu_adv_reg = true,
-	.spu_adv_reg = ADV_HWC32ENABLE | ADV_HWC32ARGB | ADV_HWC32BLEND,
-	.init = armada510_init,
-	.crtc_init = armada510_crtc_init,
-	.crtc_compute_clock = armada510_crtc_compute_clock,
+	.init = armada510_crtc_init,
+	.compute_clock = armada510_crtc_compute_clock,
+	.disable = armada510_crtc_disable,
+	.enable = armada510_crtc_enable,
 };

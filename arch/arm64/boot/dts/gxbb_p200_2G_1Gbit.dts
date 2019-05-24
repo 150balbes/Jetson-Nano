@@ -1,5 +1,0 @@
-#include "gxbb_p200_2G.dts"
-
-/{
-	le-dt-id = "gxbb_p200_2G_1Gbit";
-};

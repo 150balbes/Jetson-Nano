@@ -9,8 +9,13 @@
 
 #include <linux/power_supply.h>
 
-#define psy_to_ux500_charger(x) container_of((x), \
-		struct ux500_charger, psy)
+/*
+ * Valid only for supplies of type:
+ * - POWER_SUPPLY_TYPE_MAINS,
+ * - POWER_SUPPLY_TYPE_USB,
+ * because only them store as drv_data pointer to struct ux500_charger.
+ */
+#define psy_to_ux500_charger(x) power_supply_get_drvdata(psy)
 
 /* Forward declaration */
 struct ux500_charger;
@@ -20,8 +25,6 @@ struct ux500_charger_ops {
 	int (*check_enable) (struct ux500_charger *, int, int);
 	int (*kick_wd) (struct ux500_charger *);
 	int (*update_curr) (struct ux500_charger *, int);
-	int (*pp_enable) (struct ux500_charger *, bool);
-	int (*pre_chg_enable) (struct ux500_charger *, bool);
 };
 
 /**
@@ -32,17 +35,15 @@ struct ux500_charger_ops {
  * @max_out_curr	maximum output charger current in mA
  * @enabled		indicates if this charger is used or not
  * @external		external charger unit (pm2xxx)
- * @power_path		USB power path support
  */
 struct ux500_charger {
-	struct power_supply psy;
+	struct power_supply *psy;
 	struct ux500_charger_ops ops;
 	int max_out_volt;
 	int max_out_curr;
 	int wdt_refresh;
 	bool enabled;
 	bool external;
-	bool power_path;
 };
 
 extern struct blocking_notifier_head charger_notifier_list;

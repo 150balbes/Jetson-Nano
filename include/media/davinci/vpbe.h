@@ -9,10 +9,6 @@
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
  */
 #ifndef _VPBE_H
 #define _VPBE_H
@@ -63,7 +59,7 @@ struct vpbe_output {
 	 * output basis. If per mode is needed, we may have to move this to
 	 * mode_info structure
 	 */
-	enum v4l2_mbus_pixelcode if_params;
+	u32 if_params;
 };
 
 /* encoder configuration info */
@@ -104,10 +100,6 @@ struct vpbe_config {
 struct vpbe_device;
 
 struct vpbe_device_ops {
-	/* crop cap for the display */
-	int (*g_cropcap)(struct vpbe_device *vpbe_dev,
-			 struct v4l2_cropcap *cropcap);
-
 	/* Enumerate the outputs */
 	int (*enum_outputs)(struct vpbe_device *vpbe_dev,
 			    struct v4l2_output *output);

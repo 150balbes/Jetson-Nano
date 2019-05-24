@@ -692,7 +692,7 @@ static void ariadne_remove_one(struct zorro_dev *z)
 	free_netdev(dev);
 }
 
-static struct zorro_device_id ariadne_zorro_tbl[] = {
+static const struct zorro_device_id ariadne_zorro_tbl[] = {
 	{ ZORRO_PROD_VILLAGE_TRONIC_ARIADNE },
 	{ 0 }
 };
@@ -706,7 +706,6 @@ static const struct net_device_ops ariadne_netdev_ops = {
 	.ndo_get_stats		= ariadne_get_stats,
 	.ndo_set_rx_mode	= set_multicast_list,
 	.ndo_validate_addr	= eth_validate_addr,
-	.ndo_change_mtu		= eth_change_mtu,
 	.ndo_set_mac_address	= eth_mac_addr,
 };
 
@@ -718,7 +717,6 @@ static int ariadne_init_one(struct zorro_dev *z,
 	unsigned long mem_start = board + ARIADNE_RAM;
 	struct resource *r1, *r2;
 	struct net_device *dev;
-	struct ariadne_private *priv;
 	u32 serial;
 	int err;
 
@@ -737,8 +735,6 @@ static int ariadne_init_one(struct zorro_dev *z,
 		release_mem_region(mem_start, ARIADNE_RAM_SIZE);
 		return -ENOMEM;
 	}
-
-	priv = netdev_priv(dev);
 
 	r1->name = dev->name;
 	r2->name = dev->name;

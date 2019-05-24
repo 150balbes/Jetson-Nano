@@ -249,8 +249,6 @@ static int nspire_keypad_probe(struct platform_device *pdev)
 		return error;
 	}
 
-	platform_set_drvdata(pdev, keypad);
-
 	dev_dbg(&pdev->dev,
 		"TI-NSPIRE keypad at %pR (scan_interval=%uus, row_delay=%uus%s)\n",
 		res, keypad->row_delay, keypad->scan_interval,
@@ -268,7 +266,6 @@ MODULE_DEVICE_TABLE(of, nspire_keypad_dt_match);
 static struct platform_driver nspire_keypad_driver = {
 	.driver = {
 		.name = "nspire-keypad",
-		.owner = THIS_MODULE,
 		.of_match_table = nspire_keypad_dt_match,
 	},
 	.probe = nspire_keypad_probe,

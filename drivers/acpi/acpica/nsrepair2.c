@@ -1,46 +1,12 @@
+// SPDX-License-Identifier: BSD-3-Clause OR GPL-2.0
 /******************************************************************************
  *
  * Module Name: nsrepair2 - Repair for objects returned by specific
  *                          predefined methods
  *
+ * Copyright (C) 2000 - 2019, Intel Corp.
+ *
  *****************************************************************************/
-
-/*
- * Copyright (C) 2000 - 2013, Intel Corp.
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions, and the following disclaimer,
- *    without modification.
- * 2. Redistributions in binary form must reproduce at minimum a disclaimer
- *    substantially similar to the "NO WARRANTY" disclaimer below
- *    ("Disclaimer") and any redistribution must be conditioned upon
- *    including a substantially similar Disclaimer requirement for further
- *    binary redistribution.
- * 3. Neither the names of the above-listed copyright holders nor the names
- *    of any contributors may be used to endorse or promote products derived
- *    from this software without specific prior written permission.
- *
- * Alternatively, this software may be distributed under the terms of the
- * GNU General Public License ("GPL") version 2 as published by the Free
- * Software Foundation.
- *
- * NO WARRANTY
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTIBILITY AND FITNESS FOR
- * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
- * HOLDERS OR CONTRIBUTORS BE LIABLE FOR SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
- * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
- * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
- * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING
- * IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGES.
- */
 
 #include <acpi/acpi.h>
 #include "accommon.h"
@@ -54,9 +20,9 @@ ACPI_MODULE_NAME("nsrepair2")
  * be repaired on a per-name basis.
  */
 typedef
-acpi_status(*acpi_repair_function) (struct acpi_evaluate_info * info,
-				    union acpi_operand_object
-				    **return_object_ptr);
+acpi_status (*acpi_repair_function) (struct acpi_evaluate_info * info,
+				     union acpi_operand_object **
+				     return_object_ptr);
 
 typedef struct acpi_repair_info {
 	char name[ACPI_NAME_SIZE];
@@ -225,6 +191,7 @@ static const struct acpi_repair_info *acpi_ns_match_complex_repair(struct
 		if (ACPI_COMPARE_NAME(node->name.ascii, this_name->name)) {
 			return (this_name);
 		}
+
 		this_name++;
 	}
 
@@ -301,7 +268,8 @@ acpi_ns_repair_FDE(struct acpi_evaluate_info *info,
 		/* We can only repair if we have exactly 5 BYTEs */
 
 		if (return_object->buffer.length != ACPI_FDE_BYTE_BUFFER_SIZE) {
-			ACPI_WARN_PREDEFINED((AE_INFO, info->full_pathname,
+			ACPI_WARN_PREDEFINED((AE_INFO,
+					      info->full_pathname,
 					      info->node_flags,
 					      "Incorrect return buffer length %u, expected %u",
 					      return_object->buffer.length,
@@ -321,8 +289,8 @@ acpi_ns_repair_FDE(struct acpi_evaluate_info *info,
 		/* Expand each byte to a DWORD */
 
 		byte_buffer = return_object->buffer.pointer;
-		dword_buffer =
-		    ACPI_CAST_PTR(u32, buffer_object->buffer.pointer);
+		dword_buffer = ACPI_CAST_PTR(u32,
+					     buffer_object->buffer.pointer);
 
 		for (i = 0; i < ACPI_FDE_FIELD_COUNT; i++) {
 			*dword_buffer = (u32) *byte_buffer;
@@ -401,16 +369,12 @@ acpi_ns_repair_CID(struct acpi_evaluate_info *info,
 			return (status);
 		}
 
-		/* Take care with reference counts */
-
 		if (original_element != *element_ptr) {
 
-			/* Element was replaced */
+			/* Update reference count of new object */
 
 			(*element_ptr)->common.reference_count =
 			    original_ref_count;
-
-			acpi_ut_remove_reference(original_element);
 		}
 
 		element_ptr++;
@@ -432,8 +396,8 @@ acpi_ns_repair_CID(struct acpi_evaluate_info *info,
  * DESCRIPTION: Repair for the _CST object:
  *              1. Sort the list ascending by C state type
  *              2. Ensure type cannot be zero
- *              3. A sub-package count of zero means _CST is meaningless
- *              4. Count must match the number of C state sub-packages
+ *              3. A subpackage count of zero means _CST is meaningless
+ *              4. Count must match the number of C state subpackages
  *
  *****************************************************************************/
 
@@ -461,7 +425,8 @@ acpi_ns_repair_CST(struct acpi_evaluate_info *info,
 		removing = FALSE;
 
 		if ((*outer_elements)->package.count == 0) {
-			ACPI_WARN_PREDEFINED((AE_INFO, info->full_pathname,
+			ACPI_WARN_PREDEFINED((AE_INFO,
+					      info->full_pathname,
 					      info->node_flags,
 					      "SubPackage[%u] - removing entry due to zero count",
 					      i));
@@ -471,7 +436,8 @@ acpi_ns_repair_CST(struct acpi_evaluate_info *info,
 
 		obj_desc = (*outer_elements)->package.elements[1];	/* Index1 = Type */
 		if ((u32)obj_desc->integer.value == 0) {
-			ACPI_WARN_PREDEFINED((AE_INFO, info->full_pathname,
+			ACPI_WARN_PREDEFINED((AE_INFO,
+					      info->full_pathname,
 					      info->node_flags,
 					      "SubPackage[%u] - removing entry due to invalid Type(0)",
 					      i));
@@ -538,8 +504,8 @@ acpi_ns_repair_HID(struct acpi_evaluate_info *info,
 	}
 
 	if (return_object->string.length == 0) {
-		ACPI_WARN_PREDEFINED((AE_INFO, info->full_pathname,
-				      info->node_flags,
+		ACPI_WARN_PREDEFINED((AE_INFO,
+				      info->full_pathname, info->node_flags,
 				      "Invalid zero-length _HID or _CID string"));
 
 		/* Return AE_OK anyway, let driver handle it */
@@ -580,7 +546,7 @@ acpi_ns_repair_HID(struct acpi_evaluate_info *info,
 	 * # is a hex digit.
 	 */
 	for (dest = new_string->string.pointer; *source; dest++, source++) {
-		*dest = (char)ACPI_TOUPPER(*source);
+		*dest = (char)toupper((int)*source);
 	}
 
 	acpi_ut_remove_reference(return_object);
@@ -611,6 +577,7 @@ acpi_ns_repair_PRT(struct acpi_evaluate_info *info,
 	union acpi_operand_object **top_object_list;
 	union acpi_operand_object **sub_object_list;
 	union acpi_operand_object *obj_desc;
+	union acpi_operand_object *sub_package;
 	u32 element_count;
 	u32 index;
 
@@ -619,8 +586,17 @@ acpi_ns_repair_PRT(struct acpi_evaluate_info *info,
 	top_object_list = package_object->package.elements;
 	element_count = package_object->package.count;
 
-	for (index = 0; index < element_count; index++) {
-		sub_object_list = (*top_object_list)->package.elements;
+	/* Examine each subpackage */
+
+	for (index = 0; index < element_count; index++, top_object_list++) {
+		sub_package = *top_object_list;
+		sub_object_list = sub_package->package.elements;
+
+		/* Check for minimum required element count */
+
+		if (sub_package->package.count < 4) {
+			continue;
+		}
 
 		/*
 		 * If the BIOS has erroneously reversed the _PRT source_name (index 2)
@@ -634,15 +610,12 @@ acpi_ns_repair_PRT(struct acpi_evaluate_info *info,
 			sub_object_list[2] = obj_desc;
 			info->return_flags |= ACPI_OBJECT_REPAIRED;
 
-			ACPI_WARN_PREDEFINED((AE_INFO, info->full_pathname,
+			ACPI_WARN_PREDEFINED((AE_INFO,
+					      info->full_pathname,
 					      info->node_flags,
 					      "PRT[%X]: Fixed reversed SourceName and SourceIndex",
 					      index));
 		}
-
-		/* Point to the next union acpi_operand_object in the top level package */
-
-		top_object_list++;
 	}
 
 	return (AE_OK);
@@ -679,7 +652,7 @@ acpi_ns_repair_PSS(struct acpi_evaluate_info *info,
 	u32 i;
 
 	/*
-	 * Entries (sub-packages) in the _PSS Package must be sorted by power
+	 * Entries (subpackages) in the _PSS Package must be sorted by power
 	 * dissipation, in descending order. If it appears that the list is
 	 * incorrectly sorted, sort it. We sort by cpu_frequency, since this
 	 * should be proportional to the power.
@@ -703,8 +676,9 @@ acpi_ns_repair_PSS(struct acpi_evaluate_info *info,
 		elements = (*outer_elements)->package.elements;
 		obj_desc = elements[1];	/* Index1 = power_dissipation */
 
-		if ((u32) obj_desc->integer.value > previous_value) {
-			ACPI_WARN_PREDEFINED((AE_INFO, info->full_pathname,
+		if ((u32)obj_desc->integer.value > previous_value) {
+			ACPI_WARN_PREDEFINED((AE_INFO,
+					      info->full_pathname,
 					      info->node_flags,
 					      "SubPackage[%u,%u] - suspicious power dissipation values",
 					      i - 1, i));
@@ -767,9 +741,9 @@ acpi_ns_repair_TSS(struct acpi_evaluate_info *info,
  *
  * PARAMETERS:  info                - Method execution information block
  *              return_object       - Pointer to the top-level returned object
- *              start_index         - Index of the first sub-package
- *              expected_count      - Minimum length of each sub-package
- *              sort_index          - Sub-package entry to sort on
+ *              start_index         - Index of the first subpackage
+ *              expected_count      - Minimum length of each subpackage
+ *              sort_index          - Subpackage entry to sort on
  *              sort_direction      - Ascending or descending
  *              sort_key_name       - Name of the sort_index field
  *
@@ -805,7 +779,7 @@ acpi_ns_check_sorted_list(struct acpi_evaluate_info *info,
 	}
 
 	/*
-	 * NOTE: assumes list of sub-packages contains no NULL elements.
+	 * NOTE: assumes list of subpackages contains no NULL elements.
 	 * Any NULL elements should have been removed by earlier call
 	 * to acpi_ns_remove_null_elements.
 	 */
@@ -832,7 +806,7 @@ acpi_ns_check_sorted_list(struct acpi_evaluate_info *info,
 			return (AE_AML_OPERAND_TYPE);
 		}
 
-		/* Each sub-package must have the minimum length */
+		/* Each subpackage must have the minimum length */
 
 		if ((*outer_elements)->package.count < expected_count) {
 			return (AE_AML_PACKAGE_LIMIT);
@@ -962,6 +936,7 @@ acpi_ns_remove_element(union acpi_operand_object *obj_desc, u32 index)
 			*dest = *source;
 			dest++;
 		}
+
 		source++;
 	}
 

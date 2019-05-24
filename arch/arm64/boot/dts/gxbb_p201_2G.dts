@@ -1,9 +1,0 @@
-#include "gxbb_p201.dts"
-
-/{
-	le-dt-id = "gxbb_p201_2G";
-	memory@00000000 {
-		device_type = "memory";
-		linux,usable-memory = <0x0 0x1000000 0x0 0x7f000000>;
-	};
-};

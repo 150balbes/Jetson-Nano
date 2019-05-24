@@ -14,7 +14,6 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include <linux/clk.h>
 #include <linux/clk-provider.h>
 #include <linux/export.h>
 #include <linux/slab.h>
@@ -28,7 +27,7 @@ static u8 clk_periph_get_parent(struct clk_hw *hw)
 	const struct clk_ops *mux_ops = periph->mux_ops;
 	struct clk_hw *mux_hw = &periph->mux.hw;
 
-	mux_hw->clk = hw->clk;
+	__clk_hw_set_clk(mux_hw, hw);
 
 	return mux_ops->get_parent(mux_hw);
 }
@@ -39,7 +38,7 @@ static int clk_periph_set_parent(struct clk_hw *hw, u8 index)
 	const struct clk_ops *mux_ops = periph->mux_ops;
 	struct clk_hw *mux_hw = &periph->mux.hw;
 
-	mux_hw->clk = hw->clk;
+	__clk_hw_set_clk(mux_hw, hw);
 
 	return mux_ops->set_parent(mux_hw, index);
 }
@@ -51,7 +50,7 @@ static unsigned long clk_periph_recalc_rate(struct clk_hw *hw,
 	const struct clk_ops *div_ops = periph->div_ops;
 	struct clk_hw *div_hw = &periph->divider.hw;
 
-	div_hw->clk = hw->clk;
+	__clk_hw_set_clk(div_hw, hw);
 
 	return div_ops->recalc_rate(div_hw, parent_rate);
 }
@@ -63,7 +62,7 @@ static long clk_periph_round_rate(struct clk_hw *hw, unsigned long rate,
 	const struct clk_ops *div_ops = periph->div_ops;
 	struct clk_hw *div_hw = &periph->divider.hw;
 
-	div_hw->clk = hw->clk;
+	__clk_hw_set_clk(div_hw, hw);
 
 	return div_ops->round_rate(div_hw, rate, prate);
 }
@@ -75,7 +74,7 @@ static int clk_periph_set_rate(struct clk_hw *hw, unsigned long rate,
 	const struct clk_ops *div_ops = periph->div_ops;
 	struct clk_hw *div_hw = &periph->divider.hw;
 
-	div_hw->clk = hw->clk;
+	__clk_hw_set_clk(div_hw, hw);
 
 	return div_ops->set_rate(div_hw, rate, parent_rate);
 }
@@ -86,7 +85,7 @@ static int clk_periph_is_enabled(struct clk_hw *hw)
 	const struct clk_ops *gate_ops = periph->gate_ops;
 	struct clk_hw *gate_hw = &periph->gate.hw;
 
-	gate_hw->clk = hw->clk;
+	__clk_hw_set_clk(gate_hw, hw);
 
 	return gate_ops->is_enabled(gate_hw);
 }
@@ -97,7 +96,7 @@ static int clk_periph_enable(struct clk_hw *hw)
 	const struct clk_ops *gate_ops = periph->gate_ops;
 	struct clk_hw *gate_hw = &periph->gate.hw;
 
-	gate_hw->clk = hw->clk;
+	__clk_hw_set_clk(gate_hw, hw);
 
 	return gate_ops->enable(gate_hw);
 }
@@ -130,7 +129,7 @@ static const struct clk_ops tegra_clk_periph_nodiv_ops = {
 	.disable = clk_periph_disable,
 };
 
-const struct clk_ops tegra_clk_periph_no_gate_ops = {
+static const struct clk_ops tegra_clk_periph_no_gate_ops = {
 	.get_parent = clk_periph_get_parent,
 	.set_parent = clk_periph_set_parent,
 	.recalc_rate = clk_periph_recalc_rate,
@@ -139,14 +138,14 @@ const struct clk_ops tegra_clk_periph_no_gate_ops = {
 };
 
 static struct clk *_tegra_clk_register_periph(const char *name,
-			const char **parent_names, int num_parents,
+			const char * const *parent_names, int num_parents,
 			struct tegra_clk_periph *periph,
 			void __iomem *clk_base, u32 offset,
 			unsigned long flags)
 {
 	struct clk *clk;
 	struct clk_init_data init;
-	struct tegra_clk_periph_regs *bank;
+	const struct tegra_clk_periph_regs *bank;
 	bool div = !(periph->gate.flags & TEGRA_PERIPH_NO_DIV);
 
 	if (periph->gate.flags & TEGRA_PERIPH_NO_DIV) {
@@ -187,7 +186,7 @@ static struct clk *_tegra_clk_register_periph(const char *name,
 }
 
 struct clk *tegra_clk_register_periph(const char *name,
-		const char **parent_names, int num_parents,
+		const char * const *parent_names, int num_parents,
 		struct tegra_clk_periph *periph, void __iomem *clk_base,
 		u32 offset, unsigned long flags)
 {
@@ -196,11 +195,19 @@ struct clk *tegra_clk_register_periph(const char *name,
 }
 
 struct clk *tegra_clk_register_periph_nodiv(const char *name,
-		const char **parent_names, int num_parents,
+		const char * const *parent_names, int num_parents,
 		struct tegra_clk_periph *periph, void __iomem *clk_base,
 		u32 offset)
 {
 	periph->gate.flags |= TEGRA_PERIPH_NO_DIV;
 	return _tegra_clk_register_periph(name, parent_names, num_parents,
 			periph, clk_base, offset, CLK_SET_RATE_PARENT);
+}
+
+struct clk *tegra_clk_register_periph_data(void __iomem *clk_base,
+					   struct tegra_periph_init_data *init)
+{
+	return _tegra_clk_register_periph(init->name, init->p.parent_names,
+					  init->num_parents, &init->periph,
+					  clk_base, init->offset, init->flags);
 }

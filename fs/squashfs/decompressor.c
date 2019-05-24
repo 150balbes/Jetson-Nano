@@ -41,6 +41,12 @@ static const struct squashfs_decompressor squashfs_lzma_unsupported_comp_ops = {
 	NULL, NULL, NULL, NULL, LZMA_COMPRESSION, "lzma", 0
 };
 
+#ifndef CONFIG_SQUASHFS_LZ4
+static const struct squashfs_decompressor squashfs_lz4_comp_ops = {
+	NULL, NULL, NULL, NULL, LZ4_COMPRESSION, "lz4", 0
+};
+#endif
+
 #ifndef CONFIG_SQUASHFS_LZO
 static const struct squashfs_decompressor squashfs_lzo_comp_ops = {
 	NULL, NULL, NULL, NULL, LZO_COMPRESSION, "lzo", 0
@@ -59,15 +65,23 @@ static const struct squashfs_decompressor squashfs_zlib_comp_ops = {
 };
 #endif
 
+#ifndef CONFIG_SQUASHFS_ZSTD
+static const struct squashfs_decompressor squashfs_zstd_comp_ops = {
+	NULL, NULL, NULL, NULL, ZSTD_COMPRESSION, "zstd", 0
+};
+#endif
+
 static const struct squashfs_decompressor squashfs_unknown_comp_ops = {
 	NULL, NULL, NULL, NULL, 0, "unknown", 0
 };
 
 static const struct squashfs_decompressor *decompressor[] = {
 	&squashfs_zlib_comp_ops,
+	&squashfs_lz4_comp_ops,
 	&squashfs_lzo_comp_ops,
 	&squashfs_xz_comp_ops,
 	&squashfs_lzma_unsupported_comp_ops,
+	&squashfs_zstd_comp_ops,
 	&squashfs_unknown_comp_ops
 };
 
@@ -95,7 +109,7 @@ static void *get_comp_opts(struct super_block *sb, unsigned short flags)
 	 * Read decompressor specific options from file system if present
 	 */
 	if (SQUASHFS_COMP_OPTS(flags)) {
-		buffer = kmalloc(PAGE_CACHE_SIZE, GFP_KERNEL);
+		buffer = kmalloc(PAGE_SIZE, GFP_KERNEL);
 		if (buffer == NULL) {
 			comp_opts = ERR_PTR(-ENOMEM);
 			goto out;

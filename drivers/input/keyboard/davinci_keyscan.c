@@ -32,10 +32,6 @@
 #include <linux/errno.h>
 #include <linux/slab.h>
 
-#include <asm/irq.h>
-
-#include <mach/hardware.h>
-#include <mach/irqs.h>
 #include <linux/platform_data/keyscan-davinci.h>
 
 /* Key scan registers */
@@ -172,7 +168,7 @@ static int __init davinci_ks_probe(struct platform_device *pdev)
 	struct input_dev *key_dev;
 	struct resource *res, *mem;
 	struct device *dev = &pdev->dev;
-	struct davinci_ks_platform_data *pdata = dev_get_platdata(&pdev->dev);
+	struct davinci_ks_platform_data *pdata = dev_get_platdata(dev);
 	int error, i;
 
 	if (pdata->device_enable) {
@@ -255,7 +251,7 @@ static int __init davinci_ks_probe(struct platform_device *pdev)
 
 	key_dev->name = "davinci_keyscan";
 	key_dev->phys = "davinci_keyscan/input0";
-	key_dev->dev.parent = &pdev->dev;
+	key_dev->dev.parent = dev;
 	key_dev->id.bustype = BUS_HOST;
 	key_dev->id.vendor = 0x0001;
 	key_dev->id.product = 0x0001;
@@ -322,7 +318,6 @@ static int davinci_ks_remove(struct platform_device *pdev)
 static struct platform_driver davinci_ks_driver = {
 	.driver	= {
 		.name = "davinci_keyscan",
-		.owner = THIS_MODULE,
 	},
 	.remove	= davinci_ks_remove,
 };

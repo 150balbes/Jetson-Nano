@@ -17,15 +17,11 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  *
  * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  */
 
 #ifndef CIMAX2_H
 #define CIMAX2_H
-#include "dvb_ca_en50221.h"
+#include <media/dvb_ca_en50221.h>
 
 extern int netup_ci_read_attribute_mem(struct dvb_ca_en50221 *en50221,
 						int slot, int addr);

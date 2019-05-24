@@ -1,7 +1,5 @@
 Image
 zImage
 xipImage
-ccImage
 bootpImage
 uImage
-*.dtb

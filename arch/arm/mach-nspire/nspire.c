@@ -22,23 +22,16 @@
 #include <asm/mach-types.h>
 #include <asm/mach/map.h>
 
-#include <asm/hardware/timer-sp.h>
-
 #include "mmio.h"
 #include "clcd.h"
 
-static const char *nspire_dt_match[] __initconst = {
+static const char *const nspire_dt_match[] __initconst = {
 	"ti,nspire",
 	"ti,nspire-cx",
 	"ti,nspire-tp",
 	"ti,nspire-clp",
 	NULL,
 };
-
-static void __init nspire_map_io(void)
-{
-	debug_ll_io_init();
-}
 
 static struct clcd_board nspire_clcd_data = {
 	.name		= "LCD",
@@ -59,11 +52,10 @@ static struct of_dev_auxdata nspire_auxdata[] __initdata = {
 
 static void __init nspire_init(void)
 {
-	of_platform_populate(NULL, of_default_bus_match_table,
-			nspire_auxdata, NULL);
+	of_platform_default_populate(NULL, nspire_auxdata, NULL);
 }
 
-static void nspire_restart(char mode, const char *cmd)
+static void nspire_restart(enum reboot_mode mode, const char *cmd)
 {
 	void __iomem *base = ioremap(NSPIRE_MISC_PHYS_BASE, SZ_4K);
 	if (!base)
@@ -74,7 +66,6 @@ static void nspire_restart(char mode, const char *cmd)
 
 DT_MACHINE_START(NSPIRE, "TI-NSPIRE")
 	.dt_compat	= nspire_dt_match,
-	.map_io		= nspire_map_io,
 	.init_machine	= nspire_init,
 	.restart	= nspire_restart,
 MACHINE_END

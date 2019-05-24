@@ -1,7 +1,9 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 
 #include <asm/cache.h>
 #include <asm/ptrace.h>
 #include <asm/pgtable.h>
+#include <asm/thread_info.h>
 
 #include <asm-generic/vmlinux.lds.h>
 
@@ -46,6 +48,7 @@ SECTIONS {
 		__end_ivt_text = .;
 		TEXT_TEXT
 		SCHED_TEXT
+		CPUIDLE_TEXT
 		LOCK_TEXT
 		KPROBES_TEXT
 		*(.gnu.linkonce.t*)
@@ -106,7 +109,9 @@ SECTIONS {
 	RODATA
 
 	.opd : AT(ADDR(.opd) - LOAD_OFFSET) {
+		__start_opd = .;
 		*(.opd)
+		__end_opd = .;
 	}
 
 	/*
@@ -135,27 +140,6 @@ SECTIONS {
 		*(.data..patch.mckinley_e9)
 		__end___mckinley_e9_bundles = .;
 	}
-
-#if defined(CONFIG_PARAVIRT)
-	. = ALIGN(16);
-	.paravirt_bundles : AT(ADDR(.paravirt_bundles) - LOAD_OFFSET) {
-		__start_paravirt_bundles = .;
-		*(.paravirt_bundles)
-		__stop_paravirt_bundles = .;
-	}
-	. = ALIGN(16);
-	.paravirt_insts : AT(ADDR(.paravirt_insts) - LOAD_OFFSET) {
-		__start_paravirt_insts = .;
-		*(.paravirt_insts)
-		__stop_paravirt_insts = .;
-	}
-	. = ALIGN(16);
-	.paravirt_branches : AT(ADDR(.paravirt_branches) - LOAD_OFFSET) {
-		__start_paravirt_branches = .;
-		*(.paravirt_branches)
-		__stop_paravirt_branches = .;
-	}
-#endif
 
 #if defined(CONFIG_IA64_GENERIC)
 	/* Machine Vector */
@@ -211,6 +195,8 @@ SECTIONS {
 		*(.gnu.linkonce.d*)
 		CONSTRUCTORS
 	}
+
+	BUG_TABLE
 
 	. = ALIGN(16);	/* gp must be 16-byte aligned for exc. table */
 	.got : AT(ADDR(.got) - LOAD_OFFSET) {

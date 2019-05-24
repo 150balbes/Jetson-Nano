@@ -159,7 +159,7 @@ static int m41t93_get_time(struct device *dev, struct rtc_time *tm)
 		tm->tm_hour, tm->tm_mday,
 		tm->tm_mon, tm->tm_year, tm->tm_wday);
 
-	return ret < 0 ? ret : rtc_valid_tm(tm);
+	return ret;
 }
 
 
@@ -197,7 +197,6 @@ static int m41t93_probe(struct spi_device *spi)
 static struct spi_driver m41t93_driver = {
 	.driver = {
 		.name	= "rtc-m41t93",
-		.owner	= THIS_MODULE,
 	},
 	.probe	= m41t93_probe,
 };

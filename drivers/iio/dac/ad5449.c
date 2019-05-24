@@ -193,7 +193,6 @@ static int ad5449_write_raw(struct iio_dev *indio_dev,
 static const struct iio_info ad5449_info = {
 	.read_raw = ad5449_read_raw,
 	.write_raw = ad5449_write_raw,
-	.driver_module = THIS_MODULE,
 };
 
 #define AD5449_CHANNEL(chan, bits) {				\
@@ -356,7 +355,6 @@ MODULE_DEVICE_TABLE(spi, ad5449_spi_ids);
 static struct spi_driver ad5449_spi_driver = {
 	.driver = {
 		.name = "ad5449",
-		.owner = THIS_MODULE,
 	},
 	.probe = ad5449_spi_probe,
 	.remove = ad5449_spi_remove,

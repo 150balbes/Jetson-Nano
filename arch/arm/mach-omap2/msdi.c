@@ -23,14 +23,12 @@
 
 #include <linux/kernel.h>
 #include <linux/err.h>
-#include <linux/platform_data/gpio-omap.h>
 
 #include "prm.h"
 #include "common.h"
 #include "control.h"
 #include "omap_hwmod.h"
 #include "omap_device.h"
-#include "mux.h"
 #include "mmc.h"
 
 /*
@@ -76,8 +74,8 @@ int omap_msdi_reset(struct omap_hwmod *oh)
 			  MAX_MODULE_SOFTRESET_WAIT, c);
 
 	if (c == MAX_MODULE_SOFTRESET_WAIT)
-		pr_warning("%s: %s: softreset failed (waited %d usec)\n",
-			   __func__, oh->name, MAX_MODULE_SOFTRESET_WAIT);
+		pr_warn("%s: %s: softreset failed (waited %d usec)\n",
+			__func__, oh->name, MAX_MODULE_SOFTRESET_WAIT);
 	else
 		pr_debug("%s: %s: softreset in %d usec\n", __func__,
 			 oh->name, c);

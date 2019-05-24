@@ -1,12 +1,8 @@
-/*
- * Copyright (c) 2005-2008 Simtec Electronics
- *	http://armlinux.simtec.co.uk/
- *	Ben Dooks <ben@simtec.co.uk>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
-*/
+// SPDX-License-Identifier: GPL-2.0
+//
+// Copyright (c) 2005-2008 Simtec Electronics
+//	http://armlinux.simtec.co.uk/
+//	Ben Dooks <ben@simtec.co.uk>
 
 #include <linux/kernel.h>
 #include <linux/types.h>
@@ -18,12 +14,13 @@
 #include <linux/device.h>
 #include <linux/syscore_ops.h>
 #include <linux/serial_core.h>
+#include <linux/serial_s3c.h>
 #include <linux/clk.h>
 #include <linux/i2c.h>
 #include <linux/io.h>
 #include <linux/platform_device.h>
 
-#include <linux/i2c/tps65010.h>
+#include <linux/mfd/tps65010.h>
 
 #include <asm/mach-types.h>
 #include <asm/mach/arch.h>
@@ -35,16 +32,14 @@
 #include <linux/platform_data/i2c-s3c2410.h>
 
 #include <linux/mtd/mtd.h>
-#include <linux/mtd/nand.h>
+#include <linux/mtd/rawnand.h>
 #include <linux/mtd/nand_ecc.h>
 #include <linux/mtd/partitions.h>
 
-#include <plat/clock.h>
 #include <plat/cpu.h>
 #include <plat/cpu-freq.h>
 #include <plat/devs.h>
 #include <plat/gpio-cfg.h>
-#include <plat/regs-serial.h>
 #include <plat/samsung-time.h>
 
 #include <mach/hardware.h>
@@ -239,6 +234,7 @@ static struct s3c2410_platform_nand __initdata osiris_nand_info = {
 	.nr_sets	= ARRAY_SIZE(osiris_nand_sets),
 	.sets		= osiris_nand_sets,
 	.select_chip	= osiris_nand_select,
+	.ecc_mode       = NAND_ECC_SOFT,
 };
 
 /* PCMCIA control and configuration */
@@ -344,18 +340,11 @@ static struct i2c_board_info osiris_i2c_devs[] __initdata = {
 /* Standard Osiris devices */
 
 static struct platform_device *osiris_devices[] __initdata = {
+	&s3c2410_device_dclk,
 	&s3c_device_i2c0,
 	&s3c_device_wdt,
 	&s3c_device_nand,
 	&osiris_pcmcia,
-};
-
-static struct clk *osiris_clocks[] __initdata = {
-	&s3c24xx_dclk0,
-	&s3c24xx_dclk1,
-	&s3c24xx_clkout0,
-	&s3c24xx_clkout1,
-	&s3c24xx_uclk,
 };
 
 static struct s3c_cpufreq_board __initdata osiris_cpufreq = {
@@ -368,23 +357,7 @@ static void __init osiris_map_io(void)
 {
 	unsigned long flags;
 
-	/* initialise the clocks */
-
-	s3c24xx_dclk0.parent = &clk_upll;
-	s3c24xx_dclk0.rate   = 12*1000*1000;
-
-	s3c24xx_dclk1.parent = &clk_upll;
-	s3c24xx_dclk1.rate   = 24*1000*1000;
-
-	s3c24xx_clkout0.parent  = &s3c24xx_dclk0;
-	s3c24xx_clkout1.parent  = &s3c24xx_dclk1;
-
-	s3c24xx_uclk.parent  = &s3c24xx_clkout1;
-
-	s3c24xx_register_clocks(osiris_clocks, ARRAY_SIZE(osiris_clocks));
-
 	s3c24xx_init_io(osiris_iodesc, ARRAY_SIZE(osiris_iodesc));
-	s3c24xx_init_clocks(0);
 	s3c24xx_init_uarts(osiris_uartcfgs, ARRAY_SIZE(osiris_uartcfgs));
 	samsung_set_timer_source(SAMSUNG_PWM3, SAMSUNG_PWM4);
 
@@ -408,6 +381,12 @@ static void __init osiris_map_io(void)
 	local_irq_restore(flags);
 }
 
+static void __init osiris_init_time(void)
+{
+	s3c2440_init_clocks(12000000);
+	samsung_timer_init();
+}
+
 static void __init osiris_init(void)
 {
 	register_syscore_ops(&osiris_pm_syscore_ops);
@@ -429,6 +408,5 @@ MACHINE_START(OSIRIS, "Simtec-OSIRIS")
 	.map_io		= osiris_map_io,
 	.init_irq	= s3c2440_init_irq,
 	.init_machine	= osiris_init,
-	.init_time	= samsung_timer_init,
-	.restart	= s3c244x_restart,
+	.init_time	= osiris_init_time,
 MACHINE_END

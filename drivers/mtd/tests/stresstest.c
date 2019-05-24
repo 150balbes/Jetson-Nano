@@ -96,7 +96,7 @@ static int do_read(void)
 		if (offs + len > mtd->erasesize)
 			len = mtd->erasesize - offs;
 	}
-	addr = eb * mtd->erasesize + offs;
+	addr = (loff_t)eb * mtd->erasesize + offs;
 	return mtdtest_read(mtd, addr, len, readbuf);
 }
 
@@ -124,7 +124,7 @@ static int do_write(void)
 			offsets[eb + 1] = 0;
 		}
 	}
-	addr = eb * mtd->erasesize + offs;
+	addr = (loff_t)eb * mtd->erasesize + offs;
 	err = mtdtest_write(mtd, addr, len, writebuf);
 	if (unlikely(err))
 		return err;
@@ -199,7 +199,7 @@ static int __init mtd_stresstest_init(void)
 	err = -ENOMEM;
 	readbuf = vmalloc(bufsize);
 	writebuf = vmalloc(bufsize);
-	offsets = kmalloc(ebcnt * sizeof(int), GFP_KERNEL);
+	offsets = kmalloc_array(ebcnt, sizeof(int), GFP_KERNEL);
 	if (!readbuf || !writebuf || !offsets)
 		goto out;
 	for (i = 0; i < ebcnt; i++)
@@ -221,7 +221,10 @@ static int __init mtd_stresstest_init(void)
 		err = do_operation();
 		if (err)
 			goto out;
-		cond_resched();
+
+		err = mtdtest_relax();
+		if (err)
+			goto out;
 	}
 	pr_info("finished, %d operations done\n", op);
 

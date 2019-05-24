@@ -59,7 +59,7 @@ Fixed block size
 The origin is divided up into blocks of a fixed size.  This block size
 is configurable when you first create the cache.  Typically we've been
 using block sizes of 256KB - 1024KB.  The block size must be between 64
-(32KB) and 2097152 (1GB) and a multiple of 64 (32KB).
+sectors (32KB) and 2097152 sectors (1GB) and a multiple of 64 sectors (32KB).
 
 Having a fixed block size simplifies the target a lot.  But it is
 something of a compromise.  For instance, a small part of a block may be
@@ -119,7 +119,7 @@ doing here to avoid migrating during those peak io moments.
 
 For the time being, a message "migration_threshold <#sectors>"
 can be used to set the maximum number of sectors being migrated,
-the default being 204800 sectors (or 100MB).
+the default being 2048 sectors (1MB).
 
 Updating on-disk metadata
 -------------------------
@@ -142,11 +142,6 @@ Policy plug-ins can store a chunk of data per cache block.  It's up to
 the policy how big this chunk is, but it should be kept small.  Like the
 dirty flags this data is lost if there's a crash so a safe fallback
 value should always be possible.
-
-For instance, the 'mq' policy, which is currently the default policy,
-uses this facility to store the hit count of the cache blocks.  If
-there's a crash this information will be lost, which means the cache
-may be less efficient until those hit counts are regenerated.
 
 Policy hints affect performance, not correctness.
 
@@ -207,6 +202,13 @@ Optional feature arguments are:
 		   block, then the cache block is invalidated.
 		   To enable passthrough mode the cache must be clean.
 
+   metadata2	: use version 2 of the metadata.  This stores the dirty bits
+                  in a separate btree, which improves speed of shutting
+		  down the cache.
+
+   no_discard_passdown	: disable passing down discards from the cache
+			  to the origin's data device.
+
 A policy called 'default' is always registered.  This is an alias for
 the policy we currently think is giving best all round performance.
 
@@ -221,6 +223,7 @@ Status
 <#read hits> <#read misses> <#write hits> <#write misses>
 <#demotions> <#promotions> <#dirty> <#features> <features>*
 <#core args> <core args>* <policy name> <#policy args> <policy args>*
+<cache metadata mode>
 
 metadata block size	 : Fixed block size for each metadata block in
 			     sectors
@@ -251,8 +254,18 @@ core args		 : Key/value pairs for tuning the core
 			     e.g. migration_threshold
 policy name		 : Name of the policy
 #policy args		 : Number of policy arguments to follow (must be even)
-policy args		 : Key/value pairs
-			     e.g. sequential_threshold
+policy args		 : Key/value pairs e.g. sequential_threshold
+cache metadata mode      : ro if read-only, rw if read-write
+	In serious cases where even a read-only mode is deemed unsafe
+	no further I/O will be permitted and the status will just
+	contain the string 'Fail'.  The userspace recovery tools
+	should then be used.
+needs_check		 : 'needs_check' if set, '-' if not set
+	A metadata operation has failed, resulting in the needs_check
+	flag being set in the metadata's superblock.  The metadata
+	device must be deactivated and checked/repaired before the
+	cache can be made fully operational again.  '-' indicates
+	needs_check is not set.
 
 Messages
 --------
@@ -275,7 +288,7 @@ message, which takes an arbitrary number of cblock ranges.  Each cblock
 range's end value is "one past the end", meaning 5-10 expresses a range
 of values from 5 to 9.  Each cblock must be expressed as a decimal
 value, in the future a variant message that takes cblock ranges
-expressed in hexidecimal may be needed to better support efficient
+expressed in hexadecimal may be needed to better support efficient
 invalidation of larger caches.  The cache must be in passthrough mode
 when invalidate_cblocks is used.
 

@@ -21,6 +21,7 @@
 #define _VNIC_RQ_H_
 
 #include <linux/pci.h>
+#include <linux/netdevice.h>
 
 #include "vnic_dev.h"
 #include "vnic_cq.h"
@@ -73,6 +74,12 @@ struct vnic_rq_buf {
 	unsigned int index;
 	void *desc;
 	uint64_t wr_id;
+};
+
+enum enic_poll_state {
+	ENIC_POLL_STATE_IDLE,
+	ENIC_POLL_STATE_NAPI,
+	ENIC_POLL_STATE_POLL
 };
 
 struct vnic_rq {

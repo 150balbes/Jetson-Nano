@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  *  fs/partitions/amiga.c
  *
@@ -6,6 +7,8 @@
  *  Copyright (C) 1991-1998  Linus Torvalds
  *  Re-organised Feb 1998 Russell King
  */
+
+#define pr_fmt(fmt) fmt
 
 #include <linux/types.h>
 #include <linux/affs_hardblocks.h>
@@ -40,7 +43,7 @@ int amiga_partition(struct parsed_partitions *state)
 		data = read_part_sector(state, blk, &sect);
 		if (!data) {
 			if (warn_no_part)
-				printk("Dev %s: unable to read RDB block %d\n",
+				pr_err("Dev %s: unable to read RDB block %d\n",
 				       bdevname(state->bdev, b), blk);
 			res = -1;
 			goto rdb_done;
@@ -57,12 +60,12 @@ int amiga_partition(struct parsed_partitions *state)
 		*(__be32 *)(data+0xdc) = 0;
 		if (checksum_block((__be32 *)data,
 				be32_to_cpu(rdb->rdb_SummedLongs) & 0x7F)==0) {
-			printk("Warning: Trashed word at 0xd0 in block %d "
-				"ignored in checksum calculation\n",blk);
+			pr_err("Trashed word at 0xd0 in block %d ignored in checksum calculation\n",
+			       blk);
 			break;
 		}
 
-		printk("Dev %s: RDB in block %d has bad checksum\n",
+		pr_err("Dev %s: RDB in block %d has bad checksum\n",
 		       bdevname(state->bdev, b), blk);
 	}
 
@@ -83,7 +86,7 @@ int amiga_partition(struct parsed_partitions *state)
 		data = read_part_sector(state, blk, &sect);
 		if (!data) {
 			if (warn_no_part)
-				printk("Dev %s: unable to read partition block %d\n",
+				pr_err("Dev %s: unable to read partition block %d\n",
 				       bdevname(state->bdev, b), blk);
 			res = -1;
 			goto rdb_done;

@@ -38,6 +38,14 @@
  * nct6776f     9      5       3       6+3    0xc330 0xc1    0x5ca3
  * nct6779d    15      5       5       2+6    0xc560 0xc1    0x5ca3
  * nct6791d    15      6       6       2+6    0xc800 0xc1    0x5ca3
+ * nct6792d    15      6       6       2+6    0xc910 0xc1    0x5ca3
+ * nct6793d    15      6       6       2+6    0xd120 0xc1    0x5ca3
+ * nct6795d    14      6       6       2+6    0xd350 0xc1    0x5ca3
+ * nct6796d    14      7       7       2+6    0xd420 0xc1    0x5ca3
+ * nct6797d    14      7       7       2+6    0xd450 0xc1    0x5ca3
+ *                                           (0xd451)
+ * nct6798d    14      7       7       2+6    0xd428 0xc1    0x5ca3
+ *                                           (0xd429)
  *
  * #temp lists the number of monitored temperature sources (first value) plus
  * the number of directly connectable temperature sensors (second value).
@@ -56,12 +64,16 @@
 #include <linux/err.h>
 #include <linux/mutex.h>
 #include <linux/acpi.h>
+#include <linux/bitops.h>
+#include <linux/dmi.h>
 #include <linux/io.h>
+#include <linux/nospec.h>
 #include "lm75.h"
 
 #define USE_ALTERNATE
 
-enum kinds { nct6106, nct6775, nct6776, nct6779, nct6791 };
+enum kinds { nct6106, nct6775, nct6776, nct6779, nct6791, nct6792, nct6793,
+	     nct6795, nct6796, nct6797, nct6798 };
 
 /* used to set data->name = nct6775_device_names[data->sio_kind] */
 static const char * const nct6775_device_names[] = {
@@ -70,6 +82,26 @@ static const char * const nct6775_device_names[] = {
 	"nct6776",
 	"nct6779",
 	"nct6791",
+	"nct6792",
+	"nct6793",
+	"nct6795",
+	"nct6796",
+	"nct6797",
+	"nct6798",
+};
+
+static const char * const nct6775_sio_names[] __initconst = {
+	"NCT6106D",
+	"NCT6775F",
+	"NCT6776D/F",
+	"NCT6779D",
+	"NCT6791D",
+	"NCT6792D",
+	"NCT6793D",
+	"NCT6795D",
+	"NCT6796D",
+	"NCT6797D",
+	"NCT6798D",
 };
 
 static unsigned short force_id;
@@ -89,6 +121,7 @@ MODULE_PARM_DESC(fan_debounce, "Enable debouncing for fan RPM signal");
 #define NCT6775_LD_ACPI		0x0a
 #define NCT6775_LD_HWM		0x0b
 #define NCT6775_LD_VID		0x0d
+#define NCT6775_LD_12		0x12
 
 #define SIO_REG_LDSEL		0x07	/* Logical device select */
 #define SIO_REG_DEVID		0x20	/* Device ID (2 bytes) */
@@ -100,7 +133,13 @@ MODULE_PARM_DESC(fan_debounce, "Enable debouncing for fan RPM signal");
 #define SIO_NCT6776_ID		0xc330
 #define SIO_NCT6779_ID		0xc560
 #define SIO_NCT6791_ID		0xc800
-#define SIO_ID_MASK		0xFFF0
+#define SIO_NCT6792_ID		0xc910
+#define SIO_NCT6793_ID		0xd120
+#define SIO_NCT6795_ID		0xd350
+#define SIO_NCT6796_ID		0xd420
+#define SIO_NCT6797_ID		0xd450
+#define SIO_NCT6798_ID		0xd428
+#define SIO_ID_MASK		0xFFF8
 
 enum pwm_enable { off, manual, thermal_cruise, speed_cruise, sf3, sf4 };
 
@@ -176,7 +215,7 @@ superio_exit(int ioreg)
 #define NUM_REG_ALARM	7	/* Max number of alarm registers */
 #define NUM_REG_BEEP	5	/* Max number of beep registers */
 
-#define NUM_FAN		6
+#define NUM_FAN		7
 
 /* Common and NCT6775 specific data */
 
@@ -245,31 +284,32 @@ static const u8 NCT6775_PWM_MODE_MASK[] = { 0x01, 0x02, 0x01 };
 /* Advanced Fan control, some values are common for all fans */
 
 static const u16 NCT6775_REG_TARGET[] = {
-	0x101, 0x201, 0x301, 0x801, 0x901, 0xa01 };
+	0x101, 0x201, 0x301, 0x801, 0x901, 0xa01, 0xb01 };
 static const u16 NCT6775_REG_FAN_MODE[] = {
-	0x102, 0x202, 0x302, 0x802, 0x902, 0xa02 };
+	0x102, 0x202, 0x302, 0x802, 0x902, 0xa02, 0xb02 };
 static const u16 NCT6775_REG_FAN_STEP_DOWN_TIME[] = {
-	0x103, 0x203, 0x303, 0x803, 0x903, 0xa03 };
+	0x103, 0x203, 0x303, 0x803, 0x903, 0xa03, 0xb03 };
 static const u16 NCT6775_REG_FAN_STEP_UP_TIME[] = {
-	0x104, 0x204, 0x304, 0x804, 0x904, 0xa04 };
+	0x104, 0x204, 0x304, 0x804, 0x904, 0xa04, 0xb04 };
 static const u16 NCT6775_REG_FAN_STOP_OUTPUT[] = {
-	0x105, 0x205, 0x305, 0x805, 0x905, 0xa05 };
+	0x105, 0x205, 0x305, 0x805, 0x905, 0xa05, 0xb05 };
 static const u16 NCT6775_REG_FAN_START_OUTPUT[] = {
-	0x106, 0x206, 0x306, 0x806, 0x906, 0xa06 };
+	0x106, 0x206, 0x306, 0x806, 0x906, 0xa06, 0xb06 };
 static const u16 NCT6775_REG_FAN_MAX_OUTPUT[] = { 0x10a, 0x20a, 0x30a };
 static const u16 NCT6775_REG_FAN_STEP_OUTPUT[] = { 0x10b, 0x20b, 0x30b };
 
 static const u16 NCT6775_REG_FAN_STOP_TIME[] = {
-	0x107, 0x207, 0x307, 0x807, 0x907, 0xa07 };
+	0x107, 0x207, 0x307, 0x807, 0x907, 0xa07, 0xb07 };
 static const u16 NCT6775_REG_PWM[] = {
-	0x109, 0x209, 0x309, 0x809, 0x909, 0xa09 };
+	0x109, 0x209, 0x309, 0x809, 0x909, 0xa09, 0xb09 };
 static const u16 NCT6775_REG_PWM_READ[] = {
-	0x01, 0x03, 0x11, 0x13, 0x15, 0xa09 };
+	0x01, 0x03, 0x11, 0x13, 0x15, 0xa09, 0xb09 };
 
 static const u16 NCT6775_REG_FAN[] = { 0x630, 0x632, 0x634, 0x636, 0x638 };
 static const u16 NCT6775_REG_FAN_MIN[] = { 0x3b, 0x3c, 0x3d };
-static const u16 NCT6775_REG_FAN_PULSES[] = { 0x641, 0x642, 0x643, 0x644, 0 };
-static const u16 NCT6775_FAN_PULSE_SHIFT[] = { 0, 0, 0, 0, 0, 0 };
+static const u16 NCT6775_REG_FAN_PULSES[NUM_FAN] = {
+	0x641, 0x642, 0x643, 0x644 };
+static const u16 NCT6775_FAN_PULSE_SHIFT[NUM_FAN] = { };
 
 static const u16 NCT6775_REG_TEMP[] = {
 	0x27, 0x150, 0x250, 0x62b, 0x62c, 0x62d };
@@ -287,7 +327,7 @@ static const u16 NCT6775_REG_TEMP_SOURCE[ARRAY_SIZE(NCT6775_REG_TEMP)] = {
 	0x621, 0x622, 0x623, 0x624, 0x625, 0x626 };
 
 static const u16 NCT6775_REG_TEMP_SEL[] = {
-	0x100, 0x200, 0x300, 0x800, 0x900, 0xa00 };
+	0x100, 0x200, 0x300, 0x800, 0x900, 0xa00, 0xb00 };
 
 static const u16 NCT6775_REG_WEIGHT_TEMP_SEL[] = {
 	0x139, 0x239, 0x339, 0x839, 0x939, 0xa39 };
@@ -303,9 +343,9 @@ static const u16 NCT6775_REG_WEIGHT_TEMP_BASE[] = {
 static const u16 NCT6775_REG_TEMP_OFFSET[] = { 0x454, 0x455, 0x456 };
 
 static const u16 NCT6775_REG_AUTO_TEMP[] = {
-	0x121, 0x221, 0x321, 0x821, 0x921, 0xa21 };
+	0x121, 0x221, 0x321, 0x821, 0x921, 0xa21, 0xb21 };
 static const u16 NCT6775_REG_AUTO_PWM[] = {
-	0x127, 0x227, 0x327, 0x827, 0x927, 0xa27 };
+	0x127, 0x227, 0x327, 0x827, 0x927, 0xa27, 0xb27 };
 
 #define NCT6775_AUTO_TEMP(data, nr, p)	((data)->REG_AUTO_TEMP[nr] + (p))
 #define NCT6775_AUTO_PWM(data, nr, p)	((data)->REG_AUTO_PWM[nr] + (p))
@@ -313,9 +353,9 @@ static const u16 NCT6775_REG_AUTO_PWM[] = {
 static const u16 NCT6775_REG_CRITICAL_ENAB[] = { 0x134, 0x234, 0x334 };
 
 static const u16 NCT6775_REG_CRITICAL_TEMP[] = {
-	0x135, 0x235, 0x335, 0x835, 0x935, 0xa35 };
+	0x135, 0x235, 0x335, 0x835, 0x935, 0xa35, 0xb35 };
 static const u16 NCT6775_REG_CRITICAL_TEMP_TOLERANCE[] = {
-	0x138, 0x238, 0x338, 0x838, 0x938, 0xa38 };
+	0x138, 0x238, 0x338, 0x838, 0x938, 0xa38, 0xb38 };
 
 static const char *const nct6775_temp_label[] = {
 	"",
@@ -341,14 +381,31 @@ static const char *const nct6775_temp_label[] = {
 	"PCH_DIM3_TEMP"
 };
 
-static const u16 NCT6775_REG_TEMP_ALTERNATE[ARRAY_SIZE(nct6775_temp_label) - 1]
-	= { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x661, 0x662, 0x664 };
+#define NCT6775_TEMP_MASK	0x001ffffe
+#define NCT6775_VIRT_TEMP_MASK	0x00000000
 
-static const u16 NCT6775_REG_TEMP_CRIT[ARRAY_SIZE(nct6775_temp_label) - 1]
-	= { 0, 0, 0, 0, 0xa00, 0xa01, 0xa02, 0xa03, 0xa04, 0xa05, 0xa06,
-	    0xa07 };
+static const u16 NCT6775_REG_TEMP_ALTERNATE[32] = {
+	[13] = 0x661,
+	[14] = 0x662,
+	[15] = 0x664,
+};
+
+static const u16 NCT6775_REG_TEMP_CRIT[32] = {
+	[4] = 0xa00,
+	[5] = 0xa01,
+	[6] = 0xa02,
+	[7] = 0xa03,
+	[8] = 0xa04,
+	[9] = 0xa05,
+	[10] = 0xa06,
+	[11] = 0xa07
+};
 
 /* NCT6776 specific data */
+
+/* STEP_UP_TIME and STEP_DOWN_TIME regs are swapped for all chips but NCT6775 */
+#define NCT6776_REG_FAN_STEP_UP_TIME NCT6775_REG_FAN_STEP_DOWN_TIME
+#define NCT6776_REG_FAN_STEP_DOWN_TIME NCT6775_REG_FAN_STEP_UP_TIME
 
 static const s8 NCT6776_ALARM_BITS[] = {
 	0, 1, 2, 3, 8, 21, 20, 16,	/* in0.. in7 */
@@ -371,13 +428,15 @@ static const s8 NCT6776_BEEP_BITS[] = {
 	30, 31 };			/* intrusion0, intrusion1 */
 
 static const u16 NCT6776_REG_TOLERANCE_H[] = {
-	0x10c, 0x20c, 0x30c, 0x80c, 0x90c, 0xa0c };
+	0x10c, 0x20c, 0x30c, 0x80c, 0x90c, 0xa0c, 0xb0c };
 
 static const u8 NCT6776_REG_PWM_MODE[] = { 0x04, 0, 0, 0, 0, 0 };
 static const u8 NCT6776_PWM_MODE_MASK[] = { 0x01, 0, 0, 0, 0, 0 };
 
-static const u16 NCT6776_REG_FAN_MIN[] = { 0x63a, 0x63c, 0x63e, 0x640, 0x642 };
-static const u16 NCT6776_REG_FAN_PULSES[] = { 0x644, 0x645, 0x646, 0, 0 };
+static const u16 NCT6776_REG_FAN_MIN[] = {
+	0x63a, 0x63c, 0x63e, 0x640, 0x642, 0x64a, 0x64c };
+static const u16 NCT6776_REG_FAN_PULSES[NUM_FAN] = {
+	0x644, 0x645, 0x646, 0x647, 0x648, 0x649 };
 
 static const u16 NCT6776_REG_WEIGHT_DUTY_BASE[] = {
 	0x13e, 0x23e, 0x33e, 0x83e, 0x93e, 0xa3e };
@@ -411,11 +470,19 @@ static const char *const nct6776_temp_label[] = {
 	"BYTE_TEMP"
 };
 
-static const u16 NCT6776_REG_TEMP_ALTERNATE[ARRAY_SIZE(nct6776_temp_label) - 1]
-	= { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x401, 0x402, 0x404 };
+#define NCT6776_TEMP_MASK	0x007ffffe
+#define NCT6776_VIRT_TEMP_MASK	0x00000000
 
-static const u16 NCT6776_REG_TEMP_CRIT[ARRAY_SIZE(nct6776_temp_label) - 1]
-	= { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x709, 0x70a };
+static const u16 NCT6776_REG_TEMP_ALTERNATE[32] = {
+	[14] = 0x401,
+	[15] = 0x402,
+	[16] = 0x404,
+};
+
+static const u16 NCT6776_REG_TEMP_CRIT[32] = {
+	[11] = 0x709,
+	[12] = 0x70a,
+};
 
 /* NCT6779 specific data */
 
@@ -445,15 +512,15 @@ static const s8 NCT6779_BEEP_BITS[] = {
 	30, 31 };			/* intrusion0, intrusion1 */
 
 static const u16 NCT6779_REG_FAN[] = {
-	0x4b0, 0x4b2, 0x4b4, 0x4b6, 0x4b8, 0x4ba };
-static const u16 NCT6779_REG_FAN_PULSES[] = {
-	0x644, 0x645, 0x646, 0x647, 0x648, 0x649 };
+	0x4c0, 0x4c2, 0x4c4, 0x4c6, 0x4c8, 0x4ca, 0x4ce };
+static const u16 NCT6779_REG_FAN_PULSES[NUM_FAN] = {
+	0x644, 0x645, 0x646, 0x647, 0x648, 0x649, 0x64f };
 
 static const u16 NCT6779_REG_CRITICAL_PWM_ENABLE[] = {
-	0x136, 0x236, 0x336, 0x836, 0x936, 0xa36 };
+	0x136, 0x236, 0x336, 0x836, 0x936, 0xa36, 0xb36 };
 #define NCT6779_CRITICAL_PWM_ENABLE_MASK	0x01
 static const u16 NCT6779_REG_CRITICAL_PWM[] = {
-	0x137, 0x237, 0x337, 0x837, 0x937, 0xa37 };
+	0x137, 0x237, 0x337, 0x837, 0x937, 0xa37, 0xb37 };
 
 static const u16 NCT6779_REG_TEMP[] = { 0x27, 0x150 };
 static const u16 NCT6779_REG_TEMP_MON[] = { 0x73, 0x75, 0x77, 0x79, 0x7b };
@@ -494,28 +561,40 @@ static const char *const nct6779_temp_label[] = {
 	"PCH_DIM1_TEMP",
 	"PCH_DIM2_TEMP",
 	"PCH_DIM3_TEMP",
-	"BYTE_TEMP"
+	"BYTE_TEMP",
+	"",
+	"",
+	"",
+	"",
+	"Virtual_TEMP"
 };
 
-static const u16 NCT6779_REG_TEMP_ALTERNATE[ARRAY_SIZE(nct6779_temp_label) - 1]
+#define NCT6779_TEMP_MASK	0x07ffff7e
+#define NCT6779_VIRT_TEMP_MASK	0x00000000
+#define NCT6791_TEMP_MASK	0x87ffff7e
+#define NCT6791_VIRT_TEMP_MASK	0x80000000
+
+static const u16 NCT6779_REG_TEMP_ALTERNATE[32]
 	= { 0x490, 0x491, 0x492, 0x493, 0x494, 0x495, 0, 0,
 	    0, 0, 0, 0, 0, 0, 0, 0,
 	    0, 0x400, 0x401, 0x402, 0x404, 0x405, 0x406, 0x407,
 	    0x408, 0 };
 
-static const u16 NCT6779_REG_TEMP_CRIT[ARRAY_SIZE(nct6779_temp_label) - 1]
-	= { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x709, 0x70a };
+static const u16 NCT6779_REG_TEMP_CRIT[32] = {
+	[15] = 0x709,
+	[16] = 0x70a,
+};
 
 /* NCT6791 specific data */
 
 #define NCT6791_REG_HM_IO_SPACE_LOCK_ENABLE	0x28
 
-static const u16 NCT6791_REG_WEIGHT_TEMP_SEL[6] = { 0, 0x239 };
-static const u16 NCT6791_REG_WEIGHT_TEMP_STEP[6] = { 0, 0x23a };
-static const u16 NCT6791_REG_WEIGHT_TEMP_STEP_TOL[6] = { 0, 0x23b };
-static const u16 NCT6791_REG_WEIGHT_DUTY_STEP[6] = { 0, 0x23c };
-static const u16 NCT6791_REG_WEIGHT_TEMP_BASE[6] = { 0, 0x23d };
-static const u16 NCT6791_REG_WEIGHT_DUTY_BASE[6] = { 0, 0x23e };
+static const u16 NCT6791_REG_WEIGHT_TEMP_SEL[NUM_FAN] = { 0, 0x239 };
+static const u16 NCT6791_REG_WEIGHT_TEMP_STEP[NUM_FAN] = { 0, 0x23a };
+static const u16 NCT6791_REG_WEIGHT_TEMP_STEP_TOL[NUM_FAN] = { 0, 0x23b };
+static const u16 NCT6791_REG_WEIGHT_DUTY_STEP[NUM_FAN] = { 0, 0x23c };
+static const u16 NCT6791_REG_WEIGHT_TEMP_BASE[NUM_FAN] = { 0, 0x23d };
+static const u16 NCT6791_REG_WEIGHT_DUTY_BASE[NUM_FAN] = { 0, 0x23e };
 
 static const u16 NCT6791_REG_ALARM[NUM_REG_ALARM] = {
 	0x459, 0x45A, 0x45B, 0x568, 0x45D };
@@ -529,6 +608,202 @@ static const s8 NCT6791_ALARM_BITS[] = {
 	4, 5, 13, -1, -1, -1,		/* temp1..temp6 */
 	12, 9 };			/* intrusion0, intrusion1 */
 
+/* NCT6792/NCT6793 specific data */
+
+static const u16 NCT6792_REG_TEMP_MON[] = {
+	0x73, 0x75, 0x77, 0x79, 0x7b, 0x7d };
+static const u16 NCT6792_REG_BEEP[NUM_REG_BEEP] = {
+	0xb2, 0xb3, 0xb4, 0xb5, 0xbf };
+
+static const char *const nct6792_temp_label[] = {
+	"",
+	"SYSTIN",
+	"CPUTIN",
+	"AUXTIN0",
+	"AUXTIN1",
+	"AUXTIN2",
+	"AUXTIN3",
+	"",
+	"SMBUSMASTER 0",
+	"SMBUSMASTER 1",
+	"SMBUSMASTER 2",
+	"SMBUSMASTER 3",
+	"SMBUSMASTER 4",
+	"SMBUSMASTER 5",
+	"SMBUSMASTER 6",
+	"SMBUSMASTER 7",
+	"PECI Agent 0",
+	"PECI Agent 1",
+	"PCH_CHIP_CPU_MAX_TEMP",
+	"PCH_CHIP_TEMP",
+	"PCH_CPU_TEMP",
+	"PCH_MCH_TEMP",
+	"PCH_DIM0_TEMP",
+	"PCH_DIM1_TEMP",
+	"PCH_DIM2_TEMP",
+	"PCH_DIM3_TEMP",
+	"BYTE_TEMP",
+	"PECI Agent 0 Calibration",
+	"PECI Agent 1 Calibration",
+	"",
+	"",
+	"Virtual_TEMP"
+};
+
+#define NCT6792_TEMP_MASK	0x9fffff7e
+#define NCT6792_VIRT_TEMP_MASK	0x80000000
+
+static const char *const nct6793_temp_label[] = {
+	"",
+	"SYSTIN",
+	"CPUTIN",
+	"AUXTIN0",
+	"AUXTIN1",
+	"AUXTIN2",
+	"AUXTIN3",
+	"",
+	"SMBUSMASTER 0",
+	"SMBUSMASTER 1",
+	"",
+	"",
+	"",
+	"",
+	"",
+	"",
+	"PECI Agent 0",
+	"PECI Agent 1",
+	"PCH_CHIP_CPU_MAX_TEMP",
+	"PCH_CHIP_TEMP",
+	"PCH_CPU_TEMP",
+	"PCH_MCH_TEMP",
+	"Agent0 Dimm0 ",
+	"Agent0 Dimm1",
+	"Agent1 Dimm0",
+	"Agent1 Dimm1",
+	"BYTE_TEMP0",
+	"BYTE_TEMP1",
+	"PECI Agent 0 Calibration",
+	"PECI Agent 1 Calibration",
+	"",
+	"Virtual_TEMP"
+};
+
+#define NCT6793_TEMP_MASK	0xbfff037e
+#define NCT6793_VIRT_TEMP_MASK	0x80000000
+
+static const char *const nct6795_temp_label[] = {
+	"",
+	"SYSTIN",
+	"CPUTIN",
+	"AUXTIN0",
+	"AUXTIN1",
+	"AUXTIN2",
+	"AUXTIN3",
+	"",
+	"SMBUSMASTER 0",
+	"SMBUSMASTER 1",
+	"SMBUSMASTER 2",
+	"SMBUSMASTER 3",
+	"SMBUSMASTER 4",
+	"SMBUSMASTER 5",
+	"SMBUSMASTER 6",
+	"SMBUSMASTER 7",
+	"PECI Agent 0",
+	"PECI Agent 1",
+	"PCH_CHIP_CPU_MAX_TEMP",
+	"PCH_CHIP_TEMP",
+	"PCH_CPU_TEMP",
+	"PCH_MCH_TEMP",
+	"Agent0 Dimm0",
+	"Agent0 Dimm1",
+	"Agent1 Dimm0",
+	"Agent1 Dimm1",
+	"BYTE_TEMP0",
+	"BYTE_TEMP1",
+	"PECI Agent 0 Calibration",
+	"PECI Agent 1 Calibration",
+	"",
+	"Virtual_TEMP"
+};
+
+#define NCT6795_TEMP_MASK	0xbfffff7e
+#define NCT6795_VIRT_TEMP_MASK	0x80000000
+
+static const char *const nct6796_temp_label[] = {
+	"",
+	"SYSTIN",
+	"CPUTIN",
+	"AUXTIN0",
+	"AUXTIN1",
+	"AUXTIN2",
+	"AUXTIN3",
+	"AUXTIN4",
+	"SMBUSMASTER 0",
+	"SMBUSMASTER 1",
+	"Virtual_TEMP",
+	"Virtual_TEMP",
+	"",
+	"",
+	"",
+	"",
+	"PECI Agent 0",
+	"PECI Agent 1",
+	"PCH_CHIP_CPU_MAX_TEMP",
+	"PCH_CHIP_TEMP",
+	"PCH_CPU_TEMP",
+	"PCH_MCH_TEMP",
+	"Agent0 Dimm0",
+	"Agent0 Dimm1",
+	"Agent1 Dimm0",
+	"Agent1 Dimm1",
+	"BYTE_TEMP0",
+	"BYTE_TEMP1",
+	"PECI Agent 0 Calibration",
+	"PECI Agent 1 Calibration",
+	"",
+	"Virtual_TEMP"
+};
+
+#define NCT6796_TEMP_MASK	0xbfff0ffe
+#define NCT6796_VIRT_TEMP_MASK	0x80000c00
+
+static const char *const nct6798_temp_label[] = {
+	"",
+	"SYSTIN",
+	"CPUTIN",
+	"AUXTIN0",
+	"AUXTIN1",
+	"AUXTIN2",
+	"AUXTIN3",
+	"AUXTIN4",
+	"SMBUSMASTER 0",
+	"SMBUSMASTER 1",
+	"Virtual_TEMP",
+	"Virtual_TEMP",
+	"",
+	"",
+	"",
+	"",
+	"PECI Agent 0",
+	"PECI Agent 1",
+	"PCH_CHIP_CPU_MAX_TEMP",
+	"PCH_CHIP_TEMP",
+	"PCH_CPU_TEMP",
+	"PCH_MCH_TEMP",
+	"Agent0 Dimm0",
+	"Agent0 Dimm1",
+	"Agent1 Dimm0",
+	"Agent1 Dimm1",
+	"BYTE_TEMP0",
+	"BYTE_TEMP1",
+	"",
+	"",
+	"",
+	"Virtual_TEMP"
+};
+
+#define NCT6798_TEMP_MASK	0x8fff0ffe
+#define NCT6798_VIRT_TEMP_MASK	0x80000c00
 
 /* NCT6102D/NCT6106D specific data */
 
@@ -559,8 +834,8 @@ static const u16 NCT6106_REG_TEMP_CONFIG[] = {
 
 static const u16 NCT6106_REG_FAN[] = { 0x20, 0x22, 0x24 };
 static const u16 NCT6106_REG_FAN_MIN[] = { 0xe0, 0xe2, 0xe4 };
-static const u16 NCT6106_REG_FAN_PULSES[] = { 0xf6, 0xf6, 0xf6, 0, 0 };
-static const u16 NCT6106_FAN_PULSE_SHIFT[] = { 0, 2, 4, 0, 0 };
+static const u16 NCT6106_REG_FAN_PULSES[] = { 0xf6, 0xf6, 0xf6 };
+static const u16 NCT6106_FAN_PULSE_SHIFT[] = { 0, 2, 4 };
 
 static const u8 NCT6106_REG_PWM_MODE[] = { 0xf3, 0xf3, 0xf3 };
 static const u8 NCT6106_PWM_MODE_MASK[] = { 0x01, 0x02, 0x04 };
@@ -624,11 +899,16 @@ static const s8 NCT6106_BEEP_BITS[] = {
 	34, -1				/* intrusion0, intrusion1 */
 };
 
-static const u16 NCT6106_REG_TEMP_ALTERNATE[ARRAY_SIZE(nct6776_temp_label) - 1]
-	= { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x51, 0x52, 0x54 };
+static const u16 NCT6106_REG_TEMP_ALTERNATE[32] = {
+	[14] = 0x51,
+	[15] = 0x52,
+	[16] = 0x54,
+};
 
-static const u16 NCT6106_REG_TEMP_CRIT[ARRAY_SIZE(nct6776_temp_label) - 1]
-	= { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x204, 0x205 };
+static const u16 NCT6106_REG_TEMP_CRIT[32] = {
+	[11] = 0x204,
+	[12] = 0x205,
+};
 
 static enum pwm_enable reg_to_pwm_enable(int pwm, int mode)
 {
@@ -692,6 +972,11 @@ static unsigned int fan_from_reg16(u16 reg, unsigned int divreg)
 	return 1350000U / (reg << divreg);
 }
 
+static unsigned int fan_from_reg_rpm(u16 reg, unsigned int divreg)
+{
+	return reg;
+}
+
 static u16 fan_to_reg(u32 fan, unsigned int divreg)
 {
 	if (!fan)
@@ -703,7 +988,7 @@ static u16 fan_to_reg(u32 fan, unsigned int divreg)
 static inline unsigned int
 div_from_reg(u8 reg)
 {
-	return 1 << reg;
+	return BIT(reg);
 }
 
 /*
@@ -735,7 +1020,6 @@ struct nct6775_data {
 	enum kinds kind;
 	const char *name;
 
-	int num_attr_groups;
 	const struct attribute_group *groups[6];
 
 	u16 reg_temp[5][NUM_TEMP]; /* 0=temp, 1=temp_over, 2=temp_hyst,
@@ -744,7 +1028,8 @@ struct nct6775_data {
 	u8 temp_src[NUM_TEMP];
 	u16 reg_temp_config[NUM_TEMP];
 	const char * const *temp_label;
-	int temp_label_num;
+	u32 temp_mask;
+	u32 virt_temp_mask;
 
 	u16 REG_CONFIG;
 	u16 REG_VBAT;
@@ -827,8 +1112,8 @@ struct nct6775_data {
 	u64 beeps;
 
 	u8 pwm_num;	/* number of pwm */
-	u8 pwm_mode[NUM_FAN];	/* 1->DC variable voltage,
-				 * 0->PWM variable duty cycle
+	u8 pwm_mode[NUM_FAN];	/* 0->DC variable voltage,
+				 * 1->PWM variable duty cycle
 				 */
 	enum pwm_enable pwm_enable[NUM_FAN];
 			/* 0->off
@@ -872,12 +1157,12 @@ struct nct6775_data {
 	u16 have_temp;
 	u16 have_temp_fixed;
 	u16 have_in;
-#ifdef CONFIG_PM
+
 	/* Remember extra register values over suspend/resume */
 	u8 vbat;
 	u8 fandiv1;
 	u8 fandiv2;
-#endif
+	u8 sio_reg_enable;
 };
 
 struct nct6775_sio_data {
@@ -941,7 +1226,8 @@ struct sensor_template_group {
 };
 
 static struct attribute_group *
-nct6775_create_attr_group(struct device *dev, struct sensor_template_group *tg,
+nct6775_create_attr_group(struct device *dev,
+			  const struct sensor_template_group *tg,
 			  int repeat)
 {
 	struct attribute_group *group;
@@ -966,12 +1252,12 @@ nct6775_create_attr_group(struct device *dev, struct sensor_template_group *tg,
 	if (group == NULL)
 		return ERR_PTR(-ENOMEM);
 
-	attrs = devm_kzalloc(dev, sizeof(*attrs) * (repeat * count + 1),
+	attrs = devm_kcalloc(dev, repeat * count + 1, sizeof(*attrs),
 			     GFP_KERNEL);
 	if (attrs == NULL)
 		return ERR_PTR(-ENOMEM);
 
-	su = devm_kzalloc(dev, sizeof(*su) * repeat * count,
+	su = devm_kzalloc(dev, array3_size(repeat, count, sizeof(*su)),
 			       GFP_KERNEL);
 	if (su == NULL)
 		return ERR_PTR(-ENOMEM);
@@ -986,6 +1272,7 @@ nct6775_create_attr_group(struct device *dev, struct sensor_template_group *tg,
 				 (*t)->dev_attr.attr.name, tg->base + i);
 			if ((*t)->s2) {
 				a2 = &su->u.a2;
+				sysfs_attr_init(&a2->dev_attr.attr);
 				a2->dev_attr.attr.name = su->name;
 				a2->nr = (*t)->u.s.nr + i;
 				a2->index = (*t)->u.s.index;
@@ -996,6 +1283,7 @@ nct6775_create_attr_group(struct device *dev, struct sensor_template_group *tg,
 				*attrs = &a2->dev_attr.attr;
 			} else {
 				a = &su->u.a1;
+				sysfs_attr_init(&a->dev_attr.attr);
 				a->dev_attr.attr.name = su->name;
 				a->index = (*t)->u.index + i;
 				a->dev_attr.attr.mode =
@@ -1044,13 +1332,20 @@ static bool is_word_sized(struct nct6775_data *data, u16 reg)
 		  reg == 0x73 || reg == 0x75 || reg == 0x77;
 	case nct6779:
 	case nct6791:
+	case nct6792:
+	case nct6793:
+	case nct6795:
+	case nct6796:
+	case nct6797:
+	case nct6798:
 		return reg == 0x150 || reg == 0x153 || reg == 0x155 ||
-		  ((reg & 0xfff0) == 0x4b0 && (reg & 0x000f) < 0x0b) ||
+		  (reg & 0xfff0) == 0x4c0 ||
 		  reg == 0x402 ||
 		  reg == 0x63a || reg == 0x63c || reg == 0x63e ||
-		  reg == 0x640 || reg == 0x642 ||
+		  reg == 0x640 || reg == 0x642 || reg == 0x64a ||
+		  reg == 0x64c ||
 		  reg == 0x73 || reg == 0x75 || reg == 0x77 || reg == 0x79 ||
-		  reg == 0x7b;
+		  reg == 0x7b || reg == 0x7d;
 	}
 	return false;
 }
@@ -1064,6 +1359,7 @@ static bool is_word_sized(struct nct6775_data *data, u16 reg)
 static inline void nct6775_set_bank(struct nct6775_data *data, u16 reg)
 {
 	u8 bank = reg >> 8;
+
 	if (data->bank != bank) {
 		outb_p(NCT6775_REG_BANK, data->addr + ADDR_REG_OFFSET);
 		outb_p(bank, data->addr + DATA_REG_OFFSET);
@@ -1164,7 +1460,7 @@ static void nct6775_update_fan_div(struct nct6775_data *data)
 	data->fan_div[1] = (i & 0x70) >> 4;
 	i = nct6775_read_value(data, NCT6775_REG_FANDIV2);
 	data->fan_div[2] = i & 0x7;
-	if (data->has_fan & (1 << 3))
+	if (data->has_fan & BIT(3))
 		data->fan_div[3] = (i & 0x70) >> 4;
 }
 
@@ -1186,7 +1482,7 @@ static void nct6775_init_fan_div(struct nct6775_data *data)
 	 * We'll compute a better divider later on.
 	 */
 	for (i = 0; i < ARRAY_SIZE(data->fan_div); i++) {
-		if (!(data->has_fan & (1 << i)))
+		if (!(data->has_fan & BIT(i)))
 			continue;
 		if (data->fan_div[i] == 0) {
 			data->fan_div[i] = 7;
@@ -1209,7 +1505,7 @@ static void nct6775_init_fan_common(struct device *dev,
 	 * prevents the unnecessary warning when fanX_min is reported as 0.
 	 */
 	for (i = 0; i < ARRAY_SIZE(data->fan_min); i++) {
-		if (data->has_fan_min & (1 << i)) {
+		if (data->has_fan_min & BIT(i)) {
 			reg = nct6775_read_value(data, data->REG_FAN_MIN[i]);
 			if (!reg)
 				nct6775_write_value(data, data->REG_FAN_MIN[i],
@@ -1244,7 +1540,7 @@ static void nct6775_select_fan_div(struct device *dev,
 			div_from_reg(fan_div));
 
 		/* Preserve min limit if possible */
-		if (data->has_fan_min & (1 << nr)) {
+		if (data->has_fan_min & BIT(nr)) {
 			fan_min = data->fan_min[nr];
 			if (fan_div > data->fan_div[nr]) {
 				if (fan_min != 255 && fan_min > 1)
@@ -1275,13 +1571,13 @@ static void nct6775_update_pwm(struct device *dev)
 	bool duty_is_dc;
 
 	for (i = 0; i < data->pwm_num; i++) {
-		if (!(data->has_pwm & (1 << i)))
+		if (!(data->has_pwm & BIT(i)))
 			continue;
 
 		duty_is_dc = data->REG_PWM_MODE[i] &&
 		  (nct6775_read_value(data, data->REG_PWM_MODE[i])
 		   & data->PWM_MODE_MASK[i]);
-		data->pwm_mode[i] = duty_is_dc;
+		data->pwm_mode[i] = !duty_is_dc;
 
 		fanmodecfg = nct6775_read_value(data, data->REG_FAN_MODE[i]);
 		for (j = 0; j < ARRAY_SIZE(data->REG_PWM); j++) {
@@ -1301,6 +1597,7 @@ static void nct6775_update_pwm(struct device *dev)
 		if (!data->target_speed_tolerance[i] ||
 		    data->pwm_enable[i] == speed_cruise) {
 			u8 t = fanmodecfg & 0x0f;
+
 			if (data->REG_TOLERANCE_H) {
 				t |= (nct6775_read_value(data,
 				      data->REG_TOLERANCE_H[i]) & 0x70) >> 1;
@@ -1324,7 +1621,7 @@ static void nct6775_update_pwm(struct device *dev)
 		reg = nct6775_read_value(data, data->REG_WEIGHT_TEMP_SEL[i]);
 		data->pwm_weight_temp_sel[i] = reg & 0x1f;
 		/* If weight is disabled, report weight source as 0 */
-		if (j == 1 && !(reg & 0x80))
+		if (!(reg & 0x80))
 			data->pwm_weight_temp_sel[i] = 0;
 
 		/* Weight temp data */
@@ -1344,7 +1641,7 @@ static void nct6775_update_pwm_limits(struct device *dev)
 	u16 reg_t;
 
 	for (i = 0; i < data->pwm_num; i++) {
-		if (!(data->has_pwm & (1 << i)))
+		if (!(data->has_pwm & BIT(i)))
 			continue;
 
 		for (j = 0; j < ARRAY_SIZE(data->fan_time); j++) {
@@ -1392,6 +1689,12 @@ static void nct6775_update_pwm_limits(struct device *dev)
 		case nct6106:
 		case nct6779:
 		case nct6791:
+		case nct6792:
+		case nct6793:
+		case nct6795:
+		case nct6796:
+		case nct6797:
+		case nct6798:
 			reg = nct6775_read_value(data,
 					data->REG_CRITICAL_PWM_ENABLE[i]);
 			if (reg & data->CRITICAL_PWM_ENABLE_MASK)
@@ -1419,7 +1722,7 @@ static struct nct6775_data *nct6775_update_device(struct device *dev)
 
 		/* Measured voltages and limits */
 		for (i = 0; i < data->in_num; i++) {
-			if (!(data->have_in & (1 << i)))
+			if (!(data->have_in & BIT(i)))
 				continue;
 
 			data->in[i][0] = nct6775_read_value(data,
@@ -1434,19 +1737,23 @@ static struct nct6775_data *nct6775_update_device(struct device *dev)
 		for (i = 0; i < ARRAY_SIZE(data->rpm); i++) {
 			u16 reg;
 
-			if (!(data->has_fan & (1 << i)))
+			if (!(data->has_fan & BIT(i)))
 				continue;
 
 			reg = nct6775_read_value(data, data->REG_FAN[i]);
 			data->rpm[i] = data->fan_from_reg(reg,
 							  data->fan_div[i]);
 
-			if (data->has_fan_min & (1 << i))
+			if (data->has_fan_min & BIT(i))
 				data->fan_min[i] = nct6775_read_value(data,
 					   data->REG_FAN_MIN[i]);
-			data->fan_pulses[i] =
-			  (nct6775_read_value(data, data->REG_FAN_PULSES[i])
-				>> data->FAN_PULSE_SHIFT[i]) & 0x03;
+
+			if (data->REG_FAN_PULSES[i]) {
+				data->fan_pulses[i] =
+				  (nct6775_read_value(data,
+						      data->REG_FAN_PULSES[i])
+				   >> data->FAN_PULSE_SHIFT[i]) & 0x03;
+			}
 
 			nct6775_select_fan_div(dev, data, i, reg);
 		}
@@ -1456,7 +1763,7 @@ static struct nct6775_data *nct6775_update_device(struct device *dev)
 
 		/* Measured temperatures and limits */
 		for (i = 0; i < NUM_TEMP; i++) {
-			if (!(data->have_temp & (1 << i)))
+			if (!(data->have_temp & BIT(i)))
 				continue;
 			for (j = 0; j < ARRAY_SIZE(data->reg_temp); j++) {
 				if (data->reg_temp[j][i])
@@ -1465,7 +1772,7 @@ static struct nct6775_data *nct6775_update_device(struct device *dev)
 						data->reg_temp[j][i]);
 			}
 			if (i >= NUM_TEMP_FIXED ||
-			    !(data->have_temp_fixed & (1 << i)))
+			    !(data->have_temp_fixed & BIT(i)))
 				continue;
 			data->temp_offset[i]
 			  = nct6775_read_value(data, data->REG_TEMP_OFFSET[i]);
@@ -1474,6 +1781,7 @@ static struct nct6775_data *nct6775_update_device(struct device *dev)
 		data->alarms = 0;
 		for (i = 0; i < NUM_REG_ALARM; i++) {
 			u8 alarm;
+
 			if (!data->REG_ALARM[i])
 				continue;
 			alarm = nct6775_read_value(data, data->REG_ALARM[i]);
@@ -1483,6 +1791,7 @@ static struct nct6775_data *nct6775_update_device(struct device *dev)
 		data->beeps = 0;
 		for (i = 0; i < NUM_REG_BEEP; i++) {
 			u8 beep;
+
 			if (!data->REG_BEEP[i])
 				continue;
 			beep = nct6775_read_value(data, data->REG_BEEP[i]);
@@ -1505,8 +1814,9 @@ show_in_reg(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	struct nct6775_data *data = nct6775_update_device(dev);
 	struct sensor_device_attribute_2 *sattr = to_sensor_dev_attr_2(attr);
-	int nr = sattr->nr;
 	int index = sattr->index;
+	int nr = sattr->nr;
+
 	return sprintf(buf, "%ld\n", in_from_reg(data->in[nr][index], nr));
 }
 
@@ -1516,10 +1826,12 @@ store_in_reg(struct device *dev, struct device_attribute *attr, const char *buf,
 {
 	struct nct6775_data *data = dev_get_drvdata(dev);
 	struct sensor_device_attribute_2 *sattr = to_sensor_dev_attr_2(attr);
-	int nr = sattr->nr;
 	int index = sattr->index;
+	int nr = sattr->nr;
 	unsigned long val;
-	int err = kstrtoul(buf, 10, &val);
+	int err;
+
+	err = kstrtoul(buf, 10, &val);
 	if (err < 0)
 		return err;
 	mutex_lock(&data->update_lock);
@@ -1536,6 +1848,7 @@ show_alarm(struct device *dev, struct device_attribute *attr, char *buf)
 	struct nct6775_data *data = nct6775_update_device(dev);
 	struct sensor_device_attribute *sattr = to_sensor_dev_attr(attr);
 	int nr = data->ALARM_BITS[sattr->index];
+
 	return sprintf(buf, "%u\n",
 		       (unsigned int)((data->alarms >> nr) & 0x01));
 }
@@ -1571,6 +1884,7 @@ show_temp_alarm(struct device *dev, struct device_attribute *attr, char *buf)
 	nr = find_temp_source(data, sattr->index, data->num_temp_alarms);
 	if (nr >= 0) {
 		int bit = data->ALARM_BITS[nr + TEMP_ALARM_BASE];
+
 		alarm = (data->alarms >> bit) & 0x01;
 	}
 	return sprintf(buf, "%u\n", alarm);
@@ -1596,8 +1910,9 @@ store_beep(struct device *dev, struct device_attribute *attr, const char *buf,
 	int nr = data->BEEP_BITS[sattr->index];
 	int regindex = nr >> 3;
 	unsigned long val;
+	int err;
 
-	int err = kstrtoul(buf, 10, &val);
+	err = kstrtoul(buf, 10, &val);
 	if (err < 0)
 		return err;
 	if (val > 1)
@@ -1630,6 +1945,7 @@ show_temp_beep(struct device *dev, struct device_attribute *attr, char *buf)
 	nr = find_temp_source(data, sattr->index, data->num_temp_beeps);
 	if (nr >= 0) {
 		int bit = data->BEEP_BITS[nr + TEMP_ALARM_BASE];
+
 		beep = (data->beeps >> bit) & 0x01;
 	}
 	return sprintf(buf, "%u\n", beep);
@@ -1643,8 +1959,9 @@ store_temp_beep(struct device *dev, struct device_attribute *attr,
 	struct nct6775_data *data = dev_get_drvdata(dev);
 	int nr, bit, regindex;
 	unsigned long val;
+	int err;
 
-	int err = kstrtoul(buf, 10, &val);
+	err = kstrtoul(buf, 10, &val);
 	if (err < 0)
 		return err;
 	if (val > 1)
@@ -1676,7 +1993,7 @@ static umode_t nct6775_in_is_visible(struct kobject *kobj,
 	struct nct6775_data *data = dev_get_drvdata(dev);
 	int in = index / 5;	/* voltage index */
 
-	if (!(data->have_in & (1 << in)))
+	if (!(data->have_in & BIT(in)))
 		return 0;
 
 	return attr->mode;
@@ -1705,7 +2022,7 @@ static struct sensor_device_template *nct6775_attributes_in_template[] = {
 	NULL
 };
 
-static struct sensor_template_group nct6775_in_template_group = {
+static const struct sensor_template_group nct6775_in_template_group = {
 	.templates = nct6775_attributes_in_template,
 	.is_visible = nct6775_in_is_visible,
 };
@@ -1716,6 +2033,7 @@ show_fan(struct device *dev, struct device_attribute *attr, char *buf)
 	struct nct6775_data *data = nct6775_update_device(dev);
 	struct sensor_device_attribute *sattr = to_sensor_dev_attr(attr);
 	int nr = sattr->index;
+
 	return sprintf(buf, "%d\n", data->rpm[nr]);
 }
 
@@ -1725,6 +2043,7 @@ show_fan_min(struct device *dev, struct device_attribute *attr, char *buf)
 	struct nct6775_data *data = nct6775_update_device(dev);
 	struct sensor_device_attribute *sattr = to_sensor_dev_attr(attr);
 	int nr = sattr->index;
+
 	return sprintf(buf, "%d\n",
 		       data->fan_from_reg_min(data->fan_min[nr],
 					      data->fan_div[nr]));
@@ -1736,6 +2055,7 @@ show_fan_div(struct device *dev, struct device_attribute *attr, char *buf)
 	struct nct6775_data *data = nct6775_update_device(dev);
 	struct sensor_device_attribute *sattr = to_sensor_dev_attr(attr);
 	int nr = sattr->index;
+
 	return sprintf(buf, "%u\n", div_from_reg(data->fan_div[nr]));
 }
 
@@ -1747,9 +2067,9 @@ store_fan_min(struct device *dev, struct device_attribute *attr,
 	struct sensor_device_attribute *sattr = to_sensor_dev_attr(attr);
 	int nr = sattr->index;
 	unsigned long val;
-	int err;
 	unsigned int reg;
 	u8 new_div;
+	int err;
 
 	err = kstrtoul(buf, 10, &val);
 	if (err < 0)
@@ -1783,7 +2103,7 @@ store_fan_min(struct device *dev, struct device_attribute *attr,
 		 * even with the highest divider (128)
 		 */
 		data->fan_min[nr] = 254;
-		new_div = 7; /* 128 == (1 << 7) */
+		new_div = 7; /* 128 == BIT(7) */
 		dev_warn(dev,
 			 "fan%u low limit %lu below minimum %u, set to minimum\n",
 			 nr + 1, val, data->fan_from_reg_min(254, 7));
@@ -1793,7 +2113,7 @@ store_fan_min(struct device *dev, struct device_attribute *attr,
 		 * even with the lowest divider (1)
 		 */
 		data->fan_min[nr] = 1;
-		new_div = 0; /* 1 == (1 << 0) */
+		new_div = 0; /* 1 == BIT(0) */
 		dev_warn(dev,
 			 "fan%u low limit %lu above maximum %u, set to maximum\n",
 			 nr + 1, val, data->fan_from_reg_min(1, 0));
@@ -1880,14 +2200,16 @@ static umode_t nct6775_fan_is_visible(struct kobject *kobj,
 	int fan = index / 6;	/* fan index */
 	int nr = index % 6;	/* attribute index */
 
-	if (!(data->has_fan & (1 << fan)))
+	if (!(data->has_fan & BIT(fan)))
 		return 0;
 
 	if (nr == 1 && data->ALARM_BITS[FAN_ALARM_BASE + fan] == -1)
 		return 0;
 	if (nr == 2 && data->BEEP_BITS[FAN_ALARM_BASE + fan] == -1)
 		return 0;
-	if (nr == 4 && !(data->has_fan_min & (1 << fan)))
+	if (nr == 3 && !data->REG_FAN_PULSES[fan])
+		return 0;
+	if (nr == 4 && !(data->has_fan_min & BIT(fan)))
 		return 0;
 	if (nr == 5 && data->kind != nct6775)
 		return 0;
@@ -1921,7 +2243,7 @@ static struct sensor_device_template *nct6775_attributes_fan_template[] = {
 	NULL
 };
 
-static struct sensor_template_group nct6775_fan_template_group = {
+static const struct sensor_template_group nct6775_fan_template_group = {
 	.templates = nct6775_attributes_fan_template,
 	.is_visible = nct6775_fan_is_visible,
 	.base = 1,
@@ -1933,6 +2255,7 @@ show_temp_label(struct device *dev, struct device_attribute *attr, char *buf)
 	struct nct6775_data *data = nct6775_update_device(dev);
 	struct sensor_device_attribute *sattr = to_sensor_dev_attr(attr);
 	int nr = sattr->index;
+
 	return sprintf(buf, "%s\n", data->temp_label[data->temp_src[nr]]);
 }
 
@@ -2009,6 +2332,7 @@ show_temp_type(struct device *dev, struct device_attribute *attr, char *buf)
 	struct nct6775_data *data = nct6775_update_device(dev);
 	struct sensor_device_attribute *sattr = to_sensor_dev_attr(attr);
 	int nr = sattr->index;
+
 	return sprintf(buf, "%d\n", (int)data->temp_type[nr]);
 }
 
@@ -2063,7 +2387,10 @@ static umode_t nct6775_temp_is_visible(struct kobject *kobj,
 	int temp = index / 10;	/* temp index */
 	int nr = index % 10;	/* attribute index */
 
-	if (!(data->have_temp & (1 << temp)))
+	if (!(data->have_temp & BIT(temp)))
+		return 0;
+
+	if (nr == 1 && !data->temp_label)
 		return 0;
 
 	if (nr == 2 && find_temp_source(data, temp, data->num_temp_alarms) < 0)
@@ -2085,7 +2412,7 @@ static umode_t nct6775_temp_is_visible(struct kobject *kobj,
 		return 0;
 
 	/* offset and type only apply to fixed sensors */
-	if (nr > 7 && !(data->have_temp_fixed & (1 << temp)))
+	if (nr > 7 && !(data->have_temp_fixed & BIT(temp)))
 		return 0;
 
 	return attr->mode;
@@ -2128,7 +2455,7 @@ static struct sensor_device_template *nct6775_attributes_temp_template[] = {
 	NULL
 };
 
-static struct sensor_template_group nct6775_temp_template_group = {
+static const struct sensor_template_group nct6775_temp_template_group = {
 	.templates = nct6775_attributes_temp_template,
 	.is_visible = nct6775_temp_is_visible,
 	.base = 1,
@@ -2140,7 +2467,7 @@ show_pwm_mode(struct device *dev, struct device_attribute *attr, char *buf)
 	struct nct6775_data *data = nct6775_update_device(dev);
 	struct sensor_device_attribute *sattr = to_sensor_dev_attr(attr);
 
-	return sprintf(buf, "%d\n", !data->pwm_mode[sattr->index]);
+	return sprintf(buf, "%d\n", data->pwm_mode[sattr->index]);
 }
 
 static ssize_t
@@ -2161,9 +2488,9 @@ store_pwm_mode(struct device *dev, struct device_attribute *attr,
 	if (val > 1)
 		return -EINVAL;
 
-	/* Setting DC mode is not supported for all chips/channels */
+	/* Setting DC mode (0) is not supported for all chips/channels */
 	if (data->REG_PWM_MODE[nr] == 0) {
-		if (val)
+		if (!val)
 			return -EINVAL;
 		return count;
 	}
@@ -2172,7 +2499,7 @@ store_pwm_mode(struct device *dev, struct device_attribute *attr,
 	data->pwm_mode[nr] = val;
 	reg = nct6775_read_value(data, data->REG_PWM_MODE[nr]);
 	reg &= ~data->PWM_MODE_MASK[nr];
-	if (val)
+	if (!val)
 		reg |= data->PWM_MODE_MASK[nr];
 	nct6775_write_value(data, data->REG_PWM_MODE[nr], reg);
 	mutex_unlock(&data->update_lock);
@@ -2284,7 +2611,7 @@ static void pwm_update_registers(struct nct6775_data *data, int nr)
 	case thermal_cruise:
 		nct6775_write_value(data, data->REG_TARGET[nr],
 				    data->target_temp[nr]);
-		/* intentional */
+		/* fall through  */
 	default:
 		reg = nct6775_read_value(data, data->REG_FAN_MODE[nr]);
 		reg = (reg & ~data->tolerance_mask) |
@@ -2354,7 +2681,7 @@ show_pwm_temp_sel_common(struct nct6775_data *data, char *buf, int src)
 	int i, sel = 0;
 
 	for (i = 0; i < NUM_TEMP; i++) {
-		if (!(data->have_temp & (1 << i)))
+		if (!(data->have_temp & BIT(i)))
 			continue;
 		if (src == data->temp_src[i]) {
 			sel = i + 1;
@@ -2390,7 +2717,7 @@ store_pwm_temp_sel(struct device *dev, struct device_attribute *attr,
 		return err;
 	if (val == 0 || val > NUM_TEMP)
 		return -EINVAL;
-	if (!(data->have_temp & (1 << (val - 1))) || !data->temp_src[val - 1])
+	if (!(data->have_temp & BIT(val - 1)) || !data->temp_src[val - 1])
 		return -EINVAL;
 
 	mutex_lock(&data->update_lock);
@@ -2432,7 +2759,8 @@ store_pwm_weight_temp_sel(struct device *dev, struct device_attribute *attr,
 		return err;
 	if (val > NUM_TEMP)
 		return -EINVAL;
-	if (val && (!(data->have_temp & (1 << (val - 1))) ||
+	val = array_index_nospec(val, NUM_TEMP + 1);
+	if (val && (!(data->have_temp & BIT(val - 1)) ||
 		    !data->temp_src[val - 1]))
 		return -EINVAL;
 
@@ -2571,6 +2899,8 @@ store_temp_tolerance(struct device *dev, struct device_attribute *attr,
  * Fan speed tolerance is a tricky beast, since the associated register is
  * a tick counter, but the value is reported and configured as rpm.
  * Compute resulting low and high rpm values and report the difference.
+ * A fan speed tolerance only makes sense if a fan target speed has been
+ * configured, so only display values other than 0 if that is the case.
  */
 static ssize_t
 show_speed_tolerance(struct device *dev, struct device_attribute *attr,
@@ -2579,19 +2909,23 @@ show_speed_tolerance(struct device *dev, struct device_attribute *attr,
 	struct nct6775_data *data = nct6775_update_device(dev);
 	struct sensor_device_attribute *sattr = to_sensor_dev_attr(attr);
 	int nr = sattr->index;
-	int low = data->target_speed[nr] - data->target_speed_tolerance[nr];
-	int high = data->target_speed[nr] + data->target_speed_tolerance[nr];
-	int tolerance;
+	int target = data->target_speed[nr];
+	int tolerance = 0;
 
-	if (low <= 0)
-		low = 1;
-	if (high > 0xffff)
-		high = 0xffff;
-	if (high < low)
-		high = low;
+	if (target) {
+		int low = target - data->target_speed_tolerance[nr];
+		int high = target + data->target_speed_tolerance[nr];
 
-	tolerance = (fan_from_reg16(low, data->fan_div[nr])
-		     - fan_from_reg16(high, data->fan_div[nr])) / 2;
+		if (low <= 0)
+			low = 1;
+		if (high > 0xffff)
+			high = 0xffff;
+		if (high < low)
+			high = low;
+
+		tolerance = (fan_from_reg16(low, data->fan_div[nr])
+			     - fan_from_reg16(high, data->fan_div[nr])) / 2;
+	}
 
 	return sprintf(buf, "%d\n", tolerance);
 }
@@ -2791,6 +3125,12 @@ store_auto_pwm(struct device *dev, struct device_attribute *attr,
 		case nct6106:
 		case nct6779:
 		case nct6791:
+		case nct6792:
+		case nct6793:
+		case nct6795:
+		case nct6796:
+		case nct6797:
+		case nct6798:
 			nct6775_write_value(data, data->REG_CRITICAL_PWM[nr],
 					    val);
 			reg = nct6775_read_value(data,
@@ -2863,7 +3203,7 @@ static umode_t nct6775_pwm_is_visible(struct kobject *kobj,
 	int pwm = index / 36;	/* pwm index */
 	int nr = index % 36;	/* attribute index */
 
-	if (!(data->has_pwm & (1 << pwm)))
+	if (!(data->has_pwm & BIT(pwm)))
 		return 0;
 
 	if ((nr >= 14 && nr <= 18) || nr == 21)   /* weight */
@@ -2988,20 +3328,21 @@ static struct sensor_device_template *nct6775_attributes_pwm_template[] = {
 	NULL
 };
 
-static struct sensor_template_group nct6775_pwm_template_group = {
+static const struct sensor_template_group nct6775_pwm_template_group = {
 	.templates = nct6775_attributes_pwm_template,
 	.is_visible = nct6775_pwm_is_visible,
 	.base = 1,
 };
 
 static ssize_t
-show_vid(struct device *dev, struct device_attribute *attr, char *buf)
+cpu0_vid_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	struct nct6775_data *data = dev_get_drvdata(dev);
+
 	return sprintf(buf, "%d\n", vid_from_reg(data->vid, data->vrm));
 }
 
-static DEVICE_ATTR(cpu0_vid, S_IRUGO, show_vid, NULL);
+static DEVICE_ATTR_RO(cpu0_vid);
 
 /* Case open detection */
 
@@ -3113,7 +3454,7 @@ static inline void nct6775_init_device(struct nct6775_data *data)
 
 	/* Enable temperature sensors if needed */
 	for (i = 0; i < NUM_TEMP; i++) {
-		if (!(data->have_temp & (1 << i)))
+		if (!(data->have_temp & BIT(i)))
 			continue;
 		if (!data->reg_temp_config[i])
 			continue;
@@ -3131,7 +3472,7 @@ static inline void nct6775_init_device(struct nct6775_data *data)
 	diode = nct6775_read_value(data, data->REG_DIODE);
 
 	for (i = 0; i < data->temp_fixed_num; i++) {
-		if (!(data->have_temp_fixed & (1 << i)))
+		if (!(data->have_temp_fixed & BIT(i)))
 			continue;
 		if ((tmp & (data->DIODE_MASK << i)))	/* diode */
 			data->temp_type[i]
@@ -3144,95 +3485,206 @@ static inline void nct6775_init_device(struct nct6775_data *data)
 static void
 nct6775_check_fan_inputs(struct nct6775_data *data)
 {
-	bool fan3pin, fan4pin, fan4min, fan5pin, fan6pin;
-	bool pwm3pin, pwm4pin, pwm5pin, pwm6pin;
+	bool fan3pin = false, fan4pin = false, fan4min = false;
+	bool fan5pin = false, fan6pin = false, fan7pin = false;
+	bool pwm3pin = false, pwm4pin = false, pwm5pin = false;
+	bool pwm6pin = false, pwm7pin = false;
 	int sioreg = data->sioreg;
-	int regval;
+
+	/* Store SIO_REG_ENABLE for use during resume */
+	superio_select(sioreg, NCT6775_LD_HWM);
+	data->sio_reg_enable = superio_inb(sioreg, SIO_REG_ENABLE);
 
 	/* fan4 and fan5 share some pins with the GPIO and serial flash */
 	if (data->kind == nct6775) {
-		regval = superio_inb(sioreg, 0x2c);
+		int cr2c = superio_inb(sioreg, 0x2c);
 
-		fan3pin = regval & (1 << 6);
-		pwm3pin = regval & (1 << 7);
+		fan3pin = cr2c & BIT(6);
+		pwm3pin = cr2c & BIT(7);
 
 		/* On NCT6775, fan4 shares pins with the fdc interface */
 		fan4pin = !(superio_inb(sioreg, 0x2A) & 0x80);
-		fan4min = false;
-		fan5pin = false;
-		fan6pin = false;
-		pwm4pin = false;
-		pwm5pin = false;
-		pwm6pin = false;
 	} else if (data->kind == nct6776) {
 		bool gpok = superio_inb(sioreg, 0x27) & 0x80;
+		const char *board_vendor, *board_name;
 
-		superio_select(sioreg, NCT6775_LD_HWM);
-		regval = superio_inb(sioreg, SIO_REG_ENABLE);
+		board_vendor = dmi_get_system_info(DMI_BOARD_VENDOR);
+		board_name = dmi_get_system_info(DMI_BOARD_NAME);
 
-		if (regval & 0x80)
+		if (board_name && board_vendor &&
+		    !strcmp(board_vendor, "ASRock")) {
+			/*
+			 * Auxiliary fan monitoring is not enabled on ASRock
+			 * Z77 Pro4-M if booted in UEFI Ultra-FastBoot mode.
+			 * Observed with BIOS version 2.00.
+			 */
+			if (!strcmp(board_name, "Z77 Pro4-M")) {
+				if ((data->sio_reg_enable & 0xe0) != 0xe0) {
+					data->sio_reg_enable |= 0xe0;
+					superio_outb(sioreg, SIO_REG_ENABLE,
+						     data->sio_reg_enable);
+				}
+			}
+		}
+
+		if (data->sio_reg_enable & 0x80)
 			fan3pin = gpok;
 		else
 			fan3pin = !(superio_inb(sioreg, 0x24) & 0x40);
 
-		if (regval & 0x40)
+		if (data->sio_reg_enable & 0x40)
 			fan4pin = gpok;
 		else
 			fan4pin = superio_inb(sioreg, 0x1C) & 0x01;
 
-		if (regval & 0x20)
+		if (data->sio_reg_enable & 0x20)
 			fan5pin = gpok;
 		else
 			fan5pin = superio_inb(sioreg, 0x1C) & 0x02;
 
 		fan4min = fan4pin;
-		fan6pin = false;
 		pwm3pin = fan3pin;
-		pwm4pin = false;
-		pwm5pin = false;
-		pwm6pin = false;
 	} else if (data->kind == nct6106) {
-		regval = superio_inb(sioreg, 0x24);
-		fan3pin = !(regval & 0x80);
-		pwm3pin = regval & 0x08;
+		int cr24 = superio_inb(sioreg, 0x24);
 
-		fan4pin = false;
-		fan4min = false;
-		fan5pin = false;
-		fan6pin = false;
-		pwm4pin = false;
-		pwm5pin = false;
-		pwm6pin = false;
-	} else {	/* NCT6779D or NCT6791D */
-		regval = superio_inb(sioreg, 0x1c);
+		fan3pin = !(cr24 & 0x80);
+		pwm3pin = cr24 & 0x08;
+	} else {
+		/*
+		 * NCT6779D, NCT6791D, NCT6792D, NCT6793D, NCT6795D, NCT6796D,
+		 * NCT6797D, NCT6798D
+		 */
+		int cr1a = superio_inb(sioreg, 0x1a);
+		int cr1b = superio_inb(sioreg, 0x1b);
+		int cr1c = superio_inb(sioreg, 0x1c);
+		int cr1d = superio_inb(sioreg, 0x1d);
+		int cr2a = superio_inb(sioreg, 0x2a);
+		int cr2b = superio_inb(sioreg, 0x2b);
+		int cr2d = superio_inb(sioreg, 0x2d);
+		int cr2f = superio_inb(sioreg, 0x2f);
+		bool dsw_en = cr2f & BIT(3);
+		bool ddr4_en = cr2f & BIT(4);
+		int cre0;
+		int creb;
+		int cred;
 
-		fan3pin = !(regval & (1 << 5));
-		fan4pin = !(regval & (1 << 6));
-		fan5pin = !(regval & (1 << 7));
+		superio_select(sioreg, NCT6775_LD_12);
+		cre0 = superio_inb(sioreg, 0xe0);
+		creb = superio_inb(sioreg, 0xeb);
+		cred = superio_inb(sioreg, 0xed);
 
-		pwm3pin = !(regval & (1 << 0));
-		pwm4pin = !(regval & (1 << 1));
-		pwm5pin = !(regval & (1 << 2));
+		fan3pin = !(cr1c & BIT(5));
+		fan4pin = !(cr1c & BIT(6));
+		fan5pin = !(cr1c & BIT(7));
+
+		pwm3pin = !(cr1c & BIT(0));
+		pwm4pin = !(cr1c & BIT(1));
+		pwm5pin = !(cr1c & BIT(2));
+
+		switch (data->kind) {
+		case nct6791:
+			fan6pin = cr2d & BIT(1);
+			pwm6pin = cr2d & BIT(0);
+			break;
+		case nct6792:
+			fan6pin = !dsw_en && (cr2d & BIT(1));
+			pwm6pin = !dsw_en && (cr2d & BIT(0));
+			break;
+		case nct6793:
+			fan5pin |= cr1b & BIT(5);
+			fan5pin |= creb & BIT(5);
+
+			fan6pin = !dsw_en && (cr2d & BIT(1));
+			fan6pin |= creb & BIT(3);
+
+			pwm5pin |= cr2d & BIT(7);
+			pwm5pin |= (creb & BIT(4)) && !(cr2a & BIT(0));
+
+			pwm6pin = !dsw_en && (cr2d & BIT(0));
+			pwm6pin |= creb & BIT(2);
+			break;
+		case nct6795:
+			fan5pin |= cr1b & BIT(5);
+			fan5pin |= creb & BIT(5);
+
+			fan6pin = (cr2a & BIT(4)) &&
+					(!dsw_en || (cred & BIT(4)));
+			fan6pin |= creb & BIT(3);
+
+			pwm5pin |= cr2d & BIT(7);
+			pwm5pin |= (creb & BIT(4)) && !(cr2a & BIT(0));
+
+			pwm6pin = (cr2a & BIT(3)) && (cred & BIT(2));
+			pwm6pin |= creb & BIT(2);
+			break;
+		case nct6796:
+			fan5pin |= cr1b & BIT(5);
+			fan5pin |= (cre0 & BIT(3)) && !(cr1b & BIT(0));
+			fan5pin |= creb & BIT(5);
+
+			fan6pin = (cr2a & BIT(4)) &&
+					(!dsw_en || (cred & BIT(4)));
+			fan6pin |= creb & BIT(3);
+
+			fan7pin = !(cr2b & BIT(2));
+
+			pwm5pin |= cr2d & BIT(7);
+			pwm5pin |= (cre0 & BIT(4)) && !(cr1b & BIT(0));
+			pwm5pin |= (creb & BIT(4)) && !(cr2a & BIT(0));
+
+			pwm6pin = (cr2a & BIT(3)) && (cred & BIT(2));
+			pwm6pin |= creb & BIT(2);
+
+			pwm7pin = !(cr1d & (BIT(2) | BIT(3)));
+			break;
+		case nct6797:
+			fan5pin |= !ddr4_en && (cr1b & BIT(5));
+			fan5pin |= creb & BIT(5);
+
+			fan6pin = cr2a & BIT(4);
+			fan6pin |= creb & BIT(3);
+
+			fan7pin = cr1a & BIT(1);
+
+			pwm5pin |= (creb & BIT(4)) && !(cr2a & BIT(0));
+			pwm5pin |= !ddr4_en && (cr2d & BIT(7));
+
+			pwm6pin = creb & BIT(2);
+			pwm6pin |= cred & BIT(2);
+
+			pwm7pin = cr1d & BIT(4);
+			break;
+		case nct6798:
+			fan6pin = !(cr1b & BIT(0)) && (cre0 & BIT(3));
+			fan6pin |= cr2a & BIT(4);
+			fan6pin |= creb & BIT(5);
+
+			fan7pin = cr1b & BIT(5);
+			fan7pin |= !(cr2b & BIT(2));
+			fan7pin |= creb & BIT(3);
+
+			pwm6pin = !(cr1b & BIT(0)) && (cre0 & BIT(4));
+			pwm6pin |= !(cred & BIT(2)) && (cr2a & BIT(3));
+			pwm6pin |= (creb & BIT(4)) && !(cr2a & BIT(0));
+
+			pwm7pin = !(cr1d & (BIT(2) | BIT(3)));
+			pwm7pin |= cr2d & BIT(7);
+			pwm7pin |= creb & BIT(2);
+			break;
+		default:	/* NCT6779D */
+			break;
+		}
 
 		fan4min = fan4pin;
-
-		if (data->kind == nct6791) {
-			regval = superio_inb(sioreg, 0x2d);
-			fan6pin = (regval & (1 << 1));
-			pwm6pin = (regval & (1 << 0));
-		} else {	/* NCT6779D */
-			fan6pin = false;
-			pwm6pin = false;
-		}
 	}
 
 	/* fan 1 and 2 (0x03) are always present */
 	data->has_fan = 0x03 | (fan3pin << 2) | (fan4pin << 3) |
-		(fan5pin << 4) | (fan6pin << 5);
+		(fan5pin << 4) | (fan6pin << 5) | (fan7pin << 6);
 	data->has_fan_min = 0x03 | (fan3pin << 2) | (fan4min << 3) |
-		(fan5pin << 4);
+		(fan5pin << 4) | (fan6pin << 5) | (fan7pin << 6);
 	data->has_pwm = 0x03 | (pwm3pin << 2) | (pwm4pin << 3) |
-		(pwm5pin << 4) | (pwm6pin << 5);
+		(pwm5pin << 4) | (pwm6pin << 5) | (pwm7pin << 6);
 }
 
 static void add_temp_sensors(struct nct6775_data *data, const u16 *regp,
@@ -3248,16 +3700,15 @@ static void add_temp_sensors(struct nct6775_data *data, const u16 *regp,
 			continue;
 		src = nct6775_read_value(data, regp[i]);
 		src &= 0x1f;
-		if (!src || (*mask & (1 << src)))
+		if (!src || (*mask & BIT(src)))
 			continue;
-		if (src >= data->temp_label_num ||
-		    !strlen(data->temp_label[src]))
+		if (!(data->temp_mask & BIT(src)))
 			continue;
 
 		index = __ffs(*available);
 		nct6775_write_value(data, data->REG_TEMP_SOURCE[index], src);
-		*available &= ~(1 << index);
-		*mask |= 1 << src;
+		*available &= ~BIT(index);
+		*mask |= BIT(src);
 	}
 }
 
@@ -3276,6 +3727,7 @@ static int nct6775_probe(struct platform_device *pdev)
 	u8 cr2a;
 	struct attribute_group *group;
 	struct device *hwmon_dev;
+	int num_attr_groups = 0;
 
 	res = platform_get_resource(pdev, IORESOURCE_IO, 0);
 	if (!devm_request_region(&pdev->dev, res->start, IOREGION_LENGTH,
@@ -3308,7 +3760,8 @@ static int nct6775_probe(struct platform_device *pdev)
 		data->fan_from_reg_min = fan_from_reg13;
 
 		data->temp_label = nct6776_temp_label;
-		data->temp_label_num = ARRAY_SIZE(nct6776_temp_label);
+		data->temp_mask = NCT6776_TEMP_MASK;
+		data->virt_temp_mask = NCT6776_VIRT_TEMP_MASK;
 
 		data->REG_VBAT = NCT6106_REG_VBAT;
 		data->REG_DIODE = NCT6106_REG_DIODE;
@@ -3386,7 +3839,8 @@ static int nct6775_probe(struct platform_device *pdev)
 		data->speed_tolerance_limit = 15;
 
 		data->temp_label = nct6775_temp_label;
-		data->temp_label_num = ARRAY_SIZE(nct6775_temp_label);
+		data->temp_mask = NCT6775_TEMP_MASK;
+		data->virt_temp_mask = NCT6775_VIRT_TEMP_MASK;
 
 		data->REG_CONFIG = NCT6775_REG_CONFIG;
 		data->REG_VBAT = NCT6775_REG_VBAT;
@@ -3458,7 +3912,8 @@ static int nct6775_probe(struct platform_device *pdev)
 		data->speed_tolerance_limit = 63;
 
 		data->temp_label = nct6776_temp_label;
-		data->temp_label_num = ARRAY_SIZE(nct6776_temp_label);
+		data->temp_mask = NCT6776_TEMP_MASK;
+		data->virt_temp_mask = NCT6776_VIRT_TEMP_MASK;
 
 		data->REG_CONFIG = NCT6775_REG_CONFIG;
 		data->REG_VBAT = NCT6775_REG_VBAT;
@@ -3474,8 +3929,8 @@ static int nct6775_probe(struct platform_device *pdev)
 		data->REG_FAN_PULSES = NCT6776_REG_FAN_PULSES;
 		data->FAN_PULSE_SHIFT = NCT6775_FAN_PULSE_SHIFT;
 		data->REG_FAN_TIME[0] = NCT6775_REG_FAN_STOP_TIME;
-		data->REG_FAN_TIME[1] = NCT6775_REG_FAN_STEP_UP_TIME;
-		data->REG_FAN_TIME[2] = NCT6775_REG_FAN_STEP_DOWN_TIME;
+		data->REG_FAN_TIME[1] = NCT6776_REG_FAN_STEP_UP_TIME;
+		data->REG_FAN_TIME[2] = NCT6776_REG_FAN_STEP_DOWN_TIME;
 		data->REG_TOLERANCE_H = NCT6776_REG_TOLERANCE_H;
 		data->REG_PWM[0] = NCT6775_REG_PWM;
 		data->REG_PWM[1] = NCT6775_REG_FAN_START_OUTPUT;
@@ -3523,14 +3978,15 @@ static int nct6775_probe(struct platform_device *pdev)
 		data->ALARM_BITS = NCT6779_ALARM_BITS;
 		data->BEEP_BITS = NCT6779_BEEP_BITS;
 
-		data->fan_from_reg = fan_from_reg13;
+		data->fan_from_reg = fan_from_reg_rpm;
 		data->fan_from_reg_min = fan_from_reg13;
 		data->target_temp_mask = 0xff;
 		data->tolerance_mask = 0x07;
 		data->speed_tolerance_limit = 63;
 
 		data->temp_label = nct6779_temp_label;
-		data->temp_label_num = ARRAY_SIZE(nct6779_temp_label);
+		data->temp_mask = NCT6779_TEMP_MASK;
+		data->virt_temp_mask = NCT6779_VIRT_TEMP_MASK;
 
 		data->REG_CONFIG = NCT6775_REG_CONFIG;
 		data->REG_VBAT = NCT6775_REG_VBAT;
@@ -3546,8 +4002,8 @@ static int nct6775_probe(struct platform_device *pdev)
 		data->REG_FAN_PULSES = NCT6779_REG_FAN_PULSES;
 		data->FAN_PULSE_SHIFT = NCT6775_FAN_PULSE_SHIFT;
 		data->REG_FAN_TIME[0] = NCT6775_REG_FAN_STOP_TIME;
-		data->REG_FAN_TIME[1] = NCT6775_REG_FAN_STEP_UP_TIME;
-		data->REG_FAN_TIME[2] = NCT6775_REG_FAN_STEP_DOWN_TIME;
+		data->REG_FAN_TIME[1] = NCT6776_REG_FAN_STEP_UP_TIME;
+		data->REG_FAN_TIME[2] = NCT6776_REG_FAN_STEP_DOWN_TIME;
 		data->REG_TOLERANCE_H = NCT6776_REG_TOLERANCE_H;
 		data->REG_PWM[0] = NCT6775_REG_PWM;
 		data->REG_PWM[1] = NCT6775_REG_FAN_START_OUTPUT;
@@ -3588,8 +4044,16 @@ static int nct6775_probe(struct platform_device *pdev)
 
 		break;
 	case nct6791:
+	case nct6792:
+	case nct6793:
+	case nct6795:
+	case nct6796:
+	case nct6797:
+	case nct6798:
 		data->in_num = 15;
-		data->pwm_num = 6;
+		data->pwm_num = (data->kind == nct6796 ||
+				 data->kind == nct6797 ||
+				 data->kind == nct6798) ? 7 : 6;
 		data->auto_pwm_num = 4;
 		data->has_fan_div = false;
 		data->temp_fixed_num = 6;
@@ -3599,14 +4063,46 @@ static int nct6775_probe(struct platform_device *pdev)
 		data->ALARM_BITS = NCT6791_ALARM_BITS;
 		data->BEEP_BITS = NCT6779_BEEP_BITS;
 
-		data->fan_from_reg = fan_from_reg13;
+		data->fan_from_reg = fan_from_reg_rpm;
 		data->fan_from_reg_min = fan_from_reg13;
 		data->target_temp_mask = 0xff;
 		data->tolerance_mask = 0x07;
 		data->speed_tolerance_limit = 63;
 
-		data->temp_label = nct6779_temp_label;
-		data->temp_label_num = ARRAY_SIZE(nct6779_temp_label);
+		switch (data->kind) {
+		default:
+		case nct6791:
+			data->temp_label = nct6779_temp_label;
+			data->temp_mask = NCT6791_TEMP_MASK;
+			data->virt_temp_mask = NCT6791_VIRT_TEMP_MASK;
+			break;
+		case nct6792:
+			data->temp_label = nct6792_temp_label;
+			data->temp_mask = NCT6792_TEMP_MASK;
+			data->virt_temp_mask = NCT6792_VIRT_TEMP_MASK;
+			break;
+		case nct6793:
+			data->temp_label = nct6793_temp_label;
+			data->temp_mask = NCT6793_TEMP_MASK;
+			data->virt_temp_mask = NCT6793_VIRT_TEMP_MASK;
+			break;
+		case nct6795:
+		case nct6797:
+			data->temp_label = nct6795_temp_label;
+			data->temp_mask = NCT6795_TEMP_MASK;
+			data->virt_temp_mask = NCT6795_VIRT_TEMP_MASK;
+			break;
+		case nct6796:
+			data->temp_label = nct6796_temp_label;
+			data->temp_mask = NCT6796_TEMP_MASK;
+			data->virt_temp_mask = NCT6796_VIRT_TEMP_MASK;
+			break;
+		case nct6798:
+			data->temp_label = nct6798_temp_label;
+			data->temp_mask = NCT6798_TEMP_MASK;
+			data->virt_temp_mask = NCT6798_VIRT_TEMP_MASK;
+			break;
+		}
 
 		data->REG_CONFIG = NCT6775_REG_CONFIG;
 		data->REG_VBAT = NCT6775_REG_VBAT;
@@ -3622,8 +4118,8 @@ static int nct6775_probe(struct platform_device *pdev)
 		data->REG_FAN_PULSES = NCT6779_REG_FAN_PULSES;
 		data->FAN_PULSE_SHIFT = NCT6775_FAN_PULSE_SHIFT;
 		data->REG_FAN_TIME[0] = NCT6775_REG_FAN_STOP_TIME;
-		data->REG_FAN_TIME[1] = NCT6775_REG_FAN_STEP_UP_TIME;
-		data->REG_FAN_TIME[2] = NCT6775_REG_FAN_STEP_DOWN_TIME;
+		data->REG_FAN_TIME[1] = NCT6776_REG_FAN_STEP_UP_TIME;
+		data->REG_FAN_TIME[2] = NCT6776_REG_FAN_STEP_DOWN_TIME;
 		data->REG_TOLERANCE_H = NCT6776_REG_TOLERANCE_H;
 		data->REG_PWM[0] = NCT6775_REG_PWM;
 		data->REG_PWM[1] = NCT6775_REG_FAN_START_OUTPUT;
@@ -3650,12 +4146,20 @@ static int nct6775_probe(struct platform_device *pdev)
 		data->REG_WEIGHT_TEMP[1] = NCT6791_REG_WEIGHT_TEMP_STEP_TOL;
 		data->REG_WEIGHT_TEMP[2] = NCT6791_REG_WEIGHT_TEMP_BASE;
 		data->REG_ALARM = NCT6791_REG_ALARM;
-		data->REG_BEEP = NCT6776_REG_BEEP;
+		if (data->kind == nct6791)
+			data->REG_BEEP = NCT6776_REG_BEEP;
+		else
+			data->REG_BEEP = NCT6792_REG_BEEP;
 
 		reg_temp = NCT6779_REG_TEMP;
-		reg_temp_mon = NCT6779_REG_TEMP_MON;
 		num_reg_temp = ARRAY_SIZE(NCT6779_REG_TEMP);
-		num_reg_temp_mon = ARRAY_SIZE(NCT6779_REG_TEMP_MON);
+		if (data->kind == nct6791) {
+			reg_temp_mon = NCT6779_REG_TEMP_MON;
+			num_reg_temp_mon = ARRAY_SIZE(NCT6779_REG_TEMP_MON);
+		} else {
+			reg_temp_mon = NCT6792_REG_TEMP_MON;
+			num_reg_temp_mon = ARRAY_SIZE(NCT6792_REG_TEMP_MON);
+		}
 		reg_temp_over = NCT6779_REG_TEMP_OVER;
 		reg_temp_hyst = NCT6779_REG_TEMP_HYST;
 		reg_temp_config = NCT6779_REG_TEMP_CONFIG;
@@ -3666,7 +4170,7 @@ static int nct6775_probe(struct platform_device *pdev)
 	default:
 		return -ENODEV;
 	}
-	data->have_in = (1 << data->in_num) - 1;
+	data->have_in = BIT(data->in_num) - 1;
 	data->have_temp = 0;
 
 	/*
@@ -3684,10 +4188,10 @@ static int nct6775_probe(struct platform_device *pdev)
 			continue;
 
 		src = nct6775_read_value(data, data->REG_TEMP_SOURCE[i]) & 0x1f;
-		if (!src || (mask & (1 << src)))
-			available |= 1 << i;
+		if (!src || (mask & BIT(src)))
+			available |= BIT(i);
 
-		mask |= 1 << src;
+		mask |= BIT(src);
 	}
 
 	/*
@@ -3704,23 +4208,22 @@ static int nct6775_probe(struct platform_device *pdev)
 			continue;
 
 		src = nct6775_read_value(data, data->REG_TEMP_SOURCE[i]) & 0x1f;
-		if (!src || (mask & (1 << src)))
+		if (!src || (mask & BIT(src)))
 			continue;
 
-		if (src >= data->temp_label_num ||
-		    !strlen(data->temp_label[src])) {
+		if (!(data->temp_mask & BIT(src))) {
 			dev_info(dev,
 				 "Invalid temperature source %d at index %d, source register 0x%x, temp register 0x%x\n",
 				 src, i, data->REG_TEMP_SOURCE[i], reg_temp[i]);
 			continue;
 		}
 
-		mask |= 1 << src;
+		mask |= BIT(src);
 
 		/* Use fixed index for SYSTIN(1), CPUTIN(2), AUXTIN(3) */
 		if (src <= data->temp_fixed_num) {
-			data->have_temp |= 1 << (src - 1);
-			data->have_temp_fixed |= 1 << (src - 1);
+			data->have_temp |= BIT(src - 1);
+			data->have_temp_fixed |= BIT(src - 1);
 			data->reg_temp[0][src - 1] = reg_temp[i];
 			data->reg_temp[1][src - 1] = reg_temp_over[i];
 			data->reg_temp[2][src - 1] = reg_temp_hyst[i];
@@ -3740,7 +4243,7 @@ static int nct6775_probe(struct platform_device *pdev)
 			continue;
 
 		/* Use dynamic index for other sources */
-		data->have_temp |= 1 << s;
+		data->have_temp |= BIT(s);
 		data->reg_temp[0][s] = reg_temp[i];
 		data->reg_temp[1][s] = reg_temp_over[i];
 		data->reg_temp[2][s] = reg_temp_hyst[i];
@@ -3765,11 +4268,10 @@ static int nct6775_probe(struct platform_device *pdev)
 			continue;
 
 		src = nct6775_read_value(data, data->REG_TEMP_SEL[i]) & 0x1f;
-		if (!src || (mask & (1 << src)))
+		if (!src)
 			continue;
 
-		if (src >= data->temp_label_num ||
-		    !strlen(data->temp_label[src])) {
+		if (!(data->temp_mask & BIT(src))) {
 			dev_info(dev,
 				 "Invalid temperature source %d at index %d, source register 0x%x, temp register 0x%x\n",
 				 src, i, data->REG_TEMP_SEL[i],
@@ -3777,14 +4279,23 @@ static int nct6775_probe(struct platform_device *pdev)
 			continue;
 		}
 
-		mask |= 1 << src;
+		/*
+		 * For virtual temperature sources, the 'virtual' temperature
+		 * for each fan reflects a different temperature, and there
+		 * are no duplicates.
+		 */
+		if (!(data->virt_temp_mask & BIT(src))) {
+			if (mask & BIT(src))
+				continue;
+			mask |= BIT(src);
+		}
 
 		/* Use fixed index for SYSTIN(1), CPUTIN(2), AUXTIN(3) */
 		if (src <= data->temp_fixed_num) {
-			if (data->have_temp & (1 << (src - 1)))
+			if (data->have_temp & BIT(src - 1))
 				continue;
-			data->have_temp |= 1 << (src - 1);
-			data->have_temp_fixed |= 1 << (src - 1);
+			data->have_temp |= BIT(src - 1);
+			data->have_temp_fixed |= BIT(src - 1);
 			data->reg_temp[0][src - 1] = reg_temp_mon[i];
 			data->temp_src[src - 1] = src;
 			continue;
@@ -3794,7 +4305,7 @@ static int nct6775_probe(struct platform_device *pdev)
 			continue;
 
 		/* Use dynamic index for other sources */
-		data->have_temp |= 1 << s;
+		data->have_temp |= BIT(s);
 		data->reg_temp[0][s] = reg_temp_mon[i];
 		data->temp_src[s] = src;
 		s++;
@@ -3807,16 +4318,18 @@ static int nct6775_probe(struct platform_device *pdev)
 	 * The temperature is already monitored if the respective bit in <mask>
 	 * is set.
 	 */
-	for (i = 0; i < data->temp_label_num - 1; i++) {
+	for (i = 0; i < 31; i++) {
+		if (!(data->temp_mask & BIT(i + 1)))
+			continue;
 		if (!reg_temp_alternate[i])
 			continue;
-		if (mask & (1 << (i + 1)))
+		if (mask & BIT(i + 1))
 			continue;
 		if (i < data->temp_fixed_num) {
-			if (data->have_temp & (1 << i))
+			if (data->have_temp & BIT(i))
 				continue;
-			data->have_temp |= 1 << i;
-			data->have_temp_fixed |= 1 << i;
+			data->have_temp |= BIT(i);
+			data->have_temp_fixed |= BIT(i);
 			data->reg_temp[0][i] = reg_temp_alternate[i];
 			if (i < num_reg_temp) {
 				data->reg_temp[1][i] = reg_temp_over[i];
@@ -3829,7 +4342,7 @@ static int nct6775_probe(struct platform_device *pdev)
 		if (s >= NUM_TEMP)	/* Abort if no more space */
 			break;
 
-		data->have_temp |= 1 << s;
+		data->have_temp |= BIT(s);
 		data->reg_temp[0][s] = reg_temp_alternate[i];
 		data->temp_src[s] = i + 1;
 		s++;
@@ -3854,6 +4367,12 @@ static int nct6775_probe(struct platform_device *pdev)
 	case nct6106:
 	case nct6779:
 	case nct6791:
+	case nct6792:
+	case nct6793:
+	case nct6795:
+	case nct6796:
+	case nct6797:
+	case nct6798:
 		break;
 	}
 
@@ -3885,6 +4404,12 @@ static int nct6775_probe(struct platform_device *pdev)
 			tmp |= 0x3e;
 			break;
 		case nct6791:
+		case nct6792:
+		case nct6793:
+		case nct6795:
+		case nct6796:
+		case nct6797:
+		case nct6798:
 			tmp |= 0x7e;
 			break;
 		}
@@ -3907,29 +4432,29 @@ static int nct6775_probe(struct platform_device *pdev)
 	if (IS_ERR(group))
 		return PTR_ERR(group);
 
-	data->groups[data->num_attr_groups++] = group;
+	data->groups[num_attr_groups++] = group;
 
 	group = nct6775_create_attr_group(dev, &nct6775_in_template_group,
 					  fls(data->have_in));
 	if (IS_ERR(group))
 		return PTR_ERR(group);
 
-	data->groups[data->num_attr_groups++] = group;
+	data->groups[num_attr_groups++] = group;
 
 	group = nct6775_create_attr_group(dev, &nct6775_fan_template_group,
 					  fls(data->has_fan));
 	if (IS_ERR(group))
 		return PTR_ERR(group);
 
-	data->groups[data->num_attr_groups++] = group;
+	data->groups[num_attr_groups++] = group;
 
 	group = nct6775_create_attr_group(dev, &nct6775_temp_template_group,
 					  fls(data->have_temp));
 	if (IS_ERR(group))
 		return PTR_ERR(group);
 
-	data->groups[data->num_attr_groups++] = group;
-	data->groups[data->num_attr_groups++] = &nct6775_group_other;
+	data->groups[num_attr_groups++] = group;
+	data->groups[num_attr_groups++] = &nct6775_group_other;
 
 	hwmon_dev = devm_hwmon_device_register_with_groups(dev, data->name,
 							   data, data->groups);
@@ -3948,8 +4473,7 @@ static void nct6791_enable_io_mapping(int sioaddr)
 	}
 }
 
-#ifdef CONFIG_PM
-static int nct6775_suspend(struct device *dev)
+static int __maybe_unused nct6775_suspend(struct device *dev)
 {
 	struct nct6775_data *data = nct6775_update_device(dev);
 
@@ -3964,26 +4488,36 @@ static int nct6775_suspend(struct device *dev)
 	return 0;
 }
 
-static int nct6775_resume(struct device *dev)
+static int __maybe_unused nct6775_resume(struct device *dev)
 {
 	struct nct6775_data *data = dev_get_drvdata(dev);
+	int sioreg = data->sioreg;
 	int i, j, err = 0;
+	u8 reg;
 
 	mutex_lock(&data->update_lock);
 	data->bank = 0xff;		/* Force initial bank selection */
 
-	if (data->kind == nct6791) {
-		err = superio_enter(data->sioreg);
-		if (err)
-			goto abort;
+	err = superio_enter(sioreg);
+	if (err)
+		goto abort;
 
-		nct6791_enable_io_mapping(data->sioreg);
-		superio_exit(data->sioreg);
-	}
+	superio_select(sioreg, NCT6775_LD_HWM);
+	reg = superio_inb(sioreg, SIO_REG_ENABLE);
+	if (reg != data->sio_reg_enable)
+		superio_outb(sioreg, SIO_REG_ENABLE, data->sio_reg_enable);
+
+	if (data->kind == nct6791 || data->kind == nct6792 ||
+	    data->kind == nct6793 || data->kind == nct6795 ||
+	    data->kind == nct6796 || data->kind == nct6797 ||
+	    data->kind == nct6798)
+		nct6791_enable_io_mapping(sioreg);
+
+	superio_exit(sioreg);
 
 	/* Restore limits */
 	for (i = 0; i < data->in_num; i++) {
-		if (!(data->have_in & (1 << i)))
+		if (!(data->have_in & BIT(i)))
 			continue;
 
 		nct6775_write_value(data, data->REG_IN_MINMAX[0][i],
@@ -3993,7 +4527,7 @@ static int nct6775_resume(struct device *dev)
 	}
 
 	for (i = 0; i < ARRAY_SIZE(data->fan_min); i++) {
-		if (!(data->has_fan_min & (1 << i)))
+		if (!(data->has_fan_min & BIT(i)))
 			continue;
 
 		nct6775_write_value(data, data->REG_FAN_MIN[i],
@@ -4001,7 +4535,7 @@ static int nct6775_resume(struct device *dev)
 	}
 
 	for (i = 0; i < NUM_TEMP; i++) {
-		if (!(data->have_temp & (1 << i)))
+		if (!(data->have_temp & BIT(i)))
 			continue;
 
 		for (j = 1; j < ARRAY_SIZE(data->reg_temp); j++)
@@ -4025,33 +4559,14 @@ abort:
 	return err;
 }
 
-static const struct dev_pm_ops nct6775_dev_pm_ops = {
-	.suspend = nct6775_suspend,
-	.resume = nct6775_resume,
-	.freeze = nct6775_suspend,
-	.restore = nct6775_resume,
-};
-
-#define NCT6775_DEV_PM_OPS	(&nct6775_dev_pm_ops)
-#else
-#define NCT6775_DEV_PM_OPS	NULL
-#endif /* CONFIG_PM */
+static SIMPLE_DEV_PM_OPS(nct6775_dev_pm_ops, nct6775_suspend, nct6775_resume);
 
 static struct platform_driver nct6775_driver = {
 	.driver = {
-		.owner	= THIS_MODULE,
 		.name	= DRVNAME,
-		.pm	= NCT6775_DEV_PM_OPS,
+		.pm	= &nct6775_dev_pm_ops,
 	},
 	.probe		= nct6775_probe,
-};
-
-static const char * const nct6775_sio_names[] __initconst = {
-	"NCT6106D",
-	"NCT6775F",
-	"NCT6776D/F",
-	"NCT6779D",
-	"NCT6791D",
 };
 
 /* nct6775_find() looks for a '627 in the Super-I/O config space */
@@ -4065,11 +4580,11 @@ static int __init nct6775_find(int sioaddr, struct nct6775_sio_data *sio_data)
 	if (err)
 		return err;
 
-	if (force_id)
+	val = (superio_inb(sioaddr, SIO_REG_DEVID) << 8) |
+		superio_inb(sioaddr, SIO_REG_DEVID + 1);
+	if (force_id && val != 0xffff)
 		val = force_id;
-	else
-		val = (superio_inb(sioaddr, SIO_REG_DEVID) << 8)
-		    | superio_inb(sioaddr, SIO_REG_DEVID + 1);
+
 	switch (val & SIO_ID_MASK) {
 	case SIO_NCT6106_ID:
 		sio_data->kind = nct6106;
@@ -4085,6 +4600,24 @@ static int __init nct6775_find(int sioaddr, struct nct6775_sio_data *sio_data)
 		break;
 	case SIO_NCT6791_ID:
 		sio_data->kind = nct6791;
+		break;
+	case SIO_NCT6792_ID:
+		sio_data->kind = nct6792;
+		break;
+	case SIO_NCT6793_ID:
+		sio_data->kind = nct6793;
+		break;
+	case SIO_NCT6795_ID:
+		sio_data->kind = nct6795;
+		break;
+	case SIO_NCT6796_ID:
+		sio_data->kind = nct6796;
+		break;
+	case SIO_NCT6797_ID:
+		sio_data->kind = nct6797;
+		break;
+	case SIO_NCT6798_ID:
+		sio_data->kind = nct6798;
 		break;
 	default:
 		if (val != 0xffff)
@@ -4111,7 +4644,10 @@ static int __init nct6775_find(int sioaddr, struct nct6775_sio_data *sio_data)
 		superio_outb(sioaddr, SIO_REG_ENABLE, val | 0x01);
 	}
 
-	if (sio_data->kind == nct6791)
+	if (sio_data->kind == nct6791 || sio_data->kind == nct6792 ||
+	    sio_data->kind == nct6793 || sio_data->kind == nct6795 ||
+	    sio_data->kind == nct6796 || sio_data->kind == nct6797 ||
+	    sio_data->kind == nct6798)
 		nct6791_enable_io_mapping(sioaddr);
 
 	superio_exit(sioaddr);
@@ -4160,7 +4696,7 @@ static int __init sensors_nct6775_init(void)
 		pdev[i] = platform_device_alloc(DRVNAME, address);
 		if (!pdev[i]) {
 			err = -ENOMEM;
-			goto exit_device_put;
+			goto exit_device_unregister;
 		}
 
 		err = platform_device_add_data(pdev[i], &sio_data,
@@ -4198,9 +4734,11 @@ static int __init sensors_nct6775_init(void)
 	return 0;
 
 exit_device_put:
-	for (i = 0; i < ARRAY_SIZE(pdev); i++) {
+	platform_device_put(pdev[i]);
+exit_device_unregister:
+	while (--i >= 0) {
 		if (pdev[i])
-			platform_device_put(pdev[i]);
+			platform_device_unregister(pdev[i]);
 	}
 exit_unregister:
 	platform_driver_unregister(&nct6775_driver);
@@ -4219,7 +4757,7 @@ static void __exit sensors_nct6775_exit(void)
 }
 
 MODULE_AUTHOR("Guenter Roeck <linux@roeck-us.net>");
-MODULE_DESCRIPTION("NCT6775F/NCT6776F/NCT6779D driver");
+MODULE_DESCRIPTION("Driver for NCT6775F and compatible chips");
 MODULE_LICENSE("GPL");
 
 module_init(sensors_nct6775_init);

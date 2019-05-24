@@ -1,7 +1,10 @@
+// SPDX-License-Identifier: GPL-2.0
 #include <linux/seq_file.h>
 #include <linux/debugfs.h>
-#include <linux/module.h>
+#include <linux/sched.h>
 #include <linux/mm.h>
+#include <linux/kasan.h>
+#include <asm/kasan.h>
 #include <asm/sections.h>
 #include <asm/pgtable.h>
 
@@ -16,22 +19,26 @@ enum address_markers_idx {
 	IDENTITY_NR = 0,
 	KERNEL_START_NR,
 	KERNEL_END_NR,
+#ifdef CONFIG_KASAN
+	KASAN_SHADOW_START_NR,
+	KASAN_SHADOW_END_NR,
+#endif
 	VMEMMAP_NR,
 	VMALLOC_NR,
-#ifdef CONFIG_64BIT
 	MODULES_NR,
-#endif
 };
 
 static struct addr_marker address_markers[] = {
-	[IDENTITY_NR]	  = {0, "Identity Mapping"},
-	[KERNEL_START_NR] = {(unsigned long)&_stext, "Kernel Image Start"},
-	[KERNEL_END_NR]	  = {(unsigned long)&_end, "Kernel Image End"},
-	[VMEMMAP_NR]	  = {0, "vmemmap Area"},
-	[VMALLOC_NR]	  = {0, "vmalloc Area"},
-#ifdef CONFIG_64BIT
-	[MODULES_NR]	  = {0, "Modules Area"},
+	[IDENTITY_NR]		= {0, "Identity Mapping"},
+	[KERNEL_START_NR]	= {(unsigned long)_stext, "Kernel Image Start"},
+	[KERNEL_END_NR]		= {(unsigned long)_end, "Kernel Image End"},
+#ifdef CONFIG_KASAN
+	[KASAN_SHADOW_START_NR]	= {KASAN_SHADOW_START, "Kasan Shadow Start"},
+	[KASAN_SHADOW_END_NR]	= {KASAN_SHADOW_END, "Kasan Shadow End"},
 #endif
+	[VMEMMAP_NR]		= {0, "vmemmap Area"},
+	[VMALLOC_NR]		= {0, "vmalloc Area"},
+	[MODULES_NR]		= {0, "Modules Area"},
 	{ -1, NULL }
 };
 
@@ -53,9 +60,8 @@ static void print_prot(struct seq_file *m, unsigned int pr, int level)
 		seq_printf(m, "I\n");
 		return;
 	}
-	seq_printf(m, "%s", pr & _PAGE_PROTECT ? "RO " : "RW ");
-	seq_printf(m, "%s", pr & _PAGE_CO ? "CO " : "   ");
-	seq_putc(m, '\n');
+	seq_puts(m, (pr & _PAGE_PROTECT) ? "RO " : "RW ");
+	seq_puts(m, (pr & _PAGE_NOEXEC) ? "NX\n" : "X\n");
 }
 
 static void note_page(struct seq_file *m, struct pg_state *st,
@@ -84,7 +90,7 @@ static void note_page(struct seq_file *m, struct pg_state *st,
 	} else if (prot != cur || level != st->level ||
 		   st->current_address >= st->marker[1].start_address) {
 		/* Print the actual finished series */
-		seq_printf(m, "0x%0*lx-0x%0*lx",
+		seq_printf(m, "0x%0*lx-0x%0*lx ",
 			   width, st->start_address,
 			   width, st->current_address);
 		delta = (st->current_address - st->start_address) >> 10;
@@ -94,7 +100,7 @@ static void note_page(struct seq_file *m, struct pg_state *st,
 		}
 		seq_printf(m, "%9lu%c ", delta, *unit);
 		print_prot(m, st->current_prot, st->level);
-		if (st->current_address >= st->marker[1].start_address) {
+		while (st->current_address >= st->marker[1].start_address) {
 			st->marker++;
 			seq_printf(m, "---[ %s ]---\n", st->marker->name);
 		}
@@ -103,6 +109,18 @@ static void note_page(struct seq_file *m, struct pg_state *st,
 		st->level = level;
 	}
 }
+
+#ifdef CONFIG_KASAN
+static void note_kasan_early_shadow_page(struct seq_file *m,
+						struct pg_state *st)
+{
+	unsigned int prot;
+
+	prot = pte_val(*kasan_early_shadow_pte) &
+		(_PAGE_PROTECT | _PAGE_INVALID | _PAGE_NOEXEC);
+	note_page(m, st, prot, 4);
+}
+#endif
 
 /*
  * The actual page table walker functions. In order to keep the
@@ -122,17 +140,12 @@ static void walk_pte_level(struct seq_file *m, struct pg_state *st,
 	for (i = 0; i < PTRS_PER_PTE && addr < max_addr; i++) {
 		st->current_address = addr;
 		pte = pte_offset_kernel(pmd, addr);
-		prot = pte_val(*pte) & (_PAGE_PROTECT | _PAGE_INVALID);
+		prot = pte_val(*pte) &
+			(_PAGE_PROTECT | _PAGE_INVALID | _PAGE_NOEXEC);
 		note_page(m, st, prot, 4);
 		addr += PAGE_SIZE;
 	}
 }
-
-#ifdef CONFIG_64BIT
-#define _PMD_PROT_MASK (_SEGMENT_ENTRY_PROTECT | _SEGMENT_ENTRY_CO)
-#else
-#define _PMD_PROT_MASK 0
-#endif
 
 static void walk_pmd_level(struct seq_file *m, struct pg_state *st,
 			   pud_t *pud, unsigned long addr)
@@ -141,12 +154,21 @@ static void walk_pmd_level(struct seq_file *m, struct pg_state *st,
 	pmd_t *pmd;
 	int i;
 
+#ifdef CONFIG_KASAN
+	if ((pud_val(*pud) & PAGE_MASK) == __pa(kasan_early_shadow_pmd)) {
+		note_kasan_early_shadow_page(m, st);
+		return;
+	}
+#endif
+
 	for (i = 0; i < PTRS_PER_PMD && addr < max_addr; i++) {
 		st->current_address = addr;
 		pmd = pmd_offset(pud, addr);
 		if (!pmd_none(*pmd)) {
 			if (pmd_large(*pmd)) {
-				prot = pmd_val(*pmd) & _PMD_PROT_MASK;
+				prot = pmd_val(*pmd) &
+					(_SEGMENT_ENTRY_PROTECT |
+					 _SEGMENT_ENTRY_NOEXEC);
 				note_page(m, st, prot, 3);
 			} else
 				walk_pte_level(m, st, pmd, addr);
@@ -156,31 +178,58 @@ static void walk_pmd_level(struct seq_file *m, struct pg_state *st,
 	}
 }
 
-#ifdef CONFIG_64BIT
-#define _PUD_PROT_MASK (_REGION3_ENTRY_RO | _REGION3_ENTRY_CO)
-#else
-#define _PUD_PROT_MASK 0
-#endif
-
 static void walk_pud_level(struct seq_file *m, struct pg_state *st,
-			   pgd_t *pgd, unsigned long addr)
+			   p4d_t *p4d, unsigned long addr)
 {
 	unsigned int prot;
 	pud_t *pud;
 	int i;
 
+#ifdef CONFIG_KASAN
+	if ((p4d_val(*p4d) & PAGE_MASK) == __pa(kasan_early_shadow_pud)) {
+		note_kasan_early_shadow_page(m, st);
+		return;
+	}
+#endif
+
 	for (i = 0; i < PTRS_PER_PUD && addr < max_addr; i++) {
 		st->current_address = addr;
-		pud = pud_offset(pgd, addr);
+		pud = pud_offset(p4d, addr);
 		if (!pud_none(*pud))
 			if (pud_large(*pud)) {
-				prot = pud_val(*pud) & _PUD_PROT_MASK;
+				prot = pud_val(*pud) &
+					(_REGION_ENTRY_PROTECT |
+					 _REGION_ENTRY_NOEXEC);
 				note_page(m, st, prot, 2);
 			} else
 				walk_pmd_level(m, st, pud, addr);
 		else
 			note_page(m, st, _PAGE_INVALID, 2);
 		addr += PUD_SIZE;
+	}
+}
+
+static void walk_p4d_level(struct seq_file *m, struct pg_state *st,
+			   pgd_t *pgd, unsigned long addr)
+{
+	p4d_t *p4d;
+	int i;
+
+#ifdef CONFIG_KASAN
+	if ((pgd_val(*pgd) & PAGE_MASK) == __pa(kasan_early_shadow_p4d)) {
+		note_kasan_early_shadow_page(m, st);
+		return;
+	}
+#endif
+
+	for (i = 0; i < PTRS_PER_P4D && addr < max_addr; i++) {
+		st->current_address = addr;
+		p4d = p4d_offset(pgd, addr);
+		if (!p4d_none(*p4d))
+			walk_pud_level(m, st, p4d, addr);
+		else
+			note_page(m, st, _PAGE_INVALID, 2);
+		addr += P4D_SIZE;
 	}
 }
 
@@ -196,10 +245,11 @@ static void walk_pgd_level(struct seq_file *m)
 		st.current_address = addr;
 		pgd = pgd_offset_k(addr);
 		if (!pgd_none(*pgd))
-			walk_pud_level(m, &st, pgd, addr);
+			walk_p4d_level(m, &st, pgd, addr);
 		else
 			note_page(m, &st, _PAGE_INVALID, 1);
 		addr += PGDIR_SIZE;
+		cond_resched();
 	}
 	/* Flush out the last page */
 	st.current_address = max_addr;
@@ -231,13 +281,9 @@ static int pt_dump_init(void)
 	 * kernel ASCE. We need this to keep the page table walker functions
 	 * from accessing non-existent entries.
 	 */
-#ifdef CONFIG_32BIT
-	max_addr = 1UL << 31;
-#else
 	max_addr = (S390_lowcore.kernel_asce & _REGION_ENTRY_TYPE_MASK) >> 2;
 	max_addr = 1UL << (max_addr * 11 + 31);
 	address_markers[MODULES_NR].start_address = MODULES_VADDR;
-#endif
 	address_markers[VMEMMAP_NR].start_address = (unsigned long) vmemmap;
 	address_markers[VMALLOC_NR].start_address = VMALLOC_START;
 	debugfs_create_file("kernel_page_tables", 0400, NULL, NULL, &ptdump_fops);

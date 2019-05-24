@@ -83,14 +83,19 @@ struct iw_cm_id {
 	iw_cm_handler		cm_handler;      /* client callback function */
 	void		        *context;	 /* client cb context */
 	struct ib_device	*device;
-	struct sockaddr_storage local_addr;
+	struct sockaddr_storage local_addr;      /* local addr */
 	struct sockaddr_storage	remote_addr;
+	struct sockaddr_storage m_local_addr;	 /* nmapped local addr */
+	struct sockaddr_storage	m_remote_addr;	 /* nmapped rem addr */
 	void			*provider_data;	 /* provider private data */
 	iw_event_handler        event_handler;   /* cb for provider
 						    events */
 	/* Used by provider to add and remove refs on IW cm_id */
 	void (*add_ref)(struct iw_cm_id *);
 	void (*rem_ref)(struct iw_cm_id *);
+	u8  tos;
+	bool tos_set:1;
+	bool mapped:1;
 };
 
 struct iw_cm_conn_param {
@@ -99,6 +104,18 @@ struct iw_cm_conn_param {
 	u32 ord;
 	u32 ird;
 	u32 qpn;
+};
+
+enum iw_flags {
+
+	/*
+	 * This flag allows the iwcm and iwpmd to still advertise
+	 * mappings but the real and mapped port numbers are the
+	 * same.  Further, iwpmd will not bind any user socket to
+	 * reserve the port.  This is required for soft iwarp
+	 * to play in the port mapped iwarp space.
+	 */
+	IW_F_NO_PORT_MAP = (1 << 0),
 };
 
 struct iw_cm_verbs {
@@ -122,6 +139,8 @@ struct iw_cm_verbs {
 					 int backlog);
 
 	int		(*destroy_listen)(struct iw_cm_id *cm_id);
+	char		ifname[IFNAMSIZ];
+	enum iw_flags	driver_flags;
 };
 
 /**
@@ -247,5 +266,11 @@ int iw_cm_disconnect(struct iw_cm_id *cm_id, int abrupt);
  */
 int iw_cm_init_qp_attr(struct iw_cm_id *cm_id, struct ib_qp_attr *qp_attr,
 		       int *qp_attr_mask);
+
+/**
+ * iwcm_reject_msg - return a pointer to a reject message string.
+ * @reason: Value returned in the REJECT event status field.
+ */
+const char *__attribute_const__ iwcm_reject_msg(int reason);
 
 #endif /* IW_CM_H */

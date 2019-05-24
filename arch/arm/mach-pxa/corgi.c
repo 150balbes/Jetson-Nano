@@ -13,26 +13,31 @@
  */
 
 #include <linux/kernel.h>
+#include <linux/module.h>	/* symbol_get ; symbol_put */
 #include <linux/init.h>
 #include <linux/platform_device.h>
 #include <linux/major.h>
 #include <linux/fs.h>
 #include <linux/interrupt.h>
+#include <linux/leds.h>
 #include <linux/mmc/host.h>
 #include <linux/mtd/physmap.h>
 #include <linux/pm.h>
 #include <linux/gpio.h>
+#include <linux/gpio/machine.h>
 #include <linux/backlight.h>
 #include <linux/i2c.h>
-#include <linux/i2c/pxa-i2c.h>
+#include <linux/platform_data/i2c-pxa.h>
 #include <linux/io.h>
+#include <linux/regulator/machine.h>
 #include <linux/spi/spi.h>
 #include <linux/spi/ads7846.h>
 #include <linux/spi/corgi_lcd.h>
 #include <linux/spi/pxa2xx_spi.h>
 #include <linux/mtd/sharpsl.h>
 #include <linux/input/matrix_keypad.h>
-#include <linux/module.h>
+#include <linux/gpio_keys.h>
+#include <linux/memblock.h>
 #include <video/w100fb.h>
 
 #include <asm/setup.h>
@@ -45,12 +50,12 @@
 #include <asm/mach/map.h>
 #include <asm/mach/irq.h>
 
-#include <mach/pxa25x.h>
+#include "pxa25x.h"
 #include <linux/platform_data/irda-pxaficp.h>
 #include <linux/platform_data/mmc-pxamci.h>
-#include <mach/udc.h>
+#include "udc.h"
 #include <mach/corgi.h>
-#include <mach/sharpsl_pm.h>
+#include "sharpsl_pm.h"
 
 #include <asm/mach/sharpsl_param.h>
 #include <asm/hardware/scoop.h>
@@ -405,6 +410,44 @@ static struct platform_device corgikbd_device = {
 	},
 };
 
+static struct gpio_keys_button corgi_gpio_keys[] = {
+	{
+		.type	= EV_SW,
+		.code	= SW_LID,
+		.gpio	= CORGI_GPIO_SWA,
+		.desc	= "Lid close switch",
+		.debounce_interval = 500,
+	},
+	{
+		.type	= EV_SW,
+		.code	= SW_TABLET_MODE,
+		.gpio	= CORGI_GPIO_SWB,
+		.desc	= "Tablet mode switch",
+		.debounce_interval = 500,
+	},
+	{
+		.type	= EV_SW,
+		.code	= SW_HEADPHONE_INSERT,
+		.gpio	= CORGI_GPIO_AK_INT,
+		.desc	= "HeadPhone insert",
+		.debounce_interval = 500,
+	},
+};
+
+static struct gpio_keys_platform_data corgi_gpio_keys_platform_data = {
+	.buttons	= corgi_gpio_keys,
+	.nbuttons	= ARRAY_SIZE(corgi_gpio_keys),
+	.poll_interval	= 250,
+};
+
+static struct platform_device corgi_gpio_keys_device = {
+	.name	= "gpio-keys-polled",
+	.id	= -1,
+	.dev	= {
+		.platform_data	= &corgi_gpio_keys_platform_data,
+	},
+};
+
 /*
  * Corgi LEDs
  */
@@ -451,11 +494,23 @@ static struct platform_device corgi_audio_device = {
 static struct pxamci_platform_data corgi_mci_platform_data = {
 	.detect_delay_ms	= 250,
 	.ocr_mask		= MMC_VDD_32_33|MMC_VDD_33_34,
-	.gpio_card_detect	= CORGI_GPIO_nSD_DETECT,
-	.gpio_card_ro		= CORGI_GPIO_nSD_WP,
-	.gpio_power		= CORGI_GPIO_SD_PWR,
 };
 
+static struct gpiod_lookup_table corgi_mci_gpio_table = {
+	.dev_id = "pxa2xx-mci.0",
+	.table = {
+		/* Card detect on GPIO 9 */
+		GPIO_LOOKUP("gpio-pxa", CORGI_GPIO_nSD_DETECT,
+			    "cd", GPIO_ACTIVE_LOW),
+		/* Write protect on GPIO 7 */
+		GPIO_LOOKUP("gpio-pxa", CORGI_GPIO_nSD_WP,
+			    "wp", GPIO_ACTIVE_LOW),
+		/* Power on GPIO 33 */
+		GPIO_LOOKUP("gpio-pxa", CORGI_GPIO_SD_PWR,
+			    "power", GPIO_ACTIVE_HIGH),
+		{ },
+	},
+};
 
 /*
  * Irda
@@ -474,8 +529,8 @@ static struct pxa2xx_udc_mach_info udc_info __initdata = {
 	.gpio_pullup		= CORGI_GPIO_USB_PULLUP,
 };
 
-#if defined(CONFIG_SPI_PXA2XX) || defined(CONFIG_SPI_PXA2XX_MASTER)
-static struct pxa2xx_spi_master corgi_spi_info = {
+#if IS_ENABLED(CONFIG_SPI_PXA2XX)
+static struct pxa2xx_spi_controller corgi_spi_info = {
 	.num_chipselect	= 3,
 };
 
@@ -564,24 +619,6 @@ static void __init corgi_init_spi(void)
 static inline void corgi_init_spi(void) {}
 #endif
 
-static struct mtd_partition sharpsl_nand_partitions[] = {
-	{
-		.name = "System Area",
-		.offset = 0,
-		.size = 7 * 1024 * 1024,
-	},
-	{
-		.name = "Root Filesystem",
-		.offset = 7 * 1024 * 1024,
-		.size = 25 * 1024 * 1024,
-	},
-	{
-		.name = "Home Filesystem",
-		.offset = MTDPART_OFS_APPEND,
-		.size = MTDPART_SIZ_FULL,
-	},
-};
-
 static uint8_t scan_ff_pattern[] = { 0xff, 0xff };
 
 static struct nand_bbt_descr sharpsl_bbt = {
@@ -591,10 +628,16 @@ static struct nand_bbt_descr sharpsl_bbt = {
 	.pattern = scan_ff_pattern
 };
 
+static const char * const probes[] = {
+	"cmdlinepart",
+	"ofpart",
+	"sharpslpart",
+	NULL,
+};
+
 static struct sharpsl_nand_platform_data sharpsl_nand_platform_data = {
 	.badblock_pattern	= &sharpsl_bbt,
-	.partitions		= sharpsl_nand_partitions,
-	.nr_partitions		= ARRAY_SIZE(sharpsl_nand_partitions),
+	.part_parsers		= probes,
 };
 
 static struct resource sharpsl_nand_resources[] = {
@@ -646,6 +689,7 @@ static struct platform_device sharpsl_rom_device = {
 static struct platform_device *devices[] __initdata = {
 	&corgiscoop_device,
 	&corgifb_device,
+	&corgi_gpio_keys_device,
 	&corgikbd_device,
 	&corgiled_device,
 	&corgi_audio_device,
@@ -700,6 +744,7 @@ static void __init corgi_init(void)
 	corgi_init_spi();
 
  	pxa_set_udc_info(&udc_info);
+	gpiod_add_lookup_table(&corgi_mci_gpio_table);
 	pxa_set_mci_info(&corgi_mci_platform_data);
 	pxa_set_ficp_info(&corgi_ficp_platform_data);
 	pxa_set_i2c_info(NULL);
@@ -707,22 +752,18 @@ static void __init corgi_init(void)
 
 	platform_scoop_config = &corgi_pcmcia_config;
 
-	if (machine_is_husky())
-		sharpsl_nand_partitions[1].size = 53 * 1024 * 1024;
-
 	platform_add_devices(devices, ARRAY_SIZE(devices));
+
+	regulator_has_full_constraints();
 }
 
-static void __init fixup_corgi(struct tag *tags, char **cmdline,
-			       struct meminfo *mi)
+static void __init fixup_corgi(struct tag *tags, char **cmdline)
 {
 	sharpsl_save_param();
-	mi->nr_banks=1;
-	mi->bank[0].start = 0xa0000000;
 	if (machine_is_corgi())
-		mi->bank[0].size = (32*1024*1024);
+		memblock_add(0xa0000000, SZ_32M);
 	else
-		mi->bank[0].size = (64*1024*1024);
+		memblock_add(0xa0000000, SZ_64M);
 }
 
 #ifdef CONFIG_MACH_CORGI

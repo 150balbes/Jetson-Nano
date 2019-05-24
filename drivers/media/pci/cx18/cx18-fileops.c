@@ -15,11 +15,6 @@
  *  but WITHOUT ANY WARRANTY; without even the implied warranty of
  *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  *  GNU General Public License for more details.
- *
- *  You should have received a copy of the GNU General Public License
- *  along with this program; if not, write to the Free Software
- *  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
- *  02111-1307  USA
  */
 
 #include "cx18-driver.h"
@@ -34,6 +29,7 @@
 #include "cx18-controls.h"
 #include "cx18-ioctl.h"
 #include "cx18-cards.h"
+#include <media/v4l2-event.h>
 
 /* This function tries to claim the stream for a specific file descriptor.
    If no one else is using this stream then the stream is claimed and
@@ -48,8 +44,7 @@ int cx18_claim_stream(struct cx18_open_id *id, int type)
 
 	/* Nothing should ever try to directly claim the IDX stream */
 	if (type == CX18_ENC_STREAM_TYPE_IDX) {
-		CX18_WARN("MPEG Index stream cannot be claimed "
-			  "directly, but something tried.\n");
+		CX18_WARN("MPEG Index stream cannot be claimed directly, but something tried.\n");
 		return -EINVAL;
 	}
 
@@ -408,7 +403,7 @@ static size_t cx18_copy_mdl_to_user(struct cx18_stream *s,
 		tot_written += rc;
 
 		if (stop ||	/* Forced stopping point for VBI insertion */
-		    tot_written >= ucount ||	/* Reader request statisfied */
+		    tot_written >= ucount ||	/* Reader request satisfied */
 		    mdl->curr_buf->readpos < mdl->curr_buf->bytesused ||
 		    mdl->readpos >= mdl->bytesused) /* MDL buffers drained */
 			break;
@@ -607,15 +602,18 @@ ssize_t cx18_v4l2_read(struct file *filp, char __user *buf, size_t count,
 	return cx18_read_pos(s, buf, count, pos, filp->f_flags & O_NONBLOCK);
 }
 
-unsigned int cx18_v4l2_enc_poll(struct file *filp, poll_table *wait)
+__poll_t cx18_v4l2_enc_poll(struct file *filp, poll_table *wait)
 {
+	__poll_t req_events = poll_requested_events(wait);
 	struct cx18_open_id *id = file2id(filp);
 	struct cx18 *cx = id->cx;
 	struct cx18_stream *s = &cx->streams[id->type];
 	int eof = test_bit(CX18_F_S_STREAMOFF, &s->s_flags);
+	__poll_t res = 0;
 
 	/* Start a capture if there is none */
-	if (!eof && !test_bit(CX18_F_S_STREAMING, &s->s_flags)) {
+	if (!eof && !test_bit(CX18_F_S_STREAMING, &s->s_flags) &&
+			(req_events & (EPOLLIN | EPOLLRDNORM))) {
 		int rc;
 
 		mutex_lock(&cx->serialize_lock);
@@ -624,29 +622,34 @@ unsigned int cx18_v4l2_enc_poll(struct file *filp, poll_table *wait)
 		if (rc) {
 			CX18_DEBUG_INFO("Could not start capture for %s (%d)\n",
 					s->name, rc);
-			return POLLERR;
+			return EPOLLERR;
 		}
 		CX18_DEBUG_FILE("Encoder poll started capture\n");
 	}
 
 	if ((s->vb_type == V4L2_BUF_TYPE_VIDEO_CAPTURE) &&
 		(id->type == CX18_ENC_STREAM_TYPE_YUV)) {
-		int videobuf_poll = videobuf_poll_stream(filp, &s->vbuf_q, wait);
-                if (eof && videobuf_poll == POLLERR)
-                        return POLLHUP;
-                else
-                        return videobuf_poll;
+		__poll_t videobuf_poll = videobuf_poll_stream(filp, &s->vbuf_q, wait);
+
+		if (v4l2_event_pending(&id->fh))
+			res |= EPOLLPRI;
+		if (eof && videobuf_poll == EPOLLERR)
+			return res | EPOLLHUP;
+		return res | videobuf_poll;
 	}
 
 	/* add stream's waitq to the poll list */
 	CX18_DEBUG_HI_FILE("Encoder poll\n");
-	poll_wait(filp, &s->waitq, wait);
+	if (v4l2_event_pending(&id->fh))
+		res |= EPOLLPRI;
+	else
+		poll_wait(filp, &s->waitq, wait);
 
 	if (atomic_read(&s->q_full.depth))
-		return POLLIN | POLLRDNORM;
+		return res | EPOLLIN | EPOLLRDNORM;
 	if (eof)
-		return POLLHUP;
-	return 0;
+		return res | EPOLLHUP;
+	return res;
 }
 
 int cx18_v4l2_mmap(struct file *file, struct vm_area_struct *vma)
@@ -681,9 +684,9 @@ int cx18_v4l2_mmap(struct file *file, struct vm_area_struct *vma)
 	return -EINVAL;
 }
 
-void cx18_vb_timeout(unsigned long data)
+void cx18_vb_timeout(struct timer_list *t)
 {
-	struct cx18_stream *s = (struct cx18_stream *)data;
+	struct cx18_stream *s = from_timer(s, t, vb_timeout);
 	struct cx18_videobuf_buffer *buf;
 	unsigned long flags;
 
@@ -719,8 +722,7 @@ void cx18_stop_capture(struct cx18_open_id *id, int gop_end)
 			/* Stop internal use associated VBI and IDX streams */
 			if (test_bit(CX18_F_S_STREAMING, &s_vbi->s_flags) &&
 			    !test_bit(CX18_F_S_APPL_IO, &s_vbi->s_flags)) {
-				CX18_DEBUG_INFO("close stopping embedded VBI "
-						"capture\n");
+				CX18_DEBUG_INFO("close stopping embedded VBI capture\n");
 				cx18_stop_v4l2_encode_stream(s_vbi, 0);
 			}
 			if (test_bit(CX18_F_S_STREAMING, &s_idx->s_flags)) {
@@ -760,7 +762,7 @@ int cx18_v4l2_close(struct file *filp)
 		/* Mark that the radio is no longer in use */
 		clear_bit(CX18_F_I_RADIO_USER, &cx->i_flags);
 		/* Switch tuner to TV */
-		cx18_call_all(cx, core, s_std, cx->std);
+		cx18_call_all(cx, video, s_std, cx->std);
 		/* Select correct audio input (i.e. TV tuner or Line in) */
 		cx18_audio_set_io(cx);
 		if (atomic_read(&cx->ana_capturing) > 0) {
@@ -797,7 +799,7 @@ static int cx18_serialized_open(struct cx18_stream *s, struct file *filp)
 		CX18_DEBUG_WARN("nomem on v4l2 open\n");
 		return -ENOMEM;
 	}
-	v4l2_fh_init(&item->fh, s->video_dev);
+	v4l2_fh_init(&item->fh, &s->video_dev);
 
 	item->cx = cx;
 	item->type = s->type;

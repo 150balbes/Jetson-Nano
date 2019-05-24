@@ -18,8 +18,9 @@
 #include <linux/delay.h>
 #include <linux/irq.h>
 #include <linux/input.h>
+#include <linux/pwm.h>
 #include <linux/pwm_backlight.h>
-#include <linux/gpio.h>
+#include <linux/gpio/machine.h>
 #include <linux/input/matrix_keypad.h>
 #include <linux/ucb1400.h>
 #include <linux/power_supply.h>
@@ -31,13 +32,13 @@
 #include <asm/mach/arch.h>
 #include <asm/mach/map.h>
 
-#include <mach/pxa25x.h>
+#include "pxa25x.h"
 #include <mach/audio.h>
 #include <mach/palmtc.h>
 #include <linux/platform_data/mmc-pxamci.h>
 #include <linux/platform_data/video-pxafb.h>
 #include <linux/platform_data/irda-pxaficp.h>
-#include <mach/udc.h>
+#include "udc.h"
 
 #include "generic.h"
 #include "devices.h"
@@ -119,14 +120,25 @@ static unsigned long palmtc_pin_config[] __initdata = {
 #if defined(CONFIG_MMC_PXA) || defined(CONFIG_MMC_PXA_MODULE)
 static struct pxamci_platform_data palmtc_mci_platform_data = {
 	.ocr_mask		= MMC_VDD_32_33 | MMC_VDD_33_34,
-	.gpio_power		= GPIO_NR_PALMTC_SD_POWER,
-	.gpio_card_ro		= GPIO_NR_PALMTC_SD_READONLY,
-	.gpio_card_detect	= GPIO_NR_PALMTC_SD_DETECT_N,
 	.detect_delay_ms	= 200,
+};
+
+static struct gpiod_lookup_table palmtc_mci_gpio_table = {
+	.dev_id = "pxa2xx-mci.0",
+	.table = {
+		GPIO_LOOKUP("gpio-pxa", GPIO_NR_PALMTC_SD_DETECT_N,
+			    "cd", GPIO_ACTIVE_LOW),
+		GPIO_LOOKUP("gpio-pxa", GPIO_NR_PALMTC_SD_READONLY,
+			    "wp", GPIO_ACTIVE_LOW),
+		GPIO_LOOKUP("gpio-pxa", GPIO_NR_PALMTC_SD_POWER,
+			    "power", GPIO_ACTIVE_HIGH),
+		{ },
+	},
 };
 
 static void __init palmtc_mmc_init(void)
 {
+	gpiod_add_lookup_table(&palmtc_mci_gpio_table);
 	pxa_set_mci_info(&palmtc_mci_platform_data);
 }
 #else
@@ -166,11 +178,14 @@ static inline void palmtc_keys_init(void) {}
  * Backlight
  ******************************************************************************/
 #if defined(CONFIG_BACKLIGHT_PWM) || defined(CONFIG_BACKLIGHT_PWM_MODULE)
+static struct pwm_lookup palmtc_pwm_lookup[] = {
+	PWM_LOOKUP("pxa25x-pwm.1", 0, "pwm-backlight.0", NULL, PALMTC_PERIOD_NS,
+		   PWM_POLARITY_NORMAL),
+};
+
 static struct platform_pwm_backlight_data palmtc_backlight_data = {
-	.pwm_id		= 1,
 	.max_brightness	= PALMTC_MAX_INTENSITY,
 	.dft_brightness	= PALMTC_MAX_INTENSITY,
-	.pwm_period_ns	= PALMTC_PERIOD_NS,
 	.enable_gpio	= GPIO_NR_PALMTC_BL_POWER,
 };
 
@@ -184,6 +199,7 @@ static struct platform_device palmtc_backlight = {
 
 static void __init palmtc_pwm_init(void)
 {
+	pwm_add_table(palmtc_pwm_lookup, ARRAY_SIZE(palmtc_pwm_lookup));
 	platform_device_register(&palmtc_backlight);
 }
 #else

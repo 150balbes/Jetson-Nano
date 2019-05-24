@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-2.0
 obj-$(CONFIG_ATH5K)		+= ath5k/
 obj-$(CONFIG_ATH9K_HW)		+= ath9k/
 obj-$(CONFIG_CARL9170)		+= carl9170/
@@ -17,4 +18,6 @@ ath-objs :=	main.o \
 		dfs_pri_detector.o
 
 ath-$(CONFIG_ATH_DEBUG) += debug.o
-ccflags-y += -D__CHECK_ENDIAN__
+ath-$(CONFIG_ATH_TRACEPOINTS) += trace.o
+
+CFLAGS_trace.o := -I$(src)

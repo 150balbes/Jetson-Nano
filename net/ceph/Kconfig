@@ -3,6 +3,7 @@ config CEPH_LIB
 	depends on INET
 	select LIBCRC32C
 	select CRYPTO_AES
+	select CRYPTO_CBC
 	select CRYPTO
 	select KEYS
 	default n
@@ -40,4 +41,3 @@ config CEPH_LIB_USE_DNS_RESOLVER
 	  Documentation/networking/dns_resolver.txt
 
 	  If unsure, say N.
-

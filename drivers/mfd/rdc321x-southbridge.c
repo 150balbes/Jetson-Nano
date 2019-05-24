@@ -19,7 +19,6 @@
  * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  *
  */
-#include <linux/init.h>
 #include <linux/module.h>
 #include <linux/kernel.h>
 #include <linux/platform_device.h>
@@ -39,7 +38,7 @@ static struct resource rdc321x_wdt_resource[] = {
 };
 
 static struct rdc321x_gpio_pdata rdc321x_gpio_pdata = {
-	.max_gpios	= RDC321X_MAX_GPIO,
+	.max_gpios	= RDC321X_NUM_GPIO,
 };
 
 static struct resource rdc321x_gpio_resources[] = {
@@ -86,14 +85,10 @@ static int rdc321x_sb_probe(struct pci_dev *pdev,
 	rdc321x_gpio_pdata.sb_pdev = pdev;
 	rdc321x_wdt_pdata.sb_pdev = pdev;
 
-	return mfd_add_devices(&pdev->dev, -1,
-			       rdc321x_sb_cells, ARRAY_SIZE(rdc321x_sb_cells),
-			       NULL, 0, NULL);
-}
-
-static void rdc321x_sb_remove(struct pci_dev *pdev)
-{
-	mfd_remove_devices(&pdev->dev);
+	return devm_mfd_add_devices(&pdev->dev, -1,
+				    rdc321x_sb_cells,
+				    ARRAY_SIZE(rdc321x_sb_cells),
+				    NULL, 0, NULL);
 }
 
 static const struct pci_device_id rdc321x_sb_table[] = {
@@ -106,7 +101,6 @@ static struct pci_driver rdc321x_sb_driver = {
 	.name		= "RDC321x Southbridge",
 	.id_table	= rdc321x_sb_table,
 	.probe		= rdc321x_sb_probe,
-	.remove		= rdc321x_sb_remove,
 };
 
 module_pci_driver(rdc321x_sb_driver);

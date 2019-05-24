@@ -1,9 +1,10 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _IOP13XX_HW_H_
 #define _IOP13XX_HW_H_
 
 #ifndef __ASSEMBLY__
 
-#include <linux/reboot.h>
+enum reboot_mode;
 
 /* The ATU offsets can change based on the strapping */
 extern u32 iop13xx_atux_pmmr_offset;

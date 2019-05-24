@@ -13,7 +13,7 @@
  * more details.
  */
 
-#include <linux/gpio.h>
+#include <linux/gpio/driver.h>
 
 /* VT8500 has no enable register in the extgpio bank. */
 #define NO_REG	0xFFFF
@@ -76,4 +76,3 @@ struct wmt_pinctrl_data {
 
 int wmt_pinctrl_probe(struct platform_device *pdev,
 		      struct wmt_pinctrl_data *data);
-int wmt_pinctrl_remove(struct platform_device *pdev);

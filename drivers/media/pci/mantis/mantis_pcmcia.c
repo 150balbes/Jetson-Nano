@@ -25,11 +25,11 @@
 #include <linux/interrupt.h>
 #include <asm/io.h>
 
-#include "dmxdev.h"
-#include "dvbdev.h"
-#include "dvb_demux.h"
-#include "dvb_frontend.h"
-#include "dvb_net.h"
+#include <media/dmxdev.h>
+#include <media/dvbdev.h>
+#include <media/dvb_demux.h>
+#include <media/dvb_frontend.h>
+#include <media/dvb_net.h>
 
 #include "mantis_common.h"
 #include "mantis_link.h" /* temporary due to physical layer stuff */
@@ -89,7 +89,7 @@ int mantis_pcmcia_init(struct mantis_ca *ca)
 
 	u32 gpif_stat, card_stat;
 
-	mmwrite(mmread(MANTIS_INT_MASK) | MANTIS_INT_IRQ0, MANTIS_INT_MASK);
+	mantis_unmask_ints(mantis, MANTIS_INT_IRQ0);
 	gpif_stat = mmread(MANTIS_GPIF_STATUS);
 	card_stat = mmread(MANTIS_GPIF_IRQCFG);
 
@@ -117,5 +117,5 @@ void mantis_pcmcia_exit(struct mantis_ca *ca)
 	struct mantis_pci *mantis = ca->ca_priv;
 
 	mmwrite(mmread(MANTIS_GPIF_STATUS) & (~MANTIS_CARD_PLUGOUT | ~MANTIS_CARD_PLUGIN), MANTIS_GPIF_STATUS);
-	mmwrite(mmread(MANTIS_INT_MASK) & ~MANTIS_INT_IRQ0, MANTIS_INT_MASK);
+	mantis_mask_ints(mantis, MANTIS_INT_IRQ0);
 }

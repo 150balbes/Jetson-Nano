@@ -15,7 +15,7 @@
 #include <linux/mv643xx_eth.h>
 #include <linux/timex.h>
 #include <linux/serial_reg.h>
-#include <mach/orion5x.h>
+#include "orion5x.h"
 #include "tsx09-common.h"
 #include "common.h"
 
@@ -101,9 +101,7 @@ static int __init qnap_tsx09_check_mac_addr(const char *addr_str)
 		addr[i] = byte;
 	}
 
-	printk(KERN_INFO "tsx09: found ethernet mac address ");
-	for (i = 0; i < 6; i++)
-		printk("%.2x%s", addr[i], (i < 5) ? ":" : ".\n");
+	printk(KERN_INFO "tsx09: found ethernet mac address %pM\n", addr);
 
 	memcpy(qnap_tsx09_eth_data.mac_addr, addr, 6);
 

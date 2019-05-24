@@ -13,7 +13,7 @@
 	model = "TI OMAP3430 SDP";
 	compatible = "ti,omap3430-sdp", "ti,omap3";
 
-	memory {
+	memory@80000000 {
 		device_type = "memory";
 		reg = <0x80000000 0x10000000>; /* 256 MB */
 	};
@@ -33,7 +33,11 @@
 
 &mmc1 {
 	vmmc-supply = <&vmmc1>;
-	vmmc_aux-supply = <&vsim>;
+	vqmmc-supply = <&vsim>;
+	/*
+	 * S6-3 must be in ON position for 8 bit mode to function
+	 * Else, use 4 bit mode
+	 */
 	bus-width = <8>;
 };
 
@@ -47,8 +51,8 @@
 
 &gpmc {
 	ranges = <0 0 0x10000000 0x08000000>,
-		 <1 0 0x28000000 0x08000000>,
-		 <2 0 0x20000000 0x10000000>;
+		 <1 0 0x28000000 0x1000000>,	/* CS1: 16MB for NAND */
+		 <2 0 0x20000000 0x1000000>;	/* CS2: 16MB for OneNAND */
 
 	nor@0,0 {
 		compatible = "cfi-flash";
@@ -99,13 +103,16 @@
 	};
 
 	nand@1,0 {
+		compatible = "ti,omap2-nand";
+		reg = <0 0 4>; /* CS0, offset 0, IO size 4 */
+		interrupt-parent = <&gpmc>;
+		interrupts = <0 IRQ_TYPE_NONE>, /* fifoevent */
+			     <1 IRQ_TYPE_NONE>;	/* termcount */
 		linux,mtd-name= "micron,mt29f1g08abb";
 		#address-cells = <1>;
 		#size-cells = <1>;
-		reg = <1 0 0x08000000>;
-		nand-bus-width = <8>;
-
 		ti,nand-ecc-opt = "sw";
+		nand-bus-width = <8>;
 		gpmc,cs-on-ns = <0>;
 		gpmc,cs-rd-off-ns = <36>;
 		gpmc,cs-wr-off-ns = <36>;
@@ -147,7 +154,8 @@
 		linux,mtd-name= "samsung,kfm2g16q2m-deb8";
 		#address-cells = <1>;
 		#size-cells = <1>;
-		reg = <2 0 0x10000000>;
+		compatible = "ti,omap2-onenand";
+		reg = <2 0 0x20000>;	/* CS2, offset 0, IO size 4 */
 
 		gpmc,device-width = <2>;
 		gpmc,mux-add-data = <2>;

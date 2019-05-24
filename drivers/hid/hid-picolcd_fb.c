@@ -394,7 +394,8 @@ static int picolcd_set_par(struct fb_info *info)
 		return -EINVAL;
 
 	o_fb   = fbdata->bitmap;
-	tmp_fb = kmalloc(PICOLCDFB_SIZE*info->var.bits_per_pixel, GFP_KERNEL);
+	tmp_fb = kmalloc_array(PICOLCDFB_SIZE, info->var.bits_per_pixel,
+			       GFP_KERNEL);
 	if (!tmp_fb)
 		return -ENOMEM;
 
@@ -501,7 +502,7 @@ static ssize_t picolcd_fb_update_rate_store(struct device *dev,
 	return count;
 }
 
-static DEVICE_ATTR(fb_update_rate, 0666, picolcd_fb_update_rate_show,
+static DEVICE_ATTR(fb_update_rate, 0664, picolcd_fb_update_rate_show,
 		picolcd_fb_update_rate_store);
 
 /* initialize Framebuffer device */

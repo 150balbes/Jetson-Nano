@@ -20,9 +20,8 @@
 #ifndef M88RS2000_H
 #define M88RS2000_H
 
-#include <linux/kconfig.h>
 #include <linux/dvb/frontend.h>
-#include "dvb_frontend.h"
+#include <media/dvb_frontend.h>
 
 struct m88rs2000_config {
 	/* Demodulator i2c address */
@@ -41,7 +40,7 @@ enum {
 	CALL_IS_READ,
 };
 
-#if IS_ENABLED(CONFIG_DVB_M88RS2000)
+#if IS_REACHABLE(CONFIG_DVB_M88RS2000)
 extern struct dvb_frontend *m88rs2000_attach(
 	const struct m88rs2000_config *config, struct i2c_adapter *i2c);
 #else

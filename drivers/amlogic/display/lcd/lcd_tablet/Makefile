@@ -1,1 +1,0 @@
-obj-y += lcd_tablet.o lcd_drv.o

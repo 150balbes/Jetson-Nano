@@ -30,6 +30,7 @@
 #include <linux/ethtool.h>
 #include <linux/cache.h>
 #include <linux/crc32.h>
+#include <linux/crc32poly.h>
 #include <linux/mii.h>
 #include <linux/platform_device.h>
 #include <linux/delay.h>
@@ -1020,9 +1021,9 @@ static void ks_write_qmu(struct ks_net *ks, u8 *pdata, u16 len)
  * spin_lock_irqsave is required because tx and rx should be mutual exclusive.
  * So while tx is in-progress, prevent IRQ interrupt from happenning.
  */
-static int ks_start_xmit(struct sk_buff *skb, struct net_device *netdev)
+static netdev_tx_t ks_start_xmit(struct sk_buff *skb, struct net_device *netdev)
 {
-	int retv = NETDEV_TX_OK;
+	netdev_tx_t retv = NETDEV_TX_OK;
 	struct ks_net *ks = netdev_priv(netdev);
 
 	disable_irq(netdev->irq);
@@ -1078,7 +1079,7 @@ static void ks_stop_rx(struct ks_net *ks)
 
 }  /* ks_stop_rx */
 
-static unsigned long const ethernet_polynomial = 0x04c11db7U;
+static unsigned long const ethernet_polynomial = CRC32_POLY_BE;
 
 static unsigned long ether_gen_crc(int length, u8 *data)
 {
@@ -1285,7 +1286,6 @@ static const struct net_device_ops ks_netdev_ops = {
 	.ndo_start_xmit		= ks_start_xmit,
 	.ndo_set_mac_address	= ks_set_mac_address,
 	.ndo_set_rx_mode	= ks_set_rx_mode,
-	.ndo_change_mtu		= eth_change_mtu,
 	.ndo_validate_addr	= eth_validate_addr,
 };
 
@@ -1312,16 +1312,21 @@ static void ks_set_msglevel(struct net_device *netdev, u32 to)
 	ks->msg_enable = to;
 }
 
-static int ks_get_settings(struct net_device *netdev, struct ethtool_cmd *cmd)
+static int ks_get_link_ksettings(struct net_device *netdev,
+				 struct ethtool_link_ksettings *cmd)
 {
 	struct ks_net *ks = netdev_priv(netdev);
-	return mii_ethtool_gset(&ks->mii, cmd);
+
+	mii_ethtool_get_link_ksettings(&ks->mii, cmd);
+
+	return 0;
 }
 
-static int ks_set_settings(struct net_device *netdev, struct ethtool_cmd *cmd)
+static int ks_set_link_ksettings(struct net_device *netdev,
+				 const struct ethtool_link_ksettings *cmd)
 {
 	struct ks_net *ks = netdev_priv(netdev);
-	return mii_ethtool_sset(&ks->mii, cmd);
+	return mii_ethtool_set_link_ksettings(&ks->mii, cmd);
 }
 
 static u32 ks_get_link(struct net_device *netdev)
@@ -1340,10 +1345,10 @@ static const struct ethtool_ops ks_ethtool_ops = {
 	.get_drvinfo	= ks_get_drvinfo,
 	.get_msglevel	= ks_get_msglevel,
 	.set_msglevel	= ks_set_msglevel,
-	.get_settings	= ks_get_settings,
-	.set_settings	= ks_set_settings,
 	.get_link	= ks_get_link,
 	.nway_reset	= ks_nway_reset,
+	.get_link_ksettings = ks_get_link_ksettings,
+	.set_link_ksettings = ks_set_link_ksettings,
 };
 
 /* MII interface controls */
@@ -1519,7 +1524,8 @@ static int ks_hw_init(struct ks_net *ks)
 	ks->all_mcast = 0;
 	ks->mcast_lst_size = 0;
 
-	ks->frame_head_info = kmalloc(MHEADER_SIZE, GFP_KERNEL);
+	ks->frame_head_info = devm_kmalloc(&ks->pdev->dev, MHEADER_SIZE,
+					   GFP_KERNEL);
 	if (!ks->frame_head_info)
 		return false;
 
@@ -1537,44 +1543,41 @@ MODULE_DEVICE_TABLE(of, ks8851_ml_dt_ids);
 
 static int ks8851_probe(struct platform_device *pdev)
 {
-	int err = -ENOMEM;
+	int err;
 	struct resource *io_d, *io_c;
 	struct net_device *netdev;
 	struct ks_net *ks;
 	u16 id, data;
 	const char *mac;
 
-	io_d = platform_get_resource(pdev, IORESOURCE_MEM, 0);
-	io_c = platform_get_resource(pdev, IORESOURCE_MEM, 1);
-
-	if (!request_mem_region(io_d->start, resource_size(io_d), DRV_NAME))
-		goto err_mem_region;
-
-	if (!request_mem_region(io_c->start, resource_size(io_c), DRV_NAME))
-		goto err_mem_region1;
-
 	netdev = alloc_etherdev(sizeof(struct ks_net));
 	if (!netdev)
-		goto err_alloc_etherdev;
+		return -ENOMEM;
 
 	SET_NETDEV_DEV(netdev, &pdev->dev);
 
 	ks = netdev_priv(netdev);
 	ks->netdev = netdev;
-	ks->hw_addr = ioremap(io_d->start, resource_size(io_d));
 
-	if (!ks->hw_addr)
-		goto err_ioremap;
+	io_d = platform_get_resource(pdev, IORESOURCE_MEM, 0);
+	ks->hw_addr = devm_ioremap_resource(&pdev->dev, io_d);
+	if (IS_ERR(ks->hw_addr)) {
+		err = PTR_ERR(ks->hw_addr);
+		goto err_free;
+	}
 
-	ks->hw_addr_cmd = ioremap(io_c->start, resource_size(io_c));
-	if (!ks->hw_addr_cmd)
-		goto err_ioremap1;
+	io_c = platform_get_resource(pdev, IORESOURCE_MEM, 1);
+	ks->hw_addr_cmd = devm_ioremap_resource(&pdev->dev, io_c);
+	if (IS_ERR(ks->hw_addr_cmd)) {
+		err = PTR_ERR(ks->hw_addr_cmd);
+		goto err_free;
+	}
 
 	netdev->irq = platform_get_irq(pdev, 0);
 
 	if ((int)netdev->irq < 0) {
 		err = netdev->irq;
-		goto err_get_irq;
+		goto err_free;
 	}
 
 	ks->pdev = pdev;
@@ -1604,18 +1607,18 @@ static int ks8851_probe(struct platform_device *pdev)
 	if ((ks_rdreg16(ks, KS_CIDER) & ~CIDER_REV_MASK) != CIDER_ID) {
 		netdev_err(netdev, "failed to read device ID\n");
 		err = -ENODEV;
-		goto err_register;
+		goto err_free;
 	}
 
 	if (ks_read_selftest(ks)) {
 		netdev_err(netdev, "failed to read device ID\n");
 		err = -ENODEV;
-		goto err_register;
+		goto err_free;
 	}
 
 	err = register_netdev(netdev);
 	if (err)
-		goto err_register;
+		goto err_free;
 
 	platform_set_drvdata(pdev, netdev);
 
@@ -1663,32 +1666,17 @@ static int ks8851_probe(struct platform_device *pdev)
 
 err_pdata:
 	unregister_netdev(netdev);
-err_register:
-err_get_irq:
-	iounmap(ks->hw_addr_cmd);
-err_ioremap1:
-	iounmap(ks->hw_addr);
-err_ioremap:
+err_free:
 	free_netdev(netdev);
-err_alloc_etherdev:
-	release_mem_region(io_c->start, resource_size(io_c));
-err_mem_region1:
-	release_mem_region(io_d->start, resource_size(io_d));
-err_mem_region:
 	return err;
 }
 
 static int ks8851_remove(struct platform_device *pdev)
 {
 	struct net_device *netdev = platform_get_drvdata(pdev);
-	struct ks_net *ks = netdev_priv(netdev);
-	struct resource *iomem = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 
-	kfree(ks->frame_head_info);
 	unregister_netdev(netdev);
-	iounmap(ks->hw_addr);
 	free_netdev(netdev);
-	release_mem_region(iomem->start, resource_size(iomem));
 	return 0;
 
 }
@@ -1696,7 +1684,6 @@ static int ks8851_remove(struct platform_device *pdev)
 static struct platform_driver ks8851_platform_driver = {
 	.driver = {
 		.name = DRV_NAME,
-		.owner = THIS_MODULE,
 		.of_match_table	= of_match_ptr(ks8851_ml_dt_ids),
 	},
 	.probe = ks8851_probe,

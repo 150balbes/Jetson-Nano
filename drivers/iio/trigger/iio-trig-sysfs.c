@@ -96,7 +96,7 @@ static void iio_sysfs_trigger_work(struct irq_work *work)
 	struct iio_sysfs_trig *trig = container_of(work, struct iio_sysfs_trig,
 							work);
 
-	iio_trigger_poll(trig->trig, 0);
+	iio_trigger_poll(trig->trig);
 }
 
 static ssize_t iio_sysfs_trigger_poll(struct device *dev,
@@ -127,7 +127,6 @@ static const struct attribute_group *iio_sysfs_trigger_attr_groups[] = {
 };
 
 static const struct iio_trigger_ops iio_sysfs_trigger_ops = {
-	.owner = THIS_MODULE,
 };
 
 static int iio_sysfs_trigger_probe(int id)
@@ -135,6 +134,7 @@ static int iio_sysfs_trigger_probe(int id)
 	struct iio_sysfs_trig *t;
 	int ret;
 	bool foundit = false;
+
 	mutex_lock(&iio_sysfs_trig_list_mut);
 	list_for_each_entry(t, &iio_sysfs_trig_list, l)
 		if (id == t->id) {
@@ -173,7 +173,7 @@ static int iio_sysfs_trigger_probe(int id)
 	return 0;
 
 out2:
-	iio_trigger_put(t->trig);
+	iio_trigger_free(t->trig);
 free_t:
 	kfree(t);
 out1:
@@ -185,6 +185,7 @@ static int iio_sysfs_trigger_remove(int id)
 {
 	bool foundit = false;
 	struct iio_sysfs_trig *t;
+
 	mutex_lock(&iio_sysfs_trig_list_mut);
 	list_for_each_entry(t, &iio_sysfs_trig_list, l)
 		if (id == t->id) {
@@ -221,7 +222,7 @@ static void __exit iio_sysfs_trig_exit(void)
 }
 module_exit(iio_sysfs_trig_exit);
 
-MODULE_AUTHOR("Michael Hennerich <hennerich@blackfin.uclinux.org>");
+MODULE_AUTHOR("Michael Hennerich <michael.hennerich@analog.com>");
 MODULE_DESCRIPTION("Sysfs based trigger for the iio subsystem");
 MODULE_LICENSE("GPL v2");
 MODULE_ALIAS("platform:iio-trig-sysfs");

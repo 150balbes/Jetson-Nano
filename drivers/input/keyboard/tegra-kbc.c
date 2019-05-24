@@ -251,9 +251,9 @@ static void tegra_kbc_set_fifo_interrupt(struct tegra_kbc *kbc, bool enable)
 	writel(val, kbc->mmio + KBC_CONTROL_0);
 }
 
-static void tegra_kbc_keypress_timer(unsigned long data)
+static void tegra_kbc_keypress_timer(struct timer_list *t)
 {
-	struct tegra_kbc *kbc = (struct tegra_kbc *)data;
+	struct tegra_kbc *kbc = from_timer(kbc, t, timer);
 	unsigned long flags;
 	u32 val;
 	unsigned int i;
@@ -370,13 +370,16 @@ static int tegra_kbc_start(struct tegra_kbc *kbc)
 {
 	unsigned int debounce_cnt;
 	u32 val = 0;
+	int ret;
 
-	clk_prepare_enable(kbc->clk);
+	ret = clk_prepare_enable(kbc->clk);
+	if (ret)
+		return ret;
 
 	/* Reset the KBC controller to clear all previous status.*/
 	reset_control_assert(kbc->rst);
 	udelay(100);
-	reset_control_assert(kbc->rst);
+	reset_control_deassert(kbc->rst);
 	udelay(100);
 
 	tegra_kbc_config_pins(kbc);
@@ -517,7 +520,8 @@ static int tegra_kbc_parse_dt(struct tegra_kbc *kbc)
 	if (of_find_property(np, "nvidia,needs-ghost-filter", NULL))
 		kbc->use_ghost_filter = true;
 
-	if (of_find_property(np, "nvidia,wakeup-source", NULL))
+	if (of_property_read_bool(np, "wakeup-source") ||
+	    of_property_read_bool(np, "nvidia,wakeup-source")) /* legacy */
 		kbc->wakeup = true;
 
 	if (!of_get_property(np, "nvidia,kbc-row-pins", &proplen)) {
@@ -551,7 +555,7 @@ static int tegra_kbc_parse_dt(struct tegra_kbc *kbc)
 
 	if (!num_rows || !num_cols || ((num_rows + num_cols) > KBC_MAX_GPIO)) {
 		dev_err(kbc->dev,
-			"keypad rows/columns not porperly specified\n");
+			"keypad rows/columns not properly specified\n");
 		return -EINVAL;
 	}
 
@@ -651,7 +655,7 @@ static int tegra_kbc_probe(struct platform_device *pdev)
 		return -ENOMEM;
 	}
 
-	setup_timer(&kbc->timer, tegra_kbc_keypress_timer, (unsigned long)kbc);
+	timer_setup(&kbc->timer, tegra_kbc_keypress_timer, 0);
 
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	kbc->mmio = devm_ioremap_resource(&pdev->dev, res);
@@ -705,7 +709,7 @@ static int tegra_kbc_probe(struct platform_device *pdev)
 	input_set_drvdata(kbc->idev, kbc);
 
 	err = devm_request_irq(&pdev->dev, kbc->irq, tegra_kbc_isr,
-			  IRQF_NO_SUSPEND | IRQF_TRIGGER_HIGH, pdev->name, kbc);
+			       IRQF_TRIGGER_HIGH, pdev->name, kbc);
 	if (err) {
 		dev_err(&pdev->dev, "failed to request keyboard IRQ\n");
 		return err;
@@ -822,7 +826,6 @@ static struct platform_driver tegra_kbc_driver = {
 	.probe		= tegra_kbc_probe,
 	.driver	= {
 		.name	= "tegra-kbc",
-		.owner  = THIS_MODULE,
 		.pm	= &tegra_kbc_pm_ops,
 		.of_match_table = tegra_kbc_of_match,
 	},

@@ -37,10 +37,17 @@ struct rpc_buffer {
 	char	data[];
 };
 
-static inline int rpc_reply_expected(struct rpc_task *task)
+static inline int sock_is_loopback(struct sock *sk)
 {
-	return (task->tk_msg.rpc_proc != NULL) &&
-		(task->tk_msg.rpc_proc->p_decode != NULL);
+	struct dst_entry *dst;
+	int loopback = 0;
+	rcu_read_lock();
+	dst = rcu_dereference(sk->sk_dst_cache);
+	if (dst && dst->dev &&
+	    (dst->dev->features & NETIF_F_LOOPBACK))
+		loopback = 1;
+	rcu_read_unlock();
+	return loopback;
 }
 
 int svc_send_common(struct socket *sock, struct xdr_buf *xdr,
@@ -50,4 +57,3 @@ int svc_send_common(struct socket *sock, struct xdr_buf *xdr,
 int rpc_clients_notifier_register(void);
 void rpc_clients_notifier_unregister(void);
 #endif /* _NET_SUNRPC_SUNRPC_H */
-

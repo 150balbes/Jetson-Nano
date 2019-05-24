@@ -1,6 +1,6 @@
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 
-#include <media/saa7146_vv.h>
+#include <media/drv-intf/saa7146_vv.h>
 #include <linux/module.h>
 
 /****************************************************************************/
@@ -105,7 +105,7 @@ void saa7146_buffer_finish(struct saa7146_dev *dev,
 	}
 
 	q->curr->vb.state = state;
-	v4l2_get_timestamp(&q->curr->vb.ts);
+	q->curr->vb.ts = ktime_get_ns();
 	wake_up(&q->curr->vb.done);
 
 	q->curr = NULL;
@@ -163,9 +163,9 @@ void saa7146_buffer_next(struct saa7146_dev *dev,
 	}
 }
 
-void saa7146_buffer_timeout(unsigned long data)
+void saa7146_buffer_timeout(struct timer_list *t)
 {
-	struct saa7146_dmaqueue *q = (struct saa7146_dmaqueue*)data;
+	struct saa7146_dmaqueue *q = from_timer(q, t, timeout);
 	struct saa7146_dev *dev = q->dev;
 	unsigned long flags;
 
@@ -311,7 +311,6 @@ static int fops_mmap(struct file *file, struct vm_area_struct * vma)
 		}
 	default:
 		BUG();
-		return 0;
 	}
 
 	if (mutex_lock_interruptible(vdev->lock))
@@ -321,19 +320,19 @@ static int fops_mmap(struct file *file, struct vm_area_struct * vma)
 	return res;
 }
 
-static unsigned int __fops_poll(struct file *file, struct poll_table_struct *wait)
+static __poll_t __fops_poll(struct file *file, struct poll_table_struct *wait)
 {
 	struct video_device *vdev = video_devdata(file);
 	struct saa7146_fh *fh = file->private_data;
 	struct videobuf_buffer *buf = NULL;
 	struct videobuf_queue *q;
-	unsigned int res = v4l2_ctrl_poll(file, wait);
+	__poll_t res = v4l2_ctrl_poll(file, wait);
 
 	DEB_EE("file:%p, poll:%p\n", file, wait);
 
 	if (vdev->vfl_type == VFL_TYPE_VBI) {
 		if (fh->dev->ext_vv_data->capabilities & V4L2_CAP_SLICED_VBI_OUTPUT)
-			return res | POLLOUT | POLLWRNORM;
+			return res | EPOLLOUT | EPOLLWRNORM;
 		if( 0 == fh->vbi_q.streaming )
 			return res | videobuf_poll_stream(file, &fh->vbi_q, wait);
 		q = &fh->vbi_q;
@@ -347,23 +346,23 @@ static unsigned int __fops_poll(struct file *file, struct poll_table_struct *wai
 
 	if (!buf) {
 		DEB_D("buf == NULL!\n");
-		return res | POLLERR;
+		return res | EPOLLERR;
 	}
 
 	poll_wait(file, &buf->done, wait);
 	if (buf->state == VIDEOBUF_DONE || buf->state == VIDEOBUF_ERROR) {
 		DEB_D("poll succeeded!\n");
-		return res | POLLIN | POLLRDNORM;
+		return res | EPOLLIN | EPOLLRDNORM;
 	}
 
 	DEB_D("nothing to poll for, buf->state:%d\n", buf->state);
 	return res;
 }
 
-static unsigned int fops_poll(struct file *file, struct poll_table_struct *wait)
+static __poll_t fops_poll(struct file *file, struct poll_table_struct *wait)
 {
 	struct video_device *vdev = video_devdata(file);
-	unsigned int res;
+	__poll_t res;
 
 	mutex_lock(vdev->lock);
 	res = __fops_poll(file, wait);
@@ -399,7 +398,6 @@ static ssize_t fops_read(struct file *file, char __user *data, size_t count, lof
 		return -EINVAL;
 	default:
 		BUG();
-		return 0;
 	}
 }
 
@@ -423,7 +421,6 @@ static ssize_t fops_write(struct file *file, const char __user *data, size_t cou
 		return -EINVAL;
 	default:
 		BUG();
-		return -EINVAL;
 	}
 }
 
@@ -520,26 +517,26 @@ int saa7146_vv_init(struct saa7146_dev* dev, struct saa7146_ext_vv *ext_vv)
 	   configuration data) */
 	dev->ext_vv_data = ext_vv;
 
-	vv->d_clipping.cpu_addr = pci_alloc_consistent(dev->pci, SAA7146_CLIPPING_MEM, &vv->d_clipping.dma_handle);
+	vv->d_clipping.cpu_addr =
+		pci_zalloc_consistent(dev->pci, SAA7146_CLIPPING_MEM,
+				      &vv->d_clipping.dma_handle);
 	if( NULL == vv->d_clipping.cpu_addr ) {
 		ERR("out of memory. aborting.\n");
 		kfree(vv);
 		v4l2_ctrl_handler_free(hdl);
 		return -1;
 	}
-	memset(vv->d_clipping.cpu_addr, 0x0, SAA7146_CLIPPING_MEM);
 
 	saa7146_video_uops.init(dev,vv);
 	if (dev->ext_vv_data->capabilities & V4L2_CAP_VBI_CAPTURE)
 		saa7146_vbi_uops.init(dev,vv);
 
-	fmt = &vv->ov_fb.fmt;
-	fmt->width = vv->standard->h_max_out;
-	fmt->height = vv->standard->v_max_out;
-	fmt->pixelformat = V4L2_PIX_FMT_RGB565;
-	fmt->bytesperline = 2 * fmt->width;
-	fmt->sizeimage = fmt->bytesperline * fmt->height;
-	fmt->colorspace = V4L2_COLORSPACE_SRGB;
+	vv->ov_fb.fmt.width = vv->standard->h_max_out;
+	vv->ov_fb.fmt.height = vv->standard->v_max_out;
+	vv->ov_fb.fmt.pixelformat = V4L2_PIX_FMT_RGB565;
+	vv->ov_fb.fmt.bytesperline = 2 * vv->ov_fb.fmt.width;
+	vv->ov_fb.fmt.sizeimage = vv->ov_fb.fmt.bytesperline * vv->ov_fb.fmt.height;
+	vv->ov_fb.fmt.colorspace = V4L2_COLORSPACE_SRGB;
 
 	fmt = &vv->video_fmt;
 	fmt->width = 384;
@@ -562,7 +559,7 @@ int saa7146_vv_init(struct saa7146_dev* dev, struct saa7146_ext_vv *ext_vv)
 	vbi->start[1] = 312;
 	vbi->count[1] = 16;
 
-	init_timer(&vv->vbi_read_timeout);
+	timer_setup(&vv->vbi_read_timeout, NULL, 0);
 
 	vv->ov_fb.capability = V4L2_FBUF_CAP_LIST_CLIPPING;
 	vv->ov_fb.flags = V4L2_FBUF_FLAG_PRIMARY;
@@ -590,57 +587,45 @@ int saa7146_vv_release(struct saa7146_dev* dev)
 }
 EXPORT_SYMBOL_GPL(saa7146_vv_release);
 
-int saa7146_register_device(struct video_device **vid, struct saa7146_dev* dev,
+int saa7146_register_device(struct video_device *vfd, struct saa7146_dev *dev,
 			    char *name, int type)
 {
-	struct video_device *vfd;
 	int err;
 	int i;
 
 	DEB_EE("dev:%p, name:'%s', type:%d\n", dev, name, type);
-
-	// released by vfd->release
-	vfd = video_device_alloc();
-	if (vfd == NULL)
-		return -ENOMEM;
 
 	vfd->fops = &video_fops;
 	if (type == VFL_TYPE_GRABBER)
 		vfd->ioctl_ops = &dev->ext_vv_data->vid_ops;
 	else
 		vfd->ioctl_ops = &dev->ext_vv_data->vbi_ops;
-	vfd->release = video_device_release;
+	vfd->release = video_device_release_empty;
 	vfd->lock = &dev->v4l2_lock;
 	vfd->v4l2_dev = &dev->v4l2_dev;
 	vfd->tvnorms = 0;
-	set_bit(V4L2_FL_USE_FH_PRIO, &vfd->flags);
 	for (i = 0; i < dev->ext_vv_data->num_stds; i++)
 		vfd->tvnorms |= dev->ext_vv_data->stds[i].id;
-	strlcpy(vfd->name, name, sizeof(vfd->name));
+	strscpy(vfd->name, name, sizeof(vfd->name));
 	video_set_drvdata(vfd, dev);
 
 	err = video_register_device(vfd, type, -1);
 	if (err < 0) {
 		ERR("cannot register v4l2 device. skipping.\n");
-		video_device_release(vfd);
 		return err;
 	}
 
 	pr_info("%s: registered device %s [v4l2]\n",
 		dev->name, video_device_node_name(vfd));
-
-	*vid = vfd;
 	return 0;
 }
 EXPORT_SYMBOL_GPL(saa7146_register_device);
 
-int saa7146_unregister_device(struct video_device **vid, struct saa7146_dev* dev)
+int saa7146_unregister_device(struct video_device *vfd, struct saa7146_dev *dev)
 {
 	DEB_EE("dev:%p\n", dev);
 
-	video_unregister_device(*vid);
-	*vid = NULL;
-
+	video_unregister_device(vfd);
 	return 0;
 }
 EXPORT_SYMBOL_GPL(saa7146_unregister_device);

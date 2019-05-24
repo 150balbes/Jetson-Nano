@@ -66,13 +66,43 @@ config MTD_PHYSMAP_BANKWIDTH
 	  used internally by the CFI drivers.
 
 config MTD_PHYSMAP_OF
-	tristate "Flash device in physical memory map based on OF description"
-	depends on OF && (MTD_CFI || MTD_JEDECPROBE || MTD_ROM)
+	bool "Memory device in physical memory map based on OF description"
+	depends on OF && MTD_PHYSMAP
 	help
-	  This provides a 'mapping' driver which allows the NOR Flash and
-	  ROM driver code to communicate with chips which are mapped
+	  This provides a 'mapping' driver which allows the NOR Flash, ROM
+	  and RAM driver code to communicate with chips which are mapped
 	  physically into the CPU's memory. The mapping description here is
 	  taken from OF device tree.
+
+config MTD_PHYSMAP_VERSATILE
+	bool "ARM Versatile OF-based physical memory map handling"
+	depends on MTD_PHYSMAP_OF
+	depends on MFD_SYSCON
+	default y if (ARCH_INTEGRATOR || ARCH_VERSATILE || ARCH_REALVIEW)
+	help
+	  This provides some extra DT physmap parsing for the ARM Versatile
+	  platforms, basically to add a VPP (write protection) callback so
+	  the flash can be taken out of write protection.
+
+config MTD_PHYSMAP_GEMINI
+	bool "Cortina Gemini OF-based physical memory map handling"
+	depends on MTD_PHYSMAP_OF
+	depends on MFD_SYSCON
+	select MTD_COMPLEX_MAPPINGS
+	default ARCH_GEMINI
+	help
+	  This provides some extra DT physmap parsing for the Gemini
+	  platforms, some detection and setting up parallel mode on the
+	  external interface.
+
+config MTD_PHYSMAP_GPIO_ADDR
+	bool "GPIO-assisted Flash Chip Support"
+	depends on MTD_PHYSMAP
+	depends on GPIOLIB || COMPILE_TEST
+	depends on MTD_COMPLEX_MAPPINGS
+	help
+	  Extend the physmap driver to allow flashes to be partially
+	  physically addressed and assisted by GPIOs.
 
 config MTD_PMC_MSP_EVM
 	tristate "CFI Flash device mapped on PMC-Sierra MSP"
@@ -108,7 +138,7 @@ config MTD_SUN_UFLASH
 
 config MTD_SC520CDP
 	tristate "CFI Flash device mapped on AMD SC520 CDP"
-	depends on X86 && MTD_CFI
+	depends on (MELAN || COMPILE_TEST) && MTD_CFI
 	help
 	  The SC520 CDP board has two banks of CFI-compliant chips and one
 	  Dual-in-line JEDEC chip. This 'mapping' driver supports that
@@ -116,7 +146,7 @@ config MTD_SC520CDP
 
 config MTD_NETSC520
 	tristate "CFI Flash device mapped on AMD NetSc520"
-	depends on X86 && MTD_CFI
+	depends on (MELAN || COMPILE_TEST) && MTD_CFI
 	help
 	  This enables access routines for the flash chips on the AMD NetSc520
 	  demonstration board. If you have one of these boards and would like
@@ -124,7 +154,7 @@ config MTD_NETSC520
 
 config MTD_TS5500
 	tristate "JEDEC Flash device mapped on Technologic Systems TS-5500"
-	depends on X86
+	depends on TS5500 || COMPILE_TEST
 	select MTD_JEDECPROBE
 	select MTD_CFI_AMDSTD
 	help
@@ -187,13 +217,13 @@ config MTD_ICHXROM
 	  BE VERY CAREFUL.
 
 config MTD_ESB2ROM
-        tristate "BIOS flash chip on Intel ESB Controller Hub 2"
-        depends on X86 && MTD_JEDECPROBE && PCI
-        help
-          Support for treating the BIOS flash chip on ESB2 motherboards
-          as an MTD device - with this you can reprogram your BIOS.
+	tristate "BIOS flash chip on Intel ESB Controller Hub 2"
+	depends on X86 && MTD_JEDECPROBE && PCI
+	help
+	  Support for treating the BIOS flash chip on ESB2 motherboards
+	  as an MTD device - with this you can reprogram your BIOS.
 
-          BE VERY CAREFUL.
+	  BE VERY CAREFUL.
 
 config MTD_CK804XROM
 	tristate "BIOS flash chip on Nvidia CK804"
@@ -242,14 +272,14 @@ config MTD_L440GX
 
 config MTD_CFI_FLAGADM
 	tristate "CFI Flash device mapping on FlagaDM"
-	depends on 8xx && MTD_CFI
+	depends on PPC_8xx && MTD_CFI
 	help
 	  Mapping for the Flaga digital module. If you don't have one, ignore
 	  this setting.
 
 config MTD_SOLUTIONENGINE
 	tristate "CFI Flash device mapped on Hitachi SolutionEngine"
-	depends on SUPERH && SOLUTION_ENGINE && MTD_CFI && MTD_REDBOOT_PARTS
+	depends on SOLUTION_ENGINE && MTD_CFI && MTD_REDBOOT_PARTS
 	help
 	  This enables access to the flash chips on the Hitachi SolutionEngine and
 	  similar boards. Say 'Y' if you are building a kernel for such a board.
@@ -314,26 +344,6 @@ config MTD_PCMCIA_ANONYMOUS
 
 	  If unsure, say N.
 
-config MTD_BFIN_ASYNC
-	tristate "Blackfin BF533-STAMP Flash Chip Support"
-	depends on BFIN533_STAMP && MTD_CFI && MTD_COMPLEX_MAPPINGS
-	default y
-	help
-	  Map driver which allows for simultaneous utilization of
-	  ethernet and CFI parallel flash.
-
-	  If compiled as a module, it will be called bfin-async-flash.
-
-config MTD_GPIO_ADDR
-	tristate "GPIO-assisted Flash Chip Support"
-	depends on GPIOLIB
-	depends on MTD_COMPLEX_MAPPINGS
-	help
-	  Map driver which allows flashes to be partially physically addressed
-	  and assisted by GPIOs.
-
-	  If compiled as a module, it will be called gpio-addr-flash.
-
 config MTD_UCLINUX
 	bool "Generic uClinux RAM/ROM filesystem support"
 	depends on (MTD_RAM=y || MTD_ROM=y) && (!MMU || COLDFIRE)
@@ -389,14 +399,5 @@ config MTD_PISMO
 	  and/or MTD_PLATRAM according to the devices on your module.
 
 	  When built as a module, it will be called pismo.ko
-
-config MTD_LATCH_ADDR
-        tristate "Latch-assisted Flash Chip Support"
-        depends on MTD_COMPLEX_MAPPINGS
-        help
-          Map driver which allows flashes to be partially physically addressed
-          and have the upper address lines set by a board specific code.
-
-          If compiled as a module, it will be called latch-addr-flash.
 
 endmenu

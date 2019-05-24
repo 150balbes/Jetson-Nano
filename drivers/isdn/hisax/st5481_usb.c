@@ -267,8 +267,8 @@ int st5481_setup_usb(struct st5481_adapter *adapter)
 	}
 
 	// The descriptor is wrong for some early samples of the ST5481 chip
-	altsetting->endpoint[3].desc.wMaxPacketSize = __constant_cpu_to_le16(32);
-	altsetting->endpoint[4].desc.wMaxPacketSize = __constant_cpu_to_le16(32);
+	altsetting->endpoint[3].desc.wMaxPacketSize = cpu_to_le16(32);
+	altsetting->endpoint[4].desc.wMaxPacketSize = cpu_to_le16(32);
 
 	// Use alternative setting 3 on interface 0 to have 2B+D
 	if ((status = usb_set_interface(dev, 0, 3)) < 0) {
@@ -408,15 +408,10 @@ fill_isoc_urb(struct urb *urb, struct usb_device *dev,
 {
 	int k;
 
-	urb->dev = dev;
-	urb->pipe = pipe;
-	urb->interval = 1;
-	urb->transfer_buffer = buf;
+	usb_fill_int_urb(urb, dev, pipe, buf, num_packets * packet_size,
+			 complete, context, 1);
+
 	urb->number_of_packets = num_packets;
-	urb->transfer_buffer_length = num_packets * packet_size;
-	urb->actual_length = 0;
-	urb->complete = complete;
-	urb->context = context;
 	urb->transfer_flags = URB_ISO_ASAP;
 	for (k = 0; k < num_packets; k++) {
 		urb->iso_frame_desc[k].offset = packet_size * k;
@@ -527,7 +522,7 @@ static void usb_in_complete(struct urb *urb)
 				WARNING("receive out of memory\n");
 				break;
 			}
-			memcpy(skb_put(skb, status), in->rcvbuf, status);
+			skb_put_data(skb, in->rcvbuf, status);
 			in->hisax_if->l1l2(in->hisax_if, PH_DATA | INDICATION, skb);
 		} else if (status == -HDLC_CRC_ERROR) {
 			INFO("CRC error");

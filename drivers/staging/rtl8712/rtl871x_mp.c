@@ -1,19 +1,7 @@
+// SPDX-License-Identifier: GPL-2.0
 /******************************************************************************
  *
  * Copyright(c) 2007 - 2010 Realtek Corporation. All rights reserved.
- *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of version 2 of the GNU General Public License as
- * published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
- * more details.
- *
- * You should have received a copy of the GNU General Public License along with
- * this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110, USA
  *
  * Modifications for inclusion into the Linux staging tree are
  * Copyright(c) 2010 Larry Finger. All rights reserved.
@@ -53,9 +41,10 @@ static int init_mp_priv(struct mp_priv *pmp_priv)
 	_init_mp_priv_(pmp_priv);
 	_init_queue(&pmp_priv->free_mp_xmitqueue);
 	pmp_priv->pallocated_mp_xmitframe_buf = NULL;
-	pmp_priv->pallocated_mp_xmitframe_buf = _malloc(NR_MP_XMITFRAME *
-					 sizeof(struct mp_xmit_frame) + 4);
-	if (pmp_priv->pallocated_mp_xmitframe_buf == NULL) {
+	pmp_priv->pallocated_mp_xmitframe_buf = kmalloc(NR_MP_XMITFRAME *
+				sizeof(struct mp_xmit_frame) + 4,
+				GFP_ATOMIC);
+	if (!pmp_priv->pallocated_mp_xmitframe_buf) {
 		res = _FAIL;
 		goto _exit_init_mp_priv;
 	}
@@ -64,8 +53,8 @@ static int init_mp_priv(struct mp_priv *pmp_priv)
 			 ((addr_t)(pmp_priv->pallocated_mp_xmitframe_buf) & 3);
 	pmp_xmitframe = (struct mp_xmit_frame *)pmp_priv->pmp_xmtframe_buf;
 	for (i = 0; i < NR_MP_XMITFRAME; i++) {
-		_init_listhead(&(pmp_xmitframe->list));
-		list_insert_tail(&(pmp_xmitframe->list),
+		INIT_LIST_HEAD(&(pmp_xmitframe->list));
+		list_add_tail(&(pmp_xmitframe->list),
 				 &(pmp_priv->free_mp_xmitqueue.queue));
 		pmp_xmitframe->pkt = NULL;
 		pmp_xmitframe->frame_tag = MP_FRAMETAG;
@@ -80,9 +69,8 @@ _exit_init_mp_priv:
 
 static int free_mp_priv(struct mp_priv *pmp_priv)
 {
-	int res = 0;
 	kfree(pmp_priv->pallocated_mp_xmitframe_buf);
-	return res;
+	return 0;
 }
 
 void mp871xinit(struct _adapter *padapter)
@@ -146,6 +134,7 @@ u32 r8712_bb_reg_read(struct _adapter *pAdapter, u16 offset)
 	bb_val = fw_iocmd_read(pAdapter, iocmd);
 	if (shift != 0) {
 		u32 bb_val2 = 0;
+
 		bb_val >>= (shift * 8);
 		iocmd.value += 4;
 		bb_val2 = fw_iocmd_read(pAdapter, iocmd);
@@ -172,7 +161,7 @@ u8 r8712_bb_reg_write(struct _adapter *pAdapter, u16 offset, u32 value)
 		oldValue = r8712_bb_reg_read(pAdapter, iocmd.value);
 		oldValue &= (0xFFFFFFFF >> ((4 - shift) * 8));
 		value = oldValue | (newValue << (shift * 8));
-		if (fw_iocmd_write(pAdapter, iocmd, value) == false)
+		if (!fw_iocmd_write(pAdapter, iocmd, value))
 			return false;
 		iocmd.value += 4;
 		oldValue = r8712_bb_reg_read(pAdapter, iocmd.value);
@@ -186,14 +175,12 @@ u8 r8712_bb_reg_write(struct _adapter *pAdapter, u16 offset, u32 value)
 u32 r8712_rf_reg_read(struct _adapter *pAdapter, u8 path, u8 offset)
 {
 	u16 rf_addr = (path << 8) | offset;
-	u32 rf_data;
 	struct IOCMD_STRUCT iocmd;
 
 	iocmd.cmdclass	= IOCMD_CLASS_BB_RF;
 	iocmd.value	= rf_addr;
 	iocmd.index	= IOCMD_RF_READ_IDX;
-	rf_data = fw_iocmd_read(pAdapter, iocmd);
-	return rf_data;
+	return fw_iocmd_read(pAdapter, iocmd);
 }
 
 u8 r8712_rf_reg_write(struct _adapter *pAdapter, u8 path, u8 offset, u32 value)
@@ -212,19 +199,18 @@ static u32 bitshift(u32 bitmask)
 	u32 i;
 
 	for (i = 0; i <= 31; i++)
-		if (((bitmask>>i) &  0x1) == 1)
+		if (((bitmask >> i) &  0x1) == 1)
 			break;
 	return i;
 }
 
 static u32 get_bb_reg(struct _adapter *pAdapter, u16 offset, u32 bitmask)
 {
-	u32 org_value, bit_shift, new_value;
+	u32 org_value, bit_shift;
 
 	org_value = r8712_bb_reg_read(pAdapter, offset);
 	bit_shift = bitshift(bitmask);
-	new_value = (org_value & bitmask) >> bit_shift;
-	return new_value;
+	return (org_value & bitmask) >> bit_shift;
 }
 
 static u8 set_bb_reg(struct _adapter *pAdapter,
@@ -237,21 +223,21 @@ static u8 set_bb_reg(struct _adapter *pAdapter,
 	if (bitmask != bMaskDWord) {
 		org_value = r8712_bb_reg_read(pAdapter, offset);
 		bit_shift = bitshift(bitmask);
-		new_value = ((org_value & (~bitmask)) | (value << bit_shift));
-	} else
+		new_value = (org_value & (~bitmask)) | (value << bit_shift);
+	} else {
 		new_value = value;
+	}
 	return r8712_bb_reg_write(pAdapter, offset, new_value);
 }
 
 static u32 get_rf_reg(struct _adapter *pAdapter, u8 path, u8 offset,
 		      u32 bitmask)
 {
-	u32 org_value, bit_shift, new_value;
+	u32 org_value, bit_shift;
 
 	org_value = r8712_rf_reg_read(pAdapter, path, offset);
 	bit_shift = bitshift(bitmask);
-	new_value = (org_value & bitmask) >> bit_shift;
-	return new_value;
+	return (org_value & bitmask) >> bit_shift;
 }
 
 static u8 set_rf_reg(struct _adapter *pAdapter, u8 path, u8 offset, u32 bitmask,
@@ -262,9 +248,10 @@ static u8 set_rf_reg(struct _adapter *pAdapter, u8 path, u8 offset, u32 bitmask,
 	if (bitmask != bMaskDWord) {
 		org_value = r8712_rf_reg_read(pAdapter, path, offset);
 		bit_shift = bitshift(bitmask);
-		new_value = ((org_value & (~bitmask)) | (value << bit_shift));
-	} else
+		new_value = (org_value & (~bitmask)) | (value << bit_shift);
+	} else {
 		new_value = value;
+	}
 	return r8712_rf_reg_write(pAdapter, path, offset, new_value);
 }
 
@@ -281,12 +268,11 @@ void r8712_SetChannel(struct _adapter *pAdapter)
 	struct SetChannel_parm *pparm = NULL;
 	u16 code = GEN_CMD_CODE(_SetChannel);
 
-	pcmd = (struct cmd_obj *)_malloc(sizeof(struct cmd_obj));
-	if (pcmd == NULL)
+	pcmd = kmalloc(sizeof(*pcmd), GFP_ATOMIC);
+	if (!pcmd)
 		return;
-	pparm = (struct SetChannel_parm *)_malloc(sizeof(struct
-					 SetChannel_parm));
-	if (pparm == NULL) {
+	pparm = kmalloc(sizeof(*pparm), GFP_ATOMIC);
+	if (!pparm) {
 		kfree(pcmd);
 		return;
 	}
@@ -307,7 +293,8 @@ static void SetOFDMTxPower(struct _adapter *pAdapter, u8 TxPower)
 {
 	u32 TxAGC = 0;
 
-	TxAGC |= ((TxPower<<24)|(TxPower<<16)|(TxPower<<8)|TxPower);
+	TxAGC |= ((TxPower << 24) | (TxPower << 16) | (TxPower << 8) |
+		  TxPower);
 	set_bb_reg(pAdapter, rTxAGC_Rate18_06, bTxAGCRate18_06, TxAGC);
 	set_bb_reg(pAdapter, rTxAGC_Rate54_24, bTxAGCRate54_24, TxAGC);
 	set_bb_reg(pAdapter, rTxAGC_Mcs03_Mcs00, bTxAGCRateMCS3_MCS0, TxAGC);
@@ -319,6 +306,7 @@ static void SetOFDMTxPower(struct _adapter *pAdapter, u8 TxPower)
 void r8712_SetTxPower(struct _adapter *pAdapter)
 {
 	u8 TxPower = pAdapter->mppriv.curr_txpoweridx;
+
 	SetCCKTxPower(pAdapter, TxPower);
 	SetOFDMTxPower(pAdapter, TxPower);
 }
@@ -327,12 +315,12 @@ void r8712_SetTxAGCOffset(struct _adapter *pAdapter, u32 ulTxAGCOffset)
 {
 	u32 TxAGCOffset_B, TxAGCOffset_C, TxAGCOffset_D, tmpAGC;
 
-	TxAGCOffset_B = (ulTxAGCOffset&0x000000ff);
-	TxAGCOffset_C = ((ulTxAGCOffset&0x0000ff00)>>8);
-	TxAGCOffset_D = ((ulTxAGCOffset&0x00ff0000)>>16);
-	tmpAGC = (TxAGCOffset_D<<8 | TxAGCOffset_C<<4 | TxAGCOffset_B);
+	TxAGCOffset_B = ulTxAGCOffset & 0x000000ff;
+	TxAGCOffset_C = (ulTxAGCOffset & 0x0000ff00) >> 8;
+	TxAGCOffset_D = (ulTxAGCOffset & 0x00ff0000) >> 16;
+	tmpAGC = TxAGCOffset_D << 8 | TxAGCOffset_C << 4 | TxAGCOffset_B;
 	set_bb_reg(pAdapter, rFPGA0_TxGainStage,
-			(bXBTxAGC|bXCTxAGC|bXDTxAGC), tmpAGC);
+			(bXBTxAGC | bXCTxAGC | bXDTxAGC), tmpAGC);
 }
 
 void r8712_SetDataRate(struct _adapter *pAdapter)
@@ -376,9 +364,10 @@ void r8712_SwitchBandwidth(struct _adapter *pAdapter)
 		/* Use PHY_REG.txt default value. Do not need to change.
 		 * Correct the tx power for CCK rate in 40M.
 		 * Set Control channel to upper or lower. These settings are
-		 * required only for 40MHz */
+		 * required only for 40MHz
+		 */
 		set_bb_reg(pAdapter, rCCK0_System, bCCKSideBand,
-			   (HAL_PRIME_CHNL_OFFSET_DONT_CARE>>1));
+			   (HAL_PRIME_CHNL_OFFSET_DONT_CARE >> 1));
 		set_bb_reg(pAdapter, rOFDM1_LSTF, 0xC00,
 			   HAL_PRIME_CHNL_OFFSET_DONT_CARE);
 		set_bb_reg(pAdapter, rFPGA0_AnalogParameter2, bMaskDWord, 0x18);
@@ -491,12 +480,6 @@ void r8712_SwitchAntenna(struct _adapter *pAdapter)
 	set_bb_reg(pAdapter, rCCK0_AFESetting, bMaskByte3, cck_ant_sel_val);
 }
 
-void r8712_SetCrystalCap(struct _adapter *pAdapter)
-{
-	set_bb_reg(pAdapter, rFPGA0_AnalogParameter1, bXtalCap,
-		   pAdapter->mppriv.curr_crystalcap);
-}
-
 static void TriggerRFThermalMeter(struct _adapter *pAdapter)
 {
 	/* 0x24: RF Reg[6:5] */
@@ -505,11 +488,8 @@ static void TriggerRFThermalMeter(struct _adapter *pAdapter)
 
 static u32 ReadRFThermalMeter(struct _adapter *pAdapter)
 {
-	u32 ThermalValue = 0;
-
 	/* 0x24: RF Reg[4:0] */
-	ThermalValue = get_rf_reg(pAdapter, RF_PATH_A, RF_T_METER, 0x1F);
-	return ThermalValue;
+	return get_rf_reg(pAdapter, RF_PATH_A, RF_T_METER, 0x1F);
 }
 
 void r8712_GetThermalMeter(struct _adapter *pAdapter, u32 *value)
@@ -549,7 +529,8 @@ void r8712_SetSingleCarrierTx(struct _adapter *pAdapter, u8 bStart)
 
 void r8712_SetSingleToneTx(struct _adapter *pAdapter, u8 bStart)
 {
-	u8 rfPath = pAdapter->mppriv.curr_rfpath;
+	u8 rfPath;
+
 	switch (pAdapter->mppriv.antenna_tx) {
 	case ANTENNA_B:
 		rfPath = RF_PATH_B;

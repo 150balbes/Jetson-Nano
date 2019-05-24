@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 
 /* Microcode patches for the CPM as supplied by Motorola.
  * This is the one for IIC/SPI.  There is a newer one that
@@ -13,7 +14,6 @@
 #include <linux/mm.h>
 #include <linux/interrupt.h>
 #include <asm/irq.h>
-#include <asm/mpc8xx.h>
 #include <asm/page.h>
 #include <asm/pgtable.h>
 #include <asm/8xx_immap.h>

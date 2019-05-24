@@ -381,7 +381,7 @@ reset_hfcsx(struct IsdnCardState *cs)
 	Write_hfc(cs, HFCSX_INT_M1, cs->hw.hfcsx.int_m1);
 
 	/* Clear already pending ints */
-	if (Read_hfc(cs, HFCSX_INT_S1));
+	Read_hfc(cs, HFCSX_INT_S1);
 
 	Write_hfc(cs, HFCSX_STATES, HFCSX_LOAD_STATE | 2);	/* HFC ST 2 */
 	udelay(10);
@@ -411,15 +411,16 @@ reset_hfcsx(struct IsdnCardState *cs)
 	/* Finally enable IRQ output */
 	cs->hw.hfcsx.int_m2 = HFCSX_IRQ_ENABLE;
 	Write_hfc(cs, HFCSX_INT_M2, cs->hw.hfcsx.int_m2);
-	if (Read_hfc(cs, HFCSX_INT_S2));
+	Read_hfc(cs, HFCSX_INT_S2);
 }
 
 /***************************************************/
 /* Timer function called when kernel timer expires */
 /***************************************************/
 static void
-hfcsx_Timer(struct IsdnCardState *cs)
+hfcsx_Timer(struct timer_list *t)
 {
+	struct IsdnCardState *cs = from_timer(cs, t, hw.hfcsx.timer);
 	cs->hw.hfcsx.timer.expires = jiffies + 75;
 	/* WD RESET */
 /*      WriteReg(cs, HFCD_DATA, HFCD_CTMT, cs->hw.hfcsx.ctmt | 0x80);
@@ -674,7 +675,7 @@ receive_emsg(struct IsdnCardState *cs)
 					ptr--;
 					*ptr++ = '\n';
 					*ptr = 0;
-					HiSax_putstatus(cs, NULL, "%s", cs->dlog);
+					HiSax_putstatus(cs, NULL, cs->dlog);
 				} else
 					HiSax_putstatus(cs, "LogEcho: ", "warning Frame too big (%d)", skb->len);
 			}
@@ -860,7 +861,7 @@ hfcsx_interrupt(int intno, void *dev_id)
 /* timer callback for D-chan busy resolution. Currently no function */
 /********************************************************************/
 static void
-hfcsx_dbusy_timer(struct IsdnCardState *cs)
+hfcsx_dbusy_timer(struct timer_list *t)
 {
 }
 
@@ -1159,7 +1160,8 @@ hfcsx_l2l1(struct PStack *st, int pr, void *arg)
 	case (PH_PULL | INDICATION):
 		spin_lock_irqsave(&bcs->cs->lock, flags);
 		if (bcs->tx_skb) {
-			printk(KERN_WARNING "hfc_l2l1: this shouldn't happen\n");
+			printk(KERN_WARNING "%s: this shouldn't happen\n",
+			       __func__);
 		} else {
 //				test_and_set_bit(BC_FLG_BUSY, &bcs->Flag);
 			bcs->tx_skb = skb;
@@ -1286,7 +1288,7 @@ hfcsx_bh(struct work_struct *work)
 					cs->hw.hfcsx.int_m1 &= ~HFCSX_INTS_TIMER;
 					Write_hfc(cs, HFCSX_INT_M1, cs->hw.hfcsx.int_m1);
 					/* Clear already pending ints */
-					if (Read_hfc(cs, HFCSX_INT_S1));
+					Read_hfc(cs, HFCSX_INT_S1);
 
 					Write_hfc(cs, HFCSX_STATES, 4 | HFCSX_LOAD_STATE);
 					udelay(10);
@@ -1421,7 +1423,7 @@ int setup_hfcsx(struct IsdnCard *card)
 					}
 					card->para[1] = pnp_port_start(pnp_d, 0);
 					card->para[0] = pnp_irq(pnp_d, 0);
-					if (!card->para[0] || !card->para[1]) {
+					if (card->para[0] == -1 || !card->para[1]) {
 						printk(KERN_ERR "HFC PnP:some resources are missing %ld/%lx\n",
 						       card->para[0], card->para[1]);
 						pnp_disable_dev(pnp_d);
@@ -1494,9 +1496,7 @@ int setup_hfcsx(struct IsdnCard *card)
 	} else
 		return (0);	/* no valid card type */
 
-	cs->dbusytimer.function = (void *) hfcsx_dbusy_timer;
-	cs->dbusytimer.data = (long) cs;
-	init_timer(&cs->dbusytimer);
+	timer_setup(&cs->dbusytimer, hfcsx_dbusy_timer, 0);
 	INIT_WORK(&cs->tqueue, hfcsx_bh);
 	cs->readisac = NULL;
 	cs->writeisac = NULL;
@@ -1506,11 +1506,9 @@ int setup_hfcsx(struct IsdnCard *card)
 	cs->BC_Write_Reg = NULL;
 	cs->irq_func = &hfcsx_interrupt;
 
-	cs->hw.hfcsx.timer.function = (void *) hfcsx_Timer;
-	cs->hw.hfcsx.timer.data = (long) cs;
 	cs->hw.hfcsx.b_fifo_size = 0; /* fifo size still unknown */
 	cs->hw.hfcsx.cirm = ccd_sp_irqtab[cs->irq & 0xF]; /* RAM not evaluated */
-	init_timer(&cs->hw.hfcsx.timer);
+	timer_setup(&cs->hw.hfcsx.timer, hfcsx_Timer, 0);
 
 	reset_hfcsx(cs);
 	cs->cardmsg = &hfcsx_card_msg;

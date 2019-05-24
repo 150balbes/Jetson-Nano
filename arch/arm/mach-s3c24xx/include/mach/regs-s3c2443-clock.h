@@ -1,15 +1,11 @@
-/* arch/arm/mach-s3c2410/include/mach/regs-s3c2443-clock.h
- *
+/* SPDX-License-Identifier: GPL-2.0 */
+/*
  * Copyright (c) 2007 Simtec Electronics
  *	Ben Dooks <ben@simtec.co.uk>
  *	http://armlinux.simtec.co.uk/
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
- *
  * S3C2443 clock register definitions
-*/
+ */
 
 #ifndef __ASM_ARM_REGS_S3C2443_CLOCK
 #define __ASM_ARM_REGS_S3C2443_CLOCK
@@ -41,8 +37,6 @@
 #define S3C2443_PHYPWR			S3C2443_CLKREG(0x84)
 #define S3C2443_URSTCON			S3C2443_CLKREG(0x88)
 #define S3C2443_UCLKCON			S3C2443_CLKREG(0x8C)
-
-#define S3C2443_SWRST_RESET		(0x533c2443)
 
 #define S3C2443_PLLCON_OFF		(1<<24)
 

@@ -1,39 +1,23 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
- * intel_mid_thermal.c - Intel MID platform thermal driver
+ * Intel MID platform thermal driver
  *
  * Copyright (C) 2011 Intel Corporation
  *
- * ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; version 2 of the License.
- *
- * This program is distributed in the hope that it will be useful, but
- * WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.        See the GNU
- * General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA.
- *
- * ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
  * Author: Durgadoss R <durgadoss.r@intel.com>
  */
 
 #define pr_fmt(fmt) "intel_mid_thermal: " fmt
 
-#include <linux/module.h>
-#include <linux/init.h>
-#include <linux/err.h>
-#include <linux/param.h>
 #include <linux/device.h>
-#include <linux/platform_device.h>
-#include <linux/slab.h>
-#include <linux/pm.h>
-#include <linux/thermal.h>
+#include <linux/err.h>
 #include <linux/mfd/intel_msic.h>
+#include <linux/module.h>
+#include <linux/param.h>
+#include <linux/platform_device.h>
+#include <linux/pm.h>
+#include <linux/slab.h>
+#include <linux/thermal.h>
 
 /* Number of thermal sensors */
 #define MSIC_THERMAL_SENSORS	4
@@ -132,7 +116,7 @@ static int is_valid_adc(uint16_t adc_val, uint16_t min, uint16_t max)
  * to achieve very close approximate temp value with less than
  * 0.5C error
  */
-static int adc_to_temp(int direct, uint16_t adc_val, unsigned long *tp)
+static int adc_to_temp(int direct, uint16_t adc_val, int *tp)
 {
 	int temp;
 
@@ -174,14 +158,13 @@ static int adc_to_temp(int direct, uint16_t adc_val, unsigned long *tp)
  *
  * Can sleep
  */
-static int mid_read_temp(struct thermal_zone_device *tzd, unsigned long *temp)
+static int mid_read_temp(struct thermal_zone_device *tzd, int *temp)
 {
 	struct thermal_device_info *td_info = tzd->devdata;
 	uint16_t adc_val, addr;
 	uint8_t data = 0;
 	int ret;
-	unsigned long curr_temp;
-
+	int curr_temp;
 
 	addr = td_info->chnl_addr;
 
@@ -416,6 +399,7 @@ static struct thermal_device_info *initialize_sensor(int index)
 	return td_info;
 }
 
+#ifdef CONFIG_PM_SLEEP
 /**
  * mid_thermal_resume - resume routine
  * @dev: device structure
@@ -443,6 +427,7 @@ static int mid_thermal_suspend(struct device *dev)
 	 */
 	return configure_adc(0);
 }
+#endif
 
 static SIMPLE_DEV_PM_OPS(mid_thermal_pm,
 			 mid_thermal_suspend, mid_thermal_resume);
@@ -453,7 +438,7 @@ static SIMPLE_DEV_PM_OPS(mid_thermal_pm,
  *
  * Can sleep
  */
-static int read_curr_temp(struct thermal_zone_device *tzd, unsigned long *temp)
+static int read_curr_temp(struct thermal_zone_device *tzd, int *temp)
 {
 	WARN_ON(tzd == NULL);
 	return mid_read_temp(tzd, temp);
@@ -481,7 +466,8 @@ static int mid_thermal_probe(struct platform_device *pdev)
 	int i;
 	struct platform_info *pinfo;
 
-	pinfo = kzalloc(sizeof(struct platform_info), GFP_KERNEL);
+	pinfo = devm_kzalloc(&pdev->dev, sizeof(struct platform_info),
+			     GFP_KERNEL);
 	if (!pinfo)
 		return -ENOMEM;
 
@@ -489,7 +475,6 @@ static int mid_thermal_probe(struct platform_device *pdev)
 	ret = mid_initialize_adc(&pdev->dev);
 	if (ret) {
 		dev_err(&pdev->dev, "ADC init failed");
-		kfree(pinfo);
 		return ret;
 	}
 
@@ -520,7 +505,6 @@ err:
 		thermal_zone_device_unregister(pinfo->tzd[i]);
 	}
 	configure_adc(0);
-	kfree(pinfo);
 	return ret;
 }
 
@@ -541,8 +525,6 @@ static int mid_thermal_remove(struct platform_device *pdev)
 		thermal_zone_device_unregister(pinfo->tzd[i]);
 	}
 
-	kfree(pinfo);
-
 	/* Stop the ADC */
 	return configure_adc(0);
 }
@@ -551,14 +533,13 @@ static int mid_thermal_remove(struct platform_device *pdev)
 
 static const struct platform_device_id therm_id_table[] = {
 	{ DRIVER_NAME, 1 },
-	{ "msic_thermal", 1 },
 	{ }
 };
+MODULE_DEVICE_TABLE(platform, therm_id_table);
 
 static struct platform_driver mid_thermal_driver = {
 	.driver = {
 		.name = DRIVER_NAME,
-		.owner = THIS_MODULE,
 		.pm = &mid_thermal_pm,
 	},
 	.probe = mid_thermal_probe,
@@ -570,4 +551,4 @@ module_platform_driver(mid_thermal_driver);
 
 MODULE_AUTHOR("Durgadoss R <durgadoss.r@intel.com>");
 MODULE_DESCRIPTION("Intel Medfield Platform Thermal Driver");
-MODULE_LICENSE("GPL");
+MODULE_LICENSE("GPL v2");

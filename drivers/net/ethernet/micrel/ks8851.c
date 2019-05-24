@@ -26,6 +26,9 @@
 #include <linux/regulator/consumer.h>
 
 #include <linux/spi/spi.h>
+#include <linux/gpio.h>
+#include <linux/of_gpio.h>
+#include <linux/of_net.h>
 
 #include "ks8851.h"
 
@@ -82,9 +85,10 @@ union ks8851_tx_hdr {
  * @rc_ier: Cached copy of KS_IER.
  * @rc_ccr: Cached copy of KS_CCR.
  * @rc_rxqcr: Cached copy of KS_RXQCR.
- * @eeprom_size: Companion eeprom size in Bytes, 0 if no eeprom
  * @eeprom: 93CX6 EEPROM state for accessing on-board EEPROM.
  * @vdd_reg:	Optional regulator supplying the chip
+ * @vdd_io: Optional digital power supply for IO
+ * @gpio: Optional reset_n gpio
  *
  * The @lock ensures that the chip is protected when certain operations are
  * in progress. When the read or write packet transfer is in progress, most
@@ -116,7 +120,6 @@ struct ks8851_net {
 	u16			rc_ier;
 	u16			rc_rxqcr;
 	u16			rc_ccr;
-	u16			eeprom_size;
 
 	struct mii_if_info	mii;
 	struct ks8851_rxctrl	rxctrl;
@@ -133,6 +136,8 @@ struct ks8851_net {
 
 	struct eeprom_93cx6	eeprom;
 	struct regulator	*vdd_reg;
+	struct regulator	*vdd_io;
+	int			gpio;
 };
 
 static int msg_enable;
@@ -208,25 +213,6 @@ static void ks8851_wrreg8(struct ks8851_net *ks, unsigned reg, unsigned val)
 }
 
 /**
- * ks8851_rx_1msg - select whether to use one or two messages for spi read
- * @ks: The device structure
- *
- * Return whether to generate a single message with a tx and rx buffer
- * supplied to spi_sync(), or alternatively send the tx and rx buffers
- * as separate messages.
- *
- * Depending on the hardware in use, a single message may be more efficient
- * on interrupts or work done by the driver.
- *
- * This currently always returns true until we add some per-device data passed
- * from the platform code to specify which mode is better.
- */
-static inline bool ks8851_rx_1msg(struct ks8851_net *ks)
-{
-	return true;
-}
-
-/**
  * ks8851_rdreg - issue read register command and return the data
  * @ks: The device state
  * @op: The register address and byte enables in message format.
@@ -247,14 +233,7 @@ static void ks8851_rdreg(struct ks8851_net *ks, unsigned op,
 
 	txb[0] = cpu_to_le16(op | KS_SPIOP_RD);
 
-	if (ks8851_rx_1msg(ks)) {
-		msg = &ks->spi_msg1;
-		xfer = &ks->spi_xfer1;
-
-		xfer->tx_buf = txb;
-		xfer->rx_buf = trx;
-		xfer->len = rxl + 2;
-	} else {
+	if (ks->spidev->master->flags & SPI_MASTER_HALF_DUPLEX) {
 		msg = &ks->spi_msg2;
 		xfer = ks->spi_xfer2;
 
@@ -266,15 +245,22 @@ static void ks8851_rdreg(struct ks8851_net *ks, unsigned op,
 		xfer->tx_buf = NULL;
 		xfer->rx_buf = trx;
 		xfer->len = rxl;
+	} else {
+		msg = &ks->spi_msg1;
+		xfer = &ks->spi_xfer1;
+
+		xfer->tx_buf = txb;
+		xfer->rx_buf = trx;
+		xfer->len = rxl + 2;
 	}
 
 	ret = spi_sync(ks->spidev, msg);
 	if (ret < 0)
 		netdev_err(ks->netdev, "read: spi_sync() failed\n");
-	else if (ks8851_rx_1msg(ks))
-		memcpy(rxb, trx + 2, rxl);
-	else
+	else if (ks->spidev->master->flags & SPI_MASTER_HALF_DUPLEX)
 		memcpy(rxb, trx, rxl);
+	else
+		memcpy(rxb, trx + 2, rxl);
 }
 
 /**
@@ -422,15 +408,23 @@ static void ks8851_read_mac_addr(struct net_device *dev)
  * @ks: The device structure
  *
  * Get or create the initial mac address for the device and then set that
- * into the station address register. If there is an EEPROM present, then
+ * into the station address register. A mac address supplied in the device
+ * tree takes precedence. Otherwise, if there is an EEPROM present, then
  * we try that. If no valid mac address is found we use eth_random_addr()
  * to create a new one.
  */
 static void ks8851_init_mac(struct ks8851_net *ks)
 {
 	struct net_device *dev = ks->netdev;
+	const u8 *mac_addr;
 
-	/* first, try reading what we've got already */
+	mac_addr = of_get_mac_address(ks->spidev->dev.of_node);
+	if (mac_addr) {
+		memcpy(dev->dev_addr, mac_addr, ETH_ALEN);
+		ks8851_write_mac_addr(dev);
+		return;
+	}
+
 	if (ks->rc_ccr & CCR_EEPROM) {
 		ks8851_read_mac_addr(dev);
 		if (is_valid_ether_addr(dev->dev_addr))
@@ -1057,7 +1051,6 @@ static const struct net_device_ops ks8851_netdev_ops = {
 	.ndo_start_xmit		= ks8851_start_xmit,
 	.ndo_set_mac_address	= ks8851_set_mac_address,
 	.ndo_set_rx_mode	= ks8851_set_rx_mode,
-	.ndo_change_mtu		= eth_change_mtu,
 	.ndo_validate_addr	= eth_validate_addr,
 };
 
@@ -1083,16 +1076,21 @@ static void ks8851_set_msglevel(struct net_device *dev, u32 to)
 	ks->msg_enable = to;
 }
 
-static int ks8851_get_settings(struct net_device *dev, struct ethtool_cmd *cmd)
+static int ks8851_get_link_ksettings(struct net_device *dev,
+				     struct ethtool_link_ksettings *cmd)
 {
 	struct ks8851_net *ks = netdev_priv(dev);
-	return mii_ethtool_gset(&ks->mii, cmd);
+
+	mii_ethtool_get_link_ksettings(&ks->mii, cmd);
+
+	return 0;
 }
 
-static int ks8851_set_settings(struct net_device *dev, struct ethtool_cmd *cmd)
+static int ks8851_set_link_ksettings(struct net_device *dev,
+				     const struct ethtool_link_ksettings *cmd)
 {
 	struct ks8851_net *ks = netdev_priv(dev);
-	return mii_ethtool_sset(&ks->mii, cmd);
+	return mii_ethtool_set_link_ksettings(&ks->mii, cmd);
 }
 
 static u32 ks8851_get_link(struct net_device *dev)
@@ -1248,13 +1246,13 @@ static const struct ethtool_ops ks8851_ethtool_ops = {
 	.get_drvinfo	= ks8851_get_drvinfo,
 	.get_msglevel	= ks8851_get_msglevel,
 	.set_msglevel	= ks8851_set_msglevel,
-	.get_settings	= ks8851_get_settings,
-	.set_settings	= ks8851_set_settings,
 	.get_link	= ks8851_get_link,
 	.nway_reset	= ks8851_nway_reset,
 	.get_eeprom_len	= ks8851_get_eeprom_len,
 	.get_eeprom	= ks8851_get_eeprom,
 	.set_eeprom	= ks8851_set_eeprom,
+	.get_link_ksettings = ks8851_get_link_ksettings,
+	.set_link_ksettings = ks8851_set_link_ksettings,
 };
 
 /* MII interface controls */
@@ -1404,6 +1402,7 @@ static int ks8851_probe(struct spi_device *spi)
 	struct ks8851_net *ks;
 	int ret;
 	unsigned cider;
+	int gpio;
 
 	ndev = alloc_etherdev(sizeof(struct ks8851_net));
 	if (!ndev)
@@ -1417,20 +1416,53 @@ static int ks8851_probe(struct spi_device *spi)
 	ks->spidev = spi;
 	ks->tx_space = 6144;
 
-	ks->vdd_reg = regulator_get_optional(&spi->dev, "vdd");
-	if (IS_ERR(ks->vdd_reg)) {
-		ret = PTR_ERR(ks->vdd_reg);
-		if (ret == -EPROBE_DEFER)
-			goto err_reg;
-	} else {
-		ret = regulator_enable(ks->vdd_reg);
+	gpio = of_get_named_gpio_flags(spi->dev.of_node, "reset-gpios",
+				       0, NULL);
+	if (gpio == -EPROBE_DEFER) {
+		ret = gpio;
+		goto err_gpio;
+	}
+
+	ks->gpio = gpio;
+	if (gpio_is_valid(gpio)) {
+		ret = devm_gpio_request_one(&spi->dev, gpio,
+					    GPIOF_OUT_INIT_LOW, "ks8851_rst_n");
 		if (ret) {
-			dev_err(&spi->dev, "regulator enable fail: %d\n",
-				ret);
-			goto err_reg_en;
+			dev_err(&spi->dev, "reset gpio request failed\n");
+			goto err_gpio;
 		}
 	}
 
+	ks->vdd_io = devm_regulator_get(&spi->dev, "vdd-io");
+	if (IS_ERR(ks->vdd_io)) {
+		ret = PTR_ERR(ks->vdd_io);
+		goto err_reg_io;
+	}
+
+	ret = regulator_enable(ks->vdd_io);
+	if (ret) {
+		dev_err(&spi->dev, "regulator vdd_io enable fail: %d\n",
+			ret);
+		goto err_reg_io;
+	}
+
+	ks->vdd_reg = devm_regulator_get(&spi->dev, "vdd");
+	if (IS_ERR(ks->vdd_reg)) {
+		ret = PTR_ERR(ks->vdd_reg);
+		goto err_reg;
+	}
+
+	ret = regulator_enable(ks->vdd_reg);
+	if (ret) {
+		dev_err(&spi->dev, "regulator vdd enable fail: %d\n",
+			ret);
+		goto err_reg;
+	}
+
+	if (gpio_is_valid(gpio)) {
+		usleep_range(10000, 11000);
+		gpio_set_value(gpio, 1);
+	}
 
 	mutex_init(&ks->lock);
 	spin_lock_init(&ks->statelock);
@@ -1471,7 +1503,7 @@ static int ks8851_probe(struct spi_device *spi)
 
 	skb_queue_head_init(&ks->txq);
 
-	SET_ETHTOOL_OPS(ndev, &ks8851_ethtool_ops);
+	ndev->ethtool_ops = &ks8851_ethtool_ops;
 	SET_NETDEV_DEV(ndev, &spi->dev);
 
 	spi_set_drvdata(spi, ks);
@@ -1493,11 +1525,6 @@ static int ks8851_probe(struct spi_device *spi)
 
 	/* cache the contents of the CCR register for EEPROM, etc. */
 	ks->rc_ccr = ks8851_rdreg16(ks, KS_CCR);
-
-	if (ks->rc_ccr & CCR_EEPROM)
-		ks->eeprom_size = 128;
-	else
-		ks->eeprom_size = 0;
 
 	ks8851_read_selftest(ks);
 	ks8851_init_mac(ks);
@@ -1527,13 +1554,14 @@ err_netdev:
 	free_irq(ndev->irq, ks);
 
 err_irq:
+	if (gpio_is_valid(gpio))
+		gpio_set_value(gpio, 0);
 err_id:
-	if (!IS_ERR(ks->vdd_reg))
-		regulator_disable(ks->vdd_reg);
-err_reg_en:
-	if (!IS_ERR(ks->vdd_reg))
-		regulator_put(ks->vdd_reg);
+	regulator_disable(ks->vdd_reg);
 err_reg:
+	regulator_disable(ks->vdd_io);
+err_reg_io:
+err_gpio:
 	free_netdev(ndev);
 	return ret;
 }
@@ -1547,19 +1575,25 @@ static int ks8851_remove(struct spi_device *spi)
 
 	unregister_netdev(priv->netdev);
 	free_irq(spi->irq, priv);
-	if (!IS_ERR(priv->vdd_reg)) {
-		regulator_disable(priv->vdd_reg);
-		regulator_put(priv->vdd_reg);
-	}
+	if (gpio_is_valid(priv->gpio))
+		gpio_set_value(priv->gpio, 0);
+	regulator_disable(priv->vdd_reg);
+	regulator_disable(priv->vdd_io);
 	free_netdev(priv->netdev);
 
 	return 0;
 }
 
+static const struct of_device_id ks8851_match_table[] = {
+	{ .compatible = "micrel,ks8851" },
+	{ }
+};
+MODULE_DEVICE_TABLE(of, ks8851_match_table);
+
 static struct spi_driver ks8851_driver = {
 	.driver = {
 		.name = "ks8851",
-		.owner = THIS_MODULE,
+		.of_match_table = ks8851_match_table,
 		.pm = &ks8851_pm_ops,
 	},
 	.probe = ks8851_probe,

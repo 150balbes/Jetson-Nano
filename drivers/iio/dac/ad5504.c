@@ -15,17 +15,16 @@
 #include <linux/sysfs.h>
 #include <linux/regulator/consumer.h>
 #include <linux/module.h>
+#include <linux/bitops.h>
 
 #include <linux/iio/iio.h>
 #include <linux/iio/sysfs.h>
 #include <linux/iio/events.h>
 #include <linux/iio/dac/ad5504.h>
 
-#define AD5505_BITS			12
-#define AD5504_RES_MASK			((1 << (AD5505_BITS)) - 1)
-
-#define AD5504_CMD_READ			(1 << 15)
-#define AD5504_CMD_WRITE		(0 << 15)
+#define AD5504_RES_MASK			GENMASK(11, 0)
+#define AD5504_CMD_READ			BIT(15)
+#define AD5504_CMD_WRITE		0
 #define AD5504_ADDR(addr)		((addr) << 12)
 
 /* Registers */
@@ -42,7 +41,7 @@
 
 /**
  * struct ad5446_state - driver instance specific data
- * @us:			spi_device
+ * @spi:			spi_device
  * @reg:		supply regulator
  * @vref_mv:		actual reference voltage used
  * @pwr_down_mask	power down mask
@@ -126,7 +125,6 @@ static int ad5504_write_raw(struct iio_dev *indio_dev,
 			       long mask)
 {
 	struct ad5504_state *st = iio_priv(indio_dev);
-	int ret;
 
 	switch (mask) {
 	case IIO_CHAN_INFO_RAW:
@@ -135,10 +133,8 @@ static int ad5504_write_raw(struct iio_dev *indio_dev,
 
 		return ad5504_spi_write(st, chan->address, val);
 	default:
-		ret = -EINVAL;
+		return -EINVAL;
 	}
-
-	return -EINVAL;
 }
 
 static const char * const ad5504_powerdown_modes[] = {
@@ -216,9 +212,8 @@ static struct attribute *ad5504_ev_attributes[] = {
 	NULL,
 };
 
-static struct attribute_group ad5504_ev_attribute_group = {
+static const struct attribute_group ad5504_ev_attribute_group = {
 	.attrs = ad5504_ev_attributes,
-	.name = "events",
 };
 
 static irqreturn_t ad5504_event_handler(int irq, void *private)
@@ -228,7 +223,7 @@ static irqreturn_t ad5504_event_handler(int irq, void *private)
 					    0,
 					    IIO_EV_TYPE_THRESH,
 					    IIO_EV_DIR_RISING),
-		       iio_get_time_ns());
+		       iio_get_time_ns(private));
 
 	return IRQ_HANDLED;
 }
@@ -237,7 +232,6 @@ static const struct iio_info ad5504_info = {
 	.write_raw = ad5504_write_raw,
 	.read_raw = ad5504_read_raw,
 	.event_attrs = &ad5504_ev_attribute_group,
-	.driver_module = THIS_MODULE,
 };
 
 static const struct iio_chan_spec_ext_info ad5504_ext_info[] = {
@@ -368,7 +362,6 @@ MODULE_DEVICE_TABLE(spi, ad5504_id);
 static struct spi_driver ad5504_driver = {
 	.driver = {
 		   .name = "ad5504",
-		   .owner = THIS_MODULE,
 		   },
 	.probe = ad5504_probe,
 	.remove = ad5504_remove,
@@ -376,6 +369,6 @@ static struct spi_driver ad5504_driver = {
 };
 module_spi_driver(ad5504_driver);
 
-MODULE_AUTHOR("Michael Hennerich <hennerich@blackfin.uclinux.org>");
+MODULE_AUTHOR("Michael Hennerich <michael.hennerich@analog.com>");
 MODULE_DESCRIPTION("Analog Devices AD5501/AD5501 DAC");
 MODULE_LICENSE("GPL v2");

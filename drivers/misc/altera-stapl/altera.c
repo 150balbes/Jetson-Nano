@@ -304,13 +304,13 @@ static int altera_execute(struct altera_state *astate,
 	if (sym_count <= 0)
 		goto exit_done;
 
-	vars = kzalloc(sym_count * sizeof(long), GFP_KERNEL);
+	vars = kcalloc(sym_count, sizeof(long), GFP_KERNEL);
 
 	if (vars == NULL)
 		status = -ENOMEM;
 
 	if (status == 0) {
-		var_size = kzalloc(sym_count * sizeof(s32), GFP_KERNEL);
+		var_size = kcalloc(sym_count, sizeof(s32), GFP_KERNEL);
 
 		if (var_size == NULL)
 			status = -ENOMEM;
@@ -454,7 +454,7 @@ exit_done:
 
 				name = &p[str_table + name_id];
 
-				if (strnicmp(aconf->action, name, strlen(name)) == 0) {
+				if (strncasecmp(aconf->action, name, strlen(name)) == 0) {
 					action_found = 1;
 					current_proc =
 						get_unaligned_be32(&p[action_table +
@@ -1136,7 +1136,7 @@ exit_done:
 				/* Allocate a writable buffer for this array */
 				count = var_size[variable_id];
 				long_tmp = vars[variable_id];
-				longptr_tmp = kzalloc(count * sizeof(long),
+				longptr_tmp = kcalloc(count, sizeof(long),
 								GFP_KERNEL);
 				vars[variable_id] = (long)longptr_tmp;
 
@@ -2176,8 +2176,7 @@ static int altera_get_note(u8 *p, s32 program_size,
 			key_ptr = &p[note_strings +
 					get_unaligned_be32(
 					&p[note_table + (8 * i)])];
-			if ((strnicmp(key, key_ptr, strlen(key_ptr)) == 0) &&
-						(key != NULL)) {
+			if (key && !strncasecmp(key, key_ptr, strlen(key_ptr))) {
 				status = 0;
 
 				value_ptr = &p[note_strings +
@@ -2451,7 +2450,7 @@ int altera_init(struct altera_config *config, const struct firmware *fw)
 
 	astate->config = config;
 	if (!astate->config->jtag_io) {
-		dprintk(KERN_INFO "%s: using byteblaster!\n", __func__);
+		dprintk("%s: using byteblaster!\n", __func__);
 		astate->config->jtag_io = netup_jtag_io_lpt;
 	}
 

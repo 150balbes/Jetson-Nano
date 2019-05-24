@@ -22,7 +22,6 @@
 #ifndef __S5H1411_H__
 #define __S5H1411_H__
 
-#include <linux/kconfig.h>
 #include <linux/dvb/frontend.h>
 
 #define S5H1411_I2C_TOP_ADDR (0x32 >> 1)
@@ -41,10 +40,10 @@ struct s5h1411_config {
 	u8 gpio;
 
 	/* MPEG signal timing */
-#define S5H1411_MPEGTIMING_CONTINOUS_INVERTING_CLOCK       0
-#define S5H1411_MPEGTIMING_CONTINOUS_NONINVERTING_CLOCK    1
-#define S5H1411_MPEGTIMING_NONCONTINOUS_INVERTING_CLOCK    2
-#define S5H1411_MPEGTIMING_NONCONTINOUS_NONINVERTING_CLOCK 3
+#define S5H1411_MPEGTIMING_CONTINUOUS_INVERTING_CLOCK       0
+#define S5H1411_MPEGTIMING_CONTINUOUS_NONINVERTING_CLOCK    1
+#define S5H1411_MPEGTIMING_NONCONTINUOUS_INVERTING_CLOCK    2
+#define S5H1411_MPEGTIMING_NONCONTINUOUS_NONINVERTING_CLOCK 3
 	u16 mpeg_timing;
 
 	/* IF Freq for QAM and VSB in KHz */
@@ -69,7 +68,7 @@ struct s5h1411_config {
 	u8 status_mode;
 };
 
-#if IS_ENABLED(CONFIG_DVB_S5H1411)
+#if IS_REACHABLE(CONFIG_DVB_S5H1411)
 extern struct dvb_frontend *s5h1411_attach(const struct s5h1411_config *config,
 					   struct i2c_adapter *i2c);
 #else
@@ -83,8 +82,3 @@ static inline struct dvb_frontend *s5h1411_attach(
 #endif /* CONFIG_DVB_S5H1411 */
 
 #endif /* __S5H1411_H__ */
-
-/*
- * Local variables:
- * c-basic-offset: 8
- */

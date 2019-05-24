@@ -217,7 +217,7 @@ static
 int uwb_est_grow(void)
 {
 	size_t actual_size = uwb_est_size * sizeof(uwb_est[0]);
-	void *new = kmalloc(2 * actual_size, GFP_ATOMIC);
+	void *new = kmalloc_array(2, actual_size, GFP_ATOMIC);
 	if (new == NULL)
 		return -ENOMEM;
 	memcpy(new, uwb_est, actual_size);
@@ -258,7 +258,6 @@ int uwb_est_register(u8 type, u8 event_high, u16 vendor, u16 product,
 {
 	unsigned long flags;
 	unsigned itr;
-	u16 type_event_high;
 	int result = 0;
 
 	write_lock_irqsave(&uwb_est_lock, flags);
@@ -268,7 +267,6 @@ int uwb_est_register(u8 type, u8 event_high, u16 vendor, u16 product,
 			goto out;
 	}
 	/* Find the right spot to insert it in */
-	type_event_high = type << 8 | event_high;
 	for (itr = 0; itr < uwb_est_used; itr++)
 		if (uwb_est[itr].type_event_high < type
 		    && uwb_est[itr].vendor < vendor

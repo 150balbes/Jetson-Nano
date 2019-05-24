@@ -10,10 +10,6 @@
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
 #ifndef _DM355_CCDC_H
 #define _DM355_CCDC_H
@@ -232,7 +228,7 @@ struct ccdc_config_params_raw {
 	/* Threshold of median filter */
 	int med_filt_thres;
 	/*
-	 * horz and vertical data offset. Appliable for defect correction
+	 * horz and vertical data offset. Applicable for defect correction
 	 * and lsc
 	 */
 	struct ccdc_data_offset data_offset;
@@ -242,7 +238,7 @@ struct ccdc_config_params_raw {
 	struct ccdc_black_clamp blk_clamp;
 	/* Structure for Black Compensation */
 	struct ccdc_black_compensation blk_comp;
-	/* struture for vertical Defect Correction Module Configuration */
+	/* structure for vertical Defect Correction Module Configuration */
 	struct ccdc_vertical_dft vertical_dft;
 	/* structure for color space converter Module Configuration */
 	struct ccdc_csc csc;

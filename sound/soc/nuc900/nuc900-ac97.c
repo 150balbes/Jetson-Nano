@@ -28,6 +28,7 @@
 
 static DEFINE_MUTEX(ac97_mutex);
 struct nuc900_audio *nuc900_ac97_data;
+EXPORT_SYMBOL_GPL(nuc900_ac97_data);
 
 static int nuc900_checkready(void)
 {
@@ -66,7 +67,7 @@ static unsigned short nuc900_ac97_read(struct snd_ac97 *ac97,
 
 	/* polling the AC_R_FINISH */
 	while (!(AUDIO_READ(nuc900_audio->mmio + ACTL_ACCON) & AC_R_FINISH)
-								&& timeout--)
+								&& --timeout)
 		mdelay(1);
 
 	if (!timeout) {
@@ -120,7 +121,7 @@ static void nuc900_ac97_write(struct snd_ac97 *ac97, unsigned short reg,
 
 	/* polling the AC_W_FINISH */
 	while ((AUDIO_READ(nuc900_audio->mmio + ACTL_ACCON) & AC_W_FINISH)
-								&& timeout--)
+								&& --timeout)
 		mdelay(1);
 
 	if (!timeout)
@@ -297,7 +298,7 @@ static const struct snd_soc_dai_ops nuc900_ac97_dai_ops = {
 static struct snd_soc_dai_driver nuc900_ac97_dai = {
 	.probe			= nuc900_ac97_probe,
 	.remove			= nuc900_ac97_remove,
-	.ac97_control		= 1,
+	.bus_control		= true,
 	.playback = {
 		.rates		= SNDRV_PCM_RATE_8000_48000,
 		.formats	= SNDRV_PCM_FMTBIT_S16_LE,
@@ -344,11 +345,10 @@ static int nuc900_ac97_drvprobe(struct platform_device *pdev)
 		goto out;
 	}
 
-	nuc900_audio->irq_num = platform_get_irq(pdev, 0);
-	if (!nuc900_audio->irq_num) {
-		ret = -EBUSY;
+	ret = platform_get_irq(pdev, 0);
+	if (ret < 0)
 		goto out;
-	}
+	nuc900_audio->irq_num = ret;
 
 	nuc900_ac97_data = nuc900_audio;
 
@@ -356,7 +356,7 @@ static int nuc900_ac97_drvprobe(struct platform_device *pdev)
 	if (ret)
 		goto out;
 
-	ret = snd_soc_register_component(&pdev->dev, &nuc900_ac97_component,
+	ret = devm_snd_soc_register_component(&pdev->dev, &nuc900_ac97_component,
 					 &nuc900_ac97_dai, 1);
 	if (ret)
 		goto out;
@@ -373,8 +373,6 @@ out:
 
 static int nuc900_ac97_drvremove(struct platform_device *pdev)
 {
-	snd_soc_unregister_component(&pdev->dev);
-
 	nuc900_ac97_data = NULL;
 	snd_soc_set_ac97_ops(NULL);
 
@@ -384,7 +382,6 @@ static int nuc900_ac97_drvremove(struct platform_device *pdev)
 static struct platform_driver nuc900_ac97_driver = {
 	.driver	= {
 		.name	= "nuc900-ac97",
-		.owner	= THIS_MODULE,
 	},
 	.probe		= nuc900_ac97_drvprobe,
 	.remove		= nuc900_ac97_drvremove,

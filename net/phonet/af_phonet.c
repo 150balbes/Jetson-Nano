@@ -35,11 +35,11 @@
 #include <net/phonet/pn_dev.h>
 
 /* Transport protocol registration */
-static struct phonet_protocol *proto_tab[PHONET_NPROTO] __read_mostly;
+static const struct phonet_protocol *proto_tab[PHONET_NPROTO] __read_mostly;
 
-static struct phonet_protocol *phonet_proto_get(unsigned int protocol)
+static const struct phonet_protocol *phonet_proto_get(unsigned int protocol)
 {
-	struct phonet_protocol *pp;
+	const struct phonet_protocol *pp;
 
 	if (protocol >= PHONET_NPROTO)
 		return NULL;
@@ -53,7 +53,7 @@ static struct phonet_protocol *phonet_proto_get(unsigned int protocol)
 	return pp;
 }
 
-static inline void phonet_proto_put(struct phonet_protocol *pp)
+static inline void phonet_proto_put(const struct phonet_protocol *pp)
 {
 	module_put(pp->prot->owner);
 }
@@ -65,7 +65,7 @@ static int pn_socket_create(struct net *net, struct socket *sock, int protocol,
 {
 	struct sock *sk;
 	struct pn_sock *pn;
-	struct phonet_protocol *pnp;
+	const struct phonet_protocol *pnp;
 	int err;
 
 	if (!capable(CAP_SYS_ADMIN))
@@ -97,7 +97,7 @@ static int pn_socket_create(struct net *net, struct socket *sock, int protocol,
 		goto out;
 	}
 
-	sk = sk_alloc(net, PF_PHONET, GFP_KERNEL, pnp->prot);
+	sk = sk_alloc(net, PF_PHONET, GFP_KERNEL, pnp->prot, kern);
 	if (sk == NULL) {
 		err = -ENOMEM;
 		goto out;
@@ -149,7 +149,7 @@ static int pn_header_parse(const struct sk_buff *skb, unsigned char *haddr)
 	return 1;
 }
 
-struct header_ops phonet_header_ops = {
+const struct header_ops phonet_header_ops = {
 	.create = pn_header_create,
 	.parse = pn_header_parse,
 };
@@ -377,6 +377,10 @@ static int phonet_rcv(struct sk_buff *skb, struct net_device *dev,
 	struct sockaddr_pn sa;
 	u16 len;
 
+	skb = skb_share_check(skb, GFP_ATOMIC);
+	if (!skb)
+		return NET_RX_DROP;
+
 	/* check we have at least a full Phonet header */
 	if (!pskb_pull(skb, sizeof(struct phonethdr)))
 		goto out;
@@ -426,16 +430,17 @@ static int phonet_rcv(struct sk_buff *skb, struct net_device *dev,
 
 		out_dev = phonet_route_output(net, pn_sockaddr_get_addr(&sa));
 		if (!out_dev) {
-			LIMIT_NETDEBUG(KERN_WARNING"No Phonet route to %02X\n",
-					pn_sockaddr_get_addr(&sa));
+			net_dbg_ratelimited("No Phonet route to %02X\n",
+					    pn_sockaddr_get_addr(&sa));
 			goto out;
 		}
 
 		__skb_push(skb, sizeof(struct phonethdr));
 		skb->dev = out_dev;
 		if (out_dev == dev) {
-			LIMIT_NETDEBUG(KERN_ERR"Phonet loop to %02X on %s\n",
-					pn_sockaddr_get_addr(&sa), dev->name);
+			net_dbg_ratelimited("Phonet loop to %02X on %s\n",
+					    pn_sockaddr_get_addr(&sa),
+					    dev->name);
 			goto out_dev;
 		}
 		/* Some drivers (e.g. TUN) do not allocate HW header space */
@@ -465,7 +470,7 @@ static struct packet_type phonet_packet_type __read_mostly = {
 static DEFINE_MUTEX(proto_tab_lock);
 
 int __init_or_module phonet_proto_register(unsigned int protocol,
-						struct phonet_protocol *pp)
+				const struct phonet_protocol *pp)
 {
 	int err = 0;
 
@@ -487,7 +492,8 @@ int __init_or_module phonet_proto_register(unsigned int protocol,
 }
 EXPORT_SYMBOL(phonet_proto_register);
 
-void phonet_proto_unregister(unsigned int protocol, struct phonet_protocol *pp)
+void phonet_proto_unregister(unsigned int protocol,
+			const struct phonet_protocol *pp)
 {
 	mutex_lock(&proto_tab_lock);
 	BUG_ON(proto_tab[protocol] != pp);

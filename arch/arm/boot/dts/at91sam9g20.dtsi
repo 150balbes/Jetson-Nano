@@ -16,14 +16,31 @@
 		reg = <0x20000000 0x08000000>;
 	};
 
+	sram0: sram@2ff000 {
+		status = "disabled";
+	};
+
+	sram1: sram@2fc000 {
+		compatible = "mmio-sram";
+		reg = <0x002fc000 0x8000>;
+	};
+
 	ahb {
 		apb {
 			i2c0: i2c@fffac000 {
 				compatible = "atmel,at91sam9g20-i2c";
 			};
 
+			ssc0: ssc@fffbc000 {
+				compatible = "atmel,at91sam9rl-ssc";
+			};
+
 			adc0: adc@fffe0000 {
 				atmel,adc-startup-time = <40>;
+			};
+
+			pmc: pmc@fffffc00 {
+				compatible = "atmel,at91sam9g20-pmc", "atmel,at91sam9260-pmc", "syscon";
 			};
 		};
 	};

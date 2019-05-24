@@ -11,7 +11,7 @@ Consider the following machine :-
                +-> [Consumer B @ 3.3V]
 
 The drivers for consumers A & B must be mapped to the correct regulator in
-order to control their power supply. This mapping can be achieved in machine
+order to control their power supplies. This mapping can be achieved in machine
 initialisation code by creating a struct regulator_consumer_supply for
 each regulator.
 
@@ -23,23 +23,19 @@ struct regulator_consumer_supply {
 e.g. for the machine above
 
 static struct regulator_consumer_supply regulator1_consumers[] = {
-{
-	.dev_name	= "dev_name(consumer B)",
-	.supply		= "Vcc",
-},};
+	REGULATOR_SUPPLY("Vcc", "consumer B"),
+};
 
 static struct regulator_consumer_supply regulator2_consumers[] = {
-{
-	.dev	= "dev_name(consumer A"),
-	.supply	= "Vcc",
-},};
+	REGULATOR_SUPPLY("Vcc", "consumer A"),
+};
 
 This maps Regulator-1 to the 'Vcc' supply for Consumer B and maps Regulator-2
 to the 'Vcc' supply for Consumer A.
 
 Constraints can now be registered by defining a struct regulator_init_data
 for each regulator power domain. This structure also maps the consumers
-to their supply regulator :-
+to their supply regulators :-
 
 static struct regulator_init_data regulator1_data = {
 	.constraints = {
@@ -78,20 +74,20 @@ static struct regulator_init_data regulator2_data = {
 Finally the regulator devices must be registered in the usual manner.
 
 static struct platform_device regulator_devices[] = {
-{
-	.name = "regulator",
-	.id = DCDC_1,
-	.dev = {
-		.platform_data = &regulator1_data,
+	{
+		.name = "regulator",
+		.id = DCDC_1,
+		.dev = {
+			.platform_data = &regulator1_data,
+		},
 	},
-},
-{
-	.name = "regulator",
-	.id = DCDC_2,
-	.dev = {
-		.platform_data = &regulator2_data,
+	{
+		.name = "regulator",
+		.id = DCDC_2,
+		.dev = {
+			.platform_data = &regulator2_data,
+		},
 	},
-},
 };
 /* register regulator 1 device */
 platform_device_register(&regulator_devices[0]);

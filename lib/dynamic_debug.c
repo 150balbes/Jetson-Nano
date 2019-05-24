@@ -42,7 +42,7 @@ extern struct _ddebug __stop___verbose[];
 
 struct ddebug_table {
 	struct list_head link;
-	char *mod_name;
+	const char *mod_name;
 	unsigned int num_ddebugs;
 	struct _ddebug *ddebugs;
 };
@@ -188,6 +188,13 @@ static int ddebug_change(const struct ddebug_query *query,
 			newflags = (dp->flags & mask) | flags;
 			if (newflags == dp->flags)
 				continue;
+#ifdef CONFIG_JUMP_LABEL
+			if (dp->flags & _DPRINTK_FLAGS_PRINT) {
+				if (!(flags & _DPRINTK_FLAGS_PRINT))
+					static_branch_disable(&dp->key.dd_key_true);
+			} else if (flags & _DPRINTK_FLAGS_PRINT)
+				static_branch_enable(&dp->key.dd_key_true);
+#endif
 			dp->flags = newflags;
 			vpr_info("changed %s:%d [%s]%s =%s\n",
 				 trim_prefix(dp->filename), dp->lineno,
@@ -352,6 +359,10 @@ static int ddebug_parse_query(char *words[], int nwords,
 				/* range <first>-<last> */
 				if (parse_lineno(last, &query->last_lineno) < 0)
 					return -EINVAL;
+
+				/* special case for last lineno not specified */
+				if (query->last_lineno == 0)
+					query->last_lineno = UINT_MAX;
 
 				if (query->last_lineno < query->first_lineno) {
 					pr_err("last-line:%d < 1st-line:%d\n",
@@ -537,10 +548,9 @@ static char *dynamic_emit_prefix(const struct _ddebug *desc, char *buf)
 	return buf;
 }
 
-int __dynamic_pr_debug(struct _ddebug *descriptor, const char *fmt, ...)
+void __dynamic_pr_debug(struct _ddebug *descriptor, const char *fmt, ...)
 {
 	va_list args;
-	int res;
 	struct va_format vaf;
 	char buf[PREFIX_SIZE];
 
@@ -552,21 +562,17 @@ int __dynamic_pr_debug(struct _ddebug *descriptor, const char *fmt, ...)
 	vaf.fmt = fmt;
 	vaf.va = &args;
 
-	res = printk(KERN_DEBUG "%s%pV",
-		     dynamic_emit_prefix(descriptor, buf), &vaf);
+	printk(KERN_DEBUG "%s%pV", dynamic_emit_prefix(descriptor, buf), &vaf);
 
 	va_end(args);
-
-	return res;
 }
 EXPORT_SYMBOL(__dynamic_pr_debug);
 
-int __dynamic_dev_dbg(struct _ddebug *descriptor,
+void __dynamic_dev_dbg(struct _ddebug *descriptor,
 		      const struct device *dev, const char *fmt, ...)
 {
 	struct va_format vaf;
 	va_list args;
-	int res;
 
 	BUG_ON(!descriptor);
 	BUG_ON(!fmt);
@@ -577,30 +583,27 @@ int __dynamic_dev_dbg(struct _ddebug *descriptor,
 	vaf.va = &args;
 
 	if (!dev) {
-		res = printk(KERN_DEBUG "(NULL device *): %pV", &vaf);
+		printk(KERN_DEBUG "(NULL device *): %pV", &vaf);
 	} else {
 		char buf[PREFIX_SIZE];
 
-		res = dev_printk_emit(7, dev, "%s%s %s: %pV",
-				      dynamic_emit_prefix(descriptor, buf),
-				      dev_driver_string(dev), dev_name(dev),
-				      &vaf);
+		dev_printk_emit(LOGLEVEL_DEBUG, dev, "%s%s %s: %pV",
+				dynamic_emit_prefix(descriptor, buf),
+				dev_driver_string(dev), dev_name(dev),
+				&vaf);
 	}
 
 	va_end(args);
-
-	return res;
 }
 EXPORT_SYMBOL(__dynamic_dev_dbg);
 
 #ifdef CONFIG_NET
 
-int __dynamic_netdev_dbg(struct _ddebug *descriptor,
-			 const struct net_device *dev, const char *fmt, ...)
+void __dynamic_netdev_dbg(struct _ddebug *descriptor,
+			  const struct net_device *dev, const char *fmt, ...)
 {
 	struct va_format vaf;
 	va_list args;
-	int res;
 
 	BUG_ON(!descriptor);
 	BUG_ON(!fmt);
@@ -613,21 +616,21 @@ int __dynamic_netdev_dbg(struct _ddebug *descriptor,
 	if (dev && dev->dev.parent) {
 		char buf[PREFIX_SIZE];
 
-		res = dev_printk_emit(7, dev->dev.parent,
-				      "%s%s %s %s: %pV",
-				      dynamic_emit_prefix(descriptor, buf),
-				      dev_driver_string(dev->dev.parent),
-				      dev_name(dev->dev.parent),
-				      netdev_name(dev), &vaf);
+		dev_printk_emit(LOGLEVEL_DEBUG, dev->dev.parent,
+				"%s%s %s %s%s: %pV",
+				dynamic_emit_prefix(descriptor, buf),
+				dev_driver_string(dev->dev.parent),
+				dev_name(dev->dev.parent),
+				netdev_name(dev), netdev_reg_state(dev),
+				&vaf);
 	} else if (dev) {
-		res = printk(KERN_DEBUG "%s: %pV", netdev_name(dev), &vaf);
+		printk(KERN_DEBUG "%s%s: %pV", netdev_name(dev),
+		       netdev_reg_state(dev), &vaf);
 	} else {
-		res = printk(KERN_DEBUG "(NULL net_device): %pV", &vaf);
+		printk(KERN_DEBUG "(NULL net_device): %pV", &vaf);
 	}
 
 	va_end(args);
-
-	return res;
 }
 EXPORT_SYMBOL(__dynamic_netdev_dbg);
 
@@ -649,7 +652,7 @@ static __init int ddebug_setup_query(char *str)
 __setup("ddebug_query=", ddebug_setup_query);
 
 /*
- * File_ops->write method for <debugfs>/dynamic_debug/conrol.  Gathers the
+ * File_ops->write method for <debugfs>/dynamic_debug/control.  Gathers the
  * command text from userspace, parses and executes it.
  */
 #define USER_BUF_PAGE 4096
@@ -665,14 +668,9 @@ static ssize_t ddebug_proc_write(struct file *file, const char __user *ubuf,
 		pr_warn("expected <%d bytes into control\n", USER_BUF_PAGE);
 		return -E2BIG;
 	}
-	tmpbuf = kmalloc(len + 1, GFP_KERNEL);
-	if (!tmpbuf)
-		return -ENOMEM;
-	if (copy_from_user(tmpbuf, ubuf, len)) {
-		kfree(tmpbuf);
-		return -EFAULT;
-	}
-	tmpbuf[len] = '\0';
+	tmpbuf = memdup_user_nul(ubuf, len);
+	if (IS_ERR(tmpbuf))
+		return PTR_ERR(tmpbuf);
 	vpr_info("read %d bytes from userspace\n", (int)len);
 
 	ret = ddebug_exec_queries(tmpbuf, NULL);
@@ -827,22 +825,9 @@ static const struct seq_operations ddebug_proc_seqops = {
  */
 static int ddebug_proc_open(struct inode *inode, struct file *file)
 {
-	struct ddebug_iter *iter;
-	int err;
-
 	vpr_info("called\n");
-
-	iter = kzalloc(sizeof(*iter), GFP_KERNEL);
-	if (iter == NULL)
-		return -ENOMEM;
-
-	err = seq_open(file, &ddebug_proc_seqops);
-	if (err) {
-		kfree(iter);
-		return err;
-	}
-	((struct seq_file *)file->private_data)->private = iter;
-	return 0;
+	return seq_open_private(file, &ddebug_proc_seqops,
+				sizeof(struct ddebug_iter));
 }
 
 static const struct file_operations ddebug_proc_fops = {
@@ -862,17 +847,19 @@ int ddebug_add_module(struct _ddebug *tab, unsigned int n,
 			     const char *name)
 {
 	struct ddebug_table *dt;
-	char *new_name;
 
 	dt = kzalloc(sizeof(*dt), GFP_KERNEL);
-	if (dt == NULL)
-		return -ENOMEM;
-	new_name = kstrdup(name, GFP_KERNEL);
-	if (new_name == NULL) {
-		kfree(dt);
+	if (dt == NULL) {
+		pr_err("error adding module: %s\n", name);
 		return -ENOMEM;
 	}
-	dt->mod_name = new_name;
+	/*
+	 * For built-in modules, name lives in .rodata and is
+	 * immortal. For loaded modules, name points at the name[]
+	 * member of struct module, which lives at least as long as
+	 * this struct ddebug_table.
+	 */
+	dt->mod_name = name;
 	dt->num_ddebugs = n;
 	dt->ddebugs = tab;
 
@@ -883,7 +870,6 @@ int ddebug_add_module(struct _ddebug *tab, unsigned int n,
 	vpr_info("%u debug prints in module %s\n", n, dt->mod_name);
 	return 0;
 }
-EXPORT_SYMBOL_GPL(ddebug_add_module);
 
 /* helper for ddebug_dyndbg_(boot|module)_param_cb */
 static int ddebug_dyndbg_param_cb(char *param, char *val,
@@ -908,7 +894,7 @@ static int ddebug_dyndbg_param_cb(char *param, char *val,
 
 /* handle both dyndbg and $module.dyndbg params at boot */
 static int ddebug_dyndbg_boot_param_cb(char *param, char *val,
-				const char *unused)
+				const char *unused, void *arg)
 {
 	vpr_info("%s=\"%s\"\n", param, val);
 	return ddebug_dyndbg_param_cb(param, val, NULL, 0);
@@ -928,7 +914,6 @@ int ddebug_dyndbg_module_param_cb(char *param, char *val, const char *module)
 static void ddebug_table_free(struct ddebug_table *dt)
 {
 	list_del_init(&dt->link);
-	kfree(dt->mod_name);
 	kfree(dt);
 }
 
@@ -945,15 +930,15 @@ int ddebug_remove_module(const char *mod_name)
 
 	mutex_lock(&ddebug_lock);
 	list_for_each_entry_safe(dt, nextdt, &ddebug_tables, link) {
-		if (!strcmp(dt->mod_name, mod_name)) {
+		if (dt->mod_name == mod_name) {
 			ddebug_table_free(dt);
 			ret = 0;
+			break;
 		}
 	}
 	mutex_unlock(&ddebug_lock);
 	return ret;
 }
-EXPORT_SYMBOL_GPL(ddebug_remove_module);
 
 static void ddebug_remove_all_tables(void)
 {
@@ -1049,7 +1034,7 @@ static int __init dynamic_debug_init(void)
 	 */
 	cmdline = kstrdup(saved_command_line, GFP_KERNEL);
 	parse_args("dyndbg params", cmdline, NULL,
-		   0, 0, 0, &ddebug_dyndbg_boot_param_cb);
+		   0, 0, 0, NULL, &ddebug_dyndbg_boot_param_cb);
 	kfree(cmdline);
 	return 0;
 

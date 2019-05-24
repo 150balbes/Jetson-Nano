@@ -25,27 +25,42 @@
 #include <dt-bindings/clock/qcom,gcc-msm8974.h>
 #include <dt-bindings/reset/qcom,gcc-msm8974.h>
 
+#include "common.h"
 #include "clk-regmap.h"
 #include "clk-pll.h"
 #include "clk-rcg.h"
 #include "clk-branch.h"
 #include "reset.h"
+#include "gdsc.h"
 
-#define P_XO	0
-#define P_GPLL0	1
-#define P_GPLL1	1
-
-static const u8 gcc_xo_gpll0_map[] = {
-	[P_XO]		= 0,
-	[P_GPLL0]	= 1,
+enum {
+	P_XO,
+	P_GPLL0,
+	P_GPLL1,
+	P_GPLL4,
 };
 
-static const char *gcc_xo_gpll0[] = {
+static const struct parent_map gcc_xo_gpll0_map[] = {
+	{ P_XO, 0 },
+	{ P_GPLL0, 1 }
+};
+
+static const char * const gcc_xo_gpll0[] = {
 	"xo",
 	"gpll0_vote",
 };
 
-#define F(f, s, h, m, n) { (f), (s), (2 * (h) - 1), (m), (n) }
+static const struct parent_map gcc_xo_gpll0_gpll4_map[] = {
+	{ P_XO, 0 },
+	{ P_GPLL0, 1 },
+	{ P_GPLL4, 5 }
+};
+
+static const char * const gcc_xo_gpll0_gpll4[] = {
+	"xo",
+	"gpll0_vote",
+	"gpll4_vote",
+};
 
 static struct clk_pll gpll0 = {
 	.l_reg = 0x0004,
@@ -132,6 +147,33 @@ static struct clk_regmap gpll1_vote = {
 	.hw.init = &(struct clk_init_data){
 		.name = "gpll1_vote",
 		.parent_names = (const char *[]){ "gpll1" },
+		.num_parents = 1,
+		.ops = &clk_pll_vote_ops,
+	},
+};
+
+static struct clk_pll gpll4 = {
+	.l_reg = 0x1dc4,
+	.m_reg = 0x1dc8,
+	.n_reg = 0x1dcc,
+	.config_reg = 0x1dd4,
+	.mode_reg = 0x1dc0,
+	.status_reg = 0x1ddc,
+	.status_bit = 17,
+	.clkr.hw.init = &(struct clk_init_data){
+		.name = "gpll4",
+		.parent_names = (const char *[]){ "xo" },
+		.num_parents = 1,
+		.ops = &clk_pll_ops,
+	},
+};
+
+static struct clk_regmap gpll4_vote = {
+	.enable_reg = 0x1480,
+	.enable_mask = BIT(4),
+	.hw.init = &(struct clk_init_data){
+		.name = "gpll4_vote",
+		.parent_names = (const char *[]){ "gpll4" },
 		.num_parents = 1,
 		.ops = &clk_pll_vote_ops,
 	},
@@ -811,18 +853,33 @@ static const struct freq_tbl ftbl_gcc_sdcc1_4_apps_clk[] = {
 	{ }
 };
 
+static const struct freq_tbl ftbl_gcc_sdcc1_apps_clk_pro[] = {
+	F(144000, P_XO, 16, 3, 25),
+	F(400000, P_XO, 12, 1, 4),
+	F(20000000, P_GPLL0, 15, 1, 2),
+	F(25000000, P_GPLL0, 12, 1, 2),
+	F(50000000, P_GPLL0, 12, 0, 0),
+	F(100000000, P_GPLL0, 6, 0, 0),
+	F(192000000, P_GPLL4, 4, 0, 0),
+	F(200000000, P_GPLL0, 3, 0, 0),
+	F(384000000, P_GPLL4, 2, 0, 0),
+	{ }
+};
+
+static struct clk_init_data sdcc1_apps_clk_src_init = {
+	.name = "sdcc1_apps_clk_src",
+	.parent_names = gcc_xo_gpll0,
+	.num_parents = 2,
+	.ops = &clk_rcg2_floor_ops,
+};
+
 static struct clk_rcg2 sdcc1_apps_clk_src = {
 	.cmd_rcgr = 0x04d0,
 	.mnd_width = 8,
 	.hid_width = 5,
 	.parent_map = gcc_xo_gpll0_map,
 	.freq_tbl = ftbl_gcc_sdcc1_4_apps_clk,
-	.clkr.hw.init = &(struct clk_init_data){
-		.name = "sdcc1_apps_clk_src",
-		.parent_names = gcc_xo_gpll0,
-		.num_parents = 2,
-		.ops = &clk_rcg2_ops,
-	},
+	.clkr.hw.init = &sdcc1_apps_clk_src_init,
 };
 
 static struct clk_rcg2 sdcc2_apps_clk_src = {
@@ -835,7 +892,7 @@ static struct clk_rcg2 sdcc2_apps_clk_src = {
 		.name = "sdcc2_apps_clk_src",
 		.parent_names = gcc_xo_gpll0,
 		.num_parents = 2,
-		.ops = &clk_rcg2_ops,
+		.ops = &clk_rcg2_floor_ops,
 	},
 };
 
@@ -849,7 +906,7 @@ static struct clk_rcg2 sdcc3_apps_clk_src = {
 		.name = "sdcc3_apps_clk_src",
 		.parent_names = gcc_xo_gpll0,
 		.num_parents = 2,
-		.ops = &clk_rcg2_ops,
+		.ops = &clk_rcg2_floor_ops,
 	},
 };
 
@@ -863,7 +920,7 @@ static struct clk_rcg2 sdcc4_apps_clk_src = {
 		.name = "sdcc4_apps_clk_src",
 		.parent_names = gcc_xo_gpll0,
 		.num_parents = 2,
-		.ops = &clk_rcg2_ops,
+		.ops = &clk_rcg2_floor_ops,
 	},
 };
 
@@ -928,9 +985,9 @@ static const struct freq_tbl ftbl_gcc_usb_hsic_clk[] = {
 	{ }
 };
 
-static u8 usb_hsic_clk_src_map[] = {
-	[P_XO]		= 0,
-	[P_GPLL1]	= 4,
+static const struct parent_map usb_hsic_clk_src_map[] = {
+	{ P_XO, 0 },
+	{ P_GPLL1, 4 }
 };
 
 static struct clk_rcg2 usb_hsic_clk_src = {
@@ -1340,7 +1397,7 @@ static struct clk_branch gcc_blsp1_uart6_apps_clk = {
 };
 
 static struct clk_branch gcc_blsp2_ahb_clk = {
-	.halt_reg = 0x05c4,
+	.halt_reg = 0x0944,
 	.halt_check = BRANCH_HALT_VOTED,
 	.clkr = {
 		.enable_reg = 0x1484,
@@ -1725,6 +1782,7 @@ static struct clk_branch gcc_ce1_clk = {
 				"ce1_clk_src",
 			},
 			.num_parents = 1,
+			.flags = CLK_SET_RATE_PARENT,
 			.ops = &clk_branch2_ops,
 		},
 	},
@@ -1905,7 +1963,6 @@ static struct clk_branch gcc_mss_q6_bimc_axi_clk = {
 		.enable_mask = BIT(0),
 		.hw.init = &(struct clk_init_data){
 			.name = "gcc_mss_q6_bimc_axi_clk",
-			.flags = CLK_IS_ROOT,
 			.ops = &clk_branch2_ops,
 		},
 	},
@@ -1989,6 +2046,38 @@ static struct clk_branch gcc_sdcc1_apps_clk = {
 			},
 			.num_parents = 1,
 			.flags = CLK_SET_RATE_PARENT,
+			.ops = &clk_branch2_ops,
+		},
+	},
+};
+
+static struct clk_branch gcc_sdcc1_cdccal_ff_clk = {
+	.halt_reg = 0x04e8,
+	.clkr = {
+		.enable_reg = 0x04e8,
+		.enable_mask = BIT(0),
+		.hw.init = &(struct clk_init_data){
+			.name = "gcc_sdcc1_cdccal_ff_clk",
+			.parent_names = (const char *[]){
+				"xo"
+			},
+			.num_parents = 1,
+			.ops = &clk_branch2_ops,
+		},
+	},
+};
+
+static struct clk_branch gcc_sdcc1_cdccal_sleep_clk = {
+	.halt_reg = 0x04e4,
+	.clkr = {
+		.enable_reg = 0x04e4,
+		.enable_mask = BIT(0),
+		.hw.init = &(struct clk_init_data){
+			.name = "gcc_sdcc1_cdccal_sleep_clk",
+			.parent_names = (const char *[]){
+				"sleep_clk_src"
+			},
+			.num_parents = 1,
 			.ops = &clk_branch2_ops,
 		},
 	},
@@ -2341,6 +2430,14 @@ static struct clk_branch gcc_usb_hsic_system_clk = {
 	},
 };
 
+static struct gdsc usb_hs_hsic_gdsc = {
+	.gdscr = 0x404,
+	.pd = {
+		.name = "usb_hs_hsic",
+	},
+	.pwrsts = PWRSTS_OFF_ON,
+};
+
 static struct clk_regmap *gcc_msm8974_clocks[] = {
 	[GPLL0] = &gpll0.clkr,
 	[GPLL0_VOTE] = &gpll0_vote,
@@ -2483,6 +2580,10 @@ static struct clk_regmap *gcc_msm8974_clocks[] = {
 	[GCC_USB_HSIC_IO_CAL_SLEEP_CLK] = &gcc_usb_hsic_io_cal_sleep_clk.clkr,
 	[GCC_USB_HSIC_SYSTEM_CLK] = &gcc_usb_hsic_system_clk.clkr,
 	[GCC_MMSS_GPLL0_CLK_SRC] = &gcc_mmss_gpll0_clk_src,
+	[GPLL4] = NULL,
+	[GPLL4_VOTE] = NULL,
+	[GCC_SDCC1_CDCCAL_SLEEP_CLK] = NULL,
+	[GCC_SDCC1_CDCCAL_FF_CLK] = NULL,
 };
 
 static const struct qcom_reset_map gcc_msm8974_resets[] = {
@@ -2566,6 +2667,10 @@ static const struct qcom_reset_map gcc_msm8974_resets[] = {
 	[GCC_VENUS_RESTART] = { 0x1740 },
 };
 
+static struct gdsc *gcc_msm8974_gdscs[] = {
+	[USB_HS_HSIC_GDSC] = &usb_hs_hsic_gdsc,
+};
+
 static const struct regmap_config gcc_msm8974_regmap_config = {
 	.reg_bits	= 32,
 	.reg_stride	= 4,
@@ -2574,105 +2679,69 @@ static const struct regmap_config gcc_msm8974_regmap_config = {
 	.fast_io	= true,
 };
 
+static const struct qcom_cc_desc gcc_msm8974_desc = {
+	.config = &gcc_msm8974_regmap_config,
+	.clks = gcc_msm8974_clocks,
+	.num_clks = ARRAY_SIZE(gcc_msm8974_clocks),
+	.resets = gcc_msm8974_resets,
+	.num_resets = ARRAY_SIZE(gcc_msm8974_resets),
+	.gdscs = gcc_msm8974_gdscs,
+	.num_gdscs = ARRAY_SIZE(gcc_msm8974_gdscs),
+};
+
 static const struct of_device_id gcc_msm8974_match_table[] = {
 	{ .compatible = "qcom,gcc-msm8974" },
+	{ .compatible = "qcom,gcc-msm8974pro" , .data = (void *)1UL },
+	{ .compatible = "qcom,gcc-msm8974pro-ac", .data = (void *)1UL },
 	{ }
 };
 MODULE_DEVICE_TABLE(of, gcc_msm8974_match_table);
 
-struct qcom_cc {
-	struct qcom_reset_controller reset;
-	struct clk_onecell_data data;
-	struct clk *clks[];
-};
+static void msm8974_pro_clock_override(void)
+{
+	sdcc1_apps_clk_src_init.parent_names = gcc_xo_gpll0_gpll4;
+	sdcc1_apps_clk_src_init.num_parents = 3;
+	sdcc1_apps_clk_src.freq_tbl = ftbl_gcc_sdcc1_apps_clk_pro;
+	sdcc1_apps_clk_src.parent_map = gcc_xo_gpll0_gpll4_map;
+
+	gcc_msm8974_clocks[GPLL4] = &gpll4.clkr;
+	gcc_msm8974_clocks[GPLL4_VOTE] = &gpll4_vote;
+	gcc_msm8974_clocks[GCC_SDCC1_CDCCAL_SLEEP_CLK] =
+		&gcc_sdcc1_cdccal_sleep_clk.clkr;
+	gcc_msm8974_clocks[GCC_SDCC1_CDCCAL_FF_CLK] =
+		&gcc_sdcc1_cdccal_ff_clk.clkr;
+}
 
 static int gcc_msm8974_probe(struct platform_device *pdev)
 {
-	void __iomem *base;
-	struct resource *res;
-	int i, ret;
+	int ret;
 	struct device *dev = &pdev->dev;
-	struct clk *clk;
-	struct clk_onecell_data *data;
-	struct clk **clks;
-	struct regmap *regmap;
-	size_t num_clks;
-	struct qcom_reset_controller *reset;
-	struct qcom_cc *cc;
+	bool pro;
+	const struct of_device_id *id;
 
-	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
-	base = devm_ioremap_resource(dev, res);
-	if (IS_ERR(base))
-		return PTR_ERR(base);
+	id = of_match_device(gcc_msm8974_match_table, dev);
+	if (!id)
+		return -ENODEV;
+	pro = !!(id->data);
 
-	regmap = devm_regmap_init_mmio(dev, base, &gcc_msm8974_regmap_config);
-	if (IS_ERR(regmap))
-		return PTR_ERR(regmap);
+	if (pro)
+		msm8974_pro_clock_override();
 
-	num_clks = ARRAY_SIZE(gcc_msm8974_clocks);
-	cc = devm_kzalloc(dev, sizeof(*cc) + sizeof(*clks) * num_clks,
-			  GFP_KERNEL);
-	if (!cc)
-		return -ENOMEM;
-
-	clks = cc->clks;
-	data = &cc->data;
-	data->clks = clks;
-	data->clk_num = num_clks;
-
-	/* Temporary until RPM clocks supported */
-	clk = clk_register_fixed_rate(dev, "xo", NULL, CLK_IS_ROOT, 19200000);
-	if (IS_ERR(clk))
-		return PTR_ERR(clk);
-
-	/* Should move to DT node? */
-	clk = clk_register_fixed_rate(dev, "sleep_clk_src", NULL,
-				      CLK_IS_ROOT, 32768);
-	if (IS_ERR(clk))
-		return PTR_ERR(clk);
-
-	for (i = 0; i < num_clks; i++) {
-		if (!gcc_msm8974_clocks[i])
-			continue;
-		clk = devm_clk_register_regmap(dev, gcc_msm8974_clocks[i]);
-		if (IS_ERR(clk))
-			return PTR_ERR(clk);
-		clks[i] = clk;
-	}
-
-	ret = of_clk_add_provider(dev->of_node, of_clk_src_onecell_get, data);
+	ret = qcom_cc_register_board_clk(dev, "xo_board", "xo", 19200000);
 	if (ret)
 		return ret;
 
-	reset = &cc->reset;
-	reset->rcdev.of_node = dev->of_node;
-	reset->rcdev.ops = &qcom_reset_ops,
-	reset->rcdev.owner = THIS_MODULE,
-	reset->rcdev.nr_resets = ARRAY_SIZE(gcc_msm8974_resets),
-	reset->regmap = regmap;
-	reset->reset_map = gcc_msm8974_resets,
-	platform_set_drvdata(pdev, &reset->rcdev);
-
-	ret = reset_controller_register(&reset->rcdev);
+	ret = qcom_cc_register_sleep_clk(dev);
 	if (ret)
-		of_clk_del_provider(dev->of_node);
+		return ret;
 
-	return ret;
-}
-
-static int gcc_msm8974_remove(struct platform_device *pdev)
-{
-	of_clk_del_provider(pdev->dev.of_node);
-	reset_controller_unregister(platform_get_drvdata(pdev));
-	return 0;
+	return qcom_cc_probe(pdev, &gcc_msm8974_desc);
 }
 
 static struct platform_driver gcc_msm8974_driver = {
 	.probe		= gcc_msm8974_probe,
-	.remove		= gcc_msm8974_remove,
 	.driver		= {
 		.name	= "gcc-msm8974",
-		.owner	= THIS_MODULE,
 		.of_match_table = gcc_msm8974_match_table,
 	},
 };

@@ -21,7 +21,7 @@
  *
  *
  *  libata documentation is available via 'make {ps|pdf}docs',
- *  as Documentation/DocBook/libata.*
+ *  as Documentation/driver-api/libata.rst
  *
  *  No hardware documentation available outside of NVIDIA.
  *  This driver programs the NVIDIA SATA controller in a similar
@@ -40,7 +40,6 @@
 #include <linux/module.h>
 #include <linux/gfp.h>
 #include <linux/pci.h>
-#include <linux/init.h>
 #include <linux/blkdev.h>
 #include <linux/delay.h>
 #include <linux/interrupt.h>
@@ -296,7 +295,7 @@ struct nv_swncq_port_priv {
 #define NV_ADMA_CHECK_INTR(GCTL, PORT) ((GCTL) & (1 << (19 + (12 * (PORT)))))
 
 static int nv_init_one(struct pci_dev *pdev, const struct pci_device_id *ent);
-#ifdef CONFIG_PM
+#ifdef CONFIG_PM_SLEEP
 static int nv_pci_device_resume(struct pci_dev *pdev);
 #endif
 static void nv_ck804_host_stop(struct ata_host *host);
@@ -380,7 +379,7 @@ static struct pci_driver nv_pci_driver = {
 	.name			= DRV_NAME,
 	.id_table		= nv_pci_tbl,
 	.probe			= nv_init_one,
-#ifdef CONFIG_PM
+#ifdef CONFIG_PM_SLEEP
 	.suspend		= ata_pci_device_suspend,
 	.resume			= nv_pci_device_resume,
 #endif
@@ -401,7 +400,7 @@ static struct scsi_host_template nv_adma_sht = {
 
 static struct scsi_host_template nv_swncq_sht = {
 	ATA_NCQ_SHT(DRV_NAME),
-	.can_queue		= ATA_MAX_QUEUE,
+	.can_queue		= ATA_MAX_QUEUE - 1,
 	.sg_tablesize		= LIBATA_MAX_PRD,
 	.dma_boundary		= ATA_DMA_BOUNDARY,
 	.slave_configure	= nv_swncq_slave_config,
@@ -600,7 +599,7 @@ MODULE_DEVICE_TABLE(pci, nv_pci_tbl);
 MODULE_VERSION(DRV_VERSION);
 
 static bool adma_enabled;
-static bool swncq_enabled = 1;
+static bool swncq_enabled = true;
 static bool msi_enabled;
 
 static void nv_adma_register_mode(struct ata_port *ap)
@@ -676,7 +675,6 @@ static int nv_adma_slave_config(struct scsi_device *sdev)
 	struct ata_port *ap = ata_shost_to_port(sdev->host);
 	struct nv_adma_port_priv *pp = ap->private_data;
 	struct nv_adma_port_priv *port0, *port1;
-	struct scsi_device *sdev0, *sdev1;
 	struct pci_dev *pdev = to_pci_dev(ap->host->dev);
 	unsigned long segment_boundary, flags;
 	unsigned short sg_tablesize;
@@ -737,36 +735,18 @@ static int nv_adma_slave_config(struct scsi_device *sdev)
 
 	port0 = ap->host->ports[0]->private_data;
 	port1 = ap->host->ports[1]->private_data;
-	sdev0 = ap->host->ports[0]->link.device[0].sdev;
-	sdev1 = ap->host->ports[1]->link.device[0].sdev;
 	if ((port0->flags & NV_ADMA_ATAPI_SETUP_COMPLETE) ||
 	    (port1->flags & NV_ADMA_ATAPI_SETUP_COMPLETE)) {
-		/** We have to set the DMA mask to 32-bit if either port is in
-		    ATAPI mode, since they are on the same PCI device which is
-		    used for DMA mapping. If we set the mask we also need to set
-		    the bounce limit on both ports to ensure that the block
-		    layer doesn't feed addresses that cause DMA mapping to
-		    choke. If either SCSI device is not allocated yet, it's OK
-		    since that port will discover its correct setting when it
-		    does get allocated.
-		    Note: Setting 32-bit mask should not fail. */
-		if (sdev0)
-			blk_queue_bounce_limit(sdev0->request_queue,
-					       ATA_DMA_MASK);
-		if (sdev1)
-			blk_queue_bounce_limit(sdev1->request_queue,
-					       ATA_DMA_MASK);
-
-		pci_set_dma_mask(pdev, ATA_DMA_MASK);
+		/*
+		 * We have to set the DMA mask to 32-bit if either port is in
+		 * ATAPI mode, since they are on the same PCI device which is
+		 * used for DMA mapping.  If either SCSI device is not allocated
+		 * yet, it's OK since that port will discover its correct
+		 * setting when it does get allocated.
+		 */
+		rc = dma_set_mask(&pdev->dev, ATA_DMA_MASK);
 	} else {
-		/** This shouldn't fail as it was set to this value before */
-		pci_set_dma_mask(pdev, pp->adma_dma_mask);
-		if (sdev0)
-			blk_queue_bounce_limit(sdev0->request_queue,
-					       pp->adma_dma_mask);
-		if (sdev1)
-			blk_queue_bounce_limit(sdev1->request_queue,
-					       pp->adma_dma_mask);
+		rc = dma_set_mask(&pdev->dev, pp->adma_dma_mask);
 	}
 
 	blk_queue_segment_boundary(sdev->request_queue, segment_boundary);
@@ -1132,12 +1112,11 @@ static int nv_adma_port_start(struct ata_port *ap)
 
 	VPRINTK("ENTER\n");
 
-	/* Ensure DMA mask is set to 32-bit before allocating legacy PRD and
-	   pad buffers */
-	rc = pci_set_dma_mask(pdev, DMA_BIT_MASK(32));
-	if (rc)
-		return rc;
-	rc = pci_set_consistent_dma_mask(pdev, DMA_BIT_MASK(32));
+	/*
+	 * Ensure DMA mask is set to 32-bit before allocating legacy PRD and
+	 * pad buffers.
+	 */
+	rc = dma_set_mask_and_coherent(&pdev->dev, DMA_BIT_MASK(32));
 	if (rc)
 		return rc;
 
@@ -1157,13 +1136,16 @@ static int nv_adma_port_start(struct ata_port *ap)
 	pp->notifier_clear_block = pp->gen_block +
 	       NV_ADMA_NOTIFIER_CLEAR + (4 * ap->port_no);
 
-	/* Now that the legacy PRD and padding buffer are allocated we can
-	   safely raise the DMA mask to allocate the CPB/APRD table.
-	   These are allowed to fail since we store the value that ends up
-	   being used to set as the bounce limit in slave_config later if
-	   needed. */
-	pci_set_dma_mask(pdev, DMA_BIT_MASK(64));
-	pci_set_consistent_dma_mask(pdev, DMA_BIT_MASK(64));
+	/*
+	 * Now that the legacy PRD and padding buffer are allocated we can
+	 * try to raise the DMA mask to allocate the CPB/APRD table.
+	 */
+	rc = dma_set_mask_and_coherent(&pdev->dev, DMA_BIT_MASK(64));
+	if (rc) {
+		rc = dma_set_mask_and_coherent(&pdev->dev, DMA_BIT_MASK(32));
+		if (rc)
+			return rc;
+	}
 	pp->adma_dma_mask = *dev->dma_mask;
 
 	mem = dmam_alloc_coherent(dev, NV_ADMA_PORT_PRIV_DMA_SZ,
@@ -1357,11 +1339,11 @@ static void nv_adma_fill_sg(struct ata_queued_cmd *qc, struct nv_adma_cpb *cpb)
 
 	for_each_sg(qc->sg, sg, qc->n_elem, si) {
 		aprd = (si < 5) ? &cpb->aprd[si] :
-			       &pp->aprd[NV_ADMA_SGTBL_LEN * qc->tag + (si-5)];
+			&pp->aprd[NV_ADMA_SGTBL_LEN * qc->hw_tag + (si-5)];
 		nv_adma_fill_aprd(qc, sg, si, aprd);
 	}
 	if (si > 5)
-		cpb->next_aprd = cpu_to_le64(((u64)(pp->aprd_dma + NV_ADMA_SGTBL_SZ * qc->tag)));
+		cpb->next_aprd = cpu_to_le64(((u64)(pp->aprd_dma + NV_ADMA_SGTBL_SZ * qc->hw_tag)));
 	else
 		cpb->next_aprd = cpu_to_le64(0);
 }
@@ -1386,7 +1368,7 @@ static int nv_adma_use_reg_mode(struct ata_queued_cmd *qc)
 static void nv_adma_qc_prep(struct ata_queued_cmd *qc)
 {
 	struct nv_adma_port_priv *pp = qc->ap->private_data;
-	struct nv_adma_cpb *cpb = &pp->cpb[qc->tag];
+	struct nv_adma_cpb *cpb = &pp->cpb[qc->hw_tag];
 	u8 ctl_flags = NV_CPB_CTL_CPB_VALID |
 		       NV_CPB_CTL_IEN;
 
@@ -1404,7 +1386,7 @@ static void nv_adma_qc_prep(struct ata_queued_cmd *qc)
 	wmb();
 
 	cpb->len		= 3;
-	cpb->tag		= qc->tag;
+	cpb->tag		= qc->hw_tag;
 	cpb->next_cpb_idx	= 0;
 
 	/* turn on NCQ flags for NCQ commands */
@@ -1467,9 +1449,9 @@ static unsigned int nv_adma_qc_issue(struct ata_queued_cmd *qc)
 		pp->last_issue_ncq = curr_ncq;
 	}
 
-	writew(qc->tag, mmio + NV_ADMA_APPEND);
+	writew(qc->hw_tag, mmio + NV_ADMA_APPEND);
 
-	DPRINTK("Issued tag %u\n", qc->tag);
+	DPRINTK("Issued tag %u\n", qc->hw_tag);
 
 	return 0;
 }
@@ -1731,8 +1713,8 @@ static void nv_swncq_qc_to_dq(struct ata_port *ap, struct ata_queued_cmd *qc)
 
 	/* queue is full */
 	WARN_ON(dq->tail - dq->head == ATA_MAX_QUEUE);
-	dq->defer_bits |= (1 << qc->tag);
-	dq->tag[dq->tail++ & (ATA_MAX_QUEUE - 1)] = qc->tag;
+	dq->defer_bits |= (1 << qc->hw_tag);
+	dq->tag[dq->tail++ & (ATA_MAX_QUEUE - 1)] = qc->hw_tag;
 }
 
 static struct ata_queued_cmd *nv_swncq_qc_from_dq(struct ata_port *ap)
@@ -1797,7 +1779,7 @@ static void nv_swncq_ncq_stop(struct ata_port *ap)
 	u32 sactive;
 	u32 done_mask;
 
-	ata_port_err(ap, "EH in SWNCQ mode,QC:qc_active 0x%X sactive 0x%X\n",
+	ata_port_err(ap, "EH in SWNCQ mode,QC:qc_active 0x%llX sactive 0x%X\n",
 		     ap->qc_active, ap->link.sactive);
 	ata_port_err(ap,
 		"SWNCQ:qc_active 0x%X defer_bits 0x%X last_issue_tag 0x%x\n  "
@@ -1952,7 +1934,7 @@ static int nv_swncq_slave_config(struct scsi_device *sdev)
 	ata_id_c_string(dev->id, model_num, ATA_ID_PROD, sizeof(model_num));
 
 	if (strncmp(model_num, "Maxtor", 6) == 0) {
-		ata_scsi_change_queue_depth(sdev, 1, SCSI_QDEPTH_DEFAULT);
+		ata_scsi_change_queue_depth(sdev, 1);
 		ata_dev_notice(dev, "Disabling SWNCQ mode (depth %x)\n",
 			       sdev->queue_depth);
 	}
@@ -2011,7 +1993,7 @@ static void nv_swncq_fill_sg(struct ata_queued_cmd *qc)
 	struct ata_bmdma_prd *prd;
 	unsigned int si, idx;
 
-	prd = pp->prd + ATA_MAX_PRD * qc->tag;
+	prd = pp->prd + ATA_MAX_PRD * qc->hw_tag;
 
 	idx = 0;
 	for_each_sg(qc->sg, sg, qc->n_elem, si) {
@@ -2049,16 +2031,16 @@ static unsigned int nv_swncq_issue_atacmd(struct ata_port *ap,
 
 	DPRINTK("Enter\n");
 
-	writel((1 << qc->tag), pp->sactive_block);
-	pp->last_issue_tag = qc->tag;
-	pp->dhfis_bits &= ~(1 << qc->tag);
-	pp->dmafis_bits &= ~(1 << qc->tag);
-	pp->qc_active |= (0x1 << qc->tag);
+	writel((1 << qc->hw_tag), pp->sactive_block);
+	pp->last_issue_tag = qc->hw_tag;
+	pp->dhfis_bits &= ~(1 << qc->hw_tag);
+	pp->dmafis_bits &= ~(1 << qc->hw_tag);
+	pp->qc_active |= (0x1 << qc->hw_tag);
 
 	ap->ops->sff_tf_load(ap, &qc->tf);	 /* load tf registers */
 	ap->ops->sff_exec_command(ap, &qc->tf);
 
-	DPRINTK("Issued tag %u\n", qc->tag);
+	DPRINTK("Issued tag %u\n", qc->hw_tag);
 
 	return 0;
 }
@@ -2208,7 +2190,7 @@ static void nv_swncq_dmafis(struct ata_port *ap)
 	rw = qc->tf.flags & ATA_TFLAG_WRITE;
 
 	/* load PRD table addr. */
-	iowrite32(pp->prd_dma + ATA_PRD_TBL_SZ * qc->tag,
+	iowrite32(pp->prd_dma + ATA_PRD_TBL_SZ * qc->hw_tag,
 		  ap->ioaddr.bmdma_addr + ATA_DMA_TABLE_OFS);
 
 	/* specify data direction, triple-check start bit is clear */
@@ -2432,7 +2414,7 @@ static int nv_init_one(struct pci_dev *pdev, const struct pci_device_id *ent)
 	return ata_pci_sff_activate_host(host, ipriv->irq_handler, ipriv->sht);
 }
 
-#ifdef CONFIG_PM
+#ifdef CONFIG_PM_SLEEP
 static int nv_pci_device_resume(struct pci_dev *pdev)
 {
 	struct ata_host *host = pci_get_drvdata(pdev);

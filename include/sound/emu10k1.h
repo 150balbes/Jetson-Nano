@@ -33,15 +33,16 @@
 #include <linux/interrupt.h>
 #include <linux/mutex.h>
 #include <linux/firmware.h>
+#include <linux/io.h>
 
-#include <asm/io.h>
 #include <uapi/sound/emu10k1.h>
 
 /* ------------------- DEFINES -------------------- */
 
 #define EMUPAGESIZE     4096
 #define MAXREQVOICES    8
-#define MAXPAGES        8192
+#define MAXPAGES0       4096	/* 32 bit mode */
+#define MAXPAGES1       8192	/* 31 bit mode */
 #define RESERVED        0
 #define NUM_MIDI        16
 #define NUM_G           64              /* use all channels */
@@ -50,8 +51,7 @@
 
 /* FIXME? - according to the OSS driver the EMU10K1 needs a 29 bit DMA mask */
 #define EMU10K1_DMA_MASK	0x7fffffffUL	/* 31bit */
-#define AUDIGY_DMA_MASK		0x7fffffffUL	/* 31bit FIXME - 32 should work? */
-						/* See ALSA bug #1276 - rlrevell */
+#define AUDIGY_DMA_MASK		0xffffffffUL	/* 32bit mode */
 
 #define TMEMSIZE        256*1024
 #define TMEMSIZEREG     4
@@ -436,8 +436,6 @@
 #define CCCA_CURRADDR_MASK	0x00ffffff	/* Current address of the selected channel		*/
 #define CCCA_CURRADDR		0x18000008
 
-/* undefine CCR to avoid conflict with the definition for SH */
-#undef CCR
 #define CCR			0x09		/* Cache control register				*/
 #define CCR_CACHEINVALIDSIZE	0x07190009
 #define CCR_CACHEINVALIDSIZE_MASK	0xfe000000	/* Number of invalid samples cache for this channel    	*/
@@ -468,8 +466,11 @@
 
 #define MAPB			0x0d		/* Cache map B						*/
 
-#define MAP_PTE_MASK		0xffffe000	/* The 19 MSBs of the PTE indexed by the PTI		*/
-#define MAP_PTI_MASK		0x00001fff	/* The 13 bit index to one of the 8192 PTE dwords      	*/
+#define MAP_PTE_MASK0		0xfffff000	/* The 20 MSBs of the PTE indexed by the PTI		*/
+#define MAP_PTI_MASK0		0x00000fff	/* The 12 bit index to one of the 4096 PTE dwords      	*/
+
+#define MAP_PTE_MASK1		0xffffe000	/* The 19 MSBs of the PTE indexed by the PTI		*/
+#define MAP_PTI_MASK1		0x00001fff	/* The 13 bit index to one of the 8192 PTE dwords      	*/
 
 /* 0x0e, 0x0f: Not used */
 
@@ -1609,7 +1610,7 @@ struct snd_emu10k1_fx8010_pcm {
 	struct snd_pcm_indirect pcm_rec;
 	unsigned int tram_pos;
 	unsigned int tram_shift;
-	struct snd_emu10k1_fx8010_irq *irq;
+	struct snd_emu10k1_fx8010_irq irq;
 };
 
 struct snd_emu10k1_fx8010 {
@@ -1687,7 +1688,8 @@ struct snd_emu1010 {
 	unsigned int internal_clock; /* 44100 or 48000 */
 	unsigned int optical_in; /* 0:SPDIF, 1:ADAT */
 	unsigned int optical_out; /* 0:SPDIF, 1:ADAT */
-	struct task_struct *firmware_thread;
+	struct delayed_work firmware_work;
+	u32 last_reg;
 };
 
 struct snd_emu10k1 {
@@ -1706,7 +1708,9 @@ struct snd_emu10k1 {
 	unsigned short model;			/* subsystem id */
 	unsigned int card_type;			/* EMU10K1_CARD_* */
 	unsigned int ecard_ctrl;		/* ecard control bits */
+	unsigned int address_mode;		/* address mode */
 	unsigned long dma_mask;			/* PCI DMA mask */
+	bool iommu_workaround;			/* IOMMU workaround needed */
 	unsigned int delay_pcm_irq;		/* in samples */
 	int max_cache_pages;			/* max memory size / PAGE_SIZE */
 	struct snd_dma_buffer silent_page;	/* silent page */
@@ -1715,7 +1719,6 @@ struct snd_emu10k1 {
 	struct snd_dma_buffer p16v_buffer;
 
 	struct snd_util_memhdr *memhdr;		/* page allocation list */
-	struct snd_emu10k1_memblk *reserved_page;	/* reserved page */
 
 	struct list_head mapped_link_head;
 	struct list_head mapped_order_link_head;
@@ -1811,17 +1814,17 @@ int snd_emu10k1_create(struct snd_card *card,
 		       uint subsystem,
 		       struct snd_emu10k1 ** remu);
 
-int snd_emu10k1_pcm(struct snd_emu10k1 * emu, int device, struct snd_pcm ** rpcm);
-int snd_emu10k1_pcm_mic(struct snd_emu10k1 * emu, int device, struct snd_pcm ** rpcm);
-int snd_emu10k1_pcm_efx(struct snd_emu10k1 * emu, int device, struct snd_pcm ** rpcm);
-int snd_p16v_pcm(struct snd_emu10k1 * emu, int device, struct snd_pcm ** rpcm);
+int snd_emu10k1_pcm(struct snd_emu10k1 *emu, int device);
+int snd_emu10k1_pcm_mic(struct snd_emu10k1 *emu, int device);
+int snd_emu10k1_pcm_efx(struct snd_emu10k1 *emu, int device);
+int snd_p16v_pcm(struct snd_emu10k1 *emu, int device);
 int snd_p16v_free(struct snd_emu10k1 * emu);
 int snd_p16v_mixer(struct snd_emu10k1 * emu);
-int snd_emu10k1_pcm_multi(struct snd_emu10k1 * emu, int device, struct snd_pcm ** rpcm);
-int snd_emu10k1_fx8010_pcm(struct snd_emu10k1 * emu, int device, struct snd_pcm ** rpcm);
+int snd_emu10k1_pcm_multi(struct snd_emu10k1 *emu, int device);
+int snd_emu10k1_fx8010_pcm(struct snd_emu10k1 *emu, int device);
 int snd_emu10k1_mixer(struct snd_emu10k1 * emu, int pcm_device, int multi_device);
 int snd_emu10k1_timer(struct snd_emu10k1 * emu, int device);
-int snd_emu10k1_fx8010_new(struct snd_emu10k1 *emu, int device, struct snd_hwdep ** rhwdep);
+int snd_emu10k1_fx8010_new(struct snd_emu10k1 *emu, int device);
 
 irqreturn_t snd_emu10k1_interrupt(int irq, void *dev_id);
 
@@ -1875,6 +1878,8 @@ void snd_p16v_resume(struct snd_emu10k1 *emu);
 /* memory allocation */
 struct snd_util_memblk *snd_emu10k1_alloc_pages(struct snd_emu10k1 *emu, struct snd_pcm_substream *substream);
 int snd_emu10k1_free_pages(struct snd_emu10k1 *emu, struct snd_util_memblk *blk);
+int snd_emu10k1_alloc_pages_maybe_wider(struct snd_emu10k1 *emu, size_t size,
+					struct snd_dma_buffer *dmab);
 struct snd_util_memblk *snd_emu10k1_synth_alloc(struct snd_emu10k1 *emu, unsigned int size);
 int snd_emu10k1_synth_free(struct snd_emu10k1 *emu, struct snd_util_memblk *blk);
 int snd_emu10k1_synth_bzero(struct snd_emu10k1 *emu, struct snd_util_memblk *blk, int offset, int size);
@@ -1897,7 +1902,7 @@ int snd_emu10k1_fx8010_register_irq_handler(struct snd_emu10k1 *emu,
 					    snd_fx8010_irq_handler_t *handler,
 					    unsigned char gpr_running,
 					    void *private_data,
-					    struct snd_emu10k1_fx8010_irq **r_irq);
+					    struct snd_emu10k1_fx8010_irq *irq);
 int snd_emu10k1_fx8010_unregister_irq_handler(struct snd_emu10k1 *emu,
 					      struct snd_emu10k1_fx8010_irq *irq);
 

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-1.0+
 /*
  * Open Host Controller Interface (OHCI) driver for USB.
  *
@@ -72,12 +73,15 @@
 static const char	hcd_name [] = "ohci_hcd";
 
 #define	STATECHANGE_DELAY	msecs_to_jiffies(300)
+#define	IO_WATCHDOG_DELAY	msecs_to_jiffies(275)
+#define	IO_WATCHDOG_OFF		0xffffff00
 
 #include "ohci.h"
 #include "pci-quirks.h"
 
 static void ohci_dump(struct ohci_hcd *ohci);
 static void ohci_stop(struct usb_hcd *hcd);
+static void io_watchdog_func(struct timer_list *t);
 
 #include "ohci-hub.c"
 #include "ohci-dbg.c"
@@ -97,17 +101,44 @@ static void ohci_stop(struct usb_hcd *hcd);
 
 
 /* Some boards misreport power switching/overcurrent */
-static bool distrust_firmware = 1;
+static bool distrust_firmware = true;
 module_param (distrust_firmware, bool, 0);
 MODULE_PARM_DESC (distrust_firmware,
 	"true to distrust firmware power/overcurrent setup");
 
 /* Some boards leave IR set wrongly, since they fail BIOS/SMM handshakes */
-static bool no_handshake = 0;
+static bool no_handshake;
 module_param (no_handshake, bool, 0);
 MODULE_PARM_DESC (no_handshake, "true (not default) disables BIOS handshake");
 
 /*-------------------------------------------------------------------------*/
+
+static int number_of_tds(struct urb *urb)
+{
+	int			len, i, num, this_sg_len;
+	struct scatterlist	*sg;
+
+	len = urb->transfer_buffer_length;
+	i = urb->num_mapped_sgs;
+
+	if (len > 0 && i > 0) {		/* Scatter-gather transfer */
+		num = 0;
+		sg = urb->sg;
+		for (;;) {
+			this_sg_len = min_t(int, sg_dma_len(sg), len);
+			num += DIV_ROUND_UP(this_sg_len, 4096);
+			len -= this_sg_len;
+			if (--i <= 0 || len <= 0)
+				break;
+			sg = sg_next(sg);
+		}
+
+	} else {			/* Non-SG transfer */
+		/* one TD for every 4096 Bytes (could be up to 8K) */
+		num = DIV_ROUND_UP(len, 4096);
+	}
+	return num;
+}
 
 /*
  * queue up an urb for anything except the root hub
@@ -126,7 +157,8 @@ static int ohci_urb_enqueue (
 	int		retval = 0;
 
 	/* every endpoint has a ed, locate and maybe (re)initialize it */
-	if (! (ed = ed_get (ohci, urb->ep, urb->dev, pipe, urb->interval)))
+	ed = ed_get(ohci, urb->ep, urb->dev, pipe, urb->interval);
+	if (! ed)
 		return -ENOMEM;
 
 	/* for the private part of the URB we need the number of TDs (size) */
@@ -142,12 +174,8 @@ static int ohci_urb_enqueue (
 		// case PIPE_INTERRUPT:
 		// case PIPE_BULK:
 		default:
-			/* one TD for every 4096 Bytes (can be up to 8K) */
-			size += urb->transfer_buffer_length / 4096;
-			/* ... and for any remaining bytes ... */
-			if ((urb->transfer_buffer_length % 4096) != 0)
-				size++;
-			/* ... and maybe a zero length packet to wrap it up */
+			size += number_of_tds(urb);
+			/* maybe a zero-length packet to wrap it up */
 			if (size == 0)
 				size++;
 			else if ((urb->transfer_flags & URB_ZERO_PACKET) != 0
@@ -202,6 +230,17 @@ static int ohci_urb_enqueue (
 			usb_hcd_unlink_urb_from_ep(hcd, urb);
 			goto fail;
 		}
+
+		/* Start up the I/O watchdog timer, if it's not running */
+		if (ohci->prev_frame_no == IO_WATCHDOG_OFF &&
+				list_empty(&ohci->eds_in_use) &&
+				!(ohci->flags & OHCI_QUIRK_QEMU)) {
+			ohci->prev_frame_no = ohci_frame_no(ohci);
+			mod_timer(&ohci->io_watchdog,
+					jiffies + IO_WATCHDOG_DELAY);
+		}
+		list_add(&ed->in_use_list, &ohci->eds_in_use);
+
 		if (ed->type == PIPE_ISOCHRONOUS) {
 			u16	frame = ohci_frame_no(ohci);
 
@@ -277,30 +316,24 @@ static int ohci_urb_dequeue(struct usb_hcd *hcd, struct urb *urb, int status)
 	struct ohci_hcd		*ohci = hcd_to_ohci (hcd);
 	unsigned long		flags;
 	int			rc;
+	urb_priv_t		*urb_priv;
 
 	spin_lock_irqsave (&ohci->lock, flags);
 	rc = usb_hcd_check_unlink_urb(hcd, urb, status);
-	if (rc) {
-		;	/* Do nothing */
-	} else if (ohci->rh_state == OHCI_RH_RUNNING) {
-		urb_priv_t  *urb_priv;
+	if (rc == 0) {
 
 		/* Unless an IRQ completed the unlink while it was being
 		 * handed to us, flag it for unlink and giveback, and force
 		 * some upcoming INTR_SF to call finish_unlinks()
 		 */
 		urb_priv = urb->hcpriv;
-		if (urb_priv) {
-			if (urb_priv->ed->state == ED_OPER)
-				start_ed_unlink (ohci, urb_priv->ed);
+		if (urb_priv->ed->state == ED_OPER)
+			start_ed_unlink(ohci, urb_priv->ed);
+
+		if (ohci->rh_state != OHCI_RH_RUNNING) {
+			/* With HC dead, we can clean up right away */
+			ohci_work(ohci);
 		}
-	} else {
-		/*
-		 * with HC dead, we won't respect hc queue pointers
-		 * any more ... just clean up every urb's memory.
-		 */
-		if (urb->hcpriv)
-			finish_urb(ohci, urb, status);
 	}
 	spin_unlock_irqrestore (&ohci->lock, flags);
 	return rc;
@@ -332,9 +365,7 @@ rescan:
 	if (ohci->rh_state != OHCI_RH_RUNNING) {
 sanitize:
 		ed->state = ED_IDLE;
-		if (quirk_zfmicro(ohci) && ed->type == PIPE_INTERRUPT)
-			ohci->eds_scheduled--;
-		finish_unlinks (ohci, 0);
+		ohci_work(ohci);
 	}
 
 	switch (ed->state) {
@@ -342,11 +373,6 @@ sanitize:
 		/* major IRQ delivery trouble loses INTR_SF too... */
 		if (limit-- == 0) {
 			ohci_warn(ohci, "ED unlink timeout\n");
-			if (quirk_zfmicro(ohci)) {
-				ohci_warn(ohci, "Attempting ZF TD recovery\n");
-				ohci->ed_to_check = ed;
-				ohci->zf_delay = 2;
-			}
 			goto sanitize;
 		}
 		spin_unlock_irqrestore (&ohci->lock, flags);
@@ -358,7 +384,7 @@ sanitize:
 			ed_free (ohci, ed);
 			break;
 		}
-		/* else FALL THROUGH */
+		/* fall through */
 	default:
 		/* caller was supposed to have unlinked any requests;
 		 * that's not our job.  can't recover; must leak ed.
@@ -406,93 +432,7 @@ ohci_shutdown (struct usb_hcd *hcd)
 	udelay(10);
 
 	ohci_writel(ohci, ohci->fminterval, &ohci->regs->fminterval);
-}
-
-static int check_ed(struct ohci_hcd *ohci, struct ed *ed)
-{
-	return (hc32_to_cpu(ohci, ed->hwINFO) & ED_IN) != 0
-		&& (hc32_to_cpu(ohci, ed->hwHeadP) & TD_MASK)
-			== (hc32_to_cpu(ohci, ed->hwTailP) & TD_MASK)
-		&& !list_empty(&ed->td_list);
-}
-
-/* ZF Micro watchdog timer callback. The ZF Micro chipset sometimes completes
- * an interrupt TD but neglects to add it to the donelist.  On systems with
- * this chipset, we need to periodically check the state of the queues to look
- * for such "lost" TDs.
- */
-static void unlink_watchdog_func(unsigned long _ohci)
-{
-	unsigned long	flags;
-	unsigned	max;
-	unsigned	seen_count = 0;
-	unsigned	i;
-	struct ed	**seen = NULL;
-	struct ohci_hcd	*ohci = (struct ohci_hcd *) _ohci;
-
-	spin_lock_irqsave(&ohci->lock, flags);
-	max = ohci->eds_scheduled;
-	if (!max)
-		goto done;
-
-	if (ohci->ed_to_check)
-		goto out;
-
-	seen = kcalloc(max, sizeof *seen, GFP_ATOMIC);
-	if (!seen)
-		goto out;
-
-	for (i = 0; i < NUM_INTS; i++) {
-		struct ed	*ed = ohci->periodic[i];
-
-		while (ed) {
-			unsigned	temp;
-
-			/* scan this branch of the periodic schedule tree */
-			for (temp = 0; temp < seen_count; temp++) {
-				if (seen[temp] == ed) {
-					/* we've checked it and what's after */
-					ed = NULL;
-					break;
-				}
-			}
-			if (!ed)
-				break;
-			seen[seen_count++] = ed;
-			if (!check_ed(ohci, ed)) {
-				ed = ed->ed_next;
-				continue;
-			}
-
-			/* HC's TD list is empty, but HCD sees at least one
-			 * TD that's not been sent through the donelist.
-			 */
-			ohci->ed_to_check = ed;
-			ohci->zf_delay = 2;
-
-			/* The HC may wait until the next frame to report the
-			 * TD as done through the donelist and INTR_WDH.  (We
-			 * just *assume* it's not a multi-TD interrupt URB;
-			 * those could defer the IRQ more than one frame, using
-			 * DI...)  Check again after the next INTR_SF.
-			 */
-			ohci_writel(ohci, OHCI_INTR_SF,
-					&ohci->regs->intrstatus);
-			ohci_writel(ohci, OHCI_INTR_SF,
-					&ohci->regs->intrenable);
-
-			/* flush those writes */
-			(void) ohci_readl(ohci, &ohci->regs->control);
-
-			goto out;
-		}
-	}
-out:
-	kfree(seen);
-	if (ohci->eds_scheduled)
-		mod_timer(&ohci->unlink_watchdog, round_jiffies(jiffies + HZ));
-done:
-	spin_unlock_irqrestore(&ohci->lock, flags);
+	ohci->rh_state = OHCI_RH_HALTED;
 }
 
 /*-------------------------------------------------------------------------*
@@ -505,6 +445,10 @@ static int ohci_init (struct ohci_hcd *ohci)
 {
 	int ret;
 	struct usb_hcd *hcd = ohci_to_hcd(ohci);
+
+	/* Accept arbitrarily long scatter-gather lists */
+	if (!(hcd->driver->flags & HCD_LOCAL_MEM))
+		hcd->self.sg_tablesize = ~0;
 
 	if (distrust_firmware)
 		ohci->flags |= OHCI_QUIRK_HUB_POWER;
@@ -558,8 +502,11 @@ static int ohci_init (struct ohci_hcd *ohci)
 	if (ohci->hcca)
 		return 0;
 
+	timer_setup(&ohci->io_watchdog, io_watchdog_func, 0);
+	ohci->prev_frame_no = IO_WATCHDOG_OFF;
+
 	ohci->hcca = dma_alloc_coherent (hcd->self.controller,
-			sizeof *ohci->hcca, &ohci->hcca_dma, 0);
+			sizeof(*ohci->hcca), &ohci->hcca_dma, GFP_KERNEL);
 	if (!ohci->hcca)
 		return -ENOMEM;
 
@@ -689,7 +636,7 @@ retry:
 		return -EOVERFLOW;
 	}
 
-	/* use rhsc irqs after khubd is fully initialized */
+	/* use rhsc irqs after hub_wq is allocated */
 	set_bit(HCD_FLAG_POLL_RH, &hcd->flags);
 	hcd->uses_new_polling = 1;
 
@@ -735,15 +682,6 @@ retry:
 	// POTPGT delay is bits 24-31, in 2 ms units.
 	mdelay ((val >> 23) & 0x1fe);
 
-	if (quirk_zfmicro(ohci)) {
-		/* Create timer to watch for bad queue state on ZF Micro */
-		setup_timer(&ohci->unlink_watchdog, unlink_watchdog_func,
-				(unsigned long) ohci);
-
-		ohci->eds_scheduled = 0;
-		ohci->ed_to_check = NULL;
-	}
-
 	ohci_dump(ohci);
 
 	return 0;
@@ -776,6 +714,143 @@ static int ohci_start(struct usb_hcd *hcd)
 }
 
 /*-------------------------------------------------------------------------*/
+
+/*
+ * Some OHCI controllers are known to lose track of completed TDs.  They
+ * don't add the TDs to the hardware done queue, which means we never see
+ * them as being completed.
+ *
+ * This watchdog routine checks for such problems.  Without some way to
+ * tell when those TDs have completed, we would never take their EDs off
+ * the unlink list.  As a result, URBs could never be dequeued and
+ * endpoints could never be released.
+ */
+static void io_watchdog_func(struct timer_list *t)
+{
+	struct ohci_hcd	*ohci = from_timer(ohci, t, io_watchdog);
+	bool		takeback_all_pending = false;
+	u32		status;
+	u32		head;
+	struct ed	*ed;
+	struct td	*td, *td_start, *td_next;
+	unsigned	frame_no, prev_frame_no = IO_WATCHDOG_OFF;
+	unsigned long	flags;
+
+	spin_lock_irqsave(&ohci->lock, flags);
+
+	/*
+	 * One way to lose track of completed TDs is if the controller
+	 * never writes back the done queue head.  If it hasn't been
+	 * written back since the last time this function ran and if it
+	 * was non-empty at that time, something is badly wrong with the
+	 * hardware.
+	 */
+	status = ohci_readl(ohci, &ohci->regs->intrstatus);
+	if (!(status & OHCI_INTR_WDH) && ohci->wdh_cnt == ohci->prev_wdh_cnt) {
+		if (ohci->prev_donehead) {
+			ohci_err(ohci, "HcDoneHead not written back; disabled\n");
+ died:
+			usb_hc_died(ohci_to_hcd(ohci));
+			ohci_dump(ohci);
+			ohci_shutdown(ohci_to_hcd(ohci));
+			goto done;
+		} else {
+			/* No write back because the done queue was empty */
+			takeback_all_pending = true;
+		}
+	}
+
+	/* Check every ED which might have pending TDs */
+	list_for_each_entry(ed, &ohci->eds_in_use, in_use_list) {
+		if (ed->pending_td) {
+			if (takeback_all_pending ||
+					OKAY_TO_TAKEBACK(ohci, ed)) {
+				unsigned tmp = hc32_to_cpu(ohci, ed->hwINFO);
+
+				ohci_dbg(ohci, "takeback pending TD for dev %d ep 0x%x\n",
+						0x007f & tmp,
+						(0x000f & (tmp >> 7)) +
+							((tmp & ED_IN) >> 5));
+				add_to_done_list(ohci, ed->pending_td);
+			}
+		}
+
+		/* Starting from the latest pending TD, */
+		td = ed->pending_td;
+
+		/* or the last TD on the done list, */
+		if (!td) {
+			list_for_each_entry(td_next, &ed->td_list, td_list) {
+				if (!td_next->next_dl_td)
+					break;
+				td = td_next;
+			}
+		}
+
+		/* find the last TD processed by the controller. */
+		head = hc32_to_cpu(ohci, READ_ONCE(ed->hwHeadP)) & TD_MASK;
+		td_start = td;
+		td_next = list_prepare_entry(td, &ed->td_list, td_list);
+		list_for_each_entry_continue(td_next, &ed->td_list, td_list) {
+			if (head == (u32) td_next->td_dma)
+				break;
+			td = td_next;	/* head pointer has passed this TD */
+		}
+		if (td != td_start) {
+			/*
+			 * In case a WDH cycle is in progress, we will wait
+			 * for the next two cycles to complete before assuming
+			 * this TD will never get on the done queue.
+			 */
+			ed->takeback_wdh_cnt = ohci->wdh_cnt + 2;
+			ed->pending_td = td;
+		}
+	}
+
+	ohci_work(ohci);
+
+	if (ohci->rh_state == OHCI_RH_RUNNING) {
+
+		/*
+		 * Sometimes a controller just stops working.  We can tell
+		 * by checking that the frame counter has advanced since
+		 * the last time we ran.
+		 *
+		 * But be careful: Some controllers violate the spec by
+		 * stopping their frame counter when no ports are active.
+		 */
+		frame_no = ohci_frame_no(ohci);
+		if (frame_no == ohci->prev_frame_no) {
+			int		active_cnt = 0;
+			int		i;
+			unsigned	tmp;
+
+			for (i = 0; i < ohci->num_ports; ++i) {
+				tmp = roothub_portstatus(ohci, i);
+				/* Enabled and not suspended? */
+				if ((tmp & RH_PS_PES) && !(tmp & RH_PS_PSS))
+					++active_cnt;
+			}
+
+			if (active_cnt > 0) {
+				ohci_err(ohci, "frame counter not updating; disabled\n");
+				goto died;
+			}
+		}
+		if (!list_empty(&ohci->eds_in_use)) {
+			prev_frame_no = frame_no;
+			ohci->prev_wdh_cnt = ohci->wdh_cnt;
+			ohci->prev_donehead = ohci_readl(ohci,
+					&ohci->regs->donehead);
+			mod_timer(&ohci->io_watchdog,
+					jiffies + IO_WATCHDOG_DELAY);
+		}
+	}
+
+ done:
+	ohci->prev_frame_no = prev_frame_no;
+	spin_unlock_irqrestore(&ohci->lock, flags);
+}
 
 /* an interrupt happens */
 
@@ -839,8 +914,8 @@ static irqreturn_t ohci_irq (struct usb_hcd *hcd)
 		 * choices for RHSC.  Many followed the spec; RHSC triggers
 		 * on an edge, like setting and maybe clearing a port status
 		 * change bit.  With others it's level-triggered, active
-		 * until khubd clears all the port status change bits.  We'll
-		 * always disable it here and rely on polling until khubd
+		 * until hub_wq clears all the port status change bits.  We'll
+		 * always disable it here and rely on polling until hub_wq
 		 * re-enables it.
 		 */
 		ohci_writel(ohci, OHCI_INTR_RHSC, &regs->intrdisable);
@@ -863,58 +938,30 @@ static irqreturn_t ohci_irq (struct usb_hcd *hcd)
 			usb_hcd_resume_root_hub(hcd);
 	}
 
-	if (ints & OHCI_INTR_WDH) {
-		spin_lock (&ohci->lock);
-		dl_done_list (ohci);
-		spin_unlock (&ohci->lock);
-	}
-
-	if (quirk_zfmicro(ohci) && (ints & OHCI_INTR_SF)) {
-		spin_lock(&ohci->lock);
-		if (ohci->ed_to_check) {
-			struct ed *ed = ohci->ed_to_check;
-
-			if (check_ed(ohci, ed)) {
-				/* HC thinks the TD list is empty; HCD knows
-				 * at least one TD is outstanding
-				 */
-				if (--ohci->zf_delay == 0) {
-					struct td *td = list_entry(
-						ed->td_list.next,
-						struct td, td_list);
-					ohci_warn(ohci,
-						  "Reclaiming orphan TD %p\n",
-						  td);
-					takeback_td(ohci, td);
-					ohci->ed_to_check = NULL;
-				}
-			} else
-				ohci->ed_to_check = NULL;
-		}
-		spin_unlock(&ohci->lock);
-	}
+	spin_lock(&ohci->lock);
+	if (ints & OHCI_INTR_WDH)
+		update_done_list(ohci);
 
 	/* could track INTR_SO to reduce available PCI/... bandwidth */
 
 	/* handle any pending URB/ED unlinks, leaving INTR_SF enabled
 	 * when there's still unlinking to be done (next frame).
 	 */
-	spin_lock (&ohci->lock);
-	if (ohci->ed_rm_list)
-		finish_unlinks (ohci, ohci_frame_no(ohci));
-	if ((ints & OHCI_INTR_SF) != 0
-			&& !ohci->ed_rm_list
-			&& !ohci->ed_to_check
+	ohci_work(ohci);
+	if ((ints & OHCI_INTR_SF) != 0 && !ohci->ed_rm_list
 			&& ohci->rh_state == OHCI_RH_RUNNING)
 		ohci_writel (ohci, OHCI_INTR_SF, &regs->intrdisable);
-	spin_unlock (&ohci->lock);
 
 	if (ohci->rh_state == OHCI_RH_RUNNING) {
 		ohci_writel (ohci, ints, &regs->intrstatus);
+		if (ints & OHCI_INTR_WDH)
+			++ohci->wdh_cnt;
+
 		ohci_writel (ohci, OHCI_INTR_MIE, &regs->intrenable);
 		// flush those writes
 		(void) ohci_readl (ohci, &ohci->regs->control);
 	}
+	spin_unlock(&ohci->lock);
 
 	return IRQ_HANDLED;
 }
@@ -929,14 +976,14 @@ static void ohci_stop (struct usb_hcd *hcd)
 
 	if (quirk_nec(ohci))
 		flush_work(&ohci->nec_work);
+	del_timer_sync(&ohci->io_watchdog);
+	ohci->prev_frame_no = IO_WATCHDOG_OFF;
 
 	ohci_writel (ohci, OHCI_INTR_MIE, &ohci->regs->intrdisable);
 	ohci_usb_reset(ohci);
 	free_irq(hcd->irq, hcd);
 	hcd->irq = 0;
 
-	if (quirk_zfmicro(ohci))
-		del_timer(&ohci->unlink_watchdog);
 	if (quirk_amdiso(ohci))
 		usb_amd_dev_put();
 
@@ -953,7 +1000,7 @@ static void ohci_stop (struct usb_hcd *hcd)
 
 /*-------------------------------------------------------------------------*/
 
-#if defined(CONFIG_PM) || defined(CONFIG_PCI)
+#if defined(CONFIG_PM) || defined(CONFIG_USB_PCI)
 
 /* must not be called from interrupt context */
 int ohci_restart(struct ohci_hcd *ohci)
@@ -993,7 +1040,7 @@ int ohci_restart(struct ohci_hcd *ohci)
 		if (!urb->unlinked)
 			urb->unlinked = -ESHUTDOWN;
 	}
-	finish_unlinks (ohci, 0);
+	ohci_work(ohci);
 	spin_unlock_irq(&ohci->lock);
 
 	/* paranoia, in case that didn't work: */
@@ -1178,11 +1225,6 @@ MODULE_LICENSE ("GPL");
 #define SA1111_DRIVER		ohci_hcd_sa1111_driver
 #endif
 
-#ifdef CONFIG_ARCH_DAVINCI_DA8XX
-#include "ohci-da8xx.c"
-#define DAVINCI_PLATFORM_DRIVER	ohci_hcd_da8xx_driver
-#endif
-
 #ifdef CONFIG_USB_OHCI_HCD_PPC_OF
 #include "ohci-ppc-of.c"
 #define OF_PLATFORM_DRIVER	ohci_hcd_ppc_of_driver
@@ -1203,21 +1245,6 @@ MODULE_LICENSE ("GPL");
 #define TMIO_OHCI_DRIVER	ohci_hcd_tmio_driver
 #endif
 
-#ifdef CONFIG_MACH_JZ4740
-#include "ohci-jz4740.c"
-#define PLATFORM_DRIVER	ohci_hcd_jz4740_driver
-#endif
-
-#ifdef CONFIG_USB_OCTEON_OHCI
-#include "ohci-octeon.c"
-#define PLATFORM_DRIVER		ohci_octeon_driver
-#endif
-
-#ifdef CONFIG_TILE_USB
-#include "ohci-tilegx.c"
-#define PLATFORM_DRIVER		ohci_hcd_tilegx_driver
-#endif
-
 static int __init ohci_hcd_mod_init(void)
 {
 	int retval = 0;
@@ -1226,26 +1253,16 @@ static int __init ohci_hcd_mod_init(void)
 		return -ENODEV;
 
 	printk(KERN_INFO "%s: " DRIVER_DESC "\n", hcd_name);
-	pr_debug ("%s: block sizes: ed %Zd td %Zd\n", hcd_name,
+	pr_debug ("%s: block sizes: ed %zd td %zd\n", hcd_name,
 		sizeof (struct ed), sizeof (struct td));
 	set_bit(USB_OHCI_LOADED, &usb_hcds_loaded);
 
 	ohci_debug_root = debugfs_create_dir("ohci", usb_debug_root);
-	if (!ohci_debug_root) {
-		retval = -ENOENT;
-		goto error_debug;
-	}
 
 #ifdef PS3_SYSTEM_BUS_DRIVER
 	retval = ps3_ohci_driver_register(&PS3_SYSTEM_BUS_DRIVER);
 	if (retval < 0)
 		goto error_ps3;
-#endif
-
-#ifdef PLATFORM_DRIVER
-	retval = platform_driver_register(&PLATFORM_DRIVER);
-	if (retval < 0)
-		goto error_platform;
 #endif
 
 #ifdef OF_PLATFORM_DRIVER
@@ -1272,19 +1289,9 @@ static int __init ohci_hcd_mod_init(void)
 		goto error_tmio;
 #endif
 
-#ifdef DAVINCI_PLATFORM_DRIVER
-	retval = platform_driver_register(&DAVINCI_PLATFORM_DRIVER);
-	if (retval < 0)
-		goto error_davinci;
-#endif
-
 	return retval;
 
 	/* Error path */
-#ifdef DAVINCI_PLATFORM_DRIVER
-	platform_driver_unregister(&DAVINCI_PLATFORM_DRIVER);
- error_davinci:
-#endif
 #ifdef TMIO_OHCI_DRIVER
 	platform_driver_unregister(&TMIO_OHCI_DRIVER);
  error_tmio:
@@ -1301,17 +1308,12 @@ static int __init ohci_hcd_mod_init(void)
 	platform_driver_unregister(&OF_PLATFORM_DRIVER);
  error_of_platform:
 #endif
-#ifdef PLATFORM_DRIVER
-	platform_driver_unregister(&PLATFORM_DRIVER);
- error_platform:
-#endif
 #ifdef PS3_SYSTEM_BUS_DRIVER
 	ps3_ohci_driver_unregister(&PS3_SYSTEM_BUS_DRIVER);
  error_ps3:
 #endif
 	debugfs_remove(ohci_debug_root);
 	ohci_debug_root = NULL;
- error_debug:
 
 	clear_bit(USB_OHCI_LOADED, &usb_hcds_loaded);
 	return retval;
@@ -1320,9 +1322,6 @@ module_init(ohci_hcd_mod_init);
 
 static void __exit ohci_hcd_mod_exit(void)
 {
-#ifdef DAVINCI_PLATFORM_DRIVER
-	platform_driver_unregister(&DAVINCI_PLATFORM_DRIVER);
-#endif
 #ifdef TMIO_OHCI_DRIVER
 	platform_driver_unregister(&TMIO_OHCI_DRIVER);
 #endif
@@ -1334,9 +1333,6 @@ static void __exit ohci_hcd_mod_exit(void)
 #endif
 #ifdef OF_PLATFORM_DRIVER
 	platform_driver_unregister(&OF_PLATFORM_DRIVER);
-#endif
-#ifdef PLATFORM_DRIVER
-	platform_driver_unregister(&PLATFORM_DRIVER);
 #endif
 #ifdef PS3_SYSTEM_BUS_DRIVER
 	ps3_ohci_driver_unregister(&PS3_SYSTEM_BUS_DRIVER);

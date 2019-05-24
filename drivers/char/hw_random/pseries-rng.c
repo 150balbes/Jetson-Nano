@@ -28,7 +28,6 @@
 static int pseries_rng_read(struct hwrng *rng, void *data, size_t max, bool wait)
 {
 	u64 buffer[PLPAR_HCALL_BUFSIZE];
-	size_t size = max < 8 ? max : 8;
 	int rc;
 
 	rc = plpar_hcall(H_RANDOM, (unsigned long *)buffer);
@@ -36,10 +35,10 @@ static int pseries_rng_read(struct hwrng *rng, void *data, size_t max, bool wait
 		pr_err_ratelimited("H_RANDOM call failed %d\n", rc);
 		return -EIO;
 	}
-	memcpy(data, buffer, size);
+	memcpy(data, buffer, 8);
 
 	/* The hypervisor interface returns 64 bits */
-	return size;
+	return 8;
 }
 
 /**
@@ -61,19 +60,19 @@ static struct hwrng pseries_rng = {
 	.read		= pseries_rng_read,
 };
 
-static int __init pseries_rng_probe(struct vio_dev *dev,
+static int pseries_rng_probe(struct vio_dev *dev,
 		const struct vio_device_id *id)
 {
 	return hwrng_register(&pseries_rng);
 }
 
-static int __exit pseries_rng_remove(struct vio_dev *dev)
+static int pseries_rng_remove(struct vio_dev *dev)
 {
 	hwrng_unregister(&pseries_rng);
 	return 0;
 }
 
-static struct vio_device_id pseries_rng_driver_ids[] = {
+static const struct vio_device_id pseries_rng_driver_ids[] = {
 	{ "ibm,random-v1", "ibm,random"},
 	{ "", "" }
 };
@@ -89,7 +88,7 @@ static struct vio_driver pseries_rng_driver = {
 
 static int __init rng_init(void)
 {
-	printk(KERN_INFO "Registering IBM pSeries RNG driver\n");
+	pr_info("Registering IBM pSeries RNG driver\n");
 	return vio_register_driver(&pseries_rng_driver);
 }
 

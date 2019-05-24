@@ -17,6 +17,7 @@
 #include <linux/xattr.h>
 
 #include <linux/kernfs.h>
+#include <linux/fs_context.h>
 
 struct kernfs_iattrs {
 	struct iattr		ia_iattr;
@@ -26,7 +27,8 @@ struct kernfs_iattrs {
 	struct simple_xattrs	xattrs;
 };
 
-#define KN_DEACTIVATED_BIAS		INT_MIN
+/* +1 to avoid triggering overflow warning when negating it */
+#define KN_DEACTIVATED_BIAS		(INT_MIN + 1)
 
 /* KERNFS_TYPE_MASK and types are defined in include/linux/kernfs.h */
 
@@ -45,16 +47,11 @@ static inline struct kernfs_root *kernfs_root(struct kernfs_node *kn)
 }
 
 /*
- * Context structure to be used while adding/removing nodes.
- */
-struct kernfs_addrm_cxt {
-	struct kernfs_node	*removed;
-};
-
-/*
  * mount.c
  */
 struct kernfs_super_info {
+	struct super_block	*sb;
+
 	/*
 	 * The root associated with this super_block.  Each super_block is
 	 * identified by the root and ns it's associated with.
@@ -68,27 +65,33 @@ struct kernfs_super_info {
 	 * an array and compare kernfs_node tag against every entry.
 	 */
 	const void		*ns;
+
+	/* anchored at kernfs_root->supers, protected by kernfs_mutex */
+	struct list_head	node;
 };
 #define kernfs_info(SB) ((struct kernfs_super_info *)(SB->s_fs_info))
 
-extern struct kmem_cache *kernfs_node_cache;
+static inline struct kernfs_node *kernfs_dentry_node(struct dentry *dentry)
+{
+	if (d_really_is_negative(dentry))
+		return NULL;
+	return d_inode(dentry)->i_private;
+}
+
+extern const struct super_operations kernfs_sops;
+extern struct kmem_cache *kernfs_node_cache, *kernfs_iattrs_cache;
 
 /*
  * inode.c
  */
-struct inode *kernfs_get_inode(struct super_block *sb, struct kernfs_node *kn);
+extern const struct xattr_handler *kernfs_xattr_handlers[];
 void kernfs_evict_inode(struct inode *inode);
 int kernfs_iop_permission(struct inode *inode, int mask);
 int kernfs_iop_setattr(struct dentry *dentry, struct iattr *iattr);
-int kernfs_iop_getattr(struct vfsmount *mnt, struct dentry *dentry,
-		       struct kstat *stat);
-int kernfs_iop_setxattr(struct dentry *dentry, const char *name, const void *value,
-			size_t size, int flags);
-int kernfs_iop_removexattr(struct dentry *dentry, const char *name);
-ssize_t kernfs_iop_getxattr(struct dentry *dentry, const char *name, void *buf,
-			    size_t size);
+int kernfs_iop_getattr(const struct path *path, struct kstat *stat,
+		       u32 request_mask, unsigned int query_flags);
 ssize_t kernfs_iop_listxattr(struct dentry *dentry, char *buf, size_t size);
-void kernfs_inode_init(void);
+int __kernfs_setattr(struct kernfs_node *kn, const struct iattr *iattr);
 
 /*
  * dir.c
@@ -100,19 +103,20 @@ extern const struct inode_operations kernfs_dir_iops;
 
 struct kernfs_node *kernfs_get_active(struct kernfs_node *kn);
 void kernfs_put_active(struct kernfs_node *kn);
-void kernfs_addrm_start(struct kernfs_addrm_cxt *acxt);
-int kernfs_add_one(struct kernfs_addrm_cxt *acxt, struct kernfs_node *kn);
-void kernfs_addrm_finish(struct kernfs_addrm_cxt *acxt);
+int kernfs_add_one(struct kernfs_node *kn);
 struct kernfs_node *kernfs_new_node(struct kernfs_node *parent,
 				    const char *name, umode_t mode,
+				    kuid_t uid, kgid_t gid,
 				    unsigned flags);
+struct kernfs_node *kernfs_find_and_get_node_by_ino(struct kernfs_root *root,
+						    unsigned int ino);
 
 /*
  * file.c
  */
 extern const struct file_operations kernfs_file_fops;
 
-void kernfs_unmap_bin_file(struct kernfs_node *kn);
+void kernfs_drain_open_files(struct kernfs_node *kn);
 
 /*
  * symlink.c

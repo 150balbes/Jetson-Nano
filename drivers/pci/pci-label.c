@@ -1,6 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
- * Purpose: Export the firmware instance and label associated with
- * a pci device to sysfs
+ * Export the firmware instance and label associated with a PCI device to
+ * sysfs
+ *
  * Copyright (C) 2010 Dell Inc.
  * by Narendra K <Narendra_K@dell.com>,
  * Jordan Hargrave <Jordan_Hargrave@dell.com>
@@ -16,7 +18,7 @@
  * the instance number and string from the type 41 record and exports
  * it to sysfs.
  *
- * Please see http://linux.dell.com/wiki/index.php/Oss/libnetdevname for more
+ * Please see http://linux.dell.com/files/biosdevname/ for more
  * information.
  */
 
@@ -31,8 +33,6 @@
 #include <linux/pci-acpi.h>
 #include "pci.h"
 
-#define	DEVICE_LABEL_DSM	0x07
-
 #ifdef CONFIG_DMI
 enum smbios_attr_enum {
 	SMBIOS_ATTR_NONE = 0,
@@ -40,15 +40,16 @@ enum smbios_attr_enum {
 	SMBIOS_ATTR_INSTANCE_SHOW,
 };
 
-static size_t
-find_smbios_instance_string(struct pci_dev *pdev, char *buf,
-			    enum smbios_attr_enum attribute)
+static size_t find_smbios_instance_string(struct pci_dev *pdev, char *buf,
+					  enum smbios_attr_enum attribute)
 {
 	const struct dmi_device *dmi;
 	struct dmi_dev_onboard *donboard;
+	int domain_nr;
 	int bus;
 	int devfn;
 
+	domain_nr = pci_domain_nr(pdev->bus);
 	bus = pdev->bus->number;
 	devfn = pdev->devfn;
 
@@ -56,8 +57,9 @@ find_smbios_instance_string(struct pci_dev *pdev, char *buf,
 	while ((dmi = dmi_find_device(DMI_DEV_TYPE_DEV_ONBOARD,
 				      NULL, dmi)) != NULL) {
 		donboard = dmi->device_data;
-		if (donboard && donboard->bus == bus &&
-					donboard->devfn == devfn) {
+		if (donboard && donboard->segment == domain_nr &&
+				donboard->bus == bus &&
+				donboard->devfn == devfn) {
 			if (buf) {
 				if (attribute == SMBIOS_ATTR_INSTANCE_SHOW)
 					return scnprintf(buf, PAGE_SIZE,
@@ -74,22 +76,21 @@ find_smbios_instance_string(struct pci_dev *pdev, char *buf,
 	return 0;
 }
 
-static umode_t
-smbios_instance_string_exist(struct kobject *kobj, struct attribute *attr,
-			     int n)
+static umode_t smbios_instance_string_exist(struct kobject *kobj,
+					    struct attribute *attr, int n)
 {
 	struct device *dev;
 	struct pci_dev *pdev;
 
-	dev = container_of(kobj, struct device, kobj);
+	dev = kobj_to_dev(kobj);
 	pdev = to_pci_dev(dev);
 
 	return find_smbios_instance_string(pdev, NULL, SMBIOS_ATTR_NONE) ?
 					   S_IRUGO : 0;
 }
 
-static ssize_t
-smbioslabel_show(struct device *dev, struct device_attribute *attr, char *buf)
+static ssize_t smbioslabel_show(struct device *dev,
+				struct device_attribute *attr, char *buf)
 {
 	struct pci_dev *pdev;
 	pdev = to_pci_dev(dev);
@@ -98,9 +99,8 @@ smbioslabel_show(struct device *dev, struct device_attribute *attr, char *buf)
 					   SMBIOS_ATTR_LABEL_SHOW);
 }
 
-static ssize_t
-smbiosinstance_show(struct device *dev,
-		    struct device_attribute *attr, char *buf)
+static ssize_t smbiosinstance_show(struct device *dev,
+				   struct device_attribute *attr, char *buf)
 {
 	struct pci_dev *pdev;
 	pdev = to_pci_dev(dev);
@@ -125,41 +125,32 @@ static struct attribute *smbios_attributes[] = {
 	NULL,
 };
 
-static struct attribute_group smbios_attr_group = {
+static const struct attribute_group smbios_attr_group = {
 	.attrs = smbios_attributes,
 	.is_visible = smbios_instance_string_exist,
 };
 
-static int
-pci_create_smbiosname_file(struct pci_dev *pdev)
+static int pci_create_smbiosname_file(struct pci_dev *pdev)
 {
 	return sysfs_create_group(&pdev->dev.kobj, &smbios_attr_group);
 }
 
-static void
-pci_remove_smbiosname_file(struct pci_dev *pdev)
+static void pci_remove_smbiosname_file(struct pci_dev *pdev)
 {
 	sysfs_remove_group(&pdev->dev.kobj, &smbios_attr_group);
 }
 #else
-static inline int
-pci_create_smbiosname_file(struct pci_dev *pdev)
+static inline int pci_create_smbiosname_file(struct pci_dev *pdev)
 {
 	return -1;
 }
 
-static inline void
-pci_remove_smbiosname_file(struct pci_dev *pdev)
+static inline void pci_remove_smbiosname_file(struct pci_dev *pdev)
 {
 }
 #endif
 
 #ifdef CONFIG_ACPI
-static const char device_label_dsm_uuid[] = {
-	0xD0, 0x37, 0xC9, 0xE5, 0x53, 0x35, 0x7A, 0x4D,
-	0x91, 0x17, 0xEA, 0x4D, 0x19, 0xC3, 0x43, 0x4D
-};
-
 enum acpi_attr_enum {
 	ACPI_ATTR_LABEL_SHOW,
 	ACPI_ATTR_INDEX_SHOW,
@@ -175,8 +166,8 @@ static void dsm_label_utf16s_to_utf8s(union acpi_object *obj, char *buf)
 	buf[len] = '\n';
 }
 
-static int
-dsm_get_label(struct device *dev, char *buf, enum acpi_attr_enum attr)
+static int dsm_get_label(struct device *dev, char *buf,
+			 enum acpi_attr_enum attr)
 {
 	acpi_handle handle;
 	union acpi_object *obj, *tmp;
@@ -186,7 +177,7 @@ dsm_get_label(struct device *dev, char *buf, enum acpi_attr_enum attr)
 	if (!handle)
 		return -1;
 
-	obj = acpi_evaluate_dsm(handle, device_label_dsm_uuid, 0x2,
+	obj = acpi_evaluate_dsm(handle, &pci_acpi_dsm_guid, 0x2,
 				DEVICE_LABEL_DSM, NULL);
 	if (!obj)
 		return -1;
@@ -218,8 +209,7 @@ dsm_get_label(struct device *dev, char *buf, enum acpi_attr_enum attr)
 	return len;
 }
 
-static bool
-device_has_dsm(struct device *dev)
+static bool device_has_dsm(struct device *dev)
 {
 	acpi_handle handle;
 
@@ -227,16 +217,16 @@ device_has_dsm(struct device *dev)
 	if (!handle)
 		return false;
 
-	return !!acpi_check_dsm(handle, device_label_dsm_uuid, 0x2,
+	return !!acpi_check_dsm(handle, &pci_acpi_dsm_guid, 0x2,
 				1 << DEVICE_LABEL_DSM);
 }
 
-static umode_t
-acpi_index_string_exist(struct kobject *kobj, struct attribute *attr, int n)
+static umode_t acpi_index_string_exist(struct kobject *kobj,
+				       struct attribute *attr, int n)
 {
 	struct device *dev;
 
-	dev = container_of(kobj, struct device, kobj);
+	dev = kobj_to_dev(kobj);
 
 	if (device_has_dsm(dev))
 		return S_IRUGO;
@@ -244,14 +234,14 @@ acpi_index_string_exist(struct kobject *kobj, struct attribute *attr, int n)
 	return 0;
 }
 
-static ssize_t
-acpilabel_show(struct device *dev, struct device_attribute *attr, char *buf)
+static ssize_t acpilabel_show(struct device *dev,
+			      struct device_attribute *attr, char *buf)
 {
 	return dsm_get_label(dev, buf, ACPI_ATTR_LABEL_SHOW);
 }
 
-static ssize_t
-acpiindex_show(struct device *dev, struct device_attribute *attr, char *buf)
+static ssize_t acpiindex_show(struct device *dev,
+			      struct device_attribute *attr, char *buf)
 {
 	return dsm_get_label(dev, buf, ACPI_ATTR_INDEX_SHOW);
 }
@@ -272,38 +262,33 @@ static struct attribute *acpi_attributes[] = {
 	NULL,
 };
 
-static struct attribute_group acpi_attr_group = {
+static const struct attribute_group acpi_attr_group = {
 	.attrs = acpi_attributes,
 	.is_visible = acpi_index_string_exist,
 };
 
-static int
-pci_create_acpi_index_label_files(struct pci_dev *pdev)
+static int pci_create_acpi_index_label_files(struct pci_dev *pdev)
 {
 	return sysfs_create_group(&pdev->dev.kobj, &acpi_attr_group);
 }
 
-static int
-pci_remove_acpi_index_label_files(struct pci_dev *pdev)
+static int pci_remove_acpi_index_label_files(struct pci_dev *pdev)
 {
 	sysfs_remove_group(&pdev->dev.kobj, &acpi_attr_group);
 	return 0;
 }
 #else
-static inline int
-pci_create_acpi_index_label_files(struct pci_dev *pdev)
+static inline int pci_create_acpi_index_label_files(struct pci_dev *pdev)
 {
 	return -1;
 }
 
-static inline int
-pci_remove_acpi_index_label_files(struct pci_dev *pdev)
+static inline int pci_remove_acpi_index_label_files(struct pci_dev *pdev)
 {
 	return -1;
 }
 
-static inline bool
-device_has_dsm(struct device *dev)
+static inline bool device_has_dsm(struct device *dev)
 {
 	return false;
 }

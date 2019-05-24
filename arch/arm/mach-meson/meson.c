@@ -1,7 +1,5 @@
 /*
- * arch/arm/mach-meson/meson.c
- *
- * Copyright (C) 2011-2013 Amlogic, Inc.
+ * Copyright (C) 2014 Carlo Caione <carlo@caione.org>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -15,30 +13,19 @@
  *
  */
 
-#include <linux/init.h>
-#include <linux/platform_device.h>
-#include <linux/device.h>
-#include <linux/of.h>
 #include <linux/of_platform.h>
 #include <asm/mach/arch.h>
-#include <linux/of_fdt.h>
-#include <linux/of_platform.h>
 
-static __init void meson_init_machine_devicetree(void)
-{
-	struct device *parent;
-	parent = get_device(&platform_bus);
-
-	of_platform_populate(NULL, of_default_bus_match_table, NULL, parent);
-
-}
-
-static const char * const m8_common_board_compat[] __initconst = {
-	"AMLOGIC,mesonX",
+static const char * const meson_common_board_compat[] = {
+	"amlogic,meson6",
+	"amlogic,meson8",
+	"amlogic,meson8b",
+	"amlogic,meson8m2",
 	NULL,
 };
 
-DT_MACHINE_START(AMLOGIC, "Amlogic MesonX")
-	.init_machine	= meson_init_machine_devicetree,
-	.dt_compat	= m8_common_board_compat,
+DT_MACHINE_START(MESON, "Amlogic Meson platform")
+	.dt_compat	= meson_common_board_compat,
+	.l2c_aux_val	= 0,
+	.l2c_aux_mask	= ~0,
 MACHINE_END

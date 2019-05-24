@@ -32,20 +32,29 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <linux/sunrpc/sched.h>
 
 #ifdef CONFIG_SUNRPC_BACKCHANNEL
-struct rpc_rqst *xprt_alloc_bc_request(struct rpc_xprt *xprt);
+struct rpc_rqst *xprt_lookup_bc_request(struct rpc_xprt *xprt, __be32 xid);
+void xprt_complete_bc_request(struct rpc_rqst *req, uint32_t copied);
+void xprt_init_bc_request(struct rpc_rqst *req, struct rpc_task *task);
 void xprt_free_bc_request(struct rpc_rqst *req);
 int xprt_setup_backchannel(struct rpc_xprt *, unsigned int min_reqs);
 void xprt_destroy_backchannel(struct rpc_xprt *, unsigned int max_reqs);
-int bc_send(struct rpc_rqst *req);
+
+/* Socket backchannel transport methods */
+int xprt_setup_bc(struct rpc_xprt *xprt, unsigned int min_reqs);
+void xprt_destroy_bc(struct rpc_xprt *xprt, unsigned int max_reqs);
+void xprt_free_bc_rqst(struct rpc_rqst *req);
 
 /*
  * Determine if a shared backchannel is in use
  */
-static inline int svc_is_backchannel(const struct svc_rqst *rqstp)
+static inline bool svc_is_backchannel(const struct svc_rqst *rqstp)
 {
-	if (rqstp->rq_server->sv_bc_xprt)
-		return 1;
-	return 0;
+	return rqstp->rq_server->sv_bc_enabled;
+}
+
+static inline void set_bc_enabled(struct svc_serv *serv)
+{
+	serv->sv_bc_enabled = true;
 }
 #else /* CONFIG_SUNRPC_BACKCHANNEL */
 static inline int xprt_setup_backchannel(struct rpc_xprt *xprt,
@@ -54,9 +63,13 @@ static inline int xprt_setup_backchannel(struct rpc_xprt *xprt,
 	return 0;
 }
 
-static inline int svc_is_backchannel(const struct svc_rqst *rqstp)
+static inline bool svc_is_backchannel(const struct svc_rqst *rqstp)
 {
-	return 0;
+	return false;
+}
+
+static inline void set_bc_enabled(struct svc_serv *serv)
+{
 }
 
 static inline void xprt_free_bc_request(struct rpc_rqst *req)

@@ -49,13 +49,17 @@ enum chip_flavors {
 	chip_8019,
 	chip_8074,
 	chip_8076,
-	chip_8077
+	chip_8077,
+	chip_8006,
+	chip_8070,
+	chip_8072
 };
 
 enum phy_speed {
 	PHY_SPEED_15 = 0x01,
 	PHY_SPEED_30 = 0x02,
 	PHY_SPEED_60 = 0x04,
+	PHY_SPEED_120 = 0x08,
 };
 
 enum data_direction {
@@ -127,5 +131,13 @@ enum pm8001_hba_info_flags {
 	PM8001F_INIT_TIME	= (1U << 0),
 	PM8001F_RUN_TIME	= (1U << 1),
 };
+
+/**
+ * Phy Status
+ */
+#define PHY_LINK_DISABLE	0x00
+#define PHY_LINK_DOWN		0x01
+#define PHY_STATE_LINK_UP_SPCV	0x2
+#define PHY_STATE_LINK_UP_SPC	0x1
 
 #endif

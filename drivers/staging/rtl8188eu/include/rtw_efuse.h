@@ -1,20 +1,7 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 /******************************************************************************
  *
  * Copyright(c) 2007 - 2011 Realtek Corporation. All rights reserved.
- *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of version 2 of the GNU General Public License as
- * published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
- * more details.
- *
- * You should have received a copy of the GNU General Public License along with
- * this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110, USA
- *
  *
  ******************************************************************************/
 #ifndef __RTW_EFUSE_H__
@@ -38,16 +25,6 @@
 
 #define	EFUSE_WIFI				0
 #define	EFUSE_BT				1
-
-enum _EFUSE_DEF_TYPE {
-	TYPE_EFUSE_MAX_SECTION				= 0,
-	TYPE_EFUSE_REAL_CONTENT_LEN			= 1,
-	TYPE_AVAILABLE_EFUSE_BYTES_BANK		= 2,
-	TYPE_AVAILABLE_EFUSE_BYTES_TOTAL	= 3,
-	TYPE_EFUSE_MAP_LEN					= 4,
-	TYPE_EFUSE_PROTECT_BYTES_BANK		= 5,
-	TYPE_EFUSE_CONTENT_LEN_BANK			= 6,
-};
 
 /* E-Fuse */
 #define EFUSE_MAP_SIZE      512
@@ -99,52 +76,18 @@ struct efuse_hal {
 	u8 fakeBTEfuseModifiedMap[EFUSE_BT_MAX_MAP_LEN];
 };
 
-/*------------------------Export global variable----------------------------*/
-extern u8 fakeEfuseBank;
-extern u32 fakeEfuseUsedBytes;
-extern u8 fakeEfuseContent[];
-extern u8 fakeEfuseInitMap[];
-extern u8 fakeEfuseModifiedMap[];
-
-extern u32 BTEfuseUsedBytes;
-extern u8 BTEfuseContent[EFUSE_MAX_BT_BANK][EFUSE_MAX_HW_SIZE];
-extern u8 BTEfuseInitMap[];
-extern u8 BTEfuseModifiedMap[];
-
-extern u32 fakeBTEfuseUsedBytes;
-extern u8 fakeBTEfuseContent[EFUSE_MAX_BT_BANK][EFUSE_MAX_HW_SIZE];
-extern u8 fakeBTEfuseInitMap[];
-extern u8 fakeBTEfuseModifiedMap[];
-/*------------------------Export global variable----------------------------*/
-
-u8 efuse_GetCurrentSize(struct adapter *adapter, u16 *size);
-u16 efuse_GetMaxSize(struct adapter *adapter);
-u8 rtw_efuse_access(struct adapter *adapter, u8 read, u16 start_addr,
-		    u16 cnts, u8 *data);
-u8 rtw_efuse_map_read(struct adapter *adapter, u16 addr, u16 cnts, u8 *data);
-u8 rtw_efuse_map_write(struct adapter *adapter, u16 addr, u16 cnts, u8 *data);
-u8 rtw_BT_efuse_map_read(struct adapter *adapter, u16 addr,
-			 u16 cnts, u8 *data);
-u8 rtw_BT_efuse_map_write(struct adapter *adapter, u16 addr,
-			  u16 cnts, u8 *data);
-u16 Efuse_GetCurrentSize(struct adapter *adapter, u8 efusetype, bool test);
 u8 Efuse_CalculateWordCnts(u8 word_en);
-void ReadEFuseByte(struct adapter *adapter, u16 _offset, u8 *pbuf, bool test);
-void EFUSE_GetEfuseDefinition(struct adapter *adapt, u8 type, u8 type1,
-			      void *out, bool bPseudoTest);
-u8 efuse_OneByteRead(struct adapter *adapter, u16 addr, u8 *data, bool test);
-u8 efuse_OneByteWrite(struct adapter *adapter, u16 addr, u8 data, bool	test);
+u8 efuse_OneByteRead(struct adapter *adapter, u16 addr, u8 *data);
+u8 efuse_OneByteWrite(struct adapter *adapter, u16 addr, u8 data);
 
-void Efuse_PowerSwitch(struct adapter *adapt, u8 bWrite, u8  PwrState);
-int Efuse_PgPacketRead(struct adapter *adapt, u8 offset, u8 *data, bool test);
-int Efuse_PgPacketWrite(struct adapter *adapter, u8 offset, u8 word, u8 *data,
-			bool test);
+void efuse_ReadEFuse(struct adapter *Adapter, u8 efuseType, u16 _offset,
+		u16 _size_byte, u8 *pbuf);
+void efuse_power_switch(struct adapter *adapt, u8 write, u8  pwrstate);
+int Efuse_PgPacketRead(struct adapter *adapt, u8 offset, u8 *data);
+bool Efuse_PgPacketWrite(struct adapter *adapter, u8 offset, u8 word, u8 *data);
 void efuse_WordEnableDataRead(u8 word_en, u8 *sourdata, u8 *targetdata);
 u8 Efuse_WordEnableDataWrite(struct adapter *adapter, u16 efuse_addr,
-			     u8 word_en, u8 *data, bool test);
+			     u8 word_en, u8 *data);
 
-u8 EFUSE_Read1Byte(struct adapter *adapter, u16 address);
-void EFUSE_ShadowMapUpdate(struct adapter *adapter, u8 efusetype, bool test);
-void EFUSE_ShadowRead(struct adapter *adapt, u8 type, u16 offset, u32 *val);
-
+void EFUSE_ShadowMapUpdate(struct adapter *adapter, u8 efusetype);
 #endif

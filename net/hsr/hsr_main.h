@@ -1,4 +1,4 @@
-/* Copyright 2011-2013 Autronica Fire and Security AS
+/* Copyright 2011-2014 Autronica Fire and Security AS
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the Free
@@ -6,11 +6,11 @@
  * any later version.
  *
  * Author(s):
- *	2011-2013 Arvid Brodin, arvid.brodin@xdin.com
+ *	2011-2014 Arvid Brodin, arvid.brodin@alten.se
  */
 
-#ifndef _HSR_PRIVATE_H
-#define _HSR_PRIVATE_H
+#ifndef __HSR_PRIVATE_H
+#define __HSR_PRIVATE_H
 
 #include <linux/netdevice.h>
 #include <linux/list.h>
@@ -29,6 +29,8 @@
  * each node differ before we notify of communication problem?
  */
 #define MAX_SLAVE_DIFF			 3000 /* ms */
+#define HSR_SEQNR_START			(USHRT_MAX - 1024)
+#define HSR_SUP_SEQNR_START		(HSR_SEQNR_START / 2)
 
 
 /* How often shall we check for broken ring and remove node entries older than
@@ -46,16 +48,18 @@
  * path, LSDU_size, sequence Nr }. But we let eth_header() create { h_dest,
  * h_source, h_proto = 0x88FB }, and add { path, LSDU_size, sequence Nr,
  * encapsulated protocol } instead.
+ *
+ * Field names as defined in the IEC:2010 standard for HSR.
  */
-#define HSR_TAGLEN	6
-
-/* Field names below as defined in the IEC:2010 standard for HSR. */
 struct hsr_tag {
 	__be16		path_and_LSDU_size;
 	__be16		sequence_nr;
 	__be16		encap_proto;
 } __packed;
 
+#define HSR_HLEN	6
+
+#define HSR_V1_SUP_LSDUSIZE		52
 
 /* The helper functions below assumes that 'path' occupies the 4 most
  * significant bits of the 16-bit field shared by 'path' and 'LSDU_size' (or
@@ -130,37 +134,61 @@ static inline void set_hsr_stag_HSR_Ver(struct hsr_sup_tag *hst, u16 HSR_Ver)
 	set_hsr_tag_LSDU_size((struct hsr_tag *) hst, HSR_Ver);
 }
 
-struct hsr_ethhdr_sp {
+struct hsrv0_ethhdr_sp {
 	struct ethhdr		ethhdr;
 	struct hsr_sup_tag	hsr_sup;
 } __packed;
 
+struct hsrv1_ethhdr_sp {
+	struct ethhdr		ethhdr;
+	struct hsr_tag		hsr;
+	struct hsr_sup_tag	hsr_sup;
+} __packed;
 
-enum hsr_dev_idx {
-	HSR_DEV_NONE = -1,
-	HSR_DEV_SLAVE_A = 0,
-	HSR_DEV_SLAVE_B,
-	HSR_DEV_MASTER,
+
+enum hsr_port_type {
+	HSR_PT_NONE = 0,	/* Must be 0, used by framereg */
+	HSR_PT_SLAVE_A,
+	HSR_PT_SLAVE_B,
+	HSR_PT_INTERLINK,
+	HSR_PT_MASTER,
+	HSR_PT_PORTS,	/* This must be the last item in the enum */
 };
-#define HSR_MAX_SLAVE	(HSR_DEV_SLAVE_B + 1)
-#define HSR_MAX_DEV	(HSR_DEV_MASTER + 1)
+
+struct hsr_port {
+	struct list_head	port_list;
+	struct net_device	*dev;
+	struct hsr_priv		*hsr;
+	enum hsr_port_type	type;
+};
 
 struct hsr_priv {
-	struct list_head	hsr_list;	/* List of hsr devices */
 	struct rcu_head		rcu_head;
-	struct net_device	*dev;
-	struct net_device	*slave[HSR_MAX_SLAVE];
-	struct list_head	node_db;	/* Other HSR nodes */
+	struct list_head	ports;
+	struct list_head	node_db;	/* Known HSR nodes */
 	struct list_head	self_node_db;	/* MACs of slaves */
 	struct timer_list	announce_timer;	/* Supervision frame dispatch */
+	struct timer_list	prune_timer;
 	int announce_count;
 	u16 sequence_nr;
+	u16 sup_sequence_nr;			/* For HSRv1 separate seq_nr for supervision */
+	u8 protVersion;					/* Indicate if HSRv0 or HSRv1. */
 	spinlock_t seqnr_lock;			/* locking for sequence_nr */
 	unsigned char		sup_multicast_addr[ETH_ALEN];
 };
 
-void register_hsr_master(struct hsr_priv *hsr_priv);
-void unregister_hsr_master(struct hsr_priv *hsr_priv);
-bool is_hsr_slave(struct net_device *dev);
+#define hsr_for_each_port(hsr, port) \
+	list_for_each_entry_rcu((port), &(hsr)->ports, port_list)
 
-#endif /*  _HSR_PRIVATE_H */
+struct hsr_port *hsr_port_get_hsr(struct hsr_priv *hsr, enum hsr_port_type pt);
+
+/* Caller must ensure skb is a valid HSR frame */
+static inline u16 hsr_get_skb_sequence_nr(struct sk_buff *skb)
+{
+	struct hsr_ethhdr *hsr_ethhdr;
+
+	hsr_ethhdr = (struct hsr_ethhdr *) skb_mac_header(skb);
+	return ntohs(hsr_ethhdr->hsr_tag.sequence_nr);
+}
+
+#endif /*  __HSR_PRIVATE_H */

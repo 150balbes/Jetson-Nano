@@ -30,17 +30,17 @@
 #include <linux/timb_gpio.h>
 
 #include <linux/i2c.h>
-#include <linux/i2c-ocores.h>
-#include <linux/i2c-xiic.h>
-#include <linux/i2c/tsc2007.h>
+#include <linux/platform_data/i2c-ocores.h>
+#include <linux/platform_data/i2c-xiic.h>
 
 #include <linux/spi/spi.h>
 #include <linux/spi/xilinx_spi.h>
 #include <linux/spi/max7301.h>
 #include <linux/spi/mc33880.h>
 
-#include <media/timb_radio.h>
-#include <media/timb_video.h>
+#include <linux/platform_data/tsc2007.h>
+#include <linux/platform_data/media/timb_radio.h>
+#include <linux/platform_data/media/timb_video.h>
 
 #include <linux/timb_dma.h>
 
@@ -707,15 +707,15 @@ static int timb_probe(struct pci_dev *dev,
 		goto err_config;
 	}
 
-	msix_entries = kzalloc(TIMBERDALE_NR_IRQS * sizeof(*msix_entries),
-		GFP_KERNEL);
+	msix_entries = kcalloc(TIMBERDALE_NR_IRQS, sizeof(*msix_entries),
+			       GFP_KERNEL);
 	if (!msix_entries)
 		goto err_config;
 
 	for (i = 0; i < TIMBERDALE_NR_IRQS; i++)
 		msix_entries[i].entry = i;
 
-	err = pci_enable_msix(dev, msix_entries, TIMBERDALE_NR_IRQS);
+	err = pci_enable_msix_exact(dev, msix_entries, TIMBERDALE_NR_IRQS);
 	if (err) {
 		dev_err(&dev->dev,
 			"MSI-X init failed: %d, expected entries: %d\n",
@@ -777,7 +777,7 @@ static int timb_probe(struct pci_dev *dev,
 			&dev->resource[0], msix_entries[0].vector, NULL);
 		break;
 	default:
-		dev_err(&dev->dev, "Uknown IP setup: %d.%d.%d\n",
+		dev_err(&dev->dev, "Unknown IP setup: %d.%d.%d\n",
 			priv->fw.major, priv->fw.minor, ip_setup);
 		err = -ENODEV;
 		goto err_mfd;

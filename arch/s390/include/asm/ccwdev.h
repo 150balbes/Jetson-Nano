@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * Copyright IBM Corp. 2002, 2009
  *
@@ -219,7 +220,9 @@ extern void ccw_device_get_id(struct ccw_device *, struct ccw_dev_id *);
 #define to_ccwdev(n) container_of(n, struct ccw_device, dev)
 #define to_ccwdrv(n) container_of(n, struct ccw_driver, driver)
 
-extern struct ccw_device *ccw_device_probe_console(struct ccw_driver *);
+extern struct ccw_device *ccw_device_create_console(struct ccw_driver *);
+extern void ccw_device_destroy_console(struct ccw_device *);
+extern int ccw_device_enable_console(struct ccw_device *);
 extern void ccw_device_wait_idle(struct ccw_device *);
 extern int ccw_device_force_console(struct ccw_device *);
 
@@ -227,5 +230,6 @@ int ccw_device_siosl(struct ccw_device *);
 
 extern void ccw_device_get_schid(struct ccw_device *, struct subchannel_id *);
 
-extern void *ccw_device_get_chp_desc(struct ccw_device *, int);
+struct channel_path_desc_fmt0 *ccw_device_get_chp_desc(struct ccw_device *, int);
+u8 *ccw_device_get_util_str(struct ccw_device *cdev, int chp_idx);
 #endif /* _S390_CCWDEV_H_ */

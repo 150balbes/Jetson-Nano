@@ -18,8 +18,8 @@
 #include <linux/err.h>
 #include <linux/interrupt.h>
 #include <linux/spi/spi.h>
-#include <linux/workqueue.h>
 #include <linux/mutex.h>
+#include <linux/of.h>
 
 #define HSSPI_GLOBAL_CTRL_REG			0x0
 #define GLOBAL_CTRL_CS_POLARITY_SHIFT		0
@@ -77,6 +77,7 @@
 #define HSSPI_FIFO_REG(x)			(0x200 + (x) * 0x200)
 
 
+#define HSSPI_OP_MULTIBIT			BIT(11)
 #define HSSPI_OP_CODE_SHIFT			13
 #define HSSPI_OP_SLEEP				(0 << HSSPI_OP_CODE_SHIFT)
 #define HSSPI_OP_READ_WRITE			(1 << HSSPI_OP_CODE_SHIFT)
@@ -91,6 +92,7 @@
 
 #define HSSPI_MAX_SYNC_CLOCK			30000000
 
+#define HSSPI_SPI_MAX_CS			8
 #define HSSPI_BUS_NUM				1 /* 0 is legacy SPI */
 
 struct bcm63xx_hsspi {
@@ -99,6 +101,7 @@ struct bcm63xx_hsspi {
 
 	struct platform_device *pdev;
 	struct clk *clk;
+	struct clk *pll_clk;
 	void __iomem *regs;
 	u8 __iomem *fifo;
 
@@ -106,7 +109,7 @@ struct bcm63xx_hsspi {
 	u8 cs_polarity;
 };
 
-static void bcm63xx_hsspi_set_cs(struct bcm63xx_hsspi *bs, unsigned cs,
+static void bcm63xx_hsspi_set_cs(struct bcm63xx_hsspi *bs, unsigned int cs,
 				 bool active)
 {
 	u32 reg;
@@ -125,7 +128,7 @@ static void bcm63xx_hsspi_set_cs(struct bcm63xx_hsspi *bs, unsigned cs,
 static void bcm63xx_hsspi_set_clk(struct bcm63xx_hsspi *bs,
 				  struct spi_device *spi, int hz)
 {
-	unsigned profile = spi->chip_select;
+	unsigned int profile = spi->chip_select;
 	u32 reg;
 
 	reg = DIV_ROUND_UP(2048, DIV_ROUND_UP(bs->speed_hz, hz));
@@ -152,7 +155,7 @@ static void bcm63xx_hsspi_set_clk(struct bcm63xx_hsspi *bs,
 static int bcm63xx_hsspi_do_txrx(struct spi_device *spi, struct spi_transfer *t)
 {
 	struct bcm63xx_hsspi *bs = spi_master_get_devdata(spi->master);
-	unsigned chip_select = spi->chip_select;
+	unsigned int chip_select = spi->chip_select;
 	u16 opcode = 0;
 	int pending = t->len;
 	int step_size = HSSPI_BUFFER_LEN;
@@ -172,15 +175,18 @@ static int bcm63xx_hsspi_do_txrx(struct spi_device *spi, struct spi_transfer *t)
 	if (opcode != HSSPI_OP_READ)
 		step_size -= HSSPI_OPCODE_LEN;
 
-	__raw_writel(0 << MODE_CTRL_PREPENDBYTE_CNT_SHIFT |
-		     2 << MODE_CTRL_MULTIDATA_WR_STRT_SHIFT |
-		     2 << MODE_CTRL_MULTIDATA_RD_STRT_SHIFT | 0xff,
+	if ((opcode == HSSPI_OP_READ && t->rx_nbits == SPI_NBITS_DUAL) ||
+	    (opcode == HSSPI_OP_WRITE && t->tx_nbits == SPI_NBITS_DUAL))
+		opcode |= HSSPI_OP_MULTIBIT;
+
+	__raw_writel(1 << MODE_CTRL_MULTIDATA_WR_SIZE_SHIFT |
+		     1 << MODE_CTRL_MULTIDATA_RD_SIZE_SHIFT | 0xff,
 		     bs->regs + HSSPI_PROFILE_MODE_CTRL_REG(chip_select));
 
 	while (pending > 0) {
 		int curr_step = min_t(int, step_size, pending);
 
-		init_completion(&bs->done);
+		reinit_completion(&bs->done);
 		if (tx) {
 			memcpy_toio(bs->fifo + HSSPI_OPCODE_LEN, tx, curr_step);
 			tx += curr_step;
@@ -327,14 +333,14 @@ static int bcm63xx_hsspi_probe(struct platform_device *pdev)
 	struct resource *res_mem;
 	void __iomem *regs;
 	struct device *dev = &pdev->dev;
-	struct clk *clk;
+	struct clk *clk, *pll_clk = NULL;
 	int irq, ret;
-	u32 reg, rate;
+	u32 reg, rate, num_cs = HSSPI_SPI_MAX_CS;
 
 	irq = platform_get_irq(pdev, 0);
 	if (irq < 0) {
-		dev_err(dev, "no irq\n");
-		return -ENXIO;
+		dev_err(dev, "no irq: %d\n", irq);
+		return irq;
 	}
 
 	res_mem = platform_get_resource(pdev, IORESOURCE_MEM, 0);
@@ -347,34 +353,63 @@ static int bcm63xx_hsspi_probe(struct platform_device *pdev)
 	if (IS_ERR(clk))
 		return PTR_ERR(clk);
 
-	rate = clk_get_rate(clk);
-	if (!rate)
-		return -EINVAL;
-
 	ret = clk_prepare_enable(clk);
 	if (ret)
 		return ret;
 
+	rate = clk_get_rate(clk);
+	if (!rate) {
+		pll_clk = devm_clk_get(dev, "pll");
+
+		if (IS_ERR(pll_clk)) {
+			ret = PTR_ERR(pll_clk);
+			goto out_disable_clk;
+		}
+
+		ret = clk_prepare_enable(pll_clk);
+		if (ret)
+			goto out_disable_clk;
+
+		rate = clk_get_rate(pll_clk);
+		clk_disable_unprepare(pll_clk);
+		if (!rate) {
+			ret = -EINVAL;
+			goto out_disable_pll_clk;
+		}
+	}
+
 	master = spi_alloc_master(&pdev->dev, sizeof(*bs));
 	if (!master) {
 		ret = -ENOMEM;
-		goto out_disable_clk;
+		goto out_disable_pll_clk;
 	}
 
 	bs = spi_master_get_devdata(master);
 	bs->pdev = pdev;
 	bs->clk = clk;
+	bs->pll_clk = pll_clk;
 	bs->regs = regs;
 	bs->speed_hz = rate;
 	bs->fifo = (u8 __iomem *)(bs->regs + HSSPI_FIFO_REG(0));
 
 	mutex_init(&bs->bus_mutex);
+	init_completion(&bs->done);
 
-	master->bus_num = HSSPI_BUS_NUM;
-	master->num_chipselect = 8;
+	master->dev.of_node = dev->of_node;
+	if (!dev->of_node)
+		master->bus_num = HSSPI_BUS_NUM;
+
+	of_property_read_u32(dev->of_node, "num-cs", &num_cs);
+	if (num_cs > 8) {
+		dev_warn(dev, "unsupported number of cs (%i), reducing to 8\n",
+			 num_cs);
+		num_cs = HSSPI_SPI_MAX_CS;
+	}
+	master->num_chipselect = num_cs;
 	master->setup = bcm63xx_hsspi_setup;
 	master->transfer_one_message = bcm63xx_hsspi_transfer_one;
-	master->mode_bits = SPI_CPOL | SPI_CPHA | SPI_CS_HIGH;
+	master->mode_bits = SPI_CPOL | SPI_CPHA | SPI_CS_HIGH |
+			    SPI_RX_DUAL | SPI_TX_DUAL;
 	master->bits_per_word_mask = SPI_BPW_MASK(8);
 	master->auto_runtime_pm = true;
 
@@ -407,6 +442,8 @@ static int bcm63xx_hsspi_probe(struct platform_device *pdev)
 
 out_put_master:
 	spi_master_put(master);
+out_disable_pll_clk:
+	clk_disable_unprepare(pll_clk);
 out_disable_clk:
 	clk_disable_unprepare(clk);
 	return ret;
@@ -420,6 +457,7 @@ static int bcm63xx_hsspi_remove(struct platform_device *pdev)
 
 	/* reset the hardware and block queue progress */
 	__raw_writel(0, bs->regs + HSSPI_INT_MASK_REG);
+	clk_disable_unprepare(bs->pll_clk);
 	clk_disable_unprepare(bs->clk);
 
 	return 0;
@@ -432,6 +470,7 @@ static int bcm63xx_hsspi_suspend(struct device *dev)
 	struct bcm63xx_hsspi *bs = spi_master_get_devdata(master);
 
 	spi_master_suspend(master);
+	clk_disable_unprepare(bs->pll_clk);
 	clk_disable_unprepare(bs->clk);
 
 	return 0;
@@ -447,21 +486,32 @@ static int bcm63xx_hsspi_resume(struct device *dev)
 	if (ret)
 		return ret;
 
+	if (bs->pll_clk) {
+		ret = clk_prepare_enable(bs->pll_clk);
+		if (ret)
+			return ret;
+	}
+
 	spi_master_resume(master);
 
 	return 0;
 }
 #endif
 
-static const struct dev_pm_ops bcm63xx_hsspi_pm_ops = {
-	SET_SYSTEM_SLEEP_PM_OPS(bcm63xx_hsspi_suspend, bcm63xx_hsspi_resume)
+static SIMPLE_DEV_PM_OPS(bcm63xx_hsspi_pm_ops, bcm63xx_hsspi_suspend,
+			 bcm63xx_hsspi_resume);
+
+static const struct of_device_id bcm63xx_hsspi_of_match[] = {
+	{ .compatible = "brcm,bcm6328-hsspi", },
+	{ },
 };
+MODULE_DEVICE_TABLE(of, bcm63xx_hsspi_of_match);
 
 static struct platform_driver bcm63xx_hsspi_driver = {
 	.driver = {
 		.name	= "bcm63xx-hsspi",
-		.owner	= THIS_MODULE,
 		.pm	= &bcm63xx_hsspi_pm_ops,
+		.of_match_table = bcm63xx_hsspi_of_match,
 	},
 	.probe		= bcm63xx_hsspi_probe,
 	.remove		= bcm63xx_hsspi_remove,

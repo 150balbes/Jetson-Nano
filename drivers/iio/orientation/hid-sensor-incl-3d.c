@@ -22,6 +22,7 @@
 #include <linux/interrupt.h>
 #include <linux/irq.h>
 #include <linux/slab.h>
+#include <linux/delay.h>
 #include <linux/hid-sensor-hub.h>
 #include <linux/iio/iio.h>
 #include <linux/iio/sysfs.h>
@@ -42,6 +43,10 @@ struct incl_3d_state {
 	struct hid_sensor_common common_attributes;
 	struct hid_sensor_hub_attribute_info incl[INCLI_3D_CHANNEL_MAX];
 	u32 incl_val[INCLI_3D_CHANNEL_MAX];
+	int scale_pre_decml;
+	int scale_post_decml;
+	int scale_precision;
+	int value_offset;
 };
 
 static const u32 incl_3d_addresses[INCLI_3D_CHANNEL_MAX] = {
@@ -106,31 +111,38 @@ static int incl_3d_read_raw(struct iio_dev *indio_dev,
 	int report_id = -1;
 	u32 address;
 	int ret_type;
+	s32 min;
 
 	*val = 0;
 	*val2 = 0;
 	switch (mask) {
 	case IIO_CHAN_INFO_RAW:
-		report_id =
-			incl_state->incl[chan->scan_index].report_id;
+		hid_sensor_power_state(&incl_state->common_attributes, true);
+		report_id = incl_state->incl[chan->scan_index].report_id;
+		min = incl_state->incl[chan->scan_index].logical_minimum;
 		address = incl_3d_addresses[chan->scan_index];
 		if (report_id >= 0)
 			*val = sensor_hub_input_attr_get_raw_value(
 				incl_state->common_attributes.hsdev,
 				HID_USAGE_SENSOR_INCLINOMETER_3D, address,
-				report_id);
+				report_id,
+				SENSOR_HUB_SYNC,
+				min < 0);
 		else {
+			hid_sensor_power_state(&incl_state->common_attributes,
+						false);
 			return -EINVAL;
 		}
+		hid_sensor_power_state(&incl_state->common_attributes, false);
 		ret_type = IIO_VAL_INT;
 		break;
 	case IIO_CHAN_INFO_SCALE:
-		*val = incl_state->incl[CHANNEL_SCAN_INDEX_X].units;
-		ret_type = IIO_VAL_INT;
+		*val = incl_state->scale_pre_decml;
+		*val2 = incl_state->scale_post_decml;
+		ret_type = incl_state->scale_precision;
 		break;
 	case IIO_CHAN_INFO_OFFSET:
-		*val = hid_sensor_convert_exponent(
-			incl_state->incl[CHANNEL_SCAN_INDEX_X].unit_expo);
+		*val = incl_state->value_offset;
 		ret_type = IIO_VAL_INT;
 		break;
 	case IIO_CHAN_INFO_SAMP_FREQ:
@@ -176,7 +188,6 @@ static int incl_3d_write_raw(struct iio_dev *indio_dev,
 }
 
 static const struct iio_info incl_3d_info = {
-	.driver_module = THIS_MODULE,
 	.read_raw = &incl_3d_read_raw,
 	.write_raw = &incl_3d_write_raw,
 };
@@ -196,9 +207,8 @@ static int incl_3d_proc_event(struct hid_sensor_hub_device *hsdev,
 	struct iio_dev *indio_dev = platform_get_drvdata(priv);
 	struct incl_3d_state *incl_state = iio_priv(indio_dev);
 
-	dev_dbg(&indio_dev->dev, "incl_3d_proc_event [%d]\n",
-				incl_state->common_attributes.data_ready);
-	if (incl_state->common_attributes.data_ready)
+	dev_dbg(&indio_dev->dev, "incl_3d_proc_event\n");
+	if (atomic_read(&incl_state->common_attributes.data_ready))
 		hid_sensor_push_data(indio_dev,
 				(u8 *)incl_state->incl_val,
 				sizeof(incl_state->incl_val));
@@ -279,6 +289,11 @@ static int incl_3d_parse_report(struct platform_device *pdev,
 			st->incl[1].index, st->incl[1].report_id,
 			st->incl[2].index, st->incl[2].report_id);
 
+	st->scale_precision = hid_sensor_format_scale(
+				HID_USAGE_SENSOR_INCLINOMETER_3D,
+				&st->incl[CHANNEL_SCAN_INDEX_X],
+				&st->scale_pre_decml, &st->scale_post_decml);
+
 	/* Set Sensitivity field ids, when there is no individual modifier */
 	if (st->common_attributes.sensitivity.index < 0) {
 		sensor_hub_input_get_attribute_info(hsdev,
@@ -301,7 +316,6 @@ static int hid_incl_3d_probe(struct platform_device *pdev)
 	struct iio_dev *indio_dev;
 	struct incl_3d_state *incl_state;
 	struct hid_sensor_hub_device *hsdev = pdev->dev.platform_data;
-	struct iio_chan_spec *channels;
 
 	indio_dev = devm_iio_device_alloc(&pdev->dev,
 					  sizeof(struct incl_3d_state));
@@ -322,21 +336,22 @@ static int hid_incl_3d_probe(struct platform_device *pdev)
 		return ret;
 	}
 
-	channels = kmemdup(incl_3d_channels, sizeof(incl_3d_channels),
-			   GFP_KERNEL);
-	if (!channels) {
+	indio_dev->channels = kmemdup(incl_3d_channels,
+				      sizeof(incl_3d_channels), GFP_KERNEL);
+	if (!indio_dev->channels) {
 		dev_err(&pdev->dev, "failed to duplicate channels\n");
 		return -ENOMEM;
 	}
 
-	ret = incl_3d_parse_report(pdev, hsdev, channels,
-				HID_USAGE_SENSOR_INCLINOMETER_3D, incl_state);
+	ret = incl_3d_parse_report(pdev, hsdev,
+				   (struct iio_chan_spec *)indio_dev->channels,
+				   HID_USAGE_SENSOR_INCLINOMETER_3D,
+				   incl_state);
 	if (ret) {
 		dev_err(&pdev->dev, "failed to setup attributes\n");
 		goto error_free_dev_mem;
 	}
 
-	indio_dev->channels = channels;
 	indio_dev->num_channels = ARRAY_SIZE(incl_3d_channels);
 	indio_dev->dev.parent = &pdev->dev;
 	indio_dev->info = &incl_3d_info;
@@ -349,7 +364,7 @@ static int hid_incl_3d_probe(struct platform_device *pdev)
 		dev_err(&pdev->dev, "failed to initialize trigger buffer\n");
 		goto error_free_dev_mem;
 	}
-	incl_state->common_attributes.data_ready = false;
+	atomic_set(&incl_state->common_attributes.data_ready, 0);
 	ret = hid_sensor_setup_trigger(indio_dev, name,
 					&incl_state->common_attributes);
 	if (ret) {
@@ -403,7 +418,7 @@ static int hid_incl_3d_remove(struct platform_device *pdev)
 	return 0;
 }
 
-static struct platform_device_id hid_incl_3d_ids[] = {
+static const struct platform_device_id hid_incl_3d_ids[] = {
 	{
 		/* Format: HID-SENSOR-usage_id_in_hex_lowercase */
 		.name = "HID-SENSOR-200086",
@@ -416,7 +431,7 @@ static struct platform_driver hid_incl_3d_platform_driver = {
 	.id_table = hid_incl_3d_ids,
 	.driver = {
 		.name	= KBUILD_MODNAME,
-		.owner	= THIS_MODULE,
+		.pm	= &hid_sensor_pm_ops,
 	},
 	.probe		= hid_incl_3d_probe,
 	.remove		= hid_incl_3d_remove,

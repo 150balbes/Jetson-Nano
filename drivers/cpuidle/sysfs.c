@@ -293,6 +293,7 @@ static ssize_t show_state_##_name(struct cpuidle_state *state, \
 }
 
 define_show_state_function(exit_latency)
+define_show_state_function(target_residency)
 define_show_state_function(power_usage)
 define_show_state_ull_function(usage)
 define_show_state_ull_function(time)
@@ -300,23 +301,31 @@ define_show_state_str_function(name)
 define_show_state_str_function(desc)
 define_show_state_ull_function(disable)
 define_store_state_ull_function(disable)
+define_show_state_ull_function(above)
+define_show_state_ull_function(below)
 
 define_one_state_ro(name, show_state_name);
 define_one_state_ro(desc, show_state_desc);
 define_one_state_ro(latency, show_state_exit_latency);
+define_one_state_ro(residency, show_state_target_residency);
 define_one_state_ro(power, show_state_power_usage);
 define_one_state_ro(usage, show_state_usage);
 define_one_state_ro(time, show_state_time);
 define_one_state_rw(disable, show_state_disable, store_state_disable);
+define_one_state_ro(above, show_state_above);
+define_one_state_ro(below, show_state_below);
 
 static struct attribute *cpuidle_state_default_attrs[] = {
 	&attr_name.attr,
 	&attr_desc.attr,
 	&attr_latency.attr,
+	&attr_residency.attr,
 	&attr_power.attr,
 	&attr_usage.attr,
 	&attr_time.attr,
 	&attr_disable.attr,
+	&attr_above.attr,
+	&attr_below.attr,
 	NULL
 };
 
@@ -326,6 +335,58 @@ struct cpuidle_state_kobj {
 	struct completion kobj_unregister;
 	struct kobject kobj;
 };
+
+#ifdef CONFIG_SUSPEND
+#define define_show_state_s2idle_ull_function(_name) \
+static ssize_t show_state_s2idle_##_name(struct cpuidle_state *state, \
+					 struct cpuidle_state_usage *state_usage, \
+					 char *buf)				\
+{ \
+	return sprintf(buf, "%llu\n", state_usage->s2idle_##_name);\
+}
+
+define_show_state_s2idle_ull_function(usage);
+define_show_state_s2idle_ull_function(time);
+
+#define define_one_state_s2idle_ro(_name, show) \
+static struct cpuidle_state_attr attr_s2idle_##_name = \
+	__ATTR(_name, 0444, show, NULL)
+
+define_one_state_s2idle_ro(usage, show_state_s2idle_usage);
+define_one_state_s2idle_ro(time, show_state_s2idle_time);
+
+static struct attribute *cpuidle_state_s2idle_attrs[] = {
+	&attr_s2idle_usage.attr,
+	&attr_s2idle_time.attr,
+	NULL
+};
+
+static const struct attribute_group cpuidle_state_s2idle_group = {
+	.name	= "s2idle",
+	.attrs	= cpuidle_state_s2idle_attrs,
+};
+
+static void cpuidle_add_s2idle_attr_group(struct cpuidle_state_kobj *kobj)
+{
+	int ret;
+
+	if (!kobj->state->enter_s2idle)
+		return;
+
+	ret = sysfs_create_group(&kobj->kobj, &cpuidle_state_s2idle_group);
+	if (ret)
+		pr_debug("%s: sysfs attribute group not created\n", __func__);
+}
+
+static void cpuidle_remove_s2idle_attr_group(struct cpuidle_state_kobj *kobj)
+{
+	if (kobj->state->enter_s2idle)
+		sysfs_remove_group(&kobj->kobj, &cpuidle_state_s2idle_group);
+}
+#else
+static inline void cpuidle_add_s2idle_attr_group(struct cpuidle_state_kobj *kobj) { }
+static inline void cpuidle_remove_s2idle_attr_group(struct cpuidle_state_kobj *kobj) { }
+#endif /* CONFIG_SUSPEND */
 
 #define kobj_to_state_obj(k) container_of(k, struct cpuidle_state_kobj, kobj)
 #define kobj_to_state(k) (kobj_to_state_obj(k)->state)
@@ -380,6 +441,7 @@ static struct kobj_type ktype_state_cpuidle = {
 
 static inline void cpuidle_free_state_kobj(struct cpuidle_device *device, int i)
 {
+	cpuidle_remove_s2idle_attr_group(device->kobjs[i]);
 	kobject_put(&device->kobjs[i]->kobj);
 	wait_for_completion(&device->kobjs[i]->kobj_unregister);
 	kfree(device->kobjs[i]);
@@ -398,10 +460,12 @@ static int cpuidle_add_state_sysfs(struct cpuidle_device *device)
 	struct cpuidle_driver *drv = cpuidle_get_cpu_driver(device);
 
 	/* state statistics */
-	for (i = 0; i < device->state_count; i++) {
+	for (i = 0; i < drv->state_count; i++) {
 		kobj = kzalloc(sizeof(struct cpuidle_state_kobj), GFP_KERNEL);
-		if (!kobj)
+		if (!kobj) {
+			ret = -ENOMEM;
 			goto error_state;
+		}
 		kobj->state = &drv->states[i];
 		kobj->state_usage = &device->states_usage[i];
 		init_completion(&kobj->kobj_unregister);
@@ -412,6 +476,7 @@ static int cpuidle_add_state_sysfs(struct cpuidle_device *device)
 			kfree(kobj);
 			goto error_state;
 		}
+		cpuidle_add_s2idle_attr_group(kobj);
 		kobject_uevent(&kobj->kobj, KOBJ_ADD);
 		device->kobjs[i] = kobj;
 	}
@@ -430,9 +495,10 @@ error_state:
  */
 static void cpuidle_remove_state_sysfs(struct cpuidle_device *device)
 {
+	struct cpuidle_driver *drv = cpuidle_get_cpu_driver(device);
 	int i;
 
-	for (i = 0; i < device->state_count; i++)
+	for (i = 0; i < drv->state_count; i++)
 		cpuidle_free_state_kobj(device, i);
 }
 
@@ -442,7 +508,7 @@ static void cpuidle_remove_state_sysfs(struct cpuidle_device *device)
 
 #define define_one_driver_ro(_name, show)                       \
 	static struct cpuidle_driver_attr attr_driver_##_name = \
-		__ATTR(_name, 0644, show, NULL)
+		__ATTR(_name, 0444, show, NULL)
 
 struct cpuidle_driver_kobj {
 	struct cpuidle_driver *drv;
@@ -608,6 +674,18 @@ int cpuidle_add_sysfs(struct cpuidle_device *dev)
 	struct cpuidle_device_kobj *kdev;
 	struct device *cpu_dev = get_cpu_device((unsigned long)dev->cpu);
 	int error;
+
+	/*
+	 * Return if cpu_device is not setup for this CPU.
+	 *
+	 * This could happen if the arch did not set up cpu_device
+	 * since this CPU is not in cpu_present mask and the
+	 * driver did not send a correct CPU mask during registration.
+	 * Without this check we would end up passing bogus
+	 * value for &cpu_dev->kobj in kobject_init_and_add()
+	 */
+	if (!cpu_dev)
+		return -ENODEV;
 
 	kdev = kzalloc(sizeof(*kdev), GFP_KERNEL);
 	if (!kdev)

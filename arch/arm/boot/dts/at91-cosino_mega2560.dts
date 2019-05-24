@@ -27,14 +27,8 @@
 			};
 
 			adc0: adc@f804c000 {
-				atmel,adc-clock-rate = <1000000>;
 				atmel,adc-ts-wires = <4>;
 				atmel,adc-ts-pressure-threshold = <10000>;
-				status = "okay";
-			};
-
-
-			tsadcc: tsadcc@f804c000 {
 				status = "okay";
 			};
 
@@ -68,7 +62,7 @@
 			};
 		};
 
-		usb0: ohci@00600000 {
+		usb0: ohci@600000 {
 			status = "okay";
 			num-ports = <3>;
 			atmel,vbus-gpio = <0 /* &pioD 18 GPIO_ACTIVE_LOW */
@@ -77,7 +71,7 @@
 					  >;
 		};
 
-		usb1: ehci@00700000 {
+		usb1: ehci@700000 {
 			status = "okay";
 		};
 	};

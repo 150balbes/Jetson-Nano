@@ -16,6 +16,8 @@
 #include <asm/cp15.h>
 #include <asm/smp_plat.h>
 
+#include "generic.h"
+
 static inline void cpu_enter_lowpower(void)
 {
 	unsigned int v;
@@ -57,7 +59,7 @@ static inline void spear13xx_do_lowpower(unsigned int cpu, int *spurious)
 	for (;;) {
 		wfi();
 
-		if (pen_release == cpu) {
+		if (spear_pen_release == cpu) {
 			/*
 			 * OK, proper wakeup, we're done
 			 */
@@ -80,7 +82,7 @@ static inline void spear13xx_do_lowpower(unsigned int cpu, int *spurious)
  *
  * Called with IRQs disabled
  */
-void __ref spear13xx_cpu_die(unsigned int cpu)
+void spear13xx_cpu_die(unsigned int cpu)
 {
 	int spurious = 0;
 

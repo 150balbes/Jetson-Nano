@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _CODA_INT_
 #define _CODA_INT_
 
@@ -10,7 +11,7 @@ extern int coda_hard;
 extern int coda_fake_statfs;
 
 void coda_destroy_inodecache(void);
-int coda_init_inodecache(void);
+int __init coda_init_inodecache(void);
 int coda_fsync(struct file *coda_file, loff_t start, loff_t end, int datasync);
 void coda_sysctl_init(void);
 void coda_sysctl_clean(void);

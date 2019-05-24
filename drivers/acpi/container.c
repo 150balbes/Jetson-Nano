@@ -20,18 +20,12 @@
  *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  *  General Public License for more details.
  *
- *  You should have received a copy of the GNU General Public License along
- *  with this program; if not, write to the Free Software Foundation, Inc.,
- *  59 Temple Place, Suite 330, Boston, MA 02111-1307 USA.
- *
  * ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
  */
 #include <linux/acpi.h>
 #include <linux/container.h>
 
 #include "internal.h"
-
-#define PREFIX "ACPI: "
 
 #define _COMPONENT			ACPI_CONTAINER_COMPONENT
 ACPI_MODULE_NAME("container");
@@ -42,6 +36,8 @@ static const struct acpi_device_id container_device_ids[] = {
 	{"PNP0A06", 0},
 	{"", 0},
 };
+
+#ifdef CONFIG_ACPI_CONTAINER
 
 static int acpi_container_offline(struct container_dev *cdev)
 {
@@ -67,6 +63,9 @@ static int container_device_attach(struct acpi_device *adev,
 	struct container_dev *cdev;
 	struct device *dev;
 	int ret;
+
+	if (adev->flags.is_dock_station)
+		return 0;
 
 	cdev = kzalloc(sizeof(*cdev), GFP_KERNEL);
 	if (!cdev)
@@ -116,5 +115,18 @@ static struct acpi_scan_handler container_handler = {
 
 void __init acpi_container_init(void)
 {
+	acpi_scan_add_handler(&container_handler);
+}
+
+#else
+
+static struct acpi_scan_handler container_handler = {
+	.ids = container_device_ids,
+};
+
+void __init acpi_container_init(void)
+{
 	acpi_scan_add_handler_with_hotplug(&container_handler, "container");
 }
+
+#endif /* CONFIG_ACPI_CONTAINER */

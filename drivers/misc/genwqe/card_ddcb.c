@@ -5,7 +5,7 @@
  *
  * Author: Frank Haverkamp <haver@linux.vnet.ibm.com>
  * Author: Joerg-Stephan Vogt <jsvogt@de.ibm.com>
- * Author: Michael Jung <mijung@de.ibm.com>
+ * Author: Michael Jung <mijung@gmx.net>
  * Author: Michael Ruettger <michael@ibmra.de>
  *
  * This program is free software; you can redistribute it and/or modify
@@ -27,7 +27,6 @@
  */
 
 #include <linux/types.h>
-#include <linux/module.h>
 #include <linux/sched.h>
 #include <linux/wait.h>
 #include <linux/pci.h>
@@ -185,8 +184,7 @@ static void print_ddcb_info(struct genwqe_dev *cd, struct ddcb_queue *queue)
 	pddcb = queue->ddcb_vaddr;
 	for (i = 0; i < queue->ddcb_max; i++) {
 		dev_err(&pci_dev->dev,
-			"  %c %-3d: RETC=%03x SEQ=%04x "
-			"HSI=%02X SHI=%02x PRIV=%06llx CMD=%03x\n",
+			"  %c %-3d: RETC=%03x SEQ=%04x HSI=%02X SHI=%02x PRIV=%06llx CMD=%03x\n",
 			i == queue->ddcb_act ? '>' : ' ',
 			i,
 			be16_to_cpu(pddcb->retc_16),
@@ -204,7 +202,7 @@ struct genwqe_ddcb_cmd *ddcb_requ_alloc(void)
 {
 	struct ddcb_requ *req;
 
-	req = kzalloc(sizeof(*req), GFP_ATOMIC);
+	req = kzalloc(sizeof(*req), GFP_KERNEL);
 	if (!req)
 		return NULL;
 
@@ -214,6 +212,7 @@ struct genwqe_ddcb_cmd *ddcb_requ_alloc(void)
 void ddcb_requ_free(struct genwqe_ddcb_cmd *cmd)
 {
 	struct ddcb_requ *req = container_of(cmd, struct ddcb_requ, cmd);
+
 	kfree(req);
 }
 
@@ -305,6 +304,8 @@ static int enqueue_ddcb(struct genwqe_dev *cd, struct ddcb_queue *queue,
 			break;
 
 		new = (old | DDCB_NEXT_BE32);
+
+		wmb();		/* need to ensure write ordering */
 		icrc_hsi_shi = cmpxchg(&prev_ddcb->icrc_hsi_shi_32, old, new);
 
 		if (icrc_hsi_shi == old)
@@ -314,6 +315,8 @@ static int enqueue_ddcb(struct genwqe_dev *cd, struct ddcb_queue *queue,
 	/* Queue must be re-started by updating QUEUE_OFFSET */
 	ddcb_mark_tapped(pddcb);
 	num = (u64)ddcb_no << 8;
+
+	wmb();			/* need to ensure write ordering */
 	__genwqe_writeq(cd, queue->IO_QUEUE_OFFSET, num); /* start queue */
 
 	return RET_DDCB_TAPPED;
@@ -386,8 +389,9 @@ static int genwqe_check_ddcb_queue(struct genwqe_dev *cd,
 		    0x00000000)
 			goto go_home; /* not completed, continue waiting */
 
-		/* Note: DDCB could be purged */
+		wmb();  /*  Add sync to decouple prev. read operations */
 
+		/* Note: DDCB could be purged */
 		req = queue->ddcb_req[queue->ddcb_act];
 		if (req == NULL) {
 			/* this occurs if DDCB is purged, not an error */
@@ -412,9 +416,7 @@ static int genwqe_check_ddcb_queue(struct genwqe_dev *cd,
 			status  = __genwqe_readq(cd, queue->IO_QUEUE_STATUS);
 
 			dev_err(&pci_dev->dev,
-				"[%s] SEQN=%04x HSI=%02x RETC=%03x "
-				" Q_ERRCNTS=%016llx Q_STATUS=%016llx\n"
-				" DDCB_DMA_ADDR=%016llx\n",
+				"[%s] SEQN=%04x HSI=%02x RETC=%03x Q_ERRCNTS=%016llx Q_STATUS=%016llx DDCB_DMA_ADDR=%016llx\n",
 				__func__, be16_to_cpu(pddcb->seqnum_16),
 				pddcb->hsi, retc_16, errcnts, status,
 				queue->ddcb_daddr + ddcb_offs);
@@ -435,8 +437,7 @@ static int genwqe_check_ddcb_queue(struct genwqe_dev *cd,
 		vcrc_16 = be16_to_cpu(pddcb->vcrc_16);
 		if (vcrc != vcrc_16) {
 			printk_ratelimited(KERN_ERR
-				"%s %s: err: wrong VCRC pre=%02x vcrc_len=%d "
-				"bytes vcrc_data=%04x is not vcrc_card=%04x\n",
+				"%s %s: err: wrong VCRC pre=%02x vcrc_len=%d bytes vcrc_data=%04x is not vcrc_card=%04x\n",
 				GENWQE_DEVNAME, dev_name(&pci_dev->dev),
 				pddcb->pre, VCRC_LENGTH(req->cmd.asv_length),
 				vcrc, vcrc_16);
@@ -446,8 +447,10 @@ static int genwqe_check_ddcb_queue(struct genwqe_dev *cd,
 		queue->ddcbs_completed++;
 		queue->ddcbs_in_flight--;
 
-		/* wake up process waiting for this DDCB */
+		/* wake up process waiting for this DDCB, and
+                   processes on the busy queue */
 		wake_up_interruptible(&queue->ddcb_waitqs[queue->ddcb_act]);
+		wake_up_interruptible(&queue->busy_waitq);
 
 pick_next_one:
 		queue->ddcb_act = (queue->ddcb_act + 1) % queue->ddcb_max;
@@ -496,7 +499,7 @@ int __genwqe_wait_ddcb(struct genwqe_dev *cd, struct ddcb_requ *req)
 
 	rc = wait_event_interruptible_timeout(queue->ddcb_waitqs[ddcb_no],
 				ddcb_requ_finished(cd, req),
-				genwqe_ddcb_software_timeout * HZ);
+				GENWQE_DDCB_SOFTWARE_TIMEOUT * HZ);
 
 	/*
 	 * We need to distinguish 3 cases here:
@@ -629,7 +632,7 @@ int __genwqe_purge_ddcb(struct genwqe_dev *cd, struct ddcb_requ *req)
 	__be32 old, new;
 
 	/* unsigned long flags; */
-	if (genwqe_ddcb_software_timeout <= 0) {
+	if (GENWQE_DDCB_SOFTWARE_TIMEOUT <= 0) {
 		dev_err(&pci_dev->dev,
 			"[%s] err: software timeout is not set!\n", __func__);
 		return -EFAULT;
@@ -637,7 +640,7 @@ int __genwqe_purge_ddcb(struct genwqe_dev *cd, struct ddcb_requ *req)
 
 	pddcb = &queue->ddcb_vaddr[req->num];
 
-	for (t = 0; t < genwqe_ddcb_software_timeout * 10; t++) {
+	for (t = 0; t < GENWQE_DDCB_SOFTWARE_TIMEOUT * 10; t++) {
 
 		spin_lock_irqsave(&queue->ddcb_lock, flags);
 
@@ -713,9 +716,8 @@ go_home:
 	genwqe_hexdump(pci_dev, pddcb, sizeof(*pddcb));
 
 	dev_err(&pci_dev->dev,
-		"[%s] err: DDCB#%d not purged and not completed "
-		"after %d seconds QSTAT=%016llx!!\n",
-		__func__, req->num, genwqe_ddcb_software_timeout,
+		"[%s] err: DDCB#%d not purged and not completed after %d seconds QSTAT=%016llx!!\n",
+		__func__, req->num, GENWQE_DDCB_SOFTWARE_TIMEOUT,
 		queue_status);
 
 	print_ddcb_info(cd, req->queue);
@@ -736,7 +738,7 @@ int genwqe_init_debug_data(struct genwqe_dev *cd, struct genwqe_debug_data *d)
 	}
 
 	len  = sizeof(d->driver_version);
-	snprintf(d->driver_version, len, "%s", DRV_VERS_STRING);
+	snprintf(d->driver_version, len, "%s", DRV_VERSION);
 	d->slu_unitcfg = cd->slu_unitcfg;
 	d->app_unitcfg = cd->app_unitcfg;
 	return 0;
@@ -744,14 +746,16 @@ int genwqe_init_debug_data(struct genwqe_dev *cd, struct genwqe_debug_data *d)
 
 /**
  * __genwqe_enqueue_ddcb() - Enqueue a DDCB
- * @cd:          pointer to genwqe device descriptor
- * @req:         pointer to DDCB execution request
+ * @cd:         pointer to genwqe device descriptor
+ * @req:        pointer to DDCB execution request
+ * @f_flags:    file mode: blocking, non-blocking
  *
  * Return: 0 if enqueuing succeeded
  *         -EIO if card is unusable/PCIe problems
  *         -EBUSY if enqueuing failed
  */
-int __genwqe_enqueue_ddcb(struct genwqe_dev *cd, struct ddcb_requ *req)
+int __genwqe_enqueue_ddcb(struct genwqe_dev *cd, struct ddcb_requ *req,
+			  unsigned int f_flags)
 {
 	struct ddcb *pddcb;
 	unsigned long flags;
@@ -759,6 +763,7 @@ int __genwqe_enqueue_ddcb(struct genwqe_dev *cd, struct ddcb_requ *req)
 	struct pci_dev *pci_dev = cd->pci_dev;
 	u16 icrc;
 
+ retry:
 	if (cd->card_state != GENWQE_CARD_USED) {
 		printk_ratelimited(KERN_ERR
 			"%s %s: [%s] Card is unusable/PCIe problem Req#%d\n",
@@ -772,7 +777,7 @@ int __genwqe_enqueue_ddcb(struct genwqe_dev *cd, struct ddcb_requ *req)
 	/* FIXME circumvention to improve performance when no irq is
 	 * there.
 	 */
-	if (genwqe_polling_enabled)
+	if (GENWQE_POLLING_ENABLED)
 		genwqe_check_ddcb_queue(cd, queue);
 
 	/*
@@ -784,9 +789,24 @@ int __genwqe_enqueue_ddcb(struct genwqe_dev *cd, struct ddcb_requ *req)
 
 	pddcb = get_next_ddcb(cd, queue, &req->num);	/* get ptr and num */
 	if (pddcb == NULL) {
+		int rc;
+
 		spin_unlock_irqrestore(&queue->ddcb_lock, flags);
-		queue->busy++;
-		return -EBUSY;
+
+		if (f_flags & O_NONBLOCK) {
+			queue->return_on_busy++;
+			return -EBUSY;
+		}
+
+		queue->wait_on_busy++;
+		rc = wait_event_interruptible(queue->busy_waitq,
+					      queue_free_ddcbs(queue) != 0);
+		dev_dbg(&pci_dev->dev, "[%s] waiting for free DDCB: rc=%d\n",
+			__func__, rc);
+		if (rc == -ERESTARTSYS)
+			return rc;  /* interrupted by a signal */
+
+		goto retry;
 	}
 
 	if (queue->ddcb_req[req->num] != NULL) {
@@ -857,7 +877,7 @@ int __genwqe_enqueue_ddcb(struct genwqe_dev *cd, struct ddcb_requ *req)
 	pddcb->icrc_hsi_shi_32 = cpu_to_be32((u32)icrc << 16);
 
 	/* enable DDCB completion irq */
-	if (!genwqe_polling_enabled)
+	if (!GENWQE_POLLING_ENABLED)
 		pddcb->icrc_hsi_shi_32 |= DDCB_INTR_BE32;
 
 	dev_dbg(&pci_dev->dev, "INPUT DDCB#%d\n", req->num);
@@ -889,9 +909,11 @@ int __genwqe_enqueue_ddcb(struct genwqe_dev *cd, struct ddcb_requ *req)
  * __genwqe_execute_raw_ddcb() - Setup and execute DDCB
  * @cd:         pointer to genwqe device descriptor
  * @req:        user provided DDCB request
+ * @f_flags:    file mode: blocking, non-blocking
  */
 int __genwqe_execute_raw_ddcb(struct genwqe_dev *cd,
-			     struct genwqe_ddcb_cmd *cmd)
+			      struct genwqe_ddcb_cmd *cmd,
+			      unsigned int f_flags)
 {
 	int rc = 0;
 	struct pci_dev *pci_dev = cd->pci_dev;
@@ -907,7 +929,7 @@ int __genwqe_execute_raw_ddcb(struct genwqe_dev *cd,
 			__func__, cmd->asiv_length);
 		return -EINVAL;
 	}
-	rc = __genwqe_enqueue_ddcb(cd, req);
+	rc = __genwqe_enqueue_ddcb(cd, req, f_flags);
 	if (rc != 0)
 		return rc;
 
@@ -1005,18 +1027,19 @@ static int setup_ddcb_queue(struct genwqe_dev *cd, struct ddcb_queue *queue)
 	unsigned int queue_size;
 	struct pci_dev *pci_dev = cd->pci_dev;
 
-	if (genwqe_ddcb_max < 2)
+	if (GENWQE_DDCB_MAX < 2)
 		return -EINVAL;
 
-	queue_size = roundup(genwqe_ddcb_max * sizeof(struct ddcb), PAGE_SIZE);
+	queue_size = roundup(GENWQE_DDCB_MAX * sizeof(struct ddcb), PAGE_SIZE);
 
 	queue->ddcbs_in_flight = 0;  /* statistics */
 	queue->ddcbs_max_in_flight = 0;
 	queue->ddcbs_completed = 0;
-	queue->busy = 0;
+	queue->return_on_busy = 0;
+	queue->wait_on_busy = 0;
 
 	queue->ddcb_seq	  = 0x100; /* start sequence number */
-	queue->ddcb_max	  = genwqe_ddcb_max; /* module parameter */
+	queue->ddcb_max	  = GENWQE_DDCB_MAX;
 	queue->ddcb_vaddr = __genwqe_alloc_consistent(cd, queue_size,
 						&queue->ddcb_daddr);
 	if (queue->ddcb_vaddr == NULL) {
@@ -1024,17 +1047,16 @@ static int setup_ddcb_queue(struct genwqe_dev *cd, struct ddcb_queue *queue)
 			"[%s] **err: could not allocate DDCB **\n", __func__);
 		return -ENOMEM;
 	}
-	memset(queue->ddcb_vaddr, 0, queue_size);
-
-	queue->ddcb_req = kzalloc(sizeof(struct ddcb_requ *) *
-				  queue->ddcb_max, GFP_KERNEL);
+	queue->ddcb_req = kcalloc(queue->ddcb_max, sizeof(struct ddcb_requ *),
+				  GFP_KERNEL);
 	if (!queue->ddcb_req) {
 		rc = -ENOMEM;
 		goto free_ddcbs;
 	}
 
-	queue->ddcb_waitqs = kzalloc(sizeof(wait_queue_head_t) *
-				     queue->ddcb_max, GFP_KERNEL);
+	queue->ddcb_waitqs = kcalloc(queue->ddcb_max,
+				     sizeof(wait_queue_head_t),
+				     GFP_KERNEL);
 	if (!queue->ddcb_waitqs) {
 		rc = -ENOMEM;
 		goto free_requs;
@@ -1053,7 +1075,7 @@ static int setup_ddcb_queue(struct genwqe_dev *cd, struct ddcb_queue *queue)
 	queue->ddcb_next = 0;	/* queue is empty */
 
 	spin_lock_init(&queue->ddcb_lock);
-	init_waitqueue_head(&queue->ddcb_waitq);
+	init_waitqueue_head(&queue->busy_waitq);
 
 	val64 = ((u64)(queue->ddcb_max - 1) <<  8); /* lastptr */
 	__genwqe_writeq(cd, queue->IO_QUEUE_CONFIG,  0x07);  /* iCRC/vCRC */
@@ -1114,7 +1136,21 @@ static irqreturn_t genwqe_pf_isr(int irq, void *dev_id)
 	 * safer, but slower for the good-case ... See above.
 	 */
 	gfir = __genwqe_readq(cd, IO_SLC_CFGREG_GFIR);
-	if ((gfir & GFIR_ERR_TRIGGER) != 0x0) {
+	if (((gfir & GFIR_ERR_TRIGGER) != 0x0) &&
+	    !pci_channel_offline(pci_dev)) {
+
+		if (cd->use_platform_recovery) {
+			/*
+			 * Since we use raw accessors, EEH errors won't be
+			 * detected by the platform until we do a non-raw
+			 * MMIO or config space read
+			 */
+			readq(cd->mmio + IO_SLC_CFGREG_GFIR);
+
+			/* Don't do anything if the PCI channel is frozen */
+			if (pci_channel_offline(pci_dev))
+				goto exit;
+		}
 
 		wake_up_interruptible(&cd->health_waitq);
 
@@ -1122,12 +1158,12 @@ static irqreturn_t genwqe_pf_isr(int irq, void *dev_id)
 		 * By default GFIRs causes recovery actions. This
 		 * count is just for debug when recovery is masked.
 		 */
-		printk_ratelimited(KERN_ERR
-				   "%s %s: [%s] GFIR=%016llx\n",
-				   GENWQE_DEVNAME, dev_name(&pci_dev->dev),
-				   __func__, gfir);
+		dev_err_ratelimited(&pci_dev->dev,
+				    "[%s] GFIR=%016llx\n",
+				    __func__, gfir);
 	}
 
+ exit:
 	return IRQ_HANDLED;
 }
 
@@ -1158,7 +1194,7 @@ static int genwqe_card_thread(void *data)
 
 		genwqe_check_ddcb_queue(cd, &cd->queue);
 
-		if (genwqe_polling_enabled) {
+		if (GENWQE_POLLING_ENABLED) {
 			rc = wait_event_interruptible_timeout(
 				cd->queue_waitq,
 				genwqe_ddcbs_in_flight(cd) ||
@@ -1233,12 +1269,8 @@ int genwqe_setup_service_layer(struct genwqe_dev *cd)
 	}
 
 	rc = genwqe_set_interrupt_capability(cd, GENWQE_MSI_IRQS);
-	if (rc > 0)
-		rc = genwqe_set_interrupt_capability(cd, rc);
-	if (rc != 0) {
-		rc = -ENODEV;
+	if (rc)
 		goto stop_kthread;
-	}
 
 	/*
 	 * We must have all wait-queues initialized when we enable the
@@ -1291,6 +1323,7 @@ static int queue_wake_up_all(struct genwqe_dev *cd)
 	for (i = 0; i < queue->ddcb_max; i++)
 		wake_up_interruptible(&queue->ddcb_waitqs[queue->ddcb_act]);
 
+	wake_up_interruptible(&queue->busy_waitq);
 	spin_unlock_irqrestore(&queue->ddcb_lock, flags);
 
 	return 0;
@@ -1306,8 +1339,8 @@ static int queue_wake_up_all(struct genwqe_dev *cd)
  */
 int genwqe_finish_queue(struct genwqe_dev *cd)
 {
-	int i, rc, in_flight;
-	int waitmax = genwqe_ddcb_software_timeout;
+	int i, rc = 0, in_flight;
+	int waitmax = GENWQE_DDCB_SOFTWARE_TIMEOUT;
 	struct pci_dev *pci_dev = cd->pci_dev;
 	struct ddcb_queue *queue = &cd->queue;
 
@@ -1330,8 +1363,8 @@ int genwqe_finish_queue(struct genwqe_dev *cd)
 			break;
 
 		dev_dbg(&pci_dev->dev,
-			"  DEBUG [%d/%d] waiting for queue to get empty: "
-			"%d requests!\n", i, waitmax, in_flight);
+			"  DEBUG [%d/%d] waiting for queue to get empty: %d requests!\n",
+			i, waitmax, in_flight);
 
 		/*
 		 * Severe severe error situation: The card itself has

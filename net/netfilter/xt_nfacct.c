@@ -6,6 +6,8 @@
  * it under the terms of the GNU General Public License version 2 (or any
  * later at your option) as published by the Free Software Foundation.
  */
+#define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
+
 #include <linux/module.h>
 #include <linux/skbuff.h>
 
@@ -21,11 +23,14 @@ MODULE_ALIAS("ip6t_nfacct");
 
 static bool nfacct_mt(const struct sk_buff *skb, struct xt_action_param *par)
 {
+	int overquota;
 	const struct xt_nfacct_match_info *info = par->targinfo;
 
 	nfnl_acct_update(skb, info->nfacct);
 
-	return true;
+	overquota = nfnl_acct_overquota(xt_net(par), info->nfacct);
+
+	return overquota == NFACCT_UNDERQUOTA ? false : true;
 }
 
 static int
@@ -34,10 +39,10 @@ nfacct_mt_checkentry(const struct xt_mtchk_param *par)
 	struct xt_nfacct_match_info *info = par->matchinfo;
 	struct nf_acct *nfacct;
 
-	nfacct = nfnl_acct_find_get(info->name);
+	nfacct = nfnl_acct_find_get(par->net, info->name);
 	if (nfacct == NULL) {
-		pr_info("xt_nfacct: accounting object with name `%s' "
-			"does not exists\n", info->name);
+		pr_info_ratelimited("accounting object `%s' does not exists\n",
+				    info->name);
 		return -ENOENT;
 	}
 	info->nfacct = nfacct;
@@ -59,6 +64,7 @@ static struct xt_match nfacct_mt_reg __read_mostly = {
 	.match      = nfacct_mt,
 	.destroy    = nfacct_mt_destroy,
 	.matchsize  = sizeof(struct xt_nfacct_match_info),
+	.usersize   = offsetof(struct xt_nfacct_match_info, nfacct),
 	.me         = THIS_MODULE,
 };
 

@@ -62,7 +62,7 @@ static void discard_old_kernel_data(void *kto)
 	__asm__("mcrr	p15, 0, %1, %0, c6	@ 0xec401f06"
 	   :
 	   : "r" (kto),
-	     "r" ((unsigned long)kto + PAGE_SIZE - L1_CACHE_BYTES)
+	     "r" ((unsigned long)kto + PAGE_SIZE - 1)
 	   : "cc");
 }
 
@@ -76,7 +76,7 @@ static void v6_copy_user_highpage_aliasing(struct page *to,
 	unsigned long kfrom, kto;
 
 	if (!test_and_set_bit(PG_dcache_clean, &from->flags))
-		__flush_dcache_page(page_mapping(from), from);
+		__flush_dcache_page(page_mapping_file(from), from);
 
 	/* FIXME: not highmem safe */
 	discard_old_kernel_data(page_address(to));

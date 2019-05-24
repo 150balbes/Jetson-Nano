@@ -16,19 +16,19 @@
 
 #include <linux/linkage.h>
 
-#include <asm/assembler.h>
+#include <soc/tegra/flowctrl.h>
+#include <soc/tegra/fuse.h>
+
 #include <asm/asm-offsets.h>
+#include <asm/assembler.h>
 #include <asm/cache.h>
 
 #include "irammap.h"
-#include "fuse.h"
 #include "sleep.h"
-#include "flowctrl.h"
 
 #define EMC_CFG				0xc
 #define EMC_ADR_CFG			0x10
 #define EMC_TIMING_CONTROL		0x28
-#define EMC_REFRESH			0x70
 #define EMC_NOP				0xdc
 #define EMC_SELF_REF			0xe0
 #define EMC_MRW				0xe8
@@ -43,6 +43,8 @@
 #define EMC_ZQ_CAL			0x2ec
 #define EMC_XM2VTTGENPADCTRL		0x310
 #define EMC_XM2VTTGENPADCTRL2		0x314
+
+#define MC_EMEM_ARB_CFG			0x90
 
 #define PMC_CTRL			0x0
 #define PMC_CTRL_SIDE_EFFECT_LP0 (1 << 14) /* enter LP0 when CPU pwr gated */
@@ -142,7 +144,7 @@ ENTRY(tegra30_hotplug_shutdown)
 	/* Powergate this CPU */
 	mov	r0, #TEGRA30_POWER_HOTPLUG_SHUTDOWN
 	bl	tegra30_cpu_shutdown
-	mov	pc, lr			@ should never get here
+	ret	lr			@ should never get here
 ENDPROC(tegra30_hotplug_shutdown)
 
 /*
@@ -161,7 +163,7 @@ ENTRY(tegra30_cpu_shutdown)
 	bne	_no_cpu0_chk	@ It's not Tegra30
 
 	cmp	r3, #0
-	moveq	pc, lr		@ Must never be called for CPU 0
+	reteq	lr		@ Must never be called for CPU 0
 _no_cpu0_chk:
 
 	ldr	r12, =TEGRA_FLOW_CTRL_VIRT
@@ -222,7 +224,7 @@ wfe_war:
 	b	__cpu_reset_again
 
 	/*
-	 * 38 nop's, which fills reset of wfe cache line and
+	 * 38 nop's, which fills rest of wfe cache line and
 	 * 4 more cachelines with nop
 	 */
 	.rept 38
@@ -241,8 +243,11 @@ ENDPROC(tegra30_cpu_shutdown)
  * tegra30_tear_down_core in IRAM
  */
 ENTRY(tegra30_sleep_core_finish)
+	mov	r4, r0
 	/* Flush, disable the L1 data cache and exit SMP */
+	mov	r0, #TEGRA_FLUSH_CACHE_ALL
 	bl	tegra_disable_clean_inv_dcache
+	mov	r0, r4
 
 	/*
 	 * Preload all the address literals that are needed for the
@@ -266,7 +271,7 @@ ENTRY(tegra30_sleep_core_finish)
 	mov32	r1, TEGRA_IRAM_LPx_RESUME_AREA
 	add	r0, r0, r1
 
-	mov	pc, r3
+	ret	r3
 ENDPROC(tegra30_sleep_core_finish)
 
 /*
@@ -285,7 +290,7 @@ ENTRY(tegra30_sleep_cpu_secondary_finish)
 	mov	r0, #0                          @ power mode flags (!hotplug)
 	bl	tegra30_cpu_shutdown
 	mov	r0, #1                          @ never return here
-	mov	pc, r7
+	ret	r7
 ENDPROC(tegra30_sleep_cpu_secondary_finish)
 
 /*
@@ -415,6 +420,22 @@ _pll_m_c_x_done:
 	movweq	r0, #:lower16:TEGRA124_EMC_BASE
 	movteq	r0, #:upper16:TEGRA124_EMC_BASE
 
+	cmp	r10, #TEGRA30
+	moveq	r2, #0x20
+	movweq	r4, #:lower16:TEGRA_MC_BASE
+	movteq	r4, #:upper16:TEGRA_MC_BASE
+	cmp	r10, #TEGRA114
+	moveq	r2, #0x34
+	movweq	r4, #:lower16:TEGRA114_MC_BASE
+	movteq	r4, #:upper16:TEGRA114_MC_BASE
+	cmp	r10, #TEGRA124
+	moveq	r2, #0x20
+	movweq	r4, #:lower16:TEGRA124_MC_BASE
+	movteq	r4, #:upper16:TEGRA124_MC_BASE
+
+	ldr	r1, [r5, r2]		@ restore MC_EMEM_ARB_CFG
+	str	r1, [r4, #MC_EMEM_ARB_CFG]
+
 exit_self_refresh:
 	ldr	r1, [r5, #0xC]		@ restore EMC_XM2VTTGENPADCTRL
 	str	r1, [r0, #EMC_XM2VTTGENPADCTRL]
@@ -455,7 +476,6 @@ emc_wait_auto_cal_onetime:
 	cmp	r10, #TEGRA30
 	streq	r1, [r0, #EMC_NOP]
 	streq	r1, [r0, #EMC_NOP]
-	streq	r1, [r0, #EMC_REFRESH]
 
 	emc_device_mask r1, r0
 
@@ -517,6 +537,8 @@ zcal_done:
 	ldr	r1, [r5, #0x0]		@ restore EMC_CFG
 	str	r1, [r0, #EMC_CFG]
 
+	emc_timing_update r1, r0
+
 	/* Tegra114 had dual EMC channel, now config the other one */
 	cmp	r10, #TEGRA114
 	bne	__no_dual_emc_chanl
@@ -529,7 +551,7 @@ __no_dual_emc_chanl:
 
 	mov32	r0, TEGRA_PMC_BASE
 	ldr	r0, [r0, #PMC_SCRATCH41]
-	mov	pc, r0			@ jump to tegra_resume
+	ret	r0			@ jump to tegra_resume
 ENDPROC(tegra30_lp1_reset)
 
 	.align	L1_CACHE_SHIFT
@@ -542,6 +564,7 @@ tegra30_sdram_pad_address:
 	.word	TEGRA_PMC_BASE + PMC_IO_DPD_STATUS			@0x14
 	.word	TEGRA_CLK_RESET_BASE + CLK_RESET_CLK_SOURCE_MSELECT	@0x18
 	.word	TEGRA_CLK_RESET_BASE + CLK_RESET_SCLK_BURST		@0x1c
+	.word	TEGRA_MC_BASE + MC_EMEM_ARB_CFG				@0x20
 tegra30_sdram_pad_address_end:
 
 tegra114_sdram_pad_address:
@@ -558,6 +581,7 @@ tegra114_sdram_pad_address:
 	.word	TEGRA_EMC1_BASE + EMC_AUTO_CAL_INTERVAL			@0x28
 	.word	TEGRA_EMC1_BASE + EMC_XM2VTTGENPADCTRL			@0x2c
 	.word	TEGRA_EMC1_BASE + EMC_XM2VTTGENPADCTRL2			@0x30
+	.word	TEGRA114_MC_BASE + MC_EMEM_ARB_CFG			@0x34
 tegra114_sdram_pad_adress_end:
 
 tegra124_sdram_pad_address:
@@ -569,6 +593,7 @@ tegra124_sdram_pad_address:
 	.word	TEGRA_PMC_BASE + PMC_IO_DPD_STATUS			@0x14
 	.word	TEGRA_CLK_RESET_BASE + CLK_RESET_CLK_SOURCE_MSELECT	@0x18
 	.word	TEGRA_CLK_RESET_BASE + CLK_RESET_SCLK_BURST		@0x1c
+	.word	TEGRA124_MC_BASE + MC_EMEM_ARB_CFG			@0x20
 tegra124_sdram_pad_address_end:
 
 tegra30_sdram_pad_size:
@@ -659,7 +684,7 @@ _no_pll_in_iddq:
 	mov	r0, #0	/* brust policy = 32KHz */
 	str	r0, [r5, #CLK_RESET_SCLK_BURST]
 
-	mov	pc, lr
+	ret	lr
 
 /*
  * tegra30_enter_sleep
@@ -819,7 +844,7 @@ pmc_io_dpd_skip:
 
 	dsb
 
-	mov	pc, lr
+	ret	lr
 
 	.ltorg
 /* dummy symbol for end of IRAM */

@@ -18,9 +18,9 @@
 #define __TEA5761_H__
 
 #include <linux/i2c.h>
-#include "dvb_frontend.h"
+#include <media/dvb_frontend.h>
 
-#if IS_ENABLED(CONFIG_MEDIA_TUNER_TEA5761)
+#if IS_REACHABLE(CONFIG_MEDIA_TUNER_TEA5761)
 extern int tea5761_autodetection(struct i2c_adapter* i2c_adap, u8 i2c_addr);
 
 extern struct dvb_frontend *tea5761_attach(struct dvb_frontend *fe,

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _AV7110_H_
 #define _AV7110_H_
 
@@ -16,14 +17,14 @@
 #include <linux/dvb/net.h>
 #include <linux/mutex.h>
 
-#include "dvbdev.h"
-#include "demux.h"
-#include "dvb_demux.h"
-#include "dmxdev.h"
+#include <media/dvbdev.h>
+#include <media/demux.h>
+#include <media/dvb_demux.h>
+#include <media/dmxdev.h>
 #include "dvb_filter.h"
-#include "dvb_net.h"
-#include "dvb_ringbuffer.h"
-#include "dvb_frontend.h"
+#include <media/dvb_net.h>
+#include <media/dvb_ringbuffer.h>
+#include <media/dvb_frontend.h>
 #include "ves1820.h"
 #include "ves1x93.h"
 #include "stv0299.h"
@@ -32,7 +33,7 @@
 #include "stv0297.h"
 #include "l64781.h"
 
-#include <media/saa7146_vv.h>
+#include <media/drv-intf/saa7146_vv.h>
 
 
 #define ANALOG_TUNER_VES1820 1
@@ -40,15 +41,18 @@
 
 extern int av7110_debug;
 
-#define dprintk(level,args...) \
-	    do { if ((av7110_debug & level)) { printk("dvb-ttpci: %s(): ", __func__); printk(args); } } while (0)
+#define dprintk(level, fmt, arg...) do {				\
+	if (level & av7110_debug)					\
+		printk(KERN_DEBUG KBUILD_MODNAME ": %s(): " fmt,	\
+		       __func__, ##arg);				\
+} while (0)
 
 #define MAXFILT 32
 
 enum {AV_PES_STREAM, PS_STREAM, TS_STREAM, PES_STREAM};
 
 enum av7110_video_mode {
-	AV7110_VIDEO_MODE_PAL 	= 0,
+	AV7110_VIDEO_MODE_PAL	= 0,
 	AV7110_VIDEO_MODE_NTSC	= 1
 };
 
@@ -90,7 +94,7 @@ struct infrared {
 	u8			inversion;
 	u16			last_key;
 	u16			last_toggle;
-	u8			delay_timer_finished;
+	bool			keypressed;
 };
 
 
@@ -102,8 +106,8 @@ struct av7110 {
 	struct dvb_device	dvb_dev;
 	struct dvb_net		dvb_net;
 
-	struct video_device	*v4l_dev;
-	struct video_device	*vbi_dev;
+	struct video_device	v4l_dev;
+	struct video_device	vbi_dev;
 
 	struct saa7146_dev	*dev;
 
@@ -174,7 +178,7 @@ struct av7110 {
 
 	/* CA */
 
-	ca_slot_info_t		ci_slot[2];
+	struct ca_slot_info	ci_slot[2];
 
 	enum av7110_video_mode	vidmode;
 	struct dmxdev		dmxdev;
@@ -269,25 +273,30 @@ struct av7110 {
 	unsigned long size_root;
 
 	struct dvb_frontend* fe;
-	fe_status_t fe_status;
+	enum fe_status fe_status;
 
 	struct mutex ioctl_mutex;
 
 	/* crash recovery */
 	void				(*recover)(struct av7110* av7110);
-	fe_sec_voltage_t		saved_voltage;
-	fe_sec_tone_mode_t		saved_tone;
+	enum fe_sec_voltage		saved_voltage;
+	enum fe_sec_tone_mode		saved_tone;
 	struct dvb_diseqc_master_cmd	saved_master_cmd;
-	fe_sec_mini_cmd_t		saved_minicmd;
+	enum fe_sec_mini_cmd		saved_minicmd;
 
 	int (*fe_init)(struct dvb_frontend* fe);
-	int (*fe_read_status)(struct dvb_frontend* fe, fe_status_t* status);
-	int (*fe_diseqc_reset_overload)(struct dvb_frontend* fe);
-	int (*fe_diseqc_send_master_cmd)(struct dvb_frontend* fe, struct dvb_diseqc_master_cmd* cmd);
-	int (*fe_diseqc_send_burst)(struct dvb_frontend* fe, fe_sec_mini_cmd_t minicmd);
-	int (*fe_set_tone)(struct dvb_frontend* fe, fe_sec_tone_mode_t tone);
-	int (*fe_set_voltage)(struct dvb_frontend* fe, fe_sec_voltage_t voltage);
-	int (*fe_dishnetwork_send_legacy_command)(struct dvb_frontend* fe, unsigned long cmd);
+	int (*fe_read_status)(struct dvb_frontend *fe, enum fe_status *status);
+	int (*fe_diseqc_reset_overload)(struct dvb_frontend *fe);
+	int (*fe_diseqc_send_master_cmd)(struct dvb_frontend *fe,
+					 struct dvb_diseqc_master_cmd *cmd);
+	int (*fe_diseqc_send_burst)(struct dvb_frontend *fe,
+				    enum fe_sec_mini_cmd minicmd);
+	int (*fe_set_tone)(struct dvb_frontend *fe,
+			   enum fe_sec_tone_mode tone);
+	int (*fe_set_voltage)(struct dvb_frontend *fe,
+			      enum fe_sec_voltage voltage);
+	int (*fe_dishnetwork_send_legacy_command)(struct dvb_frontend *fe,
+						  unsigned long cmd);
 	int (*fe_set_frontend)(struct dvb_frontend *fe);
 };
 

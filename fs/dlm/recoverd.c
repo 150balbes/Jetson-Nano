@@ -55,7 +55,7 @@ static int ls_recover(struct dlm_ls *ls, struct dlm_recover *rv)
 	unsigned long start;
 	int error, neg = 0;
 
-	log_debug(ls, "dlm_recover %llu", (unsigned long long)rv->seq);
+	log_rinfo(ls, "dlm_recover %llu", (unsigned long long)rv->seq);
 
 	mutex_lock(&ls->ls_recoverd_active);
 
@@ -76,7 +76,7 @@ static int ls_recover(struct dlm_ls *ls, struct dlm_recover *rv)
 
 	error = dlm_recover_members(ls, rv, &neg);
 	if (error) {
-		log_debug(ls, "dlm_recover_members error %d", error);
+		log_rinfo(ls, "dlm_recover_members error %d", error);
 		goto fail;
 	}
 
@@ -90,7 +90,7 @@ static int ls_recover(struct dlm_ls *ls, struct dlm_recover *rv)
 
 	error = dlm_recover_members_wait(ls);
 	if (error) {
-		log_debug(ls, "dlm_recover_members_wait error %d", error);
+		log_rinfo(ls, "dlm_recover_members_wait error %d", error);
 		goto fail;
 	}
 
@@ -103,7 +103,7 @@ static int ls_recover(struct dlm_ls *ls, struct dlm_recover *rv)
 
 	error = dlm_recover_directory(ls);
 	if (error) {
-		log_debug(ls, "dlm_recover_directory error %d", error);
+		log_rinfo(ls, "dlm_recover_directory error %d", error);
 		goto fail;
 	}
 
@@ -111,11 +111,11 @@ static int ls_recover(struct dlm_ls *ls, struct dlm_recover *rv)
 
 	error = dlm_recover_directory_wait(ls);
 	if (error) {
-		log_debug(ls, "dlm_recover_directory_wait error %d", error);
+		log_rinfo(ls, "dlm_recover_directory_wait error %d", error);
 		goto fail;
 	}
 
-	log_debug(ls, "dlm_recover_directory %u out %u messages",
+	log_rinfo(ls, "dlm_recover_directory %u out %u messages",
 		  ls->ls_recover_dir_sent_res, ls->ls_recover_dir_sent_msg);
 
 	/*
@@ -144,7 +144,7 @@ static int ls_recover(struct dlm_ls *ls, struct dlm_recover *rv)
 
 		error = dlm_recover_masters(ls);
 		if (error) {
-			log_debug(ls, "dlm_recover_masters error %d", error);
+			log_rinfo(ls, "dlm_recover_masters error %d", error);
 			goto fail;
 		}
 
@@ -154,7 +154,7 @@ static int ls_recover(struct dlm_ls *ls, struct dlm_recover *rv)
 
 		error = dlm_recover_locks(ls);
 		if (error) {
-			log_debug(ls, "dlm_recover_locks error %d", error);
+			log_rinfo(ls, "dlm_recover_locks error %d", error);
 			goto fail;
 		}
 
@@ -162,11 +162,11 @@ static int ls_recover(struct dlm_ls *ls, struct dlm_recover *rv)
 
 		error = dlm_recover_locks_wait(ls);
 		if (error) {
-			log_debug(ls, "dlm_recover_locks_wait error %d", error);
+			log_rinfo(ls, "dlm_recover_locks_wait error %d", error);
 			goto fail;
 		}
 
-		log_debug(ls, "dlm_recover_locks %u in",
+		log_rinfo(ls, "dlm_recover_locks %u in",
 			  ls->ls_recover_locks_in);
 
 		/*
@@ -186,7 +186,7 @@ static int ls_recover(struct dlm_ls *ls, struct dlm_recover *rv)
 
 		error = dlm_recover_locks_wait(ls);
 		if (error) {
-			log_debug(ls, "dlm_recover_locks_wait error %d", error);
+			log_rinfo(ls, "dlm_recover_locks_wait error %d", error);
 			goto fail;
 		}
 	}
@@ -205,7 +205,7 @@ static int ls_recover(struct dlm_ls *ls, struct dlm_recover *rv)
 
 	error = dlm_recover_done_wait(ls);
 	if (error) {
-		log_debug(ls, "dlm_recover_done_wait error %d", error);
+		log_rinfo(ls, "dlm_recover_done_wait error %d", error);
 		goto fail;
 	}
 
@@ -217,25 +217,25 @@ static int ls_recover(struct dlm_ls *ls, struct dlm_recover *rv)
 
 	error = enable_locking(ls, rv->seq);
 	if (error) {
-		log_debug(ls, "enable_locking error %d", error);
+		log_rinfo(ls, "enable_locking error %d", error);
 		goto fail;
 	}
 
 	error = dlm_process_requestqueue(ls);
 	if (error) {
-		log_debug(ls, "dlm_process_requestqueue error %d", error);
+		log_rinfo(ls, "dlm_process_requestqueue error %d", error);
 		goto fail;
 	}
 
 	error = dlm_recover_waiters_post(ls);
 	if (error) {
-		log_debug(ls, "dlm_recover_waiters_post error %d", error);
+		log_rinfo(ls, "dlm_recover_waiters_post error %d", error);
 		goto fail;
 	}
 
 	dlm_recover_grant(ls);
 
-	log_debug(ls, "dlm_recover %llu generation %u done: %u ms",
+	log_rinfo(ls, "dlm_recover %llu generation %u done: %u ms",
 		  (unsigned long long)rv->seq, ls->ls_generation,
 		  jiffies_to_msecs(jiffies - start));
 	mutex_unlock(&ls->ls_recoverd_active);
@@ -245,7 +245,7 @@ static int ls_recover(struct dlm_ls *ls, struct dlm_recover *rv)
 
  fail:
 	dlm_release_root_list(ls);
-	log_debug(ls, "dlm_recover %llu error %d",
+	log_rinfo(ls, "dlm_recover %llu error %d",
 		  (unsigned long long)rv->seq, error);
 	mutex_unlock(&ls->ls_recoverd_active);
 	return error;
@@ -287,11 +287,23 @@ static int dlm_recoverd(void *arg)
 	set_bit(LSFL_RECOVER_LOCK, &ls->ls_flags);
 	wake_up(&ls->ls_recover_lock_wait);
 
-	while (!kthread_should_stop()) {
+	while (1) {
+		/*
+		 * We call kthread_should_stop() after set_current_state().
+		 * This is because it works correctly if kthread_stop() is
+		 * called just before set_current_state().
+		 */
 		set_current_state(TASK_INTERRUPTIBLE);
+		if (kthread_should_stop()) {
+			set_current_state(TASK_RUNNING);
+			break;
+		}
 		if (!test_bit(LSFL_RECOVER_WORK, &ls->ls_flags) &&
-		    !test_bit(LSFL_RECOVER_DOWN, &ls->ls_flags))
+		    !test_bit(LSFL_RECOVER_DOWN, &ls->ls_flags)) {
+			if (kthread_should_stop())
+				break;
 			schedule();
+		}
 		set_current_state(TASK_RUNNING);
 
 		if (test_and_clear_bit(LSFL_RECOVER_DOWN, &ls->ls_flags)) {

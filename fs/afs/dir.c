@@ -1,6 +1,6 @@
 /* dir.c: AFS filesystem directory handling
  *
- * Copyright (C) 2002 Red Hat, Inc. All Rights Reserved.
+ * Copyright (C) 2002, 2018 Red Hat, Inc. All Rights Reserved.
  * Written by David Howells (dhowells@redhat.com)
  *
  * This program is free software; you can redistribute it and/or
@@ -10,14 +10,15 @@
  */
 
 #include <linux/kernel.h>
-#include <linux/module.h>
-#include <linux/init.h>
 #include <linux/fs.h>
 #include <linux/namei.h>
 #include <linux/pagemap.h>
+#include <linux/swap.h>
 #include <linux/ctype.h>
 #include <linux/sched.h>
+#include <linux/task_io_accounting_ops.h>
 #include "internal.h"
+#include "xdr_fs.h"
 
 static struct dentry *afs_lookup(struct inode *dir, struct dentry *dentry,
 				 unsigned int flags);
@@ -25,9 +26,10 @@ static int afs_dir_open(struct inode *inode, struct file *file);
 static int afs_readdir(struct file *file, struct dir_context *ctx);
 static int afs_d_revalidate(struct dentry *dentry, unsigned int flags);
 static int afs_d_delete(const struct dentry *dentry);
-static void afs_d_release(struct dentry *dentry);
-static int afs_lookup_filldir(struct dir_context *ctx, const char *name, int nlen,
+static int afs_lookup_one_filldir(struct dir_context *ctx, const char *name, int nlen,
 				  loff_t fpos, u64 ino, unsigned dtype);
+static int afs_lookup_filldir(struct dir_context *ctx, const char *name, int nlen,
+			      loff_t fpos, u64 ino, unsigned dtype);
 static int afs_create(struct inode *dir, struct dentry *dentry, umode_t mode,
 		      bool excl);
 static int afs_mkdir(struct inode *dir, struct dentry *dentry, umode_t mode);
@@ -38,12 +40,21 @@ static int afs_link(struct dentry *from, struct inode *dir,
 static int afs_symlink(struct inode *dir, struct dentry *dentry,
 		       const char *content);
 static int afs_rename(struct inode *old_dir, struct dentry *old_dentry,
-		      struct inode *new_dir, struct dentry *new_dentry);
+		      struct inode *new_dir, struct dentry *new_dentry,
+		      unsigned int flags);
+static int afs_dir_releasepage(struct page *page, gfp_t gfp_flags);
+static void afs_dir_invalidatepage(struct page *page, unsigned int offset,
+				   unsigned int length);
+
+static int afs_dir_set_page_dirty(struct page *page)
+{
+	BUG(); /* This should never happen. */
+}
 
 const struct file_operations afs_dir_file_operations = {
 	.open		= afs_dir_open,
 	.release	= afs_release,
-	.iterate	= afs_readdir,
+	.iterate_shared	= afs_readdir,
 	.lock		= afs_lock,
 	.llseek		= generic_file_llseek,
 };
@@ -60,6 +71,13 @@ const struct inode_operations afs_dir_inode_operations = {
 	.permission	= afs_permission,
 	.getattr	= afs_getattr,
 	.setattr	= afs_setattr,
+	.listxattr	= afs_listxattr,
+};
+
+const struct address_space_operations afs_dir_aops = {
+	.set_page_dirty	= afs_dir_set_page_dirty,
+	.releasepage	= afs_dir_releasepage,
+	.invalidatepage	= afs_dir_invalidatepage,
 };
 
 const struct dentry_operations afs_fs_dentry_operations = {
@@ -69,144 +87,76 @@ const struct dentry_operations afs_fs_dentry_operations = {
 	.d_automount	= afs_d_automount,
 };
 
-#define AFS_DIR_HASHTBL_SIZE	128
-#define AFS_DIR_DIRENT_SIZE	32
-#define AFS_DIRENT_PER_BLOCK	64
-
-union afs_dirent {
-	struct {
-		uint8_t		valid;
-		uint8_t		unused[1];
-		__be16		hash_next;
-		__be32		vnode;
-		__be32		unique;
-		uint8_t		name[16];
-		uint8_t		overflow[4];	/* if any char of the name (inc
-						 * NUL) reaches here, consume
-						 * the next dirent too */
-	} u;
-	uint8_t	extended_name[32];
-};
-
-/* AFS directory page header (one at the beginning of every 2048-byte chunk) */
-struct afs_dir_pagehdr {
-	__be16		npages;
-	__be16		magic;
-#define AFS_DIR_MAGIC htons(1234)
-	uint8_t		nentries;
-	uint8_t		bitmap[8];
-	uint8_t		pad[19];
-};
-
-/* directory block layout */
-union afs_dir_block {
-
-	struct afs_dir_pagehdr pagehdr;
-
-	struct {
-		struct afs_dir_pagehdr	pagehdr;
-		uint8_t			alloc_ctrs[128];
-		/* dir hash table */
-		uint16_t		hashtable[AFS_DIR_HASHTBL_SIZE];
-	} hdr;
-
-	union afs_dirent dirents[AFS_DIRENT_PER_BLOCK];
-};
-
-/* layout on a linux VM page */
-struct afs_dir_page {
-	union afs_dir_block blocks[PAGE_SIZE / sizeof(union afs_dir_block)];
+struct afs_lookup_one_cookie {
+	struct dir_context	ctx;
+	struct qstr		name;
+	bool			found;
+	struct afs_fid		fid;
 };
 
 struct afs_lookup_cookie {
-	struct dir_context ctx;
-	struct afs_fid	fid;
-	struct qstr name;
-	int		found;
+	struct dir_context	ctx;
+	struct qstr		name;
+	bool			found;
+	bool			one_only;
+	unsigned short		nr_fids;
+	struct afs_file_status	*statuses;
+	struct afs_callback	*callbacks;
+	struct afs_fid		fids[50];
 };
 
 /*
  * check that a directory page is valid
  */
-static inline void afs_dir_check_page(struct inode *dir, struct page *page)
+static bool afs_dir_check_page(struct afs_vnode *dvnode, struct page *page,
+			       loff_t i_size)
 {
-	struct afs_dir_page *dbuf;
-	loff_t latter;
+	struct afs_xdr_dir_page *dbuf;
+	loff_t latter, off;
 	int tmp, qty;
 
-#if 0
-	/* check the page count */
-	qty = desc.size / sizeof(dbuf->blocks[0]);
-	if (qty == 0)
-		goto error;
+	/* Determine how many magic numbers there should be in this page, but
+	 * we must take care because the directory may change size under us.
+	 */
+	off = page_offset(page);
+	if (i_size <= off)
+		goto checked;
 
-	if (page->index == 0 && qty != ntohs(dbuf->blocks[0].pagehdr.npages)) {
-		printk("kAFS: %s(%lu): wrong number of dir blocks %d!=%hu\n",
-		       __func__, dir->i_ino, qty,
-		       ntohs(dbuf->blocks[0].pagehdr.npages));
-		goto error;
-	}
-#endif
-
-	/* determine how many magic numbers there should be in this page */
-	latter = dir->i_size - page_offset(page);
+	latter = i_size - off;
 	if (latter >= PAGE_SIZE)
 		qty = PAGE_SIZE;
 	else
 		qty = latter;
-	qty /= sizeof(union afs_dir_block);
+	qty /= sizeof(union afs_xdr_dir_block);
 
 	/* check them */
-	dbuf = page_address(page);
+	dbuf = kmap(page);
 	for (tmp = 0; tmp < qty; tmp++) {
-		if (dbuf->blocks[tmp].pagehdr.magic != AFS_DIR_MAGIC) {
-			printk("kAFS: %s(%lu): bad magic %d/%d is %04hx\n",
-			       __func__, dir->i_ino, tmp, qty,
-			       ntohs(dbuf->blocks[tmp].pagehdr.magic));
+		if (dbuf->blocks[tmp].hdr.magic != AFS_DIR_MAGIC) {
+			printk("kAFS: %s(%lx): bad magic %d/%d is %04hx\n",
+			       __func__, dvnode->vfs_inode.i_ino, tmp, qty,
+			       ntohs(dbuf->blocks[tmp].hdr.magic));
+			trace_afs_dir_check_failed(dvnode, off, i_size);
+			kunmap(page);
+			trace_afs_file_error(dvnode, -EIO, afs_file_error_dir_bad_magic);
 			goto error;
 		}
+
+		/* Make sure each block is NUL terminated so we can reasonably
+		 * use string functions on it.  The filenames in the page
+		 * *should* be NUL-terminated anyway.
+		 */
+		((u8 *)&dbuf->blocks[tmp])[AFS_DIR_BLOCK_SIZE - 1] = 0;
 	}
 
-	SetPageChecked(page);
-	return;
+	kunmap(page);
+
+checked:
+	afs_stat_v(dvnode, n_read_dir);
+	return true;
 
 error:
-	SetPageChecked(page);
-	SetPageError(page);
-}
-
-/*
- * discard a page cached in the pagecache
- */
-static inline void afs_dir_put_page(struct page *page)
-{
-	kunmap(page);
-	page_cache_release(page);
-}
-
-/*
- * get a page into the pagecache
- */
-static struct page *afs_dir_get_page(struct inode *dir, unsigned long index,
-				     struct key *key)
-{
-	struct page *page;
-	_enter("{%lu},%lu", dir->i_ino, index);
-
-	page = read_cache_page(dir->i_mapping, index, afs_page_filler, key);
-	if (!IS_ERR(page)) {
-		kmap(page);
-		if (!PageChecked(page))
-			afs_dir_check_page(dir, page);
-		if (PageError(page))
-			goto fail;
-	}
-	return page;
-
-fail:
-	afs_dir_put_page(page);
-	_leave(" = -EIO");
-	return ERR_PTR(-EIO);
+	return false;
 }
 
 /*
@@ -216,8 +166,8 @@ static int afs_dir_open(struct inode *inode, struct file *file)
 {
 	_enter("{%lu}", inode->i_ino);
 
-	BUILD_BUG_ON(sizeof(union afs_dir_block) != 2048);
-	BUILD_BUG_ON(sizeof(union afs_dirent) != 32);
+	BUILD_BUG_ON(sizeof(union afs_xdr_dir_block) != 2048);
+	BUILD_BUG_ON(sizeof(union afs_xdr_dirent) != 32);
 
 	if (test_bit(AFS_VNODE_DELETED, &AFS_FS_I(inode)->flags))
 		return -ENOENT;
@@ -226,36 +176,177 @@ static int afs_dir_open(struct inode *inode, struct file *file)
 }
 
 /*
+ * Read the directory into the pagecache in one go, scrubbing the previous
+ * contents.  The list of pages is returned, pinning them so that they don't
+ * get reclaimed during the iteration.
+ */
+static struct afs_read *afs_read_dir(struct afs_vnode *dvnode, struct key *key)
+	__acquires(&dvnode->validate_lock)
+{
+	struct afs_read *req;
+	loff_t i_size;
+	int nr_pages, nr_inline, i, n;
+	int ret = -ENOMEM;
+
+retry:
+	i_size = i_size_read(&dvnode->vfs_inode);
+	if (i_size < 2048)
+		return ERR_PTR(afs_bad(dvnode, afs_file_error_dir_small));
+	if (i_size > 2048 * 1024) {
+		trace_afs_file_error(dvnode, -EFBIG, afs_file_error_dir_big);
+		return ERR_PTR(-EFBIG);
+	}
+
+	_enter("%llu", i_size);
+
+	/* Get a request record to hold the page list.  We want to hold it
+	 * inline if we can, but we don't want to make an order 1 allocation.
+	 */
+	nr_pages = (i_size + PAGE_SIZE - 1) / PAGE_SIZE;
+	nr_inline = nr_pages;
+	if (nr_inline > (PAGE_SIZE - sizeof(*req)) / sizeof(struct page *))
+		nr_inline = 0;
+
+	req = kzalloc(sizeof(*req) + sizeof(struct page *) * nr_inline,
+		      GFP_KERNEL);
+	if (!req)
+		return ERR_PTR(-ENOMEM);
+
+	refcount_set(&req->usage, 1);
+	req->nr_pages = nr_pages;
+	req->actual_len = i_size; /* May change */
+	req->len = nr_pages * PAGE_SIZE; /* We can ask for more than there is */
+	req->data_version = dvnode->status.data_version; /* May change */
+	if (nr_inline > 0) {
+		req->pages = req->array;
+	} else {
+		req->pages = kcalloc(nr_pages, sizeof(struct page *),
+				     GFP_KERNEL);
+		if (!req->pages)
+			goto error;
+	}
+
+	/* Get a list of all the pages that hold or will hold the directory
+	 * content.  We need to fill in any gaps that we might find where the
+	 * memory reclaimer has been at work.  If there are any gaps, we will
+	 * need to reread the entire directory contents.
+	 */
+	i = 0;
+	do {
+		n = find_get_pages_contig(dvnode->vfs_inode.i_mapping, i,
+					  req->nr_pages - i,
+					  req->pages + i);
+		_debug("find %u at %u/%u", n, i, req->nr_pages);
+		if (n == 0) {
+			gfp_t gfp = dvnode->vfs_inode.i_mapping->gfp_mask;
+
+			if (test_and_clear_bit(AFS_VNODE_DIR_VALID, &dvnode->flags))
+				afs_stat_v(dvnode, n_inval);
+
+			ret = -ENOMEM;
+			req->pages[i] = __page_cache_alloc(gfp);
+			if (!req->pages[i])
+				goto error;
+			ret = add_to_page_cache_lru(req->pages[i],
+						    dvnode->vfs_inode.i_mapping,
+						    i, gfp);
+			if (ret < 0)
+				goto error;
+
+			set_page_private(req->pages[i], 1);
+			SetPagePrivate(req->pages[i]);
+			unlock_page(req->pages[i]);
+			i++;
+		} else {
+			i += n;
+		}
+	} while (i < req->nr_pages);
+
+	/* If we're going to reload, we need to lock all the pages to prevent
+	 * races.
+	 */
+	ret = -ERESTARTSYS;
+	if (down_read_killable(&dvnode->validate_lock) < 0)
+		goto error;
+
+	if (test_bit(AFS_VNODE_DIR_VALID, &dvnode->flags))
+		goto success;
+
+	up_read(&dvnode->validate_lock);
+	if (down_write_killable(&dvnode->validate_lock) < 0)
+		goto error;
+
+	if (!test_bit(AFS_VNODE_DIR_VALID, &dvnode->flags)) {
+		ret = afs_fetch_data(dvnode, key, req);
+		if (ret < 0)
+			goto error_unlock;
+
+		task_io_account_read(PAGE_SIZE * req->nr_pages);
+
+		if (req->len < req->file_size)
+			goto content_has_grown;
+
+		/* Validate the data we just read. */
+		ret = -EIO;
+		for (i = 0; i < req->nr_pages; i++)
+			if (!afs_dir_check_page(dvnode, req->pages[i],
+						req->actual_len))
+				goto error_unlock;
+
+		// TODO: Trim excess pages
+
+		set_bit(AFS_VNODE_DIR_VALID, &dvnode->flags);
+	}
+
+	downgrade_write(&dvnode->validate_lock);
+success:
+	return req;
+
+error_unlock:
+	up_write(&dvnode->validate_lock);
+error:
+	afs_put_read(req);
+	_leave(" = %d", ret);
+	return ERR_PTR(ret);
+
+content_has_grown:
+	up_write(&dvnode->validate_lock);
+	afs_put_read(req);
+	goto retry;
+}
+
+/*
  * deal with one block in an AFS directory
  */
-static int afs_dir_iterate_block(struct dir_context *ctx,
-				 union afs_dir_block *block,
+static int afs_dir_iterate_block(struct afs_vnode *dvnode,
+				 struct dir_context *ctx,
+				 union afs_xdr_dir_block *block,
 				 unsigned blkoff)
 {
-	union afs_dirent *dire;
+	union afs_xdr_dirent *dire;
 	unsigned offset, next, curr;
 	size_t nlen;
 	int tmp;
 
 	_enter("%u,%x,%p,,",(unsigned)ctx->pos,blkoff,block);
 
-	curr = (ctx->pos - blkoff) / sizeof(union afs_dirent);
+	curr = (ctx->pos - blkoff) / sizeof(union afs_xdr_dirent);
 
 	/* walk through the block, an entry at a time */
-	for (offset = AFS_DIRENT_PER_BLOCK - block->pagehdr.nentries;
-	     offset < AFS_DIRENT_PER_BLOCK;
+	for (offset = (blkoff == 0 ? AFS_DIR_RESV_BLOCKS0 : AFS_DIR_RESV_BLOCKS);
+	     offset < AFS_DIR_SLOTS_PER_BLOCK;
 	     offset = next
 	     ) {
 		next = offset + 1;
 
 		/* skip entries marked unused in the bitmap */
-		if (!(block->pagehdr.bitmap[offset / 8] &
+		if (!(block->hdr.bitmap[offset / 8] &
 		      (1 << (offset % 8)))) {
-			_debug("ENT[%Zu.%u]: unused",
-			       blkoff / sizeof(union afs_dir_block), offset);
+			_debug("ENT[%zu.%u]: unused",
+			       blkoff / sizeof(union afs_xdr_dir_block), offset);
 			if (offset >= curr)
 				ctx->pos = blkoff +
-					next * sizeof(union afs_dirent);
+					next * sizeof(union afs_xdr_dirent);
 			continue;
 		}
 
@@ -263,34 +354,34 @@ static int afs_dir_iterate_block(struct dir_context *ctx,
 		dire = &block->dirents[offset];
 		nlen = strnlen(dire->u.name,
 			       sizeof(*block) -
-			       offset * sizeof(union afs_dirent));
+			       offset * sizeof(union afs_xdr_dirent));
 
-		_debug("ENT[%Zu.%u]: %s %Zu \"%s\"",
-		       blkoff / sizeof(union afs_dir_block), offset,
+		_debug("ENT[%zu.%u]: %s %zu \"%s\"",
+		       blkoff / sizeof(union afs_xdr_dir_block), offset,
 		       (offset < curr ? "skip" : "fill"),
 		       nlen, dire->u.name);
 
 		/* work out where the next possible entry is */
-		for (tmp = nlen; tmp > 15; tmp -= sizeof(union afs_dirent)) {
-			if (next >= AFS_DIRENT_PER_BLOCK) {
-				_debug("ENT[%Zu.%u]:"
+		for (tmp = nlen; tmp > 15; tmp -= sizeof(union afs_xdr_dirent)) {
+			if (next >= AFS_DIR_SLOTS_PER_BLOCK) {
+				_debug("ENT[%zu.%u]:"
 				       " %u travelled beyond end dir block"
-				       " (len %u/%Zu)",
-				       blkoff / sizeof(union afs_dir_block),
+				       " (len %u/%zu)",
+				       blkoff / sizeof(union afs_xdr_dir_block),
 				       offset, next, tmp, nlen);
-				return -EIO;
+				return afs_bad(dvnode, afs_file_error_dir_over_end);
 			}
-			if (!(block->pagehdr.bitmap[next / 8] &
+			if (!(block->hdr.bitmap[next / 8] &
 			      (1 << (next % 8)))) {
-				_debug("ENT[%Zu.%u]:"
-				       " %u unmarked extension (len %u/%Zu)",
-				       blkoff / sizeof(union afs_dir_block),
+				_debug("ENT[%zu.%u]:"
+				       " %u unmarked extension (len %u/%zu)",
+				       blkoff / sizeof(union afs_xdr_dir_block),
 				       offset, next, tmp, nlen);
-				return -EIO;
+				return afs_bad(dvnode, afs_file_error_dir_unmarked_ext);
 			}
 
-			_debug("ENT[%Zu.%u]: ext %u/%Zu",
-			       blkoff / sizeof(union afs_dir_block),
+			_debug("ENT[%zu.%u]: ext %u/%zu",
+			       blkoff / sizeof(union afs_xdr_dir_block),
 			       next, tmp, nlen);
 			next++;
 		}
@@ -302,13 +393,14 @@ static int afs_dir_iterate_block(struct dir_context *ctx,
 		/* found the next entry */
 		if (!dir_emit(ctx, dire->u.name, nlen,
 			      ntohl(dire->u.vnode),
-			      ctx->actor == afs_lookup_filldir ?
+			      (ctx->actor == afs_lookup_filldir ||
+			       ctx->actor == afs_lookup_one_filldir)?
 			      ntohl(dire->u.unique) : DT_UNKNOWN)) {
 			_leave(" = 0 [full]");
 			return 0;
 		}
 
-		ctx->pos = blkoff + next * sizeof(union afs_dirent);
+		ctx->pos = blkoff + next * sizeof(union afs_xdr_dirent);
 	}
 
 	_leave(" = 1 [more]");
@@ -321,8 +413,10 @@ static int afs_dir_iterate_block(struct dir_context *ctx,
 static int afs_dir_iterate(struct inode *dir, struct dir_context *ctx,
 			   struct key *key)
 {
-	union afs_dir_block *dblock;
-	struct afs_dir_page *dbuf;
+	struct afs_vnode *dvnode = AFS_FS_I(dir);
+	struct afs_xdr_dir_page *dbuf;
+	union afs_xdr_dir_block *dblock;
+	struct afs_read *req;
 	struct page *page;
 	unsigned blkoff, limit;
 	int ret;
@@ -334,45 +428,54 @@ static int afs_dir_iterate(struct inode *dir, struct dir_context *ctx,
 		return -ESTALE;
 	}
 
+	req = afs_read_dir(dvnode, key);
+	if (IS_ERR(req))
+		return PTR_ERR(req);
+
 	/* round the file position up to the next entry boundary */
-	ctx->pos += sizeof(union afs_dirent) - 1;
-	ctx->pos &= ~(sizeof(union afs_dirent) - 1);
+	ctx->pos += sizeof(union afs_xdr_dirent) - 1;
+	ctx->pos &= ~(sizeof(union afs_xdr_dirent) - 1);
 
 	/* walk through the blocks in sequence */
 	ret = 0;
-	while (ctx->pos < dir->i_size) {
-		blkoff = ctx->pos & ~(sizeof(union afs_dir_block) - 1);
+	while (ctx->pos < req->actual_len) {
+		blkoff = ctx->pos & ~(sizeof(union afs_xdr_dir_block) - 1);
 
-		/* fetch the appropriate page from the directory */
-		page = afs_dir_get_page(dir, blkoff / PAGE_SIZE, key);
-		if (IS_ERR(page)) {
-			ret = PTR_ERR(page);
+		/* Fetch the appropriate page from the directory and re-add it
+		 * to the LRU.
+		 */
+		page = req->pages[blkoff / PAGE_SIZE];
+		if (!page) {
+			ret = afs_bad(dvnode, afs_file_error_dir_missing_page);
 			break;
 		}
+		mark_page_accessed(page);
 
 		limit = blkoff & ~(PAGE_SIZE - 1);
 
-		dbuf = page_address(page);
+		dbuf = kmap(page);
 
 		/* deal with the individual blocks stashed on this page */
 		do {
 			dblock = &dbuf->blocks[(blkoff % PAGE_SIZE) /
-					       sizeof(union afs_dir_block)];
-			ret = afs_dir_iterate_block(ctx, dblock, blkoff);
+					       sizeof(union afs_xdr_dir_block)];
+			ret = afs_dir_iterate_block(dvnode, ctx, dblock, blkoff);
 			if (ret != 1) {
-				afs_dir_put_page(page);
+				kunmap(page);
 				goto out;
 			}
 
-			blkoff += sizeof(union afs_dir_block);
+			blkoff += sizeof(union afs_xdr_dir_block);
 
 		} while (ctx->pos < dir->i_size && blkoff < limit);
 
-		afs_dir_put_page(page);
+		kunmap(page);
 		ret = 0;
 	}
 
 out:
+	up_read(&dvnode->validate_lock);
+	afs_put_read(req);
 	_leave(" = %d", ret);
 	return ret;
 }
@@ -382,28 +485,27 @@ out:
  */
 static int afs_readdir(struct file *file, struct dir_context *ctx)
 {
-	return afs_dir_iterate(file_inode(file), 
-			      ctx, file->private_data);
+	return afs_dir_iterate(file_inode(file), ctx, afs_file_key(file));
 }
 
 /*
- * search the directory for a name
+ * Search the directory for a single name
  * - if afs_dir_iterate_block() spots this function, it'll pass the FID
  *   uniquifier through dtype
  */
-static int afs_lookup_filldir(struct dir_context *ctx, const char *name,
-			      int nlen, loff_t fpos, u64 ino, unsigned dtype)
+static int afs_lookup_one_filldir(struct dir_context *ctx, const char *name,
+				  int nlen, loff_t fpos, u64 ino, unsigned dtype)
 {
-	struct afs_lookup_cookie *cookie =
-		container_of(ctx, struct afs_lookup_cookie, ctx);
+	struct afs_lookup_one_cookie *cookie =
+		container_of(ctx, struct afs_lookup_one_cookie, ctx);
 
 	_enter("{%s,%u},%s,%u,,%llu,%u",
 	       cookie->name.name, cookie->name.len, name, nlen,
 	       (unsigned long long) ino, dtype);
 
 	/* insanity checks first */
-	BUILD_BUG_ON(sizeof(union afs_dir_block) != 2048);
-	BUILD_BUG_ON(sizeof(union afs_dirent) != 32);
+	BUILD_BUG_ON(sizeof(union afs_xdr_dir_block) != 2048);
+	BUILD_BUG_ON(sizeof(union afs_xdr_dirent) != 32);
 
 	if (cookie->name.len != nlen ||
 	    memcmp(cookie->name.name, name, nlen) != 0) {
@@ -420,21 +522,21 @@ static int afs_lookup_filldir(struct dir_context *ctx, const char *name,
 }
 
 /*
- * do a lookup in a directory
+ * Do a lookup of a single name in a directory
  * - just returns the FID the dentry name maps to if found
  */
-static int afs_do_lookup(struct inode *dir, struct dentry *dentry,
-			 struct afs_fid *fid, struct key *key)
+static int afs_do_lookup_one(struct inode *dir, struct dentry *dentry,
+			     struct afs_fid *fid, struct key *key)
 {
 	struct afs_super_info *as = dir->i_sb->s_fs_info;
-	struct afs_lookup_cookie cookie = {
-		.ctx.actor = afs_lookup_filldir,
+	struct afs_lookup_one_cookie cookie = {
+		.ctx.actor = afs_lookup_one_filldir,
 		.name = dentry->d_name,
 		.fid.vid = as->volume->vid
 	};
 	int ret;
 
-	_enter("{%lu},%p{%s},", dir->i_ino, dentry, dentry->d_name.name);
+	_enter("{%lu},%p{%pd},", dir->i_ino, dentry, dentry);
 
 	/* search the directory */
 	ret = afs_dir_iterate(dir, &cookie.ctx, key);
@@ -450,42 +552,270 @@ static int afs_do_lookup(struct inode *dir, struct dentry *dentry,
 	}
 
 	*fid = cookie.fid;
-	_leave(" = 0 { vn=%u u=%u }", fid->vnode, fid->unique);
+	_leave(" = 0 { vn=%llu u=%u }", fid->vnode, fid->unique);
 	return 0;
 }
 
 /*
- * Try to auto mount the mountpoint with pseudo directory, if the autocell
- * operation is setted.
+ * search the directory for a name
+ * - if afs_dir_iterate_block() spots this function, it'll pass the FID
+ *   uniquifier through dtype
  */
-static struct inode *afs_try_auto_mntpt(
-	int ret, struct dentry *dentry, struct inode *dir, struct key *key,
-	struct afs_fid *fid)
+static int afs_lookup_filldir(struct dir_context *ctx, const char *name,
+			      int nlen, loff_t fpos, u64 ino, unsigned dtype)
 {
-	const char *devname = dentry->d_name.name;
-	struct afs_vnode *vnode = AFS_FS_I(dir);
-	struct inode *inode;
+	struct afs_lookup_cookie *cookie =
+		container_of(ctx, struct afs_lookup_cookie, ctx);
+	int ret;
 
-	_enter("%d, %p{%s}, {%x:%u}, %p",
-	       ret, dentry, devname, vnode->fid.vid, vnode->fid.vnode, key);
+	_enter("{%s,%u},%s,%u,,%llu,%u",
+	       cookie->name.name, cookie->name.len, name, nlen,
+	       (unsigned long long) ino, dtype);
 
-	if (ret != -ENOENT ||
-	    !test_bit(AFS_VNODE_AUTOCELL, &vnode->flags))
-		goto out;
+	/* insanity checks first */
+	BUILD_BUG_ON(sizeof(union afs_xdr_dir_block) != 2048);
+	BUILD_BUG_ON(sizeof(union afs_xdr_dirent) != 32);
 
-	inode = afs_iget_autocell(dir, devname, strlen(devname), key);
-	if (IS_ERR(inode)) {
-		ret = PTR_ERR(inode);
+	if (cookie->found) {
+		if (cookie->nr_fids < 50) {
+			cookie->fids[cookie->nr_fids].vnode	= ino;
+			cookie->fids[cookie->nr_fids].unique	= dtype;
+			cookie->nr_fids++;
+		}
+	} else if (cookie->name.len == nlen &&
+		   memcmp(cookie->name.name, name, nlen) == 0) {
+		cookie->fids[0].vnode	= ino;
+		cookie->fids[0].unique	= dtype;
+		cookie->found = 1;
+		if (cookie->one_only)
+			return -1;
+	}
+
+	ret = cookie->nr_fids >= 50 ? -1 : 0;
+	_leave(" = %d", ret);
+	return ret;
+}
+
+/*
+ * Do a lookup in a directory.  We make use of bulk lookup to query a slew of
+ * files in one go and create inodes for them.  The inode of the file we were
+ * asked for is returned.
+ */
+static struct inode *afs_do_lookup(struct inode *dir, struct dentry *dentry,
+				   struct key *key)
+{
+	struct afs_lookup_cookie *cookie;
+	struct afs_cb_interest *cbi = NULL;
+	struct afs_super_info *as = dir->i_sb->s_fs_info;
+	struct afs_iget_data data;
+	struct afs_fs_cursor fc;
+	struct afs_vnode *dvnode = AFS_FS_I(dir);
+	struct inode *inode = NULL;
+	int ret, i;
+
+	_enter("{%lu},%p{%pd},", dir->i_ino, dentry, dentry);
+
+	cookie = kzalloc(sizeof(struct afs_lookup_cookie), GFP_KERNEL);
+	if (!cookie)
+		return ERR_PTR(-ENOMEM);
+
+	cookie->ctx.actor = afs_lookup_filldir;
+	cookie->name = dentry->d_name;
+	cookie->nr_fids = 1; /* slot 0 is saved for the fid we actually want */
+
+	read_seqlock_excl(&dvnode->cb_lock);
+	if (dvnode->cb_interest &&
+	    dvnode->cb_interest->server &&
+	    test_bit(AFS_SERVER_FL_NO_IBULK, &dvnode->cb_interest->server->flags))
+		cookie->one_only = true;
+	read_sequnlock_excl(&dvnode->cb_lock);
+
+	for (i = 0; i < 50; i++)
+		cookie->fids[i].vid = as->volume->vid;
+
+	/* search the directory */
+	ret = afs_dir_iterate(dir, &cookie->ctx, key);
+	if (ret < 0) {
+		inode = ERR_PTR(ret);
 		goto out;
 	}
 
-	*fid = AFS_FS_I(inode)->fid;
-	_leave("= %p", inode);
-	return inode;
+	inode = ERR_PTR(-ENOENT);
+	if (!cookie->found)
+		goto out;
 
+	/* Check to see if we already have an inode for the primary fid. */
+	data.volume = dvnode->volume;
+	data.fid = cookie->fids[0];
+	inode = ilookup5(dir->i_sb, cookie->fids[0].vnode, afs_iget5_test, &data);
+	if (inode)
+		goto out;
+
+	/* Need space for examining all the selected files */
+	inode = ERR_PTR(-ENOMEM);
+	cookie->statuses = kcalloc(cookie->nr_fids, sizeof(struct afs_file_status),
+				   GFP_KERNEL);
+	if (!cookie->statuses)
+		goto out;
+
+	cookie->callbacks = kcalloc(cookie->nr_fids, sizeof(struct afs_callback),
+				    GFP_KERNEL);
+	if (!cookie->callbacks)
+		goto out_s;
+
+	/* Try FS.InlineBulkStatus first.  Abort codes for the individual
+	 * lookups contained therein are stored in the reply without aborting
+	 * the whole operation.
+	 */
+	if (cookie->one_only)
+		goto no_inline_bulk_status;
+
+	inode = ERR_PTR(-ERESTARTSYS);
+	if (afs_begin_vnode_operation(&fc, dvnode, key)) {
+		while (afs_select_fileserver(&fc)) {
+			if (test_bit(AFS_SERVER_FL_NO_IBULK,
+				      &fc.cbi->server->flags)) {
+				fc.ac.abort_code = RX_INVALID_OPERATION;
+				fc.ac.error = -ECONNABORTED;
+				break;
+			}
+			afs_fs_inline_bulk_status(&fc,
+						  afs_v2net(dvnode),
+						  cookie->fids,
+						  cookie->statuses,
+						  cookie->callbacks,
+						  cookie->nr_fids, NULL);
+		}
+
+		if (fc.ac.error == 0)
+			cbi = afs_get_cb_interest(fc.cbi);
+		if (fc.ac.abort_code == RX_INVALID_OPERATION)
+			set_bit(AFS_SERVER_FL_NO_IBULK, &fc.cbi->server->flags);
+		inode = ERR_PTR(afs_end_vnode_operation(&fc));
+	}
+
+	if (!IS_ERR(inode))
+		goto success;
+	if (fc.ac.abort_code != RX_INVALID_OPERATION)
+		goto out_c;
+
+no_inline_bulk_status:
+	/* We could try FS.BulkStatus next, but this aborts the entire op if
+	 * any of the lookups fails - so, for the moment, revert to
+	 * FS.FetchStatus for just the primary fid.
+	 */
+	cookie->nr_fids = 1;
+	inode = ERR_PTR(-ERESTARTSYS);
+	if (afs_begin_vnode_operation(&fc, dvnode, key)) {
+		while (afs_select_fileserver(&fc)) {
+			afs_fs_fetch_status(&fc,
+					    afs_v2net(dvnode),
+					    cookie->fids,
+					    cookie->statuses,
+					    cookie->callbacks,
+					    NULL);
+		}
+
+		if (fc.ac.error == 0)
+			cbi = afs_get_cb_interest(fc.cbi);
+		inode = ERR_PTR(afs_end_vnode_operation(&fc));
+	}
+
+	if (IS_ERR(inode))
+		goto out_c;
+
+	for (i = 0; i < cookie->nr_fids; i++)
+		cookie->statuses[i].abort_code = 0;
+
+success:
+	/* Turn all the files into inodes and save the first one - which is the
+	 * one we actually want.
+	 */
+	if (cookie->statuses[0].abort_code != 0)
+		inode = ERR_PTR(afs_abort_to_error(cookie->statuses[0].abort_code));
+
+	for (i = 0; i < cookie->nr_fids; i++) {
+		struct inode *ti;
+
+		if (cookie->statuses[i].abort_code != 0)
+			continue;
+
+		ti = afs_iget(dir->i_sb, key, &cookie->fids[i],
+			      &cookie->statuses[i],
+			      &cookie->callbacks[i],
+			      cbi);
+		if (i == 0) {
+			inode = ti;
+		} else {
+			if (!IS_ERR(ti))
+				iput(ti);
+		}
+	}
+
+out_c:
+	afs_put_cb_interest(afs_v2net(dvnode), cbi);
+	kfree(cookie->callbacks);
+out_s:
+	kfree(cookie->statuses);
 out:
-	_leave("= %d", ret);
-	return ERR_PTR(ret);
+	kfree(cookie);
+	return inode;
+}
+
+/*
+ * Look up an entry in a directory with @sys substitution.
+ */
+static struct dentry *afs_lookup_atsys(struct inode *dir, struct dentry *dentry,
+				       struct key *key)
+{
+	struct afs_sysnames *subs;
+	struct afs_net *net = afs_i2net(dir);
+	struct dentry *ret;
+	char *buf, *p, *name;
+	int len, i;
+
+	_enter("");
+
+	ret = ERR_PTR(-ENOMEM);
+	p = buf = kmalloc(AFSNAMEMAX, GFP_KERNEL);
+	if (!buf)
+		goto out_p;
+	if (dentry->d_name.len > 4) {
+		memcpy(p, dentry->d_name.name, dentry->d_name.len - 4);
+		p += dentry->d_name.len - 4;
+	}
+
+	/* There is an ordered list of substitutes that we have to try. */
+	read_lock(&net->sysnames_lock);
+	subs = net->sysnames;
+	refcount_inc(&subs->usage);
+	read_unlock(&net->sysnames_lock);
+
+	for (i = 0; i < subs->nr; i++) {
+		name = subs->subs[i];
+		len = dentry->d_name.len - 4 + strlen(name);
+		if (len >= AFSNAMEMAX) {
+			ret = ERR_PTR(-ENAMETOOLONG);
+			goto out_s;
+		}
+
+		strcpy(p, name);
+		ret = lookup_one_len(buf, dentry->d_parent, len);
+		if (IS_ERR(ret) || d_is_positive(ret))
+			goto out_s;
+		dput(ret);
+	}
+
+	/* We don't want to d_add() the @sys dentry here as we don't want to
+	 * the cached dentry to hide changes to the sysnames list.
+	 */
+	ret = NULL;
+out_s:
+	afs_put_sysnames(subs);
+	kfree(buf);
+out_p:
+	key_put(key);
+	return ret;
 }
 
 /*
@@ -494,79 +824,60 @@ out:
 static struct dentry *afs_lookup(struct inode *dir, struct dentry *dentry,
 				 unsigned int flags)
 {
-	struct afs_vnode *vnode;
-	struct afs_fid fid;
+	struct afs_vnode *dvnode = AFS_FS_I(dir);
 	struct inode *inode;
+	struct dentry *d;
 	struct key *key;
 	int ret;
 
-	vnode = AFS_FS_I(dir);
+	_enter("{%llx:%llu},%p{%pd},",
+	       dvnode->fid.vid, dvnode->fid.vnode, dentry, dentry);
 
-	_enter("{%x:%u},%p{%s},",
-	       vnode->fid.vid, vnode->fid.vnode, dentry, dentry->d_name.name);
-
-	ASSERTCMP(dentry->d_inode, ==, NULL);
+	ASSERTCMP(d_inode(dentry), ==, NULL);
 
 	if (dentry->d_name.len >= AFSNAMEMAX) {
 		_leave(" = -ENAMETOOLONG");
 		return ERR_PTR(-ENAMETOOLONG);
 	}
 
-	if (test_bit(AFS_VNODE_DELETED, &vnode->flags)) {
+	if (test_bit(AFS_VNODE_DELETED, &dvnode->flags)) {
 		_leave(" = -ESTALE");
 		return ERR_PTR(-ESTALE);
 	}
 
-	key = afs_request_key(vnode->volume->cell);
+	key = afs_request_key(dvnode->volume->cell);
 	if (IS_ERR(key)) {
 		_leave(" = %ld [key]", PTR_ERR(key));
 		return ERR_CAST(key);
 	}
 
-	ret = afs_validate(vnode, key);
+	ret = afs_validate(dvnode, key);
 	if (ret < 0) {
 		key_put(key);
 		_leave(" = %d [val]", ret);
 		return ERR_PTR(ret);
 	}
 
-	ret = afs_do_lookup(dir, dentry, &fid, key);
-	if (ret < 0) {
-		inode = afs_try_auto_mntpt(ret, dentry, dir, key, &fid);
-		if (!IS_ERR(inode)) {
-			key_put(key);
-			goto success;
-		}
+	if (dentry->d_name.len >= 4 &&
+	    dentry->d_name.name[dentry->d_name.len - 4] == '@' &&
+	    dentry->d_name.name[dentry->d_name.len - 3] == 's' &&
+	    dentry->d_name.name[dentry->d_name.len - 2] == 'y' &&
+	    dentry->d_name.name[dentry->d_name.len - 1] == 's')
+		return afs_lookup_atsys(dir, dentry, key);
 
-		ret = PTR_ERR(inode);
-		key_put(key);
-		if (ret == -ENOENT) {
-			d_add(dentry, NULL);
-			_leave(" = NULL [negative]");
-			return NULL;
-		}
-		_leave(" = %d [do]", ret);
-		return ERR_PTR(ret);
-	}
-	dentry->d_fsdata = (void *)(unsigned long) vnode->status.data_version;
-
-	/* instantiate the dentry */
-	inode = afs_iget(dir->i_sb, key, &fid, NULL, NULL);
+	afs_stat_v(dvnode, n_lookup);
+	inode = afs_do_lookup(dir, dentry, key);
 	key_put(key);
-	if (IS_ERR(inode)) {
-		_leave(" = %ld", PTR_ERR(inode));
-		return ERR_CAST(inode);
+	if (inode == ERR_PTR(-ENOENT)) {
+		inode = afs_try_auto_mntpt(dentry, dir);
+	} else {
+		dentry->d_fsdata =
+			(void *)(unsigned long)dvnode->status.data_version;
 	}
-
-success:
-	d_add(dentry, inode);
-	_leave(" = 0 { vn=%u u=%u } -> { ino=%lu v=%u }",
-	       fid.vnode,
-	       fid.unique,
-	       dentry->d_inode->i_ino,
-	       dentry->d_inode->i_generation);
-
-	return NULL;
+	d = d_splice_alias(inode, dentry);
+	if (!IS_ERR_OR_NULL(d))
+		d->d_fsdata = dentry->d_fsdata;
+	return d;
 }
 
 /*
@@ -579,63 +890,87 @@ static int afs_d_revalidate(struct dentry *dentry, unsigned int flags)
 	struct afs_vnode *vnode, *dir;
 	struct afs_fid uninitialized_var(fid);
 	struct dentry *parent;
+	struct inode *inode;
 	struct key *key;
-	void *dir_version;
+	long dir_version, de_version;
 	int ret;
 
 	if (flags & LOOKUP_RCU)
 		return -ECHILD;
 
-	vnode = AFS_FS_I(dentry->d_inode);
-
-	if (dentry->d_inode)
-		_enter("{v={%x:%u} n=%s fl=%lx},",
-		       vnode->fid.vid, vnode->fid.vnode, dentry->d_name.name,
+	if (d_really_is_positive(dentry)) {
+		vnode = AFS_FS_I(d_inode(dentry));
+		_enter("{v={%llx:%llu} n=%pd fl=%lx},",
+		       vnode->fid.vid, vnode->fid.vnode, dentry,
 		       vnode->flags);
-	else
-		_enter("{neg n=%s}", dentry->d_name.name);
+	} else {
+		_enter("{neg n=%pd}", dentry);
+	}
 
 	key = afs_request_key(AFS_FS_S(dentry->d_sb)->volume->cell);
 	if (IS_ERR(key))
 		key = NULL;
 
-	/* lock down the parent dentry so we can peer at it */
-	parent = dget_parent(dentry);
-	dir = AFS_FS_I(parent->d_inode);
-
-	/* validate the parent directory */
-	if (test_bit(AFS_VNODE_MODIFIED, &dir->flags))
-		afs_validate(dir, key);
-
-	if (test_bit(AFS_VNODE_DELETED, &dir->flags)) {
-		_debug("%s: parent dir deleted", dentry->d_name.name);
-		goto out_bad;
+	if (d_really_is_positive(dentry)) {
+		inode = d_inode(dentry);
+		if (inode) {
+			vnode = AFS_FS_I(inode);
+			afs_validate(vnode, key);
+			if (test_bit(AFS_VNODE_DELETED, &vnode->flags))
+				goto out_bad;
+		}
 	}
 
-	dir_version = (void *) (unsigned long) dir->status.data_version;
-	if (dentry->d_fsdata == dir_version)
-		goto out_valid; /* the dir contents are unchanged */
+	/* lock down the parent dentry so we can peer at it */
+	parent = dget_parent(dentry);
+	dir = AFS_FS_I(d_inode(parent));
+
+	/* validate the parent directory */
+	afs_validate(dir, key);
+
+	if (test_bit(AFS_VNODE_DELETED, &dir->flags)) {
+		_debug("%pd: parent dir deleted", dentry);
+		goto out_bad_parent;
+	}
+
+	/* We only need to invalidate a dentry if the server's copy changed
+	 * behind our back.  If we made the change, it's no problem.  Note that
+	 * on a 32-bit system, we only have 32 bits in the dentry to store the
+	 * version.
+	 */
+	dir_version = (long)dir->status.data_version;
+	de_version = (long)dentry->d_fsdata;
+	if (de_version == dir_version)
+		goto out_valid;
+
+	dir_version = (long)dir->invalid_before;
+	if (de_version - dir_version >= 0)
+		goto out_valid;
 
 	_debug("dir modified");
+	afs_stat_v(dir, n_reval);
 
 	/* search the directory for this vnode */
-	ret = afs_do_lookup(&dir->vfs_inode, dentry, &fid, key);
+	ret = afs_do_lookup_one(&dir->vfs_inode, dentry, &fid, key);
 	switch (ret) {
 	case 0:
 		/* the filename maps to something */
-		if (!dentry->d_inode)
-			goto out_bad;
-		if (is_bad_inode(dentry->d_inode)) {
-			printk("kAFS: afs_d_revalidate: %s/%s has bad inode\n",
-			       parent->d_name.name, dentry->d_name.name);
-			goto out_bad;
+		if (d_really_is_negative(dentry))
+			goto out_bad_parent;
+		inode = d_inode(dentry);
+		if (is_bad_inode(inode)) {
+			printk("kAFS: afs_d_revalidate: %pd2 has bad inode\n",
+			       dentry);
+			goto out_bad_parent;
 		}
+
+		vnode = AFS_FS_I(inode);
 
 		/* if the vnode ID has changed, then the dirent points to a
 		 * different file */
 		if (fid.vnode != vnode->fid.vnode) {
-			_debug("%s: dirent changed [%u != %u]",
-			       dentry->d_name.name, fid.vnode,
+			_debug("%pd: dirent changed [%llu != %llu]",
+			       dentry, fid.vnode,
 			       vnode->fid.vnode);
 			goto not_found;
 		}
@@ -644,33 +979,32 @@ static int afs_d_revalidate(struct dentry *dentry, unsigned int flags)
 		 * been deleted and replaced, and the original vnode ID has
 		 * been reused */
 		if (fid.unique != vnode->fid.unique) {
-			_debug("%s: file deleted (uq %u -> %u I:%u)",
-			       dentry->d_name.name, fid.unique,
+			_debug("%pd: file deleted (uq %u -> %u I:%u)",
+			       dentry, fid.unique,
 			       vnode->fid.unique,
-			       dentry->d_inode->i_generation);
-			spin_lock(&vnode->lock);
+			       vnode->vfs_inode.i_generation);
+			write_seqlock(&vnode->cb_lock);
 			set_bit(AFS_VNODE_DELETED, &vnode->flags);
-			spin_unlock(&vnode->lock);
+			write_sequnlock(&vnode->cb_lock);
 			goto not_found;
 		}
 		goto out_valid;
 
 	case -ENOENT:
 		/* the filename is unknown */
-		_debug("%s: dirent not found", dentry->d_name.name);
-		if (dentry->d_inode)
+		_debug("%pd: dirent not found", dentry);
+		if (d_really_is_positive(dentry))
 			goto not_found;
 		goto out_valid;
 
 	default:
-		_debug("failed to iterate dir %s: %d",
-		       parent->d_name.name, ret);
-		goto out_bad;
+		_debug("failed to iterate dir %pd: %d",
+		       parent, ret);
+		goto out_bad_parent;
 	}
 
 out_valid:
-	dentry->d_fsdata = dir_version;
-out_skip:
+	dentry->d_fsdata = (void *)dir_version;
 	dput(parent);
 	key_put(key);
 	_leave(" = 1 [valid]");
@@ -682,14 +1016,10 @@ not_found:
 	dentry->d_flags |= DCACHE_NFSFS_RENAMED;
 	spin_unlock(&dentry->d_lock);
 
-out_bad:
-	/* don't unhash if we have submounts */
-	if (check_submounts_and_drop(dentry) != 0)
-		goto out_skip;
-
-	_debug("dropping dentry %s/%s",
-	       parent->d_name.name, dentry->d_name.name);
+out_bad_parent:
+	_debug("dropping dentry %pd2", dentry);
 	dput(parent);
+out_bad:
 	key_put(key);
 
 	_leave(" = 0 [bad]");
@@ -704,14 +1034,14 @@ out_bad:
  */
 static int afs_d_delete(const struct dentry *dentry)
 {
-	_enter("%s", dentry->d_name.name);
+	_enter("%pd", dentry);
 
 	if (dentry->d_flags & DCACHE_NFSFS_RENAMED)
 		goto zap;
 
-	if (dentry->d_inode &&
-	    (test_bit(AFS_VNODE_DELETED,   &AFS_FS_I(dentry->d_inode)->flags) ||
-	     test_bit(AFS_VNODE_PSEUDODIR, &AFS_FS_I(dentry->d_inode)->flags)))
+	if (d_really_is_positive(dentry) &&
+	    (test_bit(AFS_VNODE_DELETED,   &AFS_FS_I(d_inode(dentry))->flags) ||
+	     test_bit(AFS_VNODE_PSEUDODIR, &AFS_FS_I(d_inode(dentry))->flags)))
 		goto zap;
 
 	_leave(" = 0 [keep]");
@@ -725,9 +1055,40 @@ zap:
 /*
  * handle dentry release
  */
-static void afs_d_release(struct dentry *dentry)
+void afs_d_release(struct dentry *dentry)
 {
-	_enter("%s", dentry->d_name.name);
+	_enter("%pd", dentry);
+}
+
+/*
+ * Create a new inode for create/mkdir/symlink
+ */
+static void afs_vnode_new_inode(struct afs_fs_cursor *fc,
+				struct dentry *new_dentry,
+				struct afs_fid *newfid,
+				struct afs_file_status *newstatus,
+				struct afs_callback *newcb)
+{
+	struct afs_vnode *vnode;
+	struct inode *inode;
+
+	if (fc->ac.error < 0)
+		return;
+
+	inode = afs_iget(fc->vnode->vfs_inode.i_sb, fc->key,
+			 newfid, newstatus, newcb, fc->cbi);
+	if (IS_ERR(inode)) {
+		/* ENOMEM or EINTR at a really inconvenient time - just abandon
+		 * the new directory on the server.
+		 */
+		fc->ac.error = PTR_ERR(inode);
+		return;
+	}
+
+	vnode = AFS_FS_I(inode);
+	set_bit(AFS_VNODE_NEW_CONTENT, &vnode->flags);
+	afs_vnode_commit_status(fc, vnode, 0);
+	d_instantiate(new_dentry, inode);
 }
 
 /*
@@ -735,19 +1096,19 @@ static void afs_d_release(struct dentry *dentry)
  */
 static int afs_mkdir(struct inode *dir, struct dentry *dentry, umode_t mode)
 {
-	struct afs_file_status status;
-	struct afs_callback cb;
-	struct afs_server *server;
-	struct afs_vnode *dvnode, *vnode;
-	struct afs_fid fid;
-	struct inode *inode;
+	struct afs_file_status newstatus;
+	struct afs_fs_cursor fc;
+	struct afs_callback newcb;
+	struct afs_vnode *dvnode = AFS_FS_I(dir);
+	struct afs_fid newfid;
 	struct key *key;
+	u64 data_version = dvnode->status.data_version;
 	int ret;
 
-	dvnode = AFS_FS_I(dir);
+	mode |= S_IFDIR;
 
-	_enter("{%x:%u},{%s},%ho",
-	       dvnode->fid.vid, dvnode->fid.vnode, dentry->d_name.name, mode);
+	_enter("{%llx:%llu},{%pd},%ho",
+	       dvnode->fid.vid, dvnode->fid.vnode, dentry, mode);
 
 	key = afs_request_key(dvnode->volume->cell);
 	if (IS_ERR(key)) {
@@ -755,40 +1116,34 @@ static int afs_mkdir(struct inode *dir, struct dentry *dentry, umode_t mode)
 		goto error;
 	}
 
-	mode |= S_IFDIR;
-	ret = afs_vnode_create(dvnode, key, dentry->d_name.name,
-			       mode, &fid, &status, &cb, &server);
-	if (ret < 0)
-		goto mkdir_error;
+	ret = -ERESTARTSYS;
+	if (afs_begin_vnode_operation(&fc, dvnode, key)) {
+		while (afs_select_fileserver(&fc)) {
+			fc.cb_break = afs_calc_vnode_cb_break(dvnode);
+			afs_fs_create(&fc, dentry->d_name.name, mode, data_version,
+				      &newfid, &newstatus, &newcb);
+		}
 
-	inode = afs_iget(dir->i_sb, key, &fid, &status, &cb);
-	if (IS_ERR(inode)) {
-		/* ENOMEM at a really inconvenient time - just abandon the new
-		 * directory on the server */
-		ret = PTR_ERR(inode);
-		goto iget_error;
+		afs_check_for_remote_deletion(&fc, fc.vnode);
+		afs_vnode_commit_status(&fc, dvnode, fc.cb_break);
+		afs_vnode_new_inode(&fc, dentry, &newfid, &newstatus, &newcb);
+		ret = afs_end_vnode_operation(&fc);
+		if (ret < 0)
+			goto error_key;
+	} else {
+		goto error_key;
 	}
 
-	/* apply the status report we've got for the new vnode */
-	vnode = AFS_FS_I(inode);
-	spin_lock(&vnode->lock);
-	vnode->update_cnt++;
-	spin_unlock(&vnode->lock);
-	afs_vnode_finalise_status_update(vnode, server);
-	afs_put_server(server);
+	if (ret == 0 &&
+	    test_bit(AFS_VNODE_DIR_VALID, &dvnode->flags))
+		afs_edit_dir_add(dvnode, &dentry->d_name, &newfid,
+				 afs_edit_dir_for_create);
 
-	d_instantiate(dentry, inode);
-	if (d_unhashed(dentry)) {
-		_debug("not hashed");
-		d_rehash(dentry);
-	}
 	key_put(key);
 	_leave(" = 0");
 	return 0;
 
-iget_error:
-	afs_put_server(server);
-mkdir_error:
+error_key:
 	key_put(key);
 error:
 	d_drop(dentry);
@@ -797,18 +1152,33 @@ error:
 }
 
 /*
+ * Remove a subdir from a directory.
+ */
+static void afs_dir_remove_subdir(struct dentry *dentry)
+{
+	if (d_really_is_positive(dentry)) {
+		struct afs_vnode *vnode = AFS_FS_I(d_inode(dentry));
+
+		clear_nlink(&vnode->vfs_inode);
+		set_bit(AFS_VNODE_DELETED, &vnode->flags);
+		clear_bit(AFS_VNODE_CB_PROMISED, &vnode->flags);
+		clear_bit(AFS_VNODE_DIR_VALID, &vnode->flags);
+	}
+}
+
+/*
  * remove a directory from an AFS filesystem
  */
 static int afs_rmdir(struct inode *dir, struct dentry *dentry)
 {
-	struct afs_vnode *dvnode, *vnode;
+	struct afs_fs_cursor fc;
+	struct afs_vnode *dvnode = AFS_FS_I(dir), *vnode = NULL;
 	struct key *key;
+	u64 data_version = dvnode->status.data_version;
 	int ret;
 
-	dvnode = AFS_FS_I(dir);
-
-	_enter("{%x:%u},{%s}",
-	       dvnode->fid.vid, dvnode->fid.vnode, dentry->d_name.name);
+	_enter("{%llx:%llu},{%pd}",
+	       dvnode->fid.vid, dvnode->fid.vnode, dentry);
 
 	key = afs_request_key(dvnode->volume->cell);
 	if (IS_ERR(key)) {
@@ -816,45 +1186,105 @@ static int afs_rmdir(struct inode *dir, struct dentry *dentry)
 		goto error;
 	}
 
-	ret = afs_vnode_remove(dvnode, key, dentry->d_name.name, true);
-	if (ret < 0)
-		goto rmdir_error;
-
-	if (dentry->d_inode) {
-		vnode = AFS_FS_I(dentry->d_inode);
-		clear_nlink(&vnode->vfs_inode);
-		set_bit(AFS_VNODE_DELETED, &vnode->flags);
-		afs_discard_callback_on_delete(vnode);
+	/* Try to make sure we have a callback promise on the victim. */
+	if (d_really_is_positive(dentry)) {
+		vnode = AFS_FS_I(d_inode(dentry));
+		ret = afs_validate(vnode, key);
+		if (ret < 0)
+			goto error_key;
 	}
 
-	key_put(key);
-	_leave(" = 0");
-	return 0;
+	ret = -ERESTARTSYS;
+	if (afs_begin_vnode_operation(&fc, dvnode, key)) {
+		while (afs_select_fileserver(&fc)) {
+			fc.cb_break = afs_calc_vnode_cb_break(dvnode);
+			afs_fs_remove(&fc, vnode, dentry->d_name.name, true,
+				      data_version);
+		}
 
-rmdir_error:
+		afs_vnode_commit_status(&fc, dvnode, fc.cb_break);
+		ret = afs_end_vnode_operation(&fc);
+		if (ret == 0) {
+			afs_dir_remove_subdir(dentry);
+			if (test_bit(AFS_VNODE_DIR_VALID, &dvnode->flags))
+				afs_edit_dir_remove(dvnode, &dentry->d_name,
+						    afs_edit_dir_for_rmdir);
+		}
+	}
+
+error_key:
 	key_put(key);
 error:
-	_leave(" = %d", ret);
 	return ret;
 }
 
 /*
- * remove a file from an AFS filesystem
+ * Remove a link to a file or symlink from a directory.
+ *
+ * If the file was not deleted due to excess hard links, the fileserver will
+ * break the callback promise on the file - if it had one - before it returns
+ * to us, and if it was deleted, it won't
+ *
+ * However, if we didn't have a callback promise outstanding, or it was
+ * outstanding on a different server, then it won't break it either...
+ */
+static int afs_dir_remove_link(struct dentry *dentry, struct key *key,
+			       unsigned long d_version_before,
+			       unsigned long d_version_after)
+{
+	bool dir_valid;
+	int ret = 0;
+
+	/* There were no intervening changes on the server if the version
+	 * number we got back was incremented by exactly 1.
+	 */
+	dir_valid = (d_version_after == d_version_before + 1);
+
+	if (d_really_is_positive(dentry)) {
+		struct afs_vnode *vnode = AFS_FS_I(d_inode(dentry));
+
+		if (test_bit(AFS_VNODE_DELETED, &vnode->flags)) {
+			/* Already done */
+		} else if (dir_valid) {
+			drop_nlink(&vnode->vfs_inode);
+			if (vnode->vfs_inode.i_nlink == 0) {
+				set_bit(AFS_VNODE_DELETED, &vnode->flags);
+				clear_bit(AFS_VNODE_CB_PROMISED, &vnode->flags);
+			}
+			ret = 0;
+		} else {
+			clear_bit(AFS_VNODE_CB_PROMISED, &vnode->flags);
+
+			if (test_bit(AFS_VNODE_DELETED, &vnode->flags))
+				kdebug("AFS_VNODE_DELETED");
+
+			ret = afs_validate(vnode, key);
+			if (ret == -ESTALE)
+				ret = 0;
+		}
+		_debug("nlink %d [val %d]", vnode->vfs_inode.i_nlink, ret);
+	}
+
+	return ret;
+}
+
+/*
+ * Remove a file or symlink from an AFS filesystem.
  */
 static int afs_unlink(struct inode *dir, struct dentry *dentry)
 {
-	struct afs_vnode *dvnode, *vnode;
+	struct afs_fs_cursor fc;
+	struct afs_vnode *dvnode = AFS_FS_I(dir), *vnode = NULL;
 	struct key *key;
+	unsigned long d_version = (unsigned long)dentry->d_fsdata;
+	u64 data_version = dvnode->status.data_version;
 	int ret;
 
-	dvnode = AFS_FS_I(dir);
+	_enter("{%llx:%llu},{%pd}",
+	       dvnode->fid.vid, dvnode->fid.vnode, dentry);
 
-	_enter("{%x:%u},{%s}",
-	       dvnode->fid.vid, dvnode->fid.vnode, dentry->d_name.name);
-
-	ret = -ENAMETOOLONG;
 	if (dentry->d_name.len >= AFSNAMEMAX)
-		goto error;
+		return -ENAMETOOLONG;
 
 	key = afs_request_key(dvnode->volume->cell);
 	if (IS_ERR(key)) {
@@ -862,44 +1292,46 @@ static int afs_unlink(struct inode *dir, struct dentry *dentry)
 		goto error;
 	}
 
-	if (dentry->d_inode) {
-		vnode = AFS_FS_I(dentry->d_inode);
-
-		/* make sure we have a callback promise on the victim */
+	/* Try to make sure we have a callback promise on the victim. */
+	if (d_really_is_positive(dentry)) {
+		vnode = AFS_FS_I(d_inode(dentry));
 		ret = afs_validate(vnode, key);
 		if (ret < 0)
-			goto error;
+			goto error_key;
 	}
 
-	ret = afs_vnode_remove(dvnode, key, dentry->d_name.name, false);
-	if (ret < 0)
-		goto remove_error;
+	ret = -ERESTARTSYS;
+	if (afs_begin_vnode_operation(&fc, dvnode, key)) {
+		while (afs_select_fileserver(&fc)) {
+			fc.cb_break = afs_calc_vnode_cb_break(dvnode);
 
-	if (dentry->d_inode) {
-		/* if the file wasn't deleted due to excess hard links, the
-		 * fileserver will break the callback promise on the file - if
-		 * it had one - before it returns to us, and if it was deleted,
-		 * it won't
-		 *
-		 * however, if we didn't have a callback promise outstanding,
-		 * or it was outstanding on a different server, then it won't
-		 * break it either...
-		 */
-		vnode = AFS_FS_I(dentry->d_inode);
-		if (test_bit(AFS_VNODE_DELETED, &vnode->flags))
-			_debug("AFS_VNODE_DELETED");
-		if (test_bit(AFS_VNODE_CB_BROKEN, &vnode->flags))
-			_debug("AFS_VNODE_CB_BROKEN");
-		set_bit(AFS_VNODE_CB_BROKEN, &vnode->flags);
-		ret = afs_validate(vnode, key);
-		_debug("nlink %d [val %d]", vnode->vfs_inode.i_nlink, ret);
+			if (test_bit(AFS_SERVER_FL_IS_YFS, &fc.cbi->server->flags) &&
+			    !test_bit(AFS_SERVER_FL_NO_RM2, &fc.cbi->server->flags)) {
+				yfs_fs_remove_file2(&fc, vnode, dentry->d_name.name,
+						    data_version);
+				if (fc.ac.error != -ECONNABORTED ||
+				    fc.ac.abort_code != RXGEN_OPCODE)
+					continue;
+				set_bit(AFS_SERVER_FL_NO_RM2, &fc.cbi->server->flags);
+			}
+
+			afs_fs_remove(&fc, vnode, dentry->d_name.name, false,
+				      data_version);
+		}
+
+		afs_vnode_commit_status(&fc, dvnode, fc.cb_break);
+		ret = afs_end_vnode_operation(&fc);
+		if (ret == 0)
+			ret = afs_dir_remove_link(
+				dentry, key, d_version,
+				(unsigned long)dvnode->status.data_version);
+		if (ret == 0 &&
+		    test_bit(AFS_VNODE_DIR_VALID, &dvnode->flags))
+			afs_edit_dir_remove(dvnode, &dentry->d_name,
+					    afs_edit_dir_for_unlink);
 	}
 
-	key_put(key);
-	_leave(" = 0");
-	return 0;
-
-remove_error:
+error_key:
 	key_put(key);
 error:
 	_leave(" = %d", ret);
@@ -912,19 +1344,23 @@ error:
 static int afs_create(struct inode *dir, struct dentry *dentry, umode_t mode,
 		      bool excl)
 {
-	struct afs_file_status status;
-	struct afs_callback cb;
-	struct afs_server *server;
-	struct afs_vnode *dvnode, *vnode;
-	struct afs_fid fid;
-	struct inode *inode;
+	struct afs_fs_cursor fc;
+	struct afs_file_status newstatus;
+	struct afs_callback newcb;
+	struct afs_vnode *dvnode = AFS_FS_I(dir);
+	struct afs_fid newfid;
 	struct key *key;
+	u64 data_version = dvnode->status.data_version;
 	int ret;
 
-	dvnode = AFS_FS_I(dir);
+	mode |= S_IFREG;
 
-	_enter("{%x:%u},{%s},%ho,",
-	       dvnode->fid.vid, dvnode->fid.vnode, dentry->d_name.name, mode);
+	_enter("{%llx:%llu},{%pd},%ho,",
+	       dvnode->fid.vid, dvnode->fid.vnode, dentry, mode);
+
+	ret = -ENAMETOOLONG;
+	if (dentry->d_name.len >= AFSNAMEMAX)
+		goto error;
 
 	key = afs_request_key(dvnode->volume->cell);
 	if (IS_ERR(key)) {
@@ -932,40 +1368,33 @@ static int afs_create(struct inode *dir, struct dentry *dentry, umode_t mode,
 		goto error;
 	}
 
-	mode |= S_IFREG;
-	ret = afs_vnode_create(dvnode, key, dentry->d_name.name,
-			       mode, &fid, &status, &cb, &server);
-	if (ret < 0)
-		goto create_error;
+	ret = -ERESTARTSYS;
+	if (afs_begin_vnode_operation(&fc, dvnode, key)) {
+		while (afs_select_fileserver(&fc)) {
+			fc.cb_break = afs_calc_vnode_cb_break(dvnode);
+			afs_fs_create(&fc, dentry->d_name.name, mode, data_version,
+				      &newfid, &newstatus, &newcb);
+		}
 
-	inode = afs_iget(dir->i_sb, key, &fid, &status, &cb);
-	if (IS_ERR(inode)) {
-		/* ENOMEM at a really inconvenient time - just abandon the new
-		 * directory on the server */
-		ret = PTR_ERR(inode);
-		goto iget_error;
+		afs_check_for_remote_deletion(&fc, fc.vnode);
+		afs_vnode_commit_status(&fc, dvnode, fc.cb_break);
+		afs_vnode_new_inode(&fc, dentry, &newfid, &newstatus, &newcb);
+		ret = afs_end_vnode_operation(&fc);
+		if (ret < 0)
+			goto error_key;
+	} else {
+		goto error_key;
 	}
 
-	/* apply the status report we've got for the new vnode */
-	vnode = AFS_FS_I(inode);
-	spin_lock(&vnode->lock);
-	vnode->update_cnt++;
-	spin_unlock(&vnode->lock);
-	afs_vnode_finalise_status_update(vnode, server);
-	afs_put_server(server);
+	if (test_bit(AFS_VNODE_DIR_VALID, &dvnode->flags))
+		afs_edit_dir_add(dvnode, &dentry->d_name, &newfid,
+				 afs_edit_dir_for_create);
 
-	d_instantiate(dentry, inode);
-	if (d_unhashed(dentry)) {
-		_debug("not hashed");
-		d_rehash(dentry);
-	}
 	key_put(key);
 	_leave(" = 0");
 	return 0;
 
-iget_error:
-	afs_put_server(server);
-create_error:
+error_key:
 	key_put(key);
 error:
 	d_drop(dentry);
@@ -979,17 +1408,24 @@ error:
 static int afs_link(struct dentry *from, struct inode *dir,
 		    struct dentry *dentry)
 {
+	struct afs_fs_cursor fc;
 	struct afs_vnode *dvnode, *vnode;
 	struct key *key;
+	u64 data_version;
 	int ret;
 
-	vnode = AFS_FS_I(from->d_inode);
+	vnode = AFS_FS_I(d_inode(from));
 	dvnode = AFS_FS_I(dir);
+	data_version = dvnode->status.data_version;
 
-	_enter("{%x:%u},{%x:%u},{%s}",
+	_enter("{%llx:%llu},{%llx:%llu},{%pd}",
 	       vnode->fid.vid, vnode->fid.vnode,
 	       dvnode->fid.vid, dvnode->fid.vnode,
-	       dentry->d_name.name);
+	       dentry);
+
+	ret = -ENAMETOOLONG;
+	if (dentry->d_name.len >= AFSNAMEMAX)
+		goto error;
 
 	key = afs_request_key(dvnode->volume->cell);
 	if (IS_ERR(key)) {
@@ -997,17 +1433,41 @@ static int afs_link(struct dentry *from, struct inode *dir,
 		goto error;
 	}
 
-	ret = afs_vnode_link(dvnode, vnode, key, dentry->d_name.name);
-	if (ret < 0)
-		goto link_error;
+	ret = -ERESTARTSYS;
+	if (afs_begin_vnode_operation(&fc, dvnode, key)) {
+		if (mutex_lock_interruptible_nested(&vnode->io_lock, 1) < 0) {
+			afs_end_vnode_operation(&fc);
+			goto error_key;
+		}
 
-	ihold(&vnode->vfs_inode);
-	d_instantiate(dentry, &vnode->vfs_inode);
+		while (afs_select_fileserver(&fc)) {
+			fc.cb_break = afs_calc_vnode_cb_break(dvnode);
+			fc.cb_break_2 = afs_calc_vnode_cb_break(vnode);
+			afs_fs_link(&fc, vnode, dentry->d_name.name, data_version);
+		}
+
+		afs_vnode_commit_status(&fc, dvnode, fc.cb_break);
+		afs_vnode_commit_status(&fc, vnode, fc.cb_break_2);
+		ihold(&vnode->vfs_inode);
+		d_instantiate(dentry, &vnode->vfs_inode);
+
+		mutex_unlock(&vnode->io_lock);
+		ret = afs_end_vnode_operation(&fc);
+		if (ret < 0)
+			goto error_key;
+	} else {
+		goto error_key;
+	}
+
+	if (test_bit(AFS_VNODE_DIR_VALID, &dvnode->flags))
+		afs_edit_dir_add(dvnode, &dentry->d_name, &vnode->fid,
+				 afs_edit_dir_for_link);
+
 	key_put(key);
 	_leave(" = 0");
 	return 0;
 
-link_error:
+error_key:
 	key_put(key);
 error:
 	d_drop(dentry);
@@ -1021,19 +1481,21 @@ error:
 static int afs_symlink(struct inode *dir, struct dentry *dentry,
 		       const char *content)
 {
-	struct afs_file_status status;
-	struct afs_server *server;
-	struct afs_vnode *dvnode, *vnode;
-	struct afs_fid fid;
-	struct inode *inode;
+	struct afs_fs_cursor fc;
+	struct afs_file_status newstatus;
+	struct afs_vnode *dvnode = AFS_FS_I(dir);
+	struct afs_fid newfid;
 	struct key *key;
+	u64 data_version = dvnode->status.data_version;
 	int ret;
 
-	dvnode = AFS_FS_I(dir);
-
-	_enter("{%x:%u},{%s},%s",
-	       dvnode->fid.vid, dvnode->fid.vnode, dentry->d_name.name,
+	_enter("{%llx:%llu},{%pd},%s",
+	       dvnode->fid.vid, dvnode->fid.vnode, dentry,
 	       content);
+
+	ret = -ENAMETOOLONG;
+	if (dentry->d_name.len >= AFSNAMEMAX)
+		goto error;
 
 	ret = -EINVAL;
 	if (strlen(content) >= AFSPATHMAX)
@@ -1045,39 +1507,34 @@ static int afs_symlink(struct inode *dir, struct dentry *dentry,
 		goto error;
 	}
 
-	ret = afs_vnode_symlink(dvnode, key, dentry->d_name.name, content,
-				&fid, &status, &server);
-	if (ret < 0)
-		goto create_error;
+	ret = -ERESTARTSYS;
+	if (afs_begin_vnode_operation(&fc, dvnode, key)) {
+		while (afs_select_fileserver(&fc)) {
+			fc.cb_break = afs_calc_vnode_cb_break(dvnode);
+			afs_fs_symlink(&fc, dentry->d_name.name,
+				       content, data_version,
+				       &newfid, &newstatus);
+		}
 
-	inode = afs_iget(dir->i_sb, key, &fid, &status, NULL);
-	if (IS_ERR(inode)) {
-		/* ENOMEM at a really inconvenient time - just abandon the new
-		 * directory on the server */
-		ret = PTR_ERR(inode);
-		goto iget_error;
+		afs_check_for_remote_deletion(&fc, fc.vnode);
+		afs_vnode_commit_status(&fc, dvnode, fc.cb_break);
+		afs_vnode_new_inode(&fc, dentry, &newfid, &newstatus, NULL);
+		ret = afs_end_vnode_operation(&fc);
+		if (ret < 0)
+			goto error_key;
+	} else {
+		goto error_key;
 	}
 
-	/* apply the status report we've got for the new vnode */
-	vnode = AFS_FS_I(inode);
-	spin_lock(&vnode->lock);
-	vnode->update_cnt++;
-	spin_unlock(&vnode->lock);
-	afs_vnode_finalise_status_update(vnode, server);
-	afs_put_server(server);
+	if (test_bit(AFS_VNODE_DIR_VALID, &dvnode->flags))
+		afs_edit_dir_add(dvnode, &dentry->d_name, &newfid,
+				 afs_edit_dir_for_symlink);
 
-	d_instantiate(dentry, inode);
-	if (d_unhashed(dentry)) {
-		_debug("not hashed");
-		d_rehash(dentry);
-	}
 	key_put(key);
 	_leave(" = 0");
 	return 0;
 
-iget_error:
-	afs_put_server(server);
-create_error:
+error_key:
 	key_put(key);
 error:
 	d_drop(dentry);
@@ -1089,21 +1546,30 @@ error:
  * rename a file in an AFS filesystem and/or move it between directories
  */
 static int afs_rename(struct inode *old_dir, struct dentry *old_dentry,
-		      struct inode *new_dir, struct dentry *new_dentry)
+		      struct inode *new_dir, struct dentry *new_dentry,
+		      unsigned int flags)
 {
+	struct afs_fs_cursor fc;
 	struct afs_vnode *orig_dvnode, *new_dvnode, *vnode;
 	struct key *key;
+	u64 orig_data_version, new_data_version;
+	bool new_negative = d_is_negative(new_dentry);
 	int ret;
 
-	vnode = AFS_FS_I(old_dentry->d_inode);
+	if (flags)
+		return -EINVAL;
+
+	vnode = AFS_FS_I(d_inode(old_dentry));
 	orig_dvnode = AFS_FS_I(old_dir);
 	new_dvnode = AFS_FS_I(new_dir);
+	orig_data_version = orig_dvnode->status.data_version;
+	new_data_version = new_dvnode->status.data_version;
 
-	_enter("{%x:%u},{%x:%u},{%x:%u},{%s}",
+	_enter("{%llx:%llu},{%llx:%llu},{%llx:%llu},{%pd}",
 	       orig_dvnode->fid.vid, orig_dvnode->fid.vnode,
 	       vnode->fid.vid, vnode->fid.vnode,
 	       new_dvnode->fid.vid, new_dvnode->fid.vnode,
-	       new_dentry->d_name.name);
+	       new_dentry);
 
 	key = afs_request_key(orig_dvnode->volume->cell);
 	if (IS_ERR(key)) {
@@ -1111,19 +1577,93 @@ static int afs_rename(struct inode *old_dir, struct dentry *old_dentry,
 		goto error;
 	}
 
-	ret = afs_vnode_rename(orig_dvnode, new_dvnode, key,
-			       old_dentry->d_name.name,
-			       new_dentry->d_name.name);
-	if (ret < 0)
-		goto rename_error;
-	key_put(key);
-	_leave(" = 0");
-	return 0;
+	ret = -ERESTARTSYS;
+	if (afs_begin_vnode_operation(&fc, orig_dvnode, key)) {
+		if (orig_dvnode != new_dvnode) {
+			if (mutex_lock_interruptible_nested(&new_dvnode->io_lock, 1) < 0) {
+				afs_end_vnode_operation(&fc);
+				goto error_key;
+			}
+		}
+		while (afs_select_fileserver(&fc)) {
+			fc.cb_break = afs_calc_vnode_cb_break(orig_dvnode);
+			fc.cb_break_2 = afs_calc_vnode_cb_break(new_dvnode);
+			afs_fs_rename(&fc, old_dentry->d_name.name,
+				      new_dvnode, new_dentry->d_name.name,
+				      orig_data_version, new_data_version);
+		}
 
-rename_error:
+		afs_vnode_commit_status(&fc, orig_dvnode, fc.cb_break);
+		afs_vnode_commit_status(&fc, new_dvnode, fc.cb_break_2);
+		if (orig_dvnode != new_dvnode)
+			mutex_unlock(&new_dvnode->io_lock);
+		ret = afs_end_vnode_operation(&fc);
+		if (ret < 0)
+			goto error_key;
+	}
+
+	if (ret == 0) {
+		if (test_bit(AFS_VNODE_DIR_VALID, &orig_dvnode->flags))
+		    afs_edit_dir_remove(orig_dvnode, &old_dentry->d_name,
+					afs_edit_dir_for_rename);
+
+		if (!new_negative &&
+		    test_bit(AFS_VNODE_DIR_VALID, &new_dvnode->flags))
+			afs_edit_dir_remove(new_dvnode, &new_dentry->d_name,
+					    afs_edit_dir_for_rename);
+
+		if (test_bit(AFS_VNODE_DIR_VALID, &new_dvnode->flags))
+			afs_edit_dir_add(new_dvnode, &new_dentry->d_name,
+					 &vnode->fid,  afs_edit_dir_for_rename);
+	}
+
+error_key:
 	key_put(key);
 error:
-	d_drop(new_dentry);
 	_leave(" = %d", ret);
 	return ret;
+}
+
+/*
+ * Release a directory page and clean up its private state if it's not busy
+ * - return true if the page can now be released, false if not
+ */
+static int afs_dir_releasepage(struct page *page, gfp_t gfp_flags)
+{
+	struct afs_vnode *dvnode = AFS_FS_I(page->mapping->host);
+
+	_enter("{{%llx:%llu}[%lu]}", dvnode->fid.vid, dvnode->fid.vnode, page->index);
+
+	set_page_private(page, 0);
+	ClearPagePrivate(page);
+
+	/* The directory will need reloading. */
+	if (test_and_clear_bit(AFS_VNODE_DIR_VALID, &dvnode->flags))
+		afs_stat_v(dvnode, n_relpg);
+	return 1;
+}
+
+/*
+ * invalidate part or all of a page
+ * - release a page and clean up its private data if offset is 0 (indicating
+ *   the entire page)
+ */
+static void afs_dir_invalidatepage(struct page *page, unsigned int offset,
+				   unsigned int length)
+{
+	struct afs_vnode *dvnode = AFS_FS_I(page->mapping->host);
+
+	_enter("{%lu},%u,%u", page->index, offset, length);
+
+	BUG_ON(!PageLocked(page));
+
+	/* The directory will need reloading. */
+	if (test_and_clear_bit(AFS_VNODE_DIR_VALID, &dvnode->flags))
+		afs_stat_v(dvnode, n_inval);
+
+	/* we clean up only if the entire page is being invalidated */
+	if (offset == 0 && length == PAGE_SIZE) {
+		set_page_private(page, 0);
+		ClearPagePrivate(page);
+	}
 }

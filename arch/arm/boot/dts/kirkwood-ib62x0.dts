@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 /dts-v1/;
 
 #include "kirkwood.dtsi"
@@ -14,10 +15,11 @@
 
 	chosen {
 		bootargs = "console=ttyS0,115200n8 earlyprintk";
+		stdout-path = &uart0;
 	};
 
 	ocp@f1000000 {
-		pinctrl: pinctrl@10000 {
+		pinctrl: pin-controller@10000 {
 			pmx_led_os_red: pmx-led-os-red {
 				marvell,pins = "mpp22";
 				marvell,function = "gpio";
@@ -61,12 +63,12 @@
 		pinctrl-0 = <&pmx_button_reset &pmx_button_usb_copy>;
 		pinctrl-names = "default";
 
-		button@1 {
+		copy {
 			label = "USB Copy";
 			linux,code = <KEY_COPY>;
 			gpios = <&gpio0 29 GPIO_ACTIVE_LOW>;
 		};
-		button@2 {
+		reset {
 			label = "Reset";
 			linux,code = <KEY_RESTART>;
 			gpios = <&gpio0 28 GPIO_ACTIVE_LOW>;
@@ -104,8 +106,6 @@
 
 &nand {
 	status = "okay";
-	pinctrl-0 = <&pmx_nand>;
-	pinctrl-names = "default";
 
 	partition@0 {
 		label = "u-boot";
@@ -114,7 +114,7 @@
 
 	partition@e0000 {
 		label = "u-boot environment";
-		reg = <0xe0000 0x100000>;
+		reg = <0xe0000 0x20000>;
 	};
 
 	partition@100000 {

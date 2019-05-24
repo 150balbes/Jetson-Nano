@@ -31,6 +31,7 @@
 #include <linux/spinlock.h>
 #include <linux/interrupt.h>
 #include <linux/delay.h>
+#include <linux/ktime.h>
 #include <linux/blkdev.h>
 #include <linux/io.h>
 #include <scsi/scsi.h>
@@ -48,7 +49,7 @@ MODULE_LICENSE("GPL");
 MODULE_AUTHOR("jyli@marvell.com");
 MODULE_DESCRIPTION("Marvell UMI Driver");
 
-static DEFINE_PCI_DEVICE_TABLE(mvumi_pci_table) = {
+static const struct pci_device_id mvumi_pci_table[] = {
 	{ PCI_DEVICE(PCI_VENDOR_ID_MARVELL_EXT, PCI_DEVICE_ID_MARVELL_MV9143) },
 	{ PCI_DEVICE(PCI_VENDOR_ID_MARVELL_EXT, PCI_DEVICE_ID_MARVELL_MV9580) },
 	{ 0 }
@@ -142,8 +143,9 @@ static struct mvumi_res *mvumi_alloc_mem_resource(struct mvumi_hba *mhba,
 
 	case RESOURCE_UNCACHED_MEMORY:
 		size = round_up(size, 8);
-		res->virt_addr = pci_alloc_consistent(mhba->pdev, size,
-							&res->bus_addr);
+		res->virt_addr = dma_alloc_coherent(&mhba->pdev->dev, size,
+						    &res->bus_addr,
+						    GFP_KERNEL);
 		if (!res->virt_addr) {
 			dev_err(&mhba->pdev->dev,
 					"unable to allocate consistent mem,"
@@ -151,7 +153,6 @@ static struct mvumi_res *mvumi_alloc_mem_resource(struct mvumi_hba *mhba,
 			kfree(res);
 			return NULL;
 		}
-		memset(res->virt_addr, 0, size);
 		break;
 
 	default:
@@ -175,7 +176,7 @@ static void mvumi_release_mem_resource(struct mvumi_hba *mhba)
 	list_for_each_entry_safe(res, tmp, &mhba->res_list, entry) {
 		switch (res->type) {
 		case RESOURCE_UNCACHED_MEMORY:
-			pci_free_consistent(mhba->pdev, res->size,
+			dma_free_coherent(&mhba->pdev->dev, res->size,
 						res->virt_addr, res->bus_addr);
 			break;
 		case RESOURCE_CACHED_MEMORY:
@@ -210,39 +211,27 @@ static int mvumi_make_sgl(struct mvumi_hba *mhba, struct scsi_cmnd *scmd,
 	unsigned int sgnum = scsi_sg_count(scmd);
 	dma_addr_t busaddr;
 
-	if (sgnum) {
-		sg = scsi_sglist(scmd);
-		*sg_count = pci_map_sg(mhba->pdev, sg, sgnum,
-				(int) scmd->sc_data_direction);
-		if (*sg_count > mhba->max_sge) {
-			dev_err(&mhba->pdev->dev, "sg count[0x%x] is bigger "
-						"than max sg[0x%x].\n",
-						*sg_count, mhba->max_sge);
-			return -1;
-		}
-		for (i = 0; i < *sg_count; i++) {
-			busaddr = sg_dma_address(&sg[i]);
-			m_sg->baseaddr_l = cpu_to_le32(lower_32_bits(busaddr));
-			m_sg->baseaddr_h = cpu_to_le32(upper_32_bits(busaddr));
-			m_sg->flags = 0;
-			sgd_setsz(mhba, m_sg, cpu_to_le32(sg_dma_len(&sg[i])));
-			if ((i + 1) == *sg_count)
-				m_sg->flags |= 1U << mhba->eot_flag;
-
-			sgd_inc(mhba, m_sg);
-		}
-	} else {
-		scmd->SCp.dma_handle = scsi_bufflen(scmd) ?
-			pci_map_single(mhba->pdev, scsi_sglist(scmd),
-				scsi_bufflen(scmd),
-				(int) scmd->sc_data_direction)
-			: 0;
-		busaddr = scmd->SCp.dma_handle;
+	sg = scsi_sglist(scmd);
+	*sg_count = dma_map_sg(&mhba->pdev->dev, sg, sgnum,
+			       scmd->sc_data_direction);
+	if (*sg_count > mhba->max_sge) {
+		dev_err(&mhba->pdev->dev,
+			"sg count[0x%x] is bigger than max sg[0x%x].\n",
+			*sg_count, mhba->max_sge);
+		dma_unmap_sg(&mhba->pdev->dev, sg, sgnum,
+			     scmd->sc_data_direction);
+		return -1;
+	}
+	for (i = 0; i < *sg_count; i++) {
+		busaddr = sg_dma_address(&sg[i]);
 		m_sg->baseaddr_l = cpu_to_le32(lower_32_bits(busaddr));
 		m_sg->baseaddr_h = cpu_to_le32(upper_32_bits(busaddr));
-		m_sg->flags = 1U << mhba->eot_flag;
-		sgd_setsz(mhba, m_sg, cpu_to_le32(scsi_bufflen(scmd)));
-		*sg_count = 1;
+		m_sg->flags = 0;
+		sgd_setsz(mhba, m_sg, cpu_to_le32(sg_dma_len(&sg[i])));
+		if ((i + 1) == *sg_count)
+			m_sg->flags |= 1U << mhba->eot_flag;
+
+		sgd_inc(mhba, m_sg);
 	}
 
 	return 0;
@@ -258,11 +247,10 @@ static int mvumi_internal_cmd_sgl(struct mvumi_hba *mhba, struct mvumi_cmd *cmd,
 	if (size == 0)
 		return 0;
 
-	virt_addr = pci_alloc_consistent(mhba->pdev, size, &phy_addr);
+	virt_addr = dma_alloc_coherent(&mhba->pdev->dev, size, &phy_addr,
+				       GFP_KERNEL);
 	if (!virt_addr)
 		return -1;
-
-	memset(virt_addr, 0, size);
 
 	m_sg = (struct mvumi_sgl *) &cmd->frame->payload[0];
 	cmd->frame->sg_counts = 1;
@@ -288,8 +276,8 @@ static struct mvumi_cmd *mvumi_create_internal_cmd(struct mvumi_hba *mhba,
 	}
 	INIT_LIST_HEAD(&cmd->queue_pointer);
 
-	cmd->frame = pci_alloc_consistent(mhba->pdev,
-				mhba->ib_max_size, &cmd->frame_phys);
+	cmd->frame = dma_alloc_coherent(&mhba->pdev->dev, mhba->ib_max_size,
+			&cmd->frame_phys, GFP_KERNEL);
 	if (!cmd->frame) {
 		dev_err(&mhba->pdev->dev, "failed to allocate memory for FW"
 			" frame,size = %d.\n", mhba->ib_max_size);
@@ -301,7 +289,7 @@ static struct mvumi_cmd *mvumi_create_internal_cmd(struct mvumi_hba *mhba,
 		if (mvumi_internal_cmd_sgl(mhba, cmd, buf_size)) {
 			dev_err(&mhba->pdev->dev, "failed to allocate memory"
 						" for internal frame\n");
-			pci_free_consistent(mhba->pdev, mhba->ib_max_size,
+			dma_free_coherent(&mhba->pdev->dev, mhba->ib_max_size,
 					cmd->frame, cmd->frame_phys);
 			kfree(cmd);
 			return NULL;
@@ -327,10 +315,10 @@ static void mvumi_delete_internal_cmd(struct mvumi_hba *mhba,
 			phy_addr = (dma_addr_t) m_sg->baseaddr_l |
 				(dma_addr_t) ((m_sg->baseaddr_h << 16) << 16);
 
-			pci_free_consistent(mhba->pdev, size, cmd->data_buf,
+			dma_free_coherent(&mhba->pdev->dev, size, cmd->data_buf,
 								phy_addr);
 		}
-		pci_free_consistent(mhba->pdev, mhba->ib_max_size,
+		dma_free_coherent(&mhba->pdev->dev, mhba->ib_max_size,
 				cmd->frame, cmd->frame_phys);
 		kfree(cmd);
 	}
@@ -677,16 +665,17 @@ static void mvumi_restore_bar_addr(struct mvumi_hba *mhba)
 	}
 }
 
-static unsigned int mvumi_pci_set_master(struct pci_dev *pdev)
+static int mvumi_pci_set_master(struct pci_dev *pdev)
 {
-	unsigned int ret = 0;
+	int ret = 0;
+
 	pci_set_master(pdev);
 
 	if (IS_DMA64) {
-		if (pci_set_dma_mask(pdev, DMA_BIT_MASK(64)))
-			ret = pci_set_dma_mask(pdev, DMA_BIT_MASK(32));
+		if (dma_set_mask(&pdev->dev, DMA_BIT_MASK(64)))
+			ret = dma_set_mask(&pdev->dev, DMA_BIT_MASK(32));
 	} else
-		ret = pci_set_dma_mask(pdev, DMA_BIT_MASK(32));
+		ret = dma_set_mask(&pdev->dev, DMA_BIT_MASK(32));
 
 	return ret;
 }
@@ -729,8 +718,8 @@ static int mvumi_host_reset(struct scsi_cmnd *scmd)
 
 	mhba = (struct mvumi_hba *) scmd->device->host->hostdata;
 
-	scmd_printk(KERN_NOTICE, scmd, "RESET -%ld cmd=%x retries=%x\n",
-			scmd->serial_number, scmd->cmnd[0], scmd->retries);
+	scmd_printk(KERN_NOTICE, scmd, "RESET -%u cmd=%x retries=%x\n",
+			scmd->request->tag, scmd->cmnd[0], scmd->retries);
 
 	return mhba->instancet->reset_host(mhba);
 }
@@ -785,7 +774,7 @@ static void mvumi_release_fw(struct mvumi_hba *mhba)
 	mvumi_free_cmds(mhba);
 	mvumi_release_mem_resource(mhba);
 	mvumi_unmap_pci_addr(mhba->pdev, mhba->base_addr);
-	pci_free_consistent(mhba->pdev, HSP_MAX_SIZE,
+	dma_free_coherent(&mhba->pdev->dev, HSP_MAX_SIZE,
 		mhba->handshake_page, mhba->handshake_page_phys);
 	kfree(mhba->regs);
 	pci_release_regions(mhba->pdev);
@@ -861,8 +850,8 @@ static void mvumi_hs_build_page(struct mvumi_hba *mhba,
 	struct mvumi_hs_page2 *hs_page2;
 	struct mvumi_hs_page4 *hs_page4;
 	struct mvumi_hs_page3 *hs_page3;
-	struct timeval time;
-	unsigned int local_time;
+	u64 time;
+	u64 local_time;
 
 	switch (hs_header->page_code) {
 	case HS_PAGE_HOST_INFO:
@@ -880,9 +869,8 @@ static void mvumi_hs_build_page(struct mvumi_hba *mhba,
 		hs_page2->slot_number = 0;
 		hs_page2->intr_level = 0;
 		hs_page2->intr_vector = 0;
-		do_gettimeofday(&time);
-		local_time = (unsigned int) (time.tv_sec -
-						(sys_tz.tz_minuteswest * 60));
+		time = ktime_get_real_seconds();
+		local_time = (time - (sys_tz.tz_minuteswest * 60));
 		hs_page2->seconds_since1970 = local_time;
 		hs_header->checksum = mvumi_calculate_checksum(hs_header,
 						hs_header->frame_length);
@@ -1353,21 +1341,10 @@ static void mvumi_complete_cmd(struct mvumi_hba *mhba, struct mvumi_cmd *cmd,
 		break;
 	}
 
-	if (scsi_bufflen(scmd)) {
-		if (scsi_sg_count(scmd)) {
-			pci_unmap_sg(mhba->pdev,
-				scsi_sglist(scmd),
-				scsi_sg_count(scmd),
-				(int) scmd->sc_data_direction);
-		} else {
-			pci_unmap_single(mhba->pdev,
-				scmd->SCp.dma_handle,
-				scsi_bufflen(scmd),
-				(int) scmd->sc_data_direction);
-
-			scmd->SCp.dma_handle = 0;
-		}
-	}
+	if (scsi_bufflen(scmd))
+		dma_unmap_sg(&mhba->pdev->dev, scsi_sglist(scmd),
+			     scsi_sg_count(scmd),
+			     scmd->sc_data_direction);
 	cmd->scmd->scsi_done(scmd);
 	mvumi_return_cmd(mhba, cmd);
 }
@@ -2127,7 +2104,6 @@ static int mvumi_queue_command(struct Scsi_Host *shost,
 	unsigned long irq_flags;
 
 	spin_lock_irqsave(shost->host_lock, irq_flags);
-	scsi_cmd_get_serial(shost, scmd);
 
 	mhba = (struct mvumi_hba *) shost->hostdata;
 	scmd->result = 0;
@@ -2174,24 +2150,14 @@ static enum blk_eh_timer_return mvumi_timed_out(struct scsi_cmnd *scmd)
 	scmd->result = (DRIVER_INVALID << 24) | (DID_ABORT << 16);
 	scmd->SCp.ptr = NULL;
 	if (scsi_bufflen(scmd)) {
-		if (scsi_sg_count(scmd)) {
-			pci_unmap_sg(mhba->pdev,
-				scsi_sglist(scmd),
-				scsi_sg_count(scmd),
-				(int)scmd->sc_data_direction);
-		} else {
-			pci_unmap_single(mhba->pdev,
-				scmd->SCp.dma_handle,
-				scsi_bufflen(scmd),
-				(int)scmd->sc_data_direction);
-
-			scmd->SCp.dma_handle = 0;
-		}
+		dma_unmap_sg(&mhba->pdev->dev, scsi_sglist(scmd),
+			     scsi_sg_count(scmd),
+			     scmd->sc_data_direction);
 	}
 	mvumi_return_cmd(mhba, cmd);
 	spin_unlock_irqrestore(mhba->shost->host_lock, flags);
 
-	return BLK_EH_NOT_HANDLED;
+	return BLK_EH_DONE;
 }
 
 static int
@@ -2228,13 +2194,11 @@ static struct scsi_host_template mvumi_template = {
 	.name = "Marvell Storage Controller",
 	.slave_configure = mvumi_slave_configure,
 	.queuecommand = mvumi_queue_command,
+	.eh_timed_out = mvumi_timed_out,
 	.eh_host_reset_handler = mvumi_host_reset,
 	.bios_param = mvumi_bios_param,
+	.dma_boundary = PAGE_SIZE - 1,
 	.this_id = -1,
-};
-
-static struct scsi_transport_template mvumi_transport_template = {
-	.eh_timed_out = mvumi_timed_out,
 };
 
 static int mvumi_cfg_hw_reg(struct mvumi_hba *mhba)
@@ -2401,8 +2365,8 @@ static int mvumi_init_fw(struct mvumi_hba *mhba)
 		ret = -ENOMEM;
 		goto fail_alloc_mem;
 	}
-	mhba->handshake_page = pci_alloc_consistent(mhba->pdev, HSP_MAX_SIZE,
-						&mhba->handshake_page_phys);
+	mhba->handshake_page = dma_alloc_coherent(&mhba->pdev->dev,
+			HSP_MAX_SIZE, &mhba->handshake_page_phys, GFP_KERNEL);
 	if (!mhba->handshake_page) {
 		dev_err(&mhba->pdev->dev,
 			"failed to allocate memory for handshake\n");
@@ -2422,7 +2386,7 @@ static int mvumi_init_fw(struct mvumi_hba *mhba)
 
 fail_ready_state:
 	mvumi_release_mem_resource(mhba);
-	pci_free_consistent(mhba->pdev, HSP_MAX_SIZE,
+	dma_free_coherent(&mhba->pdev->dev, HSP_MAX_SIZE,
 		mhba->handshake_page, mhba->handshake_page_phys);
 fail_alloc_page:
 	kfree(mhba->regs);
@@ -2454,7 +2418,6 @@ static int mvumi_io_attach(struct mvumi_hba *mhba)
 	host->cmd_per_lun = (mhba->max_io - 1) ? (mhba->max_io - 1) : 1;
 	host->max_id = mhba->max_target_id;
 	host->max_cmd_len = MAX_COMMAND_SIZE;
-	host->transportt = &mvumi_transport_template;
 
 	ret = scsi_add_host(host, &mhba->pdev->dev);
 	if (ret) {
@@ -2520,20 +2483,9 @@ static int mvumi_probe_one(struct pci_dev *pdev, const struct pci_device_id *id)
 	if (ret)
 		return ret;
 
-	pci_set_master(pdev);
-
-	if (IS_DMA64) {
-		ret = pci_set_dma_mask(pdev, DMA_BIT_MASK(64));
-		if (ret) {
-			ret = pci_set_dma_mask(pdev, DMA_BIT_MASK(32));
-			if (ret)
-				goto fail_set_dma_mask;
-		}
-	} else {
-		ret = pci_set_dma_mask(pdev, DMA_BIT_MASK(32));
-		if (ret)
-			goto fail_set_dma_mask;
-	}
+	ret = mvumi_pci_set_master(pdev);
+	if (ret)
+		goto fail_set_dma_mask;
 
 	host = scsi_host_alloc(&mvumi_template, sizeof(*mhba));
 	if (!host) {
@@ -2632,7 +2584,7 @@ static void mvumi_shutdown(struct pci_dev *pdev)
 	mvumi_flush_cache(mhba);
 }
 
-static int mvumi_suspend(struct pci_dev *pdev, pm_message_t state)
+static int __maybe_unused mvumi_suspend(struct pci_dev *pdev, pm_message_t state)
 {
 	struct mvumi_hba *mhba = NULL;
 
@@ -2651,7 +2603,7 @@ static int mvumi_suspend(struct pci_dev *pdev, pm_message_t state)
 	return 0;
 }
 
-static int mvumi_resume(struct pci_dev *pdev)
+static int __maybe_unused mvumi_resume(struct pci_dev *pdev)
 {
 	int ret;
 	struct mvumi_hba *mhba = NULL;
@@ -2667,19 +2619,11 @@ static int mvumi_resume(struct pci_dev *pdev)
 		dev_err(&pdev->dev, "enable device failed\n");
 		return ret;
 	}
-	pci_set_master(pdev);
-	if (IS_DMA64) {
-		ret = pci_set_dma_mask(pdev, DMA_BIT_MASK(64));
-		if (ret) {
-			ret = pci_set_dma_mask(pdev, DMA_BIT_MASK(32));
-			if (ret)
-				goto fail;
-		}
-	} else {
-		ret = pci_set_dma_mask(pdev, DMA_BIT_MASK(32));
-		if (ret)
-			goto fail;
-	}
+
+	ret = mvumi_pci_set_master(pdev);
+	ret = dma_set_mask(&pdev->dev, DMA_BIT_MASK(32));
+	if (ret)
+		goto fail;
 	ret = pci_request_regions(mhba->pdev, MV_DRIVER_NAME);
 	if (ret)
 		goto fail;
@@ -2733,22 +2677,4 @@ static struct pci_driver mvumi_pci_driver = {
 #endif
 };
 
-/**
- * mvumi_init - Driver load entry point
- */
-static int __init mvumi_init(void)
-{
-	return pci_register_driver(&mvumi_pci_driver);
-}
-
-/**
- * mvumi_exit - Driver unload entry point
- */
-static void __exit mvumi_exit(void)
-{
-
-	pci_unregister_driver(&mvumi_pci_driver);
-}
-
-module_init(mvumi_init);
-module_exit(mvumi_exit);
+module_pci_driver(mvumi_pci_driver);

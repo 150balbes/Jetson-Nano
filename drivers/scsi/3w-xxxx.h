@@ -1,7 +1,7 @@
 /* 
    3w-xxxx.h -- 3ware Storage Controller device driver for Linux.
    
-   Written By: Adam Radford <linuxraid@lsi.com>
+   Written By: Adam Radford <aradford@gmail.com>
    Modifications By: Joel Jacobson <linux@3ware.com>
    		     Arnaldo Carvalho de Melo <acme@conectiva.com.br>
                      Brad Strand <linux@3ware.com>
@@ -45,7 +45,8 @@
    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA 
 
    Bugs/Comments/Suggestions should be mailed to:                            
-   linuxraid@lsi.com
+
+   aradford@gmail.com
    
    For more information, goto:
    http://www.lsi.com
@@ -195,11 +196,6 @@ static unsigned char tw_sense_table[][4] =
 #define TW_AEN_SMART_FAIL        0x000F
 #define TW_AEN_SBUF_FAIL         0x0024
 
-/* Phase defines */
-#define TW_PHASE_INITIAL 0
-#define TW_PHASE_SINGLE 1
-#define TW_PHASE_SGLIST 2
-
 /* Misc defines */
 #define TW_ALIGNMENT_6000		      64 /* 64 bytes */
 #define TW_ALIGNMENT_7000                     4  /* 4 bytes */
@@ -234,7 +230,6 @@ static unsigned char tw_sense_table[][4] =
 #define TW_IOCTL_TIMEOUT                      25 /* 25 seconds */
 #define TW_IOCTL_CHRDEV_TIMEOUT               60 /* 60 seconds */
 #define TW_IOCTL_CHRDEV_FREE                  -1
-#define TW_DMA_MASK			      DMA_BIT_MASK(32)
 #define TW_MAX_CDB_LEN			      16
 
 /* Bitmask macros to eliminate bitfields */
@@ -392,6 +387,8 @@ typedef struct TAG_TW_Passthru
 	unsigned char padding[12];
 } TW_Passthru;
 
+#pragma pack()
+
 typedef struct TAG_TW_Device_Extension {
 	u32			base_addr;
 	unsigned long		*alignment_virtual_address[TW_Q_LENGTH];
@@ -429,7 +426,5 @@ typedef struct TAG_TW_Device_Extension {
 	volatile int		chrdev_request_id;
 	wait_queue_head_t	ioctl_wqueue;
 } TW_Device_Extension;
-
-#pragma pack()
 
 #endif /* _3W_XXXX_H */

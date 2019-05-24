@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __ASM_SH_IO_NOIOPORT_H
 #define __ASM_SH_IO_NOIOPORT_H
 
@@ -30,6 +31,17 @@ static inline void outw(unsigned short x, unsigned long port)
 }
 
 static inline void outl(unsigned int x, unsigned long port)
+{
+	BUG();
+}
+
+static inline void __iomem *ioport_map(unsigned long port, unsigned int size)
+{
+	BUG();
+	return NULL;
+}
+
+static inline void ioport_unmap(void __iomem *addr)
 {
 	BUG();
 }

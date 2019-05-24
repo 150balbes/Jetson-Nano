@@ -8,11 +8,18 @@ Required properties:
 - interrupts: pair specifying rx and tx irq
 - clocks: phandle to the spi clock
 - cs-gpios: see spi-bus.txt
-- location: Value to write to the ROUTE register's LOCATION bitfield to configure the pinmux for the device, see datasheet for values.
+
+Recommended properties :
+- energymicro,location: Value to write to the ROUTE register's LOCATION
+                        bitfield to configure the pinmux for the device, see
+                        datasheet for values.
+                        If this property is not provided, keeping what is
+                        already configured in the hardware, so its either the
+                        reset default 0 or whatever the bootloader did.
 
 Example:
 
-spi1: spi@0x4000c400 { /* USART1 */
+spi1: spi@4000c400 { /* USART1 */
 	#address-cells = <1>;
 	#size-cells = <0>;
 	compatible = "energymicro,efm32-spi";
@@ -20,8 +27,7 @@ spi1: spi@0x4000c400 { /* USART1 */
 	interrupts = <15 16>;
 	clocks = <&cmu 20>;
 	cs-gpios = <&gpio 51 1>; // D3
-	location = <1>;
-	status = "ok";
+	energymicro,location = <1>;
 
 	ks8851@0 {
 		compatible = "ks8851";
@@ -29,6 +35,5 @@ spi1: spi@0x4000c400 { /* USART1 */
 		reg = <0>;
 		interrupt-parent = <&boardfpga>;
 		interrupts = <4>;
-		status = "ok";
 	};
 };

@@ -1,21 +1,9 @@
+// SPDX-License-Identifier: GPL-2.0
 /******************************************************************************
  * mlme_linux.c
  *
  * Copyright(c) 2007 - 2010 Realtek Corporation. All rights reserved.
  * Linux device driver for RTL8192SU
- *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of version 2 of the GNU General Public License as
- * published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
- * more details.
- *
- * You should have received a copy of the GNU General Public License along with
- * this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110, USA
  *
  * Modifications for inclusion into the Linux staging tree are
  * Copyright(c) 2010 Larry Finger. All rights reserved.
@@ -32,57 +20,62 @@
 #include "drv_types.h"
 #include "mlme_osdep.h"
 
-static void sitesurvey_ctrl_handler(void *FunctionContext)
+static void sitesurvey_ctrl_handler(struct timer_list *t)
 {
-	struct _adapter *adapter = (struct _adapter *)FunctionContext;
+	struct _adapter *adapter =
+		from_timer(adapter, t,
+			   mlmepriv.sitesurveyctrl.sitesurvey_ctrl_timer);
 
 	_r8712_sitesurvey_ctrl_handler(adapter);
-	_set_timer(&adapter->mlmepriv.sitesurveyctrl.sitesurvey_ctrl_timer,
-		   3000);
+	mod_timer(&adapter->mlmepriv.sitesurveyctrl.sitesurvey_ctrl_timer,
+		  jiffies + msecs_to_jiffies(3000));
 }
 
-static void join_timeout_handler (void *FunctionContext)
+static void join_timeout_handler (struct timer_list *t)
 {
-	struct _adapter *adapter = (struct _adapter *)FunctionContext;
+	struct _adapter *adapter =
+		from_timer(adapter, t, mlmepriv.assoc_timer);
+
 	_r8712_join_timeout_handler(adapter);
 }
 
-static void _scan_timeout_handler (void *FunctionContext)
+static void _scan_timeout_handler (struct timer_list *t)
 {
-	struct _adapter *adapter = (struct _adapter *)FunctionContext;
+	struct _adapter *adapter =
+		from_timer(adapter, t, mlmepriv.scan_to_timer);
+
 	r8712_scan_timeout_handler(adapter);
 }
 
-static void dhcp_timeout_handler (void *FunctionContext)
+static void dhcp_timeout_handler (struct timer_list *t)
 {
-	struct _adapter *adapter = (struct _adapter *)FunctionContext;
+	struct _adapter *adapter =
+		from_timer(adapter, t, mlmepriv.dhcp_timer);
+
 	_r8712_dhcp_timeout_handler(adapter);
 }
 
-static void wdg_timeout_handler (void *FunctionContext)
+static void wdg_timeout_handler (struct timer_list *t)
 {
-	struct _adapter *adapter = (struct _adapter *)FunctionContext;
+	struct _adapter *adapter =
+		from_timer(adapter, t, mlmepriv.wdg_timer);
 
 	_r8712_wdg_timeout_handler(adapter);
 
-	_set_timer(&adapter->mlmepriv.wdg_timer, 2000);
+	mod_timer(&adapter->mlmepriv.wdg_timer,
+		  jiffies + msecs_to_jiffies(2000));
 }
 
 void r8712_init_mlme_timer(struct _adapter *padapter)
 {
 	struct	mlme_priv *pmlmepriv = &padapter->mlmepriv;
 
-	_init_timer(&(pmlmepriv->assoc_timer), padapter->pnetdev,
-		    join_timeout_handler, (pmlmepriv->nic_hdl));
-	_init_timer(&(pmlmepriv->sitesurveyctrl.sitesurvey_ctrl_timer),
-		    padapter->pnetdev, sitesurvey_ctrl_handler,
-		    (u8 *)(pmlmepriv->nic_hdl));
-	_init_timer(&(pmlmepriv->scan_to_timer), padapter->pnetdev,
-		    _scan_timeout_handler, (pmlmepriv->nic_hdl));
-	_init_timer(&(pmlmepriv->dhcp_timer), padapter->pnetdev,
-		    dhcp_timeout_handler, (u8 *)(pmlmepriv->nic_hdl));
-	_init_timer(&(pmlmepriv->wdg_timer), padapter->pnetdev,
-		    wdg_timeout_handler, (u8 *)(pmlmepriv->nic_hdl));
+	timer_setup(&pmlmepriv->assoc_timer, join_timeout_handler, 0);
+	timer_setup(&pmlmepriv->sitesurveyctrl.sitesurvey_ctrl_timer,
+		    sitesurvey_ctrl_handler, 0);
+	timer_setup(&pmlmepriv->scan_to_timer, _scan_timeout_handler, 0);
+	timer_setup(&pmlmepriv->dhcp_timer, dhcp_timeout_handler, 0);
+	timer_setup(&pmlmepriv->wdg_timer, wdg_timeout_handler, 0);
 }
 
 void r8712_os_indicate_connect(struct _adapter *adapter)
@@ -106,22 +99,22 @@ void r8712_os_indicate_disconnect(struct _adapter *adapter)
 		 * disconnect with AP for 60 seconds.
 		 */
 
-		memcpy(&backupPMKIDList[0], &adapter->securitypriv.
-			PMKIDList[0], sizeof(struct RT_PMKID_LIST) *
-			NUM_PMKID_CACHE);
+		memcpy(&backupPMKIDList[0],
+		       &adapter->securitypriv.PMKIDList[0],
+		       sizeof(struct RT_PMKID_LIST) * NUM_PMKID_CACHE);
 		backupPMKIDIndex = adapter->securitypriv.PMKIDIndex;
-		backupTKIPCountermeasure = adapter->securitypriv.
-					   btkip_countermeasure;
+		backupTKIPCountermeasure =
+			adapter->securitypriv.btkip_countermeasure;
 		memset((unsigned char *)&adapter->securitypriv, 0,
-			 sizeof(struct security_priv));
-		_init_timer(&(adapter->securitypriv.tkip_timer),
-			    adapter->pnetdev, r8712_use_tkipkey_handler,
-			    adapter);
+		       sizeof(struct security_priv));
+		timer_setup(&adapter->securitypriv.tkip_timer,
+			    r8712_use_tkipkey_handler, 0);
 		/* Restore the PMK information to securitypriv structure
-		 * for the following connection. */
+		 * for the following connection.
+		 */
 		memcpy(&adapter->securitypriv.PMKIDList[0],
-			&backupPMKIDList[0],
-			sizeof(struct RT_PMKID_LIST) * NUM_PMKID_CACHE);
+		       &backupPMKIDList[0],
+		       sizeof(struct RT_PMKID_LIST) * NUM_PMKID_CACHE);
 		adapter->securitypriv.PMKIDIndex = backupPMKIDIndex;
 		adapter->securitypriv.btkip_countermeasure =
 					 backupTKIPCountermeasure;
@@ -147,19 +140,18 @@ void r8712_report_sec_ie(struct _adapter *adapter, u8 authmode, u8 *sec_ie)
 
 	buff = NULL;
 	if (authmode == _WPA_IE_ID_) {
-		buff = _malloc(IW_CUSTOM_MAX);
-		if (buff == NULL)
+		buff = kzalloc(IW_CUSTOM_MAX, GFP_ATOMIC);
+		if (!buff)
 			return;
-		memset(buff, 0, IW_CUSTOM_MAX);
 		p = buff;
 		p += sprintf(p, "ASSOCINFO(ReqIEs=");
 		len = sec_ie[1] + 2;
-		len =  (len < IW_CUSTOM_MAX) ? len : IW_CUSTOM_MAX - 1;
+		len =  (len < IW_CUSTOM_MAX) ? len : IW_CUSTOM_MAX;
 		for (i = 0; i < len; i++)
 			p += sprintf(p, "%02x", sec_ie[i]);
 		p += sprintf(p, ")");
 		memset(&wrqu, 0, sizeof(wrqu));
-		wrqu.data.length = p-buff;
+		wrqu.data.length = p - buff;
 		wrqu.data.length = (wrqu.data.length < IW_CUSTOM_MAX) ?
 				   wrqu.data.length : IW_CUSTOM_MAX;
 		wireless_send_event(adapter->pnetdev, IWEVCUSTOM, &wrqu, buff);

@@ -25,6 +25,8 @@
 #define _VIA_DRV_H_
 
 #include <drm/drm_mm.h>
+#include <drm/drm_legacy.h>
+
 #define DRIVER_AUTHOR	"Various"
 
 #define DRIVER_NAME		"via"
@@ -72,9 +74,9 @@ typedef struct drm_via_private {
 	volatile uint32_t *last_pause_ptr;
 	volatile uint32_t *hw_addr_ptr;
 	drm_via_ring_buffer_t ring;
-	struct timeval last_vblank;
+	ktime_t last_vblank;
 	int last_vblank_valid;
-	unsigned usec_per_vblank;
+	ktime_t nsec_per_vblank;
 	atomic_t vbl_received;
 	drm_via_state_t hc_state;
 	char pci_buf[VIA_PCI_BUF_SIZE];
@@ -99,6 +101,10 @@ typedef struct drm_via_private {
 	drm_via_blitq_t blit_queues[VIA_NUM_BLIT_ENGINES];
 	uint32_t dma_diff;
 } drm_via_private_t;
+
+struct via_file_private {
+	struct list_head obj_list;
+};
 
 enum via_family {
   VIA_OTHER = 0,     /* Baseline */
@@ -128,15 +134,15 @@ extern int via_dma_blit_sync(struct drm_device *dev, void *data, struct drm_file
 extern int via_dma_blit(struct drm_device *dev, void *data, struct drm_file *file_priv);
 
 extern int via_driver_load(struct drm_device *dev, unsigned long chipset);
-extern int via_driver_unload(struct drm_device *dev);
+extern void via_driver_unload(struct drm_device *dev);
 
 extern int via_init_context(struct drm_device *dev, int context);
 extern int via_final_context(struct drm_device *dev, int context);
 
 extern int via_do_cleanup_map(struct drm_device *dev);
-extern u32 via_get_vblank_counter(struct drm_device *dev, int crtc);
-extern int via_enable_vblank(struct drm_device *dev, int crtc);
-extern void via_disable_vblank(struct drm_device *dev, int crtc);
+extern u32 via_get_vblank_counter(struct drm_device *dev, unsigned int pipe);
+extern int via_enable_vblank(struct drm_device *dev, unsigned int pipe);
+extern void via_disable_vblank(struct drm_device *dev, unsigned int pipe);
 
 extern irqreturn_t via_driver_irq_handler(int irq, void *arg);
 extern void via_driver_irq_preinstall(struct drm_device *dev);

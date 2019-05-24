@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * Copyright (C) 2012 Texas Instruments Inc
  *
@@ -9,10 +10,6 @@
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
  *
  * Contributors:
  *      Manjunath Hadli <manjunath.hadli@ti.com>
@@ -278,9 +275,10 @@
 /* Resizer Rescale Parameters */
 #define RSZ_EN_A		0x58
 #define RSZ_EN_B		0xe8
-/* offset of the registers to be added with base register of
-   either RSZ0 or RSZ1
-*/
+/*
+ * offset of the registers to be added with base register of
+ * either RSZ0 or RSZ1
+ */
 #define RSZ_MODE		0x4
 #define RSZ_420			0x8
 #define RSZ_I_VPS		0xc
@@ -479,7 +477,6 @@
 #define RSZ_TYP_Y_SHIFT			0
 #define RSZ_TYP_C_SHIFT			1
 #define RSZ_LPF_INT_MASK		0x3f
-#define RSZ_LPF_INT_MASK		0x3f
 #define RSZ_LPF_INT_C_SHIFT		6
 #define RSZ_H_PHS_MASK			0x3fff
 #define RSZ_H_DIF_MASK			0x3fff
@@ -491,29 +488,29 @@
 #define RSZ_RGB_TYP_SHIFT		0
 #define RSZ_RGB_ALPHA_MASK		0xff
 
-static inline u32 regr_ip(void *__iomem addr, u32 offset)
+static inline u32 regr_ip(void __iomem *addr, u32 offset)
 {
 	return readl(addr + offset);
 }
 
-static inline void regw_ip(void *__iomem addr, u32 val, u32 offset)
+static inline void regw_ip(void __iomem *addr, u32 val, u32 offset)
 {
 	writel(val, addr + offset);
 }
 
-static inline u32 w_ip_table(void *__iomem addr, u32 val, u32 offset)
+static inline u32 w_ip_table(void __iomem *addr, u32 val, u32 offset)
 {
 	writel(val, addr + offset);
 
 	return val;
 }
 
-static inline u32 regr_rsz(void *__iomem addr, u32 offset)
+static inline u32 regr_rsz(void __iomem *addr, u32 offset)
 {
 	return readl(addr + offset);
 }
 
-static inline u32 regw_rsz(void *__iomem addr, u32 val, u32 offset)
+static inline u32 regw_rsz(void __iomem *addr, u32 val, u32 offset)
 {
 	writel(val, addr + offset);
 
@@ -521,39 +518,39 @@ static inline u32 regw_rsz(void *__iomem addr, u32 val, u32 offset)
 }
 
 int config_ipipe_hw(struct vpfe_ipipe_device *ipipe);
-int resizer_set_outaddr(void *__iomem rsz_base, struct resizer_params *params,
+int resizer_set_outaddr(void __iomem *rsz_base, struct resizer_params *params,
 			int resize_no, unsigned int address);
-int rsz_enable(void *__iomem rsz_base, int rsz_id, int enable);
-void rsz_src_enable(void *__iomem rsz_base, int enable);
+int rsz_enable(void __iomem *rsz_base, int rsz_id, int enable);
+void rsz_src_enable(void __iomem *rsz_base, int enable);
 void rsz_set_in_pix_format(unsigned char y_c);
 int config_rsz_hw(struct vpfe_resizer_device *resizer,
 		  struct resizer_params *config);
-void ipipe_set_d2f_regs(void *__iomem base_addr, unsigned int id,
+void ipipe_set_d2f_regs(void __iomem *base_addr, unsigned int id,
 	struct vpfe_ipipe_nf *noise_filter);
-void ipipe_set_rgb2rgb_regs(void *__iomem base_addr, unsigned int id,
+void ipipe_set_rgb2rgb_regs(void __iomem *base_addr, unsigned int id,
 	struct vpfe_ipipe_rgb2rgb *rgb);
-void ipipe_set_yuv422_conv_regs(void *__iomem base_addr,
+void ipipe_set_yuv422_conv_regs(void __iomem *base_addr,
 	struct vpfe_ipipe_yuv422_conv *conv);
-void ipipe_set_lum_adj_regs(void *__iomem base_addr,
+void ipipe_set_lum_adj_regs(void __iomem *base_addr,
 	struct ipipe_lum_adj *lum_adj);
-void ipipe_set_rgb2ycbcr_regs(void *__iomem base_addr,
+void ipipe_set_rgb2ycbcr_regs(void __iomem *base_addr,
 	struct vpfe_ipipe_rgb2yuv *yuv);
-void ipipe_set_lutdpc_regs(void *__iomem base_addr,
-	void *__iomem isp5_base_addr, struct vpfe_ipipe_lutdpc *lutdpc);
-void ipipe_set_otfdpc_regs(void *__iomem base_addr,
+void ipipe_set_lutdpc_regs(void __iomem *base_addr,
+	void __iomem *isp5_base_addr, struct vpfe_ipipe_lutdpc *lutdpc);
+void ipipe_set_otfdpc_regs(void __iomem *base_addr,
 	struct vpfe_ipipe_otfdpc *otfdpc);
-void ipipe_set_3d_lut_regs(void *__iomem base_addr,
-	void *__iomem isp5_base_addr, struct vpfe_ipipe_3d_lut *lut_3d);
-void ipipe_set_gamma_regs(void *__iomem base_addr,
-	void *__iomem isp5_base_addr, struct vpfe_ipipe_gamma *gamma);
-void ipipe_set_ee_regs(void *__iomem base_addr,
-	void *__iomem isp5_base_addr, struct vpfe_ipipe_yee *ee);
-void ipipe_set_gbce_regs(void *__iomem base_addr,
-	void *__iomem isp5_base_addr, struct vpfe_ipipe_gbce *gbce);
-void ipipe_set_gic_regs(void *__iomem base_addr, struct vpfe_ipipe_gic *gic);
-void ipipe_set_cfa_regs(void *__iomem base_addr, struct vpfe_ipipe_cfa *cfa);
-void ipipe_set_car_regs(void *__iomem base_addr, struct vpfe_ipipe_car *car);
-void ipipe_set_cgs_regs(void *__iomem base_addr, struct vpfe_ipipe_cgs *cgs);
-void ipipe_set_wb_regs(void *__iomem base_addr, struct vpfe_ipipe_wb *wb);
+void ipipe_set_3d_lut_regs(void __iomem *base_addr,
+	void __iomem *isp5_base_addr, struct vpfe_ipipe_3d_lut *lut_3d);
+void ipipe_set_gamma_regs(void __iomem *base_addr,
+	void __iomem *isp5_base_addr, struct vpfe_ipipe_gamma *gamma);
+void ipipe_set_ee_regs(void __iomem *base_addr,
+	void __iomem *isp5_base_addr, struct vpfe_ipipe_yee *ee);
+void ipipe_set_gbce_regs(void __iomem *base_addr,
+	void __iomem *isp5_base_addr, struct vpfe_ipipe_gbce *gbce);
+void ipipe_set_gic_regs(void __iomem *base_addr, struct vpfe_ipipe_gic *gic);
+void ipipe_set_cfa_regs(void __iomem *base_addr, struct vpfe_ipipe_cfa *cfa);
+void ipipe_set_car_regs(void __iomem *base_addr, struct vpfe_ipipe_car *car);
+void ipipe_set_cgs_regs(void __iomem *base_addr, struct vpfe_ipipe_cgs *cgs);
+void ipipe_set_wb_regs(void __iomem *base_addr, struct vpfe_ipipe_wb *wb);
 
 #endif		/* _DAVINCI_VPFE_DM365_IPIPE_HW_H */

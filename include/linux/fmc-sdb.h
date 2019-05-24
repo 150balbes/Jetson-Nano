@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * This file is separate from sdb.h, because I want that one to remain
  * unchanged (as far as possible) from the official sdb distribution
@@ -14,6 +15,8 @@ union sdb_record {
 	struct sdb_bridge bridge;
 	struct sdb_integration integr;
 	struct sdb_empty empty;
+	struct sdb_synthesis synthesis;
+	struct sdb_repo_url repo_url;
 };
 
 struct fmc_device;

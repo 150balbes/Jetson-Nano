@@ -1,20 +1,15 @@
-/* rc-hauppauge.c - Keytable for Hauppauge Remote Controllers
- *
- * keymap imported from ir-keymaps.c
- *
- * This map currently contains the code for four different RCs:
- *	- New Hauppauge Gray;
- *	- Old Hauppauge Gray (with a golden screen for media keys);
- *	- Hauppauge Black;
- *	- DSR-0112 remote bundled with Haupauge MiniStick.
- *
- * Copyright (c) 2010-2011 by Mauro Carvalho Chehab <mchehab@redhat.com>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- */
+// SPDX-License-Identifier: GPL-2.0+
+// rc-hauppauge.c - Keytable for Hauppauge Remote Controllers
+//
+// keymap imported from ir-keymaps.c
+//
+// This map currently contains the code for four different RCs:
+//	- New Hauppauge Gray;
+//	- Old Hauppauge Gray (with a golden screen for media keys);
+//	- Hauppauge Black;
+//	- DSR-0112 remote bundled with Haupauge MiniStick.
+//
+// Copyright (c) 2010-2011 by Mauro Carvalho Chehab
 
 #include <media/rc-map.h>
 #include <linux/module.h>
@@ -269,10 +264,10 @@ static struct rc_map_table rc5_hauppauge_new[] = {
 
 static struct rc_map_list rc5_hauppauge_new_map = {
 	.map = {
-		.scan    = rc5_hauppauge_new,
-		.size    = ARRAY_SIZE(rc5_hauppauge_new),
-		.rc_type = RC_TYPE_RC5,
-		.name    = RC_MAP_HAUPPAUGE,
+		.scan     = rc5_hauppauge_new,
+		.size     = ARRAY_SIZE(rc5_hauppauge_new),
+		.rc_proto = RC_PROTO_RC5,
+		.name     = RC_MAP_HAUPPAUGE,
 	}
 };
 
@@ -290,4 +285,4 @@ module_init(init_rc_map_rc5_hauppauge_new)
 module_exit(exit_rc_map_rc5_hauppauge_new)
 
 MODULE_LICENSE("GPL");
-MODULE_AUTHOR("Mauro Carvalho Chehab <mchehab@redhat.com>");
+MODULE_AUTHOR("Mauro Carvalho Chehab");

@@ -11,6 +11,7 @@
  * as published by the Free Software Foundation; either version
  * 2 of the License, or (at your option) any later version.
  */
+#include <linux/cpu.h>
 #include <linux/export.h>
 #include <linux/init.h>
 #include <linux/irqflags.h>
@@ -32,21 +33,21 @@
 void (*cpu_wait)(void);
 EXPORT_SYMBOL(cpu_wait);
 
-static void r3081_wait(void)
+static void __cpuidle r3081_wait(void)
 {
 	unsigned long cfg = read_c0_conf();
 	write_c0_conf(cfg | R30XX_CONF_HALT);
 	local_irq_enable();
 }
 
-static void r39xx_wait(void)
+static void __cpuidle r39xx_wait(void)
 {
 	if (!need_resched())
 		write_c0_conf(read_c0_conf() | TX39_CONF_HALT);
 	local_irq_enable();
 }
 
-void r4k_wait(void)
+void __cpuidle r4k_wait(void)
 {
 	local_irq_enable();
 	__r4k_wait();
@@ -59,30 +60,27 @@ void r4k_wait(void)
  * interrupt is requested" restriction in the MIPS32/MIPS64 architecture makes
  * using this version a gamble.
  */
-void r4k_wait_irqoff(void)
+void __cpuidle r4k_wait_irqoff(void)
 {
 	if (!need_resched())
 		__asm__(
 		"	.set	push		\n"
-		"	.set	mips3		\n"
+		"	.set	arch=r4000	\n"
 		"	wait			\n"
 		"	.set	pop		\n");
 	local_irq_enable();
-	__asm__(
-	"	.globl __pastwait	\n"
-	"__pastwait:			\n");
 }
 
 /*
  * The RM7000 variant has to handle erratum 38.	 The workaround is to not
  * have any pending stores when the WAIT instruction is executed.
  */
-static void rm7k_wait_irqoff(void)
+static void __cpuidle rm7k_wait_irqoff(void)
 {
 	if (!need_resched())
 		__asm__(
 		"	.set	push					\n"
-		"	.set	mips3					\n"
+		"	.set	arch=r4000				\n"
 		"	.set	noat					\n"
 		"	mfc0	$1, $12					\n"
 		"	sync						\n"
@@ -98,12 +96,13 @@ static void rm7k_wait_irqoff(void)
  * since coreclock (and the cp0 counter) stops upon executing it. Only an
  * interrupt can wake it, so they must be enabled before entering idle modes.
  */
-static void au1k_wait(void)
+static void __cpuidle au1k_wait(void)
 {
 	unsigned long c0status = read_c0_status() | 1;	/* irqs on */
 
 	__asm__(
-	"	.set	mips3			\n"
+	"	.set	push			\n"
+	"	.set	arch=r4000		\n"
 	"	cache	0x14, 0(%0)		\n"
 	"	cache	0x14, 32(%0)		\n"
 	"	sync				\n"
@@ -113,7 +112,7 @@ static void au1k_wait(void)
 	"	nop				\n"
 	"	nop				\n"
 	"	nop				\n"
-	"	.set	mips0			\n"
+	"	.set	pop			\n"
 	: : "r" (au1k_wait), "r" (c0status));
 }
 
@@ -134,6 +133,16 @@ void __init check_wait(void)
 
 	if (nowait) {
 		printk("Wait instruction disabled.\n");
+		return;
+	}
+
+	/*
+	 * MIPSr6 specifies that masked interrupts should unblock an executing
+	 * wait instruction, and thus that it is safe for us to use
+	 * r4k_wait_irqoff. Yippee!
+	 */
+	if (cpu_has_mips_r6) {
+		cpu_wait = r4k_wait_irqoff;
 		return;
 	}
 
@@ -158,12 +167,12 @@ void __init check_wait(void)
 	case CPU_4KEC:
 	case CPU_4KSC:
 	case CPU_5KC:
+	case CPU_5KE:
 	case CPU_25KF:
 	case CPU_PR4450:
 	case CPU_BMIPS3300:
 	case CPU_BMIPS4350:
 	case CPU_BMIPS4380:
-	case CPU_BMIPS5000:
 	case CPU_CAVIUM_OCTEON:
 	case CPU_CAVIUM_OCTEON_PLUS:
 	case CPU_CAVIUM_OCTEON2:
@@ -174,18 +183,38 @@ void __init check_wait(void)
 	case CPU_XLP:
 		cpu_wait = r4k_wait;
 		break;
+	case CPU_LOONGSON3:
+		if ((c->processor_id & PRID_REV_MASK) >= PRID_REV_LOONGSON3A_R2_0)
+			cpu_wait = r4k_wait;
+		break;
 
+	case CPU_BMIPS5000:
+		cpu_wait = r4k_wait_irqoff;
+		break;
 	case CPU_RM7000:
 		cpu_wait = rm7k_wait_irqoff;
 		break;
 
+	case CPU_PROAPTIV:
+	case CPU_P5600:
+		/*
+		 * Incoming Fast Debug Channel (FDC) data during a wait
+		 * instruction causes the wait never to resume, even if an
+		 * interrupt is received. Avoid using wait at all if FDC data is
+		 * likely to be received.
+		 */
+		if (IS_ENABLED(CONFIG_MIPS_EJTAG_FDC_TTY))
+			break;
+		/* fall through */
 	case CPU_M14KC:
 	case CPU_M14KEC:
 	case CPU_24K:
 	case CPU_34K:
 	case CPU_1004K:
+	case CPU_1074K:
 	case CPU_INTERAPTIV:
-	case CPU_PROAPTIV:
+	case CPU_M5150:
+	case CPU_QEMU_GENERIC:
 		cpu_wait = r4k_wait;
 		if (read_c0_config7() & MIPS_CONF7_WII)
 			cpu_wait = r4k_wait_irqoff;
@@ -221,29 +250,26 @@ void __init check_wait(void)
 		   cpu_wait = r4k_wait;
 		 */
 		break;
-	case CPU_RM9000:
-		if ((c->processor_id & 0x00ff) >= 0x40)
-			cpu_wait = r4k_wait;
-		break;
 	default:
 		break;
 	}
 }
 
-static void smtc_idle_hook(void)
-{
-#ifdef CONFIG_MIPS_MT_SMTC
-	void smtc_idle_loop_hook(void);
-
-	smtc_idle_loop_hook();
-#endif
-}
-
 void arch_cpu_idle(void)
 {
-	smtc_idle_hook();
 	if (cpu_wait)
 		cpu_wait();
 	else
 		local_irq_enable();
 }
+
+#ifdef CONFIG_CPU_IDLE
+
+int mips_cpuidle_wait_enter(struct cpuidle_device *dev,
+			    struct cpuidle_driver *drv, int index)
+{
+	arch_cpu_idle();
+	return index;
+}
+
+#endif

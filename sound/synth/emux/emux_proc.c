@@ -24,8 +24,6 @@
 #include <sound/info.h>
 #include "emux_voice.h"
 
-#ifdef CONFIG_PROC_FS
-
 static void
 snd_emux_proc_info_read(struct snd_info_entry *entry, 
 			struct snd_info_buffer *buf)
@@ -117,10 +115,6 @@ void snd_emux_proc_init(struct snd_emux *emu, struct snd_card *card, int device)
 	entry->content = SNDRV_INFO_CONTENT_TEXT;
 	entry->private_data = emu;
 	entry->c.text.read = snd_emux_proc_info_read;
-	if (snd_info_register(entry) < 0)
-		snd_info_free_entry(entry);
-	else
-		emu->proc = entry;
 }
 
 void snd_emux_proc_free(struct snd_emux *emu)
@@ -128,5 +122,3 @@ void snd_emux_proc_free(struct snd_emux *emu)
 	snd_info_free_entry(emu->proc);
 	emu->proc = NULL;
 }
-
-#endif /* CONFIG_PROC_FS */

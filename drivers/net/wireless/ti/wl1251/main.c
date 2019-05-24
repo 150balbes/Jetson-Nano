@@ -122,14 +122,15 @@ static int wl1251_fetch_nvs(struct wl1251 *wl)
 		goto out;
 	}
 
-	wl->nvs_len = fw->size;
-	wl->nvs = kmemdup(fw->data, wl->nvs_len, GFP_KERNEL);
+	wl->nvs = kmemdup(fw->data, fw->size, GFP_KERNEL);
 
 	if (!wl->nvs) {
 		wl1251_error("could not allocate memory for the nvs file");
 		ret = -ENOMEM;
 		goto out;
 	}
+
+	wl->nvs_len = fw->size;
 
 	ret = 0;
 
@@ -198,13 +199,6 @@ static int wl1251_chip_wakeup(struct wl1251 *wl)
 
 	if (wl->fw == NULL) {
 		ret = wl1251_fetch_firmware(wl);
-		if (ret < 0)
-			goto out;
-	}
-
-	if (wl->nvs == NULL && !wl->use_eeprom) {
-		/* No NVS from netlink, try to get it from the filesystem */
-		ret = wl1251_fetch_nvs(wl);
 		if (ret < 0)
 			goto out;
 	}
@@ -448,7 +442,11 @@ static void wl1251_op_stop(struct ieee80211_hw *hw)
 	WARN_ON(wl->state != WL1251_STATE_ON);
 
 	if (wl->scanning) {
-		ieee80211_scan_completed(wl->hw, true);
+		struct cfg80211_scan_info info = {
+			.aborted = true,
+		};
+
+		ieee80211_scan_completed(wl->hw, &info);
 		wl->scanning = false;
 	}
 
@@ -468,7 +466,7 @@ static void wl1251_op_stop(struct ieee80211_hw *hw)
 	wl1251_tx_flush(wl);
 	wl1251_power_off(wl);
 
-	memset(wl->bssid, 0, ETH_ALEN);
+	eth_zero_addr(wl->bssid);
 	wl->listen_int = 1;
 	wl->bss_type = MAX_BSS_TYPE;
 
@@ -500,6 +498,7 @@ static int wl1251_op_add_interface(struct ieee80211_hw *hw,
 	int ret = 0;
 
 	vif->driver_flags |= IEEE80211_VIF_BEACON_FILTER |
+			     IEEE80211_VIF_SUPPORTS_UAPSD |
 			     IEEE80211_VIF_SUPPORTS_CQM_RSSI;
 
 	wl1251_debug(DEBUG_MAC80211, "mac80211 add interface type %d mac %pM",
@@ -546,8 +545,36 @@ static void wl1251_op_remove_interface(struct ieee80211_hw *hw,
 	mutex_lock(&wl->mutex);
 	wl1251_debug(DEBUG_MAC80211, "mac80211 remove interface");
 	wl->vif = NULL;
-	memset(wl->bssid, 0, ETH_ALEN);
+	eth_zero_addr(wl->bssid);
 	mutex_unlock(&wl->mutex);
+}
+
+static int wl1251_build_null_data(struct wl1251 *wl)
+{
+	struct sk_buff *skb = NULL;
+	int size;
+	void *ptr;
+	int ret = -ENOMEM;
+
+	if (wl->bss_type == BSS_TYPE_IBSS) {
+		size = sizeof(struct wl12xx_null_data_template);
+		ptr = NULL;
+	} else {
+		skb = ieee80211_nullfunc_get(wl->hw, wl->vif, false);
+		if (!skb)
+			goto out;
+		size = skb->len;
+		ptr = skb->data;
+	}
+
+	ret = wl1251_cmd_template_set(wl, CMD_NULL_DATA, ptr, size);
+
+out:
+	dev_kfree_skb(skb);
+	if (ret)
+		wl1251_warning("cmd buld null data failed: %d", ret);
+
+	return ret;
 }
 
 static int wl1251_build_qos_null_data(struct wl1251 *wl)
@@ -687,16 +714,6 @@ static int wl1251_op_config(struct ieee80211_hw *hw, u32 changed)
 		wl->power_level = conf->power_level;
 	}
 
-	/*
-	 * Tell stack that connection is lost because hw encryption isn't
-	 * supported in monitor mode.
-	 * This requires temporary enabling of the hw connection monitor flag
-	 */
-	if ((changed & IEEE80211_CONF_CHANGE_MONITOR) && wl->vif) {
-		wl->hw->flags |= IEEE80211_HW_CONNECTION_MONITOR;
-		ieee80211_connection_loss(wl->vif);
-	}
-
 out_sleep:
 	wl1251_ps_elp_sleep(wl);
 
@@ -744,8 +761,7 @@ static u64 wl1251_op_prepare_multicast(struct ieee80211_hw *hw,
 	return (u64)(unsigned long)fp;
 }
 
-#define WL1251_SUPPORTED_FILTERS (FIF_PROMISC_IN_BSS | \
-				  FIF_ALLMULTI | \
+#define WL1251_SUPPORTED_FILTERS (FIF_ALLMULTI | \
 				  FIF_FCSFAIL | \
 				  FIF_BCN_PRBRESP_PROMISC | \
 				  FIF_CONTROL | \
@@ -776,10 +792,6 @@ static void wl1251_op_configure_filter(struct ieee80211_hw *hw,
 	wl->rx_config = WL1251_DEFAULT_RX_CONFIG;
 	wl->rx_filter = WL1251_DEFAULT_RX_FILTER;
 
-	if (*total & FIF_PROMISC_IN_BSS) {
-		wl->rx_config |= CFG_BSSID_FILTER_EN;
-		wl->rx_config |= CFG_RX_ALL_GOOD;
-	}
 	if (*total & FIF_ALLMULTI)
 		/*
 		 * CFG_MC_FILTER_EN in rx_config needs to be 0 to receive
@@ -806,7 +818,7 @@ static void wl1251_op_configure_filter(struct ieee80211_hw *hw,
 	if (ret < 0)
 		goto out;
 
-	if (*total & FIF_ALLMULTI || *total & FIF_PROMISC_IN_BSS)
+	if (*total & FIF_ALLMULTI)
 		ret = wl1251_acx_group_address_tbl(wl, false, NULL, 0);
 	else if (fp)
 		ret = wl1251_acx_group_address_tbl(wl, fp->enabled,
@@ -973,8 +985,9 @@ out:
 
 static int wl1251_op_hw_scan(struct ieee80211_hw *hw,
 			     struct ieee80211_vif *vif,
-			     struct cfg80211_scan_request *req)
+			     struct ieee80211_scan_request *hw_req)
 {
+	struct cfg80211_scan_request *req = &hw_req->req;
 	struct wl1251 *wl = hw->priv;
 	struct sk_buff *skb;
 	size_t ssid_len = 0;
@@ -1010,14 +1023,14 @@ static int wl1251_op_hw_scan(struct ieee80211_hw *hw,
 			goto out_sleep;
 	}
 
-	skb = ieee80211_probereq_get(wl->hw, wl->vif, ssid, ssid_len,
+	skb = ieee80211_probereq_get(wl->hw, wl->vif->addr, ssid, ssid_len,
 				     req->ie_len);
 	if (!skb) {
 		ret = -ENOMEM;
 		goto out_idle;
 	}
 	if (req->ie_len)
-		memcpy(skb_put(skb, req->ie_len), req->ie, req->ie_len);
+		skb_put_data(skb, req->ie, req->ie_len);
 
 	ret = wl1251_cmd_template_set(wl, CMD_PROBE_REQ, skb->data,
 				      skb->len);
@@ -1103,24 +1116,19 @@ static void wl1251_op_bss_info_changed(struct ieee80211_hw *hw,
 		wl->rssi_thold = bss_conf->cqm_rssi_thold;
 	}
 
-	if (changed & BSS_CHANGED_BSSID) {
+	if ((changed & BSS_CHANGED_BSSID) &&
+	    memcmp(wl->bssid, bss_conf->bssid, ETH_ALEN)) {
 		memcpy(wl->bssid, bss_conf->bssid, ETH_ALEN);
 
-		skb = ieee80211_nullfunc_get(wl->hw, wl->vif);
-		if (!skb)
-			goto out_sleep;
+		if (!is_zero_ether_addr(wl->bssid)) {
+			ret = wl1251_build_null_data(wl);
+			if (ret < 0)
+				goto out_sleep;
 
-		ret = wl1251_cmd_template_set(wl, CMD_NULL_DATA,
-					      skb->data, skb->len);
-		dev_kfree_skb(skb);
-		if (ret < 0)
-			goto out_sleep;
+			ret = wl1251_build_qos_null_data(wl);
+			if (ret < 0)
+				goto out_sleep;
 
-		ret = wl1251_build_qos_null_data(wl);
-		if (ret < 0)
-			goto out;
-
-		if (wl->bss_type != BSS_TYPE_IBSS) {
 			ret = wl1251_join(wl, wl->bss_type, wl->channel,
 					  wl->beacon_int, wl->dtim_period);
 			if (ret < 0)
@@ -1129,9 +1137,6 @@ static void wl1251_op_bss_info_changed(struct ieee80211_hw *hw,
 	}
 
 	if (changed & BSS_CHANGED_ASSOC) {
-		/* Disable temporary enabled hw connection monitor flag */
-		wl->hw->flags &= ~IEEE80211_HW_CONNECTION_MONITOR;
-
 		if (bss_conf->assoc) {
 			wl->beacon_int = bss_conf->beacon_int;
 
@@ -1189,8 +1194,7 @@ static void wl1251_op_bss_info_changed(struct ieee80211_hw *hw,
 		WARN_ON(wl->bss_type != BSS_TYPE_STA_BSS);
 
 		enable = bss_conf->arp_addr_cnt == 1 && bss_conf->assoc;
-		wl1251_acx_arp_ip_filter(wl, enable, addr);
-
+		ret = wl1251_acx_arp_ip_filter(wl, enable, addr);
 		if (ret < 0)
 			goto out_sleep;
 	}
@@ -1216,8 +1220,8 @@ static void wl1251_op_bss_info_changed(struct ieee80211_hw *hw,
 		if (ret < 0)
 			goto out_sleep;
 
-		ret = wl1251_join(wl, wl->bss_type, wl->beacon_int,
-				  wl->channel, wl->dtim_period);
+		ret = wl1251_join(wl, wl->bss_type, wl->channel,
+				  wl->beacon_int, wl->dtim_period);
 
 		if (ret < 0)
 			goto out_sleep;
@@ -1436,6 +1440,61 @@ static int wl1251_read_eeprom_mac(struct wl1251 *wl)
 	return 0;
 }
 
+#define NVS_OFF_MAC_LEN 0x19
+#define NVS_OFF_MAC_ADDR_LO 0x1a
+#define NVS_OFF_MAC_ADDR_HI 0x1b
+#define NVS_OFF_MAC_DATA 0x1c
+
+static int wl1251_check_nvs_mac(struct wl1251 *wl)
+{
+	if (wl->nvs_len < 0x24)
+		return -ENODATA;
+
+	/* length is 2 and data address is 0x546c (ANDed with 0xfffe) */
+	if (wl->nvs[NVS_OFF_MAC_LEN] != 2 ||
+	    wl->nvs[NVS_OFF_MAC_ADDR_LO] != 0x6d ||
+	    wl->nvs[NVS_OFF_MAC_ADDR_HI] != 0x54)
+		return -EINVAL;
+
+	return 0;
+}
+
+static int wl1251_read_nvs_mac(struct wl1251 *wl)
+{
+	u8 mac[ETH_ALEN];
+	int i, ret;
+
+	ret = wl1251_check_nvs_mac(wl);
+	if (ret)
+		return ret;
+
+	/* MAC is stored in reverse order */
+	for (i = 0; i < ETH_ALEN; i++)
+		mac[i] = wl->nvs[NVS_OFF_MAC_DATA + ETH_ALEN - i - 1];
+
+	/* 00:00:20:07:03:09 is in example file wl1251-nvs.bin, so invalid */
+	if (ether_addr_equal_unaligned(mac, "\x00\x00\x20\x07\x03\x09"))
+		return -EINVAL;
+
+	memcpy(wl->mac_addr, mac, ETH_ALEN);
+	return 0;
+}
+
+static int wl1251_write_nvs_mac(struct wl1251 *wl)
+{
+	int i, ret;
+
+	ret = wl1251_check_nvs_mac(wl);
+	if (ret)
+		return ret;
+
+	/* MAC is stored in reverse order */
+	for (i = 0; i < ETH_ALEN; i++)
+		wl->nvs[NVS_OFF_MAC_DATA + i] = wl->mac_addr[ETH_ALEN - i - 1];
+
+	return 0;
+}
+
 static int wl1251_register_hw(struct wl1251 *wl)
 {
 	int ret;
@@ -1469,19 +1528,43 @@ int wl1251_init_ieee80211(struct wl1251 *wl)
 	/* unit us */
 	/* FIXME: find a proper value */
 
-	wl->hw->flags = IEEE80211_HW_SIGNAL_DBM |
-		IEEE80211_HW_SUPPORTS_PS |
-		IEEE80211_HW_SUPPORTS_UAPSD;
+	ieee80211_hw_set(wl->hw, SIGNAL_DBM);
+	ieee80211_hw_set(wl->hw, SUPPORTS_PS);
 
 	wl->hw->wiphy->interface_modes = BIT(NL80211_IFTYPE_STATION) |
 					 BIT(NL80211_IFTYPE_ADHOC);
 	wl->hw->wiphy->max_scan_ssids = 1;
-	wl->hw->wiphy->bands[IEEE80211_BAND_2GHZ] = &wl1251_band_2ghz;
+	wl->hw->wiphy->bands[NL80211_BAND_2GHZ] = &wl1251_band_2ghz;
 
 	wl->hw->queues = 4;
 
+	if (wl->nvs == NULL && !wl->use_eeprom) {
+		ret = wl1251_fetch_nvs(wl);
+		if (ret < 0)
+			goto out;
+	}
+
 	if (wl->use_eeprom)
-		wl1251_read_eeprom_mac(wl);
+		ret = wl1251_read_eeprom_mac(wl);
+	else
+		ret = wl1251_read_nvs_mac(wl);
+
+	if (ret == 0 && !is_valid_ether_addr(wl->mac_addr))
+		ret = -EINVAL;
+
+	if (ret < 0) {
+		/*
+		 * In case our MAC address is not correctly set,
+		 * we use a random but Nokia MAC.
+		 */
+		static const u8 nokia_oui[3] = {0x00, 0x1f, 0xdf};
+		memcpy(wl->mac_addr, nokia_oui, 3);
+		get_random_bytes(wl->mac_addr + 3, 3);
+		if (!wl->use_eeprom)
+			wl1251_write_nvs_mac(wl);
+		wl1251_warning("MAC address in eeprom or nvs data is not valid");
+		wl1251_warning("Setting random MAC address: %pM", wl->mac_addr);
+	}
 
 	ret = wl1251_register_hw(wl);
 	if (ret)
@@ -1502,7 +1585,6 @@ struct ieee80211_hw *wl1251_alloc_hw(void)
 	struct ieee80211_hw *hw;
 	struct wl1251 *wl;
 	int i;
-	static const u8 nokia_oui[3] = {0x00, 0x1f, 0xdf};
 
 	hw = ieee80211_alloc_hw(sizeof(*wl), &wl1251_ops);
 	if (!hw) {
@@ -1552,15 +1634,9 @@ struct ieee80211_hw *wl1251_alloc_hw(void)
 	INIT_WORK(&wl->irq_work, wl1251_irq_work);
 	INIT_WORK(&wl->tx_work, wl1251_tx_work);
 
-	/*
-	 * In case our MAC address is not correctly set,
-	 * we use a random but Nokia MAC.
-	 */
-	memcpy(wl->mac_addr, nokia_oui, 3);
-	get_random_bytes(wl->mac_addr + 3, 3);
-
 	wl->state = WL1251_STATE_OFF;
 	mutex_init(&wl->mutex);
+	spin_lock_init(&wl->wl_lock);
 
 	wl->tx_mgmt_frm_rate = DEFAULT_HW_GEN_TX_RATE;
 	wl->tx_mgmt_frm_mod = DEFAULT_HW_GEN_MODULATION_TYPE;
@@ -1598,7 +1674,7 @@ int wl1251_free_hw(struct wl1251 *wl)
 }
 EXPORT_SYMBOL_GPL(wl1251_free_hw);
 
-MODULE_DESCRIPTION("TI wl1251 Wireles LAN Driver Core");
+MODULE_DESCRIPTION("TI wl1251 Wireless LAN Driver Core");
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Kalle Valo <kvalo@adurom.com>");
 MODULE_FIRMWARE(WL1251_FW_NAME);

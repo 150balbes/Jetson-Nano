@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0+
 /*
  * altera_jtaguart.c -- Altera JTAG UART driver
  *
@@ -6,11 +7,6 @@
  * (C) Copyright 2003-2007, Greg Ungerer <gerg@snapgear.com>
  * (C) Copyright 2008, Thomas Chou <thomas@wytron.com.tw>
  * (C) Copyright 2010, Tobias Klauser <tklauser@distanz.ch>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
  */
 
 #include <linux/kernel.h>
@@ -106,10 +102,6 @@ static void altera_jtaguart_stop_rx(struct uart_port *port)
 }
 
 static void altera_jtaguart_break_ctl(struct uart_port *port, int break_state)
-{
-}
-
-static void altera_jtaguart_enable_ms(struct uart_port *port)
 {
 }
 
@@ -284,14 +276,13 @@ static int altera_jtaguart_verify_port(struct uart_port *port,
 /*
  *	Define the basic serial functions we support.
  */
-static struct uart_ops altera_jtaguart_ops = {
+static const struct uart_ops altera_jtaguart_ops = {
 	.tx_empty	= altera_jtaguart_tx_empty,
 	.get_mctrl	= altera_jtaguart_get_mctrl,
 	.set_mctrl	= altera_jtaguart_set_mctrl,
 	.start_tx	= altera_jtaguart_start_tx,
 	.stop_tx	= altera_jtaguart_stop_tx,
 	.stop_rx	= altera_jtaguart_stop_rx,
-	.enable_ms	= altera_jtaguart_enable_ms,
 	.break_ctl	= altera_jtaguart_break_ctl,
 	.startup	= altera_jtaguart_startup,
 	.shutdown	= altera_jtaguart_shutdown,
@@ -309,9 +300,8 @@ static struct altera_jtaguart altera_jtaguart_ports[ALTERA_JTAGUART_MAXPORTS];
 #if defined(CONFIG_SERIAL_ALTERA_JTAGUART_CONSOLE)
 
 #if defined(CONFIG_SERIAL_ALTERA_JTAGUART_CONSOLE_BYPASS)
-static void altera_jtaguart_console_putc(struct console *co, const char c)
+static void altera_jtaguart_console_putc(struct uart_port *port, int c)
 {
-	struct uart_port *port = &(altera_jtaguart_ports + co->index)->port;
 	unsigned long status;
 	unsigned long flags;
 
@@ -330,9 +320,8 @@ static void altera_jtaguart_console_putc(struct console *co, const char c)
 	spin_unlock_irqrestore(&port->lock, flags);
 }
 #else
-static void altera_jtaguart_console_putc(struct console *co, const char c)
+static void altera_jtaguart_console_putc(struct uart_port *port, int c)
 {
-	struct uart_port *port = &(altera_jtaguart_ports + co->index)->port;
 	unsigned long flags;
 
 	spin_lock_irqsave(&port->lock, flags);
@@ -350,11 +339,9 @@ static void altera_jtaguart_console_putc(struct console *co, const char c)
 static void altera_jtaguart_console_write(struct console *co, const char *s,
 					  unsigned int count)
 {
-	for (; count; count--, s++) {
-		altera_jtaguart_console_putc(co, *s);
-		if (*s == '\n')
-			altera_jtaguart_console_putc(co, '\r');
-	}
+	struct uart_port *port = &(altera_jtaguart_ports + co->index)->port;
+
+	uart_console_write(port, s, count, altera_jtaguart_console_putc);
 }
 
 static int __init altera_jtaguart_console_setup(struct console *co,
@@ -392,11 +379,31 @@ console_initcall(altera_jtaguart_console_init);
 
 #define	ALTERA_JTAGUART_CONSOLE	(&altera_jtaguart_console)
 
+static void altera_jtaguart_earlycon_write(struct console *co, const char *s,
+					   unsigned int count)
+{
+	struct earlycon_device *dev = co->data;
+
+	uart_console_write(&dev->port, s, count, altera_jtaguart_console_putc);
+}
+
+static int __init altera_jtaguart_earlycon_setup(struct earlycon_device *dev,
+						 const char *options)
+{
+	if (!dev->port.membase)
+		return -ENODEV;
+
+	dev->con->write = altera_jtaguart_earlycon_write;
+	return 0;
+}
+
+OF_EARLYCON_DECLARE(juart, "altr,juart-1.0", altera_jtaguart_earlycon_setup);
+
 #else
 
 #define	ALTERA_JTAGUART_CONSOLE	NULL
 
-#endif /* CONFIG_ALTERA_JTAGUART_CONSOLE */
+#endif /* CONFIG_SERIAL_ALTERA_JTAGUART_CONSOLE */
 
 static struct uart_driver altera_jtaguart_driver = {
 	.owner		= THIS_MODULE,
@@ -450,6 +457,7 @@ static int altera_jtaguart_probe(struct platform_device *pdev)
 	port->iotype = SERIAL_IO_MEM;
 	port->ops = &altera_jtaguart_ops;
 	port->flags = UPF_BOOT_AUTOCONF;
+	port->dev = &pdev->dev;
 
 	uart_add_one_port(&altera_jtaguart_driver, port);
 
@@ -466,12 +474,13 @@ static int altera_jtaguart_remove(struct platform_device *pdev)
 
 	port = &altera_jtaguart_ports[i].port;
 	uart_remove_one_port(&altera_jtaguart_driver, port);
+	iounmap(port->membase);
 
 	return 0;
 }
 
 #ifdef CONFIG_OF
-static struct of_device_id altera_jtaguart_match[] = {
+static const struct of_device_id altera_jtaguart_match[] = {
 	{ .compatible = "ALTR,juart-1.0", },
 	{ .compatible = "altr,juart-1.0", },
 	{},
@@ -484,7 +493,6 @@ static struct platform_driver altera_jtaguart_platform_driver = {
 	.remove	= altera_jtaguart_remove,
 	.driver	= {
 		.name		= DRV_NAME,
-		.owner		= THIS_MODULE,
 		.of_match_table	= of_match_ptr(altera_jtaguart_match),
 	},
 };

@@ -9,10 +9,11 @@
  * Authors:	Thomas Graf <tgraf@suug.ch>
  */
 
-#include <linux/module.h>
 #include <linux/slab.h>
 #include <linux/cgroup.h>
 #include <linux/fdtable.h>
+#include <linux/sched/task.h>
+
 #include <net/cls_cgroup.h>
 #include <net/sock.h>
 
@@ -23,7 +24,8 @@ static inline struct cgroup_cls_state *css_cls_state(struct cgroup_subsys_state 
 
 struct cgroup_cls_state *task_cls_state(struct task_struct *p)
 {
-	return css_cls_state(task_css(p, net_cls_subsys_id));
+	return css_cls_state(task_css_check(p, net_cls_cgrp_id,
+					    rcu_read_lock_bh_held()));
 }
 EXPORT_SYMBOL_GPL(task_cls_state);
 
@@ -42,7 +44,7 @@ cgrp_css_alloc(struct cgroup_subsys_state *parent_css)
 static int cgrp_css_online(struct cgroup_subsys_state *css)
 {
 	struct cgroup_cls_state *cs = css_cls_state(css);
-	struct cgroup_cls_state *parent = css_cls_state(css_parent(css));
+	struct cgroup_cls_state *parent = css_cls_state(css->parent);
 
 	if (parent)
 		cs->classid = parent->classid;
@@ -55,27 +57,29 @@ static void cgrp_css_free(struct cgroup_subsys_state *css)
 	kfree(css_cls_state(css));
 }
 
-static int update_classid(const void *v, struct file *file, unsigned n)
+static int update_classid_sock(const void *v, struct file *file, unsigned n)
 {
 	int err;
 	struct socket *sock = sock_from_file(file, &err);
 
-	if (sock)
-		sock->sk->sk_classid = (u32)(unsigned long)v;
-
+	if (sock) {
+		spin_lock(&cgroup_sk_update_lock);
+		sock_cgroup_set_classid(&sock->sk->sk_cgrp_data,
+					(unsigned long)v);
+		spin_unlock(&cgroup_sk_update_lock);
+	}
 	return 0;
 }
 
-static void cgrp_attach(struct cgroup_subsys_state *css,
-			struct cgroup_taskset *tset)
+static void cgrp_attach(struct cgroup_taskset *tset)
 {
-	struct cgroup_cls_state *cs = css_cls_state(css);
-	void *v = (void *)(unsigned long)cs->classid;
+	struct cgroup_subsys_state *css;
 	struct task_struct *p;
 
 	cgroup_taskset_for_each(p, css, tset) {
 		task_lock(p);
-		iterate_fd(p->files, 0, update_classid, v);
+		iterate_fd(p->files, 0, update_classid_sock,
+			   (void *)(unsigned long)css_cls_state(css)->classid);
 		task_unlock(p);
 	}
 }
@@ -88,7 +92,23 @@ static u64 read_classid(struct cgroup_subsys_state *css, struct cftype *cft)
 static int write_classid(struct cgroup_subsys_state *css, struct cftype *cft,
 			 u64 value)
 {
-	css_cls_state(css)->classid = (u32) value;
+	struct cgroup_cls_state *cs = css_cls_state(css);
+	struct css_task_iter it;
+	struct task_struct *p;
+
+	cgroup_sk_alloc_disable();
+
+	cs->classid = (u32)value;
+
+	css_task_iter_start(css, 0, &it);
+	while ((p = css_task_iter_next(&it))) {
+		task_lock(p);
+		iterate_fd(p->files, 0, update_classid_sock,
+			   (void *)(unsigned long)cs->classid);
+		task_unlock(p);
+		cond_resched();
+	}
+	css_task_iter_end(&it);
 
 	return 0;
 }
@@ -102,19 +122,10 @@ static struct cftype ss_files[] = {
 	{ }	/* terminate */
 };
 
-struct cgroup_subsys net_cls_subsys = {
-	.name			= "net_cls",
+struct cgroup_subsys net_cls_cgrp_subsys = {
 	.css_alloc		= cgrp_css_alloc,
 	.css_online		= cgrp_css_online,
 	.css_free		= cgrp_css_free,
 	.attach			= cgrp_attach,
-	.subsys_id		= net_cls_subsys_id,
-	.base_cftypes		= ss_files,
-	.module			= THIS_MODULE,
+	.legacy_cftypes		= ss_files,
 };
-
-static int __init init_netclassid_cgroup(void)
-{
-	return cgroup_load_subsys(&net_cls_subsys);
-}
-__initcall(init_netclassid_cgroup);

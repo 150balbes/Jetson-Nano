@@ -1,33 +1,14 @@
+// SPDX-License-Identifier: GPL-2.0
 #include <stdbool.h>
 #include <errno.h>
 
+#include <linux/stddef.h>
 #include <linux/perf_event.h>
 
 #include "../../perf.h"
-#include "../../util/types.h"
+#include <linux/types.h>
 #include "../../util/debug.h"
-#include "tsc.h"
-
-u64 perf_time_to_tsc(u64 ns, struct perf_tsc_conversion *tc)
-{
-	u64 t, quot, rem;
-
-	t = ns - tc->time_zero;
-	quot = t / tc->time_mult;
-	rem  = t % tc->time_mult;
-	return (quot << tc->time_shift) +
-	       (rem << tc->time_shift) / tc->time_mult;
-}
-
-u64 tsc_to_perf_time(u64 cyc, struct perf_tsc_conversion *tc)
-{
-	u64 quot, rem;
-
-	quot = cyc >> tc->time_shift;
-	rem  = cyc & ((1 << tc->time_shift) - 1);
-	return tc->time_zero + quot * tc->time_mult +
-	       ((rem * tc->time_mult) >> tc->time_shift);
-}
+#include "../../util/tsc.h"
 
 int perf_read_tsc_conversion(const struct perf_event_mmap_page *pc,
 			     struct perf_tsc_conversion *tc)
@@ -56,4 +37,46 @@ int perf_read_tsc_conversion(const struct perf_event_mmap_page *pc,
 		return -EOPNOTSUPP;
 
 	return 0;
+}
+
+u64 rdtsc(void)
+{
+	unsigned int low, high;
+
+	asm volatile("rdtsc" : "=a" (low), "=d" (high));
+
+	return low | ((u64)high) << 32;
+}
+
+int perf_event__synth_time_conv(const struct perf_event_mmap_page *pc,
+				struct perf_tool *tool,
+				perf_event__handler_t process,
+				struct machine *machine)
+{
+	union perf_event event = {
+		.time_conv = {
+			.header = {
+				.type = PERF_RECORD_TIME_CONV,
+				.size = sizeof(struct time_conv_event),
+			},
+		},
+	};
+	struct perf_tsc_conversion tc;
+	int err;
+
+	if (!pc)
+		return 0;
+	err = perf_read_tsc_conversion(pc, &tc);
+	if (err == -EOPNOTSUPP)
+		return 0;
+	if (err)
+		return err;
+
+	pr_debug2("Synthesizing TSC conversion information\n");
+
+	event.time_conv.time_mult  = tc.time_mult;
+	event.time_conv.time_shift = tc.time_shift;
+	event.time_conv.time_zero  = tc.time_zero;
+
+	return process(tool, &event, NULL, machine);
 }

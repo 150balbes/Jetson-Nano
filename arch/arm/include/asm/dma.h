@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __ASM_ARM_DMA_H
 #define __ASM_ARM_DMA_H
 
@@ -19,7 +20,7 @@
  * It should not be re-used except for that purpose.
  */
 #include <linux/spinlock.h>
-#include <asm/scatterlist.h>
+#include <linux/scatterlist.h>
 
 #include <mach/isa-dma.h>
 

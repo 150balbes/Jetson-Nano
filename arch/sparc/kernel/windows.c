@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 /* windows.c: Routines to deal with register window management
  *            at the C-code level.
  *
@@ -10,7 +11,10 @@
 #include <linux/mm.h>
 #include <linux/smp.h>
 
-#include <asm/uaccess.h>
+#include <asm/cacheflush.h>
+#include <linux/uaccess.h>
+
+#include "kernel.h"
 
 /* Do save's until all user register windows are out of the cpu. */
 void flush_user_windows(void)

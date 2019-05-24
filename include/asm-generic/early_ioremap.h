@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _ASM_EARLY_IOREMAP_H_
 #define _ASM_EARLY_IOREMAP_H_
 
@@ -11,6 +12,10 @@ extern void __iomem *early_ioremap(resource_size_t phys_addr,
 				   unsigned long size);
 extern void *early_memremap(resource_size_t phys_addr,
 			    unsigned long size);
+extern void *early_memremap_ro(resource_size_t phys_addr,
+			       unsigned long size);
+extern void *early_memremap_prot(resource_size_t phys_addr,
+				 unsigned long size, unsigned long prot_val);
 extern void early_iounmap(void __iomem *addr, unsigned long size);
 extern void early_memunmap(void *addr, unsigned long size);
 
@@ -32,6 +37,12 @@ extern void early_ioremap_setup(void);
  * accordingly for subsequent map/unmap requests.
  */
 extern void early_ioremap_reset(void);
+
+/*
+ * Early copy from unmapped memory to kernel mapped memory.
+ */
+extern void copy_from_early_mem(void *dest, phys_addr_t src,
+				unsigned long size);
 
 #else
 static inline void early_ioremap_init(void) { }

@@ -79,7 +79,7 @@ static int x25_queue_rx_frame(struct sock *sk, struct sk_buff *skb, int more)
 	skb_set_owner_r(skbn, sk);
 	skb_queue_tail(&sk->sk_receive_queue, skbn);
 	if (!sock_flag(sk, SOCK_DEAD))
-		sk->sk_data_ready(sk, skbn->len);
+		sk->sk_data_ready(sk);
 
 	return 0;
 }
@@ -142,6 +142,15 @@ static int x25_state1_machine(struct sock *sk, struct sk_buff *skb, int frametyp
 			sk->sk_state_change(sk);
 		break;
 	}
+	case X25_CALL_REQUEST:
+		/* call collision */
+		x25->causediag.cause      = 0x01;
+		x25->causediag.diagnostic = 0x48;
+
+		x25_write_internal(sk, X25_CLEAR_REQUEST);
+		x25_disconnect(sk, EISCONN, 0x01, 0x48);
+		break;
+
 	case X25_CLEAR_REQUEST:
 		if (!pskb_may_pull(skb, X25_STD_MIN_LEN + 2))
 			goto out_clear;
@@ -345,6 +354,7 @@ static int x25_state4_machine(struct sock *sk, struct sk_buff *skb, int frametyp
 
 		case X25_RESET_REQUEST:
 			x25_write_internal(sk, X25_RESET_CONFIRMATION);
+			/* fall through */
 		case X25_RESET_CONFIRMATION: {
 			x25_stop_timer(sk);
 			x25->condition = 0x00;

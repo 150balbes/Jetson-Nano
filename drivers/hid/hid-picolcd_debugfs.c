@@ -736,7 +736,7 @@ void picolcd_debug_raw_event(struct picolcd_data *data,
 		}
 		break;
 	case REPORT_MEMORY:
-		/* Data buffer in response to REPORT_READ_MEMORY or REPORT_WRTIE_MEMORY */
+		/* Data buffer in response to REPORT_READ_MEMORY or REPORT_WRITE_MEMORY */
 		snprintf(buff, BUFF_SZ, "report %s (%d, size=%d)\n",
 			"REPORT_MEMORY", report->id, size-1);
 		hid_debug_event(hdev, buff);
@@ -883,16 +883,13 @@ void picolcd_exit_devfs(struct picolcd_data *data)
 
 	dent = data->debug_reset;
 	data->debug_reset = NULL;
-	if (dent)
-		debugfs_remove(dent);
+	debugfs_remove(dent);
 	dent = data->debug_eeprom;
 	data->debug_eeprom = NULL;
-	if (dent)
-		debugfs_remove(dent);
+	debugfs_remove(dent);
 	dent = data->debug_flash;
 	data->debug_flash = NULL;
-	if (dent)
-		debugfs_remove(dent);
+	debugfs_remove(dent);
 	mutex_destroy(&data->mutex_flash);
 }
 

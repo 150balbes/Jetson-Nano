@@ -28,8 +28,10 @@
 #include <linux/spinlock.h>
 #include <net/protocol.h>
 
-const struct net_protocol __rcu *inet_protos[MAX_INET_PROTOS] __read_mostly;
+struct net_protocol __rcu *inet_protos[MAX_INET_PROTOS] __read_mostly;
+EXPORT_SYMBOL(inet_protos);
 const struct net_offload __rcu *inet_offloads[MAX_INET_PROTOS] __read_mostly;
+EXPORT_SYMBOL(inet_offloads);
 
 int inet_add_protocol(const struct net_protocol *prot, unsigned char protocol)
 {

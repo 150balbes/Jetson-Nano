@@ -14,11 +14,9 @@
 #include <linux/err.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
-#include <asm-generic/rtc.h>
+#include <linux/mc146818rtc.h>
 
 #include "internal.h"
-
-#define PREFIX "ACPI: "
 
 ACPI_MODULE_NAME("cmos rtc");
 
@@ -70,7 +68,7 @@ static int acpi_install_cmos_rtc_space_handler(struct acpi_device *adev,
 		return -ENODEV;
 	}
 
-	return 0;
+	return 1;
 }
 
 static void acpi_remove_cmos_rtc_space_handler(struct acpi_device *adev)

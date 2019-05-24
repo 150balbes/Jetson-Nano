@@ -1,28 +1,5 @@
-/*******************************************************************************
- *
- * Intel Ethernet Controller XL710 Family Linux Driver
- * Copyright(c) 2013 - 2014 Intel Corporation.
- *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms and conditions of the GNU General Public License,
- * version 2, as published by the Free Software Foundation.
- *
- * This program is distributed in the hope it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
- * more details.
- *
- * You should have received a copy of the GNU General Public License along
- * with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * The full GNU General Public License is included in this distribution in
- * the file called "COPYING".
- *
- * Contact Information:
- * e1000-devel Mailing List <e1000-devel@lists.sourceforge.net>
- * Intel Corporation, 5200 N.E. Elam Young Parkway, Hillsboro, OR 97124-6497
- *
- ******************************************************************************/
+// SPDX-License-Identifier: GPL-2.0
+/* Copyright(c) 2013 - 2018 Intel Corporation. */
 
 #include "i40e_diag.h"
 #include "i40e_prototype.h"
@@ -36,7 +13,9 @@
 static i40e_status i40e_diag_reg_pattern_test(struct i40e_hw *hw,
 							u32 reg, u32 mask)
 {
-	const u32 patterns[] = {0x5A5A5A5A, 0xA5A5A5A5, 0x00000000, 0xFFFFFFFF};
+	static const u32 patterns[] = {
+		0x5A5A5A5A, 0xA5A5A5A5, 0x00000000, 0xFFFFFFFF
+	};
 	u32 pat, val, orig_val;
 	int i;
 
@@ -67,17 +46,25 @@ static i40e_status i40e_diag_reg_pattern_test(struct i40e_hw *hw,
 
 struct i40e_diag_reg_test_info i40e_reg_list[] = {
 	/* offset               mask         elements   stride */
-	{I40E_QTX_CTL(0),       0x0000FFBF,   4, I40E_QTX_CTL(1) - I40E_QTX_CTL(0)},
-	{I40E_PFINT_ITR0(0),    0x00000FFF,   3, I40E_PFINT_ITR0(1) - I40E_PFINT_ITR0(0)},
-	{I40E_PFINT_ITRN(0, 0), 0x00000FFF,   8, I40E_PFINT_ITRN(0, 1) - I40E_PFINT_ITRN(0, 0)},
-	{I40E_PFINT_ITRN(1, 0), 0x00000FFF,   8, I40E_PFINT_ITRN(1, 1) - I40E_PFINT_ITRN(1, 0)},
-	{I40E_PFINT_ITRN(2, 0), 0x00000FFF,   8, I40E_PFINT_ITRN(2, 1) - I40E_PFINT_ITRN(2, 0)},
-	{I40E_PFINT_STAT_CTL0,  0x0000000C,   1, 0},
-	{I40E_PFINT_LNKLST0,    0x00001FFF,   1, 0},
-	{I40E_PFINT_LNKLSTN(0), 0x000007FF,  64, I40E_PFINT_LNKLSTN(1) - I40E_PFINT_LNKLSTN(0)},
-	{I40E_QINT_TQCTL(0),    0x000000FF,  64, I40E_QINT_TQCTL(1) - I40E_QINT_TQCTL(0)},
-	{I40E_QINT_RQCTL(0),    0x000000FF,  64, I40E_QINT_RQCTL(1) - I40E_QINT_RQCTL(0)},
-	{I40E_PFINT_ICR0_ENA,   0xF7F20000,   1, 0},
+	{I40E_QTX_CTL(0),       0x0000FFBF, 1,
+		I40E_QTX_CTL(1) - I40E_QTX_CTL(0)},
+	{I40E_PFINT_ITR0(0),    0x00000FFF, 3,
+		I40E_PFINT_ITR0(1) - I40E_PFINT_ITR0(0)},
+	{I40E_PFINT_ITRN(0, 0), 0x00000FFF, 1,
+		I40E_PFINT_ITRN(0, 1) - I40E_PFINT_ITRN(0, 0)},
+	{I40E_PFINT_ITRN(1, 0), 0x00000FFF, 1,
+		I40E_PFINT_ITRN(1, 1) - I40E_PFINT_ITRN(1, 0)},
+	{I40E_PFINT_ITRN(2, 0), 0x00000FFF, 1,
+		I40E_PFINT_ITRN(2, 1) - I40E_PFINT_ITRN(2, 0)},
+	{I40E_PFINT_STAT_CTL0,  0x0000000C, 1, 0},
+	{I40E_PFINT_LNKLST0,    0x00001FFF, 1, 0},
+	{I40E_PFINT_LNKLSTN(0), 0x000007FF, 1,
+		I40E_PFINT_LNKLSTN(1) - I40E_PFINT_LNKLSTN(0)},
+	{I40E_QINT_TQCTL(0),    0x000000FF, 1,
+		I40E_QINT_TQCTL(1) - I40E_QINT_TQCTL(0)},
+	{I40E_QINT_RQCTL(0),    0x000000FF, 1,
+		I40E_QINT_RQCTL(1) - I40E_QINT_RQCTL(0)},
+	{I40E_PFINT_ICR0_ENA,   0xF7F20000, 1, 0},
 	{ 0 }
 };
 
@@ -93,9 +80,25 @@ i40e_status i40e_diag_reg_test(struct i40e_hw *hw)
 	u32 reg, mask;
 	u32 i, j;
 
-	for (i = 0; (i40e_reg_list[i].offset != 0) && !ret_code; i++) {
+	for (i = 0; i40e_reg_list[i].offset != 0 &&
+					     !ret_code; i++) {
+
+		/* set actual reg range for dynamically allocated resources */
+		if (i40e_reg_list[i].offset == I40E_QTX_CTL(0) &&
+		    hw->func_caps.num_tx_qp != 0)
+			i40e_reg_list[i].elements = hw->func_caps.num_tx_qp;
+		if ((i40e_reg_list[i].offset == I40E_PFINT_ITRN(0, 0) ||
+		     i40e_reg_list[i].offset == I40E_PFINT_ITRN(1, 0) ||
+		     i40e_reg_list[i].offset == I40E_PFINT_ITRN(2, 0) ||
+		     i40e_reg_list[i].offset == I40E_QINT_TQCTL(0) ||
+		     i40e_reg_list[i].offset == I40E_QINT_RQCTL(0)) &&
+		    hw->func_caps.num_msix_vectors != 0)
+			i40e_reg_list[i].elements =
+				hw->func_caps.num_msix_vectors - 1;
+
+		/* test register access */
 		mask = i40e_reg_list[i].mask;
-		for (j = 0; (j < i40e_reg_list[i].elements) && !ret_code; j++) {
+		for (j = 0; j < i40e_reg_list[i].elements && !ret_code; j++) {
 			reg = i40e_reg_list[i].offset +
 			      (j * i40e_reg_list[i].stride);
 			ret_code = i40e_diag_reg_pattern_test(hw, reg, mask);
@@ -120,11 +123,8 @@ i40e_status i40e_diag_eeprom_test(struct i40e_hw *hw)
 	ret_code = i40e_read_nvm_word(hw, I40E_SR_NVM_CONTROL_WORD, &reg_val);
 	if (!ret_code &&
 	    ((reg_val & I40E_SR_CONTROL_WORD_1_MASK) ==
-	     (0x01 << I40E_SR_CONTROL_WORD_1_SHIFT))) {
-		ret_code = i40e_validate_nvm_checksum(hw, NULL);
-	} else {
-		ret_code = I40E_ERR_DIAG_TEST_FAILED;
-	}
-
-	return ret_code;
+	     BIT(I40E_SR_CONTROL_WORD_1_SHIFT)))
+		return i40e_validate_nvm_checksum(hw, NULL);
+	else
+		return I40E_ERR_DIAG_TEST_FAILED;
 }

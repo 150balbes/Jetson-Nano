@@ -54,7 +54,7 @@
 #if defined(CONFIG_SPI)
 #include <linux/spi/spi.h>
 #endif
-#include <asm/uaccess.h>
+#include <linux/uaccess.h>
 #include <asm/pgtable.h>
 #include <asm/io.h>
 #include <asm/div64.h>
@@ -80,40 +80,14 @@ MODULE_LICENSE("GPL");
 
 /* Helper functions for control handling			     */
 
-/* Check for correctness of the ctrl's value based on the data from
-   struct v4l2_queryctrl and the available menu items. Note that
-   menu_items may be NULL, in that case it is ignored. */
-int v4l2_ctrl_check(struct v4l2_ext_control *ctrl, struct v4l2_queryctrl *qctrl,
-		const char * const *menu_items)
-{
-	if (qctrl->flags & V4L2_CTRL_FLAG_DISABLED)
-		return -EINVAL;
-	if (qctrl->flags & V4L2_CTRL_FLAG_GRABBED)
-		return -EBUSY;
-	if (qctrl->type == V4L2_CTRL_TYPE_STRING)
-		return 0;
-	if (qctrl->type == V4L2_CTRL_TYPE_BUTTON ||
-	    qctrl->type == V4L2_CTRL_TYPE_INTEGER64 ||
-	    qctrl->type == V4L2_CTRL_TYPE_CTRL_CLASS)
-		return 0;
-	if (ctrl->value < qctrl->minimum || ctrl->value > qctrl->maximum)
-		return -ERANGE;
-	if (qctrl->type == V4L2_CTRL_TYPE_MENU && menu_items != NULL) {
-		if (menu_items[ctrl->value] == NULL ||
-		    menu_items[ctrl->value][0] == '\0')
-			return -EINVAL;
-	}
-	if (qctrl->type == V4L2_CTRL_TYPE_BITMASK &&
-			(ctrl->value & ~qctrl->maximum))
-		return -ERANGE;
-	return 0;
-}
-EXPORT_SYMBOL(v4l2_ctrl_check);
-
 /* Fill in a struct v4l2_queryctrl */
-int v4l2_ctrl_query_fill(struct v4l2_queryctrl *qctrl, s32 min, s32 max, s32 step, s32 def)
+int v4l2_ctrl_query_fill(struct v4l2_queryctrl *qctrl, s32 _min, s32 _max, s32 _step, s32 _def)
 {
 	const char *name;
+	s64 min = _min;
+	s64 max = _max;
+	u64 step = _step;
+	s64 def = _def;
 
 	v4l2_ctrl_fill(qctrl->id, &name, &qctrl->type,
 		       &min, &max, &step, &def, &qctrl->flags);
@@ -126,109 +100,27 @@ int v4l2_ctrl_query_fill(struct v4l2_queryctrl *qctrl, s32 min, s32 max, s32 ste
 	qctrl->step = step;
 	qctrl->default_value = def;
 	qctrl->reserved[0] = qctrl->reserved[1] = 0;
-	strlcpy(qctrl->name, name, sizeof(qctrl->name));
+	strscpy(qctrl->name, name, sizeof(qctrl->name));
 	return 0;
 }
 EXPORT_SYMBOL(v4l2_ctrl_query_fill);
 
-/* Fill in a struct v4l2_querymenu based on the struct v4l2_queryctrl and
-   the menu. The qctrl pointer may be NULL, in which case it is ignored.
-   If menu_items is NULL, then the menu items are retrieved using
-   v4l2_ctrl_get_menu. */
-int v4l2_ctrl_query_menu(struct v4l2_querymenu *qmenu, struct v4l2_queryctrl *qctrl,
-	       const char * const *menu_items)
-{
-	int i;
-
-	qmenu->reserved = 0;
-	if (menu_items == NULL)
-		menu_items = v4l2_ctrl_get_menu(qmenu->id);
-	if (menu_items == NULL ||
-	    (qctrl && (qmenu->index < qctrl->minimum || qmenu->index > qctrl->maximum)))
-		return -EINVAL;
-	for (i = 0; i < qmenu->index && menu_items[i]; i++) ;
-	if (menu_items[i] == NULL || menu_items[i][0] == '\0')
-		return -EINVAL;
-	strlcpy(qmenu->name, menu_items[qmenu->index], sizeof(qmenu->name));
-	return 0;
-}
-EXPORT_SYMBOL(v4l2_ctrl_query_menu);
-
-/* Fill in a struct v4l2_querymenu based on the specified array of valid
-   menu items (terminated by V4L2_CTRL_MENU_IDS_END).
-   Use this if there are 'holes' in the list of valid menu items. */
-int v4l2_ctrl_query_menu_valid_items(struct v4l2_querymenu *qmenu, const u32 *ids)
-{
-	const char * const *menu_items = v4l2_ctrl_get_menu(qmenu->id);
-
-	qmenu->reserved = 0;
-	if (menu_items == NULL || ids == NULL)
-		return -EINVAL;
-	while (*ids != V4L2_CTRL_MENU_IDS_END) {
-		if (*ids++ == qmenu->index) {
-			strlcpy(qmenu->name, menu_items[qmenu->index],
-					sizeof(qmenu->name));
-			return 0;
-		}
-	}
-	return -EINVAL;
-}
-EXPORT_SYMBOL(v4l2_ctrl_query_menu_valid_items);
-
-/* ctrl_classes points to an array of u32 pointers, the last element is
-   a NULL pointer. Each u32 array is a 0-terminated array of control IDs.
-   Each array must be sorted low to high and belong to the same control
-   class. The array of u32 pointers must also be sorted, from low class IDs
-   to high class IDs.
-
-   This function returns the first ID that follows after the given ID.
-   When no more controls are available 0 is returned. */
-u32 v4l2_ctrl_next(const u32 * const * ctrl_classes, u32 id)
-{
-	u32 ctrl_class = V4L2_CTRL_ID2CLASS(id);
-	const u32 *pctrl;
-
-	if (ctrl_classes == NULL)
-		return 0;
-
-	/* if no query is desired, then check if the ID is part of ctrl_classes */
-	if ((id & V4L2_CTRL_FLAG_NEXT_CTRL) == 0) {
-		/* find class */
-		while (*ctrl_classes && V4L2_CTRL_ID2CLASS(**ctrl_classes) != ctrl_class)
-			ctrl_classes++;
-		if (*ctrl_classes == NULL)
-			return 0;
-		pctrl = *ctrl_classes;
-		/* find control ID */
-		while (*pctrl && *pctrl != id) pctrl++;
-		return *pctrl ? id : 0;
-	}
-	id &= V4L2_CTRL_ID_MASK;
-	id++;	/* select next control */
-	/* find first class that matches (or is greater than) the class of
-	   the ID */
-	while (*ctrl_classes && V4L2_CTRL_ID2CLASS(**ctrl_classes) < ctrl_class)
-		ctrl_classes++;
-	/* no more classes */
-	if (*ctrl_classes == NULL)
-		return 0;
-	pctrl = *ctrl_classes;
-	/* find first ctrl within the class that is >= ID */
-	while (*pctrl && *pctrl < id) pctrl++;
-	if (*pctrl)
-		return *pctrl;
-	/* we are at the end of the controls of the current class. */
-	/* continue with next class if available */
-	ctrl_classes++;
-	if (*ctrl_classes == NULL)
-		return 0;
-	return **ctrl_classes;
-}
-EXPORT_SYMBOL(v4l2_ctrl_next);
-
 /* I2C Helper functions */
 
 #if IS_ENABLED(CONFIG_I2C)
+
+void v4l2_i2c_subdev_set_name(struct v4l2_subdev *sd, struct i2c_client *client,
+			      const char *devname, const char *postfix)
+{
+	if (!devname)
+		devname = client->dev.driver->name;
+	if (!postfix)
+		postfix = "";
+
+	snprintf(sd->name, sizeof(sd->name), "%s%s %d-%04x", devname, postfix,
+		 i2c_adapter_id(client->adapter), client->addr);
+}
+EXPORT_SYMBOL_GPL(v4l2_i2c_subdev_set_name);
 
 void v4l2_i2c_subdev_init(struct v4l2_subdev *sd, struct i2c_client *client,
 		const struct v4l2_subdev_ops *ops)
@@ -241,10 +133,7 @@ void v4l2_i2c_subdev_init(struct v4l2_subdev *sd, struct i2c_client *client,
 	/* i2c_client and v4l2_subdev point to one another */
 	v4l2_set_subdevdata(sd, client);
 	i2c_set_clientdata(client, sd);
-	/* initialize name */
-	snprintf(sd->name, sizeof(sd->name), "%s %d-%04x",
-		client->dev.driver->name, i2c_adapter_id(client->adapter),
-		client->addr);
+	v4l2_i2c_subdev_set_name(sd, client, NULL, NULL);
 }
 EXPORT_SYMBOL_GPL(v4l2_i2c_subdev_init);
 
@@ -307,7 +196,7 @@ struct v4l2_subdev *v4l2_i2c_new_subdev(struct v4l2_device *v4l2_dev,
 	/* Setup the i2c board info with the device type and
 	   the device address. */
 	memset(&info, 0, sizeof(info));
-	strlcpy(info.type, client_type, sizeof(info.type));
+	strscpy(info.type, client_type, sizeof(info.type));
 	info.addr = addr;
 
 	return v4l2_i2c_new_subdev_board(v4l2_dev, adapter, &info, probe_addrs);
@@ -376,7 +265,8 @@ void v4l2_spi_subdev_init(struct v4l2_subdev *sd, struct spi_device *spi,
 	v4l2_set_subdevdata(sd, spi);
 	spi_set_drvdata(spi, sd);
 	/* initialize name */
-	strlcpy(sd->name, spi->dev.driver->name, sizeof(sd->name));
+	snprintf(sd->name, sizeof(sd->name), "%s %s",
+		spi->dev.driver->name, dev_name(&spi->dev));
 }
 EXPORT_SYMBOL_GPL(v4l2_spi_subdev_init);
 
@@ -412,7 +302,7 @@ struct v4l2_subdev *v4l2_spi_new_subdev(struct v4l2_device *v4l2_dev,
 error:
 	/* If we have a client but no subdev, then something went wrong and
 	   we must unregister the client. */
-	if (spi && sd == NULL)
+	if (!sd)
 		spi_unregister_device(spi);
 
 	return sd;
@@ -441,20 +331,6 @@ static unsigned int clamp_align(unsigned int x, unsigned int min,
 	return x;
 }
 
-/* Bound an image to have a width between wmin and wmax, and height between
- * hmin and hmax, inclusive.  Additionally, the width will be a multiple of
- * 2^walign, the height will be a multiple of 2^halign, and the overall size
- * (width*height) will be a multiple of 2^salign.  The image may be shrunk
- * or enlarged to fit the alignment constraints.
- *
- * The width or height maximum must not be smaller than the corresponding
- * minimum.  The alignments must not be so high there are no possible image
- * sizes within the allowed bounds.  wmin and hmin must be at least 1
- * (don't use 0).  If you don't care about a certain alignment, specify 0,
- * as 2^0 is 1 and one byte alignment is equivalent to no alignment.  If
- * you only want to adjust downward, specify a maximum that's the same as
- * the initial value.
- */
 void v4l_bound_align_image(u32 *w, unsigned int wmin, unsigned int wmax,
 			   unsigned int walign,
 			   u32 *h, unsigned int hmin, unsigned int hmax,
@@ -492,37 +368,80 @@ void v4l_bound_align_image(u32 *w, unsigned int wmin, unsigned int wmax,
 }
 EXPORT_SYMBOL_GPL(v4l_bound_align_image);
 
-const struct v4l2_frmsize_discrete *v4l2_find_nearest_format(
-		const struct v4l2_discrete_probe *probe,
-		s32 width, s32 height)
+const void *
+__v4l2_find_nearest_size(const void *array, size_t array_size,
+			 size_t entry_size, size_t width_offset,
+			 size_t height_offset, s32 width, s32 height)
 {
-	int i;
-	u32 error, min_error = UINT_MAX;
-	const struct v4l2_frmsize_discrete *size, *best = NULL;
+	u32 error, min_error = U32_MAX;
+	const void *best = NULL;
+	unsigned int i;
 
-	if (!probe)
-		return best;
+	if (!array)
+		return NULL;
 
-	for (i = 0, size = probe->sizes; i < probe->num_sizes; i++, size++) {
-		error = abs(size->width - width) + abs(size->height - height);
-		if (error < min_error) {
-			min_error = error;
-			best = size;
-		}
+	for (i = 0; i < array_size; i++, array += entry_size) {
+		const u32 *entry_width = array + width_offset;
+		const u32 *entry_height = array + height_offset;
+
+		error = abs(*entry_width - width) + abs(*entry_height - height);
+		if (error > min_error)
+			continue;
+
+		min_error = error;
+		best = array;
 		if (!error)
 			break;
 	}
 
 	return best;
 }
-EXPORT_SYMBOL_GPL(v4l2_find_nearest_format);
+EXPORT_SYMBOL_GPL(__v4l2_find_nearest_size);
 
-void v4l2_get_timestamp(struct timeval *tv)
+int v4l2_g_parm_cap(struct video_device *vdev,
+		    struct v4l2_subdev *sd, struct v4l2_streamparm *a)
 {
-	struct timespec ts;
+	struct v4l2_subdev_frame_interval ival = { 0 };
+	int ret;
 
-	ktime_get_ts(&ts);
-	tv->tv_sec = ts.tv_sec;
-	tv->tv_usec = ts.tv_nsec / NSEC_PER_USEC;
+	if (a->type != V4L2_BUF_TYPE_VIDEO_CAPTURE &&
+	    a->type != V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE)
+		return -EINVAL;
+
+	if (vdev->device_caps & V4L2_CAP_READWRITE)
+		a->parm.capture.readbuffers = 2;
+	if (v4l2_subdev_has_op(sd, video, g_frame_interval))
+		a->parm.capture.capability = V4L2_CAP_TIMEPERFRAME;
+	ret = v4l2_subdev_call(sd, video, g_frame_interval, &ival);
+	if (!ret)
+		a->parm.capture.timeperframe = ival.interval;
+	return ret;
 }
-EXPORT_SYMBOL_GPL(v4l2_get_timestamp);
+EXPORT_SYMBOL_GPL(v4l2_g_parm_cap);
+
+int v4l2_s_parm_cap(struct video_device *vdev,
+		    struct v4l2_subdev *sd, struct v4l2_streamparm *a)
+{
+	struct v4l2_subdev_frame_interval ival = {
+		.interval = a->parm.capture.timeperframe
+	};
+	int ret;
+
+	if (a->type != V4L2_BUF_TYPE_VIDEO_CAPTURE &&
+	    a->type != V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE)
+		return -EINVAL;
+
+	memset(&a->parm, 0, sizeof(a->parm));
+	if (vdev->device_caps & V4L2_CAP_READWRITE)
+		a->parm.capture.readbuffers = 2;
+	else
+		a->parm.capture.readbuffers = 0;
+
+	if (v4l2_subdev_has_op(sd, video, g_frame_interval))
+		a->parm.capture.capability = V4L2_CAP_TIMEPERFRAME;
+	ret = v4l2_subdev_call(sd, video, s_frame_interval, &ival);
+	if (!ret)
+		a->parm.capture.timeperframe = ival.interval;
+	return ret;
+}
+EXPORT_SYMBOL_GPL(v4l2_s_parm_cap);

@@ -33,34 +33,23 @@ static bool filter(struct dma_chan *chan, void *param)
 	return true;
 }
 
-static const struct snd_pcm_hardware imx_pcm_hardware = {
-	.info = SNDRV_PCM_INFO_INTERLEAVED |
-		SNDRV_PCM_INFO_BLOCK_TRANSFER |
-		SNDRV_PCM_INFO_MMAP |
-		SNDRV_PCM_INFO_MMAP_VALID |
-		SNDRV_PCM_INFO_PAUSE |
-		SNDRV_PCM_INFO_RESUME,
-	.formats = SNDRV_PCM_FMTBIT_S16_LE,
-	.buffer_bytes_max = IMX_SSI_DMABUF_SIZE,
-	.period_bytes_min = 128,
-	.period_bytes_max = 65535, /* Limited by SDMA engine */
-	.periods_min = 2,
-	.periods_max = 255,
-	.fifo_size = 0,
-};
-
 static const struct snd_dmaengine_pcm_config imx_dmaengine_pcm_config = {
-	.pcm_hardware = &imx_pcm_hardware,
 	.prepare_slave_config = snd_dmaengine_pcm_prepare_slave_config,
 	.compat_filter_fn = filter,
-	.prealloc_buffer_size = IMX_SSI_DMABUF_SIZE,
 };
 
-int imx_pcm_dma_init(struct platform_device *pdev)
+int imx_pcm_dma_init(struct platform_device *pdev, size_t size)
 {
+	struct snd_dmaengine_pcm_config *config;
+
+	config = devm_kzalloc(&pdev->dev,
+			sizeof(struct snd_dmaengine_pcm_config), GFP_KERNEL);
+	if (!config)
+		return -ENOMEM;
+	*config = imx_dmaengine_pcm_config;
+
 	return devm_snd_dmaengine_pcm_register(&pdev->dev,
-		&imx_dmaengine_pcm_config,
-		SND_DMAENGINE_PCM_FLAG_NO_RESIDUE |
+		config,
 		SND_DMAENGINE_PCM_FLAG_COMPAT);
 }
 EXPORT_SYMBOL_GPL(imx_pcm_dma_init);

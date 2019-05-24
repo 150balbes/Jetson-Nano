@@ -22,11 +22,11 @@
 #include <linux/sched.h>
 #include <linux/interrupt.h>
 
-#include "dmxdev.h"
-#include "dvbdev.h"
-#include "dvb_demux.h"
-#include "dvb_frontend.h"
-#include "dvb_net.h"
+#include <media/dmxdev.h>
+#include <media/dvbdev.h>
+#include <media/dvb_demux.h>
+#include <media/dvb_frontend.h>
+#include <media/dvb_net.h>
 
 #include "tda1002x.h"
 #include "mantis_common.h"
@@ -37,12 +37,12 @@
 #define MANTIS_MODEL_NAME	"VP-2033"
 #define MANTIS_DEV_TYPE		"DVB-C"
 
-struct tda1002x_config vp2033_tda1002x_cu1216_config = {
+static struct tda1002x_config vp2033_tda1002x_cu1216_config = {
 	.demod_address = 0x18 >> 1,
 	.invert = 1,
 };
 
-struct tda10023_config vp2033_tda10023_cu1216_config = {
+static struct tda10023_config vp2033_tda10023_cu1216_config = {
 	.demod_address = 0x18 >> 1,
 	.invert = 1,
 };

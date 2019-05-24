@@ -113,7 +113,7 @@ static void __NS8390_init(struct net_device *dev, int startp);
 
 static unsigned version_printed;
 static u32 msg_enable;
-module_param(msg_enable, uint, (S_IRUSR|S_IRGRP|S_IROTH));
+module_param(msg_enable, uint, 0444);
 MODULE_PARM_DESC(msg_enable, "Debug message level (see linux/netdevice.h for bitmap)");
 
 /*
@@ -404,7 +404,7 @@ static netdev_tx_t __ei_start_xmit(struct sk_buff *skb,
 	spin_unlock(&ei_local->page_lock);
 	enable_irq_lockdep_irqrestore(dev->irq, &flags);
 	skb_tx_timestamp(skb);
-	dev_kfree_skb(skb);
+	dev_consume_skb_any(skb);
 	dev->stats.tx_bytes += send_length;
 
 	return NETDEV_TX_OK;
@@ -596,7 +596,7 @@ static void ei_tx_intr(struct net_device *dev)
 		if (ei_local->tx2 > 0) {
 			ei_local->txing = 1;
 			NS8390_trigger_send(dev, ei_local->tx2, ei_local->tx_start_page + 6);
-			dev->trans_start = jiffies;
+			netif_trans_update(dev);
 			ei_local->tx2 = -1,
 			ei_local->lasttx = 2;
 		} else
@@ -609,7 +609,7 @@ static void ei_tx_intr(struct net_device *dev)
 		if (ei_local->tx1 > 0) {
 			ei_local->txing = 1;
 			NS8390_trigger_send(dev, ei_local->tx1, ei_local->tx_start_page);
-			dev->trans_start = jiffies;
+			netif_trans_update(dev);
 			ei_local->tx1 = -1;
 			ei_local->lasttx = 1;
 		} else
@@ -975,6 +975,8 @@ static void ethdev_setup(struct net_device *dev)
 	ether_setup(dev);
 
 	spin_lock_init(&ei_local->page_lock);
+
+	ei_local->msg_enable = msg_enable;
 }
 
 /**
@@ -986,7 +988,7 @@ static void ethdev_setup(struct net_device *dev)
 static struct net_device *____alloc_ei_netdev(int size)
 {
 	return alloc_netdev(sizeof(struct ei_device) + size, "eth%d",
-				ethdev_setup);
+			    NET_NAME_UNKNOWN, ethdev_setup);
 }
 
 

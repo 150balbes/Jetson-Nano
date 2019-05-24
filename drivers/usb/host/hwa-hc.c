@@ -1,24 +1,10 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  * Host Wire Adapter:
  * Driver glue, HWA-specific functions, bridges to WAHC and WUSBHC
  *
  * Copyright (C) 2005-2006 Intel Corporation
  * Inaky Perez-Gonzalez <inaky.perez-gonzalez@intel.com>
- *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License version
- * 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
- * 02110-1301, USA.
- *
  *
  * The HWA driver is a simple layer that forwards requests to the WAHC
  * (Wire Adater Host Controller) or WUSBHC (Wireless USB Host
@@ -261,8 +247,44 @@ static int __hwahc_op_wusbhc_start(struct wusbhc *wusbhc)
 		dev_err(dev, "cannot listen to notifications: %d\n", result);
 		goto error_stop;
 	}
+	/*
+	 * If WUSB_QUIRK_ALEREON_HWA_DISABLE_XFER_NOTIFICATIONS is set,
+	 *  disable transfer notifications.
+	 */
+	if (hwahc->wa.quirks &
+		WUSB_QUIRK_ALEREON_HWA_DISABLE_XFER_NOTIFICATIONS) {
+		struct usb_host_interface *cur_altsetting =
+			hwahc->wa.usb_iface->cur_altsetting;
+
+		result = usb_control_msg(hwahc->wa.usb_dev,
+				usb_sndctrlpipe(hwahc->wa.usb_dev, 0),
+				WA_REQ_ALEREON_DISABLE_XFER_NOTIFICATIONS,
+				USB_DIR_OUT | USB_TYPE_VENDOR |
+					USB_RECIP_INTERFACE,
+				WA_REQ_ALEREON_FEATURE_SET,
+				cur_altsetting->desc.bInterfaceNumber,
+				NULL, 0,
+				USB_CTRL_SET_TIMEOUT);
+		/*
+		 * If we successfully sent the control message, start DTI here
+		 * because no transfer notifications will be received which is
+		 * where DTI is normally started.
+		 */
+		if (result == 0)
+			result = wa_dti_start(&hwahc->wa);
+		else
+			result = 0;	/* OK.  Continue normally. */
+
+		if (result < 0) {
+			dev_err(dev, "cannot start DTI: %d\n", result);
+			goto error_dti_start;
+		}
+	}
+
 	return result;
 
+error_dti_start:
+	wa_nep_disarm(&hwahc->wa);
 error_stop:
 	__wa_clear_feature(&hwahc->wa, WA_ENABLE);
 	return result;
@@ -571,14 +593,14 @@ found:
 	wa->wa_descr = wa_descr = (struct usb_wa_descriptor *) hdr;
 	if (le16_to_cpu(wa_descr->bcdWAVersion) > 0x0100)
 		dev_warn(dev, "Wire Adapter v%d.%d newer than groked v1.0\n",
-			 le16_to_cpu(wa_descr->bcdWAVersion) & 0xff00 >> 8,
+			 (le16_to_cpu(wa_descr->bcdWAVersion) & 0xff00) >> 8,
 			 le16_to_cpu(wa_descr->bcdWAVersion) & 0x00ff);
 	result = 0;
 error:
 	return result;
 }
 
-static struct hc_driver hwahc_hc_driver = {
+static const struct hc_driver hwahc_hc_driver = {
 	.description = "hwa-hcd",
 	.product_desc = "Wireless USB HWA host controller",
 	.hcd_priv_size = sizeof(struct hwahc) - sizeof(struct usb_hcd),
@@ -618,7 +640,7 @@ static int hwahc_security_create(struct hwahc *hwahc)
 	top = itr + itr_size;
 	result = __usb_get_extra_descriptor(usb_dev->rawdescriptors[index],
 			le16_to_cpu(usb_dev->actconfig->desc.wTotalLength),
-			USB_DT_SECURITY, (void **) &secd);
+			USB_DT_SECURITY, (void **) &secd, sizeof(*secd));
 	if (result == -1) {
 		dev_warn(dev, "BUG? WUSB host has no security descriptors\n");
 		return 0;
@@ -824,13 +846,15 @@ static void hwahc_disconnect(struct usb_interface *usb_iface)
 	usb_put_hcd(usb_hcd);
 }
 
-static struct usb_device_id hwahc_id_table[] = {
+static const struct usb_device_id hwahc_id_table[] = {
 	/* Alereon 5310 */
 	{ USB_DEVICE_AND_INTERFACE_INFO(0x13dc, 0x5310, 0xe0, 0x02, 0x01),
-	  .driver_info = WUSB_QUIRK_ALEREON_HWA_CONCAT_ISOC },
+	  .driver_info = WUSB_QUIRK_ALEREON_HWA_CONCAT_ISOC |
+		WUSB_QUIRK_ALEREON_HWA_DISABLE_XFER_NOTIFICATIONS },
 	/* Alereon 5611 */
 	{ USB_DEVICE_AND_INTERFACE_INFO(0x13dc, 0x5611, 0xe0, 0x02, 0x01),
-	  .driver_info = WUSB_QUIRK_ALEREON_HWA_CONCAT_ISOC },
+	  .driver_info = WUSB_QUIRK_ALEREON_HWA_CONCAT_ISOC |
+		WUSB_QUIRK_ALEREON_HWA_DISABLE_XFER_NOTIFICATIONS },
 	/* FIXME: use class labels for this */
 	{ USB_INTERFACE_INFO(0xe0, 0x02, 0x01), },
 	{},

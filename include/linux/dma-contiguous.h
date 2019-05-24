@@ -48,7 +48,7 @@
  *   CMA should not be used by the device drivers directly. It is
  *   only a helper framework for dma-mapping subsystem.
  *
- *   For more information, see kernel-docs in drivers/base/dma-contiguous.c
+ *   For more information, see kernel-docs in kernel/dma/contiguous.c
  */
 
 #ifdef __KERNEL__
@@ -111,9 +111,8 @@ static inline int dma_declare_contiguous(struct device *dev, phys_addr_t size,
 	return ret;
 }
 
-unsigned long dma_get_cma_size_int_byte(struct device *dev);
-struct page *dma_alloc_from_contiguous(struct device *dev, int count,
-				       unsigned int order);
+struct page *dma_alloc_from_contiguous(struct device *dev, size_t count,
+				       unsigned int order, bool no_warn);
 bool dma_release_from_contiguous(struct device *dev, struct page *pages,
 				 int count);
 
@@ -144,10 +143,9 @@ int dma_declare_contiguous(struct device *dev, phys_addr_t size,
 	return -ENOSYS;
 }
 
-unsigned long dma_get_cma_size_int_byte(struct device *dev) {return 0};
 static inline
-struct page *dma_alloc_from_contiguous(struct device *dev, int count,
-				       unsigned int order)
+struct page *dma_alloc_from_contiguous(struct device *dev, size_t count,
+				       unsigned int order, bool no_warn)
 {
 	return NULL;
 }

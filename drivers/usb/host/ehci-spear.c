@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
 * Driver for EHCI HCD on SPEAr SOC
 *
@@ -5,10 +6,6 @@
 * Deepak Sikri <deepak.sikri@st.com>
 *
 * Based on various ehci-*.c drivers
-*
-* This file is subject to the terms and conditions of the GNU General Public
-* License. See the file COPYING in the main directory of this archive for
-* more details.
 */
 
 #include <linux/clk.h>
@@ -99,25 +96,13 @@ static int spear_ehci_hcd_drv_probe(struct platform_device *pdev)
 	}
 
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
-	if (!res) {
-		retval = -ENODEV;
+	hcd->regs = devm_ioremap_resource(&pdev->dev, res);
+	if (IS_ERR(hcd->regs)) {
+		retval = PTR_ERR(hcd->regs);
 		goto err_put_hcd;
 	}
-
 	hcd->rsrc_start = res->start;
 	hcd->rsrc_len = resource_size(res);
-	if (!devm_request_mem_region(&pdev->dev, hcd->rsrc_start, hcd->rsrc_len,
-				driver->description)) {
-		retval = -EBUSY;
-		goto err_put_hcd;
-	}
-
-	hcd->regs = devm_ioremap(&pdev->dev, hcd->rsrc_start, hcd->rsrc_len);
-	if (hcd->regs == NULL) {
-		dev_dbg(&pdev->dev, "error mapping memory\n");
-		retval = -ENOMEM;
-		goto err_put_hcd;
-	}
 
 	sehci = to_spear_ehci(hcd);
 	sehci->clk = usbh_clk;
@@ -157,10 +142,11 @@ static int spear_ehci_hcd_drv_remove(struct platform_device *pdev)
 	return 0;
 }
 
-static struct of_device_id spear_ehci_id_table[] = {
+static const struct of_device_id spear_ehci_id_table[] = {
 	{ .compatible = "st,spear600-ehci", },
 	{ },
 };
+MODULE_DEVICE_TABLE(of, spear_ehci_id_table);
 
 static struct platform_driver spear_ehci_hcd_driver = {
 	.probe		= spear_ehci_hcd_drv_probe,
@@ -174,7 +160,7 @@ static struct platform_driver spear_ehci_hcd_driver = {
 	}
 };
 
-static const struct ehci_driver_overrides spear_overrides __initdata = {
+static const struct ehci_driver_overrides spear_overrides __initconst = {
 	.extra_priv_size = sizeof(struct spear_ehci),
 };
 

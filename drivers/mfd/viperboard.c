@@ -59,10 +59,8 @@ static int vprbrd_probe(struct usb_interface *interface,
 
 	/* allocate memory for our device state and initialize it */
 	vb = kzalloc(sizeof(*vb), GFP_KERNEL);
-	if (vb == NULL) {
-		dev_err(&interface->dev, "Out of memory\n");
+	if (!vb)
 		return -ENOMEM;
-	}
 
 	mutex_init(&vb->lock);
 
@@ -93,8 +91,8 @@ static int vprbrd_probe(struct usb_interface *interface,
 		 version >> 8, version & 0xff,
 		 vb->usb_dev->bus->busnum, vb->usb_dev->devnum);
 
-	ret = mfd_add_devices(&interface->dev, -1, vprbrd_devs,
-				ARRAY_SIZE(vprbrd_devs), NULL, 0, NULL);
+	ret = mfd_add_hotplug_devices(&interface->dev, vprbrd_devs,
+				      ARRAY_SIZE(vprbrd_devs));
 	if (ret != 0) {
 		dev_err(&interface->dev, "Failed to add mfd devices to core.");
 		goto error;

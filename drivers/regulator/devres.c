@@ -19,12 +19,6 @@
 
 #include "internal.h"
 
-enum {
-	NORMAL_GET,
-	EXCLUSIVE_GET,
-	OPTIONAL_GET,
-};
-
 static void devm_regulator_release(struct device *dev, void *res)
 {
 	regulator_put(*(struct regulator **)res);
@@ -39,20 +33,7 @@ static struct regulator *_devm_regulator_get(struct device *dev, const char *id,
 	if (!ptr)
 		return ERR_PTR(-ENOMEM);
 
-	switch (get_type) {
-	case NORMAL_GET:
-		regulator = regulator_get(dev, id);
-		break;
-	case EXCLUSIVE_GET:
-		regulator = regulator_get_exclusive(dev, id);
-		break;
-	case OPTIONAL_GET:
-		regulator = regulator_get_optional(dev, id);
-		break;
-	default:
-		regulator = ERR_PTR(-EINVAL);
-	}
-
+	regulator = _regulator_get(dev, id, get_type);
 	if (!IS_ERR(regulator)) {
 		*ptr = regulator;
 		devres_add(dev, ptr);
@@ -139,6 +120,18 @@ void devm_regulator_put(struct regulator *regulator)
 }
 EXPORT_SYMBOL_GPL(devm_regulator_put);
 
+struct regulator_bulk_devres {
+	struct regulator_bulk_data *consumers;
+	int num_consumers;
+};
+
+static void devm_regulator_bulk_release(struct device *dev, void *res)
+{
+	struct regulator_bulk_devres *devres = res;
+
+	regulator_bulk_free(devres->num_consumers, devres->consumers);
+}
+
 /**
  * devm_regulator_bulk_get - managed get multiple regulator consumers
  *
@@ -157,29 +150,22 @@ EXPORT_SYMBOL_GPL(devm_regulator_put);
 int devm_regulator_bulk_get(struct device *dev, int num_consumers,
 			    struct regulator_bulk_data *consumers)
 {
-	int i;
+	struct regulator_bulk_devres *devres;
 	int ret;
 
-	for (i = 0; i < num_consumers; i++)
-		consumers[i].consumer = NULL;
+	devres = devres_alloc(devm_regulator_bulk_release,
+			      sizeof(*devres), GFP_KERNEL);
+	if (!devres)
+		return -ENOMEM;
 
-	for (i = 0; i < num_consumers; i++) {
-		consumers[i].consumer = devm_regulator_get(dev,
-							   consumers[i].supply);
-		if (IS_ERR(consumers[i].consumer)) {
-			ret = PTR_ERR(consumers[i].consumer);
-			dev_err(dev, "Failed to get supply '%s': %d\n",
-				consumers[i].supply, ret);
-			consumers[i].consumer = NULL;
-			goto err;
-		}
+	ret = regulator_bulk_get(dev, num_consumers, consumers);
+	if (!ret) {
+		devres->consumers = consumers;
+		devres->num_consumers = num_consumers;
+		devres_add(dev, devres);
+	} else {
+		devres_free(devres);
 	}
-
-	return 0;
-
-err:
-	for (i = 0; i < num_consumers && consumers[i].consumer; i++)
-		devm_regulator_put(consumers[i].consumer);
 
 	return ret;
 }
@@ -360,9 +346,9 @@ EXPORT_SYMBOL_GPL(devm_regulator_unregister_supply_alias);
  * will be removed before returning to the caller.
  */
 int devm_regulator_bulk_register_supply_alias(struct device *dev,
-					      const char **id,
+					      const char *const *id,
 					      struct device *alias_dev,
-					      const char **alias_id,
+					      const char *const *alias_id,
 					      int num_id)
 {
 	int i;
@@ -404,7 +390,7 @@ EXPORT_SYMBOL_GPL(devm_regulator_bulk_register_supply_alias);
  * will ensure that the resource is freed.
  */
 void devm_regulator_bulk_unregister_supply_alias(struct device *dev,
-						 const char **id,
+						 const char *const *id,
 						 int num_id)
 {
 	int i;
@@ -413,3 +399,88 @@ void devm_regulator_bulk_unregister_supply_alias(struct device *dev,
 		devm_regulator_unregister_supply_alias(dev, id[i]);
 }
 EXPORT_SYMBOL_GPL(devm_regulator_bulk_unregister_supply_alias);
+
+struct regulator_notifier_match {
+	struct regulator *regulator;
+	struct notifier_block *nb;
+};
+
+static int devm_regulator_match_notifier(struct device *dev, void *res,
+					 void *data)
+{
+	struct regulator_notifier_match *match = res;
+	struct regulator_notifier_match *target = data;
+
+	return match->regulator == target->regulator && match->nb == target->nb;
+}
+
+static void devm_regulator_destroy_notifier(struct device *dev, void *res)
+{
+	struct regulator_notifier_match *match = res;
+
+	regulator_unregister_notifier(match->regulator, match->nb);
+}
+
+/**
+ * devm_regulator_register_notifier - Resource managed
+ * regulator_register_notifier
+ *
+ * @regulator: regulator source
+ * @nb: notifier block
+ *
+ * The notifier will be registers under the consumer device and be
+ * automatically be unregistered when the source device is unbound.
+ */
+int devm_regulator_register_notifier(struct regulator *regulator,
+				     struct notifier_block *nb)
+{
+	struct regulator_notifier_match *match;
+	int ret;
+
+	match = devres_alloc(devm_regulator_destroy_notifier,
+			     sizeof(struct regulator_notifier_match),
+			     GFP_KERNEL);
+	if (!match)
+		return -ENOMEM;
+
+	match->regulator = regulator;
+	match->nb = nb;
+
+	ret = regulator_register_notifier(regulator, nb);
+	if (ret < 0) {
+		devres_free(match);
+		return ret;
+	}
+
+	devres_add(regulator->dev, match);
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(devm_regulator_register_notifier);
+
+/**
+ * devm_regulator_unregister_notifier - Resource managed
+ * regulator_unregister_notifier()
+ *
+ * @regulator: regulator source
+ * @nb: notifier block
+ *
+ * Unregister a notifier registered with devm_regulator_register_notifier().
+ * Normally this function will not need to be called and the resource
+ * management code will ensure that the resource is freed.
+ */
+void devm_regulator_unregister_notifier(struct regulator *regulator,
+					struct notifier_block *nb)
+{
+	struct regulator_notifier_match match;
+	int rc;
+
+	match.regulator = regulator;
+	match.nb = nb;
+
+	rc = devres_release(regulator->dev, devm_regulator_destroy_notifier,
+			    devm_regulator_match_notifier, &match);
+	if (rc != 0)
+		WARN_ON(rc);
+}
+EXPORT_SYMBOL_GPL(devm_regulator_unregister_notifier);

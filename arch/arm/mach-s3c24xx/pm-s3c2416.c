@@ -1,14 +1,9 @@
-/* linux/arch/arm/mach-s3c2416/pm.c
- *
- * Copyright (c) 2010 Samsung Electronics Co., Ltd.
- *		http://www.samsung.com
- *
- * S3C2416 - PM support (Based on Ben Dooks' S3C2412 PM support)
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
-*/
+// SPDX-License-Identifier: GPL-2.0
+//
+// Copyright (c) 2010 Samsung Electronics Co., Ltd.
+//		http://www.samsung.com
+//
+// S3C2416 - PM support (Based on Ben Dooks' S3C2412 PM support)
 
 #include <linux/device.h>
 #include <linux/syscore_ops.h>
@@ -23,6 +18,7 @@
 
 #include "s3c2412-power.h"
 
+#ifdef CONFIG_PM_SLEEP
 extern void s3c2412_sleep_enter(void);
 
 static int s3c2416_cpu_suspend(unsigned long arg)
@@ -47,7 +43,7 @@ static void s3c2416_pm_prepare(void)
 	 * correct address to resume from.
 	 */
 	__raw_writel(0x2BED, S3C2412_INFORM0);
-	__raw_writel(virt_to_phys(s3c_cpu_resume), S3C2412_INFORM1);
+	__raw_writel(__pa_symbol(s3c_cpu_resume), S3C2412_INFORM1);
 }
 
 static int s3c2416_pm_add(struct device *dev, struct subsys_interface *sif)
@@ -70,7 +66,7 @@ static __init int s3c2416_pm_init(void)
 }
 
 arch_initcall(s3c2416_pm_init);
-
+#endif
 
 static void s3c2416_pm_resume(void)
 {

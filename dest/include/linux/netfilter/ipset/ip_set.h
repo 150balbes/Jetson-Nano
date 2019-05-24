@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note */
 /* Copyright (C) 2000-2002 Joakim Axelsson <gozem@linux.nu>
  *                         Patrick Schaaf <bof@bof.de>
  *                         Martin Josefsson <gandalf@wlug.westbo.se>
@@ -12,14 +13,15 @@
 
 #include <linux/types.h>
 
-/* The protocol version */
-#define IPSET_PROTOCOL		6
-
-/* The maximum permissible comment length we will accept over netlink */
-#define IPSET_MAX_COMMENT_SIZE	255
+/* The protocol versions */
+#define IPSET_PROTOCOL		7
+#define IPSET_PROTOCOL_MIN	6
 
 /* The max length of strings including NUL: set and type identifiers */
 #define IPSET_MAXNAMELEN	32
+
+/* The maximum permissible comment length we will accept over netlink */
+#define IPSET_MAX_COMMENT_SIZE	255
 
 /* Message types and commands */
 enum ipset_cmd {
@@ -37,17 +39,19 @@ enum ipset_cmd {
 	IPSET_CMD_TEST,		/* 11: Test an element in a set */
 	IPSET_CMD_HEADER,	/* 12: Get set header data only */
 	IPSET_CMD_TYPE,		/* 13: Get set type */
+	IPSET_CMD_GET_BYNAME,	/* 14: Get set index by name */
+	IPSET_CMD_GET_BYINDEX,	/* 15: Get set name by index */
 	IPSET_MSG_MAX,		/* Netlink message commands */
 
 	/* Commands in userspace: */
-	IPSET_CMD_RESTORE = IPSET_MSG_MAX, /* 14: Enter restore mode */
-	IPSET_CMD_HELP,		/* 15: Get help */
-	IPSET_CMD_VERSION,	/* 16: Get program version */
-	IPSET_CMD_QUIT,		/* 17: Quit from interactive mode */
+	IPSET_CMD_RESTORE = IPSET_MSG_MAX, /* 16: Enter restore mode */
+	IPSET_CMD_HELP,		/* 17: Get help */
+	IPSET_CMD_VERSION,	/* 18: Get program version */
+	IPSET_CMD_QUIT,		/* 19: Quit from interactive mode */
 
 	IPSET_CMD_MAX,
 
-	IPSET_CMD_COMMIT = IPSET_CMD_MAX, /* 18: Commit buffered commands */
+	IPSET_CMD_COMMIT = IPSET_CMD_MAX, /* 20: Commit buffered commands */
 };
 
 /* Attributes at command level */
@@ -65,6 +69,7 @@ enum {
 	IPSET_ATTR_LINENO,	/* 9: Restore lineno */
 	IPSET_ATTR_PROTOCOL_MIN, /* 10: Minimal supported version number */
 	IPSET_ATTR_REVISION_MIN	= IPSET_ATTR_PROTOCOL_MIN, /* type rev min */
+	IPSET_ATTR_INDEX,	/* 11: Kernel index of set */
 	__IPSET_ATTR_CMD_MAX,
 };
 #define IPSET_ATTR_CMD_MAX	(__IPSET_ATTR_CMD_MAX - 1)
@@ -82,6 +87,8 @@ enum {
 	IPSET_ATTR_PROTO,	/* 7 */
 	IPSET_ATTR_CADT_FLAGS,	/* 8 */
 	IPSET_ATTR_CADT_LINENO = IPSET_ATTR_LINENO,	/* 9 */
+	IPSET_ATTR_MARK,	/* 10 */
+	IPSET_ATTR_MARKMASK,	/* 11 */
 	/* Reserve empty slots */
 	IPSET_ATTR_CADT_MAX = 16,
 	/* Create-only specific attributes */
@@ -113,6 +120,10 @@ enum {
 	IPSET_ATTR_BYTES,
 	IPSET_ATTR_PACKETS,
 	IPSET_ATTR_COMMENT,
+	IPSET_ATTR_SKBMARK,
+	IPSET_ATTR_SKBPRIO,
+	IPSET_ATTR_SKBQUEUE,
+	IPSET_ATTR_PAD,
 	__IPSET_ATTR_ADT_MAX,
 };
 #define IPSET_ATTR_ADT_MAX	(__IPSET_ATTR_ADT_MAX - 1)
@@ -144,6 +155,8 @@ enum ipset_errno {
 	IPSET_ERR_IPADDR_IPV6,
 	IPSET_ERR_COUNTER,
 	IPSET_ERR_COMMENT,
+	IPSET_ERR_INVALID_MARKMASK,
+	IPSET_ERR_SKBINFO,
 
 	/* Type specific error codes */
 	IPSET_ERR_TYPE_SPECIFIC = 4352,
@@ -167,6 +180,12 @@ enum ipset_cmd_flags {
 	IPSET_FLAG_MATCH_COUNTERS = (1 << IPSET_FLAG_BIT_MATCH_COUNTERS),
 	IPSET_FLAG_BIT_RETURN_NOMATCH = 7,
 	IPSET_FLAG_RETURN_NOMATCH = (1 << IPSET_FLAG_BIT_RETURN_NOMATCH),
+	IPSET_FLAG_BIT_MAP_SKBMARK = 8,
+	IPSET_FLAG_MAP_SKBMARK = (1 << IPSET_FLAG_BIT_MAP_SKBMARK),
+	IPSET_FLAG_BIT_MAP_SKBPRIO = 9,
+	IPSET_FLAG_MAP_SKBPRIO = (1 << IPSET_FLAG_BIT_MAP_SKBPRIO),
+	IPSET_FLAG_BIT_MAP_SKBQUEUE = 10,
+	IPSET_FLAG_MAP_SKBQUEUE = (1 << IPSET_FLAG_BIT_MAP_SKBQUEUE),
 	IPSET_FLAG_CMD_MAX = 15,
 };
 
@@ -182,7 +201,18 @@ enum ipset_cadt_flags {
 	IPSET_FLAG_WITH_COUNTERS = (1 << IPSET_FLAG_BIT_WITH_COUNTERS),
 	IPSET_FLAG_BIT_WITH_COMMENT = 4,
 	IPSET_FLAG_WITH_COMMENT = (1 << IPSET_FLAG_BIT_WITH_COMMENT),
+	IPSET_FLAG_BIT_WITH_FORCEADD = 5,
+	IPSET_FLAG_WITH_FORCEADD = (1 << IPSET_FLAG_BIT_WITH_FORCEADD),
+	IPSET_FLAG_BIT_WITH_SKBINFO = 6,
+	IPSET_FLAG_WITH_SKBINFO = (1 << IPSET_FLAG_BIT_WITH_SKBINFO),
 	IPSET_FLAG_CADT_MAX	= 15,
+};
+
+/* The flag bits which correspond to the non-extension create flags */
+enum ipset_create_flags {
+	IPSET_CREATE_FLAG_BIT_FORCEADD = 0,
+	IPSET_CREATE_FLAG_FORCEADD = (1 << IPSET_CREATE_FLAG_BIT_FORCEADD),
+	IPSET_CREATE_FLAG_BIT_MAX = 7,
 };
 
 /* Commands with settype-specific attributes */
@@ -197,6 +227,7 @@ enum ipset_adt {
 
 /* Sets are identified by an index in kernel space. Tweak with ip_set_id_t
  * and IPSET_INVALID_ID if you want to increase the max number of sets.
+ * Also, IPSET_ATTR_INDEX must be changed.
  */
 typedef __u16 ip_set_id_t;
 
@@ -232,9 +263,15 @@ enum {
 	IPSET_COUNTER_GT,
 };
 
-struct ip_set_counter_match {
+/* Backward compatibility for set match v3 */
+struct ip_set_counter_match0 {
 	__u8 op;
 	__u64 value;
+};
+
+struct ip_set_counter_match {
+	__aligned_u64 value;
+	__u8 op;
 };
 
 /* Interface to iptables/ip6tables */

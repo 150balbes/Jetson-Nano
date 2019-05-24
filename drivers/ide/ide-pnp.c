@@ -22,7 +22,7 @@
 #define DRV_NAME "ide-pnp"
 
 /* Add your devices here :)) */
-static struct pnp_device_id idepnp_devices[] = {
+static const struct pnp_device_id idepnp_devices[] = {
 	/* Generic ESDI/IDE/ATA compatible hard disk controller */
 	{.id = "PNP0600", .driver_data = 0},
 	{.id = ""}
@@ -96,17 +96,5 @@ static struct pnp_driver idepnp_driver = {
 	.remove		= idepnp_remove,
 };
 
-static int __init pnpide_init(void)
-{
-	return pnp_register_driver(&idepnp_driver);
-}
-
-static void __exit pnpide_exit(void)
-{
-	pnp_unregister_driver(&idepnp_driver);
-}
-
-module_init(pnpide_init);
-module_exit(pnpide_exit);
-
+module_pnp_driver(idepnp_driver);
 MODULE_LICENSE("GPL");

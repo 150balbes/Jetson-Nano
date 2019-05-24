@@ -28,6 +28,19 @@ config VIDEO_IVTV
 	  To compile this driver as a module, choose M here: the
 	  module will be called ivtv.
 
+config VIDEO_IVTV_DEPRECATED_IOCTLS
+	bool "enable the DVB ioctls abuse on ivtv driver"
+	depends on VIDEO_IVTV
+	default n
+	---help---
+	  Enable the usage of the a DVB set of ioctls that were abused by
+	  IVTV driver for a while.
+
+	  Those ioctls were not needed for a long time, as IVTV implements
+	  the proper V4L2 ioctls since kernel 3.3.
+
+	  If unsure, say N.
+
 config VIDEO_IVTV_ALSA
 	tristate "Conexant cx23415/cx23416 ALSA interface for PCM audio capture"
 	depends on VIDEO_IVTV && SND
@@ -59,3 +72,23 @@ config VIDEO_FB_IVTV
 
 	  To compile this driver as a module, choose M here: the
 	  module will be called ivtvfb.
+
+config VIDEO_FB_IVTV_FORCE_PAT
+	bool "force cx23415 framebuffer init with x86 PAT enabled"
+	depends on VIDEO_FB_IVTV && X86_PAT
+	default n
+	---help---
+	  With PAT enabled, the cx23415 framebuffer driver does not
+	  utilize write-combined caching on the framebuffer memory.
+	  For this reason, the driver will by default disable itself
+	  when initializied on a kernel with PAT enabled (i.e. not
+	  using the nopat kernel parameter).
+
+	  The driver is not easily upgradable to the PAT-aware
+	  ioremap_wc() API since the firmware hides the address
+	  ranges that should be marked write-combined from the driver.
+
+	  With this setting enabled, the framebuffer will initialize on
+	  PAT-enabled systems but the framebuffer memory will be uncached.
+
+	  If unsure, say N.

@@ -1,7 +1,7 @@
 /*
  * System Control and Power Interface (SCPI) Protocol based clock driver
  *
- * Copyright (C) 2014 ARM Ltd.
+ * Copyright (C) 2015 ARM Ltd.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -16,43 +16,43 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include <linux/clkdev.h>
 #include <linux/clk-provider.h>
 #include <linux/device.h>
 #include <linux/err.h>
 #include <linux/of.h>
 #include <linux/module.h>
+#include <linux/of_platform.h>
 #include <linux/platform_device.h>
-#include <linux/amlogic/scpi_protocol.h>
-
+#include <linux/scpi_protocol.h>
 
 struct scpi_clk {
 	u32 id;
-	const char *name;
 	struct clk_hw hw;
-	struct scpi_opp *opps;
-	unsigned long rate_min;
-	unsigned long rate_max;
+	struct scpi_dvfs_info *info;
+	struct scpi_ops *scpi_ops;
 };
 
 #define to_scpi_clk(clk) container_of(clk, struct scpi_clk, hw)
+
+static struct platform_device *cpufreq_dev;
 
 static unsigned long scpi_clk_recalc_rate(struct clk_hw *hw,
 					  unsigned long parent_rate)
 {
 	struct scpi_clk *clk = to_scpi_clk(hw);
-	return scpi_clk_get_val(clk->id);
+
+	return clk->scpi_ops->clk_get_val(clk->id);
 }
 
 static long scpi_clk_round_rate(struct clk_hw *hw, unsigned long rate,
 				unsigned long *parent_rate)
 {
-	struct scpi_clk *clk = to_scpi_clk(hw);
-	if (clk->rate_min && rate < clk->rate_min)
-		rate = clk->rate_min;
-	if (clk->rate_max && rate > clk->rate_max)
-		rate = clk->rate_max;
-
+	/*
+	 * We can't figure out what rate it will be, so just return the
+	 * rate back to the caller. scpi_clk_recalc_rate() will be called
+	 * after the rate is set and we'll know what rate the clock is
+	 * running at then.
+	 */
 	return rate;
 }
 
@@ -60,67 +60,67 @@ static int scpi_clk_set_rate(struct clk_hw *hw, unsigned long rate,
 			     unsigned long parent_rate)
 {
 	struct scpi_clk *clk = to_scpi_clk(hw);
-	return scpi_clk_set_val(clk->id, rate);
+
+	return clk->scpi_ops->clk_set_val(clk->id, rate);
 }
 
-static struct clk_ops scpi_clk_ops = {
+static const struct clk_ops scpi_clk_ops = {
 	.recalc_rate = scpi_clk_recalc_rate,
 	.round_rate = scpi_clk_round_rate,
 	.set_rate = scpi_clk_set_rate,
 };
 
 /* find closest match to given frequency in OPP table */
-static int __scpi_dvfs_round_rate(struct scpi_clk *clk, unsigned long rate)
+static long __scpi_dvfs_round_rate(struct scpi_clk *clk, unsigned long rate)
 {
-	int idx, max_opp = clk->opps->count;
-	struct scpi_opp_entry *opp = clk->opps->opp;
-	u32 fmin = 0, fmax = ~0, ftmp;
+	int idx;
+	unsigned long fmin = 0, fmax = ~0, ftmp;
+	const struct scpi_opp *opp = clk->info->opps;
 
-	for (idx = 0; idx < max_opp; idx++, opp++) {
-		ftmp = opp->freq_hz;
-		if (ftmp >= (u32)rate) {
+	for (idx = 0; idx < clk->info->count; idx++, opp++) {
+		ftmp = opp->freq;
+		if (ftmp >= rate) {
 			if (ftmp <= fmax)
 				fmax = ftmp;
-		} else {
-			if (ftmp >= fmin)
-				fmin = ftmp;
+			break;
+		} else if (ftmp >= fmin) {
+			fmin = ftmp;
 		}
 	}
-	if (fmax != ~0)
-		return fmax;
-	else
-		return fmin;
+	return fmax != ~0 ? fmax : fmin;
 }
 
 static unsigned long scpi_dvfs_recalc_rate(struct clk_hw *hw,
 					   unsigned long parent_rate)
 {
 	struct scpi_clk *clk = to_scpi_clk(hw);
-	int idx = scpi_dvfs_get_idx(clk->id);
-	struct scpi_opp_entry *opp = clk->opps->opp;
+	int idx = clk->scpi_ops->dvfs_get_idx(clk->id);
+	const struct scpi_opp *opp;
 
 	if (idx < 0)
 		return 0;
-	else
-		return opp[idx].freq_hz;
+
+	opp = clk->info->opps + idx;
+	return opp->freq;
 }
 
 static long scpi_dvfs_round_rate(struct clk_hw *hw, unsigned long rate,
 				 unsigned long *parent_rate)
 {
 	struct scpi_clk *clk = to_scpi_clk(hw);
+
 	return __scpi_dvfs_round_rate(clk, rate);
 }
 
 static int __scpi_find_dvfs_index(struct scpi_clk *clk, unsigned long rate)
 {
-	int idx, max_opp = clk->opps->count;
-	struct scpi_opp_entry *opp = clk->opps->opp;
+	int idx, max_opp = clk->info->count;
+	const struct scpi_opp *opp = clk->info->opps;
 
 	for (idx = 0; idx < max_opp; idx++, opp++)
-		if (opp->freq_hz == (u32)rate)
-			break;
-	return (idx == max_opp) ? -EINVAL : idx;
+		if (opp->freq == rate)
+			return idx;
+	return -EINVAL;
 }
 
 static int scpi_dvfs_set_rate(struct clk_hw *hw, unsigned long rate,
@@ -131,180 +131,195 @@ static int scpi_dvfs_set_rate(struct clk_hw *hw, unsigned long rate,
 
 	if (ret < 0)
 		return ret;
-	else
-		return scpi_dvfs_set_idx(clk->id, (u8)ret);
+	return clk->scpi_ops->dvfs_set_idx(clk->id, (u8)ret);
 }
 
-static struct clk_ops scpi_dvfs_ops = {
+static const struct clk_ops scpi_dvfs_ops = {
 	.recalc_rate = scpi_dvfs_recalc_rate,
 	.round_rate = scpi_dvfs_round_rate,
 	.set_rate = scpi_dvfs_set_rate,
 };
 
-static struct clk *
-scpi_dvfs_ops_init(struct device *dev, struct device_node *np,
-		   struct scpi_clk *sclk)
+static const struct of_device_id scpi_clk_match[] = {
+	{ .compatible = "arm,scpi-dvfs-clocks", .data = &scpi_dvfs_ops, },
+	{ .compatible = "arm,scpi-variable-clocks", .data = &scpi_clk_ops, },
+	{}
+};
+
+static int
+scpi_clk_ops_init(struct device *dev, const struct of_device_id *match,
+		  struct scpi_clk *sclk, const char *name)
 {
 	struct clk_init_data init;
-	struct scpi_opp *opps;
-
-	init.name = sclk->name;
-	init.flags = CLK_IS_ROOT;
-	init.num_parents = 0;
-	init.ops = &scpi_dvfs_ops;
-	sclk->hw.init = &init;
-
-	opps = scpi_dvfs_get_opps(sclk->id);
-	if (IS_ERR(opps))
-		return (struct clk *)opps;
-
-	sclk->opps = opps;
-
-	return devm_clk_register(dev, &sclk->hw);
-}
-
-static struct clk *
-scpi_clk_ops_init(struct device *dev, struct device_node *np,
-		  struct scpi_clk *sclk)
-{
-	struct clk_init_data init;
-	u32 range[2];
+	unsigned long min = 0, max = 0;
 	int ret;
 
-	init.name = sclk->name;
-	init.flags = CLK_IS_ROOT;
+	init.name = name;
+	init.flags = 0;
 	init.num_parents = 0;
-	init.ops = &scpi_clk_ops;
+	init.ops = match->data;
 	sclk->hw.init = &init;
+	sclk->scpi_ops = get_scpi_ops();
 
-	ret = of_property_read_u32_array(np, "frequency-range", range,
-					 ARRAY_SIZE(range));
-	if (ret)
-		return ERR_PTR(ret);
-	sclk->rate_min = range[0];
-	sclk->rate_max = range[1];
+	if (init.ops == &scpi_dvfs_ops) {
+		sclk->info = sclk->scpi_ops->dvfs_get_info(sclk->id);
+		if (IS_ERR(sclk->info))
+			return PTR_ERR(sclk->info);
+	} else if (init.ops == &scpi_clk_ops) {
+		if (sclk->scpi_ops->clk_get_range(sclk->id, &min, &max) || !max)
+			return -EINVAL;
+	} else {
+		return -EINVAL;
+	}
 
-	return devm_clk_register(dev, &sclk->hw);
+	ret = devm_clk_hw_register(dev, &sclk->hw);
+	if (!ret && max)
+		clk_hw_set_rate_range(&sclk->hw, min, max);
+	return ret;
 }
 
-static int scpi_clk_setup(struct device *dev, struct device_node *np,
-			  const void *data)
+struct scpi_clk_data {
+	struct scpi_clk **clk;
+	unsigned int clk_num;
+};
+
+static struct clk_hw *
+scpi_of_clk_src_get(struct of_phandle_args *clkspec, void *data)
 {
-	struct clk * (*setup_ops)(struct device *, struct device_node *,
-				 struct scpi_clk *) = data;
-	struct clk_onecell_data *clk_data;
-	struct clk **clks;
-	size_t count;
-	int idx;
+	struct scpi_clk *sclk;
+	struct scpi_clk_data *clk_data = data;
+	unsigned int idx = clkspec->args[0], count;
+
+	for (count = 0; count < clk_data->clk_num; count++) {
+		sclk = clk_data->clk[count];
+		if (idx == sclk->id)
+			return &sclk->hw;
+	}
+
+	return ERR_PTR(-EINVAL);
+}
+
+static int scpi_clk_add(struct device *dev, struct device_node *np,
+			const struct of_device_id *match)
+{
+	int idx, count, err;
+	struct scpi_clk_data *clk_data;
 
 	count = of_property_count_strings(np, "clock-output-names");
 	if (count < 0) {
-		dev_err(dev, "%s: invalid clock output count\n", np->name);
+		dev_err(dev, "%pOFn: invalid clock output count\n", np);
 		return -EINVAL;
 	}
 
 	clk_data = devm_kmalloc(dev, sizeof(*clk_data), GFP_KERNEL);
-	if (!clk_data) {
-		dev_err(dev, "failed to allocate clock provider data\n");
+	if (!clk_data)
 		return -ENOMEM;
-	}
 
-	clks = devm_kmalloc(dev, count * sizeof(*clks), GFP_KERNEL);
-	if (!clks) {
-		dev_err(dev, "failed to allocate clock providers\n");
+	clk_data->clk_num = count;
+	clk_data->clk = devm_kcalloc(dev, count, sizeof(*clk_data->clk),
+				     GFP_KERNEL);
+	if (!clk_data->clk)
 		return -ENOMEM;
-	}
 
 	for (idx = 0; idx < count; idx++) {
 		struct scpi_clk *sclk;
+		const char *name;
 		u32 val;
 
 		sclk = devm_kzalloc(dev, sizeof(*sclk), GFP_KERNEL);
-		if (!sclk) {
-			dev_err(dev, "failed to allocate scpi clocks\n");
+		if (!sclk)
 			return -ENOMEM;
-		}
 
 		if (of_property_read_string_index(np, "clock-output-names",
-						  idx, &sclk->name)) {
-			dev_err(dev, "invalid clock name @ %s\n", np->name);
+						  idx, &name)) {
+			dev_err(dev, "invalid clock name @ %pOFn\n", np);
 			return -EINVAL;
 		}
 
 		if (of_property_read_u32_index(np, "clock-indices",
 					       idx, &val)) {
-			dev_err(dev, "invalid clock index @ %s\n", np->name);
+			dev_err(dev, "invalid clock index @ %pOFn\n", np);
 			return -EINVAL;
 		}
 
 		sclk->id = val;
 
-		clks[idx] = setup_ops(dev, np, sclk);
-		if (IS_ERR(clks[idx])) {
-			dev_err(dev, "failed to register clock '%s'\n",
-				sclk->name);
-			return PTR_ERR(clks[idx]);
+		err = scpi_clk_ops_init(dev, match, sclk, name);
+		if (err) {
+			dev_err(dev, "failed to register clock '%s'\n", name);
+			return err;
 		}
 
-		dev_dbg(dev, "Registered clock '%s'\n", sclk->name);
+		dev_dbg(dev, "Registered clock '%s'\n", name);
+		clk_data->clk[idx] = sclk;
 	}
 
-	clk_data->clks = clks;
-	clk_data->clk_num = count;
-	of_clk_add_provider(np, of_clk_src_onecell_get, clk_data);
+	return of_clk_add_hw_provider(np, scpi_of_clk_src_get, clk_data);
+}
 
+static int scpi_clocks_remove(struct platform_device *pdev)
+{
+	struct device *dev = &pdev->dev;
+	struct device_node *child, *np = dev->of_node;
+
+	if (cpufreq_dev) {
+		platform_device_unregister(cpufreq_dev);
+		cpufreq_dev = NULL;
+	}
+
+	for_each_available_child_of_node(np, child)
+		of_clk_del_provider(np);
 	return 0;
 }
 
-static const struct of_device_id clk_match[] = {
-	{ .compatible = "arm,scpi-clk-indexed", .data = scpi_dvfs_ops_init, },
-	{ .compatible = "arm,scpi-clk-range", .data = &scpi_clk_ops_init, },
-	{}
-};
-
-static int scpi_clk_probe(struct platform_device *pdev)
+static int scpi_clocks_probe(struct platform_device *pdev)
 {
-
-	struct device *dev = &pdev->dev;
-	struct device_node *np = dev->of_node, *child;
-	const struct of_device_id *match;
 	int ret;
-	for_each_child_of_node(np, child) {
-		match = of_match_node(clk_match, child);
+	struct device *dev = &pdev->dev;
+	struct device_node *child, *np = dev->of_node;
+	const struct of_device_id *match;
+
+	if (!get_scpi_ops())
+		return -ENXIO;
+
+	for_each_available_child_of_node(np, child) {
+		match = of_match_node(scpi_clk_match, child);
 		if (!match)
 			continue;
-		ret = scpi_clk_setup(dev, child, match->data);
-		if (ret)
+		ret = scpi_clk_add(dev, child, match);
+		if (ret) {
+			scpi_clocks_remove(pdev);
+			of_node_put(child);
 			return ret;
+		}
+
+		if (match->data != &scpi_dvfs_ops)
+			continue;
+		/* Add the virtual cpufreq device if it's DVFS clock provider */
+		cpufreq_dev = platform_device_register_simple("scpi-cpufreq",
+							      -1, NULL, 0);
+		if (IS_ERR(cpufreq_dev))
+			pr_warn("unable to register cpufreq device");
 	}
 	return 0;
 }
 
-static struct of_device_id scpi_clk_ids[] = {
-	{ .compatible = "arm,scpi-clks", },
+static const struct of_device_id scpi_clocks_ids[] = {
+	{ .compatible = "arm,scpi-clocks", },
 	{}
 };
+MODULE_DEVICE_TABLE(of, scpi_clocks_ids);
 
-static struct platform_driver scpi_clk_driver = {
+static struct platform_driver scpi_clocks_driver = {
 	.driver	= {
 		.name = "scpi_clocks",
-		.of_match_table = scpi_clk_ids,
+		.of_match_table = scpi_clocks_ids,
 	},
-	.probe = scpi_clk_probe,
+	.probe = scpi_clocks_probe,
+	.remove = scpi_clocks_remove,
 };
-
-static int __init scpi_clk_init(void)
-{
-	return platform_driver_register(&scpi_clk_driver);
-}
-postcore_initcall(scpi_clk_init);
-
-static void __exit scpi_clk_exit(void)
-{
-	platform_driver_unregister(&scpi_clk_driver);
-}
-module_exit(scpi_clk_exit);
+module_platform_driver(scpi_clocks_driver);
 
 MODULE_AUTHOR("Sudeep Holla <sudeep.holla@arm.com>");
 MODULE_DESCRIPTION("ARM SCPI clock driver");
-MODULE_LICENSE("GPL");
+MODULE_LICENSE("GPL v2");

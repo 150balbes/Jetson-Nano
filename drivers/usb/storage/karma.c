@@ -1,21 +1,9 @@
-/* Driver for Rio Karma
+// SPDX-License-Identifier: GPL-2.0+
+/*
+ * Driver for Rio Karma
  *
  *   (c) 2006 Bob Copeland <me@bobcopeland.com>
  *   (c) 2006 Keith Bennett <keith@mcs.st-and.ac.uk>
- *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU General Public License as published by the
- * Free Software Foundation; either version 2, or (at your option) any
- * later version.
- *
- * This program is distributed in the hope that it will be useful, but
- * WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 675 Mass Ave, Cambridge, MA 02139, USA.
  */
 
 #include <linux/module.h>
@@ -28,6 +16,9 @@
 #include "usb.h"
 #include "transport.h"
 #include "debug.h"
+#include "scsiglue.h"
+
+#define DRV_NAME "ums-karma"
 
 MODULE_DESCRIPTION("Driver for Rio Karma");
 MODULE_AUTHOR("Bob Copeland <me@bobcopeland.com>, Keith Bennett <keith@mcs.st-and.ac.uk>");
@@ -101,7 +92,7 @@ static struct us_unusual_dev karma_unusual_dev_list[] = {
  */
 static int rio_karma_send_command(char cmd, struct us_data *us)
 {
-	int result, partial;
+	int result;
 	unsigned long timeout;
 	static unsigned char seq = 1;
 	struct karma_data *data = (struct karma_data *) us->extra;
@@ -115,12 +106,12 @@ static int rio_karma_send_command(char cmd, struct us_data *us)
 	timeout = jiffies + msecs_to_jiffies(6000);
 	for (;;) {
 		result = usb_stor_bulk_transfer_buf(us, us->send_bulk_pipe,
-			us->iobuf, RIO_SEND_LEN, &partial);
+			us->iobuf, RIO_SEND_LEN, NULL);
 		if (result != USB_STOR_XFER_GOOD)
 			goto err;
 
 		result = usb_stor_bulk_transfer_buf(us, us->recv_bulk_pipe,
-			data->recv, RIO_RECV_LEN, &partial);
+			data->recv, RIO_RECV_LEN, NULL);
 		if (result != USB_STOR_XFER_GOOD)
 			goto err;
 
@@ -176,6 +167,7 @@ static int rio_karma_transport(struct scsi_cmnd *srb, struct us_data *us)
 static void rio_karma_destructor(void *extra)
 {
 	struct karma_data *data = (struct karma_data *) extra;
+
 	kfree(data->recv);
 }
 
@@ -183,6 +175,7 @@ static int rio_karma_init(struct us_data *us)
 {
 	int ret = 0;
 	struct karma_data *data = kzalloc(sizeof(struct karma_data), GFP_NOIO);
+
 	if (!data)
 		goto out;
 
@@ -200,6 +193,8 @@ out:
 	return ret;
 }
 
+static struct scsi_host_template karma_host_template;
+
 static int karma_probe(struct usb_interface *intf,
 			 const struct usb_device_id *id)
 {
@@ -207,7 +202,8 @@ static int karma_probe(struct usb_interface *intf,
 	int result;
 
 	result = usb_stor_probe1(&us, intf, id,
-			(id - karma_usb_ids) + karma_unusual_dev_list);
+			(id - karma_usb_ids) + karma_unusual_dev_list,
+			&karma_host_template);
 	if (result)
 		return result;
 
@@ -220,7 +216,7 @@ static int karma_probe(struct usb_interface *intf,
 }
 
 static struct usb_driver karma_driver = {
-	.name =		"ums-karma",
+	.name =		DRV_NAME,
 	.probe =	karma_probe,
 	.disconnect =	usb_stor_disconnect,
 	.suspend =	usb_stor_suspend,
@@ -233,4 +229,4 @@ static struct usb_driver karma_driver = {
 	.no_dynamic_id = 1,
 };
 
-module_usb_driver(karma_driver);
+module_usb_stor_driver(karma_driver, karma_host_template, DRV_NAME);

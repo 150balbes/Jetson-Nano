@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  * OHCI HCD(Host Controller Driver) for USB.
  *
@@ -18,10 +19,6 @@
  * Written from sparse documentation from Toshiba and Sharp's driver
  * for the 2.4 kernel,
  *	usb-ohci-tc6393.c(C) Copyright 2004 Lineo Solutions, Inc.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  */
 
 /*#include <linux/fs.h>
@@ -58,7 +55,7 @@
 #define CCR_PM_CKRNEN    0x0002
 #define CCR_PM_USBPW1    0x0004
 #define CCR_PM_USBPW2    0x0008
-#define CCR_PM_USBPW3    0x0008
+#define CCR_PM_USBPW3    0x0010
 #define CCR_PM_PMEE      0x0100
 #define CCR_PM_PMES      0x8000
 
@@ -227,13 +224,10 @@ static int ohci_hcd_tmio_drv_probe(struct platform_device *dev)
 		goto err_ioremap_regs;
 	}
 
-	if (!dma_declare_coherent_memory(&dev->dev, sram->start,
-				sram->start,
-				resource_size(sram),
-				DMA_MEMORY_MAP | DMA_MEMORY_EXCLUSIVE)) {
-		ret = -EBUSY;
+	ret = dma_declare_coherent_memory(&dev->dev, sram->start, sram->start,
+				resource_size(sram));
+	if (ret)
 		goto err_dma_declare;
-	}
 
 	if (cell->enable) {
 		ret = cell->enable(dev);
@@ -368,6 +362,5 @@ static struct platform_driver ohci_hcd_tmio_driver = {
 	.resume		= ohci_hcd_tmio_drv_resume,
 	.driver		= {
 		.name	= "tmio-ohci",
-		.owner	= THIS_MODULE,
 	},
 };

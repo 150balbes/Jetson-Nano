@@ -1,19 +1,7 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  * Copyright (c) 2000-2005 Silicon Graphics, Inc.
  * All Rights Reserved.
- *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License as
- * published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it would be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write the Free Software Foundation,
- * Inc.,  51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
  */
 #ifndef __XFS_QUOTA_H__
 #define __XFS_QUOTA_H__
@@ -48,6 +36,22 @@ struct xfs_trans;
 	 (XFS_IS_PQUOTA_ON(mp) && \
 		(mp->m_sb.sb_qflags & XFS_PQUOTA_CHKD) == 0))
 
+static inline uint
+xfs_quota_chkd_flag(
+	uint		dqtype)
+{
+	switch (dqtype) {
+	case XFS_DQ_USER:
+		return XFS_UQUOTA_CHKD;
+	case XFS_DQ_GROUP:
+		return XFS_GQUOTA_CHKD;
+	case XFS_DQ_PROJ:
+		return XFS_PQUOTA_CHKD;
+	default:
+		return 0;
+	}
+}
+
 /*
  * The structure kept inside the xfs_trans_t keep track of dquot changes
  * within a transaction and apply them later.
@@ -55,7 +59,6 @@ struct xfs_trans;
 typedef struct xfs_dqtrx {
 	struct xfs_dquot *qt_dquot;	  /* the dquot this refers to */
 	ulong		qt_blk_res;	  /* blks reserved on a dquot */
-	ulong		qt_blk_res_used;  /* blks used from the reservation */
 	ulong		qt_ino_res;	  /* inode reserved on a dquot */
 	ulong		qt_ino_res_used;  /* inodes used from the reservation */
 	long		qt_bcount_delta;  /* dquot blk count changes */
@@ -91,8 +94,8 @@ extern struct xfs_dquot *xfs_qm_vop_chown(struct xfs_trans *,
 extern int xfs_qm_vop_chown_reserve(struct xfs_trans *, struct xfs_inode *,
 		struct xfs_dquot *, struct xfs_dquot *,
 		struct xfs_dquot *, uint);
-extern int xfs_qm_dqattach(struct xfs_inode *, uint);
-extern int xfs_qm_dqattach_locked(struct xfs_inode *, uint);
+extern int xfs_qm_dqattach(struct xfs_inode *);
+extern int xfs_qm_dqattach_locked(struct xfs_inode *ip, bool doalloc);
 extern void xfs_qm_dqdetach(struct xfs_inode *);
 extern void xfs_qm_dqrele(struct xfs_dquot *);
 extern void xfs_qm_statvfs(struct xfs_inode *, struct kstatfs *);
@@ -133,7 +136,7 @@ static inline int xfs_trans_reserve_quota_bydquots(struct xfs_trans *tp,
 #define xfs_qm_vop_rename_dqattach(it)					(0)
 #define xfs_qm_vop_chown(tp, ip, old, new)				(NULL)
 #define xfs_qm_vop_chown_reserve(tp, ip, u, g, p, fl)			(0)
-#define xfs_qm_dqattach(ip, fl)						(0)
+#define xfs_qm_dqattach(ip)						(0)
 #define xfs_qm_dqattach_locked(ip, fl)					(0)
 #define xfs_qm_dqdetach(ip)
 #define xfs_qm_dqrele(d)

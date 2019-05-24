@@ -46,12 +46,20 @@ static inline void *squashfs_comp_opts(struct squashfs_sb_info *msblk,
 extern const struct squashfs_decompressor squashfs_xz_comp_ops;
 #endif
 
+#ifdef CONFIG_SQUASHFS_LZ4
+extern const struct squashfs_decompressor squashfs_lz4_comp_ops;
+#endif
+
 #ifdef CONFIG_SQUASHFS_LZO
 extern const struct squashfs_decompressor squashfs_lzo_comp_ops;
 #endif
 
 #ifdef CONFIG_SQUASHFS_ZLIB
 extern const struct squashfs_decompressor squashfs_zlib_comp_ops;
+#endif
+
+#ifdef CONFIG_SQUASHFS_ZSTD
+extern const struct squashfs_decompressor squashfs_zstd_comp_ops;
 #endif
 
 #endif

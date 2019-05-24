@@ -9,6 +9,20 @@
 #ifndef __AD193X_H__
 #define __AD193X_H__
 
+#include <linux/regmap.h>
+
+struct device;
+
+enum ad193x_type {
+	AD193X,
+	AD1933,
+	AD1934,
+};
+
+extern const struct regmap_config ad193x_regmap_config;
+int ad193x_probe(struct device *dev, struct regmap *regmap,
+		 enum ad193x_type type);
+
 #define AD193X_PLL_CLK_CTRL0    0x00
 #define AD193X_PLL_POWERDOWN           0x01
 #define AD193X_PLL_INPUT_MASK   0x6
@@ -17,6 +31,11 @@
 #define AD193X_PLL_INPUT_512    (2 << 1)
 #define AD193X_PLL_INPUT_768    (3 << 1)
 #define AD193X_PLL_CLK_CTRL1    0x01
+#define AD193X_PLL_SRC_MASK	0x03
+#define AD193X_PLL_DAC_SRC_PLL  0
+#define AD193X_PLL_DAC_SRC_MCLK 1
+#define AD193X_PLL_CLK_SRC_PLL  (0 << 1)
+#define AD193X_PLL_CLK_SRC_MCLK	(1 << 1)
 #define AD193X_DAC_CTRL0        0x02
 #define AD193X_DAC_POWERDOWN           0x01
 #define AD193X_DAC_SERFMT_MASK		0xC0
@@ -81,5 +100,8 @@
 #define AD193X_16_CHANNELS  3
 
 #define AD193X_NUM_REGS          17
+
+#define AD193X_SYSCLK_PLL	0
+#define AD193X_SYSCLK_MCLK	1
 
 #endif

@@ -18,7 +18,7 @@
 #define __TEA5767_H__
 
 #include <linux/i2c.h>
-#include "dvb_frontend.h"
+#include <media/dvb_frontend.h>
 
 enum tea5767_xtal {
 	TEA5767_LOW_LO_32768    = 0,
@@ -39,7 +39,7 @@ struct tea5767_ctrl {
 	enum tea5767_xtal	xtal_freq;
 };
 
-#if IS_ENABLED(CONFIG_MEDIA_TUNER_TEA5767)
+#if IS_REACHABLE(CONFIG_MEDIA_TUNER_TEA5767)
 extern int tea5767_autodetection(struct i2c_adapter* i2c_adap, u8 i2c_addr);
 
 extern struct dvb_frontend *tea5767_attach(struct dvb_frontend *fe,

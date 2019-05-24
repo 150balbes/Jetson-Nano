@@ -31,12 +31,10 @@ static int fscache_histogram_show(struct seq_file *m, void *v)
 
 	switch ((unsigned long) v) {
 	case 1:
-		seq_puts(m, "JIFS  SECS  OBJ INST  OP RUNS   OBJ RUNS "
-			 " RETRV DLY RETRIEVLS\n");
+		seq_puts(m, "JIFS  SECS  OBJ INST  OP RUNS   OBJ RUNS  RETRV DLY RETRIEVLS\n");
 		return 0;
 	case 2:
-		seq_puts(m, "===== ===== ========= ========= ========="
-			 " ========= =========\n");
+		seq_puts(m, "===== ===== ========= ========= ========= ========= =========\n");
 		return 0;
 	default:
 		index = (unsigned long) v - 3;
@@ -85,25 +83,9 @@ static void fscache_histogram_stop(struct seq_file *m, void *v)
 {
 }
 
-static const struct seq_operations fscache_histogram_ops = {
+const struct seq_operations fscache_histogram_ops = {
 	.start		= fscache_histogram_start,
 	.stop		= fscache_histogram_stop,
 	.next		= fscache_histogram_next,
 	.show		= fscache_histogram_show,
-};
-
-/*
- * open "/proc/fs/fscache/histogram" to provide latency data
- */
-static int fscache_histogram_open(struct inode *inode, struct file *file)
-{
-	return seq_open(file, &fscache_histogram_ops);
-}
-
-const struct file_operations fscache_histogram_fops = {
-	.owner		= THIS_MODULE,
-	.open		= fscache_histogram_open,
-	.read		= seq_read,
-	.llseek		= seq_lseek,
-	.release	= seq_release,
 };

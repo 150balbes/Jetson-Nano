@@ -405,7 +405,6 @@ static const struct iio_chan_spec adxrs450_channels[2][2] = {
 };
 
 static const struct iio_info adxrs450_info = {
-	.driver_module = THIS_MODULE,
 	.read_raw = &adxrs450_read_raw,
 	.write_raw = &adxrs450_write_raw,
 };
@@ -456,7 +455,6 @@ MODULE_DEVICE_TABLE(spi, adxrs450_id);
 static struct spi_driver adxrs450_driver = {
 	.driver = {
 		.name = "adxrs450",
-		.owner = THIS_MODULE,
 	},
 	.probe = adxrs450_probe,
 	.id_table	= adxrs450_id,

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * Copyright (C) 2012 Texas Instruments Inc
  *
@@ -9,10 +10,6 @@
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
  *
  * Contributors:
  *      Manjunath Hadli <manjunath.hadli@ti.com>
@@ -134,7 +131,7 @@ struct vpfe_ipipeif_device {
 	unsigned int output;
 	struct vpfe_video_device video_in;
 	struct v4l2_ctrl_handler ctrls;
-	void *__iomem ipipeif_base_addr;
+	void __iomem *ipipeif_base_addr;
 	struct ipipeif_params config;
 	int dpcm_predictor;
 	int gain;

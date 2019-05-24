@@ -23,7 +23,6 @@
 
 #include <linux/module.h>
 #include <linux/types.h>
-#include <linux/init.h>
 #include <linux/kernel.h>
 #include <linux/string.h>
 #include <linux/ioport.h>
@@ -44,7 +43,6 @@ struct platram_info {
 	struct device		*dev;
 	struct mtd_info		*mtd;
 	struct map_info		 map;
-	struct resource		*area;
 	struct platdata_mtd_ram	*pdata;
 };
 
@@ -98,16 +96,6 @@ static int platram_remove(struct platform_device *pdev)
 
 	platram_setrw(info, PLATRAM_RO);
 
-	/* release resources */
-
-	if (info->area) {
-		release_resource(info->area);
-		kfree(info->area);
-	}
-
-	if (info->map.virt != NULL)
-		iounmap(info->map.virt);
-
 	kfree(info);
 
 	return 0;
@@ -138,7 +126,6 @@ static int platram_probe(struct platform_device *pdev)
 
 	info = kzalloc(sizeof(*info), GFP_KERNEL);
 	if (info == NULL) {
-		dev_err(&pdev->dev, "no memory for flash info\n");
 		err = -ENOMEM;
 		goto exit_error;
 	}
@@ -149,12 +136,11 @@ static int platram_probe(struct platform_device *pdev)
 	info->pdata = pdata;
 
 	/* get the resource for the memory mapping */
-
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
-
-	if (res == NULL) {
-		dev_err(&pdev->dev, "no memory resource specified\n");
-		err = -ENOENT;
+	info->map.virt = devm_ioremap_resource(&pdev->dev, res);
+	if (IS_ERR(info->map.virt)) {
+		err = PTR_ERR(info->map.virt);
+		dev_err(&pdev->dev, "failed to ioremap() region\n");
 		goto exit_free;
 	}
 
@@ -169,25 +155,7 @@ static int platram_probe(struct platform_device *pdev)
 			(char *)pdata->mapname : (char *)pdev->name;
 	info->map.bankwidth = pdata->bankwidth;
 
-	/* register our usage of the memory area */
-
-	info->area = request_mem_region(res->start, info->map.size, pdev->name);
-	if (info->area == NULL) {
-		dev_err(&pdev->dev, "failed to request memory region\n");
-		err = -EIO;
-		goto exit_free;
-	}
-
-	/* remap the memory area */
-
-	info->map.virt = ioremap(res->start, info->map.size);
 	dev_dbg(&pdev->dev, "virt %p, %lu bytes\n", info->map.virt, info->map.size);
-
-	if (info->map.virt == NULL) {
-		dev_err(&pdev->dev, "failed to ioremap() region\n");
-		err = -EIO;
-		goto exit_free;
-	}
 
 	simple_map_init(&info->map);
 
@@ -212,7 +180,6 @@ static int platram_probe(struct platform_device *pdev)
 		goto exit_free;
 	}
 
-	info->mtd->owner = THIS_MODULE;
 	info->mtd->dev.parent = &pdev->dev;
 
 	platram_setrw(info, PLATRAM_RW);
@@ -253,7 +220,6 @@ static struct platform_driver platram_driver = {
 	.remove		= platram_remove,
 	.driver		= {
 		.name	= "mtd-ram",
-		.owner	= THIS_MODULE,
 	},
 };
 

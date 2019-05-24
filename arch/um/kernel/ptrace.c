@@ -7,10 +7,8 @@
 #include <linux/ptrace.h>
 #include <linux/sched.h>
 #include <linux/tracehook.h>
-#include <asm/uaccess.h>
-#include <skas_ptrace.h>
-
-
+#include <linux/uaccess.h>
+#include <asm/ptrace-abi.h>
 
 void user_enable_single_step(struct task_struct *child)
 {
@@ -68,7 +66,7 @@ long arch_ptrace(struct task_struct *child, long request,
 
 #ifdef PTRACE_GETREGS
 	case PTRACE_GETREGS: { /* Get all gp regs from the child. */
-		if (!access_ok(VERIFY_WRITE, p, MAX_REG_OFFSET)) {
+		if (!access_ok(p, MAX_REG_OFFSET)) {
 			ret = -EIO;
 			break;
 		}
@@ -83,7 +81,7 @@ long arch_ptrace(struct task_struct *child, long request,
 #ifdef PTRACE_SETREGS
 	case PTRACE_SETREGS: { /* Set all gp regs in the child. */
 		unsigned long tmp = 0;
-		if (!access_ok(VERIFY_READ, p, MAX_REG_OFFSET)) {
+		if (!access_ok(p, MAX_REG_OFFSET)) {
 			ret = -EIO;
 			break;
 		}
@@ -104,35 +102,6 @@ long arch_ptrace(struct task_struct *child, long request,
 		ret = ptrace_set_thread_area(child, addr, vp);
 		break;
 
-	case PTRACE_FAULTINFO: {
-		/*
-		 * Take the info from thread->arch->faultinfo,
-		 * but transfer max. sizeof(struct ptrace_faultinfo).
-		 * On i386, ptrace_faultinfo is smaller!
-		 */
-		ret = copy_to_user(p, &child->thread.arch.faultinfo,
-				   sizeof(struct ptrace_faultinfo)) ?
-			-EIO : 0;
-		break;
-	}
-
-#ifdef PTRACE_LDT
-	case PTRACE_LDT: {
-		struct ptrace_ldt ldt;
-
-		if (copy_from_user(&ldt, p, sizeof(ldt))) {
-			ret = -EIO;
-			break;
-		}
-
-		/*
-		 * This one is confusing, so just punt and return -EIO for
-		 * now
-		 */
-		ret = -EIO;
-		break;
-	}
-#endif
 	default:
 		ret = ptrace_request(child, request, addr, data);
 		if (ret == -EIO)
@@ -146,36 +115,28 @@ long arch_ptrace(struct task_struct *child, long request,
 static void send_sigtrap(struct task_struct *tsk, struct uml_pt_regs *regs,
 		  int error_code)
 {
-	struct siginfo info;
-
-	memset(&info, 0, sizeof(info));
-	info.si_signo = SIGTRAP;
-	info.si_code = TRAP_BRKPT;
-
-	/* User-mode eip? */
-	info.si_addr = UPT_IS_USER(regs) ? (void __user *) UPT_IP(regs) : NULL;
-
 	/* Send us the fake SIGTRAP */
-	force_sig_info(SIGTRAP, &info, tsk);
+	force_sig_fault(SIGTRAP, TRAP_BRKPT,
+			/* User-mode eip? */
+			UPT_IS_USER(regs) ? (void __user *) UPT_IP(regs) : NULL, tsk);
 }
 
 /*
  * XXX Check PT_DTRACE vs TIF_SINGLESTEP for singlestepping check and
  * PT_PTRACED vs TIF_SYSCALL_TRACE for syscall tracing check
  */
-void syscall_trace_enter(struct pt_regs *regs)
+int syscall_trace_enter(struct pt_regs *regs)
 {
-	audit_syscall_entry(HOST_AUDIT_ARCH,
-			    UPT_SYSCALL_NR(&regs->regs),
+	audit_syscall_entry(UPT_SYSCALL_NR(&regs->regs),
 			    UPT_SYSCALL_ARG1(&regs->regs),
 			    UPT_SYSCALL_ARG2(&regs->regs),
 			    UPT_SYSCALL_ARG3(&regs->regs),
 			    UPT_SYSCALL_ARG4(&regs->regs));
 
 	if (!test_thread_flag(TIF_SYSCALL_TRACE))
-		return;
+		return 0;
 
-	tracehook_report_syscall_entry(regs);
+	return tracehook_report_syscall_entry(regs);
 }
 
 void syscall_trace_leave(struct pt_regs *regs)

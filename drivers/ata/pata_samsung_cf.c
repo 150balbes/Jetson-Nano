@@ -17,6 +17,7 @@
 
 #include <linux/kernel.h>
 #include <linux/module.h>
+#include <linux/mod_devicetable.h>
 #include <linux/init.h>
 #include <linux/clk.h>
 #include <linux/libata.h>
@@ -54,7 +55,6 @@
 
 enum s3c_cpu_type {
 	TYPE_S3C64XX,
-	TYPE_S5PC100,
 	TYPE_S5PV210,
 };
 
@@ -71,7 +71,7 @@ struct s3c_ide_info {
 	struct clk *clk;
 	void __iomem *ide_addr;
 	void __iomem *sfr_addr;
-	unsigned int irq;
+	int irq;
 	enum s3c_cpu_type cpu_type;
 	unsigned int fifo_status_reg;
 };
@@ -264,10 +264,10 @@ static u8 pata_s3c_check_altstatus(struct ata_port *ap)
 /*
  * pata_s3c_data_xfer - Transfer data by PIO
  */
-static unsigned int pata_s3c_data_xfer(struct ata_device *dev,
+static unsigned int pata_s3c_data_xfer(struct ata_queued_cmd *qc,
 				unsigned char *buf, unsigned int buflen, int rw)
 {
-	struct ata_port *ap = dev->link->ap;
+	struct ata_port *ap = qc->dev->link->ap;
 	struct s3c_ide_info *info = ap->host->private_data;
 	void __iomem *data_addr = ap->ioaddr.data_addr;
 	unsigned int words = buflen >> 1, i;
@@ -361,7 +361,7 @@ static int pata_s3c_wait_after_reset(struct ata_link *link,
 /*
  * pata_s3c_bus_softreset - PATA device software reset
  */
-static unsigned int pata_s3c_bus_softreset(struct ata_port *ap,
+static int pata_s3c_bus_softreset(struct ata_port *ap,
 		unsigned long deadline)
 {
 	struct ata_ioports *ioaddr = &ap->ioaddr;
@@ -476,10 +476,6 @@ static void pata_s3c_hwinit(struct s3c_ide_info *info,
 		writel(0x1b, info->ide_addr + S3C_ATA_IRQ_MSK);
 		break;
 
-	case TYPE_S5PC100:
-		pata_s3c_cfg_mode(info->sfr_addr);
-		/* FALLTHROUGH */
-
 	case TYPE_S5PV210:
 		/* Configure as little endian */
 		pata_s3c_set_endian(info->ide_addr, 0);
@@ -510,10 +506,8 @@ static int __init pata_s3c_probe(struct platform_device *pdev)
 	cpu_type = platform_get_device_id(pdev)->driver_data;
 
 	info = devm_kzalloc(dev, sizeof(*info), GFP_KERNEL);
-	if (!info) {
-		dev_err(dev, "failed to allocate memory for device data\n");
+	if (!info)
 		return -ENOMEM;
-	}
 
 	info->irq = platform_get_irq(pdev, 0);
 
@@ -549,11 +543,6 @@ static int __init pata_s3c_probe(struct platform_device *pdev)
 		info->sfr_addr = info->ide_addr + 0x1800;
 		info->ide_addr += 0x1900;
 		info->fifo_status_reg = 0x94;
-	} else if (cpu_type == TYPE_S5PC100) {
-		ap->ops = &pata_s5p_port_ops;
-		info->sfr_addr = info->ide_addr + 0x1800;
-		info->ide_addr += 0x1900;
-		info->fifo_status_reg = 0x84;
 	} else {
 		ap->ops = &pata_s5p_port_ops;
 		info->fifo_status_reg = 0x84;
@@ -592,11 +581,13 @@ static int __init pata_s3c_probe(struct platform_device *pdev)
 	/* Set endianness and enable the interface */
 	pata_s3c_hwinit(info, pdata);
 
-	platform_set_drvdata(pdev, host);
+	ret = ata_host_activate(host, info->irq,
+				info->irq ? pata_s3c_irq : NULL,
+				0, &pata_s3c_sht);
+	if (ret)
+		goto stop_clk;
 
-	return ata_host_activate(host, info->irq,
-			info->irq ? pata_s3c_irq : NULL,
-			0, &pata_s3c_sht);
+	return 0;
 
 stop_clk:
 	clk_disable(info->clk);
@@ -615,20 +606,18 @@ static int __exit pata_s3c_remove(struct platform_device *pdev)
 	return 0;
 }
 
-#ifdef CONFIG_PM
+#ifdef CONFIG_PM_SLEEP
 static int pata_s3c_suspend(struct device *dev)
 {
-	struct platform_device *pdev = to_platform_device(dev);
-	struct ata_host *host = platform_get_drvdata(pdev);
+	struct ata_host *host = dev_get_drvdata(dev);
 
 	return ata_host_suspend(host, PMSG_SUSPEND);
 }
 
 static int pata_s3c_resume(struct device *dev)
 {
-	struct platform_device *pdev = to_platform_device(dev);
-	struct ata_host *host = platform_get_drvdata(pdev);
-	struct s3c_ide_platdata *pdata = dev_get_platdata(&pdev->dev);
+	struct ata_host *host = dev_get_drvdata(dev);
+	struct s3c_ide_platdata *pdata = dev_get_platdata(dev);
 	struct s3c_ide_info *info = host->private_data;
 
 	pata_s3c_hwinit(info, pdata);
@@ -644,13 +633,10 @@ static const struct dev_pm_ops pata_s3c_pm_ops = {
 #endif
 
 /* driver device registration */
-static struct platform_device_id pata_s3c_driver_ids[] = {
+static const struct platform_device_id pata_s3c_driver_ids[] = {
 	{
 		.name		= "s3c64xx-pata",
 		.driver_data	= TYPE_S3C64XX,
-	}, {
-		.name		= "s5pc100-pata",
-		.driver_data	= TYPE_S5PC100,
 	}, {
 		.name		= "s5pv210-pata",
 		.driver_data	= TYPE_S5PV210,
@@ -665,8 +651,7 @@ static struct platform_driver pata_s3c_driver = {
 	.id_table	= pata_s3c_driver_ids,
 	.driver		= {
 		.name	= DRV_NAME,
-		.owner	= THIS_MODULE,
-#ifdef CONFIG_PM
+#ifdef CONFIG_PM_SLEEP
 		.pm	= &pata_s3c_pm_ops,
 #endif
 	},

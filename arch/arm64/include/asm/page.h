@@ -19,34 +19,12 @@
 #ifndef __ASM_PAGE_H
 #define __ASM_PAGE_H
 
-/* PAGE_SHIFT determines the page size */
-#ifdef CONFIG_ARM64_64K_PAGES
-#define PAGE_SHIFT		16
-#else
-#define PAGE_SHIFT		12
-#endif
-#define PAGE_SIZE		(_AC(1,UL) << PAGE_SHIFT)
-#define PAGE_MASK		(~(PAGE_SIZE-1))
-
-/* We do define AT_SYSINFO_EHDR but don't use the gate mechanism */
-#define __HAVE_ARCH_GATE_AREA		1
-
-/*
- * The idmap and swapper page tables need some space reserved in the kernel
- * image. The idmap only requires a pgd and a next level table to (section) map
- * the kernel, while the swapper also maps the FDT and requires an additional
- * table to map an early UART. See __create_page_tables for more information.
- */
-#define SWAPPER_DIR_SIZE	(3 * PAGE_SIZE)
-#define IDMAP_DIR_SIZE		(2 * PAGE_SIZE)
+#include <asm/page-def.h>
 
 #ifndef __ASSEMBLY__
 
-#ifdef CONFIG_ARM64_64K_PAGES
-#include <asm/pgtable-2level-types.h>
-#else
-#include <asm/pgtable-3level-types.h>
-#endif
+#include <linux/personality.h> /* for READ_IMPLIES_EXEC */
+#include <asm/pgtable-types.h>
 
 extern void __cpu_clear_user_page(void *p, unsigned long user);
 extern void __cpu_copy_user_page(void *to, const void *from,
@@ -59,9 +37,7 @@ extern void clear_page(void *to);
 
 typedef struct page *pgtable_t;
 
-#ifdef CONFIG_HAVE_ARCH_PFN_VALID
 extern int pfn_valid(unsigned long);
-#endif
 
 #include <asm/memory.h>
 

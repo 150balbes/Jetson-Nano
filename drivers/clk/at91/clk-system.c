@@ -12,8 +12,8 @@
 #include <linux/clkdev.h>
 #include <linux/clk/at91_pmc.h>
 #include <linux/of.h>
-#include <linux/of_address.h>
-#include <linux/io.h>
+#include <linux/mfd/syscon.h>
+#include <linux/regmap.h>
 
 #include "pmc.h"
 
@@ -24,48 +24,78 @@
 #define to_clk_system(hw) container_of(hw, struct clk_system, hw)
 struct clk_system {
 	struct clk_hw hw;
-	struct at91_pmc *pmc;
+	struct regmap *regmap;
 	u8 id;
 };
 
-static int clk_system_enable(struct clk_hw *hw)
+static inline int is_pck(int id)
+{
+	return (id >= 8) && (id <= 15);
+}
+
+static inline bool clk_system_ready(struct regmap *regmap, int id)
+{
+	unsigned int status;
+
+	regmap_read(regmap, AT91_PMC_SR, &status);
+
+	return status & (1 << id) ? 1 : 0;
+}
+
+static int clk_system_prepare(struct clk_hw *hw)
 {
 	struct clk_system *sys = to_clk_system(hw);
-	struct at91_pmc *pmc = sys->pmc;
 
-	pmc_write(pmc, AT91_PMC_SCER, 1 << sys->id);
+	regmap_write(sys->regmap, AT91_PMC_SCER, 1 << sys->id);
+
+	if (!is_pck(sys->id))
+		return 0;
+
+	while (!clk_system_ready(sys->regmap, sys->id))
+		cpu_relax();
+
 	return 0;
 }
 
-static void clk_system_disable(struct clk_hw *hw)
+static void clk_system_unprepare(struct clk_hw *hw)
 {
 	struct clk_system *sys = to_clk_system(hw);
-	struct at91_pmc *pmc = sys->pmc;
 
-	pmc_write(pmc, AT91_PMC_SCDR, 1 << sys->id);
+	regmap_write(sys->regmap, AT91_PMC_SCDR, 1 << sys->id);
 }
 
-static int clk_system_is_enabled(struct clk_hw *hw)
+static int clk_system_is_prepared(struct clk_hw *hw)
 {
 	struct clk_system *sys = to_clk_system(hw);
-	struct at91_pmc *pmc = sys->pmc;
+	unsigned int status;
 
-	return !!(pmc_read(pmc, AT91_PMC_SCSR) & (1 << sys->id));
+	regmap_read(sys->regmap, AT91_PMC_SCSR, &status);
+
+	if (!(status & (1 << sys->id)))
+		return 0;
+
+	if (!is_pck(sys->id))
+		return 1;
+
+	regmap_read(sys->regmap, AT91_PMC_SR, &status);
+
+	return status & (1 << sys->id) ? 1 : 0;
 }
 
 static const struct clk_ops system_ops = {
-	.enable = clk_system_enable,
-	.disable = clk_system_disable,
-	.is_enabled = clk_system_is_enabled,
+	.prepare = clk_system_prepare,
+	.unprepare = clk_system_unprepare,
+	.is_prepared = clk_system_is_prepared,
 };
 
-static struct clk * __init
-at91_clk_register_system(struct at91_pmc *pmc, const char *name,
+struct clk_hw * __init
+at91_clk_register_system(struct regmap *regmap, const char *name,
 			 const char *parent_name, u8 id)
 {
 	struct clk_system *sys;
-	struct clk *clk = NULL;
+	struct clk_hw *hw;
 	struct clk_init_data init;
+	int ret;
 
 	if (!parent_name || id > SYSTEM_MAX_ID)
 		return ERR_PTR(-EINVAL);
@@ -78,58 +108,18 @@ at91_clk_register_system(struct at91_pmc *pmc, const char *name,
 	init.ops = &system_ops;
 	init.parent_names = &parent_name;
 	init.num_parents = 1;
-	/*
-	 * CLK_IGNORE_UNUSED is used to avoid ddrck switch off.
-	 * TODO : we should implement a driver supporting at91 ddr controller
-	 * (see drivers/memory) which would request and enable the ddrck clock.
-	 * When this is done we will be able to remove CLK_IGNORE_UNUSED flag.
-	 */
-	init.flags = CLK_IGNORE_UNUSED;
+	init.flags = CLK_SET_RATE_PARENT;
 
 	sys->id = id;
 	sys->hw.init = &init;
-	sys->pmc = pmc;
+	sys->regmap = regmap;
 
-	clk = clk_register(NULL, &sys->hw);
-	if (IS_ERR(clk))
+	hw = &sys->hw;
+	ret = clk_hw_register(NULL, &sys->hw);
+	if (ret) {
 		kfree(sys);
-
-	return clk;
-}
-
-static void __init
-of_at91_clk_sys_setup(struct device_node *np, struct at91_pmc *pmc)
-{
-	int num;
-	u32 id;
-	struct clk *clk;
-	const char *name;
-	struct device_node *sysclknp;
-	const char *parent_name;
-
-	num = of_get_child_count(np);
-	if (num > (SYSTEM_MAX_ID + 1))
-		return;
-
-	for_each_child_of_node(np, sysclknp) {
-		if (of_property_read_u32(sysclknp, "reg", &id))
-			continue;
-
-		if (of_property_read_string(np, "clock-output-names", &name))
-			name = sysclknp->name;
-
-		parent_name = of_clk_get_parent_name(sysclknp, 0);
-
-		clk = at91_clk_register_system(pmc, name, parent_name, id);
-		if (IS_ERR(clk))
-			continue;
-
-		of_clk_add_provider(sysclknp, of_clk_src_simple_get, clk);
+		hw = ERR_PTR(ret);
 	}
-}
 
-void __init of_at91rm9200_clk_sys_setup(struct device_node *np,
-					struct at91_pmc *pmc)
-{
-	of_at91_clk_sys_setup(np, pmc);
+	return hw;
 }

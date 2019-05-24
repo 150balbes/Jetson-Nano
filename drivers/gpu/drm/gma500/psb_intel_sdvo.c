@@ -37,6 +37,7 @@
 #include "psb_drv.h"
 #include "psb_intel_sdvo_regs.h"
 #include "psb_intel_reg.h"
+#include <linux/kernel.h>
 
 #define SDVO_TMDS_MASK (SDVO_OUTPUT_TMDS0 | SDVO_OUTPUT_TMDS1)
 #define SDVO_RGB_MASK  (SDVO_OUTPUT_RGB0 | SDVO_OUTPUT_RGB1)
@@ -61,8 +62,6 @@ static const char *tv_format_names[] = {
 	"SECAM_K"  , "SECAM_K1", "SECAM_L" ,
 	"SECAM_60"
 };
-
-#define TV_FORMAT_NUM  (sizeof(tv_format_names) / sizeof(*tv_format_names))
 
 struct psb_intel_sdvo {
 	struct gma_encoder base;
@@ -148,7 +147,7 @@ struct psb_intel_sdvo_connector {
 	int force_audio;
 
 	/* This contains all current supported TV format */
-	u8 tv_format_supported[TV_FORMAT_NUM];
+	u8 tv_format_supported[ARRAY_SIZE(tv_format_names)];
 	int   format_supported_num;
 	struct drm_property *tv_format;
 
@@ -406,18 +405,18 @@ static void psb_intel_sdvo_debug_write(struct psb_intel_sdvo *psb_intel_sdvo, u8
 	DRM_DEBUG_KMS("%s: W: %02X ",
 				SDVO_NAME(psb_intel_sdvo), cmd);
 	for (i = 0; i < args_len; i++)
-		DRM_LOG_KMS("%02X ", ((u8 *)args)[i]);
+		DRM_DEBUG_KMS("%02X ", ((u8 *)args)[i]);
 	for (; i < 8; i++)
-		DRM_LOG_KMS("   ");
+		DRM_DEBUG_KMS("   ");
 	for (i = 0; i < ARRAY_SIZE(sdvo_cmd_names); i++) {
 		if (cmd == sdvo_cmd_names[i].cmd) {
-			DRM_LOG_KMS("(%s)", sdvo_cmd_names[i].name);
+			DRM_DEBUG_KMS("(%s)", sdvo_cmd_names[i].name);
 			break;
 		}
 	}
 	if (i == ARRAY_SIZE(sdvo_cmd_names))
-		DRM_LOG_KMS("(%02X)", cmd);
-	DRM_LOG_KMS("\n");
+		DRM_DEBUG_KMS("(%02X)", cmd);
+	DRM_DEBUG_KMS("\n");
 }
 
 static const char *cmd_status_names[] = {
@@ -430,12 +429,19 @@ static const char *cmd_status_names[] = {
 	"Scaling not supported"
 };
 
+#define MAX_ARG_LEN 32
+
 static bool psb_intel_sdvo_write_cmd(struct psb_intel_sdvo *psb_intel_sdvo, u8 cmd,
 				 const void *args, int args_len)
 {
-	u8 buf[args_len*2 + 2], status;
-	struct i2c_msg msgs[args_len + 3];
+	u8 buf[MAX_ARG_LEN*2 + 2], status;
+	struct i2c_msg msgs[MAX_ARG_LEN + 3];
 	int i, ret;
+
+	if (args_len > MAX_ARG_LEN) {
+		DRM_ERROR("Need to increase arg length\n");
+		return false;
+	}
 
 	psb_intel_sdvo_debug_write(psb_intel_sdvo, cmd, args, args_len);
 
@@ -512,9 +518,9 @@ static bool psb_intel_sdvo_read_response(struct psb_intel_sdvo *psb_intel_sdvo,
 	}
 
 	if (status <= SDVO_CMD_STATUS_SCALING_NOT_SUPP)
-		DRM_LOG_KMS("(%s)", cmd_status_names[status]);
+		DRM_DEBUG_KMS("(%s)", cmd_status_names[status]);
 	else
-		DRM_LOG_KMS("(??? %d)", status);
+		DRM_DEBUG_KMS("(??? %d)", status);
 
 	if (status != SDVO_CMD_STATUS_SUCCESS)
 		goto log_fail;
@@ -525,13 +531,13 @@ static bool psb_intel_sdvo_read_response(struct psb_intel_sdvo *psb_intel_sdvo,
 					  SDVO_I2C_RETURN_0 + i,
 					  &((u8 *)response)[i]))
 			goto log_fail;
-		DRM_LOG_KMS(" %02X", ((u8 *)response)[i]);
+		DRM_DEBUG_KMS(" %02X", ((u8 *)response)[i]);
 	}
-	DRM_LOG_KMS("\n");
+	DRM_DEBUG_KMS("\n");
 	return true;
 
 log_fail:
-	DRM_LOG_KMS("... failed\n");
+	DRM_DEBUG_KMS("... failed\n");
 	return false;
 }
 
@@ -1158,7 +1164,7 @@ static void psb_intel_sdvo_dpms(struct drm_encoder *encoder, int mode)
 	return;
 }
 
-static int psb_intel_sdvo_mode_valid(struct drm_connector *connector,
+static enum drm_mode_status psb_intel_sdvo_mode_valid(struct drm_connector *connector,
 				 struct drm_display_mode *mode)
 {
 	struct psb_intel_sdvo *psb_intel_sdvo = intel_attached_sdvo(connector);
@@ -1466,7 +1472,7 @@ static void psb_intel_sdvo_get_ddc_modes(struct drm_connector *connector)
 		bool connector_is_digital = !!IS_TMDS(psb_intel_sdvo_connector);
 
 		if (connector_is_digital == monitor_is_digital) {
-			drm_mode_connector_update_edid_property(connector, edid);
+			drm_connector_update_edid_property(connector, edid);
 			drm_add_edid_modes(connector, edid);
 		}
 
@@ -1631,58 +1637,9 @@ static int psb_intel_sdvo_get_modes(struct drm_connector *connector)
 	return !list_empty(&connector->probed_modes);
 }
 
-static void
-psb_intel_sdvo_destroy_enhance_property(struct drm_connector *connector)
-{
-	struct psb_intel_sdvo_connector *psb_intel_sdvo_connector = to_psb_intel_sdvo_connector(connector);
-	struct drm_device *dev = connector->dev;
-
-	if (psb_intel_sdvo_connector->left)
-		drm_property_destroy(dev, psb_intel_sdvo_connector->left);
-	if (psb_intel_sdvo_connector->right)
-		drm_property_destroy(dev, psb_intel_sdvo_connector->right);
-	if (psb_intel_sdvo_connector->top)
-		drm_property_destroy(dev, psb_intel_sdvo_connector->top);
-	if (psb_intel_sdvo_connector->bottom)
-		drm_property_destroy(dev, psb_intel_sdvo_connector->bottom);
-	if (psb_intel_sdvo_connector->hpos)
-		drm_property_destroy(dev, psb_intel_sdvo_connector->hpos);
-	if (psb_intel_sdvo_connector->vpos)
-		drm_property_destroy(dev, psb_intel_sdvo_connector->vpos);
-	if (psb_intel_sdvo_connector->saturation)
-		drm_property_destroy(dev, psb_intel_sdvo_connector->saturation);
-	if (psb_intel_sdvo_connector->contrast)
-		drm_property_destroy(dev, psb_intel_sdvo_connector->contrast);
-	if (psb_intel_sdvo_connector->hue)
-		drm_property_destroy(dev, psb_intel_sdvo_connector->hue);
-	if (psb_intel_sdvo_connector->sharpness)
-		drm_property_destroy(dev, psb_intel_sdvo_connector->sharpness);
-	if (psb_intel_sdvo_connector->flicker_filter)
-		drm_property_destroy(dev, psb_intel_sdvo_connector->flicker_filter);
-	if (psb_intel_sdvo_connector->flicker_filter_2d)
-		drm_property_destroy(dev, psb_intel_sdvo_connector->flicker_filter_2d);
-	if (psb_intel_sdvo_connector->flicker_filter_adaptive)
-		drm_property_destroy(dev, psb_intel_sdvo_connector->flicker_filter_adaptive);
-	if (psb_intel_sdvo_connector->tv_luma_filter)
-		drm_property_destroy(dev, psb_intel_sdvo_connector->tv_luma_filter);
-	if (psb_intel_sdvo_connector->tv_chroma_filter)
-		drm_property_destroy(dev, psb_intel_sdvo_connector->tv_chroma_filter);
-	if (psb_intel_sdvo_connector->dot_crawl)
-		drm_property_destroy(dev, psb_intel_sdvo_connector->dot_crawl);
-	if (psb_intel_sdvo_connector->brightness)
-		drm_property_destroy(dev, psb_intel_sdvo_connector->brightness);
-}
-
 static void psb_intel_sdvo_destroy(struct drm_connector *connector)
 {
-	struct psb_intel_sdvo_connector *psb_intel_sdvo_connector = to_psb_intel_sdvo_connector(connector);
-
-	if (psb_intel_sdvo_connector->tv_format)
-		drm_property_destroy(connector->dev,
-				     psb_intel_sdvo_connector->tv_format);
-
-	psb_intel_sdvo_destroy_enhance_property(connector);
-	drm_sysfs_connector_remove(connector);
+	drm_connector_unregister(connector);
 	drm_connector_cleanup(connector);
 	kfree(connector);
 }
@@ -1758,7 +1715,7 @@ psb_intel_sdvo_set_property(struct drm_connector *connector,
 	}
 
 	if (property == psb_intel_sdvo_connector->tv_format) {
-		if (val >= TV_FORMAT_NUM)
+		if (val >= ARRAY_SIZE(tv_format_names))
 			return -EINVAL;
 
 		if (psb_intel_sdvo->tv_format_index ==
@@ -1844,7 +1801,7 @@ done:
 	if (psb_intel_sdvo->base.base.crtc) {
 		struct drm_crtc *crtc = psb_intel_sdvo->base.base.crtc;
 		drm_crtc_helper_set_mode(crtc, &crtc->mode, crtc->x,
-					 crtc->y, crtc->fb);
+					 crtc->y, crtc->primary->fb);
 	}
 
 	return 0;
@@ -1886,8 +1843,6 @@ static const struct drm_encoder_helper_funcs psb_intel_sdvo_helper_funcs = {
 
 static const struct drm_connector_funcs psb_intel_sdvo_connector_funcs = {
 	.dpms = drm_helper_connector_dpms,
-	.save = psb_intel_sdvo_save,
-	.restore = psb_intel_sdvo_restore,
 	.detect = psb_intel_sdvo_detect,
 	.fill_modes = drm_helper_probe_single_connector_modes,
 	.set_property = psb_intel_sdvo_set_property,
@@ -2070,8 +2025,11 @@ psb_intel_sdvo_connector_init(struct psb_intel_sdvo_connector *connector,
 	connector->base.base.doublescan_allowed = 0;
 	connector->base.base.display_info.subpixel_order = SubPixelHorizontalRGB;
 
+	connector->base.save = psb_intel_sdvo_save;
+	connector->base.restore = psb_intel_sdvo_restore;
+
 	gma_connector_attach_encoder(&connector->base, &encoder->base);
-	drm_sysfs_connector_add(&connector->base.base);
+	drm_connector_register(&connector->base.base);
 }
 
 static void
@@ -2317,7 +2275,7 @@ static bool psb_intel_sdvo_tv_create_property(struct psb_intel_sdvo *psb_intel_s
 		return false;
 
 	psb_intel_sdvo_connector->format_supported_num = 0;
-	for (i = 0 ; i < TV_FORMAT_NUM; i++)
+	for (i = 0 ; i < ARRAY_SIZE(tv_format_names); i++)
 		if (format_map & (1 << i))
 			psb_intel_sdvo_connector->tv_format_supported[psb_intel_sdvo_connector->format_supported_num++] = i;
 
@@ -2330,7 +2288,7 @@ static bool psb_intel_sdvo_tv_create_property(struct psb_intel_sdvo *psb_intel_s
 
 	for (i = 0; i < psb_intel_sdvo_connector->format_supported_num; i++)
 		drm_property_add_enum(
-				psb_intel_sdvo_connector->tv_format, i,
+				psb_intel_sdvo_connector->tv_format,
 				i, tv_format_names[psb_intel_sdvo_connector->tv_format_supported[i]]);
 
 	psb_intel_sdvo->tv_format_index = psb_intel_sdvo_connector->tv_format_supported[0];
@@ -2574,7 +2532,8 @@ bool psb_intel_sdvo_init(struct drm_device *dev, int sdvo_reg)
 	/* encoder type will be decided later */
 	gma_encoder = &psb_intel_sdvo->base;
 	gma_encoder->type = INTEL_OUTPUT_SDVO;
-	drm_encoder_init(dev, &gma_encoder->base, &psb_intel_sdvo_enc_funcs, 0);
+	drm_encoder_init(dev, &gma_encoder->base, &psb_intel_sdvo_enc_funcs,
+			 0, NULL);
 
 	/* Read the regs to test if we can talk to the device */
 	for (i = 0; i < 0x40; i++) {

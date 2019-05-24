@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _PARISC_PAGE_H
 #define _PARISC_PAGE_H
 
@@ -117,10 +118,16 @@ extern int npmem_ranges;
  * If you alter it, make sure to take care of our various fixed mapping
  * segments in fixmap.h */
 #ifdef CONFIG_64BIT
-#define __PAGE_OFFSET	(0x40000000)	/* 1GB */
+#define __PAGE_OFFSET_DEFAULT	(0x40000000)	/* 1GB */
 #else
-#define __PAGE_OFFSET	(0x10000000)	/* 256MB */
+#define __PAGE_OFFSET_DEFAULT	(0x10000000)	/* 256MB */
 #endif
+
+#if defined(BOOTLOADER)
+#define __PAGE_OFFSET	(0)	/* bootloader uses physical addresses */
+#else
+#define __PAGE_OFFSET	__PAGE_OFFSET_DEFAULT
+#endif /* BOOTLOADER */
 
 #define PAGE_OFFSET		((unsigned long)__PAGE_OFFSET)
 
@@ -145,11 +152,22 @@ extern int npmem_ranges;
 #endif /* CONFIG_DISCONTIGMEM */
 
 #ifdef CONFIG_HUGETLB_PAGE
-#define HPAGE_SHIFT		22	/* 4MB (is this fixed?) */
+#define HPAGE_SHIFT		PMD_SHIFT /* fixed for transparent huge pages */
 #define HPAGE_SIZE      	((1UL) << HPAGE_SHIFT)
 #define HPAGE_MASK		(~(HPAGE_SIZE - 1))
 #define HUGETLB_PAGE_ORDER	(HPAGE_SHIFT - PAGE_SHIFT)
+
+#if defined(CONFIG_64BIT) && defined(CONFIG_PARISC_PAGE_SIZE_4KB)
+# define REAL_HPAGE_SHIFT	20 /* 20 = 1MB */
+# define _HUGE_PAGE_SIZE_ENCODING_DEFAULT _PAGE_SIZE_ENCODING_1M
+#elif !defined(CONFIG_64BIT) && defined(CONFIG_PARISC_PAGE_SIZE_4KB)
+# define REAL_HPAGE_SHIFT	22 /* 22 = 4MB */
+# define _HUGE_PAGE_SIZE_ENCODING_DEFAULT _PAGE_SIZE_ENCODING_4M
+#else
+# define REAL_HPAGE_SHIFT	24 /* 24 = 16MB */
+# define _HUGE_PAGE_SIZE_ENCODING_DEFAULT _PAGE_SIZE_ENCODING_16M
 #endif
+#endif /* CONFIG_HUGETLB_PAGE */
 
 #define virt_addr_valid(kaddr)	pfn_valid(__pa(kaddr) >> PAGE_SHIFT)
 

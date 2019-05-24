@@ -1,0 +1,13 @@
+#
+# Meson dvb driver configuration
+#
+
+menu "Meson dvb drivers"
+
+config MESON_DVB
+	tristate "Meson dvb drivers"
+	default n
+	select DVB_CORE
+	help
+		Select to enable Meson dvb drivers.
+endmenu

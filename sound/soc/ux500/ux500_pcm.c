@@ -147,7 +147,6 @@ int ux500_pcm_register_platform(struct platform_device *pdev)
 		pcm_config = &ux500_dmaengine_pcm_config;
 
 	ret = snd_dmaengine_pcm_register(&pdev->dev, pcm_config,
-					 SND_DMAENGINE_PCM_FLAG_NO_RESIDUE |
 					 SND_DMAENGINE_PCM_FLAG_COMPAT);
 	if (ret < 0) {
 		dev_err(&pdev->dev,
@@ -166,3 +165,8 @@ int ux500_pcm_unregister_platform(struct platform_device *pdev)
 	return 0;
 }
 EXPORT_SYMBOL_GPL(ux500_pcm_unregister_platform);
+
+MODULE_AUTHOR("Ola Lilja");
+MODULE_AUTHOR("Roger Nilsson");
+MODULE_DESCRIPTION("ASoC UX500 driver");
+MODULE_LICENSE("GPL v2");

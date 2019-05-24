@@ -11,6 +11,7 @@
 #include <linux/smp.h>
 
 #include <asm/smp_plat.h>
+#include "common.h"
 
 static inline void platform_do_lowpower(unsigned int cpu)
 {
@@ -18,7 +19,7 @@ static inline void platform_do_lowpower(unsigned int cpu)
 	for (;;) {
 		__asm__ __volatile__("dsb\n\t" "wfi\n\t"
 			: : : "memory");
-		if (pen_release == cpu_logical_map(cpu)) {
+		if (prima2_pen_release == cpu_logical_map(cpu)) {
 			/*
 			 * OK, proper wakeup, we're done
 			 */
@@ -32,7 +33,7 @@ static inline void platform_do_lowpower(unsigned int cpu)
  *
  * Called with IRQs disabled
  */
-void __ref sirfsoc_cpu_die(unsigned int cpu)
+void sirfsoc_cpu_die(unsigned int cpu)
 {
 	platform_do_lowpower(cpu);
 }

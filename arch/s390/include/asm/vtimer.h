@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 /*
  *  Copyright IBM Corp. 2003, 2012
  *  Virtual CPU timer
@@ -27,7 +28,5 @@ extern int del_virt_timer(struct vtimer_list *timer);
 
 extern void init_cpu_vtimer(void);
 extern void vtime_init(void);
-
-extern void vtime_stop_cpu(void);
 
 #endif /* _ASM_S390_TIMER_H */

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _LINUX_FIREWIRE_H
 #define _LINUX_FIREWIRE_H
 
@@ -366,6 +367,9 @@ static inline int fw_stream_packet_destination_id(int tag, int channel, int sy)
 {
 	return tag << 14 | channel << 8 | sy;
 }
+
+void fw_schedule_bus_reset(struct fw_card *card, bool delayed,
+			   bool short_reset);
 
 struct fw_descriptor {
 	struct list_head link;

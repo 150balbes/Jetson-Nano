@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 OR MIT */
 /**************************************************************************
  *
  * Copyright (c) 2006-2009 VMware, Inc., Palo Alto, CA., USA
@@ -35,7 +36,7 @@
 #include <drm/drm_sysfs.h>
 
 static DECLARE_WAIT_QUEUE_HEAD(exit_q);
-atomic_t device_released;
+static atomic_t device_released;
 
 static struct device_type ttm_drm_class_type = {
 	.name = "ttm",

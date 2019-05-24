@@ -22,7 +22,7 @@
 #define __TDA18271_H__
 
 #include <linux/i2c.h>
-#include "dvb_frontend.h"
+#include <media/dvb_frontend.h>
 
 struct tda18271_std_map_item {
 	u16 if_freq;
@@ -69,10 +69,10 @@ enum tda18271_i2c_gate {
 };
 
 enum tda18271_output_options {
-	/* slave tuner output & loop thru & xtal oscillator always on */
+	/* slave tuner output & loop through & xtal oscillator always on */
 	TDA18271_OUTPUT_LT_XT_ON = 0,
 
-	/* slave tuner output loop thru off */
+	/* slave tuner output loop through off */
 	TDA18271_OUTPUT_LT_OFF = 1,
 
 	/* xtal oscillator off */
@@ -121,7 +121,7 @@ enum tda18271_mode {
 	TDA18271_DIGITAL,
 };
 
-#if IS_ENABLED(CONFIG_MEDIA_TUNER_TDA18271)
+#if IS_REACHABLE(CONFIG_MEDIA_TUNER_TDA18271)
 extern struct dvb_frontend *tda18271_attach(struct dvb_frontend *fe, u8 addr,
 					    struct i2c_adapter *i2c,
 					    struct tda18271_config *cfg);

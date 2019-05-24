@@ -15,9 +15,12 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include <linux/debugfs.h>
 #include <linux/host1x.h>
 #include <linux/of.h>
+#include <linux/seq_file.h>
 #include <linux/slab.h>
+#include <linux/of_device.h>
 
 #include "bus.h"
 #include "dev.h"
@@ -39,11 +42,16 @@ struct host1x_subdev {
 
 /**
  * host1x_subdev_add() - add a new subdevice with an associated device node
+ * @device: host1x device to add the subdevice to
+ * @np: device node
  */
 static int host1x_subdev_add(struct host1x_device *device,
+			     struct host1x_driver *driver,
 			     struct device_node *np)
 {
 	struct host1x_subdev *subdev;
+	struct device_node *child;
+	int err;
 
 	subdev = kzalloc(sizeof(*subdev), GFP_KERNEL);
 	if (!subdev)
@@ -56,11 +64,25 @@ static int host1x_subdev_add(struct host1x_device *device,
 	list_add_tail(&subdev->list, &device->subdevs);
 	mutex_unlock(&device->subdevs_lock);
 
+	/* recursively add children */
+	for_each_child_of_node(np, child) {
+		if (of_match_node(driver->subdevs, child) &&
+		    of_device_is_available(child)) {
+			err = host1x_subdev_add(device, driver, child);
+			if (err < 0) {
+				/* XXX cleanup? */
+				of_node_put(child);
+				return err;
+			}
+		}
+	}
+
 	return 0;
 }
 
 /**
  * host1x_subdev_del() - remove subdevice
+ * @subdev: subdevice to remove
  */
 static void host1x_subdev_del(struct host1x_subdev *subdev)
 {
@@ -71,18 +93,23 @@ static void host1x_subdev_del(struct host1x_subdev *subdev)
 
 /**
  * host1x_device_parse_dt() - scan device tree and add matching subdevices
+ * @device: host1x logical device
+ * @driver: host1x driver
  */
-static int host1x_device_parse_dt(struct host1x_device *device)
+static int host1x_device_parse_dt(struct host1x_device *device,
+				  struct host1x_driver *driver)
 {
 	struct device_node *np;
 	int err;
 
 	for_each_child_of_node(device->dev.parent->of_node, np) {
-		if (of_match_node(device->driver->subdevs, np) &&
+		if (of_match_node(driver->subdevs, np) &&
 		    of_device_is_available(np)) {
-			err = host1x_subdev_add(device, np);
-			if (err < 0)
+			err = host1x_subdev_add(device, driver, np);
+			if (err < 0) {
+				of_node_put(np);
 				return err;
+			}
 		}
 	}
 
@@ -109,14 +136,12 @@ static void host1x_subdev_register(struct host1x_device *device,
 	mutex_unlock(&device->clients_lock);
 	mutex_unlock(&device->subdevs_lock);
 
-	/*
-	 * When all subdevices have been registered, the composite device is
-	 * ready to be probed.
-	 */
 	if (list_empty(&device->subdevs)) {
-		err = device->driver->probe(device);
+		err = device_add(&device->dev);
 		if (err < 0)
-			dev_err(&device->dev, "probe failed: %d\n", err);
+			dev_err(&device->dev, "failed to add: %d\n", err);
+		else
+			device->registered = true;
 	}
 }
 
@@ -124,16 +149,16 @@ static void __host1x_subdev_unregister(struct host1x_device *device,
 				       struct host1x_subdev *subdev)
 {
 	struct host1x_client *client = subdev->client;
-	int err;
 
 	/*
 	 * If all subdevices have been activated, we're about to remove the
 	 * first active subdevice, so unload the driver first.
 	 */
 	if (list_empty(&device->subdevs)) {
-		err = device->driver->remove(device);
-		if (err < 0)
-			dev_err(&device->dev, "remove failed: %d\n", err);
+		if (device->registered) {
+			device->registered = false;
+			device_del(&device->dev);
+		}
 	}
 
 	/*
@@ -164,6 +189,16 @@ static void host1x_subdev_unregister(struct host1x_device *device,
 	mutex_unlock(&device->subdevs_lock);
 }
 
+/**
+ * host1x_device_init() - initialize a host1x logical device
+ * @device: host1x logical device
+ *
+ * The driver for the host1x logical device can call this during execution of
+ * its &host1x_driver.probe implementation to initialize each of its clients.
+ * The client drivers access the subsystem specific driver data using the
+ * &host1x_client.parent field and driver data associated with it (usually by
+ * calling dev_get_drvdata()).
+ */
 int host1x_device_init(struct host1x_device *device)
 {
 	struct host1x_client *client;
@@ -178,8 +213,7 @@ int host1x_device_init(struct host1x_device *device)
 				dev_err(&device->dev,
 					"failed to initialize %s: %d\n",
 					dev_name(client->dev), err);
-				mutex_unlock(&device->clients_lock);
-				return err;
+				goto teardown;
 			}
 		}
 	}
@@ -187,9 +221,26 @@ int host1x_device_init(struct host1x_device *device)
 	mutex_unlock(&device->clients_lock);
 
 	return 0;
+
+teardown:
+	list_for_each_entry_continue_reverse(client, &device->clients, list)
+		if (client->ops->exit)
+			client->ops->exit(client);
+
+	mutex_unlock(&device->clients_lock);
+	return err;
 }
 EXPORT_SYMBOL(host1x_device_init);
 
+/**
+ * host1x_device_exit() - uninitialize host1x logical device
+ * @device: host1x logical device
+ *
+ * When the driver for a host1x logical device is unloaded, it can call this
+ * function to tear down each of its clients. Typically this is done after a
+ * subsystem-specific data structure is removed and the functionality can no
+ * longer be used.
+ */
 int host1x_device_exit(struct host1x_device *device)
 {
 	struct host1x_client *client;
@@ -216,8 +267,8 @@ int host1x_device_exit(struct host1x_device *device)
 }
 EXPORT_SYMBOL(host1x_device_exit);
 
-static int host1x_register_client(struct host1x *host1x,
-				  struct host1x_client *client)
+static int host1x_add_client(struct host1x *host1x,
+			     struct host1x_client *client)
 {
 	struct host1x_device *device;
 	struct host1x_subdev *subdev;
@@ -238,8 +289,8 @@ static int host1x_register_client(struct host1x *host1x,
 	return -ENODEV;
 }
 
-static int host1x_unregister_client(struct host1x *host1x,
-				    struct host1x_client *client)
+static int host1x_del_client(struct host1x *host1x,
+			     struct host1x_client *client)
 {
 	struct host1x_device *device, *dt;
 	struct host1x_subdev *subdev;
@@ -260,92 +311,33 @@ static int host1x_unregister_client(struct host1x *host1x,
 	return -ENODEV;
 }
 
-static struct bus_type host1x_bus_type = {
-	.name = "host1x",
+static int host1x_device_match(struct device *dev, struct device_driver *drv)
+{
+	return strcmp(dev_name(dev), drv->name) == 0;
+}
+
+static int host1x_dma_configure(struct device *dev)
+{
+	return of_dma_configure(dev, dev->of_node, true);
+}
+
+static const struct dev_pm_ops host1x_device_pm_ops = {
+	.suspend = pm_generic_suspend,
+	.resume = pm_generic_resume,
+	.freeze = pm_generic_freeze,
+	.thaw = pm_generic_thaw,
+	.poweroff = pm_generic_poweroff,
+	.restore = pm_generic_restore,
 };
 
-int host1x_bus_init(void)
-{
-	return bus_register(&host1x_bus_type);
-}
+struct bus_type host1x_bus_type = {
+	.name = "host1x",
+	.match = host1x_device_match,
+	.dma_configure = host1x_dma_configure,
+	.pm = &host1x_device_pm_ops,
+};
 
-void host1x_bus_exit(void)
-{
-	bus_unregister(&host1x_bus_type);
-}
-
-static void host1x_device_release(struct device *dev)
-{
-	struct host1x_device *device = to_host1x_device(dev);
-
-	kfree(device);
-}
-
-static int host1x_device_add(struct host1x *host1x,
-			     struct host1x_driver *driver)
-{
-	struct host1x_client *client, *tmp;
-	struct host1x_subdev *subdev;
-	struct host1x_device *device;
-	int err;
-
-	device = kzalloc(sizeof(*device), GFP_KERNEL);
-	if (!device)
-		return -ENOMEM;
-
-	mutex_init(&device->subdevs_lock);
-	INIT_LIST_HEAD(&device->subdevs);
-	INIT_LIST_HEAD(&device->active);
-	mutex_init(&device->clients_lock);
-	INIT_LIST_HEAD(&device->clients);
-	INIT_LIST_HEAD(&device->list);
-	device->driver = driver;
-
-	device->dev.coherent_dma_mask = host1x->dev->coherent_dma_mask;
-	device->dev.dma_mask = &device->dev.coherent_dma_mask;
-	device->dev.release = host1x_device_release;
-	dev_set_name(&device->dev, "%s", driver->name);
-	device->dev.bus = &host1x_bus_type;
-	device->dev.parent = host1x->dev;
-
-	err = device_register(&device->dev);
-	if (err < 0)
-		return err;
-
-	err = host1x_device_parse_dt(device);
-	if (err < 0) {
-		device_unregister(&device->dev);
-		return err;
-	}
-
-	mutex_lock(&host1x->devices_lock);
-	list_add_tail(&device->list, &host1x->devices);
-	mutex_unlock(&host1x->devices_lock);
-
-	mutex_lock(&clients_lock);
-
-	list_for_each_entry_safe(client, tmp, &clients, list) {
-		list_for_each_entry(subdev, &device->subdevs, list) {
-			if (subdev->np == client->dev->of_node) {
-				host1x_subdev_register(device, subdev, client);
-				break;
-			}
-		}
-	}
-
-	mutex_unlock(&clients_lock);
-
-	return 0;
-}
-
-/*
- * Removes a device by first unregistering any subdevices and then removing
- * itself from the list of devices.
- *
- * This function must be called with the host1x->devices_lock held.
- */
-static void host1x_device_del(struct host1x *host1x,
-			      struct host1x_device *device)
+static void __host1x_device_del(struct host1x_device *device)
 {
 	struct host1x_subdev *subdev, *sd;
 	struct host1x_client *client, *cl;
@@ -391,7 +383,87 @@ static void host1x_device_del(struct host1x *host1x,
 
 	/* finally remove the device */
 	list_del_init(&device->list);
-	device_unregister(&device->dev);
+}
+
+static void host1x_device_release(struct device *dev)
+{
+	struct host1x_device *device = to_host1x_device(dev);
+
+	__host1x_device_del(device);
+	kfree(device);
+}
+
+static int host1x_device_add(struct host1x *host1x,
+			     struct host1x_driver *driver)
+{
+	struct host1x_client *client, *tmp;
+	struct host1x_subdev *subdev;
+	struct host1x_device *device;
+	int err;
+
+	device = kzalloc(sizeof(*device), GFP_KERNEL);
+	if (!device)
+		return -ENOMEM;
+
+	device_initialize(&device->dev);
+
+	mutex_init(&device->subdevs_lock);
+	INIT_LIST_HEAD(&device->subdevs);
+	INIT_LIST_HEAD(&device->active);
+	mutex_init(&device->clients_lock);
+	INIT_LIST_HEAD(&device->clients);
+	INIT_LIST_HEAD(&device->list);
+	device->driver = driver;
+
+	device->dev.coherent_dma_mask = host1x->dev->coherent_dma_mask;
+	device->dev.dma_mask = &device->dev.coherent_dma_mask;
+	dev_set_name(&device->dev, "%s", driver->driver.name);
+	device->dev.release = host1x_device_release;
+	device->dev.of_node = host1x->dev->of_node;
+	device->dev.bus = &host1x_bus_type;
+	device->dev.parent = host1x->dev;
+
+	of_dma_configure(&device->dev, host1x->dev->of_node, true);
+
+	err = host1x_device_parse_dt(device, driver);
+	if (err < 0) {
+		kfree(device);
+		return err;
+	}
+
+	list_add_tail(&device->list, &host1x->devices);
+
+	mutex_lock(&clients_lock);
+
+	list_for_each_entry_safe(client, tmp, &clients, list) {
+		list_for_each_entry(subdev, &device->subdevs, list) {
+			if (subdev->np == client->dev->of_node) {
+				host1x_subdev_register(device, subdev, client);
+				break;
+			}
+		}
+	}
+
+	mutex_unlock(&clients_lock);
+
+	return 0;
+}
+
+/*
+ * Removes a device by first unregistering any subdevices and then removing
+ * itself from the list of devices.
+ *
+ * This function must be called with the host1x->devices_lock held.
+ */
+static void host1x_device_del(struct host1x *host1x,
+			      struct host1x_device *device)
+{
+	if (device->registered) {
+		device->registered = false;
+		device_del(&device->dev);
+	}
+
+	put_device(&device->dev);
 }
 
 static void host1x_attach_driver(struct host1x *host1x,
@@ -409,11 +481,11 @@ static void host1x_attach_driver(struct host1x *host1x,
 		}
 	}
 
-	mutex_unlock(&host1x->devices_lock);
-
 	err = host1x_device_add(host1x, driver);
 	if (err < 0)
 		dev_err(host1x->dev, "failed to allocate device: %d\n", err);
+
+	mutex_unlock(&host1x->devices_lock);
 }
 
 static void host1x_detach_driver(struct host1x *host1x,
@@ -430,6 +502,44 @@ static void host1x_detach_driver(struct host1x *host1x,
 	mutex_unlock(&host1x->devices_lock);
 }
 
+static int host1x_devices_show(struct seq_file *s, void *data)
+{
+	struct host1x *host1x = s->private;
+	struct host1x_device *device;
+
+	mutex_lock(&host1x->devices_lock);
+
+	list_for_each_entry(device, &host1x->devices, list) {
+		struct host1x_subdev *subdev;
+
+		seq_printf(s, "%s\n", dev_name(&device->dev));
+
+		mutex_lock(&device->subdevs_lock);
+
+		list_for_each_entry(subdev, &device->active, list)
+			seq_printf(s, "  %pOFf: %s\n", subdev->np,
+				   dev_name(subdev->client->dev));
+
+		list_for_each_entry(subdev, &device->subdevs, list)
+			seq_printf(s, "  %pOFf:\n", subdev->np);
+
+		mutex_unlock(&device->subdevs_lock);
+	}
+
+	mutex_unlock(&host1x->devices_lock);
+
+	return 0;
+}
+DEFINE_SHOW_ATTRIBUTE(host1x_devices);
+
+/**
+ * host1x_register() - register a host1x controller
+ * @host1x: host1x controller
+ *
+ * The host1x controller driver uses this to register a host1x controller with
+ * the infrastructure. Note that all Tegra SoC generations have only ever come
+ * with a single host1x instance, so this function is somewhat academic.
+ */
 int host1x_register(struct host1x *host1x)
 {
 	struct host1x_driver *driver;
@@ -445,9 +555,19 @@ int host1x_register(struct host1x *host1x)
 
 	mutex_unlock(&drivers_lock);
 
+	debugfs_create_file("devices", S_IRUGO, host1x->debugfs, host1x,
+			    &host1x_devices_fops);
+
 	return 0;
 }
 
+/**
+ * host1x_unregister() - unregister a host1x controller
+ * @host1x: host1x controller
+ *
+ * The host1x controller driver uses this to remove a host1x controller from
+ * the infrastructure.
+ */
 int host1x_unregister(struct host1x *host1x)
 {
 	struct host1x_driver *driver;
@@ -466,7 +586,49 @@ int host1x_unregister(struct host1x *host1x)
 	return 0;
 }
 
-int host1x_driver_register(struct host1x_driver *driver)
+static int host1x_device_probe(struct device *dev)
+{
+	struct host1x_driver *driver = to_host1x_driver(dev->driver);
+	struct host1x_device *device = to_host1x_device(dev);
+
+	if (driver->probe)
+		return driver->probe(device);
+
+	return 0;
+}
+
+static int host1x_device_remove(struct device *dev)
+{
+	struct host1x_driver *driver = to_host1x_driver(dev->driver);
+	struct host1x_device *device = to_host1x_device(dev);
+
+	if (driver->remove)
+		return driver->remove(device);
+
+	return 0;
+}
+
+static void host1x_device_shutdown(struct device *dev)
+{
+	struct host1x_driver *driver = to_host1x_driver(dev->driver);
+	struct host1x_device *device = to_host1x_device(dev);
+
+	if (driver->shutdown)
+		driver->shutdown(device);
+}
+
+/**
+ * host1x_driver_register_full() - register a host1x driver
+ * @driver: host1x driver
+ * @owner: owner module
+ *
+ * Drivers for host1x logical devices call this function to register a driver
+ * with the infrastructure. Note that since these drive logical devices, the
+ * registration of the driver actually triggers tho logical device creation.
+ * A logical device will be created for each host1x instance.
+ */
+int host1x_driver_register_full(struct host1x_driver *driver,
+				struct module *owner)
 {
 	struct host1x *host1x;
 
@@ -483,18 +645,44 @@ int host1x_driver_register(struct host1x_driver *driver)
 
 	mutex_unlock(&devices_lock);
 
-	return 0;
-}
-EXPORT_SYMBOL(host1x_driver_register);
+	driver->driver.bus = &host1x_bus_type;
+	driver->driver.owner = owner;
+	driver->driver.probe = host1x_device_probe;
+	driver->driver.remove = host1x_device_remove;
+	driver->driver.shutdown = host1x_device_shutdown;
 
+	return driver_register(&driver->driver);
+}
+EXPORT_SYMBOL(host1x_driver_register_full);
+
+/**
+ * host1x_driver_unregister() - unregister a host1x driver
+ * @driver: host1x driver
+ *
+ * Unbinds the driver from each of the host1x logical devices that it is
+ * bound to, effectively removing the subsystem devices that they represent.
+ */
 void host1x_driver_unregister(struct host1x_driver *driver)
 {
+	driver_unregister(&driver->driver);
+
 	mutex_lock(&drivers_lock);
 	list_del_init(&driver->list);
 	mutex_unlock(&drivers_lock);
 }
 EXPORT_SYMBOL(host1x_driver_unregister);
 
+/**
+ * host1x_client_register() - register a host1x client
+ * @client: host1x client
+ *
+ * Registers a host1x client with each host1x controller instance. Note that
+ * each client will only match their parent host1x controller and will only be
+ * associated with that instance. Once all clients have been registered with
+ * their parent host1x controller, the infrastructure will set up the logical
+ * device and call host1x_device_init(), which will in turn call each client's
+ * &host1x_client_ops.init implementation.
+ */
 int host1x_client_register(struct host1x_client *client)
 {
 	struct host1x *host1x;
@@ -503,7 +691,7 @@ int host1x_client_register(struct host1x_client *client)
 	mutex_lock(&devices_lock);
 
 	list_for_each_entry(host1x, &devices, list) {
-		err = host1x_register_client(host1x, client);
+		err = host1x_add_client(host1x, client);
 		if (!err) {
 			mutex_unlock(&devices_lock);
 			return 0;
@@ -520,6 +708,13 @@ int host1x_client_register(struct host1x_client *client)
 }
 EXPORT_SYMBOL(host1x_client_register);
 
+/**
+ * host1x_client_unregister() - unregister a host1x client
+ * @client: host1x client
+ *
+ * Removes a host1x client from its host1x controller instance. If a logical
+ * device has already been initialized, it will be torn down.
+ */
 int host1x_client_unregister(struct host1x_client *client)
 {
 	struct host1x_client *c;
@@ -529,7 +724,7 @@ int host1x_client_unregister(struct host1x_client *client)
 	mutex_lock(&devices_lock);
 
 	list_for_each_entry(host1x, &devices, list) {
-		err = host1x_unregister_client(host1x, client);
+		err = host1x_del_client(host1x, client);
 		if (!err) {
 			mutex_unlock(&devices_lock);
 			return 0;

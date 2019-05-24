@@ -1,10 +1,11 @@
+# SPDX-License-Identifier: GPL-2.0
 config PICVUE
 	tristate "PICVUE LCD display driver"
 	depends on LASAT
 
 config PICVUE_PROC
 	tristate "PICVUE LCD display driver /proc interface"
-	depends on PICVUE
+	depends on PICVUE && PROC_FS
 
 config DS1603
 	bool "DS1603 RTC driver"

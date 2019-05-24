@@ -35,7 +35,7 @@ int __iio_add_chan_devattr(const char *postfix,
 			   struct list_head *attr_list);
 void iio_free_chan_devattr_list(struct list_head *attr_list);
 
-ssize_t iio_format_value(char *buf, unsigned int type, int val, int val2);
+ssize_t iio_format_value(char *buf, unsigned int type, int size, int *vals);
 
 /* Event interface flags */
 #define IIO_BUSY_BIT_POS 1
@@ -43,11 +43,13 @@ ssize_t iio_format_value(char *buf, unsigned int type, int val, int val2);
 #ifdef CONFIG_IIO_BUFFER
 struct poll_table_struct;
 
-unsigned int iio_buffer_poll(struct file *filp,
+__poll_t iio_buffer_poll(struct file *filp,
 			     struct poll_table_struct *wait);
 ssize_t iio_buffer_read_first_n_outer(struct file *filp, char __user *buf,
 				      size_t n, loff_t *f_ps);
 
+int iio_buffer_alloc_sysfs_and_mask(struct iio_dev *indio_dev);
+void iio_buffer_free_sysfs_and_mask(struct iio_dev *indio_dev);
 
 #define iio_buffer_poll_addr (&iio_buffer_poll)
 #define iio_buffer_read_first_n_outer_addr (&iio_buffer_read_first_n_outer)
@@ -60,6 +62,13 @@ void iio_buffer_wakeup_poll(struct iio_dev *indio_dev);
 #define iio_buffer_poll_addr NULL
 #define iio_buffer_read_first_n_outer_addr NULL
 
+static inline int iio_buffer_alloc_sysfs_and_mask(struct iio_dev *indio_dev)
+{
+	return 0;
+}
+
+static inline void iio_buffer_free_sysfs_and_mask(struct iio_dev *indio_dev) {}
+
 static inline void iio_disable_all_buffers(struct iio_dev *indio_dev) {}
 static inline void iio_buffer_wakeup_poll(struct iio_dev *indio_dev) {}
 
@@ -69,5 +78,8 @@ int iio_device_register_eventset(struct iio_dev *indio_dev);
 void iio_device_unregister_eventset(struct iio_dev *indio_dev);
 void iio_device_wakeup_eventset(struct iio_dev *indio_dev);
 int iio_event_getfd(struct iio_dev *indio_dev);
+
+struct iio_event_interface;
+bool iio_event_enabled(const struct iio_event_interface *ev_int);
 
 #endif

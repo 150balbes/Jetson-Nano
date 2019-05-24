@@ -15,6 +15,7 @@
 #include <linux/module.h>
 #include <linux/init.h>
 #include <linux/irq.h>
+#include <linux/irqchip.h>
 #include <linux/irqdomain.h>
 #include <linux/io.h>
 #include <linux/ioport.h>
@@ -22,9 +23,7 @@
 #include <linux/of_irq.h>
 
 #include <asm/exception.h>
-#include <asm/mach/irq.h>
-
-#include "irqchip.h"
+#include <asm/hardirq.h>
 
 #define MAX_ICU_NR		16
 
@@ -34,6 +33,9 @@
 /* bit fields in PJ1_INT_SEL and PJ4_INT_SEL */
 #define SEL_INT_PENDING		(1 << 6)
 #define SEL_INT_NUM_MASK	0x3f
+
+#define MMP2_ICU_INT_ROUTE_PJ4_IRQ	(1 << 5)
+#define MMP2_ICU_INT_ROUTE_PJ4_FIQ	(1 << 6)
 
 struct icu_chip_data {
 	int			nr_irqs;
@@ -130,8 +132,9 @@ struct irq_chip icu_irq_chip = {
 	.irq_unmask	= icu_unmask_irq,
 };
 
-static void icu_mux_irq_demux(unsigned int irq, struct irq_desc *desc)
+static void icu_mux_irq_demux(struct irq_desc *desc)
 {
+	unsigned int irq = irq_desc_get_irq(desc);
 	struct irq_domain *domain;
 	struct icu_chip_data *data;
 	int i;
@@ -164,7 +167,6 @@ static int mmp_irq_domain_map(struct irq_domain *d, unsigned int irq,
 			      irq_hw_number_t hw)
 {
 	irq_set_chip_and_handler(irq, &icu_irq_chip, handle_level_irq);
-	set_irq_flags(irq, IRQF_VALID);
 	return 0;
 }
 
@@ -182,42 +184,39 @@ const struct irq_domain_ops mmp_irq_domain_ops = {
 	.xlate		= mmp_irq_domain_xlate,
 };
 
-static struct mmp_intc_conf mmp_conf = {
+static const struct mmp_intc_conf mmp_conf = {
 	.conf_enable	= 0x51,
 	.conf_disable	= 0x0,
 	.conf_mask	= 0x7f,
 };
 
-static struct mmp_intc_conf mmp2_conf = {
+static const struct mmp_intc_conf mmp2_conf = {
 	.conf_enable	= 0x20,
 	.conf_disable	= 0x0,
-	.conf_mask	= 0x7f,
+	.conf_mask	= MMP2_ICU_INT_ROUTE_PJ4_IRQ |
+			  MMP2_ICU_INT_ROUTE_PJ4_FIQ,
 };
 
-static asmlinkage void __exception_irq_entry
-mmp_handle_irq(struct pt_regs *regs)
+static void __exception_irq_entry mmp_handle_irq(struct pt_regs *regs)
 {
-	int irq, hwirq;
+	int hwirq;
 
 	hwirq = readl_relaxed(mmp_icu_base + PJ1_INT_SEL);
 	if (!(hwirq & SEL_INT_PENDING))
 		return;
 	hwirq &= SEL_INT_NUM_MASK;
-	irq = irq_find_mapping(icu_data[0].domain, hwirq);
-	handle_IRQ(irq, regs);
+	handle_domain_irq(icu_data[0].domain, hwirq, regs);
 }
 
-static asmlinkage void __exception_irq_entry
-mmp2_handle_irq(struct pt_regs *regs)
+static void __exception_irq_entry mmp2_handle_irq(struct pt_regs *regs)
 {
-	int irq, hwirq;
+	int hwirq;
 
 	hwirq = readl_relaxed(mmp_icu_base + PJ4_INT_SEL);
 	if (!(hwirq & SEL_INT_PENDING))
 		return;
 	hwirq &= SEL_INT_NUM_MASK;
-	irq = irq_find_mapping(icu_data[0].domain, hwirq);
-	handle_IRQ(irq, regs);
+	handle_domain_irq(icu_data[0].domain, hwirq, regs);
 }
 
 /* MMP (ARMv5) */
@@ -238,7 +237,6 @@ void __init icu_init_irq(void)
 	for (irq = 0; irq < 64; irq++) {
 		icu_mask_irq(irq_get_irq_data(irq));
 		irq_set_chip_and_handler(irq, &icu_irq_chip, handle_level_irq);
-		set_irq_flags(irq, IRQF_VALID);
 	}
 	irq_set_default_host(icu_data[0].domain);
 	set_handle_irq(mmp_handle_irq);
@@ -341,7 +339,6 @@ void __init mmp2_init_icu(void)
 			irq_set_chip_and_handler(irq, &icu_irq_chip,
 						 handle_level_irq);
 		}
-		set_irq_flags(irq, IRQF_VALID);
 	}
 	irq_set_default_host(icu_data[0].domain);
 	set_handle_irq(mmp2_handle_irq);

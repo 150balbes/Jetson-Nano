@@ -1,24 +1,10 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  * HWA Host Controller Driver
  * Wire Adapter Control/Data Streaming Iface (WUSB1.0[8])
  *
  * Copyright (C) 2005-2006 Intel Corporation
  * Inaky Perez-Gonzalez <inaky.perez-gonzalez@intel.com>
- *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License version
- * 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
- * 02110-1301, USA.
- *
  *
  * This driver implements a USB Host Controller (struct usb_hcd) for a
  * Wireless USB Host Controller based on the Wireless USB 1.0
@@ -64,7 +50,7 @@
  *
  * Note much of the activity is difficult to follow. For example a
  * device connect goes to devconnect, which will cause the "fake" root
- * hub port to show a connect and stop there. Then khubd will notice
+ * hub port to show a connect and stop there. Then hub_wq will notice
  * and call into the rh.c:hwahc_rc_port_reset() code to authenticate
  * the device (and this might require user intervention) and enable
  * the port.
@@ -125,7 +111,8 @@ struct wa_rpipe {
 
 enum wa_dti_state {
 	WA_DTI_TRANSFER_RESULT_PENDING,
-	WA_DTI_ISOC_PACKET_STATUS_PENDING
+	WA_DTI_ISOC_PACKET_STATUS_PENDING,
+	WA_DTI_BUF_IN_DATA_PENDING
 };
 
 enum wa_quirks {
@@ -134,8 +121,20 @@ enum wa_quirks {
 	 * requests to be concatenated and not sent as separate packets.
 	 */
 	WUSB_QUIRK_ALEREON_HWA_CONCAT_ISOC	= 0x01,
+	/*
+	 * The Alereon HWA can be instructed to not send transfer notifications
+	 * as an optimization.
+	 */
+	WUSB_QUIRK_ALEREON_HWA_DISABLE_XFER_NOTIFICATIONS	= 0x02,
 };
 
+enum wa_vendor_specific_requests {
+	WA_REQ_ALEREON_DISABLE_XFER_NOTIFICATIONS = 0x4C,
+	WA_REQ_ALEREON_FEATURE_SET = 0x01,
+	WA_REQ_ALEREON_FEATURE_CLEAR = 0x00,
+};
+
+#define WA_MAX_BUF_IN_URBS	4
 /**
  * Instance of a HWA Host Controller
  *
@@ -206,7 +205,9 @@ struct wahc {
 	u32 dti_isoc_xfer_in_progress;
 	u8  dti_isoc_xfer_seg;
 	struct urb *dti_urb;		/* URB for reading xfer results */
-	struct urb *buf_in_urb;		/* URB for reading data in */
+					/* URBs for reading data in */
+	struct urb buf_in_urbs[WA_MAX_BUF_IN_URBS];
+	int active_buf_in_urbs;		/* number of buf_in_urbs active. */
 	struct edc dti_edc;		/* DTI error density counter */
 	void *dti_buf;
 	size_t dti_buf_size;
@@ -234,6 +235,7 @@ struct wahc {
 extern int wa_create(struct wahc *wa, struct usb_interface *iface,
 	kernel_ulong_t);
 extern void __wa_destroy(struct wahc *wa);
+extern int wa_dti_start(struct wahc *wa);
 void wa_reset_all(struct wahc *wa);
 
 
@@ -275,6 +277,8 @@ static inline void wa_rpipe_init(struct wahc *wa)
 
 static inline void wa_init(struct wahc *wa)
 {
+	int index;
+
 	edc_init(&wa->nep_edc);
 	atomic_set(&wa->notifs_queued, 0);
 	wa->dti_state = WA_DTI_TRANSFER_RESULT_PENDING;
@@ -288,6 +292,10 @@ static inline void wa_init(struct wahc *wa)
 	INIT_WORK(&wa->xfer_error_work, wa_process_errored_transfers_run);
 	wa->dto_in_use = 0;
 	atomic_set(&wa->xfer_id_count, 1);
+	/* init the buf in URBs */
+	for (index = 0; index < WA_MAX_BUF_IN_URBS; ++index)
+		usb_init_urb(&(wa->buf_in_urbs[index]));
+	wa->active_buf_in_urbs = 0;
 }
 
 /**

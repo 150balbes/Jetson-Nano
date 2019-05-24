@@ -18,9 +18,11 @@
 #include <linux/kernel.h>
 #include <linux/of_fdt.h>
 #include <asm/machdep.h>
+#include <asm/pgtable.h>
 #include <asm/time.h>
 #include <asm/udbg.h>
 #include <asm/mpic.h>
+#include <asm/swiotlb.h>
 #include <sysdev/fsl_soc.h>
 #include <sysdev/fsl_pci.h>
 #include "smp.h"
@@ -52,9 +54,7 @@ static void __init qemu_e500_setup_arch(void)
  */
 static int __init qemu_e500_probe(void)
 {
-	unsigned long root = of_get_flat_dt_root();
-
-	return !!of_flat_dt_is_compatible(root, "fsl,qemu-e500");
+	return !!of_machine_is_compatible("fsl,qemu-e500");
 }
 
 machine_arch_initcall(qemu_e500, mpc85xx_common_publish_devices);
@@ -66,9 +66,9 @@ define_machine(qemu_e500) {
 	.init_IRQ		= qemu_e500_pic_init,
 #ifdef CONFIG_PCI
 	.pcibios_fixup_bus	= fsl_pcibios_fixup_bus,
+	.pcibios_fixup_phb      = fsl_pcibios_fixup_phb,
 #endif
 	.get_irq		= mpic_get_coreint_irq,
-	.restart		= fsl_rstcr_restart,
 	.calibrate_decr		= generic_calibrate_decr,
 	.progress		= udbg_progress,
 };

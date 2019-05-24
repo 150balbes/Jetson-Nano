@@ -72,7 +72,7 @@ static void sn_cpei_handler(int irq, void *devid, struct pt_regs *regs)
 	ia64_sn_plat_cpei_handler();
 }
 
-static void sn_cpei_timer_handler(unsigned long dummy)
+static void sn_cpei_timer_handler(struct timer_list *unused)
 {
 	sn_cpei_handler(-1, NULL, NULL);
 	mod_timer(&sn_cpei_timer, jiffies + CPEI_INTERVAL);
@@ -80,9 +80,8 @@ static void sn_cpei_timer_handler(unsigned long dummy)
 
 void sn_init_cpei_timer(void)
 {
-	init_timer(&sn_cpei_timer);
+	timer_setup(&sn_cpei_timer, sn_cpei_timer_handler, 0);
 	sn_cpei_timer.expires = jiffies + CPEI_INTERVAL;
-	sn_cpei_timer.function = sn_cpei_timer_handler;
 	add_timer(&sn_cpei_timer);
 }
 
@@ -142,5 +141,4 @@ static int __init sn_salinfo_init(void)
 		salinfo_platform_oemdata = &sn_salinfo_platform_oemdata;
 	return 0;
 }
-
-module_init(sn_salinfo_init)
+device_initcall(sn_salinfo_init);

@@ -169,7 +169,7 @@ static int cm32181_write_als_it(struct cm32181_chip *cm32181, int val)
  * @cm32181:	pointer of struct cm32181.
  *
  * Convert sensor raw data to lux.  It depends on integration
- * time and claibscale variable.
+ * time and calibscale variable.
  *
  * Return: Positive value is lux, otherwise is error code.
  */
@@ -292,7 +292,6 @@ static const struct attribute_group cm32181_attribute_group = {
 };
 
 static const struct iio_info cm32181_info = {
-	.driver_module		= THIS_MODULE,
 	.read_raw		= &cm32181_read_raw,
 	.write_raw		= &cm32181_write_raw,
 	.attrs			= &cm32181_attribute_group,
@@ -331,7 +330,7 @@ static int cm32181_probe(struct i2c_client *client,
 		return ret;
 	}
 
-	ret = iio_device_register(indio_dev);
+	ret = devm_iio_device_register(&client->dev, indio_dev);
 	if (ret) {
 		dev_err(&client->dev,
 			"%s: regist device failed\n",
@@ -339,14 +338,6 @@ static int cm32181_probe(struct i2c_client *client,
 		return ret;
 	}
 
-	return 0;
-}
-
-static int cm32181_remove(struct i2c_client *client)
-{
-	struct iio_dev *indio_dev = i2c_get_clientdata(client);
-
-	iio_device_unregister(indio_dev);
 	return 0;
 }
 
@@ -361,16 +352,15 @@ static const struct of_device_id cm32181_of_match[] = {
 	{ .compatible = "capella,cm32181" },
 	{ }
 };
+MODULE_DEVICE_TABLE(of, cm32181_of_match);
 
 static struct i2c_driver cm32181_driver = {
 	.driver = {
 		.name	= "cm32181",
 		.of_match_table = of_match_ptr(cm32181_of_match),
-		.owner	= THIS_MODULE,
 	},
 	.id_table       = cm32181_id,
 	.probe		= cm32181_probe,
-	.remove		= cm32181_remove,
 };
 
 module_i2c_driver(cm32181_driver);

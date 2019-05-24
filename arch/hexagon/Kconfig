@@ -1,15 +1,18 @@
+# SPDX-License-Identifier: GPL-2.0
 # Hexagon configuration
 comment "Linux Kernel Configuration for Hexagon"
 
 config HEXAGON
 	def_bool y
+	select ARCH_32BIT_OFF_T
+	select ARCH_HAS_SYNC_DMA_FOR_DEVICE
+	select ARCH_NO_PREEMPT
 	select HAVE_OPROFILE
 	# Other pending projects/to-do items.
 	# select HAVE_REGS_AND_STACK_ACCESS_API
 	# select HAVE_HW_BREAKPOINT if PERF_EVENTS
 	# select ARCH_HAS_CPU_IDLE_WAIT
-	# select ARCH_WANT_OPTIONAL_GPIOLIB
-	# select ARCH_REQUIRE_GPIOLIB
+	# select GPIOLIB
 	# select HAVE_CLK
 	# select GENERIC_PENDING_IRQ if SMP
 	select GENERIC_ATOMIC64
@@ -19,11 +22,12 @@ config HEXAGON
 	select GENERIC_IRQ_SHOW
 	select HAVE_ARCH_KGDB
 	select HAVE_ARCH_TRACEHOOK
-	select NO_IOPORT
+	select ARCH_DISCARD_MEMBLOCK
+	select NEED_SG_DMA_LENGTH
+	select NO_IOPORT_MAP
 	select GENERIC_IOMAP
 	select GENERIC_SMP_IDLE_THREAD
 	select STACKTRACE_SUPPORT
-	select KTIME_SCALAR
 	select GENERIC_CLOCKEVENTS
 	select GENERIC_CLOCKEVENTS_BROADCAST
 	select MODULES_USE_ELF_RELA
@@ -43,9 +47,6 @@ config FRAME_POINTER
 config LOCKDEP_SUPPORT
 	def_bool y
 
-config PCI
-	def_bool n
-
 config EARLY_PRINTK
 	def_bool y
 
@@ -62,9 +63,6 @@ config GENERIC_CSUM
 # Use the generic interrupt handling code in kernel/irq/:
 #
 config GENERIC_IRQ_PROBE
-	def_bool y
-
-config NEED_SG_DMA_LENGTH
 	def_bool y
 
 config RWSEM_GENERIC_SPINLOCK
@@ -149,26 +147,6 @@ config PAGE_SIZE_256KB
 
 endchoice
 
-source "mm/Kconfig"
-
 source "kernel/Kconfig.hz"
 
-endmenu
-
-source "init/Kconfig"
-source "kernel/Kconfig.freezer"
-source "drivers/Kconfig"
-source "fs/Kconfig"
-
-menu "Executable File Formats"
-source "fs/Kconfig.binfmt"
-endmenu
-
-source "net/Kconfig"
-source "security/Kconfig"
-source "crypto/Kconfig"
-source "lib/Kconfig"
-
-menu "Kernel hacking"
-source "lib/Kconfig.debug"
 endmenu

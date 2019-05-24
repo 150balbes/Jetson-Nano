@@ -15,7 +15,6 @@
  * published by the Free Software Foundation.
  */
 
-#include <linux/init.h>
 #include <linux/interrupt.h>
 #include <linux/errno.h>
 #include <linux/module.h>
@@ -208,15 +207,14 @@ static int tiny_spi_of_probe(struct platform_device *pdev)
 	struct tiny_spi *hw = platform_get_drvdata(pdev);
 	struct device_node *np = pdev->dev.of_node;
 	unsigned int i;
-	const __be32 *val;
-	int len;
+	u32 val;
 
 	if (!np)
 		return 0;
 	hw->gpio_cs_count = of_gpio_count(np);
 	if (hw->gpio_cs_count > 0) {
-		hw->gpio_cs = devm_kzalloc(&pdev->dev,
-				hw->gpio_cs_count * sizeof(unsigned int),
+		hw->gpio_cs = devm_kcalloc(&pdev->dev,
+				hw->gpio_cs_count, sizeof(unsigned int),
 				GFP_KERNEL);
 		if (!hw->gpio_cs)
 			return -ENOMEM;
@@ -227,13 +225,10 @@ static int tiny_spi_of_probe(struct platform_device *pdev)
 			return -ENODEV;
 	}
 	hw->bitbang.master->dev.of_node = pdev->dev.of_node;
-	val = of_get_property(pdev->dev.of_node,
-			      "clock-frequency", &len);
-	if (val && len >= sizeof(__be32))
-		hw->freq = be32_to_cpup(val);
-	val = of_get_property(pdev->dev.of_node, "baud-width", &len);
-	if (val && len >= sizeof(__be32))
-		hw->baudwidth = be32_to_cpup(val);
+	if (!of_property_read_u32(np, "clock-frequency", &val))
+		hw->freq = val;
+	if (!of_property_read_u32(np, "baud-width", &val))
+		hw->baudwidth = val;
 	return 0;
 }
 #else /* !CONFIG_OF */
@@ -267,8 +262,6 @@ static int tiny_spi_probe(struct platform_device *pdev)
 
 	/* setup the state for the bitbang driver */
 	hw->bitbang.master = master;
-	if (!hw->bitbang.master)
-		return err;
 	hw->bitbang.setup_transfer = tiny_spi_setup_transfer;
 	hw->bitbang.chipselect = tiny_spi_chipselect;
 	hw->bitbang.txrx_bufs = tiny_spi_txrx_bufs;
@@ -354,7 +347,6 @@ static struct platform_driver tiny_spi_driver = {
 	.remove = tiny_spi_remove,
 	.driver = {
 		.name = DRV_NAME,
-		.owner = THIS_MODULE,
 		.pm = NULL,
 		.of_match_table = of_match_ptr(tiny_spi_match),
 	},

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _ASM_X86_SETUP_H
 #define _ASM_X86_SETUP_H
 
@@ -6,6 +7,7 @@
 #define COMMAND_LINE_SIZE 2048
 
 #include <linux/linkage.h>
+#include <asm/page_types.h>
 
 #ifdef __i386__
 
@@ -38,18 +40,15 @@ static inline void vsmp_init(void) { }
 #endif
 
 void setup_bios_corruption_check(void);
-
-#ifdef CONFIG_X86_VISWS
-extern void visws_early_detect(void);
-#else
-static inline void visws_early_detect(void) { }
-#endif
+void early_platform_quirks(void);
 
 extern unsigned long saved_video_mode;
 
 extern void reserve_standard_io_resources(void);
 extern void i386_reserve_resources(void);
-extern void setup_default_timer_irq(void);
+extern unsigned long __startup_64(unsigned long physaddr, struct boot_params *bp);
+extern unsigned long __startup_secondary_64(void);
+extern int early_make_pgtable(unsigned long address);
 
 #ifdef CONFIG_X86_INTEL_MID
 extern void x86_intel_mid_early_setup(void);
@@ -66,11 +65,23 @@ static inline void x86_ce4100_early_setup(void) { }
 #ifndef _SETUP
 
 #include <asm/espfix.h>
+#include <linux/kernel.h>
 
 /*
  * This is set up by the setup-routine at boot-time
  */
 extern struct boot_params boot_params;
+extern char _text[];
+
+static inline bool kaslr_enabled(void)
+{
+	return !!(boot_params.hdr.loadflags & KASLR_FLAG);
+}
+
+static inline unsigned long kaslr_offset(void)
+{
+	return (unsigned long)&_text - __START_KERNEL;
+}
 
 /*
  * Do NOT EVER look at the BIOS memory size location.

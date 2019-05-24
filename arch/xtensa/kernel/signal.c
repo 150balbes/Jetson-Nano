@@ -20,14 +20,13 @@
 #include <linux/ptrace.h>
 #include <linux/personality.h>
 #include <linux/tracehook.h>
+#include <linux/sched/task_stack.h>
 
 #include <asm/ucontext.h>
-#include <asm/uaccess.h>
+#include <linux/uaccess.h>
 #include <asm/cacheflush.h>
 #include <asm/coprocessor.h>
 #include <asm/unistd.h>
-
-#define DEBUG_SIG  0
 
 extern struct task_struct *coproc_owners[];
 
@@ -90,14 +89,14 @@ flush_window_regs_user(struct pt_regs *regs)
 			inc = 1;
 
 		} else if (m & 4) {		/* call8 */
-			if (copy_to_user((void*)(sp - 32),
-					   &regs->areg[(base + 1) * 4], 16))
+			if (copy_to_user(&SPILL_SLOT_CALL8(sp, 4),
+					 &regs->areg[(base + 1) * 4], 16))
 				goto errout;
 			inc = 2;
 
 		} else if (m & 8) {	/* call12 */
-			if (copy_to_user((void*)(sp - 48),
-					   &regs->areg[(base + 1) * 4], 32))
+			if (copy_to_user(&SPILL_SLOT_CALL12(sp, 4),
+					 &regs->areg[(base + 1) * 4], 32))
 				goto errout;
 			inc = 3;
 		}
@@ -105,7 +104,7 @@ flush_window_regs_user(struct pt_regs *regs)
 		/* Save current frame a0..a3 under next SP */
 
 		sp = regs->areg[((base + inc) * 4 + 1) % XCHAL_NUM_AREGS];
-		if (copy_to_user((void*)(sp - 16), &regs->areg[base * 4], 16))
+		if (copy_to_user(&SPILL_SLOT(sp, 0), &regs->areg[base * 4], 16))
 			goto errout;
 
 		/* Get current stack pointer for next loop iteration. */
@@ -186,13 +185,13 @@ restore_sigcontext(struct pt_regs *regs, struct rt_sigframe __user *frame)
 	COPY(sar);
 #undef COPY
 
-	/* All registers were flushed to stack. Start with a prestine frame. */
+	/* All registers were flushed to stack. Start with a pristine frame. */
 
 	regs->wmask = 1;
 	regs->windowbase = 0;
 	regs->windowstart = 1;
 
-	regs->syscall = -1;		/* disable syscall checks */
+	regs->syscall = NO_SYSCALL;	/* disable syscall checks */
 
 	/* For PS, restore only PS.CALLINC.
 	 * Assume that all other bits are either the same as for the signal
@@ -245,14 +244,14 @@ asmlinkage long xtensa_rt_sigreturn(long a0, long a1, long a2, long a3,
 	int ret;
 
 	/* Always make any pending restarted system calls return -EINTR */
-	current_thread_info()->restart_block.fn = do_no_restart_syscall;
+	current->restart_block.fn = do_no_restart_syscall;
 
 	if (regs->depc > 64)
 		panic("rt_sigreturn in double exception!\n");
 
 	frame = (struct rt_sigframe __user *) regs->areg[1];
 
-	if (!access_ok(VERIFY_READ, frame, sizeof(*frame)))
+	if (!access_ok(frame, sizeof(*frame)))
 		goto badframe;
 
 	if (__copy_from_user(&set, &frame->uc.uc_sigmask, sizeof(set)))
@@ -331,17 +330,16 @@ gen_return_code(unsigned char *codemem)
 }
 
 
-static int setup_frame(int sig, struct k_sigaction *ka, siginfo_t *info,
-		       sigset_t *set, struct pt_regs *regs)
+static int setup_frame(struct ksignal *ksig, sigset_t *set,
+		       struct pt_regs *regs)
 {
 	struct rt_sigframe *frame;
-	int err = 0;
-	int signal;
+	int err = 0, sig = ksig->sig;
 	unsigned long sp, ra, tp;
 
 	sp = regs->areg[1];
 
-	if ((ka->sa.sa_flags & SA_ONSTACK) != 0 && sas_ss_flags(sp) == 0) {
+	if ((ksig->ka.sa.sa_flags & SA_ONSTACK) != 0 && sas_ss_flags(sp) == 0) {
 		sp = current->sas_ss_sp + current->sas_ss_size;
 	}
 
@@ -350,18 +348,12 @@ static int setup_frame(int sig, struct k_sigaction *ka, siginfo_t *info,
 	if (regs->depc > 64)
 		panic ("Double exception sys_sigreturn\n");
 
-	if (!access_ok(VERIFY_WRITE, frame, sizeof(*frame))) {
-		goto give_sigsegv;
+	if (!access_ok(frame, sizeof(*frame))) {
+		return -EFAULT;
 	}
 
-	signal = current_thread_info()->exec_domain
-		&& current_thread_info()->exec_domain->signal_invmap
-		&& sig < 32
-		? current_thread_info()->exec_domain->signal_invmap[sig]
-		: sig;
-
-	if (ka->sa.sa_flags & SA_SIGINFO) {
-		err |= copy_siginfo_to_user(&frame->info, info);
+	if (ksig->ka.sa.sa_flags & SA_SIGINFO) {
+		err |= copy_siginfo_to_user(&frame->info, &ksig->info);
 	}
 
 	/* Create the user context.  */
@@ -372,8 +364,8 @@ static int setup_frame(int sig, struct k_sigaction *ka, siginfo_t *info,
 	err |= setup_sigcontext(frame, regs);
 	err |= __copy_to_user(&frame->uc.uc_sigmask, set, sizeof(*set));
 
-	if (ka->sa.sa_flags & SA_RESTORER) {
-		ra = (unsigned long)ka->sa.sa_restorer;
+	if (ksig->ka.sa.sa_flags & SA_RESTORER) {
+		ra = (unsigned long)ksig->ka.sa.sa_restorer;
 	} else {
 
 		/* Create sys_rt_sigreturn syscall in stack frame */
@@ -381,7 +373,7 @@ static int setup_frame(int sig, struct k_sigaction *ka, siginfo_t *info,
 		err |= gen_return_code(frame->retcode);
 
 		if (err) {
-			goto give_sigsegv;
+			return -EFAULT;
 		}
 		ra = (unsigned long) frame->retcode;
 	}
@@ -393,33 +385,22 @@ static int setup_frame(int sig, struct k_sigaction *ka, siginfo_t *info,
 
 	/* Set up registers for signal handler; preserve the threadptr */
 	tp = regs->threadptr;
-	start_thread(regs, (unsigned long) ka->sa.sa_handler,
+	start_thread(regs, (unsigned long) ksig->ka.sa.sa_handler,
 		     (unsigned long) frame);
 
 	/* Set up a stack frame for a call4
 	 * Note: PS.CALLINC is set to one by start_thread
 	 */
 	regs->areg[4] = (((unsigned long) ra) & 0x3fffffff) | 0x40000000;
-	regs->areg[6] = (unsigned long) signal;
+	regs->areg[6] = (unsigned long) sig;
 	regs->areg[7] = (unsigned long) &frame->info;
 	regs->areg[8] = (unsigned long) &frame->uc;
 	regs->threadptr = tp;
 
-	/* Set access mode to USER_DS.  Nomenclature is outdated, but
-	 * functionality is used in uaccess.h
-	 */
-	set_fs(USER_DS);
-
-#if DEBUG_SIG
-	printk("SIG rt deliver (%s:%d): signal=%d sp=%p pc=%08x\n",
-		current->comm, current->pid, signal, frame, regs->pc);
-#endif
+	pr_debug("SIG rt deliver (%s:%d): signal=%d sp=%p pc=%08lx\n",
+		 current->comm, current->pid, sig, frame, regs->pc);
 
 	return 0;
-
-give_sigsegv:
-	force_sigsegv(sig, current);
-	return -EFAULT;
 }
 
 /*
@@ -433,20 +414,16 @@ give_sigsegv:
  */
 static void do_signal(struct pt_regs *regs)
 {
-	siginfo_t info;
-	int signr;
-	struct k_sigaction ka;
+	struct ksignal ksig;
 
 	task_pt_regs(current)->icountlevel = 0;
 
-	signr = get_signal_to_deliver(&info, &ka, regs, NULL);
-
-	if (signr > 0) {
+	if (get_signal(&ksig)) {
 		int ret;
 
 		/* Are we from a system call? */
 
-		if ((signed)regs->syscall >= 0) {
+		if (regs->syscall != NO_SYSCALL) {
 
 			/* If so, check system call restarting.. */
 
@@ -457,7 +434,7 @@ static void do_signal(struct pt_regs *regs)
 					break;
 
 				case -ERESTARTSYS:
-					if (!(ka.sa.sa_flags & SA_RESTART)) {
+					if (!(ksig.ka.sa.sa_flags & SA_RESTART)) {
 						regs->areg[2] = -EINTR;
 						break;
 					}
@@ -476,11 +453,8 @@ static void do_signal(struct pt_regs *regs)
 
 		/* Whee!  Actually deliver the signal.  */
 		/* Set up the stack frame */
-		ret = setup_frame(signr, &ka, &info, sigmask_to_save(), regs);
-		if (ret)
-			return;
-
-		signal_delivered(signr, &info, &ka, regs, 0);
+		ret = setup_frame(&ksig, sigmask_to_save(), regs);
+		signal_setup_done(ret, &ksig, 0);
 		if (current->ptrace & PT_SINGLESTEP)
 			task_pt_regs(current)->icountlevel = 1;
 
@@ -488,7 +462,7 @@ static void do_signal(struct pt_regs *regs)
 	}
 
 	/* Did we come from a system call? */
-	if ((signed) regs->syscall >= 0) {
+	if (regs->syscall != NO_SYSCALL) {
 		/* Restart the system call - no handlers present */
 		switch (regs->areg[2]) {
 		case -ERESTARTNOHAND:

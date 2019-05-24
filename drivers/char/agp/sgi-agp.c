@@ -15,7 +15,6 @@
 #include <linux/module.h>
 #include <linux/pci.h>
 #include <linux/slab.h>
-#include <linux/init.h>
 #include <linux/agp_backend.h>
 #include <asm/sn/addrs.h>
 #include <asm/sn/io.h>
@@ -281,9 +280,9 @@ static int agp_sgi_init(void)
 	else
 		return 0;
 
-	sgi_tioca_agp_bridges = kmalloc(tioca_gart_found *
-					sizeof(struct agp_bridge_data *),
-					GFP_KERNEL);
+	sgi_tioca_agp_bridges = kmalloc_array(tioca_gart_found,
+					      sizeof(struct agp_bridge_data *),
+					      GFP_KERNEL);
 	if (!sgi_tioca_agp_bridges)
 		return -ENOMEM;
 

@@ -23,11 +23,13 @@
 
 #include <asm/assembler.h>
 #include <asm/kvm_arm.h>
+#include <asm/kvm_asm.h>
 #include <asm/ptrace.h>
 #include <asm/virt.h>
-#include <asm/esr.h>
 
 	.text
+	.pushsection	.hyp.text, "ax"
+
 	.align 11
 
 ENTRY(__hyp_stub_vectors)
@@ -55,34 +57,28 @@ ENDPROC(__hyp_stub_vectors)
 	.align 11
 
 el1_sync:
-	mrs	x18, esr_el2
-	lsr	x17, x18, #ESR_ELx_EC_SHIFT
-	and	x18, x18, #ESR_ELx_ISS_MASK
-
-	cmp	x17, #ESR_ELx_EC_HVC64
-	b.ne	2f				// Not an HVC trap
-
-	cmp	x18, #HVC_GET_VECTORS
-	b.ne	1f
-	mrs	x0, vbar_el2
-	b	2f
-
-1:	cmp	x18, #HVC_SET_VECTORS
-	b.ne	1f
-	msr	vbar_el2, x0
-	b	2f
-
-1:	cmp	x18, #HVC_CALL_FUNC
+	cmp	x0, #HVC_SET_VECTORS
 	b.ne	2f
-	mov	x18, lr
-	mov	lr, x0
-	mov	x0, x1
-	mov	x1, x2
-	mov	x2, x3
-	blr	lr
-	mov	lr, x18
+	msr	vbar_el2, x1
+	b	9f
 
-2:	eret
+2:	cmp	x0, #HVC_SOFT_RESTART
+	b.ne	3f
+	mov	x0, x2
+	mov	x2, x4
+	mov	x4, x1
+	mov	x1, x3
+	br	x4				// no return
+
+3:	cmp	x0, #HVC_RESET_VECTORS
+	beq	9f				// Nothing to reset!
+
+	/* Someone called kvm_call_hyp() against the hyp-stub... */
+	ldr	x0, =HVC_STUB_ERR
+	eret
+
+9:	mov	x0, xzr
+	eret
 ENDPROC(el1_sync)
 
 .macro invalid_vector	label
@@ -122,11 +118,14 @@ ENDPROC(\label)
  */
 
 ENTRY(__hyp_set_vectors)
-	hvc	#HVC_SET_VECTORS
+	mov	x1, x0
+	mov	x0, #HVC_SET_VECTORS
+	hvc	#0
 	ret
 ENDPROC(__hyp_set_vectors)
 
-ENTRY(__hyp_get_vectors)
-	hvc	#HVC_GET_VECTORS
+ENTRY(__hyp_reset_vectors)
+	mov	x0, #HVC_RESET_VECTORS
+	hvc	#0
 	ret
-ENDPROC(__hyp_get_vectors)
+ENDPROC(__hyp_reset_vectors)

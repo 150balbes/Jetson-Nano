@@ -100,7 +100,7 @@ static int gx_fix;
 #include <linux/ethtool.h>
 #include <linux/crc32.h>
 #include <linux/bitops.h>
-#include <asm/uaccess.h>
+#include <linux/uaccess.h>
 #include <asm/processor.h>		/* Processor type for cache alignment. */
 #include <asm/unaligned.h>
 #include <asm/io.h>
@@ -236,7 +236,7 @@ static const struct pci_id_info pci_id_tbl[] = {
 	{ }
 };
 
-static DEFINE_PCI_DEVICE_TABLE(yellowfin_pci_tbl) = {
+static const struct pci_device_id yellowfin_pci_tbl[] = {
 	{ 0x1000, 0x0702, PCI_ANY_ID, PCI_ANY_ID, 0, 0, 0 },
 	{ 0x1000, 0x0701, PCI_ANY_ID, PCI_ANY_ID, 0, 0, 1 },
 	{ }
@@ -343,7 +343,7 @@ static int mdio_read(void __iomem *ioaddr, int phy_id, int location);
 static void mdio_write(void __iomem *ioaddr, int phy_id, int location, int value);
 static int netdev_ioctl(struct net_device *dev, struct ifreq *rq, int cmd);
 static int yellowfin_open(struct net_device *dev);
-static void yellowfin_timer(unsigned long data);
+static void yellowfin_timer(struct timer_list *t);
 static void yellowfin_tx_timeout(struct net_device *dev);
 static int yellowfin_init_ring(struct net_device *dev);
 static netdev_tx_t yellowfin_start_xmit(struct sk_buff *skb,
@@ -360,7 +360,6 @@ static const struct net_device_ops netdev_ops = {
 	.ndo_stop 		= yellowfin_close,
 	.ndo_start_xmit 	= yellowfin_start_xmit,
 	.ndo_set_rx_mode	= set_rx_mode,
-	.ndo_change_mtu		= eth_change_mtu,
 	.ndo_validate_addr	= eth_validate_addr,
 	.ndo_set_mac_address 	= eth_mac_addr,
 	.ndo_do_ioctl 		= netdev_ioctl,
@@ -472,7 +471,7 @@ static int yellowfin_init_one(struct pci_dev *pdev,
 
 	/* The Yellowfin-specific entries in the device structure. */
 	dev->netdev_ops = &netdev_ops;
-	SET_ETHTOOL_OPS(dev, &ethtool_ops);
+	dev->ethtool_ops = &ethtool_ops;
 	dev->watchdog_timeo = TX_TIMEOUT;
 
 	if (mtu)
@@ -633,10 +632,8 @@ static int yellowfin_open(struct net_device *dev)
 	}
 
 	/* Set the timer to check for link beat. */
-	init_timer(&yp->timer);
+	timer_setup(&yp->timer, yellowfin_timer, 0);
 	yp->timer.expires = jiffies + 3*HZ;
-	yp->timer.data = (unsigned long)dev;
-	yp->timer.function = yellowfin_timer;				/* timer handler */
 	add_timer(&yp->timer);
 out:
 	return rc;
@@ -646,10 +643,10 @@ err_free_irq:
 	goto out;
 }
 
-static void yellowfin_timer(unsigned long data)
+static void yellowfin_timer(struct timer_list *t)
 {
-	struct net_device *dev = (struct net_device *)data;
-	struct yellowfin_private *yp = netdev_priv(dev);
+	struct yellowfin_private *yp = from_timer(yp, t, timer);
+	struct net_device *dev = pci_get_drvdata(yp->pci_dev);
 	void __iomem *ioaddr = yp->base;
 	int next_tick = 60*HZ;
 
@@ -693,11 +690,11 @@ static void yellowfin_tx_timeout(struct net_device *dev)
 	/* Note: these should be KERN_DEBUG. */
 	if (yellowfin_debug) {
 		int i;
-		pr_warning("  Rx ring %p: ", yp->rx_ring);
+		pr_warn("  Rx ring %p: ", yp->rx_ring);
 		for (i = 0; i < RX_RING_SIZE; i++)
 			pr_cont(" %08x", yp->rx_ring[i].result_status);
 		pr_cont("\n");
-		pr_warning("  Tx ring %p: ", yp->tx_ring);
+		pr_warn("  Tx ring %p: ", yp->tx_ring);
 		for (i = 0; i < TX_RING_SIZE; i++)
 			pr_cont(" %04x /%08x",
 			       yp->tx_status[i].tx_errs,
@@ -714,7 +711,7 @@ static void yellowfin_tx_timeout(struct net_device *dev)
 	if (yp->cur_tx - yp->dirty_tx < TX_QUEUE_SIZE)
 		netif_wake_queue (dev);		/* Typical path */
 
-	dev->trans_start = jiffies; /* prevent tx timeout */
+	netif_trans_update(dev); /* prevent tx timeout */
 	dev->stats.tx_errors++;
 }
 
@@ -928,7 +925,7 @@ static irqreturn_t yellowfin_interrupt(int irq, void *dev_instance)
 			/* Free the original skb. */
 			pci_unmap_single(yp->pci_dev, le32_to_cpu(yp->tx_ring[entry].addr),
 				skb->len, PCI_DMA_TODEVICE);
-			dev_kfree_skb_irq(skb);
+			dev_consume_skb_irq(skb);
 			yp->tx_skbuff[entry] = NULL;
 		}
 		if (yp->tx_full &&
@@ -986,7 +983,7 @@ static irqreturn_t yellowfin_interrupt(int irq, void *dev_instance)
 				pci_unmap_single(yp->pci_dev,
 					yp->tx_ring[entry<<1].addr, skb->len,
 					PCI_DMA_TODEVICE);
-				dev_kfree_skb_irq(skb);
+				dev_consume_skb_irq(skb);
 				yp->tx_skbuff[entry] = 0;
 				/* Mark status as empty. */
 				yp->tx_status[entry].tx_errs = 0;

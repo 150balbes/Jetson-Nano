@@ -10,6 +10,10 @@ Required Properties:
 		provider can use the values in cells to find the appropriate
 		PHY.
 
+Optional Properties:
+phy-supply:	Phandle to a regulator that provides power to the PHY. This
+		regulator will be managed during the PHY power on/off sequence.
+
 For example:
 
 phys: phy {
@@ -23,14 +27,16 @@ phys: phy {
 };
 
 That node describes an IP block (PHY provider) that implements 2 different PHYs.
-In order to differentiate between these 2 PHYs, an additonal specifier should be
+In order to differentiate between these 2 PHYs, an additional specifier should be
 given while trying to get a reference to it.
 
 PHY user node
 =============
 
 Required Properties:
-phys : the phandle for the PHY device (used by the PHY subsystem)
+phys : the phandle for the PHY device (used by the PHY subsystem; not to be
+       confused with the Ethernet specific 'phy' and 'phy-handle' properties,
+       see Documentation/devicetree/bindings/net/ethernet.txt for these)
 phy-names : the names of the PHY corresponding to the PHYs present in the
 	    *phys* phandle
 

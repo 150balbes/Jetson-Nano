@@ -6,6 +6,7 @@
 #include <linux/kernel.h>
 #include <linux/export.h>
 #include <linux/smp.h>
+#include <linux/hypervisor.h>
 
 int smp_call_function_single(int cpu, void (*func) (void *info), void *info,
 				int wait)
@@ -22,16 +23,16 @@ int smp_call_function_single(int cpu, void (*func) (void *info), void *info,
 }
 EXPORT_SYMBOL(smp_call_function_single);
 
-void __smp_call_function_single(int cpu, struct call_single_data *csd,
-				int wait)
+int smp_call_function_single_async(int cpu, call_single_data_t *csd)
 {
 	unsigned long flags;
 
 	local_irq_save(flags);
 	csd->func(csd->info);
 	local_irq_restore(flags);
+	return 0;
 }
-EXPORT_SYMBOL(__smp_call_function_single);
+EXPORT_SYMBOL(smp_call_function_single_async);
 
 int on_each_cpu(smp_call_func_t func, void *info, int wait)
 {
@@ -67,9 +68,9 @@ EXPORT_SYMBOL(on_each_cpu_mask);
  * Preemption is disabled here to make sure the cond_func is called under the
  * same condtions in UP and SMP.
  */
-void on_each_cpu_cond(bool (*cond_func)(int cpu, void *info),
-		      smp_call_func_t func, void *info, bool wait,
-		      gfp_t gfp_flags)
+void on_each_cpu_cond_mask(bool (*cond_func)(int cpu, void *info),
+			   smp_call_func_t func, void *info, bool wait,
+			   gfp_t gfp_flags, const struct cpumask *mask)
 {
 	unsigned long flags;
 
@@ -81,4 +82,29 @@ void on_each_cpu_cond(bool (*cond_func)(int cpu, void *info),
 	}
 	preempt_enable();
 }
+EXPORT_SYMBOL(on_each_cpu_cond_mask);
+
+void on_each_cpu_cond(bool (*cond_func)(int cpu, void *info),
+		      smp_call_func_t func, void *info, bool wait,
+		      gfp_t gfp_flags)
+{
+	on_each_cpu_cond_mask(cond_func, func, info, wait, gfp_flags, NULL);
+}
 EXPORT_SYMBOL(on_each_cpu_cond);
+
+int smp_call_on_cpu(unsigned int cpu, int (*func)(void *), void *par, bool phys)
+{
+	int ret;
+
+	if (cpu != 0)
+		return -ENXIO;
+
+	if (phys)
+		hypervisor_pin_vcpu(0);
+	ret = func(par);
+	if (phys)
+		hypervisor_pin_vcpu(-1);
+
+	return ret;
+}
+EXPORT_SYMBOL_GPL(smp_call_on_cpu);

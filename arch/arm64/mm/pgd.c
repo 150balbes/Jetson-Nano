@@ -26,16 +26,14 @@
 #include <asm/page.h>
 #include <asm/tlbflush.h>
 
-#include "mm.h"
-
-#define PGD_SIZE	(PTRS_PER_PGD * sizeof(pgd_t))
+static struct kmem_cache *pgd_cache __ro_after_init;
 
 pgd_t *pgd_alloc(struct mm_struct *mm)
 {
 	if (PGD_SIZE == PAGE_SIZE)
-		return (pgd_t *)get_zeroed_page(GFP_KERNEL);
+		return (pgd_t *)__get_free_page(PGALLOC_GFP);
 	else
-		return kzalloc(PGD_SIZE, GFP_KERNEL);
+		return kmem_cache_alloc(pgd_cache, PGALLOC_GFP);
 }
 
 void pgd_free(struct mm_struct *mm, pgd_t *pgd)
@@ -43,5 +41,25 @@ void pgd_free(struct mm_struct *mm, pgd_t *pgd)
 	if (PGD_SIZE == PAGE_SIZE)
 		free_page((unsigned long)pgd);
 	else
-		kfree(pgd);
+		kmem_cache_free(pgd_cache, pgd);
+}
+
+void __init pgd_cache_init(void)
+{
+	if (PGD_SIZE == PAGE_SIZE)
+		return;
+
+#ifdef CONFIG_ARM64_PA_BITS_52
+	/*
+	 * With 52-bit physical addresses, the architecture requires the
+	 * top-level table to be aligned to at least 64 bytes.
+	 */
+	BUILD_BUG_ON(PGD_SIZE < 64);
+#endif
+
+	/*
+	 * Naturally aligned pgds required by the architecture.
+	 */
+	pgd_cache = kmem_cache_create("pgd_cache", PGD_SIZE, PGD_SIZE,
+				      SLAB_PANIC, NULL);
 }

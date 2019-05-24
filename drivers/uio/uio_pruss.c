@@ -24,6 +24,7 @@
 #include <linux/io.h>
 #include <linux/clk.h>
 #include <linux/dma-mapping.h>
+#include <linux/sizes.h>
 #include <linux/slab.h>
 #include <linux/genalloc.h>
 
@@ -91,8 +92,7 @@ static irqreturn_t pruss_handler(int irq, struct uio_info *info)
 	return IRQ_HANDLED;
 }
 
-static void pruss_cleanup(struct platform_device *dev,
-			struct uio_pruss_dev *gdev)
+static void pruss_cleanup(struct device *dev, struct uio_pruss_dev *gdev)
 {
 	int cnt;
 	struct uio_info *p = gdev->info;
@@ -103,7 +103,7 @@ static void pruss_cleanup(struct platform_device *dev,
 	}
 	iounmap(gdev->prussio_vaddr);
 	if (gdev->ddr_vaddr) {
-		dma_free_coherent(&dev->dev, extram_pool_sz, gdev->ddr_vaddr,
+		dma_free_coherent(dev, extram_pool_sz, gdev->ddr_vaddr,
 			gdev->ddr_paddr);
 	}
 	if (gdev->sram_vaddr)
@@ -111,48 +111,55 @@ static void pruss_cleanup(struct platform_device *dev,
 			      gdev->sram_vaddr,
 			      sram_pool_sz);
 	kfree(gdev->info);
+	clk_disable(gdev->pruss_clk);
 	clk_put(gdev->pruss_clk);
 	kfree(gdev);
 }
 
-static int pruss_probe(struct platform_device *dev)
+static int pruss_probe(struct platform_device *pdev)
 {
 	struct uio_info *p;
 	struct uio_pruss_dev *gdev;
 	struct resource *regs_prussio;
-	int ret = -ENODEV, cnt = 0, len;
-	struct uio_pruss_pdata *pdata = dev_get_platdata(&dev->dev);
+	struct device *dev = &pdev->dev;
+	int ret, cnt, i, len;
+	struct uio_pruss_pdata *pdata = dev_get_platdata(dev);
 
 	gdev = kzalloc(sizeof(struct uio_pruss_dev), GFP_KERNEL);
 	if (!gdev)
 		return -ENOMEM;
 
-	gdev->info = kzalloc(sizeof(*p) * MAX_PRUSS_EVT, GFP_KERNEL);
+	gdev->info = kcalloc(MAX_PRUSS_EVT, sizeof(*p), GFP_KERNEL);
 	if (!gdev->info) {
-		kfree(gdev);
-		return -ENOMEM;
-	}
-	/* Power on PRU in case its not done as part of boot-loader */
-	gdev->pruss_clk = clk_get(&dev->dev, "pruss");
-	if (IS_ERR(gdev->pruss_clk)) {
-		dev_err(&dev->dev, "Failed to get clock\n");
-		ret = PTR_ERR(gdev->pruss_clk);
-		kfree(gdev->info);
-		kfree(gdev);
-		return ret;
-	} else {
-		clk_enable(gdev->pruss_clk);
+		ret = -ENOMEM;
+		goto err_free_gdev;
 	}
 
-	regs_prussio = platform_get_resource(dev, IORESOURCE_MEM, 0);
+	/* Power on PRU in case its not done as part of boot-loader */
+	gdev->pruss_clk = clk_get(dev, "pruss");
+	if (IS_ERR(gdev->pruss_clk)) {
+		dev_err(dev, "Failed to get clock\n");
+		ret = PTR_ERR(gdev->pruss_clk);
+		goto err_free_info;
+	}
+
+	ret = clk_enable(gdev->pruss_clk);
+	if (ret) {
+		dev_err(dev, "Failed to enable clock\n");
+		goto err_clk_put;
+	}
+
+	regs_prussio = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	if (!regs_prussio) {
-		dev_err(&dev->dev, "No PRUSS I/O resource specified\n");
-		goto out_free;
+		dev_err(dev, "No PRUSS I/O resource specified\n");
+		ret = -EIO;
+		goto err_clk_disable;
 	}
 
 	if (!regs_prussio->start) {
-		dev_err(&dev->dev, "Invalid memory resource\n");
-		goto out_free;
+		dev_err(dev, "Invalid memory resource\n");
+		ret = -EIO;
+		goto err_clk_disable;
 	}
 
 	if (pdata->sram_pool) {
@@ -161,27 +168,30 @@ static int pruss_probe(struct platform_device *dev)
 			(unsigned long)gen_pool_dma_alloc(gdev->sram_pool,
 					sram_pool_sz, &gdev->sram_paddr);
 		if (!gdev->sram_vaddr) {
-			dev_err(&dev->dev, "Could not allocate SRAM pool\n");
-			goto out_free;
+			dev_err(dev, "Could not allocate SRAM pool\n");
+			ret = -ENOMEM;
+			goto err_clk_disable;
 		}
 	}
 
-	gdev->ddr_vaddr = dma_alloc_coherent(&dev->dev, extram_pool_sz,
+	gdev->ddr_vaddr = dma_alloc_coherent(dev, extram_pool_sz,
 				&(gdev->ddr_paddr), GFP_KERNEL | GFP_DMA);
 	if (!gdev->ddr_vaddr) {
-		dev_err(&dev->dev, "Could not allocate external memory\n");
-		goto out_free;
+		dev_err(dev, "Could not allocate external memory\n");
+		ret = -ENOMEM;
+		goto err_free_sram;
 	}
 
 	len = resource_size(regs_prussio);
 	gdev->prussio_vaddr = ioremap(regs_prussio->start, len);
 	if (!gdev->prussio_vaddr) {
-		dev_err(&dev->dev, "Can't remap PRUSS I/O  address range\n");
-		goto out_free;
+		dev_err(dev, "Can't remap PRUSS I/O  address range\n");
+		ret = -ENOMEM;
+		goto err_free_ddr_vaddr;
 	}
 
 	gdev->pintc_base = pdata->pintc_base;
-	gdev->hostirq_start = platform_get_irq(dev, 0);
+	gdev->hostirq_start = platform_get_irq(pdev, 0);
 
 	for (cnt = 0, p = gdev->info; cnt < MAX_PRUSS_EVT; cnt++, p++) {
 		p->mem[0].addr = regs_prussio->start;
@@ -204,16 +214,37 @@ static int pruss_probe(struct platform_device *dev)
 		p->handler = pruss_handler;
 		p->priv = gdev;
 
-		ret = uio_register_device(&dev->dev, p);
-		if (ret < 0)
-			goto out_free;
+		ret = uio_register_device(dev, p);
+		if (ret < 0) {
+			kfree(p->name);
+			goto err_unloop;
+		}
 	}
 
-	platform_set_drvdata(dev, gdev);
+	platform_set_drvdata(pdev, gdev);
 	return 0;
 
-out_free:
-	pruss_cleanup(dev, gdev);
+err_unloop:
+	for (i = 0, p = gdev->info; i < cnt; i++, p++) {
+		uio_unregister_device(p);
+		kfree(p->name);
+	}
+	iounmap(gdev->prussio_vaddr);
+err_free_ddr_vaddr:
+	dma_free_coherent(dev, extram_pool_sz, gdev->ddr_vaddr,
+			  gdev->ddr_paddr);
+err_free_sram:
+	if (pdata->sram_pool)
+		gen_pool_free(gdev->sram_pool, gdev->sram_vaddr, sram_pool_sz);
+err_clk_disable:
+	clk_disable(gdev->pruss_clk);
+err_clk_put:
+	clk_put(gdev->pruss_clk);
+err_free_info:
+	kfree(gdev->info);
+err_free_gdev:
+	kfree(gdev);
+
 	return ret;
 }
 
@@ -221,7 +252,7 @@ static int pruss_remove(struct platform_device *dev)
 {
 	struct uio_pruss_dev *gdev = platform_get_drvdata(dev);
 
-	pruss_cleanup(dev, gdev);
+	pruss_cleanup(&dev->dev, gdev);
 	return 0;
 }
 
@@ -230,7 +261,6 @@ static struct platform_driver pruss_driver = {
 	.remove = pruss_remove,
 	.driver = {
 		   .name = DRV_NAME,
-		   .owner = THIS_MODULE,
 		   },
 };
 

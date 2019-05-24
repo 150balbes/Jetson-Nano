@@ -1,24 +1,10 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  * WUSB Wire Adapter
  * rpipe management
  *
  * Copyright (C) 2005-2006 Intel Corporation
  * Inaky Perez-Gonzalez <inaky.perez-gonzalez@intel.com>
- *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License version
- * 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
- * 02110-1301, USA.
- *
  *
  * FIXME: docs
  *
@@ -298,7 +284,7 @@ static struct usb_wireless_ep_comp_descriptor *rpipe_epc_find(
 			break;
 		}
 		itr += hdr->bLength;
-		itr_size -= hdr->bDescriptorType;
+		itr_size -= hdr->bLength;
 	}
 out:
 	return epcd;
@@ -484,8 +470,7 @@ error:
 int wa_rpipes_create(struct wahc *wa)
 {
 	wa->rpipes = le16_to_cpu(wa->wa_descr->wNumRPipes);
-	wa->rpipe_bm = kzalloc(BITS_TO_LONGS(wa->rpipes)*sizeof(unsigned long),
-			       GFP_KERNEL);
+	wa->rpipe_bm = bitmap_zalloc(wa->rpipes, GFP_KERNEL);
 	if (wa->rpipe_bm == NULL)
 		return -ENOMEM;
 	return 0;
@@ -496,12 +481,11 @@ void wa_rpipes_destroy(struct wahc *wa)
 	struct device *dev = &wa->usb_iface->dev;
 
 	if (!bitmap_empty(wa->rpipe_bm, wa->rpipes)) {
-		char buf[256];
 		WARN_ON(1);
-		bitmap_scnprintf(buf, sizeof(buf), wa->rpipe_bm, wa->rpipes);
-		dev_err(dev, "BUG: pipes not released on exit: %s\n", buf);
+		dev_err(dev, "BUG: pipes not released on exit: %*pb\n",
+			wa->rpipes, wa->rpipe_bm);
 	}
-	kfree(wa->rpipe_bm);
+	bitmap_free(wa->rpipe_bm);
 }
 
 /*
@@ -524,7 +508,7 @@ void rpipe_ep_disable(struct wahc *wa, struct usb_host_endpoint *ep)
 		u16 index = le16_to_cpu(rpipe->descr.wRPipeIndex);
 
 		usb_control_msg(
-			wa->usb_dev, usb_rcvctrlpipe(wa->usb_dev, 0),
+			wa->usb_dev, usb_sndctrlpipe(wa->usb_dev, 0),
 			USB_REQ_RPIPE_ABORT,
 			USB_DIR_OUT | USB_TYPE_CLASS | USB_RECIP_RPIPE,
 			0, index, NULL, 0, USB_CTRL_SET_TIMEOUT);
@@ -545,7 +529,7 @@ void rpipe_clear_feature_stalled(struct wahc *wa, struct usb_host_endpoint *ep)
 		u16 index = le16_to_cpu(rpipe->descr.wRPipeIndex);
 
 		usb_control_msg(
-			wa->usb_dev, usb_rcvctrlpipe(wa->usb_dev, 0),
+			wa->usb_dev, usb_sndctrlpipe(wa->usb_dev, 0),
 			USB_REQ_CLEAR_FEATURE,
 			USB_DIR_OUT | USB_TYPE_CLASS | USB_RECIP_RPIPE,
 			RPIPE_STALL, index, NULL, 0, USB_CTRL_SET_TIMEOUT);

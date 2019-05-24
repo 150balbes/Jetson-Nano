@@ -1,13 +1,14 @@
-/* tuner-xc2028
+/*
+ * SPDX-License-Identifier: GPL-2.0
+ * tuner-xc2028
  *
- * Copyright (c) 2007-2008 Mauro Carvalho Chehab (mchehab@infradead.org)
- * This code is placed under the terms of the GNU General Public License v2
+ * Copyright (c) 2007-2008 Mauro Carvalho Chehab <mchehab@kernel.org>
  */
 
 #ifndef __TUNER_XC2028_H__
 #define __TUNER_XC2028_H__
 
-#include "dvb_frontend.h"
+#include <media/dvb_frontend.h>
 
 #define XC2028_DEFAULT_FIRMWARE "xc3028-v27.fw"
 #define XC3028L_DEFAULT_FIRMWARE "xc3028L-v36.fw"
@@ -47,7 +48,7 @@ struct xc2028_ctrl {
 
 struct xc2028_config {
 	struct i2c_adapter *i2c_adap;
-	u8 		   i2c_addr;
+	u8		   i2c_addr;
 	struct xc2028_ctrl *ctrl;
 };
 
@@ -56,7 +57,7 @@ struct xc2028_config {
 #define XC2028_RESET_CLK	1
 #define XC2028_I2C_FLUSH	2
 
-#if IS_ENABLED(CONFIG_MEDIA_TUNER_XC2028)
+#if IS_REACHABLE(CONFIG_MEDIA_TUNER_XC2028)
 extern struct dvb_frontend *xc2028_attach(struct dvb_frontend *fe,
 					  struct xc2028_config *cfg);
 #else

@@ -86,12 +86,13 @@ isdn_divert_read(struct file *file, char __user *buf, size_t count, loff_t *off)
 	struct divert_info *inf;
 	int len;
 
-	if (!*((struct divert_info **) file->private_data)) {
+	if (!(inf = *((struct divert_info **) file->private_data))) {
 		if (file->f_flags & O_NONBLOCK)
 			return -EAGAIN;
-		interruptible_sleep_on(&(rd_queue));
+		wait_event_interruptible(rd_queue, (inf =
+			*((struct divert_info **) file->private_data)));
 	}
-	if (!(inf = *((struct divert_info **) file->private_data)))
+	if (!inf)
 		return (0);
 
 	inf->usage_cnt--;	/* new usage count */
@@ -118,15 +119,15 @@ isdn_divert_write(struct file *file, const char __user *buf, size_t count, loff_
 /***************************************/
 /* select routines for various kernels */
 /***************************************/
-static unsigned int
+static __poll_t
 isdn_divert_poll(struct file *file, poll_table *wait)
 {
-	unsigned int mask = 0;
+	__poll_t mask = 0;
 
 	poll_wait(file, &(rd_queue), wait);
-	/* mask = POLLOUT | POLLWRNORM; */
+	/* mask = EPOLLOUT | EPOLLWRNORM; */
 	if (*((struct divert_info **) file->private_data)) {
-		mask |= POLLIN | POLLRDNORM;
+		mask |= EPOLLIN | EPOLLRDNORM;
 	}
 	return mask;
 }				/* isdn_divert_poll */

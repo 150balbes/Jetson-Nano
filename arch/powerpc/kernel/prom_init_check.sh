@@ -19,16 +19,26 @@
 WHITELIST="add_reloc_offset __bss_start __bss_stop copy_and_flush
 _end enter_prom memcpy memset reloc_offset __secondary_hold
 __secondary_hold_acknowledge __secondary_hold_spinloop __start
-strcmp strcpy strlcpy strlen strncmp strstr logo_linux_clut224
+strcmp strcpy strlcpy strlen strncmp strstr kstrtobool logo_linux_clut224
 reloc_got2 kernstart_addr memstart_addr linux_banner _stext
-opal_query_takeover opal_do_takeover opal_enter_rtas opal_secondary_entry
-boot_command_line __prom_init_toc_start __prom_init_toc_end
-btext_setup_display"
+__prom_init_toc_start __prom_init_toc_end btext_setup_display TOC."
 
 NM="$1"
 OBJ="$2"
 
 ERROR=0
+
+function check_section()
+{
+    file=$1
+    section=$2
+    size=$(objdump -h -j $section $file 2>/dev/null | awk "\$2 == \"$section\" {print \$3}")
+    size=${size:-0}
+    if [ $size -ne 0 ]; then
+	ERROR=1
+	echo "Error: Section $section not empty in prom_init.c" >&2
+    fi
+}
 
 for UNDEF in $($NM -u $OBJ | awk '{print $2}')
 do
@@ -52,24 +62,14 @@ do
 	done
 
 	# ignore register save/restore funcitons
-	if [ "${UNDEF:0:9}" = "_restgpr_" ]; then
+	case $UNDEF in
+	_restgpr_*|_restgpr0_*|_rest32gpr_*)
 		OK=1
-	fi
-	if [ "${UNDEF:0:10}" = "_restgpr0_" ]; then
+		;;
+	_savegpr_*|_savegpr0_*|_save32gpr_*)
 		OK=1
-	fi
-	if [ "${UNDEF:0:11}" = "_rest32gpr_" ]; then
-		OK=1
-	fi
-	if [ "${UNDEF:0:9}" = "_savegpr_" ]; then
-		OK=1
-	fi
-	if [ "${UNDEF:0:10}" = "_savegpr0_" ]; then
-		OK=1
-	fi
-	if [ "${UNDEF:0:11}" = "_save32gpr_" ]; then
-		OK=1
-	fi
+		;;
+	esac
 
 	if [ $OK -eq 0 ]; then
 		ERROR=1
@@ -77,5 +77,9 @@ do
 		     "from prom_init.c" >&2
 	fi
 done
+
+check_section $OBJ .data
+check_section $OBJ .bss
+check_section $OBJ .init.data
 
 exit $ERROR

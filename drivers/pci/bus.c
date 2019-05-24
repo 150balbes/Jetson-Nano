@@ -1,6 +1,5 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
- *	drivers/pci/bus.c
- *
  * From setup-res.c, by:
  *	Dave Rusling (david.rusling@reo.mts.dec.com)
  *	David Mosberger (davidm@cs.arizona.edu)
@@ -13,7 +12,6 @@
 #include <linux/errno.h>
 #include <linux/ioport.h>
 #include <linux/proc_fs.h>
-#include <linux/init.h>
 #include <linux/slab.h>
 
 #include "pci.h"
@@ -21,17 +19,16 @@
 void pci_add_resource_offset(struct list_head *resources, struct resource *res,
 			     resource_size_t offset)
 {
-	struct pci_host_bridge_window *window;
+	struct resource_entry *entry;
 
-	window = kzalloc(sizeof(struct pci_host_bridge_window), GFP_KERNEL);
-	if (!window) {
+	entry = resource_list_create_entry(res, 0);
+	if (!entry) {
 		printk(KERN_ERR "PCI: can't add host bridge window %pR\n", res);
 		return;
 	}
 
-	window->res = res;
-	window->offset = offset;
-	list_add_tail(&window->list, resources);
+	entry->offset = offset;
+	resource_list_add_tail(entry, resources);
 }
 EXPORT_SYMBOL(pci_add_resource_offset);
 
@@ -43,12 +40,7 @@ EXPORT_SYMBOL(pci_add_resource);
 
 void pci_free_resource_list(struct list_head *resources)
 {
-	struct pci_host_bridge_window *window, *tmp;
-
-	list_for_each_entry_safe(window, tmp, resources, list) {
-		list_del(&window->list);
-		kfree(window);
-	}
+	resource_list_free(resources);
 }
 EXPORT_SYMBOL(pci_free_resource_list);
 
@@ -98,12 +90,41 @@ void pci_bus_remove_resources(struct pci_bus *bus)
 	}
 }
 
+int devm_request_pci_bus_resources(struct device *dev,
+				   struct list_head *resources)
+{
+	struct resource_entry *win;
+	struct resource *parent, *res;
+	int err;
+
+	resource_list_for_each_entry(win, resources) {
+		res = win->res;
+		switch (resource_type(res)) {
+		case IORESOURCE_IO:
+			parent = &ioport_resource;
+			break;
+		case IORESOURCE_MEM:
+			parent = &iomem_resource;
+			break;
+		default:
+			continue;
+		}
+
+		err = devm_request_resource(dev, parent, res);
+		if (err)
+			return err;
+	}
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(devm_request_pci_bus_resources);
+
 static struct pci_bus_region pci_32_bit = {0, 0xffffffffULL};
 #ifdef CONFIG_ARCH_DMA_ADDR_T_64BIT
 static struct pci_bus_region pci_64_bit = {0,
-				(dma_addr_t) 0xffffffffffffffffULL};
-static struct pci_bus_region pci_high = {(dma_addr_t) 0x100000000ULL,
-				(dma_addr_t) 0xffffffffffffffffULL};
+				(pci_bus_addr_t) 0xffffffffffffffffULL};
+static struct pci_bus_region pci_high = {(pci_bus_addr_t) 0x100000000ULL,
+				(pci_bus_addr_t) 0xffffffffffffffffULL};
 #endif
 
 /*
@@ -132,7 +153,7 @@ static void pci_clip_resource_to_region(struct pci_bus *bus,
 
 static int pci_bus_alloc_from_region(struct pci_bus *bus, struct resource *res,
 		resource_size_t size, resource_size_t align,
-		resource_size_t min, unsigned int type_mask,
+		resource_size_t min, unsigned long type_mask,
 		resource_size_t (*alignf)(void *,
 					  const struct resource *,
 					  resource_size_t,
@@ -144,9 +165,11 @@ static int pci_bus_alloc_from_region(struct pci_bus *bus, struct resource *res,
 	struct resource *r, avail;
 	resource_size_t max;
 
-	type_mask |= IORESOURCE_IO | IORESOURCE_MEM;
+	type_mask |= IORESOURCE_TYPE_BITS;
 
 	pci_bus_for_each_resource(bus, r, i) {
+		resource_size_t min_used = min;
+
 		if (!r)
 			continue;
 
@@ -170,12 +193,12 @@ static int pci_bus_alloc_from_region(struct pci_bus *bus, struct resource *res,
 		 * overrides "min".
 		 */
 		if (avail.start)
-			min = avail.start;
+			min_used = avail.start;
 
 		max = avail.end;
 
 		/* Ok, try it out.. */
-		ret = allocate_resource(r, res, size, min, max,
+		ret = allocate_resource(r, res, size, min_used, max,
 					align, alignf, alignf_data);
 		if (ret == 0)
 			return 0;
@@ -200,7 +223,7 @@ static int pci_bus_alloc_from_region(struct pci_bus *bus, struct resource *res,
  */
 int pci_bus_alloc_resource(struct pci_bus *bus, struct resource *res,
 		resource_size_t size, resource_size_t align,
-		resource_size_t min, unsigned int type_mask,
+		resource_size_t min, unsigned long type_mask,
 		resource_size_t (*alignf)(void *,
 					  const struct resource *,
 					  resource_size_t,
@@ -227,8 +250,56 @@ int pci_bus_alloc_resource(struct pci_bus *bus, struct resource *res,
 					 type_mask, alignf, alignf_data,
 					 &pci_32_bit);
 }
+EXPORT_SYMBOL(pci_bus_alloc_resource);
+
+/*
+ * The @idx resource of @dev should be a PCI-PCI bridge window.  If this
+ * resource fits inside a window of an upstream bridge, do nothing.  If it
+ * overlaps an upstream window but extends outside it, clip the resource so
+ * it fits completely inside.
+ */
+bool pci_bus_clip_resource(struct pci_dev *dev, int idx)
+{
+	struct pci_bus *bus = dev->bus;
+	struct resource *res = &dev->resource[idx];
+	struct resource orig_res = *res;
+	struct resource *r;
+	int i;
+
+	pci_bus_for_each_resource(bus, r, i) {
+		resource_size_t start, end;
+
+		if (!r)
+			continue;
+
+		if (resource_type(res) != resource_type(r))
+			continue;
+
+		start = max(r->start, res->start);
+		end = min(r->end, res->end);
+
+		if (start > end)
+			continue;	/* no overlap */
+
+		if (res->start == start && res->end == end)
+			return false;	/* no change */
+
+		res->start = start;
+		res->end = end;
+		res->flags &= ~IORESOURCE_UNSET;
+		orig_res.flags &= ~IORESOURCE_UNSET;
+		pci_printk(KERN_DEBUG, dev, "%pR clipped to %pR\n",
+				 &orig_res, res);
+
+		return true;
+	}
+
+	return false;
+}
 
 void __weak pcibios_resource_survey_bus(struct pci_bus *bus) { }
+
+void __weak pcibios_bus_add_device(struct pci_dev *pdev) { }
 
 /**
  * pci_bus_add_device - start driver for a single device
@@ -236,7 +307,7 @@ void __weak pcibios_resource_survey_bus(struct pci_bus *bus) { }
  *
  * This adds add sysfs entries and start device drivers
  */
-int pci_bus_add_device(struct pci_dev *dev)
+void pci_bus_add_device(struct pci_dev *dev)
 {
 	int retval;
 
@@ -244,18 +315,24 @@ int pci_bus_add_device(struct pci_dev *dev)
 	 * Can not put in pci_device_add yet because resources
 	 * are not assigned yet for some devices.
 	 */
+	pcibios_bus_add_device(dev);
 	pci_fixup_device(pci_fixup_final, dev);
 	pci_create_sysfs_dev_files(dev);
 	pci_proc_attach_device(dev);
+	pci_bridge_d3_update(dev);
 
 	dev->match_driver = true;
 	retval = device_attach(&dev->dev);
-	WARN_ON(retval < 0);
+	if (retval < 0 && retval != -EPROBE_DEFER) {
+		pci_warn(dev, "device attach failed (%d)\n", retval);
+		pci_proc_detach_device(dev);
+		pci_remove_sysfs_dev_files(dev);
+		return;
+	}
 
-	dev->is_added = 1;
-
-	return 0;
+	pci_dev_assign_added(dev, true);
 }
+EXPORT_SYMBOL_GPL(pci_bus_add_device);
 
 /**
  * pci_bus_add_devices - start driver for PCI devices
@@ -267,25 +344,24 @@ void pci_bus_add_devices(const struct pci_bus *bus)
 {
 	struct pci_dev *dev;
 	struct pci_bus *child;
-	int retval;
 
 	list_for_each_entry(dev, &bus->devices, bus_list) {
 		/* Skip already-added devices */
-		if (dev->is_added)
+		if (pci_dev_is_added(dev))
 			continue;
-		retval = pci_bus_add_device(dev);
-		if (retval)
-			dev_err(&dev->dev, "Error adding device (%d)\n",
-				retval);
+		pci_bus_add_device(dev);
 	}
 
 	list_for_each_entry(dev, &bus->devices, bus_list) {
-		BUG_ON(!dev->is_added);
+		/* Skip if device attach failed */
+		if (!pci_dev_is_added(dev))
+			continue;
 		child = dev->subordinate;
 		if (child)
 			pci_bus_add_devices(child);
 	}
 }
+EXPORT_SYMBOL(pci_bus_add_devices);
 
 /** pci_walk_bus - walk devices on/under bus, calling callback.
  *  @top      bus whose devices should be walked
@@ -350,7 +426,3 @@ void pci_bus_put(struct pci_bus *bus)
 		put_device(&bus->dev);
 }
 EXPORT_SYMBOL(pci_bus_put);
-
-EXPORT_SYMBOL(pci_bus_alloc_resource);
-EXPORT_SYMBOL_GPL(pci_bus_add_device);
-EXPORT_SYMBOL(pci_bus_add_devices);

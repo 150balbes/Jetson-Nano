@@ -20,7 +20,12 @@ static inline int __pure __get_cpu_type(const int cpu_type)
 	case CPU_LOONGSON2:
 #endif
 
-#ifdef CONFIG_SYS_HAS_CPU_LOONGSON1B
+#ifdef CONFIG_SYS_HAS_CPU_LOONGSON3
+	case CPU_LOONGSON3:
+#endif
+
+#if defined(CONFIG_SYS_HAS_CPU_LOONGSON1B) || \
+    defined(CONFIG_SYS_HAS_CPU_LOONGSON1C)
 	case CPU_LOONGSON1:
 #endif
 
@@ -28,12 +33,12 @@ static inline int __pure __get_cpu_type(const int cpu_type)
 	case CPU_4KC:
 	case CPU_ALCHEMY:
 	case CPU_PR4450:
-	case CPU_JZRISC:
 #endif
 
 #if defined(CONFIG_SYS_HAS_CPU_MIPS32_R1) || \
     defined(CONFIG_SYS_HAS_CPU_MIPS32_R2)
 	case CPU_4KEC:
+	case CPU_JZRISC:
 #endif
 
 #ifdef CONFIG_SYS_HAS_CPU_MIPS32_R2
@@ -46,6 +51,15 @@ static inline int __pure __get_cpu_type(const int cpu_type)
 	case CPU_M14KEC:
 	case CPU_INTERAPTIV:
 	case CPU_PROAPTIV:
+	case CPU_P5600:
+	case CPU_M5150:
+#endif
+
+#if defined(CONFIG_SYS_HAS_CPU_MIPS32_R2) || \
+    defined(CONFIG_SYS_HAS_CPU_MIPS32_R6) || \
+    defined(CONFIG_SYS_HAS_CPU_MIPS64_R2) || \
+    defined(CONFIG_SYS_HAS_CPU_MIPS64_R6)
+	case CPU_QEMU_GENERIC:
 #endif
 
 #ifdef CONFIG_SYS_HAS_CPU_MIPS64_R1
@@ -62,6 +76,16 @@ static inline int __pure __get_cpu_type(const int cpu_type)
 	 * All MIPS64 R2 processors have their own special symbols.  That is,
 	 * there currently is no pure R2 core
 	 */
+#endif
+
+#ifdef CONFIG_SYS_HAS_CPU_MIPS32_R6
+	case CPU_M6250:
+#endif
+
+#ifdef CONFIG_SYS_HAS_CPU_MIPS64_R6
+	case CPU_I6400:
+	case CPU_I6500:
+	case CPU_P6600:
 #endif
 
 #ifdef CONFIG_SYS_HAS_CPU_R3000
@@ -127,11 +151,6 @@ static inline int __pure __get_cpu_type(const int cpu_type)
 	case CPU_R5500:
 #endif
 
-#ifdef CONFIG_SYS_HAS_CPU_R6000
-	case CPU_R6000:
-	case CPU_R6000A:
-#endif
-
 #ifdef CONFIG_SYS_HAS_CPU_NEVADA
 	case CPU_NEVADA:
 #endif
@@ -144,13 +163,11 @@ static inline int __pure __get_cpu_type(const int cpu_type)
 	case CPU_R10000:
 	case CPU_R12000:
 	case CPU_R14000:
+	case CPU_R16000:
 #endif
 #ifdef CONFIG_SYS_HAS_CPU_RM7000
 	case CPU_RM7000:
 	case CPU_SR71000:
-#endif
-#ifdef CONFIG_SYS_HAS_CPU_RM9000
-	case CPU_RM9000:
 #endif
 #ifdef CONFIG_SYS_HAS_CPU_SB1
 	case CPU_SB1:
@@ -160,6 +177,7 @@ static inline int __pure __get_cpu_type(const int cpu_type)
 	case CPU_CAVIUM_OCTEON:
 	case CPU_CAVIUM_OCTEON_PLUS:
 	case CPU_CAVIUM_OCTEON2:
+	case CPU_CAVIUM_OCTEON3:
 #endif
 
 #if defined(CONFIG_SYS_HAS_CPU_BMIPS32_3300) || \

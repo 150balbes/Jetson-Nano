@@ -1,83 +1,70 @@
-* Synopsys Designware PCIe interface
+* Synopsys DesignWare PCIe interface
 
 Required properties:
-- compatible: should contain "snps,dw-pcie" to identify the
-	core, plus an identifier for the specific instance, such
-	as "samsung,exynos5440-pcie" or "fsl,imx6q-pcie".
-- reg: base addresses and lengths of the pcie controller,
-	the phy controller, additional register for the phy controller.
-- interrupts: interrupt values for level interrupt,
-	pulse interrupt, special interrupt.
-- clocks: from common clock binding: handle to pci clock.
-- clock-names: from common clock binding: should be "pcie" and "pcie_bus".
+- compatible:
+	"snps,dw-pcie" for RC mode;
+	"snps,dw-pcie-ep" for EP mode;
+- reg: Should contain the configuration address space.
+- reg-names: Must be "config" for the PCIe configuration space.
+    (The old way of getting the configuration address space from "ranges"
+    is deprecated and should be avoided.)
+- num-lanes: number of lanes to use
+RC mode:
 - #address-cells: set to <3>
 - #size-cells: set to <2>
 - device_type: set to "pci"
 - ranges: ranges for the PCI memory and I/O regions
 - #interrupt-cells: set to <1>
-- interrupt-map-mask and interrupt-map: standard PCI properties
-	to define the mapping of the PCIe interface to interrupt
+- interrupt-map-mask and interrupt-map: standard PCI
+	properties to define the mapping of the PCIe interface to interrupt
 	numbers.
-- num-lanes: number of lanes to use
+EP mode:
+- num-ib-windows: number of inbound address translation windows
+- num-ob-windows: number of outbound address translation windows
 
 Optional properties:
-- reset-gpio: gpio pin number of power good signal
+- num-lanes: number of lanes to use (this property should be specified unless
+  the link is brought already up in BIOS)
+- reset-gpio: GPIO pin number of power good signal
+- clocks: Must contain an entry for each entry in clock-names.
+	See ../clocks/clock-bindings.txt for details.
+- clock-names: Must include the following entries:
+	- "pcie"
+	- "pcie_bus"
+RC mode:
+- num-viewport: number of view ports configured in hardware. If a platform
+  does not specify it, the driver assumes 2.
+- bus-range: PCI bus numbers covered (it is recommended for new devicetrees
+  to specify this property, to keep backwards compatibility a range of
+  0x00-0xff is assumed if not present)
 
-Optional properties for fsl,imx6q-pcie
-- power-on-gpio: gpio pin number of power-enable signal
-- wake-up-gpio: gpio pin number of incoming wakeup signal
-- disable-gpio: gpio pin number of outgoing rfkill/endpoint disable signal
+EP mode:
+- max-functions: maximum number of functions that can be configured
 
-Example:
+Example configuration:
 
-SoC specific DT Entry:
-
-	pcie@290000 {
-		compatible = "samsung,exynos5440-pcie", "snps,dw-pcie";
-		reg = <0x290000 0x1000
-			0x270000 0x1000
-			0x271000 0x40>;
-		interrupts = <0 20 0>, <0 21 0>, <0 22 0>;
-		clocks = <&clock 28>, <&clock 27>;
-		clock-names = "pcie", "pcie_bus";
+	pcie: pcie@dfc00000 {
+		compatible = "snps,dw-pcie";
+		reg = <0xdfc00000 0x0001000>, /* IP registers */
+		      <0xd0000000 0x0002000>; /* Configuration space */
+		reg-names = "dbi", "config";
 		#address-cells = <3>;
 		#size-cells = <2>;
 		device_type = "pci";
-		ranges = <0x00000800 0 0x40000000 0x40000000 0 0x00001000   /* configuration space */
-			  0x81000000 0 0	  0x40001000 0 0x00010000   /* downstream I/O */
-			  0x82000000 0 0x40011000 0x40011000 0 0x1ffef000>; /* non-prefetchable memory */
+		ranges = <0x81000000 0 0x00000000 0xde000000 0 0x00010000
+			  0x82000000 0 0xd0400000 0xd0400000 0 0x0d000000>;
+		interrupts = <25>, <24>;
 		#interrupt-cells = <1>;
-		interrupt-map-mask = <0 0 0 0>;
-		interrupt-map = <0x0 0 &gic 53>;
-		num-lanes = <4>;
+		num-lanes = <1>;
 	};
-
-	pcie@2a0000 {
-		compatible = "samsung,exynos5440-pcie", "snps,dw-pcie";
-		reg = <0x2a0000 0x1000
-			0x272000 0x1000
-			0x271040 0x40>;
-		interrupts = <0 23 0>, <0 24 0>, <0 25 0>;
-		clocks = <&clock 29>, <&clock 27>;
-		clock-names = "pcie", "pcie_bus";
-		#address-cells = <3>;
-		#size-cells = <2>;
-		device_type = "pci";
-		ranges = <0x00000800 0 0x60000000 0x60000000 0 0x00001000   /* configuration space */
-			  0x81000000 0 0	  0x60001000 0 0x00010000   /* downstream I/O */
-			  0x82000000 0 0x60011000 0x60011000 0 0x1ffef000>; /* non-prefetchable memory */
-		#interrupt-cells = <1>;
-		interrupt-map-mask = <0 0 0 0>;
-		interrupt-map = <0x0 0 &gic 56>;
-		num-lanes = <4>;
-	};
-
-Board specific DT Entry:
-
-	pcie@290000 {
-		reset-gpio = <&pin_ctrl 5 0>;
-	};
-
-	pcie@2a0000 {
-		reset-gpio = <&pin_ctrl 22 0>;
+or
+	pcie: pcie@dfc00000 {
+		compatible = "snps,dw-pcie-ep";
+		reg = <0xdfc00000 0x0001000>, /* IP registers 1 */
+		      <0xdfc01000 0x0001000>, /* IP registers 2 */
+		      <0xd0000000 0x2000000>; /* Configuration space */
+		reg-names = "dbi", "dbi2", "addr_space";
+		num-ib-windows = <6>;
+		num-ob-windows = <2>;
+		num-lanes = <1>;
 	};

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 /* sun3_pgalloc.h --
  * reorganization around 2.3.39, routines moved from sun3_pgtable.h
  *
@@ -11,10 +12,6 @@
 #define _SUN3_PGALLOC_H
 
 #include <asm/tlb.h>
-
-/* FIXME - when we get this compiling */
-/* erm, now that it's compiling, what do we do with it? */
-#define _KERNPG_TABLE 0
 
 extern const char bad_pmd_string[];
 
@@ -38,10 +35,9 @@ do {							\
 	tlb_remove_page((tlb), pte);			\
 } while (0)
 
-static inline pte_t *pte_alloc_one_kernel(struct mm_struct *mm,
-					  unsigned long address)
+static inline pte_t *pte_alloc_one_kernel(struct mm_struct *mm)
 {
-	unsigned long page = __get_free_page(GFP_KERNEL|__GFP_REPEAT);
+	unsigned long page = __get_free_page(GFP_KERNEL);
 
 	if (!page)
 		return NULL;
@@ -50,10 +46,9 @@ static inline pte_t *pte_alloc_one_kernel(struct mm_struct *mm,
 	return (pte_t *) (page);
 }
 
-static inline pgtable_t pte_alloc_one(struct mm_struct *mm,
-					unsigned long address)
+static inline pgtable_t pte_alloc_one(struct mm_struct *mm)
 {
-        struct page *page = alloc_pages(GFP_KERNEL|__GFP_REPEAT, 0);
+        struct page *page = alloc_pages(GFP_KERNEL, 0);
 
 	if (page == NULL)
 		return NULL;

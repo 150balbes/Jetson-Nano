@@ -16,8 +16,7 @@
 #include <linux/platform_device.h>
 #include <linux/delay.h>
 #include <linux/mtd/mtd.h>
-#include <linux/mtd/nand.h>
-#include <linux/mtd/partitions.h>
+#include <linux/mtd/platnand.h>
 #include <linux/mtd/physmap.h>
 #include <linux/input.h>
 #include <linux/smc91x.h>
@@ -29,7 +28,7 @@
 
 #include <mach/tc.h>
 #include <mach/mux.h>
-#include <mach/flash.h>
+#include "flash.h"
 #include <linux/platform_data/keypad-omap.h>
 
 #include <mach/hardware.h>
@@ -186,7 +185,7 @@ static struct platform_device nor_device = {
 
 #define FSAMPLE_NAND_RB_GPIO_PIN	62
 
-static int nand_dev_ready(struct mtd_info *mtd)
+static int nand_dev_ready(struct nand_chip *chip)
 {
 	return gpio_get_value(FSAMPLE_NAND_RB_GPIO_PIN);
 }
@@ -266,7 +265,7 @@ static struct platform_device *devices[] __initdata = {
 	&kp_device,
 };
 
-static struct omap_lcd_config fsample_lcd_config = {
+static const struct omap_lcd_config fsample_lcd_config = {
 	.ctrl_name	= "internal",
 };
 
@@ -362,6 +361,7 @@ MACHINE_START(OMAP_FSAMPLE, "OMAP730 F-Sample")
 	.map_io		= omap_fsample_map_io,
 	.init_early	= omap1_init_early,
 	.init_irq	= omap1_init_irq,
+	.handle_irq	= omap1_handle_irq,
 	.init_machine	= omap_fsample_init,
 	.init_late	= omap1_init_late,
 	.init_time	= omap1_timer_init,

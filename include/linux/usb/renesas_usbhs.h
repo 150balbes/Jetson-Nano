@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-1.0+
 /*
  * Renesas USB
  *
@@ -16,6 +17,7 @@
  */
 #ifndef RENESAS_USB_H
 #define RENESAS_USB_H
+#include <linux/notifier.h>
 #include <linux/platform_device.h>
 #include <linux/usb/ch9.h>
 
@@ -97,6 +99,13 @@ struct renesas_usbhs_platform_callback {
 	 * VBUS control is needed for Host
 	 */
 	int (*set_vbus)(struct platform_device *pdev, int enable);
+
+	/*
+	 * option:
+	 * extcon notifier to set host/peripheral mode.
+	 */
+	int (*notifier)(struct notifier_block *nb, unsigned long event,
+			void *data);
 };
 
 /*
@@ -105,12 +114,26 @@ struct renesas_usbhs_platform_callback {
  * some register needs USB chip specific parameters.
  * This struct show it to driver
  */
+
+struct renesas_usbhs_driver_pipe_config {
+	u8 type;	/* USB_ENDPOINT_XFER_xxx */
+	u16 bufsize;
+	u8 bufnum;
+	bool double_buf;
+};
+#define RENESAS_USBHS_PIPE(_type, _size, _num, _double_buf)	{	\
+			.type = (_type),		\
+			.bufsize = (_size),		\
+			.bufnum = (_num),		\
+			.double_buf = (_double_buf),	\
+	}
+
 struct renesas_usbhs_driver_param {
 	/*
 	 * pipe settings
 	 */
-	u32 *pipe_type; /* array of USB_ENDPOINT_XFER_xxx (from ep0) */
-	int pipe_size; /* pipe_type array size */
+	struct renesas_usbhs_driver_pipe_config *pipe_configs;
+	int pipe_size; /* pipe_configs array size */
 
 	/*
 	 * option:
@@ -145,6 +168,10 @@ struct renesas_usbhs_driver_param {
 	int d0_rx_id;
 	int d1_tx_id;
 	int d1_rx_id;
+	int d2_tx_id;
+	int d2_rx_id;
+	int d3_tx_id;
+	int d3_rx_id;
 
 	/*
 	 * option:
@@ -153,12 +180,22 @@ struct renesas_usbhs_driver_param {
 	 */
 	int pio_dma_border; /* default is 64byte */
 
+	uintptr_t type;
+	u32 enable_gpio;
+
 	/*
 	 * option:
 	 */
 	u32 has_otg:1; /* for controlling PWEN/EXTLP */
 	u32 has_sudmac:1; /* for SUDMAC */
+	u32 has_usb_dmac:1; /* for USB-DMAC */
+#define USBHS_USB_DMAC_XFER_SIZE	32	/* hardcode the xfer size */
 };
+
+#define USBHS_TYPE_RCAR_GEN2		1
+#define USBHS_TYPE_RCAR_GEN3		2
+#define USBHS_TYPE_RCAR_GEN3_WITH_PLL	3
+#define USBHS_TYPE_RZA1			4
 
 /*
  * option:

@@ -13,9 +13,11 @@
 
 #include <linux/cpufreq.h>
 #include <linux/interrupt.h>
+#include <linux/leds.h>
 #include <linux/irq.h>
 #include <linux/pm.h>
 #include <linux/gpio.h>
+#include <linux/gpio/machine.h>
 #include <linux/serial_8250.h>
 #include <linux/dm9000.h>
 #include <linux/mmc/host.h>
@@ -25,7 +27,7 @@
 #include <linux/mtd/partitions.h>
 #include <linux/mtd/physmap.h>
 #include <linux/i2c.h>
-#include <linux/i2c/pxa-i2c.h>
+#include <linux/platform_data/i2c-pxa.h>
 #include <linux/platform_data/pca953x.h>
 #include <linux/apm-emulation.h>
 #include <linux/can/platform/mcp251x.h>
@@ -38,17 +40,18 @@
 #include <asm/mach/arch.h>
 #include <asm/mach/map.h>
 
-#include <mach/pxa27x.h>
+#include "pxa27x.h"
+#include "devices.h"
 #include <mach/regs-uart.h>
 #include <linux/platform_data/usb-ohci-pxa27x.h>
 #include <linux/platform_data/mmc-pxamci.h>
-#include <mach/pxa27x-udc.h>
-#include <mach/udc.h>
+#include "pxa27x-udc.h"
+#include "udc.h"
 #include <linux/platform_data/video-pxafb.h>
-#include <mach/pm.h>
+#include "pm.h"
 #include <mach/audio.h>
 #include <linux/platform_data/pcmcia-pxa2xx_viper.h>
-#include <mach/zeus.h>
+#include "zeus.h"
 #include <mach/smemc.h>
 
 #include "generic.h"
@@ -105,8 +108,9 @@ static inline unsigned long zeus_irq_pending(void)
 	return __raw_readw(ZEUS_CPLD_ISA_IRQ) & zeus_irq_enabled_mask;
 }
 
-static void zeus_irq_handler(unsigned int irq, struct irq_desc *desc)
+static void zeus_irq_handler(struct irq_desc *desc)
 {
+	unsigned int irq;
 	unsigned long pending;
 
 	pending = zeus_irq_pending();
@@ -151,7 +155,7 @@ static void __init zeus_init_irq(void)
 		isa_irq = zeus_bit_to_irq(level);
 		irq_set_chip_and_handler(isa_irq, &zeus_irq_chip,
 					 handle_edge_irq);
-		set_irq_flags(isa_irq, IRQF_VALID | IRQF_PROBE);
+		irq_clear_status_flags(isa_irq, IRQ_NOREQUEST | IRQ_NOPROBE);
 	}
 
 	irq_set_irq_type(gpio_to_irq(ZEUS_ISA_GPIO), IRQ_TYPE_EDGE_RISING);
@@ -387,7 +391,7 @@ static struct platform_device zeus_sram_device = {
 };
 
 /* SPI interface on SSP3 */
-static struct pxa2xx_spi_master pxa2xx_spi_ssp3_master_info = {
+static struct pxa2xx_spi_controller pxa2xx_spi_ssp3_master_info = {
 	.num_chipselect = 1,
 	.enable_dma     = 1,
 };
@@ -407,15 +411,23 @@ static struct regulator_init_data can_regulator_init_data = {
 static struct fixed_voltage_config can_regulator_pdata = {
 	.supply_name	= "CAN_SHDN",
 	.microvolts	= 3300000,
-	.gpio		= ZEUS_CAN_SHDN_GPIO,
 	.init_data	= &can_regulator_init_data,
 };
 
 static struct platform_device can_regulator_device = {
-	.name	= "reg-fixed-volage",
-	.id	= -1,
+	.name	= "reg-fixed-voltage",
+	.id	= 0,
 	.dev	= {
 		.platform_data	= &can_regulator_pdata,
+	},
+};
+
+static struct gpiod_lookup_table can_regulator_gpiod_table = {
+	.dev_id = "reg-fixed-voltage.0",
+	.table = {
+		GPIO_LOOKUP("gpio-pxa", ZEUS_CAN_SHDN_GPIO,
+			    NULL, GPIO_ACTIVE_LOW),
+		{ },
 	},
 };
 
@@ -510,18 +522,6 @@ struct platform_device zeus_max6369_device = {
 	.num_resources	= 1,
 };
 
-static struct platform_device *zeus_devices[] __initdata = {
-	&zeus_serial_device,
-	&zeus_mtd_devices[0],
-	&zeus_dm9k0_device,
-	&zeus_dm9k1_device,
-	&zeus_sram_device,
-	&zeus_leds_device,
-	&zeus_pcmcia_device,
-	&zeus_max6369_device,
-	&can_regulator_device,
-};
-
 /* AC'97 */
 static pxa2xx_audio_ops_t zeus_ac97_info = {
 	.reset_gpio = 95,
@@ -532,43 +532,56 @@ static pxa2xx_audio_ops_t zeus_ac97_info = {
  * USB host
  */
 
-static int zeus_ohci_init(struct device *dev)
-{
-	int err;
+static struct regulator_consumer_supply zeus_ohci_regulator_supplies[] = {
+	REGULATOR_SUPPLY("vbus2", "pxa27x-ohci"),
+};
 
-	/* Switch on port 2. */
-	if ((err = gpio_request(ZEUS_USB2_PWREN_GPIO, "USB2_PWREN"))) {
-		dev_err(dev, "Can't request USB2_PWREN\n");
-		return err;
-	}
+static struct regulator_init_data zeus_ohci_regulator_data = {
+	.constraints = {
+		.valid_ops_mask		= REGULATOR_CHANGE_STATUS,
+	},
+	.num_consumer_supplies	= ARRAY_SIZE(zeus_ohci_regulator_supplies),
+	.consumer_supplies	= zeus_ohci_regulator_supplies,
+};
 
-	if ((err = gpio_direction_output(ZEUS_USB2_PWREN_GPIO, 1))) {
-		gpio_free(ZEUS_USB2_PWREN_GPIO);
-		dev_err(dev, "Can't enable USB2_PWREN\n");
-		return err;
-	}
+static struct fixed_voltage_config zeus_ohci_regulator_config = {
+	.supply_name		= "vbus2",
+	.microvolts		= 5000000, /* 5.0V */
+	.startup_delay		= 0,
+	.init_data		= &zeus_ohci_regulator_data,
+};
 
-	/* Port 2 is shared between host and client interface. */
-	UP2OCR = UP2OCR_HXOE | UP2OCR_HXS | UP2OCR_DMPDE | UP2OCR_DPPDE;
+static struct platform_device zeus_ohci_regulator_device = {
+	.name		= "reg-fixed-voltage",
+	.id		= 1,
+	.dev = {
+		.platform_data = &zeus_ohci_regulator_config,
+	},
+};
 
-	return 0;
-}
-
-static void zeus_ohci_exit(struct device *dev)
-{
-	/* Power-off port 2 */
-	gpio_direction_output(ZEUS_USB2_PWREN_GPIO, 0);
-	gpio_free(ZEUS_USB2_PWREN_GPIO);
-}
+static struct gpiod_lookup_table zeus_ohci_regulator_gpiod_table = {
+	.dev_id = "reg-fixed-voltage.0",
+	.table = {
+		GPIO_LOOKUP("gpio-pxa", ZEUS_USB2_PWREN_GPIO,
+			    NULL, GPIO_ACTIVE_HIGH),
+		{ },
+	},
+};
 
 static struct pxaohci_platform_data zeus_ohci_platform_data = {
 	.port_mode	= PMM_NPS_MODE,
 	/* Clear Power Control Polarity Low and set Power Sense
 	 * Polarity Low. Supply power to USB ports. */
 	.flags		= ENABLE_PORT_ALL | POWER_SENSE_LOW,
-	.init		= zeus_ohci_init,
-	.exit		= zeus_ohci_exit,
 };
+
+static void __init zeus_register_ohci(void)
+{
+	/* Port 2 is shared between host and client interface. */
+	UP2OCR = UP2OCR_HXOE | UP2OCR_HXS | UP2OCR_DMPDE | UP2OCR_DPPDE;
+
+	pxa_set_ohci_info(&zeus_ohci_platform_data);
+}
 
 /*
  * Flat Panel
@@ -649,10 +662,18 @@ static struct pxafb_mach_info zeus_fb_info = {
 static struct pxamci_platform_data zeus_mci_platform_data = {
 	.ocr_mask		= MMC_VDD_32_33|MMC_VDD_33_34,
 	.detect_delay_ms	= 250,
-	.gpio_card_detect       = ZEUS_MMC_CD_GPIO,
-	.gpio_card_ro           = ZEUS_MMC_WP_GPIO,
 	.gpio_card_ro_invert	= 1,
-	.gpio_power             = -1
+};
+
+static struct gpiod_lookup_table zeus_mci_gpio_table = {
+	.dev_id = "pxa2xx-mci.0",
+	.table = {
+		GPIO_LOOKUP("gpio-pxa", ZEUS_MMC_CD_GPIO,
+			    "cd", GPIO_ACTIVE_LOW),
+		GPIO_LOOKUP("gpio-pxa", ZEUS_MMC_WP_GPIO,
+			    "wp", GPIO_ACTIVE_HIGH),
+		{ },
+	},
 };
 
 /*
@@ -675,6 +696,19 @@ static void zeus_udc_command(int cmd)
 
 static struct pxa2xx_udc_mach_info zeus_udc_info = {
 	.udc_command = zeus_udc_command,
+};
+
+static struct platform_device *zeus_devices[] __initdata = {
+	&zeus_serial_device,
+	&zeus_mtd_devices[0],
+	&zeus_dm9k0_device,
+	&zeus_dm9k1_device,
+	&zeus_sram_device,
+	&zeus_leds_device,
+	&zeus_pcmcia_device,
+	&zeus_max6369_device,
+	&can_regulator_device,
+	&zeus_ohci_regulator_device,
 };
 
 #ifdef CONFIG_PM
@@ -845,15 +879,18 @@ static void __init zeus_init(void)
 
 	pxa2xx_mfp_config(ARRAY_AND_SIZE(zeus_pin_config));
 
+	gpiod_add_lookup_table(&can_regulator_gpiod_table);
+	gpiod_add_lookup_table(&zeus_ohci_regulator_gpiod_table);
 	platform_add_devices(zeus_devices, ARRAY_SIZE(zeus_devices));
 
-	pxa_set_ohci_info(&zeus_ohci_platform_data);
+	zeus_register_ohci();
 
 	if (zeus_setup_fb_gpios())
 		pr_err("Failed to setup fb gpios\n");
 	else
 		pxa_set_fb_info(NULL, &zeus_fb_info);
 
+	gpiod_add_lookup_table(&zeus_mci_gpio_table);
 	pxa_set_mci_info(&zeus_mci_platform_data);
 	pxa_set_udc_info(&zeus_udc_info);
 	pxa_set_ac97_info(&zeus_ac97_info);
@@ -861,6 +898,8 @@ static void __init zeus_init(void)
 	i2c_register_board_info(0, ARRAY_AND_SIZE(zeus_i2c_devices));
 	pxa2xx_set_spi_info(3, &pxa2xx_spi_ssp3_master_info);
 	spi_register_board_info(zeus_spi_board_info, ARRAY_SIZE(zeus_spi_board_info));
+
+	regulator_has_full_constraints();
 }
 
 static struct map_desc zeus_io_desc[] __initdata = {
@@ -900,7 +939,7 @@ static void __init zeus_map_io(void)
 	PMCR = PSPR = 0;
 
 	/* enable internal 32.768Khz oscillator (ignore OSCC_OOK) */
-	OSCC |= OSCC_OON;
+	writel(readl(OSCC) | OSCC_OON, OSCC);
 
 	/* Some clock cycles later (from OSCC_ON), programme PCFR (OPDE...).
 	 * float chip selects and PCMCIA */

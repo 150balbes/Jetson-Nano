@@ -7,15 +7,12 @@ socket interface on 2.4/2.6/3.x kernels. This type of sockets is used for
 i) capture network traffic with utilities like tcpdump, ii) transmit network
 traffic, or any other that needs raw access to network interface.
 
-You can find the latest version of this document at:
-    http://wiki.ipxwarzone.com/index.php5?title=Linux_packet_mmap
-
 Howto can be found at:
-    http://wiki.gnu-log.net (packet_mmap)
+    https://sites.google.com/site/packetmmap/
 
 Please send your comments to
     Ulisses Alonso Camaró <uaca@i.hate.spam.alumni.uv.es>
-    Johann Baudy <johann.baudy@gnu-log.net>
+    Johann Baudy
 
 -------------------------------------------------------------------------------
 + Why use PACKET_MMAP
@@ -51,17 +48,8 @@ From the user standpoint, you should use the higher level libpcap library, which
 is a de facto standard, portable across nearly all operating systems
 including Win32. 
 
-Said that, at time of this writing, official libpcap 0.8.1 is out and doesn't include
-support for PACKET_MMAP, and also probably the libpcap included in your distribution. 
-
-I'm aware of two implementations of PACKET_MMAP in libpcap:
-
-    http://wiki.ipxwarzone.com/		     (by Simon Patarin, based on libpcap 0.6.2)
-    http://public.lanl.gov/cpw/              (by Phil Wood, based on lastest libpcap)
-
-The rest of this document is intended for people who want to understand
-the low level details or want to improve libpcap by including PACKET_MMAP
-support.
+Packet MMAP support was integrated into libpcap around the time of version 1.3.0;
+TPACKET_V3 support was added in version 1.5.0
 
 --------------------------------------------------------------------------------
 + How to use mmap() directly to improve capture process
@@ -174,7 +162,7 @@ As capture, each frame contains two parts:
  /* bind socket to eth0 */
  bind(this->socket, (struct sockaddr *)&my_addr, sizeof(struct sockaddr_ll));
 
- A complete tutorial is available at: http://wiki.gnu-log.net/
+ A complete tutorial is available at: https://sites.google.com/site/packetmmap/
 
 By default, the user should put data at :
  frame base + TPACKET_HDRLEN - sizeof(struct sockaddr_ll)
@@ -440,9 +428,10 @@ and the following flags apply:
 +++ Capture process:
      from include/linux/if_packet.h
 
-     #define TP_STATUS_COPY          2 
-     #define TP_STATUS_LOSING        4 
-     #define TP_STATUS_CSUMNOTREADY  8 
+     #define TP_STATUS_COPY          (1 << 1)
+     #define TP_STATUS_LOSING        (1 << 2)
+     #define TP_STATUS_CSUMNOTREADY  (1 << 3)
+     #define TP_STATUS_CSUM_VALID    (1 << 7)
 
 TP_STATUS_COPY        : This flag indicates that the frame (and associated
                         meta information) has been truncated because it's 
@@ -465,6 +454,12 @@ TP_STATUS_CSUMNOTREADY: currently it's used for outgoing IP packets which
                         its checksum will be done in hardware. So while
                         reading the packet we should not try to check the 
                         checksum. 
+
+TP_STATUS_CSUM_VALID  : This flag indicates that at least the transport
+                        header checksum of the packet has been already
+                        validated on the kernel side. If the flag is not set
+                        then we are free to check the checksum by ourselves
+                        provided that TP_STATUS_CSUMNOTREADY is also not set.
 
 for convenience there are also the following defines:
 
@@ -558,7 +553,7 @@ TPACKET_V1 --> TPACKET_V2:
 		   (void *)hdr + TPACKET_ALIGN(sizeof(struct tpacket_hdr))
 
 TPACKET_V2 --> TPACKET_V3:
-	- Flexible buffer implementation:
+	- Flexible buffer implementation for RX_RING:
 		1. Blocks can be configured with non-static frame-size
 		2. Read/poll is at a block-level (as opposed to packet-level)
 		3. Added poll timeout to avoid indefinite user-space wait
@@ -567,7 +562,12 @@ TPACKET_V2 --> TPACKET_V3:
 			4.1 block::timeout
 			4.2 tpkt_hdr::sk_rxhash
 	- RX Hash data available in user space
-	- Currently only RX_RING available
+	- TX_RING semantics are conceptually similar to TPACKET_V2;
+	  use tpacket3_hdr instead of tpacket2_hdr, and TPACKET3_HDRLEN
+	  instead of TPACKET2_HDRLEN. In the current implementation,
+	  the tp_next_offset field in the tpacket3_hdr MUST be set to
+	  zero, indicating that the ring does not hold variable sized frames.
+	  Packets with non-zero values of tp_next_offset will be dropped.
 
 -------------------------------------------------------------------------------
 + AF_PACKET fanout mode
@@ -578,7 +578,7 @@ processes. This also works in combination with mmap(2) on packet sockets.
 
 Currently implemented fanout policies are:
 
-  - PACKET_FANOUT_HASH: schedule to socket by skb's rxhash
+  - PACKET_FANOUT_HASH: schedule to socket by skb's packet hash
   - PACKET_FANOUT_LB: schedule to socket by round-robin
   - PACKET_FANOUT_CPU: schedule to socket by CPU packet arrives on
   - PACKET_FANOUT_RND: schedule to socket by random selection
@@ -1008,14 +1008,9 @@ hardware timestamps to be used. Note: you may need to enable the generation
 of hardware timestamps with SIOCSHWTSTAMP (see related information from
 Documentation/networking/timestamping.txt).
 
-PACKET_TIMESTAMP accepts the same integer bit field as
-SO_TIMESTAMPING.  However, only the SOF_TIMESTAMPING_SYS_HARDWARE
-and SOF_TIMESTAMPING_RAW_HARDWARE values are recognized by
-PACKET_TIMESTAMP.  SOF_TIMESTAMPING_SYS_HARDWARE takes precedence over
-SOF_TIMESTAMPING_RAW_HARDWARE if both bits are set.
+PACKET_TIMESTAMP accepts the same integer bit field as SO_TIMESTAMPING:
 
-    int req = 0;
-    req |= SOF_TIMESTAMPING_SYS_HARDWARE;
+    int req = SOF_TIMESTAMPING_RAW_HARDWARE;
     setsockopt(fd, SOL_PACKET, PACKET_TIMESTAMP, (void *) &req, sizeof(req))
 
 For the mmap(2)ed ring buffers, such timestamps are stored in the
@@ -1023,14 +1018,13 @@ tpacket{,2,3}_hdr structure's tp_sec and tp_{n,u}sec members. To determine
 what kind of timestamp has been reported, the tp_status field is binary |'ed
 with the following possible bits ...
 
-    TP_STATUS_TS_SYS_HARDWARE
     TP_STATUS_TS_RAW_HARDWARE
     TP_STATUS_TS_SOFTWARE
 
 ... that are equivalent to its SOF_TIMESTAMPING_* counterparts. For the
-RX_RING, if none of those 3 are set (i.e. PACKET_TIMESTAMP is not set),
-then this means that a software fallback was invoked *within* PF_PACKET's
-processing code (less precise).
+RX_RING, if neither is set (i.e. PACKET_TIMESTAMP is not set), then a
+software fallback was invoked *within* PF_PACKET's processing code (less
+precise).
 
 Getting timestamps for the TX_RING works as follows: i) fill the ring frames,
 ii) call sendto() e.g. in blocking mode, iii) wait for status of relevant
@@ -1049,7 +1043,7 @@ TX_RING part only TP_STATUS_AVAILABLE is set, then the tp_sec and tp_{n,u}sec
 members do not contain a valid value. For TX_RINGs, by default no timestamp
 is generated!
 
-See include/linux/net_tstamp.h and Documentation/networking/timestamping
+See include/linux/net_tstamp.h and Documentation/networking/timestamping.txt
 for more information on hardware timestamps.
 
 -------------------------------------------------------------------------------

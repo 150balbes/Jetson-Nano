@@ -20,46 +20,7 @@
 #include <linux/rwsem.h>
 #include <linux/proc_fs.h>
 #include <linux/seq_file.h>
-#include <linux/sysctl.h>
 #include "internal.h"
-
-#ifdef CONFIG_CRYPTO_FIPS
-static struct ctl_table crypto_sysctl_table[] = {
-	{
-		.procname       = "fips_enabled",
-		.data           = &fips_enabled,
-		.maxlen         = sizeof(int),
-		.mode           = 0444,
-		.proc_handler   = proc_dointvec
-	},
-	{}
-};
-
-static struct ctl_table crypto_dir_table[] = {
-	{
-		.procname       = "crypto",
-		.mode           = 0555,
-		.child          = crypto_sysctl_table
-	},
-	{}
-};
-
-static struct ctl_table_header *crypto_sysctls;
-
-static void crypto_proc_fips_init(void)
-{
-	crypto_sysctls = register_sysctl_table(crypto_dir_table);
-}
-
-static void crypto_proc_fips_exit(void)
-{
-	if (crypto_sysctls)
-		unregister_sysctl_table(crypto_sysctls);
-}
-#else
-#define crypto_proc_fips_init()
-#define crypto_proc_fips_exit()
-#endif
 
 static void *c_start(struct seq_file *m, loff_t *pos)
 {
@@ -85,10 +46,13 @@ static int c_show(struct seq_file *m, void *p)
 	seq_printf(m, "driver       : %s\n", alg->cra_driver_name);
 	seq_printf(m, "module       : %s\n", module_name(alg->cra_module));
 	seq_printf(m, "priority     : %d\n", alg->cra_priority);
-	seq_printf(m, "refcnt       : %d\n", atomic_read(&alg->cra_refcnt));
+	seq_printf(m, "refcnt       : %u\n", refcount_read(&alg->cra_refcnt));
 	seq_printf(m, "selftest     : %s\n",
 		   (alg->cra_flags & CRYPTO_ALG_TESTED) ?
 		   "passed" : "unknown");
+	seq_printf(m, "internal     : %s\n",
+		   (alg->cra_flags & CRYPTO_ALG_INTERNAL) ?
+		   "yes" : "no");
 
 	if (alg->cra_flags & CRYPTO_ALG_LARVAL) {
 		seq_printf(m, "type         : larval\n");
@@ -130,26 +94,12 @@ static const struct seq_operations crypto_seq_ops = {
 	.show		= c_show
 };
 
-static int crypto_info_open(struct inode *inode, struct file *file)
-{
-	return seq_open(file, &crypto_seq_ops);
-}
-        
-static const struct file_operations proc_crypto_ops = {
-	.open		= crypto_info_open,
-	.read		= seq_read,
-	.llseek		= seq_lseek,
-	.release	= seq_release
-};
-
 void __init crypto_init_proc(void)
 {
-	proc_create("crypto", 0, NULL, &proc_crypto_ops);
-	crypto_proc_fips_init();
+	proc_create_seq("crypto", 0, NULL, &crypto_seq_ops);
 }
 
 void __exit crypto_exit_proc(void)
 {
-	crypto_proc_fips_exit();
 	remove_proc_entry("crypto", NULL);
 }

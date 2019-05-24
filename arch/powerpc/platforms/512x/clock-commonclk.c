@@ -12,6 +12,7 @@
  */
 
 #include <linux/bitops.h>
+#include <linux/clk.h>
 #include <linux/clk-provider.h>
 #include <linux/clkdev.h>
 #include <linux/device.h>
@@ -220,7 +221,7 @@ static bool soc_has_mclk_mux0_canin(void)
 /* convenience wrappers around the common clk API */
 static inline struct clk *mpc512x_clk_fixed(const char *name, int rate)
 {
-	return clk_register_fixed_rate(NULL, name, NULL, CLK_IS_ROOT, rate);
+	return clk_register_fixed_rate(NULL, name, NULL, 0, rate);
 }
 
 static inline struct clk *mpc512x_clk_factor(
@@ -362,7 +363,7 @@ static int get_cpmf_mult_x2(void)
  */
 
 /* applies to the IPS_DIV, and PCI_DIV values */
-static struct clk_div_table divtab_2346[] = {
+static const struct clk_div_table divtab_2346[] = {
 	{ .val = 2, .div = 2, },
 	{ .val = 3, .div = 3, },
 	{ .val = 4, .div = 4, },
@@ -371,7 +372,7 @@ static struct clk_div_table divtab_2346[] = {
 };
 
 /* applies to the MBX_DIV, LPC_DIV, and NFC_DIV values */
-static struct clk_div_table divtab_1234[] = {
+static const struct clk_div_table divtab_1234[] = {
 	{ .val = 1, .div = 1, },
 	{ .val = 2, .div = 2, },
 	{ .val = 3, .div = 3, },
@@ -718,7 +719,7 @@ static void mpc512x_clk_setup_clock_tree(struct device_node *np, int busfreq)
 	 *   most one of a mux, div, and gate each into one 'struct clk'
 	 *   item
 	 * - PSC/MSCAN/SPDIF clock generation OTOH already is very
-	 *   specific and cannot get mapped to componsites (at least not
+	 *   specific and cannot get mapped to composites (at least not
 	 *   a single one, maybe two of them, but then some of these
 	 *   intermediate clock signals get referenced elsewhere (e.g.
 	 *   in the clock frequency measurement, CFM) and thus need
@@ -1168,6 +1169,11 @@ static void mpc5121_clk_provide_backwards_compat(void)
 	}
 }
 
+/*
+ * The "fixed-clock" nodes (which includes the oscillator node if the board's
+ * DT provides one) has already been scanned by the of_clk_init() in
+ * time_init().
+ */
 int __init mpc5121_clk_init(void)
 {
 	struct device_node *clk_np;
@@ -1185,12 +1191,6 @@ int __init mpc5121_clk_init(void)
 
 	/* invalidate all not yet registered clock slots */
 	mpc512x_clk_preset_data();
-
-	/*
-	 * have the device tree scanned for "fixed-clock" nodes (which
-	 * includes the oscillator node if the board's DT provides one)
-	 */
-	of_clk_init(NULL);
 
 	/*
 	 * add a dummy clock for those situations where a clock spec is

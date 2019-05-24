@@ -235,18 +235,18 @@ static u32 functionality(struct i2c_adapter *adap)
 	return I2C_FUNC_SMBUS_EMUL;
 }
 
-static struct i2c_algorithm algo = {
+static const struct i2c_algorithm algo = {
 	.master_xfer   = stk1160_i2c_xfer,
 	.functionality = functionality,
 };
 
-static struct i2c_adapter adap_template = {
+static const struct i2c_adapter adap_template = {
 	.owner = THIS_MODULE,
 	.name = "stk1160",
 	.algo = &algo,
 };
 
-static struct i2c_client client_template = {
+static const struct i2c_client client_template = {
 	.name = "stk1160 internal",
 };
 
@@ -260,7 +260,7 @@ int stk1160_i2c_register(struct stk1160 *dev)
 
 	dev->i2c_adap = adap_template;
 	dev->i2c_adap.dev.parent = dev->dev;
-	strcpy(dev->i2c_adap.name, "stk1160");
+	strscpy(dev->i2c_adap.name, "stk1160", sizeof(dev->i2c_adap.name));
 	dev->i2c_adap.algo_data = dev;
 
 	i2c_set_adapdata(&dev->i2c_adap, &dev->v4l2_dev);

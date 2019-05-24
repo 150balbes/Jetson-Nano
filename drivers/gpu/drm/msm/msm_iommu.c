@@ -24,96 +24,60 @@ struct msm_iommu {
 };
 #define to_msm_iommu(x) container_of(x, struct msm_iommu, base)
 
-static int msm_fault_handler(struct iommu_domain *iommu, struct device *dev,
+static int msm_fault_handler(struct iommu_domain *domain, struct device *dev,
 		unsigned long iova, int flags, void *arg)
 {
-	DBG("*** fault: iova=%08lx, flags=%d", iova, flags);
+	struct msm_iommu *iommu = arg;
+	if (iommu->base.handler)
+		return iommu->base.handler(iommu->base.arg, iova, flags);
+	pr_warn_ratelimited("*** fault: iova=%08lx, flags=%d\n", iova, flags);
 	return 0;
 }
 
-static int msm_iommu_attach(struct msm_mmu *mmu, const char **names, int cnt)
-{
-	struct drm_device *dev = mmu->dev;
-	struct msm_iommu *iommu = to_msm_iommu(mmu);
-	int i, ret;
-
-	for (i = 0; i < cnt; i++) {
-		struct device *msm_iommu_get_ctx(const char *ctx_name);
-		struct device *ctx = msm_iommu_get_ctx(names[i]);
-		if (IS_ERR_OR_NULL(ctx))
-			continue;
-		ret = iommu_attach_device(iommu->domain, ctx);
-		if (ret) {
-			dev_warn(dev->dev, "could not attach iommu to %s", names[i]);
-			return ret;
-		}
-	}
-
-	return 0;
-}
-
-static int msm_iommu_map(struct msm_mmu *mmu, uint32_t iova,
-		struct sg_table *sgt, unsigned len, int prot)
+static int msm_iommu_attach(struct msm_mmu *mmu, const char * const *names,
+			    int cnt)
 {
 	struct msm_iommu *iommu = to_msm_iommu(mmu);
-	struct iommu_domain *domain = iommu->domain;
-	struct scatterlist *sg;
-	unsigned int da = iova;
-	unsigned int i, j;
 	int ret;
 
-	if (!domain || !sgt)
-		return -EINVAL;
+	pm_runtime_get_sync(mmu->dev);
+	ret = iommu_attach_device(iommu->domain, mmu->dev);
+	pm_runtime_put_sync(mmu->dev);
 
-	for_each_sg(sgt->sgl, sg, sgt->nents, i) {
-		u32 pa = sg_phys(sg) - sg->offset;
-		size_t bytes = sg->length + sg->offset;
-
-		VERB("map[%d]: %08x %08x(%x)", i, iova, pa, bytes);
-
-		ret = iommu_map(domain, da, pa, bytes, prot);
-		if (ret)
-			goto fail;
-
-		da += bytes;
-	}
-
-	return 0;
-
-fail:
-	da = iova;
-
-	for_each_sg(sgt->sgl, sg, i, j) {
-		size_t bytes = sg->length + sg->offset;
-		iommu_unmap(domain, da, bytes);
-		da += bytes;
-	}
 	return ret;
 }
 
-static int msm_iommu_unmap(struct msm_mmu *mmu, uint32_t iova,
-		struct sg_table *sgt, unsigned len)
+static void msm_iommu_detach(struct msm_mmu *mmu, const char * const *names,
+			     int cnt)
 {
 	struct msm_iommu *iommu = to_msm_iommu(mmu);
-	struct iommu_domain *domain = iommu->domain;
-	struct scatterlist *sg;
-	unsigned int da = iova;
-	int i;
 
-	for_each_sg(sgt->sgl, sg, sgt->nents, i) {
-		size_t bytes = sg->length + sg->offset;
-		size_t unmapped;
+	pm_runtime_get_sync(mmu->dev);
+	iommu_detach_device(iommu->domain, mmu->dev);
+	pm_runtime_put_sync(mmu->dev);
+}
 
-		unmapped = iommu_unmap(domain, da, bytes);
-		if (unmapped < bytes)
-			return unmapped;
+static int msm_iommu_map(struct msm_mmu *mmu, uint64_t iova,
+		struct sg_table *sgt, unsigned len, int prot)
+{
+	struct msm_iommu *iommu = to_msm_iommu(mmu);
+	size_t ret;
 
-		VERB("unmap[%d]: %08x(%x)", i, iova, bytes);
+//	pm_runtime_get_sync(mmu->dev);
+	ret = iommu_map_sg(iommu->domain, iova, sgt->sgl, sgt->nents, prot);
+//	pm_runtime_put_sync(mmu->dev);
+	WARN_ON(!ret);
 
-		BUG_ON(!IS_ALIGNED(bytes, PAGE_SIZE));
+	return (ret == len) ? 0 : -EINVAL;
+}
 
-		da += bytes;
-	}
+static int msm_iommu_unmap(struct msm_mmu *mmu, uint64_t iova, unsigned len)
+{
+	struct msm_iommu *iommu = to_msm_iommu(mmu);
+
+	pm_runtime_get_sync(mmu->dev);
+	iommu_unmap(iommu->domain, iova, len);
+	pm_runtime_put_sync(mmu->dev);
 
 	return 0;
 }
@@ -127,12 +91,13 @@ static void msm_iommu_destroy(struct msm_mmu *mmu)
 
 static const struct msm_mmu_funcs funcs = {
 		.attach = msm_iommu_attach,
+		.detach = msm_iommu_detach,
 		.map = msm_iommu_map,
 		.unmap = msm_iommu_unmap,
 		.destroy = msm_iommu_destroy,
 };
 
-struct msm_mmu *msm_iommu_new(struct drm_device *dev, struct iommu_domain *domain)
+struct msm_mmu *msm_iommu_new(struct device *dev, struct iommu_domain *domain)
 {
 	struct msm_iommu *iommu;
 
@@ -142,7 +107,7 @@ struct msm_mmu *msm_iommu_new(struct drm_device *dev, struct iommu_domain *domai
 
 	iommu->domain = domain;
 	msm_mmu_init(&iommu->base, dev, &funcs);
-	iommu_set_fault_handler(domain, msm_fault_handler, dev);
+	iommu_set_fault_handler(domain, msm_fault_handler, iommu);
 
 	return &iommu->base;
 }

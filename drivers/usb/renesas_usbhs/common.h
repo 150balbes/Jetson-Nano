@@ -1,23 +1,17 @@
+// SPDX-License-Identifier: GPL-1.0+
 /*
  * Renesas USB driver
  *
  * Copyright (C) 2011 Renesas Solutions Corp.
  * Kuninori Morimoto <kuninori.morimoto.gx@renesas.com>
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
- *
  */
 #ifndef RENESAS_USB_DRIVER_H
 #define RENESAS_USB_DRIVER_H
 
+#include <linux/clk.h>
+#include <linux/extcon.h>
 #include <linux/platform_device.h>
+#include <linux/reset.h>
 #include <linux/usb/renesas_usbhs.h>
 
 struct usbhs_priv;
@@ -102,6 +96,11 @@ struct usbhs_priv;
 #define DEVADD8		0x00E0
 #define DEVADD9		0x00E2
 #define DEVADDA		0x00E4
+#define D2FIFOSEL	0x00F0	/* for R-Car Gen2 */
+#define D2FIFOCTR	0x00F2	/* for R-Car Gen2 */
+#define D3FIFOSEL	0x00F4	/* for R-Car Gen2 */
+#define D3FIFOCTR	0x00F6	/* for R-Car Gen2 */
+#define SUSPMODE	0x0102	/* for RZ/A */
 
 /* SYSCFG */
 #define SCKE	(1 << 10)	/* USB Module Clock Enable */
@@ -110,6 +109,8 @@ struct usbhs_priv;
 #define DRPD	(1 << 5)	/* D+ Line/D- Line Resistance Control */
 #define DPRPU	(1 << 4)	/* D+ Line Resistance Control */
 #define USBE	(1 << 0)	/* USB Module Operation Enable */
+#define UCKSEL	(1 << 2)	/* Clock Select for RZ/A1 */
+#define UPLLE	(1 << 1)	/* USB PLL Enable for RZ/A1 */
 
 /* DVSTCTR */
 #define EXTLP	(1 << 10)	/* Controls the EXTLP pin output state */
@@ -188,6 +189,7 @@ struct usbhs_priv;
 #define TYPE_BULK	(1 << 14)
 #define TYPE_INT	(2 << 14)
 #define TYPE_ISO	(3 << 14)
+#define BFRE		(1 << 10)	/* BRDY Interrupt Operation Spec. */
 #define DBLB		(1 << 9)	/* Double Buffer Mode */
 #define SHTNAK		(1 << 7)	/* Pipe Disable in Transfer End */
 #define DIR_OUT		(1 << 4)	/* Transfer Direction */
@@ -211,6 +213,7 @@ struct usbhs_priv;
 #define	ACLRM		(1 << 9)	/* Buffer Auto-Clear Mode */
 #define SQCLR		(1 << 8)	/* Toggle Bit Clear */
 #define SQSET		(1 << 7)	/* Toggle Bit Set */
+#define SQMON		(1 << 6)	/* Toggle Bit Check */
 #define PBUSY		(1 << 5)	/* Pipe Busy */
 #define PID_MASK	(0x3)		/* Response PID */
 #define  PID_NAK	0
@@ -235,6 +238,9 @@ struct usbhs_priv;
 #define USBSPD_SPEED_FULL	0x2
 #define USBSPD_SPEED_HIGH	0x3
 
+/* SUSPMODE */
+#define SUSPM		(1 << 14)	/* SuspendM Control */
+
 /*
  *		struct
  */
@@ -249,6 +255,8 @@ struct usbhs_priv {
 
 	struct delayed_work notify_hotplug_work;
 	struct platform_device *pdev;
+
+	struct extcon_dev *edev;
 
 	spinlock_t		lock;
 
@@ -268,6 +276,10 @@ struct usbhs_priv {
 	 * fifo control
 	 */
 	struct usbhs_fifo_info fifo_info;
+
+	struct phy *phy;
+	struct reset_control *rsts;
+	struct clk *clks[2];
 };
 
 /*
@@ -312,6 +324,11 @@ int usbhs_frame_get_num(struct usbhs_priv *priv);
  */
 int usbhs_set_device_config(struct usbhs_priv *priv, int devnum, u16 upphub,
 			   u16 hubport, u16 speed);
+
+/*
+ * interrupt functions
+ */
+void usbhs_xxxsts_clear(struct usbhs_priv *priv, u16 sts_reg, u16 bit);
 
 /*
  * data

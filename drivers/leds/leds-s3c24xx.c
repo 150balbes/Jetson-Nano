@@ -12,7 +12,6 @@
 */
 
 #include <linux/kernel.h>
-#include <linux/init.h>
 #include <linux/platform_device.h>
 #include <linux/leds.h>
 #include <linux/gpio.h>
@@ -29,11 +28,6 @@ struct s3c24xx_gpio_led {
 	struct led_classdev		 cdev;
 	struct s3c24xx_led_platdata	*pdata;
 };
-
-static inline struct s3c24xx_gpio_led *pdev_to_gpio(struct platform_device *dev)
-{
-	return platform_get_drvdata(dev);
-}
 
 static inline struct s3c24xx_gpio_led *to_gpio(struct led_classdev *led_cdev)
 {
@@ -60,15 +54,6 @@ static void s3c24xx_led_set(struct led_classdev *led_cdev,
 	}
 }
 
-static int s3c24xx_led_remove(struct platform_device *dev)
-{
-	struct s3c24xx_gpio_led *led = pdev_to_gpio(dev);
-
-	led_classdev_unregister(&led->cdev);
-
-	return 0;
-}
-
 static int s3c24xx_led_probe(struct platform_device *dev)
 {
 	struct s3c24xx_led_platdata *pdata = dev_get_platdata(&dev->dev);
@@ -77,12 +62,8 @@ static int s3c24xx_led_probe(struct platform_device *dev)
 
 	led = devm_kzalloc(&dev->dev, sizeof(struct s3c24xx_gpio_led),
 			   GFP_KERNEL);
-	if (led == NULL) {
-		dev_err(&dev->dev, "No memory for device\n");
+	if (!led)
 		return -ENOMEM;
-	}
-
-	platform_set_drvdata(dev, led);
 
 	led->cdev.brightness_set = s3c24xx_led_set;
 	led->cdev.default_trigger = pdata->def_trigger;
@@ -107,7 +88,7 @@ static int s3c24xx_led_probe(struct platform_device *dev)
 
 	/* register our new led device */
 
-	ret = led_classdev_register(&dev->dev, &led->cdev);
+	ret = devm_led_classdev_register(&dev->dev, &led->cdev);
 	if (ret < 0)
 		dev_err(&dev->dev, "led_classdev_register failed\n");
 
@@ -116,10 +97,8 @@ static int s3c24xx_led_probe(struct platform_device *dev)
 
 static struct platform_driver s3c24xx_led_driver = {
 	.probe		= s3c24xx_led_probe,
-	.remove		= s3c24xx_led_remove,
 	.driver		= {
 		.name		= "s3c24xx_led",
-		.owner		= THIS_MODULE,
 	},
 };
 

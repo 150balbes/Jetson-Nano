@@ -1,5 +1,6 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
- * Code for replacing ftrace calls with jumps.
+ * Dynamic function tracing support.
  *
  * Copyright (C) 2007-2008 Steven Rostedt <srostedt@redhat.com>
  *
@@ -17,13 +18,14 @@
 #include <linux/ftrace.h>
 #include <linux/percpu.h>
 #include <linux/sched.h>
+#include <linux/slab.h>
 #include <linux/init.h>
 #include <linux/list.h>
 #include <linux/module.h>
 
 #include <trace/syscall.h>
 
-#include <asm/cacheflush.h>
+#include <asm/set_memory.h>
 #include <asm/kprobes.h>
 #include <asm/ftrace.h>
 #include <asm/nops.h>
@@ -47,7 +49,7 @@ int ftrace_arch_code_modify_post_process(void)
 union ftrace_code_union {
 	char code[MCOUNT_INSN_SIZE];
 	struct {
-		char e8;
+		unsigned char op;
 		int offset;
 	} __attribute__((packed));
 };
@@ -57,18 +59,21 @@ static int ftrace_calc_offset(long ip, long addr)
 	return (int)(addr - ip);
 }
 
-static unsigned char *ftrace_call_replace(unsigned long ip, unsigned long addr)
+static unsigned char *
+ftrace_text_replace(unsigned char op, unsigned long ip, unsigned long addr)
 {
 	static union ftrace_code_union calc;
 
-	calc.e8		= 0xe8;
+	calc.op		= op;
 	calc.offset	= ftrace_calc_offset(ip + MCOUNT_INSN_SIZE, addr);
 
-	/*
-	 * No locking needed, this must be called via kstop_machine
-	 * which in essence is like running on a uniprocessor machine.
-	 */
 	return calc.code;
+}
+
+static unsigned char *
+ftrace_call_replace(unsigned long ip, unsigned long addr)
+{
+	return ftrace_text_replace(0xe8, ip, addr);
 }
 
 static inline int
@@ -80,9 +85,9 @@ within(unsigned long addr, unsigned long start, unsigned long end)
 static unsigned long text_ip_addr(unsigned long ip)
 {
 	/*
-	 * On x86_64, kernel text mappings are mapped read-only with
-	 * CONFIG_DEBUG_RODATA. So we use the kernel identity mapping instead
-	 * of the kernel text mapping to modify the kernel text.
+	 * On x86_64, kernel text mappings are mapped read-only, so we use
+	 * the kernel identity mapping instead of the kernel text mapping
+	 * to modify the kernel text.
 	 *
 	 * For 32bit kernels, these mappings are same and we can use
 	 * kernel identity mapping to modify code.
@@ -104,14 +109,14 @@ ftrace_modify_code_direct(unsigned long ip, unsigned const char *old_code,
 {
 	unsigned char replaced[MCOUNT_INSN_SIZE];
 
+	ftrace_expected = old_code;
+
 	/*
-	 * Note: Due to modules and __init, code can
-	 *  disappear and change, we need to protect against faulting
-	 *  as well as code changing. We do this by using the
-	 *  probe_kernel_* functions.
-	 *
-	 * No real locking needed, this code is run through
-	 * kstop_machine, or before SMP starts.
+	 * Note:
+	 * We are paranoid about modifying text, as if a bug was to happen, it
+	 * could cause us to read or write to someplace that could cause harm.
+	 * Carefully read and modify the code with probe_kernel_*(), and make
+	 * sure what we read is what we expected it to be before modifying it.
 	 */
 
 	/* read the text we want to modify */
@@ -152,6 +157,8 @@ int ftrace_make_nop(struct module *mod,
 	 */
 	if (addr == MCOUNT_ADDR)
 		return ftrace_modify_code_direct(rec->ip, old, new);
+
+	ftrace_expected = NULL;
 
 	/* Normal cases use add_brk_on_nop */
 	WARN_ONCE(1, "invalid use of ftrace_make_nop");
@@ -219,6 +226,7 @@ int ftrace_modify_call(struct dyn_ftrace *rec, unsigned long old_addr,
 				 unsigned long addr)
 {
 	WARN_ON(1);
+	ftrace_expected = NULL;
 	return -EINVAL;
 }
 
@@ -264,7 +272,7 @@ int ftrace_update_ftrace_func(ftrace_func_t func)
 	return ret;
 }
 
-static int is_ftrace_caller(unsigned long ip)
+static nokprobe_inline int is_ftrace_caller(unsigned long ip)
 {
 	if (ip == ftrace_update_func)
 		return 1;
@@ -294,21 +302,16 @@ int ftrace_int3_handler(struct pt_regs *regs)
 
 	return 1;
 }
+NOKPROBE_SYMBOL(ftrace_int3_handler);
 
 static int ftrace_write(unsigned long ip, const char *val, int size)
 {
-	/*
-	 * On x86_64, kernel text mappings are mapped read-only with
-	 * CONFIG_DEBUG_RODATA. So we use the kernel identity mapping instead
-	 * of the kernel text mapping to modify the kernel text.
-	 *
-	 * For 32bit kernels, these mappings are same and we can use
-	 * kernel identity mapping to modify code.
-	 */
-	if (within(ip, (unsigned long)_text, (unsigned long)_etext))
-		ip = (unsigned long)__va(__pa_symbol(ip));
+	ip = text_ip_addr(ip);
 
-	return probe_kernel_write((void *)ip, val, size);
+	if (probe_kernel_write((void *)ip, val, size))
+		return -EPERM;
+
+	return 0;
 }
 
 static int add_break(unsigned long ip, const char *old)
@@ -319,14 +322,13 @@ static int add_break(unsigned long ip, const char *old)
 	if (probe_kernel_read(replaced, (void *)ip, MCOUNT_INSN_SIZE))
 		return -EFAULT;
 
+	ftrace_expected = old;
+
 	/* Make sure it is what we expect it to be */
 	if (memcmp(replaced, old, MCOUNT_INSN_SIZE) != 0)
 		return -EINVAL;
 
-	if (ftrace_write(ip, &brk, 1))
-		return -EPERM;
-
-	return 0;
+	return ftrace_write(ip, &brk, 1);
 }
 
 static int add_brk_on_call(struct dyn_ftrace *rec, unsigned long addr)
@@ -349,40 +351,14 @@ static int add_brk_on_nop(struct dyn_ftrace *rec)
 	return add_break(rec->ip, old);
 }
 
-/*
- * If the record has the FTRACE_FL_REGS set, that means that it
- * wants to convert to a callback that saves all regs. If FTRACE_FL_REGS
- * is not not set, then it wants to convert to the normal callback.
- */
-static unsigned long get_ftrace_addr(struct dyn_ftrace *rec)
-{
-	if (rec->flags & FTRACE_FL_REGS)
-		return (unsigned long)FTRACE_REGS_ADDR;
-	else
-		return (unsigned long)FTRACE_ADDR;
-}
-
-/*
- * The FTRACE_FL_REGS_EN is set when the record already points to
- * a function that saves all the regs. Basically the '_EN' version
- * represents the current state of the function.
- */
-static unsigned long get_ftrace_old_addr(struct dyn_ftrace *rec)
-{
-	if (rec->flags & FTRACE_FL_REGS_EN)
-		return (unsigned long)FTRACE_REGS_ADDR;
-	else
-		return (unsigned long)FTRACE_ADDR;
-}
-
 static int add_breakpoints(struct dyn_ftrace *rec, int enable)
 {
 	unsigned long ftrace_addr;
 	int ret;
 
-	ret = ftrace_test_record(rec, enable);
+	ftrace_addr = ftrace_get_addr_curr(rec);
 
-	ftrace_addr = get_ftrace_addr(rec);
+	ret = ftrace_test_record(rec, enable);
 
 	switch (ret) {
 	case FTRACE_UPDATE_IGNORE:
@@ -392,10 +368,7 @@ static int add_breakpoints(struct dyn_ftrace *rec, int enable)
 		/* converting nop to call */
 		return add_brk_on_nop(rec);
 
-	case FTRACE_UPDATE_MODIFY_CALL_REGS:
 	case FTRACE_UPDATE_MODIFY_CALL:
-		ftrace_addr = get_ftrace_old_addr(rec);
-		/* fall through */
 	case FTRACE_UPDATE_MAKE_NOP:
 		/* converting a call to a nop */
 		return add_brk_on_call(rec, ftrace_addr);
@@ -425,7 +398,7 @@ static int remove_breakpoint(struct dyn_ftrace *rec)
 
 	/* If this does not have a breakpoint, we are done */
 	if (ins[0] != brk)
-		return -1;
+		return 0;
 
 	nop = ftrace_nop_replace();
 
@@ -440,22 +413,24 @@ static int remove_breakpoint(struct dyn_ftrace *rec)
 		 * If not, don't touch the breakpoint, we make just create
 		 * a disaster.
 		 */
-		ftrace_addr = get_ftrace_addr(rec);
+		ftrace_addr = ftrace_get_addr_new(rec);
 		nop = ftrace_call_replace(ip, ftrace_addr);
 
 		if (memcmp(&ins[1], &nop[1], MCOUNT_INSN_SIZE - 1) == 0)
 			goto update;
 
 		/* Check both ftrace_addr and ftrace_old_addr */
-		ftrace_addr = get_ftrace_old_addr(rec);
+		ftrace_addr = ftrace_get_addr_curr(rec);
 		nop = ftrace_call_replace(ip, ftrace_addr);
+
+		ftrace_expected = nop;
 
 		if (memcmp(&ins[1], &nop[1], MCOUNT_INSN_SIZE - 1) != 0)
 			return -EINVAL;
 	}
 
  update:
-	return probe_kernel_write((void *)ip, &nop[0], 1);
+	return ftrace_write(ip, nop, 1);
 }
 
 static int add_update_code(unsigned long ip, unsigned const char *new)
@@ -463,9 +438,7 @@ static int add_update_code(unsigned long ip, unsigned const char *new)
 	/* skip breakpoint */
 	ip++;
 	new++;
-	if (ftrace_write(ip, new, MCOUNT_INSN_SIZE - 1))
-		return -EPERM;
-	return 0;
+	return ftrace_write(ip, new, MCOUNT_INSN_SIZE - 1);
 }
 
 static int add_update_call(struct dyn_ftrace *rec, unsigned long addr)
@@ -493,13 +466,12 @@ static int add_update(struct dyn_ftrace *rec, int enable)
 
 	ret = ftrace_test_record(rec, enable);
 
-	ftrace_addr  = get_ftrace_addr(rec);
+	ftrace_addr  = ftrace_get_addr_new(rec);
 
 	switch (ret) {
 	case FTRACE_UPDATE_IGNORE:
 		return 0;
 
-	case FTRACE_UPDATE_MODIFY_CALL_REGS:
 	case FTRACE_UPDATE_MODIFY_CALL:
 	case FTRACE_UPDATE_MAKE_CALL:
 		/* converting nop to call */
@@ -520,10 +492,7 @@ static int finish_update_call(struct dyn_ftrace *rec, unsigned long addr)
 
 	new = ftrace_call_replace(ip, addr);
 
-	if (ftrace_write(ip, new, 1))
-		return -EPERM;
-
-	return 0;
+	return ftrace_write(ip, new, 1);
 }
 
 static int finish_update_nop(struct dyn_ftrace *rec)
@@ -533,9 +502,7 @@ static int finish_update_nop(struct dyn_ftrace *rec)
 
 	new = ftrace_nop_replace();
 
-	if (ftrace_write(ip, new, 1))
-		return -EPERM;
-	return 0;
+	return ftrace_write(ip, new, 1);
 }
 
 static int finish_update(struct dyn_ftrace *rec, int enable)
@@ -545,13 +512,12 @@ static int finish_update(struct dyn_ftrace *rec, int enable)
 
 	ret = ftrace_update_record(rec, enable);
 
-	ftrace_addr = get_ftrace_addr(rec);
+	ftrace_addr = ftrace_get_addr_new(rec);
 
 	switch (ret) {
 	case FTRACE_UPDATE_IGNORE:
 		return 0;
 
-	case FTRACE_UPDATE_MODIFY_CALL_REGS:
 	case FTRACE_UPDATE_MODIFY_CALL:
 	case FTRACE_UPDATE_MAKE_CALL:
 		/* converting nop to call */
@@ -572,9 +538,15 @@ static void do_sync_core(void *data)
 
 static void run_sync(void)
 {
-	int enable_irqs = irqs_disabled();
+	int enable_irqs;
 
-	/* We may be called with interrupts disbled (on bootup). */
+	/* No need to sync if there's only one CPU */
+	if (num_online_cpus() == 1)
+		return;
+
+	enable_irqs = irqs_disabled();
+
+	/* We may be called with interrupts disabled (on bootup). */
 	if (enable_irqs)
 		local_irq_enable();
 	on_each_cpu(do_sync_core, NULL, 1);
@@ -602,6 +574,7 @@ void ftrace_replace_code(int enable)
 	run_sync();
 
 	report = "updating code";
+	count = 0;
 
 	for_ftrace_rec_iter(iter) {
 		rec = ftrace_rec_iter_record(iter);
@@ -609,11 +582,13 @@ void ftrace_replace_code(int enable)
 		ret = add_update(rec, enable);
 		if (ret)
 			goto remove_breakpoints;
+		count++;
 	}
 
 	run_sync();
 
 	report = "removing breakpoints";
+	count = 0;
 
 	for_ftrace_rec_iter(iter) {
 		rec = ftrace_rec_iter_record(iter);
@@ -621,6 +596,7 @@ void ftrace_replace_code(int enable)
 		ret = finish_update(rec, enable);
 		if (ret)
 			goto remove_breakpoints;
+		count++;
 	}
 
 	run_sync();
@@ -628,12 +604,18 @@ void ftrace_replace_code(int enable)
 	return;
 
  remove_breakpoints:
-	ftrace_bug(ret, rec ? rec->ip : 0);
-	printk(KERN_WARNING "Failed on %s (%d):\n", report, count);
+	pr_warn("Failed on %s (%d):\n", report, count);
+	ftrace_bug(ret, rec);
 	for_ftrace_rec_iter(iter) {
 		rec = ftrace_rec_iter_record(iter);
-		remove_breakpoint(rec);
+		/*
+		 * Breakpoints are handled only when this function is in
+		 * progress. The system could not work with them.
+		 */
+		if (remove_breakpoint(rec))
+			BUG();
 	}
+	run_sync();
 }
 
 static int
@@ -655,16 +637,19 @@ ftrace_modify_code(unsigned long ip, unsigned const char *old_code,
 	run_sync();
 
 	ret = ftrace_write(ip, new_code, 1);
-	if (ret) {
-		ret = -EPERM;
-		goto out;
-	}
+	/*
+	 * The breakpoint is handled only when this function is in progress.
+	 * The system could not work if we could not remove it.
+	 */
+	BUG_ON(ret);
  out:
 	run_sync();
 	return ret;
 
  fail_update:
-	probe_kernel_write((void *)ip, &old_code[0], 1);
+	/* Also here the system could not work with the breakpoint */
+	if (ftrace_write(ip, old_code, 1))
+		BUG();
 	goto out;
 }
 
@@ -678,14 +663,288 @@ void arch_ftrace_update_code(int command)
 	atomic_dec(&modifying_ftrace_code);
 }
 
-int __init ftrace_dyn_arch_init(void *data)
+int __init ftrace_dyn_arch_init(void)
 {
-	/* The return code is retured via data */
-	*(unsigned long *)data = 0;
-
 	return 0;
 }
+
+/* Currently only x86_64 supports dynamic trampolines */
+#ifdef CONFIG_X86_64
+
+#ifdef CONFIG_MODULES
+#include <linux/moduleloader.h>
+/* Module allocation simplifies allocating memory for code */
+static inline void *alloc_tramp(unsigned long size)
+{
+	return module_alloc(size);
+}
+static inline void tramp_free(void *tramp, int size)
+{
+	int npages = PAGE_ALIGN(size) >> PAGE_SHIFT;
+
+	set_memory_nx((unsigned long)tramp, npages);
+	set_memory_rw((unsigned long)tramp, npages);
+	module_memfree(tramp);
+}
+#else
+/* Trampolines can only be created if modules are supported */
+static inline void *alloc_tramp(unsigned long size)
+{
+	return NULL;
+}
+static inline void tramp_free(void *tramp, int size) { }
 #endif
+
+/* Defined as markers to the end of the ftrace default trampolines */
+extern void ftrace_regs_caller_end(void);
+extern void ftrace_epilogue(void);
+extern void ftrace_caller_op_ptr(void);
+extern void ftrace_regs_caller_op_ptr(void);
+
+/* movq function_trace_op(%rip), %rdx */
+/* 0x48 0x8b 0x15 <offset-to-ftrace_trace_op (4 bytes)> */
+#define OP_REF_SIZE	7
+
+/*
+ * The ftrace_ops is passed to the function callback. Since the
+ * trampoline only services a single ftrace_ops, we can pass in
+ * that ops directly.
+ *
+ * The ftrace_op_code_union is used to create a pointer to the
+ * ftrace_ops that will be passed to the callback function.
+ */
+union ftrace_op_code_union {
+	char code[OP_REF_SIZE];
+	struct {
+		char op[3];
+		int offset;
+	} __attribute__((packed));
+};
+
+#define RET_SIZE		1
+
+static unsigned long
+create_trampoline(struct ftrace_ops *ops, unsigned int *tramp_size)
+{
+	unsigned long start_offset;
+	unsigned long end_offset;
+	unsigned long op_offset;
+	unsigned long offset;
+	unsigned long size;
+	unsigned long retq;
+	unsigned long *ptr;
+	void *trampoline;
+	void *ip;
+	/* 48 8b 15 <offset> is movq <offset>(%rip), %rdx */
+	unsigned const char op_ref[] = { 0x48, 0x8b, 0x15 };
+	union ftrace_op_code_union op_ptr;
+	int ret;
+
+	if (ops->flags & FTRACE_OPS_FL_SAVE_REGS) {
+		start_offset = (unsigned long)ftrace_regs_caller;
+		end_offset = (unsigned long)ftrace_regs_caller_end;
+		op_offset = (unsigned long)ftrace_regs_caller_op_ptr;
+	} else {
+		start_offset = (unsigned long)ftrace_caller;
+		end_offset = (unsigned long)ftrace_epilogue;
+		op_offset = (unsigned long)ftrace_caller_op_ptr;
+	}
+
+	size = end_offset - start_offset;
+
+	/*
+	 * Allocate enough size to store the ftrace_caller code,
+	 * the iret , as well as the address of the ftrace_ops this
+	 * trampoline is used for.
+	 */
+	trampoline = alloc_tramp(size + RET_SIZE + sizeof(void *));
+	if (!trampoline)
+		return 0;
+
+	*tramp_size = size + RET_SIZE + sizeof(void *);
+
+	/* Copy ftrace_caller onto the trampoline memory */
+	ret = probe_kernel_read(trampoline, (void *)start_offset, size);
+	if (WARN_ON(ret < 0))
+		goto fail;
+
+	ip = trampoline + size;
+
+	/* The trampoline ends with ret(q) */
+	retq = (unsigned long)ftrace_stub;
+	ret = probe_kernel_read(ip, (void *)retq, RET_SIZE);
+	if (WARN_ON(ret < 0))
+		goto fail;
+
+	/*
+	 * The address of the ftrace_ops that is used for this trampoline
+	 * is stored at the end of the trampoline. This will be used to
+	 * load the third parameter for the callback. Basically, that
+	 * location at the end of the trampoline takes the place of
+	 * the global function_trace_op variable.
+	 */
+
+	ptr = (unsigned long *)(trampoline + size + RET_SIZE);
+	*ptr = (unsigned long)ops;
+
+	op_offset -= start_offset;
+	memcpy(&op_ptr, trampoline + op_offset, OP_REF_SIZE);
+
+	/* Are we pointing to the reference? */
+	if (WARN_ON(memcmp(op_ptr.op, op_ref, 3) != 0))
+		goto fail;
+
+	/* Load the contents of ptr into the callback parameter */
+	offset = (unsigned long)ptr;
+	offset -= (unsigned long)trampoline + op_offset + OP_REF_SIZE;
+
+	op_ptr.offset = offset;
+
+	/* put in the new offset to the ftrace_ops */
+	memcpy(trampoline + op_offset, &op_ptr, OP_REF_SIZE);
+
+	/* ALLOC_TRAMP flags lets us know we created it */
+	ops->flags |= FTRACE_OPS_FL_ALLOC_TRAMP;
+
+	return (unsigned long)trampoline;
+fail:
+	tramp_free(trampoline, *tramp_size);
+	return 0;
+}
+
+static unsigned long calc_trampoline_call_offset(bool save_regs)
+{
+	unsigned long start_offset;
+	unsigned long call_offset;
+
+	if (save_regs) {
+		start_offset = (unsigned long)ftrace_regs_caller;
+		call_offset = (unsigned long)ftrace_regs_call;
+	} else {
+		start_offset = (unsigned long)ftrace_caller;
+		call_offset = (unsigned long)ftrace_call;
+	}
+
+	return call_offset - start_offset;
+}
+
+void arch_ftrace_update_trampoline(struct ftrace_ops *ops)
+{
+	ftrace_func_t func;
+	unsigned char *new;
+	unsigned long offset;
+	unsigned long ip;
+	unsigned int size;
+	int ret, npages;
+
+	if (ops->trampoline) {
+		/*
+		 * The ftrace_ops caller may set up its own trampoline.
+		 * In such a case, this code must not modify it.
+		 */
+		if (!(ops->flags & FTRACE_OPS_FL_ALLOC_TRAMP))
+			return;
+		npages = PAGE_ALIGN(ops->trampoline_size) >> PAGE_SHIFT;
+		set_memory_rw(ops->trampoline, npages);
+	} else {
+		ops->trampoline = create_trampoline(ops, &size);
+		if (!ops->trampoline)
+			return;
+		ops->trampoline_size = size;
+		npages = PAGE_ALIGN(size) >> PAGE_SHIFT;
+	}
+
+	offset = calc_trampoline_call_offset(ops->flags & FTRACE_OPS_FL_SAVE_REGS);
+	ip = ops->trampoline + offset;
+
+	func = ftrace_ops_get_func(ops);
+
+	/* Do a safe modify in case the trampoline is executing */
+	new = ftrace_call_replace(ip, (unsigned long)func);
+	ret = update_ftrace_func(ip, new);
+	set_memory_ro(ops->trampoline, npages);
+
+	/* The update should never fail */
+	WARN_ON(ret);
+}
+
+/* Return the address of the function the trampoline calls */
+static void *addr_from_call(void *ptr)
+{
+	union ftrace_code_union calc;
+	int ret;
+
+	ret = probe_kernel_read(&calc, ptr, MCOUNT_INSN_SIZE);
+	if (WARN_ON_ONCE(ret < 0))
+		return NULL;
+
+	/* Make sure this is a call */
+	if (WARN_ON_ONCE(calc.op != 0xe8)) {
+		pr_warn("Expected e8, got %x\n", calc.op);
+		return NULL;
+	}
+
+	return ptr + MCOUNT_INSN_SIZE + calc.offset;
+}
+
+void prepare_ftrace_return(unsigned long self_addr, unsigned long *parent,
+			   unsigned long frame_pointer);
+
+/*
+ * If the ops->trampoline was not allocated, then it probably
+ * has a static trampoline func, or is the ftrace caller itself.
+ */
+static void *static_tramp_func(struct ftrace_ops *ops, struct dyn_ftrace *rec)
+{
+	unsigned long offset;
+	bool save_regs = rec->flags & FTRACE_FL_REGS_EN;
+	void *ptr;
+
+	if (ops && ops->trampoline) {
+#ifdef CONFIG_FUNCTION_GRAPH_TRACER
+		/*
+		 * We only know about function graph tracer setting as static
+		 * trampoline.
+		 */
+		if (ops->trampoline == FTRACE_GRAPH_ADDR)
+			return (void *)prepare_ftrace_return;
+#endif
+		return NULL;
+	}
+
+	offset = calc_trampoline_call_offset(save_regs);
+
+	if (save_regs)
+		ptr = (void *)FTRACE_REGS_ADDR + offset;
+	else
+		ptr = (void *)FTRACE_ADDR + offset;
+
+	return addr_from_call(ptr);
+}
+
+void *arch_ftrace_trampoline_func(struct ftrace_ops *ops, struct dyn_ftrace *rec)
+{
+	unsigned long offset;
+
+	/* If we didn't allocate this trampoline, consider it static */
+	if (!ops || !(ops->flags & FTRACE_OPS_FL_ALLOC_TRAMP))
+		return static_tramp_func(ops, rec);
+
+	offset = calc_trampoline_call_offset(ops->flags & FTRACE_OPS_FL_SAVE_REGS);
+	return addr_from_call((void *)ops->trampoline + offset);
+}
+
+void arch_ftrace_trampoline_free(struct ftrace_ops *ops)
+{
+	if (!ops || !(ops->flags & FTRACE_OPS_FL_ALLOC_TRAMP))
+		return;
+
+	tramp_free((void *)ops->trampoline, ops->trampoline_size);
+	ops->trampoline = 0;
+}
+
+#endif /* CONFIG_X86_64 */
+#endif /* CONFIG_DYNAMIC_FTRACE */
 
 #ifdef CONFIG_FUNCTION_GRAPH_TRACER
 
@@ -694,16 +953,7 @@ extern void ftrace_graph_call(void);
 
 static unsigned char *ftrace_jmp_replace(unsigned long ip, unsigned long addr)
 {
-	static union ftrace_code_union calc;
-
-	/* Jmp not a call (ignore the .e8) */
-	calc.e8		= 0xe9;
-	calc.offset	= ftrace_calc_offset(ip + MCOUNT_INSN_SIZE, addr);
-
-	/*
-	 * ftrace external locks synchronize the access to the static variable.
-	 */
-	return calc.code;
+	return ftrace_text_replace(0xe9, ip, addr);
 }
 
 static int ftrace_mod_jmp(unsigned long ip, void *func)
@@ -735,14 +985,28 @@ int ftrace_disable_ftrace_graph_caller(void)
  * Hook the return address and push it in the stack of return addrs
  * in current thread info.
  */
-void prepare_ftrace_return(unsigned long *parent, unsigned long self_addr,
+void prepare_ftrace_return(unsigned long self_addr, unsigned long *parent,
 			   unsigned long frame_pointer)
 {
 	unsigned long old;
 	int faulted;
-	struct ftrace_graph_ent trace;
 	unsigned long return_hooker = (unsigned long)
 				&return_to_handler;
+
+	/*
+	 * When resuming from suspend-to-ram, this function can be indirectly
+	 * called from early CPU startup code while the CPU is in real mode,
+	 * which would fail miserably.  Make sure the stack pointer is a
+	 * virtual address.
+	 *
+	 * This check isn't as accurate as virt_addr_valid(), but it should be
+	 * good enough for this purpose, and it's fast.
+	 */
+	if (unlikely((long)__builtin_frame_address(0) >= 0))
+		return;
+
+	if (unlikely(ftrace_graph_is_dead()))
+		return;
 
 	if (unlikely(atomic_read(&current->tracing_graph_pause)))
 		return;
@@ -777,19 +1041,7 @@ void prepare_ftrace_return(unsigned long *parent, unsigned long self_addr,
 		return;
 	}
 
-	trace.func = self_addr;
-	trace.depth = current->curr_ret_stack + 1;
-
-	/* Only trace if the calling function expects to */
-	if (!ftrace_graph_entry(&trace)) {
+	if (function_graph_enter(old, self_addr, frame_pointer, parent))
 		*parent = old;
-		return;
-	}
-
-	if (ftrace_push_return_trace(old, self_addr, &trace.depth,
-		    frame_pointer) == -EBUSY) {
-		*parent = old;
-		return;
-	}
 }
 #endif /* CONFIG_FUNCTION_GRAPH_TRACER */

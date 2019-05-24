@@ -13,6 +13,9 @@
 #define rmb() barrier()
 #define wmb() mb()
 
+#define __smp_mb__before_atomic()		barrier()
+#define __smp_mb__after_atomic()		barrier()
+
 #include <asm-generic/barrier.h>
 
 #endif /* _XTENSA_SYSTEM_H */

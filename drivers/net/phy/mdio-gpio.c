@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  * GPIO based MDIO bitbang driver.
  * Supports OpenFirmware.
@@ -14,49 +15,39 @@
  *
  * 2005 (c) MontaVista Software, Inc.
  * Vitaly Bordug <vbordug@ru.mvista.com>
- *
- * This file is licensed under the terms of the GNU General Public License
- * version 2. This program is licensed "as is" without any warranty of any
- * kind, whether express or implied.
  */
 
 #include <linux/module.h>
 #include <linux/slab.h>
 #include <linux/interrupt.h>
 #include <linux/platform_device.h>
-#include <linux/gpio.h>
+#include <linux/platform_data/mdio-gpio.h>
+#include <linux/mdio-bitbang.h>
 #include <linux/mdio-gpio.h>
-
-#include <linux/of_gpio.h>
+#include <linux/gpio/consumer.h>
 #include <linux/of_mdio.h>
 
 struct mdio_gpio_info {
 	struct mdiobb_ctrl ctrl;
-	int mdc, mdio;
+	struct gpio_desc *mdc, *mdio, *mdo;
 };
 
-static void *mdio_gpio_of_get_data(struct platform_device *pdev)
+static int mdio_gpio_get_data(struct device *dev,
+			      struct mdio_gpio_info *bitbang)
 {
-	struct device_node *np = pdev->dev.of_node;
-	struct mdio_gpio_platform_data *pdata;
-	int ret;
+	bitbang->mdc = devm_gpiod_get_index(dev, NULL, MDIO_GPIO_MDC,
+					    GPIOD_OUT_LOW);
+	if (IS_ERR(bitbang->mdc))
+		return PTR_ERR(bitbang->mdc);
 
-	pdata = devm_kzalloc(&pdev->dev, sizeof(*pdata), GFP_KERNEL);
-	if (!pdata)
-		return NULL;
+	bitbang->mdio = devm_gpiod_get_index(dev, NULL, MDIO_GPIO_MDIO,
+					     GPIOD_IN);
+	if (IS_ERR(bitbang->mdio))
+		return PTR_ERR(bitbang->mdio);
 
-	ret = of_get_gpio(np, 0);
-	if (ret < 0)
-		return NULL;
-
-	pdata->mdc = ret;
-
-	ret = of_get_gpio(np, 1);
-	if (ret < 0)
-		return NULL;
-	pdata->mdio = ret;
-
-	return pdata;
+	bitbang->mdo = devm_gpiod_get_index_optional(dev, NULL, MDIO_GPIO_MDO,
+						     GPIOD_OUT_LOW);
+	return PTR_ERR_OR_ZERO(bitbang->mdo);
 }
 
 static void mdio_dir(struct mdiobb_ctrl *ctrl, int dir)
@@ -64,10 +55,20 @@ static void mdio_dir(struct mdiobb_ctrl *ctrl, int dir)
 	struct mdio_gpio_info *bitbang =
 		container_of(ctrl, struct mdio_gpio_info, ctrl);
 
+	if (bitbang->mdo) {
+		/* Separate output pin. Always set its value to high
+		 * when changing direction. If direction is input,
+		 * assume the pin serves as pull-up. If direction is
+		 * output, the default value is high.
+		 */
+		gpiod_set_value_cansleep(bitbang->mdo, 1);
+		return;
+	}
+
 	if (dir)
-		gpio_direction_output(bitbang->mdio, 1);
+		gpiod_direction_output(bitbang->mdio, 1);
 	else
-		gpio_direction_input(bitbang->mdio);
+		gpiod_direction_input(bitbang->mdio);
 }
 
 static int mdio_get(struct mdiobb_ctrl *ctrl)
@@ -75,7 +76,7 @@ static int mdio_get(struct mdiobb_ctrl *ctrl)
 	struct mdio_gpio_info *bitbang =
 		container_of(ctrl, struct mdio_gpio_info, ctrl);
 
-	return gpio_get_value(bitbang->mdio);
+	return gpiod_get_value_cansleep(bitbang->mdio);
 }
 
 static void mdio_set(struct mdiobb_ctrl *ctrl, int what)
@@ -83,7 +84,10 @@ static void mdio_set(struct mdiobb_ctrl *ctrl, int what)
 	struct mdio_gpio_info *bitbang =
 		container_of(ctrl, struct mdio_gpio_info, ctrl);
 
-	gpio_set_value(bitbang->mdio, what);
+	if (bitbang->mdo)
+		gpiod_set_value_cansleep(bitbang->mdo, what);
+	else
+		gpiod_set_value_cansleep(bitbang->mdio, what);
 }
 
 static void mdc_set(struct mdiobb_ctrl *ctrl, int what)
@@ -91,10 +95,10 @@ static void mdc_set(struct mdiobb_ctrl *ctrl, int what)
 	struct mdio_gpio_info *bitbang =
 		container_of(ctrl, struct mdio_gpio_info, ctrl);
 
-	gpio_set_value(bitbang->mdc, what);
+	gpiod_set_value_cansleep(bitbang->mdc, what);
 }
 
-static struct mdiobb_ops mdio_gpio_ops = {
+static const struct mdiobb_ops mdio_gpio_ops = {
 	.owner = THIS_MODULE,
 	.set_mdc = mdc_set,
 	.set_mdio_dir = mdio_dir,
@@ -103,73 +107,41 @@ static struct mdiobb_ops mdio_gpio_ops = {
 };
 
 static struct mii_bus *mdio_gpio_bus_init(struct device *dev,
-					  struct mdio_gpio_platform_data *pdata,
+					  struct mdio_gpio_info *bitbang,
 					  int bus_id)
 {
+	struct mdio_gpio_platform_data *pdata = dev_get_platdata(dev);
 	struct mii_bus *new_bus;
-	struct mdio_gpio_info *bitbang;
-	int i;
-
-	bitbang = kzalloc(sizeof(*bitbang), GFP_KERNEL);
-	if (!bitbang)
-		goto out;
 
 	bitbang->ctrl.ops = &mdio_gpio_ops;
-	bitbang->ctrl.reset = pdata->reset;
-	bitbang->mdc = pdata->mdc;
-	bitbang->mdio = pdata->mdio;
 
 	new_bus = alloc_mdio_bitbang(&bitbang->ctrl);
 	if (!new_bus)
-		goto out_free_bitbang;
+		return NULL;
 
-	new_bus->name = "GPIO Bitbanged MDIO",
-
-	new_bus->phy_mask = pdata->phy_mask;
-	new_bus->irq = pdata->irqs;
+	new_bus->name = "GPIO Bitbanged MDIO";
 	new_bus->parent = dev;
 
-	if (new_bus->phy_mask == ~0)
-		goto out_free_bus;
+	if (bus_id != -1)
+		snprintf(new_bus->id, MII_BUS_ID_SIZE, "gpio-%x", bus_id);
+	else
+		strncpy(new_bus->id, "gpio", MII_BUS_ID_SIZE);
 
-	for (i = 0; i < PHY_MAX_ADDR; i++)
-		if (!new_bus->irq[i])
-			new_bus->irq[i] = PHY_POLL;
-
-	snprintf(new_bus->id, MII_BUS_ID_SIZE, "gpio-%x", bus_id);
-
-	if (gpio_request(bitbang->mdc, "mdc"))
-		goto out_free_bus;
-
-	if (gpio_request(bitbang->mdio, "mdio"))
-		goto out_free_mdc;
-
-	gpio_direction_output(bitbang->mdc, 0);
+	if (pdata) {
+		new_bus->phy_mask = pdata->phy_mask;
+		new_bus->phy_ignore_ta_mask = pdata->phy_ignore_ta_mask;
+	}
 
 	dev_set_drvdata(dev, new_bus);
 
 	return new_bus;
-
-out_free_mdc:
-	gpio_free(bitbang->mdc);
-out_free_bus:
-	free_mdio_bitbang(new_bus);
-out_free_bitbang:
-	kfree(bitbang);
-out:
-	return NULL;
 }
 
 static void mdio_gpio_bus_deinit(struct device *dev)
 {
 	struct mii_bus *bus = dev_get_drvdata(dev);
-	struct mdio_gpio_info *bitbang = bus->priv;
 
-	dev_set_drvdata(dev, NULL);
-	gpio_free(bitbang->mdio);
-	gpio_free(bitbang->mdc);
 	free_mdio_bitbang(bus);
-	kfree(bitbang);
 }
 
 static void mdio_gpio_bus_destroy(struct device *dev)
@@ -182,30 +154,33 @@ static void mdio_gpio_bus_destroy(struct device *dev)
 
 static int mdio_gpio_probe(struct platform_device *pdev)
 {
-	struct mdio_gpio_platform_data *pdata;
+	struct mdio_gpio_info *bitbang;
 	struct mii_bus *new_bus;
 	int ret, bus_id;
 
+	bitbang = devm_kzalloc(&pdev->dev, sizeof(*bitbang), GFP_KERNEL);
+	if (!bitbang)
+		return -ENOMEM;
+
+	ret = mdio_gpio_get_data(&pdev->dev, bitbang);
+	if (ret)
+		return ret;
+
 	if (pdev->dev.of_node) {
-		pdata = mdio_gpio_of_get_data(pdev);
 		bus_id = of_alias_get_id(pdev->dev.of_node, "mdio-gpio");
+		if (bus_id < 0) {
+			dev_warn(&pdev->dev, "failed to get alias id\n");
+			bus_id = 0;
+		}
 	} else {
-		pdata = dev_get_platdata(&pdev->dev);
 		bus_id = pdev->id;
 	}
 
-	if (!pdata)
-		return -ENODEV;
-
-	new_bus = mdio_gpio_bus_init(&pdev->dev, pdata, bus_id);
+	new_bus = mdio_gpio_bus_init(&pdev->dev, bitbang, bus_id);
 	if (!new_bus)
 		return -ENODEV;
 
-	if (pdev->dev.of_node)
-		ret = of_mdiobus_register(new_bus, pdev->dev.of_node);
-	else
-		ret = mdiobus_register(new_bus);
-
+	ret = of_mdiobus_register(new_bus, pdev->dev.of_node);
 	if (ret)
 		mdio_gpio_bus_deinit(&pdev->dev);
 
@@ -219,17 +194,17 @@ static int mdio_gpio_remove(struct platform_device *pdev)
 	return 0;
 }
 
-static struct of_device_id mdio_gpio_of_match[] = {
+static const struct of_device_id mdio_gpio_of_match[] = {
 	{ .compatible = "virtual,mdio-gpio", },
 	{ /* sentinel */ }
 };
+MODULE_DEVICE_TABLE(of, mdio_gpio_of_match);
 
 static struct platform_driver mdio_gpio_driver = {
 	.probe = mdio_gpio_probe,
 	.remove = mdio_gpio_remove,
 	.driver		= {
 		.name	= "mdio-gpio",
-		.owner	= THIS_MODULE,
 		.of_match_table = mdio_gpio_of_match,
 	},
 };
@@ -238,5 +213,5 @@ module_platform_driver(mdio_gpio_driver);
 
 MODULE_ALIAS("platform:mdio-gpio");
 MODULE_AUTHOR("Laurent Pinchart, Paulius Zaleckas");
-MODULE_LICENSE("GPL");
+MODULE_LICENSE("GPL v2");
 MODULE_DESCRIPTION("Generic driver for MDIO bus emulation using GPIO");

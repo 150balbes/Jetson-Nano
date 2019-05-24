@@ -1,6 +1,0 @@
-
-config AML_LCD_GAMMA_DEBUG
-	boolean "LCD Gamma debug support"
-	default n
-	help
-		Amlogic LCD gamma debug

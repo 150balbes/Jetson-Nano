@@ -9,7 +9,7 @@
  * 2 of the License, or (at your option) any later version.
  */
 
-#include <linux/module.h>
+#include <linux/export.h>
 #include <linux/security.h>
 #include "internal.h"
 
@@ -28,7 +28,7 @@
  * permissions bits or the LSM check.
  */
 int key_task_permission(const key_ref_t key_ref, const struct cred *cred,
-			key_perm_t perm)
+			unsigned perm)
 {
 	struct key *key;
 	key_perm_t kperm;
@@ -68,7 +68,7 @@ use_these_perms:
 	if (is_key_possessed(key_ref))
 		kperm |= key->perm >> 24;
 
-	kperm = kperm & perm & KEY_ALL;
+	kperm = kperm & perm & KEY_NEED_ALL;
 
 	if (kperm != perm)
 		return -EACCES;
@@ -88,7 +88,8 @@ EXPORT_SYMBOL(key_task_permission);
  */
 int key_validate(const struct key *key)
 {
-	unsigned long flags = key->flags;
+	unsigned long flags = READ_ONCE(key->flags);
+	time64_t expiry = READ_ONCE(key->expiry);
 
 	if (flags & (1 << KEY_FLAG_INVALIDATED))
 		return -ENOKEY;
@@ -99,9 +100,8 @@ int key_validate(const struct key *key)
 		return -EKEYREVOKED;
 
 	/* check it hasn't expired */
-	if (key->expiry) {
-		struct timespec now = current_kernel_time();
-		if (now.tv_sec >= key->expiry)
+	if (expiry) {
+		if (ktime_get_real_seconds() >= expiry)
 			return -EKEYEXPIRED;
 	}
 

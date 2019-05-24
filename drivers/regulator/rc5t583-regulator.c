@@ -61,7 +61,7 @@ static int rc5t583_regulator_enable_time(struct regulator_dev *rdev)
 	return DIV_ROUND_UP(curr_uV, reg->reg_info->enable_uv_per_us);
 }
 
-static struct regulator_ops rc5t583_ops = {
+static const struct regulator_ops rc5t583_ops = {
 	.is_enabled		= regulator_is_enabled_regmap,
 	.enable			= regulator_enable_regmap,
 	.disable		= regulator_disable_regmap,
@@ -119,7 +119,6 @@ static int rc5t583_regulator_probe(struct platform_device *pdev)
 {
 	struct rc5t583 *rc5t583 = dev_get_drvdata(pdev->dev.parent);
 	struct rc5t583_platform_data *pdata = dev_get_platdata(rc5t583->dev);
-	struct regulator_init_data *reg_data;
 	struct regulator_config config = { };
 	struct rc5t583_regulator *reg = NULL;
 	struct rc5t583_regulator *regs;
@@ -133,21 +132,15 @@ static int rc5t583_regulator_probe(struct platform_device *pdev)
 		return -ENODEV;
 	}
 
-	regs = devm_kzalloc(&pdev->dev, RC5T583_REGULATOR_MAX *
-			sizeof(struct rc5t583_regulator), GFP_KERNEL);
-	if (!regs) {
-		dev_err(&pdev->dev, "Memory allocation failed exiting..\n");
+	regs = devm_kcalloc(&pdev->dev,
+			    RC5T583_REGULATOR_MAX,
+			    sizeof(struct rc5t583_regulator),
+			    GFP_KERNEL);
+	if (!regs)
 		return -ENOMEM;
-	}
 
 
 	for (id = 0; id < RC5T583_REGULATOR_MAX; ++id) {
-		reg_data = pdata->reg_init_data[id];
-
-		/* No need to register if there is no regulator data */
-		if (!reg_data)
-			continue;
-
 		reg = &regs[id];
 		ri = &rc5t583_reg_info[id];
 		reg->reg_info = ri;
@@ -169,7 +162,7 @@ static int rc5t583_regulator_probe(struct platform_device *pdev)
 
 skip_ext_pwr_config:
 		config.dev = &pdev->dev;
-		config.init_data = reg_data;
+		config.init_data = pdata->reg_init_data[id];
 		config.driver_data = reg;
 		config.regmap = rc5t583->regmap;
 
@@ -188,7 +181,6 @@ skip_ext_pwr_config:
 static struct platform_driver rc5t583_regulator_driver = {
 	.driver	= {
 		.name	= "rc5t583-regulator",
-		.owner	= THIS_MODULE,
 	},
 	.probe		= rc5t583_regulator_probe,
 };

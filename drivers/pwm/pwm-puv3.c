@@ -107,10 +107,8 @@ static int pwm_probe(struct platform_device *pdev)
 	int ret;
 
 	puv3 = devm_kzalloc(&pdev->dev, sizeof(*puv3), GFP_KERNEL);
-	if (puv3 == NULL) {
-		dev_err(&pdev->dev, "failed to allocate memory\n");
+	if (!puv3)
 		return -ENOMEM;
-	}
 
 	puv3->clk = devm_clk_get(&pdev->dev, "OST_CLK");
 	if (IS_ERR(puv3->clk))
@@ -146,7 +144,6 @@ static int pwm_remove(struct platform_device *pdev)
 static struct platform_driver puv3_pwm_driver = {
 	.driver = {
 		.name = "PKUnity-v3-PWM",
-		.owner = THIS_MODULE,
 	},
 	.probe = pwm_probe,
 	.remove = pwm_remove,

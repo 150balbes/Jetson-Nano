@@ -58,15 +58,8 @@ MODULE_PARM_DESC(sync_start, "On by Default: Driver load will not complete "
 			     "until the card startup has completed.");
 
 static DEFINE_IDA(rsxx_disk_ida);
-static DEFINE_SPINLOCK(rsxx_ida_lock);
 
 /* --------------------Debugfs Setup ------------------- */
-
-struct rsxx_cram {
-	u32 f_pos;
-	u32 offset;
-	void *i_private;
-};
 
 static int rsxx_attr_pci_regs_show(struct seq_file *m, void *p)
 {
@@ -184,93 +177,47 @@ static int rsxx_attr_pci_regs_open(struct inode *inode, struct file *file)
 static ssize_t rsxx_cram_read(struct file *fp, char __user *ubuf,
 			      size_t cnt, loff_t *ppos)
 {
-	struct rsxx_cram *info = fp->private_data;
-	struct rsxx_cardinfo *card = info->i_private;
+	struct rsxx_cardinfo *card = file_inode(fp)->i_private;
 	char *buf;
-	int st;
+	ssize_t st;
 
-	buf = kzalloc(sizeof(*buf) * cnt, GFP_KERNEL);
+	buf = kzalloc(cnt, GFP_KERNEL);
 	if (!buf)
 		return -ENOMEM;
 
-	info->f_pos = (u32)*ppos + info->offset;
-
-	st = rsxx_creg_read(card, CREG_ADD_CRAM + info->f_pos, cnt, buf, 1);
-	if (st)
-		return st;
-
-	st = copy_to_user(ubuf, buf, cnt);
-	if (st)
-		return st;
-
-	info->offset += cnt;
-
+	st = rsxx_creg_read(card, CREG_ADD_CRAM + (u32)*ppos, cnt, buf, 1);
+	if (!st)
+		st = copy_to_user(ubuf, buf, cnt);
 	kfree(buf);
-
+	if (st)
+		return st;
+	*ppos += cnt;
 	return cnt;
 }
 
 static ssize_t rsxx_cram_write(struct file *fp, const char __user *ubuf,
 			       size_t cnt, loff_t *ppos)
 {
-	struct rsxx_cram *info = fp->private_data;
-	struct rsxx_cardinfo *card = info->i_private;
+	struct rsxx_cardinfo *card = file_inode(fp)->i_private;
 	char *buf;
-	int st;
+	ssize_t st;
 
-	buf = kzalloc(sizeof(*buf) * cnt, GFP_KERNEL);
-	if (!buf)
-		return -ENOMEM;
+	buf = memdup_user(ubuf, cnt);
+	if (IS_ERR(buf))
+		return PTR_ERR(buf);
 
-	st = copy_from_user(buf, ubuf, cnt);
-	if (st)
-		return st;
-
-	info->f_pos = (u32)*ppos + info->offset;
-
-	st = rsxx_creg_write(card, CREG_ADD_CRAM + info->f_pos, cnt, buf, 1);
-	if (st)
-		return st;
-
-	info->offset += cnt;
-
+	st = rsxx_creg_write(card, CREG_ADD_CRAM + (u32)*ppos, cnt, buf, 1);
 	kfree(buf);
-
+	if (st)
+		return st;
+	*ppos += cnt;
 	return cnt;
-}
-
-static int rsxx_cram_open(struct inode *inode, struct file *file)
-{
-	struct rsxx_cram *info = kzalloc(sizeof(*info), GFP_KERNEL);
-	if (!info)
-		return -ENOMEM;
-
-	info->i_private = inode->i_private;
-	info->f_pos = file->f_pos;
-	file->private_data = info;
-
-	return 0;
-}
-
-static int rsxx_cram_release(struct inode *inode, struct file *file)
-{
-	struct rsxx_cram *info = file->private_data;
-
-	if (!info)
-		return 0;
-
-	kfree(info);
-	file->private_data = NULL;
-
-	return 0;
 }
 
 static const struct file_operations debugfs_cram_fops = {
 	.owner		= THIS_MODULE,
-	.open		= rsxx_cram_open,
 	.read		= rsxx_cram_read,
 	.write		= rsxx_cram_write,
-	.release	= rsxx_cram_release,
 };
 
 static const struct file_operations debugfs_stats_fops = {
@@ -299,19 +246,19 @@ static void rsxx_debugfs_dev_new(struct rsxx_cardinfo *card)
 	if (IS_ERR_OR_NULL(card->debugfs_dir))
 		goto failed_debugfs_dir;
 
-	debugfs_stats = debugfs_create_file("stats", S_IRUGO,
+	debugfs_stats = debugfs_create_file("stats", 0444,
 					    card->debugfs_dir, card,
 					    &debugfs_stats_fops);
 	if (IS_ERR_OR_NULL(debugfs_stats))
 		goto failed_debugfs_stats;
 
-	debugfs_pci_regs = debugfs_create_file("pci_regs", S_IRUGO,
+	debugfs_pci_regs = debugfs_create_file("pci_regs", 0444,
 					       card->debugfs_dir, card,
 					       &debugfs_pci_regs_fops);
 	if (IS_ERR_OR_NULL(debugfs_pci_regs))
 		goto failed_debugfs_pci_regs;
 
-	debugfs_cram = debugfs_create_file("cram", S_IRUGO | S_IWUSR,
+	debugfs_cram = debugfs_create_file("cram", 0644,
 					   card->debugfs_dir, card,
 					   &debugfs_cram_fops);
 	if (IS_ERR_OR_NULL(debugfs_cram))
@@ -823,28 +770,19 @@ static int rsxx_pci_probe(struct pci_dev *dev,
 	card->dev = dev;
 	pci_set_drvdata(dev, card);
 
-	do {
-		if (!ida_pre_get(&rsxx_disk_ida, GFP_KERNEL)) {
-			st = -ENOMEM;
-			goto failed_ida_get;
-		}
-
-		spin_lock(&rsxx_ida_lock);
-		st = ida_get_new(&rsxx_disk_ida, &card->disk_id);
-		spin_unlock(&rsxx_ida_lock);
-	} while (st == -EAGAIN);
-
-	if (st)
+	st = ida_alloc(&rsxx_disk_ida, GFP_KERNEL);
+	if (st < 0)
 		goto failed_ida_get;
+	card->disk_id = st;
 
 	st = pci_enable_device(dev);
 	if (st)
 		goto failed_enable;
 
 	pci_set_master(dev);
-	pci_set_dma_max_seg_size(dev, RSXX_HW_BLK_SIZE);
+	dma_set_max_seg_size(&dev->dev, RSXX_HW_BLK_SIZE);
 
-	st = pci_set_dma_mask(dev, DMA_BIT_MASK(64));
+	st = dma_set_mask(&dev->dev, DMA_BIT_MASK(64));
 	if (st) {
 		dev_err(CARD_TO_DEV(card),
 			"No usable DMA configuration,aborting\n");
@@ -886,7 +824,7 @@ static int rsxx_pci_probe(struct pci_dev *dev,
 				"Failed to enable MSI\n");
 	}
 
-	st = request_irq(dev->irq, rsxx_isr, IRQF_DISABLED | IRQF_SHARED,
+	st = request_irq(dev->irq, rsxx_isr, IRQF_SHARED,
 			 DRIVER_NAME, card);
 	if (st) {
 		dev_err(CARD_TO_DEV(card),
@@ -925,7 +863,8 @@ static int rsxx_pci_probe(struct pci_dev *dev,
 		dev_info(CARD_TO_DEV(card),
 			"Failed reading the number of DMA targets\n");
 
-	card->ctrl = kzalloc(card->n_targets * sizeof(*card->ctrl), GFP_KERNEL);
+	card->ctrl = kcalloc(card->n_targets, sizeof(*card->ctrl),
+			     GFP_KERNEL);
 	if (!card->ctrl) {
 		st = -ENOMEM;
 		goto failed_dma_setup;
@@ -1036,9 +975,7 @@ failed_request_regions:
 failed_dma_mask:
 	pci_disable_device(dev);
 failed_enable:
-	spin_lock(&rsxx_ida_lock);
-	ida_remove(&rsxx_disk_ida, card->disk_id);
-	spin_unlock(&rsxx_ida_lock);
+	ida_free(&rsxx_disk_ida, card->disk_id);
 failed_ida_get:
 	kfree(card);
 
@@ -1101,6 +1038,7 @@ static void rsxx_pci_remove(struct pci_dev *dev)
 	pci_disable_device(dev);
 	pci_release_regions(dev);
 
+	ida_free(&rsxx_disk_ida, card->disk_id);
 	kfree(card);
 }
 
@@ -1137,7 +1075,7 @@ static const struct pci_error_handlers rsxx_err_handler = {
 	.slot_reset     = rsxx_slot_reset,
 };
 
-static DEFINE_PCI_DEVICE_TABLE(rsxx_pci_ids) = {
+static const struct pci_device_id rsxx_pci_ids[] = {
 	{PCI_DEVICE(PCI_VENDOR_ID_IBM, PCI_DEVICE_ID_FS70_FLASH)},
 	{PCI_DEVICE(PCI_VENDOR_ID_IBM, PCI_DEVICE_ID_FS80_FLASH)},
 	{0,},

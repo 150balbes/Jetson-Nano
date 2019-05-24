@@ -8,10 +8,6 @@ comment "common driver options"
 config VIDEO_CX2341X
 	tristate
 
-config VIDEO_BTCX
-	depends on PCI
-	tristate
-
 config VIDEO_TVEEPROM
 	tristate
 	depends on I2C
@@ -20,6 +16,8 @@ config CYPRESS_FIRMWARE
 	tristate "Cypress firmware helper routines"
 	depends on USB
 
+source "drivers/media/common/videobuf2/Kconfig"
 source "drivers/media/common/b2c2/Kconfig"
 source "drivers/media/common/saa7146/Kconfig"
 source "drivers/media/common/siano/Kconfig"
+source "drivers/media/common/v4l2-tpg/Kconfig"

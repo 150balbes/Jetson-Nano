@@ -31,14 +31,13 @@
 #define YBLANK 45
 #define XOFFSET 88
 #define XPULSE 44
-#define YOFFSET (63+4)
-#define YPULSE (63+5)
+#define YOFFSET 4
+#define YPULSE 5
 #define DPI 96
 #define VFREQ 60 /* Hz */
 #define TIMING_NAME "Linux FHD"
-#define ESTABLISHED_TIMINGS_BITS 0x00 /* none */
+/* No ESTABLISHED_TIMINGx_BITS */
 #define HSYNC_POL 1
 #define VSYNC_POL 1
-#define CRC 0x05
 
 #include "edid.S"

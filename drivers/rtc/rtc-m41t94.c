@@ -99,8 +99,7 @@ static int m41t94_read_time(struct device *dev, struct rtc_time *tm)
 		tm->tm_hour, tm->tm_mday,
 		tm->tm_mon, tm->tm_year, tm->tm_wday);
 
-	/* initial clock setting can be undefined */
-	return rtc_valid_tm(tm);
+	return 0;
 }
 
 static const struct rtc_class_ops m41t94_rtc_ops = {
@@ -137,7 +136,6 @@ static int m41t94_probe(struct spi_device *spi)
 static struct spi_driver m41t94_driver = {
 	.driver = {
 		.name	= "rtc-m41t94",
-		.owner	= THIS_MODULE,
 	},
 	.probe	= m41t94_probe,
 };

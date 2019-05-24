@@ -135,7 +135,7 @@ static int vl600_rx_fixup(struct usbnet *dev, struct sk_buff *skb)
 		}
 
 		buf = s->current_rx_buf;
-		memcpy(skb_put(buf, skb->len), skb->data, skb->len);
+		skb_put_data(buf, skb->data, skb->len);
 	} else if (skb->len < 4) {
 		netif_err(dev, ifup, dev->net, "Frame too short\n");
 		dev->net->stats.rx_length_errors++;
@@ -157,12 +157,8 @@ static int vl600_rx_fixup(struct usbnet *dev, struct sk_buff *skb)
 
 		s->current_rx_buf = skb_copy_expand(skb, 0,
 				le32_to_cpup(&frame->len), GFP_ATOMIC);
-		if (!s->current_rx_buf) {
-			netif_err(dev, ifup, dev->net, "Reserving %i bytes "
-					"for packet assembly failed.\n",
-					le32_to_cpup(&frame->len));
+		if (!s->current_rx_buf)
 			dev->net->stats.rx_errors++;
-		}
 
 		return 0;
 	}
@@ -201,7 +197,7 @@ static int vl600_rx_fixup(struct usbnet *dev, struct sk_buff *skb)
 					&buf->data[sizeof(*ethhdr) + 0x12],
 					ETH_ALEN);
 		} else {
-			memset(ethhdr->h_source, 0, ETH_ALEN);
+			eth_zero_addr(ethhdr->h_source);
 			memcpy(ethhdr->h_dest, dev->net->dev_addr, ETH_ALEN);
 
 			/* Inbound IPv6 packets have an IPv4 ethertype (0x800)
@@ -210,7 +206,7 @@ static int vl600_rx_fixup(struct usbnet *dev, struct sk_buff *skb)
 			 * (0x86dd) so Linux can understand it.
 			 */
 			if ((buf->data[sizeof(*ethhdr)] & 0xf0) == 0x60)
-				ethhdr->h_proto = __constant_htons(ETH_P_IPV6);
+				ethhdr->h_proto = htons(ETH_P_IPV6);
 		}
 
 		if (count) {
@@ -304,7 +300,7 @@ encapsulate:
 	memset(&packet->dummy, 0, sizeof(packet->dummy));
 	packet->len = cpu_to_le32(orig_len);
 
-	frame = (struct vl600_frame_hdr *) skb_push(skb, sizeof(*frame));
+	frame = skb_push(skb, sizeof(*frame));
 	memset(frame, 0, sizeof(*frame));
 	frame->len = cpu_to_le32(full_len);
 	frame->serial = cpu_to_le32(serial++);

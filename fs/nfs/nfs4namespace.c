@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  * linux/fs/nfs/nfs4namespace.c
  *
@@ -136,19 +137,26 @@ static size_t nfs_parse_server_name(char *string, size_t len,
 
 /**
  * nfs_find_best_sec - Find a security mechanism supported locally
+ * @clnt: pointer to rpc_clnt
  * @server: NFS server struct
  * @flavors: List of security tuples returned by SECINFO procedure
  *
- * Return the pseudoflavor of the first security mechanism in
- * "flavors" that is locally supported.  Return RPC_AUTH_UNIX if
- * no matching flavor is found in the array.  The "flavors" array
+ * Return an rpc client that uses the first security mechanism in
+ * "flavors" that is locally supported.  The "flavors" array
  * is searched in the order returned from the server, per RFC 3530
- * recommendation.
+ * recommendation and each flavor is checked for membership in the
+ * sec= mount option list if it exists.
+ *
+ * Return -EPERM if no matching flavor is found in the array.
+ *
+ * Please call rpc_shutdown_client() when you are done with this rpc client.
+ *
  */
-static rpc_authflavor_t nfs_find_best_sec(struct nfs_server *server,
+static struct rpc_clnt *nfs_find_best_sec(struct rpc_clnt *clnt,
+					  struct nfs_server *server,
 					  struct nfs4_secinfo_flavors *flavors)
 {
-	rpc_authflavor_t pseudoflavor;
+	rpc_authflavor_t pflavor;
 	struct nfs4_secinfo4 *secinfo;
 	unsigned int i;
 
@@ -159,62 +167,73 @@ static rpc_authflavor_t nfs_find_best_sec(struct nfs_server *server,
 		case RPC_AUTH_NULL:
 		case RPC_AUTH_UNIX:
 		case RPC_AUTH_GSS:
-			pseudoflavor = rpcauth_get_pseudoflavor(secinfo->flavor,
+			pflavor = rpcauth_get_pseudoflavor(secinfo->flavor,
 							&secinfo->flavor_info);
-			/* make sure pseudoflavor matches sec= mount opt */
-			if (pseudoflavor != RPC_AUTH_MAXFLAVOR &&
-			    nfs_auth_info_match(&server->auth_info,
-						pseudoflavor))
-				return pseudoflavor;
-			break;
+			/* does the pseudoflavor match a sec= mount opt? */
+			if (pflavor != RPC_AUTH_MAXFLAVOR &&
+			    nfs_auth_info_match(&server->auth_info, pflavor)) {
+				struct rpc_clnt *new;
+				struct rpc_cred *cred;
+
+				/* Cloning creates an rpc_auth for the flavor */
+				new = rpc_clone_client_set_auth(clnt, pflavor);
+				if (IS_ERR(new))
+					continue;
+				/**
+				* Check that the user actually can use the
+				* flavor. This is mostly for RPC_AUTH_GSS
+				* where cr_init obtains a gss context
+				*/
+				cred = rpcauth_lookupcred(new->cl_auth, 0);
+				if (IS_ERR(cred)) {
+					rpc_shutdown_client(new);
+					continue;
+				}
+				put_rpccred(cred);
+				return new;
+			}
 		}
 	}
-
-	/* if there were any sec= options then nothing matched */
-	if (server->auth_info.flavor_len > 0)
-		return -EPERM;
-
-	return RPC_AUTH_UNIX;
+	return ERR_PTR(-EPERM);
 }
 
-static rpc_authflavor_t nfs4_negotiate_security(struct inode *inode, struct qstr *name)
+/**
+ * nfs4_negotiate_security - in response to an NFS4ERR_WRONGSEC on lookup,
+ * return an rpc_clnt that uses the best available security flavor with
+ * respect to the secinfo flavor list and the sec= mount options.
+ *
+ * @clnt: RPC client to clone
+ * @inode: directory inode
+ * @name: lookup name
+ *
+ * Please call rpc_shutdown_client() when you are done with this rpc client.
+ */
+struct rpc_clnt *
+nfs4_negotiate_security(struct rpc_clnt *clnt, struct inode *inode,
+					const struct qstr *name)
 {
 	struct page *page;
 	struct nfs4_secinfo_flavors *flavors;
-	rpc_authflavor_t flavor;
+	struct rpc_clnt *new;
 	int err;
 
 	page = alloc_page(GFP_KERNEL);
 	if (!page)
-		return -ENOMEM;
+		return ERR_PTR(-ENOMEM);
+
 	flavors = page_address(page);
 
 	err = nfs4_proc_secinfo(inode, name, flavors);
 	if (err < 0) {
-		flavor = err;
+		new = ERR_PTR(err);
 		goto out;
 	}
 
-	flavor = nfs_find_best_sec(NFS_SERVER(inode), flavors);
+	new = nfs_find_best_sec(clnt, NFS_SERVER(inode), flavors);
 
 out:
 	put_page(page);
-	return flavor;
-}
-
-/*
- * Please call rpc_shutdown_client() when you are done with this client.
- */
-struct rpc_clnt *nfs4_create_sec_client(struct rpc_clnt *clnt, struct inode *inode,
-					struct qstr *name)
-{
-	rpc_authflavor_t flavor;
-
-	flavor = nfs4_negotiate_security(inode, name);
-	if ((int)flavor < 0)
-		return ERR_PTR((int)flavor);
-
-	return rpc_clone_client_set_auth(clnt, flavor);
+	return new;
 }
 
 static struct vfsmount *try_location(struct nfs_clone_mount *mountdata,
@@ -252,8 +271,6 @@ static struct vfsmount *try_location(struct nfs_clone_mount *mountdata,
 		if (mountdata->addrlen == 0)
 			continue;
 
-		rpc_set_port(mountdata->addr, NFS_PORT);
-
 		memcpy(page2, buf->data, buf->len);
 		page2[buf->len] = '\0';
 		mountdata->hostname = page2;
@@ -262,7 +279,7 @@ static struct vfsmount *try_location(struct nfs_clone_mount *mountdata,
 				mountdata->hostname,
 				mountdata->mnt_path);
 
-		mnt = vfs_kern_mount(&nfs4_referral_fs_type, 0, page, mountdata);
+		mnt = vfs_submount(mountdata->dentry, &nfs4_referral_fs_type, page, mountdata);
 		if (!IS_ERR(mnt))
 			break;
 	}
@@ -272,8 +289,8 @@ static struct vfsmount *try_location(struct nfs_clone_mount *mountdata,
 
 /**
  * nfs_follow_referral - set up mountpoint when hitting a referral on moved error
- * @dentry - parent directory
- * @locations - array of NFSv4 server location information
+ * @dentry: parent directory
+ * @locations: array of NFSv4 server location information
  *
  */
 static struct vfsmount *nfs_follow_referral(struct dentry *dentry,
@@ -323,7 +340,6 @@ static struct vfsmount *nfs_follow_referral(struct dentry *dentry,
 out:
 	free_page((unsigned long) page);
 	free_page((unsigned long) page2);
-	dprintk("%s: done\n", __func__);
 	return mnt;
 }
 
@@ -341,11 +357,9 @@ static struct vfsmount *nfs_do_refmount(struct rpc_clnt *client, struct dentry *
 	int err;
 
 	/* BUG_ON(IS_ROOT(dentry)); */
-	dprintk("%s: enter\n", __func__);
-
 	page = alloc_page(GFP_KERNEL);
 	if (page == NULL)
-		goto out;
+		return mnt;
 
 	fs_locations = kmalloc(sizeof(struct nfs4_fs_locations), GFP_KERNEL);
 	if (fs_locations == NULL)
@@ -358,7 +372,7 @@ static struct vfsmount *nfs_do_refmount(struct rpc_clnt *client, struct dentry *
 	dprintk("%s: getting locations for %pd2\n",
 		__func__, dentry);
 
-	err = nfs4_proc_fs_locations(client, parent->d_inode, &dentry->d_name, fs_locations, page);
+	err = nfs4_proc_fs_locations(client, d_inode(parent), &dentry->d_name, fs_locations, page);
 	dput(parent);
 	if (err != 0 ||
 	    fs_locations->nlocations <= 0 ||
@@ -369,8 +383,6 @@ static struct vfsmount *nfs_do_refmount(struct rpc_clnt *client, struct dentry *
 out_free:
 	__free_page(page);
 	kfree(fs_locations);
-out:
-	dprintk("%s: done\n", __func__);
 	return mnt;
 }
 
@@ -379,8 +391,8 @@ struct vfsmount *nfs4_submount(struct nfs_server *server, struct dentry *dentry,
 {
 	rpc_authflavor_t flavor = server->client->cl_auth->au_flavor;
 	struct dentry *parent = dget_parent(dentry);
-	struct inode *dir = parent->d_inode;
-	struct qstr *name = &dentry->d_name;
+	struct inode *dir = d_inode(parent);
+	const struct qstr *name = &dentry->d_name;
 	struct rpc_clnt *client;
 	struct vfsmount *mnt;
 
@@ -397,11 +409,6 @@ struct vfsmount *nfs4_submount(struct nfs_server *server, struct dentry *dentry,
 
 	if (client->cl_auth->au_flavor != flavor)
 		flavor = client->cl_auth->au_flavor;
-	else {
-		rpc_authflavor_t new = nfs4_negotiate_security(dir, name);
-		if ((int)new >= 0)
-			flavor = new;
-	}
 	mnt = nfs_do_submount(dentry, fh, fattr, flavor);
 out:
 	rpc_shutdown_client(client);

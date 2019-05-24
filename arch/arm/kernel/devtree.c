@@ -12,56 +12,52 @@
 #include <linux/export.h>
 #include <linux/errno.h>
 #include <linux/types.h>
-#include <linux/bootmem.h>
 #include <linux/memblock.h>
 #include <linux/of.h>
 #include <linux/of_fdt.h>
 #include <linux/of_irq.h>
 #include <linux/of_platform.h>
+#include <linux/smp.h>
 
 #include <asm/cputype.h>
 #include <asm/setup.h>
 #include <asm/page.h>
+#include <asm/prom.h>
 #include <asm/smp_plat.h>
 #include <asm/mach/arch.h>
 #include <asm/mach-types.h>
 
-void __init early_init_dt_add_memory_arch(u64 base, u64 size)
+
+#ifdef CONFIG_SMP
+extern struct of_cpu_method __cpu_method_of_table[];
+
+static const struct of_cpu_method __cpu_method_of_table_sentinel
+	__used __section(__cpu_method_of_table_end);
+
+
+static int __init set_smp_ops_by_method(struct device_node *node)
 {
-	arm_add_memory(base, size);
-}
+	const char *method;
+	struct of_cpu_method *m = __cpu_method_of_table;
 
-void * __init early_init_dt_alloc_memory_arch(u64 size, u64 align)
+	if (of_property_read_string(node, "enable-method", &method))
+		return 0;
+
+	for (; m->method; m++)
+		if (!strcmp(m->method, method)) {
+			smp_set_ops(m->ops);
+			return 1;
+		}
+
+	return 0;
+}
+#else
+static inline int set_smp_ops_by_method(struct device_node *node)
 {
-	return memblock_virt_alloc(size, align);
+	return 1;
 }
+#endif
 
-void __init arm_dt_memblock_reserve(void)
-{
-	u64 *reserve_map, base, size;
-
-	if (!initial_boot_params)
-		return;
-
-	/* Reserve the dtb region */
-	memblock_reserve(virt_to_phys(initial_boot_params),
-			 be32_to_cpu(initial_boot_params->totalsize));
-
-	/*
-	 * Process the reserve map.  This will probably overlap the initrd
-	 * and dtb locations which are already reserved, but overlaping
-	 * doesn't hurt anything
-	 */
-	reserve_map = ((void*)initial_boot_params) +
-			be32_to_cpu(initial_boot_params->off_mem_rsvmap);
-	while (1) {
-		base = be64_to_cpup(reserve_map++);
-		size = be64_to_cpup(reserve_map++);
-		if (!size)
-			break;
-		memblock_reserve(base, size);
-	}
-}
 
 /*
  * arm_dt_init_cpu_maps - Function retrieves cpu nodes from the device tree
@@ -79,6 +75,7 @@ void __init arm_dt_init_cpu_maps(void)
 	 * read as 0.
 	 */
 	struct device_node *cpu, *cpus;
+	int found_method = 0;
 	u32 i, j, cpuidx = 1;
 	u32 mpidr = is_smp() ? read_cpuid_mpidr() & MPIDR_HWID_BITMASK : 0;
 
@@ -89,30 +86,37 @@ void __init arm_dt_init_cpu_maps(void)
 	if (!cpus)
 		return;
 
-	for_each_child_of_node(cpus, cpu) {
+	for_each_of_cpu_node(cpu) {
+		const __be32 *cell;
+		int prop_bytes;
 		u32 hwid;
 
-		if (of_node_cmp(cpu->type, "cpu"))
-			continue;
-
-		pr_debug(" * %s...\n", cpu->full_name);
+		pr_debug(" * %pOF...\n", cpu);
 		/*
 		 * A device tree containing CPU nodes with missing "reg"
 		 * properties is considered invalid to build the
 		 * cpu_logical_map.
 		 */
-		if (of_property_read_u32(cpu, "reg", &hwid)) {
-			pr_debug(" * %s missing reg property\n",
-				     cpu->full_name);
+		cell = of_get_property(cpu, "reg", &prop_bytes);
+		if (!cell || prop_bytes < sizeof(*cell)) {
+			pr_debug(" * %pOF missing reg property\n", cpu);
+			of_node_put(cpu);
 			return;
 		}
 
 		/*
-		 * 8 MSBs must be set to 0 in the DT since the reg property
+		 * Bits n:24 must be set to 0 in the DT since the reg property
 		 * defines the MPIDR[23:0].
 		 */
-		if (hwid & ~MPIDR_HWID_BITMASK)
+		do {
+			hwid = be32_to_cpu(*cell++);
+			prop_bytes -= sizeof(*cell);
+		} while (!hwid && prop_bytes > 0);
+
+		if (prop_bytes || (hwid & ~MPIDR_HWID_BITMASK)) {
+			of_node_put(cpu);
 			return;
+		}
 
 		/*
 		 * Duplicate MPIDRs are a recipe for disaster.
@@ -122,9 +126,11 @@ void __init arm_dt_init_cpu_maps(void)
 		 * to avoid matching valid MPIDR[23:0] values.
 		 */
 		for (j = 0; j < cpuidx; j++)
-			if (WARN(tmp_map[j] == hwid, "Duplicate /cpu reg "
-						     "properties in the DT\n"))
+			if (WARN(tmp_map[j] == hwid,
+				 "Duplicate /cpu reg properties in the DT\n")) {
+				of_node_put(cpu);
 				return;
+			}
 
 		/*
 		 * Build a stashed array of MPIDR values. Numbering scheme
@@ -146,11 +152,22 @@ void __init arm_dt_init_cpu_maps(void)
 					       "max cores %u, capping them\n",
 					       cpuidx, nr_cpu_ids)) {
 			cpuidx = nr_cpu_ids;
+			of_node_put(cpu);
 			break;
 		}
 
 		tmp_map[i] = hwid;
+
+		if (!found_method)
+			found_method = set_smp_ops_by_method(cpu);
 	}
+
+	/*
+	 * Fallback to an enable-method in the cpus node if nothing found in
+	 * a cpu node.
+	 */
+	if (!found_method)
+		set_smp_ops_by_method(cpus);
 
 	if (!bootcpu_valid) {
 		pr_warn("DT missing boot CPU MPIDR[23:0], fall back to default cpu_logical_map\n");
@@ -198,14 +215,16 @@ const struct machine_desc * __init setup_machine_fdt(unsigned int dt_phys)
 {
 	const struct machine_desc *mdesc, *mdesc_best = NULL;
 
-#ifdef CONFIG_ARCH_MULTIPLATFORM
+#if defined(CONFIG_ARCH_MULTIPLATFORM) || defined(CONFIG_ARM_SINGLE_ARMV7M)
 	DT_MACHINE_START(GENERIC_DT, "Generic DT based system")
+		.l2c_aux_val = 0x0,
+		.l2c_aux_mask = ~0x0,
 	MACHINE_END
 
 	mdesc_best = &__mach_desc_GENERIC_DT;
 #endif
 
-	if (!dt_phys || !early_init_dt_scan(phys_to_virt(dt_phys)))
+	if (!dt_phys || !early_init_dt_verify(phys_to_virt(dt_phys)))
 		return NULL;
 
 	mdesc = of_flat_dt_match_machine(mdesc_best, arch_get_next_mach);
@@ -229,6 +248,12 @@ const struct machine_desc * __init setup_machine_fdt(unsigned int dt_phys)
 
 		dump_machine_table(); /* does not return */
 	}
+
+	/* We really don't want to do this, but sometimes firmware provides buggy data */
+	if (mdesc->dt_fixup)
+		mdesc->dt_fixup();
+
+	early_init_dt_scan_nodes();
 
 	/* Change machine number to match the mdesc we're using */
 	__machine_arch_type = mdesc->nr;

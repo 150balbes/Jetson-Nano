@@ -22,11 +22,11 @@
 #include <linux/sched.h>
 #include <linux/interrupt.h>
 
-#include "dmxdev.h"
-#include "dvbdev.h"
-#include "dvb_demux.h"
-#include "dvb_frontend.h"
-#include "dvb_net.h"
+#include <media/dmxdev.h>
+#include <media/dvbdev.h>
+#include <media/dvb_demux.h>
+#include <media/dvb_frontend.h>
+#include <media/dvb_net.h>
 
 #include "zl10353.h"
 #include "tda665x.h"
@@ -35,15 +35,15 @@
 #include "mantis_dvb.h"
 #include "mantis_vp3030.h"
 
-struct zl10353_config mantis_vp3030_config = {
+static struct zl10353_config mantis_vp3030_config = {
 	.demod_address		= 0x0f,
 };
 
-struct tda665x_config env57h12d5_config = {
+static struct tda665x_config env57h12d5_config = {
 	.name			= "ENV57H12D5 (ET-50DT)",
 	.addr			= 0x60,
-	.frequency_min		=  47000000,
-	.frequency_max		= 862000000,
+	.frequency_min		=  47 * MHz,
+	.frequency_max		= 862 * MHz,
 	.frequency_offst	=   3616667,
 	.ref_multiplier		= 6, /* 1/6 MHz */
 	.ref_divider		= 100000, /* 1/6 MHz */
