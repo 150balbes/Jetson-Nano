@@ -332,27 +332,20 @@
 		remote-endpoint = <&hdmi_connector_in>;
 	};
 };
-/* 20190306
+
 &spdifout {
-	pinctrl-0 = <&spdif_out_h_pins>;
-	pinctrl-names = "default";
 	status = "okay";
 };
 
 &spdifout_b {
 	status = "okay";
 };
-*/
+
 &tdmif_a {
-	pinctrl-0 = <&tdm_a_fs_pins>, <&tdm_a_sclk_pins>, <&tdm_a_dout0_pins> ;
-	pinctrl-names = "default";
 	status = "okay";
 };
 
 &tdmif_b {
-	pinctrl-0 = <&mclk0_a_pins>, <&tdm_b_fs_pins>, <&tdm_b_sclk_pins>,
-		    <&tdm_b_dout0_pins>;
-	pinctrl-names = "default";
 	status = "okay";
 };
 
