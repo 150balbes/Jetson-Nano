@@ -1,26 +1,26 @@
 /* SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note */
 /*
- * Copyright (C) 2012 ARM Ltd.
+ *  arch/arm/include/asm/byteorder.h
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
+ * ARM Endian-ness.  In little endian mode, the data bus is connected such
+ * that byte accesses appear as:
+ *  0 = d0...d7, 1 = d8...d15, 2 = d16...d23, 3 = d24...d31
+ * and word accesses (data or instruction) appear as:
+ *  d0...d31
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ * When in big endian mode, byte accesses appear as:
+ *  0 = d24...d31, 1 = d16...d23, 2 = d8...d15, 3 = d0...d7
+ * and word accesses (data or instruction) appear as:
+ *  d0...d31
  */
-#ifndef __ASM_BYTEORDER_H
-#define __ASM_BYTEORDER_H
+#ifndef __ASM_ARM_BYTEORDER_H
+#define __ASM_ARM_BYTEORDER_H
 
-#ifdef __AARCH64EB__
+#ifdef __ARMEB__
 #include <linux/byteorder/big_endian.h>
 #else
 #include <linux/byteorder/little_endian.h>
 #endif
 
-#endif	/* __ASM_BYTEORDER_H */
+#endif
+

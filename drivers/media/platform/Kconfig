@@ -708,4 +708,3 @@ config VIDEO_RCAR_DRIF
 	  will be called rcar_drif.
 
 endif # SDR_PLATFORM_DRIVERS
-source "drivers/media/platform/meson/dvb/Kconfig"

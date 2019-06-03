@@ -116,6 +116,7 @@ Board compatible values (alphabetically, grouped by SoC):
   - "amediatech,x96-max" (Meson g12a s905x2)
   - "seirobotics,sei510" (Meson g12a s905x2)
 
+  - "khadas,vim3" (Meson g12b s922x)
   - "hardkernel,odroid-n2" (Meson g12b s922x)
 
 Amlogic Meson Firmware registers Interface

@@ -13,7 +13,7 @@ static struct rc_map_table x96max[] = {
 
 	{ 0x140, KEY_POWER },
 
-	// ** TV CONTROLS **
+	// ** TV CONTROL **
 	// SET
 	// AV/TV
 	// POWER
@@ -23,9 +23,9 @@ static struct rc_map_table x96max[] = {
 	{ 0x118, KEY_VOLUMEUP },
 	{ 0x110, KEY_VOLUMEDOWN },
 
-	{ 0x143, KEY_CONFIG },
+	{ 0x143, KEY_MUTE }, // CONFIG
 
-	{ 0x100, KEY_INFO }, // MOUSE
+	{ 0x100, KEY_EPG }, // MOUSE
 	{ 0x119, KEY_BACK },
 
 	{ 0x116, KEY_UP },

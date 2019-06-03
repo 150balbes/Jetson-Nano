@@ -106,7 +106,7 @@
 
 	sound {
 		compatible = "simple-audio-card";
-		simple-audio-card,name = "meson-gx-audio";
+		simple-audio-card,name = "HDMI";
 
 		assigned-clocks = <&clkc CLKID_MPLL2>,
 				  <&clkc CLKID_MPLL0>,
@@ -246,7 +246,7 @@
 
 	bus-width = <8>;
 	cap-mmc-highspeed;
-	max-frequency = <200000000>;
+	max-frequency = <100000000>;
 	non-removable;
 	disable-wp;
 	mmc-ddr-1_8v;
