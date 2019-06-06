@@ -11,7 +11,6 @@
 / {
 	aliases {
 		serial0 = &uart_AO;
-		serial1 = &uart_A;
 		ethernet0 = &ethmac;
 	};
 
@@ -267,6 +266,9 @@
 	bluetooth {
 		compatible = "brcm,bcm43438-bt";
 		shutdown-gpios = <&gpio GPIOX_17 GPIO_ACTIVE_HIGH>;
+		max-speed = <2000000>;
+		clocks = <&wifi32k>;
+		clock-names = "lpo";
 	};
 };
 
