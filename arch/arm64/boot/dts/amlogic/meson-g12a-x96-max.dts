@@ -196,6 +196,8 @@
 	status = "okay";
 	pinctrl-0 = <&pwm_e_pins>;
 	pinctrl-names = "default";
+	clocks = <&xtal>;
+	clock-names = "clkin0";
 };
 
 &uart_A {
