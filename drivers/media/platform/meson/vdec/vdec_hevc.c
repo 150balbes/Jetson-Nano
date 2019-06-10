@@ -124,6 +124,8 @@ static int vdec_hevc_stop(struct amvdec_session *sess)
 		GEN_PWR_VDEC_HEVC, GEN_PWR_VDEC_HEVC);
 
 	clk_disable_unprepare(core->vdec_hevc_clk);
+	if (core->platform->revision == VDEC_REVISION_G12A)
+		clk_disable_unprepare(core->vdec_hevcf_clk);
 
 	return 0;
 }
@@ -133,6 +135,13 @@ static int vdec_hevc_start(struct amvdec_session *sess)
 	int ret;
 	struct amvdec_core *core = sess->core;
 	struct amvdec_codec_ops *codec_ops = sess->fmt_out->codec_ops;
+
+	if (core->platform->revision == VDEC_REVISION_G12A) {
+		clk_set_rate(core->vdec_hevcf_clk, 666666666);
+		ret = clk_prepare_enable(core->vdec_hevcf_clk);
+		if (ret)
+			return ret;
+	}
 
 	clk_set_rate(core->vdec_hevc_clk, 666666666);
 	ret = clk_prepare_enable(core->vdec_hevc_clk);
@@ -168,7 +177,7 @@ static int vdec_hevc_start(struct amvdec_session *sess)
 	if (ret)
 		goto stop;
 
-	amvdec_write_dos(core, DOS_SW_RESET3, BIT(12)|BIT(11));
+	amvdec_write_dos(core, DOS_SW_RESET3, BIT(12) | BIT(11));
 	amvdec_write_dos(core, DOS_SW_RESET3, 0);
 	amvdec_read_dos(core, DOS_SW_RESET3);
 

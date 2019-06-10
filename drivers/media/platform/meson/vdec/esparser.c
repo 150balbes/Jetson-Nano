@@ -236,7 +236,7 @@ int esparser_queue_eos(struct amvdec_core *core, const u8 *data, u32 len)
 	int ret;
 
 	eos_vaddr = dma_alloc_coherent(dev, len + SEARCH_PATTERN_LEN,
-					&eos_paddr, GFP_KERNEL);
+				       &eos_paddr, GFP_KERNEL);
 	if (!eos_vaddr)
 		return -ENOMEM;
 

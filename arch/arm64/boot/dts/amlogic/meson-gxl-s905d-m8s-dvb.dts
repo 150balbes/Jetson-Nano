@@ -1,0 +1,22 @@
+// SPDX-License-Identifier: (GPL-3.0+ OR MIT)
+/*
+ * Author: afl1 <afl2001@gmail.com>
+ */
+
+#include "meson-gxl-s905d-p231.dts"
+#include "meson-gxl-dvb.dtsi"
+/ {
+	model = "MeCool M8S Plus DVB-T2/T";
+
+	dvb {
+		dev_name = "avl6762";
+		fec_reset_gpio-gpios = <&gpio GPIODV_13 GPIO_ACTIVE_HIGH>;
+		power_ctrl_gpio-gpios0 = <&gpio GPIODV_15 GPIO_ACTIVE_LOW>;
+	};
+};
+
+&i2c_B {
+	status = "okay";
+	pinctrl-0 = <&i2c_b_pins>;
+	pinctrl-names = "default";
+};

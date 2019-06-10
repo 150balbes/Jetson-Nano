@@ -1,23 +1,41 @@
 /* SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note */
 /*
- * Copyright (C) 2012 ARM Ltd.
+ *  arch/arm/include/asm/unistd.h
+ *
+ *  Copyright (C) 2001-2005 Russell King
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
  * published by the Free Software Foundation.
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ * Please forward _all_ changes to this file to rmk@arm.linux.org.uk,
+ * no matter what the change is.  Thanks!
  */
+#ifndef __ASM_ARM_UNISTD_H
+#define __ASM_ARM_UNISTD_H
 
-#define __ARCH_WANT_RENAMEAT
-#define __ARCH_WANT_NEW_STAT
-#define __ARCH_WANT_SET_GET_RLIMIT
-#define __ARCH_WANT_TIME32_SYSCALLS
+#define __NR_OABI_SYSCALL_BASE	0x900000
 
-#include <asm-generic/unistd.h>
+#if defined(__thumb__) || defined(__ARM_EABI__)
+#define __NR_SYSCALL_BASE	0
+#include <asm/unistd-eabi.h>
+#else
+#define __NR_SYSCALL_BASE	__NR_OABI_SYSCALL_BASE
+#include <asm/unistd-oabi.h>
+#endif
+
+#include <asm/unistd-common.h>
+#define __NR_sync_file_range2		__NR_arm_sync_file_range
+
+/*
+ * The following SWIs are ARM private.
+ */
+#define __ARM_NR_BASE			(__NR_SYSCALL_BASE+0x0f0000)
+#define __ARM_NR_breakpoint		(__ARM_NR_BASE+1)
+#define __ARM_NR_cacheflush		(__ARM_NR_BASE+2)
+#define __ARM_NR_usr26			(__ARM_NR_BASE+3)
+#define __ARM_NR_usr32			(__ARM_NR_BASE+4)
+#define __ARM_NR_set_tls		(__ARM_NR_BASE+5)
+#define __ARM_NR_get_tls		(__ARM_NR_BASE+6)
+
+#endif /* __ASM_ARM_UNISTD_H */

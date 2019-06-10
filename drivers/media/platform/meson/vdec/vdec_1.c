@@ -47,8 +47,6 @@ vdec_1_load_firmware(struct amvdec_session *sess, const char *fwname)
 	mc_addr = dma_alloc_coherent(core->dev, MC_SIZE,
 				     &mc_addr_map, GFP_KERNEL);
 	if (!mc_addr) {
-		dev_err(dev,
-			"Failed allocating memory for firmware loading\n");
 		ret = -ENOMEM;
 		goto release_firmware;
 	}
@@ -64,7 +62,7 @@ vdec_1_load_firmware(struct amvdec_session *sess, const char *fwname)
 	amvdec_write_dos(core, IMEM_DMA_COUNT, MC_SIZE / 4);
 	amvdec_write_dos(core, IMEM_DMA_CTRL, (0x8000 | (7 << 16)));
 
-	while (--i && amvdec_read_dos(core, IMEM_DMA_CTRL) & 0x8000) { }
+	while (--i && amvdec_read_dos(core, IMEM_DMA_CTRL) & 0x8000);
 
 	if (i == 0) {
 		dev_err(dev, "Firmware load fail (DMA hang?)\n");

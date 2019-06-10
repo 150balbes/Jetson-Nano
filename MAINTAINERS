@@ -10077,11 +10077,6 @@ S:	Maintained
 F:	drivers/mtd/nand/raw/meson_*
 F:	Documentation/devicetree/bindings/mtd/amlogic,meson-nand.txt
 
-METHODE UDPU SUPPORT
-M:	Vladimir Vid <vladimir.vid@sartura.hr>
-S:	Maintained
-F:	arch/arm64/boot/dts/marvell/armada-3720-uDPU.dts
-
 MESON VIDEO DECODER DRIVER FOR AMLOGIC SOCS
 M:	Maxime Jourdan <mjourdan@baylibre.com>
 L:	linux-media@lists.freedesktop.org
@@ -10089,6 +10084,11 @@ L:	linux-amlogic@lists.infradead.org
 S:	Supported
 F:	drivers/media/platform/meson/vdec/
 T:	git git://linuxtv.org/media_tree.git
+
+METHODE UDPU SUPPORT
+M:	Vladimir Vid <vladimir.vid@sartura.hr>
+S:	Maintained
+F:	arch/arm64/boot/dts/marvell/armada-3720-uDPU.dts
 
 MICROBLAZE ARCHITECTURE
 M:	Michal Simek <monstr@monstr.eu>

@@ -1,3 +1,9 @@
+// SPDX-License-Identifier: GPL-2.0+
+/*
+ * Copyright (C) 2018 BayLibre, SAS
+ * Author: Maxime Jourdan <mjourdan@baylibre.com>
+ */
+
 #include "vdec_ctrls.h"
 
 static int vdec_op_g_volatile_ctrl(struct v4l2_ctrl *ctrl)

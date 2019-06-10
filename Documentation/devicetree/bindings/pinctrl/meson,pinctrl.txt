@@ -52,7 +52,8 @@ Configuration nodes support the generic properties "bias-disable",
 pinctrl-bindings.txt
 
 Optional properties :
- - drive-strength: Drive strength for the specified pins in uA.
+ - drive-strength-microamp: Drive strength for the specified pins in uA.
+			    This property is only valid for G12A and newer.
 
 === Example ===
 

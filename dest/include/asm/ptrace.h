@@ -1,54 +1,73 @@
 /* SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note */
 /*
- * Based on arch/arm/include/asm/ptrace.h
+ *  arch/arm/include/asm/ptrace.h
  *
- * Copyright (C) 1996-2003 Russell King
- * Copyright (C) 2012 ARM Ltd.
+ *  Copyright (C) 1996-2003 Russell King
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
  * published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef __ASM_PTRACE_H
-#define __ASM_PTRACE_H
-
-#include <linux/types.h>
+#ifndef __ASM_ARM_PTRACE_H
+#define __ASM_ARM_PTRACE_H
 
 #include <asm/hwcap.h>
-#include <asm/sve_context.h>
 
+#define PTRACE_GETREGS		12
+#define PTRACE_SETREGS		13
+#define PTRACE_GETFPREGS	14
+#define PTRACE_SETFPREGS	15
+/* PTRACE_ATTACH is 16 */
+/* PTRACE_DETACH is 17 */
+#define PTRACE_GETWMMXREGS	18
+#define PTRACE_SETWMMXREGS	19
+/* 20 is unused */
+#define PTRACE_OLDSETOPTIONS	21
+#define PTRACE_GET_THREAD_AREA	22
+#define PTRACE_SET_SYSCALL	23
+/* PTRACE_SYSCALL is 24 */
+#define PTRACE_GETCRUNCHREGS	25
+#define PTRACE_SETCRUNCHREGS	26
+#define PTRACE_GETVFPREGS	27
+#define PTRACE_SETVFPREGS	28
+#define PTRACE_GETHBPREGS	29
+#define PTRACE_SETHBPREGS	30
+#define PTRACE_GETFDPIC		31
+
+#define PTRACE_GETFDPIC_EXEC	0
+#define PTRACE_GETFDPIC_INTERP	1
 
 /*
  * PSR bits
+ * Note on V7M there is no mode contained in the PSR
  */
-#define PSR_MODE_EL0t	0x00000000
-#define PSR_MODE_EL1t	0x00000004
-#define PSR_MODE_EL1h	0x00000005
-#define PSR_MODE_EL2t	0x00000008
-#define PSR_MODE_EL2h	0x00000009
-#define PSR_MODE_EL3t	0x0000000c
-#define PSR_MODE_EL3h	0x0000000d
-#define PSR_MODE_MASK	0x0000000f
+#define USR26_MODE	0x00000000
+#define FIQ26_MODE	0x00000001
+#define IRQ26_MODE	0x00000002
+#define SVC26_MODE	0x00000003
+#define USR_MODE	0x00000010
+#define SVC_MODE	0x00000013
+#define FIQ_MODE	0x00000011
+#define IRQ_MODE	0x00000012
+#define MON_MODE	0x00000016
+#define ABT_MODE	0x00000017
+#define HYP_MODE	0x0000001a
+#define UND_MODE	0x0000001b
+#define SYSTEM_MODE	0x0000001f
+#define MODE32_BIT	0x00000010
+#define MODE_MASK	0x0000001f
 
-/* AArch32 CPSR bits */
-#define PSR_MODE32_BIT		0x00000010
+#define V4_PSR_T_BIT	0x00000020	/* >= V4T, but not V7M */
+#define V7M_PSR_T_BIT	0x01000000
+/* for compatibility */
+#define PSR_T_BIT	V4_PSR_T_BIT
 
-/* AArch64 SPSR bits */
-#define PSR_F_BIT	0x00000040
-#define PSR_I_BIT	0x00000080
-#define PSR_A_BIT	0x00000100
-#define PSR_D_BIT	0x00000200
-#define PSR_SSBS_BIT	0x00001000
-#define PSR_PAN_BIT	0x00400000
-#define PSR_UAO_BIT	0x00800000
+#define PSR_F_BIT	0x00000040	/* >= V4, but not V7M */
+#define PSR_I_BIT	0x00000080	/* >= V4, but not V7M */
+#define PSR_A_BIT	0x00000100	/* >= V6, but not V7M */
+#define PSR_E_BIT	0x00000200	/* >= V6, but not V7M */
+#define PSR_J_BIT	0x01000000	/* >= V5J, but not V7M */
+#define PSR_Q_BIT	0x08000000	/* >= V5E, including V7M */
 #define PSR_V_BIT	0x10000000
 #define PSR_C_BIT	0x20000000
 #define PSR_Z_BIT	0x40000000
@@ -62,190 +81,68 @@
 #define PSR_x		0x0000ff00	/* Extension		*/
 #define PSR_c		0x000000ff	/* Control		*/
 
+/*
+ * ARMv7 groups of PSR bits
+ */
+#define APSR_MASK	0xf80f0000	/* N, Z, C, V, Q and GE flags */
+#define PSR_ISET_MASK	0x01000010	/* ISA state (J, T) mask */
+#define PSR_IT_MASK	0x0600fc00	/* If-Then execution state mask */
+#define PSR_ENDIAN_MASK	0x00000200	/* Endianness state mask */
+
+/*
+ * Default endianness state
+ */
+#ifdef CONFIG_CPU_ENDIAN_BE8
+#define PSR_ENDSTATE	PSR_E_BIT
+#else
+#define PSR_ENDSTATE	0
+#endif
+
+/* 
+ * These are 'magic' values for PTRACE_PEEKUSR that return info about where a
+ * process is located in memory.
+ */
+#define PT_TEXT_ADDR		0x10000
+#define PT_DATA_ADDR		0x10004
+#define PT_TEXT_END_ADDR	0x10008
 
 #ifndef __ASSEMBLY__
 
-#include <linux/prctl.h>
-
 /*
- * User structures for general purpose, floating point and debug registers.
+ * This struct defines the way the registers are stored on the
+ * stack during a system call.  Note that sizeof(struct pt_regs)
+ * has to be a multiple of 8.
  */
-struct user_pt_regs {
-	__u64		regs[31];
-	__u64		sp;
-	__u64		pc;
-	__u64		pstate;
+struct pt_regs {
+	long uregs[18];
 };
 
-struct user_fpsimd_state {
-	__uint128_t	vregs[32];
-	__u32		fpsr;
-	__u32		fpcr;
-	__u32		__reserved[2];
-};
-
-struct user_hwdebug_state {
-	__u32		dbg_info;
-	__u32		pad;
-	struct {
-		__u64	addr;
-		__u32	ctrl;
-		__u32	pad;
-	}		dbg_regs[16];
-};
-
-/* SVE/FP/SIMD state (NT_ARM_SVE) */
-
-struct user_sve_header {
-	__u32 size; /* total meaningful regset content in bytes */
-	__u32 max_size; /* maxmium possible size for this thread */
-	__u16 vl; /* current vector length */
-	__u16 max_vl; /* maximum possible vector length */
-	__u16 flags;
-	__u16 __reserved;
-};
-
-/* Definitions for user_sve_header.flags: */
-#define SVE_PT_REGS_MASK		(1 << 0)
-
-#define SVE_PT_REGS_FPSIMD		0
-#define SVE_PT_REGS_SVE			SVE_PT_REGS_MASK
+#define ARM_cpsr	uregs[16]
+#define ARM_pc		uregs[15]
+#define ARM_lr		uregs[14]
+#define ARM_sp		uregs[13]
+#define ARM_ip		uregs[12]
+#define ARM_fp		uregs[11]
+#define ARM_r10		uregs[10]
+#define ARM_r9		uregs[9]
+#define ARM_r8		uregs[8]
+#define ARM_r7		uregs[7]
+#define ARM_r6		uregs[6]
+#define ARM_r5		uregs[5]
+#define ARM_r4		uregs[4]
+#define ARM_r3		uregs[3]
+#define ARM_r2		uregs[2]
+#define ARM_r1		uregs[1]
+#define ARM_r0		uregs[0]
+#define ARM_ORIG_r0	uregs[17]
 
 /*
- * Common SVE_PT_* flags:
- * These must be kept in sync with prctl interface in <linux/ptrace.h>
+ * The size of the user-visible VFP state as seen by PTRACE_GET/SETVFPREGS
+ * and core dumps.
  */
-#define SVE_PT_VL_INHERIT		(PR_SVE_VL_INHERIT >> 16)
-#define SVE_PT_VL_ONEXEC		(PR_SVE_SET_VL_ONEXEC >> 16)
+#define ARM_VFPREGS_SIZE ( 32 * 8 /*fpregs*/ + 4 /*fpscr*/ )
 
-
-/*
- * The remainder of the SVE state follows struct user_sve_header.  The
- * total size of the SVE state (including header) depends on the
- * metadata in the header:  SVE_PT_SIZE(vq, flags) gives the total size
- * of the state in bytes, including the header.
- *
- * Refer to <asm/sigcontext.h> for details of how to pass the correct
- * "vq" argument to these macros.
- */
-
-/* Offset from the start of struct user_sve_header to the register data */
-#define SVE_PT_REGS_OFFSET						\
-	((sizeof(struct user_sve_header) + (__SVE_VQ_BYTES - 1))	\
-		/ __SVE_VQ_BYTES * __SVE_VQ_BYTES)
-
-/*
- * The register data content and layout depends on the value of the
- * flags field.
- */
-
-/*
- * (flags & SVE_PT_REGS_MASK) == SVE_PT_REGS_FPSIMD case:
- *
- * The payload starts at offset SVE_PT_FPSIMD_OFFSET, and is of type
- * struct user_fpsimd_state.  Additional data might be appended in the
- * future: use SVE_PT_FPSIMD_SIZE(vq, flags) to compute the total size.
- * SVE_PT_FPSIMD_SIZE(vq, flags) will never be less than
- * sizeof(struct user_fpsimd_state).
- */
-
-#define SVE_PT_FPSIMD_OFFSET		SVE_PT_REGS_OFFSET
-
-#define SVE_PT_FPSIMD_SIZE(vq, flags)	(sizeof(struct user_fpsimd_state))
-
-/*
- * (flags & SVE_PT_REGS_MASK) == SVE_PT_REGS_SVE case:
- *
- * The payload starts at offset SVE_PT_SVE_OFFSET, and is of size
- * SVE_PT_SVE_SIZE(vq, flags).
- *
- * Additional macros describe the contents and layout of the payload.
- * For each, SVE_PT_SVE_x_OFFSET(args) is the start offset relative to
- * the start of struct user_sve_header, and SVE_PT_SVE_x_SIZE(args) is
- * the size in bytes:
- *
- *	x	type				description
- *	-	----				-----------
- *	ZREGS		\
- *	ZREG		|
- *	PREGS		| refer to <asm/sigcontext.h>
- *	PREG		|
- *	FFR		/
- *
- *	FPSR	uint32_t			FPSR
- *	FPCR	uint32_t			FPCR
- *
- * Additional data might be appended in the future.
- */
-
-#define SVE_PT_SVE_ZREG_SIZE(vq)	__SVE_ZREG_SIZE(vq)
-#define SVE_PT_SVE_PREG_SIZE(vq)	__SVE_PREG_SIZE(vq)
-#define SVE_PT_SVE_FFR_SIZE(vq)		__SVE_FFR_SIZE(vq)
-#define SVE_PT_SVE_FPSR_SIZE		sizeof(__u32)
-#define SVE_PT_SVE_FPCR_SIZE		sizeof(__u32)
-
-#define SVE_PT_SVE_OFFSET		SVE_PT_REGS_OFFSET
-
-#define SVE_PT_SVE_ZREGS_OFFSET \
-	(SVE_PT_REGS_OFFSET + __SVE_ZREGS_OFFSET)
-#define SVE_PT_SVE_ZREG_OFFSET(vq, n) \
-	(SVE_PT_REGS_OFFSET + __SVE_ZREG_OFFSET(vq, n))
-#define SVE_PT_SVE_ZREGS_SIZE(vq) \
-	(SVE_PT_SVE_ZREG_OFFSET(vq, __SVE_NUM_ZREGS) - SVE_PT_SVE_ZREGS_OFFSET)
-
-#define SVE_PT_SVE_PREGS_OFFSET(vq) \
-	(SVE_PT_REGS_OFFSET + __SVE_PREGS_OFFSET(vq))
-#define SVE_PT_SVE_PREG_OFFSET(vq, n) \
-	(SVE_PT_REGS_OFFSET + __SVE_PREG_OFFSET(vq, n))
-#define SVE_PT_SVE_PREGS_SIZE(vq) \
-	(SVE_PT_SVE_PREG_OFFSET(vq, __SVE_NUM_PREGS) - \
-		SVE_PT_SVE_PREGS_OFFSET(vq))
-
-#define SVE_PT_SVE_FFR_OFFSET(vq) \
-	(SVE_PT_REGS_OFFSET + __SVE_FFR_OFFSET(vq))
-
-#define SVE_PT_SVE_FPSR_OFFSET(vq)				\
-	((SVE_PT_SVE_FFR_OFFSET(vq) + SVE_PT_SVE_FFR_SIZE(vq) +	\
-			(__SVE_VQ_BYTES - 1))			\
-		/ __SVE_VQ_BYTES * __SVE_VQ_BYTES)
-#define SVE_PT_SVE_FPCR_OFFSET(vq) \
-	(SVE_PT_SVE_FPSR_OFFSET(vq) + SVE_PT_SVE_FPSR_SIZE)
-
-/*
- * Any future extension appended after FPCR must be aligned to the next
- * 128-bit boundary.
- */
-
-#define SVE_PT_SVE_SIZE(vq, flags)					\
-	((SVE_PT_SVE_FPCR_OFFSET(vq) + SVE_PT_SVE_FPCR_SIZE		\
-			- SVE_PT_SVE_OFFSET + (__SVE_VQ_BYTES - 1))	\
-		/ __SVE_VQ_BYTES * __SVE_VQ_BYTES)
-
-#define SVE_PT_SIZE(vq, flags)						\
-	 (((flags) & SVE_PT_REGS_MASK) == SVE_PT_REGS_SVE ?		\
-		  SVE_PT_SVE_OFFSET + SVE_PT_SVE_SIZE(vq, flags)	\
-		: SVE_PT_FPSIMD_OFFSET + SVE_PT_FPSIMD_SIZE(vq, flags))
-
-/* pointer authentication masks (NT_ARM_PAC_MASK) */
-
-struct user_pac_mask {
-	__u64		data_mask;
-	__u64		insn_mask;
-};
-
-/* pointer authentication keys (NT_ARM_PACA_KEYS, NT_ARM_PACG_KEYS) */
-
-struct user_pac_address_keys {
-	__uint128_t	apiakey;
-	__uint128_t	apibkey;
-	__uint128_t	apdakey;
-	__uint128_t	apdbkey;
-};
-
-struct user_pac_generic_keys {
-	__uint128_t	apgakey;
-};
 
 #endif /* __ASSEMBLY__ */
 
-#endif /* __ASM_PTRACE_H */
+#endif /* __ASM_ARM_PTRACE_H */

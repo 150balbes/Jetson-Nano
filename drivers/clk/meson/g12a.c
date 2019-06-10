@@ -658,7 +658,7 @@ static struct clk_regmap g12a_cpu_clk_trace = {
 };
 
 static const struct pll_mult_range g12a_gp0_pll_mult_range = {
-	.min = 60,
+	.min = 125,
 	.max = 255,
 };
 
@@ -2990,8 +2990,8 @@ static struct clk_hw_onecell_data g12a_hw_onecell_data = {
 		[CLKID_MALI_1_DIV]		= &g12a_mali_1_div.hw,
 		[CLKID_MALI_1]			= &g12a_mali_1.hw,
 		[CLKID_MALI]			= &g12a_mali.hw,
-		[CLKID_MPLL_5OM_DIV]		= &g12a_mpll_50m_div.hw,
-		[CLKID_MPLL_5OM]		= &g12a_mpll_50m.hw,
+		[CLKID_MPLL_50M_DIV]		= &g12a_mpll_50m_div.hw,
+		[CLKID_MPLL_50M]		= &g12a_mpll_50m.hw,
 		[CLKID_SYS_PLL_DIV16_EN]	= &g12a_sys_pll_div16_en.hw,
 		[CLKID_SYS_PLL_DIV16]		= &g12a_sys_pll_div16.hw,
 		[CLKID_CPU_CLK_DYN0_SEL]	= &g12a_cpu_clk_premux0.hw,
@@ -3210,8 +3210,8 @@ static struct clk_hw_onecell_data g12b_hw_onecell_data = {
 		[CLKID_MALI_1_DIV]		= &g12a_mali_1_div.hw,
 		[CLKID_MALI_1]			= &g12a_mali_1.hw,
 		[CLKID_MALI]			= &g12a_mali.hw,
-		[CLKID_MPLL_5OM_DIV]		= &g12a_mpll_50m_div.hw,
-		[CLKID_MPLL_5OM]		= &g12a_mpll_50m.hw,
+		[CLKID_MPLL_50M_DIV]		= &g12a_mpll_50m_div.hw,
+		[CLKID_MPLL_50M]		= &g12a_mpll_50m.hw,
 		[CLKID_SYS_PLL_DIV16_EN]	= &g12a_sys_pll_div16_en.hw,
 		[CLKID_SYS_PLL_DIV16]		= &g12a_sys_pll_div16.hw,
 		[CLKID_CPU_CLK_DYN0_SEL]	= &g12a_cpu_clk_premux0.hw,

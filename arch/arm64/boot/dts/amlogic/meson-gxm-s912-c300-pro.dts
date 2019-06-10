@@ -1,0 +1,22 @@
+// SPDX-License-Identifier: (GPL-3.0+ OR MIT)
+/*
+ * Author: afl1 <afl2001@gmail.com>
+ */
+
+#include "meson-gxm-q201.dts"
+#include "meson-gxl-dvb.dtsi"
+/ {
+	model = "Magicsee C300 PRO DVB-T2/S2/C";
+
+	dvb {
+		dev_name = "magicsee";
+		fec_reset_gpio-gpios = <&gpio GPIOZ_2 GPIO_ACTIVE_HIGH>;
+		power_ctrl_gpio-gpios = <&gpio_ao GPIOAO_6 GPIO_ACTIVE_LOW>;
+	};
+};
+&i2c_C {
+	status = "okay";
+	pinctrl-0 = <&i2c_c1_pins>;
+	pinctrl-names = "default";
+};
+

@@ -159,7 +159,7 @@ struct meson_pinctrl {
 			[REG_IN]	= { ir, ib },			\
 			[REG_DS]	= { dsr, dsb },			\
 		},							\
-	}
+	 }
 
 #define BANK(n, f, l, fi, li, per, peb, pr, pb, dr, db, or, ob, ir, ib) \
 	BANK_DS(n, f, l, fi, li, per, peb, pr, pb, dr, db, or, ob, ir, ib, 0, 0)

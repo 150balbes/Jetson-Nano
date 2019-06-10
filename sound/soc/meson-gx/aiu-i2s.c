@@ -86,6 +86,7 @@ static struct snd_pcm_hardware meson_aiu_i2s_dma_hw = {
 	.info = (SNDRV_PCM_INFO_INTERLEAVED |
 		 SNDRV_PCM_INFO_MMAP |
 		 SNDRV_PCM_INFO_MMAP_VALID |
+		 SNDRV_PCM_INFO_BLOCK_TRANSFER |
 		 SNDRV_PCM_INFO_PAUSE),
 
 	.formats = (SNDRV_PCM_FMTBIT_S16_LE |
@@ -137,10 +138,22 @@ static void __dma_enable(struct meson_aiu_i2s *priv, bool enable)
 {
 	unsigned int en_mask = (AIU_MEM_I2S_CONTROL_FILL_EN |
 				AIU_MEM_I2S_CONTROL_EMPTY_EN);
+	unsigned int val;
+
+	pr_info("%s: enable=%d\n", __func__, enable);
+
+	if (enable) {
+		regmap_write(priv->core->aiu, AIU_RST_SOFT, AIU_RST_SOFT_I2S_FAST_DOMAIN);
+		regmap_read(priv->core->aiu, AIU_I2S_SYNC, &val);
+	}
 
 	regmap_update_bits(priv->core->aiu, AIU_MEM_I2S_CONTROL, en_mask,
 			   enable ? en_mask : 0);
 
+	if (!enable) {
+		regmap_write(priv->core->aiu, AIU_RST_SOFT, AIU_RST_SOFT_I2S_FAST_DOMAIN);
+		regmap_read(priv->core->aiu, AIU_I2S_SYNC, &val);
+	}
 }
 
 static int meson_aiu_i2s_dma_trigger(struct snd_pcm_substream *substream, int cmd)
@@ -167,6 +180,8 @@ static int meson_aiu_i2s_dma_trigger(struct snd_pcm_substream *substream, int cm
 
 static void __dma_init_mem(struct meson_aiu_i2s *priv)
 {
+	pr_info("%s\n", __func__);
+
 	regmap_update_bits(priv->core->aiu, AIU_MEM_I2S_CONTROL,
 			   AIU_MEM_I2S_CONTROL_INIT,
 			   AIU_MEM_I2S_CONTROL_INIT);
@@ -199,6 +214,9 @@ static int meson_aiu_i2s_dma_hw_params(struct snd_pcm_substream *substream,
 	int ret;
 	u32 burst_num, mem_ctl;
 	dma_addr_t end_ptr;
+	unsigned int val;
+
+	pr_info("%s: physical_width=%d buffer_bytes=%d period_bytes=%d\n", __func__, params_physical_width(params), params_buffer_bytes(params), params_period_bytes(params));
 
 	ret = snd_pcm_lib_malloc_pages(substream, params_buffer_bytes(params));
 	if (ret < 0)
@@ -229,6 +247,10 @@ static int meson_aiu_i2s_dma_hw_params(struct snd_pcm_substream *substream,
 		     AIU_MEM_I2S_MASKS_CH_MEM(0xff) |
 		     AIU_MEM_I2S_MASKS_IRQ_BLOCK(burst_num));
 
+	regmap_write(priv->core->aiu, AIU_RST_SOFT,
+		     AIU_RST_SOFT_I2S_FAST_DOMAIN);
+	regmap_read(priv->core->aiu, AIU_I2S_SYNC, &val);
+
 	return 0;
 }
 
@@ -247,12 +269,26 @@ static irqreturn_t meson_aiu_i2s_dma_irq_block(int irq, void *dev_id)
 	return IRQ_HANDLED;
 }
 
+static const unsigned int channels_2_8[] = {
+	2, 8
+};
+
+static const struct snd_pcm_hw_constraint_list hw_constraints_2_8_channels = {
+	.count = ARRAY_SIZE(channels_2_8),
+	.list = channels_2_8,
+	.mask = 0,
+};
+
 static int meson_aiu_i2s_dma_open(struct snd_pcm_substream *substream)
 {
 	struct meson_aiu_i2s *priv = meson_aiu_i2s_dma_priv(substream);
 	int ret;
 
 	snd_soc_set_runtime_hwparams(substream, &meson_aiu_i2s_dma_hw);
+
+	snd_pcm_hw_constraint_list(substream->runtime, 0,
+				   SNDRV_PCM_HW_PARAM_CHANNELS,
+				   &hw_constraints_2_8_channels);
 
 	/*
 	 * Make sure the buffer and period size are multiple of the DMA burst
@@ -359,9 +395,20 @@ static int meson_aiu_i2s_dma_new(struct snd_soc_pcm_runtime *rtd)
 
 static void __hold(struct meson_aiu_i2s *priv, bool enable)
 {
+	unsigned int val;
+	pr_info("%s: enable=%d\n", __func__, enable);
+
+	if (enable) {
 	regmap_update_bits(priv->core->aiu, AIU_I2S_MISC,
-			   AIU_I2S_MISC_HOLD_EN,
-			   enable ? AIU_I2S_MISC_HOLD_EN : 0);
+			   AIU_I2S_MISC_HOLD_EN | BIT(4),
+			   AIU_I2S_MISC_HOLD_EN);
+	} else {
+	regmap_write(priv->core->aiu, AIU_I2S_MUTE_SWAP, 0xFF);
+	regmap_update_bits(priv->core->aiu, AIU_I2S_MISC,
+			   AIU_I2S_MISC_HOLD_EN | BIT(4),
+			   BIT(4));
+	regmap_read(priv->core->aiu, AIU_I2S_SYNC, &val);
+	}
 }
 
 static void __divider_enable(struct meson_aiu_i2s *priv, bool enable)
@@ -478,6 +525,11 @@ static int __setup_desc(struct meson_aiu_i2s *priv, unsigned int width,
 	default:
 		return -EINVAL;
 	}
+
+	pr_info("%s: width=%d channels=%d desc=%u\n", __func__, width, channels, desc);
+
+	regmap_write(priv->core->aiu, AIU_I2S_SOURCE_DESC,
+		     AIU_I2S_SOURCE_DESC_MODE_SPLIT);
 
 	regmap_update_bits(priv->core->aiu, AIU_I2S_SOURCE_DESC,
 			   AIU_I2S_SOURCE_DESC_MODE_8CH |

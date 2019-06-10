@@ -53,13 +53,14 @@ static int dw_hdmi_i2s_hw_params(struct device *dev, void *data,
 	u8 val;
 
 	/* it cares I2S only */
-	if ((fmt->fmt != HDMI_I2S) ||
-	    (fmt->bit_clk_master | fmt->frame_clk_master)) {
-		dev_err(dev, "unsupported format/settings\n");
+	if (fmt->bit_clk_master | fmt->frame_clk_master) {
+		dev_err(dev, "unsupported clock settings\n");
 		return -EINVAL;
 	}
 
 	inputclkfs = HDMI_AUD_INPUTCLKFS_64FS;
+
+	dev_info(dev, "channels=%d sample_width=%d sample_rate=%d\n", hparms->channels, hparms->sample_width, hparms->sample_rate);
 
 	switch (hparms->channels) {
 	case 2:
@@ -85,6 +86,27 @@ static int dw_hdmi_i2s_hw_params(struct device *dev, void *data,
 	case 32:
 		conf1 = HDMI_AUD_CONF1_WIDTH_24;
 		break;
+	}
+
+	switch (fmt->fmt) {
+	case HDMI_I2S:
+		conf1 |= HDMI_AUD_CONF1_MODE_I2S;
+		break;
+	case HDMI_RIGHT_J:
+		conf1 |= HDMI_AUD_CONF1_MODE_RIGHT_J;
+		break;
+	case HDMI_LEFT_J:
+		conf1 |= HDMI_AUD_CONF1_MODE_LEFT_J;
+		break;
+	case HDMI_DSP_A:
+		conf1 |= HDMI_AUD_CONF1_MODE_BURST_1;
+		break;
+	case HDMI_DSP_B:
+		conf1 |= HDMI_AUD_CONF1_MODE_BURST_2;
+		break;
+	default:
+		dev_err(dev, "unsupported format\n");
+		return -EINVAL;
 	}
 
 	hdmi_update_bits(audio, HDMI_AUD_CONF0_SW_RESET,

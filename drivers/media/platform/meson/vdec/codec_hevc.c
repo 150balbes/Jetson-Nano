@@ -68,12 +68,14 @@
 #define SWAP_BUF2_SIZE	0x800
 #define SCALELUT_SIZE	0x8000
 #define DBLK_PARA_SIZE	0x20000
-#define DBLK_DATA_SIZE	0x40000
+#define DBLK_DATA_SIZE	0x80000
+#define DBLK_DATA2_SIZE	0x80000
 #define MMU_VBH_SIZE	0x5000
 #define MPRED_ABV_SIZE	0x8000
 #define MPRED_MV_SIZE	(MPRED_MV_BUF_SIZE * MAX_REF_PIC_NUM)
 #define RPM_BUF_SIZE	0x100
 #define LMEM_SIZE	0xA00
+#define MMU_MAP_SIZE	0x4800
 
 #define IPP_OFFSET       0x00
 #define SAO_ABV_OFFSET   (IPP_OFFSET + IPP_SIZE)
@@ -88,11 +90,13 @@
 #define SCALELUT_OFFSET  (SWAP_BUF2_OFFSET + SWAP_BUF2_SIZE)
 #define DBLK_PARA_OFFSET (SCALELUT_OFFSET + SCALELUT_SIZE)
 #define DBLK_DATA_OFFSET (DBLK_PARA_OFFSET + DBLK_PARA_SIZE)
-#define MMU_VBH_OFFSET   (DBLK_DATA_OFFSET + DBLK_DATA_SIZE)
+#define DBLK_DATA2_OFFSET (DBLK_DATA_OFFSET + DBLK_DATA_SIZE)
+#define MMU_VBH_OFFSET   (DBLK_DATA2_OFFSET + DBLK_DATA2_SIZE)
 #define MPRED_ABV_OFFSET (MMU_VBH_OFFSET + MMU_VBH_SIZE)
 #define MPRED_MV_OFFSET  (MPRED_ABV_OFFSET + MPRED_ABV_SIZE)
 #define RPM_OFFSET       (MPRED_MV_OFFSET + MPRED_MV_SIZE)
 #define LMEM_OFFSET      (RPM_OFFSET + RPM_BUF_SIZE)
+#define MMU_MAP_OFFSET   (LMEM_OFFSET + LMEM_SIZE)
 
 /* ISR decode status */
 #define HEVC_DEC_IDLE                        0x0
@@ -233,6 +237,9 @@ struct hevc_frame {
 
 struct codec_hevc {
 	struct mutex lock;
+
+	/* Common part of the HEVC decoder */
+	struct codec_hevc_common common;
 
 	/* Buffer for the HEVC Workspace */
 	void      *workspace_vaddr;
@@ -515,14 +522,20 @@ codec_hevc_setup_workspace(struct amvdec_core *core, struct codec_hevc *hevc)
 	amvdec_write_dos(core, HEVC_PPS_BUFFER, wkaddr + PPS_OFFSET);
 	amvdec_write_dos(core, HEVC_SAO_UP, wkaddr + SAO_UP_OFFSET);
 
+	if (core->platform->revision >= VDEC_REVISION_G12A)
+		amvdec_write_dos(core, HEVC_ASSIST_MMU_MAP_ADDR,
+				 wkaddr + MMU_MAP_OFFSET);
+
 	/* No MMU */
-	amvdec_write_dos(core, HEVC_STREAM_SWAP_BUFFER,
+	/*amvdec_write_dos(core, HEVC_STREAM_SWAP_BUFFER,
 			 wkaddr + SWAP_BUF_OFFSET);
 	amvdec_write_dos(core, HEVC_STREAM_SWAP_BUFFER2,
-			 wkaddr + SWAP_BUF2_OFFSET);
+			 wkaddr + SWAP_BUF2_OFFSET);*/
 	amvdec_write_dos(core, HEVC_SCALELUT, wkaddr + SCALELUT_OFFSET);
 	amvdec_write_dos(core, HEVC_DBLK_CFG4, wkaddr + DBLK_PARA_OFFSET);
 	amvdec_write_dos(core, HEVC_DBLK_CFG5, wkaddr + DBLK_DATA_OFFSET);
+	amvdec_write_dos(core, HEVC_DBLK_CFGE, wkaddr + DBLK_DATA2_OFFSET);
+	amvdec_write_dos(core, LMEM_DUMP_ADR, wkaddr + LMEM_OFFSET);
 
 	return 0;
 }
@@ -546,7 +559,10 @@ static int codec_hevc_start(struct amvdec_session *sess)
 	if (ret)
 		goto free_hevc;
 
-	amvdec_write_dos_bits(core, HEVC_STREAM_CONTROL, BIT(0));
+	val = BIT(0); /* stream_fetch_enable */
+	if (core->platform->revision >= VDEC_REVISION_G12A)
+		val |= (0xf << 25); /* arwlen_axi_max */
+	amvdec_write_dos_bits(core, HEVC_STREAM_CONTROL, val);
 
 	val = amvdec_read_dos(core, HEVC_PARSER_INT_CONTROL) & 0x03ffffff;
 	val |= (3 << 29) | BIT(27) | BIT(24) | BIT(22) | BIT(7) | BIT(4) |
@@ -603,9 +619,9 @@ static int codec_hevc_start(struct amvdec_session *sess)
 		goto free_hevc;
 	}
 
-	amvdec_write_dos(core, HEVC_AUX_ADR, hevc->aux_paddr);
+	/*amvdec_write_dos(core, HEVC_AUX_ADR, hevc->aux_paddr);
 	amvdec_write_dos(core, HEVC_AUX_DATA_SIZE,
-			 (((SIZE_AUX) >> 4) << 16) | 0);
+			 (((SIZE_AUX) >> 4) << 16) | 0);*/
 	mutex_init(&hevc->lock);
 	sess->priv = hevc;
 
@@ -647,7 +663,7 @@ static int codec_hevc_stop(struct amvdec_session *sess)
 		dma_free_coherent(core->dev, SIZE_AUX,
 				  hevc->aux_vaddr, hevc->aux_paddr);
 
-	codec_hevc_free_fbc_buffers(sess);
+	codec_hevc_free_fbc_buffers(sess, &hevc->common);
 	mutex_unlock(&hevc->lock);
 	mutex_destroy(&hevc->lock);
 
@@ -727,7 +743,7 @@ codec_hevc_set_sao(struct amvdec_session *sess, struct hevc_frame *frame)
 
 	if (codec_hevc_use_downsample(sess->pixfmt_cap, hevc->is_10bit))
 		buf_y_paddr =
-			sess->fbc_buffer_paddr[frame->vbuf->vb2_buf.index];
+		     hevc->common.fbc_buffer_paddr[frame->vbuf->vb2_buf.index];
 	else
 		buf_y_paddr =
 		       vb2_dma_contig_plane_dma_addr(&frame->vbuf->vb2_buf, 0);
@@ -755,6 +771,25 @@ codec_hevc_set_sao(struct amvdec_session *sess, struct hevc_frame *frame)
 			 (amvdec_get_output_size(sess) / 2));
 
 	if (frame->cur_slice_idx == 0) {
+		if (core->platform->revision >= VDEC_REVISION_G12A) {
+			val = 0x54 << 8;
+
+			/* enable first, compressed write */
+			if (codec_hevc_use_fbc(sess->pixfmt_cap, hevc->is_10bit))
+				val |= BIT(8);
+
+			/* enable second, uncompressed write */
+			if (sess->pixfmt_cap == V4L2_PIX_FMT_NV12M)
+				val |= BIT(9);
+
+			/* dblk pipeline mode=1 for performance */
+			if (hevc->width >= 1280)
+				val |= BIT(4);
+
+			amvdec_write_dos(core, HEVC_DBLK_CFGB, val);
+			amvdec_write_dos(core, HEVC_DBLK_STS1 + 16, BIT(28));
+		}
+
 		amvdec_write_dos(core, HEVC_DBLK_CFG2,
 				 hevc->width | (hevc->height << 16));
 
@@ -770,10 +805,12 @@ codec_hevc_set_sao(struct amvdec_session *sess, struct hevc_frame *frame)
 
 	val = amvdec_read_dos(core, HEVC_SAO_CTRL1) & ~0x3ff3;
 	val |= 0xff0; /* Set endianness for 2-bytes swaps (nv12) */
-	if (!codec_hevc_use_fbc(sess->pixfmt_cap, hevc->is_10bit))
-		val |= BIT(0); /* disable cm compression */
-	else if (sess->pixfmt_cap == V4L2_PIX_FMT_AM21C)
-		val |= BIT(1); /* Disable double write */
+	if (core->platform->revision < VDEC_REVISION_G12A) {
+		if (!codec_hevc_use_fbc(sess->pixfmt_cap, hevc->is_10bit))
+			val |= BIT(0); /* disable cm compression */
+		else if (sess->pixfmt_cap == V4L2_PIX_FMT_AM21C)
+			val |= BIT(1); /* Disable double write */
+	}
 
 	amvdec_write_dos(core, HEVC_SAO_CTRL1, val);
 
@@ -1297,7 +1334,7 @@ static void codec_hevc_resume(struct amvdec_session *sess)
 {
 	struct codec_hevc *hevc = sess->priv;
 
-	if (codec_hevc_setup_buffers(sess, hevc->is_10bit)) {
+	if (codec_hevc_setup_buffers(sess, &hevc->common, hevc->is_10bit)) {
 		amvdec_abort(sess);
 		return;
 	}
@@ -1313,6 +1350,8 @@ static irqreturn_t codec_hevc_threaded_isr(struct amvdec_session *sess)
 	struct amvdec_core *core = sess->core;
 	struct codec_hevc *hevc = sess->priv;
 	u32 dec_status = amvdec_read_dos(core, HEVC_DEC_STATUS_REG);
+
+	printk("ISR!\n");
 
 	if (!hevc)
 		return IRQ_HANDLED;
