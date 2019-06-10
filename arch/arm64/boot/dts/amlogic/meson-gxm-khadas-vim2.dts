@@ -84,7 +84,7 @@
 
 	sound {
 		compatible = "simple-audio-card";
-		simple-audio-card,name = "meson-gx-audio";
+		simple-audio-card,name = "HDMI";
 
 		assigned-clocks = <&clkc CLKID_MPLL2>,
 				  <&clkc CLKID_MPLL0>,
