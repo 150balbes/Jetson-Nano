@@ -218,6 +218,23 @@ static struct clk_regmap g12a_sys_pll_div16_en = {
 	},
 };
 
+static struct clk_regmap g12b_sys1_pll_div16_en = {
+	.data = &(struct clk_regmap_gate_data){
+		.offset = HHI_SYS_CPUB_CLK_CNTL1,
+		.bit_idx = 24,
+	},
+	.hw.init = &(struct clk_init_data) {
+		.name = "sys1_pll_div16_en",
+		.ops = &clk_regmap_gate_ro_ops,
+		.parent_names = (const char *[]){ "sys1_pll" },
+		.num_parents = 1,
+		/*
+		 * This clock is used to debug the sys_pll range
+		 * Linux should not change it at runtime
+		 */
+	},
+};
+
 static struct clk_fixed_factor g12a_sys_pll_div16 = {
 	.mult = 1,
 	.div = 16,
@@ -225,6 +242,17 @@ static struct clk_fixed_factor g12a_sys_pll_div16 = {
 		.name = "sys_pll_div16",
 		.ops = &clk_fixed_factor_ops,
 		.parent_names = (const char *[]){ "sys_pll_div16_en" },
+		.num_parents = 1,
+	},
+};
+
+static struct clk_fixed_factor g12b_sys1_pll_div16 = {
+	.mult = 1,
+	.div = 16,
+	.hw.init = &(struct clk_init_data){
+		.name = "sys1_pll_div16",
+		.ops = &clk_fixed_factor_ops,
+		.parent_names = (const char *[]){ "sys1_pll_div16_en" },
 		.num_parents = 1,
 	},
 };
@@ -518,6 +546,23 @@ static struct clk_regmap g12a_cpu_clk_div16_en = {
 	},
 };
 
+static struct clk_regmap g12b_cpub_clk_div16_en = {
+	.data = &(struct clk_regmap_gate_data){
+		.offset = HHI_SYS_CPUB_CLK_CNTL1,
+		.bit_idx = 1,
+	},
+	.hw.init = &(struct clk_init_data) {
+		.name = "cpub_clk_div16_en",
+		.ops = &clk_regmap_gate_ro_ops,
+		.parent_names = (const char *[]){ "cpub_clk" },
+		.num_parents = 1,
+		/*
+		 * This clock is used to debug the cpu_clk range
+		 * Linux should not change it at runtime
+		 */
+	},
+};
+
 static struct clk_fixed_factor g12a_cpu_clk_div16 = {
 	.mult = 1,
 	.div = 16,
@@ -525,6 +570,17 @@ static struct clk_fixed_factor g12a_cpu_clk_div16 = {
 		.name = "cpu_clk_div16",
 		.ops = &clk_fixed_factor_ops,
 		.parent_names = (const char *[]){ "cpu_clk_div16_en" },
+		.num_parents = 1,
+	},
+};
+
+static struct clk_fixed_factor g12b_cpub_clk_div16 = {
+	.mult = 1,
+	.div = 16,
+	.hw.init = &(struct clk_init_data){
+		.name = "cpub_clk_div16",
+		.ops = &clk_fixed_factor_ops,
+		.parent_names = (const char *[]){ "cpub_clk_div16_en" },
 		.num_parents = 1,
 	},
 };
@@ -649,6 +705,240 @@ static struct clk_regmap g12a_cpu_clk_trace = {
 		.name = "cpu_clk_trace",
 		.ops = &clk_regmap_gate_ro_ops,
 		.parent_names = (const char *[]){ "cpu_clk_trace_div" },
+		.num_parents = 1,
+		/*
+		 * This clock is set by the ROM monitor code,
+		 * Linux should not change it at runtime
+		 */
+	},
+};
+
+static struct clk_fixed_factor g12b_cpub_clk_div2 = {
+	.mult = 1,
+	.div = 2,
+	.hw.init = &(struct clk_init_data){
+		.name = "cpub_clk_div2",
+		.ops = &clk_fixed_factor_ops,
+		.parent_names = (const char *[]){ "cpub_clk" },
+		.num_parents = 1,
+	},
+};
+
+static struct clk_fixed_factor g12b_cpub_clk_div3 = {
+	.mult = 1,
+	.div = 3,
+	.hw.init = &(struct clk_init_data){
+		.name = "cpub_clk_div3",
+		.ops = &clk_fixed_factor_ops,
+		.parent_names = (const char *[]){ "cpub_clk" },
+		.num_parents = 1,
+	},
+};
+
+static struct clk_fixed_factor g12b_cpub_clk_div4 = {
+	.mult = 1,
+	.div = 4,
+	.hw.init = &(struct clk_init_data){
+		.name = "cpub_clk_div4",
+		.ops = &clk_fixed_factor_ops,
+		.parent_names = (const char *[]){ "cpub_clk" },
+		.num_parents = 1,
+	},
+};
+
+static struct clk_fixed_factor g12b_cpub_clk_div5 = {
+	.mult = 1,
+	.div = 5,
+	.hw.init = &(struct clk_init_data){
+		.name = "cpub_clk_div5",
+		.ops = &clk_fixed_factor_ops,
+		.parent_names = (const char *[]){ "cpub_clk" },
+		.num_parents = 1,
+	},
+};
+
+static struct clk_fixed_factor g12b_cpub_clk_div6 = {
+	.mult = 1,
+	.div = 6,
+	.hw.init = &(struct clk_init_data){
+		.name = "cpub_clk_div6",
+		.ops = &clk_fixed_factor_ops,
+		.parent_names = (const char *[]){ "cpub_clk" },
+		.num_parents = 1,
+	},
+};
+
+static struct clk_fixed_factor g12b_cpub_clk_div7 = {
+	.mult = 1,
+	.div = 7,
+	.hw.init = &(struct clk_init_data){
+		.name = "cpub_clk_div7",
+		.ops = &clk_fixed_factor_ops,
+		.parent_names = (const char *[]){ "cpub_clk" },
+		.num_parents = 1,
+	},
+};
+
+static struct clk_fixed_factor g12b_cpub_clk_div8 = {
+	.mult = 1,
+	.div = 8,
+	.hw.init = &(struct clk_init_data){
+		.name = "cpub_clk_div8",
+		.ops = &clk_fixed_factor_ops,
+		.parent_names = (const char *[]){ "cpub_clk" },
+		.num_parents = 1,
+	},
+};
+
+static u32 mux_table_cpub[] = { 1, 2, 3, 4, 5, 6, 7 };
+static struct clk_regmap g12b_cpub_clk_apb_sel = {
+	.data = &(struct clk_regmap_mux_data){
+		.offset = HHI_SYS_CPUB_CLK_CNTL1,
+		.mask = 7,
+		.shift = 3,
+		.table = mux_table_cpub,
+	},
+	.hw.init = &(struct clk_init_data){
+		.name = "cpub_clk_apb_sel",
+		.ops = &clk_regmap_mux_ro_ops,
+		.parent_names = (const char *[]){ "cpub_clk_div2",
+						  "cpub_clk_div3",
+						  "cpub_clk_div4",
+						  "cpub_clk_div5",
+						  "cpub_clk_div6",
+						  "cpub_clk_div7",
+						  "cpub_clk_div8" },
+		.num_parents = 7,
+	},
+};
+
+static struct clk_regmap g12b_cpub_clk_apb = {
+	.data = &(struct clk_regmap_gate_data){
+		.offset = HHI_SYS_CPUB_CLK_CNTL1,
+		.bit_idx = 16,
+		.flags = CLK_GATE_SET_TO_DISABLE,
+	},
+	.hw.init = &(struct clk_init_data) {
+		.name = "cpub_clk_apb",
+		.ops = &clk_regmap_gate_ro_ops,
+		.parent_names = (const char *[]){ "cpub_clk_apb_sel" },
+		.num_parents = 1,
+		/*
+		 * This clock is set by the ROM monitor code,
+		 * Linux should not change it at runtime
+		 */
+	},
+};
+
+static struct clk_regmap g12b_cpub_clk_atb_sel = {
+	.data = &(struct clk_regmap_mux_data){
+		.offset = HHI_SYS_CPUB_CLK_CNTL1,
+		.mask = 7,
+		.shift = 6,
+		.table = mux_table_cpub,
+	},
+	.hw.init = &(struct clk_init_data){
+		.name = "cpub_clk_atb_sel",
+		.ops = &clk_regmap_mux_ro_ops,
+		.parent_names = (const char *[]){ "cpub_clk_div2",
+						  "cpub_clk_div3",
+						  "cpub_clk_div4",
+						  "cpub_clk_div5",
+						  "cpub_clk_div6",
+						  "cpub_clk_div7",
+						  "cpub_clk_div8" },
+		.num_parents = 7,
+	},
+};
+
+static struct clk_regmap g12b_cpub_clk_atb = {
+	.data = &(struct clk_regmap_gate_data){
+		.offset = HHI_SYS_CPUB_CLK_CNTL1,
+		.bit_idx = 17,
+		.flags = CLK_GATE_SET_TO_DISABLE,
+	},
+	.hw.init = &(struct clk_init_data) {
+		.name = "cpub_clk_atb",
+		.ops = &clk_regmap_gate_ro_ops,
+		.parent_names = (const char *[]){ "cpub_clk_atb_sel" },
+		.num_parents = 1,
+		/*
+		 * This clock is set by the ROM monitor code,
+		 * Linux should not change it at runtime
+		 */
+	},
+};
+
+static struct clk_regmap g12b_cpub_clk_axi_sel = {
+	.data = &(struct clk_regmap_mux_data){
+		.offset = HHI_SYS_CPUB_CLK_CNTL1,
+		.mask = 7,
+		.shift = 9,
+		.table = mux_table_cpub,
+	},
+	.hw.init = &(struct clk_init_data){
+		.name = "cpub_clk_axi_sel",
+		.ops = &clk_regmap_mux_ro_ops,
+		.parent_names = (const char *[]){ "cpub_clk_div2",
+						  "cpub_clk_div3",
+						  "cpub_clk_div4",
+						  "cpub_clk_div5",
+						  "cpub_clk_div6",
+						  "cpub_clk_div7",
+						  "cpub_clk_div8" },
+		.num_parents = 7,
+	},
+};
+
+static struct clk_regmap g12b_cpub_clk_axi = {
+	.data = &(struct clk_regmap_gate_data){
+		.offset = HHI_SYS_CPUB_CLK_CNTL1,
+		.bit_idx = 18,
+		.flags = CLK_GATE_SET_TO_DISABLE,
+	},
+	.hw.init = &(struct clk_init_data) {
+		.name = "cpub_clk_axi",
+		.ops = &clk_regmap_gate_ro_ops,
+		.parent_names = (const char *[]){ "cpub_clk_axi_sel" },
+		.num_parents = 1,
+		/*
+		 * This clock is set by the ROM monitor code,
+		 * Linux should not change it at runtime
+		 */
+	},
+};
+
+static struct clk_regmap g12b_cpub_clk_trace_sel = {
+	.data = &(struct clk_regmap_mux_data){
+		.offset = HHI_SYS_CPUB_CLK_CNTL1,
+		.mask = 7,
+		.shift = 20,
+		.table = mux_table_cpub,
+	},
+	.hw.init = &(struct clk_init_data){
+		.name = "cpub_clk_trace_sel",
+		.ops = &clk_regmap_mux_ro_ops,
+		.parent_names = (const char *[]){ "cpub_clk_div2",
+						  "cpub_clk_div3",
+						  "cpub_clk_div4",
+						  "cpub_clk_div5",
+						  "cpub_clk_div6",
+						  "cpub_clk_div7",
+						  "cpub_clk_div8" },
+		.num_parents = 7,
+	},
+};
+
+static struct clk_regmap g12b_cpub_clk_trace = {
+	.data = &(struct clk_regmap_gate_data){
+		.offset = HHI_SYS_CPUB_CLK_CNTL1,
+		.bit_idx = 23,
+		.flags = CLK_GATE_SET_TO_DISABLE,
+	},
+	.hw.init = &(struct clk_init_data) {
+		.name = "cpub_clk_trace",
+		.ops = &clk_regmap_gate_ro_ops,
+		.parent_names = (const char *[]){ "cpub_clk_trace_sel" },
 		.num_parents = 1,
 		/*
 		 * This clock is set by the ROM monitor code,
@@ -3249,6 +3539,8 @@ static struct clk_hw_onecell_data g12b_hw_onecell_data = {
 		[CLKID_TS]			= &g12a_ts.hw,
 		[CLKID_SYS1_PLL_DCO]		= &g12b_sys1_pll_dco.hw,
 		[CLKID_SYS1_PLL]		= &g12b_sys1_pll.hw,
+		[CLKID_SYS1_PLL_DIV16_EN]	= &g12b_sys1_pll_div16_en.hw,
+		[CLKID_SYS1_PLL_DIV16]		= &g12b_sys1_pll_div16.hw,
 		[CLKID_CPUB_CLK_DYN0_SEL]	= &g12b_cpub_clk_premux0.hw,
 		[CLKID_CPUB_CLK_DYN0_DIV]	= &g12b_cpub_clk_mux0_div.hw,
 		[CLKID_CPUB_CLK_DYN0]		= &g12b_cpub_clk_postmux0.hw,
@@ -3257,6 +3549,23 @@ static struct clk_hw_onecell_data g12b_hw_onecell_data = {
 		[CLKID_CPUB_CLK_DYN1]		= &g12b_cpub_clk_postmux1.hw,
 		[CLKID_CPUB_CLK_DYN]		= &g12b_cpub_clk_dyn.hw,
 		[CLKID_CPUB_CLK]		= &g12b_cpub_clk.hw,
+		[CLKID_CPUB_CLK_DIV16_EN]	= &g12b_cpub_clk_div16_en.hw,
+		[CLKID_CPUB_CLK_DIV16]		= &g12b_cpub_clk_div16.hw,
+		[CLKID_CPUB_CLK_DIV2]		= &g12b_cpub_clk_div2.hw,
+		[CLKID_CPUB_CLK_DIV3]		= &g12b_cpub_clk_div3.hw,
+		[CLKID_CPUB_CLK_DIV4]		= &g12b_cpub_clk_div4.hw,
+		[CLKID_CPUB_CLK_DIV5]		= &g12b_cpub_clk_div5.hw,
+		[CLKID_CPUB_CLK_DIV6]		= &g12b_cpub_clk_div6.hw,
+		[CLKID_CPUB_CLK_DIV7]		= &g12b_cpub_clk_div7.hw,
+		[CLKID_CPUB_CLK_DIV8]		= &g12b_cpub_clk_div8.hw,
+		[CLKID_CPUB_CLK_APB_SEL]	= &g12b_cpub_clk_apb_sel.hw,
+		[CLKID_CPUB_CLK_APB]		= &g12b_cpub_clk_apb.hw,
+		[CLKID_CPUB_CLK_ATB_SEL]	= &g12b_cpub_clk_atb_sel.hw,
+		[CLKID_CPUB_CLK_ATB]		= &g12b_cpub_clk_atb.hw,
+		[CLKID_CPUB_CLK_AXI_SEL]	= &g12b_cpub_clk_axi_sel.hw,
+		[CLKID_CPUB_CLK_AXI]		= &g12b_cpub_clk_axi.hw,
+		[CLKID_CPUB_CLK_TRACE_SEL]	= &g12b_cpub_clk_trace_sel.hw,
+		[CLKID_CPUB_CLK_TRACE]		= &g12b_cpub_clk_trace.hw,
 		[NR_CLKS]			= NULL,
 	},
 	.num = NR_CLKS,
@@ -3459,6 +3768,7 @@ static struct clk_regmap *const g12a_clk_regmaps[] = {
 	&g12b_cpu_clk,
 	&g12b_sys1_pll_dco,
 	&g12b_sys1_pll,
+	&g12b_sys1_pll_div16_en,
 	&g12b_cpub_clk_premux0,
 	&g12b_cpub_clk_mux0_div,
 	&g12b_cpub_clk_postmux0,
@@ -3467,6 +3777,15 @@ static struct clk_regmap *const g12a_clk_regmaps[] = {
 	&g12b_cpub_clk_postmux1,
 	&g12b_cpub_clk_dyn,
 	&g12b_cpub_clk,
+	&g12b_cpub_clk_div16_en,
+	&g12b_cpub_clk_apb_sel,
+	&g12b_cpub_clk_apb,
+	&g12b_cpub_clk_atb_sel,
+	&g12b_cpub_clk_atb,
+	&g12b_cpub_clk_axi_sel,
+	&g12b_cpub_clk_axi,
+	&g12b_cpub_clk_trace_sel,
+	&g12b_cpub_clk_trace,
 };
 
 static const struct reg_sequence g12a_init_regs[] = {

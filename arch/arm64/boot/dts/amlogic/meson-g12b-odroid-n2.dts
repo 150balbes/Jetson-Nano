@@ -9,6 +9,7 @@
 #include "meson-g12b.dtsi"
 #include <dt-bindings/input/input.h>
 #include <dt-bindings/gpio/meson-g12a-gpio.h>
+#include <dt-bindings/sound/meson-g12a-tohdmitx.h>
 
 / {
 	compatible = "hardkernel,odroid-n2", "amlogic,g12b";
@@ -17,13 +18,6 @@
 	aliases {
 		serial0 = &uart_AO;
 		ethernet0 = &ethmac;
-	};
-
-	spdif_dit: audio-codec-1 {
-		#sound-dai-cells = <0>;
-		compatible = "linux,spdif-dit";
-		status = "okay";
-		sound-name-prefix = "DIT";
 	};
 
 	chosen {
@@ -98,6 +92,7 @@
 		regulator-min-microvolt = <5000000>;
 		regulator-max-microvolt = <5000000>;
 		regulator-always-on;
+		vin-supply = <&main_12v>;
 	};
 
 	vcc_1v8: regulator-vcc_1v8 {
@@ -126,6 +121,7 @@
 		regulator-max-microvolt = <5000000>;
 		vin-supply = <&vcc_5v>;
 
+		/* Connected to the Hub CHIPENABLE, LOW sets low power state */
 		gpio = <&gpio GPIOH_5 GPIO_ACTIVE_HIGH>;
 		enable-active-high;
 	};
@@ -135,8 +131,9 @@
 		regulator-name = "USB_PWR_EN";
 		regulator-min-microvolt = <5000000>;
 		regulator-max-microvolt = <5000000>;
-		vin-supply = <&hub_5v>;
+		vin-supply = <&vcc_5v>;
 
+		/* Connected to the microUSB port power enable */
 		gpio = <&gpio GPIOH_6 GPIO_ACTIVE_HIGH>;
 		enable-active-high;
 	};
@@ -159,99 +156,6 @@
 		regulator-always-on;
 	};
 
-	sound {
-		compatible = "amlogic,axg-sound-card";
-		model = "AMLG12";
-		audio-aux-devs = <&tdmout_a>, <&tdmout_b>, <&tdmout_c>;
-		audio-routing = "TDMOUT_A IN 0", "FRDDR_A OUT 0",
-				"TDMOUT_A IN 1", "FRDDR_B OUT 0",
-				"TDMOUT_A IN 2", "FRDDR_C OUT 0",
-				"TDM_A Playback", "TDMOUT_A OUT",
-				"TDMOUT_B IN 0", "FRDDR_A OUT 1",
-				"TDMOUT_B IN 1", "FRDDR_B OUT 1",
-				"TDMOUT_B IN 2", "FRDDR_C OUT 1",
-				"TDM_B Playback", "TDMOUT_B OUT",
-				"TDMOUT_C IN 0", "FRDDR_A OUT 2",
-				"TDMOUT_C IN 1", "FRDDR_B OUT 2",
-				"TDMOUT_C IN 2", "FRDDR_C OUT 2",
-				"TDM_C Playback", "TDMOUT_C OUT",
-				"SPDIFOUT IN 0", "FRDDR_A OUT 3",
-				"SPDIFOUT IN 1", "FRDDR_B OUT 3",
-				"SPDIFOUT IN 2", "FRDDR_C OUT 3";
-
-		assigned-clocks = <&clkc CLKID_HIFI_PLL>,
-				  <&clkc CLKID_MPLL0>,
-				  <&clkc CLKID_MPLL1>;
-		assigned-clock-parents = <0>, <0>, <0>;
-		assigned-clock-rates = <589824000>,
-				       <270950400>,
-				       <393216000>;
-
-		status = "okay";
-
-		dai-link-0 {
-			sound-dai = <&frddr_a>;
-		};
-
-		dai-link-1 {
-			sound-dai = <&frddr_b>;
-		};
-
-		dai-link-2 {
-			sound-dai = <&frddr_c>;
-		};
-
-		dai-link-3 {
-			sound-dai = <&tdmif_a>;
-			dai-format = "i2s";
-			dai-tdm-slot-tx-mask-0 = <1 1>;
-			mclk-fs = <256>;
-
-			codec@1 {
-				sound-dai = <&tohdmitx 0>;
-			};
-		};
-
-		dai-link-4 {
-			sound-dai = <&tdmif_b>;
-			dai-format = "i2s";
-			dai-tdm-slot-tx-mask-0 = <1 1>;
-			mclk-fs = <256>;
-
-			codec@1 {
-				sound-dai = <&tohdmitx 1>;
-			};
-		};
-
-		dai-link-5 {
-			sound-dai = <&spdifout>;
-
-			codec@0 {
-				sound-dai = <&spdif_dit>;
-			};
-
-			codec@1 {
-				sound-dai = <&tohdmitx 4>;
-			};
-		};
-
-		dai-link-6 {
-			sound-dai = <&spdifout_b>;
-
-			codec {
-				sound-dai = <&tohdmitx 5>;
-			};
-		};
-
-		dai-link-7 {
-			sound-dai = <&tohdmitx 3>;
-
-			codec {
-				sound-dai = <&hdmi_tx>;
-			};
-		};
-	};
-
 	hdmi-connector {
 		compatible = "hdmi-connector";
 		type = "a";
@@ -259,6 +163,51 @@
 		port {
 			hdmi_connector_in: endpoint {
 				remote-endpoint = <&hdmi_tx_tmds_out>;
+			};
+		};
+	};
+
+	sound {
+		compatible = "amlogic,axg-sound-card";
+		model = "AMLG12";
+		audio-aux-devs = <&tdmout_b>;
+		audio-routing = "TDMOUT_B IN 0", "FRDDR_A OUT 1",
+				"TDM_B Playback", "TDMOUT_B OUT";
+
+		assigned-clocks = <&clkc CLKID_MPLL2>,
+				  <&clkc CLKID_MPLL0>,
+				  <&clkc CLKID_MPLL1>;
+		assigned-clock-parents = <0>, <0>, <0>;
+		assigned-clock-rates = <294912000>,
+				       <270950400>,
+				       <393216000>;
+		status = "okay";
+
+		dai-link-0 {
+			sound-dai = <&frddr_a>;
+		};
+
+		/* 8ch hdmi interface */
+		dai-link-1 {
+			sound-dai = <&tdmif_b>;
+			dai-format = "i2s";
+			dai-tdm-slot-tx-mask-0 = <1 1>;
+			dai-tdm-slot-tx-mask-1 = <1 1>;
+			dai-tdm-slot-tx-mask-2 = <1 1>;
+			dai-tdm-slot-tx-mask-3 = <1 1>;
+			mclk-fs = <256>;
+
+			codec@0 {
+				sound-dai = <&tohdmitx TOHDMITX_I2S_IN_B>;
+			};
+		};
+
+		/* hdmi glue */
+		dai-link-2 {
+			sound-dai = <&tohdmitx TOHDMITX_I2S_OUT>;
+
+			codec {
+				sound-dai = <&hdmi_tx>;
 			};
 		};
 	};
@@ -286,34 +235,25 @@
 	status = "okay";
 };
 
-&frddr_a {
-	status = "okay";
-};
-
-&frddr_b {
-	status = "okay";
-};
-
-&frddr_c {
-	status = "okay";
-};
-
 &ext_mdio {
 	external_phy: ethernet-phy@0 {
-	      compatible = "ethernet-phy-id001c.c916", "ethernet-phy-ieee802.3-c22";
-	      reg = <0>;
-	      max-speed = <1000>;
-	      eee-broken-1000t;
+		/* Realtek RTL8211F (0x001cc916) */	
+		reg = <0>;
+		max-speed = <1000>;
 	};
 };
 
 &ethmac {
-	pinctrl-0 = <&eth_rmii_pins>, <&eth_rgmii_pins>;
+	pinctrl-0 = <&eth_pins>, <&eth_rgmii_pins>;
 	pinctrl-names = "default";
 	status = "okay";
 	phy-mode = "rgmii";
 	phy-handle = <&external_phy>;
 	amlogic,tx-delay-ns = <2>;
+};
+
+&frddr_a {
+	status = "okay";
 };
 
 &gpio {
@@ -342,42 +282,6 @@
 	hdmi_tx_tmds_out: endpoint {
 		remote-endpoint = <&hdmi_connector_in>;
 	};
-};
-
-&spdifout {
-	status = "okay";
-};
-
-&spdifout_b {
-	status = "okay";
-};
-
-&tdmif_a {
-	status = "okay";
-};
-
-&tdmif_b {
-	status = "okay";
-};
-
-&tdmif_c {
-	status = "okay";
-};
-
-&tdmout_a {
-	status = "okay";
-};
-
-&tdmout_b {
-	status = "okay";
-};
-
-&tdmout_c {
-	status = "okay";
-};
-
-&tohdmitx {
-	status = "okay";
 };
 
 &ir {
@@ -414,13 +318,26 @@
 
 	bus-width = <8>;
 	cap-mmc-highspeed;
-	max-frequency = <100000000>;
-	non-removable;
+	mmc-ddr-1_8v;
+	mmc-hs200-1_8v;
+	max-frequency = <200000000>;
 	disable-wp;
 
 	mmc-pwrseq = <&emmc_pwrseq>;
 	vmmc-supply = <&vcc_3v3>;
 	vqmmc-supply = <&flash_1v8>;
+};
+
+&tdmif_b {
+	status = "okay";
+};
+
+&tdmout_b {
+	status = "okay";
+};
+
+&tohdmitx {
+	status = "okay";
 };
 
 &uart_AO {
@@ -431,12 +348,14 @@
 
 &usb {
 	status = "okay";
+	vbus-supply = <&usb_pwr_en>;
 };
 
 &usb2_phy0 {
-	phy-supply = <&usb_pwr_en>;
+	phy-supply = <&vcc_5v>;
 };
 
 &usb2_phy1 {
-	phy-supply = <&vcc_5v>;
+	/* Enable the hub which is connected to this port */
+	phy-supply = <&hub_5v>;
 };

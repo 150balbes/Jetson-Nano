@@ -200,12 +200,12 @@
 
 			apb_efuse: bus@30000 {
 				compatible = "simple-bus";
-				reg = <0x0 0x30000 0x0 0x1000>;
+				reg = <0x0 0x30000 0x0 0x2000>;
 				#address-cells = <2>;
 				#size-cells = <2>;
-				ranges = <0x0 0x0 0x0 0x30000 0x0 0x1000>;
+				ranges = <0x0 0x0 0x0 0x30000 0x0 0x2000>;
 
-				hwrng: rng {
+				hwrng: rng@218 {
 					compatible = "amlogic,meson-rng";
 					reg = <0x0 0x218 0x0 0x4>;
 				};
@@ -252,45 +252,6 @@
 						mux {
 							groups = "cec_ao_b_h";
 							function = "cec_ao_b_h";
-							bias-disable;
-						};
-					};
-
-					eth_leds_pins: eth-leds {
-						mux {
-							groups = "eth_link_led",
-								 "eth_act_led";
-							function = "eth";
-							bias-disable;
-						};
-					};
-
-					eth_rmii_pins: eth-rmii {
-						mux {
-							groups = "eth_mdio",
-								 "eth_mdc",
-								 "eth_rgmii_rx_clk",
-								 "eth_rx_dv",
-								 "eth_rxd0",
-								 "eth_rxd1",
-								 "eth_txen",
-								 "eth_txd0",
-								 "eth_txd1";
-							function = "eth";
-							drive-strength-microamp = <4000>;
-							bias-disable;
-						};
-					};
-
-					eth_rgmii_pins: eth-rgmii {
-						mux {
-							groups = "eth_rxd2_rgmii",
-								 "eth_rxd3_rgmii",
-								 "eth_rgmii_tx_clk",
-								 "eth_txd2_rgmii",
-								 "eth_txd3_rgmii";
-							function = "eth";
-							drive-strength-microamp = <4000>;
 							bias-disable;
 						};
 					};
@@ -537,7 +498,7 @@
 						};
 					};
 
-					mclk0_a_pins: mclk0_a {
+					mclk0_a_pins: mclk0-a {
 						mux {
 							groups = "mclk0_a";
 							function = "mclk0";
@@ -546,7 +507,7 @@
 						};
 					};
 
-					mclk1_a_pins: mclk1_a {
+					mclk1_a_pins: mclk1-a {
 						mux {
 							groups = "mclk1_a";
 							function = "mclk1";
@@ -555,7 +516,7 @@
 						};
 					};
 
-					mclk1_x_pins: mclk1_x {
+					mclk1_x_pins: mclk1-x {
 						mux {
 							groups = "mclk1_x";
 							function = "mclk1";
@@ -564,7 +525,7 @@
 						};
 					};
 
-					mclk1_z_pins: mclk1_z {
+					mclk1_z_pins: mclk1-z {
 						mux {
 							groups = "mclk1_z";
 							function = "mclk1";
@@ -573,7 +534,7 @@
 						};
 					};
 
-					pdm_din0_a_pins: pdm_din0_a {
+					pdm_din0_a_pins: pdm-din0-a {
 						mux {
 							groups = "pdm_din0_a";
 							function = "pdm";
@@ -581,7 +542,7 @@
 						};
 					};
 
-					pdm_din0_c_pins: pdm_din0_c {
+					pdm_din0_c_pins: pdm-din0-c {
 						mux {
 							groups = "pdm_din0_c";
 							function = "pdm";
@@ -589,7 +550,7 @@
 						};
 					};
 
-					pdm_din0_x_pins: pdm_din0_x {
+					pdm_din0_x_pins: pdm-din0-x {
 						mux {
 							groups = "pdm_din0_x";
 							function = "pdm";
@@ -597,7 +558,7 @@
 						};
 					};
 
-					pdm_din0_z_pins: pdm_din0_z {
+					pdm_din0_z_pins: pdm-din0-z {
 						mux {
 							groups = "pdm_din0_z";
 							function = "pdm";
@@ -605,7 +566,7 @@
 						};
 					};
 
-					pdm_din1_a_pins: pdm_din1_a {
+					pdm_din1_a_pins: pdm-din1-a {
 						mux {
 							groups = "pdm_din1_a";
 							function = "pdm";
@@ -613,7 +574,7 @@
 						};
 					};
 
-					pdm_din1_c_pins: pdm_din1_c {
+					pdm_din1_c_pins: pdm-din1-c {
 						mux {
 							groups = "pdm_din1_c";
 							function = "pdm";
@@ -621,7 +582,7 @@
 						};
 					};
 
-					pdm_din1_x_pins: pdm_din1_x {
+					pdm_din1_x_pins: pdm-din1-x {
 						mux {
 							groups = "pdm_din1_x";
 							function = "pdm";
@@ -629,7 +590,7 @@
 						};
 					};
 
-					pdm_din1_z_pins: pdm_din1_z {
+					pdm_din1_z_pins: pdm-din1-z {
 						mux {
 							groups = "pdm_din1_z";
 							function = "pdm";
@@ -637,7 +598,7 @@
 						};
 					};
 
-					pdm_din2_a_pins: pdm_din2_a {
+					pdm_din2_a_pins: pdm-din2-a {
 						mux {
 							groups = "pdm_din2_a";
 							function = "pdm";
@@ -645,7 +606,7 @@
 						};
 					};
 
-					pdm_din2_c_pins: pdm_din2_c {
+					pdm_din2_c_pins: pdm-din2-c {
 						mux {
 							groups = "pdm_din2_c";
 							function = "pdm";
@@ -653,7 +614,7 @@
 						};
 					};
 
-					pdm_din2_x_pins: pdm_din2_x {
+					pdm_din2_x_pins: pdm-din2-x {
 						mux {
 							groups = "pdm_din2_x";
 							function = "pdm";
@@ -661,7 +622,7 @@
 						};
 					};
 
-					pdm_din2_z_pins: pdm_din2_z {
+					pdm_din2_z_pins: pdm-din2-z {
 						mux {
 							groups = "pdm_din2_z";
 							function = "pdm";
@@ -669,7 +630,7 @@
 						};
 					};
 
-					pdm_din3_a_pins: pdm_din3_a {
+					pdm_din3_a_pins: pdm-din3-a {
 						mux {
 							groups = "pdm_din3_a";
 							function = "pdm";
@@ -677,7 +638,7 @@
 						};
 					};
 
-					pdm_din3_c_pins: pdm_din3_c {
+					pdm_din3_c_pins: pdm-din3-c {
 						mux {
 							groups = "pdm_din3_c";
 							function = "pdm";
@@ -685,7 +646,7 @@
 						};
 					};
 
-					pdm_din3_x_pins: pdm_din3_x {
+					pdm_din3_x_pins: pdm-din3-x {
 						mux {
 							groups = "pdm_din3_x";
 							function = "pdm";
@@ -693,7 +654,7 @@
 						};
 					};
 
-					pdm_din3_z_pins: pdm_din3_z {
+					pdm_din3_z_pins: pdm-din3-z {
 						mux {
 							groups = "pdm_din3_z";
 							function = "pdm";
@@ -701,7 +662,7 @@
 						};
 					};
 
-					pdm_dclk_a_pins: pdm_dclk_a {
+					pdm_dclk_a_pins: pdm-dclk-a {
 						mux {
 							groups = "pdm_dclk_a";
 							function = "pdm";
@@ -710,7 +671,7 @@
 						};
 					};
 
-					pdm_dclk_c_pins: pdm_dclk_c {
+					pdm_dclk_c_pins: pdm-dclk-c {
 						mux {
 							groups = "pdm_dclk_c";
 							function = "pdm";
@@ -719,7 +680,7 @@
 						};
 					};
 
-					pdm_dclk_x_pins: pdm_dclk_x {
+					pdm_dclk_x_pins: pdm-dclk-x {
 						mux {
 							groups = "pdm_dclk_x";
 							function = "pdm";
@@ -728,7 +689,7 @@
 						};
 					};
 
-					pdm_dclk_z_pins: pdm_dclk_z {
+					pdm_dclk_z_pins: pdm-dclk-z {
 						mux {
 							groups = "pdm_dclk_z";
 							function = "pdm";
@@ -877,29 +838,6 @@
 					sdcard_clk_gate_z_pins: sdcard_clk_gate_z {
 						mux {
 							groups = "GPIOZ_6";
-							function = "gpio_periphs";
-							bias-pull-down;
-							drive-strength-microamp = <4000>;
-						};
-					};
-
-					sdio_pins: sdio {
-						mux {
-							groups = "sdio_d0",
-								 "sdio_d1",
-								 "sdio_d2",
-								 "sdio_d3",
-								 "sdio_cmd",
-								 "sdio_clk";
-							function = "sdio";
-							bias-disable;
-							drive-strength-microamp = <4000>;
-						};
-					};
-
-					sdio_clk_gate_pins: sdio_clk_gate {
-						mux {
-							groups = "GPIOX_4";
 							function = "gpio_periphs";
 							bias-pull-down;
 							drive-strength-microamp = <4000>;
@@ -1186,6 +1124,45 @@
 						};
 					};
 
+					eth_leds_pins: eth-leds {
+						mux {
+							groups = "eth_link_led",
+								 "eth_act_led";
+							function = "eth";
+							bias-disable;
+						};
+					};
+
+					eth_pins: eth {
+						mux {
+							groups = "eth_mdio",
+								 "eth_mdc",
+								 "eth_rgmii_rx_clk",
+								 "eth_rx_dv",
+								 "eth_rxd0",
+								 "eth_rxd1",
+								 "eth_txen",
+								 "eth_txd0",
+								 "eth_txd1";
+							function = "eth";
+							drive-strength-microamp = <4000>;
+							bias-disable;
+						};
+					};
+
+					eth_rgmii_pins: eth-rgmii {
+						mux {
+							groups = "eth_rxd2_rgmii",
+								 "eth_rxd3_rgmii",
+								 "eth_rgmii_tx_clk",
+								 "eth_txd2_rgmii",
+								 "eth_txd3_rgmii";
+							function = "eth";
+							drive-strength-microamp = <4000>;
+							bias-disable;
+						};
+					};
+
 					tdm_c_din2_z_pins: tdm-c-din2-z {
 						mux {
 							groups = "tdm_c_din2_z";
@@ -1350,6 +1327,30 @@
 						};
 					};
 
+					sdio_pins: sdio {
+						mux {
+							groups = "sdio_d0",
+								 "sdio_d1",
+								 "sdio_d2",
+								 "sdio_d3",
+								 "sdio_cmd",
+								 "sdio_clk";
+							function = "sdio";
+							bias-disable;
+							drive-strength-microamp = <4000>;
+						};
+					};
+
+					sdio_clk_gate_pins: sdio_clk_gate {
+						mux {
+							groups = "GPIOX_4";
+							function = "gpio_periphs";
+							bias-pull-down;
+							drive-strength-microamp = <4000>;
+						};
+					};
+
+
 					uart_a_pins: uart-a {
 						mux {
 							groups = "uart_a_tx",
@@ -1512,7 +1513,8 @@
 				};
 
 				toddr_a: audio-controller@100 {
-					compatible = "amlogic,g12a-toddr", "amlogic,axg-toddr";
+					compatible = "amlogic,g12a-toddr",
+						     "amlogic,axg-toddr";
 					reg = <0x0 0x100 0x0 0x1c>;
 					#sound-dai-cells = <0>;
 					sound-name-prefix = "TODDR_A";
@@ -1523,7 +1525,8 @@
 				};
 
 				toddr_b: audio-controller@140 {
-					compatible = "amlogic,g12a-toddr", "amlogic,axg-toddr";
+					compatible = "amlogic,g12a-toddr",
+						     "amlogic,axg-toddr";
 					reg = <0x0 0x140 0x0 0x1c>;
 					#sound-dai-cells = <0>;
 					sound-name-prefix = "TODDR_B";
@@ -1534,7 +1537,8 @@
 				};
 
 				toddr_c: audio-controller@180 {
-					compatible = "amlogic,g12a-toddr", "amlogic,axg-toddr";
+					compatible = "amlogic,g12a-toddr",
+						     "amlogic,axg-toddr";
 					reg = <0x0 0x180 0x0 0x1c>;
 					#sound-dai-cells = <0>;
 					sound-name-prefix = "TODDR_C";
@@ -1545,7 +1549,8 @@
 				};
 
 				frddr_a: audio-controller@1c0 {
-					compatible = "amlogic,g12a-frddr", "amlogic,axg-frddr";
+					compatible = "amlogic,g12a-frddr",
+						     "amlogic,axg-frddr";
 					reg = <0x0 0x1c0 0x0 0x1c>;
 					#sound-dai-cells = <0>;
 					sound-name-prefix = "FRDDR_A";
@@ -1556,7 +1561,8 @@
 				};
 
 				frddr_b: audio-controller@200 {
-					compatible = "amlogic,g12a-frddr", "amlogic,axg-frddr";
+					compatible = "amlogic,g12a-frddr",
+						     "amlogic,axg-frddr";
 					reg = <0x0 0x200 0x0 0x1c>;
 					#sound-dai-cells = <0>;
 					sound-name-prefix = "FRDDR_B";
@@ -1567,7 +1573,8 @@
 				};
 
 				frddr_c: audio-controller@240 {
-					compatible = "amlogic,g12a-frddr", "amlogic,axg-frddr";
+					compatible = "amlogic,g12a-frddr",
+						     "amlogic,axg-frddr";
 					reg = <0x0 0x240 0x0 0x1c>;
 					#sound-dai-cells = <0>;
 					sound-name-prefix = "FRDDR_C";
@@ -1729,7 +1736,6 @@
 					reg = <0x0 0x744 0x0 0x4>;
 					#sound-dai-cells = <1>;
 					sound-name-prefix = "TOHDMITX";
-					clocks = <&clkc_audio AUD_CLKID_DDR_ARB>; /* FIXME */
 					status = "disabled";
 				};
 			};
@@ -1917,7 +1923,7 @@
 						};
 					};
 
-					spdif_ao_out_pins: spdif_ao_out {
+					spdif_ao_out_pins: spdif-ao-out {
 						mux {
 							groups = "spdif_ao_out";
 							function = "spdif_ao_out";
@@ -2366,19 +2372,6 @@
 			};
 		};
 
-		sd_emmc_a: sd@ffe03000 {
-			compatible = "amlogic,meson-axg-mmc";
-			reg = <0x0 0xffe03000 0x0 0x800>;
-			interrupts = <GIC_SPI 189 IRQ_TYPE_EDGE_RISING>;
-			status = "disabled";
-			clocks = <&clkc CLKID_SD_EMMC_A>,
-				 <&clkc CLKID_SD_EMMC_A_CLK0>,
-				 <&clkc CLKID_FCLK_DIV2>;
-			clock-names = "core", "clkin0", "clkin1";
-			resets = <&reset RESET_SD_EMMC_A>;
-			amlogic,ddr-access-quirk;
-		};
-
 		sd_emmc_b: sd@ffe05000 {
 			compatible = "amlogic,meson-axg-mmc";
 			reg = <0x0 0xffe05000 0x0 0x800>;
@@ -2401,6 +2394,19 @@
 				 <&clkc CLKID_FCLK_DIV2>;
 			clock-names = "core", "clkin0", "clkin1";
 			resets = <&reset RESET_SD_EMMC_C>;
+		};
+
+		sd_emmc_a: sd@ffe03000 {
+			compatible = "amlogic,meson-axg-mmc";
+			reg = <0x0 0xffe03000 0x0 0x800>;
+			interrupts = <GIC_SPI 189 IRQ_TYPE_EDGE_RISING>;
+			status = "disabled";
+			clocks = <&clkc CLKID_SD_EMMC_A>,
+				 <&clkc CLKID_SD_EMMC_A_CLK0>,
+				 <&clkc CLKID_FCLK_DIV2>;
+			clock-names = "core", "clkin0", "clkin1";
+			resets = <&reset RESET_SD_EMMC_A>;
+			amlogic,dram-access-quirk;
 		};
 
 		usb: usb@ffe09000 {

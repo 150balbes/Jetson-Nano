@@ -14,7 +14,7 @@
 };
 
 &ethmac {
-        pinctrl-0 = <&eth_rmii_pins>;
+        pinctrl-0 = <&eth_pins>;
         pinctrl-names = "default";
         status = "okay";
         phy-mode = "rmii";

@@ -1,15 +1,6 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * cgroups support for the BFQ I/O scheduler.
- *
- *  This program is free software; you can redistribute it and/or
- *  modify it under the terms of the GNU General Public License as
- *  published by the Free Software Foundation; either version 2 of the
- *  License, or (at your option) any later version.
- *
- *  This program is distributed in the hope that it will be useful,
- *  but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- *  General Public License for more details.
  */
 #include <linux/module.h>
 #include <linux/slab.h>
@@ -578,7 +569,8 @@ void bfq_bfqq_move(struct bfq_data *bfqd, struct bfq_queue *bfqq,
 	bfqg_and_blkg_get(bfqg);
 
 	if (bfq_bfqq_busy(bfqq)) {
-		bfq_pos_tree_add_move(bfqd, bfqq);
+		if (unlikely(!bfqd->nonrot_with_queueing))
+			bfq_pos_tree_add_move(bfqd, bfqq);
 		bfq_activate_bfqq(bfqd, bfqq);
 	}
 
@@ -1054,7 +1046,8 @@ struct blkcg_policy blkcg_policy_bfq = {
 struct cftype bfq_blkcg_legacy_files[] = {
 	{
 		.name = "bfq.weight",
-		.flags = CFTYPE_NOT_ON_ROOT,
+		.link_name = "weight",
+		.flags = CFTYPE_NOT_ON_ROOT | CFTYPE_SYMLINKED,
 		.seq_show = bfq_io_show_weight,
 		.write_u64 = bfq_io_set_weight_legacy,
 	},
@@ -1102,7 +1095,7 @@ struct cftype bfq_blkcg_legacy_files[] = {
 	},
 #endif /* CONFIG_DEBUG_BLK_CGROUP */
 
-	/* the same statictics which cover the bfqg and its descendants */
+	/* the same statistics which cover the bfqg and its descendants */
 	{
 		.name = "bfq.io_service_bytes_recursive",
 		.private = (unsigned long)&blkcg_policy_bfq,
@@ -1174,7 +1167,8 @@ struct cftype bfq_blkcg_legacy_files[] = {
 struct cftype bfq_blkg_files[] = {
 	{
 		.name = "bfq.weight",
-		.flags = CFTYPE_NOT_ON_ROOT,
+		.link_name = "weight",
+		.flags = CFTYPE_NOT_ON_ROOT | CFTYPE_SYMLINKED,
 		.seq_show = bfq_io_show_weight,
 		.write = bfq_io_set_weight,
 	},

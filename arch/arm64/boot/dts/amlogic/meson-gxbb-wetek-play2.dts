@@ -8,7 +8,7 @@
 
 #include "meson-gxbb-wetek.dtsi"
 #include <dt-bindings/input/input.h>
-
+#include "meson-gxl-dvb.dtsi"
 / {
 	compatible = "wetek,play2", "amlogic,meson-gxbb";
 	model = "WeTek Play 2";
@@ -39,10 +39,24 @@
 			gpios = <&gpio_ao GPIOAO_3 GPIO_ACTIVE_LOW>;
 		};
 	};
+	clock: meson_clock {
+		compatible = "amlogic, gxbb-clock";
+		reg = <0x0 0xc883c000 0x0 0x1000>,   /* HIU BUS*/
+		          <0x0 0xc8100000 0x0 0x1000>;   //AOBUS
+		#clock-cells = <1>;
+		#reset-cells = <1>;
+		sys_max = <1536000000>;
+	};
+	dvb {
+		dev_name = "wetek-dvb";
+		fec_reset_gpio-gpios = <&gpio GPIOY_13 GPIO_ACTIVE_HIGH>;
+		power_ctrl_gpio-gpios = <&gpio GPIOY_15 GPIO_ACTIVE_LOW>;
+	};
 };
 
 &i2c_A {
 	status = "okay";
+	clock-frequency = <300000>;
 	pinctrl-0 = <&i2c_a_pins>;
 	pinctrl-names = "default";
 };
@@ -57,4 +71,8 @@
 
 &ir {
 	linux,rc-map-name = "rc-wetek-play2";
+};
+
+&usb_pwr {
+		gpio = <>;
 };

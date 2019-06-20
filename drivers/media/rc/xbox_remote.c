@@ -107,7 +107,7 @@ static void xbox_remote_input_report(struct urb *urb)
 		return;
 	}
 
-	rc_keydown(xbox_remote->rdev, RC_PROTO_UNKNOWN,
+	rc_keydown(xbox_remote->rdev, RC_PROTO_XBOX_DVD,
 		   le16_to_cpup((__le16 *)(data + 2)), 0);
 }
 

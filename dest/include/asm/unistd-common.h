@@ -378,5 +378,15 @@
 #define __NR_rt_sigtimedwait_time64 (__NR_SYSCALL_BASE + 421)
 #define __NR_futex_time64 (__NR_SYSCALL_BASE + 422)
 #define __NR_sched_rr_get_interval_time64 (__NR_SYSCALL_BASE + 423)
+#define __NR_pidfd_send_signal (__NR_SYSCALL_BASE + 424)
+#define __NR_io_uring_setup (__NR_SYSCALL_BASE + 425)
+#define __NR_io_uring_enter (__NR_SYSCALL_BASE + 426)
+#define __NR_io_uring_register (__NR_SYSCALL_BASE + 427)
+#define __NR_open_tree (__NR_SYSCALL_BASE + 428)
+#define __NR_move_mount (__NR_SYSCALL_BASE + 429)
+#define __NR_fsopen (__NR_SYSCALL_BASE + 430)
+#define __NR_fsconfig (__NR_SYSCALL_BASE + 431)
+#define __NR_fsmount (__NR_SYSCALL_BASE + 432)
+#define __NR_fspick (__NR_SYSCALL_BASE + 433)
 
 #endif /* _ASM_ARM_UNISTD_COMMON_H */

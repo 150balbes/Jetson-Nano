@@ -573,9 +573,6 @@ static irqreturn_t i8042_interrupt(int irq, void *dev_id)
 	port = &i8042_ports[port_no];
 	serio = port->exists ? port->serio : NULL;
 
-	if (irq && serio)
-		pm_wakeup_event(&serio->dev, 0);
-
 	filter_dbg(port->driver_bound, data, "<- i8042 (interrupt, %d, %d%s%s)\n",
 		   port_no, irq,
 		   dfl & SERIO_PARITY ? ", bad parity" : "",
@@ -1604,12 +1601,34 @@ static struct notifier_block i8042_kbd_bind_notifier_block = {
 	.notifier_call = i8042_kbd_bind_notifier,
 };
 
+#ifdef CONFIG_DMI
+static struct dmi_system_id __initdata dmi_system_table[] = {
+	{
+		.matches = {
+			DMI_MATCH(DMI_BIOS_VENDOR, "Apple Computer, Inc.")
+		},
+	},
+	{
+		.matches = {
+			DMI_MATCH(DMI_BIOS_VENDOR, "Apple Inc.")
+		},
+	},
+	{}
+};
+#endif /*CONFIG_DMI*/
+
 static int __init i8042_init(void)
 {
 	struct platform_device *pdev;
 	int err;
 
 	dbg_init();
+
+#ifdef CONFIG_DMI
+	/* Intel Apple Macs never have an i8042 controller */
+	if (dmi_check_system(dmi_system_table) > 0)
+		return -ENODEV;
+#endif /*CONFIG_DMI*/
 
 	err = i8042_platform_init();
 	if (err)

@@ -171,7 +171,7 @@ struct meson_host {
 	unsigned long req_rate;
 	bool ddr;
 
-	bool ddr_access_quirk;
+	bool dram_access_quirk;
 
 	struct pinctrl *pinctrl;
 	struct pinctrl_state *pins_default;
@@ -248,7 +248,7 @@ static void meson_mmc_get_transfer_mode(struct mmc_host *mmc,
 	 * support for Chain Mode to directly use the internal SRAM using
 	 * the bounce buffer mode.
 	 */
-	if (host->ddr_access_quirk)
+	if (host->dram_access_quirk)
 		return;
 
 	/*
@@ -1064,8 +1064,8 @@ static int meson_mmc_probe(struct platform_device *pdev)
 	dev_set_drvdata(&pdev->dev, host);
 
 	/* The G12A SDIO Controller needs an SRAM bounce buffer */
-	host->ddr_access_quirk = device_property_read_bool(&pdev->dev,
-					"amlogic,ddr-access-quirk");
+	host->dram_access_quirk = device_property_read_bool(&pdev->dev,
+					"amlogic,dram-access-quirk");
 
 	/* Get regulators and the supported OCR mask */
 	host->vqmmc_enabled = false;
@@ -1164,7 +1164,7 @@ static int meson_mmc_probe(struct platform_device *pdev)
 		goto err_init_clk;
 
 	mmc->caps |= MMC_CAP_CMD23;
-	if (host->ddr_access_quirk) {
+	if (host->dram_access_quirk) {
 		/* Limit to the available sram memory */
 		mmc->max_segs = SD_EMMC_SRAM_DATA_BUF_LEN / mmc->max_blk_size;
 		mmc->max_blk_count = mmc->max_segs;
@@ -1183,7 +1183,7 @@ static int meson_mmc_probe(struct platform_device *pdev)
 	 */
 	mmc->caps2 &= ~MMC_CAP2_HS400;
 
-	if (host->ddr_access_quirk) {
+	if (host->dram_access_quirk) {
 		/*
 		 * The MMC Controller embeds 1,5KiB of internal SRAM
 		 * that can be used to be used as bounce buffer.
@@ -1220,8 +1220,9 @@ static int meson_mmc_probe(struct platform_device *pdev)
 	return 0;
 
 err_bounce_buf:
-	dma_free_coherent(host->dev, host->bounce_buf_size,
-			  host->bounce_buf, host->bounce_dma_addr);
+	if (!host->dram_access_quirk)
+		dma_free_coherent(host->dev, host->bounce_buf_size,
+				  host->bounce_buf, host->bounce_dma_addr);
 err_free_irq:
 	free_irq(host->irq, host);
 err_init_clk:
@@ -1246,7 +1247,7 @@ static int meson_mmc_remove(struct platform_device *pdev)
 	dma_free_coherent(host->dev, SD_EMMC_DESC_BUF_LEN,
 			  host->descs, host->descs_dma_addr);
 
-	if (!host->ddr_access_quirk)
+	if (!host->dram_access_quirk)
 		dma_free_coherent(host->dev, host->bounce_buf_size,
 				  host->bounce_buf, host->bounce_dma_addr);
 

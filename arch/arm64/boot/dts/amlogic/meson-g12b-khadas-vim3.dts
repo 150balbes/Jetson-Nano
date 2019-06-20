@@ -9,6 +9,7 @@
 #include "meson-g12b.dtsi"
 #include <dt-bindings/input/input.h>
 #include <dt-bindings/gpio/meson-g12a-gpio.h>
+#include <dt-bindings/sound/meson-g12a-tohdmitx.h>
 
 / {
 	compatible = "khadas,vim3", "amlogic,g12b";
@@ -17,13 +18,6 @@
 	aliases {
 		serial0 = &uart_AO;
 		ethernet0 = &ethmac;
-	};
-
-	spdif_dit: audio-codec-1 {
-		#sound-dai-cells = <0>;
-		compatible = "linux,spdif-dit";
-		status = "okay";
-		sound-name-prefix = "DIT";
 	};
 
 	chosen {
@@ -156,99 +150,6 @@
 		regulator-always-on;
 	};
 
-	sound {
-		compatible = "amlogic,axg-sound-card";
-		model = "AMLG12";
-		audio-aux-devs = <&tdmout_a>, <&tdmout_b>, <&tdmout_c>;
-		audio-routing = "TDMOUT_A IN 0", "FRDDR_A OUT 0",
-				"TDMOUT_A IN 1", "FRDDR_B OUT 0",
-				"TDMOUT_A IN 2", "FRDDR_C OUT 0",
-				"TDM_A Playback", "TDMOUT_A OUT",
-				"TDMOUT_B IN 0", "FRDDR_A OUT 1",
-				"TDMOUT_B IN 1", "FRDDR_B OUT 1",
-				"TDMOUT_B IN 2", "FRDDR_C OUT 1",
-				"TDM_B Playback", "TDMOUT_B OUT",
-				"TDMOUT_C IN 0", "FRDDR_A OUT 2",
-				"TDMOUT_C IN 1", "FRDDR_B OUT 2",
-				"TDMOUT_C IN 2", "FRDDR_C OUT 2",
-				"TDM_C Playback", "TDMOUT_C OUT",
-				"SPDIFOUT IN 0", "FRDDR_A OUT 3",
-				"SPDIFOUT IN 1", "FRDDR_B OUT 3",
-				"SPDIFOUT IN 2", "FRDDR_C OUT 3";
-
-		assigned-clocks = <&clkc CLKID_HIFI_PLL>,
-				  <&clkc CLKID_MPLL0>,
-				  <&clkc CLKID_MPLL1>;
-		assigned-clock-parents = <0>, <0>, <0>;
-		assigned-clock-rates = <589824000>,
-				       <270950400>,
-				       <393216000>;
-
-		status = "okay";
-
-		dai-link-0 {
-			sound-dai = <&frddr_a>;
-		};
-
-		dai-link-1 {
-			sound-dai = <&frddr_b>;
-		};
-
-		dai-link-2 {
-			sound-dai = <&frddr_c>;
-		};
-
-		dai-link-3 {
-			sound-dai = <&tdmif_a>;
-			dai-format = "i2s";
-			dai-tdm-slot-tx-mask-0 = <1 1>;
-			mclk-fs = <256>;
-
-			codec@1 {
-				sound-dai = <&tohdmitx 0>;
-			};
-		};
-
-		dai-link-4 {
-			sound-dai = <&tdmif_b>;
-			dai-format = "i2s";
-			dai-tdm-slot-tx-mask-0 = <1 1>;
-			mclk-fs = <256>;
-
-			codec@1 {
-				sound-dai = <&tohdmitx 1>;
-			};
-		};
-
-		dai-link-5 {
-			sound-dai = <&spdifout>;
-
-			codec@0 {
-				sound-dai = <&spdif_dit>;
-			};
-
-			codec@1 {
-				sound-dai = <&tohdmitx 4>;
-			};
-		};
-
-		dai-link-6 {
-			sound-dai = <&spdifout_b>;
-
-			codec {
-				sound-dai = <&tohdmitx 5>;
-			};
-		};
-
-		dai-link-7 {
-			sound-dai = <&tohdmitx 3>;
-
-			codec {
-				sound-dai = <&hdmi_tx>;
-			};
-		};
-	};
-
 	hdmi-connector {
 		compatible = "hdmi-connector";
 		type = "a";
@@ -265,6 +166,51 @@
 		#clock-cells = <0>;
 		clock-frequency = <32768>;
 		pwms = <&pwm_ef 0 30518 0>; /* PWM_E at 32.768KHz */
+	};
+
+	sound {
+		compatible = "amlogic,axg-sound-card";
+		model = "AMLG12";
+		audio-aux-devs = <&tdmout_b>;
+		audio-routing = "TDMOUT_B IN 0", "FRDDR_A OUT 1",
+				"TDM_B Playback", "TDMOUT_B OUT";
+
+		assigned-clocks = <&clkc CLKID_MPLL2>,
+				  <&clkc CLKID_MPLL0>,
+				  <&clkc CLKID_MPLL1>;
+		assigned-clock-parents = <0>, <0>, <0>;
+		assigned-clock-rates = <294912000>,
+				       <270950400>,
+				       <393216000>;
+		status = "okay";
+
+		dai-link-0 {
+			sound-dai = <&frddr_a>;
+		};
+
+		/* 8ch hdmi interface */
+		dai-link-1 {
+			sound-dai = <&tdmif_b>;
+			dai-format = "i2s";
+			dai-tdm-slot-tx-mask-0 = <1 1>;
+			dai-tdm-slot-tx-mask-1 = <1 1>;
+			dai-tdm-slot-tx-mask-2 = <1 1>;
+			dai-tdm-slot-tx-mask-3 = <1 1>;
+			mclk-fs = <256>;
+
+			codec@0 {
+				sound-dai = <&tohdmitx TOHDMITX_I2S_IN_B>;
+			};
+		};
+
+		/* hdmi glue */
+		dai-link-2 {
+			sound-dai = <&tohdmitx TOHDMITX_I2S_OUT>;
+
+			codec {
+				sound-dai = <&hdmi_tx>;
+			};
+		};
 	};
 };
 
@@ -290,34 +236,25 @@
 	status = "okay";
 };
 
-&frddr_a {
-	status = "okay";
-};
-
-&frddr_b {
-	status = "okay";
-};
-
-&frddr_c {
-	status = "okay";
-};
-
 &ext_mdio {
 	external_phy: ethernet-phy@0 {
-	      compatible = "ethernet-phy-id001c.c916", "ethernet-phy-ieee802.3-c22";
-	      reg = <0>;
-	      max-speed = <1000>;
-	      eee-broken-1000t;
+		compatible = "ethernet-phy-id001c.c916", "ethernet-phy-ieee802.3-c22";
+		reg = <0>;
+		max-speed = <1000>;
 	};
 };
 
 &ethmac {
-	pinctrl-0 = <&eth_rmii_pins>, <&eth_rgmii_pins>;
-	pinctrl-names = "default";
+        pinctrl-0 = <&eth_pins>, <&eth_rgmii_pins>;
+        pinctrl-names = "default";
+        status = "okay";
+        phy-mode = "rgmii";
+        phy-handle = <&external_phy>;
+        amlogic,tx-delay-ns = <2>;
+};
+
+&frddr_a {
 	status = "okay";
-	phy-mode = "rgmii";
-	phy-handle = <&external_phy>;
-	amlogic,tx-delay-ns = <2>;
 };
 
 &hdmi_tx {
@@ -333,47 +270,17 @@
 	};
 };
 
-&spdifout {
-	status = "okay";
-};
-
-&spdifout_b {
-	status = "okay";
-};
-
-&tdmif_a {
-	status = "okay";
-};
-
-&tdmif_b {
-	status = "okay";
-};
-
-&tdmif_c {
-	status = "okay";
-};
-
-&tdmout_a {
-	status = "okay";
-};
-
-&tdmout_b {
-	status = "okay";
-};
-
-&tdmout_c {
-	status = "okay";
-};
-
-&tohdmitx {
-	status = "okay";
-};
-
 &ir {
 	status = "okay";
 	pinctrl-0 = <&remote_input_ao_pins>;
 	pinctrl-names = "default";
 	linux,rc-map-name = "rc-khadas";
+};
+
+&pwm_ef {
+        status = "okay";
+        pinctrl-0 = <&pwm_e_pins>;
+        pinctrl-names = "default";
 };
 
 /* SDIO */
@@ -430,8 +337,9 @@
 
 	bus-width = <8>;
 	cap-mmc-highspeed;
-	max-frequency = <100000000>;
-	non-removable;
+	mmc-ddr-1_8v;
+	mmc-hs200-1_8v;
+	max-frequency = <200000000>;
 	disable-wp;
 
 	mmc-pwrseq = <&emmc_pwrseq>;
@@ -439,10 +347,16 @@
 	vqmmc-supply = <&flash_1v8>;
 };
 
-&pwm_ef {
+&tdmif_b {
 	status = "okay";
-	pinctrl-0 = <&pwm_e_pins>;
-	pinctrl-names = "default";
+};
+
+&tdmout_b {
+	status = "okay";
+};
+
+&tohdmitx {
+	status = "okay";
 };
 
 &uart_A {

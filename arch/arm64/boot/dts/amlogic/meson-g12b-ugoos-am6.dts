@@ -303,21 +303,20 @@
 };
 
 &ext_mdio {
-	external_phy: ethernet-phy@0 {
-	      compatible = "ethernet-phy-id001c.c916", "ethernet-phy-ieee802.3-c22";
-	      reg = <0>;
-	      max-speed = <1000>;
-	      eee-broken-1000t;
-	};
+        external_phy: ethernet-phy@0 {
+                compatible = "ethernet-phy-id001c.c916", "ethernet-phy-ieee802.3-c22";
+                reg = <0>;
+                max-speed = <1000>;
+        };
 };
 
 &ethmac {
-	pinctrl-0 = <&eth_rmii_pins>, <&eth_rgmii_pins>;
-	pinctrl-names = "default";
-	status = "okay";
-	phy-mode = "rgmii";
-	phy-handle = <&external_phy>;
-	amlogic,tx-delay-ns = <2>;
+        pinctrl-0 = <&eth_pins>, <&eth_rgmii_pins>;
+        pinctrl-names = "default";
+        status = "okay";
+        phy-mode = "rgmii";
+        phy-handle = <&external_phy>;
+        amlogic,tx-delay-ns = <2>;
 };
 
 &pwm_ef {
@@ -480,3 +479,4 @@
 &usb2_phy1 {
 	phy-supply = <&vcc_5v>;
 };
+

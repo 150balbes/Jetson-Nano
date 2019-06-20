@@ -28,7 +28,6 @@
 	chosen {
 		stdout-path = "serial0:115200n8";
 	};
-
 	memory@0 {
 		device_type = "memory";
 		reg = <0x0 0x0 0x0 0x40000000>;
@@ -295,15 +294,15 @@
 
 &ext_mdio {
 	external_phy: ethernet-phy@0 {
-	      compatible = "ethernet-phy-id001c.c916", "ethernet-phy-ieee802.3-c22";
-	      reg = <0>;
-	      max-speed = <1000>;
-	      eee-broken-1000t;
+		/* Realtek RTL8211F (0x001cc916) */
+		reg = <0>;
+		max-speed = <1000>;
+		eee-broken-1000t;
 	};
 };
 
 &ethmac {
-	pinctrl-0 = <&eth_rmii_pins>, <&eth_rgmii_pins>;
+	pinctrl-0 = <&eth_pins>, <&eth_rgmii_pins>;
 	pinctrl-names = "default";
 	status = "okay";
 	phy-mode = "rgmii";

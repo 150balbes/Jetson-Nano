@@ -45,7 +45,8 @@
 		blue {
 			label = "c2:blue:alive";
 			gpios = <&gpio_ao GPIOAO_13 GPIO_ACTIVE_LOW>;
-			default-state = "on";
+			linux,default-trigger = "heartbeat";
+			default-state = "off";
 		};
 	};
 
@@ -112,7 +113,7 @@
 
 	sound {
 		compatible = "simple-audio-card";
-		simple-audio-card,name = "HDMI";
+		simple-audio-card,name = "meson-gx-audio";
 
 		assigned-clocks = <&clkc CLKID_MPLL2>,
 				  <&clkc CLKID_MPLL0>,

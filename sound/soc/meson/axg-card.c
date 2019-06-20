@@ -29,12 +29,15 @@ struct axg_dai_link_tdm_data {
 	struct axg_dai_link_tdm_mask *codec_masks;
 };
 
-/* Base params for the HDMI codec to codec link */
-static const struct snd_soc_pcm_stream hdmi_codec_params = {
+/*
+ * Base params for the codec to codec links
+ * Those will be over-written by the CPU side of the link
+ */
+static const struct snd_soc_pcm_stream codec_params = {
 	.formats = SNDRV_PCM_FMTBIT_S24_LE,
-	.rate_min = 8000,
+	.rate_min = 5525,
 	.rate_max = 192000,
-	.channels_min = 2,
+	.channels_min = 1,
 	.channels_max = 8,
 };
 
@@ -526,7 +529,7 @@ static int axg_card_cpu_is_tdm_iface(struct device_node *np)
 	return of_device_is_compatible(np, PREFIX "axg-tdm-iface");
 }
 
-static int g12a_card_is_hdmi_codec(struct device_node *np)
+static int axg_card_cpu_is_codec(struct device_node *np)
 {
 	return of_device_is_compatible(np, PREFIX "g12a-tohdmitx");
 }
@@ -554,8 +557,8 @@ static int axg_card_add_link(struct snd_soc_card *card, struct device_node *np,
 
 	if (axg_card_cpu_is_tdm_iface(dai_link->cpu_of_node))
 		ret = axg_card_parse_tdm(card, np, index);
-	else if (g12a_card_is_hdmi_codec(dai_link->cpu_of_node))
-		dai_link->params = &hdmi_codec_params;
+	else if (axg_card_cpu_is_codec(dai_link->cpu_of_node))
+		dai_link->params = &codec_params;
 
 	return ret;
 }

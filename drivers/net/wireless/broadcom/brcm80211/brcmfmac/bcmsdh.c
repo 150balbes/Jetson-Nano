@@ -628,15 +628,13 @@ int brcmf_sdiod_send_buf(struct brcmf_sdio_dev *sdiodev, u8 *buf, uint nbytes)
 
 	err = brcmf_sdiod_set_backplane_window(sdiodev, addr);
 	if (err)
-		return err;
+		goto out;
 
 	addr &= SBSDIO_SB_OFT_ADDR_MASK;
 	addr |= SBSDIO_SB_ACCESS_2_4B_FLAG;
 
-	if (!err)
-		err = brcmf_sdiod_skbuff_write(sdiodev, sdiodev->func2, addr,
-					       mypkt);
-
+	err = brcmf_sdiod_skbuff_write(sdiodev, sdiodev->func2, addr, mypkt);
+out:
 	brcmu_pkt_buf_free_skb(mypkt);
 
 	return err;
@@ -785,7 +783,8 @@ void brcmf_sdiod_sgtable_alloc(struct brcmf_sdio_dev *sdiodev)
 		      sdiodev->settings->bus.sdio.txglomsz);
 	nents += (nents >> 4) + 1;
 
-	WARN_ON(nents > sdiodev->max_segment_count);
+	WARN(nents > sdiodev->max_segment_count, "max_seg_cnt=%u, host_max_seg=%u nents=%u",
+		sdiodev->max_segment_count, host->max_segs, nents);
 
 	brcmf_dbg(TRACE, "nents=%d\n", nents);
 	err = sg_alloc_table(&sdiodev->sgtable, nents, GFP_KERNEL);

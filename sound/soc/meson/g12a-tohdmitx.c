@@ -11,6 +11,8 @@
 #include <sound/soc.h>
 #include <sound/soc-dai.h>
 
+#include <dt-bindings/sound/meson-g12a-tohdmitx.h>
+
 #define G12A_TOHDMITX_DRV_NAME "g12a-tohdmitx"
 
 #define TOHDMITX_CTRL0			0x0
@@ -24,10 +26,6 @@
 #define  CTRL0_SPDIF_CLK_O_INV		BIT(2)
 #define  CTRL0_SPDIF_SEL		BIT(1)
 #define  CTRL0_SPDIF_CLK_SEL		BIT(0)
-
-struct g12a_tohdmitx {
-	struct regmap *map;
-};
 
 struct g12a_tohdmitx_input {
 	struct snd_pcm_hw_params params;
@@ -82,12 +80,12 @@ static const char * const g12a_tohdmitx_i2s_mux_texts[] = {
 static SOC_ENUM_SINGLE_EXT_DECL(g12a_tohdmitx_i2s_mux_enum,
 				g12a_tohdmitx_i2s_mux_texts);
 
-static int g12a_tohdmitx_get_input_val(struct g12a_tohdmitx *priv,
+static int g12a_tohdmitx_get_input_val(struct snd_soc_component *component,
 				       unsigned int mask)
 {
 	unsigned int val;
 
-	regmap_read(priv->map, TOHDMITX_CTRL0, &val);
+	snd_soc_component_read(component, TOHDMITX_CTRL0, &val);
 	return (val & mask) >> __ffs(mask);
 }
 
@@ -96,10 +94,9 @@ static int g12a_tohdmitx_i2s_mux_get_enum(struct snd_kcontrol *kcontrol,
 {
 	struct snd_soc_component *component =
 		snd_soc_dapm_kcontrol_component(kcontrol);
-	struct g12a_tohdmitx *priv = snd_soc_component_get_drvdata(component);
 
 	ucontrol->value.enumerated.item[0] =
-		g12a_tohdmitx_get_input_val(priv, CTRL0_I2S_DAT_SEL);
+		g12a_tohdmitx_get_input_val(component, CTRL0_I2S_DAT_SEL);
 
 	return 0;
 }
@@ -111,22 +108,22 @@ static int g12a_tohdmitx_i2s_mux_put_enum(struct snd_kcontrol *kcontrol,
 		snd_soc_dapm_kcontrol_component(kcontrol);
 	struct snd_soc_dapm_context *dapm =
 		snd_soc_dapm_kcontrol_dapm(kcontrol);
-	struct g12a_tohdmitx *priv = snd_soc_component_get_drvdata(component);
 	struct soc_enum *e = (struct soc_enum *)kcontrol->private_value;
 	unsigned int mux = ucontrol->value.enumerated.item[0];
-	unsigned int val = g12a_tohdmitx_get_input_val(priv, CTRL0_I2S_DAT_SEL);
+	unsigned int val = g12a_tohdmitx_get_input_val(component,
+						       CTRL0_I2S_DAT_SEL);
 
 	/* Force disconnect of the mux while updating */
 	if (val != mux)
 		snd_soc_dapm_mux_update_power(dapm, kcontrol, 0, NULL, NULL);
 
-	regmap_update_bits(priv->map, TOHDMITX_CTRL0,
-			   CTRL0_I2S_DAT_SEL |
-			   CTRL0_I2S_LRCLK_SEL |
-			   CTRL0_I2S_BCLK_SEL,
-			   FIELD_PREP(CTRL0_I2S_DAT_SEL, mux) |
-			   FIELD_PREP(CTRL0_I2S_LRCLK_SEL, mux) |
-			   FIELD_PREP(CTRL0_I2S_BCLK_SEL, mux));
+	snd_soc_component_update_bits(component, TOHDMITX_CTRL0,
+				      CTRL0_I2S_DAT_SEL |
+				      CTRL0_I2S_LRCLK_SEL |
+				      CTRL0_I2S_BCLK_SEL,
+				      FIELD_PREP(CTRL0_I2S_DAT_SEL, mux) |
+				      FIELD_PREP(CTRL0_I2S_LRCLK_SEL, mux) |
+				      FIELD_PREP(CTRL0_I2S_BCLK_SEL, mux));
 
 	snd_soc_dapm_mux_update_power(dapm, kcontrol, mux, e, NULL);
 
@@ -146,39 +143,38 @@ static SOC_ENUM_SINGLE_EXT_DECL(g12a_tohdmitx_spdif_mux_enum,
 				g12a_tohdmitx_spdif_mux_texts);
 
 static int g12a_tohdmitx_spdif_mux_get_enum(struct snd_kcontrol *kcontrol,
-				     struct snd_ctl_elem_value *ucontrol)
+					    struct snd_ctl_elem_value *ucontrol)
 {
 	struct snd_soc_component *component =
 		snd_soc_dapm_kcontrol_component(kcontrol);
-	struct g12a_tohdmitx *priv = snd_soc_component_get_drvdata(component);
 
 	ucontrol->value.enumerated.item[0] =
-		g12a_tohdmitx_get_input_val(priv, CTRL0_SPDIF_SEL);
+		g12a_tohdmitx_get_input_val(component, CTRL0_SPDIF_SEL);
 
 	return 0;
 }
 
 static int g12a_tohdmitx_spdif_mux_put_enum(struct snd_kcontrol *kcontrol,
-				   struct snd_ctl_elem_value *ucontrol)
+					    struct snd_ctl_elem_value *ucontrol)
 {
 	struct snd_soc_component *component =
 		snd_soc_dapm_kcontrol_component(kcontrol);
 	struct snd_soc_dapm_context *dapm =
 		snd_soc_dapm_kcontrol_dapm(kcontrol);
-	struct g12a_tohdmitx *priv = snd_soc_component_get_drvdata(component);
 	struct soc_enum *e = (struct soc_enum *)kcontrol->private_value;
 	unsigned int mux = ucontrol->value.enumerated.item[0];
-	unsigned int val = g12a_tohdmitx_get_input_val(priv, CTRL0_SPDIF_SEL);
+	unsigned int val = g12a_tohdmitx_get_input_val(component,
+						       CTRL0_SPDIF_SEL);
 
 	/* Force disconnect of the mux while updating */
 	if (val != mux)
 		snd_soc_dapm_mux_update_power(dapm, kcontrol, 0, NULL, NULL);
 
-	regmap_update_bits(priv->map, TOHDMITX_CTRL0,
-			   CTRL0_SPDIF_SEL |
-			   CTRL0_SPDIF_CLK_SEL,
-			   FIELD_PREP(CTRL0_SPDIF_SEL, mux) |
-			   FIELD_PREP(CTRL0_SPDIF_CLK_SEL, mux));
+	snd_soc_component_update_bits(component, TOHDMITX_CTRL0,
+				      CTRL0_SPDIF_SEL |
+				      CTRL0_SPDIF_CLK_SEL,
+				      FIELD_PREP(CTRL0_SPDIF_SEL, mux) |
+				      FIELD_PREP(CTRL0_SPDIF_CLK_SEL, mux));
 
 	snd_soc_dapm_mux_update_power(dapm, kcontrol, mux, e, NULL);
 
@@ -295,43 +291,55 @@ static const struct snd_soc_dai_ops g12a_tohdmitx_output_ops = {
 	 SNDRV_PCM_FMTBIT_S24_3LE | SNDRV_PCM_FMTBIT_S24_LE |	\
 	 SNDRV_PCM_FMTBIT_S32_LE)
 
-#define TOHDMITX_IN(_name, _fmt, _chmax) {			\
-	.name = _name,						\
-	.playback = {						\
-		.stream_name	= _name " Playback",		\
-		.channels_min	= 1,				\
-		.channels_max	= (_chmax),			\
-		.rate_min       = 8000,				\
-		.rate_max	= 192000,			\
-		.formats	= (_fmt),			\
-	},							\
-	.ops = &g12a_tohdmitx_input_ops,			\
-	.probe = g12a_tohdmitx_input_probe,			\
-	.remove = g12a_tohdmitx_input_remove,			\
+#define TOHDMITX_STREAM(xname, xsuffix, xfmt, xchmax)		\
+{								\
+	.stream_name	= xname " " xsuffix,			\
+	.channels_min	= 1,					\
+	.channels_max	= (xchmax),				\
+	.rate_min       = 8000,					\
+	.rate_max	= 192000,				\
+	.formats	= (xfmt),				\
 }
 
-#define TOHDMITX_OUT(_name, _fmt, _chmax) {			\
-	.name = _name,						\
-	.capture = {						\
-		.stream_name	= _name " Capture",		\
-		.channels_min	= 1,				\
-		.channels_max	= (_chmax),			\
-		.rate_min       = 8000,				\
-		.rate_max	= 192000,			\
-		.formats	= (_fmt),			\
-	},							\
-	.ops = &g12a_tohdmitx_output_ops,			\
+#define TOHDMITX_IN(xname, xid, xfmt, xchmax) {				\
+	.name = xname,							\
+	.id = (xid),							\
+	.playback = TOHDMITX_STREAM(xname, "Playback", xfmt, xchmax),	\
+	.ops = &g12a_tohdmitx_input_ops,				\
+	.probe = g12a_tohdmitx_input_probe,				\
+	.remove = g12a_tohdmitx_input_remove,				\
+}
+
+#define TOHDMITX_OUT(xname, xid, xfmt, xchmax) {			\
+	.name = xname,							\
+	.id = (xid),							\
+	.capture = TOHDMITX_STREAM(xname, "Capture", xfmt, xchmax),	\
+	.ops = &g12a_tohdmitx_output_ops,				\
 }
 
 static struct snd_soc_dai_driver g12a_tohdmitx_dai_drv[] = {
-	TOHDMITX_IN("I2S IN A", TOHDMITX_I2S_FORMATS, 8),
-	TOHDMITX_IN("I2S IN B", TOHDMITX_I2S_FORMATS, 8),
-	TOHDMITX_IN("I2S IN C", TOHDMITX_I2S_FORMATS, 8),
-	TOHDMITX_OUT("I2S OUT", TOHDMITX_I2S_FORMATS, 8),
-	TOHDMITX_IN("SPDIF IN A", TOHDMITX_SPDIF_FORMATS, 2),
-	TOHDMITX_IN("SPDIF IN B", TOHDMITX_SPDIF_FORMATS, 2),
-	TOHDMITX_OUT("SPDIF OUT", TOHDMITX_SPDIF_FORMATS, 2),
+	TOHDMITX_IN("I2S IN A", TOHDMITX_I2S_IN_A,
+		    TOHDMITX_I2S_FORMATS, 8),
+	TOHDMITX_IN("I2S IN B", TOHDMITX_I2S_IN_B,
+		    TOHDMITX_I2S_FORMATS, 8),
+	TOHDMITX_IN("I2S IN C", TOHDMITX_I2S_IN_C,
+		    TOHDMITX_I2S_FORMATS, 8),
+	TOHDMITX_OUT("I2S OUT", TOHDMITX_I2S_OUT,
+		     TOHDMITX_I2S_FORMATS, 8),
+	TOHDMITX_IN("SPDIF IN A", TOHDMITX_SPDIF_IN_A,
+		    TOHDMITX_SPDIF_FORMATS, 2),
+	TOHDMITX_IN("SPDIF IN B", TOHDMITX_SPDIF_IN_B,
+		    TOHDMITX_SPDIF_FORMATS, 2),
+	TOHDMITX_OUT("SPDIF OUT", TOHDMITX_SPDIF_OUT,
+		     TOHDMITX_SPDIF_FORMATS, 2),
 };
+
+static int g12a_tohdmi_component_probe(struct snd_soc_component *c)
+{
+	/* Initialize the static clock parameters */
+	return snd_soc_component_write(c, TOHDMITX_CTRL0,
+		     CTRL0_I2S_BLK_CAP_INV | CTRL0_SPDIF_CLK_CAP_INV);
+}
 
 static const struct snd_soc_dapm_route g12a_tohdmitx_routes[] = {
 	{ "I2S SRC", "I2S A", "I2S IN A Playback" },
@@ -346,6 +354,7 @@ static const struct snd_soc_dapm_route g12a_tohdmitx_routes[] = {
 };
 
 static const struct snd_soc_component_driver g12a_tohdmitx_component_drv = {
+	.probe			= g12a_tohdmi_component_probe,
 	.dapm_widgets		= g12a_tohdmitx_widgets,
 	.num_dapm_widgets	= ARRAY_SIZE(g12a_tohdmitx_widgets),
 	.dapm_routes		= g12a_tohdmitx_routes,
@@ -369,56 +378,21 @@ MODULE_DEVICE_TABLE(of, g12a_tohdmitx_of_match);
 static int g12a_tohdmitx_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
-	struct g12a_tohdmitx *priv;
 	struct resource *res;
 	void __iomem *regs;
-	struct clk *pclk;
-	int ret;
-
-	priv = devm_kzalloc(dev, sizeof(*priv), GFP_KERNEL);
-	if (!priv)
-		return -ENOMEM;
-	platform_set_drvdata(pdev, priv);
+	struct regmap *map;
 
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	regs = devm_ioremap_resource(dev, res);
 	if (IS_ERR(regs))
 		return PTR_ERR(regs);
 
-	pclk = devm_clk_get(dev, NULL);
-	if (IS_ERR(pclk)) {
-		ret = PTR_ERR(pclk);
-		if (ret != -EPROBE_DEFER)
-			dev_err(dev, "failed to get pclk\n");
-		return ret;
-	}
-
-	ret = clk_prepare_enable(pclk);
-	if (ret) {
-		dev_err(dev, "pclk enable failed\n");
-		return ret;
-	}
-
-	ret = devm_add_action_or_reset(dev,
-				       (void(*)(void *))clk_disable_unprepare,
-				       pclk);
-	if (ret) {
-		dev_err(dev, "failed to add pclk reset aciton\n");
-		clk_disable_unprepare(pclk);
-		return ret;
-	}
-
-	/* Enable the clock here */
-	priv->map = devm_regmap_init_mmio(dev, regs, &g12a_tohdmitx_regmap_cfg);
-	if (IS_ERR(priv->map)) {
+	map = devm_regmap_init_mmio(dev, regs, &g12a_tohdmitx_regmap_cfg);
+	if (IS_ERR(map)) {
 		dev_err(dev, "failed to init regmap: %ld\n",
-			PTR_ERR(priv->map));
-		return PTR_ERR(priv->map);
+			PTR_ERR(map));
+		return PTR_ERR(map);
 	}
-
-	/* Initialize the static clock parameters */
-	regmap_write(priv->map, TOHDMITX_CTRL0,
-		     CTRL0_I2S_BLK_CAP_INV | CTRL0_SPDIF_CLK_CAP_INV);
 
 	return devm_snd_soc_register_component(dev,
 			&g12a_tohdmitx_component_drv, g12a_tohdmitx_dai_drv,
