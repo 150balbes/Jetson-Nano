@@ -783,8 +783,7 @@ void brcmf_sdiod_sgtable_alloc(struct brcmf_sdio_dev *sdiodev)
 		      sdiodev->settings->bus.sdio.txglomsz);
 	nents += (nents >> 4) + 1;
 
-	WARN(nents > sdiodev->max_segment_count, "max_seg_cnt=%u, host_max_seg=%u nents=%u",
-		sdiodev->max_segment_count, host->max_segs, nents);
+	WARN_ON(nents > sdiodev->max_segment_count);
 
 	brcmf_dbg(TRACE, "nents=%d\n", nents);
 	err = sg_alloc_table(&sdiodev->sgtable, nents, GFP_KERNEL);
@@ -981,7 +980,6 @@ static const struct sdio_device_id brcmf_sdmmc_ids[] = {
 	BRCMF_SDIO_DEVICE(SDIO_DEVICE_ID_BROADCOM_43455),
 	BRCMF_SDIO_DEVICE(SDIO_DEVICE_ID_BROADCOM_4354),
 	BRCMF_SDIO_DEVICE(SDIO_DEVICE_ID_BROADCOM_4356),
-	BRCMF_SDIO_DEVICE(SDIO_DEVICE_ID_BROADCOM_4359),
 	BRCMF_SDIO_DEVICE(SDIO_DEVICE_ID_CYPRESS_4373),
 	BRCMF_SDIO_DEVICE(SDIO_DEVICE_ID_CYPRESS_43012),
 	{ /* end: all zeroes */ }

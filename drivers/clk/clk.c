@@ -368,7 +368,7 @@ static struct clk_core *clk_core_get(struct clk_core *core, u8 p_index)
 	const char *dev_id = dev ? dev_name(dev) : NULL;
 	struct device_node *np = core->of_node;
 
-	if (np && index >= 0)
+	if (np && (name || index >= 0))
 		hw = of_clk_get_hw(np, index, name);
 
 	/*
@@ -2489,6 +2489,12 @@ runtime_put:
 
 	return ret;
 }
+
+int clk_hw_set_parent(struct clk_hw *hw, struct clk_hw *parent)
+{
+	return clk_core_set_parent_nolock(hw->core, parent->core);
+}
+EXPORT_SYMBOL_GPL(clk_hw_set_parent);
 
 /**
  * clk_set_parent - switch the parent of a mux clk

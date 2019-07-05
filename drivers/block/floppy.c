@@ -4971,7 +4971,8 @@ static const struct pnp_device_id floppy_pnpids[] = {
 	{"PNP0700", 0},
 	{}
 };
-/* MODULE_DEVICE_TABLE(pnp, floppy_pnpids); */
+
+MODULE_DEVICE_TABLE(pnp, floppy_pnpids);
 
 #else
 
