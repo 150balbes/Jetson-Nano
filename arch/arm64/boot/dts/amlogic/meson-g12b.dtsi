@@ -26,19 +26,19 @@
 
 			cluster1 {
 				core0 {
-					cpu = <&cpu100>;
+					cpu = <&cpu2>;
 				};
 
 				core1 {
-					cpu = <&cpu101>;
+					cpu = <&cpu3>;
 				};
 
 				core2 {
-					cpu = <&cpu102>;
+					cpu = <&cpu4>;
 				};
 
 				core3 {
-					cpu = <&cpu103>;
+					cpu = <&cpu5>;
 				};
 			};
 		};
@@ -59,7 +59,7 @@
 			next-level-cache = <&l2>;
 		};
 
-		cpu100: cpu@100 {
+		cpu2: cpu@100 {
 			device_type = "cpu";
 			compatible = "arm,cortex-a73";
 			reg = <0x0 0x100>;
@@ -67,7 +67,7 @@
 			next-level-cache = <&l2>;
 		};
 
-		cpu101: cpu@101 {
+		cpu3: cpu@101 {
 			device_type = "cpu";
 			compatible = "arm,cortex-a73";
 			reg = <0x0 0x101>;
@@ -75,7 +75,7 @@
 			next-level-cache = <&l2>;
 		};
 
-		cpu102: cpu@102 {
+		cpu4: cpu@102 {
 			device_type = "cpu";
 			compatible = "arm,cortex-a73";
 			reg = <0x0 0x102>;
@@ -83,7 +83,7 @@
 			next-level-cache = <&l2>;
 		};
 
-		cpu103: cpu@103 {
+		cpu5: cpu@103 {
 			device_type = "cpu";
 			compatible = "arm,cortex-a73";
 			reg = <0x0 0x103>;
