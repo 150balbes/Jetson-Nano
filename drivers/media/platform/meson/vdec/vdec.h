@@ -7,6 +7,7 @@
 #ifndef __MESON_VDEC_CORE_H_
 #define __MESON_VDEC_CORE_H_
 
+#include <linux/irqreturn.h>
 #include <linux/regmap.h>
 #include <linux/list.h>
 #include <media/videobuf2-v4l2.h>

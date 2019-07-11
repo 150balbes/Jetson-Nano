@@ -45,7 +45,8 @@
 		blue {
 			label = "c2:blue:alive";
 			gpios = <&gpio_ao GPIOAO_13 GPIO_ACTIVE_LOW>;
-			default-state = "on";
+			linux,default-trigger = "heartbeat";
+			default-state = "off";
 		};
 	};
 

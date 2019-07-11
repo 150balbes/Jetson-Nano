@@ -9,6 +9,7 @@
 #include <dt-bindings/gpio/gpio.h>
 #include <dt-bindings/input/input.h>
 #include <dt-bindings/gpio/meson-g12a-gpio.h>
+#include <dt-bindings/sound/meson-g12a-tohdmitx.h>
 
 / {
 	compatible = "seirobotics,sei510", "amlogic,g12a";
@@ -128,6 +129,25 @@
 		enable-active-high;
 	};
 
+	vddcpu: regulator-vddcpu {
+		/*
+		 * SY8120B1ABC DC/DC Regulator.
+		 */
+		compatible = "pwm-regulator";
+
+		regulator-name = "VDDCPU";
+		regulator-min-microvolt = <721000>;
+		regulator-max-microvolt = <1022000>;
+
+		vin-supply = <&dc_in>;
+
+		pwms = <&pwm_AO_cd 1 1250 0>;
+		pwm-dutycycle-range = <100 0>;
+
+		regulator-boot-on;
+		regulator-always-on;
+	};
+
 	vddio_ao1v8: regulator-vddio_ao1v8 {
 		compatible = "regulator-fixed";
 		regulator-name = "VDDIO_AO1V8";
@@ -155,9 +175,8 @@
 	sound {
 		compatible = "amlogic,axg-sound-card";
 		model = "G12A-SEI510";
-		audio-aux-devs = <&tdmout_a>, <&tdmout_b>, <&tdmout_c>,
-				 <&tdmin_a>, <&tdmin_b>, <&tdmin_c>,
-				 <&tdmin_lb>;
+		audio-aux-devs = <&tdmout_a>, <&tdmout_b>,
+				 <&tdmin_a>, <&tdmin_b>;
 		audio-routing = "TDMOUT_A IN 0", "FRDDR_A OUT 0",
 				"TDMOUT_A IN 1", "FRDDR_B OUT 0",
 				"TDMOUT_A IN 2", "FRDDR_C OUT 0",
@@ -173,32 +192,17 @@
 				"TDMIN_A IN 3", "TDM_A Loopback",
 				"TDMIN_B IN 0", "TDM_A Capture",
 				"TDMIN_B IN 3", "TDM_A Loopback",
-				"TDMIN_C IN 0", "TDM_A Capture",
-				"TDMIN_C IN 3", "TDM_A Loopback",
-				"TDMIN_LB IN 3", "TDM_A Capture",
-				"TDMIN_LB IN 0", "TDM_A Loopback",
 				"TDMIN_A IN 1", "TDM_B Capture",
 				"TDMIN_A IN 4", "TDM_B Loopback",
 				"TDMIN_B IN 1", "TDM_B Capture",
 				"TDMIN_B IN 4", "TDM_B Loopback",
-				"TDMIN_C IN 1", "TDM_B Capture",
-				"TDMIN_C IN 4", "TDM_B Loopback",
-				"TDMIN_LB IN 4", "TDM_B Capture",
-				"TDMIN_LB IN 1", "TDM_B Loopback",
 				"TODDR_A IN 0", "TDMIN_A OUT",
 				"TODDR_B IN 0", "TDMIN_A OUT",
 				"TODDR_C IN 0", "TDMIN_A OUT",
 				"TODDR_A IN 1", "TDMIN_B OUT",
 				"TODDR_B IN 1", "TDMIN_B OUT",
-				"TODDR_C IN 1", "TDMIN_B OUT",
-				"TODDR_A IN 2", "TDMIN_C OUT",
-				"TODDR_B IN 2", "TDMIN_C OUT",
-				"TODDR_C IN 2", "TDMIN_C OUT",
-				"TODDR_A IN 6", "TDMIN_LB OUT",
-				"TODDR_B IN 6", "TDMIN_LB OUT",
-				"TODDR_C IN 6", "TDMIN_LB OUT";
+				"TODDR_C IN 1", "TDMIN_B OUT";
 
-		/* FIXME */
 		assigned-clocks = <&clkc CLKID_MPLL2>,
 				  <&clkc CLKID_MPLL0>,
 				  <&clkc CLKID_MPLL1>;
@@ -206,7 +210,6 @@
 		assigned-clock-rates = <294912000>,
 				       <270950400>,
 				       <393216000>;
-
 		status = "okay";
 
 		dai-link-0 {
@@ -233,6 +236,7 @@
 			sound-dai = <&toddr_c>;
 		};
 
+		/* internal speaker interface */
 		dai-link-6 {
 			sound-dai = <&tdmif_a>;
 			dai-format = "i2s";
@@ -244,19 +248,12 @@
 			};
 
 			codec-1 {
-				sound-dai = <&tohdmitx 0>;
+				sound-dai = <&tohdmitx TOHDMITX_I2S_IN_A>;
 			};
 		};
 
+		/* 8ch hdmi interface */
 		dai-link-7 {
-			sound-dai = <&pdm>;
-
-			codec {
-				sound-dai = <&dmics>;
-			};
-		};
-
-		dai-link-8 {
 			sound-dai = <&tdmif_b>;
 			dai-format = "i2s";
 			dai-tdm-slot-tx-mask-0 = <1 1>;
@@ -266,12 +263,22 @@
 			mclk-fs = <256>;
 
 			codec@0 {
-				sound-dai = <&tohdmitx 1>;
+				sound-dai = <&tohdmitx TOHDMITX_I2S_IN_B>;
 			};
 		};
 
+		/* internal digital mics */
+		dai-link-8 {
+			sound-dai = <&pdm>;
+
+			codec {
+				sound-dai = <&dmics>;
+			};
+		};
+
+		/* hdmi glue */
 		dai-link-9 {
-			sound-dai = <&tohdmitx 3>;
+			sound-dai = <&tohdmitx TOHDMITX_I2S_OUT>;
 
 			codec {
 				sound-dai = <&hdmi_tx>;
@@ -307,6 +314,34 @@
 
 &clkc_audio {
 	status = "okay";
+};
+
+&cpu0 {
+	cpu-supply = <&vddcpu>;
+	operating-points-v2 = <&cpu_opp_table>;
+	clocks = <&clkc CLKID_CPU_CLK>;
+	clock-latency = <50000>;
+};
+
+&cpu1 {
+	cpu-supply = <&vddcpu>;
+	operating-points-v2 = <&cpu_opp_table>;
+	clocks = <&clkc CLKID_CPU_CLK>;
+	clock-latency = <50000>;
+};
+
+&cpu2 {
+	cpu-supply = <&vddcpu>;
+	operating-points-v2 = <&cpu_opp_table>;
+	clocks = <&clkc CLKID_CPU_CLK>;
+	clock-latency = <50000>;
+};
+
+&cpu3 {
+	cpu-supply = <&vddcpu>;
+	operating-points-v2 = <&cpu_opp_table>;
+	clocks = <&clkc CLKID_CPU_CLK>;
+	clock-latency = <50000>;
 };
 
 &cvbs_vdac_port {
@@ -351,10 +386,20 @@
 	pinctrl-names = "default";
 };
 
-&ir {
-	status = "okay";
-	pinctrl-0 = <&remote_input_ao_pins>;
+&pwm_AO_cd {
+	pinctrl-0 = <&pwm_ao_d_e_pins>;
 	pinctrl-names = "default";
+	clocks = <&xtal>;
+	clock-names = "clkin1";
+	status = "okay";
+};
+
+&pwm_ef {
+	status = "okay";
+	pinctrl-0 = <&pwm_e_pins>;
+	pinctrl-names = "default";
+	clocks = <&xtal>;
+	clock-names = "clkin0";
 };
 
 &pdm {
@@ -363,12 +408,6 @@
 		    <&pdm_dclk_z_pins>;
 	pinctrl-names = "default";
 	status = "okay";
-};
-
-&pwm_ef {
-	status = "okay";
-	pinctrl-0 = <&pwm_e_pins>;
-	pinctrl-names = "default";
 };
 
 &saradc {
@@ -455,26 +494,6 @@
 
 &tdmif_b {
 	status = "okay";
-
-	assigned-clocks = <&clkc_audio AUD_CLKID_TDM_SCLK_PAD1>,
-			  <&clkc_audio AUD_CLKID_TDM_LRCLK_PAD1>,
-			  <&clkc_audio AUD_CLKID_TDM_MCLK_PAD0>;
-	assigned-clock-parents = <&clkc_audio AUD_CLKID_MST_B_SCLK>,
-				 <&clkc_audio AUD_CLKID_MST_B_LRCLK>,
-				 <&clkc_audio AUD_CLKID_MST_B_MCLK>;
-	assigned-clock-rates = <0>, <0>, <0>;
-};
-
-&tdmif_c {
-	status = "okay";
-
-	assigned-clocks = <&clkc_audio AUD_CLKID_TDM_SCLK_PAD2>,
-			  <&clkc_audio AUD_CLKID_TDM_LRCLK_PAD2>,
-			  <&clkc_audio AUD_CLKID_TDM_MCLK_PAD1>;
-	assigned-clock-parents = <&clkc_audio AUD_CLKID_MST_C_SCLK>,
-				 <&clkc_audio AUD_CLKID_MST_C_LRCLK>,
-				 <&clkc_audio AUD_CLKID_MST_C_MCLK>;
-	assigned-clock-rates = <0>, <0>, <0>;
 };
 
 &tdmin_a {
@@ -485,23 +504,11 @@
 	status = "okay";
 };
 
-&tdmin_c {
-	status = "okay";
-};
-
-&tdmin_lb {
-	status = "okay";
-};
-
 &tdmout_a {
 	status = "okay";
 };
 
 &tdmout_b {
-	status = "okay";
-};
-
-&tdmout_c {
 	status = "okay";
 };
 
@@ -530,6 +537,11 @@
 	bluetooth {
 		compatible = "brcm,bcm43438-bt";
 		shutdown-gpios = <&gpio GPIOX_17 GPIO_ACTIVE_HIGH>;
+		max-speed = <2000000>;
+		clocks = <&wifi32k>;
+		clock-names = "lpo";
+		vbat-supply = <&vddao_3v3>;
+		vddio-supply = <&vddio_ao1v8>;
 	};
 };
 

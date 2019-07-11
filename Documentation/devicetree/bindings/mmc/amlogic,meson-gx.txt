@@ -23,8 +23,8 @@ Required properties:
 - resets     : phandle of the internal reset line
 
 Optional properties:
-- amlogic,ddr-access-quirk: set when HW cannot access the DDR memory, like on
-  the G12A SDIO controller.
+- amlogic,dram-access-quirk: set when controller's internal DMA engine cannot access the
+  DRAM memory, like on the G12A dedicated SDIO controller.
 
 Example:
 

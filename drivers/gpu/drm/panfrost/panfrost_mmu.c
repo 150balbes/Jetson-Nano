@@ -1,5 +1,6 @@
 // SPDX-License-Identifier:	GPL-2.0
 /* Copyright 2019 Linaro, Ltd, Rob Herring <robh@kernel.org> */
+#include <linux/bitfield.h>
 #include <linux/delay.h>
 #include <linux/interrupt.h>
 #include <linux/io.h>
@@ -155,6 +156,9 @@ int panfrost_mmu_map(struct panfrost_gem_object *bo)
 	struct sg_table *sgt;
 	int ret;
 
+	if (WARN_ON(bo->is_mapped))
+		return 0;
+
 	sgt = drm_gem_shmem_get_pages_sgt(obj);
 	if (WARN_ON(IS_ERR(sgt)))
 		return PTR_ERR(sgt);
@@ -188,6 +192,7 @@ int panfrost_mmu_map(struct panfrost_gem_object *bo)
 
 	pm_runtime_mark_last_busy(pfdev->dev);
 	pm_runtime_put_autosuspend(pfdev->dev);
+	bo->is_mapped = true;
 
 	return 0;
 }
@@ -201,6 +206,9 @@ void panfrost_mmu_unmap(struct panfrost_gem_object *bo)
 	size_t len = bo->node.size << PAGE_SHIFT;
 	size_t unmapped_len = 0;
 	int ret;
+
+	if (WARN_ON(!bo->is_mapped))
+		return;
 
 	dev_dbg(pfdev->dev, "unmap: iova=%llx, len=%zx", iova, len);
 
@@ -229,6 +237,7 @@ void panfrost_mmu_unmap(struct panfrost_gem_object *bo)
 
 	pm_runtime_mark_last_busy(pfdev->dev);
 	pm_runtime_put_autosuspend(pfdev->dev);
+	bo->is_mapped = false;
 }
 
 static void mmu_tlb_inv_context_s1(void *cookie)
@@ -358,8 +367,8 @@ int panfrost_mmu_init(struct panfrost_device *pfdev)
 
 	pfdev->mmu->pgtbl_cfg = (struct io_pgtable_cfg) {
 		.pgsize_bitmap	= SZ_4K | SZ_2M,
-		.ias		= 48,
-		.oas		= 40,
+		.ias		= FIELD_GET(0xff, pfdev->features.mmu_features),
+		.oas		= FIELD_GET(0xff00, pfdev->features.mmu_features),
 		.tlb		= &mmu_tlb_ops,
 		.iommu_dev	= pfdev->dev,
 	};

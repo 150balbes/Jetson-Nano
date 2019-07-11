@@ -1,14 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Driver for Amlogic Meson IR remote receiver
  *
  * Copyright (C) 2014 Beniamino Galvani <b.galvani@gmail.com>
- *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * version 2 as published by the Free Software Foundation.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
 #include <linux/device.h>
@@ -97,8 +91,7 @@ static irqreturn_t meson_ir_irq(int irqno, void *dev_id)
 	status = readl_relaxed(ir->reg + IR_DEC_STATUS);
 	rawir.pulse = !!(status & STATUS_IR_DEC_IN);
 
-	if (ir_raw_event_store_with_filter(ir->rc, &rawir))
-		ir_raw_event_handle(ir->rc);
+	ir_raw_event_store_with_timeout(ir->rc, &rawir);
 
 	spin_unlock(&ir->lock);
 

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  *   imon.c:	input and display driver for SoundGraph iMON IR/VFD/LCD
  *
@@ -10,16 +11,6 @@
  *   which the support for them wouldn't be nearly as good. Thanks
  *   also to the numerous 0xffdc device owners that tested auto-config
  *   support for me and provided debug dumps from their devices.
- *
- *   imon is free software; you can redistribute it and/or modify
- *   it under the terms of the GNU General Public License as published by
- *   the Free Software Foundation; either version 2 of the License, or
- *   (at your option) any later version.
- *
- *   This program is distributed in the hope that it will be useful,
- *   but WITHOUT ANY WARRANTY; without even the implied warranty of
- *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *   GNU General Public License for more details.
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ":%s: " fmt, __func__
@@ -1405,17 +1396,6 @@ static void imon_pad_to_keys(struct imon_context *ictx, unsigned char *buf)
 				scancode = be32_to_cpu(*((__be32 *)buf));
 			}
 		} else {
-			/*
-			 * For users without stabilized, just ignore any value getting
-			 * to close to the diagonal.
-			 */
-			if ((abs(rel_y) < 2 && abs(rel_x) < 2) ||
-				abs(abs(rel_y) - abs(rel_x)) < 2 ) {
-				spin_lock_irqsave(&ictx->kc_lock, flags);
-				ictx->kc = KEY_UNKNOWN;
-				spin_unlock_irqrestore(&ictx->kc_lock, flags);
-				return;
-			}
 			/*
 			 * Hack alert: instead of using keycodes, we have
 			 * to use hard-coded scancodes here...

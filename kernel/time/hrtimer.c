@@ -905,7 +905,7 @@ u64 hrtimer_forward(struct hrtimer *timer, ktime_t now, ktime_t interval)
 	if (delta < 0)
 		return 0;
 
-	if (timer->state & HRTIMER_STATE_ENQUEUED)
+	if (WARN_ON(timer->state & HRTIMER_STATE_ENQUEUED))
 		return 0;
 
 	if (interval < hrtimer_resolution)
