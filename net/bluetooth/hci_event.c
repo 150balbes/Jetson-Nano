@@ -5730,8 +5730,7 @@ static bool hci_get_cmd_complete(struct hci_dev *hdev, u16 opcode,
 		return false;
 
 	if (hdr->evt != HCI_EV_CMD_COMPLETE) {
-		bt_dev_err(hdev, "last event is not cmd complete (0x%2.2x)",
-			   hdr->evt);
+		BT_DBG("last event is not cmd complete (0x%2.2x)", hdr->evt);
 		return false;
 	}
 

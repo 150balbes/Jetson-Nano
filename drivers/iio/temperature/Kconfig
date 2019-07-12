@@ -34,6 +34,17 @@ config HID_SENSOR_TEMP
 	  To compile this driver as a module, choose M here: the module
 	  will be called hid-sensor-temperature.
 
+config MESON_TSENSOR
+	tristate "Amlogic Meson temperature sensor Support"
+	default ARCH_MESON
+	depends on OF && ARCH_MESON
+	help
+	  If you say yess here you get support for Meson Temperature sensor
+	  for G12 SoC Family.
+
+	  This driver can also be built as a module. If so, the module will
+	  be called meson_tsensor.
+
 config MLX90614
 	tristate "MLX90614 contact-less infrared sensor"
 	depends on I2C
