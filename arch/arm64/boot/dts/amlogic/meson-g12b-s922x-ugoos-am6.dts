@@ -132,8 +132,7 @@
 
 		vin-supply = <&main_12v>;
 
-//		pwms = <&pwm_ab 0 1250 0>;
-		pwms = <&pwm_AO_cd 0 1250 0>;
+		pwms = <&pwm_ab 0 1250 0>;
 		pwm-dutycycle-range = <100 0>;
 
 		regulator-boot-on;
@@ -346,28 +345,28 @@
 	clock-latency = <50000>;
 };
 
-&cpu2 {
+&cpu100 {
 	cpu-supply = <&vddcpu_a>;
 	operating-points-v2 = <&cpub_opp_table_1>;
 	clocks = <&clkc CLKID_CPUB_CLK>;
 	clock-latency = <50000>;
 };
 
-&cpu3 {
+&cpu101 {
 	cpu-supply = <&vddcpu_a>;
 	operating-points-v2 = <&cpub_opp_table_1>;
 	clocks = <&clkc CLKID_CPUB_CLK>;
 	clock-latency = <50000>;
 };
 
-&cpu4 {
+&cpu102 {
 	cpu-supply = <&vddcpu_a>;
 	operating-points-v2 = <&cpub_opp_table_1>;
 	clocks = <&clkc CLKID_CPUB_CLK>;
 	clock-latency = <50000>;
 };
 
-&cpu5 {
+&cpu103 {
 	cpu-supply = <&vddcpu_a>;
 	operating-points-v2 = <&cpub_opp_table_1>;
 	clocks = <&clkc CLKID_CPUB_CLK>;

@@ -72,7 +72,3 @@
 &ir {
 	linux,rc-map-name = "rc-wetek-play2";
 };
-
-&usb_pwr {
-		gpio = <>;
-};

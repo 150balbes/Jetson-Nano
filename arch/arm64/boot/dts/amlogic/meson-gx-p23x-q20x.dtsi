@@ -256,7 +256,7 @@
 	vqmmc-supply = <&vddio_boot>;
 };
 
-/* This one is connected to the Bluetooth module */
+/* This UART is connected to the Bluetooth module */
 &uart_A {
 	status = "okay";
 	pinctrl-0 = <&uart_a_pins>, <&uart_a_cts_rts_pins>;

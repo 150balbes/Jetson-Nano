@@ -130,9 +130,10 @@ properties:
       - description: Boards with the Amlogic Meson G12A S905D2/X2/Y2 SoC
         items:
           - enum:
-              - amediatech,x96-max
+              - amediatech,x96max
               - amlogic,u200
               - seirobotics,sei510
+              - oranth,tx5-max
           - const: amlogic,g12a
 
       - description: Boards with the Amlogic Meson G12B S922X SoC

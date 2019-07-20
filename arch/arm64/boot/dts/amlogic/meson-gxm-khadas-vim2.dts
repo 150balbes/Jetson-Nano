@@ -18,7 +18,7 @@
 
 	aliases {
 		serial0 = &uart_AO;
-		serial2 = &uart_AO_B;
+		serial1 = &uart_AO_B;
 	};
 
 	chosen {
@@ -62,8 +62,6 @@
 
 	gpio-keys-polled {
 		compatible = "gpio-keys-polled";
-		#address-cells = <1>;
-		#size-cells = <0>;
 		poll-interval = <100>;
 
 		button@0 {
@@ -348,7 +346,6 @@
 		interrupt-parent = <&gpio_intc>;
 		/* MAC_INTR on GPIOZ_15 */
 		interrupts = <25 IRQ_TYPE_LEVEL_LOW>;
-		eee-broken-1000t;
 	};
 };
 
@@ -392,7 +389,7 @@
 	status = "okay";
 	pinctrl-0 = <&remote_input_ao_pins>;
 	pinctrl-names = "default";
-	linux,rc-map-name = "rc-geekbox";
+	linux,rc-map-name = "rc-khadas";
 };
 
 &pwm_AO_ab {

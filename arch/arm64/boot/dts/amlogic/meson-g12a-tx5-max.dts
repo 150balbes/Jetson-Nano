@@ -1,0 +1,17 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+/*
+ * Copyright (c) 2018 BayLibre SAS. All rights reserved.
+ */
+
+/dts-v1/;
+
+#include "meson-g12a-x96-max.dts"
+
+/ {
+	compatible = "oranth,tx5-max", "amlogic,u200", "amlogic,g12a";
+	model = "Oranth Tanix TX5 Max";
+};
+
+&ir {
+	linux,rc-map-name = "rc-tx5max";
+};

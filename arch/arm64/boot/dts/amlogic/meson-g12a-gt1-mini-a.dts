@@ -1,0 +1,21 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+/*
+ * Copyright (c) 2019 Juan J. Sierralta. All rights reserved.
+ */
+
+/dts-v1/;
+
+#include "meson-g12a-x96-max.dts"
+
+/ {
+	compatible = "beelink,gt1-mini-a", "amlogic,u200", "amlogic,g12a";
+	model = "Beelink GT1 Mini-A";
+
+	reserved-memory {
+		/* TEE Reserved Memory */
+		bl32_reserved: bl32@5000000 {
+			reg = <0x0 0x05300000 0x0 0x2000000>;
+			no-map;
+		};
+	};
+};
