@@ -127,7 +127,8 @@
 
 		vin-supply = <&dc_in>;
 
-		pwms = <&pwm_ab 0 1250 0>;
+//		pwms = <&pwm_ab 0 1250 0>;
+		pwms = <&pwm_AO_cd 0 1250 0>;
 		pwm-dutycycle-range = <100 0>;
 
 		regulator-boot-on;
