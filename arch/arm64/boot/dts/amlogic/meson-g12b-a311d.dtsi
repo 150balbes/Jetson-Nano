@@ -4,6 +4,8 @@
  * Author: Neil Armstrong <narmstrong@baylibre.com>
  */
 
+#include "meson-g12b.dtsi"
+
 / {
 	cpu_opp_table_0: opp-table-0 {
 		compatible = "operating-points-v2";

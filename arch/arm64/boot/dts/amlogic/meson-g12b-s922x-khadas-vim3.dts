@@ -1,4 +1,3 @@
-
 // SPDX-License-Identifier: (GPL-2.0+ OR MIT)
 /*
  * Copyright (c) 2019 BayLibre, SAS
@@ -12,6 +11,5 @@
 #include "meson-g12b-khadas-vim3.dtsi"
 
 / {
-	compatible = "khadas,vim3", "amlogic,g12b";
-	model = "Khadas VIM3";
+	compatible = "khadas,vim3", "amlogic,s922x", "amlogic,g12b";
 };

@@ -5,13 +5,14 @@
  * Copyright (c) 2019 Christian Hewitt <christianshewitt@gmail.com>
  */
 
-#include "meson-g12b.dtsi"
 #include <dt-bindings/input/input.h>
 #include <dt-bindings/gpio/meson-g12a-gpio.h>
 #include <dt-bindings/sound/meson-g12a-tohdmitx.h>
 #include <dt-bindings/usb/pd.h>
 
 / {
+	model = "Khadas VIM3";
+
 	aliases {
 		serial0 = &uart_AO;
 		ethernet0 = &ethmac;
@@ -59,6 +60,7 @@
 		reset-gpios = <&gpio BOOT_12 GPIO_ACTIVE_LOW>;
 	};
 
+	
 	gpio-keys-polled {
 		compatible = "gpio-keys-polled";
 		poll-interval = <100>;
@@ -127,8 +129,7 @@
 
 		vin-supply = <&dc_in>;
 
-//		pwms = <&pwm_ab 0 1250 0>;
-		pwms = <&pwm_AO_cd 0 1250 0>;
+		pwms = <&pwm_ab 0 1250 0>;
 		pwm-dutycycle-range = <100 0>;
 
 		regulator-boot-on;
@@ -377,13 +378,6 @@
 	pinctrl-0 = <&i2c_ao_sck_pins>, <&i2c_ao_sda_pins>;
 	pinctrl-names = "default";
 
-	sensor@e {
-		compatible = "kionix,kxtj21009";
-		reg = <0xe>;
-		interrupt-parent = <&gpio_intc>;
-		interrupts = <9 IRQ_TYPE_LEVEL_LOW>;
-	};
-
 	gpio_expander: gpio-controller@20 {
 		compatible = "ti,tca6408";
 		reg = <0x20>;
@@ -391,22 +385,6 @@
 		gpio-controller;
 		#gpio-cells = <2>;
 	};
-
-//	fusb302: typec-portc@22 {
-//		compatible = "fcs,fusb302";
-//		reg = <0x22>;
-//		interrupt-parent = <&gpio_intc>;
-//		interrupts = <8 IRQ_TYPE_LEVEL_LOW>;
-//
-//		usb_con: connector {
-//			compatible = "usb-c-connector";
-//			label = "USB-C";
-//			power-role = "sink";
-//			data-role = "dual";
-//			sink-pdos = <PDO_FIXED(5000, 3000, PDO_FIXED_USB_COMM)>;
-//			op-sink-microwatt = <10000000>;
-//		};
-//	};
 
 	rtc@51 {
 		compatible = "haoyu,hym8563";
@@ -419,7 +397,7 @@
 	status = "okay";
 	pinctrl-0 = <&remote_input_ao_pins>;
 	pinctrl-names = "default";
-        linux,rc-map-name = "rc-khadas";
+	linux,rc-map-name = "rc-khadas";
 };
 
 &pwm_ab {
