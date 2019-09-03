@@ -8,10 +8,10 @@
 #include <dt-bindings/clock/axg-audio-clkc.h>
 #include <dt-bindings/clock/g12a-clkc.h>
 #include <dt-bindings/clock/g12a-aoclkc.h>
-#include <dt-bindings/reset/g12a-aoclkc.h>
 #include <dt-bindings/interrupt-controller/irq.h>
 #include <dt-bindings/interrupt-controller/arm-gic.h>
 #include <dt-bindings/reset/amlogic,meson-axg-audio-arb.h>
+#include <dt-bindings/reset/amlogic,meson-g12a-audio-reset.h>
 #include <dt-bindings/reset/amlogic,meson-g12a-reset.h>
 
 / {
@@ -58,6 +58,7 @@
 		#address-cells = <1>;
 		#size-cells = <1>;
 		read-only;
+		secure-monitor = <&sm>;
 	};
 
 	psci {
@@ -107,6 +108,8 @@
 				 <&clkc CLKID_FCLK_DIV2>,
 				 <&clkc CLKID_MPLL2>;
 			clock-names = "stmmaceth", "clkin0", "clkin1";
+			rx-fifo-depth = <4096>;
+			tx-fifo-depth = <2048>;
 			status = "disabled";
 
 			mdio0: mdio {
@@ -801,6 +804,29 @@
 						};
 					};
 
+					sdio_pins: sdio {
+						mux {
+							groups = "sdio_d0",
+								 "sdio_d1",
+								 "sdio_d2",
+								 "sdio_d3",
+								 "sdio_clk",
+								 "sdio_cmd";
+							function = "sdio";
+							bias-disable;
+							drive-strength-microamp = <4000>;
+						};
+					};
+
+					sdio_clk_gate_pins: sdio_clk_gate {
+						mux {
+							groups = "GPIOX_4";
+							function = "gpio_periphs";
+							bias-pull-down;
+							drive-strength-microamp = <4000>;
+						};
+					};
+
 					spdif_in_a10_pins: spdif-in-a10 {
 						mux {
 							groups = "spdif_in_a10";
@@ -1284,30 +1310,6 @@
 						};
 					};
 
-					sdio_pins: sdio {
-						mux {
-							groups = "sdio_d0",
-								 "sdio_d1",
-								 "sdio_d2",
-								 "sdio_d3",
-								 "sdio_cmd",
-								 "sdio_clk";
-							function = "sdio";
-							bias-disable;
-							drive-strength-microamp = <4000>;
-						};
-					};
-
-					sdio_clk_gate_pins: sdio_clk_gate {
-						mux {
-							groups = "GPIOX_4";
-							function = "gpio_periphs";
-							bias-pull-down;
-							drive-strength-microamp = <4000>;
-						};
-					};
-
-
 					uart_a_pins: uart-a {
 						mux {
 							groups = "uart_a_tx",
@@ -1356,24 +1358,22 @@
 			};
 
 			cpu_temp: temperature-sensor@34800 {
-				compatible = "amlogic,meson-g12a-cpu-tsensor",
-					     "amlogic,meson-g12a-tsensor";
+				compatible = "amlogic,g12-cpu-thermal",
+					     "amlogic,g12-thermal";
 				reg = <0x0 0x34800 0x0 0x50>;
 				interrupts = <GIC_SPI 35 IRQ_TYPE_EDGE_RISING>;
 				clocks = <&clkc CLKID_TS>;
-				status = "okay";
-				#io-channel-cells = <1>;
+				#thermal-sensor-cells = <0>;
 				amlogic,ao-secure = <&sec_AO>;
 			};
 
 			ddr_temp: temperature-sensor@34c00 {
-				compatible = "amlogic,meson-g12a-ddr-tsensor",
-					     "amlogic,meson-g12a-tsensor";
+				compatible = "amlogic,g12-ddr-thermal",
+					     "amlogic,g12-thermal";
 				reg = <0x0 0x34c00 0x0 0x50>;
 				interrupts = <GIC_SPI 36 IRQ_TYPE_EDGE_RISING>;
 				clocks = <&clkc CLKID_TS>;
-				status = "okay";
-				#io-channel-cells = <1>;
+				#thermal-sensor-cells = <0>;
 				amlogic,ao-secure = <&sec_AO>;
 			};
 
@@ -1429,18 +1429,6 @@
 						clock-names = "xtal";
 					};
 				};
-
-				mailbox: mailbox@404 {
-					compatible = "amlogic,meson-gx-mhu",
-						     "amlogic,meson-gxbb-mhu";
-					reg = <0 0x404 0 0x4c>;
-					interrupts = <GIC_SPI 208 IRQ_TYPE_EDGE_RISING>,
-						     <GIC_SPI 209 IRQ_TYPE_EDGE_RISING>,
-						     <GIC_SPI 210 IRQ_TYPE_EDGE_RISING>;
-					clocks = <&clkc_AO CLKID_AO_MAILBOX>;
-					clock-names = "pclk";
-					#mbox-cells = <1>;
-				};
 			};
 
 			pdm: audio-controller@40000 {
@@ -1468,6 +1456,7 @@
 					compatible = "amlogic,g12a-audio-clkc";
 					reg = <0x0 0x0 0x0 0xb4>;
 					#clock-cells = <1>;
+					#reset-cells = <1>;
 
 					clocks = <&clkc CLKID_AUDIO>,
 						 <&clkc CLKID_MPLL0>,
@@ -1576,6 +1565,7 @@
 						     "amlogic,axg-tdmin";
 					reg = <0x0 0x300 0x0 0x40>;
 					sound-name-prefix = "TDMIN_A";
+					resets = <&clkc_audio AUD_RESET_TDMIN_A>;
 					clocks = <&clkc_audio AUD_CLKID_TDMIN_A>,
 						 <&clkc_audio AUD_CLKID_TDMIN_A_SCLK>,
 						 <&clkc_audio AUD_CLKID_TDMIN_A_SCLK_SEL>,
@@ -1591,6 +1581,7 @@
 						     "amlogic,axg-tdmin";
 					reg = <0x0 0x340 0x0 0x40>;
 					sound-name-prefix = "TDMIN_B";
+					resets = <&clkc_audio AUD_RESET_TDMIN_B>;
 					clocks = <&clkc_audio AUD_CLKID_TDMIN_B>,
 						 <&clkc_audio AUD_CLKID_TDMIN_B_SCLK>,
 						 <&clkc_audio AUD_CLKID_TDMIN_B_SCLK_SEL>,
@@ -1606,6 +1597,7 @@
 						     "amlogic,axg-tdmin";
 					reg = <0x0 0x380 0x0 0x40>;
 					sound-name-prefix = "TDMIN_C";
+					resets = <&clkc_audio AUD_RESET_TDMIN_C>;
 					clocks = <&clkc_audio AUD_CLKID_TDMIN_C>,
 						 <&clkc_audio AUD_CLKID_TDMIN_C_SCLK>,
 						 <&clkc_audio AUD_CLKID_TDMIN_C_SCLK_SEL>,
@@ -1621,6 +1613,7 @@
 						     "amlogic,axg-tdmin";
 					reg = <0x0 0x3c0 0x0 0x40>;
 					sound-name-prefix = "TDMIN_LB";
+					resets = <&clkc_audio AUD_RESET_TDMIN_LB>;
 					clocks = <&clkc_audio AUD_CLKID_TDMIN_LB>,
 						 <&clkc_audio AUD_CLKID_TDMIN_LB_SCLK>,
 						 <&clkc_audio AUD_CLKID_TDMIN_LB_SCLK_SEL>,
@@ -1660,6 +1653,7 @@
 					compatible = "amlogic,g12a-tdmout";
 					reg = <0x0 0x500 0x0 0x40>;
 					sound-name-prefix = "TDMOUT_A";
+					resets = <&clkc_audio AUD_RESET_TDMOUT_A>;
 					clocks = <&clkc_audio AUD_CLKID_TDMOUT_A>,
 						 <&clkc_audio AUD_CLKID_TDMOUT_A_SCLK>,
 						 <&clkc_audio AUD_CLKID_TDMOUT_A_SCLK_SEL>,
@@ -1674,6 +1668,7 @@
 					compatible = "amlogic,g12a-tdmout";
 					reg = <0x0 0x540 0x0 0x40>;
 					sound-name-prefix = "TDMOUT_B";
+					resets = <&clkc_audio AUD_RESET_TDMOUT_B>;
 					clocks = <&clkc_audio AUD_CLKID_TDMOUT_B>,
 						 <&clkc_audio AUD_CLKID_TDMOUT_B_SCLK>,
 						 <&clkc_audio AUD_CLKID_TDMOUT_B_SCLK_SEL>,
@@ -1688,6 +1683,7 @@
 					compatible = "amlogic,g12a-tdmout";
 					reg = <0x0 0x580 0x0 0x40>;
 					sound-name-prefix = "TDMOUT_C";
+					resets = <&clkc_audio AUD_RESET_TDMOUT_C>;
 					clocks = <&clkc_audio AUD_CLKID_TDMOUT_C>,
 						 <&clkc_audio AUD_CLKID_TDMOUT_C_SCLK>,
 						 <&clkc_audio AUD_CLKID_TDMOUT_C_SCLK_SEL>,
@@ -2117,7 +2113,6 @@
 				interrupts = <GIC_SPI 193 IRQ_TYPE_EDGE_RISING>;
 				clocks = <&xtal>, <&clkc_AO CLKID_AO_UART>, <&xtal>;
 				clock-names = "xtal", "pclk", "baud";
-				reset = <&clkc_AO RESET_AO_UART>;
 				status = "disabled";
 			};
 
@@ -2128,7 +2123,6 @@
 				interrupts = <GIC_SPI 197 IRQ_TYPE_EDGE_RISING>;
 				clocks = <&xtal>, <&clkc_AO CLKID_AO_UART2>, <&xtal>;
 				clock-names = "xtal", "pclk", "baud";
-				reset = <&clkc_AO RESET_AO_UART2>;
 				status = "disabled";
 			};
 
@@ -2220,24 +2214,6 @@
 			};
 		};
 
-		sram: sram@fffc0000 {
-			compatible = "mmio-sram";
-			reg = <0x0 0xfffc0000 0x0 0x20000>;
-			#address-cells = <1>;
-			#size-cells = <1>;
-			ranges = <0 0x0 0xfffc0000 0x20000>;
-
-			cpu_scp_lpri: scp-shmem@13000 {
-				compatible = "amlogic,meson-axg-scp-shmem";
-				reg = <0x13000 0x400>;
-			};
-
-			cpu_scp_hpri: scp-shmem@13400 {
-				compatible = "amlogic,meson-axg-scp-shmem";
-				reg = <0x13400 0x400>;
-			};
-		};
-
 		gic: interrupt-controller@ffc01000 {
 			compatible = "arm,gic-400";
 			reg = <0x0 0xffc01000 0 0x1000>,
@@ -2265,14 +2241,14 @@
 				#reset-cells = <1>;
 			};
 
-                        gpio_intc: interrupt-controller@f080 {
-                                compatible = "amlogic,meson-g12a-gpio-intc",
-                                             "amlogic,meson-gpio-intc";
-                                reg = <0x0 0xf080 0x0 0x10>;
-                                interrupt-controller;
-                                #interrupt-cells = <2>;
-                                amlogic,channel-interrupts = <64 65 66 67 68 69 70 71>;
-                        };
+			gpio_intc: interrupt-controller@f080 {
+				compatible = "amlogic,meson-g12a-gpio-intc",
+					     "amlogic,meson-gpio-intc";
+				reg = <0x0 0xf080 0x0 0x10>;
+				interrupt-controller;
+				#interrupt-cells = <2>;
+				amlogic,channel-interrupts = <64 65 66 67 68 69 70 71>;
+			};
 
 			pwm_ef: pwm@19000 {
 				compatible = "amlogic,meson-g12a-ee-pwm";
