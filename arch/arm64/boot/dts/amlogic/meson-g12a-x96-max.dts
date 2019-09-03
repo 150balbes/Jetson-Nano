@@ -7,7 +7,6 @@
 
 #include "meson-g12a.dtsi"
 #include <dt-bindings/gpio/gpio.h>
-#include <dt-bindings/input/input.h>
 #include <dt-bindings/gpio/meson-g12a-gpio.h>
 #include <dt-bindings/sound/meson-g12a-tohdmitx.h>
 #include <dt-bindings/thermal/thermal.h>
@@ -19,6 +18,13 @@
 	aliases {
 		serial0 = &uart_AO;
 		ethernet0 = &ethmac;
+	};
+
+	spdif_dit: audio-codec-1 {
+		#sound-dai-cells = <0>;
+		compatible = "linux,spdif-dit";
+		status = "okay";
+		sound-name-prefix = "DIT";
 	};
 
 	thermal-zones {
@@ -66,13 +72,6 @@
 				};
 			};
 		};
-	};
-
-	spdif_dit: audio-codec-1 {
-		#sound-dai-cells = <0>;
-		compatible = "linux,spdif-dit";
-		status = "okay";
-		sound-name-prefix = "DIT";
 	};
 
 	chosen {
@@ -357,10 +356,6 @@
 	status = "okay";
 };
 
-&mali {
-	#cooling-cells = <2>;
-};
-
 &hdmi_tx {
 	status = "okay";
 	pinctrl-0 = <&hdmitx_hpd_pins>, <&hdmitx_ddc_pins>;
@@ -379,6 +374,10 @@
 	pinctrl-0 = <&remote_input_ao_pins>;
 	pinctrl-names = "default";
 	linux,rc-map-name = "rc-x96max";
+};
+
+&mali {
+	#cooling-cells = <2>;
 };
 
 &pwm_AO_cd {

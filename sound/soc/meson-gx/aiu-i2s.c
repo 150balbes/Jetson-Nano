@@ -500,13 +500,13 @@ static int meson_aiu_i2s_dai_hw_params(struct snd_pcm_substream *substream,
 
 	ret = __setup_desc(priv, width, channels);
 	if (ret) {
-		dev_err(dai->dev, "Unable to set i2s description\n");
+		dev_err(dai->dev, "Unable set to set i2s description\n");
 		return ret;
 	}
 
 	ret = __bclks_set_rate(priv, rate, width);
 	if (ret) {
-		dev_err(dai->dev, "Unable to set i2s clock rates\n");
+		dev_err(dai->dev, "Unable set to the i2s clock rates\n");
 		return ret;
 	}
 

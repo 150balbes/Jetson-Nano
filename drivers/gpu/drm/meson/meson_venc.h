@@ -21,15 +21,6 @@ enum {
 	MESON_VENC_MODE_HDMI,
 };
 
-enum {
-	MESON_VENC_MAP_CR_Y_CB = 0,
-	MESON_VENC_MAP_Y_CB_CR,
-	MESON_VENC_MAP_Y_CR_CB,
-	MESON_VENC_MAP_CB_CR_Y,
-	MESON_VENC_MAP_CB_Y_CR,
-	MESON_VENC_MAP_CR_CB_Y,
-};
-
 struct meson_cvbs_enci_mode {
 	unsigned int mode_tag;
 	unsigned int hso_begin; /* HSO begin position */
@@ -67,8 +58,6 @@ extern struct meson_cvbs_enci_mode meson_cvbs_enci_ntsc;
 void meson_venci_cvbs_mode_set(struct meson_drm *priv,
 			       struct meson_cvbs_enci_mode *mode);
 void meson_venc_hdmi_mode_set(struct meson_drm *priv, int vic,
-			      unsigned int ycrcb_map,
-			      bool yuv420_mode,
 			      struct drm_display_mode *mode);
 unsigned int meson_venci_get_field(struct meson_drm *priv);
 

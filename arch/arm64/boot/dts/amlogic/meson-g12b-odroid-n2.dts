@@ -90,7 +90,6 @@
 		blue {
 			label = "n2:blue";
 			gpios = <&gpio_ao GPIOAO_11 GPIO_ACTIVE_HIGH>;
-			linux,default-trigger = "heartbeat";
 		};
 	};
 
@@ -384,7 +383,7 @@
 
 &ext_mdio {
 	external_phy: ethernet-phy@0 {
-		/* Realtek RTL8211F (0x001cc916) */
+		/* Realtek RTL8211F (0x001cc916) */	
 		reg = <0>;
 		max-speed = <1000>;
 
@@ -456,6 +455,47 @@
 	pinctrl-0 = <&remote_input_ao_pins>;
 	pinctrl-names = "default";
 	linux,rc-map-name = "rc-odroid";
+};
+
+&i2c3_sda_a_pins {
+	mux {
+		groups = "i2c3_sda_a";
+		function = "i2c3";
+		bias-pull-up;
+		drive-strength-microamp = <3000>;
+	};
+};
+
+&i2c3_sck_a_pins {
+	mux {
+		groups = "i2c3_sck_a";
+		function = "i2c3";
+		bias-pull-up;
+		drive-strength-microamp = <3000>;
+	};
+};
+
+&i2c3 {
+	status = "okay";
+	pinctrl-names = "default","gpio_periphs";
+	pinctrl-0 = <&i2c3_sck_a_pins &i2c3_sda_a_pins>;
+	pinctrl-1 = <&i2c3_to_gpioa>;
+	clock-frequency = <100000>; /* default 100k */
+
+	pcf8563: rtc@51 { /*I2C-bus slave address: read A3h and write A2h*/
+		compatible = "nxp,pcf8563";
+		reg = <0x51>;
+	};
+};
+
+&periphs_pinctrl {
+	i2c3_to_gpioa:i2c3_gpioa {
+		mux {
+			groups = "GPIOA_14", "GPIOA_15";
+			function = "gpio_periphs";
+			drive-strength-microamp = <3000>;
+		};
+	};
 };
 
 &pwm_ab {
