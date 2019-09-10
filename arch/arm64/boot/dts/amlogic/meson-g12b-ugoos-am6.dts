@@ -100,31 +100,6 @@
 		clock-names = "ext_clock";
 	};
 
-	tflash_vdd: regulator-tflash_vdd {
-		compatible = "regulator-fixed";
-
-		regulator-name = "TFLASH_VDD";
-		regulator-min-microvolt = <3300000>;
-		regulator-max-microvolt = <3300000>;
-
-		gpio = <&gpio_ao GPIOAO_8 GPIO_ACTIVE_HIGH>;
-		enable-active-high;
-	};
-
-	tf_io: gpio-regulator-tf_io {
-		compatible = "regulator-gpio";
-
-		regulator-name = "TF_IO";
-		regulator-min-microvolt = <1800000>;
-		regulator-max-microvolt = <3300000>;
-
-		gpios = <&gpio_ao GPIOAO_9 GPIO_ACTIVE_HIGH>;
-		gpios-states = <0>;
-
-		states = <3300000 0
-			  1800000 1>;
-	};
-
 	flash_1v8: regulator-flash_1v8 {
 		compatible = "regulator-fixed";
 		regulator-name = "FLASH_1V8";
@@ -144,11 +119,13 @@
 
 	vcc_5v: regulator-vcc_5v {
 		compatible = "regulator-fixed";
-		regulator-name = "5V";
+		regulator-name = "VCC_5V";
 		regulator-min-microvolt = <5000000>;
 		regulator-max-microvolt = <5000000>;
-		regulator-always-on;
 		vin-supply = <&main_12v>;
+
+		gpio = <&gpio GPIOH_8 GPIO_OPEN_DRAIN>;
+		enable-active-high;
 	};
 
 	vcc_1v8: regulator-vcc_1v8 {
@@ -208,14 +185,13 @@
 		regulator-always-on;
 	};
 
-	hub_5v: regulator-hub_5v {
+	usb1_pow: regulator-usb1_pow {
 		compatible = "regulator-fixed";
-		regulator-name = "HUB_5V";
+		regulator-name = "USB1_POW";
 		regulator-min-microvolt = <5000000>;
 		regulator-max-microvolt = <5000000>;
 		vin-supply = <&vcc_5v>;
 
-		/* Connected to the Hub CHIPENABLE, LOW sets low power state */
 		gpio = <&gpio GPIOH_5 GPIO_ACTIVE_HIGH>;
 		enable-active-high;
 	};
@@ -227,7 +203,6 @@
 		regulator-max-microvolt = <5000000>;
 		vin-supply = <&vcc_5v>;
 
-		/* Connected to the microUSB port power enable */
 		gpio = <&gpio GPIOH_6 GPIO_ACTIVE_HIGH>;
 		enable-active-high;
 	};
@@ -441,6 +416,10 @@
 		reg = <0>;
 		max-speed = <1000>;
 
+		reset-assert-us = <10000>;
+		reset-deassert-us = <30000>;
+		reset-gpios = <&gpio GPIOZ_15 (GPIO_ACTIVE_LOW | GPIO_OPEN_DRAIN)>;
+
 		interrupt-parent = <&gpio_intc>;
 		/* MAC_INTR on GPIOZ_14 */
 		interrupts = <26 IRQ_TYPE_LEVEL_LOW>;
@@ -540,6 +519,15 @@
 &usb {
 	status = "okay";
 	dr_mode = "host";
+	vbus-regulator = <&usb_pwr_en>;
+};
+
+&usb2_phy0 {
+	phy-supply = <&usb1_pow>;
+};
+
+&usb2_phy1 {
+	phy-supply = <&usb1_pow>;
 };
 
 /* SDIO */
@@ -583,9 +571,8 @@
 	disable-wp;
 
 	cd-gpios = <&gpio GPIOC_6 GPIO_ACTIVE_LOW>;
-	vmmc-supply = <&tflash_vdd>;
-	vqmmc-supply = <&tf_io>;
-
+	vmmc-supply = <&vddao_3v3>;
+	vqmmc-supply = <&vddao_3v3>;
 };
 
 /* eMMC */
