@@ -247,6 +247,8 @@
 
 /* Global User Control Register */
 #define DWC3_GUCTL_HSTINAUTORETRY	BIT(14)
+#define DWC3_GUCTL_PARKMODEDISABLESS   BIT(17)
+#define DWC3_GUCTL_NAKPERENHHS         BIT(18)
 
 /* Global User Control 1 Register */
 #define DWC3_GUCTL1_TX_IPGAP_LINECHECK_DIS	BIT(28)
