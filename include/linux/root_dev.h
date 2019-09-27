@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _ROOT_DEV_H_
 #define _ROOT_DEV_H_
 

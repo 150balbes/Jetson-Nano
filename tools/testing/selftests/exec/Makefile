@@ -1,28 +1,27 @@
-# SPDX-License-Identifier: GPL-2.0
 CFLAGS = -Wall
-CFLAGS += -Wno-nonnull
-CFLAGS += -D_GNU_SOURCE
+BINARIES = execveat
+DEPS = execveat.symlink execveat.denatured script subdir
+all: $(BINARIES) $(DEPS)
 
-TEST_GEN_PROGS := execveat
-TEST_GEN_FILES := execveat.symlink execveat.denatured script subdir
-# Makefile is a run-time dependency, since it's accessed by the execveat test
-TEST_FILES := Makefile
-
-TEST_GEN_PROGS += recursion-depth
-
-EXTRA_CLEAN := $(OUTPUT)/subdir.moved $(OUTPUT)/execveat.moved $(OUTPUT)/xxxxx*
-
-include ../lib.mk
-
-$(OUTPUT)/subdir:
+subdir:
 	mkdir -p $@
-$(OUTPUT)/script:
+script:
 	echo '#!/bin/sh' > $@
 	echo 'exit $$*' >> $@
 	chmod +x $@
-$(OUTPUT)/execveat.symlink: $(OUTPUT)/execveat
-	cd $(OUTPUT) && ln -s -f $(shell basename $<) $(shell basename $@)
-$(OUTPUT)/execveat.denatured: $(OUTPUT)/execveat
+execveat.symlink: execveat
+	ln -s -f $< $@
+execveat.denatured: execveat
 	cp $< $@
 	chmod -x $@
+%: %.c
+	$(CC) $(CFLAGS) -o $@ $^
 
+TEST_PROGS := execveat
+# Makefile is a run-time dependency, since it's accessed by the execveat test
+TEST_FILES := $(DEPS) Makefile
+
+include ../lib.mk
+
+clean:
+	rm -rf $(BINARIES) $(DEPS) subdir.moved execveat.moved xxxxx*

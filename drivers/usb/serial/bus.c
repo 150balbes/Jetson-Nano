@@ -1,8 +1,11 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * USB Serial Converter Bus specific functions
  *
  * Copyright (C) 2002 Greg Kroah-Hartman (greg@kroah.com)
+ *
+ *	This program is free software; you can redistribute it and/or
+ *	modify it under the terms of the GNU General Public License version
+ *	2 as published by the Free Software Foundation.
  */
 
 #include <linux/kernel.h>
@@ -19,16 +22,14 @@ static int usb_serial_device_match(struct device *dev,
 	struct usb_serial_driver *driver;
 	const struct usb_serial_port *port;
 
+	if (!dev)
+		return -ENODEV;
 	/*
 	 * drivers are already assigned to ports in serial_probe so it's
 	 * a simple check here.
 	 */
 	port = to_usb_serial_port(dev);
-	if (!port)
-		return 0;
-
 	driver = to_usb_serial_driver(drv);
-
 	if (driver == port->serial->type)
 		return 1;
 
@@ -43,9 +44,10 @@ static int usb_serial_device_probe(struct device *dev)
 	int retval = 0;
 	int minor;
 
-	port = to_usb_serial_port(dev);
-	if (!port)
+	if (!dev)
 		return -ENODEV;
+
+	port = to_usb_serial_port(dev);
 
 	/* make sure suspend/resume doesn't race against port_probe */
 	retval = usb_autopm_get_interface(port->serial->interface);
@@ -60,8 +62,7 @@ static int usb_serial_device_probe(struct device *dev)
 	}
 
 	minor = port->minor;
-	tty_dev = tty_port_register_device(&port->port, usb_serial_tty_driver,
-					   minor, dev);
+	tty_dev = tty_register_device(usb_serial_tty_driver, minor, dev);
 	if (IS_ERR(tty_dev)) {
 		retval = PTR_ERR(tty_dev);
 		goto err_port_remove;
@@ -92,10 +93,10 @@ static int usb_serial_device_remove(struct device *dev)
 	int minor;
 	int autopm_err;
 
-	port = to_usb_serial_port(dev);
-	if (!port)
+	if (!dev)
 		return -ENODEV;
 
+	port = to_usb_serial_port(dev);
 	/*
 	 * Make sure suspend/resume doesn't race against port_remove.
 	 *

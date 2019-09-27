@@ -351,15 +351,13 @@ int i2400m_barker_db_init(const char *_options)
 			}
 			result = i2400m_barker_db_add(barker);
 			if (result < 0)
-				goto error_parse_add;
+				goto error_add;
 		}
 		kfree(options_orig);
 	}
 	return 0;
 
-error_parse_add:
 error_parse:
-	kfree(options_orig);
 error_add:
 	kfree(i2400m_barker_db);
 	return result;
@@ -654,7 +652,7 @@ static int i2400m_download_chunk(struct i2400m *i2400m, const void *chunk,
 	struct device *dev = i2400m_dev(i2400m);
 	struct {
 		struct i2400m_bootrom_header cmd;
-		u8 cmd_payload[];
+		u8 cmd_payload[chunk_len];
 	} __packed *buf;
 	struct i2400m_bootrom_header ack;
 
@@ -1554,6 +1552,7 @@ int i2400m_dev_bootstrap(struct i2400m *i2400m, enum i2400m_bri flags)
 	int ret, itr;
 	struct device *dev = i2400m_dev(i2400m);
 	struct i2400m_fw *i2400m_fw;
+	const struct i2400m_bcf_hdr *bcf;	/* Firmware data */
 	const struct firmware *fw;
 	const char *fw_name;
 
@@ -1575,7 +1574,7 @@ int i2400m_dev_bootstrap(struct i2400m *i2400m, enum i2400m_bri flags)
 	}
 
 	/* Load firmware files to memory. */
-	for (itr = 0, ret = -ENOENT; ; itr++) {
+	for (itr = 0, bcf = NULL, ret = -ENOENT; ; itr++) {
 		fw_name = i2400m->bus_fw_names[itr];
 		if (fw_name == NULL) {
 			dev_err(dev, "Could not find a usable firmware image\n");

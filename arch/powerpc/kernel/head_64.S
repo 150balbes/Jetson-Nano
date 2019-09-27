@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  *  PowerPC version
  *    Copyright (C) 1995-1996 Gary Thomas (gdt@linuxppc.org)
@@ -16,6 +15,11 @@
  *  This file contains the entry point for the 64-bit kernel along
  *  with some early initialization code common to all 64-bit powerpc
  *  variants.
+ *
+ *  This program is free software; you can redistribute it and/or
+ *  modify it under the terms of the GNU General Public License
+ *  as published by the Free Software Foundation; either version
+ *  2 of the License, or (at your option) any later version.
  */
 
 #include <linux/threads.h>
@@ -40,7 +44,6 @@
 #include <asm/cputhreads.h>
 #include <asm/ppc-opcode.h>
 #include <asm/export.h>
-#include <asm/feature-fixups.h>
 
 /* The physical memory is laid out such that the secondary processor
  * spin code sits at 0x0000...0x00ff. On server, the vectors follow
@@ -52,18 +55,12 @@
  *
  *  For pSeries or server processors:
  *   1. The MMU is off & open firmware is running in real mode.
- *   2. The primary CPU enters at __start.
- *   3. If the RTAS supports "query-cpu-stopped-state", then secondary
- *      CPUs will enter as directed by "start-cpu" RTAS call, which is
- *      generic_secondary_smp_init, with PIR in r3.
- *   4. Else the secondary CPUs will enter at secondary_hold (0x60) as
- *      directed by the "start-cpu" RTS call, with PIR in r3.
+ *   2. The kernel is entered at __start
  * -or- For OPAL entry:
- *   1. The MMU is off, processor in HV mode.
- *   2. The primary CPU enters at 0 with device-tree in r3, OPAL base
- *      in r8, and entry in r9 for debugging purposes.
- *   3. Secondary CPUs enter as directed by OPAL_START_CPU call, which
- *      is at generic_secondary_smp_init, with PIR in r3.
+ *   1. The MMU is off, processor in HV mode, primary CPU enters at 0
+ *      with device-tree in gpr3. We also get OPAL base in r8 and
+ *	entry in r9 for debugging purposes
+ *   2. Secondary processors enter at 0x60 with PIR in gpr3
  *
  *  For Book3E processors:
  *   1. The MMU is on running in AS0 in a state defined in ePAPR
@@ -95,13 +92,13 @@ END_FTR_SECTION(0, 1)
 	.balign 8
 	.globl  __secondary_hold_spinloop
 __secondary_hold_spinloop:
-	.8byte	0x0
+	.llong	0x0
 
 	/* Secondary processors write this value with their cpu # */
 	/* after they enter the spin loop immediately below.	  */
 	.globl	__secondary_hold_acknowledge
 __secondary_hold_acknowledge:
-	.8byte	0x0
+	.llong	0x0
 
 #ifdef CONFIG_RELOCATABLE
 	/* This flag is set to 1 by a loader if the kernel should run
@@ -110,19 +107,12 @@ __secondary_hold_acknowledge:
 	 * crash_kernel region.  The loader is responsible for
 	 * observing the alignment requirement.
 	 */
-
-#ifdef CONFIG_RELOCATABLE_TEST
-#define RUN_AT_LOAD_DEFAULT 1		/* Test relocation, do not copy to 0 */
-#else
-#define RUN_AT_LOAD_DEFAULT 0x72756e30  /* "run0" -- relocate to 0 by default */
-#endif
-
 	/* Do not move this variable as kexec-tools knows about it. */
 	. = 0x5c
 	.globl	__run_at_load
 __run_at_load:
 DEFINE_FIXED_SYMBOL(__run_at_load)
-	.long	RUN_AT_LOAD_DEFAULT
+	.long	0x72756e30	/* "run0" -- relocate to 0 by default */
 #endif
 
 	. = 0x60
@@ -163,7 +153,7 @@ __secondary_hold:
 	cmpdi	0,r12,0
 	beq	100b
 
-#if defined(CONFIG_SMP) || defined(CONFIG_KEXEC_CORE)
+#if defined(CONFIG_SMP) || defined(CONFIG_KEXEC)
 #ifdef CONFIG_PPC_BOOK3E
 	tovirt(r12,r12)
 #endif
@@ -389,20 +379,19 @@ generic_secondary_common_init:
 	 * physical cpu id in r24, we need to search the pacas to find
 	 * which logical id maps to our physical one.
 	 */
+	LOAD_REG_ADDR(r13, paca)	/* Load paca pointer		 */
+	ld	r13,0(r13)		/* Get base vaddr of paca array	 */
 #ifndef CONFIG_SMP
+	addi	r13,r13,PACA_SIZE	/* know r13 if used accidentally */
 	b	kexec_wait		/* wait for next kernel if !SMP	 */
 #else
-	LOAD_REG_ADDR(r8, paca_ptrs)	/* Load paca_ptrs pointe	 */
-	ld	r8,0(r8)		/* Get base vaddr of array	 */
 	LOAD_REG_ADDR(r7, nr_cpu_ids)	/* Load nr_cpu_ids address       */
 	lwz	r7,0(r7)		/* also the max paca allocated 	 */
 	li	r5,0			/* logical cpu id                */
-1:
-	sldi	r9,r5,3			/* get paca_ptrs[] index from cpu id */
-	ldx	r13,r9,r8		/* r13 = paca_ptrs[cpu id]       */
-	lhz	r6,PACAHWCPUID(r13)	/* Load HW procid from paca      */
+1:	lhz	r6,PACAHWCPUID(r13)	/* Load HW procid from paca      */
 	cmpw	r6,r24			/* Compare to our id             */
 	beq	2f
+	addi	r13,r13,PACA_SIZE	/* Loop to next PACA on miss     */
 	addi	r5,r5,1
 	cmpw	r5,r7			/* Check if more pacas exist     */
 	blt	1b
@@ -654,7 +643,7 @@ __after_prom_start:
 	bctr
 
 .balign 8
-p_end: .8byte _end - copy_to_here
+p_end: .llong _end - copy_to_here
 
 4:
 	/*
@@ -754,17 +743,17 @@ _GLOBAL(pmac_secondary_start)
 	mtmsrd	r3			/* RI on */
 
 	/* Set up a paca value for this processor. */
-	LOAD_REG_ADDR(r4,paca_ptrs)	/* Load paca pointer		*/
-	ld	r4,0(r4)		/* Get base vaddr of paca_ptrs array */
-	sldi	r5,r24,3		/* get paca_ptrs[] index from cpu id */
-	ldx	r13,r5,r4		/* r13 = paca_ptrs[cpu id]       */
+	LOAD_REG_ADDR(r4,paca)		/* Load paca pointer		*/
+	ld	r4,0(r4)		/* Get base vaddr of paca array	*/
+	mulli	r13,r24,PACA_SIZE	/* Calculate vaddr of right paca */
+	add	r13,r13,r4		/* for this processor.		*/
 	SET_PACA(r13)			/* Save vaddr of paca in an SPRG*/
 
 	/* Mark interrupts soft and hard disabled (they might be enabled
 	 * in the PACA when doing hotplug)
 	 */
-	li	r0,IRQS_DISABLED
-	stb	r0,PACAIRQSOFTMASK(r13)
+	li	r0,0
+	stb	r0,PACASOFTIRQEN(r13)
 	li	r0,PACA_IRQ_HARD_DIS
 	stb	r0,PACAIRQHAPPENED(r13)
 
@@ -797,19 +786,21 @@ __secondary_start:
 	/* Set thread priority to MEDIUM */
 	HMT_MEDIUM
 
-	/*
-	 * Do early setup for this CPU, in particular initialising the MMU so we
-	 * can turn it on below. This is a call to C, which is OK, we're still
-	 * running on the emergency stack.
-	 */
+	/* Initialize the kernel stack */
+	LOAD_REG_ADDR(r3, current_set)
+	sldi	r28,r24,3		/* get current_set[cpu#]	 */
+	ldx	r14,r3,r28
+	addi	r14,r14,THREAD_SIZE-STACK_FRAME_OVERHEAD
+	std	r14,PACAKSAVE(r13)
+
+	/* Do early setup for that CPU (SLB and hash table pointer) */
 	bl	early_setup_secondary
 
 	/*
-	 * The primary has initialized our kernel stack for us in the paca, grab
-	 * it and put it in r1. We must *not* use it until we turn on the MMU
-	 * below, because it may not be inside the RMO.
+	 * setup the new stack pointer, but *don't* use this until
+	 * translation is on.
 	 */
-	ld	r1, PACAKSAVE(r13)
+	mr	r1, r14
 
 	/* Clear backchain so we get nice backtraces */
 	li	r7,0
@@ -818,8 +809,7 @@ __secondary_start:
 	/* Mark interrupts soft and hard disabled (they might be enabled
 	 * in the PACA when doing hotplug)
 	 */
-	li	r7,IRQS_DISABLED
-	stb	r7,PACAIRQSOFTMASK(r13)
+	stb	r7,PACASOFTIRQEN(r13)
 	li	r0,PACA_IRQ_HARD_DIS
 	stb	r0,PACAIRQHAPPENED(r13)
 
@@ -895,12 +885,11 @@ _GLOBAL(relative_toc)
 	blr
 
 .balign 8
-p_toc:	.8byte	__toc_start + 0x8000 - 0b
+p_toc:	.llong	__toc_start + 0x8000 - 0b
 
 /*
  * This is where the main kernel code starts.
  */
-__REF
 start_here_multiplatform:
 	/* set up the TOC */
 	bl      relative_toc
@@ -953,8 +942,7 @@ start_here_multiplatform:
 	LOAD_REG_ADDR(r3,init_thread_union)
 
 	/* set up a stack pointer */
-	LOAD_REG_IMMEDIATE(r1,THREAD_SIZE)
-	add	r1,r3,r1
+	addi	r1,r3,THREAD_SIZE
 	li	r0,0
 	stdu	r0,-STACK_FRAME_OVERHEAD(r1)
 
@@ -965,9 +953,7 @@ start_here_multiplatform:
 
 	/* Restore parameters passed from prom_init/kexec */
 	mr	r3,r31
-	LOAD_REG_ADDR(r12, DOTSYM(early_setup))
-	mtctr	r12
-	bctrl		/* also sets r13 and SPRG_PACA */
+	bl	early_setup		/* also sets r13 and SPRG_PACA */
 
 	LOAD_REG_ADDR(r3, start_here_common)
 	ld	r4,PACAKMSR(r13)
@@ -976,7 +962,6 @@ start_here_multiplatform:
 	RFI
 	b	.	/* prevent speculative execution */
 
-	.previous
 	/* This is where all platforms converge execution */
 
 start_here_common:
@@ -989,8 +974,8 @@ start_here_common:
 	/* Mark interrupts soft and hard disabled (they might be enabled
 	 * in the PACA when doing hotplug)
 	 */
-	li	r0,IRQS_DISABLED
-	stb	r0,PACAIRQSOFTMASK(r13)
+	li	r0,0
+	stb	r0,PACASOFTIRQEN(r13)
 	li	r0,PACA_IRQ_HARD_DIS
 	stb	r0,PACAIRQHAPPENED(r13)
 

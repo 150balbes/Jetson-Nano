@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * OpenRISC ioremap.c
  *
@@ -9,6 +8,11 @@
  * Modifications for the OpenRISC architecture:
  * Copyright (C) 2003 Matjaz Breskvar <phoenix@bsemi.com>
  * Copyright (C) 2010-2011 Jonas Bonn <jonas@southpole.se>
+ *
+ *      This program is free software; you can redistribute it and/or
+ *      modify it under the terms of the GNU General Public License
+ *      as published by the Free Software Foundation; either version
+ *      2 of the License, or (at your option) any later version.
  */
 
 #include <linux/vmalloc.h>
@@ -76,7 +80,6 @@ __ioremap(phys_addr_t addr, unsigned long size, pgprot_t prot)
 
 	return (void __iomem *)(offset + (char *)v);
 }
-EXPORT_SYMBOL(__ioremap);
 
 void iounmap(void *addr)
 {
@@ -103,7 +106,6 @@ void iounmap(void *addr)
 
 	return vfree((void *)(PAGE_MASK & (unsigned long)addr));
 }
-EXPORT_SYMBOL(iounmap);
 
 /**
  * OK, this one's a bit tricky... ioremap can get called before memory is
@@ -114,18 +116,22 @@ EXPORT_SYMBOL(iounmap);
  * the memblock infrastructure.
  */
 
-pte_t __ref *pte_alloc_one_kernel(struct mm_struct *mm)
+pte_t __ref *pte_alloc_one_kernel(struct mm_struct *mm,
+					 unsigned long address)
 {
 	pte_t *pte;
 
 	if (likely(mem_init_done)) {
-		pte = (pte_t *)get_zeroed_page(GFP_KERNEL);
+		pte = (pte_t *) __get_free_page(GFP_KERNEL);
 	} else {
-		pte = memblock_alloc(PAGE_SIZE, PAGE_SIZE);
-		if (!pte)
-			panic("%s: Failed to allocate %lu bytes align=0x%lx\n",
-			      __func__, PAGE_SIZE, PAGE_SIZE);
+		pte = (pte_t *) alloc_bootmem_low_pages(PAGE_SIZE);
+#if 0
+		/* FIXME: use memblock... */
+		pte = (pte_t *) __va(memblock_alloc(PAGE_SIZE, PAGE_SIZE));
+#endif
 	}
 
+	if (pte)
+		clear_page(pte);
 	return pte;
 }

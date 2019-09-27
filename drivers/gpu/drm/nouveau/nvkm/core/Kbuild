@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: MIT
 nvkm-y := nvkm/core/client.o
 nvkm-y += nvkm/core/engine.o
 nvkm-y += nvkm/core/enum.o

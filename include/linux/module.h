@@ -18,10 +18,9 @@
 #include <linux/moduleparam.h>
 #include <linux/jump_label.h>
 #include <linux/export.h>
+#include <linux/extable.h>	/* only as arch move module.h -> extable.h */
 #include <linux/rbtree_latch.h>
-#include <linux/error-injection.h>
-#include <linux/tracepoint-defs.h>
-#include <linux/srcu.h>
+#include <linux/cfi.h>
 
 #include <linux/percpu.h>
 #include <asm/module.h>
@@ -48,7 +47,7 @@ struct module_kobject {
 	struct kobject *drivers_dir;
 	struct module_param_attrs *mp;
 	struct completion *kobj_completion;
-} __randomize_layout;
+};
 
 struct module_attribute {
 	struct attribute attr;
@@ -125,18 +124,19 @@ extern void cleanup_module(void);
 #define late_initcall_sync(fn)		module_init(fn)
 
 #define console_initcall(fn)		module_init(fn)
+#define security_initcall(fn)		module_init(fn)
 
 /* Each module must use one module_init(). */
 #define module_init(initfn)					\
 	static inline initcall_t __maybe_unused __inittest(void)		\
 	{ return initfn; }					\
-	int init_module(void) __copy(initfn) __attribute__((alias(#initfn)));
+	int init_module(void) __attribute__((alias(#initfn)));
 
 /* This is only required if you want to be unloadable. */
 #define module_exit(exitfn)					\
 	static inline exitcall_t __maybe_unused __exittest(void)		\
 	{ return exitfn; }					\
-	void cleanup_module(void) __copy(exitfn) __attribute__((alias(#exitfn)));
+	void cleanup_module(void) __attribute__((alias(#exitfn)));
 
 #endif
 
@@ -173,7 +173,7 @@ extern void cleanup_module(void);
  * The following license idents are currently accepted as indicating free
  * software modules
  *
- *	"GPL"				[GNU Public License v2]
+ *	"GPL"				[GNU Public License v2 or later]
  *	"GPL v2"			[GNU Public License v2]
  *	"GPL and additional rights"	[GNU Public License v2 rights and more]
  *	"Dual BSD/GPL"			[GNU Public License v2
@@ -186,22 +186,6 @@ extern void cleanup_module(void);
  * The following other idents are available
  *
  *	"Proprietary"			[Non free products]
- *
- * Both "GPL v2" and "GPL" (the latter also in dual licensed strings) are
- * merely stating that the module is licensed under the GPL v2, but are not
- * telling whether "GPL v2 only" or "GPL v2 or later". The reason why there
- * are two variants is a historic and failed attempt to convey more
- * information in the MODULE_LICENSE string. For module loading the
- * "only/or later" distinction is completely irrelevant and does neither
- * replace the proper license identifiers in the corresponding source file
- * nor amends them in any way. The sole purpose is to make the
- * 'Proprietary' flagging work and to refuse to bind symbols which are
- * exported with EXPORT_SYMBOL_GPL when a non free module is loaded.
- *
- * In the same way "BSD" is not a clear license information. It merely
- * states, that the module is licensed under one of the compatible BSD
- * license variants. The detailed and correct license information is again
- * to be found in the corresponding source files.
  *
  * There are dual licensed components, but when running with Linux it is the
  * GPL that is relevant so this is a non issue. Similarly LGPL linked with GPL
@@ -227,7 +211,7 @@ extern void cleanup_module(void);
 #ifdef MODULE
 /* Creates an alias so file2alias.c can find device table. */
 #define MODULE_DEVICE_TABLE(type, name)					\
-extern typeof(name) __mod_##type##__##name##_device_table		\
+extern const typeof(name) __mod_##type##__##name##_device_table		\
   __attribute__ ((unused, alias(__stringify(name))))
 #else  /* !MODULE */
 #define MODULE_DEVICE_TABLE(type, name)
@@ -254,7 +238,6 @@ extern typeof(name) __mod_##type##__##name##_device_table		\
 #define MODULE_VERSION(_version) MODULE_INFO(version, _version)
 #else
 #define MODULE_VERSION(_version)					\
-	MODULE_INFO(version, _version);					\
 	static struct module_version_attribute ___modver_attr = {	\
 		.mattr	= {						\
 			.attr	= {					\
@@ -284,7 +267,7 @@ extern int modules_disabled; /* for sysctl */
 /* Get/put a kernel symbol (calls must be symmetric) */
 void *__symbol_get(const char *symbol);
 void *__symbol_get_gpl(const char *symbol);
-#define symbol_get(x) ((typeof(&x))(__symbol_get(__stringify(x))))
+#define symbol_get(x) ((typeof(&x))(__symbol_get(VMLINUX_SYMBOL_STR(x))))
 
 /* modules using other modules: kdb wants to see this. */
 struct module_use {
@@ -299,6 +282,8 @@ enum module_state {
 	MODULE_STATE_GOING,	/* Going away. */
 	MODULE_STATE_UNFORMED,	/* Still setting it up. */
 };
+
+struct module;
 
 struct mod_tree_node {
 	struct module *mod;
@@ -333,7 +318,6 @@ struct mod_kallsyms {
 	Elf_Sym *symtab;
 	unsigned int num_symtab;
 	char *strtab;
-	char *typetab;
 };
 
 #ifdef CONFIG_LIVEPATCH
@@ -363,8 +347,12 @@ struct module {
 
 	/* Exported symbols */
 	const struct kernel_symbol *syms;
-	const s32 *crcs;
+	const unsigned long *crcs;
 	unsigned int num_syms;
+
+#ifdef CONFIG_CFI_CLANG
+	cfi_check_fn cfi_check;
+#endif
 
 	/* Kernel parameters. */
 #ifdef CONFIG_SYSFS
@@ -376,18 +364,18 @@ struct module {
 	/* GPL-only exported symbols. */
 	unsigned int num_gpl_syms;
 	const struct kernel_symbol *gpl_syms;
-	const s32 *gpl_crcs;
+	const unsigned long *gpl_crcs;
 
 #ifdef CONFIG_UNUSED_SYMBOLS
 	/* unused exported symbols. */
 	const struct kernel_symbol *unused_syms;
-	const s32 *unused_crcs;
+	const unsigned long *unused_crcs;
 	unsigned int num_unused_syms;
 
 	/* GPL-only, unused exported symbols. */
 	unsigned int num_unused_gpl_syms;
 	const struct kernel_symbol *unused_gpl_syms;
-	const s32 *unused_gpl_crcs;
+	const unsigned long *unused_gpl_crcs;
 #endif
 
 #ifdef CONFIG_MODULE_SIG
@@ -399,7 +387,7 @@ struct module {
 
 	/* symbols that will be GPL-only in the near future. */
 	const struct kernel_symbol *gpl_future_syms;
-	const s32 *gpl_future_crcs;
+	const unsigned long *gpl_future_crcs;
 	unsigned int num_gpl_future_syms;
 
 	/* Exception table */
@@ -416,7 +404,7 @@ struct module {
 	/* Arch-specific module values */
 	struct mod_arch_specific arch;
 
-	unsigned long taints;	/* same bits as kernel:taint_flags */
+	unsigned int taints;	/* same bits as kernel:tainted */
 
 #ifdef CONFIG_GENERIC_BUG
 	/* Support for BUG */
@@ -429,7 +417,7 @@ struct module {
 	/* Protected by RCU and/or module_mutex: use rcu_dereference() */
 	struct mod_kallsyms *kallsyms;
 	struct mod_kallsyms core_kallsyms;
-
+	
 	/* Section attributes */
 	struct module_sect_attrs *sect_attrs;
 
@@ -449,17 +437,9 @@ struct module {
 
 #ifdef CONFIG_TRACEPOINTS
 	unsigned int num_tracepoints;
-	tracepoint_ptr_t *tracepoints_ptrs;
+	struct tracepoint * const *tracepoints_ptrs;
 #endif
-#ifdef CONFIG_TREE_SRCU
-	unsigned int num_srcu_structs;
-	struct srcu_struct **srcu_struct_ptrs;
-#endif
-#ifdef CONFIG_BPF_EVENTS
-	unsigned int num_bpf_raw_events;
-	struct bpf_raw_event_map *bpf_raw_events;
-#endif
-#ifdef CONFIG_JUMP_LABEL
+#ifdef HAVE_JUMP_LABEL
 	struct jump_entry *jump_entries;
 	unsigned int num_jump_entries;
 #endif
@@ -470,8 +450,8 @@ struct module {
 #ifdef CONFIG_EVENT_TRACING
 	struct trace_event_call **trace_events;
 	unsigned int num_trace_events;
-	struct trace_eval_map **trace_evals;
-	unsigned int num_trace_evals;
+	struct trace_enum_map **trace_enums;
+	unsigned int num_trace_enums;
 #endif
 #ifdef CONFIG_FTRACE_MCOUNT_RECORD
 	unsigned int num_ftrace_callsites;
@@ -503,21 +483,9 @@ struct module {
 	ctor_fn_t *ctors;
 	unsigned int num_ctors;
 #endif
-
-#ifdef CONFIG_FUNCTION_ERROR_INJECTION
-	struct error_injection_entry *ei_funcs;
-	unsigned int num_ei_funcs;
-#endif
-} ____cacheline_aligned __randomize_layout;
+} ____cacheline_aligned;
 #ifndef MODULE_ARCH_INIT
 #define MODULE_ARCH_INIT {}
-#endif
-
-#ifndef HAVE_ARCH_KALLSYMS_SYMBOL_VALUE
-static inline unsigned long kallsyms_symbol_value(const Elf_Sym *sym)
-{
-	return sym->st_value;
-}
 #endif
 
 extern struct mutex module_mutex;
@@ -525,7 +493,7 @@ extern struct mutex module_mutex;
 /* FIXME: It'd be nice to isolate modules during init, too, so they
    aren't used before they (may) fail.  But presently too much code
    (IDE & SCSI) require entry into the module during init.*/
-static inline bool module_is_live(struct module *mod)
+static inline int module_is_live(struct module *mod)
 {
 	return mod->state != MODULE_STATE_GOING;
 }
@@ -533,7 +501,6 @@ static inline bool module_is_live(struct module *mod)
 struct module *__module_text_address(unsigned long addr);
 struct module *__module_address(unsigned long addr);
 bool is_module_address(unsigned long addr);
-bool __is_module_percpu_address(unsigned long addr, unsigned long *can_addr);
 bool is_module_percpu_address(unsigned long addr);
 bool is_module_text_address(unsigned long addr);
 
@@ -561,7 +528,7 @@ struct module *find_module(const char *name);
 
 struct symsearch {
 	const struct kernel_symbol *start, *stop;
-	const s32 *crcs;
+	const unsigned long *crcs;
 	enum {
 		NOT_GPL_ONLY,
 		GPL_ONLY,
@@ -577,7 +544,7 @@ struct symsearch {
  */
 const struct kernel_symbol *find_symbol(const char *name,
 					struct module **owner,
-					const s32 **crc,
+					const unsigned long **crc,
 					bool gplok,
 					bool warn);
 
@@ -609,7 +576,7 @@ extern void __noreturn __module_put_and_exit(struct module *mod,
 #ifdef CONFIG_MODULE_UNLOAD
 int module_refcount(struct module *mod);
 void __symbol_put(const char *symbol);
-#define symbol_put(x) __symbol_put(__stringify(x))
+#define symbol_put(x) __symbol_put(VMLINUX_SYMBOL_STR(x))
 void symbol_put_addr(void *addr);
 
 /* Sometimes we know we already have a refcount, and it's easier not
@@ -623,7 +590,7 @@ extern bool try_module_get(struct module *module);
 extern void module_put(struct module *module);
 
 #else /*!CONFIG_MODULE_UNLOAD*/
-static inline bool try_module_get(struct module *module)
+static inline int try_module_get(struct module *module)
 {
 	return !module || module_is_live(module);
 }
@@ -645,9 +612,6 @@ int ref_module(struct module *a, struct module *b);
 	struct module *__mod = (mod);		\
 	__mod ? __mod->name : "kernel";		\
 })
-
-/* Dereference module function descriptor */
-void *dereference_module_function_descriptor(struct module *mod, void *ptr);
 
 /* For kallsyms to ask for address resolution.  namebuf should be at
  * least KSYM_NAME_LEN long: a pointer to namebuf is returned if
@@ -682,9 +646,6 @@ static inline bool is_livepatch_module(struct module *mod)
 }
 #endif /* CONFIG_LIVEPATCH */
 
-bool is_module_sig_enforced(void);
-void set_module_sig_enforced(void);
-
 #else /* !CONFIG_MODULES... */
 
 static inline struct module *__module_address(unsigned long addr)
@@ -707,29 +668,7 @@ static inline bool is_module_percpu_address(unsigned long addr)
 	return false;
 }
 
-static inline bool __is_module_percpu_address(unsigned long addr, unsigned long *can_addr)
-{
-	return false;
-}
-
 static inline bool is_module_text_address(unsigned long addr)
-{
-	return false;
-}
-
-static inline bool within_module_core(unsigned long addr,
-				      const struct module *mod)
-{
-	return false;
-}
-
-static inline bool within_module_init(unsigned long addr,
-				      const struct module *mod)
-{
-	return false;
-}
-
-static inline bool within_module(unsigned long addr, const struct module *mod)
 {
 	return false;
 }
@@ -743,9 +682,9 @@ static inline void __module_get(struct module *module)
 {
 }
 
-static inline bool try_module_get(struct module *module)
+static inline int try_module_get(struct module *module)
 {
-	return true;
+	return 1;
 }
 
 static inline void module_put(struct module *module)
@@ -816,22 +755,6 @@ static inline bool module_requested_async_probing(struct module *module)
 	return false;
 }
 
-static inline bool is_module_sig_enforced(void)
-{
-	return false;
-}
-
-static inline void set_module_sig_enforced(void)
-{
-}
-
-/* Dereference module function descriptor */
-static inline
-void *dereference_module_function_descriptor(struct module *mod, void *ptr)
-{
-	return ptr;
-}
-
 #endif /* CONFIG_MODULES */
 
 #ifdef CONFIG_SYSFS
@@ -846,7 +769,7 @@ extern int module_sysfs_initialized;
 
 #define __MODULE_STRING(x) __stringify(x)
 
-#ifdef CONFIG_STRICT_MODULE_RWX
+#ifdef CONFIG_DEBUG_SET_MODULE_RONX
 extern void set_all_modules_text_rw(void);
 extern void set_all_modules_text_ro(void);
 extern void module_enable_ro(const struct module *mod, bool after_init);
@@ -873,7 +796,7 @@ static inline void module_bug_finalize(const Elf_Ehdr *hdr,
 static inline void module_bug_cleanup(struct module *mod) {}
 #endif	/* CONFIG_GENERIC_BUG */
 
-#ifdef CONFIG_RETPOLINE
+#ifdef RETPOLINE
 extern bool retpoline_module_ok(bool has_retpoline);
 #else
 static inline bool retpoline_module_ok(bool has_retpoline)

@@ -1,9 +1,14 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Public Key Encryption
  *
  * Copyright (c) 2015, Intel Corporation
  * Authors: Tadeusz Struk <tadeusz.struk@intel.com>
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License as published by the Free
+ * Software Foundation; either version 2 of the License, or (at your option)
+ * any later version.
+ *
  */
 #include <linux/errno.h>
 #include <linux/kernel.h>
@@ -12,7 +17,6 @@
 #include <linux/slab.h>
 #include <linux/string.h>
 #include <linux/crypto.h>
-#include <linux/compiler.h>
 #include <crypto/algapi.h>
 #include <linux/cryptouser.h>
 #include <net/netlink.h>
@@ -25,12 +29,15 @@ static int crypto_akcipher_report(struct sk_buff *skb, struct crypto_alg *alg)
 {
 	struct crypto_report_akcipher rakcipher;
 
-	memset(&rakcipher, 0, sizeof(rakcipher));
+	strncpy(rakcipher.type, "akcipher", sizeof(rakcipher.type));
 
-	strscpy(rakcipher.type, "akcipher", sizeof(rakcipher.type));
+	if (nla_put(skb, CRYPTOCFGA_REPORT_AKCIPHER,
+		    sizeof(struct crypto_report_akcipher), &rakcipher))
+		goto nla_put_failure;
+	return 0;
 
-	return nla_put(skb, CRYPTOCFGA_REPORT_AKCIPHER,
-		       sizeof(rakcipher), &rakcipher);
+nla_put_failure:
+	return -EMSGSIZE;
 }
 #else
 static int crypto_akcipher_report(struct sk_buff *skb, struct crypto_alg *alg)
@@ -40,7 +47,7 @@ static int crypto_akcipher_report(struct sk_buff *skb, struct crypto_alg *alg)
 #endif
 
 static void crypto_akcipher_show(struct seq_file *m, struct crypto_alg *alg)
-	__maybe_unused;
+	__attribute__ ((unused));
 
 static void crypto_akcipher_show(struct seq_file *m, struct crypto_alg *alg)
 {
@@ -114,23 +121,9 @@ static void akcipher_prepare_alg(struct akcipher_alg *alg)
 	base->cra_flags |= CRYPTO_ALG_TYPE_AKCIPHER;
 }
 
-static int akcipher_default_op(struct akcipher_request *req)
-{
-	return -ENOSYS;
-}
-
 int crypto_register_akcipher(struct akcipher_alg *alg)
 {
 	struct crypto_alg *base = &alg->base;
-
-	if (!alg->sign)
-		alg->sign = akcipher_default_op;
-	if (!alg->verify)
-		alg->verify = akcipher_default_op;
-	if (!alg->encrypt)
-		alg->encrypt = akcipher_default_op;
-	if (!alg->decrypt)
-		alg->decrypt = akcipher_default_op;
 
 	akcipher_prepare_alg(alg);
 	return crypto_register_alg(base);

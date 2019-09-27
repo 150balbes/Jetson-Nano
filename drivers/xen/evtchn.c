@@ -87,6 +87,18 @@ struct user_evtchn {
 	bool enabled;
 };
 
+static evtchn_port_t *evtchn_alloc_ring(unsigned int size)
+{
+	evtchn_port_t *ring;
+	size_t s = size * sizeof(*ring);
+
+	ring = kmalloc(s, GFP_KERNEL);
+	if (!ring)
+		ring = vmalloc(s);
+
+	return ring;
+}
+
 static void evtchn_free_ring(evtchn_port_t *ring)
 {
 	kvfree(ring);
@@ -113,7 +125,7 @@ static int add_evtchn(struct per_user_data *u, struct user_evtchn *evtchn)
 	while (*new) {
 		struct user_evtchn *this;
 
-		this = rb_entry(*new, struct user_evtchn, node);
+		this = container_of(*new, struct user_evtchn, node);
 
 		parent = *new;
 		if (this->port < evtchn->port)
@@ -145,7 +157,7 @@ static struct user_evtchn *find_evtchn(struct per_user_data *u, unsigned port)
 	while (node) {
 		struct user_evtchn *evtchn;
 
-		evtchn = rb_entry(node, struct user_evtchn, node);
+		evtchn = container_of(node, struct user_evtchn, node);
 
 		if (evtchn->port < port)
 			node = node->rb_left;
@@ -322,7 +334,7 @@ static int evtchn_resize_ring(struct per_user_data *u)
 	else
 		new_size = 2 * u->ring_size;
 
-	new_ring = kvmalloc_array(new_size, sizeof(*new_ring), GFP_KERNEL);
+	new_ring = evtchn_alloc_ring(new_size);
 	if (!new_ring)
 		return -ENOMEM;
 
@@ -421,36 +433,6 @@ static void evtchn_unbind_from_user(struct per_user_data *u,
 	del_evtchn(u, evtchn);
 }
 
-static DEFINE_PER_CPU(int, bind_last_selected_cpu);
-
-static void evtchn_bind_interdom_next_vcpu(int evtchn)
-{
-	unsigned int selected_cpu, irq;
-	struct irq_desc *desc;
-	unsigned long flags;
-
-	irq = irq_from_evtchn(evtchn);
-	desc = irq_to_desc(irq);
-
-	if (!desc)
-		return;
-
-	raw_spin_lock_irqsave(&desc->lock, flags);
-	selected_cpu = this_cpu_read(bind_last_selected_cpu);
-	selected_cpu = cpumask_next_and(selected_cpu,
-			desc->irq_common_data.affinity, cpu_online_mask);
-
-	if (unlikely(selected_cpu >= nr_cpu_ids))
-		selected_cpu = cpumask_first_and(desc->irq_common_data.affinity,
-				cpu_online_mask);
-
-	this_cpu_write(bind_last_selected_cpu, selected_cpu);
-
-	/* unmask expects irqs to be disabled */
-	xen_set_affinity_evtchn(desc, selected_cpu);
-	raw_spin_unlock_irqrestore(&desc->lock, flags);
-}
-
 static long evtchn_ioctl(struct file *file,
 			 unsigned int cmd, unsigned long arg)
 {
@@ -508,10 +490,8 @@ static long evtchn_ioctl(struct file *file,
 			break;
 
 		rc = evtchn_bind_to_user(u, bind_interdomain.local_port);
-		if (rc == 0) {
+		if (rc == 0)
 			rc = bind_interdomain.local_port;
-			evtchn_bind_interdom_next_vcpu(rc);
-		}
 		break;
 	}
 
@@ -621,16 +601,16 @@ static long evtchn_ioctl(struct file *file,
 	return rc;
 }
 
-static __poll_t evtchn_poll(struct file *file, poll_table *wait)
+static unsigned int evtchn_poll(struct file *file, poll_table *wait)
 {
-	__poll_t mask = EPOLLOUT | EPOLLWRNORM;
+	unsigned int mask = POLLOUT | POLLWRNORM;
 	struct per_user_data *u = file->private_data;
 
 	poll_wait(file, &u->evtchn_wait, wait);
 	if (u->ring_cons != u->ring_prod)
-		mask |= EPOLLIN | EPOLLRDNORM;
+		mask |= POLLIN | POLLRDNORM;
 	if (u->ring_overflow)
-		mask = EPOLLERR;
+		mask = POLLERR;
 	return mask;
 }
 
@@ -664,7 +644,7 @@ static int evtchn_open(struct inode *inode, struct file *filp)
 
 	filp->private_data = u;
 
-	return stream_open(inode, filp);
+	return nonseekable_open(inode, filp);
 }
 
 static int evtchn_release(struct inode *inode, struct file *filp)

@@ -23,4 +23,5 @@ Example:
 	      compatible = "marvell,a370db-audio";
 	      marvell,audio-controller = <&audio_controller>;
 	      marvell,audio-codec = <&audio_codec &spdif_out &spdif_in>;
+	      status = "okay";
 	};

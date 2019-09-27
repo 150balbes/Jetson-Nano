@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note */
 /*
 ** asm/bootinfo-hp300.h -- HP9000/300-specific boot information definitions
 */

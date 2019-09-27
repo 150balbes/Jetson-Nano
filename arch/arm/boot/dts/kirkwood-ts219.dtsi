@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 / {
 	model = "QNAP TS219 family";
 	compatible = "qnap,ts219", "marvell,kirkwood";
@@ -45,29 +44,29 @@
 				spi-max-frequency = <20000000>;
 				mode = <0>;
 
-				partition@0 {
+				partition@0000000 {
 					reg = <0x00000000 0x00080000>;
 					label = "U-Boot";
 				};
 
-				partition@200000 {
+				partition@00200000 {
 					reg = <0x00200000 0x00200000>;
 					label = "Kernel";
 				};
 
-				partition@400000 {
+				partition@00400000 {
 					reg = <0x00400000 0x00900000>;
 					label = "RootFS1";
 				};
-				partition@d00000 {
+				partition@00d00000 {
 					reg = <0x00d00000 0x00300000>;
 					label = "RootFS2";
 				};
-				partition@40000 {
+				partition@00040000 {
 					reg = <0x00080000 0x00040000>;
 					label = "U-Boot Config";
 				};
-				partition@c0000 {
+				partition@000c0000 {
 					reg = <0x000c0000 0x00140000>;
 					label = "NAS Config";
 				};

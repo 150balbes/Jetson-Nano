@@ -29,9 +29,9 @@ corresponding to the system hierarchy; syntactically they are defined as device
 tree nodes.
 
 The remainder of this document provides the topology bindings for ARM, based
-on the Devicetree Specification, available from:
+on the ePAPR standard, available from:
 
-https://www.devicetree.org/specifications/
+http://www.power.org/documentation/epapr-version-1-1/
 
 If not stated otherwise, whenever a reference to a cpu node phandle is made its
 value must point to a cpu node compliant with the cpu node bindings as
@@ -472,4 +472,4 @@ cpus {
 
 ===============================================================================
 [1] ARM Linux kernel documentation
-    Documentation/devicetree/bindings/arm/cpus.yaml
+    Documentation/devicetree/bindings/arm/cpus.txt

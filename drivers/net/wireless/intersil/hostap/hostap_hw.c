@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Host AP (software wireless LAN access point) driver for
  * Intersil Prism2/2.5/3.
@@ -6,6 +5,11 @@
  * Copyright (c) 2001-2002, SSH Communications Security Corp and Jouni Malinen
  * <j@w1.fi>
  * Copyright (c) 2002-2005, Jouni Malinen <j@w1.fi>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation. See README and COPYING for
+ * more details.
  *
  * FIX:
  * - there is currently no way of associating TX packets to correct wds device
@@ -28,7 +32,7 @@
 
 
 #include <asm/delay.h>
-#include <linux/uaccess.h>
+#include <asm/uaccess.h>
 
 #include <linux/slab.h>
 #include <linux/netdevice.h>
@@ -39,7 +43,7 @@
 #include <linux/delay.h>
 #include <linux/random.h>
 #include <linux/wait.h>
-#include <linux/sched/signal.h>
+#include <linux/sched.h>
 #include <linux/rtnetlink.h>
 #include <linux/wireless.h>
 #include <net/iw_handler.h>
@@ -147,6 +151,13 @@ static int prism2_get_ram_size(local_info_t *local);
 #define HFA384X_MAGIC 0x8A32
 #endif
 
+
+static u16 hfa384x_read_reg(struct net_device *dev, u16 reg)
+{
+	return HFA384X_INW(reg);
+}
+
+
 static void hfa384x_read_regs(struct net_device *dev,
 			      struct hfa384x_regs *regs)
 {
@@ -179,7 +190,7 @@ static inline void __hostap_cmd_queue_free(local_info_t *local,
 		}
 	}
 
-	if (refcount_dec_and_test(&entry->usecnt) && entry->del_req)
+	if (atomic_dec_and_test(&entry->usecnt) && entry->del_req)
 		kfree(entry);
 }
 
@@ -217,7 +228,7 @@ static void prism2_clear_cmd_queue(local_info_t *local)
 	spin_lock_irqsave(&local->cmdlock, flags);
 	list_for_each_safe(ptr, n, &local->cmd_queue) {
 		entry = list_entry(ptr, struct hostap_cmd_queue, list);
-		refcount_inc(&entry->usecnt);
+		atomic_inc(&entry->usecnt);
 		printk(KERN_DEBUG "%s: removed pending cmd_queue entry "
 		       "(type=%d, cmd=0x%04x, param0=0x%04x)\n",
 		       local->dev->name, entry->type, entry->cmd,
@@ -339,7 +350,7 @@ static int hfa384x_cmd(struct net_device *dev, u16 cmd, u16 param0,
 	if (entry == NULL)
 		return -ENOMEM;
 
-	refcount_set(&entry->usecnt, 1);
+	atomic_set(&entry->usecnt, 1);
 	entry->type = CMD_SLEEP;
 	entry->cmd = cmd;
 	entry->param0 = param0;
@@ -505,7 +516,7 @@ static int hfa384x_cmd_callback(struct net_device *dev, u16 cmd, u16 param0,
 	if (entry == NULL)
 		return -ENOMEM;
 
-	refcount_set(&entry->usecnt, 1);
+	atomic_set(&entry->usecnt, 1);
 	entry->type = CMD_CALLBACK;
 	entry->cmd = cmd;
 	entry->param0 = param0;
@@ -655,7 +666,7 @@ static void prism2_cmd_ev(struct net_device *dev)
 	if (!list_empty(&local->cmd_queue)) {
 		entry = list_entry(local->cmd_queue.next,
 				   struct hostap_cmd_queue, list);
-		refcount_inc(&entry->usecnt);
+		atomic_inc(&entry->usecnt);
 		list_del_init(&entry->list);
 		local->cmd_queue_len--;
 
@@ -707,7 +718,7 @@ static void prism2_cmd_ev(struct net_device *dev)
 			entry = NULL;
 		}
 		if (entry)
-			refcount_inc(&entry->usecnt);
+			atomic_inc(&entry->usecnt);
 	}
 	spin_unlock(&local->cmdlock);
 
@@ -1994,7 +2005,7 @@ static void prism2_rx(local_info_t *local)
 		goto rx_dropped;
 	}
 	skb->dev = dev;
-	skb_put_data(skb, &rxdesc, hdr_len);
+	memcpy(skb_put(skb, hdr_len), &rxdesc, hdr_len);
 
 	if (len > 0)
 		res = hfa384x_from_bap(dev, BAP0, skb_put(skb, len), len);
@@ -2198,9 +2209,9 @@ static void hostap_tx_callback(local_info_t *local,
 		return;
 	}
 
-	skb_put_data(skb, (void *)&txdesc->frame_control, hdrlen);
+	memcpy(skb_put(skb, hdrlen), (void *) &txdesc->frame_control, hdrlen);
 	if (payload)
-		skb_put_data(skb, payload, len);
+		memcpy(skb_put(skb, len), payload, len);
 
 	skb->dev = local->dev;
 	skb_reset_mac_header(skb);
@@ -2351,7 +2362,8 @@ static void prism2_txexc(local_info_t *local)
 		struct sk_buff *skb;
 		skb = dev_alloc_skb(sizeof(txdesc));
 		if (skb) {
-			skb_put_data(skb, &txdesc, sizeof(txdesc));
+			memcpy(skb_put(skb, sizeof(txdesc)), &txdesc,
+			       sizeof(txdesc));
 			skb_queue_tail(&local->sta_tx_exc_list, skb);
 			tasklet_schedule(&local->sta_tx_exc_tasklet);
 		}
@@ -2448,7 +2460,7 @@ static void prism2_info(local_info_t *local)
 		goto out;
 	}
 
-	skb_put_data(skb, &info, sizeof(info));
+	memcpy(skb_put(skb, sizeof(info)), &info, sizeof(info));
 	if (left > 0 && hfa384x_from_bap(dev, BAP0, skb_put(skb, left), left))
 	{
 		spin_unlock(&local->baplock);
@@ -2783,9 +2795,9 @@ static void prism2_check_sta_fw_version(local_info_t *local)
 }
 
 
-static void hostap_passive_scan(struct timer_list *t)
+static void hostap_passive_scan(unsigned long data)
 {
-	local_info_t *local = from_timer(local, t, passive_scan_timer);
+	local_info_t *local = (local_info_t *) data;
 	struct net_device *dev = local->dev;
 	u16 chan;
 
@@ -2858,10 +2870,10 @@ static void handle_comms_qual_update(struct work_struct *work)
  * used to monitor that local->last_tick_timer is being updated. If not,
  * interrupt busy-loop is assumed and driver tries to recover by masking out
  * some events. */
-static void hostap_tick_timer(struct timer_list *t)
+static void hostap_tick_timer(unsigned long data)
 {
 	static unsigned long last_inquire = 0;
-	local_info_t *local = from_timer(local, t, tick_timer);
+	local_info_t *local = (local_info_t *) data;
 	local->last_tick_timer = jiffies;
 
 	/* Inquire CommTallies every 10 seconds to keep the statistics updated
@@ -2886,12 +2898,7 @@ static void hostap_tick_timer(struct timer_list *t)
 }
 
 
-#if !defined(PRISM2_NO_PROCFS_DEBUG) && defined(CONFIG_PROC_FS)
-static u16 hfa384x_read_reg(struct net_device *dev, u16 reg)
-{
-	return HFA384X_INW(reg);
-}
-
+#ifndef PRISM2_NO_PROCFS_DEBUG
 static int prism2_registers_proc_show(struct seq_file *m, void *v)
 {
 	local_info_t *local = m->private;
@@ -2945,7 +2952,21 @@ static int prism2_registers_proc_show(struct seq_file *m, void *v)
 
 	return 0;
 }
-#endif
+
+static int prism2_registers_proc_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, prism2_registers_proc_show, PDE_DATA(inode));
+}
+
+static const struct file_operations prism2_registers_proc_fops = {
+	.open		= prism2_registers_proc_open,
+	.read		= seq_read,
+	.llseek		= seq_lseek,
+	.release	= single_release,
+};
+
+#endif /* PRISM2_NO_PROCFS_DEBUG */
+
 
 struct set_tim_data {
 	struct list_head list;
@@ -3205,8 +3226,13 @@ while (0)
 
 	lib80211_crypt_info_init(&local->crypt_info, dev->name, &local->lock);
 
-	timer_setup(&local->passive_scan_timer, hostap_passive_scan, 0);
-	timer_setup(&local->tick_timer, hostap_tick_timer, 0);
+	init_timer(&local->passive_scan_timer);
+	local->passive_scan_timer.data = (unsigned long) local;
+	local->passive_scan_timer.function = hostap_passive_scan;
+
+	init_timer(&local->tick_timer);
+	local->tick_timer.data = (unsigned long) local;
+	local->tick_timer.function = hostap_tick_timer;
 	local->tick_timer.expires = jiffies + 2 * HZ;
 	add_timer(&local->tick_timer);
 
@@ -3259,8 +3285,8 @@ static int hostap_hw_ready(struct net_device *dev)
 		}
 		hostap_init_proc(local);
 #ifndef PRISM2_NO_PROCFS_DEBUG
-		proc_create_single_data("registers", 0, local->proc,
-				 prism2_registers_proc_show, local);
+		proc_create_data("registers", 0, local->proc,
+				 &prism2_registers_proc_fops, local);
 #endif /* PRISM2_NO_PROCFS_DEBUG */
 		hostap_init_ap_proc(local);
 		return 0;

@@ -40,7 +40,6 @@
 	interrupt-parent = <&mpic>;
 
 	aliases {
-		crypto = &crypto;
 		phy_sgmii_10 = &phy_sgmii_10;
 		phy_sgmii_11 = &phy_sgmii_11;
 		phy_sgmii_1c = &phy_sgmii_1c;
@@ -167,19 +166,19 @@
 					reg = <0>;
 
 					eeprom@50 {
-						compatible = "atmel,24c64";
+						compatible = "at24,24c64";
 						reg = <0x50>;
 					};
 					eeprom@51 {
-						compatible = "atmel,24c256";
+						compatible = "at24,24c256";
 						reg = <0x51>;
 					};
 					eeprom@53 {
-						compatible = "atmel,24c256";
+						compatible = "at24,24c256";
 						reg = <0x53>;
 					};
 					eeprom@57 {
-						compatible = "atmel,24c256";
+						compatible = "at24,24c256";
 						reg = <0x57>;
 					};
 					rtc@68 {

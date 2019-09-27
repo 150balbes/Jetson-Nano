@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 
 #define REQUEST(r_contents) \
 	REQUEST_(REQUEST_NAME, REQUEST_NUM, REQUEST_IDX_KIND, I(r_contents))

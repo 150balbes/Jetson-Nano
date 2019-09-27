@@ -39,10 +39,10 @@ static void relay_file_mmap_close(struct vm_area_struct *vma)
 /*
  * fault() vm_op implementation for relay file mapping.
  */
-static vm_fault_t relay_buf_fault(struct vm_fault *vmf)
+static int relay_buf_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
 {
 	struct page *page;
-	struct rchan_buf *buf = vmf->vma->vm_private_data;
+	struct rchan_buf *buf = vma->vm_private_data;
 	pgoff_t pgoff = vmf->pgoff;
 
 	if (!buf)
@@ -169,8 +169,7 @@ static struct rchan_buf *relay_create_buf(struct rchan *chan)
 	buf = kzalloc(sizeof(struct rchan_buf), GFP_KERNEL);
 	if (!buf)
 		return NULL;
-	buf->padding = kmalloc_array(chan->n_subbufs, sizeof(size_t *),
-				     GFP_KERNEL);
+	buf->padding = kmalloc(chan->n_subbufs * sizeof(size_t *), GFP_KERNEL);
 	if (!buf->padding)
 		goto free_buf;
 
@@ -428,8 +427,6 @@ static struct dentry *relay_create_buf_file(struct rchan *chan,
 	dentry = chan->cb->create_buf_file(tmpname, chan->parent,
 					   S_IRUSR, buf,
 					   &chan->is_global);
-	if (IS_ERR(dentry))
-		dentry = NULL;
 
 	kfree(tmpname);
 
@@ -463,7 +460,7 @@ static struct rchan_buf *relay_open_buf(struct rchan *chan, unsigned int cpu)
 		dentry = chan->cb->create_buf_file(NULL, NULL,
 						   S_IRUSR, buf,
 						   &chan->is_global);
-		if (IS_ERR_OR_NULL(dentry))
+		if (WARN_ON(dentry))
 			goto free_buf;
 	}
 
@@ -849,7 +846,7 @@ void relay_close(struct rchan *chan)
 
 	if (chan->last_toobig)
 		printk(KERN_WARNING "relay: one or more items not logged "
-		       "[item size (%zd) > sub-buffer size (%zd)]\n",
+		       "[item size (%Zd) > sub-buffer size (%Zd)]\n",
 		       chan->last_toobig, chan->subbuf_size);
 
 	list_del(&chan->list);
@@ -921,18 +918,18 @@ static int relay_file_mmap(struct file *filp, struct vm_area_struct *vma)
  *
  *	Poll implemention.
  */
-static __poll_t relay_file_poll(struct file *filp, poll_table *wait)
+static unsigned int relay_file_poll(struct file *filp, poll_table *wait)
 {
-	__poll_t mask = 0;
+	unsigned int mask = 0;
 	struct rchan_buf *buf = filp->private_data;
 
 	if (buf->finalized)
-		return EPOLLERR;
+		return POLLERR;
 
 	if (filp->f_mode & FMODE_READ) {
 		poll_wait(filp, &buf->read_wait, wait);
 		if (!relay_buf_empty(buf))
-			mask |= EPOLLIN | EPOLLRDNORM;
+			mask |= POLLIN | POLLRDNORM;
 	}
 
 	return mask;
@@ -1177,6 +1174,7 @@ static void relay_pipe_buf_release(struct pipe_inode_info *pipe,
 }
 
 static const struct pipe_buf_operations relay_pipe_buf_ops = {
+	.can_merge = 0,
 	.confirm = generic_pipe_buf_confirm,
 	.release = relay_pipe_buf_release,
 	.steal = generic_pipe_buf_steal,
@@ -1213,6 +1211,7 @@ static ssize_t subbuf_splice_actor(struct file *in,
 		.nr_pages = 0,
 		.nr_pages_max = PIPE_DEF_BUFFERS,
 		.partial = partial,
+		.flags = flags,
 		.ops = &relay_pipe_buf_ops,
 		.spd_release = relay_page_release,
 	};

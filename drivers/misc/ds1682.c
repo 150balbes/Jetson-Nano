@@ -1,10 +1,13 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Dallas Semiconductor DS1682 Elapsed Time Recorder device driver
  *
  * Written by: Grant Likely <grant.likely@secretlab.ca>
  *
  * Copyright (C) 2007 Secret Lab Technologies Ltd.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  */
 
 /*
@@ -56,42 +59,25 @@ static ssize_t ds1682_show(struct device *dev, struct device_attribute *attr,
 {
 	struct sensor_device_attribute_2 *sattr = to_sensor_dev_attr_2(attr);
 	struct i2c_client *client = to_i2c_client(dev);
-	unsigned long long val, check;
-	__le32 val_le = 0;
+	__le32 val = 0;
 	int rc;
 
 	dev_dbg(dev, "ds1682_show() called on %s\n", attr->attr.name);
 
 	/* Read the register */
 	rc = i2c_smbus_read_i2c_block_data(client, sattr->index, sattr->nr,
-					   (u8 *)&val_le);
+					   (u8 *) & val);
 	if (rc < 0)
 		return -EIO;
 
-	val = le32_to_cpu(val_le);
+	/* Special case: the 32 bit regs are time values with 1/4s
+	 * resolution, scale them up to milliseconds */
+	if (sattr->nr == 4)
+		return sprintf(buf, "%llu\n",
+			((unsigned long long)le32_to_cpu(val)) * 250);
 
-	if (sattr->index == DS1682_REG_ELAPSED) {
-		int retries = 5;
-
-		/* Detect and retry when a tick occurs mid-read */
-		do {
-			rc = i2c_smbus_read_i2c_block_data(client, sattr->index,
-							   sattr->nr,
-							   (u8 *)&val_le);
-			if (rc < 0 || retries <= 0)
-				return -EIO;
-
-			check = val;
-			val = le32_to_cpu(val_le);
-			retries--;
-		} while (val != check && val != (check + 1));
-	}
-
-	/* Format the output string and return # of bytes
-	 * Special case: the 32 bit regs are time values with 1/4s
-	 * resolution, scale them up to milliseconds
-	 */
-	return sprintf(buf, "%llu\n", (sattr->nr == 4) ? (val * 250) : val);
+	/* Format the output string and return # of bytes */
+	return sprintf(buf, "%li\n", (long)le32_to_cpu(val));
 }
 
 static ssize_t ds1682_store(struct device *dev, struct device_attribute *attr,
@@ -187,7 +173,7 @@ static ssize_t ds1682_eeprom_write(struct file *filp, struct kobject *kobj,
 	return count;
 }
 
-static const struct bin_attribute ds1682_eeprom_attr = {
+static struct bin_attribute ds1682_eeprom_attr = {
 	.attr = {
 		.name = "eeprom",
 		.mode = S_IRUGO | S_IWUSR,
@@ -241,16 +227,9 @@ static const struct i2c_device_id ds1682_id[] = {
 };
 MODULE_DEVICE_TABLE(i2c, ds1682_id);
 
-static const struct of_device_id ds1682_of_match[] = {
-	{ .compatible = "dallas,ds1682", },
-	{}
-};
-MODULE_DEVICE_TABLE(of, ds1682_of_match);
-
 static struct i2c_driver ds1682_driver = {
 	.driver = {
 		.name = "ds1682",
-		.of_match_table = ds1682_of_match,
 	},
 	.probe = ds1682_probe,
 	.remove = ds1682_remove,

@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /* copy_user.S: Sparc optimized copy_from_user and copy_to_user code.
  *
  *  Copyright(C) 1995 Linus Torvalds
@@ -365,7 +364,21 @@ short_aligned_end:
 97:
 	mov	%o2, %g3
 fixupretl:
-	retl
+	sethi   %hi(PAGE_OFFSET), %g1
+	cmp	%o0, %g1
+	blu	1f
+	 cmp	%o1, %g1
+	bgeu	1f
+	 ld	[%g6 + TI_PREEMPT], %g1
+	cmp	%g1, 0
+	bne	1f
+	 nop
+	save	%sp, -64, %sp
+	mov	%i0, %o0
+	call	__bzero
+	 mov	%g3, %o1
+	restore
+1:	retl
 	 mov	%g3, %o0
 
 /* exception routine sets %g2 to (broken_insn - first_insn)>>2 */

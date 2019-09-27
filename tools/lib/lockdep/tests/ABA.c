@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 #include <liblockdep/mutex.h>
 
 void main(void)

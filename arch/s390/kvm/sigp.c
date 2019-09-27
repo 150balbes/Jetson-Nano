@@ -1,8 +1,11 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * handling interprocessor communication
  *
  * Copyright IBM Corp. 2008, 2013
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License (version 2 only)
+ * as published by the Free Software Foundation.
  *
  *    Author(s): Carsten Otte <cotte@de.ibm.com>
  *               Christian Borntraeger <borntraeger@de.ibm.com>
@@ -20,18 +23,22 @@
 static int __sigp_sense(struct kvm_vcpu *vcpu, struct kvm_vcpu *dst_vcpu,
 			u64 *reg)
 {
-	const bool stopped = kvm_s390_test_cpuflags(dst_vcpu, CPUSTAT_STOPPED);
+	struct kvm_s390_local_interrupt *li;
+	int cpuflags;
 	int rc;
 	int ext_call_pending;
 
+	li = &dst_vcpu->arch.local_int;
+
+	cpuflags = atomic_read(li->cpuflags);
 	ext_call_pending = kvm_s390_ext_call_pending(dst_vcpu);
-	if (!stopped && !ext_call_pending)
+	if (!(cpuflags & CPUSTAT_STOPPED) && !ext_call_pending)
 		rc = SIGP_CC_ORDER_CODE_ACCEPTED;
 	else {
 		*reg &= 0xffffffff00000000UL;
 		if (ext_call_pending)
 			*reg |= SIGP_STATUS_EXT_CALL_PENDING;
-		if (stopped)
+		if (cpuflags & CPUSTAT_STOPPED)
 			*reg |= SIGP_STATUS_STOPPED;
 		rc = SIGP_CC_STATUS_STORED;
 	}
@@ -148,26 +155,29 @@ static int __sigp_stop_and_store_status(struct kvm_vcpu *vcpu,
 	return rc;
 }
 
-static int __sigp_set_arch(struct kvm_vcpu *vcpu, u32 parameter,
-			   u64 *status_reg)
+static int __sigp_set_arch(struct kvm_vcpu *vcpu, u32 parameter)
 {
+	int rc;
 	unsigned int i;
 	struct kvm_vcpu *v;
-	bool all_stopped = true;
 
-	kvm_for_each_vcpu(i, v, vcpu->kvm) {
-		if (v == vcpu)
-			continue;
-		if (!is_vcpu_stopped(v))
-			all_stopped = false;
+	switch (parameter & 0xff) {
+	case 0:
+		rc = SIGP_CC_NOT_OPERATIONAL;
+		break;
+	case 1:
+	case 2:
+		kvm_for_each_vcpu(i, v, vcpu->kvm) {
+			v->arch.pfault_token = KVM_S390_PFAULT_TOKEN_INVALID;
+			kvm_clear_async_pf_completion_queue(v);
+		}
+
+		rc = SIGP_CC_ORDER_CODE_ACCEPTED;
+		break;
+	default:
+		rc = -EOPNOTSUPP;
 	}
-
-	*status_reg &= 0xffffffff00000000UL;
-
-	/* Reject set arch order, with czam we're always in z/Arch mode. */
-	*status_reg |= (all_stopped ? SIGP_STATUS_INVALID_PARAMETER :
-					SIGP_STATUS_INCORRECT_STATE);
-	return SIGP_CC_STATUS_STORED;
+	return rc;
 }
 
 static int __sigp_set_prefix(struct kvm_vcpu *vcpu, struct kvm_vcpu *dst_vcpu,
@@ -204,9 +214,11 @@ static int __sigp_store_status_at_addr(struct kvm_vcpu *vcpu,
 				       struct kvm_vcpu *dst_vcpu,
 				       u32 addr, u64 *reg)
 {
+	int flags;
 	int rc;
 
-	if (!kvm_s390_test_cpuflags(dst_vcpu, CPUSTAT_STOPPED)) {
+	flags = atomic_read(dst_vcpu->arch.local_int.cpuflags);
+	if (!(flags & CPUSTAT_STOPPED)) {
 		*reg &= 0xffffffff00000000UL;
 		*reg |= SIGP_STATUS_INCORRECT_STATE;
 		return SIGP_CC_STATUS_STORED;
@@ -225,6 +237,7 @@ static int __sigp_store_status_at_addr(struct kvm_vcpu *vcpu,
 static int __sigp_sense_running(struct kvm_vcpu *vcpu,
 				struct kvm_vcpu *dst_vcpu, u64 *reg)
 {
+	struct kvm_s390_local_interrupt *li;
 	int rc;
 
 	if (!test_kvm_facility(vcpu->kvm, 9)) {
@@ -233,7 +246,8 @@ static int __sigp_sense_running(struct kvm_vcpu *vcpu,
 		return SIGP_CC_STATUS_STORED;
 	}
 
-	if (kvm_s390_test_cpuflags(dst_vcpu, CPUSTAT_RUNNING)) {
+	li = &dst_vcpu->arch.local_int;
+	if (atomic_read(li->cpuflags) & CPUSTAT_RUNNING) {
 		/* running */
 		rc = SIGP_CC_ORDER_CODE_ACCEPTED;
 	} else {
@@ -432,8 +446,7 @@ int kvm_s390_handle_sigp(struct kvm_vcpu *vcpu)
 	switch (order_code) {
 	case SIGP_SET_ARCHITECTURE:
 		vcpu->stat.instruction_sigp_arch++;
-		rc = __sigp_set_arch(vcpu, parameter,
-				     &vcpu->run->s.regs.gprs[r1]);
+		rc = __sigp_set_arch(vcpu, parameter);
 		break;
 	default:
 		rc = handle_sigp_dst(vcpu, order_code, cpu_addr,

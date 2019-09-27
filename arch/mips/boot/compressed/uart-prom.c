@@ -1,5 +1,5 @@
-// SPDX-License-Identifier: GPL-2.0
-#include <asm/setup.h>
+
+extern void prom_putchar(unsigned char ch);
 
 void putc(char c)
 {

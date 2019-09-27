@@ -39,6 +39,7 @@ struct pci_controller {
 	unsigned long io_offset;
 	unsigned long io_map_base;
 	struct resource *busn_resource;
+	unsigned long busn_offset;
 
 #ifndef CONFIG_PCI_DOMAINS_GENERIC
 	unsigned int index;
@@ -106,8 +107,13 @@ extern unsigned long PCIBIOS_MIN_MEM;
 
 #define PCIBIOS_MIN_CARDBUS_IO	0x4000
 
+extern void pcibios_set_master(struct pci_dev *dev);
+
 #define HAVE_PCI_MMAP
-#define ARCH_GENERIC_PCI_MMAP_RESOURCE
+
+extern int pci_mmap_page_range(struct pci_dev *dev, struct vm_area_struct *vma,
+	enum pci_mmap_state mmap_state, int write_combine);
+
 #define HAVE_ARCH_PCI_RESOURCE_TO_USER
 
 /*
@@ -120,6 +126,15 @@ extern unsigned long PCIBIOS_MIN_MEM;
 #include <linux/scatterlist.h>
 #include <linux/string.h>
 #include <asm/io.h>
+
+struct pci_dev;
+
+/*
+ * The PCI address space does equal the physical memory address space.
+ * The networking and block device layers use this boolean for bounce
+ * buffer decisions.
+ */
+#define PCI_DMA_BUS_IS_PHYS     (1)
 
 #ifdef CONFIG_PCI_DOMAINS_GENERIC
 static inline int pci_proc_domain(struct pci_bus *bus)

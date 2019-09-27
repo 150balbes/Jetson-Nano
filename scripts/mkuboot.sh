@@ -1,5 +1,4 @@
 #!/bin/bash
-# SPDX-License-Identifier: GPL-2.0
 
 #
 # Build U-Boot image when `mkimage' tool is available.

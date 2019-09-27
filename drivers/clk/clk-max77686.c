@@ -1,9 +1,24 @@
-// SPDX-License-Identifier: GPL-2.0+
-//
-// clk-max77686.c - Clock driver for Maxim 77686/MAX77802
-//
-// Copyright (C) 2012 Samsung Electornics
-// Jonghwa Lee <jonghwa3.lee@samsung.com>
+/*
+ * clk-max77686.c - Clock driver for Maxim 77686/MAX77802
+ *
+ * Copyright (C) 2012 Samsung Electornics
+ * Jonghwa Lee <jonghwa3.lee@samsung.com>
+ *
+ * This program is free software; you can redistribute  it and/or modify it
+ * under  the terms of  the GNU General  Public License as published by the
+ * Free Software Foundation;  either version 2 of the  License, or (at your
+ * option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ *
+ */
 
 #include <linux/kernel.h>
 #include <linux/slab.h>
@@ -90,6 +105,7 @@ max77686_hw_clk_info max77620_hw_clks_info[MAX77620_CLKS_NUM] = {
 		.name = "32khz_out0",
 		.clk_reg = MAX77620_REG_CNFG1_32K,
 		.clk_enable_mask = MAX77620_CNFG1_32K_OUT0_EN,
+		.flags = CLK_IGNORE_UNUSED,
 	},
 };
 
@@ -137,7 +153,7 @@ static unsigned long max77686_recalc_rate(struct clk_hw *hw,
 	return 32768;
 }
 
-static const struct clk_ops max77686_clk_ops = {
+static struct clk_ops max77686_clk_ops = {
 	.prepare	= max77686_clk_prepare,
 	.unprepare	= max77686_clk_unprepare,
 	.is_prepared	= max77686_clk_is_prepared,
@@ -164,6 +180,7 @@ static int max77686_clk_probe(struct platform_device *pdev)
 	struct device *parent = dev->parent;
 	const struct platform_device_id *id = platform_get_device_id(pdev);
 	struct max77686_clk_driver_data *drv_data;
+	struct max77686_clk_init_data *max_clk_data;
 	const struct max77686_hw_clk_info *hw_clks;
 	struct regmap *regmap;
 	int i, ret, num_clks;
@@ -209,7 +226,6 @@ static int max77686_clk_probe(struct platform_device *pdev)
 		return -ENOMEM;
 
 	for (i = 0; i < num_clks; i++) {
-		struct max77686_clk_init_data *max_clk_data;
 		const char *clk_name;
 
 		max_clk_data = &drv_data->max_clk_data[i];
@@ -235,18 +251,37 @@ static int max77686_clk_probe(struct platform_device *pdev)
 			return ret;
 		}
 
-		ret = devm_clk_hw_register_clkdev(dev, &max_clk_data->hw,
-						  max_clk_data->clk_idata.name,
-						  NULL);
+		ret = clk_hw_register_clkdev(&max_clk_data->hw,
+					     max_clk_data->clk_idata.name, NULL);
 		if (ret < 0) {
 			dev_err(dev, "Failed to clkdev register: %d\n", ret);
 			return ret;
 		}
 	}
 
+	if ((drv_data->chip == CHIP_MAX77620) && parent->of_node) {
+		bool en_clk32k;
+
+		en_clk32k = of_property_read_bool(parent->of_node,
+						  "maxim,enable-clock32k-out");
+		if (!en_clk32k)
+			en_clk32k = of_property_read_bool(parent->of_node,
+						"enable-clock32k-out");
+		if (en_clk32k) {
+			max_clk_data =
+				&drv_data->max_clk_data[MAX77620_CLK_32K_OUT0];
+			ret = max77686_clk_prepare(&max_clk_data->hw);
+			if (ret < 0) {
+				dev_err(dev,
+					"Fail to enable clk32k out %d\n", ret);
+				return ret;
+			}
+		}
+	}
+
 	if (parent->of_node) {
-		ret = devm_of_clk_add_hw_provider(dev, of_clk_max77686_get,
-						  drv_data);
+		ret = of_clk_add_hw_provider(parent->of_node, of_clk_max77686_get,
+					     drv_data);
 
 		if (ret < 0) {
 			dev_err(dev, "Failed to register OF clock provider: %d\n",
@@ -262,9 +297,25 @@ static int max77686_clk_probe(struct platform_device *pdev)
 					 1 << MAX77802_CLOCK_LOW_JITTER_SHIFT);
 		if (ret < 0) {
 			dev_err(dev, "Failed to config low-jitter: %d\n", ret);
-			return ret;
+			goto remove_of_clk_provider;
 		}
 	}
+
+	return 0;
+
+remove_of_clk_provider:
+	if (parent->of_node)
+		of_clk_del_provider(parent->of_node);
+
+	return ret;
+}
+
+static int max77686_clk_remove(struct platform_device *pdev)
+{
+	struct device *parent = pdev->dev.parent;
+
+	if (parent->of_node)
+		of_clk_del_provider(parent->of_node);
 
 	return 0;
 }
@@ -282,6 +333,7 @@ static struct platform_driver max77686_clk_driver = {
 		.name  = "max77686-clk",
 	},
 	.probe = max77686_clk_probe,
+	.remove = max77686_clk_remove,
 	.id_table = max77686_clk_id,
 };
 

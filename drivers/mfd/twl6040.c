@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * MFD driver for TWL6040 audio device
  *
@@ -7,6 +6,21 @@
  *		Peter Ujfalusi <peter.ujfalusi@ti.com>
  *
  * Copyright:	(C) 2011 Texas Instruments, Inc.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA
+ * 02110-1301 USA
+ *
  */
 
 #include <linux/module.h>
@@ -308,19 +322,8 @@ int twl6040_power(struct twl6040 *twl6040, int on)
 			}
 		}
 
-		/*
-		 * Register access can produce errors after power-up unless we
-		 * wait at least 8ms based on measurements on duovero.
-		 */
-		usleep_range(10000, 12000);
-
 		/* Sync with the HW */
-		ret = regcache_sync(twl6040->regmap);
-		if (ret) {
-			dev_err(twl6040->dev, "Failed to sync with the HW: %i\n",
-				ret);
-			goto out;
-		}
+		regcache_sync(twl6040->regmap);
 
 		/* Default PLL configuration after power up */
 		twl6040->pll = TWL6040_SYSCLK_SEL_LPPLL;
@@ -610,8 +613,7 @@ static const struct regmap_config twl6040_regmap_config = {
 	.writeable_reg = twl6040_writeable_reg,
 
 	.cache_type = REGCACHE_RBTREE,
-	.use_single_read = true,
-	.use_single_write = true,
+	.use_single_rw = true,
 };
 
 static const struct regmap_irq twl6040_irqs[] = {

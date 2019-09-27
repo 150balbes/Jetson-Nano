@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * Hitachi UL SolutionEngine 7343 FPGA IRQ Support.
  *
@@ -7,6 +6,10 @@
  *
  * Based on linux/arch/sh/boards/se/7343/irq.c
  * Copyright (C) 2007  Nobuhiro Iwamatsu
+ *
+ * This file is subject to the terms and conditions of the GNU General Public
+ * License.  See the file "COPYING" in the main directory of this archive
+ * for more details.
  */
 #define DRV_NAME "SE7343-FPGA"
 #define pr_fmt(fmt) DRV_NAME ": " fmt
@@ -16,7 +19,7 @@
 #include <linux/interrupt.h>
 #include <linux/irqdomain.h>
 #include <linux/io.h>
-#include <linux/sizes.h>
+#include <asm/sizes.h>
 #include <mach-se/mach/se7343.h>
 
 #define PA_CPLD_BASE_ADDR	0x11400000

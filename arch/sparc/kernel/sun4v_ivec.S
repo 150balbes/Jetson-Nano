@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /* sun4v_ivec.S: Sun4v interrupt vector handling.
  *
  * Copyright (C) 2006 <davem@davemloft.net>

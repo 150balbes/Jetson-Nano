@@ -1,8 +1,11 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Hitachi (now Renesas) SCA-II HD64572 driver for Linux
  *
  * Copyright (C) 1998-2008 Krzysztof Halasa <khc@pm.waw.pl>
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of version 2 of the GNU General Public License
+ * as published by the Free Software Foundation.
  *
  * Source of information: HD64572 SCA-II User's Manual
  *
@@ -36,7 +39,7 @@
 #include <linux/string.h>
 #include <linux/types.h>
 #include <asm/io.h>
-#include <linux/uaccess.h>
+#include <asm/uaccess.h>
 #include "hd64572.h"
 
 #define NAPI_WEIGHT		16
@@ -338,7 +341,7 @@ static int sca_poll(struct napi_struct *napi, int budget)
 		received = sca_rx_done(port, budget);
 
 	if (received < budget) {
-		napi_complete_done(napi, received);
+		napi_complete(napi);
 		enable_intr(port);
 	}
 

@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * Function calling ABI conversion from Linux to EFI for x86_64
  *

@@ -1,0 +1,177 @@
+/*
+ * Top level DTS file for CVM:P2888-0001 and CVB:E3366-1199
+ *
+ * Copyright (c) 2017-2018, NVIDIA CORPORATION.  All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; version 2 of the License.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ */
+
+#include "common/tegra194-p2888-0000-a00.dtsi"
+#include <t19x-common-platforms/tegra194-platforms-eqos.dtsi>
+#include "common/tegra194-e3366-1199-a00.dtsi"
+#include "common/tegra194-power-tree-p2888-0001-e3366-1199.dtsi"
+#include <t19x-common-platforms/tegra194-thermal.dtsi>
+#include "common/tegra194-audio-p2822-0000.dtsi"
+#include "common/tegra194-plugin-manager-e3366-1199.dtsi"
+
+/ {
+	nvidia,dtsfilename = __FILE__;
+	nvidia,dtbbuildtime = __DATE__, __TIME__;
+	nvidia,fastboot-usb-vid = <0x0955>;
+	nvidia,fastboot-usb-pid = <0xee1e>;
+
+	compatible = "nvidia,galen", "nvidia,tegra194";
+
+	bpmp_i2c {
+		tegra_tmp451: temp-sensor@4c {
+			vdd-supply = <&e3366_vdd_1v8_slt>;
+		};
+	};
+
+	chosen {
+		bootargs ="console=ttyTCU0,115200";
+		board-has-eeprom;
+	};
+
+	firmware {
+		android {
+			compatible = "android,firmware";
+			hardware = "xavier-slt";
+		};
+	};
+
+	cpus {
+		cpu@1 {
+			status = "okay";
+		};
+
+		cpu@2 {
+			status = "okay";
+		};
+
+		cpu@3 {
+			status = "okay";
+		};
+
+		cpu@4 {
+			status = "okay";
+		};
+
+		cpu@5 {
+			status = "okay";
+		};
+
+		cpu@6 {
+			status = "okay";
+		};
+
+		cpu@7 {
+			status = "okay";
+		};
+
+	};
+
+	timer {
+		status = "okay";
+	};
+
+	interrupt-controller@3881000 {
+		status = "okay";
+	};
+
+	memory@80000000 {
+		device_type = "memory";
+		reg = <0x0 0x80000000 0x0 0xc0000000>;
+	};
+
+	cbb-noc@2300000 {
+		status = "okay";
+	};
+
+	power-domain {
+		status = "disabled";
+	};
+
+	mods-simple-bus {
+		status = "disabled";
+	};
+
+	thermal-zones {
+		status = "disabled";
+	};
+
+	interrupt-controller {
+		status = "disabled";
+	};
+
+	eeprom-manager {
+		status = "disabled";
+	};
+
+	tegra_xudc: xudc@3550000 {
+		extcon-cables = <&vbus_id_extcon 0>;
+		extcon-cable-names = "vbus";
+		#extcon-cells = <1>;
+#if TEGRA_XUSB_PADCONTROL_VERSION >= DT_VERSION_2
+		phys = <&{/xusb_padctl@3520000/pads/usb2/lanes/usb2-0}>,
+			<&{/xusb_padctl@3520000/pads/usb3/lanes/usb3-2}>;
+		phy-names = "usb2", "usb3";
+		nvidia,xusb-padctl = <&xusb_padctl>;
+#endif
+		nvidia,boost_cpu_freq = <1200>;
+		status = "okay";
+	};
+
+	tegra_xhci: xhci@3610000 {
+		extcon-cables = <&vbus_id_extcon 1>;
+		extcon-cable-names = "id";
+		#extcon-cells = <1>;
+#if TEGRA_XUSB_PADCONTROL_VERSION >= DT_VERSION_2
+		phys = <&{/xusb_padctl@3520000/pads/usb2/lanes/usb2-0}>,
+			<&{/xusb_padctl@3520000/pads/usb2/lanes/usb2-1}>,
+			<&{/xusb_padctl@3520000/pads/usb2/lanes/usb2-2}>,
+			<&{/xusb_padctl@3520000/pads/usb2/lanes/usb2-3}>,
+			<&{/xusb_padctl@3520000/pads/usb3/lanes/usb3-0}>,
+			<&{/xusb_padctl@3520000/pads/usb3/lanes/usb3-1}>,
+			<&{/xusb_padctl@3520000/pads/usb3/lanes/usb3-2}>,
+			<&{/xusb_padctl@3520000/pads/usb3/lanes/usb3-3}>;
+		phy-names = "usb2-0", "usb2-1", "usb2-2", "usb2-3",
+				"usb3-0", "usb3-1", "usb3-2", "usb-3";
+		nvidia,xusb-padctl = <&xusb_padctl>;
+#endif
+		status = "disabled";
+	};
+
+	mttcan@c310000 {
+		status = "okay";
+	};
+
+	mttcan@c320000 {
+		status = "okay";
+	};
+
+	pcie@14180000 {
+		/delete-property/ nvidia,enable-power-down;
+	};
+
+	pcie@14100000 {
+		nvidia,max-speed = <4>;
+		/delete-property/ nvidia,enable-power-down;
+	};
+
+	pcie@14140000 {
+		/delete-property/ nvidia,enable-power-down;
+	};
+
+	pcie@141a0000 {
+		/delete-property/ nvidia,enable-power-down;
+		/delete-property/ nvidia,plat-gpios;
+	};
+};

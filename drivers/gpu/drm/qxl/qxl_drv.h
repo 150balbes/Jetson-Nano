@@ -23,6 +23,7 @@
  *          Alon Levy
  */
 
+
 #ifndef QXL_DRV_H
 #define QXL_DRV_H
 
@@ -30,24 +31,24 @@
  * Definitions taken from spice-protocol, plus kernel driver specific bits.
  */
 
-#include <linux/dma-fence.h>
+#include <linux/fence.h>
 #include <linux/workqueue.h>
 #include <linux/firmware.h>
 #include <linux/platform_device.h>
 
-#include <drm/drm_crtc.h>
-#include <drm/drm_encoder.h>
-#include <drm/drm_fb_helper.h>
-#include <drm/drm_gem.h>
-#include <drm/drmP.h>
-#include <drm/ttm/ttm_bo_api.h>
-#include <drm/ttm/ttm_bo_driver.h>
-/* just for ttm_validate_buffer */
-#include <drm/ttm/ttm_execbuf_util.h>
-#include <drm/ttm/ttm_module.h>
-#include <drm/ttm/ttm_placement.h>
-#include <drm/qxl_drm.h>
+#include "drmP.h"
+#include "drm_crtc.h"
+#include <ttm/ttm_bo_api.h>
+#include <ttm/ttm_bo_driver.h>
+#include <ttm/ttm_placement.h>
+#include <ttm/ttm_module.h>
 
+#include <drm/drm_gem.h>
+
+/* just for ttm_validate_buffer */
+#include <ttm/ttm_execbuf_util.h>
+
+#include <drm/qxl_drm.h>
 #include "qxl_dev.h"
 
 #define DRIVER_AUTHOR		"Dave Airlie"
@@ -62,8 +63,34 @@
 
 #define QXL_DEBUGFS_MAX_COMPONENTS		32
 
+extern int qxl_log_level;
 extern int qxl_num_crtc;
-extern int qxl_max_ioctls;
+
+enum {
+	QXL_INFO_LEVEL = 1,
+	QXL_DEBUG_LEVEL = 2,
+};
+
+#define QXL_INFO(qdev, fmt, ...) do { \
+		if (qxl_log_level >= QXL_INFO_LEVEL) {	\
+			qxl_io_log(qdev, fmt, __VA_ARGS__); \
+		}	\
+	} while (0)
+#define QXL_DEBUG(qdev, fmt, ...) do { \
+		if (qxl_log_level >= QXL_DEBUG_LEVEL) {	\
+			qxl_io_log(qdev, fmt, __VA_ARGS__); \
+		}	\
+	} while (0)
+#define QXL_INFO_ONCE(qdev, fmt, ...) do { \
+		static int done;		\
+		if (!done) {			\
+			done = 1;			\
+			QXL_INFO(qdev, fmt, __VA_ARGS__);	\
+		}						\
+	} while (0)
+
+#define DRM_FILE_OFFSET 0x100000000ULL
+#define DRM_FILE_PAGE_OFFSET (DRM_FILE_OFFSET >> PAGE_SHIFT)
 
 #define QXL_INTERRUPT_MASK (\
 	QXL_INTERRUPT_DISPLAY |\
@@ -79,17 +106,14 @@ struct qxl_bo {
 	struct ttm_placement		placement;
 	struct ttm_buffer_object	tbo;
 	struct ttm_bo_kmap_obj		kmap;
-	unsigned int pin_count;
+	unsigned			pin_count;
 	void				*kptr;
-	unsigned int                    map_count;
 	int                             type;
 
 	/* Constant after initialization */
 	struct drm_gem_object		gem_base;
-	unsigned int is_primary:1; /* is this now a primary surface */
-	unsigned int is_dumb:1;
-	struct qxl_bo *shadow;
-	unsigned int hw_surf_alloc:1;
+	bool is_primary; /* is this now a primary surface */
+	bool hw_surf_alloc;
 	struct qxl_surface surf;
 	uint32_t surface_id;
 	struct qxl_release *surf_create;
@@ -109,7 +133,10 @@ struct qxl_bo_list {
 struct qxl_crtc {
 	struct drm_crtc base;
 	int index;
-
+	int cur_x;
+	int cur_y;
+	int hot_spot_x;
+	int hot_spot_y;
 	struct qxl_bo *cursor_bo;
 };
 
@@ -119,22 +146,38 @@ struct qxl_output {
 	struct drm_encoder enc;
 };
 
+struct qxl_framebuffer {
+	struct drm_framebuffer base;
+	struct drm_gem_object *obj;
+};
+
 #define to_qxl_crtc(x) container_of(x, struct qxl_crtc, base)
 #define drm_connector_to_qxl_output(x) container_of(x, struct qxl_output, base)
 #define drm_encoder_to_qxl_output(x) container_of(x, struct qxl_output, enc)
+#define to_qxl_framebuffer(x) container_of(x, struct qxl_framebuffer, base)
 
 struct qxl_mman {
+	struct ttm_bo_global_ref        bo_global_ref;
+	struct drm_global_reference	mem_global_ref;
+	bool				mem_global_referenced;
 	struct ttm_bo_device		bdev;
 };
 
+struct qxl_mode_info {
+	int num_modes;
+	struct qxl_mode *modes;
+	bool mode_config_initialized;
+
+	/* pointer to fbdev info structure */
+	struct qxl_fbdev *qfbdev;
+};
+
+
 struct qxl_memslot {
-	int             index;
-	const char      *name;
 	uint8_t		generation;
 	uint64_t	start_phys_addr;
-	uint64_t	size;
+	uint64_t	end_phys_addr;
 	uint64_t	high_bits;
-	uint64_t        gpu_offset;
 };
 
 enum {
@@ -147,11 +190,10 @@ enum {
  * spice-protocol/qxl_dev.h */
 #define QXL_MAX_RES 96
 struct qxl_release {
-	struct dma_fence base;
+	struct fence base;
 
 	int id;
 	int type;
-	struct qxl_bo *release_bo;
 	uint32_t release_offset;
 	uint32_t surface_release_id;
 	struct ww_acquire_ctx ticket;
@@ -187,18 +229,22 @@ struct qxl_draw_fill {
  */
 struct qxl_debugfs {
 	struct drm_info_list	*files;
-	unsigned int num_files;
+	unsigned		num_files;
 };
 
 int qxl_debugfs_add_files(struct qxl_device *rdev,
 			     struct drm_info_list *files,
-			     unsigned int nfiles);
+			     unsigned nfiles);
 int qxl_debugfs_fence_init(struct qxl_device *rdev);
+void qxl_debugfs_remove_files(struct qxl_device *qdev);
 
 struct qxl_device;
 
 struct qxl_device {
-	struct drm_device ddev;
+	struct device			*dev;
+	struct drm_device		*ddev;
+	struct pci_dev			*pdev;
+	unsigned long flags;
 
 	resource_size_t vram_base, vram_size;
 	resource_size_t surfaceram_base, surfaceram_size;
@@ -216,7 +262,10 @@ struct qxl_device {
 	void *ram;
 	struct qxl_mman		mman;
 	struct qxl_gem		gem;
+	struct qxl_mode_info mode_info;
 
+	struct fb_info			*fbdev_info;
+	struct qxl_framebuffer	*fbdev_qfb;
 	void *ram_physical;
 
 	struct qxl_ring *release_ring;
@@ -225,12 +274,16 @@ struct qxl_device {
 
 	struct qxl_ram_header *ram_header;
 
-	struct qxl_bo *primary_bo;
-	struct qxl_bo *dumb_shadow_bo;
-	struct qxl_head *dumb_heads;
+	bool primary_created;
 
-	struct qxl_memslot main_slot;
-	struct qxl_memslot surfaces_slot;
+	struct qxl_memslot	*mem_slots;
+	uint8_t		n_mem_slots;
+
+	uint8_t		main_mem_slot;
+	uint8_t		surfaces_mem_slot;
+	uint8_t		slot_id_bits;
+	uint8_t		slot_gen_bits;
+	uint64_t	va_slot_mask;
 
 	spinlock_t	release_lock;
 	struct idr	release_idr;
@@ -244,7 +297,7 @@ struct qxl_device {
 	atomic_t irq_received_display;
 	atomic_t irq_received_cursor;
 	atomic_t irq_received_io_cmd;
-	unsigned int irq_received_error;
+	unsigned irq_received_error;
 	wait_queue_head_t display_event;
 	wait_queue_head_t cursor_event;
 	wait_queue_head_t io_cmd_event;
@@ -252,7 +305,7 @@ struct qxl_device {
 
 	/* debugfs */
 	struct qxl_debugfs	debugfs[QXL_DEBUGFS_MAX_COMPONENTS];
-	unsigned int debugfs_count;
+	unsigned		debugfs_count;
 
 	struct mutex		update_area_mutex;
 
@@ -276,12 +329,14 @@ struct qxl_device {
 	int monitors_config_height;
 };
 
+/* forward declaration for QXL_INFO_IO */
+__printf(2,3) void qxl_io_log(struct qxl_device *qdev, const char *fmt, ...);
+
 extern const struct drm_ioctl_desc qxl_ioctls[];
 extern int qxl_max_ioctl;
 
-int qxl_device_init(struct qxl_device *qdev, struct drm_driver *drv,
-		    struct pci_dev *pdev);
-void qxl_device_fini(struct qxl_device *qdev);
+int qxl_driver_load(struct drm_device *dev, unsigned long flags);
+int qxl_driver_unload(struct drm_device *dev);
 
 int qxl_modeset_init(struct qxl_device *qdev);
 void qxl_modeset_fini(struct qxl_device *qdev);
@@ -303,27 +358,53 @@ void qxl_ring_free(struct qxl_ring *ring);
 void qxl_ring_init_hdr(struct qxl_ring *ring);
 int qxl_check_idle(struct qxl_ring *ring);
 
+static inline void *
+qxl_fb_virtual_address(struct qxl_device *qdev, unsigned long physical)
+{
+	QXL_INFO(qdev, "not implemented (%lu)\n", physical);
+	return 0;
+}
+
 static inline uint64_t
 qxl_bo_physical_address(struct qxl_device *qdev, struct qxl_bo *bo,
 			unsigned long offset)
 {
-	struct qxl_memslot *slot =
-		(bo->tbo.mem.mem_type == TTM_PL_VRAM)
-		? &qdev->main_slot : &qdev->surfaces_slot;
-
-	WARN_ON_ONCE((bo->tbo.offset & slot->gpu_offset) != slot->gpu_offset);
+	int slot_id = bo->type == QXL_GEM_DOMAIN_VRAM ? qdev->main_mem_slot : qdev->surfaces_mem_slot;
+	struct qxl_memslot *slot = &(qdev->mem_slots[slot_id]);
 
 	/* TODO - need to hold one of the locks to read tbo.offset */
-	return slot->high_bits | (bo->tbo.offset - slot->gpu_offset + offset);
+	return slot->high_bits | (bo->tbo.offset + offset);
 }
 
+/* qxl_fb.c */
+#define QXLFB_CONN_LIMIT 1
+
+int qxl_fbdev_init(struct qxl_device *qdev);
+void qxl_fbdev_fini(struct qxl_device *qdev);
+int qxl_get_handle_for_primary_fb(struct qxl_device *qdev,
+				  struct drm_file *file_priv,
+				  uint32_t *handle);
+void qxl_fbdev_set_suspend(struct qxl_device *qdev, int state);
+
 /* qxl_display.c */
+void qxl_user_framebuffer_destroy(struct drm_framebuffer *fb);
+int
+qxl_framebuffer_init(struct drm_device *dev,
+		     struct qxl_framebuffer *rfb,
+		     const struct drm_mode_fb_cmd2 *mode_cmd,
+		     struct drm_gem_object *obj,
+		     const struct drm_framebuffer_funcs *funcs);
 void qxl_display_read_client_monitors_config(struct qxl_device *qdev);
+void qxl_send_monitors_config(struct qxl_device *qdev);
 int qxl_create_monitors_object(struct qxl_device *qdev);
 int qxl_destroy_monitors_object(struct qxl_device *qdev);
 
+/* used by qxl_debugfs only */
+void qxl_crtc_set_from_monitors_config(struct qxl_device *qdev);
+void qxl_alloc_client_monitors_config(struct qxl_device *qdev, unsigned count);
+
 /* qxl_gem.c */
-void qxl_gem_init(struct qxl_device *qdev);
+int qxl_gem_init(struct qxl_device *qdev);
 void qxl_gem_fini(struct qxl_device *qdev);
 int qxl_gem_object_create(struct qxl_device *qdev, int size,
 			  int alignment, int initial_domain,
@@ -352,6 +433,7 @@ int qxl_mode_dumb_mmap(struct drm_file *filp,
 		       struct drm_device *dev,
 		       uint32_t handle, uint64_t *offset_p);
 
+
 /* qxl ttm */
 int qxl_ttm_init(struct qxl_device *qdev);
 void qxl_ttm_fini(struct qxl_device *qdev);
@@ -377,6 +459,7 @@ void qxl_update_screen(struct qxl_device *qxl);
 /* qxl io operations (qxl_cmd.c) */
 
 void qxl_io_create_primary(struct qxl_device *qdev,
+			   unsigned offset,
 			   struct qxl_bo *bo);
 void qxl_io_destroy_primary(struct qxl_device *qdev);
 void qxl_io_memslot_add(struct qxl_device *qdev, uint8_t id);
@@ -421,13 +504,22 @@ int qxl_alloc_bo_reserved(struct qxl_device *qdev,
 			  struct qxl_bo **_bo);
 /* qxl drawing commands */
 
+void qxl_draw_opaque_fb(const struct qxl_fb_image *qxl_fb_image,
+			int stride /* filled in if 0 */);
+
 void qxl_draw_dirty_fb(struct qxl_device *qdev,
-		       struct drm_framebuffer *fb,
+		       struct qxl_framebuffer *qxl_fb,
 		       struct qxl_bo *bo,
-		       unsigned int flags, unsigned int color,
+		       unsigned flags, unsigned color,
 		       struct drm_clip_rect *clips,
-		       unsigned int num_clips, int inc,
-		       uint32_t dumb_shadow_offset);
+		       unsigned num_clips, int inc);
+
+void qxl_draw_fill(struct qxl_draw_fill *qxl_draw_fill_rec);
+
+void qxl_draw_copyarea(struct qxl_device *qdev,
+		       u32 width, u32 height,
+		       u32 sx, u32 sy,
+		       u32 dx, u32 dy);
 
 void qxl_release_free(struct qxl_device *qdev,
 		      struct qxl_release *release);
@@ -442,7 +534,7 @@ int qxl_garbage_collect(struct qxl_device *qdev);
 /* debugfs */
 
 int qxl_debugfs_init(struct drm_minor *minor);
-int qxl_ttm_debugfs_init(struct qxl_device *qdev);
+void qxl_debugfs_takedown(struct drm_minor *minor);
 
 /* qxl_prime.c */
 int qxl_gem_prime_pin(struct drm_gem_object *obj);
@@ -460,16 +552,20 @@ int qxl_gem_prime_mmap(struct drm_gem_object *obj,
 int qxl_irq_init(struct qxl_device *qdev);
 irqreturn_t qxl_irq_handler(int irq, void *arg);
 
+/* qxl_fb.c */
+bool qxl_fbdev_qobj_is_fb(struct qxl_device *qdev, struct qxl_bo *qobj);
+
 int qxl_debugfs_add_files(struct qxl_device *qdev,
 			  struct drm_info_list *files,
-			  unsigned int nfiles);
+			  unsigned nfiles);
 
 int qxl_surface_id_alloc(struct qxl_device *qdev,
 			 struct qxl_bo *surf);
 void qxl_surface_id_dealloc(struct qxl_device *qdev,
 			    uint32_t surface_id);
 int qxl_hw_surface_alloc(struct qxl_device *qdev,
-			 struct qxl_bo *surf);
+			 struct qxl_bo *surf,
+			 struct ttm_mem_reg *mem);
 int qxl_hw_surface_dealloc(struct qxl_device *qdev,
 			   struct qxl_bo *surf);
 
@@ -478,5 +574,6 @@ int qxl_bo_check_id(struct qxl_device *qdev, struct qxl_bo *bo);
 struct qxl_drv_surface *
 qxl_surface_lookup(struct drm_device *dev, int surface_id);
 void qxl_surface_evict(struct qxl_device *qdev, struct qxl_bo *surf, bool freeing);
+int qxl_update_surface(struct qxl_device *qdev, struct qxl_bo *surf);
 
 #endif

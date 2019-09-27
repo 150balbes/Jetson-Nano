@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 #include "relocs.h"
 
 #define ELF_BITS 64

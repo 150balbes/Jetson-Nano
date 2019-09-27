@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _NET_INET_IPX_H_
 #define _NET_INET_IPX_H_
 /*
@@ -15,7 +14,6 @@
 #include <linux/ipx.h>
 #include <linux/list.h>
 #include <linux/slab.h>
-#include <linux/refcount.h>
 
 struct ipx_address {
 	__be32  net;
@@ -56,7 +54,7 @@ struct ipx_interface {
 	/* IPX address */
 	__be32			if_netnum;
 	unsigned char		if_node[IPX_NODE_LEN];
-	refcount_t		refcnt;
+	atomic_t		refcnt;
 
 	/* physical device info */
 	struct net_device	*if_dev;
@@ -82,7 +80,7 @@ struct ipx_route {
 	unsigned char		ir_routed;
 	unsigned char		ir_router_node[IPX_NODE_LEN];
 	struct list_head	node; /* node in ipx_routes list */
-	refcount_t		refcnt;
+	atomic_t		refcnt;
 };
 
 struct ipx_cb {
@@ -141,7 +139,7 @@ const char *ipx_device_name(struct ipx_interface *intrfc);
 
 static __inline__ void ipxitf_hold(struct ipx_interface *intrfc)
 {
-	refcount_inc(&intrfc->refcnt);
+	atomic_inc(&intrfc->refcnt);
 }
 
 void ipxitf_down(struct ipx_interface *intrfc);
@@ -159,18 +157,18 @@ int ipxrtr_ioctl(unsigned int cmd, void __user *arg);
 
 static __inline__ void ipxitf_put(struct ipx_interface *intrfc)
 {
-	if (refcount_dec_and_test(&intrfc->refcnt))
+	if (atomic_dec_and_test(&intrfc->refcnt))
 		ipxitf_down(intrfc);
 }
 
 static __inline__ void ipxrtr_hold(struct ipx_route *rt)
 {
-	        refcount_inc(&rt->refcnt);
+	        atomic_inc(&rt->refcnt);
 }
 
 static __inline__ void ipxrtr_put(struct ipx_route *rt)
 {
-	        if (refcount_dec_and_test(&rt->refcnt))
+	        if (atomic_dec_and_test(&rt->refcnt))
 			                kfree(rt);
 }
 #endif /* _NET_INET_IPX_H_ */

@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _NET_DN_DEV_H
 #define _NET_DN_DEV_H
 

@@ -1,7 +1,5 @@
-#!/usr/bin/env perl
-# SPDX-License-Identifier: GPL-2.0
+#!/usr/bin/perl -w
 #
-use warnings;
 use strict;
 use Math::BigInt;
 use Fcntl "SEEK_SET";

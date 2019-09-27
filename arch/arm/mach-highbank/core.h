@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __HIGHBANK_CORE_H
 #define __HIGHBANK_CORE_H
 

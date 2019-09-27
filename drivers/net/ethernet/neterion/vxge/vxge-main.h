@@ -417,10 +417,12 @@ struct vxge_tx_priv {
 	module_param(p, int, 0)
 
 static inline
-void vxge_os_timer(struct timer_list *timer, void (*func)(struct timer_list *),
-		   unsigned long timeout)
+void vxge_os_timer(struct timer_list *timer, void (*func)(unsigned long data),
+		   struct vxgedev *vdev, unsigned long timeout)
 {
-	timer_setup(timer, func, 0);
+	init_timer(timer);
+	timer->function = func;
+	timer->data = (unsigned long)vdev;
 	mod_timer(timer, jiffies + timeout);
 }
 

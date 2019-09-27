@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: MIT */
 #ifndef __NVKM_MSPDEC_H__
 #define __NVKM_MSPDEC_H__
 #include <engine/falcon.h>

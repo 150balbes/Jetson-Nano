@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0
 source "arch/sh/drivers/dma/Kconfig"
 source "arch/sh/cchips/Kconfig"
 

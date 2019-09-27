@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef AMBA_PL011_H
 #define AMBA_PL011_H
 

@@ -1,14 +1,23 @@
-// SPDX-License-Identifier: GPL-2.0+
 /*
  * FB driver for Two KS0108 LCD controllers in AGM1264K-FL display
  *
  * Copyright (C) 2014 ololoshka2871
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
  */
 
 #include <linux/module.h>
 #include <linux/kernel.h>
 #include <linux/init.h>
-#include <linux/gpio/consumer.h>
+#include <linux/gpio.h>
 #include <linux/delay.h>
 #include <linux/slab.h>
 
@@ -79,14 +88,14 @@ static int init_display(struct fbtft_par *par)
 
 static void reset(struct fbtft_par *par)
 {
-	if (!par->gpio.reset)
+	if (par->gpio.reset == -1)
 		return;
 
 	dev_dbg(par->info->device, "%s()\n", __func__);
 
-	gpiod_set_value(par->gpio.reset, 0);
+	gpio_set_value(par->gpio.reset, 0);
 	udelay(20);
-	gpiod_set_value(par->gpio.reset, 1);
+	gpio_set_value(par->gpio.reset, 1);
 	mdelay(120);
 }
 
@@ -98,30 +107,30 @@ static int verify_gpios(struct fbtft_par *par)
 	dev_dbg(par->info->device,
 		"%s()\n", __func__);
 
-	if (!par->EPIN) {
+	if (par->EPIN < 0) {
 		dev_err(par->info->device,
 			"Missing info about 'wr' (aka E) gpio. Aborting.\n");
 		return -EINVAL;
 	}
 	for (i = 0; i < 8; ++i) {
-		if (!par->gpio.db[i]) {
+		if (par->gpio.db[i] < 0) {
 			dev_err(par->info->device,
 				"Missing info about 'db[%i]' gpio. Aborting.\n",
 				i);
 			return -EINVAL;
 		}
 	}
-	if (!par->CS0) {
+	if (par->CS0 < 0) {
 		dev_err(par->info->device,
 			"Missing info about 'cs0' gpio. Aborting.\n");
 		return -EINVAL;
 	}
-	if (!par->CS1) {
+	if (par->CS1 < 0) {
 		dev_err(par->info->device,
 			"Missing info about 'cs1' gpio. Aborting.\n");
 		return -EINVAL;
 	}
-	if (!par->RW) {
+	if (par->RW < 0) {
 		dev_err(par->info->device,
 			"Missing info about 'rw' gpio. Aborting.\n");
 		return -EINVAL;
@@ -139,22 +148,22 @@ request_gpios_match(struct fbtft_par *par, const struct fbtft_gpio *gpio)
 	if (strcasecmp(gpio->name, "wr") == 0) {
 		/* left ks0108 E pin */
 		par->EPIN = gpio->gpio;
-		return GPIOD_OUT_LOW;
+		return GPIOF_OUT_INIT_LOW;
 	} else if (strcasecmp(gpio->name, "cs0") == 0) {
 		/* left ks0108 controller pin */
 		par->CS0 = gpio->gpio;
-		return GPIOD_OUT_HIGH;
+		return GPIOF_OUT_INIT_HIGH;
 	} else if (strcasecmp(gpio->name, "cs1") == 0) {
 		/* right ks0108 controller pin */
 		par->CS1 = gpio->gpio;
-		return GPIOD_OUT_HIGH;
+		return GPIOF_OUT_INIT_HIGH;
 	}
 
 	/* if write (rw = 0) e(1->0) perform write */
 	/* if read (rw = 1) e(0->1) set data on D0-7*/
 	else if (strcasecmp(gpio->name, "rw") == 0) {
 		par->RW = gpio->gpio;
-		return GPIOD_OUT_LOW;
+		return GPIOF_OUT_INIT_LOW;
 	}
 
 	return FBTFT_GPIO_NO_MATCH;
@@ -176,9 +185,9 @@ static void write_reg8_bus8(struct fbtft_par *par, int len, ...)
 			buf[i] = (u8)va_arg(args, unsigned int);
 
 		va_end(args);
-		fbtft_par_dbg_hex(DEBUG_WRITE_REGISTER, par, par->info->device,
-				  u8, buf, len, "%s: ", __func__);
-}
+		fbtft_par_dbg_hex(DEBUG_WRITE_REGISTER, par,
+			par->info->device, u8, buf, len, "%s: ", __func__);
+	}
 
 	va_start(args, len);
 
@@ -194,15 +203,15 @@ static void write_reg8_bus8(struct fbtft_par *par, int len, ...)
 	/* select chip */
 	if (*buf) {
 		/* cs1 */
-		gpiod_set_value(par->CS0, 1);
-		gpiod_set_value(par->CS1, 0);
+		gpio_set_value(par->CS0, 1);
+		gpio_set_value(par->CS1, 0);
 	} else {
 		/* cs0 */
-		gpiod_set_value(par->CS0, 0);
-		gpiod_set_value(par->CS1, 1);
+		gpio_set_value(par->CS0, 0);
+		gpio_set_value(par->CS1, 1);
 	}
 
-	gpiod_set_value(par->RS, 0); /* RS->0 (command mode) */
+	gpio_set_value(par->RS, 0); /* RS->0 (command mode) */
 	len--;
 
 	if (len) {
@@ -237,7 +246,7 @@ static void set_addr_win(struct fbtft_par *par, int xs, int ys, int xe, int ye)
 
 static void
 construct_line_bitmap(struct fbtft_par *par, u8 *dest, signed short *src,
-		      int xs, int xe, int y)
+						int xs, int xe, int y)
 {
 	int x, i;
 
@@ -253,39 +262,6 @@ construct_line_bitmap(struct fbtft_par *par, u8 *dest, signed short *src,
 		*dest++ = ~res;
 #endif
 	}
-}
-
-static void iterate_diffusion_matrix(u32 xres, u32 yres, int x,
-				     int y, signed short *convert_buf,
-				     signed short pixel, signed short error)
-{
-	u16 i, j;
-
-	/* diffusion matrix row */
-	for (i = 0; i < DIFFUSING_MATRIX_WIDTH; ++i)
-		/* diffusion matrix column */
-		for (j = 0; j < DIFFUSING_MATRIX_HEIGHT; ++j) {
-			signed short *write_pos;
-			signed char coeff;
-
-			/* skip pixels out of zone */
-			if (x + i < 0 || x + i >= xres || y + j >= yres)
-				continue;
-			write_pos = &convert_buf[(y + j) * xres + x + i];
-			coeff = diffusing_matrix[i][j];
-			if (-1 == coeff) {
-				/* pixel itself */
-				*write_pos = pixel;
-			} else {
-				signed short p = *write_pos + error * coeff;
-
-				if (p > WHITE)
-					p = WHITE;
-				if (p < BLACK)
-					p = BLACK;
-				*write_pos = p;
-			}
-		}
 }
 
 static int write_vmem(struct fbtft_par *par, size_t offset, size_t len)
@@ -327,6 +303,7 @@ static int write_vmem(struct fbtft_par *par, size_t offset, size_t len)
 			signed short error_b = pixel - BLACK;
 			signed short error_w = pixel - WHITE;
 			signed short error;
+			u16 i, j;
 
 			/* what color close? */
 			if (abs(error_b) >= abs(error_w)) {
@@ -341,10 +318,36 @@ static int write_vmem(struct fbtft_par *par, size_t offset, size_t len)
 
 			error /= 8;
 
-			iterate_diffusion_matrix(par->info->var.xres,
-						 par->info->var.yres,
-						 x, y, convert_buf,
-						 pixel, error);
+			/* diffusion matrix row */
+			for (i = 0; i < DIFFUSING_MATRIX_WIDTH; ++i)
+				/* diffusion matrix column */
+				for (j = 0; j < DIFFUSING_MATRIX_HEIGHT; ++j) {
+					signed short *write_pos;
+					signed char coeff;
+
+					/* skip pixels out of zone */
+					if (x + i < 0 ||
+						x + i >= par->info->var.xres
+						|| y + j >= par->info->var.yres)
+						continue;
+					write_pos = &convert_buf[
+						(y + j) * par->info->var.xres +
+						x + i];
+					coeff = diffusing_matrix[i][j];
+					if (coeff == -1)
+						/* pixel itself */
+						*write_pos = pixel;
+					else {
+						signed short p = *write_pos +
+							error * coeff;
+
+						if (p > WHITE)
+							p = WHITE;
+						if (p < BLACK)
+							p = BLACK;
+						*write_pos = p;
+					}
+				}
 		}
 
 	/* 1 string = 2 pages */
@@ -352,19 +355,18 @@ static int write_vmem(struct fbtft_par *par, size_t offset, size_t len)
 		/* left half of display */
 		if (addr_win.xs < par->info->var.xres / 2) {
 			construct_line_bitmap(par, buf, convert_buf,
-					      addr_win.xs,
-					      par->info->var.xres / 2, y);
+				addr_win.xs, par->info->var.xres / 2, y);
 
 			len = par->info->var.xres / 2 - addr_win.xs;
 
 			/* select left side (sc0)
 			 * set addr
 			 */
-			write_reg(par, 0x00, BIT(6) | (u8)addr_win.xs);
+			write_reg(par, 0x00, (1 << 6) | (u8)addr_win.xs);
 			write_reg(par, 0x00, (0x17 << 3) | (u8)y);
 
 			/* write bitmap */
-			gpiod_set_value(par->RS, 1); /* RS->1 (data mode) */
+			gpio_set_value(par->RS, 1); /* RS->1 (data mode) */
 			ret = par->fbtftops.write(par, buf, len);
 			if (ret < 0)
 				dev_err(par->info->device,
@@ -374,20 +376,19 @@ static int write_vmem(struct fbtft_par *par, size_t offset, size_t len)
 		/* right half of display */
 		if (addr_win.xe >= par->info->var.xres / 2) {
 			construct_line_bitmap(par, buf,
-					      convert_buf,
-					      par->info->var.xres / 2,
-					      addr_win.xe + 1, y);
+				convert_buf, par->info->var.xres / 2,
+				addr_win.xe + 1, y);
 
 			len = addr_win.xe + 1 - par->info->var.xres / 2;
 
 			/* select right side (sc1)
 			 * set addr
 			 */
-			write_reg(par, 0x01, BIT(6));
+			write_reg(par, 0x01, 1 << 6);
 			write_reg(par, 0x01, (0x17 << 3) | (u8)y);
 
 			/* write bitmap */
-			gpiod_set_value(par->RS, 1); /* RS->1 (data mode) */
+			gpio_set_value(par->RS, 1); /* RS->1 (data mode) */
 			par->fbtftops.write(par, buf, len);
 			if (ret < 0)
 				dev_err(par->info->device,
@@ -397,8 +398,8 @@ static int write_vmem(struct fbtft_par *par, size_t offset, size_t len)
 	}
 	kfree(convert_buf);
 
-	gpiod_set_value(par->CS0, 1);
-	gpiod_set_value(par->CS1, 1);
+	gpio_set_value(par->CS0, 1);
+	gpio_set_value(par->CS1, 1);
 
 	return ret;
 }
@@ -406,9 +407,9 @@ static int write_vmem(struct fbtft_par *par, size_t offset, size_t len)
 static int write(struct fbtft_par *par, void *buf, size_t len)
 {
 	fbtft_par_dbg_hex(DEBUG_WRITE, par, par->info->device, u8, buf, len,
-			  "%s(len=%zu): ", __func__, len);
+		"%s(len=%d): ", __func__, len);
 
-	gpiod_set_value(par->RW, 0); /* set write mode */
+	gpio_set_value(par->RW, 0); /* set write mode */
 
 	while (len--) {
 		u8 i, data;
@@ -417,12 +418,12 @@ static int write(struct fbtft_par *par, void *buf, size_t len)
 
 		/* set data bus */
 		for (i = 0; i < 8; ++i)
-			gpiod_set_value(par->gpio.db[i], data & (1 << i));
+			gpio_set_value(par->gpio.db[i], data & (1 << i));
 		/* set E */
-		gpiod_set_value(par->EPIN, 1);
+		gpio_set_value(par->EPIN, 1);
 		udelay(5);
 		/* unset E - write */
-		gpiod_set_value(par->EPIN, 0);
+		gpio_set_value(par->EPIN, 0);
 		udelay(1);
 	}
 

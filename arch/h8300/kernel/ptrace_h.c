@@ -9,7 +9,7 @@
  */
 
 #include <linux/linkage.h>
-#include <linux/sched/signal.h>
+#include <linux/sched.h>
 #include <asm/ptrace.h>
 
 #define BREAKINST 0x5730 /* trapa #3 */
@@ -250,7 +250,7 @@ asmlinkage void trace_trap(unsigned long bp)
 {
 	if ((unsigned long)current->thread.breakinfo.addr == bp) {
 		user_disable_single_step(current);
-		force_sig(SIGTRAP);
+		force_sig(SIGTRAP, current);
 	} else
-		force_sig(SIGILL);
+		force_sig(SIGILL, current);
 }

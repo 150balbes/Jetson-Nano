@@ -1,10 +1,13 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * ZTE ZX296702 GPIO driver
  *
  * Author: Jun Nie <jun.nie@linaro.org>
  *
  * Copyright (C) 2015 Linaro Ltd.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  */
 #include <linux/bitops.h>
 #include <linux/device.h>
@@ -38,7 +41,7 @@
 #define ZX_GPIO_NR	16
 
 struct zx_gpio {
-	raw_spinlock_t		lock;
+	spinlock_t		lock;
 
 	void __iomem		*base;
 	struct gpio_chip	gc;
@@ -53,11 +56,11 @@ static int zx_direction_input(struct gpio_chip *gc, unsigned offset)
 	if (offset >= gc->ngpio)
 		return -EINVAL;
 
-	raw_spin_lock_irqsave(&chip->lock, flags);
+	spin_lock_irqsave(&chip->lock, flags);
 	gpiodir = readw_relaxed(chip->base + ZX_GPIO_DIR);
 	gpiodir &= ~BIT(offset);
 	writew_relaxed(gpiodir, chip->base + ZX_GPIO_DIR);
-	raw_spin_unlock_irqrestore(&chip->lock, flags);
+	spin_unlock_irqrestore(&chip->lock, flags);
 
 	return 0;
 }
@@ -72,7 +75,7 @@ static int zx_direction_output(struct gpio_chip *gc, unsigned offset,
 	if (offset >= gc->ngpio)
 		return -EINVAL;
 
-	raw_spin_lock_irqsave(&chip->lock, flags);
+	spin_lock_irqsave(&chip->lock, flags);
 	gpiodir = readw_relaxed(chip->base + ZX_GPIO_DIR);
 	gpiodir |= BIT(offset);
 	writew_relaxed(gpiodir, chip->base + ZX_GPIO_DIR);
@@ -81,7 +84,7 @@ static int zx_direction_output(struct gpio_chip *gc, unsigned offset,
 		writew_relaxed(BIT(offset), chip->base + ZX_GPIO_DO1);
 	else
 		writew_relaxed(BIT(offset), chip->base + ZX_GPIO_DO0);
-	raw_spin_unlock_irqrestore(&chip->lock, flags);
+	spin_unlock_irqrestore(&chip->lock, flags);
 
 	return 0;
 }
@@ -115,7 +118,7 @@ static int zx_irq_type(struct irq_data *d, unsigned trigger)
 	if (offset < 0 || offset >= ZX_GPIO_NR)
 		return -EINVAL;
 
-	raw_spin_lock_irqsave(&chip->lock, flags);
+	spin_lock_irqsave(&chip->lock, flags);
 
 	gpioiev = readw_relaxed(chip->base + ZX_GPIO_IV);
 	gpiois = readw_relaxed(chip->base + ZX_GPIO_IVE);
@@ -148,7 +151,7 @@ static int zx_irq_type(struct irq_data *d, unsigned trigger)
 	writew_relaxed(gpioi_epos, chip->base + ZX_GPIO_IEP);
 	writew_relaxed(gpioi_eneg, chip->base + ZX_GPIO_IEN);
 	writew_relaxed(gpioiev, chip->base + ZX_GPIO_IV);
-	raw_spin_unlock_irqrestore(&chip->lock, flags);
+	spin_unlock_irqrestore(&chip->lock, flags);
 
 	return 0;
 }
@@ -167,7 +170,7 @@ static void zx_irq_handler(struct irq_desc *desc)
 	writew_relaxed(pending, chip->base + ZX_GPIO_IC);
 	if (pending) {
 		for_each_set_bit(offset, &pending, ZX_GPIO_NR)
-			generic_handle_irq(irq_find_mapping(gc->irq.domain,
+			generic_handle_irq(irq_find_mapping(gc->irqdomain,
 							    offset));
 	}
 
@@ -181,12 +184,12 @@ static void zx_irq_mask(struct irq_data *d)
 	u16 mask = BIT(irqd_to_hwirq(d) % ZX_GPIO_NR);
 	u16 gpioie;
 
-	raw_spin_lock(&chip->lock);
+	spin_lock(&chip->lock);
 	gpioie = readw_relaxed(chip->base + ZX_GPIO_IM) | mask;
 	writew_relaxed(gpioie, chip->base + ZX_GPIO_IM);
 	gpioie = readw_relaxed(chip->base + ZX_GPIO_IE) & ~mask;
 	writew_relaxed(gpioie, chip->base + ZX_GPIO_IE);
-	raw_spin_unlock(&chip->lock);
+	spin_unlock(&chip->lock);
 }
 
 static void zx_irq_unmask(struct irq_data *d)
@@ -196,12 +199,12 @@ static void zx_irq_unmask(struct irq_data *d)
 	u16 mask = BIT(irqd_to_hwirq(d) % ZX_GPIO_NR);
 	u16 gpioie;
 
-	raw_spin_lock(&chip->lock);
+	spin_lock(&chip->lock);
 	gpioie = readw_relaxed(chip->base + ZX_GPIO_IM) & ~mask;
 	writew_relaxed(gpioie, chip->base + ZX_GPIO_IM);
 	gpioie = readw_relaxed(chip->base + ZX_GPIO_IE) | mask;
 	writew_relaxed(gpioie, chip->base + ZX_GPIO_IE);
-	raw_spin_unlock(&chip->lock);
+	spin_unlock(&chip->lock);
 }
 
 static struct irq_chip zx_irqchip = {
@@ -215,17 +218,19 @@ static int zx_gpio_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
 	struct zx_gpio *chip;
+	struct resource *res;
 	int irq, id, ret;
 
 	chip = devm_kzalloc(dev, sizeof(*chip), GFP_KERNEL);
 	if (!chip)
 		return -ENOMEM;
 
-	chip->base = devm_platform_ioremap_resource(pdev, 0);
+	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
+	chip->base = devm_ioremap_resource(dev, res);
 	if (IS_ERR(chip->base))
 		return PTR_ERR(chip->base);
 
-	raw_spin_lock_init(&chip->lock);
+	spin_lock_init(&chip->lock);
 	if (of_property_read_bool(dev->of_node, "gpio-ranges")) {
 		chip->gc.request = gpiochip_generic_request;
 		chip->gc.free = gpiochip_generic_free;

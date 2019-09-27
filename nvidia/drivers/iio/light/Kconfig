@@ -1,0 +1,86 @@
+append_menu "Light sensors"
+
+#
+# Light sensor drivers
+#
+# When adding new entries keep the list in alphabetical order
+
+config NVS_BH1730FVC
+	tristate "ROHM BH1730FVC ALS"
+	depends on I2C && IIO_BUFFER && IIO_TRIGGERED_BUFFER && NVS_IIO && NVS_LIGHT
+	help
+	  Say Y here for ROHM Co., Ltd. BH1730FVC
+	  Digital 16bit Serial Output Type
+	  Ambient Light Sensor (ALS) support.
+
+	  The driver uses the NVS (NVidia Sensor) IIO, light framework.
+
+config NVS_CM3217
+	tristate "Capella CM3217 ALS"
+	depends on I2C && IIO_BUFFER && IIO_TRIGGERED_BUFFER && NVS_IIO && NVS_LIGHT
+	help
+	  Say Y here for Capella Microsystems, Inc. CM3217
+	  Ambient Light Sensor (ALS) support.
+
+	  The driver uses the NVS (NVidia Sensor) IIO, light framework.
+
+config NVS_CM3218
+	tristate "Capella CM3218 ALS"
+	depends on I2C && IIO_BUFFER && IIO_TRIGGERED_BUFFER && NVS_IIO && NVS_LIGHT
+	help
+	  Say Y here for Capella Microsystems, Inc. CM3218 and CM32181
+	  Ambient Light Sensor (ALS) driver support.
+
+	  The driver uses the NVS (NVidia Sensor) IIO, light framework.
+
+config NVS_ISL2902X
+	tristate "INTERSIL ISL2902X ALS/Proximity"
+	depends on I2C && IIO_BUFFER && IIO_TRIGGERED_BUFFER && NVS_IIO && NVS_LIGHT && NVS_PROXIMITY
+	help
+	  Say Y here for Intersil ISL29028 and ISL29029
+	  Ambient Light Sensor (ALS) and proximity driver
+	  support.
+
+	  The driver uses the NVS (NVidia Sensor) IIO, light and
+	  proximity framework.
+
+config NVS_JSA1127
+	tristate "SOLTEAMOPTO JSA1127 ALS"
+	depends on I2C && IIO_BUFFER && IIO_TRIGGERED_BUFFER && NVS_IIO && NVS_LIGHT
+	help
+	  Say Y here for Solteamopto JSA1127
+	  Ambient Light Sensor (ALS) driver support.
+
+	  The driver uses the NVS (NVidia Sensor) IIO, light framework.
+
+config NVS_LTR659
+	depends on I2C && IIO_BUFFER && IIO_TRIGGERED_BUFFER && NVS_IIO && NVS_LIGHT && NVS_PROXIMITY
+	tristate "LITEON LTR-659PS or LTR_558ALS"
+	help
+	  Say Y here for LITEON LTR-659PS or LTR-558ALS
+	  ALS/proximity sensor driver support.
+
+	  The driver uses the NVS (NVidia Sensor) IIO, light and
+	  proximity framework.
+
+config NVS_MAX4400X
+	tristate "Maxim MAX4400X ALS/Proximity"
+	depends on I2C && IIO_BUFFER && IIO_TRIGGERED_BUFFER && NVS_IIO && NVS_LIGHT && NVS_PROXIMITY
+	help
+	  Say Y here for Maxim MAX44005 and MAX44006/MAX44008
+	  Ambient Light Sensor (ALS) support.
+	  Proximity is supported on the MAX44005.
+
+	  The driver uses the NVS (NVidia Sensor) IIO, light and
+	  proximity framework.
+
+config NVS_VEML6030
+	tristate "Vishay VEML6030 ALS"
+	depends on I2C && IIO_BUFFER && IIO_TRIGGERED_BUFFER && NVS_IIO && NVS_LIGHT
+	help
+	  Say Y here for Vishay Semiconductors VEML6030
+	  Ambient Light Sensor (ALS) driver support.
+
+	  The driver uses the NVS (NVidia Sensor) IIO, light framework.
+
+endmenu

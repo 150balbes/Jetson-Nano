@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __UM_ASM_SYSCALL_H
 #define __UM_ASM_SYSCALL_H
 
@@ -9,7 +8,7 @@ typedef asmlinkage long (*sys_call_ptr_t)(unsigned long, unsigned long,
 					  unsigned long, unsigned long,
 					  unsigned long, unsigned long);
 
-static inline int syscall_get_arch(struct task_struct *task)
+static inline int syscall_get_arch(void)
 {
 #ifdef CONFIG_X86_32
 	return AUDIT_ARCH_I386;

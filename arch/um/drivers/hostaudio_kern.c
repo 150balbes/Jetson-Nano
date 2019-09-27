@@ -9,7 +9,7 @@
 #include <linux/sound.h>
 #include <linux/soundcard.h>
 #include <linux/mutex.h>
-#include <linux/uaccess.h>
+#include <asm/uaccess.h>
 #include <init.h>
 #include <os.h>
 
@@ -119,10 +119,10 @@ static ssize_t hostaudio_write(struct file *file, const char __user *buffer,
 	return err;
 }
 
-static __poll_t hostaudio_poll(struct file *file,
-				struct poll_table_struct *wait)
+static unsigned int hostaudio_poll(struct file *file,
+				   struct poll_table_struct *wait)
 {
-	__poll_t mask = 0;
+	unsigned int mask = 0;
 
 #ifdef DEBUG
 	printk(KERN_DEBUG "hostaudio: poll called (unimplemented)\n");

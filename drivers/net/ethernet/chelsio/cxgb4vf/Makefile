@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0-only
 #
 # Chelsio T4 SR-IOV Virtual Function Driver
 #

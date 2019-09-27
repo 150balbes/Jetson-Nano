@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0
 r8188eu-y :=				\
 		core/rtw_ap.o		\
 		core/rtw_cmd.o		\
@@ -24,12 +23,12 @@ r8188eu-y :=				\
 		hal/rf_cfg.o \
 		hal/pwrseqcmd.o \
 		hal/pwrseq.o \
-		hal/hal8188e_rate_adaptive.o \
+		hal/Hal8188ERateAdaptive.o\
 		hal/hal_intf.o		\
 		hal/hal_com.o		\
 		hal/odm.o		\
-		hal/odm_hwconfig.o	\
-		hal/odm_rtl8188e.o	\
+		hal/odm_HWConfig.o	\
+		hal/odm_RTL8188E.o	\
 		hal/rtl8188e_cmd.o	\
 		hal/rtl8188e_dm.o	\
 		hal/rtl8188e_hal_init.o	\
@@ -54,4 +53,4 @@ r8188eu-y :=				\
 
 obj-$(CONFIG_R8188EU)	:= r8188eu.o
 
-ccflags-y += -I$(srctree)/$(src)/include
+ccflags-y += -D__CHECK_ENDIAN__ -I$(srctree)/$(src)/include

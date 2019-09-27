@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _LIBLOCKDEP_MUTEX_H
 #define _LIBLOCKDEP_MUTEX_H
 
@@ -7,7 +6,6 @@
 
 struct liblockdep_pthread_mutex {
 	pthread_mutex_t mutex;
-	struct lock_class_key key;
 	struct lockdep_map dep_map;
 };
 
@@ -28,10 +26,11 @@ static inline int __mutex_init(liblockdep_pthread_mutex_t *lock,
 	return pthread_mutex_init(&lock->mutex, __mutexattr);
 }
 
-#define liblockdep_pthread_mutex_init(mutex, mutexattr)			\
-({									\
-	lockdep_register_key(&(mutex)->key);				\
-	__mutex_init((mutex), #mutex, &(mutex)->key, (mutexattr));	\
+#define liblockdep_pthread_mutex_init(mutex, mutexattr)		\
+({								\
+	static struct lock_class_key __key;			\
+								\
+	__mutex_init((mutex), #mutex, &__key, (mutexattr));	\
 })
 
 static inline int liblockdep_pthread_mutex_lock(liblockdep_pthread_mutex_t *lock)
@@ -54,8 +53,6 @@ static inline int liblockdep_pthread_mutex_trylock(liblockdep_pthread_mutex_t *l
 
 static inline int liblockdep_pthread_mutex_destroy(liblockdep_pthread_mutex_t *lock)
 {
-	lockdep_reset_lock(&lock->dep_map);
-	lockdep_unregister_key(&lock->key);
 	return pthread_mutex_destroy(&lock->mutex);
 }
 

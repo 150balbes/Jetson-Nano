@@ -125,75 +125,64 @@ static u32 alx_get_supported_speeds(struct alx_hw *hw)
 	return supported;
 }
 
-static int alx_get_link_ksettings(struct net_device *netdev,
-				  struct ethtool_link_ksettings *cmd)
+static int alx_get_settings(struct net_device *netdev, struct ethtool_cmd *ecmd)
 {
 	struct alx_priv *alx = netdev_priv(netdev);
 	struct alx_hw *hw = &alx->hw;
-	u32 supported, advertising;
 
-	supported = SUPPORTED_Autoneg |
+	ecmd->supported = SUPPORTED_Autoneg |
 			  SUPPORTED_TP |
 			  SUPPORTED_Pause |
 			  SUPPORTED_Asym_Pause;
 	if (alx_hw_giga(hw))
-		supported |= SUPPORTED_1000baseT_Full;
-	supported |= alx_get_supported_speeds(hw);
+		ecmd->supported |= SUPPORTED_1000baseT_Full;
+	ecmd->supported |= alx_get_supported_speeds(hw);
 
-	advertising = ADVERTISED_TP;
+	ecmd->advertising = ADVERTISED_TP;
 	if (hw->adv_cfg & ADVERTISED_Autoneg)
-		advertising |= hw->adv_cfg;
+		ecmd->advertising |= hw->adv_cfg;
 
-	cmd->base.port = PORT_TP;
-	cmd->base.phy_address = 0;
+	ecmd->port = PORT_TP;
+	ecmd->phy_address = 0;
 
 	if (hw->adv_cfg & ADVERTISED_Autoneg)
-		cmd->base.autoneg = AUTONEG_ENABLE;
+		ecmd->autoneg = AUTONEG_ENABLE;
 	else
-		cmd->base.autoneg = AUTONEG_DISABLE;
+		ecmd->autoneg = AUTONEG_DISABLE;
+	ecmd->transceiver = XCVR_INTERNAL;
 
 	if (hw->flowctrl & ALX_FC_ANEG && hw->adv_cfg & ADVERTISED_Autoneg) {
 		if (hw->flowctrl & ALX_FC_RX) {
-			advertising |= ADVERTISED_Pause;
+			ecmd->advertising |= ADVERTISED_Pause;
 
 			if (!(hw->flowctrl & ALX_FC_TX))
-				advertising |= ADVERTISED_Asym_Pause;
+				ecmd->advertising |= ADVERTISED_Asym_Pause;
 		} else if (hw->flowctrl & ALX_FC_TX) {
-			advertising |= ADVERTISED_Asym_Pause;
+			ecmd->advertising |= ADVERTISED_Asym_Pause;
 		}
 	}
 
-	cmd->base.speed = hw->link_speed;
-	cmd->base.duplex = hw->duplex;
-
-	ethtool_convert_legacy_u32_to_link_mode(cmd->link_modes.supported,
-						supported);
-	ethtool_convert_legacy_u32_to_link_mode(cmd->link_modes.advertising,
-						advertising);
+	ethtool_cmd_speed_set(ecmd, hw->link_speed);
+	ecmd->duplex = hw->duplex;
 
 	return 0;
 }
 
-static int alx_set_link_ksettings(struct net_device *netdev,
-				  const struct ethtool_link_ksettings *cmd)
+static int alx_set_settings(struct net_device *netdev, struct ethtool_cmd *ecmd)
 {
 	struct alx_priv *alx = netdev_priv(netdev);
 	struct alx_hw *hw = &alx->hw;
 	u32 adv_cfg;
-	u32 advertising;
 
 	ASSERT_RTNL();
 
-	ethtool_convert_link_mode_to_legacy_u32(&advertising,
-						cmd->link_modes.advertising);
-
-	if (cmd->base.autoneg == AUTONEG_ENABLE) {
-		if (advertising & ~alx_get_supported_speeds(hw))
+	if (ecmd->autoneg == AUTONEG_ENABLE) {
+		if (ecmd->advertising & ~alx_get_supported_speeds(hw))
 			return -EINVAL;
-		adv_cfg = advertising | ADVERTISED_Autoneg;
+		adv_cfg = ecmd->advertising | ADVERTISED_Autoneg;
 	} else {
-		adv_cfg = alx_speed_to_ethadv(cmd->base.speed,
-					      cmd->base.duplex);
+		adv_cfg = alx_speed_to_ethadv(ethtool_cmd_speed(ecmd),
+					      ecmd->duplex);
 
 		if (!adv_cfg || adv_cfg == ADVERTISED_1000baseT_Full)
 			return -EINVAL;
@@ -311,6 +300,8 @@ static int alx_get_sset_count(struct net_device *netdev, int sset)
 }
 
 const struct ethtool_ops alx_ethtool_ops = {
+	.get_settings	= alx_get_settings,
+	.set_settings	= alx_set_settings,
 	.get_pauseparam	= alx_get_pauseparam,
 	.set_pauseparam	= alx_set_pauseparam,
 	.get_msglevel	= alx_get_msglevel,
@@ -319,6 +310,4 @@ const struct ethtool_ops alx_ethtool_ops = {
 	.get_strings	= alx_get_strings,
 	.get_sset_count	= alx_get_sset_count,
 	.get_ethtool_stats	= alx_get_ethtool_stats,
-	.get_link_ksettings	= alx_get_link_ksettings,
-	.set_link_ksettings	= alx_set_link_ksettings,
 };

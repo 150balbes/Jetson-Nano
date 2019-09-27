@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * This supplies .note.* sections to go into the PT_NOTE inside the vDSO text.
  * Here we can supply some information useful to userland.

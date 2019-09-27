@@ -1,7 +1,10 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /* Kernel module to match L2TP header parameters. */
 
 /* (C) 2013      James Chapman <jchapman@katalix.com>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
@@ -213,7 +216,7 @@ static int l2tp_mt_check(const struct xt_mtchk_param *par)
 	/* Check for invalid flags */
 	if (info->flags & ~(XT_L2TP_TID | XT_L2TP_SID | XT_L2TP_VERSION |
 			    XT_L2TP_TYPE)) {
-		pr_info_ratelimited("unknown flags: %x\n", info->flags);
+		pr_info("unknown flags: %x\n", info->flags);
 		return -EINVAL;
 	}
 
@@ -222,8 +225,7 @@ static int l2tp_mt_check(const struct xt_mtchk_param *par)
 	    (!(info->flags & XT_L2TP_SID)) &&
 	    ((!(info->flags & XT_L2TP_TYPE)) ||
 	     (info->type != XT_L2TP_TYPE_CONTROL))) {
-		pr_info_ratelimited("invalid flags combination: %x\n",
-				    info->flags);
+		pr_info("invalid flags combination: %x\n", info->flags);
 		return -EINVAL;
 	}
 
@@ -232,22 +234,19 @@ static int l2tp_mt_check(const struct xt_mtchk_param *par)
 	 */
 	if (info->flags & XT_L2TP_VERSION) {
 		if ((info->version < 2) || (info->version > 3)) {
-			pr_info_ratelimited("wrong L2TP version: %u\n",
-					    info->version);
+			pr_info("wrong L2TP version: %u\n", info->version);
 			return -EINVAL;
 		}
 
 		if (info->version == 2) {
 			if ((info->flags & XT_L2TP_TID) &&
 			    (info->tid > 0xffff)) {
-				pr_info_ratelimited("v2 tid > 0xffff: %u\n",
-						    info->tid);
+				pr_info("v2 tid > 0xffff: %u\n", info->tid);
 				return -EINVAL;
 			}
 			if ((info->flags & XT_L2TP_SID) &&
 			    (info->sid > 0xffff)) {
-				pr_info_ratelimited("v2 sid > 0xffff: %u\n",
-						    info->sid);
+				pr_info("v2 sid > 0xffff: %u\n", info->sid);
 				return -EINVAL;
 			}
 		}
@@ -269,13 +268,13 @@ static int l2tp_mt_check4(const struct xt_mtchk_param *par)
 
 	if ((ip->proto != IPPROTO_UDP) &&
 	    (ip->proto != IPPROTO_L2TP)) {
-		pr_info_ratelimited("missing protocol rule (udp|l2tpip)\n");
+		pr_info("missing protocol rule (udp|l2tpip)\n");
 		return -EINVAL;
 	}
 
 	if ((ip->proto == IPPROTO_L2TP) &&
 	    (info->version == 2)) {
-		pr_info_ratelimited("v2 doesn't support IP mode\n");
+		pr_info("v2 doesn't support IP mode\n");
 		return -EINVAL;
 	}
 
@@ -296,13 +295,13 @@ static int l2tp_mt_check6(const struct xt_mtchk_param *par)
 
 	if ((ip->proto != IPPROTO_UDP) &&
 	    (ip->proto != IPPROTO_L2TP)) {
-		pr_info_ratelimited("missing protocol rule (udp|l2tpip)\n");
+		pr_info("missing protocol rule (udp|l2tpip)\n");
 		return -EINVAL;
 	}
 
 	if ((ip->proto == IPPROTO_L2TP) &&
 	    (info->version == 2)) {
-		pr_info_ratelimited("v2 doesn't support IP mode\n");
+		pr_info("v2 doesn't support IP mode\n");
 		return -EINVAL;
 	}
 

@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef	_PIXCIR_I2C_TS_H
 #define	_PIXCIR_I2C_TS_H
 

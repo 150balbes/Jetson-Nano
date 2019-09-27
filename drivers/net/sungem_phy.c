@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * PHY drivers for the sungem ethernet driver.
  *
@@ -887,7 +886,7 @@ static int marvell_read_link(struct mii_phy *phy)
 	 SUPPORTED_1000baseT_Half | SUPPORTED_1000baseT_Full)
 
 /* Broadcom BCM 5201 */
-static const struct mii_phy_ops bcm5201_phy_ops = {
+static struct mii_phy_ops bcm5201_phy_ops = {
 	.init		= bcm5201_init,
 	.suspend	= bcm5201_suspend,
 	.setup_aneg	= genmii_setup_aneg,
@@ -906,7 +905,7 @@ static struct mii_phy_def bcm5201_phy_def = {
 };
 
 /* Broadcom BCM 5221 */
-static const struct mii_phy_ops bcm5221_phy_ops = {
+static struct mii_phy_ops bcm5221_phy_ops = {
 	.suspend	= bcm5221_suspend,
 	.init		= bcm5221_init,
 	.setup_aneg	= genmii_setup_aneg,
@@ -925,7 +924,7 @@ static struct mii_phy_def bcm5221_phy_def = {
 };
 
 /* Broadcom BCM 5241 */
-static const struct mii_phy_ops bcm5241_phy_ops = {
+static struct mii_phy_ops bcm5241_phy_ops = {
 	.suspend	= bcm5241_suspend,
 	.init		= bcm5241_init,
 	.setup_aneg	= genmii_setup_aneg,
@@ -943,7 +942,7 @@ static struct mii_phy_def bcm5241_phy_def = {
 };
 
 /* Broadcom BCM 5400 */
-static const struct mii_phy_ops bcm5400_phy_ops = {
+static struct mii_phy_ops bcm5400_phy_ops = {
 	.init		= bcm5400_init,
 	.suspend	= bcm5400_suspend,
 	.setup_aneg	= bcm54xx_setup_aneg,
@@ -962,7 +961,7 @@ static struct mii_phy_def bcm5400_phy_def = {
 };
 
 /* Broadcom BCM 5401 */
-static const struct mii_phy_ops bcm5401_phy_ops = {
+static struct mii_phy_ops bcm5401_phy_ops = {
 	.init		= bcm5401_init,
 	.suspend	= bcm5401_suspend,
 	.setup_aneg	= bcm54xx_setup_aneg,
@@ -981,7 +980,7 @@ static struct mii_phy_def bcm5401_phy_def = {
 };
 
 /* Broadcom BCM 5411 */
-static const struct mii_phy_ops bcm5411_phy_ops = {
+static struct mii_phy_ops bcm5411_phy_ops = {
 	.init		= bcm5411_init,
 	.suspend	= generic_suspend,
 	.setup_aneg	= bcm54xx_setup_aneg,
@@ -1000,7 +999,7 @@ static struct mii_phy_def bcm5411_phy_def = {
 };
 
 /* Broadcom BCM 5421 */
-static const struct mii_phy_ops bcm5421_phy_ops = {
+static struct mii_phy_ops bcm5421_phy_ops = {
 	.init		= bcm5421_init,
 	.suspend	= generic_suspend,
 	.setup_aneg	= bcm54xx_setup_aneg,
@@ -1020,7 +1019,7 @@ static struct mii_phy_def bcm5421_phy_def = {
 };
 
 /* Broadcom BCM 5421 built-in K2 */
-static const struct mii_phy_ops bcm5421k2_phy_ops = {
+static struct mii_phy_ops bcm5421k2_phy_ops = {
 	.init		= bcm5421_init,
 	.suspend	= generic_suspend,
 	.setup_aneg	= bcm54xx_setup_aneg,
@@ -1038,7 +1037,7 @@ static struct mii_phy_def bcm5421k2_phy_def = {
 	.ops		= &bcm5421k2_phy_ops
 };
 
-static const struct mii_phy_ops bcm5461_phy_ops = {
+static struct mii_phy_ops bcm5461_phy_ops = {
 	.init		= bcm5421_init,
 	.suspend	= generic_suspend,
 	.setup_aneg	= bcm54xx_setup_aneg,
@@ -1058,7 +1057,7 @@ static struct mii_phy_def bcm5461_phy_def = {
 };
 
 /* Broadcom BCM 5462 built-in Vesta */
-static const struct mii_phy_ops bcm5462V_phy_ops = {
+static struct mii_phy_ops bcm5462V_phy_ops = {
 	.init		= bcm5421_init,
 	.suspend	= generic_suspend,
 	.setup_aneg	= bcm54xx_setup_aneg,
@@ -1077,7 +1076,7 @@ static struct mii_phy_def bcm5462V_phy_def = {
 };
 
 /* Marvell 88E1101 amd 88E1111 */
-static const struct mii_phy_ops marvell88e1101_phy_ops = {
+static struct mii_phy_ops marvell88e1101_phy_ops = {
 	.suspend	= generic_suspend,
 	.setup_aneg	= marvell_setup_aneg,
 	.setup_forced	= marvell_setup_forced,
@@ -1085,7 +1084,7 @@ static const struct mii_phy_ops marvell88e1101_phy_ops = {
 	.read_link	= marvell_read_link
 };
 
-static const struct mii_phy_ops marvell88e1111_phy_ops = {
+static struct mii_phy_ops marvell88e1111_phy_ops = {
 	.init		= marvell88e1111_init,
 	.suspend	= generic_suspend,
 	.setup_aneg	= marvell_setup_aneg,
@@ -1123,7 +1122,7 @@ static struct mii_phy_def marvell88e1111_phy_def = {
 };
 
 /* Generic implementation for most 10/100 PHYs */
-static const struct mii_phy_ops generic_phy_ops = {
+static struct mii_phy_ops generic_phy_ops = {
 	.setup_aneg	= genmii_setup_aneg,
 	.setup_forced	= genmii_setup_forced,
 	.poll_link	= genmii_poll_link,

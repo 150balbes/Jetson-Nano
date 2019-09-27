@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-1.0+
 /*
  * n_tty.c --- implements the N_TTY line discipline.
  *
@@ -15,6 +14,9 @@
  *
  * This file also contains code originally written by Linus Torvalds,
  * Copyright 1991, 1992, 1993, and by Julian Cowley, Copyright 1994.
+ *
+ * This file may be redistributed under the terms of the GNU General Public
+ * License.
  *
  * Reduced memory usage for older ARM systems  - Russell King.
  *
@@ -50,10 +52,8 @@
 #include <linux/ratelimit.h>
 #include <linux/vmalloc.h>
 
-/*
- * Until this number of characters is queued in the xmit buffer, select will
- * return "we have room for writes".
- */
+
+/* number of characters left in xmit buffer before select has we have room */
 #define WAKEUP_CHARS 256
 
 /*
@@ -154,28 +154,17 @@ static inline unsigned char *echo_buf_addr(struct n_tty_data *ldata, size_t i)
 	return &ldata->echo_buf[i & (N_TTY_BUF_SIZE - 1)];
 }
 
-/* If we are not echoing the data, perhaps this is a secret so erase it */
-static void zero_buffer(struct tty_struct *tty, u8 *buffer, int size)
-{
-	bool icanon = !!L_ICANON(tty);
-	bool no_echo = !L_ECHO(tty);
-
-	if (icanon && no_echo)
-		memset(buffer, 0x00, size);
-}
-
 static int tty_copy_to_user(struct tty_struct *tty, void __user *to,
 			    size_t tail, size_t n)
 {
 	struct n_tty_data *ldata = tty->disc_data;
 	size_t size = N_TTY_BUF_SIZE - tail;
-	void *from = read_buf_addr(ldata, tail);
+	const void *from = read_buf_addr(ldata, tail);
 	int uncopied;
 
 	if (n > size) {
 		tty_audit_add_data(tty, from, size);
 		uncopied = copy_to_user(to, from, size);
-		zero_buffer(tty, from, size - uncopied);
 		if (uncopied)
 			return uncopied;
 		to += size;
@@ -184,9 +173,7 @@ static int tty_copy_to_user(struct tty_struct *tty, void __user *to,
 	}
 
 	tty_audit_add_data(tty, from, n);
-	uncopied = copy_to_user(to, from, n);
-	zero_buffer(tty, from, n - uncopied);
-	return uncopied;
+	return copy_to_user(to, from, n);
 }
 
 /**
@@ -232,6 +219,14 @@ static ssize_t chars_in_buffer(struct tty_struct *tty)
 		n = ldata->canon_head - ldata->read_tail;
 	return n;
 }
+
+int n_tty_buffer_get_count(struct tty_struct *tty)
+{
+	struct n_tty_data *ldata = tty->disc_data;
+
+	return read_cnt(ldata);
+}
+EXPORT_SYMBOL(n_tty_buffer_get_count);
 
 /**
  *	n_tty_write_wakeup	-	asynchronous I/O notifier
@@ -550,9 +545,9 @@ static ssize_t process_output_block(struct tty_struct *tty,
 	mutex_lock(&ldata->output_lock);
 
 	space = tty_write_room(tty);
-	if (space <= 0) {
+	if (!space) {
 		mutex_unlock(&ldata->output_lock);
-		return space;
+		return 0;
 	}
 	if (nr > space)
 		nr = space;
@@ -1377,7 +1372,7 @@ handle_newline:
 			put_tty_queue(c, ldata);
 			smp_store_release(&ldata->canon_head, ldata->read_head);
 			kill_fasync(&tty->fasync, SIGIO, POLL_IN);
-			wake_up_interruptible_poll(&tty->read_wait, EPOLLIN);
+			wake_up_interruptible_poll(&tty->read_wait, POLLIN);
 			return 0;
 		}
 	}
@@ -1658,7 +1653,7 @@ static void __receive_buf(struct tty_struct *tty, const unsigned char *cp,
 
 	if (read_cnt(ldata)) {
 		kill_fasync(&tty->fasync, SIGIO, POLL_IN);
-		wake_up_interruptible_poll(&tty->read_wait, EPOLLIN);
+		wake_up_interruptible_poll(&tty->read_wait, POLLIN);
 	}
 }
 
@@ -1704,7 +1699,7 @@ n_tty_receive_buf_common(struct tty_struct *tty, const unsigned char *cp,
 
 	down_read(&tty->termios_rwsem);
 
-	do {
+	while (1) {
 		/*
 		 * When PARMRK is set, each input char may take up to 3 chars
 		 * in the read buf; reduce the buffer space avail by 3x
@@ -1746,7 +1741,7 @@ n_tty_receive_buf_common(struct tty_struct *tty, const unsigned char *cp,
 			fp += n;
 		count -= n;
 		rcvd += n;
-	} while (!test_bit(TTY_LDISC_CHANGING, &tty->flags));
+	}
 
 	tty->receive_room = room;
 
@@ -1975,12 +1970,11 @@ static int copy_from_read_buf(struct tty_struct *tty,
 	n = min(head - ldata->read_tail, N_TTY_BUF_SIZE - tail);
 	n = min(*nr, n);
 	if (n) {
-		unsigned char *from = read_buf_addr(ldata, tail);
+		const unsigned char *from = read_buf_addr(ldata, tail);
 		retval = copy_to_user(*b, from, n);
 		n -= retval;
 		is_eof = n == 1 && *from == EOF_CHAR(tty);
 		tty_audit_add_data(tty, from, n);
-		zero_buffer(tty, from, n);
 		smp_store_release(&ldata->read_tail, ldata->read_tail + n);
 		/* Turn single EOF into zero-length read */
 		if (L_EXTPROC(tty) && ldata->icanon && is_eof &&
@@ -2213,7 +2207,7 @@ static ssize_t n_tty_read(struct tty_struct *tty, struct file *file,
 					break;
 				if (!timeout)
 					break;
-				if (tty_io_nonblock(tty, file)) {
+				if (file->f_flags & O_NONBLOCK) {
 					retval = -EAGAIN;
 					break;
 				}
@@ -2367,7 +2361,7 @@ static ssize_t n_tty_write(struct tty_struct *tty, struct file *file,
 		}
 		if (!nr)
 			break;
-		if (tty_io_nonblock(tty, file)) {
+		if (file->f_flags & O_NONBLOCK) {
 			retval = -EAGAIN;
 			break;
 		}
@@ -2399,30 +2393,30 @@ break_out:
  *	Called without the kernel lock held - fine
  */
 
-static __poll_t n_tty_poll(struct tty_struct *tty, struct file *file,
+static unsigned int n_tty_poll(struct tty_struct *tty, struct file *file,
 							poll_table *wait)
 {
-	__poll_t mask = 0;
+	unsigned int mask = 0;
 
 	poll_wait(file, &tty->read_wait, wait);
 	poll_wait(file, &tty->write_wait, wait);
 	if (input_available_p(tty, 1))
-		mask |= EPOLLIN | EPOLLRDNORM;
+		mask |= POLLIN | POLLRDNORM;
 	else {
 		tty_buffer_flush_work(tty->port);
 		if (input_available_p(tty, 1))
-			mask |= EPOLLIN | EPOLLRDNORM;
+			mask |= POLLIN | POLLRDNORM;
 	}
 	if (tty->packet && tty->link->ctrl_status)
-		mask |= EPOLLPRI | EPOLLIN | EPOLLRDNORM;
+		mask |= POLLPRI | POLLIN | POLLRDNORM;
 	if (test_bit(TTY_OTHER_CLOSED, &tty->flags))
-		mask |= EPOLLHUP;
+		mask |= POLLHUP;
 	if (tty_hung_up_p(file))
-		mask |= EPOLLHUP;
+		mask |= POLLHUP;
 	if (tty->ops->write && !tty_is_writelocked(tty) &&
 			tty_chars_in_buffer(tty) < WAKEUP_CHARS &&
 			tty_write_room(tty) > 0)
-		mask |= EPOLLOUT | EPOLLWRNORM;
+		mask |= POLLOUT | POLLWRNORM;
 	return mask;
 }
 

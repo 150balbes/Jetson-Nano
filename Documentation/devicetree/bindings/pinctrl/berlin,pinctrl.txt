@@ -23,8 +23,7 @@ Required properties:
 	"marvell,berlin2q-system-pinctrl",
 	"marvell,berlin4ct-avio-pinctrl",
 	"marvell,berlin4ct-soc-pinctrl",
-	"marvell,berlin4ct-system-pinctrl",
-	"syna,as370-soc-pinctrl"
+	"marvell,berlin4ct-system-pinctrl"
 
 Required subnode-properties:
 - groups: a list of strings describing the group names.

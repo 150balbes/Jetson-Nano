@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * Author(s)......: Holger Smolinski <Holger.Smolinski@de.ibm.com>
  *		    Horst Hummel <Horst.Hummel@de.ibm.com>
@@ -16,7 +15,7 @@
 
 #include <asm/debug.h>
 #include <asm/ebcdic.h>
-#include <linux/uaccess.h>
+#include <asm/uaccess.h>
 
 /* This is ugly... */
 #define PRINTK_HEADER "dasd_erp:"
@@ -97,7 +96,7 @@ dasd_default_erp_action(struct dasd_ccw_req *cqr)
                              "default ERP called (%i retries left)",
                              cqr->retries);
 		if (!test_bit(DASD_CQR_VERIFY_PATH, &cqr->flags))
-			cqr->lpm = dasd_path_get_opm(device);
+			cqr->lpm = device->path_data.opm;
 		cqr->status = DASD_CQR_FILLED;
         } else {
 		pr_err("%s: default ERP has run out of retries and failed\n",
@@ -125,7 +124,7 @@ dasd_default_erp_action(struct dasd_ccw_req *cqr)
 struct dasd_ccw_req *dasd_default_erp_postaction(struct dasd_ccw_req *cqr)
 {
 	int success;
-	unsigned long startclk, stopclk;
+	unsigned long long startclk, stopclk;
 	struct dasd_device *startdev;
 
 	BUG_ON(cqr->refers == NULL || cqr->function == NULL);

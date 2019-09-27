@@ -1,13 +1,22 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Copyright 2013 Emilio López
  *
  * Emilio López <emilio@elopez.com.ar>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
  */
 
 #include <linux/clk.h>
+#include <linux/clkdev.h>
 #include <linux/clk-provider.h>
-#include <linux/io.h>
 #include <linux/of_address.h>
 #include <linux/platform_device.h>
 #include <linux/slab.h>
@@ -15,7 +24,7 @@
 #include "clk-factors.h"
 
 /**
- * sun4i_a10_get_mod0_factors() - calculates m, n factors for MOD0-style clocks
+ * sun4i_get_mod0_factors() - calculates m, n factors for MOD0-style clocks
  * MOD0 rate is calculated as follows
  * rate = (parent_rate >> p) / (m + 1);
  */
@@ -132,8 +141,8 @@ static void __init sun9i_a80_mod0_setup(struct device_node *node)
 
 	reg = of_io_request_and_map(node, 0, of_node_full_name(node));
 	if (IS_ERR(reg)) {
-		pr_err("Could not get registers for mod0-clk: %pOFn\n",
-		       node);
+		pr_err("Could not get registers for mod0-clk: %s\n",
+		       node->name);
 		return;
 	}
 
@@ -146,6 +155,7 @@ static DEFINE_SPINLOCK(sun5i_a13_mbus_lock);
 
 static void __init sun5i_a13_mbus_setup(struct device_node *node)
 {
+	struct clk *mbus;
 	void __iomem *reg;
 
 	reg = of_iomap(node, 0);
@@ -154,9 +164,12 @@ static void __init sun5i_a13_mbus_setup(struct device_node *node)
 		return;
 	}
 
+	mbus = sunxi_factors_register(node, &sun4i_a10_mod0_data,
+				      &sun5i_a13_mbus_lock, reg);
+
 	/* The MBUS clocks needs to be always enabled */
-	sunxi_factors_register_critical(node, &sun4i_a10_mod0_data,
-					&sun5i_a13_mbus_lock, reg);
+	__clk_get(mbus);
+	clk_prepare_enable(mbus);
 }
 CLK_OF_DECLARE(sun5i_a13_mbus, "allwinner,sun5i-a13-mbus-clk", sun5i_a13_mbus_setup);
 
@@ -298,7 +311,7 @@ static void __init sunxi_mmc_setup(struct device_node *node,
 
 	reg = of_io_request_and_map(node, 0, of_node_full_name(node));
 	if (IS_ERR(reg)) {
-		pr_err("Couldn't map the %pOFn clock registers\n", node);
+		pr_err("Couldn't map the %s clock registers\n", node->name);
 		return;
 	}
 

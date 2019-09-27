@@ -1,9 +1,18 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  *
  * Author	Karsten Keil <kkeil@novell.com>
  *
  * Copyright 2008  by Karsten Keil <kkeil@novell.com>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
  */
 
 #include <linux/mISDNif.h>
@@ -94,7 +103,7 @@ mISDN_ctrl(struct mISDNchannel *ch, u_int cmd, void *arg)
 static inline void
 mISDN_sock_cmsg(struct sock *sk, struct msghdr *msg, struct sk_buff *skb)
 {
-	struct __kernel_old_timeval	tv;
+	struct timeval	tv;
 
 	if (_pms(sk)->cmask & MISDN_TIME_STAMP) {
 		skb_get_timestamp(skb, &tv);
@@ -146,7 +155,7 @@ mISDN_sock_recvmsg(struct socket *sock, struct msghdr *msg, size_t len,
 	copied = skb->len + MISDN_HEADER_LEN;
 	if (len < copied) {
 		if (flags & MSG_PEEK)
-			refcount_dec(&skb->users);
+			atomic_dec(&skb->users);
 		else
 			skb_queue_head(&sk->sk_receive_queue, skb);
 		return -ENOSPC;
@@ -227,7 +236,8 @@ mISDN_sock_sendmsg(struct socket *sock, struct msghdr *msg, size_t len)
 	}
 
 done:
-	kfree_skb(skb);
+	if (skb)
+		kfree_skb(skb);
 	release_sock(sk);
 	return err;
 }
@@ -384,7 +394,7 @@ data_sock_ioctl(struct socket *sock, unsigned int cmd, unsigned long arg)
 			memcpy(di.channelmap, dev->channelmap,
 			       sizeof(di.channelmap));
 			di.nrbchan = dev->nrbchan;
-			strscpy(di.name, dev_name(&dev->dev), sizeof(di.name));
+			strcpy(di.name, dev_name(&dev->dev));
 			if (copy_to_user((void __user *)arg, &di, sizeof(di)))
 				err = -EFAULT;
 		} else
@@ -550,7 +560,7 @@ done:
 
 static int
 data_sock_getname(struct socket *sock, struct sockaddr *addr,
-		  int peer)
+		  int *addr_len, int peer)
 {
 	struct sockaddr_mISDN	*maddr = (struct sockaddr_mISDN *) addr;
 	struct sock		*sk = sock->sk;
@@ -560,13 +570,14 @@ data_sock_getname(struct socket *sock, struct sockaddr *addr,
 
 	lock_sock(sk);
 
+	*addr_len = sizeof(*maddr);
 	maddr->family = AF_ISDN;
 	maddr->dev = _pms(sk)->dev->id;
 	maddr->channel = _pms(sk)->ch.nr;
 	maddr->sapi = _pms(sk)->ch.addr & 0xff;
 	maddr->tei = (_pms(sk)->ch.addr >> 8) & 0xff;
 	release_sock(sk);
-	return sizeof(*maddr);
+	return 0;
 }
 
 static const struct proto_ops data_sock_ops = {
@@ -667,7 +678,7 @@ base_sock_ioctl(struct socket *sock, unsigned int cmd, unsigned long arg)
 			memcpy(di.channelmap, dev->channelmap,
 			       sizeof(di.channelmap));
 			di.nrbchan = dev->nrbchan;
-			strscpy(di.name, dev_name(&dev->dev), sizeof(di.name));
+			strcpy(di.name, dev_name(&dev->dev));
 			if (copy_to_user((void __user *)arg, &di, sizeof(di)))
 				err = -EFAULT;
 		} else
@@ -681,7 +692,6 @@ base_sock_ioctl(struct socket *sock, unsigned int cmd, unsigned long arg)
 			err = -EFAULT;
 			break;
 		}
-		dn.name[sizeof(dn.name) - 1] = '\0';
 		dev = get_mdevice(dn.id);
 		if (dev)
 			err = device_rename(&dev->dev, dn.name);
@@ -702,10 +712,10 @@ base_sock_bind(struct socket *sock, struct sockaddr *addr, int addr_len)
 	struct sock *sk = sock->sk;
 	int err = 0;
 
-	if (addr_len < sizeof(struct sockaddr_mISDN))
+	if (!maddr || maddr->family != AF_ISDN)
 		return -EINVAL;
 
-	if (!maddr || maddr->family != AF_ISDN)
+	if (addr_len < sizeof(struct sockaddr_mISDN))
 		return -EINVAL;
 
 	lock_sock(sk);
@@ -736,6 +746,7 @@ static const struct proto_ops base_sock_ops = {
 	.getname	= sock_no_getname,
 	.sendmsg	= sock_no_sendmsg,
 	.recvmsg	= sock_no_recvmsg,
+	.poll		= sock_no_poll,
 	.listen		= sock_no_listen,
 	.shutdown	= sock_no_shutdown,
 	.setsockopt	= sock_no_setsockopt,

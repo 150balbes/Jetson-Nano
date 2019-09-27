@@ -1,9 +1,12 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * VFIO PCI config space virtualization
  *
  * Copyright (C) 2012 Red Hat, Inc.  All rights reserved.
  *     Author: Alex Williamson <alex.williamson@redhat.com>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  *
  * Derived from original vfio:
  * Copyright 2010 Cisco Systems, Inc.  All rights reserved.
@@ -27,6 +30,8 @@
 #include <linux/slab.h>
 
 #include "vfio_pci_private.h"
+
+#define PCI_CFG_SPACE_SIZE	256
 
 /* Fake capability ID for standard config space */
 #define PCI_CAP_ID_BASIC	0
@@ -147,7 +152,7 @@ static int vfio_user_config_read(struct pci_dev *pdev, int offset,
 
 	*val = cpu_to_le32(tmp_val);
 
-	return ret;
+	return pcibios_err_to_errno(ret);
 }
 
 static int vfio_user_config_write(struct pci_dev *pdev, int offset,
@@ -168,7 +173,7 @@ static int vfio_user_config_write(struct pci_dev *pdev, int offset,
 		break;
 	}
 
-	return ret;
+	return pcibios_err_to_errno(ret);
 }
 
 static int vfio_default_config_read(struct vfio_pci_device *vdev, int pos,
@@ -252,7 +257,7 @@ static int vfio_direct_config_read(struct vfio_pci_device *vdev, int pos,
 
 	ret = vfio_user_config_read(vdev->pdev, pos, val, count);
 	if (ret)
-		return ret;
+		return pcibios_err_to_errno(ret);
 
 	if (pos >= PCI_CFG_SPACE_SIZE) { /* Extended cap header mangling */
 		if (offset < 4)
@@ -290,7 +295,7 @@ static int vfio_raw_config_read(struct vfio_pci_device *vdev, int pos,
 
 	ret = vfio_user_config_read(vdev->pdev, pos, val, count);
 	if (ret)
-		return ret;
+		return pcibios_err_to_errno(ret);
 
 	return count;
 }
@@ -409,7 +414,8 @@ static void vfio_bar_restore(struct vfio_pci_device *vdev)
 	if (pdev->is_virtfn)
 		return;
 
-	pci_info(pdev, "%s: reset recovery - restoring BARs\n", __func__);
+	pr_info("%s: %s reset recovery - restoring bars\n",
+		__func__, dev_name(&pdev->dev));
 
 	for (i = PCI_BASE_ADDRESS_0; i <= PCI_BASE_ADDRESS_5; i += 4, rbar++)
 		pci_user_write_config_dword(pdev, i, *rbar);
@@ -687,7 +693,7 @@ static int vfio_pm_config_write(struct vfio_pci_device *vdev, int pos,
 			break;
 		}
 
-		vfio_pci_set_power_state(vdev, state);
+		pci_set_power_state(vdev->pdev, state);
 	}
 
 	return count;
@@ -857,7 +863,7 @@ static int vfio_exp_config_write(struct vfio_pci_device *vdev, int pos,
 /* Permissions for PCI Express capability */
 static int __init init_pci_cap_exp_perm(struct perm_bits *perm)
 {
-	/* Alloc largest of possible sizes */
+	/* Alloc larger of two possible sizes */
 	if (alloc_perm_bits(perm, PCI_CAP_EXP_ENDPOINT_SIZEOF_V2))
 		return -ENOMEM;
 
@@ -1108,7 +1114,7 @@ static int vfio_msi_config_write(struct vfio_pci_device *vdev, int pos,
 						 start + PCI_MSI_FLAGS,
 						 flags);
 		if (ret)
-			return ret;
+			return pcibios_err_to_errno(ret);
 	}
 
 	return count;
@@ -1176,10 +1182,8 @@ static int vfio_msi_cap_len(struct vfio_pci_device *vdev, u8 pos)
 		return -ENOMEM;
 
 	ret = init_pci_cap_msi_perm(vdev->msi_perm, len, flags);
-	if (ret) {
-		kfree(vdev->msi_perm);
+	if (ret)
 		return ret;
-	}
 
 	return len;
 }
@@ -1266,16 +1270,11 @@ static int vfio_cap_len(struct vfio_pci_device *vdev, u8 cap, u8 pos)
 			vdev->extended_caps = (dword != 0);
 		}
 
-		/* length based on version and type */
-		if ((pcie_caps_reg(pdev) & PCI_EXP_FLAGS_VERS) == 1) {
-			if (pci_pcie_type(pdev) == PCI_EXP_TYPE_RC_END)
-				return 0xc; /* "All Devices" only, no link */
+		/* length based on version */
+		if ((pcie_caps_reg(pdev) & PCI_EXP_FLAGS_VERS) == 1)
 			return PCI_CAP_EXP_ENDPOINT_SIZEOF_V1;
-		} else {
-			if (pci_pcie_type(pdev) == PCI_EXP_TYPE_RC_END)
-				return 0x2c; /* No link */
+		else
 			return PCI_CAP_EXP_ENDPOINT_SIZEOF_V2;
-		}
 	case PCI_CAP_ID_HT:
 		ret = pci_read_config_byte(pdev, pos + 3, &byte);
 		if (ret)
@@ -1294,8 +1293,8 @@ static int vfio_cap_len(struct vfio_pci_device *vdev, u8 cap, u8 pos)
 		else
 			return PCI_SATA_SIZEOF_SHORT;
 	default:
-		pci_warn(pdev, "%s: unknown length for PCI cap %#x@%#x\n",
-			 __func__, cap, pos);
+		pr_warn("%s: %s unknown length for pci cap 0x%x@0x%x\n",
+			dev_name(&pdev->dev), __func__, cap, pos);
 	}
 
 	return 0;
@@ -1368,8 +1367,8 @@ static int vfio_ext_cap_len(struct vfio_pci_device *vdev, u16 ecap, u16 epos)
 		}
 		return PCI_TPH_BASE_SIZEOF;
 	default:
-		pci_warn(pdev, "%s: unknown length for PCI ecap %#x@%#x\n",
-			 __func__, ecap, epos);
+		pr_warn("%s: %s unknown length for pci ecap 0x%x@0x%x\n",
+			dev_name(&pdev->dev), __func__, ecap, epos);
 	}
 
 	return 0;
@@ -1470,8 +1469,8 @@ static int vfio_cap_init(struct vfio_pci_device *vdev)
 		}
 
 		if (!len) {
-			pci_info(pdev, "%s: hiding cap %#x@%#x\n", __func__,
-				 cap, pos);
+			pr_info("%s: %s hiding cap 0x%x\n",
+				__func__, dev_name(&pdev->dev), cap);
 			*prev = next;
 			pos = next;
 			continue;
@@ -1482,8 +1481,9 @@ static int vfio_cap_init(struct vfio_pci_device *vdev)
 			if (likely(map[pos + i] == PCI_CAP_ID_INVALID))
 				continue;
 
-			pci_warn(pdev, "%s: PCI config conflict @%#x, was cap %#x now cap %#x\n",
-				 __func__, pos + i, map[pos + i], cap);
+			pr_warn("%s: %s pci config conflict @0x%x, was cap 0x%x now cap 0x%x\n",
+				__func__, dev_name(&pdev->dev),
+				pos + i, map[pos + i], cap);
 		}
 
 		BUILD_BUG_ON(PCI_CAP_ID_MAX >= PCI_CAP_ID_INVALID_VIRT);
@@ -1544,8 +1544,8 @@ static int vfio_ecap_init(struct vfio_pci_device *vdev)
 		}
 
 		if (!len) {
-			pci_info(pdev, "%s: hiding ecap %#x@%#x\n",
-				 __func__, ecap, epos);
+			pr_info("%s: %s hiding ecap 0x%x@0x%x\n",
+				__func__, dev_name(&pdev->dev), ecap, epos);
 
 			/* If not the first in the chain, we can skip over it */
 			if (prev) {
@@ -1567,8 +1567,9 @@ static int vfio_ecap_init(struct vfio_pci_device *vdev)
 			if (likely(map[epos + i] == PCI_CAP_ID_INVALID))
 				continue;
 
-			pci_warn(pdev, "%s: PCI config conflict @%#x, was ecap %#x now ecap %#x\n",
-				 __func__, epos + i, map[epos + i], ecap);
+			pr_warn("%s: %s pci config conflict @0x%x, was ecap 0x%x now ecap 0x%x\n",
+				__func__, dev_name(&pdev->dev),
+				epos + i, map[epos + i], ecap);
 		}
 
 		/*
@@ -1604,15 +1605,6 @@ static int vfio_ecap_init(struct vfio_pci_device *vdev)
 
 	return 0;
 }
-
-/*
- * Nag about hardware bugs, hopefully to have vendors fix them, but at least
- * to collect a list of dependencies for the VF INTx pin quirk below.
- */
-static const struct pci_device_id known_bogus_vf_intx_pin[] = {
-	{ PCI_DEVICE(PCI_VENDOR_ID_INTEL, 0x270c) },
-	{}
-};
 
 /*
  * For each device we allocate a pci_config_map that indicates the
@@ -1679,24 +1671,6 @@ int vfio_config_init(struct vfio_pci_device *vdev)
 	if (pdev->is_virtfn) {
 		*(__le16 *)&vconfig[PCI_VENDOR_ID] = cpu_to_le16(pdev->vendor);
 		*(__le16 *)&vconfig[PCI_DEVICE_ID] = cpu_to_le16(pdev->device);
-
-		/*
-		 * Per SR-IOV spec rev 1.1, 3.4.1.18 the interrupt pin register
-		 * does not apply to VFs and VFs must implement this register
-		 * as read-only with value zero.  Userspace is not readily able
-		 * to identify whether a device is a VF and thus that the pin
-		 * definition on the device is bogus should it violate this
-		 * requirement.  We already virtualize the pin register for
-		 * other purposes, so we simply need to replace the bogus value
-		 * and consider VFs when we determine INTx IRQ count.
-		 */
-		if (vconfig[PCI_INTERRUPT_PIN] &&
-		    !pci_match_id(known_bogus_vf_intx_pin, pdev))
-			pci_warn(pdev,
-				 "Hardware bug: VF reports bogus INTx pin %d\n",
-				 vconfig[PCI_INTERRUPT_PIN]);
-
-		vconfig[PCI_INTERRUPT_PIN] = 0; /* Gratuitous for good VFs */
 	}
 
 	if (!IS_ENABLED(CONFIG_VFIO_PCI_INTX) || vdev->nointx)

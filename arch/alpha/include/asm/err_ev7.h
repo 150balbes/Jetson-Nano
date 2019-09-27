@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __ALPHA_ERR_EV7_H
 #define __ALPHA_ERR_EV7_H 1
 

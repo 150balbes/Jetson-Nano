@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 #include <linux/screen_info.h>
 #include <linux/init.h>
 

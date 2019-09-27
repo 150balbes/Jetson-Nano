@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note */
 /* atm_he.h */
 
 #ifndef LINUX_ATM_HE_H

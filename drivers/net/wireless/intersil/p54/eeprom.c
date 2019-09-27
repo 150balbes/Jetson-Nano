@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * EEPROM parser code for mac80211 Prism54 drivers
  *
@@ -11,6 +10,10 @@
  *   Copyright 2004-2006 Jean-Baptiste Note <jbnote@gmail.com>, et al.
  * - stlc45xx driver
  *   Copyright (C) 2008 Nokia Corporation and/or its subsidiary(-ies).
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  */
 
 #include <linux/firmware.h>
@@ -158,9 +161,8 @@ static int p54_generate_band(struct ieee80211_hw *dev,
 	if (!tmp)
 		goto err_out;
 
-	tmp->channels = kcalloc(list->band_channel_num[band],
-				sizeof(struct ieee80211_channel),
-				GFP_KERNEL);
+	tmp->channels = kzalloc(sizeof(struct ieee80211_channel) *
+				list->band_channel_num[band], GFP_KERNEL);
 	if (!tmp->channels)
 		goto err_out;
 
@@ -342,7 +344,7 @@ static int p54_generate_channel_lists(struct ieee80211_hw *dev)
 		goto free;
 	}
 	priv->chan_num = max_channel_num;
-	priv->survey = kcalloc(max_channel_num, sizeof(struct survey_info),
+	priv->survey = kzalloc(sizeof(struct survey_info) * max_channel_num,
 			       GFP_KERNEL);
 	if (!priv->survey) {
 		ret = -ENOMEM;
@@ -350,9 +352,8 @@ static int p54_generate_channel_lists(struct ieee80211_hw *dev)
 	}
 
 	list->max_entries = max_channel_num;
-	list->channels = kcalloc(max_channel_num,
-				 sizeof(struct p54_channel_entry),
-				 GFP_KERNEL);
+	list->channels = kzalloc(sizeof(struct p54_channel_entry) *
+				 max_channel_num, GFP_KERNEL);
 	if (!list->channels) {
 		ret = -ENOMEM;
 		goto free;

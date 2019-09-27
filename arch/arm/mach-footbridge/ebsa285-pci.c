@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * linux/arch/arm/mach-footbridge/ebsa285-pci.c
  *

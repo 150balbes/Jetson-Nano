@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * MPC83xx/85xx/86xx PCI/PCIE support routing.
  *
@@ -12,6 +11,11 @@
  * MPC83xx PCI-Express support:
  * 	Tony Li <tony.li@freescale.com>
  * 	Anton Vorontsov <avorontsov@ru.mvista.com>
+ *
+ * This program is free software; you can redistribute  it and/or modify it
+ * under  the terms of  the GNU General  Public License as published by the
+ * Free Software Foundation;  either version 2 of the  License, or (at your
+ * option) any later version.
  */
 #include <linux/kernel.h>
 #include <linux/pci.h>
@@ -36,7 +40,6 @@
 #include <asm/mpc85xx.h>
 #include <asm/disassemble.h>
 #include <asm/ppc-opcode.h>
-#include <asm/swiotlb.h>
 #include <sysdev/fsl_soc.h>
 #include <sysdev/fsl_pci.h>
 
@@ -111,33 +114,33 @@ static struct pci_ops fsl_indirect_pcie_ops =
 static u64 pci64_dma_offset;
 
 #ifdef CONFIG_SWIOTLB
-static void pci_dma_dev_setup_swiotlb(struct pci_dev *pdev)
-{
-	struct pci_controller *hose = pci_bus_to_host(pdev->bus);
-
-	pdev->dev.bus_dma_mask =
-		hose->dma_window_base_cur + hose->dma_window_size;
-}
-
 static void setup_swiotlb_ops(struct pci_controller *hose)
 {
-	if (ppc_swiotlb_enable)
+	if (ppc_swiotlb_enable) {
 		hose->controller_ops.dma_dev_setup = pci_dma_dev_setup_swiotlb;
+		set_pci_dma_ops(&swiotlb_dma_ops);
+	}
 }
 #else
 static inline void setup_swiotlb_ops(struct pci_controller *hose) {}
 #endif
 
-static void fsl_pci_dma_set_mask(struct device *dev, u64 dma_mask)
+static int fsl_pci_dma_set_mask(struct device *dev, u64 dma_mask)
 {
+	if (!dev->dma_mask || !dma_supported(dev, dma_mask))
+		return -EIO;
+
 	/*
 	 * Fix up PCI devices that are able to DMA to the large inbound
 	 * mapping that allows addressing any RAM address from across PCI.
 	 */
 	if (dev_is_pci(dev) && dma_mask >= pci64_dma_offset * 2 - 1) {
-		dev->bus_dma_mask = 0;
-		dev->archdata.dma_offset = pci64_dma_offset;
+		set_dma_ops(dev, &dma_direct_ops);
+		set_dma_offset(dev, pci64_dma_offset);
 	}
+
+	*dev->dma_mask = dma_mask;
+	return 0;
 }
 
 static int setup_one_atmu(struct ccsr_pci __iomem *pci,
@@ -199,6 +202,7 @@ static void setup_pci_atmu(struct pci_controller *hose)
 	u32 pcicsrbar = 0, pcicsrbar_sz;
 	u32 piwar = PIWAR_EN | PIWAR_PF | PIWAR_TGI_LOCAL |
 			PIWAR_READ_SNOOP | PIWAR_WRITE_SNOOP;
+	const char *name = hose->dn->full_name;
 	const u64 *reg;
 	int len;
 	bool setup_inbound;
@@ -286,12 +290,12 @@ static void setup_pci_atmu(struct pci_controller *hose)
 	paddr_lo -= offset;
 
 	if (paddr_hi == paddr_lo) {
-		pr_err("%pOF: No outbound window space\n", hose->dn);
+		pr_err("%s: No outbound window space\n", name);
 		return;
 	}
 
 	if (paddr_lo == 0) {
-		pr_err("%pOF: No space for inbound window\n", hose->dn);
+		pr_err("%s: No space for inbound window\n", name);
 		return;
 	}
 
@@ -309,7 +313,7 @@ static void setup_pci_atmu(struct pci_controller *hose)
 
 	paddr_lo = min(paddr_lo, (u64)pcicsrbar);
 
-	pr_info("%pOF: PCICSRBAR @ 0x%x\n", hose->dn, pcicsrbar);
+	pr_info("%s: PCICSRBAR @ 0x%x\n", name, pcicsrbar);
 
 	/* Setup inbound mem window */
 	mem = memblock_end_of_DRAM();
@@ -332,12 +336,12 @@ static void setup_pci_atmu(struct pci_controller *hose)
 		u64 address = be64_to_cpup(reg);
 
 		if ((address >= mem) && (address < (mem + PAGE_SIZE))) {
-			pr_info("%pOF: extending DDR ATMU to cover MSIIR", hose->dn);
+			pr_info("%s: extending DDR ATMU to cover MSIIR", name);
 			mem += PAGE_SIZE;
 		} else {
 			/* TODO: Create a new ATMU for MSIIR */
-			pr_warn("%pOF: msi-address-64 address of %llx is "
-				"unsupported\n", hose->dn, address);
+			pr_warn("%s: msi-address-64 address of %llx is "
+				"unsupported\n", name, address);
 		}
 	}
 
@@ -350,8 +354,8 @@ static void setup_pci_atmu(struct pci_controller *hose)
 		if ((1ull << mem_log) != mem) {
 			mem_log++;
 			if ((1ull << mem_log) > mem)
-				pr_info("%pOF: Setting PCI inbound window "
-					"greater than memory size\n", hose->dn);
+				pr_info("%s: Setting PCI inbound window "
+					"greater than memory size\n", name);
 		}
 
 		piwar |= ((mem_log - 1) & PIWAR_SZ_MASK);
@@ -398,7 +402,7 @@ static void setup_pci_atmu(struct pci_controller *hose)
 			 */
 			ppc_md.dma_set_mask = fsl_pci_dma_set_mask;
 
-			pr_info("%pOF: Setup 64-bit PCI DMA window\n", hose->dn);
+			pr_info("%s: Setup 64-bit PCI DMA window\n", name);
 		}
 	} else {
 		u64 paddr = 0;
@@ -439,18 +443,18 @@ static void setup_pci_atmu(struct pci_controller *hose)
 #ifdef CONFIG_SWIOTLB
 		ppc_swiotlb_enable = 1;
 #else
-		pr_err("%pOF: ERROR: Memory size exceeds PCI ATMU ability to "
+		pr_err("%s: ERROR: Memory size exceeds PCI ATMU ability to "
 			"map - enable CONFIG_SWIOTLB to avoid dma errors.\n",
-			 hose->dn);
+			 name);
 #endif
 		/* adjusting outbound windows could reclaim space in mem map */
 		if (paddr_hi < 0xffffffffull)
-			pr_warn("%pOF: WARNING: Outbound window cfg leaves "
+			pr_warning("%s: WARNING: Outbound window cfg leaves "
 				"gaps in memory map. Adjusting the memory map "
 				"could reduce unnecessary bounce buffering.\n",
-				hose->dn);
+				name);
 
-		pr_info("%pOF: DMA window size is 0x%llx\n", hose->dn,
+		pr_info("%s: DMA window size is 0x%llx\n", name,
 			(u64)hose->dma_window_size);
 	}
 }
@@ -528,11 +532,11 @@ int fsl_add_bridge(struct platform_device *pdev, int is_primary)
 	dev = pdev->dev.of_node;
 
 	if (!of_device_is_available(dev)) {
-		pr_warn("%pOF: disabled\n", dev);
+		pr_warning("%s: disabled\n", dev->full_name);
 		return -ENODEV;
 	}
 
-	pr_debug("Adding PCI host bridge %pOF\n", dev);
+	pr_debug("Adding PCI host bridge %s\n", dev->full_name);
 
 	/* Fetch host bridge registers address */
 	if (of_address_to_resource(dev, 0, &rsrc)) {
@@ -543,8 +547,8 @@ int fsl_add_bridge(struct platform_device *pdev, int is_primary)
 	/* Get bus range if any */
 	bus_range = of_get_property(dev, "bus-range", &len);
 	if (bus_range == NULL || len < 2 * sizeof(int))
-		printk(KERN_WARNING "Can't get bus-range for %pOF, assume"
-			" bus 0\n", dev);
+		printk(KERN_WARNING "Can't get bus-range for %s, assume"
+			" bus 0\n", dev->full_name);
 
 	pci_add_flags(PCI_REASSIGN_ALL_BUS);
 	hose = pcibios_alloc_controller(dev);
@@ -805,11 +809,11 @@ int __init mpc83xx_add_bridge(struct device_node *dev)
 	is_mpc83xx_pci = 1;
 
 	if (!of_device_is_available(dev)) {
-		pr_warn("%pOF: disabled by the firmware.\n",
-			dev);
+		pr_warning("%s: disabled by the firmware.\n",
+			   dev->full_name);
 		return -ENODEV;
 	}
-	pr_debug("Adding PCI host bridge %pOF\n", dev);
+	pr_debug("Adding PCI host bridge %s\n", dev->full_name);
 
 	/* Fetch host bridge registers address */
 	if (of_address_to_resource(dev, 0, &rsrc_reg)) {
@@ -844,8 +848,8 @@ int __init mpc83xx_add_bridge(struct device_node *dev)
 	/* Get bus range if any */
 	bus_range = of_get_property(dev, "bus-range", &len);
 	if (bus_range == NULL || len < 2 * sizeof(int)) {
-		printk(KERN_WARNING "Can't get bus-range for %pOF, assume"
-		       " bus 0\n", dev);
+		printk(KERN_WARNING "Can't get bus-range for %s, assume"
+		       " bus 0\n", dev->full_name);
 	}
 
 	pci_add_flags(PCI_REASSIGN_ALL_BUS);
@@ -1067,7 +1071,7 @@ int fsl_pci_mcheck_exception(struct pt_regs *regs)
 	if (is_in_pci_mem_space(addr)) {
 		if (user_mode(regs)) {
 			pagefault_disable();
-			ret = get_user(inst, (__u32 __user *)regs->nip);
+			ret = get_user(regs->nip, &inst);
 			pagefault_enable();
 		} else {
 			ret = probe_kernel_address((void *)regs->nip, inst);
@@ -1301,8 +1305,10 @@ static int add_err_dev(struct platform_device *pdev)
 						   pdev->resource,
 						   pdev->num_resources,
 						   &pd, sizeof(pd));
+	if (IS_ERR(errdev))
+		return PTR_ERR(errdev);
 
-	return PTR_ERR_OR_ZERO(errdev);
+	return 0;
 }
 
 static int fsl_pci_probe(struct platform_device *pdev)

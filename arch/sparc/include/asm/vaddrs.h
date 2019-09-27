@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _SPARC_VADDRS_H
 #define _SPARC_VADDRS_H
 

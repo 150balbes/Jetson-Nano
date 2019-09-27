@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0
 #
 # Partition configuration
 #
@@ -194,7 +193,7 @@ config LDM_PARTITION
 	  Normal partitions are now called Basic Disks under Windows 2000, XP,
 	  and Vista.
 
-	  For a fuller description read <file:Documentation/admin-guide/ldm.rst>.
+	  For a fuller description read <file:Documentation/ldm.txt>.
 
 	  If unsure, say N.
 

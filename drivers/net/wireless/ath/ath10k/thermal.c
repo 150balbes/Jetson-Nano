@@ -1,6 +1,17 @@
-// SPDX-License-Identifier: ISC
 /*
- * Copyright (c) 2014-2015 Qualcomm Atheros, Inc.
+ * Copyright (c) 2014 Qualcomm Atheros, Inc.
+ *
+ * Permission to use, copy, modify, and/or distribute this software for any
+ * purpose with or without fee is hereby granted, provided that the above
+ * copyright notice and this permission notice appear in all copies.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+ * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+ * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+ * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+ * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+ * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+ * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
 #include <linux/device.h>
@@ -52,7 +63,7 @@ ath10k_thermal_set_cur_throttle_state(struct thermal_cooling_device *cdev,
 	return 0;
 }
 
-static const struct thermal_cooling_device_ops ath10k_thermal_ops = {
+static struct thermal_cooling_device_ops ath10k_thermal_ops = {
 	.get_max_state = ath10k_thermal_get_max_throttle_state,
 	.get_cur_state = ath10k_thermal_get_cur_throttle_state,
 	.set_cur_state = ath10k_thermal_set_cur_throttle_state,
@@ -113,7 +124,7 @@ void ath10k_thermal_event_temperature(struct ath10k *ar, int temperature)
 	complete(&ar->thermal.wmi_sync);
 }
 
-static SENSOR_DEVICE_ATTR(temp1_input, 0444, ath10k_thermal_show_temp,
+static SENSOR_DEVICE_ATTR(temp1_input, S_IRUGO, ath10k_thermal_show_temp,
 			  NULL, 0);
 
 static struct attribute *ath10k_hwmon_attrs[] = {
@@ -128,9 +139,6 @@ void ath10k_thermal_set_throttling(struct ath10k *ar)
 	int ret;
 
 	lockdep_assert_held(&ar->conf_mutex);
-
-	if (!test_bit(WMI_SERVICE_THERM_THROT, ar->wmi.svc_map))
-		return;
 
 	if (!ar->wmi.ops->gen_pdev_set_quiet_mode)
 		return;
@@ -156,9 +164,6 @@ int ath10k_thermal_register(struct ath10k *ar)
 	struct thermal_cooling_device *cdev;
 	struct device *hwmon_dev;
 	int ret;
-
-	if (!test_bit(WMI_SERVICE_THERM_THROT, ar->wmi.svc_map))
-		return 0;
 
 	cdev = thermal_cooling_device_register("ath10k_thermal", ar,
 					       &ath10k_thermal_ops);
@@ -186,8 +191,7 @@ int ath10k_thermal_register(struct ath10k *ar)
 		return 0;
 
 	/* Avoid linking error on devm_hwmon_device_register_with_groups, I
-	 * guess linux/hwmon.h is missing proper stubs.
-	 */
+	 * guess linux/hwmon.h is missing proper stubs. */
 	if (!IS_REACHABLE(CONFIG_HWMON))
 		return 0;
 
@@ -211,9 +215,6 @@ err_cooling_destroy:
 
 void ath10k_thermal_unregister(struct ath10k *ar)
 {
-	if (!test_bit(WMI_SERVICE_THERM_THROT, ar->wmi.svc_map))
-		return;
-
 	sysfs_remove_link(&ar->dev->kobj, "cooling_device");
 	thermal_cooling_device_unregister(ar->thermal.cdev);
 }

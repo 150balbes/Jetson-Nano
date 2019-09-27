@@ -1,11 +1,10 @@
-// SPDX-License-Identifier: GPL-1.0+
 /*
  * Copyright IBM Corp. 2002, 2009
  *
  * Author(s): Martin Schwidefsky (schwidefsky@de.ibm.com)
  *	      Cornelia Huck (cornelia.huck@de.ibm.com)
  */
-#include <linux/export.h>
+#include <linux/module.h>
 #include <linux/init.h>
 #include <linux/errno.h>
 #include <linux/slab.h>
@@ -429,8 +428,8 @@ struct ciw *ccw_device_get_ciw(struct ccw_device *cdev, __u32 ct)
 	if (cdev->private->flags.esid == 0)
 		return NULL;
 	for (ciw_cnt = 0; ciw_cnt < MAX_CIWS; ciw_cnt++)
-		if (cdev->private->dma_area->senseid.ciw[ciw_cnt].ct == ct)
-			return cdev->private->dma_area->senseid.ciw + ciw_cnt;
+		if (cdev->private->senseid.ciw[ciw_cnt].ct == ct)
+			return cdev->private->senseid.ciw + ciw_cnt;
 	return NULL;
 }
 
@@ -460,8 +459,8 @@ __u8 ccw_device_get_path_mask(struct ccw_device *cdev)
  * On success return a newly allocated copy of the channel-path description
  * data associated with the given channel path. Return %NULL on error.
  */
-struct channel_path_desc_fmt0 *ccw_device_get_chp_desc(struct ccw_device *cdev,
-						       int chp_idx)
+struct channel_path_desc *ccw_device_get_chp_desc(struct ccw_device *cdev,
+						  int chp_idx)
 {
 	struct subchannel *sch;
 	struct chp_id chpid;
@@ -470,36 +469,6 @@ struct channel_path_desc_fmt0 *ccw_device_get_chp_desc(struct ccw_device *cdev,
 	chp_id_init(&chpid);
 	chpid.id = sch->schib.pmcw.chpid[chp_idx];
 	return chp_get_chp_desc(chpid);
-}
-
-/**
- * ccw_device_get_util_str() - return newly allocated utility strings
- * @cdev: device to obtain the utility strings for
- * @chp_idx: index of the channel path
- *
- * On success return a newly allocated copy of the utility strings
- * associated with the given channel path. Return %NULL on error.
- */
-u8 *ccw_device_get_util_str(struct ccw_device *cdev, int chp_idx)
-{
-	struct subchannel *sch = to_subchannel(cdev->dev.parent);
-	struct channel_path *chp;
-	struct chp_id chpid;
-	u8 *util_str;
-
-	chp_id_init(&chpid);
-	chpid.id = sch->schib.pmcw.chpid[chp_idx];
-	chp = chpid_to_chp(chpid);
-
-	util_str = kmalloc(sizeof(chp->desc_fmt3.util_str), GFP_KERNEL);
-	if (!util_str)
-		return NULL;
-
-	mutex_lock(&chp->lock);
-	memcpy(util_str, chp->desc_fmt3.util_str, sizeof(chp->desc_fmt3.util_str));
-	mutex_unlock(&chp->lock);
-
-	return util_str;
 }
 
 /**
@@ -699,23 +668,7 @@ void ccw_device_get_schid(struct ccw_device *cdev, struct subchannel_id *schid)
 }
 EXPORT_SYMBOL_GPL(ccw_device_get_schid);
 
-/*
- * Allocate zeroed dma coherent 31 bit addressable memory using
- * the subchannels dma pool. Maximal size of allocation supported
- * is PAGE_SIZE.
- */
-void *ccw_device_dma_zalloc(struct ccw_device *cdev, size_t size)
-{
-	return cio_gp_dma_zalloc(cdev->private->dma_pool, &cdev->dev, size);
-}
-EXPORT_SYMBOL(ccw_device_dma_zalloc);
-
-void ccw_device_dma_free(struct ccw_device *cdev, void *cpu_addr, size_t size)
-{
-	cio_gp_dma_free(cdev->private->dma_pool, cpu_addr, size);
-}
-EXPORT_SYMBOL(ccw_device_dma_free);
-
+MODULE_LICENSE("GPL");
 EXPORT_SYMBOL(ccw_device_set_options_mask);
 EXPORT_SYMBOL(ccw_device_set_options);
 EXPORT_SYMBOL(ccw_device_clear_options);
@@ -729,4 +682,3 @@ EXPORT_SYMBOL(ccw_device_start_key);
 EXPORT_SYMBOL(ccw_device_get_ciw);
 EXPORT_SYMBOL(ccw_device_get_path_mask);
 EXPORT_SYMBOL_GPL(ccw_device_get_chp_desc);
-EXPORT_SYMBOL_GPL(ccw_device_get_util_str);

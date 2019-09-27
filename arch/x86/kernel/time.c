@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  *  Copyright (c) 1991,1992,1995  Linus Torvalds
  *  Copyright (c) 1994  Alan Modra
@@ -10,7 +9,6 @@
  *
  */
 
-#include <linux/clocksource.h>
 #include <linux/clockchips.h>
 #include <linux/interrupt.h>
 #include <linux/irq.h>
@@ -37,7 +35,8 @@ unsigned long profile_pc(struct pt_regs *regs)
 #ifdef CONFIG_FRAME_POINTER
 		return *(unsigned long *)(regs->bp + sizeof(long));
 #else
-		unsigned long *sp = (unsigned long *)regs->sp;
+		unsigned long *sp =
+			(unsigned long *)kernel_stack_pointer(regs);
 		/*
 		 * Return address is either directly at stack pointer
 		 * or above a saved flags. Eflags has bits 22-31 zero,
@@ -68,35 +67,24 @@ static struct irqaction irq0  = {
 	.name = "timer"
 };
 
-static void __init setup_default_timer_irq(void)
+void __init setup_default_timer_irq(void)
 {
-	/*
-	 * Unconditionally register the legacy timer; even without legacy
-	 * PIC/PIT we need this for the HPET0 in legacy replacement mode.
-	 */
-	if (setup_irq(0, &irq0))
-		pr_info("Failed to register legacy timer interrupt\n");
+	if (!nr_legacy_irqs())
+		return;
+	setup_irq(0, &irq0);
 }
 
 /* Default timer init function */
 void __init hpet_time_init(void)
 {
-	if (!hpet_enable()) {
-		if (!pit_timer_init())
-			return;
-	}
-
+	if (!hpet_enable())
+		setup_pit_timer();
 	setup_default_timer_irq();
 }
 
 static __init void x86_late_time_init(void)
 {
 	x86_init.timers.timer_init();
-	/*
-	 * After PIT/HPET timers init, select and setup
-	 * the final interrupt mode for delivering IRQs.
-	 */
-	x86_init.irqs.intr_mode_init();
 	tsc_init();
 }
 
@@ -107,25 +95,4 @@ static __init void x86_late_time_init(void)
 void __init time_init(void)
 {
 	late_time_init = x86_late_time_init;
-}
-
-/*
- * Sanity check the vdso related archdata content.
- */
-void clocksource_arch_init(struct clocksource *cs)
-{
-	if (cs->archdata.vclock_mode == VCLOCK_NONE)
-		return;
-
-	if (cs->archdata.vclock_mode > VCLOCK_MAX) {
-		pr_warn("clocksource %s registered with invalid vclock_mode %d. Disabling vclock.\n",
-			cs->name, cs->archdata.vclock_mode);
-		cs->archdata.vclock_mode = VCLOCK_NONE;
-	}
-
-	if (cs->mask != CLOCKSOURCE_MASK(64)) {
-		pr_warn("clocksource %s registered with invalid mask %016llx. Disabling vclock.\n",
-			cs->name, cs->mask);
-		cs->archdata.vclock_mode = VCLOCK_NONE;
-	}
 }

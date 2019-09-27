@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  *    Hardware descriptions for HP 9000 based hardware, including
  *    system types, SCSI controllers, DMA controllers, HPPB controllers
@@ -10,6 +9,21 @@
  *
  *    Copyright 1999 by Alex deVries <alex@onefishtwo.ca>
  *    and copyright 1999 The Puffin Group Inc.
+ *
+ *    This program is free software; you can redistribute it and/or modify
+ *    it under the terms of the GNU General Public License as published by
+ *    the Free Software Foundation; either version 2, or (at your option)
+ *    any later version.
+ *
+ *    This program is distributed in the hope that it will be useful,
+ *    but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *    GNU General Public License for more details.
+ * 
+ *    You should have received a copy of the GNU General Public License
+ *    along with this program; if not, write to the Free Software
+ *    Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ *
  */
 
 
@@ -27,7 +41,7 @@
  *	are guessed. If you know the correct name, please let us know.
  */
  
-static struct hp_hardware hp_hardware_list[] __initdata = {
+static struct hp_hardware hp_hardware_list[] = {
 	{HPHW_NPROC,0x01,0x4,0x0,"Indigo (840, 930)"},
 	{HPHW_NPROC,0x8,0x4,0x01,"Firefox(825,925)"},
 	{HPHW_NPROC,0xA,0x4,0x01,"Top Gun (835,834,935,635)"},
@@ -1224,7 +1238,7 @@ static struct hp_cpu_type_mask {
 	unsigned short model;
 	unsigned short mask;
 	enum cpu_type cpu;
-} hp_cpu_type_mask_list[] __initdata = {
+} hp_cpu_type_mask_list[] = {
 
 	{ 0x0000, 0x0ff0, pcx    },  /* 0x0000 - 0x000f */
 	{ 0x0048, 0x0ff0, pcxl   },  /* 0x0040 - 0x004f */
@@ -1311,17 +1325,17 @@ const char * const cpu_name_version[][2] = {
 	[pcxt]	= { "PA7100 (PCX-T)",	"1.1b" },
 	[pcxt_]	= { "PA7200 (PCX-T')",	"1.1c" },
 	[pcxl]	= { "PA7100LC (PCX-L)",	"1.1d" },
-	[pcxl2]	= { "PA7300LC (PCX-L2)","1.1e" },
+	[pcxl2]	= { "PA7300LC (PCX-L2)",	"1.1e" },
 	[pcxu]	= { "PA8000 (PCX-U)",	"2.0" },
 	[pcxu_]	= { "PA8200 (PCX-U+)",	"2.0" },
 	[pcxw]	= { "PA8500 (PCX-W)",	"2.0" },
 	[pcxw_]	= { "PA8600 (PCX-W+)",	"2.0" },
 	[pcxw2]	= { "PA8700 (PCX-W2)",	"2.0" },
 	[mako]	= { "PA8800 (Mako)",	"2.0" },
-	[mako2] = { "PA8900 (Shortfin)","2.0" }
+	[mako2] = { "PA8900 (Shortfin)",	"2.0" }
 };
 
-const char * __init parisc_hardware_description(struct parisc_device_id *id)
+const char *parisc_hardware_description(struct parisc_device_id *id)
 {
 	struct hp_hardware *listptr;
 	
@@ -1359,7 +1373,7 @@ const char * __init parisc_hardware_description(struct parisc_device_id *id)
 
 
 /* Interpret hversion (ret[0]) from PDC_MODEL(4)/PDC_MODEL_INFO(0) */
-enum cpu_type __init
+enum cpu_type
 parisc_get_cpu_type(unsigned long hversion)
 {
 	struct hp_cpu_type_mask *ptr;

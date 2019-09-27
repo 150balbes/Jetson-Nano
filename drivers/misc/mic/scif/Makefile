@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0
 #
 # Makefile - SCIF driver.
 # Copyright(c) 2014, Intel Corporation.

@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0-only
 config SERIAL_IPOCTAL
 	tristate "IndustryPack IP-OCTAL uart support"
 	depends on IPACK_BUS && TTY

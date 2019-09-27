@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /* GENpage.S: Generic clear and copy page.
  *
  * Copyright (C) 2007 (davem@davemloft.net)

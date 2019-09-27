@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * CPU frequency scaling for DaVinci
  *
@@ -14,15 +13,22 @@
  * Copyright (C) 2007-2008 Texas Instruments, Inc.
  * Updated to support OMAP3
  * Rajendra Nayak <rnayak@ti.com>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  */
 #include <linux/types.h>
 #include <linux/cpufreq.h>
 #include <linux/init.h>
 #include <linux/err.h>
 #include <linux/clk.h>
-#include <linux/platform_data/davinci-cpufreq.h>
 #include <linux/platform_device.h>
 #include <linux/export.h>
+
+#include <mach/hardware.h>
+#include <mach/cpufreq.h>
+#include <mach/common.h>
 
 struct davinci_cpufreq {
 	struct device *dev;
@@ -49,7 +55,7 @@ static int davinci_target(struct cpufreq_policy *policy, unsigned int idx)
 			return ret;
 	}
 
-	ret = clk_set_rate(armclk, new_freq * 1000);
+	ret = clk_set_rate(armclk, idx);
 	if (ret)
 		return ret;
 
@@ -90,8 +96,7 @@ static int davinci_cpu_init(struct cpufreq_policy *policy)
 	 * Setting the latency to 2000 us to accommodate addition of drivers
 	 * to pre/post change notification list.
 	 */
-	cpufreq_generic_init(policy, freq_table, 2000 * 1000);
-	return 0;
+	return cpufreq_generic_init(policy, freq_table, 2000 * 1000);
 }
 
 static struct cpufreq_driver davinci_driver = {

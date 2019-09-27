@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _FIREWIRE_FWSERIAL_H
 #define _FIREWIRE_FWSERIAL_H
 

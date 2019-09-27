@@ -1,8 +1,7 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
- * Procfs interface for the PCI bus
+ *	Procfs interface for the PCI bus.
  *
- * Copyright (c) 1997--1999 Martin Mares <mj@ucw.cz>
+ *	Copyright (c) 1997--1999 Martin Mares <mj@ucw.cz>
  */
 
 #include <linux/init.h>
@@ -12,7 +11,7 @@
 #include <linux/proc_fs.h>
 #include <linux/seq_file.h>
 #include <linux/capability.h>
-#include <linux/uaccess.h>
+#include <asm/uaccess.h>
 #include <asm/byteorder.h>
 #include "pci.h"
 
@@ -52,7 +51,7 @@ static ssize_t proc_bus_pci_read(struct file *file, char __user *buf,
 		nbytes = size - pos;
 	cnt = nbytes;
 
-	if (!access_ok(buf, cnt))
+	if (!access_ok(VERIFY_WRITE, buf, cnt))
 		return -EINVAL;
 
 	pci_config_pm_runtime_get(dev);
@@ -125,7 +124,7 @@ static ssize_t proc_bus_pci_write(struct file *file, const char __user *buf,
 		nbytes = size - pos;
 	cnt = nbytes;
 
-	if (!access_ok(buf, cnt))
+	if (!access_ok(VERIFY_READ, buf, cnt))
 		return -EINVAL;
 
 	pci_config_pm_runtime_get(dev);
@@ -203,8 +202,6 @@ static long proc_bus_pci_ioctl(struct file *file, unsigned int cmd,
 
 #ifdef HAVE_PCI_MMAP
 	case PCIIOC_MMAP_IS_IO:
-		if (!arch_can_pci_mmap_io())
-			return -EINVAL;
 		fpriv->mmap_state = pci_mmap_io;
 		break;
 
@@ -213,16 +210,14 @@ static long proc_bus_pci_ioctl(struct file *file, unsigned int cmd,
 		break;
 
 	case PCIIOC_WRITE_COMBINE:
-		if (arch_can_pci_mmap_wc()) {
-			if (arg)
-				fpriv->write_combine = 1;
-			else
-				fpriv->write_combine = 0;
-			break;
-		}
-		/* If arch decided it can't, fall through... */
+		if (arg)
+			fpriv->write_combine = 1;
+		else
+			fpriv->write_combine = 0;
+		break;
+
 #endif /* HAVE_PCI_MMAP */
-		/* fall through */
+
 	default:
 		ret = -EINVAL;
 		break;
@@ -236,16 +231,15 @@ static int proc_bus_pci_mmap(struct file *file, struct vm_area_struct *vma)
 {
 	struct pci_dev *dev = PDE_DATA(file_inode(file));
 	struct pci_filp_private *fpriv = file->private_data;
-	int i, ret, write_combine = 0, res_bit = IORESOURCE_MEM;
+	int i, ret, write_combine = 0, res_bit;
 
 	if (!capable(CAP_SYS_RAWIO))
 		return -EPERM;
 
-	if (fpriv->mmap_state == pci_mmap_io) {
-		if (!arch_can_pci_mmap_io())
-			return -EINVAL;
+	if (fpriv->mmap_state == pci_mmap_io)
 		res_bit = IORESOURCE_IO;
-	}
+	else
+		res_bit = IORESOURCE_MEM;
 
 	/* Make sure the caller is mapping a real resource for this device */
 	for (i = 0; i < PCI_ROM_RESOURCE; i++) {
@@ -264,7 +258,7 @@ static int proc_bus_pci_mmap(struct file *file, struct vm_area_struct *vma)
 		else
 			return -EINVAL;
 	}
-	ret = pci_mmap_page_range(dev, i, vma,
+	ret = pci_mmap_page_range(dev, vma,
 				  fpriv->mmap_state, write_combine);
 	if (ret < 0)
 		return ret;
@@ -377,7 +371,7 @@ static int show_device(struct seq_file *m, void *v)
 	}
 	seq_putc(m, '\t');
 	if (drv)
-		seq_puts(m, drv->name);
+		seq_printf(m, "%s", drv->name);
 	seq_putc(m, '\n');
 	return 0;
 }
@@ -436,12 +430,25 @@ int pci_proc_detach_bus(struct pci_bus *bus)
 	return 0;
 }
 
+static int proc_bus_pci_dev_open(struct inode *inode, struct file *file)
+{
+	return seq_open(file, &proc_bus_pci_devices_op);
+}
+
+static const struct file_operations proc_bus_pci_dev_operations = {
+	.owner		= THIS_MODULE,
+	.open		= proc_bus_pci_dev_open,
+	.read		= seq_read,
+	.llseek		= seq_lseek,
+	.release	= seq_release,
+};
+
 static int __init pci_proc_init(void)
 {
 	struct pci_dev *dev = NULL;
 	proc_bus_pci_dir = proc_mkdir("bus/pci", NULL);
-	proc_create_seq("devices", 0, proc_bus_pci_dir,
-		    &proc_bus_pci_devices_op);
+	proc_create("devices", 0, proc_bus_pci_dir,
+		    &proc_bus_pci_dev_operations);
 	proc_initialized = 1;
 	for_each_pci_dev(dev)
 		pci_proc_attach_device(dev);

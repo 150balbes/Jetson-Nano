@@ -1,0 +1,164 @@
+/*
+ * tegra186-host1xb.dtsi: Configure host1xb
+ *
+ * Copyright (c) 2017, NVIDIA CORPORATION.  All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; version 2 of the License.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ */
+
+/ {
+
+	host1x {
+		isp@15600000 {
+			status = "disabled";
+		};
+
+		vic@15340000 {
+			status = "disabled";
+		};
+
+		nvenc@154c0000 {
+			status = "disabled";
+		};
+
+		nvdec@15480000 {
+			status = "disabled";
+		};
+
+		nvjpg@15380000 {
+			status = "disabled";
+		};
+
+		tsec@15500000 {
+			status = "disabled";
+		};
+
+		tsecb@15100000 {
+			status = "disabled";
+		};
+	};
+
+	host1xb: host1xb {
+		compatible = "nvidia,tegra186-host1x", "simple-bus";
+		reg = <0x0 0x13e10000 0x0 0x00010000>;
+		interrupts = <0 265 0x04
+			      0 263 0x04>;
+		wakeup_capable;
+		resets = <&tegra_car TEGRA186_RESET_HOST1X>;
+		clocks = <&tegra_car TEGRA186_CLK_HOST1X>,
+			 <&tegra_car TEGRA186_CLK_ACTMON>;
+		clock-names = "host1x", "actmon";
+		status = "okay";
+
+                #address-cells = <2>;
+                #size-cells = <2>;
+
+		iommus = <&smmu TEGRA_SID_HC>,
+			<&smmu TEGRA_SID_HC_VM0>,
+			<&smmu TEGRA_SID_HC_VM1>,
+			<&smmu TEGRA_SID_HC_VM2>,
+			<&smmu TEGRA_SID_HC_VM3>,
+			<&smmu TEGRA_SID_HC_VM4>,
+			<&smmu TEGRA_SID_HC_VM5>,
+			<&smmu TEGRA_SID_HC_VM6>,
+			<&smmu TEGRA_SID_HC_VM7>;
+
+		ranges;
+
+		vmserver-owns-engines = <1>;
+
+		nvidia,vmid = <0>;
+
+		nvidia,ch-base = <63>;
+		nvidia,nb-channels = <0>;
+
+		nvidia,nb-hw-pts = <576>;
+		nvidia,pts-base = <576>;
+		nvidia,nb-pts = <0>;
+
+		isp@15600000 {
+			compatible = "nvidia,tegra186-isp";
+			power-domains = <&bpmp TEGRA186_POWER_DOMAIN_ISPA>;
+			reg = <0x0 0x15600000 0x0 0x00040000>;
+			interrupts = <0 205 0x04>;
+			resets = <&tegra_car TEGRA186_RESET_ISP>;
+			clocks = <&tegra_car TEGRA186_CLK_ISP>;
+			clock-names = "isp";
+			iommus = <&smmu TEGRA_SID_ISP>;
+			status = "okay";
+		};
+
+		vic@15340000 {
+			compatible = "nvidia,tegra186-vhost-vic";
+			power-domains = <&bpmp TEGRA186_POWER_DOMAIN_VIC>;
+			reg = <0x0 0x15340000 0x0 0x00040000>;
+			resets = <&tegra_car TEGRA186_RESET_VIC>;
+			clocks = <&tegra_car TEGRA186_CLK_VIC>;
+			clock-names = "vic";
+			iommus = <&smmu TEGRA_SID_VIC>;
+			status = "okay";
+		};
+
+		nvenc@154c0000 {
+			compatible = "nvidia,tegra186-vhost-nvenc";
+			power-domains = <&bpmp TEGRA186_POWER_DOMAIN_MPE>;
+			reg = <0x0 0x154c0000 0x0 0x00040000>;
+			resets = <&tegra_car TEGRA186_RESET_NVENC>;
+			clocks = <&tegra_car TEGRA186_CLK_NVENC>;
+			clock-names = "nvenc";
+			iommus = <&smmu TEGRA_SID_NVENC>;
+			status = "okay";
+		};
+
+		nvdec@15480000 {
+			compatible = "nvidia,tegra186-vhost-nvdec";
+			power-domains = <&bpmp TEGRA186_POWER_DOMAIN_NVDEC>;
+			reg = <0x0 0x15480000 0x0 0x00040000>;
+			resets = <&tegra_car TEGRA186_RESET_NVDEC>;
+			clocks = <&tegra_car TEGRA186_CLK_NVDEC>,
+				 <&tegra_car TEGRA186_CLK_KFUSE>;
+			clock-names = "nvdec", "kfuse";
+			iommus = <&smmu TEGRA_SID_NVDEC>;
+			status = "okay";
+		};
+
+		nvjpg@15380000 {
+			compatible = "nvidia,tegra186-vhost-nvjpg";
+			power-domains = <&bpmp TEGRA186_POWER_DOMAIN_NVJPG>;
+			reg = <0x0 0x15380000 0x0 0x00040000>;
+			resets = <&tegra_car TEGRA186_RESET_NVJPG>;
+			clocks = <&tegra_car TEGRA186_CLK_NVJPG>;
+			clock-names = "nvjpg";
+			iommus = <&smmu TEGRA_SID_NVJPG>;
+			status = "okay";
+			interrupts = <0 198 0x04>;
+		};
+
+		tsec@15500000 {
+			compatible = "nvidia,tegra186-tsec";
+			reg = <0x0 0x15500000 0x0 0x00040000>;
+			resets = <&tegra_car TEGRA186_RESET_TSEC>;
+			clocks = <&tegra_car TEGRA186_CLK_TSEC>;
+			clock-names = "tsec";
+			iommus = <&smmu TEGRA_SID_TSEC>;
+			status = "okay";
+		};
+
+		tsecb@15100000 {
+			compatible = "nvidia,tegra186-tsec";
+			reg = <0x0 0x15100000 0x0 0x00040000>;
+			resets = <&tegra_car TEGRA186_RESET_TSECB>;
+			clocks = <&tegra_car TEGRA186_CLK_TSECB>;
+			clock-names = "tsecb";
+			iommus = <&smmu TEGRA_SID_TSECB>;
+			status = "okay";
+		};
+	};
+};

@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  *  net/dccp/options.c
  *
@@ -6,6 +5,11 @@
  *  Copyright (c) 2005 Aristeu Sergio Rozanski Filho <aris@cathedrallabs.org>
  *  Copyright (c) 2005 Arnaldo Carvalho de Melo <acme@ghostprotocols.net>
  *  Copyright (c) 2005 Ian McDonald <ian.mcdonald@jandi.co.nz>
+ *
+ *      This program is free software; you can redistribute it and/or
+ *      modify it under the terms of the GNU General Public License
+ *      as published by the Free Software Foundation; either version
+ *      2 of the License, or (at your option) any later version.
  */
 #include <linux/dccp.h>
 #include <linux/module.h>
@@ -223,8 +227,8 @@ int dccp_parse_options(struct sock *sk, struct dccp_request_sock *dreq,
 			 * Ack vectors are processed by the TX CCID if it is
 			 * interested. The RX CCID need not parse Ack Vectors,
 			 * since it is only interested in clearing old state.
+			 * Fall through.
 			 */
-			/* fall through */
 		case DCCPO_MIN_TX_CCID_SPECIFIC ... DCCPO_MAX_TX_CCID_SPECIFIC:
 			if (ccid_hc_tx_parse_options(dp->dccps_hc_tx_ccid, sk,
 						     pkt_type, opt, value, len))
@@ -480,7 +484,7 @@ int dccp_insert_option_mandatory(struct sk_buff *skb)
 		return -1;
 
 	DCCP_SKB_CB(skb)->dccpd_opt_len++;
-	*(u8 *)skb_push(skb, 1) = DCCPO_MANDATORY;
+	*skb_push(skb, 1) = DCCPO_MANDATORY;
 	return 0;
 }
 

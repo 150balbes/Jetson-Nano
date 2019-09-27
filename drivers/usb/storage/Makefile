@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0
 #
 # Makefile for the USB Mass Storage device drivers.
 #
@@ -6,7 +5,7 @@
 # Rewritten to use lists instead of if-statements.
 #
 
-ccflags-y := -I $(srctree)/drivers/scsi
+ccflags-y := -Idrivers/scsi
 
 obj-$(CONFIG_USB_UAS)		+= uas.o
 obj-$(CONFIG_USB_STORAGE)	+= usb-storage.o

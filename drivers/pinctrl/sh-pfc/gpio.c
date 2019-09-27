@@ -1,9 +1,12 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * SuperH Pin Function Controller GPIO driver.
  *
  * Copyright (C) 2008 Magnus Damm
  * Copyright (C) 2009 - 2012 Paul Mundt
+ *
+ * This file is subject to the terms and conditions of the GNU General Public
+ * License.  See the file "COPYING" in the main directory of this archive
+ * for more details.
  */
 
 #include <linux/device.h>
@@ -104,7 +107,7 @@ static int gpio_setup_data_regs(struct sh_pfc_chip *chip)
 	for (i = 0; pfc->info->data_regs[i].reg_width; ++i)
 		;
 
-	chip->regs = devm_kcalloc(pfc->dev, i, sizeof(*chip->regs),
+	chip->regs = devm_kzalloc(pfc->dev, i * sizeof(*chip->regs),
 				  GFP_KERNEL);
 	if (chip->regs == NULL)
 		return -ENOMEM;
@@ -136,12 +139,12 @@ static int gpio_pin_request(struct gpio_chip *gc, unsigned offset)
 	if (idx < 0 || pfc->info->pins[idx].enum_id == 0)
 		return -EINVAL;
 
-	return pinctrl_gpio_request(offset);
+	return pinctrl_request_gpio(offset);
 }
 
 static void gpio_pin_free(struct gpio_chip *gc, unsigned offset)
 {
-	return pinctrl_gpio_free(offset);
+	return pinctrl_free_gpio(offset);
 }
 
 static void gpio_pin_set_value(struct sh_pfc_chip *chip, unsigned offset,
@@ -221,9 +224,8 @@ static int gpio_pin_setup(struct sh_pfc_chip *chip)
 	struct gpio_chip *gc = &chip->gpio_chip;
 	int ret;
 
-	chip->pins = devm_kcalloc(pfc->dev,
-				  pfc->info->nr_pins, sizeof(*chip->pins),
-				  GFP_KERNEL);
+	chip->pins = devm_kzalloc(pfc->dev, pfc->info->nr_pins *
+				  sizeof(*chip->pins), GFP_KERNEL);
 	if (chip->pins == NULL)
 		return -ENOMEM;
 
@@ -252,7 +254,7 @@ static int gpio_pin_setup(struct sh_pfc_chip *chip)
  * Function GPIOs
  */
 
-#ifdef CONFIG_PINCTRL_SH_FUNC_GPIO
+#ifdef CONFIG_SUPERH
 static int gpio_function_request(struct gpio_chip *gc, unsigned offset)
 {
 	static bool __print_once;
@@ -292,7 +294,7 @@ static int gpio_function_setup(struct sh_pfc_chip *chip)
 
 	return 0;
 }
-#endif /* CONFIG_PINCTRL_SH_FUNC_GPIO */
+#endif
 
 /* -----------------------------------------------------------------------------
  * Register/unregister
@@ -369,7 +371,7 @@ int sh_pfc_register_gpiochip(struct sh_pfc *pfc)
 	if (IS_ENABLED(CONFIG_OF) && pfc->dev->of_node)
 		return 0;
 
-#ifdef CONFIG_PINCTRL_SH_FUNC_GPIO
+#ifdef CONFIG_SUPERH
 	/*
 	 * Register the GPIO to pin mappings. As pins with GPIO ports
 	 * must come first in the ranges, skip the pins without GPIO
@@ -397,7 +399,7 @@ int sh_pfc_register_gpiochip(struct sh_pfc *pfc)
 	chip = sh_pfc_add_gpiochip(pfc, gpio_function_setup, NULL);
 	if (IS_ERR(chip))
 		return PTR_ERR(chip);
-#endif /* CONFIG_PINCTRL_SH_FUNC_GPIO */
+#endif /* CONFIG_SUPERH */
 
 	return 0;
 }

@@ -97,8 +97,7 @@ struct dfs_pattern_detector {
 	bool (*set_dfs_domain)(struct dfs_pattern_detector *dpd,
 			   enum nl80211_dfs_regions region);
 	bool (*add_pulse)(struct dfs_pattern_detector *dpd,
-			  struct pulse_event *pe,
-			  struct radar_detector_specs *rs);
+			  struct pulse_event *pe);
 
 	struct ath_dfs_pool_stats (*get_stats)(struct dfs_pattern_detector *dpd);
 	enum nl80211_dfs_regions region;

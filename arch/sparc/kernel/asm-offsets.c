@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * This program is used to generate definitions needed by
  * assembly language modules.
@@ -12,7 +11,6 @@
  */
 
 #include <linux/sched.h>
-#include <linux/mm_types.h>
 // #include <linux/mm.h>
 #include <linux/kbuild.h>
 

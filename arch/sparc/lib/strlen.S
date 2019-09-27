@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /* strlen.S: Sparc optimized strlen code
  * Hand optimized from GNU libc's strlen
  * Copyright (C) 1991,1996 Free Software Foundation

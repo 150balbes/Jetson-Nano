@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Copyright (C) 2010-2013 Bluecherry, LLC <http://www.bluecherrydvr.com>
  *
@@ -7,6 +6,16 @@
  *
  * Additional work by:
  * John Brooks <john.brooks@bluecherry.net>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
  */
 
 #include <linux/kernel.h>
@@ -523,7 +532,7 @@ static void saa712x_write_regs(struct solo_dev *dev, const u8 *vals,
 static void saa712x_setup(struct solo_dev *dev)
 {
 	const int reg_start = 0x26;
-	static const u8 saa7128_regs_ntsc[] = {
+	const u8 saa7128_regs_ntsc[] = {
 	/* :0x26 */
 		0x0d, 0x00,
 	/* :0x28 */
@@ -597,7 +606,6 @@ int solo_tw28_init(struct solo_dev *solo_dev)
 			solo_dev->tw28_cnt++;
 			break;
 		case 0x0c:
-		case 0x0d:
 			solo_dev->tw2864 |= 1 << i;
 			solo_dev->tw28_cnt++;
 			break;

@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: ((GPL-2.0 WITH Linux-syscall-note) OR Linux-OpenIB) */
 /*
  * Copyright (c) 2005 Intel Corporation.  All rights reserved.
  *

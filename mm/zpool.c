@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * zpool memory storage api
  *
@@ -22,7 +21,6 @@ struct zpool {
 	struct zpool_driver *driver;
 	void *pool;
 	const struct zpool_ops *ops;
-	bool evictable;
 
 	struct list_head list;
 };
@@ -102,7 +100,7 @@ static void zpool_put_driver(struct zpool_driver *driver)
 
 /**
  * zpool_has_pool() - Check if the pool driver is available
- * @type:	The type of the zpool to check (e.g. zbud, zsmalloc)
+ * @type	The type of the zpool to check (e.g. zbud, zsmalloc)
  *
  * This checks if the @type pool driver is available.  This will try to load
  * the requested module, if needed, but there is no guarantee the module will
@@ -137,14 +135,14 @@ EXPORT_SYMBOL(zpool_has_pool);
 
 /**
  * zpool_create_pool() - Create a new zpool
- * @type:	The type of the zpool to create (e.g. zbud, zsmalloc)
- * @name:	The name of the zpool (e.g. zram0, zswap)
- * @gfp:	The GFP flags to use when allocating the pool.
- * @ops:	The optional ops callback.
+ * @type	The type of the zpool to create (e.g. zbud, zsmalloc)
+ * @name	The name of the zpool (e.g. zram0, zswap)
+ * @gfp		The GFP flags to use when allocating the pool.
+ * @ops		The optional ops callback.
  *
  * This creates a new zpool of the specified type.  The gfp flags will be
  * used when allocating memory, if the implementation supports it.  If the
- * ops param is NULL, then the created zpool will not be evictable.
+ * ops param is NULL, then the created zpool will not be shrinkable.
  *
  * Implementations must guarantee this to be thread-safe.
  *
@@ -182,7 +180,6 @@ struct zpool *zpool_create_pool(const char *type, const char *name, gfp_t gfp,
 	zpool->driver = driver;
 	zpool->pool = driver->create(name, gfp, ops, zpool);
 	zpool->ops = ops;
-	zpool->evictable = driver->shrink && ops && ops->evict;
 
 	if (!zpool->pool) {
 		pr_err("couldn't create %s pool\n", type);
@@ -202,7 +199,7 @@ struct zpool *zpool_create_pool(const char *type, const char *name, gfp_t gfp,
 
 /**
  * zpool_destroy_pool() - Destroy a zpool
- * @zpool:	The zpool to destroy.
+ * @pool	The zpool to destroy.
  *
  * Implementations must guarantee this to be thread-safe,
  * however only when destroying different pools.  The same
@@ -225,7 +222,7 @@ void zpool_destroy_pool(struct zpool *zpool)
 
 /**
  * zpool_get_type() - Get the type of the zpool
- * @zpool:	The zpool to check
+ * @pool	The zpool to check
  *
  * This returns the type of the pool.
  *
@@ -240,10 +237,10 @@ const char *zpool_get_type(struct zpool *zpool)
 
 /**
  * zpool_malloc() - Allocate memory
- * @zpool:	The zpool to allocate from.
- * @size:	The amount of memory to allocate.
- * @gfp:	The GFP flags to use when allocating memory.
- * @handle:	Pointer to the handle to set
+ * @pool	The zpool to allocate from.
+ * @size	The amount of memory to allocate.
+ * @gfp		The GFP flags to use when allocating memory.
+ * @handle	Pointer to the handle to set
  *
  * This allocates the requested amount of memory from the pool.
  * The gfp flags will be used when allocating memory, if the
@@ -262,8 +259,8 @@ int zpool_malloc(struct zpool *zpool, size_t size, gfp_t gfp,
 
 /**
  * zpool_free() - Free previously allocated memory
- * @zpool:	The zpool that allocated the memory.
- * @handle:	The handle to the memory to free.
+ * @pool	The zpool that allocated the memory.
+ * @handle	The handle to the memory to free.
  *
  * This frees previously allocated memory.  This does not guarantee
  * that the pool will actually free memory, only that the memory
@@ -281,9 +278,9 @@ void zpool_free(struct zpool *zpool, unsigned long handle)
 
 /**
  * zpool_shrink() - Shrink the pool size
- * @zpool:	The zpool to shrink.
- * @pages:	The number of pages to shrink the pool.
- * @reclaimed:	The number of pages successfully evicted.
+ * @pool	The zpool to shrink.
+ * @pages	The number of pages to shrink the pool.
+ * @reclaimed	The number of pages successfully evicted.
  *
  * This attempts to shrink the actual memory size of the pool
  * by evicting currently used handle(s).  If the pool was
@@ -299,17 +296,16 @@ void zpool_free(struct zpool *zpool, unsigned long handle)
 int zpool_shrink(struct zpool *zpool, unsigned int pages,
 			unsigned int *reclaimed)
 {
-	return zpool->driver->shrink ?
-	       zpool->driver->shrink(zpool->pool, pages, reclaimed) : -EINVAL;
+	return zpool->driver->shrink(zpool->pool, pages, reclaimed);
 }
 
 /**
  * zpool_map_handle() - Map a previously allocated handle into memory
- * @zpool:	The zpool that the handle was allocated from
- * @handle:	The handle to map
- * @mapmode:	How the memory should be mapped
+ * @pool	The zpool that the handle was allocated from
+ * @handle	The handle to map
+ * @mm		How the memory should be mapped
  *
- * This maps a previously allocated handle into memory.  The @mapmode
+ * This maps a previously allocated handle into memory.  The @mm
  * param indicates to the implementation how the memory will be
  * used, i.e. read-only, write-only, read-write.  If the
  * implementation does not support it, the memory will be treated
@@ -333,8 +329,8 @@ void *zpool_map_handle(struct zpool *zpool, unsigned long handle,
 
 /**
  * zpool_unmap_handle() - Unmap a previously mapped handle
- * @zpool:	The zpool that the handle was allocated from
- * @handle:	The handle to unmap
+ * @pool	The zpool that the handle was allocated from
+ * @handle	The handle to unmap
  *
  * This unmaps a previously mapped handle.  Any locks or other
  * actions that the implementation took in zpool_map_handle()
@@ -348,7 +344,7 @@ void zpool_unmap_handle(struct zpool *zpool, unsigned long handle)
 
 /**
  * zpool_get_total_size() - The total size of the pool
- * @zpool:	The zpool to check
+ * @pool	The zpool to check
  *
  * This returns the total size in bytes of the pool.
  *
@@ -357,24 +353,6 @@ void zpool_unmap_handle(struct zpool *zpool, unsigned long handle)
 u64 zpool_get_total_size(struct zpool *zpool)
 {
 	return zpool->driver->total_size(zpool->pool);
-}
-
-/**
- * zpool_evictable() - Test if zpool is potentially evictable
- * @zpool:	The zpool to test
- *
- * Zpool is only potentially evictable when it's created with struct
- * zpool_ops.evict and its driver implements struct zpool_driver.shrink.
- *
- * However, it doesn't necessarily mean driver will use zpool_ops.evict
- * in its implementation of zpool_driver.shrink. It could do internal
- * defragmentation instead.
- *
- * Returns: true if potentially evictable; false otherwise.
- */
-bool zpool_evictable(struct zpool *zpool)
-{
-	return zpool->evictable;
 }
 
 MODULE_LICENSE("GPL");

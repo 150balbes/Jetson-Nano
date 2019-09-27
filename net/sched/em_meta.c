@@ -1,6 +1,10 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * net/sched/em_meta.c	Metadata ematch
+ *
+ *		This program is free software; you can redistribute it and/or
+ *		modify it under the terms of the GNU General Public License
+ *		as published by the Free Software Foundation; either version
+ *		2 of the License, or (at your option) any later version.
  *
  * Authors:	Thomas Graf <tgraf@suug.ch>
  *
@@ -59,7 +63,6 @@
 #include <linux/types.h>
 #include <linux/kernel.h>
 #include <linux/sched.h>
-#include <linux/sched/loadavg.h>
 #include <linux/string.h>
 #include <linux/skbuff.h>
 #include <linux/random.h>
@@ -173,12 +176,11 @@ META_COLLECTOR(int_vlan_tag)
 {
 	unsigned short tag;
 
-	if (skb_vlan_tag_present(skb))
-		dst->value = skb_vlan_tag_get(skb);
-	else if (!__vlan_get_tag(skb, &tag))
-		dst->value = tag;
-	else
+	tag = skb_vlan_tag_get(skb);
+	if (!tag && __vlan_get_tag(skb, &tag))
 		*err = -1;
+	else
+		dst->value = tag;
 }
 
 
@@ -336,7 +338,7 @@ META_COLLECTOR(int_sk_refcnt)
 		*err = -1;
 		return;
 	}
-	dst->value = refcount_read(&skb->sk->sk_refcnt);
+	dst->value = atomic_read(&skb->sk->sk_refcnt);
 }
 
 META_COLLECTOR(int_sk_rcvbuf)
@@ -908,8 +910,7 @@ static int em_meta_change(struct net *net, void *data, int len,
 	struct tcf_meta_hdr *hdr;
 	struct meta_match *meta = NULL;
 
-	err = nla_parse_deprecated(tb, TCA_EM_META_MAX, data, len,
-				   meta_policy, NULL);
+	err = nla_parse(tb, TCA_EM_META_MAX, data, len, meta_policy);
 	if (err < 0)
 		goto errout;
 

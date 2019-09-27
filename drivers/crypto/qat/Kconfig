@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0-only
 config CRYPTO_DEV_QAT
 	tristate
 	select CRYPTO_AEAD

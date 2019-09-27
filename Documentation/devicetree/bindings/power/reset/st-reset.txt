@@ -8,4 +8,5 @@ Example node:
 	restart {
 		compatible = "st,stih407-restart";
 		st,syscfg = <&syscfg_sbc_reg>;
+		status = "okay";
 	};

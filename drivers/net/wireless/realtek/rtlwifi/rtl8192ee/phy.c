@@ -1,5 +1,27 @@
-// SPDX-License-Identifier: GPL-2.0
-/* Copyright(c) 2009-2014  Realtek Corporation.*/
+/******************************************************************************
+ *
+ * Copyright(c) 2009-2014  Realtek Corporation.
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of version 2 of the GNU General Public License as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ *
+ * The full GNU General Public License is included in this distribution in the
+ * file called LICENSE.
+ *
+ * Contact Information:
+ * wlanfae <wlanfae@realtek.com>
+ * Realtek Corporation, No. 2, Innovation Road II, Hsinchu Science Park,
+ * Hsinchu 300, Taiwan.
+ *
+ * Larry Finger <Larry.Finger@lwfinger.net>
+ *
+ *****************************************************************************/
 
 #include "../wifi.h"
 #include "../pci.h"
@@ -148,7 +170,7 @@ static u32 _rtl92ee_phy_rf_serial_read(struct ieee80211_hw *hw,
 	offset &= 0xff;
 	newoffset = offset;
 	if (RT_CANNOT_IO(hw)) {
-		pr_err("return all one\n");
+		RT_TRACE(rtlpriv, COMP_ERR, DBG_EMERG, "return all one\n");
 		return 0xFFFFFFFF;
 	}
 	tmplong = rtl_get_bbreg(hw, RFPGA0_XA_HSSIPARAMETER2, MASKDWORD);
@@ -192,7 +214,7 @@ static void _rtl92ee_phy_rf_serial_write(struct ieee80211_hw *hw,
 	struct bb_reg_def *pphyreg = &rtlphy->phyreg_def[rfpath];
 
 	if (RT_CANNOT_IO(hw)) {
-		pr_err("stop\n");
+		RT_TRACE(rtlpriv, COMP_ERR, DBG_EMERG, "stop\n");
 		return;
 	}
 	offset &= 0xff;
@@ -628,7 +650,7 @@ static bool _rtl92ee_phy_bb8192ee_config_parafile(struct ieee80211_hw *hw)
 
 	rtstatus = phy_config_bb_with_hdr_file(hw, BASEBAND_CONFIG_PHY_REG);
 	if (!rtstatus) {
-		pr_err("Write BB Reg Fail!!\n");
+		RT_TRACE(rtlpriv, COMP_ERR, DBG_EMERG, "Write BB Reg Fail!!\n");
 		return false;
 	}
 
@@ -640,12 +662,12 @@ static bool _rtl92ee_phy_bb8192ee_config_parafile(struct ieee80211_hw *hw)
 	}
 	_rtl92ee_phy_txpower_by_rate_configuration(hw);
 	if (!rtstatus) {
-		pr_err("BB_PG Reg Fail!!\n");
+		RT_TRACE(rtlpriv, COMP_ERR, DBG_EMERG, "BB_PG Reg Fail!!\n");
 		return false;
 	}
 	rtstatus = phy_config_bb_with_hdr_file(hw, BASEBAND_CONFIG_AGC_TAB);
 	if (!rtstatus) {
-		pr_err("AGC Table Fail\n");
+		RT_TRACE(rtlpriv, COMP_ERR, DBG_EMERG, "AGC Table Fail\n");
 		return false;
 	}
 	rtlphy->cck_high_power = (bool)(rtl_get_bbreg(hw,
@@ -1154,7 +1176,7 @@ static u8 _rtl92ee_phy_get_ratesection_intxpower_byrate(enum radio_path path,
 		rate_section = 7;
 		break;
 	default:
-		WARN_ONCE(true, "rtl8192ee: Rate_Section is Illegal\n");
+		RT_ASSERT(true, "Rate_Section is Illegal\n");
 		break;
 	}
 	return rate_section;
@@ -1217,7 +1239,7 @@ static u8 _rtl92ee_get_txpower_by_rate(struct ieee80211_hw *hw,
 		shift = 24;
 		break;
 	default:
-		WARN_ONCE(true, "rtl8192ee: Rate_Section is Illegal\n");
+		RT_ASSERT(true, "Rate_Section is Illegal\n");
 		break;
 	}
 
@@ -1653,7 +1675,8 @@ void rtl92ee_phy_scan_operation_backup(struct ieee80211_hw *hw, u8 operation)
 						      (u8 *)&iotype);
 			break;
 		default:
-			pr_err("Unknown Scan Backup operation.\n");
+			RT_TRACE(rtlpriv, COMP_ERR, DBG_EMERG,
+				 "Unknown Scan Backup operation.\n");
 			break;
 		}
 	}
@@ -1694,8 +1717,8 @@ void rtl92ee_phy_set_bw_mode_callback(struct ieee80211_hw *hw)
 		rtl_write_byte(rtlpriv, REG_RRSR + 2, reg_prsr_rsc);
 		break;
 	default:
-		pr_err("unknown bandwidth: %#X\n",
-		       rtlphy->current_chan_bw);
+		RT_TRACE(rtlpriv, COMP_ERR, DBG_EMERG,
+			 "unknown bandwidth: %#X\n", rtlphy->current_chan_bw);
 		break;
 	}
 
@@ -1719,8 +1742,8 @@ void rtl92ee_phy_set_bw_mode_callback(struct ieee80211_hw *hw)
 			       HAL_PRIME_CHNL_OFFSET_LOWER) ? 2 : 1);
 		break;
 	default:
-		pr_err("unknown bandwidth: %#X\n",
-		       rtlphy->current_chan_bw);
+		RT_TRACE(rtlpriv, COMP_ERR, DBG_EMERG,
+			 "unknown bandwidth: %#X\n", rtlphy->current_chan_bw);
 		break;
 	}
 	rtl92ee_phy_rf6052_set_bandwidth(hw, rtlphy->current_chan_bw);
@@ -1788,8 +1811,8 @@ u8 rtl92ee_phy_sw_chnl(struct ieee80211_hw *hw)
 		return 0;
 	if (rtlphy->set_bwmode_inprogress)
 		return 0;
-	WARN_ONCE((rtlphy->current_channel > 14),
-		  "rtl8192ee: WIRELESS_MODE_G but channel>14");
+	RT_ASSERT((rtlphy->current_channel <= 14),
+		  "WIRELESS_MODE_G but channel>14");
 	rtlphy->sw_chnl_inprogress = true;
 	rtlphy->sw_chnl_stage = 0;
 	rtlphy->sw_chnl_step = 0;
@@ -1837,8 +1860,8 @@ static bool _rtl92ee_phy_sw_chnl_step_by_step(struct ieee80211_hw *hw,
 
 	rfdependcmdcnt = 0;
 
-	WARN_ONCE((channel < 1 || channel > 14),
-		  "rtl8192ee: illegal channel for Zebra: %d\n", channel);
+	RT_ASSERT((channel >= 1 && channel <= 14),
+		  "illegal channel for Zebra: %d\n", channel);
 
 	_rtl92ee_phy_set_sw_chnl_cmdarray(rfdependcmd, rfdependcmdcnt++,
 					  MAX_RFDEPENDCMD_CNT,
@@ -1861,8 +1884,8 @@ static bool _rtl92ee_phy_sw_chnl_step_by_step(struct ieee80211_hw *hw,
 			currentcmd = &postcommoncmd[*step];
 			break;
 		default:
-			pr_err("Invalid 'stage' = %d, Check it!\n",
-			       *stage);
+			RT_TRACE(rtlpriv, COMP_ERR, DBG_EMERG,
+				 "Invalid 'stage' = %d, Check it!\n" , *stage);
 			return true;
 		}
 
@@ -1925,7 +1948,7 @@ static bool _rtl92ee_phy_set_sw_chnl_cmdarray(struct swchnlcmd *cmdtable,
 	struct swchnlcmd *pcmd;
 
 	if (cmdtable == NULL) {
-		WARN_ONCE(true, "rtl8192ee: cmdtable cannot be NULL.\n");
+		RT_ASSERT(false, "cmdtable cannot be NULL.\n");
 		return false;
 	}
 

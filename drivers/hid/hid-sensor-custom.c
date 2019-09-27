@@ -1,7 +1,15 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * hid-sensor-custom.c
  * Copyright (c) 2015, Intel Corporation.
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms and conditions of the GNU General Public License,
+ * version 2, as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
  */
 
 #include <linux/kernel.h>
@@ -149,7 +157,8 @@ static int usage_id_cmp(const void *p1, const void *p2)
 static ssize_t enable_sensor_show(struct device *dev,
 				  struct device_attribute *attr, char *buf)
 {
-	struct hid_sensor_custom *sensor_inst = dev_get_drvdata(dev);
+	struct platform_device *pdev = to_platform_device(dev);
+	struct hid_sensor_custom *sensor_inst = platform_get_drvdata(pdev);
 
 	return sprintf(buf, "%d\n", sensor_inst->enable);
 }
@@ -228,7 +237,8 @@ static ssize_t enable_sensor_store(struct device *dev,
 				   struct device_attribute *attr,
 				   const char *buf, size_t count)
 {
-	struct hid_sensor_custom *sensor_inst = dev_get_drvdata(dev);
+	struct platform_device *pdev = to_platform_device(dev);
+	struct hid_sensor_custom *sensor_inst = platform_get_drvdata(pdev);
 	int value;
 	int ret = -EINVAL;
 
@@ -266,14 +276,15 @@ static struct attribute *enable_sensor_attrs[] = {
 	NULL,
 };
 
-static const struct attribute_group enable_sensor_attr_group = {
+static struct attribute_group enable_sensor_attr_group = {
 	.attrs = enable_sensor_attrs,
 };
 
 static ssize_t show_value(struct device *dev, struct device_attribute *attr,
 			  char *buf)
 {
-	struct hid_sensor_custom *sensor_inst = dev_get_drvdata(dev);
+	struct platform_device *pdev = to_platform_device(dev);
+	struct hid_sensor_custom *sensor_inst = platform_get_drvdata(pdev);
 	struct hid_sensor_hub_attribute_info *attribute;
 	int index, usage, field_index;
 	char name[HID_CUSTOM_NAME_LENGTH];
@@ -347,7 +358,7 @@ static ssize_t show_value(struct device *dev, struct device_attribute *attr,
 						sensor_inst->hsdev,
 						sensor_inst->hsdev->usage,
 						usage, report_id,
-						SENSOR_HUB_SYNC, false);
+						SENSOR_HUB_SYNC);
 	} else if (!strncmp(name, "units", strlen("units")))
 		value = sensor_inst->fields[field_index].attribute.units;
 	else if (!strncmp(name, "unit-expo", strlen("unit-expo")))
@@ -381,7 +392,8 @@ static ssize_t show_value(struct device *dev, struct device_attribute *attr,
 static ssize_t store_value(struct device *dev, struct device_attribute *attr,
 			   const char *buf, size_t count)
 {
-	struct hid_sensor_custom *sensor_inst = dev_get_drvdata(dev);
+	struct platform_device *pdev = to_platform_device(dev);
+	struct hid_sensor_custom *sensor_inst = platform_get_drvdata(pdev);
 	int index, field_index, usage;
 	char name[HID_CUSTOM_NAME_LENGTH];
 	int value;
@@ -687,14 +699,14 @@ static int hid_sensor_custom_open(struct inode *inode, struct file *file)
 	if (test_and_set_bit(0, &sensor_inst->misc_opened))
 		return -EBUSY;
 
-	return stream_open(inode, file);
+	return nonseekable_open(inode, file);
 }
 
-static __poll_t hid_sensor_custom_poll(struct file *file,
+static unsigned int hid_sensor_custom_poll(struct file *file,
 					   struct poll_table_struct *wait)
 {
 	struct hid_sensor_custom *sensor_inst;
-	__poll_t mask = 0;
+	unsigned int mask = 0;
 
 	sensor_inst = container_of(file->private_data,
 				   struct hid_sensor_custom, custom_dev);
@@ -702,7 +714,7 @@ static __poll_t hid_sensor_custom_poll(struct file *file,
 	poll_wait(file, &sensor_inst->wait, wait);
 
 	if (!kfifo_is_empty(&sensor_inst->data_fifo))
-		mask = EPOLLIN | EPOLLRDNORM;
+		mask = POLLIN | POLLRDNORM;
 
 	return mask;
 }
@@ -811,7 +823,7 @@ static int hid_sensor_custom_remove(struct platform_device *pdev)
 	return 0;
 }
 
-static const struct platform_device_id hid_sensor_custom_ids[] = {
+static struct platform_device_id hid_sensor_custom_ids[] = {
 	{
 		.name = "HID-SENSOR-2000e1",
 	},

@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * NetLabel System
  *
@@ -6,10 +5,25 @@
  * protocols such as CIPSO and RIPSO.
  *
  * Author: Paul Moore <paul@paul-moore.com>
+ *
  */
 
 /*
  * (c) Copyright Hewlett-Packard Development Company, L.P., 2006, 2008
+ *
+ * This program is free software;  you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY;  without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See
+ * the GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program;  if not, see <http://www.gnu.org/licenses/>.
+ *
  */
 
 #ifndef _NETLABEL_H
@@ -23,7 +37,7 @@
 #include <linux/in6.h>
 #include <net/netlink.h>
 #include <net/request_sock.h>
-#include <linux/refcount.h>
+#include <linux/atomic.h>
 
 struct cipso_v4_doi;
 struct calipso_doi;
@@ -122,7 +136,7 @@ struct netlbl_audit {
  *
  */
 struct netlbl_lsm_cache {
-	refcount_t refcount;
+	atomic_t refcount;
 	void (*free) (const void *data);
 	void *data;
 };
@@ -281,7 +295,7 @@ static inline struct netlbl_lsm_cache *netlbl_secattr_cache_alloc(gfp_t flags)
 
 	cache = kzalloc(sizeof(*cache), flags);
 	if (cache)
-		refcount_set(&cache->refcount, 1);
+		atomic_set(&cache->refcount, 1);
 	return cache;
 }
 
@@ -295,7 +309,7 @@ static inline struct netlbl_lsm_cache *netlbl_secattr_cache_alloc(gfp_t flags)
  */
 static inline void netlbl_secattr_cache_free(struct netlbl_lsm_cache *cache)
 {
-	if (!refcount_dec_and_test(&cache->refcount))
+	if (!atomic_dec_and_test(&cache->refcount))
 		return;
 
 	if (cache->free)

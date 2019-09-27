@@ -129,6 +129,10 @@ static int mlx4_reset_slave(struct mlx4_dev *dev)
 	comm_flags = rst_req << COM_CHAN_RST_REQ_OFFSET;
 	__raw_writel((__force u32)cpu_to_be32(comm_flags),
 		     (__iomem char *)priv->mfunc.comm + MLX4_COMM_CHAN_FLAGS);
+	/* Make sure that our comm channel write doesn't
+	 * get mixed in with writes from another CPU.
+	 */
+	mmiowb();
 
 	end = msecs_to_jiffies(MLX4_COMM_TIME) + jiffies;
 	while (time_before(jiffies, end)) {
@@ -174,12 +178,10 @@ void mlx4_enter_error_state(struct mlx4_dev_persistent *persist)
 
 	dev = persist->dev;
 	mlx4_err(dev, "device is going to be reset\n");
-	if (mlx4_is_slave(dev)) {
+	if (mlx4_is_slave(dev))
 		err = mlx4_reset_slave(dev);
-	} else {
-		mlx4_crdump_collect(dev);
+	else
 		err = mlx4_reset_master(dev);
-	}
 
 	if (!err) {
 		mlx4_err(dev, "device was reset successfully\n");
@@ -210,7 +212,7 @@ static void mlx4_handle_error_state(struct mlx4_dev_persistent *persist)
 	mutex_lock(&persist->interface_state_mutex);
 	if (persist->interface_state & MLX4_INTERFACE_STATE_UP &&
 	    !(persist->interface_state & MLX4_INTERFACE_STATE_DELETION)) {
-		err = mlx4_restart_one(persist->pdev, false, NULL);
+		err = mlx4_restart_one(persist->pdev);
 		mlx4_info(persist->dev, "mlx4_restart_one was ended, ret=%d\n",
 			  err);
 	}
@@ -229,10 +231,10 @@ static void dump_err_buf(struct mlx4_dev *dev)
 			 i, swab32(readl(priv->catas_err.map + i)));
 }
 
-static void poll_catas(struct timer_list *t)
+static void poll_catas(unsigned long dev_ptr)
 {
-	struct mlx4_priv *priv = from_timer(priv, t, catas_err.timer);
-	struct mlx4_dev *dev = &priv->dev;
+	struct mlx4_dev *dev = (struct mlx4_dev *) dev_ptr;
+	struct mlx4_priv *priv = mlx4_priv(dev);
 	u32 slave_read;
 
 	if (mlx4_is_slave(dev)) {
@@ -275,7 +277,7 @@ void mlx4_start_catas_poll(struct mlx4_dev *dev)
 	phys_addr_t addr;
 
 	INIT_LIST_HEAD(&priv->catas_err.list);
-	timer_setup(&priv->catas_err.timer, poll_catas, 0);
+	init_timer(&priv->catas_err.timer);
 	priv->catas_err.map = NULL;
 
 	if (!mlx4_is_slave(dev)) {
@@ -291,6 +293,8 @@ void mlx4_start_catas_poll(struct mlx4_dev *dev)
 		}
 	}
 
+	priv->catas_err.timer.data     = (unsigned long) dev;
+	priv->catas_err.timer.function = poll_catas;
 	priv->catas_err.timer.expires  =
 		round_jiffies(jiffies + MLX4_CATAS_POLL_INTERVAL);
 	add_timer(&priv->catas_err.timer);

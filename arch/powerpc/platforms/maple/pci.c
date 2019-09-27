@@ -1,7 +1,11 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Copyright (C) 2004 Benjamin Herrenschmuidt (benh@kernel.crashing.org),
  *		      IBM Corp.
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License
+ * as published by the Free Software Foundation; either version
+ * 2 of the License, or (at your option) any later version.
  */
 
 #undef DEBUG
@@ -20,7 +24,6 @@
 #include <asm/machdep.h>
 #include <asm/iommu.h>
 #include <asm/ppc-pci.h>
-#include <asm/isa-bridge.h>
 
 #include "maple.h"
 
@@ -69,8 +72,8 @@ static void __init fixup_bus_range(struct device_node *bridge)
 	/* Lookup the "bus-range" property for the hose */
 	prop = of_find_property(bridge, "bus-range", &len);
 	if (prop == NULL  || prop->value == NULL || len < 2 * sizeof(int)) {
-		printk(KERN_WARNING "Can't get bus-range for %pOF\n",
-			       bridge);
+		printk(KERN_WARNING "Can't get bus-range for %s\n",
+			       bridge->full_name);
 		return;
 	}
 	bus_range = prop->value;
@@ -494,12 +497,12 @@ static int __init maple_add_bridge(struct device_node *dev)
 	const int *bus_range;
 	int primary = 1;
 
-	DBG("Adding PCI host bridge %pOF\n", dev);
+	DBG("Adding PCI host bridge %s\n", dev->full_name);
 
 	bus_range = of_get_property(dev, "bus-range", &len);
 	if (bus_range == NULL || len < 2 * sizeof(int)) {
-		printk(KERN_WARNING "Can't get bus-range for %pOF, assume bus 0\n",
-		dev);
+		printk(KERN_WARNING "Can't get bus-range for %s, assume bus 0\n",
+		dev->full_name);
 	}
 
 	hose = pcibios_alloc_controller(dev);
@@ -600,8 +603,10 @@ void __init maple_pci_init(void)
 		printk(KERN_CRIT "maple_find_bridges: can't find root of device tree\n");
 		return;
 	}
-	for_each_child_of_node(root, np) {
-		if (!of_node_is_type(np, "pci") && !of_node_is_type(np, "ht"))
+	for (np = NULL; (np = of_get_next_child(root, np)) != NULL;) {
+		if (!np->type)
+			continue;
+		if (strcmp(np->type, "pci") && strcmp(np->type, "ht"))
 			continue;
 		if ((of_device_is_compatible(np, "u4-pcie") ||
 		     of_device_is_compatible(np, "u3-agp")) &&

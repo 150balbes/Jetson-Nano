@@ -1,6 +1,19 @@
-// SPDX-License-Identifier: GPL-2.0+
 /*
  * (C) Copyright David Brownell 2000-2002
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License as published by the
+ * Free Software Foundation; either version 2 of the License, or (at your
+ * option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
+ * or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+ * for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software Foundation,
+ * Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  */
 
 #include <linux/kernel.h>
@@ -216,18 +229,17 @@ int usb_hcd_pci_probe(struct pci_dev *dev, const struct pci_device_id *id)
 		/* EHCI, OHCI */
 		hcd->rsrc_start = pci_resource_start(dev, 0);
 		hcd->rsrc_len = pci_resource_len(dev, 0);
-		if (!devm_request_mem_region(&dev->dev, hcd->rsrc_start,
-				hcd->rsrc_len, driver->description)) {
+		if (!request_mem_region(hcd->rsrc_start, hcd->rsrc_len,
+				driver->description)) {
 			dev_dbg(&dev->dev, "controller already in use\n");
 			retval = -EBUSY;
 			goto put_hcd;
 		}
-		hcd->regs = devm_ioremap_nocache(&dev->dev, hcd->rsrc_start,
-				hcd->rsrc_len);
+		hcd->regs = ioremap_nocache(hcd->rsrc_start, hcd->rsrc_len);
 		if (hcd->regs == NULL) {
 			dev_dbg(&dev->dev, "error mapping memory\n");
 			retval = -EFAULT;
-			goto put_hcd;
+			goto release_mem_region;
 		}
 
 	} else {
@@ -241,8 +253,8 @@ int usb_hcd_pci_probe(struct pci_dev *dev, const struct pci_device_id *id)
 
 			hcd->rsrc_start = pci_resource_start(dev, region);
 			hcd->rsrc_len = pci_resource_len(dev, region);
-			if (devm_request_region(&dev->dev, hcd->rsrc_start,
-					hcd->rsrc_len, driver->description))
+			if (request_region(hcd->rsrc_start, hcd->rsrc_len,
+					driver->description))
 				break;
 		}
 		if (region == PCI_ROM_RESOURCE) {
@@ -259,6 +271,14 @@ int usb_hcd_pci_probe(struct pci_dev *dev, const struct pci_device_id *id)
 		down_write(&companions_rwsem);
 		dev_set_drvdata(&dev->dev, hcd);
 		for_each_companion(dev, hcd, ehci_pre_add);
+		if ((dev->vendor == PCI_VENDOR_ID_NETMOS) &&
+		    (dev->device == PCI_DEVICE_ID_NETMOS_9990)) {
+			retval = pci_enable_msi(dev);
+			if (retval)
+				dev_err(&dev->dev, "MSI enable failed:%s, %d\n",
+					pci_name(dev), retval);
+		}
+		hcd_irq = dev->irq;
 		retval = usb_add_hcd(hcd, hcd_irq, IRQF_SHARED);
 		if (retval != 0)
 			dev_set_drvdata(&dev->dev, NULL);
@@ -267,6 +287,14 @@ int usb_hcd_pci_probe(struct pci_dev *dev, const struct pci_device_id *id)
 	} else {
 		down_read(&companions_rwsem);
 		dev_set_drvdata(&dev->dev, hcd);
+		if ((dev->vendor == PCI_VENDOR_ID_NETMOS) &&
+		    (dev->device == PCI_DEVICE_ID_NETMOS_9990)) {
+			retval = pci_enable_msi(dev);
+			if (retval)
+				dev_err(&dev->dev, "MSI enable failed:%s, %d\n",
+					pci_name(dev), retval);
+		}
+		hcd_irq = dev->irq;
 		retval = usb_add_hcd(hcd, hcd_irq, IRQF_SHARED);
 		if (retval != 0)
 			dev_set_drvdata(&dev->dev, NULL);
@@ -276,13 +304,20 @@ int usb_hcd_pci_probe(struct pci_dev *dev, const struct pci_device_id *id)
 	}
 
 	if (retval != 0)
-		goto put_hcd;
+		goto unmap_registers;
 	device_wakeup_enable(hcd->self.controller);
 
 	if (pci_dev_run_wake(dev))
 		pm_runtime_put_noidle(&dev->dev);
 	return retval;
 
+unmap_registers:
+	if (driver->flags & HCD_MEMORY) {
+		iounmap(hcd->regs);
+release_mem_region:
+		release_mem_region(hcd->rsrc_start, hcd->rsrc_len);
+	} else
+		release_region(hcd->rsrc_start, hcd->rsrc_len);
 put_hcd:
 	usb_put_hcd(hcd);
 disable_pci:
@@ -341,6 +376,14 @@ void usb_hcd_pci_remove(struct pci_dev *dev)
 		dev_set_drvdata(&dev->dev, NULL);
 		up_read(&companions_rwsem);
 	}
+
+	if (hcd->driver->flags & HCD_MEMORY) {
+		iounmap(hcd->regs);
+		release_mem_region(hcd->rsrc_start, hcd->rsrc_len);
+	} else {
+		release_region(hcd->rsrc_start, hcd->rsrc_len);
+	}
+
 	usb_put_hcd(hcd);
 	pci_disable_device(dev);
 }
@@ -555,7 +598,12 @@ static int hcd_pci_suspend_noirq(struct device *dev)
 
 static int hcd_pci_resume_noirq(struct device *dev)
 {
-	powermac_set_asic(to_pci_dev(dev), 1);
+	struct pci_dev		*pci_dev = to_pci_dev(dev);
+
+	powermac_set_asic(pci_dev, 1);
+
+	/* Go back to D0 and disable remote wakeup */
+	pci_back_from_sleep(pci_dev);
 	return 0;
 }
 

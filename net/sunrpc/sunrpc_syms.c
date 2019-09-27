@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * linux/net/sunrpc/sunrpc_syms.c
  *
@@ -25,7 +24,7 @@
 
 #include "netns.h"
 
-unsigned int sunrpc_net_id;
+int sunrpc_net_id;
 EXPORT_SYMBOL_GPL(sunrpc_net_id);
 
 static __net_init int sunrpc_init_net(struct net *net)
@@ -66,13 +65,10 @@ err_proc:
 
 static __net_exit void sunrpc_exit_net(struct net *net)
 {
-	struct sunrpc_net *sn = net_generic(net, sunrpc_net_id);
-
 	rpc_pipefs_exit_net(net);
 	unix_gid_cache_destroy(net);
 	ip_map_cache_destroy(net);
 	rpc_proc_exit(net);
-	WARN_ON_ONCE(!list_empty(&sn->all_clients));
 }
 
 static struct pernet_operations sunrpc_net_ops = {

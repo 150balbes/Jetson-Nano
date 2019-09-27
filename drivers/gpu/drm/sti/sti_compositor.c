@@ -1,20 +1,17 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * Copyright (C) STMicroelectronics SA 2014
  * Authors: Benjamin Gaignard <benjamin.gaignard@st.com>
  *          Fabien Dessenne <fabien.dessenne@st.com>
  *          for STMicroelectronics.
+ * License terms:  GNU General Public License (GPL), version 2
  */
 
 #include <linux/component.h>
-#include <linux/io.h>
 #include <linux/module.h>
 #include <linux/platform_device.h>
 #include <linux/reset.h>
 
-#include <drm/drm_device.h>
-#include <drm/drm_print.h>
-#include <drm/drm_vblank.h>
+#include <drm/drmP.h>
 
 #include "sti_compositor.h"
 #include "sti_crtc.h"
@@ -92,7 +89,7 @@ static int sti_compositor_bind(struct device *dev,
 			/* Nothing to do, wait for the second round */
 			break;
 		default:
-			DRM_ERROR("Unknown subdev component type\n");
+			DRM_ERROR("Unknow subdev compoment type\n");
 			return 1;
 		}
 	}
@@ -132,7 +129,7 @@ static int sti_compositor_bind(struct device *dev,
 			}
 			break;
 		default:
-			DRM_ERROR("Unknown subdev component type\n");
+			DRM_ERROR("Unknown subdev compoment type\n");
 			return 1;
 		}
 

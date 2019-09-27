@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  *  htc-i2cpld.c
  *  Chip driver for an unknown CPLD chip found on omap850 HTC devices like
@@ -10,10 +9,25 @@
  *
  *  Based on work done in the linwizard project
  *  Copyright (C) 2008-2009 Angelo Arrifano <miknix@gmail.com>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  */
 
 #include <linux/kernel.h>
 #include <linux/init.h>
+#include <linux/module.h>
 #include <linux/interrupt.h>
 #include <linux/platform_device.h>
 #include <linux/i2c.h>
@@ -463,12 +477,12 @@ static int htcpld_setup_chips(struct platform_device *pdev)
 
 	/* Setup each chip's output GPIOs */
 	htcpld->nchips = pdata->num_chip;
-	htcpld->chip = devm_kcalloc(dev,
-				    htcpld->nchips,
-				    sizeof(struct htcpld_chip),
+	htcpld->chip = devm_kzalloc(dev, sizeof(struct htcpld_chip) * htcpld->nchips,
 				    GFP_KERNEL);
-	if (!htcpld->chip)
+	if (!htcpld->chip) {
+		dev_warn(dev, "Unable to allocate memory for chips\n");
 		return -ENOMEM;
+	}
 
 	/* Add the chips as best we can */
 	for (i = 0; i < htcpld->nchips; i++) {
@@ -600,6 +614,8 @@ static const struct i2c_device_id htcpld_chip_id[] = {
 	{ "htcpld-chip", 0 },
 	{ }
 };
+MODULE_DEVICE_TABLE(i2c, htcpld_chip_id);
+
 
 static struct i2c_driver htcpld_chip_driver = {
 	.driver = {
@@ -627,4 +643,17 @@ static int __init htcpld_core_init(void)
 	/* Probe for our chips */
 	return platform_driver_probe(&htcpld_core_driver, htcpld_core_probe);
 }
-device_initcall(htcpld_core_init);
+
+static void __exit htcpld_core_exit(void)
+{
+	i2c_del_driver(&htcpld_chip_driver);
+	platform_driver_unregister(&htcpld_core_driver);
+}
+
+module_init(htcpld_core_init);
+module_exit(htcpld_core_exit);
+
+MODULE_AUTHOR("Cory Maccarrone <darkstar6262@gmail.com>");
+MODULE_DESCRIPTION("I2C HTC PLD Driver");
+MODULE_LICENSE("GPL");
+

@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * Kernel execution entry point code.
  *
@@ -24,6 +23,11 @@
  *	PowerPC 44x support, Matt Porter <mporter@kernel.crashing.org>
  *    Copyright 2004 Freescale Semiconductor, Inc
  *	PowerPC e500 modifications, Kumar Gala <galak@kernel.crashing.org>
+ *
+ * This program is free software; you can redistribute  it and/or modify it
+ * under  the terms of  the GNU General  Public License as published by the
+ * Free Software Foundation;  either version 2 of the  License, or (at your
+ * option) any later version.
  */
 
 #include <linux/init.h>
@@ -39,7 +43,6 @@
 #include <asm/cache.h>
 #include <asm/ptrace.h>
 #include <asm/export.h>
-#include <asm/feature-fixups.h>
 #include "head_booke.h"
 
 /* As with the other PowerPC ports, it is expected that when code
@@ -190,6 +193,13 @@ set_ivor:
 #endif
 	mtspr	SPRN_MAS4, r2
 
+#if 0
+	/* Enable DOZE */
+	mfspr	r2,SPRN_HID0
+	oris	r2,r2,HID0_DOZE@h
+	mtspr	SPRN_HID0, r2
+#endif
+
 #if !defined(CONFIG_BDI_SWITCH)
 	/*
 	 * The Abatron BDI JTAG debugger does not tolerate others
@@ -232,9 +242,8 @@ set_ivor:
 	li	r0,0
 	stwu	r0,THREAD_SIZE-STACK_FRAME_OVERHEAD(r1)
 
-#ifdef CONFIG_SMP
-	stw	r24, TASK_CPU(r2)
-#endif
+	CURRENT_THREAD_INFO(r22, r1)
+	stw	r24, TI_CPU(r22)
 
 	bl	early_init
 
@@ -264,9 +273,6 @@ set_ivor:
 /*
  * Decide what sort of machine this is and initialize the MMU.
  */
-#ifdef CONFIG_KASAN
-	bl	kasan_early_init
-#endif
 	mr	r3,r30
 	mr	r4,r31
 	bl	machine_init
@@ -379,7 +385,7 @@ interrupt_base:
 	EXC_XFER_LITE(0x0300, handle_page_fault)
 1:
 	addi	r3,r1,STACK_FRAME_OVERHEAD
-	EXC_XFER_LITE(0x0300, CacheLockingException)
+	EXC_XFER_EE_LITE(0x0300, CacheLockingException)
 
 	/* Instruction Storage Interrupt */
 	INSTRUCTION_STORAGE_EXCEPTION
@@ -400,20 +406,21 @@ interrupt_base:
 #ifdef CONFIG_E200
 	/* E200 treats 'normal' floating point instructions as FP Unavail exception */
 	EXCEPTION(0x0800, FP_UNAVAIL, FloatingPointUnavailable, \
-		  program_check_exception, EXC_XFER_STD)
+		  program_check_exception, EXC_XFER_EE)
 #else
 	EXCEPTION(0x0800, FP_UNAVAIL, FloatingPointUnavailable, \
-		  unknown_exception, EXC_XFER_STD)
+		  unknown_exception, EXC_XFER_EE)
 #endif
 #endif
 
 	/* System Call Interrupt */
 	START_EXCEPTION(SystemCall)
-	SYSCALL_ENTRY   0xc00 BOOKE_INTERRUPT_SYSCALL SPRN_SRR1
+	NORMAL_EXCEPTION_PROLOG(SYSCALL)
+	EXC_XFER_EE_LITE(0x0c00, DoSyscall)
 
 	/* Auxiliary Processor Unavailable Interrupt */
 	EXCEPTION(0x2900, AP_UNAVAIL, AuxillaryProcessorUnavailable, \
-		  unknown_exception, EXC_XFER_STD)
+		  unknown_exception, EXC_XFER_EE)
 
 	/* Decrementer Interrupt */
 	DECREMENTER_EXCEPTION
@@ -421,7 +428,7 @@ interrupt_base:
 	/* Fixed Internal Timer Interrupt */
 	/* TODO: Add FIT support */
 	EXCEPTION(0x3100, FIT, FixedIntervalTimer, \
-		  unknown_exception, EXC_XFER_STD)
+		  unknown_exception, EXC_XFER_EE)
 
 	/* Watchdog Timer Interrupt */
 #ifdef CONFIG_BOOKE_WDT
@@ -445,13 +452,6 @@ END_FTR_SECTION_IFSET(CPU_FTR_EMB_HV)
 	mfcr	r13
 	stw	r13, THREAD_NORMSAVE(3)(r10)
 	DO_KVM	BOOKE_INTERRUPT_DTLB_MISS SPRN_SRR1
-START_BTB_FLUSH_SECTION
-	mfspr r11, SPRN_SRR1
-	andi. r10,r11,MSR_PR
-	beq 1f
-	BTB_FLUSH(r10)
-1:
-END_BTB_FLUSH_SECTION
 	mfspr	r10, SPRN_DEAR		/* Get faulting address */
 
 	/* If we are faulting a kernel address, we have to use the
@@ -546,14 +546,6 @@ END_FTR_SECTION_IFSET(CPU_FTR_EMB_HV)
 	mfcr	r13
 	stw	r13, THREAD_NORMSAVE(3)(r10)
 	DO_KVM	BOOKE_INTERRUPT_ITLB_MISS SPRN_SRR1
-START_BTB_FLUSH_SECTION
-	mfspr r11, SPRN_SRR1
-	andi. r10,r11,MSR_PR
-	beq 1f
-	BTB_FLUSH(r10)
-1:
-END_BTB_FLUSH_SECTION
-
 	mfspr	r10, SPRN_SRR0		/* Get faulting address */
 
 	/* If we are faulting a kernel address, we have to use the
@@ -631,25 +623,25 @@ END_BTB_FLUSH_SECTION
 	bl	load_up_spe
 	b	fast_exception_return
 1:	addi	r3,r1,STACK_FRAME_OVERHEAD
-	EXC_XFER_LITE(0x2010, KernelSPE)
+	EXC_XFER_EE_LITE(0x2010, KernelSPE)
 #elif defined(CONFIG_SPE_POSSIBLE)
 	EXCEPTION(0x2020, SPE_UNAVAIL, SPEUnavailable, \
-		  unknown_exception, EXC_XFER_STD)
+		  unknown_exception, EXC_XFER_EE)
 #endif /* CONFIG_SPE_POSSIBLE */
 
 	/* SPE Floating Point Data */
 #ifdef CONFIG_SPE
 	EXCEPTION(0x2030, SPE_FP_DATA, SPEFloatingPointData,
-		  SPEFloatingPointException, EXC_XFER_STD)
+		  SPEFloatingPointException, EXC_XFER_EE)
 
 	/* SPE Floating Point Round */
 	EXCEPTION(0x2050, SPE_FP_ROUND, SPEFloatingPointRound, \
-		  SPEFloatingPointRoundException, EXC_XFER_STD)
+		  SPEFloatingPointRoundException, EXC_XFER_EE)
 #elif defined(CONFIG_SPE_POSSIBLE)
 	EXCEPTION(0x2040, SPE_FP_DATA, SPEFloatingPointData,
-		  unknown_exception, EXC_XFER_STD)
+		  unknown_exception, EXC_XFER_EE)
 	EXCEPTION(0x2050, SPE_FP_ROUND, SPEFloatingPointRound, \
-		  unknown_exception, EXC_XFER_STD)
+		  unknown_exception, EXC_XFER_EE)
 #endif /* CONFIG_SPE_POSSIBLE */
 
 
@@ -672,10 +664,10 @@ END_BTB_FLUSH_SECTION
 			   unknown_exception)
 
 	/* Hypercall */
-	EXCEPTION(0, HV_SYSCALL, Hypercall, unknown_exception, EXC_XFER_STD)
+	EXCEPTION(0, HV_SYSCALL, Hypercall, unknown_exception, EXC_XFER_EE)
 
 	/* Embedded Hypervisor Privilege */
-	EXCEPTION(0, HV_PRIV, Ehvpriv, unknown_exception, EXC_XFER_STD)
+	EXCEPTION(0, HV_PRIV, Ehvpriv, unknown_exception, EXC_XFER_EE)
 
 interrupt_end:
 
@@ -709,7 +701,8 @@ finish_tlb_load:
 
 	/* Get the next_tlbcam_idx percpu var */
 #ifdef CONFIG_SMP
-	lwz	r15, TASK_CPU-THREAD(r12)
+	lwz	r12, THREAD_INFO-THREAD(r12)
+	lwz	r15, TI_CPU(r12)
 	lis     r14, __per_cpu_offset@h
 	ori     r14, r14, __per_cpu_offset@l
 	rlwinm  r15, r15, 2, 0, 29
@@ -1080,10 +1073,10 @@ __secondary_start:
 	mr	r4,r24		/* Why? */
 	bl	call_setup_cpu
 
-	/* get current's stack and current */
-	lis	r2,secondary_current@ha
-	lwz	r2,secondary_current@l(r2)
-	lwz	r1,TASK_STACK(r2)
+	/* get current_thread_info and current */
+	lis	r1,secondary_ti@ha
+	lwz	r1,secondary_ti@l(r1)
+	lwz	r2,TI_TASK(r1)
 
 	/* stack */
 	addi	r1,r1,THREAD_SIZE-STACK_FRAME_OVERHEAD

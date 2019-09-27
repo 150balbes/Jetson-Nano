@@ -1,8 +1,10 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Sample kfifo int type implementation
  *
  * Copyright (C) 2010 Stefani Seibold <stefani@seibold.net>
+ *
+ * Released under the GPL version 2 only.
+ *
  */
 
 #include <linux/init.h>

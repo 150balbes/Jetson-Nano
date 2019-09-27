@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  *  Copyright (c) by Jaroslav Kysela <perex@perex.cz>
  *  Routines for control of CS4231(A)/CS4232/InterWave & compatible chips
@@ -8,6 +7,21 @@
  *       Yamaha OPL3-SA3 chip
  *     - CS4231 (GUS MAX) - still trouble with occasional noises
  *			  - broken initialization?
+ *
+ *   This program is free software; you can redistribute it and/or modify
+ *   it under the terms of the GNU General Public License as published by
+ *   the Free Software Foundation; either version 2 of the License, or
+ *   (at your option) any later version.
+ *
+ *   This program is distributed in the hope that it will be useful,
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *   GNU General Public License for more details.
+ *
+ *   You should have received a copy of the GNU General Public License
+ *   along with this program; if not, write to the Free Software
+ *   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+ *
  */
 
 #include <linux/delay.h>
@@ -55,12 +69,12 @@ static unsigned char freq_bits[14] = {
 	/* 48000 */	0x0C | CS4231_XTAL1
 };
 
-static const unsigned int rates[14] = {
+static unsigned int rates[14] = {
 	5510, 6620, 8000, 9600, 11025, 16000, 18900, 22050,
 	27042, 32000, 33075, 37800, 44100, 48000
 };
 
-static const struct snd_pcm_hw_constraint_list hw_constraints_rates = {
+static struct snd_pcm_hw_constraint_list hw_constraints_rates = {
 	.count = ARRAY_SIZE(rates),
 	.list = rates,
 	.mask = 0,
@@ -527,7 +541,7 @@ static unsigned char snd_wss_get_rate(unsigned int rate)
 }
 
 static unsigned char snd_wss_get_format(struct snd_wss *chip,
-					snd_pcm_format_t format,
+					int format,
 					int channels)
 {
 	unsigned char rformat;
@@ -1438,7 +1452,7 @@ static int snd_wss_probe(struct snd_wss *chip)
 
  */
 
-static const struct snd_pcm_hardware snd_wss_playback =
+static struct snd_pcm_hardware snd_wss_playback =
 {
 	.info =			(SNDRV_PCM_INFO_MMAP | SNDRV_PCM_INFO_INTERLEAVED |
 				 SNDRV_PCM_INFO_MMAP_VALID |
@@ -1458,7 +1472,7 @@ static const struct snd_pcm_hardware snd_wss_playback =
 	.fifo_size =		0,
 };
 
-static const struct snd_pcm_hardware snd_wss_capture =
+static struct snd_pcm_hardware snd_wss_capture =
 {
 	.info =			(SNDRV_PCM_INFO_MMAP | SNDRV_PCM_INFO_INTERLEAVED |
 				 SNDRV_PCM_INFO_MMAP_VALID |
@@ -1517,6 +1531,7 @@ static int snd_wss_playback_open(struct snd_pcm_substream *substream)
 	if (err < 0) {
 		if (chip->release_dma)
 			chip->release_dma(chip, chip->dma_private_data, chip->dma1);
+		snd_free_pages(runtime->dma_area, runtime->dma_bytes);
 		return err;
 	}
 	chip->playback_substream = substream;
@@ -1557,6 +1572,7 @@ static int snd_wss_capture_open(struct snd_pcm_substream *substream)
 	if (err < 0) {
 		if (chip->release_dma)
 			chip->release_dma(chip, chip->dma_private_data, chip->dma2);
+		snd_free_pages(runtime->dma_area, runtime->dma_bytes);
 		return err;
 	}
 	chip->capture_substream = substream;
@@ -1611,6 +1627,7 @@ static void snd_wss_suspend(struct snd_wss *chip)
 	int reg;
 	unsigned long flags;
 
+	snd_pcm_suspend_all(chip->pcm);
 	spin_lock_irqsave(&chip->reg_lock, flags);
 	for (reg = 0; reg < 32; reg++)
 		chip->image[reg] = snd_wss_in(chip, reg);
@@ -1884,7 +1901,7 @@ int snd_wss_create(struct snd_card *card,
 }
 EXPORT_SYMBOL(snd_wss_create);
 
-static const struct snd_pcm_ops snd_wss_playback_ops = {
+static struct snd_pcm_ops snd_wss_playback_ops = {
 	.open =		snd_wss_playback_open,
 	.close =	snd_wss_playback_close,
 	.ioctl =	snd_pcm_lib_ioctl,
@@ -1895,7 +1912,7 @@ static const struct snd_pcm_ops snd_wss_playback_ops = {
 	.pointer =	snd_wss_playback_pointer,
 };
 
-static const struct snd_pcm_ops snd_wss_capture_ops = {
+static struct snd_pcm_ops snd_wss_capture_ops = {
 	.open =		snd_wss_capture_open,
 	.close =	snd_wss_capture_close,
 	.ioctl =	snd_pcm_lib_ioctl,
@@ -1928,7 +1945,7 @@ int snd_wss_pcm(struct snd_wss *chip, int device)
 	strcpy(pcm->name, snd_wss_chip_id(chip));
 
 	snd_pcm_lib_preallocate_pages_for_all(pcm, SNDRV_DMA_TYPE_DEV,
-					      chip->card->dev,
+					      snd_dma_isa_data(),
 					      64*1024, chip->dma1 > 3 || chip->dma2 > 3 ? 128*1024 : 64*1024);
 
 	chip->pcm = pcm;
@@ -2262,3 +2279,19 @@ const struct snd_pcm_ops *snd_wss_get_pcm_ops(int direction)
 		&snd_wss_playback_ops : &snd_wss_capture_ops;
 }
 EXPORT_SYMBOL(snd_wss_get_pcm_ops);
+
+/*
+ *  INIT part
+ */
+
+static int __init alsa_wss_init(void)
+{
+	return 0;
+}
+
+static void __exit alsa_wss_exit(void)
+{
+}
+
+module_init(alsa_wss_init);
+module_exit(alsa_wss_exit);

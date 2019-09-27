@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * xor.c : Multiple Devices driver for Linux
  *
@@ -6,6 +5,15 @@
  * Ingo Molnar, Matti Aarnio, Jakub Jelinek, Richard Henderson.
  *
  * Dispatch optimized RAID-5 checksumming functions.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2, or (at your option)
+ * any later version.
+ *
+ * You should have received a copy of the GNU General Public License
+ * (for example /usr/src/linux/COPYING); if not, write to the Free
+ * Software Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  */
 
 #define BH_TRACE 0
@@ -114,7 +122,12 @@ calibrate_xor_blocks(void)
 		goto out;
 	}
 
-	b1 = (void *) __get_free_pages(GFP_KERNEL, 2);
+	/*
+	 * Note: Since the memory is not actually used for _anything_ but to
+	 * test the XOR speed, we don't really want kmemcheck to warn about
+	 * reading uninitialized bytes here.
+	 */
+	b1 = (void *) __get_free_pages(GFP_KERNEL | __GFP_NOTRACK, 2);
 	if (!b1) {
 		printk(KERN_WARNING "xor: Yikes!  No memory available.\n");
 		return -ENOMEM;

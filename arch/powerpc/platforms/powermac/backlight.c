@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Miscellaneous procedures for dealing with the PowerMac hardware.
  * Contains support for the backlight.
@@ -187,7 +186,7 @@ int pmac_backlight_set_legacy_brightness(int brightness)
 	return __pmac_backlight_set_legacy_brightness(brightness);
 }
 
-int pmac_backlight_get_legacy_brightness(void)
+int pmac_backlight_get_legacy_brightness()
 {
 	int result = -ENXIO;
 
@@ -206,12 +205,12 @@ int pmac_backlight_get_legacy_brightness(void)
 	return result;
 }
 
-void pmac_backlight_disable(void)
+void pmac_backlight_disable()
 {
 	atomic_inc(&kernel_backlight_disabled);
 }
 
-void pmac_backlight_enable(void)
+void pmac_backlight_enable()
 {
 	atomic_dec(&kernel_backlight_disabled);
 }

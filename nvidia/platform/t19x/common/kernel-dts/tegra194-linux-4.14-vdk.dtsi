@@ -1,0 +1,33 @@
+/*
+ * tegra194-linux-4.14-vdk.dtsi
+ *
+ * Copyright (c) 2018, NVIDIA CORPORATION.  All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; version 2 of the License.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ */
+
+#include "tegra194-linux-4.14-core.dtsi"
+/ {
+
+	reserved-memory {
+		/delete-node/ vpr-carveout;
+	};
+
+	reserved-memory {
+		generic_reserved: generic_carveout {
+			size = <0 0x10000000>;
+			status = "okay";
+		};
+	};
+
+	tegra-carveouts {
+		memory-region = <&generic_reserved>;
+	};
+};

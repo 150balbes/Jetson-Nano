@@ -1,5 +1,8 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
+ * This file is subject to the terms and conditions of the GNU General Public
+ * License.  See the file "COPYING" in the main directory of this archive
+ * for more details.
+ *
  * Copyright (C) 2011, 2012 Cavium, Inc.
  */
 
@@ -23,15 +26,17 @@ static int mdio_mux_gpio_switch_fn(int current_child, int desired_child,
 				   void *data)
 {
 	struct mdio_mux_gpio_state *s = data;
-	DECLARE_BITMAP(values, BITS_PER_TYPE(desired_child));
+	int values[s->gpios->ndescs];
+	unsigned int n;
 
 	if (current_child == desired_child)
 		return 0;
 
-	values[0] = desired_child;
+	for (n = 0; n < s->gpios->ndescs; n++)
+		values[n] = (desired_child >> n) & 1;
 
 	gpiod_set_array_value_cansleep(s->gpios->ndescs, s->gpios->desc,
-				       s->gpios->info, values);
+				       values);
 
 	return 0;
 }
@@ -39,22 +44,17 @@ static int mdio_mux_gpio_switch_fn(int current_child, int desired_child,
 static int mdio_mux_gpio_probe(struct platform_device *pdev)
 {
 	struct mdio_mux_gpio_state *s;
-	struct gpio_descs *gpios;
 	int r;
 
-	gpios = gpiod_get_array(&pdev->dev, NULL, GPIOD_OUT_LOW);
-	if (IS_ERR(gpios))
-		return PTR_ERR(gpios);
-
 	s = devm_kzalloc(&pdev->dev, sizeof(*s), GFP_KERNEL);
-	if (!s) {
-		gpiod_put_array(gpios);
+	if (!s)
 		return -ENOMEM;
-	}
 
-	s->gpios = gpios;
+	s->gpios = gpiod_get_array(&pdev->dev, NULL, GPIOD_OUT_LOW);
+	if (IS_ERR(s->gpios))
+		return PTR_ERR(s->gpios);
 
-	r = mdio_mux_init(&pdev->dev, pdev->dev.of_node,
+	r = mdio_mux_init(&pdev->dev,
 			  mdio_mux_gpio_switch_fn, &s->mux_handle, s, NULL);
 
 	if (r != 0) {
@@ -100,4 +100,4 @@ module_platform_driver(mdio_mux_gpio_driver);
 MODULE_DESCRIPTION(DRV_DESCRIPTION);
 MODULE_VERSION(DRV_VERSION);
 MODULE_AUTHOR("David Daney");
-MODULE_LICENSE("GPL v2");
+MODULE_LICENSE("GPL");

@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * Marvell Dove PMU Core PLL divider driver
  *

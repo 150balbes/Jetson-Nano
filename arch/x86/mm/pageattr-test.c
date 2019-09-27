@@ -1,11 +1,10 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * self test for change_page_attr.
  *
  * Clears the a test pte bit on random pages in the direct mapping,
  * then reverts and compares page tables forwards and afterwards.
  */
-#include <linux/memblock.h>
+#include <linux/bootmem.h>
 #include <linux/kthread.h>
 #include <linux/random.h>
 #include <linux/kernel.h>
@@ -23,8 +22,7 @@
 static __read_mostly int print = 1;
 
 enum {
-	NTEST			= 3 * 100,
-	NPAGES			= 100,
+	NTEST			= 400,
 #ifdef CONFIG_X86_64
 	LPS			= (1 << PMD_SHIFT),
 #elif defined(CONFIG_X86_PAE)
@@ -111,9 +109,6 @@ static int print_split(struct split_state *s)
 static unsigned long addr[NTEST];
 static unsigned int len[NTEST];
 
-static struct page *pages[NPAGES];
-static unsigned long addrs[NPAGES];
-
 /* Change the global bit on random pages in the direct mapping */
 static int pageattr_test(void)
 {
@@ -124,6 +119,7 @@ static int pageattr_test(void)
 	unsigned int level;
 	int i, k;
 	int err;
+	unsigned long test_addr;
 
 	if (print)
 		printk(KERN_INFO "CPA self-test:\n");
@@ -140,7 +136,7 @@ static int pageattr_test(void)
 		unsigned long pfn = prandom_u32() % max_pfn_mapped;
 
 		addr[i] = (unsigned long)__va(pfn << PAGE_SHIFT);
-		len[i] = prandom_u32() % NPAGES;
+		len[i] = prandom_u32() % 100;
 		len[i] = min_t(unsigned long, len[i], max_pfn_mapped - pfn - 1);
 
 		if (len[i] == 0)
@@ -170,29 +166,14 @@ static int pageattr_test(void)
 				break;
 			}
 			__set_bit(pfn + k, bm);
-			addrs[k] = addr[i] + k*PAGE_SIZE;
-			pages[k] = pfn_to_page(pfn + k);
 		}
 		if (!addr[i] || !pte || !k) {
 			addr[i] = 0;
 			continue;
 		}
 
-		switch (i % 3) {
-		case 0:
-			err = change_page_attr_set(&addr[i], len[i], PAGE_CPA_TEST, 0);
-			break;
-
-		case 1:
-			err = change_page_attr_set(addrs, len[1], PAGE_CPA_TEST, 1);
-			break;
-
-		case 2:
-			err = cpa_set_pages_array(pages, len[i], PAGE_CPA_TEST);
-			break;
-		}
-
-
+		test_addr = addr[i];
+		err = change_page_attr_set(&test_addr, len[i], PAGE_CPA_TEST, 0);
 		if (err < 0) {
 			printk(KERN_ERR "CPA %d failed %d\n", i, err);
 			failed++;
@@ -224,7 +205,8 @@ static int pageattr_test(void)
 			failed++;
 			continue;
 		}
-		err = change_page_attr_clear(&addr[i], len[i], PAGE_CPA_TEST, 0);
+		test_addr = addr[i];
+		err = change_page_attr_clear(&test_addr, len[i], PAGE_CPA_TEST, 0);
 		if (err < 0) {
 			printk(KERN_ERR "CPA reverting failed: %d\n", err);
 			failed++;

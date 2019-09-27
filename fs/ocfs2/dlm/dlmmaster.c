@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /* -*- mode: c; c-basic-offset: 8; -*-
  * vim: noexpandtab sw=8 ts=8 sts=0:
  *
@@ -7,6 +6,22 @@
  * standalone DLM module
  *
  * Copyright (C) 2004 Oracle.  All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public
+ * License as published by the Free Software Foundation; either
+ * version 2 of the License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public
+ * License along with this program; if not, write to the
+ * Free Software Foundation, Inc., 59 Temple Place - Suite 330,
+ * Boston, MA 021110-1307, USA.
+ *
  */
 
 
@@ -218,7 +233,7 @@ static void __dlm_put_mle(struct dlm_master_list_entry *mle)
 
 	assert_spin_locked(&dlm->spinlock);
 	assert_spin_locked(&dlm->master_lock);
-	if (!kref_read(&mle->mle_refs)) {
+	if (!atomic_read(&mle->mle_refs.refcount)) {
 		/* this may or may not crash, but who cares.
 		 * it's a BUG. */
 		mlog(ML_ERROR, "bad mle: %p\n", mle);
@@ -399,7 +414,8 @@ int dlm_init_mle_cache(void)
 
 void dlm_destroy_mle_cache(void)
 {
-	kmem_cache_destroy(dlm_mle_cache);
+	if (dlm_mle_cache)
+		kmem_cache_destroy(dlm_mle_cache);
 }
 
 static void dlm_mle_release(struct kref *kref)
@@ -456,11 +472,15 @@ bail:
 
 void dlm_destroy_master_caches(void)
 {
-	kmem_cache_destroy(dlm_lockname_cache);
-	dlm_lockname_cache = NULL;
+	if (dlm_lockname_cache) {
+		kmem_cache_destroy(dlm_lockname_cache);
+		dlm_lockname_cache = NULL;
+	}
 
-	kmem_cache_destroy(dlm_lockres_cache);
-	dlm_lockres_cache = NULL;
+	if (dlm_lockres_cache) {
+		kmem_cache_destroy(dlm_lockres_cache);
+		dlm_lockres_cache = NULL;
+	}
 }
 
 static void dlm_lockres_release(struct kref *kref)
@@ -1102,6 +1122,13 @@ recheck:
 	/* sleep if we haven't finished voting yet */
 	if (sleep) {
 		unsigned long timeo = msecs_to_jiffies(DLM_MASTERY_TIMEOUT_MS);
+
+		/*
+		if (atomic_read(&mle->mle_refs.refcount) < 2)
+			mlog(ML_ERROR, "mle (%p) refs=%d, name=%.*s\n", mle,
+			atomic_read(&mle->mle_refs.refcount),
+			res->lockname.len, res->lockname.name);
+		*/
 		atomic_set(&mle->woken, 0);
 		(void)wait_event_timeout(mle->wq,
 					 (atomic_read(&mle->woken) == 1),
@@ -1582,6 +1609,8 @@ way_up_top:
 		__dlm_insert_mle(dlm, mle);
 		response = DLM_MASTER_RESP_NO;
 	} else {
+		// mlog(0, "mle was found\n");
+		set_maybe = 1;
 		spin_lock(&tmpmle->spinlock);
 		if (tmpmle->master == dlm->node_num) {
 			mlog(ML_ERROR, "no lockres, but an mle with this node as master!\n");
@@ -1596,7 +1625,8 @@ way_up_top:
 			response = DLM_MASTER_RESP_NO;
 		} else
 			response = DLM_MASTER_RESP_MAYBE;
-		set_bit(request->node_idx, tmpmle->maybe_map);
+		if (set_maybe)
+			set_bit(request->node_idx, tmpmle->maybe_map);
 		spin_unlock(&tmpmle->spinlock);
 	}
 	spin_unlock(&dlm->master_lock);
@@ -1614,6 +1644,12 @@ send_response:
 	 * dlm_assert_master_worker() isn't called, we drop it here.
 	 */
 	if (dispatch_assert) {
+		if (response != DLM_MASTER_RESP_YES)
+			mlog(ML_ERROR, "invalid response %d\n", response);
+		if (!res) {
+			mlog(ML_ERROR, "bad lockres while trying to assert!\n");
+			BUG();
+		}
 		mlog(0, "%u is the owner of %.*s, cleaning everyone else\n",
 			     dlm->node_num, res->lockname.len, res->lockname.name);
 		spin_lock(&res->spinlock);
@@ -1952,7 +1988,7 @@ ok:
 		 * on this mle. */
 		spin_lock(&dlm->master_lock);
 
-		rr = kref_read(&mle->mle_refs);
+		rr = atomic_read(&mle->mle_refs.refcount);
 		if (mle->inuse > 0) {
 			if (extra_ref && rr < 3)
 				err = 1;
@@ -2161,7 +2197,7 @@ put:
  * think that $RECOVERY is currently mastered by a dead node.  If so,
  * we wait a short time to allow that node to get notified by its own
  * heartbeat stack, then check again.  All $RECOVERY lock resources
- * mastered by dead nodes are purged when the heartbeat callback is
+ * mastered by dead nodes are purged when the hearbeat callback is
  * fired, so we can know for sure that it is safe to continue once
  * the node returns a live node or no node.  */
 static int dlm_pre_master_reco_lockres(struct dlm_ctxt *dlm,
@@ -2475,13 +2511,13 @@ static void dlm_deref_lockres_worker(struct dlm_work_item *item, void *data)
 }
 
 /*
- * A migratable resource is one that is :
+ * A migrateable resource is one that is :
  * 1. locally mastered, and,
  * 2. zero local locks, and,
  * 3. one or more non-local locks, or, one or more references
  * Returns 1 if yes, 0 if not.
  */
-static int dlm_is_lockres_migratable(struct dlm_ctxt *dlm,
+static int dlm_is_lockres_migrateable(struct dlm_ctxt *dlm,
 				      struct dlm_lock_resource *res)
 {
 	enum dlm_lockres_list idx;
@@ -2512,7 +2548,7 @@ static int dlm_is_lockres_migratable(struct dlm_ctxt *dlm,
 				continue;
 			}
 			cookie = be64_to_cpu(lock->ml.cookie);
-			mlog(0, "%s: Not migratable res %.*s, lock %u:%llu on "
+			mlog(0, "%s: Not migrateable res %.*s, lock %u:%llu on "
 			     "%s list\n", dlm->name, res->lockname.len,
 			     res->lockname.name,
 			     dlm_get_lock_cookie_node(cookie),
@@ -2528,7 +2564,7 @@ static int dlm_is_lockres_migratable(struct dlm_ctxt *dlm,
 			return 0;
 	}
 
-	mlog(0, "%s: res %.*s, Migratable\n", dlm->name, res->lockname.len,
+	mlog(0, "%s: res %.*s, Migrateable\n", dlm->name, res->lockname.len,
 	     res->lockname.name);
 
 	return 1;
@@ -2589,9 +2625,7 @@ static int dlm_migrate_lockres(struct dlm_ctxt *dlm,
 	 * otherwise the assert_master from the new
 	 * master will destroy this.
 	 */
-	if (ret != -EEXIST)
-		dlm_get_mle_inuse(mle);
-
+	dlm_get_mle_inuse(mle);
 	spin_unlock(&dlm->master_lock);
 	spin_unlock(&dlm->spinlock);
 
@@ -2772,7 +2806,7 @@ int dlm_empty_lockres(struct dlm_ctxt *dlm, struct dlm_lock_resource *res)
 	assert_spin_locked(&dlm->spinlock);
 
 	spin_lock(&res->spinlock);
-	if (dlm_is_lockres_migratable(dlm, res))
+	if (dlm_is_lockres_migrateable(dlm, res))
 		target = dlm_pick_migration_target(dlm, res);
 	spin_unlock(&res->spinlock);
 
@@ -2899,7 +2933,7 @@ again:
 	/*
 	 * if target is down, we need to clear DLM_LOCK_RES_BLOCK_DIRTY for
 	 * another try; otherwise, we are sure the MIGRATING state is there,
-	 * drop the unneeded state which blocked threads trying to DIRTY
+	 * drop the unneded state which blocked threads trying to DIRTY
 	 */
 	spin_lock(&res->spinlock);
 	BUG_ON(!(res->state & DLM_LOCK_RES_BLOCK_DIRTY));

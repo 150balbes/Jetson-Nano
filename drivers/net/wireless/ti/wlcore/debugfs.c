@@ -1,10 +1,24 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * This file is part of wl1271
  *
  * Copyright (C) 2009 Nokia Corporation
  *
  * Contact: Luciano Coelho <luciano.coelho@nokia.com>
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License
+ * version 2 as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA
+ * 02110-1301 USA
+ *
  */
 
 #include "debugfs.h"
@@ -12,7 +26,6 @@
 #include <linux/skbuff.h>
 #include <linux/slab.h>
 #include <linux/module.h>
-#include <linux/pm_runtime.h>
 
 #include "wlcore.h"
 #include "debug.h"
@@ -52,11 +65,9 @@ void wl1271_debugfs_update_stats(struct wl1271 *wl)
 	if (unlikely(wl->state != WLCORE_STATE_ON))
 		goto out;
 
-	ret = pm_runtime_get_sync(wl->dev);
-	if (ret < 0) {
-		pm_runtime_put_noidle(wl->dev);
+	ret = wl1271_ps_elp_wakeup(wl);
+	if (ret < 0)
 		goto out;
-	}
 
 	if (!wl->plt &&
 	    time_after(jiffies, wl->stats.fw_stats_update +
@@ -65,8 +76,7 @@ void wl1271_debugfs_update_stats(struct wl1271 *wl)
 		wl->stats.fw_stats_update = jiffies;
 	}
 
-	pm_runtime_mark_last_busy(wl->dev);
-	pm_runtime_put_autosuspend(wl->dev);
+	wl1271_ps_elp_sleep(wl);
 
 out:
 	mutex_unlock(&wl->mutex);
@@ -108,18 +118,14 @@ static void chip_op_handler(struct wl1271 *wl, unsigned long value,
 		return;
 	}
 
-	ret = pm_runtime_get_sync(wl->dev);
-	if (ret < 0) {
-		pm_runtime_put_noidle(wl->dev);
-
+	ret = wl1271_ps_elp_wakeup(wl);
+	if (ret < 0)
 		return;
-	}
 
 	chip_op = arg;
 	chip_op(wl);
 
-	pm_runtime_mark_last_busy(wl->dev);
-	pm_runtime_put_autosuspend(wl->dev);
+	wl1271_ps_elp_sleep(wl);
 }
 
 
@@ -275,7 +281,7 @@ static ssize_t dynamic_ps_timeout_write(struct file *file,
 	}
 
 	if (value < 1 || value > 65535) {
-		wl1271_warning("dynamic_ps_timeout is not in valid range");
+		wl1271_warning("dyanmic_ps_timeout is not in valid range");
 		return -ERANGE;
 	}
 
@@ -286,11 +292,9 @@ static ssize_t dynamic_ps_timeout_write(struct file *file,
 	if (unlikely(wl->state != WLCORE_STATE_ON))
 		goto out;
 
-	ret = pm_runtime_get_sync(wl->dev);
-	if (ret < 0) {
-		pm_runtime_put_noidle(wl->dev);
+	ret = wl1271_ps_elp_wakeup(wl);
+	if (ret < 0)
 		goto out;
-	}
 
 	/* In case we're already in PSM, trigger it again to set new timeout
 	 * immediately without waiting for re-association
@@ -301,8 +305,7 @@ static ssize_t dynamic_ps_timeout_write(struct file *file,
 			wl1271_ps_set_mode(wl, wlvif, STATION_AUTO_PS_MODE);
 	}
 
-	pm_runtime_mark_last_busy(wl->dev);
-	pm_runtime_put_autosuspend(wl->dev);
+	wl1271_ps_elp_sleep(wl);
 
 out:
 	mutex_unlock(&wl->mutex);
@@ -356,11 +359,9 @@ static ssize_t forced_ps_write(struct file *file,
 	if (unlikely(wl->state != WLCORE_STATE_ON))
 		goto out;
 
-	ret = pm_runtime_get_sync(wl->dev);
-	if (ret < 0) {
-		pm_runtime_put_noidle(wl->dev);
+	ret = wl1271_ps_elp_wakeup(wl);
+	if (ret < 0)
 		goto out;
-	}
 
 	/* In case we're already in PSM, trigger it again to switch mode
 	 * immediately without waiting for re-association
@@ -373,8 +374,7 @@ static ssize_t forced_ps_write(struct file *file,
 			wl1271_ps_set_mode(wl, wlvif, ps_mode);
 	}
 
-	pm_runtime_mark_last_busy(wl->dev);
-	pm_runtime_put_autosuspend(wl->dev);
+	wl1271_ps_elp_sleep(wl);
 
 out:
 	mutex_unlock(&wl->mutex);
@@ -838,18 +838,15 @@ static ssize_t rx_streaming_interval_write(struct file *file,
 
 	wl->conf.rx_streaming.interval = value;
 
-	ret = pm_runtime_get_sync(wl->dev);
-	if (ret < 0) {
-		pm_runtime_put_noidle(wl->dev);
+	ret = wl1271_ps_elp_wakeup(wl);
+	if (ret < 0)
 		goto out;
-	}
 
 	wl12xx_for_each_wlvif_sta(wl, wlvif) {
 		wl1271_recalc_rx_streaming(wl, wlvif);
 	}
 
-	pm_runtime_mark_last_busy(wl->dev);
-	pm_runtime_put_autosuspend(wl->dev);
+	wl1271_ps_elp_sleep(wl);
 out:
 	mutex_unlock(&wl->mutex);
 	return count;
@@ -896,18 +893,15 @@ static ssize_t rx_streaming_always_write(struct file *file,
 
 	wl->conf.rx_streaming.always = value;
 
-	ret = pm_runtime_get_sync(wl->dev);
-	if (ret < 0) {
-		pm_runtime_put_noidle(wl->dev);
+	ret = wl1271_ps_elp_wakeup(wl);
+	if (ret < 0)
 		goto out;
-	}
 
 	wl12xx_for_each_wlvif_sta(wl, wlvif) {
 		wl1271_recalc_rx_streaming(wl, wlvif);
 	}
 
-	pm_runtime_mark_last_busy(wl->dev);
-	pm_runtime_put_autosuspend(wl->dev);
+	wl1271_ps_elp_sleep(wl);
 out:
 	mutex_unlock(&wl->mutex);
 	return count;
@@ -946,18 +940,15 @@ static ssize_t beacon_filtering_write(struct file *file,
 
 	mutex_lock(&wl->mutex);
 
-	ret = pm_runtime_get_sync(wl->dev);
-	if (ret < 0) {
-		pm_runtime_put_noidle(wl->dev);
+	ret = wl1271_ps_elp_wakeup(wl);
+	if (ret < 0)
 		goto out;
-	}
 
 	wl12xx_for_each_wlvif(wl, wlvif) {
 		ret = wl1271_acx_beacon_filter_opt(wl, wlvif, !!value);
 	}
 
-	pm_runtime_mark_last_busy(wl->dev);
-	pm_runtime_put_autosuspend(wl->dev);
+	wl1271_ps_elp_sleep(wl);
 out:
 	mutex_unlock(&wl->mutex);
 	return count;
@@ -1028,19 +1019,16 @@ static ssize_t sleep_auth_write(struct file *file,
 		goto out;
 	}
 
-	ret = pm_runtime_get_sync(wl->dev);
-	if (ret < 0) {
-		pm_runtime_put_noidle(wl->dev);
+	ret = wl1271_ps_elp_wakeup(wl);
+	if (ret < 0)
 		goto out;
-	}
 
 	ret = wl1271_acx_sleep_auth(wl, value);
 	if (ret < 0)
 		goto out_sleep;
 
 out_sleep:
-	pm_runtime_mark_last_busy(wl->dev);
-	pm_runtime_put_autosuspend(wl->dev);
+	wl1271_ps_elp_sleep(wl);
 out:
 	mutex_unlock(&wl->mutex);
 	return count;
@@ -1095,7 +1083,7 @@ static ssize_t dev_mem_read(struct file *file,
 	 * Don't fail if elp_wakeup returns an error, so the device's memory
 	 * could be read even if the FW crashed
 	 */
-	pm_runtime_get_sync(wl->dev);
+	wl1271_ps_elp_wakeup(wl);
 
 	/* store current partition and switch partition */
 	memcpy(&old_part, &wl->curr_part, sizeof(old_part));
@@ -1114,8 +1102,7 @@ read_err:
 		goto part_err;
 
 part_err:
-	pm_runtime_mark_last_busy(wl->dev);
-	pm_runtime_put_autosuspend(wl->dev);
+	wl1271_ps_elp_sleep(wl);
 
 skip_read:
 	mutex_unlock(&wl->mutex);
@@ -1162,9 +1149,15 @@ static ssize_t dev_mem_write(struct file *file, const char __user *user_buf,
 	part.mem.start = *ppos;
 	part.mem.size = bytes;
 
-	buf = memdup_user(user_buf, bytes);
-	if (IS_ERR(buf))
-		return PTR_ERR(buf);
+	buf = kmalloc(bytes, GFP_KERNEL);
+	if (!buf)
+		return -ENOMEM;
+
+	ret = copy_from_user(buf, user_buf, bytes);
+	if (ret) {
+		ret = -EFAULT;
+		goto err_out;
+	}
 
 	mutex_lock(&wl->mutex);
 
@@ -1177,7 +1170,7 @@ static ssize_t dev_mem_write(struct file *file, const char __user *user_buf,
 	 * Don't fail if elp_wakeup returns an error, so the device's memory
 	 * could be read even if the FW crashed
 	 */
-	pm_runtime_get_sync(wl->dev);
+	wl1271_ps_elp_wakeup(wl);
 
 	/* store current partition and switch partition */
 	memcpy(&old_part, &wl->curr_part, sizeof(old_part));
@@ -1196,8 +1189,7 @@ write_err:
 		goto part_err;
 
 part_err:
-	pm_runtime_mark_last_busy(wl->dev);
-	pm_runtime_put_autosuspend(wl->dev);
+	wl1271_ps_elp_sleep(wl);
 
 skip_write:
 	mutex_unlock(&wl->mutex);
@@ -1205,6 +1197,7 @@ skip_write:
 	if (ret == 0)
 		*ppos += bytes;
 
+err_out:
 	kfree(buf);
 
 	return ((ret == 0) ? bytes : ret);
@@ -1256,14 +1249,13 @@ static ssize_t fw_logger_write(struct file *file,
 	}
 
 	if (wl->conf.fwlog.output == 0) {
-		wl1271_warning("invalid operation - fw logger disabled by default, please change mode via wlconf");
+		wl1271_warning("iligal opperation - fw logger disabled by default, please change mode via wlconf");
 		return -EINVAL;
 	}
 
 	mutex_lock(&wl->mutex);
-	ret = pm_runtime_get_sync(wl->dev);
+	ret = wl1271_ps_elp_wakeup(wl);
 	if (ret < 0) {
-		pm_runtime_put_noidle(wl->dev);
 		count = ret;
 		goto out;
 	}
@@ -1272,8 +1264,7 @@ static ssize_t fw_logger_write(struct file *file,
 
 	ret = wl12xx_cmd_config_fwlog(wl);
 
-	pm_runtime_mark_last_busy(wl->dev);
-	pm_runtime_put_autosuspend(wl->dev);
+	wl1271_ps_elp_sleep(wl);
 
 out:
 	mutex_unlock(&wl->mutex);
@@ -1287,10 +1278,11 @@ static const struct file_operations fw_logger_ops = {
 	.llseek = default_llseek,
 };
 
-static void wl1271_debugfs_add_files(struct wl1271 *wl,
-				     struct dentry *rootdir)
+static int wl1271_debugfs_add_files(struct wl1271 *wl,
+				    struct dentry *rootdir)
 {
-	struct dentry *streaming;
+	int ret = 0;
+	struct dentry *entry, *streaming;
 
 	DEBUGFS_ADD(tx_queue_len, rootdir);
 	DEBUGFS_ADD(retry_count, rootdir);
@@ -1315,11 +1307,23 @@ static void wl1271_debugfs_add_files(struct wl1271 *wl,
 	DEBUGFS_ADD(fw_logger, rootdir);
 
 	streaming = debugfs_create_dir("rx_streaming", rootdir);
+	if (!streaming || IS_ERR(streaming))
+		goto err;
 
 	DEBUGFS_ADD_PREFIX(rx_streaming, interval, streaming);
 	DEBUGFS_ADD_PREFIX(rx_streaming, always, streaming);
 
 	DEBUGFS_ADD_PREFIX(dev, mem, rootdir);
+
+	return 0;
+
+err:
+	if (IS_ERR(entry))
+		ret = PTR_ERR(entry);
+	else
+		ret = -ENOMEM;
+
+	return ret;
 }
 
 void wl1271_debugfs_reset(struct wl1271 *wl)
@@ -1340,6 +1344,11 @@ int wl1271_debugfs_init(struct wl1271 *wl)
 	rootdir = debugfs_create_dir(KBUILD_MODNAME,
 				     wl->hw->wiphy->debugfsdir);
 
+	if (IS_ERR(rootdir)) {
+		ret = PTR_ERR(rootdir);
+		goto out;
+	}
+
 	wl->stats.fw_stats = kzalloc(wl->stats.fw_stats_len, GFP_KERNEL);
 	if (!wl->stats.fw_stats) {
 		ret = -ENOMEM;
@@ -1348,7 +1357,9 @@ int wl1271_debugfs_init(struct wl1271 *wl)
 
 	wl->stats.fw_stats_update = jiffies;
 
-	wl1271_debugfs_add_files(wl, rootdir);
+	ret = wl1271_debugfs_add_files(wl, rootdir);
+	if (ret < 0)
+		goto out_exit;
 
 	ret = wlcore_debugfs_init(wl, rootdir);
 	if (ret < 0)

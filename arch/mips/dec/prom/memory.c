@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * memory.c: memory initialisation code.
  *
@@ -8,7 +7,7 @@
 #include <linux/init.h>
 #include <linux/kernel.h>
 #include <linux/mm.h>
-#include <linux/memblock.h>
+#include <linux/bootmem.h>
 #include <linux/types.h>
 
 #include <asm/addrspace.h>

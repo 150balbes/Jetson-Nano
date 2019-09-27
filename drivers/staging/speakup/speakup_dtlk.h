@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /* speakup_dtlk.h - header file for speakups DoubleTalk driver. */
 
 #define SYNTH_IO_EXTENT	0x02
@@ -25,11 +24,11 @@
 				 * usec later.
 				 */
 #define TTS_ALMOST_FULL	0x08	/* mask for AF bit: When set to 1,
-				 * indicates that less than 300 bytes
-				 * are available in the TTS input
-				 * buffer. AF is always 0 in the PCM,
-				 * TGN and CVSD modes.
-				 */
+					 * indicates that less than 300 bytes
+					 * are available in the TTS input
+					 * buffer. AF is always 0 in the PCM,
+					 * TGN and CVSD modes.
+					 */
 #define TTS_ALMOST_EMPTY 0x04	/* mask for AE bit: When set to 1,
 				 * indicates that less than 300 bytes
 				 * are remaining in DoubleTalk's input

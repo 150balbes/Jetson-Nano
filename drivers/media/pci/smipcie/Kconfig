@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0-only
 config DVB_SMIPCIE
 	tristate "SMI PCIe DVBSky cards"
 	depends on DVB_CORE && PCI && I2C

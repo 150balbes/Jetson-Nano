@@ -17,10 +17,8 @@
 #include <asm/pgtable-64.h>
 #endif
 
-#include <asm/cmpxchg.h>
 #include <asm/io.h>
 #include <asm/pgtable-bits.h>
-#include <asm/cpu-features.h>
 
 struct mm_struct;
 struct vm_area_struct;
@@ -206,11 +204,51 @@ static inline void set_pte(pte_t *ptep, pte_t pteval)
 		 * Make sure the buddy is global too (if it's !none,
 		 * it better already be global)
 		 */
-# if defined(CONFIG_PHYS_ADDR_T_64BIT) && !defined(CONFIG_CPU_MIPS32)
-		cmpxchg64(&buddy->pte, 0, _PAGE_GLOBAL);
-# else
-		cmpxchg(&buddy->pte, 0, _PAGE_GLOBAL);
-# endif
+#ifdef CONFIG_SMP
+		/*
+		 * For SMP, multiple CPUs can race, so we need to do
+		 * this atomically.
+		 */
+		unsigned long page_global = _PAGE_GLOBAL;
+		unsigned long tmp;
+
+		if (kernel_uses_llsc && R10000_LLSC_WAR) {
+			__asm__ __volatile__ (
+			"	.set	arch=r4000			\n"
+			"	.set	push				\n"
+			"	.set	noreorder			\n"
+			"1:"	__LL	"%[tmp], %[buddy]		\n"
+			"	bnez	%[tmp], 2f			\n"
+			"	 or	%[tmp], %[tmp], %[global]	\n"
+				__SC	"%[tmp], %[buddy]		\n"
+			"	beqzl	%[tmp], 1b			\n"
+			"	nop					\n"
+			"2:						\n"
+			"	.set	pop				\n"
+			"	.set	mips0				\n"
+			: [buddy] "+m" (buddy->pte), [tmp] "=&r" (tmp)
+			: [global] "r" (page_global));
+		} else if (kernel_uses_llsc) {
+			__asm__ __volatile__ (
+			"	.set	"MIPS_ISA_ARCH_LEVEL"		\n"
+			"	.set	push				\n"
+			"	.set	noreorder			\n"
+			"1:"	__LL	"%[tmp], %[buddy]		\n"
+			"	bnez	%[tmp], 2f			\n"
+			"	 or	%[tmp], %[tmp], %[global]	\n"
+				__SC	"%[tmp], %[buddy]		\n"
+			"	beqz	%[tmp], 1b			\n"
+			"	nop					\n"
+			"2:						\n"
+			"	.set	pop				\n"
+			"	.set	mips0				\n"
+			: [buddy] "+m" (buddy->pte), [tmp] "=&r" (tmp)
+			: [global] "r" (page_global));
+		}
+#else /* !CONFIG_SMP */
+		if (pte_none(*buddy))
+			pte_val(*buddy) = pte_val(*buddy) | _PAGE_GLOBAL;
+#endif /* CONFIG_SMP */
 	}
 #endif
 }
@@ -496,9 +534,6 @@ static inline int io_remap_pfn_range(struct vm_area_struct *vma,
 
 #ifdef CONFIG_TRANSPARENT_HUGEPAGE
 
-/* We don't have hardware dirty/accessed bits, generic_pmdp_establish is fine.*/
-#define pmdp_establish generic_pmdp_establish
-
 #define has_transparent_hugepage has_transparent_hugepage
 extern int has_transparent_hugepage(void);
 
@@ -517,7 +552,7 @@ static inline pmd_t pmd_mkhuge(pmd_t pmd)
 extern void set_pmd_at(struct mm_struct *mm, unsigned long addr,
 		       pmd_t *pmdp, pmd_t pmd);
 
-#define pmd_write pmd_write
+#define __HAVE_ARCH_PMD_WRITE
 static inline int pmd_write(pmd_t pmd)
 {
 	return !!(pmd_val(pmd) & _PAGE_WRITE);
@@ -626,8 +661,6 @@ static inline pmd_t pmdp_huge_get_and_clear(struct mm_struct *mm,
 }
 
 #endif /* CONFIG_TRANSPARENT_HUGEPAGE */
-
-#define gup_fast_permitted(start, end)	(!cpu_has_dc_aliases)
 
 #include <asm-generic/pgtable.h>
 

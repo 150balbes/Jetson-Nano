@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  *	Declarations of X.25 Packet Layer type objects.
  *
@@ -12,7 +11,6 @@
 #define _X25_H 
 #include <linux/x25.h>
 #include <linux/slab.h>
-#include <linux/refcount.h>
 #include <net/sock.h>
 
 #define	X25_ADDR_LEN			16
@@ -131,7 +129,7 @@ struct x25_route {
 	struct x25_address	address;
 	unsigned int		sigdigits;
 	struct net_device	*dev;
-	refcount_t		refcnt;
+	atomic_t		refcnt;
 };
 
 struct x25_neigh {
@@ -143,7 +141,7 @@ struct x25_neigh {
 	unsigned long		t20;
 	struct timer_list	t20timer;
 	unsigned long		global_facil_mask;
-	refcount_t		refcnt;
+	atomic_t		refcnt;
 };
 
 struct x25_sock {
@@ -244,12 +242,12 @@ void x25_link_free(void);
 /* x25_neigh.c */
 static __inline__ void x25_neigh_hold(struct x25_neigh *nb)
 {
-	refcount_inc(&nb->refcnt);
+	atomic_inc(&nb->refcnt);
 }
 
 static __inline__ void x25_neigh_put(struct x25_neigh *nb)
 {
-	if (refcount_dec_and_test(&nb->refcnt))
+	if (atomic_dec_and_test(&nb->refcnt))
 		kfree(nb);
 }
 
@@ -267,12 +265,12 @@ void x25_route_free(void);
 
 static __inline__ void x25_route_hold(struct x25_route *rt)
 {
-	refcount_inc(&rt->refcnt);
+	atomic_inc(&rt->refcnt);
 }
 
 static __inline__ void x25_route_put(struct x25_route *rt)
 {
-	if (refcount_dec_and_test(&rt->refcnt))
+	if (atomic_dec_and_test(&rt->refcnt))
 		kfree(rt);
 }
 

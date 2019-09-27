@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0-only
 #
 # I-Force driver configuration
 #
@@ -14,20 +13,20 @@ config JOYSTICK_IFORCE
 	  module will be called iforce.
 
 config JOYSTICK_IFORCE_USB
-	tristate "I-Force USB joysticks and wheels"
-	depends on JOYSTICK_IFORCE && USB
+	bool "I-Force USB joysticks and wheels"
+	depends on JOYSTICK_IFORCE && (JOYSTICK_IFORCE=m || USB=y) && USB
 	help
 	  Say Y here if you have an I-Force joystick or steering wheel
 	  connected to your USB port.
 
 config JOYSTICK_IFORCE_232
-	tristate "I-Force Serial joysticks and wheels"
-	depends on JOYSTICK_IFORCE && SERIO
+	bool "I-Force Serial joysticks and wheels"
+	depends on JOYSTICK_IFORCE && (JOYSTICK_IFORCE=m || SERIO=y) && SERIO
 	help
 	  Say Y here if you have an I-Force joystick or steering wheel
 	  connected to your serial (COM) port.
 
 	  You will need an additional utility called inputattach, see
-	  <file:Documentation/input/joydev/joystick.rst>
-	  and <file:Documentation/input/ff.rst>.
+	  <file:Documentation/input/joystick.txt>
+	  and <file:Documentation/input/ff.txt>.
 

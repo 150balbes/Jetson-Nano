@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  *  Implementation of various system calls for Linux/PowerPC
  *
@@ -12,6 +11,12 @@
  * This file contains various random system calls that
  * have a non-standard calling sequence on the Linux/PPC
  * platform.
+ *
+ *  This program is free software; you can redistribute it and/or
+ *  modify it under the terms of the GNU General Public License
+ *  as published by the Free Software Foundation; either version
+ *  2 of the License, or (at your option) any later version.
+ *
  */
 
 #include <linux/errno.h>
@@ -31,19 +36,19 @@
 #include <linux/file.h>
 #include <linux/personality.h>
 
-#include <linux/uaccess.h>
+#include <asm/uaccess.h>
 #include <asm/syscalls.h>
 #include <asm/time.h>
 #include <asm/unistd.h>
 #include <asm/asm-prototypes.h>
 
-static inline long do_mmap2(unsigned long addr, size_t len,
+static inline unsigned long do_mmap2(unsigned long addr, size_t len,
 			unsigned long prot, unsigned long flags,
 			unsigned long fd, unsigned long off, int shift)
 {
-	long ret = -EINVAL;
+	unsigned long ret = -EINVAL;
 
-	if (!arch_validate_prot(prot, addr))
+	if (!arch_validate_prot(prot))
 		goto out;
 
 	if (shift) {
@@ -52,21 +57,21 @@ static inline long do_mmap2(unsigned long addr, size_t len,
 		off >>= shift;
 	}
 
-	ret = ksys_mmap_pgoff(addr, len, prot, flags, fd, off);
+	ret = sys_mmap_pgoff(addr, len, prot, flags, fd, off);
 out:
 	return ret;
 }
 
-SYSCALL_DEFINE6(mmap2, unsigned long, addr, size_t, len,
-		unsigned long, prot, unsigned long, flags,
-		unsigned long, fd, unsigned long, pgoff)
+unsigned long sys_mmap2(unsigned long addr, size_t len,
+			unsigned long prot, unsigned long flags,
+			unsigned long fd, unsigned long pgoff)
 {
 	return do_mmap2(addr, len, prot, flags, fd, pgoff, PAGE_SHIFT-12);
 }
 
-SYSCALL_DEFINE6(mmap, unsigned long, addr, size_t, len,
-		unsigned long, prot, unsigned long, flags,
-		unsigned long, fd, off_t, offset)
+unsigned long sys_mmap(unsigned long addr, size_t len,
+		       unsigned long prot, unsigned long flags,
+		       unsigned long fd, off_t offset)
 {
 	return do_mmap2(addr, len, prot, flags, fd, offset, PAGE_SHIFT);
 }
@@ -84,7 +89,7 @@ ppc_select(int n, fd_set __user *inp, fd_set __user *outp, fd_set __user *exp, s
 	if ( (unsigned long)n >= 4096 )
 	{
 		unsigned long __user *buffer = (unsigned long __user *)n;
-		if (!access_ok(buffer, 5*sizeof(unsigned long))
+		if (!access_ok(VERIFY_READ, buffer, 5*sizeof(unsigned long))
 		    || __get_user(n, buffer)
 		    || __get_user(inp, ((fd_set __user * __user *)(buffer+1)))
 		    || __get_user(outp, ((fd_set  __user * __user *)(buffer+2)))
@@ -114,11 +119,11 @@ long ppc64_personality(unsigned long personality)
 long ppc_fadvise64_64(int fd, int advice, u32 offset_high, u32 offset_low,
 		      u32 len_high, u32 len_low)
 {
-	return ksys_fadvise64_64(fd, (u64)offset_high << 32 | offset_low,
-				 (u64)len_high << 32 | len_low, advice);
+	return sys_fadvise64(fd, (u64)offset_high << 32 | offset_low,
+			     (u64)len_high << 32 | len_low, advice);
 }
 
-SYSCALL_DEFINE0(switch_endian)
+long sys_switch_endian(void)
 {
 	struct thread_info *ti;
 

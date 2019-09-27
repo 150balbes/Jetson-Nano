@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * Copyright IBM Corp. 2000, 2008
  * Author(s): Utz Bacher <utz.bacher@de.ibm.com>
@@ -28,7 +27,7 @@
  * @sliba: storage list information block address
  * @sla: storage list address
  * @slsba: storage list state block address
- * @akey: access key for SLIB
+ * @akey: access key for DLIB
  * @bkey: access key for SL
  * @ckey: access key for SBALs
  * @dkey: access key for SLSB
@@ -50,10 +49,11 @@ struct qdesfmt0 {
 /**
  * struct qdr - queue description record (QDR)
  * @qfmt: queue format
+ * @pfmt: implementation dependent parameter format
  * @ac: adapter characteristics
  * @iqdcnt: input queue descriptor count
  * @oqdcnt: output queue descriptor count
- * @iqdsz: input queue descriptor size
+ * @iqdsz: inpout queue descriptor size
  * @oqdsz: output queue descriptor size
  * @qiba: queue information block address
  * @qkey: queue information block key
@@ -61,7 +61,8 @@ struct qdesfmt0 {
  */
 struct qdr {
 	u32 qfmt   : 8;
-	u32	   : 16;
+	u32 pfmt   : 8;
+	u32	   : 8;
 	u32 ac	   : 8;
 	u32	   : 8;
 	u32 iqdcnt : 8;
@@ -79,7 +80,7 @@ struct qdr {
 	u32 qkey   : 4;
 	u32	   : 28;
 	struct qdesfmt0 qdf0[126];
-} __packed __aligned(PAGE_SIZE);
+} __attribute__ ((packed, aligned(4096)));
 
 #define QIB_AC_OUTBOUND_PCI_SUPPORTED	0x40
 #define QIB_RFLAGS_ENABLE_QEBSM		0x80
@@ -250,11 +251,13 @@ struct slsb {
  *   (for communication with upper layer programs)
  *   (only required for use with completion queues)
  * @flags: flags indicating state of buffer
+ * @aob: pointer to QAOB used for the particular SBAL
  * @user: pointer to upper layer program's state information related to SBAL
  *        (stored in user1 data of QAOB)
  */
 struct qdio_outbuf_state {
 	u8 flags;
+	struct qaob *aob;
 	void *user;
 };
 
@@ -325,7 +328,6 @@ typedef void qdio_handler_t(struct ccw_device *, unsigned int, int,
  * struct qdio_initialize - qdio initialization data
  * @cdev: associated ccw device
  * @q_format: queue format
- * @qdr_ac: feature flags to set
  * @adapter_name: name for the adapter
  * @qib_param_field_format: format for qib_parm_field
  * @qib_param_field: pointer to 128 bytes or NULL, if no param field
@@ -337,7 +339,6 @@ typedef void qdio_handler_t(struct ccw_device *, unsigned int, int,
  * @input_handler: handler to be called for input queues
  * @output_handler: handler to be called for output queues
  * @queue_start_poll_array: polling handlers (one per input queue or NULL)
- * @scan_threshold: # of in-use buffers that triggers scan on output queue
  * @int_parm: interruption parameter
  * @input_sbal_addr_array:  address of no_input_qs * 128 pointers
  * @output_sbal_addr_array: address of no_output_qs * 128 pointers
@@ -361,8 +362,8 @@ struct qdio_initialize {
 					  unsigned long);
 	int scan_threshold;
 	unsigned long int_parm;
-	struct qdio_buffer **input_sbal_addr_array;
-	struct qdio_buffer **output_sbal_addr_array;
+	void **input_sbal_addr_array;
+	void **output_sbal_addr_array;
 	struct qdio_outbuf_state *output_sbal_state_array;
 };
 

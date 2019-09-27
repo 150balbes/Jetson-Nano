@@ -7,7 +7,6 @@
  * Copyright (C) 2009, 2012 Cavium, Inc.
  */
 #include <linux/clocksource.h>
-#include <linux/sched/clock.h>
 #include <linux/export.h>
 #include <linux/init.h>
 #include <linux/smp.h>
@@ -99,7 +98,7 @@ void octeon_init_cvmcount(void)
 	local_irq_restore(flags);
 }
 
-static u64 octeon_cvmcount_read(struct clocksource *cs)
+static cycle_t octeon_cvmcount_read(struct clocksource *cs)
 {
 	return read_c0_cvmcount();
 }

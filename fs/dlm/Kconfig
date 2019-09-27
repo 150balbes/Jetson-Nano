@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0-only
 menuconfig DLM
 	tristate "Distributed Lock Manager (DLM)"
 	depends on INET

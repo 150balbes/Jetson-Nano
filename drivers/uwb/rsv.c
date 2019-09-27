@@ -1,8 +1,19 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * UWB reservation management.
  *
  * Copyright (C) 2008 Cambridge Silicon Radio Ltd.
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License version
+ * 2 as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include <linux/kernel.h>
 #include <linux/uwb.h>
@@ -12,7 +23,7 @@
 
 #include "uwb-internal.h"
 
-static void uwb_rsv_timer(struct timer_list *t);
+static void uwb_rsv_timer(unsigned long arg);
 
 static const char *rsv_states[] = {
 	[UWB_RSV_STATE_NONE]                 = "none            ",
@@ -187,9 +198,9 @@ static void uwb_rsv_put_stream(struct uwb_rsv *rsv)
 	dev_dbg(dev, "put stream %d\n", rsv->stream);
 }
 
-void uwb_rsv_backoff_win_timer(struct timer_list *t)
+void uwb_rsv_backoff_win_timer(unsigned long arg)
 {
-	struct uwb_drp_backoff_win *bow = from_timer(bow, t, timer);
+	struct uwb_drp_backoff_win *bow = (struct uwb_drp_backoff_win *)arg;
 	struct uwb_rc *rc = container_of(bow, struct uwb_rc, bow);
 	struct device *dev = &rc->uwb_dev.dev;
 
@@ -459,7 +470,7 @@ static struct uwb_rsv *uwb_rsv_alloc(struct uwb_rc *rc)
 	INIT_LIST_HEAD(&rsv->rc_node);
 	INIT_LIST_HEAD(&rsv->pal_node);
 	kref_init(&rsv->kref);
-	timer_setup(&rsv->timer, uwb_rsv_timer, 0);
+	setup_timer(&rsv->timer, uwb_rsv_timer, (unsigned long)rsv);
 
 	rsv->rc = rc;
 	INIT_WORK(&rsv->handle_timeout_work, uwb_rsv_handle_timeout_work);
@@ -928,9 +939,9 @@ static void uwb_rsv_alien_bp_work(struct work_struct *work)
 	mutex_unlock(&rc->rsvs_mutex);
 }
 
-static void uwb_rsv_timer(struct timer_list *t)
+static void uwb_rsv_timer(unsigned long arg)
 {
-	struct uwb_rsv *rsv = from_timer(rsv, t, timer);
+	struct uwb_rsv *rsv = (struct uwb_rsv *)arg;
 
 	queue_work(rsv->rc->rsv_workq, &rsv->handle_timeout_work);
 }
@@ -976,7 +987,8 @@ void uwb_rsv_init(struct uwb_rc *rc)
 	rc->bow.can_reserve_extra_mases = true;
 	rc->bow.total_expired = 0;
 	rc->bow.window = UWB_DRP_BACKOFF_WIN_MIN >> 1;
-	timer_setup(&rc->bow.timer, uwb_rsv_backoff_win_timer, 0);
+	setup_timer(&rc->bow.timer, uwb_rsv_backoff_win_timer,
+			(unsigned long)&rc->bow);
 
 	bitmap_complement(rc->uwb_dev.streams, rc->uwb_dev.streams, UWB_NUM_STREAMS);
 }

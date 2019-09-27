@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __VIA_PMU_EVENT_H
 #define __VIA_PMU_EVENT_H
 

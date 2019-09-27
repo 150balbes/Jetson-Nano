@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 
 /*
  * Register bits and API for Wolfson WM97xx series of codecs

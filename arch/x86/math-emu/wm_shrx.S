@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 	.file	"wm_shrx.S"
 /*---------------------------------------------------------------------------+
  |  wm_shrx.S                                                                |
@@ -93,7 +92,6 @@ L_more_than_95:
 	popl	%esi
 	leave
 	ret
-ENDPROC(FPU_shrx)
 
 
 /*---------------------------------------------------------------------------+
@@ -204,4 +202,3 @@ Ls_more_than_95:
 	popl	%esi
 	leave
 	ret
-ENDPROC(FPU_shrxs)

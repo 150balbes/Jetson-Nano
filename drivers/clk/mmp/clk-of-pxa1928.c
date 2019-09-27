@@ -216,7 +216,6 @@ static void __init pxa1928_mpmu_clk_init(struct device_node *np)
 	pxa_unit->mpmu_base = of_iomap(np, 0);
 	if (!pxa_unit->mpmu_base) {
 		pr_err("failed to map mpmu registers\n");
-		kfree(pxa_unit);
 		return;
 	}
 
@@ -235,7 +234,6 @@ static void __init pxa1928_apmu_clk_init(struct device_node *np)
 	pxa_unit->apmu_base = of_iomap(np, 0);
 	if (!pxa_unit->apmu_base) {
 		pr_err("failed to map apmu registers\n");
-		kfree(pxa_unit);
 		return;
 	}
 
@@ -256,7 +254,6 @@ static void __init pxa1928_apbc_clk_init(struct device_node *np)
 	pxa_unit->apbc_base = of_iomap(np, 0);
 	if (!pxa_unit->apbc_base) {
 		pr_err("failed to map apbc registers\n");
-		kfree(pxa_unit);
 		return;
 	}
 

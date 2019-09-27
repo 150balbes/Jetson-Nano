@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0
 # Built-in dtb
 builtindtb-y		:= nsim_700
 
@@ -9,9 +8,10 @@ endif
 obj-y   += $(builtindtb-y).dtb.o
 dtb-y := $(builtindtb-y).dtb
 
-# for CONFIG_OF_ALL_DTBS test
-dtstree	:= $(srctree)/$(src)
-dtb-	:= $(patsubst $(dtstree)/%.dts,%.dtb, $(wildcard $(dtstree)/*.dts))
+.SECONDARY: $(obj)/$(builtindtb-y).dtb.S
 
-# board-specific dtc flags
-DTC_FLAGS_hsdk += --pad 20
+dtstree		:= $(srctree)/$(src)
+dtb-$(CONFIG_OF_ALL_DTBS) := $(patsubst $(dtstree)/%.dts,%.dtb, $(wildcard $(dtstree)/*.dts))
+
+always := $(dtb-y)
+clean-files := *.dtb  *.dtb.S

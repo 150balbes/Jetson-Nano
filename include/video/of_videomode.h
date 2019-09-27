@@ -1,8 +1,9 @@
-/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright 2012 Steffen Trumtrar <s.trumtrar@pengutronix.de>
  *
  * videomode of-helpers
+ *
+ * This file is released under the GPLv2
  */
 
 #ifndef __LINUX_OF_VIDEOMODE_H

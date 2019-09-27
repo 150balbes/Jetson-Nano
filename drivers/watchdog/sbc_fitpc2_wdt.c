@@ -75,7 +75,7 @@ static int fitpc2_wdt_open(struct inode *inode, struct file *file)
 
 	wdt_enable();
 
-	return stream_open(inode, file);
+	return nonseekable_open(inode, file);
 }
 
 static ssize_t fitpc2_wdt_write(struct file *file, const char *data,

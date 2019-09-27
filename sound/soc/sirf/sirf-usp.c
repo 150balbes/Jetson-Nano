@@ -1,8 +1,9 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * SiRF USP in I2S/DSP mode
  *
  * Copyright (c) 2011 Cambridge Silicon Radio Limited, a CSR plc group company.
+ *
+ * Licensed under GPLv2 or later.
  */
 #include <linux/module.h>
 #include <linux/io.h>
@@ -70,7 +71,6 @@ static void sirf_usp_rx_disable(struct sirf_usp *usp)
 static int sirf_usp_pcm_dai_probe(struct snd_soc_dai *dai)
 {
 	struct sirf_usp *usp = snd_soc_dai_get_drvdata(dai);
-
 	snd_soc_dai_init_dma_data(dai, &usp->playback_dma_data,
 			&usp->capture_dma_data);
 	return 0;
@@ -294,7 +294,6 @@ static struct snd_soc_dai_driver sirf_usp_pcm_dai = {
 static int sirf_usp_pcm_runtime_suspend(struct device *dev)
 {
 	struct sirf_usp *usp = dev_get_drvdata(dev);
-
 	clk_disable_unprepare(usp->clk);
 	return 0;
 }
@@ -303,7 +302,6 @@ static int sirf_usp_pcm_runtime_resume(struct device *dev)
 {
 	struct sirf_usp *usp = dev_get_drvdata(dev);
 	int ret;
-
 	ret = clk_prepare_enable(usp->clk);
 	if (ret) {
 		dev_err(dev, "clk_enable failed: %d\n", ret);

@@ -1,10 +1,11 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * STMicroelectronics pressures driver
  *
  * Copyright 2013 STMicroelectronics Inc.
  *
  * Denis Ciocca <denis.ciocca@st.com>
+ *
+ * Licensed under the GPL-2.
  */
 
 #include <linux/module.h>

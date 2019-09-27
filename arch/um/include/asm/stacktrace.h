@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _ASM_UML_STACKTRACE_H
 #define _ASM_UML_STACKTRACE_H
 

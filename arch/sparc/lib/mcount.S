@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * Copyright (C) 2000 Anton Blanchard (anton@linuxcare.com)
  *

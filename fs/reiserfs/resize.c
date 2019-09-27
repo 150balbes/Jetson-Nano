@@ -120,8 +120,7 @@ int reiserfs_resize(struct super_block *s, unsigned long block_count_new)
 		 * array of bitmap block pointers
 		 */
 		bitmap =
-		    vzalloc(array_size(bmap_nr_new,
-				       sizeof(struct reiserfs_bitmap_info)));
+		    vzalloc(sizeof(struct reiserfs_bitmap_info) * bmap_nr_new);
 		if (!bitmap) {
 			/*
 			 * Journal bitmaps are still supersized, but the

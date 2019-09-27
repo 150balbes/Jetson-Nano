@@ -90,7 +90,8 @@ cxgb_mk_tid_release(struct sk_buff *skb, u32 len, u32 tid, u16 chan)
 {
 	struct cpl_tid_release *req;
 
-	req = __skb_put_zero(skb, len);
+	req = (struct cpl_tid_release *)__skb_put(skb, len);
+	memset(req, 0, len);
 
 	INIT_TP_WR(req, tid);
 	OPCODE_TID(req) = cpu_to_be32(MK_OPCODE_TID(CPL_TID_RELEASE, tid));
@@ -103,7 +104,8 @@ cxgb_mk_close_con_req(struct sk_buff *skb, u32 len, u32 tid, u16 chan,
 {
 	struct cpl_close_con_req *req;
 
-	req = __skb_put_zero(skb, len);
+	req = (struct cpl_close_con_req *)__skb_put(skb, len);
+	memset(req, 0, len);
 
 	INIT_TP_WR(req, tid);
 	OPCODE_TID(req) = cpu_to_be32(MK_OPCODE_TID(CPL_CLOSE_CON_REQ, tid));
@@ -117,7 +119,8 @@ cxgb_mk_abort_req(struct sk_buff *skb, u32 len, u32 tid, u16 chan,
 {
 	struct cpl_abort_req *req;
 
-	req = __skb_put_zero(skb, len);
+	req = (struct cpl_abort_req *)__skb_put(skb, len);
+	memset(req, 0, len);
 
 	INIT_TP_WR(req, tid);
 	OPCODE_TID(req) = cpu_to_be32(MK_OPCODE_TID(CPL_ABORT_REQ, tid));
@@ -131,7 +134,8 @@ cxgb_mk_abort_rpl(struct sk_buff *skb, u32 len, u32 tid, u16 chan)
 {
 	struct cpl_abort_rpl *rpl;
 
-	rpl = __skb_put_zero(skb, len);
+	rpl = (struct cpl_abort_rpl *)__skb_put(skb, len);
+	memset(rpl, 0, len);
 
 	INIT_TP_WR(rpl, tid);
 	OPCODE_TID(rpl) = cpu_to_be32(MK_OPCODE_TID(CPL_ABORT_RPL, tid));
@@ -145,7 +149,8 @@ cxgb_mk_rx_data_ack(struct sk_buff *skb, u32 len, u32 tid, u16 chan,
 {
 	struct cpl_rx_data_ack *req;
 
-	req = __skb_put_zero(skb, len);
+	req = (struct cpl_rx_data_ack *)__skb_put(skb, len);
+	memset(req, 0, len);
 
 	INIT_TP_WR(req, tid);
 	OPCODE_TID(req) = cpu_to_be32(MK_OPCODE_TID(CPL_RX_DATA_ACK, tid));

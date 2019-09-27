@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * linux/include/linux/lockd/bind.h
  *
@@ -19,7 +18,6 @@
 
 /* Dummy declarations */
 struct svc_rqst;
-struct rpc_task;
 
 /*
  * This is the set of functions for lockd->nfsd communication
@@ -45,8 +43,6 @@ struct nlmclnt_initdata {
 	u32			nfs_version;
 	int			noresvport;
 	struct net		*net;
-	const struct nlmclnt_operations	*nlmclnt_ops;
-	const struct cred	*cred;
 };
 
 /*
@@ -56,27 +52,9 @@ struct nlmclnt_initdata {
 extern struct nlm_host *nlmclnt_init(const struct nlmclnt_initdata *nlm_init);
 extern void	nlmclnt_done(struct nlm_host *host);
 
-/*
- * NLM client operations provide a means to modify RPC processing of NLM
- * requests.  Callbacks receive a pointer to data passed into the call to
- * nlmclnt_proc().
- */
-struct nlmclnt_operations {
-	/* Called on successful allocation of nlm_rqst, use for allocation or
-	 * reference counting. */
-	void (*nlmclnt_alloc_call)(void *);
-
-	/* Called in rpc_task_prepare for unlock.  A return value of true
-	 * indicates the callback has put the task to sleep on a waitqueue
-	 * and NLM should not call rpc_call_start(). */
-	bool (*nlmclnt_unlock_prepare)(struct rpc_task*, void *);
-
-	/* Called when the nlm_rqst is freed, callbacks should clean up here */
-	void (*nlmclnt_release_call)(void *);
-};
-
-extern int	nlmclnt_proc(struct nlm_host *host, int cmd, struct file_lock *fl, void *data);
-extern int	lockd_up(struct net *net, const struct cred *cred);
+extern int	nlmclnt_proc(struct nlm_host *host, int cmd,
+					struct file_lock *fl);
+extern int	lockd_up(struct net *net);
 extern void	lockd_down(struct net *net);
 
 #endif /* LINUX_LOCKD_BIND_H */

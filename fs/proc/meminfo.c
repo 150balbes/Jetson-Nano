@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 #include <linux/fs.h>
 #include <linux/init.h>
 #include <linux/kernel.h>
@@ -7,7 +6,6 @@
 #include <linux/mman.h>
 #include <linux/mmzone.h>
 #include <linux/proc_fs.h>
-#include <linux/percpu.h>
 #include <linux/quicklist.h>
 #include <linux/seq_file.h>
 #include <linux/swap.h>
@@ -21,13 +19,30 @@
 #include <asm/pgtable.h>
 #include "internal.h"
 
+#if defined(CONFIG_TEGRA_NVMAP)
+#include <linux/nvmap.h>
+#endif
+
 void __attribute__((weak)) arch_report_meminfo(struct seq_file *m)
 {
 }
 
 static void show_val_kb(struct seq_file *m, const char *s, unsigned long num)
 {
-	seq_put_decimal_ull_width(m, s, num << (PAGE_SHIFT - 10), 8);
+	char v[32];
+	static const char blanks[7] = {' ', ' ', ' ', ' ',' ', ' ', ' '};
+	int len;
+
+	len = num_to_str(v, sizeof(v), num << (PAGE_SHIFT - 10));
+
+	seq_write(m, s, 16);
+
+	if (len > 0) {
+		if (len < 8)
+			seq_write(m, blanks, 8 - len);
+
+		seq_write(m, v, len);
+	}
 	seq_write(m, " kB\n", 4);
 }
 
@@ -38,7 +53,6 @@ static int meminfo_proc_show(struct seq_file *m, void *v)
 	long cached;
 	long available;
 	unsigned long pages[NR_LRU_LISTS];
-	unsigned long sreclaimable, sunreclaim;
 	int lru;
 
 	si_meminfo(&i);
@@ -53,9 +67,13 @@ static int meminfo_proc_show(struct seq_file *m, void *v)
 	for (lru = LRU_BASE; lru < NR_LRU_LISTS; lru++)
 		pages[lru] = global_node_page_state(NR_LRU_BASE + lru);
 
-	available = si_mem_available();
-	sreclaimable = global_node_page_state(NR_SLAB_RECLAIMABLE);
-	sunreclaim = global_node_page_state(NR_SLAB_UNRECLAIMABLE);
+	available = si_mem_available()
+#if defined(CONFIG_TEGRA_NVMAP)
+	+ nvmap_page_pool_get_unused_pages();
+#else
+	;
+#endif
+
 
 	show_val_kb(m, "MemTotal:       ", i.totalram);
 	show_val_kb(m, "MemFree:        ", i.freeram);
@@ -72,7 +90,7 @@ static int meminfo_proc_show(struct seq_file *m, void *v)
 	show_val_kb(m, "Active(file):   ", pages[LRU_ACTIVE_FILE]);
 	show_val_kb(m, "Inactive(file): ", pages[LRU_INACTIVE_FILE]);
 	show_val_kb(m, "Unevictable:    ", pages[LRU_UNEVICTABLE]);
-	show_val_kb(m, "Mlocked:        ", global_zone_page_state(NR_MLOCK));
+	show_val_kb(m, "Mlocked:        ", global_page_state(NR_MLOCK));
 
 #ifdef CONFIG_HIGHMEM
 	show_val_kb(m, "HighTotal:      ", i.totalhigh);
@@ -97,15 +115,18 @@ static int meminfo_proc_show(struct seq_file *m, void *v)
 	show_val_kb(m, "Mapped:         ",
 		    global_node_page_state(NR_FILE_MAPPED));
 	show_val_kb(m, "Shmem:          ", i.sharedram);
-	show_val_kb(m, "KReclaimable:   ", sreclaimable +
-		    global_node_page_state(NR_KERNEL_MISC_RECLAIMABLE));
-	show_val_kb(m, "Slab:           ", sreclaimable + sunreclaim);
-	show_val_kb(m, "SReclaimable:   ", sreclaimable);
-	show_val_kb(m, "SUnreclaim:     ", sunreclaim);
+	show_val_kb(m, "Slab:           ",
+		    global_page_state(NR_SLAB_RECLAIMABLE) +
+		    global_page_state(NR_SLAB_UNRECLAIMABLE));
+
+	show_val_kb(m, "SReclaimable:   ",
+		    global_page_state(NR_SLAB_RECLAIMABLE));
+	show_val_kb(m, "SUnreclaim:     ",
+		    global_page_state(NR_SLAB_UNRECLAIMABLE));
 	seq_printf(m, "KernelStack:    %8lu kB\n",
-		   global_zone_page_state(NR_KERNEL_STACK_KB));
+		   global_page_state(NR_KERNEL_STACK_KB));
 	show_val_kb(m, "PageTables:     ",
-		    global_zone_page_state(NR_PAGETABLE));
+		    global_page_state(NR_PAGETABLE));
 #ifdef CONFIG_QUICKLIST
 	show_val_kb(m, "Quicklists:     ", quicklist_total_size());
 #endif
@@ -113,16 +134,15 @@ static int meminfo_proc_show(struct seq_file *m, void *v)
 	show_val_kb(m, "NFS_Unstable:   ",
 		    global_node_page_state(NR_UNSTABLE_NFS));
 	show_val_kb(m, "Bounce:         ",
-		    global_zone_page_state(NR_BOUNCE));
+		    global_page_state(NR_BOUNCE));
 	show_val_kb(m, "WritebackTmp:   ",
 		    global_node_page_state(NR_WRITEBACK_TEMP));
 	show_val_kb(m, "CommitLimit:    ", vm_commit_limit());
 	show_val_kb(m, "Committed_AS:   ", committed);
 	seq_printf(m, "VmallocTotal:   %8lu kB\n",
 		   (unsigned long)VMALLOC_TOTAL >> 10);
-	show_val_kb(m, "VmallocUsed:    ", vmalloc_nr_pages());
+	show_val_kb(m, "VmallocUsed:    ", 0ul);
 	show_val_kb(m, "VmallocChunk:   ", 0ul);
-	show_val_kb(m, "Percpu:         ", pcpu_nr_pages());
 
 #ifdef CONFIG_MEMORY_FAILURE
 	seq_printf(m, "HardwareCorrupted: %5lu kB\n",
@@ -138,10 +158,15 @@ static int meminfo_proc_show(struct seq_file *m, void *v)
 		    global_node_page_state(NR_SHMEM_PMDMAPPED) * HPAGE_PMD_NR);
 #endif
 
+#if defined(CONFIG_TEGRA_NVMAP)
+	show_val_kb(m, "NvMapMemFree:   ", nvmap_page_pool_get_unused_pages());
+	show_val_kb(m, "NvMapMemUsed:   ", nvmap_iovmm_get_used_pages());
+#endif
+
 #ifdef CONFIG_CMA
 	show_val_kb(m, "CmaTotal:       ", totalcma_pages);
 	show_val_kb(m, "CmaFree:        ",
-		    global_zone_page_state(NR_FREE_CMA_PAGES));
+		    global_page_state(NR_FREE_CMA_PAGES));
 #endif
 
 	hugetlb_report_meminfo(m);
@@ -151,9 +176,21 @@ static int meminfo_proc_show(struct seq_file *m, void *v)
 	return 0;
 }
 
+static int meminfo_proc_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, meminfo_proc_show, NULL);
+}
+
+static const struct file_operations meminfo_proc_fops = {
+	.open		= meminfo_proc_open,
+	.read		= seq_read,
+	.llseek		= seq_lseek,
+	.release	= single_release,
+};
+
 static int __init proc_meminfo_init(void)
 {
-	proc_create_single("meminfo", 0, NULL, meminfo_proc_show);
+	proc_create("meminfo", 0, NULL, &meminfo_proc_fops);
 	return 0;
 }
 fs_initcall(proc_meminfo_init);

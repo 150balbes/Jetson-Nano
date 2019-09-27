@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Samsung EXYNOS4x12 FIMC-IS (Imaging Subsystem) driver
  *
@@ -6,6 +5,10 @@
  *
  * Authors: Younghwan Joo <yhwan.joo@samsung.com>
  *          Sylwester Nawrocki <s.nawrocki@samsung.com>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  */
 #include <linux/delay.h>
 
@@ -156,7 +159,7 @@ void fimc_is_hw_load_setfile(struct fimc_is *is)
 
 int fimc_is_hw_change_mode(struct fimc_is *is)
 {
-	static const u8 cmd[] = {
+	const u8 cmd[] = {
 		HIC_PREVIEW_STILL, HIC_PREVIEW_VIDEO,
 		HIC_CAPTURE_STILL, HIC_CAPTURE_VIDEO,
 	};

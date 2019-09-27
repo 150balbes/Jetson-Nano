@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  *      sr.h by David Giller
  *      CD-ROM disk driver header file

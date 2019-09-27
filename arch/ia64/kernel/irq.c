@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  *	linux/arch/ia64/kernel/irq.c
  *
@@ -18,7 +17,7 @@
  */
 
 #include <asm/delay.h>
-#include <linux/uaccess.h>
+#include <asm/uaccess.h>
 #include <linux/module.h>
 #include <linux/seq_file.h>
 #include <linux/interrupt.h>

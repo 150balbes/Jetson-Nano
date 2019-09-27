@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * This is the infamous ld script for the 64 bits vdso
  * library

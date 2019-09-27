@@ -192,6 +192,20 @@ static inline void init_hpc_chain(struct ip22_hostdata *hdata)
 	hcp->desc.pnext = hdata->dma;
 }
 
+static int sgiwd93_bus_reset(struct scsi_cmnd *cmd)
+{
+	/* FIXME perform bus-specific reset */
+
+	/* FIXME 2: kill this function, and let midlayer fallback
+	   to the same result, calling wd33c93_host_reset() */
+
+	spin_lock_irq(cmd->device->host->host_lock);
+	wd33c93_host_reset(cmd);
+	spin_unlock_irq(cmd->device->host->host_lock);
+
+	return SUCCESS;
+}
+
 /*
  * Kludge alert - the SCSI code calls the abort and reset method with int
  * arguments not with pointers.  So this is going to blow up beautyfully
@@ -203,12 +217,13 @@ static struct scsi_host_template sgiwd93_template = {
 	.name			= "SGI WD93",
 	.queuecommand		= wd33c93_queuecommand,
 	.eh_abort_handler	= wd33c93_abort,
+	.eh_bus_reset_handler	= sgiwd93_bus_reset,
 	.eh_host_reset_handler	= wd33c93_host_reset,
 	.can_queue		= 16,
 	.this_id		= 7,
 	.sg_tablesize		= SG_ALL,
 	.cmd_per_lun		= 8,
-	.dma_boundary		= PAGE_SIZE - 1,
+	.use_clustering		= DISABLE_CLUSTERING,
 };
 
 static int sgiwd93_probe(struct platform_device *pdev)
@@ -234,8 +249,8 @@ static int sgiwd93_probe(struct platform_device *pdev)
 
 	hdata = host_to_hostdata(host);
 	hdata->dev = &pdev->dev;
-	hdata->cpu = dma_alloc_attrs(&pdev->dev, HPC_DMA_SIZE, &hdata->dma,
-				     GFP_KERNEL, DMA_ATTR_NON_CONSISTENT);
+	hdata->cpu = dma_alloc_noncoherent(&pdev->dev, HPC_DMA_SIZE,
+					   &hdata->dma, GFP_KERNEL);
 	if (!hdata->cpu) {
 		printk(KERN_WARNING "sgiwd93: Could not allocate memory for "
 		       "host %d buffer.\n", unit);
@@ -274,8 +289,7 @@ static int sgiwd93_probe(struct platform_device *pdev)
 out_irq:
 	free_irq(irq, host);
 out_free:
-	dma_free_attrs(&pdev->dev, HPC_DMA_SIZE, hdata->cpu, hdata->dma,
-		       DMA_ATTR_NON_CONSISTENT);
+	dma_free_noncoherent(&pdev->dev, HPC_DMA_SIZE, hdata->cpu, hdata->dma);
 out_put:
 	scsi_host_put(host);
 out:
@@ -283,7 +297,7 @@ out:
 	return err;
 }
 
-static int sgiwd93_remove(struct platform_device *pdev)
+static int __exit sgiwd93_remove(struct platform_device *pdev)
 {
 	struct Scsi_Host *host = platform_get_drvdata(pdev);
 	struct ip22_hostdata *hdata = (struct ip22_hostdata *) host->hostdata;
@@ -291,8 +305,7 @@ static int sgiwd93_remove(struct platform_device *pdev)
 
 	scsi_remove_host(host);
 	free_irq(pd->irq, host);
-	dma_free_attrs(&pdev->dev, HPC_DMA_SIZE, hdata->cpu, hdata->dma,
-		       DMA_ATTR_NON_CONSISTENT);
+	dma_free_noncoherent(&pdev->dev, HPC_DMA_SIZE, hdata->cpu, hdata->dma);
 	scsi_host_put(host);
 	return 0;
 }

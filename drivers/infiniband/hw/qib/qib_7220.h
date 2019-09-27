@@ -67,6 +67,7 @@ struct qib_chip_specific {
 	u32 lastbuf_for_pio;
 	u32 updthresh; /* current AvailUpdThld */
 	u32 updthresh_dflt; /* default AvailUpdThld */
+	int irq;
 	u8 presets_needed;
 	u8 relock_timer_active;
 	char emsgbuf[128];
@@ -74,7 +75,6 @@ struct qib_chip_specific {
 	char bitsmsgbuf[64];
 	struct timer_list relock_timer;
 	unsigned int relock_interval; /* in jiffies */
-	struct qib_devdata *dd;
 };
 
 struct qib_chippport_specific {

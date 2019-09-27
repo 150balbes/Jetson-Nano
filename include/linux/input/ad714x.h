@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * include/linux/input/ad714x.h
  *
@@ -8,6 +7,8 @@
  * information.
  *
  * Copyright 2009-2011 Analog Devices Inc.
+ *
+ * Licensed under the GPL-2 or later.
  */
 
 #ifndef __LINUX_INPUT_AD714X_H__

@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  *  Machine specific NMI handling for generic.
  *  Split out from traps.c by Osamu Tomita <tomita@cinet.co.jp>

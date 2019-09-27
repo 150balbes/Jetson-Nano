@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 static int prism2_enable_aux_port(struct net_device *dev, int enable)
 {
 	u16 val, reg;

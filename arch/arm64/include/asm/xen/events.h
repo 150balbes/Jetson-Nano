@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _ASM_ARM64_XEN_EVENTS_H
 #define _ASM_ARM64_XEN_EVENTS_H
 
@@ -14,7 +13,7 @@ enum ipi_vector {
 
 static inline int xen_irqs_disabled(struct pt_regs *regs)
 {
-	return !interrupts_enabled(regs);
+	return raw_irqs_disabled_flags((unsigned long) regs->pstate);
 }
 
 #define xchg_xen_ulong(ptr, val) xchg((ptr), (val))

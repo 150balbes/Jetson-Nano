@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * VME Bridge Framework
  *
@@ -7,6 +6,11 @@
  *
  * Based on work by Tom Armistead and Ajit Prem
  * Copyright 2004 Motorola Inc.
+ *
+ * This program is free software; you can redistribute  it and/or modify it
+ * under  the terms of  the GNU General  Public License as published by the
+ * Free Software Foundation;  either version 2 of the  License, or (at your
+ * option) any later version.
  */
 
 #include <linux/init.h>
@@ -72,39 +76,32 @@ static struct vme_bridge *find_bridge(struct vme_resource *resource)
 	}
 }
 
-/**
- * vme_free_consistent - Allocate contiguous memory.
- * @resource: Pointer to VME resource.
- * @size: Size of allocation required.
- * @dma: Pointer to variable to store physical address of allocation.
- *
+/*
  * Allocate a contiguous block of memory for use by the driver. This is used to
  * create the buffers for the slave windows.
- *
- * Return: Virtual address of allocation on success, NULL on failure.
  */
 void *vme_alloc_consistent(struct vme_resource *resource, size_t size,
 	dma_addr_t *dma)
 {
 	struct vme_bridge *bridge;
 
-	if (!resource) {
+	if (resource == NULL) {
 		printk(KERN_ERR "No resource\n");
 		return NULL;
 	}
 
 	bridge = find_bridge(resource);
-	if (!bridge) {
+	if (bridge == NULL) {
 		printk(KERN_ERR "Can't find bridge\n");
 		return NULL;
 	}
 
-	if (!bridge->parent) {
+	if (bridge->parent == NULL) {
 		printk(KERN_ERR "Dev entry NULL for bridge %s\n", bridge->name);
 		return NULL;
 	}
 
-	if (!bridge->alloc_consistent) {
+	if (bridge->alloc_consistent == NULL) {
 		printk(KERN_ERR "alloc_consistent not supported by bridge %s\n",
 		       bridge->name);
 		return NULL;
@@ -114,37 +111,31 @@ void *vme_alloc_consistent(struct vme_resource *resource, size_t size,
 }
 EXPORT_SYMBOL(vme_alloc_consistent);
 
-/**
- * vme_free_consistent - Free previously allocated memory.
- * @resource: Pointer to VME resource.
- * @size: Size of allocation to free.
- * @vaddr: Virtual address of allocation.
- * @dma: Physical address of allocation.
- *
- * Free previously allocated block of contiguous memory.
+/*
+ * Free previously allocated contiguous block of memory.
  */
 void vme_free_consistent(struct vme_resource *resource, size_t size,
 	void *vaddr, dma_addr_t dma)
 {
 	struct vme_bridge *bridge;
 
-	if (!resource) {
+	if (resource == NULL) {
 		printk(KERN_ERR "No resource\n");
 		return;
 	}
 
 	bridge = find_bridge(resource);
-	if (!bridge) {
+	if (bridge == NULL) {
 		printk(KERN_ERR "Can't find bridge\n");
 		return;
 	}
 
-	if (!bridge->parent) {
+	if (bridge->parent == NULL) {
 		printk(KERN_ERR "Dev entry NULL for bridge %s\n", bridge->name);
 		return;
 	}
 
-	if (!bridge->free_consistent) {
+	if (bridge->free_consistent == NULL) {
 		printk(KERN_ERR "free_consistent not supported by bridge %s\n",
 		       bridge->name);
 		return;
@@ -154,16 +145,6 @@ void vme_free_consistent(struct vme_resource *resource, size_t size,
 }
 EXPORT_SYMBOL(vme_free_consistent);
 
-/**
- * vme_get_size - Helper function returning size of a VME window
- * @resource: Pointer to VME slave or master resource.
- *
- * Determine the size of the VME window provided. This is a helper
- * function, wrappering the call to vme_master_get or vme_slave_get
- * depending on the type of window resource handed to it.
- *
- * Return: Size of the window on success, zero on failure.
- */
 size_t vme_get_size(struct vme_resource *resource)
 {
 	int enabled, retval;
@@ -204,27 +185,29 @@ int vme_check_window(u32 aspace, unsigned long long vme_base,
 {
 	int retval = 0;
 
-	if (vme_base + size < size)
-		return -EINVAL;
-
 	switch (aspace) {
 	case VME_A16:
-		if (vme_base + size > VME_A16_MAX)
+		if (((vme_base + size) > VME_A16_MAX) ||
+				(vme_base > VME_A16_MAX))
 			retval = -EFAULT;
 		break;
 	case VME_A24:
-		if (vme_base + size > VME_A24_MAX)
+		if (((vme_base + size) > VME_A24_MAX) ||
+				(vme_base > VME_A24_MAX))
 			retval = -EFAULT;
 		break;
 	case VME_A32:
-		if (vme_base + size > VME_A32_MAX)
+		if (((vme_base + size) > VME_A32_MAX) ||
+				(vme_base > VME_A32_MAX))
 			retval = -EFAULT;
 		break;
 	case VME_A64:
-		/* The VME_A64_MAX limit is actually U64_MAX + 1 */
+		if ((size != 0) && (vme_base > U64_MAX + 1 - size))
+			retval = -EFAULT;
 		break;
 	case VME_CRCSR:
-		if (vme_base + size > VME_CRCSR_MAX)
+		if (((vme_base + size) > VME_CRCSR_MAX) ||
+				(vme_base > VME_CRCSR_MAX))
 			retval = -EFAULT;
 		break;
 	case VME_USER1:
@@ -276,16 +259,9 @@ static u32 vme_get_aspace(int am)
 	return 0;
 }
 
-/**
- * vme_slave_request - Request a VME slave window resource.
- * @vdev: Pointer to VME device struct vme_dev assigned to driver instance.
- * @address: Required VME address space.
- * @cycle: Required VME data transfer cycle type.
- *
- * Request use of a VME window resource capable of being set for the requested
- * address space and data transfer cycle.
- *
- * Return: Pointer to VME resource on success, NULL on failure.
+/*
+ * Request a slave image with specific attributes, return some unique
+ * identifier.
  */
 struct vme_resource *vme_slave_request(struct vme_dev *vdev, u32 address,
 	u32 cycle)
@@ -297,7 +273,7 @@ struct vme_resource *vme_slave_request(struct vme_dev *vdev, u32 address,
 	struct vme_resource *resource = NULL;
 
 	bridge = vdev->bridge;
-	if (!bridge) {
+	if (bridge == NULL) {
 		printk(KERN_ERR "Can't find VME bus\n");
 		goto err_bus;
 	}
@@ -307,7 +283,7 @@ struct vme_resource *vme_slave_request(struct vme_dev *vdev, u32 address,
 		slave_image = list_entry(slave_pos,
 			struct vme_slave_resource, list);
 
-		if (!slave_image) {
+		if (slave_image == NULL) {
 			printk(KERN_ERR "Registered NULL Slave resource\n");
 			continue;
 		}
@@ -327,13 +303,14 @@ struct vme_resource *vme_slave_request(struct vme_dev *vdev, u32 address,
 	}
 
 	/* No free image */
-	if (!allocated_image)
+	if (allocated_image == NULL)
 		goto err_image;
 
-	resource = kmalloc(sizeof(*resource), GFP_KERNEL);
-	if (!resource)
+	resource = kmalloc(sizeof(struct vme_resource), GFP_KERNEL);
+	if (resource == NULL) {
+		printk(KERN_WARNING "Unable to allocate resource structure\n");
 		goto err_alloc;
-
+	}
 	resource->type = VME_SLAVE;
 	resource->entry = &allocated_image->list;
 
@@ -350,23 +327,6 @@ err_bus:
 }
 EXPORT_SYMBOL(vme_slave_request);
 
-/**
- * vme_slave_set - Set VME slave window configuration.
- * @resource: Pointer to VME slave resource.
- * @enabled: State to which the window should be configured.
- * @vme_base: Base address for the window.
- * @size: Size of the VME window.
- * @buf_base: Based address of buffer used to provide VME slave window storage.
- * @aspace: VME address space for the VME window.
- * @cycle: VME data transfer cycle type for the VME window.
- *
- * Set configuration for provided VME slave window.
- *
- * Return: Zero on success, -EINVAL if operation is not supported on this
- *         device, if an invalid resource has been provided or invalid
- *         attributes are provided. Hardware specific errors may also be
- *         returned.
- */
 int vme_slave_set(struct vme_resource *resource, int enabled,
 	unsigned long long vme_base, unsigned long long size,
 	dma_addr_t buf_base, u32 aspace, u32 cycle)
@@ -382,7 +342,7 @@ int vme_slave_set(struct vme_resource *resource, int enabled,
 
 	image = list_entry(resource->entry, struct vme_slave_resource, list);
 
-	if (!bridge->slave_set) {
+	if (bridge->slave_set == NULL) {
 		printk(KERN_ERR "Function not supported\n");
 		return -ENOSYS;
 	}
@@ -402,21 +362,6 @@ int vme_slave_set(struct vme_resource *resource, int enabled,
 }
 EXPORT_SYMBOL(vme_slave_set);
 
-/**
- * vme_slave_get - Retrieve VME slave window configuration.
- * @resource: Pointer to VME slave resource.
- * @enabled: Pointer to variable for storing state.
- * @vme_base: Pointer to variable for storing window base address.
- * @size: Pointer to variable for storing window size.
- * @buf_base: Pointer to variable for storing slave buffer base address.
- * @aspace: Pointer to variable for storing VME address space.
- * @cycle: Pointer to variable for storing VME data transfer cycle type.
- *
- * Return configuration for provided VME slave window.
- *
- * Return: Zero on success, -EINVAL if operation is not supported on this
- *         device or if an invalid resource has been provided.
- */
 int vme_slave_get(struct vme_resource *resource, int *enabled,
 	unsigned long long *vme_base, unsigned long long *size,
 	dma_addr_t *buf_base, u32 *aspace, u32 *cycle)
@@ -431,7 +376,7 @@ int vme_slave_get(struct vme_resource *resource, int *enabled,
 
 	image = list_entry(resource->entry, struct vme_slave_resource, list);
 
-	if (!bridge->slave_get) {
+	if (bridge->slave_get == NULL) {
 		printk(KERN_ERR "vme_slave_get not supported\n");
 		return -EINVAL;
 	}
@@ -441,12 +386,6 @@ int vme_slave_get(struct vme_resource *resource, int *enabled,
 }
 EXPORT_SYMBOL(vme_slave_get);
 
-/**
- * vme_slave_free - Free VME slave window
- * @resource: Pointer to VME slave resource.
- *
- * Free the provided slave resource so that it may be reallocated.
- */
 void vme_slave_free(struct vme_resource *resource)
 {
 	struct vme_slave_resource *slave_image;
@@ -458,7 +397,7 @@ void vme_slave_free(struct vme_resource *resource)
 
 	slave_image = list_entry(resource->entry, struct vme_slave_resource,
 		list);
-	if (!slave_image) {
+	if (slave_image == NULL) {
 		printk(KERN_ERR "Can't find slave resource\n");
 		return;
 	}
@@ -476,17 +415,9 @@ void vme_slave_free(struct vme_resource *resource)
 }
 EXPORT_SYMBOL(vme_slave_free);
 
-/**
- * vme_master_request - Request a VME master window resource.
- * @vdev: Pointer to VME device struct vme_dev assigned to driver instance.
- * @address: Required VME address space.
- * @cycle: Required VME data transfer cycle type.
- * @dwidth: Required VME data transfer width.
- *
- * Request use of a VME window resource capable of being set for the requested
- * address space, data transfer cycle and width.
- *
- * Return: Pointer to VME resource on success, NULL on failure.
+/*
+ * Request a master image with specific attributes, return some unique
+ * identifier.
  */
 struct vme_resource *vme_master_request(struct vme_dev *vdev, u32 address,
 	u32 cycle, u32 dwidth)
@@ -498,7 +429,7 @@ struct vme_resource *vme_master_request(struct vme_dev *vdev, u32 address,
 	struct vme_resource *resource = NULL;
 
 	bridge = vdev->bridge;
-	if (!bridge) {
+	if (bridge == NULL) {
 		printk(KERN_ERR "Can't find VME bus\n");
 		goto err_bus;
 	}
@@ -508,7 +439,7 @@ struct vme_resource *vme_master_request(struct vme_dev *vdev, u32 address,
 		master_image = list_entry(master_pos,
 			struct vme_master_resource, list);
 
-		if (!master_image) {
+		if (master_image == NULL) {
 			printk(KERN_WARNING "Registered NULL master resource\n");
 			continue;
 		}
@@ -529,15 +460,16 @@ struct vme_resource *vme_master_request(struct vme_dev *vdev, u32 address,
 	}
 
 	/* Check to see if we found a resource */
-	if (!allocated_image) {
+	if (allocated_image == NULL) {
 		printk(KERN_ERR "Can't find a suitable resource\n");
 		goto err_image;
 	}
 
-	resource = kmalloc(sizeof(*resource), GFP_KERNEL);
-	if (!resource)
+	resource = kmalloc(sizeof(struct vme_resource), GFP_KERNEL);
+	if (resource == NULL) {
+		printk(KERN_ERR "Unable to allocate resource structure\n");
 		goto err_alloc;
-
+	}
 	resource->type = VME_MASTER;
 	resource->entry = &allocated_image->list;
 
@@ -554,23 +486,6 @@ err_bus:
 }
 EXPORT_SYMBOL(vme_master_request);
 
-/**
- * vme_master_set - Set VME master window configuration.
- * @resource: Pointer to VME master resource.
- * @enabled: State to which the window should be configured.
- * @vme_base: Base address for the window.
- * @size: Size of the VME window.
- * @aspace: VME address space for the VME window.
- * @cycle: VME data transfer cycle type for the VME window.
- * @dwidth: VME data transfer width for the VME window.
- *
- * Set configuration for provided VME master window.
- *
- * Return: Zero on success, -EINVAL if operation is not supported on this
- *         device, if an invalid resource has been provided or invalid
- *         attributes are provided. Hardware specific errors may also be
- *         returned.
- */
 int vme_master_set(struct vme_resource *resource, int enabled,
 	unsigned long long vme_base, unsigned long long size, u32 aspace,
 	u32 cycle, u32 dwidth)
@@ -586,7 +501,7 @@ int vme_master_set(struct vme_resource *resource, int enabled,
 
 	image = list_entry(resource->entry, struct vme_master_resource, list);
 
-	if (!bridge->master_set) {
+	if (bridge->master_set == NULL) {
 		printk(KERN_WARNING "vme_master_set not supported\n");
 		return -EINVAL;
 	}
@@ -607,21 +522,6 @@ int vme_master_set(struct vme_resource *resource, int enabled,
 }
 EXPORT_SYMBOL(vme_master_set);
 
-/**
- * vme_master_get - Retrieve VME master window configuration.
- * @resource: Pointer to VME master resource.
- * @enabled: Pointer to variable for storing state.
- * @vme_base: Pointer to variable for storing window base address.
- * @size: Pointer to variable for storing window size.
- * @aspace: Pointer to variable for storing VME address space.
- * @cycle: Pointer to variable for storing VME data transfer cycle type.
- * @dwidth: Pointer to variable for storing VME data transfer width.
- *
- * Return configuration for provided VME master window.
- *
- * Return: Zero on success, -EINVAL if operation is not supported on this
- *         device or if an invalid resource has been provided.
- */
 int vme_master_get(struct vme_resource *resource, int *enabled,
 	unsigned long long *vme_base, unsigned long long *size, u32 *aspace,
 	u32 *cycle, u32 *dwidth)
@@ -636,7 +536,7 @@ int vme_master_get(struct vme_resource *resource, int *enabled,
 
 	image = list_entry(resource->entry, struct vme_master_resource, list);
 
-	if (!bridge->master_get) {
+	if (bridge->master_get == NULL) {
 		printk(KERN_WARNING "%s not supported\n", __func__);
 		return -EINVAL;
 	}
@@ -646,20 +546,8 @@ int vme_master_get(struct vme_resource *resource, int *enabled,
 }
 EXPORT_SYMBOL(vme_master_get);
 
-/**
- * vme_master_write - Read data from VME space into a buffer.
- * @resource: Pointer to VME master resource.
- * @buf: Pointer to buffer where data should be transferred.
- * @count: Number of bytes to transfer.
- * @offset: Offset into VME master window at which to start transfer.
- *
- * Perform read of count bytes of data from location on VME bus which maps into
- * the VME master window at offset to buf.
- *
- * Return: Number of bytes read, -EINVAL if resource is not a VME master
- *         resource or read operation is not supported. -EFAULT returned if
- *         invalid offset is provided. Hardware specific errors may also be
- *         returned.
+/*
+ * Read data out of VME space into a buffer.
  */
 ssize_t vme_master_read(struct vme_resource *resource, void *buf, size_t count,
 	loff_t offset)
@@ -668,7 +556,7 @@ ssize_t vme_master_read(struct vme_resource *resource, void *buf, size_t count,
 	struct vme_master_resource *image;
 	size_t length;
 
-	if (!bridge->master_read) {
+	if (bridge->master_read == NULL) {
 		printk(KERN_WARNING "Reading from resource not supported\n");
 		return -EINVAL;
 	}
@@ -695,20 +583,8 @@ ssize_t vme_master_read(struct vme_resource *resource, void *buf, size_t count,
 }
 EXPORT_SYMBOL(vme_master_read);
 
-/**
- * vme_master_write - Write data out to VME space from a buffer.
- * @resource: Pointer to VME master resource.
- * @buf: Pointer to buffer holding data to transfer.
- * @count: Number of bytes to transfer.
- * @offset: Offset into VME master window at which to start transfer.
- *
- * Perform write of count bytes of data from buf to location on VME bus which
- * maps into the VME master window at offset.
- *
- * Return: Number of bytes written, -EINVAL if resource is not a VME master
- *         resource or write operation is not supported. -EFAULT returned if
- *         invalid offset is provided. Hardware specific errors may also be
- *         returned.
+/*
+ * Write data out to VME space from a buffer.
  */
 ssize_t vme_master_write(struct vme_resource *resource, void *buf,
 	size_t count, loff_t offset)
@@ -717,7 +593,7 @@ ssize_t vme_master_write(struct vme_resource *resource, void *buf,
 	struct vme_master_resource *image;
 	size_t length;
 
-	if (!bridge->master_write) {
+	if (bridge->master_write == NULL) {
 		printk(KERN_WARNING "Writing to resource not supported\n");
 		return -EINVAL;
 	}
@@ -743,24 +619,8 @@ ssize_t vme_master_write(struct vme_resource *resource, void *buf,
 }
 EXPORT_SYMBOL(vme_master_write);
 
-/**
- * vme_master_rmw - Perform read-modify-write cycle.
- * @resource: Pointer to VME master resource.
- * @mask: Bits to be compared and swapped in operation.
- * @compare: Bits to be compared with data read from offset.
- * @swap: Bits to be swapped in data read from offset.
- * @offset: Offset into VME master window at which to perform operation.
- *
- * Perform read-modify-write cycle on provided location:
- * - Location on VME bus is read.
- * - Bits selected by mask are compared with compare.
- * - Where a selected bit matches that in compare and are selected in swap,
- * the bit is swapped.
- * - Result written back to location on VME bus.
- *
- * Return: Bytes written on success, -EINVAL if resource is not a VME master
- *         resource or RMW operation is not supported. Hardware specific
- *         errors may also be returned.
+/*
+ * Perform RMW cycle to provided location.
  */
 unsigned int vme_master_rmw(struct vme_resource *resource, unsigned int mask,
 	unsigned int compare, unsigned int swap, loff_t offset)
@@ -768,7 +628,7 @@ unsigned int vme_master_rmw(struct vme_resource *resource, unsigned int mask,
 	struct vme_bridge *bridge = find_bridge(resource);
 	struct vme_master_resource *image;
 
-	if (!bridge->master_rmw) {
+	if (bridge->master_rmw == NULL) {
 		printk(KERN_WARNING "Writing to resource not supported\n");
 		return -EINVAL;
 	}
@@ -784,17 +644,6 @@ unsigned int vme_master_rmw(struct vme_resource *resource, unsigned int mask,
 }
 EXPORT_SYMBOL(vme_master_rmw);
 
-/**
- * vme_master_mmap - Mmap region of VME master window.
- * @resource: Pointer to VME master resource.
- * @vma: Pointer to definition of user mapping.
- *
- * Memory map a region of the VME master window into user space.
- *
- * Return: Zero on success, -EINVAL if resource is not a VME master
- *         resource or -EFAULT if map exceeds window size. Other generic mmap
- *         errors may also be returned.
- */
 int vme_master_mmap(struct vme_resource *resource, struct vm_area_struct *vma)
 {
 	struct vme_master_resource *image;
@@ -821,12 +670,6 @@ int vme_master_mmap(struct vme_resource *resource, struct vm_area_struct *vma)
 }
 EXPORT_SYMBOL(vme_master_mmap);
 
-/**
- * vme_master_free - Free VME master window
- * @resource: Pointer to VME master resource.
- *
- * Free the provided master resource so that it may be reallocated.
- */
 void vme_master_free(struct vme_resource *resource)
 {
 	struct vme_master_resource *master_image;
@@ -838,7 +681,7 @@ void vme_master_free(struct vme_resource *resource)
 
 	master_image = list_entry(resource->entry, struct vme_master_resource,
 		list);
-	if (!master_image) {
+	if (master_image == NULL) {
 		printk(KERN_ERR "Can't find master resource\n");
 		return;
 	}
@@ -856,15 +699,9 @@ void vme_master_free(struct vme_resource *resource)
 }
 EXPORT_SYMBOL(vme_master_free);
 
-/**
- * vme_dma_request - Request a DMA controller.
- * @vdev: Pointer to VME device struct vme_dev assigned to driver instance.
- * @route: Required src/destination combination.
- *
- * Request a VME DMA controller with capability to perform transfers bewteen
- * requested source/destination combination.
- *
- * Return: Pointer to VME DMA resource on success, NULL on failure.
+/*
+ * Request a DMA controller with specific attributes, return some unique
+ * identifier.
  */
 struct vme_resource *vme_dma_request(struct vme_dev *vdev, u32 route)
 {
@@ -878,7 +715,7 @@ struct vme_resource *vme_dma_request(struct vme_dev *vdev, u32 route)
 	printk(KERN_ERR "No VME resource Attribute tests done\n");
 
 	bridge = vdev->bridge;
-	if (!bridge) {
+	if (bridge == NULL) {
 		printk(KERN_ERR "Can't find VME bus\n");
 		goto err_bus;
 	}
@@ -887,7 +724,8 @@ struct vme_resource *vme_dma_request(struct vme_dev *vdev, u32 route)
 	list_for_each(dma_pos, &bridge->dma_resources) {
 		dma_ctrlr = list_entry(dma_pos,
 			struct vme_dma_resource, list);
-		if (!dma_ctrlr) {
+
+		if (dma_ctrlr == NULL) {
 			printk(KERN_ERR "Registered NULL DMA resource\n");
 			continue;
 		}
@@ -906,13 +744,14 @@ struct vme_resource *vme_dma_request(struct vme_dev *vdev, u32 route)
 	}
 
 	/* Check to see if we found a resource */
-	if (!allocated_ctrlr)
+	if (allocated_ctrlr == NULL)
 		goto err_ctrlr;
 
-	resource = kmalloc(sizeof(*resource), GFP_KERNEL);
-	if (!resource)
+	resource = kmalloc(sizeof(struct vme_resource), GFP_KERNEL);
+	if (resource == NULL) {
+		printk(KERN_WARNING "Unable to allocate resource structure\n");
 		goto err_alloc;
-
+	}
 	resource->type = VME_DMA;
 	resource->entry = &allocated_ctrlr->list;
 
@@ -929,18 +768,12 @@ err_bus:
 }
 EXPORT_SYMBOL(vme_dma_request);
 
-/**
- * vme_new_dma_list - Create new VME DMA list.
- * @resource: Pointer to VME DMA resource.
- *
- * Create a new VME DMA list. It is the responsibility of the user to free
- * the list once it is no longer required with vme_dma_list_free().
- *
- * Return: Pointer to new VME DMA list, NULL on allocation failure or invalid
- *         VME DMA resource.
+/*
+ * Start new list
  */
 struct vme_dma_list *vme_new_dma_list(struct vme_resource *resource)
 {
+	struct vme_dma_resource *ctrlr;
 	struct vme_dma_list *dma_list;
 
 	if (resource->type != VME_DMA) {
@@ -948,43 +781,40 @@ struct vme_dma_list *vme_new_dma_list(struct vme_resource *resource)
 		return NULL;
 	}
 
-	dma_list = kmalloc(sizeof(*dma_list), GFP_KERNEL);
-	if (!dma_list)
-		return NULL;
+	ctrlr = list_entry(resource->entry, struct vme_dma_resource, list);
 
+	dma_list = kmalloc(sizeof(struct vme_dma_list), GFP_KERNEL);
+	if (dma_list == NULL) {
+		printk(KERN_ERR "Unable to allocate memory for new DMA list\n");
+		return NULL;
+	}
 	INIT_LIST_HEAD(&dma_list->entries);
-	dma_list->parent = list_entry(resource->entry,
-				      struct vme_dma_resource,
-				      list);
+	dma_list->parent = ctrlr;
 	mutex_init(&dma_list->mtx);
 
 	return dma_list;
 }
 EXPORT_SYMBOL(vme_new_dma_list);
 
-/**
- * vme_dma_pattern_attribute - Create "Pattern" type VME DMA list attribute.
- * @pattern: Value to use used as pattern
- * @type: Type of pattern to be written.
- *
- * Create VME DMA list attribute for pattern generation. It is the
- * responsibility of the user to free used attributes using
- * vme_dma_free_attribute().
- *
- * Return: Pointer to VME DMA attribute, NULL on failure.
+/*
+ * Create "Pattern" type attributes
  */
 struct vme_dma_attr *vme_dma_pattern_attribute(u32 pattern, u32 type)
 {
 	struct vme_dma_attr *attributes;
 	struct vme_dma_pattern *pattern_attr;
 
-	attributes = kmalloc(sizeof(*attributes), GFP_KERNEL);
-	if (!attributes)
+	attributes = kmalloc(sizeof(struct vme_dma_attr), GFP_KERNEL);
+	if (attributes == NULL) {
+		printk(KERN_ERR "Unable to allocate memory for attributes structure\n");
 		goto err_attr;
+	}
 
-	pattern_attr = kmalloc(sizeof(*pattern_attr), GFP_KERNEL);
-	if (!pattern_attr)
+	pattern_attr = kmalloc(sizeof(struct vme_dma_pattern), GFP_KERNEL);
+	if (pattern_attr == NULL) {
+		printk(KERN_ERR "Unable to allocate memory for pattern attributes\n");
 		goto err_pat;
+	}
 
 	attributes->type = VME_DMA_PATTERN;
 	attributes->private = (void *)pattern_attr;
@@ -1001,15 +831,8 @@ err_attr:
 }
 EXPORT_SYMBOL(vme_dma_pattern_attribute);
 
-/**
- * vme_dma_pci_attribute - Create "PCI" type VME DMA list attribute.
- * @address: PCI base address for DMA transfer.
- *
- * Create VME DMA list attribute pointing to a location on PCI for DMA
- * transfers. It is the responsibility of the user to free used attributes
- * using vme_dma_free_attribute().
- *
- * Return: Pointer to VME DMA attribute, NULL on failure.
+/*
+ * Create "PCI" type attributes
  */
 struct vme_dma_attr *vme_dma_pci_attribute(dma_addr_t address)
 {
@@ -1018,13 +841,19 @@ struct vme_dma_attr *vme_dma_pci_attribute(dma_addr_t address)
 
 	/* XXX Run some sanity checks here */
 
-	attributes = kmalloc(sizeof(*attributes), GFP_KERNEL);
-	if (!attributes)
+	attributes = kmalloc(sizeof(struct vme_dma_attr), GFP_KERNEL);
+	if (attributes == NULL) {
+		printk(KERN_ERR "Unable to allocate memory for attributes structure\n");
 		goto err_attr;
+	}
 
-	pci_attr = kmalloc(sizeof(*pci_attr), GFP_KERNEL);
-	if (!pci_attr)
+	pci_attr = kmalloc(sizeof(struct vme_dma_pci), GFP_KERNEL);
+	if (pci_attr == NULL) {
+		printk(KERN_ERR "Unable to allocate memory for PCI attributes\n");
 		goto err_pci;
+	}
+
+
 
 	attributes->type = VME_DMA_PCI;
 	attributes->private = (void *)pci_attr;
@@ -1040,18 +869,8 @@ err_attr:
 }
 EXPORT_SYMBOL(vme_dma_pci_attribute);
 
-/**
- * vme_dma_vme_attribute - Create "VME" type VME DMA list attribute.
- * @address: VME base address for DMA transfer.
- * @aspace: VME address space to use for DMA transfer.
- * @cycle: VME bus cycle to use for DMA transfer.
- * @dwidth: VME data width to use for DMA transfer.
- *
- * Create VME DMA list attribute pointing to a location on the VME bus for DMA
- * transfers. It is the responsibility of the user to free used attributes
- * using vme_dma_free_attribute().
- *
- * Return: Pointer to VME DMA attribute, NULL on failure.
+/*
+ * Create "VME" type attributes
  */
 struct vme_dma_attr *vme_dma_vme_attribute(unsigned long long address,
 	u32 aspace, u32 cycle, u32 dwidth)
@@ -1059,13 +878,18 @@ struct vme_dma_attr *vme_dma_vme_attribute(unsigned long long address,
 	struct vme_dma_attr *attributes;
 	struct vme_dma_vme *vme_attr;
 
-	attributes = kmalloc(sizeof(*attributes), GFP_KERNEL);
-	if (!attributes)
+	attributes = kmalloc(
+		sizeof(struct vme_dma_attr), GFP_KERNEL);
+	if (attributes == NULL) {
+		printk(KERN_ERR "Unable to allocate memory for attributes structure\n");
 		goto err_attr;
+	}
 
-	vme_attr = kmalloc(sizeof(*vme_attr), GFP_KERNEL);
-	if (!vme_attr)
+	vme_attr = kmalloc(sizeof(struct vme_dma_vme), GFP_KERNEL);
+	if (vme_attr == NULL) {
+		printk(KERN_ERR "Unable to allocate memory for VME attributes\n");
 		goto err_vme;
+	}
 
 	attributes->type = VME_DMA_VME;
 	attributes->private = (void *)vme_attr;
@@ -1084,12 +908,8 @@ err_attr:
 }
 EXPORT_SYMBOL(vme_dma_vme_attribute);
 
-/**
- * vme_dma_free_attribute - Free DMA list attribute.
- * @attributes: Pointer to DMA list attribute.
- *
- * Free VME DMA list attribute. VME DMA list attributes can be safely freed
- * once vme_dma_list_add() has returned.
+/*
+ * Free attribute
  */
 void vme_dma_free_attribute(struct vme_dma_attr *attributes)
 {
@@ -1098,30 +918,13 @@ void vme_dma_free_attribute(struct vme_dma_attr *attributes)
 }
 EXPORT_SYMBOL(vme_dma_free_attribute);
 
-/**
- * vme_dma_list_add - Add enty to a VME DMA list.
- * @list: Pointer to VME list.
- * @src: Pointer to DMA list attribute to use as source.
- * @dest: Pointer to DMA list attribute to use as destination.
- * @count: Number of bytes to transfer.
- *
- * Add an entry to the provided VME DMA list. Entry requires pointers to source
- * and destination DMA attributes and a count.
- *
- * Please note, the attributes supported as source and destinations for
- * transfers are hardware dependent.
- *
- * Return: Zero on success, -EINVAL if operation is not supported on this
- *         device or if the link list has already been submitted for execution.
- *         Hardware specific errors also possible.
- */
 int vme_dma_list_add(struct vme_dma_list *list, struct vme_dma_attr *src,
 	struct vme_dma_attr *dest, size_t count)
 {
 	struct vme_bridge *bridge = list->parent->parent;
 	int retval;
 
-	if (!bridge->dma_list_add) {
+	if (bridge->dma_list_add == NULL) {
 		printk(KERN_WARNING "Link List DMA generation not supported\n");
 		return -EINVAL;
 	}
@@ -1139,22 +942,12 @@ int vme_dma_list_add(struct vme_dma_list *list, struct vme_dma_attr *src,
 }
 EXPORT_SYMBOL(vme_dma_list_add);
 
-/**
- * vme_dma_list_exec - Queue a VME DMA list for execution.
- * @list: Pointer to VME list.
- *
- * Queue the provided VME DMA list for execution. The call will return once the
- * list has been executed.
- *
- * Return: Zero on success, -EINVAL if operation is not supported on this
- *         device. Hardware specific errors also possible.
- */
 int vme_dma_list_exec(struct vme_dma_list *list)
 {
 	struct vme_bridge *bridge = list->parent->parent;
 	int retval;
 
-	if (!bridge->dma_list_exec) {
+	if (bridge->dma_list_exec == NULL) {
 		printk(KERN_ERR "Link List DMA execution not supported\n");
 		return -EINVAL;
 	}
@@ -1169,28 +962,19 @@ int vme_dma_list_exec(struct vme_dma_list *list)
 }
 EXPORT_SYMBOL(vme_dma_list_exec);
 
-/**
- * vme_dma_list_free - Free a VME DMA list.
- * @list: Pointer to VME list.
- *
- * Free the provided DMA list and all its entries.
- *
- * Return: Zero on success, -EINVAL on invalid VME resource, -EBUSY if resource
- *         is still in use. Hardware specific errors also possible.
- */
 int vme_dma_list_free(struct vme_dma_list *list)
 {
 	struct vme_bridge *bridge = list->parent->parent;
 	int retval;
 
-	if (!bridge->dma_list_empty) {
+	if (bridge->dma_list_empty == NULL) {
 		printk(KERN_WARNING "Emptying of Link Lists not supported\n");
 		return -EINVAL;
 	}
 
 	if (!mutex_trylock(&list->mtx)) {
 		printk(KERN_ERR "Link List in use\n");
-		return -EBUSY;
+		return -EINVAL;
 	}
 
 	/*
@@ -1210,15 +994,6 @@ int vme_dma_list_free(struct vme_dma_list *list)
 }
 EXPORT_SYMBOL(vme_dma_list_free);
 
-/**
- * vme_dma_free - Free a VME DMA resource.
- * @resource: Pointer to VME DMA resource.
- *
- * Free the provided DMA resource so that it may be reallocated.
- *
- * Return: Zero on success, -EINVAL on invalid VME resource, -EBUSY if resource
- *         is still active.
- */
 int vme_dma_free(struct vme_resource *resource)
 {
 	struct vme_dma_resource *ctrlr;
@@ -1286,7 +1061,7 @@ struct vme_error_handler *vme_register_error_handler(
 {
 	struct vme_error_handler *handler;
 
-	handler = kmalloc(sizeof(*handler), GFP_ATOMIC);
+	handler = kmalloc(sizeof(*handler), GFP_KERNEL);
 	if (!handler)
 		return NULL;
 
@@ -1315,7 +1090,8 @@ void vme_irq_handler(struct vme_bridge *bridge, int level, int statid)
 
 	call = bridge->irq[level - 1].callback[statid].func;
 	priv_data = bridge->irq[level - 1].callback[statid].priv_data;
-	if (call)
+
+	if (call != NULL)
 		call(level, statid, priv_data);
 	else
 		printk(KERN_WARNING "Spurious VME interrupt, level:%x, vector:%x\n",
@@ -1323,22 +1099,6 @@ void vme_irq_handler(struct vme_bridge *bridge, int level, int statid)
 }
 EXPORT_SYMBOL(vme_irq_handler);
 
-/**
- * vme_irq_request - Request a specific VME interrupt.
- * @vdev: Pointer to VME device struct vme_dev assigned to driver instance.
- * @level: Interrupt priority being requested.
- * @statid: Interrupt vector being requested.
- * @callback: Pointer to callback function called when VME interrupt/vector
- *            received.
- * @priv_data: Generic pointer that will be passed to the callback function.
- *
- * Request callback to be attached as a handler for VME interrupts with provided
- * level and statid.
- *
- * Return: Zero on success, -EINVAL on invalid vme device, level or if the
- *         function is not supported, -EBUSY if the level/statid combination is
- *         already in use. Hardware specific errors also possible.
- */
 int vme_irq_request(struct vme_dev *vdev, int level, int statid,
 	void (*callback)(int, int, void *),
 	void *priv_data)
@@ -1346,7 +1106,7 @@ int vme_irq_request(struct vme_dev *vdev, int level, int statid,
 	struct vme_bridge *bridge;
 
 	bridge = vdev->bridge;
-	if (!bridge) {
+	if (bridge == NULL) {
 		printk(KERN_ERR "Can't find VME bus\n");
 		return -EINVAL;
 	}
@@ -1356,7 +1116,7 @@ int vme_irq_request(struct vme_dev *vdev, int level, int statid,
 		return -EINVAL;
 	}
 
-	if (!bridge->irq_set) {
+	if (bridge->irq_set == NULL) {
 		printk(KERN_ERR "Configuring interrupts not supported\n");
 		return -EINVAL;
 	}
@@ -1382,20 +1142,12 @@ int vme_irq_request(struct vme_dev *vdev, int level, int statid,
 }
 EXPORT_SYMBOL(vme_irq_request);
 
-/**
- * vme_irq_free - Free a VME interrupt.
- * @vdev: Pointer to VME device struct vme_dev assigned to driver instance.
- * @level: Interrupt priority of interrupt being freed.
- * @statid: Interrupt vector of interrupt being freed.
- *
- * Remove previously attached callback from VME interrupt priority/vector.
- */
 void vme_irq_free(struct vme_dev *vdev, int level, int statid)
 {
 	struct vme_bridge *bridge;
 
 	bridge = vdev->bridge;
-	if (!bridge) {
+	if (bridge == NULL) {
 		printk(KERN_ERR "Can't find VME bus\n");
 		return;
 	}
@@ -1405,7 +1157,7 @@ void vme_irq_free(struct vme_dev *vdev, int level, int statid)
 		return;
 	}
 
-	if (!bridge->irq_set) {
+	if (bridge->irq_set == NULL) {
 		printk(KERN_ERR "Configuring interrupts not supported\n");
 		return;
 	}
@@ -1425,24 +1177,12 @@ void vme_irq_free(struct vme_dev *vdev, int level, int statid)
 }
 EXPORT_SYMBOL(vme_irq_free);
 
-/**
- * vme_irq_generate - Generate VME interrupt.
- * @vdev: Pointer to VME device struct vme_dev assigned to driver instance.
- * @level: Interrupt priority at which to assert the interrupt.
- * @statid: Interrupt vector to associate with the interrupt.
- *
- * Generate a VME interrupt of the provided level and with the provided
- * statid.
- *
- * Return: Zero on success, -EINVAL on invalid vme device, level or if the
- *         function is not supported. Hardware specific errors also possible.
- */
 int vme_irq_generate(struct vme_dev *vdev, int level, int statid)
 {
 	struct vme_bridge *bridge;
 
 	bridge = vdev->bridge;
-	if (!bridge) {
+	if (bridge == NULL) {
 		printk(KERN_ERR "Can't find VME bus\n");
 		return -EINVAL;
 	}
@@ -1452,7 +1192,7 @@ int vme_irq_generate(struct vme_dev *vdev, int level, int statid)
 		return -EINVAL;
 	}
 
-	if (!bridge->irq_generate) {
+	if (bridge->irq_generate == NULL) {
 		printk(KERN_WARNING "Interrupt generation not supported\n");
 		return -EINVAL;
 	}
@@ -1461,15 +1201,8 @@ int vme_irq_generate(struct vme_dev *vdev, int level, int statid)
 }
 EXPORT_SYMBOL(vme_irq_generate);
 
-/**
- * vme_lm_request - Request a VME location monitor
- * @vdev: Pointer to VME device struct vme_dev assigned to driver instance.
- *
- * Allocate a location monitor resource to the driver. A location monitor
- * allows the driver to monitor accesses to a contiguous number of
- * addresses on the VME bus.
- *
- * Return: Pointer to a VME resource on success or NULL on failure.
+/*
+ * Request the location monitor, return resource or NULL
  */
 struct vme_resource *vme_lm_request(struct vme_dev *vdev)
 {
@@ -1480,16 +1213,17 @@ struct vme_resource *vme_lm_request(struct vme_dev *vdev)
 	struct vme_resource *resource = NULL;
 
 	bridge = vdev->bridge;
-	if (!bridge) {
+	if (bridge == NULL) {
 		printk(KERN_ERR "Can't find VME bus\n");
 		goto err_bus;
 	}
 
-	/* Loop through LM resources */
+	/* Loop through DMA resources */
 	list_for_each(lm_pos, &bridge->lm_resources) {
 		lm = list_entry(lm_pos,
 			struct vme_lm_resource, list);
-		if (!lm) {
+
+		if (lm == NULL) {
 			printk(KERN_ERR "Registered NULL Location Monitor resource\n");
 			continue;
 		}
@@ -1506,13 +1240,14 @@ struct vme_resource *vme_lm_request(struct vme_dev *vdev)
 	}
 
 	/* Check to see if we found a resource */
-	if (!allocated_lm)
+	if (allocated_lm == NULL)
 		goto err_lm;
 
-	resource = kmalloc(sizeof(*resource), GFP_KERNEL);
-	if (!resource)
+	resource = kmalloc(sizeof(struct vme_resource), GFP_KERNEL);
+	if (resource == NULL) {
+		printk(KERN_ERR "Unable to allocate resource structure\n");
 		goto err_alloc;
-
+	}
 	resource->type = VME_LM;
 	resource->entry = &allocated_lm->list;
 
@@ -1529,17 +1264,6 @@ err_bus:
 }
 EXPORT_SYMBOL(vme_lm_request);
 
-/**
- * vme_lm_count - Determine number of VME Addresses monitored
- * @resource: Pointer to VME location monitor resource.
- *
- * The number of contiguous addresses monitored is hardware dependent.
- * Return the number of contiguous addresses monitored by the
- * location monitor.
- *
- * Return: Count of addresses monitored or -EINVAL when provided with an
- *	   invalid location monitor resource.
- */
 int vme_lm_count(struct vme_resource *resource)
 {
 	struct vme_lm_resource *lm;
@@ -1555,20 +1279,6 @@ int vme_lm_count(struct vme_resource *resource)
 }
 EXPORT_SYMBOL(vme_lm_count);
 
-/**
- * vme_lm_set - Configure location monitor
- * @resource: Pointer to VME location monitor resource.
- * @lm_base: Base address to monitor.
- * @aspace: VME address space to monitor.
- * @cycle: VME bus cycle type to monitor.
- *
- * Set the base address, address space and cycle type of accesses to be
- * monitored by the location monitor.
- *
- * Return: Zero on success, -EINVAL when provided with an invalid location
- *	   monitor resource or function is not supported. Hardware specific
- *	   errors may also be returned.
- */
 int vme_lm_set(struct vme_resource *resource, unsigned long long lm_base,
 	u32 aspace, u32 cycle)
 {
@@ -1582,7 +1292,7 @@ int vme_lm_set(struct vme_resource *resource, unsigned long long lm_base,
 
 	lm = list_entry(resource->entry, struct vme_lm_resource, list);
 
-	if (!bridge->lm_set) {
+	if (bridge->lm_set == NULL) {
 		printk(KERN_ERR "vme_lm_set not supported\n");
 		return -EINVAL;
 	}
@@ -1591,20 +1301,6 @@ int vme_lm_set(struct vme_resource *resource, unsigned long long lm_base,
 }
 EXPORT_SYMBOL(vme_lm_set);
 
-/**
- * vme_lm_get - Retrieve location monitor settings
- * @resource: Pointer to VME location monitor resource.
- * @lm_base: Pointer used to output the base address monitored.
- * @aspace: Pointer used to output the address space monitored.
- * @cycle: Pointer used to output the VME bus cycle type monitored.
- *
- * Retrieve the base address, address space and cycle type of accesses to
- * be monitored by the location monitor.
- *
- * Return: Zero on success, -EINVAL when provided with an invalid location
- *	   monitor resource or function is not supported. Hardware specific
- *	   errors may also be returned.
- */
 int vme_lm_get(struct vme_resource *resource, unsigned long long *lm_base,
 	u32 *aspace, u32 *cycle)
 {
@@ -1618,7 +1314,7 @@ int vme_lm_get(struct vme_resource *resource, unsigned long long *lm_base,
 
 	lm = list_entry(resource->entry, struct vme_lm_resource, list);
 
-	if (!bridge->lm_get) {
+	if (bridge->lm_get == NULL) {
 		printk(KERN_ERR "vme_lm_get not supported\n");
 		return -EINVAL;
 	}
@@ -1627,21 +1323,6 @@ int vme_lm_get(struct vme_resource *resource, unsigned long long *lm_base,
 }
 EXPORT_SYMBOL(vme_lm_get);
 
-/**
- * vme_lm_attach - Provide callback for location monitor address
- * @resource: Pointer to VME location monitor resource.
- * @monitor: Offset to which callback should be attached.
- * @callback: Pointer to callback function called when triggered.
- * @data: Generic pointer that will be passed to the callback function.
- *
- * Attach a callback to the specificed offset into the location monitors
- * monitored addresses. A generic pointer is provided to allow data to be
- * passed to the callback when called.
- *
- * Return: Zero on success, -EINVAL when provided with an invalid location
- *	   monitor resource or function is not supported. Hardware specific
- *	   errors may also be returned.
- */
 int vme_lm_attach(struct vme_resource *resource, int monitor,
 	void (*callback)(void *), void *data)
 {
@@ -1655,7 +1336,7 @@ int vme_lm_attach(struct vme_resource *resource, int monitor,
 
 	lm = list_entry(resource->entry, struct vme_lm_resource, list);
 
-	if (!bridge->lm_attach) {
+	if (bridge->lm_attach == NULL) {
 		printk(KERN_ERR "vme_lm_attach not supported\n");
 		return -EINVAL;
 	}
@@ -1664,18 +1345,6 @@ int vme_lm_attach(struct vme_resource *resource, int monitor,
 }
 EXPORT_SYMBOL(vme_lm_attach);
 
-/**
- * vme_lm_detach - Remove callback for location monitor address
- * @resource: Pointer to VME location monitor resource.
- * @monitor: Offset to which callback should be removed.
- *
- * Remove the callback associated with the specificed offset into the
- * location monitors monitored addresses.
- *
- * Return: Zero on success, -EINVAL when provided with an invalid location
- *	   monitor resource or function is not supported. Hardware specific
- *	   errors may also be returned.
- */
 int vme_lm_detach(struct vme_resource *resource, int monitor)
 {
 	struct vme_bridge *bridge = find_bridge(resource);
@@ -1688,7 +1357,7 @@ int vme_lm_detach(struct vme_resource *resource, int monitor)
 
 	lm = list_entry(resource->entry, struct vme_lm_resource, list);
 
-	if (!bridge->lm_detach) {
+	if (bridge->lm_detach == NULL) {
 		printk(KERN_ERR "vme_lm_detach not supported\n");
 		return -EINVAL;
 	}
@@ -1697,18 +1366,6 @@ int vme_lm_detach(struct vme_resource *resource, int monitor)
 }
 EXPORT_SYMBOL(vme_lm_detach);
 
-/**
- * vme_lm_free - Free allocated VME location monitor
- * @resource: Pointer to VME location monitor resource.
- *
- * Free allocation of a VME location monitor.
- *
- * WARNING: This function currently expects that any callbacks that have
- *          been attached to the location monitor have been removed.
- *
- * Return: Zero on success, -EINVAL when provided with an invalid location
- *	   monitor resource.
- */
 void vme_lm_free(struct vme_resource *resource)
 {
 	struct vme_lm_resource *lm;
@@ -1735,27 +1392,17 @@ void vme_lm_free(struct vme_resource *resource)
 }
 EXPORT_SYMBOL(vme_lm_free);
 
-/**
- * vme_slot_num - Retrieve slot ID
- * @vdev: Pointer to VME device struct vme_dev assigned to driver instance.
- *
- * Retrieve the slot ID associated with the provided VME device.
- *
- * Return: The slot ID on success, -EINVAL if VME bridge cannot be determined
- *         or the function is not supported. Hardware specific errors may also
- *         be returned.
- */
 int vme_slot_num(struct vme_dev *vdev)
 {
 	struct vme_bridge *bridge;
 
 	bridge = vdev->bridge;
-	if (!bridge) {
+	if (bridge == NULL) {
 		printk(KERN_ERR "Can't find VME bus\n");
 		return -EINVAL;
 	}
 
-	if (!bridge->slot_get) {
+	if (bridge->slot_get == NULL) {
 		printk(KERN_WARNING "vme_slot_num not supported\n");
 		return -EINVAL;
 	}
@@ -1764,21 +1411,12 @@ int vme_slot_num(struct vme_dev *vdev)
 }
 EXPORT_SYMBOL(vme_slot_num);
 
-/**
- * vme_bus_num - Retrieve bus number
- * @vdev: Pointer to VME device struct vme_dev assigned to driver instance.
- *
- * Retrieve the bus enumeration associated with the provided VME device.
- *
- * Return: The bus number on success, -EINVAL if VME bridge cannot be
- *         determined.
- */
 int vme_bus_num(struct vme_dev *vdev)
 {
 	struct vme_bridge *bridge;
 
 	bridge = vdev->bridge;
-	if (!bridge) {
+	if (bridge == NULL) {
 		pr_err("Can't find VME bus\n");
 		return -EINVAL;
 	}
@@ -1858,7 +1496,7 @@ static int __vme_register_driver_bus(struct vme_driver *drv,
 	struct vme_dev *tmp;
 
 	for (i = 0; i < ndevs; i++) {
-		vdev = kzalloc(sizeof(*vdev), GFP_KERNEL);
+		vdev = kzalloc(sizeof(struct vme_dev), GFP_KERNEL);
 		if (!vdev) {
 			err = -ENOMEM;
 			goto err_devalloc;
@@ -1886,6 +1524,7 @@ static int __vme_register_driver_bus(struct vme_driver *drv,
 
 err_reg:
 	put_device(&vdev->dev);
+	kfree(vdev);
 err_devalloc:
 	list_for_each_entry_safe(vdev, tmp, &drv->devices, drv_list) {
 		list_del(&vdev->drv_list);
@@ -1917,15 +1556,6 @@ static int __vme_register_driver(struct vme_driver *drv, unsigned int ndevs)
 	return err;
 }
 
-/**
- * vme_register_driver - Register a VME driver
- * @drv: Pointer to VME driver structure to register.
- * @ndevs: Maximum number of devices to allow to be enumerated.
- *
- * Register a VME device driver with the VME subsystem.
- *
- * Return: Zero on success, error value on registration failure.
- */
 int vme_register_driver(struct vme_driver *drv, unsigned int ndevs)
 {
 	int err;
@@ -1946,12 +1576,6 @@ int vme_register_driver(struct vme_driver *drv, unsigned int ndevs)
 }
 EXPORT_SYMBOL(vme_register_driver);
 
-/**
- * vme_unregister_driver - Unregister a VME driver
- * @drv: Pointer to VME driver structure to unregister.
- *
- * Unregister a VME device driver from the VME subsystem.
- */
 void vme_unregister_driver(struct vme_driver *drv)
 {
 	struct vme_dev *dev, *dev_tmp;
@@ -1989,26 +1613,30 @@ static int vme_bus_match(struct device *dev, struct device_driver *drv)
 
 static int vme_bus_probe(struct device *dev)
 {
+	int retval = -ENODEV;
 	struct vme_driver *driver;
 	struct vme_dev *vdev = dev_to_vme_dev(dev);
 
 	driver = dev->platform_data;
-	if (driver->probe)
-		return driver->probe(vdev);
 
-	return -ENODEV;
+	if (driver->probe != NULL)
+		retval = driver->probe(vdev);
+
+	return retval;
 }
 
 static int vme_bus_remove(struct device *dev)
 {
+	int retval = -ENODEV;
 	struct vme_driver *driver;
 	struct vme_dev *vdev = dev_to_vme_dev(dev);
 
 	driver = dev->platform_data;
-	if (driver->remove)
-		return driver->remove(vdev);
 
-	return -ENODEV;
+	if (driver->remove != NULL)
+		retval = driver->remove(vdev);
+
+	return retval;
 }
 
 struct bus_type vme_bus_type = {

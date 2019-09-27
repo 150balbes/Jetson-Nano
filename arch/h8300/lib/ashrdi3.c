@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 #include "libgcc.h"
 
 DWtype __ashrdi3(DWtype u, word_type b)

@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Embedded Planet EP405 with PlanetCore firmware
  *
@@ -9,6 +8,10 @@
  * Scott Wood <scottwood@freescale.com>
  *
  * Copyright (c) 2007 Freescale Semiconductor, Inc.
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License version 2 as published
+ * by the Free Software Foundation.
  */
 
 #include "ops.h"

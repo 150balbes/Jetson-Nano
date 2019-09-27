@@ -1,0 +1,101 @@
+/*
+ * Copyright (c) 2018-2019, NVIDIA CORPORATION.  All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; version 2 of the License.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with this program; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+ *
+ */
+
+/ {
+	host1x {
+		sor1 {
+			prod-settings {
+				#prod-cells = <3>;
+				prod_list_hdmi_board = "prod_c_hdmi_0m_54m", "prod_c_hdmi_54m_75m",
+						     "prod_c_hdmi_75m_150m", "prod_c_hdmi_150m_300m",
+						     "prod_c_hdmi_300m_600m";
+
+				prod {
+					prod = <0x000003a0 0x00000001 0x00000001
+						0x0000005c 0x0f000700 0x01000000
+						0x00000060 0x00f01f00 0x00300f80
+						0x00000068 0x0f000000 0x0e000000
+						0x00000138 0xffffffff 0x3c3c3c3c
+						0x00000148 0xffffffff 0x00000000
+						0x00000170 0x0040ff00 0x00401000>;
+				};
+
+				prod_c_hdmi_0m_54m {
+					prod = <0x000003a0 0x00000002 0x00000002
+						0x0000005c 0x0f000700 0x05000310
+						0x00000060 0x00f01f00 0x00001100
+						0x00000068 0x0f000000 0x08000000
+						0x00000138 0xffffffff 0x2d2f2f2f
+						0x00000148 0xffffffff 0x00000000
+						0x00000170 0xf040ff00 0x80406600>;
+				};
+
+				prod_c_hdmi_54m_75m {
+					prod = <0x000003a0 0x00000002 0x00000002
+						0x0000005c 0x0f000700 0x05000310
+						0x00000060 0x00f01f00 0x00301500
+						0x00000068 0x0f000000 0x08000000
+						0x00000138 0xffffffff 0x2d303030
+						0x00000148 0xffffffff 0x00000000
+						0x00000170 0xf040ff00 0x80406600>;
+				};
+
+				prod_c_hdmi_75m_150m {
+					prod = <0x000003a0 0x00000002 0x00000000
+						0x0000005c 0x0f000700 0x01000300
+						0x00000060 0x00f01f00 0x00309300
+						0x00000068 0x0f000000 0x08000000
+						0x00000138 0xffffffff 0x2d303030
+						0x00000148 0xffffffff 0x00000000
+						0x00000170 0xf040ff00 0x80406600>;
+				};
+
+				prod_c_hdmi_150m_300m {
+					prod = <0x000003a0 0x00000002 0x00000000
+						0x0000005c 0x0f000700 0x01000300
+						0x00000060 0x00f01f00 0x00309300
+						0x00000068 0x0f000000 0x08000000
+						0x00000138 0xffffffff 0x2d303430
+						0x00000148 0xffffffff 0x00000000
+						0x00000170 0xf040ff00 0x80406600>;
+				};
+
+				prod_c_hdmi_300m_600m {
+					prod = <0x000003a0 0x00000002 0x00000002
+						0x0000005c 0x0f000700 0x05000310
+						0x00000060 0x00f01f00 0x00300f00
+						0x00000068 0x0f000000 0x08000000
+						0x00000138 0xffffffff 0x30353537
+						0x00000148 0xffffffff 0x00000000
+						0x00000170 0x0040ff00 0x00406000>;
+				};
+			};
+		};
+
+		dpaux1 {
+			prod-settings {
+				#prod-cells = <3>;
+				prod_c_dpaux_hdmi {
+					prod = <
+						0x00000124 0x00000700 0x00000400
+						>;
+				};
+			};
+		};
+	};
+};

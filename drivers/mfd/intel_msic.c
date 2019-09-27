@@ -1,9 +1,12 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * Driver for Intel MSIC
  *
  * Copyright (C) 2011, Intel Corporation
  * Author: Mika Westerberg <mika.westerberg@linux.intel.com>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  */
 
 #include <linux/err.h>
@@ -51,44 +54,68 @@ struct intel_msic {
 };
 
 static struct resource msic_touch_resources[] = {
-	DEFINE_RES_IRQ(0),
+	{
+		.flags		= IORESOURCE_IRQ,
+	},
 };
 
 static struct resource msic_adc_resources[] = {
-	DEFINE_RES_IRQ(0),
+	{
+		.flags		= IORESOURCE_IRQ,
+	},
 };
 
 static struct resource msic_battery_resources[] = {
-	DEFINE_RES_IRQ(0),
+	{
+		.flags		= IORESOURCE_IRQ,
+	},
 };
 
 static struct resource msic_gpio_resources[] = {
-	DEFINE_RES_IRQ(0),
+	{
+		.flags		= IORESOURCE_IRQ,
+	},
 };
 
 static struct resource msic_audio_resources[] = {
-	DEFINE_RES_IRQ_NAMED(0, "IRQ"),
+	{
+		.name		= "IRQ",
+		.flags		= IORESOURCE_IRQ,
+	},
 	/*
 	 * We will pass IRQ_BASE to the driver now but this can be removed
 	 * when/if the driver starts to use intel_msic_irq_read().
 	 */
-	DEFINE_RES_MEM_NAMED(MSIC_IRQ_STATUS_ACCDET, 1, "IRQ_BASE"),
+	{
+		.name		= "IRQ_BASE",
+		.flags		= IORESOURCE_MEM,
+		.start		= MSIC_IRQ_STATUS_ACCDET,
+		.end		= MSIC_IRQ_STATUS_ACCDET,
+	},
 };
 
 static struct resource msic_hdmi_resources[] = {
-	DEFINE_RES_IRQ(0),
+	{
+		.flags		= IORESOURCE_IRQ,
+	},
 };
 
 static struct resource msic_thermal_resources[] = {
-	DEFINE_RES_IRQ(0),
+	{
+		.flags		= IORESOURCE_IRQ,
+	},
 };
 
 static struct resource msic_power_btn_resources[] = {
-	DEFINE_RES_IRQ(0),
+	{
+		.flags		= IORESOURCE_IRQ,
+	},
 };
 
 static struct resource msic_ocd_resources[] = {
-	DEFINE_RES_IRQ(0),
+	{
+		.flags		= IORESOURCE_IRQ,
+	},
 };
 
 /*

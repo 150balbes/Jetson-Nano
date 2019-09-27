@@ -1,8 +1,8 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Apple iSight audio driver
  *
  * Copyright (c) Clemens Ladisch <clemens@ladisch.de>
+ * Licensed under the terms of the GNU General Public License, version 2.
  */
 
 #include <asm/byteorder.h>
@@ -96,7 +96,7 @@ static void isight_update_pointers(struct isight *isight, unsigned int count)
 	ptr += count;
 	if (ptr >= runtime->buffer_size)
 		ptr -= runtime->buffer_size;
-	WRITE_ONCE(isight->buffer_pointer, ptr);
+	ACCESS_ONCE(isight->buffer_pointer) = ptr;
 
 	isight->period_counter += count;
 	if (isight->period_counter >= runtime->period_size) {
@@ -111,7 +111,7 @@ static void isight_samples(struct isight *isight,
 	struct snd_pcm_runtime *runtime;
 	unsigned int count1;
 
-	if (!READ_ONCE(isight->pcm_running))
+	if (!ACCESS_ONCE(isight->pcm_running))
 		return;
 
 	runtime = isight->pcm->runtime;
@@ -131,7 +131,7 @@ static void isight_samples(struct isight *isight,
 
 static void isight_pcm_abort(struct isight *isight)
 {
-	if (READ_ONCE(isight->pcm_active))
+	if (ACCESS_ONCE(isight->pcm_active))
 		snd_pcm_stop_xrun(isight->pcm);
 }
 
@@ -141,7 +141,7 @@ static void isight_dropped_samples(struct isight *isight, unsigned int total)
 	u32 dropped;
 	unsigned int count1;
 
-	if (!READ_ONCE(isight->pcm_running))
+	if (!ACCESS_ONCE(isight->pcm_running))
 		return;
 
 	runtime = isight->pcm->runtime;
@@ -293,7 +293,7 @@ static int isight_hw_params(struct snd_pcm_substream *substream,
 	if (err < 0)
 		return err;
 
-	WRITE_ONCE(isight->pcm_active, true);
+	ACCESS_ONCE(isight->pcm_active) = true;
 
 	return 0;
 }
@@ -331,7 +331,7 @@ static int isight_hw_free(struct snd_pcm_substream *substream)
 {
 	struct isight *isight = substream->private_data;
 
-	WRITE_ONCE(isight->pcm_active, false);
+	ACCESS_ONCE(isight->pcm_active) = false;
 
 	mutex_lock(&isight->mutex);
 	isight_stop_streaming(isight);
@@ -424,10 +424,10 @@ static int isight_trigger(struct snd_pcm_substream *substream, int cmd)
 
 	switch (cmd) {
 	case SNDRV_PCM_TRIGGER_START:
-		WRITE_ONCE(isight->pcm_running, true);
+		ACCESS_ONCE(isight->pcm_running) = true;
 		break;
 	case SNDRV_PCM_TRIGGER_STOP:
-		WRITE_ONCE(isight->pcm_running, false);
+		ACCESS_ONCE(isight->pcm_running) = false;
 		break;
 	default:
 		return -EINVAL;
@@ -439,12 +439,12 @@ static snd_pcm_uframes_t isight_pointer(struct snd_pcm_substream *substream)
 {
 	struct isight *isight = substream->private_data;
 
-	return READ_ONCE(isight->buffer_pointer);
+	return ACCESS_ONCE(isight->buffer_pointer);
 }
 
 static int isight_create_pcm(struct isight *isight)
 {
-	static const struct snd_pcm_ops ops = {
+	static struct snd_pcm_ops ops = {
 		.open      = isight_open,
 		.close     = isight_close,
 		.ioctl     = snd_pcm_lib_ioctl,
@@ -454,6 +454,7 @@ static int isight_create_pcm(struct isight *isight)
 		.trigger   = isight_trigger,
 		.pointer   = isight_pointer,
 		.page      = snd_pcm_lib_get_vmalloc_page,
+		.mmap      = snd_pcm_lib_mmap_vmalloc,
 	};
 	struct snd_pcm *pcm;
 	int err;
@@ -568,20 +569,18 @@ static int isight_create_mixer(struct isight *isight)
 		return err;
 	isight->gain_max = be32_to_cpu(value);
 
-	isight->gain_tlv[SNDRV_CTL_TLVO_TYPE] = SNDRV_CTL_TLVT_DB_MINMAX;
-	isight->gain_tlv[SNDRV_CTL_TLVO_LEN] = 2 * sizeof(unsigned int);
+	isight->gain_tlv[0] = SNDRV_CTL_TLVT_DB_MINMAX;
+	isight->gain_tlv[1] = 2 * sizeof(unsigned int);
 
 	err = reg_read(isight, REG_GAIN_DB_START, &value);
 	if (err < 0)
 		return err;
-	isight->gain_tlv[SNDRV_CTL_TLVO_DB_MINMAX_MIN] =
-						(s32)be32_to_cpu(value) * 100;
+	isight->gain_tlv[2] = (s32)be32_to_cpu(value) * 100;
 
 	err = reg_read(isight, REG_GAIN_DB_END, &value);
 	if (err < 0)
 		return err;
-	isight->gain_tlv[SNDRV_CTL_TLVO_DB_MINMAX_MAX] =
-						(s32)be32_to_cpu(value) * 100;
+	isight->gain_tlv[3] = (s32)be32_to_cpu(value) * 100;
 
 	ctl = snd_ctl_new1(&gain_control, isight);
 	if (ctl)
@@ -602,6 +601,8 @@ static void isight_card_free(struct snd_card *card)
 	struct isight *isight = card->private_data;
 
 	fw_iso_resources_destroy(&isight->resources);
+	fw_unit_put(isight->unit);
+	mutex_destroy(&isight->mutex);
 }
 
 static u64 get_unit_base(struct fw_unit *unit)
@@ -638,7 +639,7 @@ static int isight_probe(struct fw_unit *unit,
 	if (!isight->audio_base) {
 		dev_err(&unit->device, "audio unit base not found\n");
 		err = -ENXIO;
-		goto error;
+		goto err_unit;
 	}
 	fw_iso_resources_init(&isight->resources, unit);
 
@@ -667,12 +668,12 @@ static int isight_probe(struct fw_unit *unit,
 	dev_set_drvdata(&unit->device, isight);
 
 	return 0;
+
+err_unit:
+	fw_unit_put(isight->unit);
+	mutex_destroy(&isight->mutex);
 error:
 	snd_card_free(card);
-
-	mutex_destroy(&isight->mutex);
-	fw_unit_put(isight->unit);
-
 	return err;
 }
 
@@ -701,11 +702,7 @@ static void isight_remove(struct fw_unit *unit)
 	isight_stop_streaming(isight);
 	mutex_unlock(&isight->mutex);
 
-	// Block till all of ALSA character devices are released.
-	snd_card_free(isight->card);
-
-	mutex_destroy(&isight->mutex);
-	fw_unit_put(isight->unit);
+	snd_card_free_when_closed(isight->card);
 }
 
 static const struct ieee1394_device_id isight_id_table[] = {

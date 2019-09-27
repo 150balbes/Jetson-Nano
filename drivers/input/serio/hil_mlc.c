@@ -274,12 +274,14 @@ static int hilse_match(hil_mlc *mlc, int unused)
 /* An LCV used to prevent runaway loops, forces 5 second sleep when reset. */
 static int hilse_init_lcv(hil_mlc *mlc, int unused)
 {
-	time64_t now = ktime_get_seconds();
+	struct timeval tv;
 
-	if (mlc->lcv && (now - mlc->lcv_time) < 5)
+	do_gettimeofday(&tv);
+
+	if (mlc->lcv && (tv.tv_sec - mlc->lcv_tv.tv_sec) < 5)
 		return -1;
 
-	mlc->lcv_time = now;
+	mlc->lcv_tv = tv;
 	mlc->lcv = 0;
 
 	return 0;
@@ -602,8 +604,8 @@ static inline void hilse_setup_input(hil_mlc *mlc, const struct hilse_node *node
 		BUG();
 	}
 	mlc->istarted = 1;
-	mlc->intimeout = usecs_to_jiffies(node->arg);
-	mlc->instart = jiffies;
+	mlc->intimeout = node->arg;
+	do_gettimeofday(&(mlc->instart));
 	mlc->icount = 15;
 	memset(mlc->ipacket, 0, 16 * sizeof(hil_packet));
 	BUG_ON(down_trylock(&mlc->isem));
@@ -708,7 +710,7 @@ static int hilse_donode(hil_mlc *mlc)
 			break;
 		}
 		mlc->ostarted = 0;
-		mlc->instart = jiffies;
+		do_gettimeofday(&(mlc->instart));
 		write_unlock_irqrestore(&mlc->lock, flags);
 		nextidx = HILSEN_NEXT;
 		break;
@@ -729,14 +731,18 @@ static int hilse_donode(hil_mlc *mlc)
 #endif
 
 	while (nextidx & HILSEN_SCHED) {
-		unsigned long now = jiffies;
+		struct timeval tv;
 
 		if (!sched_long)
 			goto sched;
 
-		if (time_after(now, mlc->instart + mlc->intimeout))
-			 goto sched;
-		mod_timer(&hil_mlcs_kicker, mlc->instart + mlc->intimeout);
+		do_gettimeofday(&tv);
+		tv.tv_usec += USEC_PER_SEC * (tv.tv_sec - mlc->instart.tv_sec);
+		tv.tv_usec -= mlc->instart.tv_usec;
+		if (tv.tv_usec >= mlc->intimeout) goto sched;
+		tv.tv_usec = (mlc->intimeout - tv.tv_usec) * HZ / USEC_PER_SEC;
+		if (!tv.tv_usec) goto sched;
+		mod_timer(&hil_mlcs_kicker, jiffies + tv.tv_usec);
 		break;
 	sched:
 		tasklet_schedule(&hil_mlcs_tasklet);
@@ -778,7 +784,7 @@ static void hil_mlcs_process(unsigned long unused)
 
 /************************* Keepalive timer task *********************/
 
-static void hil_mlcs_timer(struct timer_list *unused)
+static void hil_mlcs_timer(unsigned long data)
 {
 	hil_mlcs_probe = 1;
 	tasklet_schedule(&hil_mlcs_tasklet);
@@ -992,7 +998,7 @@ int hil_mlc_unregister(hil_mlc *mlc)
 
 static int __init hil_mlc_init(void)
 {
-	timer_setup(&hil_mlcs_kicker, &hil_mlcs_timer, 0);
+	setup_timer(&hil_mlcs_kicker, &hil_mlcs_timer, 0);
 	mod_timer(&hil_mlcs_kicker, jiffies + HZ);
 
 	tasklet_enable(&hil_mlcs_tasklet);

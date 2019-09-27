@@ -1,10 +1,15 @@
-// SPDX-License-Identifier: GPL-2.0
-//
-// Copyright (c) 2009 Simtec Electronics
-//	http://armlinux.simtec.co.uk/
-//	Ben Dooks <ben@simtec.co.uk>
-//
-// Audio setup for various Simtec S3C24XX implementations
+/* linux/arch/arm/plat-s3c24xx/simtec-audio.c
+ *
+ * Copyright (c) 2009 Simtec Electronics
+ *	http://armlinux.simtec.co.uk/
+ *	Ben Dooks <ben@simtec.co.uk>
+ *
+ * Audio setup for various Simtec S3C24XX implementations
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+*/
 
 #include <linux/kernel.h>
 #include <linux/interrupt.h>

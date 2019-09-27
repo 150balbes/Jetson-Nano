@@ -67,7 +67,7 @@ struct aafb_par {
 	struct bt431_regs __iomem *bt431;
 };
 
-static const struct fb_var_screeninfo aafb_defined = {
+static struct fb_var_screeninfo aafb_defined = {
 	.xres		= 1280,
 	.yres		= 1024,
 	.xres_virtual	= 2048,
@@ -90,7 +90,7 @@ static const struct fb_var_screeninfo aafb_defined = {
 	.vmode		= FB_VMODE_NONINTERLACED,
 };
 
-static const struct fb_fix_screeninfo aafb_fix = {
+static struct fb_fix_screeninfo aafb_fix = {
 	.id		= "PMAG-AA",
 	.smem_len	= (2048 * 1024),
 	.type		= FB_TYPE_PACKED_PIXELS,
@@ -165,8 +165,10 @@ static int pmagaafb_probe(struct device *dev)
 	int err;
 
 	info = framebuffer_alloc(sizeof(struct aafb_par), dev);
-	if (!info)
+	if (!info) {
+		printk(KERN_ERR "%s: Cannot allocate memory\n", dev_name(dev));
 		return -ENOMEM;
+	}
 
 	par = info->par;
 	dev_set_drvdata(dev, info);
@@ -245,7 +247,7 @@ err_alloc:
 	return err;
 }
 
-static int pmagaafb_remove(struct device *dev)
+static int __exit pmagaafb_remove(struct device *dev)
 {
 	struct tc_dev *tdev = to_tc_dev(dev);
 	struct fb_info *info = dev_get_drvdata(dev);
@@ -278,7 +280,7 @@ static struct tc_driver pmagaafb_driver = {
 		.name	= "pmagaafb",
 		.bus	= &tc_bus_type,
 		.probe	= pmagaafb_probe,
-		.remove	= pmagaafb_remove,
+		.remove	= __exit_p(pmagaafb_remove),
 	},
 };
 

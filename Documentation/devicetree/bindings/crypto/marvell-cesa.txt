@@ -41,4 +41,5 @@ Examples:
 		clock-names = "cesa0", "cesa1";
 		marvell,crypto-srams = <&crypto_sram0>, <&crypto_sram1>;
 		marvell,crypto-sram-size = <0x600>;
+		status = "okay";
 	};

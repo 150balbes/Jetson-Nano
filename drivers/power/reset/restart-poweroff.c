@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Power off by restarting and let u-boot keep hold of the machine
  * until the user presses a button for example.
@@ -6,6 +5,10 @@
  * Andrew Lunn <andrew@lunn.ch>
  *
  * Copyright (C) 2012 Andrew Lunn
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  */
 #include <linux/kernel.h>
 #include <linux/init.h>

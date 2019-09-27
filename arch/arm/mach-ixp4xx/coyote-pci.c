@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * arch/arm/mach-ixp4xx/coyote-pci.c
  *
@@ -8,6 +7,11 @@
  * Copyright (C) 2003 MontaVista Softwrae, Inc.
  *
  * Maintainer: Deepak Saxena <dsaxena@mvista.com>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
  */
 
 #include <linux/kernel.h>
@@ -18,8 +22,6 @@
 #include <mach/hardware.h>
 #include <asm/irq.h>
 #include <asm/mach/pci.h>
-
-#include "irqs.h"
 
 #define SLOT0_DEVID	14
 #define SLOT1_DEVID	15

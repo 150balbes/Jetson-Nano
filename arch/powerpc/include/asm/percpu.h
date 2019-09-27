@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _ASM_POWERPC_PERCPU_H_
 #define _ASM_POWERPC_PERCPU_H_
 #ifdef __powerpc64__

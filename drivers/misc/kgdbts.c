@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * kgdbts is a test suite for kgdb for the sole purpose of validating
  * that key pieces of the kgdb internals are working properly such as
@@ -7,6 +6,19 @@
  * Created by: Jason Wessel <jason.wessel@windriver.com>
  *
  * Copyright (c) 2008 Wind River Systems, Inc.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ * See the GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
  */
 /* Information about the kgdb test suite.
  * -------------------------------------
@@ -91,8 +103,6 @@
 #include <linux/delay.h>
 #include <linux/kthread.h>
 #include <linux/module.h>
-#include <linux/sched/task.h>
-
 #include <asm/sections.h>
 
 #define v1printk(a...) do { \
@@ -388,14 +398,10 @@ static void skip_back_repeat_test(char *arg)
 	int go_back = simple_strtol(arg, NULL, 10);
 
 	repeat_test--;
-	if (repeat_test <= 0) {
+	if (repeat_test <= 0)
 		ts.idx++;
-	} else {
-		if (repeat_test % 100 == 0)
-			v1printk("kgdbts:RUN ... %d remaining\n", repeat_test);
-
+	else
 		ts.idx -= go_back;
-	}
 	fill_get_buf(ts.tst[ts.idx].get);
 }
 
@@ -973,12 +979,6 @@ static void kgdbts_run_tests(void)
 	int nmi_sleep = 0;
 	int i;
 
-	verbose = 0;
-	if (strstr(config, "V1"))
-		verbose = 1;
-	if (strstr(config, "V2"))
-		verbose = 2;
-
 	ptr = strchr(config, 'F');
 	if (ptr)
 		fork_test = simple_strtol(ptr + 1, NULL, 10);
@@ -1062,6 +1062,13 @@ static int kgdbts_option_setup(char *opt)
 		return -ENOSPC;
 	}
 	strcpy(config, opt);
+
+	verbose = 0;
+	if (strstr(config, "V1"))
+		verbose = 1;
+	if (strstr(config, "V2"))
+		verbose = 2;
+
 	return 0;
 }
 
@@ -1072,6 +1079,9 @@ static int configure_kgdbts(void)
 	int err = 0;
 
 	if (!strlen(config) || isspace(config[0]))
+		goto noconfig;
+	err = kgdbts_option_setup(config);
+	if (err)
 		goto noconfig;
 
 	final_ack = 0;
@@ -1123,7 +1133,7 @@ static void kgdbts_put_char(u8 chr)
 static int param_set_kgdbts_var(const char *kmessage,
 				const struct kernel_param *kp)
 {
-	size_t len = strlen(kmessage);
+	int len = strlen(kmessage);
 
 	if (len >= MAX_CONFIG_LEN) {
 		printk(KERN_ERR "kgdbts: config string too long\n");
@@ -1143,7 +1153,7 @@ static int param_set_kgdbts_var(const char *kmessage,
 
 	strcpy(config, kmessage);
 	/* Chop out \n char as a result of echo */
-	if (len && config[len - 1] == '\n')
+	if (config[len - 1] == '\n')
 		config[len - 1] = '\0';
 
 	/* Go and configure with the new params. */

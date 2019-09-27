@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * misc.c
  *
@@ -14,10 +13,8 @@
 
 #include "misc.h"
 #include "error.h"
-#include "pgtable.h"
 #include "../string.h"
 #include "../voffset.h"
-#include <asm/bootparam_utils.h>
 
 /*
  * WARNING!!
@@ -119,7 +116,8 @@ void __putstr(const char *s)
 		}
 	}
 
-	if (lines == 0 || cols == 0)
+	if (boot_params->screen_info.orig_video_mode == 0 &&
+	    lines == 0 && cols == 0)
 		return;
 
 	x = boot_params->screen_info.orig_x;
@@ -366,14 +364,6 @@ asmlinkage __visible void *extract_kernel(void *rmode, memptr heap,
 	cols = boot_params->screen_info.orig_video_cols;
 
 	console_init();
-
-	/*
-	 * Save RSDP address for later use. Have this after console_init()
-	 * so that early debugging output from the RSDP parsing code can be
-	 * collected.
-	 */
-	boot_params->acpi_rsdp_addr = get_rsdp_addr();
-
 	debug_putstr("early console in extract_kernel\n");
 
 	free_mem_ptr     = heap;	/* Heap */
@@ -385,11 +375,6 @@ asmlinkage __visible void *extract_kernel(void *rmode, memptr heap,
 	debug_putaddr(output);
 	debug_putaddr(output_len);
 	debug_putaddr(kernel_total_size);
-
-#ifdef CONFIG_X86_64
-	/* Report address of 32-bit trampoline */
-	debug_putaddr(trampoline_32bit);
-#endif
 
 	/*
 	 * The memory hole needed for the kernel is the larger of either
@@ -409,8 +394,6 @@ asmlinkage __visible void *extract_kernel(void *rmode, memptr heap,
 #ifdef CONFIG_X86_64
 	if (heap > 0x3fffffffffffUL)
 		error("Destination address too large");
-	if (virt_addr + max(output_len, kernel_total_size) > KERNEL_IMAGE_SIZE)
-		error("Destination virtual address is beyond the kernel mapping area");
 #else
 	if (heap > ((-__PAGE_OFFSET-(128<<20)-1) & 0x7fffffff))
 		error("Destination address too large");
@@ -429,9 +412,4 @@ asmlinkage __visible void *extract_kernel(void *rmode, memptr heap,
 	handle_relocations(output, output_len, virt_addr);
 	debug_putstr("done.\nBooting the kernel.\n");
 	return output;
-}
-
-void fortify_panic(const char *name)
-{
-	error("detected buffer overflow");
 }

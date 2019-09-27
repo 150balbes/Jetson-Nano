@@ -1,9 +1,12 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2011 Samsung Electronics Co., Ltd.
  *		http://www.samsung.com/
  *
  * samsung - Common hr-timer support (s3c and s5p)
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
 */
 
 #include <linux/interrupt.h>
@@ -304,7 +307,7 @@ static void samsung_clocksource_resume(struct clocksource *cs)
 	samsung_time_start(pwm.source_id, true);
 }
 
-static u64 notrace samsung_clocksource_read(struct clocksource *c)
+static cycle_t notrace samsung_clocksource_read(struct clocksource *c)
 {
 	return ~readl_relaxed(pwm.source_reg);
 }
@@ -382,7 +385,7 @@ static int __init _samsung_pwm_clocksource_init(void)
 	mask = ~pwm.variant.output_mask & ((1 << SAMSUNG_PWM_NUM) - 1);
 	channel = fls(mask) - 1;
 	if (channel < 0) {
-		pr_crit("failed to find PWM channel for clocksource\n");
+		pr_crit("failed to find PWM channel for clocksource");
 		return -EINVAL;
 	}
 	pwm.source_id = channel;
@@ -390,7 +393,7 @@ static int __init _samsung_pwm_clocksource_init(void)
 	mask &= ~(1 << channel);
 	channel = fls(mask) - 1;
 	if (channel < 0) {
-		pr_crit("failed to find PWM channel for clock event\n");
+		pr_crit("failed to find PWM channel for clock event");
 		return -EINVAL;
 	}
 	pwm.event_id = channel;
@@ -415,7 +418,7 @@ void __init samsung_pwm_clocksource_init(void __iomem *base,
 	_samsung_pwm_clocksource_init();
 }
 
-#ifdef CONFIG_TIMER_OF
+#ifdef CONFIG_CLKSRC_OF
 static int __init samsung_pwm_alloc(struct device_node *np,
 				    const struct samsung_pwm_variant *variant)
 {
@@ -445,7 +448,7 @@ static int __init samsung_pwm_alloc(struct device_node *np,
 
 	pwm.timerclk = of_clk_get_by_name(np, "timers");
 	if (IS_ERR(pwm.timerclk)) {
-		pr_crit("failed to get timers clock for timer\n");
+		pr_crit("failed to get timers clock for timer");
 		return PTR_ERR(pwm.timerclk);
 	}
 
@@ -463,7 +466,7 @@ static int __init s3c2410_pwm_clocksource_init(struct device_node *np)
 {
 	return samsung_pwm_alloc(np, &s3c24xx_variant);
 }
-TIMER_OF_DECLARE(s3c2410_pwm, "samsung,s3c2410-pwm", s3c2410_pwm_clocksource_init);
+CLOCKSOURCE_OF_DECLARE(s3c2410_pwm, "samsung,s3c2410-pwm", s3c2410_pwm_clocksource_init);
 
 static const struct samsung_pwm_variant s3c64xx_variant = {
 	.bits		= 32,
@@ -476,7 +479,7 @@ static int __init s3c64xx_pwm_clocksource_init(struct device_node *np)
 {
 	return samsung_pwm_alloc(np, &s3c64xx_variant);
 }
-TIMER_OF_DECLARE(s3c6400_pwm, "samsung,s3c6400-pwm", s3c64xx_pwm_clocksource_init);
+CLOCKSOURCE_OF_DECLARE(s3c6400_pwm, "samsung,s3c6400-pwm", s3c64xx_pwm_clocksource_init);
 
 static const struct samsung_pwm_variant s5p64x0_variant = {
 	.bits		= 32,
@@ -489,7 +492,7 @@ static int __init s5p64x0_pwm_clocksource_init(struct device_node *np)
 {
 	return samsung_pwm_alloc(np, &s5p64x0_variant);
 }
-TIMER_OF_DECLARE(s5p6440_pwm, "samsung,s5p6440-pwm", s5p64x0_pwm_clocksource_init);
+CLOCKSOURCE_OF_DECLARE(s5p6440_pwm, "samsung,s5p6440-pwm", s5p64x0_pwm_clocksource_init);
 
 static const struct samsung_pwm_variant s5p_variant = {
 	.bits		= 32,
@@ -502,5 +505,5 @@ static int __init s5p_pwm_clocksource_init(struct device_node *np)
 {
 	return samsung_pwm_alloc(np, &s5p_variant);
 }
-TIMER_OF_DECLARE(s5pc100_pwm, "samsung,s5pc100-pwm", s5p_pwm_clocksource_init);
+CLOCKSOURCE_OF_DECLARE(s5pc100_pwm, "samsung,s5pc100-pwm", s5p_pwm_clocksource_init);
 #endif

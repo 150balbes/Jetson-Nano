@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __ASM_PREEMPT_H
 #define __ASM_PREEMPT_H
 
@@ -7,9 +6,6 @@
 #include <linux/thread_info.h>
 
 DECLARE_PER_CPU(int, __preempt_count);
-
-/* We use the MSB mostly because its available */
-#define PREEMPT_NEED_RESCHED	0x80000000
 
 /*
  * We use the PREEMPT_NEED_RESCHED bit as an inverted NEED_RESCHED such
@@ -28,13 +24,7 @@ static __always_inline int preempt_count(void)
 
 static __always_inline void preempt_count_set(int pc)
 {
-	int old, new;
-
-	do {
-		old = raw_cpu_read_4(__preempt_count);
-		new = (old & PREEMPT_NEED_RESCHED) |
-			(pc & ~PREEMPT_NEED_RESCHED);
-	} while (raw_cpu_cmpxchg_4(__preempt_count, old, new) != old);
+	raw_cpu_write_4(__preempt_count, pc);
 }
 
 /*
@@ -91,7 +81,7 @@ static __always_inline void __preempt_count_sub(int val)
  */
 static __always_inline bool __preempt_count_dec_and_test(void)
 {
-	return GEN_UNARY_RMWcc("decl", __preempt_count, e, __percpu_arg([var]));
+	GEN_UNARY_RMWcc("decl", __preempt_count, __percpu_arg(0), e);
 }
 
 /*

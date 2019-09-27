@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * This routine clears to zero a linear memory buffer in user space.
  *

@@ -1,8 +1,12 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * FireDTV driver (formerly known as FireSAT)
  *
  * Copyright (C) 2004 Andreas Monitzer <andy@monitzer.com>
+ *
+ *	This program is free software; you can redistribute it and/or
+ *	modify it under the terms of the GNU General Public License as
+ *	published by the Free Software Foundation; either version 2 of
+ *	the License, or (at your option) any later version.
  */
 
 #include <linux/bitops.h>
@@ -180,9 +184,8 @@ void fdtv_handle_rc(struct firedtv *fdtv, unsigned int code)
 	else if (code >= 0x4540 && code <= 0x4542)
 		code = oldtable[code - 0x4521];
 	else {
-		dev_dbg(fdtv->device,
-			"invalid key code 0x%04x from remote control\n",
-			code);
+		printk(KERN_DEBUG "firedtv: invalid key code 0x%04x "
+		       "from remote control\n", code);
 		return;
 	}
 

@@ -1,7 +1,20 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  *   pata-legacy.c - Legacy port PATA/SATA controller driver.
  *   Copyright 2005/2006 Red Hat, all rights reserved.
+ *
+ *  This program is free software; you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License as published by
+ *  the Free Software Foundation; either version 2, or (at your option)
+ *  any later version.
+ *
+ *  This program is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *  GNU General Public License for more details.
+ *
+ *  You should have received a copy of the GNU General Public License
+ *  along with this program; see the file COPYING.  If not, write to
+ *  the Free Software Foundation, 675 Mass Ave, Cambridge, MA 02139, USA.
  *
  *   An ATA driver for the legacy ATA ports.
  *
@@ -42,6 +55,7 @@
  *
  *  For now use autospeed and pio_mask as above with the W83759A. This may
  *  change.
+ *
  */
 
 #include <linux/async.h>
@@ -232,12 +246,12 @@ static const struct ata_port_operations legacy_base_port_ops = {
 
 static struct ata_port_operations simple_port_ops = {
 	.inherits	= &legacy_base_port_ops,
-	.sff_data_xfer	= ata_sff_data_xfer32,
+	.sff_data_xfer	= ata_sff_data_xfer_noirq,
 };
 
 static struct ata_port_operations legacy_port_ops = {
 	.inherits	= &legacy_base_port_ops,
-	.sff_data_xfer	= ata_sff_data_xfer32,
+	.sff_data_xfer	= ata_sff_data_xfer_noirq,
 	.set_mode	= legacy_set_mode,
 };
 
@@ -289,12 +303,11 @@ static void pdc20230_set_piomode(struct ata_port *ap, struct ata_device *adev)
 
 }
 
-static unsigned int pdc_data_xfer_vlb(struct ata_queued_cmd *qc,
+static unsigned int pdc_data_xfer_vlb(struct ata_device *dev,
 			unsigned char *buf, unsigned int buflen, int rw)
 {
-	struct ata_device *dev = qc->dev;
-	struct ata_port *ap = dev->link->ap;
 	int slop = buflen & 3;
+	struct ata_port *ap = dev->link->ap;
 
 	/* 32bit I/O capable *and* we need to write a whole number of dwords */
 	if (ata_id_has_dword_io(dev->id) && (slop == 0 || slop == 3)
@@ -327,7 +340,7 @@ static unsigned int pdc_data_xfer_vlb(struct ata_queued_cmd *qc,
 		}
 		local_irq_restore(flags);
 	} else
-		buflen = ata_sff_data_xfer32(qc, buf, buflen, rw);
+		buflen = ata_sff_data_xfer_noirq(dev, buf, buflen, rw);
 
 	return buflen;
 }
@@ -689,11 +702,9 @@ static unsigned int qdi_qc_issue(struct ata_queued_cmd *qc)
 	return ata_sff_qc_issue(qc);
 }
 
-static unsigned int vlb32_data_xfer(struct ata_queued_cmd *qc,
-				    unsigned char *buf,
-				    unsigned int buflen, int rw)
+static unsigned int vlb32_data_xfer(struct ata_device *adev, unsigned char *buf,
+					unsigned int buflen, int rw)
 {
-	struct ata_device *adev = qc->dev;
 	struct ata_port *ap = adev->link->ap;
 	int slop = buflen & 3;
 
@@ -716,7 +727,7 @@ static unsigned int vlb32_data_xfer(struct ata_queued_cmd *qc,
 		}
 		return (buflen + 3) & ~3;
 	} else
-		return ata_sff_data_xfer(qc, buf, buflen, rw);
+		return ata_sff_data_xfer(adev, buf, buflen, rw);
 }
 
 static int qdi_port(struct platform_device *dev,

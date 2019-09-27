@@ -1,7 +1,6 @@
-# SPDX-License-Identifier: GPL-2.0-only
 config DRM_ARMADA
 	tristate "DRM support for Marvell Armada SoCs"
-	depends on DRM && HAVE_CLK && ARM && MMU
+	depends on DRM && HAVE_CLK && ARM
 	select DRM_KMS_HELPER
 	help
 	  Support the "LCD" controllers found on the Marvell Armada 510

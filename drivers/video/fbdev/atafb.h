@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _VIDEO_ATAFB_H
 #define _VIDEO_ATAFB_H
 

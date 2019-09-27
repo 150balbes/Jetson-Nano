@@ -1,44 +1,33 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /* Userspace key control operations
  *
  * Copyright (C) 2004-5 Red Hat, Inc. All Rights Reserved.
  * Written by David Howells (dhowells@redhat.com)
+ * Copyright (C) 2017, NVIDIA Corporation. All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License
+ * as published by the Free Software Foundation; either version
+ * 2 of the License, or (at your option) any later version.
  */
 
+#include <linux/module.h>
 #include <linux/init.h>
 #include <linux/sched.h>
-#include <linux/sched/task.h>
 #include <linux/slab.h>
 #include <linux/syscalls.h>
 #include <linux/key.h>
 #include <linux/keyctl.h>
 #include <linux/fs.h>
 #include <linux/capability.h>
-#include <linux/cred.h>
 #include <linux/string.h>
 #include <linux/err.h>
 #include <linux/vmalloc.h>
 #include <linux/security.h>
 #include <linux/uio.h>
-#include <linux/uaccess.h>
-#include <keys/request_key_auth-type.h>
+#include <asm/uaccess.h>
 #include "internal.h"
 
 #define KEY_MAX_DESC_SIZE 4096
-
-static const unsigned char keyrings_capabilities[2] = {
-	[0] = (KEYCTL_CAPS0_CAPABILITIES |
-	       (IS_ENABLED(CONFIG_PERSISTENT_KEYRINGS)	? KEYCTL_CAPS0_PERSISTENT_KEYRINGS : 0) |
-	       (IS_ENABLED(CONFIG_KEY_DH_OPERATIONS)	? KEYCTL_CAPS0_DIFFIE_HELLMAN : 0) |
-	       (IS_ENABLED(CONFIG_ASYMMETRIC_KEY_TYPE)	? KEYCTL_CAPS0_PUBLIC_KEY : 0) |
-	       (IS_ENABLED(CONFIG_BIG_KEYS)		? KEYCTL_CAPS0_BIG_KEY : 0) |
-	       KEYCTL_CAPS0_INVALIDATE |
-	       KEYCTL_CAPS0_RESTRICT_KEYRING |
-	       KEYCTL_CAPS0_MOVE
-	       ),
-	[1] = (KEYCTL_CAPS1_NS_KEYRING_NAME |
-	       KEYCTL_CAPS1_NS_KEY_TAG),
-};
 
 static int key_get_type_from_user(char *type,
 				  const char __user *_type,
@@ -111,9 +100,14 @@ SYSCALL_DEFINE5(add_key, const char __user *, _type,
 
 	if (plen) {
 		ret = -ENOMEM;
-		payload = kvmalloc(plen, GFP_KERNEL);
-		if (!payload)
-			goto error2;
+		payload = kmalloc(plen, GFP_KERNEL | __GFP_NOWARN);
+		if (!payload) {
+			if (plen <= PAGE_SIZE)
+				goto error2;
+			payload = vmalloc(plen);
+			if (!payload)
+				goto error2;
+		}
 
 		ret = -EFAULT;
 		if (copy_from_user(payload, _payload, plen) != 0)
@@ -142,10 +136,7 @@ SYSCALL_DEFINE5(add_key, const char __user *, _type,
 
 	key_ref_put(keyring_ref);
  error3:
-	if (payload) {
-		memzero_explicit(payload, plen);
-		kvfree(payload);
-	}
+	kvfree(payload);
  error2:
 	kfree(description);
  error:
@@ -220,7 +211,7 @@ SYSCALL_DEFINE4(request_key, const char __user *, _type,
 	}
 
 	/* do the search */
-	key = request_key_and_link(ktype, description, NULL, callout_info,
+	key = request_key_and_link(ktype, description, callout_info,
 				   callout_len, NULL, key_ref_to_ptr(dest_ref),
 				   KEY_ALLOC_IN_QUOTA);
 	if (IS_ERR(key)) {
@@ -360,7 +351,7 @@ long keyctl_update_key(key_serial_t id,
 
 	key_ref_put(key_ref);
 error2:
-	kzfree(payload);
+	kfree(payload);
 error:
 	return ret;
 }
@@ -583,52 +574,6 @@ error:
 }
 
 /*
- * Move a link to a key from one keyring to another, displacing any matching
- * key from the destination keyring.
- *
- * The key must grant the caller Link permission and both keyrings must grant
- * the caller Write permission.  There must also be a link in the from keyring
- * to the key.  If both keyrings are the same, nothing is done.
- *
- * If successful, 0 will be returned.
- */
-long keyctl_keyring_move(key_serial_t id, key_serial_t from_ringid,
-			 key_serial_t to_ringid, unsigned int flags)
-{
-	key_ref_t key_ref, from_ref, to_ref;
-	long ret;
-
-	if (flags & ~KEYCTL_MOVE_EXCL)
-		return -EINVAL;
-
-	key_ref = lookup_user_key(id, KEY_LOOKUP_CREATE, KEY_NEED_LINK);
-	if (IS_ERR(key_ref))
-		return PTR_ERR(key_ref);
-
-	from_ref = lookup_user_key(from_ringid, 0, KEY_NEED_WRITE);
-	if (IS_ERR(from_ref)) {
-		ret = PTR_ERR(from_ref);
-		goto error2;
-	}
-
-	to_ref = lookup_user_key(to_ringid, KEY_LOOKUP_CREATE, KEY_NEED_WRITE);
-	if (IS_ERR(to_ref)) {
-		ret = PTR_ERR(to_ref);
-		goto error3;
-	}
-
-	ret = key_move(key_ref_to_ptr(key_ref), key_ref_to_ptr(from_ref),
-		       key_ref_to_ptr(to_ref), flags);
-
-	key_ref_put(to_ref);
-error3:
-	key_ref_put(from_ref);
-error2:
-	key_ref_put(key_ref);
-	return ret;
-}
-
-/*
  * Return a description of a key to userspace.
  *
  * The key must grant the caller View permission for this to work.
@@ -760,7 +705,7 @@ long keyctl_keyring_search(key_serial_t ringid,
 	}
 
 	/* do the search */
-	key_ref = keyring_search(keyring_ref, ktype, description, true);
+	key_ref = keyring_search(keyring_ref, ktype, description);
 	if (IS_ERR(key_ref)) {
 		ret = PTR_ERR(key_ref);
 
@@ -831,7 +776,7 @@ long keyctl_read_key(key_serial_t keyid, char __user *buffer, size_t buflen)
 	if (ret == 0)
 		goto can_read_key;
 	if (ret != -EACCES)
-		goto error2;
+		goto error;
 
 	/* we can't; see if it's searchable from this process's keyrings
 	 * - we automatically take account of the fact that it may be
@@ -1129,12 +1074,17 @@ long keyctl_instantiate_key_common(key_serial_t id,
 
 	if (from) {
 		ret = -ENOMEM;
-		payload = kvmalloc(plen, GFP_KERNEL);
-		if (!payload)
-			goto error;
+		payload = kmalloc(plen, GFP_KERNEL);
+		if (!payload) {
+			if (plen <= PAGE_SIZE)
+				goto error;
+			payload = vmalloc(plen);
+			if (!payload)
+				goto error;
+		}
 
 		ret = -EFAULT;
-		if (!copy_from_iter_full(payload, plen, from))
+		if (copy_from_iter(payload, plen, from) != plen)
 			goto error2;
 	}
 
@@ -1156,10 +1106,7 @@ long keyctl_instantiate_key_common(key_serial_t id,
 		keyctl_change_reqkey_auth(NULL);
 
 error2:
-	if (payload) {
-		memzero_explicit(payload, plen);
-		kvfree(payload);
-	}
+	kvfree(payload);
 error:
 	return ret;
 }
@@ -1351,7 +1298,6 @@ long keyctl_set_reqkey_keyring(int reqkey_defl)
 	case KEY_REQKEY_DEFL_REQUESTOR_KEYRING:
 		goto set;
 
-	case KEY_REQKEY_DEFL_NO_CHANGE:
 	case KEY_REQKEY_DEFL_GROUP_KEYRING:
 	default:
 		ret = -EINVAL;
@@ -1466,9 +1412,11 @@ long keyctl_assume_authority(key_serial_t id)
 	}
 
 	ret = keyctl_change_reqkey_auth(authkey);
-	if (ret == 0)
-		ret = authkey->serial;
+	if (ret < 0)
+		goto error;
 	key_put(authkey);
+
+	ret = authkey->serial;
 error:
 	return ret;
 }
@@ -1580,8 +1528,7 @@ long keyctl_session_to_parent(void)
 
 	ret = -EPERM;
 	oldwork = NULL;
-	parent = rcu_dereference_protected(me->real_parent,
-					   lockdep_is_held(&tasklist_lock));
+	parent = me->real_parent;
 
 	/* the parent mustn't be init and mustn't be a kernel thread */
 	if (parent->pid <= 1 || !parent->mm)
@@ -1637,75 +1584,6 @@ unlock:
 error_keyring:
 	key_ref_put(keyring_r);
 	return ret;
-}
-
-/*
- * Apply a restriction to a given keyring.
- *
- * The caller must have Setattr permission to change keyring restrictions.
- *
- * The requested type name may be a NULL pointer to reject all attempts
- * to link to the keyring.  In this case, _restriction must also be NULL.
- * Otherwise, both _type and _restriction must be non-NULL.
- *
- * Returns 0 if successful.
- */
-long keyctl_restrict_keyring(key_serial_t id, const char __user *_type,
-			     const char __user *_restriction)
-{
-	key_ref_t key_ref;
-	char type[32];
-	char *restriction = NULL;
-	long ret;
-
-	key_ref = lookup_user_key(id, 0, KEY_NEED_SETATTR);
-	if (IS_ERR(key_ref))
-		return PTR_ERR(key_ref);
-
-	ret = -EINVAL;
-	if (_type) {
-		if (!_restriction)
-			goto error;
-
-		ret = key_get_type_from_user(type, _type, sizeof(type));
-		if (ret < 0)
-			goto error;
-
-		restriction = strndup_user(_restriction, PAGE_SIZE);
-		if (IS_ERR(restriction)) {
-			ret = PTR_ERR(restriction);
-			goto error;
-		}
-	} else {
-		if (_restriction)
-			goto error;
-	}
-
-	ret = keyring_restrict(key_ref, _type ? type : NULL, restriction);
-	kfree(restriction);
-error:
-	key_ref_put(key_ref);
-	return ret;
-}
-
-/*
- * Get keyrings subsystem capabilities.
- */
-long keyctl_capabilities(unsigned char __user *_buffer, size_t buflen)
-{
-	size_t size = buflen;
-
-	if (size > 0) {
-		if (size > sizeof(keyrings_capabilities))
-			size = sizeof(keyrings_capabilities);
-		if (copy_to_user(_buffer, keyrings_capabilities, size) != 0)
-			return -EFAULT;
-		if (size < buflen &&
-		    clear_user(_buffer + size, buflen - size) != 0)
-			return -EFAULT;
-	}
-
-	return sizeof(keyrings_capabilities);
 }
 
 /*
@@ -1817,45 +1695,7 @@ SYSCALL_DEFINE5(keyctl, int, option, unsigned long, arg2, unsigned long, arg3,
 	case KEYCTL_DH_COMPUTE:
 		return keyctl_dh_compute((struct keyctl_dh_params __user *) arg2,
 					 (char __user *) arg3, (size_t) arg4,
-					 (struct keyctl_kdf_params __user *) arg5);
-
-	case KEYCTL_RESTRICT_KEYRING:
-		return keyctl_restrict_keyring((key_serial_t) arg2,
-					       (const char __user *) arg3,
-					       (const char __user *) arg4);
-
-	case KEYCTL_PKEY_QUERY:
-		if (arg3 != 0)
-			return -EINVAL;
-		return keyctl_pkey_query((key_serial_t)arg2,
-					 (const char __user *)arg4,
-					 (struct keyctl_pkey_query __user *)arg5);
-
-	case KEYCTL_PKEY_ENCRYPT:
-	case KEYCTL_PKEY_DECRYPT:
-	case KEYCTL_PKEY_SIGN:
-		return keyctl_pkey_e_d_s(
-			option,
-			(const struct keyctl_pkey_params __user *)arg2,
-			(const char __user *)arg3,
-			(const void __user *)arg4,
-			(void __user *)arg5);
-
-	case KEYCTL_PKEY_VERIFY:
-		return keyctl_pkey_verify(
-			(const struct keyctl_pkey_params __user *)arg2,
-			(const char __user *)arg3,
-			(const void __user *)arg4,
-			(const void __user *)arg5);
-
-	case KEYCTL_MOVE:
-		return keyctl_keyring_move((key_serial_t)arg2,
-					   (key_serial_t)arg3,
-					   (key_serial_t)arg4,
-					   (unsigned int)arg5);
-
-	case KEYCTL_CAPABILITIES:
-		return keyctl_capabilities((unsigned char __user *)arg2, (size_t)arg3);
+					 (void __user *) arg5);
 
 	default:
 		return -EOPNOTSUPP;

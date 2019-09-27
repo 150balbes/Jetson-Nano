@@ -1,9 +1,13 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  *  linux/drivers/mmc/core/bus.c
  *
  *  Copyright (C) 2003 Russell King, All Rights Reserved.
  *  Copyright (C) 2007 Pierre Ossman
+ *  Copyright (c) 2018, NVIDIA CORPORATION.  All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  *
  *  MMC card bus driver model
  */
@@ -20,12 +24,15 @@
 #include <linux/mmc/host.h>
 
 #include "core.h"
-#include "card.h"
-#include "host.h"
 #include "sdio_cis.h"
 #include "bus.h"
 
 #define to_mmc_driver(d)	container_of(d, struct mmc_driver, drv)
+
+struct mmc_card *mmc_cards[MAX_CARDS_NUM];
+EXPORT_SYMBOL(mmc_cards);
+
+static int card_idx;
 
 static ssize_t type_show(struct device *dev,
 	struct device_attribute *attr, char *buf)
@@ -110,6 +117,19 @@ static int mmc_bus_probe(struct device *dev)
 {
 	struct mmc_driver *drv = to_mmc_driver(dev->driver);
 	struct mmc_card *card = mmc_dev_to_card(dev);
+	int card_id;
+
+	if (card_idx == MAX_CARDS_NUM) {
+		pr_err("Exceeded the total number of cards allowed");
+		return -EINVAL;
+	} else {
+		for (card_id = 0; card_id < MAX_CARDS_NUM; card_id++) {
+			if (!mmc_cards[card_id])
+				break;
+		}
+		mmc_cards[card_id] = card;
+		card_idx++;
+	}
 
 	return drv->probe(card);
 }
@@ -118,7 +138,16 @@ static int mmc_bus_remove(struct device *dev)
 {
 	struct mmc_driver *drv = to_mmc_driver(dev->driver);
 	struct mmc_card *card = mmc_dev_to_card(dev);
+	int card_id;
 
+	for (card_id = 0; card_id < MAX_CARDS_NUM; card_id++) {
+		if (mmc_cards[card_id] == card)
+			break;
+	}
+	if (card_id == MAX_CARDS_NUM)
+		card_id--;
+	mmc_cards[card_id] = NULL;
+	card_idx--;
 	drv->remove(card);
 
 	return 0;
@@ -348,6 +377,8 @@ int mmc_add_card(struct mmc_card *card)
 #ifdef CONFIG_DEBUG_FS
 	mmc_add_card_debugfs(card);
 #endif
+	mmc_init_context_info(card->host);
+
 	card->dev.of_node = mmc_of_find_child_device(card->host, 0);
 
 	device_enable_async_suspend(&card->dev);
@@ -367,16 +398,9 @@ int mmc_add_card(struct mmc_card *card)
  */
 void mmc_remove_card(struct mmc_card *card)
 {
-	struct mmc_host *host = card->host;
-
 #ifdef CONFIG_DEBUG_FS
 	mmc_remove_card_debugfs(card);
 #endif
-
-	if (host->cqe_enabled) {
-		host->cqe_ops->cqe_disable(host);
-		host->cqe_enabled = false;
-	}
 
 	if (mmc_card_present(card)) {
 		if (mmc_host_is_spi(card->host)) {

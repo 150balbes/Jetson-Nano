@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __mISDNdsp_H__
 #define __mISDNdsp_H__
 

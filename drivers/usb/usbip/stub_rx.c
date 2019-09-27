@@ -1,6 +1,20 @@
-// SPDX-License-Identifier: GPL-2.0+
 /*
  * Copyright (C) 2003-2008 Takahiro Hirofuchi
+ *
+ * This is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307,
+ * USA.
  */
 
 #include <asm/byteorder.h>
@@ -17,9 +31,9 @@ static int is_clear_halt_cmd(struct urb *urb)
 
 	req = (struct usb_ctrlrequest *) urb->setup_packet;
 
-	return (req->bRequest == USB_REQ_CLEAR_FEATURE) &&
-	       (req->bRequestType == USB_RECIP_ENDPOINT) &&
-	       (req->wValue == USB_ENDPOINT_HALT);
+	 return (req->bRequest == USB_REQ_CLEAR_FEATURE) &&
+		 (req->bRequestType == USB_RECIP_ENDPOINT) &&
+		 (req->wValue == USB_ENDPOINT_HALT);
 }
 
 static int is_set_interface_cmd(struct urb *urb)
@@ -339,6 +353,14 @@ static int get_pipe(struct stub_device *sdev, struct usbip_header *pdu)
 
 	epd = &ep->desc;
 
+	/* validate transfer_buffer_length */
+	if (pdu->u.cmd_submit.transfer_buffer_length > INT_MAX) {
+		dev_err(&sdev->udev->dev,
+			"CMD_SUBMIT: -EMSGSIZE transfer_buffer_length %d\n",
+			pdu->u.cmd_submit.transfer_buffer_length);
+		return -1;
+	}
+
 	if (usb_endpoint_xfer_control(epd)) {
 		if (dir == USBIP_DIR_OUT)
 			return usb_sndctrlpipe(udev, epnum);
@@ -361,10 +383,16 @@ static int get_pipe(struct stub_device *sdev, struct usbip_header *pdu)
 	}
 
 	if (usb_endpoint_xfer_isoc(epd)) {
-		/* validate number of packets */
+		/* validate packet size and number of packets */
+		unsigned int maxp, packets, bytes;
+
+		maxp = usb_endpoint_maxp(epd);
+		maxp *= usb_endpoint_maxp_mult(epd);
+		bytes = pdu->u.cmd_submit.transfer_buffer_length;
+		packets = DIV_ROUND_UP(bytes, maxp);
+
 		if (pdu->u.cmd_submit.number_of_packets < 0 ||
-		    pdu->u.cmd_submit.number_of_packets >
-		    USBIP_MAX_ISO_PACKETS) {
+		    pdu->u.cmd_submit.number_of_packets > packets) {
 			dev_err(&sdev->udev->dev,
 				"CMD_SUBMIT: isoc invalid num packets %d\n",
 				pdu->u.cmd_submit.number_of_packets);
@@ -422,6 +450,9 @@ static void masking_bogus_flags(struct urb *urb)
 		if (is_out)
 			allowed |= URB_ZERO_PACKET;
 		/* FALLTHROUGH */
+	case USB_ENDPOINT_XFER_CONTROL:
+		allowed |= URB_NO_FSBR;	/* only affects UHCI */
+		/* FALLTHROUGH */
 	default:			/* all non-iso endpoints */
 		if (!is_out)
 			allowed |= URB_SHORT_NOT_OK;
@@ -462,7 +493,8 @@ static void stub_recv_cmd_submit(struct stub_device *sdev,
 	}
 
 	/* allocate urb transfer buffer, if needed */
-	if (pdu->u.cmd_submit.transfer_buffer_length > 0) {
+	if (pdu->u.cmd_submit.transfer_buffer_length > 0 &&
+	    pdu->u.cmd_submit.transfer_buffer_length <= INT_MAX) {
 		priv->urb->transfer_buffer =
 			kzalloc(pdu->u.cmd_submit.transfer_buffer_length,
 				GFP_KERNEL);

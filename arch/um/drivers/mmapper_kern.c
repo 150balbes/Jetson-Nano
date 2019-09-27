@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * arch/um/drivers/mmapper_kern.c
  *
@@ -18,7 +17,7 @@
 #include <linux/module.h>
 #include <linux/mm.h>
 
-#include <linux/uaccess.h>
+#include <asm/uaccess.h>
 #include <mem_user.h>
 
 /* These are set in mmapper_init, which is called at boot time */

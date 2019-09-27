@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * Hisilicon Hi3620 clock gate driver
  *
@@ -7,6 +6,21 @@
  *
  * Author: Haojian Zhuang <haojian.zhuang@linaro.org>
  *	   Xin Li <li.xin@linaro.org>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with this program; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ *
  */
 
 #ifndef	__HISI_CLK_H
@@ -52,19 +66,6 @@ struct hisi_mux_clock {
 	u8			mux_flags;
 	u32			*table;
 	const char		*alias;
-};
-
-struct hisi_phase_clock {
-	unsigned int		id;
-	const char		*name;
-	const char		*parent_names;
-	unsigned long		flags;
-	unsigned long		offset;
-	u8			shift;
-	u8			width;
-	u32			*phase_degrees;
-	u32			*phase_regvals;
-	u8			phase_num;
 };
 
 struct hisi_divider_clock {
@@ -119,12 +120,6 @@ int hisi_clk_register_fixed_factor(const struct hisi_fixed_factor_clock *,
 				int, struct hisi_clock_data *);
 int hisi_clk_register_mux(const struct hisi_mux_clock *, int,
 				struct hisi_clock_data *);
-struct clk *clk_register_hisi_phase(struct device *dev,
-				const struct hisi_phase_clock *clks,
-				void __iomem *base, spinlock_t *lock);
-int hisi_clk_register_phase(struct device *dev,
-				const struct hisi_phase_clock *clks,
-				int nums, struct hisi_clock_data *data);
 int hisi_clk_register_divider(const struct hisi_divider_clock *,
 				int, struct hisi_clock_data *);
 int hisi_clk_register_gate(const struct hisi_gate_clock *,

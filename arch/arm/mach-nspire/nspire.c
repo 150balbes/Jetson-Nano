@@ -1,8 +1,12 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  *	linux/arch/arm/mach-nspire/nspire.c
  *
  *	Copyright (C) 2013 Daniel Tang <tangrs@tangrs.id.au>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2, as
+ * published by the Free Software Foundation.
+ *
  */
 #include <linux/init.h>
 #include <linux/of_irq.h>
@@ -28,6 +32,11 @@ static const char *const nspire_dt_match[] __initconst = {
 	"ti,nspire-clp",
 	NULL,
 };
+
+static void __init nspire_map_io(void)
+{
+	debug_ll_io_init();
+}
 
 static struct clcd_board nspire_clcd_data = {
 	.name		= "LCD",
@@ -62,6 +71,7 @@ static void nspire_restart(enum reboot_mode mode, const char *cmd)
 
 DT_MACHINE_START(NSPIRE, "TI-NSPIRE")
 	.dt_compat	= nspire_dt_match,
+	.map_io		= nspire_map_io,
 	.init_machine	= nspire_init,
 	.restart	= nspire_restart,
 MACHINE_END

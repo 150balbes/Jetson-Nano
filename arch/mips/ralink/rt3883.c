@@ -1,5 +1,7 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License version 2 as published
+ * by the Free Software Foundation.
  *
  * Parts of this file are based on Ralink's 2.6.21 BSP
  *
@@ -10,6 +12,7 @@
 
 #include <linux/kernel.h>
 #include <linux/init.h>
+#include <linux/module.h>
 
 #include <asm/mipsregs.h>
 #include <asm/mach-ralink/ralink_regs.h>
@@ -95,8 +98,6 @@ void __init ralink_clk_init(void)
 	ralink_clk_add("10000100.timer", sys_rate);
 	ralink_clk_add("10000120.watchdog", sys_rate);
 	ralink_clk_add("10000500.uart", 40000000);
-	ralink_clk_add("10000900.i2c", 40000000);
-	ralink_clk_add("10000a00.i2s", 40000000);
 	ralink_clk_add("10000b00.spi", sys_rate);
 	ralink_clk_add("10000b40.spi", sys_rate);
 	ralink_clk_add("10000c00.uartlite", 40000000);

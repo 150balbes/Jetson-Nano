@@ -1,6 +1,17 @@
-/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (C) 2016 ARM Ltd.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 #ifndef __ASM_CHECKSUM_H
 #define __ASM_CHECKSUM_H
@@ -17,21 +28,34 @@ static inline __sum16 csum_fold(__wsum csum)
 
 static inline __sum16 ip_fast_csum(const void *iph, unsigned int ihl)
 {
-	__uint128_t tmp;
+	union {
+		struct {
+#ifdef CONFIG_CPU_BIG_ENDIAN
+			uint64_t hi;
+			uint64_t lo;
+#else
+			uint64_t lo;
+			uint64_t hi;
+#endif
+		};
+		__uint128_t val;
+	} tmp;
 	u64 sum;
 
-	tmp = *(const __uint128_t *)iph;
+	asm volatile ("ldp %0, %1, [%2]\n" : "=r" (tmp.lo)
+					, "=r" (tmp.hi)
+					: "r" (iph));
 	iph += 16;
 	ihl -= 4;
-	tmp += ((tmp >> 64) | (tmp << 64));
-	sum = tmp >> 64;
+	tmp.val += ((tmp.val >> 64) | (tmp.val << 64));
+	sum = tmp.val >> 64;
 	do {
 		sum += *(const u32 *)iph;
 		iph += 4;
 	} while (--ihl);
 
 	sum += ((sum >> 32) | (sum << 32));
-	return csum_fold((__force u32)(sum >> 32));
+	return csum_fold(sum >> 32);
 }
 #define ip_fast_csum ip_fast_csum
 

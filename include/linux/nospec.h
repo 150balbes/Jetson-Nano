@@ -5,6 +5,7 @@
 
 #ifndef _LINUX_NOSPEC_H
 #define _LINUX_NOSPEC_H
+
 #include <asm/barrier.h>
 
 struct task_struct;

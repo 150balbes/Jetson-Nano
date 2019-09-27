@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 
 #ifndef _PC873xx_H_
 #define _PC873xx_H_

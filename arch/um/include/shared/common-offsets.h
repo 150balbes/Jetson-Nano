@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /* for use by sys-$SUBARCH/kernel-offsets.c */
 
 DEFINE(KERNEL_MADV_REMOVE, MADV_REMOVE);

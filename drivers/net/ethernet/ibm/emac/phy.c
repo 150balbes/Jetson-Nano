@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * drivers/net/ethernet/ibm/emac/phy.c
  *
@@ -97,7 +96,7 @@ int emac_mii_reset_gpcs(struct mii_phy *phy)
 	if ((val & BMCR_ISOLATE) && limit > 0)
 		gpcs_phy_write(phy, MII_BMCR, val & ~BMCR_ISOLATE);
 
-	if (limit > 0 && phy->mode == PHY_INTERFACE_MODE_SGMII) {
+	if (limit > 0 && phy->mode == PHY_MODE_SGMII) {
 		/* Configure GPCS interface to recommended setting for SGMII */
 		gpcs_phy_write(phy, 0x04, 0x8120); /* AsymPause, FDX */
 		gpcs_phy_write(phy, 0x07, 0x2801); /* msg_pg, toggle */
@@ -277,7 +276,7 @@ static int genmii_read_link(struct mii_phy *phy)
 }
 
 /* Generic implementation for most 10/100/1000 PHYs */
-static const struct mii_phy_ops generic_phy_ops = {
+static struct mii_phy_ops generic_phy_ops = {
 	.setup_aneg	= genmii_setup_aneg,
 	.setup_forced	= genmii_setup_forced,
 	.poll_link	= genmii_poll_link,
@@ -314,16 +313,16 @@ static int cis8201_init(struct mii_phy *phy)
 	epcr &= ~EPCR_MODE_MASK;
 
 	switch (phy->mode) {
-	case PHY_INTERFACE_MODE_TBI:
+	case PHY_MODE_TBI:
 		epcr |= EPCR_TBI_MODE;
 		break;
-	case PHY_INTERFACE_MODE_RTBI:
+	case PHY_MODE_RTBI:
 		epcr |= EPCR_RTBI_MODE;
 		break;
-	case PHY_INTERFACE_MODE_GMII:
+	case PHY_MODE_GMII:
 		epcr |= EPCR_GMII_MODE;
 		break;
-	case PHY_INTERFACE_MODE_RGMII:
+	case PHY_MODE_RGMII:
 	default:
 		epcr |= EPCR_RGMII_MODE;
 	}
@@ -341,7 +340,7 @@ static int cis8201_init(struct mii_phy *phy)
 	return 0;
 }
 
-static const struct mii_phy_ops cis8201_phy_ops = {
+static struct mii_phy_ops cis8201_phy_ops = {
 	.init		= cis8201_init,
 	.setup_aneg	= genmii_setup_aneg,
 	.setup_forced	= genmii_setup_forced,
@@ -421,7 +420,7 @@ static int et1011c_init(struct mii_phy *phy)
 	return 0;
 }
 
-static const struct mii_phy_ops et1011c_phy_ops = {
+static struct mii_phy_ops et1011c_phy_ops = {
 	.init		= et1011c_init,
 	.setup_aneg	= genmii_setup_aneg,
 	.setup_forced	= genmii_setup_forced,
@@ -440,7 +439,7 @@ static struct mii_phy_def et1011c_phy_def = {
 
 
 
-static const struct mii_phy_ops m88e1111_phy_ops = {
+static struct mii_phy_ops m88e1111_phy_ops = {
 	.init		= m88e1111_init,
 	.setup_aneg	= genmii_setup_aneg,
 	.setup_forced	= genmii_setup_forced,
@@ -456,7 +455,7 @@ static struct mii_phy_def m88e1111_phy_def = {
 	.ops		= &m88e1111_phy_ops,
 };
 
-static const struct mii_phy_ops m88e1112_phy_ops = {
+static struct mii_phy_ops m88e1112_phy_ops = {
 	.init		= m88e1112_init,
 	.setup_aneg	= genmii_setup_aneg,
 	.setup_forced	= genmii_setup_forced,
@@ -481,7 +480,7 @@ static int ar8035_init(struct mii_phy *phy)
 	return 0;
 }
 
-static const struct mii_phy_ops ar8035_phy_ops = {
+static struct mii_phy_ops ar8035_phy_ops = {
 	.init		= ar8035_init,
 	.setup_aneg	= genmii_setup_aneg,
 	.setup_forced	= genmii_setup_forced,

@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0-only
 if PLAT_PXA
 
 config PXA_SSP

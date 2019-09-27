@@ -1,0 +1,106 @@
+/*
+ * Copyright (c) 2016-2018, NVIDIA CORPORATION.  All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
+#include "tegra210-camera-imx274-hdmi.dtsi"
+
+#define CAM0_RST_L	TEGRA_GPIO(S, 4)
+#define CAM1_RST_L	TEGRA_GPIO(S, 5)
+
+/* camera control gpio definitions */
+
+/ {
+	host1x {
+		i2c@546c0000 {
+			imx274_a@1a {
+				/* Define any required hw resources needed by driver */
+				/* ie. clocks, io pins, power sources */
+				clocks = <&tegra_car TEGRA210_CLK_CLK_OUT_3>;
+				clock-names = "clk_out_3";
+				clock-frequency = <24000000>;
+				mclk = "clk_out_3";
+				status = "okay";
+				reset-gpios = <&gpio CAM1_RST_L GPIO_ACTIVE_HIGH>;
+				vana-supply = <&en_vdd_cam_hv_2v8>;
+				vif-supply = <&en_vdd_cam>;
+				vdig-supply = <&en_vdd_cam_1v2_alt>;
+			};
+			tc358840@1f {
+				single-source-max-width = "1920";
+				mclk = "clk_out_3";
+				cam2_rst   = <&tca9539_77 8 GPIO_ACTIVE_HIGH>;
+				vif-supply = <&en_vdd_cam>;
+				vdig-supply = <&en_vdd_cam_1v2_alt>;
+				reset-gpios = <&gpio CAM0_RST_L GPIO_ACTIVE_HIGH>;
+				interrupt-parent = <&gpio>;
+				interrupts = <TEGRA_GPIO(X, 2) GPIO_ACTIVE_HIGH>;
+
+				refclk_hz = <40000000>; /* 40 - 50 MHz */
+
+				ddc5v_delay = <1>;        /* 50 ms */
+
+				/* HDCP */
+				/* TODO: Not yet implemented */
+				enable_hdcp = <0>;
+
+				/* CSI Output */
+				csi_port = <3>;            /* Enable TX0 and TX1 */
+
+				lineinitcnt = <0x00000FA0>;
+				lptxtimecnt = <0x00000004>;
+				tclk_headercnt = <0x00180203>;
+				tclk_trailcnt = <0x00040005>;
+				ths_headercnt = <0x000D0004>;
+				twakeup = <0x00003E80>;
+				tclk_postcnt = <0x0000000A>;
+				ths_trailcnt = <0x00080006>;
+				hstxvregcnt = <0x00000020>;
+				btacnt = <0>;
+
+				/* PLL */
+				/* Bps per lane is (refclk_hz / pll_prd) * pll_fbd */
+				pll_prd = <10>;
+				pll_fbd = <230>;
+				pll_frs = <0>;
+			};
+		};
+	};
+
+	gpio: gpio@6000d000 {
+		camera-control-output-low {
+			gpio-hog;
+			output-low;
+			gpios = <
+				CAM0_RST_L 0
+				>;
+			label = "cam0-rst";
+		};
+		camera-control-output-high {
+			gpio-hog;
+			output-high;
+			gpios = <
+				CAM1_RST_L 0
+				>;
+			label = "cam1-rst";
+		};
+	};
+
+	regulators {
+		regulator@210 {
+			/delete-property/ gpio;
+		};
+	};
+};

@@ -324,8 +324,7 @@ u32 xenvif_set_hash_mapping_size(struct xenvif *vif, u32 size)
 		return XEN_NETIF_CTRL_STATUS_INVALID_PARAMETER;
 
 	vif->hash.size = size;
-	memset(vif->hash.mapping[vif->hash.mapping_sel], 0,
-	       sizeof(u32) * size);
+	memset(vif->hash.mapping, 0, sizeof(u32) * size);
 
 	return XEN_NETIF_CTRL_STATUS_SUCCESS;
 }
@@ -333,48 +332,32 @@ u32 xenvif_set_hash_mapping_size(struct xenvif *vif, u32 size)
 u32 xenvif_set_hash_mapping(struct xenvif *vif, u32 gref, u32 len,
 			    u32 off)
 {
-	u32 *mapping = vif->hash.mapping[!vif->hash.mapping_sel];
-	unsigned int nr = 1;
-	struct gnttab_copy copy_op[2] = {{
+	u32 *mapping = vif->hash.mapping;
+	struct gnttab_copy copy_op = {
 		.source.u.ref = gref,
 		.source.domid = vif->domid,
 		.dest.domid = DOMID_SELF,
 		.len = len * sizeof(*mapping),
 		.flags = GNTCOPY_source_gref
-	}};
+	};
 
 	if ((off + len < off) || (off + len > vif->hash.size) ||
 	    len > XEN_PAGE_SIZE / sizeof(*mapping))
 		return XEN_NETIF_CTRL_STATUS_INVALID_PARAMETER;
 
-	copy_op[0].dest.u.gmfn = virt_to_gfn(mapping + off);
-	copy_op[0].dest.offset = xen_offset_in_page(mapping + off);
-	if (copy_op[0].dest.offset + copy_op[0].len > XEN_PAGE_SIZE) {
-		copy_op[1] = copy_op[0];
-		copy_op[1].source.offset = XEN_PAGE_SIZE - copy_op[0].dest.offset;
-		copy_op[1].dest.u.gmfn = virt_to_gfn(mapping + off + len);
-		copy_op[1].dest.offset = 0;
-		copy_op[1].len = copy_op[0].len - copy_op[1].source.offset;
-		copy_op[0].len = copy_op[1].source.offset;
-		nr = 2;
-	}
-
-	memcpy(mapping, vif->hash.mapping[vif->hash.mapping_sel],
-	       vif->hash.size * sizeof(*mapping));
-
-	if (copy_op[0].len != 0) {
-		gnttab_batch_copy(copy_op, nr);
-
-		if (copy_op[0].status != GNTST_okay ||
-		    copy_op[nr - 1].status != GNTST_okay)
-			return XEN_NETIF_CTRL_STATUS_INVALID_PARAMETER;
-	}
+	copy_op.dest.u.gmfn = virt_to_gfn(mapping + off);
+	copy_op.dest.offset = xen_offset_in_page(mapping + off);
 
 	while (len-- != 0)
 		if (mapping[off++] >= vif->num_queues)
 			return XEN_NETIF_CTRL_STATUS_INVALID_PARAMETER;
 
-	vif->hash.mapping_sel = !vif->hash.mapping_sel;
+	if (copy_op.len != 0) {
+		gnttab_batch_copy(&copy_op, 1);
+
+		if (copy_op.status != GNTST_okay)
+			return XEN_NETIF_CTRL_STATUS_INVALID_PARAMETER;
+	}
 
 	return XEN_NETIF_CTRL_STATUS_SUCCESS;
 }
@@ -427,8 +410,6 @@ void xenvif_dump_hash_info(struct xenvif *vif, struct seq_file *m)
 	}
 
 	if (vif->hash.size != 0) {
-		const u32 *mapping = vif->hash.mapping[vif->hash.mapping_sel];
-
 		seq_puts(m, "\nHash Mapping:\n");
 
 		for (i = 0; i < vif->hash.size; ) {
@@ -441,7 +422,7 @@ void xenvif_dump_hash_info(struct xenvif *vif, struct seq_file *m)
 			seq_printf(m, "[%4u - %4u]: ", i, i + n - 1);
 
 			for (j = 0; j < n; j++, i++)
-				seq_printf(m, "%4u ", mapping[i]);
+				seq_printf(m, "%4u ", vif->hash.mapping[i]);
 
 			seq_puts(m, "\n");
 		}
@@ -453,8 +434,6 @@ void xenvif_init_hash(struct xenvif *vif)
 {
 	if (xenvif_hash_cache_size == 0)
 		return;
-
-	BUG_ON(vif->hash.cache.count);
 
 	spin_lock_init(&vif->hash.cache.lock);
 	INIT_LIST_HEAD(&vif->hash.cache.list);

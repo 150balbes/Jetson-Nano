@@ -1,7 +1,7 @@
 /*
    3w-sas.c -- LSI 3ware SAS/SATA-RAID Controller device driver for Linux.
 
-   Written By: Adam Radford <aradford@gmail.com>
+   Written By: Adam Radford <linuxraid@lsi.com>
 
    Copyright (C) 2009 LSI Corporation.
 
@@ -43,7 +43,10 @@
    LSI 3ware 9750 6Gb/s SAS/SATA-RAID
 
    Bugs/Comments/Suggestions should be mailed to:
-   aradford@gmail.com
+   linuxraid@lsi.com
+
+   For more information, goto:
+   http://www.lsi.com
 
    History
    -------
@@ -64,7 +67,7 @@
 #include <linux/slab.h>
 #include <asm/io.h>
 #include <asm/irq.h>
-#include <linux/uaccess.h>
+#include <asm/uaccess.h>
 #include <scsi/scsi.h>
 #include <scsi/scsi_host.h>
 #include <scsi/scsi_tcq.h>
@@ -221,6 +224,7 @@ out:
 static void twl_aen_queue_event(TW_Device_Extension *tw_dev, TW_Command_Apache_Header *header)
 {
 	u32 local_time;
+	struct timeval time;
 	TW_Event *event;
 	unsigned short aen;
 	char host[16];
@@ -239,8 +243,8 @@ static void twl_aen_queue_event(TW_Device_Extension *tw_dev, TW_Command_Apache_H
 	memset(event, 0, sizeof(TW_Event));
 
 	event->severity = TW_SEV_OUT(header->status_block.severity__reserved);
-	/* event->time_stamp_sec overflows in y2106 */
-	local_time = (u32)(ktime_get_real_seconds() - (sys_tz.tz_minuteswest * 60));
+	do_gettimeofday(&time);
+	local_time = (u32)(time.tv_sec - (sys_tz.tz_minuteswest * 60));
 	event->time_stamp_sec = local_time;
 	event->aen_code = aen;
 	event->retrieved = TW_AEN_NOT_RETRIEVED;
@@ -287,9 +291,7 @@ static int twl_post_command_packet(TW_Device_Extension *tw_dev, int request_id)
 } /* End twl_post_command_packet() */
 
 /* This function hands scsi cdb's to the firmware */
-static int twl_scsiop_execute_scsi(TW_Device_Extension *tw_dev, int request_id,
-				   unsigned char *cdb, int use_sg,
-				   TW_SG_Entry_ISO *sglistarg)
+static int twl_scsiop_execute_scsi(TW_Device_Extension *tw_dev, int request_id, char *cdb, int use_sg, TW_SG_Entry_ISO *sglistarg)
 {
 	TW_Command_Full *full_command_packet;
 	TW_Command_Apache *command_packet;
@@ -374,7 +376,7 @@ out:
 /* This function will read the aen queue from the isr */
 static int twl_aen_read_queue(TW_Device_Extension *tw_dev, int request_id)
 {
-	unsigned char cdb[TW_MAX_CDB_LEN];
+	char cdb[TW_MAX_CDB_LEN];
 	TW_SG_Entry_ISO sglist[1];
 	TW_Command_Full *full_command_packet;
 	int retval = 1;
@@ -409,10 +411,11 @@ out:
 static void twl_aen_sync_time(TW_Device_Extension *tw_dev, int request_id)
 {
 	u32 schedulertime;
+	struct timeval utc;
 	TW_Command_Full *full_command_packet;
 	TW_Command *command_packet;
 	TW_Param_Apache *param;
-	time64_t local_time;
+	u32 local_time;
 
 	/* Fill out the command packet */
 	full_command_packet = tw_dev->command_packet_virt[request_id];
@@ -434,9 +437,10 @@ static void twl_aen_sync_time(TW_Device_Extension *tw_dev, int request_id)
 
 	/* Convert system time in UTC to local time seconds since last 
            Sunday 12:00AM */
-	local_time = (ktime_get_real_seconds() - (sys_tz.tz_minuteswest * 60));
-	div_u64_rem(local_time - (3 * 86400), 604800, &schedulertime);
-	schedulertime = cpu_to_le32(schedulertime);
+	do_gettimeofday(&utc);
+	local_time = (u32)(utc.tv_sec - (sys_tz.tz_minuteswest * 60));
+	schedulertime = local_time - (3 * 86400);
+	schedulertime = cpu_to_le32(schedulertime % 604800);
 
 	memcpy(param->data, &schedulertime, sizeof(u32));
 
@@ -556,7 +560,7 @@ out:
 static int twl_aen_drain_queue(TW_Device_Extension *tw_dev, int no_check_reset)
 {
 	int request_id = 0;
-	unsigned char cdb[TW_MAX_CDB_LEN];
+	char cdb[TW_MAX_CDB_LEN];
 	TW_SG_Entry_ISO sglist[1];
 	int finished = 0, count = 0;
 	TW_Command_Full *full_command_packet;
@@ -646,9 +650,8 @@ static int twl_allocate_memory(TW_Device_Extension *tw_dev, int size, int which)
 	unsigned long *cpu_addr;
 	int retval = 1;
 
-	cpu_addr = dma_alloc_coherent(&tw_dev->tw_pci_dev->dev,
-				      size * TW_Q_LENGTH, &dma_handle,
-				      GFP_KERNEL);
+	cpu_addr = pci_zalloc_consistent(tw_dev->tw_pci_dev, size * TW_Q_LENGTH,
+					 &dma_handle);
 	if (!cpu_addr) {
 		TW_PRINTK(tw_dev->host, TW_DRIVER, 0x5, "Memory allocation failed");
 		goto out;
@@ -902,19 +905,19 @@ out:
 static void twl_free_device_extension(TW_Device_Extension *tw_dev)
 {
 	if (tw_dev->command_packet_virt[0])
-		dma_free_coherent(&tw_dev->tw_pci_dev->dev,
+		pci_free_consistent(tw_dev->tw_pci_dev,
 				    sizeof(TW_Command_Full)*TW_Q_LENGTH,
 				    tw_dev->command_packet_virt[0],
 				    tw_dev->command_packet_phys[0]);
 
 	if (tw_dev->generic_buffer_virt[0])
-		dma_free_coherent(&tw_dev->tw_pci_dev->dev,
+		pci_free_consistent(tw_dev->tw_pci_dev,
 				    TW_SECTOR_SIZE*TW_Q_LENGTH,
 				    tw_dev->generic_buffer_virt[0],
 				    tw_dev->generic_buffer_phys[0]);
 
 	if (tw_dev->sense_buffer_virt[0])
-		dma_free_coherent(&tw_dev->tw_pci_dev->dev,
+		pci_free_consistent(tw_dev->tw_pci_dev,
 				    sizeof(TW_Command_Apache_Header)*
 				    TW_Q_LENGTH,
 				    tw_dev->sense_buffer_virt[0],
@@ -1551,6 +1554,7 @@ static struct scsi_host_template driver_template = {
 	.sg_tablesize		= TW_LIBERATOR_MAX_SGL_LENGTH,
 	.max_sectors		= TW_MAX_SECTORS,
 	.cmd_per_lun		= TW_MAX_CMDS_PER_LUN,
+	.use_clustering		= ENABLE_CLUSTERING,
 	.shost_attrs		= twl_host_attrs,
 	.emulated		= 1,
 	.no_write_same		= 1,
@@ -1573,14 +1577,14 @@ static int twl_probe(struct pci_dev *pdev, const struct pci_device_id *dev_id)
 	pci_set_master(pdev);
 	pci_try_set_mwi(pdev);
 
-	retval = dma_set_mask_and_coherent(&pdev->dev, DMA_BIT_MASK(64));
-	if (retval)
-		retval = dma_set_mask_and_coherent(&pdev->dev, DMA_BIT_MASK(32));
-	if (retval) {
-		TW_PRINTK(host, TW_DRIVER, 0x18, "Failed to set dma mask");
-		retval = -ENODEV;
-		goto out_disable_device;
-	}
+	if (pci_set_dma_mask(pdev, DMA_BIT_MASK(64))
+	    || pci_set_consistent_dma_mask(pdev, DMA_BIT_MASK(64)))
+		if (pci_set_dma_mask(pdev, DMA_BIT_MASK(32))
+		    || pci_set_consistent_dma_mask(pdev, DMA_BIT_MASK(32))) {
+			TW_PRINTK(host, TW_DRIVER, 0x18, "Failed to set dma mask");
+			retval = -ENODEV;
+			goto out_disable_device;
+		}
 
 	host = scsi_host_alloc(&driver_template, sizeof(TW_Device_Extension));
 	if (!host) {
@@ -1807,14 +1811,14 @@ static int twl_resume(struct pci_dev *pdev)
 	pci_set_master(pdev);
 	pci_try_set_mwi(pdev);
 
-	retval = dma_set_mask_and_coherent(&pdev->dev, DMA_BIT_MASK(64));
-	if (retval)
-		retval = dma_set_mask_and_coherent(&pdev->dev, DMA_BIT_MASK(32));
-	if (retval) {
-		TW_PRINTK(host, TW_DRIVER, 0x25, "Failed to set dma mask during resume");
-		retval = -ENODEV;
-		goto out_disable_device;
-	}
+	if (pci_set_dma_mask(pdev, DMA_BIT_MASK(64))
+	    || pci_set_consistent_dma_mask(pdev, DMA_BIT_MASK(64)))
+		if (pci_set_dma_mask(pdev, DMA_BIT_MASK(32))
+		    || pci_set_consistent_dma_mask(pdev, DMA_BIT_MASK(32))) {
+			TW_PRINTK(host, TW_DRIVER, 0x25, "Failed to set dma mask during resume");
+			retval = -ENODEV;
+			goto out_disable_device;
+		}
 
 	/* Initialize the card */
 	if (twl_reset_sequence(tw_dev, 0)) {

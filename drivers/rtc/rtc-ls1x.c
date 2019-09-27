@@ -1,8 +1,12 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Copyright (c) 2011 Zhao Zhang <zhzhl555@gmail.com>
  *
  * Derived from driver/rtc/rtc-au1xxx.c
+ *
+ * This program is free software; you can redistribute  it and/or modify it
+ * under  the terms of  the GNU General  Public License as published by the
+ * Free Software Foundation;  either version 2 of the  License, or (at your
+ * option) any later version.
  */
 
 #include <linux/module.h>
@@ -83,19 +87,18 @@
 
 static int ls1x_rtc_read_time(struct device *dev, struct rtc_time *rtm)
 {
-	unsigned long v;
-	time64_t t;
+	unsigned long v, t;
 
 	v = readl(SYS_TOYREAD0);
 	t = readl(SYS_TOYREAD1);
 
 	memset(rtm, 0, sizeof(struct rtc_time));
-	t  = mktime64((t & LS1X_YEAR_MASK), ls1x_get_month(v),
+	t  = mktime((t & LS1X_YEAR_MASK), ls1x_get_month(v),
 			ls1x_get_day(v), ls1x_get_hour(v),
 			ls1x_get_min(v), ls1x_get_sec(v));
-	rtc_time64_to_tm(t, rtm);
+	rtc_time_to_tm(t, rtm);
 
-	return 0;
+	return rtc_valid_tm(rtm);
 }
 
 static int ls1x_rtc_set_time(struct device *dev, struct  rtc_time *rtm)
@@ -135,7 +138,7 @@ err:
 	return ret;
 }
 
-static const struct rtc_class_ops  ls1x_rtc_ops = {
+static struct rtc_class_ops  ls1x_rtc_ops = {
 	.read_time	= ls1x_rtc_read_time,
 	.set_time	= ls1x_rtc_set_time,
 };
@@ -144,13 +147,15 @@ static int ls1x_rtc_probe(struct platform_device *pdev)
 {
 	struct rtc_device *rtcdev;
 	unsigned long v;
+	int ret;
 
 	v = readl(SYS_COUNTER_CNTRL);
 	if (!(v & RTC_CNTR_OK)) {
 		dev_err(&pdev->dev, "rtc counters not working\n");
-		return -ENODEV;
+		ret = -ENODEV;
+		goto err;
 	}
-
+	ret = -ETIMEDOUT;
 	/* set to 1 HZ if needed */
 	if (readl(SYS_TOYTRIM) != 32767) {
 		v = 0x100000;
@@ -159,7 +164,7 @@ static int ls1x_rtc_probe(struct platform_device *pdev)
 
 		if (!v) {
 			dev_err(&pdev->dev, "time out\n");
-			return -ETIMEDOUT;
+			goto err;
 		}
 		writel(32767, SYS_TOYTRIM);
 	}
@@ -167,16 +172,17 @@ static int ls1x_rtc_probe(struct platform_device *pdev)
 	while (readl(SYS_COUNTER_CNTRL) & SYS_CNTRL_TTS)
 		usleep_range(1000, 3000);
 
-	rtcdev = devm_rtc_allocate_device(&pdev->dev);
-	if (IS_ERR(rtcdev))
-		return PTR_ERR(rtcdev);
+	rtcdev = devm_rtc_device_register(&pdev->dev, "ls1x-rtc",
+					&ls1x_rtc_ops , THIS_MODULE);
+	if (IS_ERR(rtcdev)) {
+		ret = PTR_ERR(rtcdev);
+		goto err;
+	}
 
 	platform_set_drvdata(pdev, rtcdev);
-	rtcdev->ops = &ls1x_rtc_ops;
-	rtcdev->range_min = RTC_TIMESTAMP_BEGIN_1900;
-	rtcdev->range_max = RTC_TIMESTAMP_END_2099;
-
-	return rtc_register_device(rtcdev);
+	return 0;
+err:
+	return ret;
 }
 
 static struct platform_driver  ls1x_rtc_driver = {

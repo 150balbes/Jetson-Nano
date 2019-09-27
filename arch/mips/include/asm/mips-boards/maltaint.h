@@ -10,6 +10,8 @@
 #ifndef _MIPS_MALTAINT_H
 #define _MIPS_MALTAINT_H
 
+#include <linux/irqchip/mips-gic.h>
+
 /*
  * Interrupts 0..15 are used for Malta ISA compatible interrupts
  */
@@ -59,5 +61,8 @@
 #define MSC01E_INT_PCI		9
 #define MSC01E_INT_PERFCTR	10
 #define MSC01E_INT_CPUCTR	11
+
+/* GIC external interrupts */
+#define GIC_INT_I8259A		GIC_SHARED_TO_HWIRQ(3)
 
 #endif /* !(_MIPS_MALTAINT_H) */

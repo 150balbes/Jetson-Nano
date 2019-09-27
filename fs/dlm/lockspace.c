@@ -1,15 +1,15 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /******************************************************************************
 *******************************************************************************
 **
 **  Copyright (C) Sistina Software, Inc.  1997-2003  All rights reserved.
 **  Copyright (C) 2004-2011 Red Hat, Inc.  All rights reserved.
 **
+**  This copyrighted material is made available to anyone wishing to use,
+**  modify, copy, or redistribute it subject to the terms and conditions
+**  of the GNU General Public License v.2.
 **
 *******************************************************************************
 ******************************************************************************/
-
-#include <linux/module.h>
 
 #include "dlm_internal.h"
 #include "lockspace.h"
@@ -158,7 +158,6 @@ static struct attribute *dlm_attrs[] = {
 	&dlm_attr_recover_nodeid.attr,
 	NULL,
 };
-ATTRIBUTE_GROUPS(dlm);
 
 static ssize_t dlm_attr_show(struct kobject *kobj, struct attribute *attr,
 			     char *buf)
@@ -188,7 +187,7 @@ static const struct sysfs_ops dlm_attr_ops = {
 };
 
 static struct kobj_type dlm_ktype = {
-	.default_groups = dlm_groups,
+	.default_attrs = dlm_attrs,
 	.sysfs_ops     = &dlm_attr_ops,
 	.release       = lockspace_kobj_release,
 };
@@ -234,7 +233,7 @@ static int dlm_uevent(struct kset *kset, struct kobject *kobj,
 	return 0;
 }
 
-static const struct kset_uevent_ops dlm_uevent_ops = {
+static struct kset_uevent_ops dlm_uevent_ops = {
 	.uevent = dlm_uevent,
 };
 
@@ -430,7 +429,7 @@ static int new_lockspace(const char *name, const char *cluster,
 	int do_unreg = 0;
 	int namelen = strlen(name);
 
-	if (namelen > DLM_LOCKSPACE_LEN || namelen == 0)
+	if (namelen > DLM_LOCKSPACE_LEN)
 		return -EINVAL;
 
 	if (!lvblen || (lvblen % 8))
@@ -452,14 +451,9 @@ static int new_lockspace(const char *name, const char *cluster,
 			*ops_result = 0;
 	}
 
-	if (!cluster)
-		log_print("dlm cluster name '%s' is being used without an application provided cluster name",
-			  dlm_config.ci_cluster_name);
-
 	if (dlm_config.ci_recover_callbacks && cluster &&
 	    strncmp(cluster, dlm_config.ci_cluster_name, DLM_LOCKSPACE_LEN)) {
-		log_print("dlm cluster name '%s' does not match "
-			  "the application cluster name '%s'",
+		log_print("dlm cluster name %s mismatch %s",
 			  dlm_config.ci_cluster_name, cluster);
 		error = -EBADR;
 		goto out;
@@ -516,7 +510,7 @@ static int new_lockspace(const char *name, const char *cluster,
 	size = dlm_config.ci_rsbtbl_size;
 	ls->ls_rsbtbl_size = size;
 
-	ls->ls_rsbtbl = vmalloc(array_size(size, sizeof(struct dlm_rsbtable)));
+	ls->ls_rsbtbl = vmalloc(sizeof(struct dlm_rsbtable) * size);
 	if (!ls->ls_rsbtbl)
 		goto out_lsfree;
 	for (i = 0; i < size; i++) {
@@ -679,9 +673,11 @@ static int new_lockspace(const char *name, const char *cluster,
 	kfree(ls->ls_recover_buf);
  out_lkbidr:
 	idr_destroy(&ls->ls_lkbidr);
+	for (i = 0; i < DLM_REMOVE_NAMES_MAX; i++) {
+		if (ls->ls_remove_names[i])
+			kfree(ls->ls_remove_names[i]);
+	}
  out_rsbtbl:
-	for (i = 0; i < DLM_REMOVE_NAMES_MAX; i++)
-		kfree(ls->ls_remove_names[i]);
 	vfree(ls->ls_rsbtbl);
  out_lsfree:
 	if (do_unreg)
@@ -804,7 +800,6 @@ static int release_lockspace(struct dlm_ls *ls, int force)
 
 	dlm_delete_debug_file(ls);
 
-	idr_destroy(&ls->ls_recover_idr);
 	kfree(ls->ls_recover_buf);
 
 	/*

@@ -34,10 +34,10 @@
 #include <linux/mlx4/qp.h>
 #include <linux/mlx4/srq.h>
 #include <linux/slab.h>
+#include <linux/vmalloc.h>
 
 #include "mlx4_ib.h"
 #include <rdma/mlx4-abi.h>
-#include <rdma/uverbs_ioctl.h>
 
 static void *get_wqe(struct mlx4_ib_srq *srq, int n)
 {
@@ -69,14 +69,12 @@ static void mlx4_ib_srq_event(struct mlx4_srq *srq, enum mlx4_event type)
 	}
 }
 
-int mlx4_ib_create_srq(struct ib_srq *ib_srq,
-		       struct ib_srq_init_attr *init_attr,
-		       struct ib_udata *udata)
+struct ib_srq *mlx4_ib_create_srq(struct ib_pd *pd,
+				  struct ib_srq_init_attr *init_attr,
+				  struct ib_udata *udata)
 {
-	struct mlx4_ib_dev *dev = to_mdev(ib_srq->device);
-	struct mlx4_ib_ucontext *ucontext = rdma_udata_to_drv_context(
-		udata, struct mlx4_ib_ucontext, ibucontext);
-	struct mlx4_ib_srq *srq = to_msrq(ib_srq);
+	struct mlx4_ib_dev *dev = to_mdev(pd->device);
+	struct mlx4_ib_srq *srq;
 	struct mlx4_wqe_srq_next_seg *next;
 	struct mlx4_wqe_data_seg *scatter;
 	u32 cqn;
@@ -89,7 +87,11 @@ int mlx4_ib_create_srq(struct ib_srq *ib_srq,
 	/* Sanity check SRQ size before proceeding */
 	if (init_attr->attr.max_wr  >= dev->dev->caps.max_srq_wqes ||
 	    init_attr->attr.max_sge >  dev->dev->caps.max_srq_sge)
-		return -EINVAL;
+		return ERR_PTR(-EINVAL);
+
+	srq = kmalloc(sizeof *srq, GFP_KERNEL);
+	if (!srq)
+		return ERR_PTR(-ENOMEM);
 
 	mutex_init(&srq->mutex);
 	spin_lock_init(&srq->lock);
@@ -104,18 +106,23 @@ int mlx4_ib_create_srq(struct ib_srq *ib_srq,
 
 	buf_size = srq->msrq.max * desc_size;
 
-	if (udata) {
+	if (pd->uobject) {
 		struct mlx4_ib_create_srq ucmd;
 
-		if (ib_copy_from_udata(&ucmd, udata, sizeof(ucmd)))
-			return -EFAULT;
+		if (ib_copy_from_udata(&ucmd, udata, sizeof ucmd)) {
+			err = -EFAULT;
+			goto err_srq;
+		}
 
-		srq->umem = ib_umem_get(udata, ucmd.buf_addr, buf_size, 0, 0);
-		if (IS_ERR(srq->umem))
-			return PTR_ERR(srq->umem);
+		srq->umem = ib_umem_get(pd->uobject->context, ucmd.buf_addr,
+					buf_size, 0, 0);
+		if (IS_ERR(srq->umem)) {
+			err = PTR_ERR(srq->umem);
+			goto err_srq;
+		}
 
 		err = mlx4_mtt_init(dev->dev, ib_umem_page_count(srq->umem),
-				    PAGE_SHIFT, &srq->mtt);
+				    ilog2(srq->umem->page_size), &srq->mtt);
 		if (err)
 			goto err_buf;
 
@@ -123,18 +130,19 @@ int mlx4_ib_create_srq(struct ib_srq *ib_srq,
 		if (err)
 			goto err_mtt;
 
-		err = mlx4_ib_db_map_user(udata, ucmd.db_addr, &srq->db);
+		err = mlx4_ib_db_map_user(to_mucontext(pd->uobject->context),
+					  ucmd.db_addr, &srq->db);
 		if (err)
 			goto err_mtt;
 	} else {
-		err = mlx4_db_alloc(dev->dev, &srq->db, 0);
+		err = mlx4_db_alloc(dev->dev, &srq->db, 0, GFP_KERNEL);
 		if (err)
-			return err;
+			goto err_srq;
 
 		*srq->db.db = 0;
 
-		if (mlx4_buf_alloc(dev->dev, buf_size, PAGE_SIZE * 2,
-				   &srq->buf)) {
+		if (mlx4_buf_alloc(dev->dev, buf_size, PAGE_SIZE * 2, &srq->buf,
+				   GFP_KERNEL)) {
 			err = -ENOMEM;
 			goto err_db;
 		}
@@ -159,32 +167,36 @@ int mlx4_ib_create_srq(struct ib_srq *ib_srq,
 		if (err)
 			goto err_buf;
 
-		err = mlx4_buf_write_mtt(dev->dev, &srq->mtt, &srq->buf);
+		err = mlx4_buf_write_mtt(dev->dev, &srq->mtt, &srq->buf, GFP_KERNEL);
 		if (err)
 			goto err_mtt;
 
-		srq->wrid = kvmalloc_array(srq->msrq.max,
-					   sizeof(u64), GFP_KERNEL);
+		srq->wrid = kmalloc_array(srq->msrq.max, sizeof(u64),
+					GFP_KERNEL | __GFP_NOWARN);
 		if (!srq->wrid) {
-			err = -ENOMEM;
-			goto err_mtt;
+			srq->wrid = __vmalloc(srq->msrq.max * sizeof(u64),
+					      GFP_KERNEL, PAGE_KERNEL);
+			if (!srq->wrid) {
+				err = -ENOMEM;
+				goto err_mtt;
+			}
 		}
 	}
 
-	cqn = ib_srq_has_cq(init_attr->srq_type) ?
-		to_mcq(init_attr->ext.cq)->mcq.cqn : 0;
+	cqn = (init_attr->srq_type == IB_SRQT_XRC) ?
+		to_mcq(init_attr->ext.xrc.cq)->mcq.cqn : 0;
 	xrcdn = (init_attr->srq_type == IB_SRQT_XRC) ?
 		to_mxrcd(init_attr->ext.xrc.xrcd)->xrcdn :
 		(u16) dev->dev->caps.reserved_xrcds;
-	err = mlx4_srq_alloc(dev->dev, to_mpd(ib_srq->pd)->pdn, cqn, xrcdn,
-			     &srq->mtt, srq->db.dma, &srq->msrq);
+	err = mlx4_srq_alloc(dev->dev, to_mpd(pd)->pdn, cqn, xrcdn, &srq->mtt,
+			     srq->db.dma, &srq->msrq);
 	if (err)
 		goto err_wrid;
 
 	srq->msrq.event = mlx4_ib_srq_event;
 	srq->ibsrq.ext.xrc.srq_num = srq->msrq.srqn;
 
-	if (udata)
+	if (pd->uobject)
 		if (ib_copy_to_udata(udata, &srq->msrq.srqn, sizeof (__u32))) {
 			err = -EFAULT;
 			goto err_wrid;
@@ -192,11 +204,11 @@ int mlx4_ib_create_srq(struct ib_srq *ib_srq,
 
 	init_attr->attr.max_wr = srq->msrq.max - 1;
 
-	return 0;
+	return &srq->ibsrq;
 
 err_wrid:
-	if (udata)
-		mlx4_ib_db_unmap_user(ucontext, &srq->db);
+	if (pd->uobject)
+		mlx4_ib_db_unmap_user(to_mucontext(pd->uobject->context), &srq->db);
 	else
 		kvfree(srq->wrid);
 
@@ -204,15 +216,19 @@ err_mtt:
 	mlx4_mtt_cleanup(dev->dev, &srq->mtt);
 
 err_buf:
-	if (!srq->umem)
+	if (pd->uobject)
+		ib_umem_release(srq->umem);
+	else
 		mlx4_buf_free(dev->dev, buf_size, &srq->buf);
-	ib_umem_release(srq->umem);
 
 err_db:
-	if (!udata)
+	if (!pd->uobject)
 		mlx4_db_free(dev->dev, &srq->db);
 
-	return err;
+err_srq:
+	kfree(srq);
+
+	return ERR_PTR(err);
 }
 
 int mlx4_ib_modify_srq(struct ib_srq *ibsrq, struct ib_srq_attr *attr,
@@ -259,7 +275,7 @@ int mlx4_ib_query_srq(struct ib_srq *ibsrq, struct ib_srq_attr *srq_attr)
 	return 0;
 }
 
-void mlx4_ib_destroy_srq(struct ib_srq *srq, struct ib_udata *udata)
+int mlx4_ib_destroy_srq(struct ib_srq *srq)
 {
 	struct mlx4_ib_dev *dev = to_mdev(srq->device);
 	struct mlx4_ib_srq *msrq = to_msrq(srq);
@@ -267,20 +283,19 @@ void mlx4_ib_destroy_srq(struct ib_srq *srq, struct ib_udata *udata)
 	mlx4_srq_free(dev->dev, &msrq->msrq);
 	mlx4_mtt_cleanup(dev->dev, &msrq->mtt);
 
-	if (udata) {
-		mlx4_ib_db_unmap_user(
-			rdma_udata_to_drv_context(
-				udata,
-				struct mlx4_ib_ucontext,
-				ibucontext),
-			&msrq->db);
+	if (srq->uobject) {
+		mlx4_ib_db_unmap_user(to_mucontext(srq->uobject->context), &msrq->db);
+		ib_umem_release(msrq->umem);
 	} else {
 		kvfree(msrq->wrid);
 		mlx4_buf_free(dev->dev, msrq->msrq.max << msrq->msrq.wqe_shift,
 			      &msrq->buf);
 		mlx4_db_free(dev->dev, &msrq->db);
 	}
-	ib_umem_release(msrq->umem);
+
+	kfree(msrq);
+
+	return 0;
 }
 
 void mlx4_ib_free_srq_wqe(struct mlx4_ib_srq *srq, int wqe_index)
@@ -297,8 +312,8 @@ void mlx4_ib_free_srq_wqe(struct mlx4_ib_srq *srq, int wqe_index)
 	spin_unlock(&srq->lock);
 }
 
-int mlx4_ib_post_srq_recv(struct ib_srq *ibsrq, const struct ib_recv_wr *wr,
-			  const struct ib_recv_wr **bad_wr)
+int mlx4_ib_post_srq_recv(struct ib_srq *ibsrq, struct ib_recv_wr *wr,
+			  struct ib_recv_wr **bad_wr)
 {
 	struct mlx4_ib_srq *srq = to_msrq(ibsrq);
 	struct mlx4_wqe_srq_next_seg *next;

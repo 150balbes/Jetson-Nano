@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * cs5535-mfd.c - core MFD driver for CS5535/CS5536 southbridges
  *
@@ -8,6 +7,19 @@
  * hardcoded in the CS553x specifications.
  *
  * Copyright (c) 2010  Andres Salomon <dilinger@queued.net>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  */
 
 #include <linux/kernel.h>
@@ -100,10 +112,22 @@ static struct mfd_cell cs5535_mfd_cells[] = {
 	},
 };
 
-static const char *olpc_acpi_clones[] = {
-	"olpc-xo1-pm-acpi",
-	"olpc-xo1-sci-acpi"
-};
+#ifdef CONFIG_OLPC
+static void cs5535_clone_olpc_cells(void)
+{
+	static const char *acpi_clones[] = {
+		"olpc-xo1-pm-acpi",
+		"olpc-xo1-sci-acpi"
+	};
+
+	if (!machine_is_olpc())
+		return;
+
+	mfd_clone_cell("cs5535-acpi", acpi_clones, ARRAY_SIZE(acpi_clones));
+}
+#else
+static void cs5535_clone_olpc_cells(void) { }
+#endif
 
 static int cs5535_mfd_probe(struct pci_dev *pdev,
 		const struct pci_device_id *id)
@@ -133,9 +157,7 @@ static int cs5535_mfd_probe(struct pci_dev *pdev,
 		dev_err(&pdev->dev, "MFD add devices failed: %d\n", err);
 		goto err_disable;
 	}
-
-	if (machine_is_olpc())
-		mfd_clone_cell("cs5535-acpi", olpc_acpi_clones, ARRAY_SIZE(olpc_acpi_clones));
+	cs5535_clone_olpc_cells();
 
 	dev_info(&pdev->dev, "%zu devices registered.\n",
 			ARRAY_SIZE(cs5535_mfd_cells));

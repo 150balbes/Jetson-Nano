@@ -1,8 +1,21 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
- * Platform level USB initialization for FS USB OTG controller on omap1
+ * Platform level USB initialization for FS USB OTG controller on omap1 and 24xx
  *
  * Copyright (C) 2004 Texas Instruments, Inc.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
 
 #include <linux/module.h>
@@ -45,12 +58,11 @@
 
 #ifdef	CONFIG_ARCH_OMAP_OTG
 
-static void __init
+void __init
 omap_otg_init(struct omap_usb_config *config)
 {
 	u32		syscon;
 	int		alt_pingroup = 0;
-	u16		w;
 
 	/* NOTE:  no bus or clock setup (yet?) */
 
@@ -75,35 +87,39 @@ omap_otg_init(struct omap_usb_config *config)
 	if (config->otg)
 		syscon |= OTG_EN;
 #endif
-	pr_debug("USB_TRANSCEIVER_CTRL = %03x\n",
-		 omap_readl(USB_TRANSCEIVER_CTRL));
+	if (cpu_class_is_omap1())
+		pr_debug("USB_TRANSCEIVER_CTRL = %03x\n",
+			 omap_readl(USB_TRANSCEIVER_CTRL));
 	pr_debug("OTG_SYSCON_2 = %08x\n", omap_readl(OTG_SYSCON_2));
 	omap_writel(syscon, OTG_SYSCON_2);
 
 	printk("USB: hmc %d", config->hmc_mode);
 	if (!alt_pingroup)
-		pr_cont(", usb2 alt %d wires", config->pins[2]);
+		printk(", usb2 alt %d wires", config->pins[2]);
 	else if (config->pins[0])
-		pr_cont(", usb0 %d wires%s", config->pins[0],
+		printk(", usb0 %d wires%s", config->pins[0],
 			is_usb0_device(config) ? " (dev)" : "");
 	if (config->pins[1])
-		pr_cont(", usb1 %d wires", config->pins[1]);
+		printk(", usb1 %d wires", config->pins[1]);
 	if (!alt_pingroup && config->pins[2])
-		pr_cont(", usb2 %d wires", config->pins[2]);
+		printk(", usb2 %d wires", config->pins[2]);
 	if (config->otg)
-		pr_cont(", Mini-AB on usb%d", config->otg - 1);
-	pr_cont("\n");
+		printk(", Mini-AB on usb%d", config->otg - 1);
+	printk("\n");
 
-	/* leave USB clocks/controllers off until needed */
-	w = omap_readw(ULPD_SOFT_REQ);
-	w &= ~SOFT_USB_CLK_REQ;
-	omap_writew(w, ULPD_SOFT_REQ);
+	if (cpu_class_is_omap1()) {
+		u16 w;
 
-	w = omap_readw(ULPD_CLOCK_CTRL);
-	w &= ~USB_MCLK_EN;
-	w |= DIS_USB_PVCI_CLK;
-	omap_writew(w, ULPD_CLOCK_CTRL);
+		/* leave USB clocks/controllers off until needed */
+		w = omap_readw(ULPD_SOFT_REQ);
+		w &= ~SOFT_USB_CLK_REQ;
+		omap_writew(w, ULPD_SOFT_REQ);
 
+		w = omap_readw(ULPD_CLOCK_CTRL);
+		w &= ~USB_MCLK_EN;
+		w |= DIS_USB_PVCI_CLK;
+		omap_writew(w, ULPD_CLOCK_CTRL);
+	}
 	syscon = omap_readl(OTG_SYSCON_1);
 	syscon |= HST_IDLE_EN|DEV_IDLE_EN|OTG_IDLE_EN;
 
@@ -150,7 +166,7 @@ omap_otg_init(struct omap_usb_config *config)
 }
 
 #else
-static void omap_otg_init(struct omap_usb_config *config) {}
+void omap_otg_init(struct omap_usb_config *config) {}
 #endif
 
 #if IS_ENABLED(CONFIG_USB_OMAP)
@@ -557,13 +573,13 @@ static void __init omap_1510_usb_init(struct omap_usb_config *config)
 
 	printk("USB: hmc %d", config->hmc_mode);
 	if (config->pins[0])
-		pr_cont(", usb0 %d wires%s", config->pins[0],
+		printk(", usb0 %d wires%s", config->pins[0],
 			is_usb0_device(config) ? " (dev)" : "");
 	if (config->pins[1])
-		pr_cont(", usb1 %d wires", config->pins[1]);
+		printk(", usb1 %d wires", config->pins[1]);
 	if (config->pins[2])
-		pr_cont(", usb2 %d wires", config->pins[2]);
-	pr_cont("\n");
+		printk(", usb2 %d wires", config->pins[2]);
+	printk("\n");
 
 	/* use DPLL for 48 MHz function clock */
 	pr_debug("APLL %04x DPLL %04x REQ %04x\n", omap_readw(ULPD_APLL_CTRL),

@@ -12,4 +12,5 @@ Examples:
 pxa2xx_clks: pxa2xx_clks@41300004 {
         compatible = "marvell,pxa-clocks";
         #clock-cells = <1>;
+        status = "okay";
 };

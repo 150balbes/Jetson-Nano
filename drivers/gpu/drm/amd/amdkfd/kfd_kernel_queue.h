@@ -70,9 +70,8 @@ struct kernel_queue {
 
 	/* data */
 	struct kfd_dev		*dev;
-	struct mqd_manager	*mqd_mgr;
+	struct mqd_manager	*mqd;
 	struct queue		*queue;
-	uint64_t		pending_wptr64;
 	uint32_t		pending_wptr;
 	unsigned int		nop_packet;
 
@@ -80,10 +79,7 @@ struct kernel_queue {
 	uint32_t		*rptr_kernel;
 	uint64_t		rptr_gpu_addr;
 	struct kfd_mem_obj	*wptr_mem;
-	union {
-		uint64_t	*wptr64_kernel;
-		uint32_t	*wptr_kernel;
-	};
+	uint32_t		*wptr_kernel;
 	uint64_t		wptr_gpu_addr;
 	struct kfd_mem_obj	*pq;
 	uint64_t		pq_gpu_addr;
@@ -101,7 +97,5 @@ struct kernel_queue {
 
 void kernel_queue_init_cik(struct kernel_queue_ops *ops);
 void kernel_queue_init_vi(struct kernel_queue_ops *ops);
-void kernel_queue_init_v9(struct kernel_queue_ops *ops);
-void kernel_queue_init_v10(struct kernel_queue_ops *ops);
 
 #endif /* KFD_KERNEL_QUEUE_H_ */

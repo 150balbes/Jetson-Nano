@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: MIT */
 #ifndef __NVKM_GRCTX_H__
 #define __NVKM_GRCTX_H__
 #include <core/gpuobj.h>

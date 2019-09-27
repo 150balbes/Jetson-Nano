@@ -4,7 +4,7 @@
  * Contact: support@caviumnetworks.com
  * This file is part of the OCTEON SDK
  *
- * Copyright (c) 2003-2017 Cavium, Inc.
+ * Copyright (c) 2003-2010 Cavium Networks
  *
  * This file is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, Version 2, as
@@ -63,15 +63,16 @@ static const char *__init octeon_model_get_string_buffer(uint32_t chip_id,
 	char pass[4];
 	int clock_mhz;
 	const char *suffix;
+	union cvmx_l2d_fus3 fus3;
 	int num_cores;
 	union cvmx_mio_fus_dat2 fus_dat2;
 	union cvmx_mio_fus_dat3 fus_dat3;
 	char fuse_model[10];
 	uint32_t fuse_data = 0;
-	uint64_t l2d_fus3 = 0;
 
+	fus3.u64 = 0;
 	if (OCTEON_IS_MODEL(OCTEON_CN3XXX) || OCTEON_IS_MODEL(OCTEON_CN5XXX))
-		l2d_fus3 = (cvmx_read_csr(CVMX_L2D_FUS3) >> 34) & 0x3;
+		fus3.u64 = cvmx_read_csr(CVMX_L2D_FUS3);
 	fus_dat2.u64 = cvmx_read_csr(CVMX_MIO_FUS_DAT2);
 	fus_dat3.u64 = cvmx_read_csr(CVMX_MIO_FUS_DAT3);
 	num_cores = cvmx_octeon_num_cores();
@@ -191,7 +192,7 @@ static const char *__init octeon_model_get_string_buffer(uint32_t chip_id,
 	/* Now figure out the family, the first two digits */
 	switch ((chip_id >> 8) & 0xff) {
 	case 0:		/* CN38XX, CN37XX or CN36XX */
-		if (l2d_fus3) {
+		if (fus3.cn38xx.crip_512k) {
 			/*
 			 * For some unknown reason, the 16 core one is
 			 * called 37 instead of 36.
@@ -222,7 +223,7 @@ static const char *__init octeon_model_get_string_buffer(uint32_t chip_id,
 		}
 		break;
 	case 1:		/* CN31XX or CN3020 */
-		if ((chip_id & 0x10) || l2d_fus3)
+		if ((chip_id & 0x10) || fus3.cn31xx.crip_128k)
 			family = "30";
 		else
 			family = "31";
@@ -245,7 +246,7 @@ static const char *__init octeon_model_get_string_buffer(uint32_t chip_id,
 	case 2:		/* CN3010 or CN3005 */
 		family = "30";
 		/* A chip with half cache is an 05 */
-		if (l2d_fus3)
+		if (fus3.cn30xx.crip_64k)
 			core_model = "05";
 		/*
 		 * This series of chips didn't follow the standard
@@ -266,7 +267,7 @@ static const char *__init octeon_model_get_string_buffer(uint32_t chip_id,
 	case 3:		/* CN58XX */
 		family = "58";
 		/* Special case. 4 core, half cache (CP with half cache) */
-		if ((num_cores == 4) && l2d_fus3 && !strncmp(suffix, "CP", 2))
+		if ((num_cores == 4) && fus3.cn58xx.crip_1024k && !strncmp(suffix, "CP", 2))
 			core_model = "29";
 
 		/* Pass 1 uses different encodings for pass numbers */
@@ -289,7 +290,7 @@ static const char *__init octeon_model_get_string_buffer(uint32_t chip_id,
 		break;
 	case 4:		/* CN57XX, CN56XX, CN55XX, CN54XX */
 		if (fus_dat2.cn56xx.raid_en) {
-			if (l2d_fus3)
+			if (fus3.cn56xx.crip_1024k)
 				family = "55";
 			else
 				family = "57";
@@ -305,10 +306,10 @@ static const char *__init octeon_model_get_string_buffer(uint32_t chip_id,
 				if (fus_dat3.s.nozip)
 					suffix = "SCP";
 
-				if (fus_dat3.cn38xx.bar2_en)
+				if (fus_dat3.cn56xx.bar2_en)
 					suffix = "NSPB2";
 			}
-			if (l2d_fus3)
+			if (fus3.cn56xx.crip_1024k)
 				family = "54";
 			else
 				family = "56";
@@ -318,7 +319,7 @@ static const char *__init octeon_model_get_string_buffer(uint32_t chip_id,
 		family = "50";
 		break;
 	case 7:		/* CN52XX */
-		if (l2d_fus3)
+		if (fus3.cn52xx.crip_256k)
 			family = "51";
 		else
 			family = "52";
@@ -344,7 +345,7 @@ static const char *__init octeon_model_get_string_buffer(uint32_t chip_id,
 			suffix = "CP";
 		else if (fus_dat2.cn63xx.dorm_crypto)
 			suffix = "DAP";
-		else if (fus_dat3.cn61xx.nozip)
+		else if (fus_dat3.cn63xx.nozip)
 			suffix = "SCP";
 		else
 			suffix = "AAP";
@@ -359,18 +360,18 @@ static const char *__init octeon_model_get_string_buffer(uint32_t chip_id,
 			suffix = "CP";
 		else if (fus_dat2.cn66xx.dorm_crypto)
 			suffix = "DAP";
-		else if (fus_dat3.cn61xx.nozip)
+		else if (fus_dat3.cn66xx.nozip)
 			suffix = "SCP";
 		else
 			suffix = "AAP";
 		break;
 	case 0x91:		/* CN68XX */
 		family = "68";
-		if (fus_dat2.cn68xx.nocrypto && fus_dat3.cn61xx.nozip)
+		if (fus_dat2.cn68xx.nocrypto && fus_dat3.cn68xx.nozip)
 			suffix = "CP";
 		else if (fus_dat2.cn68xx.dorm_crypto)
 			suffix = "DAP";
-		else if (fus_dat3.cn61xx.nozip)
+		else if (fus_dat3.cn68xx.nozip)
 			suffix = "SCP";
 		else if (fus_dat2.cn68xx.nocrypto)
 			suffix = "SP";
@@ -379,7 +380,7 @@ static const char *__init octeon_model_get_string_buffer(uint32_t chip_id,
 		break;
 	case 0x94:		/* CNF71XX */
 		family = "F71";
-		if (fus_dat3.cn61xx.nozip)
+		if (fus_dat3.cnf71xx.nozip)
 			suffix = "SCP";
 		else
 			suffix = "AAP";

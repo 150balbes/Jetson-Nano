@@ -1,10 +1,13 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Intel MID Power Management Unit (PWRMU) device driver
  *
  * Copyright (C) 2016, Intel Corporation
  *
  * Author: Andy Shevchenko <andriy.shevchenko@linux.intel.com>
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms and conditions of the GNU General Public License,
+ * version 2, as published by the Free Software Foundation.
  *
  * Intel MID Power Management Unit device driver handles the South Complex PCI
  * devices such as GPDMA, SPI, I2C, PWM, and so on. By default PCI core
@@ -267,6 +270,7 @@ int intel_mid_pci_set_power_state(struct pci_dev *pdev, pci_power_t state)
 
 	return 0;
 }
+EXPORT_SYMBOL_GPL(intel_mid_pci_set_power_state);
 
 pci_power_t intel_mid_pci_get_power_state(struct pci_dev *pdev)
 {
@@ -441,7 +445,7 @@ static int mid_set_initial_state(struct mid_pwr *pwr, const u32 *states)
 static int pnw_set_initial_state(struct mid_pwr *pwr)
 {
 	/* On Penwell SRAM must stay powered on */
-	static const u32 states[] = {
+	const u32 states[] = {
 		0xf00fffff,		/* PM_SSC(0) */
 		0xffffffff,		/* PM_SSC(1) */
 		0xffffffff,		/* PM_SSC(2) */
@@ -452,7 +456,7 @@ static int pnw_set_initial_state(struct mid_pwr *pwr)
 
 static int tng_set_initial_state(struct mid_pwr *pwr)
 {
-	static const u32 states[] = {
+	const u32 states[] = {
 		0xffffffff,		/* PM_SSC(0) */
 		0xffffffff,		/* PM_SSC(1) */
 		0xffffffff,		/* PM_SSC(2) */

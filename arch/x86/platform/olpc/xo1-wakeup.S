@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 .text
 #include <linux/linkage.h>
 #include <asm/segment.h>

@@ -18,6 +18,10 @@
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
  */
 
 
@@ -27,9 +31,9 @@
 #include <linux/module.h>
 #include <linux/sched.h>
 #include <linux/string.h>
-#include <linux/uaccess.h>
+#include <asm/uaccess.h>
 
-#include <media/dvb_ringbuffer.h>
+#include "dvb_ringbuffer.h"
 
 #define PKT_READY 0
 #define PKT_DISPOSED 1
@@ -55,7 +59,7 @@ int dvb_ringbuffer_empty(struct dvb_ringbuffer *rbuf)
 	 * this pairs with smp_store_release() in dvb_ringbuffer_write(),
 	 * dvb_ringbuffer_write_user(), or dvb_ringbuffer_reset()
 	 *
-	 * for memory barriers also see Documentation/core-api/circular-buffers.rst
+	 * for memory barriers also see Documentation/circular-buffers.txt
 	 */
 	return (rbuf->pread == smp_load_acquire(&rbuf->pwrite));
 }
@@ -66,12 +70,12 @@ ssize_t dvb_ringbuffer_free(struct dvb_ringbuffer *rbuf)
 {
 	ssize_t free;
 
-	/* READ_ONCE() to load read pointer on writer side
+	/* ACCESS_ONCE() to load read pointer on writer side
 	 * this pairs with smp_store_release() in dvb_ringbuffer_read(),
 	 * dvb_ringbuffer_read_user(), dvb_ringbuffer_flush(),
 	 * or dvb_ringbuffer_reset()
 	 */
-	free = READ_ONCE(rbuf->pread) - rbuf->pwrite;
+	free = ACCESS_ONCE(rbuf->pread) - rbuf->pwrite;
 	if (free <= 0)
 		free += rbuf->size;
 	return free-1;
@@ -143,7 +147,7 @@ ssize_t dvb_ringbuffer_read_user(struct dvb_ringbuffer *rbuf, u8 __user *buf, si
 		todo -= split;
 		/* smp_store_release() for read pointer update to ensure
 		 * that buf is not overwritten until read is complete,
-		 * this pairs with READ_ONCE() in dvb_ringbuffer_free()
+		 * this pairs with ACCESS_ONCE() in dvb_ringbuffer_free()
 		 */
 		smp_store_release(&rbuf->pread, 0);
 	}
@@ -168,7 +172,7 @@ void dvb_ringbuffer_read(struct dvb_ringbuffer *rbuf, u8 *buf, size_t len)
 		todo -= split;
 		/* smp_store_release() for read pointer update to ensure
 		 * that buf is not overwritten until read is complete,
-		 * this pairs with READ_ONCE() in dvb_ringbuffer_free()
+		 * this pairs with ACCESS_ONCE() in dvb_ringbuffer_free()
 		 */
 		smp_store_release(&rbuf->pread, 0);
 	}

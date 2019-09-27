@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0-only
 config VIDEO_SAA7146
 	tristate
 	depends on I2C && PCI

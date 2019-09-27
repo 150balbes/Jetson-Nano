@@ -1,13 +1,42 @@
-/* SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause */
-/* Copyright (c) 2010-2012 Broadcom. All rights reserved. */
+/**
+ * Copyright (c) 2010-2012 Broadcom. All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice, this list of conditions, and the following disclaimer,
+ *    without modification.
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice, this list of conditions and the following disclaimer in the
+ *    documentation and/or other materials provided with the distribution.
+ * 3. The names of the above-listed copyright holders may not be used
+ *    to endorse or promote products derived from this software without
+ *    specific prior written permission.
+ *
+ * ALTERNATIVELY, this software may be distributed under the terms of the
+ * GNU General Public License ("GPL") version 2, as published by the Free
+ * Software Foundation.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS
+ * IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
+ * THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+ * PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
+ * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+ * EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+ * PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+ * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+ * LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+ * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+ * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ */
 
 #ifndef VCHIQ_CORE_H
 #define VCHIQ_CORE_H
 
 #include <linux/mutex.h>
-#include <linux/completion.h>
+#include <linux/semaphore.h>
 #include <linux/kthread.h>
-#include <linux/wait.h>
 
 #include "vchiq_cfg.h"
 
@@ -60,7 +89,7 @@ vchiq_static_assert(IS_POW2(VCHIQ_MAX_SLOTS_PER_SIDE));
 
 #define VCHIQ_SLOT_MASK        (VCHIQ_SLOT_SIZE - 1)
 #define VCHIQ_SLOT_QUEUE_MASK  (VCHIQ_MAX_SLOTS_PER_SIDE - 1)
-#define VCHIQ_SLOT_ZERO_SLOTS  ((sizeof(struct vchiq_slot_zero) + \
+#define VCHIQ_SLOT_ZERO_SLOTS  ((sizeof(VCHIQ_SLOT_ZERO_T) + \
 	VCHIQ_SLOT_SIZE - 1) / VCHIQ_SLOT_SIZE)
 
 #define VCHIQ_MSG_PADDING            0  /* -                                 */
@@ -118,6 +147,7 @@ vchiq_static_assert((sizeof(BITSET_T) * 8) == 32);
 #define BITSET_SIZE(b)        ((b + 31) >> 5)
 #define BITSET_WORD(b)        (b >> 5)
 #define BITSET_BIT(b)         (1 << (b & 31))
+#define BITSET_ZERO(bs)       memset(bs, 0, sizeof(bs))
 #define BITSET_IS_SET(bs, b)  (bs[BITSET_WORD(b)] & BITSET_BIT(b))
 #define BITSET_SET(bs, b)     (bs[BITSET_WORD(b)] |= BITSET_BIT(b))
 #define BITSET_CLR(bs, b)     (bs[BITSET_WORD(b)] &= ~BITSET_BIT(b))
@@ -154,11 +184,11 @@ enum {
 
 #define DEBUG_INITIALISE(local) int *debug_ptr = (local)->debug;
 #define DEBUG_TRACE(d) \
-	do { debug_ptr[DEBUG_ ## d] = __LINE__; dsb(sy); } while (0)
+	do { debug_ptr[DEBUG_ ## d] = __LINE__; dsb(); } while (0)
 #define DEBUG_VALUE(d, v) \
-	do { debug_ptr[DEBUG_ ## d] = (v); dsb(sy); } while (0)
+	do { debug_ptr[DEBUG_ ## d] = (v); dsb(); } while (0)
 #define DEBUG_COUNT(d) \
-	do { debug_ptr[DEBUG_ ## d]++; dsb(sy); } while (0)
+	do { debug_ptr[DEBUG_ ## d]++; dsb(); } while (0)
 
 #else /* VCHIQ_ENABLE_DEBUG */
 
@@ -209,47 +239,50 @@ typedef enum {
 
 typedef void (*VCHIQ_USERDATA_TERM_T)(void *userdata);
 
-struct vchiq_bulk {
+typedef struct vchiq_bulk_struct {
 	short mode;
 	short dir;
 	void *userdata;
+	VCHI_MEM_HANDLE_T handle;
 	void *data;
 	int size;
 	void *remote_data;
 	int remote_size;
 	int actual;
-};
+} VCHIQ_BULK_T;
 
-struct vchiq_bulk_queue {
+typedef struct vchiq_bulk_queue_struct {
 	int local_insert;  /* Where to insert the next local bulk */
 	int remote_insert; /* Where to insert the next remote bulk (master) */
 	int process;       /* Bulk to transfer next */
 	int remote_notify; /* Bulk to notify the remote client of next (mstr) */
 	int remove;        /* Bulk to notify the local client of, and remove,
 			   ** next */
-	struct vchiq_bulk bulks[VCHIQ_NUM_SERVICE_BULKS];
-};
+	VCHIQ_BULK_T bulks[VCHIQ_NUM_SERVICE_BULKS];
+} VCHIQ_BULK_QUEUE_T;
 
-struct remote_event {
+typedef struct remote_event_struct {
 	int armed;
 	int fired;
-	u32 __unused;
-};
+	struct semaphore *event;
+} REMOTE_EVENT_T;
 
 typedef struct opaque_platform_state_t *VCHIQ_PLATFORM_STATE_T;
 
-struct vchiq_slot {
-	char data[VCHIQ_SLOT_SIZE];
-};
+typedef struct vchiq_state_struct VCHIQ_STATE_T;
 
-struct vchiq_slot_info {
+typedef struct vchiq_slot_struct {
+	char data[VCHIQ_SLOT_SIZE];
+} VCHIQ_SLOT_T;
+
+typedef struct vchiq_slot_info_struct {
 	/* Use two counters rather than one to avoid the need for a mutex. */
 	short use_count;
 	short release_count;
-};
+} VCHIQ_SLOT_INFO_T;
 
-struct vchiq_service {
-	struct vchiq_service_base base;
+typedef struct vchiq_service_struct {
+	VCHIQ_SERVICE_BASE_T base;
 	VCHIQ_SERVICE_HANDLE_T handle;
 	unsigned int ref_count;
 	int srvstate;
@@ -267,16 +300,16 @@ struct vchiq_service {
 	short version_min;
 	short peer_version;
 
-	struct vchiq_state *state;
+	VCHIQ_STATE_T *state;
 	VCHIQ_INSTANCE_T instance;
 
 	int service_use_count;
 
-	struct vchiq_bulk_queue bulk_tx;
-	struct vchiq_bulk_queue bulk_rx;
+	VCHIQ_BULK_QUEUE_T bulk_tx;
+	VCHIQ_BULK_QUEUE_T bulk_rx;
 
-	struct completion remove_event;
-	struct completion bulk_remove_event;
+	struct semaphore remove_event;
+	struct semaphore bulk_remove_event;
 	struct mutex bulk_mutex;
 
 	struct service_stats_struct {
@@ -294,22 +327,22 @@ struct vchiq_service {
 		uint64_t bulk_tx_bytes;
 		uint64_t bulk_rx_bytes;
 	} stats;
-};
+} VCHIQ_SERVICE_T;
 
-/* The quota information is outside struct vchiq_service so that it can
- * be statically allocated, since for accounting reasons a service's slot
- * usage is carried over between users of the same port number.
+/* The quota information is outside VCHIQ_SERVICE_T so that it can be
+	statically allocated, since for accounting reasons a service's slot
+	usage is carried over between users of the same port number.
  */
-struct vchiq_service_quota {
+typedef struct vchiq_service_quota_struct {
 	unsigned short slot_quota;
 	unsigned short slot_use_count;
 	unsigned short message_quota;
 	unsigned short message_use_count;
-	struct completion quota_event;
+	struct semaphore quota_event;
 	int previous_tx_index;
-};
+} VCHIQ_SERVICE_QUOTA_T;
 
-struct vchiq_shared_state {
+typedef struct vchiq_shared_state_struct {
 
 	/* A non-zero value here indicates that the content is valid. */
 	int initialised;
@@ -323,7 +356,7 @@ struct vchiq_shared_state {
 
 	/* Signalling this event indicates that owner's slot handler thread
 	** should run. */
-	struct remote_event trigger;
+	REMOTE_EVENT_T trigger;
 
 	/* Indicates the byte position within the stream where the next message
 	** will be written. The least significant bits are an index into the
@@ -331,26 +364,26 @@ struct vchiq_shared_state {
 	int tx_pos;
 
 	/* This event should be signalled when a slot is recycled. */
-	struct remote_event recycle;
+	REMOTE_EVENT_T recycle;
 
 	/* The slot_queue index where the next recycled slot will be written. */
 	int slot_queue_recycle;
 
 	/* This event should be signalled when a synchronous message is sent. */
-	struct remote_event sync_trigger;
+	REMOTE_EVENT_T sync_trigger;
 
 	/* This event should be signalled when a synchronous message has been
 	** released. */
-	struct remote_event sync_release;
+	REMOTE_EVENT_T sync_release;
 
 	/* A circular buffer of slot indexes. */
 	int slot_queue[VCHIQ_MAX_SLOTS_PER_SIDE];
 
 	/* Debugging state */
 	int debug[DEBUG_MAX];
-};
+} VCHIQ_SHARED_STATE_T;
 
-struct vchiq_slot_zero {
+typedef struct vchiq_slot_zero_struct {
 	int magic;
 	short version;
 	short version_min;
@@ -359,26 +392,27 @@ struct vchiq_slot_zero {
 	int max_slots;
 	int max_slots_per_side;
 	int platform_data[2];
-	struct vchiq_shared_state master;
-	struct vchiq_shared_state slave;
-	struct vchiq_slot_info slots[VCHIQ_MAX_SLOTS];
-};
+	VCHIQ_SHARED_STATE_T master;
+	VCHIQ_SHARED_STATE_T slave;
+	VCHIQ_SLOT_INFO_T slots[VCHIQ_MAX_SLOTS];
+} VCHIQ_SLOT_ZERO_T;
 
-struct vchiq_state {
+struct vchiq_state_struct {
 	int id;
 	int initialised;
 	VCHIQ_CONNSTATE_T conn_state;
+	int is_master;
 	short version_common;
 
-	struct vchiq_shared_state *local;
-	struct vchiq_shared_state *remote;
-	struct vchiq_slot *slot_data;
+	VCHIQ_SHARED_STATE_T *local;
+	VCHIQ_SHARED_STATE_T *remote;
+	VCHIQ_SLOT_T *slot_data;
 
 	unsigned short default_slot_quota;
 	unsigned short default_message_quota;
 
 	/* Event indicating connect message received */
-	struct completion connect;
+	struct semaphore connect;
 
 	/* Mutex protecting services */
 	struct mutex mutex;
@@ -394,20 +428,20 @@ struct vchiq_state {
 	struct task_struct *sync_thread;
 
 	/* Local implementation of the trigger remote event */
-	wait_queue_head_t trigger_event;
+	struct semaphore trigger_event;
 
 	/* Local implementation of the recycle remote event */
-	wait_queue_head_t recycle_event;
+	struct semaphore recycle_event;
 
 	/* Local implementation of the sync trigger remote event */
-	wait_queue_head_t sync_trigger_event;
+	struct semaphore sync_trigger_event;
 
 	/* Local implementation of the sync release remote event */
-	wait_queue_head_t sync_release_event;
+	struct semaphore sync_release_event;
 
 	char *tx_data;
 	char *rx_data;
-	struct vchiq_slot_info *rx_info;
+	VCHIQ_SLOT_INFO_T *rx_info;
 
 	struct mutex slot_mutex;
 
@@ -449,12 +483,16 @@ struct vchiq_state {
 	int unused_service;
 
 	/* Signalled when a free slot becomes available. */
-	struct completion slot_available_event;
+	struct semaphore slot_available_event;
 
-	struct completion slot_remove_event;
+	struct semaphore slot_remove_event;
 
 	/* Signalled when a free data slot becomes available. */
-	struct completion data_quota_event;
+	struct semaphore data_quota_event;
+
+	/* Incremented when there are bulk transfers which cannot be processed
+	 * whilst paused and must be processed on resume */
+	int deferred_bulks;
 
 	struct state_stats_struct {
 		int slot_stalls;
@@ -464,16 +502,16 @@ struct vchiq_state {
 		int error_count;
 	} stats;
 
-	struct vchiq_service *services[VCHIQ_MAX_SERVICES];
-	struct vchiq_service_quota service_quotas[VCHIQ_MAX_SERVICES];
-	struct vchiq_slot_info slot_info[VCHIQ_MAX_SLOTS];
+	VCHIQ_SERVICE_T * services[VCHIQ_MAX_SERVICES];
+	VCHIQ_SERVICE_QUOTA_T service_quotas[VCHIQ_MAX_SERVICES];
+	VCHIQ_SLOT_INFO_T slot_info[VCHIQ_MAX_SLOTS];
 
 	VCHIQ_PLATFORM_STATE_T platform_state;
 };
 
 struct bulk_waiter {
-	struct vchiq_bulk *bulk;
-	struct completion event;
+	VCHIQ_BULK_T *bulk;
+	struct semaphore event;
 	int actual;
 };
 
@@ -483,54 +521,60 @@ extern int vchiq_core_log_level;
 extern int vchiq_core_msg_log_level;
 extern int vchiq_sync_log_level;
 
-extern struct vchiq_state *vchiq_states[VCHIQ_MAX_STATES];
+extern VCHIQ_STATE_T *vchiq_states[VCHIQ_MAX_STATES];
 
 extern const char *
 get_conn_state_name(VCHIQ_CONNSTATE_T conn_state);
 
-extern struct vchiq_slot_zero *
+extern VCHIQ_SLOT_ZERO_T *
 vchiq_init_slots(void *mem_base, int mem_size);
 
 extern VCHIQ_STATUS_T
-vchiq_init_state(struct vchiq_state *state, struct vchiq_slot_zero *slot_zero);
+vchiq_init_state(VCHIQ_STATE_T *state, VCHIQ_SLOT_ZERO_T *slot_zero,
+	int is_master);
 
 extern VCHIQ_STATUS_T
-vchiq_connect_internal(struct vchiq_state *state, VCHIQ_INSTANCE_T instance);
+vchiq_connect_internal(VCHIQ_STATE_T *state, VCHIQ_INSTANCE_T instance);
 
-extern struct vchiq_service *
-vchiq_add_service_internal(struct vchiq_state *state,
-			   const struct vchiq_service_params *params,
-			   int srvstate, VCHIQ_INSTANCE_T instance,
-			   VCHIQ_USERDATA_TERM_T userdata_term);
-
-extern VCHIQ_STATUS_T
-vchiq_open_service_internal(struct vchiq_service *service, int client_id);
+extern VCHIQ_SERVICE_T *
+vchiq_add_service_internal(VCHIQ_STATE_T *state,
+	const VCHIQ_SERVICE_PARAMS_T *params, int srvstate,
+	VCHIQ_INSTANCE_T instance, VCHIQ_USERDATA_TERM_T userdata_term);
 
 extern VCHIQ_STATUS_T
-vchiq_close_service_internal(struct vchiq_service *service, int close_recvd);
-
-extern void
-vchiq_terminate_service_internal(struct vchiq_service *service);
-
-extern void
-vchiq_free_service_internal(struct vchiq_service *service);
+vchiq_open_service_internal(VCHIQ_SERVICE_T *service, int client_id);
 
 extern VCHIQ_STATUS_T
-vchiq_shutdown_internal(struct vchiq_state *state, VCHIQ_INSTANCE_T instance);
+vchiq_close_service_internal(VCHIQ_SERVICE_T *service, int close_recvd);
 
 extern void
-remote_event_pollall(struct vchiq_state *state);
+vchiq_terminate_service_internal(VCHIQ_SERVICE_T *service);
+
+extern void
+vchiq_free_service_internal(VCHIQ_SERVICE_T *service);
 
 extern VCHIQ_STATUS_T
-vchiq_bulk_transfer(VCHIQ_SERVICE_HANDLE_T handle, void *offset, int size,
-		    void *userdata, VCHIQ_BULK_MODE_T mode,
-		    VCHIQ_BULK_DIR_T dir);
+vchiq_shutdown_internal(VCHIQ_STATE_T *state, VCHIQ_INSTANCE_T instance);
+
+extern VCHIQ_STATUS_T
+vchiq_pause_internal(VCHIQ_STATE_T *state);
+
+extern VCHIQ_STATUS_T
+vchiq_resume_internal(VCHIQ_STATE_T *state);
 
 extern void
-vchiq_dump_state(void *dump_context, struct vchiq_state *state);
+remote_event_pollall(VCHIQ_STATE_T *state);
+
+extern VCHIQ_STATUS_T
+vchiq_bulk_transfer(VCHIQ_SERVICE_HANDLE_T handle,
+	VCHI_MEM_HANDLE_T memhandle, void *offset, int size, void *userdata,
+	VCHIQ_BULK_MODE_T mode, VCHIQ_BULK_DIR_T dir);
 
 extern void
-vchiq_dump_service_state(void *dump_context, struct vchiq_service *service);
+vchiq_dump_state(void *dump_context, VCHIQ_STATE_T *state);
+
+extern void
+vchiq_dump_service_state(void *dump_context, VCHIQ_SERVICE_T *service);
 
 extern void
 vchiq_loud_error_header(void);
@@ -539,13 +583,12 @@ extern void
 vchiq_loud_error_footer(void);
 
 extern void
-request_poll(struct vchiq_state *state, struct vchiq_service *service,
-	     int poll_type);
+request_poll(VCHIQ_STATE_T *state, VCHIQ_SERVICE_T *service, int poll_type);
 
-static inline struct vchiq_service *
+static inline VCHIQ_SERVICE_T *
 handle_to_service(VCHIQ_SERVICE_HANDLE_T handle)
 {
-	struct vchiq_state *state = vchiq_states[(handle / VCHIQ_MAX_SERVICES) &
+	VCHIQ_STATE_T *state = vchiq_states[(handle / VCHIQ_MAX_SERVICES) &
 		(VCHIQ_MAX_STATES - 1)];
 	if (!state)
 		return NULL;
@@ -553,54 +596,60 @@ handle_to_service(VCHIQ_SERVICE_HANDLE_T handle)
 	return state->services[handle & (VCHIQ_MAX_SERVICES - 1)];
 }
 
-extern struct vchiq_service *
+extern VCHIQ_SERVICE_T *
 find_service_by_handle(VCHIQ_SERVICE_HANDLE_T handle);
 
-extern struct vchiq_service *
-find_service_by_port(struct vchiq_state *state, int localport);
+extern VCHIQ_SERVICE_T *
+find_service_by_port(VCHIQ_STATE_T *state, int localport);
 
-extern struct vchiq_service *
+extern VCHIQ_SERVICE_T *
 find_service_for_instance(VCHIQ_INSTANCE_T instance,
 	VCHIQ_SERVICE_HANDLE_T handle);
 
-extern struct vchiq_service *
+extern VCHIQ_SERVICE_T *
 find_closed_service_for_instance(VCHIQ_INSTANCE_T instance,
 	VCHIQ_SERVICE_HANDLE_T handle);
 
-extern struct vchiq_service *
-next_service_by_instance(struct vchiq_state *state, VCHIQ_INSTANCE_T instance,
-			 int *pidx);
+extern VCHIQ_SERVICE_T *
+next_service_by_instance(VCHIQ_STATE_T *state, VCHIQ_INSTANCE_T instance,
+	int *pidx);
 
 extern void
-lock_service(struct vchiq_service *service);
+lock_service(VCHIQ_SERVICE_T *service);
 
 extern void
-unlock_service(struct vchiq_service *service);
+unlock_service(VCHIQ_SERVICE_T *service);
 
 /* The following functions are called from vchiq_core, and external
 ** implementations must be provided. */
 
 extern VCHIQ_STATUS_T
-vchiq_prepare_bulk_data(struct vchiq_bulk *bulk, void *offset, int size,
-			int dir);
+vchiq_prepare_bulk_data(VCHIQ_BULK_T *bulk,
+	VCHI_MEM_HANDLE_T memhandle, void *offset, int size, int dir);
 
 extern void
-vchiq_complete_bulk(struct vchiq_bulk *bulk);
+vchiq_transfer_bulk(VCHIQ_BULK_T *bulk);
 
 extern void
-remote_event_signal(struct remote_event *event);
-
-void
-vchiq_platform_check_suspend(struct vchiq_state *state);
-
-extern void
-vchiq_platform_paused(struct vchiq_state *state);
+vchiq_complete_bulk(VCHIQ_BULK_T *bulk);
 
 extern VCHIQ_STATUS_T
-vchiq_platform_resume(struct vchiq_state *state);
+vchiq_copy_from_user(void *dst, const void *src, int size);
 
 extern void
-vchiq_platform_resumed(struct vchiq_state *state);
+remote_event_signal(REMOTE_EVENT_T *event);
+
+void
+vchiq_platform_check_suspend(VCHIQ_STATE_T *state);
+
+extern void
+vchiq_platform_paused(VCHIQ_STATE_T *state);
+
+extern VCHIQ_STATUS_T
+vchiq_platform_resume(VCHIQ_STATE_T *state);
+
+extern void
+vchiq_platform_resumed(VCHIQ_STATE_T *state);
 
 extern void
 vchiq_dump(void *dump_context, const char *str, int len);
@@ -613,45 +662,48 @@ vchiq_dump_platform_instances(void *dump_context);
 
 extern void
 vchiq_dump_platform_service_state(void *dump_context,
-	struct vchiq_service *service);
+	VCHIQ_SERVICE_T *service);
 
 extern VCHIQ_STATUS_T
-vchiq_use_service_internal(struct vchiq_service *service);
+vchiq_use_service_internal(VCHIQ_SERVICE_T *service);
 
 extern VCHIQ_STATUS_T
-vchiq_release_service_internal(struct vchiq_service *service);
+vchiq_release_service_internal(VCHIQ_SERVICE_T *service);
 
 extern void
-vchiq_on_remote_use(struct vchiq_state *state);
+vchiq_on_remote_use(VCHIQ_STATE_T *state);
 
 extern void
-vchiq_on_remote_release(struct vchiq_state *state);
+vchiq_on_remote_release(VCHIQ_STATE_T *state);
 
 extern VCHIQ_STATUS_T
-vchiq_platform_init_state(struct vchiq_state *state);
+vchiq_platform_init_state(VCHIQ_STATE_T *state);
 
 extern VCHIQ_STATUS_T
-vchiq_check_service(struct vchiq_service *service);
+vchiq_check_service(VCHIQ_SERVICE_T *service);
 
 extern void
-vchiq_on_remote_use_active(struct vchiq_state *state);
+vchiq_on_remote_use_active(VCHIQ_STATE_T *state);
 
 extern VCHIQ_STATUS_T
-vchiq_send_remote_use(struct vchiq_state *state);
+vchiq_send_remote_use(VCHIQ_STATE_T *state);
 
 extern VCHIQ_STATUS_T
-vchiq_send_remote_use_active(struct vchiq_state *state);
+vchiq_send_remote_release(VCHIQ_STATE_T *state);
+
+extern VCHIQ_STATUS_T
+vchiq_send_remote_use_active(VCHIQ_STATE_T *state);
 
 extern void
-vchiq_platform_conn_state_changed(struct vchiq_state *state,
-				  VCHIQ_CONNSTATE_T oldstate,
-				  VCHIQ_CONNSTATE_T newstate);
+vchiq_platform_conn_state_changed(VCHIQ_STATE_T *state,
+	VCHIQ_CONNSTATE_T oldstate, VCHIQ_CONNSTATE_T newstate);
 
 extern void
-vchiq_platform_handle_timeout(struct vchiq_state *state);
+vchiq_platform_handle_timeout(VCHIQ_STATE_T *state);
 
 extern void
-vchiq_set_conn_state(struct vchiq_state *state, VCHIQ_CONNSTATE_T newstate);
+vchiq_set_conn_state(VCHIQ_STATE_T *state, VCHIQ_CONNSTATE_T newstate);
+
 
 extern void
 vchiq_log_dump_mem(const char *label, uint32_t addr, const void *voidMem,

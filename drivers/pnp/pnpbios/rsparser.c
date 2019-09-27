@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * rsparser.c - parses and encodes pnpbios resource data streams
  */

@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  *  fs/partitions/atari.h
  *  Moved by Russell King from:

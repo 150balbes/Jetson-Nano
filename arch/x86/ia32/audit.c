@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 #include <asm/unistd_32.h>
 
 unsigned ia32_dir_class[] = {

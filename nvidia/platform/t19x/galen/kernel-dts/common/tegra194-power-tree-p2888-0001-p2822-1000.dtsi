@@ -1,0 +1,176 @@
+/*
+ * Copyright (c) 2017, NVIDIA CORPORATION.  All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ */
+
+#include "tegra194-spmic-p2888-0001.dtsi"
+#include "tegra194-fixed-regulator-p2888-0001.dtsi"
+#include "tegra194-fixed-regulator-p2822-1000.dtsi"
+#include "dt-bindings/gpio/tegra194-gpio.h"
+
+/ {
+	sdhci@3460000 {
+		vmmc-supply = <&p2888_spmic_ldo3>;
+		vqmmc-supply = <&p2888_spmic_sd2>;
+	};
+
+	sdhci@3400000 {
+		vmmc-supply = <&p2822_vdd_sdmmc1_sw>;
+	};
+
+	ufshci@2450000 {
+		vcc-supply = <&p2822_vdd_sdmmc1_sw>;
+		vccq-supply = <&p2888_spmic_ldo7>;
+		vccq2-supply = <&p2888_spmic_sd2>;
+	};
+
+	ether_qos@2490000 {
+		vddio_sys_enet_bias-supply = <&battery_reg>;
+		vddio_enet-supply = <&battery_reg>;
+		phy_vdd_1v8-supply = <&p2888_spmic_sd2>;
+		phy_ovdd_rgmii-supply = <&p2888_spmic_sd2>;
+		phy_pllvdd-supply = <&battery_reg>;
+	};
+
+#if TEGRA_XUSB_PADCONTROL_VERSION >= DT_VERSION_2
+	xusb_padctl@3520000 {
+		pex_dvdd-supply = <&p2888_spmic_sd0>;
+		pex_hvdd-supply = <&p2888_spmic_sd1>;
+		pex_pll_hvdd-supply = <&p2888_spmic_sd1>;
+		vclamp_usb-supply = <&p2888_spmic_sd3>;
+		avdd_usb-supply = <&p2888_spmic_ldo5>;
+		avdd_pll_nvhs_eutmip-supply = <&p2888_spmic_sd1>;
+		ports {
+			usb2-0 {
+				vbus-supply = <&battery_reg>;
+			};
+			usb2-1 {
+				vbus-supply = <&battery_reg>;
+			};
+			usb2-2 {
+				vbus-supply = <&battery_reg>;
+			};
+			usb2-3 {
+				vbus-supply = <&p2822_vdd_5v_sata>;
+			};
+		};
+	};
+#endif
+
+	xudc@3550000 {
+		avdd-usb-supply = <&p2888_spmic_ldo5>;
+	};
+
+	pwm-fan {
+		vdd-fan-supply = <&p2822_vdd_fan>;
+	};
+
+	bpmp_i2c {
+		spmic@3c {
+			regulators {
+				sd0 {
+					regulator-enable-ramp-delay = <3960>;
+					regulator-disable-ramp-delay = <660>;
+					ramp-rate-setting = <27500>;
+					regulator-ramp-delay = <1100>;
+				};
+
+				sd1 {
+					regulator-enable-ramp-delay = <3310>;
+					regulator-disable-ramp-delay = <2000>;
+					ramp-rate-setting = <27500>;
+					regulator-ramp-delay = <550>;
+				};
+
+				sd2 {
+					regulator-enable-ramp-delay = <3310>;
+					regulator-disable-ramp-delay = <1970>;
+					ramp-rate-setting = <27500>;
+					regulator-ramp-delay = <550>;
+				};
+
+				sd3 {
+					regulator-enable-ramp-delay = <2130>;
+					regulator-disable-ramp-delay = <1970>;
+					ramp-rate-setting = <27500>;
+					regulator-ramp-delay = <350>;
+				};
+
+				sd4 {
+					regulator-enable-ramp-delay = <2650>;
+					regulator-disable-ramp-delay = <1300>;
+					ramp-rate-setting = <27500>;
+					regulator-ramp-delay = <700>;
+				};
+
+				ldo0 {
+					regulator-enable-ramp-delay = <160>;
+					regulator-disable-ramp-delay = <4480>;
+					ramp-rate-setting = <100000>;
+					regulator-ramp-delay = <200>;
+				};
+
+				ldo1 {
+					regulator-enable-ramp-delay = <2650>;
+					regulator-disable-ramp-delay = <1300>;
+					ramp-rate-setting = <100000>;
+					regulator-ramp-delay = <1150>;
+				};
+
+				ldo2 {
+					regulator-enable-ramp-delay = <4670>;
+					ramp-rate-setting = <100000>;
+					regulator-ramp-delay = <1500>;
+				};
+
+				ldo3 {
+					regulator-enable-ramp-delay = <4670>;
+					ramp-rate-setting = <100000>;
+					regulator-ramp-delay = <1500>;
+				};
+
+				ldo4 {
+					regulator-enable-ramp-delay = <3310>;
+					regulator-disable-ramp-delay = <1970>;
+					ramp-rate-setting = <100000>;
+					regulator-ramp-delay = <2200>;
+				};
+
+				ldo5 {
+					regulator-enable-ramp-delay = <4670>;
+					ramp-rate-setting = <100000>;
+					regulator-ramp-delay = <1500>;
+				};
+
+				ldo6 {
+					regulator-enable-ramp-delay = <4690>;
+					ramp-rate-setting = <100000>;
+					regulator-ramp-delay = <1500>;
+				};
+
+				ldo7 {
+					regulator-enable-ramp-delay = <3960>;
+					regulator-disable-ramp-delay = <660>;
+					ramp-rate-setting = <100000>;
+					regulator-ramp-delay = <3350>;
+				};
+
+				ldo8 {
+					regulator-enable-ramp-delay = <3960>;
+					regulator-disable-ramp-delay = <660>;
+					ramp-rate-setting = <100000>;
+					regulator-ramp-delay = <2250>;
+				};
+			};
+		};
+	};
+};

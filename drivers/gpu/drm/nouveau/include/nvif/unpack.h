@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: MIT */
 #ifndef __NVIF_UNPACK_H__
 #define __NVIF_UNPACK_H__
 

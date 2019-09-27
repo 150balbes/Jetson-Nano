@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 #include <linux/fs.h>
 #include <linux/sched.h>
 #include <linux/slab.h>
@@ -19,17 +18,23 @@ void pin_remove(struct fs_pin *pin)
 	spin_unlock_irq(&pin->wait.lock);
 }
 
-void pin_insert(struct fs_pin *pin, struct vfsmount *m)
+void pin_insert_group(struct fs_pin *pin, struct vfsmount *m, struct hlist_head *p)
 {
 	spin_lock(&pin_lock);
-	hlist_add_head(&pin->s_list, &m->mnt_sb->s_pins);
+	if (p)
+		hlist_add_head(&pin->s_list, p);
 	hlist_add_head(&pin->m_list, &real_mount(m)->mnt_pins);
 	spin_unlock(&pin_lock);
 }
 
+void pin_insert(struct fs_pin *pin, struct vfsmount *m)
+{
+	pin_insert_group(pin, m, &m->mnt_sb->s_pins);
+}
+
 void pin_kill(struct fs_pin *p)
 {
-	wait_queue_entry_t wait;
+	wait_queue_t wait;
 
 	if (!p) {
 		rcu_read_unlock();
@@ -56,7 +61,7 @@ void pin_kill(struct fs_pin *p)
 		rcu_read_unlock();
 		schedule();
 		rcu_read_lock();
-		if (likely(list_empty(&wait.entry)))
+		if (likely(list_empty(&wait.task_list)))
 			break;
 		/* OK, we know p couldn't have been freed yet */
 		spin_lock_irq(&p->wait.lock);
@@ -73,7 +78,7 @@ void mnt_pin_kill(struct mount *m)
 	while (1) {
 		struct hlist_node *p;
 		rcu_read_lock();
-		p = READ_ONCE(m->mnt_pins.first);
+		p = ACCESS_ONCE(m->mnt_pins.first);
 		if (!p) {
 			rcu_read_unlock();
 			break;
@@ -87,7 +92,7 @@ void group_pin_kill(struct hlist_head *p)
 	while (1) {
 		struct hlist_node *q;
 		rcu_read_lock();
-		q = READ_ONCE(p->first);
+		q = ACCESS_ONCE(p->first);
 		if (!q) {
 			rcu_read_unlock();
 			break;

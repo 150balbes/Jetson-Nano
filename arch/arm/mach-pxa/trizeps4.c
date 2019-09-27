@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  *  linux/arch/arm/mach-pxa/trizeps4.c
  *
@@ -7,13 +6,16 @@
  *  Author:	Jürgen Schindele
  *  Created:	20 02, 2006
  *  Copyright:	Jürgen Schindele
+ *
+ *  This program is free software; you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License version 2 as
+ *  published by the Free Software Foundation.
  */
 
 #include <linux/init.h>
 #include <linux/kernel.h>
 #include <linux/platform_device.h>
 #include <linux/interrupt.h>
-#include <linux/leds.h>
 #include <linux/export.h>
 #include <linux/sched.h>
 #include <linux/bitops.h>
@@ -25,14 +27,14 @@
 #include <linux/mtd/physmap.h>
 #include <linux/mtd/partitions.h>
 #include <linux/regulator/machine.h>
-#include <linux/platform_data/i2c-pxa.h>
+#include <linux/i2c/pxa-i2c.h>
 
 #include <asm/types.h>
 #include <asm/setup.h>
 #include <asm/memory.h>
 #include <asm/mach-types.h>
 #include <asm/irq.h>
-#include <linux/sizes.h>
+#include <asm/sizes.h>
 
 #include <asm/mach/arch.h>
 #include <asm/mach/map.h>
@@ -352,6 +354,9 @@ static struct pxamci_platform_data trizeps4_mci_platform_data = {
 	.exit		= trizeps4_mci_exit,
 	.get_ro		= NULL,	/* write-protection not supported */
 	.setpower 	= NULL,	/* power-switching not supported */
+	.gpio_card_detect = -1,
+	.gpio_card_ro	= -1,
+	.gpio_power	= -1,
 };
 
 /****************************************************************************

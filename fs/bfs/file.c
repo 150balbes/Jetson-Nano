@@ -1,8 +1,7 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  *	fs/bfs/file.c
  *	BFS file operations.
- *	Copyright (C) 1999-2018 Tigran Aivazian <aivazian.tigran@gmail.com>
+ *	Copyright (C) 1999,2000 Tigran Aivazian <tigran@veritas.com>
  *
  *	Make the file block allocation algorithm understand the size
  *	of the underlying block device.

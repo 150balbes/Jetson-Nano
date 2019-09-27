@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Pluggable TCP congestion control support and newReno
  * congestion control.
@@ -34,11 +33,9 @@ static struct tcp_congestion_ops *tcp_ca_find(const char *name)
 }
 
 /* Must be called with rcu lock held */
-static struct tcp_congestion_ops *tcp_ca_find_autoload(struct net *net,
-						       const char *name)
+static const struct tcp_congestion_ops *__tcp_ca_find_autoload(const char *name)
 {
-	struct tcp_congestion_ops *ca = tcp_ca_find(name);
-
+	const struct tcp_congestion_ops *ca = tcp_ca_find(name);
 #ifdef CONFIG_MODULES
 	if (!ca && capable(CAP_NET_ADMIN)) {
 		rcu_read_unlock();
@@ -71,9 +68,8 @@ int tcp_register_congestion_control(struct tcp_congestion_ops *ca)
 {
 	int ret = 0;
 
-	/* all algorithms must implement these */
-	if (!ca->ssthresh || !ca->undo_cwnd ||
-	    !(ca->cong_avoid || ca->cong_control)) {
+	/* all algorithms must implement ssthresh and cong_avoid ops */
+	if (!ca->ssthresh || !(ca->cong_avoid || ca->cong_control)) {
 		pr_err("%s does not implement required ops\n", ca->name);
 		return -EINVAL;
 	}
@@ -118,7 +114,7 @@ void tcp_unregister_congestion_control(struct tcp_congestion_ops *ca)
 }
 EXPORT_SYMBOL_GPL(tcp_unregister_congestion_control);
 
-u32 tcp_ca_get_key_by_name(struct net *net, const char *name, bool *ecn_ca)
+u32 tcp_ca_get_key_by_name(const char *name, bool *ecn_ca)
 {
 	const struct tcp_congestion_ops *ca;
 	u32 key = TCP_CA_UNSPEC;
@@ -126,7 +122,7 @@ u32 tcp_ca_get_key_by_name(struct net *net, const char *name, bool *ecn_ca)
 	might_sleep();
 
 	rcu_read_lock();
-	ca = tcp_ca_find_autoload(net, name);
+	ca = __tcp_ca_find_autoload(name);
 	if (ca) {
 		key = ca->key;
 		*ecn_ca = ca->flags & TCP_CONG_NEEDS_ECN;
@@ -156,18 +152,23 @@ EXPORT_SYMBOL_GPL(tcp_ca_get_name_by_key);
 /* Assign choice of congestion control. */
 void tcp_assign_congestion_control(struct sock *sk)
 {
-	struct net *net = sock_net(sk);
 	struct inet_connection_sock *icsk = inet_csk(sk);
-	const struct tcp_congestion_ops *ca;
+	struct tcp_congestion_ops *ca;
 
 	rcu_read_lock();
-	ca = rcu_dereference(net->ipv4.tcp_congestion_control);
-	if (unlikely(!try_module_get(ca->owner)))
-		ca = &tcp_reno;
-	icsk->icsk_ca_ops = ca;
+	list_for_each_entry_rcu(ca, &tcp_cong_list, list) {
+		if (likely(try_module_get(ca->owner))) {
+			icsk->icsk_ca_ops = ca;
+			goto out;
+		}
+		/* Fallback to next available. The last really
+		 * guaranteed fallback is Reno from this list.
+		 */
+	}
+out:
 	rcu_read_unlock();
-
 	memset(icsk->icsk_ca_priv, 0, sizeof(icsk->icsk_ca_priv));
+
 	if (ca->flags & TCP_CONG_NEEDS_ECN)
 		INET_ECN_xmit(sk);
 	else
@@ -212,27 +213,29 @@ void tcp_cleanup_congestion_control(struct sock *sk)
 }
 
 /* Used by sysctl to change default congestion control */
-int tcp_set_default_congestion_control(struct net *net, const char *name)
+int tcp_set_default_congestion_control(const char *name)
 {
 	struct tcp_congestion_ops *ca;
-	const struct tcp_congestion_ops *prev;
-	int ret;
+	int ret = -ENOENT;
 
-	rcu_read_lock();
-	ca = tcp_ca_find_autoload(net, name);
-	if (!ca) {
-		ret = -ENOENT;
-	} else if (!try_module_get(ca->owner)) {
-		ret = -EBUSY;
-	} else {
-		prev = xchg(&net->ipv4.tcp_congestion_control, ca);
-		if (prev)
-			module_put(prev->owner);
+	spin_lock(&tcp_cong_list_lock);
+	ca = tcp_ca_find(name);
+#ifdef CONFIG_MODULES
+	if (!ca && capable(CAP_NET_ADMIN)) {
+		spin_unlock(&tcp_cong_list_lock);
 
-		ca->flags |= TCP_CONG_NON_RESTRICTED;
+		request_module("tcp_%s", name);
+		spin_lock(&tcp_cong_list_lock);
+		ca = tcp_ca_find(name);
+	}
+#endif
+
+	if (ca) {
+		ca->flags |= TCP_CONG_NON_RESTRICTED;	/* default is always allowed */
+		list_move(&ca->list, &tcp_cong_list);
 		ret = 0;
 	}
-	rcu_read_unlock();
+	spin_unlock(&tcp_cong_list_lock);
 
 	return ret;
 }
@@ -240,8 +243,7 @@ int tcp_set_default_congestion_control(struct net *net, const char *name)
 /* Set default value from kernel configuration at bootup */
 static int __init tcp_congestion_default(void)
 {
-	return tcp_set_default_congestion_control(&init_net,
-						  CONFIG_DEFAULT_TCP_CONG);
+	return tcp_set_default_congestion_control(CONFIG_DEFAULT_TCP_CONG);
 }
 late_initcall(tcp_congestion_default);
 
@@ -261,12 +263,14 @@ void tcp_get_available_congestion_control(char *buf, size_t maxlen)
 }
 
 /* Get current default congestion control */
-void tcp_get_default_congestion_control(struct net *net, char *name)
+void tcp_get_default_congestion_control(char *name)
 {
-	const struct tcp_congestion_ops *ca;
+	struct tcp_congestion_ops *ca;
+	/* We will always have reno... */
+	BUG_ON(list_empty(&tcp_cong_list));
 
 	rcu_read_lock();
-	ca = rcu_dereference(net->ipv4.tcp_congestion_control);
+	ca = list_entry(tcp_cong_list.next, struct tcp_congestion_ops, list);
 	strncpy(name, ca->name, TCP_CA_NAME_MAX);
 	rcu_read_unlock();
 }
@@ -328,13 +332,8 @@ out:
 	return ret;
 }
 
-/* Change congestion control for socket. If load is false, then it is the
- * responsibility of the caller to call tcp_init_congestion_control or
- * tcp_reinit_congestion_control (if the current congestion control was
- * already initialized.
- */
-int tcp_set_congestion_control(struct sock *sk, const char *name, bool load,
-			       bool reinit, bool cap_net_admin)
+/* Change congestion control for socket */
+int tcp_set_congestion_control(struct sock *sk, const char *name)
 {
 	struct inet_connection_sock *icsk = inet_csk(sk);
 	const struct tcp_congestion_ops *ca;
@@ -344,39 +343,21 @@ int tcp_set_congestion_control(struct sock *sk, const char *name, bool load,
 		return -EPERM;
 
 	rcu_read_lock();
-	if (!load)
-		ca = tcp_ca_find(name);
-	else
-		ca = tcp_ca_find_autoload(sock_net(sk), name);
-
+	ca = __tcp_ca_find_autoload(name);
 	/* No change asking for existing value */
 	if (ca == icsk->icsk_ca_ops) {
 		icsk->icsk_ca_setsockopt = 1;
 		goto out;
 	}
-
-	if (!ca) {
+	if (!ca)
 		err = -ENOENT;
-	} else if (!load) {
-		const struct tcp_congestion_ops *old_ca = icsk->icsk_ca_ops;
-
-		if (try_module_get(ca->owner)) {
-			if (reinit) {
-				tcp_reinit_congestion_control(sk, ca);
-			} else {
-				icsk->icsk_ca_ops = ca;
-				module_put(old_ca->owner);
-			}
-		} else {
-			err = -EBUSY;
-		}
-	} else if (!((ca->flags & TCP_CONG_NON_RESTRICTED) || cap_net_admin)) {
+	else if (!((ca->flags & TCP_CONG_NON_RESTRICTED) ||
+		   ns_capable(sock_net(sk)->user_ns, CAP_NET_ADMIN)))
 		err = -EPERM;
-	} else if (!try_module_get(ca->owner)) {
+	else if (!try_module_get(ca->owner))
 		err = -EBUSY;
-	} else {
+	else
 		tcp_reinit_congestion_control(sk, ca);
-	}
  out:
 	rcu_read_unlock();
 	return err;
@@ -458,19 +439,10 @@ u32 tcp_reno_ssthresh(struct sock *sk)
 }
 EXPORT_SYMBOL_GPL(tcp_reno_ssthresh);
 
-u32 tcp_reno_undo_cwnd(struct sock *sk)
-{
-	const struct tcp_sock *tp = tcp_sk(sk);
-
-	return max(tp->snd_cwnd, tp->prior_cwnd);
-}
-EXPORT_SYMBOL_GPL(tcp_reno_undo_cwnd);
-
 struct tcp_congestion_ops tcp_reno = {
 	.flags		= TCP_CONG_NON_RESTRICTED,
 	.name		= "reno",
 	.owner		= THIS_MODULE,
 	.ssthresh	= tcp_reno_ssthresh,
 	.cong_avoid	= tcp_reno_cong_avoid,
-	.undo_cwnd	= tcp_reno_undo_cwnd,
 };

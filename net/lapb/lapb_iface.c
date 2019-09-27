@@ -1,8 +1,13 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  *	LAPB release 002
  *
  *	This code REQUIRES 2.1.15 or higher/ NET3.038
+ *
+ *	This module:
+ *		This module is free software; you can redistribute it and/or
+ *		modify it under the terms of the GNU General Public License
+ *		as published by the Free Software Foundation; either version
+ *		2 of the License, or (at your option) any later version.
  *
  *	History
  *	LAPB 001	Jonathan Naylor	Started Coding
@@ -28,7 +33,7 @@
 #include <linux/skbuff.h>
 #include <linux/slab.h>
 #include <net/sock.h>
-#include <linux/uaccess.h>
+#include <asm/uaccess.h>
 #include <linux/fcntl.h>
 #include <linux/mm.h>
 #include <linux/interrupt.h>
@@ -49,12 +54,12 @@ static void lapb_free_cb(struct lapb_cb *lapb)
 
 static __inline__ void lapb_hold(struct lapb_cb *lapb)
 {
-	refcount_inc(&lapb->refcnt);
+	atomic_inc(&lapb->refcnt);
 }
 
 static __inline__ void lapb_put(struct lapb_cb *lapb)
 {
-	if (refcount_dec_and_test(&lapb->refcnt))
+	if (atomic_dec_and_test(&lapb->refcnt))
 		lapb_free_cb(lapb);
 }
 
@@ -68,6 +73,7 @@ static void __lapb_remove_cb(struct lapb_cb *lapb)
 		lapb_put(lapb);
 	}
 }
+EXPORT_SYMBOL(lapb_register);
 
 /*
  *	Add a socket to the bound sockets list.
@@ -114,14 +120,15 @@ static struct lapb_cb *lapb_create_cb(void)
 {
 	struct lapb_cb *lapb = kzalloc(sizeof(*lapb), GFP_ATOMIC);
 
+
 	if (!lapb)
 		goto out;
 
 	skb_queue_head_init(&lapb->write_queue);
 	skb_queue_head_init(&lapb->ack_queue);
 
-	timer_setup(&lapb->t1timer, NULL, 0);
-	timer_setup(&lapb->t2timer, NULL, 0);
+	init_timer(&lapb->t1timer);
+	init_timer(&lapb->t2timer);
 
 	lapb->t1      = LAPB_DEFAULT_T1;
 	lapb->t2      = LAPB_DEFAULT_T2;
@@ -129,7 +136,7 @@ static struct lapb_cb *lapb_create_cb(void)
 	lapb->mode    = LAPB_DEFAULT_MODE;
 	lapb->window  = LAPB_DEFAULT_WINDOW;
 	lapb->state   = LAPB_STATE_0;
-	refcount_set(&lapb->refcnt, 1);
+	atomic_set(&lapb->refcnt, 1);
 out:
 	return lapb;
 }
@@ -165,7 +172,6 @@ out:
 	write_unlock_bh(&lapb_list_lock);
 	return rc;
 }
-EXPORT_SYMBOL(lapb_register);
 
 int lapb_unregister(struct net_device *dev)
 {
@@ -176,7 +182,6 @@ int lapb_unregister(struct net_device *dev)
 	lapb = __lapb_devtostruct(dev);
 	if (!lapb)
 		goto out;
-	lapb_put(lapb);
 
 	lapb_stop_t1timer(lapb);
 	lapb_stop_t2timer(lapb);

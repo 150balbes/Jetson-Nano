@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef CS2000_H_INCLUDED
 #define CS2000_H_INCLUDED
 

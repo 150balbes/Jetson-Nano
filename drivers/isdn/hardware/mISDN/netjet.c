@@ -1,10 +1,23 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * NETJet mISDN driver
  *
  * Author       Karsten Keil <keil@isdn4linux.de>
  *
  * Copyright 2009  by Karsten Keil <keil@isdn4linux.de>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ *
  */
 
 #include <linux/interrupt.h>
@@ -16,7 +29,7 @@
 #include "ipac.h"
 #include "iohelper.h"
 #include "netjet.h"
-#include "isdnhdlc.h"
+#include <linux/isdn/hdlc.h>
 
 #define NETJET_REV	"2.0"
 
@@ -1071,7 +1084,7 @@ nj_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 		return -ENODEV;
 	}
 
-	card = kzalloc(sizeof(struct tiger_hw), GFP_KERNEL);
+	card = kzalloc(sizeof(struct tiger_hw), GFP_ATOMIC);
 	if (!card) {
 		pr_info("No kmem for Netjet\n");
 		return err;
@@ -1124,7 +1137,7 @@ static void nj_remove(struct pci_dev *pdev)
 /* We cannot select cards with PCI_SUB... IDs, since here are cards with
  * SUB IDs set to PCI_ANY_ID, so we need to match all and reject
  * known other cards which not work with this driver - see probe function */
-static const struct pci_device_id nj_pci_ids[] = {
+static struct pci_device_id nj_pci_ids[] = {
 	{ PCI_VENDOR_ID_TIGERJET, PCI_DEVICE_ID_TIGERJET_300,
 	  PCI_ANY_ID, PCI_ANY_ID, 0, 0, 0},
 	{ }

@@ -1,11 +1,10 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * A symbol table (symtab) maintains associations between symbol
  * strings and datum values.  The type of the datum values
  * is arbitrary.  The symbol table type is implemented
  * using the hash table type (hashtab).
  *
- * Author : Stephen Smalley, <sds@tycho.nsa.gov>
+ * Author : Stephen Smalley, <sds@epoch.ncsc.mil>
  */
 #ifndef _SS_SYMTAB_H_
 #define _SS_SYMTAB_H_

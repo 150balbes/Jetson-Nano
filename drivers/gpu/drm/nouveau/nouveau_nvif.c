@@ -60,15 +60,20 @@ nvkm_client_ioctl(void *priv, bool super, void *data, u32 size, void **hack)
 static int
 nvkm_client_resume(void *priv)
 {
-	struct nvkm_client *client = priv;
-	return nvkm_object_init(&client->object);
+	return nvkm_client_init(priv);
 }
 
 static int
 nvkm_client_suspend(void *priv)
 {
+	return nvkm_client_fini(priv, true);
+}
+
+static void
+nvkm_client_driver_fini(void *priv)
+{
 	struct nvkm_client *client = priv;
-	return nvkm_object_fini(&client->object, true);
+	nvkm_client_del(&client);
 }
 
 static int
@@ -103,14 +108,23 @@ static int
 nvkm_client_driver_init(const char *name, u64 device, const char *cfg,
 			const char *dbg, void **ppriv)
 {
-	return nvkm_client_new(name, device, cfg, dbg, nvkm_client_ntfy,
-			       (struct nvkm_client **)ppriv);
+	struct nvkm_client *client;
+	int ret;
+
+	ret = nvkm_client_new(name, device, cfg, dbg, &client);
+	*ppriv = client;
+	if (ret)
+		return ret;
+
+	client->ntfy = nvkm_client_ntfy;
+	return 0;
 }
 
 const struct nvif_driver
 nvif_driver_nvkm = {
 	.name = "nvkm",
 	.init = nvkm_client_driver_init,
+	.fini = nvkm_client_driver_fini,
 	.suspend = nvkm_client_suspend,
 	.resume = nvkm_client_resume,
 	.ioctl = nvkm_client_ioctl,

@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /* n2_core.c: Niagara2 Stream Processing Unit (SPU) crypto support.
  *
  * Copyright (C) 2010, 2011 David S. Miller <davem@davemloft.net>
@@ -64,11 +63,6 @@ struct spu_queue {
 	unsigned int		irq;
 
 	struct list_head	list;
-};
-
-struct spu_qreg {
-	struct spu_queue	*queue;
-	unsigned long		type;
 };
 
 static struct spu_queue **cpu_to_cwq;
@@ -360,16 +354,6 @@ static int n2_hash_async_finup(struct ahash_request *req)
 	return crypto_ahash_finup(&rctx->fallback_req);
 }
 
-static int n2_hash_async_noimport(struct ahash_request *req, const void *in)
-{
-	return -ENOSYS;
-}
-
-static int n2_hash_async_noexport(struct ahash_request *req, void *out)
-{
-	return -ENOSYS;
-}
-
 static int n2_hash_cra_init(struct crypto_tfm *tfm)
 {
 	const char *fallback_driver_name = crypto_tfm_alg_name(tfm);
@@ -470,6 +454,8 @@ static int n2_hmac_async_setkey(struct crypto_ahash *tfm, const u8 *key,
 		return err;
 
 	shash->tfm = child_shash;
+	shash->flags = crypto_ahash_get_flags(tfm) &
+		CRYPTO_TFM_REQ_MAY_SLEEP;
 
 	bs = crypto_shash_blocksize(child_shash);
 	ds = crypto_shash_digestsize(child_shash);
@@ -771,7 +757,7 @@ static int n2_des_setkey(struct crypto_ablkcipher *cipher, const u8 *key,
 	}
 
 	err = des_ekey(tmp, key);
-	if (err == 0 && (tfm->crt_flags & CRYPTO_TFM_REQ_FORBID_WEAK_KEYS)) {
+	if (err == 0 && (tfm->crt_flags & CRYPTO_TFM_REQ_WEAK_KEY)) {
 		tfm->crt_flags |= CRYPTO_TFM_RES_WEAK_KEY;
 		return -EINVAL;
 	}
@@ -787,18 +773,13 @@ static int n2_3des_setkey(struct crypto_ablkcipher *cipher, const u8 *key,
 	struct crypto_tfm *tfm = crypto_ablkcipher_tfm(cipher);
 	struct n2_cipher_context *ctx = crypto_tfm_ctx(tfm);
 	struct n2_cipher_alg *n2alg = n2_cipher_alg(tfm);
-	u32 flags;
-	int err;
-
-	flags = crypto_ablkcipher_get_flags(cipher);
-	err = __des3_verify_key(&flags, key);
-	if (unlikely(err)) {
-		crypto_ablkcipher_set_flags(cipher, flags);
-		return err;
-	}
 
 	ctx->enc_type = n2alg->enc_type;
 
+	if (keylen != (3 * DES_KEY_SIZE)) {
+		crypto_ablkcipher_set_flags(cipher, CRYPTO_TFM_RES_BAD_KEY_LEN);
+		return -EINVAL;
+	}
 	ctx->key_len = keylen;
 	memcpy(ctx->key.des3, key, keylen);
 	return 0;
@@ -1481,8 +1462,6 @@ static int __n2_register_one_ahash(const struct n2_hash_tmpl *tmpl)
 	ahash->final = n2_hash_async_final;
 	ahash->finup = n2_hash_async_finup;
 	ahash->digest = n2_hash_async_digest;
-	ahash->export = n2_hash_async_noexport;
-	ahash->import = n2_hash_async_noimport;
 
 	halg = &ahash->halg;
 	halg->digestsize = tmpl->digest_size;
@@ -1491,7 +1470,8 @@ static int __n2_register_one_ahash(const struct n2_hash_tmpl *tmpl)
 	snprintf(base->cra_name, CRYPTO_MAX_ALG_NAME, "%s", tmpl->name);
 	snprintf(base->cra_driver_name, CRYPTO_MAX_ALG_NAME, "%s-n2", tmpl->name);
 	base->cra_priority = N2_CRA_PRIORITY;
-	base->cra_flags = CRYPTO_ALG_KERN_DRIVER_ONLY |
+	base->cra_flags = CRYPTO_ALG_TYPE_AHASH |
+			  CRYPTO_ALG_KERN_DRIVER_ONLY |
 			  CRYPTO_ALG_NEED_FALLBACK;
 	base->cra_blocksize = tmpl->block_size;
 	base->cra_ctxsize = sizeof(struct n2_hash_ctx);
@@ -1654,27 +1634,31 @@ static void queue_cache_destroy(void)
 	queue_cache[HV_NCS_QTYPE_CWQ - 1] = NULL;
 }
 
-static long spu_queue_register_workfn(void *arg)
+static int spu_queue_register(struct spu_queue *p, unsigned long q_type)
 {
-	struct spu_qreg *qr = arg;
-	struct spu_queue *p = qr->queue;
-	unsigned long q_type = qr->type;
+	cpumask_var_t old_allowed;
 	unsigned long hv_ret;
+
+	if (cpumask_empty(&p->sharing))
+		return -EINVAL;
+
+	if (!alloc_cpumask_var(&old_allowed, GFP_KERNEL))
+		return -ENOMEM;
+
+	cpumask_copy(old_allowed, &current->cpus_allowed);
+
+	set_cpus_allowed_ptr(current, &p->sharing);
 
 	hv_ret = sun4v_ncs_qconf(q_type, __pa(p->q),
 				 CWQ_NUM_ENTRIES, &p->qhandle);
 	if (!hv_ret)
 		sun4v_ncs_sethead_marker(p->qhandle, 0);
 
-	return hv_ret ? -EINVAL : 0;
-}
+	set_cpus_allowed_ptr(current, old_allowed);
 
-static int spu_queue_register(struct spu_queue *p, unsigned long q_type)
-{
-	int cpu = cpumask_any_and(&p->sharing, cpu_online_mask);
-	struct spu_qreg qr = { .queue = p, .type = q_type };
+	free_cpumask_var(old_allowed);
 
-	return work_on_cpu_safe(cpu, spu_queue_register_workfn, &qr);
+	return (hv_ret ? -EINVAL : 0);
 }
 
 static int spu_queue_setup(struct spu_queue *p)
@@ -1748,8 +1732,8 @@ static int spu_mdesc_walk_arcs(struct mdesc_handle *mdesc,
 			continue;
 		id = mdesc_get_property(mdesc, tgt, "id", NULL);
 		if (table[*id] != NULL) {
-			dev_err(&dev->dev, "%pOF: SPU cpu slot already set.\n",
-				dev->dev.of_node);
+			dev_err(&dev->dev, "%s: SPU cpu slot already set.\n",
+				dev->dev.of_node->full_name);
 			return -EINVAL;
 		}
 		cpumask_set_cpu(*id, &p->sharing);
@@ -1769,8 +1753,8 @@ static int handle_exec_unit(struct spu_mdesc_info *ip, struct list_head *list,
 
 	p = kzalloc(sizeof(struct spu_queue), GFP_KERNEL);
 	if (!p) {
-		dev_err(&dev->dev, "%pOF: Could not allocate SPU queue.\n",
-			dev->dev.of_node);
+		dev_err(&dev->dev, "%s: Could not allocate SPU queue.\n",
+			dev->dev.of_node->full_name);
 		return -ENOMEM;
 	}
 
@@ -1922,12 +1906,12 @@ static int grab_global_resources(void)
 		goto out_hvapi_release;
 
 	err = -ENOMEM;
-	cpu_to_cwq = kcalloc(NR_CPUS, sizeof(struct spu_queue *),
+	cpu_to_cwq = kzalloc(sizeof(struct spu_queue *) * NR_CPUS,
 			     GFP_KERNEL);
 	if (!cpu_to_cwq)
 		goto out_queue_cache_destroy;
 
-	cpu_to_mau = kcalloc(NR_CPUS, sizeof(struct spu_queue *),
+	cpu_to_mau = kzalloc(sizeof(struct spu_queue *) * NR_CPUS,
 			     GFP_KERNEL);
 	if (!cpu_to_mau)
 		goto out_free_cwq_table;
@@ -1980,8 +1964,10 @@ static struct n2_crypto *alloc_n2cp(void)
 
 static void free_n2cp(struct n2_crypto *np)
 {
-	kfree(np->cwq_info.ino_table);
-	np->cwq_info.ino_table = NULL;
+	if (np->cwq_info.ino_table) {
+		kfree(np->cwq_info.ino_table);
+		np->cwq_info.ino_table = NULL;
+	}
 
 	kfree(np);
 }
@@ -1997,39 +1983,41 @@ static void n2_spu_driver_version(void)
 static int n2_crypto_probe(struct platform_device *dev)
 {
 	struct mdesc_handle *mdesc;
+	const char *full_name;
 	struct n2_crypto *np;
 	int err;
 
 	n2_spu_driver_version();
 
-	pr_info("Found N2CP at %pOF\n", dev->dev.of_node);
+	full_name = dev->dev.of_node->full_name;
+	pr_info("Found N2CP at %s\n", full_name);
 
 	np = alloc_n2cp();
 	if (!np) {
-		dev_err(&dev->dev, "%pOF: Unable to allocate n2cp.\n",
-			dev->dev.of_node);
+		dev_err(&dev->dev, "%s: Unable to allocate n2cp.\n",
+			full_name);
 		return -ENOMEM;
 	}
 
 	err = grab_global_resources();
 	if (err) {
-		dev_err(&dev->dev, "%pOF: Unable to grab global resources.\n",
-			dev->dev.of_node);
+		dev_err(&dev->dev, "%s: Unable to grab "
+			"global resources.\n", full_name);
 		goto out_free_n2cp;
 	}
 
 	mdesc = mdesc_grab();
 
 	if (!mdesc) {
-		dev_err(&dev->dev, "%pOF: Unable to grab MDESC.\n",
-			dev->dev.of_node);
+		dev_err(&dev->dev, "%s: Unable to grab MDESC.\n",
+			full_name);
 		err = -ENODEV;
 		goto out_free_global;
 	}
 	err = grab_mdesc_irq_props(mdesc, dev, &np->cwq_info, "n2cp");
 	if (err) {
-		dev_err(&dev->dev, "%pOF: Unable to grab IRQ props.\n",
-			dev->dev.of_node);
+		dev_err(&dev->dev, "%s: Unable to grab IRQ props.\n",
+			full_name);
 		mdesc_release(mdesc);
 		goto out_free_global;
 	}
@@ -2040,15 +2028,15 @@ static int n2_crypto_probe(struct platform_device *dev)
 	mdesc_release(mdesc);
 
 	if (err) {
-		dev_err(&dev->dev, "%pOF: CWQ MDESC scan failed.\n",
-			dev->dev.of_node);
+		dev_err(&dev->dev, "%s: CWQ MDESC scan failed.\n",
+			full_name);
 		goto out_free_global;
 	}
 
 	err = n2_register_algs();
 	if (err) {
-		dev_err(&dev->dev, "%pOF: Unable to register algorithms.\n",
-			dev->dev.of_node);
+		dev_err(&dev->dev, "%s: Unable to register algorithms.\n",
+			full_name);
 		goto out_free_spu_list;
 	}
 
@@ -2095,8 +2083,10 @@ static struct n2_mau *alloc_ncp(void)
 
 static void free_ncp(struct n2_mau *mp)
 {
-	kfree(mp->mau_info.ino_table);
-	mp->mau_info.ino_table = NULL;
+	if (mp->mau_info.ino_table) {
+		kfree(mp->mau_info.ino_table);
+		mp->mau_info.ino_table = NULL;
+	}
 
 	kfree(mp);
 }
@@ -2104,40 +2094,42 @@ static void free_ncp(struct n2_mau *mp)
 static int n2_mau_probe(struct platform_device *dev)
 {
 	struct mdesc_handle *mdesc;
+	const char *full_name;
 	struct n2_mau *mp;
 	int err;
 
 	n2_spu_driver_version();
 
-	pr_info("Found NCP at %pOF\n", dev->dev.of_node);
+	full_name = dev->dev.of_node->full_name;
+	pr_info("Found NCP at %s\n", full_name);
 
 	mp = alloc_ncp();
 	if (!mp) {
-		dev_err(&dev->dev, "%pOF: Unable to allocate ncp.\n",
-			dev->dev.of_node);
+		dev_err(&dev->dev, "%s: Unable to allocate ncp.\n",
+			full_name);
 		return -ENOMEM;
 	}
 
 	err = grab_global_resources();
 	if (err) {
-		dev_err(&dev->dev, "%pOF: Unable to grab global resources.\n",
-			dev->dev.of_node);
+		dev_err(&dev->dev, "%s: Unable to grab "
+			"global resources.\n", full_name);
 		goto out_free_ncp;
 	}
 
 	mdesc = mdesc_grab();
 
 	if (!mdesc) {
-		dev_err(&dev->dev, "%pOF: Unable to grab MDESC.\n",
-			dev->dev.of_node);
+		dev_err(&dev->dev, "%s: Unable to grab MDESC.\n",
+			full_name);
 		err = -ENODEV;
 		goto out_free_global;
 	}
 
 	err = grab_mdesc_irq_props(mdesc, dev, &mp->mau_info, "ncp");
 	if (err) {
-		dev_err(&dev->dev, "%pOF: Unable to grab IRQ props.\n",
-			dev->dev.of_node);
+		dev_err(&dev->dev, "%s: Unable to grab IRQ props.\n",
+			full_name);
 		mdesc_release(mdesc);
 		goto out_free_global;
 	}
@@ -2148,8 +2140,8 @@ static int n2_mau_probe(struct platform_device *dev)
 	mdesc_release(mdesc);
 
 	if (err) {
-		dev_err(&dev->dev, "%pOF: MAU MDESC scan failed.\n",
-			dev->dev.of_node);
+		dev_err(&dev->dev, "%s: MAU MDESC scan failed.\n",
+			full_name);
 		goto out_free_global;
 	}
 
@@ -2179,7 +2171,7 @@ static int n2_mau_remove(struct platform_device *dev)
 	return 0;
 }
 
-static const struct of_device_id n2_crypto_match[] = {
+static struct of_device_id n2_crypto_match[] = {
 	{
 		.name = "n2cp",
 		.compatible = "SUNW,n2-cwq",
@@ -2206,7 +2198,7 @@ static struct platform_driver n2_crypto_driver = {
 	.remove		=	n2_crypto_remove,
 };
 
-static const struct of_device_id n2_mau_match[] = {
+static struct of_device_id n2_mau_match[] = {
 	{
 		.name = "ncp",
 		.compatible = "SUNW,n2-mau",

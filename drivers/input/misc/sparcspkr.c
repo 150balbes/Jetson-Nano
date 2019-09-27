@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  *  Driver for PC-speaker like devices found on various Sparc systems.
  *

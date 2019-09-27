@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 #include <linux/fs.h>
 #include <linux/interrupt.h>
 #include <asm/octeon/octeon.h>
@@ -64,11 +63,31 @@ static int reset_statistics(void *data, u64 value)
 
 DEFINE_SIMPLE_ATTRIBUTE(reset_statistics_ops, NULL, reset_statistics, "%llu\n");
 
-static void init_debugfs(void)
+static int init_debufs(void)
 {
+	struct dentry *show_dentry;
 	dir = debugfs_create_dir("oct_ilm", 0);
-	debugfs_create_file("statistics", 0222, dir, NULL, &oct_ilm_ops);
-	debugfs_create_file("reset", 0222, dir, NULL, &reset_statistics_ops);
+	if (!dir) {
+		pr_err("oct_ilm: failed to create debugfs entry oct_ilm\n");
+		return -1;
+	}
+
+	show_dentry = debugfs_create_file("statistics", 0222, dir, NULL,
+					  &oct_ilm_ops);
+	if (!show_dentry) {
+		pr_err("oct_ilm: failed to create debugfs entry oct_ilm/statistics\n");
+		return -1;
+	}
+
+	show_dentry = debugfs_create_file("reset", 0222, dir, NULL,
+					  &reset_statistics_ops);
+	if (!show_dentry) {
+		pr_err("oct_ilm: failed to create debugfs entry oct_ilm/reset\n");
+		return -1;
+	}
+
+	return 0;
+
 }
 
 static void init_latency_info(struct latency_info *li, int startup)
@@ -150,7 +169,11 @@ static __init int oct_ilm_module_init(void)
 	int rc;
 	int irq = OCTEON_IRQ_TIMER0 + TIMER_NUM;
 
-	init_debugfs();
+	rc = init_debufs();
+	if (rc) {
+		WARN(1, "Could not create debugfs entries");
+		return rc;
+	}
 
 	rc = request_irq(irq, cvm_oct_ciu_timer_interrupt, IRQF_NO_THREAD,
 			 "oct_ilm", 0);

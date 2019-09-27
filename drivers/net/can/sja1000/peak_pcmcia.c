@@ -1,10 +1,18 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (C) 2010-2012 Stephane Grosjean <s.grosjean@peak-system.com>
  *
  * CAN driver for PEAK-System PCAN-PC Card
  * Derived from the PCAN project file driver/src/pcan_pccard.c
  * Copyright (C) 2006-2010 PEAK System-Technik GmbH
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the version 2 of the GNU General Public License
+ * as published by the Free Software Foundation
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
  */
 #include <linux/kernel.h>
 #include <linux/module.h>
@@ -373,9 +381,9 @@ static inline void pcan_set_can_power(struct pcan_pccard *card, int onoff)
 /*
  * set leds state according to channel activity
  */
-static void pcan_led_timer(struct timer_list *t)
+static void pcan_led_timer(unsigned long arg)
 {
-	struct pcan_pccard *card = from_timer(card, t, led_timer);
+	struct pcan_pccard *card = (struct pcan_pccard *)arg;
 	struct net_device *netdev;
 	int i, up_count = 0;
 	u8 ccr;
@@ -479,7 +487,7 @@ static void pcan_free_channels(struct pcan_pccard *card)
 		if (!netdev)
 			continue;
 
-		strlcpy(name, netdev->name, IFNAMSIZ);
+		strncpy(name, netdev->name, IFNAMSIZ);
 
 		unregister_sja1000dev(netdev);
 
@@ -522,7 +530,7 @@ static int pcan_add_channels(struct pcan_pccard *card)
 	pcan_write_reg(card, PCC_CCR, ccr);
 
 	/* wait 2ms before unresetting channels */
-	usleep_range(2000, 3000);
+	mdelay(2);
 
 	ccr &= ~PCC_CCR_RST_ALL;
 	pcan_write_reg(card, PCC_CCR, ccr);
@@ -684,7 +692,9 @@ static int pcan_probe(struct pcmcia_device *pdev)
 	}
 
 	/* init the timer which controls the leds */
-	timer_setup(&card->led_timer, pcan_led_timer, 0);
+	init_timer(&card->led_timer);
+	card->led_timer.function = pcan_led_timer;
+	card->led_timer.data = (unsigned long)card;
 
 	/* request the given irq */
 	err = request_irq(pdev->irq, &pcan_isr, IRQF_SHARED, PCC_NAME, card);

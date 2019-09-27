@@ -1,9 +1,23 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * blk-integrity.c - Block layer data integrity extensions
  *
  * Copyright (C) 2007, 2008 Oracle Corporation
  * Written by: Martin K. Petersen <martin.petersen@oracle.com>
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License version
+ * 2 as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; see the file COPYING.  If not, write to
+ * the Free Software Foundation, 675 Mass Ave, Cambridge, MA 02139,
+ * USA.
+ *
  */
 
 #include <linux/blkdev.h>
@@ -35,8 +49,12 @@ int blk_rq_count_integrity_sg(struct request_queue *q, struct bio *bio)
 	bio_for_each_integrity_vec(iv, bio, iter) {
 
 		if (prev) {
-			if (!biovec_phys_mergeable(q, &ivprv, &iv))
+			if (!BIOVEC_PHYS_MERGEABLE(&ivprv, &iv))
 				goto new_segment;
+
+			if (!BIOVEC_SEG_BOUNDARY(q, &ivprv, &iv))
+				goto new_segment;
+
 			if (seg_size + iv.bv_len > queue_max_segment_size(q))
 				goto new_segment;
 
@@ -77,8 +95,12 @@ int blk_rq_map_integrity_sg(struct request_queue *q, struct bio *bio,
 	bio_for_each_integrity_vec(iv, bio, iter) {
 
 		if (prev) {
-			if (!biovec_phys_mergeable(q, &ivprv, &iv))
+			if (!BIOVEC_PHYS_MERGEABLE(&ivprv, &iv))
 				goto new_segment;
+
+			if (!BIOVEC_SEG_BOUNDARY(q, &ivprv, &iv))
+				goto new_segment;
+
 			if (sg->length + iv.bv_len > queue_max_segment_size(q))
 				goto new_segment;
 
@@ -311,34 +333,34 @@ static ssize_t integrity_device_show(struct blk_integrity *bi, char *page)
 }
 
 static struct integrity_sysfs_entry integrity_format_entry = {
-	.attr = { .name = "format", .mode = 0444 },
+	.attr = { .name = "format", .mode = S_IRUGO },
 	.show = integrity_format_show,
 };
 
 static struct integrity_sysfs_entry integrity_tag_size_entry = {
-	.attr = { .name = "tag_size", .mode = 0444 },
+	.attr = { .name = "tag_size", .mode = S_IRUGO },
 	.show = integrity_tag_size_show,
 };
 
 static struct integrity_sysfs_entry integrity_interval_entry = {
-	.attr = { .name = "protection_interval_bytes", .mode = 0444 },
+	.attr = { .name = "protection_interval_bytes", .mode = S_IRUGO },
 	.show = integrity_interval_show,
 };
 
 static struct integrity_sysfs_entry integrity_verify_entry = {
-	.attr = { .name = "read_verify", .mode = 0644 },
+	.attr = { .name = "read_verify", .mode = S_IRUGO | S_IWUSR },
 	.show = integrity_verify_show,
 	.store = integrity_verify_store,
 };
 
 static struct integrity_sysfs_entry integrity_generate_entry = {
-	.attr = { .name = "write_generate", .mode = 0644 },
+	.attr = { .name = "write_generate", .mode = S_IRUGO | S_IWUSR },
 	.show = integrity_generate_show,
 	.store = integrity_generate_store,
 };
 
 static struct integrity_sysfs_entry integrity_device_entry = {
-	.attr = { .name = "device_is_integrity_capable", .mode = 0444 },
+	.attr = { .name = "device_is_integrity_capable", .mode = S_IRUGO },
 	.show = integrity_device_show,
 };
 
@@ -351,7 +373,6 @@ static struct attribute *integrity_attrs[] = {
 	&integrity_device_entry.attr,
 	NULL,
 };
-ATTRIBUTE_GROUPS(integrity);
 
 static const struct sysfs_ops integrity_ops = {
 	.show	= &integrity_attr_show,
@@ -359,16 +380,16 @@ static const struct sysfs_ops integrity_ops = {
 };
 
 static struct kobj_type integrity_ktype = {
-	.default_groups = integrity_groups,
+	.default_attrs	= integrity_attrs,
 	.sysfs_ops	= &integrity_ops,
 };
 
-static blk_status_t blk_integrity_nop_fn(struct blk_integrity_iter *iter)
+static int blk_integrity_nop_fn(struct blk_integrity_iter *iter)
 {
-	return BLK_STS_OK;
+	return 0;
 }
 
-static const struct blk_integrity_profile nop_profile = {
+static struct blk_integrity_profile nop_profile = {
 	.name = "nop",
 	.generate_fn = blk_integrity_nop_fn,
 	.verify_fn = blk_integrity_nop_fn,
@@ -383,7 +404,7 @@ static const struct blk_integrity_profile nop_profile = {
  * send/receive integrity metadata it must use this function to register
  * the capability with the block layer. The template is a blk_integrity
  * struct with values appropriate for the underlying hardware. See
- * Documentation/block/data-integrity.rst.
+ * Documentation/block/data-integrity.txt.
  */
 void blk_integrity_register(struct gendisk *disk, struct blk_integrity *template)
 {
@@ -397,7 +418,7 @@ void blk_integrity_register(struct gendisk *disk, struct blk_integrity *template
 	bi->tuple_size = template->tuple_size;
 	bi->tag_size = template->tag_size;
 
-	disk->queue->backing_dev_info->capabilities |= BDI_CAP_STABLE_WRITES;
+	disk->queue->backing_dev_info.capabilities |= BDI_CAP_STABLE_WRITES;
 }
 EXPORT_SYMBOL(blk_integrity_register);
 
@@ -410,7 +431,7 @@ EXPORT_SYMBOL(blk_integrity_register);
  */
 void blk_integrity_unregister(struct gendisk *disk)
 {
-	disk->queue->backing_dev_info->capabilities &= ~BDI_CAP_STABLE_WRITES;
+	disk->queue->backing_dev_info.capabilities &= ~BDI_CAP_STABLE_WRITES;
 	memset(&disk->queue->integrity, 0, sizeof(struct blk_integrity));
 }
 EXPORT_SYMBOL(blk_integrity_unregister);

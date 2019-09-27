@@ -1,8 +1,20 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*******************************************************************************
 
   Copyright(c) 2006 Tundra Semiconductor Corporation.
 
+  This program is free software; you can redistribute it and/or modify it
+  under the terms of the GNU General Public License as published by the Free
+  Software Foundation; either version 2 of the License, or (at your option)
+  any later version.
+
+  This program is distributed in the hope that it will be useful, but WITHOUT
+  ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+  FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+  more details.
+
+  You should have received a copy of the GNU General Public License along with
+  this program; if not, write to the Free Software Foundation, Inc., 59
+  Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 *******************************************************************************/
 
@@ -140,8 +152,6 @@ struct tsi108_prv_data {
 	u32 msg_enable;			/* debug message level */
 	struct mii_if_info mii_if;
 	unsigned int init_media;
-
-	struct platform_device *pdev;
 };
 
 /* Structure for a device driver */
@@ -154,7 +164,7 @@ static struct platform_driver tsi_eth_driver = {
 	},
 };
 
-static void tsi108_timed_checker(struct timer_list *t);
+static void tsi108_timed_checker(unsigned long dev_ptr);
 
 #ifdef DEBUG
 static void dump_eth_one(struct net_device *dev)
@@ -371,10 +381,9 @@ tsi108_stat_carry_one(int carry, int carry_bit, int carry_shift,
 static void tsi108_stat_carry(struct net_device *dev)
 {
 	struct tsi108_prv_data *data = netdev_priv(dev);
-	unsigned long flags;
 	u32 carry1, carry2;
 
-	spin_lock_irqsave(&data->misclock, flags);
+	spin_lock_irq(&data->misclock);
 
 	carry1 = TSI_READ(TSI108_STAT_CARRY1);
 	carry2 = TSI_READ(TSI108_STAT_CARRY2);
@@ -442,7 +451,7 @@ static void tsi108_stat_carry(struct net_device *dev)
 			      TSI108_STAT_TXPAUSEDROP_CARRY,
 			      &data->tx_pause_drop);
 
-	spin_unlock_irqrestore(&data->misclock, flags);
+	spin_unlock_irq(&data->misclock);
 }
 
 /* Read a stat counter atomically with respect to carries.
@@ -694,18 +703,17 @@ static int tsi108_send_packet(struct sk_buff * skb, struct net_device *dev)
 		data->txskbs[tx] = skb;
 
 		if (i == 0) {
-			data->txring[tx].buf0 = dma_map_single(&data->pdev->dev,
-					skb->data, skb_headlen(skb),
-					DMA_TO_DEVICE);
+			data->txring[tx].buf0 = dma_map_single(NULL, skb->data,
+					skb_headlen(skb), DMA_TO_DEVICE);
 			data->txring[tx].len = skb_headlen(skb);
 			misc |= TSI108_TX_SOF;
 		} else {
 			const skb_frag_t *frag = &skb_shinfo(skb)->frags[i - 1];
 
-			data->txring[tx].buf0 =
-				skb_frag_dma_map(&data->pdev->dev, frag,
-						0, skb_frag_size(frag),
-						DMA_TO_DEVICE);
+			data->txring[tx].buf0 = skb_frag_dma_map(NULL, frag,
+								 0,
+								 skb_frag_size(frag),
+								 DMA_TO_DEVICE);
 			data->txring[tx].len = skb_frag_size(frag);
 		}
 
@@ -800,9 +808,9 @@ static int tsi108_refill_rx(struct net_device *dev, int budget)
 		if (!skb)
 			break;
 
-		data->rxring[rx].buf0 = dma_map_single(&data->pdev->dev,
-				skb->data, TSI108_RX_SKB_SIZE,
-				DMA_FROM_DEVICE);
+		data->rxring[rx].buf0 = dma_map_single(NULL, skb->data,
+							TSI108_RX_SKB_SIZE,
+							DMA_FROM_DEVICE);
 
 		/* Sometimes the hardware sets blen to zero after packet
 		 * reception, even though the manual says that it's only ever
@@ -879,7 +887,7 @@ static int tsi108_poll(struct napi_struct *napi, int budget)
 
 	if (num_received < budget) {
 		data->rxpending = 0;
-		napi_complete_done(napi, num_received);
+		napi_complete(napi);
 
 		TSI_WRITE(TSI108_EC_INTMASK,
 				     TSI_READ(TSI108_EC_INTMASK)
@@ -1300,15 +1308,15 @@ static int tsi108_open(struct net_device *dev)
 		       data->id, dev->irq, dev->name);
 	}
 
-	data->rxring = dma_alloc_coherent(&data->pdev->dev, rxring_size,
-					  &data->rxdma, GFP_KERNEL);
+	data->rxring = dma_zalloc_coherent(NULL, rxring_size, &data->rxdma,
+					   GFP_KERNEL);
 	if (!data->rxring)
 		return -ENOMEM;
 
-	data->txring = dma_alloc_coherent(&data->pdev->dev, txring_size,
-					  &data->txdma, GFP_KERNEL);
+	data->txring = dma_zalloc_coherent(NULL, txring_size, &data->txdma,
+					   GFP_KERNEL);
 	if (!data->txring) {
-		dma_free_coherent(&data->pdev->dev, rxring_size, data->rxring,
+		pci_free_consistent(NULL, rxring_size, data->rxring,
 				    data->rxdma);
 		return -ENOMEM;
 	}
@@ -1362,7 +1370,7 @@ static int tsi108_open(struct net_device *dev)
 
 	napi_enable(&data->napi);
 
-	timer_setup(&data->timer, tsi108_timed_checker, 0);
+	setup_timer(&data->timer, tsi108_timed_checker, (unsigned long)dev);
 	mod_timer(&data->timer, jiffies + 1);
 
 	tsi108_restart_rx(data, dev);
@@ -1420,10 +1428,10 @@ static int tsi108_close(struct net_device *dev)
 		dev_kfree_skb(skb);
 	}
 
-	dma_free_coherent(&data->pdev->dev,
+	dma_free_coherent(0,
 			    TSI108_RXRING_LEN * sizeof(rx_desc),
 			    data->rxring, data->rxdma);
-	dma_free_coherent(&data->pdev->dev,
+	dma_free_coherent(0,
 			    TSI108_TXRING_LEN * sizeof(tx_desc),
 			    data->txring, data->txdma);
 
@@ -1491,28 +1499,27 @@ static void tsi108_init_mac(struct net_device *dev)
 	TSI_WRITE(TSI108_EC_INTMASK, ~0);
 }
 
-static int tsi108_get_link_ksettings(struct net_device *dev,
-				     struct ethtool_link_ksettings *cmd)
-{
-	struct tsi108_prv_data *data = netdev_priv(dev);
-	unsigned long flags;
-
-	spin_lock_irqsave(&data->txlock, flags);
-	mii_ethtool_get_link_ksettings(&data->mii_if, cmd);
-	spin_unlock_irqrestore(&data->txlock, flags);
-
-	return 0;
-}
-
-static int tsi108_set_link_ksettings(struct net_device *dev,
-				     const struct ethtool_link_ksettings *cmd)
+static int tsi108_get_settings(struct net_device *dev, struct ethtool_cmd *cmd)
 {
 	struct tsi108_prv_data *data = netdev_priv(dev);
 	unsigned long flags;
 	int rc;
 
 	spin_lock_irqsave(&data->txlock, flags);
-	rc = mii_ethtool_set_link_ksettings(&data->mii_if, cmd);
+	rc = mii_ethtool_gset(&data->mii_if, cmd);
+	spin_unlock_irqrestore(&data->txlock, flags);
+
+	return rc;
+}
+
+static int tsi108_set_settings(struct net_device *dev, struct ethtool_cmd *cmd)
+{
+	struct tsi108_prv_data *data = netdev_priv(dev);
+	unsigned long flags;
+	int rc;
+
+	spin_lock_irqsave(&data->txlock, flags);
+	rc = mii_ethtool_sset(&data->mii_if, cmd);
 	spin_unlock_irqrestore(&data->txlock, flags);
 
 	return rc;
@@ -1528,8 +1535,8 @@ static int tsi108_do_ioctl(struct net_device *dev, struct ifreq *rq, int cmd)
 
 static const struct ethtool_ops tsi108_ethtool_ops = {
 	.get_link 	= ethtool_op_get_link,
-	.get_link_ksettings	= tsi108_get_link_ksettings,
-	.set_link_ksettings	= tsi108_set_link_ksettings,
+	.get_settings	= tsi108_get_settings,
+	.set_settings	= tsi108_set_settings,
 };
 
 static const struct net_device_ops tsi108_netdev_ops = {
@@ -1541,6 +1548,7 @@ static const struct net_device_ops tsi108_netdev_ops = {
 	.ndo_do_ioctl		= tsi108_do_ioctl,
 	.ndo_set_mac_address	= tsi108_set_mac,
 	.ndo_validate_addr	= eth_validate_addr,
+	.ndo_change_mtu		= eth_change_mtu,
 };
 
 static int
@@ -1568,7 +1576,6 @@ tsi108_init_one(struct platform_device *pdev)
 	printk("tsi108_eth%d: probe...\n", pdev->id);
 	data = netdev_priv(dev);
 	data->dev = dev;
-	data->pdev = pdev;
 
 	pr_debug("tsi108_eth%d:regs:phyresgs:phy:irq_num=0x%x:0x%x:0x%x:0x%x\n",
 			pdev->id, einfo->regs, einfo->phyregs,
@@ -1659,10 +1666,10 @@ regs_fail:
  * Thus, we have to do it using a timer.
  */
 
-static void tsi108_timed_checker(struct timer_list *t)
+static void tsi108_timed_checker(unsigned long dev_ptr)
 {
-	struct tsi108_prv_data *data = from_timer(data, t, timer);
-	struct net_device *dev = data->dev;
+	struct net_device *dev = (struct net_device *)dev_ptr;
+	struct tsi108_prv_data *data = netdev_priv(dev);
 
 	tsi108_check_phy(dev);
 	tsi108_check_rxring(dev);

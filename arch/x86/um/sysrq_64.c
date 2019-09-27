@@ -7,7 +7,6 @@
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/sched.h>
-#include <linux/sched/debug.h>
 #include <linux/utsname.h>
 #include <asm/current.h>
 #include <asm/ptrace.h>

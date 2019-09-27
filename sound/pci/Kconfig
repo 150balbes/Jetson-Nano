@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0-only
 # ALSA PCI drivers
 
 menuconfig SND_PCI
@@ -176,7 +175,7 @@ config SND_BT87X
 	help
 	  If you want to record audio from TV cards based on
 	  Brooktree Bt878/Bt879 chips, say Y here and read
-	  <file:Documentation/sound/cards/bt87x.rst>.
+	  <file:Documentation/sound/alsa/Bt87x.txt>.
 
 	  To compile this driver as a module, choose M here: the module
 	  will be called snd-bt87x.
@@ -211,7 +210,7 @@ config SND_CMIPCI
 	help
 	  If you want to use soundcards based on C-Media CMI8338, CMI8738,
 	  CMI8768 or CMI8770 chips, say Y here and read
-	  <file:Documentation/sound/cards/cmipci.rst>.
+	  <file:Documentation/sound/alsa/CMIPCI.txt>.
 
 	  To compile this driver as a module, choose M here: the module
 	  will be called snd-cmipci.
@@ -466,25 +465,17 @@ config SND_EMU10K1
 	select SND_RAWMIDI
 	select SND_AC97_CODEC
 	select SND_TIMER
-	select SND_SEQ_DEVICE if SND_SEQUENCER != n
 	depends on ZONE_DMA
 	help
 	  Say Y to include support for Sound Blaster PCI 512, Live!,
 	  Audigy and E-mu APS (partially supported) soundcards.
 
 	  The confusing multitude of mixer controls is documented in
-	  <file:Documentation/sound/cards/sb-live-mixer.rst> and
-	  <file:Documentation/sound/cards/audigy-mixer.rst>.
+	  <file:Documentation/sound/alsa/SB-Live-mixer.txt> and
+	  <file:Documentation/sound/alsa/Audigy-mixer.txt>.
 
 	  To compile this driver as a module, choose M here: the module
 	  will be called snd-emu10k1.
-
-# select SEQ stuff to min(SND_SEQUENCER,SND_XXX)
-config SND_EMU10K1_SEQ
-	def_tristate SND_SEQUENCER && SND_EMU10K1
-	select SND_SEQ_MIDI_EMUL
-	select SND_SEQ_VIRMIDI
-	select SND_SYNTH_EMUX
 
 config SND_EMU10K1X
 	tristate "Emu10k1X (Dell OEM Version)"
@@ -736,7 +727,7 @@ config SND_MIXART
 	select SND_PCM
 	help
 	  If you want to use Digigram miXart soundcards, say Y here and
-	  read <file:Documentation/sound/cards/mixart.rst>.
+	  read <file:Documentation/sound/alsa/MIXART.txt>.
 
 	  To compile this driver as a module, choose M here: the module
 	  will be called snd-mixart.

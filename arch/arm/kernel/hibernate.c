@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Hibernation support specific for ARM
  *
@@ -12,6 +11,8 @@
  *  https://patchwork.kernel.org/patch/96442/
  *
  * Copyright (C) 2006 Rafael J. Wysocki <rjw@sisk.pl>
+ *
+ * License terms: GNU General Public License (GPL) version 2
  */
 
 #include <linux/mm.h>

@@ -1,8 +1,16 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * (c) Copyright 2002-2010, Ralink Technology, Inc.
  * Copyright (C) 2014 Felix Fietkau <nbd@openwrt.org>
  * Copyright (C) 2015 Jakub Kicinski <kubakici@wp.pl>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2
+ * as published by the Free Software Foundation
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
  */
 
 #include <linux/kernel.h>
@@ -50,7 +58,8 @@ static inline void trace_mt_mcu_msg_send_cs(struct mt7601u_dev *dev,
 	trace_mt_mcu_msg_send(dev, skb, csum, need_resp);
 }
 
-static struct sk_buff *mt7601u_mcu_msg_alloc(const void *data, int len)
+static struct sk_buff *
+mt7601u_mcu_msg_alloc(struct mt7601u_dev *dev, const void *data, int len)
 {
 	struct sk_buff *skb;
 
@@ -59,7 +68,7 @@ static struct sk_buff *mt7601u_mcu_msg_alloc(const void *data, int len)
 	skb = alloc_skb(len + MT_DMA_HDR_LEN + 4, GFP_KERNEL);
 	if (skb) {
 		skb_reserve(skb, MT_DMA_HDR_LEN);
-		skb_put_data(skb, data, len);
+		memcpy(skb_put(skb, len), data, len);
 	}
 
 	return skb;
@@ -162,7 +171,7 @@ static int mt7601u_mcu_function_select(struct mt7601u_dev *dev,
 		.value = cpu_to_le32(val),
 	};
 
-	skb = mt7601u_mcu_msg_alloc(&msg, sizeof(msg));
+	skb = mt7601u_mcu_msg_alloc(dev, &msg, sizeof(msg));
 	if (!skb)
 		return -ENOMEM;
 	return mt7601u_mcu_msg_send(dev, skb, CMD_FUN_SET_OP, func == 5);
@@ -199,7 +208,7 @@ mt7601u_mcu_calibrate(struct mt7601u_dev *dev, enum mcu_calibrate cal, u32 val)
 		.value = cpu_to_le32(val),
 	};
 
-	skb = mt7601u_mcu_msg_alloc(&msg, sizeof(msg));
+	skb = mt7601u_mcu_msg_alloc(dev, &msg, sizeof(msg));
 	if (!skb)
 		return -ENOMEM;
 	return mt7601u_mcu_msg_send(dev, skb, CMD_CALIBRATION_OP, true);
@@ -412,7 +421,7 @@ static int mt7601u_load_firmware(struct mt7601u_dev *dev)
 					 MT_USB_DMA_CFG_TX_BULK_EN));
 
 	if (firmware_running(dev))
-		return firmware_request_cache(dev->dev, MT7601U_FIRMWARE);
+		return 0;
 
 	ret = request_firmware(&fw, MT7601U_FIRMWARE, dev->dev);
 	if (ret)

@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  *
  * sched-pipe.c
@@ -77,7 +76,7 @@ static void *worker_thread(void *__tdata)
 	return NULL;
 }
 
-int bench_sched_pipe(int argc, const char **argv)
+int bench_sched_pipe(int argc, const char **argv, const char *prefix __maybe_unused)
 {
 	struct thread_data threads[2], *td;
 	int pipe_1[2], pipe_2[2];

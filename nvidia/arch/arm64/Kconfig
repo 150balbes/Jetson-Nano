@@ -1,0 +1,44 @@
+config ARCH_TEGRA_18x_SOC
+	bool "Tegra 18x family SOC (Downstream options)"
+	select CPU_V8
+	select ARM_GIC
+	select ARM_GIC_PM
+	select COMMON_CLK
+	select SOC_BUS
+	select ARCH_REQUIRE_GPIOLIB
+	select PINCTRL
+	select ARCH_SUPPORTS_MSI if PCI_TEGRA
+	select PCI_MSI if PCI_TEGRA
+	select ARCH_TEGRA_APE
+	select ARCH_HAS_RESET_CONTROLLER
+	select ARM64_CPU_SUSPEND
+	default n
+	help
+	  NVIDIA Tegra Downstream options for 18x family of SoCs
+
+config ARCH_TEGRA_19x_SOC
+	bool "Tegra 19x family SOC (Downstream options)"
+	select PINCTRL
+	default n
+	help
+	  NVIDIA Tegra Downstream options for 19x family of SoCs
+
+config ARCH_TEGRA_23x_SOC
+	bool "Tegra 23x family SOC (Downstream options)"
+	select PINCTRL
+	default n
+	help
+	  NVIDIA Tegra Downstream options for 23x family of SoCs
+
+append_menu "Kernel Features"
+
+config TEGRA_EBP
+	bool "Tegra Early Boot Partition"
+	select ARM64_NON_SHARED_TLBI
+	select MINIMAL_GIC_INIT
+	default n
+	help
+	  NVIDIA Tegra single core stripped down configuration
+	  designed for fast boot time.
+
+endmenu

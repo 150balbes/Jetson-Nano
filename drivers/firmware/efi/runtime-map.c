@@ -1,7 +1,8 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * linux/drivers/efi/runtime-map.c
  * Copyright (C) 2013 Red Hat, Inc., Dave Young <dyoung@redhat.com>
+ *
+ * This file is released under the GPLv2.
  */
 
 #include <linux/string.h>
@@ -165,7 +166,7 @@ int __init efi_runtime_map_init(struct kobject *efi_kobj)
 	if (!efi_enabled(EFI_MEMMAP))
 		return 0;
 
-	map_entries = kcalloc(efi.memmap.nr_map, sizeof(entry), GFP_KERNEL);
+	map_entries = kzalloc(efi.memmap.nr_map * sizeof(entry), GFP_KERNEL);
 	if (!map_entries) {
 		ret = -ENOMEM;
 		goto out;

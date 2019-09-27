@@ -1,8 +1,12 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Performance counter callchain support - powerpc architecture code
  *
  * Copyright © 2009 Paul Mackerras, IBM Corporation.
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License
+ * as published by the Free Software Foundation; either version
+ * 2 of the License, or (at your option) any later version.
  */
 #include <linux/kernel.h>
 #include <linux/sched.h>
@@ -18,7 +22,6 @@
 #ifdef CONFIG_PPC64
 #include "../kernel/ppc32.h"
 #endif
-#include <asm/pte-walk.h>
 
 
 /*
@@ -124,7 +127,7 @@ static int read_user_stack_slow(void __user *ptr, void *buf, int nb)
 		return -EFAULT;
 
 	local_irq_save(flags);
-	ptep = find_current_mm_pte(pgdir, addr, NULL, &shift);
+	ptep = find_linux_pte_or_hugepte(pgdir, addr, NULL, &shift);
 	if (!ptep)
 		goto err_out;
 	if (!shift)

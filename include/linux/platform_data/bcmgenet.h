@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __LINUX_PLATFORM_DATA_BCMGENET_H__
 #define __LINUX_PLATFORM_DATA_BCMGENET_H__
 

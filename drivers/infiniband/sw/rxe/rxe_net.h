@@ -43,7 +43,11 @@ struct rxe_recv_sockets {
 	struct socket *sk6;
 };
 
-int rxe_net_add(const char *ibdev_name, struct net_device *ndev);
+extern struct rxe_recv_sockets recv_sockets;
+extern struct notifier_block rxe_net_notifier;
+void rxe_release_udp_tunnel(struct socket *sk);
+
+struct rxe_dev *rxe_net_add(struct net_device *ndev);
 
 int rxe_net_init(void);
 void rxe_net_exit(void);

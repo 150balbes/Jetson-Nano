@@ -1,20 +1,27 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * Samsung's Exynos SoC syscon reboot/poweroff nodes common definition.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  */
 
-&pmu_system_controller {
-	poweroff: syscon-poweroff {
-		compatible = "syscon-poweroff";
-		regmap = <&pmu_system_controller>;
-		offset = <0x330C>; /* PS_HOLD_CONTROL */
-		mask = <0x5200>; /* reset value */
-	};
+/ {
+	soc {
+		compatible = "simple-bus";
 
-	reboot: syscon-reboot {
-		compatible = "syscon-reboot";
-		regmap = <&pmu_system_controller>;
-		offset = <0x0400>; /* SWRESET */
-		mask = <0x1>;
+		poweroff: syscon-poweroff {
+			compatible = "syscon-poweroff";
+			regmap = <&pmu_system_controller>;
+			offset = <0x330C>; /* PS_HOLD_CONTROL */
+			mask = <0x5200>; /* reset value */
+		};
+
+		reboot: syscon-reboot {
+			compatible = "syscon-reboot";
+			regmap = <&pmu_system_controller>;
+			offset = <0x0400>; /* SWRESET */
+			mask = <0x1>;
+		};
 	};
 };

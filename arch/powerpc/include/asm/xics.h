@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * Common definitions across all variants of ICP and ICS interrupt
  * controllers.
@@ -58,7 +57,7 @@ struct icp_ops {
 	void (*teardown_cpu)(void);
 	void (*flush_ipi)(void);
 #ifdef CONFIG_SMP
-	void (*cause_ipi)(int cpu);
+	void (*cause_ipi)(int cpu, unsigned long data);
 	irq_handler_t ipi_action;
 #endif
 };

@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Cryptographic API.
  *
@@ -10,6 +9,12 @@
  * Copyright (c) Alan Smithee.
  * Copyright (c) Andrew McDonald <andrew@mcdonald.org.uk>
  * Copyright (c) Jean-Francois Dive <jef@linuxbe.org>
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License as published by the Free
+ * Software Foundation; either version 2 of the License, or (at your option)
+ * any later version.
+ *
  */
 #include <crypto/internal/hash.h>
 #include <linux/init.h>
@@ -71,7 +76,7 @@ static struct shash_alg alg = {
 	.base		=	{
 		.cra_name	=	"sha1",
 		.cra_driver_name=	"sha1-generic",
-		.cra_priority	=	100,
+		.cra_flags	=	CRYPTO_ALG_TYPE_SHASH,
 		.cra_blocksize	=	SHA1_BLOCK_SIZE,
 		.cra_module	=	THIS_MODULE,
 	}
@@ -87,7 +92,7 @@ static void __exit sha1_generic_mod_fini(void)
 	crypto_unregister_shash(&alg);
 }
 
-subsys_initcall(sha1_generic_mod_init);
+module_init(sha1_generic_mod_init);
 module_exit(sha1_generic_mod_fini);
 
 MODULE_LICENSE("GPL");

@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * PKUnity General-Purpose Input/Output (GPIO) Registers
  */
@@ -32,7 +31,7 @@
  */
 #define GPIO_GEDR	(PKUNITY_GPIO_BASE + 0x0018)
 /*
- * Special Voltage Detect Reg GPIO_GPIR.
+ * Sepcial Voltage Detect Reg GPIO_GPIR.
  */
 #define GPIO_GPIR	(PKUNITY_GPIO_BASE + 0x0020)
 

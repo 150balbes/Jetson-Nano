@@ -1,8 +1,11 @@
-/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Defining registers address and its bit definitions of MAX77620 and MAX20024
  *
- * Copyright (C) 2016 NVIDIA CORPORATION. All rights reserved.
+ * Copyright (C) 2016-2019 NVIDIA CORPORATION. All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms and conditions of the GNU General Public License,
+ * version 2, as published by the Free Software Foundation.
  */
 
 #ifndef _MFD_MAX77620_H_
@@ -133,8 +136,8 @@
 #define MAX77620_FPS_PERIOD_MIN_US		40
 #define MAX20024_FPS_PERIOD_MIN_US		20
 
-#define MAX20024_FPS_PERIOD_MAX_US		2560
-#define MAX77620_FPS_PERIOD_MAX_US		5120
+#define MAX77620_FPS_PERIOD_MAX_US		2560
+#define MAX20024_FPS_PERIOD_MAX_US		5120
 
 #define MAX77620_REG_FPS_GPIO1			0x54
 #define MAX77620_REG_FPS_GPIO2			0x55
@@ -249,6 +252,7 @@
 #define MAX77620_ONOFFCNFG2_WD_RST_WK		BIT(6)
 #define MAX77620_ONOFFCNFG2_SLP_LPM_MSK		BIT(5)
 #define MAX77620_ONOFFCNFG2_WK_ALARM1		BIT(2)
+#define MAX77620_ONOFFCNFG2_WK_ALARM2		BIT(1)
 #define MAX77620_ONOFFCNFG2_WK_EN0		BIT(0)
 
 #define MAX77620_GLBLM_MASK			BIT(0)
@@ -321,7 +325,6 @@ enum max77620_fps_src {
 enum max77620_chip_id {
 	MAX77620,
 	MAX20024,
-	MAX77663,
 };
 
 struct max77620_chip {

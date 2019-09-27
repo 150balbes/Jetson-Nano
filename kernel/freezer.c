@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * kernel/freezer.c - Function to freeze a process
  *
@@ -16,9 +15,7 @@
 atomic_t system_freezing_cnt = ATOMIC_INIT(0);
 EXPORT_SYMBOL(system_freezing_cnt);
 
-/* indicate whether PM freezing is in effect, protected by
- * system_transition_mutex
- */
+/* indicate whether PM freezing is in effect, protected by pm_mutex */
 bool pm_freezing;
 bool pm_nosig_freezing;
 

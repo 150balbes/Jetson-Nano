@@ -12,6 +12,7 @@ Example:
 	pmic@5b {
 		compatible = "active-semi,act8945a";
 		reg = <0x5b>;
+		status = "okay";
 
 		active-semi,vsel-high;
 
@@ -78,5 +79,6 @@ Example:
 			active-semi,input-voltage-threshold-microvolt = <6600>;
 			active-semi,precondition-timeout = <40>;
 			active-semi,total-timeout = <3>;
+			status = "okay";
 		};
 	};

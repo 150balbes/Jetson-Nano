@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * DSM-G600 board-level PCI initialization
  *
@@ -10,6 +9,11 @@
  *	Copyright (C) 2003-2004 MontaVista Software, Inc.
  *
  * Maintainer: http://www.nslu2-linux.org/
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
  */
 
 #include <linux/pci.h>
@@ -17,8 +21,6 @@
 #include <linux/irq.h>
 #include <asm/mach/pci.h>
 #include <asm/mach-types.h>
-
-#include "irqs.h"
 
 #define MAX_DEV		4
 #define IRQ_LINES	3

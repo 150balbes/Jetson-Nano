@@ -1,0 +1,62 @@
+/*
+ * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms and conditions of the GNU General Public License,
+ * version 2, as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
+#include <dt-bindings/clock/tegra194-clock.h>
+#include <dt-bindings/reset/tegra194-reset.h>
+
+/ {
+	mttcan0: mttcan@c310000 {
+		 compatible = "nvidia,tegra194-mttcan";
+		 reg = <0x00 0x0c310000 0x00 0x400>,
+		     <0x00 0x0c311000 0x00 0x32>,
+		     <0x00 0x0c312000 0x00 0x1000>;
+		 reg-names = "can-regs", "glue-regs", "msg-ram";
+		 interrupts = <0 40 0x04 >;
+		 pll_source = "pllaon";
+		 clocks = <&bpmp_clks TEGRA194_CLK_CAN1_CORE>,
+			<&bpmp_clks TEGRA194_CLK_CAN1_HOST>,
+			<&bpmp_clks TEGRA194_CLK_CAN1>,
+			<&bpmp_clks TEGRA194_CLK_PLLAON>;
+		 clock-names = "can_core", "can_host","can","pllaon";
+		 resets = <&bpmp_resets TEGRA194_RESET_CAN1>;
+		 reset-names = "can";
+		 mram-params = <0 16 16 32 0 0 16 16 16>;
+		 tx-config = <0 16 0 64>;
+		 rx-config = <64 64 64>;
+		 status = "disabled";
+	 };
+
+	mttcan1: mttcan@c320000 {
+		 compatible = "nvidia,tegra194-mttcan";
+		 reg = <0x00 0x0c320000 0x00 0x400>,
+		     <0x00 0x0c321000 0x00 0x32>,
+		     <0x00 0x0c322000 0x00 0x1000>;
+		 reg-names = "can-regs", "glue-regs", "msg-ram";
+		 interrupts = <0 42 0x04 >;
+		 pll_source = "pllaon";
+		 clocks = <&bpmp_clks TEGRA194_CLK_CAN2_CORE>,
+			<&bpmp_clks TEGRA194_CLK_CAN2_HOST>,
+			<&bpmp_clks TEGRA194_CLK_CAN2>,
+			<&bpmp_clks TEGRA194_CLK_PLLAON>;
+		 clock-names = "can_core", "can_host","can","pllaon";
+		 resets = <&bpmp_resets TEGRA194_RESET_CAN2>;
+		 reset-names = "can";
+		 mram-params = <0 16 16 32 0 0 16 16 16>;
+		 tx-config = <0 16 0 64>;
+		 rx-config = <64 64 64>;
+		 status = "disabled";
+	 };
+};

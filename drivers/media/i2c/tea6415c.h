@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __INCLUDED_TEA6415C__
 #define __INCLUDED_TEA6415C__
 

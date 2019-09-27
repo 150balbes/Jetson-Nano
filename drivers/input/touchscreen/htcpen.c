@@ -1,8 +1,11 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * HTC Shift touchscreen driver
  *
  * Copyright (C) 2008 Pau Oliva Fora <pof@eslack.org>
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License version 2 as published
+ * by the Free Software Foundation.
  */
 
 #include <linux/errno.h>
@@ -216,7 +219,7 @@ static struct isa_driver htcpen_isa_driver = {
 	}
 };
 
-static const struct dmi_system_id htcshift_dmi_table[] __initconst = {
+static struct dmi_system_id htcshift_dmi_table[] __initdata = {
 	{
 		.ident = "Shift",
 		.matches = {

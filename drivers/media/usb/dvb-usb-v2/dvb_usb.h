@@ -1,9 +1,22 @@
-/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * DVB USB framework
  *
  * Copyright (C) 2004-6 Patrick Boettcher <patrick.boettcher@posteo.de>
  * Copyright (C) 2012 Antti Palosaari <crope@iki.fi>
+ *
+ *    This program is free software; you can redistribute it and/or modify
+ *    it under the terms of the GNU General Public License as published by
+ *    the Free Software Foundation; either version 2 of the License, or
+ *    (at your option) any later version.
+ *
+ *    This program is distributed in the hope that it will be useful,
+ *    but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *    GNU General Public License for more details.
+ *
+ *    You should have received a copy of the GNU General Public License along
+ *    with this program; if not, write to the Free Software Foundation, Inc.,
+ *    51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
 #ifndef DVB_USB_H
@@ -14,11 +27,11 @@
 #include <media/rc-core.h>
 #include <media/media-device.h>
 
-#include <media/dvb_frontend.h>
-#include <media/dvb_demux.h>
-#include <media/dvb_net.h>
-#include <media/dmxdev.h>
-#include <media/dvb-usb-ids.h>
+#include "dvb_frontend.h"
+#include "dvb_demux.h"
+#include "dvb_net.h"
+#include "dmxdev.h"
+#include "dvb-usb-ids.h"
 
 /*
  * device file: /dev/dvb/adapter[0-1]/frontend[0-2]
@@ -125,7 +138,7 @@ struct dvb_usb_driver_info {
 struct dvb_usb_rc {
 	const char *map_name;
 	u64 allowed_protos;
-	int (*change_protocol)(struct rc_dev *dev, u64 *rc_proto);
+	int (*change_protocol)(struct rc_dev *dev, u64 *rc_type);
 	int (*query) (struct dvb_usb_device *d);
 	unsigned int interval;
 	enum rc_driver_type driver_type;
@@ -133,7 +146,7 @@ struct dvb_usb_rc {
 };
 
 /**
- * usb streaming configuration for adapter
+ * usb streaming configration for adapter
  * @type: urb type
  * @count: count of used urbs
  * @endpoint: stream usb endpoint number
@@ -190,8 +203,6 @@ struct dvb_usb_adapter_properties {
  * @generic_bulk_ctrl_endpoint_response: bulk control endpoint number for
  *  receive
  * @generic_bulk_ctrl_delay: delay between bulk control sent and receive message
- * @probe: like probe on driver model
- * @disconnect: like disconnect on driver model
  * @identify_state: called to determine the firmware state (cold or warm) and
  *  return possible firmware file name to be loaded
  * @firmware: name of the firmware file to be loaded
@@ -228,8 +239,6 @@ struct dvb_usb_device_properties {
 	u8 generic_bulk_ctrl_endpoint_response;
 	unsigned int generic_bulk_ctrl_delay;
 
-	int (*probe)(struct dvb_usb_device *);
-	void (*disconnect)(struct dvb_usb_device *);
 #define WARM                  0
 #define COLD                  1
 	int (*identify_state) (struct dvb_usb_device *, const char **);

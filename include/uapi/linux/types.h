@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note */
 #ifndef _UAPI_LINUX_TYPES_H
 #define _UAPI_LINUX_TYPES_H
 
@@ -24,7 +23,11 @@
 #else
 #define __bitwise__
 #endif
+#ifdef __CHECK_ENDIAN__
 #define __bitwise __bitwise__
+#else
+#define __bitwise
+#endif
 
 typedef __u16 __bitwise __le16;
 typedef __u16 __bitwise __be16;
@@ -48,8 +51,6 @@ typedef __u32 __bitwise __wsum;
 #define __aligned_u64 __u64 __attribute__((aligned(8)))
 #define __aligned_be64 __be64 __attribute__((aligned(8)))
 #define __aligned_le64 __le64 __attribute__((aligned(8)))
-
-typedef unsigned __bitwise __poll_t;
 
 #endif /*  __ASSEMBLY__ */
 #endif /* _UAPI_LINUX_TYPES_H */

@@ -408,13 +408,13 @@ static ssize_t hp_sdc_rtc_read(struct file *file, char __user *buf,
 	return retval;
 }
 
-static __poll_t hp_sdc_rtc_poll(struct file *file, poll_table *wait)
+static unsigned int hp_sdc_rtc_poll(struct file *file, poll_table *wait)
 {
         unsigned long l;
 
 	l = 0;
         if (l != 0)
-                return EPOLLIN | EPOLLRDNORM;
+                return POLLIN | POLLRDNORM;
         return 0;
 }
 
@@ -441,10 +441,12 @@ static int hp_sdc_rtc_proc_show(struct seq_file *m, void *v)
 		seq_puts(m, "BBRTC\t\t: READ FAILED!\n");
 	} else {
 		seq_printf(m,
-			     "rtc_time\t: %ptRt\n"
-			     "rtc_date\t: %ptRd\n"
+			     "rtc_time\t: %02d:%02d:%02d\n"
+			     "rtc_date\t: %04d-%02d-%02d\n"
 			     "rtc_epoch\t: %04lu\n",
-			     &tm, &tm, epoch);
+			     tm.tm_hour, tm.tm_min, tm.tm_sec,
+			     tm.tm_year + 1900, tm.tm_mon + 1, 
+			     tm.tm_mday, epoch);
 	}
 
 	if (hp_sdc_rtc_read_rt(&tv)) {
@@ -506,6 +508,18 @@ static int hp_sdc_rtc_proc_show(struct seq_file *m, void *v)
 #undef YN
 #undef NY
 }
+
+static int hp_sdc_rtc_proc_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, hp_sdc_rtc_proc_show, NULL);
+}
+
+static const struct file_operations hp_sdc_rtc_proc_fops = {
+	.open		= hp_sdc_rtc_proc_open,
+	.read		= seq_read,
+	.llseek		= seq_lseek,
+	.release	= single_release,
+};
 
 static int hp_sdc_rtc_ioctl(struct file *file, 
 			    unsigned int cmd, unsigned long arg)
@@ -699,7 +713,7 @@ static int __init hp_sdc_rtc_init(void)
 	if (misc_register(&hp_sdc_rtc_dev) != 0)
 		printk(KERN_INFO "Could not register misc. dev for i8042 rtc\n");
 
-        proc_create_single("driver/rtc", 0, NULL, hp_sdc_rtc_proc_show);
+        proc_create("driver/rtc", 0, NULL, &hp_sdc_rtc_proc_fops);
 
 	printk(KERN_INFO "HP i8042 SDC + MSM-58321 RTC support loaded "
 			 "(RTC v " RTC_VERSION ")\n");

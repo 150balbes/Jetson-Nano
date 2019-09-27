@@ -1,9 +1,10 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * Greybus operations
  *
  * Copyright 2014 Google Inc.
  * Copyright 2014 Linaro Ltd.
+ *
+ * Released under the GPLv2 only.
  */
 
 #ifndef __OPERATION_H
@@ -97,15 +98,12 @@ struct gb_operation {
 	struct work_struct	work;
 	gb_operation_callback	callback;
 	struct completion	completion;
-	struct timer_list	timer;
 
 	struct kref		kref;
 	atomic_t		waiters;
 
 	int			active;
 	struct list_head	links;		/* connection->operations */
-
-	void			*private;
 };
 
 static inline bool
@@ -166,7 +164,6 @@ bool gb_operation_response_alloc(struct gb_operation *operation,
 
 int gb_operation_request_send(struct gb_operation *operation,
 				gb_operation_callback callback,
-				unsigned int timeout,
 				gfp_t gfp);
 int gb_operation_request_send_sync_timeout(struct gb_operation *operation,
 						unsigned int timeout);
@@ -205,17 +202,6 @@ static inline int gb_operation_unidirectional(struct gb_connection *connection,
 {
 	return gb_operation_unidirectional_timeout(connection, type,
 			request, request_size, GB_OPERATION_TIMEOUT_DEFAULT);
-}
-
-static inline void *gb_operation_get_data(struct gb_operation *operation)
-{
-	return operation->private;
-}
-
-static inline void gb_operation_set_data(struct gb_operation *operation,
-					 void *data)
-{
-	operation->private = data;
 }
 
 int gb_operation_init(void);

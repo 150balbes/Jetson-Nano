@@ -1,6 +1,22 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (C) 2009, Steven Rostedt <srostedt@redhat.com>
+ *
+ * ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; version 2 of the License (not later!)
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ *
+ * ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
  */
 #include <dirent.h>
 #include <stdio.h>
@@ -11,6 +27,7 @@
 #include <sys/stat.h>
 #include <sys/wait.h>
 #include <sys/mman.h>
+#include <pthread.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include <errno.h>
@@ -80,22 +97,22 @@ static void skip(int size)
 	};
 }
 
-static unsigned int read4(struct tep_handle *pevent)
+static unsigned int read4(struct pevent *pevent)
 {
 	unsigned int data;
 
 	if (do_read(&data, 4) < 0)
 		return 0;
-	return tep_read_number(pevent, &data, 4);
+	return __data2host4(pevent, data);
 }
 
-static unsigned long long read8(struct tep_handle *pevent)
+static unsigned long long read8(struct pevent *pevent)
 {
 	unsigned long long data;
 
 	if (do_read(&data, 8) < 0)
 		return 0;
-	return tep_read_number(pevent, &data, 8);
+	return __data2host8(pevent, data);
 }
 
 static char *read_string(void)
@@ -142,7 +159,7 @@ out:
 	return str;
 }
 
-static int read_proc_kallsyms(struct tep_handle *pevent)
+static int read_proc_kallsyms(struct pevent *pevent)
 {
 	unsigned int size;
 
@@ -165,7 +182,7 @@ static int read_proc_kallsyms(struct tep_handle *pevent)
 	return 0;
 }
 
-static int read_ftrace_printk(struct tep_handle *pevent)
+static int read_ftrace_printk(struct pevent *pevent)
 {
 	unsigned int size;
 	char *buf;
@@ -175,7 +192,7 @@ static int read_ftrace_printk(struct tep_handle *pevent)
 	if (!size)
 		return 0;
 
-	buf = malloc(size + 1);
+	buf = malloc(size);
 	if (buf == NULL)
 		return -1;
 
@@ -184,15 +201,13 @@ static int read_ftrace_printk(struct tep_handle *pevent)
 		return -1;
 	}
 
-	buf[size] = '\0';
-
 	parse_ftrace_printk(pevent, buf, size);
 
 	free(buf);
 	return 0;
 }
 
-static int read_header_files(struct tep_handle *pevent)
+static int read_header_files(struct pevent *pevent)
 {
 	unsigned long long size;
 	char *header_page;
@@ -219,13 +234,13 @@ static int read_header_files(struct tep_handle *pevent)
 		return -1;
 	}
 
-	if (!tep_parse_header_page(pevent, header_page, size,
-				   tep_get_long_size(pevent))) {
+	if (!pevent_parse_header_page(pevent, header_page, size,
+				      pevent_get_long_size(pevent))) {
 		/*
 		 * The commit field in the page is of type long,
 		 * use that instead, since it represents the kernel.
 		 */
-		tep_set_long_size(pevent, tep_get_header_page_size(pevent));
+		pevent_set_long_size(pevent, pevent->header_page_size_size);
 	}
 	free(header_page);
 
@@ -243,56 +258,44 @@ static int read_header_files(struct tep_handle *pevent)
 	return ret;
 }
 
-static int read_ftrace_file(struct tep_handle *pevent, unsigned long long size)
+static int read_ftrace_file(struct pevent *pevent, unsigned long long size)
 {
-	int ret;
 	char *buf;
 
 	buf = malloc(size);
-	if (buf == NULL) {
-		pr_debug("memory allocation failure\n");
+	if (buf == NULL)
+		return -1;
+
+	if (do_read(buf, size) < 0) {
+		free(buf);
 		return -1;
 	}
 
-	ret = do_read(buf, size);
-	if (ret < 0) {
-		pr_debug("error reading ftrace file.\n");
-		goto out;
-	}
-
-	ret = parse_ftrace_file(pevent, buf, size);
-	if (ret < 0)
-		pr_debug("error parsing ftrace file.\n");
-out:
+	parse_ftrace_file(pevent, buf, size);
 	free(buf);
-	return ret;
+	return 0;
 }
 
-static int read_event_file(struct tep_handle *pevent, char *sys,
-			   unsigned long long size)
+static int read_event_file(struct pevent *pevent, char *sys,
+			    unsigned long long size)
 {
-	int ret;
 	char *buf;
 
 	buf = malloc(size);
-	if (buf == NULL) {
-		pr_debug("memory allocation failure\n");
+	if (buf == NULL)
+		return -1;
+
+	if (do_read(buf, size) < 0) {
+		free(buf);
 		return -1;
 	}
 
-	ret = do_read(buf, size);
-	if (ret < 0)
-		goto out;
-
-	ret = parse_event_file(pevent, buf, size, sys);
-	if (ret < 0)
-		pr_debug("error parsing event file.\n");
-out:
+	parse_event_file(pevent, buf, size, sys);
 	free(buf);
-	return ret;
+	return 0;
 }
 
-static int read_ftrace_files(struct tep_handle *pevent)
+static int read_ftrace_files(struct pevent *pevent)
 {
 	unsigned long long size;
 	int count;
@@ -310,7 +313,7 @@ static int read_ftrace_files(struct tep_handle *pevent)
 	return 0;
 }
 
-static int read_event_files(struct tep_handle *pevent)
+static int read_event_files(struct pevent *pevent)
 {
 	unsigned long long size;
 	char *sys;
@@ -341,36 +344,6 @@ static int read_event_files(struct tep_handle *pevent)
 	return 0;
 }
 
-static int read_saved_cmdline(struct tep_handle *pevent)
-{
-	unsigned long long size;
-	char *buf;
-	int ret;
-
-	/* it can have 0 size */
-	size = read8(pevent);
-	if (!size)
-		return 0;
-
-	buf = malloc(size + 1);
-	if (buf == NULL) {
-		pr_debug("memory allocation failure\n");
-		return -1;
-	}
-
-	ret = do_read(buf, size);
-	if (ret < 0) {
-		pr_debug("error reading saved cmdlines\n");
-		goto out;
-	}
-
-	parse_saved_cmdline(pevent, buf, size);
-	ret = 0;
-out:
-	free(buf);
-	return ret;
-}
-
 ssize_t trace_report(int fd, struct trace_event *tevent, bool __repipe)
 {
 	char buf[BUFSIZ];
@@ -384,7 +357,7 @@ ssize_t trace_report(int fd, struct trace_event *tevent, bool __repipe)
 	int host_bigendian;
 	int file_long_size;
 	int file_page_size;
-	struct tep_handle *pevent = NULL;
+	struct pevent *pevent = NULL;
 	int err;
 
 	repipe = __repipe;
@@ -409,11 +382,10 @@ ssize_t trace_report(int fd, struct trace_event *tevent, bool __repipe)
 		return -1;
 	if (show_version)
 		printf("version = %s\n", version);
+	free(version);
 
-	if (do_read(buf, 1) < 0) {
-		free(version);
+	if (do_read(buf, 1) < 0)
 		return -1;
-	}
 	file_bigendian = buf[0];
 	host_bigendian = bigendian();
 
@@ -424,9 +396,9 @@ ssize_t trace_report(int fd, struct trace_event *tevent, bool __repipe)
 
 	pevent = tevent->pevent;
 
-	tep_set_flag(pevent, TEP_NSEC_OUTPUT);
-	tep_set_file_bigendian(pevent, file_bigendian);
-	tep_set_local_bigendian(pevent, host_bigendian);
+	pevent_set_flag(pevent, PEVENT_NSEC_OUTPUT);
+	pevent_set_file_bigendian(pevent, file_bigendian);
+	pevent_set_host_bigendian(pevent, host_bigendian);
 
 	if (do_read(buf, 1) < 0)
 		goto out;
@@ -436,8 +408,8 @@ ssize_t trace_report(int fd, struct trace_event *tevent, bool __repipe)
 	if (!file_page_size)
 		goto out;
 
-	tep_set_long_size(pevent, file_long_size);
-	tep_set_page_size(pevent, file_page_size);
+	pevent_set_long_size(pevent, file_long_size);
+	pevent_set_page_size(pevent, file_page_size);
 
 	err = read_header_files(pevent);
 	if (err)
@@ -454,19 +426,14 @@ ssize_t trace_report(int fd, struct trace_event *tevent, bool __repipe)
 	err = read_ftrace_printk(pevent);
 	if (err)
 		goto out;
-	if (atof(version) >= 0.6) {
-		err = read_saved_cmdline(pevent);
-		if (err)
-			goto out;
-	}
 
 	size = trace_data_size;
 	repipe = false;
 
 	if (show_funcs) {
-		tep_print_funcs(pevent);
+		pevent_print_funcs(pevent);
 	} else if (show_printk) {
-		tep_print_printk(pevent);
+		pevent_print_printk(pevent);
 	}
 
 	pevent = NULL;
@@ -474,6 +441,5 @@ ssize_t trace_report(int fd, struct trace_event *tevent, bool __repipe)
 out:
 	if (pevent)
 		trace_event__cleanup(tevent);
-	free(version);
 	return size;
 }

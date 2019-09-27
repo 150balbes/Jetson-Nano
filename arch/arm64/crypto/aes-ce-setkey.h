@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 
 int ce_aes_setkey(struct crypto_tfm *tfm, const u8 *in_key,
 		  unsigned int key_len);

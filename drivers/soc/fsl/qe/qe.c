@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Copyright (C) 2006-2010 Freescale Semiconductor, Inc. All rights reserved.
  *
@@ -9,6 +8,11 @@
  * Description:
  * General Purpose functions for the global management of the
  * QUICC Engine (QE).
+ *
+ * This program is free software; you can redistribute  it and/or modify it
+ * under  the terms of  the GNU General  Public License as published by the
+ * Free Software Foundation;  either version 2 of the  License, or (at your
+ * option) any later version.
  */
 #include <linux/errno.h>
 #include <linux/sched.h>
@@ -62,7 +66,7 @@ static unsigned int qe_num_of_snum;
 
 static phys_addr_t qebase = -1;
 
-static phys_addr_t get_qe_base(void)
+phys_addr_t get_qe_base(void)
 {
 	struct device_node *qe;
 	int ret;
@@ -85,6 +89,8 @@ static phys_addr_t get_qe_base(void)
 
 	return qebase;
 }
+
+EXPORT_SYMBOL(get_qe_base);
 
 void qe_reset(void)
 {
@@ -196,9 +202,6 @@ unsigned int qe_get_brg_clk(void)
 }
 EXPORT_SYMBOL(qe_get_brg_clk);
 
-#define PVR_VER_836x	0x8083
-#define PVR_VER_832x	0x8084
-
 /* Program the BRG to the given sampling rate and multiplier
  *
  * @brg: the BRG, QE_BRG1 - QE_BRG16
@@ -225,9 +228,8 @@ int qe_setbrg(enum qe_clock brg, unsigned int rate, unsigned int multiplier)
 	/* Errata QE_General4, which affects some MPC832x and MPC836x SOCs, says
 	   that the BRG divisor must be even if you're not using divide-by-16
 	   mode. */
-	if (pvr_version_is(PVR_VER_836x) || pvr_version_is(PVR_VER_832x))
-		if (!div16 && (divisor & 1) && (divisor > 3))
-			divisor++;
+	if (!div16 && (divisor & 1) && (divisor > 3))
+		divisor++;
 
 	tempval = ((divisor - 1) << QE_BRGC_DIVISOR_SHIFT) |
 		QE_BRGC_ENABLE | div16;
@@ -419,7 +421,7 @@ static void qe_upload_microcode(const void *base,
 /*
  * Upload a microcode to the I-RAM at a specific address.
  *
- * See Documentation/powerpc/qe_firmware.rst for information on QE microcode
+ * See Documentation/powerpc/qe_firmware.txt for information on QE microcode
  * uploading.
  *
  * Currently, only version 1 is supported, so the 'version' field must be
@@ -584,7 +586,11 @@ struct qe_firmware_info *qe_get_firmware_info(void)
 	}
 
 	/* Find the 'firmware' child node */
-	fw = of_get_child_by_name(qe, "firmware");
+	for_each_child_of_node(qe, fw) {
+		if (strcmp(fw->name, "firmware") == 0)
+			break;
+	}
+
 	of_node_put(qe);
 
 	/* Did we find the 'firmware' node? */
@@ -724,5 +730,9 @@ static struct platform_driver qe_driver = {
 	.resume = qe_resume,
 };
 
-builtin_platform_driver(qe_driver);
+static int __init qe_drv_init(void)
+{
+	return platform_driver_register(&qe_driver);
+}
+device_initcall(qe_drv_init);
 #endif /* defined(CONFIG_SUSPEND) && defined(CONFIG_PPC_85xx) */

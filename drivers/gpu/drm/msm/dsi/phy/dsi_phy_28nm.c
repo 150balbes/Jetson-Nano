@@ -1,6 +1,14 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2015, The Linux Foundation. All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 and
+ * only version 2 as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
  */
 
 #include "dsi_phy.h"
@@ -59,7 +67,7 @@ static void dsi_28nm_phy_regulator_ctrl(struct msm_dsi_phy *phy, bool enable)
 }
 
 static int dsi_28nm_phy_enable(struct msm_dsi_phy *phy, int src_pll_id,
-				struct msm_dsi_phy_clk_request *clk_req)
+		const unsigned long bit_rate, const unsigned long esc_rate)
 {
 	struct msm_dsi_dphy_timing *timing = &phy->timing;
 	int i;
@@ -67,8 +75,8 @@ static int dsi_28nm_phy_enable(struct msm_dsi_phy *phy, int src_pll_id,
 
 	DBG("");
 
-	if (msm_dsi_dphy_timing_calc(timing, clk_req)) {
-		DRM_DEV_ERROR(&phy->pdev->dev,
+	if (msm_dsi_dphy_timing_calc(timing, bit_rate, esc_rate)) {
+		dev_err(&phy->pdev->dev,
 			"%s: D-PHY timing calculation failed\n", __func__);
 		return -EINVAL;
 	}
@@ -136,7 +144,6 @@ const struct msm_dsi_phy_cfg dsi_phy_28nm_hpm_cfgs = {
 	.ops = {
 		.enable = dsi_28nm_phy_enable,
 		.disable = dsi_28nm_phy_disable,
-		.init = msm_dsi_phy_init_common,
 	},
 	.io_start = { 0xfd922b00, 0xfd923100 },
 	.num_dsi_phy = 2,
@@ -154,7 +161,6 @@ const struct msm_dsi_phy_cfg dsi_phy_28nm_lp_cfgs = {
 	.ops = {
 		.enable = dsi_28nm_phy_enable,
 		.disable = dsi_28nm_phy_disable,
-		.init = msm_dsi_phy_init_common,
 	},
 	.io_start = { 0x1a98500 },
 	.num_dsi_phy = 1,

@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifdef pr_fmt
 #undef pr_fmt
 #endif
@@ -8,7 +7,7 @@
 #include <linux/types.h>
 #include <linux/fs.h>
 #include <linux/buffer_head.h>
-#include "amigaffs.h"
+#include <linux/amigaffs.h>
 #include <linux/mutex.h>
 #include <linux/workqueue.h>
 
@@ -139,9 +138,9 @@ extern int	affs_remove_hash(struct inode *dir, struct buffer_head *rem_bh);
 extern int	affs_remove_header(struct dentry *dentry);
 extern u32	affs_checksum_block(struct super_block *sb, struct buffer_head *bh);
 extern void	affs_fix_checksum(struct super_block *sb, struct buffer_head *bh);
-extern void	affs_secs_to_datestamp(time64_t secs, struct affs_date *ds);
-extern umode_t	affs_prot_to_mode(u32 prot);
-extern void	affs_mode_to_prot(struct inode *inode);
+extern void	secs_to_datestamp(time64_t secs, struct affs_date *ds);
+extern umode_t	prot_to_mode(u32 prot);
+extern void	mode_to_prot(struct inode *inode);
 __printf(3, 4)
 extern void	affs_error(struct super_block *sb, const char *function,
 			   const char *fmt, ...);
@@ -163,7 +162,6 @@ extern void	affs_free_bitmap(struct super_block *sb);
 
 /* namei.c */
 
-extern const struct export_operations affs_export_ops;
 extern int	affs_hash_name(struct super_block *sb, const u8 *name, unsigned int len);
 extern struct dentry *affs_lookup(struct inode *dir, struct dentry *dentry, unsigned int);
 extern int	affs_unlink(struct inode *dir, struct dentry *dentry);
@@ -174,12 +172,13 @@ extern int	affs_link(struct dentry *olddentry, struct inode *dir,
 			  struct dentry *dentry);
 extern int	affs_symlink(struct inode *dir, struct dentry *dentry,
 			     const char *symname);
-extern int	affs_rename2(struct inode *old_dir, struct dentry *old_dentry,
+extern int	affs_rename(struct inode *old_dir, struct dentry *old_dentry,
 			    struct inode *new_dir, struct dentry *new_dentry,
 			    unsigned int flags);
 
 /* inode.c */
 
+extern unsigned long		 affs_parent_ino(struct inode *dir);
 extern struct inode		*affs_new_inode(struct inode *dir);
 extern int			 affs_notify_change(struct dentry *dentry, struct iattr *attr);
 extern void			 affs_evict_inode(struct inode *inode);
@@ -214,12 +213,6 @@ extern const struct address_space_operations	 affs_aops_ofs;
 extern const struct dentry_operations	 affs_dentry_operations;
 extern const struct dentry_operations	 affs_intl_dentry_operations;
 
-static inline bool affs_validblock(struct super_block *sb, int block)
-{
-	return(block >= AFFS_SB(sb)->s_reserved &&
-	       block < AFFS_SB(sb)->s_partition_size);
-}
-
 static inline void
 affs_set_blocksize(struct super_block *sb, int size)
 {
@@ -229,7 +222,7 @@ static inline struct buffer_head *
 affs_bread(struct super_block *sb, int block)
 {
 	pr_debug("%s: %d\n", __func__, block);
-	if (affs_validblock(sb, block))
+	if (block >= AFFS_SB(sb)->s_reserved && block < AFFS_SB(sb)->s_partition_size)
 		return sb_bread(sb, block);
 	return NULL;
 }
@@ -237,7 +230,7 @@ static inline struct buffer_head *
 affs_getblk(struct super_block *sb, int block)
 {
 	pr_debug("%s: %d\n", __func__, block);
-	if (affs_validblock(sb, block))
+	if (block >= AFFS_SB(sb)->s_reserved && block < AFFS_SB(sb)->s_partition_size)
 		return sb_getblk(sb, block);
 	return NULL;
 }
@@ -246,7 +239,7 @@ affs_getzeroblk(struct super_block *sb, int block)
 {
 	struct buffer_head *bh;
 	pr_debug("%s: %d\n", __func__, block);
-	if (affs_validblock(sb, block)) {
+	if (block >= AFFS_SB(sb)->s_reserved && block < AFFS_SB(sb)->s_partition_size) {
 		bh = sb_getblk(sb, block);
 		lock_buffer(bh);
 		memset(bh->b_data, 0 , sb->s_blocksize);
@@ -261,7 +254,7 @@ affs_getemptyblk(struct super_block *sb, int block)
 {
 	struct buffer_head *bh;
 	pr_debug("%s: %d\n", __func__, block);
-	if (affs_validblock(sb, block)) {
+	if (block >= AFFS_SB(sb)->s_reserved && block < AFFS_SB(sb)->s_partition_size) {
 		bh = sb_getblk(sb, block);
 		wait_on_buffer(bh);
 		set_buffer_uptodate(bh);

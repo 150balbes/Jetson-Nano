@@ -1,25 +1,14 @@
-// SPDX-License-Identifier: GPL-2.0
-#include "callchain.h"
+#include "util.h"
 #include "build-id.h"
 #include "hist.h"
 #include "map.h"
 #include "session.h"
-#include "namespaces.h"
 #include "sort.h"
-#include "units.h"
 #include "evlist.h"
 #include "evsel.h"
 #include "annotate.h"
-#include "srcline.h"
-#include "symbol.h"
-#include "thread.h"
 #include "ui/progress.h"
-#include <errno.h>
 #include <math.h>
-#include <inttypes.h>
-#include <sys/param.h>
-#include <linux/time64.h>
-#include <linux/zalloc.h>
 
 static bool hists__filter_entry_by_dso(struct hists *hists,
 				       struct hist_entry *he);
@@ -80,7 +69,7 @@ void hists__calc_col_len(struct hists *hists, struct hist_entry *h)
 	 */
 	if (h->ms.sym) {
 		symlen = h->ms.sym->namelen + 4;
-		if (verbose > 0)
+		if (verbose)
 			symlen += BITS_PER_LONG / 4 + 2 + 3;
 		hists__new_col_len(hists, HISTC_SYMBOL, symlen);
 	} else {
@@ -104,7 +93,7 @@ void hists__calc_col_len(struct hists *hists, struct hist_entry *h)
 	if (h->branch_info) {
 		if (h->branch_info->from.sym) {
 			symlen = (int)h->branch_info->from.sym->namelen + 4;
-			if (verbose > 0)
+			if (verbose)
 				symlen += BITS_PER_LONG / 4 + 2 + 3;
 			hists__new_col_len(hists, HISTC_SYMBOL_FROM, symlen);
 
@@ -118,7 +107,7 @@ void hists__calc_col_len(struct hists *hists, struct hist_entry *h)
 
 		if (h->branch_info->to.sym) {
 			symlen = (int)h->branch_info->to.sym->namelen + 4;
-			if (verbose > 0)
+			if (verbose)
 				symlen += BITS_PER_LONG / 4 + 2 + 3;
 			hists__new_col_len(hists, HISTC_SYMBOL_TO, symlen);
 
@@ -173,10 +162,6 @@ void hists__calc_col_len(struct hists *hists, struct hist_entry *h)
 			symlen = unresolved_col_width + 4 + 2;
 			hists__set_unres_dso_col_len(hists, HISTC_MEM_DADDR_DSO);
 		}
-
-		hists__new_col_len(hists, HISTC_MEM_PHYS_DADDR,
-				   unresolved_col_width + 4 + 2);
-
 	} else {
 		symlen = unresolved_col_width + 4 + 2;
 		hists__new_col_len(hists, HISTC_MEM_DADDR_SYMBOL, symlen);
@@ -184,7 +169,6 @@ void hists__calc_col_len(struct hists *hists, struct hist_entry *h)
 		hists__set_unres_dso_col_len(hists, HISTC_MEM_DADDR_DSO);
 	}
 
-	hists__new_col_len(hists, HISTC_CGROUP_ID, 20);
 	hists__new_col_len(hists, HISTC_CPU, 3);
 	hists__new_col_len(hists, HISTC_SOCKET, 6);
 	hists__new_col_len(hists, HISTC_MEM_LOCKED, 6);
@@ -193,7 +177,6 @@ void hists__calc_col_len(struct hists *hists, struct hist_entry *h)
 	hists__new_col_len(hists, HISTC_MEM_LVL, 21 + 3);
 	hists__new_col_len(hists, HISTC_LOCAL_WEIGHT, 12);
 	hists__new_col_len(hists, HISTC_GLOBAL_WEIGHT, 12);
-	hists__new_col_len(hists, HISTC_TIME, 12);
 
 	if (h->srcline) {
 		len = MAX(strlen(h->srcline), strlen(sort_srcline.se_header));
@@ -213,7 +196,7 @@ void hists__calc_col_len(struct hists *hists, struct hist_entry *h)
 
 void hists__output_recalc_col_len(struct hists *hists, int max_rows)
 {
-	struct rb_node *next = rb_first_cached(&hists->entries);
+	struct rb_node *next = rb_first(&hists->entries);
 	struct hist_entry *n;
 	int row = 0;
 
@@ -246,14 +229,6 @@ static void he_stat__add_cpumode_period(struct he_stat *he_stat,
 	default:
 		break;
 	}
-}
-
-static long hist_time(unsigned long htime)
-{
-	unsigned long time_quantum = symbol_conf.time_quantum;
-	if (time_quantum)
-		return (htime / time_quantum) * time_quantum;
-	return htime;
 }
 
 static void he_stat__add_period(struct he_stat *he_stat, u64 period,
@@ -308,7 +283,7 @@ static bool hists__decay_entry(struct hists *hists, struct hist_entry *he)
 
 	if (!he->leaf) {
 		struct hist_entry *child;
-		struct rb_node *node = rb_first_cached(&he->hroot_out);
+		struct rb_node *node = rb_first(&he->hroot_out);
 		while (node) {
 			child = rb_entry(node, struct hist_entry, rb_node);
 			node = rb_next(node);
@@ -323,8 +298,8 @@ static bool hists__decay_entry(struct hists *hists, struct hist_entry *he)
 
 static void hists__delete_entry(struct hists *hists, struct hist_entry *he)
 {
-	struct rb_root_cached *root_in;
-	struct rb_root_cached *root_out;
+	struct rb_root *root_in;
+	struct rb_root *root_out;
 
 	if (he->parent_he) {
 		root_in  = &he->parent_he->hroot_in;
@@ -337,8 +312,8 @@ static void hists__delete_entry(struct hists *hists, struct hist_entry *he)
 		root_out = &hists->entries;
 	}
 
-	rb_erase_cached(&he->rb_node_in, root_in);
-	rb_erase_cached(&he->rb_node, root_out);
+	rb_erase(&he->rb_node_in, root_in);
+	rb_erase(&he->rb_node, root_out);
 
 	--hists->nr_entries;
 	if (!he->filtered)
@@ -349,7 +324,7 @@ static void hists__delete_entry(struct hists *hists, struct hist_entry *he)
 
 void hists__decay_entries(struct hists *hists, bool zap_user, bool zap_kernel)
 {
-	struct rb_node *next = rb_first_cached(&hists->entries);
+	struct rb_node *next = rb_first(&hists->entries);
 	struct hist_entry *n;
 
 	while (next) {
@@ -365,7 +340,7 @@ void hists__decay_entries(struct hists *hists, bool zap_user, bool zap_kernel)
 
 void hists__delete_entries(struct hists *hists)
 {
-	struct rb_node *next = rb_first_cached(&hists->entries);
+	struct rb_node *next = rb_first(&hists->entries);
 	struct hist_entry *n;
 
 	while (next) {
@@ -376,35 +351,15 @@ void hists__delete_entries(struct hists *hists)
 	}
 }
 
-struct hist_entry *hists__get_entry(struct hists *hists, int idx)
-{
-	struct rb_node *next = rb_first_cached(&hists->entries);
-	struct hist_entry *n;
-	int i = 0;
-
-	while (next) {
-		n = rb_entry(next, struct hist_entry, rb_node);
-		if (i == idx)
-			return n;
-
-		next = rb_next(&n->rb_node);
-		i++;
-	}
-
-	return NULL;
-}
-
 /*
  * histogram, sorted on item, collects periods
  */
 
 static int hist_entry__init(struct hist_entry *he,
 			    struct hist_entry *template,
-			    bool sample_self,
-			    size_t callchain_size)
+			    bool sample_self)
 {
 	*he = *template;
-	he->callchain_size = callchain_size;
 
 	if (symbol_conf.cumulate_callchain) {
 		he->stat_acc = malloc(sizeof(he->stat));
@@ -424,8 +379,11 @@ static int hist_entry__init(struct hist_entry *he,
 		 * adding new entries.  So we need to save a copy.
 		 */
 		he->branch_info = malloc(sizeof(*he->branch_info));
-		if (he->branch_info == NULL)
-			goto err;
+		if (he->branch_info == NULL) {
+			map__zput(he->ms.map);
+			free(he->stat_acc);
+			return -ENOMEM;
+		}
 
 		memcpy(he->branch_info, template->branch_info,
 		       sizeof(*he->branch_info));
@@ -439,58 +397,36 @@ static int hist_entry__init(struct hist_entry *he,
 		map__get(he->mem_info->daddr.map);
 	}
 
-	if (hist_entry__has_callchains(he) && symbol_conf.use_callchain)
+	if (symbol_conf.use_callchain)
 		callchain_init(he->callchain);
 
 	if (he->raw_data) {
 		he->raw_data = memdup(he->raw_data, he->raw_size);
-		if (he->raw_data == NULL)
-			goto err_infos;
-	}
 
-	if (he->srcline) {
-		he->srcline = strdup(he->srcline);
-		if (he->srcline == NULL)
-			goto err_rawdata;
+		if (he->raw_data == NULL) {
+			map__put(he->ms.map);
+			if (he->branch_info) {
+				map__put(he->branch_info->from.map);
+				map__put(he->branch_info->to.map);
+				free(he->branch_info);
+			}
+			if (he->mem_info) {
+				map__put(he->mem_info->iaddr.map);
+				map__put(he->mem_info->daddr.map);
+			}
+			free(he->stat_acc);
+			return -ENOMEM;
+		}
 	}
-
-	if (symbol_conf.res_sample) {
-		he->res_samples = calloc(sizeof(struct res_sample),
-					symbol_conf.res_sample);
-		if (!he->res_samples)
-			goto err_srcline;
-	}
-
 	INIT_LIST_HEAD(&he->pairs.node);
 	thread__get(he->thread);
-	he->hroot_in  = RB_ROOT_CACHED;
-	he->hroot_out = RB_ROOT_CACHED;
+	he->hroot_in  = RB_ROOT;
+	he->hroot_out = RB_ROOT;
 
 	if (!symbol_conf.report_hierarchy)
 		he->leaf = true;
 
 	return 0;
-
-err_srcline:
-	zfree(&he->srcline);
-
-err_rawdata:
-	zfree(&he->raw_data);
-
-err_infos:
-	if (he->branch_info) {
-		map__put(he->branch_info->from.map);
-		map__put(he->branch_info->to.map);
-		zfree(&he->branch_info);
-	}
-	if (he->mem_info) {
-		map__put(he->mem_info->iaddr.map);
-		map__put(he->mem_info->daddr.map);
-	}
-err:
-	map__zput(he->ms.map);
-	zfree(&he->stat_acc);
-	return -ENOMEM;
 }
 
 static void *hist_entry__zalloc(size_t size)
@@ -524,7 +460,7 @@ static struct hist_entry *hist_entry__new(struct hist_entry *template,
 
 	he = ops->new(callchain_size);
 	if (he) {
-		err = hist_entry__init(he, template, sample_self, callchain_size);
+		err = hist_entry__init(he, template, sample_self);
 		if (err) {
 			ops->free(he);
 			he = NULL;
@@ -543,7 +479,7 @@ static u8 symbol__parent_filter(const struct symbol *parent)
 
 static void hist_entry__add_callchain_period(struct hist_entry *he, u64 period)
 {
-	if (!hist_entry__has_callchains(he) || !symbol_conf.use_callchain)
+	if (!symbol_conf.use_callchain)
 		return;
 
 	he->hists->callchain_period += period;
@@ -562,9 +498,8 @@ static struct hist_entry *hists__findnew_entry(struct hists *hists,
 	int64_t cmp;
 	u64 period = entry->stat.period;
 	u64 weight = entry->stat.weight;
-	bool leftmost = true;
 
-	p = &hists->entries_in->rb_root.rb_node;
+	p = &hists->entries_in->rb_node;
 
 	while (*p != NULL) {
 		parent = *p;
@@ -590,9 +525,7 @@ static struct hist_entry *hists__findnew_entry(struct hists *hists,
 			 * This mem info was allocated from sample__resolve_mem
 			 * and will not be used anymore.
 			 */
-			mem_info__zput(entry->mem_info);
-
-			block_info__zput(entry->block_info);
+			zfree(&entry->mem_info);
 
 			/* If the map of an existing hist_entry has
 			 * become out-of-date due to an exec() or
@@ -609,10 +542,8 @@ static struct hist_entry *hists__findnew_entry(struct hists *hists,
 
 		if (cmp < 0)
 			p = &(*p)->rb_left;
-		else {
+		else
 			p = &(*p)->rb_right;
-			leftmost = false;
-		}
 	}
 
 	he = hist_entry__new(entry, sample_self);
@@ -624,7 +555,7 @@ static struct hist_entry *hists__findnew_entry(struct hists *hists,
 	hists->nr_entries++;
 
 	rb_link_node(&he->rb_node_in, parent, p);
-	rb_insert_color_cached(&he->rb_node_in, hists->entries_in, leftmost);
+	rb_insert_color(&he->rb_node_in, hists->entries_in);
 out:
 	if (sample_self)
 		he_stat__add_cpumode_period(&he->stat, al->cpumode, period);
@@ -633,56 +564,23 @@ out:
 	return he;
 }
 
-static unsigned random_max(unsigned high)
-{
-	unsigned thresh = -high % high;
-	for (;;) {
-		unsigned r = random();
-		if (r >= thresh)
-			return r % high;
-	}
-}
-
-static void hists__res_sample(struct hist_entry *he, struct perf_sample *sample)
-{
-	struct res_sample *r;
-	int j;
-
-	if (he->num_res < symbol_conf.res_sample) {
-		j = he->num_res++;
-	} else {
-		j = random_max(symbol_conf.res_sample);
-	}
-	r = &he->res_samples[j];
-	r->time = sample->time;
-	r->cpu = sample->cpu;
-	r->tid = sample->tid;
-}
-
 static struct hist_entry*
 __hists__add_entry(struct hists *hists,
 		   struct addr_location *al,
 		   struct symbol *sym_parent,
 		   struct branch_info *bi,
 		   struct mem_info *mi,
-		   struct block_info *block_info,
 		   struct perf_sample *sample,
 		   bool sample_self,
 		   struct hist_entry_ops *ops)
 {
-	struct namespaces *ns = thread__namespaces(al->thread);
 	struct hist_entry entry = {
 		.thread	= al->thread,
 		.comm = thread__comm(al->thread),
-		.cgroup_id = {
-			.dev = ns ? ns->link_info[CGROUP_NS_INDEX].dev : 0,
-			.ino = ns ? ns->link_info[CGROUP_NS_INDEX].ino : 0,
-		},
 		.ms = {
 			.map	= al->map,
 			.sym	= al->sym,
 		},
-		.srcline = (char *) al->srcline,
 		.socket	 = al->socket,
 		.cpu	 = al->cpu,
 		.cpumode = al->cpumode,
@@ -698,19 +596,13 @@ __hists__add_entry(struct hists *hists,
 		.hists	= hists,
 		.branch_info = bi,
 		.mem_info = mi,
-		.block_info = block_info,
 		.transaction = sample->transaction,
 		.raw_data = sample->raw_data,
 		.raw_size = sample->raw_size,
 		.ops = ops,
-		.time = hist_time(sample->time),
-	}, *he = hists__findnew_entry(hists, &entry, al, sample_self);
+	};
 
-	if (!hists->has_callchains && he && he->callchain_size != 0)
-		hists->has_callchains = true;
-	if (he && symbol_conf.res_sample)
-		hists__res_sample(he, sample);
-	return he;
+	return hists__findnew_entry(hists, &entry, al, sample_self);
 }
 
 struct hist_entry *hists__add_entry(struct hists *hists,
@@ -721,7 +613,7 @@ struct hist_entry *hists__add_entry(struct hists *hists,
 				    struct perf_sample *sample,
 				    bool sample_self)
 {
-	return __hists__add_entry(hists, al, sym_parent, bi, mi, NULL,
+	return __hists__add_entry(hists, al, sym_parent, bi, mi,
 				  sample, sample_self, NULL);
 }
 
@@ -734,20 +626,8 @@ struct hist_entry *hists__add_entry_ops(struct hists *hists,
 					struct perf_sample *sample,
 					bool sample_self)
 {
-	return __hists__add_entry(hists, al, sym_parent, bi, mi, NULL,
+	return __hists__add_entry(hists, al, sym_parent, bi, mi,
 				  sample, sample_self, ops);
-}
-
-struct hist_entry *hists__add_entry_block(struct hists *hists,
-					  struct addr_location *al,
-					  struct block_info *block_info)
-{
-	struct hist_entry entry = {
-		.block_info = block_info,
-		.hists = hists,
-	}, *he = hists__findnew_entry(hists, &entry, al, false);
-
-	return he;
 }
 
 static int
@@ -858,9 +738,12 @@ iter_prepare_branch_entry(struct hist_entry_iter *iter, struct addr_location *al
 }
 
 static int
-iter_add_single_branch_entry(struct hist_entry_iter *iter __maybe_unused,
+iter_add_single_branch_entry(struct hist_entry_iter *iter,
 			     struct addr_location *al __maybe_unused)
 {
+	/* to avoid calling callback function */
+	iter->he = NULL;
+
 	return 0;
 }
 
@@ -1055,7 +938,6 @@ iter_add_next_cumulative_entry(struct hist_entry_iter *iter,
 			.map = al->map,
 			.sym = al->sym,
 		},
-		.srcline = (char *) al->srcline,
 		.parent = iter->parent,
 		.raw_data = sample->raw_data,
 		.raw_size = sample->raw_size,
@@ -1087,7 +969,7 @@ iter_add_next_cumulative_entry(struct hist_entry_iter *iter,
 	iter->he = he;
 	he_cache[iter->curr++] = he;
 
-	if (hist_entry__has_callchains(he) && symbol_conf.use_callchain)
+	if (symbol_conf.use_callchain)
 		callchain_append(he->callchain, &cursor, sample->period);
 	return 0;
 }
@@ -1140,15 +1022,13 @@ int hist_entry_iter__add(struct hist_entry_iter *iter, struct addr_location *al,
 	int err, err2;
 	struct map *alm = NULL;
 
-	if (al)
+	if (al && al->map)
 		alm = map__get(al->map);
 
 	err = sample__resolve_callchain(iter->sample, &callchain_cursor, &iter->parent,
 					iter->evsel, al, max_stack_depth);
-	if (err) {
-		map__put(alm);
+	if (err)
 		return err;
-	}
 
 	err = iter->ops->prepare_entry(iter, al);
 	if (err)
@@ -1244,26 +1124,22 @@ void hist_entry__delete(struct hist_entry *he)
 	if (he->mem_info) {
 		map__zput(he->mem_info->iaddr.map);
 		map__zput(he->mem_info->daddr.map);
-		mem_info__zput(he->mem_info);
+		zfree(&he->mem_info);
 	}
 
-	if (he->block_info)
-		block_info__zput(he->block_info);
-
-	zfree(&he->res_samples);
 	zfree(&he->stat_acc);
 	free_srcline(he->srcline);
 	if (he->srcfile && he->srcfile[0])
-		zfree(&he->srcfile);
+		free(he->srcfile);
 	free_callchain(he->callchain);
-	zfree(&he->trace_output);
-	zfree(&he->raw_data);
+	free(he->trace_output);
+	free(he->raw_data);
 	ops->free(he);
 }
 
 /*
  * If this is not the last column, then we need to pad it according to the
- * pre-calculated max length for this column, otherwise don't bother adding
+ * pre-calculated max lenght for this column, otherwise don't bother adding
  * spaces because that would break viewing this with, for instance, 'less',
  * that would show tons of trailing spaces when a long C++ demangled method
  * names is sampled.
@@ -1324,7 +1200,6 @@ static void hist_entry__check_and_remove_filter(struct hist_entry *he,
 	case HIST_FILTER__GUEST:
 	case HIST_FILTER__HOST:
 	case HIST_FILTER__SOCKET:
-	case HIST_FILTER__C2C:
 	default:
 		return;
 	}
@@ -1382,17 +1257,16 @@ static void hist_entry__apply_hierarchy_filters(struct hist_entry *he)
 }
 
 static struct hist_entry *hierarchy_insert_entry(struct hists *hists,
-						 struct rb_root_cached *root,
+						 struct rb_root *root,
 						 struct hist_entry *he,
 						 struct hist_entry *parent_he,
 						 struct perf_hpp_list *hpp_list)
 {
-	struct rb_node **p = &root->rb_root.rb_node;
+	struct rb_node **p = &root->rb_node;
 	struct rb_node *parent = NULL;
 	struct hist_entry *iter, *new;
 	struct perf_hpp_fmt *fmt;
 	int64_t cmp;
-	bool leftmost = true;
 
 	while (*p != NULL) {
 		parent = *p;
@@ -1412,10 +1286,8 @@ static struct hist_entry *hierarchy_insert_entry(struct hists *hists,
 
 		if (cmp < 0)
 			p = &parent->rb_left;
-		else {
+		else
 			p = &parent->rb_right;
-			leftmost = false;
-		}
 	}
 
 	new = hist_entry__new(he, true);
@@ -1449,12 +1321,12 @@ static struct hist_entry *hierarchy_insert_entry(struct hists *hists,
 	}
 
 	rb_link_node(&new->rb_node_in, parent, p);
-	rb_insert_color_cached(&new->rb_node_in, root, leftmost);
+	rb_insert_color(&new->rb_node_in, root);
 	return new;
 }
 
 static int hists__hierarchy_insert_entry(struct hists *hists,
-					 struct rb_root_cached *root,
+					 struct rb_root *root,
 					 struct hist_entry *he)
 {
 	struct perf_hpp_list_node *node;
@@ -1483,8 +1355,7 @@ static int hists__hierarchy_insert_entry(struct hists *hists,
 	if (new_he) {
 		new_he->leaf = true;
 
-		if (hist_entry__has_callchains(new_he) &&
-		    symbol_conf.use_callchain) {
+		if (symbol_conf.use_callchain) {
 			callchain_cursor_reset(&callchain_cursor);
 			if (callchain_merge(&callchain_cursor,
 					    new_he->callchain,
@@ -1501,14 +1372,13 @@ static int hists__hierarchy_insert_entry(struct hists *hists,
 }
 
 static int hists__collapse_insert_entry(struct hists *hists,
-					struct rb_root_cached *root,
+					struct rb_root *root,
 					struct hist_entry *he)
 {
-	struct rb_node **p = &root->rb_root.rb_node;
+	struct rb_node **p = &root->rb_node;
 	struct rb_node *parent = NULL;
 	struct hist_entry *iter;
 	int64_t cmp;
-	bool leftmost = true;
 
 	if (symbol_conf.report_hierarchy)
 		return hists__hierarchy_insert_entry(hists, root, he);
@@ -1526,7 +1396,7 @@ static int hists__collapse_insert_entry(struct hists *hists,
 			if (symbol_conf.cumulate_callchain)
 				he_stat__add_stat(iter->stat_acc, he->stat_acc);
 
-			if (hist_entry__has_callchains(he) && symbol_conf.use_callchain) {
+			if (symbol_conf.use_callchain) {
 				callchain_cursor_reset(&callchain_cursor);
 				if (callchain_merge(&callchain_cursor,
 						    iter->callchain,
@@ -1539,21 +1409,19 @@ static int hists__collapse_insert_entry(struct hists *hists,
 
 		if (cmp < 0)
 			p = &(*p)->rb_left;
-		else {
+		else
 			p = &(*p)->rb_right;
-			leftmost = false;
-		}
 	}
 	hists->nr_entries++;
 
 	rb_link_node(&he->rb_node_in, parent, p);
-	rb_insert_color_cached(&he->rb_node_in, root, leftmost);
+	rb_insert_color(&he->rb_node_in, root);
 	return 1;
 }
 
-struct rb_root_cached *hists__get_rotate_entries_in(struct hists *hists)
+struct rb_root *hists__get_rotate_entries_in(struct hists *hists)
 {
-	struct rb_root_cached *root;
+	struct rb_root *root;
 
 	pthread_mutex_lock(&hists->lock);
 
@@ -1576,7 +1444,7 @@ static void hists__apply_filters(struct hists *hists, struct hist_entry *he)
 
 int hists__collapse_resort(struct hists *hists, struct ui_progress *prog)
 {
-	struct rb_root_cached *root;
+	struct rb_root *root;
 	struct rb_node *next;
 	struct hist_entry *n;
 	int ret;
@@ -1588,7 +1456,7 @@ int hists__collapse_resort(struct hists *hists, struct ui_progress *prog)
 
 	root = hists__get_rotate_entries_in(hists);
 
-	next = rb_first_cached(root);
+	next = rb_first(root);
 
 	while (next) {
 		if (session_done())
@@ -1596,7 +1464,7 @@ int hists__collapse_resort(struct hists *hists, struct ui_progress *prog)
 		n = rb_entry(next, struct hist_entry, rb_node_in);
 		next = rb_next(&n->rb_node_in);
 
-		rb_erase_cached(&n->rb_node_in, root);
+		rb_erase(&n->rb_node_in, root);
 		ret = hists__collapse_insert_entry(hists, &hists->entries_collapsed, n);
 		if (ret < 0)
 			return -1;
@@ -1667,7 +1535,7 @@ static void hierarchy_recalc_total_periods(struct hists *hists)
 	struct rb_node *node;
 	struct hist_entry *he;
 
-	node = rb_first_cached(&hists->entries);
+	node = rb_first(&hists->entries);
 
 	hists->stats.total_period = 0;
 	hists->stats.total_non_filtered_period = 0;
@@ -1687,14 +1555,13 @@ static void hierarchy_recalc_total_periods(struct hists *hists)
 	}
 }
 
-static void hierarchy_insert_output_entry(struct rb_root_cached *root,
+static void hierarchy_insert_output_entry(struct rb_root *root,
 					  struct hist_entry *he)
 {
-	struct rb_node **p = &root->rb_root.rb_node;
+	struct rb_node **p = &root->rb_node;
 	struct rb_node *parent = NULL;
 	struct hist_entry *iter;
 	struct perf_hpp_fmt *fmt;
-	bool leftmost = true;
 
 	while (*p != NULL) {
 		parent = *p;
@@ -1702,14 +1569,12 @@ static void hierarchy_insert_output_entry(struct rb_root_cached *root,
 
 		if (hist_entry__sort(he, iter) > 0)
 			p = &parent->rb_left;
-		else {
+		else
 			p = &parent->rb_right;
-			leftmost = false;
-		}
 	}
 
 	rb_link_node(&he->rb_node, parent, p);
-	rb_insert_color_cached(&he->rb_node, root, leftmost);
+	rb_insert_color(&he->rb_node, root);
 
 	/* update column width of dynamic entry */
 	perf_hpp_list__for_each_sort_list(he->hpp_list, fmt) {
@@ -1720,16 +1585,16 @@ static void hierarchy_insert_output_entry(struct rb_root_cached *root,
 
 static void hists__hierarchy_output_resort(struct hists *hists,
 					   struct ui_progress *prog,
-					   struct rb_root_cached *root_in,
-					   struct rb_root_cached *root_out,
+					   struct rb_root *root_in,
+					   struct rb_root *root_out,
 					   u64 min_callchain_hits,
 					   bool use_callchain)
 {
 	struct rb_node *node;
 	struct hist_entry *he;
 
-	*root_out = RB_ROOT_CACHED;
-	node = rb_first_cached(root_in);
+	*root_out = RB_ROOT;
+	node = rb_first(root_in);
 
 	while (node) {
 		he = rb_entry(node, struct hist_entry, rb_node_in);
@@ -1772,16 +1637,15 @@ static void hists__hierarchy_output_resort(struct hists *hists,
 	}
 }
 
-static void __hists__insert_output_entry(struct rb_root_cached *entries,
+static void __hists__insert_output_entry(struct rb_root *entries,
 					 struct hist_entry *he,
 					 u64 min_callchain_hits,
 					 bool use_callchain)
 {
-	struct rb_node **p = &entries->rb_root.rb_node;
+	struct rb_node **p = &entries->rb_node;
 	struct rb_node *parent = NULL;
 	struct hist_entry *iter;
 	struct perf_hpp_fmt *fmt;
-	bool leftmost = true;
 
 	if (use_callchain) {
 		if (callchain_param.mode == CHAIN_GRAPH_REL) {
@@ -1802,14 +1666,12 @@ static void __hists__insert_output_entry(struct rb_root_cached *entries,
 
 		if (hist_entry__sort(he, iter) > 0)
 			p = &(*p)->rb_left;
-		else {
+		else
 			p = &(*p)->rb_right;
-			leftmost = false;
-		}
 	}
 
 	rb_link_node(&he->rb_node, parent, p);
-	rb_insert_color_cached(&he->rb_node, entries, leftmost);
+	rb_insert_color(&he->rb_node, entries);
 
 	perf_hpp_list__for_each_sort_list(&perf_hpp_list, fmt) {
 		if (perf_hpp__is_dynamic_entry(fmt) &&
@@ -1819,10 +1681,9 @@ static void __hists__insert_output_entry(struct rb_root_cached *entries,
 }
 
 static void output_resort(struct hists *hists, struct ui_progress *prog,
-			  bool use_callchain, hists__resort_cb_t cb,
-			  void *cb_arg)
+			  bool use_callchain, hists__resort_cb_t cb)
 {
-	struct rb_root_cached *root;
+	struct rb_root *root;
 	struct rb_node *next;
 	struct hist_entry *n;
 	u64 callchain_total;
@@ -1852,14 +1713,14 @@ static void output_resort(struct hists *hists, struct ui_progress *prog,
 	else
 		root = hists->entries_in;
 
-	next = rb_first_cached(root);
-	hists->entries = RB_ROOT_CACHED;
+	next = rb_first(root);
+	hists->entries = RB_ROOT;
 
 	while (next) {
 		n = rb_entry(next, struct hist_entry, rb_node_in);
 		next = rb_next(&n->rb_node_in);
 
-		if (cb && cb(n, cb_arg))
+		if (cb && cb(n))
 			continue;
 
 		__hists__insert_output_entry(&hists->entries, n, min_callchain_hits, use_callchain);
@@ -1873,35 +1734,27 @@ static void output_resort(struct hists *hists, struct ui_progress *prog,
 	}
 }
 
-void perf_evsel__output_resort_cb(struct perf_evsel *evsel, struct ui_progress *prog,
-				  hists__resort_cb_t cb, void *cb_arg)
+void perf_evsel__output_resort(struct perf_evsel *evsel, struct ui_progress *prog)
 {
 	bool use_callchain;
 
 	if (evsel && symbol_conf.use_callchain && !symbol_conf.show_ref_callgraph)
-		use_callchain = evsel__has_callchain(evsel);
+		use_callchain = evsel->attr.sample_type & PERF_SAMPLE_CALLCHAIN;
 	else
 		use_callchain = symbol_conf.use_callchain;
 
-	use_callchain |= symbol_conf.show_branchflag_count;
-
-	output_resort(evsel__hists(evsel), prog, use_callchain, cb, cb_arg);
-}
-
-void perf_evsel__output_resort(struct perf_evsel *evsel, struct ui_progress *prog)
-{
-	return perf_evsel__output_resort_cb(evsel, prog, NULL, NULL);
+	output_resort(evsel__hists(evsel), prog, use_callchain, NULL);
 }
 
 void hists__output_resort(struct hists *hists, struct ui_progress *prog)
 {
-	output_resort(hists, prog, symbol_conf.use_callchain, NULL, NULL);
+	output_resort(hists, prog, symbol_conf.use_callchain, NULL);
 }
 
 void hists__output_resort_cb(struct hists *hists, struct ui_progress *prog,
 			     hists__resort_cb_t cb)
 {
-	output_resort(hists, prog, symbol_conf.use_callchain, cb, NULL);
+	output_resort(hists, prog, symbol_conf.use_callchain, cb);
 }
 
 static bool can_goto_child(struct hist_entry *he, enum hierarchy_move_dir hmd)
@@ -1920,7 +1773,7 @@ struct rb_node *rb_hierarchy_last(struct rb_node *node)
 	struct hist_entry *he = rb_entry(node, struct hist_entry, rb_node);
 
 	while (can_goto_child(he, HMD_NORMAL)) {
-		node = rb_last(&he->hroot_out.rb_root);
+		node = rb_last(&he->hroot_out);
 		he = rb_entry(node, struct hist_entry, rb_node);
 	}
 	return node;
@@ -1931,7 +1784,7 @@ struct rb_node *__rb_hierarchy_next(struct rb_node *node, enum hierarchy_move_di
 	struct hist_entry *he = rb_entry(node, struct hist_entry, rb_node);
 
 	if (can_goto_child(he, hmd))
-		node = rb_first_cached(&he->hroot_out);
+		node = rb_first(&he->hroot_out);
 	else
 		node = rb_next(node);
 
@@ -1969,7 +1822,7 @@ bool hist_entry__has_hierarchy_children(struct hist_entry *he, float limit)
 	if (he->leaf)
 		return false;
 
-	node = rb_first_cached(&he->hroot_out);
+	node = rb_first(&he->hroot_out);
 	child = rb_entry(node, struct hist_entry, rb_node);
 
 	while (node && child->filtered) {
@@ -2087,7 +1940,7 @@ static void hists__filter_by_type(struct hists *hists, int type, filter_fn_t fil
 	hists__reset_filter_stats(hists);
 	hists__reset_col_len(hists);
 
-	for (nd = rb_first_cached(&hists->entries); nd; nd = rb_next(nd)) {
+	for (nd = rb_first(&hists->entries); nd; nd = rb_next(nd)) {
 		struct hist_entry *h = rb_entry(nd, struct hist_entry, rb_node);
 
 		if (filter(hists, h))
@@ -2097,15 +1950,13 @@ static void hists__filter_by_type(struct hists *hists, int type, filter_fn_t fil
 	}
 }
 
-static void resort_filtered_entry(struct rb_root_cached *root,
-				  struct hist_entry *he)
+static void resort_filtered_entry(struct rb_root *root, struct hist_entry *he)
 {
-	struct rb_node **p = &root->rb_root.rb_node;
+	struct rb_node **p = &root->rb_node;
 	struct rb_node *parent = NULL;
 	struct hist_entry *iter;
-	struct rb_root_cached new_root = RB_ROOT_CACHED;
+	struct rb_root new_root = RB_ROOT;
 	struct rb_node *nd;
-	bool leftmost = true;
 
 	while (*p != NULL) {
 		parent = *p;
@@ -2113,24 +1964,22 @@ static void resort_filtered_entry(struct rb_root_cached *root,
 
 		if (hist_entry__sort(he, iter) > 0)
 			p = &(*p)->rb_left;
-		else {
+		else
 			p = &(*p)->rb_right;
-			leftmost = false;
-		}
 	}
 
 	rb_link_node(&he->rb_node, parent, p);
-	rb_insert_color_cached(&he->rb_node, root, leftmost);
+	rb_insert_color(&he->rb_node, root);
 
 	if (he->leaf || he->filtered)
 		return;
 
-	nd = rb_first_cached(&he->hroot_out);
+	nd = rb_first(&he->hroot_out);
 	while (nd) {
 		struct hist_entry *h = rb_entry(nd, struct hist_entry, rb_node);
 
 		nd = rb_next(nd);
-		rb_erase_cached(&h->rb_node, &he->hroot_out);
+		rb_erase(&h->rb_node, &he->hroot_out);
 
 		resort_filtered_entry(&new_root, h);
 	}
@@ -2141,14 +1990,14 @@ static void resort_filtered_entry(struct rb_root_cached *root,
 static void hists__filter_hierarchy(struct hists *hists, int type, const void *arg)
 {
 	struct rb_node *nd;
-	struct rb_root_cached new_root = RB_ROOT_CACHED;
+	struct rb_root new_root = RB_ROOT;
 
 	hists->stats.nr_non_filtered_samples = 0;
 
 	hists__reset_filter_stats(hists);
 	hists__reset_col_len(hists);
 
-	nd = rb_first_cached(&hists->entries);
+	nd = rb_first(&hists->entries);
 	while (nd) {
 		struct hist_entry *h = rb_entry(nd, struct hist_entry, rb_node);
 		int ret;
@@ -2192,12 +2041,12 @@ static void hists__filter_hierarchy(struct hists *hists, int type, const void *a
 	 * resort output after applying a new filter since filter in a lower
 	 * hierarchy can change periods in a upper hierarchy.
 	 */
-	nd = rb_first_cached(&hists->entries);
+	nd = rb_first(&hists->entries);
 	while (nd) {
 		struct hist_entry *h = rb_entry(nd, struct hist_entry, rb_node);
 
 		nd = rb_next(nd);
-		rb_erase_cached(&h->rb_node, &hists->entries);
+		rb_erase(&h->rb_node, &hists->entries);
 
 		resort_filtered_entry(&new_root, h);
 	}
@@ -2266,19 +2115,18 @@ void hists__inc_nr_samples(struct hists *hists, bool filtered)
 static struct hist_entry *hists__add_dummy_entry(struct hists *hists,
 						 struct hist_entry *pair)
 {
-	struct rb_root_cached *root;
+	struct rb_root *root;
 	struct rb_node **p;
 	struct rb_node *parent = NULL;
 	struct hist_entry *he;
 	int64_t cmp;
-	bool leftmost = true;
 
 	if (hists__has(hists, need_collapse))
 		root = &hists->entries_collapsed;
 	else
 		root = hists->entries_in;
 
-	p = &root->rb_root.rb_node;
+	p = &root->rb_node;
 
 	while (*p != NULL) {
 		parent = *p;
@@ -2291,10 +2139,8 @@ static struct hist_entry *hists__add_dummy_entry(struct hists *hists,
 
 		if (cmp < 0)
 			p = &(*p)->rb_left;
-		else {
+		else
 			p = &(*p)->rb_right;
-			leftmost = false;
-		}
 	}
 
 	he = hist_entry__new(pair, true);
@@ -2304,7 +2150,7 @@ static struct hist_entry *hists__add_dummy_entry(struct hists *hists,
 		if (symbol_conf.cumulate_callchain)
 			memset(he->stat_acc, 0, sizeof(he->stat));
 		rb_link_node(&he->rb_node_in, parent, p);
-		rb_insert_color_cached(&he->rb_node_in, root, leftmost);
+		rb_insert_color(&he->rb_node_in, root);
 		hists__inc_stats(hists, he);
 		he->dummy = true;
 	}
@@ -2313,16 +2159,15 @@ out:
 }
 
 static struct hist_entry *add_dummy_hierarchy_entry(struct hists *hists,
-						    struct rb_root_cached *root,
+						    struct rb_root *root,
 						    struct hist_entry *pair)
 {
 	struct rb_node **p;
 	struct rb_node *parent = NULL;
 	struct hist_entry *he;
 	struct perf_hpp_fmt *fmt;
-	bool leftmost = true;
 
-	p = &root->rb_root.rb_node;
+	p = &root->rb_node;
 	while (*p != NULL) {
 		int64_t cmp = 0;
 
@@ -2339,16 +2184,14 @@ static struct hist_entry *add_dummy_hierarchy_entry(struct hists *hists,
 
 		if (cmp < 0)
 			p = &parent->rb_left;
-		else {
+		else
 			p = &parent->rb_right;
-			leftmost = false;
-		}
 	}
 
 	he = hist_entry__new(pair, true);
 	if (he) {
 		rb_link_node(&he->rb_node_in, parent, p);
-		rb_insert_color_cached(&he->rb_node_in, root, leftmost);
+		rb_insert_color(&he->rb_node_in, root);
 
 		he->dummy = true;
 		he->hists = hists;
@@ -2365,9 +2208,9 @@ static struct hist_entry *hists__find_entry(struct hists *hists,
 	struct rb_node *n;
 
 	if (hists__has(hists, need_collapse))
-		n = hists->entries_collapsed.rb_root.rb_node;
+		n = hists->entries_collapsed.rb_node;
 	else
-		n = hists->entries_in->rb_root.rb_node;
+		n = hists->entries_in->rb_node;
 
 	while (n) {
 		struct hist_entry *iter = rb_entry(n, struct hist_entry, rb_node_in);
@@ -2384,10 +2227,10 @@ static struct hist_entry *hists__find_entry(struct hists *hists,
 	return NULL;
 }
 
-static struct hist_entry *hists__find_hierarchy_entry(struct rb_root_cached *root,
+static struct hist_entry *hists__find_hierarchy_entry(struct rb_root *root,
 						      struct hist_entry *he)
 {
-	struct rb_node *n = root->rb_root.rb_node;
+	struct rb_node *n = root->rb_node;
 
 	while (n) {
 		struct hist_entry *iter;
@@ -2412,13 +2255,13 @@ static struct hist_entry *hists__find_hierarchy_entry(struct rb_root_cached *roo
 	return NULL;
 }
 
-static void hists__match_hierarchy(struct rb_root_cached *leader_root,
-				   struct rb_root_cached *other_root)
+static void hists__match_hierarchy(struct rb_root *leader_root,
+				   struct rb_root *other_root)
 {
 	struct rb_node *nd;
 	struct hist_entry *pos, *pair;
 
-	for (nd = rb_first_cached(leader_root); nd; nd = rb_next(nd)) {
+	for (nd = rb_first(leader_root); nd; nd = rb_next(nd)) {
 		pos  = rb_entry(nd, struct hist_entry, rb_node_in);
 		pair = hists__find_hierarchy_entry(other_root, pos);
 
@@ -2434,7 +2277,7 @@ static void hists__match_hierarchy(struct rb_root_cached *leader_root,
  */
 void hists__match(struct hists *leader, struct hists *other)
 {
-	struct rb_root_cached *root;
+	struct rb_root *root;
 	struct rb_node *nd;
 	struct hist_entry *pos, *pair;
 
@@ -2449,7 +2292,7 @@ void hists__match(struct hists *leader, struct hists *other)
 	else
 		root = leader->entries_in;
 
-	for (nd = rb_first_cached(root); nd; nd = rb_next(nd)) {
+	for (nd = rb_first(root); nd; nd = rb_next(nd)) {
 		pos  = rb_entry(nd, struct hist_entry, rb_node_in);
 		pair = hists__find_entry(other, pos);
 
@@ -2460,13 +2303,13 @@ void hists__match(struct hists *leader, struct hists *other)
 
 static int hists__link_hierarchy(struct hists *leader_hists,
 				 struct hist_entry *parent,
-				 struct rb_root_cached *leader_root,
-				 struct rb_root_cached *other_root)
+				 struct rb_root *leader_root,
+				 struct rb_root *other_root)
 {
 	struct rb_node *nd;
 	struct hist_entry *pos, *leader;
 
-	for (nd = rb_first_cached(other_root); nd; nd = rb_next(nd)) {
+	for (nd = rb_first(other_root); nd; nd = rb_next(nd)) {
 		pos = rb_entry(nd, struct hist_entry, rb_node_in);
 
 		if (hist_entry__has_pairs(pos)) {
@@ -2509,7 +2352,7 @@ static int hists__link_hierarchy(struct hists *leader_hists,
  */
 int hists__link(struct hists *leader, struct hists *other)
 {
-	struct rb_root_cached *root;
+	struct rb_root *root;
 	struct rb_node *nd;
 	struct hist_entry *pos, *pair;
 
@@ -2525,7 +2368,7 @@ int hists__link(struct hists *leader, struct hists *other)
 	else
 		root = other->entries_in;
 
-	for (nd = rb_first_cached(root); nd; nd = rb_next(nd)) {
+	for (nd = rb_first(root); nd; nd = rb_next(nd)) {
 		pos = rb_entry(nd, struct hist_entry, rb_node_in);
 
 		if (!hist_entry__has_pairs(pos)) {
@@ -2593,85 +2436,6 @@ u64 hists__total_period(struct hists *hists)
 		hists->stats.total_period;
 }
 
-int __hists__scnprintf_title(struct hists *hists, char *bf, size_t size, bool show_freq)
-{
-	char unit;
-	int printed;
-	const struct dso *dso = hists->dso_filter;
-	struct thread *thread = hists->thread_filter;
-	int socket_id = hists->socket_filter;
-	unsigned long nr_samples = hists->stats.nr_events[PERF_RECORD_SAMPLE];
-	u64 nr_events = hists->stats.total_period;
-	struct perf_evsel *evsel = hists_to_evsel(hists);
-	const char *ev_name = perf_evsel__name(evsel);
-	char buf[512], sample_freq_str[64] = "";
-	size_t buflen = sizeof(buf);
-	char ref[30] = " show reference callgraph, ";
-	bool enable_ref = false;
-
-	if (symbol_conf.filter_relative) {
-		nr_samples = hists->stats.nr_non_filtered_samples;
-		nr_events = hists->stats.total_non_filtered_period;
-	}
-
-	if (perf_evsel__is_group_event(evsel)) {
-		struct perf_evsel *pos;
-
-		perf_evsel__group_desc(evsel, buf, buflen);
-		ev_name = buf;
-
-		for_each_group_member(pos, evsel) {
-			struct hists *pos_hists = evsel__hists(pos);
-
-			if (symbol_conf.filter_relative) {
-				nr_samples += pos_hists->stats.nr_non_filtered_samples;
-				nr_events += pos_hists->stats.total_non_filtered_period;
-			} else {
-				nr_samples += pos_hists->stats.nr_events[PERF_RECORD_SAMPLE];
-				nr_events += pos_hists->stats.total_period;
-			}
-		}
-	}
-
-	if (symbol_conf.show_ref_callgraph &&
-	    strstr(ev_name, "call-graph=no"))
-		enable_ref = true;
-
-	if (show_freq)
-		scnprintf(sample_freq_str, sizeof(sample_freq_str), " %d Hz,", evsel->attr.sample_freq);
-
-	nr_samples = convert_unit(nr_samples, &unit);
-	printed = scnprintf(bf, size,
-			   "Samples: %lu%c of event%s '%s',%s%sEvent count (approx.): %" PRIu64,
-			   nr_samples, unit, evsel->nr_members > 1 ? "s" : "",
-			   ev_name, sample_freq_str, enable_ref ? ref : " ", nr_events);
-
-
-	if (hists->uid_filter_str)
-		printed += snprintf(bf + printed, size - printed,
-				    ", UID: %s", hists->uid_filter_str);
-	if (thread) {
-		if (hists__has(hists, thread)) {
-			printed += scnprintf(bf + printed, size - printed,
-				    ", Thread: %s(%d)",
-				     (thread->comm_set ? thread__comm_str(thread) : ""),
-				    thread->tid);
-		} else {
-			printed += scnprintf(bf + printed, size - printed,
-				    ", Thread: %s",
-				     (thread->comm_set ? thread__comm_str(thread) : ""));
-		}
-	}
-	if (dso)
-		printed += scnprintf(bf + printed, size - printed,
-				    ", DSO: %s", dso->short_name);
-	if (socket_id > -1)
-		printed += scnprintf(bf + printed, size - printed,
-				    ", Processor Socket: %d", socket_id);
-
-	return printed;
-}
-
 int parse_filter_percentage(const struct option *opt __maybe_unused,
 			    const char *arg, int unset __maybe_unused)
 {
@@ -2679,10 +2443,8 @@ int parse_filter_percentage(const struct option *opt __maybe_unused,
 		symbol_conf.filter_relative = true;
 	else if (!strcmp(arg, "absolute"))
 		symbol_conf.filter_relative = false;
-	else {
-		pr_debug("Invalid percentage: %s\n", arg);
+	else
 		return -1;
-	}
 
 	return 0;
 }
@@ -2698,10 +2460,10 @@ int perf_hist_config(const char *var, const char *value)
 int __hists__init(struct hists *hists, struct perf_hpp_list *hpp_list)
 {
 	memset(hists, 0, sizeof(*hists));
-	hists->entries_in_array[0] = hists->entries_in_array[1] = RB_ROOT_CACHED;
+	hists->entries_in_array[0] = hists->entries_in_array[1] = RB_ROOT;
 	hists->entries_in = &hists->entries_in_array[0];
-	hists->entries_collapsed = RB_ROOT_CACHED;
-	hists->entries = RB_ROOT_CACHED;
+	hists->entries_collapsed = RB_ROOT;
+	hists->entries = RB_ROOT;
 	pthread_mutex_init(&hists->lock, NULL);
 	hists->socket_filter = -1;
 	hists->hpp_list = hpp_list;
@@ -2709,14 +2471,14 @@ int __hists__init(struct hists *hists, struct perf_hpp_list *hpp_list)
 	return 0;
 }
 
-static void hists__delete_remaining_entries(struct rb_root_cached *root)
+static void hists__delete_remaining_entries(struct rb_root *root)
 {
 	struct rb_node *node;
 	struct hist_entry *he;
 
-	while (!RB_EMPTY_ROOT(&root->rb_root)) {
-		node = rb_first_cached(root);
-		rb_erase_cached(node, root);
+	while (!RB_EMPTY_ROOT(root)) {
+		node = rb_first(root);
+		rb_erase(node, root);
 
 		he = rb_entry(node, struct hist_entry, rb_node_in);
 		hist_entry__delete(he);
@@ -2741,10 +2503,10 @@ static void hists_evsel__exit(struct perf_evsel *evsel)
 
 	list_for_each_entry_safe(node, tmp, &hists->hpp_formats, list) {
 		perf_hpp_list__for_each_format_safe(&node->hpp, fmt, pos) {
-			list_del_init(&fmt->list);
+			list_del(&fmt->list);
 			free(fmt);
 		}
-		list_del_init(&node->list);
+		list_del(&node->list);
 		free(node);
 	}
 }

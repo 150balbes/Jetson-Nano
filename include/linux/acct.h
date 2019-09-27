@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  *  BSD Process Accounting for Linux - Definitions
  *
@@ -20,6 +19,9 @@
 
 
 #ifdef CONFIG_BSD_PROCESS_ACCT
+struct vfsmount;
+struct super_block;
+struct pacct_struct;
 struct pid_namespace;
 extern int acct_parm[]; /* for sysctl */
 extern void acct_collect(long exitcode, int group_dead);

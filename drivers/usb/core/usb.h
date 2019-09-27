@@ -1,8 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
-/*
- * Released under the GPLv2 only.
- */
-
 #include <linux/pm.h>
 #include <linux/acpi.h>
 
@@ -36,12 +31,10 @@ extern void usb_deauthorize_interface(struct usb_interface *);
 extern void usb_authorize_interface(struct usb_interface *);
 extern void usb_detect_quirks(struct usb_device *udev);
 extern void usb_detect_interface_quirks(struct usb_device *udev);
-extern void usb_release_quirk_list(void);
 extern int usb_remove_device(struct usb_device *udev);
 
 extern int usb_get_device_descriptor(struct usb_device *dev,
 		unsigned int size);
-extern int usb_set_isoch_delay(struct usb_device *dev);
 extern int usb_get_bos_descriptor(struct usb_device *dev);
 extern void usb_release_bos_descriptor(struct usb_device *dev);
 extern char *usb_cache_string(struct usb_device *udev, int index);
@@ -61,8 +54,6 @@ extern void usb_kick_hub_wq(struct usb_device *dev);
 extern int usb_match_one_id_intf(struct usb_device *dev,
 				 struct usb_host_interface *intf,
 				 const struct usb_device_id *id);
-extern int usb_match_device(struct usb_device *dev,
-			    const struct usb_device_id *id);
 extern void usb_forced_unbind_intf(struct usb_interface *intf);
 extern void usb_unbind_and_rebind_marked_interfaces(struct usb_device *udev);
 
@@ -75,7 +66,6 @@ extern void usb_hub_cleanup(void);
 extern int usb_major_init(void);
 extern void usb_major_cleanup(void);
 extern int usb_device_supports_lpm(struct usb_device *udev);
-extern int usb_port_disable(struct usb_device *udev);
 
 #ifdef	CONFIG_PM
 
@@ -92,8 +82,7 @@ extern int usb_remote_wakeup(struct usb_device *dev);
 extern int usb_runtime_suspend(struct device *dev);
 extern int usb_runtime_resume(struct device *dev);
 extern int usb_runtime_idle(struct device *dev);
-extern int usb_enable_usb2_hardware_lpm(struct usb_device *udev);
-extern int usb_disable_usb2_hardware_lpm(struct usb_device *udev);
+extern int usb_set_usb2_hardware_lpm(struct usb_device *udev, int enable);
 
 #else
 
@@ -113,12 +102,7 @@ static inline int usb_autoresume_device(struct usb_device *udev)
 	return 0;
 }
 
-static inline int usb_enable_usb2_hardware_lpm(struct usb_device *udev)
-{
-	return 0;
-}
-
-static inline int usb_disable_usb2_hardware_lpm(struct usb_device *udev)
+static inline int usb_set_usb2_hardware_lpm(struct usb_device *udev, int enable)
 {
 	return 0;
 }
@@ -153,11 +137,6 @@ static inline int is_usb_port(const struct device *dev)
 	return dev->type == &usb_port_device_type;
 }
 
-static inline int is_root_hub(struct usb_device *udev)
-{
-	return (udev->parent == NULL);
-}
-
 /* Do the same for device drivers and interface drivers. */
 
 static inline int is_usb_device_driver(struct device_driver *drv)
@@ -174,6 +153,7 @@ extern const struct attribute_group *usb_device_groups[];
 extern const struct attribute_group *usb_interface_groups[];
 
 /* usbfs stuff */
+extern struct mutex usbfs_mutex;
 extern struct usb_driver usbfs_driver;
 extern const struct file_operations usbfs_devices_fops;
 extern const struct file_operations usbdev_file_operations;

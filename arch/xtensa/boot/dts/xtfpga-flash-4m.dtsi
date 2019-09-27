@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 / {
 	soc {
 		flash: flash@08000000 {

@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /* Based on net/wireless/trace.h */
 
 #undef TRACE_SYSTEM

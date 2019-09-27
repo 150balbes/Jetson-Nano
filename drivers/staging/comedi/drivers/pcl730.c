@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * comedi/drivers/pcl730.c
  * Driver for Advantech PCL-730 and clones

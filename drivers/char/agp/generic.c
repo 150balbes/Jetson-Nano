@@ -39,9 +39,7 @@
 #include <linux/sched.h>
 #include <linux/slab.h>
 #include <asm/io.h>
-#ifdef CONFIG_X86
-#include <asm/set_memory.h>
-#endif
+#include <asm/cacheflush.h>
 #include <asm/pgtable.h>
 #include "agp.h"
 
@@ -90,7 +88,13 @@ static int agp_get_key(void)
 
 void agp_alloc_page_array(size_t size, struct agp_memory *mem)
 {
-	mem->pages = kvmalloc(size, GFP_KERNEL);
+	mem->pages = NULL;
+
+	if (size <= 2*PAGE_SIZE)
+		mem->pages = kmalloc(size, GFP_KERNEL | __GFP_NOWARN);
+	if (mem->pages == NULL) {
+		mem->pages = vmalloc(size);
+	}
 }
 EXPORT_SYMBOL(agp_alloc_page_array);
 
@@ -1311,7 +1315,8 @@ static void ipi_handler(void *null)
 
 void global_cache_flush(void)
 {
-	on_each_cpu(ipi_handler, NULL, 1);
+	if (on_each_cpu(ipi_handler, NULL, 1) != 0)
+		panic(PFX "timed out waiting for the other CPUs!\n");
 }
 EXPORT_SYMBOL(global_cache_flush);
 

@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (C) 2010,2011 Google, Inc.
  * Copyright (C) 2011-2012 NVIDIA CORPORATION. All Rights Reserved.
@@ -11,6 +10,16 @@
  *
  * Portions based on mach-omap2's debug-macro.S
  * Copyright (C) 1994-1999 Russell King
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
  */
 
 #include <linux/serial_reg.h>
@@ -164,7 +173,7 @@
 
 		.macro	senduart, rd, rx
 		cmp	\rx, #0
-		strbne	\rd, [\rx, #UART_TX << UART_SHIFT]
+		strneb	\rd, [\rx, #UART_TX << UART_SHIFT]
 1001:
 		.endm
 

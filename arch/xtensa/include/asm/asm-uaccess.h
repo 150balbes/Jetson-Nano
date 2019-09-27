@@ -19,6 +19,9 @@
 #include <linux/errno.h>
 #include <asm/types.h>
 
+#define VERIFY_READ    0
+#define VERIFY_WRITE   1
+
 #include <asm/current.h>
 #include <asm/asm-offsets.h>
 #include <asm/processor.h>
@@ -31,6 +34,8 @@
 
 #define KERNEL_DS	0
 #define USER_DS		1
+
+#define get_ds		(KERNEL_DS)
 
 /*
  * get_fs reads current->thread.current_ds into a register.

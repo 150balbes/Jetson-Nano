@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0-only
 #
 # IIO imu drivers configuration
 #
@@ -40,9 +39,7 @@ config KMX61
 	  be called kmx61.
 
 source "drivers/iio/imu/inv_mpu6050/Kconfig"
-source "drivers/iio/imu/st_lsm6dsx/Kconfig"
 
-endmenu
 
 config IIO_ADIS_LIB
 	tristate
@@ -55,3 +52,5 @@ config IIO_ADIS_LIB_BUFFER
 	help
 	  A set of buffer helper functions for the Analog Devices ADIS* device
 	  family.
+
+endmenu

@@ -1,0 +1,213 @@
+NVIDIA Tegra PCIe controller (Synopsys DesignWare Core based)
+
+This PCIe host controller is based on the Synopsis Designware PCIe IP
+and thus inherits all the common properties defined in designware-pcie.txt.
+
+Required properties:
+- compatible: For Tegra19x, must contain "nvidia,tegra194-pcie".
+- device_type: Must be "pci"
+- reg: A list of physical base address and length for each set of controller
+  registers. Must contain an entry for each entry in the reg-names property.
+- reg-names: Must include the following entries:
+  "appl": Controller's application logic registers
+  "config": configuration space region
+  "atu_dma": iATU and DMA register
+- interrupts: A list of interrupt outputs of the controller. Must contain an
+  entry for each entry in the interrupt-names property.
+- interrupt-names: Must include the following entries:
+  "intr": The Tegra interrupt that is asserted for controller interrupts
+  "msi": The Tegra interrupt that is asserted when an MSI is received
+- bus-range: Range of bus numbers associated with this controller
+- #address-cells: Address representation for root ports (must be 3)
+  - cell 0 specifies the bus and device numbers of the root port:
+    [23:16]: bus number
+    [15:11]: device number
+  - cell 1 denotes the upper 32 address bits and should be 0
+  - cell 2 contains the lower 32 address bits and is used to translate to the
+    CPU address space
+- #size-cells: Size representation for root ports (must be 2)
+- ranges: Describes the translation of addresses for root ports and standard
+  PCI regions. The entries must be 6 cells each, where the first three cells
+  correspond to the address as described for the #address-cells property
+  above, the fourth cell is the physical CPU address to translate to and the
+  fifth and six cells are as described for the #size-cells property above.
+  - Entries setup the mapping for the standard I/O, memory and
+    prefetchable PCI regions. The first cell determines the type of region
+    that is setup:
+    - 0x81000000: I/O memory region
+    - 0x82000000: non-prefetchable memory region
+    - 0xc2000000: prefetchable memory region
+  Please refer to the standard PCI bus binding document for a more detailed
+  explanation.
+- #interrupt-cells: Size representation for interrupts (must be 1)
+- interrupt-map-mask and interrupt-map: Standard PCI IRQ mapping properties
+  Please refer to the standard PCI bus binding document for a more detailed
+  explanation.
+- clocks: Must contain an entry for each entry in clock-names.
+  See ../clocks/clock-bindings.txt for details.
+- clock-names: Must include the following entries:
+  - core_clk
+- resets: Must contain an entry for each entry in reset-names.
+  See ../reset/reset.txt for details.
+- reset-names: Must include the following entries:
+  - core_apb_rst
+  - core_rst
+- phys: Must contain a phandle to P2U PHY for each entry in phy-names.
+- phy-names: Must include an entry for each active lane. Note that the number
+  of entries does not have to (though usually will) be equal to the specified
+  number of lanes in XBAR configuration. Entries are of the form
+  "pcie-p2u-N": where N ranges from 0 to the value specified in xbar config
+- Controller dependent register offsets
+  - nvidia,cfg-link-cap-l1sub: L1SUB_CAP_L1SUB reg offset
+      0x154 - FPGA
+      0x194 - C1, C2 and C3
+      0x1b0 - C4
+      0x1c4 - C0 and C5
+  - nvidia,cap-pl16g-status: PL16G_CAP_PL16G_STATUS reg offset
+      0x164 - C1, C2 and C3
+      0x174 - C4
+      0x174 - C0 and C5
+  - nvidia,event-cntr-ctrl: EVENT_COUNTER_CONTROL reg offset
+      0x168 - FPGA
+      0x1a8 - C1, C2 and C3
+      0x1c4 - C4
+      0x1d8 - C0 and C5
+  - nvidia,event-cntr-data: EVENT_COUNTER_DATA reg offset
+      0x16c - FPGA
+      0x1ac - C1, C2 and C3
+      0x1c8 - C4
+      0x1dc - C0 and C5
+  - nvidia,cap_pl16g_cap_off: CAP_PL16G_CAP_OFF reg offset
+      0x178 - C1, C2 and C3
+      0x188 - C4
+      0x188 - C0 and C5
+  - nvidia,margin-port-cap: MARGIN_PORT_CAP_STATUS reg offset
+      0x180 - C1, C2 and C3
+      0x190 - C4
+      0x194 - C0 and C5
+  - nvidia,margin-lane-cntrl: MARGIN_LANE_CNTRL_STATUS reg offset
+      0x184 - C1, C2 and C3
+      0x194 - C4
+      0x198 - C0 and C5
+  - nvidia,dl-feature-cap: DATA_LINK_FEATURE_CAP reg offset
+      0x2dc - C1, C2 and C3
+      0x2f8 - C4
+      0x30c - C5
+- nvidia,controller-id : Controller specific ID
+      0x0 - C0
+      0x1 - C1
+      0x2 - C2
+      0x3 - C3
+      0x4 - C4
+      0x5 - C5
+- vddio-pex-ctl-supply: Regulator supply for PCIe side band signals
+
+Optional properties:
+- iommus: A reference to the IOMMU. See ../iommu/iommu.txt for details.
+- dma-coherent: Indicates that the hardware IP block can ensure the coherency
+  of the data transferred from/to the IP block. This can avoid the software
+  cache flush/invalid actions, and improve the performance significantly.
+- nvidia,max-speed: limits controllers max speed to this value.
+    1 - Gen-1
+    2 - Gen-2
+    3 - Gen-3
+    4 - Gen-4
+- nvidia,init-speed: limits controllers init speed to this value.
+    1 - Gen-1
+    2 - Gen-2
+    3 - Gen-3
+    4 - Gen-4
+- nvidia,disable-aspm-states : controls advertisement of ASPM states
+    bit-0 to '1' : disables advertisement of ASPM-L0s
+    bit-1 to '1' : disables advertisement of ASPM-L1. This also disables
+                 advertisement of ASPM-L1.1 and ASPM-L1.2
+    bit-2 to '1' : disables advertisement of ASPM-L1.1
+    bit-3 to '1' : disables advertisement of ASPM-L1.2
+- nvidia,disable-clock-request : gives a hint to driver that there is no
+    CLKREQ signal routing on board
+- nvidia,enable-fmon : gives a hint to driver that this a safety enabled
+    platform
+- nvidia,update_fc_fixup : needs it to improve perf when a platform is designed
+    in such a way that it satisfies at least one of the following conditions
+    1. If C0/C4/C5 run at x1/x2 link widths (irrespective of speed and MPS)
+    2. If C0/C1/C2/C3/C4/C5 operate at their respective max link widths and
+       a) speed is Gen-2 and MPS is 256B
+       b) speed is >= Gen-3 with any MPS
+- nvidia,cdm_check : Enables CDM checking. For more information, refer synopsis
+    data book
+- nvidia,enable-power-down : Enables power down of respective controller and
+    corresponding PLLs if they are not shared by any other entity
+- "nvidia,pex-wake" : Add PEX_WAKE gpio number to provide wake support.
+- "nvidia,tsa-config" : Add TSA configuration register address to configure MC
+    with production settings for PCIe. Note:- this is applicable only for C5
+- "nvidia,dma-poll" : Add this property to do polling instead of interrupt
+    mechanism during DMA operation. DMA polling will give accurate perf
+    numbers
+- "nvidia,dma-size" : Add this property to provide DMA size input, size will
+    set to 1 MB if this property is missing
+- "nvidia,disable-l1-cpm" : Add this property to disable ASPM L1-CPM for the
+    immediate end point
+- "nvidia,plat-gpios" : Add gpio number that needs to be configured before
+   system goes for enumeration
+
+Power supplies for Tegra194:
+//TODO
+
+
+Examples:
+=========
+
+Tegra194:
+--------
+
+SoC DTSI:
+
+	pcie_c1_rp {
+		compatible = "nvidia,tegra194-pcie", "snps,dw-pcie";
+		reg = <0x00 0x14100000 0x0 0x00020000   /* appl registers (128K)      */
+		       0x00 0x30000000 0x0 0x00040000   /* configuration space (256K) */
+		       0x00 0x30040000 0x0 0x00040000>; /* iATU_DMA reg space (256K)  */
+		reg-names = "appl", "config", "atu_dma";
+
+		status = "disabled";
+
+		#address-cells = <3>;
+		#size-cells = <2>;
+		device_type = "pci";
+		num-lanes = <1>;
+
+		clocks = <&bpmp_clks TEGRA194_CLK_PEX0_CORE_1>;
+		clock-names = "core_clk";
+
+		resets = <&bpmp_resets TEGRA194_RESET_PEX0_CORE_1_APB>,
+			 <&bpmp_resets TEGRA194_RESET_PEX0_CORE_1>;
+		reset-names = "core_apb_rst", "core_rst";
+
+		interrupts = <0 45 0x04>,	/* controller interrupt */
+					 <0 46 0x04>;	/* MSI interrupt */
+		interrupt-names = "intr", "msi";
+
+		iommus = <&smmu TEGRA_SID_PCIE1>;
+		dma-coherent;
+
+		#interrupt-cells = <1>;
+		interrupt-map-mask = <0 0 0 0>;
+		interrupt-map = <0 0 0 0 &intc 0 45 0x04>;
+
+		nvidia,max-speed = <2>;
+		nvidia,disable-aspm-states = <0x0>;
+
+		bus-range = <0x0 0xff>;
+		ranges = <0x81000000 0x0 0x30100000 0x0 0x30100000 0x0 0x00100000      /* downstream I/O (1MB) */
+			  0x82000000 0x0 0x30200000 0x0 0x30200000 0x0 0x01E00000      /* non-prefetchable memory (30MB) */
+			  0xc2000000 0x12 0x00000000 0x12 0x00000000 0x0 0x40000000>;  /* prefetchable memory (1GB) */
+
+		nvidia,cfg-link-cap-l1sub = <0x1c4>;
+		nvidia,cap-pl16g-status = <0x174>;
+		nvidia,event-cntr-ctrl = <0x1d8>;
+		nvidia,event-cntr-data = <0x1dc>;
+	};
+
+Board DTS:
+
+//TODO

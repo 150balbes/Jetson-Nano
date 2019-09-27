@@ -1,8 +1,16 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * PCI glue for ISHTP provider device (ISH) driver
  *
  * Copyright (c) 2014-2016, Intel Corporation.
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms and conditions of the GNU General Public License,
+ * version 2, as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
+ * more details.
  */
 
 #include <linux/module.h>
@@ -16,6 +24,7 @@
 #include <linux/sched.h>
 #include <linux/interrupt.h>
 #include <linux/workqueue.h>
+#include <linux/miscdevice.h>
 #define CREATE_TRACE_POINTS
 #include <trace/events/intel_ish.h>
 #include "ishtp-dev.h"
@@ -27,13 +36,6 @@ static const struct pci_device_id ish_pci_tbl[] = {
 	{PCI_DEVICE(PCI_VENDOR_ID_INTEL, BXT_Bx_DEVICE_ID)},
 	{PCI_DEVICE(PCI_VENDOR_ID_INTEL, APL_Ax_DEVICE_ID)},
 	{PCI_DEVICE(PCI_VENDOR_ID_INTEL, SPT_Ax_DEVICE_ID)},
-	{PCI_DEVICE(PCI_VENDOR_ID_INTEL, CNL_Ax_DEVICE_ID)},
-	{PCI_DEVICE(PCI_VENDOR_ID_INTEL, GLK_Ax_DEVICE_ID)},
-	{PCI_DEVICE(PCI_VENDOR_ID_INTEL, CNL_H_DEVICE_ID)},
-	{PCI_DEVICE(PCI_VENDOR_ID_INTEL, ICL_MOBILE_DEVICE_ID)},
-	{PCI_DEVICE(PCI_VENDOR_ID_INTEL, SPT_H_DEVICE_ID)},
-	{PCI_DEVICE(PCI_VENDOR_ID_INTEL, CML_LP_DEVICE_ID)},
-	{PCI_DEVICE(PCI_VENDOR_ID_INTEL, EHL_Ax_DEVICE_ID)},
 	{0, }
 };
 MODULE_DEVICE_TABLE(pci, ish_pci_tbl);
@@ -45,8 +47,7 @@ MODULE_DEVICE_TABLE(pci, ish_pci_tbl);
  *
  * Callback to direct log messages to Linux trace buffers
  */
-static __printf(2, 3)
-void ish_event_tracer(struct ishtp_device *dev, const char *format, ...)
+static void ish_event_tracer(struct ishtp_device *dev, char *format, ...)
 {
 	if (trace_ishtp_dump_enabled()) {
 		va_list args;
@@ -91,13 +92,6 @@ static int ish_init(struct ishtp_device *dev)
 	return 0;
 }
 
-static const struct pci_device_id ish_invalid_pci_ids[] = {
-	/* Mehlow platform special pci ids */
-	{PCI_DEVICE(PCI_VENDOR_ID_INTEL, 0xA309)},
-	{PCI_DEVICE(PCI_VENDOR_ID_INTEL, 0xA30A)},
-	{}
-};
-
 /**
  * ish_probe() - PCI driver probe callback
  * @pdev:	pci device
@@ -109,20 +103,14 @@ static const struct pci_device_id ish_invalid_pci_ids[] = {
  */
 static int ish_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 {
-	int ret;
+	struct ishtp_device *dev;
 	struct ish_hw *hw;
-	unsigned long irq_flag = 0;
-	struct ishtp_device *ishtp;
-	struct device *dev = &pdev->dev;
-
-	/* Check for invalid platforms for ISH support */
-	if (pci_dev_present(ish_invalid_pci_ids))
-		return -ENODEV;
+	int	ret;
 
 	/* enable pci dev */
-	ret = pcim_enable_device(pdev);
+	ret = pci_enable_device(pdev);
 	if (ret) {
-		dev_err(dev, "ISH: Failed to enable PCI device\n");
+		dev_err(&pdev->dev, "ISH: Failed to enable PCI device\n");
 		return ret;
 	}
 
@@ -130,48 +118,66 @@ static int ish_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	pci_set_master(pdev);
 
 	/* pci request regions for ISH driver */
-	ret = pcim_iomap_regions(pdev, 1 << 0, KBUILD_MODNAME);
+	ret = pci_request_regions(pdev, KBUILD_MODNAME);
 	if (ret) {
-		dev_err(dev, "ISH: Failed to get PCI regions\n");
-		return ret;
+		dev_err(&pdev->dev, "ISH: Failed to get PCI regions\n");
+		goto disable_device;
 	}
 
 	/* allocates and initializes the ISH dev structure */
-	ishtp = ish_dev_init(pdev);
-	if (!ishtp) {
+	dev = ish_dev_init(pdev);
+	if (!dev) {
 		ret = -ENOMEM;
-		return ret;
+		goto release_regions;
 	}
-	hw = to_ish_hw(ishtp);
-	ishtp->print_log = ish_event_tracer;
+	hw = to_ish_hw(dev);
+	dev->print_log = ish_event_tracer;
 
 	/* mapping IO device memory */
-	hw->mem_addr = pcim_iomap_table(pdev)[0];
-	ishtp->pdev = pdev;
+	hw->mem_addr = pci_iomap(pdev, 0, 0);
+	if (!hw->mem_addr) {
+		dev_err(&pdev->dev, "ISH: mapping I/O range failure\n");
+		ret = -ENOMEM;
+		goto free_device;
+	}
+
+	dev->pdev = pdev;
+
 	pdev->dev_flags |= PCI_DEV_FLAGS_NO_D3;
 
 	/* request and enable interrupt */
-	ret = pci_alloc_irq_vectors(pdev, 1, 1, PCI_IRQ_ALL_TYPES);
-	if (!pdev->msi_enabled && !pdev->msix_enabled)
-		irq_flag = IRQF_SHARED;
-
-	ret = devm_request_irq(dev, pdev->irq, ish_irq_handler,
-			       irq_flag, KBUILD_MODNAME, ishtp);
+	ret = request_irq(pdev->irq, ish_irq_handler, IRQF_SHARED,
+			  KBUILD_MODNAME, dev);
 	if (ret) {
-		dev_err(dev, "ISH: request IRQ %d failed\n", pdev->irq);
-		return ret;
+		dev_err(&pdev->dev, "ISH: request IRQ failure (%d)\n",
+			pdev->irq);
+		goto free_device;
 	}
 
-	dev_set_drvdata(ishtp->devc, ishtp);
+	dev_set_drvdata(dev->devc, dev);
 
-	init_waitqueue_head(&ishtp->suspend_wait);
-	init_waitqueue_head(&ishtp->resume_wait);
+	init_waitqueue_head(&dev->suspend_wait);
+	init_waitqueue_head(&dev->resume_wait);
 
-	ret = ish_init(ishtp);
+	ret = ish_init(dev);
 	if (ret)
-		return ret;
+		goto free_irq;
 
 	return 0;
+
+free_irq:
+	free_irq(pdev->irq, dev);
+free_device:
+	pci_iounmap(pdev, hw->mem_addr);
+	kfree(dev);
+release_regions:
+	pci_release_regions(pdev);
+disable_device:
+	pci_clear_master(pdev);
+	pci_disable_device(pdev);
+	dev_err(&pdev->dev, "ISH: PCI driver initialization failed.\n");
+
+	return ret;
 }
 
 /**
@@ -183,23 +189,27 @@ static int ish_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 static void ish_remove(struct pci_dev *pdev)
 {
 	struct ishtp_device *ishtp_dev = pci_get_drvdata(pdev);
+	struct ish_hw *hw = to_ish_hw(ishtp_dev);
 
 	ishtp_bus_remove_all_clients(ishtp_dev, false);
-	pdev->dev_flags &= ~PCI_DEV_FLAGS_NO_D3;
 	ish_device_disable(ishtp_dev);
+
+	free_irq(pdev->irq, ishtp_dev);
+	pci_iounmap(pdev, hw->mem_addr);
+	pci_release_regions(pdev);
+	pci_clear_master(pdev);
+	pci_disable_device(pdev);
+	kfree(ishtp_dev);
 }
 
 static struct device __maybe_unused *ish_resume_device;
-
-/* 50ms to get resume response */
-#define WAIT_FOR_RESUME_ACK_MS		50
 
 /**
  * ish_resume_handler() - Work function to complete resume
  * @work:	work struct
  *
  * The resume work function to complete resume function asynchronously.
- * There are two resume paths, one where ISH is not powered off,
+ * There are two types of platforms, one where ISH is not powered off,
  * in that case a simple resume message is enough, others we need
  * a reset sequence.
  */
@@ -207,31 +217,20 @@ static void __maybe_unused ish_resume_handler(struct work_struct *work)
 {
 	struct pci_dev *pdev = to_pci_dev(ish_resume_device);
 	struct ishtp_device *dev = pci_get_drvdata(pdev);
-	uint32_t fwsts;
 	int ret;
 
-	/* Get ISH FW status */
-	fwsts = IPC_GET_ISH_FWSTS(dev->ops->get_fw_status(dev));
+	ishtp_send_resume(dev);
+
+	/* 50 ms to get resume response */
+	if (dev->resume_flag)
+		ret = wait_event_interruptible_timeout(dev->resume_wait,
+						       !dev->resume_flag,
+						       msecs_to_jiffies(50));
 
 	/*
-	 * If currently, in ISH FW, sensor app is loaded or beyond that,
-	 * it means ISH isn't powered off, in this case, send a resume message.
-	 */
-	if (fwsts >= FWSTS_SENSOR_APP_LOADED) {
-		ishtp_send_resume(dev);
-
-		/* Waiting to get resume response */
-		if (dev->resume_flag)
-			ret = wait_event_interruptible_timeout(dev->resume_wait,
-				!dev->resume_flag,
-				msecs_to_jiffies(WAIT_FOR_RESUME_ACK_MS));
-	}
-
-	/*
-	 * If in ISH FW, sensor app isn't loaded yet, or no resume response.
-	 * That means this platform is not S0ix compatible, or something is
-	 * wrong with ISH FW. So on resume, full reboot of ISH processor will
-	 * happen, so need to go through init sequence again.
+	 * If no resume response. This platform  is not S0ix compatible
+	 * So on resume full reboot of ISH processor will happen, so
+	 * need to go through init sequence again
 	 */
 	if (dev->resume_flag)
 		ish_init(dev);

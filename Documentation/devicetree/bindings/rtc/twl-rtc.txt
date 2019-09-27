@@ -1,11 +1,12 @@
-* Texas Instruments TWL4030/6030 RTC
+* TI twl RTC
+
+The TWL family (twl4030/6030) contains a RTC.
 
 Required properties:
-- compatible : Should be "ti,twl4030-rtc"
-- interrupts : Should be the interrupt number.
+- compatible : Should be twl4030-rtc
 
-Example:
-	rtc {
-		compatible = "ti,twl4030-rtc";
-		interrupts = <11>;
-	};
+Examples:
+
+rtc@0 {
+    compatible = "ti,twl4030-rtc";
+};

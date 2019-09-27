@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * RapidIO interconnect services
  * (RapidIO Interconnect Specification, http://www.rapidio.org)
@@ -8,6 +7,11 @@
  *
  * Copyright 2009 - 2013 Integrated Device Technology, Inc.
  * Alex Bounine <alexandre.bounine@idt.com>
+ *
+ * This program is free software; you can redistribute  it and/or modify it
+ * under  the terms of  the GNU General  Public License as published by the
+ * Free Software Foundation;  either version 2 of the  License, or (at your
+ * option) any later version.
  */
 
 #include <linux/types.h>
@@ -77,7 +81,6 @@ u16 rio_local_get_device_id(struct rio_mport *port)
 
 	return (RIO_GET_DID(port->sys_size, result));
 }
-EXPORT_SYMBOL_GPL(rio_local_get_device_id);
 
 /**
  * rio_query_mport - Query mport device attributes
@@ -107,8 +110,9 @@ EXPORT_SYMBOL(rio_query_mport);
  */
 struct rio_net *rio_alloc_net(struct rio_mport *mport)
 {
-	struct rio_net *net = kzalloc(sizeof(*net), GFP_KERNEL);
+	struct rio_net *net;
 
+	net = kzalloc(sizeof(struct rio_net), GFP_KERNEL);
 	if (net) {
 		INIT_LIST_HEAD(&net->node);
 		INIT_LIST_HEAD(&net->devices);
@@ -188,6 +192,8 @@ int rio_add_device(struct rio_dev *rdev)
 	}
 	spin_unlock(&rio_global_list_lock);
 
+	rio_create_sysfs_dev_files(rdev);
+
 	return 0;
 }
 EXPORT_SYMBOL_GPL(rio_add_device);
@@ -214,6 +220,7 @@ void rio_del_device(struct rio_dev *rdev, enum rio_device_state state)
 		}
 	}
 	spin_unlock(&rio_global_list_lock);
+	rio_remove_sysfs_dev_files(rdev);
 	device_unregister(&rdev->dev);
 }
 EXPORT_SYMBOL_GPL(rio_del_device);
@@ -239,17 +246,18 @@ int rio_request_inb_mbox(struct rio_mport *mport,
 	int rc = -ENOSYS;
 	struct resource *res;
 
-	if (!mport->ops->open_inb_mbox)
+	if (mport->ops->open_inb_mbox == NULL)
 		goto out;
 
-	res = kzalloc(sizeof(*res), GFP_KERNEL);
+	res = kzalloc(sizeof(struct resource), GFP_KERNEL);
+
 	if (res) {
 		rio_init_mbox_res(res, mbox, mbox);
 
 		/* Make sure this mailbox isn't in use */
-		rc = request_resource(&mport->riores[RIO_INB_MBOX_RESOURCE],
-				      res);
-		if (rc < 0) {
+		if ((rc =
+		     request_resource(&mport->riores[RIO_INB_MBOX_RESOURCE],
+				      res)) < 0) {
 			kfree(res);
 			goto out;
 		}
@@ -272,7 +280,6 @@ int rio_request_inb_mbox(struct rio_mport *mport,
       out:
 	return rc;
 }
-EXPORT_SYMBOL_GPL(rio_request_inb_mbox);
 
 /**
  * rio_release_inb_mbox - release inbound mailbox message service
@@ -301,7 +308,6 @@ int rio_release_inb_mbox(struct rio_mport *mport, int mbox)
 
 	return 0;
 }
-EXPORT_SYMBOL_GPL(rio_release_inb_mbox);
 
 /**
  * rio_request_outb_mbox - request outbound mailbox service
@@ -323,17 +329,18 @@ int rio_request_outb_mbox(struct rio_mport *mport,
 	int rc = -ENOSYS;
 	struct resource *res;
 
-	if (!mport->ops->open_outb_mbox)
+	if (mport->ops->open_outb_mbox == NULL)
 		goto out;
 
-	res = kzalloc(sizeof(*res), GFP_KERNEL);
+	res = kzalloc(sizeof(struct resource), GFP_KERNEL);
+
 	if (res) {
 		rio_init_mbox_res(res, mbox, mbox);
 
 		/* Make sure this outbound mailbox isn't in use */
-		rc = request_resource(&mport->riores[RIO_OUTB_MBOX_RESOURCE],
-				      res);
-		if (rc < 0) {
+		if ((rc =
+		     request_resource(&mport->riores[RIO_OUTB_MBOX_RESOURCE],
+				      res)) < 0) {
 			kfree(res);
 			goto out;
 		}
@@ -356,7 +363,6 @@ int rio_request_outb_mbox(struct rio_mport *mport,
       out:
 	return rc;
 }
-EXPORT_SYMBOL_GPL(rio_request_outb_mbox);
 
 /**
  * rio_release_outb_mbox - release outbound mailbox message service
@@ -385,7 +391,6 @@ int rio_release_outb_mbox(struct rio_mport *mport, int mbox)
 
 	return 0;
 }
-EXPORT_SYMBOL_GPL(rio_release_outb_mbox);
 
 /**
  * rio_setup_inb_dbell - bind inbound doorbell callback
@@ -403,10 +408,13 @@ rio_setup_inb_dbell(struct rio_mport *mport, void *dev_id, struct resource *res,
 		    void (*dinb) (struct rio_mport * mport, void *dev_id, u16 src, u16 dst,
 				  u16 info))
 {
-	struct rio_dbell *dbell = kmalloc(sizeof(*dbell), GFP_KERNEL);
+	int rc = 0;
+	struct rio_dbell *dbell;
 
-	if (!dbell)
-		return -ENOMEM;
+	if (!(dbell = kmalloc(sizeof(struct rio_dbell), GFP_KERNEL))) {
+		rc = -ENOMEM;
+		goto out;
+	}
 
 	dbell->res = res;
 	dbell->dinb = dinb;
@@ -415,7 +423,9 @@ rio_setup_inb_dbell(struct rio_mport *mport, void *dev_id, struct resource *res,
 	mutex_lock(&mport->lock);
 	list_add_tail(&dbell->node, &mport->dbells);
 	mutex_unlock(&mport->lock);
-	return 0;
+
+      out:
+	return rc;
 }
 
 /**
@@ -437,16 +447,17 @@ int rio_request_inb_dbell(struct rio_mport *mport,
 			  void (*dinb) (struct rio_mport * mport, void *dev_id, u16 src,
 					u16 dst, u16 info))
 {
-	int rc;
-	struct resource *res = kzalloc(sizeof(*res), GFP_KERNEL);
+	int rc = 0;
+
+	struct resource *res = kzalloc(sizeof(struct resource), GFP_KERNEL);
 
 	if (res) {
 		rio_init_dbell_res(res, start, end);
 
 		/* Make sure these doorbells aren't in use */
-		rc = request_resource(&mport->riores[RIO_DOORBELL_RESOURCE],
-				      res);
-		if (rc < 0) {
+		if ((rc =
+		     request_resource(&mport->riores[RIO_DOORBELL_RESOURCE],
+				      res)) < 0) {
 			kfree(res);
 			goto out;
 		}
@@ -459,7 +470,6 @@ int rio_request_inb_dbell(struct rio_mport *mport,
       out:
 	return rc;
 }
-EXPORT_SYMBOL_GPL(rio_request_inb_dbell);
 
 /**
  * rio_release_inb_dbell - release inbound doorbell message service
@@ -501,7 +511,6 @@ int rio_release_inb_dbell(struct rio_mport *mport, u16 start, u16 end)
       out:
 	return rc;
 }
-EXPORT_SYMBOL_GPL(rio_release_inb_dbell);
 
 /**
  * rio_request_outb_dbell - request outbound doorbell message range
@@ -530,7 +539,6 @@ struct resource *rio_request_outb_dbell(struct rio_dev *rdev, u16 start,
 
 	return res;
 }
-EXPORT_SYMBOL_GPL(rio_request_outb_dbell);
 
 /**
  * rio_release_outb_dbell - release outbound doorbell message range
@@ -548,7 +556,6 @@ int rio_release_outb_dbell(struct rio_dev *rdev, struct resource *res)
 
 	return rc;
 }
-EXPORT_SYMBOL_GPL(rio_release_outb_dbell);
 
 /**
  * rio_add_mport_pw_handler - add port-write message handler into the list
@@ -563,17 +570,22 @@ int rio_add_mport_pw_handler(struct rio_mport *mport, void *context,
 			     int (*pwcback)(struct rio_mport *mport,
 			     void *context, union rio_pw_msg *msg, int step))
 {
-	struct rio_pwrite *pwrite = kzalloc(sizeof(*pwrite), GFP_KERNEL);
+	int rc = 0;
+	struct rio_pwrite *pwrite;
 
-	if (!pwrite)
-		return -ENOMEM;
+	pwrite = kzalloc(sizeof(struct rio_pwrite), GFP_KERNEL);
+	if (!pwrite) {
+		rc = -ENOMEM;
+		goto out;
+	}
 
 	pwrite->pwcback = pwcback;
 	pwrite->context = context;
 	mutex_lock(&mport->lock);
 	list_add_tail(&pwrite->node, &mport->pwrites);
 	mutex_unlock(&mport->lock);
-	return 0;
+out:
+	return rc;
 }
 EXPORT_SYMBOL_GPL(rio_add_mport_pw_handler);
 
@@ -623,7 +635,7 @@ int rio_request_inb_pwrite(struct rio_dev *rdev,
 	int rc = 0;
 
 	spin_lock(&rio_global_list_lock);
-	if (rdev->pwcback)
+	if (rdev->pwcback != NULL)
 		rc = -ENOMEM;
 	else
 		rdev->pwcback = pwcback;
@@ -689,7 +701,7 @@ EXPORT_SYMBOL_GPL(rio_pw_enable);
 int rio_map_inb_region(struct rio_mport *mport, dma_addr_t local,
 			u64 rbase, u32 size, u32 rflags)
 {
-	int rc;
+	int rc = 0;
 	unsigned long flags;
 
 	if (!mport->ops->map_inb)
@@ -733,7 +745,7 @@ EXPORT_SYMBOL_GPL(rio_unmap_inb_region);
 int rio_map_outb_region(struct rio_mport *mport, u16 destid, u64 rbase,
 			u32 size, u32 rflags, dma_addr_t *local)
 {
-	int rc;
+	int rc = 0;
 	unsigned long flags;
 
 	if (!mport->ops->map_outb)
@@ -966,7 +978,7 @@ rio_chk_dev_route(struct rio_dev *rdev, struct rio_dev **nrdev, int *npnum)
 		rdev = rdev->prev;
 	}
 
-	if (!prev)
+	if (prev == NULL)
 		goto err_out;
 
 	p_port = prev->rswitch->route_table[rdev->destid];
@@ -1045,7 +1057,7 @@ rio_get_input_status(struct rio_dev *rdev, int pnum, u32 *lnkresp)
 		RIO_MNT_REQ_CMD_IS);
 
 	/* Exit if the response is not expected */
-	if (!lnkresp)
+	if (lnkresp == NULL)
 		return 0;
 
 	checkcount = 3;
@@ -1402,9 +1414,7 @@ rio_mport_get_feature(struct rio_mport * port, int local, u16 destid,
 						 ext_ftr_ptr, &ftr_header);
 		if (RIO_GET_BLOCK_ID(ftr_header) == ftr)
 			return ext_ftr_ptr;
-
-		ext_ftr_ptr = RIO_GET_BLOCK_PTR(ftr_header);
-		if (!ext_ftr_ptr)
+		if (!(ext_ftr_ptr = RIO_GET_BLOCK_PTR(ftr_header)))
 			break;
 	}
 
@@ -1455,7 +1465,6 @@ struct rio_dev *rio_get_asm(u16 vid, u16 did,
 	spin_unlock(&rio_global_list_lock);
 	return rdev;
 }
-EXPORT_SYMBOL_GPL(rio_get_asm);
 
 /**
  * rio_get_device - Begin or continue searching for a RIO device by vid/did
@@ -1475,7 +1484,6 @@ struct rio_dev *rio_get_device(u16 vid, u16 did, struct rio_dev *from)
 {
 	return rio_get_asm(vid, did, RIO_ANY_ID, RIO_ANY_ID, from);
 }
-EXPORT_SYMBOL_GPL(rio_get_device);
 
 /**
  * rio_std_route_add_entry - Add switch route table entry using standard
@@ -1691,7 +1699,7 @@ int rio_route_add_entry(struct rio_dev *rdev,
 
 	spin_lock(&rdev->rswitch->lock);
 
-	if (!ops || !ops->add_entry) {
+	if (ops == NULL || ops->add_entry == NULL) {
 		rc = rio_std_route_add_entry(rdev->net->hport, rdev->destid,
 					     rdev->hopcount, table,
 					     route_destid, route_port);
@@ -1744,7 +1752,7 @@ int rio_route_get_entry(struct rio_dev *rdev, u16 table,
 
 	spin_lock(&rdev->rswitch->lock);
 
-	if (!ops || !ops->get_entry) {
+	if (ops == NULL || ops->get_entry == NULL) {
 		rc = rio_std_route_get_entry(rdev->net->hport, rdev->destid,
 					     rdev->hopcount, table,
 					     route_destid, route_port);
@@ -1792,7 +1800,7 @@ int rio_route_clr_table(struct rio_dev *rdev, u16 table, int lock)
 
 	spin_lock(&rdev->rswitch->lock);
 
-	if (!ops || !ops->clr_table) {
+	if (ops == NULL || ops->clr_table == NULL) {
 		rc = rio_std_route_clr_table(rdev->net->hport, rdev->destid,
 					     rdev->hopcount, table);
 	} else if (try_module_get(ops->owner)) {
@@ -1884,7 +1892,7 @@ struct dma_async_tx_descriptor *rio_dma_prep_xfer(struct dma_chan *dchan,
 {
 	struct rio_dma_ext rio_ext;
 
-	if (!dchan->device->device_prep_slave_sg) {
+	if (dchan->device->device_prep_slave_sg == NULL) {
 		pr_err("%s: prep_rio_sg == NULL\n", __func__);
 		return NULL;
 	}
@@ -2184,6 +2192,7 @@ int rio_init_mports(void)
 
 	work = kcalloc(n, sizeof *work, GFP_KERNEL);
 	if (!work) {
+		pr_err("RIO: no memory for work struct\n");
 		destroy_workqueue(rio_wq);
 		goto no_disc;
 	}
@@ -2210,7 +2219,6 @@ no_disc:
 
 	return 0;
 }
-EXPORT_SYMBOL_GPL(rio_init_mports);
 
 static int rio_get_hdid(int index)
 {
@@ -2325,3 +2333,16 @@ int rio_unregister_mport(struct rio_mport *port)
 	return 0;
 }
 EXPORT_SYMBOL_GPL(rio_unregister_mport);
+
+EXPORT_SYMBOL_GPL(rio_local_get_device_id);
+EXPORT_SYMBOL_GPL(rio_get_device);
+EXPORT_SYMBOL_GPL(rio_get_asm);
+EXPORT_SYMBOL_GPL(rio_request_inb_dbell);
+EXPORT_SYMBOL_GPL(rio_release_inb_dbell);
+EXPORT_SYMBOL_GPL(rio_request_outb_dbell);
+EXPORT_SYMBOL_GPL(rio_release_outb_dbell);
+EXPORT_SYMBOL_GPL(rio_request_inb_mbox);
+EXPORT_SYMBOL_GPL(rio_release_inb_mbox);
+EXPORT_SYMBOL_GPL(rio_request_outb_mbox);
+EXPORT_SYMBOL_GPL(rio_release_outb_mbox);
+EXPORT_SYMBOL_GPL(rio_init_mports);

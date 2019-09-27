@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0-only
 config PINCTRL_TEGRA
 	bool
 	select PINMUX
@@ -21,10 +20,6 @@ config PINCTRL_TEGRA124
 	select PINCTRL_TEGRA
 
 config PINCTRL_TEGRA210
-	bool
-	select PINCTRL_TEGRA
-
-config PINCTRL_TEGRA194
 	bool
 	select PINCTRL_TEGRA
 

@@ -23,10 +23,8 @@
  * Authors: Dave Airlie
  *          Alex Deucher
  */
-
-#include <drm/drm_device.h>
+#include <drm/drmP.h>
 #include <drm/radeon_drm.h>
-
 #include "radeon.h"
 
 static void radeon_lock_cursor(struct drm_crtc *crtc, bool lock)
@@ -309,7 +307,7 @@ int radeon_crtc_cursor_set2(struct drm_crtc *crtc,
 	robj = gem_to_radeon_bo(obj);
 	ret = radeon_bo_reserve(robj, false);
 	if (ret != 0) {
-		drm_gem_object_put_unlocked(obj);
+		drm_gem_object_unreference_unlocked(obj);
 		return ret;
 	}
 	/* Only 27 bit offset for legacy cursor */
@@ -319,7 +317,7 @@ int radeon_crtc_cursor_set2(struct drm_crtc *crtc,
 	radeon_bo_unreserve(robj);
 	if (ret) {
 		DRM_ERROR("Failed to pin new cursor BO (%d)\n", ret);
-		drm_gem_object_put_unlocked(obj);
+		drm_gem_object_unreference_unlocked(obj);
 		return ret;
 	}
 
@@ -354,7 +352,7 @@ unpin:
 			radeon_bo_unpin(robj);
 			radeon_bo_unreserve(robj);
 		}
-		drm_gem_object_put_unlocked(radeon_crtc->cursor_bo);
+		drm_gem_object_unreference_unlocked(radeon_crtc->cursor_bo);
 	}
 
 	radeon_crtc->cursor_bo = obj;

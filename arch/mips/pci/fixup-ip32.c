@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 #include <linux/init.h>
 #include <linux/kernel.h>
 #include <linux/pci.h>
@@ -22,7 +21,7 @@
 #define INTB   MACEPCI_SHARED0_IRQ
 #define INTC   MACEPCI_SHARED1_IRQ
 #define INTD   MACEPCI_SHARED2_IRQ
-static char irq_tab_mace[][5] = {
+static char irq_tab_mace[][5] __initdata = {
       /* Dummy	INT#A  INT#B  INT#C  INT#D */
 	{0,	    0,	   0,	  0,	 0}, /* This is placeholder row - never used */
 	{0,	SCSI0, SCSI0, SCSI0, SCSI0},
@@ -40,7 +39,7 @@ static char irq_tab_mace[][5] = {
  * irqs.  I suppose a device without a pin A will thank us for doing it
  * right if there exists such a broken piece of crap.
  */
-int pcibios_map_irq(const struct pci_dev *dev, u8 slot, u8 pin)
+int __init pcibios_map_irq(const struct pci_dev *dev, u8 slot, u8 pin)
 {
 	return irq_tab_mace[slot][pin];
 }

@@ -1,8 +1,5 @@
-// SPDX-License-Identifier: GPL-2.0
-#include <inttypes.h>
 #include "perf.h"
 #include "util/debug.h"
-#include "util/map.h"
 #include "util/symbol.h"
 #include "util/sort.h"
 #include "util/evsel.h"
@@ -10,7 +7,6 @@
 #include "util/machine.h"
 #include "util/thread.h"
 #include "tests/hists_common.h"
-#include <linux/kernel.h>
 
 static struct {
 	u32 pid;
@@ -132,20 +128,20 @@ struct machine *setup_fake_machine(struct machines *machines)
 			goto out;
 
 		/* emulate dso__load() */
-		dso__set_loaded(dso);
+		dso__set_loaded(dso, MAP__FUNCTION);
 
 		for (k = 0; k < fake_symbols[i].nr_syms; k++) {
 			struct symbol *sym;
 			struct fake_sym *fsym = &fake_symbols[i].syms[k];
 
 			sym = symbol__new(fsym->start, fsym->length,
-					  STB_GLOBAL, STT_FUNC, fsym->name);
+					  STB_GLOBAL, fsym->name);
 			if (sym == NULL) {
 				dso__put(dso);
 				goto out;
 			}
 
-			symbols__insert(&dso->symbols, sym);
+			symbols__insert(&dso->symbols[MAP__FUNCTION], sym);
 		}
 
 		dso__put(dso);
@@ -162,7 +158,7 @@ out:
 void print_hists_in(struct hists *hists)
 {
 	int i = 0;
-	struct rb_root_cached *root;
+	struct rb_root *root;
 	struct rb_node *node;
 
 	if (hists__has(hists, need_collapse))
@@ -171,7 +167,7 @@ void print_hists_in(struct hists *hists)
 		root = hists->entries_in;
 
 	pr_info("----- %s --------\n", __func__);
-	node = rb_first_cached(root);
+	node = rb_first(root);
 	while (node) {
 		struct hist_entry *he;
 
@@ -192,13 +188,13 @@ void print_hists_in(struct hists *hists)
 void print_hists_out(struct hists *hists)
 {
 	int i = 0;
-	struct rb_root_cached *root;
+	struct rb_root *root;
 	struct rb_node *node;
 
 	root = &hists->entries;
 
 	pr_info("----- %s --------\n", __func__);
-	node = rb_first_cached(root);
+	node = rb_first(root);
 	while (node) {
 		struct hist_entry *he;
 

@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-1.0+
 /*
  *    Hypervisor filesystem for Linux on s390.
  *
@@ -19,8 +18,7 @@
 #include <linux/time.h>
 #include <linux/parser.h>
 #include <linux/sysfs.h>
-#include <linux/init.h>
-#include <linux/kobject.h>
+#include <linux/module.h>
 #include <linux/seq_file.h>
 #include <linux/mount.h>
 #include <linux/uio.h>
@@ -36,7 +34,7 @@ struct hypfs_sb_info {
 	kuid_t uid;			/* uid used for files and dirs */
 	kgid_t gid;			/* gid used for files and dirs */
 	struct dentry *update_file;	/* file to trigger update */
-	time64_t last_update;		/* last update, CLOCK_MONOTONIC time */
+	time_t last_update;		/* last update time in secs since 1970 */
 	struct mutex lock;		/* lock to protect update process */
 };
 
@@ -52,7 +50,7 @@ static void hypfs_update_update(struct super_block *sb)
 	struct hypfs_sb_info *sb_info = sb->s_fs_info;
 	struct inode *inode = d_inode(sb_info->update_file);
 
-	sb_info->last_update = ktime_get_seconds();
+	sb_info->last_update = get_seconds();
 	inode->i_atime = inode->i_mtime = inode->i_ctime = current_time(inode);
 }
 
@@ -179,7 +177,7 @@ static ssize_t hypfs_write_iter(struct kiocb *iocb, struct iov_iter *from)
 	 *    to restart data collection in this case.
 	 */
 	mutex_lock(&fs_info->lock);
-	if (fs_info->last_update == ktime_get_seconds()) {
+	if (fs_info->last_update == get_seconds()) {
 		rc = -EBUSY;
 		goto out;
 	}
@@ -445,6 +443,7 @@ static struct file_system_type hypfs_type = {
 	.mount		= hypfs_mount,
 	.kill_sb	= hypfs_kill_super
 };
+MODULE_ALIAS_FS("s390_hypfs");
 
 static const struct super_operations hypfs_s_ops = {
 	.statfs		= simple_statfs,
@@ -456,8 +455,9 @@ static int __init hypfs_init(void)
 {
 	int rc;
 
-	hypfs_dbfs_init();
-
+	rc = hypfs_dbfs_init();
+	if (rc)
+		return rc;
 	if (hypfs_diag_init()) {
 		rc = -ENODATA;
 		goto fail_dbfs_exit;
@@ -466,7 +466,10 @@ static int __init hypfs_init(void)
 		rc = -ENODATA;
 		goto fail_hypfs_diag_exit;
 	}
-	hypfs_sprp_init();
+	if (hypfs_sprp_init()) {
+		rc = -ENODATA;
+		goto fail_hypfs_vm_exit;
+	}
 	if (hypfs_diag0c_init()) {
 		rc = -ENODATA;
 		goto fail_hypfs_sprp_exit;
@@ -485,6 +488,7 @@ fail_hypfs_diag0c_exit:
 	hypfs_diag0c_exit();
 fail_hypfs_sprp_exit:
 	hypfs_sprp_exit();
+fail_hypfs_vm_exit:
 	hypfs_vm_exit();
 fail_hypfs_diag_exit:
 	hypfs_diag_exit();
@@ -493,4 +497,21 @@ fail_dbfs_exit:
 	pr_err("Initialization of hypfs failed with rc=%i\n", rc);
 	return rc;
 }
-device_initcall(hypfs_init)
+
+static void __exit hypfs_exit(void)
+{
+	unregister_filesystem(&hypfs_type);
+	sysfs_remove_mount_point(hypervisor_kobj, "s390");
+	hypfs_diag0c_exit();
+	hypfs_sprp_exit();
+	hypfs_vm_exit();
+	hypfs_diag_exit();
+	hypfs_dbfs_exit();
+}
+
+module_init(hypfs_init)
+module_exit(hypfs_exit)
+
+MODULE_LICENSE("GPL");
+MODULE_AUTHOR("Michael Holzheu <holzheu@de.ibm.com>");
+MODULE_DESCRIPTION("s390 Hypervisor Filesystem");

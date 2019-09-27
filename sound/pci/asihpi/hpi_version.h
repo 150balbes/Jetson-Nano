@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /** HPI Version Definitions
 Development releases have odd minor version.
 Production releases have even minor version.

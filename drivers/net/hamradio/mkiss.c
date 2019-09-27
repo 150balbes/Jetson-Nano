@@ -1,5 +1,15 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
+ *  This program is free software; you can distribute it and/or modify it
+ *  under the terms of the GNU General Public License (Version 2) as
+ *  published by the Free Software Foundation.
+ *
+ *  This program is distributed in the hope it will be useful, but WITHOUT
+ *  ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ *  FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+ *  for more details.
+ *
+ *  You should have received a copy of the GNU General Public License along
+ *  with this program; if not, see <http://www.gnu.org/licenses/>.
  *
  * Copyright (C) Hans Alblas PE1AYX <hans@esrac.ele.tue.nl>
  * Copyright (C) 2004, 05 Ralf Baechle DL5RB <ralf@linux-mips.org>
@@ -7,7 +17,7 @@
  */
 #include <linux/module.h>
 #include <linux/bitops.h>
-#include <linux/uaccess.h>
+#include <asm/uaccess.h>
 #include <linux/crc16.h>
 #include <linux/string.h>
 #include <linux/mm.h>
@@ -25,6 +35,7 @@
 #include <linux/skbuff.h>
 #include <linux/if_arp.h>
 #include <linux/jiffies.h>
+#include <linux/compat.h>
 
 #include <net/ax25.h>
 
@@ -71,7 +82,7 @@ struct mkiss {
 #define CRC_MODE_SMACK_TEST	4
 
 	atomic_t		refcnt;
-	struct completion	dead;
+	struct semaphore	dead_sem;
 };
 
 /*---------------------------------------------------------------------------*/
@@ -206,7 +217,7 @@ static int kiss_esc_crc(unsigned char *s, unsigned char *d, unsigned short crc,
 			c = *s++;
 		else if (len > 1)
 			c = crc >> 8;
-		else
+		else if (len > 0)
 			c = crc & 0xff;
 
 		len--;
@@ -287,7 +298,7 @@ static void ax_bump(struct mkiss *ax)
 		return;
 	}
 
-	skb_put_data(skb, ax->rbuff, count);
+	memcpy(skb_put(skb,count), ax->rbuff, count);
 	skb->protocol = ax25_type_trans(skb, ax->dev);
 	netif_rx(skb);
 	ax->dev->stats.rx_packets++;
@@ -429,6 +440,7 @@ static void ax_encaps(struct net_device *dev, unsigned char *icp, int len)
 		ax_changedmtu(ax);
 
 	if (len > ax->mtu) {		/* Sigh, shouldn't occur BUT ... */
+		len = ax->mtu;
 		printk(KERN_ERR "mkiss: %s: truncating oversized transmit packet!\n", ax->dev->name);
 		dev->stats.tx_dropped++;
 		netif_start_queue(dev);
@@ -465,8 +477,7 @@ static void ax_encaps(struct net_device *dev, unsigned char *icp, int len)
 				  cmd = 0;
 				}
 				ax->crcauto = (cmd ? 0 : 1);
-				printk(KERN_INFO "mkiss: %s: crc mode set to %d\n",
-				       ax->dev->name, cmd);
+				printk(KERN_INFO "mkiss: %s: crc mode %s %d\n", ax->dev->name, (len) ? "set to" : "is", cmd);
 			}
 			spin_unlock_bh(&ax->buflock);
 			netif_start_queue(dev);
@@ -677,7 +688,7 @@ static struct mkiss *mkiss_get(struct tty_struct *tty)
 static void mkiss_put(struct mkiss *ax)
 {
 	if (atomic_dec_and_test(&ax->refcnt))
-		complete(&ax->dead);
+		up(&ax->dead_sem);
 }
 
 static int crc_force = 0;	/* Can be overridden with insmod */
@@ -705,7 +716,7 @@ static int mkiss_open(struct tty_struct *tty)
 
 	spin_lock_init(&ax->buflock);
 	atomic_set(&ax->refcnt, 1);
-	init_completion(&ax->dead);
+	sema_init(&ax->dead_sem, 0);
 
 	ax->tty = tty;
 	tty->disc_data = ax;
@@ -785,7 +796,7 @@ static void mkiss_close(struct tty_struct *tty)
 	 * we have to wait for all existing users to finish.
 	 */
 	if (!atomic_dec_and_test(&ax->refcnt))
-		wait_for_completion(&ax->dead);
+		down(&ax->dead_sem);
 	/*
 	 * Halt the transmit queue so that a new transmit cannot scribble
 	 * on our buffers
@@ -864,6 +875,23 @@ static int mkiss_ioctl(struct tty_struct *tty, struct file *file,
 	return err;
 }
 
+#ifdef CONFIG_COMPAT
+static long mkiss_compat_ioctl(struct tty_struct *tty, struct file *file,
+	unsigned int cmd, unsigned long arg)
+{
+	switch (cmd) {
+	case SIOCGIFNAME:
+	case SIOCGIFENCAP:
+	case SIOCSIFENCAP:
+	case SIOCSIFHWADDR:
+		return mkiss_ioctl(tty, file, cmd,
+				   (unsigned long)compat_ptr(arg));
+	}
+
+	return -ENOIOCTLCMD;
+}
+#endif
+
 /*
  * Handle the 'receiver data ready' interrupt.
  * This function is called by the 'tty_io' module in the kernel when
@@ -938,6 +966,9 @@ static struct tty_ldisc_ops ax_ldisc = {
 	.open		= mkiss_open,
 	.close		= mkiss_close,
 	.ioctl		= mkiss_ioctl,
+#ifdef CONFIG_COMPAT
+	.compat_ioctl	= mkiss_compat_ioctl,
+#endif
 	.receive_buf	= mkiss_receive_buf,
 	.write_wakeup	= mkiss_write_wakeup
 };

@@ -1,8 +1,11 @@
-/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  *  linux/drivers/mmc/s3cmci.h - Samsung S3C MCI driver
  *
  *  Copyright (C) 2004-2006 Thomas Kleffel, All Rights Reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  */
 
 enum s3cmci_waitfor {
@@ -67,6 +70,8 @@ struct s3cmci_host {
 
 #ifdef CONFIG_DEBUG_FS
 	struct dentry		*debug_root;
+	struct dentry		*debug_state;
+	struct dentry		*debug_regs;
 #endif
 
 #ifdef CONFIG_ARM_S3C24XX_CPUFREQ

@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  *	linux/arch/alpha/kernel/sys_sx164.c
  *
@@ -95,10 +94,10 @@ sx164_init_irq(void)
  *   9  32 bit PCI option slot 3
  */
 
-static int
+static int __init
 sx164_map_irq(const struct pci_dev *dev, u8 slot, u8 pin)
 {
-	static char irq_tab[5][5] = {
+	static char irq_tab[5][5] __initdata = {
 		/*INT    INTA   INTB   INTC   INTD */
 		{ 16+ 9, 16+ 9, 16+13, 16+17, 16+21}, /* IdSel 5 slot 2 J17 */
 		{ 16+11, 16+11, 16+15, 16+19, 16+23}, /* IdSel 6 slot 0 J19 */

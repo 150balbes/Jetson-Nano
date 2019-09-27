@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __SUN3_HEAD_H
 #define __SUN3_HEAD_H
 

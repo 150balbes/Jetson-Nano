@@ -1,8 +1,7 @@
-// SPDX-License-Identifier: GPL-2.0-only
-#include <linux/memblock.h>
+#include <linux/bootmem.h>
 #include <linux/gfp.h>
 #include <linux/export.h>
-#include <linux/spinlock.h>
+#include <linux/rwlock.h>
 #include <linux/slab.h>
 #include <linux/types.h>
 #include <linux/dma-mapping.h>
@@ -71,9 +70,8 @@ unsigned long __pfn_to_mfn(unsigned long pfn)
 		entry = rb_entry(n, struct xen_p2m_entry, rbnode_phys);
 		if (entry->pfn <= pfn &&
 				entry->pfn + entry->nr_pages > pfn) {
-			unsigned long mfn = entry->mfn + (pfn - entry->pfn);
 			read_unlock_irqrestore(&p2m_lock, irqflags);
-			return mfn;
+			return entry->mfn + (pfn - entry->pfn);
 		}
 		if (pfn < entry->pfn)
 			n = n->rb_left;
@@ -146,19 +144,18 @@ bool __set_phys_to_machine_multi(unsigned long pfn,
 		return true;
 	}
 
-	p2m_entry = kzalloc(sizeof(*p2m_entry), GFP_NOWAIT);
-	if (!p2m_entry)
+	p2m_entry = kzalloc(sizeof(struct xen_p2m_entry), GFP_NOWAIT);
+	if (!p2m_entry) {
+		pr_warn("cannot allocate xen_p2m_entry\n");
 		return false;
-
+	}
 	p2m_entry->pfn = pfn;
 	p2m_entry->nr_pages = nr_pages;
 	p2m_entry->mfn = mfn;
 
 	write_lock_irqsave(&p2m_lock, irqflags);
-	rc = xen_add_phys_to_mach_entry(p2m_entry);
-	if (rc < 0) {
+	if ((rc = xen_add_phys_to_mach_entry(p2m_entry)) < 0) {
 		write_unlock_irqrestore(&p2m_lock, irqflags);
-		kfree(p2m_entry);
 		return false;
 	}
 	write_unlock_irqrestore(&p2m_lock, irqflags);

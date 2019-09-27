@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 #include <linux/init.h>
 #include <linux/pci.h>
 #include <linux/topology.h>
@@ -93,8 +92,7 @@ static int __init early_root_info_init(void)
 		vendor = id & 0xffff;
 		device = (id>>16) & 0xffff;
 
-		if (vendor != PCI_VENDOR_ID_AMD &&
-		    vendor != PCI_VENDOR_ID_HYGON)
+		if (vendor != PCI_VENDOR_ID_AMD)
 			continue;
 
 		if (hb_probes[i].device == device) {
@@ -329,17 +327,34 @@ static int __init early_root_info_init(void)
 
 #define ENABLE_CF8_EXT_CFG      (1ULL << 46)
 
-static int amd_bus_cpu_online(unsigned int cpu)
+static void enable_pci_io_ecs(void *unused)
 {
 	u64 reg;
-
 	rdmsrl(MSR_AMD64_NB_CFG, reg);
 	if (!(reg & ENABLE_CF8_EXT_CFG)) {
 		reg |= ENABLE_CF8_EXT_CFG;
 		wrmsrl(MSR_AMD64_NB_CFG, reg);
 	}
-	return 0;
 }
+
+static int amd_cpu_notify(struct notifier_block *self, unsigned long action,
+			  void *hcpu)
+{
+	int cpu = (long)hcpu;
+	switch (action) {
+	case CPU_ONLINE:
+	case CPU_ONLINE_FROZEN:
+		smp_call_function_single(cpu, enable_pci_io_ecs, NULL, 0);
+		break;
+	default:
+		break;
+	}
+	return NOTIFY_OK;
+}
+
+static struct notifier_block amd_cpu_notifier = {
+	.notifier_call	= amd_cpu_notify,
+};
 
 static void __init pci_enable_pci_io_ecs(void)
 {
@@ -370,7 +385,7 @@ static void __init pci_enable_pci_io_ecs(void)
 
 static int __init pci_io_ecs_init(void)
 {
-	int ret;
+	int cpu;
 
 	/* assume all cpus from fam10h have IO ECS */
 	if (boot_cpu_data.x86 < 0x10)
@@ -380,9 +395,12 @@ static int __init pci_io_ecs_init(void)
 	if (early_pci_allowed())
 		pci_enable_pci_io_ecs();
 
-	ret = cpuhp_setup_state(CPUHP_AP_ONLINE_DYN, "pci/amd_bus:online",
-				amd_bus_cpu_online, NULL);
-	WARN_ON(ret < 0);
+	cpu_notifier_register_begin();
+	for_each_online_cpu(cpu)
+		amd_cpu_notify(&amd_cpu_notifier, (unsigned long)CPU_ONLINE,
+			       (void *)(long)cpu);
+	__register_cpu_notifier(&amd_cpu_notifier);
+	cpu_notifier_register_done();
 
 	pci_probe |= PCI_HAS_IO_ECS;
 
@@ -391,8 +409,7 @@ static int __init pci_io_ecs_init(void)
 
 static int __init amd_postcore_init(void)
 {
-	if (boot_cpu_data.x86_vendor != X86_VENDOR_AMD &&
-	    boot_cpu_data.x86_vendor != X86_VENDOR_HYGON)
+	if (boot_cpu_data.x86_vendor != X86_VENDOR_AMD)
 		return 0;
 
 	early_root_info_init();

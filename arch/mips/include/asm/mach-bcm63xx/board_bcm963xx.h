@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef BOARD_BCM963XX_H_
 #define BOARD_BCM963XX_H_
 
@@ -7,6 +6,7 @@
 #include <linux/leds.h>
 #include <bcm63xx_dev_enet.h>
 #include <bcm63xx_dev_usb_usbd.h>
+#include <bcm63xx_dev_dsp.h>
 
 /*
  * flash mapping
@@ -30,6 +30,7 @@ struct board_info {
 	unsigned int	has_ohci0:1;
 	unsigned int	has_ehci0:1;
 	unsigned int	has_usbd:1;
+	unsigned int	has_dsp:1;
 	unsigned int	has_uart0:1;
 	unsigned int	has_uart1:1;
 
@@ -40,6 +41,9 @@ struct board_info {
 
 	/* USB config */
 	struct bcm63xx_usbd_platform_data usbd;
+
+	/* DSP config */
+	struct bcm63xx_dsp_platform_data dsp;
 
 	/* GPIO LEDs */
 	struct gpio_led leds[5];

@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * sbi.h:  SBI (Sbus Interface on sun4d) definitions
  *

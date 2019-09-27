@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  *		INETPEER - A storage for permanent information about peers
  *
@@ -34,15 +33,20 @@ struct inetpeer_addr {
 };
 
 struct inet_peer {
-	struct rb_node		rb_node;
+	/* group together avl_left,avl_right,v4daddr to speedup lookups */
+	struct inet_peer __rcu	*avl_left, *avl_right;
 	struct inetpeer_addr	daddr;
+	__u32			avl_height;
 
 	u32			metrics[RTAX_MAX];
 	u32			rate_tokens;	/* rate limiting for ICMP */
-	u32			n_redirects;
 	unsigned long		rate_last;
+	union {
+		struct list_head	gc_list;
+		struct rcu_head     gc_rcu;
+	};
 	/*
-	 * Once inet_peer is queued for deletion (refcnt == 0), following field
+	 * Once inet_peer is queued for deletion (refcnt == -1), following field
 	 * is not available: rid
 	 * We can share memory with rcu_head to help keep inet_peer small.
 	 */
@@ -51,15 +55,16 @@ struct inet_peer {
 			atomic_t			rid;		/* Frag reception counter */
 		};
 		struct rcu_head         rcu;
+		struct inet_peer	*gc_next;
 	};
 
 	/* following fields might be frequently dirtied */
 	__u32			dtime;	/* the time of last use of not referenced entries */
-	refcount_t		refcnt;
+	atomic_t		refcnt;
 };
 
 struct inet_peer_base {
-	struct rb_root		rb_root;
+	struct inet_peer __rcu	*root;
 	seqlock_t		lock;
 	int			total;
 };

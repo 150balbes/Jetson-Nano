@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * PXA168 ethernet driver.
  * Most of the code is derived from mv643xx ethernet driver.
@@ -8,6 +7,19 @@
  *		Zhangfei Gao <zgao6@marvell.com>
  *		Philip Rakity <prakity@marvell.com>
  *		Mark Brown <markb@marvell.com>
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License
+ * as published by the Free Software Foundation; either version 2
+ * of the License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, see <http://www.gnu.org/licenses/>.
  */
 
 #include <linux/bitops.h>
@@ -189,7 +201,6 @@ struct tx_desc {
 };
 
 struct pxa168_eth_private {
-	struct platform_device *pdev;
 	int port_num;		/* User Ethernet port number    */
 	int phy_addr;
 	int phy_speed;
@@ -263,6 +274,8 @@ enum hash_table_entry {
 	HASH_ENTRY_RECEIVE_DISCARD_BIT = 2
 };
 
+static int pxa168_get_link_ksettings(struct net_device *dev,
+				     struct ethtool_link_ksettings *cmd);
 static int pxa168_init_hw(struct pxa168_eth_private *pep);
 static int pxa168_init_phy(struct net_device *dev);
 static void eth_port_reset(struct net_device *dev);
@@ -320,7 +333,7 @@ static void rxq_refill(struct net_device *dev)
 		used_rx_desc = pep->rx_used_desc_q;
 		p_used_rx_desc = &pep->p_rx_desc_area[used_rx_desc];
 		size = skb_end_pointer(skb) - skb->data;
-		p_used_rx_desc->buf_ptr = dma_map_single(&pep->pdev->dev,
+		p_used_rx_desc->buf_ptr = dma_map_single(NULL,
 							 skb->data,
 							 size,
 							 DMA_FROM_DEVICE);
@@ -351,9 +364,9 @@ static void rxq_refill(struct net_device *dev)
 	}
 }
 
-static inline void rxq_refill_timer_wrapper(struct timer_list *t)
+static inline void rxq_refill_timer_wrapper(unsigned long data)
 {
-	struct pxa168_eth_private *pep = from_timer(pep, t, timeout);
+	struct pxa168_eth_private *pep = (void *)data;
 	napi_schedule(&pep->napi);
 }
 
@@ -545,11 +558,11 @@ static int init_hash_table(struct pxa168_eth_private *pep)
 	 * function.Driver can dynamically switch to them if the 1/2kB hash
 	 * table is full.
 	 */
-	if (!pep->htpr) {
-		pep->htpr = dma_alloc_coherent(pep->dev->dev.parent,
-					       HASH_ADDR_TABLE_SIZE,
-					       &pep->htpr_dma, GFP_KERNEL);
-		if (!pep->htpr)
+	if (pep->htpr == NULL) {
+		pep->htpr = dma_zalloc_coherent(pep->dev->dev.parent,
+						HASH_ADDR_TABLE_SIZE,
+						&pep->htpr_dma, GFP_KERNEL);
+		if (pep->htpr == NULL)
 			return -ENOMEM;
 	} else {
 		memset(pep->htpr, 0, HASH_ADDR_TABLE_SIZE);
@@ -732,7 +745,7 @@ static int txq_reclaim(struct net_device *dev, int force)
 				netdev_err(dev, "Error in TX\n");
 			dev->stats.tx_errors++;
 		}
-		dma_unmap_single(&pep->pdev->dev, addr, count, DMA_TO_DEVICE);
+		dma_unmap_single(NULL, addr, count, DMA_TO_DEVICE);
 		if (skb)
 			dev_kfree_skb_irq(skb);
 		released++;
@@ -794,7 +807,7 @@ static int rxq_process(struct net_device *dev, int budget)
 		if (rx_next_curr_desc == rx_used_desc)
 			pep->rx_resource_err = 1;
 		pep->rx_desc_count--;
-		dma_unmap_single(&pep->pdev->dev, rx_desc->buf_ptr,
+		dma_unmap_single(NULL, rx_desc->buf_ptr,
 				 rx_desc->buf_size,
 				 DMA_FROM_DEVICE);
 		received_packets++;
@@ -974,11 +987,15 @@ static int pxa168_init_phy(struct net_device *dev)
 	if (err)
 		return err;
 
+	err = pxa168_get_link_ksettings(dev, &cmd);
+	if (err)
+		return err;
+
 	cmd.base.phy_address = pep->phy_addr;
 	cmd.base.speed = pep->phy_speed;
 	cmd.base.duplex = pep->phy_duplex;
-	bitmap_copy(cmd.link_modes.advertising, PHY_BASIC_FEATURES,
-		    __ETHTOOL_LINK_MODE_MASK_NBITS);
+	ethtool_convert_legacy_u32_to_link_mode(cmd.link_modes.advertising,
+						PHY_BASIC_FEATURES);
 	cmd.base.autoneg = AUTONEG_ENABLE;
 
 	if (cmd.base.speed != 0)
@@ -1025,7 +1042,8 @@ static int rxq_init(struct net_device *dev)
 	int rx_desc_num = pep->rx_ring_size;
 
 	/* Allocate RX skb rings */
-	pep->rx_skb = kcalloc(rx_desc_num, sizeof(*pep->rx_skb), GFP_KERNEL);
+	pep->rx_skb = kzalloc(sizeof(*pep->rx_skb) * pep->rx_ring_size,
+			     GFP_KERNEL);
 	if (!pep->rx_skb)
 		return -ENOMEM;
 
@@ -1033,9 +1051,9 @@ static int rxq_init(struct net_device *dev)
 	pep->rx_desc_count = 0;
 	size = pep->rx_ring_size * sizeof(struct rx_desc);
 	pep->rx_desc_area_size = size;
-	pep->p_rx_desc_area = dma_alloc_coherent(pep->dev->dev.parent, size,
-						 &pep->rx_desc_dma,
-						 GFP_KERNEL);
+	pep->p_rx_desc_area = dma_zalloc_coherent(pep->dev->dev.parent, size,
+						  &pep->rx_desc_dma,
+						  GFP_KERNEL);
 	if (!pep->p_rx_desc_area)
 		goto out;
 
@@ -1084,7 +1102,8 @@ static int txq_init(struct net_device *dev)
 	int size = 0, i = 0;
 	int tx_desc_num = pep->tx_ring_size;
 
-	pep->tx_skb = kcalloc(tx_desc_num, sizeof(*pep->tx_skb), GFP_KERNEL);
+	pep->tx_skb = kzalloc(sizeof(*pep->tx_skb) * pep->tx_ring_size,
+			     GFP_KERNEL);
 	if (!pep->tx_skb)
 		return -ENOMEM;
 
@@ -1092,9 +1111,9 @@ static int txq_init(struct net_device *dev)
 	pep->tx_desc_count = 0;
 	size = pep->tx_ring_size * sizeof(struct tx_desc);
 	pep->tx_desc_area_size = size;
-	pep->p_tx_desc_area = dma_alloc_coherent(pep->dev->dev.parent, size,
-						 &pep->tx_desc_dma,
-						 GFP_KERNEL);
+	pep->p_tx_desc_area = dma_zalloc_coherent(pep->dev->dev.parent, size,
+						  &pep->tx_desc_dma,
+						  GFP_KERNEL);
 	if (!pep->p_tx_desc_area)
 		goto out;
 	/* Initialize the next_desc_ptr links in the Tx descriptors ring */
@@ -1190,6 +1209,9 @@ static int pxa168_eth_change_mtu(struct net_device *dev, int mtu)
 	int retval;
 	struct pxa168_eth_private *pep = netdev_priv(dev);
 
+	if ((mtu > 9500) || (mtu < 68))
+		return -EINVAL;
+
 	dev->mtu = mtu;
 	retval = set_port_config_ext(pep);
 
@@ -1242,15 +1264,14 @@ static int pxa168_rx_poll(struct napi_struct *napi, int budget)
 	}
 	work_done = rxq_process(dev, budget);
 	if (work_done < budget) {
-		napi_complete_done(napi, work_done);
+		napi_complete(napi);
 		wrl(pep, INT_MASK, ALL_INTS);
 	}
 
 	return work_done;
 }
 
-static netdev_tx_t
-pxa168_eth_start_xmit(struct sk_buff *skb, struct net_device *dev)
+static int pxa168_eth_start_xmit(struct sk_buff *skb, struct net_device *dev)
 {
 	struct pxa168_eth_private *pep = netdev_priv(dev);
 	struct net_device_stats *stats = &dev->stats;
@@ -1263,8 +1284,7 @@ pxa168_eth_start_xmit(struct sk_buff *skb, struct net_device *dev)
 	length = skb->len;
 	pep->tx_skb[tx_index] = skb;
 	desc->byte_cnt = length;
-	desc->buf_ptr = dma_map_single(&pep->pdev->dev, skb->data, length,
-					DMA_TO_DEVICE);
+	desc->buf_ptr = dma_map_single(NULL, skb->data, length, DMA_TO_DEVICE);
 
 	skb_tx_timestamp(skb);
 
@@ -1347,20 +1367,23 @@ static int pxa168_smi_write(struct mii_bus *bus, int phy_addr, int regnum,
 static int pxa168_eth_do_ioctl(struct net_device *dev, struct ifreq *ifr,
 			       int cmd)
 {
-	if (dev->phydev)
+	if (dev->phydev != NULL)
 		return phy_mii_ioctl(dev->phydev, ifr, cmd);
 
 	return -EOPNOTSUPP;
 }
 
-#ifdef CONFIG_NET_POLL_CONTROLLER
-static void pxa168_eth_netpoll(struct net_device *dev)
+static int pxa168_get_link_ksettings(struct net_device *dev,
+				     struct ethtool_link_ksettings *cmd)
 {
-	disable_irq(dev->irq);
-	pxa168_eth_int_handler(dev->irq, dev);
-	enable_irq(dev->irq);
+	int err;
+
+	err = phy_read_status(dev->phydev);
+	if (err == 0)
+		err = phy_ethtool_ksettings_get(dev->phydev, cmd);
+
+	return err;
 }
-#endif
 
 static void pxa168_get_drvinfo(struct net_device *dev,
 			       struct ethtool_drvinfo *info)
@@ -1373,10 +1396,9 @@ static void pxa168_get_drvinfo(struct net_device *dev,
 
 static const struct ethtool_ops pxa168_ethtool_ops = {
 	.get_drvinfo	= pxa168_get_drvinfo,
-	.nway_reset	= phy_ethtool_nway_reset,
 	.get_link	= ethtool_op_get_link,
 	.get_ts_info	= ethtool_op_get_ts_info,
-	.get_link_ksettings = phy_ethtool_get_link_ksettings,
+	.get_link_ksettings = pxa168_get_link_ksettings,
 	.set_link_ksettings = phy_ethtool_set_link_ksettings,
 };
 
@@ -1390,9 +1412,6 @@ static const struct net_device_ops pxa168_eth_netdev_ops = {
 	.ndo_do_ioctl		= pxa168_eth_do_ioctl,
 	.ndo_change_mtu		= pxa168_eth_change_mtu,
 	.ndo_tx_timeout		= pxa168_eth_tx_timeout,
-#ifdef CONFIG_NET_POLL_CONTROLLER
-	.ndo_poll_controller    = pxa168_eth_netpoll,
-#endif
 };
 
 static int pxa168_eth_probe(struct platform_device *pdev)
@@ -1440,16 +1459,12 @@ static int pxa168_eth_probe(struct platform_device *pdev)
 	dev->base_addr = 0;
 	dev->ethtool_ops = &pxa168_ethtool_ops;
 
-	/* MTU range: 68 - 9500 */
-	dev->min_mtu = ETH_MIN_MTU;
-	dev->max_mtu = 9500;
-
 	INIT_WORK(&pep->tx_timeout_task, pxa168_eth_tx_timeout_task);
 
 	if (pdev->dev.of_node)
 		mac_addr = of_get_mac_address(pdev->dev.of_node);
 
-	if (!IS_ERR_OR_NULL(mac_addr)) {
+	if (mac_addr && is_valid_ether_addr(mac_addr)) {
 		ether_addr_copy(dev->dev_addr, mac_addr);
 	} else {
 		/* try reading the mac address, if set by the bootloader */
@@ -1499,10 +1514,12 @@ static int pxa168_eth_probe(struct platform_device *pdev)
 	netif_napi_add(dev, &pep->napi, pxa168_rx_poll, pep->rx_ring_size);
 
 	memset(&pep->timeout, 0, sizeof(struct timer_list));
-	timer_setup(&pep->timeout, rxq_refill_timer_wrapper, 0);
+	init_timer(&pep->timeout);
+	pep->timeout.function = rxq_refill_timer_wrapper;
+	pep->timeout.data = (unsigned long)pep;
 
 	pep->smi_bus = mdiobus_alloc();
-	if (!pep->smi_bus) {
+	if (pep->smi_bus == NULL) {
 		err = -ENOMEM;
 		goto err_netdev;
 	}
@@ -1518,7 +1535,6 @@ static int pxa168_eth_probe(struct platform_device *pdev)
 	if (err)
 		goto err_free_mdio;
 
-	pep->pdev = pdev;
 	SET_NETDEV_DEV(dev, &pdev->dev);
 	pxa168_init_hw(pep);
 	err = register_netdev(dev);

@@ -1,4 +1,3 @@
-; SPDX-License-Identifier: GPL-2.0
 ;
 ; mulsi3 for H8/300H - based on Renesas SH implementation
 ;

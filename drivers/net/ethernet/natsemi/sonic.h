@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * Header file for sonic.c
  *
@@ -319,7 +318,6 @@ struct sonic_local {
 	unsigned int eol_rx;
 	unsigned int eol_tx;           /* last unacked transmit packet */
 	unsigned int next_tx;          /* next free TD */
-	int msg_enable;
 	struct device *device;         /* generic device */
 	struct net_device_stats stats;
 };
@@ -337,7 +335,6 @@ static struct net_device_stats *sonic_get_stats(struct net_device *dev);
 static void sonic_multicast_list(struct net_device *dev);
 static int sonic_init(struct net_device *dev);
 static void sonic_tx_timeout(struct net_device *dev);
-static void sonic_msg_init(struct net_device *dev);
 
 /* Internal inlines for reading/writing DMA buffers.  Note that bus
    size and endianness matter here, whereas they don't for registers,
@@ -447,7 +444,7 @@ static inline __u16 sonic_rra_get(struct net_device* dev, int entry,
 			     (entry * SIZEOF_SONIC_RR) + offset);
 }
 
-static const char version[] =
+static const char *version =
     "sonic.c:v0.92 20.9.98 tsbogend@alpha.franken.de\n";
 
 #endif /* SONIC_H */

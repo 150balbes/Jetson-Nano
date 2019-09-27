@@ -1,0 +1,31 @@
+* ARMv8.2 RAS Driver
+==============================
+
+RAS are three aspects of the dependability of a system:
+Reliability: continuity of correct service
+Availability: readiness for correct service
+Serviceability: ability to undergo modifications and repairs
+
+ARMv8.2 provides RAS extensions to achieve the above features in a system.
+
+arm64_ras driver allows you to handle Correctable errors using
+Fault Handling Interrupt (or FHI).
+
+The driver provides an API for CPU sepcific RAS drivers to
+register callbacks in case of FHI. When FHI occurs, the FHI
+ISR goes through the list of registered callbacks and executes
+them.
+
+Required Properties:
+
+- compatible : Should be "arm,armv8.2-ras"
+- interrupts : Represents the Fault Handling Interrupt
+
+Example:
+=========
+
+	arm64_ras: arm64_ras {
+		compatible = "arm,armv8.2ras";
+		interrupts = <0 400 0x04>;
+		status = "disabled";
+	};

@@ -37,45 +37,11 @@
 #include <linux/pci.h>
 #include <linux/pm_runtime.h>
 
-static int ufs_intel_disable_lcc(struct ufs_hba *hba)
-{
-	u32 attr = UIC_ARG_MIB(PA_LOCAL_TX_LCC_ENABLE);
-	u32 lcc_enable = 0;
-
-	ufshcd_dme_get(hba, attr, &lcc_enable);
-	if (lcc_enable)
-		ufshcd_dme_set(hba, attr, 0);
-
-	return 0;
-}
-
-static int ufs_intel_link_startup_notify(struct ufs_hba *hba,
-					 enum ufs_notify_change_status status)
-{
-	int err = 0;
-
-	switch (status) {
-	case PRE_CHANGE:
-		err = ufs_intel_disable_lcc(hba);
-		break;
-	case POST_CHANGE:
-		break;
-	default:
-		break;
-	}
-
-	return err;
-}
-
-static struct ufs_hba_variant_ops ufs_intel_cnl_hba_vops = {
-	.name                   = "intel-pci",
-	.link_startup_notify	= ufs_intel_link_startup_notify,
-};
-
-#ifdef CONFIG_PM_SLEEP
+#ifdef CONFIG_PM
 /**
  * ufshcd_pci_suspend - suspend power management function
- * @dev: pointer to PCI device handle
+ * @pdev: pointer to PCI device handle
+ * @state: power state
  *
  * Returns 0 if successful
  * Returns non-zero otherwise
@@ -87,7 +53,7 @@ static int ufshcd_pci_suspend(struct device *dev)
 
 /**
  * ufshcd_pci_resume - resume power management function
- * @dev: pointer to PCI device handle
+ * @pdev: pointer to PCI device handle
  *
  * Returns 0 if successful
  * Returns non-zero otherwise
@@ -96,9 +62,7 @@ static int ufshcd_pci_resume(struct device *dev)
 {
 	return ufshcd_system_resume(dev_get_drvdata(dev));
 }
-#endif /* !CONFIG_PM_SLEEP */
 
-#ifdef CONFIG_PM
 static int ufshcd_pci_runtime_suspend(struct device *dev)
 {
 	return ufshcd_runtime_suspend(dev_get_drvdata(dev));
@@ -111,7 +75,13 @@ static int ufshcd_pci_runtime_idle(struct device *dev)
 {
 	return ufshcd_runtime_idle(dev_get_drvdata(dev));
 }
-#endif /* !CONFIG_PM */
+#else /* !CONFIG_PM */
+#define ufshcd_pci_suspend	NULL
+#define ufshcd_pci_resume	NULL
+#define ufshcd_pci_runtime_suspend	NULL
+#define ufshcd_pci_runtime_resume	NULL
+#define ufshcd_pci_runtime_idle	NULL
+#endif /* CONFIG_PM */
 
 /**
  * ufshcd_pci_shutdown - main function to put the controller in reset state
@@ -125,7 +95,7 @@ static void ufshcd_pci_shutdown(struct pci_dev *pdev)
 /**
  * ufshcd_pci_remove - de-allocate PCI/SCSI host and host memory space
  *		data structure memory
- * @pdev: pointer to PCI handle
+ * @pdev - pointer to PCI handle
  */
 static void ufshcd_pci_remove(struct pci_dev *pdev)
 {
@@ -134,7 +104,6 @@ static void ufshcd_pci_remove(struct pci_dev *pdev)
 	pm_runtime_forbid(&pdev->dev);
 	pm_runtime_get_noresume(&pdev->dev);
 	ufshcd_remove(hba);
-	ufshcd_dealloc_host(hba);
 }
 
 /**
@@ -173,12 +142,11 @@ ufshcd_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 		return err;
 	}
 
-	hba->vops = (struct ufs_hba_variant_ops *)id->driver_data;
+	INIT_LIST_HEAD(&hba->clk_list_head);
 
 	err = ufshcd_init(hba, mmio_base, pdev->irq);
 	if (err) {
 		dev_err(&pdev->dev, "Initialization failed\n");
-		ufshcd_dealloc_host(hba);
 		return err;
 	}
 
@@ -190,18 +158,15 @@ ufshcd_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 }
 
 static const struct dev_pm_ops ufshcd_pci_pm_ops = {
-	SET_SYSTEM_SLEEP_PM_OPS(ufshcd_pci_suspend,
-				ufshcd_pci_resume)
-	SET_RUNTIME_PM_OPS(ufshcd_pci_runtime_suspend,
-			   ufshcd_pci_runtime_resume,
-			   ufshcd_pci_runtime_idle)
+	.suspend	= ufshcd_pci_suspend,
+	.resume		= ufshcd_pci_resume,
+	.runtime_suspend = ufshcd_pci_runtime_suspend,
+	.runtime_resume  = ufshcd_pci_runtime_resume,
+	.runtime_idle    = ufshcd_pci_runtime_idle,
 };
 
 static const struct pci_device_id ufshcd_pci_tbl[] = {
 	{ PCI_VENDOR_ID_SAMSUNG, 0xC00C, PCI_ANY_ID, PCI_ANY_ID, 0, 0, 0 },
-	{ PCI_VDEVICE(INTEL, 0x9DFA), (kernel_ulong_t)&ufs_intel_cnl_hba_vops },
-	{ PCI_VDEVICE(INTEL, 0x4B41), (kernel_ulong_t)&ufs_intel_cnl_hba_vops },
-	{ PCI_VDEVICE(INTEL, 0x4B43), (kernel_ulong_t)&ufs_intel_cnl_hba_vops },
 	{ }	/* terminate list */
 };
 

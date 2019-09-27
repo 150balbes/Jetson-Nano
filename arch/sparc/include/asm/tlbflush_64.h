@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _SPARC64_TLBFLUSH_H
 #define _SPARC64_TLBFLUSH_H
 
@@ -9,7 +8,7 @@
 #define TLB_BATCH_NR	192
 
 struct tlb_batch {
-	unsigned int hugepage_shift;
+	bool huge;
 	struct mm_struct *mm;
 	unsigned long tlb_nr;
 	unsigned long active;
@@ -18,8 +17,7 @@ struct tlb_batch {
 
 void flush_tsb_kernel_range(unsigned long start, unsigned long end);
 void flush_tsb_user(struct tlb_batch *tb);
-void flush_tsb_user_page(struct mm_struct *mm, unsigned long vaddr,
-			 unsigned int hugepage_shift);
+void flush_tsb_user_page(struct mm_struct *mm, unsigned long vaddr, bool huge);
 
 /* TLB flush operations. */
 

@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __ALPHA_DELAY_H
 #define __ALPHA_DELAY_H
 

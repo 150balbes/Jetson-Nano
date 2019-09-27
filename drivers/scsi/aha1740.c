@@ -207,11 +207,11 @@ static int aha1740_test_port(unsigned int base)
 static irqreturn_t aha1740_intr_handle(int irq, void *dev_id)
 {
 	struct Scsi_Host *host = (struct Scsi_Host *) dev_id;
-        void (*my_done)(struct scsi_cmnd *);
+        void (*my_done)(Scsi_Cmnd *);
 	int errstatus, adapstat;
 	int number_serviced;
 	struct ecb *ecbptr;
-	struct scsi_cmnd *SCtmp;
+	Scsi_Cmnd *SCtmp;
 	unsigned int base;
 	unsigned long flags;
 	int handled = 0;
@@ -311,8 +311,7 @@ static irqreturn_t aha1740_intr_handle(int irq, void *dev_id)
 	return IRQ_RETVAL(handled);
 }
 
-static int aha1740_queuecommand_lck(struct scsi_cmnd * SCpnt,
-				    void (*done)(struct scsi_cmnd *))
+static int aha1740_queuecommand_lck(Scsi_Cmnd * SCpnt, void (*done)(Scsi_Cmnd *))
 {
 	unchar direction;
 	unchar *cmd = (unchar *) SCpnt->cmnd;
@@ -521,7 +520,7 @@ static int aha1740_biosparam(struct scsi_device *sdev,
 	return 0;
 }
 
-static int aha1740_eh_abort_handler (struct scsi_cmnd *dummy)
+static int aha1740_eh_abort_handler (Scsi_Cmnd *dummy)
 {
 /*
  * From Alan Cox :
@@ -545,6 +544,7 @@ static struct scsi_host_template aha1740_template = {
 	.can_queue        = AHA1740_ECBS,
 	.this_id          = 7,
 	.sg_tablesize     = AHA1740_SCATTER,
+	.use_clustering   = ENABLE_CLUSTERING,
 	.eh_abort_handler = aha1740_eh_abort_handler,
 };
 
@@ -592,7 +592,7 @@ static int aha1740_probe (struct device *dev)
 					     DMA_BIDIRECTIONAL);
 	if (!host->ecb_dma_addr) {
 		printk (KERN_ERR "aha1740_probe: Couldn't map ECB, giving up\n");
-		scsi_host_put (shpnt);
+		scsi_unregister (shpnt);
 		goto err_host_put;
 	}
 	

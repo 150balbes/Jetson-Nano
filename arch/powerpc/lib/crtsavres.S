@@ -44,9 +44,9 @@
 
 #ifdef CONFIG_CC_OPTIMIZE_FOR_SIZE
 
-	.section ".text"
-
 #ifndef CONFIG_PPC64
+
+	.section ".text"
 
 /* Routines for saving integer registers, called by the compiler.  */
 /* Called with r11 pointing to the stack header word of the caller of the */
@@ -313,6 +313,8 @@ _GLOBAL(_restvr_31)
 #endif /* CONFIG_ALTIVEC */
 
 #else /* CONFIG_PPC64 */
+
+	.section ".text.save.restore","ax",@progbits
 
 .globl	_savegpr0_14
 _savegpr0_14:

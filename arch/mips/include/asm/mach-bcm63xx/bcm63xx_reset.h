@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __BCM63XX_RESET_H
 #define __BCM63XX_RESET_H
 

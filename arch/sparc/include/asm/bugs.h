@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /* include/asm/bugs.h:  Sparc probes for various bugs.
  *
  * Copyright (C) 1996, 2007 David S. Miller (davem@davemloft.net)

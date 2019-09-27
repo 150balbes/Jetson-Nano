@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 #include <linux/types.h>
 #include <linux/netdevice.h>
 #include <linux/interrupt.h>

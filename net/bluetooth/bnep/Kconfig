@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0-only
 config BT_BNEP
 	tristate "BNEP protocol support"
 	depends on BT_BREDR

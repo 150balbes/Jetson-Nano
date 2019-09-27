@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _ALPHA_TLBFLUSH_H
 #define _ALPHA_TLBFLUSH_H
 

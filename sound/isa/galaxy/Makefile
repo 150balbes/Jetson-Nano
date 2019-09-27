@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0-only
 #
 # Makefile for ALSA
 # Copyright (c) 2001 by Jaroslav Kysela <perex@suse.cz>

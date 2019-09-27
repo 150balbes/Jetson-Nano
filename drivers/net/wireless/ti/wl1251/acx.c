@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 #include "acx.h"
 
 #include <linux/module.h>

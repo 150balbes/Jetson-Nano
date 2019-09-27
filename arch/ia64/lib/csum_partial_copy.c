@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * Network Checksum & Copy routine
  *
@@ -12,7 +11,7 @@
 #include <linux/types.h>
 #include <linux/string.h>
 
-#include <linux/uaccess.h>
+#include <asm/uaccess.h>
 
 /*
  * XXX Fixme: those 2 inlines are meant for debugging and will go away

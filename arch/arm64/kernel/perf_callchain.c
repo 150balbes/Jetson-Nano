@@ -1,13 +1,23 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * arm64 callchain support
  *
  * Copyright (C) 2015 ARM Limited
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include <linux/perf_event.h>
 #include <linux/uaccess.h>
 
-#include <asm/pointer_auth.h>
 #include <asm/stacktrace.h>
 
 struct frame_tail {
@@ -25,10 +35,9 @@ user_backtrace(struct frame_tail __user *tail,
 {
 	struct frame_tail buftail;
 	unsigned long err;
-	unsigned long lr;
 
 	/* Also check accessibility of one struct frame_tail beyond */
-	if (!access_ok(tail, sizeof(buftail)))
+	if (!access_ok(VERIFY_READ, tail, sizeof(buftail)))
 		return NULL;
 
 	pagefault_disable();
@@ -38,9 +47,7 @@ user_backtrace(struct frame_tail __user *tail,
 	if (err)
 		return NULL;
 
-	lr = ptrauth_strip_insn_pac(buftail.lr);
-
-	perf_callchain_store(entry, lr);
+	perf_callchain_store(entry, buftail.lr);
 
 	/*
 	 * Frame pointers should strictly progress back up the stack
@@ -75,7 +82,7 @@ compat_user_backtrace(struct compat_frame_tail __user *tail,
 	unsigned long err;
 
 	/* Also check accessibility of one struct frame_tail beyond */
-	if (!access_ok(tail, sizeof(buftail)))
+	if (!access_ok(VERIFY_READ, tail, sizeof(buftail)))
 		return NULL;
 
 	pagefault_disable();
@@ -154,7 +161,13 @@ void perf_callchain_kernel(struct perf_callchain_entry_ctx *entry,
 		return;
 	}
 
-	start_backtrace(&frame, regs->regs[29], regs->pc);
+	frame.fp = regs->regs[29];
+	frame.sp = regs->sp;
+	frame.pc = regs->pc;
+#ifdef CONFIG_FUNCTION_GRAPH_TRACER
+	frame.graph = current->curr_ret_stack;
+#endif
+
 	walk_stackframe(current, &frame, callchain_trace, entry);
 }
 

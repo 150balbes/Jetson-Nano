@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * Copyright (C) 1999 Niibe Yutaka
  * Copyright (C) 2003 - 2007 Paul Mundt
@@ -11,9 +10,7 @@
 #ifdef __KERNEL__
 #include <cpu/mmu_context.h>
 #include <asm/tlbflush.h>
-#include <linux/uaccess.h>
-#include <linux/mm_types.h>
-
+#include <asm/uaccess.h>
 #include <asm/io.h>
 #include <asm-generic/mm_hooks.h>
 

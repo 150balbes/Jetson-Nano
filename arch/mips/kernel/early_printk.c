@@ -14,6 +14,8 @@
 
 #include <asm/setup.h>
 
+extern void prom_putchar(char);
+
 static void early_console_write(struct console *con, const char *s, unsigned n)
 {
 	while (n-- && *s) {

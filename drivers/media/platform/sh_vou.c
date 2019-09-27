@@ -1,8 +1,11 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * SuperH Video Output Unit (VOU) driver
  *
  * Copyright (C) 2010, Guennadi Liakhovetski <g.liakhovetski@gmx.de>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  */
 
 #include <linux/dma-mapping.h>
@@ -226,7 +229,6 @@ static void sh_vou_stream_config(struct sh_vou_device *vou_dev)
 		break;
 	case V4L2_PIX_FMT_RGB565:
 		dataswap ^= 1;
-		/* fall through */
 	case V4L2_PIX_FMT_RGB565X:
 		row_coeff = 2;
 		break;
@@ -378,9 +380,9 @@ static int sh_vou_querycap(struct file *file, void  *priv,
 
 	dev_dbg(vou_dev->v4l2_dev.dev, "%s()\n", __func__);
 
-	strscpy(cap->card, "SuperH VOU", sizeof(cap->card));
-	strscpy(cap->driver, "sh-vou", sizeof(cap->driver));
-	strscpy(cap->bus_info, "platform:sh-vou", sizeof(cap->bus_info));
+	strlcpy(cap->card, "SuperH VOU", sizeof(cap->card));
+	strlcpy(cap->driver, "sh-vou", sizeof(cap->driver));
+	strlcpy(cap->bus_info, "platform:sh-vou", sizeof(cap->bus_info));
 	cap->device_caps = V4L2_CAP_VIDEO_OUTPUT | V4L2_CAP_READWRITE |
 			   V4L2_CAP_STREAMING;
 	cap->capabilities = cap->device_caps | V4L2_CAP_DEVICE_CAPS;
@@ -399,7 +401,7 @@ static int sh_vou_enum_fmt_vid_out(struct file *file, void  *priv,
 	dev_dbg(vou_dev->v4l2_dev.dev, "%s()\n", __func__);
 
 	fmt->type = V4L2_BUF_TYPE_VIDEO_OUTPUT;
-	strscpy(fmt->description, vou_fmt[fmt->index].desc,
+	strlcpy(fmt->description, vou_fmt[fmt->index].desc,
 		sizeof(fmt->description));
 	fmt->pixelformat = vou_fmt[fmt->index].pfmt;
 
@@ -790,7 +792,7 @@ static int sh_vou_enum_output(struct file *file, void *fh,
 
 	if (a->index)
 		return -EINVAL;
-	strscpy(a->name, "Video Out", sizeof(a->name));
+	strlcpy(a->name, "Video Out", sizeof(a->name));
 	a->type = V4L2_OUTPUT_TYPE_ANALOG;
 	a->std = vou_dev->vdev.tvnorms;
 	return 0;
@@ -811,9 +813,8 @@ static u32 sh_vou_ntsc_mode(enum sh_vou_bus_fmt bus_fmt)
 {
 	switch (bus_fmt) {
 	default:
-		pr_warn("%s(): Invalid bus-format code %d, using default 8-bit\n",
-			__func__, bus_fmt);
-		/* fall through */
+		pr_warning("%s(): Invalid bus-format code %d, using default 8-bit\n",
+			   __func__, bus_fmt);
 	case SH_VOU_BUS_8BIT:
 		return 1;
 	case SH_VOU_BUS_16BIT:
@@ -1007,7 +1008,7 @@ static int sh_vou_s_selection(struct file *file, void *fh,
 
 	/*
 	 * No down-scaling. According to the API, current call has precedence:
-	 * https://linuxtv.org/downloads/v4l-dvb-apis/uapi/v4l/crop.html#cropping-structures
+	 * http://v4l2spec.bytesex.org/spec/x1904.htm#AEN1954 paragraph two.
 	 */
 	vou_adjust_input(&geo, vou_dev->std);
 
@@ -1178,7 +1179,7 @@ static int sh_vou_release(struct file *file)
 
 /* sh_vou display ioctl operations */
 static const struct v4l2_ioctl_ops sh_vou_ioctl_ops = {
-	.vidioc_querycap		= sh_vou_querycap,
+	.vidioc_querycap        	= sh_vou_querycap,
 	.vidioc_enum_fmt_vid_out	= sh_vou_enum_fmt_vid_out,
 	.vidioc_g_fmt_vid_out		= sh_vou_g_fmt_vid_out,
 	.vidioc_s_fmt_vid_out		= sh_vou_s_fmt_vid_out,

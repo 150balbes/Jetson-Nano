@@ -1,11 +1,25 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Bt8xx based DVB adapter driver
  *
  * Copyright (C) 2002,2003 Florian Schirmer <jolt@tuxbox.org>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ *
  */
 
-#define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
+#define pr_fmt(fmt) "dvb_bt8xx: " fmt
 
 #include <linux/bitops.h>
 #include <linux/module.h>
@@ -16,10 +30,10 @@
 #include <linux/slab.h>
 #include <linux/i2c.h>
 
-#include <media/dmxdev.h>
-#include <media/dvbdev.h>
-#include <media/dvb_demux.h>
-#include <media/dvb_frontend.h>
+#include "dmxdev.h"
+#include "dvbdev.h"
+#include "dvb_demux.h"
+#include "dvb_frontend.h"
 #include "dvb-bt8xx.h"
 #include "bt878.h"
 
@@ -30,12 +44,10 @@ MODULE_PARM_DESC(debug, "Turn on/off debugging (default:off).");
 
 DVB_DEFINE_MOD_OPT_ADAPTER_NR(adapter_nr);
 
-#define dprintk(fmt, arg...) do {				\
-	if (debug)						\
-		printk(KERN_DEBUG pr_fmt("%s: " fmt),		\
-		       __func__, ##arg);			\
-} while (0)
-
+#define dprintk( args... ) \
+	do { \
+		if (debug) printk(KERN_DEBUG args); \
+	} while (0)
 
 #define IF_FREQUENCYx6 217    /* 6 * 36.16666666667MHz */
 
@@ -43,7 +55,7 @@ static void dvb_bt8xx_task(unsigned long data)
 {
 	struct dvb_bt8xx_card *card = (struct dvb_bt8xx_card *)data;
 
-	dprintk("%d\n", card->bt->finished_block);
+	//printk("%d ", card->bt->finished_block);
 
 	while (card->bt->last_block != card->bt->finished_block) {
 		(card->bt->TS_Size ? dvb_dmx_swfilter_204 : dvb_dmx_swfilter)
@@ -376,6 +388,10 @@ static int advbt771_samsung_tdtc9251dh0_tuner_calc_regs(struct dvb_frontend *fe,
 		bs = 0x02;
 	else if (c->frequency < 470000000)
 		bs = 0x02;
+	else if (c->frequency < 600000000)
+		bs = 0x08;
+	else if (c->frequency < 730000000)
+		bs = 0x08;
 	else
 		bs = 0x08;
 
@@ -427,7 +443,7 @@ static void or51211_reset(struct dvb_frontend * fe)
 	/* reset & PRM1,2&4 are outputs */
 	int ret = bttv_gpio_enable(bt->bttv_nr, 0x001F, 0x001F);
 	if (ret != 0)
-		pr_warn("or51211: Init Error - Can't Reset DVR (%i)\n", ret);
+		printk(KERN_WARNING "or51211: Init Error - Can't Reset DVR (%i)\n", ret);
 	bttv_write_gpio(bt->bttv_nr, 0x001F, 0x0000);   /* Reset */
 	msleep(20);
 	/* Now set for normal operation */
@@ -544,8 +560,7 @@ static void digitv_alps_tded4_reset(struct dvb_bt8xx_card *bt)
 
 	int ret = bttv_gpio_enable(bt->bttv_nr, 0x08, 0x08);
 	if (ret != 0)
-		pr_warn("digitv_alps_tded4: Init Error - Can't Reset DVR (%i)\n",
-			ret);
+		printk(KERN_WARNING "digitv_alps_tded4: Init Error - Can't Reset DVR (%i)\n", ret);
 
 	/* Pulse the reset line */
 	bttv_write_gpio(bt->bttv_nr, 0x08, 0x08); /* High */
@@ -561,6 +576,7 @@ static struct mt352_config digitv_alps_tded4_config = {
 };
 
 static struct lgdt330x_config tdvs_tua6034_config = {
+	.demod_address    = 0x0e,
 	.demod_chip       = LGDT3303,
 	.serial_mpeg      = 0x40, /* TPSERIAL for 3303 in TOP_CONTROL */
 };
@@ -592,20 +608,19 @@ static void frontend_init(struct dvb_bt8xx_card *card, u32 type)
 
 		if (card->fe != NULL) {
 			card->fe->ops.tuner_ops.calc_regs = thomson_dtt7579_tuner_calc_regs;
-			card->fe->ops.info.frequency_min_hz = 174 * MHz;
-			card->fe->ops.info.frequency_max_hz = 862 * MHz;
+			card->fe->ops.info.frequency_min = 174000000;
+			card->fe->ops.info.frequency_max = 862000000;
 		}
 		break;
 
 	case BTTV_BOARD_DVICO_FUSIONHDTV_5_LITE:
 		lgdt330x_reset(card);
-		card->fe = dvb_attach(lgdt330x_attach, &tdvs_tua6034_config,
-				      0x0e, card->i2c_adapter);
+		card->fe = dvb_attach(lgdt330x_attach, &tdvs_tua6034_config, card->i2c_adapter);
 		if (card->fe != NULL) {
 			dvb_attach(simple_tuner_attach, card->fe,
 				   card->i2c_adapter, 0x61,
 				   TUNER_LG_TDVS_H06XF);
-			dprintk("dvb_bt8xx: lgdt330x detected\n");
+			dprintk ("dvb_bt8xx: lgdt330x detected\n");
 		}
 		break;
 
@@ -620,7 +635,7 @@ static void frontend_init(struct dvb_bt8xx_card *card, u32 type)
 		card->fe = dvb_attach(nxt6000_attach, &vp3021_alps_tded4_config, card->i2c_adapter);
 		if (card->fe != NULL) {
 			card->fe->ops.tuner_ops.set_params = vp3021_alps_tded4_tuner_set_params;
-			dprintk("dvb_bt8xx: an nxt6000 was detected on your digitv card\n");
+			dprintk ("dvb_bt8xx: an nxt6000 was detected on your digitv card\n");
 			break;
 		}
 
@@ -630,7 +645,7 @@ static void frontend_init(struct dvb_bt8xx_card *card, u32 type)
 
 		if (card->fe != NULL) {
 			card->fe->ops.tuner_ops.calc_regs = digitv_alps_tded4_tuner_calc_regs;
-			dprintk("dvb_bt8xx: an mt352 was detected on your digitv card\n");
+			dprintk ("dvb_bt8xx: an mt352 was detected on your digitv card\n");
 		}
 		break;
 
@@ -645,8 +660,8 @@ static void frontend_init(struct dvb_bt8xx_card *card, u32 type)
 		card->fe = dvb_attach(mt352_attach, &advbt771_samsung_tdtc9251dh0_config, card->i2c_adapter);
 		if (card->fe != NULL) {
 			card->fe->ops.tuner_ops.calc_regs = advbt771_samsung_tdtc9251dh0_tuner_calc_regs;
-			card->fe->ops.info.frequency_min_hz = 174 * MHz;
-			card->fe->ops.info.frequency_max_hz = 862 * MHz;
+			card->fe->ops.info.frequency_min = 174000000;
+			card->fe->ops.info.frequency_max = 862000000;
 		}
 		break;
 
@@ -809,8 +824,7 @@ static int dvb_bt8xx_probe(struct bttv_sub_device *sub)
 
 	mutex_init(&card->lock);
 	card->bttv_nr = sub->core->nr;
-	strscpy(card->card_name, sub->core->v4l2_dev.name,
-		sizeof(card->card_name));
+	strlcpy(card->card_name, sub->core->v4l2_dev.name, sizeof(card->card_name));
 	card->i2c_adapter = &sub->core->i2c_adap;
 
 	switch(sub->core->type) {

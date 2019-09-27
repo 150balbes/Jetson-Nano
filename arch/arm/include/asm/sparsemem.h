@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef ASMARM_SPARSEMEM_H
 #define ASMARM_SPARSEMEM_H
 

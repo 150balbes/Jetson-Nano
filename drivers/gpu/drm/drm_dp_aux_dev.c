@@ -27,17 +27,14 @@
 
 #include <linux/device.h>
 #include <linux/fs.h>
+#include <linux/slab.h>
 #include <linux/init.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
-#include <linux/sched/signal.h>
-#include <linux/slab.h>
 #include <linux/uaccess.h>
-#include <linux/uio.h>
-
-#include <drm/drm_crtc.h>
 #include <drm/drm_dp_helper.h>
-#include <drm/drm_print.h>
+#include <drm/drm_crtc.h>
+#include <drm/drmP.h>
 
 #include "drm_crtc_helper_internal.h"
 
@@ -143,87 +140,103 @@ static loff_t auxdev_llseek(struct file *file, loff_t offset, int whence)
 	return fixed_size_llseek(file, offset, whence, AUX_MAX_OFFSET);
 }
 
-static ssize_t auxdev_read_iter(struct kiocb *iocb, struct iov_iter *to)
+static ssize_t auxdev_read(struct file *file, char __user *buf, size_t count,
+			   loff_t *offset)
 {
-	struct drm_dp_aux_dev *aux_dev = iocb->ki_filp->private_data;
-	loff_t pos = iocb->ki_pos;
+	size_t bytes_pending, num_bytes_processed = 0;
+	struct drm_dp_aux_dev *aux_dev = file->private_data;
 	ssize_t res = 0;
 
 	if (!atomic_inc_not_zero(&aux_dev->usecount))
 		return -ENODEV;
 
-	iov_iter_truncate(to, AUX_MAX_OFFSET - pos);
+	bytes_pending = min((loff_t)count, AUX_MAX_OFFSET - (*offset));
 
-	while (iov_iter_count(to)) {
-		uint8_t buf[DP_AUX_MAX_PAYLOAD_BYTES];
-		ssize_t todo = min(iov_iter_count(to), sizeof(buf));
-
-		if (signal_pending(current)) {
-			res = -ERESTARTSYS;
-			break;
-		}
-
-		res = drm_dp_dpcd_read(aux_dev->aux, pos, buf, todo);
-		if (res <= 0)
-			break;
-
-		if (copy_to_iter(buf, res, to) != res) {
-			res = -EFAULT;
-			break;
-		}
-
-		pos += res;
+	if (!access_ok(VERIFY_WRITE, buf, bytes_pending)) {
+		res = -EFAULT;
+		goto out;
 	}
 
-	if (pos != iocb->ki_pos)
-		res = pos - iocb->ki_pos;
-	iocb->ki_pos = pos;
+	while (bytes_pending > 0) {
+		uint8_t localbuf[DP_AUX_MAX_PAYLOAD_BYTES];
+		ssize_t todo = min_t(size_t, bytes_pending, sizeof(localbuf));
 
-	if (atomic_dec_and_test(&aux_dev->usecount))
-		wake_up_var(&aux_dev->usecount);
+		if (signal_pending(current)) {
+			res = num_bytes_processed ?
+				num_bytes_processed : -ERESTARTSYS;
+			goto out;
+		}
 
+		res = drm_dp_dpcd_read(aux_dev->aux, *offset, localbuf, todo);
+		if (res <= 0) {
+			res = num_bytes_processed ? num_bytes_processed : res;
+			goto out;
+		}
+		if (__copy_to_user(buf + num_bytes_processed, localbuf, res)) {
+			res = num_bytes_processed ?
+				num_bytes_processed : -EFAULT;
+			goto out;
+		}
+		bytes_pending -= res;
+		*offset += res;
+		num_bytes_processed += res;
+		res = num_bytes_processed;
+	}
+
+out:
+	atomic_dec(&aux_dev->usecount);
+	wake_up_atomic_t(&aux_dev->usecount);
 	return res;
 }
 
-static ssize_t auxdev_write_iter(struct kiocb *iocb, struct iov_iter *from)
+static ssize_t auxdev_write(struct file *file, const char __user *buf,
+			    size_t count, loff_t *offset)
 {
-	struct drm_dp_aux_dev *aux_dev = iocb->ki_filp->private_data;
-	loff_t pos = iocb->ki_pos;
+	size_t bytes_pending, num_bytes_processed = 0;
+	struct drm_dp_aux_dev *aux_dev = file->private_data;
 	ssize_t res = 0;
 
 	if (!atomic_inc_not_zero(&aux_dev->usecount))
 		return -ENODEV;
 
-	iov_iter_truncate(from, AUX_MAX_OFFSET - pos);
+	bytes_pending = min((loff_t)count, AUX_MAX_OFFSET - *offset);
 
-	while (iov_iter_count(from)) {
-		uint8_t buf[DP_AUX_MAX_PAYLOAD_BYTES];
-		ssize_t todo = min(iov_iter_count(from), sizeof(buf));
-
-		if (signal_pending(current)) {
-			res = -ERESTARTSYS;
-			break;
-		}
-
-		if (!copy_from_iter_full(buf, todo, from)) {
-			res = -EFAULT;
-			break;
-		}
-
-		res = drm_dp_dpcd_write(aux_dev->aux, pos, buf, todo);
-		if (res <= 0)
-			break;
-
-		pos += res;
+	if (!access_ok(VERIFY_READ, buf, bytes_pending)) {
+		res = -EFAULT;
+		goto out;
 	}
 
-	if (pos != iocb->ki_pos)
-		res = pos - iocb->ki_pos;
-	iocb->ki_pos = pos;
+	while (bytes_pending > 0) {
+		uint8_t localbuf[DP_AUX_MAX_PAYLOAD_BYTES];
+		ssize_t todo = min_t(size_t, bytes_pending, sizeof(localbuf));
 
-	if (atomic_dec_and_test(&aux_dev->usecount))
-		wake_up_var(&aux_dev->usecount);
+		if (signal_pending(current)) {
+			res = num_bytes_processed ?
+				num_bytes_processed : -ERESTARTSYS;
+			goto out;
+		}
 
+		if (__copy_from_user(localbuf,
+				     buf + num_bytes_processed, todo)) {
+			res = num_bytes_processed ?
+				num_bytes_processed : -EFAULT;
+			goto out;
+		}
+
+		res = drm_dp_dpcd_write(aux_dev->aux, *offset, localbuf, todo);
+		if (res <= 0) {
+			res = num_bytes_processed ? num_bytes_processed : res;
+			goto out;
+		}
+		bytes_pending -= res;
+		*offset += res;
+		num_bytes_processed += res;
+		res = num_bytes_processed;
+	}
+
+out:
+	atomic_dec(&aux_dev->usecount);
+	wake_up_atomic_t(&aux_dev->usecount);
 	return res;
 }
 
@@ -238,8 +251,8 @@ static int auxdev_release(struct inode *inode, struct file *file)
 static const struct file_operations auxdev_fops = {
 	.owner		= THIS_MODULE,
 	.llseek		= auxdev_llseek,
-	.read_iter	= auxdev_read_iter,
-	.write_iter	= auxdev_write_iter,
+	.read		= auxdev_read,
+	.write		= auxdev_write,
 	.open		= auxdev_open,
 	.release	= auxdev_release,
 };
@@ -267,6 +280,12 @@ static struct drm_dp_aux_dev *drm_dp_aux_dev_get_by_aux(struct drm_dp_aux *aux)
 	return aux_dev;
 }
 
+static int auxdev_wait_atomic_t(atomic_t *p)
+{
+	schedule();
+	return 0;
+}
+
 void drm_dp_aux_unregister_devnode(struct drm_dp_aux *aux)
 {
 	struct drm_dp_aux_dev *aux_dev;
@@ -281,7 +300,8 @@ void drm_dp_aux_unregister_devnode(struct drm_dp_aux *aux)
 	mutex_unlock(&aux_idr_mutex);
 
 	atomic_dec(&aux_dev->usecount);
-	wait_var_event(&aux_dev->usecount, !atomic_read(&aux_dev->usecount));
+	wait_on_atomic_t(&aux_dev->usecount, auxdev_wait_atomic_t,
+			 TASK_UNINTERRUPTIBLE);
 
 	minor = aux_dev->index;
 	if (aux_dev->dev)

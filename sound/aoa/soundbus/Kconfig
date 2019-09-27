@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0-only
 config SND_AOA_SOUNDBUS
 	tristate "Apple Soundbus support"
 	select SND_PCM

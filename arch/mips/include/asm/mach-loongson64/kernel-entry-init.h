@@ -11,8 +11,6 @@
 #ifndef __ASM_MACH_LOONGSON64_KERNEL_ENTRY_H
 #define __ASM_MACH_LOONGSON64_KERNEL_ENTRY_H
 
-#include <asm/cpu.h>
-
 /*
  * Override macros used in arch/mips/kernel/head.S.
  */
@@ -21,22 +19,19 @@
 	.set	push
 	.set	mips64
 	/* Set LPA on LOONGSON3 config3 */
-	mfc0	t0, CP0_CONFIG3
+	mfc0	t0, $16, 3
 	or	t0, (0x1 << 7)
-	mtc0	t0, CP0_CONFIG3
+	mtc0	t0, $16, 3
 	/* Set ELPA on LOONGSON3 pagegrain */
-	mfc0	t0, CP0_PAGEGRAIN
+	mfc0	t0, $5, 1
 	or	t0, (0x1 << 29)
-	mtc0	t0, CP0_PAGEGRAIN
+	mtc0	t0, $5, 1
+#ifdef CONFIG_LOONGSON3_ENHANCEMENT
 	/* Enable STFill Buffer */
-	mfc0	t0, CP0_PRID
-	andi	t0, (PRID_IMP_MASK | PRID_REV_MASK)
-	slti	t0, (PRID_IMP_LOONGSON_64 | PRID_REV_LOONGSON3A_R2_0)
-	bnez	t0, 1f
-	mfc0	t0, CP0_CONFIG6
+	mfc0	t0, $16, 6
 	or	t0, 0x100
-	mtc0	t0, CP0_CONFIG6
-1:
+	mtc0	t0, $16, 6
+#endif
 	_ehb
 	.set	pop
 #endif
@@ -50,22 +45,19 @@
 	.set	push
 	.set	mips64
 	/* Set LPA on LOONGSON3 config3 */
-	mfc0	t0, CP0_CONFIG3
+	mfc0	t0, $16, 3
 	or	t0, (0x1 << 7)
-	mtc0	t0, CP0_CONFIG3
+	mtc0	t0, $16, 3
 	/* Set ELPA on LOONGSON3 pagegrain */
-	mfc0	t0, CP0_PAGEGRAIN
+	mfc0	t0, $5, 1
 	or	t0, (0x1 << 29)
-	mtc0	t0, CP0_PAGEGRAIN
+	mtc0	t0, $5, 1
+#ifdef CONFIG_LOONGSON3_ENHANCEMENT
 	/* Enable STFill Buffer */
-	mfc0	t0, CP0_PRID
-	andi	t0, (PRID_IMP_MASK | PRID_REV_MASK)
-	slti	t0, (PRID_IMP_LOONGSON_64 | PRID_REV_LOONGSON3A_R2_0)
-	bnez	t0, 1f
-	mfc0	t0, CP0_CONFIG6
+	mfc0	t0, $16, 6
 	or	t0, 0x100
-	mtc0	t0, CP0_CONFIG6
-1:
+	mtc0	t0, $16, 6
+#endif
 	_ehb
 	.set	pop
 #endif

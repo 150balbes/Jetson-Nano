@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * File		pci-acpi.h
  *
@@ -25,9 +24,7 @@ static inline acpi_status pci_acpi_remove_pm_notifier(struct acpi_device *dev)
 }
 extern phys_addr_t acpi_pci_root_get_mcfg_addr(acpi_handle handle);
 
-struct pci_ecam_ops;
-extern int pci_mcfg_lookup(struct acpi_pci_root *root, struct resource *cfgres,
-			   struct pci_ecam_ops **ecam_ops);
+extern phys_addr_t pci_mcfg_lookup(u16 domain, struct resource *bus_res);
 
 static inline acpi_handle acpi_find_root_bridge_handle(struct pci_dev *pdev)
 {
@@ -106,11 +103,10 @@ static inline void acpiphp_remove_slots(struct pci_bus *bus) { }
 static inline void acpiphp_check_host_bridge(struct acpi_device *adev) { }
 #endif
 
-extern const guid_t pci_acpi_dsm_guid;
-#define IGNORE_PCI_BOOT_CONFIG_DSM	0x05
-#define DEVICE_LABEL_DSM		0x07
-#define RESET_DELAY_DSM			0x08
-#define FUNCTION_DELAY_DSM		0x09
+extern const u8 pci_acpi_dsm_uuid[];
+#define DEVICE_LABEL_DSM	0x07
+#define RESET_DELAY_DSM		0x08
+#define FUNCTION_DELAY_DSM	0x09
 
 #else	/* CONFIG_ACPI */
 static inline void acpi_pci_add_bus(struct pci_bus *bus) { }

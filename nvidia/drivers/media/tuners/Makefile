@@ -1,0 +1,1 @@
+obj-$(CONFIG_MEDIA_TUNER_TDA18272) += tda18272.o

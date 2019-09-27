@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _SIRFSOC_DMA_H_
 #define _SIRFSOC_DMA_H_
 

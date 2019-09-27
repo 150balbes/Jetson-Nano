@@ -44,6 +44,13 @@
 
 #define IB_CM_CLASS_VERSION	2 /* IB specification 1.2 */
 
+enum cm_msg_sequence {
+	CM_MSG_SEQUENCE_REQ,
+	CM_MSG_SEQUENCE_LAP,
+	CM_MSG_SEQUENCE_DREQ,
+	CM_MSG_SEQUENCE_SIDR
+};
+
 struct cm_req_msg {
 	struct ib_mad_hdr hdr;
 
@@ -98,7 +105,7 @@ struct cm_req_msg {
 
 	u32 private_data[IB_CM_REQ_PRIVATE_DATA_SIZE / sizeof(u32)];
 
-} __packed;
+} __attribute__ ((packed));
 
 static inline __be32 cm_req_get_local_qpn(struct cm_req_msg *req_msg)
 {
@@ -423,7 +430,7 @@ enum cm_msg_response {
 
 	u8 private_data[IB_CM_MRA_PRIVATE_DATA_SIZE];
 
-} __packed;
+} __attribute__ ((packed));
 
 static inline u8 cm_mra_get_msg_mraed(struct cm_mra_msg *mra_msg)
 {
@@ -461,7 +468,7 @@ struct cm_rej_msg {
 
 	u8 private_data[IB_CM_REJ_PRIVATE_DATA_SIZE];
 
-} __packed;
+} __attribute__ ((packed));
 
 static inline u8 cm_rej_get_msg_rejected(struct cm_rej_msg *rej_msg)
 {
@@ -506,7 +513,7 @@ struct cm_rep_msg {
 
 	u8 private_data[IB_CM_REP_PRIVATE_DATA_SIZE];
 
-} __packed;
+} __attribute__ ((packed));
 
 static inline __be32 cm_rep_get_local_qpn(struct cm_rep_msg *rep_msg)
 {
@@ -614,7 +621,7 @@ struct cm_rtu_msg {
 
 	u8 private_data[IB_CM_RTU_PRIVATE_DATA_SIZE];
 
-} __packed;
+} __attribute__ ((packed));
 
 struct cm_dreq_msg {
 	struct ib_mad_hdr hdr;
@@ -626,7 +633,7 @@ struct cm_dreq_msg {
 
 	u8 private_data[IB_CM_DREQ_PRIVATE_DATA_SIZE];
 
-} __packed;
+} __attribute__ ((packed));
 
 static inline __be32 cm_dreq_get_remote_qpn(struct cm_dreq_msg *dreq_msg)
 {
@@ -647,7 +654,7 @@ struct cm_drep_msg {
 
 	u8 private_data[IB_CM_DREP_PRIVATE_DATA_SIZE];
 
-} __packed;
+} __attribute__ ((packed));
 
 struct cm_lap_msg {
 	struct ib_mad_hdr hdr;
@@ -675,7 +682,7 @@ struct cm_lap_msg {
 	u8 offset63;
 
 	u8 private_data[IB_CM_LAP_PRIVATE_DATA_SIZE];
-} __packed;
+} __attribute__  ((packed));
 
 static inline __be32 cm_lap_get_remote_qpn(struct cm_lap_msg *lap_msg)
 {
@@ -784,7 +791,7 @@ struct cm_apr_msg {
 	u8 info[IB_CM_APR_INFO_LENGTH];
 
 	u8 private_data[IB_CM_APR_PRIVATE_DATA_SIZE];
-} __packed;
+} __attribute__ ((packed));
 
 struct cm_sidr_req_msg {
 	struct ib_mad_hdr hdr;
@@ -795,7 +802,7 @@ struct cm_sidr_req_msg {
 	__be64 service_id;
 
 	u32 private_data[IB_CM_SIDR_REQ_PRIVATE_DATA_SIZE / sizeof(u32)];
-} __packed;
+} __attribute__ ((packed));
 
 struct cm_sidr_rep_msg {
 	struct ib_mad_hdr hdr;
@@ -811,7 +818,7 @@ struct cm_sidr_rep_msg {
 	u8 info[IB_CM_SIDR_REP_INFO_LENGTH];
 
 	u8 private_data[IB_CM_SIDR_REP_PRIVATE_DATA_SIZE];
-} __packed;
+} __attribute__ ((packed));
 
 static inline __be32 cm_sidr_rep_get_qpn(struct cm_sidr_rep_msg *sidr_rep_msg)
 {

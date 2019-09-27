@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * drivers/atm/suni.h - S/UNI PHY driver
  */

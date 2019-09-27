@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: MIT */
 #ifndef __NVKM_MSVLD_PRIV_H__
 #define __NVKM_MSVLD_PRIV_H__
 #include <engine/msvld.h>

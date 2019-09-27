@@ -1,8 +1,20 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * ASIX AX88179/178A USB 3.0/2.0 to Gigabit Ethernet Devices
  *
  * Copyright (C) 2011-2013 ASIX
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License
+ * as published by the Free Software Foundation; either version 2
+ * of the License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, see <http://www.gnu.org/licenses/>.
  */
 
 #include <linux/module.h>
@@ -590,8 +602,8 @@ ax88179_get_eeprom(struct net_device *net, struct ethtool_eeprom *eeprom,
 
 	first_word = eeprom->offset >> 1;
 	last_word = (eeprom->offset + eeprom->len - 1) >> 1;
-	eeprom_buff = kmalloc_array(last_word - first_word + 1, sizeof(u16),
-				    GFP_KERNEL);
+	eeprom_buff = kmalloc(sizeof(u16) * (last_word - first_word + 1),
+			      GFP_KERNEL);
 	if (!eeprom_buff)
 		return -ENOMEM;
 
@@ -611,21 +623,16 @@ ax88179_get_eeprom(struct net_device *net, struct ethtool_eeprom *eeprom,
 	return 0;
 }
 
-static int ax88179_get_link_ksettings(struct net_device *net,
-				      struct ethtool_link_ksettings *cmd)
+static int ax88179_get_settings(struct net_device *net, struct ethtool_cmd *cmd)
 {
 	struct usbnet *dev = netdev_priv(net);
-
-	mii_ethtool_get_link_ksettings(&dev->mii, cmd);
-
-	return 0;
+	return mii_ethtool_gset(&dev->mii, cmd);
 }
 
-static int ax88179_set_link_ksettings(struct net_device *net,
-				      const struct ethtool_link_ksettings *cmd)
+static int ax88179_set_settings(struct net_device *net, struct ethtool_cmd *cmd)
 {
 	struct usbnet *dev = netdev_priv(net);
-	return mii_ethtool_set_link_ksettings(&dev->mii, cmd);
+	return mii_ethtool_sset(&dev->mii, cmd);
 }
 
 static int
@@ -822,11 +829,11 @@ static const struct ethtool_ops ax88179_ethtool_ops = {
 	.set_wol		= ax88179_set_wol,
 	.get_eeprom_len		= ax88179_get_eeprom_len,
 	.get_eeprom		= ax88179_get_eeprom,
+	.get_settings		= ax88179_get_settings,
+	.set_settings		= ax88179_set_settings,
 	.get_eee		= ax88179_get_eee,
 	.set_eee		= ax88179_set_eee,
 	.nway_reset		= usbnet_nway_reset,
-	.get_link_ksettings	= ax88179_get_link_ksettings,
-	.set_link_ksettings	= ax88179_set_link_ksettings,
 };
 
 static void ax88179_set_multicast(struct net_device *net)
@@ -903,6 +910,9 @@ static int ax88179_change_mtu(struct net_device *net, int new_mtu)
 	struct usbnet *dev = netdev_priv(net);
 	u16 tmp16;
 
+	if (new_mtu <= 0 || new_mtu > 4088)
+		return -EINVAL;
+
 	net->mtu = new_mtu;
 	dev->hard_mtu = net->mtu + net->hard_header_len;
 
@@ -953,7 +963,6 @@ static const struct net_device_ops ax88179_netdev_ops = {
 	.ndo_stop		= usbnet_stop,
 	.ndo_start_xmit		= usbnet_start_xmit,
 	.ndo_tx_timeout		= usbnet_tx_timeout,
-	.ndo_get_stats64	= usbnet_get_stats64,
 	.ndo_change_mtu		= ax88179_change_mtu,
 	.ndo_set_mac_address	= ax88179_set_mac_addr,
 	.ndo_validate_addr	= eth_validate_addr,
@@ -1260,7 +1269,6 @@ static int ax88179_bind(struct usbnet *dev, struct usb_interface *intf)
 	dev->net->netdev_ops = &ax88179_netdev_ops;
 	dev->net->ethtool_ops = &ax88179_ethtool_ops;
 	dev->net->needed_headroom = 8;
-	dev->net->max_mtu = 4088;
 
 	/* Initialize MII structure */
 	dev->mii.dev = dev->net;
@@ -1547,6 +1555,7 @@ static int ax88179_reset(struct usbnet *dev)
 
 	ax88179_read_cmd(dev, AX_ACCESS_MAC, AX_NODE_ID, ETH_ALEN, ETH_ALEN,
 			 dev->net->dev_addr);
+	memcpy(dev->net->perm_addr, dev->net->dev_addr, ETH_ALEN);
 
 	/* RX bulk configuration */
 	memcpy(tmp, &AX88179_BULKIN_SIZE[0], 5);
@@ -1715,18 +1724,6 @@ static const struct driver_info lenovo_info = {
 	.tx_fixup = ax88179_tx_fixup,
 };
 
-static const struct driver_info belkin_info = {
-	.description = "Belkin USB Ethernet Adapter",
-	.bind	= ax88179_bind,
-	.unbind = ax88179_unbind,
-	.status = ax88179_status,
-	.link_reset = ax88179_link_reset,
-	.reset	= ax88179_reset,
-	.flags	= FLAG_ETHER | FLAG_FRAMING_AX,
-	.rx_fixup = ax88179_rx_fixup,
-	.tx_fixup = ax88179_tx_fixup,
-};
-
 static const struct usb_device_id products[] = {
 {
 	/* ASIX AX88179 10/100/1000 */
@@ -1756,10 +1753,6 @@ static const struct usb_device_id products[] = {
 	/* Lenovo OneLinkDock Gigabit LAN */
 	USB_DEVICE(0x17ef, 0x304b),
 	.driver_info = (unsigned long)&lenovo_info,
-}, {
-	/* Belkin B2B128 USB 3.0 Hub + Gigabit Ethernet Adapter */
-	USB_DEVICE(0x050d, 0x0128),
-	.driver_info = (unsigned long)&belkin_info,
 },
 	{ },
 };

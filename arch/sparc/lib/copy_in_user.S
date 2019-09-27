@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /* copy_in_user.S: Copy from userspace to userspace.
  *
  * Copyright (C) 1999, 2000, 2004 David S. Miller (davem@redhat.com)
@@ -45,7 +44,7 @@ __retl_o2_plus_1:
 	 * to copy register windows around during thread cloning.
 	 */
 
-ENTRY(raw_copy_in_user)	/* %o0=dst, %o1=src, %o2=len */
+ENTRY(___copy_in_user)	/* %o0=dst, %o1=src, %o2=len */
 	cmp		%o2, 0
 	be,pn		%XCC, 85f
 	 or		%o0, %o1, %o3
@@ -106,5 +105,5 @@ ENTRY(raw_copy_in_user)	/* %o0=dst, %o1=src, %o2=len */
 	 add		%o0, 1, %o0
 	retl
 	 clr		%o0
-ENDPROC(raw_copy_in_user)
-EXPORT_SYMBOL(raw_copy_in_user)
+ENDPROC(___copy_in_user)
+EXPORT_SYMBOL(___copy_in_user)

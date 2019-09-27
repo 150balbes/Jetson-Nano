@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * ecc.h: Definitions and defines for the external cache/memory
  *        controller on the sun4m.

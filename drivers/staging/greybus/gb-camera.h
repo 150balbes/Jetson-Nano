@@ -1,8 +1,9 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * Greybus Camera protocol driver.
  *
  * Copyright 2015 Google Inc.
+ *
+ * Released under the GPLv2 only.
  */
 #ifndef __GB_CAMERA_H
 #define __GB_CAMERA_H

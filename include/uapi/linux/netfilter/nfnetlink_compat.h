@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note */
 #ifndef _NFNETLINK_COMPAT_H
 #define _NFNETLINK_COMPAT_H
 

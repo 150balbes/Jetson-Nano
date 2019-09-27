@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 
 #include <linux/user-return-notifier.h>
 #include <linux/percpu.h>

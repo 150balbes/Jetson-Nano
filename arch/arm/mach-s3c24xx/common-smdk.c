@@ -1,11 +1,16 @@
-// SPDX-License-Identifier: GPL-2.0
-//
-// Copyright (c) 2006 Simtec Electronics
-//	Ben Dooks <ben@simtec.co.uk>
-//
-// Common code for SMDK2410 and SMDK2440 boards
-//
-// http://www.fluff.org/ben/smdk2440/
+/* linux/arch/arm/plat-s3c24xx/common-smdk.c
+ *
+ * Copyright (c) 2006 Simtec Electronics
+ *	Ben Dooks <ben@simtec.co.uk>
+ *
+ * Common code for SMDK2410 and SMDK2440 boards
+ *
+ * http://www.fluff.org/ben/smdk2440/
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+*/
 
 #include <linux/kernel.h>
 #include <linux/types.h>
@@ -18,7 +23,7 @@
 #include <linux/platform_device.h>
 
 #include <linux/mtd/mtd.h>
-#include <linux/mtd/rawnand.h>
+#include <linux/mtd/nand.h>
 #include <linux/mtd/nand_ecc.h>
 #include <linux/mtd/partitions.h>
 #include <linux/io.h>
@@ -166,7 +171,6 @@ static struct s3c2410_platform_nand smdk_nand_info = {
 	.twrph1		= 20,
 	.nr_sets	= ARRAY_SIZE(smdk_nand_sets),
 	.sets		= smdk_nand_sets,
-	.ecc_mode       = NAND_ECC_SOFT,
 };
 
 /* devices we initialise */

@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note */
 #ifndef __ASM_ALPHA_AUXVEC_H
 #define __ASM_ALPHA_AUXVEC_H
 

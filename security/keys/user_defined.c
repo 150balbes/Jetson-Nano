@@ -1,17 +1,21 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /* user_defined.c: user defined key type
  *
  * Copyright (C) 2004 Red Hat, Inc. All Rights Reserved.
  * Written by David Howells (dhowells@redhat.com)
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License
+ * as published by the Free Software Foundation; either version
+ * 2 of the License, or (at your option) any later version.
  */
 
-#include <linux/export.h>
+#include <linux/module.h>
 #include <linux/init.h>
 #include <linux/slab.h>
 #include <linux/seq_file.h>
 #include <linux/err.h>
 #include <keys/user-type.h>
-#include <linux/uaccess.h>
+#include <asm/uaccess.h>
 #include "internal.h"
 
 static int logon_vet_description(const char *desc);
@@ -82,17 +86,9 @@ EXPORT_SYMBOL_GPL(user_preparse);
  */
 void user_free_preparse(struct key_preparsed_payload *prep)
 {
-	kzfree(prep->payload.data[0]);
+	kfree(prep->payload.data[0]);
 }
 EXPORT_SYMBOL_GPL(user_free_preparse);
-
-static void user_free_payload_rcu(struct rcu_head *head)
-{
-	struct user_key_payload *payload;
-
-	payload = container_of(head, struct user_key_payload, rcu);
-	kzfree(payload);
-}
 
 /*
  * update a user defined key
@@ -116,7 +112,7 @@ int user_update(struct key *key, struct key_preparsed_payload *prep)
 	prep->payload.data[0] = NULL;
 
 	if (zap)
-		call_rcu(&zap->rcu, user_free_payload_rcu);
+		kfree_rcu(zap, rcu);
 	return ret;
 }
 EXPORT_SYMBOL_GPL(user_update);
@@ -134,7 +130,7 @@ void user_revoke(struct key *key)
 
 	if (upayload) {
 		rcu_assign_keypointer(key, NULL);
-		call_rcu(&upayload->rcu, user_free_payload_rcu);
+		kfree_rcu(upayload, rcu);
 	}
 }
 
@@ -147,7 +143,7 @@ void user_destroy(struct key *key)
 {
 	struct user_key_payload *upayload = key->payload.data[0];
 
-	kzfree(upayload);
+	kfree(upayload);
 }
 
 EXPORT_SYMBOL_GPL(user_destroy);

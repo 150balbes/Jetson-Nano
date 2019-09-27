@@ -1,8 +1,16 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (C) Fuzhou Rockchip Electronics Co.Ltd
  *    Zheng Yang <zhengyang@rock-chips.com>
  *    Yakir Yang <ykk@rock-chips.com>
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
  */
 
 #include <linux/irq.h>
@@ -18,8 +26,8 @@
 #include <drm/drm_of.h>
 #include <drm/drmP.h>
 #include <drm/drm_atomic_helper.h>
+#include <drm/drm_crtc_helper.h>
 #include <drm/drm_edid.h>
-#include <drm/drm_probe_helper.h>
 
 #include "rockchip_drm_drv.h"
 #include "rockchip_drm_vop.h"
@@ -216,7 +224,7 @@ static void inno_hdmi_set_pwr_mode(struct inno_hdmi *hdmi, int mode)
 		break;
 
 	default:
-		DRM_DEV_ERROR(hdmi->dev, "Unknown power mode %d\n", mode);
+		dev_err(hdmi->dev, "Unknown power mode %d\n", mode);
 	}
 }
 
@@ -274,7 +282,6 @@ static int inno_hdmi_config_video_vsi(struct inno_hdmi *hdmi,
 	int rc;
 
 	rc = drm_hdmi_vendor_infoframe_from_display_mode(&frame.vendor.hdmi,
-							 &hdmi->connector,
 							 mode);
 
 	return inno_hdmi_upload_frame(hdmi, rc, &frame, INFOFRAME_VSI,
@@ -287,9 +294,7 @@ static int inno_hdmi_config_video_avi(struct inno_hdmi *hdmi,
 	union hdmi_infoframe frame;
 	int rc;
 
-	rc = drm_hdmi_avi_infoframe_from_display_mode(&frame.avi,
-						      &hdmi->connector,
-						      mode);
+	rc = drm_hdmi_avi_infoframe_from_display_mode(&frame.avi, mode);
 
 	if (hdmi->hdmi_data.enc_out_format == HDMI_COLORSPACE_YUV444)
 		frame.avi.colorspace = HDMI_COLORSPACE_YUV444;
@@ -559,7 +564,7 @@ static int inno_hdmi_connector_get_modes(struct drm_connector *connector)
 	if (edid) {
 		hdmi->hdmi_data.sink_is_hdmi = drm_detect_hdmi_monitor(edid);
 		hdmi->hdmi_data.sink_has_audio = drm_detect_monitor_audio(edid);
-		drm_connector_update_edid_property(connector, edid);
+		drm_mode_connector_update_edid_property(connector, edid);
 		ret = drm_add_edid_modes(connector, edid);
 		kfree(edid);
 	}
@@ -587,7 +592,8 @@ static void inno_hdmi_connector_destroy(struct drm_connector *connector)
 	drm_connector_cleanup(connector);
 }
 
-static const struct drm_connector_funcs inno_hdmi_connector_funcs = {
+static struct drm_connector_funcs inno_hdmi_connector_funcs = {
+	.dpms = drm_atomic_helper_connector_dpms,
 	.fill_modes = inno_hdmi_probe_single_connector_modes,
 	.detect = inno_hdmi_connector_detect,
 	.destroy = inno_hdmi_connector_destroy,
@@ -628,7 +634,7 @@ static int inno_hdmi_register(struct drm_device *drm, struct inno_hdmi *hdmi)
 	drm_connector_init(drm, &hdmi->connector, &inno_hdmi_connector_funcs,
 			   DRM_MODE_CONNECTOR_HDMIA);
 
-	drm_connector_attach_encoder(&hdmi->connector, encoder);
+	drm_mode_connector_attach_encoder(&hdmi->connector, encoder);
 
 	return 0;
 }
@@ -737,9 +743,8 @@ static int inno_hdmi_i2c_xfer(struct i2c_adapter *adap,
 	hdmi_writeb(hdmi, HDMI_INTERRUPT_STATUS1, m_INT_EDID_READY);
 
 	for (i = 0; i < num; i++) {
-		DRM_DEV_DEBUG(hdmi->dev,
-			      "xfer: num: %d/%d, len: %d, flags: %#x\n",
-			      i + 1, num, msgs[i].len, msgs[i].flags);
+		dev_dbg(hdmi->dev, "xfer: num: %d/%d, len: %d, flags: %#x\n",
+			i + 1, num, msgs[i].len, msgs[i].flags);
 
 		if (msgs[i].flags & I2C_M_RD)
 			ret = inno_hdmi_i2c_read(hdmi, &msgs[i]);
@@ -802,7 +807,7 @@ static struct i2c_adapter *inno_hdmi_i2c_adapter(struct inno_hdmi *hdmi)
 
 	hdmi->i2c = i2c;
 
-	DRM_DEV_INFO(hdmi->dev, "registered %s I2C bus driver\n", adap->name);
+	dev_info(hdmi->dev, "registered %s I2C bus driver\n", adap->name);
 
 	return adap;
 }
@@ -825,28 +830,28 @@ static int inno_hdmi_bind(struct device *dev, struct device *master,
 	hdmi->drm_dev = drm;
 
 	iores = platform_get_resource(pdev, IORESOURCE_MEM, 0);
+	if (!iores)
+		return -ENXIO;
+
 	hdmi->regs = devm_ioremap_resource(dev, iores);
 	if (IS_ERR(hdmi->regs))
 		return PTR_ERR(hdmi->regs);
 
 	hdmi->pclk = devm_clk_get(hdmi->dev, "pclk");
 	if (IS_ERR(hdmi->pclk)) {
-		DRM_DEV_ERROR(hdmi->dev, "Unable to get HDMI pclk clk\n");
+		dev_err(hdmi->dev, "Unable to get HDMI pclk clk\n");
 		return PTR_ERR(hdmi->pclk);
 	}
 
 	ret = clk_prepare_enable(hdmi->pclk);
 	if (ret) {
-		DRM_DEV_ERROR(hdmi->dev,
-			      "Cannot enable HDMI pclk clock: %d\n", ret);
+		dev_err(hdmi->dev, "Cannot enable HDMI pclk clock: %d\n", ret);
 		return ret;
 	}
 
 	irq = platform_get_irq(pdev, 0);
-	if (irq < 0) {
-		ret = irq;
-		goto err_disable_clk;
-	}
+	if (irq < 0)
+		return irq;
 
 	inno_hdmi_reset(hdmi);
 
@@ -854,7 +859,7 @@ static int inno_hdmi_bind(struct device *dev, struct device *master,
 	if (IS_ERR(hdmi->ddc)) {
 		ret = PTR_ERR(hdmi->ddc);
 		hdmi->ddc = NULL;
-		goto err_disable_clk;
+		return ret;
 	}
 
 	/*
@@ -868,7 +873,7 @@ static int inno_hdmi_bind(struct device *dev, struct device *master,
 
 	ret = inno_hdmi_register(drm, hdmi);
 	if (ret)
-		goto err_put_adapter;
+		return ret;
 
 	dev_set_drvdata(dev, hdmi);
 
@@ -878,17 +883,7 @@ static int inno_hdmi_bind(struct device *dev, struct device *master,
 	ret = devm_request_threaded_irq(dev, irq, inno_hdmi_hardirq,
 					inno_hdmi_irq, IRQF_SHARED,
 					dev_name(dev), hdmi);
-	if (ret < 0)
-		goto err_cleanup_hdmi;
 
-	return 0;
-err_cleanup_hdmi:
-	hdmi->connector.funcs->destroy(&hdmi->connector);
-	hdmi->encoder.funcs->destroy(&hdmi->encoder);
-err_put_adapter:
-	i2c_put_adapter(hdmi->ddc);
-err_disable_clk:
-	clk_disable_unprepare(hdmi->pclk);
 	return ret;
 }
 
@@ -900,8 +895,8 @@ static void inno_hdmi_unbind(struct device *dev, struct device *master,
 	hdmi->connector.funcs->destroy(&hdmi->connector);
 	hdmi->encoder.funcs->destroy(&hdmi->encoder);
 
-	i2c_put_adapter(hdmi->ddc);
 	clk_disable_unprepare(hdmi->pclk);
+	i2c_put_adapter(hdmi->ddc);
 }
 
 static const struct component_ops inno_hdmi_ops = {
@@ -928,7 +923,7 @@ static const struct of_device_id inno_hdmi_dt_ids[] = {
 };
 MODULE_DEVICE_TABLE(of, inno_hdmi_dt_ids);
 
-struct platform_driver inno_hdmi_driver = {
+static struct platform_driver inno_hdmi_driver = {
 	.probe  = inno_hdmi_probe,
 	.remove = inno_hdmi_remove,
 	.driver = {
@@ -936,3 +931,11 @@ struct platform_driver inno_hdmi_driver = {
 		.of_match_table = inno_hdmi_dt_ids,
 	},
 };
+
+module_platform_driver(inno_hdmi_driver);
+
+MODULE_AUTHOR("Zheng Yang <zhengyang@rock-chips.com>");
+MODULE_AUTHOR("Yakir Yang <ykk@rock-chips.com>");
+MODULE_DESCRIPTION("Rockchip Specific INNO-HDMI Driver");
+MODULE_LICENSE("GPL v2");
+MODULE_ALIAS("platform:innohdmi-rockchip");

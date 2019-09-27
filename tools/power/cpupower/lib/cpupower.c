@@ -1,6 +1,7 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  *  (C) 2004-2009  Dominik Brodowski <linux@dominikbrodowski.de>
+ *
+ *  Licensed under the terms of the GNU GPL License version 2.
  */
 
 #include <sys/types.h>
@@ -14,7 +15,7 @@
 #include "cpupower.h"
 #include "cpupower_intern.h"
 
-unsigned int cpupower_read_sysfs(const char *path, char *buf, size_t buflen)
+unsigned int sysfs_read_file(const char *path, char *buf, size_t buflen)
 {
 	int fd;
 	ssize_t numread;
@@ -94,7 +95,7 @@ static int sysfs_topology_read_file(unsigned int cpu, const char *fname, int *re
 
 	snprintf(path, sizeof(path), PATH_TO_CPU "cpu%u/topology/%s",
 			 cpu, fname);
-	if (cpupower_read_sysfs(path, linebuf, MAX_LINE_LEN) == 0)
+	if (sysfs_read_file(path, linebuf, MAX_LINE_LEN) == 0)
 		return -1;
 	*result = strtol(linebuf, &endp, 0);
 	if (endp == linebuf || errno == ERANGE)

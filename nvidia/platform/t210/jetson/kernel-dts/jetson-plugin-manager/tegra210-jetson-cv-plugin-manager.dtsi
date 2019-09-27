@@ -1,0 +1,302 @@
+/*
+ * Copyright (c) 2015-2019, NVIDIA CORPORATION.  All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; version 2 of the License.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ *
+ */
+
+/ {
+	plugin-manager {
+		fragement@0 {
+			ids = ">=2180-1000-300";
+			override@0 {
+				target = <&ina3221x>;
+				_overlay_ {
+					status = "okay";
+				};
+			};
+		};
+
+		fragement@1 {
+			ids = "2614-0000-000", "2614-0000-100";
+			override@0 {
+				target = <&tca6416_20>;
+				_overlay_ {
+					status = "okay";
+				};
+			};
+
+			override@1 {
+				target = <&icm20628_68>;
+				_overlay_ {
+					status = "okay";
+				};
+			};
+
+			override@2 {
+				target = <&ak8963_0d>;
+				_overlay_ {
+					status = "okay";
+				};
+			};
+
+			override@3 {
+				target = <&bmp280_77>;
+				_overlay_ {
+					status = "okay";
+				};
+			};
+
+			override@4 {
+				target = <&cm32180_48>;
+				_overlay_ {
+					status = "okay";
+				};
+			};
+
+			override@5 {
+				target = <&i2cmux_70>;
+				_overlay_ {
+					status = "okay";
+				};
+			};
+
+			override@6 {
+				target = <&sound_card>;
+				_overlay_ {
+					nvidia,audio-routing =
+						"x Headphone Jack",	"x HPO L Playback",
+						"x Headphone Jack",	"x HPO R Playback",
+						"x IN1P",		"x Mic Jack",
+						"x Int Spk",		"x SPO Playback",
+						"x DMIC L1",		"x Int Mic",
+						"x DMIC L2",		"x Int Mic",
+						"x DMIC R1",		"x Int Mic",
+						"x DMIC R2",		"x Int Mic",
+						"y Headphone",		"y OUT",
+						"y IN",			"y Mic",
+						"l Headphone",		"l OUT",
+						"l IN",			"l Mic",
+						"s Headphone",		"s OUT",
+						"s IN",			"s Mic",
+						"w Headphone",		"w OUT",
+						"w IN",			"w Mic",
+						"z IN",			"z Mic",
+						"m IN",			"m Mic",
+						"n IN",			"n Mic";
+					nvidia,dai-link-1 {
+						codec-dai-name = "rt5659-aif1";
+					};
+				};
+			};
+
+			override@7 {
+				target = <&pinmux>;
+				_overlay_ {
+					common {
+						aud_mclk_pbb0 {
+							nvidia,pins = "aud_mclk_pbb0";
+							nvidia,function = "aud";
+							nvidia,pull = <TEGRA_PIN_PULL_NONE>;
+							nvidia,tristate = <TEGRA_PIN_DISABLE>;
+							nvidia,enable-input = <TEGRA_PIN_DISABLE>;
+						};
+
+						dap1_din_pb1 {
+							nvidia,pins = "dap1_din_pb1";
+							nvidia,function = "i2s1";
+							nvidia,pull = <TEGRA_PIN_PULL_NONE>;
+							nvidia,tristate = <TEGRA_PIN_DISABLE>;
+							nvidia,enable-input = <TEGRA_PIN_ENABLE>;
+						};
+
+						dap1_dout_pb2 {
+							nvidia,pins = "dap1_dout_pb2";
+							nvidia,function = "i2s1";
+							nvidia,pull = <TEGRA_PIN_PULL_NONE>;
+							nvidia,tristate = <TEGRA_PIN_DISABLE>;
+							nvidia,enable-input = <TEGRA_PIN_ENABLE>;
+						};
+
+						dap1_fs_pb0 {
+							nvidia,pins = "dap1_fs_pb0";
+							nvidia,function = "i2s1";
+							nvidia,pull = <TEGRA_PIN_PULL_NONE>;
+							nvidia,tristate = <TEGRA_PIN_DISABLE>;
+							nvidia,enable-input = <TEGRA_PIN_ENABLE>;
+						};
+
+						dap1_sclk_pb3 {
+							nvidia,pins = "dap1_sclk_pb3";
+							nvidia,function = "i2s1";
+							nvidia,pull = <TEGRA_PIN_PULL_NONE>;
+							nvidia,tristate = <TEGRA_PIN_DISABLE>;
+							nvidia,enable-input = <TEGRA_PIN_ENABLE>;
+						};
+
+						dmic3_clk_pe4 {
+							nvidia,pins = "dmic3_clk_pe4";
+							nvidia,function = "dmic3";
+							nvidia,pull = <TEGRA_PIN_PULL_NONE>;
+							nvidia,tristate = <TEGRA_PIN_DISABLE>;
+							nvidia,enable-input = <TEGRA_PIN_DISABLE>;
+						};
+
+						dmic3_dat_pe5 {
+							nvidia,pins = "dmic3_dat_pe5";
+							nvidia,function = "dmic3";
+							nvidia,pull = <TEGRA_PIN_PULL_UP>;
+							nvidia,tristate = <TEGRA_PIN_DISABLE>;
+							nvidia,enable-input = <TEGRA_PIN_ENABLE>;
+						};
+					};
+				};
+			};
+		};
+
+		fragement@2 {
+			ids = "2614-0000-000";
+			override@0 {
+				target = <&rt5658_a00>;
+				_overlay_ {
+					status = "okay";
+				};
+			};
+
+			override@1 {
+				target = <&sound_card>;
+				_overlay_ {
+					nvidia,dai-link-1 {
+						codec-dai = <&rt5658_a00>;
+					};
+				};
+			};
+
+			override@2 {
+				target = <&e2614_audio>;
+				_overlay_ {
+					status = "okay";
+				};
+			};
+		};
+
+		fragement@3 {
+			ids = "2614-0000-100";
+			override@0 {
+				target = <&rt5658_b00>;
+				_overlay_ {
+					status = "okay";
+				};
+			};
+
+			override@1 {
+				target = <&sound_card>;
+				_overlay_ {
+					nvidia,dai-link-1 {
+						codec-dai = <&rt5658_b00>;
+					};
+				};
+			};
+
+			override@2 {
+				target = <&e2614_audio>;
+				_overlay_ {
+					status = "okay";
+				};
+			};
+		};
+
+		fragement@4 {
+			odm-data = "enable-high-speed-uart";
+			override@0 {
+				target = <&uarta>;
+				_overlay_ {
+					compatible = "nvidia,tegra114-hsuart";
+					early-print-console-channel;
+					resets = <&tegra_car TEGRA210_CLK_UARTA>;
+					reset-names = "serial";
+				};
+			};
+		};
+
+		fragement@5 {
+			odm-data = "enable-tegra-wdt";
+			override@0 {
+				target = <&tegra_wdt>;
+				_overlay_ {
+					status = "okay";
+				};
+			};
+		};
+
+		fragement@6 {
+			odm-data = "enable-pmic-wdt";
+			override@0 {
+				target = <&spmic_wdt>;
+				_overlay_ {
+					status = "okay";
+				};
+			};
+		};
+
+		fragement@7 {
+			odm-data = "enable-pmic-wdt",
+				"enable-tegra-wdt";
+			override@0 {
+				target = <&soft_wdt>;
+				_overlay_ {
+					status = "disabled";
+				};
+			};
+		};
+
+		fragment@8 {
+			/* E3320 DSI connector */
+			ids = "3320-1000-*", "3320-1100-000";
+			overrides@1 {
+				target = <&{/host1x}>;
+				_overlay_ {
+					dc@54200000 {
+						/* dc.0 */
+						status = "okay";
+						nvidia,dc-or-node = "/host1x/dsi";
+						nvidia,dc-connector = <&dsi>;
+					};
+					dsi {
+						status = "okay";
+						nvidia,active-panel = <&panel_a_wuxga_8_0>;
+						panel-a-wuxga-8-0 {
+							status = "okay";
+						};
+					};
+				};
+			};
+
+			overrides@2 {
+				target = <&{/i2c@7000c400}>;
+				_overlay_ {
+					lp8557-backlight-a-wuxga-8-0@2c {
+						status = "okay";
+					};
+				};
+			};
+
+			overrides@3 {
+				target = <&{/backlight}>;
+				_overlay_ {
+					status = "okay";
+					panel-a-wuxga-8-0-bl {
+						status = "okay";
+					};
+				};
+			};
+		};
+	};
+};

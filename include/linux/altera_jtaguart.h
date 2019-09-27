@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * altera_jtaguart.h -- Altera JTAG UART driver defines.
  */

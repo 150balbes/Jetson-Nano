@@ -1,6 +1,9 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (C) 2007 Red Hat, Inc.  All rights reserved.
+ *
+ * This copyrighted material is made available to anyone wishing to use,
+ * modify, copy, or redistribute it subject to the terms and conditions
+ * of the GNU General Public License v.2.
  */
 
 #include <net/genetlink.h>
@@ -13,7 +16,11 @@
 static uint32_t dlm_nl_seqnum;
 static uint32_t listener_nlportid;
 
-static struct genl_family family;
+static struct genl_family family = {
+	.id		= GENL_ID_GENERATE,
+	.name		= DLM_GENL_NAME,
+	.version	= DLM_GENL_VERSION,
+};
 
 static int prepare_data(u8 cmd, struct sk_buff **skbp, size_t size)
 {
@@ -62,25 +69,16 @@ static int user_cmd(struct sk_buff *skb, struct genl_info *info)
 	return 0;
 }
 
-static const struct genl_ops dlm_nl_ops[] = {
+static struct genl_ops dlm_nl_ops[] = {
 	{
 		.cmd	= DLM_CMD_HELLO,
-		.validate = GENL_DONT_VALIDATE_STRICT | GENL_DONT_VALIDATE_DUMP,
 		.doit	= user_cmd,
 	},
 };
 
-static struct genl_family family __ro_after_init = {
-	.name		= DLM_GENL_NAME,
-	.version	= DLM_GENL_VERSION,
-	.ops		= dlm_nl_ops,
-	.n_ops		= ARRAY_SIZE(dlm_nl_ops),
-	.module		= THIS_MODULE,
-};
-
 int __init dlm_netlink_init(void)
 {
-	return genl_register_family(&family);
+	return genl_register_family_with_ops(&family, dlm_nl_ops);
 }
 
 void dlm_netlink_exit(void)

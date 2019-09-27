@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * Public Include File for DRV6000 users
  * (ie. NxtWave Communications - NXT6000 demodulator driver)

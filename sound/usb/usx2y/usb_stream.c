@@ -1,6 +1,19 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Copyright (C) 2007, 2008 Karsten Wiese <fzu@wemgehoertderstaat.de>
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License as published by the
+ * Free Software Foundation; either version 2 of the License, or (at your
+ * option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
+ * or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+ * for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software Foundation,
+ * Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  */
 
 #include <linux/usb.h>
@@ -43,7 +56,7 @@ check:
 		    lb, s->period_size);
 }
 
-static int init_pipe_urbs(struct usb_stream_kernel *sk, unsigned use_packsize,
+static void init_pipe_urbs(struct usb_stream_kernel *sk, unsigned use_packsize,
 			   struct urb **urbs, char *transfer,
 			   struct usb_device *dev, int pipe)
 {
@@ -64,8 +77,6 @@ static int init_pipe_urbs(struct usb_stream_kernel *sk, unsigned use_packsize,
 		urb->interval = 1;
 		if (usb_pipeout(pipe))
 			continue;
-		if (usb_urb_ep_type_check(urb))
-			return -EINVAL;
 
 		urb->transfer_buffer_length = transfer_length;
 		desc = urb->iso_frame_desc;
@@ -76,11 +87,9 @@ static int init_pipe_urbs(struct usb_stream_kernel *sk, unsigned use_packsize,
 			desc[p].length = maxpacket;
 		}
 	}
-
-	return 0;
 }
 
-static int init_urbs(struct usb_stream_kernel *sk, unsigned use_packsize,
+static void init_urbs(struct usb_stream_kernel *sk, unsigned use_packsize,
 		      struct usb_device *dev, int in_pipe, int out_pipe)
 {
 	struct usb_stream	*s = sk->s;
@@ -91,20 +100,12 @@ static int init_urbs(struct usb_stream_kernel *sk, unsigned use_packsize,
 
 	for (u = 0; u < USB_STREAM_NURBS; ++u) {
 		sk->inurb[u] = usb_alloc_urb(sk->n_o_ps, GFP_KERNEL);
-		if (!sk->inurb[u])
-			return -ENOMEM;
-
 		sk->outurb[u] = usb_alloc_urb(sk->n_o_ps, GFP_KERNEL);
-		if (!sk->outurb[u])
-			return -ENOMEM;
 	}
 
-	if (init_pipe_urbs(sk, use_packsize, sk->inurb, indata, dev, in_pipe) ||
-	    init_pipe_urbs(sk, use_packsize, sk->outurb, sk->write_page, dev,
-			   out_pipe))
-		return -EINVAL;
-
-	return 0;
+	init_pipe_urbs(sk, use_packsize, sk->inurb, indata, dev, in_pipe);
+	init_pipe_urbs(sk, use_packsize, sk->outurb, sk->write_page, dev,
+		       out_pipe);
 }
 
 
@@ -142,9 +143,9 @@ void usb_stream_free(struct usb_stream_kernel *sk)
 	if (!s)
 		return;
 
-	free_pages_exact(sk->write_page, s->write_size);
+	free_pages((unsigned long)sk->write_page, get_order(s->write_size));
 	sk->write_page = NULL;
-	free_pages_exact(s, s->read_size);
+	free_pages((unsigned long)s, get_order(s->read_size));
 	sk->s = NULL;
 }
 
@@ -159,6 +160,7 @@ struct usb_stream *usb_stream_new(struct usb_stream_kernel *sk,
 	int read_size = sizeof(struct usb_stream);
 	int write_size;
 	int usb_frames = dev->speed == USB_SPEED_HIGH ? 8000 : 1000;
+	int pg;
 
 	in_pipe = usb_rcvisocpipe(dev, in_endpoint);
 	out_pipe = usb_sndisocpipe(dev, out_endpoint);
@@ -188,10 +190,11 @@ struct usb_stream *usb_stream_new(struct usb_stream_kernel *sk,
 		goto out;
 	}
 
-	sk->s = alloc_pages_exact(read_size,
-				  GFP_KERNEL | __GFP_ZERO | __GFP_NOWARN);
+	pg = get_order(read_size);
+	sk->s = (void *) __get_free_pages(GFP_KERNEL|__GFP_COMP|__GFP_ZERO|
+					  __GFP_NOWARN, pg);
 	if (!sk->s) {
-		pr_warn("us122l: couldn't allocate read buffer\n");
+		snd_printk(KERN_WARNING "couldn't __get_free_pages()\n");
 		goto out;
 	}
 	sk->s->cfg.version = USB_STREAM_INTERFACE_VERSION;
@@ -206,11 +209,13 @@ struct usb_stream *usb_stream_new(struct usb_stream_kernel *sk,
 	sk->s->period_size = frame_size * period_frames;
 
 	sk->s->write_size = write_size;
+	pg = get_order(write_size);
 
-	sk->write_page = alloc_pages_exact(write_size,
-					   GFP_KERNEL | __GFP_ZERO | __GFP_NOWARN);
+	sk->write_page =
+		(void *)__get_free_pages(GFP_KERNEL|__GFP_COMP|__GFP_ZERO|
+					 __GFP_NOWARN, pg);
 	if (!sk->write_page) {
-		pr_warn("us122l: couldn't allocate write buffer\n");
+		snd_printk(KERN_WARNING "couldn't __get_free_pages()\n");
 		usb_stream_free(sk);
 		return NULL;
 	}
@@ -221,11 +226,7 @@ struct usb_stream *usb_stream_new(struct usb_stream_kernel *sk,
 	else
 		sk->freqn = get_usb_high_speed_rate(sample_rate);
 
-	if (init_urbs(sk, use_packsize, dev, in_pipe, out_pipe) < 0) {
-		usb_stream_free(sk);
-		return NULL;
-	}
-
+	init_urbs(sk, use_packsize, dev, in_pipe, out_pipe);
 	sk->s->state = usb_stream_stopped;
 out:
 	return sk->s;
@@ -353,22 +354,20 @@ static int submit_urbs(struct usb_stream_kernel *sk,
 	int err;
 	prepare_inurb(sk->idle_outurb->number_of_packets, sk->idle_inurb);
 	err = usb_submit_urb(sk->idle_inurb, GFP_ATOMIC);
-	if (err < 0)
-		goto report_failure;
-
+	if (err < 0) {
+		snd_printk(KERN_ERR "%i\n", err);
+		return err;
+	}
 	sk->idle_inurb = sk->completed_inurb;
 	sk->completed_inurb = inurb;
 	err = usb_submit_urb(sk->idle_outurb, GFP_ATOMIC);
-	if (err < 0)
-		goto report_failure;
-
+	if (err < 0) {
+		snd_printk(KERN_ERR "%i\n", err);
+		return err;
+	}
 	sk->idle_outurb = sk->completed_outurb;
 	sk->completed_outurb = outurb;
 	return 0;
-
-report_failure:
-	snd_printk(KERN_ERR "%i\n", err);
-	return err;
 }
 
 #ifdef DEBUG_LOOP_BACK
@@ -628,9 +627,9 @@ static void i_capture_start(struct urb *urb)
 		       urb->iso_frame_desc[0].actual_length);
 		for (pack = 1; pack < urb->number_of_packets; ++pack) {
 			int l = urb->iso_frame_desc[pack].actual_length;
-			printk(KERN_CONT " %i", l);
+			printk(" %i", l);
 		}
-		printk(KERN_CONT "\n");
+		printk("\n");
 	}
 #endif
 	if (!empty && s->state < usb_stream_sync1)

@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Copyright 2008-2010 Freescale Semiconductor, Inc. All Rights Reserved.
  *
@@ -7,6 +6,12 @@
  *  Authors: Hongjun Chen <hong-jun.chen@freescale.com>
  *	     Porting to 2.6.35 by DENX Software Engineering,
  *	     Anatolij Gustschin <agust@denx.de>
+ *
+ * This program is free software; you can redistribute  it and/or modify it
+ * under  the terms of  the GNU General  Public License as published by the
+ * Free Software Foundation;  either version 2 of the  License, or (at your
+ * option) any later version.
+ *
  */
 
 #include <linux/module.h>
@@ -30,12 +35,6 @@
 
 #define DRV_NAME		"fsl_viu"
 #define VIU_VERSION		"0.5.1"
-
-/* Allow building this driver with COMPILE_TEST */
-#ifndef CONFIG_PPC
-#define out_be32(v, a)	iowrite32be(a, (void __iomem *)v)
-#define in_be32(a)	ioread32be((void __iomem *)a)
-#endif
 
 #define BUFFER_TIMEOUT		msecs_to_jiffies(500)  /* 0.5 seconds */
 
@@ -129,7 +128,7 @@ struct viu_dev {
 	int			dma_done;
 
 	/* Hardware register area */
-	struct viu_reg __iomem	*vr;
+	struct viu_reg		*vr;
 
 	/* Interrupt vector */
 	int			irq;
@@ -230,7 +229,7 @@ enum status_config {
 
 static irqreturn_t viu_intr(int irq, void *dev_id);
 
-static struct viu_fmt *format_by_fourcc(int fourcc)
+struct viu_fmt *format_by_fourcc(int fourcc)
 {
 	int i;
 
@@ -243,9 +242,9 @@ static struct viu_fmt *format_by_fourcc(int fourcc)
 	return NULL;
 }
 
-static void viu_start_dma(struct viu_dev *dev)
+void viu_start_dma(struct viu_dev *dev)
 {
-	struct viu_reg __iomem *vr = dev->vr;
+	struct viu_reg *vr = dev->vr;
 
 	dev->field = 0;
 
@@ -254,9 +253,9 @@ static void viu_start_dma(struct viu_dev *dev)
 	out_be32(&vr->status_cfg, INT_FIELD_EN);
 }
 
-static void viu_stop_dma(struct viu_dev *dev)
+void viu_stop_dma(struct viu_dev *dev)
 {
-	struct viu_reg __iomem *vr = dev->vr;
+	struct viu_reg *vr = dev->vr;
 	int cnt = 100;
 	u32 status_cfg;
 
@@ -291,7 +290,7 @@ static int restart_video_queue(struct viu_dmaqueue *vidq)
 {
 	struct viu_buf *buf, *prev;
 
-	dprintk(1, "%s vidq=%p\n", __func__, vidq);
+	dprintk(1, "%s vidq=0x%08lx\n", __func__, (unsigned long)vidq);
 	if (!list_empty(&vidq->active)) {
 		buf = list_entry(vidq->active.next, struct viu_buf, vb.queue);
 		dprintk(2, "restart_queue [%p/%d]: restart dma\n",
@@ -340,9 +339,9 @@ static int restart_video_queue(struct viu_dmaqueue *vidq)
 	}
 }
 
-static void viu_vid_timeout(struct timer_list *t)
+static void viu_vid_timeout(unsigned long data)
 {
-	struct viu_dev *dev = from_timer(dev, t, vidq.timeout);
+	struct viu_dev *dev = (struct viu_dev *)data;
 	struct viu_buf *buf;
 	struct viu_dmaqueue *vidq = &dev->vidq;
 
@@ -396,7 +395,7 @@ static void free_buffer(struct videobuf_queue *vq, struct viu_buf *buf)
 
 inline int buffer_activate(struct viu_dev *dev, struct viu_buf *buf)
 {
-	struct viu_reg __iomem *vr = dev->vr;
+	struct viu_reg *vr = dev->vr;
 	int bpp;
 
 	/* setup the DMA base address */
@@ -498,7 +497,8 @@ static void buffer_queue(struct videobuf_queue *vq, struct videobuf_buffer *vb)
 	struct viu_buf       *prev;
 
 	if (!list_empty(&vidq->queued)) {
-		dprintk(1, "adding vb queue=%p\n", &buf->vb.queue);
+		dprintk(1, "adding vb queue=0x%08lx\n",
+				(unsigned long)&buf->vb.queue);
 		dprintk(1, "vidq pointer 0x%p, queued 0x%p\n",
 				vidq, &vidq->queued);
 		dprintk(1, "dev %p, queued: self %p, next %p, head %p\n",
@@ -509,7 +509,8 @@ static void buffer_queue(struct videobuf_queue *vq, struct videobuf_buffer *vb)
 		dprintk(2, "[%p/%d] buffer_queue - append to queued\n",
 			buf, buf->vb.i);
 	} else if (list_empty(&vidq->active)) {
-		dprintk(1, "adding vb active=%p\n", &buf->vb.queue);
+		dprintk(1, "adding vb active=0x%08lx\n",
+				(unsigned long)&buf->vb.queue);
 		list_add_tail(&buf->vb.queue, &vidq->active);
 		buf->vb.state = VIDEOBUF_ACTIVE;
 		mod_timer(&vidq->timeout, jiffies+BUFFER_TIMEOUT);
@@ -518,7 +519,8 @@ static void buffer_queue(struct videobuf_queue *vq, struct videobuf_buffer *vb)
 
 		buffer_activate(dev, buf);
 	} else {
-		dprintk(1, "adding vb queue2=%p\n", &buf->vb.queue);
+		dprintk(1, "adding vb queue2=0x%08lx\n",
+				(unsigned long)&buf->vb.queue);
 		prev = list_entry(vidq->active.prev, struct viu_buf, vb.queue);
 		if (prev->vb.width  == buf->vb.width  &&
 		    prev->vb.height == buf->vb.height &&
@@ -547,7 +549,7 @@ static void buffer_release(struct videobuf_queue *vq,
 	free_buffer(vq, buf);
 }
 
-static const struct videobuf_queue_ops viu_video_qops = {
+static struct videobuf_queue_ops viu_video_qops = {
 	.buf_setup      = buffer_setup,
 	.buf_prepare    = buffer_prepare,
 	.buf_queue      = buffer_queue,
@@ -560,9 +562,9 @@ static const struct videobuf_queue_ops viu_video_qops = {
 static int vidioc_querycap(struct file *file, void *priv,
 			   struct v4l2_capability *cap)
 {
-	strscpy(cap->driver, "viu", sizeof(cap->driver));
-	strscpy(cap->card, "viu", sizeof(cap->card));
-	strscpy(cap->bus_info, "platform:viu", sizeof(cap->bus_info));
+	strcpy(cap->driver, "viu");
+	strcpy(cap->card, "viu");
+	strcpy(cap->bus_info, "platform:viu");
 	cap->device_caps =	V4L2_CAP_VIDEO_CAPTURE |
 				V4L2_CAP_STREAMING     |
 				V4L2_CAP_VIDEO_OVERLAY |
@@ -701,8 +703,10 @@ static int verify_preview(struct viu_dev *dev, struct v4l2_window *win)
 	return 0;
 }
 
-inline void viu_activate_overlay(struct viu_reg __iomem *vr)
+inline void viu_activate_overlay(struct viu_reg *viu_reg)
 {
+	struct viu_reg *vr = viu_reg;
+
 	out_be32(&vr->field_base_addr, reg_val.field_base_addr);
 	out_be32(&vr->dma_inc, reg_val.dma_inc);
 	out_be32(&vr->picture_count, reg_val.picture_count);
@@ -745,7 +749,7 @@ static int viu_setup_preview(struct viu_dev *dev, struct viu_fh *fh)
 	reg_val.status_cfg |= DMA_ACT | INT_DMA_END_EN | INT_FIELD_EN;
 
 	/* setup the base address of the overlay buffer */
-	reg_val.field_base_addr = (u32)(long)dev->ovbuf.base;
+	reg_val.field_base_addr = (u32)dev->ovbuf.base;
 
 	return 0;
 }
@@ -798,7 +802,7 @@ static int vidioc_overlay(struct file *file, void *priv, unsigned int on)
 	return 0;
 }
 
-static int vidioc_g_fbuf(struct file *file, void *priv, struct v4l2_framebuffer *arg)
+int vidioc_g_fbuf(struct file *file, void *priv, struct v4l2_framebuffer *arg)
 {
 	struct viu_fh  *fh = priv;
 	struct viu_dev *dev = fh->dev;
@@ -809,7 +813,7 @@ static int vidioc_g_fbuf(struct file *file, void *priv, struct v4l2_framebuffer 
 	return 0;
 }
 
-static int vidioc_s_fbuf(struct file *file, void *priv, const struct v4l2_framebuffer *arg)
+int vidioc_s_fbuf(struct file *file, void *priv, const struct v4l2_framebuffer *arg)
 {
 	struct viu_fh  *fh = priv;
 	struct viu_dev *dev = fh->dev;
@@ -936,7 +940,7 @@ static int vidioc_enum_input(struct file *file, void *priv,
 
 	inp->type = V4L2_INPUT_TYPE_CAMERA;
 	inp->std = fh->dev->vdev->tvnorms;
-	strscpy(inp->name, "Camera", sizeof(inp->name));
+	strcpy(inp->name, "Camera");
 	return 0;
 }
 
@@ -981,8 +985,10 @@ inline void viu_activate_next_buf(struct viu_dev *dev,
 	}
 }
 
-inline void viu_default_settings(struct viu_reg __iomem *vr)
+inline void viu_default_settings(struct viu_reg *viu_reg)
 {
+	struct viu_reg *vr = viu_reg;
+
 	out_be32(&vr->luminance, 0x9512A254);
 	out_be32(&vr->chroma_r, 0x03310000);
 	out_be32(&vr->chroma_g, 0x06600F38);
@@ -995,7 +1001,7 @@ inline void viu_default_settings(struct viu_reg __iomem *vr)
 
 static void viu_overlay_intr(struct viu_dev *dev, u32 status)
 {
-	struct viu_reg __iomem *vr = dev->vr;
+	struct viu_reg *vr = dev->vr;
 
 	if (status & INT_DMA_END_STATUS)
 		dev->dma_done = 1;
@@ -1026,7 +1032,7 @@ static void viu_overlay_intr(struct viu_dev *dev, u32 status)
 static void viu_capture_intr(struct viu_dev *dev, u32 status)
 {
 	struct viu_dmaqueue *vidq = &dev->vidq;
-	struct viu_reg __iomem *vr = dev->vr;
+	struct viu_reg *vr = dev->vr;
 	struct viu_buf *buf;
 	int field_num;
 	int need_two;
@@ -1085,7 +1091,7 @@ static void viu_capture_intr(struct viu_dev *dev, u32 status)
 
 		if (waitqueue_active(&buf->vb.done)) {
 			list_del(&buf->vb.queue);
-			buf->vb.ts = ktime_get_ns();
+			v4l2_get_timestamp(&buf->vb.ts);
 			buf->vb.state = VIDEOBUF_DONE;
 			buf->vb.field_count++;
 			wake_up(&buf->vb.done);
@@ -1098,7 +1104,7 @@ static void viu_capture_intr(struct viu_dev *dev, u32 status)
 static irqreturn_t viu_intr(int irq, void *dev_id)
 {
 	struct viu_dev *dev  = (struct viu_dev *)dev_id;
-	struct viu_reg __iomem *vr = dev->vr;
+	struct viu_reg *vr = dev->vr;
 	u32 status;
 	u32 error;
 
@@ -1163,7 +1169,7 @@ static int viu_open(struct file *file)
 	struct video_device *vdev = video_devdata(file);
 	struct viu_dev *dev = video_get_drvdata(vdev);
 	struct viu_fh *fh;
-	struct viu_reg __iomem *vr;
+	struct viu_reg *vr;
 	int minor = vdev->minor;
 	u32 status_cfg;
 
@@ -1204,7 +1210,9 @@ static int viu_open(struct file *file)
 	dev->crop_current.width  = fh->width;
 	dev->crop_current.height = fh->height;
 
-	dprintk(1, "Open: fh=%p, dev=%p, dev->vidq=%p\n", fh, dev, &dev->vidq);
+	dprintk(1, "Open: fh=0x%08lx, dev=0x%08lx, dev->vidq=0x%08lx\n",
+		(unsigned long)fh, (unsigned long)dev,
+		(unsigned long)&dev->vidq);
 	dprintk(1, "Open: list_empty queued=%d\n",
 		list_empty(&dev->vidq.queued));
 	dprintk(1, "Open: list_empty active=%d\n",
@@ -1255,18 +1263,18 @@ static ssize_t viu_read(struct file *file, char __user *data, size_t count,
 	return 0;
 }
 
-static __poll_t viu_poll(struct file *file, struct poll_table_struct *wait)
+static unsigned int viu_poll(struct file *file, struct poll_table_struct *wait)
 {
 	struct viu_fh *fh = file->private_data;
 	struct videobuf_queue *q = &fh->vb_vidq;
 	struct viu_dev *dev = fh->dev;
-	__poll_t req_events = poll_requested_events(wait);
-	__poll_t res = v4l2_ctrl_poll(file, wait);
+	unsigned long req_events = poll_requested_events(wait);
+	unsigned int res = v4l2_ctrl_poll(file, wait);
 
 	if (V4L2_BUF_TYPE_VIDEO_CAPTURE != fh->type)
-		return EPOLLERR;
+		return POLLERR;
 
-	if (!(req_events & (EPOLLIN | EPOLLRDNORM)))
+	if (!(req_events & (POLLIN | POLLRDNORM)))
 		return res;
 
 	mutex_lock(&dev->lock);
@@ -1297,7 +1305,7 @@ static int viu_release(struct file *file)
 	return 0;
 }
 
-static void viu_reset(struct viu_reg __iomem *reg)
+void viu_reset(struct viu_reg *reg)
 {
 	out_be32(&reg->status_cfg, 0);
 	out_be32(&reg->luminance, 0x9512a254);
@@ -1317,7 +1325,7 @@ static int viu_mmap(struct file *file, struct vm_area_struct *vma)
 	struct viu_dev *dev = fh->dev;
 	int ret;
 
-	dprintk(1, "mmap called, vma=%p\n", vma);
+	dprintk(1, "mmap called, vma=0x%08lx\n", (unsigned long)vma);
 
 	if (mutex_lock_interruptible(&dev->lock))
 		return -ERESTARTSYS;
@@ -1332,7 +1340,7 @@ static int viu_mmap(struct file *file, struct vm_area_struct *vma)
 	return ret;
 }
 
-static const struct v4l2_file_operations viu_fops = {
+static struct v4l2_file_operations viu_fops = {
 	.owner		= THIS_MODULE,
 	.open		= viu_open,
 	.release	= viu_release,
@@ -1372,7 +1380,7 @@ static const struct v4l2_ioctl_ops viu_ioctl_ops = {
 	.vidioc_unsubscribe_event = v4l2_event_unsubscribe,
 };
 
-static const struct video_device viu_template = {
+static struct video_device viu_template = {
 	.name		= "FSL viu",
 	.fops		= &viu_fops,
 	.minor		= -1,
@@ -1399,7 +1407,7 @@ static int viu_of_probe(struct platform_device *op)
 	}
 
 	viu_irq = irq_of_parse_and_map(op->dev.of_node, 0);
-	if (!viu_irq) {
+	if (viu_irq == NO_IRQ) {
 		dev_err(&op->dev, "Error while mapping the irq\n");
 		return -EINVAL;
 	}
@@ -1463,7 +1471,9 @@ static int viu_of_probe(struct platform_device *op)
 	viu_dev->decoder = v4l2_i2c_new_subdev(&viu_dev->v4l2_dev, ad,
 			"saa7113", VIU_VIDEO_DECODER_ADDR, NULL);
 
-	timer_setup(&viu_dev->vidq.timeout, viu_vid_timeout, 0);
+	viu_dev->vidq.timeout.function = viu_vid_timeout;
+	viu_dev->vidq.timeout.data     = (unsigned long)viu_dev;
+	init_timer(&viu_dev->vidq.timeout);
 	viu_dev->std = V4L2_STD_NTSC_M;
 	viu_dev->first = 1;
 

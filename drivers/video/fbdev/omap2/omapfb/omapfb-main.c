@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * linux/drivers/video/omap2/omapfb-main.c
  *
@@ -7,6 +6,18 @@
  *
  * Some code and ideas taken from drivers/video/omap/ driver
  * by Imre Deak.
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License version 2 as published by
+ * the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License along with
+ * this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 #include <linux/module.h>
@@ -276,7 +287,7 @@ static bool cmp_var_to_colormode(struct fb_var_screeninfo *var,
 			var->red.length == 0 ||
 			var->blue.length == 0 ||
 			var->green.length == 0)
-		return false;
+		return 0;
 
 	return var->bits_per_pixel == color->bits_per_pixel &&
 		cmp_component(&var->red, &color->red) &&
@@ -882,7 +893,6 @@ int omapfb_setup_overlay(struct fb_info *fbi, struct omap_overlay *ovl,
 				/ (var->bits_per_pixel >> 2);
 			break;
 		}
-		/* fall through */
 	default:
 		screen_width = fix->line_length / (var->bits_per_pixel >> 3);
 		break;
@@ -1467,7 +1477,7 @@ static int omapfb_alloc_fbmem_display(struct fb_info *fbi, unsigned long size,
 static int omapfb_parse_vram_param(const char *param, int max_entries,
 		unsigned long *sizes, unsigned long *paddrs)
 {
-	unsigned int fbnum;
+	int fbnum;
 	unsigned long size;
 	unsigned long paddr = 0;
 	char *p, *start;
@@ -1881,8 +1891,12 @@ static int omapfb_create_framebuffers(struct omapfb2_device *fbdev)
 
 		fbi = framebuffer_alloc(sizeof(struct omapfb_info),
 				fbdev->dev);
-		if (!fbi)
+
+		if (fbi == NULL) {
+			dev_err(fbdev->dev,
+				"unable to allocate memory for plane info\n");
 			return -ENOMEM;
+		}
 
 		clear_fb_info(fbi);
 

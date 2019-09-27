@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * bbc.h: Defines for BootBus Controller found on UltraSPARC-III
  *        systems.

@@ -159,16 +159,13 @@ static void ascii_ssetup_strings(char **pbcc_area, struct cifs_ses *ses,
 				 const struct nls_table *nls_cp)
 {
 	char *bcc_ptr = *pbcc_area;
-	int len;
 
 	/* copy user */
 	/* BB what about null user mounts - check that we do this BB */
 	/* copy user */
 	if (ses->user_name != NULL) {
-		len = strscpy(bcc_ptr, ses->user_name, CIFS_MAX_USERNAME_LEN);
-		if (WARN_ON_ONCE(len < 0))
-			len = CIFS_MAX_USERNAME_LEN - 1;
-		bcc_ptr += len;
+		strncpy(bcc_ptr, ses->user_name, CIFS_MAX_USERNAME_LEN);
+		bcc_ptr += strnlen(ses->user_name, CIFS_MAX_USERNAME_LEN);
 	}
 	/* else null user mount */
 	*bcc_ptr = 0;
@@ -176,10 +173,8 @@ static void ascii_ssetup_strings(char **pbcc_area, struct cifs_ses *ses,
 
 	/* copy domain */
 	if (ses->domainName != NULL) {
-		len = strscpy(bcc_ptr, ses->domainName, CIFS_MAX_DOMAINNAME_LEN);
-		if (WARN_ON_ONCE(len < 0))
-			len = CIFS_MAX_DOMAINNAME_LEN - 1;
-		bcc_ptr += len;
+		strncpy(bcc_ptr, ses->domainName, CIFS_MAX_DOMAINNAME_LEN);
+		bcc_ptr += strnlen(ses->domainName, CIFS_MAX_DOMAINNAME_LEN);
 	} /* else we will send a null domain name
 	     so the server will default to its own domain */
 	*bcc_ptr = 0;
@@ -247,10 +242,9 @@ static void decode_ascii_ssetup(char **pbcc_area, __u16 bleft,
 
 	kfree(ses->serverOS);
 
-	ses->serverOS = kmalloc(len + 1, GFP_KERNEL);
+	ses->serverOS = kzalloc(len + 1, GFP_KERNEL);
 	if (ses->serverOS) {
-		memcpy(ses->serverOS, bcc_ptr, len);
-		ses->serverOS[len] = 0;
+		strncpy(ses->serverOS, bcc_ptr, len);
 		if (strncmp(ses->serverOS, "OS/2", 4) == 0)
 			cifs_dbg(FYI, "OS/2 server\n");
 	}
@@ -264,11 +258,9 @@ static void decode_ascii_ssetup(char **pbcc_area, __u16 bleft,
 
 	kfree(ses->serverNOS);
 
-	ses->serverNOS = kmalloc(len + 1, GFP_KERNEL);
-	if (ses->serverNOS) {
-		memcpy(ses->serverNOS, bcc_ptr, len);
-		ses->serverNOS[len] = 0;
-	}
+	ses->serverNOS = kzalloc(len + 1, GFP_KERNEL);
+	if (ses->serverNOS)
+		strncpy(ses->serverNOS, bcc_ptr, len);
 
 	bcc_ptr += len + 1;
 	bleft -= len + 1;
@@ -512,7 +504,7 @@ setup_ntlmv2_ret:
 }
 
 enum securityEnum
-cifs_select_sectype(struct TCP_Server_Info *server, enum securityEnum requested)
+select_sectype(struct TCP_Server_Info *server, enum securityEnum requested)
 {
 	switch (server->negflavor) {
 	case CIFS_NEGFLAVOR_EXTENDED:
@@ -542,9 +534,9 @@ cifs_select_sectype(struct TCP_Server_Info *server, enum securityEnum requested)
 			if (global_secflags & CIFSSEC_MAY_NTLM)
 				return NTLM;
 		default:
+			/* Fallthrough to attempt LANMAN authentication next */
 			break;
 		}
-		/* Fallthrough - to attempt LANMAN authentication next */
 	case CIFS_NEGFLAVOR_LANMAN:
 		switch (requested) {
 		case LANMAN:
@@ -664,7 +656,6 @@ sess_sendreceive(struct sess_data *sess_data)
 	int rc;
 	struct smb_hdr *smb_buf = (struct smb_hdr *) sess_data->iov[0].iov_base;
 	__u16 count;
-	struct kvec rsp_iov = { NULL, 0 };
 
 	count = sess_data->iov[1].iov_len + sess_data->iov[2].iov_len;
 	smb_buf->smb_buf_length =
@@ -674,9 +665,7 @@ sess_sendreceive(struct sess_data *sess_data)
 	rc = SendReceive2(sess_data->xid, sess_data->ses,
 			  sess_data->iov, 3 /* num_iovecs */,
 			  &sess_data->buf0_type,
-			  CIFS_LOG_ERROR, &rsp_iov);
-	cifs_small_buf_release(sess_data->iov[0].iov_base);
-	memcpy(&sess_data->iov[0], &rsp_iov, sizeof(struct kvec));
+			  CIFS_LOG_ERROR);
 
 	return rc;
 }
@@ -1162,12 +1151,14 @@ out:
 static int
 _sess_auth_rawntlmssp_assemble_req(struct sess_data *sess_data)
 {
+	struct smb_hdr *smb_buf;
 	SESSION_SETUP_ANDX *pSMB;
 	struct cifs_ses *ses = sess_data->ses;
 	__u32 capabilities;
 	char *bcc_ptr;
 
 	pSMB = (SESSION_SETUP_ANDX *)sess_data->iov[0].iov_base;
+	smb_buf = (struct smb_hdr *)pSMB;
 
 	capabilities = cifs_ssetup_hdr(ses, pSMB);
 	if ((pSMB->req.hdr.Flags2 & SMBFLG2_UNICODE) == 0) {
@@ -1403,7 +1394,7 @@ static int select_sec(struct cifs_ses *ses, struct sess_data *sess_data)
 {
 	int type;
 
-	type = cifs_select_sectype(ses->server, ses->sectype);
+	type = select_sectype(ses->server, ses->sectype);
 	cifs_dbg(FYI, "sess setup type %d\n", type);
 	if (type == Unspecified) {
 		cifs_dbg(VFS,

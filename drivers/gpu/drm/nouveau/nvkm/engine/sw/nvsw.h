@@ -1,8 +1,7 @@
-/* SPDX-License-Identifier: MIT */
 #ifndef __NVKM_NVSW_H__
 #define __NVKM_NVSW_H__
 #define nvkm_nvsw(p) container_of((p), struct nvkm_nvsw, object)
-#include <core/object.h>
+#include "priv.h"
 
 struct nvkm_nvsw {
 	struct nvkm_object object;

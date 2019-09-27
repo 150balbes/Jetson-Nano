@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * highmem.c: virtual kernel memory mappings for high memory
  *
@@ -43,7 +42,9 @@ void *kmap_atomic_prot(struct page *page, pgprot_t prot)
 	type = kmap_atomic_idx_push();
 	idx = type + KM_TYPE_NR*smp_processor_id();
 	vaddr = __fix_to_virt(FIX_KMAP_BEGIN + idx);
-	WARN_ON(IS_ENABLED(CONFIG_DEBUG_HIGHMEM) && !pte_none(*(kmap_pte - idx)));
+#ifdef CONFIG_DEBUG_HIGHMEM
+	BUG_ON(!pte_none(*(kmap_pte-idx)));
+#endif
 	__set_pte_at(&init_mm, vaddr, kmap_pte-idx, mk_pte(page, prot), 1);
 	local_flush_tlb_page(NULL, vaddr);
 
@@ -54,6 +55,7 @@ EXPORT_SYMBOL(kmap_atomic_prot);
 void __kunmap_atomic(void *kvaddr)
 {
 	unsigned long vaddr = (unsigned long) kvaddr & PAGE_MASK;
+	int type;
 
 	if (vaddr < __fix_to_virt(FIX_KMAP_END)) {
 		pagefault_enable();
@@ -61,12 +63,14 @@ void __kunmap_atomic(void *kvaddr)
 		return;
 	}
 
-	if (IS_ENABLED(CONFIG_DEBUG_HIGHMEM)) {
-		int type = kmap_atomic_idx();
+	type = kmap_atomic_idx();
+
+#ifdef CONFIG_DEBUG_HIGHMEM
+	{
 		unsigned int idx;
 
 		idx = type + KM_TYPE_NR * smp_processor_id();
-		WARN_ON(vaddr != __fix_to_virt(FIX_KMAP_BEGIN + idx));
+		BUG_ON(vaddr != __fix_to_virt(FIX_KMAP_BEGIN + idx));
 
 		/*
 		 * force other mappings to Oops if they'll try to access
@@ -75,6 +79,7 @@ void __kunmap_atomic(void *kvaddr)
 		pte_clear(&init_mm, vaddr, kmap_pte-idx);
 		local_flush_tlb_page(NULL, vaddr);
 	}
+#endif
 
 	kmap_atomic_idx_pop();
 	pagefault_enable();

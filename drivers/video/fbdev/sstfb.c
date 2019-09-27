@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * linux/drivers/video/sstfb.c -- voodoo graphics frame buffer
  *

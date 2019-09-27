@@ -1,6 +1,7 @@
-/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * OF helpers for network devices.
+ *
+ * This file is released under the GPLv2
  */
 
 #ifndef __LINUX_OF_NET_H
@@ -21,7 +22,7 @@ static inline int of_get_phy_mode(struct device_node *np)
 
 static inline const void *of_get_mac_address(struct device_node *np)
 {
-	return ERR_PTR(-ENODEV);
+	return NULL;
 }
 
 static inline struct net_device *of_find_net_device_by_node(struct device_node *np)

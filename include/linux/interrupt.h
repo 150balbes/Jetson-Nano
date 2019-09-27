@@ -1,10 +1,11 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /* interrupt.h */
 #ifndef _LINUX_INTERRUPT_H
 #define _LINUX_INTERRUPT_H
 
 #include <linux/kernel.h>
+#include <linux/linkage.h>
 #include <linux/bitops.h>
+#include <linux/preempt.h>
 #include <linux/cpumask.h>
 #include <linux/irqreturn.h>
 #include <linux/irqnr.h>
@@ -45,14 +46,14 @@
  * IRQF_PERCPU - Interrupt is per cpu
  * IRQF_NOBALANCING - Flag to exclude this interrupt from irq balancing
  * IRQF_IRQPOLL - Interrupt is used for polling (only the interrupt that is
- *                registered first in a shared interrupt is considered for
+ *                registered first in an shared interrupt is considered for
  *                performance reasons)
  * IRQF_ONESHOT - Interrupt is not reenabled after the hardirq handler finished.
  *                Used by threaded interrupts which need to keep the
  *                irq line disabled until the threaded handler has been run.
  * IRQF_NO_SUSPEND - Do not disable this IRQ during suspend.  Does not guarantee
  *                   that this interrupt will wake the system from a suspended
- *                   state.  See Documentation/power/suspend-and-interrupts.rst
+ *                   state.  See Documentation/power/suspend-and-interrupts.txt
  * IRQF_FORCE_RESUME - Force enable it on resume even if IRQF_NO_SUSPEND is set
  * IRQF_NO_THREAD - Interrupt cannot be threaded
  * IRQF_EARLY_RESUME - Resume IRQ early during syscore instead of at device
@@ -152,31 +153,11 @@ request_any_context_irq(unsigned int irq, irq_handler_t handler,
 			unsigned long flags, const char *name, void *dev_id);
 
 extern int __must_check
-__request_percpu_irq(unsigned int irq, irq_handler_t handler,
-		     unsigned long flags, const char *devname,
-		     void __percpu *percpu_dev_id);
-
-extern int __must_check
-request_nmi(unsigned int irq, irq_handler_t handler, unsigned long flags,
-	    const char *name, void *dev);
-
-static inline int __must_check
 request_percpu_irq(unsigned int irq, irq_handler_t handler,
-		   const char *devname, void __percpu *percpu_dev_id)
-{
-	return __request_percpu_irq(irq, handler, 0,
-				    devname, percpu_dev_id);
-}
+		   const char *devname, void __percpu *percpu_dev_id);
 
-extern int __must_check
-request_percpu_nmi(unsigned int irq, irq_handler_t handler,
-		   const char *devname, void __percpu *dev);
-
-extern const void *free_irq(unsigned int, void *);
+extern void free_irq(unsigned int, void *);
 extern void free_percpu_irq(unsigned int, void __percpu *);
-
-extern const void *free_nmi(unsigned int irq, void *dev_id);
-extern void free_percpu_nmi(unsigned int irq, void __percpu *percpu_dev_id);
 
 struct device;
 
@@ -228,13 +209,6 @@ extern void enable_percpu_irq(unsigned int irq, unsigned int type);
 extern bool irq_percpu_is_enabled(unsigned int irq);
 extern void irq_wake_thread(unsigned int irq, void *dev_id);
 
-extern void disable_nmi_nosync(unsigned int irq);
-extern void disable_percpu_nmi(unsigned int irq);
-extern void enable_nmi(unsigned int irq);
-extern void enable_percpu_nmi(unsigned int irq, unsigned int type);
-extern int prepare_percpu_nmi(unsigned int irq);
-extern void teardown_percpu_nmi(unsigned int irq);
-
 /* The following three functions are for the core kernel use only. */
 extern void suspend_device_irqs(void);
 extern void resume_device_irqs(void);
@@ -257,41 +231,6 @@ struct irq_affinity_notify {
 	struct work_struct work;
 	void (*notify)(struct irq_affinity_notify *, const cpumask_t *mask);
 	void (*release)(struct kref *ref);
-};
-
-#define	IRQ_AFFINITY_MAX_SETS  4
-
-/**
- * struct irq_affinity - Description for automatic irq affinity assignements
- * @pre_vectors:	Don't apply affinity to @pre_vectors at beginning of
- *			the MSI(-X) vector space
- * @post_vectors:	Don't apply affinity to @post_vectors at end of
- *			the MSI(-X) vector space
- * @nr_sets:		The number of interrupt sets for which affinity
- *			spreading is required
- * @set_size:		Array holding the size of each interrupt set
- * @calc_sets:		Callback for calculating the number and size
- *			of interrupt sets
- * @priv:		Private data for usage by @calc_sets, usually a
- *			pointer to driver/device specific data.
- */
-struct irq_affinity {
-	unsigned int	pre_vectors;
-	unsigned int	post_vectors;
-	unsigned int	nr_sets;
-	unsigned int	set_size[IRQ_AFFINITY_MAX_SETS];
-	void		(*calc_sets)(struct irq_affinity *, unsigned int nvecs);
-	void		*priv;
-};
-
-/**
- * struct irq_affinity_desc - Interrupt affinity descriptor
- * @mask:	cpumask to hold the affinity assignment
- * @is_managed: 1 if the interrupt is managed internally
- */
-struct irq_affinity_desc {
-	struct cpumask	mask;
-	unsigned int	is_managed : 1;
 };
 
 #if defined(CONFIG_SMP)
@@ -340,11 +279,8 @@ extern int irq_set_affinity_hint(unsigned int irq, const struct cpumask *m);
 extern int
 irq_set_affinity_notifier(unsigned int irq, struct irq_affinity_notify *notify);
 
-struct irq_affinity_desc *
-irq_create_affinity_masks(unsigned int nvec, struct irq_affinity *affd);
-
-unsigned int irq_calc_affinity_vectors(unsigned int minvec, unsigned int maxvec,
-				       const struct irq_affinity *affd);
+struct cpumask *irq_create_affinity_masks(const struct cpumask *affinity, int nvec);
+int irq_calc_affinity_vectors(const struct cpumask *affinity, int maxvec);
 
 #else /* CONFIG_SMP */
 
@@ -377,15 +313,14 @@ irq_set_affinity_notifier(unsigned int irq, struct irq_affinity_notify *notify)
 	return 0;
 }
 
-static inline struct irq_affinity_desc *
-irq_create_affinity_masks(unsigned int nvec, struct irq_affinity *affd)
+static inline struct cpumask *
+irq_create_affinity_masks(const struct cpumask *affinity, int nvec)
 {
 	return NULL;
 }
 
-static inline unsigned int
-irq_calc_affinity_vectors(unsigned int minvec, unsigned int maxvec,
-			  const struct irq_affinity *affd)
+static inline int
+irq_calc_affinity_vectors(const struct cpumask *affinity, int maxvec)
 {
 	return maxvec;
 }
@@ -477,17 +412,10 @@ extern bool force_irqthreads;
 #define force_irqthreads	(0)
 #endif
 
-#ifndef local_softirq_pending
-
-#ifndef local_softirq_pending_ref
-#define local_softirq_pending_ref irq_stat.__softirq_pending
+#ifndef __ARCH_SET_SOFTIRQ_PENDING
+#define set_softirq_pending(x) (local_softirq_pending() = (x))
+#define or_softirq_pending(x)  (local_softirq_pending() |= (x))
 #endif
-
-#define local_softirq_pending()	(__this_cpu_read(local_softirq_pending_ref))
-#define set_softirq_pending(x)	(__this_cpu_write(local_softirq_pending_ref, (x)))
-#define or_softirq_pending(x)	(__this_cpu_or(local_softirq_pending_ref, (x)))
-
-#endif /* local_softirq_pending */
 
 /* Some architectures might implement lazy enabling/disabling of
  * interrupts. In some cases, such as stop_machine, we might want
@@ -644,6 +572,21 @@ static inline void tasklet_hi_schedule(struct tasklet_struct *t)
 		__tasklet_hi_schedule(t);
 }
 
+extern void __tasklet_hi_schedule_first(struct tasklet_struct *t);
+
+/*
+ * This version avoids touching any other tasklets. Needed for kmemcheck
+ * in order not to take any page faults while enqueueing this tasklet;
+ * consider VERY carefully whether you really need this or
+ * tasklet_hi_schedule()...
+ */
+static inline void tasklet_hi_schedule_first(struct tasklet_struct *t)
+{
+	if (!test_and_set_bit(TASKLET_STATE_SCHED, &t->state))
+		__tasklet_hi_schedule_first(t);
+}
+
+
 static inline void tasklet_disable_nosync(struct tasklet_struct *t)
 {
 	atomic_inc(&t->count);
@@ -667,6 +610,31 @@ extern void tasklet_kill(struct tasklet_struct *t);
 extern void tasklet_kill_immediate(struct tasklet_struct *t, unsigned int cpu);
 extern void tasklet_init(struct tasklet_struct *t,
 			 void (*func)(unsigned long), unsigned long data);
+
+struct tasklet_hrtimer {
+	struct hrtimer		timer;
+	struct tasklet_struct	tasklet;
+	enum hrtimer_restart	(*function)(struct hrtimer *);
+};
+
+extern void
+tasklet_hrtimer_init(struct tasklet_hrtimer *ttimer,
+		     enum hrtimer_restart (*function)(struct hrtimer *),
+		     clockid_t which_clock, enum hrtimer_mode mode);
+
+static inline
+void tasklet_hrtimer_start(struct tasklet_hrtimer *ttimer, ktime_t time,
+			   const enum hrtimer_mode mode)
+{
+	hrtimer_start(&ttimer->timer, time, mode);
+}
+
+static inline
+void tasklet_hrtimer_cancel(struct tasklet_hrtimer *ttimer)
+{
+	hrtimer_cancel(&ttimer->timer);
+	tasklet_kill(&ttimer->tasklet);
+}
 
 /*
  * Autoprobing for irqs:
@@ -722,12 +690,6 @@ extern void init_irq_proc(void);
 static inline void init_irq_proc(void)
 {
 }
-#endif
-
-#ifdef CONFIG_IRQ_TIMINGS
-void irq_timings_enable(void);
-void irq_timings_disable(void);
-u64 irq_timings_next_event(u64 now);
 #endif
 
 struct seq_file;

@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  *    pata_efar.c - EFAR PIIX clone controller driver
  *

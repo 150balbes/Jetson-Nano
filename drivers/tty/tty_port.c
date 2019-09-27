@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * Tty port functions
  */
@@ -12,50 +11,11 @@
 #include <linux/timer.h>
 #include <linux/string.h>
 #include <linux/slab.h>
-#include <linux/sched/signal.h>
+#include <linux/sched.h>
 #include <linux/wait.h>
 #include <linux/bitops.h>
 #include <linux/delay.h>
 #include <linux/module.h>
-#include <linux/serdev.h>
-
-static int tty_port_default_receive_buf(struct tty_port *port,
-					const unsigned char *p,
-					const unsigned char *f, size_t count)
-{
-	int ret;
-	struct tty_struct *tty;
-	struct tty_ldisc *disc;
-
-	tty = READ_ONCE(port->itty);
-	if (!tty)
-		return 0;
-
-	disc = tty_ldisc_ref(tty);
-	if (!disc)
-		return 0;
-
-	ret = tty_ldisc_receive_buf(disc, p, (char *)f, count);
-
-	tty_ldisc_deref(disc);
-
-	return ret;
-}
-
-static void tty_port_default_wakeup(struct tty_port *port)
-{
-	struct tty_struct *tty = tty_port_tty_get(port);
-
-	if (tty) {
-		tty_wakeup(tty);
-		tty_kref_put(tty);
-	}
-}
-
-static const struct tty_port_client_operations default_client_ops = {
-	.receive_buf = tty_port_default_receive_buf,
-	.write_wakeup = tty_port_default_wakeup,
-};
 
 void tty_port_init(struct tty_port *port)
 {
@@ -68,7 +28,6 @@ void tty_port_init(struct tty_port *port)
 	spin_lock_init(&port->lock);
 	port->close_delay = (50 * HZ) / 100;
 	port->closing_wait = (3000 * HZ) / 100;
-	port->client_ops = &default_client_ops;
 	kref_init(&port->kref);
 }
 EXPORT_SYMBOL(tty_port_init);
@@ -79,7 +38,7 @@ EXPORT_SYMBOL(tty_port_init);
  * @driver: tty_driver for this device
  * @index: index of the tty
  *
- * Provide the tty layer with a link from a tty (specified by @index) to a
+ * Provide the tty layer wit ha link from a tty (specified by @index) to a
  * tty_port (@port). Use this only if neither tty_port_register_device nor
  * tty_port_install is used in the driver. If used, this has to be called before
  * tty_register_driver.
@@ -108,7 +67,8 @@ struct device *tty_port_register_device(struct tty_port *port,
 		struct tty_driver *driver, unsigned index,
 		struct device *device)
 {
-	return tty_port_register_device_attr(port, driver, index, device, NULL, NULL);
+	tty_port_link_device(port, driver, index);
+	return tty_register_device(driver, index, device);
 }
 EXPORT_SYMBOL_GPL(tty_port_register_device);
 
@@ -136,80 +96,6 @@ struct device *tty_port_register_device_attr(struct tty_port *port,
 }
 EXPORT_SYMBOL_GPL(tty_port_register_device_attr);
 
-/**
- * tty_port_register_device_attr_serdev - register tty or serdev device
- * @port: tty_port of the device
- * @driver: tty_driver for this device
- * @index: index of the tty
- * @device: parent if exists, otherwise NULL
- * @drvdata: driver data for the device
- * @attr_grp: attribute group for the device
- *
- * Register a serdev or tty device depending on if the parent device has any
- * defined serdev clients or not.
- */
-struct device *tty_port_register_device_attr_serdev(struct tty_port *port,
-		struct tty_driver *driver, unsigned index,
-		struct device *device, void *drvdata,
-		const struct attribute_group **attr_grp)
-{
-	struct device *dev;
-
-	tty_port_link_device(port, driver, index);
-
-	dev = serdev_tty_port_register(port, device, driver, index);
-	if (PTR_ERR(dev) != -ENODEV) {
-		/* Skip creating cdev if we registered a serdev device */
-		return dev;
-	}
-
-	return tty_register_device_attr(driver, index, device, drvdata,
-			attr_grp);
-}
-EXPORT_SYMBOL_GPL(tty_port_register_device_attr_serdev);
-
-/**
- * tty_port_register_device_serdev - register tty or serdev device
- * @port: tty_port of the device
- * @driver: tty_driver for this device
- * @index: index of the tty
- * @device: parent if exists, otherwise NULL
- *
- * Register a serdev or tty device depending on if the parent device has any
- * defined serdev clients or not.
- */
-struct device *tty_port_register_device_serdev(struct tty_port *port,
-		struct tty_driver *driver, unsigned index,
-		struct device *device)
-{
-	return tty_port_register_device_attr_serdev(port, driver, index,
-			device, NULL, NULL);
-}
-EXPORT_SYMBOL_GPL(tty_port_register_device_serdev);
-
-/**
- * tty_port_unregister_device - deregister a tty or serdev device
- * @port: tty_port of the device
- * @driver: tty_driver for this device
- * @index: index of the tty
- *
- * If a tty or serdev device is registered with a call to
- * tty_port_register_device_serdev() then this function must be called when
- * the device is gone.
- */
-void tty_port_unregister_device(struct tty_port *port,
-		struct tty_driver *driver, unsigned index)
-{
-	int ret;
-
-	ret = serdev_tty_port_unregister(port);
-	if (ret == 0)
-		return;
-
-	tty_unregister_device(driver, index);
-}
-EXPORT_SYMBOL_GPL(tty_port_unregister_device);
-
 int tty_port_alloc_xmit_buf(struct tty_port *port)
 {
 	/* We may sleep in get_zeroed_page() */
@@ -236,7 +122,7 @@ EXPORT_SYMBOL(tty_port_free_xmit_buf);
 
 /**
  * tty_port_destroy -- destroy inited port
- * @port: tty port to be destroyed
+ * @port: tty port to be doestroyed
  *
  * When a port was initialized using tty_port_init, one has to destroy the
  * port by this function. Either indirectly by using tty_port refcounting
@@ -279,6 +165,7 @@ EXPORT_SYMBOL(tty_port_put);
  *	Return a refcount protected tty instance or NULL if the port is not
  *	associated with a tty (eg due to close or hangup)
  */
+
 struct tty_struct *tty_port_tty_get(struct tty_port *port)
 {
 	unsigned long flags;
@@ -299,6 +186,7 @@ EXPORT_SYMBOL(tty_port_tty_get);
  *	Associate the port and tty pair. Manages any internal refcounts.
  *	Pass NULL to deassociate a port
  */
+
 void tty_port_tty_set(struct tty_port *port, struct tty_struct *tty)
 {
 	unsigned long flags;
@@ -341,6 +229,7 @@ out:
  *
  *	Caller holds tty lock.
  */
+
 void tty_port_hangup(struct tty_port *port)
 {
 	struct tty_struct *tty;
@@ -384,7 +273,12 @@ EXPORT_SYMBOL_GPL(tty_port_tty_hangup);
  */
 void tty_port_tty_wakeup(struct tty_port *port)
 {
-	port->client_ops->write_wakeup(port);
+	struct tty_struct *tty = tty_port_tty_get(port);
+
+	if (tty) {
+		tty_wakeup(tty);
+		tty_kref_put(tty);
+	}
 }
 EXPORT_SYMBOL_GPL(tty_port_tty_wakeup);
 
@@ -396,6 +290,7 @@ EXPORT_SYMBOL_GPL(tty_port_tty_wakeup);
  *	to hide some internal details. This will eventually become entirely
  *	internal to the tty port.
  */
+
 int tty_port_carrier_raised(struct tty_port *port)
 {
 	if (port->ops->carrier_raised == NULL)
@@ -412,6 +307,7 @@ EXPORT_SYMBOL(tty_port_carrier_raised);
  *	to hide some internal details. This will eventually become entirely
  *	internal to the tty port.
  */
+
 void tty_port_raise_dtr_rts(struct tty_port *port)
 {
 	if (port->ops->dtr_rts)
@@ -427,6 +323,7 @@ EXPORT_SYMBOL(tty_port_raise_dtr_rts);
  *	to hide some internal details. This will eventually become entirely
  *	internal to the tty port.
  */
+
 void tty_port_lower_dtr_rts(struct tty_port *port)
 {
 	if (port->ops->dtr_rts)
@@ -438,7 +335,7 @@ EXPORT_SYMBOL(tty_port_lower_dtr_rts);
  *	tty_port_block_til_ready	-	Waiting logic for tty open
  *	@port: the tty port being opened
  *	@tty: the tty device being bound
- *	@filp: the file pointer of the opener or NULL
+ *	@filp: the file pointer of the opener
  *
  *	Implement the core POSIX/SuS tty behaviour when opening a tty device.
  *	Handles:
@@ -458,6 +355,7 @@ EXPORT_SYMBOL(tty_port_lower_dtr_rts);
  *      NB: May drop and reacquire tty lock when blocking, so tty and tty_port
  *      may have changed state (eg., may have been hung up).
  */
+
 int tty_port_block_til_ready(struct tty_port *port,
 				struct tty_struct *tty, struct file *filp)
 {
@@ -471,7 +369,7 @@ int tty_port_block_til_ready(struct tty_port *port,
 		tty_port_set_active(port, 1);
 		return 0;
 	}
-	if (filp == NULL || (filp->f_flags & O_NONBLOCK)) {
+	if (filp->f_flags & O_NONBLOCK) {
 		/* Indicate we are open */
 		if (C_BAUD(tty))
 			tty_port_raise_dtr_rts(port);
@@ -633,8 +531,7 @@ void tty_port_close(struct tty_port *port, struct tty_struct *tty,
 	if (tty_port_close_start(port, tty, filp) == 0)
 		return;
 	tty_port_shutdown(port, tty);
-	if (!port->console)
-		set_bit(TTY_IO_ERROR, &tty->flags);
+	set_bit(TTY_IO_ERROR, &tty->flags);
 	tty_port_close_end(port, tty);
 	tty_port_tty_set(port, NULL);
 }

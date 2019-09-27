@@ -56,7 +56,7 @@ Scott Hill shill@gtcocalcomp.com
 #include <linux/slab.h>
 #include <linux/input.h>
 #include <linux/usb.h>
-#include <linux/uaccess.h>
+#include <asm/uaccess.h>
 #include <asm/unaligned.h>
 #include <asm/byteorder.h>
 #include <linux/bitops.h>
@@ -78,7 +78,6 @@ Scott Hill shill@gtcocalcomp.com
 
 /* Max size of a single report */
 #define REPORT_MAX_SIZE       10
-#define MAX_COLLECTION_LEVELS  10
 
 
 /* Bitmask whether pen is in range */
@@ -224,7 +223,8 @@ static void parse_hid_report_descriptor(struct gtco *device, char * report,
 	char  maintype = 'x';
 	char  globtype[12];
 	int   indent = 0;
-	char  indentstr[MAX_COLLECTION_LEVELS + 1] = { 0 };
+	char  indentstr[10] = "";
+
 
 	dev_dbg(ddev, "======>>>>>>PARSE<<<<<<======\n");
 
@@ -350,13 +350,6 @@ static void parse_hid_report_descriptor(struct gtco *device, char * report,
 			case TAG_MAIN_COL_START:
 				maintype = 'S';
 
-				if (indent == MAX_COLLECTION_LEVELS) {
-					dev_err(ddev, "Collection level %d would exceed limit of %d\n",
-						indent + 1,
-						MAX_COLLECTION_LEVELS);
-					break;
-				}
-
 				if (data == 0) {
 					dev_dbg(ddev, "======>>>>>> Physical\n");
 					strcpy(globtype, "Physical");
@@ -376,15 +369,8 @@ static void parse_hid_report_descriptor(struct gtco *device, char * report,
 				break;
 
 			case TAG_MAIN_COL_END:
-				maintype = 'E';
-
-				if (indent == 0) {
-					dev_err(ddev, "Collection level already at zero\n");
-					break;
-				}
-
 				dev_dbg(ddev, "<<<<<<======\n");
-
+				maintype = 'E';
 				indent--;
 				for (x = 0; x < indent; x++)
 					indentstr[x] = '-';
@@ -668,9 +654,7 @@ static void gtco_urb_callback(struct urb *urbinfo)
 		 */
 		switch (device->buffer[0]) {
 		case 5:
-			/* Pressure is 9 bits */
-			val = ((u16)(device->buffer[8]) << 1);
-			val |= (u16)(device->buffer[7] >> 7);
+			/* Pressure */
 			input_report_abs(inputdev, ABS_PRESSURE,
 					 device->buffer[8]);
 

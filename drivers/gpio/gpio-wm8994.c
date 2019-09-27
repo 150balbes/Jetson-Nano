@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0+
 /*
  * gpiolib support for Wolfson WM8994
  *
@@ -6,12 +5,17 @@
  *
  * Author: Mark Brown <broonie@opensource.wolfsonmicro.com>
  *
+ *  This program is free software; you can redistribute  it and/or modify it
+ *  under  the terms of  the GNU General  Public License as published by the
+ *  Free Software Foundation;  either version 2 of the  License, or (at your
+ *  option) any later version.
+ *
  */
 
 #include <linux/kernel.h>
 #include <linux/slab.h>
 #include <linux/module.h>
-#include <linux/gpio/driver.h>
+#include <linux/gpio.h>
 #include <linux/mfd/core.h>
 #include <linux/platform_device.h>
 #include <linux/seq_file.h>
@@ -99,18 +103,19 @@ static void wm8994_gpio_set(struct gpio_chip *chip, unsigned offset, int value)
 	wm8994_set_bits(wm8994, WM8994_GPIO_1 + offset, WM8994_GPN_LVL, value);
 }
 
-static int wm8994_gpio_set_config(struct gpio_chip *chip, unsigned int offset,
-				  unsigned long config)
+static int wm8994_gpio_set_single_ended(struct gpio_chip *chip,
+					unsigned int offset,
+					enum single_ended_mode mode)
 {
 	struct wm8994_gpio *wm8994_gpio = gpiochip_get_data(chip);
 	struct wm8994 *wm8994 = wm8994_gpio->wm8994;
 
-	switch (pinconf_to_config_param(config)) {
-	case PIN_CONFIG_DRIVE_OPEN_DRAIN:
+	switch (mode) {
+	case LINE_MODE_OPEN_DRAIN:
 		return wm8994_set_bits(wm8994, WM8994_GPIO_1 + offset,
 				       WM8994_GPN_OP_CFG_MASK,
 				       WM8994_GPN_OP_CFG);
-	case PIN_CONFIG_DRIVE_PUSH_PULL:
+	case LINE_MODE_PUSH_PULL:
 		return wm8994_set_bits(wm8994, WM8994_GPIO_1 + offset,
 				       WM8994_GPN_OP_CFG_MASK, 0);
 	default:
@@ -252,7 +257,7 @@ static const struct gpio_chip template_chip = {
 	.get			= wm8994_gpio_get,
 	.direction_output	= wm8994_gpio_direction_out,
 	.set			= wm8994_gpio_set,
-	.set_config		= wm8994_gpio_set_config,
+	.set_single_ended	= wm8994_gpio_set_single_ended,
 	.to_irq			= wm8994_gpio_to_irq,
 	.dbg_show		= wm8994_gpio_dbg_show,
 	.can_sleep		= true,

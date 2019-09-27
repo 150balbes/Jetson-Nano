@@ -1,10 +1,14 @@
-// SPDX-License-Identifier: GPL-2.0
-//
-//  max17040_battery.c
-//  fuel-gauge systems for lithium-ion (Li+) batteries
-//
-//  Copyright (C) 2009 Samsung Electronics
-//  Minkyu Kang <mk7.kang@samsung.com>
+/*
+ *  max17040_battery.c
+ *  fuel-gauge systems for lithium-ion (Li+) batteries
+ *
+ *  Copyright (C) 2009 Samsung Electronics
+ *  Minkyu Kang <mk7.kang@samsung.com>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ */
 
 #include <linux/module.h>
 #include <linux/init.h>
@@ -17,13 +21,18 @@
 #include <linux/max17040_battery.h>
 #include <linux/slab.h>
 
-#define MAX17040_VCELL	0x02
-#define MAX17040_SOC	0x04
-#define MAX17040_MODE	0x06
-#define MAX17040_VER	0x08
-#define MAX17040_RCOMP	0x0C
-#define MAX17040_CMD	0xFE
-
+#define MAX17040_VCELL_MSB	0x02
+#define MAX17040_VCELL_LSB	0x03
+#define MAX17040_SOC_MSB	0x04
+#define MAX17040_SOC_LSB	0x05
+#define MAX17040_MODE_MSB	0x06
+#define MAX17040_MODE_LSB	0x07
+#define MAX17040_VER_MSB	0x08
+#define MAX17040_VER_LSB	0x09
+#define MAX17040_RCOMP_MSB	0x0C
+#define MAX17040_RCOMP_LSB	0x0D
+#define MAX17040_CMD_MSB	0xFE
+#define MAX17040_CMD_LSB	0xFF
 
 #define MAX17040_DELAY		1000
 #define MAX17040_BATTERY_FULL	95
@@ -69,11 +78,11 @@ static int max17040_get_property(struct power_supply *psy,
 	return 0;
 }
 
-static int max17040_write_reg(struct i2c_client *client, int reg, u16 value)
+static int max17040_write_reg(struct i2c_client *client, int reg, u8 value)
 {
 	int ret;
 
-	ret = i2c_smbus_write_word_swapped(client, reg, value);
+	ret = i2c_smbus_write_byte_data(client, reg, value);
 
 	if (ret < 0)
 		dev_err(&client->dev, "%s: err %d\n", __func__, ret);
@@ -85,7 +94,7 @@ static int max17040_read_reg(struct i2c_client *client, int reg)
 {
 	int ret;
 
-	ret = i2c_smbus_read_word_swapped(client, reg);
+	ret = i2c_smbus_read_byte_data(client, reg);
 
 	if (ret < 0)
 		dev_err(&client->dev, "%s: err %d\n", __func__, ret);
@@ -95,36 +104,43 @@ static int max17040_read_reg(struct i2c_client *client, int reg)
 
 static void max17040_reset(struct i2c_client *client)
 {
-	max17040_write_reg(client, MAX17040_CMD, 0x0054);
+	max17040_write_reg(client, MAX17040_CMD_MSB, 0x54);
+	max17040_write_reg(client, MAX17040_CMD_LSB, 0x00);
 }
 
 static void max17040_get_vcell(struct i2c_client *client)
 {
 	struct max17040_chip *chip = i2c_get_clientdata(client);
-	u16 vcell;
+	u8 msb;
+	u8 lsb;
 
-	vcell = max17040_read_reg(client, MAX17040_VCELL);
+	msb = max17040_read_reg(client, MAX17040_VCELL_MSB);
+	lsb = max17040_read_reg(client, MAX17040_VCELL_LSB);
 
-	chip->vcell = vcell;
+	chip->vcell = (msb << 4) + (lsb >> 4);
 }
 
 static void max17040_get_soc(struct i2c_client *client)
 {
 	struct max17040_chip *chip = i2c_get_clientdata(client);
-	u16 soc;
+	u8 msb;
+	u8 lsb;
 
-	soc = max17040_read_reg(client, MAX17040_SOC);
+	msb = max17040_read_reg(client, MAX17040_SOC_MSB);
+	lsb = max17040_read_reg(client, MAX17040_SOC_LSB);
 
-	chip->soc = (soc >> 8);
+	chip->soc = msb;
 }
 
 static void max17040_get_version(struct i2c_client *client)
 {
-	u16 version;
+	u8 msb;
+	u8 lsb;
 
-	version = max17040_read_reg(client, MAX17040_VER);
+	msb = max17040_read_reg(client, MAX17040_VER_MSB);
+	lsb = max17040_read_reg(client, MAX17040_VER_LSB);
 
-	dev_info(&client->dev, "MAX17040 Fuel-Gauge Ver 0x%x\n", version);
+	dev_info(&client->dev, "MAX17040 Fuel-Gauge Ver %d%d\n", msb, lsb);
 }
 
 static void max17040_get_online(struct i2c_client *client)
@@ -193,7 +209,7 @@ static const struct power_supply_desc max17040_battery_desc = {
 static int max17040_probe(struct i2c_client *client,
 			const struct i2c_device_id *id)
 {
-	struct i2c_adapter *adapter = client->adapter;
+	struct i2c_adapter *adapter = to_i2c_adapter(client->dev.parent);
 	struct power_supply_config psy_cfg = {};
 	struct max17040_chip *chip;
 
@@ -273,17 +289,9 @@ static const struct i2c_device_id max17040_id[] = {
 };
 MODULE_DEVICE_TABLE(i2c, max17040_id);
 
-static const struct of_device_id max17040_of_match[] = {
-	{ .compatible = "maxim,max17040" },
-	{ .compatible = "maxim,max77836-battery" },
-	{ },
-};
-MODULE_DEVICE_TABLE(of, max17040_of_match);
-
 static struct i2c_driver max17040_i2c_driver = {
 	.driver	= {
 		.name	= "max17040",
-		.of_match_table = max17040_of_match,
 		.pm	= MAX17040_PM_OPS,
 	},
 	.probe		= max17040_probe,

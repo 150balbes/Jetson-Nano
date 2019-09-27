@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _LINUX_I2C_ALGO_PXA_H
 #define _LINUX_I2C_ALGO_PXA_H
 

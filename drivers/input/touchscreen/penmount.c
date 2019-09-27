@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Penmount serial touchscreen driver
  *
@@ -9,6 +8,11 @@
  * Copyright (c) 2004 Vojtech Pavlik
  */
 
+/*
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License version 2 as published
+ * by the Free Software Foundation.
+ */
 
 #include <linux/errno.h>
 #include <linux/kernel.h>
@@ -289,7 +293,7 @@ static int pm_connect(struct serio *serio, struct serio_driver *drv)
  * The serio driver structure.
  */
 
-static const struct serio_device_id pm_serio_ids[] = {
+static struct serio_device_id pm_serio_ids[] = {
 	{
 		.type	= SERIO_RS232,
 		.proto	= SERIO_PENMOUNT,

@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /* linux/arch/arm/plat-s3c64xx/include/mach/regs-gpio.h
  *
  * Copyright 2008 Openmoko, Inc.

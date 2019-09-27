@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * arch/ia64/hp/sim/boot/bootloader.c
  *

@@ -1,6 +1,10 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * net/sched/sch_fifo.c	The simplest FIFO queue.
+ *
+ *		This program is free software; you can redistribute it and/or
+ *		modify it under the terms of the GNU General Public License
+ *		as published by the Free Software Foundation; either version
+ *		2 of the License, or (at your option) any later version.
  *
  * Authors:	Alexey Kuznetsov, <kuznet@ms2.inr.ac.ru>
  */
@@ -51,8 +55,7 @@ static int pfifo_tail_enqueue(struct sk_buff *skb, struct Qdisc *sch,
 	return NET_XMIT_CN;
 }
 
-static int fifo_init(struct Qdisc *sch, struct nlattr *opt,
-		     struct netlink_ext_ack *extack)
+static int fifo_init(struct Qdisc *sch, struct nlattr *opt)
 {
 	bool bypass;
 	bool is_bfifo = sch->ops == &bfifo_qdisc_ops;
@@ -154,7 +157,7 @@ int fifo_set_limit(struct Qdisc *q, unsigned int limit)
 		nla->nla_len = nla_attr_size(sizeof(struct tc_fifo_qopt));
 		((struct tc_fifo_qopt *)nla_data(nla))->limit = limit;
 
-		ret = q->ops->change(q, nla, NULL);
+		ret = q->ops->change(q, nla);
 		kfree(nla);
 	}
 	return ret;
@@ -162,18 +165,16 @@ int fifo_set_limit(struct Qdisc *q, unsigned int limit)
 EXPORT_SYMBOL(fifo_set_limit);
 
 struct Qdisc *fifo_create_dflt(struct Qdisc *sch, struct Qdisc_ops *ops,
-			       unsigned int limit,
-			       struct netlink_ext_ack *extack)
+			       unsigned int limit)
 {
 	struct Qdisc *q;
 	int err = -ENOMEM;
 
-	q = qdisc_create_dflt(sch->dev_queue, ops, TC_H_MAKE(sch->handle, 1),
-			      extack);
+	q = qdisc_create_dflt(sch->dev_queue, ops, TC_H_MAKE(sch->handle, 1));
 	if (q) {
 		err = fifo_set_limit(q, limit);
 		if (err < 0) {
-			qdisc_put(q);
+			qdisc_destroy(q);
 			q = NULL;
 		}
 	}

@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * trace_hwlatdetect.c - A simple Hardware Latency detector.
  *
@@ -36,13 +35,15 @@
  *
  * Includes useful feedback from Clark Williams <clark@redhat.com>
  *
+ * This file is licensed under the terms of the GNU General Public
+ * License version 2. This program is licensed "as is" without any
+ * warranty of any kind, whether express or implied.
  */
 #include <linux/kthread.h>
 #include <linux/tracefs.h>
 #include <linux/uaccess.h>
 #include <linux/cpumask.h>
 #include <linux/delay.h>
-#include <linux/sched/clock.h>
 #include "trace.h"
 
 static struct trace_array	*hwlat_trace;
@@ -77,12 +78,12 @@ static u64 last_tracing_thresh = DEFAULT_LAT_THRESHOLD * NSEC_PER_USEC;
 
 /* Individual latency samples are stored here when detected. */
 struct hwlat_sample {
-	u64			seqnum;		/* unique sequence */
-	u64			duration;	/* delta */
-	u64			outer_duration;	/* delta (outer loop) */
-	u64			nmi_total_ts;	/* Total time spent in NMIs */
-	struct timespec64	timestamp;	/* wall time */
-	int			nmi_count;	/* # NMIs during this sample */
+	u64		seqnum;		/* unique sequence */
+	u64		duration;	/* delta */
+	u64		outer_duration;	/* delta (outer loop) */
+	u64		nmi_total_ts;	/* Total time spent in NMIs */
+	struct timespec	timestamp;	/* wall time */
+	int		nmi_count;	/* # NMIs during this sample */
 };
 
 /* keep the global state somewhere. */
@@ -126,7 +127,7 @@ static void trace_hwlat_sample(struct hwlat_sample *sample)
 	entry->nmi_count		= sample->nmi_count;
 
 	if (!call_filter_check_discard(call, entry, buffer, event))
-		trace_buffer_unlock_commit_nostack(buffer, event);
+		__buffer_unlock_commit(buffer, event);
 }
 
 /* Macros to encapsulate the time capturing infrastructure */
@@ -248,7 +249,7 @@ static int get_sample(void)
 		s.seqnum = hwlat_data.count;
 		s.duration = sample;
 		s.outer_duration = outer_sample;
-		ktime_get_real_ts64(&s.timestamp);
+		s.timestamp = CURRENT_TIME;
 		s.nmi_total_ts = nmi_total_ts;
 		s.nmi_count = nmi_count;
 		trace_hwlat_sample(&s);
@@ -265,19 +266,30 @@ out:
 static struct cpumask save_cpumask;
 static bool disable_migrate;
 
-static void move_to_next_cpu(void)
+static void move_to_next_cpu(bool initmask)
 {
-	struct cpumask *current_mask = &save_cpumask;
+	static struct cpumask *current_mask;
 	int next_cpu;
 
 	if (disable_migrate)
 		return;
+
+	/* Just pick the first CPU on first iteration */
+	if (initmask) {
+		current_mask = &save_cpumask;
+		get_online_cpus();
+		cpumask_and(current_mask, cpu_online_mask, tracing_buffer_mask);
+		put_online_cpus();
+		next_cpu = cpumask_first(current_mask);
+		goto set_affinity;
+	}
+
 	/*
 	 * If for some reason the user modifies the CPU affinity
 	 * of this thread, than stop migrating for the duration
 	 * of the current test.
 	 */
-	if (!cpumask_equal(current_mask, current->cpus_ptr))
+	if (!cpumask_equal(current_mask, &current->cpus_allowed))
 		goto disable;
 
 	get_online_cpus();
@@ -288,6 +300,7 @@ static void move_to_next_cpu(void)
 	if (next_cpu >= nr_cpu_ids)
 		next_cpu = cpumask_first(current_mask);
 
+ set_affinity:
 	if (next_cpu >= nr_cpu_ids) /* Shouldn't happen! */
 		goto disable;
 
@@ -309,15 +322,20 @@ static void move_to_next_cpu(void)
  * need to ensure nothing else might be running (and thus preempting).
  * Obviously this should never be used in production environments.
  *
- * Executes one loop interaction on each CPU in tracing_cpumask sysfs file.
+ * Currently this runs on which ever CPU it was scheduled on, but most
+ * real-world hardware latency situations occur across several CPUs,
+ * but we might later generalize this if we find there are any actualy
+ * systems with alternate SMI delivery or other hardware latencies.
  */
 static int kthread_fn(void *data)
 {
 	u64 interval;
+	bool initmask = true;
 
 	while (!kthread_should_stop()) {
 
-		move_to_next_cpu();
+		move_to_next_cpu(initmask);
+		initmask = false;
 
 		local_irq_disable();
 		get_sample();
@@ -348,30 +366,13 @@ static int kthread_fn(void *data)
  */
 static int start_kthread(struct trace_array *tr)
 {
-	struct cpumask *current_mask = &save_cpumask;
 	struct task_struct *kthread;
-	int next_cpu;
-
-	if (WARN_ON(hwlat_kthread))
-		return 0;
-
-	/* Just pick the first CPU on first iteration */
-	current_mask = &save_cpumask;
-	get_online_cpus();
-	cpumask_and(current_mask, cpu_online_mask, tracing_buffer_mask);
-	put_online_cpus();
-	next_cpu = cpumask_first(current_mask);
 
 	kthread = kthread_create(kthread_fn, NULL, "hwlatd");
 	if (IS_ERR(kthread)) {
 		pr_err(BANNER "could not start sampling thread\n");
 		return -ENOMEM;
 	}
-
-	cpumask_clear(current_mask);
-	cpumask_set_cpu(next_cpu, current_mask);
-	sched_setaffinity(kthread->pid, current_mask);
-
 	hwlat_kthread = kthread;
 	wake_up_process(kthread);
 

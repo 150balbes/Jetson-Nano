@@ -1,13 +1,10 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * This file contains work-arounds for x86 and x86_64 platform bugs.
  */
-#include <linux/dmi.h>
 #include <linux/pci.h>
 #include <linux/irq.h>
 
 #include <asm/hpet.h>
-#include <asm/setup.h>
 
 #if defined(CONFIG_X86_IO_APIC) && defined(CONFIG_SMP) && defined(CONFIG_PCI)
 
@@ -666,12 +663,3 @@ DECLARE_PCI_FIXUP_EARLY(PCI_VENDOR_ID_INTEL, 0x6fc0, quirk_intel_brickland_xeon_
 DECLARE_PCI_FIXUP_EARLY(PCI_VENDOR_ID_INTEL, 0x2083, quirk_intel_purley_xeon_ras_cap);
 #endif
 #endif
-
-bool x86_apple_machine;
-EXPORT_SYMBOL(x86_apple_machine);
-
-void __init early_platform_quirks(void)
-{
-	x86_apple_machine = dmi_match(DMI_SYS_VENDOR, "Apple Inc.") ||
-			    dmi_match(DMI_SYS_VENDOR, "Apple Computer, Inc.");
-}

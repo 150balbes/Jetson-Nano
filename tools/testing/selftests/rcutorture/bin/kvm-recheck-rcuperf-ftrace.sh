@@ -1,5 +1,4 @@
 #!/bin/bash
-# SPDX-License-Identifier: GPL-2.0+
 #
 # Analyze a given results directory for rcuperf performance measurements,
 # looking for ftrace data.  Exits with 0 if data was found, analyzed, and
@@ -8,12 +7,26 @@
 #
 # Usage: kvm-recheck-rcuperf-ftrace.sh resdir
 #
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 2 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, you can access it online at
+# http://www.gnu.org/licenses/gpl-2.0.html.
+#
 # Copyright (C) IBM Corporation, 2016
 #
-# Authors: Paul E. McKenney <paulmck@linux.ibm.com>
+# Authors: Paul E. McKenney <paulmck@linux.vnet.ibm.com>
 
 i="$1"
-. functions.sh
+. tools/testing/selftests/rcutorture/bin/functions.sh
 
 if test "`grep -c 'rcu_exp_grace_period.*start' < $i/console.log`" -lt 100
 then
@@ -26,31 +39,30 @@ sed -e 's/us : / : /' |
 tr -d '\015' |
 awk '
 $8 == "start" {
-	if (startseq != "")
+	if (starttask != "")
 		nlost++;
 	starttask = $1;
 	starttime = $3;
 	startseq = $7;
-	seqtask[startseq] = starttask;
 }
 
 $8 == "end" {
-	if (startseq == $7) {
+	if (starttask == $1 && startseq == $7) {
 		curgpdur = $3 - starttime;
 		gptimes[++n] = curgpdur;
 		gptaskcnt[starttask]++;
 		sum += curgpdur;
 		if (curgpdur > 1000)
 			print "Long GP " starttime "us to " $3 "us (" curgpdur "us)";
-		startseq = "";
+		starttask = "";
 	} else {
 		# Lost a message or some such, reset.
-		startseq = "";
+		starttask = "";
 		nlost++;
 	}
 }
 
-$8 == "done" && seqtask[$7] != $1 {
+$8 == "done" {
 	piggybackcnt[$1]++;
 }
 

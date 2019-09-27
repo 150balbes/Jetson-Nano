@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * arch/arm/mach-ixp4xx/ixdpg425-pci.c
  *
@@ -7,6 +6,11 @@
  * Copyright (C) 2004 MontaVista Softwrae, Inc.
  *
  * Maintainer: Deepak Saxena <dsaxena@plexity.net>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
  */
 
 #include <linux/kernel.h>
@@ -18,8 +22,6 @@
 #include <mach/hardware.h>
 
 #include <asm/mach/pci.h>
-
-#include "irqs.h"
 
 void __init ixdpg425_pci_preinit(void)
 {

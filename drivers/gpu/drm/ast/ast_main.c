@@ -32,6 +32,8 @@
 #include <drm/drm_fb_helper.h>
 #include <drm/drm_crtc_helper.h>
 
+#include "ast_dram_tables.h"
+
 void ast_set_index_reg_mask(struct ast_private *ast,
 			    uint32_t base, uint8_t index,
 			    uint8_t mask, uint8_t val)
@@ -131,8 +133,8 @@ static int ast_detect_chip(struct drm_device *dev, bool *need_post)
 
 
 	/* Enable extended register access */
-	ast_open_key(ast);
 	ast_enable_mmio(dev);
+	ast_open_key(ast);
 
 	/* Find out whether P2A works or whether to use device-tree */
 	ast_detect_config_mode(dev, &scu_rev);
@@ -142,10 +144,7 @@ static int ast_detect_chip(struct drm_device *dev, bool *need_post)
 		ast->chip = AST1100;
 		DRM_INFO("AST 1180 detected\n");
 	} else {
-		if (dev->pdev->revision >= 0x40) {
-			ast->chip = AST2500;
-			DRM_INFO("AST 2500 detected\n");
-		} else if (dev->pdev->revision >= 0x30) {
+		if (dev->pdev->revision >= 0x30) {
 			ast->chip = AST2400;
 			DRM_INFO("AST 2400 detected\n");
 		} else if (dev->pdev->revision >= 0x20) {
@@ -198,9 +197,6 @@ static int ast_detect_chip(struct drm_device *dev, bool *need_post)
 				ast->support_wide_screen = true;
 			if (ast->chip == AST2400 &&
 			    (scu_rev & 0x300) == 0x100) /* ast1400 */
-				ast->support_wide_screen = true;
-			if (ast->chip == AST2500 &&
-			    scu_rev == 0x100)           /* ast2510 */
 				ast->support_wide_screen = true;
 		}
 		break;
@@ -297,10 +293,7 @@ static int ast_get_dram_info(struct drm_device *dev)
 	default:
 		ast->dram_bus_width = 16;
 		ast->dram_type = AST_DRAM_1Gx16;
-		if (ast->chip == AST2500)
-			ast->mclk = 800;
-		else
-			ast->mclk = 396;
+		ast->mclk = 396;
 		return 0;
 	}
 
@@ -309,23 +302,7 @@ static int ast_get_dram_info(struct drm_device *dev)
 	else
 		ast->dram_bus_width = 32;
 
-	if (ast->chip == AST2500) {
-		switch (mcr_cfg & 0x03) {
-		case 0:
-			ast->dram_type = AST_DRAM_1Gx16;
-			break;
-		default:
-		case 1:
-			ast->dram_type = AST_DRAM_2Gx16;
-			break;
-		case 2:
-			ast->dram_type = AST_DRAM_4Gx16;
-			break;
-		case 3:
-			ast->dram_type = AST_DRAM_8Gx16;
-			break;
-		}
-	} else if (ast->chip == AST2300 || ast->chip == AST2400) {
+	if (ast->chip == AST2300 || ast->chip == AST2400) {
 		switch (mcr_cfg & 0x03) {
 		case 0:
 			ast->dram_type = AST_DRAM_512Mx16;
@@ -379,7 +356,7 @@ static int ast_get_dram_info(struct drm_device *dev)
 		div = 0x1;
 		break;
 	}
-	ast->mclk = ref_pll * (num + 2) / ((denum + 2) * (div * 1000));
+	ast->mclk = ref_pll * (num + 2) / (denum + 2) * (div * 1000);
 	return 0;
 }
 
@@ -387,9 +364,9 @@ static void ast_user_framebuffer_destroy(struct drm_framebuffer *fb)
 {
 	struct ast_framebuffer *ast_fb = to_ast_framebuffer(fb);
 
-	drm_gem_object_put_unlocked(ast_fb->obj);
+	drm_gem_object_unreference_unlocked(ast_fb->obj);
 	drm_framebuffer_cleanup(fb);
-	kfree(ast_fb);
+	kfree(fb);
 }
 
 static const struct drm_framebuffer_funcs ast_fb_funcs = {
@@ -404,7 +381,7 @@ int ast_framebuffer_init(struct drm_device *dev,
 {
 	int ret;
 
-	drm_helper_mode_fill_fb_struct(dev, &ast_fb->base, mode_cmd);
+	drm_helper_mode_fill_fb_struct(&ast_fb->base, mode_cmd);
 	ast_fb->obj = obj;
 	ret = drm_framebuffer_init(dev, &ast_fb->base, &ast_fb_funcs);
 	if (ret) {
@@ -429,13 +406,13 @@ ast_user_framebuffer_create(struct drm_device *dev,
 
 	ast_fb = kzalloc(sizeof(*ast_fb), GFP_KERNEL);
 	if (!ast_fb) {
-		drm_gem_object_put_unlocked(obj);
+		drm_gem_object_unreference_unlocked(obj);
 		return ERR_PTR(-ENOMEM);
 	}
 
 	ret = ast_framebuffer_init(dev, ast_fb, mode_cmd, obj);
 	if (ret) {
-		drm_gem_object_put_unlocked(obj);
+		drm_gem_object_unreference_unlocked(obj);
 		kfree(ast_fb);
 		return ERR_PTR(ret);
 	}
@@ -518,18 +495,16 @@ int ast_driver_load(struct drm_device *dev, unsigned long flags)
 
 	ast_detect_chip(dev, &need_post);
 
-	if (need_post)
-		ast_post_gpu(dev);
-
 	if (ast->chip != AST1180) {
 		ret = ast_get_dram_info(dev);
 		if (ret)
 			goto out_free;
 		ast->vram_size = ast_get_vram_info(dev);
-		DRM_INFO("dram MCLK=%u Mhz type=%d bus_width=%d size=%08x\n",
-			 ast->mclk, ast->dram_type,
-			 ast->dram_bus_width, ast->vram_size);
+		DRM_INFO("dram %d %d %d %08x\n", ast->mclk, ast->dram_type, ast->dram_bus_width, ast->vram_size);
 	}
+
+	if (need_post)
+		ast_post_gpu(dev);
 
 	ret = ast_mm_init(ast);
 	if (ret)
@@ -548,7 +523,6 @@ int ast_driver_load(struct drm_device *dev, unsigned long flags)
 	    ast->chip == AST2200 ||
 	    ast->chip == AST2300 ||
 	    ast->chip == AST2400 ||
-	    ast->chip == AST2500 ||
 	    ast->chip == AST1180) {
 		dev->mode_config.max_width = 1920;
 		dev->mode_config.max_height = 2048;
@@ -572,31 +546,27 @@ out_free:
 	return ret;
 }
 
-void ast_driver_unload(struct drm_device *dev)
+int ast_driver_unload(struct drm_device *dev)
 {
 	struct ast_private *ast = dev->dev_private;
 
-	/* enable standard VGA decode */
-	ast_set_index_reg(ast, AST_IO_CRTC_PORT, 0xa1, 0x04);
-
-	ast_release_firmware(dev);
 	kfree(ast->dp501_fw_addr);
 	ast_mode_fini(dev);
 	ast_fbdev_fini(dev);
 	drm_mode_config_cleanup(dev);
 
 	ast_mm_fini(ast);
-	if (ast->ioregs != ast->regs + AST_IO_MM_OFFSET)
-		pci_iounmap(dev->pdev, ast->ioregs);
+	pci_iounmap(dev->pdev, ast->ioregs);
 	pci_iounmap(dev->pdev, ast->regs);
 	kfree(ast);
+	return 0;
 }
 
 int ast_gem_create(struct drm_device *dev,
 		   u32 size, bool iskernel,
 		   struct drm_gem_object **obj)
 {
-	struct drm_gem_vram_object *gbo;
+	struct ast_bo *astbo;
 	int ret;
 
 	*obj = NULL;
@@ -605,13 +575,84 @@ int ast_gem_create(struct drm_device *dev,
 	if (size == 0)
 		return -EINVAL;
 
-	gbo = drm_gem_vram_create(dev, &dev->vram_mm->bdev, size, 0, false);
-	if (IS_ERR(gbo)) {
-		ret = PTR_ERR(gbo);
+	ret = ast_bo_create(dev, size, 0, 0, &astbo);
+	if (ret) {
 		if (ret != -ERESTARTSYS)
 			DRM_ERROR("failed to allocate GEM object\n");
 		return ret;
 	}
-	*obj = &gbo->gem;
+	*obj = &astbo->gem;
 	return 0;
 }
+
+int ast_dumb_create(struct drm_file *file,
+		    struct drm_device *dev,
+		    struct drm_mode_create_dumb *args)
+{
+	int ret;
+	struct drm_gem_object *gobj;
+	u32 handle;
+
+	args->pitch = args->width * ((args->bpp + 7) / 8);
+	args->size = args->pitch * args->height;
+
+	ret = ast_gem_create(dev, args->size, false,
+			     &gobj);
+	if (ret)
+		return ret;
+
+	ret = drm_gem_handle_create(file, gobj, &handle);
+	drm_gem_object_unreference_unlocked(gobj);
+	if (ret)
+		return ret;
+
+	args->handle = handle;
+	return 0;
+}
+
+static void ast_bo_unref(struct ast_bo **bo)
+{
+	struct ttm_buffer_object *tbo;
+
+	if ((*bo) == NULL)
+		return;
+
+	tbo = &((*bo)->bo);
+	ttm_bo_unref(&tbo);
+	*bo = NULL;
+}
+
+void ast_gem_free_object(struct drm_gem_object *obj)
+{
+	struct ast_bo *ast_bo = gem_to_ast_bo(obj);
+
+	ast_bo_unref(&ast_bo);
+}
+
+
+static inline u64 ast_bo_mmap_offset(struct ast_bo *bo)
+{
+	return drm_vma_node_offset_addr(&bo->bo.vma_node);
+}
+int
+ast_dumb_mmap_offset(struct drm_file *file,
+		     struct drm_device *dev,
+		     uint32_t handle,
+		     uint64_t *offset)
+{
+	struct drm_gem_object *obj;
+	struct ast_bo *bo;
+
+	obj = drm_gem_object_lookup(file, handle);
+	if (obj == NULL)
+		return -ENOENT;
+
+	bo = gem_to_ast_bo(obj);
+	*offset = ast_bo_mmap_offset(bo);
+
+	drm_gem_object_unreference_unlocked(obj);
+
+	return 0;
+
+}
+

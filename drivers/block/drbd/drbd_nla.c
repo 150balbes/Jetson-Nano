@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 #include <linux/kernel.h>
 #include <net/netlink.h>
 #include <linux/drbd_genl_api.h>
@@ -35,8 +34,7 @@ int drbd_nla_parse_nested(struct nlattr *tb[], int maxtype, struct nlattr *nla,
 
 	err = drbd_nla_check_mandatory(maxtype, nla);
 	if (!err)
-		err = nla_parse_nested_deprecated(tb, maxtype, nla, policy,
-						  NULL);
+		err = nla_parse_nested(tb, maxtype, nla, policy);
 
 	return err;
 }

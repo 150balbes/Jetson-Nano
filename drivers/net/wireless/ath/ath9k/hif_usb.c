@@ -20,11 +20,10 @@
 MODULE_FIRMWARE(HTC_7010_MODULE_FW);
 MODULE_FIRMWARE(HTC_9271_MODULE_FW);
 
-static const struct usb_device_id ath9k_hif_usb_ids[] = {
+static struct usb_device_id ath9k_hif_usb_ids[] = {
 	{ USB_DEVICE(0x0cf3, 0x9271) }, /* Atheros */
 	{ USB_DEVICE(0x0cf3, 0x1006) }, /* Atheros */
 	{ USB_DEVICE(0x0846, 0x9030) }, /* Netgear N150 */
-	{ USB_DEVICE(0x07b8, 0x9271) }, /* Altai WA1011N-GU */
 	{ USB_DEVICE(0x07D1, 0x3A10) }, /* Dlink Wireless 150 */
 	{ USB_DEVICE(0x13D3, 0x3327) }, /* Azurewave */
 	{ USB_DEVICE(0x13D3, 0x3328) }, /* Azurewave */
@@ -138,7 +137,6 @@ static void hif_usb_mgmt_cb(struct urb *urb)
 {
 	struct cmd_buf *cmd = (struct cmd_buf *)urb->context;
 	struct hif_device_usb *hif_dev;
-	unsigned long flags;
 	bool txok = true;
 
 	if (!cmd || !cmd->skb || !cmd->hif_dev)
@@ -159,14 +157,14 @@ static void hif_usb_mgmt_cb(struct urb *urb)
 		 * If the URBs are being flushed, no need to complete
 		 * this packet.
 		 */
-		spin_lock_irqsave(&hif_dev->tx.tx_lock, flags);
+		spin_lock(&hif_dev->tx.tx_lock);
 		if (hif_dev->tx.flags & HIF_USB_TX_FLUSH) {
-			spin_unlock_irqrestore(&hif_dev->tx.tx_lock, flags);
+			spin_unlock(&hif_dev->tx.tx_lock);
 			dev_kfree_skb_any(cmd->skb);
 			kfree(cmd);
 			return;
 		}
-		spin_unlock_irqrestore(&hif_dev->tx.tx_lock, flags);
+		spin_unlock(&hif_dev->tx.tx_lock);
 
 		break;
 	default:
@@ -201,7 +199,7 @@ static int hif_usb_send_mgmt(struct hif_device_usb *hif_dev,
 	cmd->skb = skb;
 	cmd->hif_dev = hif_dev;
 
-	hdr = skb_push(skb, 4);
+	hdr = (__le16 *) skb_push(skb, 4);
 	*hdr++ = cpu_to_le16(skb->len - 4);
 	*hdr++ = cpu_to_le16(ATH_USB_TX_STREAM_MODE_TAG);
 
@@ -426,7 +424,7 @@ static int hif_usb_send_tx(struct hif_device_usb *hif_dev, struct sk_buff *skb)
 
 static void hif_usb_start(void *hif_handle)
 {
-	struct hif_device_usb *hif_dev = hif_handle;
+	struct hif_device_usb *hif_dev = (struct hif_device_usb *)hif_handle;
 	unsigned long flags;
 
 	hif_dev->flags |= HIF_USB_START;
@@ -438,7 +436,7 @@ static void hif_usb_start(void *hif_handle)
 
 static void hif_usb_stop(void *hif_handle)
 {
-	struct hif_device_usb *hif_dev = hif_handle;
+	struct hif_device_usb *hif_dev = (struct hif_device_usb *)hif_handle;
 	struct tx_buf *tx_buf = NULL, *tx_buf_tmp = NULL;
 	unsigned long flags;
 
@@ -459,7 +457,7 @@ static void hif_usb_stop(void *hif_handle)
 
 static int hif_usb_send(void *hif_handle, u8 pipe_id, struct sk_buff *skb)
 {
-	struct hif_device_usb *hif_dev = hif_handle;
+	struct hif_device_usb *hif_dev = (struct hif_device_usb *)hif_handle;
 	int ret = 0;
 
 	switch (pipe_id) {
@@ -494,7 +492,7 @@ static inline bool check_index(struct sk_buff *skb, u8 idx)
 
 static void hif_usb_sta_drain(void *hif_handle, u8 idx)
 {
-	struct hif_device_usb *hif_dev = hif_handle;
+	struct hif_device_usb *hif_dev = (struct hif_device_usb *)hif_handle;
 	struct sk_buff *skb, *tmp;
 	unsigned long flags;
 
@@ -1000,8 +998,7 @@ static int ath9k_hif_usb_download_fw(struct hif_device_usb *hif_dev)
 		err = usb_control_msg(hif_dev->udev,
 				      usb_sndctrlpipe(hif_dev->udev, 0),
 				      FIRMWARE_DOWNLOAD, 0x40 | USB_DIR_OUT,
-				      addr >> 8, 0, buf, transfer,
-				      USB_MSG_TIMEOUT);
+				      addr >> 8, 0, buf, transfer, HZ);
 		if (err < 0) {
 			kfree(buf);
 			return err;
@@ -1024,7 +1021,7 @@ static int ath9k_hif_usb_download_fw(struct hif_device_usb *hif_dev)
 	err = usb_control_msg(hif_dev->udev, usb_sndctrlpipe(hif_dev->udev, 0),
 			      FIRMWARE_DOWNLOAD_COMP,
 			      0x40 | USB_DIR_OUT,
-			      firm_offset >> 8, 0, NULL, 0, USB_MSG_TIMEOUT);
+			      firm_offset >> 8, 0, NULL, 0, HZ);
 	if (err)
 		return -EIO;
 
@@ -1256,7 +1253,7 @@ static int send_eject_command(struct usb_interface *interface)
 
 	dev_info(&udev->dev, "Ejecting storage device...\n");
 	r = usb_bulk_msg(udev, usb_sndbulkpipe(udev, bulk_out_ep),
-		cmd, 31, NULL, 2 * USB_MSG_TIMEOUT);
+		cmd, 31, NULL, 2000);
 	kfree(cmd);
 	if (r)
 		return r;
@@ -1321,7 +1318,7 @@ static void ath9k_hif_usb_reboot(struct usb_device *udev)
 		return;
 
 	ret = usb_interrupt_msg(udev, usb_sndintpipe(udev, USB_REG_OUT_PIPE),
-			   buf, 4, NULL, USB_MSG_TIMEOUT);
+			   buf, 4, NULL, HZ);
 	if (ret)
 		dev_err(&udev->dev, "ath9k_htc: USB reboot failed\n");
 

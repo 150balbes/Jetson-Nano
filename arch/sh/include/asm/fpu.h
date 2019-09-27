@@ -1,10 +1,7 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __ASM_SH_FPU_H
 #define __ASM_SH_FPU_H
 
 #ifndef __ASSEMBLY__
-
-#include <asm/ptrace.h>
 
 struct task_struct;
 

@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  *
  *   YeAH TCP
@@ -227,7 +226,6 @@ static u32 tcp_yeah_ssthresh(struct sock *sk)
 static struct tcp_congestion_ops tcp_yeah __read_mostly = {
 	.init		= tcp_yeah_init,
 	.ssthresh	= tcp_yeah_ssthresh,
-	.undo_cwnd      = tcp_reno_undo_cwnd,
 	.cong_avoid	= tcp_yeah_cong_avoid,
 	.set_state	= tcp_vegas_state,
 	.cwnd_event	= tcp_vegas_cwnd_event,

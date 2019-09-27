@@ -53,12 +53,9 @@
 	};
 };
 
-&emac {
-	/* LEDs changed to active high on the plus */
-	/delete-property/ allwinner,leds-active-low;
-};
-
 &mmc1 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&mmc1_pins_a>;
 	vmmc-supply = <&reg_vcc3v3>;
 	bus-width = <4>;
 	non-removable;
@@ -85,7 +82,7 @@
 
 &mmc2_8bit_pins {
 	/* Increase drive strength for DDR modes */
-	drive-strength = <40>;
+	allwinner,drive = <SUN4I_PINCTRL_40_MA>;
 	/* eMMC is missing pull-ups */
-	bias-pull-up;
+	allwinner,pull = <SUN4I_PINCTRL_PULL_UP>;
 };

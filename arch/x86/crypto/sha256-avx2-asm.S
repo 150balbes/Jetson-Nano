@@ -98,6 +98,8 @@ d	= %r8d
 e       = %edx	# clobbers NUM_BLKS
 y3	= %esi	# clobbers INP
 
+
+TBL	= %rbp
 SRND	= CTX	# SRND is same register as CTX
 
 a = %eax
@@ -529,6 +531,7 @@ STACK_SIZE	= _RSP      + _RSP_SIZE
 ENTRY(sha256_transform_rorx)
 .align 32
 	pushq	%rbx
+	pushq	%rbp
 	pushq	%r12
 	pushq	%r13
 	pushq	%r14
@@ -565,6 +568,8 @@ ENTRY(sha256_transform_rorx)
 	mov	CTX, _CTX(%rsp)
 
 loop0:
+	lea     K256(%rip), TBL
+
 	## Load first 16 dwords from two blocks
 	VMOVDQ	0*32(INP),XTMP0
 	VMOVDQ	1*32(INP),XTMP1
@@ -592,19 +597,19 @@ last_block_enter:
 
 .align 16
 loop1:
-	vpaddd	K256+0*32(SRND), X0, XFER
+	vpaddd	0*32(TBL, SRND), X0, XFER
 	vmovdqa XFER, 0*32+_XFER(%rsp, SRND)
 	FOUR_ROUNDS_AND_SCHED	_XFER + 0*32
 
-	vpaddd	K256+1*32(SRND), X0, XFER
+	vpaddd	1*32(TBL, SRND), X0, XFER
 	vmovdqa XFER, 1*32+_XFER(%rsp, SRND)
 	FOUR_ROUNDS_AND_SCHED	_XFER + 1*32
 
-	vpaddd	K256+2*32(SRND), X0, XFER
+	vpaddd	2*32(TBL, SRND), X0, XFER
 	vmovdqa XFER, 2*32+_XFER(%rsp, SRND)
 	FOUR_ROUNDS_AND_SCHED	_XFER + 2*32
 
-	vpaddd	K256+3*32(SRND), X0, XFER
+	vpaddd	3*32(TBL, SRND), X0, XFER
 	vmovdqa XFER, 3*32+_XFER(%rsp, SRND)
 	FOUR_ROUNDS_AND_SCHED	_XFER + 3*32
 
@@ -614,11 +619,10 @@ loop1:
 
 loop2:
 	## Do last 16 rounds with no scheduling
-	vpaddd	K256+0*32(SRND), X0, XFER
+	vpaddd	0*32(TBL, SRND), X0, XFER
 	vmovdqa XFER, 0*32+_XFER(%rsp, SRND)
 	DO_4ROUNDS	_XFER + 0*32
-
-	vpaddd	K256+1*32(SRND), X1, XFER
+	vpaddd	1*32(TBL, SRND), X1, XFER
 	vmovdqa XFER, 1*32+_XFER(%rsp, SRND)
 	DO_4ROUNDS	_XFER + 1*32
 	add	$2*32, SRND
@@ -672,6 +676,9 @@ loop3:
 	ja	done_hash
 
 do_last_block:
+	#### do last block
+	lea	K256(%rip), TBL
+
 	VMOVDQ	0*16(INP),XWORD0
 	VMOVDQ	1*16(INP),XWORD1
 	VMOVDQ	2*16(INP),XWORD2
@@ -711,11 +718,12 @@ done_hash:
 	popq	%r14
 	popq	%r13
 	popq	%r12
+	popq	%rbp
 	popq	%rbx
 	ret
 ENDPROC(sha256_transform_rorx)
 
-.section	.rodata.cst512.K256, "aM", @progbits, 512
+.data
 .align 64
 K256:
 	.long	0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5
@@ -751,21 +759,14 @@ K256:
 	.long	0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2
 	.long	0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2
 
-.section	.rodata.cst32.PSHUFFLE_BYTE_FLIP_MASK, "aM", @progbits, 32
-.align 32
 PSHUFFLE_BYTE_FLIP_MASK:
 	.octa 0x0c0d0e0f08090a0b0405060700010203,0x0c0d0e0f08090a0b0405060700010203
 
 # shuffle xBxA -> 00BA
-.section	.rodata.cst32._SHUF_00BA, "aM", @progbits, 32
-.align 32
 _SHUF_00BA:
 	.octa 0xFFFFFFFFFFFFFFFF0b0a090803020100,0xFFFFFFFFFFFFFFFF0b0a090803020100
 
 # shuffle xDxC -> DC00
-.section	.rodata.cst32._SHUF_DC00, "aM", @progbits, 32
-.align 32
 _SHUF_DC00:
 	.octa 0x0b0a090803020100FFFFFFFFFFFFFFFF,0x0b0a090803020100FFFFFFFFFFFFFFFF
-
 #endif

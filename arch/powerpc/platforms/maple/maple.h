@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * Declarations for maple-specific code.
  *
@@ -6,7 +5,7 @@
  */
 extern int maple_set_rtc_time(struct rtc_time *tm);
 extern void maple_get_rtc_time(struct rtc_time *tm);
-extern time64_t maple_get_boot_time(void);
+extern unsigned long maple_get_boot_time(void);
 extern void maple_calibrate_decr(void);
 extern void maple_pci_init(void);
 extern void maple_pci_irq_fixup(struct pci_dev *dev);

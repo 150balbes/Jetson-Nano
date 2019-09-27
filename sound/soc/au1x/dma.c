@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Au1000/Au1500/Au1100 Audio DMA support.
  *
@@ -21,8 +20,6 @@
 #include <asm/mach-au1x00/au1000_dma.h>
 
 #include "psc.h"
-
-#define DRV_NAME "au1x_dma"
 
 struct pcm_period {
 	u32 start;
@@ -177,8 +174,7 @@ static const struct snd_pcm_hardware alchemy_pcm_hardware = {
 static inline struct alchemy_pcm_ctx *ss_to_ctx(struct snd_pcm_substream *ss)
 {
 	struct snd_soc_pcm_runtime *rtd = ss->private_data;
-	struct snd_soc_component *component = snd_soc_rtdcom_lookup(rtd, DRV_NAME);
-	return snd_soc_component_get_drvdata(component);
+	return snd_soc_platform_get_drvdata(rtd->platform);
 }
 
 static inline struct audio_stream *ss_to_as(struct snd_pcm_substream *ss)
@@ -281,7 +277,7 @@ static snd_pcm_uframes_t alchemy_pcm_pointer(struct snd_pcm_substream *ss)
 	return bytes_to_frames(ss->runtime, location);
 }
 
-static const struct snd_pcm_ops alchemy_pcm_ops = {
+static struct snd_pcm_ops alchemy_pcm_ops = {
 	.open			= alchemy_pcm_open,
 	.close			= alchemy_pcm_close,
 	.ioctl			= snd_pcm_lib_ioctl,
@@ -301,8 +297,7 @@ static int alchemy_pcm_new(struct snd_soc_pcm_runtime *rtd)
 	return 0;
 }
 
-static struct snd_soc_component_driver alchemy_pcm_soc_component = {
-	.name		= DRV_NAME,
+static struct snd_soc_platform_driver alchemy_pcm_soc_platform = {
 	.ops		= &alchemy_pcm_ops,
 	.pcm_new	= alchemy_pcm_new,
 };
@@ -317,8 +312,8 @@ static int alchemy_pcm_drvprobe(struct platform_device *pdev)
 
 	platform_set_drvdata(pdev, ctx);
 
-	return devm_snd_soc_register_component(&pdev->dev,
-					&alchemy_pcm_soc_component, NULL, 0);
+	return devm_snd_soc_register_platform(&pdev->dev,
+					      &alchemy_pcm_soc_platform);
 }
 
 static struct platform_driver alchemy_pcmdma_driver = {

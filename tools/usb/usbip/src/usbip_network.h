@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * Copyright (C) 2005-2007 Takahiro Hirofuchi
  */
@@ -27,7 +26,9 @@ struct op_common {
 #define OP_REPLY	(0x00 << 8)
 	uint16_t code;
 
-	/* status codes defined in usbip_common.h */
+	/* add more error code */
+#define ST_OK	0x00
+#define ST_NA	0x01
 	uint32_t status; /* op_code status (for reply) */
 
 } __attribute__((packed));
@@ -174,7 +175,7 @@ void usbip_net_pack_usb_interface(int pack, struct usbip_usb_interface *uinf);
 ssize_t usbip_net_recv(int sockfd, void *buff, size_t bufflen);
 ssize_t usbip_net_send(int sockfd, void *buff, size_t bufflen);
 int usbip_net_send_op_common(int sockfd, uint32_t code, uint32_t status);
-int usbip_net_recv_op_common(int sockfd, uint16_t *code, int *status);
+int usbip_net_recv_op_common(int sockfd, uint16_t *code);
 int usbip_net_set_reuseaddr(int sockfd);
 int usbip_net_set_nodelay(int sockfd);
 int usbip_net_set_keepalive(int sockfd);

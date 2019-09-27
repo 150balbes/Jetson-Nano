@@ -1,6 +1,9 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (C) 2012 Red Hat
+ *
+ * This file is subject to the terms and conditions of the GNU General Public
+ * License v2. See the file COPYING in the main directory of this archive for
+ * more details.
  */
 
 #include <drm/drmP.h>
@@ -49,7 +52,7 @@ udl_gem_create(struct drm_file *file,
 		return ret;
 	}
 
-	drm_gem_object_put_unlocked(&obj->base);
+	drm_gem_object_unreference_unlocked(&obj->base);
 	*handle_p = handle;
 	return 0;
 }
@@ -97,20 +100,31 @@ int udl_drm_gem_mmap(struct file *filp, struct vm_area_struct *vma)
 	return ret;
 }
 
-vm_fault_t udl_gem_fault(struct vm_fault *vmf)
+int udl_gem_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
 {
-	struct vm_area_struct *vma = vmf->vma;
 	struct udl_gem_object *obj = to_udl_bo(vma->vm_private_data);
 	struct page *page;
 	unsigned int page_offset;
+	int ret = 0;
 
-	page_offset = (vmf->address - vma->vm_start) >> PAGE_SHIFT;
+	page_offset = ((unsigned long)vmf->virtual_address - vma->vm_start) >>
+		PAGE_SHIFT;
 
 	if (!obj->pages)
 		return VM_FAULT_SIGBUS;
 
 	page = obj->pages[page_offset];
-	return vmf_insert_page(vma, vmf->address, page);
+	ret = vm_insert_page(vma, (unsigned long)vmf->virtual_address, page);
+	switch (ret) {
+	case -EAGAIN:
+	case 0:
+	case -ERESTARTSYS:
+		return VM_FAULT_NOPAGE;
+	case -ENOMEM:
+		return VM_FAULT_OOM;
+	default:
+		return VM_FAULT_SIGBUS;
+	}
 }
 
 int udl_gem_get_pages(struct udl_gem_object *obj)
@@ -132,7 +146,7 @@ int udl_gem_get_pages(struct udl_gem_object *obj)
 void udl_gem_put_pages(struct udl_gem_object *obj)
 {
 	if (obj->base.import_attach) {
-		kvfree(obj->pages);
+		drm_free_large(obj->pages);
 		obj->pages = NULL;
 		return;
 	}
@@ -200,10 +214,9 @@ int udl_gem_mmap(struct drm_file *file, struct drm_device *dev,
 {
 	struct udl_gem_object *gobj;
 	struct drm_gem_object *obj;
-	struct udl_device *udl = to_udl(dev);
 	int ret = 0;
 
-	mutex_lock(&udl->gem_lock);
+	mutex_lock(&dev->struct_mutex);
 	obj = drm_gem_object_lookup(file, handle);
 	if (obj == NULL) {
 		ret = -ENOENT;
@@ -221,8 +234,8 @@ int udl_gem_mmap(struct drm_file *file, struct drm_device *dev,
 	*offset = drm_vma_node_offset_addr(&gobj->base.vma_node);
 
 out:
-	drm_gem_object_put_unlocked(&gobj->base);
+	drm_gem_object_unreference(&gobj->base);
 unlock:
-	mutex_unlock(&udl->gem_lock);
+	mutex_unlock(&dev->struct_mutex);
 	return ret;
 }

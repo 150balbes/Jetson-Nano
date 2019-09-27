@@ -1,8 +1,12 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * fbsysfs.c - framebuffer device class and attributes
  *
  * Copyright (c) 2004 James Simmons <jsimmons@infradead.org>
+ * 
+ *	This program is free software you can redistribute it and/or
+ *	modify it under the terms of the GNU General Public License
+ *	as published by the Free Software Foundation; either version
+ *	2 of the License, or (at your option) any later version.
  */
 
 /*
@@ -14,7 +18,6 @@
 #include <linux/kernel.h>
 #include <linux/slab.h>
 #include <linux/fb.h>
-#include <linux/fbcon.h>
 #include <linux/console.h>
 #include <linux/module.h>
 
@@ -55,9 +58,8 @@ struct fb_info *framebuffer_alloc(size_t size, struct device *dev)
 		info->par = p + fb_info_size;
 
 	info->device = dev;
-	info->fbcon_rotate_hint = -1;
 
-#if IS_ENABLED(CONFIG_FB_BACKLIGHT)
+#ifdef CONFIG_FB_BACKLIGHT
 	mutex_init(&info->bl_curve_mutex);
 #endif
 
@@ -176,7 +178,10 @@ static ssize_t store_modes(struct device *device,
 		return -EINVAL;
 
 	console_lock();
-	lock_fb_info(fb_info);
+	if (!lock_fb_info(fb_info)) {
+		console_unlock();
+		return -ENODEV;
+	}
 
 	list_splice(&fb_info->modelist, &old_list);
 	fb_videomode_to_modelist((const struct fb_videomode *)buf, i,
@@ -302,13 +307,12 @@ static ssize_t store_blank(struct device *device,
 {
 	struct fb_info *fb_info = dev_get_drvdata(device);
 	char *last = NULL;
-	int err, arg;
+	int err;
 
-	arg = simple_strtoul(buf, &last, 0);
 	console_lock();
-	err = fb_blank(fb_info, arg);
-	/* might again call into fb_blank */
-	fbcon_fb_blanked(fb_info, arg);
+	fb_info->flags |= FBINFO_MISC_USEREVENT;
+	err = fb_blank(fb_info, simple_strtoul(buf, &last, 0));
+	fb_info->flags &= ~FBINFO_MISC_USEREVENT;
 	console_unlock();
 	if (err < 0)
 		return err;
@@ -404,7 +408,10 @@ static ssize_t store_fbstate(struct device *device,
 	state = simple_strtoul(buf, &last, 0);
 
 	console_lock();
-	lock_fb_info(fb_info);
+	if (!lock_fb_info(fb_info)) {
+		console_unlock();
+		return -ENODEV;
+	}
 
 	fb_set_suspend(fb_info, (int)state);
 
@@ -421,7 +428,7 @@ static ssize_t show_fbstate(struct device *device,
 	return snprintf(buf, PAGE_SIZE, "%d\n", fb_info->state);
 }
 
-#if IS_ENABLED(CONFIG_FB_BACKLIGHT)
+#ifdef CONFIG_FB_BACKLIGHT
 static ssize_t store_bl_curve(struct device *device,
 			      struct device_attribute *attr,
 			      const char *buf, size_t count)
@@ -502,7 +509,7 @@ static struct device_attribute device_attrs[] = {
 	__ATTR(stride, S_IRUGO, show_stride, NULL),
 	__ATTR(rotate, S_IRUGO|S_IWUSR, show_rotate, store_rotate),
 	__ATTR(state, S_IRUGO|S_IWUSR, show_fbstate, store_fbstate),
-#if IS_ENABLED(CONFIG_FB_BACKLIGHT)
+#ifdef CONFIG_FB_BACKLIGHT
 	__ATTR(bl_curve, S_IRUGO|S_IWUSR, show_bl_curve, store_bl_curve),
 #endif
 };
@@ -543,7 +550,7 @@ void fb_cleanup_device(struct fb_info *fb_info)
 	}
 }
 
-#if IS_ENABLED(CONFIG_FB_BACKLIGHT)
+#ifdef CONFIG_FB_BACKLIGHT
 /* This function generates a linear backlight curve
  *
  *     0: off

@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * Kernel execution entry point code.
  *
@@ -22,6 +21,11 @@
  * 	   	debbie_chu@mvista.com
  *    Copyright 2002-2005 MontaVista Software, Inc.
  *      PowerPC 44x support, Matt Porter <mporter@kernel.crashing.org>
+ *
+ * This program is free software; you can redistribute  it and/or modify it
+ * under  the terms of  the GNU General  Public License as published by the
+ * Free Software Foundation;  either version 2 of the  License, or (at your
+ * option) any later version.
  */
 
 #include <linux/init.h>
@@ -36,7 +40,6 @@
 #include <asm/ptrace.h>
 #include <asm/synch.h>
 #include <asm/export.h>
-#include <asm/code-patching-asm.h>
 #include "head_booke.h"
 
 
@@ -199,9 +202,6 @@ _ENTRY(_start);
 /*
  * Decide what sort of machine this is and initialize the MMU.
  */
-#ifdef CONFIG_KASAN
-	bl	kasan_early_init
-#endif
 	li	r3,0
 	mr	r4,r31
 	bl	machine_init
@@ -277,15 +277,16 @@ interrupt_base:
 	FP_UNAVAILABLE_EXCEPTION
 #else
 	EXCEPTION(0x2010, BOOKE_INTERRUPT_FP_UNAVAIL, \
-		  FloatingPointUnavailable, unknown_exception, EXC_XFER_STD)
+		  FloatingPointUnavailable, unknown_exception, EXC_XFER_EE)
 #endif
 	/* System Call Interrupt */
 	START_EXCEPTION(SystemCall)
-	SYSCALL_ENTRY   0xc00 BOOKE_INTERRUPT_SYSCALL
+	NORMAL_EXCEPTION_PROLOG(BOOKE_INTERRUPT_SYSCALL)
+	EXC_XFER_EE_LITE(0x0c00, DoSyscall)
 
 	/* Auxiliary Processor Unavailable Interrupt */
 	EXCEPTION(0x2020, BOOKE_INTERRUPT_AP_UNAVAIL, \
-		  AuxillaryProcessorUnavailable, unknown_exception, EXC_XFER_STD)
+		  AuxillaryProcessorUnavailable, unknown_exception, EXC_XFER_EE)
 
 	/* Decrementer Interrupt */
 	DECREMENTER_EXCEPTION
@@ -293,7 +294,7 @@ interrupt_base:
 	/* Fixed Internal Timer Interrupt */
 	/* TODO: Add FIT support */
 	EXCEPTION(0x1010, BOOKE_INTERRUPT_FIT, FixedIntervalTimer, \
-		  unknown_exception, EXC_XFER_STD)
+		  unknown_exception, EXC_XFER_EE)
 
 	/* Watchdog Timer Interrupt */
 	/* TODO: Add watchdog support */
@@ -381,9 +382,10 @@ interrupt_base:
 	/* Increment, rollover, and store TLB index */
 	addi	r13,r13,1
 
-	patch_site 0f, patch__tlb_44x_hwater_D
 	/* Compare with watermark (instruction gets patched) */
-0:	cmpwi	0,r13,1			/* reserve entries */
+	.globl tlb_44x_patch_hwater_D
+tlb_44x_patch_hwater_D:
+	cmpwi	0,r13,1			/* reserve entries */
 	ble	5f
 	li	r13,0
 5:
@@ -476,9 +478,10 @@ interrupt_base:
 	/* Increment, rollover, and store TLB index */
 	addi	r13,r13,1
 
-	patch_site 0f, patch__tlb_44x_hwater_I
 	/* Compare with watermark (instruction gets patched) */
-0:	cmpwi	0,r13,1			/* reserve entries */
+	.globl tlb_44x_patch_hwater_I
+tlb_44x_patch_hwater_I:
+	cmpwi	0,r13,1			/* reserve entries */
 	ble	5f
 	li	r13,0
 5:
@@ -1017,10 +1020,10 @@ _GLOBAL(start_secondary_47x)
 
 	/* Now we can get our task struct and real stack pointer */
 
-	/* Get current's stack and current */
-	lis	r2,secondary_current@ha
-	lwz	r2,secondary_current@l(r2)
-	lwz	r1,TASK_STACK(r2)
+	/* Get current_thread_info and current */
+	lis	r1,secondary_ti@ha
+	lwz	r1,secondary_ti@l(r1)
+	lwz	r2,TI_TASK(r1)
 
 	/* Current stack pointer */
 	addi	r1,r1,THREAD_SIZE-STACK_FRAME_OVERHEAD

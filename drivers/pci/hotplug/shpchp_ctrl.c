@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0+
 /*
  * Standard Hot Plug Controller Driver
  *
@@ -8,6 +7,21 @@
  * Copyright (C) 2003-2004 Intel Corporation
  *
  * All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or (at
+ * your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE, GOOD TITLE or
+ * NON INFRINGEMENT.  See the GNU General Public License for more
+ * details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  *
  * Send feedback to <greg@kroah.com>, <kristen.c.accardi@intel.com>
  *
@@ -446,12 +460,23 @@ void shpchp_queue_pushbutton_work(struct work_struct *work)
 	mutex_unlock(&p_slot->lock);
 }
 
-static void update_slot_info(struct slot *slot)
+static int update_slot_info (struct slot *slot)
 {
-	slot->hpc_ops->get_power_status(slot, &slot->pwr_save);
-	slot->hpc_ops->get_attention_status(slot, &slot->attention_save);
-	slot->hpc_ops->get_latch_status(slot, &slot->latch_save);
-	slot->hpc_ops->get_adapter_status(slot, &slot->presence_save);
+	struct hotplug_slot_info *info;
+	int result;
+
+	info = kmalloc(sizeof(*info), GFP_KERNEL);
+	if (!info)
+		return -ENOMEM;
+
+	slot->hpc_ops->get_power_status(slot, &(info->power_status));
+	slot->hpc_ops->get_attention_status(slot, &(info->attention_status));
+	slot->hpc_ops->get_latch_status(slot, &(info->latch_status));
+	slot->hpc_ops->get_adapter_status(slot, &(info->adapter_status));
+
+	result = pci_hp_change_slot_info(slot->hotplug_slot, info);
+	kfree (info);
+	return result;
 }
 
 /*
@@ -574,13 +599,13 @@ static int shpchp_enable_slot (struct slot *p_slot)
 	ctrl_dbg(ctrl, "%s: p_slot->pwr_save %x\n", __func__, p_slot->pwr_save);
 	p_slot->hpc_ops->get_latch_status(p_slot, &getstatus);
 
-	if ((p_slot->ctrl->pci_dev->vendor == PCI_VENDOR_ID_AMD &&
-	     p_slot->ctrl->pci_dev->device == PCI_DEVICE_ID_AMD_POGO_7458)
+	if (((p_slot->ctrl->pci_dev->vendor == PCI_VENDOR_ID_AMD) ||
+	    (p_slot->ctrl->pci_dev->device == PCI_DEVICE_ID_AMD_POGO_7458))
 	     && p_slot->ctrl->num_slots == 1) {
-		/* handle AMD POGO errata; this must be done before enable  */
+		/* handle amd pogo errata; this must be done before enable  */
 		amd_pogo_errata_save_misc_reg(p_slot);
 		retval = board_added(p_slot);
-		/* handle AMD POGO errata; this must be done after enable  */
+		/* handle amd pogo errata; this must be done after enable  */
 		amd_pogo_errata_restore_misc_reg(p_slot);
 	} else
 		retval = board_added(p_slot);
@@ -643,7 +668,6 @@ int shpchp_sysfs_enable_slot(struct slot *p_slot)
 	switch (p_slot->state) {
 	case BLINKINGON_STATE:
 		cancel_delayed_work(&p_slot->work);
-		/* fall through */
 	case STATIC_STATE:
 		p_slot->state = POWERON_STATE;
 		mutex_unlock(&p_slot->lock);
@@ -679,7 +703,6 @@ int shpchp_sysfs_disable_slot(struct slot *p_slot)
 	switch (p_slot->state) {
 	case BLINKINGOFF_STATE:
 		cancel_delayed_work(&p_slot->work);
-		/* fall through */
 	case STATIC_STATE:
 		p_slot->state = POWEROFF_STATE;
 		mutex_unlock(&p_slot->lock);

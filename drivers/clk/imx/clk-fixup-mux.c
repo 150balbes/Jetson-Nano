@@ -1,6 +1,12 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Copyright (C) 2013 Freescale Semiconductor, Inc.
+ *
+ * The code contained herein is licensed under the GNU General Public
+ * License. You may obtain a copy of the GNU General Public License
+ * Version 2 or later at the following locations:
+ *
+ * http://www.opensource.org/licenses/gpl-license.html
+ * http://www.gnu.org/copyleft/gpl.html
  */
 
 #include <linux/clk-provider.h>
@@ -63,14 +69,13 @@ static const struct clk_ops clk_fixup_mux_ops = {
 	.set_parent = clk_fixup_mux_set_parent,
 };
 
-struct clk_hw *imx_clk_hw_fixup_mux(const char *name, void __iomem *reg,
-			      u8 shift, u8 width, const char * const *parents,
+struct clk *imx_clk_fixup_mux(const char *name, void __iomem *reg,
+			      u8 shift, u8 width, const char **parents,
 			      int num_parents, void (*fixup)(u32 *val))
 {
 	struct clk_fixup_mux *fixup_mux;
-	struct clk_hw *hw;
+	struct clk *clk;
 	struct clk_init_data init;
-	int ret;
 
 	if (!fixup)
 		return ERR_PTR(-EINVAL);
@@ -93,13 +98,9 @@ struct clk_hw *imx_clk_hw_fixup_mux(const char *name, void __iomem *reg,
 	fixup_mux->ops = &clk_mux_ops;
 	fixup_mux->fixup = fixup;
 
-	hw = &fixup_mux->mux.hw;
-
-	ret = clk_hw_register(NULL, hw);
-	if (ret) {
+	clk = clk_register(NULL, &fixup_mux->mux.hw);
+	if (IS_ERR(clk))
 		kfree(fixup_mux);
-		return ERR_PTR(ret);
-	}
 
-	return hw;
+	return clk;
 }

@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Oak Generic NCR5380 driver
  *
@@ -17,18 +16,21 @@
 
 #define priv(host)			((struct NCR5380_hostdata *)(host)->hostdata)
 
-#define NCR5380_read(reg)           readb(hostdata->io + ((reg) << 2))
-#define NCR5380_write(reg, value)   writeb(value, hostdata->io + ((reg) << 2))
+#define NCR5380_read(reg) \
+	readb(priv(instance)->base + ((reg) << 2))
+#define NCR5380_write(reg, value) \
+	writeb(value, priv(instance)->base + ((reg) << 2))
 
-#define NCR5380_dma_xfer_len		NCR5380_dma_xfer_none
+#define NCR5380_dma_xfer_len(instance, cmd, phase)	(0)
 #define NCR5380_dma_recv_setup		oakscsi_pread
 #define NCR5380_dma_send_setup		oakscsi_pwrite
-#define NCR5380_dma_residual		NCR5380_dma_residual_none
+#define NCR5380_dma_residual(instance)	(0)
 
 #define NCR5380_queue_command		oakscsi_queue_command
 #define NCR5380_info			oakscsi_info
 
-#define NCR5380_implementation_fields	/* none */
+#define NCR5380_implementation_fields	\
+	void __iomem *base
 
 #include "../NCR5380.h"
 
@@ -38,10 +40,10 @@
 #define STAT	((128 + 16) << 2)
 #define DATA	((128 + 8) << 2)
 
-static inline int oakscsi_pwrite(struct NCR5380_hostdata *hostdata,
+static inline int oakscsi_pwrite(struct Scsi_Host *instance,
                                  unsigned char *addr, int len)
 {
-  u8 __iomem *base = hostdata->io;
+  void __iomem *base = priv(instance)->base;
 
 printk("writing %p len %d\n",addr, len);
 
@@ -53,11 +55,10 @@ printk("writing %p len %d\n",addr, len);
   return 0;
 }
 
-static inline int oakscsi_pread(struct NCR5380_hostdata *hostdata,
+static inline int oakscsi_pread(struct Scsi_Host *instance,
                                 unsigned char *addr, int len)
 {
-  u8 __iomem *base = hostdata->io;
-
+  void __iomem *base = priv(instance)->base;
 printk("reading %p len %d\n", addr, len);
   while(len > 0)
   {
@@ -106,12 +107,12 @@ static struct scsi_host_template oakscsi_template = {
 	.info			= oakscsi_info,
 	.queuecommand		= oakscsi_queue_command,
 	.eh_abort_handler	= NCR5380_abort,
-	.eh_host_reset_handler	= NCR5380_host_reset,
+	.eh_bus_reset_handler	= NCR5380_bus_reset,
 	.can_queue		= 16,
 	.this_id		= 7,
 	.sg_tablesize		= SG_ALL,
 	.cmd_per_lun		= 2,
-	.dma_boundary		= PAGE_SIZE - 1,
+	.use_clustering		= DISABLE_CLUSTERING,
 	.proc_name		= "oakscsi",
 	.cmd_size		= NCR5380_CMD_SIZE,
 	.max_sectors		= 128,
@@ -132,14 +133,15 @@ static int oakscsi_probe(struct expansion_card *ec, const struct ecard_id *id)
 		goto release;
 	}
 
-	priv(host)->io = ioremap(ecard_resource_start(ec, ECARD_RES_MEMC),
-	                         ecard_resource_len(ec, ECARD_RES_MEMC));
-	if (!priv(host)->io) {
+	priv(host)->base = ioremap(ecard_resource_start(ec, ECARD_RES_MEMC),
+				   ecard_resource_len(ec, ECARD_RES_MEMC));
+	if (!priv(host)->base) {
 		ret = -ENOMEM;
 		goto unreg;
 	}
 
 	host->irq = NO_IRQ;
+	host->n_io_port = 255;
 
 	ret = NCR5380_init(host, FLAG_DMA_FIXUP | FLAG_LATE_DMA_SETUP);
 	if (ret)
@@ -157,7 +159,7 @@ static int oakscsi_probe(struct expansion_card *ec, const struct ecard_id *id)
  out_exit:
 	NCR5380_exit(host);
  out_unmap:
-	iounmap(priv(host)->io);
+	iounmap(priv(host)->base);
  unreg:
 	scsi_host_put(host);
  release:
@@ -169,14 +171,13 @@ static int oakscsi_probe(struct expansion_card *ec, const struct ecard_id *id)
 static void oakscsi_remove(struct expansion_card *ec)
 {
 	struct Scsi_Host *host = ecard_get_drvdata(ec);
-	void __iomem *base = priv(host)->io;
 
 	ecard_set_drvdata(ec, NULL);
 	scsi_remove_host(host);
 
 	NCR5380_exit(host);
+	iounmap(priv(host)->base);
 	scsi_host_put(host);
-	iounmap(base);
 	ecard_release_resources(ec);
 }
 

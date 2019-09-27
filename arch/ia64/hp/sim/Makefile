@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0
 #
 # ia64/platform/hp/sim/Makefile
 #

@@ -19,7 +19,7 @@ Optional properties:
 
 Example:
 
-wm8804: codec@1a {
+codec: wm8804@1a {
 	compatible = "wlf,wm8804";
 	reg = <0x1a>;
 };

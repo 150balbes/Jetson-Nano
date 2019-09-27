@@ -1,46 +1,58 @@
-// SPDX-License-Identifier: GPL-2.0+
-/*
- * Copyright (c) 2012 - 2015 UNISYS CORPORATION
+/* Copyright (c) 2012 - 2015 UNISYS CORPORATION
  * All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or (at
+ * your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE, GOOD TITLE or
+ * NON INFRINGEMENT.  See the GNU General Public License for more
+ * details.
  */
 
 #include <linux/debugfs.h>
+#include <linux/skbuff.h>
 #include <linux/kthread.h>
 #include <linux/idr.h>
-#include <linux/module.h>
 #include <linux/seq_file.h>
-#include <linux/visorbus.h>
 #include <scsi/scsi.h>
 #include <scsi/scsi_host.h>
 #include <scsi/scsi_cmnd.h>
 #include <scsi/scsi_device.h>
 
+#include "visorbus.h"
 #include "iochannel.h"
 
 /* The Send and Receive Buffers of the IO Queue may both be full */
 
-#define IOS_ERROR_THRESHOLD  1000
-#define MAX_PENDING_REQUESTS (MIN_NUMSIGNALS * 2)
-#define VISORHBA_ERROR_COUNT 30
+#define IOS_ERROR_THRESHOLD	1000
+/* MAX_BUF = 6 lines x 10 MAXVHBA x 80 characters
+ *         = 4800 bytes ~ 2^13 = 8192 bytes
+ */
+#define MAX_BUF			8192
+#define MAX_PENDING_REQUESTS	(MIN_NUMSIGNALS * 2)
+#define VISORHBA_ERROR_COUNT	30
 
 static struct dentry *visorhba_debugfs_dir;
 
 /* GUIDS for HBA channel type supported by this driver */
 static struct visor_channeltype_descriptor visorhba_channel_types[] = {
 	/* Note that the only channel type we expect to be reported by the
-	 * bus driver is the VISOR_VHBA channel.
+	 * bus driver is the SPAR_VHBA channel.
 	 */
-	{ VISOR_VHBA_CHANNEL_GUID, "sparvhba", sizeof(struct channel_header),
-	  VISOR_VHBA_CHANNEL_VERSIONID },
-	{}
+	{ SPAR_VHBA_CHANNEL_PROTOCOL_UUID, "sparvhba" },
+	{ NULL_UUID_LE, NULL }
 };
 
 MODULE_DEVICE_TABLE(visorbus, visorhba_channel_types);
-MODULE_ALIAS("visorbus:" VISOR_VHBA_CHANNEL_GUID_STR);
+MODULE_ALIAS("visorbus:" SPAR_VHBA_CHANNEL_PROTOCOL_UUID_STR);
 
 struct visordisk_info {
-	struct scsi_device *sdev;
 	u32 valid;
+	u32 channel, id, lun;	/* Disk Path */
 	atomic_t ios_threshold;
 	atomic_t error_count;
 	struct visordisk_info *next;
@@ -48,10 +60,8 @@ struct visordisk_info {
 
 struct scsipending {
 	struct uiscmdrsp cmdrsp;
-	/* The Data being tracked */
-	void *sent;
-	/* Type of pointer that is being stored */
-	char cmdtype;
+	void *sent;		/* The Data being tracked */
+	char cmdtype;		/* Type of pointer that is being stored */
 };
 
 /* Each scsi_host has a host_data area that contains this struct. */
@@ -65,8 +75,7 @@ struct visorhba_devdata {
 	struct scsipending pending[MAX_PENDING_REQUESTS];
 	/* Start search for next pending free slot here */
 	unsigned int nextinsert;
-	/* lock to protect data in devdata */
-	spinlock_t privlock;
+	spinlock_t privlock; /* lock to protect data in devdata */
 	bool serverdown;
 	bool serverchangingstate;
 	unsigned long long acquire_failed_cnt;
@@ -96,19 +105,24 @@ struct visorhba_devices_open {
 	struct visorhba_devdata *devdata;
 };
 
-/*
- * visor_thread_start - Starts a thread for the device
- * @threadfn:   Function the thread starts
- * @thrcontext: Context to pass to the thread, i.e. devdata
- * @name:	String describing name of thread
+#define for_each_vdisk_match(iter, list, match)			  \
+	for (iter = &list->head; iter->next; iter = iter->next) \
+		if ((iter->channel == match->channel) &&		  \
+		    (iter->id == match->id) &&			  \
+		    (iter->lun == match->lun))
+/**
+ *	visor_thread_start - starts a thread for the device
+ *	@threadfn: Function the thread starts
+ *	@thrcontext: Context to pass to the thread, i.e. devdata
+ *	@name: string describing name of thread
  *
- * Starts a thread for the device.
+ *	Starts a thread for the device.
  *
- * Return: The task_struct * denoting the thread on success,
- *	   or NULL on failure
+ *	Return the task_struct * denoting the thread on success,
+ *             or NULL on failure
  */
-static struct task_struct *visor_thread_start(int (*threadfn)(void *),
-					      void *thrcontext, char *name)
+static struct task_struct *visor_thread_start
+(int (*threadfn)(void *), void *thrcontext, char *name)
 {
 	struct task_struct *task;
 
@@ -120,28 +134,28 @@ static struct task_struct *visor_thread_start(int (*threadfn)(void *),
 	return task;
 }
 
-/*
- * visor_thread_stop - Stops the thread if it is running
- * @task: Description of process to stop
+/**
+ *      visor_thread_stop - stops the thread if it is running
  */
 static void visor_thread_stop(struct task_struct *task)
 {
+	if (!task)
+		return;  /* no thread running */
 	kthread_stop(task);
 }
 
-/*
- * add_scsipending_entry - Save off io command that is pending in
- *			   Service Partition
- * @devdata: Pointer to devdata
- * @cmdtype: Specifies the type of command pending
- * @new:     The command to be saved
+/**
+ *	add_scsipending_entry - save off io command that is pending in
+ *				Service Partition
+ *	@devdata: Pointer to devdata
+ *	@cmdtype: Specifies the type of command pending
+ *	@new:	The command to be saved
  *
- * Saves off the io command that is being handled by the Service
- * Partition so that it can be handled when it completes. If new is
- * NULL it is assumed the entry refers only to the cmdrsp.
- *
- * Return: Insert_location where entry was added on success,
- *	   -EBUSY if it can't
+ *	Saves off the io command that is being handled by the Service
+ *	Partition so that it can be handled when it completes. If new is
+ *	NULL it is assumed the entry refers only to the cmdrsp.
+ *	Returns insert_location where entry was added,
+ *	-EBUSY if it can't
  */
 static int add_scsipending_entry(struct visorhba_devdata *devdata,
 				 char cmdtype, void *new)
@@ -165,8 +179,7 @@ static int add_scsipending_entry(struct visorhba_devdata *devdata,
 	entry->cmdtype = cmdtype;
 	if (new)
 		entry->sent = new;
-	/* wants to send cmdrsp */
-	else
+	else /* wants to send cmdrsp */
 		entry->sent = &entry->cmdrsp;
 	devdata->nextinsert = (insert_location + 1) % MAX_PENDING_REQUESTS;
 	spin_unlock_irqrestore(&devdata->privlock, flags);
@@ -174,16 +187,16 @@ static int add_scsipending_entry(struct visorhba_devdata *devdata,
 	return insert_location;
 }
 
-/*
- * del_scsipending_ent - Removes an entry from the pending array
- * @devdata: Device holding the pending array
- * @del:     Entry to remove
+/**
+ *	del_scsipending_enty - removes an entry from the pending array
+ *	@devdata: Device holding the pending array
+ *	@del: Entry to remove
  *
- * Removes the entry pointed at by del and returns it.
- *
- * Return: The scsipending entry pointed to on success, NULL on failure
+ *	Removes the entry pointed at by del and returns it.
+ *	Returns the scsipending entry pointed at
  */
-static void *del_scsipending_ent(struct visorhba_devdata *devdata, int del)
+static void *del_scsipending_ent(struct visorhba_devdata *devdata,
+				 int del)
 {
 	unsigned long flags;
 	void *sent;
@@ -193,6 +206,7 @@ static void *del_scsipending_ent(struct visorhba_devdata *devdata, int del)
 
 	spin_lock_irqsave(&devdata->privlock, flags);
 	sent = devdata->pending[del].sent;
+
 	devdata->pending[del].cmdtype = 0;
 	devdata->pending[del].sent = NULL;
 	spin_unlock_irqrestore(&devdata->privlock, flags);
@@ -200,15 +214,14 @@ static void *del_scsipending_ent(struct visorhba_devdata *devdata, int del)
 	return sent;
 }
 
-/*
- * get_scsipending_cmdrsp - Return the cmdrsp stored in a pending entry
- * @ddata: Device holding the pending array
- * @ent:   Entry that stores the cmdrsp
+/**
+ *	get_scsipending_cmdrsp - return the cmdrsp stored in a pending entry
+ *	#ddata: Device holding the pending array
+ *	@ent: Entry that stores the cmdrsp
  *
- * Each scsipending entry has a cmdrsp in it. The cmdrsp is only valid
- * if the "sent" field is not NULL.
- *
- * Return: A pointer to the cmdrsp, NULL on failure
+ *	Each scsipending entry has a cmdrsp in it. The cmdrsp is only valid
+ *	if the "sent" field is not NULL
+ *	Returns a pointer to the cmdrsp.
  */
 static struct uiscmdrsp *get_scsipending_cmdrsp(struct visorhba_devdata *ddata,
 						int ent)
@@ -219,16 +232,14 @@ static struct uiscmdrsp *get_scsipending_cmdrsp(struct visorhba_devdata *ddata,
 	return NULL;
 }
 
-/*
- * simple_idr_get - Associate a provided pointer with an int value
- *		    1 <= value <= INT_MAX, and return this int value;
- *		    the pointer value can be obtained later by passing
- *		    this int value to idr_find()
- * @idrtable: The data object maintaining the pointer<-->int mappings
- * @p:	      The pointer value to be remembered
- * @lock:     A spinlock used when exclusive access to idrtable is needed
- *
- * Return: The id number mapped to pointer 'p', 0 on failure
+/**
+ *      simple_idr_get - associate a provided pointer with an int value
+ *                       1 <= value <= INT_MAX, and return this int value;
+ *                       the pointer value can be obtained later by passing
+ *                       this int value to idr_find()
+ *      @idrtable: the data object maintaining the pointer<-->int mappings
+ *      @p: the pointer value to be remembered
+ *      @lock: a spinlock used when exclusive access to idrtable is needed
  */
 static unsigned int simple_idr_get(struct idr *idrtable, void *p,
 				   spinlock_t *lock)
@@ -241,23 +252,16 @@ static unsigned int simple_idr_get(struct idr *idrtable, void *p,
 	id = idr_alloc(idrtable, p, 1, INT_MAX, GFP_NOWAIT);
 	spin_unlock_irqrestore(lock, flags);
 	idr_preload_end();
-	/* failure */
 	if (id < 0)
-		return 0;
-	/* idr_alloc() guarantees > 0 */
-	return (unsigned int)(id);
+		return 0;  /* failure */
+	return (unsigned int)(id);  /* idr_alloc() guarantees > 0 */
 }
 
-/*
- * setup_scsitaskmgmt_handles - Stash the necessary handles so that the
- *				completion processing logic for a taskmgmt
- *				cmd will be able to find who to wake up
- *				and where to stash the result
- * @idrtable: The data object maintaining the pointer<-->int mappings
- * @lock:     A spinlock used when exclusive access to idrtable is needed
- * @cmdrsp:   Response from the IOVM
- * @event:    The event handle to associate with an id
- * @result:   The location to place the result of the event handle into
+/**
+ *      setup_scsitaskmgmt_handles - stash the necessary handles so that the
+ *                                   completion processing logic for a taskmgmt
+ *                                   cmd will be able to find who to wake up
+ *                                   and where to stash the result
  */
 static void setup_scsitaskmgmt_handles(struct idr *idrtable, spinlock_t *lock,
 				       struct uiscmdrsp *cmdrsp,
@@ -271,11 +275,9 @@ static void setup_scsitaskmgmt_handles(struct idr *idrtable, spinlock_t *lock,
 		simple_idr_get(idrtable, result, lock);
 }
 
-/*
- * cleanup_scsitaskmgmt_handles - Forget handles created by
- *				  setup_scsitaskmgmt_handles()
- * @idrtable: The data object maintaining the pointer<-->int mappings
- * @cmdrsp:   Response from the IOVM
+/**
+ *      cleanup_scsitaskmgmt_handles - forget handles created by
+ *                                     setup_scsitaskmgmt_handles()
  */
 static void cleanup_scsitaskmgmt_handles(struct idr *idrtable,
 					 struct uiscmdrsp *cmdrsp)
@@ -286,21 +288,21 @@ static void cleanup_scsitaskmgmt_handles(struct idr *idrtable,
 		idr_remove(idrtable, cmdrsp->scsitaskmgmt.notifyresult_handle);
 }
 
-/*
- * forward_taskmgmt_command - Send taskmegmt command to the Service
- *			      Partition
- * @tasktype: Type of taskmgmt command
- * @scsidev:  Scsidev that issued command
+/**
+ *	forward_taskmgmt_command - send taskmegmt command to the Service
+ *				   Partition
+ *	@tasktype: Type of taskmgmt command
+ *	@scsidev: Scsidev that issued command
  *
- * Create a cmdrsp packet and send it to the Serivce Partition
- * that will service this request.
- *
- * Return: Int representing whether command was queued successfully or not
+ *	Create a cmdrsp packet and send it to the Serivce Partition
+ *	that will service this request.
+ *	Returns whether the command was queued successfully or not.
  */
 static int forward_taskmgmt_command(enum task_mgmt_types tasktype,
-				    struct scsi_device *scsidev)
+				    struct scsi_cmnd *scsicmd)
 {
 	struct uiscmdrsp *cmdrsp;
+	struct scsi_device *scsidev = scsicmd->device;
 	struct visorhba_devdata *devdata =
 		(struct visorhba_devdata *)scsidev->host->hostdata;
 	int notifyresult = 0xffff;
@@ -348,6 +350,12 @@ static int forward_taskmgmt_command(enum task_mgmt_types tasktype,
 	dev_dbg(&scsidev->sdev_gendev,
 		"visorhba: taskmgmt type=%d success; result=0x%x\n",
 		 tasktype, notifyresult);
+	if (tasktype == TASK_MGMT_ABORT_TASK)
+		scsicmd->result = DID_ABORT << 16;
+	else
+		scsicmd->result = DID_RESET << 16;
+
+	scsicmd->scsi_done(scsicmd);
 	cleanup_scsitaskmgmt_handles(&devdata->idr, cmdrsp);
 	return SUCCESS;
 
@@ -359,106 +367,98 @@ err_del_scsipending_ent:
 	return FAILED;
 }
 
-/*
- * visorhba_abort_handler - Send TASK_MGMT_ABORT_TASK
- * @scsicmd: The scsicmd that needs aborted
+/**
+ *	visorhba_abort_handler - Send TASK_MGMT_ABORT_TASK
+ *	@scsicmd: The scsicmd that needs aborted
  *
- * Return: SUCCESS if inserted, FAILED otherwise
+ *	Returns SUCCESS if inserted, failure otherwise
+ *
  */
 static int visorhba_abort_handler(struct scsi_cmnd *scsicmd)
 {
 	/* issue TASK_MGMT_ABORT_TASK */
 	struct scsi_device *scsidev;
 	struct visordisk_info *vdisk;
-	int rtn;
+	struct visorhba_devdata *devdata;
 
 	scsidev = scsicmd->device;
-	vdisk = scsidev->hostdata;
-	if (atomic_read(&vdisk->error_count) < VISORHBA_ERROR_COUNT)
-		atomic_inc(&vdisk->error_count);
-	else
-		atomic_set(&vdisk->ios_threshold, IOS_ERROR_THRESHOLD);
-	rtn = forward_taskmgmt_command(TASK_MGMT_ABORT_TASK, scsidev);
-	if (rtn == SUCCESS) {
-		scsicmd->result = DID_ABORT << 16;
-		scsicmd->scsi_done(scsicmd);
+	devdata = (struct visorhba_devdata *)scsidev->host->hostdata;
+	for_each_vdisk_match(vdisk, devdata, scsidev) {
+		if (atomic_read(&vdisk->error_count) < VISORHBA_ERROR_COUNT)
+			atomic_inc(&vdisk->error_count);
+		else
+			atomic_set(&vdisk->ios_threshold, IOS_ERROR_THRESHOLD);
 	}
-	return rtn;
+	return forward_taskmgmt_command(TASK_MGMT_ABORT_TASK, scsicmd);
 }
 
-/*
- * visorhba_device_reset_handler - Send TASK_MGMT_LUN_RESET
- * @scsicmd: The scsicmd that needs aborted
+/**
+ *	visorhba_device_reset_handler - Send TASK_MGMT_LUN_RESET
+ *	@scsicmd: The scsicmd that needs aborted
  *
- * Return: SUCCESS if inserted, FAILED otherwise
+ *	Returns SUCCESS if inserted, failure otherwise
  */
 static int visorhba_device_reset_handler(struct scsi_cmnd *scsicmd)
 {
 	/* issue TASK_MGMT_LUN_RESET */
 	struct scsi_device *scsidev;
 	struct visordisk_info *vdisk;
-	int rtn;
+	struct visorhba_devdata *devdata;
 
 	scsidev = scsicmd->device;
-	vdisk = scsidev->hostdata;
-	if (atomic_read(&vdisk->error_count) < VISORHBA_ERROR_COUNT)
-		atomic_inc(&vdisk->error_count);
-	else
-		atomic_set(&vdisk->ios_threshold, IOS_ERROR_THRESHOLD);
-	rtn = forward_taskmgmt_command(TASK_MGMT_LUN_RESET, scsidev);
-	if (rtn == SUCCESS) {
-		scsicmd->result = DID_RESET << 16;
-		scsicmd->scsi_done(scsicmd);
-	}
-	return rtn;
-}
-
-/*
- * visorhba_bus_reset_handler - Send TASK_MGMT_TARGET_RESET for each
- *				target on the bus
- * @scsicmd: The scsicmd that needs aborted
- *
- * Return: SUCCESS if inserted, FAILED otherwise
- */
-static int visorhba_bus_reset_handler(struct scsi_cmnd *scsicmd)
-{
-	struct scsi_device *scsidev;
-	struct visordisk_info *vdisk;
-	int rtn;
-
-	scsidev = scsicmd->device;
-	shost_for_each_device(scsidev, scsidev->host) {
-		vdisk = scsidev->hostdata;
+	devdata = (struct visorhba_devdata *)scsidev->host->hostdata;
+	for_each_vdisk_match(vdisk, devdata, scsidev) {
 		if (atomic_read(&vdisk->error_count) < VISORHBA_ERROR_COUNT)
 			atomic_inc(&vdisk->error_count);
 		else
 			atomic_set(&vdisk->ios_threshold, IOS_ERROR_THRESHOLD);
 	}
-	rtn = forward_taskmgmt_command(TASK_MGMT_BUS_RESET, scsidev);
-	if (rtn == SUCCESS) {
-		scsicmd->result = DID_RESET << 16;
-		scsicmd->scsi_done(scsicmd);
-	}
-	return rtn;
+	return forward_taskmgmt_command(TASK_MGMT_LUN_RESET, scsicmd);
 }
 
-/*
- * visorhba_host_reset_handler - Not supported
- * @scsicmd: The scsicmd that needs to be aborted
+/**
+ *	visorhba_bus_reset_handler - Send TASK_MGMT_TARGET_RESET for each
+ *				     target on the bus
+ *	@scsicmd: The scsicmd that needs aborted
  *
- * Return: Not supported, return SUCCESS
+ *	Returns SUCCESS
  */
-static int visorhba_host_reset_handler(struct scsi_cmnd *scsicmd)
+static int visorhba_bus_reset_handler(struct scsi_cmnd *scsicmd)
+{
+	struct scsi_device *scsidev;
+	struct visordisk_info *vdisk;
+	struct visorhba_devdata *devdata;
+
+	scsidev = scsicmd->device;
+	devdata = (struct visorhba_devdata *)scsidev->host->hostdata;
+	for_each_vdisk_match(vdisk, devdata, scsidev) {
+		if (atomic_read(&vdisk->error_count) < VISORHBA_ERROR_COUNT)
+			atomic_inc(&vdisk->error_count);
+		else
+			atomic_set(&vdisk->ios_threshold, IOS_ERROR_THRESHOLD);
+	}
+	return forward_taskmgmt_command(TASK_MGMT_BUS_RESET, scsicmd);
+}
+
+/**
+ *	visorhba_host_reset_handler - Not supported
+ *	@scsicmd: The scsicmd that needs aborted
+ *
+ *	Not supported, return SUCCESS
+ *	Returns SUCCESS
+ */
+static int
+visorhba_host_reset_handler(struct scsi_cmnd *scsicmd)
 {
 	/* issue TASK_MGMT_TARGET_RESET for each target on each bus for host */
 	return SUCCESS;
 }
 
-/*
- * visorhba_get_info - Get information about SCSI device
- * @shp: Scsi host that is requesting information
+/**
+ *	visorhba_get_info
+ *	@shp: Scsi host that is requesting information
  *
- * Return: String with visorhba information
+ *	Returns string with info
  */
 static const char *visorhba_get_info(struct Scsi_Host *shp)
 {
@@ -466,43 +466,20 @@ static const char *visorhba_get_info(struct Scsi_Host *shp)
 	return "visorhba";
 }
 
-/*
- * dma_data_dir_linux_to_spar - convert dma_data_direction value to
- *				Unisys-specific equivalent
- * @d: dma direction value to convert
+/**
+ *	visorhba_queue_command_lck -- queues command to the Service Partition
+ *	@scsicmd: Command to be queued
+ *	@vsiorhba_cmnd_done: Done command to call when scsicmd is returned
  *
- * Returns the Unisys-specific dma direction value corresponding to @d
+ *	Queues to scsicmd to the ServicePartition after converting it to a
+ *	uiscmdrsp structure.
+ *
+ *	Returns success if queued to the Service Partition, otherwise
+ *	failure.
  */
-static u32 dma_data_dir_linux_to_spar(enum dma_data_direction d)
-{
-	switch (d) {
-	case DMA_BIDIRECTIONAL:
-		return UIS_DMA_BIDIRECTIONAL;
-	case DMA_TO_DEVICE:
-		return UIS_DMA_TO_DEVICE;
-	case DMA_FROM_DEVICE:
-		return UIS_DMA_FROM_DEVICE;
-	case DMA_NONE:
-		return UIS_DMA_NONE;
-	default:
-		return UIS_DMA_NONE;
-	}
-}
-
-/*
- * visorhba_queue_command_lck - Queues command to the Service Partition
- * @scsicmd:		Command to be queued
- * @vsiorhba_cmnd_done: Done command to call when scsicmd is returned
- *
- * Queues to scsicmd to the ServicePartition after converting it to a
- * uiscmdrsp structure.
- *
- * Return: 0 if successfully queued to the Service Partition, otherwise
- *	   error code
- */
-static int visorhba_queue_command_lck(struct scsi_cmnd *scsicmd,
-				      void (*visorhba_cmnd_done)
-					   (struct scsi_cmnd *))
+static int
+visorhba_queue_command_lck(struct scsi_cmnd *scsicmd,
+			   void (*visorhba_cmnd_done)(struct scsi_cmnd *))
 {
 	struct uiscmdrsp *cmdrsp;
 	struct scsi_device *scsidev = scsicmd->device;
@@ -520,10 +497,12 @@ static int visorhba_queue_command_lck(struct scsi_cmnd *scsicmd,
 
 	insert_location = add_scsipending_entry(devdata, CMD_SCSI_TYPE,
 						(void *)scsicmd);
+
 	if (insert_location < 0)
 		return SCSI_MLQUEUE_DEVICE_BUSY;
 
 	cmdrsp = get_scsipending_cmdrsp(devdata, insert_location);
+
 	cmdrsp->cmdtype = CMD_SCSI_TYPE;
 	/* save the pending insertion location. Deletion from pending
 	 * will return the scsicmd pointer for completion
@@ -537,9 +516,9 @@ static int visorhba_queue_command_lck(struct scsi_cmnd *scsicmd,
 	cmdrsp->scsi.vdest.id = scsidev->id;
 	cmdrsp->scsi.vdest.lun = scsidev->lun;
 	/* save datadir */
-	cmdrsp->scsi.data_dir =
-		dma_data_dir_linux_to_spar(scsicmd->sc_data_direction);
+	cmdrsp->scsi.data_dir = scsicmd->sc_data_direction;
 	memcpy(cmdrsp->scsi.cmnd, cdb, MAX_CMND_SIZE);
+
 	cmdrsp->scsi.bufflen = scsi_bufflen(scsicmd);
 
 	/* keep track of the max buffer length so far. */
@@ -578,14 +557,14 @@ static DEF_SCSI_QCMD(visorhba_queue_command)
 #define visorhba_queue_command visorhba_queue_command_lck
 #endif
 
-/*
- * visorhba_slave_alloc - Called when new disk is discovered
- * @scsidev: New disk
+/**
+ *	visorhba_slave_alloc - called when new disk is discovered
+ *	@scsidev: New disk
  *
- * Create a new visordisk_info structure and add it to our
- * list of vdisks.
+ *	Create a new visordisk_info structure and add it to our
+ *	list of vdisks.
  *
- * Return: 0 on success, -ENOMEM on failure.
+ *	Returns success when created, otherwise error.
  */
 static int visorhba_slave_alloc(struct scsi_device *scsidev)
 {
@@ -593,41 +572,51 @@ static int visorhba_slave_alloc(struct scsi_device *scsidev)
 	 * LLD can alloc any struct & do init if needed.
 	 */
 	struct visordisk_info *vdisk;
+	struct visordisk_info *tmpvdisk;
 	struct visorhba_devdata *devdata;
 	struct Scsi_Host *scsihost = (struct Scsi_Host *)scsidev->host;
 
-	/* already allocated return success */
-	if (scsidev->hostdata)
-		return 0;
-
-	/* even though we errored, treat as success */
 	devdata = (struct visorhba_devdata *)scsihost->hostdata;
 	if (!devdata)
-		return 0;
+		return 0; /* even though we errored, treat as success */
 
-	vdisk = kzalloc(sizeof(*vdisk), GFP_ATOMIC);
-	if (!vdisk)
+	for_each_vdisk_match(vdisk, devdata, scsidev)
+		return 0; /* already allocated return success */
+
+	tmpvdisk = kzalloc(sizeof(*tmpvdisk), GFP_ATOMIC);
+	if (!tmpvdisk)
 		return -ENOMEM;
 
-	vdisk->sdev = scsidev;
-	scsidev->hostdata = vdisk;
+	tmpvdisk->channel = scsidev->channel;
+	tmpvdisk->id = scsidev->id;
+	tmpvdisk->lun = scsidev->lun;
+	vdisk->next = tmpvdisk;
 	return 0;
 }
 
-/*
- * visorhba_slave_destroy - Disk is going away, clean up resources.
- * @scsidev: Scsi device to destroy
+/**
+ *	visorhba_slave_destroy - disk is going away
+ *	@scsidev: scsi device going away
+ *
+ *	Disk is going away, clean up resources.
+ *	Returns void.
  */
 static void visorhba_slave_destroy(struct scsi_device *scsidev)
 {
 	/* midlevel calls this after device has been quiesced and
 	 * before it is to be deleted.
 	 */
-	struct visordisk_info *vdisk;
+	struct visordisk_info *vdisk, *delvdisk;
+	struct visorhba_devdata *devdata;
+	struct Scsi_Host *scsihost = (struct Scsi_Host *)scsidev->host;
 
-	vdisk = scsidev->hostdata;
-	scsidev->hostdata = NULL;
-	kfree(vdisk);
+	devdata = (struct visorhba_devdata *)scsihost->hostdata;
+	for_each_vdisk_match(vdisk, devdata, scsidev) {
+		delvdisk = vdisk->next;
+		vdisk->next = delvdisk->next;
+		kfree(delvdisk);
+		return;
+	}
 }
 
 static struct scsi_host_template visorhba_driver_template = {
@@ -645,16 +634,14 @@ static struct scsi_host_template visorhba_driver_template = {
 	.this_id = -1,
 	.slave_alloc = visorhba_slave_alloc,
 	.slave_destroy = visorhba_slave_destroy,
+	.use_clustering = ENABLE_CLUSTERING,
 };
 
-/*
- * info_debugfs_show - Debugfs interface to dump visorhba states
- * @seq: The sequence file to write information to
- * @v:   Unused, but needed for use with seq file single_open invocation
+/**
+ *	info_debugfs_show - debugfs interface to dump visorhba states
  *
- * Presents a file in the debugfs tree named: /visorhba/vbus<x>:dev<y>/info.
- *
- * Return: SUCCESS
+ *      This presents a file in the debugfs tree named:
+ *          /visorhba/vbus<x>:dev<y>/info
  */
 static int info_debugfs_show(struct seq_file *seq, void *v)
 {
@@ -673,31 +660,43 @@ static int info_debugfs_show(struct seq_file *seq, void *v)
 		seq_printf(seq, "phys_flags_addr = 0x%016llx\n",
 			   phys_flags_addr);
 		seq_printf(seq, "FeatureFlags = %llu\n",
-			   (u64)readq(devdata->flags_addr));
+			   (__le64)readq(devdata->flags_addr));
 	}
 	seq_printf(seq, "acquire_failed_cnt = %llu\n",
 		   devdata->acquire_failed_cnt);
 
 	return 0;
 }
-DEFINE_SHOW_ATTRIBUTE(info_debugfs);
 
-/*
- * complete_taskmgmt_command - Complete task management
- * @idrtable: The data object maintaining the pointer<-->int mappings
- * @cmdrsp:   Response from the IOVM
- * @result:   The result of the task management command
+static int info_debugfs_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, info_debugfs_show, inode->i_private);
+}
+
+static const struct file_operations info_debugfs_fops = {
+	.owner = THIS_MODULE,
+	.open = info_debugfs_open,
+	.read = seq_read,
+	.llseek = seq_lseek,
+	.release = single_release,
+};
+
+/**
+ *	complete_taskmgmt_command - complete task management
+ *	@cmdrsp: Response from the IOVM
  *
- * Service Partition returned the result of the task management
- * command. Wake up anyone waiting for it.
+ *	Service Partition returned the result of the task management
+ *	command. Wake up anyone waiting for it.
+ *	Returns void
  */
-static void complete_taskmgmt_command(struct idr *idrtable,
-				      struct uiscmdrsp *cmdrsp, int result)
+static inline void complete_taskmgmt_command
+(struct idr *idrtable, struct uiscmdrsp *cmdrsp, int result)
 {
 	wait_queue_head_t *wq =
 		idr_find(idrtable, cmdrsp->scsitaskmgmt.notify_handle);
 	int *scsi_result_ptr =
 		idr_find(idrtable, cmdrsp->scsitaskmgmt.notifyresult_handle);
+
 	if (unlikely(!(wq && scsi_result_ptr))) {
 		pr_err("visorhba: no completion context; cmd will time out\n");
 		return;
@@ -711,13 +710,14 @@ static void complete_taskmgmt_command(struct idr *idrtable,
 	wake_up_all(wq);
 }
 
-/*
- * visorhba_serverdown_complete - Called when we are done cleaning up
- *				  from serverdown
- * @devdata: Visorhba instance on which to complete serverdown
+/**
+ *	visorhba_serverdown_complete - Called when we are done cleaning up
+ *				       from serverdown
+ *	@work: work structure for this serverdown request
  *
- * Called when we are done cleanning up from serverdown, stop processing
- * queue, fail pending IOs.
+ *	Called when we are done cleanning up from serverdown, stop processing
+ *	queue, fail pending IOs.
+ *	Returns void when finished cleaning up
  */
 static void visorhba_serverdown_complete(struct visorhba_devdata *devdata)
 {
@@ -760,14 +760,13 @@ static void visorhba_serverdown_complete(struct visorhba_devdata *devdata)
 	devdata->serverchangingstate = false;
 }
 
-/*
- * visorhba_serverdown - Got notified that the IOVM is down
- * @devdata: Visorhba that is being serviced by downed IOVM
+/**
+ *	visorhba_serverdown - Got notified that the IOVM is down
+ *	@devdata: visorhba that is being serviced by downed IOVM.
  *
- * Something happened to the IOVM, return immediately and
- * schedule cleanup work.
- *
- * Return: 0 on success, -EINVAL on failure
+ *	Something happened to the IOVM, return immediately and
+ *	schedule work cleanup work.
+ *	Return SUCCESS or EINVAL
  */
 static int visorhba_serverdown(struct visorhba_devdata *devdata)
 {
@@ -780,16 +779,18 @@ static int visorhba_serverdown(struct visorhba_devdata *devdata)
 	return 0;
 }
 
-/*
- * do_scsi_linuxstat - Scsi command returned linuxstat
- * @cmdrsp:  Response from IOVM
- * @scsicmd: Command issued
+/**
+ *	do_scsi_linuxstat - scsi command returned linuxstat
+ *	@cmdrsp: response from IOVM
+ *	@scsicmd: Command issued.
  *
- * Don't log errors for disk-not-present inquiries.
+ *	Don't log errors for disk-not-present inquiries
+ *	Returns void
  */
-static void do_scsi_linuxstat(struct uiscmdrsp *cmdrsp,
-			      struct scsi_cmnd *scsicmd)
+static void
+do_scsi_linuxstat(struct uiscmdrsp *cmdrsp, struct scsi_cmnd *scsicmd)
 {
+	struct visorhba_devdata *devdata;
 	struct visordisk_info *vdisk;
 	struct scsi_device *scsidev;
 
@@ -797,22 +798,24 @@ static void do_scsi_linuxstat(struct uiscmdrsp *cmdrsp,
 	memcpy(scsicmd->sense_buffer, cmdrsp->scsi.sensebuf, MAX_SENSE_SIZE);
 
 	/* Do not log errors for disk-not-present inquiries */
-	if (cmdrsp->scsi.cmnd[0] == INQUIRY &&
+	if ((cmdrsp->scsi.cmnd[0] == INQUIRY) &&
 	    (host_byte(cmdrsp->scsi.linuxstat) == DID_NO_CONNECT) &&
-	    cmdrsp->scsi.addlstat == ADDL_SEL_TIMEOUT)
+	    (cmdrsp->scsi.addlstat == ADDL_SEL_TIMEOUT))
 		return;
 	/* Okay see what our error_count is here.... */
-	vdisk = scsidev->hostdata;
-	if (atomic_read(&vdisk->error_count) < VISORHBA_ERROR_COUNT) {
-		atomic_inc(&vdisk->error_count);
-		atomic_set(&vdisk->ios_threshold, IOS_ERROR_THRESHOLD);
+	devdata = (struct visorhba_devdata *)scsidev->host->hostdata;
+	for_each_vdisk_match(vdisk, devdata, scsidev) {
+		if (atomic_read(&vdisk->error_count) < VISORHBA_ERROR_COUNT) {
+			atomic_inc(&vdisk->error_count);
+			atomic_set(&vdisk->ios_threshold, IOS_ERROR_THRESHOLD);
+		}
 	}
 }
 
-static int set_no_disk_inquiry_result(unsigned char *buf, size_t len,
-				      bool is_lun0)
+static int set_no_disk_inquiry_result(unsigned char *buf,
+				      size_t len, bool is_lun0)
 {
-	if (len < NO_DISK_INQUIRY_RESULT_LEN)
+	if (!buf || len < NO_DISK_INQUIRY_RESULT_LEN)
 		return -EINVAL;
 	memset(buf, 0, NO_DISK_INQUIRY_RESULT_LEN);
 	buf[2] = SCSI_SPC2_VER;
@@ -827,15 +830,16 @@ static int set_no_disk_inquiry_result(unsigned char *buf, size_t len,
 	return 0;
 }
 
-/*
- * do_scsi_nolinuxstat - Scsi command didn't have linuxstat
- * @cmdrsp:  Response from IOVM
- * @scsicmd: Command issued
+/**
+ *	do_scsi_nolinuxstat - scsi command didn't have linuxstat
+ *	@cmdrsp: response from IOVM
+ *	@scsicmd: Command issued.
  *
- * Handle response when no linuxstat was returned.
+ *	Handle response when no linuxstat was returned
+ *	Returns void
  */
-static void do_scsi_nolinuxstat(struct uiscmdrsp *cmdrsp,
-				struct scsi_cmnd *scsicmd)
+static void
+do_scsi_nolinuxstat(struct uiscmdrsp *cmdrsp, struct scsi_cmnd *scsicmd)
 {
 	struct scsi_device *scsidev;
 	unsigned char *buf;
@@ -845,14 +849,15 @@ static void do_scsi_nolinuxstat(struct uiscmdrsp *cmdrsp,
 	char *this_page_orig;
 	int bufind = 0;
 	struct visordisk_info *vdisk;
+	struct visorhba_devdata *devdata;
 
 	scsidev = scsicmd->device;
-	if (cmdrsp->scsi.cmnd[0] == INQUIRY &&
-	    cmdrsp->scsi.bufflen >= MIN_INQUIRY_RESULT_LEN) {
+	if ((cmdrsp->scsi.cmnd[0] == INQUIRY) &&
+	    (cmdrsp->scsi.bufflen >= MIN_INQUIRY_RESULT_LEN)) {
 		if (cmdrsp->scsi.no_disk_result == 0)
 			return;
 
-		buf = kzalloc(36, GFP_KERNEL);
+		buf = kzalloc(sizeof(char) * 36, GFP_KERNEL);
 		if (!buf)
 			return;
 
@@ -871,34 +876,38 @@ static void do_scsi_nolinuxstat(struct uiscmdrsp *cmdrsp,
 			return;
 		}
 
-		scsi_for_each_sg(scsicmd, sg, scsi_sg_count(scsicmd), i) {
-			this_page_orig = kmap_atomic(sg_page(sg));
+		sg = scsi_sglist(scsicmd);
+		for (i = 0; i < scsi_sg_count(scsicmd); i++) {
+			this_page_orig = kmap_atomic(sg_page(sg + i));
 			this_page = (void *)((unsigned long)this_page_orig |
-					     sg->offset);
-			memcpy(this_page, buf + bufind, sg->length);
+					     sg[i].offset);
+			memcpy(this_page, buf + bufind, sg[i].length);
 			kunmap_atomic(this_page_orig);
 		}
 		kfree(buf);
 	} else {
-		vdisk = scsidev->hostdata;
-		if (atomic_read(&vdisk->ios_threshold) > 0) {
-			atomic_dec(&vdisk->ios_threshold);
-			if (atomic_read(&vdisk->ios_threshold) == 0)
-				atomic_set(&vdisk->error_count, 0);
+		devdata = (struct visorhba_devdata *)scsidev->host->hostdata;
+		for_each_vdisk_match(vdisk, devdata, scsidev) {
+			if (atomic_read(&vdisk->ios_threshold) > 0) {
+				atomic_dec(&vdisk->ios_threshold);
+				if (atomic_read(&vdisk->ios_threshold) == 0)
+					atomic_set(&vdisk->error_count, 0);
+			}
 		}
 	}
 }
 
-/*
- * complete_scsi_command - Complete a scsi command
- * @uiscmdrsp: Response from Service Partition
- * @scsicmd:   The scsi command
+/**
+ *	complete_scsi_command - complete a scsi command
+ *	@uiscmdrsp: Response from Service Partition
+ *	@scsicmd: The scsi command
  *
- * Response was returned by the Service Partition. Finish it and send
- * completion to the scsi midlayer.
+ *	Response returned by the Service Partition, finish it and send
+ *	completion to the scsi midlayer.
+ *	Returns void.
  */
-static void complete_scsi_command(struct uiscmdrsp *cmdrsp,
-				  struct scsi_cmnd *scsicmd)
+static void
+complete_scsi_command(struct uiscmdrsp *cmdrsp, struct scsi_cmnd *scsicmd)
 {
 	/* take what we need out of cmdrsp and complete the scsicmd */
 	scsicmd->result = cmdrsp->scsi.linuxstat;
@@ -910,24 +919,25 @@ static void complete_scsi_command(struct uiscmdrsp *cmdrsp,
 	scsicmd->scsi_done(scsicmd);
 }
 
-/*
- * drain_queue - Pull responses out of iochannel
- * @cmdrsp:  Response from the IOSP
- * @devdata: Device that owns this iochannel
+/**
+ *	drain_queue - pull responses out of iochannel
+ *	@cmdrsp: Response from the IOSP
+ *	@devdata: device that owns this iochannel
  *
- * Pulls responses out of the iochannel and process the responses.
+ *	Pulls responses out of the iochannel and process the responses.
+ *	Restuns void
  */
-static void drain_queue(struct uiscmdrsp *cmdrsp,
-			struct visorhba_devdata *devdata)
+static void
+drain_queue(struct uiscmdrsp *cmdrsp, struct visorhba_devdata *devdata)
 {
 	struct scsi_cmnd *scsicmd;
 
 	while (1) {
-		/* queue empty */
 		if (visorchannel_signalremove(devdata->dev->visorchannel,
 					      IOCHAN_FROM_IOPART,
 					      cmdrsp))
-			break;
+			break; /* queue empty */
+
 		if (cmdrsp->cmdtype == CMD_SCSI_TYPE) {
 			/* scsicmd location is returned by the
 			 * deletion
@@ -951,15 +961,13 @@ static void drain_queue(struct uiscmdrsp *cmdrsp,
 	}
 }
 
-/*
- * process_incoming_rsps - Process responses from IOSP
- * @v:  Void pointer to visorhba_devdata
+/**
+ *	process_incoming_rsps - Process responses from IOSP
+ *	@v: void pointer to visorhba_devdata
  *
- * Main function for the thread that processes the responses
- * from the IO Service Partition. When the queue is empty, wait
- * to check to see if it is full again.
- *
- * Return: 0 on success, -ENOMEM on failure
+ *	Main function for the thread that processes the responses
+ *	from the IO Service Partition. When the queue is empty, wait
+ *	to check to see if it is full again.
  */
 static int process_incoming_rsps(void *v)
 {
@@ -985,16 +993,15 @@ static int process_incoming_rsps(void *v)
 	return 0;
 }
 
-/*
- * visorhba_pause - Function to handle visorbus pause messages
- * @dev:	   Device that is pausing
- * @complete_func: Function to call when finished
+/**
+ *	visorhba_pause - function to handle visorbus pause messages
+ *	@dev: device that is pausing.
+ *	@complete_func: function to call when finished
  *
- * Something has happened to the IO Service Partition that is
- * handling this device. Quiet this device and reset commands
- * so that the Service Partition can be corrected.
- *
- * Return: SUCCESS
+ *	Something has happened to the IO Service Partition that is
+ *	handling this device. Quiet this device and reset commands
+ *	so that the Service Partition can be corrected.
+ *	Returns SUCCESS
  */
 static int visorhba_pause(struct visor_device *dev,
 			  visorbus_state_complete_func complete_func)
@@ -1006,15 +1013,14 @@ static int visorhba_pause(struct visor_device *dev,
 	return 0;
 }
 
-/*
- * visorhba_resume - Function called when the IO Service Partition is back
- * @dev:	   Device that is pausing
- * @complete_func: Function to call when finished
+/**
+ *	visorhba_resume - function called when the IO Service Partition is back
+ *	@dev: device that is pausing.
+ *	@complete_func: function to call when finished
  *
- * Yay! The IO Service Partition is back, the channel has been wiped
- * so lets re-establish connection and start processing responses.
- *
- * Return: 0 on success, -EINVAL on failure
+ *	Yay! The IO Service Partition is back, the channel has been wiped
+ *	so lets re-establish connection and start processing responses.
+ *	Returns 0 on success, error on failure.
  */
 static int visorhba_resume(struct visor_device *dev,
 			   visorbus_state_complete_func complete_func)
@@ -1030,19 +1036,19 @@ static int visorhba_resume(struct visor_device *dev,
 
 	devdata->thread = visor_thread_start(process_incoming_rsps, devdata,
 					     "vhba_incming");
+
 	devdata->serverdown = false;
 	devdata->serverchangingstate = false;
 
 	return 0;
 }
 
-/*
- * visorhba_probe - Device has been discovered; do acquire
- * @dev: visor_device that was discovered
+/**
+ *	visorhba_probe - device has been discovered, do acquire
+ *	@dev: visor_device that was discovered
  *
- * A new HBA was discovered; do the initial connections of it.
- *
- * Return: 0 on success, otherwise error code
+ *	A new HBA was discovered, do the initial connections of it.
+ *	Return 0 on success, otherwise error.
  */
 static int visorhba_probe(struct visor_device *dev)
 {
@@ -1057,7 +1063,8 @@ static int visorhba_probe(struct visor_device *dev)
 	if (!scsihost)
 		return -ENODEV;
 
-	channel_offset = offsetof(struct visor_io_channel, vhba.max);
+	channel_offset = offsetof(struct spar_io_channel_protocol,
+				  vhba.max);
 	err = visorbus_read_channel(dev, channel_offset, &max,
 				    sizeof(struct vhba_config_max));
 	if (err < 0)
@@ -1087,7 +1094,7 @@ static int visorhba_probe(struct visor_device *dev)
 		goto err_scsi_remove_host;
 	}
 	devdata->debugfs_info =
-		debugfs_create_file("info", 0440,
+		debugfs_create_file("info", S_IRUSR | S_IRGRP,
 				    devdata->debugfs_dir, devdata,
 				    &info_debugfs_fops);
 	if (!devdata->debugfs_info) {
@@ -1101,12 +1108,12 @@ static int visorhba_probe(struct visor_device *dev)
 	devdata->serverchangingstate = false;
 	devdata->scsihost = scsihost;
 
-	channel_offset = offsetof(struct visor_io_channel,
+	channel_offset = offsetof(struct spar_io_channel_protocol,
 				  channel_header.features);
 	err = visorbus_read_channel(dev, channel_offset, &features, 8);
 	if (err)
 		goto err_debugfs_info;
-	features |= VISOR_CHANNEL_IS_POLLING;
+	features |= ULTRA_IO_CHANNEL_IS_POLLING;
 	err = visorbus_write_channel(dev, channel_offset, &features, 8);
 	if (err)
 		goto err_debugfs_info;
@@ -1135,11 +1142,12 @@ err_scsi_host_put:
 	return err;
 }
 
-/*
- * visorhba_remove - Remove a visorhba device
- * @dev: Device to remove
+/**
+ *	visorhba_remove - remove a visorhba device
+ *	@dev: Device to remove
  *
- * Removes the visorhba device.
+ *	Removes the visorhba device.
+ *	Returns void.
  */
 static void visorhba_remove(struct visor_device *dev)
 {
@@ -1161,7 +1169,7 @@ static void visorhba_remove(struct visor_device *dev)
 	debugfs_remove_recursive(devdata->debugfs_dir);
 }
 
-/* This is used to tell the visorbus driver which types of visor devices
+/* This is used to tell the visor bus driver which types of visor devices
  * we support, and what functions to call when a visor device that we support
  * is attached or removed.
  */
@@ -1176,13 +1184,11 @@ static struct visor_driver visorhba_driver = {
 	.channel_interrupt = NULL,
 };
 
-/*
- * visorhba_init - Driver init routine
+/**
+ *	visorhba_init		- driver init routine
  *
- * Initialize the visorhba driver and register it with visorbus
- * to handle s-Par virtual host bus adapter.
- *
- * Return: 0 on success, error code otherwise
+ *	Initialize the visorhba driver and register it with visorbus
+ *	to handle s-Par virtual host bus adapter.
  */
 static int visorhba_init(void)
 {
@@ -1204,10 +1210,10 @@ cleanup_debugfs:
 	return rc;
 }
 
-/*
- * visorhba_exit - Driver exit routine
+/**
+ *	visorhba_cleanup	- driver exit routine
  *
- * Unregister driver from the bus and free up memory.
+ *	Unregister driver from the bus and free up memory.
  */
 static void visorhba_exit(void)
 {

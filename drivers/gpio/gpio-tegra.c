@@ -1,12 +1,21 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * arch/arm/mach-tegra/gpio.c
  *
  * Copyright (c) 2010 Google, Inc
- * Copyright (c) 2011-2016, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2011-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * Author:
  *	Erik Gilling <konkers@google.com>
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
  */
 
 #include <linux/err.h>
@@ -14,14 +23,16 @@
 #include <linux/irq.h>
 #include <linux/interrupt.h>
 #include <linux/io.h>
-#include <linux/gpio/driver.h>
+#include <linux/gpio.h>
 #include <linux/of_device.h>
+#include <linux/of_gpio.h>
 #include <linux/platform_device.h>
 #include <linux/module.h>
 #include <linux/irqdomain.h>
 #include <linux/irqchip/chained_irq.h>
 #include <linux/pinctrl/consumer.h>
 #include <linux/pm.h>
+#include <linux/syscore_ops.h>
 
 #define GPIO_BANK(x)		((x) >> 5)
 #define GPIO_PORT(x)		(((x) >> 3) & 0x3)
@@ -59,10 +70,9 @@
 struct tegra_gpio_info;
 
 struct tegra_gpio_bank {
-	unsigned int bank;
-	unsigned int irq;
-	spinlock_t lvl_lock[4];
-	spinlock_t dbc_lock[4];	/* Lock for updating debounce count register */
+	int bank;
+	int irq;
+	spinlock_t gpio_lock[4];
 #ifdef CONFIG_PM_SLEEP
 	u32 cnf[4];
 	u32 out[4];
@@ -73,6 +83,9 @@ struct tegra_gpio_bank {
 	u32 dbc_enb[4];
 #endif
 	u32 dbc_cnt[4];
+	u32 cnf_init[4];
+	u32 out_init[4];
+	u32 oe_init[4];
 	struct tegra_gpio_info *tgi;
 };
 
@@ -92,6 +105,7 @@ struct tegra_gpio_info {
 	struct irq_chip				ic;
 	u32					bank_count;
 };
+static struct tegra_gpio_info *gpio_info;
 
 static inline void tegra_gpio_writel(struct tegra_gpio_info *tgi,
 				     u32 val, u32 reg)
@@ -104,14 +118,13 @@ static inline u32 tegra_gpio_readl(struct tegra_gpio_info *tgi, u32 reg)
 	return __raw_readl(tgi->regs + reg);
 }
 
-static unsigned int tegra_gpio_compose(unsigned int bank, unsigned int port,
-				       unsigned int bit)
+static int tegra_gpio_compose(int bank, int port, int bit)
 {
 	return (bank << 5) | ((port & 0x3) << 3) | (bit & 0x7);
 }
 
 static void tegra_gpio_mask_write(struct tegra_gpio_info *tgi, u32 reg,
-				  unsigned int gpio, u32 value)
+				  int gpio, int value)
 {
 	u32 val;
 
@@ -121,41 +134,112 @@ static void tegra_gpio_mask_write(struct tegra_gpio_info *tgi, u32 reg,
 	tegra_gpio_writel(tgi, val, reg);
 }
 
-static void tegra_gpio_enable(struct tegra_gpio_info *tgi, unsigned int gpio)
+static void tegra_gpio_save_gpio_state(unsigned int gpio)
+{
+	struct tegra_gpio_info *tgi = gpio_info;
+	int b = GPIO_BANK(gpio);
+	int p = GPIO_PORT(gpio);
+	struct tegra_gpio_bank *bank = &tgi->bank_info[b];
+	u32 mask = BIT(GPIO_BIT(gpio));
+	unsigned long flags;
+
+	spin_lock_irqsave(&bank->gpio_lock[p], flags);
+
+	bank->cnf_init[p] &= ~mask;
+	bank->cnf_init[p] |= tegra_gpio_readl(tgi, GPIO_CNF(tgi, gpio)) & mask;
+
+	bank->out_init[p] &= ~mask;
+	bank->out_init[p] |= tegra_gpio_readl(tgi, GPIO_OUT(tgi, gpio)) & mask;
+
+	bank->oe_init[p] &= ~mask;
+	bank->oe_init[p] |= tegra_gpio_readl(tgi, GPIO_OE(tgi, gpio)) & mask;
+
+	spin_unlock_irqrestore(&bank->gpio_lock[p], flags);
+}
+
+static void tegra_gpio_restore_gpio_state(unsigned int gpio)
+{
+	struct tegra_gpio_info *tgi = gpio_info;
+	int b = GPIO_BANK(gpio);
+	int p = GPIO_PORT(gpio);
+	int bpos = GPIO_BIT(gpio);
+	struct tegra_gpio_bank *bank = &tgi->bank_info[b];
+	int was_gpio, was_output, was_out_val;
+	unsigned long flags;
+
+	spin_lock_irqsave(&bank->gpio_lock[p], flags);
+
+	was_gpio = (bank->cnf_init[p] >> bpos) & 0x1;
+	was_output = (bank->oe_init[p] >> bpos) & 0x1;
+	was_out_val = (bank->out_init[p] >> bpos) & 0x1;
+
+	/*
+	 * If pin was GPIO and pin direction was OUT then restore GPIO_OUT first
+	 * then GPIO_OE and then GPIO_CNF
+	 */
+	if (was_gpio & was_output) {
+		tegra_gpio_mask_write(tgi, GPIO_MSK_OUT(tgi, gpio), gpio,
+								was_out_val);
+		tegra_gpio_mask_write(tgi, GPIO_MSK_OE(tgi, gpio), gpio,
+								was_output);
+		tegra_gpio_mask_write(tgi, GPIO_MSK_CNF(tgi, gpio), gpio,
+								was_gpio);
+	}
+	/*
+	 * If pin was GPIO and pin direction was IN then restore GPIO_OE,
+	 * then GPIO_OUT and then GPIO_CNF
+	 */
+	else if (was_gpio) {
+		tegra_gpio_mask_write(tgi, GPIO_MSK_OE(tgi, gpio), gpio,
+								was_output);
+		tegra_gpio_mask_write(tgi, GPIO_MSK_OUT(tgi, gpio), gpio,
+								was_out_val);
+		tegra_gpio_mask_write(tgi, GPIO_MSK_CNF(tgi, gpio), gpio,
+								was_gpio);
+	}
+	/*
+	 * If pin is SFIO then restore GPIO_CNF, then GPIO_OE and then GPIO_OUT
+	 */
+	else {
+		tegra_gpio_mask_write(tgi, GPIO_MSK_CNF(tgi, gpio), gpio,
+								was_gpio);
+		tegra_gpio_mask_write(tgi, GPIO_MSK_OE(tgi, gpio), gpio,
+								was_output);
+		tegra_gpio_mask_write(tgi, GPIO_MSK_OUT(tgi, gpio), gpio,
+								was_out_val);
+	}
+
+	spin_unlock_irqrestore(&bank->gpio_lock[p], flags);
+}
+
+static void tegra_gpio_enable(struct tegra_gpio_info *tgi, int gpio)
 {
 	tegra_gpio_mask_write(tgi, GPIO_MSK_CNF(tgi, gpio), gpio, 1);
 }
 
-static void tegra_gpio_disable(struct tegra_gpio_info *tgi, unsigned int gpio)
+static int tegra_gpio_request(struct gpio_chip *chip, unsigned offset)
 {
-	tegra_gpio_mask_write(tgi, GPIO_MSK_CNF(tgi, gpio), gpio, 0);
+	tegra_gpio_save_gpio_state(offset);
+	return pinctrl_request_gpio(chip->base + offset);
 }
 
-static int tegra_gpio_request(struct gpio_chip *chip, unsigned int offset)
+static void tegra_gpio_free(struct gpio_chip *chip, unsigned offset)
 {
-	return pinctrl_gpio_request(chip->base + offset);
+	pinctrl_free_gpio(chip->base + offset);
+	tegra_gpio_restore_gpio_state(offset);
 }
 
-static void tegra_gpio_free(struct gpio_chip *chip, unsigned int offset)
-{
-	struct tegra_gpio_info *tgi = gpiochip_get_data(chip);
-
-	pinctrl_gpio_free(chip->base + offset);
-	tegra_gpio_disable(tgi, offset);
-}
-
-static void tegra_gpio_set(struct gpio_chip *chip, unsigned int offset,
-			   int value)
+static void tegra_gpio_set(struct gpio_chip *chip, unsigned offset, int value)
 {
 	struct tegra_gpio_info *tgi = gpiochip_get_data(chip);
 
 	tegra_gpio_mask_write(tgi, GPIO_MSK_OUT(tgi, offset), offset, value);
 }
 
-static int tegra_gpio_get(struct gpio_chip *chip, unsigned int offset)
+static int tegra_gpio_get(struct gpio_chip *chip, unsigned offset)
 {
 	struct tegra_gpio_info *tgi = gpiochip_get_data(chip);
-	unsigned int bval = BIT(GPIO_BIT(offset));
+	int bval = BIT(GPIO_BIT(offset));
 
 	/* If gpio is in output mode then read from the out value */
 	if (tegra_gpio_readl(tgi, GPIO_OE(tgi, offset)) & bval)
@@ -164,11 +248,10 @@ static int tegra_gpio_get(struct gpio_chip *chip, unsigned int offset)
 	return !!(tegra_gpio_readl(tgi, GPIO_IN(tgi, offset)) & bval);
 }
 
-static int tegra_gpio_direction_input(struct gpio_chip *chip,
-				      unsigned int offset)
+static int tegra_gpio_direction_input(struct gpio_chip *chip, unsigned offset)
 {
-	struct tegra_gpio_info *tgi = gpiochip_get_data(chip);
 	int ret;
+	struct tegra_gpio_info *tgi = gpiochip_get_data(chip);
 
 	tegra_gpio_mask_write(tgi, GPIO_MSK_OE(tgi, offset), offset, 0);
 	tegra_gpio_enable(tgi, offset);
@@ -182,9 +265,8 @@ static int tegra_gpio_direction_input(struct gpio_chip *chip,
 	return ret;
 }
 
-static int tegra_gpio_direction_output(struct gpio_chip *chip,
-				       unsigned int offset,
-				       int value)
+static int tegra_gpio_direction_output(struct gpio_chip *chip, unsigned offset,
+					int value)
 {
 	struct tegra_gpio_info *tgi = gpiochip_get_data(chip);
 	int ret;
@@ -202,8 +284,7 @@ static int tegra_gpio_direction_output(struct gpio_chip *chip,
 	return ret;
 }
 
-static int tegra_gpio_get_direction(struct gpio_chip *chip,
-				    unsigned int offset)
+static int tegra_gpio_get_direction(struct gpio_chip *chip, unsigned offset)
 {
 	struct tegra_gpio_info *tgi = gpiochip_get_data(chip);
 	u32 pin_mask = BIT(GPIO_BIT(offset));
@@ -215,7 +296,7 @@ static int tegra_gpio_get_direction(struct gpio_chip *chip,
 
 	oe = tegra_gpio_readl(tgi, GPIO_OE(tgi, offset));
 
-	return !(oe & pin_mask);
+	return (oe & pin_mask) ? GPIOF_DIR_OUT : GPIOF_DIR_IN;
 }
 
 static int tegra_gpio_set_debounce(struct gpio_chip *chip, unsigned int offset,
@@ -225,7 +306,7 @@ static int tegra_gpio_set_debounce(struct gpio_chip *chip, unsigned int offset,
 	struct tegra_gpio_bank *bank = &tgi->bank_info[GPIO_BANK(offset)];
 	unsigned int debounce_ms = DIV_ROUND_UP(debounce, 1000);
 	unsigned long flags;
-	unsigned int port;
+	int port;
 
 	if (!debounce_ms) {
 		tegra_gpio_mask_write(tgi, GPIO_MSK_DBC_EN(tgi, offset),
@@ -236,34 +317,23 @@ static int tegra_gpio_set_debounce(struct gpio_chip *chip, unsigned int offset,
 	debounce_ms = min(debounce_ms, 255U);
 	port = GPIO_PORT(offset);
 
-	/* There is only one debounce count register per port and hence
+	/*
+	 * There is only one debounce count register per port and hence
 	 * set the maximum of current and requested debounce time.
 	 */
-	spin_lock_irqsave(&bank->dbc_lock[port], flags);
+	spin_lock_irqsave(&bank->gpio_lock[port], flags);
 	if (bank->dbc_cnt[port] < debounce_ms) {
 		tegra_gpio_writel(tgi, debounce_ms, GPIO_DBC_CNT(tgi, offset));
 		bank->dbc_cnt[port] = debounce_ms;
 	}
-	spin_unlock_irqrestore(&bank->dbc_lock[port], flags);
+	spin_unlock_irqrestore(&bank->gpio_lock[port], flags);
 
 	tegra_gpio_mask_write(tgi, GPIO_MSK_DBC_EN(tgi, offset), offset, 1);
 
 	return 0;
 }
 
-static int tegra_gpio_set_config(struct gpio_chip *chip, unsigned int offset,
-				 unsigned long config)
-{
-	u32 debounce;
-
-	if (pinconf_to_config_param(config) != PIN_CONFIG_INPUT_DEBOUNCE)
-		return -ENOTSUPP;
-
-	debounce = pinconf_to_config_argument(config);
-	return tegra_gpio_set_debounce(chip, offset, debounce);
-}
-
-static int tegra_gpio_to_irq(struct gpio_chip *chip, unsigned int offset)
+static int tegra_gpio_to_irq(struct gpio_chip *chip, unsigned offset)
 {
 	struct tegra_gpio_info *tgi = gpiochip_get_data(chip);
 
@@ -274,7 +344,7 @@ static void tegra_gpio_irq_ack(struct irq_data *d)
 {
 	struct tegra_gpio_bank *bank = irq_data_get_irq_chip_data(d);
 	struct tegra_gpio_info *tgi = bank->tgi;
-	unsigned int gpio = d->hwirq;
+	int gpio = d->hwirq;
 
 	tegra_gpio_writel(tgi, 1 << GPIO_BIT(gpio), GPIO_INT_CLR(tgi, gpio));
 }
@@ -283,7 +353,7 @@ static void tegra_gpio_irq_mask(struct irq_data *d)
 {
 	struct tegra_gpio_bank *bank = irq_data_get_irq_chip_data(d);
 	struct tegra_gpio_info *tgi = bank->tgi;
-	unsigned int gpio = d->hwirq;
+	int gpio = d->hwirq;
 
 	tegra_gpio_mask_write(tgi, GPIO_MSK_INT_ENB(tgi, gpio), gpio, 0);
 }
@@ -292,18 +362,20 @@ static void tegra_gpio_irq_unmask(struct irq_data *d)
 {
 	struct tegra_gpio_bank *bank = irq_data_get_irq_chip_data(d);
 	struct tegra_gpio_info *tgi = bank->tgi;
-	unsigned int gpio = d->hwirq;
+	int gpio = d->hwirq;
 
 	tegra_gpio_mask_write(tgi, GPIO_MSK_INT_ENB(tgi, gpio), gpio, 1);
 }
 
 static int tegra_gpio_irq_set_type(struct irq_data *d, unsigned int type)
 {
-	unsigned int gpio = d->hwirq, port = GPIO_PORT(gpio), lvl_type;
+	int gpio = d->hwirq;
 	struct tegra_gpio_bank *bank = irq_data_get_irq_chip_data(d);
 	struct tegra_gpio_info *tgi = bank->tgi;
+	int port = GPIO_PORT(gpio);
+	int lvl_type;
+	int val;
 	unsigned long flags;
-	u32 val;
 	int ret;
 
 	switch (type & IRQ_TYPE_SENSE_MASK) {
@@ -331,25 +403,24 @@ static int tegra_gpio_irq_set_type(struct irq_data *d, unsigned int type)
 		return -EINVAL;
 	}
 
-	spin_lock_irqsave(&bank->lvl_lock[port], flags);
+	ret = gpiochip_lock_as_irq(&tgi->gc, gpio);
+	if (ret) {
+		dev_err(tgi->dev,
+			"unable to lock Tegra GPIO %d as IRQ\n", gpio);
+		return ret;
+	}
+
+	spin_lock_irqsave(&bank->gpio_lock[port], flags);
 
 	val = tegra_gpio_readl(tgi, GPIO_INT_LVL(tgi, gpio));
 	val &= ~(GPIO_INT_LVL_MASK << GPIO_BIT(gpio));
 	val |= lvl_type << GPIO_BIT(gpio);
 	tegra_gpio_writel(tgi, val, GPIO_INT_LVL(tgi, gpio));
 
-	spin_unlock_irqrestore(&bank->lvl_lock[port], flags);
+	spin_unlock_irqrestore(&bank->gpio_lock[port], flags);
 
 	tegra_gpio_mask_write(tgi, GPIO_MSK_OE(tgi, gpio), gpio, 0);
 	tegra_gpio_enable(tgi, gpio);
-
-	ret = gpiochip_lock_as_irq(&tgi->gc, gpio);
-	if (ret) {
-		dev_err(tgi->dev,
-			"unable to lock Tegra GPIO %u as IRQ\n", gpio);
-		tegra_gpio_disable(tgi, gpio);
-		return ret;
-	}
 
 	if (type & (IRQ_TYPE_LEVEL_LOW | IRQ_TYPE_LEVEL_HIGH))
 		irq_set_handler_locked(d, handle_level_irq);
@@ -363,15 +434,18 @@ static void tegra_gpio_irq_shutdown(struct irq_data *d)
 {
 	struct tegra_gpio_bank *bank = irq_data_get_irq_chip_data(d);
 	struct tegra_gpio_info *tgi = bank->tgi;
-	unsigned int gpio = d->hwirq;
+	int gpio = d->hwirq;
 
+	tegra_gpio_irq_mask(d);
 	gpiochip_unlock_as_irq(&tgi->gc, gpio);
 }
 
 static void tegra_gpio_irq_handler(struct irq_desc *desc)
 {
-	unsigned int port, pin, gpio;
-	bool unmasked = false;
+	int port;
+	int pin;
+	int unmasked = 0;
+	int gpio;
 	u32 lvl;
 	unsigned long sta;
 	struct irq_chip *chip = irq_desc_get_chip(desc);
@@ -390,17 +464,17 @@ static void tegra_gpio_irq_handler(struct irq_desc *desc)
 			tegra_gpio_writel(tgi, 1 << pin,
 					  GPIO_INT_CLR(tgi, gpio));
 
-			/* if gpio is edge triggered, clear condition
+			/*
+			 * If gpio is edge triggered, clear condition
 			 * before executing the handler so that we don't
 			 * miss edges
 			 */
-			if (!unmasked && lvl & (0x100 << pin)) {
-				unmasked = true;
+			if (lvl & (0x100 << pin)) {
+				unmasked = 1;
 				chained_irq_exit(chip, desc);
 			}
 
-			generic_handle_irq(irq_find_mapping(tgi->irq_domain,
-							    gpio + pin));
+			generic_handle_irq(gpio_to_irq(gpio + pin));
 		}
 	}
 
@@ -410,20 +484,17 @@ static void tegra_gpio_irq_handler(struct irq_desc *desc)
 }
 
 #ifdef CONFIG_PM_SLEEP
-static int tegra_gpio_resume(struct device *dev)
+static void tegra_gpio_resume(void)
 {
-	struct tegra_gpio_info *tgi = dev_get_drvdata(dev);
-	unsigned long flags;
-	unsigned int b, p;
-
-	local_irq_save(flags);
+	struct tegra_gpio_info *tgi = gpio_info;
+	int b;
+	int p;
 
 	for (b = 0; b < tgi->bank_count; b++) {
 		struct tegra_gpio_bank *bank = &tgi->bank_info[b];
 
 		for (p = 0; p < ARRAY_SIZE(bank->oe); p++) {
-			unsigned int gpio = (b << 5) | (p << 3);
-
+			unsigned int gpio = (b<<5) | (p<<3);
 			tegra_gpio_writel(tgi, bank->cnf[p],
 					  GPIO_CNF(tgi, gpio));
 
@@ -444,24 +515,19 @@ static int tegra_gpio_resume(struct device *dev)
 					  GPIO_INT_ENB(tgi, gpio));
 		}
 	}
-
-	local_irq_restore(flags);
-	return 0;
 }
 
-static int tegra_gpio_suspend(struct device *dev)
+static int tegra_gpio_suspend(void)
 {
-	struct tegra_gpio_info *tgi = dev_get_drvdata(dev);
-	unsigned long flags;
-	unsigned int b, p;
+	struct tegra_gpio_info *tgi = gpio_info;
+	int b;
+	int p;
 
-	local_irq_save(flags);
 	for (b = 0; b < tgi->bank_count; b++) {
 		struct tegra_gpio_bank *bank = &tgi->bank_info[b];
 
 		for (p = 0; p < ARRAY_SIZE(bank->oe); p++) {
-			unsigned int gpio = (b << 5) | (p << 3);
-
+			unsigned int gpio = (b<<5) | (p<<3);
 			bank->cnf[p] = tegra_gpio_readl(tgi,
 							GPIO_CNF(tgi, gpio));
 			bank->out[p] = tegra_gpio_readl(tgi,
@@ -485,14 +551,15 @@ static int tegra_gpio_suspend(struct device *dev)
 					  GPIO_INT_ENB(tgi, gpio));
 		}
 	}
-	local_irq_restore(flags);
+
+	of_gpiochip_suspend(&tgi->gc);
 	return 0;
 }
 
 static int tegra_gpio_irq_set_wake(struct irq_data *d, unsigned int enable)
 {
 	struct tegra_gpio_bank *bank = irq_data_get_irq_chip_data(d);
-	unsigned int gpio = d->hwirq;
+	int gpio = d->hwirq;
 	u32 port, bit, mask;
 
 	port = GPIO_PORT(gpio);
@@ -506,25 +573,41 @@ static int tegra_gpio_irq_set_wake(struct irq_data *d, unsigned int enable)
 
 	return irq_set_irq_wake(bank->irq, enable);
 }
+#else
+#define tegra_gpio_suspend NULL
+#define tegra_gpio_resume NULL
 #endif
+
+static struct syscore_ops tegra_gpio_syscore_ops = {
+	.suspend = tegra_gpio_suspend,
+	.early_resume = tegra_gpio_resume,
+	.save = tegra_gpio_suspend,
+	.restore = tegra_gpio_resume,
+};
 
 #ifdef	CONFIG_DEBUG_FS
 
 #include <linux/debugfs.h>
 #include <linux/seq_file.h>
 
-static int tegra_dbg_gpio_show(struct seq_file *s, void *unused)
+static int dbg_gpio_show(struct seq_file *s, void *unused)
 {
 	struct tegra_gpio_info *tgi = s->private;
-	unsigned int i, j;
+	int i;
+	int j;
+	char x, y;
 
+	x = ' ';
+	y = 'A';
+
+	seq_printf(s, "Name:Bank:Port CNF OE OUT IN INT_STA INT_ENB INT_LVL\n");
 	for (i = 0; i < tgi->bank_count; i++) {
 		for (j = 0; j < 4; j++) {
-			unsigned int gpio = tegra_gpio_compose(i, j, 0);
+			int gpio = tegra_gpio_compose(i, j, 0);
 
 			seq_printf(s,
-				"%u:%u %02x %02x %02x %02x %02x %02x %06x\n",
-				i, j,
+			     "%c%c: %d:%d %02x %02x %02x %02x %02x %02x %06x\n",
+				x, y, i, j,
 				tegra_gpio_readl(tgi, GPIO_CNF(tgi, gpio)),
 				tegra_gpio_readl(tgi, GPIO_OE(tgi, gpio)),
 				tegra_gpio_readl(tgi, GPIO_OUT(tgi, gpio)),
@@ -532,17 +615,36 @@ static int tegra_dbg_gpio_show(struct seq_file *s, void *unused)
 				tegra_gpio_readl(tgi, GPIO_INT_STA(tgi, gpio)),
 				tegra_gpio_readl(tgi, GPIO_INT_ENB(tgi, gpio)),
 				tegra_gpio_readl(tgi, GPIO_INT_LVL(tgi, gpio)));
+
+			if (x != ' ')
+				x++;
+			if (y == 'Z') {
+				y = 'A';
+				x = 'A';
+			} else {
+				y++;
+			};
 		}
 	}
 	return 0;
 }
 
-DEFINE_SHOW_ATTRIBUTE(tegra_dbg_gpio);
+static int dbg_gpio_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, dbg_gpio_show, inode->i_private);
+}
+
+static const struct file_operations debug_fops = {
+	.open		= dbg_gpio_open,
+	.read		= seq_read,
+	.llseek		= seq_lseek,
+	.release	= single_release,
+};
 
 static void tegra_gpio_debuginit(struct tegra_gpio_info *tgi)
 {
-	debugfs_create_file("tegra_gpio", 0444, NULL, tgi,
-			    &tegra_dbg_gpio_fops);
+	(void) debugfs_create_file("tegra_gpio", S_IRUGO,
+					NULL, tgi, &debug_fops);
 }
 
 #else
@@ -553,30 +655,44 @@ static inline void tegra_gpio_debuginit(struct tegra_gpio_info *tgi)
 
 #endif
 
-static const struct dev_pm_ops tegra_gpio_pm_ops = {
-	SET_SYSTEM_SLEEP_PM_OPS(tegra_gpio_suspend, tegra_gpio_resume)
-};
+/*
+ * This lock class tells lockdep that GPIO irqs are in a different category
+ * than their parents, so it won't report false recursion.
+ */
+static struct lock_class_key gpio_lock_class;
 
 static int tegra_gpio_probe(struct platform_device *pdev)
 {
+	const struct tegra_gpio_soc_config *config;
 	struct tegra_gpio_info *tgi;
+	struct resource *res;
 	struct tegra_gpio_bank *bank;
-	unsigned int gpio, i, j;
 	int ret;
+	int gpio;
+	int i;
+	int j;
+
+	config = of_device_get_match_data(&pdev->dev);
+	if (!config) {
+		dev_err(&pdev->dev, "Error: No device match found\n");
+		return -ENODEV;
+	}
 
 	tgi = devm_kzalloc(&pdev->dev, sizeof(*tgi), GFP_KERNEL);
 	if (!tgi)
 		return -ENODEV;
+	gpio_info = tgi;
 
-	tgi->soc = of_device_get_match_data(&pdev->dev);
+	tgi->soc = config;
 	tgi->dev = &pdev->dev;
 
-	ret = platform_irq_count(pdev);
-	if (ret < 0)
-		return ret;
-
-	tgi->bank_count = ret;
-
+	for (;;) {
+		res = platform_get_resource(pdev, IORESOURCE_IRQ,
+					    tgi->bank_count);
+		if (!res)
+			break;
+		tgi->bank_count++;
+	}
 	if (!tgi->bank_count) {
 		dev_err(&pdev->dev, "Missing IRQ resource\n");
 		return -ENODEV;
@@ -608,13 +724,13 @@ static int tegra_gpio_probe(struct platform_device *pdev)
 
 	platform_set_drvdata(pdev, tgi);
 
-	if (tgi->soc->debounce_supported)
-		tgi->gc.set_config = tegra_gpio_set_config;
+	if (config->debounce_supported)
+		tgi->gc.set_debounce = tegra_gpio_set_debounce;
 
-	tgi->bank_info = devm_kcalloc(&pdev->dev, tgi->bank_count,
+	tgi->bank_info = devm_kzalloc(&pdev->dev, tgi->bank_count *
 				      sizeof(*tgi->bank_info), GFP_KERNEL);
 	if (!tgi->bank_info)
-		return -ENOMEM;
+		return -ENODEV;
 
 	tgi->irq_domain = irq_domain_add_linear(pdev->dev.of_node,
 						tgi->gc.ngpio,
@@ -623,28 +739,38 @@ static int tegra_gpio_probe(struct platform_device *pdev)
 		return -ENODEV;
 
 	for (i = 0; i < tgi->bank_count; i++) {
-		ret = platform_get_irq(pdev, i);
-		if (ret < 0) {
-			dev_err(&pdev->dev, "Missing IRQ resource: %d\n", ret);
-			return ret;
+		res = platform_get_resource(pdev, IORESOURCE_IRQ, i);
+		if (!res) {
+			dev_err(&pdev->dev, "Missing IRQ resource\n");
+			return -ENODEV;
 		}
 
 		bank = &tgi->bank_info[i];
 		bank->bank = i;
-		bank->irq = ret;
+		bank->irq = res->start;
 		bank->tgi = tgi;
 	}
 
-	tgi->regs = devm_platform_ioremap_resource(pdev, 0);
+	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
+	tgi->regs = devm_ioremap_resource(&pdev->dev, res);
 	if (IS_ERR(tgi->regs))
 		return PTR_ERR(tgi->regs);
 
 	for (i = 0; i < tgi->bank_count; i++) {
 		for (j = 0; j < 4; j++) {
 			int gpio = tegra_gpio_compose(i, j, 0);
-
 			tegra_gpio_writel(tgi, 0x00, GPIO_INT_ENB(tgi, gpio));
 		}
+	}
+
+	for (i = 0; i < tgi->bank_count; i++) {
+		bank = &tgi->bank_info[i];
+
+		irq_set_chained_handler_and_data(bank->irq,
+				tegra_gpio_irq_handler, bank);
+
+		for (j = 0; j < 4; j++)
+			spin_lock_init(&bank->gpio_lock[j]);
 	}
 
 	ret = devm_gpiochip_add_data(&pdev->dev, &tgi->gc, tgi);
@@ -659,23 +785,14 @@ static int tegra_gpio_probe(struct platform_device *pdev)
 
 		bank = &tgi->bank_info[GPIO_BANK(gpio)];
 
+		irq_set_lockdep_class(irq, &gpio_lock_class);
 		irq_set_chip_data(irq, bank);
 		irq_set_chip_and_handler(irq, &tgi->ic, handle_simple_irq);
 	}
 
-	for (i = 0; i < tgi->bank_count; i++) {
-		bank = &tgi->bank_info[i];
-
-		irq_set_chained_handler_and_data(bank->irq,
-						 tegra_gpio_irq_handler, bank);
-
-		for (j = 0; j < 4; j++) {
-			spin_lock_init(&bank->lvl_lock[j]);
-			spin_lock_init(&bank->dbc_lock[j]);
-		}
-	}
-
 	tegra_gpio_debuginit(tgi);
+
+	register_syscore_ops(&tegra_gpio_syscore_ops);
 
 	return 0;
 }
@@ -706,7 +823,6 @@ static const struct of_device_id tegra_gpio_of_match[] = {
 static struct platform_driver tegra_gpio_driver = {
 	.driver		= {
 		.name	= "tegra-gpio",
-		.pm	= &tegra_gpio_pm_ops,
 		.of_match_table = tegra_gpio_of_match,
 	},
 	.probe		= tegra_gpio_probe,

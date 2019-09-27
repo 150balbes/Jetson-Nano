@@ -21,6 +21,7 @@
 #include <linux/io.h>
 #include <linux/slab.h>
 #include <linux/of_device.h>
+#include <linux/of_gpio.h>
 #include <linux/of_address.h>
 #include <linux/module.h>
 #include <linux/gpio/driver.h>
@@ -52,6 +53,8 @@ MODULE_DEVICE_TABLE(of, gef_gpio_ids);
 
 static int __init gef_gpio_probe(struct platform_device *pdev)
 {
+	const struct of_device_id *of_id =
+		of_match_device(gef_gpio_ids, &pdev->dev);
 	struct gpio_chip *gc;
 	void __iomem *regs;
 	int ret;
@@ -73,14 +76,15 @@ static int __init gef_gpio_probe(struct platform_device *pdev)
 	}
 
 	/* Setup pointers to chip functions */
-	gc->label = devm_kasprintf(&pdev->dev, GFP_KERNEL, "%pOF", pdev->dev.of_node);
+	gc->label = devm_kstrdup(&pdev->dev, pdev->dev.of_node->full_name,
+				     GFP_KERNEL);
 	if (!gc->label) {
 		ret = -ENOMEM;
 		goto err0;
 	}
 
 	gc->base = -1;
-	gc->ngpio = (u16)(uintptr_t)of_device_get_match_data(&pdev->dev);
+	gc->ngpio = (u16)(uintptr_t)of_id->data;
 	gc->of_gpio_n_cells = 2;
 	gc->of_node = pdev->dev.of_node;
 
@@ -92,7 +96,8 @@ static int __init gef_gpio_probe(struct platform_device *pdev)
 	return 0;
 err0:
 	iounmap(regs);
-	pr_err("%pOF: GPIO chip registration failed\n", pdev->dev.of_node);
+	pr_err("%s: GPIO chip registration failed\n",
+			pdev->dev.of_node->full_name);
 	return ret;
 };
 

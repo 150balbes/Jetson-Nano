@@ -8,7 +8,6 @@
 
 #include <bcm63xx_io.h>
 #include <linux/serial_bcm63xx.h>
-#include <asm/setup.h>
 
 static void wait_xfered(void)
 {

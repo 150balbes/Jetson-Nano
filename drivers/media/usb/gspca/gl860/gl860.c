@@ -1,10 +1,22 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /* GSPCA subdrivers for Genesys Logic webcams with the GL860 chip
  * Subdriver core
  *
  * 2009/09/24 Olivier Lorin <o.lorin@laposte.net>
  * GSPCA by Jean-Francois Moine <http://moinejf.free.fr>
  * Thanks BUGabundo and Malmostoso for your amazing help!
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
@@ -570,7 +582,7 @@ int gl860_RTx(struct gspca_dev *gspca_dev,
 		pr_err("ctrl transfer failed %4d [p%02x r%d v%04x i%04x len%d]\n",
 		       r, pref, req, val, index, len);
 	else if (len > 1 && r < len)
-		gspca_err(gspca_dev, "short ctrl transfer %d/%d\n", r, len);
+		PERR("short ctrl transfer %d/%d", r, len);
 
 	msleep(1);
 
@@ -649,7 +661,7 @@ static int gl860_guess_sensor(struct gspca_dev *gspca_dev,
 		ctrl_out(gspca_dev, 0x40, 1, 0x006a, 0x000d, 0, NULL);
 		msleep(56);
 
-		gspca_dbg(gspca_dev, D_PROBE, "probing for sensor MI2020 or OVXXXX\n");
+		PDEBUG(D_PROBE, "probing for sensor MI2020 or OVXXXX");
 		nOV = 0;
 		for (ntry = 0; ntry < 4; ntry++) {
 			ctrl_out(gspca_dev, 0x40, 1, 0x0040, 0x0000, 0, NULL);
@@ -659,14 +671,14 @@ static int gl860_guess_sensor(struct gspca_dev *gspca_dev,
 			ctrl_out(gspca_dev, 0x40, 1, 0x7a00, 0x8030, 0, NULL);
 			msleep(10);
 			ctrl_in(gspca_dev, 0xc0, 2, 0x7a00, 0x8030, 1, &probe);
-			gspca_dbg(gspca_dev, D_PROBE, "probe=0x%02x\n", probe);
+			PDEBUG(D_PROBE, "probe=0x%02x", probe);
 			if (probe == 0xff)
 				nOV++;
 		}
 
 		if (nOV) {
-			gspca_dbg(gspca_dev, D_PROBE, "0xff -> OVXXXX\n");
-			gspca_dbg(gspca_dev, D_PROBE, "probing for sensor OV2640 or OV9655");
+			PDEBUG(D_PROBE, "0xff -> OVXXXX");
+			PDEBUG(D_PROBE, "probing for sensor OV2640 or OV9655");
 
 			nb26 = nb96 = 0;
 			for (ntry = 0; ntry < 4; ntry++) {
@@ -682,23 +694,22 @@ static int gl860_guess_sensor(struct gspca_dev *gspca_dev,
 						1, &probe);
 
 				if (probe == 0x26 || probe == 0x40) {
-					gspca_dbg(gspca_dev, D_PROBE,
-						  "probe=0x%02x -> OV2640\n",
-						  probe);
+					PDEBUG(D_PROBE,
+						"probe=0x%02x -> OV2640",
+						probe);
 					sd->sensor = ID_OV2640;
 					nb26 += 4;
 					break;
 				}
 				if (probe == 0x96 || probe == 0x55) {
-					gspca_dbg(gspca_dev, D_PROBE,
-						  "probe=0x%02x -> OV9655\n",
-						  probe);
+					PDEBUG(D_PROBE,
+						"probe=0x%02x -> OV9655",
+						probe);
 					sd->sensor = ID_OV9655;
 					nb96 += 4;
 					break;
 				}
-				gspca_dbg(gspca_dev, D_PROBE, "probe=0x%02x\n",
-					  probe);
+				PDEBUG(D_PROBE, "probe=0x%02x", probe);
 				if (probe == 0x00)
 					nb26++;
 				if (probe == 0xff)
@@ -708,21 +719,21 @@ static int gl860_guess_sensor(struct gspca_dev *gspca_dev,
 			if (nb26 < 4 && nb96 < 4)
 				return -1;
 		} else {
-			gspca_dbg(gspca_dev, D_PROBE, "Not any 0xff -> MI2020\n");
+			PDEBUG(D_PROBE, "Not any 0xff -> MI2020");
 			sd->sensor = ID_MI2020;
 		}
 	}
 
 	if (_MI1320_) {
-		gspca_dbg(gspca_dev, D_PROBE, "05e3:f191 sensor MI1320 (1.3M)\n");
+		PDEBUG(D_PROBE, "05e3:f191 sensor MI1320 (1.3M)");
 	} else if (_MI2020_) {
-		gspca_dbg(gspca_dev, D_PROBE, "05e3:0503 sensor MI2020 (2.0M)\n");
+		PDEBUG(D_PROBE, "05e3:0503 sensor MI2020 (2.0M)");
 	} else if (_OV9655_) {
-		gspca_dbg(gspca_dev, D_PROBE, "05e3:0503 sensor OV9655 (1.3M)\n");
+		PDEBUG(D_PROBE, "05e3:0503 sensor OV9655 (1.3M)");
 	} else if (_OV2640_) {
-		gspca_dbg(gspca_dev, D_PROBE, "05e3:0503 sensor OV2640 (2.0M)\n");
+		PDEBUG(D_PROBE, "05e3:0503 sensor OV2640 (2.0M)");
 	} else {
-		gspca_dbg(gspca_dev, D_PROBE, "***** Unknown sensor *****\n");
+		PDEBUG(D_PROBE, "***** Unknown sensor *****");
 		return -1;
 	}
 

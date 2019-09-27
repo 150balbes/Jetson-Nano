@@ -1,6 +1,7 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * (C) 2002 - 2003 Dominik Brodowski <linux@brodo.de>
+ *
+ *  Licensed under the terms of the GNU GPL License version 2.
  *
  *  Library for common functions for Intel SpeedStep v.1 and v.2 support
  *
@@ -34,7 +35,7 @@ static int relaxed_check;
 static unsigned int pentium3_get_frequency(enum speedstep_processor processor)
 {
 	/* See table 14 of p3_ds.pdf and table 22 of 29834003.pdf */
-	static const struct {
+	struct {
 		unsigned int ratio;	/* Frequency Multiplier (x10) */
 		u8 bitmap;		/* power on configuration bits
 					[27, 25:22] (in MSR 0x2a) */
@@ -57,7 +58,7 @@ static unsigned int pentium3_get_frequency(enum speedstep_processor processor)
 	};
 
 	/* PIII(-M) FSB settings: see table b1-b of 24547206.pdf */
-	static const struct {
+	struct {
 		unsigned int value;	/* Front Side Bus speed in MHz */
 		u8 bitmap;		/* power on configuration bits [18: 19]
 					(in MSR 0x2a) */
@@ -251,7 +252,7 @@ EXPORT_SYMBOL_GPL(speedstep_get_frequency);
  *********************************************************************/
 
 /* Keep in sync with the x86_cpu_id tables in the different modules */
-enum speedstep_processor speedstep_detect_processor(void)
+unsigned int speedstep_detect_processor(void)
 {
 	struct cpuinfo_x86 *c = &cpu_data(0);
 	u32 ebx, msr_lo, msr_hi;
@@ -366,7 +367,7 @@ enum speedstep_processor speedstep_detect_processor(void)
 			} else
 				return SPEEDSTEP_CPU_PIII_C;
 		}
-		/* fall through */
+
 	default:
 		return 0;
 	}

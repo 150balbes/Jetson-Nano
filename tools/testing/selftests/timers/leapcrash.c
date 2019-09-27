@@ -22,7 +22,20 @@
 #include <sys/timex.h>
 #include <string.h>
 #include <signal.h>
+#ifdef KTEST
 #include "../kselftest.h"
+#else
+static inline int ksft_exit_pass(void)
+{
+	exit(0);
+}
+static inline int ksft_exit_fail(void)
+{
+	exit(1);
+}
+#endif
+
+
 
 /* clear NTP time_status & time_state */
 int clear_time_state(void)
@@ -101,7 +114,6 @@ int main(void)
 		}
 		clear_time_state();
 		printf(".");
-		fflush(stdout);
 	}
 	printf("[OK]\n");
 	return ksft_exit_pass();

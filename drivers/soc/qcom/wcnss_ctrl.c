@@ -1,15 +1,23 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2016, Linaro Ltd.
  * Copyright (c) 2015, Sony Mobile Communications Inc.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 and
+ * only version 2 as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
  */
 #include <linux/firmware.h>
 #include <linux/module.h>
 #include <linux/slab.h>
+#include <linux/soc/qcom/smd.h>
 #include <linux/io.h>
 #include <linux/of_platform.h>
 #include <linux/platform_device.h>
-#include <linux/rpmsg.h>
 #include <linux/soc/qcom/wcnss_ctrl.h>
 
 #define WCNSS_REQUEST_TIMEOUT	(5 * HZ)
@@ -32,7 +40,7 @@
  */
 struct wcnss_ctrl {
 	struct device *dev;
-	struct rpmsg_endpoint *channel;
+	struct qcom_smd_channel *channel;
 
 	struct completion ack;
 	struct completion cbc;
@@ -114,13 +122,11 @@ struct wcnss_download_nv_resp {
  *
  * Handles any incoming packets from the remote WCNSS_CTRL service.
  */
-static int wcnss_ctrl_smd_callback(struct rpmsg_device *rpdev,
-				   void *data,
-				   int count,
-				   void *priv,
-				   u32 addr)
+static int wcnss_ctrl_smd_callback(struct qcom_smd_channel *channel,
+				   const void *data,
+				   size_t count)
 {
-	struct wcnss_ctrl *wcnss = dev_get_drvdata(&rpdev->dev);
+	struct wcnss_ctrl *wcnss = qcom_smd_get_drvdata(channel);
 	const struct wcnss_download_nv_resp *nvresp;
 	const struct wcnss_version_resp *version;
 	const struct wcnss_msg_hdr *hdr = data;
@@ -174,7 +180,7 @@ static int wcnss_request_version(struct wcnss_ctrl *wcnss)
 
 	msg.type = WCNSS_VERSION_REQ;
 	msg.len = sizeof(msg);
-	ret = rpmsg_send(wcnss->channel, &msg, sizeof(msg));
+	ret = qcom_smd_send(wcnss->channel, &msg, sizeof(msg));
 	if (ret < 0)
 		return ret;
 
@@ -232,7 +238,7 @@ static int wcnss_download_nv(struct wcnss_ctrl *wcnss, bool *expect_cbc)
 
 		memcpy(req->fragment, data, req->frag_size);
 
-		ret = rpmsg_send(wcnss->channel, req, req->hdr.len);
+		ret = qcom_smd_send(wcnss->channel, req, req->hdr.len);
 		if (ret < 0) {
 			dev_err(wcnss->dev, "failed to send smd packet\n");
 			goto release_fw;
@@ -268,16 +274,11 @@ free_req:
  * @name:	SMD channel name
  * @cb:		callback to handle incoming data on the channel
  */
-struct rpmsg_endpoint *qcom_wcnss_open_channel(void *wcnss, const char *name, rpmsg_rx_cb_t cb, void *priv)
+struct qcom_smd_channel *qcom_wcnss_open_channel(void *wcnss, const char *name, qcom_smd_cb_t cb)
 {
-	struct rpmsg_channel_info chinfo;
 	struct wcnss_ctrl *_wcnss = wcnss;
 
-	strscpy(chinfo.name, name, sizeof(chinfo.name));
-	chinfo.src = RPMSG_ADDR_ANY;
-	chinfo.dst = RPMSG_ADDR_ANY;
-
-	return rpmsg_create_ept(_wcnss->channel->rpdev, cb, priv, chinfo);
+	return qcom_smd_open_channel(_wcnss->channel, name, cb);
 }
 EXPORT_SYMBOL(qcom_wcnss_open_channel);
 
@@ -305,54 +306,54 @@ static void wcnss_async_probe(struct work_struct *work)
 	of_platform_populate(wcnss->dev->of_node, NULL, NULL, wcnss->dev);
 }
 
-static int wcnss_ctrl_probe(struct rpmsg_device *rpdev)
+static int wcnss_ctrl_probe(struct qcom_smd_device *sdev)
 {
 	struct wcnss_ctrl *wcnss;
 
-	wcnss = devm_kzalloc(&rpdev->dev, sizeof(*wcnss), GFP_KERNEL);
+	wcnss = devm_kzalloc(&sdev->dev, sizeof(*wcnss), GFP_KERNEL);
 	if (!wcnss)
 		return -ENOMEM;
 
-	wcnss->dev = &rpdev->dev;
-	wcnss->channel = rpdev->ept;
+	wcnss->dev = &sdev->dev;
+	wcnss->channel = sdev->channel;
 
 	init_completion(&wcnss->ack);
 	init_completion(&wcnss->cbc);
 	INIT_WORK(&wcnss->probe_work, wcnss_async_probe);
 
-	dev_set_drvdata(&rpdev->dev, wcnss);
+	qcom_smd_set_drvdata(sdev->channel, wcnss);
+	dev_set_drvdata(&sdev->dev, wcnss);
 
 	schedule_work(&wcnss->probe_work);
 
 	return 0;
 }
 
-static void wcnss_ctrl_remove(struct rpmsg_device *rpdev)
+static void wcnss_ctrl_remove(struct qcom_smd_device *sdev)
 {
-	struct wcnss_ctrl *wcnss = dev_get_drvdata(&rpdev->dev);
+	struct wcnss_ctrl *wcnss = qcom_smd_get_drvdata(sdev->channel);
 
 	cancel_work_sync(&wcnss->probe_work);
-	of_platform_depopulate(&rpdev->dev);
+	of_platform_depopulate(&sdev->dev);
 }
 
 static const struct of_device_id wcnss_ctrl_of_match[] = {
 	{ .compatible = "qcom,wcnss", },
 	{}
 };
-MODULE_DEVICE_TABLE(of, wcnss_ctrl_of_match);
 
-static struct rpmsg_driver wcnss_ctrl_driver = {
+static struct qcom_smd_driver wcnss_ctrl_driver = {
 	.probe = wcnss_ctrl_probe,
 	.remove = wcnss_ctrl_remove,
 	.callback = wcnss_ctrl_smd_callback,
-	.drv  = {
+	.driver  = {
 		.name  = "qcom_wcnss_ctrl",
 		.owner = THIS_MODULE,
 		.of_match_table = wcnss_ctrl_of_match,
 	},
 };
 
-module_rpmsg_driver(wcnss_ctrl_driver);
+module_qcom_smd_driver(wcnss_ctrl_driver);
 
 MODULE_DESCRIPTION("Qualcomm WCNSS control driver");
 MODULE_LICENSE("GPL v2");

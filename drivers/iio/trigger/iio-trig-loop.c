@@ -1,6 +1,7 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright 2016 Jonathan Cameron <jic23@kernel.org>
+ *
+ * Licensed under the GPL-2.
  *
  * Based on a mashup of the hrtimer trigger and continuous sampling proposal of
  * Gregor Boirie <gregor.boirie@parrot.com>
@@ -35,7 +36,7 @@ struct iio_loop_info {
 	struct task_struct *task;
 };
 
-static const struct config_item_type iio_loop_type = {
+static struct config_item_type iio_loop_type = {
 	.ct_owner = THIS_MODULE,
 };
 
@@ -59,7 +60,7 @@ static int iio_loop_trigger_set_state(struct iio_trigger *trig, bool state)
 	if (state) {
 		loop_trig->task = kthread_run(iio_loop_thread,
 					      trig, trig->name);
-		if (IS_ERR(loop_trig->task)) {
+		if (unlikely(IS_ERR(loop_trig->task))) {
 			dev_err(&trig->dev,
 				"failed to create trigger loop thread\n");
 			return PTR_ERR(loop_trig->task);
@@ -73,6 +74,7 @@ static int iio_loop_trigger_set_state(struct iio_trigger *trig, bool state)
 
 static const struct iio_trigger_ops iio_loop_trigger_ops = {
 	.set_trigger_state = iio_loop_trigger_set_state,
+	.owner = THIS_MODULE,
 };
 
 static struct iio_sw_trigger *iio_trig_loop_probe(const char *name)

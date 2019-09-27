@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * acpi_processor.c - ACPI processor enumeration support
  *
@@ -8,6 +7,10 @@
  * Copyright (C) 2004  Anil S Keshavamurthy <anil.s.keshavamurthy@intel.com>
  * Copyright (C) 2013, Intel Corporation
  *                     Rafael J. Wysocki <rafael.j.wysocki@intel.com>
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License version 2 as published
+ * by the Free Software Foundation.
  */
 
 #include <linux/acpi.h>
@@ -79,7 +82,6 @@ static int acpi_processor_errata_piix4(struct pci_dev *dev)
 		 * PIIX4 models.
 		 */
 		errata.piix4.throttle = 1;
-		/* fall through*/
 
 	case 2:		/* PIIX4E */
 	case 3:		/* PIIX4M */
@@ -163,7 +165,7 @@ static int acpi_processor_errata(void)
 
 #ifdef CONFIG_ACPI_HOTPLUG_CPU
 int __weak acpi_map_cpu(acpi_handle handle,
-		phys_cpuid_t physid, u32 acpi_id, int *pcpu)
+		phys_cpuid_t physid, int *pcpu)
 {
 	return -ENODEV;
 }
@@ -196,7 +198,7 @@ static int acpi_processor_hotadd_init(struct acpi_processor *pr)
 	cpu_maps_update_begin();
 	cpu_hotplug_begin();
 
-	ret = acpi_map_cpu(pr->handle, pr->phys_id, pr->acpi_id, &pr->id);
+	ret = acpi_map_cpu(pr->handle, pr->phys_id, &pr->id);
 	if (ret)
 		goto out;
 
@@ -276,13 +278,6 @@ static int acpi_processor_get_info(struct acpi_device *device)
 		}
 		device_declaration = 1;
 		pr->acpi_id = value;
-	}
-
-	if (acpi_duplicate_processor_id(pr->acpi_id)) {
-		dev_err(&device->dev,
-			"Failed to get unique processor _UID (0x%x)\n",
-			pr->acpi_id);
-		return -ENODEV;
 	}
 
 	pr->phys_id = acpi_get_phys_id(pr->handle, device_declaration,
@@ -385,6 +380,11 @@ static int acpi_processor_add(struct acpi_device *device,
 	result = acpi_processor_get_info(device);
 	if (result) /* Processor is not physically present or unavailable */
 		return 0;
+
+#ifdef CONFIG_SMP
+	if (pr->id >= setup_max_cpus && pr->id != 0)
+		return 0;
+#endif
 
 	BUG_ON(pr->id >= nr_cpu_ids);
 
@@ -580,7 +580,7 @@ static struct acpi_scan_handler processor_container_handler = {
 static int nr_unique_ids __initdata;
 
 /* The number of the duplicate processor IDs */
-static int nr_duplicate_ids;
+static int nr_duplicate_ids __initdata;
 
 /* Used to store the unique processor IDs */
 static int unique_processor_ids[] __initdata = {
@@ -588,7 +588,7 @@ static int unique_processor_ids[] __initdata = {
 };
 
 /* Used to store the duplicate processor IDs */
-static int duplicate_processor_ids[] = {
+static int duplicate_processor_ids[] __initdata = {
 	[0 ... NR_CPUS - 1] = -1,
 };
 
@@ -633,54 +633,28 @@ static acpi_status __init acpi_processor_ids_walk(acpi_handle handle,
 						  void **rv)
 {
 	acpi_status status;
-	acpi_object_type acpi_type;
-	unsigned long long uid;
 	union acpi_object object = { 0 };
 	struct acpi_buffer buffer = { sizeof(union acpi_object), &object };
 
-	status = acpi_get_type(handle, &acpi_type);
+	status = acpi_evaluate_object(handle, NULL, NULL, &buffer);
 	if (ACPI_FAILURE(status))
-		return status;
+		acpi_handle_info(handle, "Not get the processor object\n");
+	else
+		processor_validated_ids_update(object.processor.proc_id);
 
-	switch (acpi_type) {
-	case ACPI_TYPE_PROCESSOR:
-		status = acpi_evaluate_object(handle, NULL, NULL, &buffer);
-		if (ACPI_FAILURE(status))
-			goto err;
-		uid = object.processor.proc_id;
-		break;
-
-	case ACPI_TYPE_DEVICE:
-		status = acpi_evaluate_integer(handle, "_UID", NULL, &uid);
-		if (ACPI_FAILURE(status))
-			goto err;
-		break;
-	default:
-		goto err;
-	}
-
-	processor_validated_ids_update(uid);
 	return AE_OK;
-
-err:
-	/* Exit on error, but don't abort the namespace walk */
-	acpi_handle_info(handle, "Invalid processor object\n");
-	return AE_OK;
-
 }
 
 static void __init acpi_processor_check_duplicates(void)
 {
-	/* check the correctness for all processors in ACPI namespace */
+	/* Search all processor nodes in ACPI namespace */
 	acpi_walk_namespace(ACPI_TYPE_PROCESSOR, ACPI_ROOT_OBJECT,
 						ACPI_UINT32_MAX,
 						acpi_processor_ids_walk,
 						NULL, NULL, NULL);
-	acpi_get_devices(ACPI_PROCESSOR_DEVICE_HID, acpi_processor_ids_walk,
-						NULL, NULL);
 }
 
-bool acpi_duplicate_processor_id(int proc_id)
+bool __init acpi_processor_validate_proc_id(int proc_id)
 {
 	int i;
 

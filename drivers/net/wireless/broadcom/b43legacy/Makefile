@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0
 # b43legacy core
 b43legacy-y				+= main.o
 b43legacy-y				+= ilt.o

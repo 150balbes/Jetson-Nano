@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0-only
 config USB_STV06XX
 	tristate "STV06XX USB Camera Driver"
 	depends on USB_GSPCA

@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * Optmized version of the ip_fast_csum() function
  * Used for calculating IP header checksum

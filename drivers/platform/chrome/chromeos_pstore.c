@@ -1,7 +1,12 @@
-// SPDX-License-Identifier: GPL-2.0
-// Driver to instantiate Chromebook ramoops device.
-//
-// Copyright (C) 2013 Google, Inc.
+/*
+ *  chromeos_pstore.c - Driver to instantiate Chromebook ramoops device
+ *
+ *  Copyright (C) 2013 Google, Inc.
+ *
+ *  This program is free software; you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License as published by
+ *  the Free Software Foundation, version 2 of the License.
+ */
 
 #include <linux/acpi.h>
 #include <linux/dmi.h>
@@ -9,7 +14,7 @@
 #include <linux/platform_device.h>
 #include <linux/pstore_ram.h>
 
-static const struct dmi_system_id chromeos_pstore_dmi_table[] __initconst = {
+static struct dmi_system_id chromeos_pstore_dmi_table[] __initdata = {
 	{
 		/*
 		 * Today all Chromebooks/boxes ship with Google_* as version and
@@ -133,5 +138,5 @@ static void __exit chromeos_pstore_exit(void)
 module_init(chromeos_pstore_init);
 module_exit(chromeos_pstore_exit);
 
-MODULE_DESCRIPTION("ChromeOS pstore module");
-MODULE_LICENSE("GPL v2");
+MODULE_DESCRIPTION("Chrome OS pstore module");
+MODULE_LICENSE("GPL");

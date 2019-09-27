@@ -1,9 +1,10 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * SD/MMC Greybus driver.
  *
  * Copyright 2014-2015 Google Inc.
  * Copyright 2014-2015 Linaro Ltd.
+ *
+ * Released under the GPLv2 only.
  */
 
 #include <linux/kernel.h>
@@ -51,7 +52,7 @@ struct gb_sdio_host {
 
 static inline bool single_op(struct mmc_command *cmd)
 {
-	u32 opcode = cmd->opcode;
+	uint32_t opcode = cmd->opcode;
 
 	return opcode == MMC_WRITE_BLOCK ||
 	       opcode == MMC_READ_SINGLE_BLOCK;
@@ -190,8 +191,9 @@ static int _gb_sdio_process_events(struct gb_sdio_host *host, u8 event)
 		state_changed = 1;
 	}
 
-	if (event & GB_SDIO_WP)
+	if (event & GB_SDIO_WP) {
 		host->read_only = true;
+	}
 
 	if (state_changed) {
 		dev_info(mmc_dev(host->mmc), "card %s now event\n",
@@ -275,7 +277,7 @@ static int _gb_sdio_send(struct gb_sdio_host *host, struct mmc_data *data,
 		return -ENOMEM;
 
 	request = operation->request->payload;
-	request->data_flags = data->flags >> 8;
+	request->data_flags = (data->flags >> 8);
 	request->data_blocks = cpu_to_le16(nblocks);
 	request->data_blksz = cpu_to_le16(data->blksz);
 
@@ -329,7 +331,7 @@ static int _gb_sdio_recv(struct gb_sdio_host *host, struct mmc_data *data,
 		return -ENOMEM;
 
 	request = operation->request->payload;
-	request->data_flags = data->flags >> 8;
+	request->data_flags = (data->flags >> 8);
 	request->data_blocks = cpu_to_le16(nblocks);
 	request->data_blksz = cpu_to_le16(data->blksz);
 
@@ -602,9 +604,9 @@ static void gb_mmc_set_ios(struct mmc_host *mmc, struct mmc_ios *ios)
 		vdd = 1 << (ios->vdd - GB_SDIO_VDD_SHIFT);
 	request.vdd = cpu_to_le32(vdd);
 
-	request.bus_mode = ios->bus_mode == MMC_BUSMODE_OPENDRAIN ?
+	request.bus_mode = (ios->bus_mode == MMC_BUSMODE_OPENDRAIN ?
 			    GB_SDIO_BUSMODE_OPENDRAIN :
-			    GB_SDIO_BUSMODE_PUSHPULL;
+			    GB_SDIO_BUSMODE_PUSHPULL);
 
 	switch (ios->power_mode) {
 	case MMC_POWER_OFF:

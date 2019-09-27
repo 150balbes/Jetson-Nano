@@ -14,7 +14,6 @@
 #include <linux/delay.h>
 #include <linux/module.h>
 #include <linux/of_device.h>
-#include <linux/gpio/consumer.h>
 #include <linux/pm_runtime.h>
 #include <linux/regulator/consumer.h>
 #include <sound/pcm_params.h>
@@ -46,8 +45,6 @@ struct cs42xx8_priv {
 	bool slave_mode;
 	unsigned long sysclk;
 	u32 tx_channels;
-	struct gpio_desc *gpiod_reset;
-	u32 rate[2];
 };
 
 /* -127.5dB to 0dB with step of 0.5dB */
@@ -177,34 +174,28 @@ static const struct snd_soc_dapm_route cs42xx8_adc3_dapm_routes[] = {
 };
 
 struct cs42xx8_ratios {
-	unsigned int mfreq;
-	unsigned int min_mclk;
-	unsigned int max_mclk;
-	unsigned int ratio[3];
+	unsigned int ratio;
+	unsigned char speed;
+	unsigned char mclk;
 };
 
-/*
- * According to reference mannual, define the cs42xx8_ratio struct
- * MFreq2 | MFreq1 | MFreq0 |     Description     | SSM | DSM | QSM |
- * 0      | 0      | 0      |1.029MHz to 12.8MHz  | 256 | 128 |  64 |
- * 0      | 0      | 1      |1.536MHz to 19.2MHz  | 384 | 192 |  96 |
- * 0      | 1      | 0      |2.048MHz to 25.6MHz  | 512 | 256 | 128 |
- * 0      | 1      | 1      |3.072MHz to 38.4MHz  | 768 | 384 | 192 |
- * 1      | x      | x      |4.096MHz to 51.2MHz  |1024 | 512 | 256 |
- */
 static const struct cs42xx8_ratios cs42xx8_ratios[] = {
-	{ 0, 1029000, 12800000, {256, 128, 64} },
-	{ 2, 1536000, 19200000, {384, 192, 96} },
-	{ 4, 2048000, 25600000, {512, 256, 128} },
-	{ 6, 3072000, 38400000, {768, 384, 192} },
-	{ 8, 4096000, 51200000, {1024, 512, 256} },
+	{ 64, CS42XX8_FM_QUAD, CS42XX8_FUNCMOD_MFREQ_256(4) },
+	{ 96, CS42XX8_FM_QUAD, CS42XX8_FUNCMOD_MFREQ_384(4) },
+	{ 128, CS42XX8_FM_QUAD, CS42XX8_FUNCMOD_MFREQ_512(4) },
+	{ 192, CS42XX8_FM_QUAD, CS42XX8_FUNCMOD_MFREQ_768(4) },
+	{ 256, CS42XX8_FM_SINGLE, CS42XX8_FUNCMOD_MFREQ_256(1) },
+	{ 384, CS42XX8_FM_SINGLE, CS42XX8_FUNCMOD_MFREQ_384(1) },
+	{ 512, CS42XX8_FM_SINGLE, CS42XX8_FUNCMOD_MFREQ_512(1) },
+	{ 768, CS42XX8_FM_SINGLE, CS42XX8_FUNCMOD_MFREQ_768(1) },
+	{ 1024, CS42XX8_FM_SINGLE, CS42XX8_FUNCMOD_MFREQ_1024(1) }
 };
 
 static int cs42xx8_set_dai_sysclk(struct snd_soc_dai *codec_dai,
 				  int clk_id, unsigned int freq, int dir)
 {
-	struct snd_soc_component *component = codec_dai->component;
-	struct cs42xx8_priv *cs42xx8 = snd_soc_component_get_drvdata(component);
+	struct snd_soc_codec *codec = codec_dai->codec;
+	struct cs42xx8_priv *cs42xx8 = snd_soc_codec_get_drvdata(codec);
 
 	cs42xx8->sysclk = freq;
 
@@ -214,8 +205,8 @@ static int cs42xx8_set_dai_sysclk(struct snd_soc_dai *codec_dai,
 static int cs42xx8_set_dai_fmt(struct snd_soc_dai *codec_dai,
 			       unsigned int format)
 {
-	struct snd_soc_component *component = codec_dai->component;
-	struct cs42xx8_priv *cs42xx8 = snd_soc_component_get_drvdata(component);
+	struct snd_soc_codec *codec = codec_dai->codec;
+	struct cs42xx8_priv *cs42xx8 = snd_soc_codec_get_drvdata(codec);
 	u32 val;
 
 	/* Set DAI format */
@@ -233,7 +224,7 @@ static int cs42xx8_set_dai_fmt(struct snd_soc_dai *codec_dai,
 		val = CS42XX8_INTF_DAC_DIF_TDM | CS42XX8_INTF_ADC_DIF_TDM;
 		break;
 	default:
-		dev_err(component->dev, "unsupported dai format\n");
+		dev_err(codec->dev, "unsupported dai format\n");
 		return -EINVAL;
 	}
 
@@ -250,7 +241,7 @@ static int cs42xx8_set_dai_fmt(struct snd_soc_dai *codec_dai,
 		cs42xx8->slave_mode = false;
 		break;
 	default:
-		dev_err(component->dev, "unsupported master/slave mode\n");
+		dev_err(codec->dev, "unsupported master/slave mode\n");
 		return -EINVAL;
 	}
 
@@ -261,111 +252,41 @@ static int cs42xx8_hw_params(struct snd_pcm_substream *substream,
 			     struct snd_pcm_hw_params *params,
 			     struct snd_soc_dai *dai)
 {
-	struct snd_soc_component *component = dai->component;
-	struct cs42xx8_priv *cs42xx8 = snd_soc_component_get_drvdata(component);
+	struct snd_soc_codec *codec = dai->codec;
+	struct cs42xx8_priv *cs42xx8 = snd_soc_codec_get_drvdata(codec);
 	bool tx = substream->stream == SNDRV_PCM_STREAM_PLAYBACK;
-	u32 ratio[2];
-	u32 rate[2];
-	u32 fm[2];
-	u32 i, val, mask;
-	bool condition1, condition2;
+	u32 ratio = cs42xx8->sysclk / params_rate(params);
+	u32 i, fm, val, mask;
 
 	if (tx)
 		cs42xx8->tx_channels = params_channels(params);
 
-	rate[tx]  = params_rate(params);
-	rate[!tx] = cs42xx8->rate[!tx];
-
-	ratio[tx] = rate[tx] > 0 ? cs42xx8->sysclk / rate[tx] : 0;
-	ratio[!tx] = rate[!tx] > 0 ? cs42xx8->sysclk / rate[!tx] : 0;
-
-	/* Get functional mode for tx and rx according to rate */
-	for (i = 0; i < 2; i++) {
-		if (cs42xx8->slave_mode) {
-			fm[i] = CS42XX8_FM_AUTO;
-		} else {
-			if (rate[i] < 50000) {
-				fm[i] = CS42XX8_FM_SINGLE;
-			} else if (rate[i] > 50000 && rate[i] < 100000) {
-				fm[i] = CS42XX8_FM_DOUBLE;
-			} else if (rate[i] > 100000 && rate[i] < 200000) {
-				fm[i] = CS42XX8_FM_QUAD;
-			} else {
-				dev_err(component->dev,
-					"unsupported sample rate\n");
-				return -EINVAL;
-			}
-		}
-	}
-
 	for (i = 0; i < ARRAY_SIZE(cs42xx8_ratios); i++) {
-		/* Is the ratio[tx] valid ? */
-		condition1 = ((fm[tx] == CS42XX8_FM_AUTO) ?
-			(cs42xx8_ratios[i].ratio[0] == ratio[tx] ||
-			cs42xx8_ratios[i].ratio[1] == ratio[tx] ||
-			cs42xx8_ratios[i].ratio[2] == ratio[tx]) :
-			(cs42xx8_ratios[i].ratio[fm[tx]] == ratio[tx])) &&
-			cs42xx8->sysclk >= cs42xx8_ratios[i].min_mclk &&
-			cs42xx8->sysclk <= cs42xx8_ratios[i].max_mclk;
-
-		if (!ratio[tx])
-			condition1 = true;
-
-		/* Is the ratio[!tx] valid ? */
-		condition2 = ((fm[!tx] == CS42XX8_FM_AUTO) ?
-			(cs42xx8_ratios[i].ratio[0] == ratio[!tx] ||
-			cs42xx8_ratios[i].ratio[1] == ratio[!tx] ||
-			cs42xx8_ratios[i].ratio[2] == ratio[!tx]) :
-			(cs42xx8_ratios[i].ratio[fm[!tx]] == ratio[!tx]));
-
-		if (!ratio[!tx])
-			condition2 = true;
-
-		/*
-		 * Both ratio[tx] and ratio[!tx] is valid, then we get
-		 * a proper MFreq.
-		 */
-		if (condition1 && condition2)
+		if (cs42xx8_ratios[i].ratio == ratio)
 			break;
 	}
 
 	if (i == ARRAY_SIZE(cs42xx8_ratios)) {
-		dev_err(component->dev, "unsupported sysclk ratio\n");
+		dev_err(codec->dev, "unsupported sysclk ratio\n");
 		return -EINVAL;
 	}
 
-	cs42xx8->rate[tx] = params_rate(params);
-
 	mask = CS42XX8_FUNCMOD_MFREQ_MASK;
-	val = cs42xx8_ratios[i].mfreq;
+	val = cs42xx8_ratios[i].mclk;
+
+	fm = cs42xx8->slave_mode ? CS42XX8_FM_AUTO : cs42xx8_ratios[i].speed;
 
 	regmap_update_bits(cs42xx8->regmap, CS42XX8_FUNCMOD,
 			   CS42XX8_FUNCMOD_xC_FM_MASK(tx) | mask,
-			   CS42XX8_FUNCMOD_xC_FM(tx, fm[tx]) | val);
+			   CS42XX8_FUNCMOD_xC_FM(tx, fm) | val);
 
-	return 0;
-}
-
-static int cs42xx8_hw_free(struct snd_pcm_substream *substream,
-			   struct snd_soc_dai *dai)
-{
-	struct snd_soc_component *component = dai->component;
-	struct cs42xx8_priv *cs42xx8 = snd_soc_component_get_drvdata(component);
-	bool tx = substream->stream == SNDRV_PCM_STREAM_PLAYBACK;
-
-	/* Clear stored rate */
-	cs42xx8->rate[tx] = 0;
-
-	regmap_update_bits(cs42xx8->regmap, CS42XX8_FUNCMOD,
-			   CS42XX8_FUNCMOD_xC_FM_MASK(tx),
-			   CS42XX8_FUNCMOD_xC_FM(tx, CS42XX8_FM_AUTO));
 	return 0;
 }
 
 static int cs42xx8_digital_mute(struct snd_soc_dai *dai, int mute)
 {
-	struct snd_soc_component *component = dai->component;
-	struct cs42xx8_priv *cs42xx8 = snd_soc_component_get_drvdata(component);
+	struct snd_soc_codec *codec = dai->codec;
+	struct cs42xx8_priv *cs42xx8 = snd_soc_codec_get_drvdata(codec);
 	u8 dac_unmute = cs42xx8->tx_channels ?
 		        ~((0x1 << cs42xx8->tx_channels) - 1) : 0;
 
@@ -379,7 +300,6 @@ static const struct snd_soc_dai_ops cs42xx8_dai_ops = {
 	.set_fmt	= cs42xx8_set_dai_fmt,
 	.set_sysclk	= cs42xx8_set_dai_sysclk,
 	.hw_params	= cs42xx8_hw_params,
-	.hw_free	= cs42xx8_hw_free,
 	.digital_mute	= cs42xx8_digital_mute,
 };
 
@@ -401,6 +321,7 @@ static struct snd_soc_dai_driver cs42xx8_dai = {
 };
 
 static const struct reg_default cs42xx8_reg[] = {
+	{ 0x01, 0x01 },   /* Chip I.D. and Revision Register */
 	{ 0x02, 0x00 },   /* Power Control */
 	{ 0x03, 0xF0 },   /* Functional Mode */
 	{ 0x04, 0x46 },   /* Interface Formats */
@@ -462,14 +383,14 @@ const struct regmap_config cs42xx8_regmap_config = {
 };
 EXPORT_SYMBOL_GPL(cs42xx8_regmap_config);
 
-static int cs42xx8_component_probe(struct snd_soc_component *component)
+static int cs42xx8_codec_probe(struct snd_soc_codec *codec)
 {
-	struct cs42xx8_priv *cs42xx8 = snd_soc_component_get_drvdata(component);
-	struct snd_soc_dapm_context *dapm = snd_soc_component_get_dapm(component);
+	struct cs42xx8_priv *cs42xx8 = snd_soc_codec_get_drvdata(codec);
+	struct snd_soc_dapm_context *dapm = snd_soc_codec_get_dapm(codec);
 
 	switch (cs42xx8->drvdata->num_adcs) {
 	case 3:
-		snd_soc_add_component_controls(component, cs42xx8_adc3_snd_controls,
+		snd_soc_add_codec_controls(codec, cs42xx8_adc3_snd_controls,
 					ARRAY_SIZE(cs42xx8_adc3_snd_controls));
 		snd_soc_dapm_new_controls(dapm, cs42xx8_adc3_dapm_widgets,
 					ARRAY_SIZE(cs42xx8_adc3_dapm_widgets));
@@ -486,17 +407,18 @@ static int cs42xx8_component_probe(struct snd_soc_component *component)
 	return 0;
 }
 
-static const struct snd_soc_component_driver cs42xx8_driver = {
-	.probe			= cs42xx8_component_probe,
-	.controls		= cs42xx8_snd_controls,
-	.num_controls		= ARRAY_SIZE(cs42xx8_snd_controls),
-	.dapm_widgets		= cs42xx8_dapm_widgets,
-	.num_dapm_widgets	= ARRAY_SIZE(cs42xx8_dapm_widgets),
-	.dapm_routes		= cs42xx8_dapm_routes,
-	.num_dapm_routes	= ARRAY_SIZE(cs42xx8_dapm_routes),
-	.use_pmdown_time	= 1,
-	.endianness		= 1,
-	.non_legacy_dai_naming	= 1,
+static const struct snd_soc_codec_driver cs42xx8_driver = {
+	.probe = cs42xx8_codec_probe,
+	.idle_bias_off = true,
+
+	.component_driver = {
+		.controls		= cs42xx8_snd_controls,
+		.num_controls		= ARRAY_SIZE(cs42xx8_snd_controls),
+		.dapm_widgets		= cs42xx8_dapm_widgets,
+		.num_dapm_widgets	= ARRAY_SIZE(cs42xx8_dapm_widgets),
+		.dapm_routes		= cs42xx8_dapm_routes,
+		.num_dapm_routes	= ARRAY_SIZE(cs42xx8_dapm_routes),
+	},
 };
 
 const struct cs42xx8_driver_data cs42448_data = {
@@ -547,13 +469,6 @@ int cs42xx8_probe(struct device *dev, struct regmap *regmap)
 		return -EINVAL;
 	}
 
-	cs42xx8->gpiod_reset = devm_gpiod_get_optional(dev, "reset",
-							GPIOD_OUT_HIGH);
-	if (IS_ERR(cs42xx8->gpiod_reset))
-		return PTR_ERR(cs42xx8->gpiod_reset);
-
-	gpiod_set_value_cansleep(cs42xx8->gpiod_reset, 0);
-
 	cs42xx8->clk = devm_clk_get(dev, "mclk");
 	if (IS_ERR(cs42xx8->clk)) {
 		dev_err(dev, "failed to get the clock: %ld\n",
@@ -583,6 +498,13 @@ int cs42xx8_probe(struct device *dev, struct regmap *regmap)
 	/* Make sure hardware reset done */
 	msleep(5);
 
+	/*
+	 * We haven't marked the chip revision as volatile due to
+	 * sharing a register with the right input volume; explicitly
+	 * bypass the cache to read it.
+	 */
+	regcache_cache_bypass(cs42xx8->regmap, true);
+
 	/* Validate the chip ID */
 	ret = regmap_read(cs42xx8->regmap, CS42XX8_CHIPID, &val);
 	if (ret < 0) {
@@ -601,14 +523,16 @@ int cs42xx8_probe(struct device *dev, struct regmap *regmap)
 	dev_info(dev, "found device, revision %X\n",
 			val & CS42XX8_CHIPID_REV_ID_MASK);
 
+	regcache_cache_bypass(cs42xx8->regmap, false);
+
 	cs42xx8_dai.name = cs42xx8->drvdata->name;
 
 	/* Each adc supports stereo input */
 	cs42xx8_dai.capture.channels_max = cs42xx8->drvdata->num_adcs * 2;
 
-	ret = devm_snd_soc_register_component(dev, &cs42xx8_driver, &cs42xx8_dai, 1);
+	ret = snd_soc_register_codec(dev, &cs42xx8_driver, &cs42xx8_dai, 1);
 	if (ret) {
-		dev_err(dev, "failed to register component:%d\n", ret);
+		dev_err(dev, "failed to register codec:%d\n", ret);
 		goto err_enable;
 	}
 
@@ -634,8 +558,6 @@ static int cs42xx8_runtime_resume(struct device *dev)
 		return ret;
 	}
 
-	gpiod_set_value_cansleep(cs42xx8->gpiod_reset, 0);
-
 	ret = regulator_bulk_enable(ARRAY_SIZE(cs42xx8->supplies),
 				    cs42xx8->supplies);
 	if (ret) {
@@ -647,7 +569,6 @@ static int cs42xx8_runtime_resume(struct device *dev)
 	msleep(5);
 
 	regcache_cache_only(cs42xx8->regmap, false);
-	regcache_mark_dirty(cs42xx8->regmap);
 
 	ret = regcache_sync(cs42xx8->regmap);
 	if (ret) {
@@ -674,8 +595,6 @@ static int cs42xx8_runtime_suspend(struct device *dev)
 
 	regulator_bulk_disable(ARRAY_SIZE(cs42xx8->supplies),
 			       cs42xx8->supplies);
-
-	gpiod_set_value_cansleep(cs42xx8->gpiod_reset, 1);
 
 	clk_disable_unprepare(cs42xx8->clk);
 

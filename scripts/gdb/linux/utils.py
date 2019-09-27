@@ -66,7 +66,6 @@ Note that TYPE and ELEMENT have to be quoted as strings."""
         return container_of(ptr, gdb.lookup_type(typename.string()).pointer(),
                             elementname.string())
 
-
 ContainerOf()
 
 
@@ -149,14 +148,14 @@ def get_gdbserver_type():
     def probe_qemu():
         try:
             return gdb.execute("monitor info version", to_string=True) != ""
-        except gdb.error:
+        except:
             return False
 
     def probe_kgdb():
         try:
             thread_info = gdb.execute("info thread 2", to_string=True)
             return "shadowCPU0" in thread_info
-        except gdb.error:
+        except:
             return False
 
     global gdbserver_type
@@ -173,7 +172,7 @@ def get_gdbserver_type():
 def gdb_eval_or_none(expresssion):
     try:
         return gdb.parse_and_eval(expresssion)
-    except gdb.error:
+    except:
         return None
 
 

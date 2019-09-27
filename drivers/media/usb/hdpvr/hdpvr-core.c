@@ -1,10 +1,14 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Hauppauge HD PVR USB driver
  *
  * Copyright (C) 2001-2004 Greg Kroah-Hartman (greg@kroah.com)
  * Copyright (C) 2008      Janne Grunau (j@jannau.net)
  * Copyright (C) 2008      John Poet
+ *
+ *	This program is free software; you can redistribute it and/or
+ *	modify it under the terms of the GNU General Public License as
+ *	published by the Free Software Foundation, version 2.
+ *
  */
 
 #include <linux/kernel.h>
@@ -37,11 +41,13 @@ MODULE_PARM_DESC(hdpvr_debug, "enable debugging output");
 
 static uint default_video_input = HDPVR_VIDEO_INPUTS;
 module_param(default_video_input, uint, S_IRUGO|S_IWUSR);
-MODULE_PARM_DESC(default_video_input, "default video input: 0=Component / 1=S-Video / 2=Composite");
+MODULE_PARM_DESC(default_video_input, "default video input: 0=Component / "
+		 "1=S-Video / 2=Composite");
 
 static uint default_audio_input = HDPVR_AUDIO_INPUTS;
 module_param(default_audio_input, uint, S_IRUGO|S_IWUSR);
-MODULE_PARM_DESC(default_audio_input, "default audio input: 0=RCA back / 1=RCA front / 2=S/PDIF");
+MODULE_PARM_DESC(default_audio_input, "default audio input: 0=RCA back / "
+		 "1=RCA front / 2=S/PDIF");
 
 static bool boost_audio;
 module_param(boost_audio, bool, S_IRUGO|S_IWUSR);
@@ -49,7 +55,7 @@ MODULE_PARM_DESC(boost_audio, "boost the audio signal");
 
 
 /* table of devices that work with this driver */
-static const struct usb_device_id hdpvr_table[] = {
+static struct usb_device_id hdpvr_table[] = {
 	{ USB_DEVICE(HD_PVR_VENDOR_ID, HD_PVR_PRODUCT_ID) },
 	{ USB_DEVICE(HD_PVR_VENDOR_ID, HD_PVR_PRODUCT_ID1) },
 	{ USB_DEVICE(HD_PVR_VENDOR_ID, HD_PVR_PRODUCT_ID2) },
@@ -159,7 +165,8 @@ static int device_authorization(struct hdpvr_device *dev)
 		dev->flags |= HDPVR_FLAG_AC3_CAP;
 		break;
 	default:
-		v4l2_info(&dev->v4l2_dev, "untested firmware, the driver might not work.\n");
+		v4l2_info(&dev->v4l2_dev, "untested firmware, the driver might"
+			  " not work.\n");
 		if (dev->fw_ver >= HDPVR_FIRMWARE_VERSION_AC3)
 			dev->flags |= HDPVR_FLAG_AC3_CAP;
 		else
@@ -360,9 +367,16 @@ static int hdpvr_probe(struct usb_interface *interface,
 		goto error_free_buffers;
 	}
 
-	client = hdpvr_register_ir_i2c(dev);
+	client = hdpvr_register_ir_rx_i2c(dev);
 	if (!client) {
-		v4l2_err(&dev->v4l2_dev, "i2c IR device register failed\n");
+		v4l2_err(&dev->v4l2_dev, "i2c IR RX device register failed\n");
+		retval = -ENODEV;
+		goto reg_fail;
+	}
+
+	client = hdpvr_register_ir_tx_i2c(dev);
+	if (!client) {
+		v4l2_err(&dev->v4l2_dev, "i2c IR TX device register failed\n");
 		retval = -ENODEV;
 		goto reg_fail;
 	}

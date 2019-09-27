@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * zfcp device driver
  *
@@ -17,7 +16,7 @@
 /**
  * struct zfcp_reqlist - Container for request list (reqlist)
  * @lock: Spinlock for protecting the hash list
- * @buckets: Array of hashbuckets, each is a list of requests in this bucket
+ * @list: Array of hashbuckets, each is a list of requests in this bucket
  */
 struct zfcp_reqlist {
 	spinlock_t lock;

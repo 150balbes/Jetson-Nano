@@ -776,6 +776,11 @@ static void *alloc_ring(struct device *dev, size_t nelem, size_t hwsize,
 		*(void **)swringp = swring;
 	}
 
+	/*
+	 * Zero out the hardware ring and return its address as our function
+	 * value.
+	 */
+	memset(hwring, 0, hwlen);
 	return hwring;
 }
 
@@ -1197,10 +1202,6 @@ int t4vf_eth_xmit(struct sk_buff *skb, struct net_device *dev)
 	BUG_ON(qidx >= pi->nqsets);
 	txq = &adapter->sge.ethtxq[pi->first_qset + qidx];
 
-	if (pi->vlan_id && !skb_vlan_tag_present(skb))
-		__vlan_hwaccel_put_tag(skb, cpu_to_be16(ETH_P_8021Q),
-				       pi->vlan_id);
-
 	/*
 	 * Take this opportunity to reclaim any TX Descriptors whose DMA
 	 * transfers have completed.
@@ -1569,7 +1570,6 @@ static void do_gro(struct sge_eth_rxq *rxq, const struct pkt_gl *gl,
 {
 	struct adapter *adapter = rxq->rspq.adapter;
 	struct sge *s = &adapter->sge;
-	struct port_info *pi;
 	int ret;
 	struct sk_buff *skb;
 
@@ -1586,9 +1586,8 @@ static void do_gro(struct sge_eth_rxq *rxq, const struct pkt_gl *gl,
 	skb->truesize += skb->data_len;
 	skb->ip_summed = CHECKSUM_UNNECESSARY;
 	skb_record_rx_queue(skb, rxq->rspq.idx);
-	pi = netdev_priv(skb->dev);
 
-	if (pkt->vlan_ex && !pi->vlan_id) {
+	if (pkt->vlan_ex) {
 		__vlan_hwaccel_put_tag(skb, cpu_to_be16(ETH_P_8021Q),
 					be16_to_cpu(pkt->vlan));
 		rxq->stats.vlan_ex++;
@@ -1621,7 +1620,6 @@ int t4vf_ethrx_handler(struct sge_rspq *rspq, const __be64 *rsp,
 	struct sge_eth_rxq *rxq = container_of(rspq, struct sge_eth_rxq, rspq);
 	struct adapter *adapter = rspq->adapter;
 	struct sge *s = &adapter->sge;
-	struct port_info *pi;
 
 	/*
 	 * If this is a good TCP packet and we have Generic Receive Offload
@@ -1646,7 +1644,6 @@ int t4vf_ethrx_handler(struct sge_rspq *rspq, const __be64 *rsp,
 	__skb_pull(skb, s->pktshift);
 	skb->protocol = eth_type_trans(skb, rspq->netdev);
 	skb_record_rx_queue(skb, rspq->idx);
-	pi = netdev_priv(skb->dev);
 	rxq->stats.pkts++;
 
 	if (csum_ok && !pkt->err_vec &&
@@ -1663,10 +1660,9 @@ int t4vf_ethrx_handler(struct sge_rspq *rspq, const __be64 *rsp,
 	} else
 		skb_checksum_none_assert(skb);
 
-	if (pkt->vlan_ex && !pi->vlan_id) {
+	if (pkt->vlan_ex) {
 		rxq->stats.vlan_ex++;
-		__vlan_hwaccel_put_tag(skb, htons(ETH_P_8021Q),
-				       be16_to_cpu(pkt->vlan));
+		__vlan_hwaccel_put_tag(skb, htons(ETH_P_8021Q), be16_to_cpu(pkt->vlan));
 	}
 
 	netif_receive_skb(skb);
@@ -1893,7 +1889,7 @@ static int napi_rx_handler(struct napi_struct *napi, int budget)
 	u32 val;
 
 	if (likely(work_done < budget)) {
-		napi_complete_done(napi, work_done);
+		napi_complete(napi);
 		intr_params = rspq->next_intr_params;
 		rspq->next_intr_params = rspq->intr_params;
 	} else
@@ -2044,9 +2040,8 @@ static irqreturn_t t4vf_intr_msi(int irq, void *cookie)
  */
 irq_handler_t t4vf_intr_handler(struct adapter *adapter)
 {
-	BUG_ON((adapter->flags &
-	       (CXGB4VF_USING_MSIX | CXGB4VF_USING_MSI)) == 0);
-	if (adapter->flags & CXGB4VF_USING_MSIX)
+	BUG_ON((adapter->flags & (USING_MSIX|USING_MSI)) == 0);
+	if (adapter->flags & USING_MSIX)
 		return t4vf_sge_intr_msix;
 	else
 		return t4vf_intr_msi;
@@ -2063,9 +2058,9 @@ irq_handler_t t4vf_intr_handler(struct adapter *adapter)
  *	when out of memory a queue can become empty.  We schedule NAPI to do
  *	the actual refill.
  */
-static void sge_rx_timer_cb(struct timer_list *t)
+static void sge_rx_timer_cb(unsigned long data)
 {
-	struct adapter *adapter = from_timer(adapter, t, sge.rx_timer);
+	struct adapter *adapter = (struct adapter *)data;
 	struct sge *s = &adapter->sge;
 	unsigned int i;
 
@@ -2122,9 +2117,9 @@ static void sge_rx_timer_cb(struct timer_list *t)
  *	when no new packets are being submitted.  This is essential for pktgen,
  *	at least.
  */
-static void sge_tx_timer_cb(struct timer_list *t)
+static void sge_tx_timer_cb(unsigned long data)
 {
-	struct adapter *adapter = from_timer(adapter, t, sge.tx_timer);
+	struct adapter *adapter = (struct adapter *)data;
 	struct sge *s = &adapter->sge;
 	unsigned int i, budget;
 
@@ -2210,7 +2205,6 @@ int t4vf_sge_alloc_rxq(struct adapter *adapter, struct sge_rspq *rspq,
 	struct port_info *pi = netdev_priv(dev);
 	struct fw_iq_cmd cmd, rpl;
 	int ret, iqandst, flsz = 0;
-	int relaxed = !(adapter->flags & CXGB4VF_ROOT_NO_RELAXED_ORDERING);
 
 	/*
 	 * If we're using MSI interrupts and we're not initializing the
@@ -2219,8 +2213,7 @@ int t4vf_sge_alloc_rxq(struct adapter *adapter, struct sge_rspq *rspq,
 	 * the Forwarded Interrupt Queue must be set up before any other
 	 * ingress queue ...
 	 */
-	if ((adapter->flags & CXGB4VF_USING_MSI) &&
-	    rspq != &adapter->sge.intrq) {
+	if ((adapter->flags & USING_MSI) && rspq != &adapter->sge.intrq) {
 		iqandst = SGE_INTRDST_IQ;
 		intr_dest = adapter->sge.intrq.abs_id;
 	} else
@@ -2270,7 +2263,7 @@ int t4vf_sge_alloc_rxq(struct adapter *adapter, struct sge_rspq *rspq,
 	cmd.iqaddr = cpu_to_be64(rspq->phys_addr);
 
 	if (fl) {
-		unsigned int chip_ver =
+		enum chip_type chip =
 			CHELSIO_CHIP_VERSION(adapter->params.chip);
 		/*
 		 * Allocate the ring for the hardware free list (with space
@@ -2307,8 +2300,6 @@ int t4vf_sge_alloc_rxq(struct adapter *adapter, struct sge_rspq *rspq,
 			cpu_to_be32(
 				FW_IQ_CMD_FL0HOSTFCMODE_V(SGE_HOSTFCMODE_NONE) |
 				FW_IQ_CMD_FL0PACKEN_F |
-				FW_IQ_CMD_FL0FETCHRO_V(relaxed) |
-				FW_IQ_CMD_FL0DATARO_V(relaxed) |
 				FW_IQ_CMD_FL0PADEN_F);
 
 		/* In T6, for egress queue type FL there is internal overhead
@@ -2321,10 +2312,10 @@ int t4vf_sge_alloc_rxq(struct adapter *adapter, struct sge_rspq *rspq,
 		 */
 		cmd.fl0dcaen_to_fl0cidxfthresh =
 			cpu_to_be16(
-				FW_IQ_CMD_FL0FBMIN_V(chip_ver <= CHELSIO_T5
-						     ? FETCHBURSTMIN_128B_X
-						     : FETCHBURSTMIN_64B_T6_X) |
-				FW_IQ_CMD_FL0FBMAX_V((chip_ver <= CHELSIO_T5) ?
+				FW_IQ_CMD_FL0FBMIN_V(chip <= CHELSIO_T5 ?
+						     FETCHBURSTMIN_128B_X :
+						     FETCHBURSTMIN_64B_X) |
+				FW_IQ_CMD_FL0FBMAX_V((chip <= CHELSIO_T5) ?
 						     FETCHBURSTMAX_512B_X :
 						     FETCHBURSTMAX_256B_X));
 		cmd.fl0size = cpu_to_be16(flsz);
@@ -2413,11 +2404,10 @@ int t4vf_sge_alloc_eth_txq(struct adapter *adapter, struct sge_eth_txq *txq,
 			   struct net_device *dev, struct netdev_queue *devq,
 			   unsigned int iqid)
 {
-	unsigned int chip_ver = CHELSIO_CHIP_VERSION(adapter->params.chip);
-	struct port_info *pi = netdev_priv(dev);
-	struct fw_eq_eth_cmd cmd, rpl;
 	struct sge *s = &adapter->sge;
 	int ret, nentries;
+	struct fw_eq_eth_cmd cmd, rpl;
+	struct port_info *pi = netdev_priv(dev);
 
 	/*
 	 * Calculate the size of the hardware TX Queue (including the Status
@@ -2451,19 +2441,17 @@ int t4vf_sge_alloc_eth_txq(struct adapter *adapter, struct sge_eth_txq *txq,
 	cmd.alloc_to_len16 = cpu_to_be32(FW_EQ_ETH_CMD_ALLOC_F |
 					 FW_EQ_ETH_CMD_EQSTART_F |
 					 FW_LEN16(cmd));
-	cmd.autoequiqe_to_viid = cpu_to_be32(FW_EQ_ETH_CMD_AUTOEQUEQE_F |
-					     FW_EQ_ETH_CMD_VIID_V(pi->viid));
+	cmd.viid_pkd = cpu_to_be32(FW_EQ_ETH_CMD_AUTOEQUEQE_F |
+				   FW_EQ_ETH_CMD_VIID_V(pi->viid));
 	cmd.fetchszm_to_iqid =
 		cpu_to_be32(FW_EQ_ETH_CMD_HOSTFCMODE_V(SGE_HOSTFCMODE_STPG) |
 			    FW_EQ_ETH_CMD_PCIECHN_V(pi->port_id) |
 			    FW_EQ_ETH_CMD_IQID_V(iqid));
 	cmd.dcaen_to_eqsize =
-		cpu_to_be32(FW_EQ_ETH_CMD_FBMIN_V(chip_ver <= CHELSIO_T5
-						  ? FETCHBURSTMIN_64B_X
-						  : FETCHBURSTMIN_64B_T6_X) |
-			    FW_EQ_ETH_CMD_FBMAX_V(FETCHBURSTMAX_512B_X) |
+		cpu_to_be32(FW_EQ_ETH_CMD_FBMIN_V(SGE_FETCHBURSTMIN_64B) |
+			    FW_EQ_ETH_CMD_FBMAX_V(SGE_FETCHBURSTMAX_512B) |
 			    FW_EQ_ETH_CMD_CIDXFTHRESH_V(
-						CIDXFLUSHTHRESH_32_X) |
+						SGE_CIDXFLUSHTHRESH_32) |
 			    FW_EQ_ETH_CMD_EQSIZE_V(nentries));
 	cmd.eqaddr = cpu_to_be64(txq->q.phys_addr);
 
@@ -2696,8 +2684,8 @@ int t4vf_sge_init(struct adapter *adapter)
 	/*
 	 * Set up tasklet timers.
 	 */
-	timer_setup(&s->rx_timer, sge_rx_timer_cb, 0);
-	timer_setup(&s->tx_timer, sge_tx_timer_cb, 0);
+	setup_timer(&s->rx_timer, sge_rx_timer_cb, (unsigned long)adapter);
+	setup_timer(&s->tx_timer, sge_tx_timer_cb, (unsigned long)adapter);
 
 	/*
 	 * Initialize Forwarded Interrupt Queue lock.

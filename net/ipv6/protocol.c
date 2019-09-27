@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * INET		An implementation of the TCP/IP protocol suite for the LINUX
  *		operating system.  INET is implemented using the  BSD Socket
@@ -7,6 +6,11 @@
  *		PF_INET6 protocol dispatch tables.
  *
  * Authors:	Pedro Roque	<roque@di.fc.ul.pt>
+ *
+ *		This program is free software; you can redistribute it and/or
+ *		modify it under the terms of the GNU General Public License
+ *		as published by the Free Software Foundation; either version
+ *		2 of the License, or (at your option) any later version.
  */
 
 /*
@@ -22,7 +26,7 @@
 #include <net/protocol.h>
 
 #if IS_ENABLED(CONFIG_IPV6)
-struct inet6_protocol __rcu *inet6_protos[MAX_INET_PROTOS] __read_mostly;
+const struct inet6_protocol __rcu *inet6_protos[MAX_INET_PROTOS] __read_mostly;
 EXPORT_SYMBOL(inet6_protos);
 
 int inet6_add_protocol(const struct inet6_protocol *prot, unsigned char protocol)

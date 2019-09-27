@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _ASM_X86_XEN_PAGE_COHERENT_H
 #define _ASM_X86_XEN_PAGE_COHERENT_H
 

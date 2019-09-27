@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __ASM_MIPS_CLOCK_H
 #define __ASM_MIPS_CLOCK_H
 

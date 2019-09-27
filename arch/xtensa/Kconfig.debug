@@ -1,4 +1,6 @@
-# SPDX-License-Identifier: GPL-2.0
+menu "Kernel hacking"
+
+source "lib/Kconfig.debug"
 
 config DEBUG_TLB_SANITY
 	bool "Debug TLB sanity"
@@ -31,3 +33,5 @@ config S32C1I_SELFTEST
 	  It is easy to make wrong hardware configuration, this test should catch it early.
 
 	  Say 'N' on stable hardware.
+
+endmenu

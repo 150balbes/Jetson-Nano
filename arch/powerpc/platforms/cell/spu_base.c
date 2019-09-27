@@ -1,10 +1,23 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Low-level SPU handling
  *
  * (C) Copyright IBM Deutschland Entwicklung GmbH 2005
  *
  * Author: Arnd Bergmann <arndb@de.ibm.com>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2, or (at your option)
+ * any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  */
 
 #undef DEBUG
@@ -37,11 +50,11 @@ struct cbe_spu_info cbe_spu_info[MAX_NUMNODES];
 EXPORT_SYMBOL_GPL(cbe_spu_info);
 
 /*
- * The spufs fault-handling code needs to call force_sig_fault to raise signals
+ * The spufs fault-handling code needs to call force_sig_info to raise signals
  * on DMA errors. Export it here to avoid general kernel-wide access to this
  * function
  */
-EXPORT_SYMBOL_GPL(force_sig_fault);
+EXPORT_SYMBOL_GPL(force_sig_info);
 
 /*
  * Protects cbe_spu_info and spu->number.
@@ -181,7 +194,7 @@ static int __spu_trap_data_map(struct spu *spu, unsigned long ea, u64 dsisr)
 	 * faults need to be deferred to process context.
 	 */
 	if ((dsisr & MFC_DSISR_PTE_NOT_FOUND) &&
-	    (get_region_id(ea) != USER_REGION_ID)) {
+	    (REGION_ID(ea) != USER_REGION_ID)) {
 
 		spin_unlock(&spu->register_lock);
 		ret = hash_page(ea,
@@ -211,7 +224,7 @@ static void __spu_kernel_slb(void *addr, struct copro_slb *slb)
 	unsigned long ea = (unsigned long)addr;
 	u64 llp;
 
-	if (get_region_id(ea) == LINEAR_MAP_REGION_ID)
+	if (REGION_ID(ea) == KERNEL_REGION_ID)
 		llp = mmu_psize_defs[mmu_linear_psize].sllp;
 	else
 		llp = mmu_psize_defs[mmu_virtual_psize].sllp;
@@ -665,7 +678,7 @@ static ssize_t spu_stat_show(struct device *dev,
 
 static DEVICE_ATTR(stat, 0444, spu_stat_show, NULL);
 
-#ifdef CONFIG_KEXEC_CORE
+#ifdef CONFIG_KEXEC
 
 struct crash_spu_info {
 	struct spu *spu;

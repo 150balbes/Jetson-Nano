@@ -40,7 +40,6 @@
  * rfc3962 includes errata information in its Appendix A.
  */
 
-#include <crypto/algapi.h>
 #include <crypto/internal/skcipher.h>
 #include <linux/err.h>
 #include <linux/init.h>
@@ -50,7 +49,6 @@
 #include <linux/scatterlist.h>
 #include <crypto/scatterwalk.h>
 #include <linux/slab.h>
-#include <linux/compiler.h>
 
 struct crypto_cts_ctx {
 	struct crypto_skcipher *child;
@@ -105,7 +103,7 @@ static int cts_cbc_encrypt(struct skcipher_request *req)
 	struct crypto_skcipher *tfm = crypto_skcipher_reqtfm(req);
 	struct skcipher_request *subreq = &rctx->subreq;
 	int bsize = crypto_skcipher_blocksize(tfm);
-	u8 d[MAX_CIPHER_BLOCKSIZE * 2] __aligned(__alignof__(u32));
+	u8 d[bsize * 2] __attribute__ ((aligned(__alignof__(u32))));
 	struct scatterlist *sg;
 	unsigned int offset;
 	int lastn;
@@ -115,6 +113,7 @@ static int cts_cbc_encrypt(struct skcipher_request *req)
 
 	sg = scatterwalk_ffwd(rctx->sg, req->dst, offset - bsize);
 	scatterwalk_map_and_copy(d + bsize, sg, 0, bsize, 0);
+	memcpy(req->iv, d+bsize, bsize);
 
 	memset(d, 0, bsize);
 	scatterwalk_map_and_copy(d, req->src, offset, lastn, 0);
@@ -137,7 +136,8 @@ static void crypto_cts_encrypt_done(struct crypto_async_request *areq, int err)
 		goto out;
 
 	err = cts_cbc_encrypt(req);
-	if (err == -EINPROGRESS || err == -EBUSY)
+	if (err == -EINPROGRESS ||
+	    (err == -EBUSY && req->base.flags & CRYPTO_TFM_REQ_MAY_BACKLOG))
 		return;
 
 out:
@@ -152,14 +152,12 @@ static int crypto_cts_encrypt(struct skcipher_request *req)
 	struct skcipher_request *subreq = &rctx->subreq;
 	int bsize = crypto_skcipher_blocksize(tfm);
 	unsigned int nbytes = req->cryptlen;
+	int cbc_blocks = (nbytes + bsize - 1) / bsize - 1;
 	unsigned int offset;
 
 	skcipher_request_set_tfm(subreq, ctx->child);
 
-	if (nbytes < bsize)
-		return -EINVAL;
-
-	if (nbytes == bsize) {
+	if (cbc_blocks <= 0) {
 		skcipher_request_set_callback(subreq, req->base.flags,
 					      req->base.complete,
 					      req->base.data);
@@ -168,7 +166,7 @@ static int crypto_cts_encrypt(struct skcipher_request *req)
 		return crypto_skcipher_encrypt(subreq);
 	}
 
-	offset = rounddown(nbytes - 1, bsize);
+	offset = cbc_blocks * bsize;
 	rctx->offset = offset;
 
 	skcipher_request_set_callback(subreq, req->base.flags,
@@ -186,7 +184,7 @@ static int cts_cbc_decrypt(struct skcipher_request *req)
 	struct crypto_skcipher *tfm = crypto_skcipher_reqtfm(req);
 	struct skcipher_request *subreq = &rctx->subreq;
 	int bsize = crypto_skcipher_blocksize(tfm);
-	u8 d[MAX_CIPHER_BLOCKSIZE * 2] __aligned(__alignof__(u32));
+	u8 d[bsize * 2] __attribute__ ((aligned(__alignof__(u32))));
 	struct scatterlist *sg;
 	unsigned int offset;
 	u8 *space;
@@ -231,7 +229,8 @@ static void crypto_cts_decrypt_done(struct crypto_async_request *areq, int err)
 		goto out;
 
 	err = cts_cbc_decrypt(req);
-	if (err == -EINPROGRESS || err == -EBUSY)
+	if (err == -EINPROGRESS ||
+	    (err == -EBUSY && req->base.flags & CRYPTO_TFM_REQ_MAY_BACKLOG))
 		return;
 
 out:
@@ -246,15 +245,13 @@ static int crypto_cts_decrypt(struct skcipher_request *req)
 	struct skcipher_request *subreq = &rctx->subreq;
 	int bsize = crypto_skcipher_blocksize(tfm);
 	unsigned int nbytes = req->cryptlen;
+	int cbc_blocks = (nbytes + bsize - 1) / bsize - 1;
 	unsigned int offset;
 	u8 *space;
 
 	skcipher_request_set_tfm(subreq, ctx->child);
 
-	if (nbytes < bsize)
-		return -EINVAL;
-
-	if (nbytes == bsize) {
+	if (cbc_blocks <= 0) {
 		skcipher_request_set_callback(subreq, req->base.flags,
 					      req->base.complete,
 					      req->base.data);
@@ -268,10 +265,10 @@ static int crypto_cts_decrypt(struct skcipher_request *req)
 
 	space = crypto_cts_reqctx_space(req);
 
-	offset = rounddown(nbytes - 1, bsize);
+	offset = cbc_blocks * bsize;
 	rctx->offset = offset;
 
-	if (offset <= bsize)
+	if (cbc_blocks <= 1)
 		memcpy(space, req->iv, bsize);
 	else
 		scatterwalk_map_and_copy(space, req->src, offset - 2 * bsize,
@@ -294,7 +291,7 @@ static int crypto_cts_init_tfm(struct crypto_skcipher *tfm)
 	unsigned bsize;
 	unsigned align;
 
-	cipher = crypto_spawn_skcipher(spawn);
+	cipher = crypto_spawn_skcipher2(spawn);
 	if (IS_ERR(cipher))
 		return PTR_ERR(cipher);
 
@@ -352,9 +349,9 @@ static int crypto_cts_create(struct crypto_template *tmpl, struct rtattr **tb)
 	spawn = skcipher_instance_ctx(inst);
 
 	crypto_set_skcipher_spawn(spawn, skcipher_crypto_instance(inst));
-	err = crypto_grab_skcipher(spawn, cipher_name, 0,
-				   crypto_requires_sync(algt->type,
-							algt->mask));
+	err = crypto_grab_skcipher2(spawn, cipher_name, 0,
+				    crypto_requires_sync(algt->type,
+							 algt->mask));
 	if (err)
 		goto err_free_inst;
 
@@ -376,6 +373,9 @@ static int crypto_cts_create(struct crypto_template *tmpl, struct rtattr **tb)
 	inst->alg.base.cra_priority = alg->base.cra_priority;
 	inst->alg.base.cra_blocksize = alg->base.cra_blocksize;
 	inst->alg.base.cra_alignmask = alg->base.cra_alignmask;
+
+	/* We access the data as u32s when xoring. */
+	inst->alg.base.cra_alignmask |= __alignof__(u32) - 1;
 
 	inst->alg.ivsize = alg->base.cra_blocksize;
 	inst->alg.chunksize = crypto_skcipher_alg_chunksize(alg);
@@ -423,7 +423,7 @@ static void __exit crypto_cts_module_exit(void)
 	crypto_unregister_template(&crypto_cts_tmpl);
 }
 
-subsys_initcall(crypto_cts_module_init);
+module_init(crypto_cts_module_init);
 module_exit(crypto_cts_module_exit);
 
 MODULE_LICENSE("Dual BSD/GPL");

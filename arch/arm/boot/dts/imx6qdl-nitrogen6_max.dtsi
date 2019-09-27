@@ -1,6 +1,42 @@
-// SPDX-License-Identifier: GPL-2.0 OR X11
 /*
  * Copyright 2015 Boundary Devices, Inc.
+ *
+ * This file is dual-licensed: you can use it either under the terms
+ * of the GPL or the X11 license, at your option. Note that this dual
+ * licensing only applies to this file, and not this project as a
+ * whole.
+ *
+ *  a) This file is free software; you can redistribute it and/or
+ *     modify it under the terms of the GNU General Public License
+ *     version 2 as published by the Free Software Foundation.
+ *
+ *     This file is distributed in the hope that it will be useful
+ *     but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *     GNU General Public License for more details.
+ *
+ * Or, alternatively
+ *
+ *  b) Permission is hereby granted, free of charge, to any person
+ *     obtaining a copy of this software and associated documentation
+ *     files (the "Software"), to deal in the Software without
+ *     restriction, including without limitation the rights to use
+ *     copy, modify, merge, publish, distribute, sublicense, and/or
+ *     sell copies of the Software, and to permit persons to whom the
+ *     Software is furnished to do so, subject to the following
+ *     conditions:
+ *
+ *     The above copyright notice and this permission notice shall be
+ *     included in all copies or substantial portions of the Software.
+ *
+ *     THE SOFTWARE IS PROVIDED , WITHOUT WARRANTY OF ANY KIND
+ *     EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES
+ *     OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+ *     NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+ *     HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY
+ *     WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+ *     FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+ *     OTHER DEALINGS IN THE SOFTWARE.
  */
 #include <dt-bindings/gpio/gpio.h>
 #include <dt-bindings/input/input.h>
@@ -10,8 +46,7 @@
 		stdout-path = &uart2;
 	};
 
-	memory@10000000 {
-		device_type = "memory";
+	memory {
 		reg = <0x10000000 0xF0000000>;
 	};
 
@@ -137,7 +172,7 @@
 		};
 	};
 
-	i2c2mux {
+	i2cmux@2 {
 		compatible = "i2c-mux-gpio";
 		pinctrl-names = "default";
 		pinctrl-0 = <&pinctrl_i2c2mux>;
@@ -148,20 +183,20 @@
 		i2c-parent = <&i2c2>;
 		idle-state = <0>;
 
-		i2c2mux@1 {
+		i2c2@1 {
 			reg = <1>;
 			#address-cells = <1>;
 			#size-cells = <0>;
 		};
 
-		i2c2mux@2 {
+		i2c2@2 {
 			reg = <2>;
 			#address-cells = <1>;
 			#size-cells = <0>;
 		};
 	};
 
-	i2c3mux {
+	i2cmux@3 {
 		compatible = "i2c-mux-gpio";
 		pinctrl-names = "default";
 		pinctrl-0 = <&pinctrl_i2c3mux>;
@@ -171,7 +206,7 @@
 		i2c-parent = <&i2c3>;
 		idle-state = <0>;
 
-		i2c3mux@1 {
+		i2c3@1 {
 			reg = <1>;
 			#address-cells = <1>;
 			#size-cells = <0>;
@@ -194,7 +229,7 @@
 		};
 	};
 
-	backlight_lcd: backlight-lcd {
+	backlight_lcd: backlight_lcd {
 		compatible = "pwm-backlight";
 		pwms = <&pwm1 0 5000000>;
 		brightness-levels = <0 4 8 16 32 64 128 255>;
@@ -203,7 +238,7 @@
 		status = "okay";
 	};
 
-	backlight_lvds0: backlight-lvds0 {
+	backlight_lvds0: backlight_lvds0 {
 		compatible = "pwm-backlight";
 		pwms = <&pwm4 0 5000000>;
 		brightness-levels = <0 4 8 16 32 64 128 255>;
@@ -212,7 +247,7 @@
 		status = "okay";
 	};
 
-	backlight_lvds1: backlight-lvds1 {
+	backlight_lvds1: backlight_lvds1 {
 		compatible = "pwm-backlight";
 		pwms = <&pwm2 0 5000000>;
 		brightness-levels = <0 4 8 16 32 64 128 255>;
@@ -221,7 +256,7 @@
 		status = "okay";
 	};
 
-	lcd_display: disp0 {
+	lcd_display: display@di0 {
 		compatible = "fsl,imx-parallel-display";
 		#address-cells = <1>;
 		#size-cells = <0>;
@@ -247,7 +282,7 @@
 		};
 	};
 
-	panel-lcd {
+	panel_lcd {
 		compatible = "okaya,rs800480t-7x0gp";
 		backlight = <&backlight_lcd>;
 
@@ -258,7 +293,7 @@
 		};
 	};
 
-	panel-lvds0 {
+	panel_lvds0 {
 		compatible = "hannstar,hsd100pxn1";
 		backlight = <&backlight_lvds0>;
 
@@ -269,7 +304,7 @@
 		};
 	};
 
-	panel-lvds1 {
+	panel_lvds1 {
 		compatible = "hannstar,hsd100pxn1";
 		backlight = <&backlight_lvds1>;
 
@@ -316,6 +351,7 @@
 };
 
 &ecspi1 {
+	fsl,spi-num-chipselects = <1>;
 	cs-gpios = <&gpio3 19 GPIO_ACTIVE_HIGH>;
 	pinctrl-names = "default";
 	pinctrl-0 = <&pinctrl_ecspi1>;
@@ -362,7 +398,7 @@
 	pinctrl-0 = <&pinctrl_i2c1>;
 	status = "okay";
 
-	codec: sgtl5000@a {
+	codec: sgtl5000@0a {
 		compatible = "fsl,sgtl5000";
 		pinctrl-names = "default";
 		pinctrl-0 = <&pinctrl_sgtl5000>;
@@ -373,7 +409,7 @@
 	};
 
 	rtc: rtc@68 {
-		compatible = "microcrystal,rv4162";
+		compatible = "st,rv4162";
 		pinctrl-names = "default";
 		pinctrl-0 = <&pinctrl_rv4162>;
 		reg = <0x68>;
@@ -394,7 +430,7 @@
 	pinctrl-0 = <&pinctrl_i2c3>;
 	status = "okay";
 
-	touchscreen@4 {
+	touchscreen@04 {
 		compatible = "eeti,egalax_ts";
 		reg = <0x04>;
 		interrupt-parent = <&gpio1>;
@@ -407,12 +443,11 @@
 		reg = <0x38>;
 		interrupt-parent = <&gpio1>;
 		interrupts = <9 IRQ_TYPE_EDGE_FALLING>;
-		wakeup-source;
 	};
 };
 
 &iomuxc {
-	imx6q-nitrogen6-max {
+	imx6q-nitrogen6_max {
 		pinctrl_audmux: audmuxgrp {
 			fsl,pins = <
 				MX6QDL_PAD_CSI0_DAT7__AUD3_RXD		0x130b0
@@ -469,7 +504,7 @@
 			>;
 		};
 
-		pinctrl_gpio_keys: gpio-keysgrp {
+		pinctrl_gpio_keys: gpio_keysgrp {
 			fsl,pins = <
 				/* Power Button */
 				MX6QDL_PAD_NANDF_D3__GPIO2_IO03		0x1b0b0
@@ -685,7 +720,7 @@
 			>;
 		};
 
-		pinctrl_wlan_vmmc: wlan-vmmcgrp {
+		pinctrl_wlan_vmmc: wlan_vmmcgrp {
 			fsl,pins = <
 				MX6QDL_PAD_NANDF_CS0__GPIO6_IO11	0x100b0
 				MX6QDL_PAD_NANDF_CS2__GPIO6_IO15	0x000b0
@@ -704,6 +739,8 @@
 	status = "okay";
 
 	lvds-channel@0 {
+		fsl,data-mapping = "spwg";
+		fsl,data-width = <18>;
 		status = "okay";
 
 		port@4 {
@@ -716,6 +753,8 @@
 	};
 
 	lvds-channel@1 {
+		fsl,data-mapping = "spwg";
+		fsl,data-width = <18>;
 		status = "okay";
 
 		port@4 {

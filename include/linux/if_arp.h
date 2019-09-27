@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * INET		An implementation of the TCP/IP protocol suite for the LINUX
  *		operating system.  INET is implemented using the  BSD Socket
@@ -15,6 +14,11 @@
  *		Florian La Roche,
  *		Jonathan Layes <layes@loran.com>
  *		Arnaldo Carvalho de Melo <acme@conectiva.com.br> ARPHRD_HWX25
+ *
+ *		This program is free software; you can redistribute it and/or
+ *		modify it under the terms of the GNU General Public License
+ *		as published by the Free Software Foundation; either version
+ *		2 of the License, or (at your option) any later version.
  */
 #ifndef _LINUX_IF_ARP_H
 #define _LINUX_IF_ARP_H
@@ -27,7 +31,7 @@ static inline struct arphdr *arp_hdr(const struct sk_buff *skb)
 	return (struct arphdr *)skb_network_header(skb);
 }
 
-static inline unsigned int arp_hdr_len(const struct net_device *dev)
+static inline int arp_hdr_len(struct net_device *dev)
 {
 	switch (dev->type) {
 #if IS_ENABLED(CONFIG_FIREWIRE_NET)
@@ -40,21 +44,4 @@ static inline unsigned int arp_hdr_len(const struct net_device *dev)
 		return sizeof(struct arphdr) + (dev->addr_len + sizeof(u32)) * 2;
 	}
 }
-
-static inline bool dev_is_mac_header_xmit(const struct net_device *dev)
-{
-	switch (dev->type) {
-	case ARPHRD_TUNNEL:
-	case ARPHRD_TUNNEL6:
-	case ARPHRD_SIT:
-	case ARPHRD_IPGRE:
-	case ARPHRD_VOID:
-	case ARPHRD_NONE:
-	case ARPHRD_RAWIP:
-		return false;
-	default:
-		return true;
-	}
-}
-
 #endif	/* _LINUX_IF_ARP_H */

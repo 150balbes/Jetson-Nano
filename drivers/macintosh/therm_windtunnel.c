@@ -432,6 +432,7 @@ static struct i2c_driver g4fan_driver = {
 	.driver = {
 		.name	= "therm_windtunnel",
 	},
+	.attach_adapter = do_attach,
 	.probe		= do_probe,
 	.remove		= do_remove,
 	.id_table	= therm_windtunnel_id,
@@ -444,29 +445,7 @@ static struct i2c_driver g4fan_driver = {
 
 static int therm_of_probe(struct platform_device *dev)
 {
-	struct i2c_adapter *adap;
-	int ret, i = 0;
-
-	adap = i2c_get_adapter(0);
-	if (!adap)
-		return -EPROBE_DEFER;
-
-	ret = i2c_add_driver(&g4fan_driver);
-	if (ret) {
-		i2c_put_adapter(adap);
-		return ret;
-	}
-
-	/* We assume Macs have consecutive I2C bus numbers starting at 0 */
-	while (adap) {
-		do_attach(adap);
-		if (x.running)
-			return 0;
-		i2c_put_adapter(adap);
-		adap = i2c_get_adapter(++i);
-	}
-
-	return -ENODEV;
+	return i2c_add_driver( &g4fan_driver );
 }
 
 static int

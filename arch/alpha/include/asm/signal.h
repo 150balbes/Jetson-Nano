@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _ASMAXP_SIGNAL_H
 #define _ASMAXP_SIGNAL_H
 

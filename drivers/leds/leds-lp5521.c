@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * LP5521 LED chip driver.
  *
@@ -7,6 +6,20 @@
  *
  * Contact: Samu Onkalo <samu.p.onkalo@nokia.com>
  *          Milo(Woogyom) Kim <milo.kim@ti.com>
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License
+ * version 2 as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.	 See the GNU
+ * General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA
+ * 02110-1301 USA
  */
 
 #include <linux/delay.h>
@@ -121,13 +134,13 @@ static void lp5521_set_led_current(struct lp55xx_led *led, u8 led_current)
 static void lp5521_load_engine(struct lp55xx_chip *chip)
 {
 	enum lp55xx_engine_index idx = chip->engine_idx;
-	static const u8 mask[] = {
+	u8 mask[] = {
 		[LP55XX_ENGINE_1] = LP5521_MODE_R_M,
 		[LP55XX_ENGINE_2] = LP5521_MODE_G_M,
 		[LP55XX_ENGINE_3] = LP5521_MODE_B_M,
 	};
 
-	static const u8 val[] = {
+	u8 val[] = {
 		[LP55XX_ENGINE_1] = LP5521_LOAD_R,
 		[LP55XX_ENGINE_2] = LP5521_LOAD_G,
 		[LP55XX_ENGINE_3] = LP5521_LOAD_B,
@@ -147,7 +160,7 @@ static void lp5521_stop_all_engines(struct lp55xx_chip *chip)
 static void lp5521_stop_engine(struct lp55xx_chip *chip)
 {
 	enum lp55xx_engine_index idx = chip->engine_idx;
-	static const u8 mask[] = {
+	u8 mask[] = {
 		[LP55XX_ENGINE_1] = LP5521_MODE_R_M,
 		[LP55XX_ENGINE_2] = LP5521_MODE_G_M,
 		[LP55XX_ENGINE_3] = LP5521_MODE_B_M,
@@ -213,7 +226,7 @@ static int lp5521_update_program_memory(struct lp55xx_chip *chip,
 {
 	enum lp55xx_engine_index idx = chip->engine_idx;
 	u8 pattern[LP5521_PROGRAM_LENGTH] = {0};
-	static const u8 addr[] = {
+	u8 addr[] = {
 		[LP55XX_ENGINE_1] = LP5521_REG_R_PROG_MEM,
 		[LP55XX_ENGINE_2] = LP5521_REG_G_PROG_MEM,
 		[LP55XX_ENGINE_3] = LP5521_REG_B_PROG_MEM,
@@ -268,7 +281,7 @@ static void lp5521_firmware_loaded(struct lp55xx_chip *chip)
 	}
 
 	/*
-	 * Program memory sequence
+	 * Program momery sequence
 	 *  1) set engine mode to "LOAD"
 	 *  2) write firmware data into program memory
 	 */
@@ -520,8 +533,8 @@ static int lp5521_probe(struct i2c_client *client,
 	if (!chip)
 		return -ENOMEM;
 
-	led = devm_kcalloc(&client->dev,
-			pdata->num_channels, sizeof(*led), GFP_KERNEL);
+	led = devm_kzalloc(&client->dev,
+			sizeof(*led) * pdata->num_channels, GFP_KERNEL);
 	if (!led)
 		return -ENOMEM;
 

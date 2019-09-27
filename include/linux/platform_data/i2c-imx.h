@@ -1,8 +1,9 @@
-/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * i2c.h - i.MX I2C driver header file
  *
  * Copyright (c) 2008, Darius Augulis <augulis.darius@gmail.com>
+ *
+ * This file is released under the GPLv2
  */
 
 #ifndef __ASM_ARCH_I2C_H_

@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  *	6522 Versatile Interface Adapter (VIA)
  *

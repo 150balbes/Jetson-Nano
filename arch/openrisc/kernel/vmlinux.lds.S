@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * OpenRISC vmlinux.lds.S
  *
@@ -10,13 +9,18 @@
  * Copyright (C) 2003 Matjaz Breskvar <phoenix@bsemi.com>
  * Copyright (C) 2010-2011 Jonas Bonn <jonas@southpole.se>
  *
+ *      This program is free software; you can redistribute it and/or
+ *      modify it under the terms of the GNU General Public License
+ *      as published by the Free Software Foundation; either version
+ *      2 of the License, or (at your option) any later version.
+ *
  * ld script for OpenRISC architecture
  */
 
 /* TODO
  *		- clean up __offset & stuff
- *		- change all 8192 alignment to PAGE !!!
- *		- recheck if all alignments are really needed
+ *		- change all 8192 aligment to PAGE !!!
+ *		- recheck if all aligments are really needed
  */
 
 #  define LOAD_OFFSET  PAGE_OFFSET
@@ -24,16 +28,9 @@
 
 #include <asm/page.h>
 #include <asm/cache.h>
-#include <asm/thread_info.h>
 #include <asm-generic/vmlinux.lds.h>
 
-#ifdef __OR1K__
-#define __OUTPUT_FORMAT        "elf32-or1k"
-#else
-#define __OUTPUT_FORMAT        "elf32-or32"
-#endif
-
-OUTPUT_FORMAT(__OUTPUT_FORMAT, __OUTPUT_FORMAT, __OUTPUT_FORMAT)
+OUTPUT_FORMAT("elf32-or32", "elf32-or32", "elf32-or32")
 jiffies = jiffies_64 + 4;
 
 SECTIONS

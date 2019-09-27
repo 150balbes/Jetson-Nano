@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0
 # arch/arm/mach-ks8695/Makefile
 #
 # Makefile for KS8695 architecture support

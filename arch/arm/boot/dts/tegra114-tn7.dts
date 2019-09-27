@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /dts-v1/;
 
 #include <dt-bindings/input/input.h>
@@ -28,7 +27,7 @@
 		};
 	};
 
-	memory@80000000 {
+	memory {
 		/* memory >= 0x37e00000 is reserved for firmware usage */
 		reg = <0x80000000 0x37e00000>;
 	};

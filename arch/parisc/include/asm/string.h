@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _PA_STRING_H_
 #define _PA_STRING_H_
 

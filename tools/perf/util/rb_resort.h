@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _PERF_RESORT_RB_H_
 #define _PERF_RESORT_RB_H_
 /*
@@ -140,12 +139,11 @@ struct __name##_sorted *__name = __name##_sorted__new
 
 /* For 'struct intlist' */
 #define DECLARE_RESORT_RB_INTLIST(__name, __ilist)				\
-	DECLARE_RESORT_RB(__name)(&__ilist->rblist.entries.rb_root,		\
+	DECLARE_RESORT_RB(__name)(&__ilist->rblist.entries,			\
 				  __ilist->rblist.nr_entries)
 
 /* For 'struct machine->threads' */
-#define DECLARE_RESORT_RB_MACHINE_THREADS(__name, __machine, hash_bucket)    \
- DECLARE_RESORT_RB(__name)(&__machine->threads[hash_bucket].entries.rb_root, \
-			   __machine->threads[hash_bucket].nr)
+#define DECLARE_RESORT_RB_MACHINE_THREADS(__name, __machine)			\
+	DECLARE_RESORT_RB(__name)(&__machine->threads, __machine->nr_threads)
 
 #endif /* _PERF_RESORT_RB_H_ */

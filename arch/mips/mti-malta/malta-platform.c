@@ -23,6 +23,7 @@
  */
 #include <linux/init.h>
 #include <linux/serial_8250.h>
+#include <linux/module.h>
 #include <linux/irq.h>
 #include <linux/platform_device.h>
 #include <asm/mips-boards/maltaint.h>

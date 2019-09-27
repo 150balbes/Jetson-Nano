@@ -1,9 +1,12 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /**
  * PCI Endpoint *Function* (EPF) header file
  *
  * Copyright (C) 2017 Texas Instruments
  * Author: Kishon Vijay Abraham I <kishon@ti.com>
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 of
+ * the License as published by the Free Software Foundation.
  */
 
 #ifndef __LINUX_PCI_EPF_H
@@ -72,7 +75,7 @@ struct pci_epf_ops {
  * @driver: PCI EPF driver
  * @ops: set of function pointers for performing EPF operations
  * @owner: the owner of the module that registers the PCI EPF driver
- * @epf_group: list of configfs group corresponding to the PCI EPF driver
+ * @group: configfs group corresponding to the PCI EPF driver
  * @id_table: identifies EPF devices for probing
  */
 struct pci_epf_driver {
@@ -82,7 +85,7 @@ struct pci_epf_driver {
 	struct device_driver	driver;
 	struct pci_epf_ops	*ops;
 	struct module		*owner;
-	struct list_head	epf_group;
+	struct config_group	*group;
 	const struct pci_epf_device_id	*id_table;
 };
 
@@ -97,8 +100,6 @@ struct pci_epf_driver {
 struct pci_epf_bar {
 	dma_addr_t	phys_addr;
 	size_t		size;
-	enum pci_barno	barno;
-	int		flags;
 };
 
 /**
@@ -119,7 +120,6 @@ struct pci_epf {
 	struct pci_epf_header	*header;
 	struct pci_epf_bar	bar[6];
 	u8			msi_interrupts;
-	u16			msix_interrupts;
 	u8			func_no;
 
 	struct pci_epc		*epc;
@@ -149,8 +149,7 @@ void pci_epf_destroy(struct pci_epf *epf);
 int __pci_epf_register_driver(struct pci_epf_driver *driver,
 			      struct module *owner);
 void pci_epf_unregister_driver(struct pci_epf_driver *driver);
-void *pci_epf_alloc_space(struct pci_epf *epf, size_t size, enum pci_barno bar,
-			  size_t align);
+void *pci_epf_alloc_space(struct pci_epf *epf, size_t size, enum pci_barno bar);
 void pci_epf_free_space(struct pci_epf *epf, void *addr, enum pci_barno bar);
 int pci_epf_bind(struct pci_epf *epf);
 void pci_epf_unbind(struct pci_epf *epf);

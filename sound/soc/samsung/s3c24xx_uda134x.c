@@ -1,11 +1,15 @@
-// SPDX-License-Identifier: GPL-2.0
-//
-// Modifications by Christian Pellegrin <chripell@evolware.org>
-//
-// s3c24xx_uda134x.c - S3C24XX_UDA134X ALSA SoC Audio board driver
-//
-// Copyright 2007 Dension Audio Systems Ltd.
-// Author: Zoltan Devai
+/*
+ * Modifications by Christian Pellegrin <chripell@evolware.org>
+ *
+ * s3c24xx_uda134x.c  --  S3C24XX_UDA134X ALSA SoC Audio board driver
+ *
+ * Copyright 2007 Dension Audio Systems Ltd.
+ * Author: Zoltan Devai
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ */
 
 #include <linux/clk.h>
 #include <linux/gpio.h>
@@ -15,14 +19,8 @@
 #include <sound/s3c24xx_uda134x.h>
 
 #include "regs-iis.h"
-#include "s3c24xx-i2s.h"
 
-struct s3c24xx_uda134x {
-	struct clk *xtal;
-	struct clk *pclk;
-	struct mutex clk_lock;
-	int clk_users;
-};
+#include "s3c24xx-i2s.h"
 
 /* #define ENFORCE_RATES 1 */
 /*
@@ -38,9 +36,18 @@ struct s3c24xx_uda134x {
   possible an error will be returned.
 */
 
+static struct clk *xtal;
+static struct clk *pclk;
+/* this is need because we don't have a place where to keep the
+ * pointers to the clocks in each substream. We get the clocks only
+ * when we are actually using them so we don't block stuff like
+ * frequency change or oscillator power-off */
+static int clk_users;
+static DEFINE_MUTEX(clk_lock);
+
 static unsigned int rates[33 * 2];
 #ifdef ENFORCE_RATES
-static const struct snd_pcm_hw_constraint_list hw_constraints_rates = {
+static struct snd_pcm_hw_constraint_list hw_constraints_rates = {
 	.count	= ARRAY_SIZE(rates),
 	.list	= rates,
 	.mask	= 0,
@@ -50,24 +57,26 @@ static const struct snd_pcm_hw_constraint_list hw_constraints_rates = {
 static int s3c24xx_uda134x_startup(struct snd_pcm_substream *substream)
 {
 	struct snd_soc_pcm_runtime *rtd = substream->private_data;
-	struct s3c24xx_uda134x *priv = snd_soc_card_get_drvdata(rtd->card);
 	struct snd_soc_dai *cpu_dai = rtd->cpu_dai;
+#ifdef ENFORCE_RATES
+	struct snd_pcm_runtime *runtime = substream->runtime;
+#endif
 	int ret = 0;
 
-	mutex_lock(&priv->clk_lock);
+	mutex_lock(&clk_lock);
 
-	if (priv->clk_users == 0) {
-		priv->xtal = clk_get(rtd->dev, "xtal");
-		if (IS_ERR(priv->xtal)) {
+	if (clk_users == 0) {
+		xtal = clk_get(rtd->dev, "xtal");
+		if (IS_ERR(xtal)) {
 			dev_err(rtd->dev, "%s cannot get xtal\n", __func__);
-			ret = PTR_ERR(priv->xtal);
+			ret = PTR_ERR(xtal);
 		} else {
-			priv->pclk = clk_get(cpu_dai->dev, "iis");
-			if (IS_ERR(priv->pclk)) {
+			pclk = clk_get(cpu_dai->dev, "iis");
+			if (IS_ERR(pclk)) {
 				dev_err(rtd->dev, "%s cannot get pclk\n",
 					__func__);
-				clk_put(priv->xtal);
-				ret = PTR_ERR(priv->pclk);
+				clk_put(xtal);
+				ret = PTR_ERR(pclk);
 			}
 		}
 		if (!ret) {
@@ -76,19 +85,18 @@ static int s3c24xx_uda134x_startup(struct snd_pcm_substream *substream)
 			for (i = 0; i < 2; i++) {
 				int fs = i ? 256 : 384;
 
-				rates[i*33] = clk_get_rate(priv->xtal) / fs;
+				rates[i*33] = clk_get_rate(xtal) / fs;
 				for (j = 1; j < 33; j++)
-					rates[i*33 + j] = clk_get_rate(priv->pclk) /
+					rates[i*33 + j] = clk_get_rate(pclk) /
 						(j * fs);
 			}
 		}
 	}
-	priv->clk_users += 1;
-	mutex_unlock(&priv->clk_lock);
-
+	clk_users += 1;
+	mutex_unlock(&clk_lock);
 	if (!ret) {
 #ifdef ENFORCE_RATES
-		ret = snd_pcm_hw_constraint_list(substream->runtime, 0,
+		ret = snd_pcm_hw_constraint_list(runtime, 0,
 						 SNDRV_PCM_HW_PARAM_RATE,
 						 &hw_constraints_rates);
 		if (ret < 0)
@@ -101,18 +109,15 @@ static int s3c24xx_uda134x_startup(struct snd_pcm_substream *substream)
 
 static void s3c24xx_uda134x_shutdown(struct snd_pcm_substream *substream)
 {
-	struct snd_soc_pcm_runtime *rtd = substream->private_data;
-	struct s3c24xx_uda134x *priv = snd_soc_card_get_drvdata(rtd->card);
-
-	mutex_lock(&priv->clk_lock);
-	priv->clk_users -= 1;
-	if (priv->clk_users == 0) {
-		clk_put(priv->xtal);
-		priv->xtal = NULL;
-		clk_put(priv->pclk);
-		priv->pclk = NULL;
+	mutex_lock(&clk_lock);
+	clk_users -= 1;
+	if (clk_users == 0) {
+		clk_put(xtal);
+		xtal = NULL;
+		clk_put(pclk);
+		pclk = NULL;
 	}
-	mutex_unlock(&priv->clk_lock);
+	mutex_unlock(&clk_lock);
 }
 
 static int s3c24xx_uda134x_hw_params(struct snd_pcm_substream *substream,
@@ -195,24 +200,22 @@ static int s3c24xx_uda134x_hw_params(struct snd_pcm_substream *substream,
 	return 0;
 }
 
-static const struct snd_soc_ops s3c24xx_uda134x_ops = {
+static struct snd_soc_ops s3c24xx_uda134x_ops = {
 	.startup = s3c24xx_uda134x_startup,
 	.shutdown = s3c24xx_uda134x_shutdown,
 	.hw_params = s3c24xx_uda134x_hw_params,
 };
 
-SND_SOC_DAILINK_DEFS(uda134x,
-	DAILINK_COMP_ARRAY(COMP_CPU("s3c24xx-iis")),
-	DAILINK_COMP_ARRAY(COMP_CODEC("uda134x-codec", "uda134x-hifi")),
-	DAILINK_COMP_ARRAY(COMP_PLATFORM("s3c24xx-iis")));
-
 static struct snd_soc_dai_link s3c24xx_uda134x_dai_link = {
 	.name = "UDA134X",
 	.stream_name = "UDA134X",
+	.codec_name = "uda134x-codec",
+	.codec_dai_name = "uda134x-hifi",
+	.cpu_dai_name = "s3c24xx-iis",
 	.dai_fmt = SND_SOC_DAIFMT_I2S | SND_SOC_DAIFMT_NB_NF |
 		   SND_SOC_DAIFMT_CBS_CFS,
 	.ops = &s3c24xx_uda134x_ops,
-	SND_SOC_DAILINK_REG(uda134x),
+	.platform_name	= "s3c24xx-iis",
 };
 
 static struct snd_soc_card snd_soc_s3c24xx_uda134x = {
@@ -225,17 +228,10 @@ static struct snd_soc_card snd_soc_s3c24xx_uda134x = {
 static int s3c24xx_uda134x_probe(struct platform_device *pdev)
 {
 	struct snd_soc_card *card = &snd_soc_s3c24xx_uda134x;
-	struct s3c24xx_uda134x *priv;
 	int ret;
 
-	priv = devm_kzalloc(&pdev->dev, sizeof(*priv), GFP_KERNEL);
-	if (!priv)
-		return -ENOMEM;
-
-	mutex_init(&priv->clk_lock);
-
+	platform_set_drvdata(pdev, card);
 	card->dev = &pdev->dev;
-	snd_soc_card_set_drvdata(card, priv);
 
 	ret = devm_snd_soc_register_card(&pdev->dev, card);
 	if (ret)

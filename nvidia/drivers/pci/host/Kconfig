@@ -1,0 +1,18 @@
+config PCIE_TEGRA_DW
+	tristate "NVIDIA Tegra DesignWare Core based PCIe controller"
+	depends on ARCH_TEGRA
+	select PCIEPORTBUS
+	select PCIE_K49_DW
+	help
+	 Say Y here if you want support for the next gen PCIe host controller
+	 which is based on Synopsys DesignWare IP suite found on next gen
+	 NVIDIA Tegra SoCs.
+
+config PCIE_TEGRA_DW_DMA_TEST
+	bool "DMA test framework"
+	depends on PCIE_TEGRA_DW
+	help
+	 Say Y here if you want to enable test framework for the DMA which is
+	 integrated into root port. Please note that this framework should be
+	 used only for testing purposes and enabling it would have security
+	 implications. If you are not sure, select NO.

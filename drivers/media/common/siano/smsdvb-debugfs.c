@@ -1,6 +1,21 @@
-// SPDX-License-Identifier: GPL-2.0+
-//
-// Copyright(c) 2013 Mauro Carvalho Chehab
+/***********************************************************************
+ *
+ * Copyright(c) 2013 Mauro Carvalho Chehab
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 2 of the License, or
+ * (at your option) any later version.
+
+ *  This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ *
+ ***********************************************************************/
 
 #include "smscoreapi.h"
 
@@ -11,10 +26,10 @@
 #include <linux/spinlock.h>
 #include <linux/usb.h>
 
-#include <media/dmxdev.h>
-#include <media/dvbdev.h>
-#include <media/dvb_demux.h>
-#include <media/dvb_frontend.h>
+#include "dmxdev.h"
+#include "dvbdev.h"
+#include "dvb_demux.h"
+#include "dvb_frontend.h"
 
 #include "smsdvb.h"
 
@@ -359,7 +374,7 @@ exit:
 	return rc;
 }
 
-static __poll_t smsdvb_stats_poll(struct file *file, poll_table *wait)
+static unsigned int smsdvb_stats_poll(struct file *file, poll_table *wait)
 {
 	struct smsdvb_debugfs *debug_data = file->private_data;
 	int rc;
@@ -369,9 +384,12 @@ static __poll_t smsdvb_stats_poll(struct file *file, poll_table *wait)
 	poll_wait(file, &debug_data->stats_queue, wait);
 
 	rc = smsdvb_stats_wait_read(debug_data);
+	if (rc > 0)
+		rc = POLLIN | POLLRDNORM;
+
 	kref_put(&debug_data->refcount, smsdvb_debugfs_data_release);
 
-	return rc > 0 ? EPOLLIN | EPOLLRDNORM : 0;
+	return rc;
 }
 
 static ssize_t smsdvb_stats_read(struct file *file, char __user *user_buf,
@@ -500,7 +518,7 @@ void smsdvb_debugfs_release(struct smsdvb_client_t *client)
 	client->debugfs = NULL;
 }
 
-void smsdvb_debugfs_register(void)
+int smsdvb_debugfs_register(void)
 {
 	struct dentry *d;
 
@@ -517,15 +535,15 @@ void smsdvb_debugfs_register(void)
 	d = debugfs_create_dir("smsdvb", usb_debug_root);
 	if (IS_ERR_OR_NULL(d)) {
 		pr_err("Couldn't create sysfs node for smsdvb\n");
-		return;
+		return PTR_ERR(d);
+	} else {
+		smsdvb_debugfs_usb_root = d;
 	}
-	smsdvb_debugfs_usb_root = d;
+	return 0;
 }
 
 void smsdvb_debugfs_unregister(void)
 {
-	if (!smsdvb_debugfs_usb_root)
-		return;
 	debugfs_remove_recursive(smsdvb_debugfs_usb_root);
 	smsdvb_debugfs_usb_root = NULL;
 }

@@ -1,9 +1,12 @@
-/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  *  linux/include/linux/mtd/onenand.h
  *
  *  Copyright © 2005-2009 Samsung Electronics
  *  Kyungmin Park <kyungmin.park@samsung.com>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  */
 
 #ifndef __LINUX_MTD_ONENAND_H
@@ -91,7 +94,6 @@ struct onenand_chip {
 	unsigned int		technology;
 	unsigned int		density_mask;
 	unsigned int		options;
-	unsigned int		badblockpos;
 
 	unsigned int		erase_shift;
 	unsigned int		page_shift;
@@ -185,8 +187,6 @@ struct onenand_chip {
 
 /* Check byte access in OneNAND */
 #define ONENAND_CHECK_BYTE_ACCESS(addr)		(addr & 0x1)
-
-#define ONENAND_BADBLOCK_POS		0
 
 /*
  * Options bits

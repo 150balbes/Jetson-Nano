@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * drivers/clk/tegra/clk-emc.c
  *
@@ -6,13 +5,21 @@
  *
  * Author:
  *	Mikko Perttunen <mperttunen@nvidia.com>
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
  */
 
 #include <linux/clk-provider.h>
 #include <linux/clk.h>
 #include <linux/clkdev.h>
 #include <linux/delay.h>
-#include <linux/io.h>
 #include <linux/module.h>
 #include <linux/of_address.h>
 #include <linux/of_platform.h>
@@ -114,28 +121,18 @@ static int emc_determine_rate(struct clk_hw *hw, struct clk_rate_request *req)
 	struct tegra_clk_emc *tegra;
 	u8 ram_code = tegra_read_ram_code();
 	struct emc_timing *timing = NULL;
-	int i, k, t;
+	int i;
 
 	tegra = container_of(hw, struct tegra_clk_emc, hw);
 
-	for (k = 0; k < tegra->num_timings; k++) {
-		if (tegra->timings[k].ram_code == ram_code)
-			break;
-	}
-
-	for (t = k; t < tegra->num_timings; t++) {
-		if (tegra->timings[t].ram_code != ram_code)
-			break;
-	}
-
-	for (i = k; i < t; i++) {
-		timing = tegra->timings + i;
-
-		if (timing->rate < req->rate && i != t - 1)
+	for (i = 0; i < tegra->num_timings; i++) {
+		if (tegra->timings[i].ram_code != ram_code)
 			continue;
 
+		timing = tegra->timings + i;
+
 		if (timing->rate > req->max_rate) {
-			i = max(i, k + 1);
+			i = min(i, 1);
 			req->rate = tegra->timings[i - 1].rate;
 			return 0;
 		}
@@ -143,8 +140,10 @@ static int emc_determine_rate(struct clk_hw *hw, struct clk_rate_request *req)
 		if (timing->rate < req->min_rate)
 			continue;
 
-		req->rate = timing->rate;
-		return 0;
+		if (timing->rate >= req->rate) {
+			req->rate = timing->rate;
+			return 0;
+		}
 	}
 
 	if (timing) {
@@ -215,10 +214,7 @@ static int emc_set_timing(struct tegra_clk_emc *tegra,
 
 	if (emc_get_parent(&tegra->hw) == timing->parent_index &&
 	    clk_get_rate(timing->parent) != timing->parent_rate) {
-		WARN_ONCE(1, "parent %s rate mismatch %lu %lu\n",
-			  __clk_get_name(timing->parent),
-			  clk_get_rate(timing->parent),
-			  timing->parent_rate);
+		BUG();
 		return -EINVAL;
 	}
 
@@ -286,7 +282,7 @@ static struct emc_timing *get_backup_timing(struct tegra_clk_emc *tegra,
 	for (i = timing_index+1; i < tegra->num_timings; i++) {
 		timing = tegra->timings + i;
 		if (timing->ram_code != ram_code)
-			break;
+			continue;
 
 		if (emc_parent_clk_sources[timing->parent_index] !=
 		    emc_parent_clk_sources[
@@ -297,7 +293,7 @@ static struct emc_timing *get_backup_timing(struct tegra_clk_emc *tegra,
 	for (i = timing_index-1; i >= 0; --i) {
 		timing = tegra->timings + i;
 		if (timing->ram_code != ram_code)
-			break;
+			continue;
 
 		if (emc_parent_clk_sources[timing->parent_index] !=
 		    emc_parent_clk_sources[
@@ -382,7 +378,7 @@ static int load_one_timing_from_dt(struct tegra_clk_emc *tegra,
 
 	err = of_property_read_u32(node, "clock-frequency", &tmp);
 	if (err) {
-		pr_err("timing %pOF: failed to read rate\n", node);
+		pr_err("timing %s: failed to read rate\n", node->full_name);
 		return err;
 	}
 
@@ -390,7 +386,8 @@ static int load_one_timing_from_dt(struct tegra_clk_emc *tegra,
 
 	err = of_property_read_u32(node, "nvidia,parent-clock-frequency", &tmp);
 	if (err) {
-		pr_err("timing %pOF: failed to read parent rate\n", node);
+		pr_err("timing %s: failed to read parent rate\n",
+		       node->full_name);
 		return err;
 	}
 
@@ -398,7 +395,8 @@ static int load_one_timing_from_dt(struct tegra_clk_emc *tegra,
 
 	timing->parent = of_clk_get_by_name(node, "emc-parent");
 	if (IS_ERR(timing->parent)) {
-		pr_err("timing %pOF: failed to get parent clock\n", node);
+		pr_err("timing %s: failed to get parent clock\n",
+		       node->full_name);
 		return PTR_ERR(timing->parent);
 	}
 
@@ -411,8 +409,8 @@ static int load_one_timing_from_dt(struct tegra_clk_emc *tegra,
 		}
 	}
 	if (timing->parent_index == 0xff) {
-		pr_err("timing %pOF: %s is not a valid parent\n",
-		       node, __clk_get_name(timing->parent));
+		pr_err("timing %s: %s is not a valid parent\n",
+		       node->full_name, __clk_get_name(timing->parent));
 		clk_put(timing->parent);
 		return -EINVAL;
 	}
@@ -437,23 +435,19 @@ static int load_timings_from_dt(struct tegra_clk_emc *tegra,
 				struct device_node *node,
 				u32 ram_code)
 {
-	struct emc_timing *timings_ptr;
 	struct device_node *child;
 	int child_count = of_get_child_count(node);
 	int i = 0, err;
-	size_t size;
 
-	size = (tegra->num_timings + child_count) * sizeof(struct emc_timing);
-
-	tegra->timings = krealloc(tegra->timings, size, GFP_KERNEL);
+	tegra->timings = kcalloc(child_count, sizeof(struct emc_timing),
+				 GFP_KERNEL);
 	if (!tegra->timings)
 		return -ENOMEM;
 
-	timings_ptr = tegra->timings + tegra->num_timings;
-	tegra->num_timings += child_count;
+	tegra->num_timings = child_count;
 
 	for_each_child_of_node(node, child) {
-		struct emc_timing *timing = timings_ptr + (i++);
+		struct emc_timing *timing = tegra->timings + (i++);
 
 		err = load_one_timing_from_dt(tegra, timing, child);
 		if (err) {
@@ -464,7 +458,7 @@ static int load_timings_from_dt(struct tegra_clk_emc *tegra,
 		timing->ram_code = ram_code;
 	}
 
-	sort(timings_ptr, child_count, sizeof(struct emc_timing),
+	sort(tegra->timings, tegra->num_timings, sizeof(struct emc_timing),
 	     cmp_timings, NULL);
 
 	return 0;
@@ -507,10 +501,10 @@ struct clk *tegra_clk_register_emc(void __iomem *base, struct device_node *np,
 		 * fuses until the apbmisc driver is loaded.
 		 */
 		err = load_timings_from_dt(tegra, node, node_ram_code);
-		if (err) {
-			of_node_put(node);
+		of_node_put(node);
+		if (err)
 			return ERR_PTR(err);
-		}
+		break;
 	}
 
 	if (tegra->num_timings == 0)
@@ -523,7 +517,7 @@ struct clk *tegra_clk_register_emc(void __iomem *base, struct device_node *np,
 
 	init.name = "emc";
 	init.ops = &tegra_clk_emc_ops;
-	init.flags = CLK_IS_CRITICAL;
+	init.flags = 0;
 	init.parent_names = emc_parent_clk_names;
 	init.num_parents = ARRAY_SIZE(emc_parent_clk_names);
 
@@ -539,6 +533,8 @@ struct clk *tegra_clk_register_emc(void __iomem *base, struct device_node *np,
 
 	/* Allow debugging tools to see the EMC clock */
 	clk_register_clkdev(clk, "emc", "tegra-clk-debug");
+
+	clk_prepare_enable(clk);
 
 	return clk;
 };

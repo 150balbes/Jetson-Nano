@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  *    Copyright IBM Corp. 2007, 2012
  *    Author(s): Peter Oberparleiter <peter.oberparleiter@de.ibm.com>
@@ -9,7 +8,7 @@
 #include <uapi/asm/chpid.h>
 #include <asm/cio.h>
 
-struct channel_path_desc_fmt0 {
+struct channel_path_desc {
 	u8 flags;
 	u8 lsn;
 	u8 desc;

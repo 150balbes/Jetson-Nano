@@ -1,8 +1,12 @@
-/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * drivers/net/ethernet/rocker/rocker.h - Rocker switch device driver
  * Copyright (c) 2014-2016 Jiri Pirko <jiri@mellanox.com>
  * Copyright (c) 2014 Scott Feldman <sfeldma@gmail.com>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
  */
 
 #ifndef _ROCKER_H
@@ -68,7 +72,6 @@ struct rocker {
 	struct rocker_dma_ring_info event_ring;
 	struct notifier_block fib_nb;
 	struct rocker_world_ops *wops;
-	struct workqueue_struct *rocker_owq;
 	void *wpriv;
 };
 
@@ -101,25 +104,32 @@ struct rocker_world_ops {
 	int (*port_open)(struct rocker_port *rocker_port);
 	void (*port_stop)(struct rocker_port *rocker_port);
 	int (*port_attr_stp_state_set)(struct rocker_port *rocker_port,
-				       u8 state);
+				       u8 state,
+				       struct switchdev_trans *trans);
 	int (*port_attr_bridge_flags_set)(struct rocker_port *rocker_port,
 					  unsigned long brport_flags,
 					  struct switchdev_trans *trans);
-	int (*port_attr_bridge_flags_support_get)(const struct rocker_port *
-						  rocker_port,
-						  unsigned long *
-						  p_brport_flags);
+	int (*port_attr_bridge_flags_get)(const struct rocker_port *rocker_port,
+					  unsigned long *p_brport_flags);
 	int (*port_attr_bridge_ageing_time_set)(struct rocker_port *rocker_port,
 						u32 ageing_time,
 						struct switchdev_trans *trans);
 	int (*port_obj_vlan_add)(struct rocker_port *rocker_port,
-				 const struct switchdev_obj_port_vlan *vlan);
+				 const struct switchdev_obj_port_vlan *vlan,
+				 struct switchdev_trans *trans);
 	int (*port_obj_vlan_del)(struct rocker_port *rocker_port,
 				 const struct switchdev_obj_port_vlan *vlan);
+	int (*port_obj_vlan_dump)(const struct rocker_port *rocker_port,
+				  struct switchdev_obj_port_vlan *vlan,
+				  switchdev_obj_dump_cb_t *cb);
 	int (*port_obj_fdb_add)(struct rocker_port *rocker_port,
-				u16 vid, const unsigned char *addr);
+				const struct switchdev_obj_port_fdb *fdb,
+				struct switchdev_trans *trans);
 	int (*port_obj_fdb_del)(struct rocker_port *rocker_port,
-				u16 vid, const unsigned char *addr);
+				const struct switchdev_obj_port_fdb *fdb);
+	int (*port_obj_fdb_dump)(const struct rocker_port *rocker_port,
+				 struct switchdev_obj_port_fdb *fdb,
+				 switchdev_obj_dump_cb_t *cb);
 	int (*port_master_linked)(struct rocker_port *rocker_port,
 				  struct net_device *master);
 	int (*port_master_unlinked)(struct rocker_port *rocker_port,

@@ -1,0 +1,31 @@
+if TTY
+
+config TEGRA_COMBINED_UART
+	bool "Tegra combined UART"
+	depends on ARCH_TEGRA_18x_SOC
+	default n
+	help
+	  Tegra combined UART is a client-server model which allows a server
+	  running on SPE to multiplex a single UART controller amongst multiple
+	  UART clients.
+
+	  This config enables the Linux client driver. Instead of
+	  directly bit banging the UART controller, the client driver
+	  communicates with the SPE server using mailbox registers. The SPE
+	  server multiplexes the UART controller amongst the various clients.
+	  This allows all the clients to send output and receive input through a
+	  single UART controller.
+
+	  Combined-uart uses 'ctrl /' as break-signal for SysRq, for example:
+	  'ctrl / + h' for sysrq-help.
+
+config TEGRA_HV_COMM
+	tristate "Tegra Hypervisor Communication"
+	depends on TEGRA_HV_MANAGER
+	help
+	  Add support for emulating a TTY device over the Tegra Hypervisor interface.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called tegra_hv_comm.
+
+endif

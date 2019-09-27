@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /* $Date: 2005/11/12 02:13:49 $ $RCSfile: my3126.c,v $ $Revision: 1.15 $ */
 #include "cphy.h"
 #include "elmer0.h"
@@ -94,7 +93,7 @@ static int my3126_interrupt_handler(struct cphy *cphy)
 	return cphy_cause_link_change;
 }
 
-static void my3126_poll(struct work_struct *work)
+static void my3216_poll(struct work_struct *work)
 {
 	struct cphy *cphy = container_of(work, struct cphy, phy_update.work);
 
@@ -177,7 +176,7 @@ static struct cphy *my3126_phy_create(struct net_device *dev,
 		return NULL;
 
 	cphy_init(cphy, dev, phy_addr, &my3126_ops, mdio_ops);
-	INIT_DELAYED_WORK(&cphy->phy_update, my3126_poll);
+	INIT_DELAYED_WORK(&cphy->phy_update, my3216_poll);
 	cphy->bmsr = 0;
 
 	return cphy;

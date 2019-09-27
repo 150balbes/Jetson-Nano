@@ -1,9 +1,18 @@
-// SPDX-License-Identifier: GPL-2.0+
 /*
  * /proc interface for comedi
  *
  * COMEDI - Linux Control and Measurement Device Interface
  * Copyright (C) 1998 David A. Schleef <ds@schleef.org>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
  */
 
 /*
@@ -62,10 +71,24 @@ static int comedi_read(struct seq_file *m, void *v)
 	return 0;
 }
 
-void __init comedi_proc_init(void)
+/*
+ * seq_file wrappers for procfile show routines.
+ */
+static int comedi_proc_open(struct inode *inode, struct file *file)
 {
-	if (!proc_create_single("comedi", 0444, NULL, comedi_read))
-		pr_warn("comedi: unable to create proc entry\n");
+	return single_open(file, comedi_read, NULL);
+}
+
+static const struct file_operations comedi_proc_fops = {
+	.open		= comedi_proc_open,
+	.read		= seq_read,
+	.llseek		= seq_lseek,
+	.release	= single_release,
+};
+
+void comedi_proc_init(void)
+{
+	proc_create("comedi", 0644, NULL, &comedi_proc_fops);
 }
 
 void comedi_proc_cleanup(void)

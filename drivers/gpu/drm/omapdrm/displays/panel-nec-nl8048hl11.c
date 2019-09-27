@@ -1,25 +1,34 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * NEC NL8048HL11 Panel driver
  *
- * Copyright (C) 2010 Texas Instruments Incorporated - http://www.ti.com/
+ * Copyright (C) 2010 Texas Instruments Inc.
  * Author: Erik Gilling <konkers@android.com>
  * Converted to new DSS device model: Tomi Valkeinen <tomi.valkeinen@ti.com>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
  */
 
-#include <linux/delay.h>
-#include <linux/gpio/consumer.h>
 #include <linux/module.h>
+#include <linux/delay.h>
 #include <linux/spi/spi.h>
+#include <linux/gpio/consumer.h>
+#include <linux/of_gpio.h>
 
 #include "../dss/omapdss.h"
 
 struct panel_drv_data {
 	struct omap_dss_device	dssdev;
+	struct omap_dss_device *in;
 
-	struct videomode vm;
+	struct omap_video_timings videomode;
 
-	struct gpio_desc *res_gpio;
+	int data_lines;
+
+	int res_gpio;
+	int qvga_gpio;
 
 	struct spi_device *spi;
 };
@@ -56,18 +65,22 @@ static const struct {
 	{ 156, 0x00 }, { 157, 0x00 }, { 2, 0x00 },
 };
 
-static const struct videomode nec_8048_panel_vm = {
-	.hactive	= LCD_XRES,
-	.vactive	= LCD_YRES,
+static const struct omap_video_timings nec_8048_panel_timings = {
+	.x_res		= LCD_XRES,
+	.y_res		= LCD_YRES,
 	.pixelclock	= LCD_PIXEL_CLOCK,
-	.hfront_porch	= 6,
-	.hsync_len	= 1,
-	.hback_porch	= 4,
-	.vfront_porch	= 3,
-	.vsync_len	= 1,
-	.vback_porch	= 4,
+	.hfp		= 6,
+	.hsw		= 1,
+	.hbp		= 4,
+	.vfp		= 3,
+	.vsw		= 1,
+	.vbp		= 4,
 
-	.flags		= DISPLAY_FLAGS_HSYNC_LOW | DISPLAY_FLAGS_VSYNC_LOW,
+	.vsync_level	= OMAPDSS_SIG_ACTIVE_LOW,
+	.hsync_level	= OMAPDSS_SIG_ACTIVE_LOW,
+	.data_pclk_edge	= OMAPDSS_DRIVE_SIG_RISING_EDGE,
+	.de_level	= OMAPDSS_SIG_ACTIVE_HIGH,
+	.sync_pclk_edge	= OMAPDSS_DRIVE_SIG_RISING_EDGE,
 };
 
 #define to_panel_data(p) container_of(p, struct panel_drv_data, dssdev)
@@ -103,54 +116,152 @@ static int init_nec_8048_wvga_lcd(struct spi_device *spi)
 	return 0;
 }
 
-static int nec_8048_connect(struct omap_dss_device *src,
-			    struct omap_dss_device *dst)
+static int nec_8048_connect(struct omap_dss_device *dssdev)
 {
+	struct panel_drv_data *ddata = to_panel_data(dssdev);
+	struct omap_dss_device *in = ddata->in;
+	int r;
+
+	if (omapdss_device_is_connected(dssdev))
+		return 0;
+
+	r = in->ops.dpi->connect(in, dssdev);
+	if (r)
+		return r;
+
 	return 0;
 }
 
-static void nec_8048_disconnect(struct omap_dss_device *src,
-				struct omap_dss_device *dst)
-{
-}
-
-static void nec_8048_enable(struct omap_dss_device *dssdev)
+static void nec_8048_disconnect(struct omap_dss_device *dssdev)
 {
 	struct panel_drv_data *ddata = to_panel_data(dssdev);
+	struct omap_dss_device *in = ddata->in;
 
-	gpiod_set_value_cansleep(ddata->res_gpio, 1);
+	if (!omapdss_device_is_connected(dssdev))
+		return;
+
+	in->ops.dpi->disconnect(in, dssdev);
+}
+
+static int nec_8048_enable(struct omap_dss_device *dssdev)
+{
+	struct panel_drv_data *ddata = to_panel_data(dssdev);
+	struct omap_dss_device *in = ddata->in;
+	int r;
+
+	if (!omapdss_device_is_connected(dssdev))
+		return -ENODEV;
+
+	if (omapdss_device_is_enabled(dssdev))
+		return 0;
+
+	if (ddata->data_lines)
+		in->ops.dpi->set_data_lines(in, ddata->data_lines);
+	in->ops.dpi->set_timings(in, &ddata->videomode);
+
+	r = in->ops.dpi->enable(in);
+	if (r)
+		return r;
+
+	if (gpio_is_valid(ddata->res_gpio))
+		gpio_set_value_cansleep(ddata->res_gpio, 1);
+
+	dssdev->state = OMAP_DSS_DISPLAY_ACTIVE;
+
+	return 0;
 }
 
 static void nec_8048_disable(struct omap_dss_device *dssdev)
 {
 	struct panel_drv_data *ddata = to_panel_data(dssdev);
+	struct omap_dss_device *in = ddata->in;
 
-	gpiod_set_value_cansleep(ddata->res_gpio, 0);
+	if (!omapdss_device_is_enabled(dssdev))
+		return;
+
+	if (gpio_is_valid(ddata->res_gpio))
+		gpio_set_value_cansleep(ddata->res_gpio, 0);
+
+	in->ops.dpi->disable(in);
+
+	dssdev->state = OMAP_DSS_DISPLAY_DISABLED;
 }
 
-static int nec_8048_get_modes(struct omap_dss_device *dssdev,
-			      struct drm_connector *connector)
+static void nec_8048_set_timings(struct omap_dss_device *dssdev,
+		struct omap_video_timings *timings)
+{
+	struct panel_drv_data *ddata = to_panel_data(dssdev);
+	struct omap_dss_device *in = ddata->in;
+
+	ddata->videomode = *timings;
+	dssdev->panel.timings = *timings;
+
+	in->ops.dpi->set_timings(in, timings);
+}
+
+static void nec_8048_get_timings(struct omap_dss_device *dssdev,
+		struct omap_video_timings *timings)
 {
 	struct panel_drv_data *ddata = to_panel_data(dssdev);
 
-	return omapdss_display_get_modes(connector, &ddata->vm);
+	*timings = ddata->videomode;
 }
 
-static const struct omap_dss_device_ops nec_8048_ops = {
+static int nec_8048_check_timings(struct omap_dss_device *dssdev,
+		struct omap_video_timings *timings)
+{
+	struct panel_drv_data *ddata = to_panel_data(dssdev);
+	struct omap_dss_device *in = ddata->in;
+
+	return in->ops.dpi->check_timings(in, timings);
+}
+
+static struct omap_dss_driver nec_8048_ops = {
 	.connect	= nec_8048_connect,
 	.disconnect	= nec_8048_disconnect,
 
 	.enable		= nec_8048_enable,
 	.disable	= nec_8048_disable,
 
-	.get_modes	= nec_8048_get_modes,
+	.set_timings	= nec_8048_set_timings,
+	.get_timings	= nec_8048_get_timings,
+	.check_timings	= nec_8048_check_timings,
+
+	.get_resolution	= omapdss_default_get_resolution,
 };
+
+static int nec_8048_probe_of(struct spi_device *spi)
+{
+	struct device_node *node = spi->dev.of_node;
+	struct panel_drv_data *ddata = dev_get_drvdata(&spi->dev);
+	struct omap_dss_device *in;
+	int gpio;
+
+	gpio = of_get_named_gpio(node, "reset-gpios", 0);
+	if (!gpio_is_valid(gpio)) {
+		dev_err(&spi->dev, "failed to parse enable gpio\n");
+		return gpio;
+	}
+	ddata->res_gpio = gpio;
+
+	/* XXX the panel spec doesn't mention any QVGA pin?? */
+	ddata->qvga_gpio = -ENOENT;
+
+	in = omapdss_of_find_source_for_first_ep(node);
+	if (IS_ERR(in)) {
+		dev_err(&spi->dev, "failed to find video source\n");
+		return PTR_ERR(in);
+	}
+
+	ddata->in = in;
+
+	return 0;
+}
 
 static int nec_8048_probe(struct spi_device *spi)
 {
 	struct panel_drv_data *ddata;
 	struct omap_dss_device *dssdev;
-	struct gpio_desc *gpio;
 	int r;
 
 	dev_dbg(&spi->dev, "%s\n", __func__);
@@ -174,44 +285,64 @@ static int nec_8048_probe(struct spi_device *spi)
 
 	ddata->spi = spi;
 
-	gpio = devm_gpiod_get(&spi->dev, "reset", GPIOD_OUT_LOW);
-	if (IS_ERR(gpio)) {
-		dev_err(&spi->dev, "failed to get reset gpio\n");
-		return PTR_ERR(gpio);
+	if (!spi->dev.of_node)
+		return -ENODEV;
+
+	r = nec_8048_probe_of(spi);
+	if (r)
+		return r;
+
+	if (gpio_is_valid(ddata->qvga_gpio)) {
+		r = devm_gpio_request_one(&spi->dev, ddata->qvga_gpio,
+				GPIOF_OUT_INIT_HIGH, "lcd QVGA");
+		if (r)
+			goto err_gpio;
 	}
 
-	ddata->res_gpio = gpio;
+	if (gpio_is_valid(ddata->res_gpio)) {
+		r = devm_gpio_request_one(&spi->dev, ddata->res_gpio,
+				GPIOF_OUT_INIT_LOW, "lcd RES");
+		if (r)
+			goto err_gpio;
+	}
 
-	ddata->vm = nec_8048_panel_vm;
+	ddata->videomode = nec_8048_panel_timings;
 
 	dssdev = &ddata->dssdev;
 	dssdev->dev = &spi->dev;
-	dssdev->ops = &nec_8048_ops;
+	dssdev->driver = &nec_8048_ops;
 	dssdev->type = OMAP_DISPLAY_TYPE_DPI;
-	dssdev->display = true;
 	dssdev->owner = THIS_MODULE;
-	dssdev->of_ports = BIT(0);
-	dssdev->ops_flags = OMAP_DSS_DEVICE_OP_MODES;
-	dssdev->bus_flags = DRM_BUS_FLAG_DE_HIGH
-			  | DRM_BUS_FLAG_SYNC_DRIVE_POSEDGE
-			  | DRM_BUS_FLAG_PIXDATA_DRIVE_POSEDGE;
+	dssdev->panel.timings = ddata->videomode;
 
-	omapdss_display_init(dssdev);
-	omapdss_device_register(dssdev);
+	r = omapdss_register_display(dssdev);
+	if (r) {
+		dev_err(&spi->dev, "Failed to register panel\n");
+		goto err_reg;
+	}
 
 	return 0;
+
+err_reg:
+err_gpio:
+	omap_dss_put_device(ddata->in);
+	return r;
 }
 
 static int nec_8048_remove(struct spi_device *spi)
 {
 	struct panel_drv_data *ddata = dev_get_drvdata(&spi->dev);
 	struct omap_dss_device *dssdev = &ddata->dssdev;
+	struct omap_dss_device *in = ddata->in;
 
 	dev_dbg(&ddata->spi->dev, "%s\n", __func__);
 
-	omapdss_device_unregister(dssdev);
+	omapdss_unregister_display(dssdev);
 
 	nec_8048_disable(dssdev);
+	nec_8048_disconnect(dssdev);
+
+	omap_dss_put_device(in);
 
 	return 0;
 }

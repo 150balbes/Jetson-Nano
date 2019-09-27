@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * dz.h: Serial port driver for DECstations equipped
  *       with the DZ chipset.

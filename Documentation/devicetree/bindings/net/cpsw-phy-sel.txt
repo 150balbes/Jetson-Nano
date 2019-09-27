@@ -1,4 +1,4 @@
-TI CPSW Phy mode Selection Device Tree Bindings (DEPRECATED)
+TI CPSW Phy mode Selection Device Tree Bindings
 -----------------------------------------------
 
 Required properties:

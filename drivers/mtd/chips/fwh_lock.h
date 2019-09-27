@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef FWH_LOCK_H
 #define FWH_LOCK_H
 

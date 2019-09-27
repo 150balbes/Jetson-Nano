@@ -1,9 +1,12 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  *  linux/arch/arm/kernel/dec21285.c: PCI functions for DC21285
  *
  *  Copyright (C) 1998-2001 Russell King
  *  Copyright (C) 1998-2000 Phil Blundell
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  */
 #include <linux/kernel.h>
 #include <linux/pci.h>
@@ -133,14 +136,19 @@ struct pci_ops dc21285_ops = {
 static struct timer_list serr_timer;
 static struct timer_list perr_timer;
 
-static void dc21285_enable_error(struct timer_list *timer)
+static void dc21285_enable_error(unsigned long __data)
 {
-	del_timer(timer);
+	switch (__data) {
+	case IRQ_PCI_SERR:
+		del_timer(&serr_timer);
+		break;
 
-	if (timer == &serr_timer)
-		enable_irq(IRQ_PCI_SERR);
-	else if (timer == &perr_timer)
-		enable_irq(IRQ_PCI_PERR);
+	case IRQ_PCI_PERR:
+		del_timer(&perr_timer);
+		break;
+	}
+
+	enable_irq(__data);
 }
 
 /*
@@ -249,7 +257,7 @@ int __init dc21285_setup(int nr, struct pci_sys_data *sys)
 	if (nr || !footbridge_cfn_mode())
 		return 0;
 
-	res = kcalloc(2, sizeof(struct resource), GFP_KERNEL);
+	res = kzalloc(sizeof(struct resource) * 2, GFP_KERNEL);
 	if (!res) {
 		printk("out of memory for root bus resources");
 		return 0;
@@ -315,8 +323,13 @@ void __init dc21285_preinit(void)
 		*CSR_PCICMD = (*CSR_PCICMD & 0xffff) | PCICMD_ERROR_BITS;
 	}
 
-	timer_setup(&serr_timer, dc21285_enable_error, 0);
-	timer_setup(&perr_timer, dc21285_enable_error, 0);
+	init_timer(&serr_timer);
+	init_timer(&perr_timer);
+
+	serr_timer.data = IRQ_PCI_SERR;
+	serr_timer.function = dc21285_enable_error;
+	perr_timer.data = IRQ_PCI_PERR;
+	perr_timer.function = dc21285_enable_error;
 
 	/*
 	 * We don't care if these fail.

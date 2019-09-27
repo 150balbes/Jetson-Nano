@@ -1,1 +1,1 @@
-#include <xen/arm/page.h>
+#include <../../arm/include/asm/xen/page.h>

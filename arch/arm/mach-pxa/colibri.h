@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _COLIBRI_H_
 #define _COLIBRI_H_
 
@@ -46,7 +45,7 @@ static inline void colibri_pxa3xx_init_lcd(int bl_pin) {}
 extern void colibri_pxa3xx_init_eth(struct ax_plat_data *plat_data);
 #endif
 
-#if IS_ENABLED(CONFIG_MTD_NAND_MARVELL)
+#if defined(CONFIG_MTD_NAND_PXA3xx) || defined(CONFIG_MTD_NAND_PXA3xx_MODULE)
 extern void colibri_pxa3xx_init_nand(void);
 #else
 static inline void colibri_pxa3xx_init_nand(void) {}

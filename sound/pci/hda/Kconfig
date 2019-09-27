@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0-only
 menu "HD-Audio"
 
 config SND_HDA
@@ -21,21 +20,6 @@ config SND_HDA_INTEL
 
 	  To compile this driver as a module, choose M here: the module
 	  will be called snd-hda-intel.
-
-config SND_HDA_TEGRA
-	tristate "NVIDIA Tegra HD Audio"
-	depends on ARCH_TEGRA
-	select SND_HDA
-	help
-	  Say Y here to support the HDA controller present in NVIDIA
-	  Tegra SoCs
-
-	  This options enables support for the HD Audio controller
-	  present in some NVIDIA Tegra SoCs, used to communicate audio
-	  to the HDMI output.
-
-	  To compile this driver as a module, choose M here: the module
-	  will be called snd-hda-tegra.
 
 if SND_HDA
 
@@ -128,14 +112,10 @@ comment "Set to Y if you want auto-loading the codec driver"
 
 config SND_HDA_CODEC_HDMI
 	tristate "Build HDMI/DisplayPort HD-audio codec support"
-	select SND_DYNAMIC_MINORS
 	help
 	  Say Y or M here to include HDMI and DisplayPort HD-audio codec
 	  support in snd-hda-intel driver.  This includes all AMD/ATI,
 	  Intel and Nvidia HDMI/DisplayPort codecs.
-
-	  Note that this option mandatorily enables CONFIG_SND_DYNAMIC_MINORS
-	  to assure the multiple streams for DP-MST support.
 
 comment "Set to Y if you want auto-loading the codec driver"
 	depends on SND_HDA=y && SND_HDA_CODEC_HDMI=m

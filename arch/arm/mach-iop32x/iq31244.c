@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * arch/arm/mach-iop32x/iq31244.c
  *
@@ -8,6 +7,11 @@
  * Copyright (C) 2002 Rory Bolt
  * Copyright 2003 (c) MontaVista, Software, Inc.
  * Copyright (C) 2004 Intel Corp.
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License as published by the
+ * Free Software Foundation; either version 2 of the License, or (at your
+ * option) any later version.
  */
 
 #include <linux/mm.h>
@@ -22,7 +26,6 @@
 #include <linux/mtd/physmap.h>
 #include <linux/platform_device.h>
 #include <linux/io.h>
-#include <linux/gpio/machine.h>
 #include <mach/hardware.h>
 #include <asm/cputype.h>
 #include <asm/irq.h>
@@ -282,8 +285,6 @@ void ep80219_power_off(void)
 static void __init iq31244_init_machine(void)
 {
 	register_iop32x_gpio();
-	gpiod_add_lookup_table(&iop3xx_i2c0_gpio_lookup);
-	gpiod_add_lookup_table(&iop3xx_i2c1_gpio_lookup);
 	platform_device_register(&iop3xx_i2c0_device);
 	platform_device_register(&iop3xx_i2c1_device);
 	platform_device_register(&iq31244_flash_device);

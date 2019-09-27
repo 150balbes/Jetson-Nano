@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /dts-v1/;
 
 #include "tango4-smp8758.dtsi"
@@ -9,7 +8,6 @@
 
 	aliases {
 		serial = &uart;
-		eth0 = &eth0;
 	};
 
 	memory@80000000 {
@@ -35,8 +33,4 @@
 		interrupts = <37 IRQ_TYPE_EDGE_RISING>;
 		reg = <4>;
 	};
-};
-
-&mmc1 {
-	non-removable; /* eMMC */
 };

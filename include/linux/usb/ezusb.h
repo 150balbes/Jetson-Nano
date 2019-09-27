@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __EZUSB_H
 #define __EZUSB_H
 

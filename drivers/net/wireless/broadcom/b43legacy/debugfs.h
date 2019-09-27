@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef B43legacy_DEBUGFS_H_
 #define B43legacy_DEBUGFS_H_
 

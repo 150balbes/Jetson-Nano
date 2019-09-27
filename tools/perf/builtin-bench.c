@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * builtin-bench.c
  *
@@ -14,9 +13,9 @@
  *  mem   ... memory access performance
  *  numa  ... NUMA scheduling and MM performance
  *  futex ... Futex performance
- *  epoll ... Event poll performance
  */
 #include "perf.h"
+#include "util/util.h"
 #include <subcmd/parse-options.h>
 #include "builtin.h"
 #include "bench/bench.h"
@@ -25,9 +24,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/prctl.h>
-#include <linux/zalloc.h>
 
-typedef int (*bench_fn_t)(int argc, const char **argv);
+typedef int (*bench_fn_t)(int argc, const char **argv, const char *prefix);
 
 struct bench {
 	const char	*name;
@@ -68,15 +66,6 @@ static struct bench futex_benchmarks[] = {
 	{ NULL,		NULL,						NULL			}
 };
 
-#ifdef HAVE_EVENTFD
-static struct bench epoll_benchmarks[] = {
-	{ "wait",	"Benchmark epoll concurrent epoll_waits",       bench_epoll_wait	},
-	{ "ctl",	"Benchmark epoll concurrent epoll_ctls",        bench_epoll_ctl		},
-	{ "all",	"Run all futex benchmarks",			NULL			},
-	{ NULL,		NULL,						NULL			}
-};
-#endif // HAVE_EVENTFD
-
 struct collection {
 	const char	*name;
 	const char	*summary;
@@ -90,9 +79,6 @@ static struct collection collections[] = {
 	{ "numa",	"NUMA scheduling and MM benchmarks",		numa_benchmarks		},
 #endif
 	{"futex",       "Futex stressing benchmarks",                   futex_benchmarks        },
-#ifdef HAVE_EVENTFD
-	{"epoll",       "Epoll stressing benchmarks",                   epoll_benchmarks        },
-#endif
 	{ "all",	"All benchmarks",				NULL			},
 	{ NULL,		NULL,						NULL			}
 };
@@ -169,7 +155,7 @@ static int bench_str2int(const char *str)
  * to something meaningful:
  */
 static int run_bench(const char *coll_name, const char *bench_name, bench_fn_t fn,
-		     int argc, const char **argv)
+		     int argc, const char **argv, const char *prefix)
 {
 	int size;
 	char *name;
@@ -185,7 +171,7 @@ static int run_bench(const char *coll_name, const char *bench_name, bench_fn_t f
 	prctl(PR_SET_NAME, name);
 	argv[0] = name;
 
-	ret = fn(argc, argv);
+	ret = fn(argc, argv, prefix);
 
 	free(name);
 
@@ -212,7 +198,7 @@ static void run_collection(struct collection *coll)
 		fflush(stdout);
 
 		argv[1] = bench->name;
-		run_bench(coll->name, bench->name, bench->fn, 1, argv);
+		run_bench(coll->name, bench->name, bench->fn, 1, argv, NULL);
 		printf("\n");
 	}
 }
@@ -225,7 +211,7 @@ static void run_all_collections(void)
 		run_collection(coll);
 }
 
-int cmd_bench(int argc, const char **argv)
+int cmd_bench(int argc, const char **argv, const char *prefix __maybe_unused)
 {
 	struct collection *coll;
 	int ret = 0;
@@ -284,7 +270,7 @@ int cmd_bench(int argc, const char **argv)
 			if (bench_format == BENCH_FORMAT_DEFAULT)
 				printf("# Running '%s/%s' benchmark:\n", coll->name, bench->name);
 			fflush(stdout);
-			ret = run_bench(coll->name, bench->name, bench->fn, argc-1, argv+1);
+			ret = run_bench(coll->name, bench->name, bench->fn, argc-1, argv+1, prefix);
 			goto end;
 		}
 

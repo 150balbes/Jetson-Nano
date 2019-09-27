@@ -1,17 +1,19 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * ARC700 mmap
  *
  * (started from arm version - for VIPT alias handling)
  *
  * Copyright (C) 2013 Synopsys, Inc. (www.synopsys.com)
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  */
 
 #include <linux/fs.h>
 #include <linux/mm.h>
 #include <linux/mman.h>
-#include <linux/sched/mm.h>
-
+#include <linux/sched.h>
 #include <asm/cacheflush.h>
 
 #define COLOUR_ALIGN(addr, pgoff)			\

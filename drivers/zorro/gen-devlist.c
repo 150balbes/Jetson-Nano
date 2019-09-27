@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  *	Generate devlist.h from the Zorro ID file.
  *

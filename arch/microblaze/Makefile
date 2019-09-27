@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0
 KBUILD_DEFCONFIG := mmu_defconfig
 
 ifeq ($(CONFIG_MMU),y)
@@ -37,20 +36,13 @@ CPUFLAGS-$(CONFIG_XILINX_MICROBLAZE0_USE_DIV) += -mno-xl-soft-div
 CPUFLAGS-$(CONFIG_XILINX_MICROBLAZE0_USE_BARREL) += -mxl-barrel-shift
 CPUFLAGS-$(CONFIG_XILINX_MICROBLAZE0_USE_PCMP_INSTR) += -mxl-pattern-compare
 
-ifdef CONFIG_CPU_BIG_ENDIAN
-KBUILD_CFLAGS += -mbig-endian
-KBUILD_AFLAGS += -mbig-endian
-KBUILD_LDFLAGS += -EB
-else
-KBUILD_CFLAGS += -mlittle-endian
-KBUILD_AFLAGS += -mlittle-endian
-KBUILD_LDFLAGS += -EL
-endif
-
 CPUFLAGS-1 += $(call cc-option,-mcpu=v$(CPU_VER))
 
 # r31 holds current when in kernel mode
-KBUILD_CFLAGS += -ffixed-r31 $(CPUFLAGS-y) $(CPUFLAGS-1) $(CPUFLAGS-2)
+KBUILD_CFLAGS += -ffixed-r31 $(CPUFLAGS-1) $(CPUFLAGS-2)
+
+LDFLAGS		:=
+LDFLAGS_vmlinux	:=
 
 head-y := arch/microblaze/kernel/head.o
 libs-y += arch/microblaze/lib/
@@ -65,7 +57,9 @@ boot := arch/microblaze/boot
 # Are we making a simpleImage.<boardname> target? If so, crack out the boardname
 DTB:=$(subst simpleImage.,,$(filter simpleImage.%, $(MAKECMDGOALS)))
 
-core-y	+= $(boot)/dts/
+ifneq ($(DTB),)
+	core-y	+= $(boot)/dts/
+endif
 
 # defines filename extension depending memory management type
 ifeq ($(CONFIG_MMU),)
@@ -79,30 +73,21 @@ all: linux.bin
 archclean:
 	$(Q)$(MAKE) $(clean)=$(boot)
 
-archheaders:
-	$(Q)$(MAKE) $(build)=arch/microblaze/kernel/syscalls all
-
-PHONY += linux.bin linux.bin.gz linux.bin.ub
-linux.bin.ub linux.bin.gz: linux.bin
-linux.bin: vmlinux
-linux.bin linux.bin.gz linux.bin.ub:
+linux.bin linux.bin.gz linux.bin.ub: vmlinux
 	$(Q)$(MAKE) $(build)=$(boot) $(boot)/$@
-	@echo 'Kernel: $(boot)/$@ is ready' ' (#'`cat .version`')'
 
-PHONY += simpleImage.$(DTB)
-simpleImage.$(DTB): vmlinux
-	$(Q)$(MAKE) $(build)=$(boot) $(addprefix $(boot)/$@., ub unstrip strip)
-	@echo 'Kernel: $(boot)/$@ is ready' ' (#'`cat .version`')'
+simpleImage.%: vmlinux
+	$(Q)$(MAKE) $(build)=$(boot) $(boot)/$@
 
 define archhelp
   echo '* linux.bin    - Create raw binary'
   echo '  linux.bin.gz - Create compressed raw binary'
   echo '  linux.bin.ub - Create U-Boot wrapped raw binary'
-  echo '  simpleImage.<dt> - Create the following images with <dt>.dtb linked in'
-  echo '                    simpleImage.<dt>        : raw image'
-  echo '                    simpleImage.<dt>.ub     : raw image with U-Boot header'
-  echo '                    simpleImage.<dt>.unstrip: ELF (identical to vmlinux)'
-  echo '                    simpleImage.<dt>.strip  : stripped ELF'
+  echo '  simpleImage.<dt> - ELF image with $(arch)/boot/dts/<dt>.dts linked in'
+  echo '                   - stripped elf with fdt blob'
+  echo '  simpleImage.<dt>.unstrip - full ELF image with fdt blob'
+  echo '  *_defconfig      - Select default config from arch/microblaze/configs'
+  echo ''
   echo '  Targets with <dt> embed a device tree blob inside the image'
   echo '  These targets support board with firmware that does not'
   echo '  support passing a device tree directly. Replace <dt> with the'

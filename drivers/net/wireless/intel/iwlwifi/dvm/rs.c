@@ -1,7 +1,22 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /******************************************************************************
  *
  * Copyright(c) 2005 - 2014 Intel Corporation. All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of version 2 of the GNU General Public License as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License along with
+ * this program; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin Street, Fifth Floor, Boston, MA 02110, USA
+ *
+ * The full GNU General Public License is included in this distribution in the
+ * file called LICENSE.
  *
  * Contact Information:
  *  Intel Linux Wireless <linuxwifi@intel.com>
@@ -349,7 +364,7 @@ static void rs_program_fix_rate(struct iwl_priv *priv,
 /*
 	get the traffic load value for tid
 */
-static void rs_tl_get_load(struct iwl_lq_sta *lq_data, u8 tid)
+static u32 rs_tl_get_load(struct iwl_lq_sta *lq_data, u8 tid)
 {
 	u32 curr_time = jiffies_to_msecs(jiffies);
 	u32 time_diff;
@@ -357,14 +372,14 @@ static void rs_tl_get_load(struct iwl_lq_sta *lq_data, u8 tid)
 	struct iwl_traffic_load *tl = NULL;
 
 	if (tid >= IWL_MAX_TID_COUNT)
-		return;
+		return 0;
 
 	tl = &(lq_data->load[tid]);
 
 	curr_time -= curr_time % TID_ROUND_VALUE;
 
 	if (!(tl->queue_count))
-		return;
+		return 0;
 
 	time_diff = TIME_WRAP_AROUND(tl->time_stamp, curr_time);
 	index = time_diff / TID_QUEUE_CELL_SPACING;
@@ -373,6 +388,8 @@ static void rs_tl_get_load(struct iwl_lq_sta *lq_data, u8 tid)
 	/* TID_MAX_TIME_DIFF */
 	if (index >= TID_QUEUE_MAX_SIZE)
 		rs_tl_rm_old_stats(tl, curr_time);
+
+	return tl->total;
 }
 
 static int rs_tl_turn_on_agg_for_tid(struct iwl_priv *priv,
@@ -380,6 +397,7 @@ static int rs_tl_turn_on_agg_for_tid(struct iwl_priv *priv,
 				      struct ieee80211_sta *sta)
 {
 	int ret = -EAGAIN;
+	u32 load;
 
 	/*
 	 * Don't create TX aggregation sessions when in high
@@ -392,7 +410,7 @@ static int rs_tl_turn_on_agg_for_tid(struct iwl_priv *priv,
 		return ret;
 	}
 
-	rs_tl_get_load(lq_data, tid);
+	load = rs_tl_get_load(lq_data, tid);
 
 	IWL_DEBUG_HT(priv, "Starting Tx agg: STA: %pM tid: %d\n",
 			sta->addr, tid);
@@ -725,10 +743,7 @@ static u16 rs_get_adjacent_rate(struct iwl_priv *priv, u8 index, u16 rate_mask,
 
 		/* Find the previous rate that is in the rate mask */
 		i = index - 1;
-		if (i >= 0)
-			mask = BIT(i);
-
-		for (; i >= 0; i--, mask >>= 1) {
+		for (mask = (1 << i); i >= 0; i--, mask >>= 1) {
 			if (rate_mask & mask) {
 				low = i;
 				break;
@@ -2705,7 +2720,7 @@ static void rs_get_rate(void *priv_r, struct ieee80211_sta *sta, void *priv_sta,
 
 	/* Get max rate if user set max rate */
 	if (lq_sta) {
-		lq_sta->max_rate_idx = fls(txrc->rate_idx_mask) - 1;
+		lq_sta->max_rate_idx = txrc->max_rate_idx;
 		if ((sband->band == NL80211_BAND_5GHZ) &&
 		    (lq_sta->max_rate_idx != -1))
 			lq_sta->max_rate_idx += IWL_FIRST_OFDM_RATE;
@@ -2719,6 +2734,10 @@ static void rs_get_rate(void *priv_r, struct ieee80211_sta *sta, void *priv_sta,
 		IWL_DEBUG_RATE(priv, "Rate scaling not initialized yet.\n");
 		priv_sta = NULL;
 	}
+
+	/* Send management frames and NO_ACK data using lowest rate. */
+	if (rate_control_send_low(sta, priv_sta, txrc))
+		return;
 
 	rate_idx  = lq_sta->last_txrate_idx;
 
@@ -3257,17 +3276,17 @@ static void rs_add_debugfs(void *priv, void *priv_sta,
 {
 	struct iwl_lq_sta *lq_sta = priv_sta;
 	lq_sta->rs_sta_dbgfs_scale_table_file =
-		debugfs_create_file("rate_scale_table", 0600, dir,
-				    lq_sta, &rs_sta_dbgfs_scale_table_ops);
+		debugfs_create_file("rate_scale_table", S_IRUSR | S_IWUSR, dir,
+				lq_sta, &rs_sta_dbgfs_scale_table_ops);
 	lq_sta->rs_sta_dbgfs_stats_table_file =
-		debugfs_create_file("rate_stats_table", 0400, dir,
-				    lq_sta, &rs_sta_dbgfs_stats_table_ops);
+		debugfs_create_file("rate_stats_table", S_IRUSR, dir,
+			lq_sta, &rs_sta_dbgfs_stats_table_ops);
 	lq_sta->rs_sta_dbgfs_rate_scale_data_file =
-		debugfs_create_file("rate_scale_data", 0400, dir,
-				    lq_sta, &rs_sta_dbgfs_rate_scale_data_ops);
+		debugfs_create_file("rate_scale_data", S_IRUSR, dir,
+			lq_sta, &rs_sta_dbgfs_rate_scale_data_ops);
 	lq_sta->rs_sta_dbgfs_tx_agg_tid_en_file =
-		debugfs_create_u8("tx_agg_tid_enable", 0600, dir,
-				  &lq_sta->tx_agg_tid_en);
+		debugfs_create_u8("tx_agg_tid_enable", S_IRUSR | S_IWUSR, dir,
+		&lq_sta->tx_agg_tid_en);
 
 }
 

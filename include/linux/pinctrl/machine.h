@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Machine interface for the pinctrl subsystem.
  *
@@ -7,6 +6,8 @@
  * Based on bits of regulator core, gpio core and clk core
  *
  * Author: Linus Walleij <linus.walleij@linaro.org>
+ *
+ * License terms: GNU General Public License (GPL) version 2
  */
 #ifndef __LINUX_PINCTRL_MACHINE_H
 #define __LINUX_PINCTRL_MACHINE_H
@@ -151,12 +152,12 @@ struct pinctrl_map {
 
 #ifdef CONFIG_PINCTRL
 
-extern int pinctrl_register_mappings(const struct pinctrl_map *map,
+extern int pinctrl_register_mappings(struct pinctrl_map const *map,
 				unsigned num_maps);
 extern void pinctrl_provide_dummies(void);
 #else
 
-static inline int pinctrl_register_mappings(const struct pinctrl_map *map,
+static inline int pinctrl_register_mappings(struct pinctrl_map const *map,
 					   unsigned num_maps)
 {
 	return 0;

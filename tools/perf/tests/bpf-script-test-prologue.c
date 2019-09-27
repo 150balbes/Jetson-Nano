@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * bpf-script-test-prologue.c
  * Test BPF prologue
@@ -11,15 +10,6 @@
 
 #include <uapi/linux/fs.h>
 
-/*
- * If CONFIG_PROFILE_ALL_BRANCHES is selected,
- * 'if' is redefined after include kernel header.
- * Recover 'if' for BPF object code.
- */
-#ifdef if
-# undef if
-#endif
-
 #define FMODE_READ		0x1
 #define FMODE_WRITE		0x2
 
@@ -27,11 +17,9 @@ static void (*bpf_trace_printk)(const char *fmt, int fmt_size, ...) =
 	(void *) 6;
 
 SEC("func=null_lseek file->f_mode offset orig")
-int bpf_func__null_lseek(void *ctx, int err, unsigned long _f_mode,
+int bpf_func__null_lseek(void *ctx, int err, unsigned long f_mode,
 			 unsigned long offset, unsigned long orig)
 {
-	fmode_t f_mode = (fmode_t)_f_mode;
-
 	if (err)
 		return 0;
 	if (f_mode & FMODE_WRITE)

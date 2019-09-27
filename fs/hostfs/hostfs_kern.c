@@ -243,9 +243,15 @@ static void hostfs_evict_inode(struct inode *inode)
 	}
 }
 
-static void hostfs_free_inode(struct inode *inode)
+static void hostfs_i_callback(struct rcu_head *head)
 {
+	struct inode *inode = container_of(head, struct inode, i_rcu);
 	kfree(HOSTFS_I(inode));
+}
+
+static void hostfs_destroy_inode(struct inode *inode)
+{
+	call_rcu(&inode->i_rcu, hostfs_i_callback);
 }
 
 static int hostfs_show_options(struct seq_file *seq, struct dentry *root)
@@ -264,7 +270,7 @@ static int hostfs_show_options(struct seq_file *seq, struct dentry *root)
 
 static const struct super_operations hostfs_sbops = {
 	.alloc_inode	= hostfs_alloc_inode,
-	.free_inode	= hostfs_free_inode,
+	.destroy_inode	= hostfs_destroy_inode,
 	.evict_inode	= hostfs_evict_inode,
 	.statfs		= hostfs_statfs,
 	.show_options	= hostfs_show_options,
@@ -368,7 +374,7 @@ static int hostfs_fsync(struct file *file, loff_t start, loff_t end,
 	struct inode *inode = file->f_mapping->host;
 	int ret;
 
-	ret = file_write_and_wait_range(file, start, end);
+	ret = filemap_write_and_wait_range(inode->i_mapping, start, end);
 	if (ret)
 		return ret;
 
@@ -549,9 +555,9 @@ static int read_name(struct inode *ino, char *name)
 	set_nlink(ino, st.nlink);
 	i_uid_write(ino, st.uid);
 	i_gid_write(ino, st.gid);
-	ino->i_atime = timespec_to_timespec64(st.atime);
-	ino->i_mtime = timespec_to_timespec64(st.mtime);
-	ino->i_ctime = timespec_to_timespec64(st.ctime);
+	ino->i_atime = st.atime;
+	ino->i_mtime = st.mtime;
+	ino->i_ctime = st.ctime;
 	ino->i_size = st.size;
 	ino->i_blocks = st.blocks;
 	return 0;
@@ -604,21 +610,33 @@ static struct dentry *hostfs_lookup(struct inode *ino, struct dentry *dentry,
 	int err;
 
 	inode = hostfs_iget(ino->i_sb);
-	if (IS_ERR(inode))
+	if (IS_ERR(inode)) {
+		err = PTR_ERR(inode);
 		goto out;
+	}
 
 	err = -ENOMEM;
 	name = dentry_name(dentry);
-	if (name) {
-		err = read_name(inode, name);
-		__putname(name);
-	}
-	if (err) {
+	if (name == NULL)
+		goto out_put;
+
+	err = read_name(inode, name);
+
+	__putname(name);
+	if (err == -ENOENT) {
 		iput(inode);
-		inode = (err == -ENOENT) ? NULL : ERR_PTR(err);
+		inode = NULL;
 	}
+	else if (err)
+		goto out_put;
+
+	d_add(dentry, inode);
+	return NULL;
+
+ out_put:
+	iput(inode);
  out:
-	return d_splice_alias(inode, dentry);
+	return ERR_PTR(err);
 }
 
 static int hostfs_link(struct dentry *to, struct inode *ino,
@@ -688,7 +706,7 @@ static int hostfs_rmdir(struct inode *ino, struct dentry *dentry)
 
 	if ((file = dentry_name(dentry)) == NULL)
 		return -ENOMEM;
-	err = hostfs_do_rmdir(file);
+	err = do_rmdir(file);
 	__putname(file);
 	return err;
 }
@@ -820,15 +838,15 @@ static int hostfs_setattr(struct dentry *dentry, struct iattr *attr)
 	}
 	if (attr->ia_valid & ATTR_ATIME) {
 		attrs.ia_valid |= HOSTFS_ATTR_ATIME;
-		attrs.ia_atime = timespec64_to_timespec(attr->ia_atime);
+		attrs.ia_atime = attr->ia_atime;
 	}
 	if (attr->ia_valid & ATTR_MTIME) {
 		attrs.ia_valid |= HOSTFS_ATTR_MTIME;
-		attrs.ia_mtime = timespec64_to_timespec(attr->ia_mtime);
+		attrs.ia_mtime = attr->ia_mtime;
 	}
 	if (attr->ia_valid & ATTR_CTIME) {
 		attrs.ia_valid |= HOSTFS_ATTR_CTIME;
-		attrs.ia_ctime = timespec64_to_timespec(attr->ia_ctime);
+		attrs.ia_ctime = attr->ia_ctime;
 	}
 	if (attr->ia_valid & ATTR_ATIME_SET) {
 		attrs.ia_valid |= HOSTFS_ATTR_ATIME_SET;
@@ -902,6 +920,7 @@ static const char *hostfs_get_link(struct dentry *dentry,
 }
 
 static const struct inode_operations hostfs_link_iops = {
+	.readlink	= generic_readlink,
 	.get_link	= hostfs_get_link,
 };
 

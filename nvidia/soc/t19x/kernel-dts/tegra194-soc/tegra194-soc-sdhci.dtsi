@@ -1,0 +1,145 @@
+/*
+ * Copyright (c) 2016, NVIDIA CORPORATION.  All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms and conditions of the GNU General Public License,
+ * version 2, as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
+#include <dt-bindings/clock/tegra194-clock.h>
+#include <dt-bindings/reset/tegra194-reset.h>
+#include <dt-bindings/interrupt/tegra194-irq.h>
+#include "tegra194-pin-drive-sdmmc-common.dtsi"
+
+/ {
+
+	aliases {
+		sdhci3 = &sdmmc4;
+		sdhci2 = &sdmmc3;
+		sdhci0 = &sdmmc1;
+	};
+
+	sdmmc4: sdhci@3460000 { /* Used for eMMC */
+		compatible = "nvidia,tegra194-sdhci";
+		reg = <0x0 0x3460000 0x0 0x00020000>;
+		interrupts = < 0 TEGRA194_IRQ_SDMMC4 0x04>;
+		iommus = <&smmu TEGRA_SID_SDMMC4A>;
+		dma-coherent;
+		max-clk-limit = <200000000>;
+		ddr-clk-limit = <51000000>;
+		bus-width = <8>;
+		only-1-8-v;
+		ignore-pm-notify;
+		keep-power-in-suspend;
+		non-removable;
+		cap-mmc-highspeed;
+		cap-sd-highspeed;
+		mmc-ddr-1_8v;
+		mmc-hs200-1_8v;
+		mmc-hs400-1_8v;
+		mmc-hs400-enhanced-strobe;
+		nvidia,min-tap-delay = <96>;
+		nvidia,max-tap-delay = <139>;
+		nvidia,en-periodic-cflush;
+		nvidia,periodic-cflush-to = <10>;
+		resets = <&bpmp_resets TEGRA194_RESET_SDMMC4>;
+		reset-names = "sdhci";
+		pll_source = "pll_p", "pll_c4_out0_lj";
+		nvidia,set-parent-clk;
+		nvidia,parent_clk_list = "pll_p", "pll_p", "NULL", "NULL", "NULL", "NULL", "NULL", "NULL", "pll_p", "pll_c4_out0_lj", "pll_c4_out0_lj";
+		clocks = <&bpmp_clks TEGRA194_CLK_SDMMC4>,
+			<&bpmp_clks TEGRA194_CLK_PLLP_OUT0>,
+			<&bpmp_clks TEGRA194_CLK_PLLC4>,
+			<&bpmp_clks TEGRA194_CLK_SDMMC_LEGACY_TM>;
+		clock-names = "sdmmc", "pll_p", "pll_c4_out0_lj", "sdmmc_legacy_tm";
+		status = "disabled";
+	};
+
+	sdmmc3: sdhci@3440000 {
+		compatible = "nvidia,tegra194-sdhci";
+		reg = <0x0 0x3440000 0x0 0x00020000>;
+		interrupts = < 0 TEGRA194_IRQ_SDMMC3 0x04>;
+		iommus = <&smmu TEGRA_SID_SDMMC3A>;
+		dma-coherent;
+		max-clk-limit = <208000000>;
+		bus-width = <4>;
+		cap-mmc-highspeed;
+		cap-sd-highspeed;
+		sd-uhs-sdr104;
+		sd-uhs-sdr50;
+		sd-uhs-sdr25;
+		sd-uhs-sdr12;
+		mmc-ddr-1_8v;
+		mmc-hs200-1_8v;
+		cd-inverted;
+		nvidia,min-tap-delay = <96>;
+		nvidia,max-tap-delay = <139>;
+		nvidia,vqmmc-always-on;
+		pwrdet-support;
+		pinctrl-names = "sdmmc_e_33v_enable", "sdmmc_e_33v_disable";
+		pinctrl-0 = <&sdmmc3_e_33V_enable>;
+		pinctrl-1 = <&sdmmc3_e_33V_disable>;
+		ignore-pm-notify;
+		resets = <&bpmp_resets TEGRA194_RESET_SDMMC3>;
+		reset-names = "sdhci";
+		pll_source = "pll_p", "pll_c4_muxed";
+		nvidia,set-parent-clk;
+		nvidia,parent_clk_list = "pll_p", "pll_p", "pll_p", "pll_p", "pll_p", "pll_c4_muxed", "pll_c4_muxed", "pll_c4_muxed", "pll_c4_muxed", "pll_c4_muxed", "NULL";
+		clocks = <&bpmp_clks TEGRA194_CLK_SDMMC3>,
+			<&bpmp_clks TEGRA194_CLK_PLLP_OUT0>,
+			<&bpmp_clks TEGRA194_CLK_PLLC4_MUXED>,
+			<&bpmp_clks TEGRA194_CLK_SDMMC_LEGACY_TM>;
+		clock-names = "sdmmc", "pll_p", "pll_c4_muxed", "sdmmc_legacy_tm";
+		uhs-mask = <0x08>;
+		nvidia,en-periodic-calib;
+		status = "disabled";
+	 };
+
+	sdmmc1: sdhci@3400000 {
+		compatible = "nvidia,tegra194-sdhci";
+		reg = <0x0 0x3400000 0x0 0x00020000>;
+		interrupts = < 0 TEGRA194_IRQ_SDMMC1 0x04>;
+		iommus = <&smmu TEGRA_SID_SDMMC1A>;
+		dma-coherent;
+		max-clk-limit = <208000000>;
+		bus-width = <4>;
+		cap-mmc-highspeed;
+		cap-sd-highspeed;
+		sd-uhs-sdr104;
+		sd-uhs-sdr50;
+		sd-uhs-sdr25;
+		sd-uhs-sdr12;
+		mmc-ddr-1_8v;
+		mmc-hs200-1_8v;
+		nvidia,vqmmc-always-on;
+		cd-inverted;
+		nvidia,min-tap-delay = <96>;
+		nvidia,max-tap-delay = <139>;
+		pwrdet-support;
+		pinctrl-names = "sdmmc_e_33v_enable", "sdmmc_e_33v_disable";
+		pinctrl-0 = <&sdmmc1_e_33V_enable>;
+		pinctrl-1 = <&sdmmc1_e_33V_disable>;
+		ignore-pm-notify;
+		resets = <&bpmp_resets TEGRA194_RESET_SDMMC1>;
+		reset-names = "sdhci";
+		pll_source = "pll_p", "pll_c4_muxed";
+		nvidia,set-parent-clk;
+		nvidia,parent_clk_list = "pll_p", "pll_p", "pll_p", "pll_p", "pll_p", "pll_c4_muxed", "pll_c4_muxed", "pll_c4_muxed", "pll_c4_muxed", "pll_c4_muxed", "NULL";
+		clocks = <&bpmp_clks TEGRA194_CLK_SDMMC1>,
+			<&bpmp_clks TEGRA194_CLK_PLLP_OUT0>,
+			<&bpmp_clks TEGRA194_CLK_PLLC4_MUXED>,
+			<&bpmp_clks TEGRA194_CLK_SDMMC_LEGACY_TM>;
+		clock-names = "sdmmc", "pll_p", "pll_c4_muxed", "sdmmc_legacy_tm";
+		uhs-mask = <0x08>;
+		nvidia,en-periodic-calib;
+		status = "disabled";
+	 };
+};

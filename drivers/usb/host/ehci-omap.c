@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0+
 /*
  * ehci-omap.c - driver for USBHOST on OMAP3/4 processors
  *
@@ -15,6 +14,21 @@
  *	Contact: Felipe Balbi <felipe.balbi@nokia.com>
  *
  * Based on "ehci-fsl.c" and "ehci-au1xxx.c" ehci glue layers
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+ *
  */
 
 #include <linux/kernel.h>
@@ -116,8 +130,8 @@ static int ehci_hcd_omap_probe(struct platform_device *pdev)
 
 	irq = platform_get_irq(pdev, 0);
 	if (irq < 0) {
-		dev_err(dev, "EHCI irq failed: %d\n", irq);
-		return irq;
+		dev_err(dev, "EHCI irq failed\n");
+		return -ENODEV;
 	}
 
 	res =  platform_get_resource(pdev, IORESOURCE_MEM, 0);
@@ -157,16 +171,17 @@ static int ehci_hcd_omap_probe(struct platform_device *pdev)
 		struct usb_phy *phy;
 
 		/* get the PHY device */
-		phy = devm_usb_get_phy_by_phandle(dev, "phys", i);
+		if (dev->of_node)
+			phy = devm_usb_get_phy_by_phandle(dev, "phys", i);
+		else
+			phy = devm_usb_get_phy_dev(dev, i);
 		if (IS_ERR(phy)) {
-			ret = PTR_ERR(phy);
-			if (ret == -ENODEV) { /* no PHY */
-				phy = NULL;
+			/* Don't bail out if PHY is not absolutely necessary */
+			if (pdata->port_mode[i] != OMAP_EHCI_PORT_MODE_PHY)
 				continue;
-			}
 
-			if (ret != -EPROBE_DEFER)
-				dev_err(dev, "Can't get PHY for port %d: %d\n",
+			ret = PTR_ERR(phy);
+			dev_err(dev, "Can't get PHY device for port %d: %d\n",
 					i, ret);
 			goto err_phy;
 		}

@@ -1,11 +1,4 @@
-.. Permission is granted to copy, distribute and/or modify this
-.. document under the terms of the GNU Free Documentation License,
-.. Version 1.1 or any later version published by the Free Software
-.. Foundation, with no Invariant Sections, no Front-Cover Texts
-.. and no Back-Cover Texts. A copy of the license is included at
-.. Documentation/media/uapi/fdl-appendix.rst.
-..
-.. TODO: replace it to GFDL-1.1-or-later WITH no-invariant-sections
+.. -*- coding: utf-8; mode: rst -*-
 
 .. _media_ioc_device_info:
 
@@ -33,7 +26,6 @@ Arguments
     File descriptor returned by :ref:`open() <media-func-open>`.
 
 ``argp``
-    Pointer to struct :c:type:`media_device_info`.
 
 
 Description
@@ -56,8 +48,12 @@ ioctl never fails.
     :widths:       1 1 2
 
 
-    *  -  char
+    -  .. row 1
+
+       -  char
+
        -  ``driver``\ [16]
+
        -  Name of the driver implementing the media API as a NUL-terminated
 	  ASCII string. The driver version is stored in the
 	  ``driver_version`` field.
@@ -66,38 +62,66 @@ ioctl never fails.
 	  the driver identity. It is also useful to work around known bugs,
 	  or to identify drivers in error reports.
 
-    *  -  char
+    -  .. row 2
+
+       -  char
+
        -  ``model``\ [32]
+
        -  Device model name as a NUL-terminated UTF-8 string. The device
 	  version is stored in the ``device_version`` field and is not be
 	  appended to the model name.
 
-    *  -  char
+    -  .. row 3
+
+       -  char
+
        -  ``serial``\ [40]
+
        -  Serial number as a NUL-terminated ASCII string.
 
-    *  -  char
+    -  .. row 4
+
+       -  char
+
        -  ``bus_info``\ [32]
+
        -  Location of the device in the system as a NUL-terminated ASCII
 	  string. This includes the bus type name (PCI, USB, ...) and a
 	  bus-specific identifier.
 
-    *  -  __u32
+    -  .. row 5
+
+       -  __u32
+
        -  ``media_version``
+
        -  Media API version, formatted with the ``KERNEL_VERSION()`` macro.
 
-    *  -  __u32
+    -  .. row 6
+
+       -  __u32
+
        -  ``hw_revision``
+
        -  Hardware device revision in a driver-specific format.
 
-    *  -  __u32
+    -  .. row 7
+
+       -  __u32
+
        -  ``driver_version``
+
        -  Media device driver version, formatted with the
 	  ``KERNEL_VERSION()`` macro. Together with the ``driver`` field
 	  this identifies a particular driver.
 
-    *  -  __u32
+    -  .. row 8
+
+       -  __u32
+
        -  ``reserved``\ [31]
+
        -  Reserved for future extensions. Drivers and applications must set
 	  this array to zero.
 

@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /* NGmemcpy.S: Niagara optimized memcpy.
  *
  * Copyright (C) 2006, 2007 David S. Miller (davem@davemloft.net)
@@ -395,7 +394,6 @@ FUNC_NAME:	/* %i0=dst, %i1=src, %i2=len */
 	brz,pt		%i2, 85f
 	 sub		%o0, %i1, %i3
 	ba,a,pt		%XCC, 90f
-	 nop
 
 	.align		64
 70: /* 16 < len <= 64 */

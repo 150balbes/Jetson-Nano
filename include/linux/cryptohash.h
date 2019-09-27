@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __CRYPTOHASH_H
 #define __CRYPTOHASH_H
 
@@ -10,5 +9,12 @@
 
 void sha_init(__u32 *buf);
 void sha_transform(__u32 *digest, const char *data, __u32 *W);
+
+#define MD5_DIGEST_WORDS 4
+#define MD5_MESSAGE_BYTES 64
+
+void md5_transform(__u32 *hash, __u32 const *in);
+
+__u32 half_md4_transform(__u32 buf[4], __u32 const in[8]);
 
 #endif

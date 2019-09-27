@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _LIBLOCKDEP_TEST_COMMON_H
 #define _LIBLOCKDEP_TEST_COMMON_H
 

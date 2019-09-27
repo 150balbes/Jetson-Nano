@@ -1,5 +1,10 @@
-/* SPDX-License-Identifier: GPL-2.0-or-later */
 /* Copyright (C) 2012 Dialog Semiconductor Ltd.
+ *
+ *  This program is free software; you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License as published by
+ *  the Free Software Foundation; either version 2 of the License, or
+ *  (at your option) any later version.
+ *
  */
 #ifndef __DA9055_PDATA_H
 #define __DA9055_PDATA_H
@@ -7,7 +12,6 @@
 #define DA9055_MAX_REGULATORS	8
 
 struct da9055;
-struct gpio_desc;
 
 enum gpio_select {
 	NO_GPIO = 0,
@@ -43,7 +47,7 @@ struct da9055_pdata {
 	 * controls the regulator set A/B, 0 if  not available.
 	 */
 	enum gpio_select *reg_rsel;
-	/* GPIO descriptors to enable regulator, NULL if not available */
-	struct gpio_desc **ena_gpiods;
+	/* GPIOs to enable regulator, 0 if not available */
+	int *ena_gpio;
 };
 #endif /* __DA9055_PDATA_H */

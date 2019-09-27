@@ -44,6 +44,8 @@
 #define OPA_MAX_SLS				32
 #define OPA_MAX_SCS				32
 
+#define OPA_SMI_CLASS_VERSION			0x80
+
 #define OPA_LID_PERMISSIVE			cpu_to_be32(0xFFFFFFFF)
 
 struct opa_smp {
@@ -98,7 +100,7 @@ struct opa_smp {
 
 struct opa_node_description {
 	u8 data[64];
-} __packed;
+} __attribute__ ((packed));
 
 struct opa_node_info {
 	u8      base_version;
@@ -114,7 +116,7 @@ struct opa_node_info {
 	__be32  revision;
 	u8      local_port_num;
 	u8      vendor_id[3];   /* network byte order */
-} __packed;
+} __attribute__ ((packed));
 
 #define OPA_PARTITION_TABLE_BLK_SIZE 32
 

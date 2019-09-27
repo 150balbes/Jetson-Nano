@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /// Use DEFINE_DEBUGFS_ATTRIBUTE rather than DEFINE_SIMPLE_ATTRIBUTE
 /// for debugfs files.
 ///

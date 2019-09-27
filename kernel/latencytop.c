@@ -1,9 +1,13 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * latencytop.c: Latency display infrastructure
  *
  * (C) Copyright 2008 Intel Corporation
  * Author: Arjan van de Ven <arjan@linux.intel.com>
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License
+ * as published by the Free Software Foundation; version 2
+ * of the License.
  */
 
 /*
@@ -51,8 +55,6 @@
 #include <linux/latencytop.h>
 #include <linux/export.h>
 #include <linux/sched.h>
-#include <linux/sched/debug.h>
-#include <linux/sched/stat.h>
 #include <linux/list.h>
 #include <linux/stacktrace.h>
 
@@ -63,9 +65,12 @@ static struct latency_record latency_record[MAXLR];
 
 int latencytop_enabled;
 
-void clear_tsk_latency_tracing(struct task_struct *p)
+void clear_all_latency_tracing(struct task_struct *p)
 {
 	unsigned long flags;
+
+	if (!latencytop_enabled)
+		return;
 
 	raw_spin_lock_irqsave(&latency_lock, flags);
 	memset(&p->latency_record, 0, sizeof(p->latency_record));
@@ -89,6 +94,9 @@ account_global_scheduler_latency(struct task_struct *tsk,
 	int firstnonnull = MAXLR + 1;
 	int i;
 
+	if (!latencytop_enabled)
+		return;
+
 	/* skip kernel threads for now */
 	if (!tsk->mm)
 		return;
@@ -110,8 +118,8 @@ account_global_scheduler_latency(struct task_struct *tsk,
 				break;
 			}
 
-			/* 0 entry marks end of backtrace: */
-			if (!record)
+			/* 0 and ULONG_MAX entries mean end of backtrace: */
+			if (record == 0 || record == ULONG_MAX)
 				break;
 		}
 		if (same) {
@@ -129,6 +137,20 @@ account_global_scheduler_latency(struct task_struct *tsk,
 
 	/* Allocted a new one: */
 	memcpy(&latency_record[i], lat, sizeof(struct latency_record));
+}
+
+/*
+ * Iterator to store a backtrace into a latency record entry
+ */
+static inline void store_stacktrace(struct task_struct *tsk,
+					struct latency_record *lat)
+{
+	struct stack_trace trace;
+
+	memset(&trace, 0, sizeof(trace));
+	trace.max_entries = LT_BACKTRACEDEPTH;
+	trace.entries = &lat->backtrace[0];
+	save_stack_trace_tsk(tsk, &trace);
 }
 
 /**
@@ -167,8 +189,7 @@ __account_scheduler_latency(struct task_struct *tsk, int usecs, int inter)
 	lat.count = 1;
 	lat.time = usecs;
 	lat.max = usecs;
-
-	stack_trace_save_tsk(tsk, lat.backtrace, LT_BACKTRACEDEPTH, 0);
+	store_stacktrace(tsk, &lat);
 
 	raw_spin_lock_irqsave(&latency_lock, flags);
 
@@ -187,8 +208,8 @@ __account_scheduler_latency(struct task_struct *tsk, int usecs, int inter)
 				break;
 			}
 
-			/* 0 entry is end of backtrace */
-			if (!record)
+			/* 0 and ULONG_MAX entries mean end of backtrace: */
+			if (record == 0 || record == ULONG_MAX)
 				break;
 		}
 		if (same) {
@@ -229,10 +250,10 @@ static int lstats_show(struct seq_file *m, void *v)
 				   lr->count, lr->time, lr->max);
 			for (q = 0; q < LT_BACKTRACEDEPTH; q++) {
 				unsigned long bt = lr->backtrace[q];
-
 				if (!bt)
 					break;
-
+				if (bt == ULONG_MAX)
+					break;
 				seq_printf(m, " %ps", (void *)bt);
 			}
 			seq_puts(m, "\n");

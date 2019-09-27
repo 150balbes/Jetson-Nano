@@ -19,6 +19,10 @@
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 */
 
 #include <linux/init.h>
@@ -345,7 +349,7 @@ static int usb_shark_probe(struct usb_interface *intf,
 	shark->tea.ops = &shark_tea_ops;
 	shark->tea.cannot_mute = true;
 	shark->tea.has_am = true;
-	strscpy(shark->tea.card, "Griffin radioSHARK",
+	strlcpy(shark->tea.card, "Griffin radioSHARK",
 		sizeof(shark->tea.card));
 	usb_make_path(shark->usbdev, shark->tea.bus_info,
 		sizeof(shark->tea.bus_info));
@@ -392,7 +396,7 @@ static int usb_shark_resume(struct usb_interface *intf)
 #endif
 
 /* Specify the bcdDevice value, as the radioSHARK and radioSHARK2 share ids */
-static const struct usb_device_id usb_shark_device_table[] = {
+static struct usb_device_id usb_shark_device_table[] = {
 	{ .match_flags = USB_DEVICE_ID_MATCH_DEVICE_AND_VERSION |
 			 USB_DEVICE_ID_MATCH_INT_CLASS,
 	  .idVendor     = 0x077d,

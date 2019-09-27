@@ -1,0 +1,18 @@
+* Tegra Hypervisor PM control (tegra_hv_pm_ctl)
+
+Required properties:
+- compatible: Should be "nvidia,tegra-hv-pm-ctl".
+- ivc : IVC channel ID between Guest VM and Sysmgr.
+
+Optional properties:
+- wait-for-guests: Used for dependency management.
+                   VMs which should be inactive (shutdown/suspended)
+                   before this VM should be specified in this property
+
+Example:
+	tegra_hv_pm_ctl {
+		compatible = "nvidia,tegra-hv-pm-ctl";
+		status = "okay";
+		ivc = <&tegra_hv 102>;
+		wait-for-guests = <1 2 3 ...>;
+	};

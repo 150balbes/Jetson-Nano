@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0
 #
 # MAKEFILE FOR THE MIPS LINUX BOOTLOADER AND ROM DEBUGGER
 #
@@ -38,7 +37,7 @@ $(obj)/rom.bin: $(obj)/rom
 
 # Rule to make the bootloader
 $(obj)/rom: $(addprefix $(obj)/,$(OBJECTS))
-	$(LD) $(KBUILD_LDFLAGS) $(LDSCRIPT) -o $@ $^
+	$(LD) $(LDFLAGS) $(LDSCRIPT) -o $@ $^
 
 $(obj)/%.o: $(obj)/%.gz
 	$(LD) -r -o $@ -b binary $<

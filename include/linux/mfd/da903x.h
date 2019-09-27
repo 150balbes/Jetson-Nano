@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __LINUX_PMIC_DA903X_H
 #define __LINUX_PMIC_DA903X_H
 

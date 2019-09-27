@@ -1,9 +1,12 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * RNDIS MSG parser
  *
  * Authors:	Benedikt Spranger, Pengutronix
  *		Robert Schwebel, Pengutronix
+ *
+ *              This program is free software; you can redistribute it and/or
+ *              modify it under the terms of the GNU General Public License
+ *              version 2, as published by the Free Software Foundation.
  *
  *		This software was originally developed in conformance with
  *		Microsoft's Remote NDIS Specification License Agreement.
@@ -77,7 +80,8 @@ static const struct file_operations rndis_proc_fops;
 #endif /* CONFIG_USB_GADGET_DEBUG_FILES */
 
 /* supported OIDs */
-static const u32 oid_supported_list[] = {
+static const u32 oid_supported_list[] =
+{
 	/* the general stuff */
 	RNDIS_OID_GEN_SUPPORTED_LIST,
 	RNDIS_OID_GEN_HARDWARE_STATUS,
@@ -198,6 +202,9 @@ static int gen_ndis_query_resp(struct rndis_params *params, u32 OID, u8 *buf,
 	outbuf = (__le32 *)&resp[1];
 	resp->InformationBufferOffset = cpu_to_le32(16);
 
+	if (!params->dev)
+		return -ENODEV;
+
 	net = params->dev;
 	stats = dev_get_stats(net, &temp);
 
@@ -246,10 +253,8 @@ static int gen_ndis_query_resp(struct rndis_params *params, u32 OID, u8 *buf,
 	/* mandatory */
 	case RNDIS_OID_GEN_MAXIMUM_FRAME_SIZE:
 		pr_debug("%s: RNDIS_OID_GEN_MAXIMUM_FRAME_SIZE\n", __func__);
-		if (params->dev) {
-			*outbuf = cpu_to_le32(params->dev->mtu);
-			retval = 0;
-		}
+		*outbuf = cpu_to_le32(params->dev->mtu);
+		retval = 0;
 		break;
 
 	/* mandatory */
@@ -266,19 +271,15 @@ static int gen_ndis_query_resp(struct rndis_params *params, u32 OID, u8 *buf,
 	/* mandatory */
 	case RNDIS_OID_GEN_TRANSMIT_BLOCK_SIZE:
 		pr_debug("%s: RNDIS_OID_GEN_TRANSMIT_BLOCK_SIZE\n", __func__);
-		if (params->dev) {
-			*outbuf = cpu_to_le32(params->dev->mtu);
-			retval = 0;
-		}
+		*outbuf = cpu_to_le32(params->dev->mtu);
+		retval = 0;
 		break;
 
 	/* mandatory */
 	case RNDIS_OID_GEN_RECEIVE_BLOCK_SIZE:
 		pr_debug("%s: RNDIS_OID_GEN_RECEIVE_BLOCK_SIZE\n", __func__);
-		if (params->dev) {
-			*outbuf = cpu_to_le32(params->dev->mtu);
-			retval = 0;
-		}
+		*outbuf = cpu_to_le32(params->dev->mtu);
+		retval = 0;
 		break;
 
 	/* mandatory */
@@ -405,21 +406,17 @@ static int gen_ndis_query_resp(struct rndis_params *params, u32 OID, u8 *buf,
 	/* mandatory */
 	case RNDIS_OID_802_3_PERMANENT_ADDRESS:
 		pr_debug("%s: RNDIS_OID_802_3_PERMANENT_ADDRESS\n", __func__);
-		if (params->dev) {
-			length = ETH_ALEN;
-			memcpy(outbuf, params->host_mac, length);
-			retval = 0;
-		}
+		length = ETH_ALEN;
+		memcpy(outbuf, params->host_mac, length);
+		retval = 0;
 		break;
 
 	/* mandatory */
 	case RNDIS_OID_802_3_CURRENT_ADDRESS:
 		pr_debug("%s: RNDIS_OID_802_3_CURRENT_ADDRESS\n", __func__);
-		if (params->dev) {
-			length = ETH_ALEN;
-			memcpy(outbuf, params->host_mac, length);
-			retval = 0;
-		}
+		length = ETH_ALEN;
+		memcpy(outbuf, params->host_mac, length);
+		retval = 0;
 		break;
 
 	/* mandatory */
@@ -470,7 +467,8 @@ static int gen_ndis_query_resp(struct rndis_params *params, u32 OID, u8 *buf,
 		break;
 
 	default:
-		pr_warn("%s: query unknown OID 0x%08X\n", __func__, OID);
+		pr_warning("%s: query unknown OID 0x%08X\n",
+			 __func__, OID);
 	}
 	if (retval < 0)
 		length = 0;
@@ -541,8 +539,8 @@ static int gen_ndis_set_resp(struct rndis_params *params, u32 OID,
 		break;
 
 	default:
-		pr_warn("%s: set unknown OID 0x%08X, size %d\n",
-			__func__, OID, buf_len);
+		pr_warning("%s: set unknown OID 0x%08X, size %d\n",
+			 __func__, OID, buf_len);
 	}
 
 	return retval;
@@ -849,11 +847,8 @@ int rndis_msg_parser(struct rndis_params *params, u8 *buf)
 		 * In one case those messages seemed to relate to the host
 		 * suspending itself.
 		 */
-		pr_warn("%s: unknown RNDIS message 0x%08X len %d\n",
+		pr_warning("%s: unknown RNDIS message 0x%08X len %d\n",
 			__func__, MsgType, MsgLength);
-		/* Garbled message can be huge, so limit what we display */
-		if (MsgLength > 16)
-			MsgLength = 16;
 		print_hex_dump_bytes(__func__, DUMP_PREFIX_OFFSET,
 				     buf, MsgLength);
 		break;
@@ -999,7 +994,7 @@ void rndis_add_hdr(struct sk_buff *skb)
 
 	if (!skb)
 		return;
-	header = skb_push(skb, sizeof(*header));
+	header = (void *)skb_push(skb, sizeof(*header));
 	memset(header, 0, sizeof *header);
 	header->MessageType = cpu_to_le32(RNDIS_MSG_PACKET);
 	header->MessageLength = cpu_to_le32(skb->len);

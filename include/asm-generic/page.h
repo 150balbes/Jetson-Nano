@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __ASM_GENERIC_PAGE_H
 #define __ASM_GENERIC_PAGE_H
 /*
@@ -7,7 +6,7 @@
  */
 
 #ifdef CONFIG_MMU
-#error need to provide a real asm/page.h
+#error need to prove a real asm/page.h
 #endif
 
 

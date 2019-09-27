@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0+
 /******************************************************************************
  *  speedtch.c  -  Alcatel SpeedTouch USB xDSL modem driver
  *
@@ -7,6 +6,21 @@
  *  Copyright (C) 2004, David Woodhouse
  *
  *  Based on "modem_run.c", copyright (C) 2001, Benoit Papillault
+ *
+ *  This program is free software; you can redistribute it and/or modify it
+ *  under the terms of the GNU General Public License as published by the Free
+ *  Software Foundation; either version 2 of the License, or (at your option)
+ *  any later version.
+ *
+ *  This program is distributed in the hope that it will be useful, but WITHOUT
+ *  ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ *  FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ *  more details.
+ *
+ *  You should have received a copy of the GNU General Public License along with
+ *  this program; if not, write to the Free Software Foundation, Inc., 59
+ *  Temple Place - Suite 330, Boston, MA  02111-1307, USA.
+ *
  ******************************************************************************/
 
 #include <asm/page.h>
@@ -26,7 +40,8 @@
 #include "usbatm.h"
 
 #define DRIVER_AUTHOR	"Johan Verrept, Duncan Sands <duncan.sands@free.fr>"
-#define DRIVER_DESC	"Alcatel SpeedTouch USB driver"
+#define DRIVER_VERSION	"1.10"
+#define DRIVER_DESC	"Alcatel SpeedTouch USB driver version " DRIVER_VERSION
 
 static const char speedtch_driver_name[] = "speedtch";
 
@@ -557,10 +572,9 @@ static void speedtch_check_status(struct work_struct *work)
 	}
 }
 
-static void speedtch_status_poll(struct timer_list *t)
+static void speedtch_status_poll(unsigned long data)
 {
-	struct speedtch_instance_data *instance = from_timer(instance, t,
-						             status_check_timer);
+	struct speedtch_instance_data *instance = (void *)data;
 
 	schedule_work(&instance->status_check_work);
 
@@ -571,10 +585,9 @@ static void speedtch_status_poll(struct timer_list *t)
 		atm_warn(instance->usbatm, "Too many failures - disabling line status polling\n");
 }
 
-static void speedtch_resubmit_int(struct timer_list *t)
+static void speedtch_resubmit_int(unsigned long data)
 {
-	struct speedtch_instance_data *instance = from_timer(instance, t,
-							     resubmit_timer);
+	struct speedtch_instance_data *instance = (void *)data;
 	struct urb *int_urb = instance->int_urb;
 	int ret;
 
@@ -725,7 +738,7 @@ static int speedtch_post_reset(struct usb_interface *intf)
 **  USB  **
 **********/
 
-static const struct usb_device_id speedtch_usb_ids[] = {
+static struct usb_device_id speedtch_usb_ids[] = {
 	{USB_DEVICE(0x06b9, 0x4061)},
 	{}
 };
@@ -862,11 +875,16 @@ static int speedtch_bind(struct usbatm_data *usbatm,
 	usbatm->flags |= (use_isoc ? UDSL_USE_ISOC : 0);
 
 	INIT_WORK(&instance->status_check_work, speedtch_check_status);
-	timer_setup(&instance->status_check_timer, speedtch_status_poll, 0);
+	init_timer(&instance->status_check_timer);
+
+	instance->status_check_timer.function = speedtch_status_poll;
+	instance->status_check_timer.data = (unsigned long)instance;
 	instance->last_status = 0xff;
 	instance->poll_delay = MIN_POLL_DELAY;
 
-	timer_setup(&instance->resubmit_timer, speedtch_resubmit_int, 0);
+	init_timer(&instance->resubmit_timer);
+	instance->resubmit_timer.function = speedtch_resubmit_int;
+	instance->resubmit_timer.data = (unsigned long)instance;
 
 	instance->int_urb = usb_alloc_urb(0, GFP_KERNEL);
 
@@ -944,3 +962,4 @@ module_usb_driver(speedtch_usb_driver);
 MODULE_AUTHOR(DRIVER_AUTHOR);
 MODULE_DESCRIPTION(DRIVER_DESC);
 MODULE_LICENSE("GPL");
+MODULE_VERSION(DRIVER_VERSION);

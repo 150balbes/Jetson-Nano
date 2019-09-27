@@ -25,22 +25,16 @@
  *          Alex Deucher
  *          Jerome Glisse
  */
-
 #include <linux/seq_file.h>
 #include <linux/slab.h>
-
-#include <drm/drm_debugfs.h>
-#include <drm/drm_device.h>
-#include <drm/drm_file.h>
-#include <drm/drm_pci.h>
-
-#include "atom.h"
-#include "r100d.h"
-#include "r420_reg_safe.h"
-#include "r420d.h"
+#include <drm/drmP.h>
+#include "radeon_reg.h"
 #include "radeon.h"
 #include "radeon_asic.h"
-#include "radeon_reg.h"
+#include "atom.h"
+#include "r100d.h"
+#include "r420d.h"
+#include "r420_reg_safe.h"
 
 void r420_pm_init_profile(struct radeon_device *rdev)
 {
@@ -98,7 +92,8 @@ void r420_pipes_init(struct radeon_device *rdev)
 	       (1 << 2) | (1 << 3));
 	/* add idle wait as per freedesktop.org bug 24041 */
 	if (r100_gui_wait_for_idle(rdev)) {
-		pr_warn("Failed to wait GUI idle while programming pipes. Bad things might happen.\n");
+		printk(KERN_WARNING "Failed to wait GUI idle while "
+		       "programming pipes. Bad things might happen.\n");
 	}
 	/* get max number of pipes */
 	gb_pipe_select = RREG32(R400_GB_PIPE_SELECT);
@@ -115,7 +110,6 @@ void r420_pipes_init(struct radeon_device *rdev)
 	default:
 		/* force to 1 pipe */
 		num_pipes = 1;
-		/* fall through */
 	case 1:
 		tmp = (0 << 1);
 		break;
@@ -134,7 +128,8 @@ void r420_pipes_init(struct radeon_device *rdev)
 	tmp |= R300_TILE_SIZE_16 | R300_ENABLE_TILING;
 	WREG32(R300_GB_TILE_CONFIG, tmp);
 	if (r100_gui_wait_for_idle(rdev)) {
-		pr_warn("Failed to wait GUI idle while programming pipes. Bad things might happen.\n");
+		printk(KERN_WARNING "Failed to wait GUI idle while "
+		       "programming pipes. Bad things might happen.\n");
 	}
 
 	tmp = RREG32(R300_DST_PIPE_CONFIG);
@@ -146,7 +141,8 @@ void r420_pipes_init(struct radeon_device *rdev)
 	       R300_DC_DC_DISABLE_IGNORE_PE);
 
 	if (r100_gui_wait_for_idle(rdev)) {
-		pr_warn("Failed to wait GUI idle while programming pipes. Bad things might happen.\n");
+		printk(KERN_WARNING "Failed to wait GUI idle while "
+		       "programming pipes. Bad things might happen.\n");
 	}
 
 	if (rdev->family == CHIP_RV530) {
@@ -210,7 +206,6 @@ static void r420_clock_resume(struct radeon_device *rdev)
 
 static void r420_cp_errata_init(struct radeon_device *rdev)
 {
-	int r;
 	struct radeon_ring *ring = &rdev->ring[RADEON_RING_TYPE_GFX_INDEX];
 
 	/* RV410 and R420 can lock up if CP DMA to host memory happens
@@ -220,8 +215,7 @@ static void r420_cp_errata_init(struct radeon_device *rdev)
 	 * of the CP init, apparently.
 	 */
 	radeon_scratch_get(rdev, &rdev->config.r300.resync_scratch);
-	r = radeon_ring_lock(rdev, ring, 8);
-	WARN_ON(r);
+	radeon_ring_lock(rdev, ring, 8);
 	radeon_ring_write(ring, PACKET0(R300_CP_RESYNC_ADDR, 1));
 	radeon_ring_write(ring, rdev->config.r300.resync_scratch);
 	radeon_ring_write(ring, 0xDEADBEEF);
@@ -230,14 +224,12 @@ static void r420_cp_errata_init(struct radeon_device *rdev)
 
 static void r420_cp_errata_fini(struct radeon_device *rdev)
 {
-	int r;
 	struct radeon_ring *ring = &rdev->ring[RADEON_RING_TYPE_GFX_INDEX];
 
 	/* Catch the RESYNC we dispatched all the way back,
 	 * at the very beginning of the CP init.
 	 */
-	r = radeon_ring_lock(rdev, ring, 8);
-	WARN_ON(r);
+	radeon_ring_lock(rdev, ring, 8);
 	radeon_ring_write(ring, PACKET0(R300_RB3D_DSTCACHE_CTLSTAT, 0));
 	radeon_ring_write(ring, R300_RB3D_DC_FINISH);
 	radeon_ring_unlock_commit(rdev, ring, false);

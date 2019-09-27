@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _H8300_SEGMENT_H
 #define _H8300_SEGMENT_H
 
@@ -31,6 +30,12 @@ typedef struct {
 static inline mm_segment_t get_fs(void)
 {
 	return USER_DS;
+}
+
+static inline mm_segment_t get_ds(void)
+{
+	/* return the supervisor data space code */
+	return KERNEL_DS;
 }
 
 #define segment_eq(a, b)	((a).seg == (b).seg)

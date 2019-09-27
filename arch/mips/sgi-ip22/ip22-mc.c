@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * ip22-mc.c: Routines for manipulating SGI Memory Controller.
  *
@@ -9,9 +8,8 @@
  */
 
 #include <linux/init.h>
-#include <linux/export.h>
+#include <linux/module.h>
 #include <linux/kernel.h>
-#include <linux/spinlock.h>
 
 #include <asm/io.h>
 #include <asm/bootinfo.h>

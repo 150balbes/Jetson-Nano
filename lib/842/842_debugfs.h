@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 
 #ifndef __842_DEBUGFS_H__
 #define __842_DEBUGFS_H__
@@ -22,6 +21,8 @@ static int __init sw842_debugfs_create(void)
 		return -ENODEV;
 
 	sw842_debugfs_root = debugfs_create_dir(MODULE_NAME, NULL);
+	if (IS_ERR(sw842_debugfs_root))
+		return PTR_ERR(sw842_debugfs_root);
 
 	for (i = 0; i < ARRAY_SIZE(template_count); i++) {
 		char name[32];
@@ -44,7 +45,8 @@ static int __init sw842_debugfs_create(void)
 
 static void __exit sw842_debugfs_remove(void)
 {
-	debugfs_remove_recursive(sw842_debugfs_root);
+	if (sw842_debugfs_root && !IS_ERR(sw842_debugfs_root))
+		debugfs_remove_recursive(sw842_debugfs_root);
 }
 
 #endif

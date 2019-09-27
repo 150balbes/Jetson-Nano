@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 #include <linux/syscalls.h>
 #include <linux/slab.h>
 #include <linux/fs.h>
@@ -9,8 +8,7 @@
 #include <linux/fs_struct.h>
 #include <linux/fsnotify.h>
 #include <linux/personality.h>
-#include <linux/uaccess.h>
-#include <linux/compat.h>
+#include <asm/uaccess.h>
 #include "internal.h"
 #include "mount.h"
 
@@ -69,7 +67,8 @@ static long do_sys_name_to_handle(struct path *path,
 	} else
 		retval = 0;
 	/* copy the mount id */
-	if (put_user(real_mount(path->mnt)->mnt_id, mnt_id) ||
+	if (copy_to_user(mnt_id, &real_mount(path->mnt)->mnt_id,
+			 sizeof(*mnt_id)) ||
 	    copy_to_user(ufh, handle,
 			 sizeof(struct file_handle) + handle_bytes))
 		retval = -EFAULT;
@@ -212,8 +211,8 @@ out_err:
 	return retval;
 }
 
-static long do_handle_open(int mountdirfd, struct file_handle __user *ufh,
-			   int open_flag)
+long do_handle_open(int mountdirfd,
+		    struct file_handle __user *ufh, int open_flag)
 {
 	long retval = 0;
 	struct path path;
@@ -265,15 +264,3 @@ SYSCALL_DEFINE3(open_by_handle_at, int, mountdirfd,
 	ret = do_handle_open(mountdirfd, handle, flags);
 	return ret;
 }
-
-#ifdef CONFIG_COMPAT
-/*
- * Exactly like fs/open.c:sys_open_by_handle_at(), except that it
- * doesn't set the O_LARGEFILE flag.
- */
-COMPAT_SYSCALL_DEFINE3(open_by_handle_at, int, mountdirfd,
-			     struct file_handle __user *, handle, int, flags)
-{
-	return do_handle_open(mountdirfd, handle, flags);
-}
-#endif

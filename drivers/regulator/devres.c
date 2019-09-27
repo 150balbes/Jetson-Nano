@@ -1,8 +1,13 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * devres.c  --  Voltage/Current Regulator framework devres implementation.
  *
  * Copyright 2013 Linaro Ltd
+ *
+ *  This program is free software; you can redistribute  it and/or modify it
+ *  under  the terms of  the GNU General  Public License as published by the
+ *  Free Software Foundation;  either version 2 of the  License, or (at your
+ *  option) any later version.
+ *
  */
 
 #include <linux/kernel.h>
@@ -13,6 +18,12 @@
 #include <linux/module.h>
 
 #include "internal.h"
+
+enum {
+	NORMAL_GET,
+	EXCLUSIVE_GET,
+	OPTIONAL_GET,
+};
 
 static void devm_regulator_release(struct device *dev, void *res)
 {
@@ -28,7 +39,20 @@ static struct regulator *_devm_regulator_get(struct device *dev, const char *id,
 	if (!ptr)
 		return ERR_PTR(-ENOMEM);
 
-	regulator = _regulator_get(dev, id, get_type);
+	switch (get_type) {
+	case NORMAL_GET:
+		regulator = regulator_get(dev, id);
+		break;
+	case EXCLUSIVE_GET:
+		regulator = regulator_get_exclusive(dev, id);
+		break;
+	case OPTIONAL_GET:
+		regulator = regulator_get_optional(dev, id);
+		break;
+	default:
+		regulator = ERR_PTR(-EINVAL);
+	}
+
 	if (!IS_ERR(regulator)) {
 		*ptr = regulator;
 		devres_add(dev, ptr);
@@ -115,18 +139,6 @@ void devm_regulator_put(struct regulator *regulator)
 }
 EXPORT_SYMBOL_GPL(devm_regulator_put);
 
-struct regulator_bulk_devres {
-	struct regulator_bulk_data *consumers;
-	int num_consumers;
-};
-
-static void devm_regulator_bulk_release(struct device *dev, void *res)
-{
-	struct regulator_bulk_devres *devres = res;
-
-	regulator_bulk_free(devres->num_consumers, devres->consumers);
-}
-
 /**
  * devm_regulator_bulk_get - managed get multiple regulator consumers
  *
@@ -145,22 +157,29 @@ static void devm_regulator_bulk_release(struct device *dev, void *res)
 int devm_regulator_bulk_get(struct device *dev, int num_consumers,
 			    struct regulator_bulk_data *consumers)
 {
-	struct regulator_bulk_devres *devres;
+	int i;
 	int ret;
 
-	devres = devres_alloc(devm_regulator_bulk_release,
-			      sizeof(*devres), GFP_KERNEL);
-	if (!devres)
-		return -ENOMEM;
+	for (i = 0; i < num_consumers; i++)
+		consumers[i].consumer = NULL;
 
-	ret = regulator_bulk_get(dev, num_consumers, consumers);
-	if (!ret) {
-		devres->consumers = consumers;
-		devres->num_consumers = num_consumers;
-		devres_add(dev, devres);
-	} else {
-		devres_free(devres);
+	for (i = 0; i < num_consumers; i++) {
+		consumers[i].consumer = devm_regulator_get(dev,
+							   consumers[i].supply);
+		if (IS_ERR(consumers[i].consumer)) {
+			ret = PTR_ERR(consumers[i].consumer);
+			dev_err(dev, "Failed to get supply '%s': %d\n",
+				consumers[i].supply, ret);
+			consumers[i].consumer = NULL;
+			goto err;
+		}
 	}
+
+	return 0;
+
+err:
+	for (i = 0; i < num_consumers && consumers[i].consumer; i++)
+		devm_regulator_put(consumers[i].consumer);
 
 	return ret;
 }

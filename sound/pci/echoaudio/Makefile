@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0
 #
 # Makefile for ALSA Echoaudio soundcard drivers
 # Copyright (c) 2003 by Giuliano Pochini <pochini@shiny.it>

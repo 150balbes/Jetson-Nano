@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * nvec_kbd: keyboard driver for a NVIDIA compliant embedded controller
  *
@@ -6,6 +5,11 @@
  *
  * Authors:  Pierre-Hugues Husson <phhusson@free.fr>
  *           Marc Dietrich <marvin24@gmx.de>
+ *
+ * This file is subject to the terms and conditions of the GNU General Public
+ * License.  See the file "COPYING" in the main directory of this archive
+ * for more details.
+ *
  */
 
 #include <linux/module.h>
@@ -54,7 +58,7 @@ static int nvec_keys_notifier(struct notifier_block *nb,
 			      unsigned long event_type, void *data)
 {
 	int code, state;
-	unsigned char *msg = data;
+	unsigned char *msg = (unsigned char *)data;
 
 	if (event_type == NVEC_KB_EVT) {
 		int _size = (msg[0] & (3 << 5)) >> 5;

@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /* pci_msi.c: Sparc64 MSI support common layer.
  *
  * Copyright (C) 2007 David S. Miller (davem@davemloft.net)
@@ -191,8 +190,8 @@ static void sparc64_teardown_msi_irq(unsigned int irq,
 			break;
 	}
 	if (i >= pbm->msi_num) {
-		pci_err(pdev, "%s: teardown: No MSI for irq %u\n", pbm->name,
-			irq);
+		printk(KERN_ERR "%s: teardown: No MSI for irq %u\n",
+		       pbm->name, irq);
 		return;
 	}
 
@@ -201,9 +200,9 @@ static void sparc64_teardown_msi_irq(unsigned int irq,
 
 	err = ops->msi_teardown(pbm, msi_num);
 	if (err) {
-		pci_err(pdev, "%s: teardown: ops->teardown() on MSI %u, "
-			"irq %u, gives error %d\n", pbm->name, msi_num, irq,
-			err);
+		printk(KERN_ERR "%s: teardown: ops->teardown() on MSI %u, "
+		       "irq %u, gives error %d\n",
+		       pbm->name, msi_num, irq, err);
 		return;
 	}
 

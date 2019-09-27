@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Wind River SBC8548 setup and early boot code.
  *
@@ -7,6 +6,12 @@
  * By Paul Gortmaker (see MAINTAINERS for contact information)
  *
  * Based largely on the MPC8548CDS support - Copyright 2005 Freescale Inc.
+ *
+ *
+ * This program is free software; you can redistribute  it and/or modify it
+ * under  the terms of  the GNU General  Public License as published by the
+ * Free Software Foundation;  either version 2 of the  License, or (at your
+ * option) any later version.
  */
 
 #include <linux/stddef.h>

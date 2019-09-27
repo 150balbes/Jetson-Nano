@@ -29,6 +29,7 @@
 #include <linux/init.h>
 #include <linux/io.h>
 #include <linux/kernel_stat.h>
+#include <linux/module.h>
 #include <linux/signal.h>
 #include <linux/sched.h>
 #include <linux/types.h>

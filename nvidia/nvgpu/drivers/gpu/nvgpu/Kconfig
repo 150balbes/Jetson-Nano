@@ -1,0 +1,155 @@
+config GK20A
+	tristate "Nvidia GK20A GPU support"
+	default y
+	help
+	  Choose this option if you have an SoC with integrated
+	  Nvidia GPU IP.
+
+config GK20A_PMU
+	bool "Support GK20A PMU"
+	depends on GK20A
+	default n
+	help
+	  Say Y here to enable GK20A PMU features.
+
+choice
+	depends on GK20A
+	prompt "Enable GK20A frequency scaling"
+	default GK20A_DEVFREQ
+	optional
+	help
+	  Select this entry to enable gk20a scaling
+
+config GK20A_DEVFREQ
+	depends on COMMON_CLK && PM_DEVFREQ
+	bool "Use Devfreq"
+	help
+	  Select this to use devfreq based scaling.
+	  Devfreq is a common framework that allows using
+	  variety of different governors and changing
+	  between governors on the fly. By default, no
+	  governor is selected.
+
+endchoice
+
+config GK20A_PM_QOS
+	depends on GK20A_DEVFREQ
+	bool "Use PM_QOS constraints for devfreq based scaling"
+	default y
+	help
+	  Enable support to pass PM_QOS constraints to devfreq based
+	  scaling.
+
+config GK20A_RDMA
+        bool "Support GK20A RDMA"
+        depends on GK20A && MMU_NOTIFIER
+        default n
+        help
+          Say Y here to enable GK20A RDMA features.
+
+config NVGPU_TRACK_MEM_USAGE
+        bool "Track the usage of system memory in nvgpu"
+	depends on GK20A
+	default n
+	help
+	  Say Y here to allow nvgpu to track and keep statistics on
+	  the system memory used by the driver. This does recreate
+	  some of the kmem_leak tracking but this is also applicable
+	  to other OSes which do not have Linux' kmem_leak.
+
+
+config GK20A_CYCLE_STATS
+	bool "Support GK20A GPU CYCLE STATS"
+	depends on GK20A
+	default y
+	help
+	  Say Y here to enable the cycle stats debugging features.
+
+config GK20A_CTXSW_TRACE
+	bool "Support GK20A Context Switch tracing"
+	depends on GK20A
+	default y
+	help
+	  Enable support for the GK20A Context Switch Tracing. In this mode,
+	  FECS collects timestamps for contexts loaded on GR engine. This
+	  allows tracking context switches on GR engine, as well as
+	  identifying processes that submitted work.
+
+config TEGRA_GK20A_NVHOST
+	bool "Support interfacing with nvhost hardware"
+	depends on TEGRA_GRHOST || TEGRA_HOST1X
+	depends on GK20A
+	default y
+	help
+	  Enable support in GK20A for the nvhost (host1x) dma engine hardware
+	  that includes things like hardware syncpts. This requires either
+	  TEGRA_GRHOST or TEGRA_HOST1X.
+
+config TEGRA_GK20A
+	bool "Enable the GK20A GPU on Tegra"
+	depends on GK20A
+	default y
+	help
+	  Enable support for the GK20A graphics engine on Tegra
+	  by adding a Tegra platfrom interface to the GK20A driver.
+
+config TEGRA_ACR
+	bool "Enable HS bin support on GM20B GPU on Tegra"
+	depends on GK20A && GK20A_PMU
+	default n
+	help
+	  Enable Support for Loading High Secure binary, and using
+	  Write Protected Regions (WPR) for storing ucodes, and bootstrap
+	  PMU, FECS and GPCCS in Low Secure mode.
+
+config TEGRA_USE_NA_GPCPLL
+	bool "Enable noise aware mode of GM20B GPCPLL on Tegra"
+	depends on GK20A
+	depends on COMMON_CLK
+	default n
+	help
+	  Enable noise aware (NA) mode of GM20b GPCPLL. In this mode PLL output
+	  frequency is automatically adjusted when GM20b voltage is fluctuating
+	  because of transient PMIC or power distribution tree noise.
+
+config GK20A_PCI
+	bool "Support PCIe NVIDIA GPUs on nvgpu"
+	depends on PCI && GK20A
+	default y
+	help
+	  Enable support for GPUs on PCIe bus.
+
+config GK20A_TRACE_PRINTK
+	bool "Support trace_printk debugging"
+	depends on GK20A && TRACING
+	default n
+	help
+	  Enable nvgpu debug facility to redirect debug spew to ftrace. This
+	  affects kernel memory use, so should not be enabled by default.
+
+config GK20A_VIDMEM
+	bool "Support separate video memory on nvgpu"
+	depends on GK20A
+	default n
+	help
+	  Enable support for using and allocating buffers in a distinct video
+	  memory aperture (in contrast to general system memory), available on
+	  GPUs that have their own banks. PCIe GPUs have this, for example.
+
+config NVGPU_SUPPORT_CDE
+	bool "Support extraction of comptags for CDE"
+	depends on GK20A
+	default y
+	help
+	  Enable support for extraction of comptags for CDE.
+
+config NVGPU_USE_TEGRA_ALLOC_FD
+	bool "Use tegra_alloc_fd() for allocating dma_buf fds for vidmem"
+	depends on GK20A && GK20A_VIDMEM
+	default y
+	help
+	  Use tegra_alloc_fd() for allocating dma_buf fds. This allocates
+	  the fds above 1024 which exempts them from counting against process
+	  fd limit.
+
+	  It is only available in Tegra kernel.

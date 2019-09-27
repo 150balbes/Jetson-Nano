@@ -1,9 +1,18 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2012, Microsoft Corporation.
  *
  * Author:
  *   Haiyang Zhang <haiyangz@microsoft.com>
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License version 2 as published
+ * by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE, GOOD TITLE or
+ * NON INFRINGEMENT.  See the GNU General Public License for more
+ * details.
  */
 
 /*
@@ -762,8 +771,10 @@ static int hvfb_probe(struct hv_device *hdev,
 	int ret;
 
 	info = framebuffer_alloc(sizeof(struct hvfb_par), &hdev->device);
-	if (!info)
+	if (!info) {
+		pr_err("No memory for framebuffer info\n");
 		return -ENOMEM;
+	}
 
 	par = info->par;
 	par->info = info;
@@ -901,9 +912,6 @@ static struct hv_driver hvfb_drv = {
 	.id_table = id_table,
 	.probe = hvfb_probe,
 	.remove = hvfb_remove,
-	.driver = {
-		.probe_type = PROBE_PREFER_ASYNCHRONOUS,
-	},
 };
 
 static int hvfb_pci_stub_probe(struct pci_dev *pdev,
@@ -921,9 +929,6 @@ static struct pci_driver hvfb_pci_stub_driver = {
 	.id_table =	pci_stub_id_table,
 	.probe =	hvfb_pci_stub_probe,
 	.remove =	hvfb_pci_stub_remove,
-	.driver = {
-		.probe_type = PROBE_PREFER_ASYNCHRONOUS,
-	}
 };
 
 static int __init hvfb_drv_init(void)

@@ -23,7 +23,7 @@ struct nfcmrvl_platform_data {
 	 */
 
 	/* GPIO that is wired to RESET_N signal */
-	int reset_n_io;
+	unsigned int reset_n_io;
 	/* Tell if transport is muxed in HCI one */
 	unsigned int hci_muxed;
 

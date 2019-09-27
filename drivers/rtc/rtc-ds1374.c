@@ -89,8 +89,10 @@ static int ds1374_read_rtc(struct i2c_client *client, u32 *time,
 	int ret;
 	int i;
 
-	if (WARN_ON(nbytes > 4))
+	if (nbytes > 4) {
+		WARN_ON(1);
 		return -EINVAL;
+	}
 
 	ret = i2c_smbus_read_i2c_block_data(client, reg, nbytes, buf);
 
@@ -467,7 +469,7 @@ static int ds1374_wdt_open(struct inode *inode, struct file *file)
 		 */
 		wdt_is_open = 1;
 		mutex_unlock(&ds1374->mutex);
-		return stream_open(inode, file);
+		return nonseekable_open(inode, file);
 	}
 	return -ENODEV;
 }
@@ -710,7 +712,6 @@ static SIMPLE_DEV_PM_OPS(ds1374_pm, ds1374_suspend, ds1374_resume);
 static struct i2c_driver ds1374_driver = {
 	.driver = {
 		.name = "rtc-ds1374",
-		.of_match_table = of_match_ptr(ds1374_of_match),
 		.pm = &ds1374_pm,
 	},
 	.probe = ds1374_probe,

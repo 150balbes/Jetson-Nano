@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _CRYPTO_CAST6_H
 #define _CRYPTO_CAST6_H
 

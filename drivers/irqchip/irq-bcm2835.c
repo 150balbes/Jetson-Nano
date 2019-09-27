@@ -1,7 +1,16 @@
-// SPDX-License-Identifier: GPL-2.0+
 /*
  * Copyright 2010 Broadcom
  * Copyright 2012 Simon Arlott, Chris Boot, Stephen Warren
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
  *
  * Quirk 1: Shortcut interrupts don't set the bank 1/2 register pending bits
  *
@@ -138,12 +147,13 @@ static int __init armctrl_of_init(struct device_node *node,
 
 	base = of_iomap(node, 0);
 	if (!base)
-		panic("%pOF: unable to map IC registers\n", node);
+		panic("%s: unable to map IC registers\n",
+			node->full_name);
 
 	intc.domain = irq_domain_add_linear(node, MAKE_HWIRQ(NR_BANKS, 0),
 			&armctrl_ops, NULL);
 	if (!intc.domain)
-		panic("%pOF: unable to create IRQ domain\n", node);
+		panic("%s: unable to create IRQ domain\n", node->full_name);
 
 	for (b = 0; b < NR_BANKS; b++) {
 		intc.pending[b] = base + reg_pending[b];
@@ -163,8 +173,8 @@ static int __init armctrl_of_init(struct device_node *node,
 		int parent_irq = irq_of_parse_and_map(node, 0);
 
 		if (!parent_irq) {
-			panic("%pOF: unable to get parent interrupt.\n",
-			      node);
+			panic("%s: unable to get parent interrupt.\n",
+			      node->full_name);
 		}
 		irq_set_chained_handler(parent_irq, bcm2836_chained_handle_irq);
 	} else {

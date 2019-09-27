@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * Backlight Lowlevel Control Abstraction
  *
@@ -46,8 +45,18 @@ enum backlight_notification {
 	BACKLIGHT_UNREGISTERED,
 };
 
+enum backlight_device_notification {
+	BACKLIGHT_DEVICE_PRE_BRIGHTNESS_CHANGE,
+	BACKLIGHT_DEVICE_POST_BRIGHTNESS_CHANGE,
+};
+
 struct backlight_device;
 struct fb_info;
+
+struct backlight_device_brightness_info {
+	struct device *dev;
+	int brightness;
+};
 
 struct backlight_ops {
 	unsigned int options;
@@ -78,11 +87,19 @@ struct backlight_properties {
 	int fb_blank;
 	/* Backlight type */
 	enum backlight_type type;
+	/* Denotes if backlight supports low-persistence (read-only) */
+	bool low_persistence_capable;
 	/* Flags used to signal drivers of state changes */
+	/* Upper 4 bits are reserved for driver internal use */
 	unsigned int state;
 
 #define BL_CORE_SUSPENDED	(1 << 0)	/* backlight is suspended */
 #define BL_CORE_FBBLANK		(1 << 1)	/* backlight is under an fb blank event */
+#define BL_CORE_LPMODE		(1 << 2)	/* backlight is in low-persistence mode */
+#define BL_CORE_DRIVER4		(1 << 28)	/* reserved for driver specific use */
+#define BL_CORE_DRIVER3		(1 << 29)	/* reserved for driver specific use */
+#define BL_CORE_DRIVER2		(1 << 30)	/* reserved for driver specific use */
+#define BL_CORE_DRIVER1		(1 << 31)	/* reserved for driver specific use */
 
 };
 
@@ -101,6 +118,9 @@ struct backlight_device {
 
 	/* The framebuffer notifier block */
 	struct notifier_block fb_notif;
+
+	/* Notifier for backlight status update */
+	struct blocking_notifier_head notifier;
 
 	/* list entry of all registered backlight devices */
 	struct list_head entry;
@@ -124,48 +144,9 @@ static inline int backlight_update_status(struct backlight_device *bd)
 
 	return ret;
 }
-
-/**
- * backlight_enable - Enable backlight
- * @bd: the backlight device to enable
- */
-static inline int backlight_enable(struct backlight_device *bd)
-{
-	if (!bd)
-		return 0;
-
-	bd->props.power = FB_BLANK_UNBLANK;
-	bd->props.fb_blank = FB_BLANK_UNBLANK;
-	bd->props.state &= ~BL_CORE_FBBLANK;
-
-	return backlight_update_status(bd);
-}
-
-/**
- * backlight_disable - Disable backlight
- * @bd: the backlight device to disable
- */
-static inline int backlight_disable(struct backlight_device *bd)
-{
-	if (!bd)
-		return 0;
-
-	bd->props.power = FB_BLANK_POWERDOWN;
-	bd->props.fb_blank = FB_BLANK_POWERDOWN;
-	bd->props.state |= BL_CORE_FBBLANK;
-
-	return backlight_update_status(bd);
-}
-
-/**
- * backlight_put - Drop backlight reference
- * @bd: the backlight device to put
- */
-static inline void backlight_put(struct backlight_device *bd)
-{
-	if (bd)
-		put_device(&bd->dev);
-}
+extern struct backlight_device *get_backlight_device_by_name(char *name);
+extern struct backlight_device *get_backlight_device_by_node(
+		struct device_node *np);
 
 extern struct backlight_device *backlight_device_register(const char *name,
 	struct device *dev, void *devdata, const struct backlight_ops *ops,
@@ -183,6 +164,14 @@ extern int backlight_register_notifier(struct notifier_block *nb);
 extern int backlight_unregister_notifier(struct notifier_block *nb);
 extern struct backlight_device *backlight_device_get_by_type(enum backlight_type type);
 extern int backlight_device_set_brightness(struct backlight_device *bd, unsigned long brightness);
+
+extern int backlight_device_register_notifier(struct backlight_device *bd,
+		struct notifier_block *nb);
+extern int backlight_device_unregister_notifier(struct backlight_device *bd,
+		struct notifier_block *nb);
+
+extern int backlight_device_notifier_call_chain(struct backlight_device *bd,
+		unsigned long event, void *data);
 
 #define to_backlight_device(obj) container_of(obj, struct backlight_device, dev)
 
@@ -205,22 +194,6 @@ struct backlight_device *of_find_backlight_by_node(struct device_node *node);
 #else
 static inline struct backlight_device *
 of_find_backlight_by_node(struct device_node *node)
-{
-	return NULL;
-}
-#endif
-
-#if IS_ENABLED(CONFIG_BACKLIGHT_CLASS_DEVICE)
-struct backlight_device *of_find_backlight(struct device *dev);
-struct backlight_device *devm_of_find_backlight(struct device *dev);
-#else
-static inline struct backlight_device *of_find_backlight(struct device *dev)
-{
-	return NULL;
-}
-
-static inline struct backlight_device *
-devm_of_find_backlight(struct device *dev)
 {
 	return NULL;
 }

@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __PARISC_SWITCH_TO_H
 #define __PARISC_SWITCH_TO_H
 

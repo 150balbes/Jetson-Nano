@@ -19,7 +19,7 @@
 #include <linux/node.h>
 #include <linux/slab.h>
 #include <linux/init.h>
-#include <linux/memblock.h>
+#include <linux/bootmem.h>
 #include <linux/nodemask.h>
 #include <linux/notifier.h>
 #include <linux/export.h>
@@ -85,7 +85,7 @@ static int __init topology_init(void)
 	}
 #endif
 
-	sysfs_cpus = kcalloc(NR_CPUS, sizeof(struct ia64_cpu), GFP_KERNEL);
+	sysfs_cpus = kzalloc(sizeof(struct ia64_cpu) * NR_CPUS, GFP_KERNEL);
 	if (!sysfs_cpus)
 		panic("kzalloc in topology_init failed - NR_CPUS too big?");
 
@@ -319,8 +319,8 @@ static int cpu_cache_sysfs_init(unsigned int cpu)
 		return -1;
 	}
 
-	this_cache=kcalloc(unique_caches, sizeof(struct cache_info),
-			   GFP_KERNEL);
+	this_cache=kzalloc(sizeof(struct cache_info)*unique_caches,
+			GFP_KERNEL);
 	if (this_cache == NULL)
 		return -ENOMEM;
 
@@ -349,18 +349,24 @@ static int cpu_cache_sysfs_init(unsigned int cpu)
 }
 
 /* Add cache interface for CPU device */
-static int cache_add_dev(unsigned int cpu)
+static int cache_add_dev(struct device *sys_dev)
 {
-	struct device *sys_dev = get_cpu_device(cpu);
+	unsigned int cpu = sys_dev->id;
 	unsigned long i, j;
 	struct cache_info *this_object;
 	int retval = 0;
+	cpumask_t oldmask;
 
 	if (all_cpu_cache_info[cpu].kobj.parent)
 		return 0;
 
+	oldmask = current->cpus_allowed;
+	retval = set_cpus_allowed_ptr(current, cpumask_of(cpu));
+	if (unlikely(retval))
+		return retval;
 
 	retval = cpu_cache_sysfs_init(cpu);
+	set_cpus_allowed_ptr(current, &oldmask);
 	if (unlikely(retval < 0))
 		return retval;
 
@@ -393,8 +399,9 @@ static int cache_add_dev(unsigned int cpu)
 }
 
 /* Remove cache interface for CPU device */
-static int cache_remove_dev(unsigned int cpu)
+static int cache_remove_dev(struct device *sys_dev)
 {
+	unsigned int cpu = sys_dev->id;
 	unsigned long i;
 
 	for (i = 0; i < all_cpu_cache_info[cpu].num_cache_leaves; i++)
@@ -412,13 +419,52 @@ static int cache_remove_dev(unsigned int cpu)
 	return 0;
 }
 
+/*
+ * When a cpu is hot-plugged, do a check and initiate
+ * cache kobject if necessary
+ */
+static int cache_cpu_callback(struct notifier_block *nfb,
+		unsigned long action, void *hcpu)
+{
+	unsigned int cpu = (unsigned long)hcpu;
+	struct device *sys_dev;
+
+	sys_dev = get_cpu_device(cpu);
+	switch (action) {
+	case CPU_ONLINE:
+	case CPU_ONLINE_FROZEN:
+		cache_add_dev(sys_dev);
+		break;
+	case CPU_DEAD:
+	case CPU_DEAD_FROZEN:
+		cache_remove_dev(sys_dev);
+		break;
+	}
+	return NOTIFY_OK;
+}
+
+static struct notifier_block cache_cpu_notifier =
+{
+	.notifier_call = cache_cpu_callback
+};
+
 static int __init cache_sysfs_init(void)
 {
-	int ret;
+	int i;
 
-	ret = cpuhp_setup_state(CPUHP_AP_ONLINE_DYN, "ia64/topology:online",
-				cache_add_dev, cache_remove_dev);
-	WARN_ON(ret < 0);
+	cpu_notifier_register_begin();
+
+	for_each_online_cpu(i) {
+		struct device *sys_dev = get_cpu_device((unsigned int)i);
+		cache_add_dev(sys_dev);
+	}
+
+	__register_hotcpu_notifier(&cache_cpu_notifier);
+
+	cpu_notifier_register_done();
+
 	return 0;
 }
+
 device_initcall(cache_sysfs_init);
+

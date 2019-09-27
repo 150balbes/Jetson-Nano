@@ -1,10 +1,14 @@
-// SPDX-License-Identifier: GPL-2.0
-//
-// Copyright (c) 2006-2009 Simtec Electronics
-//	http://armlinux.simtec.co.uk/
-//	Ben Dooks <ben@simtec.co.uk>
-//
-// S3C24XX CPU Frequency scaling - IO timing for S3C2410/S3C2440/S3C2442
+/*
+ * Copyright (c) 2006-2009 Simtec Electronics
+ *	http://armlinux.simtec.co.uk/
+ *	Ben Dooks <ben@simtec.co.uk>
+ *
+ * S3C24XX CPU Frequency scaling - IO timing for S3C2410/S3C2440/S3C2442
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+*/
 
 #include <linux/init.h>
 #include <linux/kernel.h>
@@ -202,7 +206,7 @@ static int calc_tacc(unsigned int cyc, int nwait_en,
 }
 
 /**
- * s3c2410_calc_bank - calculate bank timing information
+ * s3c2410_calc_bank - calculate bank timing infromation
  * @cfg: The configuration we need to calculate for.
  * @bt: The bank timing information.
  *
@@ -245,7 +249,7 @@ static int s3c2410_calc_bank(struct s3c_cpufreq_config *cfg,
 	return 0;
 }
 
-static const unsigned int tacc_tab[] = {
+static unsigned int tacc_tab[] = {
 	[0]	= 1,
 	[1]	= 2,
 	[2]	= 3,
@@ -449,9 +453,11 @@ int s3c2410_iotiming_get(struct s3c_cpufreq_config *cfg,
 		s3c_freq_iodbg("%s: bank %d: con %08lx\n",
 			       __func__, bank, bankcon);
 
-		bt = kzalloc(sizeof(*bt), GFP_KERNEL);
-		if (!bt)
+		bt = kzalloc(sizeof(struct s3c2410_iobank_timing), GFP_KERNEL);
+		if (!bt) {
+			printk(KERN_ERR "%s: no memory for bank\n", __func__);
 			return -ENOMEM;
+		}
 
 		/* find out in nWait is enabled for bank. */
 

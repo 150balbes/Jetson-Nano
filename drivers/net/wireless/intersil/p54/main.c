@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * mac80211 glue code for mac80211 Prism54 drivers
  *
@@ -11,6 +10,10 @@
  *   Copyright 2004-2006 Jean-Baptiste Note <jbnote@gmail.com>, et al.
  * - stlc45xx driver
  *   Copyright (C) 2008 Nokia Corporation and/or its subsidiary(-ies).
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  */
 
 #include <linux/slab.h>
@@ -24,7 +27,7 @@
 #include "lmac.h"
 
 static bool modparam_nohwcrypt;
-module_param_named(nohwcrypt, modparam_nohwcrypt, bool, 0444);
+module_param_named(nohwcrypt, modparam_nohwcrypt, bool, S_IRUGO);
 MODULE_PARM_DESC(nohwcrypt, "Disable hardware encryption.");
 MODULE_AUTHOR("Michael Wu <flamingice@sourmilk.net>");
 MODULE_DESCRIPTION("Softmac Prism54 common code");
@@ -411,9 +414,12 @@ static int p54_conf_tx(struct ieee80211_hw *dev,
 	int ret;
 
 	mutex_lock(&priv->conf_mutex);
-	P54_SET_QUEUE(priv->qos_params[queue], params->aifs,
-		      params->cw_min, params->cw_max, params->txop);
-	ret = p54_set_edcf(priv);
+	if (queue < dev->queues) {
+		P54_SET_QUEUE(priv->qos_params[queue], params->aifs,
+			params->cw_min, params->cw_max, params->txop);
+		ret = p54_set_edcf(priv);
+	} else
+		ret = -EINVAL;
 	mutex_unlock(&priv->conf_mutex);
 	return ret;
 }

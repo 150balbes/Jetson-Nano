@@ -1,6 +1,10 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  *  Promise PATA TX2/TX4/TX2000/133 IDE driver for pdc20268 to pdc20277.
+ *
+ *  This program is free software; you can redistribute it and/or
+ *  modify it under the terms of the GNU General Public License
+ *  as published by the Free Software Foundation; either version
+ *  2 of the License, or (at your option) any later version.
  *
  *  Ported to libata by:
  *  Albert Lee <albertcc@tw.ibm.com> IBM Corporation
@@ -11,10 +15,12 @@
  *  Author: Frank Tiernan (frankt@promise.com)
  *  Released under terms of General Public License
  *
+ *
  *  libata documentation is available via 'make {ps|pdf}docs',
- *  as Documentation/driver-api/libata.rst
+ *  as Documentation/DocBook/libata.*
  *
  *  Hardware information only available under NDA.
+ *
  */
 #include <linux/kernel.h>
 #include <linux/module.h>
@@ -76,9 +82,9 @@ static int pdc2027x_set_mode(struct ata_link *link, struct ata_device **r_failed
  * is issued to the device. However, if the controller clock is 133MHz,
  * the following tables must be used.
  */
-static const struct pdc2027x_pio_timing {
+static struct pdc2027x_pio_timing {
 	u8 value0, value1, value2;
-} pdc2027x_pio_timing_tbl[] = {
+} pdc2027x_pio_timing_tbl [] = {
 	{ 0xfb, 0x2b, 0xac }, /* PIO mode 0 */
 	{ 0x46, 0x29, 0xa4 }, /* PIO mode 1 */
 	{ 0x23, 0x26, 0x64 }, /* PIO mode 2 */
@@ -86,17 +92,17 @@ static const struct pdc2027x_pio_timing {
 	{ 0x23, 0x09, 0x25 }, /* PIO mode 4, IORDY on, Prefetch off */
 };
 
-static const struct pdc2027x_mdma_timing {
+static struct pdc2027x_mdma_timing {
 	u8 value0, value1;
-} pdc2027x_mdma_timing_tbl[] = {
+} pdc2027x_mdma_timing_tbl [] = {
 	{ 0xdf, 0x5f }, /* MDMA mode 0 */
 	{ 0x6b, 0x27 }, /* MDMA mode 1 */
 	{ 0x69, 0x25 }, /* MDMA mode 2 */
 };
 
-static const struct pdc2027x_udma_timing {
+static struct pdc2027x_udma_timing {
 	u8 value0, value1, value2;
-} pdc2027x_udma_timing_tbl[] = {
+} pdc2027x_udma_timing_tbl [] = {
 	{ 0x4a, 0x0f, 0xd5 }, /* UDMA mode 0 */
 	{ 0x3a, 0x0a, 0xd0 }, /* UDMA mode 1 */
 	{ 0x2a, 0x07, 0xcd }, /* UDMA mode 2 */
@@ -574,7 +580,7 @@ static void pdc_adjust_pll(struct ata_host *host, long pll_clock, unsigned int b
 	ioread16(mmio_base + PDC_PLL_CTL); /* flush */
 
 	/* Wait the PLL circuit to be stable */
-	msleep(30);
+	mdelay(30);
 
 #ifdef PDC_DEBUG
 	/*
@@ -614,7 +620,7 @@ static long pdc_detect_pll_input_clock(struct ata_host *host)
 	start_time = ktime_get();
 
 	/* Let the counter run for 100 ms. */
-	msleep(100);
+	mdelay(100);
 
 	/* Read the counter values again */
 	end_count = pdc_read_counter(host);
@@ -643,7 +649,7 @@ static long pdc_detect_pll_input_clock(struct ata_host *host)
  * @host: target ATA host
  * @board_idx: board identifier
  */
-static void pdc_hardware_init(struct ata_host *host, unsigned int board_idx)
+static int pdc_hardware_init(struct ata_host *host, unsigned int board_idx)
 {
 	long pll_clock;
 
@@ -659,6 +665,8 @@ static void pdc_hardware_init(struct ata_host *host, unsigned int board_idx)
 
 	/* Adjust PLL control register */
 	pdc_adjust_pll(host, pll_clock, board_idx);
+
+	return 0;
 }
 
 /**
@@ -745,7 +753,8 @@ static int pdc2027x_init_one(struct pci_dev *pdev,
 	//pci_enable_intx(pdev);
 
 	/* initialize adapter */
-	pdc_hardware_init(host, board_idx);
+	if (pdc_hardware_init(host, board_idx) != 0)
+		return -EIO;
 
 	pci_set_master(pdev);
 	return ata_host_activate(host, pdev->irq, ata_bmdma_interrupt,
@@ -769,7 +778,8 @@ static int pdc2027x_reinit_one(struct pci_dev *pdev)
 	else
 		board_idx = PDC_UDMA_133;
 
-	pdc_hardware_init(host, board_idx);
+	if (pdc_hardware_init(host, board_idx))
+		return -EIO;
 
 	ata_host_resume(host);
 	return 0;

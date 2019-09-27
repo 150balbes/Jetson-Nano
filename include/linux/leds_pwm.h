@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * PWM LED driver data - see drivers/leds/leds-pwm.c
  */
@@ -12,6 +11,7 @@ struct led_pwm {
 	u8 		active_low;
 	unsigned 	max_brightness;
 	unsigned	pwm_period_ns;
+	unsigned 	default_brightness;
 };
 
 struct led_pwm_platform_data {

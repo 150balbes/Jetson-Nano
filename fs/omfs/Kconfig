@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0-only
 config OMFS_FS
 	tristate "SonicBlue Optimized MPEG File System support"
 	depends on BLOCK

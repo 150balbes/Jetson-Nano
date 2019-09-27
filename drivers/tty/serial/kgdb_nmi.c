@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * KGDB NMI serial console
  *
@@ -7,6 +6,10 @@
  *		  Colin Cross <ccross@android.com>
  * Copyright 2012 Linaro Ltd.
  *		  Anton Vorontsov <anton.vorontsov@linaro.org>
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License version 2 as published
+ * by the Free Software Foundation.
  */
 
 #include <linux/kernel.h>
@@ -188,9 +191,9 @@ bool kgdb_nmi_poll_knock(void)
  * The tasklet is cheap, it does not cause wakeups when reschedules itself,
  * instead it waits for the next tick.
  */
-static void kgdb_nmi_tty_receiver(struct timer_list *t)
+static void kgdb_nmi_tty_receiver(unsigned long data)
 {
-	struct kgdb_nmi_tty_priv *priv = from_timer(priv, t, timer);
+	struct kgdb_nmi_tty_priv *priv = (void *)data;
 	char ch;
 
 	priv->timer.expires = jiffies + (HZ/100);
@@ -241,7 +244,7 @@ static int kgdb_nmi_tty_install(struct tty_driver *drv, struct tty_struct *tty)
 		return -ENOMEM;
 
 	INIT_KFIFO(priv->fifo);
-	timer_setup(&priv->timer, kgdb_nmi_tty_receiver, 0);
+	setup_timer(&priv->timer, kgdb_nmi_tty_receiver, (unsigned long)priv);
 	tty_port_init(&priv->port);
 	priv->port.ops = &kgdb_nmi_tty_port_ops;
 	tty->driver_data = priv;

@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /* cpudata.h: Per-cpu parameters.
  *
  * Copyright (C) 2004 Keith M Wesolowski (wesolows@foobazco.org)

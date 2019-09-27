@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 #include <ctype.h>
 #include <errno.h>
 #include <limits.h>
@@ -39,10 +38,6 @@
 #define HUGETLBFS_MAGIC        0x958458f6
 #endif
 
-#ifndef BPF_FS_MAGIC
-#define BPF_FS_MAGIC           0xcafe4a11
-#endif
-
 static const char * const sysfs__fs_known_mountpoints[] = {
 	"/sys",
 	0,
@@ -80,11 +75,6 @@ static const char * const hugetlbfs__known_mountpoints[] = {
 	0,
 };
 
-static const char * const bpf_fs__known_mountpoints[] = {
-	"/sys/fs/bpf",
-	0,
-};
-
 struct fs {
 	const char		*name;
 	const char * const	*mounts;
@@ -99,7 +89,6 @@ enum {
 	FS__DEBUGFS = 2,
 	FS__TRACEFS = 3,
 	FS__HUGETLBFS = 4,
-	FS__BPF_FS = 5,
 };
 
 #ifndef TRACEFS_MAGIC
@@ -131,11 +120,6 @@ static struct fs fs__entries[] = {
 		.name	= "hugetlbfs",
 		.mounts = hugetlbfs__known_mountpoints,
 		.magic	= HUGETLBFS_MAGIC,
-	},
-	[FS__BPF_FS] = {
-		.name	= "bpf",
-		.mounts = bpf_fs__known_mountpoints,
-		.magic	= BPF_FS_MAGIC,
 	},
 };
 
@@ -201,7 +185,7 @@ static void mem_toupper(char *f, size_t len)
 
 /*
  * Check for "NAME_PATH" environment variable to override fs location (for
- * testing). This matches the recommendation in Documentation/admin-guide/sysfs-rules.rst
+ * testing). This matches the recommendation in Documentation/sysfs-rules.txt
  * for SYSFS_PATH.
  */
 static bool fs__env_override(struct fs *fs)
@@ -296,7 +280,6 @@ FS(procfs,  FS__PROCFS);
 FS(debugfs, FS__DEBUGFS);
 FS(tracefs, FS__TRACEFS);
 FS(hugetlbfs, FS__HUGETLBFS);
-FS(bpf_fs, FS__BPF_FS);
 
 int filename__read_int(const char *filename, int *value)
 {
@@ -315,8 +298,12 @@ int filename__read_int(const char *filename, int *value)
 	return err;
 }
 
-static int filename__read_ull_base(const char *filename,
-				   unsigned long long *value, int base)
+/*
+ * Parses @value out of @filename with strtoull.
+ * By using 0 for base, the strtoull detects the
+ * base automatically (see man strtoull).
+ */
+int filename__read_ull(const char *filename, unsigned long long *value)
 {
 	char line[64];
 	int fd = open(filename, O_RDONLY), err = -1;
@@ -325,32 +312,13 @@ static int filename__read_ull_base(const char *filename,
 		return -1;
 
 	if (read(fd, line, sizeof(line)) > 0) {
-		*value = strtoull(line, NULL, base);
+		*value = strtoull(line, NULL, 0);
 		if (*value != ULLONG_MAX)
 			err = 0;
 	}
 
 	close(fd);
 	return err;
-}
-
-/*
- * Parses @value out of @filename with strtoull.
- * By using 16 for base to treat the number as hex.
- */
-int filename__read_xll(const char *filename, unsigned long long *value)
-{
-	return filename__read_ull_base(filename, value, 16);
-}
-
-/*
- * Parses @value out of @filename with strtoull.
- * By using 0 for base, the strtoull detects the
- * base automatically (see man strtoull).
- */
-int filename__read_ull(const char *filename, unsigned long long *value)
-{
-	return filename__read_ull_base(filename, value, 0);
 }
 
 #define STRERR_BUFSIZE  128     /* For the buffer size of strerror_r */
@@ -403,22 +371,6 @@ int filename__read_str(const char *filename, char **buf, size_t *sizep)
 	return err;
 }
 
-int filename__write_int(const char *filename, int value)
-{
-	int fd = open(filename, O_WRONLY), err = -1;
-	char buf[64];
-
-	if (fd < 0)
-		return err;
-
-	sprintf(buf, "%d", value);
-	if (write(fd, buf, sizeof(buf)) == sizeof(buf))
-		err = 0;
-
-	close(fd);
-	return err;
-}
-
 int procfs__read_str(const char *entry, char **buf, size_t *sizep)
 {
 	char path[PATH_MAX];
@@ -432,8 +384,7 @@ int procfs__read_str(const char *entry, char **buf, size_t *sizep)
 	return filename__read_str(path, buf, sizep);
 }
 
-static int sysfs__read_ull_base(const char *entry,
-				unsigned long long *value, int base)
+int sysfs__read_ull(const char *entry, unsigned long long *value)
 {
 	char path[PATH_MAX];
 	const char *sysfs = sysfs__mountpoint();
@@ -443,17 +394,7 @@ static int sysfs__read_ull_base(const char *entry,
 
 	snprintf(path, sizeof(path), "%s/%s", sysfs, entry);
 
-	return filename__read_ull_base(path, value, base);
-}
-
-int sysfs__read_xll(const char *entry, unsigned long long *value)
-{
-	return sysfs__read_ull_base(entry, value, 16);
-}
-
-int sysfs__read_ull(const char *entry, unsigned long long *value)
-{
-	return sysfs__read_ull_base(entry, value, 0);
+	return filename__read_ull(path, value);
 }
 
 int sysfs__read_int(const char *entry, int *value)
@@ -482,35 +423,6 @@ int sysfs__read_str(const char *entry, char **buf, size_t *sizep)
 	return filename__read_str(path, buf, sizep);
 }
 
-int sysfs__read_bool(const char *entry, bool *value)
-{
-	char *buf;
-	size_t size;
-	int ret;
-
-	ret = sysfs__read_str(entry, &buf, &size);
-	if (ret < 0)
-		return ret;
-
-	switch (buf[0]) {
-	case '1':
-	case 'y':
-	case 'Y':
-		*value = true;
-		break;
-	case '0':
-	case 'n':
-	case 'N':
-		*value = false;
-		break;
-	default:
-		ret = -1;
-	}
-
-	free(buf);
-
-	return ret;
-}
 int sysctl__read_int(const char *sysctl, int *value)
 {
 	char path[PATH_MAX];
@@ -522,18 +434,4 @@ int sysctl__read_int(const char *sysctl, int *value)
 	snprintf(path, sizeof(path), "%s/sys/%s", procfs, sysctl);
 
 	return filename__read_int(path, value);
-}
-
-int sysfs__write_int(const char *entry, int value)
-{
-	char path[PATH_MAX];
-	const char *sysfs = sysfs__mountpoint();
-
-	if (!sysfs)
-		return -1;
-
-	if (snprintf(path, sizeof(path), "%s/%s", sysfs, entry) >= PATH_MAX)
-		return -1;
-
-	return filename__write_int(path, value);
 }

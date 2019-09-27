@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _SBP_BASE_H
 #define _SBP_BASE_H
 

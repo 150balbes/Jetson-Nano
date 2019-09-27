@@ -1,8 +1,20 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2012, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2012-2017, NVIDIA CORPORATION.  All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms and conditions of the GNU General Public License,
+ * version 2, as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include <linux/clk.h>
 #include <linux/clk-provider.h>
 #include <linux/slab.h>
 #include <linux/io.h>
@@ -10,6 +22,7 @@
 #include <linux/err.h>
 
 #include <soc/tegra/fuse.h>
+#include <soc/tegra/tegra-dvfs.h>
 
 #include "clk.h"
 
@@ -62,20 +75,21 @@ static int clk_periph_enable(struct clk_hw *hw)
 	}
 
 	write_enb_set(periph_clk_to_bit(gate), gate);
-	udelay(2);
+	fence_udelay(2, gate->clk_base);
 
 	if (!(gate->flags & TEGRA_PERIPH_NO_RESET) &&
 	    !(gate->flags & TEGRA_PERIPH_MANUAL_RESET)) {
 		if (read_rst(gate) & periph_clk_to_bit(gate)) {
 			udelay(5); /* reset propogation delay */
 			write_rst_clr(periph_clk_to_bit(gate), gate);
+			fence_udelay(2, gate->clk_base);
 		}
 	}
 
 	if (gate->flags & TEGRA_PERIPH_WAR_1005168) {
 		writel_relaxed(0, gate->clk_base + LVL2_CLK_GATE_OVRE);
 		writel_relaxed(BIT(22), gate->clk_base + LVL2_CLK_GATE_OVRE);
-		udelay(1);
+		fence_udelay(1, gate->clk_base);
 		writel_relaxed(0, gate->clk_base + LVL2_CLK_GATE_OVRE);
 	}
 
@@ -106,14 +120,27 @@ static void clk_periph_disable(struct clk_hw *hw)
 		tegra_read_chipid();
 
 	write_enb_clr(periph_clk_to_bit(gate), gate);
+	fence_udelay(2, gate->clk_base);
 
 	spin_unlock_irqrestore(&periph_ref_lock, flags);
+}
+
+static int clk_periph_prepare(struct clk_hw *hw)
+{
+	return tegra_dvfs_set_rate(hw->clk, clk_hw_get_rate(hw));
+}
+
+static void clk_periph_unprepare(struct clk_hw *hw)
+{
+	tegra_dvfs_set_rate(hw->clk, 0);
 }
 
 const struct clk_ops tegra_clk_periph_gate_ops = {
 	.is_enabled = clk_periph_is_enabled,
 	.enable = clk_periph_enable,
 	.disable = clk_periph_disable,
+	.prepare = clk_periph_prepare,
+	.unprepare = clk_periph_unprepare,
 };
 
 struct clk *tegra_clk_register_periph_gate(const char *name,

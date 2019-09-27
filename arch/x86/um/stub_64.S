@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #include <as-layout.h>
 
 .section .__syscall_stub, "ax"

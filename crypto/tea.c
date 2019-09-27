@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /* 
  * Cryptographic API.
  *
@@ -12,6 +11,12 @@
  * compatibility with these implementations.
  *
  * Copyright (c) 2004 Aaron Grothe ajgrothe@yahoo.com
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
  */
 
 #include <linux/init.h>
@@ -216,7 +221,6 @@ static void xeta_decrypt(struct crypto_tfm *tfm, u8 *dst, const u8 *src)
 
 static struct crypto_alg tea_algs[3] = { {
 	.cra_name		=	"tea",
-	.cra_driver_name	=	"tea-generic",
 	.cra_flags		=	CRYPTO_ALG_TYPE_CIPHER,
 	.cra_blocksize		=	TEA_BLOCK_SIZE,
 	.cra_ctxsize		=	sizeof (struct tea_ctx),
@@ -230,7 +234,6 @@ static struct crypto_alg tea_algs[3] = { {
 	.cia_decrypt		=	tea_decrypt } }
 }, {
 	.cra_name		=	"xtea",
-	.cra_driver_name	=	"xtea-generic",
 	.cra_flags		=	CRYPTO_ALG_TYPE_CIPHER,
 	.cra_blocksize		=	XTEA_BLOCK_SIZE,
 	.cra_ctxsize		=	sizeof (struct xtea_ctx),
@@ -244,7 +247,6 @@ static struct crypto_alg tea_algs[3] = { {
 	.cia_decrypt		=	xtea_decrypt } }
 }, {
 	.cra_name		=	"xeta",
-	.cra_driver_name	=	"xeta-generic",
 	.cra_flags		=	CRYPTO_ALG_TYPE_CIPHER,
 	.cra_blocksize		=	XTEA_BLOCK_SIZE,
 	.cra_ctxsize		=	sizeof (struct xtea_ctx),
@@ -272,7 +274,7 @@ MODULE_ALIAS_CRYPTO("tea");
 MODULE_ALIAS_CRYPTO("xtea");
 MODULE_ALIAS_CRYPTO("xeta");
 
-subsys_initcall(tea_mod_init);
+module_init(tea_mod_init);
 module_exit(tea_mod_fini);
 
 MODULE_LICENSE("GPL");

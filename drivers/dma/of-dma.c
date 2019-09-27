@@ -1,10 +1,13 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Device tree helpers for DMA request / controller
  *
  * Based on of_gpio.c
  *
  * Copyright (C) 2012 Texas Instruments Incorporated - http://www.ti.com/
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  */
 
 #include <linux/device.h>
@@ -35,8 +38,8 @@ static struct of_dma *of_dma_find_controller(struct of_phandle_args *dma_spec)
 		if (ofdma->of_node == dma_spec->np)
 			return ofdma;
 
-	pr_debug("%s: can't find DMA controller %pOF\n", __func__,
-		 dma_spec->np);
+	pr_debug("%s: can't find DMA controller %s\n", __func__,
+		 dma_spec->np->full_name);
 
 	return NULL;
 }
@@ -252,8 +255,8 @@ struct dma_chan *of_dma_request_slave_channel(struct device_node *np,
 
 	count = of_property_count_strings(np, "dma-names");
 	if (count < 0) {
-		pr_err("%s: dma-names property of node '%pOF' missing or empty\n",
-			__func__, np);
+		pr_err("%s: dma-names property of node '%s' missing or empty\n",
+			__func__, np->full_name);
 		return ERR_PTR(-ENODEV);
 	}
 
@@ -313,8 +316,8 @@ struct dma_chan *of_dma_simple_xlate(struct of_phandle_args *dma_spec,
 	if (count != 1)
 		return NULL;
 
-	return __dma_request_channel(&info->dma_cap, info->filter_fn,
-				     &dma_spec->args[0], dma_spec->np);
+	return dma_request_channel(info->dma_cap, info->filter_fn,
+			&dma_spec->args[0]);
 }
 EXPORT_SYMBOL_GPL(of_dma_simple_xlate);
 

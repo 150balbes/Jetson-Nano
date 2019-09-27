@@ -1,0 +1,60 @@
+/*
+ * Copyright (c) 2016-2017, NVIDIA CORPORATION.  All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+#include "tegra210-camera-imx185-a00.dtsi"
+
+#define CAM0_RST_L	TEGRA_GPIO(S, 4)
+#define CAMERA_I2C_MUX_BUS(x) (0x1E + x)
+
+/* camera control gpio definitions */
+
+/ {
+	host1x {
+		i2c@546c0000 {
+			tca9546@70 {
+				compatible = "nxp,pca9546";
+				reg = <0x70>;
+				#address-cells = <1>;
+				#size-cells = <0>;
+				vcc-supply = <&en_vdd_cam>;
+				vcc_lp = "vcc";
+				force_bus_start = <CAMERA_I2C_MUX_BUS(0)>;
+
+				i2c@0 {
+					reg = <0>;
+					i2c-mux,deselect-on-exit;
+					#address-cells = <1>;
+					#size-cells = <0>;
+					pca9570_a@24 {
+						compatible = "nvidia,pca9570";
+						reg = <0x24>;
+						channel = "a";
+						drive_ic = "DRV8838";
+					};
+					imx185_a@1a {
+						/* Define any required hw resources needed by driver */
+						/* ie. clocks, io pins, power sources */
+						clocks = <&tegra_car TEGRA210_CLK_CLK_OUT_3>;
+						clock-names = "clk_out_3";
+						clock-frequency = <24000000>;
+						mclk = "clk_out_3";
+						reset-gpios = <&gpio CAM0_RST_L GPIO_ACTIVE_HIGH>;
+					};
+				};
+			};
+		};
+	};
+};

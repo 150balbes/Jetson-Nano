@@ -1,9 +1,12 @@
-/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * rt5659.h  --  RT5659/RT5658 ALSA SoC audio driver
  *
  * Copyright 2015 Realtek Microelectronics
  * Author: Bard Liao <bardliao@realtek.com>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  */
 
 #ifndef __RT5659_H__
@@ -1005,7 +1008,7 @@
 #define RT5659_PWR_ADC_R1			(0x1 << 3)
 #define RT5659_PWR_ADC_R1_BIT			3
 #define RT5659_PWR_ADC_L2			(0x1 << 2)
-#define RT5659_PWR_ADC_L2_BIT			2
+#define RT5659_PWR_ADC_L2_BIT			4
 #define RT5659_PWR_ADC_R2			(0x1 << 1)
 #define RT5659_PWR_ADC_R2_BIT			1
 #define RT5659_PWR_CLS_D			(0x1)
@@ -1740,14 +1743,10 @@
 #define RT5659_CKGEN_DAC2_SFT			4
 
 /* Chopper and Clock control for ADC (0x013b)*/
-#define RT5659_CKXEN_ADC1_MASK			(0x1 << 13)
-#define RT5659_CKXEN_ADC1_SFT			13
-#define RT5659_CKGEN_ADC1_MASK			(0x1 << 12)
-#define RT5659_CKGEN_ADC1_SFT			12
-#define RT5659_CKXEN_ADC2_MASK			(0x1 << 5)
-#define RT5659_CKXEN_ADC2_SFT			5
-#define RT5659_CKGEN_ADC2_MASK			(0x1 << 4)
-#define RT5659_CKGEN_ADC2_SFT			4
+#define RT5659_CKXEN_ADCC_MASK			(0x1 << 13)
+#define RT5659_CKXEN_ADCC_SFT			13
+#define RT5659_CKGEN_ADCC_MASK			(0x1 << 12)
+#define RT5659_CKGEN_ADCC_SFT			12
 
 /* Test Mode Control 1 (0x0145) */
 #define RT5659_AD2DA_LB_MASK			(0x1 << 9)
@@ -1772,6 +1771,7 @@ enum {
 	RT5659_PLL1_S_BCLK2,
 	RT5659_PLL1_S_BCLK3,
 	RT5659_PLL1_S_BCLK4,
+	RT5659_PLL1_S_INVALID,
 };
 
 enum {
@@ -1790,9 +1790,10 @@ struct rt5659_pll_code {
 };
 
 struct rt5659_priv {
-	struct snd_soc_component *component;
+	struct snd_soc_codec *codec;
 	struct rt5659_platform_data pdata;
 	struct regmap *regmap;
+	struct i2c_client *i2c;
 	struct gpio_desc *gpiod_ldo1_en;
 	struct gpio_desc *gpiod_reset;
 	struct snd_soc_jack *hs_jack;
@@ -1811,11 +1812,20 @@ struct rt5659_priv {
 	int pll_out;
 
 	int jack_type;
-	bool hda_hp_plugged;
-	bool hda_mic_plugged;
+
+	/* for intel HD header */
+	bool hp_state;
+	bool mic_state;
+
 };
 
-int rt5659_set_jack_detect(struct snd_soc_component *component,
+int rt5659_set_jack_detect(struct snd_soc_codec *codec,
 	struct snd_soc_jack *hs_jack);
+
+void rt565x_parse_codec_pll_source(struct platform_device *pdev,
+	int *pll_source_id, bool *is_mclk_enabled);
+
+int rt565x_manage_codec_sysclk(struct snd_soc_pcm_stream *dai_params,
+	struct snd_soc_dai *dai, int pll_source_id);
 
 #endif /* __RT5659_H__ */

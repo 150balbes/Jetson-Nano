@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /* This handles the memory map.. */
 
 #if defined(CONFIG_RAMBASE)

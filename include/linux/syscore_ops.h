@@ -1,8 +1,9 @@
-/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  *  syscore_ops.h - System core operations.
  *
  *  Copyright (C) 2011 Rafael J. Wysocki <rjw@sisk.pl>, Novell Inc.
+ *
+ *  This file is released under the GPLv2.
  */
 
 #ifndef _LINUX_SYSCORE_OPS_H
@@ -14,7 +15,10 @@ struct syscore_ops {
 	struct list_head node;
 	int (*suspend)(void);
 	void (*resume)(void);
+	void (*early_resume)(void);
 	void (*shutdown)(void);
+	int (*save)(void);
+	void (*restore)(void);
 };
 
 extern void register_syscore_ops(struct syscore_ops *ops);
@@ -22,6 +26,8 @@ extern void unregister_syscore_ops(struct syscore_ops *ops);
 #ifdef CONFIG_PM_SLEEP
 extern int syscore_suspend(void);
 extern void syscore_resume(void);
+extern int syscore_save(void);
+extern void syscore_restore(void);
 #endif
 extern void syscore_shutdown(void);
 

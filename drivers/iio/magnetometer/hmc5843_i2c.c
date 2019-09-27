@@ -1,9 +1,12 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * i2c driver for hmc5843/5843/5883/5883l/5983
  *
  * Split from hmc5843.c
  * Copyright (C) Josef Gajdusek <atx@atx.name>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  */
 
 #include <linux/module.h>
@@ -55,13 +58,8 @@ static const struct regmap_config hmc5843_i2c_regmap_config = {
 static int hmc5843_i2c_probe(struct i2c_client *cli,
 			     const struct i2c_device_id *id)
 {
-	struct regmap *regmap = devm_regmap_init_i2c(cli,
-			&hmc5843_i2c_regmap_config);
-	if (IS_ERR(regmap))
-		return PTR_ERR(regmap);
-
 	return hmc5843_common_probe(&cli->dev,
-			regmap,
+			devm_regmap_init_i2c(cli, &hmc5843_i2c_regmap_config),
 			id->driver_data, id->name);
 }
 

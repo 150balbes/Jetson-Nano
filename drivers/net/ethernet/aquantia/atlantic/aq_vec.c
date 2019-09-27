@@ -1,7 +1,10 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * aQuantia Corporation Network Driver
  * Copyright (C) 2014-2017 aQuantia Corporation. All rights reserved
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms and conditions of the GNU General Public License,
+ * version 2, as published by the Free Software Foundation.
  */
 
 /* File aq_vec.c: Definition of common structure for vector of Rx and Tx rings.
@@ -86,17 +89,20 @@ static int aq_vec_poll(struct napi_struct *napi, int budget)
 			}
 		}
 
-err_exit:
 		if (!was_tx_cleaned)
 			work_done = budget;
 
 		if (work_done < budget) {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 19, 0)
 			napi_complete_done(napi, work_done);
+#else
+			napi_complete(napi);
+#endif
 			self->aq_hw_ops->hw_irq_enable(self->aq_hw,
 					1U << self->aq_ring_param.vec_idx);
 		}
 	}
-
+err_exit:
 	return work_done;
 }
 

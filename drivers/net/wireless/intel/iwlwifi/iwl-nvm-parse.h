@@ -6,8 +6,7 @@
  * GPL LICENSE SUMMARY
  *
  * Copyright(c) 2008 - 2015 Intel Corporation. All rights reserved.
- * Copyright(c) 2016 - 2017 Intel Deutschland GmbH
- * Copyright(c) 2018        Intel Corporation
+ * Copyright(c) 2016        Intel Deutschland GmbH
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of version 2 of the GNU General Public License as
@@ -17,6 +16,11 @@
  * WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110,
+ * USA
  *
  * The full GNU General Public License is included in this distribution
  * in the file called COPYING.
@@ -28,8 +32,6 @@
  * BSD LICENSE
  *
  * Copyright(c) 2005 - 2014 Intel Corporation. All rights reserved.
- * Copyright(c) 2016 - 2017 Intel Deutschland GmbH
- * Copyright(c) 2018        Intel Corporation
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -65,17 +67,6 @@
 #include "iwl-eeprom-parse.h"
 
 /**
- * enum iwl_nvm_sbands_flags - modification flags for the channel profiles
- *
- * @IWL_NVM_SBANDS_FLAGS_LAR: LAR is enabled
- * @IWL_NVM_SBANDS_FLAGS_NO_WIDE_IN_5GHZ: disallow 40, 80 and 160MHz on 5GHz
- */
-enum iwl_nvm_sbands_flags {
-	IWL_NVM_SBANDS_FLAGS_LAR		= BIT(0),
-	IWL_NVM_SBANDS_FLAGS_NO_WIDE_IN_5GHZ	= BIT(1),
-};
-
-/**
  * iwl_parse_nvm_data - parse NVM data and return values
  *
  * This function parses all NVM values we need and then
@@ -85,7 +76,7 @@ enum iwl_nvm_sbands_flags {
  */
 struct iwl_nvm_data *
 iwl_parse_nvm_data(struct iwl_trans *trans, const struct iwl_cfg *cfg,
-		   const __be16 *nvm_hw, const __le16 *nvm_sw,
+		   const __le16 *nvm_hw, const __le16 *nvm_sw,
 		   const __le16 *nvm_calib, const __le16 *regulatory,
 		   const __le16 *mac_override, const __le16 *phy_sku,
 		   u8 tx_chains, u8 rx_chains, bool lar_fw_supported);
@@ -95,43 +86,29 @@ iwl_parse_nvm_data(struct iwl_trans *trans, const struct iwl_cfg *cfg,
  *
  * This function parses the regulatory channel data received as a
  * MCC_UPDATE_CMD command. It returns a newly allocation regulatory domain,
- * to be fed into the regulatory core. In case the geo_info is set handle
- * accordingly. An ERR_PTR is returned on error.
+ * to be fed into the regulatory core. An ERR_PTR is returned on error.
  * If not given to the regulatory core, the user is responsible for freeing
  * the regdomain returned here with kfree.
  */
 struct ieee80211_regdomain *
 iwl_parse_nvm_mcc_info(struct device *dev, const struct iwl_cfg *cfg,
-		       int num_of_ch, __le32 *channels, u16 fw_mcc,
-		       u16 geo_info);
+		       int num_of_ch, __le32 *channels, u16 fw_mcc);
 
+#ifdef CONFIG_ACPI
 /**
- * struct iwl_nvm_section - describes an NVM section in memory.
+ * iwl_get_bios_mcc - read MCC from BIOS, if available
  *
- * This struct holds an NVM section read from the NIC using NVM_ACCESS_CMD,
- * and saved for later use by the driver. Not all NVM sections are saved
- * this way, only the needed ones.
- */
-struct iwl_nvm_section {
-	u16 length;
-	const u8 *data;
-};
-
-/**
- * iwl_read_external_nvm - Reads external NVM from a file into nvm_sections
- */
-int iwl_read_external_nvm(struct iwl_trans *trans,
-			  const char *nvm_file_name,
-			  struct iwl_nvm_section *nvm_sections);
-void iwl_nvm_fixups(u32 hw_id, unsigned int section, u8 *data,
-		    unsigned int len);
-
-/**
- * iwl_get_nvm - retrieve NVM data from firmware
+ * @dev: the struct device
+ * @mcc: output buffer (3 bytes) that will get the MCC
  *
- * Allocates a new iwl_nvm_data structure, fills it with
- * NVM data, and returns it to caller.
+ * This function tries to read the current MCC from ACPI if available.
  */
-struct iwl_nvm_data *iwl_get_nvm(struct iwl_trans *trans,
-				 const struct iwl_fw *fw);
+int iwl_get_bios_mcc(struct device *dev, char *mcc);
+#else
+static inline int iwl_get_bios_mcc(struct device *dev, char *mcc)
+{
+	return -ENOENT;
+}
+#endif
+
 #endif /* __iwl_nvm_parse_h__ */

@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 	.file	"reg_u_sub.S"
 /*---------------------------------------------------------------------------+
  |  reg_u_sub.S                                                              |
@@ -271,4 +270,3 @@ L_exit:
 	popl	%esi
 	leave
 	ret
-ENDPROC(FPU_u_sub)

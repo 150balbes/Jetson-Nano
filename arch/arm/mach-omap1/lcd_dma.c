@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * linux/arch/arm/mach-omap1/lcd_dma.c
  *
@@ -16,6 +15,11 @@
  * Added OMAP4 support - Santosh Shilimkar <santosh.shilimkar@ti.com>
  *
  * Support functions for the OMAP internal DMA channels.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
  */
 
 #include <linux/module.h>

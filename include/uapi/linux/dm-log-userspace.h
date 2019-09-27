@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: LGPL-2.0+ WITH Linux-syscall-note */
 /*
  * Copyright (C) 2006-2009 Red Hat, Inc.
  *
@@ -8,7 +7,6 @@
 #ifndef __DM_LOG_USERSPACE_H__
 #define __DM_LOG_USERSPACE_H__
 
-#include <linux/types.h>
 #include <linux/dm-ioctl.h> /* For DM_UUID_LEN */
 
 /*
@@ -149,12 +147,12 @@
 
 /*
  * DM_ULOG_GET_REGION_SIZE corresponds to (found in dm-dirty-log.h):
- * __u32 (*get_region_size)(struct dm_dirty_log *log);
+ * uint32_t (*get_region_size)(struct dm_dirty_log *log);
  *
  * Payload-to-userspace:
  *	None.
  * Payload-to-kernel:
- *	__u64 - contains the region size
+ *	uint64_t - contains the region size
  *
  * The region size is something that was determined at constructor time.
  * It is returned in the payload area and 'data_size' is set to
@@ -170,11 +168,11 @@
  * int (*is_clean)(struct dm_dirty_log *log, region_t region);
  *
  * Payload-to-userspace:
- *	__u64 - the region to get clean status on
+ *	uint64_t - the region to get clean status on
  * Payload-to-kernel:
- *	__s64  - 1 if clean, 0 otherwise
+ *	int64_t  - 1 if clean, 0 otherwise
  *
- * Payload is sizeof(__u64) and contains the region for which the clean
+ * Payload is sizeof(uint64_t) and contains the region for which the clean
  * status is being made.
  *
  * When the request has been processed, user-space must return the
@@ -189,9 +187,9 @@
  *		  int can_block);
  *
  * Payload-to-userspace:
- *	__u64 - the region to get sync status on
+ *	uint64_t - the region to get sync status on
  * Payload-to-kernel:
- *	__s64 - 1 if in-sync, 0 otherwise
+ *	int64_t - 1 if in-sync, 0 otherwise
  *
  * Exactly the same as 'is_clean' above, except this time asking "has the
  * region been recovered?" vs. "is the region not being modified?"
@@ -205,7 +203,7 @@
  * Payload-to-userspace:
  *	If the 'integrated_flush' directive is present in the constructor
  *	table, the payload is as same as DM_ULOG_MARK_REGION:
- *		__u64 [] - region(s) to mark
+ *		uint64_t [] - region(s) to mark
  *	else
  *		None
  * Payload-to-kernel:
@@ -227,13 +225,13 @@
  * void (*mark_region)(struct dm_dirty_log *log, region_t region);
  *
  * Payload-to-userspace:
- *	__u64 [] - region(s) to mark
+ *	uint64_t [] - region(s) to mark
  * Payload-to-kernel:
  *	None.
  *
  * Incoming payload contains the one or more regions to mark dirty.
  * The number of regions contained in the payload can be determined from
- * 'data_size/sizeof(__u64)'.
+ * 'data_size/sizeof(uint64_t)'.
  *
  * When the request has been processed, user-space must return the
  * dm_ulog_request to the kernel - setting the 'error' field and clearing
@@ -246,13 +244,13 @@
  * void (*clear_region)(struct dm_dirty_log *log, region_t region);
  *
  * Payload-to-userspace:
- *	__u64 [] - region(s) to clear
+ *	uint64_t [] - region(s) to clear
  * Payload-to-kernel:
  *	None.
  *
  * Incoming payload contains the one or more regions to mark clean.
  * The number of regions contained in the payload can be determined from
- * 'data_size/sizeof(__u64)'.
+ * 'data_size/sizeof(uint64_t)'.
  *
  * When the request has been processed, user-space must return the
  * dm_ulog_request to the kernel - setting the 'error' field and clearing
@@ -268,8 +266,8 @@
  *	None.
  * Payload-to-kernel:
  *	{
- *		__s64 i; -- 1 if recovery necessary, 0 otherwise
- *		__u64 r; -- The region to recover if i=1
+ *		int64_t i; -- 1 if recovery necessary, 0 otherwise
+ *		uint64_t r; -- The region to recover if i=1
  *	}
  * 'data_size' should be set appropriately.
  *
@@ -285,8 +283,8 @@
  *
  * Payload-to-userspace:
  *	{
- *		__u64 - region to set sync state on
- *		__s64  - 0 if not-in-sync, 1 if in-sync
+ *		uint64_t - region to set sync state on
+ *		int64_t  - 0 if not-in-sync, 1 if in-sync
  *	}
  * Payload-to-kernel:
  *	None.
@@ -304,7 +302,7 @@
  * Payload-to-userspace:
  *	None.
  * Payload-to-kernel:
- *	__u64 - the number of in-sync regions
+ *	uint64_t - the number of in-sync regions
  *
  * No incoming payload.  Kernel-bound payload contains the number of
  * regions that are in-sync (in a size_t).
@@ -352,11 +350,11 @@
  * int (*is_remote_recovering)(struct dm_dirty_log *log, region_t region);
  *
  * Payload-to-userspace:
- *	__u64 - region to determine recovery status on
+ *	uint64_t - region to determine recovery status on
  * Payload-to-kernel:
  *	{
- *		__s64 is_recovering;  -- 0 if no, 1 if yes
- *		__u64 in_sync_hint;  -- lowest region still needing resync
+ *		int64_t is_recovering;  -- 0 if no, 1 if yes
+ *		uint64_t in_sync_hint;  -- lowest region still needing resync
  *	}
  *
  * When the request has been processed, user-space must return the
@@ -415,16 +413,16 @@ struct dm_ulog_request {
 	 * differentiate between logs that are being swapped and have the
 	 * same 'uuid'.  (Think "live" and "inactive" device-mapper tables.)
 	 */
-	__u64 luid;
+	uint64_t luid;
 	char uuid[DM_UUID_LEN];
 	char padding[3];        /* Padding because DM_UUID_LEN = 129 */
 
-	__u32 version;       /* See DM_ULOG_REQUEST_VERSION */
-	__s32 error;          /* Used to report back processing errors */
+	uint32_t version;       /* See DM_ULOG_REQUEST_VERSION */
+	int32_t error;          /* Used to report back processing errors */
 
-	__u32 seq;           /* Sequence number for request */
-	__u32 request_type;  /* DM_ULOG_* defined above */
-	__u32 data_size;     /* How much data (not including this struct) */
+	uint32_t seq;           /* Sequence number for request */
+	uint32_t request_type;  /* DM_ULOG_* defined above */
+	uint32_t data_size;     /* How much data (not including this struct) */
 
 	char data[0];
 };

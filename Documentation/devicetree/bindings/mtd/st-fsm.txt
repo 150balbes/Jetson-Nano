@@ -21,5 +21,6 @@ Example:
 		st,syscfg	   = <&syscfg_rear>;
 	        st,boot-device-reg = <0x958>;
 	        st,boot-device-spi = <0x1a>;
+		status = "okay";
 	};
 

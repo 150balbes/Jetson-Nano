@@ -308,7 +308,7 @@ static int flush_header(struct log_c *lc)
 	};
 
 	lc->io_req.bi_op = REQ_OP_WRITE;
-	lc->io_req.bi_op_flags = REQ_PREFLUSH;
+	lc->io_req.bi_op_flags = WRITE_FLUSH;
 
 	return dm_io(&lc->io_req, 1, &null_location, NULL);
 }

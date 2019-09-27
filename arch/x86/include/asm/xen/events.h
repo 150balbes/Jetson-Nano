@@ -1,8 +1,5 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _ASM_X86_XEN_EVENTS_H
 #define _ASM_X86_XEN_EVENTS_H
-
-#include <xen/xen.h>
 
 enum ipi_vector {
 	XEN_RESCHEDULE_VECTOR,

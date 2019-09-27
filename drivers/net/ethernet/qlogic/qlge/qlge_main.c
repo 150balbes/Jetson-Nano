@@ -1092,7 +1092,8 @@ static int ql_get_next_chunk(struct ql_adapter *qdev, struct rx_ring *rx_ring,
 {
 	if (!rx_ring->pg_chunk.page) {
 		u64 map;
-		rx_ring->pg_chunk.page = alloc_pages(__GFP_COMP | GFP_ATOMIC,
+		rx_ring->pg_chunk.page = alloc_pages(__GFP_COLD | __GFP_COMP |
+						GFP_ATOMIC,
 						qdev->lbq_buf_order);
 		if (unlikely(!rx_ring->pg_chunk.page)) {
 			netif_err(qdev, drv, qdev->ndev,
@@ -1159,10 +1160,10 @@ static void ql_update_lbq(struct ql_adapter *qdev, struct rx_ring *rx_ring)
 
 			map = lbq_desc->p.pg_chunk.map +
 				lbq_desc->p.pg_chunk.offset;
-			dma_unmap_addr_set(lbq_desc, mapaddr, map);
+				dma_unmap_addr_set(lbq_desc, mapaddr, map);
 			dma_unmap_len_set(lbq_desc, maplen,
 					rx_ring->lbq_buf_size);
-			*lbq_desc->addr = cpu_to_le64(map);
+				*lbq_desc->addr = cpu_to_le64(map);
 
 			pci_dma_sync_single_for_device(qdev->pdev, map,
 						rx_ring->lbq_buf_size,
@@ -1576,7 +1577,7 @@ static void ql_process_mac_rx_page(struct ql_adapter *qdev,
 		rx_ring->rx_dropped++;
 		goto err_out;
 	}
-	skb_put_data(skb, addr, hlen);
+	memcpy(skb_put(skb, hlen), addr, hlen);
 	netif_printk(qdev, rx_status, KERN_DEBUG, qdev->ndev,
 		     "%d bytes of headers and data in large. Chain page to new skb and pull tail.\n",
 		     length);
@@ -1653,7 +1654,7 @@ static void ql_process_mac_rx_skb(struct ql_adapter *qdev,
 				    dma_unmap_len(sbq_desc, maplen),
 				    PCI_DMA_FROMDEVICE);
 
-	skb_put_data(new_skb, skb->data, length);
+	memcpy(skb_put(new_skb, length), skb->data, length);
 
 	pci_dma_sync_single_for_device(qdev->pdev,
 				       dma_unmap_addr(sbq_desc, mapaddr),
@@ -1747,7 +1748,8 @@ static void ql_realign_skb(struct sk_buff *skb, int len)
 	 */
 	skb->data -= QLGE_SB_PAD - NET_IP_ALIGN;
 	skb->tail -= QLGE_SB_PAD - NET_IP_ALIGN;
-	memmove(skb->data, temp_addr, len);
+	skb_copy_to_linear_data(skb, temp_addr,
+		(unsigned int)len);
 }
 
 /*
@@ -1815,7 +1817,8 @@ static struct sk_buff *ql_build_rx_skb(struct ql_adapter *qdev,
 						    dma_unmap_len
 						    (sbq_desc, maplen),
 						    PCI_DMA_FROMDEVICE);
-			skb_put_data(skb, sbq_desc->p.skb->data, length);
+			memcpy(skb_put(skb, length),
+			       sbq_desc->p.skb->data, length);
 			pci_dma_sync_single_for_device(qdev->pdev,
 						       dma_unmap_addr
 						       (sbq_desc,
@@ -2211,7 +2214,7 @@ static int ql_clean_outbound_rx_ring(struct rx_ring *rx_ring)
 	while (prod != rx_ring->cnsmr_idx) {
 
 		netif_printk(qdev, rx_status, KERN_DEBUG, qdev->ndev,
-			     "cq_id = %d, prod = %d, cnsmr = %d\n",
+			     "cq_id = %d, prod = %d, cnsmr = %d.\n.",
 			     rx_ring->cq_id, prod, rx_ring->cnsmr_idx);
 
 		net_rsp = (struct ob_mac_iocb_rsp *)rx_ring->curr_entry;
@@ -2258,7 +2261,7 @@ static int ql_clean_inbound_rx_ring(struct rx_ring *rx_ring, int budget)
 	while (prod != rx_ring->cnsmr_idx) {
 
 		netif_printk(qdev, rx_status, KERN_DEBUG, qdev->ndev,
-			     "cq_id = %d, prod = %d, cnsmr = %d\n",
+			     "cq_id = %d, prod = %d, cnsmr = %d.\n.",
 			     rx_ring->cq_id, prod, rx_ring->cnsmr_idx);
 
 		net_rsp = rx_ring->curr_entry;
@@ -2331,7 +2334,7 @@ static int ql_napi_poll_msix(struct napi_struct *napi, int budget)
 	}
 
 	if (work_done < budget) {
-		napi_complete_done(napi, work_done);
+		napi_complete(napi);
 		ql_enable_completion_interrupt(qdev, rx_ring->irq);
 	}
 	return work_done;
@@ -2694,7 +2697,7 @@ static netdev_tx_t qlge_send(struct sk_buff *skb, struct net_device *ndev)
 		tx_ring->prod_idx = 0;
 	wmb();
 
-	ql_write_db_reg_relaxed(tx_ring->prod_idx, tx_ring->prod_idx_db_reg);
+	ql_write_db_reg(tx_ring->prod_idx, tx_ring->prod_idx_db_reg);
 	netif_printk(qdev, tx_queued, KERN_DEBUG, qdev->ndev,
 		     "tx queued, slot %d, len %d\n",
 		     tx_ring->prod_idx, skb->len);
@@ -2803,8 +2806,7 @@ static int ql_alloc_tx_resources(struct ql_adapter *qdev,
 		goto pci_alloc_err;
 
 	tx_ring->q =
-	    kmalloc_array(tx_ring->wq_len, sizeof(struct tx_ring_desc),
-			  GFP_KERNEL);
+	    kmalloc(tx_ring->wq_len * sizeof(struct tx_ring_desc), GFP_KERNEL);
 	if (tx_ring->q == NULL)
 		goto err;
 
@@ -4678,13 +4680,7 @@ static int ql_init_device(struct pci_dev *pdev, struct net_device *ndev,
 	/*
 	 * Set up the operating parameters.
 	 */
-	qdev->workqueue = alloc_ordered_workqueue("%s", WQ_MEM_RECLAIM,
-						  ndev->name);
-	if (!qdev->workqueue) {
-		err = -ENOMEM;
-		goto err_out2;
-	}
-
+	qdev->workqueue = alloc_ordered_workqueue(ndev->name, WQ_MEM_RECLAIM);
 	INIT_DELAYED_WORK(&qdev->asic_reset_work, ql_asic_reset_work);
 	INIT_DELAYED_WORK(&qdev->mpi_reset_work, ql_mpi_reset_work);
 	INIT_DELAYED_WORK(&qdev->mpi_work, ql_mpi_work);
@@ -4722,9 +4718,9 @@ static const struct net_device_ops qlge_netdev_ops = {
 	.ndo_vlan_rx_kill_vid	= qlge_vlan_rx_kill_vid,
 };
 
-static void ql_timer(struct timer_list *t)
+static void ql_timer(unsigned long data)
 {
-	struct ql_adapter *qdev = from_timer(qdev, t, timer);
+	struct ql_adapter *qdev = (struct ql_adapter *)data;
 	u32 var = 0;
 
 	var = ql_read32(qdev, STS);
@@ -4785,13 +4781,6 @@ static int qlge_probe(struct pci_dev *pdev,
 	ndev->ethtool_ops = &qlge_ethtool_ops;
 	ndev->watchdog_timeo = 10 * HZ;
 
-	/* MTU range: this driver only supports 1500 or 9000, so this only
-	 * filters out values above or below, and we'll rely on
-	 * qlge_change_mtu to make sure only 1500 or 9000 are allowed
-	 */
-	ndev->min_mtu = ETH_DATA_LEN;
-	ndev->max_mtu = 9000;
-
 	err = register_netdev(ndev);
 	if (err) {
 		dev_err(&pdev->dev, "net device registration failed.\n");
@@ -4803,8 +4792,11 @@ static int qlge_probe(struct pci_dev *pdev,
 	/* Start up the timer to trigger EEH if
 	 * the bus goes dead
 	 */
-	timer_setup(&qdev->timer, ql_timer, TIMER_DEFERRABLE);
-	mod_timer(&qdev->timer, jiffies + (5*HZ));
+	init_timer_deferrable(&qdev->timer);
+	qdev->timer.data = (unsigned long)qdev;
+	qdev->timer.function = ql_timer;
+	qdev->timer.expires = jiffies + (5*HZ);
+	add_timer(&qdev->timer);
 	ql_link_off(qdev);
 	ql_display_dev_info(ndev);
 	atomic_set(&qdev->lb_count, 0);

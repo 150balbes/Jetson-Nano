@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: MIT */
 #ifndef __NVKM_ICCSENSE_H__
 #define __NVKM_ICCSENSE_H__
 
@@ -9,9 +8,6 @@ struct nvkm_iccsense {
 	bool data_valid;
 	struct list_head sensors;
 	struct list_head rails;
-
-	u32 power_w_max;
-	u32 power_w_crit;
 };
 
 int gf100_iccsense_new(struct nvkm_device *, int index, struct nvkm_iccsense **);

@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * arch/sh/kernel/smp.c
  *
@@ -6,6 +5,10 @@
  *
  * Copyright (C) 2002 - 2010 Paul Mundt
  * Copyright (C) 2006 - 2007 Akio Idehara
+ *
+ * This file is subject to the terms and conditions of the GNU General Public
+ * License.  See the file "COPYING" in the main directory of this archive
+ * for more details.
  */
 #include <linux/err.h>
 #include <linux/cache.h>
@@ -17,8 +20,7 @@
 #include <linux/module.h>
 #include <linux/cpu.h>
 #include <linux/interrupt.h>
-#include <linux/sched/mm.h>
-#include <linux/sched/hotplug.h>
+#include <linux/sched.h>
 #include <linux/atomic.h>
 #include <linux/clockchips.h>
 #include <asm/processor.h>
@@ -176,8 +178,8 @@ asmlinkage void start_secondary(void)
 	struct mm_struct *mm = &init_mm;
 
 	enable_mmu();
-	mmgrab(mm);
-	mmget(mm);
+	atomic_inc(&mm->mm_count);
+	atomic_inc(&mm->mm_users);
 	current->active_mm = mm;
 #ifdef CONFIG_MMU
 	enter_lazy_tlb(mm, current);

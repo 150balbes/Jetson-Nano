@@ -1,8 +1,12 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /* FS-Cache cache handling
  *
  * Copyright (C) 2007 Red Hat, Inc. All Rights Reserved.
  * Written by David Howells (dhowells@redhat.com)
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License
+ * as published by the Free Software Foundation; either version
+ * 2 of the License, or (at your option) any later version.
  */
 
 #define FSCACHE_DEBUG_LEVEL CACHE
@@ -121,7 +125,7 @@ struct fscache_cache *fscache_select_cache_for_object(
 	}
 
 	/* the parent is unbacked */
-	if (cookie->type != FSCACHE_COOKIE_TYPE_INDEX) {
+	if (cookie->def->type != FSCACHE_COOKIE_TYPE_INDEX) {
 		/* cookie not an index and is unbacked */
 		spin_unlock(&cookie->lock);
 		_leave(" = NULL [cookie ub,ni]");
@@ -216,7 +220,6 @@ int fscache_add_cache(struct fscache_cache *cache,
 {
 	struct fscache_cache_tag *tag;
 
-	ASSERTCMP(ifsdef->cookie, ==, &fscache_fsdef_index);
 	BUG_ON(!cache->ops);
 	BUG_ON(!ifsdef);
 
@@ -245,6 +248,7 @@ int fscache_add_cache(struct fscache_cache *cache,
 	if (!cache->kobj)
 		goto error;
 
+	ifsdef->cookie = &fscache_fsdef_index;
 	ifsdef->cache = cache;
 	cache->fsdef = ifsdef;
 

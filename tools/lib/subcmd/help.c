@@ -1,8 +1,6 @@
-// SPDX-License-Identifier: GPL-2.0
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <linux/string.h>
 #include <termios.h>
 #include <sys/ioctl.h>
 #include <sys/types.h>
@@ -172,7 +170,7 @@ static void list_commands_in_dir(struct cmdnames *cmds,
 	while ((de = readdir(dir)) != NULL) {
 		int entlen;
 
-		if (!strstarts(de->d_name, prefix))
+		if (prefixcmp(de->d_name, prefix))
 			continue;
 
 		astrcat(&buf, de->d_name);

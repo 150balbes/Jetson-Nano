@@ -1,6 +1,15 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2015-2016, Linaro Limited
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
  */
 #include <linux/device.h>
 #include <linux/dma-buf.h>
@@ -71,7 +80,12 @@ static void tee_shm_op_release(struct dma_buf *dmabuf)
 	tee_shm_release(shm);
 }
 
-static void *tee_shm_op_map(struct dma_buf *dmabuf, unsigned long pgnum)
+static void *tee_shm_op_kmap_atomic(struct dma_buf *dmabuf, unsigned long pgnum)
+{
+	return NULL;
+}
+
+static void *tee_shm_op_kmap(struct dma_buf *dmabuf, unsigned long pgnum)
 {
 	return NULL;
 }
@@ -93,7 +107,8 @@ static const struct dma_buf_ops tee_shm_dma_buf_ops = {
 	.map_dma_buf = tee_shm_op_map_dma_buf,
 	.unmap_dma_buf = tee_shm_op_unmap_dma_buf,
 	.release = tee_shm_op_release,
-	.map = tee_shm_op_map,
+	.kmap_atomic = tee_shm_op_kmap_atomic,
+	.kmap = tee_shm_op_kmap,
 	.mmap = tee_shm_op_mmap,
 };
 
@@ -264,7 +279,7 @@ struct tee_shm *tee_shm_register(struct tee_context *ctx, unsigned long addr,
 		goto err;
 	}
 
-	rc = get_user_pages_fast(start, num_pages, FOLL_WRITE, shm->pages);
+	rc = get_user_pages_fast(start, num_pages, 1, shm->pages);
 	if (rc > 0)
 		shm->num_pages = rc;
 	if (rc != num_pages) {
@@ -345,10 +360,9 @@ int tee_shm_get_fd(struct tee_shm *shm)
 	if (!(shm->flags & TEE_SHM_DMA_BUF))
 		return -EINVAL;
 
-	get_dma_buf(shm->dmabuf);
 	fd = dma_buf_fd(shm->dmabuf, O_CLOEXEC);
-	if (fd < 0)
-		dma_buf_put(shm->dmabuf);
+	if (fd >= 0)
+		get_dma_buf(shm->dmabuf);
 	return fd;
 }
 

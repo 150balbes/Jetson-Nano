@@ -1,10 +1,6 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * Standard pin control state definitions
  */
-
-#ifndef __LINUX_PINCTRL_PINCTRL_STATE_H
-#define __LINUX_PINCTRL_PINCTRL_STATE_H
 
 /**
  * @PINCTRL_STATE_DEFAULT: the state the pinctrl handle shall be put
@@ -34,5 +30,3 @@
 #define PINCTRL_STATE_INIT "init"
 #define PINCTRL_STATE_IDLE "idle"
 #define PINCTRL_STATE_SLEEP "sleep"
-
-#endif /* __LINUX_PINCTRL_PINCTRL_STATE_H */

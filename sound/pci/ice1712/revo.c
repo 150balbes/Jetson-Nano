@@ -1,10 +1,24 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  *   ALSA driver for ICEnsemble ICE1712 (Envy24)
  *
  *   Lowlevel functions for M-Audio Audiophile 192, Revolution 7.1 and 5.1
  *
  *	Copyright (c) 2003 Takashi Iwai <tiwai@suse.de>
+ *
+ *   This program is free software; you can redistribute it and/or modify
+ *   it under the terms of the GNU General Public License as published by
+ *   the Free Software Foundation; either version 2 of the License, or
+ *   (at your option) any later version.
+ *
+ *   This program is distributed in the hope that it will be useful,
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *   GNU General Public License for more details.
+ *
+ *   You should have received a copy of the GNU General Public License
+ *   along with this program; if not, write to the Free Software
+ *   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+ *
  */      
 
 #include <linux/delay.h>
@@ -221,7 +235,7 @@ static const struct snd_akm4xxx_adc_channel revo51_adc[] = {
 	},
 };
 
-static const struct snd_akm4xxx akm_revo_front = {
+static struct snd_akm4xxx akm_revo_front = {
 	.type = SND_AK4381,
 	.num_dacs = 2,
 	.ops = {
@@ -230,7 +244,7 @@ static const struct snd_akm4xxx akm_revo_front = {
 	.dac_info = revo71_front,
 };
 
-static const struct snd_ak4xxx_private akm_revo_front_priv = {
+static struct snd_ak4xxx_private akm_revo_front_priv = {
 	.caddr = 1,
 	.cif = 0,
 	.data_mask = VT1724_REVO_CDOUT,
@@ -242,7 +256,7 @@ static const struct snd_ak4xxx_private akm_revo_front_priv = {
 	.mask_flags = 0,
 };
 
-static const struct snd_akm4xxx akm_revo_surround = {
+static struct snd_akm4xxx akm_revo_surround = {
 	.type = SND_AK4355,
 	.idx_offset = 1,
 	.num_dacs = 6,
@@ -252,7 +266,7 @@ static const struct snd_akm4xxx akm_revo_surround = {
 	.dac_info = revo71_surround,
 };
 
-static const struct snd_ak4xxx_private akm_revo_surround_priv = {
+static struct snd_ak4xxx_private akm_revo_surround_priv = {
 	.caddr = 3,
 	.cif = 0,
 	.data_mask = VT1724_REVO_CDOUT,
@@ -264,7 +278,7 @@ static const struct snd_ak4xxx_private akm_revo_surround_priv = {
 	.mask_flags = 0,
 };
 
-static const struct snd_akm4xxx akm_revo51 = {
+static struct snd_akm4xxx akm_revo51 = {
 	.type = SND_AK4358,
 	.num_dacs = 8,
 	.ops = {
@@ -273,7 +287,7 @@ static const struct snd_akm4xxx akm_revo51 = {
 	.dac_info = revo51_dac,
 };
 
-static const struct snd_ak4xxx_private akm_revo51_priv = {
+static struct snd_ak4xxx_private akm_revo51_priv = {
 	.caddr = 2,
 	.cif = 0,
 	.data_mask = VT1724_REVO_CDOUT,
@@ -285,13 +299,13 @@ static const struct snd_ak4xxx_private akm_revo51_priv = {
 	.mask_flags = 0,
 };
 
-static const struct snd_akm4xxx akm_revo51_adc = {
+static struct snd_akm4xxx akm_revo51_adc = {
 	.type = SND_AK5365,
 	.num_adcs = 2,
 	.adc_info = revo51_adc,
 };
 
-static const struct snd_ak4xxx_private akm_revo51_adc_priv = {
+static struct snd_ak4xxx_private akm_revo51_adc_priv = {
 	.caddr = 2,
 	.cif = 0,
 	.data_mask = VT1724_REVO_CDOUT,
@@ -332,7 +346,7 @@ static const struct snd_akm4xxx_dac_channel ap192_dac[] = {
 	AK_DAC("PCM Playback Volume", 2)
 };
 
-static const struct snd_akm4xxx akm_ap192 = {
+static struct snd_akm4xxx akm_ap192 = {
 	.type = SND_AK4358,
 	.num_dacs = 2,
 	.ops = {
@@ -341,7 +355,7 @@ static const struct snd_akm4xxx akm_ap192 = {
 	.dac_info = ap192_dac,
 };
 
-static const struct snd_ak4xxx_private akm_ap192_priv = {
+static struct snd_ak4xxx_private akm_ap192_priv = {
 	.caddr = 2,
 	.cif = 0,
 	.data_mask = VT1724_REVO_CDOUT,

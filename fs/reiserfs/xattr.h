@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #include <linux/reiserfs_xattr.h>
 #include <linux/init.h>
 #include <linux/list.h>

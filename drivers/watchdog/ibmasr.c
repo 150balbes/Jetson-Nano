@@ -323,7 +323,7 @@ static int asr_open(struct inode *inode, struct file *file)
 	asr_toggle();
 	asr_enable();
 
-	return stream_open(inode, file);
+	return nonseekable_open(inode, file);
 }
 
 static int asr_release(struct inode *inode, struct file *file)

@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  *    tape device discipline for 3480/3490 tapes.
  *

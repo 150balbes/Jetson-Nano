@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * include/linux/buffer_head.h
  *
@@ -81,14 +80,11 @@ struct buffer_head {
 /*
  * macro tricks to expand the set_buffer_foo(), clear_buffer_foo()
  * and buffer_foo() functions.
- * To avoid reset buffer flags that are already set, because that causes
- * a costly cache line transition, check the flag first.
  */
 #define BUFFER_FNS(bit, name)						\
 static __always_inline void set_buffer_##name(struct buffer_head *bh)	\
 {									\
-	if (!test_bit(BH_##bit, &(bh)->b_state))			\
-		set_bit(BH_##bit, &(bh)->b_state);			\
+	set_bit(BH_##bit, &(bh)->b_state);				\
 }									\
 static __always_inline void clear_buffer_##name(struct buffer_head *bh)	\
 {									\
@@ -153,13 +149,13 @@ void buffer_check_dirty_writeback(struct page *page,
  */
 
 void mark_buffer_dirty(struct buffer_head *bh);
-void mark_buffer_write_io_error(struct buffer_head *bh);
+void init_buffer(struct buffer_head *, bh_end_io_t *, void *);
 void touch_buffer(struct buffer_head *bh);
 void set_bh_page(struct buffer_head *bh,
 		struct page *page, unsigned long offset);
 int try_to_free_buffers(struct page *);
 struct buffer_head *alloc_page_buffers(struct page *page, unsigned long size,
-		bool retry);
+		int retry);
 void create_empty_buffers(struct page *, unsigned long,
 			unsigned long b_state);
 void end_buffer_read_sync(struct buffer_head *bh, int uptodate);
@@ -172,12 +168,7 @@ int inode_has_buffers(struct inode *);
 void invalidate_inode_buffers(struct inode *);
 int remove_inode_buffers(struct inode *inode);
 int sync_mapping_buffers(struct address_space *mapping);
-void clean_bdev_aliases(struct block_device *bdev, sector_t block,
-			sector_t len);
-static inline void clean_bdev_bh_alias(struct buffer_head *bh)
-{
-	clean_bdev_aliases(bh->b_bdev, bh->b_blocknr, 1);
-}
+void unmap_underlying_metadata(struct block_device *bdev, sector_t block);
 
 void mark_buffer_async_write(struct buffer_head *bh);
 void __wait_on_buffer(struct buffer_head *);
@@ -200,6 +191,8 @@ void ll_rw_block(int, int, int, struct buffer_head * bh[]);
 int sync_dirty_buffer(struct buffer_head *bh);
 int __sync_dirty_buffer(struct buffer_head *bh, int op_flags);
 void write_dirty_buffer(struct buffer_head *bh, int op_flags);
+int _submit_bh(int op, int op_flags, struct buffer_head *bh,
+	       unsigned long bio_flags);
 int submit_bh(int, int, struct buffer_head *);
 void write_boundary_block(struct block_device *bdev,
 			sector_t bblock, unsigned blocksize);
@@ -242,7 +235,7 @@ int block_commit_write(struct page *page, unsigned from, unsigned to);
 int block_page_mkwrite(struct vm_area_struct *vma, struct vm_fault *vmf,
 				get_block_t get_block);
 /* Convert errno to return value from ->page_mkwrite() call */
-static inline vm_fault_t block_page_mkwrite_return(int err)
+static inline int block_page_mkwrite_return(int err)
 {
 	if (err == 0)
 		return VM_FAULT_LOCKED;

@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __PPC_FSL_SOC_H
 #define __PPC_FSL_SOC_H
 #ifdef __KERNEL__
@@ -8,7 +7,7 @@
 struct spi_device;
 
 extern phys_addr_t get_immrbase(void);
-#if defined(CONFIG_CPM) || defined(CONFIG_QUICC_ENGINE)
+#if defined(CONFIG_CPM2) || defined(CONFIG_QUICC_ENGINE) || defined(CONFIG_8xx)
 extern u32 get_brgfreq(void);
 extern u32 get_baudrate(void);
 #else

@@ -1,17 +1,14 @@
-// SPDX-License-Identifier: GPL-2.0
-#include <stdlib.h>
 #include <sys/types.h>
 #include <unistd.h>
 #include <sys/prctl.h>
 #include "tests.h"
 #include "thread_map.h"
 #include "debug.h"
-#include <linux/zalloc.h>
 
 #define NAME	(const char *) "perf"
 #define NAMEUL	(unsigned long) NAME
 
-int test__thread_map(struct test *test __maybe_unused, int subtest __maybe_unused)
+int test__thread_map(int subtest __maybe_unused)
 {
 	struct thread_map *map;
 
@@ -31,7 +28,7 @@ int test__thread_map(struct test *test __maybe_unused, int subtest __maybe_unuse
 			thread_map__comm(map, 0) &&
 			!strcmp(thread_map__comm(map, 0), NAME));
 	TEST_ASSERT_VAL("wrong refcnt",
-			refcount_read(&map->refcnt) == 1);
+			atomic_read(&map->refcnt) == 1);
 	thread_map__put(map);
 
 	/* test dummy pid */
@@ -46,7 +43,7 @@ int test__thread_map(struct test *test __maybe_unused, int subtest __maybe_unuse
 			thread_map__comm(map, 0) &&
 			!strcmp(thread_map__comm(map, 0), "dummy"));
 	TEST_ASSERT_VAL("wrong refcnt",
-			refcount_read(&map->refcnt) == 1);
+			atomic_read(&map->refcnt) == 1);
 	thread_map__put(map);
 	return 0;
 }
@@ -73,12 +70,12 @@ static int process_event(struct perf_tool *tool __maybe_unused,
 			thread_map__comm(threads, 0) &&
 			!strcmp(thread_map__comm(threads, 0), NAME));
 	TEST_ASSERT_VAL("wrong refcnt",
-			refcount_read(&threads->refcnt) == 1);
+			atomic_read(&threads->refcnt) == 1);
 	thread_map__put(threads);
 	return 0;
 }
 
-int test__thread_map_synthesize(struct test *test __maybe_unused, int subtest __maybe_unused)
+int test__thread_map_synthesize(int subtest __maybe_unused)
 {
 	struct thread_map *threads;
 
@@ -94,48 +91,5 @@ int test__thread_map_synthesize(struct test *test __maybe_unused, int subtest __
 	TEST_ASSERT_VAL("failed to synthesize map",
 		!perf_event__synthesize_thread_map2(NULL, threads, process_event, NULL));
 
-	return 0;
-}
-
-int test__thread_map_remove(struct test *test __maybe_unused, int subtest __maybe_unused)
-{
-	struct thread_map *threads;
-	char *str;
-	int i;
-
-	TEST_ASSERT_VAL("failed to allocate map string",
-			asprintf(&str, "%d,%d", getpid(), getppid()) >= 0);
-
-	threads = thread_map__new_str(str, NULL, 0, false);
-
-	TEST_ASSERT_VAL("failed to allocate thread_map",
-			threads);
-
-	if (verbose > 0)
-		thread_map__fprintf(threads, stderr);
-
-	TEST_ASSERT_VAL("failed to remove thread",
-			!thread_map__remove(threads, 0));
-
-	TEST_ASSERT_VAL("thread_map count != 1", threads->nr == 1);
-
-	if (verbose > 0)
-		thread_map__fprintf(threads, stderr);
-
-	TEST_ASSERT_VAL("failed to remove thread",
-			!thread_map__remove(threads, 0));
-
-	TEST_ASSERT_VAL("thread_map count != 0", threads->nr == 0);
-
-	if (verbose > 0)
-		thread_map__fprintf(threads, stderr);
-
-	TEST_ASSERT_VAL("failed to not remove thread",
-			thread_map__remove(threads, 0));
-
-	for (i = 0; i < threads->nr; i++)
-		zfree(&threads->map[i].comm);
-
-	free(threads);
 	return 0;
 }

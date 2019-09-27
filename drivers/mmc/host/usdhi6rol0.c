@@ -1,7 +1,10 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * Copyright (C) 2013-2014 Renesas Electronics Europe Ltd.
  * Author: Guennadi Liakhovetski <g.liakhovetski@gmx.de>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of version 2 of the GNU General Public License as
+ * published by the Free Software Foundation.
  */
 
 #include <linux/clk.h>
@@ -316,7 +319,7 @@ static void usdhi6_blk_bounce(struct usdhi6_host *host,
 	struct mmc_data *data = host->mrq->data;
 	size_t blk_head = host->head_len;
 
-	dev_dbg(mmc_dev(host->mmc), "%s(): CMD%u of %u SG: %ux%u @ 0x%x\n",
+	dev_dbg(mmc_dev(host->mmc), "%s(): CMD%u of %u SG: %ux%u @ 0x%lx\n",
 		__func__, host->mrq->cmd->opcode, data->sg_len,
 		data->blksz, data->blocks, sg->offset);
 
@@ -360,7 +363,7 @@ static void *usdhi6_sg_map(struct usdhi6_host *host)
 
 	WARN(host->pg.page, "%p not properly unmapped!\n", host->pg.page);
 	if (WARN(sg_dma_len(sg) % data->blksz,
-		 "SG size %u isn't a multiple of block size %u\n",
+		 "SG size %zu isn't a multiple of block size %u\n",
 		 sg_dma_len(sg), data->blksz))
 		return NULL;
 
@@ -383,7 +386,7 @@ static void *usdhi6_sg_map(struct usdhi6_host *host)
 	else
 		host->blk_page = host->pg.mapped;
 
-	dev_dbg(mmc_dev(host->mmc), "Mapped %p (%lx) at %p + %u for CMD%u @ 0x%p\n",
+	dev_dbg(mmc_dev(host->mmc), "Mapped %p (%lx) at %p + %lu for CMD%u @ 0x%p\n",
 		host->pg.page, page_to_pfn(host->pg.page), host->pg.mapped,
 		sg->offset, host->mrq->cmd->opcode, host->mrq);
 
@@ -492,7 +495,7 @@ static void usdhi6_sg_advance(struct usdhi6_host *host)
 		host->sg = next;
 
 		if (WARN(next && sg_dma_len(next) % data->blksz,
-			 "SG size %u isn't a multiple of block size %u\n",
+			 "SG size %zu isn't a multiple of block size %u\n",
 			 sg_dma_len(next), data->blksz))
 			data->error = -EINVAL;
 
@@ -1044,7 +1047,7 @@ static int usdhi6_rq_start(struct usdhi6_host *host)
 		    (data->blksz % 4 ||
 		     data->sg->offset % 4))
 			dev_dbg(mmc_dev(host->mmc),
-				"Bad SG of %u: %ux%u @ %u\n", data->sg_len,
+				"Bad SG of %u: %ux%u @ %lu\n", data->sg_len,
 				data->blksz, data->blocks, data->sg->offset);
 
 		/* Enable DMA for USDHI6_MIN_DMA bytes or more */
@@ -1056,7 +1059,7 @@ static int usdhi6_rq_start(struct usdhi6_host *host)
 			usdhi6_write(host, USDHI6_CC_EXT_MODE, USDHI6_CC_EXT_MODE_SDRW);
 
 		dev_dbg(mmc_dev(host->mmc),
-			"%s(): request opcode %u, %u blocks of %u bytes in %u segments, %s %s @+0x%x%s\n",
+			"%s(): request opcode %u, %u blocks of %u bytes in %u segments, %s %s @+0x%lx%s\n",
 			__func__, cmd->opcode, data->blocks, data->blksz,
 			data->sg_len, use_dma ? "DMA" : "PIO",
 			data->flags & MMC_DATA_READ ? "read" : "write",
@@ -1182,7 +1185,7 @@ static int usdhi6_sig_volt_switch(struct mmc_host *mmc, struct mmc_ios *ios)
 	return ret;
 }
 
-static const struct mmc_host_ops usdhi6_ops = {
+static struct mmc_host_ops usdhi6_ops = {
 	.request	= usdhi6_request,
 	.set_ios	= usdhi6_set_ios,
 	.get_cd		= usdhi6_get_cd,
@@ -1339,7 +1342,7 @@ static int usdhi6_stop_cmd(struct usdhi6_host *host)
 			host->wait = USDHI6_WAIT_FOR_STOP;
 			return 0;
 		}
-		/* fall through - Unsupported STOP command. */
+		/* Unsupported STOP command */
 	default:
 		dev_err(mmc_dev(host->mmc),
 			"unsupported stop CMD%d for CMD%d\n",
@@ -1687,7 +1690,7 @@ static void usdhi6_timeout_work(struct work_struct *work)
 	switch (host->wait) {
 	default:
 		dev_err(mmc_dev(host->mmc), "Invalid state %u\n", host->wait);
-		/* fall through - mrq can be NULL, but is impossible. */
+		/* mrq can be NULL in this actually impossible case */
 	case USDHI6_WAIT_FOR_CMD:
 		usdhi6_error_code(host);
 		if (mrq)
@@ -1704,12 +1707,15 @@ static void usdhi6_timeout_work(struct work_struct *work)
 	case USDHI6_WAIT_FOR_WRITE:
 		sg = host->sg ?: data->sg;
 		dev_dbg(mmc_dev(host->mmc),
-			"%c: page #%u @ +0x%zx %ux%u in SG%u. Current SG %u bytes @ %u\n",
+			"%c: page #%u @ +0x%zx %ux%u in SG%u. Current SG %zu bytes @ %lu\n",
 			data->flags & MMC_DATA_READ ? 'R' : 'W', host->page_idx,
 			host->offset, data->blocks, data->blksz, data->sg_len,
 			sg_dma_len(sg), sg->offset);
 		usdhi6_sg_unmap(host, true);
-		/* fall through - page unmapped in USDHI6_WAIT_FOR_DATA_END. */
+		/*
+		 * If USDHI6_WAIT_FOR_DATA_END times out, we have already unmapped
+		 * the page
+		 */
 	case USDHI6_WAIT_FOR_DATA_END:
 		usdhi6_error_code(host);
 		data->error = -ETIMEDOUT;
@@ -1751,7 +1757,7 @@ static int usdhi6_probe(struct platform_device *pdev)
 		return -ENOMEM;
 
 	ret = mmc_regulator_get_supply(mmc);
-	if (ret)
+	if (ret == -EPROBE_DEFER)
 		goto e_free_mmc;
 
 	ret = mmc_of_parse(mmc);

@@ -1,5 +1,7 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License version 2 as published
+ * by the Free Software Foundation.
  *
  * Parts of this file are based on Ralink's 2.6.21 BSP
  *
@@ -10,7 +12,7 @@
 
 #include <linux/kernel.h>
 #include <linux/init.h>
-#include <linux/bug.h>
+#include <linux/module.h>
 
 #include <asm/mipsregs.h>
 #include <asm/mach-ralink/ralink_regs.h>
@@ -53,10 +55,7 @@ static int dram_type;
 static struct rt2880_pmx_func i2c_grp[] =  { FUNC("i2c", 0, 1, 2) };
 static struct rt2880_pmx_func spi_grp[] = { FUNC("spi", 0, 3, 4) };
 static struct rt2880_pmx_func uartlite_grp[] = { FUNC("uartlite", 0, 15, 2) };
-static struct rt2880_pmx_func mdio_grp[] = {
-	FUNC("mdio", MT7620_GPIO_MODE_MDIO, 22, 2),
-	FUNC("refclk", MT7620_GPIO_MODE_MDIO_REFCLK, 22, 2),
-};
+static struct rt2880_pmx_func mdio_grp[] = { FUNC("mdio", 0, 22, 2) };
 static struct rt2880_pmx_func rgmii1_grp[] = { FUNC("rgmii1", 0, 24, 12) };
 static struct rt2880_pmx_func refclk_grp[] = { FUNC("spi refclk", 0, 37, 3) };
 static struct rt2880_pmx_func ephy_grp[] = { FUNC("ephy", 0, 40, 5) };
@@ -82,7 +81,7 @@ static struct rt2880_pmx_func pcie_rst_grp[] = {
 };
 static struct rt2880_pmx_func nd_sd_grp[] = {
 	FUNC("nand", MT7620_GPIO_MODE_NAND, 45, 15),
-	FUNC("sd", MT7620_GPIO_MODE_SD, 47, 13)
+	FUNC("sd", MT7620_GPIO_MODE_SD, 45, 15)
 };
 
 static struct rt2880_pmx_group mt7620a_pinmux_data[] = {
@@ -93,8 +92,7 @@ static struct rt2880_pmx_group mt7620a_pinmux_data[] = {
 	GRP("uartlite", uartlite_grp, 1, MT7620_GPIO_MODE_UART1),
 	GRP_G("wdt", wdt_grp, MT7620_GPIO_MODE_WDT_MASK,
 		MT7620_GPIO_MODE_WDT_GPIO, MT7620_GPIO_MODE_WDT_SHIFT),
-	GRP_G("mdio", mdio_grp, MT7620_GPIO_MODE_MDIO_MASK,
-		MT7620_GPIO_MODE_MDIO_GPIO, MT7620_GPIO_MODE_MDIO_SHIFT),
+	GRP("mdio", mdio_grp, 1, MT7620_GPIO_MODE_MDIO),
 	GRP("rgmii1", rgmii1_grp, 1, MT7620_GPIO_MODE_RGMII1),
 	GRP("spi refclk", refclk_grp, 1, MT7620_GPIO_MODE_SPI_REF_CLK),
 	GRP_G("pcie", pcie_rst_grp, MT7620_GPIO_MODE_PCIE_MASK,
@@ -511,7 +509,6 @@ void __init ralink_clk_init(void)
 	unsigned long sys_rate;
 	unsigned long dram_rate;
 	unsigned long periph_rate;
-	unsigned long pcmi2s_rate;
 
 	xtal_rate = mt7620_get_xtal_rate();
 
@@ -526,7 +523,6 @@ void __init ralink_clk_init(void)
 			cpu_rate = MHZ(575);
 		dram_rate = sys_rate = cpu_rate / 3;
 		periph_rate = MHZ(40);
-		pcmi2s_rate = MHZ(480);
 
 		ralink_clk_add("10000d00.uartlite", periph_rate);
 		ralink_clk_add("10000e00.uartlite", periph_rate);
@@ -538,7 +534,6 @@ void __init ralink_clk_init(void)
 		dram_rate = mt7620_get_dram_rate(pll_rate);
 		sys_rate = mt7620_get_sys_rate(cpu_rate);
 		periph_rate = mt7620_get_periph_rate(xtal_rate);
-		pcmi2s_rate = periph_rate;
 
 		pr_debug(RFMT("XTAL") RFMT("CPU_PLL") RFMT("PLL"),
 			 RINT(xtal_rate), RFRAC(xtal_rate),
@@ -560,8 +555,6 @@ void __init ralink_clk_init(void)
 	ralink_clk_add("cpu", cpu_rate);
 	ralink_clk_add("10000100.timer", periph_rate);
 	ralink_clk_add("10000120.watchdog", periph_rate);
-	ralink_clk_add("10000900.i2c", periph_rate);
-	ralink_clk_add("10000a00.i2s", pcmi2s_rate);
 	ralink_clk_add("10000b00.spi", sys_rate);
 	ralink_clk_add("10000b40.spi", sys_rate);
 	ralink_clk_add("10000c00.uartlite", periph_rate);

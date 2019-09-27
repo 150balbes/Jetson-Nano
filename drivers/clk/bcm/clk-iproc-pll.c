@@ -69,6 +69,16 @@ enum vco_freq_range {
 	VCO_MAX       = 4000000000U,
 };
 
+struct iproc_pll;
+
+struct iproc_clk {
+	struct clk_hw hw;
+	const char *name;
+	struct iproc_pll *pll;
+	unsigned long rate;
+	const struct iproc_clk_ctrl *ctrl;
+};
+
 struct iproc_pll {
 	void __iomem *status_base;
 	void __iomem *control_base;
@@ -78,48 +88,12 @@ struct iproc_pll {
 	const struct iproc_pll_ctrl *ctrl;
 	const struct iproc_pll_vco_param *vco_param;
 	unsigned int num_vco_entries;
-};
 
-struct iproc_clk {
-	struct clk_hw hw;
-	struct iproc_pll *pll;
-	const struct iproc_clk_ctrl *ctrl;
+	struct clk_hw_onecell_data *clk_data;
+	struct iproc_clk *clks;
 };
 
 #define to_iproc_clk(hw) container_of(hw, struct iproc_clk, hw)
-
-static int pll_calc_param(unsigned long target_rate,
-			unsigned long parent_rate,
-			struct iproc_pll_vco_param *vco_out)
-{
-	u64 ndiv_int, ndiv_frac, residual;
-
-	ndiv_int = target_rate / parent_rate;
-
-	if (!ndiv_int || (ndiv_int > 255))
-		return -EINVAL;
-
-	residual = target_rate - (ndiv_int * parent_rate);
-	residual <<= 20;
-
-	/*
-	 * Add half of the divisor so the result will be rounded to closest
-	 * instead of rounded down.
-	 */
-	residual += (parent_rate / 2);
-	ndiv_frac = div64_u64((u64)residual, (u64)parent_rate);
-
-	vco_out->ndiv_int = ndiv_int;
-	vco_out->ndiv_frac = ndiv_frac;
-	vco_out->pdiv = 1;
-
-	vco_out->rate = vco_out->ndiv_int * parent_rate;
-	residual = (u64)vco_out->ndiv_frac * (u64)parent_rate;
-	residual >>= 20;
-	vco_out->rate += residual;
-
-	return 0;
-}
 
 /*
  * Based on the target frequency, find a match from the VCO frequency parameter
@@ -278,51 +252,17 @@ static void __pll_bring_out_reset(struct iproc_pll *pll, unsigned int kp,
 	iproc_pll_write(pll, pll->control_base, reset->offset, val);
 }
 
-/*
- * Determines if the change to be applied to the PLL is minor (just an update
- * or the fractional divider). If so, then we can avoid going through a
- * disruptive reset and lock sequence.
- */
-static bool pll_fractional_change_only(struct iproc_pll *pll,
-				       struct iproc_pll_vco_param *vco)
-{
-	const struct iproc_pll_ctrl *ctrl = pll->ctrl;
-	u32 val;
-	u32 ndiv_int;
-	unsigned int pdiv;
-
-	/* PLL needs to be locked */
-	val = readl(pll->status_base + ctrl->status.offset);
-	if ((val & (1 << ctrl->status.shift)) == 0)
-		return false;
-
-	val = readl(pll->control_base + ctrl->ndiv_int.offset);
-	ndiv_int = (val >> ctrl->ndiv_int.shift) &
-		bit_mask(ctrl->ndiv_int.width);
-
-	if (ndiv_int != vco->ndiv_int)
-		return false;
-
-	val = readl(pll->control_base + ctrl->pdiv.offset);
-	pdiv = (val >> ctrl->pdiv.shift) & bit_mask(ctrl->pdiv.width);
-
-	if (pdiv != vco->pdiv)
-		return false;
-
-	return true;
-}
-
-static int pll_set_rate(struct iproc_clk *clk, struct iproc_pll_vco_param *vco,
+static int pll_set_rate(struct iproc_clk *clk, unsigned int rate_index,
 			unsigned long parent_rate)
 {
 	struct iproc_pll *pll = clk->pll;
+	const struct iproc_pll_vco_param *vco = &pll->vco_param[rate_index];
 	const struct iproc_pll_ctrl *ctrl = pll->ctrl;
 	int ka = 0, ki, kp, ret;
 	unsigned long rate = vco->rate;
 	u32 val;
 	enum kp_band kp_index;
 	unsigned long ref_freq;
-	const char *clk_name = clk_hw_get_name(&clk->hw);
 
 	/*
 	 * reference frequency = parent frequency / PDIV
@@ -337,7 +277,7 @@ static int pll_set_rate(struct iproc_clk *clk, struct iproc_pll_vco_param *vco,
 	if (rate >= VCO_LOW && rate < VCO_HIGH) {
 		ki = 4;
 		kp_index = KP_BAND_MID;
-	} else if (rate >= VCO_HIGH && rate < VCO_HIGH_HIGH) {
+	} else if (rate >= VCO_HIGH && rate && rate < VCO_HIGH_HIGH) {
 		ki = 3;
 		kp_index = KP_BAND_HIGH;
 	} else if (rate >= VCO_HIGH_HIGH && rate < VCO_MAX) {
@@ -345,33 +285,20 @@ static int pll_set_rate(struct iproc_clk *clk, struct iproc_pll_vco_param *vco,
 		kp_index = KP_BAND_HIGH_HIGH;
 	} else {
 		pr_err("%s: pll: %s has invalid rate: %lu\n", __func__,
-				clk_name, rate);
+				clk->name, rate);
 		return -EINVAL;
 	}
 
 	kp = get_kp(ref_freq, kp_index);
 	if (kp < 0) {
-		pr_err("%s: pll: %s has invalid kp\n", __func__, clk_name);
+		pr_err("%s: pll: %s has invalid kp\n", __func__, clk->name);
 		return kp;
 	}
 
 	ret = __pll_enable(pll);
 	if (ret) {
-		pr_err("%s: pll: %s fails to enable\n", __func__, clk_name);
+		pr_err("%s: pll: %s fails to enable\n", __func__, clk->name);
 		return ret;
-	}
-
-	if (pll_fractional_change_only(clk->pll, vco)) {
-		/* program fractional part of NDIV */
-		if (ctrl->flags & IPROC_CLK_PLL_HAS_NDIV_FRAC) {
-			val = readl(pll->control_base + ctrl->ndiv_frac.offset);
-			val &= ~(bit_mask(ctrl->ndiv_frac.width) <<
-				 ctrl->ndiv_frac.shift);
-			val |= vco->ndiv_frac << ctrl->ndiv_frac.shift;
-			iproc_pll_write(pll, pll->control_base,
-					ctrl->ndiv_frac.offset, val);
-			return 0;
-		}
 	}
 
 	/* put PLL in reset */
@@ -427,7 +354,7 @@ static int pll_set_rate(struct iproc_clk *clk, struct iproc_pll_vco_param *vco,
 
 	ret = pll_wait_for_lock(pll);
 	if (ret < 0) {
-		pr_err("%s: pll: %s failed to lock\n", __func__, clk_name);
+		pr_err("%s: pll: %s failed to lock\n", __func__, clk->name);
 		return ret;
 	}
 
@@ -463,15 +390,16 @@ static unsigned long iproc_pll_recalc_rate(struct clk_hw *hw,
 	u32 val;
 	u64 ndiv, ndiv_int, ndiv_frac;
 	unsigned int pdiv;
-	unsigned long rate;
 
 	if (parent_rate == 0)
 		return 0;
 
 	/* PLL needs to be locked */
 	val = readl(pll->status_base + ctrl->status.offset);
-	if ((val & (1 << ctrl->status.shift)) == 0)
+	if ((val & (1 << ctrl->status.shift)) == 0) {
+		clk->rate = 0;
 		return 0;
+	}
 
 	/*
 	 * PLL output frequency =
@@ -493,60 +421,35 @@ static unsigned long iproc_pll_recalc_rate(struct clk_hw *hw,
 	val = readl(pll->control_base + ctrl->pdiv.offset);
 	pdiv = (val >> ctrl->pdiv.shift) & bit_mask(ctrl->pdiv.width);
 
-	rate = (ndiv * parent_rate) >> 20;
+	clk->rate = (ndiv * parent_rate) >> 20;
 
 	if (pdiv == 0)
-		rate *= 2;
+		clk->rate *= 2;
 	else
-		rate /= pdiv;
+		clk->rate /= pdiv;
 
-	return rate;
+	return clk->rate;
 }
 
-static int iproc_pll_determine_rate(struct clk_hw *hw,
-		struct clk_rate_request *req)
+static long iproc_pll_round_rate(struct clk_hw *hw, unsigned long rate,
+				 unsigned long *parent_rate)
 {
-	unsigned int  i;
+	unsigned i;
 	struct iproc_clk *clk = to_iproc_clk(hw);
 	struct iproc_pll *pll = clk->pll;
-	const struct iproc_pll_ctrl *ctrl = pll->ctrl;
-	unsigned long  diff, best_diff;
-	unsigned int  best_idx = 0;
-	int ret;
 
-	if (req->rate == 0 || req->best_parent_rate == 0)
+	if (rate == 0 || *parent_rate == 0 || !pll->vco_param)
 		return -EINVAL;
 
-	if (ctrl->flags & IPROC_CLK_PLL_CALC_PARAM) {
-		struct iproc_pll_vco_param vco_param;
-
-		ret = pll_calc_param(req->rate, req->best_parent_rate,
-					&vco_param);
-		if (ret)
-			return ret;
-
-		req->rate = vco_param.rate;
-		return 0;
-	}
-
-	if (!pll->vco_param)
-		return -EINVAL;
-
-	best_diff = ULONG_MAX;
 	for (i = 0; i < pll->num_vco_entries; i++) {
-		diff = abs(req->rate - pll->vco_param[i].rate);
-		if (diff <= best_diff) {
-			best_diff = diff;
-			best_idx = i;
-		}
-		/* break now if perfect match */
-		if (diff == 0)
+		if (rate <= pll->vco_param[i].rate)
 			break;
 	}
 
-	req->rate = pll->vco_param[best_idx].rate;
+	if (i == pll->num_vco_entries)
+		i--;
 
-	return 0;
+	return pll->vco_param[i].rate;
 }
 
 static int iproc_pll_set_rate(struct clk_hw *hw, unsigned long rate,
@@ -554,23 +457,13 @@ static int iproc_pll_set_rate(struct clk_hw *hw, unsigned long rate,
 {
 	struct iproc_clk *clk = to_iproc_clk(hw);
 	struct iproc_pll *pll = clk->pll;
-	const struct iproc_pll_ctrl *ctrl = pll->ctrl;
-	struct iproc_pll_vco_param vco_param;
 	int rate_index, ret;
 
-	if (ctrl->flags & IPROC_CLK_PLL_CALC_PARAM) {
-		ret = pll_calc_param(rate, parent_rate, &vco_param);
-		if (ret)
-			return ret;
-	} else {
-		rate_index = pll_get_rate_index(pll, rate);
-		if (rate_index < 0)
-			return rate_index;
+	rate_index = pll_get_rate_index(pll, rate);
+	if (rate_index < 0)
+		return rate_index;
 
-		vco_param = pll->vco_param[rate_index];
-	}
-
-	ret = pll_set_rate(clk, &vco_param, parent_rate);
+	ret = pll_set_rate(clk, rate_index, parent_rate);
 	return ret;
 }
 
@@ -578,7 +471,7 @@ static const struct clk_ops iproc_pll_ops = {
 	.enable = iproc_pll_enable,
 	.disable = iproc_pll_disable,
 	.recalc_rate = iproc_pll_recalc_rate,
-	.determine_rate = iproc_pll_determine_rate,
+	.round_rate = iproc_pll_round_rate,
 	.set_rate = iproc_pll_set_rate,
 };
 
@@ -625,7 +518,6 @@ static unsigned long iproc_clk_recalc_rate(struct clk_hw *hw,
 	struct iproc_pll *pll = clk->pll;
 	u32 val;
 	unsigned int mdiv;
-	unsigned long rate;
 
 	if (parent_rate == 0)
 		return 0;
@@ -636,33 +528,32 @@ static unsigned long iproc_clk_recalc_rate(struct clk_hw *hw,
 		mdiv = 256;
 
 	if (ctrl->flags & IPROC_CLK_MCLK_DIV_BY_2)
-		rate = parent_rate / (mdiv * 2);
+		clk->rate = parent_rate / (mdiv * 2);
 	else
-		rate = parent_rate / mdiv;
+		clk->rate = parent_rate / mdiv;
 
-	return rate;
+	return clk->rate;
 }
 
-static int iproc_clk_determine_rate(struct clk_hw *hw,
-		struct clk_rate_request *req)
+static long iproc_clk_round_rate(struct clk_hw *hw, unsigned long rate,
+		unsigned long *parent_rate)
 {
-	unsigned int bestdiv;
+	unsigned int div;
 
-	if (req->rate == 0)
+	if (rate == 0 || *parent_rate == 0)
 		return -EINVAL;
-	if (req->rate == req->best_parent_rate)
-		return 0;
 
-	bestdiv = DIV_ROUND_CLOSEST(req->best_parent_rate, req->rate);
-	if (bestdiv < 2)
-		req->rate = req->best_parent_rate;
+	if (rate == *parent_rate)
+		return *parent_rate;
 
-	if (bestdiv > 256)
-		bestdiv = 256;
+	div = DIV_ROUND_UP(*parent_rate, rate);
+	if (div < 2)
+		return *parent_rate;
 
-	req->rate = req->best_parent_rate / bestdiv;
+	if (div > 256)
+		div = 256;
 
-	return 0;
+	return *parent_rate / div;
 }
 
 static int iproc_clk_set_rate(struct clk_hw *hw, unsigned long rate,
@@ -677,10 +568,10 @@ static int iproc_clk_set_rate(struct clk_hw *hw, unsigned long rate,
 	if (rate == 0 || parent_rate == 0)
 		return -EINVAL;
 
-	div = DIV_ROUND_CLOSEST(parent_rate, rate);
 	if (ctrl->flags & IPROC_CLK_MCLK_DIV_BY_2)
-		div /=  2;
-
+		div = DIV_ROUND_UP(parent_rate, rate * 2);
+	else
+		div = DIV_ROUND_UP(parent_rate, rate);
 	if (div > 256)
 		return -EINVAL;
 
@@ -692,6 +583,10 @@ static int iproc_clk_set_rate(struct clk_hw *hw, unsigned long rate,
 		val |= div << ctrl->mdiv.shift;
 	}
 	iproc_pll_write(pll, pll->control_base, ctrl->mdiv.offset, val);
+	if (ctrl->flags & IPROC_CLK_MCLK_DIV_BY_2)
+		clk->rate = parent_rate / (div * 2);
+	else
+		clk->rate = parent_rate / div;
 
 	return 0;
 }
@@ -700,7 +595,7 @@ static const struct clk_ops iproc_clk_ops = {
 	.enable = iproc_clk_enable,
 	.disable = iproc_clk_disable,
 	.recalc_rate = iproc_clk_recalc_rate,
-	.determine_rate = iproc_clk_determine_rate,
+	.round_rate = iproc_clk_round_rate,
 	.set_rate = iproc_clk_set_rate,
 };
 
@@ -722,20 +617,18 @@ static void iproc_pll_sw_cfg(struct iproc_pll *pll)
 	}
 }
 
-void iproc_pll_clk_setup(struct device_node *node,
-			 const struct iproc_pll_ctrl *pll_ctrl,
-			 const struct iproc_pll_vco_param *vco,
-			 unsigned int num_vco_entries,
-			 const struct iproc_clk_ctrl *clk_ctrl,
-			 unsigned int num_clks)
+void __init iproc_pll_clk_setup(struct device_node *node,
+				const struct iproc_pll_ctrl *pll_ctrl,
+				const struct iproc_pll_vco_param *vco,
+				unsigned int num_vco_entries,
+				const struct iproc_clk_ctrl *clk_ctrl,
+				unsigned int num_clks)
 {
 	int i, ret;
 	struct iproc_pll *pll;
 	struct iproc_clk *iclk;
 	struct clk_init_data init;
 	const char *parent_name;
-	struct iproc_clk *iclk_array;
-	struct clk_hw_onecell_data *clk_data;
 
 	if (WARN_ON(!pll_ctrl) || WARN_ON(!clk_ctrl))
 		return;
@@ -744,13 +637,14 @@ void iproc_pll_clk_setup(struct device_node *node,
 	if (WARN_ON(!pll))
 		return;
 
-	clk_data = kzalloc(struct_size(clk_data, hws, num_clks), GFP_KERNEL);
-	if (WARN_ON(!clk_data))
+	pll->clk_data = kzalloc(sizeof(*pll->clk_data->hws) * num_clks +
+				sizeof(*pll->clk_data), GFP_KERNEL);
+	if (WARN_ON(!pll->clk_data))
 		goto err_clk_data;
-	clk_data->num = num_clks;
+	pll->clk_data->num = num_clks;
 
-	iclk_array = kcalloc(num_clks, sizeof(struct iproc_clk), GFP_KERNEL);
-	if (WARN_ON(!iclk_array))
+	pll->clks = kcalloc(num_clks, sizeof(*pll->clks), GFP_KERNEL);
+	if (WARN_ON(!pll->clks))
 		goto err_clks;
 
 	pll->control_base = of_iomap(node, 0);
@@ -780,8 +674,9 @@ void iproc_pll_clk_setup(struct device_node *node,
 	/* initialize and register the PLL itself */
 	pll->ctrl = pll_ctrl;
 
-	iclk = &iclk_array[0];
+	iclk = &pll->clks[0];
 	iclk->pll = pll;
+	iclk->name = node->name;
 
 	init.name = node->name;
 	init.ops = &iproc_pll_ops;
@@ -802,7 +697,7 @@ void iproc_pll_clk_setup(struct device_node *node,
 	if (WARN_ON(ret))
 		goto err_pll_register;
 
-	clk_data->hws[0] = &iclk->hw;
+	pll->clk_data->hws[0] = &iclk->hw;
 
 	/* now initialize and register all leaf clocks */
 	for (i = 1; i < num_clks; i++) {
@@ -816,7 +711,8 @@ void iproc_pll_clk_setup(struct device_node *node,
 		if (WARN_ON(ret))
 			goto err_clk_register;
 
-		iclk = &iclk_array[i];
+		iclk = &pll->clks[i];
+		iclk->name = clk_name;
 		iclk->pll = pll;
 		iclk->ctrl = &clk_ctrl[i];
 
@@ -831,10 +727,11 @@ void iproc_pll_clk_setup(struct device_node *node,
 		if (WARN_ON(ret))
 			goto err_clk_register;
 
-		clk_data->hws[i] = &iclk->hw;
+		pll->clk_data->hws[i] = &iclk->hw;
 	}
 
-	ret = of_clk_add_hw_provider(node, of_clk_hw_onecell_get, clk_data);
+	ret = of_clk_add_hw_provider(node, of_clk_hw_onecell_get,
+				     pll->clk_data);
 	if (WARN_ON(ret))
 		goto err_clk_register;
 
@@ -842,7 +739,7 @@ void iproc_pll_clk_setup(struct device_node *node,
 
 err_clk_register:
 	while (--i >= 0)
-		clk_hw_unregister(clk_data->hws[i]);
+		clk_hw_unregister(pll->clk_data->hws[i]);
 
 err_pll_register:
 	if (pll->status_base != pll->control_base)
@@ -859,10 +756,10 @@ err_asiu_iomap:
 	iounmap(pll->control_base);
 
 err_pll_iomap:
-	kfree(iclk_array);
+	kfree(pll->clks);
 
 err_clks:
-	kfree(clk_data);
+	kfree(pll->clk_data);
 
 err_clk_data:
 	kfree(pll);

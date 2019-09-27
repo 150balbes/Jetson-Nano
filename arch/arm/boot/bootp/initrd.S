@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 	.type	initrd_start,#object
 	.globl	initrd_start
 initrd_start:

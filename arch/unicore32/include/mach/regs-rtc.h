@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * PKUnity Real-Time Clock (RTC) control registers
  */

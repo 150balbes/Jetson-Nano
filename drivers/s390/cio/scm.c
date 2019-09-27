@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * Recognize and maintain s390 storage class memory.
  *
@@ -72,7 +71,7 @@ void scm_driver_unregister(struct scm_driver *scmdrv)
 }
 EXPORT_SYMBOL_GPL(scm_driver_unregister);
 
-void scm_irq_handler(struct aob *aob, blk_status_t error)
+void scm_irq_handler(struct aob *aob, int error)
 {
 	struct aob_rq_header *aobrq = (void *) aob->request.data;
 	struct scm_device *scmdev = aobrq->scmdev;
@@ -174,10 +173,10 @@ out:
 		kobject_uevent(&scmdev->dev.kobj, KOBJ_CHANGE);
 }
 
-static int check_address(struct device *dev, const void *data)
+static int check_address(struct device *dev, void *data)
 {
 	struct scm_device *scmdev = to_scm_dev(dev);
-	const struct sale *sale = data;
+	struct sale *sale = data;
 
 	return scmdev->address == sale->sa;
 }

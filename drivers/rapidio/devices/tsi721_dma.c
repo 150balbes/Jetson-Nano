@@ -1,9 +1,21 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * DMA Engine support for Tsi721 PCIExpress-to-SRIO bridge
  *
  * Copyright (c) 2011-2014 Integrated Device Technology, Inc.
  * Alexandre Bounine <alexandre.bounine@idt.com>
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License as published by the Free
+ * Software Foundation; either version 2 of the License, or (at your option)
+ * any later version.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ *
+ * The full GNU General Public License is included in this distribution in the
+ * file called COPYING.
  */
 
 #include <linux/io.h>
@@ -78,9 +90,9 @@ static int tsi721_bdma_ch_init(struct tsi721_bdma_chan *bdma_chan, int bd_num)
 	 * Allocate space for DMA descriptors
 	 * (add an extra element for link descriptor)
 	 */
-	bd_ptr = dma_alloc_coherent(dev,
-				    (bd_num + 1) * sizeof(struct tsi721_dma_desc),
-				    &bd_phys, GFP_ATOMIC);
+	bd_ptr = dma_zalloc_coherent(dev,
+				(bd_num + 1) * sizeof(struct tsi721_dma_desc),
+				&bd_phys, GFP_ATOMIC);
 	if (!bd_ptr)
 		return -ENOMEM;
 
@@ -96,7 +108,7 @@ static int tsi721_bdma_ch_init(struct tsi721_bdma_chan *bdma_chan, int bd_num)
 	sts_size = ((bd_num + 1) >= TSI721_DMA_MINSTSSZ) ?
 					(bd_num + 1) : TSI721_DMA_MINSTSSZ;
 	sts_size = roundup_pow_of_two(sts_size);
-	sts_ptr = dma_alloc_coherent(dev,
+	sts_ptr = dma_zalloc_coherent(dev,
 				     sts_size * sizeof(struct tsi721_dma_sts),
 				     &sts_phys, GFP_ATOMIC);
 	if (!sts_ptr) {
@@ -210,7 +222,7 @@ static int tsi721_bdma_ch_free(struct tsi721_bdma_chan *bdma_chan)
 	struct tsi721_device *priv = to_tsi721(bdma_chan->dchan.device);
 #endif
 
-	if (!bdma_chan->bd_base)
+	if (bdma_chan->bd_base == NULL)
 		return 0;
 
 	/* Check if DMA channel still running */
@@ -334,7 +346,7 @@ tsi721_desc_fill_init(struct tsi721_tx_desc *desc,
 {
 	u64 rio_addr;
 
-	if (!bd_ptr)
+	if (bd_ptr == NULL)
 		return -EINVAL;
 
 	/* Initialize DMA descriptor */
@@ -358,7 +370,7 @@ tsi721_desc_fill_init(struct tsi721_tx_desc *desc,
 static int
 tsi721_desc_fill_end(struct tsi721_dma_desc *bd_ptr, u32 bcount, bool interrupt)
 {
-	if (!bd_ptr)
+	if (bd_ptr == NULL)
 		return -EINVAL;
 
 	/* Update DMA descriptor */
@@ -543,7 +555,9 @@ static void tsi721_advance_work(struct tsi721_bdma_chan *bdma_chan,
 	 * If there is no data transfer in progress, fetch new descriptor from
 	 * the pending queue.
 	*/
-	if (!desc && !bdma_chan->active_tx && !list_empty(&bdma_chan->queue)) {
+
+	if (desc == NULL && bdma_chan->active_tx == NULL &&
+					!list_empty(&bdma_chan->queue)) {
 		desc = list_first_entry(&bdma_chan->queue,
 					struct tsi721_tx_desc, desc_node);
 		list_del_init((&desc->desc_node));
@@ -721,7 +735,7 @@ static dma_cookie_t tsi721_tx_submit(struct dma_async_tx_descriptor *txd)
 static int tsi721_alloc_chan_resources(struct dma_chan *dchan)
 {
 	struct tsi721_bdma_chan *bdma_chan = to_tsi721_chan(dchan);
-	struct tsi721_tx_desc *desc;
+	struct tsi721_tx_desc *desc = NULL;
 	int i;
 
 	tsi_debug(DMA, &dchan->dev->device, "DMAC%d", bdma_chan->id);
@@ -740,6 +754,9 @@ static int tsi721_alloc_chan_resources(struct dma_chan *dchan)
 	desc = kcalloc(dma_txqueue_sz, sizeof(struct tsi721_tx_desc),
 			GFP_ATOMIC);
 	if (!desc) {
+		tsi_err(&dchan->dev->device,
+			"DMAC%d Failed to allocate logical descriptors",
+			bdma_chan->id);
 		tsi721_bdma_ch_free(bdma_chan);
 		return -ENOMEM;
 	}
@@ -782,7 +799,7 @@ static void tsi721_free_chan_resources(struct dma_chan *dchan)
 
 	tsi_debug(DMA, &dchan->dev->device, "DMAC%d", bdma_chan->id);
 
-	if (!bdma_chan->bd_base)
+	if (bdma_chan->bd_base == NULL)
 		return;
 
 	tsi721_bdma_interrupt_enable(bdma_chan, 0);

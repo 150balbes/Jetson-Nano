@@ -33,9 +33,38 @@
 #include <linux/ctype.h>
 #include <linux/random.h>
 #include <linux/highmem.h>
-#include <linux/fips.h>
-#include <crypto/arc4.h>
-#include <crypto/aead.h>
+#include <crypto/skcipher.h>
+
+static int
+cifs_crypto_shash_md5_allocate(struct TCP_Server_Info *server)
+{
+	int rc;
+	unsigned int size;
+
+	if (server->secmech.sdescmd5 != NULL)
+		return 0; /* already allocated */
+
+	server->secmech.md5 = crypto_alloc_shash("md5", 0, 0);
+	if (IS_ERR(server->secmech.md5)) {
+		cifs_dbg(VFS, "could not allocate crypto md5\n");
+		rc = PTR_ERR(server->secmech.md5);
+		server->secmech.md5 = NULL;
+		return rc;
+	}
+
+	size = sizeof(struct shash_desc) +
+			crypto_shash_descsize(server->secmech.md5);
+	server->secmech.sdescmd5 = kmalloc(size, GFP_KERNEL);
+	if (!server->secmech.sdescmd5) {
+		crypto_free_shash(server->secmech.md5);
+		server->secmech.md5 = NULL;
+		return -ENOMEM;
+	}
+	server->secmech.sdescmd5->shash.tfm = server->secmech.md5;
+	server->secmech.sdescmd5->shash.flags = 0x0;
+
+	return 0;
+}
 
 int __cifs_calc_signature(struct smb_rqst *rqst,
 			struct TCP_Server_Info *server, char *signature,
@@ -45,29 +74,25 @@ int __cifs_calc_signature(struct smb_rqst *rqst,
 	int rc;
 	struct kvec *iov = rqst->rq_iov;
 	int n_vec = rqst->rq_nvec;
-	int is_smb2 = server->vals->header_preamble_size == 0;
 
-	/* iov[0] is actual data and not the rfc1002 length for SMB2+ */
-	if (is_smb2) {
-		if (iov[0].iov_len <= 4)
-			return -EIO;
-		i = 0;
-	} else {
-		if (n_vec < 2 || iov[0].iov_len != 4)
-			return -EIO;
-		i = 1; /* skip rfc1002 length */
-	}
-
-	for (; i < n_vec; i++) {
+	for (i = 0; i < n_vec; i++) {
 		if (iov[i].iov_len == 0)
 			continue;
 		if (iov[i].iov_base == NULL) {
 			cifs_dbg(VFS, "null iovec entry\n");
 			return -EIO;
 		}
-
-		rc = crypto_shash_update(shash,
-					 iov[i].iov_base, iov[i].iov_len);
+		/* The first entry includes a length field (which does not get
+		   signed that occupies the first 4 bytes before the header */
+		if (i == 0) {
+			if (iov[0].iov_len <= 8) /* cmd field at offset 9 */
+				break; /* nothing to sign or corrupt header */
+			rc = crypto_shash_update(shash,
+				iov[i].iov_base + 4, iov[i].iov_len - 4);
+		} else {
+			rc = crypto_shash_update(shash,
+				iov[i].iov_base, iov[i].iov_len);
+		}
 		if (rc) {
 			cifs_dbg(VFS, "%s: Could not update with payload\n",
 				 __func__);
@@ -77,20 +102,13 @@ int __cifs_calc_signature(struct smb_rqst *rqst,
 
 	/* now hash over the rq_pages array */
 	for (i = 0; i < rqst->rq_npages; i++) {
-		void *kaddr;
-		unsigned int len, offset;
+		void *kaddr = kmap(rqst->rq_pages[i]);
+		size_t len = rqst->rq_pagesz;
 
-		rqst_page_get_length(rqst, i, &len, &offset);
+		if (i == rqst->rq_npages - 1)
+			len = rqst->rq_tailsz;
 
-		kaddr = (char *) kmap(rqst->rq_pages[i]) + offset;
-
-		rc = crypto_shash_update(shash, kaddr, len);
-		if (rc) {
-			cifs_dbg(VFS, "%s: Could not update with payload\n",
-				 __func__);
-			kunmap(rqst->rq_pages[i]);
-			return rc;
-		}
+		crypto_shash_update(shash, kaddr, len);
 
 		kunmap(rqst->rq_pages[i]);
 	}
@@ -117,10 +135,13 @@ static int cifs_calc_signature(struct smb_rqst *rqst,
 	if (!rqst->rq_iov || !signature || !server)
 		return -EINVAL;
 
-	rc = cifs_alloc_hash("md5", &server->secmech.md5,
-			     &server->secmech.sdescmd5);
-	if (rc)
-		return -1;
+	if (!server->secmech.sdescmd5) {
+		rc = cifs_crypto_shash_md5_allocate(server);
+		if (rc) {
+			cifs_dbg(VFS, "%s: Can't alloc md5 crypto\n", __func__);
+			return -1;
+		}
+	}
 
 	rc = crypto_shash_init(&server->secmech.sdescmd5->shash);
 	if (rc) {
@@ -146,10 +167,6 @@ int cifs_sign_rqst(struct smb_rqst *rqst, struct TCP_Server_Info *server,
 	int rc = 0;
 	char smb_signature[20];
 	struct smb_hdr *cifs_pdu = (struct smb_hdr *)rqst->rq_iov[0].iov_base;
-
-	if (rqst->rq_iov[0].iov_len != 4 ||
-	    rqst->rq_iov[0].iov_base + 4 != rqst->rq_iov[1].iov_base)
-		return -EIO;
 
 	if ((cifs_pdu == NULL) || (server == NULL))
 		return -EINVAL;
@@ -192,14 +209,12 @@ int cifs_sign_smbv(struct kvec *iov, int n_vec, struct TCP_Server_Info *server,
 int cifs_sign_smb(struct smb_hdr *cifs_pdu, struct TCP_Server_Info *server,
 		  __u32 *pexpected_response_sequence_number)
 {
-	struct kvec iov[2];
+	struct kvec iov;
 
-	iov[0].iov_base = cifs_pdu;
-	iov[0].iov_len = 4;
-	iov[1].iov_base = (char *)cifs_pdu + 4;
-	iov[1].iov_len = be32_to_cpu(cifs_pdu->smb_buf_length);
+	iov.iov_base = cifs_pdu;
+	iov.iov_len = be32_to_cpu(cifs_pdu->smb_buf_length) + 4;
 
-	return cifs_sign_smbv(iov, 2, server,
+	return cifs_sign_smbv(&iov, 1, server,
 			      pexpected_response_sequence_number);
 }
 
@@ -212,10 +227,6 @@ int cifs_verify_signature(struct smb_rqst *rqst,
 	char what_we_think_sig_should_be[20];
 	struct smb_hdr *cifs_pdu = (struct smb_hdr *)rqst->rq_iov[0].iov_base;
 
-	if (rqst->rq_iov[0].iov_len != 4 ||
-	    rqst->rq_iov[0].iov_base + 4 != rqst->rq_iov[1].iov_base)
-		return -EIO;
-
 	if (cifs_pdu == NULL || server == NULL)
 		return -EINVAL;
 
@@ -225,7 +236,7 @@ int cifs_verify_signature(struct smb_rqst *rqst,
 	if (cifs_pdu->Command == SMB_COM_LOCKING_ANDX) {
 		struct smb_com_lock_req *pSMB =
 			(struct smb_com_lock_req *)cifs_pdu;
-		if (pSMB->LockType & LOCKING_ANDX_OPLOCK_RELEASE)
+	    if (pSMB->LockType & LOCKING_ANDX_OPLOCK_RELEASE)
 			return 0;
 	}
 
@@ -305,17 +316,12 @@ int setup_ntlm_response(struct cifs_ses *ses, const struct nls_table *nls_cp)
 int calc_lanman_hash(const char *password, const char *cryptkey, bool encrypt,
 			char *lnm_session_key)
 {
-	int i, len;
+	int i;
 	int rc;
 	char password_with_pad[CIFS_ENCPWD_SIZE] = {0};
 
-	if (password) {
-		for (len = 0; len < CIFS_ENCPWD_SIZE; len++)
-			if (!password[len])
-				break;
-
-		memcpy(password_with_pad, password, len);
-	}
+	if (password)
+		strncpy(password_with_pad, password, CIFS_ENCPWD_SIZE);
 
 	if (!encrypt && global_secflags & CIFSSEC_MAY_PLNTXT) {
 		memcpy(lnm_session_key, password_with_pad,
@@ -464,7 +470,6 @@ find_timestamp(struct cifs_ses *ses)
 	unsigned char *blobptr;
 	unsigned char *blobend;
 	struct ntlmssp2_name *attrptr;
-	struct timespec64 ts;
 
 	if (!ses->auth_key.len || !ses->auth_key.response)
 		return 0;
@@ -489,8 +494,7 @@ find_timestamp(struct cifs_ses *ses)
 		blobptr += attrsize; /* advance attr value */
 	}
 
-	ktime_get_real_ts64(&ts);
-	return cpu_to_le64(cifs_UnixTimeToNT(ts));
+	return cpu_to_le64(cifs_UnixTimeToNT(CURRENT_TIME));
 }
 
 static int calc_ntlmv2_hash(struct cifs_ses *ses, char *ntlmv2_hash,
@@ -650,6 +654,37 @@ CalcNTLMv2_response(const struct cifs_ses *ses, char *ntlmv2_hash)
 	return rc;
 }
 
+static int crypto_hmacmd5_alloc(struct TCP_Server_Info *server)
+{
+	int rc;
+	unsigned int size;
+
+	/* check if already allocated */
+	if (server->secmech.sdeschmacmd5)
+		return 0;
+
+	server->secmech.hmacmd5 = crypto_alloc_shash("hmac(md5)", 0, 0);
+	if (IS_ERR(server->secmech.hmacmd5)) {
+		cifs_dbg(VFS, "could not allocate crypto hmacmd5\n");
+		rc = PTR_ERR(server->secmech.hmacmd5);
+		server->secmech.hmacmd5 = NULL;
+		return rc;
+	}
+
+	size = sizeof(struct shash_desc) +
+			crypto_shash_descsize(server->secmech.hmacmd5);
+	server->secmech.sdeschmacmd5 = kmalloc(size, GFP_KERNEL);
+	if (!server->secmech.sdeschmacmd5) {
+		crypto_free_shash(server->secmech.hmacmd5);
+		server->secmech.hmacmd5 = NULL;
+		return -ENOMEM;
+	}
+	server->secmech.sdeschmacmd5->shash.tfm = server->secmech.hmacmd5;
+	server->secmech.sdeschmacmd5->shash.flags = 0x0;
+
+	return 0;
+}
+
 int
 setup_ntlmv2_rsp(struct cifs_ses *ses, const struct nls_table *nls_cp)
 {
@@ -663,15 +698,11 @@ setup_ntlmv2_rsp(struct cifs_ses *ses, const struct nls_table *nls_cp)
 
 	if (ses->server->negflavor == CIFS_NEGFLAVOR_EXTENDED) {
 		if (!ses->domainName) {
-			if (ses->domainAuto) {
-				rc = find_domain_name(ses, nls_cp);
-				if (rc) {
-					cifs_dbg(VFS, "error %d finding domain name\n",
-						 rc);
-					goto setup_ntlmv2_rsp_ret;
-				}
-			} else {
-				ses->domainName = kstrdup("", GFP_KERNEL);
+			rc = find_domain_name(ses, nls_cp);
+			if (rc) {
+				cifs_dbg(VFS, "error %d finding domain name\n",
+					 rc);
+				goto setup_ntlmv2_rsp_ret;
 			}
 		}
 	} else {
@@ -713,10 +744,9 @@ setup_ntlmv2_rsp(struct cifs_ses *ses, const struct nls_table *nls_cp)
 
 	mutex_lock(&ses->server->srv_mutex);
 
-	rc = cifs_alloc_hash("hmac(md5)",
-			     &ses->server->secmech.hmacmd5,
-			     &ses->server->secmech.sdeschmacmd5);
+	rc = crypto_hmacmd5_alloc(ses->server);
 	if (rc) {
+		cifs_dbg(VFS, "could not crypto alloc hmacmd5 rc %d\n", rc);
 		goto unlock;
 	}
 
@@ -773,36 +803,67 @@ setup_ntlmv2_rsp_ret:
 int
 calc_seckey(struct cifs_ses *ses)
 {
-	unsigned char sec_key[CIFS_SESS_KEY_SIZE]; /* a nonce */
-	struct arc4_ctx *ctx_arc4;
+	int rc;
+	struct crypto_skcipher *tfm_arc4;
+	struct scatterlist sgin, sgout;
+	struct skcipher_request *req;
+	unsigned char *sec_key;
 
-	if (fips_enabled)
-		return -ENODEV;
+	sec_key = kmalloc(CIFS_SESS_KEY_SIZE, GFP_KERNEL);
+	if (sec_key == NULL)
+		return -ENOMEM;
 
 	get_random_bytes(sec_key, CIFS_SESS_KEY_SIZE);
 
-	ctx_arc4 = kmalloc(sizeof(*ctx_arc4), GFP_KERNEL);
-	if (!ctx_arc4) {
-		cifs_dbg(VFS, "could not allocate arc4 context\n");
-		return -ENOMEM;
+	tfm_arc4 = crypto_alloc_skcipher("ecb(arc4)", 0, CRYPTO_ALG_ASYNC);
+	if (IS_ERR(tfm_arc4)) {
+		rc = PTR_ERR(tfm_arc4);
+		cifs_dbg(VFS, "could not allocate crypto API arc4\n");
+		goto out;
 	}
 
-	arc4_setkey(ctx_arc4, ses->auth_key.response, CIFS_SESS_KEY_SIZE);
-	arc4_crypt(ctx_arc4, ses->ntlmssp->ciphertext, sec_key,
-		   CIFS_CPHTXT_SIZE);
+	rc = crypto_skcipher_setkey(tfm_arc4, ses->auth_key.response,
+					CIFS_SESS_KEY_SIZE);
+	if (rc) {
+		cifs_dbg(VFS, "%s: Could not set response as a key\n",
+			 __func__);
+		goto out_free_cipher;
+	}
+
+	req = skcipher_request_alloc(tfm_arc4, GFP_KERNEL);
+	if (!req) {
+		rc = -ENOMEM;
+		cifs_dbg(VFS, "could not allocate crypto API arc4 request\n");
+		goto out_free_cipher;
+	}
+
+	sg_init_one(&sgin, sec_key, CIFS_SESS_KEY_SIZE);
+	sg_init_one(&sgout, ses->ntlmssp->ciphertext, CIFS_CPHTXT_SIZE);
+
+	skcipher_request_set_callback(req, 0, NULL, NULL);
+	skcipher_request_set_crypt(req, &sgin, &sgout, CIFS_CPHTXT_SIZE, NULL);
+
+	rc = crypto_skcipher_encrypt(req);
+	skcipher_request_free(req);
+	if (rc) {
+		cifs_dbg(VFS, "could not encrypt session key rc: %d\n", rc);
+		goto out_free_cipher;
+	}
 
 	/* make secondary_key/nonce as session key */
 	memcpy(ses->auth_key.response, sec_key, CIFS_SESS_KEY_SIZE);
 	/* and make len as that of session key only */
 	ses->auth_key.len = CIFS_SESS_KEY_SIZE;
 
-	memzero_explicit(sec_key, CIFS_SESS_KEY_SIZE);
-	kzfree(ctx_arc4);
-	return 0;
+out_free_cipher:
+	crypto_free_skcipher(tfm_arc4);
+out:
+	kfree(sec_key);
+	return rc;
 }
 
 void
-cifs_crypto_secmech_release(struct TCP_Server_Info *server)
+cifs_crypto_shash_release(struct TCP_Server_Info *server)
 {
 	if (server->secmech.cmacaes) {
 		crypto_free_shash(server->secmech.cmacaes);
@@ -819,24 +880,9 @@ cifs_crypto_secmech_release(struct TCP_Server_Info *server)
 		server->secmech.md5 = NULL;
 	}
 
-	if (server->secmech.sha512) {
-		crypto_free_shash(server->secmech.sha512);
-		server->secmech.sha512 = NULL;
-	}
-
 	if (server->secmech.hmacmd5) {
 		crypto_free_shash(server->secmech.hmacmd5);
 		server->secmech.hmacmd5 = NULL;
-	}
-
-	if (server->secmech.ccmaesencrypt) {
-		crypto_free_aead(server->secmech.ccmaesencrypt);
-		server->secmech.ccmaesencrypt = NULL;
-	}
-
-	if (server->secmech.ccmaesdecrypt) {
-		crypto_free_aead(server->secmech.ccmaesdecrypt);
-		server->secmech.ccmaesdecrypt = NULL;
 	}
 
 	kfree(server->secmech.sdesccmacaes);
@@ -847,6 +893,4 @@ cifs_crypto_secmech_release(struct TCP_Server_Info *server)
 	server->secmech.sdeschmacmd5 = NULL;
 	kfree(server->secmech.sdescmd5);
 	server->secmech.sdescmd5 = NULL;
-	kfree(server->secmech.sdescsha512);
-	server->secmech.sdescsha512 = NULL;
 }

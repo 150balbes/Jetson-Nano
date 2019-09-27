@@ -1,9 +1,17 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * drivers/pwm/pwm-vt8500.c
  *
  * Copyright (C) 2012 Tony Prisk <linux@prisktech.co.nz>
  * Copyright (C) 2010 Alexey Charkov <alchark@gmail.com>
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
  */
 
 #include <linux/module.h>
@@ -176,7 +184,7 @@ static int vt8500_pwm_set_polarity(struct pwm_chip *chip,
 	return 0;
 }
 
-static const struct pwm_ops vt8500_pwm_ops = {
+static struct pwm_ops vt8500_pwm_ops = {
 	.enable = vt8500_pwm_enable,
 	.disable = vt8500_pwm_disable,
 	.config = vt8500_pwm_config,
@@ -233,7 +241,6 @@ static int vt8500_pwm_probe(struct platform_device *pdev)
 	ret = pwmchip_add(&chip->chip);
 	if (ret < 0) {
 		dev_err(&pdev->dev, "failed to add PWM chip\n");
-		clk_unprepare(chip->clk);
 		return ret;
 	}
 

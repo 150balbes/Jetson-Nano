@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef SOUND_SOC_CODECS_ADAU_PLL_H
 #define SOUND_SOC_CODECS_ADAU_PLL_H
 

@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * Copyright 2008-2011 Freescale Semiconductor, Inc.
  */
@@ -17,7 +16,6 @@
 #include <linux/of_platform.h>
 #include <linux/dma-mapping.h>
 #include <linux/io.h>
-#include <linux/iommu.h>
 #include <linux/spinlock.h>
 #include <linux/rtnetlink.h>
 #include <linux/in.h>
@@ -33,17 +31,12 @@
 #include <crypto/aes.h>
 #include <crypto/ctr.h>
 #include <crypto/des.h>
-#include <crypto/gcm.h>
 #include <crypto/sha.h>
 #include <crypto/md5.h>
-#include <crypto/chacha.h>
-#include <crypto/poly1305.h>
 #include <crypto/internal/aead.h>
 #include <crypto/authenc.h>
 #include <crypto/akcipher.h>
 #include <crypto/scatterwalk.h>
-#include <crypto/skcipher.h>
-#include <crypto/arc4.h>
 #include <crypto/internal/skcipher.h>
 #include <crypto/internal/hash.h>
 #include <crypto/internal/rsa.h>

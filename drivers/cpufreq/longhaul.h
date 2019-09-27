@@ -1,7 +1,8 @@
-/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  *  longhaul.h
  *  (C) 2003 Dave Jones.
+ *
+ *  Licensed under the terms of the GNU GPL License version 2.
  *
  *  VIA-specific information
  */

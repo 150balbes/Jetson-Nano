@@ -81,8 +81,7 @@ int hfi1_mmu_rb_insert(struct mmu_rb_handler *handler,
 void hfi1_mmu_rb_evict(struct mmu_rb_handler *handler, void *evict_arg);
 void hfi1_mmu_rb_remove(struct mmu_rb_handler *handler,
 			struct mmu_rb_node *mnode);
-bool hfi1_mmu_rb_remove_unless_exact(struct mmu_rb_handler *handler,
-				     unsigned long addr, unsigned long len,
-				     struct mmu_rb_node **rb_node);
+struct mmu_rb_node *hfi1_mmu_rb_extract(struct mmu_rb_handler *handler,
+					unsigned long addr, unsigned long len);
 
 #endif /* _HFI1_MMU_RB_H */

@@ -1,0 +1,279 @@
+#include <dt-bindings/memory/tegra210-mc.h>
+
+/ {
+#if defined(LINUX_VERSION) && LINUX_VERSION >= 414
+	pmc@7000e400 {
+		powergates {
+			pd_venc: venc {
+				clocks = <&tegra_car TEGRA210_CLK_ISPA>,
+				         <&tegra_car TEGRA210_CLK_VI>,
+					 <&tegra_car TEGRA210_CLK_CSI>,
+					 <&tegra_car TEGRA210_CLK_VI_I2C>,
+					 <&tegra_car TEGRA210_CLK_CILAB>,
+					 <&tegra_car TEGRA210_CLK_CILCD>,
+					 <&tegra_car TEGRA210_CLK_CILE>;
+				resets = <&tegra_mc TEGRA210_MC_RESET_ISP2>,
+				         <&tegra_mc TEGRA210_MC_RESET_VI>,
+					 <&tegra_car TEGRA210_CLK_ISPA>,
+					 <&tegra_car TEGRA210_RST_VI>,
+					 <&tegra_car TEGRA210_CLK_CSI>,
+					 <&tegra_car TEGRA210_CLK_VI_I2C>;
+				#power-domain-cells = <0>;
+			};
+
+			pd_pcie: pcie {
+				clocks = <&tegra_car TEGRA210_CLK_AFI>,
+				         <&tegra_car TEGRA210_CLK_PCIE>;
+				resets = <&tegra_mc TEGRA210_MC_RESET_AFI>,
+				         <&tegra_car TEGRA210_CLK_AFI>,
+					 <&tegra_car TEGRA210_CLK_PCIE>,
+					 <&tegra_car 74>; /* PCIEX */
+				#power-domain-cells = <0>;
+			};
+
+			pd_nvenc: mpe {
+				clocks = <&tegra_car TEGRA210_CLK_NVENC>;
+				resets = <&tegra_mc TEGRA210_MC_RESET_NVENC>,
+				         <&tegra_car TEGRA210_CLK_NVENC>;
+				#power-domain-cells = <0>;
+			};
+
+			pd_sata: sata {
+				clocks = <&tegra_car TEGRA210_CLK_SATA_OOB>,
+				         <&tegra_car TEGRA210_CLK_CML1>,
+					 <&tegra_car TEGRA210_CLK_SATA>;
+				resets = <&tegra_mc TEGRA210_MC_RESET_SATA>,
+				         <&tegra_car TEGRA210_CLK_SATA_OOB>,
+					 <&tegra_car TEGRA210_CLK_SATA_COLD>,
+					 <&tegra_car TEGRA210_CLK_SATA>;
+				#power-domain-cells = <0>;
+			};
+
+			pd_sor: sor {
+				clocks = <&tegra_car TEGRA210_CLK_SOR0>,
+				         <&tegra_car TEGRA210_CLK_DSIA>,
+					 <&tegra_car TEGRA210_CLK_DSIB>,
+					 <&tegra_car TEGRA210_CLK_SOR1>,
+					 <&tegra_car TEGRA210_CLK_MIPI_CAL>,
+					 <&tegra_car TEGRA210_CLK_DPAUX>,
+					 <&tegra_car TEGRA210_CLK_DPAUX1>;
+				resets = <&tegra_car TEGRA210_CLK_SOR0>,
+				         <&tegra_car TEGRA210_CLK_DISP1>,
+					 <&tegra_car TEGRA210_CLK_DSIB>,
+					 <&tegra_car TEGRA210_CLK_SOR1>,
+					 <&tegra_car TEGRA210_CLK_MIPI_CAL>;
+				#power-domain-cells = <0>;
+			};
+
+			pd_dis: dis {
+				clocks = <&tegra_car TEGRA210_CLK_DISP1>;
+				resets = <&tegra_mc TEGRA210_MC_RESET_DC>,
+				         <&tegra_car TEGRA210_CLK_DISP1>;
+				#power-domain-cells = <0>;
+			};
+
+			pd_disb: disb {
+				clocks = <&tegra_car TEGRA210_CLK_DISP2>;
+				resets = <&tegra_mc TEGRA210_MC_RESET_DCB>,
+				         <&tegra_car TEGRA210_CLK_DISP2>;
+				#power-domain-cells = <0>;
+			};
+
+			pd_xusbss: xusba {
+				clocks = <&tegra_car TEGRA210_CLK_XUSB_SS>,
+				         <&tegra_car TEGRA210_CLK_XUSB_SSP_SRC>,
+					 <&tegra_car TEGRA210_CLK_XUSB_HS_SRC>,
+					 <&tegra_car TEGRA210_CLK_XUSB_FS_SRC>,
+					 <&tegra_car TEGRA210_CLK_XUSB_DEV_SRC>;
+				resets = <&tegra_car TEGRA210_CLK_XUSB_SS>;
+				#power-domain-cells = <0>;
+			};
+
+			pd_xusbdev: xusbb {
+				clocks = <&tegra_car TEGRA210_CLK_XUSB_DEV>;
+				resets = <&tegra_mc TEGRA210_MC_RESET_XUSB_DEV>,
+				         <&tegra_car 95>; /* bit affects xusb_dev and xusb_dev_src */
+				#power-domain-cells = <0>;
+			};
+
+			pd_xusbhost: xusbc {
+				clocks = <&tegra_car TEGRA210_CLK_XUSB_HOST>;
+				resets = <&tegra_mc TEGRA210_MC_RESET_XUSB_HOST>,
+				         <&tegra_car TEGRA210_CLK_XUSB_HOST>;
+				#power-domain-cells = <0>;
+			};
+
+			pd_vic: vic {
+				clocks = <&tegra_car TEGRA210_CLK_VIC03>;
+				resets = <&tegra_mc TEGRA210_MC_RESET_VIC>,
+				         <&tegra_car TEGRA210_CLK_VIC03>;
+				#power-domain-cells = <0>;
+			};
+
+			pd_nvdec: nvdec {
+				clocks = <&tegra_car TEGRA210_CLK_NVDEC>;
+				resets = <&tegra_mc TEGRA210_MC_RESET_NVDEC>,
+				         <&tegra_car TEGRA210_CLK_NVDEC>;
+				#power-domain-cells = <0>;
+			};
+
+			pd_nvjpg: nvjpg {
+				clocks = <&tegra_car TEGRA210_CLK_NVJPG>;
+				resets = <&tegra_mc TEGRA210_MC_RESET_NVJPG>,
+				         <&tegra_car TEGRA210_CLK_NVJPG>;
+				#power-domain-cells = <0>;
+			};
+
+			pd_audio: aud {
+				clocks = <&tegra_car TEGRA210_CLK_APE>,
+				         <&tegra_car TEGRA210_CLK_APB2APE>;
+				resets = <&tegra_mc TEGRA210_MC_RESET_APE>,
+				         <&tegra_car TEGRA210_CLK_APE>;
+				#power-domain-cells = <0>;
+			};
+
+			pd_ve2: ve2 {
+				clocks = <&tegra_car TEGRA210_CLK_ISPB>;
+				resets = <&tegra_mc TEGRA210_MC_RESET_ISP2B>,
+				         <&tegra_car TEGRA210_CLK_ISPB>;
+				#power-domain-cells = <0>;
+			};
+		};
+	};
+#endif
+
+	power-domain {
+		compatible = "tegra-power-domains";
+
+		host1x_pd: host1x-pd {
+			compatible = "nvidia,tegra210-host1x-pd";
+			is_off;
+			host1x;
+			#power-domain-cells = <0>;
+		};
+
+#if defined(LINUX_VERSION) && LINUX_VERSION < 414
+		pd_audio: ape-pd {
+			compatible = "nvidia,tegra210-ape-pd";
+			is_off;
+			#power-domain-cells = <0>;
+			partition-id = <TEGRA210_POWER_DOMAIN_APE>;
+			clocks = <&tegra_car TEGRA210_CLK_APE>,
+					<&tegra_car TEGRA210_CLK_APB2APE>,
+					<&tegra_car TEGRA210_CLK_ADSP >;
+			clock-names = "ape", "apb2ape", "adsp";
+		};
+
+		adsp_pd: adsp-pd {
+			compatible = "nvidia,tegra210-adsp-pd";
+			is_off;
+			#power-domain-cells = <0>;
+			power-domains = <&pd_audio>;
+		};
+
+		tsec_pd: tsec-pd {
+			compatible = "nvidia,tegra210-tsec-pd";
+			is_off;
+			#power-domain-cells = <0>;
+			power-domains = <&host1x_pd>;
+		};
+
+		pd_nvdec: nvdec-pd {
+			compatible = "nvidia,tegra210-nvdec-pd";
+			is_off;
+			#power-domain-cells = <0>;
+			power-domains = <&host1x_pd>;
+			partition-id = <TEGRA210_POWER_DOMAIN_NVDEC>;
+		};
+
+		pd_ve2: ve2-pd {
+			compatible = "nvidia,tegra210-ve2-pd";
+			is_off;
+			#power-domain-cells = <0>;
+			power-domains = <&host1x_pd>;
+			partition-id = <TEGRA210_POWER_DOMAIN_VE2>;
+		};
+
+		pd_vic: vic03-pd {
+			compatible = "nvidia,tegra210-vic03-pd";
+			is_off;
+			#power-domain-cells = <0>;
+			power-domains = <&host1x_pd>;
+			partition-id = <TEGRA210_POWER_DOMAIN_VIC>;
+		};
+
+		pd_nvenc: msenc-pd {
+			compatible = "nvidia,tegra210-msenc-pd";
+			is_off;
+			#power-domain-cells = <0>;
+			power-domains = <&host1x_pd>;
+			partition-id = <TEGRA210_POWER_DOMAIN_MPE>;
+		};
+
+		pd_nvjpg: nvjpg-pd {
+			compatible = "nvidia,tegra210-nvjpg-pd";
+			is_off;
+			#power-domain-cells = <0>;
+			power-domains = <&host1x_pd>;
+			partition-id = <TEGRA210_POWER_DOMAIN_NVJPG>;
+		};
+
+		pd_pcie: pcie-pd {
+			compatible = "nvidia,tegra210-pcie-pd";
+			is_off;
+			#power-domain-cells = <0>;
+			partition-id = <TEGRA210_POWER_DOMAIN_PCIE>;
+		};
+#endif
+
+		ve_pd: ve-pd {
+			compatible = "nvidia,tegra210-ve-pd";
+			is_off;
+			#power-domain-cells = <0>;
+			power-domains = <&host1x_pd>;
+			partition-id = <TEGRA210_POWER_DOMAIN_VENC>;
+		};
+
+		sata_pd: sata-pd {
+			compatible = "nvidia,tegra210-sata-pd";
+			#power-domain-cells = <0>;
+			partition-id = <TEGRA210_POWER_DOMAIN_SATA>;
+		};
+
+		sor_pd: sor-pd {
+			compatible = "nvidia,tegra210-sor-pd";
+			#power-domain-cells = <0>;
+			partition-id = <TEGRA210_POWER_DOMAIN_SOR>;
+		};
+
+		disa_pd: disa-pd {
+			compatible = "nvidia,tegra210-disa-pd";
+			#power-domain-cells = <0>;
+			partition-id = <TEGRA210_POWER_DOMAIN_DISA>;
+		};
+
+		disb_pd: disb-pd {
+			compatible = "nvidia,tegra210-disb-pd";
+			#power-domain-cells = <0>;
+			partition-id = <TEGRA210_POWER_DOMAIN_DISB>;
+		};
+
+		xusba_pd: xusba-pd {
+			compatible = "nvidia,tegra210-xusba-pd";
+			#power-domain-cells = <0>;
+			partition-id = <TEGRA210_POWER_DOMAIN_XUSBA>;
+		};
+
+		xusbb_pd: xusbb-pd {
+			compatible = "nvidia,tegra210-xusbb-pd";
+			#power-domain-cells = <0>;
+			partition-id = <TEGRA210_POWER_DOMAIN_XUSBB>;
+		};
+
+		xusbc_pd: xusbc-pd {
+			compatible = "nvidia,tegra210-xusbc-pd";
+			#power-domain-cells = <0>;
+			partition-id = <TEGRA210_POWER_DOMAIN_XUSBC>;
+		};
+	};
+};

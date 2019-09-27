@@ -1,8 +1,12 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * IPVS:        Weighted Round-Robin Scheduling module
  *
  * Authors:     Wensong Zhang <wensong@linuxvirtualserver.org>
+ *
+ *              This program is free software; you can redistribute it and/or
+ *              modify it under the terms of the GNU General Public License
+ *              as published by the Free Software Foundation; either version
+ *              2 of the License, or (at your option) any later version.
  *
  * Changes:
  *     Wensong Zhang            :     changed the ip_vs_wrr_schedule to return dest
@@ -11,6 +15,7 @@
  *     Wensong Zhang            :     added the ip_vs_wrr_update_svc
  *     Julian Anastasov         :     fixed the bug of returning destination
  *                                    with weight 0 when all weights are zero
+ *
  */
 
 #define KMSG_COMPONENT "IPVS"
@@ -213,7 +218,7 @@ found:
 		      "activeconns %d refcnt %d weight %d\n",
 		      IP_VS_DBG_ADDR(dest->af, &dest->addr), ntohs(dest->port),
 		      atomic_read(&dest->activeconns),
-		      refcount_read(&dest->refcnt),
+		      atomic_read(&dest->refcnt),
 		      atomic_read(&dest->weight));
 	mark->cl = dest;
 

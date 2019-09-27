@@ -1,9 +1,22 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Squashfs - a compressed read only filesystem for Linux
  *
  * Copyright (c) 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010
  * Phillip Lougher <phillip@squashfs.org.uk>
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License
+ * as published by the Free Software Foundation; either version 2,
+ * or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
  *
  * xz_wrapper.c
  */
@@ -42,7 +55,7 @@ static void *squashfs_xz_comp_opts(struct squashfs_sb_info *msblk,
 	struct comp_opts *opts;
 	int err = 0, n;
 
-	opts = kmalloc(sizeof(*opts), GFP_KERNEL);
+	opts = kmalloc(sizeof(*opts), GFP_ATOMIC);
 	if (opts == NULL) {
 		err = -ENOMEM;
 		goto out2;
@@ -123,6 +136,7 @@ static int squashfs_xz_uncompress(struct squashfs_sb_info *msblk, void *strm,
 	enum xz_ret xz_err;
 	int avail, total = 0, k = 0;
 	struct squashfs_xz *stream = strm;
+	void *buf = NULL;
 
 	xz_dec_reset(stream->state);
 	stream->buf.in_pos = 0;
@@ -143,12 +157,20 @@ static int squashfs_xz_uncompress(struct squashfs_sb_info *msblk, void *strm,
 
 		if (stream->buf.out_pos == stream->buf.out_size) {
 			stream->buf.out = squashfs_next_page(output);
-			if (stream->buf.out != NULL) {
+			if (!IS_ERR(stream->buf.out)) {
 				stream->buf.out_pos = 0;
 				total += PAGE_SIZE;
 			}
 		}
 
+		if (!stream->buf.out) {
+			if (!buf) {
+				buf = kmalloc(PAGE_SIZE, GFP_ATOMIC);
+				if (!buf)
+					goto out;
+			}
+			stream->buf.out = buf;
+		}
 		xz_err = xz_dec_run(stream->state, &stream->buf);
 
 		if (stream->buf.in_pos == stream->buf.in_size && k < b)
@@ -160,11 +182,13 @@ static int squashfs_xz_uncompress(struct squashfs_sb_info *msblk, void *strm,
 	if (xz_err != XZ_STREAM_END || k < b)
 		goto out;
 
+	kfree(buf);
 	return total + stream->buf.out_pos;
 
 out:
 	for (; k < b; k++)
 		put_bh(bh[k]);
+	kfree(buf);
 
 	return -EIO;
 }

@@ -57,7 +57,7 @@ nfs4_renew_state(struct work_struct *work)
 	const struct nfs4_state_maintenance_ops *ops;
 	struct nfs_client *clp =
 		container_of(work, struct nfs_client, cl_renewd.work);
-	const struct cred *cred;
+	struct rpc_cred *cred;
 	long lease;
 	unsigned long last, now;
 	unsigned renew_flags = 0;
@@ -68,6 +68,7 @@ nfs4_renew_state(struct work_struct *work)
 	if (test_bit(NFS_CS_STOP_RENEW, &clp->cl_res_state))
 		goto out;
 
+	spin_lock(&clp->cl_lock);
 	lease = clp->cl_lease_time;
 	last = clp->cl_last_renewal;
 	now = jiffies;
@@ -78,7 +79,8 @@ nfs4_renew_state(struct work_struct *work)
 		renew_flags |= NFS4_RENEW_DELEGATION_CB;
 
 	if (renew_flags != 0) {
-		cred = ops->get_state_renewal_cred(clp);
+		cred = ops->get_state_renewal_cred_locked(clp);
+		spin_unlock(&clp->cl_lock);
 		if (cred == NULL) {
 			if (!(renew_flags & NFS4_RENEW_DELEGATION_CB)) {
 				set_bit(NFS4CLNT_LEASE_EXPIRED, &clp->cl_state);
@@ -90,7 +92,7 @@ nfs4_renew_state(struct work_struct *work)
 
 			/* Queue an asynchronous RENEW. */
 			ret = ops->sched_state_renewal(clp, cred, renew_flags);
-			put_cred(cred);
+			put_rpccred(cred);
 			switch (ret) {
 			default:
 				goto out_exp;
@@ -102,6 +104,7 @@ nfs4_renew_state(struct work_struct *work)
 	} else {
 		dprintk("%s: failed to call renewd. Reason: lease not expired \n",
 				__func__);
+		spin_unlock(&clp->cl_lock);
 	}
 	nfs4_schedule_state_renewal(clp);
 out_exp:
@@ -150,7 +153,7 @@ void nfs4_set_lease_period(struct nfs_client *clp,
 	spin_unlock(&clp->cl_lock);
 
 	/* Cap maximum reconnect timeout at 1/2 lease period */
-	rpc_set_connect_timeout(clp->cl_rpcclient, lease, lease >> 1);
+	rpc_cap_max_reconnect_timeout(clp->cl_rpcclient, lease >> 1);
 }
 
 /*

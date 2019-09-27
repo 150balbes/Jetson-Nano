@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Procedures for creating, accessing and interpreting the device tree.
  *
@@ -7,6 +6,11 @@
  * 
  *  Adapted for 64bit PowerPC by Dave Engebretsen and Peter Bergner.
  *    {engebret|bergner}@us.ibm.com 
+ *
+ *      This program is free software; you can redistribute it and/or
+ *      modify it under the terms of the GNU General Public License
+ *      as published by the Free Software Foundation; either version
+ *      2 of the License, or (at your option) any later version.
  */
 
 #undef DEBUG
@@ -19,6 +23,7 @@
 #include <linux/spinlock.h>
 #include <linux/types.h>
 #include <linux/pci.h>
+#include <linux/stringify.h>
 #include <linux/delay.h>
 #include <linux/initrd.h>
 #include <linux/bitops.h>
@@ -42,7 +47,6 @@
 #include <asm/mmu.h>
 #include <asm/paca.h>
 #include <asm/pgtable.h>
-#include <asm/powernv.h>
 #include <asm/iommu.h>
 #include <asm/btext.h>
 #include <asm/sections.h>
@@ -51,10 +55,9 @@
 #include <asm/kexec.h>
 #include <asm/opal.h>
 #include <asm/fadump.h>
+#include <asm/debug.h>
 #include <asm/epapr_hcalls.h>
 #include <asm/firmware.h>
-#include <asm/dt_cpu_ftrs.h>
-#include <asm/drmem.h>
 
 #include <mm/mmu_decl.h>
 
@@ -120,15 +123,12 @@ static void __init move_device_tree(void)
 	size = fdt_totalsize(initial_boot_params);
 
 	if ((memory_limit && (start + size) > PHYSICAL_START + memory_limit) ||
-	    !memblock_is_memory(start + size - 1) ||
-	    overlaps_crashkernel(start, size) || overlaps_initrd(start, size)) {
-		p = memblock_alloc_raw(size, PAGE_SIZE);
-		if (!p)
-			panic("Failed to allocate %lu bytes to move device tree\n",
-			      size);
+			overlaps_crashkernel(start, size) ||
+			overlaps_initrd(start, size)) {
+		p = __va(memblock_alloc(size, PAGE_SIZE));
 		memcpy(p, initial_boot_params, size);
 		initial_boot_params = p;
-		DBG("Moved device tree to 0x%px\n", p);
+		DBG("Moved device tree to 0x%p\n", p);
 	}
 
 	DBG("<- move_device_tree\n");
@@ -156,24 +156,21 @@ static struct ibm_pa_feature {
 	unsigned char	pabit;		/* bit number (big-endian) */
 	unsigned char	invert;		/* if 1, pa bit set => clear feature */
 } ibm_pa_features[] __initdata = {
-	{ .pabyte = 0,  .pabit = 0, .cpu_user_ftrs = PPC_FEATURE_HAS_MMU },
-	{ .pabyte = 0,  .pabit = 1, .cpu_user_ftrs = PPC_FEATURE_HAS_FPU },
-	{ .pabyte = 0,  .pabit = 3, .cpu_features  = CPU_FTR_CTRL },
-	{ .pabyte = 0,  .pabit = 6, .cpu_features  = CPU_FTR_NOEXECUTE },
-	{ .pabyte = 1,  .pabit = 2, .mmu_features  = MMU_FTR_CI_LARGE_PAGE },
-#ifdef CONFIG_PPC_RADIX_MMU
-	{ .pabyte = 40, .pabit = 0, .mmu_features  = MMU_FTR_TYPE_RADIX },
-#endif
-	{ .pabyte = 1,  .pabit = 1, .invert = 1, .cpu_features = CPU_FTR_NODSISRALIGN },
-	{ .pabyte = 5,  .pabit = 0, .cpu_features  = CPU_FTR_REAL_LE,
-				    .cpu_user_ftrs = PPC_FEATURE_TRUE_LE },
+	{0, 0, PPC_FEATURE_HAS_MMU, 0,		0, 0, 0},
+	{0, 0, PPC_FEATURE_HAS_FPU, 0,		0, 1, 0},
+	{CPU_FTR_CTRL, 0, 0, 0,			0, 3, 0},
+	{CPU_FTR_NOEXECUTE, 0, 0, 0,		0, 6, 0},
+	{CPU_FTR_NODSISRALIGN, 0, 0, 0,		1, 1, 1},
+	{0, MMU_FTR_CI_LARGE_PAGE, 0, 0,		1, 2, 0},
+	{CPU_FTR_REAL_LE, 0, PPC_FEATURE_TRUE_LE, 0, 5, 0, 0},
 	/*
 	 * If the kernel doesn't support TM (ie CONFIG_PPC_TRANSACTIONAL_MEM=n),
 	 * we don't want to turn on TM here, so we use the *_COMP versions
 	 * which are 0 if the kernel doesn't support TM.
 	 */
-	{ .pabyte = 22, .pabit = 0, .cpu_features = CPU_FTR_TM_COMP,
-	  .cpu_user_ftrs2 = PPC_FEATURE2_HTM_COMP | PPC_FEATURE2_HTM_NOSC_COMP },
+	{CPU_FTR_TM_COMP, 0, 0,
+	 PPC_FEATURE2_HTM_COMP|PPC_FEATURE2_HTM_NOSC_COMP, 22, 0, 0},
+	{0, MMU_FTR_TYPE_RADIX, 0, 0,		40, 0, 0},
 };
 
 static void __init scan_features(unsigned long node, const unsigned char *ftrs,
@@ -228,7 +225,7 @@ static void __init check_cpu_pa_features(unsigned long node)
 		      ibm_pa_features, ARRAY_SIZE(ibm_pa_features));
 }
 
-#ifdef CONFIG_PPC_BOOK3S_64
+#ifdef CONFIG_PPC_STD_MMU_64
 static void __init init_mmu_slb_size(unsigned long node)
 {
 	const __be32 *slb_size_ptr;
@@ -289,11 +286,11 @@ static inline void identical_pvr_fixup(unsigned long node)
 
 static void __init check_cpu_feature_properties(unsigned long node)
 {
-	int i;
+	unsigned long i;
 	struct feature_property *fp = feature_properties;
 	const __be32 *prop;
 
-	for (i = 0; i < (int)ARRAY_SIZE(feature_properties); ++i, ++fp) {
+	for (i = 0; i < ARRAY_SIZE(feature_properties); ++i, ++fp) {
 		prop = of_get_flat_dt_prop(node, fp->name, NULL);
 		if (prop && be32_to_cpup(prop) >= fp->min_value) {
 			cur_cpu_spec->cpu_features |= fp->cpu_feature;
@@ -330,10 +327,25 @@ static int __init early_init_dt_scan_cpus(unsigned long node,
 	 * NOTE: This must match the parsing done in smp_setup_cpu_maps.
 	 */
 	for (i = 0; i < nthreads; i++) {
-		if (be32_to_cpu(intserv[i]) ==
-			fdt_boot_cpuid_phys(initial_boot_params)) {
-			found = boot_cpu_count;
-			found_thread = i;
+		/*
+		 * version 2 of the kexec param format adds the phys cpuid of
+		 * booted proc.
+		 */
+		if (fdt_version(initial_boot_params) >= 2) {
+			if (be32_to_cpu(intserv[i]) ==
+			    fdt_boot_cpuid_phys(initial_boot_params)) {
+				found = boot_cpu_count;
+				found_thread = i;
+			}
+		} else {
+			/*
+			 * Check if it's the boot-cpu, set it's hw index now,
+			 * unfortunately this format did not support booting
+			 * off secondary threads.
+			 */
+			if (of_get_flat_dt_prop(node,
+					"linux,boot-cpu", NULL) != NULL)
+				found = boot_cpu_count;
 		}
 #ifdef CONFIG_SMP
 		/* logical cpu id is always 0 on UP kernels */
@@ -348,6 +360,7 @@ static int __init early_init_dt_scan_cpus(unsigned long node,
 	DBG("boot cpu: logical %d physical %d\n", found,
 	    be32_to_cpu(intserv[found_thread]));
 	boot_cpuid = found;
+	set_hard_smp_processor_id(found, be32_to_cpu(intserv[found_thread]));
 
 	/*
 	 * PAPR defines "logical" PVR values for cpus that
@@ -362,33 +375,23 @@ static int __init early_init_dt_scan_cpus(unsigned long node,
 	 * A POWER6 partition in "POWER6 architected" mode
 	 * uses the 0x0f000002 PVR value; in POWER5+ mode
 	 * it uses 0x0f000001.
-	 *
-	 * If we're using device tree CPU feature discovery then we don't
-	 * support the cpu-version property, and it's the responsibility of the
-	 * firmware/hypervisor to provide the correct feature set for the
-	 * architecture level via the ibm,powerpc-cpu-features binding.
 	 */
-	if (!dt_cpu_ftrs_in_use()) {
-		prop = of_get_flat_dt_prop(node, "cpu-version", NULL);
-		if (prop && (be32_to_cpup(prop) & 0xff000000) == 0x0f000000)
-			identify_cpu(0, be32_to_cpup(prop));
-
-		check_cpu_feature_properties(node);
-		check_cpu_pa_features(node);
-	}
+	prop = of_get_flat_dt_prop(node, "cpu-version", NULL);
+	if (prop && (be32_to_cpup(prop) & 0xff000000) == 0x0f000000)
+		identify_cpu(0, be32_to_cpup(prop));
 
 	identical_pvr_fixup(node);
+
+	check_cpu_feature_properties(node);
+	check_cpu_pa_features(node);
 	init_mmu_slb_size(node);
 
 #ifdef CONFIG_PPC64
-	if (nthreads == 1)
-		cur_cpu_spec->cpu_features &= ~CPU_FTR_SMT;
-	else if (!dt_cpu_ftrs_in_use())
+	if (nthreads > 1)
 		cur_cpu_spec->cpu_features |= CPU_FTR_SMT;
-	allocate_paca(boot_cpuid);
+	else
+		cur_cpu_spec->cpu_features &= ~CPU_FTR_SMT;
 #endif
-	set_hard_smp_processor_id(found, be32_to_cpu(intserv[found_thread]));
-
 	return 0;
 }
 
@@ -424,7 +427,7 @@ static int __init early_init_dt_scan_chosen_ppc(unsigned long node,
 		tce_alloc_end = *lprop;
 #endif
 
-#ifdef CONFIG_KEXEC_CORE
+#ifdef CONFIG_KEXEC
 	lprop = of_get_flat_dt_prop(node, "linux,crashkernel-base", NULL);
 	if (lprop)
 		crashk_res.start = *lprop;
@@ -438,100 +441,94 @@ static int __init early_init_dt_scan_chosen_ppc(unsigned long node,
 	return 1;
 }
 
-/*
- * Compare the range against max mem limit and update
- * size if it cross the limit.
- */
-
-#ifdef CONFIG_SPARSEMEM
-static bool validate_mem_limit(u64 base, u64 *size)
-{
-	u64 max_mem = 1UL << (MAX_PHYSMEM_BITS);
-
-	if (base >= max_mem)
-		return false;
-	if ((base + *size) > max_mem)
-		*size = max_mem - base;
-	return true;
-}
-#else
-static bool validate_mem_limit(u64 base, u64 *size)
-{
-	return true;
-}
-#endif
-
 #ifdef CONFIG_PPC_PSERIES
 /*
- * Interpret the ibm dynamic reconfiguration memory LMBs.
+ * Interpret the ibm,dynamic-memory property in the
+ * /ibm,dynamic-reconfiguration-memory node.
  * This contains a list of memory blocks along with NUMA affinity
  * information.
  */
-static void __init early_init_drmem_lmb(struct drmem_lmb *lmb,
-					const __be32 **usm)
+static int __init early_init_dt_scan_drconf_memory(unsigned long node)
 {
-	u64 base, size;
-	int is_kexec_kdump = 0, rngs;
+	const __be32 *dm, *ls, *usm;
+	int l;
+	unsigned long n, flags;
+	u64 base, size, memblock_size;
+	unsigned int is_kexec_kdump = 0, rngs;
 
-	base = lmb->base_addr;
-	size = drmem_lmb_size();
-	rngs = 1;
+	ls = of_get_flat_dt_prop(node, "ibm,lmb-size", &l);
+	if (ls == NULL || l < dt_root_size_cells * sizeof(__be32))
+		return 0;
+	memblock_size = dt_mem_next_cell(dt_root_size_cells, &ls);
 
-	/*
-	 * Skip this block if the reserved bit is set in flags
-	 * or if the block is not assigned to this partition.
-	 */
-	if ((lmb->flags & DRCONF_MEM_RESERVED) ||
-	    !(lmb->flags & DRCONF_MEM_ASSIGNED))
-		return;
+	dm = of_get_flat_dt_prop(node, "ibm,dynamic-memory", &l);
+	if (dm == NULL || l < sizeof(__be32))
+		return 0;
 
-	if (*usm)
+	n = of_read_number(dm++, 1);	/* number of entries */
+	if (l < (n * (dt_root_addr_cells + 4) + 1) * sizeof(__be32))
+		return 0;
+
+	/* check if this is a kexec/kdump kernel. */
+	usm = of_get_flat_dt_prop(node, "linux,drconf-usable-memory",
+						 &l);
+	if (usm != NULL)
 		is_kexec_kdump = 1;
 
-	if (is_kexec_kdump) {
-		/*
-		 * For each memblock in ibm,dynamic-memory, a
-		 * corresponding entry in linux,drconf-usable-memory
-		 * property contains a counter 'p' followed by 'p'
-		 * (base, size) duple. Now read the counter from
-		 * linux,drconf-usable-memory property
-		 */
-		rngs = dt_mem_next_cell(dt_root_size_cells, usm);
-		if (!rngs) /* there are no (base, size) duple */
-			return;
-	}
-
-	do {
+	for (; n != 0; --n) {
+		base = dt_mem_next_cell(dt_root_addr_cells, &dm);
+		flags = of_read_number(&dm[3], 1);
+		/* skip DRC index, pad, assoc. list index, flags */
+		dm += 4;
+		/* skip this block if the reserved bit is set in flags
+		   or if the block is not assigned to this partition */
+		if ((flags & DRCONF_MEM_RESERVED) ||
+				!(flags & DRCONF_MEM_ASSIGNED))
+			continue;
+		size = memblock_size;
+		rngs = 1;
 		if (is_kexec_kdump) {
-			base = dt_mem_next_cell(dt_root_addr_cells, usm);
-			size = dt_mem_next_cell(dt_root_size_cells, usm);
-		}
-
-		if (iommu_is_off) {
-			if (base >= 0x80000000ul)
+			/*
+			 * For each memblock in ibm,dynamic-memory, a corresponding
+			 * entry in linux,drconf-usable-memory property contains
+			 * a counter 'p' followed by 'p' (base, size) duple.
+			 * Now read the counter from
+			 * linux,drconf-usable-memory property
+			 */
+			rngs = dt_mem_next_cell(dt_root_size_cells, &usm);
+			if (!rngs) /* there are no (base, size) duple */
 				continue;
-			if ((base + size) > 0x80000000ul)
-				size = 0x80000000ul - base;
 		}
-
-		DBG("Adding: %llx -> %llx\n", base, size);
-		if (validate_mem_limit(base, &size))
+		do {
+			if (is_kexec_kdump) {
+				base = dt_mem_next_cell(dt_root_addr_cells,
+							 &usm);
+				size = dt_mem_next_cell(dt_root_size_cells,
+							 &usm);
+			}
+			if (iommu_is_off) {
+				if (base >= 0x80000000ul)
+					continue;
+				if ((base + size) > 0x80000000ul)
+					size = 0x80000000ul - base;
+			}
 			memblock_add(base, size);
-	} while (--rngs);
+		} while (--rngs);
+	}
+	memblock_dump_all();
+	return 0;
 }
+#else
+#define early_init_dt_scan_drconf_memory(node)	0
 #endif /* CONFIG_PPC_PSERIES */
 
 static int __init early_init_dt_scan_memory_ppc(unsigned long node,
 						const char *uname,
 						int depth, void *data)
 {
-#ifdef CONFIG_PPC_PSERIES
 	if (depth == 1 &&
-	    strcmp(uname, "ibm,dynamic-reconfiguration-memory") == 0) {
-		walk_drmem_lmbs_early(node, early_init_drmem_lmb);
-		return 0;
-	}
-#endif
+	    strcmp(uname, "ibm,dynamic-reconfiguration-memory") == 0)
+		return early_init_dt_scan_drconf_memory(node);
 	
 	return early_init_dt_scan_memory(node, uname, depth, data);
 }
@@ -570,10 +567,8 @@ void __init early_init_dt_add_memory_arch(u64 base, u64 size)
 	}
 
 	/* Add the chunk to the MEMBLOCK list */
-	if (add_mem_to_memblock) {
-		if (validate_mem_limit(base, &size))
-			memblock_add(base, size);
-	}
+	if (add_mem_to_memblock)
+		memblock_add(base, size);
 }
 
 static void __init early_reserve_mem_dt(void)
@@ -652,43 +647,11 @@ static void __init early_reserve_mem(void)
 #endif
 }
 
-#ifdef CONFIG_PPC_TRANSACTIONAL_MEM
-static bool tm_disabled __initdata;
-
-static int __init parse_ppc_tm(char *str)
-{
-	bool res;
-
-	if (kstrtobool(str, &res))
-		return -EINVAL;
-
-	tm_disabled = !res;
-
-	return 0;
-}
-early_param("ppc_tm", parse_ppc_tm);
-
-static void __init tm_init(void)
-{
-	if (tm_disabled) {
-		pr_info("Disabling hardware transactional memory (HTM)\n");
-		cur_cpu_spec->cpu_user_features2 &=
-			~(PPC_FEATURE2_HTM_NOSC | PPC_FEATURE2_HTM);
-		cur_cpu_spec->cpu_features &= ~CPU_FTR_TM;
-		return;
-	}
-
-	pnv_tm_init();
-}
-#else
-static void tm_init(void) { }
-#endif /* CONFIG_PPC_TRANSACTIONAL_MEM */
-
 void __init early_init_devtree(void *params)
 {
 	phys_addr_t limit;
 
-	DBG(" -> early_init_devtree(%px)\n", params);
+	DBG(" -> early_init_devtree(%p)\n", params);
 
 	/* Too early to BUG_ON(), do it by hand */
 	if (!early_init_dt_verify(params))
@@ -748,17 +711,15 @@ void __init early_init_devtree(void *params)
 	memblock_allow_resize();
 	memblock_dump_all();
 
-	DBG("Phys. mem: %llx\n", (unsigned long long)memblock_phys_mem_size());
+	DBG("Phys. mem: %llx\n", memblock_phys_mem_size());
 
 	/* We may need to relocate the flat tree, do it now.
 	 * FIXME .. and the initrd too? */
 	move_device_tree();
 
-	allocate_paca_ptrs();
+	allocate_pacas();
 
 	DBG("Scanning CPUs ...\n");
-
-	dt_cpu_ftrs_scan();
 
 	/* Retrieve CPU related informations from the flat tree
 	 * (altivec support, boot CPU ID, ...)
@@ -792,8 +753,6 @@ void __init early_init_devtree(void *params)
 	if (of_flat_dt_is_compatible(of_get_flat_dt_root(), "sony,ps3"))
 		powerpc_firmware_features |= FW_FEATURE_PS3_POSSIBLE;
 #endif
-
-	tm_init();
 
 	DBG(" <- early_init_devtree()\n");
 }
@@ -884,15 +843,5 @@ EXPORT_SYMBOL(cpu_to_chip_id);
 
 bool arch_match_cpu_phys_id(int cpu, u64 phys_id)
 {
-#ifdef CONFIG_SMP
-	/*
-	 * Early firmware scanning must use this rather than
-	 * get_hard_smp_processor_id because we don't have pacas allocated
-	 * until memory topology is discovered.
-	 */
-	if (cpu_to_phys_id != NULL)
-		return (int)phys_id == cpu_to_phys_id[cpu];
-#endif
-
 	return (int)phys_id == get_hard_smp_processor_id(cpu);
 }

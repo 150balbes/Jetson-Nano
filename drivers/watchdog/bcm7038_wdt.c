@@ -1,7 +1,15 @@
-// SPDX-License-Identifier: GPL-2.0+
 /*
  * Copyright (C) 2015 Broadcom Corporation
  *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License
+ * as published by the Free Software Foundation; either version 2
+ * of the License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
  */
 
 #include <linux/clk.h>
@@ -93,7 +101,7 @@ static unsigned int bcm7038_wdt_get_timeleft(struct watchdog_device *wdog)
 	return time_left / wdt->rate;
 }
 
-static const struct watchdog_info bcm7038_wdt_info = {
+static struct watchdog_info bcm7038_wdt_info = {
 	.identity	= "Broadcom BCM7038 Watchdog Timer",
 	.options	= WDIOF_SETTIMEOUT | WDIOF_KEEPALIVEPING |
 				WDIOF_MAGICCLOSE
@@ -107,15 +115,11 @@ static const struct watchdog_ops bcm7038_wdt_ops = {
 	.get_timeleft	= bcm7038_wdt_get_timeleft,
 };
 
-static void bcm7038_clk_disable_unprepare(void *data)
-{
-	clk_disable_unprepare(data);
-}
-
 static int bcm7038_wdt_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
 	struct bcm7038_watchdog *wdt;
+	struct resource *res;
 	int err;
 
 	wdt = devm_kzalloc(dev, sizeof(*wdt), GFP_KERNEL);
@@ -124,21 +128,15 @@ static int bcm7038_wdt_probe(struct platform_device *pdev)
 
 	platform_set_drvdata(pdev, wdt);
 
-	wdt->base = devm_platform_ioremap_resource(pdev, 0);
+	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
+	wdt->base = devm_ioremap_resource(dev, res);
 	if (IS_ERR(wdt->base))
 		return PTR_ERR(wdt->base);
 
 	wdt->clk = devm_clk_get(dev, NULL);
 	/* If unable to get clock, use default frequency */
 	if (!IS_ERR(wdt->clk)) {
-		err = clk_prepare_enable(wdt->clk);
-		if (err)
-			return err;
-		err = devm_add_action_or_reset(dev,
-					       bcm7038_clk_disable_unprepare,
-					       wdt->clk);
-		if (err)
-			return err;
+		clk_prepare_enable(wdt->clk);
 		wdt->rate = clk_get_rate(wdt->clk);
 		/* Prevent divide-by-zero exception */
 		if (!wdt->rate)
@@ -156,13 +154,27 @@ static int bcm7038_wdt_probe(struct platform_device *pdev)
 	wdt->wdd.parent		= dev;
 	watchdog_set_drvdata(&wdt->wdd, wdt);
 
-	watchdog_stop_on_reboot(&wdt->wdd);
-	watchdog_stop_on_unregister(&wdt->wdd);
-	err = devm_watchdog_register_device(dev, &wdt->wdd);
-	if (err)
+	err = watchdog_register_device(&wdt->wdd);
+	if (err) {
+		dev_err(dev, "Failed to register watchdog device\n");
+		clk_disable_unprepare(wdt->clk);
 		return err;
+	}
 
 	dev_info(dev, "Registered BCM7038 Watchdog\n");
+
+	return 0;
+}
+
+static int bcm7038_wdt_remove(struct platform_device *pdev)
+{
+	struct bcm7038_watchdog *wdt = platform_get_drvdata(pdev);
+
+	if (!nowayout)
+		bcm7038_wdt_stop(&wdt->wdd);
+
+	watchdog_unregister_device(&wdt->wdd);
+	clk_disable_unprepare(wdt->clk);
 
 	return 0;
 }
@@ -192,14 +204,23 @@ static int bcm7038_wdt_resume(struct device *dev)
 static SIMPLE_DEV_PM_OPS(bcm7038_wdt_pm_ops, bcm7038_wdt_suspend,
 			 bcm7038_wdt_resume);
 
+static void bcm7038_wdt_shutdown(struct platform_device *pdev)
+{
+	struct bcm7038_watchdog *wdt = platform_get_drvdata(pdev);
+
+	if (watchdog_active(&wdt->wdd))
+		bcm7038_wdt_stop(&wdt->wdd);
+}
+
 static const struct of_device_id bcm7038_wdt_match[] = {
 	{ .compatible = "brcm,bcm7038-wdt" },
 	{},
 };
-MODULE_DEVICE_TABLE(of, bcm7038_wdt_match);
 
 static struct platform_driver bcm7038_wdt_driver = {
 	.probe		= bcm7038_wdt_probe,
+	.remove		= bcm7038_wdt_remove,
+	.shutdown	= bcm7038_wdt_shutdown,
 	.driver		= {
 		.name		= "bcm7038-wdt",
 		.of_match_table	= bcm7038_wdt_match,
@@ -211,6 +232,6 @@ module_platform_driver(bcm7038_wdt_driver);
 module_param(nowayout, bool, 0);
 MODULE_PARM_DESC(nowayout, "Watchdog cannot be stopped once started (default="
 	__MODULE_STRING(WATCHDOG_NOWAYOUT) ")");
-MODULE_LICENSE("GPL");
+MODULE_LICENSE("GPL v2");
 MODULE_DESCRIPTION("Driver for Broadcom 7038 SoCs Watchdog");
 MODULE_AUTHOR("Justin Chen");

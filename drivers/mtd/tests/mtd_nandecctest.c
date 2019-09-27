@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 #define pr_fmt(fmt)	KBUILD_MODNAME ": " fmt
 
 #include <linux/kernel.h>
@@ -22,7 +21,7 @@
  * or detected.
  */
 
-#if IS_ENABLED(CONFIG_MTD_RAW_NAND)
+#if IS_ENABLED(CONFIG_MTD_NAND)
 
 struct nand_ecc_test {
 	const char *name;
@@ -122,10 +121,8 @@ static int no_bit_error_verify(void *error_data, void *error_ecc,
 	unsigned char calc_ecc[3];
 	int ret;
 
-	__nand_calculate_ecc(error_data, size, calc_ecc,
-			     IS_ENABLED(CONFIG_MTD_NAND_ECC_SW_HAMMING_SMC));
-	ret = __nand_correct_data(error_data, error_ecc, calc_ecc, size,
-				  IS_ENABLED(CONFIG_MTD_NAND_ECC_SW_HAMMING_SMC));
+	__nand_calculate_ecc(error_data, size, calc_ecc);
+	ret = __nand_correct_data(error_data, error_ecc, calc_ecc, size);
 	if (ret == 0 && !memcmp(correct_data, error_data, size))
 		return 0;
 
@@ -152,10 +149,8 @@ static int single_bit_error_correct(void *error_data, void *error_ecc,
 	unsigned char calc_ecc[3];
 	int ret;
 
-	__nand_calculate_ecc(error_data, size, calc_ecc,
-			     IS_ENABLED(CONFIG_MTD_NAND_ECC_SW_HAMMING_SMC));
-	ret = __nand_correct_data(error_data, error_ecc, calc_ecc, size,
-				  IS_ENABLED(CONFIG_MTD_NAND_ECC_SW_HAMMING_SMC));
+	__nand_calculate_ecc(error_data, size, calc_ecc);
+	ret = __nand_correct_data(error_data, error_ecc, calc_ecc, size);
 	if (ret == 1 && !memcmp(correct_data, error_data, size))
 		return 0;
 
@@ -189,10 +184,8 @@ static int double_bit_error_detect(void *error_data, void *error_ecc,
 	unsigned char calc_ecc[3];
 	int ret;
 
-	__nand_calculate_ecc(error_data, size, calc_ecc,
-			     IS_ENABLED(CONFIG_MTD_NAND_ECC_SW_HAMMING_SMC));
-	ret = __nand_correct_data(error_data, error_ecc, calc_ecc, size,
-				  IS_ENABLED(CONFIG_MTD_NAND_ECC_SW_HAMMING_SMC));
+	__nand_calculate_ecc(error_data, size, calc_ecc);
+	ret = __nand_correct_data(error_data, error_ecc, calc_ecc, size);
 
 	return (ret == -EBADMSG) ? 0 : -EINVAL;
 }
@@ -266,8 +259,7 @@ static int nand_ecc_test_run(const size_t size)
 	}
 
 	prandom_bytes(correct_data, size);
-	__nand_calculate_ecc(correct_data, size, correct_ecc,
-			     IS_ENABLED(CONFIG_MTD_NAND_ECC_SW_HAMMING_SMC));
+	__nand_calculate_ecc(correct_data, size, correct_ecc);
 
 	for (i = 0; i < ARRAY_SIZE(nand_ecc_test); i++) {
 		nand_ecc_test[i].prepare(error_data, error_ecc,

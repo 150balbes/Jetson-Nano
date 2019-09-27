@@ -1,16 +1,26 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Regulator driver for tps65090 power management chip.
  *
  * Copyright (c) 2012, NVIDIA CORPORATION.  All rights reserved.
 
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms and conditions of the GNU General Public License,
+ * version 2, as published by the Free Software Foundation.
+
+ * This program is distributed in the hope it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>
  */
 
 #include <linux/module.h>
 #include <linux/delay.h>
 #include <linux/init.h>
-#include <linux/of.h>
-#include <linux/gpio/consumer.h>
+#include <linux/gpio.h>
+#include <linux/of_gpio.h>
 #include <linux/slab.h>
 #include <linux/err.h>
 #include <linux/platform_device.h>
@@ -290,6 +300,26 @@ static int tps65090_regulator_disable_ext_control(
 	return tps65090_config_ext_control(ri, false);
 }
 
+static void tps65090_configure_regulator_config(
+		struct tps65090_regulator_plat_data *tps_pdata,
+		struct regulator_config *config)
+{
+	if (gpio_is_valid(tps_pdata->gpio)) {
+		int gpio_flag = GPIOF_OUT_INIT_LOW;
+
+		if (tps_pdata->reg_init_data->constraints.always_on ||
+				tps_pdata->reg_init_data->constraints.boot_on)
+			gpio_flag = GPIOF_OUT_INIT_HIGH;
+
+		config->ena_gpio = tps_pdata->gpio;
+		config->ena_gpio_initialized = true;
+		config->ena_gpio_flags = gpio_flag;
+	} else {
+		config->ena_gpio = -EINVAL;
+		config->ena_gpio_initialized = false;
+	}
+}
+
 #ifdef CONFIG_OF
 static struct of_regulator_match tps65090_matches[] = {
 	{ .name = "dcdc1", },
@@ -321,9 +351,8 @@ static struct tps65090_platform_data *tps65090_parse_dt_reg_data(
 	if (!tps65090_pdata)
 		return ERR_PTR(-ENOMEM);
 
-	reg_pdata = devm_kcalloc(&pdev->dev,
-				 TPS65090_REGULATOR_MAX, sizeof(*reg_pdata),
-				 GFP_KERNEL);
+	reg_pdata = devm_kzalloc(&pdev->dev, TPS65090_REGULATOR_MAX *
+				sizeof(*reg_pdata), GFP_KERNEL);
 	if (!reg_pdata)
 		return ERR_PTR(-ENOMEM);
 
@@ -356,28 +385,9 @@ static struct tps65090_platform_data *tps65090_parse_dt_reg_data(
 		rpdata->enable_ext_control = of_property_read_bool(
 					tps65090_matches[idx].of_node,
 					"ti,enable-ext-control");
-		if (rpdata->enable_ext_control) {
-			enum gpiod_flags gflags;
-
-			if (ri_data->constraints.always_on ||
-			    ri_data->constraints.boot_on)
-				gflags = GPIOD_OUT_HIGH;
-			else
-				gflags = GPIOD_OUT_LOW;
-			gflags |= GPIOD_FLAGS_BIT_NONEXCLUSIVE;
-
-			rpdata->gpiod = devm_gpiod_get_from_of_node(&pdev->dev,
-								    tps65090_matches[idx].of_node,
-								    "dcdc-ext-control-gpios", 0,
-								    gflags,
-								    "tps65090");
-			if (PTR_ERR(rpdata->gpiod) == -ENOENT) {
-				dev_err(&pdev->dev,
-					"could not find DCDC external control GPIO\n");
-				rpdata->gpiod = NULL;
-			} else if (IS_ERR(rpdata->gpiod))
-				return ERR_CAST(rpdata->gpiod);
-		}
+		if (rpdata->enable_ext_control)
+			rpdata->gpio = of_get_named_gpio(np,
+					"dcdc-ext-control-gpios", 0);
 
 		if (of_property_read_u32(tps65090_matches[idx].of_node,
 					 "ti,overcurrent-wait",
@@ -422,9 +432,8 @@ static int tps65090_regulator_probe(struct platform_device *pdev)
 		return tps65090_pdata ? PTR_ERR(tps65090_pdata) : -EINVAL;
 	}
 
-	pmic = devm_kcalloc(&pdev->dev,
-			    TPS65090_REGULATOR_MAX, sizeof(*pmic),
-			    GFP_KERNEL);
+	pmic = devm_kzalloc(&pdev->dev, TPS65090_REGULATOR_MAX * sizeof(*pmic),
+			GFP_KERNEL);
 	if (!pmic)
 		return -ENOMEM;
 
@@ -446,7 +455,8 @@ static int tps65090_regulator_probe(struct platform_device *pdev)
 		 */
 		if (tps_pdata && is_dcdc(num) && tps_pdata->reg_init_data) {
 			if (tps_pdata->enable_ext_control) {
-				config.ena_gpiod = tps_pdata->gpiod;
+				tps65090_configure_regulator_config(
+						tps_pdata, &config);
 				ri->desc->ops = &tps65090_ext_control_ops;
 			} else {
 				ret = tps65090_regulator_disable_ext_control(
@@ -471,12 +481,6 @@ static int tps65090_regulator_probe(struct platform_device *pdev)
 		else
 			config.of_node = NULL;
 
-		/*
-		 * Hand the GPIO descriptor management over to the regulator
-		 * core, remove it from devres management.
-		 */
-		if (config.ena_gpiod)
-			devm_gpiod_unhinge(&pdev->dev, config.ena_gpiod);
 		rdev = devm_regulator_register(&pdev->dev, ri->desc, &config);
 		if (IS_ERR(rdev)) {
 			dev_err(&pdev->dev, "failed to register regulator %s\n",

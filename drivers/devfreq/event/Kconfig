@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0-only
 menuconfig PM_DEVFREQ_EVENT
 	bool "DEVFREQ-Event device Support"
 	help

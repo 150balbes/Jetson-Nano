@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0
 ##################################################
 #
 # Makefile for 68000 core based cpus

@@ -1,16 +1,14 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * ox810se.dtsi - Device tree file for Oxford Semiconductor OX810SE SoC
  *
  * Copyright (C) 2016 Neil Armstrong <narmstrong@baylibre.com>
+ *
+ * Licensed under GPLv2 or later
  */
 
-#include <dt-bindings/clock/oxsemi,ox810se.h>
-#include <dt-bindings/reset/oxsemi,ox810se.h>
+/include/ "skeleton.dtsi"
 
 / {
-	#address-cells = <1>;
-	#size-cells = <1>;
 	compatible = "oxsemi,ox810se";
 
 	cpus {
@@ -25,7 +23,6 @@
 	};
 
 	memory {
-		device_type = "memory";
 		/* Max 256MB @ 0x48000000 */
 		reg = <0x48000000 0x10000000>;
 	};
@@ -208,7 +205,7 @@
 				};
 			};
 
-			gpio0: gpio@0 {
+			gpio0: gpio@000000 {
 				compatible = "oxsemi,ox810se-gpio";
 				reg = <0x000000 0x100000>;
 				interrupts = <21>;
@@ -245,7 +242,7 @@
 			       current-speed = <115200>;
 			       no-loopback-test;
 			       status = "disabled";
-			       resets = <&reset RESET_UART1>;
+			       resets = <&reset 17>;
 			};
 
 			uart1: serial@300000 {
@@ -259,7 +256,7 @@
 			       current-speed = <115200>;
 			       no-loopback-test;
 			       status = "disabled";
-			       resets = <&reset RESET_UART2>;
+			       resets = <&reset 18>;
 			};
 
 			uart2: serial@900000 {
@@ -273,7 +270,7 @@
 			       current-speed = <115200>;
 			       no-loopback-test;
 			       status = "disabled";
-			       resets = <&reset RESET_UART3>;
+			       resets = <&reset 22>;
 			};
 
 			uart3: serial@a00000 {
@@ -287,7 +284,7 @@
 			       current-speed = <115200>;
 			       no-loopback-test;
 			       status = "disabled";
-			       resets = <&reset RESET_UART4>;
+			       resets = <&reset 23>;
 			};
 		};
 
@@ -297,7 +294,7 @@
 			compatible = "simple-bus";
 			ranges = <0 0x45000000 0x1000000>;
 
-			sys: sys-ctrl@0 {
+			sys: sys-ctrl@000000 {
 				compatible = "oxsemi,ox810se-sys-ctrl", "syscon", "simple-mfd";
 				reg = <0x000000 0x100000>;
 

@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: MIT */
 #ifndef __NVBIOS_PLL_H__
 #define __NVBIOS_PLL_H__
 /*XXX: kill me */

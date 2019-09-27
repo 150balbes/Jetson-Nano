@@ -18,28 +18,28 @@
 
 		cpu0: cpu@0 {
 			device_type = "cpu";
-			compatible = "arm,cortex-a53";
+			compatible = "arm,cortex-a53", "arm,armv8";
 			reg = <0x0 0x0>;
 			enable-method = "psci";
 		};
 
 		cpu1: cpu@1 {
 			device_type = "cpu";
-			compatible = "arm,cortex-a53";
+			compatible = "arm,cortex-a53", "arm,armv8";
 			reg = <0x0 0x1>;
 			enable-method = "psci";
 		};
 
 		cpu2: cpu@2 {
 			device_type = "cpu";
-			compatible = "arm,cortex-a53";
+			compatible = "arm,cortex-a53", "arm,armv8";
 			reg = <0x0 0x2>;
 			enable-method = "psci";
 		};
 
 		cpu3: cpu@3 {
 			device_type = "cpu";
-			compatible = "arm,cortex-a53";
+			compatible = "arm,cortex-a53", "arm,armv8";
 			reg = <0x0 0x3>;
 			enable-method = "psci";
 		};
@@ -50,64 +50,68 @@
 		reg = <0 0x10003000 0 0x1000>;
 		clocks = <&clk26mhz>;
 		clock-names = "apb_pclk";
-		in-ports {
-			port {
-				etf_in: endpoint {
-					remote-endpoint = <&funnel_out_port0>;
-				};
+		port {
+			etf_in: endpoint {
+				slave-mode;
+				remote-endpoint = <&funnel_out_port0>;
 			};
 		};
 	};
 
 	funnel@10001000 {
-		compatible = "arm,coresight-dynamic-funnel", "arm,primecell";
+		compatible = "arm,coresight-funnel", "arm,primecell";
 		reg = <0 0x10001000 0 0x1000>;
 		clocks = <&clk26mhz>;
 		clock-names = "apb_pclk";
+		ports {
+			#address-cells = <1>;
+			#size-cells = <0>;
 
-		out-ports {
-			port {
+			/* funnel output port */
+			port@0 {
+				reg = <0>;
 				funnel_out_port0: endpoint {
 					remote-endpoint = <&etf_in>;
 				};
 			};
-		};
 
-		in-ports {
-			#address-cells = <1>;
-			#size-cells = <0>;
-
-			port@0 {
+			/* funnel input port 0-4 */
+			port@1 {
 				reg = <0>;
 				funnel_in_port0: endpoint {
+					slave-mode;
 					remote-endpoint = <&etm0_out>;
 				};
 			};
 
-			port@1 {
+			port@2 {
 				reg = <1>;
 				funnel_in_port1: endpoint {
+					slave-mode;
 					remote-endpoint = <&etm1_out>;
 				};
 			};
 
-			port@2 {
+			port@3 {
 				reg = <2>;
 				funnel_in_port2: endpoint {
+					slave-mode;
 					remote-endpoint = <&etm2_out>;
 				};
 			};
 
-			port@3 {
+			port@4 {
 				reg = <3>;
 				funnel_in_port3: endpoint {
+					slave-mode;
 					remote-endpoint = <&etm3_out>;
 				};
 			};
 
-			port@4 {
+			port@5 {
 				reg = <4>;
 				funnel_in_port4: endpoint {
+					slave-mode;
 					remote-endpoint = <&stm_out>;
 				};
 			};
@@ -122,11 +126,9 @@
 		cpu = <&cpu0>;
 		clocks = <&clk26mhz>;
 		clock-names = "apb_pclk";
-		out-ports {
-			port {
-				etm0_out: endpoint {
-					remote-endpoint = <&funnel_in_port0>;
-				};
+		port {
+			etm0_out: endpoint {
+				remote-endpoint = <&funnel_in_port0>;
 			};
 		};
 	};
@@ -138,11 +140,9 @@
 		cpu = <&cpu1>;
 		clocks = <&clk26mhz>;
 		clock-names = "apb_pclk";
-		out-ports {
-			port {
-				etm1_out: endpoint {
-					remote-endpoint = <&funnel_in_port1>;
-				};
+		port {
+			etm1_out: endpoint {
+				remote-endpoint = <&funnel_in_port1>;
 			};
 		};
 	};
@@ -154,11 +154,9 @@
 		cpu = <&cpu2>;
 		clocks = <&clk26mhz>;
 		clock-names = "apb_pclk";
-		out-ports {
-			port {
-				etm2_out: endpoint {
-					remote-endpoint = <&funnel_in_port2>;
-				};
+		port {
+			etm2_out: endpoint {
+				remote-endpoint = <&funnel_in_port2>;
 			};
 		};
 	};
@@ -170,11 +168,9 @@
 		cpu = <&cpu3>;
 		clocks = <&clk26mhz>;
 		clock-names = "apb_pclk";
-		out-ports {
-			port {
-				etm3_out: endpoint {
-					remote-endpoint = <&funnel_in_port3>;
-				};
+		port {
+			etm3_out: endpoint {
+				remote-endpoint = <&funnel_in_port3>;
 			};
 		};
 	};
@@ -186,11 +182,9 @@
 		reg-names = "stm-base", "stm-stimulus-base";
 		clocks = <&clk26mhz>;
 		clock-names = "apb_pclk";
-		out-ports {
-			port {
-				stm_out: endpoint {
-					remote-endpoint = <&funnel_in_port4>;
-				};
+		port {
+			stm_out: endpoint {
+				remote-endpoint = <&funnel_in_port4>;
 			};
 		};
 	};

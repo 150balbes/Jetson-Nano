@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: MIT */
 #ifndef __NVBIOS_DISP_H__
 #define __NVBIOS_DISP_H__
 u16 nvbios_disp_table(struct nvkm_bios *,

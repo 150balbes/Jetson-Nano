@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 #define _GNU_SOURCE
 #define __EXPORTED_HEADERS__
 
@@ -19,20 +18,14 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
-#include "common.h"
-
-#define MEMFD_STR	"memfd:"
-#define MEMFD_HUGE_STR	"memfd-hugetlb:"
-#define SHARED_FT_STR	"(shared file-table)"
-
 #define MFD_DEF_SIZE 8192
 #define STACK_SIZE 65536
 
-/*
- * Default is not to test hugetlbfs
- */
-static size_t mfd_def_size = MFD_DEF_SIZE;
-static const char *memfd_str = MEMFD_STR;
+static int sys_memfd_create(const char *name,
+			    unsigned int flags)
+{
+	return syscall(__NR_memfd_create, name, flags);
+}
 
 static int mfd_assert_new(const char *name, loff_t sz, unsigned int flags)
 {
@@ -48,22 +41,6 @@ static int mfd_assert_new(const char *name, loff_t sz, unsigned int flags)
 	r = ftruncate(fd, sz);
 	if (r < 0) {
 		printf("ftruncate(%llu) failed: %m\n", (unsigned long long)sz);
-		abort();
-	}
-
-	return fd;
-}
-
-static int mfd_assert_reopen_fd(int fd_in)
-{
-	int r, fd;
-	char path[100];
-
-	sprintf(path, "/proc/self/fd/%d", fd_in);
-
-	fd = open(path, O_RDWR);
-	if (fd < 0) {
-		printf("re-open of existing fd %d failed\n", fd_in);
 		abort();
 	}
 
@@ -173,7 +150,7 @@ static void *mfd_assert_mmap_shared(int fd)
 	void *p;
 
 	p = mmap(NULL,
-		 mfd_def_size,
+		 MFD_DEF_SIZE,
 		 PROT_READ | PROT_WRITE,
 		 MAP_SHARED,
 		 fd,
@@ -191,7 +168,7 @@ static void *mfd_assert_mmap_private(int fd)
 	void *p;
 
 	p = mmap(NULL,
-		 mfd_def_size,
+		 MFD_DEF_SIZE,
 		 PROT_READ,
 		 MAP_PRIVATE,
 		 fd,
@@ -246,7 +223,7 @@ static void mfd_assert_read(int fd)
 
 	/* verify PROT_READ *is* allowed */
 	p = mmap(NULL,
-		 mfd_def_size,
+		 MFD_DEF_SIZE,
 		 PROT_READ,
 		 MAP_PRIVATE,
 		 fd,
@@ -255,11 +232,11 @@ static void mfd_assert_read(int fd)
 		printf("mmap() failed: %m\n");
 		abort();
 	}
-	munmap(p, mfd_def_size);
+	munmap(p, MFD_DEF_SIZE);
 
 	/* verify MAP_PRIVATE is *always* allowed (even writable) */
 	p = mmap(NULL,
-		 mfd_def_size,
+		 MFD_DEF_SIZE,
 		 PROT_READ | PROT_WRITE,
 		 MAP_PRIVATE,
 		 fd,
@@ -268,26 +245,7 @@ static void mfd_assert_read(int fd)
 		printf("mmap() failed: %m\n");
 		abort();
 	}
-	munmap(p, mfd_def_size);
-}
-
-/* Test that PROT_READ + MAP_SHARED mappings work. */
-static void mfd_assert_read_shared(int fd)
-{
-	void *p;
-
-	/* verify PROT_READ and MAP_SHARED *is* allowed */
-	p = mmap(NULL,
-		 mfd_def_size,
-		 PROT_READ,
-		 MAP_SHARED,
-		 fd,
-		 0);
-	if (p == MAP_FAILED) {
-		printf("mmap() failed: %m\n");
-		abort();
-	}
-	munmap(p, mfd_def_size);
+	munmap(p, MFD_DEF_SIZE);
 }
 
 static void mfd_assert_write(int fd)
@@ -296,22 +254,16 @@ static void mfd_assert_write(int fd)
 	void *p;
 	int r;
 
-	/*
-	 * huegtlbfs does not support write, but we want to
-	 * verify everything else here.
-	 */
-	if (!hugetlbfs_test) {
-		/* verify write() succeeds */
-		l = write(fd, "\0\0\0\0", 4);
-		if (l != 4) {
-			printf("write() failed: %m\n");
-			abort();
-		}
+	/* verify write() succeeds */
+	l = write(fd, "\0\0\0\0", 4);
+	if (l != 4) {
+		printf("write() failed: %m\n");
+		abort();
 	}
 
 	/* verify PROT_READ | PROT_WRITE is allowed */
 	p = mmap(NULL,
-		 mfd_def_size,
+		 MFD_DEF_SIZE,
 		 PROT_READ | PROT_WRITE,
 		 MAP_SHARED,
 		 fd,
@@ -321,11 +273,11 @@ static void mfd_assert_write(int fd)
 		abort();
 	}
 	*(char *)p = 0;
-	munmap(p, mfd_def_size);
+	munmap(p, MFD_DEF_SIZE);
 
 	/* verify PROT_WRITE is allowed */
 	p = mmap(NULL,
-		 mfd_def_size,
+		 MFD_DEF_SIZE,
 		 PROT_WRITE,
 		 MAP_SHARED,
 		 fd,
@@ -335,12 +287,12 @@ static void mfd_assert_write(int fd)
 		abort();
 	}
 	*(char *)p = 0;
-	munmap(p, mfd_def_size);
+	munmap(p, MFD_DEF_SIZE);
 
 	/* verify PROT_READ with MAP_SHARED is allowed and a following
 	 * mprotect(PROT_WRITE) allows writing */
 	p = mmap(NULL,
-		 mfd_def_size,
+		 MFD_DEF_SIZE,
 		 PROT_READ,
 		 MAP_SHARED,
 		 fd,
@@ -350,20 +302,20 @@ static void mfd_assert_write(int fd)
 		abort();
 	}
 
-	r = mprotect(p, mfd_def_size, PROT_READ | PROT_WRITE);
+	r = mprotect(p, MFD_DEF_SIZE, PROT_READ | PROT_WRITE);
 	if (r < 0) {
 		printf("mprotect() failed: %m\n");
 		abort();
 	}
 
 	*(char *)p = 0;
-	munmap(p, mfd_def_size);
+	munmap(p, MFD_DEF_SIZE);
 
 	/* verify PUNCH_HOLE works */
 	r = fallocate(fd,
 		      FALLOC_FL_PUNCH_HOLE | FALLOC_FL_KEEP_SIZE,
 		      0,
-		      mfd_def_size);
+		      MFD_DEF_SIZE);
 	if (r < 0) {
 		printf("fallocate(PUNCH_HOLE) failed: %m\n");
 		abort();
@@ -385,7 +337,7 @@ static void mfd_fail_write(int fd)
 
 	/* verify PROT_READ | PROT_WRITE is not allowed */
 	p = mmap(NULL,
-		 mfd_def_size,
+		 MFD_DEF_SIZE,
 		 PROT_READ | PROT_WRITE,
 		 MAP_SHARED,
 		 fd,
@@ -397,7 +349,7 @@ static void mfd_fail_write(int fd)
 
 	/* verify PROT_WRITE is not allowed */
 	p = mmap(NULL,
-		 mfd_def_size,
+		 MFD_DEF_SIZE,
 		 PROT_WRITE,
 		 MAP_SHARED,
 		 fd,
@@ -410,13 +362,13 @@ static void mfd_fail_write(int fd)
 	/* Verify PROT_READ with MAP_SHARED with a following mprotect is not
 	 * allowed. Note that for r/w the kernel already prevents the mmap. */
 	p = mmap(NULL,
-		 mfd_def_size,
+		 MFD_DEF_SIZE,
 		 PROT_READ,
 		 MAP_SHARED,
 		 fd,
 		 0);
 	if (p != MAP_FAILED) {
-		r = mprotect(p, mfd_def_size, PROT_READ | PROT_WRITE);
+		r = mprotect(p, MFD_DEF_SIZE, PROT_READ | PROT_WRITE);
 		if (r >= 0) {
 			printf("mmap()+mprotect() didn't fail as expected\n");
 			abort();
@@ -427,7 +379,7 @@ static void mfd_fail_write(int fd)
 	r = fallocate(fd,
 		      FALLOC_FL_PUNCH_HOLE | FALLOC_FL_KEEP_SIZE,
 		      0,
-		      mfd_def_size);
+		      MFD_DEF_SIZE);
 	if (r >= 0) {
 		printf("fallocate(PUNCH_HOLE) didn't fail as expected\n");
 		abort();
@@ -438,13 +390,13 @@ static void mfd_assert_shrink(int fd)
 {
 	int r, fd2;
 
-	r = ftruncate(fd, mfd_def_size / 2);
+	r = ftruncate(fd, MFD_DEF_SIZE / 2);
 	if (r < 0) {
 		printf("ftruncate(SHRINK) failed: %m\n");
 		abort();
 	}
 
-	mfd_assert_size(fd, mfd_def_size / 2);
+	mfd_assert_size(fd, MFD_DEF_SIZE / 2);
 
 	fd2 = mfd_assert_open(fd,
 			      O_RDWR | O_CREAT | O_TRUNC,
@@ -458,7 +410,7 @@ static void mfd_fail_shrink(int fd)
 {
 	int r;
 
-	r = ftruncate(fd, mfd_def_size / 2);
+	r = ftruncate(fd, MFD_DEF_SIZE / 2);
 	if (r >= 0) {
 		printf("ftruncate(SHRINK) didn't fail as expected\n");
 		abort();
@@ -473,31 +425,31 @@ static void mfd_assert_grow(int fd)
 {
 	int r;
 
-	r = ftruncate(fd, mfd_def_size * 2);
+	r = ftruncate(fd, MFD_DEF_SIZE * 2);
 	if (r < 0) {
 		printf("ftruncate(GROW) failed: %m\n");
 		abort();
 	}
 
-	mfd_assert_size(fd, mfd_def_size * 2);
+	mfd_assert_size(fd, MFD_DEF_SIZE * 2);
 
 	r = fallocate(fd,
 		      0,
 		      0,
-		      mfd_def_size * 4);
+		      MFD_DEF_SIZE * 4);
 	if (r < 0) {
 		printf("fallocate(ALLOC) failed: %m\n");
 		abort();
 	}
 
-	mfd_assert_size(fd, mfd_def_size * 4);
+	mfd_assert_size(fd, MFD_DEF_SIZE * 4);
 }
 
 static void mfd_fail_grow(int fd)
 {
 	int r;
 
-	r = ftruncate(fd, mfd_def_size * 2);
+	r = ftruncate(fd, MFD_DEF_SIZE * 2);
 	if (r >= 0) {
 		printf("ftruncate(GROW) didn't fail as expected\n");
 		abort();
@@ -506,7 +458,7 @@ static void mfd_fail_grow(int fd)
 	r = fallocate(fd,
 		      0,
 		      0,
-		      mfd_def_size * 4);
+		      MFD_DEF_SIZE * 4);
 	if (r >= 0) {
 		printf("fallocate(ALLOC) didn't fail as expected\n");
 		abort();
@@ -515,45 +467,25 @@ static void mfd_fail_grow(int fd)
 
 static void mfd_assert_grow_write(int fd)
 {
-	static char *buf;
+	static char buf[MFD_DEF_SIZE * 8];
 	ssize_t l;
 
-	/* hugetlbfs does not support write */
-	if (hugetlbfs_test)
-		return;
-
-	buf = malloc(mfd_def_size * 8);
-	if (!buf) {
-		printf("malloc(%zu) failed: %m\n", mfd_def_size * 8);
-		abort();
-	}
-
-	l = pwrite(fd, buf, mfd_def_size * 8, 0);
-	if (l != (mfd_def_size * 8)) {
+	l = pwrite(fd, buf, sizeof(buf), 0);
+	if (l != sizeof(buf)) {
 		printf("pwrite() failed: %m\n");
 		abort();
 	}
 
-	mfd_assert_size(fd, mfd_def_size * 8);
+	mfd_assert_size(fd, MFD_DEF_SIZE * 8);
 }
 
 static void mfd_fail_grow_write(int fd)
 {
-	static char *buf;
+	static char buf[MFD_DEF_SIZE * 8];
 	ssize_t l;
 
-	/* hugetlbfs does not support write */
-	if (hugetlbfs_test)
-		return;
-
-	buf = malloc(mfd_def_size * 8);
-	if (!buf) {
-		printf("malloc(%zu) failed: %m\n", mfd_def_size * 8);
-		abort();
-	}
-
-	l = pwrite(fd, buf, mfd_def_size * 8, 0);
-	if (l == (mfd_def_size * 8)) {
+	l = pwrite(fd, buf, sizeof(buf), 0);
+	if (l == sizeof(buf)) {
 		printf("pwrite() didn't fail as expected\n");
 		abort();
 	}
@@ -611,8 +543,6 @@ static void test_create(void)
 	char buf[2048];
 	int fd;
 
-	printf("%s CREATE\n", memfd_str);
-
 	/* test NULL name */
 	mfd_fail_new(NULL, 0);
 
@@ -657,10 +587,8 @@ static void test_basic(void)
 {
 	int fd;
 
-	printf("%s BASIC\n", memfd_str);
-
 	fd = mfd_assert_new("kern_memfd_basic",
-			    mfd_def_size,
+			    MFD_DEF_SIZE,
 			    MFD_CLOEXEC | MFD_ALLOW_SEALING);
 
 	/* add basic seals */
@@ -691,7 +619,7 @@ static void test_basic(void)
 
 	/* verify sealing does not work without MFD_ALLOW_SEALING */
 	fd = mfd_assert_new("kern_memfd_basic",
-			    mfd_def_size,
+			    MFD_DEF_SIZE,
 			    MFD_CLOEXEC);
 	mfd_assert_has_seals(fd, F_SEAL_SEAL);
 	mfd_fail_add_seals(fd, F_SEAL_SHRINK |
@@ -709,10 +637,8 @@ static void test_seal_write(void)
 {
 	int fd;
 
-	printf("%s SEAL-WRITE\n", memfd_str);
-
 	fd = mfd_assert_new("kern_memfd_seal_write",
-			    mfd_def_size,
+			    MFD_DEF_SIZE,
 			    MFD_CLOEXEC | MFD_ALLOW_SEALING);
 	mfd_assert_has_seals(fd, 0);
 	mfd_assert_add_seals(fd, F_SEAL_WRITE);
@@ -728,44 +654,6 @@ static void test_seal_write(void)
 }
 
 /*
- * Test SEAL_FUTURE_WRITE
- * Test whether SEAL_FUTURE_WRITE actually prevents modifications.
- */
-static void test_seal_future_write(void)
-{
-	int fd, fd2;
-	void *p;
-
-	printf("%s SEAL-FUTURE-WRITE\n", memfd_str);
-
-	fd = mfd_assert_new("kern_memfd_seal_future_write",
-			    mfd_def_size,
-			    MFD_CLOEXEC | MFD_ALLOW_SEALING);
-
-	p = mfd_assert_mmap_shared(fd);
-
-	mfd_assert_has_seals(fd, 0);
-
-	mfd_assert_add_seals(fd, F_SEAL_FUTURE_WRITE);
-	mfd_assert_has_seals(fd, F_SEAL_FUTURE_WRITE);
-
-	/* read should pass, writes should fail */
-	mfd_assert_read(fd);
-	mfd_assert_read_shared(fd);
-	mfd_fail_write(fd);
-
-	fd2 = mfd_assert_reopen_fd(fd);
-	/* read should pass, writes should still fail */
-	mfd_assert_read(fd2);
-	mfd_assert_read_shared(fd2);
-	mfd_fail_write(fd2);
-
-	munmap(p, mfd_def_size);
-	close(fd2);
-	close(fd);
-}
-
-/*
  * Test SEAL_SHRINK
  * Test whether SEAL_SHRINK actually prevents shrinking
  */
@@ -773,10 +661,8 @@ static void test_seal_shrink(void)
 {
 	int fd;
 
-	printf("%s SEAL-SHRINK\n", memfd_str);
-
 	fd = mfd_assert_new("kern_memfd_seal_shrink",
-			    mfd_def_size,
+			    MFD_DEF_SIZE,
 			    MFD_CLOEXEC | MFD_ALLOW_SEALING);
 	mfd_assert_has_seals(fd, 0);
 	mfd_assert_add_seals(fd, F_SEAL_SHRINK);
@@ -799,10 +685,8 @@ static void test_seal_grow(void)
 {
 	int fd;
 
-	printf("%s SEAL-GROW\n", memfd_str);
-
 	fd = mfd_assert_new("kern_memfd_seal_grow",
-			    mfd_def_size,
+			    MFD_DEF_SIZE,
 			    MFD_CLOEXEC | MFD_ALLOW_SEALING);
 	mfd_assert_has_seals(fd, 0);
 	mfd_assert_add_seals(fd, F_SEAL_GROW);
@@ -825,10 +709,8 @@ static void test_seal_resize(void)
 {
 	int fd;
 
-	printf("%s SEAL-RESIZE\n", memfd_str);
-
 	fd = mfd_assert_new("kern_memfd_seal_resize",
-			    mfd_def_size,
+			    MFD_DEF_SIZE,
 			    MFD_CLOEXEC | MFD_ALLOW_SEALING);
 	mfd_assert_has_seals(fd, 0);
 	mfd_assert_add_seals(fd, F_SEAL_SHRINK | F_SEAL_GROW);
@@ -847,14 +729,12 @@ static void test_seal_resize(void)
  * Test sharing via dup()
  * Test that seals are shared between dupped FDs and they're all equal.
  */
-static void test_share_dup(char *banner, char *b_suffix)
+static void test_share_dup(void)
 {
 	int fd, fd2;
 
-	printf("%s %s %s\n", memfd_str, banner, b_suffix);
-
 	fd = mfd_assert_new("kern_memfd_share_dup",
-			    mfd_def_size,
+			    MFD_DEF_SIZE,
 			    MFD_CLOEXEC | MFD_ALLOW_SEALING);
 	mfd_assert_has_seals(fd, 0);
 
@@ -888,15 +768,13 @@ static void test_share_dup(char *banner, char *b_suffix)
  * Test sealing with active mmap()s
  * Modifying seals is only allowed if no other mmap() refs exist.
  */
-static void test_share_mmap(char *banner, char *b_suffix)
+static void test_share_mmap(void)
 {
 	int fd;
 	void *p;
 
-	printf("%s %s %s\n", memfd_str,  banner, b_suffix);
-
 	fd = mfd_assert_new("kern_memfd_share_mmap",
-			    mfd_def_size,
+			    MFD_DEF_SIZE,
 			    MFD_CLOEXEC | MFD_ALLOW_SEALING);
 	mfd_assert_has_seals(fd, 0);
 
@@ -906,13 +784,13 @@ static void test_share_mmap(char *banner, char *b_suffix)
 	mfd_assert_has_seals(fd, 0);
 	mfd_assert_add_seals(fd, F_SEAL_SHRINK);
 	mfd_assert_has_seals(fd, F_SEAL_SHRINK);
-	munmap(p, mfd_def_size);
+	munmap(p, MFD_DEF_SIZE);
 
 	/* readable ref allows sealing */
 	p = mfd_assert_mmap_private(fd);
 	mfd_assert_add_seals(fd, F_SEAL_WRITE);
 	mfd_assert_has_seals(fd, F_SEAL_WRITE | F_SEAL_SHRINK);
-	munmap(p, mfd_def_size);
+	munmap(p, MFD_DEF_SIZE);
 
 	close(fd);
 }
@@ -923,14 +801,12 @@ static void test_share_mmap(char *banner, char *b_suffix)
  * This is *not* like dup(), but like a real separate open(). Make sure the
  * semantics are as expected and we correctly check for RDONLY / WRONLY / RDWR.
  */
-static void test_share_open(char *banner, char *b_suffix)
+static void test_share_open(void)
 {
 	int fd, fd2;
 
-	printf("%s %s %s\n", memfd_str, banner, b_suffix);
-
 	fd = mfd_assert_new("kern_memfd_share_open",
-			    mfd_def_size,
+			    MFD_DEF_SIZE,
 			    MFD_CLOEXEC | MFD_ALLOW_SEALING);
 	mfd_assert_has_seals(fd, 0);
 
@@ -965,15 +841,13 @@ static void test_share_open(char *banner, char *b_suffix)
  * Test sharing via fork()
  * Test whether seal-modifications work as expected with forked childs.
  */
-static void test_share_fork(char *banner, char *b_suffix)
+static void test_share_fork(void)
 {
 	int fd;
 	pid_t pid;
 
-	printf("%s %s %s\n", memfd_str, banner, b_suffix);
-
 	fd = mfd_assert_new("kern_memfd_share_fork",
-			    mfd_def_size,
+			    MFD_DEF_SIZE,
 			    MFD_CLOEXEC | MFD_ALLOW_SEALING);
 	mfd_assert_has_seals(fd, 0);
 
@@ -996,45 +870,40 @@ int main(int argc, char **argv)
 {
 	pid_t pid;
 
-	if (argc == 2) {
-		if (!strcmp(argv[1], "hugetlbfs")) {
-			unsigned long hpage_size = default_huge_page_size();
-
-			if (!hpage_size) {
-				printf("Unable to determine huge page size\n");
-				abort();
-			}
-
-			hugetlbfs_test = 1;
-			memfd_str = MEMFD_HUGE_STR;
-			mfd_def_size = hpage_size * 2;
-		} else {
-			printf("Unknown option: %s\n", argv[1]);
-			abort();
-		}
-	}
-
+	printf("memfd: CREATE\n");
 	test_create();
+	printf("memfd: BASIC\n");
 	test_basic();
 
+	printf("memfd: SEAL-WRITE\n");
 	test_seal_write();
-	test_seal_future_write();
+	printf("memfd: SEAL-SHRINK\n");
 	test_seal_shrink();
+	printf("memfd: SEAL-GROW\n");
 	test_seal_grow();
+	printf("memfd: SEAL-RESIZE\n");
 	test_seal_resize();
 
-	test_share_dup("SHARE-DUP", "");
-	test_share_mmap("SHARE-MMAP", "");
-	test_share_open("SHARE-OPEN", "");
-	test_share_fork("SHARE-FORK", "");
+	printf("memfd: SHARE-DUP\n");
+	test_share_dup();
+	printf("memfd: SHARE-MMAP\n");
+	test_share_mmap();
+	printf("memfd: SHARE-OPEN\n");
+	test_share_open();
+	printf("memfd: SHARE-FORK\n");
+	test_share_fork();
 
 	/* Run test-suite in a multi-threaded environment with a shared
 	 * file-table. */
 	pid = spawn_idle_thread(CLONE_FILES | CLONE_FS | CLONE_VM);
-	test_share_dup("SHARE-DUP", SHARED_FT_STR);
-	test_share_mmap("SHARE-MMAP", SHARED_FT_STR);
-	test_share_open("SHARE-OPEN", SHARED_FT_STR);
-	test_share_fork("SHARE-FORK", SHARED_FT_STR);
+	printf("memfd: SHARE-DUP (shared file-table)\n");
+	test_share_dup();
+	printf("memfd: SHARE-MMAP (shared file-table)\n");
+	test_share_mmap();
+	printf("memfd: SHARE-OPEN (shared file-table)\n");
+	test_share_open();
+	printf("memfd: SHARE-FORK (shared file-table)\n");
+	test_share_fork();
 	join_idle_thread(pid);
 
 	printf("memfd: DONE\n");

@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * srmmu.c:  SRMMU specific routines for memory management.
  *
@@ -11,7 +10,7 @@
 
 #include <linux/seq_file.h>
 #include <linux/spinlock.h>
-#include <linux/memblock.h>
+#include <linux/bootmem.h>
 #include <linux/pagemap.h>
 #include <linux/vmalloc.h>
 #include <linux/kdebug.h>
@@ -37,6 +36,7 @@
 #include <asm/mbus.h>
 #include <asm/page.h>
 #include <asm/asi.h>
+#include <asm/msi.h>
 #include <asm/smp.h>
 #include <asm/io.h>
 
@@ -113,25 +113,6 @@ static inline void srmmu_ctxd_set(ctxd_t *ctxp, pgd_t *pgdp)
 
 	pte = __pte((SRMMU_ET_PTD | (__nocache_pa(pgdp) >> 4)));
 	set_pte((pte_t *)ctxp, pte);
-}
-
-/*
- * Locations of MSI Registers.
- */
-#define MSI_MBUS_ARBEN	0xe0001008	/* MBus Arbiter Enable register */
-
-/*
- * Useful bits in the MSI Registers.
- */
-#define MSI_ASYNC_MODE  0x80000000	/* Operate the MSI asynchronously */
-
-static void msi_set_sync(void)
-{
-	__asm__ __volatile__ ("lda [%0] %1, %%g3\n\t"
-			      "andn %%g3, %2, %%g3\n\t"
-			      "sta %%g3, [%0] %1\n\t" : :
-			      "r" (MSI_MBUS_ARBEN),
-			      "i" (ASI_M_CTL), "r" (MSI_ASYNC_MODE) : "g3");
 }
 
 void pmd_set(pmd_t *pmdp, pte_t *ptep)
@@ -303,19 +284,13 @@ static void __init srmmu_nocache_init(void)
 
 	bitmap_bits = srmmu_nocache_size >> SRMMU_NOCACHE_BITMAP_SHIFT;
 
-	srmmu_nocache_pool = memblock_alloc(srmmu_nocache_size,
-					    SRMMU_NOCACHE_ALIGN_MAX);
-	if (!srmmu_nocache_pool)
-		panic("%s: Failed to allocate %lu bytes align=0x%x\n",
-		      __func__, srmmu_nocache_size, SRMMU_NOCACHE_ALIGN_MAX);
+	srmmu_nocache_pool = __alloc_bootmem(srmmu_nocache_size,
+		SRMMU_NOCACHE_ALIGN_MAX, 0UL);
 	memset(srmmu_nocache_pool, 0, srmmu_nocache_size);
 
 	srmmu_nocache_bitmap =
-		memblock_alloc(BITS_TO_LONGS(bitmap_bits) * sizeof(long),
-			       SMP_CACHE_BYTES);
-	if (!srmmu_nocache_bitmap)
-		panic("%s: Failed to allocate %zu bytes\n", __func__,
-		      BITS_TO_LONGS(bitmap_bits) * sizeof(long));
+		__alloc_bootmem(BITS_TO_LONGS(bitmap_bits) * sizeof(long),
+				SMP_CACHE_BYTES, 0UL);
 	bit_map_init(&srmmu_nocache_map, srmmu_nocache_bitmap, bitmap_bits);
 
 	srmmu_swapper_pg_dir = __srmmu_get_nocache(SRMMU_PGD_TABLE_SIZE, SRMMU_PGD_TABLE_SIZE);
@@ -370,12 +345,12 @@ pgd_t *get_pgd_fast(void)
  * Alignments up to the page size are the same for physical and virtual
  * addresses of the nocache area.
  */
-pgtable_t pte_alloc_one(struct mm_struct *mm)
+pgtable_t pte_alloc_one(struct mm_struct *mm, unsigned long address)
 {
 	unsigned long pte;
 	struct page *page;
 
-	if ((pte = (unsigned long)pte_alloc_one_kernel(mm)) == 0)
+	if ((pte = (unsigned long)pte_alloc_one_kernel(mm, address)) == 0)
 		return NULL;
 	page = pfn_to_page(__nocache_pa(pte) >> PAGE_SHIFT);
 	if (!pgtable_page_ctor(page)) {
@@ -473,9 +448,7 @@ static void __init sparc_context_init(int numctx)
 	unsigned long size;
 
 	size = numctx * sizeof(struct ctx_list);
-	ctx_list_pool = memblock_alloc(size, SMP_CACHE_BYTES);
-	if (!ctx_list_pool)
-		panic("%s: Failed to allocate %lu bytes\n", __func__, size);
+	ctx_list_pool = __alloc_bootmem(size, SMP_CACHE_BYTES, 0UL);
 
 	for (ctx = 0; ctx < numctx; ctx++) {
 		struct ctx_list *clist;
@@ -1472,7 +1445,7 @@ static void poke_viking(void)
 	srmmu_set_mmureg(mreg);
 }
 
-static struct sparc32_cachetlb_ops viking_ops __ro_after_init = {
+static struct sparc32_cachetlb_ops viking_ops = {
 	.cache_all	= viking_flush_cache_all,
 	.cache_mm	= viking_flush_cache_mm,
 	.cache_page	= viking_flush_cache_page,
@@ -1503,7 +1476,7 @@ static struct sparc32_cachetlb_ops viking_ops __ro_after_init = {
  * flushes going at once will require SMP locking anyways so there's
  * no real value in trying any harder than this.
  */
-static struct sparc32_cachetlb_ops viking_sun4d_smp_ops __ro_after_init = {
+static struct sparc32_cachetlb_ops viking_sun4d_smp_ops = {
 	.cache_all	= viking_flush_cache_all,
 	.cache_mm	= viking_flush_cache_mm,
 	.cache_page	= viking_flush_cache_page,
@@ -1787,7 +1760,7 @@ static void smp_flush_sig_insns(struct mm_struct *mm, unsigned long insn_addr)
 	local_ops->sig_insns(mm, insn_addr);
 }
 
-static struct sparc32_cachetlb_ops smp_cachetlb_ops __ro_after_init = {
+static struct sparc32_cachetlb_ops smp_cachetlb_ops = {
 	.cache_all	= smp_flush_cache_all,
 	.cache_mm	= smp_flush_cache_mm,
 	.cache_page	= smp_flush_cache_page,

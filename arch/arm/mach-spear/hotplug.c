@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * linux/arch/arm/mach-spear13xx/hotplug.c
  *
@@ -6,14 +5,16 @@
  * Deepak Sikri <deepak.sikri@st.com>
  *
  * based upon linux/arch/arm/mach-realview/hotplug.c
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  */
 #include <linux/kernel.h>
 #include <linux/errno.h>
 #include <linux/smp.h>
 #include <asm/cp15.h>
 #include <asm/smp_plat.h>
-
-#include "generic.h"
 
 static inline void cpu_enter_lowpower(void)
 {
@@ -56,7 +57,7 @@ static inline void spear13xx_do_lowpower(unsigned int cpu, int *spurious)
 	for (;;) {
 		wfi();
 
-		if (spear_pen_release == cpu) {
+		if (pen_release == cpu) {
 			/*
 			 * OK, proper wakeup, we're done
 			 */

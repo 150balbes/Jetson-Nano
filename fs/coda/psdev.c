@@ -1,9 +1,13 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  *      	An implementation of a loadable kernel mode driver providing
  *		multiple kernel/user space bidirectional communications links.
  *
  * 		Author: 	Alan Cox <alan@lxorguk.ukuu.org.uk>
+ *
+ *		This program is free software; you can redistribute it and/or
+ *		modify it under the terms of the GNU General Public License
+ *		as published by the Free Software Foundation; either version
+ *		2 of the License, or (at your option) any later version.
  * 
  *              Adapted to become the Linux 2.0 Coda pseudo device
  *              Peter  Braam  <braam@maths.ox.ac.uk> 
@@ -18,7 +22,7 @@
 #include <linux/kernel.h>
 #include <linux/major.h>
 #include <linux/time.h>
-#include <linux/sched/signal.h>
+#include <linux/sched.h>
 #include <linux/slab.h>
 #include <linux/ioport.h>
 #include <linux/fcntl.h>
@@ -35,10 +39,12 @@
 #include <linux/device.h>
 #include <linux/pid_namespace.h>
 #include <asm/io.h>
+#include <asm/poll.h>
 #include <linux/uaccess.h>
 
 #include <linux/coda.h>
-#include "coda_psdev.h"
+#include <linux/coda_psdev.h>
+
 #include "coda_linux.h"
 
 #include "coda_int.h"
@@ -55,15 +61,15 @@ static struct class *coda_psdev_class;
  * Device operations
  */
 
-static __poll_t coda_psdev_poll(struct file *file, poll_table * wait)
+static unsigned int coda_psdev_poll(struct file *file, poll_table * wait)
 {
         struct venus_comm *vcp = (struct venus_comm *) file->private_data;
-	__poll_t mask = EPOLLOUT | EPOLLWRNORM;
+	unsigned int mask = POLLOUT | POLLWRNORM;
 
 	poll_wait(file, &vcp->vc_waitq, wait);
 	mutex_lock(&vcp->vc_mutex);
 	if (!list_empty(&vcp->vc_pending))
-                mask |= EPOLLIN | EPOLLRDNORM;
+                mask |= POLLIN | POLLRDNORM;
 	mutex_unlock(&vcp->vc_mutex);
 
 	return mask;
@@ -99,12 +105,8 @@ static ssize_t coda_psdev_write(struct file *file, const char __user *buf,
 	ssize_t retval = 0, count = 0;
 	int error;
 
-	/* make sure there is enough to copy out the (opcode, unique) values */
-	if (nbytes < (2 * sizeof(u_int32_t)))
-		return -EINVAL;
-
         /* Peek at the opcode, uniquefier */
-	if (copy_from_user(&hdr, buf, 2 * sizeof(u_int32_t)))
+	if (copy_from_user(&hdr, buf, 2 * sizeof(u_long)))
 	        return -EFAULT;
 
         if (DOWNCALL(hdr.opcode)) {
@@ -122,21 +124,17 @@ static ssize_t coda_psdev_write(struct file *file, const char __user *buf,
 				hdr.opcode, hdr.unique);
 		        nbytes = size;
 		}
-		dcbuf = kvmalloc(nbytes, GFP_KERNEL);
-		if (!dcbuf) {
-			retval = -ENOMEM;
-			goto out;
-		}
+		CODA_ALLOC(dcbuf, union outputArgs *, nbytes);
 		if (copy_from_user(dcbuf, buf, nbytes)) {
-			kvfree(dcbuf);
+			CODA_FREE(dcbuf, nbytes);
 			retval = -EFAULT;
 			goto out;
 		}
 
 		/* what downcall errors does Venus handle ? */
-		error = coda_downcall(vcp, hdr.opcode, dcbuf, nbytes);
+		error = coda_downcall(vcp, hdr.opcode, dcbuf);
 
-		kvfree(dcbuf);
+		CODA_FREE(dcbuf, nbytes);
 		if (error) {
 			pr_warn("%s: coda_downcall error: %d\n",
 				__func__, error);
@@ -189,11 +187,8 @@ static ssize_t coda_psdev_write(struct file *file, const char __user *buf,
 	if (req->uc_opcode == CODA_OPEN_BY_FD) {
 		struct coda_open_by_fd_out *outp =
 			(struct coda_open_by_fd_out *)req->uc_data;
-		if (!outp->oh.result) {
+		if (!outp->oh.result)
 			outp->fh = fget(outp->fd);
-			if (!outp->fh)
-				return -EBADF;
-		}
 	}
 
         wake_up(&req->uc_sleep);
@@ -262,7 +257,7 @@ static ssize_t coda_psdev_read(struct file * file, char __user * buf,
 		goto out;
 	}
 
-	kvfree(req->uc_data);
+	CODA_FREE(req->uc_data, sizeof(struct coda_in_hdr));
 	kfree(req);
 out:
 	mutex_unlock(&vcp->vc_mutex);
@@ -324,7 +319,7 @@ static int coda_psdev_release(struct inode * inode, struct file * file)
 
 		/* Async requests need to be freed here */
 		if (req->uc_flags & CODA_REQ_ASYNC) {
-			kvfree(req->uc_data);
+			CODA_FREE(req->uc_data, sizeof(struct coda_in_hdr));
 			kfree(req);
 			continue;
 		}
@@ -357,13 +352,13 @@ static const struct file_operations coda_psdev_fops = {
 	.llseek		= noop_llseek,
 };
 
-static int __init init_coda_psdev(void)
+static int init_coda_psdev(void)
 {
 	int i, err = 0;
 	if (register_chrdev(CODA_PSDEV_MAJOR, "coda", &coda_psdev_fops)) {
 		pr_err("%s: unable to get major %d\n",
 		       __func__, CODA_PSDEV_MAJOR);
-		return -EIO;
+              return -EIO;
 	}
 	coda_psdev_class = class_create(THIS_MODULE, "coda");
 	if (IS_ERR(coda_psdev_class)) {
@@ -388,7 +383,7 @@ MODULE_AUTHOR("Jan Harkes, Peter J. Braam");
 MODULE_DESCRIPTION("Coda Distributed File System VFS interface");
 MODULE_ALIAS_CHARDEV_MAJOR(CODA_PSDEV_MAJOR);
 MODULE_LICENSE("GPL");
-MODULE_VERSION("7.0");
+MODULE_VERSION("6.6");
 
 static int __init init_coda(void)
 {

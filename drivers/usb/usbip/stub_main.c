@@ -1,6 +1,20 @@
-// SPDX-License-Identifier: GPL-2.0+
 /*
  * Copyright (C) 2003-2008 Takahiro Hirofuchi
+ *
+ * This is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307,
+ * USA.
  */
 
 #include <linux/string.h>
@@ -147,7 +161,7 @@ out:
 	return ret;
 }
 
-static ssize_t match_busid_show(struct device_driver *drv, char *buf)
+static ssize_t show_match_busid(struct device_driver *drv, char *buf)
 {
 	int i;
 	char *out = buf;
@@ -165,7 +179,7 @@ static ssize_t match_busid_show(struct device_driver *drv, char *buf)
 	return out - buf;
 }
 
-static ssize_t match_busid_store(struct device_driver *dev, const char *buf,
+static ssize_t store_match_busid(struct device_driver *dev, const char *buf,
 				 size_t count)
 {
 	int len;
@@ -197,11 +211,12 @@ static ssize_t match_busid_store(struct device_driver *dev, const char *buf,
 
 	return -EINVAL;
 }
-static DRIVER_ATTR_RW(match_busid);
+static DRIVER_ATTR(match_busid, S_IRUSR | S_IWUSR, show_match_busid,
+		   store_match_busid);
 
 static int do_rebind(char *busid, struct bus_id_priv *busid_priv)
 {
-	int ret = 0;
+	int ret;
 
 	/* device_attach() callers should hold parent lock for USB */
 	if (busid_priv->udev->dev.parent)
@@ -209,9 +224,11 @@ static int do_rebind(char *busid, struct bus_id_priv *busid_priv)
 	ret = device_attach(&busid_priv->udev->dev);
 	if (busid_priv->udev->dev.parent)
 		device_unlock(busid_priv->udev->dev.parent);
-	if (ret < 0)
+	if (ret < 0) {
 		dev_err(&busid_priv->udev->dev, "rebind failed\n");
-	return ret;
+		return ret;
+	}
+	return 0;
 }
 
 static void stub_device_rebind(void)
@@ -368,6 +385,7 @@ static int __init usbip_host_init(void)
 		goto err_create_file;
 	}
 
+	pr_info(DRIVER_DESC " v" USBIP_VERSION "\n");
 	return ret;
 
 err_create_file:
@@ -403,3 +421,4 @@ module_exit(usbip_host_exit);
 MODULE_AUTHOR(DRIVER_AUTHOR);
 MODULE_DESCRIPTION(DRIVER_DESC);
 MODULE_LICENSE("GPL");
+MODULE_VERSION(USBIP_VERSION);

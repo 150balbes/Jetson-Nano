@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note */
 /* ipv6header match - matches IPv6 packets based
 on whether they contain certain headers */
 

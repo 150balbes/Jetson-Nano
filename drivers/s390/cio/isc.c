@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * Functions for registration of I/O interruption subclasses on s390.
  *

@@ -1,5 +1,7 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License version 2 as published
+ * by the Free Software Foundation.
  *
  * Copyright (C) 2015 Nikolay Martynov <mar.kolya@gmail.com>
  * Copyright (C) 2015 John Crispin <john@phrozen.org>
@@ -9,7 +11,7 @@
 
 #include <linux/of.h>
 #include <linux/irqchip.h>
-#include <asm/mips-cps.h>
+#include <linux/irqchip/mips-gic.h>
 
 int get_c0_perfcount_int(void)
 {

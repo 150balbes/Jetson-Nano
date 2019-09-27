@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * Wireless USB - Cable Based Association
  *
@@ -6,6 +5,21 @@
  * Copyright (C) 2006 Intel Corporation
  * Inaky Perez-Gonzalez <inaky.perez-gonzalez@intel.com>
  * Copyright (C) 2008 Cambridge Silicon Radio Ltd.
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License version
+ * 2 as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
+ * 02110-1301, USA.
+ *
  *
  * WUSB devices have to be paired (associated in WUSB lingo) so
  * that they can connect to the system.
@@ -302,8 +316,10 @@ static ssize_t cbaf_wusb_chid_show(struct device *dev,
 {
 	struct usb_interface *iface = to_usb_interface(dev);
 	struct cbaf *cbaf = usb_get_intfdata(iface);
+	char pr_chid[WUSB_CKHDID_STRSIZE];
 
-	return sprintf(buf, "%16ph\n", cbaf->chid.data);
+	ckhdid_printf(pr_chid, sizeof(pr_chid), &cbaf->chid);
+	return scnprintf(buf, PAGE_SIZE, "%s\n", pr_chid);
 }
 
 static ssize_t cbaf_wusb_chid_store(struct device *dev,
@@ -413,8 +429,10 @@ static ssize_t cbaf_wusb_cdid_show(struct device *dev,
 {
 	struct usb_interface *iface = to_usb_interface(dev);
 	struct cbaf *cbaf = usb_get_intfdata(iface);
+	char pr_cdid[WUSB_CKHDID_STRSIZE];
 
-	return sprintf(buf, "%16ph\n", cbaf->cdid.data);
+	ckhdid_printf(pr_cdid, sizeof(pr_cdid), &cbaf->cdid);
+	return scnprintf(buf, PAGE_SIZE, "%s\n", pr_cdid);
 }
 
 static ssize_t cbaf_wusb_cdid_store(struct device *dev,
@@ -499,6 +517,7 @@ static int cbaf_cc_upload(struct cbaf *cbaf)
 	int result;
 	struct device *dev = &cbaf->usb_iface->dev;
 	struct wusb_cbaf_cc_data *ccd;
+	char pr_cdid[WUSB_CKHDID_STRSIZE];
 
 	ccd =  cbaf->buffer;
 	*ccd = cbaf_cc_data_defaults;
@@ -508,8 +527,10 @@ static int cbaf_cc_upload(struct cbaf *cbaf)
 	ccd->BandGroups = cpu_to_le16(cbaf->host_band_groups);
 
 	dev_dbg(dev, "Trying to upload CC:\n");
-	dev_dbg(dev, "  CHID       %16ph\n", ccd->CHID.data);
-	dev_dbg(dev, "  CDID       %16ph\n", ccd->CDID.data);
+	ckhdid_printf(pr_cdid, sizeof(pr_cdid), &ccd->CHID);
+	dev_dbg(dev, "  CHID       %s\n", pr_cdid);
+	ckhdid_printf(pr_cdid, sizeof(pr_cdid), &ccd->CDID);
+	dev_dbg(dev, "  CDID       %s\n", pr_cdid);
 	dev_dbg(dev, "  Bandgroups 0x%04x\n", cbaf->host_band_groups);
 
 	result = usb_control_msg(
@@ -565,7 +586,7 @@ static struct attribute *cbaf_dev_attrs[] = {
 	NULL,
 };
 
-static const struct attribute_group cbaf_dev_attr_group = {
+static struct attribute_group cbaf_dev_attr_group = {
 	.name = NULL,	/* we want them in the same directory */
 	.attrs = cbaf_dev_attrs,
 };

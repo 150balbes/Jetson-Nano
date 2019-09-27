@@ -1,6 +1,19 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Copyright (c) International Business Machines Corp., 2006
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See
+ * the GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
  *
  * Author: Artem Bityutskiy (Битюцкий Артём)
  */
@@ -354,10 +367,6 @@ static ssize_t vol_cdev_write(struct file *file, const char __user *buf,
 			return count;
 		}
 
-		/*
-		 * We voluntarily do not take into account the skip_check flag
-		 * as we want to make sure what we wrote was correctly written.
-		 */
 		err = ubi_check_volume(ubi, vol->vol_id);
 		if (err < 0)
 			return err;
@@ -613,13 +622,6 @@ static int verify_mkvol_req(const struct ubi_device *ubi,
 	    req->vol_type != UBI_STATIC_VOLUME)
 		goto bad;
 
-	if (req->flags & ~UBI_VOL_VALID_FLGS)
-		goto bad;
-
-	if (req->flags & UBI_VOL_SKIP_CRC_CHECK_FLG &&
-	    req->vol_type != UBI_STATIC_VOLUME)
-		goto bad;
-
 	if (req->alignment > ubi->leb_size)
 		goto bad;
 
@@ -855,7 +857,14 @@ static long ubi_cdev_ioctl(struct file *file, unsigned int cmd,
 			err = -EFAULT;
 			break;
 		}
-
+		if ((req.vol_id > 128) || (req.vol_id < 0)) {
+			pr_err("Invalid value of volume id %d\n", req.vol_id);
+			return -EINVAL;
+		}
+		if (req.name_len < 0) {
+			pr_err("Invalid value of name len %d\n", req.name_len);
+			return -EINVAL;
+		}
 		err = verify_mkvol_req(ubi, &req);
 		if (err)
 			break;
@@ -958,36 +967,6 @@ static long ubi_cdev_ioctl(struct file *file, unsigned int cmd,
 
 		err = rename_volumes(ubi, req);
 		kfree(req);
-		break;
-	}
-
-	/* Check a specific PEB for bitflips and scrub it if needed */
-	case UBI_IOCRPEB:
-	{
-		int pnum;
-
-		err = get_user(pnum, (__user int32_t *)argp);
-		if (err) {
-			err = -EFAULT;
-			break;
-		}
-
-		err = ubi_bitflip_check(ubi, pnum, 0);
-		break;
-	}
-
-	/* Force scrubbing for a specific PEB */
-	case UBI_IOCSPEB:
-	{
-		int pnum;
-
-		err = get_user(pnum, (__user int32_t *)argp);
-		if (err) {
-			err = -EFAULT;
-			break;
-		}
-
-		err = ubi_bitflip_check(ubi, pnum, 1);
 		break;
 	}
 

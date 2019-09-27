@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
-#include <errno.h>
-#include <inttypes.h>
 #include <stdio.h>
 #include <unistd.h>
 #include <linux/types.h>
@@ -38,7 +35,7 @@
  * %0 is returned, otherwise %-1 is returned.  If TSC conversion is not
  * supported then then the test passes but " (not supported)" is printed.
  */
-int test__perf_time_to_tsc(struct test *test __maybe_unused, int subtest __maybe_unused)
+int test__perf_time_to_tsc(int subtest __maybe_unused)
 {
 	struct record_opts opts = {
 		.mmap_pages	     = UINT_MAX,
@@ -60,7 +57,6 @@ int test__perf_time_to_tsc(struct test *test __maybe_unused, int subtest __maybe
 	union perf_event *event;
 	u64 test_tsc, comm1_tsc, comm2_tsc;
 	u64 test_time, comm1_time = 0, comm2_time = 0;
-	struct perf_mmap *md;
 
 	threads = thread_map__new(-1, getpid(), UINT_MAX);
 	CHECK_NOT_NULL__(threads);
@@ -85,7 +81,7 @@ int test__perf_time_to_tsc(struct test *test __maybe_unused, int subtest __maybe
 
 	CHECK__(perf_evlist__open(evlist));
 
-	CHECK__(perf_evlist__mmap(evlist, UINT_MAX));
+	CHECK__(perf_evlist__mmap(evlist, UINT_MAX, false));
 
 	pc = evlist->mmap[0].base;
 	ret = perf_read_tsc_conversion(pc, &tc);
@@ -110,11 +106,7 @@ int test__perf_time_to_tsc(struct test *test __maybe_unused, int subtest __maybe
 	perf_evlist__disable(evlist);
 
 	for (i = 0; i < evlist->nr_mmaps; i++) {
-		md = &evlist->mmap[i];
-		if (perf_mmap__read_init(md) < 0)
-			continue;
-
-		while ((event = perf_mmap__read_event(md)) != NULL) {
+		while ((event = perf_evlist__mmap_read(evlist, i)) != NULL) {
 			struct perf_sample sample;
 
 			if (event->header.type != PERF_RECORD_COMM ||
@@ -133,9 +125,8 @@ int test__perf_time_to_tsc(struct test *test __maybe_unused, int subtest __maybe
 				comm2_time = sample.time;
 			}
 next_event:
-			perf_mmap__consume(md);
+			perf_evlist__mmap_consume(evlist, i);
 		}
-		perf_mmap__read_done(md);
 	}
 
 	if (!comm1_time || !comm2_time)

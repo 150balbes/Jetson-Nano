@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0-only
 config SECURITY_SMACK
 	bool "Simplified Mandatory Access Control Kernel Support"
 	depends on NET

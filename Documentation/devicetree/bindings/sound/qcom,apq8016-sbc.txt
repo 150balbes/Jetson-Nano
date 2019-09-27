@@ -30,7 +30,7 @@ Required properties:
 
 			  Board connectors:
 			  * Headset Mic
-			  * Secondary Mic
+			  * Secondary Mic",
 			  * DMIC
 			  * Ext Spk
 
@@ -44,7 +44,8 @@ Required dai-link subnodes:
 Required CPU/CODEC subnodes properties:
 
 -link-name		: Name of the dai link.
--sound-dai		: phandle/s and port of CPU/CODEC
+-sound-dai		: phandle and port of CPU/CODEC
+-capture-dai		: phandle and port of CPU/CODEC
 
 Example:
 
@@ -72,7 +73,7 @@ sound: sound {
 			sound-dai = <&lpass MI2S_PRIMARY>;
 		};
 		codec {
-			sound-dai = <&lpass_codec 0>, <&wcd_codec 0>;
+			sound-dai = <&wcd_codec 0>;
 		};
 	};
 

@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  *  Copyright (C) 1992 obz under the linux copyright
  *
@@ -11,7 +10,7 @@
 
 #include <linux/types.h>
 #include <linux/errno.h>
-#include <linux/sched/signal.h>
+#include <linux/sched.h>
 #include <linux/tty.h>
 #include <linux/timer.h>
 #include <linux/kernel.h>
@@ -30,7 +29,7 @@
 #include <linux/timex.h>
 
 #include <asm/io.h>
-#include <linux/uaccess.h>
+#include <asm/uaccess.h>
 
 #include <linux/nospec.h>
 
@@ -59,7 +58,7 @@ extern struct tty_driver *console_driver;
  */
 
 #ifdef CONFIG_X86
-#include <asm/syscalls.h>
+#include <linux/syscalls.h>
 #endif
 
 static void complete_change_console(struct vc_data *vc);
@@ -132,6 +131,12 @@ static void __vt_event_wait(struct vt_event_wait *vw)
 	wait_event_interruptible(vt_event_waitqueue, vw->done);
 }
 
+static long __vt_event_wait_timeout(struct vt_event_wait *vw, long timeout)
+{
+	return wait_event_interruptible_timeout(vt_event_waitqueue,
+		vw->done, timeout);
+}
+
 static void __vt_event_dequeue(struct vt_event_wait *vw)
 {
 	unsigned long flags;
@@ -196,6 +201,8 @@ static int vt_event_wait_ioctl(struct vt_event __user *event)
 
 int vt_waitactive(int n)
 {
+	long ret;
+
 	struct vt_event_wait vw;
 	do {
 		vw.event.event = VT_EVENT_SWITCH;
@@ -204,9 +211,18 @@ int vt_waitactive(int n)
 			__vt_event_dequeue(&vw);
 			break;
 		}
-		__vt_event_wait(&vw);
+
+		/*
+		 * 5 seconds is chosen as a result of observation from
+		 * stressing test exercising vt_waitactive for more than 7K
+		 * cycles, worst case for userspace to generate wake event
+		 * is no more than 4 seconds, usually in 2~3 secoonds range
+		 */
+		ret = __vt_event_wait_timeout(&vw, 5 * HZ);
 		__vt_event_dequeue(&vw);
-		if (vw.done == 0)
+		if (WARN_ON(ret == 0))
+			return -EIO;
+		else if (ret == -ERESTARTSYS)
 			return -EINTR;
 	} while (vw.event.newev != n);
 	return 0;
@@ -269,6 +285,10 @@ do_unimap_ioctl(int cmd, struct unimapdesc __user *user_ud, int perm, struct vc_
 
 	if (copy_from_user(&tmp, user_ud, sizeof tmp))
 		return -EFAULT;
+	if (tmp.entries)
+		if (!access_ok(VERIFY_WRITE, tmp.entries,
+				tmp.entry_ct*sizeof(struct unipair)))
+			return -EFAULT;
 	switch (cmd) {
 	case PIO_UNIMAP:
 		if (!perm)
@@ -422,12 +442,12 @@ int vt_ioctl(struct tty_struct *tty,
 			ret = -EINVAL;
 			break;
 		}
-		ret = ksys_ioperm(arg, 1, (cmd == KDADDIO)) ? -ENXIO : 0;
+		ret = sys_ioperm(arg, 1, (cmd == KDADDIO)) ? -ENXIO : 0;
 		break;
 
 	case KDENABIO:
 	case KDDISABIO:
-		ret = ksys_ioperm(GPFIRST, GPNUM,
+		ret = sys_ioperm(GPFIRST, GPNUM,
 				  (cmd == KDENABIO)) ? -ENXIO : 0;
 		break;
 #endif
@@ -847,44 +867,58 @@ int vt_ioctl(struct tty_struct *tty,
 
 	case VT_RESIZEX:
 	{
-		struct vt_consize v;
+		struct vt_consize __user *vtconsize = up;
+		ushort ll,cc,vlin,clin,vcol,ccol;
 		if (!perm)
 			return -EPERM;
-		if (copy_from_user(&v, up, sizeof(struct vt_consize)))
-			return -EFAULT;
+		if (!access_ok(VERIFY_READ, vtconsize,
+				sizeof(struct vt_consize))) {
+			ret = -EFAULT;
+			break;
+		}
 		/* FIXME: Should check the copies properly */
-		if (!v.v_vlin)
-			v.v_vlin = vc->vc_scan_lines;
-		if (v.v_clin) {
-			int rows = v.v_vlin/v.v_clin;
-			if (v.v_rows != rows) {
-				if (v.v_rows) /* Parameters don't add up */
-					return -EINVAL;
-				v.v_rows = rows;
-			}
+		__get_user(ll, &vtconsize->v_rows);
+		__get_user(cc, &vtconsize->v_cols);
+		__get_user(vlin, &vtconsize->v_vlin);
+		__get_user(clin, &vtconsize->v_clin);
+		__get_user(vcol, &vtconsize->v_vcol);
+		__get_user(ccol, &vtconsize->v_ccol);
+		vlin = vlin ? vlin : vc->vc_scan_lines;
+		if (clin) {
+			if (ll) {
+				if (ll != vlin/clin) {
+					/* Parameters don't add up */
+					ret = -EINVAL;
+					break;
+				}
+			} else 
+				ll = vlin/clin;
 		}
-		if (v.v_vcol && v.v_ccol) {
-			int cols = v.v_vcol/v.v_ccol;
-			if (v.v_cols != cols) {
-				if (v.v_cols)
-					return -EINVAL;
-				v.v_cols = cols;
-			}
+		if (vcol && ccol) {
+			if (cc) {
+				if (cc != vcol/ccol) {
+					ret = -EINVAL;
+					break;
+				}
+			} else
+				cc = vcol/ccol;
 		}
 
-		if (v.v_clin > 32)
-			return -EINVAL;
-
+		if (clin > 32) {
+			ret =  -EINVAL;
+			break;
+		}
+		    
 		for (i = 0; i < MAX_NR_CONSOLES; i++) {
 			if (!vc_cons[i].d)
 				continue;
 			console_lock();
-			if (v.v_vlin)
-				vc_cons[i].d->vc_scan_lines = v.v_vlin;
-			if (v.v_clin)
-				vc_cons[i].d->vc_font.height = v.v_clin;
+			if (vlin)
+				vc_cons[i].d->vc_scan_lines = vlin;
+			if (clin)
+				vc_cons[i].d->vc_font.height = clin;
 			vc_cons[i].d->vc_resize_user = 1;
-			vc_resize(vc_cons[i].d, v.v_cols, v.v_rows);
+			vc_resize(vc_cons[i].d, cc, ll);
 			console_unlock();
 		}
 		break;
@@ -1157,6 +1191,10 @@ compat_unimap_ioctl(unsigned int cmd, struct compat_unimapdesc __user *user_ud,
 	if (copy_from_user(&tmp, user_ud, sizeof tmp))
 		return -EFAULT;
 	tmp_entries = compat_ptr(tmp.entries);
+	if (tmp_entries)
+		if (!access_ok(VERIFY_WRITE, tmp_entries,
+				tmp.entry_ct*sizeof(struct unipair)))
+			return -EFAULT;
 	switch (cmd) {
 	case PIO_UNIMAP:
 		if (!perm)
@@ -1175,13 +1213,17 @@ long vt_compat_ioctl(struct tty_struct *tty,
 {
 	struct vc_data *vc = tty->driver_data;
 	struct console_font_op op;	/* used in multiple places here */
-	unsigned int console = vc->vc_num;
-	void __user *up = compat_ptr(arg);
+	unsigned int console;
+	void __user *up = (void __user *)arg;
 	int perm;
+	int ret = 0;
 
+	console = vc->vc_num;
 
-	if (!vc_cons_allocated(console)) 	/* impossible? */
-		return -ENOIOCTLCMD;
+	if (!vc_cons_allocated(console)) { 	/* impossible? */
+		ret = -ENOIOCTLCMD;
+		goto out;
+	}
 
 	/*
 	 * To have permissions to do most of the vt ioctls, we either have
@@ -1197,14 +1239,17 @@ long vt_compat_ioctl(struct tty_struct *tty,
 	 */
 	case PIO_FONTX:
 	case GIO_FONTX:
-		return compat_fontx_ioctl(cmd, up, perm, &op);
+		ret = compat_fontx_ioctl(cmd, up, perm, &op);
+		break;
 
 	case KDFONTOP:
-		return compat_kdfontop_ioctl(up, perm, &op, vc);
+		ret = compat_kdfontop_ioctl(up, perm, &op, vc);
+		break;
 
 	case PIO_UNIMAP:
 	case GIO_UNIMAP:
-		return compat_unimap_ioctl(cmd, up, perm, vc);
+		ret = compat_unimap_ioctl(cmd, up, perm, vc);
+		break;
 
 	/*
 	 * all these treat 'arg' as an integer
@@ -1229,15 +1274,21 @@ long vt_compat_ioctl(struct tty_struct *tty,
 	case VT_DISALLOCATE:
 	case VT_RESIZE:
 	case VT_RESIZEX:
-		return vt_ioctl(tty, cmd, arg);
+		goto fallback;
 
 	/*
 	 * the rest has a compatible data structure behind arg,
 	 * but we have to convert it to a proper 64 bit pointer.
 	 */
 	default:
-		return vt_ioctl(tty, cmd, (unsigned long)up);
+		arg = (unsigned long)compat_ptr(arg);
+		goto fallback;
 	}
+out:
+	return ret;
+
+fallback:
+	return vt_ioctl(tty, cmd, arg);
 }
 
 

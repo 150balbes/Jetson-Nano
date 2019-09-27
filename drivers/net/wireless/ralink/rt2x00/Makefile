@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0
 rt2x00lib-y				+= rt2x00dev.o
 rt2x00lib-y				+= rt2x00mac.o
 rt2x00lib-y				+= rt2x00config.o

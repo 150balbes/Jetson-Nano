@@ -339,6 +339,6 @@
 
 
 	chosen {
-		stdout-path = "/soc/cpm/serial@91a00";
+		linux,stdout-path = "/soc/cpm/serial@91a00";
 	};
 };

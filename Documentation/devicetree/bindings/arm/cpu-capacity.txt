@@ -59,11 +59,9 @@ mhz values (normalized w.r.t. the highest value found while parsing the DT).
 ===========================================
 
 Example 1 (ARM 64-bit, 6-cpu system, two clusters):
-The capacities-dmips-mhz or DMIPS/MHz values (scaled to 1024)
-are 1024 and 578 for cluster0 and cluster1. Further normalization
-is done by the operating system based on cluster0@max-freq=1100 and
-custer1@max-freq=850, final capacities are 1024 for cluster0 and
-446 for cluster1 (576*850/1100).
+capacities-dmips-mhz are scaled w.r.t. 1024 (cpu@0 and cpu@1)
+supposing cluster0@max-freq=1100 and custer1@max-freq=850,
+final capacities are 1024 for cluster0 and 446 for cluster1
 
 cpus {
 	#address-cells = <2>;
@@ -96,7 +94,7 @@ cpus {
 	};
 
 	idle-states {
-		entry-method = "psci";
+		entry-method = "arm,psci";
 
 		CPU_SLEEP_0: cpu-sleep-0 {
 			compatible = "arm,idle-state";
@@ -118,7 +116,7 @@ cpus {
 	};
 
 	A57_0: cpu@0 {
-		compatible = "arm,cortex-a57";
+		compatible = "arm,cortex-a57","arm,armv8";
 		reg = <0x0 0x0>;
 		device_type = "cpu";
 		enable-method = "psci";
@@ -129,7 +127,7 @@ cpus {
 	};
 
 	A57_1: cpu@1 {
-		compatible = "arm,cortex-a57";
+		compatible = "arm,cortex-a57","arm,armv8";
 		reg = <0x0 0x1>;
 		device_type = "cpu";
 		enable-method = "psci";
@@ -140,7 +138,7 @@ cpus {
 	};
 
 	A53_0: cpu@100 {
-		compatible = "arm,cortex-a53";
+		compatible = "arm,cortex-a53","arm,armv8";
 		reg = <0x0 0x100>;
 		device_type = "cpu";
 		enable-method = "psci";
@@ -151,7 +149,7 @@ cpus {
 	};
 
 	A53_1: cpu@101 {
-		compatible = "arm,cortex-a53";
+		compatible = "arm,cortex-a53","arm,armv8";
 		reg = <0x0 0x101>;
 		device_type = "cpu";
 		enable-method = "psci";
@@ -162,7 +160,7 @@ cpus {
 	};
 
 	A53_2: cpu@102 {
-		compatible = "arm,cortex-a53";
+		compatible = "arm,cortex-a53","arm,armv8";
 		reg = <0x0 0x102>;
 		device_type = "cpu";
 		enable-method = "psci";
@@ -173,7 +171,7 @@ cpus {
 	};
 
 	A53_3: cpu@103 {
-		compatible = "arm,cortex-a53";
+		compatible = "arm,cortex-a53","arm,armv8";
 		reg = <0x0 0x103>;
 		device_type = "cpu";
 		enable-method = "psci";
@@ -235,4 +233,4 @@ cpus {
 ===========================================
 
 [1] ARM Linux Kernel documentation - CPUs bindings
-    Documentation/devicetree/bindings/arm/cpus.yaml
+    Documentation/devicetree/bindings/arm/cpus.txt

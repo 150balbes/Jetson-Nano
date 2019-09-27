@@ -20,8 +20,8 @@ i2c@0 {
 	#address-cells = <1>;
 	#size-cells = <0>;
 
-	retu: retu@1 {
-		compatible = "nokia,retu";
+	retu-mfd: retu@1 {
+		compatible = "retu-mfd";
 		reg = <0x1>;
 	};
 };

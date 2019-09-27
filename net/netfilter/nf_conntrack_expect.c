@@ -1,10 +1,13 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /* Expectation handling for nf_conntrack. */
 
 /* (C) 1999-2001 Paul `Rusty' Russell
  * (C) 2002-2006 Netfilter Core Team <coreteam@netfilter.org>
  * (C) 2003,2004 USAGI/WIDE Project <http://www.linux-ipv6.org>
  * (c) 2005-2012 Patrick McHardy <kaber@trash.net>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  */
 
 #include <linux/types.h>
@@ -48,13 +51,13 @@ void nf_ct_unlink_expect_report(struct nf_conntrack_expect *exp,
 	struct nf_conn_help *master_help = nfct_help(exp->master);
 	struct net *net = nf_ct_exp_net(exp);
 
-	WARN_ON(!master_help);
-	WARN_ON(timer_pending(&exp->timeout));
+	NF_CT_ASSERT(master_help);
+	NF_CT_ASSERT(!timer_pending(&exp->timeout));
 
 	hlist_del_rcu(&exp->hnode);
 	net->ct.expect_count--;
 
-	hlist_del_rcu(&exp->lnode);
+	hlist_del(&exp->lnode);
 	master_help->expecting[exp->class]--;
 
 	nf_ct_expect_event_report(IPEXP_DESTROY, exp, portid, report);
@@ -64,9 +67,9 @@ void nf_ct_unlink_expect_report(struct nf_conntrack_expect *exp,
 }
 EXPORT_SYMBOL_GPL(nf_ct_unlink_expect_report);
 
-static void nf_ct_expectation_timed_out(struct timer_list *t)
+static void nf_ct_expectation_timed_out(unsigned long ul_expect)
 {
-	struct nf_conntrack_expect *exp = from_timer(exp, t, timeout);
+	struct nf_conntrack_expect *exp = (void *)ul_expect;
 
 	spin_lock_bh(&nf_conntrack_expect_lock);
 	nf_ct_unlink_expect(exp);
@@ -100,17 +103,6 @@ nf_ct_exp_equal(const struct nf_conntrack_tuple *tuple,
 	       nf_ct_zone_equal_any(i->master, zone);
 }
 
-bool nf_ct_remove_expect(struct nf_conntrack_expect *exp)
-{
-	if (del_timer(&exp->timeout)) {
-		nf_ct_unlink_expect(exp);
-		nf_ct_expect_put(exp);
-		return true;
-	}
-	return false;
-}
-EXPORT_SYMBOL_GPL(nf_ct_remove_expect);
-
 struct nf_conntrack_expect *
 __nf_ct_expect_find(struct net *net,
 		    const struct nf_conntrack_zone *zone,
@@ -141,7 +133,7 @@ nf_ct_expect_find_get(struct net *net,
 
 	rcu_read_lock();
 	i = __nf_ct_expect_find(net, zone, tuple);
-	if (i && !refcount_inc_not_zero(&i->use))
+	if (i && !atomic_inc_not_zero(&i->use))
 		i = NULL;
 	rcu_read_unlock();
 
@@ -194,7 +186,7 @@ nf_ct_find_expectation(struct net *net,
 		return NULL;
 
 	if (exp->flags & NF_CT_EXPECT_PERMANENT) {
-		refcount_inc(&exp->use);
+		atomic_inc(&exp->use);
 		return exp;
 	} else if (del_timer(&exp->timeout)) {
 		nf_ct_unlink_expect(exp);
@@ -219,7 +211,10 @@ void nf_ct_remove_expectations(struct nf_conn *ct)
 
 	spin_lock_bh(&nf_conntrack_expect_lock);
 	hlist_for_each_entry_safe(exp, next, &help->expectations, lnode) {
-		nf_ct_remove_expect(exp);
+		if (del_timer(&exp->timeout)) {
+			nf_ct_unlink_expect(exp);
+			nf_ct_expect_put(exp);
+		}
 	}
 	spin_unlock_bh(&nf_conntrack_expect_lock);
 }
@@ -249,27 +244,21 @@ static inline int expect_clash(const struct nf_conntrack_expect *a,
 static inline int expect_matches(const struct nf_conntrack_expect *a,
 				 const struct nf_conntrack_expect *b)
 {
-	return nf_ct_tuple_equal(&a->tuple, &b->tuple) &&
+	return a->master == b->master && a->class == b->class &&
+	       nf_ct_tuple_equal(&a->tuple, &b->tuple) &&
 	       nf_ct_tuple_mask_equal(&a->mask, &b->mask) &&
 	       net_eq(nf_ct_net(a->master), nf_ct_net(b->master)) &&
 	       nf_ct_zone_equal_any(a->master, nf_ct_zone(b->master));
-}
-
-static bool master_matches(const struct nf_conntrack_expect *a,
-			   const struct nf_conntrack_expect *b,
-			   unsigned int flags)
-{
-	if (flags & NF_CT_EXP_F_SKIP_MASTER)
-		return true;
-
-	return a->master == b->master;
 }
 
 /* Generally a bad idea to call this: could have matched already. */
 void nf_ct_unexpect_related(struct nf_conntrack_expect *exp)
 {
 	spin_lock_bh(&nf_conntrack_expect_lock);
-	nf_ct_remove_expect(exp);
+	if (del_timer(&exp->timeout)) {
+		nf_ct_unlink_expect(exp);
+		nf_ct_expect_put(exp);
+	}
 	spin_unlock_bh(&nf_conntrack_expect_lock);
 }
 EXPORT_SYMBOL_GPL(nf_ct_unexpect_related);
@@ -286,7 +275,7 @@ struct nf_conntrack_expect *nf_ct_expect_alloc(struct nf_conn *me)
 		return NULL;
 
 	new->master = me;
-	refcount_set(&new->use, 1);
+	atomic_set(&new->use, 1);
 	return new;
 }
 EXPORT_SYMBOL_GPL(nf_ct_expect_alloc);
@@ -342,7 +331,7 @@ void nf_ct_expect_init(struct nf_conntrack_expect *exp, unsigned int class,
 
 	exp->tuple.dst.u.all = *dst;
 
-#if IS_ENABLED(CONFIG_NF_NAT)
+#ifdef CONFIG_NF_NAT_NEEDED
 	memset(&exp->saved_addr, 0, sizeof(exp->saved_addr));
 	memset(&exp->saved_proto, 0, sizeof(exp->saved_proto));
 #endif
@@ -359,12 +348,12 @@ static void nf_ct_expect_free_rcu(struct rcu_head *head)
 
 void nf_ct_expect_put(struct nf_conntrack_expect *exp)
 {
-	if (refcount_dec_and_test(&exp->use))
+	if (atomic_dec_and_test(&exp->use))
 		call_rcu(&exp->rcu, nf_ct_expect_free_rcu);
 }
 EXPORT_SYMBOL_GPL(nf_ct_expect_put);
 
-static void nf_ct_expect_insert(struct nf_conntrack_expect *exp)
+static int nf_ct_expect_insert(struct nf_conntrack_expect *exp)
 {
 	struct nf_conn_help *master_help = nfct_help(exp->master);
 	struct nf_conntrack_helper *helper;
@@ -372,9 +361,16 @@ static void nf_ct_expect_insert(struct nf_conntrack_expect *exp)
 	unsigned int h = nf_ct_expect_dst_hash(net, &exp->tuple);
 
 	/* two references : one for hash insert, one for the timer */
-	refcount_add(2, &exp->use);
+	atomic_add(2, &exp->use);
 
-	timer_setup(&exp->timeout, nf_ct_expectation_timed_out, 0);
+	hlist_add_head(&exp->lnode, &master_help->expectations);
+	master_help->expecting[exp->class]++;
+
+	hlist_add_head_rcu(&exp->hnode, &nf_ct_expect_hash[h]);
+	net->ct.expect_count++;
+
+	setup_timer(&exp->timeout, nf_ct_expectation_timed_out,
+		    (unsigned long)exp);
 	helper = rcu_dereference_protected(master_help->helper,
 					   lockdep_is_held(&nf_conntrack_expect_lock));
 	if (helper) {
@@ -383,13 +379,8 @@ static void nf_ct_expect_insert(struct nf_conntrack_expect *exp)
 	}
 	add_timer(&exp->timeout);
 
-	hlist_add_head_rcu(&exp->lnode, &master_help->expectations);
-	master_help->expecting[exp->class]++;
-
-	hlist_add_head_rcu(&exp->hnode, &nf_ct_expect_hash[h]);
-	net->ct.expect_count++;
-
 	NF_CT_STAT_INC(net, expect_create);
+	return 0;
 }
 
 /* Race with expectations being used means we could have none to find; OK. */
@@ -404,12 +395,13 @@ static void evict_oldest_expect(struct nf_conn *master,
 			last = exp;
 	}
 
-	if (last)
-		nf_ct_remove_expect(last);
+	if (last && del_timer(&last->timeout)) {
+		nf_ct_unlink_expect(last);
+		nf_ct_expect_put(last);
+	}
 }
 
-static inline int __nf_ct_expect_check(struct nf_conntrack_expect *expect,
-				       unsigned int flags)
+static inline int __nf_ct_expect_check(struct nf_conntrack_expect *expect)
 {
 	const struct nf_conntrack_expect_policy *p;
 	struct nf_conntrack_expect *i;
@@ -427,14 +419,12 @@ static inline int __nf_ct_expect_check(struct nf_conntrack_expect *expect,
 	}
 	h = nf_ct_expect_dst_hash(net, &expect->tuple);
 	hlist_for_each_entry_safe(i, next, &nf_ct_expect_hash[h], hnode) {
-		if (master_matches(i, expect, flags) &&
-		    expect_matches(i, expect)) {
-			if (i->class != expect->class ||
-			    i->master != expect->master)
-				return -EALREADY;
-
-			if (nf_ct_remove_expect(i))
+		if (expect_matches(i, expect)) {
+			if (del_timer(&i->timeout)) {
+				nf_ct_unlink_expect(i);
+				nf_ct_expect_put(i);
 				break;
+			}
 		} else if (expect_clash(i, expect)) {
 			ret = -EBUSY;
 			goto out;
@@ -465,79 +455,26 @@ out:
 }
 
 int nf_ct_expect_related_report(struct nf_conntrack_expect *expect,
-				u32 portid, int report, unsigned int flags)
+				u32 portid, int report)
 {
 	int ret;
 
 	spin_lock_bh(&nf_conntrack_expect_lock);
-	ret = __nf_ct_expect_check(expect, flags);
+	ret = __nf_ct_expect_check(expect);
 	if (ret < 0)
 		goto out;
 
-	nf_ct_expect_insert(expect);
-
+	ret = nf_ct_expect_insert(expect);
+	if (ret < 0)
+		goto out;
 	spin_unlock_bh(&nf_conntrack_expect_lock);
 	nf_ct_expect_event_report(IPEXP_NEW, expect, portid, report);
-	return 0;
+	return ret;
 out:
 	spin_unlock_bh(&nf_conntrack_expect_lock);
 	return ret;
 }
 EXPORT_SYMBOL_GPL(nf_ct_expect_related_report);
-
-void nf_ct_expect_iterate_destroy(bool (*iter)(struct nf_conntrack_expect *e, void *data),
-				  void *data)
-{
-	struct nf_conntrack_expect *exp;
-	const struct hlist_node *next;
-	unsigned int i;
-
-	spin_lock_bh(&nf_conntrack_expect_lock);
-
-	for (i = 0; i < nf_ct_expect_hsize; i++) {
-		hlist_for_each_entry_safe(exp, next,
-					  &nf_ct_expect_hash[i],
-					  hnode) {
-			if (iter(exp, data) && del_timer(&exp->timeout)) {
-				nf_ct_unlink_expect(exp);
-				nf_ct_expect_put(exp);
-			}
-		}
-	}
-
-	spin_unlock_bh(&nf_conntrack_expect_lock);
-}
-EXPORT_SYMBOL_GPL(nf_ct_expect_iterate_destroy);
-
-void nf_ct_expect_iterate_net(struct net *net,
-			      bool (*iter)(struct nf_conntrack_expect *e, void *data),
-			      void *data,
-			      u32 portid, int report)
-{
-	struct nf_conntrack_expect *exp;
-	const struct hlist_node *next;
-	unsigned int i;
-
-	spin_lock_bh(&nf_conntrack_expect_lock);
-
-	for (i = 0; i < nf_ct_expect_hsize; i++) {
-		hlist_for_each_entry_safe(exp, next,
-					  &nf_ct_expect_hash[i],
-					  hnode) {
-
-			if (!net_eq(nf_ct_exp_net(exp), net))
-				continue;
-
-			if (iter(exp, data) && del_timer(&exp->timeout)) {
-				nf_ct_unlink_expect_report(exp, portid, report);
-				nf_ct_expect_put(exp);
-			}
-		}
-	}
-
-	spin_unlock_bh(&nf_conntrack_expect_lock);
-}
-EXPORT_SYMBOL_GPL(nf_ct_expect_iterate_net);
 
 #ifdef CONFIG_NF_CONNTRACK_PROCFS
 struct ct_expect_iter_state {
@@ -614,15 +551,17 @@ static int exp_seq_show(struct seq_file *s, void *v)
 		seq_printf(s, "%ld ", timer_pending(&expect->timeout)
 			   ? (long)(expect->timeout.expires - jiffies)/HZ : 0);
 	else
-		seq_puts(s, "- ");
+		seq_printf(s, "- ");
 	seq_printf(s, "l3proto = %u proto=%u ",
 		   expect->tuple.src.l3num,
 		   expect->tuple.dst.protonum);
 	print_tuple(s, &expect->tuple,
-		    nf_ct_l4proto_find(expect->tuple.dst.protonum));
+		    __nf_ct_l3proto_find(expect->tuple.src.l3num),
+		    __nf_ct_l4proto_find(expect->tuple.src.l3num,
+				       expect->tuple.dst.protonum));
 
 	if (expect->flags & NF_CT_EXPECT_PERMANENT) {
-		seq_puts(s, "PERMANENT");
+		seq_printf(s, "PERMANENT");
 		delim = ",";
 	}
 	if (expect->flags & NF_CT_EXPECT_INACTIVE) {
@@ -651,6 +590,20 @@ static const struct seq_operations exp_seq_ops = {
 	.stop = exp_seq_stop,
 	.show = exp_seq_show
 };
+
+static int exp_open(struct inode *inode, struct file *file)
+{
+	return seq_open_net(inode, file, &exp_seq_ops,
+			sizeof(struct ct_expect_iter_state));
+}
+
+static const struct file_operations exp_file_ops = {
+	.owner   = THIS_MODULE,
+	.open    = exp_open,
+	.read    = seq_read,
+	.llseek  = seq_lseek,
+	.release = seq_release_net,
+};
 #endif /* CONFIG_NF_CONNTRACK_PROCFS */
 
 static int exp_proc_init(struct net *net)
@@ -660,8 +613,8 @@ static int exp_proc_init(struct net *net)
 	kuid_t root_uid;
 	kgid_t root_gid;
 
-	proc = proc_create_net("nf_conntrack_expect", 0440, net->proc_net,
-			&exp_seq_ops, sizeof(struct ct_expect_iter_state));
+	proc = proc_create("nf_conntrack_expect", 0440, net->proc_net,
+			   &exp_file_ops);
 	if (!proc)
 		return -ENOMEM;
 
@@ -720,5 +673,5 @@ void nf_conntrack_expect_fini(void)
 {
 	rcu_barrier(); /* Wait for call_rcu() before destroy */
 	kmem_cache_destroy(nf_ct_expect_cachep);
-	kvfree(nf_ct_expect_hash);
+	nf_ct_free_hashtable(nf_ct_expect_hash, nf_ct_expect_hsize);
 }

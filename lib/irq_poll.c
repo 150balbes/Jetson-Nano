@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * Functions related to interrupt-poll handling in the block layer. This
  * is similar to NAPI for network devices.
@@ -35,7 +34,7 @@ void irq_poll_sched(struct irq_poll *iop)
 
 	local_irq_save(flags);
 	list_add_tail(&iop->list, this_cpu_ptr(&blk_cpu_iopoll));
-	raise_softirq_irqoff(IRQ_POLL_SOFTIRQ);
+	__raise_softirq_irqoff(IRQ_POLL_SOFTIRQ);
 	local_irq_restore(flags);
 }
 EXPORT_SYMBOL(irq_poll_sched);

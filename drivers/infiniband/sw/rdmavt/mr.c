@@ -51,7 +51,6 @@
 #include <rdma/rdma_vt.h>
 #include "vt.h"
 #include "mr.h"
-#include "trace.h"
 
 /**
  * rvt_driver_mr_init - Init MR resources per driver
@@ -85,7 +84,6 @@ int rvt_driver_mr_init(struct rvt_dev_info *rdi)
 		lkey_table_size = rdi->dparms.lkey_table_size;
 	}
 	rdi->lkey_table.max = 1 << lkey_table_size;
-	rdi->lkey_table.shift = 32 - lkey_table_size;
 	lk_tab_size = rdi->lkey_table.max * sizeof(*rdi->lkey_table.table);
 	rdi->lkey_table.table = (struct rvt_mregion __rcu **)
 			       vmalloc_node(lk_tab_size, rdi->dparms.node);
@@ -96,8 +94,6 @@ int rvt_driver_mr_init(struct rvt_dev_info *rdi)
 	for (i = 0; i < rdi->lkey_table.max; i++)
 		RCU_INIT_POINTER(rdi->lkey_table.table[i], NULL);
 
-	rdi->dparms.props.max_mr = rdi->lkey_table.max;
-	rdi->dparms.props.max_fmr = rdi->lkey_table.max;
 	return 0;
 }
 
@@ -122,19 +118,10 @@ static void rvt_deinit_mregion(struct rvt_mregion *mr)
 	mr->mapsz = 0;
 	while (i)
 		kfree(mr->map[--i]);
-	percpu_ref_exit(&mr->refcount);
-}
-
-static void __rvt_mregion_complete(struct percpu_ref *ref)
-{
-	struct rvt_mregion *mr = container_of(ref, struct rvt_mregion,
-					      refcount);
-
-	complete(&mr->comp);
 }
 
 static int rvt_init_mregion(struct rvt_mregion *mr, struct ib_pd *pd,
-			    int count, unsigned int percpu_flags)
+			    int count)
 {
 	int m, i = 0;
 	struct rvt_dev_info *dev = ib_to_rvt(pd->device);
@@ -144,23 +131,19 @@ static int rvt_init_mregion(struct rvt_mregion *mr, struct ib_pd *pd,
 	for (; i < m; i++) {
 		mr->map[i] = kzalloc_node(sizeof(*mr->map[0]), GFP_KERNEL,
 					  dev->dparms.node);
-		if (!mr->map[i])
-			goto bail;
+		if (!mr->map[i]) {
+			rvt_deinit_mregion(mr);
+			return -ENOMEM;
+		}
 		mr->mapsz++;
 	}
 	init_completion(&mr->comp);
 	/* count returning the ptr to user */
-	if (percpu_ref_init(&mr->refcount, &__rvt_mregion_complete,
-			    percpu_flags, GFP_KERNEL))
-		goto bail;
-
+	atomic_set(&mr->refcount, 1);
 	atomic_set(&mr->lkey_invalid, 0);
 	mr->pd = pd;
 	mr->max_segs = count;
 	return 0;
-bail:
-	rvt_deinit_mregion(mr);
-	return -ENOMEM;
 }
 
 /**
@@ -193,10 +176,10 @@ static int rvt_alloc_lkey(struct rvt_mregion *mr, int dma_region)
 
 		tmr = rcu_access_pointer(dev->dma_mr);
 		if (!tmr) {
-			mr->lkey_published = 1;
-			/* Insure published written first */
 			rcu_assign_pointer(dev->dma_mr, mr);
-			rvt_get_mr(mr);
+			mr->lkey_published = 1;
+		} else {
+			rvt_put_mr(mr);
 		}
 		goto success;
 	}
@@ -227,9 +210,8 @@ static int rvt_alloc_lkey(struct rvt_mregion *mr, int dma_region)
 		mr->lkey |= 1 << 8;
 		rkt->gen++;
 	}
-	mr->lkey_published = 1;
-	/* Insure published written first */
 	rcu_assign_pointer(rkt->table[r], mr);
+	mr->lkey_published = 1;
 success:
 	spin_unlock_irqrestore(&rkt->lock, flags);
 out:
@@ -255,26 +237,22 @@ static void rvt_free_lkey(struct rvt_mregion *mr)
 	int freed = 0;
 
 	spin_lock_irqsave(&rkt->lock, flags);
-	if (!lkey) {
-		if (mr->lkey_published) {
-			mr->lkey_published = 0;
-			/* insure published is written before pointer */
-			rcu_assign_pointer(dev->dma_mr, NULL);
-			rvt_put_mr(mr);
-		}
+	if (!mr->lkey_published)
+		goto out;
+	if (lkey == 0) {
+		RCU_INIT_POINTER(dev->dma_mr, NULL);
 	} else {
-		if (!mr->lkey_published)
-			goto out;
 		r = lkey >> (32 - dev->dparms.lkey_table_size);
-		mr->lkey_published = 0;
-		/* insure published is written before pointer */
-		rcu_assign_pointer(rkt->table[r], NULL);
+		RCU_INIT_POINTER(rkt->table[r], NULL);
 	}
+	mr->lkey_published = 0;
 	freed++;
 out:
 	spin_unlock_irqrestore(&rkt->lock, flags);
-	if (freed)
-		percpu_ref_kill(&mr->refcount);
+	if (freed) {
+		synchronize_rcu();
+		rvt_put_mr(mr);
+	}
 }
 
 static struct rvt_mr *__rvt_alloc_mr(int count, struct ib_pd *pd)
@@ -285,11 +263,11 @@ static struct rvt_mr *__rvt_alloc_mr(int count, struct ib_pd *pd)
 
 	/* Allocate struct plus pointers to first level page tables. */
 	m = (count + RVT_SEGSZ - 1) / RVT_SEGSZ;
-	mr = kzalloc(struct_size(mr, mr.map, m), GFP_KERNEL);
+	mr = kzalloc(sizeof(*mr) + m * sizeof(mr->mr.map[0]), GFP_KERNEL);
 	if (!mr)
 		goto bail;
 
-	rval = rvt_init_mregion(&mr->mr, pd, count, 0);
+	rval = rvt_init_mregion(&mr->mr, pd, count);
 	if (rval)
 		goto bail;
 	/*
@@ -314,8 +292,8 @@ bail:
 
 static void __rvt_free_mr(struct rvt_mr *mr)
 {
-	rvt_free_lkey(&mr->mr);
 	rvt_deinit_mregion(&mr->mr);
+	rvt_free_lkey(&mr->mr);
 	kfree(mr);
 }
 
@@ -325,8 +303,8 @@ static void __rvt_free_mr(struct rvt_mr *mr)
  * @acc: access flags
  *
  * Return: the memory region on success, otherwise returns an errno.
- * Note that all DMA addresses should be created via the functions in
- * struct dma_virt_ops.
+ * Note that all DMA addresses should be created via the
+ * struct ib_dma_mapping_ops functions (see dma.c).
  */
 struct ib_mr *rvt_get_dma_mr(struct ib_pd *pd, int acc)
 {
@@ -343,7 +321,7 @@ struct ib_mr *rvt_get_dma_mr(struct ib_pd *pd, int acc)
 		goto bail;
 	}
 
-	rval = rvt_init_mregion(&mr->mr, pd, 0, 0);
+	rval = rvt_init_mregion(&mr->mr, pd, 0);
 	if (rval) {
 		ret = ERR_PTR(rval);
 		goto bail;
@@ -383,18 +361,19 @@ struct ib_mr *rvt_reg_user_mr(struct ib_pd *pd, u64 start, u64 length,
 {
 	struct rvt_mr *mr;
 	struct ib_umem *umem;
-	struct sg_page_iter sg_iter;
-	int n, m;
+	struct scatterlist *sg;
+	int n, m, entry;
 	struct ib_mr *ret;
 
 	if (length == 0)
 		return ERR_PTR(-EINVAL);
 
-	umem = ib_umem_get(udata, start, length, mr_access_flags, 0);
+	umem = ib_umem_get(pd->uobject->context, start, length,
+			   mr_access_flags, 0);
 	if (IS_ERR(umem))
 		return (void *)umem;
 
-	n = ib_umem_num_pages(umem);
+	n = umem->nmap;
 
 	mr = __rvt_alloc_mr(n, pd);
 	if (IS_ERR(mr)) {
@@ -409,21 +388,22 @@ struct ib_mr *rvt_reg_user_mr(struct ib_pd *pd, u64 start, u64 length,
 	mr->mr.access_flags = mr_access_flags;
 	mr->umem = umem;
 
-	mr->mr.page_shift = PAGE_SHIFT;
+	if (is_power_of_2(umem->page_size))
+		mr->mr.page_shift = ilog2(umem->page_size);
 	m = 0;
 	n = 0;
-	for_each_sg_page (umem->sg_head.sgl, &sg_iter, umem->nmap, 0) {
+	for_each_sg(umem->sg_head.sgl, sg, umem->nmap, entry) {
 		void *vaddr;
 
-		vaddr = page_address(sg_page_iter_page(&sg_iter));
+		vaddr = page_address(sg_page(sg));
 		if (!vaddr) {
 			ret = ERR_PTR(-EINVAL);
 			goto bail_inval;
 		}
 		mr->mr.map[m]->segs[n].vaddr = vaddr;
-		mr->mr.map[m]->segs[n].length = PAGE_SIZE;
-		trace_rvt_mr_user_seg(&mr->mr, m, n, vaddr, PAGE_SIZE);
-		if (++n == RVT_SEGSZ) {
+		mr->mr.map[m]->segs[n].length = umem->page_size;
+		n++;
+		if (n == RVT_SEGSZ) {
 			m++;
 			n = 0;
 		}
@@ -440,107 +420,6 @@ bail_umem:
 }
 
 /**
- * rvt_dereg_clean_qp_cb - callback from iterator
- * @qp - the qp
- * @v - the mregion (as u64)
- *
- * This routine fields the callback for all QPs and
- * for QPs in the same PD as the MR will call the
- * rvt_qp_mr_clean() to potentially cleanup references.
- */
-static void rvt_dereg_clean_qp_cb(struct rvt_qp *qp, u64 v)
-{
-	struct rvt_mregion *mr = (struct rvt_mregion *)v;
-
-	/* skip PDs that are not ours */
-	if (mr->pd != qp->ibqp.pd)
-		return;
-	rvt_qp_mr_clean(qp, mr->lkey);
-}
-
-/**
- * rvt_dereg_clean_qps - find QPs for reference cleanup
- * @mr - the MR that is being deregistered
- *
- * This routine iterates RC QPs looking for references
- * to the lkey noted in mr.
- */
-static void rvt_dereg_clean_qps(struct rvt_mregion *mr)
-{
-	struct rvt_dev_info *rdi = ib_to_rvt(mr->pd->device);
-
-	rvt_qp_iter(rdi, (u64)mr, rvt_dereg_clean_qp_cb);
-}
-
-/**
- * rvt_check_refs - check references
- * @mr - the megion
- * @t - the caller identification
- *
- * This routine checks MRs holding a reference during
- * when being de-registered.
- *
- * If the count is non-zero, the code calls a clean routine then
- * waits for the timeout for the count to zero.
- */
-static int rvt_check_refs(struct rvt_mregion *mr, const char *t)
-{
-	unsigned long timeout;
-	struct rvt_dev_info *rdi = ib_to_rvt(mr->pd->device);
-
-	if (mr->lkey) {
-		/* avoid dma mr */
-		rvt_dereg_clean_qps(mr);
-		/* @mr was indexed on rcu protected @lkey_table */
-		synchronize_rcu();
-	}
-
-	timeout = wait_for_completion_timeout(&mr->comp, 5 * HZ);
-	if (!timeout) {
-		rvt_pr_err(rdi,
-			   "%s timeout mr %p pd %p lkey %x refcount %ld\n",
-			   t, mr, mr->pd, mr->lkey,
-			   atomic_long_read(&mr->refcount.count));
-		rvt_get_mr(mr);
-		return -EBUSY;
-	}
-	return 0;
-}
-
-/**
- * rvt_mr_has_lkey - is MR
- * @mr - the mregion
- * @lkey - the lkey
- */
-bool rvt_mr_has_lkey(struct rvt_mregion *mr, u32 lkey)
-{
-	return mr && lkey == mr->lkey;
-}
-
-/**
- * rvt_ss_has_lkey - is mr in sge tests
- * @ss - the sge state
- * @lkey
- *
- * This code tests for an MR in the indicated
- * sge state.
- */
-bool rvt_ss_has_lkey(struct rvt_sge_state *ss, u32 lkey)
-{
-	int i;
-	bool rval = false;
-
-	if (!ss->num_sge)
-		return rval;
-	/* first one */
-	rval = rvt_mr_has_lkey(ss->sge.mr, lkey);
-	/* any others */
-	for (i = 0; !rval && i < ss->num_sge - 1; i++)
-		rval = rvt_mr_has_lkey(ss->sg_list[i].mr, lkey);
-	return rval;
-}
-
-/**
  * rvt_dereg_mr - unregister and free a memory region
  * @ibmr: the memory region to free
  *
@@ -550,19 +429,28 @@ bool rvt_ss_has_lkey(struct rvt_sge_state *ss, u32 lkey)
  *
  * Returns 0 on success.
  */
-int rvt_dereg_mr(struct ib_mr *ibmr, struct ib_udata *udata)
+int rvt_dereg_mr(struct ib_mr *ibmr)
 {
 	struct rvt_mr *mr = to_imr(ibmr);
-	int ret;
+	struct rvt_dev_info *rdi = ib_to_rvt(ibmr->pd->device);
+	int ret = 0;
+	unsigned long timeout;
 
 	rvt_free_lkey(&mr->mr);
 
 	rvt_put_mr(&mr->mr); /* will set completion if last */
-	ret = rvt_check_refs(&mr->mr, __func__);
-	if (ret)
+	timeout = wait_for_completion_timeout(&mr->mr.comp, 5 * HZ);
+	if (!timeout) {
+		rvt_pr_err(rdi,
+			   "rvt_dereg_mr timeout mr %p pd %p refcount %u\n",
+			   mr, mr->mr.pd, atomic_read(&mr->mr.refcount));
+		rvt_get_mr(&mr->mr);
+		ret = -EBUSY;
 		goto out;
+	}
 	rvt_deinit_mregion(&mr->mr);
-	ib_umem_release(mr->umem);
+	if (mr->umem)
+		ib_umem_release(mr->umem);
 	kfree(mr);
 out:
 	return ret;
@@ -576,8 +464,9 @@ out:
  *
  * Return: the memory region on success, otherwise return an errno.
  */
-struct ib_mr *rvt_alloc_mr(struct ib_pd *pd, enum ib_mr_type mr_type,
-			   u32 max_num_sg, struct ib_udata *udata)
+struct ib_mr *rvt_alloc_mr(struct ib_pd *pd,
+			   enum ib_mr_type mr_type,
+			   u32 max_num_sg)
 {
 	struct rvt_mr *mr;
 
@@ -608,12 +497,16 @@ static int rvt_set_page(struct ib_mr *ibmr, u64 addr)
 	if (unlikely(mapped_segs == mr->mr.max_segs))
 		return -ENOMEM;
 
+	if (mr->mr.length == 0) {
+		mr->mr.user_base = addr;
+		mr->mr.iova = addr;
+	}
+
 	m = mapped_segs / RVT_SEGSZ;
 	n = mapped_segs % RVT_SEGSZ;
 	mr->mr.map[m]->segs[n].vaddr = (void *)addr;
 	mr->mr.map[m]->segs[n].length = ps;
 	mr->mr.length += ps;
-	trace_rvt_mr_page_seg(&mr->mr, m, n, (void *)addr, ps);
 
 	return 0;
 }
@@ -625,25 +518,17 @@ static int rvt_set_page(struct ib_mr *ibmr, u64 addr)
  * @sg_nents: number of entries in sg
  * @sg_offset: offset in bytes into sg
  *
- * Overwrite rvt_mr length with mr length calculated by ib_sg_to_pages.
- *
  * Return: number of sg elements mapped to the memory region
  */
 int rvt_map_mr_sg(struct ib_mr *ibmr, struct scatterlist *sg,
 		  int sg_nents, unsigned int *sg_offset)
 {
 	struct rvt_mr *mr = to_imr(ibmr);
-	int ret;
 
 	mr->mr.length = 0;
 	mr->mr.page_shift = PAGE_SHIFT;
-	ret = ib_sg_to_pages(ibmr, sg, sg_nents, sg_offset, rvt_set_page);
-	mr->mr.user_base = ibmr->iova;
-	mr->mr.iova = ibmr->iova;
-	mr->mr.offset = ibmr->iova - (u64)mr->mr.map[0]->segs[0].vaddr;
-	mr->mr.length = (size_t)ibmr->length;
-	trace_rvt_map_mr_sg(ibmr, sg_nents, sg_offset);
-	return ret;
+	return ib_sg_to_pages(ibmr, sg, sg_nents, sg_offset,
+			      rvt_set_page);
 }
 
 /**
@@ -674,7 +559,6 @@ int rvt_fast_reg_mr(struct rvt_qp *qp, struct ib_mr *ibmr, u32 key,
 	ibmr->rkey = key;
 	mr->mr.lkey = key;
 	mr->mr.access_flags = access;
-	mr->mr.iova = ibmr->iova;
 	atomic_set(&mr->mr.lkey_invalid, 0);
 
 	return 0;
@@ -731,12 +615,11 @@ struct ib_fmr *rvt_alloc_fmr(struct ib_pd *pd, int mr_access_flags,
 
 	/* Allocate struct plus pointers to first level page tables. */
 	m = (fmr_attr->max_pages + RVT_SEGSZ - 1) / RVT_SEGSZ;
-	fmr = kzalloc(struct_size(fmr, mr.map, m), GFP_KERNEL);
+	fmr = kzalloc(sizeof(*fmr) + m * sizeof(fmr->mr.map[0]), GFP_KERNEL);
 	if (!fmr)
 		goto bail;
 
-	rval = rvt_init_mregion(&fmr->mr, pd, fmr_attr->max_pages,
-				PERCPU_REF_INIT_ATOMIC);
+	rval = rvt_init_mregion(&fmr->mr, pd, fmr_attr->max_pages);
 	if (rval)
 		goto bail;
 
@@ -771,7 +654,7 @@ bail:
 
 /**
  * rvt_map_phys_fmr - set up a fast memory region
- * @ibfmr: the fast memory region to set up
+ * @ibmfr: the fast memory region to set up
  * @page_list: the list of pages to associate with the fast memory region
  * @list_len: the number of pages to associate with the fast memory region
  * @iova: the virtual address of the start of the fast memory region
@@ -787,12 +670,11 @@ int rvt_map_phys_fmr(struct ib_fmr *ibfmr, u64 *page_list,
 	struct rvt_fmr *fmr = to_ifmr(ibfmr);
 	struct rvt_lkey_table *rkt;
 	unsigned long flags;
-	int m, n;
-	unsigned long i;
+	int m, n, i;
 	u32 ps;
 	struct rvt_dev_info *rdi = ib_to_rvt(ibfmr->device);
 
-	i = atomic_long_read(&fmr->mr.refcount.count);
+	i = atomic_read(&fmr->mr.refcount);
 	if (i > 2)
 		return -EBUSY;
 
@@ -810,7 +692,6 @@ int rvt_map_phys_fmr(struct ib_fmr *ibfmr, u64 *page_list,
 	for (i = 0; i < list_len; i++) {
 		fmr->mr.map[m]->segs[n].vaddr = (void *)page_list[i];
 		fmr->mr.map[m]->segs[n].length = ps;
-		trace_rvt_mr_fmr_seg(&fmr->mr, m, n, (void *)page_list[i], ps);
 		if (++n == RVT_SEGSZ) {
 			m++;
 			n = 0;
@@ -855,12 +736,16 @@ int rvt_dealloc_fmr(struct ib_fmr *ibfmr)
 {
 	struct rvt_fmr *fmr = to_ifmr(ibfmr);
 	int ret = 0;
+	unsigned long timeout;
 
 	rvt_free_lkey(&fmr->mr);
 	rvt_put_mr(&fmr->mr); /* will set completion if last */
-	ret = rvt_check_refs(&fmr->mr, __func__);
-	if (ret)
+	timeout = wait_for_completion_timeout(&fmr->mr.comp, 5 * HZ);
+	if (!timeout) {
+		rvt_get_mr(&fmr->mr);
+		ret = -EBUSY;
 		goto out;
+	}
 	rvt_deinit_mregion(&fmr->mr);
 	kfree(fmr);
 out:
@@ -868,73 +753,41 @@ out:
 }
 
 /**
- * rvt_sge_adjacent - is isge compressible
- * @last_sge: last outgoing SGE written
- * @sge: SGE to check
- *
- * If adjacent will update last_sge to add length.
- *
- * Return: true if isge is adjacent to last sge
- */
-static inline bool rvt_sge_adjacent(struct rvt_sge *last_sge,
-				    struct ib_sge *sge)
-{
-	if (last_sge && sge->lkey == last_sge->mr->lkey &&
-	    ((uint64_t)(last_sge->vaddr + last_sge->length) == sge->addr)) {
-		if (sge->lkey) {
-			if (unlikely((sge->addr - last_sge->mr->user_base +
-			      sge->length > last_sge->mr->length)))
-				return false; /* overrun, caller will catch */
-		} else {
-			last_sge->length += sge->length;
-		}
-		last_sge->sge_length += sge->length;
-		trace_rvt_sge_adjacent(last_sge, sge);
-		return true;
-	}
-	return false;
-}
-
-/**
  * rvt_lkey_ok - check IB SGE for validity and initialize
  * @rkt: table containing lkey to check SGE against
  * @pd: protection domain
  * @isge: outgoing internal SGE
- * @last_sge: last outgoing SGE written
  * @sge: SGE to check
  * @acc: access flags
  *
  * Check the IB SGE for validity and initialize our internal version
  * of it.
  *
- * Increments the reference count when a new sge is stored.
+ * Return: 1 if valid and successful, otherwise returns 0.
  *
- * Return: 0 if compressed, 1 if added , otherwise returns -errno.
+ * increments the reference count upon success
+ *
  */
 int rvt_lkey_ok(struct rvt_lkey_table *rkt, struct rvt_pd *pd,
-		struct rvt_sge *isge, struct rvt_sge *last_sge,
-		struct ib_sge *sge, int acc)
+		struct rvt_sge *isge, struct ib_sge *sge, int acc)
 {
 	struct rvt_mregion *mr;
 	unsigned n, m;
 	size_t off;
+	struct rvt_dev_info *dev = ib_to_rvt(pd->ibpd.device);
 
 	/*
 	 * We use LKEY == zero for kernel virtual addresses
-	 * (see rvt_get_dma_mr() and dma_virt_ops).
+	 * (see rvt_get_dma_mr and dma.c).
 	 */
+	rcu_read_lock();
 	if (sge->lkey == 0) {
-		struct rvt_dev_info *dev = ib_to_rvt(pd->ibpd.device);
-
 		if (pd->user)
-			return -EINVAL;
-		if (rvt_sge_adjacent(last_sge, sge))
-			return 0;
-		rcu_read_lock();
+			goto bail;
 		mr = rcu_dereference(dev->dma_mr);
 		if (!mr)
 			goto bail;
-		rvt_get_mr(mr);
+		atomic_inc(&mr->refcount);
 		rcu_read_unlock();
 
 		isge->mr = mr;
@@ -945,25 +798,18 @@ int rvt_lkey_ok(struct rvt_lkey_table *rkt, struct rvt_pd *pd,
 		isge->n = 0;
 		goto ok;
 	}
-	if (rvt_sge_adjacent(last_sge, sge))
-		return 0;
-	rcu_read_lock();
-	mr = rcu_dereference(rkt->table[sge->lkey >> rkt->shift]);
-	if (!mr)
-		goto bail;
-	rvt_get_mr(mr);
-	if (!READ_ONCE(mr->lkey_published))
-		goto bail_unref;
-
-	if (unlikely(atomic_read(&mr->lkey_invalid) ||
+	mr = rcu_dereference(
+		rkt->table[(sge->lkey >> (32 - dev->dparms.lkey_table_size))]);
+	if (unlikely(!mr || atomic_read(&mr->lkey_invalid) ||
 		     mr->lkey != sge->lkey || mr->pd != &pd->ibpd))
-		goto bail_unref;
+		goto bail;
 
 	off = sge->addr - mr->user_base;
 	if (unlikely(sge->addr < mr->user_base ||
 		     off + sge->length > mr->length ||
 		     (mr->access_flags & acc) != acc))
-		goto bail_unref;
+		goto bail;
+	atomic_inc(&mr->refcount);
 	rcu_read_unlock();
 
 	off += mr->offset;
@@ -998,13 +844,10 @@ int rvt_lkey_ok(struct rvt_lkey_table *rkt, struct rvt_pd *pd,
 	isge->m = m;
 	isge->n = n;
 ok:
-	trace_rvt_sge_new(isge, sge);
 	return 1;
-bail_unref:
-	rvt_put_mr(mr);
 bail:
 	rcu_read_unlock();
-	return -EINVAL;
+	return 0;
 }
 EXPORT_SYMBOL(rvt_lkey_ok);
 
@@ -1032,7 +875,7 @@ int rvt_rkey_ok(struct rvt_qp *qp, struct rvt_sge *sge,
 
 	/*
 	 * We use RKEY == zero for kernel virtual addresses
-	 * (see rvt_get_dma_mr() and dma_virt_ops).
+	 * (see rvt_get_dma_mr and dma.c).
 	 */
 	rcu_read_lock();
 	if (rkey == 0) {
@@ -1044,7 +887,7 @@ int rvt_rkey_ok(struct rvt_qp *qp, struct rvt_sge *sge,
 		mr = rcu_dereference(rdi->dma_mr);
 		if (!mr)
 			goto bail;
-		rvt_get_mr(mr);
+		atomic_inc(&mr->refcount);
 		rcu_read_unlock();
 
 		sge->mr = mr;
@@ -1056,21 +899,17 @@ int rvt_rkey_ok(struct rvt_qp *qp, struct rvt_sge *sge,
 		goto ok;
 	}
 
-	mr = rcu_dereference(rkt->table[rkey >> rkt->shift]);
-	if (!mr)
-		goto bail;
-	rvt_get_mr(mr);
-	/* insure mr read is before test */
-	if (!READ_ONCE(mr->lkey_published))
-		goto bail_unref;
-	if (unlikely(atomic_read(&mr->lkey_invalid) ||
+	mr = rcu_dereference(
+		rkt->table[(rkey >> (32 - dev->dparms.lkey_table_size))]);
+	if (unlikely(!mr || atomic_read(&mr->lkey_invalid) ||
 		     mr->lkey != rkey || qp->ibqp.pd != mr->pd))
-		goto bail_unref;
+		goto bail;
 
 	off = vaddr - mr->iova;
 	if (unlikely(vaddr < mr->iova || off + len > mr->length ||
 		     (mr->access_flags & acc) == 0))
-		goto bail_unref;
+		goto bail;
+	atomic_inc(&mr->refcount);
 	rcu_read_unlock();
 
 	off += mr->offset;
@@ -1106,8 +945,6 @@ int rvt_rkey_ok(struct rvt_qp *qp, struct rvt_sge *sge,
 	sge->n = n;
 ok:
 	return 1;
-bail_unref:
-	rvt_put_mr(mr);
 bail:
 	rcu_read_unlock();
 	return 0;

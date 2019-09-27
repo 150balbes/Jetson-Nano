@@ -6,16 +6,13 @@
  */
 
 #include <linux/sched.h>
-#include <linux/sched/mm.h>
-#include <linux/syscalls.h>
 #include <linux/uaccess.h>
 #include <asm/prctl.h> /* XXX This should get the constants from libc */
 #include <os.h>
 
-long arch_prctl(struct task_struct *task, int option,
-		unsigned long __user *arg2)
+long arch_prctl(struct task_struct *task, int code, unsigned long __user *addr)
 {
-	unsigned long *ptr = arg2, tmp;
+	unsigned long *ptr = addr, tmp;
 	long ret;
 	int pid = task->mm->context.id.u.pid;
 
@@ -32,7 +29,7 @@ long arch_prctl(struct task_struct *task, int option,
 	 * arch_prctl is run on the host, then the registers are read
 	 * back.
 	 */
-	switch (option) {
+	switch (code) {
 	case ARCH_SET_FS:
 	case ARCH_SET_GS:
 		ret = restore_registers(pid, &current->thread.regs.regs);
@@ -52,11 +49,11 @@ long arch_prctl(struct task_struct *task, int option,
 		ptr = &tmp;
 	}
 
-	ret = os_arch_prctl(pid, option, ptr);
+	ret = os_arch_prctl(pid, code, ptr);
 	if (ret)
 		return ret;
 
-	switch (option) {
+	switch (code) {
 	case ARCH_SET_FS:
 		current->thread.arch.fs = (unsigned long) ptr;
 		ret = save_registers(pid, &current->thread.regs.regs);
@@ -65,19 +62,19 @@ long arch_prctl(struct task_struct *task, int option,
 		ret = save_registers(pid, &current->thread.regs.regs);
 		break;
 	case ARCH_GET_FS:
-		ret = put_user(tmp, arg2);
+		ret = put_user(tmp, addr);
 		break;
 	case ARCH_GET_GS:
-		ret = put_user(tmp, arg2);
+		ret = put_user(tmp, addr);
 		break;
 	}
 
 	return ret;
 }
 
-SYSCALL_DEFINE2(arch_prctl, int, option, unsigned long, arg2)
+long sys_arch_prctl(int code, unsigned long addr)
 {
-	return arch_prctl(current, option, (unsigned long __user *) arg2);
+	return arch_prctl(current, code, (unsigned long __user *) addr);
 }
 
 void arch_switch_to(struct task_struct *to)

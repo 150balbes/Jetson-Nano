@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _ASM_PARISC_PARISC_DEVICE_H_
 #define _ASM_PARISC_PARISC_DEVICE_H_
 

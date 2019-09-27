@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note */
 #ifndef _LINUX_NETFILTER_XT_L2TP_H
 #define _LINUX_NETFILTER_XT_L2TP_H
 

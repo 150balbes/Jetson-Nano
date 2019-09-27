@@ -1,8 +1,12 @@
-/* SPDX-License-Identifier: GPL-2.0-only */
 #ifndef _IP_SET_TIMEOUT_H
 #define _IP_SET_TIMEOUT_H
 
-/* Copyright (C) 2003-2013 Jozsef Kadlecsik <kadlec@netfilter.org> */
+/* Copyright (C) 2003-2013 Jozsef Kadlecsik <kadlec@blackhole.kfki.hu>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ */
 
 #ifdef __KERNEL__
 
@@ -19,9 +23,6 @@
 /* Set is defined with timeout support: timeout value may be 0 */
 #define IPSET_NO_TIMEOUT	UINT_MAX
 
-/* Max timeout value, see msecs_to_jiffies() in jiffies.h */
-#define IPSET_MAX_TIMEOUT	(UINT_MAX >> 1)/MSEC_PER_SEC
-
 #define ip_set_adt_opt_timeout(opt, set)	\
 ((opt)->ext.timeout != IPSET_NO_TIMEOUT ? (opt)->ext.timeout : (set)->timeout)
 
@@ -31,14 +32,15 @@ ip_set_timeout_uget(struct nlattr *tb)
 	unsigned int timeout = ip_set_get_h32(tb);
 
 	/* Normalize to fit into jiffies */
-	if (timeout > IPSET_MAX_TIMEOUT)
-		timeout = IPSET_MAX_TIMEOUT;
+	if (timeout > UINT_MAX/MSEC_PER_SEC)
+		timeout = UINT_MAX/MSEC_PER_SEC;
 
-	return timeout;
+	/* Userspace supplied TIMEOUT parameter: adjust crazy size */
+	return timeout == IPSET_NO_TIMEOUT ? IPSET_NO_TIMEOUT - 1 : timeout;
 }
 
 static inline bool
-ip_set_timeout_expired(const unsigned long *t)
+ip_set_timeout_expired(unsigned long *t)
 {
 	return *t != IPSET_ELEM_PERMANENT && time_is_before_jiffies(*t);
 }
@@ -61,7 +63,7 @@ ip_set_timeout_set(unsigned long *timeout, u32 value)
 }
 
 static inline u32
-ip_set_timeout_get(const unsigned long *timeout)
+ip_set_timeout_get(unsigned long *timeout)
 {
 	u32 t;
 

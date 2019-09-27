@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: LGPL-2.0+ WITH Linux-syscall-note */
 /*  Generic MTRR (Memory Type Range Register) ioctls.
 
     Copyright (C) 1997-1999  Richard Gooch

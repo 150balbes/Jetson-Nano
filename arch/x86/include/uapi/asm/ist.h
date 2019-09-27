@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0+ WITH Linux-syscall-note */
 /*
  * Include file for the interface to IST BIOS
  * Copyright 2002 Andy Grover <andrew.grover@intel.com>

@@ -7,6 +7,8 @@ Required properties:
   - "maxim,max3109" for Maxim MAX3109,
   - "maxim,max14830" for Maxim MAX14830.
 - reg: SPI chip select number.
+- interrupt-parent: The phandle for the interrupt controller that
+  services interrupts for this IC.
 - interrupts: Specifies the interrupt source of the parent interrupt
   controller. The format of the interrupt specifier depends on the
   parent interrupt controller.
@@ -22,27 +24,13 @@ Optional properties:
     1 = active low.
 
 Example:
-
-/ {
-	clocks {
-		spi_uart_clk: osc_max14830 {
-			compatible = "fixed-clock";
-			#clock-cells = <0>;
-			clock-frequency = <3686400>;
-		};
-
-	};
-};
-
-&spi0 {
 	max14830: max14830@0 {
 		compatible = "maxim,max14830";
 		reg = <0>;
-		clocks = <&spi_uart_clk>;
+		clocks = <&clk20m>;
 		clock-names = "osc";
 		interrupt-parent = <&gpio3>;
-		interrupts = <7 IRQ_TYPE_LEVEL_LOW>;
+		interrupts = <7 IRQ_TYPE_EDGE_FALLING>;
 		gpio-controller;
 		#gpio-cells = <2>;
 	};
-};

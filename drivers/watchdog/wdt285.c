@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  *	Intel 21285 watchdog driver
  *	Copyright (c) Phil Blundell <pb@nexus.co.uk>, 1998
@@ -9,6 +8,12 @@
  *
  *	(c) Copyright 1996 Alan Cox <alan@lxorguk.ukuu.org.uk>,
  *						All Rights Reserved.
+ *
+ *	This program is free software; you can redistribute it and/or
+ *	modify it under the terms of the GNU General Public License
+ *	as published by the Free Software Foundation; either version
+ *	2 of the License, or (at your option) any later version.
+ *
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
@@ -96,7 +101,7 @@ static int watchdog_open(struct inode *inode, struct file *file)
 
 	ret = 0;
 #endif
-	stream_open(inode, file);
+	nonseekable_open(inode, file);
 	return ret;
 }
 
@@ -168,7 +173,7 @@ static long watchdog_ioctl(struct file *file, unsigned int cmd,
 		soft_margin = new_margin;
 		reload = soft_margin * (mem_fclk_21285 / 256);
 		watchdog_ping();
-		/* Fall through */
+		/* Fall */
 	case WDIOC_GETTIMEOUT:
 		ret = put_user(soft_margin, int_arg);
 		break;

@@ -1,7 +1,8 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Copyright 2014-2015 Analog Devices Inc.
  *  Author: Lars-Peter Clausen <lars@metafoo.de>
+ *
+ * Licensed under the GPL-2 or later.
  */
 
 #include <linux/slab.h>
@@ -13,7 +14,6 @@
 
 #include <linux/iio/iio.h>
 #include <linux/iio/buffer.h>
-#include <linux/iio/buffer_impl.h>
 #include <linux/iio/buffer-dma.h>
 #include <linux/iio/buffer-dmaengine.h>
 

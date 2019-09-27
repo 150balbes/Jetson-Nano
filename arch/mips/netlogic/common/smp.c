@@ -35,7 +35,6 @@
 #include <linux/kernel.h>
 #include <linux/delay.h>
 #include <linux/init.h>
-#include <linux/sched/task_stack.h>
 #include <linux/smp.h>
 #include <linux/irq.h>
 
@@ -122,7 +121,7 @@ static void nlm_init_secondary(void)
 	int hwtid;
 
 	hwtid = hard_smp_processor_id();
-	cpu_set_core(&current_cpu_data, hwtid / NLM_THREADS_PER_CORE);
+	current_cpu_data.core = hwtid / NLM_THREADS_PER_CORE;
 	current_cpu_data.package = nlm_nodeid();
 	nlm_percpu_init(hwtid);
 	nlm_smp_irq_init(hwtid);
@@ -147,7 +146,7 @@ unsigned long nlm_next_gp;
 unsigned long nlm_next_sp;
 static cpumask_t phys_cpu_present_mask;
 
-int nlm_boot_secondary(int logical_cpu, struct task_struct *idle)
+void nlm_boot_secondary(int logical_cpu, struct task_struct *idle)
 {
 	uint64_t picbase;
 	int hwtid;
@@ -161,8 +160,6 @@ int nlm_boot_secondary(int logical_cpu, struct task_struct *idle)
 	/* barrier for sp/gp store above */
 	__sync();
 	nlm_pic_send_ipi(picbase, hwtid, 1, 1);  /* NMI */
-
-	return 0;
 }
 
 void __init nlm_smp_setup(void)
@@ -274,7 +271,7 @@ int nlm_wakeup_secondary_cpus(void)
 	return 0;
 }
 
-const struct plat_smp_ops nlm_smp_ops = {
+struct plat_smp_ops nlm_smp_ops = {
 	.send_ipi_single	= nlm_send_ipi_single,
 	.send_ipi_mask		= nlm_send_ipi_mask,
 	.init_secondary		= nlm_init_secondary,

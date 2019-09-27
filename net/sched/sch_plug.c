@@ -1,6 +1,10 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * sch_plug.c Queue traffic until an explicit release command
+ *
+ *             This program is free software; you can redistribute it and/or
+ *             modify it under the terms of the GNU General Public License
+ *             as published by the Free Software Foundation; either version
+ *             2 of the License, or (at your option) any later version.
  *
  * There are two ways to use this qdisc:
  * 1. A simple "instantaneous" plug/unplug operation, by issuing an alternating
@@ -119,8 +123,7 @@ static struct sk_buff *plug_dequeue(struct Qdisc *sch)
 	return qdisc_dequeue_head(sch);
 }
 
-static int plug_init(struct Qdisc *sch, struct nlattr *opt,
-		     struct netlink_ext_ack *extack)
+static int plug_init(struct Qdisc *sch, struct nlattr *opt)
 {
 	struct plug_sched_data *q = qdisc_priv(sch);
 
@@ -155,8 +158,7 @@ static int plug_init(struct Qdisc *sch, struct nlattr *opt,
  *   command is received (just act as a pass-thru queue).
  * TCQ_PLUG_LIMIT: Increase/decrease queue size
  */
-static int plug_change(struct Qdisc *sch, struct nlattr *opt,
-		       struct netlink_ext_ack *extack)
+static int plug_change(struct Qdisc *sch, struct nlattr *opt)
 {
 	struct plug_sched_data *q = qdisc_priv(sch);
 	struct tc_plug_qopt *msg;

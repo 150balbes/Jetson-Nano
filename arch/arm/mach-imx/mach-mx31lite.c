@@ -1,9 +1,18 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  *  Copyright (C) 2000 Deep Blue Solutions Ltd
  *  Copyright (C) 2002 Shane Nay (shane@minirl.com)
  *  Copyright 2005-2007 Freescale Semiconductor, Inc. All Rights Reserved.
  *  Copyright (C) 2009 Daniel Mack <daniel@caiaq.de>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
  */
 
 #include <linux/types.h>
@@ -74,8 +83,15 @@ static const struct imxuart_platform_data uart_pdata __initconst = {
 };
 
 /* SPI */
+static int spi0_internal_chipselect[] = {
+	MXC_SPI_CS(0),
+	MXC_SPI_CS(1),
+	MXC_SPI_CS(2),
+};
+
 static const struct spi_imx_master spi0_pdata __initconst = {
-	.num_chipselect	= 3,
+	.chipselect	= spi0_internal_chipselect,
+	.num_chipselect	= ARRAY_SIZE(spi0_internal_chipselect),
 };
 
 static const struct mxc_nand_platform_data
@@ -117,8 +133,13 @@ static struct platform_device smsc911x_device = {
  * The MC13783 is the only hard-wired SPI device on the module.
  */
 
+static int spi1_internal_chipselect[] = {
+	MXC_SPI_CS(0),
+};
+
 static const struct spi_imx_master spi1_pdata __initconst = {
-	.num_chipselect	= 1,
+	.chipselect	= spi1_internal_chipselect,
+	.num_chipselect	= ARRAY_SIZE(spi1_internal_chipselect),
 };
 
 static struct mc13xxx_platform_data mc13783_pdata __initdata = {
@@ -224,7 +245,7 @@ static struct map_desc mx31lite_io_desc[] __initdata = {
 /*
  * Set up static virtual mappings.
  */
-static void __init mx31lite_map_io(void)
+void __init mx31lite_map_io(void)
 {
 	mx31_map_io();
 	iotable_init(mx31lite_io_desc, ARRAY_SIZE(mx31lite_io_desc));

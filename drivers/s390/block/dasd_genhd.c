@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * Author(s)......: Holger Smolinski <Holger.Smolinski@de.ibm.com>
  *		    Horst Hummel <Horst.Hummel@de.ibm.com>
@@ -17,7 +16,7 @@
 #include <linux/fs.h>
 #include <linux/blkpg.h>
 
-#include <linux/uaccess.h>
+#include <asm/uaccess.h>
 
 /* This is ugly... */
 #define PRINTK_HEADER "dasd_gendisk:"
@@ -76,7 +75,7 @@ int dasd_gendisk_alloc(struct dasd_block *block)
 	gdp->queue = block->request_queue;
 	block->gdp = gdp;
 	set_capacity(block->gdp, 0);
-	device_add_disk(&base->cdev->dev, block->gdp, NULL);
+	device_add_disk(&base->cdev->dev, block->gdp);
 	return 0;
 }
 

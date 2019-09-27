@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0+
 /*
  * gpiolib support for Wolfson WM831x PMICs
  *
@@ -6,12 +5,17 @@
  *
  * Author: Mark Brown <broonie@opensource.wolfsonmicro.com>
  *
+ *  This program is free software; you can redistribute  it and/or modify it
+ *  under  the terms of  the GNU General  Public License as published by the
+ *  Free Software Foundation;  either version 2 of the  License, or (at your
+ *  option) any later version.
+ *
  */
 
 #include <linux/kernel.h>
 #include <linux/slab.h>
 #include <linux/module.h>
-#include <linux/gpio/driver.h>
+#include <linux/gpio.h>
 #include <linux/mfd/core.h>
 #include <linux/platform_device.h>
 #include <linux/seq_file.h>
@@ -97,9 +101,11 @@ static int wm831x_gpio_to_irq(struct gpio_chip *chip, unsigned offset)
 				  WM831X_IRQ_GPIO_1 + offset);
 }
 
-static int wm831x_gpio_set_debounce(struct wm831x *wm831x, unsigned offset,
+static int wm831x_gpio_set_debounce(struct gpio_chip *chip, unsigned offset,
 				    unsigned debounce)
 {
+	struct wm831x_gpio *wm831x_gpio = gpiochip_get_data(chip);
+	struct wm831x *wm831x = wm831x_gpio->wm831x;
 	int reg = WM831X_GPIO1_CONTROL + offset;
 	int ret, fn;
 
@@ -126,23 +132,21 @@ static int wm831x_gpio_set_debounce(struct wm831x *wm831x, unsigned offset,
 	return wm831x_set_bits(wm831x, reg, WM831X_GPN_FN_MASK, fn);
 }
 
-static int wm831x_set_config(struct gpio_chip *chip, unsigned int offset,
-			     unsigned long config)
+static int wm831x_set_single_ended(struct gpio_chip *chip,
+				   unsigned int offset,
+				   enum single_ended_mode mode)
 {
 	struct wm831x_gpio *wm831x_gpio = gpiochip_get_data(chip);
 	struct wm831x *wm831x = wm831x_gpio->wm831x;
 	int reg = WM831X_GPIO1_CONTROL + offset;
 
-	switch (pinconf_to_config_param(config)) {
-	case PIN_CONFIG_DRIVE_OPEN_DRAIN:
+	switch (mode) {
+	case LINE_MODE_OPEN_DRAIN:
 		return wm831x_set_bits(wm831x, reg,
 				       WM831X_GPN_OD_MASK, WM831X_GPN_OD);
-	case PIN_CONFIG_DRIVE_PUSH_PULL:
+	case LINE_MODE_PUSH_PULL:
 		return wm831x_set_bits(wm831x, reg,
 				       WM831X_GPN_OD_MASK, 0);
-	case PIN_CONFIG_INPUT_DEBOUNCE:
-		return wm831x_gpio_set_debounce(wm831x, offset,
-			pinconf_to_config_argument(config));
 	default:
 		break;
 	}
@@ -178,7 +182,7 @@ static void wm831x_gpio_dbg_show(struct seq_file *s, struct gpio_chip *chip)
 			dev_err(wm831x->dev,
 				"GPIO control %d read failed: %d\n",
 				gpio, reg);
-			seq_putc(s, '\n');
+			seq_printf(s, "\n");
 			continue;
 		}
 
@@ -251,7 +255,8 @@ static const struct gpio_chip template_chip = {
 	.direction_output	= wm831x_gpio_direction_out,
 	.set			= wm831x_gpio_set,
 	.to_irq			= wm831x_gpio_to_irq,
-	.set_config		= wm831x_set_config,
+	.set_debounce		= wm831x_gpio_set_debounce,
+	.set_single_ended	= wm831x_set_single_ended,
 	.dbg_show		= wm831x_gpio_dbg_show,
 	.can_sleep		= true,
 };
@@ -259,7 +264,7 @@ static const struct gpio_chip template_chip = {
 static int wm831x_gpio_probe(struct platform_device *pdev)
 {
 	struct wm831x *wm831x = dev_get_drvdata(pdev->dev.parent);
-	struct wm831x_pdata *pdata = &wm831x->pdata;
+	struct wm831x_pdata *pdata = dev_get_platdata(wm831x->dev);
 	struct wm831x_gpio *wm831x_gpio;
 	int ret;
 
@@ -276,9 +281,6 @@ static int wm831x_gpio_probe(struct platform_device *pdev)
 		wm831x_gpio->gpio_chip.base = pdata->gpio_base;
 	else
 		wm831x_gpio->gpio_chip.base = -1;
-#ifdef CONFIG_OF_GPIO
-	wm831x_gpio->gpio_chip.of_node = wm831x->dev->of_node;
-#endif
 
 	ret = devm_gpiochip_add_data(&pdev->dev, &wm831x_gpio->gpio_chip,
 				     wm831x_gpio);

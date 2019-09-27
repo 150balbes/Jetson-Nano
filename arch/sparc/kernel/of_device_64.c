@@ -1,8 +1,6 @@
-// SPDX-License-Identifier: GPL-2.0
 #include <linux/string.h>
 #include <linux/kernel.h>
 #include <linux/of.h>
-#include <linux/dma-mapping.h>
 #include <linux/init.h>
 #include <linux/export.h>
 #include <linux/mod_devicetable.h>
@@ -46,7 +44,7 @@ EXPORT_SYMBOL(of_iounmap);
 
 static int of_bus_pci_match(struct device_node *np)
 {
-	if (of_node_name_eq(np, "pci")) {
+	if (!strcmp(np->name, "pci")) {
 		const char *model = of_get_property(np, "model", NULL);
 
 		if (model && !strcmp(model, "SUNW,simba"))
@@ -77,7 +75,7 @@ static int of_bus_simba_match(struct device_node *np)
 	/* Treat PCI busses lacking ranges property just like
 	 * simba.
 	 */
-	if (of_node_name_eq(np, "pci")) {
+	if (!strcmp(np->name, "pci")) {
 		if (!of_find_property(np, "ranges", NULL))
 			return 1;
 	}
@@ -170,8 +168,8 @@ static unsigned long of_bus_pci_get_flags(const u32 *addr, unsigned long flags)
  */
 static int of_bus_fhc_match(struct device_node *np)
 {
-	return of_node_name_eq(np, "fhc") ||
-		of_node_name_eq(np, "central");
+	return !strcmp(np->name, "fhc") ||
+		!strcmp(np->name, "central");
 }
 
 #define of_bus_fhc_count_cells of_bus_sbus_count_cells
@@ -295,17 +293,17 @@ static int __init use_1to1_mapping(struct device_node *pp)
 	 * But, we should still pass the translation work up
 	 * to the SBUS itself.
 	 */
-	if (of_node_name_eq(pp, "dma") ||
-	    of_node_name_eq(pp, "espdma") ||
-	    of_node_name_eq(pp, "ledma") ||
-	    of_node_name_eq(pp, "lebuffer"))
+	if (!strcmp(pp->name, "dma") ||
+	    !strcmp(pp->name, "espdma") ||
+	    !strcmp(pp->name, "ledma") ||
+	    !strcmp(pp->name, "lebuffer"))
 		return 0;
 
 	/* Similarly for all PCI bridges, if we get this far
 	 * it lacks a ranges property, and this will include
 	 * cases like Simba.
 	 */
-	if (of_node_name_eq(pp, "pci"))
+	if (!strcmp(pp->name, "pci"))
 		return 0;
 
 	return 1;
@@ -341,9 +339,9 @@ static void __init build_device_resources(struct platform_device *op,
 
 	/* Prevent overrunning the op->resources[] array.  */
 	if (num_reg > PROMREG_MAX) {
-		printk(KERN_WARNING "%pOF: Too many regs (%d), "
+		printk(KERN_WARNING "%s: Too many regs (%d), "
 		       "limiting to %d.\n",
-		       op->dev.of_node, num_reg, PROMREG_MAX);
+		       op->dev.of_node->full_name, num_reg, PROMREG_MAX);
 		num_reg = PROMREG_MAX;
 	}
 
@@ -401,8 +399,8 @@ static void __init build_device_resources(struct platform_device *op,
 		memset(r, 0, sizeof(*r));
 
 		if (of_resource_verbose)
-			printk("%pOF reg[%d] -> %llx\n",
-			       op->dev.of_node, index,
+			printk("%s reg[%d] -> %llx\n",
+			       op->dev.of_node->full_name, index,
 			       result);
 
 		if (result != OF_BAD_ADDR) {
@@ -413,7 +411,7 @@ static void __init build_device_resources(struct platform_device *op,
 			r->end = result + size - 1;
 			r->flags = flags;
 		}
-		r->name = op->dev.of_node->full_name;
+		r->name = op->dev.of_node->name;
 	}
 }
 
@@ -548,8 +546,8 @@ static unsigned int __init build_one_device_irq(struct platform_device *op,
 					       dp->irq_trans->data);
 
 		if (of_irq_verbose)
-			printk("%pOF: direct translate %x --> %x\n",
-			       dp, orig_irq, irq);
+			printk("%s: direct translate %x --> %x\n",
+			       dp->full_name, orig_irq, irq);
 
 		goto out;
 	}
@@ -579,9 +577,10 @@ static unsigned int __init build_one_device_irq(struct platform_device *op,
 						   &irq);
 
 			if (of_irq_verbose)
-				printk("%pOF: Apply [%pOF:%x] imap --> [%pOF:%x]\n",
-				       op->dev.of_node,
-				       pp, this_orig_irq, iret, irq);
+				printk("%s: Apply [%s:%x] imap --> [%s:%x]\n",
+				       op->dev.of_node->full_name,
+				       pp->full_name, this_orig_irq,
+				       of_node_full_name(iret), irq);
 
 			if (!iret)
 				break;
@@ -591,15 +590,15 @@ static unsigned int __init build_one_device_irq(struct platform_device *op,
 				break;
 			}
 		} else {
-			if (of_node_name_eq(pp, "pci")) {
+			if (!strcmp(pp->name, "pci")) {
 				unsigned int this_orig_irq = irq;
 
 				irq = pci_irq_swizzle(dp, pp, irq);
 				if (of_irq_verbose)
-					printk("%pOF: PCI swizzle [%pOF] "
+					printk("%s: PCI swizzle [%s] "
 					       "%x --> %x\n",
-					       op->dev.of_node,
-					       pp, this_orig_irq,
+					       op->dev.of_node->full_name,
+					       pp->full_name, this_orig_irq,
 					       irq);
 
 			}
@@ -618,8 +617,8 @@ static unsigned int __init build_one_device_irq(struct platform_device *op,
 	irq = ip->irq_trans->irq_build(op->dev.of_node, irq,
 				       ip->irq_trans->data);
 	if (of_irq_verbose)
-		printk("%pOF: Apply IRQ trans [%pOF] %x --> %x\n",
-		      op->dev.of_node, ip, orig_irq, irq);
+		printk("%s: Apply IRQ trans [%s] %x --> %x\n",
+		      op->dev.of_node->full_name, ip->full_name, orig_irq, irq);
 
 out:
 	nid = of_node_to_nid(dp);
@@ -655,9 +654,9 @@ static struct platform_device * __init scan_one_device(struct device_node *dp,
 
 		/* Prevent overrunning the op->irqs[] array.  */
 		if (op->archdata.num_irqs > PROMINTR_MAX) {
-			printk(KERN_WARNING "%pOF: Too many irqs (%d), "
+			printk(KERN_WARNING "%s: Too many irqs (%d), "
 			       "limiting to %d.\n",
-			       dp, op->archdata.num_irqs, PROMINTR_MAX);
+			       dp->full_name, op->archdata.num_irqs, PROMINTR_MAX);
 			op->archdata.num_irqs = PROMINTR_MAX;
 		}
 		memcpy(op->archdata.irqs, irq, op->archdata.num_irqs * 4);
@@ -675,11 +674,10 @@ static struct platform_device * __init scan_one_device(struct device_node *dp,
 		dev_set_name(&op->dev, "root");
 	else
 		dev_set_name(&op->dev, "%08x", dp->phandle);
-	op->dev.coherent_dma_mask = DMA_BIT_MASK(32);
-	op->dev.dma_mask = &op->dev.coherent_dma_mask;
 
 	if (of_device_register(op)) {
-		printk("%pOF: Could not register of device.\n", dp);
+		printk("%s: Could not register of device.\n",
+		       dp->full_name);
 		kfree(op);
 		op = NULL;
 	}

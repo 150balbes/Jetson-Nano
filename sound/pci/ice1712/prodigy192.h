@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __SOUND_PRODIGY192_H
 #define __SOUND_PRODIGY192_H
 

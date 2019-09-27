@@ -96,7 +96,7 @@
 #define CHIP_DEF(id, family, flags)					\
 	{ PCI_VENDOR_ID_ATI, id, PCI_ANY_ID, PCI_ANY_ID, 0, 0, (flags) | (CHIP_FAMILY_##family) }
 
-static const struct pci_device_id radeonfb_pci_table[] = {
+static struct pci_device_id radeonfb_pci_table[] = {
         /* Radeon Xpress 200m */
 	CHIP_DEF(PCI_CHIP_RS480_5955,   RS480,  CHIP_HAS_CRTC2 | CHIP_IS_IGP | CHIP_IS_MOBILITY),
 	CHIP_DEF(PCI_CHIP_RS482_5975,	RS480,	CHIP_HAS_CRTC2 | CHIP_IS_IGP | CHIP_IS_MOBILITY),
@@ -583,8 +583,8 @@ static int radeon_probe_pll_params(struct radeonfb_info *rinfo)
 	int hTotal, vTotal, num, denom, m, n;
 	unsigned long long hz, vclk;
 	long xtal;
-	ktime_t start_time, stop_time;
-	u64 total_usecs;
+	struct timeval start_tv, stop_tv;
+	long total_secs, total_usecs;
 	int i;
 
 	/* Ugh, we cut interrupts, bad bad bad, but we want some precision
@@ -600,7 +600,7 @@ static int radeon_probe_pll_params(struct radeonfb_info *rinfo)
 		if (((INREG(CRTC_VLINE_CRNT_VLINE) >> 16) & 0x3ff) == 0)
 			break;
 
-	start_time = ktime_get();
+	do_gettimeofday(&start_tv);
 
 	for(i=0; i<1000000; i++)
 		if (((INREG(CRTC_VLINE_CRNT_VLINE) >> 16) & 0x3ff) != 0)
@@ -610,14 +610,18 @@ static int radeon_probe_pll_params(struct radeonfb_info *rinfo)
 		if (((INREG(CRTC_VLINE_CRNT_VLINE) >> 16) & 0x3ff) == 0)
 			break;
 	
-	stop_time = ktime_get();
+	do_gettimeofday(&stop_tv);
 	
 	local_irq_enable();
 
-	total_usecs = ktime_us_delta(stop_time, start_time);
-	if (total_usecs >= 10 * USEC_PER_SEC || total_usecs == 0)
+	total_secs = stop_tv.tv_sec - start_tv.tv_sec;
+	if (total_secs > 10)
 		return -1;
-	hz = USEC_PER_SEC/(u32)total_usecs;
+	total_usecs = stop_tv.tv_usec - start_tv.tv_usec;
+	total_usecs += total_secs * 1000000;
+	if (total_usecs < 0)
+		total_usecs = -total_usecs;
+	hz = 1000000/total_usecs;
  
 	hTotal = ((INREG(CRTC_H_TOTAL_DISP) & 0x1ff) + 1) * 8;
 	vTotal = ((INREG(CRTC_V_TOTAL_DISP) & 0x3ff) + 1);
@@ -1450,9 +1454,9 @@ static void radeon_write_pll_regs(struct radeonfb_info *rinfo, struct radeon_reg
 /*
  * Timer function for delayed LVDS panel power up/down
  */
-static void radeon_lvds_timer_func(struct timer_list *t)
+static void radeon_lvds_timer_func(unsigned long data)
 {
-	struct radeonfb_info *rinfo = from_timer(rinfo, t, lvds_timer);
+	struct radeonfb_info *rinfo = (struct radeonfb_info *)data;
 
 	radeon_engine_idle();
 
@@ -1530,7 +1534,7 @@ void radeon_write_mode (struct radeonfb_info *rinfo, struct radeon_regs *mode,
 static void radeon_calc_pll_regs(struct radeonfb_info *rinfo, struct radeon_regs *regs,
 				 unsigned long freq)
 {
-	static const struct {
+	const struct {
 		int divider;
 		int bitvalue;
 	} *post_div,
@@ -2237,7 +2241,7 @@ static ssize_t radeon_show_edid2(struct file *filp, struct kobject *kobj,
 	return radeon_show_one_edid(buf, off, count, rinfo->mon2_EDID);
 }
 
-static const struct bin_attribute edid1_attr = {
+static struct bin_attribute edid1_attr = {
 	.attr   = {
 		.name	= "edid1",
 		.mode	= 0444,
@@ -2246,7 +2250,7 @@ static const struct bin_attribute edid1_attr = {
 	.read	= radeon_show_edid1,
 };
 
-static const struct bin_attribute edid2_attr = {
+static struct bin_attribute edid2_attr = {
 	.attr   = {
 		.name	= "edid2",
 		.mode	= 0444,
@@ -2255,23 +2259,6 @@ static const struct bin_attribute edid2_attr = {
 	.read	= radeon_show_edid2,
 };
 
-static int radeon_kick_out_firmware_fb(struct pci_dev *pdev)
-{
-	struct apertures_struct *ap;
-
-	ap = alloc_apertures(1);
-	if (!ap)
-		return -ENOMEM;
-
-	ap->ranges[0].base = pci_resource_start(pdev, 0);
-	ap->ranges[0].size = pci_resource_len(pdev, 0);
-
-	remove_conflicting_framebuffers(ap, KBUILD_MODNAME, false);
-
-	kfree(ap);
-
-	return 0;
-}
 
 static int radeonfb_pci_register(struct pci_dev *pdev,
 				 const struct pci_device_id *ent)
@@ -2294,6 +2281,8 @@ static int radeonfb_pci_register(struct pci_dev *pdev,
 
 	info = framebuffer_alloc(sizeof(struct radeonfb_info), &pdev->dev);
 	if (!info) {
+		printk (KERN_ERR "radeonfb (%s): could not allocate memory\n",
+			pci_name(pdev));
 		ret = -ENOMEM;
 		goto err_disable;
 	}
@@ -2302,7 +2291,9 @@ static int radeonfb_pci_register(struct pci_dev *pdev,
 	rinfo->pdev = pdev;
 	
 	spin_lock_init(&rinfo->reg_lock);
-	timer_setup(&rinfo->lvds_timer, radeon_lvds_timer_func, 0);
+	init_timer(&rinfo->lvds_timer);
+	rinfo->lvds_timer.function = radeon_lvds_timer_func;
+	rinfo->lvds_timer.data = (unsigned long)rinfo;
 
 	c1 = ent->device >> 8;
 	c2 = ent->device & 0xff;
@@ -2322,10 +2313,6 @@ static int radeonfb_pci_register(struct pci_dev *pdev,
 	/* Set base addrs */
 	rinfo->fb_base_phys = pci_resource_start (pdev, 0);
 	rinfo->mmio_base_phys = pci_resource_start (pdev, 2);
-
-	ret = radeon_kick_out_firmware_fb(pdev);
-	if (ret)
-		return ret;
 
 	/* request the mem regions */
 	ret = pci_request_region(pdev, 0, "radeonfb framebuffer");
@@ -2466,8 +2453,8 @@ static int radeonfb_pci_register(struct pci_dev *pdev,
 		err |= sysfs_create_bin_file(&rinfo->pdev->dev.kobj,
 						&edid2_attr);
 	if (err)
-		pr_warn("%s() Creating sysfs files failed, continuing\n",
-			__func__);
+		pr_warning("%s() Creating sysfs files failed, continuing\n",
+			   __func__);
 
 	/* save current mode regs before we switch into the new one
 	 * so we can restore this upon __exit

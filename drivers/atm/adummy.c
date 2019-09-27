@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * adummy.c: a dummy ATM driver
  */
@@ -17,7 +16,7 @@
 #include <linux/slab.h>
 #include <asm/io.h>
 #include <asm/byteorder.h>
-#include <linux/uaccess.h>
+#include <asm/uaccess.h>
 
 #include <linux/atmdev.h>
 #include <linux/atm.h>
@@ -72,7 +71,7 @@ static struct attribute *adummy_attrs[] = {
 	NULL
 };
 
-static const struct attribute_group adummy_group_attrs = {
+static struct attribute_group adummy_group_attrs = {
 	.name = NULL, /* We want them in dev's root folder */
 	.attrs = adummy_attrs
 };
@@ -131,7 +130,7 @@ adummy_proc_read(struct atm_dev *dev, loff_t *pos, char *page)
 	return 0;
 }
 
-static const struct atmdev_ops adummy_ops =
+static struct atmdev_ops adummy_ops =
 {
 	.open =		adummy_open,
 	.close =	adummy_close,	

@@ -22,16 +22,14 @@
  * Authors: Alex Deucher
  */
 
-#include <linux/seq_file.h>
-
-#include <drm/drm_pci.h>
-
-#include "atom.h"
-#include "r600_dpm.h"
+#include "drmP.h"
 #include "radeon.h"
 #include "radeon_asic.h"
-#include "rs780_dpm.h"
 #include "rs780d.h"
+#include "r600_dpm.h"
+#include "rs780_dpm.h"
+#include "atom.h"
+#include <linux/seq_file.h>
 
 static struct igp_ps *rs780_get_ps(struct radeon_ps *rps)
 {
@@ -806,9 +804,8 @@ static int rs780_parse_power_table(struct radeon_device *rdev)
 		return -EINVAL;
 	power_info = (union power_info *)(mode_info->atom_context->bios + data_offset);
 
-	rdev->pm.dpm.ps = kcalloc(power_info->pplib.ucNumStates,
-				  sizeof(struct radeon_ps),
-				  GFP_KERNEL);
+	rdev->pm.dpm.ps = kzalloc(sizeof(struct radeon_ps) *
+				  power_info->pplib.ucNumStates, GFP_KERNEL);
 	if (!rdev->pm.dpm.ps)
 		return -ENOMEM;
 

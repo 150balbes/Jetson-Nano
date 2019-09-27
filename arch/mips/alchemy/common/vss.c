@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Au1300 media block power gating (VSS)
  *
@@ -7,7 +6,7 @@
  * for various media blocks are enabled/disabled.
  */
 
-#include <linux/export.h>
+#include <linux/module.h>
 #include <linux/spinlock.h>
 #include <asm/mach-au1x00/au1000.h>
 

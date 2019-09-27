@@ -1,10 +1,23 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * ALSA SoC CQ0093 Voice Codec Driver for DaVinci platforms
  *
  * Copyright (C) 2010 Texas Instruments, Inc
  *
  * Author: Miguel Aguilar <miguel.aguilar@ridgerun.com>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
  */
 #include <linux/module.h>
 #include <linux/moduleparam.h>
@@ -32,7 +45,7 @@ static const struct snd_kcontrol_new cq93vc_snd_controls[] = {
 
 static int cq93vc_mute(struct snd_soc_dai *dai, int mute)
 {
-	struct snd_soc_component *component = dai->component;
+	struct snd_soc_codec *codec = dai->codec;
 	u8 reg;
 
 	if (mute)
@@ -40,7 +53,7 @@ static int cq93vc_mute(struct snd_soc_dai *dai, int mute)
 	else
 		reg = 0;
 
-	snd_soc_component_update_bits(component, DAVINCI_VC_REG09, DAVINCI_VC_REG09_MUTE,
+	snd_soc_update_bits(codec, DAVINCI_VC_REG09, DAVINCI_VC_REG09_MUTE,
 			    reg);
 
 	return 0;
@@ -59,23 +72,23 @@ static int cq93vc_set_dai_sysclk(struct snd_soc_dai *codec_dai,
 	return -EINVAL;
 }
 
-static int cq93vc_set_bias_level(struct snd_soc_component *component,
+static int cq93vc_set_bias_level(struct snd_soc_codec *codec,
 				enum snd_soc_bias_level level)
 {
 	switch (level) {
 	case SND_SOC_BIAS_ON:
-		snd_soc_component_write(component, DAVINCI_VC_REG12,
+		snd_soc_write(codec, DAVINCI_VC_REG12,
 			     DAVINCI_VC_REG12_POWER_ALL_ON);
 		break;
 	case SND_SOC_BIAS_PREPARE:
 		break;
 	case SND_SOC_BIAS_STANDBY:
-		snd_soc_component_write(component, DAVINCI_VC_REG12,
+		snd_soc_write(codec, DAVINCI_VC_REG12,
 			     DAVINCI_VC_REG12_POWER_ALL_OFF);
 		break;
 	case SND_SOC_BIAS_OFF:
 		/* force all power off */
-		snd_soc_component_write(component, DAVINCI_VC_REG12,
+		snd_soc_write(codec, DAVINCI_VC_REG12,
 			     DAVINCI_VC_REG12_POWER_ALL_OFF);
 		break;
 	}
@@ -108,34 +121,31 @@ static struct snd_soc_dai_driver cq93vc_dai = {
 	.ops = &cq93vc_dai_ops,
 };
 
-static int cq93vc_probe(struct snd_soc_component *component)
+static struct regmap *cq93vc_get_regmap(struct device *dev)
 {
-	struct davinci_vc *davinci_vc = component->dev->platform_data;
+	struct davinci_vc *davinci_vc = dev->platform_data;
 
-	snd_soc_component_init_regmap(component, davinci_vc->regmap);
-
-	return 0;
+	return davinci_vc->regmap;
 }
 
-static const struct snd_soc_component_driver soc_component_dev_cq93vc = {
-	.set_bias_level		= cq93vc_set_bias_level,
-	.probe			= cq93vc_probe,
-	.controls		= cq93vc_snd_controls,
-	.num_controls		= ARRAY_SIZE(cq93vc_snd_controls),
-	.idle_bias_on		= 1,
-	.use_pmdown_time	= 1,
-	.endianness		= 1,
-	.non_legacy_dai_naming	= 1,
+static struct snd_soc_codec_driver soc_codec_dev_cq93vc = {
+	.set_bias_level = cq93vc_set_bias_level,
+	.get_regmap = cq93vc_get_regmap,
+	.component_driver = {
+		.controls = cq93vc_snd_controls,
+		.num_controls = ARRAY_SIZE(cq93vc_snd_controls),
+	},
 };
 
 static int cq93vc_platform_probe(struct platform_device *pdev)
 {
-	return devm_snd_soc_register_component(&pdev->dev,
-			&soc_component_dev_cq93vc, &cq93vc_dai, 1);
+	return snd_soc_register_codec(&pdev->dev,
+			&soc_codec_dev_cq93vc, &cq93vc_dai, 1);
 }
 
 static int cq93vc_platform_remove(struct platform_device *pdev)
 {
+	snd_soc_unregister_codec(&pdev->dev);
 	return 0;
 }
 

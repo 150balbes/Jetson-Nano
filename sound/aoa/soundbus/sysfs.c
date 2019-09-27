@@ -1,9 +1,16 @@
-// SPDX-License-Identifier: GPL-2.0
 #include <linux/kernel.h>
-#include <linux/of.h>
 #include <linux/stat.h>
 /* FIX UP */
 #include "soundbus.h"
+
+#define soundbus_config_of_attr(field, format_string)			\
+static ssize_t								\
+field##_show (struct device *dev, struct device_attribute *attr,	\
+              char *buf)						\
+{									\
+	struct soundbus_dev *mdev = to_soundbus_device (dev);		\
+	return sprintf (buf, format_string, mdev->ofdev.dev.of_node->field); \
+}
 
 static ssize_t modalias_show(struct device *dev, struct device_attribute *attr,
 			     char *buf)
@@ -17,33 +24,17 @@ static ssize_t modalias_show(struct device *dev, struct device_attribute *attr,
 		strcat(buf, "\n");
 		length = strlen(buf);
 	} else {
-		length = sprintf(buf, "of:N%pOFn%c%s\n",
-				 of->dev.of_node, 'T',
-                                 of_node_get_device_type(of->dev.of_node));
+		length = sprintf(buf, "of:N%sT%s\n",
+				 of->dev.of_node->name, of->dev.of_node->type);
 	}
 
 	return length;
 }
 static DEVICE_ATTR_RO(modalias);
 
-static ssize_t name_show(struct device *dev,
-			 struct device_attribute *attr, char *buf)
-{
-	struct soundbus_dev *sdev = to_soundbus_device(dev);
-	struct platform_device *of = &sdev->ofdev;
-
-	return sprintf(buf, "%pOFn\n", of->dev.of_node);
-}
+soundbus_config_of_attr (name, "%s\n");
 static DEVICE_ATTR_RO(name);
-
-static ssize_t type_show(struct device *dev,
-			 struct device_attribute *attr, char *buf)
-{
-	struct soundbus_dev *sdev = to_soundbus_device(dev);
-	struct platform_device *of = &sdev->ofdev;
-
-	return sprintf(buf, "%s\n", of_node_get_device_type(of->dev.of_node));
-}
+soundbus_config_of_attr (type, "%s\n");
 static DEVICE_ATTR_RO(type);
 
 struct attribute *soundbus_dev_attrs[] = {

@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * init.c: PROM library initialisation code.
  *
@@ -89,7 +88,7 @@ void __init which_prom(s32 magic, s32 *prom_vec)
 void __init prom_init(void)
 {
 	extern void dec_machine_halt(void);
-	static const char cpu_msg[] __initconst =
+	static char cpu_msg[] __initdata =
 		"Sorry, this kernel is compiled for a wrong CPU type!\n";
 	s32 argc = fw_arg0;
 	s32 *argv = (void *)fw_arg1;
@@ -112,7 +111,7 @@ void __init prom_init(void)
 #if defined(CONFIG_CPU_R3000)
 	if ((current_cpu_type() == CPU_R4000SC) ||
 	    (current_cpu_type() == CPU_R4400SC)) {
-		static const char r4k_msg[] __initconst =
+		static char r4k_msg[] __initdata =
 			"Please recompile with \"CONFIG_CPU_R4x00 = y\".\n";
 		printk(cpu_msg);
 		printk(r4k_msg);
@@ -123,7 +122,7 @@ void __init prom_init(void)
 #if defined(CONFIG_CPU_R4X00)
 	if ((current_cpu_type() == CPU_R3000) ||
 	    (current_cpu_type() == CPU_R3000A)) {
-		static const char r3k_msg[] __initconst =
+		static char r3k_msg[] __initdata =
 			"Please recompile with \"CONFIG_CPU_R3000 = y\".\n";
 		printk(cpu_msg);
 		printk(r3k_msg);

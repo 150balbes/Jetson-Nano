@@ -10,10 +10,9 @@
  * License.  See the file "COPYING" in the main directory of this archive
  * for more details.
  */
-#include <linux/bsearch.h>
 #include <linux/rwsem.h>
-#include <linux/extable.h>
-#include <linux/uaccess.h>
+#include <linux/module.h>
+#include <asm/uaccess.h>
 
 extern unsigned long copy_user_memcpy, copy_user_memcpy_end;
 extern void __copy_user_fixup(void);
@@ -41,23 +40,10 @@ static const struct exception_table_entry *check_exception_ranges(unsigned long 
 	return NULL;
 }
 
-static int cmp_ex_search(const void *key, const void *elt)
-{
-	const struct exception_table_entry *_elt = elt;
-	unsigned long _key = *(unsigned long *)key;
-
-	/* avoid overflow */
-	if (_key > _elt->insn)
-		return 1;
-	if (_key < _elt->insn)
-		return -1;
-	return 0;
-}
-
 /* Simple binary search */
 const struct exception_table_entry *
-search_extable(const struct exception_table_entry *base,
-		 const size_t num,
+search_extable(const struct exception_table_entry *first,
+		 const struct exception_table_entry *last,
 		 unsigned long value)
 {
 	const struct exception_table_entry *mid;
@@ -66,8 +52,20 @@ search_extable(const struct exception_table_entry *base,
 	if (mid)
 		return mid;
 
-	return bsearch(&value, base, num,
-		       sizeof(struct exception_table_entry), cmp_ex_search);
+        while (first <= last) {
+		long diff;
+
+		mid = (last - first) / 2 + first;
+		diff = mid->insn - value;
+                if (diff == 0)
+                        return mid;
+                else if (diff < 0)
+                        first = mid+1;
+                else
+                        last = mid-1;
+        }
+
+        return NULL;
 }
 
 int fixup_exception(struct pt_regs *regs)

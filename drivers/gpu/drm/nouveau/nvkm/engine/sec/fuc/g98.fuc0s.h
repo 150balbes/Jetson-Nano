@@ -1,5 +1,4 @@
-/* SPDX-License-Identifier: MIT */
-static uint32_t g98_sec_data[] = {
+uint32_t g98_sec_data[] = {
 /* 0x0000: ctx_dma */
 /* 0x0000: ctx_dma_query */
 	0x00000000,
@@ -151,7 +150,7 @@ static uint32_t g98_sec_data[] = {
 	0x00000000,
 };
 
-static uint32_t g98_sec_code[] = {
+uint32_t g98_sec_code[] = {
 	0x17f004bd,
 	0x0010fe35,
 	0xf10004fe,

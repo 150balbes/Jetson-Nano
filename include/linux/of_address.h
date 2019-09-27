@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __OF_ADDRESS_H
 #define __OF_ADDRESS_H
 #include <linux/ioport.h>
@@ -50,8 +49,6 @@ extern const __be32 *of_get_address(struct device_node *dev, int index,
 
 extern int of_pci_range_parser_init(struct of_pci_range_parser *parser,
 			struct device_node *node);
-extern int of_pci_dma_range_parser_init(struct of_pci_range_parser *parser,
-			struct device_node *node);
 extern struct of_pci_range *of_pci_range_parser_one(
 					struct of_pci_range_parser *parser,
 					struct of_pci_range *range);
@@ -88,13 +85,7 @@ static inline const __be32 *of_get_address(struct device_node *dev, int index,
 static inline int of_pci_range_parser_init(struct of_pci_range_parser *parser,
 			struct device_node *node)
 {
-	return -ENOSYS;
-}
-
-static inline int of_pci_dma_range_parser_init(struct of_pci_range_parser *parser,
-			struct device_node *node)
-{
-	return -ENOSYS;
+	return -1;
 }
 
 static inline struct of_pci_range *of_pci_range_parser_one(

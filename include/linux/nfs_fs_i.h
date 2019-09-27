@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _NFS_FS_I
 #define _NFS_FS_I
 

@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: MIT */
 #ifndef __NVKM_PCI_H__
 #define __NVKM_PCI_H__
 #include <core/subdev.h>
@@ -44,7 +43,6 @@ int nv40_pci_new(struct nvkm_device *, int, struct nvkm_pci **);
 int nv46_pci_new(struct nvkm_device *, int, struct nvkm_pci **);
 int nv4c_pci_new(struct nvkm_device *, int, struct nvkm_pci **);
 int g84_pci_new(struct nvkm_device *, int, struct nvkm_pci **);
-int g92_pci_new(struct nvkm_device *, int, struct nvkm_pci **);
 int g94_pci_new(struct nvkm_device *, int, struct nvkm_pci **);
 int gf100_pci_new(struct nvkm_device *, int, struct nvkm_pci **);
 int gf106_pci_new(struct nvkm_device *, int, struct nvkm_pci **);

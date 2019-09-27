@@ -1,24 +1,55 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (C) 2012 Russell King
  *  Rewritten from the dovefb driver, and Armada510 manuals.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  */
 #include <linux/clk.h>
 #include <linux/component.h>
 #include <linux/of_device.h>
 #include <linux/platform_device.h>
 #include <drm/drmP.h>
-#include <drm/drm_atomic.h>
-#include <drm/drm_probe_helper.h>
+#include <drm/drm_crtc_helper.h>
 #include <drm/drm_plane_helper.h>
-#include <drm/drm_atomic_helper.h>
 #include "armada_crtc.h"
 #include "armada_drm.h"
 #include "armada_fb.h"
 #include "armada_gem.h"
 #include "armada_hw.h"
-#include "armada_plane.h"
-#include "armada_trace.h"
+
+struct armada_frame_work {
+	struct armada_plane_work work;
+	struct drm_pending_vblank_event *event;
+	struct armada_regs regs[4];
+	struct drm_framebuffer *old_fb;
+};
+
+enum csc_mode {
+	CSC_AUTO = 0,
+	CSC_YUV_CCIR601 = 1,
+	CSC_YUV_CCIR709 = 2,
+	CSC_RGB_COMPUTER = 1,
+	CSC_RGB_STUDIO = 2,
+};
+
+static const uint32_t armada_primary_formats[] = {
+	DRM_FORMAT_UYVY,
+	DRM_FORMAT_YUYV,
+	DRM_FORMAT_VYUY,
+	DRM_FORMAT_YVYU,
+	DRM_FORMAT_ARGB8888,
+	DRM_FORMAT_ABGR8888,
+	DRM_FORMAT_XRGB8888,
+	DRM_FORMAT_XBGR8888,
+	DRM_FORMAT_RGB888,
+	DRM_FORMAT_BGR888,
+	DRM_FORMAT_ARGB1555,
+	DRM_FORMAT_ABGR1555,
+	DRM_FORMAT_RGB565,
+	DRM_FORMAT_BGR565,
+};
 
 /*
  * A note about interlacing.  Let's consider HDMI 1920x1080i.
@@ -89,13 +120,15 @@ armada_drm_crtc_update_regs(struct armada_crtc *dcrtc, struct armada_regs *regs)
 	}
 }
 
-static void armada_drm_crtc_update(struct armada_crtc *dcrtc, bool enable)
+#define dpms_blanked(dpms)	((dpms) != DRM_MODE_DPMS_ON)
+
+static void armada_drm_crtc_update(struct armada_crtc *dcrtc)
 {
 	uint32_t dumb_ctrl;
 
 	dumb_ctrl = dcrtc->cfg_dumb_ctrl;
 
-	if (enable)
+	if (!dpms_blanked(dcrtc->dpms))
 		dumb_ctrl |= CFG_DUMB_ENA;
 
 	/*
@@ -104,91 +137,248 @@ static void armada_drm_crtc_update(struct armada_crtc *dcrtc, bool enable)
 	 * force LCD_D[23:0] to output blank color, overriding the GPIO or
 	 * SPI usage.  So leave it as-is unless in DUMB24_RGB888_0 mode.
 	 */
-	if (!enable && (dumb_ctrl & DUMB_MASK) == DUMB24_RGB888_0) {
+	if (dpms_blanked(dcrtc->dpms) &&
+	    (dumb_ctrl & DUMB_MASK) == DUMB24_RGB888_0) {
 		dumb_ctrl &= ~DUMB_MASK;
 		dumb_ctrl |= DUMB_BLANK;
 	}
 
-	armada_updatel(dumb_ctrl,
-		       ~(CFG_INV_CSYNC | CFG_INV_HSYNC | CFG_INV_VSYNC),
-		       dcrtc->base + LCD_SPU_DUMB_CTRL);
-}
+	/*
+	 * The documentation doesn't indicate what the normal state of
+	 * the sync signals are.  Sebastian Hesselbart kindly probed
+	 * these signals on his board to determine their state.
+	 *
+	 * The non-inverted state of the sync signals is active high.
+	 * Setting these bits makes the appropriate signal active low.
+	 */
+	if (dcrtc->crtc.mode.flags & DRM_MODE_FLAG_NCSYNC)
+		dumb_ctrl |= CFG_INV_CSYNC;
+	if (dcrtc->crtc.mode.flags & DRM_MODE_FLAG_NHSYNC)
+		dumb_ctrl |= CFG_INV_HSYNC;
+	if (dcrtc->crtc.mode.flags & DRM_MODE_FLAG_NVSYNC)
+		dumb_ctrl |= CFG_INV_VSYNC;
 
-static void armada_drm_crtc_queue_state_event(struct drm_crtc *crtc)
-{
-	struct armada_crtc *dcrtc = drm_to_armada_crtc(crtc);
-	struct drm_pending_vblank_event *event;
-
-	/* If we have an event, we need vblank events enabled */
-	event = xchg(&crtc->state->event, NULL);
-	if (event) {
-		WARN_ON(drm_crtc_vblank_get(crtc) != 0);
-		dcrtc->event = event;
+	if (dcrtc->dumb_ctrl != dumb_ctrl) {
+		dcrtc->dumb_ctrl = dumb_ctrl;
+		writel_relaxed(dumb_ctrl, dcrtc->base + LCD_SPU_DUMB_CTRL);
 	}
 }
 
-static void armada_drm_update_gamma(struct drm_crtc *crtc)
+static unsigned armada_drm_crtc_calc_fb(struct drm_framebuffer *fb,
+	int x, int y, struct armada_regs *regs, bool interlaced)
 {
-	struct drm_property_blob *blob = crtc->state->gamma_lut;
-	void __iomem *base = drm_to_armada_crtc(crtc)->base;
-	int i;
+	struct armada_gem_object *obj = drm_fb_obj(fb);
+	unsigned pitch = fb->pitches[0];
+	unsigned offset = y * pitch + x * fb->bits_per_pixel / 8;
+	uint32_t addr_odd, addr_even;
+	unsigned i = 0;
 
-	if (blob) {
-		struct drm_color_lut *lut = blob->data;
+	DRM_DEBUG_DRIVER("pitch %u x %d y %d bpp %d\n",
+		pitch, x, y, fb->bits_per_pixel);
 
-		armada_updatel(CFG_CSB_256x8, CFG_CSB_256x8 | CFG_PDWN256x8,
-			       base + LCD_SPU_SRAM_PARA1);
+	addr_odd = addr_even = obj->dev_addr + offset;
 
-		for (i = 0; i < 256; i++) {
-			writel_relaxed(drm_color_lut_extract(lut[i].red, 8),
-				       base + LCD_SPU_SRAM_WRDAT);
-			writel_relaxed(i | SRAM_WRITE | SRAM_GAMMA_YR,
-				       base + LCD_SPU_SRAM_CTRL);
-			readl_relaxed(base + LCD_SPU_HWC_OVSA_HPXL_VLN);
-			writel_relaxed(drm_color_lut_extract(lut[i].green, 8),
-				       base + LCD_SPU_SRAM_WRDAT);
-			writel_relaxed(i | SRAM_WRITE | SRAM_GAMMA_UG,
-				       base + LCD_SPU_SRAM_CTRL);
-			readl_relaxed(base + LCD_SPU_HWC_OVSA_HPXL_VLN);
-			writel_relaxed(drm_color_lut_extract(lut[i].blue, 8),
-				       base + LCD_SPU_SRAM_WRDAT);
-			writel_relaxed(i | SRAM_WRITE | SRAM_GAMMA_VB,
-				       base + LCD_SPU_SRAM_CTRL);
-			readl_relaxed(base + LCD_SPU_HWC_OVSA_HPXL_VLN);
-		}
-		armada_updatel(CFG_GAMMA_ENA, CFG_GAMMA_ENA,
-			       base + LCD_SPU_DMA_CTRL0);
-	} else {
-		armada_updatel(0, CFG_GAMMA_ENA, base + LCD_SPU_DMA_CTRL0);
-		armada_updatel(CFG_PDWN256x8, CFG_CSB_256x8 | CFG_PDWN256x8,
-			       base + LCD_SPU_SRAM_PARA1);
+	if (interlaced) {
+		addr_even += pitch;
+		pitch *= 2;
 	}
+
+	/* write offset, base, and pitch */
+	armada_reg_queue_set(regs, i, addr_odd, LCD_CFG_GRA_START_ADDR0);
+	armada_reg_queue_set(regs, i, addr_even, LCD_CFG_GRA_START_ADDR1);
+	armada_reg_queue_mod(regs, i, pitch, 0xffff, LCD_CFG_GRA_PITCH);
+
+	return i;
 }
 
-static enum drm_mode_status armada_drm_crtc_mode_valid(struct drm_crtc *crtc,
-	const struct drm_display_mode *mode)
+static void armada_drm_plane_work_run(struct armada_crtc *dcrtc,
+	struct armada_plane *plane)
+{
+	struct armada_plane_work *work = xchg(&plane->work, NULL);
+
+	/* Handle any pending frame work. */
+	if (work) {
+		work->fn(dcrtc, plane, work);
+		drm_crtc_vblank_put(&dcrtc->crtc);
+	}
+
+	wake_up(&plane->frame_wait);
+}
+
+int armada_drm_plane_work_queue(struct armada_crtc *dcrtc,
+	struct armada_plane *plane, struct armada_plane_work *work)
+{
+	int ret;
+
+	ret = drm_crtc_vblank_get(&dcrtc->crtc);
+	if (ret) {
+		DRM_ERROR("failed to acquire vblank counter\n");
+		return ret;
+	}
+
+	ret = cmpxchg(&plane->work, NULL, work) ? -EBUSY : 0;
+	if (ret)
+		drm_crtc_vblank_put(&dcrtc->crtc);
+
+	return ret;
+}
+
+int armada_drm_plane_work_wait(struct armada_plane *plane, long timeout)
+{
+	return wait_event_timeout(plane->frame_wait, !plane->work, timeout);
+}
+
+struct armada_plane_work *armada_drm_plane_work_cancel(
+	struct armada_crtc *dcrtc, struct armada_plane *plane)
+{
+	struct armada_plane_work *work = xchg(&plane->work, NULL);
+
+	if (work)
+		drm_crtc_vblank_put(&dcrtc->crtc);
+
+	return work;
+}
+
+static int armada_drm_crtc_queue_frame_work(struct armada_crtc *dcrtc,
+	struct armada_frame_work *work)
+{
+	struct armada_plane *plane = drm_to_armada_plane(dcrtc->crtc.primary);
+
+	return armada_drm_plane_work_queue(dcrtc, plane, &work->work);
+}
+
+static void armada_drm_crtc_complete_frame_work(struct armada_crtc *dcrtc,
+	struct armada_plane *plane, struct armada_plane_work *work)
+{
+	struct armada_frame_work *fwork = container_of(work, struct armada_frame_work, work);
+	struct drm_device *dev = dcrtc->crtc.dev;
+	unsigned long flags;
+
+	spin_lock_irqsave(&dcrtc->irq_lock, flags);
+	armada_drm_crtc_update_regs(dcrtc, fwork->regs);
+	spin_unlock_irqrestore(&dcrtc->irq_lock, flags);
+
+	if (fwork->event) {
+		spin_lock_irqsave(&dev->event_lock, flags);
+		drm_crtc_send_vblank_event(&dcrtc->crtc, fwork->event);
+		spin_unlock_irqrestore(&dev->event_lock, flags);
+	}
+
+	/* Finally, queue the process-half of the cleanup. */
+	__armada_drm_queue_unref_work(dcrtc->crtc.dev, fwork->old_fb);
+	kfree(fwork);
+}
+
+static void armada_drm_crtc_finish_fb(struct armada_crtc *dcrtc,
+	struct drm_framebuffer *fb, bool force)
+{
+	struct armada_frame_work *work;
+
+	if (!fb)
+		return;
+
+	if (force) {
+		/* Display is disabled, so just drop the old fb */
+		drm_framebuffer_unreference(fb);
+		return;
+	}
+
+	work = kmalloc(sizeof(*work), GFP_KERNEL);
+	if (work) {
+		int i = 0;
+		work->work.fn = armada_drm_crtc_complete_frame_work;
+		work->event = NULL;
+		work->old_fb = fb;
+		armada_reg_queue_end(work->regs, i);
+
+		if (armada_drm_crtc_queue_frame_work(dcrtc, work) == 0)
+			return;
+
+		kfree(work);
+	}
+
+	/*
+	 * Oops - just drop the reference immediately and hope for
+	 * the best.  The worst that will happen is the buffer gets
+	 * reused before it has finished being displayed.
+	 */
+	drm_framebuffer_unreference(fb);
+}
+
+static void armada_drm_vblank_off(struct armada_crtc *dcrtc)
+{
+	struct armada_plane *plane = drm_to_armada_plane(dcrtc->crtc.primary);
+
+	/*
+	 * Tell the DRM core that vblank IRQs aren't going to happen for
+	 * a while.  This cleans up any pending vblank events for us.
+	 */
+	drm_crtc_vblank_off(&dcrtc->crtc);
+	armada_drm_plane_work_run(dcrtc, plane);
+}
+
+void armada_drm_crtc_gamma_set(struct drm_crtc *crtc, u16 r, u16 g, u16 b,
+	int idx)
+{
+}
+
+void armada_drm_crtc_gamma_get(struct drm_crtc *crtc, u16 *r, u16 *g, u16 *b,
+	int idx)
+{
+}
+
+/* The mode_config.mutex will be held for this call */
+static void armada_drm_crtc_dpms(struct drm_crtc *crtc, int dpms)
 {
 	struct armada_crtc *dcrtc = drm_to_armada_crtc(crtc);
 
-	if (mode->vscan > 1)
-		return MODE_NO_VSCAN;
+	if (dpms_blanked(dcrtc->dpms) != dpms_blanked(dpms)) {
+		if (dpms_blanked(dpms))
+			armada_drm_vblank_off(dcrtc);
+		else if (!IS_ERR(dcrtc->clk))
+			WARN_ON(clk_prepare_enable(dcrtc->clk));
+		dcrtc->dpms = dpms;
+		armada_drm_crtc_update(dcrtc);
+		if (!dpms_blanked(dpms))
+			drm_crtc_vblank_on(&dcrtc->crtc);
+		else if (!IS_ERR(dcrtc->clk))
+			clk_disable_unprepare(dcrtc->clk);
+	} else if (dcrtc->dpms != dpms) {
+		dcrtc->dpms = dpms;
+	}
+}
 
-	if (mode->flags & DRM_MODE_FLAG_DBLSCAN)
-		return MODE_NO_DBLESCAN;
+/*
+ * Prepare for a mode set.  Turn off overlay to ensure that we don't end
+ * up with the overlay size being bigger than the active screen size.
+ * We rely upon X refreshing this state after the mode set has completed.
+ *
+ * The mode_config.mutex will be held for this call
+ */
+static void armada_drm_crtc_prepare(struct drm_crtc *crtc)
+{
+	struct armada_crtc *dcrtc = drm_to_armada_crtc(crtc);
+	struct drm_plane *plane;
 
-	if (mode->flags & DRM_MODE_FLAG_HSKEW)
-		return MODE_H_ILLEGAL;
+	/*
+	 * If we have an overlay plane associated with this CRTC, disable
+	 * it before the modeset to avoid its coordinates being outside
+	 * the new mode parameters.
+	 */
+	plane = dcrtc->plane;
+	if (plane)
+		drm_plane_force_disable(plane);
+}
 
-	/* We can't do interlaced modes if we don't have the SPU_ADV_REG */
-	if (!dcrtc->variant->has_spu_adv_reg &&
-	    mode->flags & DRM_MODE_FLAG_INTERLACE)
-		return MODE_NO_INTERLACE;
+/* The mode_config.mutex will be held for this call */
+static void armada_drm_crtc_commit(struct drm_crtc *crtc)
+{
+	struct armada_crtc *dcrtc = drm_to_armada_crtc(crtc);
 
-	if (mode->flags & (DRM_MODE_FLAG_BCAST | DRM_MODE_FLAG_PIXMUX |
-			   DRM_MODE_FLAG_CLKDIV2))
-		return MODE_BAD;
-
-	return MODE_OK;
+	if (dcrtc->dpms != DRM_MODE_DPMS_ON) {
+		dcrtc->dpms = DRM_MODE_DPMS_ON;
+		armada_drm_crtc_update(dcrtc);
+	}
 }
 
 /* The mode_config.mutex will be held for this call */
@@ -198,18 +388,9 @@ static bool armada_drm_crtc_mode_fixup(struct drm_crtc *crtc,
 	struct armada_crtc *dcrtc = drm_to_armada_crtc(crtc);
 	int ret;
 
-	/*
-	 * Set CRTC modesetting parameters for the adjusted mode.  This is
-	 * applied after the connectors, bridges, and encoders have fixed up
-	 * this mode, as described above drm_atomic_helper_check_modeset().
-	 */
-	drm_mode_set_crtcinfo(adj, CRTC_INTERLACE_HALVE_V);
-
-	/*
-	 * Validate the adjusted mode in case an encoder/bridge has set
-	 * something we don't support.
-	 */
-	if (armada_drm_crtc_mode_valid(crtc, adj) != MODE_OK)
+	/* We can't do interlaced modes if we don't have the SPU_ADV_REG */
+	if (!dcrtc->variant->has_spu_adv_reg &&
+	    adj->flags & DRM_MODE_FLAG_INTERLACE)
 		return false;
 
 	/* Check whether the display mode is possible */
@@ -220,29 +401,10 @@ static bool armada_drm_crtc_mode_fixup(struct drm_crtc *crtc,
 	return true;
 }
 
-/* These are locked by dev->vbl_lock */
-static void armada_drm_crtc_disable_irq(struct armada_crtc *dcrtc, u32 mask)
-{
-	if (dcrtc->irq_ena & mask) {
-		dcrtc->irq_ena &= ~mask;
-		writel(dcrtc->irq_ena, dcrtc->base + LCD_SPU_IRQ_ENA);
-	}
-}
-
-static void armada_drm_crtc_enable_irq(struct armada_crtc *dcrtc, u32 mask)
-{
-	if ((dcrtc->irq_ena & mask) != mask) {
-		dcrtc->irq_ena |= mask;
-		writel(dcrtc->irq_ena, dcrtc->base + LCD_SPU_IRQ_ENA);
-		if (readl_relaxed(dcrtc->base + LCD_SPU_IRQ_ISR) & mask)
-			writel(0, dcrtc->base + LCD_SPU_IRQ_ISR);
-	}
-}
-
 static void armada_drm_crtc_irq(struct armada_crtc *dcrtc, u32 stat)
 {
-	struct drm_pending_vblank_event *event;
 	void __iomem *base = dcrtc->base;
+	struct drm_plane *ovl_plane;
 
 	if (stat & DMA_FF_UNDERFLOW)
 		DRM_ERROR("video underflow on crtc %u\n", dcrtc->num);
@@ -253,6 +415,12 @@ static void armada_drm_crtc_irq(struct armada_crtc *dcrtc, u32 stat)
 		drm_crtc_handle_vblank(&dcrtc->crtc);
 
 	spin_lock(&dcrtc->irq_lock);
+	ovl_plane = dcrtc->plane;
+	if (ovl_plane) {
+		struct armada_plane *plane = drm_to_armada_plane(ovl_plane);
+		armada_drm_plane_work_run(dcrtc, plane);
+	}
+
 	if (stat & GRA_FRAME_IRQ && dcrtc->interlaced) {
 		int i = stat & GRA_FRAME_IRQ0 ? 0 : 1;
 		uint32_t val;
@@ -267,34 +435,23 @@ static void armada_drm_crtc_irq(struct armada_crtc *dcrtc, u32 stat)
 		writel_relaxed(val, base + LCD_SPU_ADV_REG);
 	}
 
-	if (stat & dcrtc->irq_ena & DUMB_FRAMEDONE) {
-		if (dcrtc->update_pending) {
-			armada_drm_crtc_update_regs(dcrtc, dcrtc->regs);
-			dcrtc->update_pending = false;
-		}
-		if (dcrtc->cursor_update) {
-			writel_relaxed(dcrtc->cursor_hw_pos,
-				       base + LCD_SPU_HWC_OVSA_HPXL_VLN);
-			writel_relaxed(dcrtc->cursor_hw_sz,
-				       base + LCD_SPU_HWC_HPXL_VLN);
-			armada_updatel(CFG_HWC_ENA,
-				       CFG_HWC_ENA | CFG_HWC_1BITMOD |
-				       CFG_HWC_1BITENA,
-				       base + LCD_SPU_DMA_CTRL0);
-			dcrtc->cursor_update = false;
-		}
+	if (stat & DUMB_FRAMEDONE && dcrtc->cursor_update) {
+		writel_relaxed(dcrtc->cursor_hw_pos,
+			       base + LCD_SPU_HWC_OVSA_HPXL_VLN);
+		writel_relaxed(dcrtc->cursor_hw_sz,
+			       base + LCD_SPU_HWC_HPXL_VLN);
+		armada_updatel(CFG_HWC_ENA,
+			       CFG_HWC_ENA | CFG_HWC_1BITMOD | CFG_HWC_1BITENA,
+			       base + LCD_SPU_DMA_CTRL0);
+		dcrtc->cursor_update = false;
 		armada_drm_crtc_disable_irq(dcrtc, DUMB_FRAMEDONE_ENA);
 	}
+
 	spin_unlock(&dcrtc->irq_lock);
 
-	if (stat & VSYNC_IRQ && !dcrtc->update_pending) {
-		event = xchg(&dcrtc->event, NULL);
-		if (event) {
-			spin_lock(&dcrtc->crtc.dev->event_lock);
-			drm_crtc_send_vblank_event(&dcrtc->crtc, event);
-			spin_unlock(&dcrtc->crtc.dev->event_lock);
-			drm_crtc_vblank_put(&dcrtc->crtc);
-		}
+	if (stat & GRA_FRAME_IRQ) {
+		struct armada_plane *plane = drm_to_armada_plane(dcrtc->crtc.primary);
+		armada_drm_plane_work_run(dcrtc, plane);
 	}
 }
 
@@ -304,13 +461,10 @@ static irqreturn_t armada_drm_irq(int irq, void *arg)
 	u32 v, stat = readl_relaxed(dcrtc->base + LCD_SPU_IRQ_ISR);
 
 	/*
-	 * Reading the ISR appears to clear bits provided CLEAN_SPU_IRQ_ISR
-	 * is set.  Writing has some other effect to acknowledge the IRQ -
-	 * without this, we only get a single IRQ.
+	 * This is rediculous - rather than writing bits to clear, we
+	 * have to set the actual status register value.  This is racy.
 	 */
 	writel_relaxed(0, dcrtc->base + LCD_SPU_IRQ_ISR);
-
-	trace_armada_drm_irq(&dcrtc->crtc, stat);
 
 	/* Mask out those interrupts we haven't enabled */
 	v = stat & dcrtc->irq_ena;
@@ -322,49 +476,148 @@ static irqreturn_t armada_drm_irq(int irq, void *arg)
 	return IRQ_NONE;
 }
 
-/* The mode_config.mutex will be held for this call */
-static void armada_drm_crtc_mode_set_nofb(struct drm_crtc *crtc)
+/* These are locked by dev->vbl_lock */
+void armada_drm_crtc_disable_irq(struct armada_crtc *dcrtc, u32 mask)
 {
-	struct drm_display_mode *adj = &crtc->state->adjusted_mode;
+	if (dcrtc->irq_ena & mask) {
+		dcrtc->irq_ena &= ~mask;
+		writel(dcrtc->irq_ena, dcrtc->base + LCD_SPU_IRQ_ENA);
+	}
+}
+
+void armada_drm_crtc_enable_irq(struct armada_crtc *dcrtc, u32 mask)
+{
+	if ((dcrtc->irq_ena & mask) != mask) {
+		dcrtc->irq_ena |= mask;
+		writel(dcrtc->irq_ena, dcrtc->base + LCD_SPU_IRQ_ENA);
+		if (readl_relaxed(dcrtc->base + LCD_SPU_IRQ_ISR) & mask)
+			writel(0, dcrtc->base + LCD_SPU_IRQ_ISR);
+	}
+}
+
+static uint32_t armada_drm_crtc_calculate_csc(struct armada_crtc *dcrtc)
+{
+	struct drm_display_mode *adj = &dcrtc->crtc.mode;
+	uint32_t val = 0;
+
+	if (dcrtc->csc_yuv_mode == CSC_YUV_CCIR709)
+		val |= CFG_CSC_YUV_CCIR709;
+	if (dcrtc->csc_rgb_mode == CSC_RGB_STUDIO)
+		val |= CFG_CSC_RGB_STUDIO;
+
+	/*
+	 * In auto mode, set the colorimetry, based upon the HDMI spec.
+	 * 1280x720p, 1920x1080p and 1920x1080i use ITU709, others use
+	 * ITU601.  It may be more appropriate to set this depending on
+	 * the source - but what if the graphic frame is YUV and the
+	 * video frame is RGB?
+	 */
+	if ((adj->hdisplay == 1280 && adj->vdisplay == 720 &&
+	     !(adj->flags & DRM_MODE_FLAG_INTERLACE)) ||
+	    (adj->hdisplay == 1920 && adj->vdisplay == 1080)) {
+		if (dcrtc->csc_yuv_mode == CSC_AUTO)
+			val |= CFG_CSC_YUV_CCIR709;
+	}
+
+	/*
+	 * We assume we're connected to a TV-like device, so the YUV->RGB
+	 * conversion should produce a limited range.  We should set this
+	 * depending on the connectors attached to this CRTC, and what
+	 * kind of device they report being connected.
+	 */
+	if (dcrtc->csc_rgb_mode == CSC_AUTO)
+		val |= CFG_CSC_RGB_STUDIO;
+
+	return val;
+}
+
+/* The mode_config.mutex will be held for this call */
+static int armada_drm_crtc_mode_set(struct drm_crtc *crtc,
+	struct drm_display_mode *mode, struct drm_display_mode *adj,
+	int x, int y, struct drm_framebuffer *old_fb)
+{
 	struct armada_crtc *dcrtc = drm_to_armada_crtc(crtc);
 	struct armada_regs regs[17];
 	uint32_t lm, rm, tm, bm, val, sclk;
 	unsigned long flags;
 	unsigned i;
-	bool interlaced = !!(adj->flags & DRM_MODE_FLAG_INTERLACE);
+	bool interlaced;
 
-	i = 0;
+	drm_framebuffer_reference(crtc->primary->fb);
+
+	interlaced = !!(adj->flags & DRM_MODE_FLAG_INTERLACE);
+
+	i = armada_drm_crtc_calc_fb(dcrtc->crtc.primary->fb,
+				    x, y, regs, interlaced);
+
 	rm = adj->crtc_hsync_start - adj->crtc_hdisplay;
 	lm = adj->crtc_htotal - adj->crtc_hsync_end;
 	bm = adj->crtc_vsync_start - adj->crtc_vdisplay;
 	tm = adj->crtc_vtotal - adj->crtc_vsync_end;
 
-	DRM_DEBUG_KMS("[CRTC:%d:%s] mode " DRM_MODE_FMT "\n",
-		      crtc->base.id, crtc->name, DRM_MODE_ARG(adj));
-	DRM_DEBUG_KMS("lm %d rm %d tm %d bm %d\n", lm, rm, tm, bm);
+	DRM_DEBUG_DRIVER("H: %d %d %d %d lm %d rm %d\n",
+		adj->crtc_hdisplay,
+		adj->crtc_hsync_start,
+		adj->crtc_hsync_end,
+		adj->crtc_htotal, lm, rm);
+	DRM_DEBUG_DRIVER("V: %d %d %d %d tm %d bm %d\n",
+		adj->crtc_vdisplay,
+		adj->crtc_vsync_start,
+		adj->crtc_vsync_end,
+		adj->crtc_vtotal, tm, bm);
+
+	/* Wait for pending flips to complete */
+	armada_drm_plane_work_wait(drm_to_armada_plane(dcrtc->crtc.primary),
+				   MAX_SCHEDULE_TIMEOUT);
+
+	drm_crtc_vblank_off(crtc);
+
+	val = dcrtc->dumb_ctrl & ~CFG_DUMB_ENA;
+	if (val != dcrtc->dumb_ctrl) {
+		dcrtc->dumb_ctrl = val;
+		writel_relaxed(val, dcrtc->base + LCD_SPU_DUMB_CTRL);
+	}
+
+	/*
+	 * If we are blanked, we would have disabled the clock.  Re-enable
+	 * it so that compute_clock() does the right thing.
+	 */
+	if (!IS_ERR(dcrtc->clk) && dpms_blanked(dcrtc->dpms))
+		WARN_ON(clk_prepare_enable(dcrtc->clk));
 
 	/* Now compute the divider for real */
 	dcrtc->variant->compute_clock(dcrtc, adj, &sclk);
 
+	/* Ensure graphic fifo is enabled */
+	armada_reg_queue_mod(regs, i, 0, CFG_PDWN64x66, LCD_SPU_SRAM_PARA1);
 	armada_reg_queue_set(regs, i, sclk, LCD_CFG_SCLK_DIV);
+
+	if (interlaced ^ dcrtc->interlaced) {
+		if (adj->flags & DRM_MODE_FLAG_INTERLACE)
+			drm_crtc_vblank_get(&dcrtc->crtc);
+		else
+			drm_crtc_vblank_put(&dcrtc->crtc);
+		dcrtc->interlaced = interlaced;
+	}
 
 	spin_lock_irqsave(&dcrtc->irq_lock, flags);
 
-	dcrtc->interlaced = interlaced;
 	/* Even interlaced/progressive frame */
 	dcrtc->v[1].spu_v_h_total = adj->crtc_vtotal << 16 |
 				    adj->crtc_htotal;
 	dcrtc->v[1].spu_v_porch = tm << 16 | bm;
 	val = adj->crtc_hsync_start;
-	dcrtc->v[1].spu_adv_reg = val << 20 | val | ADV_VSYNCOFFEN;
+	dcrtc->v[1].spu_adv_reg = val << 20 | val | ADV_VSYNCOFFEN |
+		dcrtc->variant->spu_adv_reg;
 
 	if (interlaced) {
 		/* Odd interlaced frame */
-		val -= adj->crtc_htotal / 2;
-		dcrtc->v[0].spu_adv_reg = val << 20 | val | ADV_VSYNCOFFEN;
 		dcrtc->v[0].spu_v_h_total = dcrtc->v[1].spu_v_h_total +
 						(1 << 16);
 		dcrtc->v[0].spu_v_porch = dcrtc->v[1].spu_v_porch + 1;
+		val = adj->crtc_hsync_start - adj->crtc_htotal / 2;
+		dcrtc->v[0].spu_adv_reg = val << 20 | val | ADV_VSYNCOFFEN |
+			dcrtc->variant->spu_adv_reg;
 	} else {
 		dcrtc->v[0] = dcrtc->v[1];
 	}
@@ -372,166 +625,132 @@ static void armada_drm_crtc_mode_set_nofb(struct drm_crtc *crtc)
 	val = adj->crtc_vdisplay << 16 | adj->crtc_hdisplay;
 
 	armada_reg_queue_set(regs, i, val, LCD_SPU_V_H_ACTIVE);
+	armada_reg_queue_set(regs, i, val, LCD_SPU_GRA_HPXL_VLN);
+	armada_reg_queue_set(regs, i, val, LCD_SPU_GZM_HPXL_VLN);
 	armada_reg_queue_set(regs, i, (lm << 16) | rm, LCD_SPU_H_PORCH);
 	armada_reg_queue_set(regs, i, dcrtc->v[0].spu_v_porch, LCD_SPU_V_PORCH);
 	armada_reg_queue_set(regs, i, dcrtc->v[0].spu_v_h_total,
 			   LCD_SPUT_V_H_TOTAL);
 
-	if (dcrtc->variant->has_spu_adv_reg)
+	if (dcrtc->variant->has_spu_adv_reg) {
 		armada_reg_queue_mod(regs, i, dcrtc->v[0].spu_adv_reg,
 				     ADV_VSYNC_L_OFF | ADV_VSYNC_H_OFF |
 				     ADV_VSYNCOFFEN, LCD_SPU_ADV_REG);
+	}
+
+	val = CFG_GRA_ENA | CFG_GRA_HSMOOTH;
+	val |= CFG_GRA_FMT(drm_fb_to_armada_fb(dcrtc->crtc.primary->fb)->fmt);
+	val |= CFG_GRA_MOD(drm_fb_to_armada_fb(dcrtc->crtc.primary->fb)->mod);
+
+	if (drm_fb_to_armada_fb(dcrtc->crtc.primary->fb)->fmt > CFG_420)
+		val |= CFG_PALETTE_ENA;
+
+	if (interlaced)
+		val |= CFG_GRA_FTOGGLE;
+
+	armada_reg_queue_mod(regs, i, val, CFG_GRAFORMAT |
+			     CFG_GRA_MOD(CFG_SWAPRB | CFG_SWAPUV |
+					 CFG_SWAPYU | CFG_YUV2RGB) |
+			     CFG_PALETTE_ENA | CFG_GRA_FTOGGLE,
+			     LCD_SPU_DMA_CTRL0);
 
 	val = adj->flags & DRM_MODE_FLAG_NVSYNC ? CFG_VSYNC_INV : 0;
 	armada_reg_queue_mod(regs, i, val, CFG_VSYNC_INV, LCD_SPU_DMA_CTRL1);
 
-	/*
-	 * The documentation doesn't indicate what the normal state of
-	 * the sync signals are.  Sebastian Hesselbart kindly probed
-	 * these signals on his board to determine their state.
-	 *
-	 * The non-inverted state of the sync signals is active high.
-	 * Setting these bits makes the appropriate signal active low.
-	 */
-	val = 0;
-	if (adj->flags & DRM_MODE_FLAG_NCSYNC)
-		val |= CFG_INV_CSYNC;
-	if (adj->flags & DRM_MODE_FLAG_NHSYNC)
-		val |= CFG_INV_HSYNC;
-	if (adj->flags & DRM_MODE_FLAG_NVSYNC)
-		val |= CFG_INV_VSYNC;
-	armada_reg_queue_mod(regs, i, val, CFG_INV_CSYNC | CFG_INV_HSYNC |
-			     CFG_INV_VSYNC, LCD_SPU_DUMB_CTRL);
+	val = dcrtc->spu_iopad_ctrl | armada_drm_crtc_calculate_csc(dcrtc);
+	armada_reg_queue_set(regs, i, val, LCD_SPU_IOPAD_CONTROL);
 	armada_reg_queue_end(regs, i);
 
 	armada_drm_crtc_update_regs(dcrtc, regs);
 	spin_unlock_irqrestore(&dcrtc->irq_lock, flags);
-}
 
-static int armada_drm_crtc_atomic_check(struct drm_crtc *crtc,
-					struct drm_crtc_state *state)
-{
-	DRM_DEBUG_KMS("[CRTC:%d:%s]\n", crtc->base.id, crtc->name);
+	armada_drm_crtc_update(dcrtc);
 
-	if (state->gamma_lut && drm_color_lut_size(state->gamma_lut) != 256)
-		return -EINVAL;
-
-	if (state->color_mgmt_changed)
-		state->planes_changed = true;
+	drm_crtc_vblank_on(crtc);
+	armada_drm_crtc_finish_fb(dcrtc, old_fb, dpms_blanked(dcrtc->dpms));
 
 	return 0;
 }
 
-static void armada_drm_crtc_atomic_begin(struct drm_crtc *crtc,
-					 struct drm_crtc_state *old_crtc_state)
+/* The mode_config.mutex will be held for this call */
+static int armada_drm_crtc_mode_set_base(struct drm_crtc *crtc, int x, int y,
+	struct drm_framebuffer *old_fb)
 {
 	struct armada_crtc *dcrtc = drm_to_armada_crtc(crtc);
+	struct armada_regs regs[4];
+	unsigned i;
 
-	DRM_DEBUG_KMS("[CRTC:%d:%s]\n", crtc->base.id, crtc->name);
+	i = armada_drm_crtc_calc_fb(crtc->primary->fb, crtc->x, crtc->y, regs,
+				    dcrtc->interlaced);
+	armada_reg_queue_end(regs, i);
 
-	if (crtc->state->color_mgmt_changed)
-		armada_drm_update_gamma(crtc);
+	/* Wait for pending flips to complete */
+	armada_drm_plane_work_wait(drm_to_armada_plane(dcrtc->crtc.primary),
+				   MAX_SCHEDULE_TIMEOUT);
 
-	dcrtc->regs_idx = 0;
-	dcrtc->regs = dcrtc->atomic_regs;
+	/* Take a reference to the new fb as we're using it */
+	drm_framebuffer_reference(crtc->primary->fb);
+
+	/* Update the base in the CRTC */
+	armada_drm_crtc_update_regs(dcrtc, regs);
+
+	/* Drop our previously held reference */
+	armada_drm_crtc_finish_fb(dcrtc, old_fb, dpms_blanked(dcrtc->dpms));
+
+	return 0;
 }
 
-static void armada_drm_crtc_atomic_flush(struct drm_crtc *crtc,
-					 struct drm_crtc_state *old_crtc_state)
+void armada_drm_crtc_plane_disable(struct armada_crtc *dcrtc,
+	struct drm_plane *plane)
 {
-	struct armada_crtc *dcrtc = drm_to_armada_crtc(crtc);
-
-	DRM_DEBUG_KMS("[CRTC:%d:%s]\n", crtc->base.id, crtc->name);
-
-	armada_reg_queue_end(dcrtc->regs, dcrtc->regs_idx);
+	u32 sram_para1, dma_ctrl0_mask;
 
 	/*
-	 * If we aren't doing a full modeset, then we need to queue
-	 * the event here.
+	 * Drop our reference on any framebuffer attached to this plane.
+	 * We don't need to NULL this out as drm_plane_force_disable(),
+	 * and __setplane_internal() will do so for an overlay plane, and
+	 * __drm_helper_disable_unused_functions() will do so for the
+	 * primary plane.
 	 */
-	if (!drm_atomic_crtc_needs_modeset(crtc->state)) {
-		dcrtc->update_pending = true;
-		armada_drm_crtc_queue_state_event(crtc);
-		spin_lock_irq(&dcrtc->irq_lock);
-		armada_drm_crtc_enable_irq(dcrtc, DUMB_FRAMEDONE_ENA);
-		spin_unlock_irq(&dcrtc->irq_lock);
+	if (plane->fb)
+		drm_framebuffer_unreference(plane->fb);
+
+	/* Power down the Y/U/V FIFOs */
+	sram_para1 = CFG_PDWN16x66 | CFG_PDWN32x66;
+
+	/* Power down most RAMs and FIFOs if this is the primary plane */
+	if (plane->type == DRM_PLANE_TYPE_PRIMARY) {
+		sram_para1 |= CFG_PDWN256x32 | CFG_PDWN256x24 | CFG_PDWN256x8 |
+			      CFG_PDWN32x32 | CFG_PDWN64x66;
+		dma_ctrl0_mask = CFG_GRA_ENA;
 	} else {
-		spin_lock_irq(&dcrtc->irq_lock);
-		armada_drm_crtc_update_regs(dcrtc, dcrtc->regs);
-		spin_unlock_irq(&dcrtc->irq_lock);
+		dma_ctrl0_mask = CFG_DMA_ENA;
 	}
+
+	spin_lock_irq(&dcrtc->irq_lock);
+	armada_updatel(0, dma_ctrl0_mask, dcrtc->base + LCD_SPU_DMA_CTRL0);
+	spin_unlock_irq(&dcrtc->irq_lock);
+
+	armada_updatel(sram_para1, 0, dcrtc->base + LCD_SPU_SRAM_PARA1);
 }
 
-static void armada_drm_crtc_atomic_disable(struct drm_crtc *crtc,
-					   struct drm_crtc_state *old_state)
-{
-	struct armada_crtc *dcrtc = drm_to_armada_crtc(crtc);
-	struct drm_pending_vblank_event *event;
-
-	DRM_DEBUG_KMS("[CRTC:%d:%s]\n", crtc->base.id, crtc->name);
-
-	if (old_state->adjusted_mode.flags & DRM_MODE_FLAG_INTERLACE)
-		drm_crtc_vblank_put(crtc);
-
-	drm_crtc_vblank_off(crtc);
-	armada_drm_crtc_update(dcrtc, false);
-
-	if (!crtc->state->active) {
-		/*
-		 * This modeset will be leaving the CRTC disabled, so
-		 * call the backend to disable upstream clocks etc.
-		 */
-		if (dcrtc->variant->disable)
-			dcrtc->variant->disable(dcrtc);
-
-		/*
-		 * We will not receive any further vblank events.
-		 * Send the flip_done event manually.
-		 */
-		event = crtc->state->event;
-		crtc->state->event = NULL;
-		if (event) {
-			spin_lock_irq(&crtc->dev->event_lock);
-			drm_crtc_send_vblank_event(crtc, event);
-			spin_unlock_irq(&crtc->dev->event_lock);
-		}
-	}
-}
-
-static void armada_drm_crtc_atomic_enable(struct drm_crtc *crtc,
-					  struct drm_crtc_state *old_state)
+/* The mode_config.mutex will be held for this call */
+static void armada_drm_crtc_disable(struct drm_crtc *crtc)
 {
 	struct armada_crtc *dcrtc = drm_to_armada_crtc(crtc);
 
-	DRM_DEBUG_KMS("[CRTC:%d:%s]\n", crtc->base.id, crtc->name);
-
-	if (!old_state->active) {
-		/*
-		 * This modeset is enabling the CRTC after it having
-		 * been disabled.  Reverse the call to ->disable in
-		 * the atomic_disable().
-		 */
-		if (dcrtc->variant->enable)
-			dcrtc->variant->enable(dcrtc, &crtc->state->adjusted_mode);
-	}
-	armada_drm_crtc_update(dcrtc, true);
-	drm_crtc_vblank_on(crtc);
-
-	if (crtc->state->adjusted_mode.flags & DRM_MODE_FLAG_INTERLACE)
-		WARN_ON(drm_crtc_vblank_get(crtc));
-
-	armada_drm_crtc_queue_state_event(crtc);
+	armada_drm_crtc_dpms(crtc, DRM_MODE_DPMS_OFF);
+	armada_drm_crtc_plane_disable(dcrtc, crtc->primary);
 }
 
 static const struct drm_crtc_helper_funcs armada_crtc_helper_funcs = {
-	.mode_valid	= armada_drm_crtc_mode_valid,
+	.dpms		= armada_drm_crtc_dpms,
+	.prepare	= armada_drm_crtc_prepare,
+	.commit		= armada_drm_crtc_commit,
 	.mode_fixup	= armada_drm_crtc_mode_fixup,
-	.mode_set_nofb	= armada_drm_crtc_mode_set_nofb,
-	.atomic_check	= armada_drm_crtc_atomic_check,
-	.atomic_begin	= armada_drm_crtc_atomic_begin,
-	.atomic_flush	= armada_drm_crtc_atomic_flush,
-	.atomic_disable	= armada_drm_crtc_atomic_disable,
-	.atomic_enable	= armada_drm_crtc_atomic_enable,
+	.mode_set	= armada_drm_crtc_mode_set,
+	.mode_set_base	= armada_drm_crtc_mode_set_base,
+	.disable	= armada_drm_crtc_disable,
 };
 
 static void armada_load_cursor_argb(void __iomem *base, uint32_t *pix,
@@ -548,13 +767,6 @@ static void armada_load_cursor_argb(void __iomem *base, uint32_t *pix,
 		for (x = 0; x < width; x++, p++) {
 			uint32_t val = *p;
 
-			/*
-			 * In "ARGB888" (HWC32) mode, writing to the SRAM
-			 * requires these bits to contain:
-			 * 31:24 = alpha 23:16 = blue 15:8 = green 7:0 = red
-			 * So, it's actually ABGR8888.  This is independent
-			 * of the SWAPRB bits in DMA control register 0.
-			 */
 			val = (val & 0xff00ff00) |
 			      (val & 0x000000ff) << 16 |
 			      (val & 0x00ff0000) >> 16;
@@ -631,17 +843,16 @@ static int armada_drm_crtc_cursor_update(struct armada_crtc *dcrtc, bool reload)
 
 	if (!dcrtc->cursor_obj || !h || !w) {
 		spin_lock_irq(&dcrtc->irq_lock);
+		armada_drm_crtc_disable_irq(dcrtc, DUMB_FRAMEDONE_ENA);
 		dcrtc->cursor_update = false;
 		armada_updatel(0, CFG_HWC_ENA, dcrtc->base + LCD_SPU_DMA_CTRL0);
 		spin_unlock_irq(&dcrtc->irq_lock);
 		return 0;
 	}
 
-	spin_lock_irq(&dcrtc->irq_lock);
 	para1 = readl_relaxed(dcrtc->base + LCD_SPU_SRAM_PARA1);
 	armada_updatel(CFG_CSB_256x32, CFG_CSB_256x32 | CFG_PDWN256x32,
 		       dcrtc->base + LCD_SPU_SRAM_PARA1);
-	spin_unlock_irq(&dcrtc->irq_lock);
 
 	/*
 	 * Initialize the transparency if the SRAM was powered down.
@@ -654,6 +865,7 @@ static int armada_drm_crtc_cursor_update(struct armada_crtc *dcrtc, bool reload)
 
 	if (dcrtc->cursor_hw_sz != (h << 16 | w)) {
 		spin_lock_irq(&dcrtc->irq_lock);
+		armada_drm_crtc_disable_irq(dcrtc, DUMB_FRAMEDONE_ENA);
 		dcrtc->cursor_update = false;
 		armada_updatel(0, CFG_HWC_ENA, dcrtc->base + LCD_SPU_DMA_CTRL0);
 		spin_unlock_irq(&dcrtc->irq_lock);
@@ -706,13 +918,13 @@ static int armada_drm_crtc_cursor_set(struct drm_crtc *crtc,
 
 		/* Must be a kernel-mapped object */
 		if (!obj->addr) {
-			drm_gem_object_put_unlocked(&obj->obj);
+			drm_gem_object_unreference_unlocked(&obj->obj);
 			return -EINVAL;
 		}
 
 		if (obj->obj.size < w * h * 4) {
 			DRM_ERROR("buffer is too small\n");
-			drm_gem_object_put_unlocked(&obj->obj);
+			drm_gem_object_unreference_unlocked(&obj->obj);
 			return -ENOMEM;
 		}
 	}
@@ -720,7 +932,7 @@ static int armada_drm_crtc_cursor_set(struct drm_crtc *crtc,
 	if (dcrtc->cursor_obj) {
 		dcrtc->cursor_obj->update = NULL;
 		dcrtc->cursor_obj->update_data = NULL;
-		drm_gem_object_put_unlocked(&dcrtc->cursor_obj->obj);
+		drm_gem_object_unreference_unlocked(&dcrtc->cursor_obj->obj);
 	}
 	dcrtc->cursor_obj = obj;
 	dcrtc->cursor_w = w;
@@ -756,13 +968,13 @@ static void armada_drm_crtc_destroy(struct drm_crtc *crtc)
 	struct armada_private *priv = crtc->dev->dev_private;
 
 	if (dcrtc->cursor_obj)
-		drm_gem_object_put_unlocked(&dcrtc->cursor_obj->obj);
+		drm_gem_object_unreference_unlocked(&dcrtc->cursor_obj->obj);
 
 	priv->dcrtc[dcrtc->num] = NULL;
 	drm_crtc_cleanup(&dcrtc->crtc);
 
-	if (dcrtc->variant->disable)
-		dcrtc->variant->disable(dcrtc);
+	if (!IS_ERR(dcrtc->clk))
+		clk_disable_unprepare(dcrtc->clk);
 
 	writel_relaxed(0, dcrtc->base + LCD_SPU_IRQ_ENA);
 
@@ -771,126 +983,145 @@ static void armada_drm_crtc_destroy(struct drm_crtc *crtc)
 	kfree(dcrtc);
 }
 
-static int armada_drm_crtc_late_register(struct drm_crtc *crtc)
+/*
+ * The mode_config lock is held here, to prevent races between this
+ * and a mode_set.
+ */
+static int armada_drm_crtc_page_flip(struct drm_crtc *crtc,
+	struct drm_framebuffer *fb, struct drm_pending_vblank_event *event, uint32_t page_flip_flags)
 {
-	if (IS_ENABLED(CONFIG_DEBUG_FS))
-		armada_drm_crtc_debugfs_init(drm_to_armada_crtc(crtc));
+	struct armada_crtc *dcrtc = drm_to_armada_crtc(crtc);
+	struct armada_frame_work *work;
+	unsigned i;
+	int ret;
+
+	/* We don't support changing the pixel format */
+	if (fb->pixel_format != crtc->primary->fb->pixel_format)
+		return -EINVAL;
+
+	work = kmalloc(sizeof(*work), GFP_KERNEL);
+	if (!work)
+		return -ENOMEM;
+
+	work->work.fn = armada_drm_crtc_complete_frame_work;
+	work->event = event;
+	work->old_fb = dcrtc->crtc.primary->fb;
+
+	i = armada_drm_crtc_calc_fb(fb, crtc->x, crtc->y, work->regs,
+				    dcrtc->interlaced);
+	armada_reg_queue_end(work->regs, i);
+
+	/*
+	 * Ensure that we hold a reference on the new framebuffer.
+	 * This has to match the behaviour in mode_set.
+	 */
+	drm_framebuffer_reference(fb);
+
+	ret = armada_drm_crtc_queue_frame_work(dcrtc, work);
+	if (ret) {
+		/* Undo our reference above */
+		drm_framebuffer_unreference(fb);
+		kfree(work);
+		return ret;
+	}
+
+	/*
+	 * Don't take a reference on the new framebuffer;
+	 * drm_mode_page_flip_ioctl() has already grabbed a reference and
+	 * will _not_ drop that reference on successful return from this
+	 * function.  Simply mark this new framebuffer as the current one.
+	 */
+	dcrtc->crtc.primary->fb = fb;
+
+	/*
+	 * Finally, if the display is blanked, we won't receive an
+	 * interrupt, so complete it now.
+	 */
+	if (dpms_blanked(dcrtc->dpms))
+		armada_drm_plane_work_run(dcrtc, drm_to_armada_plane(dcrtc->crtc.primary));
 
 	return 0;
 }
 
-/* These are called under the vbl_lock. */
-static int armada_drm_crtc_enable_vblank(struct drm_crtc *crtc)
+static int
+armada_drm_crtc_set_property(struct drm_crtc *crtc,
+	struct drm_property *property, uint64_t val)
 {
+	struct armada_private *priv = crtc->dev->dev_private;
 	struct armada_crtc *dcrtc = drm_to_armada_crtc(crtc);
-	unsigned long flags;
+	bool update_csc = false;
 
-	spin_lock_irqsave(&dcrtc->irq_lock, flags);
-	armada_drm_crtc_enable_irq(dcrtc, VSYNC_IRQ_ENA);
-	spin_unlock_irqrestore(&dcrtc->irq_lock, flags);
+	if (property == priv->csc_yuv_prop) {
+		dcrtc->csc_yuv_mode = val;
+		update_csc = true;
+	} else if (property == priv->csc_rgb_prop) {
+		dcrtc->csc_rgb_mode = val;
+		update_csc = true;
+	}
+
+	if (update_csc) {
+		uint32_t val;
+
+		val = dcrtc->spu_iopad_ctrl |
+		      armada_drm_crtc_calculate_csc(dcrtc);
+		writel_relaxed(val, dcrtc->base + LCD_SPU_IOPAD_CONTROL);
+	}
+
 	return 0;
-}
-
-static void armada_drm_crtc_disable_vblank(struct drm_crtc *crtc)
-{
-	struct armada_crtc *dcrtc = drm_to_armada_crtc(crtc);
-	unsigned long flags;
-
-	spin_lock_irqsave(&dcrtc->irq_lock, flags);
-	armada_drm_crtc_disable_irq(dcrtc, VSYNC_IRQ_ENA);
-	spin_unlock_irqrestore(&dcrtc->irq_lock, flags);
 }
 
 static const struct drm_crtc_funcs armada_crtc_funcs = {
-	.reset		= drm_atomic_helper_crtc_reset,
 	.cursor_set	= armada_drm_crtc_cursor_set,
 	.cursor_move	= armada_drm_crtc_cursor_move,
 	.destroy	= armada_drm_crtc_destroy,
-	.gamma_set	= drm_atomic_helper_legacy_gamma_set,
-	.set_config	= drm_atomic_helper_set_config,
-	.page_flip	= drm_atomic_helper_page_flip,
-	.atomic_duplicate_state = drm_atomic_helper_crtc_duplicate_state,
-	.atomic_destroy_state = drm_atomic_helper_crtc_destroy_state,
-	.late_register	= armada_drm_crtc_late_register,
-	.enable_vblank	= armada_drm_crtc_enable_vblank,
-	.disable_vblank	= armada_drm_crtc_disable_vblank,
+	.set_config	= drm_crtc_helper_set_config,
+	.page_flip	= armada_drm_crtc_page_flip,
+	.set_property	= armada_drm_crtc_set_property,
 };
 
-int armada_crtc_select_clock(struct armada_crtc *dcrtc,
-			     struct armada_clk_result *res,
-			     const struct armada_clocking_params *params,
-			     struct clk *clks[], size_t num_clks,
-			     unsigned long desired_khz)
+static const struct drm_plane_funcs armada_primary_plane_funcs = {
+	.update_plane	= drm_primary_helper_update,
+	.disable_plane	= drm_primary_helper_disable,
+	.destroy	= drm_primary_helper_destroy,
+};
+
+int armada_drm_plane_init(struct armada_plane *plane)
 {
-	unsigned long desired_hz = desired_khz * 1000;
-	unsigned long desired_clk_hz;	// requested clk input
-	unsigned long real_clk_hz;	// actual clk input
-	unsigned long real_hz;		// actual pixel clk
-	unsigned long permillage;
-	struct clk *clk;
-	u32 div;
-	int i;
+	init_waitqueue_head(&plane->frame_wait);
 
-	DRM_DEBUG_KMS("[CRTC:%u:%s] desired clock=%luHz\n",
-		      dcrtc->crtc.base.id, dcrtc->crtc.name, desired_hz);
+	return 0;
+}
 
-	for (i = 0; i < num_clks; i++) {
-		clk = clks[i];
-		if (!clk)
-			continue;
+static struct drm_prop_enum_list armada_drm_csc_yuv_enum_list[] = {
+	{ CSC_AUTO,        "Auto" },
+	{ CSC_YUV_CCIR601, "CCIR601" },
+	{ CSC_YUV_CCIR709, "CCIR709" },
+};
 
-		if (params->settable & BIT(i)) {
-			real_clk_hz = clk_round_rate(clk, desired_hz);
-			desired_clk_hz = desired_hz;
-		} else {
-			real_clk_hz = clk_get_rate(clk);
-			desired_clk_hz = real_clk_hz;
-		}
+static struct drm_prop_enum_list armada_drm_csc_rgb_enum_list[] = {
+	{ CSC_AUTO,         "Auto" },
+	{ CSC_RGB_COMPUTER, "Computer system" },
+	{ CSC_RGB_STUDIO,   "Studio" },
+};
 
-		/* If the clock can do exactly the desired rate, we're done */
-		if (real_clk_hz == desired_hz) {
-			real_hz = real_clk_hz;
-			div = 1;
-			goto found;
-		}
+static int armada_drm_crtc_create_properties(struct drm_device *dev)
+{
+	struct armada_private *priv = dev->dev_private;
 
-		/* Calculate the divider - if invalid, we can't do this rate */
-		div = DIV_ROUND_CLOSEST(real_clk_hz, desired_hz);
-		if (div == 0 || div > params->div_max)
-			continue;
+	if (priv->csc_yuv_prop)
+		return 0;
 
-		/* Calculate the actual rate - HDMI requires -0.6%..+0.5% */
-		real_hz = DIV_ROUND_CLOSEST(real_clk_hz, div);
+	priv->csc_yuv_prop = drm_property_create_enum(dev, 0,
+				"CSC_YUV", armada_drm_csc_yuv_enum_list,
+				ARRAY_SIZE(armada_drm_csc_yuv_enum_list));
+	priv->csc_rgb_prop = drm_property_create_enum(dev, 0,
+				"CSC_RGB", armada_drm_csc_rgb_enum_list,
+				ARRAY_SIZE(armada_drm_csc_rgb_enum_list));
 
-		DRM_DEBUG_KMS("[CRTC:%u:%s] clk=%u %luHz div=%u real=%luHz\n",
-			dcrtc->crtc.base.id, dcrtc->crtc.name,
-			i, real_clk_hz, div, real_hz);
+	if (!priv->csc_yuv_prop || !priv->csc_rgb_prop)
+		return -ENOMEM;
 
-		/* Avoid repeated division */
-		if (real_hz < desired_hz) {
-			permillage = real_hz / desired_khz;
-			if (permillage < params->permillage_min)
-				continue;
-		} else {
-			permillage = DIV_ROUND_UP(real_hz, desired_khz);
-			if (permillage > params->permillage_max)
-				continue;
-		}
-		goto found;
-	}
-
-	return -ERANGE;
-
-found:
-	DRM_DEBUG_KMS("[CRTC:%u:%s] selected clk=%u %luHz div=%u real=%luHz\n",
-		dcrtc->crtc.base.id, dcrtc->crtc.name,
-		i, real_clk_hz, div, real_hz);
-
-	res->desired_clk_hz = desired_clk_hz;
-	res->clk = clk;
-	res->div = div;
-
-	return i;
+	return 0;
 }
 
 static int armada_drm_crtc_create(struct drm_device *drm, struct device *dev,
@@ -899,9 +1130,13 @@ static int armada_drm_crtc_create(struct drm_device *drm, struct device *dev,
 {
 	struct armada_private *priv = drm->dev_private;
 	struct armada_crtc *dcrtc;
-	struct drm_plane *primary;
+	struct armada_plane *primary;
 	void __iomem *base;
 	int ret;
+
+	ret = armada_drm_crtc_create_properties(drm);
+	if (ret)
+		return ret;
 
 	base = devm_ioremap_resource(dev, res);
 	if (IS_ERR(base))
@@ -919,6 +1154,9 @@ static int armada_drm_crtc_create(struct drm_device *drm, struct device *dev,
 	dcrtc->variant = variant;
 	dcrtc->base = base;
 	dcrtc->num = drm->mode_config.num_crtc;
+	dcrtc->clk = ERR_PTR(-EINVAL);
+	dcrtc->csc_yuv_mode = CSC_AUTO;
+	dcrtc->csc_rgb_mode = CSC_AUTO;
 	dcrtc->cfg_dumb_ctrl = DUMB24_RGB888_0;
 	dcrtc->spu_iopad_ctrl = CFG_VSCALE_LN_EN | CFG_IOPAD_DUMB24;
 	spin_lock_init(&dcrtc->irq_lock);
@@ -934,8 +1172,8 @@ static int armada_drm_crtc_create(struct drm_device *drm, struct device *dev,
 		       CFG_PDWN32x32 | CFG_PDWN16x66 | CFG_PDWN32x66 |
 		       CFG_PDWN64x66, dcrtc->base + LCD_SPU_SRAM_PARA1);
 	writel_relaxed(0x2032ff81, dcrtc->base + LCD_SPU_DMA_CTRL1);
+	writel_relaxed(0x00000000, dcrtc->base + LCD_SPU_GRA_OVSA_HPXL_VLN);
 	writel_relaxed(dcrtc->irq_ena, dcrtc->base + LCD_SPU_IRQ_ENA);
-	readl_relaxed(dcrtc->base + LCD_SPU_IRQ_ISR);
 	writel_relaxed(0, dcrtc->base + LCD_SPU_IRQ_ISR);
 
 	ret = devm_request_irq(dev, irq, armada_drm_irq, 0, "armada_drm_crtc",
@@ -962,29 +1200,38 @@ static int armada_drm_crtc_create(struct drm_device *drm, struct device *dev,
 		goto err_crtc;
 	}
 
-	ret = armada_drm_primary_plane_init(drm, primary);
+	ret = armada_drm_plane_init(primary);
 	if (ret) {
 		kfree(primary);
 		goto err_crtc;
 	}
 
-	ret = drm_crtc_init_with_planes(drm, &dcrtc->crtc, primary, NULL,
+	ret = drm_universal_plane_init(drm, &primary->base, 0,
+				       &armada_primary_plane_funcs,
+				       armada_primary_formats,
+				       ARRAY_SIZE(armada_primary_formats),
+				       DRM_PLANE_TYPE_PRIMARY, NULL);
+	if (ret) {
+		kfree(primary);
+		goto err_crtc;
+	}
+
+	ret = drm_crtc_init_with_planes(drm, &dcrtc->crtc, &primary->base, NULL,
 					&armada_crtc_funcs, NULL);
 	if (ret)
 		goto err_crtc_init;
 
 	drm_crtc_helper_add(&dcrtc->crtc, &armada_crtc_helper_funcs);
 
-	ret = drm_mode_crtc_set_gamma_size(&dcrtc->crtc, 256);
-	if (ret)
-		return ret;
-
-	drm_crtc_enable_color_mgmt(&dcrtc->crtc, 0, false, 256);
+	drm_object_attach_property(&dcrtc->crtc.base, priv->csc_yuv_prop,
+				   dcrtc->csc_yuv_mode);
+	drm_object_attach_property(&dcrtc->crtc.base, priv->csc_rgb_prop,
+				   dcrtc->csc_rgb_mode);
 
 	return armada_overlay_plane_create(drm, 1 << dcrtc->num);
 
 err_crtc_init:
-	primary->funcs->destroy(primary);
+	primary->base.funcs->destroy(&primary->base);
 err_crtc:
 	kfree(dcrtc);
 
@@ -1026,7 +1273,8 @@ armada_lcd_bind(struct device *dev, struct device *master, void *data)
 		port = of_get_child_by_name(parent, "port");
 		of_node_put(np);
 		if (!port) {
-			dev_err(dev, "no port node found in %pOF\n", parent);
+			dev_err(dev, "no port node found in %s\n",
+				parent->full_name);
 			return -ENXIO;
 		}
 
@@ -1060,7 +1308,7 @@ static int armada_lcd_remove(struct platform_device *pdev)
 	return 0;
 }
 
-static const struct of_device_id armada_lcd_of_match[] = {
+static struct of_device_id armada_lcd_of_match[] = {
 	{
 		.compatible	= "marvell,dove-lcd",
 		.data		= &armada510_ops,

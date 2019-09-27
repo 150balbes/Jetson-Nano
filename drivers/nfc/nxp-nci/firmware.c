@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Generic driver for NXP NCI NFC chips
  *
@@ -8,12 +7,24 @@
  *
  * Derived from PN544 device driver:
  * Copyright (C) 2012  Intel Corporation. All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms and conditions of the GNU General Public License,
+ * version 2, as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, see <http://www.gnu.org/licenses/>.
  */
 
 #include <linux/completion.h>
 #include <linux/firmware.h>
 #include <linux/nfc.h>
-#include <asm/unaligned.h>
+#include <linux/unaligned/access_ok.h>
 
 #include "nxp-nci.h"
 
@@ -113,7 +124,8 @@ static int nxp_nci_fw_send_chunk(struct nxp_nci_info *info)
 	header |= chunk_len & NXP_NCI_FW_FRAME_LEN_MASK;
 	put_unaligned_be16(header, skb_put(skb, NXP_NCI_FW_HDR_LEN));
 
-	skb_put_data(skb, fw_info->data + fw_info->written, chunk_len);
+	memcpy(skb_put(skb, chunk_len), fw_info->data + fw_info->written,
+	       chunk_len);
 
 	crc = nxp_nci_fw_crc(skb->data, chunk_len + NXP_NCI_FW_HDR_LEN);
 	put_unaligned_be16(crc, skb_put(skb, NXP_NCI_FW_CRC_LEN));
@@ -300,7 +312,8 @@ void nxp_nci_fw_recv_frame(struct nci_dev *ndev, struct sk_buff *skb)
 		if (nxp_nci_fw_check_crc(skb) != 0x00)
 			fw_info->cmd_result = -EBADMSG;
 		else
-			fw_info->cmd_result = nxp_nci_fw_read_status(*(u8 *)skb_pull(skb, NXP_NCI_FW_HDR_LEN));
+			fw_info->cmd_result = nxp_nci_fw_read_status(
+					*skb_pull(skb, NXP_NCI_FW_HDR_LEN));
 		kfree_skb(skb);
 	} else {
 		fw_info->cmd_result = -EIO;

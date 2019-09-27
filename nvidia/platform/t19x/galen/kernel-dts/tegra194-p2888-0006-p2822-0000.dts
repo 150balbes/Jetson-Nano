@@ -1,0 +1,40 @@
+/*
+ * Top level DTS file for CVM:P2888-0005 and CVB:P2822-0000.
+ *
+ * Copyright (c) 2019, NVIDIA CORPORATION.  All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; version 2 of the License.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ */
+
+#include "common/tegra194-p2888-0001-p2822-0000-common.dtsi"
+#include "common/tegra194-p2822-camera-modules.dtsi"
+#include "t19x-common-modules/tegra194-camera-plugin-manager.dtsi"
+#include "common/tegra194-p2888-0006-p2822-common.dtsi"
+
+/ {
+	model = "NVIDIA Jetson AGX Xavier 8GB Developer Kit";
+
+	compatible = "nvidia,p2972-0006", "nvidia,tegra194";
+	pcie@14180000 {
+		nvidia,max-speed = <3>;
+	};
+
+	pcie@14140000 {
+		nvidia,max-speed = <3>;
+	};
+
+	pcie@141a0000 {
+		nvidia,max-speed = <3>;
+	};
+
+	pcie_ep@141a0000 {
+		nvidia,max-speed = <3>;
+	};
+};

@@ -22,17 +22,12 @@
 
 static int ath9k_hw_ar9287_get_eeprom_ver(struct ath_hw *ah)
 {
-	u16 version = le16_to_cpu(ah->eeprom.map9287.baseEepHeader.version);
-
-	return (version & AR5416_EEP_VER_MAJOR_MASK) >>
-		AR5416_EEP_VER_MAJOR_SHIFT;
+	return (ah->eeprom.map9287.baseEepHeader.version >> 12) & 0xF;
 }
 
 static int ath9k_hw_ar9287_get_eeprom_rev(struct ath_hw *ah)
 {
-	u16 version = le16_to_cpu(ah->eeprom.map9287.baseEepHeader.version);
-
-	return version & AR5416_EEP_VER_MINOR_MASK;
+	return (ah->eeprom.map9287.baseEepHeader.version) & 0xFFF;
 }
 
 static bool __ath9k_hw_ar9287_fill_eeprom(struct ath_hw *ah)
@@ -75,13 +70,13 @@ static bool ath9k_hw_ar9287_fill_eeprom(struct ath_hw *ah)
 		return __ath9k_hw_ar9287_fill_eeprom(ah);
 }
 
-#ifdef CONFIG_ATH9K_COMMON_DEBUG
+#if defined(CONFIG_ATH9K_DEBUGFS) || defined(CONFIG_ATH9K_HTC_DEBUGFS)
 static u32 ar9287_dump_modal_eeprom(char *buf, u32 len, u32 size,
 				    struct modal_eep_ar9287_header *modal_hdr)
 {
-	PR_EEP("Chain0 Ant. Control", le16_to_cpu(modal_hdr->antCtrlChain[0]));
-	PR_EEP("Chain1 Ant. Control", le16_to_cpu(modal_hdr->antCtrlChain[1]));
-	PR_EEP("Ant. Common Control", le32_to_cpu(modal_hdr->antCtrlCommon));
+	PR_EEP("Chain0 Ant. Control", modal_hdr->antCtrlChain[0]);
+	PR_EEP("Chain1 Ant. Control", modal_hdr->antCtrlChain[1]);
+	PR_EEP("Ant. Common Control", modal_hdr->antCtrlCommon);
 	PR_EEP("Chain0 Ant. Gain", modal_hdr->antennaGainCh[0]);
 	PR_EEP("Chain1 Ant. Gain", modal_hdr->antennaGainCh[1]);
 	PR_EEP("Switch Settle", modal_hdr->switchSettling);
@@ -128,7 +123,6 @@ static u32 ath9k_hw_ar9287_dump_eeprom(struct ath_hw *ah, bool dump_base_hdr,
 {
 	struct ar9287_eeprom *eep = &ah->eeprom.map9287;
 	struct base_eep_ar9287_header *pBase = &eep->baseEepHeader;
-	u32 binBuildNumber = le32_to_cpu(pBase->binBuildNumber);
 
 	if (!dump_base_hdr) {
 		len += scnprintf(buf + len, size - len,
@@ -138,12 +132,12 @@ static u32 ath9k_hw_ar9287_dump_eeprom(struct ath_hw *ah, bool dump_base_hdr,
 		goto out;
 	}
 
-	PR_EEP("Major Version", ath9k_hw_ar9287_get_eeprom_ver(ah));
-	PR_EEP("Minor Version", ath9k_hw_ar9287_get_eeprom_rev(ah));
-	PR_EEP("Checksum", le16_to_cpu(pBase->checksum));
-	PR_EEP("Length", le16_to_cpu(pBase->length));
-	PR_EEP("RegDomain1", le16_to_cpu(pBase->regDmn[0]));
-	PR_EEP("RegDomain2", le16_to_cpu(pBase->regDmn[1]));
+	PR_EEP("Major Version", pBase->version >> 12);
+	PR_EEP("Minor Version", pBase->version & 0xFFF);
+	PR_EEP("Checksum", pBase->checksum);
+	PR_EEP("Length", pBase->length);
+	PR_EEP("RegDomain1", pBase->regDmn[0]);
+	PR_EEP("RegDomain2", pBase->regDmn[1]);
 	PR_EEP("TX Mask", pBase->txMask);
 	PR_EEP("RX Mask", pBase->rxMask);
 	PR_EEP("Allow 5GHz", !!(pBase->opCapFlags & AR5416_OPFLAGS_11A));
@@ -156,10 +150,10 @@ static u32 ath9k_hw_ar9287_dump_eeprom(struct ath_hw *ah, bool dump_base_hdr,
 					AR5416_OPFLAGS_N_5G_HT20));
 	PR_EEP("Disable 5Ghz HT40", !!(pBase->opCapFlags &
 					AR5416_OPFLAGS_N_5G_HT40));
-	PR_EEP("Big Endian", !!(pBase->eepMisc & AR5416_EEPMISC_BIG_ENDIAN));
-	PR_EEP("Cal Bin Major Ver", (binBuildNumber >> 24) & 0xFF);
-	PR_EEP("Cal Bin Minor Ver", (binBuildNumber >> 16) & 0xFF);
-	PR_EEP("Cal Bin Build", (binBuildNumber >> 8) & 0xFF);
+	PR_EEP("Big Endian", !!(pBase->eepMisc & 0x01));
+	PR_EEP("Cal Bin Major Ver", (pBase->binBuildNumber >> 24) & 0xFF);
+	PR_EEP("Cal Bin Minor Ver", (pBase->binBuildNumber >> 16) & 0xFF);
+	PR_EEP("Cal Bin Build", (pBase->binBuildNumber >> 8) & 0xFF);
 	PR_EEP("Power Table Offset", pBase->pwrTableOffset);
 	PR_EEP("OpenLoop Power Ctrl", pBase->openLoopPwrCntl);
 
@@ -183,7 +177,8 @@ static u32 ath9k_hw_ar9287_dump_eeprom(struct ath_hw *ah, bool dump_base_hdr,
 
 static int ath9k_hw_ar9287_check_eeprom(struct ath_hw *ah)
 {
-	u32 el;
+	u32 el, integer;
+	u16 word;
 	int i, err;
 	bool need_swap;
 	struct ar9287_eeprom *eep = &ah->eeprom.map9287;
@@ -193,31 +188,51 @@ static int ath9k_hw_ar9287_check_eeprom(struct ath_hw *ah)
 		return err;
 
 	if (need_swap)
-		el = swab16((__force u16)eep->baseEepHeader.length);
+		el = swab16(eep->baseEepHeader.length);
 	else
-		el = le16_to_cpu(eep->baseEepHeader.length);
+		el = eep->baseEepHeader.length;
 
 	el = min(el / sizeof(u16), SIZE_EEPROM_AR9287);
 	if (!ath9k_hw_nvram_validate_checksum(ah, el))
 		return -EINVAL;
 
 	if (need_swap) {
-		EEPROM_FIELD_SWAB16(eep->baseEepHeader.length);
-		EEPROM_FIELD_SWAB16(eep->baseEepHeader.checksum);
-		EEPROM_FIELD_SWAB16(eep->baseEepHeader.version);
-		EEPROM_FIELD_SWAB16(eep->baseEepHeader.regDmn[0]);
-		EEPROM_FIELD_SWAB16(eep->baseEepHeader.regDmn[1]);
-		EEPROM_FIELD_SWAB16(eep->baseEepHeader.rfSilent);
-		EEPROM_FIELD_SWAB16(eep->baseEepHeader.blueToothOptions);
-		EEPROM_FIELD_SWAB16(eep->baseEepHeader.deviceCap);
-		EEPROM_FIELD_SWAB32(eep->modalHeader.antCtrlCommon);
+		word = swab16(eep->baseEepHeader.length);
+		eep->baseEepHeader.length = word;
 
-		for (i = 0; i < AR9287_MAX_CHAINS; i++)
-			EEPROM_FIELD_SWAB32(eep->modalHeader.antCtrlChain[i]);
+		word = swab16(eep->baseEepHeader.checksum);
+		eep->baseEepHeader.checksum = word;
 
-		for (i = 0; i < AR_EEPROM_MODAL_SPURS; i++)
-			EEPROM_FIELD_SWAB16(
-				eep->modalHeader.spurChans[i].spurChan);
+		word = swab16(eep->baseEepHeader.version);
+		eep->baseEepHeader.version = word;
+
+		word = swab16(eep->baseEepHeader.regDmn[0]);
+		eep->baseEepHeader.regDmn[0] = word;
+
+		word = swab16(eep->baseEepHeader.regDmn[1]);
+		eep->baseEepHeader.regDmn[1] = word;
+
+		word = swab16(eep->baseEepHeader.rfSilent);
+		eep->baseEepHeader.rfSilent = word;
+
+		word = swab16(eep->baseEepHeader.blueToothOptions);
+		eep->baseEepHeader.blueToothOptions = word;
+
+		word = swab16(eep->baseEepHeader.deviceCap);
+		eep->baseEepHeader.deviceCap = word;
+
+		integer = swab32(eep->modalHeader.antCtrlCommon);
+		eep->modalHeader.antCtrlCommon = integer;
+
+		for (i = 0; i < AR9287_MAX_CHAINS; i++) {
+			integer = swab32(eep->modalHeader.antCtrlChain[i]);
+			eep->modalHeader.antCtrlChain[i] = integer;
+		}
+
+		for (i = 0; i < AR_EEPROM_MODAL_SPURS; i++) {
+			word = swab16(eep->modalHeader.spurChans[i].spurChan);
+			eep->modalHeader.spurChans[i].spurChan = word;
+		}
 	}
 
 	if (!ath9k_hw_nvram_check_version(ah, AR9287_EEP_VER,
@@ -235,7 +250,9 @@ static u32 ath9k_hw_ar9287_get_eeprom(struct ath_hw *ah,
 	struct ar9287_eeprom *eep = &ah->eeprom.map9287;
 	struct modal_eep_ar9287_header *pModal = &eep->modalHeader;
 	struct base_eep_ar9287_header *pBase = &eep->baseEepHeader;
-	u16 ver_minor = ath9k_hw_ar9287_get_eeprom_rev(ah);
+	u16 ver_minor;
+
+	ver_minor = pBase->version & AR9287_EEP_VER_MINOR_MASK;
 
 	switch (param) {
 	case EEP_NFTHRESH_2:
@@ -247,13 +264,15 @@ static u32 ath9k_hw_ar9287_get_eeprom(struct ath_hw *ah,
 	case EEP_MAC_MSW:
 		return get_unaligned_be16(pBase->macAddr + 4);
 	case EEP_REG_0:
-		return le16_to_cpu(pBase->regDmn[0]);
+		return pBase->regDmn[0];
 	case EEP_OP_CAP:
-		return le16_to_cpu(pBase->deviceCap);
+		return pBase->deviceCap;
 	case EEP_OP_MODE:
 		return pBase->opCapFlags;
 	case EEP_RF_SILENT:
-		return le16_to_cpu(pBase->rfSilent);
+		return pBase->rfSilent;
+	case EEP_MINOR_REV:
+		return ver_minor;
 	case EEP_TX_MASK:
 		return pBase->txMask;
 	case EEP_RX_MASK:
@@ -368,7 +387,8 @@ static void ath9k_hw_set_ar9287_power_cal_table(struct ath_hw *ah,
 
 	xpdMask = pEepData->modalHeader.xpdGain;
 
-	if (ath9k_hw_ar9287_get_eeprom_rev(ah) >= AR9287_EEP_MINOR_VER_2)
+	if ((pEepData->baseEepHeader.version & AR9287_EEP_VER_MINOR_MASK) >=
+	    AR9287_EEP_MINOR_VER_2)
 		pdGainOverlap_t2 = pEepData->modalHeader.pdGainOverlap;
 	else
 		pdGainOverlap_t2 = (u16)(MS(REG_READ(ah, AR_PHY_TPCRG5),
@@ -717,7 +737,8 @@ static void ath9k_hw_ar9287_set_txpower(struct ath_hw *ah,
 
 	memset(ratesArray, 0, sizeof(ratesArray));
 
-	if (ath9k_hw_ar9287_get_eeprom_rev(ah) >= AR9287_EEP_MINOR_VER_2)
+	if ((pEepData->baseEepHeader.version & AR9287_EEP_VER_MINOR_MASK) >=
+	    AR9287_EEP_MINOR_VER_2)
 		ht40PowerIncForPdadc = pModal->ht40PowerIncForPdadc;
 
 	ath9k_hw_set_ar9287_power_per_rate_table(ah, chan,
@@ -858,13 +879,13 @@ static void ath9k_hw_ar9287_set_board_values(struct ath_hw *ah,
 
 	pModal = &eep->modalHeader;
 
-	REG_WRITE(ah, AR_PHY_SWITCH_COM, le32_to_cpu(pModal->antCtrlCommon));
+	REG_WRITE(ah, AR_PHY_SWITCH_COM, pModal->antCtrlCommon);
 
 	for (i = 0; i < AR9287_MAX_CHAINS; i++)	{
 		regChainOffset = i * 0x1000;
 
 		REG_WRITE(ah, AR_PHY_SWITCH_CHAIN_0 + regChainOffset,
-			  le32_to_cpu(pModal->antCtrlChain[i]));
+			  pModal->antCtrlChain[i]);
 
 		REG_WRITE(ah, AR_PHY_TIMING_CTRL4(0) + regChainOffset,
 			  (REG_READ(ah, AR_PHY_TIMING_CTRL4(0) + regChainOffset)
@@ -962,14 +983,7 @@ static void ath9k_hw_ar9287_set_board_values(struct ath_hw *ah,
 static u16 ath9k_hw_ar9287_get_spur_channel(struct ath_hw *ah,
 					    u16 i, bool is2GHz)
 {
-	__le16 spur_ch = ah->eeprom.map9287.modalHeader.spurChans[i].spurChan;
-
-	return le16_to_cpu(spur_ch);
-}
-
-static u8 ath9k_hw_ar9287_get_eepmisc(struct ath_hw *ah)
-{
-	return ah->eeprom.map9287.baseEepHeader.eepMisc;
+	return ah->eeprom.map9287.modalHeader.spurChans[i].spurChan;
 }
 
 const struct eeprom_ops eep_ar9287_ops = {
@@ -981,6 +995,5 @@ const struct eeprom_ops eep_ar9287_ops = {
 	.get_eeprom_rev		= ath9k_hw_ar9287_get_eeprom_rev,
 	.set_board_values	= ath9k_hw_ar9287_set_board_values,
 	.set_txpower		= ath9k_hw_ar9287_set_txpower,
-	.get_spur_channel	= ath9k_hw_ar9287_get_spur_channel,
-	.get_eepmisc		= ath9k_hw_ar9287_get_eepmisc
+	.get_spur_channel	= ath9k_hw_ar9287_get_spur_channel
 };

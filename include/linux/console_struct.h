@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * console_struct.h
  *
@@ -17,8 +16,8 @@
 #include <linux/vt.h>
 #include <linux/workqueue.h>
 
+struct vt_struct;
 struct uni_pagedir;
-struct uni_screen;
 
 #define NPAR 16
 
@@ -119,7 +118,7 @@ struct vc_data {
 	unsigned int	vc_s_blink	: 1;
 	unsigned int	vc_s_reverse	: 1;
 	/* misc */
-	unsigned int	vc_priv		: 3;
+	unsigned int	vc_ques		: 1;
 	unsigned int	vc_need_wrap	: 1;
 	unsigned int	vc_can_do_color	: 1;
 	unsigned int	vc_report_mouse : 2;
@@ -140,7 +139,7 @@ struct vc_data {
 	struct vc_data **vc_display_fg;		/* [!] Ptr to var holding fg console for this display */
 	struct uni_pagedir *vc_uni_pagedir;
 	struct uni_pagedir **vc_uni_pagedir_loc; /* [!] Location of uni_pagedir variable for this console */
-	struct uni_screen *vc_uni_screen;	/* unicode screen content */
+	bool vc_panic_force_write; /* when oops/panic this VC can accept forced output/blanking */
 	/* additional information is in vt_kern.h */
 };
 
@@ -148,7 +147,7 @@ struct vc {
 	struct vc_data *d;
 	struct work_struct SAK_work;
 
-	/* might add  scrmem, kbd  at some time,
+	/* might add  scrmem, vt_struct, kbd  at some time,
 	   to have everything in one place - the disadvantage
 	   would be that vc_cons etc can no longer be static */
 };
@@ -168,6 +167,9 @@ extern void vc_SAK(struct work_struct *work);
 
 #define CUR_DEFAULT CUR_UNDERLINE
 
-bool con_is_visible(const struct vc_data *vc);
+static inline bool con_is_visible(const struct vc_data *vc)
+{
+	return *vc->vc_display_fg == vc;
+}
 
 #endif /* _LINUX_CONSOLE_STRUCT_H */

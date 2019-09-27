@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _DT_BINDINGS_PINCTRL_TEGRA_XUSB_H
 #define _DT_BINDINGS_PINCTRL_TEGRA_XUSB_H 1
 

@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0-only
 config HFS_FS
 	tristate "Apple Macintosh file system support"
 	depends on BLOCK

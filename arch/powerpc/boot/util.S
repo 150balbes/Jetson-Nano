@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * Copied from <file:arch/powerpc/kernel/misc_32.S>
  *
@@ -11,6 +10,12 @@
  * kexec bits:
  * Copyright (C) 2002-2003 Eric Biederman  <ebiederm@xmission.com>
  * GameCube/ppc32 port Copyright (C) 2004 Albert Herranz
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License
+ * as published by the Free Software Foundation; either version
+ * 2 of the License, or (at your option) any later version.
+ *
  */
 #include "ppc_asm.h"
 
@@ -66,18 +71,32 @@ udelay:
 	add	r4,r4,r5
 	addi	r4,r4,-1
 	divw	r4,r4,r5	/* BUS ticks */
-1:	MFTBU(r5)
-	MFTBL(r6)
-	MFTBU(r7)
+#ifdef CONFIG_8xx
+1:	mftbu	r5
+	mftb	r6
+	mftbu	r7
+#else
+1:	mfspr	r5, SPRN_TBRU
+	mfspr	r6, SPRN_TBRL
+	mfspr	r7, SPRN_TBRU
+#endif
 	cmpw	0,r5,r7
 	bne	1b		/* Get [synced] base time */
 	addc	r9,r6,r4	/* Compute end time */
 	addze	r8,r5
-2:	MFTBU(r5)
+#ifdef CONFIG_8xx
+2:	mftbu	r5
+#else
+2:	mfspr	r5, SPRN_TBRU
+#endif
 	cmpw	0,r5,r8
 	blt	2b
 	bgt	3f
-	MFTBL(r6)
+#ifdef CONFIG_8xx
+	mftb	r6
+#else
+	mfspr	r6, SPRN_TBRL
+#endif
 	cmpw	0,r6,r9
 	blt	2b
 3:	blr

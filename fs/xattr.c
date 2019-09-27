@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
   File: fs/xattr.c
 
@@ -23,7 +22,7 @@
 #include <linux/vmalloc.h>
 #include <linux/posix_acl_xattr.h>
 
-#include <linux/uaccess.h>
+#include <asm/uaccess.h>
 
 static const char *
 strcmp_prefix(const char *a, const char *a_prefix)
@@ -131,7 +130,7 @@ xattr_permission(struct inode *inode, const char *name, int mask)
 			return -EPERM;
 	}
 
-	return inode_permission(inode, mask);
+	return inode_permission2(ERR_PTR(-EOPNOTSUPP), inode, mask);
 }
 
 int
@@ -229,7 +228,7 @@ out:
 }
 EXPORT_SYMBOL_GPL(vfs_setxattr);
 
-static ssize_t
+ssize_t
 xattr_getsecurity(struct inode *inode, const char *name, void *value,
 			size_t size)
 {
@@ -254,6 +253,7 @@ out:
 out_noalloc:
 	return len;
 }
+EXPORT_SYMBOL_GPL(xattr_getsecurity);
 
 /*
  * vfs_getxattr_alloc - allocate memory, if necessary, before calling getxattr
@@ -353,6 +353,7 @@ vfs_listxattr(struct dentry *dentry, char *list, size_t size)
 	if (error)
 		return error;
 	if (inode->i_op->listxattr && (inode->i_opflags & IOP_XATTR)) {
+		error = -EOPNOTSUPP;
 		error = inode->i_op->listxattr(dentry, list, size);
 	} else {
 		error = security_inode_listsecurity(inode, list, size);
@@ -430,9 +431,12 @@ setxattr(struct dentry *d, const char __user *name, const void __user *value,
 	if (size) {
 		if (size > XATTR_SIZE_MAX)
 			return -E2BIG;
-		kvalue = kvmalloc(size, GFP_KERNEL);
-		if (!kvalue)
-			return -ENOMEM;
+		kvalue = kmalloc(size, GFP_KERNEL | __GFP_NOWARN);
+		if (!kvalue) {
+			kvalue = vmalloc(size);
+			if (!kvalue)
+				return -ENOMEM;
+		}
 		if (copy_from_user(kvalue, value, size)) {
 			error = -EFAULT;
 			goto out;
@@ -440,12 +444,6 @@ setxattr(struct dentry *d, const char __user *name, const void __user *value,
 		if ((strcmp(kname, XATTR_NAME_POSIX_ACL_ACCESS) == 0) ||
 		    (strcmp(kname, XATTR_NAME_POSIX_ACL_DEFAULT) == 0))
 			posix_acl_fix_xattr_from_user(kvalue, size);
-		else if (strcmp(kname, XATTR_NAME_CAPS) == 0) {
-			error = cap_convert_nscap(d, &kvalue, size);
-			if (error < 0)
-				goto out;
-			size = error;
-		}
 	}
 
 	error = vfs_setxattr(d, kname, kvalue, size, flags);
@@ -530,9 +528,12 @@ getxattr(struct dentry *d, const char __user *name, void __user *value,
 	if (size) {
 		if (size > XATTR_SIZE_MAX)
 			size = XATTR_SIZE_MAX;
-		kvalue = kvzalloc(size, GFP_KERNEL);
-		if (!kvalue)
-			return -ENOMEM;
+		kvalue = kzalloc(size, GFP_KERNEL | __GFP_NOWARN);
+		if (!kvalue) {
+			kvalue = vzalloc(size);
+			if (!kvalue)
+				return -ENOMEM;
+		}
 	}
 
 	error = vfs_getxattr(d, kname, kvalue, size);
@@ -610,9 +611,12 @@ listxattr(struct dentry *d, char __user *list, size_t size)
 	if (size) {
 		if (size > XATTR_LIST_MAX)
 			size = XATTR_LIST_MAX;
-		klist = kvmalloc(size, GFP_KERNEL);
-		if (!klist)
-			return -ENOMEM;
+		klist = kmalloc(size, __GFP_NOWARN | GFP_KERNEL);
+		if (!klist) {
+			klist = vmalloc(size);
+			if (!klist)
+				return -ENOMEM;
+		}
 	}
 
 	error = vfs_listxattr(d, klist, size);

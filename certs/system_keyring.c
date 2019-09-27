@@ -1,8 +1,12 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /* System trusted keyring for trusted public keys
  *
  * Copyright (C) 2012 Red Hat, Inc. All Rights Reserved.
  * Written by David Howells (dhowells@redhat.com)
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public Licence
+ * as published by the Free Software Foundation; either version
+ * 2 of the Licence, or (at your option) any later version.
  */
 
 #include <linux/export.h>
@@ -10,7 +14,6 @@
 #include <linux/sched.h>
 #include <linux/cred.h>
 #include <linux/err.h>
-#include <linux/slab.h>
 #include <linux/verification.h>
 #include <keys/asymmetric-type.h>
 #include <keys/system_keyring.h>
@@ -19,9 +22,6 @@
 static struct key *builtin_trusted_keys;
 #ifdef CONFIG_SECONDARY_TRUSTED_KEYRING
 static struct key *secondary_trusted_keys;
-#endif
-#ifdef CONFIG_INTEGRITY_PLATFORM_KEYRING
-static struct key *platform_trusted_keys;
 #endif
 
 extern __initconst const u8 system_certificate_list[];
@@ -33,13 +33,11 @@ extern __initconst const unsigned long system_certificate_list_size;
  * Restrict the addition of keys into a keyring based on the key-to-be-added
  * being vouched for by a key in the built in system keyring.
  */
-int restrict_link_by_builtin_trusted(struct key *dest_keyring,
+int restrict_link_by_builtin_trusted(struct key *keyring,
 				     const struct key_type *type,
-				     const union key_payload *payload,
-				     struct key *restriction_key)
+				     const union key_payload *payload)
 {
-	return restrict_link_by_signature(dest_keyring, type, payload,
-					  builtin_trusted_keys);
+	return restrict_link_by_signature(builtin_trusted_keys, type, payload);
 }
 
 #ifdef CONFIG_SECONDARY_TRUSTED_KEYRING
@@ -52,40 +50,20 @@ int restrict_link_by_builtin_trusted(struct key *dest_keyring,
  * keyrings.
  */
 int restrict_link_by_builtin_and_secondary_trusted(
-	struct key *dest_keyring,
+	struct key *keyring,
 	const struct key_type *type,
-	const union key_payload *payload,
-	struct key *restrict_key)
+	const union key_payload *payload)
 {
 	/* If we have a secondary trusted keyring, then that contains a link
 	 * through to the builtin keyring and the search will follow that link.
 	 */
 	if (type == &key_type_keyring &&
-	    dest_keyring == secondary_trusted_keys &&
+	    keyring == secondary_trusted_keys &&
 	    payload == &builtin_trusted_keys->payload)
 		/* Allow the builtin keyring to be added to the secondary */
 		return 0;
 
-	return restrict_link_by_signature(dest_keyring, type, payload,
-					  secondary_trusted_keys);
-}
-
-/**
- * Allocate a struct key_restriction for the "builtin and secondary trust"
- * keyring. Only for use in system_trusted_keyring_init().
- */
-static __init struct key_restriction *get_builtin_and_secondary_restriction(void)
-{
-	struct key_restriction *restriction;
-
-	restriction = kzalloc(sizeof(struct key_restriction), GFP_KERNEL);
-
-	if (!restriction)
-		panic("Can't allocate secondary trusted keyring restriction\n");
-
-	restriction->check = restrict_link_by_builtin_and_secondary_trusted;
-
-	return restriction;
+	return restrict_link_by_signature(secondary_trusted_keys, type, payload);
 }
 #endif
 
@@ -114,7 +92,7 @@ static __init int system_trusted_keyring_init(void)
 			       KEY_USR_VIEW | KEY_USR_READ | KEY_USR_SEARCH |
 			       KEY_USR_WRITE),
 			      KEY_ALLOC_NOT_IN_QUOTA,
-			      get_builtin_and_secondary_restriction(),
+			      restrict_link_by_builtin_and_secondary_trusted,
 			      NULL);
 	if (IS_ERR(secondary_trusted_keys))
 		panic("Can't allocate secondary trusted keyring\n");
@@ -236,22 +214,11 @@ int verify_pkcs7_signature(const void *data, size_t len,
 #else
 		trusted_keys = builtin_trusted_keys;
 #endif
-	} else if (trusted_keys == VERIFY_USE_PLATFORM_KEYRING) {
-#ifdef CONFIG_INTEGRITY_PLATFORM_KEYRING
-		trusted_keys = platform_trusted_keys;
-#else
-		trusted_keys = NULL;
-#endif
-		if (!trusted_keys) {
-			ret = -ENOKEY;
-			pr_devel("PKCS#7 platform keyring is not available\n");
-			goto error;
-		}
 	}
 	ret = pkcs7_validate_trust(pkcs7, trusted_keys);
 	if (ret < 0) {
 		if (ret == -ENOKEY)
-			pr_devel("PKCS#7 signature not signed with a trusted key\n");
+			pr_err("PKCS#7 signature not signed with a trusted key\n");
 		goto error;
 	}
 
@@ -274,12 +241,46 @@ error:
 	return ret;
 }
 EXPORT_SYMBOL_GPL(verify_pkcs7_signature);
-
 #endif /* CONFIG_SYSTEM_DATA_VERIFICATION */
 
-#ifdef CONFIG_INTEGRITY_PLATFORM_KEYRING
-void __init set_platform_trusted_keys(struct key *keyring)
+/**
+ * verify_signature_one - Verify a signature with keys from given keyring
+ * @sig: The signature to be verified
+ * @trusted_keys: Trusted keys to use (NULL for builtin trusted keys only,
+ *					(void *)1UL for all trusted keys).
+ * @keyid: key description (not partial)
+ */
+int verify_signature_one(const struct public_key_signature *sig,
+			   struct key *trusted_keys, const char *keyid)
 {
-	platform_trusted_keys = keyring;
-}
+	key_ref_t ref;
+	struct key *key;
+	int ret;
+
+	if (!sig)
+		return -EBADMSG;
+	if (!trusted_keys) {
+		trusted_keys = builtin_trusted_keys;
+	} else if (trusted_keys == (void *)1UL) {
+#ifdef CONFIG_SECONDARY_TRUSTED_KEYRING
+		trusted_keys = secondary_trusted_keys;
+#else
+		trusted_keys = builtin_trusted_keys;
 #endif
+	}
+
+	ref = keyring_search(make_key_ref(trusted_keys, 1),
+				&key_type_asymmetric, keyid);
+	if (IS_ERR(ref)) {
+		pr_err("Asymmetric key (%s) not found in keyring(%s)\n",
+				keyid, trusted_keys->description);
+		return -ENOKEY;
+	}
+
+	key = key_ref_to_ptr(ref);
+	ret = verify_signature(key, sig);
+	key_put(key);
+	return ret;
+}
+EXPORT_SYMBOL_GPL(verify_signature_one);
+

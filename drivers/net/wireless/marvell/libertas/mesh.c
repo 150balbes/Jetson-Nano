@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 
 #include <linux/delay.h>
@@ -27,6 +26,8 @@ static int lbs_mesh_access(struct lbs_private *priv, uint16_t cmd_action,
 {
 	int ret;
 
+	lbs_deb_enter_args(LBS_DEB_CMD, "action %d", cmd_action);
+
 	cmd->hdr.command = cpu_to_le16(CMD_MESH_ACCESS);
 	cmd->hdr.size = cpu_to_le16(sizeof(*cmd));
 	cmd->hdr.result = 0;
@@ -35,6 +36,7 @@ static int lbs_mesh_access(struct lbs_private *priv, uint16_t cmd_action,
 
 	ret = lbs_cmd_with_response(priv, CMD_MESH_ACCESS, cmd);
 
+	lbs_deb_leave(LBS_DEB_CMD);
 	return ret;
 }
 
@@ -44,6 +46,8 @@ static int __lbs_mesh_config_send(struct lbs_private *priv,
 {
 	int ret;
 	u16 command = CMD_MESH_CONFIG_OLD;
+
+	lbs_deb_enter(LBS_DEB_CMD);
 
 	/*
 	 * Command id is 0xac for v10 FW along with mesh interface
@@ -62,6 +66,7 @@ static int __lbs_mesh_config_send(struct lbs_private *priv,
 
 	ret = lbs_cmd_with_response(priv, command, cmd);
 
+	lbs_deb_leave(LBS_DEB_CMD);
 	return ret;
 }
 
@@ -234,9 +239,8 @@ static ssize_t lbs_prb_rsp_limit_set(struct device *dev,
 	memset(&mesh_access, 0, sizeof(mesh_access));
 	mesh_access.data[0] = cpu_to_le32(CMD_ACT_SET);
 
-	ret = kstrtoul(buf, 10, &retry_limit);
-	if (ret)
-		return ret;
+	if (!kstrtoul(buf, 10, &retry_limit))
+		return -ENOTSUPP;
 	if (retry_limit > 15)
 		return -ENOTSUPP;
 
@@ -797,12 +801,7 @@ static void lbs_persist_config_init(struct net_device *dev)
 {
 	int ret;
 	ret = sysfs_create_group(&(dev->dev.kobj), &boot_opts_group);
-	if (ret)
-		pr_err("failed to create boot_opts_group.\n");
-
 	ret = sysfs_create_group(&(dev->dev.kobj), &mesh_ie_group);
-	if (ret)
-		pr_err("failed to create mesh_ie_group.\n");
 }
 
 static void lbs_persist_config_remove(struct net_device *dev)
@@ -823,6 +822,8 @@ static void lbs_persist_config_remove(struct net_device *dev)
 int lbs_init_mesh(struct lbs_private *priv)
 {
 	int ret = 0;
+
+	lbs_deb_enter(LBS_DEB_MESH);
 
 	/* Determine mesh_fw_ver from fwrelease and fwcapinfo */
 	/* 5.0.16p0 9.0.0.p0 is known to NOT support any mesh */
@@ -869,6 +870,7 @@ int lbs_init_mesh(struct lbs_private *priv)
 		ret = 1;
 	}
 
+	lbs_deb_leave_args(LBS_DEB_MESH, "ret %d", ret);
 	return ret;
 }
 
@@ -885,11 +887,14 @@ int lbs_deinit_mesh(struct lbs_private *priv)
 	struct net_device *dev = priv->dev;
 	int ret = 0;
 
+	lbs_deb_enter(LBS_DEB_MESH);
+
 	if (priv->mesh_tlv) {
 		device_remove_file(&dev->dev, &dev_attr_lbs_mesh);
 		ret = 1;
 	}
 
+	lbs_deb_leave_args(LBS_DEB_MESH, "ret %d", ret);
 	return ret;
 }
 
@@ -904,6 +909,7 @@ static int lbs_mesh_stop(struct net_device *dev)
 {
 	struct lbs_private *priv = dev->ml_priv;
 
+	lbs_deb_enter(LBS_DEB_MESH);
 	lbs_mesh_config(priv, CMD_ACT_MESH_CONFIG_STOP,
 		lbs_mesh_get_channel(priv));
 
@@ -918,6 +924,7 @@ static int lbs_mesh_stop(struct net_device *dev)
 	if (!lbs_iface_active(priv))
 		lbs_stop_iface(priv);
 
+	lbs_deb_leave(LBS_DEB_MESH);
 	return 0;
 }
 
@@ -932,6 +939,7 @@ static int lbs_mesh_dev_open(struct net_device *dev)
 	struct lbs_private *priv = dev->ml_priv;
 	int ret = 0;
 
+	lbs_deb_enter(LBS_DEB_NET);
 	if (!priv->iface_running) {
 		ret = lbs_start_iface(priv);
 		if (ret)
@@ -957,6 +965,7 @@ static int lbs_mesh_dev_open(struct net_device *dev)
 		lbs_mesh_get_channel(priv));
 
 out:
+	lbs_deb_leave_args(LBS_DEB_NET, "ret %d", ret);
 	return ret;
 }
 
@@ -979,6 +988,8 @@ static int lbs_add_mesh(struct lbs_private *priv)
 	struct net_device *mesh_dev = NULL;
 	struct wireless_dev *mesh_wdev;
 	int ret = 0;
+
+	lbs_deb_enter(LBS_DEB_MESH);
 
 	/* Allocate a virtual mesh device */
 	mesh_wdev = kzalloc(sizeof(struct wireless_dev), GFP_KERNEL);
@@ -1037,6 +1048,7 @@ err_free_wdev:
 	kfree(mesh_wdev);
 
 done:
+	lbs_deb_leave_args(LBS_DEB_MESH, "ret %d", ret);
 	return ret;
 }
 
@@ -1048,6 +1060,7 @@ void lbs_remove_mesh(struct lbs_private *priv)
 	if (!mesh_dev)
 		return;
 
+	lbs_deb_enter(LBS_DEB_MESH);
 	netif_stop_queue(mesh_dev);
 	netif_carrier_off(mesh_dev);
 	sysfs_remove_group(&(mesh_dev->dev.kobj), &lbs_mesh_attr_group);
@@ -1056,6 +1069,7 @@ void lbs_remove_mesh(struct lbs_private *priv)
 	priv->mesh_dev = NULL;
 	kfree(mesh_dev->ieee80211_ptr);
 	free_netdev(mesh_dev);
+	lbs_deb_leave(LBS_DEB_MESH);
 }
 
 
@@ -1094,15 +1108,15 @@ void lbs_mesh_set_txpd(struct lbs_private *priv,
  * Ethtool related
  */
 
-static const char mesh_stat_strings[MESH_STATS_NUM][ETH_GSTRING_LEN] = {
-	"drop_duplicate_bcast",
-	"drop_ttl_zero",
-	"drop_no_fwd_route",
-	"drop_no_buffers",
-	"fwded_unicast_cnt",
-	"fwded_bcast_cnt",
-	"drop_blind_table",
-	"tx_failed_cnt"
+static const char * const mesh_stat_strings[] = {
+			"drop_duplicate_bcast",
+			"drop_ttl_zero",
+			"drop_no_fwd_route",
+			"drop_no_buffers",
+			"fwded_unicast_cnt",
+			"fwded_bcast_cnt",
+			"drop_blind_table",
+			"tx_failed_cnt"
 };
 
 void lbs_mesh_ethtool_get_stats(struct net_device *dev,
@@ -1111,6 +1125,8 @@ void lbs_mesh_ethtool_get_stats(struct net_device *dev,
 	struct lbs_private *priv = dev->ml_priv;
 	struct cmd_ds_mesh_access mesh_access;
 	int ret;
+
+	lbs_deb_enter(LBS_DEB_ETHTOOL);
 
 	/* Get Mesh Statistics */
 	ret = lbs_mesh_access(priv, CMD_ACT_MESH_GET_STATS, &mesh_access);
@@ -1137,6 +1153,8 @@ void lbs_mesh_ethtool_get_stats(struct net_device *dev,
 	data[5] = priv->mstats.fwd_bcast_cnt;
 	data[6] = priv->mstats.drop_blind;
 	data[7] = priv->mstats.tx_failed_cnt;
+
+	lbs_deb_enter(LBS_DEB_ETHTOOL);
 }
 
 int lbs_mesh_ethtool_get_sset_count(struct net_device *dev, int sset)
@@ -1152,9 +1170,18 @@ int lbs_mesh_ethtool_get_sset_count(struct net_device *dev, int sset)
 void lbs_mesh_ethtool_get_strings(struct net_device *dev,
 	uint32_t stringset, uint8_t *s)
 {
+	int i;
+
+	lbs_deb_enter(LBS_DEB_ETHTOOL);
+
 	switch (stringset) {
 	case ETH_SS_STATS:
-		memcpy(s, mesh_stat_strings, sizeof(mesh_stat_strings));
+		for (i = 0; i < MESH_STATS_NUM; i++) {
+			memcpy(s + i * ETH_GSTRING_LEN,
+					mesh_stat_strings[i],
+					ETH_GSTRING_LEN);
+		}
 		break;
 	}
+	lbs_deb_enter(LBS_DEB_ETHTOOL);
 }

@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /* tcx.c: TCX frame buffer driver
  *
  * Copyright (C) 2003, 2006 David S. Miller (davem@davemloft.net)
@@ -468,8 +467,8 @@ static int tcx_probe(struct platform_device *op)
 
 	dev_set_drvdata(&op->dev, info);
 
-	printk(KERN_INFO "%pOF: TCX at %lx:%lx, %s\n",
-	       dp,
+	printk(KERN_INFO "%s: TCX at %lx:%lx, %s\n",
+	       dp->full_name,
 	       par->which_io,
 	       info->fix.smem_start,
 	       par->lowdepth ? "8-bit only" : "24-bit depth");

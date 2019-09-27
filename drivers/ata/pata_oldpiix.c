@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  *    pata_oldpiix.c - Intel PATA/SATA controllers
  *

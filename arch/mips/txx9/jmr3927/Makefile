@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0-only
 #
 # Makefile for TOSHIBA JMR-TX3927 board
 #

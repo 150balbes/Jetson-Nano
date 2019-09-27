@@ -1,8 +1,9 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * digi00x.c - a part of driver for Digidesign Digi 002/003 family
  *
  * Copyright (c) 2014-2015 Takashi Sakamoto
+ *
+ * Licensed under the terms of the GNU General Public License, version 2.
  */
 
 #include "digi00x.h"
@@ -40,12 +41,20 @@ static int name_card(struct snd_dg00x *dg00x)
 	return 0;
 }
 
-static void dg00x_card_free(struct snd_card *card)
+static void dg00x_free(struct snd_dg00x *dg00x)
 {
-	struct snd_dg00x *dg00x = card->private_data;
-
 	snd_dg00x_stream_destroy_duplex(dg00x);
 	snd_dg00x_transaction_unregister(dg00x);
+
+	fw_unit_put(dg00x->unit);
+
+	mutex_destroy(&dg00x->mutex);
+	kfree(dg00x);
+}
+
+static void dg00x_card_free(struct snd_card *card)
+{
+	dg00x_free(card->private_data);
 }
 
 static void do_registration(struct work_struct *work)
@@ -61,8 +70,6 @@ static void do_registration(struct work_struct *work)
 			   &dg00x->card);
 	if (err < 0)
 		return;
-	dg00x->card->private_free = dg00x_card_free;
-	dg00x->card->private_data = dg00x;
 
 	err = name_card(dg00x);
 	if (err < 0)
@@ -94,10 +101,14 @@ static void do_registration(struct work_struct *work)
 	if (err < 0)
 		goto error;
 
+	dg00x->card->private_free = dg00x_card_free;
+	dg00x->card->private_data = dg00x;
 	dg00x->registered = true;
 
 	return;
 error:
+	snd_dg00x_transaction_unregister(dg00x);
+	snd_dg00x_stream_destroy_duplex(dg00x);
 	snd_card_free(dg00x->card);
 	dev_info(&dg00x->unit->device,
 		 "Sound card registration failed: %d\n", err);
@@ -109,9 +120,8 @@ static int snd_dg00x_probe(struct fw_unit *unit,
 	struct snd_dg00x *dg00x;
 
 	/* Allocate this independent of sound card instance. */
-	dg00x = devm_kzalloc(&unit->device, sizeof(struct snd_dg00x),
-			     GFP_KERNEL);
-	if (!dg00x)
+	dg00x = kzalloc(sizeof(struct snd_dg00x), GFP_KERNEL);
+	if (dg00x == NULL)
 		return -ENOMEM;
 
 	dg00x->unit = fw_unit_get(unit);
@@ -163,12 +173,12 @@ static void snd_dg00x_remove(struct fw_unit *unit)
 	cancel_delayed_work_sync(&dg00x->dwork);
 
 	if (dg00x->registered) {
-		// Block till all of ALSA character devices are released.
-		snd_card_free(dg00x->card);
+		/* No need to wait for releasing card object in this context. */
+		snd_card_free_when_closed(dg00x->card);
+	} else {
+		/* Don't forget this case. */
+		dg00x_free(dg00x);
 	}
-
-	mutex_destroy(&dg00x->mutex);
-	fw_unit_put(dg00x->unit);
 }
 
 static const struct ieee1394_device_id snd_dg00x_id_table[] = {

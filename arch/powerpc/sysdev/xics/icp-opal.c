@@ -1,6 +1,10 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Copyright 2016 IBM Corporation.
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License
+ * as published by the Free Software Foundation; either version
+ * 2 of the License, or (at your option) any later version.
  */
 #include <linux/types.h>
 #include <linux/kernel.h>
@@ -122,7 +126,7 @@ static void icp_opal_eoi(struct irq_data *d)
 
 #ifdef CONFIG_SMP
 
-static void icp_opal_cause_ipi(int cpu)
+static void icp_opal_cause_ipi(int cpu, unsigned long data)
 {
 	int hw_cpu = get_hard_smp_processor_id(cpu);
 

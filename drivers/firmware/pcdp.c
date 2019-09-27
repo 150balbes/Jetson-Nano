@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Parse the EFI PCDP table to locate the console device.
  *
@@ -6,6 +5,10 @@
  *	Khalid Aziz <khalid.aziz@hp.com>
  *	Alex Williamson <alex.williamson@hp.com>
  *	Bjorn Helgaas <bjorn.helgaas@hp.com>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  */
 
 #include <linux/acpi.h>
@@ -92,7 +95,7 @@ efi_setup_pcdp_console(char *cmdline)
 	if (efi.hcdp == EFI_INVALID_TABLE_ADDR)
 		return -ENODEV;
 
-	pcdp = early_memremap(efi.hcdp, 4096);
+	pcdp = early_ioremap(efi.hcdp, 4096);
 	printk(KERN_INFO "PCDP: v%d at 0x%lx\n", pcdp->rev, efi.hcdp);
 
 	if (strstr(cmdline, "console=hcdp")) {
@@ -128,6 +131,6 @@ efi_setup_pcdp_console(char *cmdline)
 	}
 
 out:
-	early_memunmap(pcdp, 4096);
+	early_iounmap(pcdp, 4096);
 	return rc;
 }

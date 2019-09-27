@@ -1,8 +1,22 @@
-/* SPDX-License-Identifier: GPL-2.0-or-later */
 /* -*- mode: c; c-basic-offset: 8; -*-
  * vim: noexpandtab sw=8 ts=8 sts=0:
  *
  * configfs.h - definitions for the device driver filesystem
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public
+ * License as published by the Free Software Foundation; either
+ * version 2 of the License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public
+ * License along with this program; if not, write to the
+ * Free Software Foundation, Inc., 59 Temple Place - Suite 330,
+ * Boston, MA 021110-1307, USA.
  *
  * Based on sysfs:
  * 	sysfs is Copyright (C) 2001, 2002, 2003 Patrick Mochel
@@ -21,11 +35,14 @@
 #ifndef _CONFIGFS_H_
 #define _CONFIGFS_H_
 
-#include <linux/stat.h>   /* S_IRUGO */
-#include <linux/types.h>  /* ssize_t */
-#include <linux/list.h>   /* struct list_head */
-#include <linux/kref.h>   /* struct kref */
-#include <linux/mutex.h>  /* struct mutex */
+#include <linux/kernel.h>
+#include <linux/types.h>
+#include <linux/list.h>
+#include <linux/kref.h>
+#include <linux/mutex.h>
+#include <linux/err.h>
+
+#include <linux/atomic.h>
 
 #define CONFIGFS_ITEM_NAME_LEN	20
 
@@ -44,7 +61,7 @@ struct config_item {
 	struct list_head	ci_entry;
 	struct config_item	*ci_parent;
 	struct config_group	*ci_group;
-	const struct config_item_type	*ci_type;
+	struct config_item_type	*ci_type;
 	struct dentry		*ci_dentry;
 };
 
@@ -58,10 +75,9 @@ static inline char *config_item_name(struct config_item * item)
 
 extern void config_item_init_type_name(struct config_item *item,
 				       const char *name,
-				       const struct config_item_type *type);
+				       struct config_item_type *type);
 
-extern struct config_item *config_item_get(struct config_item *);
-extern struct config_item *config_item_get_unless_zero(struct config_item *);
+extern struct config_item * config_item_get(struct config_item *);
 extern void config_item_put(struct config_item *);
 
 struct config_item_type {
@@ -87,7 +103,7 @@ struct config_group {
 extern void config_group_init(struct config_group *group);
 extern void config_group_init_type_name(struct config_group *group,
 					const char *name,
-					const struct config_item_type *type);
+					struct config_item_type *type);
 
 static inline struct config_group *to_config_group(struct config_item *item)
 {
@@ -212,7 +228,7 @@ static struct configfs_bin_attribute _pfx##attr_##_name = {	\
 struct configfs_item_operations {
 	void (*release)(struct config_item *);
 	int (*allow_link)(struct config_item *src, struct config_item *target);
-	void (*drop_link)(struct config_item *src, struct config_item *target);
+	int (*drop_link)(struct config_item *src, struct config_item *target);
 };
 
 struct configfs_group_operations {
@@ -247,7 +263,7 @@ void configfs_remove_default_groups(struct config_group *group);
 struct config_group *
 configfs_register_default_group(struct config_group *parent_group,
 				const char *name,
-				const struct config_item_type *item_type);
+				struct config_item_type *item_type);
 void configfs_unregister_default_group(struct config_group *group);
 
 /* These functions can sleep and can alloc with GFP_KERNEL */

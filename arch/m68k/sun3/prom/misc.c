@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * misc.c:  Miscellaneous prom functions that don't belong
  *          anywhere else.

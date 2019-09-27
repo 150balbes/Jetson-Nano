@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * ashldi3.S:	GCC emits these for certain drivers playing
  *		with long longs.

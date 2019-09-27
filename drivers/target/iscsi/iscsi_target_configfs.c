@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*******************************************************************************
  * This file contains the configfs implementation for iSCSI Target mode
  * from the LIO-Target Project.
@@ -7,17 +6,25 @@
  *
  * Author: Nicholas A. Bellinger <nab@linux-iscsi.org>
  *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
  ****************************************************************************/
 
 #include <linux/configfs.h>
 #include <linux/ctype.h>
 #include <linux/export.h>
 #include <linux/inet.h>
-#include <linux/module.h>
-#include <net/ipv6.h>
 #include <target/target_core_base.h>
 #include <target/target_core_fabric.h>
 #include <target/iscsi/iscsi_transport.h>
+
 #include <target/iscsi/iscsi_target_core.h>
 #include "iscsi_target_parameters.h"
 #include "iscsi_target_device.h"
@@ -159,7 +166,10 @@ static struct se_tpg_np *lio_target_call_addnptotpg(
 	struct iscsi_portal_group *tpg;
 	struct iscsi_tpg_np *tpg_np;
 	char *str, *str2, *ip_str, *port_str;
-	struct sockaddr_storage sockaddr = { };
+	struct sockaddr_storage sockaddr;
+	struct sockaddr_in *sock_in;
+	struct sockaddr_in6 *sock_in6;
+	unsigned long port;
 	int ret;
 	char buf[MAX_PORTAL_LEN + 1];
 
@@ -171,19 +181,21 @@ static struct se_tpg_np *lio_target_call_addnptotpg(
 	memset(buf, 0, MAX_PORTAL_LEN + 1);
 	snprintf(buf, MAX_PORTAL_LEN + 1, "%s", name);
 
+	memset(&sockaddr, 0, sizeof(struct sockaddr_storage));
+
 	str = strstr(buf, "[");
 	if (str) {
+		const char *end;
+
 		str2 = strstr(str, "]");
 		if (!str2) {
 			pr_err("Unable to locate trailing \"]\""
 				" in IPv6 iSCSI network portal address\n");
 			return ERR_PTR(-EINVAL);
 		}
-
-		ip_str = str + 1; /* Skip over leading "[" */
+		str++; /* Skip over leading "[" */
 		*str2 = '\0'; /* Terminate the unbracketed IPv6 address */
 		str2++; /* Skip over the \0 */
-
 		port_str = strstr(str2, ":");
 		if (!port_str) {
 			pr_err("Unable to locate \":port\""
@@ -192,8 +204,23 @@ static struct se_tpg_np *lio_target_call_addnptotpg(
 		}
 		*port_str = '\0'; /* Terminate string for IP */
 		port_str++; /* Skip over ":" */
+
+		ret = kstrtoul(port_str, 0, &port);
+		if (ret < 0) {
+			pr_err("kstrtoul() failed for port_str: %d\n", ret);
+			return ERR_PTR(ret);
+		}
+		sock_in6 = (struct sockaddr_in6 *)&sockaddr;
+		sock_in6->sin6_family = AF_INET6;
+		sock_in6->sin6_port = htons((unsigned short)port);
+		ret = in6_pton(str, -1,
+				(void *)&sock_in6->sin6_addr.in6_u, -1, &end);
+		if (ret <= 0) {
+			pr_err("in6_pton returned: %d\n", ret);
+			return ERR_PTR(-EINVAL);
+		}
 	} else {
-		ip_str = &buf[0];
+		str = ip_str = &buf[0];
 		port_str = strstr(ip_str, ":");
 		if (!port_str) {
 			pr_err("Unable to locate \":port\""
@@ -202,15 +229,17 @@ static struct se_tpg_np *lio_target_call_addnptotpg(
 		}
 		*port_str = '\0'; /* Terminate string for IP */
 		port_str++; /* Skip over ":" */
-	}
 
-	ret = inet_pton_with_scope(&init_net, AF_UNSPEC, ip_str,
-			port_str, &sockaddr);
-	if (ret) {
-		pr_err("malformed ip/port passed: %s\n", name);
-		return ERR_PTR(ret);
+		ret = kstrtoul(port_str, 0, &port);
+		if (ret < 0) {
+			pr_err("kstrtoul() failed for port_str: %d\n", ret);
+			return ERR_PTR(ret);
+		}
+		sock_in = (struct sockaddr_in *)&sockaddr;
+		sock_in->sin_family = AF_INET;
+		sock_in->sin_port = htons((unsigned short)port);
+		sock_in->sin_addr.s_addr = in_aton(ip_str);
 	}
-
 	tpg = container_of(se_tpg, struct iscsi_portal_group, tpg_se_tpg);
 	ret = iscsit_get_tpg(tpg);
 	if (ret < 0)
@@ -1082,8 +1111,10 @@ static struct configfs_attribute *lio_target_tpg_attrs[] = {
 
 /* Start items for lio_target_tiqn_cit */
 
-static struct se_portal_group *lio_target_tiqn_addtpg(struct se_wwn *wwn,
-						      const char *name)
+static struct se_portal_group *lio_target_tiqn_addtpg(
+	struct se_wwn *wwn,
+	struct config_group *group,
+	const char *name)
 {
 	struct iscsi_portal_group *tpg;
 	struct iscsi_tiqn *tiqn;
@@ -1335,6 +1366,11 @@ static struct configfs_attribute *lio_target_discovery_auth_attrs[] = {
 
 /* Start functions for target_core_fabric_ops */
 
+static char *iscsi_get_fabric_name(void)
+{
+	return "iSCSI";
+}
+
 static int iscsi_get_cmd_state(struct se_cmd *se_cmd)
 {
 	struct iscsi_cmd *cmd = container_of(se_cmd, struct iscsi_cmd, se_cmd);
@@ -1364,10 +1400,11 @@ static u32 lio_sess_get_initiator_sid(
 static int lio_queue_data_in(struct se_cmd *se_cmd)
 {
 	struct iscsi_cmd *cmd = container_of(se_cmd, struct iscsi_cmd, se_cmd);
-	struct iscsi_conn *conn = cmd->conn;
 
 	cmd->i_state = ISTATE_SEND_DATAIN;
-	return conn->conn_transport->iscsit_queue_data_in(conn, cmd);
+	cmd->conn->conn_transport->iscsit_queue_data_in(cmd->conn, cmd);
+
+	return 0;
 }
 
 static int lio_write_pending(struct se_cmd *se_cmd)
@@ -1381,17 +1418,31 @@ static int lio_write_pending(struct se_cmd *se_cmd)
 	return 0;
 }
 
+static int lio_write_pending_status(struct se_cmd *se_cmd)
+{
+	struct iscsi_cmd *cmd = container_of(se_cmd, struct iscsi_cmd, se_cmd);
+	int ret;
+
+	spin_lock_bh(&cmd->istate_lock);
+	ret = !(cmd->cmd_flags & ICF_GOT_LAST_DATAOUT);
+	spin_unlock_bh(&cmd->istate_lock);
+
+	return ret;
+}
+
 static int lio_queue_status(struct se_cmd *se_cmd)
 {
 	struct iscsi_cmd *cmd = container_of(se_cmd, struct iscsi_cmd, se_cmd);
-	struct iscsi_conn *conn = cmd->conn;
 
 	cmd->i_state = ISTATE_SEND_STATUS;
 
 	if (cmd->se_cmd.scsi_status || cmd->sense_reason) {
-		return iscsit_add_cmd_to_response_queue(cmd, conn, cmd->i_state);
+		iscsit_add_cmd_to_response_queue(cmd, cmd->conn, cmd->i_state);
+		return 0;
 	}
-	return conn->conn_transport->iscsit_queue_status(conn, cmd);
+	cmd->conn->conn_transport->iscsit_queue_status(cmd->conn, cmd);
+
+	return 0;
 }
 
 static void lio_queue_tm_rsp(struct se_cmd *se_cmd)
@@ -1524,9 +1575,9 @@ static void lio_release_cmd(struct se_cmd *se_cmd)
 
 const struct target_core_fabric_ops iscsi_ops = {
 	.module				= THIS_MODULE,
-	.fabric_alias			= "iscsi",
-	.fabric_name			= "iSCSI",
+	.name				= "iscsi",
 	.node_acl_size			= sizeof(struct iscsi_node_acl),
+	.get_fabric_name		= iscsi_get_fabric_name,
 	.tpg_get_wwn			= lio_tpg_get_endpoint_wwn,
 	.tpg_get_tag			= lio_tpg_get_tag,
 	.tpg_get_default_depth		= lio_tpg_get_default_depth,
@@ -1544,6 +1595,7 @@ const struct target_core_fabric_ops iscsi_ops = {
 	.sess_get_index			= lio_sess_get_index,
 	.sess_get_initiator_sid		= lio_sess_get_initiator_sid,
 	.write_pending			= lio_write_pending,
+	.write_pending_status		= lio_write_pending_status,
 	.set_default_node_attributes	= lio_set_default_node_attributes,
 	.get_cmd_state			= iscsi_get_cmd_state,
 	.queue_data_in			= lio_queue_data_in,
@@ -1570,6 +1622,4 @@ const struct target_core_fabric_ops iscsi_ops = {
 	.tfc_tpg_nacl_attrib_attrs	= lio_target_nacl_attrib_attrs,
 	.tfc_tpg_nacl_auth_attrs	= lio_target_nacl_auth_attrs,
 	.tfc_tpg_nacl_param_attrs	= lio_target_nacl_param_attrs,
-
-	.write_pending_must_be_called	= true,
 };

@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0+
 /*
  * Compaq Hot Plug Controller Driver
  *
@@ -7,6 +6,21 @@
  * Copyright (C) 2001 IBM Corp.
  *
  * All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or (at
+ * your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE, GOOD TITLE or
+ * NON INFRINGEMENT.  See the GNU General Public License for more
+ * details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  *
  * Send feedback to <greg@kroah.com>
  *
@@ -33,7 +47,7 @@ static void interrupt_event_handler(struct controller *ctrl);
 
 
 static struct task_struct *cpqhp_event_thread;
-static struct timer_list *pushbutton_pending;	/* = NULL */
+static unsigned long pushbutton_pending;	/* = 0 */
 
 /* delay is in jiffies to wait for */
 static void long_delay(int delay)
@@ -1130,7 +1144,9 @@ static u8 set_controller_speed(struct controller *ctrl, u8 adapter_speed, u8 hp_
 	for (slot = ctrl->slot; slot; slot = slot->next) {
 		if (slot->device == (hp_slot + ctrl->slot_device_offset))
 			continue;
-		if (get_presence_status(ctrl, slot) == 0)
+		if (!slot->hotplug_slot || !slot->hotplug_slot->info)
+			continue;
+		if (slot->hotplug_slot->info->adapter_status == 0)
 			continue;
 		/* If another adapter is running on the same segment but at a
 		 * lower speed/mode, we allow the new adapter to function at
@@ -1716,10 +1732,9 @@ static u32 remove_board(struct pci_func *func, u32 replace_flag, struct controll
 	return 0;
 }
 
-static void pushbutton_helper_thread(struct timer_list *t)
+static void pushbutton_helper_thread(unsigned long data)
 {
-	pushbutton_pending = t;
-
+	pushbutton_pending = data;
 	wake_up_process(cpqhp_event_thread);
 }
 
@@ -1764,6 +1779,24 @@ void cpqhp_event_stop_thread(void)
 	kthread_stop(cpqhp_event_thread);
 }
 
+
+static int update_slot_info(struct controller *ctrl, struct slot *slot)
+{
+	struct hotplug_slot_info *info;
+	int result;
+
+	info = kmalloc(sizeof(*info), GFP_KERNEL);
+	if (!info)
+		return -ENOMEM;
+
+	info->power_status = get_slot_enabled(ctrl, slot);
+	info->attention_status = cpq_get_attention_status(ctrl, slot);
+	info->latch_status = cpq_get_latch_status(ctrl, slot);
+	info->adapter_status = get_presence_status(ctrl, slot);
+	result = pci_hp_change_slot_info(slot->hotplug_slot, info);
+	kfree(info);
+	return result;
+}
 
 static void interrupt_event_handler(struct controller *ctrl)
 {
@@ -1850,13 +1883,13 @@ static void interrupt_event_handler(struct controller *ctrl)
 					wait_for_ctrl_irq(ctrl);
 
 					mutex_unlock(&ctrl->crit_sect);
-					timer_setup(&p_slot->task_event,
-						    pushbutton_helper_thread,
-						    0);
+					init_timer(&p_slot->task_event);
 					p_slot->hp_slot = hp_slot;
 					p_slot->ctrl = ctrl;
 /*					p_slot->physical_slot = physical_slot; */
 					p_slot->task_event.expires = jiffies + 5 * HZ;   /* 5 second delay */
+					p_slot->task_event.function = pushbutton_helper_thread;
+					p_slot->task_event.data = (u32) p_slot;
 
 					dbg("add_timer p_slot = %p\n", p_slot);
 					add_timer(&p_slot->task_event);
@@ -1864,6 +1897,9 @@ static void interrupt_event_handler(struct controller *ctrl)
 				/***********POWER FAULT */
 				else if (ctrl->event_queue[loop].event_type == INT_POWER_FAULT) {
 					dbg("power fault\n");
+				} else {
+					/* refresh notification */
+					update_slot_info(ctrl, p_slot);
 				}
 
 				ctrl->event_queue[loop].event_type = 0;
@@ -1884,15 +1920,15 @@ static void interrupt_event_handler(struct controller *ctrl)
  * Scheduled procedure to handle blocking stuff for the pushbuttons.
  * Handles all pending events and exits.
  */
-void cpqhp_pushbutton_thread(struct timer_list *t)
+void cpqhp_pushbutton_thread(unsigned long slot)
 {
 	u8 hp_slot;
 	u8 device;
 	struct pci_func *func;
-	struct slot *p_slot = from_timer(p_slot, t, task_event);
+	struct slot *p_slot = (struct slot *) slot;
 	struct controller *ctrl = (struct controller *) p_slot->ctrl;
 
-	pushbutton_pending = NULL;
+	pushbutton_pending = 0;
 	hp_slot = p_slot->hp_slot;
 
 	device = p_slot->device;
@@ -2034,6 +2070,9 @@ int cpqhp_process_SI(struct controller *ctrl, struct pci_func *func)
 	if (rc)
 		dbg("%s: rc = %d\n", __func__, rc);
 
+	if (p_slot)
+		update_slot_info(ctrl, p_slot);
+
 	return rc;
 }
 
@@ -2098,6 +2137,9 @@ int cpqhp_process_SS(struct controller *ctrl, struct pci_func *func)
 	} else if (!rc) {
 		rc = 1;
 	}
+
+	if (p_slot)
+		update_slot_info(ctrl, p_slot);
 
 	return rc;
 }
@@ -2783,16 +2825,18 @@ static int configure_new_function(struct controller *ctrl, struct pci_func *func
 
 					dbg("CND:      length = 0x%x\n", base);
 					io_node = get_io_resource(&(resources->io_head), base);
-					if (!io_node)
-						return -ENOMEM;
 					dbg("Got io_node start = %8.8x, length = %8.8x next (%p)\n",
 					    io_node->base, io_node->length, io_node->next);
 					dbg("func (%p) io_head (%p)\n", func, func->io_head);
 
 					/* allocate the resource to the board */
-					base = io_node->base;
-					io_node->next = func->io_head;
-					func->io_head = io_node;
+					if (io_node) {
+						base = io_node->base;
+
+						io_node->next = func->io_head;
+						func->io_head = io_node;
+					} else
+						return -ENOMEM;
 				} else if ((temp_register & 0x0BL) == 0x08) {
 					/* Map prefetchable memory */
 					base = temp_register & 0xFFFFFFF0;

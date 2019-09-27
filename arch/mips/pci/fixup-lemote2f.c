@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Copyright (C) 2008 Lemote Technology
  * Copyright (C) 2004 ICT CAS
@@ -6,6 +5,11 @@
  *
  * Copyright (C) 2007 Lemote, Inc.
  * Author: Fuxin Zhang, zhangfx@lemote.com
+ *
+ *  This program is free software; you can redistribute  it and/or modify it
+ *  under  the terms of  the GNU General  Public License as published by the
+ *  Free Software Foundation;  either version 2 of the  License, or (at your
+ *  option) any later version.
  */
 #include <linux/init.h>
 #include <linux/pci.h>
@@ -26,7 +30,7 @@
 #define PCID		7
 
 /* all the pci device has the PCIA pin, check the datasheet. */
-static char irq_tab[][5] = {
+static char irq_tab[][5] __initdata = {
 	/*	INTA	INTB	INTC	INTD */
 	{0, 0, 0, 0, 0},	/*  11: Unused */
 	{0, 0, 0, 0, 0},	/*  12: Unused */
@@ -47,7 +51,7 @@ static char irq_tab[][5] = {
 	{0, 0, 0, 0, 0},	/*  27: Unused */
 };
 
-int pcibios_map_irq(const struct pci_dev *dev, u8 slot, u8 pin)
+int __init pcibios_map_irq(const struct pci_dev *dev, u8 slot, u8 pin)
 {
 	int virq;
 

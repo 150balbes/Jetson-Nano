@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /* dvb-usb-firmware.c is part of the DVB USB library.
  *
  * Copyright (C) 2004-6 Patrick Boettcher (patrick.boettcher@posteo.de)
@@ -56,7 +55,8 @@ int usb_cypress_load_firmware(struct usb_device *udev, const struct firmware *fw
 		ret = usb_cypress_writemem(udev, hx->addr, hx->data, hx->len);
 
 		if (ret != hx->len) {
-			err("error while transferring firmware (transferred size: %d, block size: %d)",
+			err("error while transferring firmware "
+				"(transferred size: %d, block size: %d)",
 				ret, hx->len);
 			ret = -EINVAL;
 			break;
@@ -90,7 +90,8 @@ int dvb_usb_download_firmware(struct usb_device *udev, struct dvb_usb_device_pro
 	const struct firmware *fw = NULL;
 
 	if ((ret = request_firmware(&fw, props->firmware, &udev->dev)) != 0) {
-		err("did not find the firmware file '%s' (status %d). You can use <kernel_dir>/scripts/get_dvb_firmware to get the firmware",
+		err("did not find the firmware file. (%s) "
+			"Please see linux/Documentation/dvb/ for more details on firmware-problems. (%d)",
 			props->firmware,ret);
 		return ret;
 	}

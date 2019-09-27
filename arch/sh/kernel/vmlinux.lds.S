@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * ld script to make SuperH Linux kernel
  * Written by Niibe Yutaka and Paul Mundt

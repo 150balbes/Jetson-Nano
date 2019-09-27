@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0-only
 config CAN_MSCAN
 	depends on PPC
 	tristate "Support for Freescale MSCAN based chips"

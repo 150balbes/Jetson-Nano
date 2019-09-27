@@ -1,0 +1,115 @@
+/*
+ * mods-display.dts
+ *
+ * Copyright (c) 2015-2017, NVIDIA CORPORATION.  All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; version 2 of the License.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ */
+
+#include "t18x-common-platforms/tegra186-dp.dtsi"
+#include "panels/panel-s-wuxga-8-0-mods.dtsi"
+/ {
+	host1x {
+		nvdisplay@15200000 {
+			status = "okay";
+			nvidia,dc-flags = <TEGRA_DC_FLAG_ENABLED>;
+			nvidia,emc-clk-rate = <300000000>;
+			nvidia,fb-bpp = <32>; /* bits per pixel */
+			nvidia,fb-win = <0>;
+			win-mask = <0x3>;
+			nvidia,dc-or-node = "/host1x/dsi";
+			nvidia,dc-connector = <&dsi>;
+		};
+
+		nvdisplay@15210000 {
+			status = "okay";
+			nvidia,dc-flags = <TEGRA_DC_FLAG_ENABLED>;
+			nvidia,emc-clk-rate = <300000000>;
+			nvidia,fb-bpp = <32>; /* bits per pixel */
+			nvidia,fb-win = <2>;
+			win-mask = <0xc>;
+			nvidia,dc-or-node = "/host1x/sor1";
+			nvidia,dc-connector = <&sor1>;
+		};
+
+		nvdisplay@15220000 {
+			status = "okay";
+			nvidia,dc-flags = <TEGRA_DC_FLAG_ENABLED>;
+			nvidia,emc-clk-rate = <300000000>;
+			nvidia,fb-bpp = <32>; /* bits per pixel */
+			nvidia,fb-win = <4>;
+			win-mask = <0x30>;
+			nvidia,dc-or-node = "/host1x/sor";
+			nvidia,dc-connector = <&sor0>;
+		};
+
+		dsi {
+			status = "okay";
+			nvidia,active-panel = <&panel_s_wuxga_8_0_mods>;
+			panel-s-wuxga-8-0-mods {
+				status = "okay";
+			};
+			panel-s-wuxga-8-0 {
+				status = "disabled";
+				disp-default-out {
+					nvidia,out-xres = <4096>;
+					nvidia,out-yres = <2160>;
+				};
+			};
+		};
+
+		sor {
+			status = "okay";
+			nvidia,active-panel = <&sor0_dp_display>;
+			dp-display {
+				status = "okay";
+				disp-default-out {
+					/* need 18bpp to drive max pclk */
+					nvidia,out-depth = <18>;
+					nvidia,out-xres = <4096>;
+					nvidia,out-yres = <2160>;
+					nvidia,out-parent-clk = "plld3";
+				};
+			};
+
+			hdmi-display {
+				status = "disabled";
+			};
+		};
+
+		sor1 {
+			status = "okay";
+			nvidia,active-panel = <&sor1_hdmi_display>;
+			hdmi-display {
+				status = "okay";
+				disp-default-out {
+					nvidia,out-xres = <4096>;
+					nvidia,out-yres = <2160>;
+				};
+			};
+
+			dp-display {
+				status = "disabled";
+			};
+		};
+
+		dpaux@15040000 {
+			status = "okay";
+		};
+
+		dpaux@155c0000 {
+			status = "okay";
+		};
+	};
+
+	mipical {
+		status = "okay";
+	};
+};

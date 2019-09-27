@@ -1,10 +1,16 @@
-// SPDX-License-Identifier: GPL-2.0+
-//
-// Regulator support for WM8400
-//
-// Copyright 2008 Wolfson Microelectronics PLC.
-//
-// Author: Mark Brown <broonie@opensource.wolfsonmicro.com>
+/*
+ * Regulator support for WM8400
+ *
+ * Copyright 2008 Wolfson Microelectronics PLC.
+ *
+ * Author: Mark Brown <broonie@opensource.wolfsonmicro.com>
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License as
+ * published by the Free Software Foundation; either version 2 of the
+ * License, or (at your option) any later version.
+ *
+ */
 
 #include <linux/bug.h>
 #include <linux/err.h>
@@ -30,12 +36,13 @@ static const struct regulator_ops wm8400_ldo_ops = {
 
 static unsigned int wm8400_dcdc_get_mode(struct regulator_dev *dev)
 {
-	struct regmap *rmap = rdev_get_regmap(dev);
+	struct wm8400 *wm8400 = rdev_get_drvdata(dev);
 	int offset = (rdev_get_id(dev) - WM8400_DCDC1) * 2;
 	u16 data[2];
 	int ret;
 
-	ret = regmap_bulk_read(rmap, WM8400_DCDC1_CONTROL_1 + offset, data, 2);
+	ret = wm8400_block_read(wm8400, WM8400_DCDC1_CONTROL_1 + offset, 2,
+				data);
 	if (ret != 0)
 		return 0;
 
@@ -56,36 +63,36 @@ static unsigned int wm8400_dcdc_get_mode(struct regulator_dev *dev)
 
 static int wm8400_dcdc_set_mode(struct regulator_dev *dev, unsigned int mode)
 {
-	struct regmap *rmap = rdev_get_regmap(dev);
+	struct wm8400 *wm8400 = rdev_get_drvdata(dev);
 	int offset = (rdev_get_id(dev) - WM8400_DCDC1) * 2;
 	int ret;
 
 	switch (mode) {
 	case REGULATOR_MODE_FAST:
 		/* Datasheet: active with force PWM */
-		ret = regmap_update_bits(rmap, WM8400_DCDC1_CONTROL_2 + offset,
+		ret = wm8400_set_bits(wm8400, WM8400_DCDC1_CONTROL_2 + offset,
 				      WM8400_DC1_FRC_PWM, WM8400_DC1_FRC_PWM);
 		if (ret != 0)
 			return ret;
 
-		return regmap_update_bits(rmap, WM8400_DCDC1_CONTROL_1 + offset,
+		return wm8400_set_bits(wm8400, WM8400_DCDC1_CONTROL_1 + offset,
 				       WM8400_DC1_ACTIVE | WM8400_DC1_SLEEP,
 				       WM8400_DC1_ACTIVE);
 
 	case REGULATOR_MODE_NORMAL:
 		/* Datasheet: active */
-		ret = regmap_update_bits(rmap, WM8400_DCDC1_CONTROL_2 + offset,
+		ret = wm8400_set_bits(wm8400, WM8400_DCDC1_CONTROL_2 + offset,
 				      WM8400_DC1_FRC_PWM, 0);
 		if (ret != 0)
 			return ret;
 
-		return regmap_update_bits(rmap, WM8400_DCDC1_CONTROL_1 + offset,
+		return wm8400_set_bits(wm8400, WM8400_DCDC1_CONTROL_1 + offset,
 				       WM8400_DC1_ACTIVE | WM8400_DC1_SLEEP,
 				       WM8400_DC1_ACTIVE);
 
 	case REGULATOR_MODE_IDLE:
 		/* Datasheet: standby */
-		return regmap_update_bits(rmap, WM8400_DCDC1_CONTROL_1 + offset,
+		return wm8400_set_bits(wm8400, WM8400_DCDC1_CONTROL_1 + offset,
 				       WM8400_DC1_ACTIVE | WM8400_DC1_SLEEP, 0);
 	default:
 		return -EINVAL;
@@ -188,7 +195,7 @@ static struct regulator_desc regulators[] = {
 		.id = WM8400_DCDC2,
 		.ops = &wm8400_dcdc_ops,
 		.enable_reg = WM8400_DCDC2_CONTROL_1,
-		.enable_mask = WM8400_DC2_ENA_MASK,
+		.enable_mask = WM8400_DC1_ENA_MASK,
 		.n_voltages = WM8400_DC2_VSEL_MASK + 1,
 		.vsel_reg = WM8400_DCDC2_CONTROL_1,
 		.vsel_mask = WM8400_DC2_VSEL_MASK,

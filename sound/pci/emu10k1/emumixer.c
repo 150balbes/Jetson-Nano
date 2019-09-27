@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  *  Copyright (c) by Jaroslav Kysela <perex@perex.cz>,
  *                   Takashi Iwai <tiwai@suse.de>
@@ -14,6 +13,21 @@
  *
  *  TODO:
  *    --
+ *
+ *   This program is free software; you can redistribute it and/or modify
+ *   it under the terms of the GNU General Public License as published by
+ *   the Free Software Foundation; either version 2 of the License, or
+ *   (at your option) any later version.
+ *
+ *   This program is distributed in the hope that it will be useful,
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *   GNU General Public License for more details.
+ *
+ *   You should have received a copy of the GNU General Public License
+ *   along with this program; if not, write to the Free Software
+ *   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+ *
  */
 
 #include <linux/time.h>
@@ -781,7 +795,7 @@ static int snd_emu1010_internal_clock_put(struct snd_kcontrol *kcontrol,
         return change;
 }
 
-static const struct snd_kcontrol_new snd_emu1010_internal_clock =
+static struct snd_kcontrol_new snd_emu1010_internal_clock =
 {
 	.access =	SNDRV_CTL_ELEM_ACCESS_READWRITE,
 	.iface =        SNDRV_CTL_ELEM_IFACE_MIXER,
@@ -833,7 +847,7 @@ static int snd_emu1010_optical_out_put(struct snd_kcontrol *kcontrol,
 	return change;
 }
 
-static const struct snd_kcontrol_new snd_emu1010_optical_out = {
+static struct snd_kcontrol_new snd_emu1010_optical_out = {
 	.access =	SNDRV_CTL_ELEM_ACCESS_READWRITE,
 	.iface =        SNDRV_CTL_ELEM_IFACE_MIXER,
 	.name =         "Optical Output Mode",
@@ -884,7 +898,7 @@ static int snd_emu1010_optical_in_put(struct snd_kcontrol *kcontrol,
 	return change;
 }
 
-static const struct snd_kcontrol_new snd_emu1010_optical_in = {
+static struct snd_kcontrol_new snd_emu1010_optical_in = {
 	.access =	SNDRV_CTL_ELEM_ACCESS_READWRITE,
 	.iface =        SNDRV_CTL_ELEM_IFACE_MIXER,
 	.name =         "Optical Input Mode",
@@ -964,7 +978,7 @@ static int snd_audigy_i2c_capture_source_put(struct snd_kcontrol *kcontrol,
         return change;
 }
 
-static const struct snd_kcontrol_new snd_audigy_i2c_capture_source =
+static struct snd_kcontrol_new snd_audigy_i2c_capture_source =
 {
 		.iface =	SNDRV_CTL_ELEM_IFACE_MIXER,
 		.name =		"Capture Source",
@@ -1163,7 +1177,7 @@ static int snd_emu10k1_spdif_put(struct snd_kcontrol *kcontrol,
 	return change;
 }
 
-static const struct snd_kcontrol_new snd_emu10k1_spdif_mask_control =
+static struct snd_kcontrol_new snd_emu10k1_spdif_mask_control =
 {
 	.access =	SNDRV_CTL_ELEM_ACCESS_READ,
 	.iface =        SNDRV_CTL_ELEM_IFACE_PCM,
@@ -1173,7 +1187,7 @@ static const struct snd_kcontrol_new snd_emu10k1_spdif_mask_control =
 	.get =          snd_emu10k1_spdif_get_mask
 };
 
-static const struct snd_kcontrol_new snd_emu10k1_spdif_control =
+static struct snd_kcontrol_new snd_emu10k1_spdif_control =
 {
 	.iface =	SNDRV_CTL_ELEM_IFACE_PCM,
 	.name =         SNDRV_CTL_NAME_IEC958("",PLAYBACK,DEFAULT),
@@ -1279,7 +1293,7 @@ static int snd_emu10k1_send_routing_put(struct snd_kcontrol *kcontrol,
 	return change;
 }
 
-static const struct snd_kcontrol_new snd_emu10k1_send_routing_control =
+static struct snd_kcontrol_new snd_emu10k1_send_routing_control =
 {
 	.access =	SNDRV_CTL_ELEM_ACCESS_READWRITE | SNDRV_CTL_ELEM_ACCESS_INACTIVE,
 	.iface =        SNDRV_CTL_ELEM_IFACE_PCM,
@@ -1350,7 +1364,7 @@ static int snd_emu10k1_send_volume_put(struct snd_kcontrol *kcontrol,
 	return change;
 }
 
-static const struct snd_kcontrol_new snd_emu10k1_send_volume_control =
+static struct snd_kcontrol_new snd_emu10k1_send_volume_control =
 {
 	.access =	SNDRV_CTL_ELEM_ACCESS_READWRITE | SNDRV_CTL_ELEM_ACCESS_INACTIVE,
 	.iface =        SNDRV_CTL_ELEM_IFACE_PCM,
@@ -1415,7 +1429,7 @@ static int snd_emu10k1_attn_put(struct snd_kcontrol *kcontrol,
 	return change;
 }
 
-static const struct snd_kcontrol_new snd_emu10k1_attn_control =
+static struct snd_kcontrol_new snd_emu10k1_attn_control =
 {
 	.access =	SNDRV_CTL_ELEM_ACCESS_READWRITE | SNDRV_CTL_ELEM_ACCESS_INACTIVE,
 	.iface =        SNDRV_CTL_ELEM_IFACE_PCM,
@@ -1487,7 +1501,7 @@ static int snd_emu10k1_efx_send_routing_put(struct snd_kcontrol *kcontrol,
 	return change;
 }
 
-static const struct snd_kcontrol_new snd_emu10k1_efx_send_routing_control =
+static struct snd_kcontrol_new snd_emu10k1_efx_send_routing_control =
 {
 	.access =	SNDRV_CTL_ELEM_ACCESS_READWRITE | SNDRV_CTL_ELEM_ACCESS_INACTIVE,
 	.iface =        SNDRV_CTL_ELEM_IFACE_PCM,
@@ -1554,7 +1568,7 @@ static int snd_emu10k1_efx_send_volume_put(struct snd_kcontrol *kcontrol,
 }
 
 
-static const struct snd_kcontrol_new snd_emu10k1_efx_send_volume_control =
+static struct snd_kcontrol_new snd_emu10k1_efx_send_volume_control =
 {
 	.access =	SNDRV_CTL_ELEM_ACCESS_READWRITE | SNDRV_CTL_ELEM_ACCESS_INACTIVE,
 	.iface =        SNDRV_CTL_ELEM_IFACE_PCM,
@@ -1612,7 +1626,7 @@ static int snd_emu10k1_efx_attn_put(struct snd_kcontrol *kcontrol,
 	return change;
 }
 
-static const struct snd_kcontrol_new snd_emu10k1_efx_attn_control =
+static struct snd_kcontrol_new snd_emu10k1_efx_attn_control =
 {
 	.access =	SNDRV_CTL_ELEM_ACCESS_READWRITE | SNDRV_CTL_ELEM_ACCESS_INACTIVE,
 	.iface =        SNDRV_CTL_ELEM_IFACE_PCM,
@@ -1677,7 +1691,7 @@ static int snd_emu10k1_shared_spdif_put(struct snd_kcontrol *kcontrol,
 	return change;
 }
 
-static const struct snd_kcontrol_new snd_emu10k1_shared_spdif =
+static struct snd_kcontrol_new snd_emu10k1_shared_spdif =
 {
 	.iface =	SNDRV_CTL_ELEM_IFACE_MIXER,
 	.name =		"SB Live Analog/Digital Output Jack",
@@ -1686,7 +1700,7 @@ static const struct snd_kcontrol_new snd_emu10k1_shared_spdif =
 	.put =		snd_emu10k1_shared_spdif_put
 };
 
-static const struct snd_kcontrol_new snd_audigy_shared_spdif =
+static struct snd_kcontrol_new snd_audigy_shared_spdif =
 {
 	.iface =	SNDRV_CTL_ELEM_IFACE_MIXER,
 	.name =		"Audigy Analog/Digital Output Jack",
@@ -1724,7 +1738,7 @@ static int snd_audigy_capture_boost_put(struct snd_kcontrol *kcontrol,
 	return snd_ac97_update(emu->ac97, AC97_REC_GAIN, val);
 }
 
-static const struct snd_kcontrol_new snd_audigy_capture_boost =
+static struct snd_kcontrol_new snd_audigy_capture_boost =
 {
 	.iface =	SNDRV_CTL_ELEM_IFACE_MIXER,
 	.name =		"Mic Extra Boost",

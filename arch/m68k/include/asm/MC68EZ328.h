@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 
 /* include/asm-m68knommu/MC68EZ328.h: 'EZ328 control registers
  *
@@ -10,7 +9,6 @@
  *                     The Silver Hammer Group, Ltd.
  *
  */
-#include <linux/compiler.h>
 
 #ifndef _MC68EZ328_H_
 #define _MC68EZ328_H_
@@ -817,7 +815,7 @@ typedef volatile struct {
   volatile unsigned short int nipr;
   volatile unsigned short int pad1;
   volatile unsigned short int pad2;
-} __packed m68328_uart;
+} __attribute__((packed)) m68328_uart;
 
 
 /**********

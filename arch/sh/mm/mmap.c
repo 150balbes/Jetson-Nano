@@ -9,7 +9,6 @@
  */
 #include <linux/io.h>
 #include <linux/mm.h>
-#include <linux/sched/mm.h>
 #include <linux/mman.h>
 #include <linux/module.h>
 #include <asm/page.h>

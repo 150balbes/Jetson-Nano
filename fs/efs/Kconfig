@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0-only
 config EFS_FS
 	tristate "EFS file system support (read only)"
 	depends on BLOCK

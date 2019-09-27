@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _BBC_I2C_H
 #define _BBC_I2C_H
 

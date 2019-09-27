@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * isl29020.c - Intersil  ALS Driver
  *
@@ -6,6 +5,18 @@
  *
  *  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
  *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; version 2 of the License.
+ *
+ * This program is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+ * General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with this program; if not, write to the Free Software Foundation, Inc.,
+ * 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA.
  * ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
  *
  * Data sheet at: http://www.intersil.com/data/fn/fn6505.pdf
@@ -134,7 +145,7 @@ static struct attribute *mid_att_als[] = {
 	NULL
 };
 
-static const struct attribute_group m_als_gr = {
+static struct attribute_group m_als_gr = {
 	.name = "isl29020",
 	.attrs = mid_att_als
 };
@@ -177,7 +188,7 @@ static int isl29020_remove(struct i2c_client *client)
 	return 0;
 }
 
-static const struct i2c_device_id isl29020_id[] = {
+static struct i2c_device_id isl29020_id[] = {
 	{ "isl29020", 0 },
 	{ }
 };

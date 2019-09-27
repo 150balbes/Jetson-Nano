@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0+
 /*
  * mass_storage.c -- Mass Storage USB Gadget
  *
@@ -6,6 +5,11 @@
  * Copyright (C) 2009 Samsung Electronics
  *                    Author: Michal Nazarewicz <mina86@mina86.com>
  * All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
  */
 
 
@@ -225,7 +229,7 @@ static int msg_unbind(struct usb_composite_dev *cdev)
 static struct usb_composite_driver msg_driver = {
 	.name		= "g_mass_storage",
 	.dev		= &msg_device_desc,
-	.max_speed	= USB_SPEED_SUPER_PLUS,
+	.max_speed	= USB_SPEED_SUPER,
 	.needs_serial	= 1,
 	.strings	= dev_strings,
 	.bind		= msg_bind,

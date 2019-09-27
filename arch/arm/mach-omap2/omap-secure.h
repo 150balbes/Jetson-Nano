@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * omap-secure.h: OMAP Secure infrastructure header.
  *
@@ -6,6 +5,10 @@
  *	Santosh Shilimkar <santosh.shilimkar@ti.com>
  * Copyright (C) 2012 Ivaylo Dimitrov <freemangordon@abv.bg>
  * Copyright (C) 2013 Pali Rohár <pali.rohar@gmail.com>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  */
 #ifndef OMAP_ARCH_OMAP_SECURE_H
 #define OMAP_ARCH_OMAP_SECURE_H

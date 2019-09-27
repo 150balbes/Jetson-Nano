@@ -25,7 +25,6 @@
 #include <subdev/bios.h>
 #include <subdev/bios/gpio.h>
 #include <subdev/gpio.h>
-#include "priv.h"
 
 static const u8 tags[] = {
 	DCB_GPIO_VID0, DCB_GPIO_VID1, DCB_GPIO_VID2, DCB_GPIO_VID3,

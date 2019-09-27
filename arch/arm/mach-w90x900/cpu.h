@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * arch/arm/mach-w90x900/cpu.h
  *
@@ -10,6 +9,11 @@
  * Header file for NUC900 CPU support
  *
  * Wan ZongShun <mcuos.com@gmail.com>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
  */
 
 #define IODESC_ENT(y)                                  \

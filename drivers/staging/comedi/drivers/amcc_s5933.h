@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * Stuff for AMCC S5933 PCI Controller
  *

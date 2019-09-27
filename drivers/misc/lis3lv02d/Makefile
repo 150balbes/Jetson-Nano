@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0-only
 #
 # STMicroelectonics LIS3LV02D and similar accelerometers
 #

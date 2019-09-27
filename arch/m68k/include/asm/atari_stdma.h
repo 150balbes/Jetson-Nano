@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 
 #ifndef _atari_stdma_h
 #define _atari_stdma_h

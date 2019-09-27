@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _PARISC_MACHDEP_H
 #define _PARISC_MACHDEP_H
 

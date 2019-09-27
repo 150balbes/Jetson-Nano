@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  *  Copyright 2000-2014 Avago Technologies.  All rights reserved.
  *

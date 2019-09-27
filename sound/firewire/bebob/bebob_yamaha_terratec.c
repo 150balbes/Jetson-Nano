@@ -1,8 +1,9 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * bebob_yamaha.c - a part of driver for BeBoB based devices
  *
  * Copyright (c) 2013-2014 Takashi Sakamoto
+ *
+ * Licensed under the terms of the GNU General Public License, version 2.
  */
 
 #include "./bebob.h"
@@ -30,7 +31,7 @@
  * Yamaha GO 44 and GO 46. Yamaha and Terratec had cooperated for these models.
  */
 
-static const enum snd_bebob_clock_type clk_src_types[] = {
+static enum snd_bebob_clock_type clk_src_types[] = {
 	SND_BEBOB_CLOCK_TYPE_INTERNAL,
 	SND_BEBOB_CLOCK_TYPE_EXTERNAL,	/* S/PDIF */
 };

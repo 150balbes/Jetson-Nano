@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _MIPS_SPARSEMEM_H
 #define _MIPS_SPARSEMEM_H
 #ifdef CONFIG_SPARSEMEM

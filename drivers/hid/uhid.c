@@ -1,15 +1,17 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * User-space I/O driver support for HID subsystem
  * Copyright (c) 2012 David Herrmann
  */
 
 /*
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License as published by the Free
+ * Software Foundation; either version 2 of the License, or (at your option)
+ * any later version.
  */
 
 #include <linux/atomic.h>
 #include <linux/compat.h>
-#include <linux/cred.h>
 #include <linux/device.h>
 #include <linux/fs.h>
 #include <linux/hid.h>
@@ -25,6 +27,8 @@
 
 #define UHID_NAME	"uhid"
 #define UHID_BUFSIZE	32
+
+static DEFINE_MUTEX(uhid_open_mutex);
 
 struct uhid_device {
 	struct mutex devlock;
@@ -140,15 +144,26 @@ static void uhid_hid_stop(struct hid_device *hid)
 static int uhid_hid_open(struct hid_device *hid)
 {
 	struct uhid_device *uhid = hid->driver_data;
+	int retval = 0;
 
-	return uhid_queue_event(uhid, UHID_OPEN);
+	mutex_lock(&uhid_open_mutex);
+	if (!hid->open++) {
+		retval = uhid_queue_event(uhid, UHID_OPEN);
+		if (retval)
+			hid->open--;
+	}
+	mutex_unlock(&uhid_open_mutex);
+	return retval;
 }
 
 static void uhid_hid_close(struct hid_device *hid)
 {
 	struct uhid_device *uhid = hid->driver_data;
 
-	uhid_queue_event(uhid, UHID_CLOSE);
+	mutex_lock(&uhid_open_mutex);
+	if (!--hid->open)
+		uhid_queue_event(uhid, UHID_CLOSE);
+	mutex_unlock(&uhid_open_mutex);
 }
 
 static int uhid_hid_parse(struct hid_device *hid)
@@ -323,7 +338,7 @@ static int uhid_hid_raw_request(struct hid_device *hid, unsigned char reportnum,
 	}
 }
 
-static int uhid_hid_output_raw(struct hid_device *hid, __u8 *buf, size_t count,
+int uhid_hid_output_raw(struct hid_device *hid, __u8 *buf, size_t count,
 			       unsigned char report_type)
 {
 	struct uhid_device *uhid = hid->driver_data;
@@ -360,6 +375,7 @@ static int uhid_hid_output_raw(struct hid_device *hid, __u8 *buf, size_t count,
 
 	return count;
 }
+EXPORT_SYMBOL_GPL(uhid_hid_output_raw);
 
 static int uhid_hid_output_report(struct hid_device *hid, __u8 *buf,
 				  size_t count)
@@ -367,7 +383,7 @@ static int uhid_hid_output_report(struct hid_device *hid, __u8 *buf,
 	return uhid_hid_output_raw(hid, buf, count, HID_OUTPUT_REPORT);
 }
 
-struct hid_ll_driver uhid_hid_driver = {
+static struct hid_ll_driver uhid_hid_driver = {
 	.start = uhid_hid_start,
 	.stop = uhid_hid_stop,
 	.open = uhid_hid_open,
@@ -376,7 +392,6 @@ struct hid_ll_driver uhid_hid_driver = {
 	.raw_request = uhid_hid_raw_request,
 	.output_report = uhid_hid_output_report,
 };
-EXPORT_SYMBOL_GPL(uhid_hid_driver);
 
 #ifdef CONFIG_COMPAT
 
@@ -494,7 +509,6 @@ static int uhid_dev_create2(struct uhid_device *uhid,
 		goto err_free;
 	}
 
-	/* @hid is zero-initialized, strncpy() is correct, strlcpy() not */
 	len = min(sizeof(hid->name), sizeof(ev->u.create2.name)) - 1;
 	strncpy(hid->name, ev->u.create2.name, len);
 	len = min(sizeof(hid->phys), sizeof(ev->u.create2.phys)) - 1;
@@ -629,7 +643,7 @@ static int uhid_char_open(struct inode *inode, struct file *file)
 	INIT_WORK(&uhid->worker, uhid_device_add_worker);
 
 	file->private_data = uhid;
-	stream_open(inode, file);
+	nonseekable_open(inode, file);
 
 	return 0;
 }
@@ -721,17 +735,6 @@ static ssize_t uhid_char_write(struct file *file, const char __user *buffer,
 
 	switch (uhid->input_buf.type) {
 	case UHID_CREATE:
-		/*
-		 * 'struct uhid_create_req' contains a __user pointer which is
-		 * copied from, so it's unsafe to allow this with elevated
-		 * privileges (e.g. from a setuid binary) or via kernel_write().
-		 */
-		if (file->f_cred != current_cred() || uaccess_kernel()) {
-			pr_err_once("UHID_CREATE from different security context by process %d (%s), this is not allowed.\n",
-				    task_tgid_vnr(current), current->comm);
-			ret = -EACCES;
-			goto unlock;
-		}
 		ret = uhid_dev_create(uhid, &uhid->input_buf);
 		break;
 	case UHID_CREATE2:
@@ -763,14 +766,14 @@ unlock:
 	return ret ? ret : count;
 }
 
-static __poll_t uhid_char_poll(struct file *file, poll_table *wait)
+static unsigned int uhid_char_poll(struct file *file, poll_table *wait)
 {
 	struct uhid_device *uhid = file->private_data;
 
 	poll_wait(file, &uhid->waitq, wait);
 
 	if (uhid->head != uhid->tail)
-		return EPOLLIN | EPOLLRDNORM;
+		return POLLIN | POLLRDNORM;
 
 	return 0;
 }

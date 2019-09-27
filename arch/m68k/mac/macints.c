@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  *	Macintosh interrupts
  *
@@ -111,7 +110,6 @@
 #include <linux/types.h>
 #include <linux/kernel.h>
 #include <linux/sched.h>
-#include <linux/sched/debug.h>
 #include <linux/interrupt.h>
 #include <linux/irq.h>
 #include <linux/delay.h>
@@ -127,9 +125,16 @@
 #include <asm/hwtest.h>
 #include <asm/irq_regs.h>
 
-extern void show_registers(struct pt_regs *);
+#define SHUTUP_SONIC
+
+/*
+ * console_loglevel determines NMI handler function
+ */
 
 irqreturn_t mac_nmi_handler(int, void *);
+irqreturn_t mac_debug_handler(int, void *);
+
+/* #define DEBUG_MACINTS */
 
 static unsigned int mac_irq_startup(struct irq_data *);
 static void mac_irq_shutdown(struct irq_data *);
@@ -144,8 +149,21 @@ static struct irq_chip mac_irq_chip = {
 
 void __init mac_init_IRQ(void)
 {
+#ifdef DEBUG_MACINTS
+	printk("mac_init_IRQ(): Setting things up...\n");
+#endif
 	m68k_setup_irq_controller(&mac_irq_chip, handle_simple_irq, IRQ_USER,
 				  NUM_MAC_SOURCES - IRQ_USER);
+	/* Make sure the SONIC interrupt is cleared or things get ugly */
+#ifdef SHUTUP_SONIC
+	printk("Killing onboard sonic... ");
+	/* This address should hopefully be mapped already */
+	if (hwreg_present((void*)(0x50f0a000))) {
+		*(long *)(0x50f0a014) = 0x7fffL;
+		*(long *)(0x50f0a010) = 0L;
+	}
+	printk("Done.\n");
+#endif /* SHUTUP_SONIC */
 
 	/*
 	 * Now register the handlers for the master IRQ handlers
@@ -164,6 +182,9 @@ void __init mac_init_IRQ(void)
 	if (request_irq(IRQ_AUTO_7, mac_nmi_handler, 0, "NMI",
 			mac_nmi_handler))
 		pr_err("Couldn't register NMI\n");
+#ifdef DEBUG_MACINTS
+	printk("mac_init_IRQ(): Done!\n");
+#endif
 }
 
 /*
@@ -255,17 +276,65 @@ static void mac_irq_shutdown(struct irq_data *data)
 		mac_irq_disable(data);
 }
 
-static volatile int in_nmi;
+static int num_debug[8];
+
+irqreturn_t mac_debug_handler(int irq, void *dev_id)
+{
+	if (num_debug[irq] < 10) {
+		printk("DEBUG: Unexpected IRQ %d\n", irq);
+		num_debug[irq]++;
+	}
+	return IRQ_HANDLED;
+}
+
+static int in_nmi;
+static volatile int nmi_hold;
 
 irqreturn_t mac_nmi_handler(int irq, void *dev_id)
 {
-	if (in_nmi)
-		return IRQ_HANDLED;
-	in_nmi = 1;
+	int i;
+	/*
+	 * generate debug output on NMI switch if 'debug' kernel option given
+	 * (only works with Penguin!)
+	 */
 
-	pr_info("Non-Maskable Interrupt\n");
-	show_registers(get_irq_regs());
+	in_nmi++;
+	for (i=0; i<100; i++)
+		udelay(1000);
 
-	in_nmi = 0;
+	if (in_nmi == 1) {
+		nmi_hold = 1;
+		printk("... pausing, press NMI to resume ...");
+	} else {
+		printk(" ok!\n");
+		nmi_hold = 0;
+	}
+
+	barrier();
+
+	while (nmi_hold == 1)
+		udelay(1000);
+
+	if (console_loglevel >= 8) {
+#if 0
+		struct pt_regs *fp = get_irq_regs();
+		show_state();
+		printk("PC: %08lx\nSR: %04x  SP: %p\n", fp->pc, fp->sr, fp);
+		printk("d0: %08lx    d1: %08lx    d2: %08lx    d3: %08lx\n",
+		       fp->d0, fp->d1, fp->d2, fp->d3);
+		printk("d4: %08lx    d5: %08lx    a0: %08lx    a1: %08lx\n",
+		       fp->d4, fp->d5, fp->a0, fp->a1);
+
+		if (STACK_MAGIC != *(unsigned long *)current->kernel_stack_page)
+			printk("Corrupted stack page\n");
+		printk("Process %s (pid: %d, stackpage=%08lx)\n",
+			current->comm, current->pid, current->kernel_stack_page);
+		if (intr_count == 1)
+			dump_stack((struct frame *)fp);
+#else
+		/* printk("NMI "); */
+#endif
+	}
+	in_nmi--;
 	return IRQ_HANDLED;
 }

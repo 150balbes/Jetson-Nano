@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * arch/arm/mach-omap1/include/mach/memory.h
  */

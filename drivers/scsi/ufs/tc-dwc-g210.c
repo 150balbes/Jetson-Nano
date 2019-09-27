@@ -1,10 +1,13 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Synopsys G210 Test Chip driver
  *
  * Copyright (C) 2015-2016 Synopsys, Inc. (www.synopsys.com)
  *
  * Authors: Joao Pinto <jpinto@synopsys.com>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  */
 
 #include "ufshcd.h"
@@ -23,7 +26,7 @@
  */
 static int tc_dwc_g210_setup_40bit_rmmi(struct ufs_hba *hba)
 {
-	static const struct ufshcd_dme_attr_val setup_attrs[] = {
+	const struct ufshcd_dme_attr_val setup_attrs[] = {
 		{ UIC_ARG_MIB(TX_GLOBALHIBERNATE), 0x00, DME_LOCAL },
 		{ UIC_ARG_MIB(REFCLKMODE), 0x01, DME_LOCAL },
 		{ UIC_ARG_MIB(CDIRECTCTRL6), 0x80, DME_LOCAL },
@@ -87,7 +90,7 @@ static int tc_dwc_g210_setup_40bit_rmmi(struct ufs_hba *hba)
  */
 static int tc_dwc_g210_setup_20bit_rmmi_lane0(struct ufs_hba *hba)
 {
-	static const struct ufshcd_dme_attr_val setup_attrs[] = {
+	const struct ufshcd_dme_attr_val setup_attrs[] = {
 		{ UIC_ARG_MIB_SEL(TX_REFCLKFREQ, SELIND_LN0_TX), 0x01,
 								DME_LOCAL },
 		{ UIC_ARG_MIB_SEL(TX_CFGCLKFREQVAL, SELIND_LN0_TX), 0x19,
@@ -144,7 +147,7 @@ static int tc_dwc_g210_setup_20bit_rmmi_lane1(struct ufs_hba *hba)
 	int connected_tx_lanes = 0;
 	int ret = 0;
 
-	static const struct ufshcd_dme_attr_val setup_tx_attrs[] = {
+	const struct ufshcd_dme_attr_val setup_tx_attrs[] = {
 		{ UIC_ARG_MIB_SEL(TX_REFCLKFREQ, SELIND_LN1_TX), 0x0d,
 								DME_LOCAL },
 		{ UIC_ARG_MIB_SEL(TX_CFGCLKFREQVAL, SELIND_LN1_TX), 0x19,
@@ -155,7 +158,7 @@ static int tc_dwc_g210_setup_20bit_rmmi_lane1(struct ufs_hba *hba)
 								DME_LOCAL },
 	};
 
-	static const struct ufshcd_dme_attr_val setup_rx_attrs[] = {
+	const struct ufshcd_dme_attr_val setup_rx_attrs[] = {
 		{ UIC_ARG_MIB_SEL(RX_REFCLKFREQ, SELIND_LN1_RX), 0x01,
 								DME_LOCAL },
 		{ UIC_ARG_MIB_SEL(RX_CFGCLKFREQVAL, SELIND_LN1_RX), 0x19,
@@ -219,7 +222,7 @@ static int tc_dwc_g210_setup_20bit_rmmi(struct ufs_hba *hba)
 {
 	int ret = 0;
 
-	static const struct ufshcd_dme_attr_val setup_attrs[] = {
+	const struct ufshcd_dme_attr_val setup_attrs[] = {
 		{ UIC_ARG_MIB(TX_GLOBALHIBERNATE), 0x00, DME_LOCAL },
 		{ UIC_ARG_MIB(REFCLKMODE), 0x01, DME_LOCAL },
 		{ UIC_ARG_MIB(CDIRECTCTRL6), 0xc0, DME_LOCAL },

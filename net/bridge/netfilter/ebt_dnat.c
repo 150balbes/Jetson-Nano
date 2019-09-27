@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  *  ebt_dnat
  *
@@ -10,7 +9,6 @@
  */
 #include <linux/module.h>
 #include <net/sock.h>
-#include "../br_private.h"
 #include <linux/netfilter.h>
 #include <linux/netfilter/x_tables.h>
 #include <linux/netfilter_bridge/ebtables.h>
@@ -20,30 +18,11 @@ static unsigned int
 ebt_dnat_tg(struct sk_buff *skb, const struct xt_action_param *par)
 {
 	const struct ebt_nat_info *info = par->targinfo;
-	struct net_device *dev;
 
-	if (skb_ensure_writable(skb, ETH_ALEN))
+	if (!skb_make_writable(skb, 0))
 		return EBT_DROP;
 
 	ether_addr_copy(eth_hdr(skb)->h_dest, info->mac);
-
-	if (is_multicast_ether_addr(info->mac)) {
-		if (is_broadcast_ether_addr(info->mac))
-			skb->pkt_type = PACKET_BROADCAST;
-		else
-			skb->pkt_type = PACKET_MULTICAST;
-	} else {
-		if (xt_hooknum(par) != NF_BR_BROUTING)
-			dev = br_port_get_rcu(xt_in(par))->br->dev;
-		else
-			dev = xt_in(par);
-
-		if (ether_addr_equal(info->mac, dev->dev_addr))
-			skb->pkt_type = PACKET_HOST;
-		else
-			skb->pkt_type = PACKET_OTHERHOST;
-	}
-
 	return info->target;
 }
 
@@ -62,7 +41,7 @@ static int ebt_dnat_tg_check(const struct xt_tgchk_param *par)
 	    (strcmp(par->table, "broute") != 0 ||
 	    hook_mask & ~(1 << NF_BR_BROUTING)))
 		return -EINVAL;
-	if (ebt_invalid_target(info->target))
+	if (INVALID_TARGET)
 		return -EINVAL;
 	return 0;
 }

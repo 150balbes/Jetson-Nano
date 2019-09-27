@@ -14,10 +14,8 @@
 #include <linux/uprobes.h>
 #include <linux/key.h>
 #include <linux/context_tracking.h>
-#include <linux/livepatch.h>
-#include <linux/syscalls.h>
 #include <asm/hw_breakpoint.h>
-#include <linux/uaccess.h>
+#include <asm/uaccess.h>
 #include <asm/unistd.h>
 #include <asm/debug.h>
 #include <asm/tm.h>
@@ -44,7 +42,7 @@ void __user *get_sigframe(struct ksignal *ksig, unsigned long sp,
 	newsp = (oldsp - frame_size) & ~0xFUL;
 
 	/* Check access */
-	if (!access_ok((void __user *)newsp, oldsp - newsp))
+	if (!access_ok(VERIFY_WRITE, (void __user *)newsp, oldsp - newsp))
 		return NULL;
 
         return (void __user *)newsp;
@@ -134,8 +132,6 @@ static void do_signal(struct task_struct *tsk)
 	/* Re-enable the breakpoints for the signal stack */
 	thread_change_pc(tsk, tsk->thread.regs);
 
-	rseq_signal_deliver(&ksig, tsk->thread.regs);
-
 	if (is32) {
         	if (ksig.ka.sa.sa_flags & SA_SIGINFO)
 			ret = handle_rt_signal32(&ksig, oldset, tsk);
@@ -153,14 +149,8 @@ void do_notify_resume(struct pt_regs *regs, unsigned long thread_info_flags)
 {
 	user_exit();
 
-	/* Check valid addr_limit, TIF check is done there */
-	addr_limit_user_check();
-
 	if (thread_info_flags & _TIF_UPROBE)
 		uprobe_notify_resume(regs);
-
-	if (thread_info_flags & _TIF_PATCH_PENDING)
-		klp_update_patch_state(current);
 
 	if (thread_info_flags & _TIF_SIGPENDING) {
 		BUG_ON(regs != current->thread.regs);
@@ -170,7 +160,6 @@ void do_notify_resume(struct pt_regs *regs, unsigned long thread_info_flags)
 	if (thread_info_flags & _TIF_NOTIFY_RESUME) {
 		clear_thread_flag(TIF_NOTIFY_RESUME);
 		tracehook_notify_resume(regs);
-		rseq_handle_notify_resume(NULL, regs);
 	}
 
 	user_enter();

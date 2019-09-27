@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * linux/drivers/misc/xillybus_core.c
  *
@@ -11,6 +10,10 @@
  * file in the host. The number of such pipes and their attributes are
  * set up on the logic. This driver detects these automatically and
  * creates the device files accordingly.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the smems of the GNU General Public License as published by
+ * the Free Software Foundation; version 2 of the License.
  */
 
 #include <linux/list.h>
@@ -1733,10 +1736,10 @@ end:
 	return pos;
 }
 
-static __poll_t xillybus_poll(struct file *filp, poll_table *wait)
+static unsigned int xillybus_poll(struct file *filp, poll_table *wait)
 {
 	struct xilly_channel *channel = filp->private_data;
-	__poll_t mask = 0;
+	unsigned int mask = 0;
 	unsigned long flags;
 
 	poll_wait(filp, &channel->endpoint->ep_wait, wait);
@@ -1755,15 +1758,15 @@ static __poll_t xillybus_poll(struct file *filp, poll_table *wait)
 
 		spin_lock_irqsave(&channel->wr_spinlock, flags);
 		if (!channel->wr_empty || channel->wr_ready)
-			mask |= EPOLLIN | EPOLLRDNORM;
+			mask |= POLLIN | POLLRDNORM;
 
 		if (channel->wr_hangup)
 			/*
-			 * Not EPOLLHUP, because its behavior is in the
-			 * mist, and EPOLLIN does what we want: Wake up
+			 * Not POLLHUP, because its behavior is in the
+			 * mist, and POLLIN does what we want: Wake up
 			 * the read file descriptor so it sees EOF.
 			 */
-			mask |=  EPOLLIN | EPOLLRDNORM;
+			mask |=  POLLIN | POLLRDNORM;
 		spin_unlock_irqrestore(&channel->wr_spinlock, flags);
 	}
 
@@ -1778,12 +1781,12 @@ static __poll_t xillybus_poll(struct file *filp, poll_table *wait)
 
 		spin_lock_irqsave(&channel->rd_spinlock, flags);
 		if (!channel->rd_full)
-			mask |= EPOLLOUT | EPOLLWRNORM;
+			mask |= POLLOUT | POLLWRNORM;
 		spin_unlock_irqrestore(&channel->rd_spinlock, flags);
 	}
 
 	if (channel->endpoint->fatal_error)
-		mask |= EPOLLERR;
+		mask |= POLLERR;
 
 	return mask;
 }

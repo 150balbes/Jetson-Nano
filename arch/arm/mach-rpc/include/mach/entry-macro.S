@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #include <mach/hardware.h>
 #include <asm/hardware/entry-macro-iomd.S>
 

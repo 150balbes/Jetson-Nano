@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 #include <linux/cred.h>
 #include <linux/init.h>
 #include <linux/kernel.h>
@@ -13,8 +12,14 @@ static const struct genl_multicast_group quota_mcgrps[] = {
 };
 
 /* Netlink family structure for quota */
-static struct genl_family quota_genl_family __ro_after_init = {
-	.module = THIS_MODULE,
+static struct genl_family quota_genl_family = {
+	/*
+	 * Needed due to multicast group ID abuse - old code assumed
+	 * the family ID was also a valid multicast group ID (which
+	 * isn't true) and userspace might thus rely on it. Assign a
+	 * static ID for this group to make dealing with that easier.
+	 */
+	.id = GENL_ID_VFS_DQUOT,
 	.hdrsize = 0,
 	.name = "VFS_DQUOT",
 	.version = 1,

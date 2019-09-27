@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _NET_IPCOMP_H
 #define _NET_IPCOMP_H
 

@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __MACH_PXA300_H
 #define __MACH_PXA300_H
 

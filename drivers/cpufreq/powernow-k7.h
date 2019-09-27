@@ -1,8 +1,10 @@
-/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  *  (C) 2003 Dave Jones.
  *
+ *  Licensed under the terms of the GNU GPL License version 2.
+ *
  *  AMD-specific information
+ *
  */
 
 union msr_fidvidctl {

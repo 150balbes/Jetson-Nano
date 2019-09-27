@@ -1,8 +1,11 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
- * Expose a PWM controlled by the ChromeOS EC to the host processor.
+ * Copyright (C) 2016 Google, Inc
  *
- * Copyright (C) 2016 Google, Inc.
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License version 2, as published by
+ * the Free Software Foundation.
+ *
+ * Expose a PWM controlled by the ChromeOS EC to the host processor.
  */
 
 #include <linux/module.h>
@@ -72,8 +75,8 @@ static int __cros_ec_pwm_get_duty(struct cros_ec_device *ec, u8 index,
 
 	msg->version = 0;
 	msg->command = EC_CMD_PWM_GET_DUTY;
-	msg->insize = sizeof(*resp);
-	msg->outsize = sizeof(*params);
+	msg->insize = sizeof(*params);
+	msg->outsize = sizeof(*resp);
 
 	params->pwm_type = EC_PWM_TYPE_GENERIC;
 	params->index = index;

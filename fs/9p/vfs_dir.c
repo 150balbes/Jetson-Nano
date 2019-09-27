@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * linux/fs/9p/vfs_dir.c
  *
@@ -6,6 +5,22 @@
  *
  *  Copyright (C) 2004 by Eric Van Hensbergen <ericvh@gmail.com>
  *  Copyright (C) 2002 by Ron Minnich <rminnich@lanl.gov>
+ *
+ *  This program is free software; you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License version 2
+ *  as published by the Free Software Foundation.
+ *
+ *  This program is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *  GNU General Public License for more details.
+ *
+ *  You should have received a copy of the GNU General Public License
+ *  along with this program; if not, write to:
+ *  Free Software Foundation
+ *  51 Franklin Street, Fifth Floor
+ *  Boston, MA  02111-1301  USA
+ *
  */
 
 #include <linux/module.h>
@@ -61,6 +76,15 @@ static inline int dt_type(struct p9_wstat *mistat)
 	return rettype;
 }
 
+static void p9stat_init(struct p9_wstat *stbuf)
+{
+	stbuf->name  = NULL;
+	stbuf->uid   = NULL;
+	stbuf->gid   = NULL;
+	stbuf->muid  = NULL;
+	stbuf->extension = NULL;
+}
+
 /**
  * v9fs_alloc_rdir_buf - Allocate buffer used for read and readdir
  * @filp: opened file structure
@@ -90,6 +114,7 @@ static int v9fs_dir_readdir(struct file *file, struct dir_context *ctx)
 	int err = 0;
 	struct p9_fid *fid;
 	int buflen;
+	int reclen = 0;
 	struct p9_rdir *rdir;
 	struct kvec kvec;
 
@@ -108,7 +133,7 @@ static int v9fs_dir_readdir(struct file *file, struct dir_context *ctx)
 		if (rdir->tail == rdir->head) {
 			struct iov_iter to;
 			int n;
-			iov_iter_kvec(&to, READ, &kvec, 1, buflen);
+			iov_iter_kvec(&to, READ | ITER_KVEC, &kvec, 1, buflen);
 			n = p9_client_read(file->private_data, ctx->pos, &to,
 					   &err);
 			if (err)
@@ -120,12 +145,15 @@ static int v9fs_dir_readdir(struct file *file, struct dir_context *ctx)
 			rdir->tail = n;
 		}
 		while (rdir->head < rdir->tail) {
+			p9stat_init(&st);
 			err = p9stat_read(fid->clnt, rdir->buf + rdir->head,
 					  rdir->tail - rdir->head, &st);
-			if (err <= 0) {
+			if (err) {
 				p9_debug(P9_DEBUG_VFS, "returned %d\n", err);
+				p9stat_free(&st);
 				return -EIO;
 			}
+			reclen = st.size+2;
 
 			over = !dir_emit(ctx, st.name, strlen(st.name),
 					 v9fs_qid2ino(&st.qid), dt_type(&st));
@@ -133,8 +161,8 @@ static int v9fs_dir_readdir(struct file *file, struct dir_context *ctx)
 			if (over)
 				return 0;
 
-			rdir->head += err;
-			ctx->pos += err;
+			rdir->head += reclen;
+			ctx->pos += reclen;
 		}
 	}
 }

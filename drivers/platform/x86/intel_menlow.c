@@ -1,10 +1,25 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
- *  Intel menlow Driver for thermal management extension
+ *  intel_menlow.c - Intel menlow Driver for thermal management extension
  *
  *  Copyright (C) 2008 Intel Corp
  *  Copyright (C) 2008 Sujith Thomas <sujith.thomas@intel.com>
  *  Copyright (C) 2008 Zhang Rui <rui.zhang@intel.com>
+ *  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+ *
+ *  This program is free software; you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License as published by
+ *  the Free Software Foundation; version 2 of the License.
+ *
+ *  This program is distributed in the hope that it will be useful, but
+ *  WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ *  General Public License for more details.
+ *
+ *  You should have received a copy of the GNU General Public License along
+ *  with this program; if not, write to the Free Software Foundation, Inc.,
+ *  59 Temple Place, Suite 330, Boston, MA 02111-1307 USA.
+ *
+ * ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
  *
  *  This driver creates the sys I/F for programming the sensors.
  *  It also implements the driver for intel menlow memory controller (hardware
@@ -14,19 +29,20 @@
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 
-#include <linux/acpi.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
+#include <linux/init.h>
+#include <linux/slab.h>
+#include <linux/types.h>
 #include <linux/pci.h>
 #include <linux/pm.h>
-#include <linux/slab.h>
 #include <linux/thermal.h>
-#include <linux/types.h>
+#include <linux/acpi.h>
 
 MODULE_AUTHOR("Thomas Sujith");
 MODULE_AUTHOR("Zhang Rui");
 MODULE_DESCRIPTION("Intel Menlow platform specific driver");
-MODULE_LICENSE("GPL v2");
+MODULE_LICENSE("GPL");
 
 /*
  * Memory controller device control
@@ -126,7 +142,7 @@ static int memory_set_cur_bandwidth(struct thermal_cooling_device *cdev,
 	return 0;
 }
 
-static const struct thermal_cooling_device_ops memory_cooling_ops = {
+static struct thermal_cooling_device_ops memory_cooling_ops = {
 	.get_max_state = memory_get_max_bandwidth,
 	.get_cur_state = memory_get_cur_bandwidth,
 	.set_cur_state = memory_set_cur_bandwidth,
@@ -180,13 +196,9 @@ static int intel_menlow_memory_add(struct acpi_device *device)
 
 static int intel_menlow_memory_remove(struct acpi_device *device)
 {
-	struct thermal_cooling_device *cdev;
+	struct thermal_cooling_device *cdev = acpi_driver_data(device);
 
-	if (!device)
-		return -EINVAL;
-
-	cdev = acpi_driver_data(device);
-	if (!cdev)
+	if (!device || !cdev)
 		return -EINVAL;
 
 	sysfs_remove_link(&device->dev.kobj, "thermal_cooling");

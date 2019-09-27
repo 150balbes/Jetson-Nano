@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * BIOS Flash chip on Intel 440GX board.
  *

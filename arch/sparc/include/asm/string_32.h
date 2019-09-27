@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * string.h: External definitions for optimized assembly string
  *           routines for the Linux Kernel.

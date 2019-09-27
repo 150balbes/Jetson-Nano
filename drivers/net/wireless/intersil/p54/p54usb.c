@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 
 /*
  * Linux device driver for USB based Prism54
@@ -7,6 +6,10 @@
  *
  * Based on the islsm (softmac prism54) driver, which is:
  * Copyright 2004-2006 Jean-Baptiste Note <jbnote@gmail.com>, et al.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  */
 
 #include <linux/usb.h>
@@ -30,8 +33,6 @@ MODULE_ALIAS("prism54usb");
 MODULE_FIRMWARE("isl3886usb");
 MODULE_FIRMWARE("isl3887usb");
 
-static struct usb_driver p54u_driver;
-
 /*
  * Note:
  *
@@ -40,7 +41,7 @@ static struct usb_driver p54u_driver;
  * whenever you add a new device.
  */
 
-static const struct usb_device_id p54u_table[] = {
+static struct usb_device_id p54u_table[] = {
 	/* Version 1 devices (pci chip + net2280) */
 	{USB_DEVICE(0x0411, 0x0050)},	/* Buffalo WLI2-USB2-G54 */
 	{USB_DEVICE(0x045e, 0x00c2)},	/* Microsoft MN-710 */
@@ -920,9 +921,9 @@ static void p54u_load_firmware_cb(const struct firmware *firmware,
 {
 	struct p54u_priv *priv = context;
 	struct usb_device *udev = priv->udev;
-	struct usb_interface *intf = priv->intf;
 	int err;
 
+	complete(&priv->fw_wait_load);
 	if (firmware) {
 		priv->fw = firmware;
 		err = p54u_start_ops(priv);
@@ -931,22 +932,26 @@ static void p54u_load_firmware_cb(const struct firmware *firmware,
 		dev_err(&udev->dev, "Firmware not found.\n");
 	}
 
-	complete(&priv->fw_wait_load);
-	/*
-	 * At this point p54u_disconnect may have already freed
-	 * the "priv" context. Do not use it anymore!
-	 */
-	priv = NULL;
-
 	if (err) {
-		dev_err(&intf->dev, "failed to initialize device (%d)\n", err);
+		struct device *parent = priv->udev->dev.parent;
 
-		usb_lock_device(udev);
-		usb_driver_release_interface(&p54u_driver, intf);
-		usb_unlock_device(udev);
+		dev_err(&udev->dev, "failed to initialize device (%d)\n", err);
+
+		if (parent)
+			device_lock(parent);
+
+		device_release_driver(&udev->dev);
+		/*
+		 * At this point p54u_disconnect has already freed
+		 * the "priv" context. Do not use it anymore!
+		 */
+		priv = NULL;
+
+		if (parent)
+			device_unlock(parent);
 	}
 
-	usb_put_intf(intf);
+	usb_put_dev(udev);
 }
 
 static int p54u_load_firmware(struct ieee80211_hw *dev,
@@ -967,14 +972,14 @@ static int p54u_load_firmware(struct ieee80211_hw *dev,
 	dev_info(&priv->udev->dev, "Loading firmware file %s\n",
 	       p54u_fwlist[i].fw);
 
-	usb_get_intf(intf);
+	usb_get_dev(udev);
 	err = request_firmware_nowait(THIS_MODULE, 1, p54u_fwlist[i].fw,
 				      device, GFP_KERNEL, priv,
 				      p54u_load_firmware_cb);
 	if (err) {
 		dev_err(&priv->udev->dev, "(p54usb) cannot load firmware %s "
 					  "(%d)!\n", p54u_fwlist[i].fw, err);
-		usb_put_intf(intf);
+		usb_put_dev(udev);
 	}
 
 	return err;
@@ -1005,6 +1010,8 @@ static int p54u_probe(struct usb_interface *intf,
 	priv->intf = intf;
 	skb_queue_head_init(&priv->rx_queue);
 	init_usb_anchor(&priv->submitted);
+
+	usb_get_dev(udev);
 
 	/* really lazy and simple way of figuring out if we're a 3887 */
 	/* TODO: should just stick the identification in the device table */
@@ -1046,8 +1053,10 @@ static int p54u_probe(struct usb_interface *intf,
 		priv->upload_fw = p54u_upload_firmware_net2280;
 	}
 	err = p54u_load_firmware(dev, intf);
-	if (err)
+	if (err) {
+		usb_put_dev(udev);
 		p54_free_common(dev);
+	}
 	return err;
 }
 
@@ -1063,6 +1072,7 @@ static void p54u_disconnect(struct usb_interface *intf)
 	wait_for_completion(&priv->fw_wait_load);
 	p54_unregister_common(dev);
 
+	usb_put_dev(interface_to_usbdev(intf));
 	release_firmware(priv->fw);
 	p54_free_common(dev);
 }

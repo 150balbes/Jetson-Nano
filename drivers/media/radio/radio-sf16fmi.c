@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /* SF16-FMI, SF16-FMP and SF16-FMD radio driver for Linux radio support
  * heavily based on rtrack driver...
  * (c) 1997 M. Kirkwood
@@ -14,11 +13,11 @@
  *  No volume control - only mute/unmute - you have to use line volume
  *  control on SB-part of SF16-FMI/SF16-FMP/SF16-FMD
  *
- * Converted to V4L2 API by Mauro Carvalho Chehab <mchehab@kernel.org>
+ * Converted to V4L2 API by Mauro Carvalho Chehab <mchehab@infradead.org>
  */
 
 #include <linux/kernel.h>	/* __setup			*/
-#include <linux/module.h>	/* Modules			*/
+#include <linux/module.h>	/* Modules 			*/
 #include <linux/init.h>		/* Initdata			*/
 #include <linux/ioport.h>	/* request_region		*/
 #include <linux/delay.h>	/* udelay			*/
@@ -111,7 +110,7 @@ static inline int fmi_getsigstr(struct fmi *fmi)
 	val = fmi->mute ? 0x00 : 0x08;	/* mute/unmute */
 	outb(val, fmi->io);
 	outb(val | 0x10, fmi->io);
-	msleep(143);		/* was schedule_timeout(HZ/7) */
+	msleep(143); 		/* was schedule_timeout(HZ/7) */
 	res = (int)inb(fmi->io + 1);
 	outb(val, fmi->io);
 
@@ -130,9 +129,11 @@ static void fmi_set_freq(struct fmi *fmi)
 static int vidioc_querycap(struct file *file, void  *priv,
 					struct v4l2_capability *v)
 {
-	strscpy(v->driver, "radio-sf16fmi", sizeof(v->driver));
-	strscpy(v->card, "SF16-FMI/FMP/FMD radio", sizeof(v->card));
-	strscpy(v->bus_info, "ISA:radio-sf16fmi", sizeof(v->bus_info));
+	strlcpy(v->driver, "radio-sf16fmi", sizeof(v->driver));
+	strlcpy(v->card, "SF16-FMI/FMP/FMD radio", sizeof(v->card));
+	strlcpy(v->bus_info, "ISA:radio-sf16fmi", sizeof(v->bus_info));
+	v->device_caps = V4L2_CAP_TUNER | V4L2_CAP_RADIO;
+	v->capabilities = v->device_caps | V4L2_CAP_DEVICE_CAPS;
 	return 0;
 }
 
@@ -144,7 +145,7 @@ static int vidioc_g_tuner(struct file *file, void *priv,
 	if (v->index > 0)
 		return -EINVAL;
 
-	strscpy(v->name, "FM", sizeof(v->name));
+	strlcpy(v->name, "FM", sizeof(v->name));
 	v->type = V4L2_TUNER_RADIO;
 	v->rangelow = RSF16_MINFREQ;
 	v->rangehigh = RSF16_MAXFREQ;
@@ -314,7 +315,7 @@ static int __init fmi_init(void)
 		return -ENODEV;
 	}
 
-	strscpy(v4l2_dev->name, "sf16fmi", sizeof(v4l2_dev->name));
+	strlcpy(v4l2_dev->name, "sf16fmi", sizeof(v4l2_dev->name));
 	fmi->io = io;
 
 	res = v4l2_device_register(NULL, v4l2_dev);
@@ -338,12 +339,11 @@ static int __init fmi_init(void)
 		return res;
 	}
 
-	strscpy(fmi->vdev.name, v4l2_dev->name, sizeof(fmi->vdev.name));
+	strlcpy(fmi->vdev.name, v4l2_dev->name, sizeof(fmi->vdev.name));
 	fmi->vdev.v4l2_dev = v4l2_dev;
 	fmi->vdev.fops = &fmi_fops;
 	fmi->vdev.ioctl_ops = &fmi_ioctl_ops;
 	fmi->vdev.release = video_device_release_empty;
-	fmi->vdev.device_caps = V4L2_CAP_TUNER | V4L2_CAP_RADIO;
 	video_set_drvdata(&fmi->vdev, fmi);
 
 	mutex_init(&fmi->lock);

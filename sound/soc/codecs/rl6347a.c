@@ -1,10 +1,13 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * rl6347a.c - RL6347A class device shared support
  *
  * Copyright 2015 Realtek Semiconductor Corp.
  *
  * Author: Oder Chiou <oder_chiou@realtek.com>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  */
 
 #include <linux/module.h>
@@ -48,7 +51,7 @@ int rl6347a_hw_write(void *context, unsigned int reg, unsigned int value)
 	if (ret == 4)
 		return 0;
 	else
-		dev_err(&client->dev, "I2C error %d\n", ret);
+		pr_err("ret=%d\n", ret);
 	if (ret < 0)
 		return ret;
 	else
@@ -61,8 +64,8 @@ int rl6347a_hw_read(void *context, unsigned int reg, unsigned int *value)
 	struct i2c_client *client = context;
 	struct i2c_msg xfer[2];
 	int ret;
-	__be32 be_reg, buf = 0x0;
-	unsigned int index, vid;
+	__be32 be_reg;
+	unsigned int index, vid, buf = 0x0;
 
 	/* handle index registers */
 	if (reg <= 0xff) {

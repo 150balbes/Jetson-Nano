@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 
 /*
  * MTD driver for the 28F160F3 Flash Memory (non-CFI) on LART.
@@ -6,6 +5,10 @@
  * Author: Abraham vd Merwe <abraham@2d3d.co.za>
  *
  * Copyright (c) 2001, 2d3D, Inc.
+ *
+ * This code is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  *
  * References:
  *
@@ -72,18 +75,18 @@ static char module_name[] = "lart";
 
 /* blob */
 #define NUM_BLOB_BLOCKS		FLASH_NUMBLOCKS_16m_PARAM
-#define PART_BLOB_START		0x00000000
-#define PART_BLOB_LEN		(NUM_BLOB_BLOCKS * FLASH_BLOCKSIZE_PARAM)
+#define BLOB_START			0x00000000
+#define BLOB_LEN			(NUM_BLOB_BLOCKS * FLASH_BLOCKSIZE_PARAM)
 
 /* kernel */
 #define NUM_KERNEL_BLOCKS	7
-#define PART_KERNEL_START	(PART_BLOB_START + PART_BLOB_LEN)
-#define PART_KERNEL_LEN		(NUM_KERNEL_BLOCKS * FLASH_BLOCKSIZE_MAIN)
+#define KERNEL_START		(BLOB_START + BLOB_LEN)
+#define KERNEL_LEN			(NUM_KERNEL_BLOCKS * FLASH_BLOCKSIZE_MAIN)
 
 /* initial ramdisk */
 #define NUM_INITRD_BLOCKS	24
-#define PART_INITRD_START	(PART_KERNEL_START + PART_KERNEL_LEN)
-#define PART_INITRD_LEN		(NUM_INITRD_BLOCKS * FLASH_BLOCKSIZE_MAIN)
+#define INITRD_START		(KERNEL_START + KERNEL_LEN)
+#define INITRD_LEN			(NUM_INITRD_BLOCKS * FLASH_BLOCKSIZE_MAIN)
 
 /*
  * See section 4.0 in "3 Volt Fast Boot Block Flash Memory" Intel Datasheet
@@ -411,13 +414,19 @@ static int flash_erase (struct mtd_info *mtd,struct erase_info *instr)
    while (len)
 	 {
 		if (!erase_block (addr))
+		  {
+			 instr->state = MTD_ERASE_FAILED;
 			 return (-EIO);
+		  }
 
 		addr += mtd->eraseregions[i].erasesize;
 		len -= mtd->eraseregions[i].erasesize;
 
 		if (addr == mtd->eraseregions[i].offset + (mtd->eraseregions[i].erasesize * mtd->eraseregions[i].numblocks)) i++;
 	 }
+
+   instr->state = MTD_ERASE_DONE;
+   mtd_erase_callback(instr);
 
    return (0);
 }
@@ -574,24 +583,24 @@ static struct mtd_erase_region_info erase_regions[] = {
 	}
 };
 
-static const struct mtd_partition lart_partitions[] = {
+static struct mtd_partition lart_partitions[] = {
 	/* blob */
 	{
 		.name	= "blob",
-		.offset	= PART_BLOB_START,
-		.size	= PART_BLOB_LEN,
+		.offset	= BLOB_START,
+		.size	= BLOB_LEN,
 	},
 	/* kernel */
 	{
 		.name	= "kernel",
-		.offset	= PART_KERNEL_START,	/* MTDPART_OFS_APPEND */
-		.size	= PART_KERNEL_LEN,
+		.offset	= KERNEL_START,		/* MTDPART_OFS_APPEND */
+		.size	= KERNEL_LEN,
 	},
 	/* initial ramdisk / file system */
 	{
 		.name	= "file system",
-		.offset	= PART_INITRD_START,	/* MTDPART_OFS_APPEND */
-		.size	= PART_INITRD_LEN,	/* MTDPART_SIZ_FULL */
+		.offset	= INITRD_START,		/* MTDPART_OFS_APPEND */
+		.size	= INITRD_LEN,		/* MTDPART_SIZ_FULL */
 	}
 };
 #define NUM_PARTITIONS ARRAY_SIZE(lart_partitions)

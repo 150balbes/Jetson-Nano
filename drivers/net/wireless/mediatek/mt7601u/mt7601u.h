@@ -1,7 +1,15 @@
-/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (C) 2014 Felix Fietkau <nbd@openwrt.org>
  * Copyright (C) 2015 Jakub Kicinski <kubakici@wp.pl>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2
+ * as published by the Free Software Foundation
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
  */
 
 #ifndef MT7601U_H
@@ -15,7 +23,6 @@
 #include <linux/completion.h>
 #include <net/mac80211.h>
 #include <linux/debugfs.h>
-#include <linux/average.h>
 
 #include "regs.h"
 
@@ -131,8 +138,6 @@ enum {
 	MT7601U_STATE_MORE_STATS,
 };
 
-DECLARE_EWMA(rssi, 10, 4);
-
 /**
  * struct mt7601u_dev - adapter structure
  * @lock:		protects @wcid->tx_rate.
@@ -142,8 +147,7 @@ DECLARE_EWMA(rssi, 10, 4);
  * @rx_lock:		protects @rx_q.
  * @con_mon_lock:	protects @ap_bssid, @bcn_*, @avg_rssi.
  * @mutex:		ensures exclusive access from mac80211 callbacks.
- * @vendor_req_mutex:	protects @vend_buf, ensures atomicity of read/write
- *			accesses
+ * @vendor_req_mutex:	protects @vend_buf, ensures atomicity of split writes.
  * @reg_atomic_mutex:	ensures atomicity of indirect register accesses
  *			(accesses to RF and BBP).
  * @hw_atomic_mutex:	ensures exclusive access to HW during critical
@@ -215,7 +219,7 @@ struct mt7601u_dev {
 	s8 bcn_freq_off;
 	u8 bcn_phy_mode;
 
-	struct ewma_rssi avg_rssi;
+	int avg_rssi; /* starts at 0 and converges */
 
 	u8 agc_save;
 

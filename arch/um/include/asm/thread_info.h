@@ -6,15 +6,11 @@
 #ifndef __UM_THREAD_INFO_H
 #define __UM_THREAD_INFO_H
 
-#define THREAD_SIZE_ORDER CONFIG_KERNEL_STACK_ORDER
-#define THREAD_SIZE ((1 << CONFIG_KERNEL_STACK_ORDER) * PAGE_SIZE)
-
 #ifndef __ASSEMBLY__
 
 #include <asm/types.h>
 #include <asm/page.h>
 #include <asm/segment.h>
-#include <sysdep/ptrace_user.h>
 
 struct thread_info {
 	struct task_struct	*task;		/* main task structure */
@@ -26,8 +22,6 @@ struct thread_info {
 					 	   0-0xBFFFFFFF for user
 						   0-0xFFFFFFFF for kernel */
 	struct thread_info	*real_thread;    /* Points to non-IRQ stack */
-	unsigned long aux_fp_regs[FP_SIZE];	/* auxiliary fp_regs to save/restore
-						   them out-of-band */
 };
 
 #define INIT_THREAD_INFO(tsk)			\
@@ -40,6 +34,10 @@ struct thread_info {
 	.real_thread = NULL,			\
 }
 
+#define init_thread_info	(init_thread_union.thread_info)
+#define init_stack		(init_thread_union.stack)
+
+#define THREAD_SIZE ((1 << CONFIG_KERNEL_STACK_ORDER) * PAGE_SIZE)
 /* how to get the thread information struct from C */
 static inline struct thread_info *current_thread_info(void)
 {
@@ -51,6 +49,8 @@ static inline struct thread_info *current_thread_info(void)
 	ti = (struct thread_info *) (((unsigned long)p) & ~mask);
 	return ti;
 }
+
+#define THREAD_SIZE_ORDER CONFIG_KERNEL_STACK_ORDER
 
 #endif
 

@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * This may not use any stack, nor any variable that is not "NoSave":
  *
@@ -12,7 +11,6 @@
 #include <asm/page_types.h>
 #include <asm/asm-offsets.h>
 #include <asm/processor-flags.h>
-#include <asm/frame.h>
 
 .text
 
@@ -25,30 +23,13 @@ ENTRY(swsusp_arch_suspend)
 	pushfl
 	popl saved_context_eflags
 
-	/* save cr3 */
-	movl	%cr3, %eax
-	movl	%eax, restore_cr3
-
-	FRAME_BEGIN
 	call swsusp_save
-	FRAME_END
 	ret
-ENDPROC(swsusp_arch_suspend)
 
 ENTRY(restore_image)
-	/* prepare to jump to the image kernel */
-	movl	restore_jump_address, %ebx
-	movl	restore_cr3, %ebp
-
 	movl	mmu_cr4_features, %ecx
-
-	/* jump to relocated restore code */
-	movl	relocated_restore_code, %eax
-	jmpl	*%eax
-
-/* code below has been relocated to a safe page */
-ENTRY(core_restore_code)
-	movl	temp_pgt, %eax
+	movl	resume_pg_dir, %eax
+	subl	$__PAGE_OFFSET, %eax
 	movl	%eax, %cr3
 
 	jecxz	1f	# cr4 Pentium and higher, skip if zero
@@ -67,7 +48,7 @@ copy_loop:
 	movl	pbe_address(%edx), %esi
 	movl	pbe_orig_address(%edx), %edi
 
-	movl	$(PAGE_SIZE >> 2), %ecx
+	movl	$1024, %ecx
 	rep
 	movsl
 
@@ -76,13 +57,10 @@ copy_loop:
 	.p2align 4,,7
 
 done:
-	jmpl	*%ebx
-
-	/* code below belongs to the image kernel */
-	.align PAGE_SIZE
-ENTRY(restore_registers)
 	/* go back to the original page tables */
-	movl	%ebp, %cr3
+	movl	$swapper_pg_dir, %eax
+	subl	$__PAGE_OFFSET, %eax
+	movl	%eax, %cr3
 	movl	mmu_cr4_features, %ecx
 	jecxz	1f	# cr4 Pentium and higher, skip if zero
 	movl	%ecx, %cr4;  # turn PGE back on
@@ -103,8 +81,4 @@ ENTRY(restore_registers)
 
 	xorl	%eax, %eax
 
-	/* tell the hibernation core that we've just restored the memory */
-	movl	%eax, in_suspend
-
 	ret
-ENDPROC(restore_registers)

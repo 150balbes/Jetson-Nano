@@ -452,7 +452,7 @@ RETURN VALUE
 
 
 ERRORS
-       EACCES
+       EACCESS
               The  current  user does not have write access on the spufs mount
               point.
 

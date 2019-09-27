@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * Copyright (C) 2014 Linaro Ltd.
  * Author: Rob Herring <robh@kernel.org>
@@ -6,6 +5,10 @@
  * Based on 8250 earlycon:
  * (c) Copyright 2004 Hewlett-Packard Development Company, L.P.
  *	Bjorn Helgaas <bjorn.helgaas@hp.com>
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  */
 
 #define pr_fmt(fmt)	KBUILD_MODNAME ": " fmt
@@ -199,22 +202,27 @@ int __init setup_earlycon(char *buf)
 }
 
 /*
- * This defers the initialization of the early console until after ACPI has
- * been initialized.
+ * When CONFIG_ACPI_SPCR_TABLE is defined, "earlycon" without parameters in
+ * command line does not start DT earlycon immediately, instead it defers
+ * starting it until DT/ACPI decision is made.  At that time if ACPI is enabled
+ * call parse_spcr(), else call early_init_dt_scan_chosen_stdout()
  */
-bool earlycon_acpi_spcr_enable __initdata;
+bool earlycon_init_is_deferred __initdata;
 
 /* early_param wrapper for setup_earlycon() */
 static int __init param_setup_earlycon(char *buf)
 {
 	int err;
 
-	/* Just 'earlycon' is a valid param for devicetree and ACPI SPCR. */
+	/*
+	 * Just 'earlycon' is a valid param for devicetree earlycons;
+	 * don't generate a warning from parse_early_params() in that case
+	 */
 	if (!buf || !buf[0]) {
 		if (IS_ENABLED(CONFIG_ACPI_SPCR_TABLE)) {
-			earlycon_acpi_spcr_enable = true;
+			earlycon_init_is_deferred = true;
 			return 0;
-		} else if (!buf) {
+		} else {
 			return early_init_dt_scan_chosen_stdout();
 		}
 	}
@@ -246,6 +254,7 @@ int __init of_setup_earlycon(const struct earlycon_id *match,
 		return -ENXIO;
 	}
 	port->mapbase = addr;
+	port->uartclk = BASE_BAUD * 16;
 
 	val = of_get_flat_dt_prop(node, "reg-offset", NULL);
 	if (val)
@@ -276,16 +285,7 @@ int __init of_setup_earlycon(const struct earlycon_id *match,
 		}
 	}
 
-	val = of_get_flat_dt_prop(node, "current-speed", NULL);
-	if (val)
-		early_console_dev.baud = be32_to_cpu(*val);
-
-	val = of_get_flat_dt_prop(node, "clock-frequency", NULL);
-	if (val)
-		port->uartclk = be32_to_cpu(*val);
-
 	if (options) {
-		early_console_dev.baud = simple_strtoul(options, NULL, 0);
 		strlcpy(early_console_dev.options, options,
 			sizeof(early_console_dev.options));
 	}

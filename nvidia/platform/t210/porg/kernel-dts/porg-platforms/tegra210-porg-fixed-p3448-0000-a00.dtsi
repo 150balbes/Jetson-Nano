@@ -1,0 +1,138 @@
+/*
+ * Copyright (c) 2018, NVIDIA CORPORATION.  All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with this program; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+ */
+
+#include <dt-bindings/gpio/tegra-gpio.h>
+
+/ {
+	regulators {
+		compatible = "simple-bus";
+		device_type = "fixed-regulators";
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		battery_reg: regulator@0 {
+			compatible = "regulator-fixed";
+			reg = <0>;
+			regulator-name = "vdd-ac-bat";
+			regulator-min-microvolt = <5000000>;
+			regulator-max-microvolt = <5000000>;
+			regulator-always-on;
+		};
+
+		p3449_vdd_5v0_sys: regulator@1 { /* DC 5V INPUT */
+			compatible = "regulator-fixed";
+			reg = <1>;
+			regulator-name = "vdd-5v0-sys";
+			regulator-min-microvolt = <5000000>;
+			regulator-max-microvolt = <5000000>;
+			regulator-enable-ramp-delay = <160>;
+			regulator-disable-ramp-delay = <10000>;
+		};
+
+		p3448_vdd_3v3_sys: regulator@2 {
+			compatible = "regulator-fixed-sync";
+			reg = <2>;
+			regulator-name = "vdd-3v3-sys";
+			regulator-min-microvolt = <3300000>;
+			regulator-max-microvolt = <3300000>;
+			gpio = <&max77620 3 0>;
+			enable-active-high;
+			vin-supply = <&p3449_vdd_5v0_sys>;
+			regulator-enable-ramp-delay = <240>;
+			regulator-disable-ramp-delay = <11340>;
+		};
+
+		p3448_vdd_3v3_sd: regulator@3 {
+			compatible = "regulator-fixed-sync";
+			reg = <3>;
+			regulator-name = "vdd-3v3-sd";
+			regulator-min-microvolt = <3300000>;
+			regulator-max-microvolt = <3300000>;
+			gpio = <&gpio TEGRA_GPIO(Z, 3) 0>;
+			enable-active-high;
+			regulator-boot-on;
+			vin-supply = <&p3448_vdd_3v3_sys>;
+		};
+
+		p3448_avdd_io_edp: regulator@4 {
+			compatible = "regulator-fixed-sync";
+			reg = <4>;
+			regulator-name = "avdd-io-edp-1v05";
+			regulator-min-microvolt = <1050000>;
+			regulator-max-microvolt = <1050000>;
+			gpio = <&max77620 7 0>;
+			enable-active-high;
+			vin-supply = <&max77620_ldo7>;
+		};
+
+		p3449_vdd_hdmi: regulator@5 {
+			compatible = "regulator-fixed";
+			reg = <5>;
+			regulator-name = "vdd-5v0-hdmi";
+			regulator-min-microvolt = <5000000>;
+			regulator-max-microvolt = <5000000>;
+			vin-supply = <&p3449_vdd_5v0_sys>;
+		};
+
+		p3449_vdd_1v8: regulator@6 {
+			compatible = "regulator-fixed";
+			reg = <6>;
+			regulator-name = "vdd-1v8-sys";
+			regulator-min-microvolt = <1800000>;
+			regulator-max-microvolt = <1800000>;
+			vin-supply = <&p3448_vdd_3v3_sys>;
+		};
+
+		p3449_vdd_fan: regulator@7 {
+			compatible = "regulator-fixed";
+			reg = <7>;
+			regulator-name = "vdd-fan";
+			regulator-min-microvolt = <5000000>;
+			regulator-max-microvolt = <5000000>;
+			vin-supply = <&p3449_vdd_5v0_sys>;
+		};
+
+		p3449_vdd_usb_vbus: regulator@8 {
+			compatible = "regulator-fixed";
+			reg = <8>;
+			regulator-name = "vdd-usb-vbus";
+			regulator-min-microvolt = <5000000>;
+			regulator-max-microvolt = <5000000>;
+			vin-supply = <&p3449_vdd_5v0_sys>;
+		};
+
+		p3449_vdd_usb_hub_en: regulator@9 {
+			compatible = "regulator-fixed-sync";
+			reg = <9>;
+			regulator-name = "vdd-usb-hub-en";
+			regulator-min-microvolt = <5000000>;
+			regulator-max-microvolt = <5000000>;
+			vin-supply = <&p3449_vdd_1v8>;
+		};
+
+		p3449_vdd_usb_vbus2: regulator@10 {
+			compatible = "regulator-fixed";
+			reg = <10>;
+			regulator-name = "vdd-usb-vbus2";
+			regulator-min-microvolt = <5000000>;
+			regulator-max-microvolt = <5000000>;
+			vin-supply = <&p3448_vdd_3v3_sys>;
+		};
+
+	};
+};

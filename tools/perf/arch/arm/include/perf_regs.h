@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef ARCH_PERF_REGS_H
 #define ARCH_PERF_REGS_H
 

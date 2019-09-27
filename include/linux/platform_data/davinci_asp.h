@@ -79,7 +79,6 @@ struct davinci_mcasp_pdata {
 	/* McASP specific fields */
 	int tdm_slots;
 	u8 op_mode;
-	u8 dismod;
 	u8 num_serializer;
 	u8 *serial_dir;
 	u8 version;

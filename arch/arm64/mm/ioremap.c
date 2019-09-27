@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Based on arch/arm/mm/ioremap.c
  *
@@ -7,6 +6,18 @@
  * Hacked to allow all architectures to build, and various cleanups
  * by Russell King
  * Copyright (C) 2012 ARM Ltd.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 #include <linux/export.h>
@@ -77,7 +88,7 @@ void __iounmap(volatile void __iomem *io_addr)
 	 * We could get an address outside vmalloc range in case
 	 * of ioremap_cache() reusing a RAM mapping.
 	 */
-	if (is_vmalloc_addr((void *)addr))
+	if (VMALLOC_START <= addr && addr < VMALLOC_END)
 		vunmap((void *)addr);
 }
 EXPORT_SYMBOL(__iounmap);
@@ -100,3 +111,23 @@ void __init early_ioremap_init(void)
 {
 	early_ioremap_setup();
 }
+
+#ifdef CONFIG_PCI
+int pci_ioremap_io(unsigned int offset, phys_addr_t phys_addr)
+{
+	BUG_ON(offset + SZ_64K > IO_SPACE_LIMIT);
+
+	return ioremap_page_range((unsigned long)(PCI_IOBASE + offset),
+				  (unsigned long)(PCI_IOBASE + offset + SZ_64K),
+				  phys_addr,
+				  __pgprot(PROT_DEVICE_nGnRE));
+}
+EXPORT_SYMBOL_GPL(pci_ioremap_io);
+
+void pci_iounmap_io(unsigned int offset)
+{
+	unmap_kernel_range((unsigned long)(PCI_IOBASE + offset), SZ_64K);
+}
+EXPORT_SYMBOL_GPL(pci_iounmap_io);
+
+#endif

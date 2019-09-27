@@ -658,10 +658,10 @@ static u8 *it821x_firmware_command(struct ata_port *ap, u8 cmd, int len)
 	u8 status;
 	int n = 0;
 	u16 *buf = kmalloc(len, GFP_KERNEL);
-
-	if (!buf)
+	if (buf == NULL) {
+		printk(KERN_ERR "it821x_firmware_command: Out of memory\n");
 		return NULL;
-
+	}
 	/* This isn't quite a normal ATA command as we are talking to the
 	   firmware not the drives */
 	ap->ctl |= ATA_NIEN;
@@ -683,7 +683,7 @@ static u8 *it821x_firmware_command(struct ata_port *ap, u8 cmd, int len)
 			ioread16_rep(ap->ioaddr.data_addr, buf, len/2);
 			return (u8 *)buf;
 		}
-		usleep_range(500, 1000);
+		mdelay(1);
 	}
 	kfree(buf);
 	printk(KERN_ERR "it821x_firmware_command: timeout\n");

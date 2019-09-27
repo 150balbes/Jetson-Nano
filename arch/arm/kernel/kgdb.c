@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * arch/arm/kernel/kgdb.c
  *
@@ -141,6 +140,8 @@ int kgdb_arch_handle_exception(int exception_vector, int signo,
 
 static int kgdb_brk_fn(struct pt_regs *regs, unsigned int instr)
 {
+	if (user_mode(regs))
+		return -1;
 	kgdb_handle_exception(1, SIGTRAP, 0, regs);
 
 	return 0;
@@ -148,6 +149,8 @@ static int kgdb_brk_fn(struct pt_regs *regs, unsigned int instr)
 
 static int kgdb_compiled_brk_fn(struct pt_regs *regs, unsigned int instr)
 {
+	if (user_mode(regs))
+		return -1;
 	compiled_break = 1;
 	kgdb_handle_exception(1, SIGTRAP, 0, regs);
 
@@ -169,6 +172,18 @@ static struct undef_hook kgdb_compiled_brkpt_hook = {
 	.cpsr_val		= SVC_MODE,
 	.fn			= kgdb_compiled_brk_fn
 };
+
+static void kgdb_call_nmi_hook(void *ignored)
+{
+       kgdb_nmicallback(raw_smp_processor_id(), get_irq_regs());
+}
+
+void kgdb_roundup_cpus(unsigned long flags)
+{
+       local_irq_enable();
+       smp_call_function(kgdb_call_nmi_hook, NULL, 0);
+       local_irq_disable();
+}
 
 static int __kgdb_notify(struct die_args *args, unsigned long cmd)
 {
@@ -258,11 +273,11 @@ int kgdb_arch_remove_breakpoint(struct kgdb_bkpt *bpt)
 
 /*
  * Register our undef instruction hooks with ARM undef core.
- * We register a hook specifically looking for the KGB break inst
+ * We regsiter a hook specifically looking for the KGB break inst
  * and we handle the normal undef case within the do_undefinstr
  * handler.
  */
-const struct kgdb_arch arch_kgdb_ops = {
+struct kgdb_arch arch_kgdb_ops = {
 #ifndef __ARMEB__
 	.gdb_bpt_instr		= {0xfe, 0xde, 0xff, 0xe7}
 #else /* ! __ARMEB__ */

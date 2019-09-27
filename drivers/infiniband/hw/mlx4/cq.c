@@ -38,7 +38,6 @@
 
 #include "mlx4_ib.h"
 #include <rdma/mlx4-abi.h>
-#include <rdma/uverbs_ioctl.h>
 
 static void mlx4_ib_cq_comp(struct mlx4_cq *cq)
 {
@@ -103,7 +102,7 @@ static int mlx4_ib_alloc_cq_buf(struct mlx4_ib_dev *dev, struct mlx4_ib_cq_buf *
 	int err;
 
 	err = mlx4_buf_alloc(dev->dev, nent * dev->dev->caps.cqe_size,
-			     PAGE_SIZE * 2, &buf->buf);
+			     PAGE_SIZE * 2, &buf->buf, GFP_KERNEL);
 
 	if (err)
 		goto out;
@@ -114,7 +113,7 @@ static int mlx4_ib_alloc_cq_buf(struct mlx4_ib_dev *dev, struct mlx4_ib_cq_buf *
 	if (err)
 		goto err_buf;
 
-	err = mlx4_buf_write_mtt(dev->dev, &buf->mtt, &buf->buf);
+	err = mlx4_buf_write_mtt(dev->dev, &buf->mtt, &buf->buf, GFP_KERNEL);
 	if (err)
 		goto err_mtt;
 
@@ -135,24 +134,20 @@ static void mlx4_ib_free_cq_buf(struct mlx4_ib_dev *dev, struct mlx4_ib_cq_buf *
 	mlx4_buf_free(dev->dev, (cqe + 1) * buf->entry_size, &buf->buf);
 }
 
-static int mlx4_ib_get_cq_umem(struct mlx4_ib_dev *dev, struct ib_udata *udata,
-			       struct mlx4_ib_cq_buf *buf,
-			       struct ib_umem **umem, u64 buf_addr, int cqe)
+static int mlx4_ib_get_cq_umem(struct mlx4_ib_dev *dev, struct ib_ucontext *context,
+			       struct mlx4_ib_cq_buf *buf, struct ib_umem **umem,
+			       u64 buf_addr, int cqe)
 {
 	int err;
 	int cqe_size = dev->dev->caps.cqe_size;
-	int shift;
-	int n;
 
-	*umem = ib_umem_get(udata, buf_addr, cqe * cqe_size,
+	*umem = ib_umem_get(context, buf_addr, cqe * cqe_size,
 			    IB_ACCESS_LOCAL_WRITE, 1);
 	if (IS_ERR(*umem))
 		return PTR_ERR(*umem);
 
-	n = ib_umem_page_count(*umem);
-	shift = mlx4_ib_umem_calc_optimal_mtt_size(*umem, 0, &n);
-	err = mlx4_mtt_init(dev->dev, n, shift, &buf->mtt);
-
+	err = mlx4_mtt_init(dev->dev, ib_umem_page_count(*umem),
+			    ilog2((*umem)->page_size), &buf->mtt);
 	if (err)
 		goto err_buf;
 
@@ -171,26 +166,28 @@ err_buf:
 	return err;
 }
 
-#define CQ_CREATE_FLAGS_SUPPORTED IB_UVERBS_CQ_FLAGS_TIMESTAMP_COMPLETION
-int mlx4_ib_create_cq(struct ib_cq *ibcq, const struct ib_cq_init_attr *attr,
-		      struct ib_udata *udata)
+#define CQ_CREATE_FLAGS_SUPPORTED IB_CQ_FLAGS_TIMESTAMP_COMPLETION
+struct ib_cq *mlx4_ib_create_cq(struct ib_device *ibdev,
+				const struct ib_cq_init_attr *attr,
+				struct ib_ucontext *context,
+				struct ib_udata *udata)
 {
-	struct ib_device *ibdev = ibcq->device;
 	int entries = attr->cqe;
 	int vector = attr->comp_vector;
 	struct mlx4_ib_dev *dev = to_mdev(ibdev);
-	struct mlx4_ib_cq *cq = to_mcq(ibcq);
+	struct mlx4_ib_cq *cq;
 	struct mlx4_uar *uar;
-	void *buf_addr;
 	int err;
-	struct mlx4_ib_ucontext *context = rdma_udata_to_drv_context(
-		udata, struct mlx4_ib_ucontext, ibucontext);
 
 	if (entries < 1 || entries > dev->dev->caps.max_cqes)
-		return -EINVAL;
+		return ERR_PTR(-EINVAL);
 
 	if (attr->flags & ~CQ_CREATE_FLAGS_SUPPORTED)
-		return -EINVAL;
+		return ERR_PTR(-EINVAL);
+
+	cq = kmalloc(sizeof *cq, GFP_KERNEL);
+	if (!cq)
+		return ERR_PTR(-ENOMEM);
 
 	entries      = roundup_pow_of_two(entries + 1);
 	cq->ibcq.cqe = entries - 1;
@@ -202,7 +199,7 @@ int mlx4_ib_create_cq(struct ib_cq *ibcq, const struct ib_cq_init_attr *attr,
 	INIT_LIST_HEAD(&cq->send_qp_list);
 	INIT_LIST_HEAD(&cq->recv_qp_list);
 
-	if (udata) {
+	if (context) {
 		struct mlx4_ib_create_cq ucmd;
 
 		if (ib_copy_from_udata(&ucmd, udata, sizeof ucmd)) {
@@ -210,20 +207,19 @@ int mlx4_ib_create_cq(struct ib_cq *ibcq, const struct ib_cq_init_attr *attr,
 			goto err_cq;
 		}
 
-		buf_addr = (void *)(unsigned long)ucmd.buf_addr;
-		err = mlx4_ib_get_cq_umem(dev, udata, &cq->buf, &cq->umem,
+		err = mlx4_ib_get_cq_umem(dev, context, &cq->buf, &cq->umem,
 					  ucmd.buf_addr, entries);
 		if (err)
 			goto err_cq;
 
-		err = mlx4_ib_db_map_user(udata, ucmd.db_addr, &cq->db);
+		err = mlx4_ib_db_map_user(to_mucontext(context), ucmd.db_addr,
+					  &cq->db);
 		if (err)
 			goto err_mtt;
 
-		uar = &context->uar;
-		cq->mcq.usage = MLX4_RES_USAGE_USER_VERBS;
+		uar = &to_mucontext(context)->uar;
 	} else {
-		err = mlx4_db_alloc(dev->dev, &cq->db, 1);
+		err = mlx4_db_alloc(dev->dev, &cq->db, 1, GFP_KERNEL);
 		if (err)
 			goto err_cq;
 
@@ -236,56 +232,55 @@ int mlx4_ib_create_cq(struct ib_cq *ibcq, const struct ib_cq_init_attr *attr,
 		if (err)
 			goto err_db;
 
-		buf_addr = &cq->buf.buf;
-
 		uar = &dev->priv_uar;
-		cq->mcq.usage = MLX4_RES_USAGE_DRIVER;
 	}
 
 	if (dev->eq_table)
 		vector = dev->eq_table[vector % ibdev->num_comp_vectors];
 
-	err = mlx4_cq_alloc(dev->dev, entries, &cq->buf.mtt, uar, cq->db.dma,
-			    &cq->mcq, vector, 0,
-			    !!(cq->create_flags &
-			       IB_UVERBS_CQ_FLAGS_TIMESTAMP_COMPLETION),
-			    buf_addr, !!udata);
+	err = mlx4_cq_alloc(dev->dev, entries, &cq->buf.mtt, uar,
+			    cq->db.dma, &cq->mcq, vector, 0,
+			    !!(cq->create_flags & IB_CQ_FLAGS_TIMESTAMP_COMPLETION));
 	if (err)
 		goto err_dbmap;
 
-	if (udata)
+	if (context)
 		cq->mcq.tasklet_ctx.comp = mlx4_ib_cq_comp;
 	else
 		cq->mcq.comp = mlx4_ib_cq_comp;
 	cq->mcq.event = mlx4_ib_cq_event;
 
-	if (udata)
+	if (context)
 		if (ib_copy_to_udata(udata, &cq->mcq.cqn, sizeof (__u32))) {
 			err = -EFAULT;
 			goto err_cq_free;
 		}
 
-	return 0;
+	return &cq->ibcq;
 
 err_cq_free:
 	mlx4_cq_free(dev->dev, &cq->mcq);
 
 err_dbmap:
-	if (udata)
-		mlx4_ib_db_unmap_user(context, &cq->db);
+	if (context)
+		mlx4_ib_db_unmap_user(to_mucontext(context), &cq->db);
 
 err_mtt:
 	mlx4_mtt_cleanup(dev->dev, &cq->buf.mtt);
 
-	ib_umem_release(cq->umem);
-	if (!udata)
+	if (context)
+		ib_umem_release(cq->umem);
+	else
 		mlx4_ib_free_cq_buf(dev, &cq->buf, cq->ibcq.cqe);
 
 err_db:
-	if (!udata)
+	if (!context)
 		mlx4_db_free(dev->dev, &cq->db);
+
 err_cq:
-	return err;
+	kfree(cq);
+
+	return ERR_PTR(err);
 }
 
 static int mlx4_alloc_resize_buf(struct mlx4_ib_dev *dev, struct mlx4_ib_cq *cq,
@@ -328,7 +323,7 @@ static int mlx4_alloc_resize_umem(struct mlx4_ib_dev *dev, struct mlx4_ib_cq *cq
 	if (!cq->resize_buf)
 		return -ENOMEM;
 
-	err = mlx4_ib_get_cq_umem(dev, udata, &cq->resize_buf->buf,
+	err = mlx4_ib_get_cq_umem(dev, cq->umem->context, &cq->resize_buf->buf,
 				  &cq->resize_umem, ucmd.buf_addr, entries);
 	if (err) {
 		kfree(cq->resize_buf);
@@ -467,15 +462,18 @@ err_buf:
 	kfree(cq->resize_buf);
 	cq->resize_buf = NULL;
 
-	ib_umem_release(cq->resize_umem);
-	cq->resize_umem = NULL;
+	if (cq->resize_umem) {
+		ib_umem_release(cq->resize_umem);
+		cq->resize_umem = NULL;
+	}
+
 out:
 	mutex_unlock(&cq->resize_mutex);
 
 	return err;
 }
 
-void mlx4_ib_destroy_cq(struct ib_cq *cq, struct ib_udata *udata)
+int mlx4_ib_destroy_cq(struct ib_cq *cq)
 {
 	struct mlx4_ib_dev *dev = to_mdev(cq->device);
 	struct mlx4_ib_cq *mcq = to_mcq(cq);
@@ -483,18 +481,17 @@ void mlx4_ib_destroy_cq(struct ib_cq *cq, struct ib_udata *udata)
 	mlx4_cq_free(dev->dev, &mcq->mcq);
 	mlx4_mtt_cleanup(dev->dev, &mcq->buf.mtt);
 
-	if (udata) {
-		mlx4_ib_db_unmap_user(
-			rdma_udata_to_drv_context(
-				udata,
-				struct mlx4_ib_ucontext,
-				ibucontext),
-			&mcq->db);
+	if (cq->uobject) {
+		mlx4_ib_db_unmap_user(to_mucontext(cq->uobject->context), &mcq->db);
+		ib_umem_release(mcq->umem);
 	} else {
 		mlx4_ib_free_cq_buf(dev, &mcq->buf, cq->cqe);
 		mlx4_db_free(dev->dev, &mcq->db);
 	}
-	ib_umem_release(mcq->umem);
+
+	kfree(mcq);
+
+	return 0;
 }
 
 static void dump_cqe(void *cqe)
@@ -598,7 +595,6 @@ static void use_tunnel_data(struct mlx4_ib_qp *qp, struct mlx4_ib_cq *cq, struct
 	wc->dlid_path_bits = 0;
 
 	if (is_eth) {
-		wc->slid = 0;
 		wc->vlan_id = be16_to_cpu(hdr->tun.sl_vid);
 		memcpy(&(wc->smac[0]), (char *)&hdr->tun.mac_31_0, 4);
 		memcpy(&(wc->smac[4]), (char *)&hdr->tun.slid_mac_47_32, 2);
@@ -639,7 +635,7 @@ static void mlx4_ib_poll_sw_comp(struct mlx4_ib_cq *cq, int num_entries,
 	struct mlx4_ib_qp *qp;
 
 	*npolled = 0;
-	/* Find uncompleted WQEs belonging to that cq and return
+	/* Find uncompleted WQEs belonging to that cq and retrun
 	 * simulated FLUSH_ERR completions
 	 */
 	list_for_each_entry(qp, &cq->send_qp_list, cq_send_list) {
@@ -770,13 +766,11 @@ repoll:
 		switch (cqe->owner_sr_opcode & MLX4_CQE_OPCODE_MASK) {
 		case MLX4_OPCODE_RDMA_WRITE_IMM:
 			wc->wc_flags |= IB_WC_WITH_IMM;
-			/* fall through */
 		case MLX4_OPCODE_RDMA_WRITE:
 			wc->opcode    = IB_WC_RDMA_WRITE;
 			break;
 		case MLX4_OPCODE_SEND_IMM:
 			wc->wc_flags |= IB_WC_WITH_IMM;
-			/* fall through */
 		case MLX4_OPCODE_SEND:
 		case MLX4_OPCODE_SEND_INVAL:
 			wc->opcode    = IB_WC_SEND;
@@ -849,6 +843,7 @@ repoll:
 			}
 		}
 
+		wc->slid	   = be16_to_cpu(cqe->rlid);
 		g_mlpath_rqpn	   = be32_to_cpu(cqe->g_mlpath_rqpn);
 		wc->src_qp	   = g_mlpath_rqpn & 0xffffff;
 		wc->dlid_path_bits = (g_mlpath_rqpn >> 24) & 0x7f;
@@ -857,7 +852,6 @@ repoll:
 		wc->wc_flags	  |= mlx4_ib_ipoib_csum_ok(cqe->status,
 					cqe->checksum) ? IB_WC_IP_CSUM_OK : 0;
 		if (is_eth) {
-			wc->slid = 0;
 			wc->sl  = be16_to_cpu(cqe->sl_vid) >> 13;
 			if (be32_to_cpu(cqe->vlan_my_qpn) &
 					MLX4_CQE_CVLAN_PRESENT_MASK) {
@@ -869,7 +863,6 @@ repoll:
 			memcpy(wc->smac, cqe->smac, ETH_ALEN);
 			wc->wc_flags |= (IB_WC_WITH_VLAN | IB_WC_WITH_SMAC);
 		} else {
-			wc->slid = be16_to_cpu(cqe->rlid);
 			wc->sl  = be16_to_cpu(cqe->sl_vid) >> 12;
 			wc->vlan_id = 0xffff;
 		}

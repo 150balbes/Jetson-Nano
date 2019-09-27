@@ -1,9 +1,12 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * devfreq-event: a framework to provide raw data and events of devfreq devices
  *
  * Copyright (C) 2015 Samsung Electronics
  * Author: Chanwoo Choi <cw00.choi@samsung.com>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  *
  * This driver is based on drivers/devfreq/devfreq.c.
  */
@@ -237,7 +240,7 @@ struct devfreq_event_dev *devfreq_event_get_edev_by_phandle(struct device *dev,
 	}
 
 	list_for_each_entry(edev, &devfreq_event_list, node) {
-		if (of_node_name_eq(node, edev->desc->name))
+		if (!strcmp(edev->desc->name, node->name))
 			goto out;
 	}
 	edev = NULL;
@@ -274,8 +277,8 @@ int devfreq_event_get_edev_count(struct device *dev)
 						sizeof(u32));
 	if (count < 0) {
 		dev_err(dev,
-			"failed to get the count of devfreq-event in %pOF node\n",
-			dev->of_node);
+			"failed to get the count of devfreq-event in %s node\n",
+			dev->of_node->full_name);
 		return count;
 	}
 
@@ -303,7 +306,7 @@ struct devfreq_event_dev *devfreq_event_add_edev(struct device *dev,
 						struct devfreq_event_desc *desc)
 {
 	struct devfreq_event_dev *edev;
-	static atomic_t event_no = ATOMIC_INIT(-1);
+	static atomic_t event_no = ATOMIC_INIT(0);
 	int ret;
 
 	if (!dev || !desc)
@@ -326,7 +329,7 @@ struct devfreq_event_dev *devfreq_event_add_edev(struct device *dev,
 	edev->dev.class = devfreq_event_class;
 	edev->dev.release = devfreq_event_release_edev;
 
-	dev_set_name(&edev->dev, "event%d", atomic_inc_return(&event_no));
+	dev_set_name(&edev->dev, "event.%d", atomic_inc_return(&event_no) - 1);
 	ret = device_register(&edev->dev);
 	if (ret < 0) {
 		put_device(&edev->dev);

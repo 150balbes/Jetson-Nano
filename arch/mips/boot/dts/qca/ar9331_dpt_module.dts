@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /dts-v1/;
 
 #include <dt-bindings/gpio/gpio.h>
@@ -29,10 +28,11 @@
 		};
 	};
 
-	gpio-keys {
-		compatible = "gpio-keys";
+	gpio-keys-polled {
+		compatible = "gpio-keys-polled";
 		#address-cells = <1>;
 		#size-cells = <0>;
+		poll-interval = <100>;
 
 		button@0 {
 			label = "reset";
@@ -75,12 +75,4 @@
 		spi-max-frequency = <104000000>;
 		reg = <0>;
 	};
-};
-
-&eth0 {
-	status = "okay";
-};
-
-&eth1 {
-	status = "okay";
 };

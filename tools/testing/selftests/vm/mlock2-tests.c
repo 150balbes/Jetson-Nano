@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 #define _GNU_SOURCE
 #include <sys/mman.h>
 #include <stdint.h>
@@ -8,8 +7,6 @@
 #include <sys/resource.h>
 #include <stdbool.h>
 #include "mlock2.h"
-
-#include "../kselftest.h"
 
 struct vm_boundaries {
 	unsigned long start;
@@ -296,7 +293,7 @@ static int test_mlock_lock()
 	unsigned long page_size = getpagesize();
 
 	map = mmap(NULL, 2 * page_size, PROT_READ | PROT_WRITE,
-		   MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
+		   MAP_ANONYMOUS | MAP_PRIVATE, 0, 0);
 	if (map == MAP_FAILED) {
 		perror("test_mlock_locked mmap");
 		goto out;
@@ -305,7 +302,7 @@ static int test_mlock_lock()
 	if (mlock2_(map, 2 * page_size, 0)) {
 		if (errno == ENOSYS) {
 			printf("Cannot call new mlock family, skipping test\n");
-			_exit(KSFT_SKIP);
+			_exit(0);
 		}
 		perror("mlock2(0)");
 		goto unmap;
@@ -405,7 +402,7 @@ static int test_mlock_onfault()
 	unsigned long page_size = getpagesize();
 
 	map = mmap(NULL, 2 * page_size, PROT_READ | PROT_WRITE,
-		   MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
+		   MAP_ANONYMOUS | MAP_PRIVATE, 0, 0);
 	if (map == MAP_FAILED) {
 		perror("test_mlock_locked mmap");
 		goto out;
@@ -414,7 +411,7 @@ static int test_mlock_onfault()
 	if (mlock2_(map, 2 * page_size, MLOCK_ONFAULT)) {
 		if (errno == ENOSYS) {
 			printf("Cannot call new mlock family, skipping test\n");
-			_exit(KSFT_SKIP);
+			_exit(0);
 		}
 		perror("mlock2(MLOCK_ONFAULT)");
 		goto unmap;
@@ -427,7 +424,7 @@ static int test_mlock_onfault()
 	if (munlock(map, 2 * page_size)) {
 		if (errno == ENOSYS) {
 			printf("Cannot call new mlock family, skipping test\n");
-			_exit(KSFT_SKIP);
+			_exit(0);
 		}
 		perror("munlock()");
 		goto unmap;
@@ -448,7 +445,7 @@ static int test_lock_onfault_of_present()
 	uint64_t page1_flags, page2_flags;
 
 	map = mmap(NULL, 2 * page_size, PROT_READ | PROT_WRITE,
-		   MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
+		   MAP_ANONYMOUS | MAP_PRIVATE, 0, 0);
 	if (map == MAP_FAILED) {
 		perror("test_mlock_locked mmap");
 		goto out;
@@ -459,7 +456,7 @@ static int test_lock_onfault_of_present()
 	if (mlock2_(map, 2 * page_size, MLOCK_ONFAULT)) {
 		if (errno == ENOSYS) {
 			printf("Cannot call new mlock family, skipping test\n");
-			_exit(KSFT_SKIP);
+			_exit(0);
 		}
 		perror("mlock2(MLOCK_ONFAULT)");
 		goto unmap;
@@ -495,7 +492,7 @@ static int test_munlockall()
 	unsigned long page_size = getpagesize();
 
 	map = mmap(NULL, 2 * page_size, PROT_READ | PROT_WRITE,
-		   MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
+		   MAP_ANONYMOUS | MAP_PRIVATE, 0, 0);
 
 	if (map == MAP_FAILED) {
 		perror("test_munlockall mmap");
@@ -521,7 +518,7 @@ static int test_munlockall()
 	munmap(map, 2 * page_size);
 
 	map = mmap(NULL, 2 * page_size, PROT_READ | PROT_WRITE,
-		   MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
+		   MAP_ANONYMOUS | MAP_PRIVATE, 0, 0);
 
 	if (map == MAP_FAILED) {
 		perror("test_munlockall second mmap");
@@ -576,7 +573,7 @@ static int test_vma_management(bool call_mlock)
 	struct vm_boundaries page3;
 
 	map = mmap(NULL, 3 * page_size, PROT_READ | PROT_WRITE,
-		   MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
+		   MAP_ANONYMOUS | MAP_PRIVATE, 0, 0);
 	if (map == MAP_FAILED) {
 		perror("mmap()");
 		return ret;
@@ -585,7 +582,7 @@ static int test_vma_management(bool call_mlock)
 	if (call_mlock && mlock2_(map, 3 * page_size, MLOCK_ONFAULT)) {
 		if (errno == ENOSYS) {
 			printf("Cannot call new mlock family, skipping test\n");
-			_exit(KSFT_SKIP);
+			_exit(0);
 		}
 		perror("mlock(ONFAULT)\n");
 		goto out;

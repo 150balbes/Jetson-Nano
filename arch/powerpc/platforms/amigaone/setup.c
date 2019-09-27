@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * AmigaOne platform setup
  *
@@ -6,6 +5,11 @@
  *
  *   Based on original amigaone_setup.c source code
  * Copyright 2003 by Hans-Joerg Frieden and Thomas Frieden
+ *
+ * This program is free software; you can redistribute  it and/or modify it
+ * under  the terms of  the GNU General  Public License as published by the
+ * Free Software Foundation;  either version 2 of the  License, or (at your
+ * option) any later version.
  */
 
 #include <linux/kernel.h>
@@ -36,7 +40,7 @@ static int __init amigaone_add_bridge(struct device_node *dev)
 	const int *bus_range;
 	struct pci_controller *hose;
 
-	printk(KERN_INFO "Adding PCI host bridge %pOF\n", dev);
+	printk(KERN_INFO "Adding PCI host bridge %s\n", dev->full_name);
 
 	cfg_addr = of_get_address(dev, 0, NULL, NULL);
 	cfg_data = of_get_address(dev, 1, NULL, NULL);
@@ -45,8 +49,8 @@ static int __init amigaone_add_bridge(struct device_node *dev)
 
 	bus_range = of_get_property(dev, "bus-range", &len);
 	if ((bus_range == NULL) || (len < 2 * sizeof(int)))
-		printk(KERN_WARNING "Can't get bus-range for %pOF, assume"
-		       " bus 0\n", dev);
+		printk(KERN_WARNING "Can't get bus-range for %s, assume"
+		       " bus 0\n", dev->full_name);
 
 	hose = pcibios_alloc_controller(dev);
 	if (hose == NULL)

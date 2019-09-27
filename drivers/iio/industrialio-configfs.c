@@ -1,8 +1,11 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Industrial I/O configfs bits
  *
  * Copyright (c) 2015 Intel Corporation
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License version 2 as published by
+ * the Free Software Foundation.
  */
 
 #include <linux/configfs.h>
@@ -14,7 +17,7 @@
 #include <linux/iio/iio.h>
 #include <linux/iio/configfs.h>
 
-static const struct config_item_type iio_root_group_type = {
+static struct config_item_type iio_root_group_type = {
 	.ct_owner       = THIS_MODULE,
 };
 

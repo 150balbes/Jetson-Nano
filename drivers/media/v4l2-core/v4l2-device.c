@@ -1,9 +1,21 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
     V4L2 device support.
 
     Copyright (C) 2008  Hans Verkuil <hverkuil@xs4all.nl>
 
+    This program is free software; you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation; either version 2 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program; if not, write to the Free Software
+    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
 
 #include <linux/types.h>
@@ -166,8 +178,7 @@ int v4l2_device_register_subdev(struct v4l2_device *v4l2_dev,
 
 	sd->v4l2_dev = v4l2_dev;
 	/* This just returns 0 if either of the two args is NULL */
-	err = v4l2_ctrl_add_handler(v4l2_dev->ctrl_handler, sd->ctrl_handler,
-				    NULL, true);
+	err = v4l2_ctrl_add_handler(v4l2_dev->ctrl_handler, sd->ctrl_handler, NULL);
 	if (err)
 		goto error_module;
 
@@ -204,18 +215,10 @@ error_module:
 }
 EXPORT_SYMBOL_GPL(v4l2_device_register_subdev);
 
-static void v4l2_subdev_release(struct v4l2_subdev *sd)
-{
-	struct module *owner = !sd->owner_v4l2_dev ? sd->owner : NULL;
-
-	if (sd->internal_ops && sd->internal_ops->release)
-		sd->internal_ops->release(sd);
-	module_put(owner);
-}
-
 static void v4l2_device_release_subdev_node(struct video_device *vdev)
 {
-	v4l2_subdev_release(video_get_drvdata(vdev));
+	struct v4l2_subdev *sd = video_get_drvdata(vdev);
+	sd->devnode = NULL;
 	kfree(vdev);
 }
 
@@ -242,8 +245,7 @@ int v4l2_device_register_subdev_nodes(struct v4l2_device *v4l2_dev)
 		}
 
 		video_set_drvdata(vdev, sd);
-		strscpy(vdev->name, sd->name, sizeof(vdev->name));
-		vdev->dev_parent = sd->dev;
+		strlcpy(vdev->name, sd->name, sizeof(vdev->name));
 		vdev->v4l2_dev = v4l2_dev;
 		vdev->fops = &v4l2_subdev_fops;
 		vdev->release = v4l2_device_release_subdev_node;
@@ -254,7 +256,6 @@ int v4l2_device_register_subdev_nodes(struct v4l2_device *v4l2_dev)
 			kfree(vdev);
 			goto clean_up;
 		}
-		sd->devnode = vdev;
 #if defined(CONFIG_MEDIA_CONTROLLER)
 		sd->entity.info.dev.major = VIDEO_MAJOR;
 		sd->entity.info.dev.minor = vdev->minor;
@@ -265,14 +266,14 @@ int v4l2_device_register_subdev_nodes(struct v4l2_device *v4l2_dev)
 
 			link = media_create_intf_link(&sd->entity,
 						      &vdev->intf_devnode->intf,
-						      MEDIA_LNK_FL_ENABLED |
-						      MEDIA_LNK_FL_IMMUTABLE);
+						      MEDIA_LNK_FL_ENABLED);
 			if (!link) {
 				err = -ENOMEM;
 				goto clean_up;
 			}
 		}
 #endif
+		sd->devnode = vdev;
 	}
 	return 0;
 
@@ -314,9 +315,8 @@ void v4l2_device_unregister_subdev(struct v4l2_subdev *sd)
 		media_device_unregister_entity(&sd->entity);
 	}
 #endif
-	if (sd->devnode)
-		video_unregister_device(sd->devnode);
-	else
-		v4l2_subdev_release(sd);
+	video_unregister_device(sd->devnode);
+	if (!sd->owner_v4l2_dev)
+		module_put(sd->owner);
 }
 EXPORT_SYMBOL_GPL(v4l2_device_unregister_subdev);

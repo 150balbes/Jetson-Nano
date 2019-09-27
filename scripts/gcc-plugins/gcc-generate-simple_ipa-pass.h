@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * Generator for SIMPLE_IPA pass related boilerplate code/data
  *

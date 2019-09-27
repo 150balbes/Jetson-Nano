@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _LINUX_FB_H
 #define _LINUX_FB_H
 
@@ -49,6 +48,8 @@ struct device_node;
 #define FB_MISC_PRIM_COLOR	1
 #define FB_MISC_1ST_DETAIL	2	/* First Detailed Timing is preferred */
 #define FB_MISC_HDMI		4
+#define FB_MISC_HDMI_FORUM	8	/* hdmi2.0 and beyond */
+
 struct fb_chroma {
 	__u32 redx;	/* in fraction of 1024 */
 	__u32 greenx;
@@ -88,6 +89,7 @@ struct fb_monspecs {
 	__u8  revision;			/* ...and revision */
 	__u8  max_x;			/* Maximum horizontal size (cm) */
 	__u8  max_y;			/* Maximum vertical size (cm) */
+	__u8  bpc;			/* bits per prim-color - 0:unknown */
 };
 
 struct fb_cmap_user {
@@ -126,18 +128,42 @@ struct fb_cursor_user {
 
 /*	The resolution of the passed in fb_info about to change */ 
 #define FB_EVENT_MODE_CHANGE		0x01
-
-#ifdef CONFIG_GUMSTIX_AM200EPD
-/* only used by mach-pxa/am200epd.c */
+/*	The display on this fb_info is beeing suspended, no access to the
+ *	framebuffer is allowed any more after that call returns
+ */
+#define FB_EVENT_SUSPEND		0x02
+/*	The display on this fb_info was resumed, you can restore the display
+ *	if you own it
+ */
+#define FB_EVENT_RESUME			0x03
+/*      An entry from the modelist was removed */
+#define FB_EVENT_MODE_DELETE            0x04
+/*      A driver registered itself */
 #define FB_EVENT_FB_REGISTERED          0x05
+/*      A driver unregistered itself */
 #define FB_EVENT_FB_UNREGISTERED        0x06
-#endif
-
-/*      A display blank is requested       */
+/*      CONSOLE-SPECIFIC: get console to framebuffer mapping */
+#define FB_EVENT_GET_CONSOLE_MAP        0x07
+/*      CONSOLE-SPECIFIC: set console to framebuffer mapping */
+#define FB_EVENT_SET_CONSOLE_MAP        0x08
+/*      A hardware display blank change occurred */
 #define FB_EVENT_BLANK                  0x09
-/*      A hardware display blank early change occurred */
+/*      Private modelist is to be replaced */
+#define FB_EVENT_NEW_MODELIST           0x0A
+/*	The resolution of the passed in fb_info about to change and
+        all vc's should be changed         */
+#define FB_EVENT_MODE_CHANGE_ALL	0x0B
+/*	A software display blank change occurred */
+#define FB_EVENT_CONBLANK               0x0C
+/*      Get drawing requirements        */
+#define FB_EVENT_GET_REQ                0x0D
+/*      Unbind from the console if possible */
+#define FB_EVENT_FB_UNBIND              0x0E
+/*      CONSOLE-SPECIFIC: remap all consoles to new fb - for vga_switcheroo */
+#define FB_EVENT_REMAP_ALL_CONSOLE      0x0F
+/*      A hardware display blank early change occured */
 #define FB_EARLY_EVENT_BLANK		0x10
-/*      A hardware display blank revert early change occurred */
+/*      A hardware display blank revert early change occured */
 #define FB_R_EARLY_EVENT_BLANK		0x11
 
 struct fb_event {
@@ -377,7 +403,7 @@ struct fb_tile_ops {
 #endif /* CONFIG_FB_TILEBLITTING */
 
 /* FBINFO_* = fb_info.flags bit flags */
-#define FBINFO_DEFAULT		0
+#define FBINFO_MODULE		0x0001	/* Low-level driver is a module */
 #define FBINFO_HWACCEL_DISABLED	0x0002
 	/* When FBINFO_HWACCEL_DISABLED is set:
 	 *  Hardware acceleration is turned off.  Software implementations
@@ -432,23 +458,15 @@ struct fb_tile_ops {
  * and host endianness. Drivers should not use this flag.
  */
 #define FBINFO_BE_MATH  0x100000
-/*
- * Hide smem_start in the FBIOGET_FSCREENINFO IOCTL. This is used by modern DRM
- * drivers to stop userspace from trying to share buffers behind the kernel's
- * back. Instead dma-buf based buffer sharing should be used.
- */
-#define FBINFO_HIDE_SMEM_START  0x200000
 
+/* report to the VT layer that this fb driver can accept forced console
+   output like oopses */
+#define FBINFO_CAN_FORCE_OUTPUT     0x200000
 
 struct fb_info {
 	atomic_t count;
 	int node;
 	int flags;
-	/*
-	 * -1 by default, set to a FB_ROTATE_* value by the driver, if it knows
-	 * a lcd is not mounted upright and fbcon should rotate to compensate.
-	 */
-	int fbcon_rotate_hint;
 	struct mutex lock;		/* Lock for open/release/ioctl funcs */
 	struct mutex mm_lock;		/* Lock for fb_mmap and smem_* fields */
 	struct fb_var_screeninfo var;	/* Current var */
@@ -461,7 +479,7 @@ struct fb_info {
 	struct list_head modelist;      /* mode list */
 	struct fb_videomode *mode;	/* current mode */
 
-#if IS_ENABLED(CONFIG_FB_BACKLIGHT)
+#ifdef CONFIG_FB_BACKLIGHT
 	/* assigned backlight device */
 	/* set before framebuffer registration, 
 	   remove after unregister */
@@ -518,6 +536,14 @@ static inline struct apertures_struct *alloc_apertures(unsigned int max_num) {
 	return a;
 }
 
+#ifdef MODULE
+#define FBINFO_DEFAULT	FBINFO_MODULE
+#else
+#define FBINFO_DEFAULT	0
+#endif
+
+// This will go away
+#define FBINFO_FLAG_MODULE	FBINFO_MODULE
 #define FBINFO_FLAG_DEFAULT	FBINFO_DEFAULT
 
 /* This will go away
@@ -548,9 +574,7 @@ static inline struct apertures_struct *alloc_apertures(unsigned int max_num) {
 #define fb_memcpy_fromfb sbus_memcpy_fromio
 #define fb_memcpy_tofb sbus_memcpy_toio
 
-#elif defined(__i386__) || defined(__alpha__) || defined(__x86_64__) ||	\
-	defined(__hppa__) || defined(__sh__) || defined(__powerpc__) ||	\
-	defined(__arm__) || defined(__aarch64__)
+#elif defined(__i386__) || defined(__alpha__) || defined(__x86_64__) || defined(__hppa__) || defined(__sh__) || defined(__powerpc__) || defined(__avr32__) || defined(__bfin__) || defined(__arm__)
 
 #define fb_readb __raw_readb
 #define fb_readw __raw_readw
@@ -609,10 +633,8 @@ extern ssize_t fb_sys_write(struct fb_info *info, const char __user *buf,
 
 /* drivers/video/fbmem.c */
 extern int register_framebuffer(struct fb_info *fb_info);
-extern void unregister_framebuffer(struct fb_info *fb_info);
-extern void unlink_framebuffer(struct fb_info *fb_info);
-extern int remove_conflicting_pci_framebuffers(struct pci_dev *pdev, int res_id,
-					       const char *name);
+extern int unregister_framebuffer(struct fb_info *fb_info);
+extern int unlink_framebuffer(struct fb_info *fb_info);
 extern int remove_conflicting_framebuffers(struct apertures_struct *a,
 					   const char *name, bool primary);
 extern int fb_prepare_logo(struct fb_info *fb_info, int rotate);
@@ -629,17 +651,9 @@ extern int fb_new_modelist(struct fb_info *info);
 
 extern struct fb_info *registered_fb[FB_MAX];
 extern int num_registered_fb;
-extern bool fb_center_logo;
 extern struct class *fb_class;
 
-#define for_each_registered_fb(i)		\
-	for (i = 0; i < FB_MAX; i++)		\
-		if (!registered_fb[i]) {} else
-
-static inline void lock_fb_info(struct fb_info *info)
-{
-	mutex_lock(&info->lock);
-}
+extern int lock_fb_info(struct fb_info *info);
 
 static inline void unlock_fb_info(struct fb_info *info)
 {
@@ -734,8 +748,15 @@ extern int fb_videomode_from_videomode(const struct videomode *vm,
 				       struct fb_videomode *fbmode);
 
 /* drivers/video/modedb.c */
-#define VESA_MODEDB_SIZE 43
-#define DMT_SIZE 0x50
+#define VESA_MODEDB_SIZE 88
+#define CEA_861_D_MODEDB_SIZE 65
+#define CEA_861_F_MODEDB_SIZE 108
+#define CEA_MODEDB_SIZE (CEA_861_F_MODEDB_SIZE)
+#define DMT_SIZE 0x58
+#define HDMI_EXT_MODEDB_SIZE 5
+#define FB_MODE_TOLERANCE_DEFAULT 5
+#define FB_MODE_TOLERANCE_DENOMINATOR 1000
+/* A tolerance of DEFAULT/DENOMINATOR == 5/1000 == 0.5% */
 
 extern void fb_var_to_videomode(struct fb_videomode *mode,
 				const struct fb_var_screeninfo *var);
@@ -743,6 +764,10 @@ extern void fb_videomode_to_var(struct fb_var_screeninfo *var,
 				const struct fb_videomode *mode);
 extern int fb_mode_is_equal(const struct fb_videomode *mode1,
 			    const struct fb_videomode *mode2);
+extern int fb_mode_is_equal_tolerance(const struct fb_videomode *mode1,
+				      const struct fb_videomode *mode2,
+				      unsigned int tolerance);
+extern int fb_mode_find_cea(struct fb_videomode *mode);
 extern int fb_add_videomode(const struct fb_videomode *mode,
 			    struct list_head *head);
 extern void fb_delete_videomode(const struct fb_videomode *mode,
@@ -785,6 +810,9 @@ struct fb_videomode {
 	u32 sync;
 	u32 vmode;
 	u32 flag;
+#if defined(CONFIG_FB_MODE_PIXCLOCK_HZ)
+	u32 pixclock_hz;
+#endif
 };
 
 struct dmt_videomode {
@@ -796,8 +824,9 @@ struct dmt_videomode {
 
 extern const char *fb_mode_option;
 extern const struct fb_videomode vesa_modes[];
-extern const struct fb_videomode cea_modes[65];
+extern const struct fb_videomode cea_modes[];
 extern const struct dmt_videomode dmt_modes[];
+extern const struct fb_videomode hdmi_ext_modes[];
 
 struct fb_modelist {
 	struct list_head list;

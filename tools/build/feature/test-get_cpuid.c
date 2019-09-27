@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 #include <cpuid.h>
 
 int main(void)

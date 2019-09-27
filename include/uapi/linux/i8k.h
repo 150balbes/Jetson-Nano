@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0+ WITH Linux-syscall-note */
 /*
  * i8k.h -- Linux driver for accessing the SMM BIOS on Dell laptops
  *

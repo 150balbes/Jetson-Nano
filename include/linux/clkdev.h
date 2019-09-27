@@ -1,15 +1,18 @@
-/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  *  include/linux/clkdev.h
  *
  *  Copyright (C) 2008 Russell King.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  *
  * Helper for the clk API to assist looking up a struct clk.
  */
 #ifndef __CLKDEV_H
 #define __CLKDEV_H
 
-#include <linux/slab.h>
+#include <asm/clkdev.h>
 
 struct clk;
 struct clk_hw;
@@ -49,8 +52,9 @@ int clk_add_alias(const char *, const char *, const char *, struct device *);
 int clk_register_clkdev(struct clk *, const char *, const char *);
 int clk_hw_register_clkdev(struct clk_hw *, const char *, const char *);
 
-int devm_clk_hw_register_clkdev(struct device *dev, struct clk_hw *hw,
-				const char *con_id, const char *dev_id);
-void devm_clk_release_clkdev(struct device *dev, const char *con_id,
-			     const char *dev_id);
+#ifdef CONFIG_COMMON_CLK
+int __clk_get(struct clk *clk);
+void __clk_put(struct clk *clk);
+#endif
+
 #endif

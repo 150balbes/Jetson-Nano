@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  *  linux/fs/ufs/ufs_dir.c
  *
@@ -20,7 +19,6 @@
 #include <linux/time.h>
 #include <linux/fs.h>
 #include <linux/swap.h>
-#include <linux/iversion.h>
 
 #include "ufs_fs.h"
 #include "ufs.h"
@@ -48,14 +46,14 @@ static int ufs_commit_chunk(struct page *page, loff_t pos, unsigned len)
 	struct inode *dir = mapping->host;
 	int err = 0;
 
-	inode_inc_iversion(dir);
+	dir->i_version++;
 	block_write_end(NULL, mapping, pos, len, len, page, NULL);
 	if (pos+len > dir->i_size) {
 		i_size_write(dir, pos+len);
 		mark_inode_dirty(dir);
 	}
 	if (IS_DIRSYNC(dir))
-		err = write_one_page(page);
+		err = write_one_page(page, 1);
 	else
 		unlock_page(page);
 	return err;
@@ -429,7 +427,7 @@ ufs_readdir(struct file *file, struct dir_context *ctx)
 	unsigned long n = pos >> PAGE_SHIFT;
 	unsigned long npages = dir_pages(inode);
 	unsigned chunk_mask = ~(UFS_SB(sb)->s_uspi->s_dirblksize - 1);
-	bool need_revalidate = !inode_eq_iversion(inode, file->f_version);
+	int need_revalidate = file->f_version != inode->i_version;
 	unsigned flags = UFS_SB(sb)->s_flags;
 
 	UFSD("BEGIN\n");
@@ -456,8 +454,8 @@ ufs_readdir(struct file *file, struct dir_context *ctx)
 				offset = ufs_validate_entry(sb, kaddr, offset, chunk_mask);
 				ctx->pos = (n<<PAGE_SHIFT) + offset;
 			}
-			file->f_version = inode_query_iversion(inode);
-			need_revalidate = false;
+			file->f_version = inode->i_version;
+			need_revalidate = 0;
 		}
 		de = (struct ufs_dir_entry *)(kaddr+offset);
 		limit = kaddr + ufs_last_byte(inode, n) - UFS_DIR_REC_LEN(1);

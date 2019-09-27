@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
 
     bttv-risc.c  --  interfaces to other kernel modules
@@ -9,6 +8,19 @@
 
     (c) 2000-2003 Gerd Knorr <kraxel@bytesex.org>
 
+    This program is free software; you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation; either version 2 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program; if not, write to the Free Software
+    Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 
 */
 
@@ -81,7 +93,7 @@ bttv_risc_packed(struct bttv *btv, struct btcx_riscmem *risc,
 			*(rp++)=cpu_to_le32(sg_dma_address(sg)+offset);
 			offset+=bpl;
 		} else {
-			/* scanline needs to be split */
+			/* scanline needs to be splitted */
 			todo = bpl;
 			*(rp++)=cpu_to_le32(BT848_RISC_WRITE|BT848_RISC_SOL|
 					    (sg_dma_len(sg)-offset));
@@ -177,21 +189,20 @@ bttv_risc_planar(struct bttv *btv, struct btcx_riscmem *risc,
 				yoffset -= sg_dma_len(ysg);
 				ysg = sg_next(ysg);
 			}
+			while (uoffset && uoffset >= sg_dma_len(usg)) {
+				uoffset -= sg_dma_len(usg);
+				usg = sg_next(usg);
+			}
+			while (voffset && voffset >= sg_dma_len(vsg)) {
+				voffset -= sg_dma_len(vsg);
+				vsg = sg_next(vsg);
+			}
 
 			/* calculate max number of bytes we can write */
 			ylen = todo;
 			if (yoffset + ylen > sg_dma_len(ysg))
 				ylen = sg_dma_len(ysg) - yoffset;
 			if (chroma) {
-				while (uoffset && uoffset >= sg_dma_len(usg)) {
-					uoffset -= sg_dma_len(usg);
-					usg = sg_next(usg);
-				}
-				while (voffset && voffset >= sg_dma_len(vsg)) {
-					voffset -= sg_dma_len(vsg);
-					vsg = sg_next(vsg);
-				}
-
 				if (uoffset + (ylen>>hshift) > sg_dma_len(usg))
 					ylen = (sg_dma_len(usg) - uoffset) << hshift;
 				if (voffset + (ylen>>hshift) > sg_dma_len(vsg))
@@ -244,8 +255,7 @@ bttv_risc_overlay(struct bttv *btv, struct btcx_riscmem *risc,
 	u32 addr;
 
 	/* skip list for window clipping */
-	skips = kmalloc_array(ov->nclips, sizeof(*skips),GFP_KERNEL);
-	if (NULL == skips)
+	if (NULL == (skips = kmalloc(sizeof(*skips) * ov->nclips,GFP_KERNEL)))
 		return -ENOMEM;
 
 	/* estimate risc mem: worst case is (1.5*clip+1) * lines instructions

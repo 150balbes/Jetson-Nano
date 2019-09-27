@@ -4,7 +4,7 @@
  * Contact: support@caviumnetworks.com
  * This file is part of the OCTEON SDK
  *
- * Copyright (C) 2003-2018 Cavium, Inc.
+ * Copyright (c) 2003-2012 Cavium Networks
  *
  * This file is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, Version 2, as
@@ -45,8 +45,6 @@
 #define CVMX_STXX_STAT_CTL(block_id) (CVMX_ADD_IO_SEG(0x0001180090000638ull) + ((block_id) & 1) * 0x8000000ull)
 #define CVMX_STXX_STAT_PKT_XMT(block_id) (CVMX_ADD_IO_SEG(0x0001180090000640ull) + ((block_id) & 1) * 0x8000000ull)
 
-void __cvmx_interrupt_stxx_int_msk_enable(int index);
-
 union cvmx_stxx_arb_ctl {
 	uint64_t u64;
 	struct cvmx_stxx_arb_ctl_s {
@@ -64,6 +62,10 @@ union cvmx_stxx_arb_ctl {
 		uint64_t reserved_6_63:58;
 #endif
 	} s;
+	struct cvmx_stxx_arb_ctl_s cn38xx;
+	struct cvmx_stxx_arb_ctl_s cn38xxp2;
+	struct cvmx_stxx_arb_ctl_s cn58xx;
+	struct cvmx_stxx_arb_ctl_s cn58xxp1;
 };
 
 union cvmx_stxx_bckprs_cnt {
@@ -77,6 +79,10 @@ union cvmx_stxx_bckprs_cnt {
 		uint64_t reserved_32_63:32;
 #endif
 	} s;
+	struct cvmx_stxx_bckprs_cnt_s cn38xx;
+	struct cvmx_stxx_bckprs_cnt_s cn38xxp2;
+	struct cvmx_stxx_bckprs_cnt_s cn58xx;
+	struct cvmx_stxx_bckprs_cnt_s cn58xxp1;
 };
 
 union cvmx_stxx_com_ctl {
@@ -94,6 +100,10 @@ union cvmx_stxx_com_ctl {
 		uint64_t reserved_4_63:60;
 #endif
 	} s;
+	struct cvmx_stxx_com_ctl_s cn38xx;
+	struct cvmx_stxx_com_ctl_s cn38xxp2;
+	struct cvmx_stxx_com_ctl_s cn58xx;
+	struct cvmx_stxx_com_ctl_s cn58xxp1;
 };
 
 union cvmx_stxx_dip_cnt {
@@ -109,6 +119,10 @@ union cvmx_stxx_dip_cnt {
 		uint64_t reserved_8_63:56;
 #endif
 	} s;
+	struct cvmx_stxx_dip_cnt_s cn38xx;
+	struct cvmx_stxx_dip_cnt_s cn38xxp2;
+	struct cvmx_stxx_dip_cnt_s cn58xx;
+	struct cvmx_stxx_dip_cnt_s cn58xxp1;
 };
 
 union cvmx_stxx_ign_cal {
@@ -122,6 +136,10 @@ union cvmx_stxx_ign_cal {
 		uint64_t reserved_16_63:48;
 #endif
 	} s;
+	struct cvmx_stxx_ign_cal_s cn38xx;
+	struct cvmx_stxx_ign_cal_s cn38xxp2;
+	struct cvmx_stxx_ign_cal_s cn58xx;
+	struct cvmx_stxx_ign_cal_s cn58xxp1;
 };
 
 union cvmx_stxx_int_msk {
@@ -149,6 +167,10 @@ union cvmx_stxx_int_msk {
 		uint64_t reserved_8_63:56;
 #endif
 	} s;
+	struct cvmx_stxx_int_msk_s cn38xx;
+	struct cvmx_stxx_int_msk_s cn38xxp2;
+	struct cvmx_stxx_int_msk_s cn58xx;
+	struct cvmx_stxx_int_msk_s cn58xxp1;
 };
 
 union cvmx_stxx_int_reg {
@@ -178,6 +200,10 @@ union cvmx_stxx_int_reg {
 		uint64_t reserved_9_63:55;
 #endif
 	} s;
+	struct cvmx_stxx_int_reg_s cn38xx;
+	struct cvmx_stxx_int_reg_s cn38xxp2;
+	struct cvmx_stxx_int_reg_s cn58xx;
+	struct cvmx_stxx_int_reg_s cn58xxp1;
 };
 
 union cvmx_stxx_int_sync {
@@ -205,6 +231,10 @@ union cvmx_stxx_int_sync {
 		uint64_t reserved_8_63:56;
 #endif
 	} s;
+	struct cvmx_stxx_int_sync_s cn38xx;
+	struct cvmx_stxx_int_sync_s cn38xxp2;
+	struct cvmx_stxx_int_sync_s cn58xx;
+	struct cvmx_stxx_int_sync_s cn58xxp1;
 };
 
 union cvmx_stxx_min_bst {
@@ -218,6 +248,10 @@ union cvmx_stxx_min_bst {
 		uint64_t reserved_9_63:55;
 #endif
 	} s;
+	struct cvmx_stxx_min_bst_s cn38xx;
+	struct cvmx_stxx_min_bst_s cn38xxp2;
+	struct cvmx_stxx_min_bst_s cn58xx;
+	struct cvmx_stxx_min_bst_s cn58xxp1;
 };
 
 union cvmx_stxx_spi4_calx {
@@ -239,6 +273,10 @@ union cvmx_stxx_spi4_calx {
 		uint64_t reserved_17_63:47;
 #endif
 	} s;
+	struct cvmx_stxx_spi4_calx_s cn38xx;
+	struct cvmx_stxx_spi4_calx_s cn38xxp2;
+	struct cvmx_stxx_spi4_calx_s cn58xx;
+	struct cvmx_stxx_spi4_calx_s cn58xxp1;
 };
 
 union cvmx_stxx_spi4_dat {
@@ -254,6 +292,10 @@ union cvmx_stxx_spi4_dat {
 		uint64_t reserved_32_63:32;
 #endif
 	} s;
+	struct cvmx_stxx_spi4_dat_s cn38xx;
+	struct cvmx_stxx_spi4_dat_s cn38xxp2;
+	struct cvmx_stxx_spi4_dat_s cn58xx;
+	struct cvmx_stxx_spi4_dat_s cn58xxp1;
 };
 
 union cvmx_stxx_spi4_stat {
@@ -271,6 +313,10 @@ union cvmx_stxx_spi4_stat {
 		uint64_t reserved_16_63:48;
 #endif
 	} s;
+	struct cvmx_stxx_spi4_stat_s cn38xx;
+	struct cvmx_stxx_spi4_stat_s cn38xxp2;
+	struct cvmx_stxx_spi4_stat_s cn58xx;
+	struct cvmx_stxx_spi4_stat_s cn58xxp1;
 };
 
 union cvmx_stxx_stat_bytes_hi {
@@ -284,6 +330,10 @@ union cvmx_stxx_stat_bytes_hi {
 		uint64_t reserved_32_63:32;
 #endif
 	} s;
+	struct cvmx_stxx_stat_bytes_hi_s cn38xx;
+	struct cvmx_stxx_stat_bytes_hi_s cn38xxp2;
+	struct cvmx_stxx_stat_bytes_hi_s cn58xx;
+	struct cvmx_stxx_stat_bytes_hi_s cn58xxp1;
 };
 
 union cvmx_stxx_stat_bytes_lo {
@@ -297,6 +347,10 @@ union cvmx_stxx_stat_bytes_lo {
 		uint64_t reserved_32_63:32;
 #endif
 	} s;
+	struct cvmx_stxx_stat_bytes_lo_s cn38xx;
+	struct cvmx_stxx_stat_bytes_lo_s cn38xxp2;
+	struct cvmx_stxx_stat_bytes_lo_s cn58xx;
+	struct cvmx_stxx_stat_bytes_lo_s cn58xxp1;
 };
 
 union cvmx_stxx_stat_ctl {
@@ -312,6 +366,10 @@ union cvmx_stxx_stat_ctl {
 		uint64_t reserved_5_63:59;
 #endif
 	} s;
+	struct cvmx_stxx_stat_ctl_s cn38xx;
+	struct cvmx_stxx_stat_ctl_s cn38xxp2;
+	struct cvmx_stxx_stat_ctl_s cn58xx;
+	struct cvmx_stxx_stat_ctl_s cn58xxp1;
 };
 
 union cvmx_stxx_stat_pkt_xmt {
@@ -325,6 +383,10 @@ union cvmx_stxx_stat_pkt_xmt {
 		uint64_t reserved_32_63:32;
 #endif
 	} s;
+	struct cvmx_stxx_stat_pkt_xmt_s cn38xx;
+	struct cvmx_stxx_stat_pkt_xmt_s cn38xxp2;
+	struct cvmx_stxx_stat_pkt_xmt_s cn58xx;
+	struct cvmx_stxx_stat_pkt_xmt_s cn58xxp1;
 };
 
 #endif

@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note */
 #ifndef _UAPIASM_SCHID_H
 #define _UAPIASM_SCHID_H
 

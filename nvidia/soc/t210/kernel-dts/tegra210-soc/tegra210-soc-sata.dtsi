@@ -1,0 +1,45 @@
+/*
+ * Copyright (c) 2015-2017, NVIDIA CORPORATION.  All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms and conditions of the GNU General Public License,
+ * version 2, as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
+/ {
+	sata@70020000 {
+		compatible = "nvidia,tegra210-ahci-sata";
+		reg = <0x0 0x70027000 0x0 0x00002000>, /* SATA AHCI */
+		    <0x0 0x70021000 0x0 0x00006000>, /* SATA Config */
+		    <0x0 0x70020000 0x0 0x00001000>, /* SATA IPFS */
+		    <0x0 0x70001100 0x0 0x00000034>; /* SATA AUX */
+		reg-names = "sata-ahci", "sata-config", "sata-ipfs", "sata-aux";
+		interrupts = <0 23 0x04>;
+		clocks = <&tegra_car TEGRA210_CLK_SATA>,
+		       <&tegra_car TEGRA210_CLK_SATA_OOB>,
+		       <&tegra_car TEGRA210_CLK_PLL_P>;
+		clock-names = "sata", "sata-oob", "pllp";
+		resets = <&tegra_car TEGRA210_CLK_SATA>,
+		       <&tegra_car TEGRA210_CLK_SATA_OOB>,
+		       <&tegra_car TEGRA210_CLK_SATA_COLD>;
+		reset-names = "sata", "sata-oob", "sata-cold";
+		iommus = <&smmu TEGRA_SWGROUP_SATA2>;
+#if TEGRA_XUSB_PADCONTROL_VERSION >= DT_VERSION_2
+		phys = <&{/xusb_padctl@7009f000/pads/sata/lanes/sata-0}>;
+#else
+		phys = <&tegra_padctl_uphy TEGRA_PADCTL_UPHY_SATA_P(0)>;
+#endif
+		phy-names = "sata-phy";
+		nvidia,disable-features = "devslp", "dipm";
+		nvidia,link-flags = "max_power";
+		status = "disabled";
+	};
+};

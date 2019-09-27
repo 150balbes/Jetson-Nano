@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 #include <linux/dcache.h>
 #include <linux/debugfs.h>
 #include <linux/delay.h>
@@ -708,6 +707,8 @@ void lbs_debugfs_init_one(struct lbs_private *priv, struct net_device *dev)
 		goto exit;
 
 	priv->debugfs_dir = debugfs_create_dir(dev->name, lbs_dir);
+	if (!priv->debugfs_dir)
+		goto exit;
 
 	for (i=0; i<ARRAY_SIZE(debugfs_files); i++) {
 		files = &debugfs_files[i];
@@ -719,6 +720,8 @@ void lbs_debugfs_init_one(struct lbs_private *priv, struct net_device *dev)
 	}
 
 	priv->events_dir = debugfs_create_dir("subscribed_events", priv->debugfs_dir);
+	if (!priv->events_dir)
+		goto exit;
 
 	for (i=0; i<ARRAY_SIZE(debugfs_events_files); i++) {
 		files = &debugfs_events_files[i];
@@ -730,6 +733,8 @@ void lbs_debugfs_init_one(struct lbs_private *priv, struct net_device *dev)
 	}
 
 	priv->regs_dir = debugfs_create_dir("registers", priv->debugfs_dir);
+	if (!priv->regs_dir)
+		goto exit;
 
 	for (i=0; i<ARRAY_SIZE(debugfs_regs_files); i++) {
 		files = &debugfs_regs_files[i];

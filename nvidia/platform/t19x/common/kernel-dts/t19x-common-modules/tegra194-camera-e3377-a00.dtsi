@@ -1,0 +1,172 @@
+/*
+ * Copyright (c) 2017, NVIDIA CORPORATION.  All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
+/ {
+	host1x {
+		vi@15c10000 {
+			num-channels = <1>;
+			ports {
+				#address-cells = <1>;
+				#size-cells = <0>;
+				port@0 {
+					reg = <0>;
+					status = "okay";
+					e3377_vi_in0: endpoint {
+						port-index = <0>;
+						bus-width = <8>;
+						remote-endpoint = <&e3377_slvs_ec_out0>;
+					};
+				};
+			};
+		};
+
+		slvs-ec@15ac0000 {
+			status = "okay";
+			streams {
+                                #address-cells = <1>;
+                                #size-cells = <0>;
+				stream@0 {
+                                        reg = <0>;
+                                        lanes = <0 1 2 3 4 5 6 7>;
+					ports {
+						#address-cells = <1>;
+						#size-cells = <0>;
+						port@0 {
+							reg = <0>;
+							e3377_slvs_ec_in0: endpoint@0 {
+								port-index = <0>;
+								bus-width = <8>;
+								remote-endpoint = <&e3377_imx204_out0>;
+							};
+						};
+						port@1 {
+							reg = <1>;
+							e3377_slvs_ec_out0: endpoint@1 {
+								remote-endpoint = <&e3377_vi_in0>;
+							};
+						};
+					};
+				};
+			};
+		};
+	};
+
+	spi@c260000 {
+		status = "okay";
+		spi-max-frequency = <12000000>;
+		imx204@0 {
+			compatible = "nvidia,imx204-spi";
+			reg = <0>;
+			status = "okay";
+			spi-max-frequency = <12000000>;
+
+			/* Physical dimensions of sensor */
+			physical_w = "4.713";
+			physical_h = "3.494";
+
+			/* enable delay gain due to no hardware group hold support */
+			delayed_gain = "true";
+
+			/* Define any required hw resources needed by driver */
+			/* ie, clocks, io pins, power sources */
+			/* mclk = "cam_mclk1"; Not in use. */
+			devname = "imx204-spi";
+
+			/* Sensor Model */
+			sensor_model = "imx204";
+
+			focus_macro = "100";
+			focus_infinity = "208";
+			focus_max_slew_rate = "180";
+			min_aperture = "2";
+			max_aperture = "90";
+			min_aperture_fnumber = "2000";
+			max_aperture_fnumber = "22000";
+			aperture_max_slew_rate = "180";
+			/* <FNumber*1000 motor-pos> */
+			fnumber_map = <2000 2>, <2800 34>, <4000 49>, <5600 59>,
+						<8000 67>, <11000 71>, <16000 75>, <22000 78>;
+
+			mode0 {
+				mclk_khz = "72000";
+				num_lanes = "8";
+				tegra_sinterface = "serial_a";
+				phy_mode = "SLVS";
+				discontinuous_clk = "no";
+				dpcm_enable = "false";
+				cil_settletime = "0";
+
+				active_w = "5352";
+				active_h = "3950";
+				pixel_t = "bayer_rggb";
+				readout_orientation = "0";
+				line_length = "6667";
+				inherent_gain = "1";
+				mclk_multiplier = "11";
+				pix_clk_hz = "1320000000";
+
+				min_gain_val = "1.0";
+				max_gain_val = "22.3";
+				min_hdr_ratio = "1";
+				max_hdr_ratio = "1";
+				min_framerate = "1.5";
+				max_framerate = "60";
+				min_exp_time = "13";
+				max_exp_time = "33333";
+			};
+			ports {
+				#address-cells = <1>;
+				#size-cells = <0>;
+				port@0 {
+					reg = <0>;
+					e3377_imx204_out0: endpoint {
+						port-index = <0>;
+						bus-width = <8>;
+						remote-endpoint = <&e3377_slvs_ec_in0>;
+					};
+				};
+			};
+		};
+	};
+
+	tegra-camera-platform {
+		compatible = "nvidia, tegra-camera-platform";
+		/**
+		* The general guideline for naming badge_info contains 3 parts, and is as follows,
+		* The first part is the camera_board_id for the module; if the module is in a FFD
+		* platform, then use the platform name for this part.
+		* The second part contains the position of the module, ex. “rear” or “front”.
+		* The third part contains the last 6 characters of a part number which is found
+		* in the module's specsheet from the vender.
+		*/
+		modules {
+			module0 {
+				badge = "e3377_rear_IMX204";
+				position = "rear";
+				orientation = "1";
+				drivernode0 {
+					/* Declare PCL support driver (classically known as guid)  */
+					pcl_id = "v4l2_sensor";
+					/* Driver v4l2 device name */
+					devname = "imx204_spi";
+					/* Declare the device-tree hierarchy to driver instance */
+					proc-device-tree = "/proc/device-tree/spi@c260000/imx204@0";
+				};
+			};
+		};
+	};
+};

@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __ASM_SH_FTRACE_H
 #define __ASM_SH_FTRACE_H
 

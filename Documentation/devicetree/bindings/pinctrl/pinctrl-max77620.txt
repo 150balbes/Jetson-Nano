@@ -11,9 +11,9 @@ Optional Pinmux properties:
 --------------------------
 Following properties are required if default setting of pins are required
 at boot.
-- pinctrl-names: A pinctrl state named per <pinctrl-bindings.txt>.
+- pinctrl-names: A pinctrl state named per <pinctrl-binding.txt>.
 - pinctrl[0...n]: Properties to contain the phandle for pinctrl states per
-		<pinctrl-bindings.txt>.
+		<pinctrl-binding.txt>.
 
 The pin configurations are defined as child of the pinctrl states node. Each
 sub-node have following properties:
@@ -96,6 +96,18 @@ detail of Flexible Power Sequence (FPS).
 					This is applicable if suspend state
 					FPS source is selected as FPS0, FPS1 or
 					FPS2.
+
+There is anothe name of these properties to reduce the property name
+length to meet ePAPR specs. The another name is without vendor as
+follows:
+	maxim,active-fps-source -> active-fps-source
+	maxim,active-fps-power-up-slot -> active-fps-power-up-slot
+	maxim,active-fps-power-down-slot -> active-fps-power-down-slot
+	maxim,suspend-fps-source -> suspend-fps-source
+	maxim,suspend-fps-power-up-slot -> suspend-fps-power-up-slot
+	maxim,suspend-fps-power-down-slot -> suspend-fps-power-down-slot
+	maxim,ramp-rate-setting -> ramp-rate-setting
+	maxim,power-ok-control -> power-ok-control
 
 Example:
 --------

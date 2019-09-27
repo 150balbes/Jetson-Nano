@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0-only
 #
 # Hardware for mISDN
 #
@@ -14,7 +13,7 @@ config MISDN_HFCPCI
 
 config MISDN_HFCMULTI
 	tristate "Support for HFC multiport cards (HFC-4S/8S/E1)"
-	depends on PCI || CPM1
+	depends on PCI || 8xx
 	depends on MISDN
 	help
 	  Enable support for cards with Cologne Chip AG's HFC multiport
@@ -28,8 +27,8 @@ config MISDN_HFCMULTI_8xx
 	bool "Support for XHFC embedded board in HFC multiport driver"
 	depends on MISDN
 	depends on MISDN_HFCMULTI
-	depends on CPM1
-	default CPM1
+	depends on 8xx
+	default 8xx
 	help
 	  Enable support for the XHFC embedded solution from Speech Design.
 
@@ -79,14 +78,11 @@ config MISDN_NETJET
 	depends on PCI
 	depends on TTY
 	select MISDN_IPAC
-	select MISDN_HDLC
+	select ISDN_HDLC
+	select ISDN_I4L
 	help
 	  Enable support for Traverse Technologies NETJet PCI cards.
 
-config MISDN_HDLC
-	tristate
-	select CRC_CCITT
-	select BITREVERSE
 
 config MISDN_IPAC
 	tristate

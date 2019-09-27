@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note */
 /*
 ** asm/setup.h -- Definition of the Linux/m68k setup information
 **

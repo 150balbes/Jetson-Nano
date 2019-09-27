@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * USB Synaptics device driver
  *
@@ -16,6 +15,11 @@
  * Bases on:	usb_skeleton.c v2.2 by Greg Kroah-Hartman
  *		drivers/hid/usbhid/usbmouse.c by Vojtech Pavlik
  *		drivers/input/mouse/synaptics.c by Peter Osterlund
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License as published by the Free
+ * Software Foundation; either version 2 of the License, or (at your option)
+ * any later version.
  *
  * Trademarks are the property of their respective owners.
  */
@@ -77,10 +81,6 @@ struct synusb {
 	struct usb_interface *intf;
 	struct urb *urb;
 	unsigned char *data;
-
-	/* serialize access to open/suspend */
-	struct mutex pm_mutex;
-	bool is_open;
 
 	/* input device related data structures */
 	struct input_dev *input;
@@ -252,7 +252,6 @@ static int synusb_open(struct input_dev *dev)
 		return retval;
 	}
 
-	mutex_lock(&synusb->pm_mutex);
 	retval = usb_submit_urb(synusb->urb, GFP_KERNEL);
 	if (retval) {
 		dev_err(&synusb->intf->dev,
@@ -263,10 +262,8 @@ static int synusb_open(struct input_dev *dev)
 	}
 
 	synusb->intf->needs_remote_wakeup = 1;
-	synusb->is_open = true;
 
 out:
-	mutex_unlock(&synusb->pm_mutex);
 	usb_autopm_put_interface(synusb->intf);
 	return retval;
 }
@@ -278,11 +275,8 @@ static void synusb_close(struct input_dev *dev)
 
 	autopm_error = usb_autopm_get_interface(synusb->intf);
 
-	mutex_lock(&synusb->pm_mutex);
 	usb_kill_urb(synusb->urb);
 	synusb->intf->needs_remote_wakeup = 0;
-	synusb->is_open = false;
-	mutex_unlock(&synusb->pm_mutex);
 
 	if (!autopm_error)
 		usb_autopm_put_interface(synusb->intf);
@@ -321,7 +315,6 @@ static int synusb_probe(struct usb_interface *intf,
 	synusb->udev = udev;
 	synusb->intf = intf;
 	synusb->input = input_dev;
-	mutex_init(&synusb->pm_mutex);
 
 	synusb->flags = id->driver_info;
 	if (synusb->flags & SYNUSB_COMBO) {
@@ -473,10 +466,11 @@ static void synusb_disconnect(struct usb_interface *intf)
 static int synusb_suspend(struct usb_interface *intf, pm_message_t message)
 {
 	struct synusb *synusb = usb_get_intfdata(intf);
+	struct input_dev *input_dev = synusb->input;
 
-	mutex_lock(&synusb->pm_mutex);
+	mutex_lock(&input_dev->mutex);
 	usb_kill_urb(synusb->urb);
-	mutex_unlock(&synusb->pm_mutex);
+	mutex_unlock(&input_dev->mutex);
 
 	return 0;
 }
@@ -484,16 +478,17 @@ static int synusb_suspend(struct usb_interface *intf, pm_message_t message)
 static int synusb_resume(struct usb_interface *intf)
 {
 	struct synusb *synusb = usb_get_intfdata(intf);
+	struct input_dev *input_dev = synusb->input;
 	int retval = 0;
 
-	mutex_lock(&synusb->pm_mutex);
+	mutex_lock(&input_dev->mutex);
 
-	if ((synusb->is_open || (synusb->flags & SYNUSB_IO_ALWAYS)) &&
+	if ((input_dev->users || (synusb->flags & SYNUSB_IO_ALWAYS)) &&
 	    usb_submit_urb(synusb->urb, GFP_NOIO) < 0) {
 		retval = -EIO;
 	}
 
-	mutex_unlock(&synusb->pm_mutex);
+	mutex_unlock(&input_dev->mutex);
 
 	return retval;
 }
@@ -501,8 +496,9 @@ static int synusb_resume(struct usb_interface *intf)
 static int synusb_pre_reset(struct usb_interface *intf)
 {
 	struct synusb *synusb = usb_get_intfdata(intf);
+	struct input_dev *input_dev = synusb->input;
 
-	mutex_lock(&synusb->pm_mutex);
+	mutex_lock(&input_dev->mutex);
 	usb_kill_urb(synusb->urb);
 
 	return 0;
@@ -511,14 +507,15 @@ static int synusb_pre_reset(struct usb_interface *intf)
 static int synusb_post_reset(struct usb_interface *intf)
 {
 	struct synusb *synusb = usb_get_intfdata(intf);
+	struct input_dev *input_dev = synusb->input;
 	int retval = 0;
 
-	if ((synusb->is_open || (synusb->flags & SYNUSB_IO_ALWAYS)) &&
+	if ((input_dev->users || (synusb->flags & SYNUSB_IO_ALWAYS)) &&
 	    usb_submit_urb(synusb->urb, GFP_NOIO) < 0) {
 		retval = -EIO;
 	}
 
-	mutex_unlock(&synusb->pm_mutex);
+	mutex_unlock(&input_dev->mutex);
 
 	return retval;
 }
@@ -528,7 +525,7 @@ static int synusb_reset_resume(struct usb_interface *intf)
 	return synusb_resume(intf);
 }
 
-static const struct usb_device_id synusb_idtable[] = {
+static struct usb_device_id synusb_idtable[] = {
 	{ USB_DEVICE_SYNAPTICS(TP, SYNUSB_TOUCHPAD) },
 	{ USB_DEVICE_SYNAPTICS(INT_TP, SYNUSB_TOUCHPAD) },
 	{ USB_DEVICE_SYNAPTICS(CPAD,

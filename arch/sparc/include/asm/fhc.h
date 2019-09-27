@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /* fhc.h: FHC and Clock board register definitions.
  *
  * Copyright (C) 1997, 1999 David S. Miller (davem@redhat.com)

@@ -1,10 +1,12 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Routines for doing kexec-based kdump.
  *
  * Copyright (C) 2005, IBM Corp.
  *
  * Created by: Michael Ellerman
+ *
+ * This source code is licensed under the GNU General Public License,
+ * Version 2.  See the file COPYING for more details.
  */
 
 #undef DEBUG
@@ -16,7 +18,7 @@
 #include <asm/kdump.h>
 #include <asm/prom.h>
 #include <asm/firmware.h>
-#include <linux/uaccess.h>
+#include <asm/uaccess.h>
 #include <asm/rtas.h>
 
 #ifdef DEBUG
@@ -108,7 +110,7 @@ ssize_t copy_oldmem_page(unsigned long pfn, char *buf,
 		vaddr = __va(paddr);
 		csize = copy_oldmem_vaddr(vaddr, buf, csize, offset, userbuf);
 	} else {
-		vaddr = ioremap_cache(paddr, PAGE_SIZE);
+		vaddr = __ioremap(paddr, PAGE_SIZE, 0);
 		csize = copy_oldmem_vaddr(vaddr, buf, csize, offset, userbuf);
 		iounmap(vaddr);
 	}

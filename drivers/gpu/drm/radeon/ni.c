@@ -21,23 +21,20 @@
  *
  * Authors: Alex Deucher
  */
-
 #include <linux/firmware.h>
 #include <linux/slab.h>
 #include <linux/module.h>
-
-#include <drm/drm_pci.h>
-#include <drm/radeon_drm.h>
-
-#include "atom.h"
-#include "cayman_blit_shaders.h"
-#include "clearstate_cayman.h"
-#include "ni_reg.h"
-#include "nid.h"
+#include <drm/drmP.h>
 #include "radeon.h"
 #include "radeon_asic.h"
 #include "radeon_audio.h"
+#include <drm/radeon_drm.h>
+#include "nid.h"
+#include "atom.h"
+#include "ni_reg.h"
+#include "cayman_blit_shaders.h"
 #include "radeon_ucode.h"
+#include "clearstate_cayman.h"
 
 /*
  * Indirect registers accessor
@@ -777,7 +774,8 @@ int ni_init_microcode(struct radeon_device *rdev)
 	if (err)
 		goto out;
 	if (rdev->pfp_fw->size != pfp_req_size) {
-		pr_err("ni_cp: Bogus length %zu in firmware \"%s\"\n",
+		printk(KERN_ERR
+		       "ni_cp: Bogus length %zu in firmware \"%s\"\n",
 		       rdev->pfp_fw->size, fw_name);
 		err = -EINVAL;
 		goto out;
@@ -788,7 +786,8 @@ int ni_init_microcode(struct radeon_device *rdev)
 	if (err)
 		goto out;
 	if (rdev->me_fw->size != me_req_size) {
-		pr_err("ni_cp: Bogus length %zu in firmware \"%s\"\n",
+		printk(KERN_ERR
+		       "ni_cp: Bogus length %zu in firmware \"%s\"\n",
 		       rdev->me_fw->size, fw_name);
 		err = -EINVAL;
 	}
@@ -798,7 +797,8 @@ int ni_init_microcode(struct radeon_device *rdev)
 	if (err)
 		goto out;
 	if (rdev->rlc_fw->size != rlc_req_size) {
-		pr_err("ni_rlc: Bogus length %zu in firmware \"%s\"\n",
+		printk(KERN_ERR
+		       "ni_rlc: Bogus length %zu in firmware \"%s\"\n",
 		       rdev->rlc_fw->size, fw_name);
 		err = -EINVAL;
 	}
@@ -810,7 +810,8 @@ int ni_init_microcode(struct radeon_device *rdev)
 		if (err)
 			goto out;
 		if (rdev->mc_fw->size != mc_req_size) {
-			pr_err("ni_mc: Bogus length %zu in firmware \"%s\"\n",
+			printk(KERN_ERR
+			       "ni_mc: Bogus length %zu in firmware \"%s\"\n",
 			       rdev->mc_fw->size, fw_name);
 			err = -EINVAL;
 		}
@@ -820,12 +821,15 @@ int ni_init_microcode(struct radeon_device *rdev)
 		snprintf(fw_name, sizeof(fw_name), "radeon/%s_smc.bin", chip_name);
 		err = request_firmware(&rdev->smc_fw, fw_name, rdev->dev);
 		if (err) {
-			pr_err("smc: error loading firmware \"%s\"\n", fw_name);
+			printk(KERN_ERR
+			       "smc: error loading firmware \"%s\"\n",
+			       fw_name);
 			release_firmware(rdev->smc_fw);
 			rdev->smc_fw = NULL;
 			err = 0;
 		} else if (rdev->smc_fw->size != smc_req_size) {
-			pr_err("ni_mc: Bogus length %zu in firmware \"%s\"\n",
+			printk(KERN_ERR
+			       "ni_mc: Bogus length %zu in firmware \"%s\"\n",
 			       rdev->mc_fw->size, fw_name);
 			err = -EINVAL;
 		}
@@ -834,7 +838,8 @@ int ni_init_microcode(struct radeon_device *rdev)
 out:
 	if (err) {
 		if (err != -EINVAL)
-			pr_err("ni_cp: Failed to load firmware \"%s\"\n",
+			printk(KERN_ERR
+			       "ni_cp: Failed to load firmware \"%s\"\n",
 			       fw_name);
 		release_firmware(rdev->pfp_fw);
 		rdev->pfp_fw = NULL;
@@ -1151,7 +1156,6 @@ static void cayman_gpu_init(struct radeon_device *rdev)
 						rdev->config.cayman.max_shader_engines,
 						CAYMAN_MAX_BACKENDS, disabled_rb_mask);
 	}
-	rdev->config.cayman.backend_map = tmp;
 	WREG32(GB_BACKEND_MAP, tmp);
 
 	cgts_tcc_disable = 0xffff0000;

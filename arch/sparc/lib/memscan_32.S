@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * memscan.S: Optimized memscan for the Sparc.
  *

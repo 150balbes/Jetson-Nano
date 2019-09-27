@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /* GENpatch.S: Patch Ultra-I routines with generic variant.
  *
  * Copyright (C) 2007 David S. Miller <davem@davemloft.net>
@@ -27,8 +26,8 @@
 	.type	generic_patch_copyops,#function
 generic_patch_copyops:
 	GEN_DO_PATCH(memcpy, GENmemcpy)
-	GEN_DO_PATCH(raw_copy_from_user, GENcopy_from_user)
-	GEN_DO_PATCH(raw_copy_to_user, GENcopy_to_user)
+	GEN_DO_PATCH(___copy_from_user, GENcopy_from_user)
+	GEN_DO_PATCH(___copy_to_user, GENcopy_to_user)
 	retl
 	 nop
 	.size	generic_patch_copyops,.-generic_patch_copyops

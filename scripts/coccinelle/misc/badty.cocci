@@ -1,5 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0-only
-/// Correct the size argument to alloc functions
+/// Use ARRAY_SIZE instead of dividing sizeof array with sizeof an element
 ///
 //# This makes an effort to find cases where the argument to sizeof is wrong
 //# in memory allocation functions by checking the type of the allocated memory
@@ -9,7 +8,7 @@
 //# may need some reformatting.
 //
 // Confidence: Moderate
-// Copyright: (C) 2014 Himangi Saraogi.
+// Copyright: (C) 2014 Himangi Saraogi.  GPLv2.
 // Comments:
 // Options:
 

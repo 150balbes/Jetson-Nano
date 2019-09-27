@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0-only
 config MKISS
 	tristate "Serial port KISS driver"
 	depends on AX25 && TTY

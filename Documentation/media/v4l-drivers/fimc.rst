@@ -1,5 +1,3 @@
-.. SPDX-License-Identifier: GPL-2.0
-
 .. include:: <isonum.txt>
 
 The Samsung S5P/EXYNOS4 FIMC driver

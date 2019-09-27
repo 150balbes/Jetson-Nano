@@ -25,10 +25,10 @@ $(obj)/Image.o: vmlinux.bin $(OBJS)
 		$(OBJS) $@
 
 $(obj)/../Image.elf: $(obj)/Image.o $(obj)/boot.lds
-	$(Q)$(LD) $(KBUILD_LDFLAGS) $(LDFLAGS_vmlinux) \
+	$(Q)$(LD) $(LDFLAGS) $(LDFLAGS_vmlinux) \
 		-T $(obj)/boot.lds \
 		--build-id=none \
 		-o $@ $(obj)/Image.o
 	$(Q)$(kecho) '  Kernel: $@ is ready'
 
-all Image: $(obj)/../Image.elf
+zImage:	$(obj)/../Image.elf

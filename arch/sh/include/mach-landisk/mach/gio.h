@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __ASM_SH_LANDISK_GIO_H
 #define __ASM_SH_LANDISK_GIO_H
 

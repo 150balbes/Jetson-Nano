@@ -1,9 +1,12 @@
-/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  *  linux/drivers/pinctrl/pinctrl-lantiq.h
  *  based on linux/drivers/pinctrl/pinctrl-pxa3xx.h
  *
- *  Copyright (C) 2012 John Crispin <john@phrozen.org>
+ *  This program is free software; you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License version 2 as
+ *  publishhed by the Free Software Foundation.
+ *
+ *  Copyright (C) 2012 John Crispin <blogic@openwrt.org>
  */
 
 #ifndef __PINCTRL_LANTIQ_H

@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * smc911x.c
  * This is a driver for SMSC's LAN911{5,6,7,8} single-chip Ethernet devices.
@@ -6,6 +5,19 @@
  * Copyright (C) 2005 Sensoria Corp
  *	   Derived from the unified SMC91x driver by Nicolas Pitre
  *	   and the smsc911x.c reference driver by SMSC
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, see <http://www.gnu.org/licenses/>.
  *
  * Arguments:
  *	 watchdog  = TX watchdog timeout
@@ -62,6 +74,7 @@ static const char version[] =
 #include <linux/skbuff.h>
 
 #include <linux/dmaengine.h>
+#include <linux/dma/pxa-dma.h>
 
 #include <asm/io.h>
 
@@ -501,8 +514,7 @@ static void smc911x_hardware_send_pkt(struct net_device *dev)
  * now, or set the card to generates an interrupt when ready
  * for the packet.
  */
-static netdev_tx_t
-smc911x_hard_start_xmit(struct sk_buff *skb, struct net_device *dev)
+static int smc911x_hard_start_xmit(struct sk_buff *skb, struct net_device *dev)
 {
 	struct smc911x_local *lp = netdev_priv(dev);
 	unsigned int free;
@@ -712,7 +724,6 @@ static void smc911x_phy_detect(struct net_device *dev)
 					/* Found an external PHY */
 					break;
 			}
-			/* Else, fall through */
 		default:
 			/* Internal media only */
 			SMC_GET_PHY_ID1(lp, 1, id1);
@@ -1177,7 +1188,7 @@ smc911x_tx_dma_irq(void *data)
 
 	DBG(SMC_DEBUG_TX | SMC_DEBUG_DMA, dev, "TX DMA irq handler\n");
 	BUG_ON(skb == NULL);
-	dma_unmap_single(lp->dev, tx_dmabuf, tx_dmalen, DMA_TO_DEVICE);
+	dma_unmap_single(NULL, tx_dmabuf, tx_dmalen, DMA_TO_DEVICE);
 	netif_trans_update(dev);
 	dev_kfree_skb_irq(skb);
 	lp->current_tx_skb = NULL;
@@ -1208,7 +1219,7 @@ smc911x_rx_dma_irq(void *data)
 
 	DBG(SMC_DEBUG_FUNC, dev, "--> %s\n", __func__);
 	DBG(SMC_DEBUG_RX | SMC_DEBUG_DMA, dev, "RX DMA irq handler\n");
-	dma_unmap_single(lp->dev, rx_dmabuf, rx_dmalen, DMA_FROM_DEVICE);
+	dma_unmap_single(NULL, rx_dmabuf, rx_dmalen, DMA_FROM_DEVICE);
 	BUG_ON(skb == NULL);
 	lp->current_rx_skb = NULL;
 	PRINT_PKT(skb->data, skb->len);
@@ -1435,48 +1446,48 @@ static int smc911x_close(struct net_device *dev)
  * Ethtool support
  */
 static int
-smc911x_ethtool_get_link_ksettings(struct net_device *dev,
-				   struct ethtool_link_ksettings *cmd)
+smc911x_ethtool_getsettings(struct net_device *dev, struct ethtool_cmd *cmd)
 {
 	struct smc911x_local *lp = netdev_priv(dev);
-	int status;
+	int ret, status;
 	unsigned long flags;
-	u32 supported;
 
 	DBG(SMC_DEBUG_FUNC, dev, "--> %s\n", __func__);
+	cmd->maxtxpkt = 1;
+	cmd->maxrxpkt = 1;
 
 	if (lp->phy_type != 0) {
 		spin_lock_irqsave(&lp->lock, flags);
-		mii_ethtool_get_link_ksettings(&lp->mii, cmd);
+		ret = mii_ethtool_gset(&lp->mii, cmd);
 		spin_unlock_irqrestore(&lp->lock, flags);
 	} else {
-		supported = SUPPORTED_10baseT_Half |
+		cmd->supported = SUPPORTED_10baseT_Half |
 				SUPPORTED_10baseT_Full |
 				SUPPORTED_TP | SUPPORTED_AUI;
 
 		if (lp->ctl_rspeed == 10)
-			cmd->base.speed = SPEED_10;
+			ethtool_cmd_speed_set(cmd, SPEED_10);
 		else if (lp->ctl_rspeed == 100)
-			cmd->base.speed = SPEED_100;
+			ethtool_cmd_speed_set(cmd, SPEED_100);
 
-		cmd->base.autoneg = AUTONEG_DISABLE;
-		cmd->base.port = 0;
+		cmd->autoneg = AUTONEG_DISABLE;
+		if (lp->mii.phy_id==1)
+			cmd->transceiver = XCVR_INTERNAL;
+		else
+			cmd->transceiver = XCVR_EXTERNAL;
+		cmd->port = 0;
 		SMC_GET_PHY_SPECIAL(lp, lp->mii.phy_id, status);
-		cmd->base.duplex =
+		cmd->duplex =
 			(status & (PHY_SPECIAL_SPD_10FULL_ | PHY_SPECIAL_SPD_100FULL_)) ?
 				DUPLEX_FULL : DUPLEX_HALF;
-
-		ethtool_convert_legacy_u32_to_link_mode(
-			cmd->link_modes.supported, supported);
-
+		ret = 0;
 	}
 
-	return 0;
+	return ret;
 }
 
 static int
-smc911x_ethtool_set_link_ksettings(struct net_device *dev,
-				   const struct ethtool_link_ksettings *cmd)
+smc911x_ethtool_setsettings(struct net_device *dev, struct ethtool_cmd *cmd)
 {
 	struct smc911x_local *lp = netdev_priv(dev);
 	int ret;
@@ -1484,18 +1495,16 @@ smc911x_ethtool_set_link_ksettings(struct net_device *dev,
 
 	if (lp->phy_type != 0) {
 		spin_lock_irqsave(&lp->lock, flags);
-		ret = mii_ethtool_set_link_ksettings(&lp->mii, cmd);
+		ret = mii_ethtool_sset(&lp->mii, cmd);
 		spin_unlock_irqrestore(&lp->lock, flags);
 	} else {
-		if (cmd->base.autoneg != AUTONEG_DISABLE ||
-		    cmd->base.speed != SPEED_10 ||
-		    (cmd->base.duplex != DUPLEX_HALF &&
-		     cmd->base.duplex != DUPLEX_FULL) ||
-		    (cmd->base.port != PORT_TP &&
-		     cmd->base.port != PORT_AUI))
+		if (cmd->autoneg != AUTONEG_DISABLE ||
+			cmd->speed != SPEED_10 ||
+			(cmd->duplex != DUPLEX_HALF && cmd->duplex != DUPLEX_FULL) ||
+			(cmd->port != PORT_TP && cmd->port != PORT_AUI))
 			return -EINVAL;
 
-		lp->ctl_rfduplx = cmd->base.duplex == DUPLEX_FULL;
+		lp->ctl_rfduplx = cmd->duplex == DUPLEX_FULL;
 
 		ret = 0;
 	}
@@ -1677,6 +1686,8 @@ static int smc911x_ethtool_geteeprom_len(struct net_device *dev)
 }
 
 static const struct ethtool_ops smc911x_ethtool_ops = {
+	.get_settings	 = smc911x_ethtool_getsettings,
+	.set_settings	 = smc911x_ethtool_setsettings,
 	.get_drvinfo	 = smc911x_ethtool_getdrvinfo,
 	.get_msglevel	 = smc911x_ethtool_getmsglevel,
 	.set_msglevel	 = smc911x_ethtool_setmsglevel,
@@ -1687,8 +1698,6 @@ static const struct ethtool_ops smc911x_ethtool_ops = {
 	.get_eeprom_len = smc911x_ethtool_geteeprom_len,
 	.get_eeprom = smc911x_ethtool_geteeprom,
 	.set_eeprom = smc911x_ethtool_seteeprom,
-	.get_link_ksettings	 = smc911x_ethtool_get_link_ksettings,
-	.set_link_ksettings	 = smc911x_ethtool_set_link_ksettings,
 };
 
 /*
@@ -1744,6 +1753,7 @@ static const struct net_device_ops smc911x_netdev_ops = {
 	.ndo_start_xmit		= smc911x_hard_start_xmit,
 	.ndo_tx_timeout		= smc911x_timeout,
 	.ndo_set_rx_mode	= smc911x_set_multicast_list,
+	.ndo_change_mtu		= eth_change_mtu,
 	.ndo_validate_addr	= eth_validate_addr,
 	.ndo_set_mac_address	= eth_mac_addr,
 #ifdef CONFIG_NET_POLL_CONTROLLER
@@ -1784,6 +1794,7 @@ static int smc911x_probe(struct net_device *dev)
 #ifdef SMC_USE_DMA
 	struct dma_slave_config	config;
 	dma_cap_mask_t mask;
+	struct pxad_param param;
 #endif
 
 	DBG(SMC_DEBUG_FUNC, dev, "--> %s\n", __func__);
@@ -1959,8 +1970,15 @@ static int smc911x_probe(struct net_device *dev)
 
 	dma_cap_zero(mask);
 	dma_cap_set(DMA_SLAVE, mask);
-	lp->rxdma = dma_request_channel(mask, NULL, NULL);
-	lp->txdma = dma_request_channel(mask, NULL, NULL);
+	param.prio = PXAD_PRIO_LOWEST;
+	param.drcmr = -1UL;
+
+	lp->rxdma =
+		dma_request_slave_channel_compat(mask, pxad_filter_fn,
+						 &param, &dev->dev, "rx");
+	lp->txdma =
+		dma_request_slave_channel_compat(mask, pxad_filter_fn,
+						 &param, &dev->dev, "tx");
 	lp->rxdma_active = 0;
 	lp->txdma_active = 0;
 

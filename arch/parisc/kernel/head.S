@@ -22,7 +22,7 @@
 #include <linux/linkage.h>
 #include <linux/init.h>
 
-	.level	PA_ASM_LEVEL
+	.level	LEVEL
 
 	__INITDATA
 ENTRY(boot_args)
@@ -138,16 +138,6 @@ $pgt_fill_loop:
 	std		%dp,0x18(%r10)
 #endif
 
-#ifdef CONFIG_64BIT
-	/* Get PDCE_PROC for monarch CPU. */
-#define MEM_PDC_LO 0x388
-#define MEM_PDC_HI 0x35C
-	ldw             MEM_PDC_LO(%r0),%r3
-	ldw             MEM_PDC_HI(%r0),%r10
-	depd            %r10, 31, 32, %r3        /* move to upper word */
-#endif
-
-
 #ifdef CONFIG_SMP
 	/* Set the smp rendezvous address into page zero.
 	** It would be safer to do this in init_smp_config() but
@@ -206,6 +196,12 @@ common_stext:
         ** Someday, palo might not do this for the Monarch either.
         */
 2:
+#define MEM_PDC_LO 0x388
+#define MEM_PDC_HI 0x35C
+	ldw             MEM_PDC_LO(%r0),%r3
+	ldw             MEM_PDC_HI(%r0),%r6
+	depd            %r6, 31, 32, %r3        /* move to upper word */
+
 	mfctl		%cr30,%r6		/* PCX-W2 firmware bug */
 
 	ldo             PDC_PSW(%r0),%arg0              /* 21 */
@@ -258,7 +254,7 @@ stext_pdc_ret:
 	ldo		R%PA(fault_vector_11)(%r10),%r10
 
 $is_pa20:
-	.level		PA_ASM_LEVEL /* restore 1.1 || 2.0w */
+	.level		LEVEL /* restore 1.1 || 2.0w */
 #endif /*!CONFIG_64BIT*/
 	load32		PA(fault_vector_20),%r10
 
@@ -271,8 +267,6 @@ $install_iva:
 	.align 128
 aligned_rfi:
 	pcxt_ssm_bug
-
-	copy		%r3, %arg0	/* PDCE_PROC for smp_callin() */
 
 	rsm		PSW_SM_QUIET,%r0	/* off troublesome PSW bits */
 	/* Don't need NOPs, have 8 compliant insn before rfi */
@@ -329,19 +323,6 @@ smp_slave_stext:
 	mtsp	   %r0,%sr6
 	mtsp	   %r0,%sr7
 
-#ifdef CONFIG_64BIT
-	/*
-	 *  Enable Wide mode early, in case the task_struct for the idle
-	 *  task in smp_init_current_idle_task was allocated above 4GB.
-	 */
-1:	mfia            %rp             /* clear upper part of pcoq */
-	ldo             2f-1b(%rp),%rp
-	depdi           0,31,32,%rp
-	bv              (%rp)
-	ssm             PSW_SM_W,%r0
-2:
-#endif
-
 	/*  Initialize the SP - monarch sets up smp_init_current_idle_task */
 	load32		PA(smp_init_current_idle_task),%sp
 	LDREG		0(%sp),%sp	/* load task address */
@@ -376,7 +357,7 @@ smp_slave_stext:
 ENDPROC(parisc_kernel_start)
 
 #ifndef CONFIG_64BIT
-	.section .data..ro_after_init
+	.section .data..read_mostly
 
 	.align	4
 	.export	$global$,data

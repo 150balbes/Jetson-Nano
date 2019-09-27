@@ -11,11 +11,6 @@ Required properties:
 - clocks: Clock driving the hardware; used to figure out the baud rate
   divisor.
 
-
-Optional properties:
-
-- clock-names: Should be "refclk".
-
 Example:
 
 	uart0: serial@14e00520 {
@@ -24,7 +19,6 @@ Example:
 		interrupt-parent = <&periph_intc>;
 		interrupts = <2>;
 		clocks = <&periph_clk>;
-		clock-names = "refclk";
 	};
 
 	clocks {

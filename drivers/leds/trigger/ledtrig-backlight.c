@@ -1,9 +1,13 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Backlight emulation LED trigger
  *
  * Copyright 2008 (C) Rodolfo Giometti <giometti@linux.it>
  * Copyright 2008 (C) Eurotech S.p.A. <info@eurotech.it>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
  */
 
 #include <linux/module.h>
@@ -60,7 +64,8 @@ static int fb_notifier_callback(struct notifier_block *p,
 static ssize_t bl_trig_invert_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
 {
-	struct bl_trig_notifier *n = led_trigger_get_drvdata(dev);
+	struct led_classdev *led = dev_get_drvdata(dev);
+	struct bl_trig_notifier *n = led->trigger_data;
 
 	return sprintf(buf, "%u\n", n->invert);
 }
@@ -68,8 +73,8 @@ static ssize_t bl_trig_invert_show(struct device *dev,
 static ssize_t bl_trig_invert_store(struct device *dev,
 		struct device_attribute *attr, const char *buf, size_t num)
 {
-	struct led_classdev *led = led_trigger_get_led(dev);
-	struct bl_trig_notifier *n = led_trigger_get_drvdata(dev);
+	struct led_classdev *led = dev_get_drvdata(dev);
+	struct bl_trig_notifier *n = led->trigger_data;
 	unsigned long invert;
 	int ret;
 
@@ -92,22 +97,22 @@ static ssize_t bl_trig_invert_store(struct device *dev,
 }
 static DEVICE_ATTR(inverted, 0644, bl_trig_invert_show, bl_trig_invert_store);
 
-static struct attribute *bl_trig_attrs[] = {
-	&dev_attr_inverted.attr,
-	NULL,
-};
-ATTRIBUTE_GROUPS(bl_trig);
-
-static int bl_trig_activate(struct led_classdev *led)
+static void bl_trig_activate(struct led_classdev *led)
 {
 	int ret;
 
 	struct bl_trig_notifier *n;
 
 	n = kzalloc(sizeof(struct bl_trig_notifier), GFP_KERNEL);
-	if (!n)
-		return -ENOMEM;
-	led_set_trigger_data(led, n);
+	led->trigger_data = n;
+	if (!n) {
+		dev_err(led->dev, "unable to allocate backlight trigger\n");
+		return;
+	}
+
+	ret = device_create_file(led->dev, &dev_attr_inverted);
+	if (ret)
+		goto err_invert;
 
 	n->led = led;
 	n->brightness = led->brightness;
@@ -117,25 +122,46 @@ static int bl_trig_activate(struct led_classdev *led)
 	ret = fb_register_client(&n->notifier);
 	if (ret)
 		dev_err(led->dev, "unable to register backlight trigger\n");
+	led->activated = true;
 
-	return 0;
+	return;
+
+err_invert:
+	led->trigger_data = NULL;
+	kfree(n);
 }
 
 static void bl_trig_deactivate(struct led_classdev *led)
 {
-	struct bl_trig_notifier *n = led_get_trigger_data(led);
+	struct bl_trig_notifier *n =
+		(struct bl_trig_notifier *) led->trigger_data;
 
-	fb_unregister_client(&n->notifier);
-	kfree(n);
+	if (led->activated) {
+		device_remove_file(led->dev, &dev_attr_inverted);
+		fb_unregister_client(&n->notifier);
+		kfree(n);
+		led->activated = false;
+	}
 }
 
 static struct led_trigger bl_led_trigger = {
 	.name		= "backlight",
 	.activate	= bl_trig_activate,
-	.deactivate	= bl_trig_deactivate,
-	.groups		= bl_trig_groups,
+	.deactivate	= bl_trig_deactivate
 };
-module_led_trigger(bl_led_trigger);
+
+static int __init bl_trig_init(void)
+{
+	return led_trigger_register(&bl_led_trigger);
+}
+
+static void __exit bl_trig_exit(void)
+{
+	led_trigger_unregister(&bl_led_trigger);
+}
+
+module_init(bl_trig_init);
+module_exit(bl_trig_exit);
 
 MODULE_AUTHOR("Rodolfo Giometti <giometti@linux.it>");
 MODULE_DESCRIPTION("Backlight emulation LED trigger");

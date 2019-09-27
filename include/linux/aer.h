@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * Copyright (C) 2006 Intel Corp.
  *     Tom Long Nguyen (tom.l.nguyen@intel.com)
@@ -14,7 +13,6 @@
 #define AER_NONFATAL			0
 #define AER_FATAL			1
 #define AER_CORRECTABLE			2
-#define DPC_FATAL			3
 
 struct pci_dev;
 
@@ -41,7 +39,7 @@ struct aer_capability_regs {
 };
 
 #if defined(CONFIG_PCIEAER)
-/* PCIe port driver needs this function to enable AER */
+/* pci-e port driver needs this function to enable aer */
 int pci_enable_pcie_error_reporting(struct pci_dev *dev);
 int pci_disable_pcie_error_reporting(struct pci_dev *dev);
 int pci_cleanup_aer_uncorrect_error_status(struct pci_dev *dev);
@@ -69,6 +67,7 @@ void cper_print_aer(struct pci_dev *dev, int aer_severity,
 		    struct aer_capability_regs *aer);
 int cper_severity_to_aer(int cper_severity);
 void aer_recover_queue(int domain, unsigned int bus, unsigned int devfn,
-		       int severity, struct aer_capability_regs *aer_regs);
+		       int severity,
+		       struct aer_capability_regs *aer_regs);
 #endif //_AER_H_
 

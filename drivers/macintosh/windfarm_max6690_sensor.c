@@ -1,8 +1,9 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Windfarm PowerMac thermal control.  MAX6690 sensor.
  *
  * Copyright (C) 2005 Paul Mackerras, IBM Corp. <paulus@samba.org>
+ *
+ * Use and redistribute under the terms of the GNU GPL v2.
  */
 #include <linux/types.h>
 #include <linux/errno.h>
@@ -54,7 +55,7 @@ static void wf_max6690_release(struct wf_sensor *sr)
 	kfree(max);
 }
 
-static const struct wf_sensor_ops wf_max6690_ops = {
+static struct wf_sensor_ops wf_max6690_ops = {
 	.get_value	= wf_max6690_get,
 	.release	= wf_max6690_release,
 	.owner		= THIS_MODULE,

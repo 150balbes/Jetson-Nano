@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __NV_TYPE_H__
 #define __NV_TYPE_H__
 

@@ -246,8 +246,8 @@ static void carl9170_release_dev_space(struct ar9170 *ar, struct sk_buff *skb)
 	 *    of available memory blocks, so the number can
 	 *    never execeed the mem_blocks count.
 	 */
-	if (WARN_ON_ONCE(cookie == 0) ||
-	    WARN_ON_ONCE(cookie > ar->fw.mem_blocks))
+	if (unlikely(WARN_ON_ONCE(cookie == 0) ||
+	    WARN_ON_ONCE(cookie > ar->fw.mem_blocks)))
 		return;
 
 	atomic_add(DIV_ROUND_UP(skb->len, ar->fw.mem_block_size),
@@ -830,12 +830,10 @@ static bool carl9170_tx_rts_check(struct ar9170 *ar,
 	case CARL9170_ERP_AUTO:
 		if (ampdu)
 			break;
-		/* fall through */
 
 	case CARL9170_ERP_MAC80211:
 		if (!(rate->flags & IEEE80211_TX_RC_USE_RTS_CTS))
 			break;
-		/* fall through */
 
 	case CARL9170_ERP_RTS:
 		if (likely(!multi))
@@ -856,7 +854,6 @@ static bool carl9170_tx_cts_check(struct ar9170 *ar,
 	case CARL9170_ERP_MAC80211:
 		if (!(rate->flags & IEEE80211_TX_RC_USE_CTS_PROTECT))
 			break;
-		/* fall through */
 
 	case CARL9170_ERP_CTS:
 		return true;
@@ -994,7 +991,7 @@ static int carl9170_tx_prepare(struct ar9170 *ar,
 	else
 		cvif = NULL;
 
-	txc = skb_push(skb, sizeof(*txc));
+	txc = (void *)skb_push(skb, sizeof(*txc));
 	memset(txc, 0, sizeof(*txc));
 
 	SET_VAL(CARL9170_TX_SUPER_MISC_QUEUE, txc->s.misc, hw_queue);

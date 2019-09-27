@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * driver.c - device id matching, driver model, etc.
  *

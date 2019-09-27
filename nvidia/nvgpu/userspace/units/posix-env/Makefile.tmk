@@ -1,0 +1,40 @@
+################################### tell Emacs this is a -*- makefile-gmake -*-
+#
+# Copyright (c) 2018 NVIDIA CORPORATION.  All Rights Reserved.
+#
+# NVIDIA CORPORATION and its licensors retain all intellectual property
+# and proprietary rights in and to this software, related documentation
+# and any modifications thereto.  Any use, reproduction, disclosure or
+# distribution of this software and related documentation without an express
+# license agreement from NVIDIA CORPORATION is strictly prohibited.
+#
+# tmake for SW Mobile component makefile
+#
+###############################################################################
+
+ifdef NV_COMPONENT_FLAG_SHARED_LIBRARY_SECTION
+include $(NV_BUILD_START_COMPONENT)
+
+NV_COMPONENT_NAME		:= posix-env
+NV_COMPONENT_SOURCES		:= posix-env.c
+NV_COMPONENT_OWN_INTERFACE_DIR	:= .
+NV_COMPONENT_CFLAGS		+= -D__NVGPU_POSIX__
+
+NV_COMPONENT_NEEDED_INTERFACE_DIRS := \
+                                $(NV_SOURCE)/kernel/nvgpu/drivers/gpu/nvgpu \
+                                $(NV_SOURCE)/kernel/nvgpu/userspace
+
+NV_COMPONENT_SYSTEMIMAGE_DIR    := $(NV_SYSTEMIMAGE_TEST_EXECUTABLE_DIR)/nvgpu_unit/units
+systemimage:: $(NV_COMPONENT_SYSTEMIMAGE_DIR)
+$(NV_COMPONENT_SYSTEMIMAGE_DIR) : $(NV_SYSTEMIMAGE_TEST_EXECUTABLE_DIR)
+	$(MKDIR_P) $@
+
+include $(NV_BUILD_SHARED_LIBRARY)
+
+endif
+
+# Local Variables:
+# indent-tabs-mode: t
+# tab-width: 8
+# End:
+# vi: set tabstop=8 noexpandtab:

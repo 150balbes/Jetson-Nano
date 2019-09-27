@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * arch/alpha/lib/ev6-stxncpy.S
  * 21264 version contributed by Rick Gorton <rick.gorton@api-networks.com>

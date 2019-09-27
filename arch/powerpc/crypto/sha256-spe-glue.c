@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Glue code for SHA-256 implementation for SPE instructions (PPC)
  *
@@ -6,6 +5,12 @@
  * about the SPE registers so it can run from interrupt context.
  *
  * Copyright (c) 2015 Markus Stockhausen <stockhausen@collogia.de>
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License as published by the Free
+ * Software Foundation; either version 2 of the License, or (at your option)
+ * any later version.
+ *
  */
 
 #include <crypto/internal/hash.h>
@@ -226,6 +231,7 @@ static struct shash_alg algs[2] = { {
 		.cra_name	=	"sha256",
 		.cra_driver_name=	"sha256-ppc-spe",
 		.cra_priority	=	300,
+		.cra_flags	=	CRYPTO_ALG_TYPE_SHASH,
 		.cra_blocksize	=	SHA256_BLOCK_SIZE,
 		.cra_module	=	THIS_MODULE,
 	}
@@ -242,6 +248,7 @@ static struct shash_alg algs[2] = { {
 		.cra_name	=	"sha224",
 		.cra_driver_name=	"sha224-ppc-spe",
 		.cra_priority	=	300,
+		.cra_flags	=	CRYPTO_ALG_TYPE_SHASH,
 		.cra_blocksize	=	SHA224_BLOCK_SIZE,
 		.cra_module	=	THIS_MODULE,
 	}

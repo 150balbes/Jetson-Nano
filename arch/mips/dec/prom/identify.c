@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * identify.c: machine identification code.
  *
@@ -8,7 +7,7 @@
 #include <linux/init.h>
 #include <linux/kernel.h>
 #include <linux/mc146818rtc.h>
-#include <linux/export.h>
+#include <linux/module.h>
 #include <linux/string.h>
 #include <linux/types.h>
 

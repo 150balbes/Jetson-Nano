@@ -1,9 +1,21 @@
-// SPDX-License-Identifier: GPL-2.0
 /******************************************************************************
  * rtl8712_cmd.c
  *
  * Copyright(c) 2007 - 2010 Realtek Corporation. All rights reserved.
  * Linux device driver for RTL8192SU
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of version 2 of the GNU General Public License as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License along with
+ * this program; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin Street, Fifth Floor, Boston, MA 02110, USA
  *
  * Modifications for inclusion into the Linux staging tree are
  * Copyright(c) 2010 Larry Finger. All rights reserved.
@@ -20,7 +32,6 @@
 #include <linux/kernel.h>
 #include <linux/errno.h>
 #include <linux/slab.h>
-#include <linux/sched/signal.h>
 #include <linux/module.h>
 #include <linux/kref.h>
 #include <linux/netdevice.h>
@@ -147,9 +158,17 @@ static u8 write_macreg_hdl(struct _adapter *padapter, u8 *pbuf)
 
 static u8 read_bbreg_hdl(struct _adapter *padapter, u8 *pbuf)
 {
+	u32 val;
+	void (*pcmd_callback)(struct _adapter *dev, struct cmd_obj	*pcmd);
 	struct cmd_obj *pcmd  = (struct cmd_obj *)pbuf;
 
-	r8712_free_cmd_obj(pcmd);
+	if (pcmd->rsp && pcmd->rspsz > 0)
+		memcpy(pcmd->rsp, (u8 *)&val, pcmd->rspsz);
+	pcmd_callback = cmd_callback[pcmd->cmdcode].callback;
+	if (!pcmd_callback)
+		r8712_free_cmd_obj(pcmd);
+	else
+		pcmd_callback(padapter, pcmd);
 	return H2C_SUCCESS;
 }
 
@@ -295,38 +314,33 @@ void r8712_fw_cmd_data(struct _adapter *pAdapter, u32 *value, u8 flag)
 int r8712_cmd_thread(void *context)
 {
 	struct cmd_obj *pcmd;
-	unsigned int cmdsz, wr_sz;
-	__le32 *pcmdbuf;
+	unsigned int cmdsz, wr_sz, *pcmdbuf;
 	struct tx_desc *pdesc;
 	void (*pcmd_callback)(struct _adapter *dev, struct cmd_obj *pcmd);
 	struct _adapter *padapter = context;
-	struct	cmd_priv *pcmdpriv = &padapter->cmdpriv;
-	struct completion *cmd_queue_comp =
-		&pcmdpriv->cmd_queue_comp;
-	struct mutex *pwctrl_lock = &padapter->pwrctrlpriv.mutex_lock;
+	struct	cmd_priv	*pcmdpriv = &(padapter->cmdpriv);
 
 	allow_signal(SIGTERM);
 	while (1) {
-		if (wait_for_completion_interruptible(cmd_queue_comp))
+		if (wait_for_completion_interruptible(&pcmdpriv->cmd_queue_comp))
 			break;
-		if (padapter->driver_stopped || padapter->surprise_removed)
+		if (padapter->bDriverStopped || padapter->bSurpriseRemoved)
 			break;
 		if (r8712_register_cmd_alive(padapter) != _SUCCESS)
 			continue;
 _next:
-		pcmd = r8712_dequeue_cmd(&pcmdpriv->cmd_queue);
+		pcmd = r8712_dequeue_cmd(&(pcmdpriv->cmd_queue));
 		if (!(pcmd)) {
 			r8712_unregister_cmd_alive(padapter);
 			continue;
 		}
-		pcmdbuf = (__le32 *)pcmdpriv->cmd_buf;
+		pcmdbuf = (unsigned int *)pcmdpriv->cmd_buf;
 		pdesc = (struct tx_desc *)pcmdbuf;
 		memset(pdesc, 0, TXDESC_SIZE);
 		pcmd = cmd_hdl_filter(padapter, pcmd);
 		if (pcmd) { /* if pcmd != NULL, cmd will be handled by f/w */
 			struct dvobj_priv *pdvobj = &padapter->dvobjpriv;
 			u8 blnPending = 0;
-			u16 cmdcode = pcmd->cmdcode;
 
 			pcmdpriv->cmd_issued_cnt++;
 			cmdsz = round_up(pcmd->cmdsz, 8);
@@ -340,11 +354,11 @@ _next:
 				if ((wr_sz % 64) == 0)
 					blnPending = 1;
 			}
-			if (blnPending) { /* 32 bytes for TX Desc - 8 offset */
+			if (blnPending) /* 32 bytes for TX Desc - 8 offset */
 				pdesc->txdw0 |= cpu_to_le32(((TXDESC_SIZE +
 						OFFSET_SZ + 8) << OFFSET_SHT) &
 						0x00ff0000);
-			} else {
+			else {
 				pdesc->txdw0 |= cpu_to_le32(((TXDESC_SIZE +
 							      OFFSET_SZ) <<
 							      OFFSET_SHT) &
@@ -360,8 +374,8 @@ _next:
 			pcmdbuf += 2; /* 8 bytes alignment */
 			memcpy((u8 *)pcmdbuf, pcmd->parmbuf, pcmd->cmdsz);
 			while (check_cmd_fifo(padapter, wr_sz) == _FAIL) {
-				if (padapter->driver_stopped ||
-				    padapter->surprise_removed)
+				if (padapter->bDriverStopped ||
+				    padapter->bSurpriseRemoved)
 					break;
 				msleep(100);
 				continue;
@@ -369,20 +383,22 @@ _next:
 			if (blnPending)
 				wr_sz += 8;   /* Append 8 bytes */
 			r8712_write_mem(padapter, RTL8712_DMA_H2CCMD, wr_sz,
-					(u8 *)pdesc);
+				       (u8 *)pdesc);
 			pcmdpriv->cmd_seq++;
-			if (cmdcode == GEN_CMD_CODE(_CreateBss)) {
+			if (pcmd->cmdcode == GEN_CMD_CODE(_CreateBss)) {
 				pcmd->res = H2C_SUCCESS;
-				pcmd_callback = cmd_callback[cmdcode].callback;
+				pcmd_callback = cmd_callback[pcmd->
+						cmdcode].callback;
 				if (pcmd_callback)
 					pcmd_callback(padapter, pcmd);
 				continue;
 			}
-			if (cmdcode == GEN_CMD_CODE(_SetPwrMode)) {
+			if (pcmd->cmdcode == GEN_CMD_CODE(_SetPwrMode)) {
 				if (padapter->pwrctrlpriv.bSleep) {
-					mutex_lock(pwctrl_lock);
+					mutex_lock(&padapter->
+						       pwrctrlpriv.mutex_lock);
 					r8712_set_rpwm(padapter, PS_STATE_S2);
-					mutex_unlock(pwctrl_lock);
+					mutex_unlock(&padapter->pwrctrlpriv.mutex_lock);
 				}
 			}
 			r8712_free_cmd_obj(pcmd);
@@ -399,7 +415,7 @@ _next:
 	}
 	/* free all cmd_obj resources */
 	do {
-		pcmd = r8712_dequeue_cmd(&pcmdpriv->cmd_queue);
+		pcmd = r8712_dequeue_cmd(&(pcmdpriv->cmd_queue));
 		if (!pcmd)
 			break;
 		r8712_free_cmd_obj(pcmd);
@@ -408,12 +424,12 @@ _next:
 	thread_exit();
 }
 
-void r8712_event_handle(struct _adapter *padapter, __le32 *peventbuf)
+void r8712_event_handle(struct _adapter *padapter, uint *peventbuf)
 {
 	u8 evt_code, evt_seq;
 	u16 evt_sz;
 	void (*event_callback)(struct _adapter *dev, u8 *pbuf);
-	struct	evt_priv *pevt_priv = &padapter->evtpriv;
+	struct	evt_priv *pevt_priv = &(padapter->evtpriv);
 
 	if (!peventbuf)
 		goto _abort_event_;

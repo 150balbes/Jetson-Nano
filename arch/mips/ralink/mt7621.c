@@ -1,5 +1,7 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License version 2 as published
+ * by the Free Software Foundation.
  *
  * Copyright (C) 2015 Nikolay Martynov <mar.kolya@gmail.com>
  * Copyright (C) 2015 John Crispin <john@phrozen.org>
@@ -7,10 +9,12 @@
 
 #include <linux/kernel.h>
 #include <linux/init.h>
+#include <linux/module.h>
 
 #include <asm/mipsregs.h>
 #include <asm/smp-ops.h>
-#include <asm/mips-cps.h>
+#include <asm/mips-cm.h>
+#include <asm/mips-cpc.h>
 #include <asm/mach-ralink/ralink_regs.h>
 #include <asm/mach-ralink/mt7621.h>
 
@@ -168,28 +172,6 @@ void prom_soc_init(struct ralink_soc_info *soc_info)
 	u32 n1;
 	u32 rev;
 
-	/* Early detection of CMP support */
-	mips_cm_probe();
-	mips_cpc_probe();
-
-	if (mips_cps_numiocu(0)) {
-		/*
-		 * mips_cm_probe() wipes out bootloader
-		 * config for CM regions and we have to configure them
-		 * again. This SoC cannot talk to pamlbus devices
-		 * witout proper iocu region set up.
-		 *
-		 * FIXME: it would be better to do this with values
-		 * from DT, but we need this very early because
-		 * without this we cannot talk to pretty much anything
-		 * including serial.
-		 */
-		write_gcr_reg0_base(MT7621_PALMBUS_BASE);
-		write_gcr_reg0_mask(~MT7621_PALMBUS_SIZE |
-				    CM_GCR_REGn_MASK_CMTGT_IOCU0);
-		__sync();
-	}
-
 	n0 = __raw_readl(sysc + SYSC_REG_CHIP_NAME0);
 	n1 = __raw_readl(sysc + SYSC_REG_CHIP_NAME1);
 
@@ -199,7 +181,7 @@ void prom_soc_init(struct ralink_soc_info *soc_info)
 	} else {
 		panic("mt7621: unknown SoC, n0:%08x n1:%08x\n", n0, n1);
 	}
-	ralink_soc = MT762X_SOC_MT7621AT;
+
 	rev = __raw_readl(sysc + SYSC_REG_CHIP_REV);
 
 	snprintf(soc_info->sys_type, RAMIPS_SYS_TYPE_LEN,
@@ -214,6 +196,26 @@ void prom_soc_init(struct ralink_soc_info *soc_info)
 
 	rt2880_pinmux_data = mt7621_pinmux_data;
 
+	/* Early detection of CMP support */
+	mips_cm_probe();
+	mips_cpc_probe();
+
+	if (mips_cm_numiocu()) {
+		/*
+		 * mips_cm_probe() wipes out bootloader
+		 * config for CM regions and we have to configure them
+		 * again. This SoC cannot talk to pamlbus devices
+		 * witout proper iocu region set up.
+		 *
+		 * FIXME: it would be better to do this with values
+		 * from DT, but we need this very early because
+		 * without this we cannot talk to pretty much anything
+		 * including serial.
+		 */
+		write_gcr_reg0_base(MT7621_PALMBUS_BASE);
+		write_gcr_reg0_mask(~MT7621_PALMBUS_SIZE |
+				    CM_GCR_REGn_MASK_CMTGT_IOCU0);
+	}
 
 	if (!register_cps_smp_ops())
 		return;

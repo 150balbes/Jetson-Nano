@@ -34,7 +34,6 @@
 #include <linux/regulator/max8973-regulator.h>
 #include <linux/regulator/of_regulator.h>
 #include <linux/gpio.h>
-#include <linux/gpio/consumer.h>
 #include <linux/of_gpio.h>
 #include <linux/i2c.h>
 #include <linux/slab.h>
@@ -115,10 +114,13 @@ struct max8973_chip {
 	struct regulator_desc desc;
 	struct regmap *regmap;
 	bool enable_external_control;
+	bool enable_dvs_sleep_control;
+	int enable_gpio;
 	int dvs_gpio;
 	int lru_index[MAX8973_MAX_VOUT_REG];
 	int curr_vout_val[MAX8973_MAX_VOUT_REG];
 	int curr_vout_reg;
+	int sleep_vout_reg;
 	int curr_gpio_val;
 	struct regulator_ops ops;
 	enum device_id id;
@@ -217,6 +219,26 @@ static int max8973_dcdc_set_voltage_sel(struct regulator_dev *rdev,
 	if (gpio_is_valid(max->dvs_gpio)) {
 		gpio_set_value_cansleep(max->dvs_gpio, gpio_val & 0x1);
 		max->curr_gpio_val = gpio_val;
+	}
+	return 0;
+}
+
+static int max8973_dcdc_set_sleep_voltage_sel(struct regulator_dev *rdev,
+		unsigned sel)
+{
+	struct max8973_chip *max = rdev_get_drvdata(rdev);
+	int ret;
+
+	if (gpio_is_valid(max->dvs_gpio) || !max->enable_dvs_sleep_control) {
+		dev_err(max->dev, "Regulator has invalid configuration\n");
+		return -EINVAL;
+	}
+	ret = regmap_update_bits(max->regmap, max->sleep_vout_reg,
+				MAX8973_VOUT_MASK, sel);
+	if (ret < 0) {
+		dev_err(max->dev, "register %d update failed %d\n",
+				max->sleep_vout_reg, ret);
+		return ret;
 	}
 	return 0;
 }
@@ -349,6 +371,7 @@ static const struct regulator_ops max8973_dcdc_ops = {
 	.get_mode		= max8973_dcdc_get_mode,
 	.set_voltage_time_sel	= regulator_set_voltage_time_sel,
 	.set_ramp_delay		= max8973_set_ramp_delay,
+	.set_sleep_voltage_sel	= max8973_dcdc_set_sleep_voltage_sel,
 };
 
 static int max8973_init_dcdc(struct max8973_chip *max,
@@ -567,8 +590,11 @@ static struct max8973_regulator_platform_data *max8973_parse_dt(
 
 	pdata->enable_ext_control = of_property_read_bool(np,
 						"maxim,externally-enable");
+	pdata->enable_gpio = of_get_named_gpio(np, "maxim,enable-gpio", 0);
 	pdata->dvs_gpio = of_get_named_gpio(np, "maxim,dvs-gpio", 0);
 
+	pdata->enable_dvs_sleep_control = of_property_read_bool(np,
+						"maxim,sleep-on-dvs");
 	ret = of_property_read_u32(np, "maxim,dvs-default-state", &pval);
 	if (!ret)
 		pdata->dvs_def_state = pval;
@@ -632,8 +658,6 @@ static int max8973_probe(struct i2c_client *client,
 	struct max8973_chip *max;
 	bool pdata_from_dt = false;
 	unsigned int chip_id;
-	struct gpio_desc *gpiod;
-	enum gpiod_flags gflags;
 	int ret;
 
 	pdata = dev_get_platdata(&client->dev);
@@ -648,7 +672,8 @@ static int max8973_probe(struct i2c_client *client,
 		return -EIO;
 	}
 
-	if (pdata->dvs_gpio == -EPROBE_DEFER)
+	if ((pdata->dvs_gpio == -EPROBE_DEFER) ||
+		(pdata->enable_gpio == -EPROBE_DEFER))
 		return -EPROBE_DEFER;
 
 	max = devm_kzalloc(&client->dev, sizeof(*max), GFP_KERNEL);
@@ -696,10 +721,18 @@ static int max8973_probe(struct i2c_client *client,
 	max->desc.n_voltages = MAX8973_BUCK_N_VOLTAGE;
 
 	max->dvs_gpio = (pdata->dvs_gpio) ? pdata->dvs_gpio : -EINVAL;
+	max->enable_gpio = (pdata->enable_gpio) ? pdata->enable_gpio : -EINVAL;
 	max->enable_external_control = pdata->enable_ext_control;
 	max->curr_gpio_val = pdata->dvs_def_state;
 	max->curr_vout_reg = MAX8973_VOUT + pdata->dvs_def_state;
 	max->junction_temp_warning = pdata->junction_temp_warning;
+	max->sleep_vout_reg = MAX8973_VOUT;
+	max->enable_dvs_sleep_control = pdata->enable_dvs_sleep_control;
+	if (!pdata->dvs_def_state)
+		max->sleep_vout_reg = MAX8973_VOUT + 1;
+
+	if (gpio_is_valid(max->enable_gpio))
+		max->enable_external_control = true;
 
 	max->lru_index[0] = max->curr_vout_reg;
 
@@ -753,36 +786,27 @@ static int max8973_probe(struct i2c_client *client,
 			break;
 		}
 
-		if (ridata && (ridata->constraints.always_on ||
-			       ridata->constraints.boot_on))
-			gflags = GPIOD_OUT_HIGH;
-		else
-			gflags = GPIOD_OUT_LOW;
-		gflags |= GPIOD_FLAGS_BIT_NONEXCLUSIVE;
-		gpiod = devm_gpiod_get_optional(&client->dev,
-						"maxim,enable",
-						gflags);
-		if (IS_ERR(gpiod))
-			return PTR_ERR(gpiod);
-		if (gpiod) {
-			config.ena_gpiod = gpiod;
-			max->enable_external_control = true;
+		if (gpio_is_valid(max->enable_gpio)) {
+			config.ena_gpio_flags = GPIOF_OUT_INIT_LOW;
+			if (ridata && (ridata->constraints.always_on ||
+					ridata->constraints.boot_on))
+				config.ena_gpio_flags = GPIOF_OUT_INIT_HIGH;
+			config.ena_gpio = max->enable_gpio;
 		}
-
 		break;
 
 	case MAX77621:
-		/*
-		 * We do not let the core switch this regulator on/off,
-		 * we just leave it on.
-		 */
-		gpiod = devm_gpiod_get_optional(&client->dev,
-						"maxim,enable",
-						GPIOD_OUT_HIGH);
-		if (IS_ERR(gpiod))
-			return PTR_ERR(gpiod);
-		if (gpiod)
-			max->enable_external_control = true;
+		if (gpio_is_valid(max->enable_gpio)) {
+			ret = devm_gpio_request_one(&client->dev,
+					max->enable_gpio, GPIOF_OUT_INIT_HIGH,
+					"max8973-en-gpio");
+			if (ret) {
+				dev_err(&client->dev,
+					"gpio_request for gpio %d failed: %d\n",
+					max->enable_gpio, ret);
+				return ret;
+			}
+		}
 
 		max->desc.enable_reg = MAX8973_VOUT;
 		max->desc.enable_mask = MAX8973_VOUT_ENABLE;
@@ -808,13 +832,7 @@ static int max8973_probe(struct i2c_client *client,
 	config.of_node = client->dev.of_node;
 	config.regmap = max->regmap;
 
-	/*
-	 * Register the regulators
-	 * Turn the GPIO descriptor over to the regulator core for
-	 * lifecycle management if we pass an ena_gpiod.
-	 */
-	if (config.ena_gpiod)
-		devm_gpiod_unhinge(&client->dev, config.ena_gpiod);
+	/* Register the regulators */
 	rdev = devm_regulator_register(&client->dev, &max->desc, &config);
 	if (IS_ERR(rdev)) {
 		ret = PTR_ERR(rdev);

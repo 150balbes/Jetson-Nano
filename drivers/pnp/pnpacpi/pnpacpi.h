@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef ACPI_PNP_H
 #define ACPI_PNP_H
 

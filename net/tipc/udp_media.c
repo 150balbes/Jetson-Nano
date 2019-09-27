@@ -44,11 +44,9 @@
 #include <net/sock.h>
 #include <net/ip.h>
 #include <net/udp_tunnel.h>
-#include <net/ipv6_stubs.h>
+#include <net/addrconf.h>
 #include <linux/tipc_netlink.h>
 #include "core.h"
-#include "addr.h"
-#include "net.h"
 #include "bearer.h"
 #include "netlink.h"
 #include "msg.h"
@@ -76,7 +74,6 @@ struct udp_media_addr {
 /* struct udp_replicast - container for UDP remote addresses */
 struct udp_replicast {
 	struct udp_media_addr addr;
-	struct dst_cache dst_cache;
 	struct rcu_head rcu;
 	struct list_head list;
 };
@@ -116,7 +113,7 @@ static void tipc_udp_media_addr_set(struct tipc_media_addr *addr,
 	memcpy(addr->value, ua, sizeof(struct udp_media_addr));
 
 	if (tipc_udp_is_mcast_addr(ua))
-		addr->broadcast = TIPC_BROADCAST_SUPPORT;
+		addr->broadcast = 1;
 }
 
 /* tipc_udp_addr2str - convert ip/udp address to string */
@@ -159,52 +156,47 @@ static int tipc_udp_addr2msg(char *msg, struct tipc_media_addr *a)
 /* tipc_send_msg - enqueue a send request */
 static int tipc_udp_xmit(struct net *net, struct sk_buff *skb,
 			 struct udp_bearer *ub, struct udp_media_addr *src,
-			 struct udp_media_addr *dst, struct dst_cache *cache)
+			 struct udp_media_addr *dst)
 {
-	struct dst_entry *ndst = dst_cache_get(cache);
 	int ttl, err = 0;
+	struct rtable *rt;
 
 	if (dst->proto == htons(ETH_P_IP)) {
-		struct rtable *rt = (struct rtable *)ndst;
-
-		if (!rt) {
-			struct flowi4 fl = {
-				.daddr = dst->ipv4.s_addr,
-				.saddr = src->ipv4.s_addr,
-				.flowi4_mark = skb->mark,
-				.flowi4_proto = IPPROTO_UDP
-			};
-			rt = ip_route_output_key(net, &fl);
-			if (IS_ERR(rt)) {
-				err = PTR_ERR(rt);
-				goto tx_error;
-			}
-			dst_cache_set_ip4(cache, &rt->dst, fl.saddr);
+		struct flowi4 fl = {
+			.daddr = dst->ipv4.s_addr,
+			.saddr = src->ipv4.s_addr,
+			.flowi4_mark = skb->mark,
+			.flowi4_proto = IPPROTO_UDP
+		};
+		rt = ip_route_output_key(net, &fl);
+		if (IS_ERR(rt)) {
+			err = PTR_ERR(rt);
+			goto tx_error;
 		}
 
+		skb->dev = rt->dst.dev;
 		ttl = ip4_dst_hoplimit(&rt->dst);
 		udp_tunnel_xmit_skb(rt, ub->ubsock->sk, skb, src->ipv4.s_addr,
 				    dst->ipv4.s_addr, 0, ttl, 0, src->port,
 				    dst->port, false, true);
 #if IS_ENABLED(CONFIG_IPV6)
 	} else {
-		if (!ndst) {
-			struct flowi6 fl6 = {
-				.flowi6_oif = ub->ifindex,
-				.daddr = dst->ipv6,
-				.saddr = src->ipv6,
-				.flowi6_proto = IPPROTO_UDP
-			};
-			err = ipv6_stub->ipv6_dst_lookup(net, ub->ubsock->sk,
-							 &ndst, &fl6);
-			if (err)
-				goto tx_error;
-			dst_cache_set_ip6(cache, ndst, &fl6.saddr);
-		}
+		struct dst_entry *ndst;
+		struct flowi6 fl6 = {
+			.flowi6_oif = ub->ifindex,
+			.daddr = dst->ipv6,
+			.saddr = src->ipv6,
+			.flowi6_proto = IPPROTO_UDP
+		};
+		err = ipv6_stub->ipv6_dst_lookup(net, ub->ubsock->sk, &ndst,
+						 &fl6);
+		if (err)
+			goto tx_error;
 		ttl = ip6_dst_hoplimit(ndst);
-		err = udp_tunnel6_xmit_skb(ndst, ub->ubsock->sk, skb, NULL,
-					   &src->ipv6, &dst->ipv6, 0, ttl, 0,
-					   src->port, dst->port, false);
+		err = udp_tunnel6_xmit_skb(ndst, ub->ubsock->sk, skb,
+					   ndst->dev, &src->ipv6,
+					   &dst->ipv6, 0, ttl, 0, src->port,
+					   dst->port, false);
 #endif
 	}
 	return err;
@@ -231,15 +223,14 @@ static int tipc_udp_send_msg(struct net *net, struct sk_buff *skb,
 	}
 
 	skb_set_inner_protocol(skb, htons(ETH_P_TIPC));
-	ub = rcu_dereference(b->media_ptr);
+	ub = rcu_dereference_rtnl(b->media_ptr);
 	if (!ub) {
 		err = -ENODEV;
 		goto out;
 	}
 
-	if (addr->broadcast != TIPC_REPLICAST_SUPPORT)
-		return tipc_udp_xmit(net, skb, ub, src, dst,
-				     &ub->rcast.dst_cache);
+	if (!addr->broadcast || list_empty(&ub->rcast.list))
+		return tipc_udp_xmit(net, skb, ub, src, dst);
 
 	/* Replicast, send an skb to each configured IP address */
 	list_for_each_entry_rcu(rcast, &ub->rcast.list, list) {
@@ -251,10 +242,11 @@ static int tipc_udp_send_msg(struct net *net, struct sk_buff *skb,
 			goto out;
 		}
 
-		err = tipc_udp_xmit(net, _skb, ub, src, &rcast->addr,
-				    &rcast->dst_cache);
-		if (err)
+		err = tipc_udp_xmit(net, _skb, ub, src, &rcast->addr);
+		if (err) {
+			kfree_skb(_skb);
 			goto out;
+		}
 	}
 	err = 0;
 out:
@@ -296,11 +288,6 @@ static int tipc_udp_rcast_add(struct tipc_bearer *b,
 	if (!rcast)
 		return -ENOMEM;
 
-	if (dst_cache_init(&rcast->dst_cache, GFP_ATOMIC)) {
-		kfree(rcast);
-		return -ENOMEM;
-	}
-
 	memcpy(&rcast->addr, addr, sizeof(struct udp_media_addr));
 
 	if (ntohs(addr->proto) == ETH_P_IP)
@@ -309,7 +296,7 @@ static int tipc_udp_rcast_add(struct tipc_bearer *b,
 	else if (ntohs(addr->proto) == ETH_P_IPV6)
 		pr_info("New replicast peer: %pI6\n", &rcast->addr.ipv6);
 #endif
-	b->bcast_addr.broadcast = TIPC_REPLICAST_SUPPORT;
+
 	list_add_rcu(&rcast->list, &ub->rcast.list);
 	return 0;
 }
@@ -367,21 +354,25 @@ static int tipc_udp_recv(struct sock *sk, struct sk_buff *skb)
 	skb_pull(skb, sizeof(struct udphdr));
 	hdr = buf_msg(skb);
 
-	b = rcu_dereference(ub->bearer);
+	rcu_read_lock();
+	b = rcu_dereference_rtnl(ub->bearer);
 	if (!b)
-		goto out;
+		goto rcu_out;
 
 	if (b && test_bit(0, &b->up)) {
 		tipc_rcv(sock_net(sk), skb, b);
+		rcu_read_unlock();
 		return 0;
 	}
 
 	if (unlikely(msg_user(hdr) == LINK_CONFIG)) {
 		err = tipc_udp_rcast_disc(b, skb);
 		if (err)
-			goto out;
+			goto rcu_out;
 	}
 
+rcu_out:
+	rcu_read_unlock();
 out:
 	kfree_skb(skb);
 	return 0;
@@ -460,9 +451,9 @@ int tipc_udp_nl_dump_remoteip(struct sk_buff *skb, struct netlink_callback *cb)
 		if (!attrs[TIPC_NLA_BEARER])
 			return -EINVAL;
 
-		err = nla_parse_nested_deprecated(battrs, TIPC_NLA_BEARER_MAX,
-						  attrs[TIPC_NLA_BEARER],
-						  tipc_nl_bearer_policy, NULL);
+		err = nla_parse_nested(battrs, TIPC_NLA_BEARER_MAX,
+				       attrs[TIPC_NLA_BEARER],
+				       tipc_nl_bearer_policy);
 		if (err)
 			return err;
 
@@ -490,7 +481,7 @@ int tipc_udp_nl_dump_remoteip(struct sk_buff *skb, struct netlink_callback *cb)
 		}
 	}
 
-	ub = rtnl_dereference(b->media_ptr);
+	ub = rcu_dereference_rtnl(b->media_ptr);
 	if (!ub) {
 		rtnl_unlock();
 		return -EINVAL;
@@ -532,11 +523,11 @@ int tipc_udp_nl_add_bearer_data(struct tipc_nl_msg *msg, struct tipc_bearer *b)
 	struct udp_bearer *ub;
 	struct nlattr *nest;
 
-	ub = rtnl_dereference(b->media_ptr);
+	ub = rcu_dereference_rtnl(b->media_ptr);
 	if (!ub)
 		return -ENODEV;
 
-	nest = nla_nest_start_noflag(msg->skb, TIPC_NLA_BEARER_UDP_OPTS);
+	nest = nla_nest_start(msg->skb, TIPC_NLA_BEARER_UDP_OPTS);
 	if (!nest)
 		goto msg_full;
 
@@ -614,7 +605,7 @@ int tipc_udp_nl_bearer_add(struct tipc_bearer *b, struct nlattr *attr)
 	struct nlattr *opts[TIPC_NLA_UDP_MAX + 1];
 	struct udp_media_addr *dst;
 
-	if (nla_parse_nested_deprecated(opts, TIPC_NLA_UDP_MAX, attr, tipc_nl_udp_policy, NULL))
+	if (nla_parse_nested(opts, TIPC_NLA_UDP_MAX, attr, tipc_nl_udp_policy))
 		return -EINVAL;
 
 	if (!opts[TIPC_NLA_UDP_REMOTE])
@@ -655,8 +646,6 @@ static int tipc_udp_enable(struct net *net, struct tipc_bearer *b,
 	struct udp_port_cfg udp_conf = {0};
 	struct udp_tunnel_sock_cfg tuncfg = {NULL};
 	struct nlattr *opts[TIPC_NLA_UDP_MAX + 1];
-	u8 node_id[NODE_ID_LEN] = {0,};
-	int rmcast = 0;
 
 	ub = kzalloc(sizeof(*ub), GFP_ATOMIC);
 	if (!ub)
@@ -667,7 +656,9 @@ static int tipc_udp_enable(struct net *net, struct tipc_bearer *b,
 	if (!attrs[TIPC_NLA_BEARER_UDP_OPTS])
 		goto err;
 
-	if (nla_parse_nested_deprecated(opts, TIPC_NLA_UDP_MAX, attrs[TIPC_NLA_BEARER_UDP_OPTS], tipc_nl_udp_policy, NULL))
+	if (nla_parse_nested(opts, TIPC_NLA_UDP_MAX,
+			     attrs[TIPC_NLA_BEARER_UDP_OPTS],
+			     tipc_nl_udp_policy))
 		goto err;
 
 	if (!opts[TIPC_NLA_UDP_LOCAL] || !opts[TIPC_NLA_UDP_REMOTE]) {
@@ -685,27 +676,8 @@ static int tipc_udp_enable(struct net *net, struct tipc_bearer *b,
 	if (err)
 		goto err;
 
-	if (remote.proto != local.proto) {
-		err = -EINVAL;
-		goto err;
-	}
-
-	/* Checking remote ip address */
-	rmcast = tipc_udp_is_mcast_addr(&remote);
-
-	/* Autoconfigure own node identity if needed */
-	if (!tipc_own_id(net)) {
-		memcpy(node_id, local.ipv6.in6_u.u6_addr8, 16);
-		tipc_net_init(net, node_id, 0);
-	}
-	if (!tipc_own_id(net)) {
-		pr_warn("Failed to set node id, please configure manually\n");
-		err = -EINVAL;
-		goto err;
-	}
-
 	b->bcast_addr.media_id = TIPC_MEDIA_TYPE_UDP;
-	b->bcast_addr.broadcast = TIPC_BROADCAST_SUPPORT;
+	b->bcast_addr.broadcast = 1;
 	rcu_assign_pointer(b->media_ptr, ub);
 	rcu_assign_pointer(ub->bearer, b);
 	tipc_udp_media_addr_set(&b->addr, &local);
@@ -718,12 +690,7 @@ static int tipc_udp_enable(struct net *net, struct tipc_bearer *b,
 			goto err;
 		}
 		udp_conf.family = AF_INET;
-
-		/* Switch to use ANY to receive packets from group */
-		if (rmcast)
-			udp_conf.local_ip.s_addr = htonl(INADDR_ANY);
-		else
-			udp_conf.local_ip.s_addr = local.ipv4.s_addr;
+		udp_conf.local_ip.s_addr = htonl(INADDR_ANY);
 		udp_conf.use_udp_checksums = false;
 		ub->ifindex = dev->ifindex;
 		if (tipc_mtu_bad(dev, sizeof(struct iphdr) +
@@ -731,16 +698,14 @@ static int tipc_udp_enable(struct net *net, struct tipc_bearer *b,
 			err = -EINVAL;
 			goto err;
 		}
-		b->mtu = b->media->mtu;
+		b->mtu = dev->mtu - sizeof(struct iphdr)
+			- sizeof(struct udphdr);
 #if IS_ENABLED(CONFIG_IPV6)
 	} else if (local.proto == htons(ETH_P_IPV6)) {
 		udp_conf.family = AF_INET6;
 		udp_conf.use_udp6_tx_checksums = true;
 		udp_conf.use_udp6_rx_checksums = true;
-		if (rmcast)
-			udp_conf.local_ip6 = in6addr_any;
-		else
-			udp_conf.local_ip6 = local.ipv6;
+		udp_conf.local_ip6 = in6addr_any;
 		b->mtu = 1280;
 #endif
 	} else {
@@ -757,28 +722,22 @@ static int tipc_udp_enable(struct net *net, struct tipc_bearer *b,
 	tuncfg.encap_destroy = NULL;
 	setup_udp_tunnel_sock(net, ub->ubsock, &tuncfg);
 
-	err = dst_cache_init(&ub->rcast.dst_cache, GFP_ATOMIC);
-	if (err)
-		goto free;
-
 	/**
 	 * The bcast media address port is used for all peers and the ip
 	 * is used if it's a multicast address.
 	 */
 	memcpy(&b->bcast_addr.value, &remote, sizeof(remote));
-	if (rmcast)
+	if (tipc_udp_is_mcast_addr(&remote))
 		err = enable_mcast(ub, &remote);
 	else
 		err = tipc_udp_rcast_add(b, &remote);
 	if (err)
-		goto free;
+		goto err;
 
 	return 0;
-
-free:
-	dst_cache_destroy(&ub->rcast.dst_cache);
-	udp_tunnel_sock_release(ub->ubsock);
 err:
+	if (ub->ubsock)
+		udp_tunnel_sock_release(ub->ubsock);
 	kfree(ub);
 	return err;
 }
@@ -790,13 +749,12 @@ static void cleanup_bearer(struct work_struct *work)
 	struct udp_replicast *rcast, *tmp;
 
 	list_for_each_entry_safe(rcast, tmp, &ub->rcast.list, list) {
-		dst_cache_destroy(&rcast->dst_cache);
 		list_del_rcu(&rcast->list);
 		kfree_rcu(rcast, rcu);
 	}
 
-	dst_cache_destroy(&ub->rcast.dst_cache);
-	udp_tunnel_sock_release(ub->ubsock);
+	if (ub->ubsock)
+		udp_tunnel_sock_release(ub->ubsock);
 	synchronize_net();
 	kfree(ub);
 }
@@ -806,12 +764,13 @@ static void tipc_udp_disable(struct tipc_bearer *b)
 {
 	struct udp_bearer *ub;
 
-	ub = rtnl_dereference(b->media_ptr);
+	ub = rcu_dereference_rtnl(b->media_ptr);
 	if (!ub) {
 		pr_err("UDP bearer instance not found\n");
 		return;
 	}
-	sock_set_flag(ub->ubsock->sk, SOCK_DEAD);
+	if (ub->ubsock)
+		sock_set_flag(ub->ubsock->sk, SOCK_DEAD);
 	RCU_INIT_POINTER(ub->bearer, NULL);
 
 	/* sock_release need to be done outside of rtnl lock */
@@ -829,7 +788,6 @@ struct tipc_media udp_media_info = {
 	.priority	= TIPC_DEF_LINK_PRI,
 	.tolerance	= TIPC_DEF_LINK_TOL,
 	.window		= TIPC_DEF_LINK_WIN,
-	.mtu		= TIPC_DEF_LINK_UDP_MTU,
 	.type_id	= TIPC_MEDIA_TYPE_UDP,
 	.hwaddr_len	= 0,
 	.name		= "udp"

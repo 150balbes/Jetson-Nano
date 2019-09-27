@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * tracing clocks
  *
@@ -19,7 +18,6 @@
 #include <linux/module.h>
 #include <linux/percpu.h>
 #include <linux/sched.h>
-#include <linux/sched/clock.h>
 #include <linux/ktime.h>
 #include <linux/trace_clock.h>
 
@@ -97,7 +95,7 @@ u64 notrace trace_clock_global(void)
 	int this_cpu;
 	u64 now;
 
-	raw_local_irq_save(flags);
+	local_irq_save(flags);
 
 	this_cpu = raw_smp_processor_id();
 	now = sched_clock_cpu(this_cpu);
@@ -123,7 +121,7 @@ u64 notrace trace_clock_global(void)
 	arch_spin_unlock(&trace_clock_struct.lock);
 
  out:
-	raw_local_irq_restore(flags);
+	local_irq_restore(flags);
 
 	return now;
 }

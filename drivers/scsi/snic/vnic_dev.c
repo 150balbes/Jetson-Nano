@@ -225,9 +225,10 @@ int svnic_dev_alloc_desc_ring(struct vnic_dev *vdev, struct vnic_dev_ring *ring,
 {
 	svnic_dev_desc_ring_size(ring, desc_count, desc_size);
 
-	ring->descs_unaligned = dma_alloc_coherent(&vdev->pdev->dev,
-			ring->size_unaligned, &ring->base_addr_unaligned,
-			GFP_KERNEL);
+	ring->descs_unaligned = pci_alloc_consistent(vdev->pdev,
+		ring->size_unaligned,
+		&ring->base_addr_unaligned);
+
 	if (!ring->descs_unaligned) {
 		pr_err("Failed to allocate ring (size=%d), aborting\n",
 			(int)ring->size);
@@ -250,7 +251,7 @@ int svnic_dev_alloc_desc_ring(struct vnic_dev *vdev, struct vnic_dev_ring *ring,
 void svnic_dev_free_desc_ring(struct vnic_dev *vdev, struct vnic_dev_ring *ring)
 {
 	if (ring->descs) {
-		dma_free_coherent(&vdev->pdev->dev,
+		pci_free_consistent(vdev->pdev,
 			ring->size_unaligned,
 			ring->descs_unaligned,
 			ring->base_addr_unaligned);
@@ -469,9 +470,9 @@ int svnic_dev_fw_info(struct vnic_dev *vdev,
 	int err = 0;
 
 	if (!vdev->fw_info) {
-		vdev->fw_info = dma_alloc_coherent(&vdev->pdev->dev,
+		vdev->fw_info = pci_alloc_consistent(vdev->pdev,
 			sizeof(struct vnic_devcmd_fw_info),
-			&vdev->fw_info_pa, GFP_KERNEL);
+			&vdev->fw_info_pa);
 		if (!vdev->fw_info)
 			return -ENOMEM;
 
@@ -533,8 +534,8 @@ int svnic_dev_stats_dump(struct vnic_dev *vdev, struct vnic_stats **stats)
 	int wait = VNIC_DVCMD_TMO;
 
 	if (!vdev->stats) {
-		vdev->stats = dma_alloc_coherent(&vdev->pdev->dev,
-			sizeof(struct vnic_stats), &vdev->stats_pa, GFP_KERNEL);
+		vdev->stats = pci_alloc_consistent(vdev->pdev,
+			sizeof(struct vnic_stats), &vdev->stats_pa);
 		if (!vdev->stats)
 			return -ENOMEM;
 	}
@@ -606,9 +607,9 @@ int svnic_dev_notify_set(struct vnic_dev *vdev, u16 intr)
 	int wait = VNIC_DVCMD_TMO;
 
 	if (!vdev->notify) {
-		vdev->notify = dma_alloc_coherent(&vdev->pdev->dev,
+		vdev->notify = pci_alloc_consistent(vdev->pdev,
 			sizeof(struct vnic_devcmd_notify),
-			&vdev->notify_pa, GFP_KERNEL);
+			&vdev->notify_pa);
 		if (!vdev->notify)
 			return -ENOMEM;
 	}
@@ -696,21 +697,21 @@ void svnic_dev_unregister(struct vnic_dev *vdev)
 {
 	if (vdev) {
 		if (vdev->notify)
-			dma_free_coherent(&vdev->pdev->dev,
+			pci_free_consistent(vdev->pdev,
 				sizeof(struct vnic_devcmd_notify),
 				vdev->notify,
 				vdev->notify_pa);
 		if (vdev->linkstatus)
-			dma_free_coherent(&vdev->pdev->dev,
+			pci_free_consistent(vdev->pdev,
 				sizeof(u32),
 				vdev->linkstatus,
 				vdev->linkstatus_pa);
 		if (vdev->stats)
-			dma_free_coherent(&vdev->pdev->dev,
+			pci_free_consistent(vdev->pdev,
 				sizeof(struct vnic_stats),
 				vdev->stats, vdev->stats_pa);
 		if (vdev->fw_info)
-			dma_free_coherent(&vdev->pdev->dev,
+			pci_free_consistent(vdev->pdev,
 				sizeof(struct vnic_devcmd_fw_info),
 				vdev->fw_info, vdev->fw_info_pa);
 		if (vdev->devcmd2)

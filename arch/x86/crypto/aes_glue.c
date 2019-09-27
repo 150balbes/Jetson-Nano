@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Glue Code for the asm optimized version of the AES Cipher Algorithm
  *

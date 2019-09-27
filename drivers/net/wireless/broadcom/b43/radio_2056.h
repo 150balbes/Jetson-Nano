@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef B43_RADIO_2056_H_
 #define B43_RADIO_2056_H_
 

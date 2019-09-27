@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Driver for AMD7930 sound chips found on Sparcs.
  * Copyright (C) 2002, 2008 David S. Miller <davem@davemloft.net>
@@ -667,7 +666,7 @@ static snd_pcm_uframes_t snd_amd7930_capture_pointer(struct snd_pcm_substream *s
 }
 
 /* Playback and capture have identical properties.  */
-static const struct snd_pcm_hardware snd_amd7930_pcm_hw =
+static struct snd_pcm_hardware snd_amd7930_pcm_hw =
 {
 	.info			= (SNDRV_PCM_INFO_MMAP |
 				   SNDRV_PCM_INFO_MMAP_VALID |
@@ -734,7 +733,7 @@ static int snd_amd7930_hw_free(struct snd_pcm_substream *substream)
 	return snd_pcm_lib_free_pages(substream);
 }
 
-static const struct snd_pcm_ops snd_amd7930_playback_ops = {
+static struct snd_pcm_ops snd_amd7930_playback_ops = {
 	.open		=	snd_amd7930_playback_open,
 	.close		=	snd_amd7930_playback_close,
 	.ioctl		=	snd_pcm_lib_ioctl,
@@ -745,7 +744,7 @@ static const struct snd_pcm_ops snd_amd7930_playback_ops = {
 	.pointer	=	snd_amd7930_playback_pointer,
 };
 
-static const struct snd_pcm_ops snd_amd7930_capture_ops = {
+static struct snd_pcm_ops snd_amd7930_capture_ops = {
 	.open		=	snd_amd7930_capture_open,
 	.close		=	snd_amd7930_capture_close,
 	.ioctl		=	snd_pcm_lib_ioctl,

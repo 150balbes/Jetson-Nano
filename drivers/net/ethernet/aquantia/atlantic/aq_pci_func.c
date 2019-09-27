@@ -1,7 +1,10 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * aQuantia Corporation Network Driver
  * Copyright (C) 2014-2017 aQuantia Corporation. All rights reserved
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms and conditions of the GNU General Public License,
+ * version 2, as published by the Free Software Foundation.
  */
 
 /* File aq_pci_func.c: Definition of PCI functions. */
@@ -16,8 +19,6 @@
 #include "aq_pci_func.h"
 #include "hw_atl/hw_atl_a0.h"
 #include "hw_atl/hw_atl_b0.h"
-#include "aq_filters.h"
-#include "aq_drvinfo.h"
 
 static const struct pci_device_id aq_pci_tbl[] = {
 	{ PCI_VDEVICE(AQUANTIA, AQ_DEVICE_ID_0001), },
@@ -39,6 +40,9 @@ static const struct pci_device_id aq_pci_tbl[] = {
 	{ PCI_VDEVICE(AQUANTIA, AQ_DEVICE_ID_AQC109S), },
 	{ PCI_VDEVICE(AQUANTIA, AQ_DEVICE_ID_AQC111S), },
 	{ PCI_VDEVICE(AQUANTIA, AQ_DEVICE_ID_AQC112S), },
+
+	{ PCI_VDEVICE(AQUANTIA, AQ_DEVICE_ID_AQC111E), },
+	{ PCI_VDEVICE(AQUANTIA, AQ_DEVICE_ID_AQC112E), },
 
 	{}
 };
@@ -69,6 +73,9 @@ static const struct aq_board_revision_s hw_atl_boards[] = {
 	{ AQ_DEVICE_ID_AQC109S,	AQ_HWREV_ANY,	&hw_atl_ops_b1, &hw_atl_b0_caps_aqc109s, },
 	{ AQ_DEVICE_ID_AQC111S,	AQ_HWREV_ANY,	&hw_atl_ops_b1, &hw_atl_b0_caps_aqc111s, },
 	{ AQ_DEVICE_ID_AQC112S,	AQ_HWREV_ANY,	&hw_atl_ops_b1, &hw_atl_b0_caps_aqc112s, },
+
+	{ AQ_DEVICE_ID_AQC111E,	AQ_HWREV_ANY,	&hw_atl_ops_b1, &hw_atl_b0_caps_aqc111e, },
+	{ AQ_DEVICE_ID_AQC112E,	AQ_HWREV_ANY,	&hw_atl_ops_b1, &hw_atl_b0_caps_aqc112e, },
 };
 
 MODULE_DEVICE_TABLE(pci, aq_pci_tbl);
@@ -77,7 +84,7 @@ static int aq_pci_probe_get_hw_by_id(struct pci_dev *pdev,
 				     const struct aq_hw_ops **ops,
 				     const struct aq_hw_caps_s **caps)
 {
-	int i;
+	int i = 0;
 
 	if (pdev->vendor != PCI_VENDOR_ID_AQUANTIA)
 		return -EINVAL;
@@ -100,7 +107,7 @@ static int aq_pci_probe_get_hw_by_id(struct pci_dev *pdev,
 
 int aq_pci_func_init(struct pci_dev *pdev)
 {
-	int err;
+	int err = 0;
 
 	err = pci_set_dma_mask(pdev, DMA_BIT_MASK(64));
 	if (!err) {
@@ -131,50 +138,83 @@ err_exit:
 }
 
 int aq_pci_func_alloc_irq(struct aq_nic_s *self, unsigned int i,
-			  char *name, irq_handler_t irq_handler,
-			  void *irq_arg, cpumask_t *affinity_mask)
+			  char *name, void *aq_vec, cpumask_t *affinity_mask)
 {
 	struct pci_dev *pdev = self->pdev;
-	int err;
+	int err = 0;
 
-	if (pdev->msix_enabled || pdev->msi_enabled)
-		err = request_irq(pci_irq_vector(pdev, i), irq_handler, 0,
-				  name, irq_arg);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 8, 0)
+	if (pdev->msix_enabled)
+		err = request_irq(self->msix_entry[i].vector, aq_vec_isr, 0,
+				  name, aq_vec);
+	else if (pdev->msi_enabled)
+		err = request_irq(pdev->irq, aq_vec_isr, 0,
+				  name, aq_vec);
 	else
-		err = request_irq(pci_irq_vector(pdev, i), aq_vec_isr_legacy,
-				  IRQF_SHARED, name, irq_arg);
+		err = request_irq(pdev->irq, aq_vec_isr_legacy,
+				  IRQF_SHARED, name, aq_vec);
 
 	if (err >= 0) {
 		self->msix_entry_mask |= (1 << i);
+		self->aq_vec[i] = aq_vec;
 
-		if (pdev->msix_enabled && affinity_mask)
+		if (pdev->msix_enabled)
+			irq_set_affinity_hint(self->msix_entry[i].vector,
+					      affinity_mask);
+	}
+#else
+	if (pdev->msix_enabled || pdev->msi_enabled)
+		err = request_irq(pci_irq_vector(pdev, i), aq_vec_isr, 0,
+				  name, aq_vec);
+	else
+		err = request_irq(pci_irq_vector(pdev, i), aq_vec_isr_legacy,
+				  IRQF_SHARED, name, aq_vec);
+
+	if (err >= 0) {
+		self->msix_entry_mask |= (1 << i);
+		self->aq_vec[i] = aq_vec;
+
+		if (pdev->msix_enabled)
 			irq_set_affinity_hint(pci_irq_vector(pdev, i),
 					      affinity_mask);
 	}
-
+#endif
 	return err;
 }
 
 void aq_pci_func_free_irqs(struct aq_nic_s *self)
 {
 	struct pci_dev *pdev = self->pdev;
-	unsigned int i;
-	void *irq_data;
+	unsigned int i = 0U;
 
 	for (i = 32U; i--;) {
 		if (!((1U << i) & self->msix_entry_mask))
 			continue;
-		if (self->aq_nic_cfg.link_irq_vec &&
-		    i == self->aq_nic_cfg.link_irq_vec)
-			irq_data = self;
-		else if (i < AQ_CFG_VECS_MAX)
-			irq_data = self->aq_vec[i];
-		else
-			continue;
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 8, 0)
+		switch (aq_pci_func_get_irq_type(self)) {
+		case AQ_HW_IRQ_MSIX:
+			irq_set_affinity_hint(self->msix_entry[i].vector, NULL);
+			free_irq(self->msix_entry[i].vector, self->aq_vec[i]);
+			break;
+
+		case AQ_HW_IRQ_MSI:
+			free_irq(pdev->irq, self->aq_vec[i]);
+			break;
+
+		case AQ_HW_IRQ_LEGACY:
+			free_irq(pdev->irq, self->aq_vec[i]);
+			break;
+
+		default:
+			break;
+		}
+
+#else
 		if (pdev->msix_enabled)
 			irq_set_affinity_hint(pci_irq_vector(pdev, i), NULL);
-		free_irq(pci_irq_vector(pdev, i), irq_data);
+		free_irq(pci_irq_vector(pdev, i), self->aq_vec[i]);
+#endif
 		self->msix_entry_mask &= ~(1U << i);
 	}
 }
@@ -184,22 +224,46 @@ unsigned int aq_pci_func_get_irq_type(struct aq_nic_s *self)
 	if (self->pdev->msix_enabled)
 		return AQ_HW_IRQ_MSIX;
 	if (self->pdev->msi_enabled)
-		return AQ_HW_IRQ_MSI;
+		return AQ_HW_IRQ_MSIX;
 	return AQ_HW_IRQ_LEGACY;
 }
 
 static void aq_pci_free_irq_vectors(struct aq_nic_s *self)
 {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 7, 0)
+
+	switch (aq_pci_func_get_irq_type(self)) {
+	case AQ_HW_IRQ_MSI:
+		pci_disable_msi(self->pdev);
+		break;
+
+	case AQ_HW_IRQ_MSIX:
+		pci_disable_msix(self->pdev);
+		break;
+
+	case AQ_HW_IRQ_LEGACY:
+		break;
+
+	default:
+		break;
+	}
+
+#else
 	pci_free_irq_vectors(self->pdev);
+
+#endif
 }
 
 static int aq_pci_probe(struct pci_dev *pdev,
 			const struct pci_device_id *pci_id)
 {
-	struct aq_nic_s *self;
-	int err;
+	struct aq_nic_s *self = NULL;
+	int err = 0;
 	struct net_device *ndev;
 	resource_size_t mmio_pa;
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 8, 0)
+	unsigned int i = 0U;
+#endif
 	u32 bar;
 	u32 numvecs;
 
@@ -221,8 +285,6 @@ static int aq_pci_probe(struct pci_dev *pdev,
 	self->pdev = pdev;
 	SET_NETDEV_DEV(ndev, &pdev->dev);
 	pci_set_drvdata(pdev, self);
-
-	mutex_init(&self->fwreq_mutex);
 
 	err = aq_pci_probe_get_hw_by_id(pdev, &self->aq_hw_ops,
 					&aq_nic_get_cfg(self)->aq_hw_caps);
@@ -269,16 +331,30 @@ static int aq_pci_probe(struct pci_dev *pdev,
 	numvecs = min((u8)AQ_CFG_VECS_DEF,
 		      aq_nic_get_cfg(self)->aq_hw_caps->msix_irqs);
 	numvecs = min(numvecs, num_online_cpus());
-	numvecs += AQ_HW_SERVICE_IRQS;
 	/*enable interrupts */
 #if !AQ_CFG_FORCE_LEGACY_INT
-	err = pci_alloc_irq_vectors(self->pdev, 1, numvecs,
-				    PCI_IRQ_MSIX | PCI_IRQ_MSI |
-				    PCI_IRQ_LEGACY);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 7, 0)
+	for (i = 0; i < numvecs; i++)
+		self->msix_entry[i].entry = i;
 
-	if (err < 0)
+	err = pci_enable_msix(self->pdev, self->msix_entry, numvecs);
+
+	if (err < 0) {
+		err = pci_enable_msi(self->pdev);
+
+		if (err < 0)
+			goto err_hwinit;
+	}
+#else
+	numvecs = pci_alloc_irq_vectors(self->pdev, 1, numvecs,
+					PCI_IRQ_MSIX | PCI_IRQ_MSI |
+					PCI_IRQ_LEGACY);
+
+	if (numvecs < 0) {
+		err = numvecs;
 		goto err_hwinit;
-	numvecs = err;
+	}
+#endif
 #endif
 	self->irqvecs = numvecs;
 
@@ -290,8 +366,6 @@ static int aq_pci_probe(struct pci_dev *pdev,
 	err = aq_nic_ndev_register(self);
 	if (err < 0)
 		goto err_register;
-
-	aq_drvinfo_init(ndev);
 
 	return 0;
 
@@ -316,7 +390,6 @@ static void aq_pci_remove(struct pci_dev *pdev)
 	struct aq_nic_s *self = pci_get_drvdata(pdev);
 
 	if (self->ndev) {
-		aq_clear_rxnfc_all_rules(self);
 		if (self->ndev->reg_state == NETREG_REGISTERED)
 			unregister_netdev(self->ndev);
 		aq_nic_free_vectors(self);
@@ -339,7 +412,7 @@ static void aq_pci_shutdown(struct pci_dev *pdev)
 	pci_disable_device(pdev);
 
 	if (system_state == SYSTEM_POWER_OFF) {
-		pci_wake_from_d3(pdev, false);
+		pci_wake_from_d3(pdev, !!self->aq_nic_cfg.wol);
 		pci_set_power_state(pdev, PCI_D3hot);
 	}
 }
@@ -369,13 +442,4 @@ static struct pci_driver aq_pci_ops = {
 	.shutdown = aq_pci_shutdown,
 };
 
-int aq_pci_func_register_driver(void)
-{
-	return pci_register_driver(&aq_pci_ops);
-}
-
-void aq_pci_func_unregister_driver(void)
-{
-	pci_unregister_driver(&aq_pci_ops);
-}
-
+module_pci_driver(aq_pci_ops);

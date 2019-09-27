@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 u32 scx200_gpio_configure(unsigned index, u32 set, u32 clear);
 
 extern unsigned scx200_gpio_base;

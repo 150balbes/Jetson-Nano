@@ -1,11 +1,4 @@
-.. Permission is granted to copy, distribute and/or modify this
-.. document under the terms of the GNU Free Documentation License,
-.. Version 1.1 or any later version published by the Free Software
-.. Foundation, with no Invariant Sections, no Front-Cover Texts
-.. and no Back-Cover Texts. A copy of the license is included at
-.. Documentation/media/uapi/fdl-appendix.rst.
-..
-.. TODO: replace it to GFDL-1.1-or-later WITH no-invariant-sections
+.. -*- coding: utf-8; mode: rst -*-
 
 .. _VIDIOC_SUBSCRIBE_EVENT:
 .. _VIDIOC_UNSUBSCRIBE_EVENT:
@@ -37,7 +30,6 @@ Arguments
     File descriptor returned by :ref:`open() <func-open>`.
 
 ``argp``
-    Pointer to struct :c:type:`v4l2_event_subscription`.
 
 
 Description
@@ -47,7 +39,7 @@ Subscribe or unsubscribe V4L2 event. Subscribed events are dequeued by
 using the :ref:`VIDIOC_DQEVENT` ioctl.
 
 
-.. tabularcolumns:: |p{4.6cm}|p{4.4cm}|p{8.7cm}|
+.. tabularcolumns:: |p{4.4cm}|p{4.4cm}|p{8.7cm}|
 
 .. c:type:: v4l2_event_subscription
 
@@ -80,7 +72,7 @@ using the :ref:`VIDIOC_DQEVENT` ioctl.
 
 
 
-.. tabularcolumns:: |p{6.8cm}|p{2.2cm}|p{8.5cm}|
+.. tabularcolumns:: |p{6.6cm}|p{2.2cm}|p{8.7cm}|
 
 .. _event-flags:
 

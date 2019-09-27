@@ -53,12 +53,12 @@ struct snic_trc {
 
 int snic_trc_init(void);
 void snic_trc_free(void);
-void snic_trc_debugfs_init(void);
+int snic_trc_debugfs_init(void);
 void snic_trc_debugfs_term(void);
 struct snic_trc_data *snic_get_trc_buf(void);
 int snic_get_trc_data(char *buf, int buf_sz);
 
-void snic_debugfs_init(void);
+int snic_debugfs_init(void);
 void snic_debugfs_term(void);
 
 static inline void

@@ -1,6 +1,9 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (C) 2013 Emilio López <emilio@elopez.com.ar>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  *
  * Adjustable factor-based clock implementation
  */
@@ -173,10 +176,10 @@ static const struct clk_ops clk_factors_ops = {
 	.set_rate = clk_factors_set_rate,
 };
 
-static struct clk *__sunxi_factors_register(struct device_node *node,
-					    const struct factors_data *data,
-					    spinlock_t *lock, void __iomem *reg,
-					    unsigned long flags)
+struct clk *sunxi_factors_register(struct device_node *node,
+				   const struct factors_data *data,
+				   spinlock_t *lock,
+				   void __iomem *reg)
 {
 	struct clk *clk;
 	struct clk_factors *factors;
@@ -246,7 +249,7 @@ static struct clk *__sunxi_factors_register(struct device_node *node,
 			parents, i,
 			mux_hw, &clk_mux_ops,
 			&factors->hw, &clk_factors_ops,
-			gate_hw, &clk_gate_ops, CLK_IS_CRITICAL);
+			gate_hw, &clk_gate_ops, 0);
 	if (IS_ERR(clk))
 		goto err_register;
 
@@ -269,31 +272,17 @@ err_factors:
 	return NULL;
 }
 
-struct clk *sunxi_factors_register(struct device_node *node,
-				   const struct factors_data *data,
-				   spinlock_t *lock,
-				   void __iomem *reg)
-{
-	return __sunxi_factors_register(node, data, lock, reg, 0);
-}
-
-struct clk *sunxi_factors_register_critical(struct device_node *node,
-					    const struct factors_data *data,
-					    spinlock_t *lock,
-					    void __iomem *reg)
-{
-	return __sunxi_factors_register(node, data, lock, reg, CLK_IS_CRITICAL);
-}
-
 void sunxi_factors_unregister(struct device_node *node, struct clk *clk)
 {
 	struct clk_hw *hw = __clk_get_hw(clk);
 	struct clk_factors *factors;
+	const char *name;
 
 	if (!hw)
 		return;
 
 	factors = to_clk_factors(hw);
+	name = clk_hw_get_name(hw);
 
 	of_clk_del_provider(node);
 	/* TODO: The composite clock stuff will leak a bit here. */

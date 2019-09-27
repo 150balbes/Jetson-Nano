@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /* net/atm/clip.c - RFC1577 Classical IP over ATM */
 
 /* Written 1995-2000 by Werner Almesberger, EPFL LRC/ICA */
@@ -61,7 +60,7 @@ static int to_atmarpd(enum atmarp_ctrl_type type, int itf, __be32 ip)
 	skb = alloc_skb(sizeof(struct atmarp_ctrl), GFP_ATOMIC);
 	if (!skb)
 		return -ENOMEM;
-	ctrl = skb_put(skb, sizeof(struct atmarp_ctrl));
+	ctrl = (struct atmarp_ctrl *)skb_put(skb, sizeof(struct atmarp_ctrl));
 	ctrl->type = type;
 	ctrl->itf_num = itf;
 	ctrl->ip = ip;
@@ -107,7 +106,7 @@ static void unlink_clip_vcc(struct clip_vcc *clip_vcc)
 			entry->expires = jiffies - 1;
 			/* force resolution or expiration */
 			error = neigh_update(entry->neigh, NULL, NUD_NONE,
-					     NEIGH_UPDATE_F_ADMIN, 0);
+					     NEIGH_UPDATE_F_ADMIN);
 			if (error)
 				pr_crit("neigh_update failed with %d\n", error);
 			goto out;
@@ -138,11 +137,11 @@ static int neigh_check_cb(struct neighbour *n)
 	if (entry->vccs || time_before(jiffies, entry->expires))
 		return 0;
 
-	if (refcount_read(&n->refcnt) > 1) {
+	if (atomic_read(&n->refcnt) > 1) {
 		struct sk_buff *skb;
 
 		pr_debug("destruction postponed with ref %d\n",
-			 refcount_read(&n->refcnt));
+			 atomic_read(&n->refcnt));
 
 		while ((skb = skb_dequeue(&n->arp_queue)) != NULL)
 			dev_kfree_skb(skb);
@@ -154,7 +153,7 @@ static int neigh_check_cb(struct neighbour *n)
 	return 1;
 }
 
-static void idle_timer_check(struct timer_list *unused)
+static void idle_timer_check(unsigned long dummy)
 {
 	write_lock(&arp_tbl.lock);
 	__neigh_for_each_release(&arp_tbl, neigh_check_cb);
@@ -346,8 +345,8 @@ static netdev_tx_t clip_start_xmit(struct sk_buff *skb,
 		return NETDEV_TX_OK;
 	}
 	rt = (struct rtable *) dst;
-	if (rt->rt_gw_family == AF_INET)
-		daddr = &rt->rt_gw4;
+	if (rt->rt_gateway)
+		daddr = &rt->rt_gateway;
 	else
 		daddr = &ip_hdr(skb)->daddr;
 	n = dst_neigh_lookup(dst, daddr);
@@ -382,7 +381,8 @@ static netdev_tx_t clip_start_xmit(struct sk_buff *skb,
 		memcpy(here, llc_oui, sizeof(llc_oui));
 		((__be16 *) here)[3] = skb->protocol;
 	}
-	atm_account_tx(vcc, skb);
+	atomic_add(skb->truesize, &sk_atm(vcc)->sk_wmem_alloc);
+	ATM_SKB(skb)->atm_options = vcc->atm_options;
 	entry->vccs->last_use = jiffies;
 	pr_debug("atm_skb(%p)->vcc(%p)->dev(%p)\n", skb, vcc, vcc->dev);
 	old = xchg(&entry->vccs->xoff, 1);	/* assume XOFF ... */
@@ -481,7 +481,7 @@ static int clip_setentry(struct atm_vcc *vcc, __be32 ip)
 		link_vcc(clip_vcc, entry);
 	}
 	error = neigh_update(neigh, llc_oui, NUD_PERMANENT,
-			     NEIGH_UPDATE_F_OVERRIDE | NEIGH_UPDATE_F_ADMIN, 0);
+			     NEIGH_UPDATE_F_OVERRIDE | NEIGH_UPDATE_F_ADMIN);
 	neigh_release(neigh);
 	return error;
 }
@@ -617,7 +617,7 @@ static void atmarpd_close(struct atm_vcc *vcc)
 	module_put(THIS_MODULE);
 }
 
-static const struct atmdev_ops atmarpd_dev_ops = {
+static struct atmdev_ops atmarpd_dev_ops = {
 	.close = atmarpd_close
 };
 
@@ -767,7 +767,7 @@ static void atmarp_info(struct seq_file *seq, struct neighbour *n,
 			seq_printf(seq, "(resolving)\n");
 		else
 			seq_printf(seq, "(expired, ref %d)\n",
-				   refcount_read(&entry->neigh->refcnt));
+				   atomic_read(&entry->neigh->refcnt));
 	} else if (!svc) {
 		seq_printf(seq, "%d.%d.%d\n",
 			   clip_vcc->vcc->dev->number,
@@ -863,6 +863,20 @@ static const struct seq_operations arp_seq_ops = {
 	.stop	= neigh_seq_stop,
 	.show	= clip_seq_show,
 };
+
+static int arp_seq_open(struct inode *inode, struct file *file)
+{
+	return seq_open_net(inode, file, &arp_seq_ops,
+			    sizeof(struct clip_seq_state));
+}
+
+static const struct file_operations arp_seq_fops = {
+	.open		= arp_seq_open,
+	.read		= seq_read,
+	.llseek		= seq_lseek,
+	.release	= seq_release_net,
+	.owner		= THIS_MODULE
+};
 #endif
 
 static void atm_clip_exit_noproc(void);
@@ -873,14 +887,13 @@ static int __init atm_clip_init(void)
 	register_netdevice_notifier(&clip_dev_notifier);
 	register_inetaddr_notifier(&clip_inet_notifier);
 
-	timer_setup(&idle_timer, idle_timer_check, 0);
+	setup_timer(&idle_timer, idle_timer_check, 0);
 
 #ifdef CONFIG_PROC_FS
 	{
 		struct proc_dir_entry *p;
 
-		p = proc_create_net("arp", 0444, atm_proc_root, &arp_seq_ops,
-				sizeof(struct clip_seq_state));
+		p = proc_create("arp", S_IRUGO, atm_proc_root, &arp_seq_fops);
 		if (!p) {
 			pr_err("Unable to initialize /proc/net/atm/arp\n");
 			atm_clip_exit_noproc();

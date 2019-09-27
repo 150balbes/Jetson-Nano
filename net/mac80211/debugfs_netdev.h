@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /* routines exported for debugfs handling */
 
 #ifndef __IEEE80211_DEBUGFS_NETDEV_H

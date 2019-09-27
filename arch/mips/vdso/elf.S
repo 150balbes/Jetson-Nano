@@ -1,12 +1,14 @@
-/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * Copyright (C) 2015 Imagination Technologies
  * Author: Alex Smith <alex.smith@imgtec.com>
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License as published by the
+ * Free Software Foundation;  either version 2 of the  License, or (at your
+ * option) any later version.
  */
 
 #include "vdso.h"
-
-#include <asm/isa-rev.h>
 
 #include <linux/elfnote.h>
 #include <linux/version.h>
@@ -38,7 +40,11 @@ __mips_abiflags:
 	.byte	__mips		/* isa_level */
 
 	/* isa_rev */
-	.byte	MIPS_ISA_REV
+#ifdef __mips_isa_rev
+	.byte	__mips_isa_rev
+#else
+	.byte	0
+#endif
 
 	/* gpr_size */
 #ifdef __mips64
@@ -48,7 +54,7 @@ __mips_abiflags:
 #endif
 
 	/* cpr1_size */
-#if (MIPS_ISA_REV >= 6) || defined(__mips64)
+#if (defined(__mips_isa_rev) && __mips_isa_rev >= 6) || defined(__mips64)
 	.byte	2		/* AFL_REG_64 */
 #else
 	.byte	1		/* AFL_REG_32 */

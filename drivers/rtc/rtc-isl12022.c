@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * An I2C driver for the Intersil ISL 12022
  *
@@ -6,6 +5,10 @@
  *
  * Based on the Philips PCF8563 RTC
  * by Alessandro Zummo <a.zummo@towertech.it>.
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License version
+ * 2 as published by the Free Software Foundation.
  */
 
 #include <linux/i2c.h>
@@ -101,9 +104,8 @@ static int isl12022_write_reg(struct i2c_client *client,
  * In the routines that deal directly with the isl12022 hardware, we use
  * rtc_time -- month 0-11, hour 0-23, yr = calendar year-epoch.
  */
-static int isl12022_rtc_read_time(struct device *dev, struct rtc_time *tm)
+static int isl12022_get_datetime(struct i2c_client *client, struct rtc_time *tm)
 {
-	struct i2c_client *client = to_i2c_client(dev);
 	uint8_t buf[ISL12022_REG_INT + 1];
 	int ret;
 
@@ -147,12 +149,11 @@ static int isl12022_rtc_read_time(struct device *dev, struct rtc_time *tm)
 		tm->tm_sec, tm->tm_min, tm->tm_hour,
 		tm->tm_mday, tm->tm_mon, tm->tm_year, tm->tm_wday);
 
-	return 0;
+	return rtc_valid_tm(tm);
 }
 
-static int isl12022_rtc_set_time(struct device *dev, struct rtc_time *tm)
+static int isl12022_set_datetime(struct i2c_client *client, struct rtc_time *tm)
 {
-	struct i2c_client *client = to_i2c_client(dev);
 	struct isl12022 *isl12022 = i2c_get_clientdata(client);
 	size_t i;
 	int ret;
@@ -198,7 +199,7 @@ static int isl12022_rtc_set_time(struct device *dev, struct rtc_time *tm)
 				return ret;
 		}
 
-		isl12022->write_enabled = true;
+		isl12022->write_enabled = 1;
 	}
 
 	/* hours, minutes and seconds */
@@ -225,6 +226,16 @@ static int isl12022_rtc_set_time(struct device *dev, struct rtc_time *tm)
 	}
 
 	return 0;
+}
+
+static int isl12022_rtc_read_time(struct device *dev, struct rtc_time *tm)
+{
+	return isl12022_get_datetime(to_i2c_client(dev), tm);
+}
+
+static int isl12022_rtc_set_time(struct device *dev, struct rtc_time *tm)
+{
+	return isl12022_set_datetime(to_i2c_client(dev), tm);
 }
 
 static const struct rtc_class_ops isl12022_rtc_ops = {

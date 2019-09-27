@@ -1,14 +1,42 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Xenbus code for netif backend
  *
  * Copyright (C) 2005 Rusty Russell <rusty@rustcorp.com.au>
  * Copyright (C) 2005 XenSource Ltd
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, see <http://www.gnu.org/licenses/>.
 */
 
 #include "common.h"
 #include <linux/vmalloc.h>
 #include <linux/rtnetlink.h>
+
+struct backend_info {
+	struct xenbus_device *dev;
+	struct xenvif *vif;
+
+	/* This is the state that will be reflected in xenstore when any
+	 * active hotplug script completes.
+	 */
+	enum xenbus_state state;
+
+	enum xenbus_state frontend_state;
+	struct xenbus_watch hotplug_status_watch;
+	u8 have_hotplug_status_watch:1;
+
+	const char *hotplug_script;
+};
 
 static int connect_data_rings(struct backend_info *be,
 			      struct xenvif_queue *queue);
@@ -158,7 +186,7 @@ static const struct file_operations xenvif_dbg_io_ring_ops_fops = {
 	.write = xenvif_write_io_ring,
 };
 
-static int xenvif_ctrl_show(struct seq_file *m, void *v)
+static int xenvif_read_ctrl(struct seq_file *m, void *v)
 {
 	struct xenvif *vif = m->private;
 
@@ -166,7 +194,19 @@ static int xenvif_ctrl_show(struct seq_file *m, void *v)
 
 	return 0;
 }
-DEFINE_SHOW_ATTRIBUTE(xenvif_ctrl);
+
+static int xenvif_ctrl_open(struct inode *inode, struct file *filp)
+{
+	return single_open(filp, xenvif_read_ctrl, inode->i_private);
+}
+
+static const struct file_operations xenvif_dbg_ctrl_ops_fops = {
+	.owner = THIS_MODULE,
+	.open = xenvif_ctrl_open,
+	.read = seq_read,
+	.llseek = seq_lseek,
+	.release = single_release,
+};
 
 static void xenvif_debugfs_addif(struct xenvif *vif)
 {
@@ -184,7 +224,7 @@ static void xenvif_debugfs_addif(struct xenvif *vif)
 
 			snprintf(filename, sizeof(filename), "io_ring_q%d", i);
 			pfile = debugfs_create_file(filename,
-						    0600,
+						    S_IRUSR | S_IWUSR,
 						    vif->xenvif_dbg_root,
 						    &vif->queues[i],
 						    &xenvif_dbg_io_ring_ops_fops);
@@ -195,10 +235,10 @@ static void xenvif_debugfs_addif(struct xenvif *vif)
 
 		if (vif->ctrl_irq) {
 			pfile = debugfs_create_file("ctrl",
-						    0400,
+						    S_IRUSR,
 						    vif->xenvif_dbg_root,
 						    vif,
-						    &xenvif_ctrl_fops);
+						    &xenvif_dbg_ctrl_ops_fops);
 			if (IS_ERR_OR_NULL(pfile))
 				pr_warn("Creation of ctrl file returned %ld!\n",
 					PTR_ERR(pfile));
@@ -214,7 +254,8 @@ static void xenvif_debugfs_delif(struct xenvif *vif)
 	if (IS_ERR_OR_NULL(xen_netback_dbg_root))
 		return;
 
-	debugfs_remove_recursive(vif->xenvif_dbg_root);
+	if (!IS_ERR_OR_NULL(vif->xenvif_dbg_root))
+		debugfs_remove_recursive(vif->xenvif_dbg_root);
 	vif->xenvif_dbg_root = NULL;
 }
 #endif /* CONFIG_DEBUG_FS */
@@ -444,7 +485,6 @@ static int backend_create_xenvif(struct backend_info *be)
 		return err;
 	}
 	be->vif = vif;
-	vif->be = be;
 
 	kobject_uevent(&dev->dev.kobj, KOBJ_ONLINE);
 	return 0;
@@ -452,31 +492,24 @@ static int backend_create_xenvif(struct backend_info *be)
 
 static void backend_disconnect(struct backend_info *be)
 {
-	struct xenvif *vif = be->vif;
-
-	if (vif) {
-		unsigned int num_queues = vif->num_queues;
+	if (be->vif) {
 		unsigned int queue_index;
 
-		xen_unregister_watchers(vif);
+		xen_unregister_watchers(be->vif);
 #ifdef CONFIG_DEBUG_FS
-		xenvif_debugfs_delif(vif);
+		xenvif_debugfs_delif(be->vif);
 #endif /* CONFIG_DEBUG_FS */
-		xenvif_disconnect_data(vif);
+		xenvif_disconnect_data(be->vif);
+		for (queue_index = 0; queue_index < be->vif->num_queues; ++queue_index)
+			xenvif_deinit_queue(&be->vif->queues[queue_index]);
 
-		/* At this point some of the handlers may still be active
-		 * so we need to have additional synchronization here.
-		 */
-		vif->num_queues = 0;
-		synchronize_net();
+		spin_lock(&be->vif->lock);
+		vfree(be->vif->queues);
+		be->vif->num_queues = 0;
+		be->vif->queues = NULL;
+		spin_unlock(&be->vif->lock);
 
-		for (queue_index = 0; queue_index < num_queues; ++queue_index)
-			xenvif_deinit_queue(&vif->queues[queue_index]);
-
-		vfree(vif->queues);
-		vif->queues = NULL;
-
-		xenvif_disconnect_ctrl(vif);
+		xenvif_disconnect_ctrl(be->vif);
 	}
 }
 
@@ -628,7 +661,7 @@ static void frontend_changed(struct xenbus_device *dev,
 		set_backend_state(be, XenbusStateClosed);
 		if (xenbus_dev_is_online(dev))
 			break;
-		/* fall through - if not online */
+		/* fall through if not online */
 	case XenbusStateUnknown:
 		set_backend_state(be, XenbusStateClosed);
 		device_unregister(&dev->dev);
@@ -701,7 +734,7 @@ static int xen_net_read_mac(struct xenbus_device *dev, u8 mac[])
 }
 
 static void xen_net_rate_changed(struct xenbus_watch *watch,
-				 const char *path, const char *token)
+				const char **vec, unsigned int len)
 {
 	struct xenvif *vif = container_of(watch, struct xenvif, credit_watch);
 	struct xenbus_device *dev = xenvif_to_xenbus_device(vif);
@@ -758,14 +791,17 @@ static void xen_unregister_credit_watch(struct xenvif *vif)
 }
 
 static void xen_mcast_ctrl_changed(struct xenbus_watch *watch,
-				   const char *path, const char *token)
+				   const char **vec, unsigned int len)
 {
 	struct xenvif *vif = container_of(watch, struct xenvif,
 					  mcast_ctrl_watch);
 	struct xenbus_device *dev = xenvif_to_xenbus_device(vif);
+	int val;
 
-	vif->multicast_control = !!xenbus_read_unsigned(dev->otherend,
-					"request-multicast-control", 0);
+	if (xenbus_scanf(XBT_NIL, dev->otherend,
+			 "request-multicast-control", "%d", &val) < 0)
+		val = 0;
+	vif->multicast_control = !!val;
 }
 
 static int xen_register_mcast_ctrl_watch(struct xenbus_device *dev,
@@ -833,8 +869,8 @@ static void unregister_hotplug_status_watch(struct backend_info *be)
 }
 
 static void hotplug_status_changed(struct xenbus_watch *watch,
-				   const char *path,
-				   const char *token)
+				   const char **vec,
+				   unsigned int vec_size)
 {
 	struct backend_info *be = container_of(watch,
 					       struct backend_info,
@@ -864,16 +900,16 @@ static int connect_ctrl_ring(struct backend_info *be)
 	unsigned int evtchn;
 	int err;
 
-	err = xenbus_scanf(XBT_NIL, dev->otherend,
-			   "ctrl-ring-ref", "%u", &val);
-	if (err < 0)
+	err = xenbus_gather(XBT_NIL, dev->otherend,
+			    "ctrl-ring-ref", "%u", &val, NULL);
+	if (err)
 		goto done; /* The frontend does not have a control ring */
 
 	ring_ref = val;
 
-	err = xenbus_scanf(XBT_NIL, dev->otherend,
-			   "event-channel-ctrl", "%u", &val);
-	if (err < 0) {
+	err = xenbus_gather(XBT_NIL, dev->otherend,
+			    "event-channel-ctrl", "%u", &val, NULL);
+	if (err) {
 		xenbus_dev_fatal(dev, err,
 				 "reading %s/event-channel-ctrl",
 				 dev->otherend);
@@ -909,11 +945,14 @@ static void connect(struct backend_info *be)
 	/* Check whether the frontend requested multiple queues
 	 * and read the number requested.
 	 */
-	requested_num_queues = xenbus_read_unsigned(dev->otherend,
-					"multi-queue-num-queues", 1);
-	if (requested_num_queues > xenvif_max_queues) {
+	err = xenbus_scanf(XBT_NIL, dev->otherend,
+			   "multi-queue-num-queues",
+			   "%u", &requested_num_queues);
+	if (err < 0) {
+		requested_num_queues = 1; /* Fall back to single queue */
+	} else if (requested_num_queues > xenvif_max_queues) {
 		/* buggy or malicious guest */
-		xenbus_dev_fatal(dev, -EINVAL,
+		xenbus_dev_fatal(dev, err,
 				 "guest requested %u queues, exceeding the maximum of %u.",
 				 requested_num_queues, xenvif_max_queues);
 		return;
@@ -937,8 +976,8 @@ static void connect(struct backend_info *be)
 	}
 
 	/* Use the number of queues requested by the frontend */
-	be->vif->queues = vzalloc(array_size(requested_num_queues,
-					     sizeof(struct xenvif_queue)));
+	be->vif->queues = vzalloc(requested_num_queues *
+				  sizeof(struct xenvif_queue));
 	if (!be->vif->queues) {
 		xenbus_dev_fatal(dev, -ENOMEM,
 				 "allocating queues");
@@ -1108,7 +1147,7 @@ static int read_xenbus_vif_flags(struct backend_info *be)
 	struct xenvif *vif = be->vif;
 	struct xenbus_device *dev = be->dev;
 	unsigned int rx_copy;
-	int err;
+	int err, val;
 
 	err = xenbus_scanf(XBT_NIL, dev->otherend, "request-rx-copy", "%u",
 			   &rx_copy);
@@ -1124,7 +1163,10 @@ static int read_xenbus_vif_flags(struct backend_info *be)
 	if (!rx_copy)
 		return -EOPNOTSUPP;
 
-	if (!xenbus_read_unsigned(dev->otherend, "feature-rx-notify", 0)) {
+	if (xenbus_scanf(XBT_NIL, dev->otherend,
+			 "feature-rx-notify", "%d", &val) < 0)
+		val = 0;
+	if (!val) {
 		/* - Reduce drain timeout to poll more frequently for
 		 *   Rx requests.
 		 * - Disable Rx stall detection.
@@ -1133,21 +1175,34 @@ static int read_xenbus_vif_flags(struct backend_info *be)
 		be->vif->stall_timeout = 0;
 	}
 
-	vif->can_sg = !!xenbus_read_unsigned(dev->otherend, "feature-sg", 0);
+	if (xenbus_scanf(XBT_NIL, dev->otherend, "feature-sg",
+			 "%d", &val) < 0)
+		val = 0;
+	vif->can_sg = !!val;
 
 	vif->gso_mask = 0;
 
-	if (xenbus_read_unsigned(dev->otherend, "feature-gso-tcpv4", 0))
+	if (xenbus_scanf(XBT_NIL, dev->otherend, "feature-gso-tcpv4",
+			 "%d", &val) < 0)
+		val = 0;
+	if (val)
 		vif->gso_mask |= GSO_BIT(TCPV4);
 
-	if (xenbus_read_unsigned(dev->otherend, "feature-gso-tcpv6", 0))
+	if (xenbus_scanf(XBT_NIL, dev->otherend, "feature-gso-tcpv6",
+			 "%d", &val) < 0)
+		val = 0;
+	if (val)
 		vif->gso_mask |= GSO_BIT(TCPV6);
 
-	vif->ip_csum = !xenbus_read_unsigned(dev->otherend,
-					     "feature-no-csum-offload", 0);
+	if (xenbus_scanf(XBT_NIL, dev->otherend, "feature-no-csum-offload",
+			 "%d", &val) < 0)
+		val = 0;
+	vif->ip_csum = !val;
 
-	vif->ipv6_csum = !!xenbus_read_unsigned(dev->otherend,
-						"feature-ipv6-csum-offload", 0);
+	if (xenbus_scanf(XBT_NIL, dev->otherend, "feature-ipv6-csum-offload",
+			 "%d", &val) < 0)
+		val = 0;
+	vif->ipv6_csum = !!val;
 
 	return 0;
 }

@@ -1,8 +1,21 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Char device for device raw access
  *
  * Copyright (C) 2005-2007  Kristian Hoegsberg <krh@bitplanet.net>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software Foundation,
+ * Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
  */
 
 #include <linux/bug.h>
@@ -1081,7 +1094,7 @@ static int ioctl_queue_iso(struct client *client, union ioctl_arg *arg)
 		return -EINVAL;
 
 	p = (struct fw_cdev_iso_packet __user *)u64_to_uptr(a->packets);
-	if (!access_ok(p, a->size))
+	if (!access_ok(VERIFY_READ, p, a->size))
 		return -EFAULT;
 
 	end = (void __user *)p + a->size;
@@ -1192,7 +1205,7 @@ static int ioctl_get_cycle_timer2(struct client *client, union ioctl_arg *arg)
 {
 	struct fw_cdev_get_cycle_timer2 *a = &arg->get_cycle_timer2;
 	struct fw_card *card = client->device->card;
-	struct timespec64 ts = {0, 0};
+	struct timespec ts = {0, 0};
 	u32 cycle_time;
 	int ret = 0;
 
@@ -1201,9 +1214,9 @@ static int ioctl_get_cycle_timer2(struct client *client, union ioctl_arg *arg)
 	cycle_time = card->driver->read_csr(card, CSR_CYCLE_TIME);
 
 	switch (a->clk_id) {
-	case CLOCK_REALTIME:      ktime_get_real_ts64(&ts);	break;
-	case CLOCK_MONOTONIC:     ktime_get_ts64(&ts);		break;
-	case CLOCK_MONOTONIC_RAW: ktime_get_raw_ts64(&ts);	break;
+	case CLOCK_REALTIME:      getnstimeofday(&ts);	break;
+	case CLOCK_MONOTONIC:     ktime_get_ts(&ts);	break;
+	case CLOCK_MONOTONIC_RAW: getrawmonotonic(&ts);	break;
 	default:
 		ret = -EINVAL;
 	}
@@ -1294,7 +1307,8 @@ static void iso_resource_work(struct work_struct *work)
 	 */
 	if (r->todo == ISO_RES_REALLOC && !success &&
 	    !client->in_shutdown &&
-	    idr_remove(&client->resource_idr, r->resource.handle)) {
+	    idr_find(&client->resource_idr, r->resource.handle)) {
+		idr_remove(&client->resource_idr, r->resource.handle);
 		client_put(client);
 		free = true;
 	}
@@ -1771,17 +1785,17 @@ static int fw_device_op_release(struct inode *inode, struct file *file)
 	return 0;
 }
 
-static __poll_t fw_device_op_poll(struct file *file, poll_table * pt)
+static unsigned int fw_device_op_poll(struct file *file, poll_table * pt)
 {
 	struct client *client = file->private_data;
-	__poll_t mask = 0;
+	unsigned int mask = 0;
 
 	poll_wait(file, &client->wait, pt);
 
 	if (fw_device_is_shutdown(client->device))
-		mask |= EPOLLHUP | EPOLLERR;
+		mask |= POLLHUP | POLLERR;
 	if (!list_empty(&client->event_list))
-		mask |= EPOLLIN | EPOLLRDNORM;
+		mask |= POLLIN | POLLRDNORM;
 
 	return mask;
 }

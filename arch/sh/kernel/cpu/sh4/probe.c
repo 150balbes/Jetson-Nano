@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * arch/sh/kernel/cpu/sh4/probe.c
  *
@@ -6,6 +5,10 @@
  *
  * Copyright (C) 2001 - 2007  Paul Mundt
  * Copyright (C) 2003  Richard Curnow
+ *
+ * This file is subject to the terms and conditions of the GNU General Public
+ * License.  See the file "COPYING" in the main directory of this archive
+ * for more details.
  */
 #include <linux/init.h>
 #include <linux/io.h>

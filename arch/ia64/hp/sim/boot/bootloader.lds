@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 OUTPUT_FORMAT("elf64-ia64-little")
 OUTPUT_ARCH(ia64)
 ENTRY(_start)

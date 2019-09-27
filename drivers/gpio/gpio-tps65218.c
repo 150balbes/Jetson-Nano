@@ -1,8 +1,12 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Copyright 2015 Verifone Int.
  *
  * Author: Nicolas Saenz Julienne <nicolassaenzj@gmail.com>
+ *
+ * This program is free software; you can redistribute it and/or modify i t
+ * under  the terms of the GNU General  Public License as published by th e
+ * Free Software Foundation;  either version 2 of the License, or (at you r
+ * option) any later version.
  *
  * This driver is based on the gpio-tps65912 implementation.
  */
@@ -12,7 +16,6 @@
 #include <linux/errno.h>
 #include <linux/gpio/driver.h>
 #include <linux/platform_device.h>
-#include <linux/regmap.h>
 #include <linux/mfd/tps65218.h>
 
 struct tps65218_gpio {
@@ -27,7 +30,7 @@ static int tps65218_gpio_get(struct gpio_chip *gc, unsigned offset)
 	unsigned int val;
 	int ret;
 
-	ret = regmap_read(tps65218->regmap, TPS65218_REG_ENABLE2, &val);
+	ret = tps65218_reg_read(tps65218, TPS65218_REG_ENABLE2, &val);
 	if (ret)
 		return ret;
 
@@ -135,28 +138,28 @@ static int tps65218_gpio_request(struct gpio_chip *gc, unsigned offset)
 	return 0;
 }
 
-static int tps65218_gpio_set_config(struct gpio_chip *gc, unsigned offset,
-				    unsigned long config)
+static int tps65218_gpio_set_single_ended(struct gpio_chip *gc,
+					  unsigned offset,
+					  enum single_ended_mode mode)
 {
 	struct tps65218_gpio *tps65218_gpio = gpiochip_get_data(gc);
 	struct tps65218 *tps65218 = tps65218_gpio->tps65218;
-	enum pin_config_param param = pinconf_to_config_param(config);
 
 	switch (offset) {
 	case 0:
 	case 2:
 		/* GPO1 is hardwired to be open drain */
-		if (param == PIN_CONFIG_DRIVE_OPEN_DRAIN)
+		if (mode == LINE_MODE_OPEN_DRAIN)
 			return 0;
 		return -ENOTSUPP;
 	case 1:
 		/* GPO2 is push-pull by default, can be set as open drain. */
-		if (param == PIN_CONFIG_DRIVE_OPEN_DRAIN)
+		if (mode == LINE_MODE_OPEN_DRAIN)
 			return tps65218_clear_bits(tps65218,
 						   TPS65218_REG_CONFIG1,
 						   TPS65218_CONFIG1_GPO2_BUF,
 						   TPS65218_PROTECT_L1);
-		if (param == PIN_CONFIG_DRIVE_PUSH_PULL)
+		if (mode == LINE_MODE_PUSH_PULL)
 			return tps65218_set_bits(tps65218,
 						 TPS65218_REG_CONFIG1,
 						 TPS65218_CONFIG1_GPO2_BUF,
@@ -177,7 +180,7 @@ static const struct gpio_chip template_chip = {
 	.direction_input	= tps65218_gpio_input,
 	.get			= tps65218_gpio_get,
 	.set			= tps65218_gpio_set,
-	.set_config		= tps65218_gpio_set_config,
+	.set_single_ended	= tps65218_gpio_set_single_ended,
 	.can_sleep		= true,
 	.ngpio			= 3,
 	.base			= -1,

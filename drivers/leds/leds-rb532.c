@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * LEDs driver for the "User LED" on Routerboard532
  *

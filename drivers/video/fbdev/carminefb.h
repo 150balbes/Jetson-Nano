@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef CARMINE_CARMINE_H
 #define CARMINE_CARMINE_H
 

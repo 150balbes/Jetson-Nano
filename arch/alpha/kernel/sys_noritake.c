@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  *	linux/arch/alpha/kernel/sys_noritake.c
  *
@@ -194,10 +193,10 @@ noritake_init_irq(void)
  * comes in on.  This makes interrupt processing much easier.
  */
 
-static int
+static int __init
 noritake_map_irq(const struct pci_dev *dev, u8 slot, u8 pin)
 {
-	static char irq_tab[15][5] = {
+	static char irq_tab[15][5] __initdata = {
 		/*INT    INTA   INTB   INTC   INTD */
 		/* note: IDSELs 16, 17, and 25 are CORELLE only */
 		{ 16+1,  16+1,  16+1,  16+1,  16+1},  /* IdSel 16,  QLOGIC */
@@ -222,7 +221,7 @@ noritake_map_irq(const struct pci_dev *dev, u8 slot, u8 pin)
 	return COMMON_TABLE_LOOKUP;
 }
 
-static u8
+static u8 __init
 noritake_swizzle(struct pci_dev *dev, u8 *pinp)
 {
 	int slot, pin = *pinp;

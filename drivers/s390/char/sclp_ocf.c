@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  *    SCLP OCF communication parameters sysfs interface
  *
@@ -127,7 +126,7 @@ static struct attribute *ocf_attrs[] = {
 	NULL,
 };
 
-static const struct attribute_group ocf_attr_group = {
+static struct attribute_group ocf_attr_group = {
 	.attrs = ocf_attrs,
 };
 

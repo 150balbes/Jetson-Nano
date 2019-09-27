@@ -1,8 +1,11 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * The Industrial I/O core, software IIO devices functions
  *
  * Copyright (c) 2016 Intel Corporation
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License version 2 as published by
+ * the Free Software Foundation.
  */
 
 #include <linux/module.h>
@@ -16,9 +19,9 @@
 #include <linux/configfs.h>
 
 static struct config_group *iio_devices_group;
-static const struct config_item_type iio_device_type_group_type;
+static struct config_item_type iio_device_type_group_type;
 
-static const struct config_item_type iio_devices_group_type = {
+static struct config_item_type iio_devices_group_type = {
 	.ct_owner = THIS_MODULE,
 };
 
@@ -153,7 +156,7 @@ static struct configfs_group_operations device_ops = {
 	.drop_item	= &device_drop_group,
 };
 
-static const struct config_item_type iio_device_type_group_type = {
+static struct config_item_type iio_device_type_group_type = {
 	.ct_group_ops = &device_ops,
 	.ct_owner       = THIS_MODULE,
 };

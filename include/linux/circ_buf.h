@@ -1,6 +1,5 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
- * See Documentation/core-api/circular-buffers.rst for more information.
+ * See Documentation/circular-buffers.txt for more information.
  */
 
 #ifndef _LINUX_CIRC_BUF_H

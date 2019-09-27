@@ -1,17 +1,19 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * arch/arm/common/bL_switcher.c -- big.LITTLE cluster switcher core driver
  *
  * Created by:	Nicolas Pitre, March 2012
  * Copyright:	(C) 2012-2013  Linaro Limited
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  */
 
 #include <linux/atomic.h>
 #include <linux/init.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
-#include <linux/sched/signal.h>
-#include <uapi/linux/sched/types.h>
+#include <linux/sched.h>
 #include <linux/interrupt.h>
 #include <linux/cpu_pm.h>
 #include <linux/cpu.h>
@@ -539,14 +541,16 @@ static void bL_switcher_trace_trigger_cpu(void *__always_unused info)
 
 int bL_switcher_trace_trigger(void)
 {
+	int ret;
+
 	preempt_disable();
 
 	bL_switcher_trace_trigger_cpu(NULL);
-	smp_call_function(bL_switcher_trace_trigger_cpu, NULL, true);
+	ret = smp_call_function(bL_switcher_trace_trigger_cpu, NULL, true);
 
 	preempt_enable();
 
-	return 0;
+	return ret;
 }
 EXPORT_SYMBOL_GPL(bL_switcher_trace_trigger);
 
@@ -753,18 +757,19 @@ EXPORT_SYMBOL_GPL(bL_switcher_put_enabled);
  * while the switcher is active.
  * We're just not ready to deal with that given the trickery involved.
  */
-static int bL_switcher_cpu_pre(unsigned int cpu)
+static int bL_switcher_hotplug_callback(struct notifier_block *nfb,
+					unsigned long action, void *hcpu)
 {
-	int pairing;
-
-	if (!bL_switcher_active)
-		return 0;
-
-	pairing = bL_switcher_cpu_pairing[cpu];
-
-	if (pairing == -1)
-		return -EINVAL;
-	return 0;
+	if (bL_switcher_active) {
+		int pairing = bL_switcher_cpu_pairing[(unsigned long)hcpu];
+		switch (action & 0xf) {
+		case CPU_UP_PREPARE:
+		case CPU_DOWN_PREPARE:
+			if (pairing == -1)
+				return NOTIFY_BAD;
+		}
+	}
+	return NOTIFY_DONE;
 }
 
 static bool no_bL_switcher;
@@ -777,15 +782,8 @@ static int __init bL_switcher_init(void)
 	if (!mcpm_is_available())
 		return -ENODEV;
 
-	cpuhp_setup_state_nocalls(CPUHP_ARM_BL_PREPARE, "arm/bl:prepare",
-				  bL_switcher_cpu_pre, NULL);
-	ret = cpuhp_setup_state_nocalls(CPUHP_AP_ONLINE_DYN, "arm/bl:predown",
-					NULL, bL_switcher_cpu_pre);
-	if (ret < 0) {
-		cpuhp_remove_state_nocalls(CPUHP_ARM_BL_PREPARE);
-		pr_err("bL_switcher: Failed to allocate a hotplug state\n");
-		return ret;
-	}
+	cpu_notifier(bL_switcher_hotplug_callback, 0);
+
 	if (!no_bL_switcher) {
 		ret = bL_switcher_enable();
 		if (ret)

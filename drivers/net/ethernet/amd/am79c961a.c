@@ -1,8 +1,11 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  *  linux/drivers/net/ethernet/amd/am79c961a.c
  *
  *  by Russell King <rmk@arm.linux.org.uk> 1995-2001.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  *
  * Derived from various things including skeleton.c
  *
@@ -299,10 +302,10 @@ am79c961_init_for_open(struct net_device *dev)
 	write_rreg (dev->base_addr, CSR0, CSR0_IENA|CSR0_STRT);
 }
 
-static void am79c961_timer(struct timer_list *t)
+static void am79c961_timer(unsigned long data)
 {
-	struct dev_priv *priv = from_timer(priv, t, timer);
-	struct net_device *dev = priv->dev;
+	struct net_device *dev = (struct net_device *)data;
+	struct dev_priv *priv = netdev_priv(dev);
 	unsigned int lnkstat, carrier;
 	unsigned long flags;
 
@@ -437,7 +440,7 @@ static void am79c961_timeout(struct net_device *dev)
 /*
  * Transmit a packet
  */
-static netdev_tx_t
+static int
 am79c961_sendpacket(struct sk_buff *skb, struct net_device *dev)
 {
 	struct dev_priv *priv = netdev_priv(dev);
@@ -660,6 +663,7 @@ static const struct net_device_ops am79c961_netdev_ops = {
 	.ndo_set_rx_mode	= am79c961_setmulticastlist,
 	.ndo_tx_timeout		= am79c961_timeout,
 	.ndo_validate_addr	= eth_validate_addr,
+	.ndo_change_mtu		= eth_change_mtu,
 	.ndo_set_mac_address	= eth_mac_addr,
 #ifdef CONFIG_NET_POLL_CONTROLLER
 	.ndo_poll_controller	= am79c961_poll_controller,
@@ -725,8 +729,9 @@ static int am79c961_probe(struct platform_device *pdev)
 	am79c961_banner();
 
 	spin_lock_init(&priv->chip_lock);
-	priv->dev = dev;
-	timer_setup(&priv->timer, am79c961_timer, 0);
+	init_timer(&priv->timer);
+	priv->timer.data = (unsigned long)dev;
+	priv->timer.function = am79c961_timer;
 
 	if (am79c961_hw_init(dev))
 		goto release;

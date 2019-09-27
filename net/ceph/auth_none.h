@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _FS_CEPH_AUTH_NONE_H
 #define _FS_CEPH_AUTH_NONE_H
 
@@ -26,3 +25,4 @@ struct ceph_auth_none_info {
 int ceph_auth_none_init(struct ceph_auth_client *ac);
 
 #endif
+

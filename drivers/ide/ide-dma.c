@@ -104,7 +104,7 @@ ide_startstop_t ide_dma_intr(ide_drive_t *drive)
 			if ((cmd->tf_flags & IDE_TFLAG_FS) == 0)
 				ide_finish_cmd(drive, cmd, stat);
 			else
-				ide_complete_rq(drive, BLK_STS_OK,
+				ide_complete_rq(drive, 0,
 						blk_rq_sectors(cmd->rq) << 9);
 			return ide_stopped;
 		}
@@ -180,6 +180,7 @@ EXPORT_SYMBOL_GPL(ide_dma_unmap_sg);
 void ide_dma_off_quietly(ide_drive_t *drive)
 {
 	drive->dev_flags &= ~IDE_DFLAG_USING_DMA;
+	ide_toggle_bounce(drive, 0);
 
 	drive->hwif->dma_ops->dma_host_set(drive, 0);
 }
@@ -210,6 +211,7 @@ EXPORT_SYMBOL(ide_dma_off);
 void ide_dma_on(ide_drive_t *drive)
 {
 	drive->dev_flags |= IDE_DFLAG_USING_DMA;
+	ide_toggle_bounce(drive, 1);
 
 	drive->hwif->dma_ops->dma_host_set(drive, 1);
 }
@@ -488,7 +490,7 @@ ide_startstop_t ide_dma_timeout_retry(ide_drive_t *drive, int error)
 	 * make sure request is sane
 	 */
 	if (hwif->rq)
-		scsi_req(hwif->rq)->result = 0;
+		hwif->rq->errors = 0;
 	return ret;
 }
 

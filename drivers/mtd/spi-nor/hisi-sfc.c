@@ -1,8 +1,20 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * HiSilicon SPI Nor Flash Controller Driver
  *
  * Copyright (c) 2015-2016 HiSilicon Technologies Co., Ltd.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 #include <linux/bitops.h>
 #include <linux/clk.h>
@@ -100,7 +112,7 @@ struct hifmc_host {
 	u32 num_chip;
 };
 
-static inline int hisi_spi_nor_wait_op_finish(struct hifmc_host *host)
+static inline int wait_op_finish(struct hifmc_host *host)
 {
 	u32 reg;
 
@@ -108,24 +120,19 @@ static inline int hisi_spi_nor_wait_op_finish(struct hifmc_host *host)
 		(reg & FMC_INT_OP_DONE), 0, FMC_WAIT_TIMEOUT);
 }
 
-static int hisi_spi_nor_get_if_type(enum spi_nor_protocol proto)
+static int get_if_type(enum read_mode flash_read)
 {
 	enum hifmc_iftype if_type;
 
-	switch (proto) {
-	case SNOR_PROTO_1_1_2:
+	switch (flash_read) {
+	case SPI_NOR_DUAL:
 		if_type = IF_TYPE_DUAL;
 		break;
-	case SNOR_PROTO_1_2_2:
-		if_type = IF_TYPE_DIO;
-		break;
-	case SNOR_PROTO_1_1_4:
+	case SPI_NOR_QUAD:
 		if_type = IF_TYPE_QUAD;
 		break;
-	case SNOR_PROTO_1_4_4:
-		if_type = IF_TYPE_QIO;
-		break;
-	case SNOR_PROTO_1_1_1:
+	case SPI_NOR_NORMAL:
+	case SPI_NOR_FAST:
 	default:
 		if_type = IF_TYPE_STD;
 		break;
@@ -196,7 +203,7 @@ static int hisi_spi_nor_op_reg(struct spi_nor *nor,
 	reg = FMC_OP_CMD1_EN | FMC_OP_REG_OP_START | optype;
 	writel(reg, host->regbase + FMC_OP);
 
-	return hisi_spi_nor_wait_op_finish(host);
+	return wait_op_finish(host);
 }
 
 static int hisi_spi_nor_read_reg(struct spi_nor *nor, u8 opcode, u8 *buf,
@@ -246,10 +253,7 @@ static int hisi_spi_nor_dma_transfer(struct spi_nor *nor, loff_t start_off,
 	writel(FMC_DMA_LEN_SET(len), host->regbase + FMC_DMA_LEN);
 
 	reg = OP_CFG_FM_CS(priv->chipselect);
-	if (op_type == FMC_OP_READ)
-		if_type = hisi_spi_nor_get_if_type(nor->read_proto);
-	else
-		if_type = hisi_spi_nor_get_if_type(nor->write_proto);
+	if_type = get_if_type(nor->flash_read);
 	reg |= OP_CFG_MEM_IF_TYPE(if_type);
 	if (op_type == FMC_OP_READ)
 		reg |= OP_CFG_DUMMY_NUM(nor->read_dummy >> 3);
@@ -262,7 +266,7 @@ static int hisi_spi_nor_dma_transfer(struct spi_nor *nor, loff_t start_off,
 		: OP_CTRL_WR_OPCODE(nor->program_opcode);
 	writel(reg, host->regbase + FMC_OP_DMA);
 
-	return hisi_spi_nor_wait_op_finish(host);
+	return wait_op_finish(host);
 }
 
 static ssize_t hisi_spi_nor_read(struct spi_nor *nor, loff_t from, size_t len,
@@ -317,13 +321,6 @@ static ssize_t hisi_spi_nor_write(struct spi_nor *nor, loff_t to,
 static int hisi_spi_nor_register(struct device_node *np,
 				struct hifmc_host *host)
 {
-	const struct spi_nor_hwcaps hwcaps = {
-		.mask = SNOR_HWCAPS_READ |
-			SNOR_HWCAPS_READ_FAST |
-			SNOR_HWCAPS_READ_1_1_2 |
-			SNOR_HWCAPS_READ_1_1_4 |
-			SNOR_HWCAPS_PP,
-	};
 	struct device *dev = host->dev;
 	struct spi_nor *nor;
 	struct hifmc_priv *priv;
@@ -343,16 +340,16 @@ static int hisi_spi_nor_register(struct device_node *np,
 
 	ret = of_property_read_u32(np, "reg", &priv->chipselect);
 	if (ret) {
-		dev_err(dev, "There's no reg property for %pOF\n",
-			np);
+		dev_err(dev, "There's no reg property for %s\n",
+			np->full_name);
 		return ret;
 	}
 
 	ret = of_property_read_u32(np, "spi-max-frequency",
 			&priv->clkrate);
 	if (ret) {
-		dev_err(dev, "There's no spi-max-frequency property for %pOF\n",
-			np);
+		dev_err(dev, "There's no spi-max-frequency property for %s\n",
+			np->full_name);
 		return ret;
 	}
 	priv->host = host;
@@ -365,7 +362,7 @@ static int hisi_spi_nor_register(struct device_node *np,
 	nor->read = hisi_spi_nor_read;
 	nor->write = hisi_spi_nor_write;
 	nor->erase = NULL;
-	ret = spi_nor_scan(nor, NULL, &hwcaps);
+	ret = spi_nor_scan(nor, NULL, SPI_NOR_QUAD);
 	if (ret)
 		return ret;
 
@@ -451,11 +448,8 @@ static int hisi_spi_nor_probe(struct platform_device *pdev)
 	if (!host->buffer)
 		return -ENOMEM;
 
-	ret = clk_prepare_enable(host->clk);
-	if (ret)
-		return ret;
-
 	mutex_init(&host->lock);
+	clk_prepare_enable(host->clk);
 	hisi_spi_nor_init(host);
 	ret = hisi_spi_nor_register_all(host);
 	if (ret)

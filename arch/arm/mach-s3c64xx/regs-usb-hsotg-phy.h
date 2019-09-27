@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright 2008 Openmoko, Inc.
  * Copyright 2008 Simtec Electronics
@@ -6,6 +5,10 @@
  *      Ben Dooks <ben@simtec.co.uk>
  *
  * S3C - USB2.0 Highspeed/OtG device PHY registers
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
 */
 
 /* Note, this is a separate header file as some of the clock framework

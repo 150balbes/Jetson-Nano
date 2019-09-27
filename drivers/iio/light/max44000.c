@@ -1,8 +1,11 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * MAX44000 Ambient and Infrared Proximity Sensor
  *
  * Copyright (c) 2016, Intel Corporation.
+ *
+ * This file is subject to the terms and conditions of version 2 of
+ * the GNU General Public License.  See the file COPYING in the main
+ * directory of this archive for more details.
  *
  * Data sheet: https://datasheets.maximintegrated.com/en/ds/MAX44000.pdf
  *
@@ -96,6 +99,7 @@ static const int max44000_alspga_shift[] = {0, 2, 4, 7};
  * Handling this internally is also required for buffer support because the
  * channel's scan_type can't be modified dynamically.
  */
+static const int max44000_alstim_shift[] = {0, 2, 4, 6};
 #define MAX44000_ALSTIM_SHIFT(alstim) (2 * (alstim))
 
 /* Available integration times with pretty manual alignment: */
@@ -200,18 +204,17 @@ static int max44000_write_alspga(struct max44000_data *data, int val)
 static int max44000_read_alsval(struct max44000_data *data)
 {
 	u16 regval;
-	__be16 val;
 	int alstim, ret;
 
 	ret = regmap_bulk_read(data->regmap, MAX44000_REG_ALS_DATA_HI,
-			       &val, sizeof(val));
+			       &regval, sizeof(regval));
 	if (ret < 0)
 		return ret;
 	alstim = ret = max44000_read_alstim(data);
 	if (ret < 0)
 		return ret;
 
-	regval = be16_to_cpu(val);
+	regval = be16_to_cpu(regval);
 
 	/*
 	 * Overflow is explained on datasheet page 17.
@@ -398,6 +401,7 @@ static const struct attribute_group max44000_attribute_group = {
 };
 
 static const struct iio_info max44000_info = {
+	.driver_module		= THIS_MODULE,
 	.read_raw		= max44000_read_raw,
 	.write_raw		= max44000_write_raw,
 	.write_raw_get_fmt	= max44000_write_raw_get_fmt,
@@ -469,18 +473,17 @@ static bool max44000_precious_reg(struct device *dev, unsigned int reg)
 }
 
 static const struct regmap_config max44000_regmap_config = {
-	.reg_bits		= 8,
-	.val_bits		= 8,
+	.reg_bits	= 8,
+	.val_bits	= 8,
 
-	.max_register		= MAX44000_REG_PRX_DATA,
-	.readable_reg		= max44000_readable_reg,
-	.writeable_reg		= max44000_writeable_reg,
-	.volatile_reg		= max44000_volatile_reg,
-	.precious_reg		= max44000_precious_reg,
+	.max_register	= MAX44000_REG_PRX_DATA,
+	.readable_reg	= max44000_readable_reg,
+	.writeable_reg	= max44000_writeable_reg,
+	.volatile_reg	= max44000_volatile_reg,
+	.precious_reg	= max44000_precious_reg,
 
-	.use_single_read	= true,
-	.use_single_write	= true,
-	.cache_type		= REGCACHE_RBTREE,
+	.use_single_rw	= 1,
+	.cache_type	= REGCACHE_RBTREE,
 };
 
 static irqreturn_t max44000_trigger_handler(int irq, void *p)

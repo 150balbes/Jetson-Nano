@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0-or-later */
 #ifndef __LINUX_CMA_H
 #define __LINUX_CMA_H
 
@@ -8,6 +7,11 @@
  * Written by:
  *	Marek Szyprowski <m.szyprowski@samsung.com>
  *	Michal Nazarewicz <mina86@mina86.com>
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License as
+ * published by the Free Software Foundation; either version 2 of the
+ * License or (at your optional) any later version of the license.
  */
 
 /*
@@ -44,18 +48,22 @@
  *   CMA should not be used by the device drivers directly. It is
  *   only a helper framework for dma-mapping subsystem.
  *
- *   For more information, see kernel-docs in kernel/dma/contiguous.c
+ *   For more information, see kernel-docs in drivers/base/dma-contiguous.c
  */
 
 #ifdef __KERNEL__
 
 #include <linux/device.h>
-#include <linux/mm.h>
 
 struct cma;
 struct page;
 
 #ifdef CONFIG_DMA_CMA
+
+struct dma_contiguous_stats {
+	phys_addr_t base;
+	size_t size;
+};
 
 extern struct cma *dma_contiguous_default_area;
 
@@ -109,13 +117,20 @@ static inline int dma_declare_contiguous(struct device *dev, phys_addr_t size,
 }
 
 struct page *dma_alloc_from_contiguous(struct device *dev, size_t count,
-				       unsigned int order, bool no_warn);
+				       unsigned int order);
+struct page *dma_alloc_at_from_contiguous(struct device *dev, int count,
+				       unsigned int order, phys_addr_t at_addr,
+				       bool map_non_cached);
 bool dma_release_from_contiguous(struct device *dev, struct page *pages,
 				 int count);
-struct page *dma_alloc_contiguous(struct device *dev, size_t size, gfp_t gfp);
-void dma_free_contiguous(struct device *dev, struct page *page, size_t size);
+int dma_get_contiguous_stats(struct device *dev,
+			struct dma_contiguous_stats *stats);
 
+bool dma_contiguous_should_replace_page(struct page *page);
+int dma_contiguous_enable_replace_pages(struct device *dev);
 #else
+
+struct dma_contiguous_stats;
 
 static inline struct cma *dev_get_cma_area(struct device *dev)
 {
@@ -143,8 +158,16 @@ int dma_declare_contiguous(struct device *dev, phys_addr_t size,
 }
 
 static inline
-struct page *dma_alloc_from_contiguous(struct device *dev, size_t count,
-				       unsigned int order, bool no_warn)
+struct page *dma_alloc_at_from_contiguous(struct device *dev, int count,
+				       unsigned int order, phys_addr_t at_addr,
+				       bool map_non_cached)
+{
+	return NULL;
+}
+
+static inline
+struct page *dma_alloc_from_contiguous(struct device *dev, int count,
+				       unsigned int order)
 {
 	return NULL;
 }
@@ -156,19 +179,24 @@ bool dma_release_from_contiguous(struct device *dev, struct page *pages,
 	return false;
 }
 
-/* Use fallback alloc() and free() when CONFIG_DMA_CMA=n */
-static inline struct page *dma_alloc_contiguous(struct device *dev, size_t size,
-		gfp_t gfp)
+static inline
+int dma_get_contiguous_stats(struct device *dev,
+			struct dma_contiguous_stats *stats)
 {
-	return NULL;
+	return -ENOSYS;
 }
 
-static inline void dma_free_contiguous(struct device *dev, struct page *page,
-		size_t size)
+static inline
+bool dma_contiguous_should_replace_page(struct page *page)
 {
-	__free_pages(page, get_order(size));
+	return false;
 }
 
+static inline
+int dma_contiguous_enable_replace_pages(struct device *dev)
+{
+	return 0;
+}
 #endif
 
 #endif

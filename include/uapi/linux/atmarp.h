@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note */
 /* atmarp.h - ATM ARP protocol and kernel-demon interface definitions */
  
 /* Written 1995-1999 by Werner Almesberger, EPFL LRC/ICA */

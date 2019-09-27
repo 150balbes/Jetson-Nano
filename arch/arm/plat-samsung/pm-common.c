@@ -1,13 +1,17 @@
-// SPDX-License-Identifier: GPL-2.0
-//
-// Copyright (C) 2013 Samsung Electronics Co., Ltd.
-//	Tomasz Figa <t.figa@samsung.com>
-// Copyright (C) 2008 Openmoko, Inc.
-// Copyright (C) 2004-2008 Simtec Electronics
-//	Ben Dooks <ben@simtec.co.uk>
-//	http://armlinux.simtec.co.uk/
-//
-// Samsung common power management helper functions.
+/*
+ * Copyright (C) 2013 Samsung Electronics Co., Ltd.
+ *	Tomasz Figa <t.figa@samsung.com>
+ * Copyright (C) 2008 Openmoko, Inc.
+ * Copyright (C) 2004-2008 Simtec Electronics
+ *	Ben Dooks <ben@simtec.co.uk>
+ *	http://armlinux.simtec.co.uk/
+ *
+ * Samsung common power management helper functions.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+*/
 
 #include <linux/io.h>
 #include <linux/kernel.h>

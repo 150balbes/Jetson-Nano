@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __API_FD_ARRAY__
 #define __API_FD_ARRAY__
 

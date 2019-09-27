@@ -15,6 +15,10 @@
  */
 
 #include <asm/bootparam.h>
+#include <asm/processor.h>
+#include <asm/pgtable.h>
+#include <asm/page.h>
+#include <asm/cacheasm.h>
 #include <asm/initialize_mmu.h>
 #include <asm/vectors.h>
 #include <linux/linkage.h>
@@ -29,8 +33,16 @@ _ResetVector:
 	.begin  no-absolute-literals
 	.literal_position
 
-#ifdef CONFIG_PARSE_BOOTPARAM
 	.align 4
+RomInitAddr:
+#if defined(CONFIG_INITIALIZE_XTENSA_MMU_INSIDE_VMLINUX) && \
+	XCHAL_HAVE_PTP_MMU && XCHAL_HAVE_SPANNING_WAY
+	.word	CONFIG_KERNEL_LOAD_ADDRESS
+#else
+	.word	KERNELOFFSET
+#endif
+RomBootParam:
+	.word _bootparam
 _bootparam:
 	.short	BP_TAG_FIRST
 	.short	4
@@ -38,7 +50,6 @@ _bootparam:
 	.short	BP_TAG_LAST
 	.short	0
 	.long	0
-#endif
 
 	.align  4
 _SetupMMU:
@@ -56,22 +67,13 @@ _SetupMMU:
 	initialize_mmu
 #endif
 
+	.end    no-absolute-literals
+
 	rsil    a0, XCHAL_DEBUGLEVEL-1
 	rsync
 reset:
-#if defined(CONFIG_INITIALIZE_XTENSA_MMU_INSIDE_VMLINUX) && \
-	XCHAL_HAVE_PTP_MMU && XCHAL_HAVE_SPANNING_WAY
-	movi	a0, CONFIG_KERNEL_LOAD_ADDRESS
-#else
-	movi	a0, KERNELOFFSET
-#endif
-#ifdef CONFIG_PARSE_BOOTPARAM
-	movi	a2, _bootparam
-#else
-	movi	a2, 0
-#endif
+	l32r    a0, RomInitAddr
+	l32r	a2, RomBootParam
 	movi	a3, 0
 	movi	a4, 0
 	jx      a0
-
-	.end    no-absolute-literals

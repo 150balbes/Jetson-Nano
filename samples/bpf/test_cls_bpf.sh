@@ -1,5 +1,4 @@
 #!/bin/bash
-# SPDX-License-Identifier: GPL-2.0
 
 function pktgen {
     ../pktgen/pktgen_bench_xmit_mode_netif_receive.sh -i $IFC -s 64 \

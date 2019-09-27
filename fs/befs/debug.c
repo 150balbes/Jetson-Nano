@@ -1,7 +1,6 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  *  linux/fs/befs/debug.c
- *
+ * 
  * Copyright (C) 2001 Will Dyson (will_dyson at pobox.com)
  *
  * With help from the ntfs-tng driver by Anton Altparmakov
@@ -58,7 +57,6 @@ befs_debug(const struct super_block *sb, const char *fmt, ...)
 
 	struct va_format vaf;
 	va_list args;
-
 	va_start(args, fmt);
 	vaf.fmt = fmt;
 	vaf.va = &args;
@@ -69,7 +67,7 @@ befs_debug(const struct super_block *sb, const char *fmt, ...)
 }
 
 void
-befs_dump_inode(const struct super_block *sb, befs_inode *inode)
+befs_dump_inode(const struct super_block *sb, befs_inode * inode)
 {
 #ifdef CONFIG_BEFS_DEBUG
 
@@ -153,7 +151,7 @@ befs_dump_inode(const struct super_block *sb, befs_inode *inode)
  */
 
 void
-befs_dump_super_block(const struct super_block *sb, befs_super_block *sup)
+befs_dump_super_block(const struct super_block *sb, befs_super_block * sup)
 {
 #ifdef CONFIG_BEFS_DEBUG
 
@@ -204,7 +202,7 @@ befs_dump_super_block(const struct super_block *sb, befs_super_block *sup)
 #if 0
 /* unused */
 void
-befs_dump_small_data(const struct super_block *sb, befs_small_data *sd)
+befs_dump_small_data(const struct super_block *sb, befs_small_data * sd)
 {
 }
 
@@ -223,8 +221,7 @@ befs_dump_run(const struct super_block *sb, befs_disk_block_run run)
 #endif  /*  0  */
 
 void
-befs_dump_index_entry(const struct super_block *sb,
-		      befs_disk_btree_super *super)
+befs_dump_index_entry(const struct super_block *sb, befs_disk_btree_super * super)
 {
 #ifdef CONFIG_BEFS_DEBUG
 
@@ -245,7 +242,7 @@ befs_dump_index_entry(const struct super_block *sb,
 }
 
 void
-befs_dump_index_node(const struct super_block *sb, befs_btree_nodehead *node)
+befs_dump_index_node(const struct super_block *sb, befs_btree_nodehead * node)
 {
 #ifdef CONFIG_BEFS_DEBUG
 

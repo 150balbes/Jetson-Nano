@@ -1,6 +1,22 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (C) 2008,2009, Steven Rostedt <srostedt@redhat.com>
+ *
+ * ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; version 2 of the License (not later!)
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ *
+ * ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
  */
 #include "util.h"
 #include <dirent.h>
@@ -12,13 +28,13 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
+#include <pthread.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include <errno.h>
 #include <stdbool.h>
 #include <linux/list.h>
 #include <linux/kernel.h>
-#include <linux/zalloc.h>
 
 #include "../perf.h"
 #include "trace-event.h"
@@ -26,7 +42,7 @@
 #include "evsel.h"
 #include "debug.h"
 
-#define VERSION "0.6"
+#define VERSION "0.5"
 
 static int output_fd;
 
@@ -88,10 +104,11 @@ out:
 
 static int record_header_files(void)
 {
-	char *path = get_events_file("header_page");
+	char *path;
 	struct stat st;
 	int err = -EIO;
 
+	path = get_tracing_file("events/header_page");
 	if (!path) {
 		pr_debug("can't get tracing/events/header_page");
 		return -ENOMEM;
@@ -112,9 +129,9 @@ static int record_header_files(void)
 		goto out;
 	}
 
-	put_events_file(path);
+	put_tracing_file(path);
 
-	path = get_events_file("header_event");
+	path = get_tracing_file("events/header_event");
 	if (!path) {
 		pr_debug("can't get tracing/events/header_event");
 		err = -ENOMEM;
@@ -138,7 +155,7 @@ static int record_header_files(void)
 
 	err = 0;
 out:
-	put_events_file(path);
+	put_tracing_file(path);
 	return err;
 }
 
@@ -152,12 +169,6 @@ static bool name_in_tp_list(char *sys, struct tracepoint_path *tps)
 
 	return false;
 }
-
-#define for_each_event(dir, dent, tps)				\
-	while ((dent = readdir(dir)))				\
-		if (dent->d_type == DT_DIR &&			\
-		    (strcmp(dent->d_name, ".")) &&		\
-		    (strcmp(dent->d_name, "..")))		\
 
 static int copy_event_system(const char *sys, struct tracepoint_path *tps)
 {
@@ -175,10 +186,12 @@ static int copy_event_system(const char *sys, struct tracepoint_path *tps)
 		return -errno;
 	}
 
-	for_each_event(dir, dent, tps) {
-		if (!name_in_tp_list(dent->d_name, tps))
+	while ((dent = readdir(dir))) {
+		if (dent->d_type != DT_DIR ||
+		    strcmp(dent->d_name, ".") == 0 ||
+		    strcmp(dent->d_name, "..") == 0 ||
+		    !name_in_tp_list(dent->d_name, tps))
 			continue;
-
 		if (asprintf(&format, "%s/%s/format", sys, dent->d_name) < 0) {
 			err = -ENOMEM;
 			goto out;
@@ -197,10 +210,12 @@ static int copy_event_system(const char *sys, struct tracepoint_path *tps)
 	}
 
 	rewinddir(dir);
-	for_each_event(dir, dent, tps) {
-		if (!name_in_tp_list(dent->d_name, tps))
+	while ((dent = readdir(dir))) {
+		if (dent->d_type != DT_DIR ||
+		    strcmp(dent->d_name, ".") == 0 ||
+		    strcmp(dent->d_name, "..") == 0 ||
+		    !name_in_tp_list(dent->d_name, tps))
 			continue;
-
 		if (asprintf(&format, "%s/%s/format", sys, dent->d_name) < 0) {
 			err = -ENOMEM;
 			goto out;
@@ -227,7 +242,7 @@ static int record_ftrace_files(struct tracepoint_path *tps)
 	char *path;
 	int ret;
 
-	path = get_events_file("ftrace");
+	path = get_tracing_file("events/ftrace");
 	if (!path) {
 		pr_debug("can't get tracing/events/ftrace");
 		return -ENOMEM;
@@ -275,11 +290,13 @@ static int record_event_files(struct tracepoint_path *tps)
 		goto out;
 	}
 
-	for_each_event(dir, dent, tps) {
-		if (strcmp(dent->d_name, "ftrace") == 0 ||
+	while ((dent = readdir(dir))) {
+		if (dent->d_type != DT_DIR ||
+		    strcmp(dent->d_name, ".") == 0 ||
+		    strcmp(dent->d_name, "..") == 0 ||
+		    strcmp(dent->d_name, "ftrace") == 0 ||
 		    !system_in_tp_list(dent->d_name, tps))
 			continue;
-
 		count++;
 	}
 
@@ -290,11 +307,13 @@ static int record_event_files(struct tracepoint_path *tps)
 	}
 
 	rewinddir(dir);
-	for_each_event(dir, dent, tps) {
-		if (strcmp(dent->d_name, "ftrace") == 0 ||
+	while ((dent = readdir(dir))) {
+		if (dent->d_type != DT_DIR ||
+		    strcmp(dent->d_name, ".") == 0 ||
+		    strcmp(dent->d_name, "..") == 0 ||
+		    strcmp(dent->d_name, "ftrace") == 0 ||
 		    !system_in_tp_list(dent->d_name, tps))
 			continue;
-
 		if (asprintf(&sys, "%s/%s", path, dent->d_name) < 0) {
 			err = -ENOMEM;
 			goto out;
@@ -354,34 +373,6 @@ static int record_ftrace_printk(void)
 		goto out;
 	}
 	err = record_file(path, 4);
-
-out:
-	put_tracing_file(path);
-	return err;
-}
-
-static int record_saved_cmdline(void)
-{
-	unsigned long long size;
-	char *path;
-	struct stat st;
-	int ret, err = 0;
-
-	path = get_tracing_file("saved_cmdlines");
-	if (!path) {
-		pr_debug("can't get tracing/saved_cmdline");
-		return -ENOMEM;
-	}
-
-	ret = stat(path, &st);
-	if (ret < 0) {
-		/* not found */
-		size = 0;
-		if (write(output_fd, &size, 8) != 8)
-			err = -EIO;
-		goto out;
-	}
-	err = record_file(path, 8);
 
 out:
 	put_tracing_file(path);
@@ -550,9 +541,6 @@ struct tracing_data *tracing_data_get(struct list_head *pattrs,
 	if (err)
 		goto out;
 	err = record_ftrace_printk();
-	if (err)
-		goto out;
-	err = record_saved_cmdline();
 
 out:
 	/*

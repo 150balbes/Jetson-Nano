@@ -1,9 +1,13 @@
-/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * LED Flash class interface
  *
  * Copyright (C) 2015 Samsung Electronics Co., Ltd.
  * Author: Jacek Anaszewski <j.anaszewski@samsung.com>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
  */
 #ifndef __LINUX_FLASH_LEDS_H_INCLUDED
 #define __LINUX_FLASH_LEDS_H_INCLUDED
@@ -117,8 +121,6 @@ extern void led_classdev_flash_unregister(struct led_classdev_flash *fled_cdev);
 static inline int led_set_flash_strobe(struct led_classdev_flash *fled_cdev,
 					bool state)
 {
-	if (!fled_cdev)
-		return -EINVAL;
 	return fled_cdev->ops->strobe_set(fled_cdev, state);
 }
 
@@ -134,8 +136,6 @@ static inline int led_set_flash_strobe(struct led_classdev_flash *fled_cdev,
 static inline int led_get_flash_strobe(struct led_classdev_flash *fled_cdev,
 					bool *state)
 {
-	if (!fled_cdev)
-		return -EINVAL;
 	if (fled_cdev->ops->strobe_get)
 		return fled_cdev->ops->strobe_get(fled_cdev, state);
 

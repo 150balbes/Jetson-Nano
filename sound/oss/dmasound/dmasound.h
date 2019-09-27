@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _dmasound_h_
 /*
  *  linux/sound/oss/dmasound/dmasound.h

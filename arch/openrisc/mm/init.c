@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * OpenRISC idle.c
  *
@@ -9,6 +8,11 @@
  * Modifications for the OpenRISC architecture:
  * Copyright (C) 2003 Matjaz Breskvar <phoenix@bsemi.com>
  * Copyright (C) 2010-2011 Jonas Bonn <jonas@southpole.se>
+ *
+ *      This program is free software; you can redistribute it and/or
+ *      modify it under the terms of the GNU General Public License
+ *      as published by the Free Software Foundation; either version
+ *      2 of the License, or (at your option) any later version.
  */
 
 #include <linux/signal.h>
@@ -22,12 +26,14 @@
 #include <linux/mm.h>
 #include <linux/swap.h>
 #include <linux/smp.h>
-#include <linux/memblock.h>
+#include <linux/bootmem.h>
 #include <linux/init.h>
 #include <linux/delay.h>
 #include <linux/blkdev.h>	/* for initrd_* */
 #include <linux/pagemap.h>
+#include <linux/memblock.h>
 
+#include <asm/segment.h>
 #include <asm/pgalloc.h>
 #include <asm/pgtable.h>
 #include <asm/dma.h>
@@ -100,14 +106,11 @@ static void __init map_ram(void)
 			}
 
 			/* Alloc one page for holding PTE's... */
-			pte = memblock_alloc_raw(PAGE_SIZE, PAGE_SIZE);
-			if (!pte)
-				panic("%s: Failed to allocate page for PTEs\n",
-				      __func__);
+			pte = (pte_t *) alloc_bootmem_low_pages(PAGE_SIZE);
 			set_pmd(pme, __pmd(_KERNPG_TABLE + __pa(pte)));
 
 			/* Fill the newly allocated page with PTE'S */
-			for (j = 0; p < e && j < PTRS_PER_PTE;
+			for (j = 0; p < e && j < PTRS_PER_PGD;
 			     v += PAGE_SIZE, p += PAGE_SIZE, j++, pte++) {
 				if (v >= (u32) _e_kernel_ro ||
 				    v < (u32) _s_kernel_ro)
@@ -144,7 +147,7 @@ void __init paging_init(void)
 	 * (even if it is most probably not used until the next
 	 *  switch_mm)
 	 */
-	current_pgd[smp_processor_id()] = init_mm.pgd;
+	current_pgd = init_mm.pgd;
 
 	end = (unsigned long)__va(max_low_pfn * PAGE_SIZE);
 
@@ -210,11 +213,23 @@ void __init mem_init(void)
 	memset((void *)empty_zero_page, 0, PAGE_SIZE);
 
 	/* this will put all low memory onto the freelists */
-	memblock_free_all();
+	free_all_bootmem();
 
 	mem_init_print_info(NULL);
 
 	printk("mem_init_done ...........................................\n");
 	mem_init_done = 1;
 	return;
+}
+
+#ifdef CONFIG_BLK_DEV_INITRD
+void free_initrd_mem(unsigned long start, unsigned long end)
+{
+	free_reserved_area((void *)start, (void *)end, -1, "initrd");
+}
+#endif
+
+void free_initmem(void)
+{
+	free_initmem_default(-1);
 }

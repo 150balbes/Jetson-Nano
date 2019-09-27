@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * Freescale MPC5200 Audio DMA driver
  */

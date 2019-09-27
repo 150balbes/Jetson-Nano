@@ -1,21 +1,21 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef SLAB_H
 #define SLAB_H
 
 #include <linux/types.h>
-#include <linux/gfp.h>
 
 #define SLAB_HWCACHE_ALIGN 1
 #define SLAB_PANIC 2
 #define SLAB_RECLAIM_ACCOUNT    0x00020000UL            /* Objects are reclaimable */
 
-void *kmalloc(size_t size, gfp_t);
-void kfree(void *);
-
-static inline void *kzalloc(size_t size, gfp_t gfp)
+static inline int gfpflags_allow_blocking(gfp_t mask)
 {
-        return kmalloc(size, gfp | __GFP_ZERO);
+	return 1;
 }
+
+struct kmem_cache {
+	int size;
+	void (*ctor)(void *);
+};
 
 void *kmem_cache_alloc(struct kmem_cache *cachep, int flags);
 void kmem_cache_free(struct kmem_cache *cachep, void *objp);

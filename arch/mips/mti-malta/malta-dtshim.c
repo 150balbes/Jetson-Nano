@@ -1,7 +1,11 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Copyright (C) 2015 Imagination Technologies
- * Author: Paul Burton <paul.burton@mips.com>
+ * Author: Paul Burton <paul.burton@imgtec.com>
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License as published by the
+ * Free Software Foundation; either version 2 of the License, or (at your
+ * option) any later version.
  */
 
 #include <linux/bug.h>
@@ -14,7 +18,7 @@
 #include <asm/fw/fw.h>
 #include <asm/mips-boards/generic.h>
 #include <asm/mips-boards/malta.h>
-#include <asm/mips-cps.h>
+#include <asm/mips-cm.h>
 #include <asm/page.h>
 
 #define ROCIT_REG_BASE			0x1f403000
@@ -232,7 +236,7 @@ static void __init remove_gic(void *fdt)
 
 	/* if we have a CM which reports a GIC is present, leave the DT alone */
 	err = mips_cm_probe();
-	if (!err && (read_gcr_gic_status() & CM_GCR_GIC_STATUS_EX))
+	if (!err && (read_gcr_gic_status() & CM_GCR_GIC_STATUS_GICEX_MSK))
 		return;
 
 	if (malta_scon() == MIPS_REVISION_SCON_ROCIT) {

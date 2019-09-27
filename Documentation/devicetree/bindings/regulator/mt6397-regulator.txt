@@ -1,4 +1,4 @@
-Mediatek MT6397 Regulator
+Mediatek MT6397 Regulator Driver
 
 Required properties:
 - compatible: "mediatek,mt6397-regulator"

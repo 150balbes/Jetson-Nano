@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * opp2420_data.c - old-style "OPP" table for OMAP2420
  *

@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * linux/drivers/video/omap2/dss/dss.h
  *
@@ -7,6 +6,18 @@
  *
  * Some code and ideas taken from drivers/video/omap/ driver
  * by Imre Deak.
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License version 2 as published by
+ * the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License along with
+ * this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 #ifndef __OMAP2_DSS_H
@@ -203,7 +214,7 @@ struct platform_device *dss_get_core_pdev(void);
 int dss_dsi_enable_pads(int dsi_id, unsigned lane_mask);
 void dss_dsi_disable_pads(int dsi_id, unsigned lane_mask);
 int dss_set_min_bus_tput(struct device *dev, unsigned long tput);
-void dss_debugfs_create_file(const char *name, void (*write)(struct seq_file *));
+int dss_debugfs_create_file(const char *name, void (*write)(struct seq_file *));
 
 /* display */
 int dss_suspend_all_devices(void);
@@ -460,6 +471,10 @@ void hdmi4_uninit_platform_driver(void);
 
 int hdmi5_init_platform_driver(void) __init;
 void hdmi5_uninit_platform_driver(void);
+
+/* RFBI */
+int rfbi_init_platform_driver(void) __init;
+void rfbi_uninit_platform_driver(void);
 
 
 #ifdef CONFIG_FB_OMAP2_DSS_COLLECT_IRQ_STATS

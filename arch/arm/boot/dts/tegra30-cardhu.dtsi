@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 #include <dt-bindings/input/input.h>
 #include "tegra30.dtsi"
 
@@ -40,11 +39,11 @@
 		stdout-path = "serial0:115200n8";
 	};
 
-	memory@80000000 {
+	memory {
 		reg = <0x80000000 0x40000000>;
 	};
 
-	pcie@3000 {
+	pcie-controller@00003000 {
 		status = "okay";
 
 		/* AVDD_PEXA and VDD_PEXA inputs are grounded on Cardhu. */
@@ -360,7 +359,7 @@
 		status = "okay";
 		spi-max-frequency = <25000000>;
 		spi-flash@1 {
-			compatible = "winbond,w25q32", "jedec,spi-nor";
+			compatible = "winbond,w25q32";
 			reg = <1>;
 			spi-max-frequency = <20000000>;
 		};

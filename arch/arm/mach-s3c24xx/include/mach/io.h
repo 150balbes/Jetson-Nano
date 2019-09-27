@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * arch/arm/mach-s3c2410/include/mach/io.h
  *  from arch/arm/mach-rpc/include/mach/io.h

@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * This file contains various system calls that have different calling
  * conventions on different platforms.
@@ -11,8 +10,6 @@
 #include <linux/mm.h>
 #include <linux/mman.h>
 #include <linux/sched.h>
-#include <linux/sched/mm.h>
-#include <linux/sched/task_stack.h>
 #include <linux/shm.h>
 #include <linux/file.h>		/* doh, must come after sched.h... */
 #include <linux/smp.h>
@@ -21,7 +18,7 @@
 #include <linux/hugetlb.h>
 
 #include <asm/shmparam.h>
-#include <linux/uaccess.h>
+#include <asm/uaccess.h>
 
 unsigned long
 arch_get_unmapped_area (struct file *filp, unsigned long addr, unsigned long len,
@@ -139,7 +136,7 @@ int ia64_mmap_check(unsigned long addr, unsigned long len,
 asmlinkage unsigned long
 sys_mmap2 (unsigned long addr, unsigned long len, int prot, int flags, int fd, long pgoff)
 {
-	addr = ksys_mmap_pgoff(addr, len, prot, flags, fd, pgoff);
+	addr = sys_mmap_pgoff(addr, len, prot, flags, fd, pgoff);
 	if (!IS_ERR((void *) addr))
 		force_successful_syscall_return();
 	return addr;
@@ -151,7 +148,7 @@ sys_mmap (unsigned long addr, unsigned long len, int prot, int flags, int fd, lo
 	if (offset_in_page(off) != 0)
 		return -EINVAL;
 
-	addr = ksys_mmap_pgoff(addr, len, prot, flags, fd, off >> PAGE_SHIFT);
+	addr = sys_mmap_pgoff(addr, len, prot, flags, fd, off >> PAGE_SHIFT);
 	if (!IS_ERR((void *) addr))
 		force_successful_syscall_return();
 	return addr;

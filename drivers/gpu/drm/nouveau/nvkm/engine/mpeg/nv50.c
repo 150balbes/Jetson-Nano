@@ -24,7 +24,6 @@
 #include "priv.h"
 
 #include <core/gpuobj.h>
-#include <core/object.h>
 #include <subdev/timer.h>
 
 #include <nvif/class.h>

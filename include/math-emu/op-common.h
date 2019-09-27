@@ -308,7 +308,6 @@ do {									     \
 									     \
   case _FP_CLS_COMBINE(FP_CLS_NORMAL,FP_CLS_ZERO):			     \
     R##_e = X##_e;							     \
-	  /* Fall through */						     \
   case _FP_CLS_COMBINE(FP_CLS_NAN,FP_CLS_NORMAL):			     \
   case _FP_CLS_COMBINE(FP_CLS_NAN,FP_CLS_INF):				     \
   case _FP_CLS_COMBINE(FP_CLS_NAN,FP_CLS_ZERO):				     \
@@ -319,7 +318,6 @@ do {									     \
 									     \
   case _FP_CLS_COMBINE(FP_CLS_ZERO,FP_CLS_NORMAL):			     \
     R##_e = Y##_e;							     \
-	  /* Fall through */						     \
   case _FP_CLS_COMBINE(FP_CLS_NORMAL,FP_CLS_NAN):			     \
   case _FP_CLS_COMBINE(FP_CLS_INF,FP_CLS_NAN):				     \
   case _FP_CLS_COMBINE(FP_CLS_ZERO,FP_CLS_NAN):				     \
@@ -417,7 +415,6 @@ do {							\
   case _FP_CLS_COMBINE(FP_CLS_NAN,FP_CLS_INF):		\
   case _FP_CLS_COMBINE(FP_CLS_NAN,FP_CLS_ZERO):		\
     R##_s = X##_s;					\
-	/* Fall through */				\
 							\
   case _FP_CLS_COMBINE(FP_CLS_INF,FP_CLS_INF):		\
   case _FP_CLS_COMBINE(FP_CLS_INF,FP_CLS_NORMAL):	\
@@ -431,7 +428,6 @@ do {							\
   case _FP_CLS_COMBINE(FP_CLS_INF,FP_CLS_NAN):		\
   case _FP_CLS_COMBINE(FP_CLS_ZERO,FP_CLS_NAN):		\
     R##_s = Y##_s;					\
-	/* Fall through */				\
 							\
   case _FP_CLS_COMBINE(FP_CLS_NORMAL,FP_CLS_INF):	\
   case _FP_CLS_COMBINE(FP_CLS_NORMAL,FP_CLS_ZERO):	\
@@ -497,7 +493,6 @@ do {							\
 							\
   case _FP_CLS_COMBINE(FP_CLS_NORMAL,FP_CLS_ZERO):	\
     FP_SET_EXCEPTION(FP_EX_DIVZERO);			\
-	  /* Fall through */				\
   case _FP_CLS_COMBINE(FP_CLS_INF,FP_CLS_ZERO):		\
   case _FP_CLS_COMBINE(FP_CLS_INF,FP_CLS_NORMAL):	\
     R##_c = FP_CLS_INF;					\
@@ -800,12 +795,11 @@ do {									\
 	  ur_ = (unsigned rtype) -r;					\
 	else								\
 	  ur_ = (unsigned rtype) r;					\
-	(void) (((rsize) <= _FP_W_TYPE_SIZE)				\
-		? ({ __FP_CLZ(X##_e, ur_); })				\
-		: ({							\
-		     __FP_CLZ_2(X##_e, (_FP_W_TYPE)(ur_ >> _FP_W_TYPE_SIZE),  \
-							    (_FP_W_TYPE)ur_); \
-		  }));							\
+	if (rsize <= _FP_W_TYPE_SIZE)					\
+	  __FP_CLZ(X##_e, ur_);						\
+	else								\
+	  __FP_CLZ_2(X##_e, (_FP_W_TYPE)(ur_ >> _FP_W_TYPE_SIZE), 	\
+		     (_FP_W_TYPE)ur_);					\
 	if (rsize < _FP_W_TYPE_SIZE)					\
 		X##_e -= (_FP_W_TYPE_SIZE - rsize);			\
 	X##_e = rsize - X##_e - 1;					\

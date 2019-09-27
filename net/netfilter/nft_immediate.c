@@ -1,6 +1,9 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2008-2009 Patrick McHardy <kaber@trash.net>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  *
  * Development of this code funded by Astaro AG (http://www.astaro.com/)
  */
@@ -13,11 +16,16 @@
 #include <linux/netfilter/nf_tables.h>
 #include <net/netfilter/nf_tables_core.h>
 #include <net/netfilter/nf_tables.h>
-#include <net/netfilter/nf_tables_offload.h>
 
-void nft_immediate_eval(const struct nft_expr *expr,
-			struct nft_regs *regs,
-			const struct nft_pktinfo *pkt)
+struct nft_immediate_expr {
+	struct nft_data		data;
+	enum nft_registers	dreg:8;
+	u8			dlen;
+};
+
+static void nft_immediate_eval(const struct nft_expr *expr,
+			       struct nft_regs *regs,
+			       const struct nft_pktinfo *pkt)
 {
 	const struct nft_immediate_expr *priv = nft_expr_priv(expr);
 
@@ -46,6 +54,9 @@ static int nft_immediate_init(const struct nft_ctx *ctx,
 	if (err < 0)
 		return err;
 
+	if (desc.len > U8_MAX)
+		return -ERANGE;
+
 	priv->dlen = desc.len;
 
 	priv->dreg = nft_parse_register(tb[NFTA_IMMEDIATE_DREG]);
@@ -57,28 +68,15 @@ static int nft_immediate_init(const struct nft_ctx *ctx,
 	return 0;
 
 err1:
-	nft_data_release(&priv->data, desc.type);
+	nft_data_uninit(&priv->data, desc.type);
 	return err;
 }
 
-static void nft_immediate_activate(const struct nft_ctx *ctx,
-				   const struct nft_expr *expr)
+static void nft_immediate_destroy(const struct nft_ctx *ctx,
+				  const struct nft_expr *expr)
 {
 	const struct nft_immediate_expr *priv = nft_expr_priv(expr);
-
-	return nft_data_hold(&priv->data, nft_dreg_to_type(priv->dreg));
-}
-
-static void nft_immediate_deactivate(const struct nft_ctx *ctx,
-				     const struct nft_expr *expr,
-				     enum nft_trans_phase phase)
-{
-	const struct nft_immediate_expr *priv = nft_expr_priv(expr);
-
-	if (phase == NFT_TRANS_COMMIT)
-		return;
-
-	return nft_data_release(&priv->data, nft_dreg_to_type(priv->dreg));
+	return nft_data_uninit(&priv->data, nft_dreg_to_type(priv->dreg));
 }
 
 static int nft_immediate_dump(struct sk_buff *skb, const struct nft_expr *expr)
@@ -97,79 +95,41 @@ nla_put_failure:
 
 static int nft_immediate_validate(const struct nft_ctx *ctx,
 				  const struct nft_expr *expr,
-				  const struct nft_data **d)
+				  const struct nft_data **data)
 {
 	const struct nft_immediate_expr *priv = nft_expr_priv(expr);
-	struct nft_ctx *pctx = (struct nft_ctx *)ctx;
-	const struct nft_data *data;
-	int err;
 
-	if (priv->dreg != NFT_REG_VERDICT)
-		return 0;
-
-	data = &priv->data;
-
-	switch (data->verdict.code) {
-	case NFT_JUMP:
-	case NFT_GOTO:
-		pctx->level++;
-		err = nft_chain_validate(ctx, data->verdict.chain);
-		if (err < 0)
-			return err;
-		pctx->level--;
-		break;
-	default:
-		break;
-	}
+	if (priv->dreg == NFT_REG_VERDICT)
+		*data = &priv->data;
 
 	return 0;
 }
 
-static int nft_immediate_offload(struct nft_offload_ctx *ctx,
-				 struct nft_flow_rule *flow,
-				 const struct nft_expr *expr)
-{
-	const struct nft_immediate_expr *priv = nft_expr_priv(expr);
-	struct flow_action_entry *entry;
-	const struct nft_data *data;
-
-	if (priv->dreg != NFT_REG_VERDICT)
-		return -EOPNOTSUPP;
-
-	entry = &flow->rule->action.entries[ctx->num_actions++];
-
-	data = &priv->data;
-	switch (data->verdict.code) {
-	case NF_ACCEPT:
-		entry->id = FLOW_ACTION_ACCEPT;
-		break;
-	case NF_DROP:
-		entry->id = FLOW_ACTION_DROP;
-		break;
-	default:
-		return -EOPNOTSUPP;
-	}
-
-	return 0;
-}
-
+static struct nft_expr_type nft_imm_type;
 static const struct nft_expr_ops nft_imm_ops = {
 	.type		= &nft_imm_type,
 	.size		= NFT_EXPR_SIZE(sizeof(struct nft_immediate_expr)),
 	.eval		= nft_immediate_eval,
 	.init		= nft_immediate_init,
-	.activate	= nft_immediate_activate,
-	.deactivate	= nft_immediate_deactivate,
+	.destroy	= nft_immediate_destroy,
 	.dump		= nft_immediate_dump,
 	.validate	= nft_immediate_validate,
-	.offload	= nft_immediate_offload,
-	.offload_flags	= NFT_OFFLOAD_F_ACTION,
 };
 
-struct nft_expr_type nft_imm_type __read_mostly = {
+static struct nft_expr_type nft_imm_type __read_mostly = {
 	.name		= "immediate",
 	.ops		= &nft_imm_ops,
 	.policy		= nft_immediate_policy,
 	.maxattr	= NFTA_IMMEDIATE_MAX,
 	.owner		= THIS_MODULE,
 };
+
+int __init nft_immediate_module_init(void)
+{
+	return nft_register_expr(&nft_imm_type);
+}
+
+void nft_immediate_module_exit(void)
+{
+	nft_unregister_expr(&nft_imm_type);
+}

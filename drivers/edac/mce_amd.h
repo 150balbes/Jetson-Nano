@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _EDAC_MCE_AMD_H
 #define _EDAC_MCE_AMD_H
 
@@ -80,5 +79,6 @@ struct amd_decoder_ops {
 void amd_report_gart_errors(bool);
 void amd_register_ecc_decoder(void (*f)(int, struct mce *));
 void amd_unregister_ecc_decoder(void (*f)(int, struct mce *));
+int amd_decode_mce(struct notifier_block *nb, unsigned long val, void *data);
 
 #endif /* _EDAC_MCE_AMD_H */

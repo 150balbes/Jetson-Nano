@@ -10,7 +10,6 @@
 #include <linux/slab.h>
 #include <linux/agp_backend.h>
 #include <asm/agp.h>
-#include <asm/set_memory.h>
 #include "agp.h"
 
 #define ATI_GART_MMBASE_BAR	1
@@ -108,8 +107,7 @@ static int ati_create_gatt_pages(int nr_tables)
 	int retval = 0;
 	int i;
 
-	tables = kcalloc(nr_tables + 1, sizeof(struct ati_page_map *),
-			 GFP_KERNEL);
+	tables = kzalloc((nr_tables + 1) * sizeof(struct ati_page_map *),GFP_KERNEL);
 	if (tables == NULL)
 		return -ENOMEM;
 
@@ -541,7 +539,7 @@ static void agp_ati_remove(struct pci_dev *pdev)
 	agp_put_bridge(bridge);
 }
 
-static const struct pci_device_id agp_ati_pci_table[] = {
+static struct pci_device_id agp_ati_pci_table[] = {
 	{
 	.class		= (PCI_CLASS_BRIDGE_HOST << 8),
 	.class_mask	= ~0,

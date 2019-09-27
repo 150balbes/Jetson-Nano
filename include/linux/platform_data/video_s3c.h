@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __PLATFORM_DATA_VIDEO_S3C
 #define __PLATFORM_DATA_VIDEO_S3C
 

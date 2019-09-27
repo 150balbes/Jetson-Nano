@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /* sunsab.c: ASYNC Driver for the SIEMENS SAB82532 DUSCC.
  *
  * Copyright (C) 1997  Eddie C. Dost  (ecd@skynet.be)
@@ -820,7 +819,7 @@ static int sunsab_verify_port(struct uart_port *port, struct serial_struct *ser)
 	return -EINVAL;
 }
 
-static const struct uart_ops sunsab_pops = {
+static struct uart_ops sunsab_pops = {
 	.tx_empty	= sunsab_tx_empty,
 	.set_mctrl	= sunsab_set_mctrl,
 	.get_mctrl	= sunsab_get_mctrl,
@@ -1125,9 +1124,8 @@ static int __init sunsab_init(void)
 	}
 
 	if (num_channels) {
-		sunsab_ports = kcalloc(num_channels,
-				       sizeof(struct uart_sunsab_port),
-				       GFP_KERNEL);
+		sunsab_ports = kzalloc(sizeof(struct uart_sunsab_port) *
+				       num_channels, GFP_KERNEL);
 		if (!sunsab_ports)
 			return -ENOMEM;
 

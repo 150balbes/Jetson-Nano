@@ -34,11 +34,7 @@
  */
 
 #include <linux/export.h>
-
-#include <drm/drm_drv.h>
-#include <drm/drm_pci.h>
-#include <drm/drm_print.h>
-
+#include <drm/drmP.h>
 #include "drm_legacy.h"
 
 /**

@@ -332,10 +332,10 @@ static int qat_dh_compute_value(struct kpp_request *req)
 		} else {
 			int shift = ctx->p_size - req->src_len;
 
-			qat_req->src_align = dma_alloc_coherent(dev,
-								ctx->p_size,
-								&qat_req->in.dh.in.b,
-								GFP_KERNEL);
+			qat_req->src_align = dma_zalloc_coherent(dev,
+								 ctx->p_size,
+								 &qat_req->in.dh.in.b,
+								 GFP_KERNEL);
 			if (unlikely(!qat_req->src_align))
 				return ret;
 
@@ -360,9 +360,9 @@ static int qat_dh_compute_value(struct kpp_request *req)
 			goto unmap_src;
 
 	} else {
-		qat_req->dst_align = dma_alloc_coherent(dev, ctx->p_size,
-							&qat_req->out.dh.r,
-							GFP_KERNEL);
+		qat_req->dst_align = dma_zalloc_coherent(dev, ctx->p_size,
+							 &qat_req->out.dh.r,
+							 GFP_KERNEL);
 		if (unlikely(!qat_req->dst_align))
 			goto unmap_src;
 	}
@@ -443,11 +443,14 @@ static int qat_dh_set_params(struct qat_dh_ctx *ctx, struct dh *params)
 	struct qat_crypto_instance *inst = ctx->inst;
 	struct device *dev = &GET_DEV(inst->accel_dev);
 
+	if (unlikely(!params->p || !params->g))
+		return -EINVAL;
+
 	if (qat_dh_check_params_length(params->p_size << 3))
 		return -EINVAL;
 
 	ctx->p_size = params->p_size;
-	ctx->p = dma_alloc_coherent(dev, ctx->p_size, &ctx->dma_p, GFP_KERNEL);
+	ctx->p = dma_zalloc_coherent(dev, ctx->p_size, &ctx->dma_p, GFP_KERNEL);
 	if (!ctx->p)
 		return -ENOMEM;
 	memcpy(ctx->p, params->p, ctx->p_size);
@@ -458,9 +461,12 @@ static int qat_dh_set_params(struct qat_dh_ctx *ctx, struct dh *params)
 		return 0;
 	}
 
-	ctx->g = dma_alloc_coherent(dev, ctx->p_size, &ctx->dma_g, GFP_KERNEL);
-	if (!ctx->g)
+	ctx->g = dma_zalloc_coherent(dev, ctx->p_size, &ctx->dma_g, GFP_KERNEL);
+	if (!ctx->g) {
+		dma_free_coherent(dev, ctx->p_size, ctx->p, ctx->dma_p);
+		ctx->p = NULL;
 		return -ENOMEM;
+	}
 	memcpy(ctx->g + (ctx->p_size - params->g_size), params->g,
 	       params->g_size);
 
@@ -485,7 +491,7 @@ static void qat_dh_clear_ctx(struct device *dev, struct qat_dh_ctx *ctx)
 	ctx->g2 = false;
 }
 
-static int qat_dh_set_secret(struct crypto_kpp *tfm, const void *buf,
+static int qat_dh_set_secret(struct crypto_kpp *tfm, void *buf,
 			     unsigned int len)
 {
 	struct qat_dh_ctx *ctx = kpp_tfm_ctx(tfm);
@@ -501,29 +507,25 @@ static int qat_dh_set_secret(struct crypto_kpp *tfm, const void *buf,
 
 	ret = qat_dh_set_params(ctx, &params);
 	if (ret < 0)
-		goto err_clear_ctx;
+		return ret;
 
-	ctx->xa = dma_alloc_coherent(dev, ctx->p_size, &ctx->dma_xa,
-				     GFP_KERNEL);
+	ctx->xa = dma_zalloc_coherent(dev, ctx->p_size, &ctx->dma_xa,
+				      GFP_KERNEL);
 	if (!ctx->xa) {
-		ret = -ENOMEM;
-		goto err_clear_ctx;
+		qat_dh_clear_ctx(dev, ctx);
+		return -ENOMEM;
 	}
 	memcpy(ctx->xa + (ctx->p_size - params.key_size), params.key,
 	       params.key_size);
 
 	return 0;
-
-err_clear_ctx:
-	qat_dh_clear_ctx(dev, ctx);
-	return ret;
 }
 
-static unsigned int qat_dh_max_size(struct crypto_kpp *tfm)
+static int qat_dh_max_size(struct crypto_kpp *tfm)
 {
 	struct qat_dh_ctx *ctx = kpp_tfm_ctx(tfm);
 
-	return ctx->p_size;
+	return ctx->p ? ctx->p_size : -EINVAL;
 }
 
 static int qat_dh_init_tfm(struct crypto_kpp *tfm)
@@ -737,9 +739,9 @@ static int qat_rsa_enc(struct akcipher_request *req)
 	} else {
 		int shift = ctx->key_sz - req->src_len;
 
-		qat_req->src_align = dma_alloc_coherent(dev, ctx->key_sz,
-							&qat_req->in.rsa.enc.m,
-							GFP_KERNEL);
+		qat_req->src_align = dma_zalloc_coherent(dev, ctx->key_sz,
+							 &qat_req->in.rsa.enc.m,
+							 GFP_KERNEL);
 		if (unlikely(!qat_req->src_align))
 			return ret;
 
@@ -756,9 +758,9 @@ static int qat_rsa_enc(struct akcipher_request *req)
 			goto unmap_src;
 
 	} else {
-		qat_req->dst_align = dma_alloc_coherent(dev, ctx->key_sz,
-							&qat_req->out.rsa.enc.c,
-							GFP_KERNEL);
+		qat_req->dst_align = dma_zalloc_coherent(dev, ctx->key_sz,
+							 &qat_req->out.rsa.enc.c,
+							 GFP_KERNEL);
 		if (unlikely(!qat_req->dst_align))
 			goto unmap_src;
 
@@ -881,9 +883,9 @@ static int qat_rsa_dec(struct akcipher_request *req)
 	} else {
 		int shift = ctx->key_sz - req->src_len;
 
-		qat_req->src_align = dma_alloc_coherent(dev, ctx->key_sz,
-							&qat_req->in.rsa.dec.c,
-							GFP_KERNEL);
+		qat_req->src_align = dma_zalloc_coherent(dev, ctx->key_sz,
+							 &qat_req->in.rsa.dec.c,
+							 GFP_KERNEL);
 		if (unlikely(!qat_req->src_align))
 			return ret;
 
@@ -900,9 +902,9 @@ static int qat_rsa_dec(struct akcipher_request *req)
 			goto unmap_src;
 
 	} else {
-		qat_req->dst_align = dma_alloc_coherent(dev, ctx->key_sz,
-							&qat_req->out.rsa.dec.m,
-							GFP_KERNEL);
+		qat_req->dst_align = dma_zalloc_coherent(dev, ctx->key_sz,
+							 &qat_req->out.rsa.dec.m,
+							 GFP_KERNEL);
 		if (unlikely(!qat_req->dst_align))
 			goto unmap_src;
 
@@ -969,8 +971,7 @@ unmap_src:
 	return ret;
 }
 
-static int qat_rsa_set_n(struct qat_rsa_ctx *ctx, const char *value,
-			 size_t vlen)
+int qat_rsa_set_n(struct qat_rsa_ctx *ctx, const char *value, size_t vlen)
 {
 	struct qat_crypto_instance *inst = ctx->inst;
 	struct device *dev = &GET_DEV(inst->accel_dev);
@@ -989,7 +990,7 @@ static int qat_rsa_set_n(struct qat_rsa_ctx *ctx, const char *value,
 		goto err;
 
 	ret = -ENOMEM;
-	ctx->n = dma_alloc_coherent(dev, ctx->key_sz, &ctx->dma_n, GFP_KERNEL);
+	ctx->n = dma_zalloc_coherent(dev, ctx->key_sz, &ctx->dma_n, GFP_KERNEL);
 	if (!ctx->n)
 		goto err;
 
@@ -1001,8 +1002,7 @@ err:
 	return ret;
 }
 
-static int qat_rsa_set_e(struct qat_rsa_ctx *ctx, const char *value,
-			 size_t vlen)
+int qat_rsa_set_e(struct qat_rsa_ctx *ctx, const char *value, size_t vlen)
 {
 	struct qat_crypto_instance *inst = ctx->inst;
 	struct device *dev = &GET_DEV(inst->accel_dev);
@@ -1018,7 +1018,7 @@ static int qat_rsa_set_e(struct qat_rsa_ctx *ctx, const char *value,
 		return -EINVAL;
 	}
 
-	ctx->e = dma_alloc_coherent(dev, ctx->key_sz, &ctx->dma_e, GFP_KERNEL);
+	ctx->e = dma_zalloc_coherent(dev, ctx->key_sz, &ctx->dma_e, GFP_KERNEL);
 	if (!ctx->e)
 		return -ENOMEM;
 
@@ -1026,8 +1026,7 @@ static int qat_rsa_set_e(struct qat_rsa_ctx *ctx, const char *value,
 	return 0;
 }
 
-static int qat_rsa_set_d(struct qat_rsa_ctx *ctx, const char *value,
-			 size_t vlen)
+int qat_rsa_set_d(struct qat_rsa_ctx *ctx, const char *value, size_t vlen)
 {
 	struct qat_crypto_instance *inst = ctx->inst;
 	struct device *dev = &GET_DEV(inst->accel_dev);
@@ -1044,7 +1043,7 @@ static int qat_rsa_set_d(struct qat_rsa_ctx *ctx, const char *value,
 		goto err;
 
 	ret = -ENOMEM;
-	ctx->d = dma_alloc_coherent(dev, ctx->key_sz, &ctx->dma_d, GFP_KERNEL);
+	ctx->d = dma_zalloc_coherent(dev, ctx->key_sz, &ctx->dma_d, GFP_KERNEL);
 	if (!ctx->d)
 		goto err;
 
@@ -1077,7 +1076,7 @@ static void qat_rsa_setkey_crt(struct qat_rsa_ctx *ctx, struct rsa_key *rsa_key)
 	qat_rsa_drop_leading_zeros(&ptr, &len);
 	if (!len)
 		goto err;
-	ctx->p = dma_alloc_coherent(dev, half_key_sz, &ctx->dma_p, GFP_KERNEL);
+	ctx->p = dma_zalloc_coherent(dev, half_key_sz, &ctx->dma_p, GFP_KERNEL);
 	if (!ctx->p)
 		goto err;
 	memcpy(ctx->p + (half_key_sz - len), ptr, len);
@@ -1088,7 +1087,7 @@ static void qat_rsa_setkey_crt(struct qat_rsa_ctx *ctx, struct rsa_key *rsa_key)
 	qat_rsa_drop_leading_zeros(&ptr, &len);
 	if (!len)
 		goto free_p;
-	ctx->q = dma_alloc_coherent(dev, half_key_sz, &ctx->dma_q, GFP_KERNEL);
+	ctx->q = dma_zalloc_coherent(dev, half_key_sz, &ctx->dma_q, GFP_KERNEL);
 	if (!ctx->q)
 		goto free_p;
 	memcpy(ctx->q + (half_key_sz - len), ptr, len);
@@ -1099,8 +1098,8 @@ static void qat_rsa_setkey_crt(struct qat_rsa_ctx *ctx, struct rsa_key *rsa_key)
 	qat_rsa_drop_leading_zeros(&ptr, &len);
 	if (!len)
 		goto free_q;
-	ctx->dp = dma_alloc_coherent(dev, half_key_sz, &ctx->dma_dp,
-				     GFP_KERNEL);
+	ctx->dp = dma_zalloc_coherent(dev, half_key_sz, &ctx->dma_dp,
+				      GFP_KERNEL);
 	if (!ctx->dp)
 		goto free_q;
 	memcpy(ctx->dp + (half_key_sz - len), ptr, len);
@@ -1111,8 +1110,8 @@ static void qat_rsa_setkey_crt(struct qat_rsa_ctx *ctx, struct rsa_key *rsa_key)
 	qat_rsa_drop_leading_zeros(&ptr, &len);
 	if (!len)
 		goto free_dp;
-	ctx->dq = dma_alloc_coherent(dev, half_key_sz, &ctx->dma_dq,
-				     GFP_KERNEL);
+	ctx->dq = dma_zalloc_coherent(dev, half_key_sz, &ctx->dma_dq,
+				      GFP_KERNEL);
 	if (!ctx->dq)
 		goto free_dp;
 	memcpy(ctx->dq + (half_key_sz - len), ptr, len);
@@ -1123,8 +1122,8 @@ static void qat_rsa_setkey_crt(struct qat_rsa_ctx *ctx, struct rsa_key *rsa_key)
 	qat_rsa_drop_leading_zeros(&ptr, &len);
 	if (!len)
 		goto free_dq;
-	ctx->qinv = dma_alloc_coherent(dev, half_key_sz, &ctx->dma_qinv,
-				       GFP_KERNEL);
+	ctx->qinv = dma_zalloc_coherent(dev, half_key_sz, &ctx->dma_qinv,
+					GFP_KERNEL);
 	if (!ctx->qinv)
 		goto free_dq;
 	memcpy(ctx->qinv + (half_key_sz - len), ptr, len);
@@ -1257,11 +1256,11 @@ static int qat_rsa_setprivkey(struct crypto_akcipher *tfm, const void *key,
 	return qat_rsa_setkey(tfm, key, keylen, true);
 }
 
-static unsigned int qat_rsa_max_size(struct crypto_akcipher *tfm)
+static int qat_rsa_max_size(struct crypto_akcipher *tfm)
 {
 	struct qat_rsa_ctx *ctx = akcipher_tfm_ctx(tfm);
 
-	return ctx->key_sz;
+	return (ctx->n) ? ctx->key_sz : -EINVAL;
 }
 
 static int qat_rsa_init_tfm(struct crypto_akcipher *tfm)
@@ -1300,6 +1299,8 @@ static void qat_rsa_exit_tfm(struct crypto_akcipher *tfm)
 static struct akcipher_alg rsa = {
 	.encrypt = qat_rsa_enc,
 	.decrypt = qat_rsa_dec,
+	.sign = qat_rsa_dec,
+	.verify = qat_rsa_enc,
 	.set_pub_key = qat_rsa_setpubkey,
 	.set_priv_key = qat_rsa_setprivkey,
 	.max_size = qat_rsa_max_size,

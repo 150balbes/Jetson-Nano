@@ -97,6 +97,24 @@ union cvmx_pko_mem_count0 {
 		uint64_t reserved_32_63:32;
 #endif
 	} s;
+	struct cvmx_pko_mem_count0_s cn30xx;
+	struct cvmx_pko_mem_count0_s cn31xx;
+	struct cvmx_pko_mem_count0_s cn38xx;
+	struct cvmx_pko_mem_count0_s cn38xxp2;
+	struct cvmx_pko_mem_count0_s cn50xx;
+	struct cvmx_pko_mem_count0_s cn52xx;
+	struct cvmx_pko_mem_count0_s cn52xxp1;
+	struct cvmx_pko_mem_count0_s cn56xx;
+	struct cvmx_pko_mem_count0_s cn56xxp1;
+	struct cvmx_pko_mem_count0_s cn58xx;
+	struct cvmx_pko_mem_count0_s cn58xxp1;
+	struct cvmx_pko_mem_count0_s cn61xx;
+	struct cvmx_pko_mem_count0_s cn63xx;
+	struct cvmx_pko_mem_count0_s cn63xxp1;
+	struct cvmx_pko_mem_count0_s cn66xx;
+	struct cvmx_pko_mem_count0_s cn68xx;
+	struct cvmx_pko_mem_count0_s cn68xxp1;
+	struct cvmx_pko_mem_count0_s cnf71xx;
 };
 
 union cvmx_pko_mem_count1 {
@@ -110,6 +128,24 @@ union cvmx_pko_mem_count1 {
 		uint64_t reserved_48_63:16;
 #endif
 	} s;
+	struct cvmx_pko_mem_count1_s cn30xx;
+	struct cvmx_pko_mem_count1_s cn31xx;
+	struct cvmx_pko_mem_count1_s cn38xx;
+	struct cvmx_pko_mem_count1_s cn38xxp2;
+	struct cvmx_pko_mem_count1_s cn50xx;
+	struct cvmx_pko_mem_count1_s cn52xx;
+	struct cvmx_pko_mem_count1_s cn52xxp1;
+	struct cvmx_pko_mem_count1_s cn56xx;
+	struct cvmx_pko_mem_count1_s cn56xxp1;
+	struct cvmx_pko_mem_count1_s cn58xx;
+	struct cvmx_pko_mem_count1_s cn58xxp1;
+	struct cvmx_pko_mem_count1_s cn61xx;
+	struct cvmx_pko_mem_count1_s cn63xx;
+	struct cvmx_pko_mem_count1_s cn63xxp1;
+	struct cvmx_pko_mem_count1_s cn66xx;
+	struct cvmx_pko_mem_count1_s cn68xx;
+	struct cvmx_pko_mem_count1_s cn68xxp1;
+	struct cvmx_pko_mem_count1_s cnf71xx;
 };
 
 union cvmx_pko_mem_debug0 {
@@ -127,6 +163,24 @@ union cvmx_pko_mem_debug0 {
 		uint64_t fau:28;
 #endif
 	} s;
+	struct cvmx_pko_mem_debug0_s cn30xx;
+	struct cvmx_pko_mem_debug0_s cn31xx;
+	struct cvmx_pko_mem_debug0_s cn38xx;
+	struct cvmx_pko_mem_debug0_s cn38xxp2;
+	struct cvmx_pko_mem_debug0_s cn50xx;
+	struct cvmx_pko_mem_debug0_s cn52xx;
+	struct cvmx_pko_mem_debug0_s cn52xxp1;
+	struct cvmx_pko_mem_debug0_s cn56xx;
+	struct cvmx_pko_mem_debug0_s cn56xxp1;
+	struct cvmx_pko_mem_debug0_s cn58xx;
+	struct cvmx_pko_mem_debug0_s cn58xxp1;
+	struct cvmx_pko_mem_debug0_s cn61xx;
+	struct cvmx_pko_mem_debug0_s cn63xx;
+	struct cvmx_pko_mem_debug0_s cn63xxp1;
+	struct cvmx_pko_mem_debug0_s cn66xx;
+	struct cvmx_pko_mem_debug0_s cn68xx;
+	struct cvmx_pko_mem_debug0_s cn68xxp1;
+	struct cvmx_pko_mem_debug0_s cnf71xx;
 };
 
 union cvmx_pko_mem_debug1 {
@@ -146,6 +200,24 @@ union cvmx_pko_mem_debug1 {
 		uint64_t i:1;
 #endif
 	} s;
+	struct cvmx_pko_mem_debug1_s cn30xx;
+	struct cvmx_pko_mem_debug1_s cn31xx;
+	struct cvmx_pko_mem_debug1_s cn38xx;
+	struct cvmx_pko_mem_debug1_s cn38xxp2;
+	struct cvmx_pko_mem_debug1_s cn50xx;
+	struct cvmx_pko_mem_debug1_s cn52xx;
+	struct cvmx_pko_mem_debug1_s cn52xxp1;
+	struct cvmx_pko_mem_debug1_s cn56xx;
+	struct cvmx_pko_mem_debug1_s cn56xxp1;
+	struct cvmx_pko_mem_debug1_s cn58xx;
+	struct cvmx_pko_mem_debug1_s cn58xxp1;
+	struct cvmx_pko_mem_debug1_s cn61xx;
+	struct cvmx_pko_mem_debug1_s cn63xx;
+	struct cvmx_pko_mem_debug1_s cn63xxp1;
+	struct cvmx_pko_mem_debug1_s cn66xx;
+	struct cvmx_pko_mem_debug1_s cn68xx;
+	struct cvmx_pko_mem_debug1_s cn68xxp1;
+	struct cvmx_pko_mem_debug1_s cnf71xx;
 };
 
 union cvmx_pko_mem_debug10 {
@@ -170,6 +242,9 @@ union cvmx_pko_mem_debug10 {
 		uint64_t fau:28;
 #endif
 	} cn30xx;
+	struct cvmx_pko_mem_debug10_cn30xx cn31xx;
+	struct cvmx_pko_mem_debug10_cn30xx cn38xx;
+	struct cvmx_pko_mem_debug10_cn30xx cn38xxp2;
 	struct cvmx_pko_mem_debug10_cn50xx {
 #ifdef __BIG_ENDIAN_BITFIELD
 		uint64_t reserved_49_63:15;
@@ -183,6 +258,19 @@ union cvmx_pko_mem_debug10 {
 		uint64_t reserved_49_63:15;
 #endif
 	} cn50xx;
+	struct cvmx_pko_mem_debug10_cn50xx cn52xx;
+	struct cvmx_pko_mem_debug10_cn50xx cn52xxp1;
+	struct cvmx_pko_mem_debug10_cn50xx cn56xx;
+	struct cvmx_pko_mem_debug10_cn50xx cn56xxp1;
+	struct cvmx_pko_mem_debug10_cn50xx cn58xx;
+	struct cvmx_pko_mem_debug10_cn50xx cn58xxp1;
+	struct cvmx_pko_mem_debug10_cn50xx cn61xx;
+	struct cvmx_pko_mem_debug10_cn50xx cn63xx;
+	struct cvmx_pko_mem_debug10_cn50xx cn63xxp1;
+	struct cvmx_pko_mem_debug10_cn50xx cn66xx;
+	struct cvmx_pko_mem_debug10_cn50xx cn68xx;
+	struct cvmx_pko_mem_debug10_cn50xx cn68xxp1;
+	struct cvmx_pko_mem_debug10_cn50xx cnf71xx;
 };
 
 union cvmx_pko_mem_debug11 {
@@ -217,6 +305,9 @@ union cvmx_pko_mem_debug11 {
 		uint64_t i:1;
 #endif
 	} cn30xx;
+	struct cvmx_pko_mem_debug11_cn30xx cn31xx;
+	struct cvmx_pko_mem_debug11_cn30xx cn38xx;
+	struct cvmx_pko_mem_debug11_cn30xx cn38xxp2;
 	struct cvmx_pko_mem_debug11_cn50xx {
 #ifdef __BIG_ENDIAN_BITFIELD
 		uint64_t reserved_23_63:41;
@@ -238,6 +329,19 @@ union cvmx_pko_mem_debug11 {
 		uint64_t reserved_23_63:41;
 #endif
 	} cn50xx;
+	struct cvmx_pko_mem_debug11_cn50xx cn52xx;
+	struct cvmx_pko_mem_debug11_cn50xx cn52xxp1;
+	struct cvmx_pko_mem_debug11_cn50xx cn56xx;
+	struct cvmx_pko_mem_debug11_cn50xx cn56xxp1;
+	struct cvmx_pko_mem_debug11_cn50xx cn58xx;
+	struct cvmx_pko_mem_debug11_cn50xx cn58xxp1;
+	struct cvmx_pko_mem_debug11_cn50xx cn61xx;
+	struct cvmx_pko_mem_debug11_cn50xx cn63xx;
+	struct cvmx_pko_mem_debug11_cn50xx cn63xxp1;
+	struct cvmx_pko_mem_debug11_cn50xx cn66xx;
+	struct cvmx_pko_mem_debug11_cn50xx cn68xx;
+	struct cvmx_pko_mem_debug11_cn50xx cn68xxp1;
+	struct cvmx_pko_mem_debug11_cn50xx cnf71xx;
 };
 
 union cvmx_pko_mem_debug12 {
@@ -256,6 +360,9 @@ union cvmx_pko_mem_debug12 {
 		uint64_t data:64;
 #endif
 	} cn30xx;
+	struct cvmx_pko_mem_debug12_cn30xx cn31xx;
+	struct cvmx_pko_mem_debug12_cn30xx cn38xx;
+	struct cvmx_pko_mem_debug12_cn30xx cn38xxp2;
 	struct cvmx_pko_mem_debug12_cn50xx {
 #ifdef __BIG_ENDIAN_BITFIELD
 		uint64_t fau:28;
@@ -269,6 +376,16 @@ union cvmx_pko_mem_debug12 {
 		uint64_t fau:28;
 #endif
 	} cn50xx;
+	struct cvmx_pko_mem_debug12_cn50xx cn52xx;
+	struct cvmx_pko_mem_debug12_cn50xx cn52xxp1;
+	struct cvmx_pko_mem_debug12_cn50xx cn56xx;
+	struct cvmx_pko_mem_debug12_cn50xx cn56xxp1;
+	struct cvmx_pko_mem_debug12_cn50xx cn58xx;
+	struct cvmx_pko_mem_debug12_cn50xx cn58xxp1;
+	struct cvmx_pko_mem_debug12_cn50xx cn61xx;
+	struct cvmx_pko_mem_debug12_cn50xx cn63xx;
+	struct cvmx_pko_mem_debug12_cn50xx cn63xxp1;
+	struct cvmx_pko_mem_debug12_cn50xx cn66xx;
 	struct cvmx_pko_mem_debug12_cn68xx {
 #ifdef __BIG_ENDIAN_BITFIELD
 		uint64_t state:64;
@@ -276,6 +393,8 @@ union cvmx_pko_mem_debug12 {
 		uint64_t state:64;
 #endif
 	} cn68xx;
+	struct cvmx_pko_mem_debug12_cn68xx cn68xxp1;
+	struct cvmx_pko_mem_debug12_cn50xx cnf71xx;
 };
 
 union cvmx_pko_mem_debug13 {
@@ -300,6 +419,9 @@ union cvmx_pko_mem_debug13 {
 		uint64_t reserved_51_63:13;
 #endif
 	} cn30xx;
+	struct cvmx_pko_mem_debug13_cn30xx cn31xx;
+	struct cvmx_pko_mem_debug13_cn30xx cn38xx;
+	struct cvmx_pko_mem_debug13_cn30xx cn38xxp2;
 	struct cvmx_pko_mem_debug13_cn50xx {
 #ifdef __BIG_ENDIAN_BITFIELD
 		uint64_t i:1;
@@ -315,6 +437,16 @@ union cvmx_pko_mem_debug13 {
 		uint64_t i:1;
 #endif
 	} cn50xx;
+	struct cvmx_pko_mem_debug13_cn50xx cn52xx;
+	struct cvmx_pko_mem_debug13_cn50xx cn52xxp1;
+	struct cvmx_pko_mem_debug13_cn50xx cn56xx;
+	struct cvmx_pko_mem_debug13_cn50xx cn56xxp1;
+	struct cvmx_pko_mem_debug13_cn50xx cn58xx;
+	struct cvmx_pko_mem_debug13_cn50xx cn58xxp1;
+	struct cvmx_pko_mem_debug13_cn50xx cn61xx;
+	struct cvmx_pko_mem_debug13_cn50xx cn63xx;
+	struct cvmx_pko_mem_debug13_cn50xx cn63xxp1;
+	struct cvmx_pko_mem_debug13_cn50xx cn66xx;
 	struct cvmx_pko_mem_debug13_cn68xx {
 #ifdef __BIG_ENDIAN_BITFIELD
 		uint64_t state:64;
@@ -322,6 +454,8 @@ union cvmx_pko_mem_debug13 {
 		uint64_t state:64;
 #endif
 	} cn68xx;
+	struct cvmx_pko_mem_debug13_cn68xx cn68xxp1;
+	struct cvmx_pko_mem_debug13_cn50xx cnf71xx;
 };
 
 union cvmx_pko_mem_debug14 {
@@ -342,6 +476,9 @@ union cvmx_pko_mem_debug14 {
 		uint64_t reserved_17_63:47;
 #endif
 	} cn30xx;
+	struct cvmx_pko_mem_debug14_cn30xx cn31xx;
+	struct cvmx_pko_mem_debug14_cn30xx cn38xx;
+	struct cvmx_pko_mem_debug14_cn30xx cn38xxp2;
 	struct cvmx_pko_mem_debug14_cn52xx {
 #ifdef __BIG_ENDIAN_BITFIELD
 		uint64_t data:64;
@@ -349,6 +486,14 @@ union cvmx_pko_mem_debug14 {
 		uint64_t data:64;
 #endif
 	} cn52xx;
+	struct cvmx_pko_mem_debug14_cn52xx cn52xxp1;
+	struct cvmx_pko_mem_debug14_cn52xx cn56xx;
+	struct cvmx_pko_mem_debug14_cn52xx cn56xxp1;
+	struct cvmx_pko_mem_debug14_cn52xx cn61xx;
+	struct cvmx_pko_mem_debug14_cn52xx cn63xx;
+	struct cvmx_pko_mem_debug14_cn52xx cn63xxp1;
+	struct cvmx_pko_mem_debug14_cn52xx cn66xx;
+	struct cvmx_pko_mem_debug14_cn52xx cnf71xx;
 };
 
 union cvmx_pko_mem_debug2 {
@@ -368,6 +513,24 @@ union cvmx_pko_mem_debug2 {
 		uint64_t i:1;
 #endif
 	} s;
+	struct cvmx_pko_mem_debug2_s cn30xx;
+	struct cvmx_pko_mem_debug2_s cn31xx;
+	struct cvmx_pko_mem_debug2_s cn38xx;
+	struct cvmx_pko_mem_debug2_s cn38xxp2;
+	struct cvmx_pko_mem_debug2_s cn50xx;
+	struct cvmx_pko_mem_debug2_s cn52xx;
+	struct cvmx_pko_mem_debug2_s cn52xxp1;
+	struct cvmx_pko_mem_debug2_s cn56xx;
+	struct cvmx_pko_mem_debug2_s cn56xxp1;
+	struct cvmx_pko_mem_debug2_s cn58xx;
+	struct cvmx_pko_mem_debug2_s cn58xxp1;
+	struct cvmx_pko_mem_debug2_s cn61xx;
+	struct cvmx_pko_mem_debug2_s cn63xx;
+	struct cvmx_pko_mem_debug2_s cn63xxp1;
+	struct cvmx_pko_mem_debug2_s cn66xx;
+	struct cvmx_pko_mem_debug2_s cn68xx;
+	struct cvmx_pko_mem_debug2_s cn68xxp1;
+	struct cvmx_pko_mem_debug2_s cnf71xx;
 };
 
 union cvmx_pko_mem_debug3 {
@@ -394,6 +557,9 @@ union cvmx_pko_mem_debug3 {
 		uint64_t i:1;
 #endif
 	} cn30xx;
+	struct cvmx_pko_mem_debug3_cn30xx cn31xx;
+	struct cvmx_pko_mem_debug3_cn30xx cn38xx;
+	struct cvmx_pko_mem_debug3_cn30xx cn38xxp2;
 	struct cvmx_pko_mem_debug3_cn50xx {
 #ifdef __BIG_ENDIAN_BITFIELD
 		uint64_t data:64;
@@ -401,6 +567,19 @@ union cvmx_pko_mem_debug3 {
 		uint64_t data:64;
 #endif
 	} cn50xx;
+	struct cvmx_pko_mem_debug3_cn50xx cn52xx;
+	struct cvmx_pko_mem_debug3_cn50xx cn52xxp1;
+	struct cvmx_pko_mem_debug3_cn50xx cn56xx;
+	struct cvmx_pko_mem_debug3_cn50xx cn56xxp1;
+	struct cvmx_pko_mem_debug3_cn50xx cn58xx;
+	struct cvmx_pko_mem_debug3_cn50xx cn58xxp1;
+	struct cvmx_pko_mem_debug3_cn50xx cn61xx;
+	struct cvmx_pko_mem_debug3_cn50xx cn63xx;
+	struct cvmx_pko_mem_debug3_cn50xx cn63xxp1;
+	struct cvmx_pko_mem_debug3_cn50xx cn66xx;
+	struct cvmx_pko_mem_debug3_cn50xx cn68xx;
+	struct cvmx_pko_mem_debug3_cn50xx cn68xxp1;
+	struct cvmx_pko_mem_debug3_cn50xx cnf71xx;
 };
 
 union cvmx_pko_mem_debug4 {
@@ -419,6 +598,9 @@ union cvmx_pko_mem_debug4 {
 		uint64_t data:64;
 #endif
 	} cn30xx;
+	struct cvmx_pko_mem_debug4_cn30xx cn31xx;
+	struct cvmx_pko_mem_debug4_cn30xx cn38xx;
+	struct cvmx_pko_mem_debug4_cn30xx cn38xxp2;
 	struct cvmx_pko_mem_debug4_cn50xx {
 #ifdef __BIG_ENDIAN_BITFIELD
 		uint64_t cmnd_segs:3;
@@ -491,6 +673,18 @@ union cvmx_pko_mem_debug4 {
 		uint64_t curr_siz:8;
 #endif
 	} cn52xx;
+	struct cvmx_pko_mem_debug4_cn52xx cn52xxp1;
+	struct cvmx_pko_mem_debug4_cn52xx cn56xx;
+	struct cvmx_pko_mem_debug4_cn52xx cn56xxp1;
+	struct cvmx_pko_mem_debug4_cn50xx cn58xx;
+	struct cvmx_pko_mem_debug4_cn50xx cn58xxp1;
+	struct cvmx_pko_mem_debug4_cn52xx cn61xx;
+	struct cvmx_pko_mem_debug4_cn52xx cn63xx;
+	struct cvmx_pko_mem_debug4_cn52xx cn63xxp1;
+	struct cvmx_pko_mem_debug4_cn52xx cn66xx;
+	struct cvmx_pko_mem_debug4_cn52xx cn68xx;
+	struct cvmx_pko_mem_debug4_cn52xx cn68xxp1;
+	struct cvmx_pko_mem_debug4_cn52xx cnf71xx;
 };
 
 union cvmx_pko_mem_debug5 {
@@ -545,6 +739,9 @@ union cvmx_pko_mem_debug5 {
 		uint64_t dwri_mod:1;
 #endif
 	} cn30xx;
+	struct cvmx_pko_mem_debug5_cn30xx cn31xx;
+	struct cvmx_pko_mem_debug5_cn30xx cn38xx;
+	struct cvmx_pko_mem_debug5_cn30xx cn38xxp2;
 	struct cvmx_pko_mem_debug5_cn50xx {
 #ifdef __BIG_ENDIAN_BITFIELD
 		uint64_t curr_ptr:29;
@@ -571,6 +768,11 @@ union cvmx_pko_mem_debug5 {
 		uint64_t reserved_54_63:10;
 #endif
 	} cn52xx;
+	struct cvmx_pko_mem_debug5_cn52xx cn52xxp1;
+	struct cvmx_pko_mem_debug5_cn52xx cn56xx;
+	struct cvmx_pko_mem_debug5_cn52xx cn56xxp1;
+	struct cvmx_pko_mem_debug5_cn50xx cn58xx;
+	struct cvmx_pko_mem_debug5_cn50xx cn58xxp1;
 	struct cvmx_pko_mem_debug5_cn61xx {
 #ifdef __BIG_ENDIAN_BITFIELD
 		uint64_t reserved_56_63:8;
@@ -588,6 +790,9 @@ union cvmx_pko_mem_debug5 {
 		uint64_t reserved_56_63:8;
 #endif
 	} cn61xx;
+	struct cvmx_pko_mem_debug5_cn61xx cn63xx;
+	struct cvmx_pko_mem_debug5_cn61xx cn63xxp1;
+	struct cvmx_pko_mem_debug5_cn61xx cn66xx;
 	struct cvmx_pko_mem_debug5_cn68xx {
 #ifdef __BIG_ENDIAN_BITFIELD
 		uint64_t reserved_57_63:7;
@@ -607,6 +812,8 @@ union cvmx_pko_mem_debug5 {
 		uint64_t reserved_57_63:7;
 #endif
 	} cn68xx;
+	struct cvmx_pko_mem_debug5_cn68xx cn68xxp1;
+	struct cvmx_pko_mem_debug5_cn61xx cnf71xx;
 };
 
 union cvmx_pko_mem_debug6 {
@@ -659,6 +866,9 @@ union cvmx_pko_mem_debug6 {
 		uint64_t reserved_11_63:53;
 #endif
 	} cn30xx;
+	struct cvmx_pko_mem_debug6_cn30xx cn31xx;
+	struct cvmx_pko_mem_debug6_cn30xx cn38xx;
+	struct cvmx_pko_mem_debug6_cn30xx cn38xxp2;
 	struct cvmx_pko_mem_debug6_cn50xx {
 #ifdef __BIG_ENDIAN_BITFIELD
 		uint64_t reserved_11_63:53;
@@ -699,6 +909,18 @@ union cvmx_pko_mem_debug6 {
 		uint64_t reserved_37_63:27;
 #endif
 	} cn52xx;
+	struct cvmx_pko_mem_debug6_cn52xx cn52xxp1;
+	struct cvmx_pko_mem_debug6_cn52xx cn56xx;
+	struct cvmx_pko_mem_debug6_cn52xx cn56xxp1;
+	struct cvmx_pko_mem_debug6_cn50xx cn58xx;
+	struct cvmx_pko_mem_debug6_cn50xx cn58xxp1;
+	struct cvmx_pko_mem_debug6_cn52xx cn61xx;
+	struct cvmx_pko_mem_debug6_cn52xx cn63xx;
+	struct cvmx_pko_mem_debug6_cn52xx cn63xxp1;
+	struct cvmx_pko_mem_debug6_cn52xx cn66xx;
+	struct cvmx_pko_mem_debug6_cn52xx cn68xx;
+	struct cvmx_pko_mem_debug6_cn52xx cn68xxp1;
+	struct cvmx_pko_mem_debug6_cn52xx cnf71xx;
 };
 
 union cvmx_pko_mem_debug7 {
@@ -723,6 +945,9 @@ union cvmx_pko_mem_debug7 {
 		uint64_t reserved_58_63:6;
 #endif
 	} cn30xx;
+	struct cvmx_pko_mem_debug7_cn30xx cn31xx;
+	struct cvmx_pko_mem_debug7_cn30xx cn38xx;
+	struct cvmx_pko_mem_debug7_cn30xx cn38xxp2;
 	struct cvmx_pko_mem_debug7_cn50xx {
 #ifdef __BIG_ENDIAN_BITFIELD
 		uint64_t qos:5;
@@ -740,6 +965,16 @@ union cvmx_pko_mem_debug7 {
 		uint64_t qos:5;
 #endif
 	} cn50xx;
+	struct cvmx_pko_mem_debug7_cn50xx cn52xx;
+	struct cvmx_pko_mem_debug7_cn50xx cn52xxp1;
+	struct cvmx_pko_mem_debug7_cn50xx cn56xx;
+	struct cvmx_pko_mem_debug7_cn50xx cn56xxp1;
+	struct cvmx_pko_mem_debug7_cn50xx cn58xx;
+	struct cvmx_pko_mem_debug7_cn50xx cn58xxp1;
+	struct cvmx_pko_mem_debug7_cn50xx cn61xx;
+	struct cvmx_pko_mem_debug7_cn50xx cn63xx;
+	struct cvmx_pko_mem_debug7_cn50xx cn63xxp1;
+	struct cvmx_pko_mem_debug7_cn50xx cn66xx;
 	struct cvmx_pko_mem_debug7_cn68xx {
 #ifdef __BIG_ENDIAN_BITFIELD
 		uint64_t qos:3;
@@ -757,6 +992,8 @@ union cvmx_pko_mem_debug7 {
 		uint64_t qos:3;
 #endif
 	} cn68xx;
+	struct cvmx_pko_mem_debug7_cn68xx cn68xxp1;
+	struct cvmx_pko_mem_debug7_cn50xx cnf71xx;
 };
 
 union cvmx_pko_mem_debug8 {
@@ -791,6 +1028,9 @@ union cvmx_pko_mem_debug8 {
 		uint64_t qos:5;
 #endif
 	} cn30xx;
+	struct cvmx_pko_mem_debug8_cn30xx cn31xx;
+	struct cvmx_pko_mem_debug8_cn30xx cn38xx;
+	struct cvmx_pko_mem_debug8_cn30xx cn38xxp2;
 	struct cvmx_pko_mem_debug8_cn50xx {
 #ifdef __BIG_ENDIAN_BITFIELD
 		uint64_t reserved_28_63:36;
@@ -833,6 +1073,11 @@ union cvmx_pko_mem_debug8 {
 		uint64_t reserved_29_63:35;
 #endif
 	} cn52xx;
+	struct cvmx_pko_mem_debug8_cn52xx cn52xxp1;
+	struct cvmx_pko_mem_debug8_cn52xx cn56xx;
+	struct cvmx_pko_mem_debug8_cn52xx cn56xxp1;
+	struct cvmx_pko_mem_debug8_cn50xx cn58xx;
+	struct cvmx_pko_mem_debug8_cn50xx cn58xxp1;
 	struct cvmx_pko_mem_debug8_cn61xx {
 #ifdef __BIG_ENDIAN_BITFIELD
 		uint64_t reserved_42_63:22;
@@ -862,6 +1107,9 @@ union cvmx_pko_mem_debug8 {
 		uint64_t reserved_42_63:22;
 #endif
 	} cn61xx;
+	struct cvmx_pko_mem_debug8_cn52xx cn63xx;
+	struct cvmx_pko_mem_debug8_cn52xx cn63xxp1;
+	struct cvmx_pko_mem_debug8_cn61xx cn66xx;
 	struct cvmx_pko_mem_debug8_cn68xx {
 #ifdef __BIG_ENDIAN_BITFIELD
 		uint64_t reserved_37_63:27;
@@ -885,6 +1133,8 @@ union cvmx_pko_mem_debug8 {
 		uint64_t reserved_37_63:27;
 #endif
 	} cn68xx;
+	struct cvmx_pko_mem_debug8_cn68xx cn68xxp1;
+	struct cvmx_pko_mem_debug8_cn61xx cnf71xx;
 };
 
 union cvmx_pko_mem_debug9 {
@@ -917,6 +1167,7 @@ union cvmx_pko_mem_debug9 {
 		uint64_t reserved_28_63:36;
 #endif
 	} cn30xx;
+	struct cvmx_pko_mem_debug9_cn30xx cn31xx;
 	struct cvmx_pko_mem_debug9_cn38xx {
 #ifdef __BIG_ENDIAN_BITFIELD
 		uint64_t reserved_28_63:36;
@@ -936,6 +1187,7 @@ union cvmx_pko_mem_debug9 {
 		uint64_t reserved_28_63:36;
 #endif
 	} cn38xx;
+	struct cvmx_pko_mem_debug9_cn38xx cn38xxp2;
 	struct cvmx_pko_mem_debug9_cn50xx {
 #ifdef __BIG_ENDIAN_BITFIELD
 		uint64_t reserved_49_63:15;
@@ -949,6 +1201,19 @@ union cvmx_pko_mem_debug9 {
 		uint64_t reserved_49_63:15;
 #endif
 	} cn50xx;
+	struct cvmx_pko_mem_debug9_cn50xx cn52xx;
+	struct cvmx_pko_mem_debug9_cn50xx cn52xxp1;
+	struct cvmx_pko_mem_debug9_cn50xx cn56xx;
+	struct cvmx_pko_mem_debug9_cn50xx cn56xxp1;
+	struct cvmx_pko_mem_debug9_cn50xx cn58xx;
+	struct cvmx_pko_mem_debug9_cn50xx cn58xxp1;
+	struct cvmx_pko_mem_debug9_cn50xx cn61xx;
+	struct cvmx_pko_mem_debug9_cn50xx cn63xx;
+	struct cvmx_pko_mem_debug9_cn50xx cn63xxp1;
+	struct cvmx_pko_mem_debug9_cn50xx cn66xx;
+	struct cvmx_pko_mem_debug9_cn50xx cn68xx;
+	struct cvmx_pko_mem_debug9_cn50xx cn68xxp1;
+	struct cvmx_pko_mem_debug9_cn50xx cnf71xx;
 };
 
 union cvmx_pko_mem_iport_ptrs {
@@ -984,6 +1249,8 @@ union cvmx_pko_mem_iport_ptrs {
 		uint64_t reserved_63_63:1;
 #endif
 	} s;
+	struct cvmx_pko_mem_iport_ptrs_s cn68xx;
+	struct cvmx_pko_mem_iport_ptrs_s cn68xxp1;
 };
 
 union cvmx_pko_mem_iport_qos {
@@ -1005,6 +1272,8 @@ union cvmx_pko_mem_iport_qos {
 		uint64_t reserved_61_63:3;
 #endif
 	} s;
+	struct cvmx_pko_mem_iport_qos_s cn68xx;
+	struct cvmx_pko_mem_iport_qos_s cn68xxp1;
 };
 
 union cvmx_pko_mem_iqueue_ptrs {
@@ -1034,6 +1303,8 @@ union cvmx_pko_mem_iqueue_ptrs {
 		uint64_t s_tail:1;
 #endif
 	} s;
+	struct cvmx_pko_mem_iqueue_ptrs_s cn68xx;
+	struct cvmx_pko_mem_iqueue_ptrs_s cn68xxp1;
 };
 
 union cvmx_pko_mem_iqueue_qos {
@@ -1053,6 +1324,8 @@ union cvmx_pko_mem_iqueue_qos {
 		uint64_t reserved_61_63:3;
 #endif
 	} s;
+	struct cvmx_pko_mem_iqueue_qos_s cn68xx;
+	struct cvmx_pko_mem_iqueue_qos_s cn68xxp1;
 };
 
 union cvmx_pko_mem_port_ptrs {
@@ -1076,6 +1349,15 @@ union cvmx_pko_mem_port_ptrs {
 		uint64_t reserved_62_63:2;
 #endif
 	} s;
+	struct cvmx_pko_mem_port_ptrs_s cn52xx;
+	struct cvmx_pko_mem_port_ptrs_s cn52xxp1;
+	struct cvmx_pko_mem_port_ptrs_s cn56xx;
+	struct cvmx_pko_mem_port_ptrs_s cn56xxp1;
+	struct cvmx_pko_mem_port_ptrs_s cn61xx;
+	struct cvmx_pko_mem_port_ptrs_s cn63xx;
+	struct cvmx_pko_mem_port_ptrs_s cn63xxp1;
+	struct cvmx_pko_mem_port_ptrs_s cn66xx;
+	struct cvmx_pko_mem_port_ptrs_s cnf71xx;
 };
 
 union cvmx_pko_mem_port_qos {
@@ -1095,6 +1377,15 @@ union cvmx_pko_mem_port_qos {
 		uint64_t reserved_61_63:3;
 #endif
 	} s;
+	struct cvmx_pko_mem_port_qos_s cn52xx;
+	struct cvmx_pko_mem_port_qos_s cn52xxp1;
+	struct cvmx_pko_mem_port_qos_s cn56xx;
+	struct cvmx_pko_mem_port_qos_s cn56xxp1;
+	struct cvmx_pko_mem_port_qos_s cn61xx;
+	struct cvmx_pko_mem_port_qos_s cn63xx;
+	struct cvmx_pko_mem_port_qos_s cn63xxp1;
+	struct cvmx_pko_mem_port_qos_s cn66xx;
+	struct cvmx_pko_mem_port_qos_s cnf71xx;
 };
 
 union cvmx_pko_mem_port_rate0 {
@@ -1129,6 +1420,16 @@ union cvmx_pko_mem_port_rate0 {
 		uint64_t reserved_51_63:13;
 #endif
 	} cn52xx;
+	struct cvmx_pko_mem_port_rate0_cn52xx cn52xxp1;
+	struct cvmx_pko_mem_port_rate0_cn52xx cn56xx;
+	struct cvmx_pko_mem_port_rate0_cn52xx cn56xxp1;
+	struct cvmx_pko_mem_port_rate0_cn52xx cn61xx;
+	struct cvmx_pko_mem_port_rate0_cn52xx cn63xx;
+	struct cvmx_pko_mem_port_rate0_cn52xx cn63xxp1;
+	struct cvmx_pko_mem_port_rate0_cn52xx cn66xx;
+	struct cvmx_pko_mem_port_rate0_s cn68xx;
+	struct cvmx_pko_mem_port_rate0_s cn68xxp1;
+	struct cvmx_pko_mem_port_rate0_cn52xx cnf71xx;
 };
 
 union cvmx_pko_mem_port_rate1 {
@@ -1159,6 +1460,16 @@ union cvmx_pko_mem_port_rate1 {
 		uint64_t reserved_32_63:32;
 #endif
 	} cn52xx;
+	struct cvmx_pko_mem_port_rate1_cn52xx cn52xxp1;
+	struct cvmx_pko_mem_port_rate1_cn52xx cn56xx;
+	struct cvmx_pko_mem_port_rate1_cn52xx cn56xxp1;
+	struct cvmx_pko_mem_port_rate1_cn52xx cn61xx;
+	struct cvmx_pko_mem_port_rate1_cn52xx cn63xx;
+	struct cvmx_pko_mem_port_rate1_cn52xx cn63xxp1;
+	struct cvmx_pko_mem_port_rate1_cn52xx cn66xx;
+	struct cvmx_pko_mem_port_rate1_s cn68xx;
+	struct cvmx_pko_mem_port_rate1_s cn68xxp1;
+	struct cvmx_pko_mem_port_rate1_cn52xx cnf71xx;
 };
 
 union cvmx_pko_mem_queue_ptrs {
@@ -1186,6 +1497,22 @@ union cvmx_pko_mem_queue_ptrs {
 		uint64_t s_tail:1;
 #endif
 	} s;
+	struct cvmx_pko_mem_queue_ptrs_s cn30xx;
+	struct cvmx_pko_mem_queue_ptrs_s cn31xx;
+	struct cvmx_pko_mem_queue_ptrs_s cn38xx;
+	struct cvmx_pko_mem_queue_ptrs_s cn38xxp2;
+	struct cvmx_pko_mem_queue_ptrs_s cn50xx;
+	struct cvmx_pko_mem_queue_ptrs_s cn52xx;
+	struct cvmx_pko_mem_queue_ptrs_s cn52xxp1;
+	struct cvmx_pko_mem_queue_ptrs_s cn56xx;
+	struct cvmx_pko_mem_queue_ptrs_s cn56xxp1;
+	struct cvmx_pko_mem_queue_ptrs_s cn58xx;
+	struct cvmx_pko_mem_queue_ptrs_s cn58xxp1;
+	struct cvmx_pko_mem_queue_ptrs_s cn61xx;
+	struct cvmx_pko_mem_queue_ptrs_s cn63xx;
+	struct cvmx_pko_mem_queue_ptrs_s cn63xxp1;
+	struct cvmx_pko_mem_queue_ptrs_s cn66xx;
+	struct cvmx_pko_mem_queue_ptrs_s cnf71xx;
 };
 
 union cvmx_pko_mem_queue_qos {
@@ -1205,6 +1532,22 @@ union cvmx_pko_mem_queue_qos {
 		uint64_t reserved_61_63:3;
 #endif
 	} s;
+	struct cvmx_pko_mem_queue_qos_s cn30xx;
+	struct cvmx_pko_mem_queue_qos_s cn31xx;
+	struct cvmx_pko_mem_queue_qos_s cn38xx;
+	struct cvmx_pko_mem_queue_qos_s cn38xxp2;
+	struct cvmx_pko_mem_queue_qos_s cn50xx;
+	struct cvmx_pko_mem_queue_qos_s cn52xx;
+	struct cvmx_pko_mem_queue_qos_s cn52xxp1;
+	struct cvmx_pko_mem_queue_qos_s cn56xx;
+	struct cvmx_pko_mem_queue_qos_s cn56xxp1;
+	struct cvmx_pko_mem_queue_qos_s cn58xx;
+	struct cvmx_pko_mem_queue_qos_s cn58xxp1;
+	struct cvmx_pko_mem_queue_qos_s cn61xx;
+	struct cvmx_pko_mem_queue_qos_s cn63xx;
+	struct cvmx_pko_mem_queue_qos_s cn63xxp1;
+	struct cvmx_pko_mem_queue_qos_s cn66xx;
+	struct cvmx_pko_mem_queue_qos_s cnf71xx;
 };
 
 union cvmx_pko_mem_throttle_int {
@@ -1226,6 +1569,8 @@ union cvmx_pko_mem_throttle_int {
 		uint64_t reserved_47_63:17;
 #endif
 	} s;
+	struct cvmx_pko_mem_throttle_int_s cn68xx;
+	struct cvmx_pko_mem_throttle_int_s cn68xxp1;
 };
 
 union cvmx_pko_mem_throttle_pipe {
@@ -1247,6 +1592,8 @@ union cvmx_pko_mem_throttle_pipe {
 		uint64_t reserved_47_63:17;
 #endif
 	} s;
+	struct cvmx_pko_mem_throttle_pipe_s cn68xx;
+	struct cvmx_pko_mem_throttle_pipe_s cn68xxp1;
 };
 
 union cvmx_pko_reg_bist_result {
@@ -1289,6 +1636,9 @@ union cvmx_pko_reg_bist_result {
 		uint64_t reserved_27_63:37;
 #endif
 	} cn30xx;
+	struct cvmx_pko_reg_bist_result_cn30xx cn31xx;
+	struct cvmx_pko_reg_bist_result_cn30xx cn38xx;
+	struct cvmx_pko_reg_bist_result_cn30xx cn38xxp2;
 	struct cvmx_pko_reg_bist_result_cn50xx {
 #ifdef __BIG_ENDIAN_BITFIELD
 		uint64_t reserved_33_63:31;
@@ -1361,6 +1711,15 @@ union cvmx_pko_reg_bist_result {
 		uint64_t reserved_35_63:29;
 #endif
 	} cn52xx;
+	struct cvmx_pko_reg_bist_result_cn52xx cn52xxp1;
+	struct cvmx_pko_reg_bist_result_cn52xx cn56xx;
+	struct cvmx_pko_reg_bist_result_cn52xx cn56xxp1;
+	struct cvmx_pko_reg_bist_result_cn50xx cn58xx;
+	struct cvmx_pko_reg_bist_result_cn50xx cn58xxp1;
+	struct cvmx_pko_reg_bist_result_cn52xx cn61xx;
+	struct cvmx_pko_reg_bist_result_cn52xx cn63xx;
+	struct cvmx_pko_reg_bist_result_cn52xx cn63xxp1;
+	struct cvmx_pko_reg_bist_result_cn52xx cn66xx;
 	struct cvmx_pko_reg_bist_result_cn68xx {
 #ifdef __BIG_ENDIAN_BITFIELD
 		uint64_t reserved_36_63:28;
@@ -1449,6 +1808,7 @@ union cvmx_pko_reg_bist_result {
 		uint64_t reserved_35_63:29;
 #endif
 	} cn68xxp1;
+	struct cvmx_pko_reg_bist_result_cn52xx cnf71xx;
 };
 
 union cvmx_pko_reg_cmd_buf {
@@ -1466,6 +1826,24 @@ union cvmx_pko_reg_cmd_buf {
 		uint64_t reserved_23_63:41;
 #endif
 	} s;
+	struct cvmx_pko_reg_cmd_buf_s cn30xx;
+	struct cvmx_pko_reg_cmd_buf_s cn31xx;
+	struct cvmx_pko_reg_cmd_buf_s cn38xx;
+	struct cvmx_pko_reg_cmd_buf_s cn38xxp2;
+	struct cvmx_pko_reg_cmd_buf_s cn50xx;
+	struct cvmx_pko_reg_cmd_buf_s cn52xx;
+	struct cvmx_pko_reg_cmd_buf_s cn52xxp1;
+	struct cvmx_pko_reg_cmd_buf_s cn56xx;
+	struct cvmx_pko_reg_cmd_buf_s cn56xxp1;
+	struct cvmx_pko_reg_cmd_buf_s cn58xx;
+	struct cvmx_pko_reg_cmd_buf_s cn58xxp1;
+	struct cvmx_pko_reg_cmd_buf_s cn61xx;
+	struct cvmx_pko_reg_cmd_buf_s cn63xx;
+	struct cvmx_pko_reg_cmd_buf_s cn63xxp1;
+	struct cvmx_pko_reg_cmd_buf_s cn66xx;
+	struct cvmx_pko_reg_cmd_buf_s cn68xx;
+	struct cvmx_pko_reg_cmd_buf_s cn68xxp1;
+	struct cvmx_pko_reg_cmd_buf_s cnf71xx;
 };
 
 union cvmx_pko_reg_crc_ctlx {
@@ -1481,6 +1859,10 @@ union cvmx_pko_reg_crc_ctlx {
 		uint64_t reserved_2_63:62;
 #endif
 	} s;
+	struct cvmx_pko_reg_crc_ctlx_s cn38xx;
+	struct cvmx_pko_reg_crc_ctlx_s cn38xxp2;
+	struct cvmx_pko_reg_crc_ctlx_s cn58xx;
+	struct cvmx_pko_reg_crc_ctlx_s cn58xxp1;
 };
 
 union cvmx_pko_reg_crc_enable {
@@ -1494,6 +1876,10 @@ union cvmx_pko_reg_crc_enable {
 		uint64_t reserved_32_63:32;
 #endif
 	} s;
+	struct cvmx_pko_reg_crc_enable_s cn38xx;
+	struct cvmx_pko_reg_crc_enable_s cn38xxp2;
+	struct cvmx_pko_reg_crc_enable_s cn58xx;
+	struct cvmx_pko_reg_crc_enable_s cn58xxp1;
 };
 
 union cvmx_pko_reg_crc_ivx {
@@ -1507,6 +1893,10 @@ union cvmx_pko_reg_crc_ivx {
 		uint64_t reserved_32_63:32;
 #endif
 	} s;
+	struct cvmx_pko_reg_crc_ivx_s cn38xx;
+	struct cvmx_pko_reg_crc_ivx_s cn38xxp2;
+	struct cvmx_pko_reg_crc_ivx_s cn58xx;
+	struct cvmx_pko_reg_crc_ivx_s cn58xxp1;
 };
 
 union cvmx_pko_reg_debug0 {
@@ -1527,6 +1917,23 @@ union cvmx_pko_reg_debug0 {
 		uint64_t reserved_17_63:47;
 #endif
 	} cn30xx;
+	struct cvmx_pko_reg_debug0_cn30xx cn31xx;
+	struct cvmx_pko_reg_debug0_cn30xx cn38xx;
+	struct cvmx_pko_reg_debug0_cn30xx cn38xxp2;
+	struct cvmx_pko_reg_debug0_s cn50xx;
+	struct cvmx_pko_reg_debug0_s cn52xx;
+	struct cvmx_pko_reg_debug0_s cn52xxp1;
+	struct cvmx_pko_reg_debug0_s cn56xx;
+	struct cvmx_pko_reg_debug0_s cn56xxp1;
+	struct cvmx_pko_reg_debug0_s cn58xx;
+	struct cvmx_pko_reg_debug0_s cn58xxp1;
+	struct cvmx_pko_reg_debug0_s cn61xx;
+	struct cvmx_pko_reg_debug0_s cn63xx;
+	struct cvmx_pko_reg_debug0_s cn63xxp1;
+	struct cvmx_pko_reg_debug0_s cn66xx;
+	struct cvmx_pko_reg_debug0_s cn68xx;
+	struct cvmx_pko_reg_debug0_s cn68xxp1;
+	struct cvmx_pko_reg_debug0_s cnf71xx;
 };
 
 union cvmx_pko_reg_debug1 {
@@ -1538,6 +1945,20 @@ union cvmx_pko_reg_debug1 {
 		uint64_t asserts:64;
 #endif
 	} s;
+	struct cvmx_pko_reg_debug1_s cn50xx;
+	struct cvmx_pko_reg_debug1_s cn52xx;
+	struct cvmx_pko_reg_debug1_s cn52xxp1;
+	struct cvmx_pko_reg_debug1_s cn56xx;
+	struct cvmx_pko_reg_debug1_s cn56xxp1;
+	struct cvmx_pko_reg_debug1_s cn58xx;
+	struct cvmx_pko_reg_debug1_s cn58xxp1;
+	struct cvmx_pko_reg_debug1_s cn61xx;
+	struct cvmx_pko_reg_debug1_s cn63xx;
+	struct cvmx_pko_reg_debug1_s cn63xxp1;
+	struct cvmx_pko_reg_debug1_s cn66xx;
+	struct cvmx_pko_reg_debug1_s cn68xx;
+	struct cvmx_pko_reg_debug1_s cn68xxp1;
+	struct cvmx_pko_reg_debug1_s cnf71xx;
 };
 
 union cvmx_pko_reg_debug2 {
@@ -1549,6 +1970,20 @@ union cvmx_pko_reg_debug2 {
 		uint64_t asserts:64;
 #endif
 	} s;
+	struct cvmx_pko_reg_debug2_s cn50xx;
+	struct cvmx_pko_reg_debug2_s cn52xx;
+	struct cvmx_pko_reg_debug2_s cn52xxp1;
+	struct cvmx_pko_reg_debug2_s cn56xx;
+	struct cvmx_pko_reg_debug2_s cn56xxp1;
+	struct cvmx_pko_reg_debug2_s cn58xx;
+	struct cvmx_pko_reg_debug2_s cn58xxp1;
+	struct cvmx_pko_reg_debug2_s cn61xx;
+	struct cvmx_pko_reg_debug2_s cn63xx;
+	struct cvmx_pko_reg_debug2_s cn63xxp1;
+	struct cvmx_pko_reg_debug2_s cn66xx;
+	struct cvmx_pko_reg_debug2_s cn68xx;
+	struct cvmx_pko_reg_debug2_s cn68xxp1;
+	struct cvmx_pko_reg_debug2_s cnf71xx;
 };
 
 union cvmx_pko_reg_debug3 {
@@ -1560,6 +1995,20 @@ union cvmx_pko_reg_debug3 {
 		uint64_t asserts:64;
 #endif
 	} s;
+	struct cvmx_pko_reg_debug3_s cn50xx;
+	struct cvmx_pko_reg_debug3_s cn52xx;
+	struct cvmx_pko_reg_debug3_s cn52xxp1;
+	struct cvmx_pko_reg_debug3_s cn56xx;
+	struct cvmx_pko_reg_debug3_s cn56xxp1;
+	struct cvmx_pko_reg_debug3_s cn58xx;
+	struct cvmx_pko_reg_debug3_s cn58xxp1;
+	struct cvmx_pko_reg_debug3_s cn61xx;
+	struct cvmx_pko_reg_debug3_s cn63xx;
+	struct cvmx_pko_reg_debug3_s cn63xxp1;
+	struct cvmx_pko_reg_debug3_s cn66xx;
+	struct cvmx_pko_reg_debug3_s cn68xx;
+	struct cvmx_pko_reg_debug3_s cn68xxp1;
+	struct cvmx_pko_reg_debug3_s cnf71xx;
 };
 
 union cvmx_pko_reg_debug4 {
@@ -1571,6 +2020,8 @@ union cvmx_pko_reg_debug4 {
 		uint64_t asserts:64;
 #endif
 	} s;
+	struct cvmx_pko_reg_debug4_s cn68xx;
+	struct cvmx_pko_reg_debug4_s cn68xxp1;
 };
 
 union cvmx_pko_reg_engine_inflight {
@@ -1639,6 +2090,9 @@ union cvmx_pko_reg_engine_inflight {
 		uint64_t reserved_40_63:24;
 #endif
 	} cn52xx;
+	struct cvmx_pko_reg_engine_inflight_cn52xx cn52xxp1;
+	struct cvmx_pko_reg_engine_inflight_cn52xx cn56xx;
+	struct cvmx_pko_reg_engine_inflight_cn52xx cn56xxp1;
 	struct cvmx_pko_reg_engine_inflight_cn61xx {
 #ifdef __BIG_ENDIAN_BITFIELD
 		uint64_t reserved_56_63:8;
@@ -1705,6 +2159,11 @@ union cvmx_pko_reg_engine_inflight {
 		uint64_t reserved_48_63:16;
 #endif
 	} cn63xx;
+	struct cvmx_pko_reg_engine_inflight_cn63xx cn63xxp1;
+	struct cvmx_pko_reg_engine_inflight_cn61xx cn66xx;
+	struct cvmx_pko_reg_engine_inflight_s cn68xx;
+	struct cvmx_pko_reg_engine_inflight_s cn68xxp1;
+	struct cvmx_pko_reg_engine_inflight_cn61xx cnf71xx;
 };
 
 union cvmx_pko_reg_engine_inflight1 {
@@ -1724,6 +2183,8 @@ union cvmx_pko_reg_engine_inflight1 {
 		uint64_t reserved_16_63:48;
 #endif
 	} s;
+	struct cvmx_pko_reg_engine_inflight1_s cn68xx;
+	struct cvmx_pko_reg_engine_inflight1_s cn68xxp1;
 };
 
 union cvmx_pko_reg_engine_storagex {
@@ -1765,6 +2226,8 @@ union cvmx_pko_reg_engine_storagex {
 		uint64_t engine15:4;
 #endif
 	} s;
+	struct cvmx_pko_reg_engine_storagex_s cn68xx;
+	struct cvmx_pko_reg_engine_storagex_s cn68xxp1;
 };
 
 union cvmx_pko_reg_engine_thresh {
@@ -1787,6 +2250,9 @@ union cvmx_pko_reg_engine_thresh {
 		uint64_t reserved_10_63:54;
 #endif
 	} cn52xx;
+	struct cvmx_pko_reg_engine_thresh_cn52xx cn52xxp1;
+	struct cvmx_pko_reg_engine_thresh_cn52xx cn56xx;
+	struct cvmx_pko_reg_engine_thresh_cn52xx cn56xxp1;
 	struct cvmx_pko_reg_engine_thresh_cn61xx {
 #ifdef __BIG_ENDIAN_BITFIELD
 		uint64_t reserved_14_63:50;
@@ -1805,6 +2271,11 @@ union cvmx_pko_reg_engine_thresh {
 		uint64_t reserved_12_63:52;
 #endif
 	} cn63xx;
+	struct cvmx_pko_reg_engine_thresh_cn63xx cn63xxp1;
+	struct cvmx_pko_reg_engine_thresh_cn61xx cn66xx;
+	struct cvmx_pko_reg_engine_thresh_s cn68xx;
+	struct cvmx_pko_reg_engine_thresh_s cn68xxp1;
+	struct cvmx_pko_reg_engine_thresh_cn61xx cnf71xx;
 };
 
 union cvmx_pko_reg_error {
@@ -1835,6 +2306,9 @@ union cvmx_pko_reg_error {
 		uint64_t reserved_2_63:62;
 #endif
 	} cn30xx;
+	struct cvmx_pko_reg_error_cn30xx cn31xx;
+	struct cvmx_pko_reg_error_cn30xx cn38xx;
+	struct cvmx_pko_reg_error_cn30xx cn38xxp2;
 	struct cvmx_pko_reg_error_cn50xx {
 #ifdef __BIG_ENDIAN_BITFIELD
 		uint64_t reserved_3_63:61;
@@ -1848,6 +2322,19 @@ union cvmx_pko_reg_error {
 		uint64_t reserved_3_63:61;
 #endif
 	} cn50xx;
+	struct cvmx_pko_reg_error_cn50xx cn52xx;
+	struct cvmx_pko_reg_error_cn50xx cn52xxp1;
+	struct cvmx_pko_reg_error_cn50xx cn56xx;
+	struct cvmx_pko_reg_error_cn50xx cn56xxp1;
+	struct cvmx_pko_reg_error_cn50xx cn58xx;
+	struct cvmx_pko_reg_error_cn50xx cn58xxp1;
+	struct cvmx_pko_reg_error_cn50xx cn61xx;
+	struct cvmx_pko_reg_error_cn50xx cn63xx;
+	struct cvmx_pko_reg_error_cn50xx cn63xxp1;
+	struct cvmx_pko_reg_error_cn50xx cn66xx;
+	struct cvmx_pko_reg_error_s cn68xx;
+	struct cvmx_pko_reg_error_s cn68xxp1;
+	struct cvmx_pko_reg_error_cn50xx cnf71xx;
 };
 
 union cvmx_pko_reg_flags {
@@ -1892,6 +2379,16 @@ union cvmx_pko_reg_flags {
 		uint64_t reserved_4_63:60;
 #endif
 	} cn30xx;
+	struct cvmx_pko_reg_flags_cn30xx cn31xx;
+	struct cvmx_pko_reg_flags_cn30xx cn38xx;
+	struct cvmx_pko_reg_flags_cn30xx cn38xxp2;
+	struct cvmx_pko_reg_flags_cn30xx cn50xx;
+	struct cvmx_pko_reg_flags_cn30xx cn52xx;
+	struct cvmx_pko_reg_flags_cn30xx cn52xxp1;
+	struct cvmx_pko_reg_flags_cn30xx cn56xx;
+	struct cvmx_pko_reg_flags_cn30xx cn56xxp1;
+	struct cvmx_pko_reg_flags_cn30xx cn58xx;
+	struct cvmx_pko_reg_flags_cn30xx cn58xxp1;
 	struct cvmx_pko_reg_flags_cn61xx {
 #ifdef __BIG_ENDIAN_BITFIELD
 		uint64_t reserved_9_63:55;
@@ -1913,6 +2410,10 @@ union cvmx_pko_reg_flags {
 		uint64_t reserved_9_63:55;
 #endif
 	} cn61xx;
+	struct cvmx_pko_reg_flags_cn30xx cn63xx;
+	struct cvmx_pko_reg_flags_cn30xx cn63xxp1;
+	struct cvmx_pko_reg_flags_cn61xx cn66xx;
+	struct cvmx_pko_reg_flags_s cn68xx;
 	struct cvmx_pko_reg_flags_cn68xxp1 {
 #ifdef __BIG_ENDIAN_BITFIELD
 		uint64_t reserved_7_63:57;
@@ -1934,6 +2435,7 @@ union cvmx_pko_reg_flags {
 		uint64_t reserved_7_63:57;
 #endif
 	} cn68xxp1;
+	struct cvmx_pko_reg_flags_cn61xx cnf71xx;
 };
 
 union cvmx_pko_reg_gmx_port_mode {
@@ -1949,6 +2451,22 @@ union cvmx_pko_reg_gmx_port_mode {
 		uint64_t reserved_6_63:58;
 #endif
 	} s;
+	struct cvmx_pko_reg_gmx_port_mode_s cn30xx;
+	struct cvmx_pko_reg_gmx_port_mode_s cn31xx;
+	struct cvmx_pko_reg_gmx_port_mode_s cn38xx;
+	struct cvmx_pko_reg_gmx_port_mode_s cn38xxp2;
+	struct cvmx_pko_reg_gmx_port_mode_s cn50xx;
+	struct cvmx_pko_reg_gmx_port_mode_s cn52xx;
+	struct cvmx_pko_reg_gmx_port_mode_s cn52xxp1;
+	struct cvmx_pko_reg_gmx_port_mode_s cn56xx;
+	struct cvmx_pko_reg_gmx_port_mode_s cn56xxp1;
+	struct cvmx_pko_reg_gmx_port_mode_s cn58xx;
+	struct cvmx_pko_reg_gmx_port_mode_s cn58xxp1;
+	struct cvmx_pko_reg_gmx_port_mode_s cn61xx;
+	struct cvmx_pko_reg_gmx_port_mode_s cn63xx;
+	struct cvmx_pko_reg_gmx_port_mode_s cn63xxp1;
+	struct cvmx_pko_reg_gmx_port_mode_s cn66xx;
+	struct cvmx_pko_reg_gmx_port_mode_s cnf71xx;
 };
 
 union cvmx_pko_reg_int_mask {
@@ -1979,6 +2497,9 @@ union cvmx_pko_reg_int_mask {
 		uint64_t reserved_2_63:62;
 #endif
 	} cn30xx;
+	struct cvmx_pko_reg_int_mask_cn30xx cn31xx;
+	struct cvmx_pko_reg_int_mask_cn30xx cn38xx;
+	struct cvmx_pko_reg_int_mask_cn30xx cn38xxp2;
 	struct cvmx_pko_reg_int_mask_cn50xx {
 #ifdef __BIG_ENDIAN_BITFIELD
 		uint64_t reserved_3_63:61;
@@ -1992,6 +2513,19 @@ union cvmx_pko_reg_int_mask {
 		uint64_t reserved_3_63:61;
 #endif
 	} cn50xx;
+	struct cvmx_pko_reg_int_mask_cn50xx cn52xx;
+	struct cvmx_pko_reg_int_mask_cn50xx cn52xxp1;
+	struct cvmx_pko_reg_int_mask_cn50xx cn56xx;
+	struct cvmx_pko_reg_int_mask_cn50xx cn56xxp1;
+	struct cvmx_pko_reg_int_mask_cn50xx cn58xx;
+	struct cvmx_pko_reg_int_mask_cn50xx cn58xxp1;
+	struct cvmx_pko_reg_int_mask_cn50xx cn61xx;
+	struct cvmx_pko_reg_int_mask_cn50xx cn63xx;
+	struct cvmx_pko_reg_int_mask_cn50xx cn63xxp1;
+	struct cvmx_pko_reg_int_mask_cn50xx cn66xx;
+	struct cvmx_pko_reg_int_mask_s cn68xx;
+	struct cvmx_pko_reg_int_mask_s cn68xxp1;
+	struct cvmx_pko_reg_int_mask_cn50xx cnf71xx;
 };
 
 union cvmx_pko_reg_loopback_bpid {
@@ -2035,6 +2569,8 @@ union cvmx_pko_reg_loopback_bpid {
 		uint64_t reserved_59_63:5;
 #endif
 	} s;
+	struct cvmx_pko_reg_loopback_bpid_s cn68xx;
+	struct cvmx_pko_reg_loopback_bpid_s cn68xxp1;
 };
 
 union cvmx_pko_reg_loopback_pkind {
@@ -2078,6 +2614,8 @@ union cvmx_pko_reg_loopback_pkind {
 		uint64_t reserved_59_63:5;
 #endif
 	} s;
+	struct cvmx_pko_reg_loopback_pkind_s cn68xx;
+	struct cvmx_pko_reg_loopback_pkind_s cn68xxp1;
 };
 
 union cvmx_pko_reg_min_pkt {
@@ -2103,6 +2641,8 @@ union cvmx_pko_reg_min_pkt {
 		uint64_t size7:8;
 #endif
 	} s;
+	struct cvmx_pko_reg_min_pkt_s cn68xx;
+	struct cvmx_pko_reg_min_pkt_s cn68xxp1;
 };
 
 union cvmx_pko_reg_preempt {
@@ -2116,6 +2656,17 @@ union cvmx_pko_reg_preempt {
 		uint64_t reserved_16_63:48;
 #endif
 	} s;
+	struct cvmx_pko_reg_preempt_s cn52xx;
+	struct cvmx_pko_reg_preempt_s cn52xxp1;
+	struct cvmx_pko_reg_preempt_s cn56xx;
+	struct cvmx_pko_reg_preempt_s cn56xxp1;
+	struct cvmx_pko_reg_preempt_s cn61xx;
+	struct cvmx_pko_reg_preempt_s cn63xx;
+	struct cvmx_pko_reg_preempt_s cn63xxp1;
+	struct cvmx_pko_reg_preempt_s cn66xx;
+	struct cvmx_pko_reg_preempt_s cn68xx;
+	struct cvmx_pko_reg_preempt_s cn68xxp1;
+	struct cvmx_pko_reg_preempt_s cnf71xx;
 };
 
 union cvmx_pko_reg_queue_mode {
@@ -2129,6 +2680,24 @@ union cvmx_pko_reg_queue_mode {
 		uint64_t reserved_2_63:62;
 #endif
 	} s;
+	struct cvmx_pko_reg_queue_mode_s cn30xx;
+	struct cvmx_pko_reg_queue_mode_s cn31xx;
+	struct cvmx_pko_reg_queue_mode_s cn38xx;
+	struct cvmx_pko_reg_queue_mode_s cn38xxp2;
+	struct cvmx_pko_reg_queue_mode_s cn50xx;
+	struct cvmx_pko_reg_queue_mode_s cn52xx;
+	struct cvmx_pko_reg_queue_mode_s cn52xxp1;
+	struct cvmx_pko_reg_queue_mode_s cn56xx;
+	struct cvmx_pko_reg_queue_mode_s cn56xxp1;
+	struct cvmx_pko_reg_queue_mode_s cn58xx;
+	struct cvmx_pko_reg_queue_mode_s cn58xxp1;
+	struct cvmx_pko_reg_queue_mode_s cn61xx;
+	struct cvmx_pko_reg_queue_mode_s cn63xx;
+	struct cvmx_pko_reg_queue_mode_s cn63xxp1;
+	struct cvmx_pko_reg_queue_mode_s cn66xx;
+	struct cvmx_pko_reg_queue_mode_s cn68xx;
+	struct cvmx_pko_reg_queue_mode_s cn68xxp1;
+	struct cvmx_pko_reg_queue_mode_s cnf71xx;
 };
 
 union cvmx_pko_reg_queue_preempt {
@@ -2144,6 +2713,17 @@ union cvmx_pko_reg_queue_preempt {
 		uint64_t reserved_2_63:62;
 #endif
 	} s;
+	struct cvmx_pko_reg_queue_preempt_s cn52xx;
+	struct cvmx_pko_reg_queue_preempt_s cn52xxp1;
+	struct cvmx_pko_reg_queue_preempt_s cn56xx;
+	struct cvmx_pko_reg_queue_preempt_s cn56xxp1;
+	struct cvmx_pko_reg_queue_preempt_s cn61xx;
+	struct cvmx_pko_reg_queue_preempt_s cn63xx;
+	struct cvmx_pko_reg_queue_preempt_s cn63xxp1;
+	struct cvmx_pko_reg_queue_preempt_s cn66xx;
+	struct cvmx_pko_reg_queue_preempt_s cn68xx;
+	struct cvmx_pko_reg_queue_preempt_s cn68xxp1;
+	struct cvmx_pko_reg_queue_preempt_s cnf71xx;
 };
 
 union cvmx_pko_reg_queue_ptrs1 {
@@ -2159,6 +2739,18 @@ union cvmx_pko_reg_queue_ptrs1 {
 		uint64_t reserved_2_63:62;
 #endif
 	} s;
+	struct cvmx_pko_reg_queue_ptrs1_s cn50xx;
+	struct cvmx_pko_reg_queue_ptrs1_s cn52xx;
+	struct cvmx_pko_reg_queue_ptrs1_s cn52xxp1;
+	struct cvmx_pko_reg_queue_ptrs1_s cn56xx;
+	struct cvmx_pko_reg_queue_ptrs1_s cn56xxp1;
+	struct cvmx_pko_reg_queue_ptrs1_s cn58xx;
+	struct cvmx_pko_reg_queue_ptrs1_s cn58xxp1;
+	struct cvmx_pko_reg_queue_ptrs1_s cn61xx;
+	struct cvmx_pko_reg_queue_ptrs1_s cn63xx;
+	struct cvmx_pko_reg_queue_ptrs1_s cn63xxp1;
+	struct cvmx_pko_reg_queue_ptrs1_s cn66xx;
+	struct cvmx_pko_reg_queue_ptrs1_s cnf71xx;
 };
 
 union cvmx_pko_reg_read_idx {
@@ -2174,6 +2766,24 @@ union cvmx_pko_reg_read_idx {
 		uint64_t reserved_16_63:48;
 #endif
 	} s;
+	struct cvmx_pko_reg_read_idx_s cn30xx;
+	struct cvmx_pko_reg_read_idx_s cn31xx;
+	struct cvmx_pko_reg_read_idx_s cn38xx;
+	struct cvmx_pko_reg_read_idx_s cn38xxp2;
+	struct cvmx_pko_reg_read_idx_s cn50xx;
+	struct cvmx_pko_reg_read_idx_s cn52xx;
+	struct cvmx_pko_reg_read_idx_s cn52xxp1;
+	struct cvmx_pko_reg_read_idx_s cn56xx;
+	struct cvmx_pko_reg_read_idx_s cn56xxp1;
+	struct cvmx_pko_reg_read_idx_s cn58xx;
+	struct cvmx_pko_reg_read_idx_s cn58xxp1;
+	struct cvmx_pko_reg_read_idx_s cn61xx;
+	struct cvmx_pko_reg_read_idx_s cn63xx;
+	struct cvmx_pko_reg_read_idx_s cn63xxp1;
+	struct cvmx_pko_reg_read_idx_s cn66xx;
+	struct cvmx_pko_reg_read_idx_s cn68xx;
+	struct cvmx_pko_reg_read_idx_s cn68xxp1;
+	struct cvmx_pko_reg_read_idx_s cnf71xx;
 };
 
 union cvmx_pko_reg_throttle {
@@ -2187,6 +2797,8 @@ union cvmx_pko_reg_throttle {
 		uint64_t reserved_32_63:32;
 #endif
 	} s;
+	struct cvmx_pko_reg_throttle_s cn68xx;
+	struct cvmx_pko_reg_throttle_s cn68xxp1;
 };
 
 union cvmx_pko_reg_timestamp {
@@ -2200,6 +2812,13 @@ union cvmx_pko_reg_timestamp {
 		uint64_t reserved_4_63:60;
 #endif
 	} s;
+	struct cvmx_pko_reg_timestamp_s cn61xx;
+	struct cvmx_pko_reg_timestamp_s cn63xx;
+	struct cvmx_pko_reg_timestamp_s cn63xxp1;
+	struct cvmx_pko_reg_timestamp_s cn66xx;
+	struct cvmx_pko_reg_timestamp_s cn68xx;
+	struct cvmx_pko_reg_timestamp_s cn68xxp1;
+	struct cvmx_pko_reg_timestamp_s cnf71xx;
 };
 
 #endif

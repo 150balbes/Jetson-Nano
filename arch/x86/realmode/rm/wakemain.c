@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 #include "wakeup.h"
 #include "boot.h"
 

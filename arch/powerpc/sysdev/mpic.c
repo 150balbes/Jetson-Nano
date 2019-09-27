@@ -544,7 +544,7 @@ static void __init mpic_scan_ht_pics(struct mpic *mpic)
 	printk(KERN_INFO "mpic: Setting up HT PICs workarounds for U3/U4\n");
 
 	/* Allocate fixups array */
-	mpic->fixups = kcalloc(128, sizeof(*mpic->fixups), GFP_KERNEL);
+	mpic->fixups = kzalloc(128 * sizeof(*mpic->fixups), GFP_KERNEL);
 	BUG_ON(mpic->fixups == NULL);
 
 	/* Init spinlock */
@@ -1008,8 +1008,9 @@ static int mpic_host_map(struct irq_domain *h, unsigned int virq,
 	if (hw == mpic->spurious_vec)
 		return -EINVAL;
 	if (mpic->protected && test_bit(hw, mpic->protected)) {
-		pr_warn("mpic: Mapping of source 0x%x failed, source protected by firmware !\n",
-			(unsigned int)hw);
+		pr_warning("mpic: Mapping of source 0x%x failed, "
+			   "source protected by firmware !\n",\
+			   (unsigned int)hw);
 		return -EPERM;
 	}
 
@@ -1039,8 +1040,9 @@ static int mpic_host_map(struct irq_domain *h, unsigned int virq,
 		return 0;
 
 	if (hw >= mpic->num_sources) {
-		pr_warn("mpic: Mapping of source 0x%x failed, source out of range !\n",
-			(unsigned int)hw);
+		pr_warning("mpic: Mapping of source 0x%x failed, "
+			   "source out of range !\n",\
+			   (unsigned int)hw);
 		return -EINVAL;
 	}
 
@@ -1324,7 +1326,7 @@ struct mpic * __init mpic_alloc(struct device_node *node,
 	if (psrc) {
 		/* Allocate a bitmap with one bit per interrupt */
 		unsigned int mapsize = BITS_TO_LONGS(intvec_top + 1);
-		mpic->protected = kcalloc(mapsize, sizeof(long), GFP_KERNEL);
+		mpic->protected = kzalloc(mapsize*sizeof(long), GFP_KERNEL);
 		BUG_ON(mpic->protected == NULL);
 		for (i = 0; i < psize/sizeof(u32); i++) {
 			if (psrc[i] > intvec_top)
@@ -1380,12 +1382,12 @@ struct mpic * __init mpic_alloc(struct device_node *node,
 		 * global vector number space, as in case of ipis
 		 * and timer interrupts.
 		 *
-		 * Available vector space = intvec_top - 13, where 13
+		 * Available vector space = intvec_top - 12, where 12
 		 * is the number of vectors which have been consumed by
-		 * ipis, timer interrupts and spurious.
+		 * ipis and timer interrupts.
 		 */
 		if (fsl_version >= 0x401) {
-			ret = mpic_setup_error_int(mpic, intvec_top - 13);
+			ret = mpic_setup_error_int(mpic, intvec_top - 12);
 			if (ret)
 				return NULL;
 		}
@@ -1639,9 +1641,8 @@ void __init mpic_init(struct mpic *mpic)
 
 #ifdef CONFIG_PM
 	/* allocate memory to save mpic state */
-	mpic->save_data = kmalloc_array(mpic->num_sources,
-				        sizeof(*mpic->save_data),
-				        GFP_KERNEL);
+	mpic->save_data = kmalloc(mpic->num_sources * sizeof(*mpic->save_data),
+				  GFP_KERNEL);
 	BUG_ON(mpic->save_data == NULL);
 #endif
 
@@ -1649,8 +1650,8 @@ void __init mpic_init(struct mpic *mpic)
 	if (mpic->flags & MPIC_SECONDARY) {
 		int virq = irq_of_parse_and_map(mpic->node, 0);
 		if (virq) {
-			printk(KERN_INFO "%pOF: hooking up to IRQ %d\n",
-					mpic->node, virq);
+			printk(KERN_INFO "%s: hooking up to IRQ %d\n",
+					mpic->node->full_name, virq);
 			irq_set_handler_data(virq, mpic);
 			irq_set_chained_handler(virq, &mpic_cascade);
 		}

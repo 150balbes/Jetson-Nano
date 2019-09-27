@@ -23,7 +23,6 @@
  *          Ben Skeggs
  */
 #include "priv.h"
-#include "ram.h"
 
 struct ramxlat {
 	int id;

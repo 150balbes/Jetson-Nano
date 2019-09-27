@@ -1,9 +1,7 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __SUBCMD_HELP_H
 #define __SUBCMD_HELP_H
 
 #include <sys/types.h>
-#include <stdio.h>
 
 struct cmdnames {
 	size_t alloc;

@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * Data gathering module for Linux-VM Monitor Stream, Stage 1.
  * Collects accumulated network statistics (Packets received/transmitted,

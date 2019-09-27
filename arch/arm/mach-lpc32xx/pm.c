@@ -73,6 +73,7 @@
 #include <mach/hardware.h>
 #include <mach/platform.h>
 #include "common.h"
+#include "clock.h"
 
 #define TEMP_IRAM_AREA  IO_ADDRESS(LPC32XX_IRAM_BASE)
 
@@ -86,10 +87,17 @@ static int lpc32xx_pm_enter(suspend_state_t state)
 	void *iram_swap_area;
 
 	/* Allocate some space for temporary IRAM storage */
-	iram_swap_area = kmemdup((void *)TEMP_IRAM_AREA,
-				 lpc32xx_sys_suspend_sz, GFP_KERNEL);
-	if (!iram_swap_area)
+	iram_swap_area = kmalloc(lpc32xx_sys_suspend_sz, GFP_KERNEL);
+	if (!iram_swap_area) {
+		printk(KERN_ERR
+		       "PM Suspend: cannot allocate memory to save portion "
+			"of SRAM\n");
 		return -ENOMEM;
+	}
+
+	/* Backup a small area of IRAM used for the suspend code */
+	memcpy(iram_swap_area, (void *) TEMP_IRAM_AREA,
+		lpc32xx_sys_suspend_sz);
 
 	/*
 	 * Copy code to suspend system into IRAM. The suspend code

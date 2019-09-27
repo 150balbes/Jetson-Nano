@@ -89,7 +89,7 @@
 #define	REG_RE	%rdx
 #define	REG_RTA	%r12
 #define	REG_RTB	%rbx
-#define	REG_T1	%r11d
+#define	REG_T1	%ebp
 #define	xmm_mov	vmovups
 #define	avx2_zeroupper	vzeroupper
 #define	RND_F1	1
@@ -637,6 +637,7 @@ _loop3:
 	ENTRY(\name)
 
 	push	%rbx
+	push	%rbp
 	push	%r12
 	push	%r13
 	push	%r14
@@ -672,6 +673,7 @@ _loop3:
 	pop	%r14
 	pop	%r13
 	pop	%r12
+	pop	%rbp
 	pop	%rbx
 
 	ret

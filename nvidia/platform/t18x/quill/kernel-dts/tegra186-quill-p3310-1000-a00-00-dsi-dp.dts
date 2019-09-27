@@ -1,0 +1,52 @@
+/*
+ * tegra186-quill-p3310-1000-a00-00-dsi-dp.dts
+ * Device Tree file for Quill to enable display on
+ * two heads: DSI and DP.
+ *
+ * Copyright (c) 2016-2017, NVIDIA CORPORATION.  All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; version 2 of the License.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ *
+ */
+
+#include "tegra186-quill-p3310-1000-a00-00-base.dts"
+
+/ {
+	nvidia,dtsfilename = __FILE__;
+
+	host1x {
+		nvdisplay@15210000 {
+			nvidia,dc-or-node = "/host1x/sor";
+			nvidia,dc-connector = <&sor0>;
+		};
+
+		nvdisplay@15220000 {
+			status = "disabled";
+		};
+
+		sor {
+			status = "okay";
+			bootloader-status = "okay";
+			dp-display {
+				status = "okay";
+				bootloader-status = "okay";
+			};
+		};
+
+		dpaux@155c0000 {
+			status = "okay";
+			bootloader-status = "okay";
+		};
+	};
+
+	plugin-manager {
+		/delete-node/ fragment-e3320-dp;
+	};
+};

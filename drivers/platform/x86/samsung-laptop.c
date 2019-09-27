@@ -1,9 +1,13 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Samsung Laptop driver
  *
  * Copyright (C) 2009,2011 Greg Kroah-Hartman (gregkh@suse.de)
  * Copyright (C) 2009,2011 Novell Inc.
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License version 2 as published by
+ * the Free Software Foundation.
+ *
  */
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 
@@ -587,7 +591,7 @@ static int seclinux_rfkill_set(void *data, bool blocked)
 				 !blocked);
 }
 
-static const struct rfkill_ops seclinux_rfkill_ops = {
+static struct rfkill_ops seclinux_rfkill_ops = {
 	.set_block = seclinux_rfkill_set,
 };
 
@@ -647,7 +651,7 @@ static void swsmi_rfkill_query(struct rfkill *rfkill, void *priv)
 	rfkill_set_sw_state(rfkill, !ret);
 }
 
-static const struct rfkill_ops swsmi_rfkill_ops = {
+static struct rfkill_ops swsmi_rfkill_ops = {
 	.set_block = swsmi_rfkill_set,
 	.query = swsmi_rfkill_query,
 };
@@ -1212,7 +1216,8 @@ static umode_t samsung_sysfs_is_visible(struct kobject *kobj,
 					struct attribute *attr, int idx)
 {
 	struct device *dev = container_of(kobj, struct device, kobj);
-	struct samsung_laptop *samsung = dev_get_drvdata(dev);
+	struct platform_device *pdev = to_platform_device(dev);
+	struct samsung_laptop *samsung = platform_get_drvdata(pdev);
 	bool ok = true;
 
 	if (attr == &dev_attr_performance_level.attr)
@@ -1227,7 +1232,7 @@ static umode_t samsung_sysfs_is_visible(struct kobject *kobj,
 	return ok ? attr->mode : 0;
 }
 
-static const struct attribute_group platform_attribute_group = {
+static struct attribute_group platform_attribute_group = {
 	.is_visible = samsung_sysfs_is_visible,
 	.attrs = platform_attributes
 };
@@ -1247,7 +1252,7 @@ static int __init samsung_sysfs_init(struct samsung_laptop *samsung)
 
 }
 
-static int samsung_laptop_call_show(struct seq_file *m, void *data)
+static int show_call(struct seq_file *m, void *data)
 {
 	struct samsung_laptop *samsung = m->private;
 	struct sabi_data *sdata = &samsung->debug.data;
@@ -1269,19 +1274,34 @@ static int samsung_laptop_call_show(struct seq_file *m, void *data)
 		   sdata->d0, sdata->d1, sdata->d2, sdata->d3);
 	return 0;
 }
-DEFINE_SHOW_ATTRIBUTE(samsung_laptop_call);
+
+static int samsung_debugfs_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, show_call, inode->i_private);
+}
+
+static const struct file_operations samsung_laptop_call_io_ops = {
+	.owner = THIS_MODULE,
+	.open = samsung_debugfs_open,
+	.read = seq_read,
+	.llseek = seq_lseek,
+	.release = single_release,
+};
 
 static void samsung_debugfs_exit(struct samsung_laptop *samsung)
 {
 	debugfs_remove_recursive(samsung->debug.root);
 }
 
-static void samsung_debugfs_init(struct samsung_laptop *samsung)
+static int samsung_debugfs_init(struct samsung_laptop *samsung)
 {
-	struct dentry *root;
+	struct dentry *dent;
 
-	root = debugfs_create_dir("samsung-laptop", NULL);
-	samsung->debug.root = root;
+	samsung->debug.root = debugfs_create_dir("samsung-laptop", NULL);
+	if (!samsung->debug.root) {
+		pr_err("failed to create debugfs directory");
+		goto error_debugfs;
+	}
 
 	samsung->debug.f0000_wrapper.data = samsung->f0000_segment;
 	samsung->debug.f0000_wrapper.size = 0xffff;
@@ -1292,24 +1312,60 @@ static void samsung_debugfs_init(struct samsung_laptop *samsung)
 	samsung->debug.sdiag_wrapper.data = samsung->sdiag;
 	samsung->debug.sdiag_wrapper.size = strlen(samsung->sdiag);
 
-	debugfs_create_u16("command", S_IRUGO | S_IWUSR, root,
-			   &samsung->debug.command);
-	debugfs_create_u32("d0", S_IRUGO | S_IWUSR, root,
-			   &samsung->debug.data.d0);
-	debugfs_create_u32("d1", S_IRUGO | S_IWUSR, root,
-			   &samsung->debug.data.d1);
-	debugfs_create_u16("d2", S_IRUGO | S_IWUSR, root,
-			   &samsung->debug.data.d2);
-	debugfs_create_u8("d3", S_IRUGO | S_IWUSR, root,
-			  &samsung->debug.data.d3);
-	debugfs_create_blob("data", S_IRUGO | S_IWUSR, root,
-			    &samsung->debug.data_wrapper);
-	debugfs_create_blob("f0000_segment", S_IRUSR | S_IWUSR, root,
-			    &samsung->debug.f0000_wrapper);
-	debugfs_create_file("call", S_IFREG | S_IRUGO, root, samsung,
-			    &samsung_laptop_call_fops);
-	debugfs_create_blob("sdiag", S_IRUGO | S_IWUSR, root,
-			    &samsung->debug.sdiag_wrapper);
+	dent = debugfs_create_u16("command", S_IRUGO | S_IWUSR,
+				  samsung->debug.root, &samsung->debug.command);
+	if (!dent)
+		goto error_debugfs;
+
+	dent = debugfs_create_u32("d0", S_IRUGO | S_IWUSR, samsung->debug.root,
+				  &samsung->debug.data.d0);
+	if (!dent)
+		goto error_debugfs;
+
+	dent = debugfs_create_u32("d1", S_IRUGO | S_IWUSR, samsung->debug.root,
+				  &samsung->debug.data.d1);
+	if (!dent)
+		goto error_debugfs;
+
+	dent = debugfs_create_u16("d2", S_IRUGO | S_IWUSR, samsung->debug.root,
+				  &samsung->debug.data.d2);
+	if (!dent)
+		goto error_debugfs;
+
+	dent = debugfs_create_u8("d3", S_IRUGO | S_IWUSR, samsung->debug.root,
+				 &samsung->debug.data.d3);
+	if (!dent)
+		goto error_debugfs;
+
+	dent = debugfs_create_blob("data", S_IRUGO | S_IWUSR,
+				   samsung->debug.root,
+				   &samsung->debug.data_wrapper);
+	if (!dent)
+		goto error_debugfs;
+
+	dent = debugfs_create_blob("f0000_segment", S_IRUSR | S_IWUSR,
+				   samsung->debug.root,
+				   &samsung->debug.f0000_wrapper);
+	if (!dent)
+		goto error_debugfs;
+
+	dent = debugfs_create_file("call", S_IFREG | S_IRUGO,
+				   samsung->debug.root, samsung,
+				   &samsung_laptop_call_io_ops);
+	if (!dent)
+		goto error_debugfs;
+
+	dent = debugfs_create_blob("sdiag", S_IRUGO | S_IWUSR,
+				   samsung->debug.root,
+				   &samsung->debug.sdiag_wrapper);
+	if (!dent)
+		goto error_debugfs;
+
+	return 0;
+
+error_debugfs:
+	samsung_debugfs_exit(samsung);
+	return -ENOMEM;
 }
 
 static void samsung_sabi_exit(struct samsung_laptop *samsung)
@@ -1390,9 +1446,9 @@ static int __init samsung_sabi_init(struct samsung_laptop *samsung)
 	const struct sabi_config *config = NULL;
 	const struct sabi_commands *commands;
 	unsigned int ifaceP;
-	int loca = 0xffff;
 	int ret = 0;
 	int i;
+	int loca;
 
 	samsung->f0000_segment = ioremap_nocache(0xf0000, 0xffff);
 	if (!samsung->f0000_segment) {
@@ -1511,7 +1567,7 @@ static int __init samsung_dmi_matched(const struct dmi_system_id *d)
 	return 0;
 }
 
-static const struct dmi_system_id samsung_dmi_table[] __initconst = {
+static struct dmi_system_id __initdata samsung_dmi_table[] = {
 	{
 		.matches = {
 			DMI_MATCH(DMI_SYS_VENDOR,
@@ -1702,7 +1758,9 @@ static int __init samsung_init(void)
 	if (ret)
 		goto error_lid_handling;
 
-	samsung_debugfs_init(samsung);
+	ret = samsung_debugfs_init(samsung);
+	if (ret)
+		goto error_debugfs;
 
 	samsung->pm_nb.notifier_call = samsung_pm_notification;
 	register_pm_notifier(&samsung->pm_nb);
@@ -1710,6 +1768,8 @@ static int __init samsung_init(void)
 	samsung_platform_device = samsung->platform_device;
 	return ret;
 
+error_debugfs:
+	samsung_lid_handling_exit(samsung);
 error_lid_handling:
 	samsung_leds_exit(samsung);
 error_leds:

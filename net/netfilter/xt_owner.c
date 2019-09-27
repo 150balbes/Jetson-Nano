@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Kernel module to match various things tied to sockets associated with
  * locally generated outgoing packets.
@@ -6,12 +5,14 @@
  * (C) 2000 Marc Boucher <marc@mbsi.ca>
  *
  * Copyright © CC Computer Consultants GmbH, 2007 - 2008
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  */
 #include <linux/module.h>
 #include <linux/skbuff.h>
 #include <linux/file.h>
-#include <linux/cred.h>
-
 #include <net/sock.h>
 #include <net/inet_sock.h>
 #include <linux/netfilter/x_tables.h>
@@ -21,9 +22,6 @@ static int owner_check(const struct xt_mtchk_param *par)
 {
 	struct xt_owner_match_info *info = par->matchinfo;
 	struct net *net = par->net;
-
-	if (info->match & ~XT_OWNER_MASK)
-		return -EINVAL;
 
 	/* Only allow the common case where the userns of the writer
 	 * matches the userns of the network namespace.
@@ -65,9 +63,9 @@ owner_mt(const struct sk_buff *skb, struct xt_action_param *par)
 	const struct xt_owner_match_info *info = par->matchinfo;
 	const struct file *filp;
 	struct sock *sk = skb_to_full_sk(skb);
-	struct net *net = xt_net(par);
+	struct net *net = par->net;
 
-	if (!sk || !sk->sk_socket || !net_eq(net, sock_net(sk)))
+	if (sk == NULL || sk->sk_socket == NULL)
 		return (info->match ^ info->invert) == 0;
 	else if (info->match & info->invert & XT_OWNER_SOCKET)
 		/*
@@ -91,28 +89,11 @@ owner_mt(const struct sk_buff *skb, struct xt_action_param *par)
 	}
 
 	if (info->match & XT_OWNER_GID) {
-		unsigned int i, match = false;
 		kgid_t gid_min = make_kgid(net->user_ns, info->gid_min);
 		kgid_t gid_max = make_kgid(net->user_ns, info->gid_max);
-		struct group_info *gi = filp->f_cred->group_info;
-
-		if (gid_gte(filp->f_cred->fsgid, gid_min) &&
-		    gid_lte(filp->f_cred->fsgid, gid_max))
-			match = true;
-
-		if (!match && (info->match & XT_OWNER_SUPPL_GROUPS) && gi) {
-			for (i = 0; i < gi->ngroups; ++i) {
-				kgid_t group = gi->gid[i];
-
-				if (gid_gte(group, gid_min) &&
-				    gid_lte(group, gid_max)) {
-					match = true;
-					break;
-				}
-			}
-		}
-
-		if (match ^ !(info->invert & XT_OWNER_GID))
+		if ((gid_gte(filp->f_cred->fsgid, gid_min) &&
+		     gid_lte(filp->f_cred->fsgid, gid_max)) ^
+		    !(info->invert & XT_OWNER_GID))
 			return false;
 	}
 

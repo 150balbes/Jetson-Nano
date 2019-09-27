@@ -1,0 +1,61 @@
+ * NVIDIA Tegra SPE/AON sensor hub with communication via the "IVC" IPC protocol.
+
+The AON FW implements the sensor hub functionality and communicates with the
+AP via the "IVC" protocol. The kernel driver that communicates with AON fw on
+the sensor hub IVC channel uses the Nvidia Sensor (NVS) framework.
+See the nvs.txt documentation for NVS DT capabilities.
+
+== AON Sensor Hub top-level node ==
+
+The AON Senor Hub is represented by the top-level node.
+
+Required properties:
+- compatible: Should be "nvidia,tegra186_aon_shub" for T18x.
+- mboxes: Should have the respective mbox index to indicate the ivc channel id.
+  Formatted as per standard rules for this property.
+
+== AON Sensor Hub sub nodes ==
+
+Each sub-node respresents sensor chip supported by the AON.
+Required properties:
+- i2c_info: I2C parameters namely controller id, clock rate and chips i2c
+	    address on the bus. This property is defined as a u32 tuple
+	    of the following form:
+	    i2c_info = <0 100000 0x68>;
+	    The tuple is described as follows:
+	    < I2C_controller_ID I2C_Clock_Rate I2C_address_of_slave >
+- chip_id:  Chip id of the sensor chip on the AON sensor hub.
+- gpio:	    GPIO number of the GPIO connected to the sensor chip.
+
+Optional Properties:
+- status: set to "ok" or "okay" for normal operation.  Set to anything else
+	  to unload the driver without ever communicating with the device.
+  Note: The "anything else" above is typically "disabled".
+- sensorname_disable: Setting this property to <1> will disable the sensor.
+- sensorname_matrix:  Orientation matrix for this device. Where sensorname is
+		      substituted by the actual sensor name.
+- sensorname_delay_us_min: Change the max supported sampling rate.
+- sensorname_delay_us_max: Change the min supported sampling rate.
+
+Possible example:
+
+aon_shub {
+	status = "okay";
+	compatible = "nvidia,tegra186_aon_shub";
+	mboxes = <&aon 5>;
+
+	icm20628@68 {
+		i2c_info = <1 100000 0x68>;
+		chip_id = <1>;
+		gpio = <TEGRA_AON_GPIO(V, 4)>;
+		accelerometer_matrix = [00 01 00 01 00 00 00 00 ff];
+		gyroscope_matrix = [00 01 00 01 00 00 00 00 ff];
+	};
+
+	ak8963c@0c {
+		i2c_info = <1 100000 0x0c>;
+		chip_id = <2>;
+		gpio = <TEGRA_AON_GPIO(V, 5)>;
+		magnetic_field_matrix = [00 01 00 01 00 00 00 00 ff];
+	};
+};

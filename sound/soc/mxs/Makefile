@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0
 # MXS Platform Support
 snd-soc-mxs-objs := mxs-saif.o
 snd-soc-mxs-pcm-objs := mxs-pcm.o

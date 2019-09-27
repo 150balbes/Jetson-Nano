@@ -9,7 +9,6 @@
 #include <linux/mm.h>
 #include <linux/io.h>
 #include <linux/serial_reg.h>
-#include <asm/setup.h>
 
 #include "devices.h"
 #include "ar2315_regs.h"
@@ -26,7 +25,7 @@ static inline unsigned char prom_uart_rr(void __iomem *base, unsigned reg)
 	return __raw_readl(base + 4 * reg);
 }
 
-void prom_putchar(char ch)
+void prom_putchar(unsigned char ch)
 {
 	static void __iomem *base;
 
@@ -39,7 +38,7 @@ void prom_putchar(char ch)
 
 	while ((prom_uart_rr(base, UART_LSR) & UART_LSR_THRE) == 0)
 		;
-	prom_uart_wr(base, UART_TX, (unsigned char)ch);
+	prom_uart_wr(base, UART_TX, ch);
 	while ((prom_uart_rr(base, UART_LSR) & UART_LSR_THRE) == 0)
 		;
 }

@@ -1,6 +1,7 @@
-/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (C) ST-Ericsson SA 2010
+ *
+ * License terms: GNU General Public License (GPL) version 2
  */
 
 #ifndef __MACH_DB8500_REGS_H
@@ -39,6 +40,10 @@
 #define U8500_BOOT_ROM_BASE	0x90000000
 /* ASIC ID is at 0xbf4 offset within this region */
 #define U8500_ASIC_ID_BASE	0x9001D000
+
+#define U9540_BOOT_ROM_BASE	0xFFFE0000
+/* ASIC ID is at 0xbf4 offset within this region */
+#define U9540_ASIC_ID_BASE	0xFFFFD000
 
 #define U8500_PER6_BASE		0xa03c0000
 #define U8500_PER7_BASE		0xa03d0000

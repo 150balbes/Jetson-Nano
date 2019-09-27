@@ -1,9 +1,12 @@
-/* SPDX-License-Identifier: GPL-2.0-or-later */
 #ifdef __KERNEL__
 #ifndef _ASM_POWERPC_IRQ_H
 #define _ASM_POWERPC_IRQ_H
 
 /*
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License
+ * as published by the Free Software Foundation; either version
+ * 2 of the License, or (at your option) any later version.
  */
 
 #include <linux/irqdomain.h>
@@ -45,21 +48,24 @@ struct pt_regs;
  * Per-cpu stacks for handling critical, debug and machine check
  * level interrupts.
  */
-extern void *critirq_ctx[NR_CPUS];
-extern void *dbgirq_ctx[NR_CPUS];
-extern void *mcheckirq_ctx[NR_CPUS];
+extern struct thread_info *critirq_ctx[NR_CPUS];
+extern struct thread_info *dbgirq_ctx[NR_CPUS];
+extern struct thread_info *mcheckirq_ctx[NR_CPUS];
+extern void exc_lvl_ctx_init(void);
+#else
+#define exc_lvl_ctx_init()
 #endif
 
 /*
  * Per-cpu stacks for handling hard and soft interrupts.
  */
-extern void *hardirq_ctx[NR_CPUS];
-extern void *softirq_ctx[NR_CPUS];
+extern struct thread_info *hardirq_ctx[NR_CPUS];
+extern struct thread_info *softirq_ctx[NR_CPUS];
 
-void call_do_softirq(void *sp);
-void call_do_irq(struct pt_regs *regs, void *sp);
+extern void irq_ctx_init(void);
+extern void call_do_softirq(struct thread_info *tp);
+extern void call_do_irq(struct pt_regs *regs, struct thread_info *tp);
 extern void do_IRQ(struct pt_regs *regs);
-extern void __init init_IRQ(void);
 extern void __do_irq(struct pt_regs *regs);
 
 int irq_choose_cpu(const struct cpumask *mask);

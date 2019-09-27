@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /* Sysctl interface for parport devices.
  * 
  * Authors: David Campbell
@@ -24,7 +23,7 @@
 #include <linux/sysctl.h>
 #include <linux/device.h>
 
-#include <linux/uaccess.h>
+#include <asm/uaccess.h>
 
 #if defined(CONFIG_SYSCTL) && defined(CONFIG_PROC_FS)
 

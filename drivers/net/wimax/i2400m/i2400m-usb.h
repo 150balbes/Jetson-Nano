@@ -131,7 +131,7 @@ static inline int edc_inc(struct edc *edc, u16 max_err, u16 timeframe)
 	unsigned long now;
 
 	now = jiffies;
-	if (time_after(now, edc->timestart + timeframe)) {
+	if (now - edc->timestart > timeframe) {
 		edc->errorcount = 1;
 		edc->timestart = now;
 	} else if (++edc->errorcount > max_err) {

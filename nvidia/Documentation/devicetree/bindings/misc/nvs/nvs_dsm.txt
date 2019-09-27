@@ -1,0 +1,24 @@
+* NVidia Sensor (NVS) Dynamic Sensor Meta (DSM)
+
+This driver uses the NVidia Sensor (NVS) framework.
+See the nvs.txt documentation for NVS DT capabilities.
+The nvs_dsm sensor driver supports dynamic sensors.
+
+Required properties:
+- compatible: Device or generic name.
+	      Supported device names:
+	      - nvidia,nvs_dsm
+
+Optional properties:
+- status: set to "ok" or "okay" for normal operation.  Set to anything else
+	  to unload the driver without ever communicating with the device.
+  Note: The "anything else" above is typically "disabled".
+	Since the driver will unload without communicating with the device, the
+	device will be left in its POR state.
+
+Example:
+	nvs_dsm {
+		compatible = "nvidia,nvs_dsm";
+		status = "okay";
+	};
+

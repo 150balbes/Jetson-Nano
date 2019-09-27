@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _RRUNNER_H_
 #define _RRUNNER_H_
 

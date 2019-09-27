@@ -13,7 +13,6 @@
  */
 #include <linux/kernel.h>
 #include <linux/mm.h>
-#include <linux/sched/signal.h>
 #include <linux/hardirq.h>
 #include <linux/kprobes.h>
 #include <linux/perf_event.h>
@@ -24,10 +23,32 @@
 #include <asm/tlbflush.h>
 #include <asm/traps.h>
 
-static void
-force_sig_info_fault(int si_signo, int si_code, unsigned long address)
+static inline int notify_page_fault(struct pt_regs *regs, int trap)
 {
-	force_sig_fault(si_signo, si_code, (void __user *)address);
+	int ret = 0;
+
+	if (kprobes_built_in() && !user_mode(regs)) {
+		preempt_disable();
+		if (kprobe_running() && kprobe_fault_handler(regs, trap))
+			ret = 1;
+		preempt_enable();
+	}
+
+	return ret;
+}
+
+static void
+force_sig_info_fault(int si_signo, int si_code, unsigned long address,
+		     struct task_struct *tsk)
+{
+	siginfo_t info;
+
+	info.si_signo	= si_signo;
+	info.si_errno	= 0;
+	info.si_code	= si_code;
+	info.si_addr	= (void __user *)address;
+
+	force_sig_info(si_signo, &info, tsk);
 }
 
 /*
@@ -229,6 +250,8 @@ static void
 __bad_area_nosemaphore(struct pt_regs *regs, unsigned long error_code,
 		       unsigned long address, int si_code)
 {
+	struct task_struct *tsk = current;
+
 	/* User mode accesses just cause a SIGSEGV */
 	if (user_mode(regs)) {
 		/*
@@ -236,7 +259,7 @@ __bad_area_nosemaphore(struct pt_regs *regs, unsigned long error_code,
 		 */
 		local_irq_enable();
 
-		force_sig_info_fault(SIGSEGV, si_code, address);
+		force_sig_info_fault(SIGSEGV, si_code, address, tsk);
 
 		return;
 	}
@@ -291,12 +314,12 @@ do_sigbus(struct pt_regs *regs, unsigned long error_code, unsigned long address)
 	if (!user_mode(regs))
 		no_context(regs, error_code, address);
 
-	force_sig_info_fault(SIGBUS, BUS_ADRERR, address);
+	force_sig_info_fault(SIGBUS, BUS_ADRERR, address, tsk);
 }
 
 static noinline int
 mm_fault_error(struct pt_regs *regs, unsigned long error_code,
-	       unsigned long address, vm_fault_t fault)
+	       unsigned long address, unsigned int fault)
 {
 	/*
 	 * Pagefault was interrupted by SIGKILL. We have no reason to
@@ -379,7 +402,7 @@ asmlinkage void __kprobes do_page_fault(struct pt_regs *regs,
 	struct task_struct *tsk;
 	struct mm_struct *mm;
 	struct vm_area_struct * vma;
-	vm_fault_t fault;
+	int fault;
 	unsigned int flags = FAULT_FLAG_ALLOW_RETRY | FAULT_FLAG_KILLABLE;
 
 	tsk = current;
@@ -398,14 +421,14 @@ asmlinkage void __kprobes do_page_fault(struct pt_regs *regs,
 	if (unlikely(fault_in_kernel_space(address))) {
 		if (vmalloc_fault(address) >= 0)
 			return;
-		if (kprobe_page_fault(regs, vec))
+		if (notify_page_fault(regs, vec))
 			return;
 
 		bad_area_nosemaphore(regs, error_code, address);
 		return;
 	}
 
-	if (unlikely(kprobe_page_fault(regs, vec)))
+	if (unlikely(notify_page_fault(regs, vec)))
 		return;
 
 	/* Only enable interrupts if they were on before the fault */

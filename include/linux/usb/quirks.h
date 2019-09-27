@@ -1,5 +1,6 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
+ * Copyright (c) 2018, NVIDIA CORPORATION. All rights reserved.
+ *
  * This file holds the definitions of quirks found in USB devices.
  * Only quirks that affect the whole device, not an interface,
  * belong here.
@@ -57,16 +58,10 @@
  */
 #define USB_QUIRK_LINEAR_FRAME_INTR_BINTERVAL	BIT(11)
 
-/*
- * Device needs to be disconnected before suspend to prevent spurious
- * wakeup.
- */
-#define USB_QUIRK_DISCONNECT_SUSPEND		BIT(12)
+/* Downgrade SS device to USB2 mode */
+#define USB_QUIRK_DOWNGRADE_USB3		BIT(12)
 
 /* Device needs a pause after every control message. */
 #define USB_QUIRK_DELAY_CTRL_MSG		BIT(13)
-
-/* Hub needs extra delay after resetting its port. */
-#define USB_QUIRK_HUB_SLOW_RESET		BIT(14)
 
 #endif /* __LINUX_USB_QUIRKS_H */

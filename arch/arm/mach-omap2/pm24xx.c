@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * OMAP2 Power Management Routines
  *
@@ -13,9 +12,12 @@
  * Igor Stoppa <igor.stoppa@nokia.com>
  *
  * Based on pm.c for omap1
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  */
 
-#include <linux/cpu_pm.h>
 #include <linux/suspend.h>
 #include <linux/sched.h>
 #include <linux/proc_fs.h>
@@ -27,6 +29,8 @@
 #include <linux/clk-provider.h>
 #include <linux/irq.h>
 #include <linux/time.h>
+#include <linux/gpio.h>
+#include <linux/platform_data/gpio-omap.h>
 
 #include <asm/fncpy.h>
 
@@ -83,7 +87,7 @@ static int omap2_enter_full_retention(void)
 	l = omap_ctrl_readl(OMAP2_CONTROL_DEVCONF0) | OMAP24XX_USBSTANDBYCTRL;
 	omap_ctrl_writel(l, OMAP2_CONTROL_DEVCONF0);
 
-	cpu_cluster_pm_enter();
+	omap2_gpio_prepare_for_idle(0);
 
 	/* One last check for pending IRQs to avoid extra latency due
 	 * to sleeping unnecessarily. */
@@ -96,7 +100,7 @@ static int omap2_enter_full_retention(void)
 			   OMAP_SDRC_REGADDR(SDRC_POWER));
 
 no_sleep:
-	cpu_cluster_pm_exit();
+	omap2_gpio_resume_after_idle();
 
 	clk_enable(osc_ck);
 

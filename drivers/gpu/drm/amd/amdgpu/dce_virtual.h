@@ -24,7 +24,8 @@
 #ifndef __DCE_VIRTUAL_H__
 #define __DCE_VIRTUAL_H__
 
-extern const struct amdgpu_ip_block_version dce_virtual_ip_block;
+extern const struct amd_ip_funcs dce_virtual_ip_funcs;
+#define DCE_VIRTUAL_VBLANK_PERIOD 16666666
 
 #endif
 

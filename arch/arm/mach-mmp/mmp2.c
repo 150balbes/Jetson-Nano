@@ -1,10 +1,13 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * linux/arch/arm/mach-mmp/mmp2.c
  *
  * code name MMP2
  *
  * Copyright (C) 2009 Marvell International Ltd.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  */
 #include <linux/clk/mmp.h>
 #include <linux/module.h>
@@ -131,7 +134,7 @@ void __init mmp2_timer_init(void)
 	clk_rst = APBC_APBCLK | APBC_FNCLK | APBC_FNCLKSEL(1);
 	__raw_writel(clk_rst, APBC_TIMERS);
 
-	mmp_timer_init(IRQ_MMP2_TIMER1, 6500000);
+	timer_init(IRQ_MMP2_TIMER1);
 }
 
 /* on-chip devices */

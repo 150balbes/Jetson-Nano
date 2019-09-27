@@ -28,6 +28,10 @@ Required properties:
 
 Optional properties:
 - clock-output-names: From common clock binding.
+- enable-clock32k-out: Enable clock32K output at boot. This is applicable for
+		     	max77620 only.
+- maxim,enable-clock32k-out: Same as enable-clock32k-out. This is applicable for
+			max77620 only.
 
 Each clock is assigned an identifier and client nodes can use this identifier
 to specify the clock which they consume. Following indices are allowed:
@@ -46,7 +50,7 @@ Example:
 /* ... */
 
 	Node of the MFD chip
-		max77686: max77686@9 {
+		max77686: max77686@09 {
 			compatible = "maxim,max77686";
 			interrupt-parent = <&wakeup_eint>;
 			interrupts = <26 0>;
@@ -71,7 +75,7 @@ Example:
 /* ... */
 
 	Node of the MFD chip
-		max77802: max77802@9 {
+		max77802: max77802@09 {
 			compatible = "maxim,max77802";
 			interrupt-parent = <&wakeup_eint>;
 			interrupts = <26 0>;

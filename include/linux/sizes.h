@@ -1,11 +1,12 @@
-/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * include/linux/sizes.h
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  */
 #ifndef __LINUX_SIZES_H__
 #define __LINUX_SIZES_H__
-
-#include <linux/const.h>
 
 #define SZ_1				0x00000001
 #define SZ_2				0x00000002
@@ -42,8 +43,12 @@
 
 #define SZ_1G				0x40000000
 #define SZ_2G				0x80000000
-
-#define SZ_4G				_AC(0x100000000, ULL)
-#define SZ_64T				_AC(0x400000000000, ULL)
+#define SZ_4G				0x100000000
+#define SZ_8G				0x200000000
+#define SZ_16G				0x400000000
+#define SZ_32G				0x800000000
+#define SZ_64G				0x1000000000
+#define SZ_128G				0x2000000000
+#define SZ_256G				0x4000000000
 
 #endif /* __LINUX_SIZES_H__ */

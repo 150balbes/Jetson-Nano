@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * STV0680 USB Camera Driver
  *
@@ -11,6 +10,21 @@
  * Thanks to STMicroelectronics for information on the usb commands, and
  * to Steve Miller at STM for his help and encouragement while I was
  * writing this driver.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ *
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
@@ -72,8 +86,8 @@ static int stv_sndctrl(struct gspca_dev *gspca_dev, int set, u8 req, u16 val,
 static int stv0680_handle_error(struct gspca_dev *gspca_dev, int ret)
 {
 	stv_sndctrl(gspca_dev, 0, 0x80, 0, 0x02); /* Get Last Error */
-	gspca_err(gspca_dev, "last error: %i,  command = 0x%x\n",
-		  gspca_dev->usb_buf[0], gspca_dev->usb_buf[1]);
+	PERR("last error: %i,  command = 0x%x",
+	       gspca_dev->usb_buf[0], gspca_dev->usb_buf[1]);
 	return ret;
 }
 
@@ -84,7 +98,7 @@ static int stv0680_get_video_mode(struct gspca_dev *gspca_dev)
 	gspca_dev->usb_buf[0] = 0x0f;
 
 	if (stv_sndctrl(gspca_dev, 0, 0x87, 0, 0x08) != 0x08) {
-		gspca_err(gspca_dev, "Get_Camera_Mode failed\n");
+		PERR("Get_Camera_Mode failed");
 		return stv0680_handle_error(gspca_dev, -EIO);
 	}
 
@@ -102,13 +116,13 @@ static int stv0680_set_video_mode(struct gspca_dev *gspca_dev, u8 mode)
 	gspca_dev->usb_buf[0] = mode;
 
 	if (stv_sndctrl(gspca_dev, 3, 0x07, 0x0100, 0x08) != 0x08) {
-		gspca_err(gspca_dev, "Set_Camera_Mode failed\n");
+		PERR("Set_Camera_Mode failed");
 		return stv0680_handle_error(gspca_dev, -EIO);
 	}
 
 	/* Verify we got what we've asked for */
 	if (stv0680_get_video_mode(gspca_dev) != mode) {
-		gspca_err(gspca_dev, "Error setting camera video mode!\n");
+		PERR("Error setting camera video mode!");
 		return -EIO;
 	}
 
@@ -132,7 +146,7 @@ static int sd_config(struct gspca_dev *gspca_dev,
 	/* ping camera to be sure STV0680 is present */
 	if (stv_sndctrl(gspca_dev, 0, 0x88, 0x5678, 0x02) != 0x02 ||
 	    gspca_dev->usb_buf[0] != 0x56 || gspca_dev->usb_buf[1] != 0x78) {
-		gspca_err(gspca_dev, "STV(e): camera ping failed!!\n");
+		PERR("STV(e): camera ping failed!!");
 		return stv0680_handle_error(gspca_dev, -ENODEV);
 	}
 
@@ -142,7 +156,7 @@ static int sd_config(struct gspca_dev *gspca_dev,
 
 	if (stv_sndctrl(gspca_dev, 2, 0x06, 0x0200, 0x22) != 0x22 ||
 	    gspca_dev->usb_buf[7] != 0xa0 || gspca_dev->usb_buf[8] != 0x23) {
-		gspca_err(gspca_dev, "Could not get descriptor 0200\n");
+		PERR("Could not get descriptor 0200.");
 		return stv0680_handle_error(gspca_dev, -ENODEV);
 	}
 	if (stv_sndctrl(gspca_dev, 0, 0x8a, 0, 0x02) != 0x02)
@@ -153,17 +167,17 @@ static int sd_config(struct gspca_dev *gspca_dev,
 		return stv0680_handle_error(gspca_dev, -ENODEV);
 
 	if (!(gspca_dev->usb_buf[7] & 0x09)) {
-		gspca_err(gspca_dev, "Camera supports neither CIF nor QVGA mode\n");
+		PERR("Camera supports neither CIF nor QVGA mode");
 		return -ENODEV;
 	}
 	if (gspca_dev->usb_buf[7] & 0x01)
-		gspca_dbg(gspca_dev, D_PROBE, "Camera supports CIF mode\n");
+		PDEBUG(D_PROBE, "Camera supports CIF mode");
 	if (gspca_dev->usb_buf[7] & 0x02)
-		gspca_dbg(gspca_dev, D_PROBE, "Camera supports VGA mode\n");
+		PDEBUG(D_PROBE, "Camera supports VGA mode");
 	if (gspca_dev->usb_buf[7] & 0x04)
-		gspca_dbg(gspca_dev, D_PROBE, "Camera supports QCIF mode\n");
+		PDEBUG(D_PROBE, "Camera supports QCIF mode");
 	if (gspca_dev->usb_buf[7] & 0x08)
-		gspca_dbg(gspca_dev, D_PROBE, "Camera supports QVGA mode\n");
+		PDEBUG(D_PROBE, "Camera supports QVGA mode");
 
 	if (gspca_dev->usb_buf[7] & 0x01)
 		sd->video_mode = 0x00; /* CIF */
@@ -171,12 +185,12 @@ static int sd_config(struct gspca_dev *gspca_dev,
 		sd->video_mode = 0x03; /* QVGA */
 
 	/* FW rev, ASIC rev, sensor ID  */
-	gspca_dbg(gspca_dev, D_PROBE, "Firmware rev is %i.%i\n",
-		  gspca_dev->usb_buf[0], gspca_dev->usb_buf[1]);
-	gspca_dbg(gspca_dev, D_PROBE, "ASIC rev is %i.%i",
-		  gspca_dev->usb_buf[2], gspca_dev->usb_buf[3]);
-	gspca_dbg(gspca_dev, D_PROBE, "Sensor ID is %i",
-		  (gspca_dev->usb_buf[4]*16) + (gspca_dev->usb_buf[5]>>4));
+	PDEBUG(D_PROBE, "Firmware rev is %i.%i",
+	       gspca_dev->usb_buf[0], gspca_dev->usb_buf[1]);
+	PDEBUG(D_PROBE, "ASIC rev is %i.%i",
+	       gspca_dev->usb_buf[2], gspca_dev->usb_buf[3]);
+	PDEBUG(D_PROBE, "Sensor ID is %i",
+	       (gspca_dev->usb_buf[4]*16) + (gspca_dev->usb_buf[5]>>4));
 
 
 	ret = stv0680_get_video_mode(gspca_dev);

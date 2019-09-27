@@ -1,7 +1,15 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
 * Copyright (c) 2014-2015 MediaTek Inc.
 * Author: Tianping.Fang <tianping.fang@mediatek.com>
+*
+* This program is free software; you can redistribute it and/or modify
+* it under the terms of the GNU General Public License version 2 as
+* published by the Free Software Foundation.
+*
+* This program is distributed in the hope that it will be useful,
+* but WITHOUT ANY WARRANTY; without even the implied warranty of
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+* GNU General Public License for more details.
 */
 
 #include <linux/delay.h>
@@ -314,19 +322,16 @@ static int mtk_rtc_probe(struct platform_device *pdev)
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	rtc->addr_base = res->start;
 
-	rtc->irq = platform_get_irq(pdev, 0);
-	if (rtc->irq < 0)
-		return rtc->irq;
+	res = platform_get_resource(pdev, IORESOURCE_IRQ, 0);
+	rtc->irq = irq_create_mapping(mt6397_chip->irq_domain, res->start);
+	if (rtc->irq <= 0)
+		return -EINVAL;
 
 	rtc->regmap = mt6397_chip->regmap;
 	rtc->dev = &pdev->dev;
 	mutex_init(&rtc->lock);
 
 	platform_set_drvdata(pdev, rtc);
-
-	rtc->rtc_dev = devm_rtc_allocate_device(rtc->dev);
-	if (IS_ERR(rtc->rtc_dev))
-		return PTR_ERR(rtc->rtc_dev);
 
 	ret = request_threaded_irq(rtc->irq, NULL,
 				   mtk_rtc_irq_handler_thread,
@@ -335,23 +340,25 @@ static int mtk_rtc_probe(struct platform_device *pdev)
 	if (ret) {
 		dev_err(&pdev->dev, "Failed to request alarm IRQ: %d: %d\n",
 			rtc->irq, ret);
-		return ret;
+		goto out_dispose_irq;
 	}
 
 	device_init_wakeup(&pdev->dev, 1);
 
-	rtc->rtc_dev->ops = &mtk_rtc_ops;
-
-	ret = rtc_register_device(rtc->rtc_dev);
-	if (ret) {
+	rtc->rtc_dev = rtc_device_register("mt6397-rtc", &pdev->dev,
+					   &mtk_rtc_ops, THIS_MODULE);
+	if (IS_ERR(rtc->rtc_dev)) {
 		dev_err(&pdev->dev, "register rtc device failed\n");
+		ret = PTR_ERR(rtc->rtc_dev);
 		goto out_free_irq;
 	}
 
 	return 0;
 
 out_free_irq:
-	free_irq(rtc->irq, rtc);
+	free_irq(rtc->irq, rtc->rtc_dev);
+out_dispose_irq:
+	irq_dispose_mapping(rtc->irq);
 	return ret;
 }
 
@@ -359,7 +366,9 @@ static int mtk_rtc_remove(struct platform_device *pdev)
 {
 	struct mt6397_rtc *rtc = platform_get_drvdata(pdev);
 
-	free_irq(rtc->irq, rtc);
+	rtc_device_unregister(rtc->rtc_dev);
+	free_irq(rtc->irq, rtc->rtc_dev);
+	irq_dispose_mapping(rtc->irq);
 
 	return 0;
 }

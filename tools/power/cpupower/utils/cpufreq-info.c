@@ -1,6 +1,7 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  *  (C) 2004-2009  Dominik Brodowski <linux@dominikbrodowski.de>
+ *
+ *  Licensed under the terms of the GNU GPL License version 2.
  */
 
 
@@ -92,6 +93,8 @@ static void print_speed(unsigned long speed)
 		if (speed > 1000000)
 			printf("%u.%06u GHz", ((unsigned int) speed/1000000),
 				((unsigned int) speed%1000000));
+		else if (speed > 100000)
+			printf("%u MHz", (unsigned int) speed);
 		else if (speed > 1000)
 			printf("%u.%03u MHz", ((unsigned int) speed/1000),
 				(unsigned int) (speed%1000));
@@ -160,11 +163,17 @@ static void print_duration(unsigned long duration)
 	return;
 }
 
-static int get_boost_mode_x86(unsigned int cpu)
+/* --boost / -b */
+
+static int get_boost_mode(unsigned int cpu)
 {
 	int support, active, b_states = 0, ret, pstate_no, i;
 	/* ToDo: Make this more global */
 	unsigned long pstates[MAX_HW_PSTATES] = {0,};
+
+	if (cpupower_cpu_info.vendor != X86_VENDOR_AMD &&
+	    cpupower_cpu_info.vendor != X86_VENDOR_INTEL)
+		return 0;
 
 	ret = cpufreq_has_boost_support(cpu, &support, &active, &b_states);
 	if (ret) {
@@ -183,9 +192,8 @@ static int get_boost_mode_x86(unsigned int cpu)
 	printf(_("    Supported: %s\n"), support ? _("yes") : _("no"));
 	printf(_("    Active: %s\n"), active ? _("yes") : _("no"));
 
-	if ((cpupower_cpu_info.vendor == X86_VENDOR_AMD &&
-	     cpupower_cpu_info.family >= 0x10) ||
-	     cpupower_cpu_info.vendor == X86_VENDOR_HYGON) {
+	if (cpupower_cpu_info.vendor == X86_VENDOR_AMD &&
+	    cpupower_cpu_info.family >= 0x10) {
 		ret = decode_pstates(cpu, cpupower_cpu_info.family, b_states,
 				     pstates, &pstate_no);
 		if (ret)
@@ -194,8 +202,6 @@ static int get_boost_mode_x86(unsigned int cpu)
 		printf(_("    Boost States: %d\n"), b_states);
 		printf(_("    Total States: %d\n"), pstate_no);
 		for (i = 0; i < pstate_no; i++) {
-			if (!pstates[i])
-				continue;
 			if (i < b_states)
 				printf(_("    Pstate-Pb%d: %luMHz (boost state)"
 					 "\n"), i, pstates[i]);
@@ -240,33 +246,6 @@ static int get_boost_mode_x86(unsigned int cpu)
 	return 0;
 }
 
-/* --boost / -b */
-
-static int get_boost_mode(unsigned int cpu)
-{
-	struct cpufreq_frequencies *freqs;
-
-	if (cpupower_cpu_info.vendor == X86_VENDOR_AMD ||
-	    cpupower_cpu_info.vendor == X86_VENDOR_HYGON ||
-	    cpupower_cpu_info.vendor == X86_VENDOR_INTEL)
-		return get_boost_mode_x86(cpu);
-
-	freqs = cpufreq_get_frequencies("boost", cpu);
-	if (freqs) {
-		printf(_("  boost frequency steps: "));
-		while (freqs->next) {
-			print_speed(freqs->frequency);
-			printf(", ");
-			freqs = freqs->next;
-		}
-		print_speed(freqs->frequency);
-		printf("\n");
-		cpufreq_put_frequencies(freqs);
-	}
-
-	return 0;
-}
-
 /* --freq / -f */
 
 static int get_freq_kernel(unsigned int cpu, unsigned int human)
@@ -306,24 +285,20 @@ static int get_freq_hardware(unsigned int cpu, unsigned int human)
 
 /* --hwlimits / -l */
 
-static int get_hardware_limits(unsigned int cpu, unsigned int human)
+static int get_hardware_limits(unsigned int cpu)
 {
 	unsigned long min, max;
 
+	printf(_("  hardware limits: "));
 	if (cpufreq_get_hardware_limits(cpu, &min, &max)) {
 		printf(_("Not Available\n"));
 		return -EINVAL;
 	}
 
-	if (human) {
-		printf(_("  hardware limits: "));
-		print_speed(min);
-		printf(" - ");
-		print_speed(max);
-		printf("\n");
-	} else {
-		printf("%lu %lu\n", min, max);
-	}
+	print_speed(min);
+	printf(" - ");
+	print_speed(max);
+	printf("\n");
 	return 0;
 }
 
@@ -475,15 +450,15 @@ static int get_latency(unsigned int cpu, unsigned int human)
 
 static void debug_output_one(unsigned int cpu)
 {
-	struct cpufreq_frequencies *freqs;
+	struct cpufreq_available_frequencies *freqs;
 
 	get_driver(cpu);
 	get_related_cpus(cpu);
 	get_affected_cpus(cpu);
 	get_latency(cpu, 1);
-	get_hardware_limits(cpu, 1);
+	get_hardware_limits(cpu);
 
-	freqs = cpufreq_get_frequencies("available", cpu);
+	freqs = cpufreq_get_available_frequencies(cpu);
 	if (freqs) {
 		printf(_("  available frequency steps:  "));
 		while (freqs->next) {
@@ -493,7 +468,7 @@ static void debug_output_one(unsigned int cpu)
 		}
 		print_speed(freqs->frequency);
 		printf("\n");
-		cpufreq_put_frequencies(freqs);
+		cpufreq_put_available_frequencies(freqs);
 	}
 
 	get_available_governors(cpu);
@@ -647,7 +622,7 @@ int cmd_freq_info(int argc, char **argv)
 			ret = get_driver(cpu);
 			break;
 		case 'l':
-			ret = get_hardware_limits(cpu, human);
+			ret = get_hardware_limits(cpu);
 			break;
 		case 'w':
 			ret = get_freq_hardware(cpu, human);
@@ -664,6 +639,7 @@ int cmd_freq_info(int argc, char **argv)
 		}
 		if (ret)
 			return ret;
+		printf("\n");
 	}
 	return ret;
 }

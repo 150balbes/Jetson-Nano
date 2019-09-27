@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * sgiseeq.h: Defines for the Seeq8003 ethernet controller.
  *

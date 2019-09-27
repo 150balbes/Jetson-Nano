@@ -1,10 +1,19 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Intel MIC Platform Software Stack (MPSS)
  *
  * Copyright(c) 2014 Intel Corporation.
  *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License, version 2, as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+ * General Public License for more details.
+ *
  * Intel SCIF driver.
+ *
  */
 #include <linux/circ_buf.h>
 #include <linux/types.h>
@@ -129,7 +138,7 @@ void scif_rb_commit(struct scif_rb *rb)
 	 * the read barrier in scif_rb_count(..)
 	 */
 	wmb();
-	WRITE_ONCE(*rb->write_ptr, rb->current_write_offset);
+	ACCESS_ONCE(*rb->write_ptr) = rb->current_write_offset;
 #ifdef CONFIG_INTEL_MIC_CARD
 	/*
 	 * X100 Si bug: For the case where a Core is performing an EXT_WR
@@ -138,7 +147,7 @@ void scif_rb_commit(struct scif_rb *rb)
 	 * This way, if ordering is violated for the Interrupt Message, it will
 	 * fall just behind the first Posted associated with the first EXT_WR.
 	 */
-	WRITE_ONCE(*rb->write_ptr, rb->current_write_offset);
+	ACCESS_ONCE(*rb->write_ptr) = rb->current_write_offset;
 #endif
 }
 
@@ -201,7 +210,7 @@ void scif_rb_update_read_ptr(struct scif_rb *rb)
 	 * scif_rb_space(..)
 	 */
 	mb();
-	WRITE_ONCE(*rb->read_ptr, new_offset);
+	ACCESS_ONCE(*rb->read_ptr) = new_offset;
 #ifdef CONFIG_INTEL_MIC_CARD
 	/*
 	 * X100 Si Bug: For the case where a Core is performing an EXT_WR
@@ -210,7 +219,7 @@ void scif_rb_update_read_ptr(struct scif_rb *rb)
 	 * This way, if ordering is violated for the Interrupt Message, it will
 	 * fall just behind the first Posted associated with the first EXT_WR.
 	 */
-	WRITE_ONCE(*rb->read_ptr, new_offset);
+	ACCESS_ONCE(*rb->read_ptr) = new_offset;
 #endif
 }
 

@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  *  linux/fs/proc/kmsg.c
  *
@@ -15,7 +14,7 @@
 #include <linux/fs.h>
 #include <linux/syslog.h>
 
-#include <linux/uaccess.h>
+#include <asm/uaccess.h>
 #include <asm/io.h>
 
 extern wait_queue_head_t log_wait;
@@ -40,11 +39,11 @@ static ssize_t kmsg_read(struct file *file, char __user *buf,
 	return do_syslog(SYSLOG_ACTION_READ, buf, count, SYSLOG_FROM_PROC);
 }
 
-static __poll_t kmsg_poll(struct file *file, poll_table *wait)
+static unsigned int kmsg_poll(struct file *file, poll_table *wait)
 {
 	poll_wait(file, &log_wait, wait);
 	if (do_syslog(SYSLOG_ACTION_SIZE_UNREAD, NULL, 0, SYSLOG_FROM_PROC))
-		return EPOLLIN | EPOLLRDNORM;
+		return POLLIN | POLLRDNORM;
 	return 0;
 }
 

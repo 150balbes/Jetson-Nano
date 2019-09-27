@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * Copyright (C) 2014 Intel Corporation; author Matt Fleming
  *
@@ -33,7 +32,7 @@ ENTRY(efi64_thunk)
 	 * Switch to 1:1 mapped 32-bit stack pointer.
 	 */
 	movq	%rsp, efi_saved_sp(%rip)
-	movq	efi_scratch(%rip), %rsp
+	movq	efi_scratch+25(%rip), %rsp
 
 	/*
 	 * Calculate the physical address of the kernel text.

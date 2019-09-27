@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * MTD map driver for BIOS Flash on Intel SCB2 boards
  * Copyright (C) 2002 Sun Microsystems, Inc.

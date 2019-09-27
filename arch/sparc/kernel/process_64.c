@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*  arch/sparc64/kernel/process.c
  *
  *  Copyright (C) 1995, 1996, 2008 David S. Miller (davem@davemloft.net)
@@ -15,9 +14,6 @@
 #include <linux/errno.h>
 #include <linux/export.h>
 #include <linux/sched.h>
-#include <linux/sched/debug.h>
-#include <linux/sched/task.h>
-#include <linux/sched/task_stack.h>
 #include <linux/kernel.h>
 #include <linux/mm.h>
 #include <linux/fs.h>
@@ -36,9 +32,8 @@
 #include <linux/sysrq.h>
 #include <linux/nmi.h>
 #include <linux/context_tracking.h>
-#include <linux/signal.h>
 
-#include <linux/uaccess.h>
+#include <asm/uaccess.h>
 #include <asm/page.h>
 #include <asm/pgalloc.h>
 #include <asm/pgtable.h>
@@ -79,13 +74,8 @@ void arch_cpu_idle(void)
 			: "=&r" (pstate)
 			: "i" (PSTATE_IE));
 
-		if (!need_resched() && !cpu_is_offline(smp_processor_id())) {
+		if (!need_resched() && !cpu_is_offline(smp_processor_id()))
 			sun4v_cpu_yield();
-			/* If resumed by cpu_poke then we need to explicitly
-			 * call scheduler_ipi().
-			 */
-			scheduler_poke();
-		}
 
 		/* Re-enable interrupts. */
 		__asm__ __volatile__(
@@ -407,6 +397,25 @@ core_initcall(sparc_sysrq_init);
 
 #endif
 
+unsigned long thread_saved_pc(struct task_struct *tsk)
+{
+	struct thread_info *ti = task_thread_info(tsk);
+	unsigned long ret = 0xdeadbeefUL;
+	
+	if (ti && ti->ksp) {
+		unsigned long *sp;
+		sp = (unsigned long *)(ti->ksp + STACK_BIAS);
+		if (((unsigned long)sp & (sizeof(long) - 1)) == 0UL &&
+		    sp[14]) {
+			unsigned long *fp;
+			fp = (unsigned long *)(sp[14] + STACK_BIAS);
+			if (((unsigned long)fp & (sizeof(long) - 1)) == 0UL)
+				ret = fp[15];
+		}
+	}
+	return ret;
+}
+
 /* Free current thread data structures etc.. */
 void exit_thread(struct task_struct *tsk)
 {
@@ -519,15 +528,17 @@ void synchronize_user_stack(void)
 
 static void stack_unaligned(unsigned long sp)
 {
-	force_sig_fault(SIGBUS, BUS_ADRALN, (void __user *) sp, 0);
+	siginfo_t info;
+
+	info.si_signo = SIGBUS;
+	info.si_errno = 0;
+	info.si_code = BUS_ADRALN;
+	info.si_addr = (void __user *) sp;
+	info.si_trapno = 0;
+	force_sig_info(SIGBUS, &info, current);
 }
 
-static const char uwfault32[] = KERN_INFO \
-	"%s[%d]: bad register window fault: SP %08lx (orig_sp %08lx) TPC %08lx O7 %08lx\n";
-static const char uwfault64[] = KERN_INFO \
-	"%s[%d]: bad register window fault: SP %016lx (orig_sp %016lx) TPC %08lx O7 %016lx\n";
-
-void fault_in_user_windows(struct pt_regs *regs)
+void fault_in_user_windows(void)
 {
 	struct thread_info *t = current_thread_info();
 	unsigned long window;
@@ -540,9 +551,9 @@ void fault_in_user_windows(struct pt_regs *regs)
 		do {
 			struct reg_window *rwin = &t->reg_window[window];
 			int winsize = sizeof(struct reg_window);
-			unsigned long sp, orig_sp;
+			unsigned long sp;
 
-			orig_sp = sp = t->rwbuf_stkptrs[window];
+			sp = t->rwbuf_stkptrs[window];
 
 			if (test_thread_64bit_stack(sp))
 				sp += STACK_BIAS;
@@ -553,16 +564,8 @@ void fault_in_user_windows(struct pt_regs *regs)
 				stack_unaligned(sp);
 
 			if (unlikely(copy_to_user((char __user *)sp,
-						  rwin, winsize))) {
-				if (show_unhandled_signals)
-					printk_ratelimited(is_compat_task() ?
-							   uwfault32 : uwfault64,
-							   current->comm, current->pid,
-							   sp, orig_sp,
-							   regs->tpc,
-							   regs->u_regs[UREG_I7]);
+						  rwin, winsize)))
 				goto barf;
-			}
 		} while (window--);
 	}
 	set_thread_wsaved(0);
@@ -570,7 +573,8 @@ void fault_in_user_windows(struct pt_regs *regs)
 
 barf:
 	set_thread_wsaved(window + 1);
-	force_sig(SIGSEGV);
+	user_exit();
+	do_exit(SIGILL);
 }
 
 asmlinkage long sparc_do_fork(unsigned long clone_flags,
@@ -673,31 +677,6 @@ int copy_thread(unsigned long clone_flags, unsigned long sp,
 	if (clone_flags & CLONE_SETTLS)
 		t->kregs->u_regs[UREG_G7] = regs->u_regs[UREG_I3];
 
-	return 0;
-}
-
-/* TIF_MCDPER in thread info flags for current task is updated lazily upon
- * a context switch. Update this flag in current task's thread flags
- * before dup so the dup'd task will inherit the current TIF_MCDPER flag.
- */
-int arch_dup_task_struct(struct task_struct *dst, struct task_struct *src)
-{
-	if (adi_capable()) {
-		register unsigned long tmp_mcdper;
-
-		__asm__ __volatile__(
-			".word 0x83438000\n\t"	/* rd  %mcdper, %g1 */
-			"mov %%g1, %0\n\t"
-			: "=r" (tmp_mcdper)
-			:
-			: "g1");
-		if (tmp_mcdper)
-			set_thread_flag(TIF_MCDPER);
-		else
-			clear_thread_flag(TIF_MCDPER);
-	}
-
-	*dst = *src;
 	return 0;
 }
 

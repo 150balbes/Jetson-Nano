@@ -26,7 +26,6 @@
 #include <subdev/bios.h>
 #include <subdev/bios/bit.h>
 #include <subdev/bios/pmu.h>
-#include <subdev/timer.h>
 
 static void
 pmu_code(struct nv50_devinit *init, u32 pmu, u32 img, u32 len, bool sec)
@@ -86,8 +85,10 @@ pmu_load(struct nv50_devinit *init, u8 type, bool post,
 	struct nvkm_bios *bios = subdev->device->bios;
 	struct nvbios_pmuR pmu;
 
-	if (!nvbios_pmuRm(bios, type, &pmu))
+	if (!nvbios_pmuRm(bios, type, &pmu)) {
+		nvkm_error(subdev, "VBIOS PMU fuc %02x not found\n", type);
 		return -EINVAL;
+	}
 
 	if (!post)
 		return 0;
@@ -105,16 +106,7 @@ pmu_load(struct nv50_devinit *init, u8 type, bool post,
 	return pmu_exec(init, pmu.init_addr_pmu), 0;
 }
 
-void
-gm200_devinit_preos(struct nv50_devinit *init, bool post)
-{
-	/* Optional: Execute PRE_OS application on PMU, which should at
-	 * least take care of fans until a full PMU has been loaded.
-	 */
-	pmu_load(init, 0x01, post, NULL, NULL);
-}
-
-int
+static int
 gm200_devinit_post(struct nvkm_devinit *base, bool post)
 {
 	struct nv50_devinit *init = nv50_devinit(base);
@@ -131,14 +123,20 @@ gm200_devinit_post(struct nvkm_devinit *base, bool post)
 		return -EINVAL;
 	}
 
-	/* Upload DEVINIT application from VBIOS onto PMU. */
-	ret = pmu_load(init, 0x04, post, &exec, &args);
-	if (ret) {
-		nvkm_error(subdev, "VBIOS PMU/DEVINIT not found\n");
-		return ret;
+	/* reset PMU and load init table parser ucode */
+	if (post) {
+		nvkm_mask(device, 0x000200, 0x00002000, 0x00000000);
+		nvkm_mask(device, 0x000200, 0x00002000, 0x00002000);
+		nvkm_rd32(device, 0x000200);
+		while (nvkm_rd32(device, 0x10a10c) & 0x00000006) {
+		}
 	}
 
-	/* Upload tables required by opcodes in boot scripts. */
+	ret = pmu_load(init, 0x04, post, &exec, &args);
+	if (ret)
+		return ret;
+
+	/* upload first chunk of init data */
 	if (post) {
 		u32 pmu = pmu_args(init, args + 0x08, 0x08);
 		u32 img = nvbios_rd16(bios, bit_I.offset + 0x14);
@@ -146,7 +144,7 @@ gm200_devinit_post(struct nvkm_devinit *base, bool post)
 		pmu_data(init, pmu, img, len);
 	}
 
-	/* Upload boot scripts. */
+	/* upload second chunk of init data */
 	if (post) {
 		u32 pmu = pmu_args(init, args + 0x08, 0x10);
 		u32 img = nvbios_rd16(bios, bit_I.offset + 0x18);
@@ -154,18 +152,16 @@ gm200_devinit_post(struct nvkm_devinit *base, bool post)
 		pmu_data(init, pmu, img, len);
 	}
 
-	/* Execute DEVINIT. */
+	/* execute init tables */
 	if (post) {
 		nvkm_wr32(device, 0x10a040, 0x00005000);
 		pmu_exec(init, exec);
-		if (nvkm_msec(device, 2000,
-			if (nvkm_rd32(device, 0x10a040) & 0x00002000)
-				break;
-		) < 0)
-			return -ETIMEDOUT;
+		while (!(nvkm_rd32(device, 0x10a040) & 0x00002000)) {
+		}
 	}
 
-	gm200_devinit_preos(init, post);
+	/* load and execute some other ucode image (bios therm?) */
+	pmu_load(init, 0x01, post, NULL, NULL);
 	return 0;
 }
 

@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Zalon 53c7xx device driver.
  * By Richard Hirst (rhirst@linuxcare.com)
@@ -161,7 +160,7 @@ zalon_probe(struct parisc_device *dev)
 	return error;
 }
 
-static const struct parisc_device_id zalon_tbl[] __initconst = {
+static struct parisc_device_id zalon_tbl[] = {
 	{ HPHW_A_DMA, HVERSION_REV_ANY_ID, HVERSION_ANY_ID, 0x00089 }, 
 	{ 0, }
 };
@@ -179,11 +178,11 @@ static int __exit zalon_remove(struct parisc_device *dev)
 	return 0;
 }
 
-static struct parisc_driver zalon_driver __refdata = {
+static struct parisc_driver zalon_driver = {
 	.name =		"zalon",
 	.id_table =	zalon_tbl,
 	.probe =	zalon_probe,
-	.remove =	__exit_p(zalon_remove),
+	.remove =	zalon_remove,
 };
 
 static int __init zalon7xx_init(void)

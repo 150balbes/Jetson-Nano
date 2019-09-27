@@ -1,10 +1,19 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /* -*- linux-c -*-
  * APM BIOS driver for Linux
  * Copyright 1994-2001 Stephen Rothwell (sfr@canb.auug.org.au)
  *
  * Initial development of this driver was funded by NEC Australia P/L
  *	and NEC Corporation
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License as published by the
+ * Free Software Foundation; either version 2, or (at your option) any
+ * later version.
+ *
+ * This program is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
  *
  * October 1995, Rik Faith (faith@cs.unc.edu):
  *    Minor enhancements and updates (to the patch set) for 1.3.x
@@ -209,8 +218,7 @@
 #include <linux/apm_bios.h>
 #include <linux/init.h>
 #include <linux/time.h>
-#include <linux/sched/signal.h>
-#include <linux/sched/cputime.h>
+#include <linux/sched.h>
 #include <linux/pm.h>
 #include <linux/capability.h>
 #include <linux/device.h>
@@ -226,7 +234,7 @@
 #include <linux/i8253.h>
 #include <linux/cpuidle.h>
 
-#include <linux/uaccess.h>
+#include <asm/uaccess.h>
 #include <asm/desc.h>
 #include <asm/olpc.h>
 #include <asm/paravirt.h>
@@ -601,7 +609,7 @@ static long __apm_bios_call(void *_call)
 
 	cpu = get_cpu();
 	BUG_ON(cpu != 0);
-	gdt = get_cpu_gdt_rw(cpu);
+	gdt = get_cpu_gdt_table(cpu);
 	save_desc_40 = gdt[0x40 / 8];
 	gdt[0x40 / 8] = bad_bios_desc;
 
@@ -679,7 +687,7 @@ static long __apm_bios_call_simple(void *_call)
 
 	cpu = get_cpu();
 	BUG_ON(cpu != 0);
-	gdt = get_cpu_gdt_rw(cpu);
+	gdt = get_cpu_gdt_table(cpu);
 	save_desc_40 = gdt[0x40 / 8];
 	gdt[0x40 / 8] = bad_bios_desc;
 
@@ -902,21 +910,21 @@ static int apm_cpu_idle(struct cpuidle_device *dev,
 {
 	static int use_apm_idle; /* = 0 */
 	static unsigned int last_jiffies; /* = 0 */
-	static u64 last_stime; /* = 0 */
-	u64 stime, utime;
+	static unsigned int last_stime; /* = 0 */
+	cputime_t stime;
 
 	int apm_idle_done = 0;
 	unsigned int jiffies_since_last_check = jiffies - last_jiffies;
 	unsigned int bucket;
 
 recalc:
-	task_cputime(current, &utime, &stime);
+	task_cputime(current, NULL, &stime);
 	if (jiffies_since_last_check > IDLE_CALC_LIMIT) {
 		use_apm_idle = 0;
 	} else if (jiffies_since_last_check > idle_period) {
 		unsigned int idle_percentage;
 
-		idle_percentage = nsecs_to_jiffies(stime - last_stime);
+		idle_percentage = cputime_to_jiffies(stime - last_stime);
 		idle_percentage *= 100;
 		idle_percentage /= jiffies_since_last_check;
 		use_apm_idle = (idle_percentage > idle_threshold);
@@ -1502,7 +1510,7 @@ static ssize_t do_read(struct file *fp, char __user *buf, size_t count, loff_t *
 	return 0;
 }
 
-static __poll_t do_poll(struct file *fp, poll_table *wait)
+static unsigned int do_poll(struct file *fp, poll_table *wait)
 {
 	struct apm_user *as;
 
@@ -1511,7 +1519,7 @@ static __poll_t do_poll(struct file *fp, poll_table *wait)
 		return 0;
 	poll_wait(fp, &apm_waitqueue, wait);
 	if (!queue_empty(as))
-		return EPOLLIN | EPOLLRDNORM;
+		return POLLIN | POLLRDNORM;
 	return 0;
 }
 
@@ -1631,7 +1639,6 @@ static int do_open(struct inode *inode, struct file *filp)
 	return 0;
 }
 
-#ifdef CONFIG_PROC_FS
 static int proc_apm_show(struct seq_file *m, void *v)
 {
 	unsigned short	bx;
@@ -1711,7 +1718,19 @@ static int proc_apm_show(struct seq_file *m, void *v)
 		   units);
 	return 0;
 }
-#endif
+
+static int proc_apm_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, proc_apm_show, NULL);
+}
+
+static const struct file_operations apm_file_ops = {
+	.owner		= THIS_MODULE,
+	.open		= proc_apm_open,
+	.read		= seq_read,
+	.llseek		= seq_lseek,
+	.release	= single_release,
+};
 
 static int apm(void *unused)
 {
@@ -2028,7 +2047,7 @@ static int __init swab_apm_power_in_minutes(const struct dmi_system_id *d)
 	return 0;
 }
 
-static const struct dmi_system_id apm_dmi_table[] __initconst = {
+static struct dmi_system_id __initdata apm_dmi_table[] = {
 	{
 		print_if_true,
 		KERN_WARNING "IBM T23 - BIOS 1.03b+ and controller firmware 1.02+ may be needed for Linux APM.",
@@ -2337,7 +2356,7 @@ static int __init apm_init(void)
 	 * Note we only set APM segments on CPU zero, since we pin the APM
 	 * code to that CPU.
 	 */
-	gdt = get_cpu_gdt_rw(0);
+	gdt = get_cpu_gdt_table(0);
 	set_desc_base(&gdt[APM_CS >> 3],
 		 (unsigned long)__va((unsigned long)apm_info.bios.cseg << 4));
 	set_desc_base(&gdt[APM_CS_16 >> 3],
@@ -2345,7 +2364,7 @@ static int __init apm_init(void)
 	set_desc_base(&gdt[APM_DS >> 3],
 		 (unsigned long)__va((unsigned long)apm_info.bios.dseg << 4));
 
-	proc_create_single("apm", 0, NULL, proc_apm_show);
+	proc_create("apm", 0, NULL, &apm_file_ops);
 
 	kapmd_task = kthread_create(apm, NULL, "kapmd");
 	if (IS_ERR(kapmd_task)) {
@@ -2374,7 +2393,6 @@ static int __init apm_init(void)
 	if (HZ != 100)
 		idle_period = (idle_period * HZ) / 100;
 	if (idle_threshold < 100) {
-		cpuidle_poll_state_init(&apm_idle_driver);
 		if (!cpuidle_register_driver(&apm_idle_driver))
 			if (cpuidle_register_device(&apm_cpuidle_device))
 				cpuidle_unregister_driver(&apm_idle_driver);
@@ -2431,7 +2449,7 @@ MODULE_PARM_DESC(idle_threshold,
 	"System idle percentage above which to make APM BIOS idle calls");
 module_param(idle_period, int, 0444);
 MODULE_PARM_DESC(idle_period,
-	"Period (in sec/100) over which to calculate the idle percentage");
+	"Period (in sec/100) over which to caculate the idle percentage");
 module_param(smp, bool, 0444);
 MODULE_PARM_DESC(smp,
 	"Set this to enable APM use on an SMP platform. Use with caution on older systems");

@@ -1,0 +1,42 @@
+/ {
+       power-domain {
+               compatible = "tegra-power-domains";
+               status = "disabled";
+
+               disa_pd: disa-pd {
+                       compatible = "nvidia,tegra194-disa-pd";
+                       #power-domain-cells = <0>;
+                       partition-id = <TEGRA194_POWER_DOMAIN_DISP>;
+               };
+
+               disb_pd: disb-pd {
+                       compatible = "nvidia,tegra194-disb-pd";
+                       #power-domain-cells = <0>;
+                       partition-id = <TEGRA194_POWER_DOMAIN_DISPB>;
+               };
+
+               disc_pd: disc-pd {
+                       compatible = "nvidia,tegra194-disc-pd";
+                       #power-domain-cells = <0>;
+                       partition-id = <TEGRA194_POWER_DOMAIN_DISPC>;
+               };
+
+               xusba_pd: xusba-pd {
+                       compatible = "nvidia,tegra194-xusba-pd";
+                       #power-domain-cells = <0>;
+                       partition-id = <TEGRA194_POWER_DOMAIN_XUSBA>;
+               };
+
+               xusbb_pd: xusbb-pd {
+                       compatible = "nvidia,tegra194-xusbb-pd";
+                       #power-domain-cells = <0>;
+                       partition-id = <TEGRA194_POWER_DOMAIN_XUSBB>;
+               };
+
+               xusbc_pd: xusbc-pd {
+                       compatible = "nvidia,tegra194-xusbc-pd";
+                       #power-domain-cells = <0>;
+                       partition-id = <TEGRA194_POWER_DOMAIN_XUSBC>;
+               };
+       };
+};

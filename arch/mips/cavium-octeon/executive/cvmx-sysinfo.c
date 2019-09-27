@@ -29,7 +29,7 @@
  * This module provides system/board/application information obtained
  * by the bootloader.
  */
-#include <linux/export.h>
+#include <linux/module.h>
 
 #include <asm/octeon/cvmx.h>
 #include <asm/octeon/cvmx-sysinfo.h>

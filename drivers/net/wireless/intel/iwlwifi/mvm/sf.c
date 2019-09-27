@@ -7,7 +7,6 @@
  *
  * Copyright(c) 2013 - 2014 Intel Corporation. All rights reserved.
  * Copyright(c) 2013 - 2014 Intel Mobile Communications GmbH
- * Copyright (C) 2018 Intel Corporation
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of version 2 of the GNU General Public License as
@@ -17,6 +16,11 @@
  * WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110,
+ * USA
  *
  * The full GNU General Public License is included in this distribution
  * in the file called COPYING.
@@ -29,7 +33,6 @@
  *
  * Copyright(c) 2013 - 2014 Intel Corporation. All rights reserved.
  * Copyright(c) 2013 - 2014 Intel Mobile Communications GmbH
- * Copyright (C) 2018 Intel Corporation
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -66,7 +69,7 @@ struct iwl_mvm_active_iface_iterator_data {
 	struct ieee80211_vif *ignore_vif;
 	u8 sta_vif_ap_sta_id;
 	enum iwl_sf_state sta_vif_state;
-	u32 num_active_macs;
+	int num_active_macs;
 };
 
 /*
@@ -232,7 +235,7 @@ static int iwl_mvm_sf_config(struct iwl_mvm *mvm, u8 sta_id,
 		iwl_mvm_fill_sf_command(mvm, &sf_cmd, NULL);
 		break;
 	case SF_FULL_ON:
-		if (sta_id == IWL_MVM_INVALID_STA) {
+		if (sta_id == IWL_MVM_STATION_COUNT) {
 			IWL_ERR(mvm,
 				"No station: Cannot switch SF to FULL_ON\n");
 			return -EINVAL;
@@ -273,12 +276,12 @@ int iwl_mvm_sf_update(struct iwl_mvm *mvm, struct ieee80211_vif *changed_vif,
 		      bool remove_vif)
 {
 	enum iwl_sf_state new_state;
-	u8 sta_id = IWL_MVM_INVALID_STA;
+	u8 sta_id = IWL_MVM_STATION_COUNT;
 	struct iwl_mvm_vif *mvmvif = NULL;
 	struct iwl_mvm_active_iface_iterator_data data = {
 		.ignore_vif = changed_vif,
 		.sta_vif_state = SF_UNINIT,
-		.sta_vif_ap_sta_id = IWL_MVM_INVALID_STA,
+		.sta_vif_ap_sta_id = IWL_MVM_STATION_COUNT,
 	};
 
 	/*

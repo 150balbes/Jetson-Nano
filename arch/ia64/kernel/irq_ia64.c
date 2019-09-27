@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * linux/arch/ia64/kernel/irq_ia64.c
  *

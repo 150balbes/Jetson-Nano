@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 
 #include <linux/ceph/ceph_debug.h>
 
@@ -142,3 +141,4 @@ int ceph_auth_none_init(struct ceph_auth_client *ac)
 	ac->ops = &ceph_auth_none_ops;
 	return 0;
 }
+

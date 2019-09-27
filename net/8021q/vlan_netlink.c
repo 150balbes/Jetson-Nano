@@ -1,8 +1,11 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  *	VLAN netlink control interface
  *
  * 	Copyright (c) 2007 Patrick McHardy <kaber@trash.net>
+ *
+ *	This program is free software; you can redistribute it and/or
+ *	modify it under the terms of the GNU General Public License
+ *	version 2 as published by the Free Software Foundation.
  */
 
 #include <linux/kernel.h>
@@ -32,32 +35,24 @@ static inline int vlan_validate_qos_map(struct nlattr *attr)
 {
 	if (!attr)
 		return 0;
-	return nla_validate_nested_deprecated(attr, IFLA_VLAN_QOS_MAX,
-					      vlan_map_policy, NULL);
+	return nla_validate_nested(attr, IFLA_VLAN_QOS_MAX, vlan_map_policy);
 }
 
-static int vlan_validate(struct nlattr *tb[], struct nlattr *data[],
-			 struct netlink_ext_ack *extack)
+static int vlan_validate(struct nlattr *tb[], struct nlattr *data[])
 {
 	struct ifla_vlan_flags *flags;
 	u16 id;
 	int err;
 
 	if (tb[IFLA_ADDRESS]) {
-		if (nla_len(tb[IFLA_ADDRESS]) != ETH_ALEN) {
-			NL_SET_ERR_MSG_MOD(extack, "Invalid link address");
+		if (nla_len(tb[IFLA_ADDRESS]) != ETH_ALEN)
 			return -EINVAL;
-		}
-		if (!is_valid_ether_addr(nla_data(tb[IFLA_ADDRESS]))) {
-			NL_SET_ERR_MSG_MOD(extack, "Invalid link address");
+		if (!is_valid_ether_addr(nla_data(tb[IFLA_ADDRESS])))
 			return -EADDRNOTAVAIL;
-		}
 	}
 
-	if (!data) {
-		NL_SET_ERR_MSG_MOD(extack, "VLAN properties not specified");
+	if (!data)
 		return -EINVAL;
-	}
 
 	if (data[IFLA_VLAN_PROTOCOL]) {
 		switch (nla_get_be16(data[IFLA_VLAN_PROTOCOL])) {
@@ -65,45 +60,34 @@ static int vlan_validate(struct nlattr *tb[], struct nlattr *data[],
 		case htons(ETH_P_8021AD):
 			break;
 		default:
-			NL_SET_ERR_MSG_MOD(extack, "Invalid VLAN protocol");
 			return -EPROTONOSUPPORT;
 		}
 	}
 
 	if (data[IFLA_VLAN_ID]) {
 		id = nla_get_u16(data[IFLA_VLAN_ID]);
-		if (id >= VLAN_VID_MASK) {
-			NL_SET_ERR_MSG_MOD(extack, "Invalid VLAN id");
+		if (id >= VLAN_VID_MASK)
 			return -ERANGE;
-		}
 	}
 	if (data[IFLA_VLAN_FLAGS]) {
 		flags = nla_data(data[IFLA_VLAN_FLAGS]);
 		if ((flags->flags & flags->mask) &
 		    ~(VLAN_FLAG_REORDER_HDR | VLAN_FLAG_GVRP |
-		      VLAN_FLAG_LOOSE_BINDING | VLAN_FLAG_MVRP |
-		      VLAN_FLAG_BRIDGE_BINDING)) {
-			NL_SET_ERR_MSG_MOD(extack, "Invalid VLAN flags");
+		      VLAN_FLAG_LOOSE_BINDING | VLAN_FLAG_MVRP))
 			return -EINVAL;
-		}
 	}
 
 	err = vlan_validate_qos_map(data[IFLA_VLAN_INGRESS_QOS]);
-	if (err < 0) {
-		NL_SET_ERR_MSG_MOD(extack, "Invalid ingress QOS map");
+	if (err < 0)
 		return err;
-	}
 	err = vlan_validate_qos_map(data[IFLA_VLAN_EGRESS_QOS]);
-	if (err < 0) {
-		NL_SET_ERR_MSG_MOD(extack, "Invalid egress QOS map");
+	if (err < 0)
 		return err;
-	}
 	return 0;
 }
 
-static int vlan_changelink(struct net_device *dev, struct nlattr *tb[],
-			   struct nlattr *data[],
-			   struct netlink_ext_ack *extack)
+static int vlan_changelink(struct net_device *dev,
+			   struct nlattr *tb[], struct nlattr *data[])
 {
 	struct ifla_vlan_flags *flags;
 	struct ifla_vlan_qos_mapping *m;
@@ -130,8 +114,7 @@ static int vlan_changelink(struct net_device *dev, struct nlattr *tb[],
 }
 
 static int vlan_newlink(struct net *src_net, struct net_device *dev,
-			struct nlattr *tb[], struct nlattr *data[],
-			struct netlink_ext_ack *extack)
+			struct nlattr *tb[], struct nlattr *data[])
 {
 	struct vlan_dev_priv *vlan = vlan_dev_priv(dev);
 	struct net_device *real_dev;
@@ -139,21 +122,14 @@ static int vlan_newlink(struct net *src_net, struct net_device *dev,
 	__be16 proto;
 	int err;
 
-	if (!data[IFLA_VLAN_ID]) {
-		NL_SET_ERR_MSG_MOD(extack, "VLAN id not specified");
+	if (!data[IFLA_VLAN_ID])
 		return -EINVAL;
-	}
 
-	if (!tb[IFLA_LINK]) {
-		NL_SET_ERR_MSG_MOD(extack, "link not specified");
+	if (!tb[IFLA_LINK])
 		return -EINVAL;
-	}
-
 	real_dev = __dev_get_by_index(src_net, nla_get_u32(tb[IFLA_LINK]));
-	if (!real_dev) {
-		NL_SET_ERR_MSG_MOD(extack, "link does not exist");
+	if (!real_dev)
 		return -ENODEV;
-	}
 
 	if (data[IFLA_VLAN_PROTOCOL])
 		proto = nla_get_be16(data[IFLA_VLAN_PROTOCOL]);
@@ -163,11 +139,9 @@ static int vlan_newlink(struct net *src_net, struct net_device *dev,
 	vlan->vlan_proto = proto;
 	vlan->vlan_id	 = nla_get_u16(data[IFLA_VLAN_ID]);
 	vlan->real_dev	 = real_dev;
-	dev->priv_flags |= (real_dev->priv_flags & IFF_XMIT_DST_RELEASE);
 	vlan->flags	 = VLAN_FLAG_REORDER_HDR;
 
-	err = vlan_check_real_dev(real_dev, vlan->vlan_proto, vlan->vlan_id,
-				  extack);
+	err = vlan_check_real_dev(real_dev, vlan->vlan_proto, vlan->vlan_id);
 	if (err < 0)
 		return err;
 
@@ -178,11 +152,11 @@ static int vlan_newlink(struct net *src_net, struct net_device *dev,
 	else if (dev->mtu > max_mtu)
 		return -EINVAL;
 
-	err = vlan_changelink(dev, tb, data, extack);
+	err = vlan_changelink(dev, tb, data);
 	if (err < 0)
 		return err;
 
-	return register_vlan_dev(dev, extack);
+	return register_vlan_dev(dev);
 }
 
 static inline size_t vlan_qos_map_size(unsigned int n)
@@ -224,7 +198,7 @@ static int vlan_fill_info(struct sk_buff *skb, const struct net_device *dev)
 			goto nla_put_failure;
 	}
 	if (vlan->nr_ingress_mappings) {
-		nest = nla_nest_start_noflag(skb, IFLA_VLAN_INGRESS_QOS);
+		nest = nla_nest_start(skb, IFLA_VLAN_INGRESS_QOS);
 		if (nest == NULL)
 			goto nla_put_failure;
 
@@ -242,7 +216,7 @@ static int vlan_fill_info(struct sk_buff *skb, const struct net_device *dev)
 	}
 
 	if (vlan->nr_egress_mappings) {
-		nest = nla_nest_start_noflag(skb, IFLA_VLAN_EGRESS_QOS);
+		nest = nla_nest_start(skb, IFLA_VLAN_EGRESS_QOS);
 		if (nest == NULL)
 			goto nla_put_failure;
 

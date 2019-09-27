@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /* DVB USB compliant linux driver for mobile DVB-T USB devices based on
  * reference designs made by DiBcom (http://www.dibcom.fr/) (DiB3000M-B)
  *
@@ -7,7 +6,11 @@
  * based on GPL code from DiBcom, which has
  * Copyright (C) 2004 Amaury Demol for DiBcom
  *
- * see Documentation/media/dvb-drivers/dvb-usb.rst for more information
+ *	This program is free software; you can redistribute it and/or modify it
+ *	under the terms of the GNU General Public License as published by the Free
+ *	Software Foundation, version 2.
+ *
+ * see Documentation/dvb/README.dvb-usb for more information
  */
 #include "dibusb.h"
 

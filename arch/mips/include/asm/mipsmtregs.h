@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * MT regs definitions, follows on from mipsregs.h
  * Copyright (C) 2004 - 2005 MIPS Technologies, Inc.  All rights reserved.
@@ -255,12 +254,12 @@ static inline unsigned int dmt(void)
 static inline void __raw_emt(void)
 {
 	__asm__ __volatile__(
-	"	.set	push						\n"
 	"	.set	noreorder					\n"
 	"	.set	mips32r2					\n"
 	"	.word	0x41600be1			# emt		\n"
 	"	ehb							\n"
-	"	.set	pop");
+	"	.set	mips0						\n"
+	"	.set	reorder");
 }
 
 /* enable multi-threaded execution if previous suggested it should be.
@@ -277,10 +276,9 @@ static inline void emt(int previous)
 static inline void ehb(void)
 {
 	__asm__ __volatile__(
-	"	.set	push					\n"
 	"	.set	mips32r2				\n"
 	"	ehb						\n"
-	"	.set	pop					\n");
+	"	.set	mips0					\n");
 }
 
 #define mftc0(rt,sel)							\

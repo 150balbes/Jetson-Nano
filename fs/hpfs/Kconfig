@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0-only
 config HPFS_FS
 	tristate "OS/2 HPFS file system support"
 	depends on BLOCK

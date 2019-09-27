@@ -1,6 +1,8 @@
-# SPDX-License-Identifier: GPL-2.0-only
 CFLAGS = -Wall
-TEST_GEN_PROGS = sas
+BINARIES = sas
+all: $(BINARIES)
 
 include ../lib.mk
 
+clean:
+	rm -rf $(BINARIES)

@@ -1,0 +1,99 @@
+/*
+ * tegra186-quill-e3313-a00-00-e2598.dts Quill PB Board
+ *
+ * Copyright (c) 2016-2017, NVIDIA CORPORATION. All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; version 2 of the License.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ */
+
+#include "tegra186-quill-p3310-1000-c03-00-base.dts"
+/ {
+#if TEGRA_XUSB_PADCONTROL_VERSION >= DT_VERSION_2
+		xhci@3530000 {
+			phys = <&{/xusb_padctl@3520000/pads/usb2/lanes/usb2-0}>,
+					<&{/xusb_padctl@3520000/pads/usb2/lanes/usb2-1}>,
+					<&{/xusb_padctl@3520000/pads/usb3/lanes/usb3-0}>,
+					<&{/xusb_padctl@3520000/pads/usb3/lanes/usb3-2}>;
+					phy-names = "usb2-0", "usb2-1", "usb3-0", "usb3-2";
+		};
+#else
+		xhci@3530000 {
+			phys = <&tegra_xusb_padctl TEGRA_PADCTL_PHY_UTMI_P(0)>,
+					<&tegra_xusb_padctl TEGRA_PADCTL_PHY_UTMI_P(1)>,
+					<&tegra_xusb_padctl TEGRA_PADCTL_PHY_USB3_P(0)>,
+					<&tegra_xusb_padctl TEGRA_PADCTL_PHY_USB3_P(2)>;
+					phy-names = "utmi-0", "utmi-1", "usb3-0", "usb3-2";
+		};
+#endif
+
+#if TEGRA_XUSB_PADCONTROL_VERSION >= DT_VERSION_2
+		xusb_padctl@3520000 {
+			ports {
+				usb2-0 {
+					status = "okay";
+				};
+				usb2-1 {
+					status = "okay";
+				};
+				usb2-2 {
+					status = "disabled";
+				};
+				usb3-0 {
+					status = "okay";
+					nvidia,usb2-companion = <0>;
+				};
+				usb3-1 {
+					status = "disabled";
+				};
+				usb3-2 {
+					status = "okay";
+					nvidia,usb2-companion = <1>;
+				};
+			};
+		};
+#else
+		pinctrl@3520000 {
+			pinmux {
+				e3325-usb3-std-A-HS {
+					status = "disabled";
+				};
+				usb3-std-A-port2 {
+					nvidia,lanes = "usb3-2";
+				};
+				e3325-usb3-std-A-SS {
+					status = "okay";
+					nvidia,port-cap = <TEGRA_PADCTL_PORT_OTG_CAP>;
+				};
+			};
+		};
+#endif
+
+#if TEGRA_XUSB_PADCONTROL_VERSION >= DT_VERSION_2
+		xudc@3550000 {
+			phys = <&{/xusb_padctl@3520000/pads/usb2/lanes/usb2-0}>,
+					<&{/xusb_padctl@3520000/pads/usb3/lanes/usb3-0}>;
+			phy-names = "usb2", "usb3";
+		};
+#else
+		xudc@3550000 {
+			phys = <&tegra_xusb_padctl TEGRA_PADCTL_PHY_UTMI_P(0)>,
+					<&tegra_xusb_padctl TEGRA_PADCTL_PHY_USB3_P(0)>;
+			phy-names = "usb2", "usb3";
+		};
+#endif
+
+#if TEGRA_XUSB_PADCONTROL_VERSION <= DT_VERSION_1
+		xotg {
+			phys = <&tegra_xusb_padctl TEGRA_PADCTL_PHY_UTMI_P(0)>,
+						<&tegra_xusb_padctl TEGRA_PADCTL_PHY_USB3_P(0)>;
+			phy-names = "otg-usb2", "otg-usb3";
+		};
+#endif
+};

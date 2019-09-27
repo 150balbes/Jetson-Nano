@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * OMAP3/OMAP4 smartreflex device file
  *
@@ -13,6 +12,10 @@
  *
  * Copyright (C) 2007 Texas Instruments, Inc.
  * Lesly A M <x0080970@ti.com>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  */
 #include <linux/power/smartreflex.h>
 
@@ -41,9 +44,13 @@ static void __init sr_set_nvalues(struct omap_volt_data *volt_data,
 	while (volt_data[count].volt_nominal)
 		count++;
 
-	nvalue_table = kcalloc(count, sizeof(*nvalue_table), GFP_KERNEL);
-	if (!nvalue_table)
+	nvalue_table = kzalloc(sizeof(struct omap_sr_nvalue_table)*count,
+			GFP_KERNEL);
+
+	if (!nvalue_table) {
+		pr_err("OMAP: SmartReflex: cannot allocate memory for n-value table\n");
 		return;
+	}
 
 	for (i = 0, j = 0; i < count; i++) {
 		u32 v;
@@ -86,26 +93,20 @@ static void __init sr_set_nvalues(struct omap_volt_data *volt_data,
 	sr_data->nvalue_count = j;
 }
 
-extern struct omap_sr_data omap_sr_pdata[];
-
 static int __init sr_dev_init(struct omap_hwmod *oh, void *user)
 {
-	struct omap_sr_data *sr_data = NULL;
+	struct omap_sr_data *sr_data;
+	struct platform_device *pdev;
 	struct omap_volt_data *volt_data;
 	struct omap_smartreflex_dev_attr *sr_dev_attr;
+	char *name = "smartreflex";
 	static int i;
 
-	if (!strncmp(oh->name, "smartreflex_mpu_iva", 20) ||
-	    !strncmp(oh->name, "smartreflex_mpu", 16))
-		sr_data = &omap_sr_pdata[OMAP_SR_MPU];
-	else if (!strncmp(oh->name, "smartreflex_core", 17))
-		sr_data = &omap_sr_pdata[OMAP_SR_CORE];
-	else if (!strncmp(oh->name, "smartreflex_iva", 16))
-		sr_data = &omap_sr_pdata[OMAP_SR_IVA];
-
+	sr_data = kzalloc(sizeof(struct omap_sr_data), GFP_KERNEL);
 	if (!sr_data) {
-		pr_err("%s: Unknown instance %s\n", __func__, oh->name);
-		return -EINVAL;
+		pr_err("%s: Unable to allocate memory for %s sr_data\n",
+		       __func__, oh->name);
+		return -ENOMEM;
 	}
 
 	sr_dev_attr = (struct omap_smartreflex_dev_attr *)oh->dev_attr;
@@ -116,10 +117,7 @@ static int __init sr_dev_init(struct omap_hwmod *oh, void *user)
 	}
 
 	sr_data->name = oh->name;
-	if (cpu_is_omap343x())
-		sr_data->ip_type = 1;
-	else
-		sr_data->ip_type = 2;
+	sr_data->ip_type = oh->class->rev;
 	sr_data->senn_mod = 0x1;
 	sr_data->senp_mod = 0x1;
 
@@ -154,9 +152,13 @@ static int __init sr_dev_init(struct omap_hwmod *oh, void *user)
 
 	sr_data->enable_on_init = sr_enable_on_init;
 
+	pdev = omap_device_build(name, i, oh, sr_data, sizeof(*sr_data));
+	if (IS_ERR(pdev))
+		pr_warn("%s: Could not build omap_device for %s: %s\n",
+			__func__, name, oh->name);
 exit:
 	i++;
-
+	kfree(sr_data);
 	return 0;
 }
 

@@ -1,7 +1,5 @@
-.. SPDX-License-Identifier: GPL-2.0
-
-Introduction
-============
+Introdution
+===========
 
 The main development site and GIT repository for these
 drivers is https://linuxtv.org.

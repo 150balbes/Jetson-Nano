@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * System call table for UML/i386, copied from arch/x86/kernel/syscall_*.c
  * with some changes for UML.

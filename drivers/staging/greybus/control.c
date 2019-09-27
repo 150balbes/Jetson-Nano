@@ -1,9 +1,10 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * Greybus CPort control protocol.
  *
  * Copyright 2015 Google Inc.
  * Copyright 2015 Linaro Ltd.
+ *
+ * Released under the GPLv2 only.
  */
 
 #include <linux/kernel.h>
@@ -14,6 +15,7 @@
 /* Highest control-protocol version supported */
 #define GB_CONTROL_VERSION_MAJOR	0
 #define GB_CONTROL_VERSION_MINOR	1
+
 
 static int gb_control_get_version(struct gb_control *control)
 {
@@ -31,15 +33,15 @@ static int gb_control_get_version(struct gb_control *control)
 				sizeof(response));
 	if (ret) {
 		dev_err(&intf->dev,
-			"failed to get control-protocol version: %d\n",
-			ret);
+				"failed to get control-protocol version: %d\n",
+				ret);
 		return ret;
 	}
 
 	if (response.major > request.major) {
 		dev_err(&intf->dev,
-			"unsupported major control-protocol version (%u > %u)\n",
-			response.major, request.major);
+				"unsupported major control-protocol version (%u > %u)\n",
+				response.major, request.major);
 		return -ENOTSUPP;
 	}
 
@@ -47,13 +49,13 @@ static int gb_control_get_version(struct gb_control *control)
 	control->protocol_minor = response.minor;
 
 	dev_dbg(&intf->dev, "%s - %u.%u\n", __func__, response.major,
-		response.minor);
+			response.minor);
 
 	return 0;
 }
 
 static int gb_control_get_bundle_version(struct gb_control *control,
-					 struct gb_bundle *bundle)
+						struct gb_bundle *bundle)
 {
 	struct gb_interface *intf = control->connection->intf;
 	struct gb_control_bundle_version_request request;
@@ -68,8 +70,8 @@ static int gb_control_get_bundle_version(struct gb_control *control,
 				&response, sizeof(response));
 	if (ret) {
 		dev_err(&intf->dev,
-			"failed to get bundle %u class version: %d\n",
-			bundle->id, ret);
+				"failed to get bundle %u class version: %d\n",
+				bundle->id, ret);
 		return ret;
 	}
 
@@ -77,7 +79,7 @@ static int gb_control_get_bundle_version(struct gb_control *control,
 	bundle->class_minor = response.minor;
 
 	dev_dbg(&intf->dev, "%s - %u: %u.%u\n", __func__, bundle->id,
-		response.major, response.minor);
+			response.major, response.minor);
 
 	return 0;
 }
@@ -111,7 +113,7 @@ int gb_control_get_manifest_size_operation(struct gb_interface *intf)
 				NULL, 0, &response, sizeof(response));
 	if (ret) {
 		dev_err(&connection->intf->dev,
-			"failed to get manifest size: %d\n", ret);
+				"failed to get manifest size: %d\n", ret);
 		return ret;
 	}
 
@@ -148,16 +150,16 @@ int gb_control_disconnected_operation(struct gb_control *control, u16 cport_id)
 }
 
 int gb_control_disconnecting_operation(struct gb_control *control,
-				       u16 cport_id)
+					u16 cport_id)
 {
 	struct gb_control_disconnecting_request *request;
 	struct gb_operation *operation;
 	int ret;
 
 	operation = gb_operation_create_core(control->connection,
-					     GB_CONTROL_TYPE_DISCONNECTING,
-					     sizeof(*request), 0, 0,
-					     GFP_KERNEL);
+					GB_CONTROL_TYPE_DISCONNECTING,
+					sizeof(*request), 0, 0,
+					GFP_KERNEL);
 	if (!operation)
 		return -ENOMEM;
 
@@ -167,7 +169,7 @@ int gb_control_disconnecting_operation(struct gb_control *control,
 	ret = gb_operation_request_send_sync(operation);
 	if (ret) {
 		dev_err(&control->dev, "failed to send disconnecting: %d\n",
-			ret);
+				ret);
 	}
 
 	gb_operation_put(operation);
@@ -181,10 +183,9 @@ int gb_control_mode_switch_operation(struct gb_control *control)
 	int ret;
 
 	operation = gb_operation_create_core(control->connection,
-					     GB_CONTROL_TYPE_MODE_SWITCH,
-					     0, 0,
-					     GB_OPERATION_FLAG_UNIDIRECTIONAL,
-					     GFP_KERNEL);
+					GB_CONTROL_TYPE_MODE_SWITCH,
+					0, 0, GB_OPERATION_FLAG_UNIDIRECTIONAL,
+					GFP_KERNEL);
 	if (!operation)
 		return -ENOMEM;
 
@@ -195,6 +196,56 @@ int gb_control_mode_switch_operation(struct gb_control *control)
 	gb_operation_put(operation);
 
 	return ret;
+}
+
+int gb_control_timesync_enable(struct gb_control *control, u8 count,
+			       u64 frame_time, u32 strobe_delay, u32 refclk)
+{
+	struct gb_control_timesync_enable_request request;
+
+	request.count = count;
+	request.frame_time = cpu_to_le64(frame_time);
+	request.strobe_delay = cpu_to_le32(strobe_delay);
+	request.refclk = cpu_to_le32(refclk);
+	return gb_operation_sync(control->connection,
+				 GB_CONTROL_TYPE_TIMESYNC_ENABLE, &request,
+				 sizeof(request), NULL, 0);
+}
+
+int gb_control_timesync_disable(struct gb_control *control)
+{
+	return gb_operation_sync(control->connection,
+				 GB_CONTROL_TYPE_TIMESYNC_DISABLE, NULL, 0,
+				 NULL, 0);
+}
+
+int gb_control_timesync_get_last_event(struct gb_control *control,
+				       u64 *frame_time)
+{
+	struct gb_control_timesync_get_last_event_response response;
+	int ret;
+
+	ret = gb_operation_sync(control->connection,
+				GB_CONTROL_TYPE_TIMESYNC_GET_LAST_EVENT,
+				NULL, 0, &response, sizeof(response));
+	if (!ret)
+		*frame_time = le64_to_cpu(response.frame_time);
+	return ret;
+}
+
+int gb_control_timesync_authoritative(struct gb_control *control,
+				      u64 *frame_time)
+{
+	struct gb_control_timesync_authoritative_request request;
+	int i;
+
+	for (i = 0; i < GB_TIMESYNC_MAX_STROBES; i++)
+		request.frame_time[i] = cpu_to_le64(frame_time[i]);
+
+	return gb_operation_sync(control->connection,
+				 GB_CONTROL_TYPE_TIMESYNC_AUTHORITATIVE,
+				 &request, sizeof(request),
+				 NULL, 0);
 }
 
 static int gb_control_bundle_pm_status_map(u8 status)
@@ -400,7 +451,7 @@ int gb_control_interface_hibernate_abort(struct gb_control *control)
 }
 
 static ssize_t vendor_string_show(struct device *dev,
-				  struct device_attribute *attr, char *buf)
+			struct device_attribute *attr, char *buf)
 {
 	struct gb_control *control = to_gb_control(dev);
 
@@ -409,7 +460,7 @@ static ssize_t vendor_string_show(struct device *dev,
 static DEVICE_ATTR_RO(vendor_string);
 
 static ssize_t product_string_show(struct device *dev,
-				   struct device_attribute *attr, char *buf)
+			struct device_attribute *attr, char *buf)
 {
 	struct gb_control *control = to_gb_control(dev);
 
@@ -455,8 +506,8 @@ struct gb_control *gb_control_create(struct gb_interface *intf)
 	connection = gb_connection_create_control(intf);
 	if (IS_ERR(connection)) {
 		dev_err(&intf->dev,
-			"failed to create control connection: %ld\n",
-			PTR_ERR(connection));
+				"failed to create control connection: %ld\n",
+				PTR_ERR(connection));
 		kfree(control);
 		return ERR_CAST(connection);
 	}
@@ -485,8 +536,8 @@ int gb_control_enable(struct gb_control *control)
 	ret = gb_connection_enable_tx(control->connection);
 	if (ret) {
 		dev_err(&control->connection->intf->dev,
-			"failed to enable control connection: %d\n",
-			ret);
+				"failed to enable control connection: %d\n",
+				ret);
 		return ret;
 	}
 
@@ -547,8 +598,8 @@ int gb_control_add(struct gb_control *control)
 	ret = device_add(&control->dev);
 	if (ret) {
 		dev_err(&control->dev,
-			"failed to register control device: %d\n",
-			ret);
+				"failed to register control device: %d\n",
+				ret);
 		return ret;
 	}
 

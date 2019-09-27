@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __ASM_CPU_SH4_SIGCONTEXT_H
 #define __ASM_CPU_SH4_SIGCONTEXT_H
 

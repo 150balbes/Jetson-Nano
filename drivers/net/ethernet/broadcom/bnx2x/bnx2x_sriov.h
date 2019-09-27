@@ -141,9 +141,6 @@ struct bnx2x_virtf {
 #define VF_RESET	3	/* VF FLR'd, pending cleanup */
 
 	bool flr_clnup_stage;	/* true during flr cleanup */
-	bool malicious;		/* true if FW indicated so, until FLR */
-	/* 1(true) if spoof check is enabled */
-	u8 spoofchk;
 
 	/* dma */
 	dma_addr_t fw_stat_map;
@@ -184,7 +181,6 @@ struct bnx2x_virtf {
 	u32 error;	/* 0 means all's-well */
 
 	/* BDF */
-	unsigned int domain;
 	unsigned int bus;
 	unsigned int devfn;
 

@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * Copyright 1996, 1997, 1998 Hans Reiser, see reiserfs/README for
  * licensing and copyright details
@@ -331,7 +330,7 @@ struct reiserfs_journal {
 
 	struct buffer_head *j_header_bh;
 
-	time64_t j_trans_start_time;	/* time this transaction started */
+	time_t j_trans_start_time;	/* time this transaction started */
 	struct mutex j_mutex;
 	struct mutex j_flush_mutex;
 
@@ -1916,7 +1915,7 @@ struct reiserfs_de_head {
 
 /* empty directory contains two entries "." and ".." and their headers */
 #define EMPTY_DIR_SIZE \
-(DEH_SIZE * 2 + ROUND_UP (sizeof(".") - 1) + ROUND_UP (sizeof("..") - 1))
+(DEH_SIZE * 2 + ROUND_UP (strlen (".")) + ROUND_UP (strlen ("..")))
 
 /* old format directories have this size when empty */
 #define EMPTY_DIR_SIZE_V1 (DEH_SIZE * 2 + 3)
@@ -3100,6 +3099,7 @@ static inline void reiserfs_update_sd(struct reiserfs_transaction_handle *th,
 }
 
 void sd_attrs_to_i_attrs(__u16 sd_attrs, struct inode *inode);
+void i_attrs_to_sd_attrs(struct inode *inode, __u16 * sd_attrs);
 int reiserfs_setattr(struct dentry *dentry, struct iattr *attr);
 
 int __reiserfs_write_begin(struct page *page, unsigned from, unsigned len);

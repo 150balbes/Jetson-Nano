@@ -1,11 +1,4 @@
-.. Permission is granted to copy, distribute and/or modify this
-.. document under the terms of the GNU Free Documentation License,
-.. Version 1.1 or any later version published by the Free Software
-.. Foundation, with no Invariant Sections, no Front-Cover Texts
-.. and no Back-Cover Texts. A copy of the license is included at
-.. Documentation/media/uapi/fdl-appendix.rst.
-..
-.. TODO: replace it to GFDL-1.1-or-later WITH no-invariant-sections
+.. -*- coding: utf-8; mode: rst -*-
 
 .. _VIDIOC_DQEVENT:
 
@@ -33,7 +26,6 @@ Arguments
     File descriptor returned by :ref:`open() <func-open>`.
 
 ``argp``
-    Pointer to struct :c:type:`v4l2_event`.
 
 
 Description
@@ -46,7 +38,7 @@ exceptions which the application may get by e.g. using the select system
 call.
 
 
-.. tabularcolumns:: |p{3.0cm}|p{4.4cm}|p{2.4cm}|p{7.7cm}|
+.. tabularcolumns:: |p{3.0cm}|p{4.3cm}|p{2.5cm}|p{7.7cm}|
 
 .. c:type:: v4l2_event
 
@@ -386,17 +378,7 @@ call.
       - 0x0001
       - This event gets triggered when a resolution change is detected at
 	an input. This can come from an input connector or from a video
-	decoder. Applications will have to query the new resolution (if
-	any, the signal may also have been lost).
-
-	*Important*: even if the new video timings appear identical to the old
-	ones, receiving this event indicates that there was an issue with the
-	video signal and you must stop and restart streaming
-	(:ref:`VIDIOC_STREAMOFF <VIDIOC_STREAMON>`
-	followed by :ref:`VIDIOC_STREAMON <VIDIOC_STREAMON>`). The reason is
-	that many devices are not able to recover from a temporary loss of
-	signal and so restarting streaming I/O is required in order for the
-	hardware to synchronize to the video signal.
+	decoder.
 
 
 Return Value

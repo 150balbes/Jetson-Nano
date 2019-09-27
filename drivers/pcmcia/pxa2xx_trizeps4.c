@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * linux/drivers/pcmcia/pxa2xx_trizeps4.c
  *
@@ -7,6 +6,10 @@
  * Author:	Jürgen Schindele
  * Created:	20 02, 2006
  * Copyright:	Jürgen Schindele
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  */
 
 #include <linux/module.h>

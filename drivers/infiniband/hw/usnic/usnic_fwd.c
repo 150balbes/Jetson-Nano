@@ -92,8 +92,8 @@ struct usnic_fwd_dev *usnic_fwd_dev_alloc(struct pci_dev *pdev)
 	ufdev->pdev = pdev;
 	ufdev->netdev = pci_get_drvdata(pdev);
 	spin_lock_init(&ufdev->lock);
-	BUILD_BUG_ON(sizeof(ufdev->name) != sizeof(ufdev->netdev->name));
-	strcpy(ufdev->name, ufdev->netdev->name);
+	strncpy(ufdev->name, netdev_name(ufdev->netdev),
+			sizeof(ufdev->name) - 1);
 
 	return ufdev;
 }
@@ -110,12 +110,20 @@ void usnic_fwd_set_mac(struct usnic_fwd_dev *ufdev, char mac[ETH_ALEN])
 	spin_unlock(&ufdev->lock);
 }
 
-void usnic_fwd_add_ipaddr(struct usnic_fwd_dev *ufdev, __be32 inaddr)
+int usnic_fwd_add_ipaddr(struct usnic_fwd_dev *ufdev, __be32 inaddr)
 {
+	int status;
+
 	spin_lock(&ufdev->lock);
-	if (!ufdev->inaddr)
+	if (ufdev->inaddr == 0) {
 		ufdev->inaddr = inaddr;
+		status = 0;
+	} else {
+		status = -EFAULT;
+	}
 	spin_unlock(&ufdev->lock);
+
+	return status;
 }
 
 void usnic_fwd_del_ipaddr(struct usnic_fwd_dev *ufdev)

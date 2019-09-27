@@ -57,7 +57,6 @@
 #include <xen/interface/grant_table.h>
 
 /* Module parameters */
-#define MAX_QUEUES_DEFAULT 8
 static unsigned int xennet_max_queues;
 module_param_named(max_queues, xennet_max_queues, uint, 0644);
 MODULE_PARM_DESC(max_queues,
@@ -230,9 +229,9 @@ static bool xennet_can_sg(struct net_device *dev)
 }
 
 
-static void rx_refill_timeout(struct timer_list *t)
+static void rx_refill_timeout(unsigned long data)
 {
-	struct netfront_queue *queue = from_timer(queue, t, rx_refill_timer);
+	struct netfront_queue *queue = (struct netfront_queue *)data;
 	napi_schedule(&queue->napi);
 }
 
@@ -336,6 +335,8 @@ static void xennet_alloc_rx_buffers(struct netfront_queue *queue)
 		mod_timer(&queue->rx_refill_timer, jiffies + (HZ/10));
 		return;
 	}
+
+	wmb();		/* barrier so backend seens requests */
 
 	RING_PUSH_REQUESTS_AND_CHECK_NOTIFY(&queue->rx, notify);
 	if (notify)
@@ -543,7 +544,7 @@ static int xennet_count_skb_slots(struct sk_buff *skb)
 }
 
 static u16 xennet_select_queue(struct net_device *dev, struct sk_buff *skb,
-			       struct net_device *sb_dev)
+			       void *accel_priv, select_queue_fallback_t fallback)
 {
 	unsigned int num_queues = dev->real_num_tx_queues;
 	u32 hash;
@@ -562,7 +563,7 @@ static u16 xennet_select_queue(struct net_device *dev, struct sk_buff *skb,
 
 #define MAX_XEN_SKB_FRAGS (65536 / XEN_PAGE_SIZE + 1)
 
-static netdev_tx_t xennet_start_xmit(struct sk_buff *skb, struct net_device *dev)
+static int xennet_start_xmit(struct sk_buff *skb, struct net_device *dev)
 {
 	struct netfront_info *np = netdev_priv(dev);
 	struct netfront_stats *tx_stats = this_cpu_ptr(np->tx_stats);
@@ -614,7 +615,7 @@ static netdev_tx_t xennet_start_xmit(struct sk_buff *skb, struct net_device *dev
 		nskb = skb_copy(skb, GFP_ATOMIC);
 		if (!nskb)
 			goto drop;
-		dev_consume_skb_any(skb);
+		dev_kfree_skb_any(skb);
 		skb = nskb;
 		page = virt_to_page(skb->data);
 		offset = offset_in_page(skb->data);
@@ -902,7 +903,7 @@ static RING_IDX xennet_fill_frags(struct netfront_queue *queue,
 		if (skb_shinfo(skb)->nr_frags == MAX_SKB_FRAGS) {
 			unsigned int pull_to = NETFRONT_SKB_CB(skb)->pull_to;
 
-			BUG_ON(pull_to < skb_headlen(skb));
+			BUG_ON(pull_to <= skb_headlen(skb));
 			__pskb_pull_tail(skb, pull_to - skb_headlen(skb));
 		}
 		if (unlikely(skb_shinfo(skb)->nr_frags >= MAX_SKB_FRAGS)) {
@@ -1069,7 +1070,7 @@ err:
 	if (work_done < budget) {
 		int more_to_do = 0;
 
-		napi_complete_done(napi, work_done);
+		napi_complete(napi);
 
 		RING_FINAL_CHECK_FOR_RESPONSES(&queue->rx, more_to_do);
 		if (more_to_do)
@@ -1091,8 +1092,8 @@ static int xennet_change_mtu(struct net_device *dev, int mtu)
 	return 0;
 }
 
-static void xennet_get_stats64(struct net_device *dev,
-			       struct rtnl_link_stats64 *tot)
+static struct rtnl_link_stats64 *xennet_get_stats64(struct net_device *dev,
+						    struct rtnl_link_stats64 *tot)
 {
 	struct netfront_info *np = netdev_priv(dev);
 	int cpu;
@@ -1123,6 +1124,8 @@ static void xennet_get_stats64(struct net_device *dev,
 
 	tot->rx_errors  = dev->stats.rx_errors;
 	tot->tx_dropped = dev->stats.tx_dropped;
+
+	return tot;
 }
 
 static void xennet_release_tx_bufs(struct netfront_queue *queue)
@@ -1185,23 +1188,43 @@ static netdev_features_t xennet_fix_features(struct net_device *dev,
 	netdev_features_t features)
 {
 	struct netfront_info *np = netdev_priv(dev);
+	int val;
 
-	if (features & NETIF_F_SG &&
-	    !xenbus_read_unsigned(np->xbdev->otherend, "feature-sg", 0))
-		features &= ~NETIF_F_SG;
+	if (features & NETIF_F_SG) {
+		if (xenbus_scanf(XBT_NIL, np->xbdev->otherend, "feature-sg",
+				 "%d", &val) < 0)
+			val = 0;
 
-	if (features & NETIF_F_IPV6_CSUM &&
-	    !xenbus_read_unsigned(np->xbdev->otherend,
-				  "feature-ipv6-csum-offload", 0))
-		features &= ~NETIF_F_IPV6_CSUM;
+		if (!val)
+			features &= ~NETIF_F_SG;
+	}
 
-	if (features & NETIF_F_TSO &&
-	    !xenbus_read_unsigned(np->xbdev->otherend, "feature-gso-tcpv4", 0))
-		features &= ~NETIF_F_TSO;
+	if (features & NETIF_F_IPV6_CSUM) {
+		if (xenbus_scanf(XBT_NIL, np->xbdev->otherend,
+				 "feature-ipv6-csum-offload", "%d", &val) < 0)
+			val = 0;
 
-	if (features & NETIF_F_TSO6 &&
-	    !xenbus_read_unsigned(np->xbdev->otherend, "feature-gso-tcpv6", 0))
-		features &= ~NETIF_F_TSO6;
+		if (!val)
+			features &= ~NETIF_F_IPV6_CSUM;
+	}
+
+	if (features & NETIF_F_TSO) {
+		if (xenbus_scanf(XBT_NIL, np->xbdev->otherend,
+				 "feature-gso-tcpv4", "%d", &val) < 0)
+			val = 0;
+
+		if (!val)
+			features &= ~NETIF_F_TSO;
+	}
+
+	if (features & NETIF_F_TSO6) {
+		if (xenbus_scanf(XBT_NIL, np->xbdev->otherend,
+				 "feature-gso-tcpv6", "%d", &val) < 0)
+			val = 0;
+
+		if (!val)
+			features &= ~NETIF_F_TSO6;
+	}
 
 	return features;
 }
@@ -1325,8 +1348,6 @@ static struct net_device *xennet_create_dev(struct xenbus_device *dev)
 	netdev->features |= netdev->hw_features;
 
 	netdev->ethtool_ops = &xennet_ethtool_ops;
-	netdev->min_mtu = ETH_MIN_MTU;
-	netdev->max_mtu = XEN_NETIF_MAX_TX_SIZE;
 	SET_NETDEV_DEV(netdev, &dev->dev);
 
 	np->netdev = netdev;
@@ -1611,7 +1632,8 @@ static int xennet_init_queue(struct netfront_queue *queue)
 	spin_lock_init(&queue->tx_lock);
 	spin_lock_init(&queue->rx_lock);
 
-	timer_setup(&queue->rx_refill_timer, rx_refill_timeout, 0);
+	setup_timer(&queue->rx_refill_timer, rx_refill_timeout,
+		    (unsigned long)queue);
 
 	devid = strrchr(queue->info->xbdev->nodename, '/') + 1;
 	snprintf(queue->name, sizeof(queue->name), "vif%s-q%u",
@@ -1809,13 +1831,18 @@ static int talk_to_netback(struct xenbus_device *dev,
 	info->netdev->irq = 0;
 
 	/* Check if backend supports multiple queues */
-	max_queues = xenbus_read_unsigned(info->xbdev->otherend,
-					  "multi-queue-max-queues", 1);
+	err = xenbus_scanf(XBT_NIL, info->xbdev->otherend,
+			   "multi-queue-max-queues", "%u", &max_queues);
+	if (err < 0)
+		max_queues = 1;
 	num_queues = min(max_queues, xennet_max_queues);
 
 	/* Check feature-split-event-channels */
-	feature_split_evtchn = xenbus_read_unsigned(info->xbdev->otherend,
-					"feature-split-event-channels", 0);
+	err = xenbus_scanf(XBT_NIL, info->xbdev->otherend,
+			   "feature-split-event-channels", "%u",
+			   &feature_split_evtchn);
+	if (err < 0)
+		feature_split_evtchn = 0;
 
 	/* Read mac addr. */
 	err = xen_net_read_mac(dev, info->netdev->dev_addr);
@@ -1946,10 +1973,16 @@ static int xennet_connect(struct net_device *dev)
 	struct netfront_info *np = netdev_priv(dev);
 	unsigned int num_queues = 0;
 	int err;
+	unsigned int feature_rx_copy;
 	unsigned int j = 0;
 	struct netfront_queue *queue = NULL;
 
-	if (!xenbus_read_unsigned(np->xbdev->otherend, "feature-rx-copy", 0)) {
+	err = xenbus_scanf(XBT_NIL, np->xbdev->otherend,
+			   "feature-rx-copy", "%u", &feature_rx_copy);
+	if (err != 1)
+		feature_rx_copy = 0;
+
+	if (!feature_rx_copy) {
 		dev_info(&dev->dev,
 			 "backend does not support copying receive path\n");
 		return -ENODEV;
@@ -2037,7 +2070,7 @@ static void netback_changed(struct xenbus_device *dev,
 	case XenbusStateClosed:
 		if (dev->state == XenbusStateClosed)
 			break;
-		/* Fall through - Missed the backend's CLOSING state. */
+		/* Missed the backend's CLOSING state -- fallthrough */
 	case XenbusStateClosing:
 		xenbus_frontend_closed(dev);
 		break;
@@ -2122,9 +2155,9 @@ static ssize_t store_rxbuf(struct device *dev,
 	return len;
 }
 
-static DEVICE_ATTR(rxbuf_min, 0644, show_rxbuf, store_rxbuf);
-static DEVICE_ATTR(rxbuf_max, 0644, show_rxbuf, store_rxbuf);
-static DEVICE_ATTR(rxbuf_cur, 0444, show_rxbuf, NULL);
+static DEVICE_ATTR(rxbuf_min, S_IRUGO|S_IWUSR, show_rxbuf, store_rxbuf);
+static DEVICE_ATTR(rxbuf_max, S_IRUGO|S_IWUSR, show_rxbuf, store_rxbuf);
+static DEVICE_ATTR(rxbuf_cur, S_IRUGO, show_rxbuf, NULL);
 
 static struct attribute *xennet_dev_attrs[] = {
 	&dev_attr_rxbuf_min.attr,
@@ -2198,12 +2231,11 @@ static int __init netif_init(void)
 
 	pr_info("Initialising Xen virtual ethernet driver\n");
 
-	/* Allow as many queues as there are CPUs inut max. 8 if user has not
+	/* Allow as many queues as there are CPUs if user has not
 	 * specified a value.
 	 */
 	if (xennet_max_queues == 0)
-		xennet_max_queues = min_t(unsigned int, MAX_QUEUES_DEFAULT,
-					  num_online_cpus());
+		xennet_max_queues = num_online_cpus();
 
 	return xenbus_register_frontend(&netfront_driver);
 }

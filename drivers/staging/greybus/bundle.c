@@ -1,9 +1,10 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * Greybus bundles
  *
  * Copyright 2014-2015 Google Inc.
  * Copyright 2014-2015 Linaro Ltd.
+ *
+ * Released under the GPLv2 only.
  */
 
 #include "greybus.h"
@@ -32,7 +33,7 @@ static ssize_t state_show(struct device *dev, struct device_attribute *attr,
 {
 	struct gb_bundle *bundle = to_gb_bundle(dev);
 
-	if (!bundle->state)
+	if (bundle->state == NULL)
 		return sprintf(buf, "\n");
 
 	return sprintf(buf, "%s\n", bundle->state);
@@ -65,7 +66,7 @@ static struct attribute *bundle_attrs[] = {
 ATTRIBUTE_GROUPS(bundle);
 
 static struct gb_bundle *gb_bundle_find(struct gb_interface *intf,
-					u8 bundle_id)
+							u8 bundle_id)
 {
 	struct gb_bundle *bundle;
 

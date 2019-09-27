@@ -165,7 +165,7 @@ static int clk_pll_set_rate(struct clk_hw *hw, unsigned long drate,
 	return 0;
 }
 
-static const struct clk_ops clk_pll_ops = {
+static struct clk_ops clk_pll_ops = {
 	.recalc_rate = clk_pll_recalc_rate,
 	.round_rate = clk_pll_round_rate,
 	.set_rate = clk_pll_set_rate,
@@ -266,7 +266,7 @@ static int clk_vco_set_rate(struct clk_hw *hw, unsigned long drate,
 	return 0;
 }
 
-static const struct clk_ops clk_vco_ops = {
+static struct clk_ops clk_vco_ops = {
 	.recalc_rate = clk_vco_recalc_rate,
 	.round_rate = clk_vco_round_rate,
 	.set_rate = clk_vco_set_rate,
@@ -292,12 +292,16 @@ struct clk *clk_register_vco_pll(const char *vco_name, const char *pll_name,
 	}
 
 	vco = kzalloc(sizeof(*vco), GFP_KERNEL);
-	if (!vco)
+	if (!vco) {
+		pr_err("could not allocate vco clk\n");
 		return ERR_PTR(-ENOMEM);
+	}
 
 	pll = kzalloc(sizeof(*pll), GFP_KERNEL);
-	if (!pll)
+	if (!pll) {
+		pr_err("could not allocate pll clk\n");
 		goto free_vco;
+	}
 
 	/* struct clk_vco assignments */
 	vco->mode_reg = mode_reg;

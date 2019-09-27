@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 #include <trace/syscall.h>
 #include <trace/events/syscalls.h>
 #include <linux/syscalls.h>
@@ -314,7 +313,6 @@ static void ftrace_syscall_enter(void *data, struct pt_regs *regs, long id)
 	struct ring_buffer_event *event;
 	struct ring_buffer *buffer;
 	unsigned long irq_flags;
-	unsigned long args[6];
 	int pc;
 	int syscall_nr;
 	int size;
@@ -348,8 +346,7 @@ static void ftrace_syscall_enter(void *data, struct pt_regs *regs, long id)
 
 	entry = ring_buffer_event_data(event);
 	entry->nr = syscall_nr;
-	syscall_get_arguments(current, regs, args);
-	memcpy(entry->args, args, sizeof(unsigned long) * sys_data->nb_args);
+	syscall_get_arguments(current, regs, 0, sys_data->nb_args, entry->args);
 
 	event_trigger_unlock_commit(trace_file, buffer, event, entry,
 				    irq_flags, pc);
@@ -562,31 +559,11 @@ static DECLARE_BITMAP(enabled_perf_exit_syscalls, NR_syscalls);
 static int sys_perf_refcount_enter;
 static int sys_perf_refcount_exit;
 
-static int perf_call_bpf_enter(struct trace_event_call *call, struct pt_regs *regs,
-			       struct syscall_metadata *sys_data,
-			       struct syscall_trace_enter *rec)
-{
-	struct syscall_tp_t {
-		unsigned long long regs;
-		unsigned long syscall_nr;
-		unsigned long args[SYSCALL_DEFINE_MAXARGS];
-	} param;
-	int i;
-
-	*(struct pt_regs **)&param = regs;
-	param.syscall_nr = rec->nr;
-	for (i = 0; i < sys_data->nb_args; i++)
-		param.args[i] = rec->args[i];
-	return trace_call_bpf(call, &param);
-}
-
 static void perf_syscall_enter(void *ignore, struct pt_regs *regs, long id)
 {
 	struct syscall_metadata *sys_data;
 	struct syscall_trace_enter *rec;
 	struct hlist_head *head;
-	unsigned long args[6];
-	bool valid_prog_array;
 	int syscall_nr;
 	int rctx;
 	int size;
@@ -602,8 +579,7 @@ static void perf_syscall_enter(void *ignore, struct pt_regs *regs, long id)
 		return;
 
 	head = this_cpu_ptr(sys_data->enter_event->perf_events);
-	valid_prog_array = bpf_prog_array_valid(sys_data->enter_event);
-	if (!valid_prog_array && hlist_empty(head))
+	if (hlist_empty(head))
 		return;
 
 	/* get the size after alignment with the u32 buffer size field */
@@ -616,16 +592,8 @@ static void perf_syscall_enter(void *ignore, struct pt_regs *regs, long id)
 		return;
 
 	rec->nr = syscall_nr;
-	syscall_get_arguments(current, regs, args);
-	memcpy(&rec->args, args, sizeof(unsigned long) * sys_data->nb_args);
-
-	if ((valid_prog_array &&
-	     !perf_call_bpf_enter(sys_data->enter_event, regs, sys_data, rec)) ||
-	    hlist_empty(head)) {
-		perf_swevent_put_recursion_context(rctx);
-		return;
-	}
-
+	syscall_get_arguments(current, regs, 0, sys_data->nb_args,
+			       (unsigned long *)&rec->args);
 	perf_trace_buf_submit(rec, size, rctx,
 			      sys_data->enter_event->event.type, 1, regs,
 			      head, NULL);
@@ -665,27 +633,11 @@ static void perf_sysenter_disable(struct trace_event_call *call)
 	mutex_unlock(&syscall_trace_lock);
 }
 
-static int perf_call_bpf_exit(struct trace_event_call *call, struct pt_regs *regs,
-			      struct syscall_trace_exit *rec)
-{
-	struct syscall_tp_t {
-		unsigned long long regs;
-		unsigned long syscall_nr;
-		unsigned long ret;
-	} param;
-
-	*(struct pt_regs **)&param = regs;
-	param.syscall_nr = rec->nr;
-	param.ret = rec->ret;
-	return trace_call_bpf(call, &param);
-}
-
 static void perf_syscall_exit(void *ignore, struct pt_regs *regs, long ret)
 {
 	struct syscall_metadata *sys_data;
 	struct syscall_trace_exit *rec;
 	struct hlist_head *head;
-	bool valid_prog_array;
 	int syscall_nr;
 	int rctx;
 	int size;
@@ -701,8 +653,7 @@ static void perf_syscall_exit(void *ignore, struct pt_regs *regs, long ret)
 		return;
 
 	head = this_cpu_ptr(sys_data->exit_event->perf_events);
-	valid_prog_array = bpf_prog_array_valid(sys_data->exit_event);
-	if (!valid_prog_array && hlist_empty(head))
+	if (hlist_empty(head))
 		return;
 
 	/* We can probably do that at build time */
@@ -715,14 +666,6 @@ static void perf_syscall_exit(void *ignore, struct pt_regs *regs, long ret)
 
 	rec->nr = syscall_nr;
 	rec->ret = syscall_get_return_value(current, regs);
-
-	if ((valid_prog_array &&
-	     !perf_call_bpf_exit(sys_data->exit_event, regs, rec)) ||
-	    hlist_empty(head)) {
-		perf_swevent_put_recursion_context(rctx);
-		return;
-	}
-
 	perf_trace_buf_submit(rec, size, rctx, sys_data->exit_event->event.type,
 			      1, regs, head, NULL);
 }

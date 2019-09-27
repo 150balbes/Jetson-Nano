@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * asmmacro.h: Assembler macros to make things easier to read.
  *

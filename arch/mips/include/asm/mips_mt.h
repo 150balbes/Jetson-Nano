@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * Definitions and declarations for MIPS MT support that are common between
  * the VSMP, and AP/SP kernel models.

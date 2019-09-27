@@ -1,7 +1,19 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
  /***************************************************************************
  *
  * Copyright (C) 2007-2010 SMSC
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License
+ * as published by the Free Software Foundation; either version 2
+ * of the License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, see <http://www.gnu.org/licenses/>.
  *
  *****************************************************************************/
 
@@ -737,13 +749,13 @@ static const struct ethtool_ops smsc75xx_ethtool_ops = {
 	.get_drvinfo	= usbnet_get_drvinfo,
 	.get_msglevel	= usbnet_get_msglevel,
 	.set_msglevel	= usbnet_set_msglevel,
+	.get_settings	= usbnet_get_settings,
+	.set_settings	= usbnet_set_settings,
 	.get_eeprom_len	= smsc75xx_ethtool_get_eeprom_len,
 	.get_eeprom	= smsc75xx_ethtool_get_eeprom,
 	.set_eeprom	= smsc75xx_ethtool_set_eeprom,
 	.get_wol	= smsc75xx_ethtool_get_wol,
 	.set_wol	= smsc75xx_ethtool_set_wol,
-	.get_link_ksettings	= usbnet_get_link_ksettings,
-	.set_link_ksettings	= usbnet_set_link_ksettings,
 };
 
 static int smsc75xx_ioctl(struct net_device *netdev, struct ifreq *rq, int cmd)
@@ -762,8 +774,8 @@ static void smsc75xx_init_mac_address(struct usbnet *dev)
 
 	/* maybe the boot loader passed the MAC address in devicetree */
 	mac_addr = of_get_mac_address(dev->udev->dev.of_node);
-	if (!IS_ERR(mac_addr)) {
-		ether_addr_copy(dev->net->dev_addr, mac_addr);
+	if (mac_addr) {
+		memcpy(dev->net->dev_addr, mac_addr, ETH_ALEN);
 		return;
 	}
 
@@ -921,6 +933,9 @@ static int smsc75xx_change_mtu(struct net_device *netdev, int new_mtu)
 {
 	struct usbnet *dev = netdev_priv(netdev);
 	int ret;
+
+	if (new_mtu > MAX_SINGLE_PACKET_SIZE)
+		return -EINVAL;
 
 	ret = smsc75xx_set_rx_max_frame_length(dev, new_mtu + ETH_HLEN);
 	if (ret < 0) {
@@ -1435,7 +1450,6 @@ static const struct net_device_ops smsc75xx_netdev_ops = {
 	.ndo_stop		= usbnet_stop,
 	.ndo_start_xmit		= usbnet_start_xmit,
 	.ndo_tx_timeout		= usbnet_tx_timeout,
-	.ndo_get_stats64	= usbnet_get_stats64,
 	.ndo_change_mtu		= smsc75xx_change_mtu,
 	.ndo_set_mac_address 	= eth_mac_addr,
 	.ndo_validate_addr	= eth_validate_addr,
@@ -1500,7 +1514,6 @@ static int smsc75xx_bind(struct usbnet *dev, struct usb_interface *intf)
 	dev->net->flags |= IFF_MULTICAST;
 	dev->net->hard_header_len += SMSC75XX_TX_OVERHEAD;
 	dev->hard_mtu = dev->net->mtu + dev->net->hard_header_len;
-	dev->net->max_mtu = MAX_SINGLE_PACKET_SIZE;
 	return 0;
 }
 

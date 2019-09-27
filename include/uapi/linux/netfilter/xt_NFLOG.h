@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note */
 #ifndef _XT_NFLOG_TARGET
 #define _XT_NFLOG_TARGET
 

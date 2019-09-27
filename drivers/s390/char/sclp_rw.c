@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * driver: reading from and writing to system console on S/390 via SCLP
  *
@@ -14,7 +13,7 @@
 #include <linux/string.h>
 #include <linux/spinlock.h>
 #include <linux/ctype.h>
-#include <linux/uaccess.h>
+#include <asm/uaccess.h>
 
 #include "sclp.h"
 #include "sclp_rw.h"

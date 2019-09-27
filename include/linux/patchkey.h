@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * <linux/patchkey.h> -- definition of _PATCHKEY macro
  *

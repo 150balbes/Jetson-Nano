@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: MIT */
 #ifndef __NVKM_MPEG_H__
 #define __NVKM_MPEG_H__
 #include <core/engine.h>

@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _ASM_POWERPC_CACHE_H
 #define _ASM_POWERPC_CACHE_H
 
@@ -6,17 +5,14 @@
 
 
 /* bytes per L1 cache line */
-#if defined(CONFIG_PPC_8xx) || defined(CONFIG_403GCX)
+#if defined(CONFIG_8xx) || defined(CONFIG_403GCX)
 #define L1_CACHE_SHIFT		4
 #define MAX_COPY_PREFETCH	1
-#define IFETCH_ALIGN_SHIFT	2
 #elif defined(CONFIG_PPC_E500MC)
 #define L1_CACHE_SHIFT		6
 #define MAX_COPY_PREFETCH	4
-#define IFETCH_ALIGN_SHIFT	3
 #elif defined(CONFIG_PPC32)
 #define MAX_COPY_PREFETCH	4
-#define IFETCH_ALIGN_SHIFT	3	/* 603 fetches 2 insn at a time */
 #if defined(CONFIG_PPC_47x)
 #define L1_CACHE_SHIFT		7
 #else
@@ -24,58 +20,26 @@
 #endif
 #else /* CONFIG_PPC64 */
 #define L1_CACHE_SHIFT		7
-#define IFETCH_ALIGN_SHIFT	4 /* POWER8,9 */
 #endif
 
 #define	L1_CACHE_BYTES		(1 << L1_CACHE_SHIFT)
 
 #define	SMP_CACHE_BYTES		L1_CACHE_BYTES
 
-#define IFETCH_ALIGN_BYTES	(1 << IFETCH_ALIGN_SHIFT)
-
-#if !defined(__ASSEMBLY__)
-#ifdef CONFIG_PPC64
-
-struct ppc_cache_info {
-	u32 size;
-	u32 line_size;
-	u32 block_size;	/* L1 only */
-	u32 log_block_size;
-	u32 blocks_per_page;
-	u32 sets;
-	u32 assoc;
-};
-
+#if defined(__powerpc64__) && !defined(__ASSEMBLY__)
 struct ppc64_caches {
-	struct ppc_cache_info l1d;
-	struct ppc_cache_info l1i;
-	struct ppc_cache_info l2;
-	struct ppc_cache_info l3;
+	u32	dsize;			/* L1 d-cache size */
+	u32	dline_size;		/* L1 d-cache line size	*/
+	u32	log_dline_size;
+	u32	dlines_per_page;
+	u32	isize;			/* L1 i-cache size */
+	u32	iline_size;		/* L1 i-cache line size	*/
+	u32	log_iline_size;
+	u32	ilines_per_page;
 };
 
 extern struct ppc64_caches ppc64_caches;
-
-static inline u32 l1_cache_shift(void)
-{
-	return ppc64_caches.l1d.log_block_size;
-}
-
-static inline u32 l1_cache_bytes(void)
-{
-	return ppc64_caches.l1d.block_size;
-}
-#else
-static inline u32 l1_cache_shift(void)
-{
-	return L1_CACHE_SHIFT;
-}
-
-static inline u32 l1_cache_bytes(void)
-{
-	return L1_CACHE_BYTES;
-}
-#endif
-#endif /* ! __ASSEMBLY__ */
+#endif /* __powerpc64__ && ! __ASSEMBLY__ */
 
 #if defined(__ASSEMBLY__)
 /*
@@ -93,7 +57,7 @@ static inline u32 l1_cache_bytes(void)
 #else
 #define __read_mostly __attribute__((__section__(".data..read_mostly")))
 
-#ifdef CONFIG_PPC_BOOK3S_32
+#ifdef CONFIG_6xx
 extern long _get_L2CR(void);
 extern long _get_L3CR(void);
 extern void _set_L2CR(unsigned long);

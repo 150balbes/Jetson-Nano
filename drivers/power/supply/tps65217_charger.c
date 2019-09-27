@@ -1,8 +1,20 @@
-// SPDX-License-Identifier: GPL-2.0
-// Battery charger driver for TI's tps65217
-//
-// Copyright (C) 2015 Collabora Ltd.
-// Author: Enric Balletbo i Serra <enric.balletbo@collabora.com>
+/*
+ * Battery charger driver for TI's tps65217
+ *
+ * Copyright (c) 2015, Collabora Ltd.
+
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms and conditions of the GNU General Public License,
+ * version 2, as published by the Free Software Foundation.
+
+ * This program is distributed in the hope it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
 
 /*
  * Battery charger driver for TI's tps65217
@@ -23,28 +35,30 @@
 #include <linux/mfd/core.h>
 #include <linux/mfd/tps65217.h>
 
-#define CHARGER_STATUS_PRESENT	(TPS65217_STATUS_ACPWR | TPS65217_STATUS_USBPWR)
-#define NUM_CHARGER_IRQS	2
 #define POLL_INTERVAL		(HZ * 2)
 
 struct tps65217_charger {
 	struct tps65217 *tps;
 	struct device *dev;
-	struct power_supply *psy;
+	struct power_supply *ac;
 
-	int	online;
-	int	prev_online;
+	int	ac_online;
+	int	prev_ac_online;
 
 	struct task_struct	*poll_task;
+
+	int	irq;
 };
 
-static enum power_supply_property tps65217_charger_props[] = {
+static enum power_supply_property tps65217_ac_props[] = {
 	POWER_SUPPLY_PROP_ONLINE,
 };
 
 static int tps65217_config_charger(struct tps65217_charger *charger)
 {
 	int ret;
+
+	dev_dbg(charger->dev, "%s\n", __func__);
 
 	/*
 	 * tps65217 rev. G, p. 31 (see p. 32 for NTC schematic)
@@ -81,7 +95,7 @@ static int tps65217_enable_charging(struct tps65217_charger *charger)
 	int ret;
 
 	/* charger already enabled */
-	if (charger->online)
+	if (charger->ac_online)
 		return 0;
 
 	dev_dbg(charger->dev, "%s: enable charging\n", __func__);
@@ -96,19 +110,19 @@ static int tps65217_enable_charging(struct tps65217_charger *charger)
 		return ret;
 	}
 
-	charger->online = 1;
+	charger->ac_online = 1;
 
 	return 0;
 }
 
-static int tps65217_charger_get_property(struct power_supply *psy,
-					 enum power_supply_property psp,
-					 union power_supply_propval *val)
+static int tps65217_ac_get_property(struct power_supply *psy,
+			enum power_supply_property psp,
+			union power_supply_propval *val)
 {
 	struct tps65217_charger *charger = power_supply_get_drvdata(psy);
 
 	if (psp == POWER_SUPPLY_PROP_ONLINE) {
-		val->intval = charger->online;
+		val->intval = charger->ac_online;
 		return 0;
 	}
 	return -EINVAL;
@@ -119,7 +133,7 @@ static irqreturn_t tps65217_charger_irq(int irq, void *dev)
 	int ret, val;
 	struct tps65217_charger *charger = dev;
 
-	charger->prev_online = charger->online;
+	charger->prev_ac_online = charger->ac_online;
 
 	ret = tps65217_reg_read(charger->tps, TPS65217_REG_STATUS, &val);
 	if (ret < 0) {
@@ -130,8 +144,8 @@ static irqreturn_t tps65217_charger_irq(int irq, void *dev)
 
 	dev_dbg(charger->dev, "%s: 0x%x\n", __func__, val);
 
-	/* check for charger status bit */
-	if (val & CHARGER_STATUS_PRESENT) {
+	/* check for AC status bit */
+	if (val & TPS65217_STATUS_ACPWR) {
 		ret = tps65217_enable_charging(charger);
 		if (ret) {
 			dev_err(charger->dev,
@@ -139,11 +153,11 @@ static irqreturn_t tps65217_charger_irq(int irq, void *dev)
 			return IRQ_HANDLED;
 		}
 	} else {
-		charger->online = 0;
+		charger->ac_online = 0;
 	}
 
-	if (charger->prev_online != charger->online)
-		power_supply_changed(charger->psy);
+	if (charger->prev_ac_online != charger->ac_online)
+		power_supply_changed(charger->ac);
 
 	ret = tps65217_reg_read(charger->tps, TPS65217_REG_CHGCONFIG0, &val);
 	if (ret < 0) {
@@ -174,11 +188,11 @@ static int tps65217_charger_poll_task(void *data)
 }
 
 static const struct power_supply_desc tps65217_charger_desc = {
-	.name			= "tps65217-charger",
+	.name			= "tps65217-ac",
 	.type			= POWER_SUPPLY_TYPE_MAINS,
-	.get_property		= tps65217_charger_get_property,
-	.properties		= tps65217_charger_props,
-	.num_properties		= ARRAY_SIZE(tps65217_charger_props),
+	.get_property		= tps65217_ac_get_property,
+	.properties		= tps65217_ac_props,
+	.num_properties		= ARRAY_SIZE(tps65217_ac_props),
 };
 
 static int tps65217_charger_probe(struct platform_device *pdev)
@@ -186,10 +200,10 @@ static int tps65217_charger_probe(struct platform_device *pdev)
 	struct tps65217 *tps = dev_get_drvdata(pdev->dev.parent);
 	struct tps65217_charger *charger;
 	struct power_supply_config cfg = {};
-	struct task_struct *poll_task;
-	int irq[NUM_CHARGER_IRQS];
+	int irq;
 	int ret;
-	int i;
+
+	dev_dbg(&pdev->dev, "%s\n", __func__);
 
 	charger = devm_kzalloc(&pdev->dev, sizeof(*charger), GFP_KERNEL);
 	if (!charger)
@@ -202,16 +216,18 @@ static int tps65217_charger_probe(struct platform_device *pdev)
 	cfg.of_node = pdev->dev.of_node;
 	cfg.drv_data = charger;
 
-	charger->psy = devm_power_supply_register(&pdev->dev,
-						  &tps65217_charger_desc,
-						  &cfg);
-	if (IS_ERR(charger->psy)) {
+	charger->ac = devm_power_supply_register(&pdev->dev,
+						 &tps65217_charger_desc,
+						 &cfg);
+	if (IS_ERR(charger->ac)) {
 		dev_err(&pdev->dev, "failed: power supply register\n");
-		return PTR_ERR(charger->psy);
+		return PTR_ERR(charger->ac);
 	}
 
-	irq[0] = platform_get_irq_byname(pdev, "USB");
-	irq[1] = platform_get_irq_byname(pdev, "AC");
+	irq = platform_get_irq_byname(pdev, "AC");
+	if (irq < 0)
+		irq = -ENXIO;
+	charger->irq = irq;
 
 	ret = tps65217_config_charger(charger);
 	if (ret < 0) {
@@ -219,36 +235,29 @@ static int tps65217_charger_probe(struct platform_device *pdev)
 		return ret;
 	}
 
-	/* Create a polling thread if an interrupt is invalid */
-	if (irq[0] < 0 || irq[1] < 0) {
-		poll_task = kthread_run(tps65217_charger_poll_task,
-					charger, "ktps65217charger");
-		if (IS_ERR(poll_task)) {
-			ret = PTR_ERR(poll_task);
-			dev_err(charger->dev,
-				"Unable to run kthread err %d\n", ret);
-			return ret;
-		}
-
-		charger->poll_task = poll_task;
-		return 0;
-	}
-
-	/* Create IRQ threads for charger interrupts */
-	for (i = 0; i < NUM_CHARGER_IRQS; i++) {
-		ret = devm_request_threaded_irq(&pdev->dev, irq[i], NULL,
+	if (irq != -ENXIO) {
+		ret = devm_request_threaded_irq(&pdev->dev, irq, NULL,
 						tps65217_charger_irq,
 						0, "tps65217-charger",
 						charger);
 		if (ret) {
 			dev_err(charger->dev,
-				"Unable to register irq %d err %d\n", irq[i],
+				"Unable to register irq %d err %d\n", irq,
 				ret);
 			return ret;
 		}
 
 		/* Check current state */
-		tps65217_charger_irq(-1, charger);
+		tps65217_charger_irq(irq, charger);
+	} else {
+		charger->poll_task = kthread_run(tps65217_charger_poll_task,
+						charger, "ktps65217charger");
+		if (IS_ERR(charger->poll_task)) {
+			ret = PTR_ERR(charger->poll_task);
+			dev_err(charger->dev,
+				"Unable to run kthread err %d\n", ret);
+			return ret;
+		}
 	}
 
 	return 0;
@@ -258,7 +267,7 @@ static int tps65217_charger_remove(struct platform_device *pdev)
 {
 	struct tps65217_charger *charger = platform_get_drvdata(pdev);
 
-	if (charger->poll_task)
+	if (charger->irq == -ENXIO)
 		kthread_stop(charger->poll_task);
 
 	return 0;

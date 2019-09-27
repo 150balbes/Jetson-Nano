@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 
 #include <linux/device.h>
@@ -31,7 +30,7 @@ static ssize_t ath5k_attr_store_##name(struct device *dev,		\
 	set(ah, val);						\
 	return count;							\
 }									\
-static DEVICE_ATTR(name, 0644,						\
+static DEVICE_ATTR(name, S_IRUGO | S_IWUSR,				\
 		   ath5k_attr_show_##name, ath5k_attr_store_##name)
 
 #define SIMPLE_SHOW(name, get)						\
@@ -43,7 +42,7 @@ static ssize_t ath5k_attr_show_##name(struct device *dev,		\
 	struct ath5k_hw *ah = hw->priv;				\
 	return snprintf(buf, PAGE_SIZE, "%d\n", get);			\
 }									\
-static DEVICE_ATTR(name, 0444, ath5k_attr_show_##name, NULL)
+static DEVICE_ATTR(name, S_IRUGO, ath5k_attr_show_##name, NULL)
 
 /*** ANI ***/
 
@@ -66,7 +65,7 @@ static ssize_t ath5k_attr_show_noise_immunity_level_max(struct device *dev,
 {
 	return snprintf(buf, PAGE_SIZE, "%d\n", ATH5K_ANI_MAX_NOISE_IMM_LVL);
 }
-static DEVICE_ATTR(noise_immunity_level_max, 0444,
+static DEVICE_ATTR(noise_immunity_level_max, S_IRUGO,
 		   ath5k_attr_show_noise_immunity_level_max, NULL);
 
 static ssize_t ath5k_attr_show_firstep_level_max(struct device *dev,
@@ -75,7 +74,7 @@ static ssize_t ath5k_attr_show_firstep_level_max(struct device *dev,
 {
 	return snprintf(buf, PAGE_SIZE, "%d\n", ATH5K_ANI_MAX_FIRSTEP_LVL);
 }
-static DEVICE_ATTR(firstep_level_max, 0444,
+static DEVICE_ATTR(firstep_level_max, S_IRUGO,
 		   ath5k_attr_show_firstep_level_max, NULL);
 
 static struct attribute *ath5k_sysfs_entries_ani[] = {

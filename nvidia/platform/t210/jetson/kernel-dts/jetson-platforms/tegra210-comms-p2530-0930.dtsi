@@ -1,0 +1,52 @@
+#include <dt-bindings/gpio/tegra-gpio.h>
+#include <dt-bindings/soc/tegra-pmc.h>
+
+/ {
+	gpio@6000d000 {
+		wlan-default-input {
+			gpio-hog;
+			input;
+			gpios = <
+				TEGRA_GPIO(H, 2) 0
+				TEGRA_GPIO(I, 1) 0
+				>;
+			label = "wlan-default-input-h2",
+				"wlan-default-input-i1";
+		};
+
+		wlan-default-output-high {
+			gpio-hog;
+			output-high;
+			gpios = <
+				TEGRA_GPIO(H, 0) 0
+				TEGRA_GPIO(I, 0) 0
+				TEGRA_GPIO(I, 2) 0
+				>;
+			label = "wlan-default-output-high-h0",
+				"wlan-default-output-high-i0";
+		};
+	};
+
+	bluedroid_pm { /* BT BCM43340 in P2530 Compute Module */
+		compatible = "nvidia,tegra-bluedroid_pm";
+		id = <0>;
+		bluedroid_pm,reset-gpio = <&gpio TEGRA_GPIO(H, 4) 0>;
+		bluedroid_pm,host-wake-gpio = <&gpio TEGRA_GPIO(H, 5) 0>;
+		bluedroid_pm,ext-wake-gpio = <&gpio TEGRA_GPIO(H, 3) 0>;
+		interrupt-parent = <&gpio>;
+		interrupts = <TEGRA_GPIO(H, 5) 0x01>;
+		nvidia,pmc-wakeup = <&tegra_pmc
+			PMC_WAKE_TYPE_EVENT 52 PMC_TRIGGER_TYPE_HIGH>;
+	};
+
+	bcmdhd_wlan { /* WLAN BCM43340 in P2530 Compute Module */
+		compatible = "android,bcmdhd_wlan";
+		interrupt-parent = <&gpio>;
+		interrupts = <TEGRA_GPIO(H, 2) 0x14>;
+		nvidia,pmc-wakeup = <&tegra_pmc
+				PMC_WAKE_TYPE_EVENT 8 PMC_TRIGGER_TYPE_HIGH>;
+		wlan-pwr-gpio = <&gpio TEGRA_GPIO(H, 0) 0>;
+		sdhci-host = <&sdhci1>;
+		status = "okay";
+	};
+};

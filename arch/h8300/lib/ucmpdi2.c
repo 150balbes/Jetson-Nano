@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 #include "libgcc.h"
 
 word_type __ucmpdi2(DWtype a, DWtype b)

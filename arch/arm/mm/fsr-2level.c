@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 static struct fsr_info fsr_info[] = {
 	/*
 	 * The following are the standard ARMv3 and ARMv4 aborts.  ARMv5

@@ -1,17 +1,15 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * zfcp device driver
  *
  * Implementation of FSF commands.
  *
- * Copyright IBM Corp. 2002, 2018
+ * Copyright IBM Corp. 2002, 2015
  */
 
 #define KMSG_COMPONENT "zfcp"
 #define pr_fmt(fmt) KMSG_COMPONENT ": " fmt
 
 #include <linux/blktrace_api.h>
-#include <linux/types.h>
 #include <linux/slab.h>
 #include <scsi/fc/fc_els.h>
 #include "zfcp_ext.h"
@@ -20,18 +18,11 @@
 #include "zfcp_qdio.h"
 #include "zfcp_reqlist.h"
 
-/* timeout for FSF requests sent during scsi_eh: abort or FCP TMF */
-#define ZFCP_FSF_SCSI_ER_TIMEOUT (10*HZ)
-/* timeout for: exchange config/port data outside ERP, or open/close WKA port */
-#define ZFCP_FSF_REQUEST_TIMEOUT (60*HZ)
-
 struct kmem_cache *zfcp_fsf_qtcb_cache;
 
-static void zfcp_fsf_request_timeout_handler(struct timer_list *t)
+static void zfcp_fsf_request_timeout_handler(unsigned long data)
 {
-	struct zfcp_fsf_req *fsf_req = from_timer(fsf_req, t, timer);
-	struct zfcp_adapter *adapter = fsf_req->adapter;
-
+	struct zfcp_adapter *adapter = (struct zfcp_adapter *) data;
 	zfcp_qdio_siosl(adapter);
 	zfcp_erp_adapter_reopen(adapter, ZFCP_STATUS_COMMON_ERP_FAILED,
 				"fsrth_1");
@@ -41,6 +32,7 @@ static void zfcp_fsf_start_timer(struct zfcp_fsf_req *fsf_req,
 				 unsigned long timeout)
 {
 	fsf_req->timer.function = zfcp_fsf_request_timeout_handler;
+	fsf_req->timer.data = (unsigned long) fsf_req->adapter;
 	fsf_req->timer.expires = jiffies + timeout;
 	add_timer(&fsf_req->timer);
 }
@@ -49,6 +41,7 @@ static void zfcp_fsf_start_erp_timer(struct zfcp_fsf_req *fsf_req)
 {
 	BUG_ON(!fsf_req->erp_action);
 	fsf_req->timer.function = zfcp_erp_timeout_handler;
+	fsf_req->timer.data = (unsigned long) fsf_req->erp_action;
 	fsf_req->timer.expires = jiffies + 30 * HZ;
 	add_timer(&fsf_req->timer);
 }
@@ -80,18 +73,18 @@ static void zfcp_fsf_class_not_supp(struct zfcp_fsf_req *req)
 
 /**
  * zfcp_fsf_req_free - free memory used by fsf request
- * @req: pointer to struct zfcp_fsf_req
+ * @fsf_req: pointer to struct zfcp_fsf_req
  */
 void zfcp_fsf_req_free(struct zfcp_fsf_req *req)
 {
 	if (likely(req->pool)) {
-		if (likely(!zfcp_fsf_req_is_status_read_buffer(req)))
+		if (likely(req->qtcb))
 			mempool_free(req->qtcb, req->adapter->pool.qtcb_pool);
 		mempool_free(req, req->pool);
 		return;
 	}
 
-	if (likely(!zfcp_fsf_req_is_status_read_buffer(req)))
+	if (likely(req->qtcb))
 		kmem_cache_free(zfcp_fsf_qtcb_cache, req->qtcb);
 	kfree(req);
 }
@@ -204,6 +197,8 @@ static void zfcp_fsf_status_read_link_down(struct zfcp_fsf_req *req)
 
 	switch (sr_buf->status_subtype) {
 	case FSF_STATUS_READ_SUB_NO_PHYSICAL_LINK:
+		zfcp_fsf_link_down_info_eval(req, ldi);
+		break;
 	case FSF_STATUS_READ_SUB_FDISC_FAILED:
 		zfcp_fsf_link_down_info_eval(req, ldi);
 		break;
@@ -385,7 +380,7 @@ static void zfcp_fsf_protstatus_eval(struct zfcp_fsf_req *req)
 
 /**
  * zfcp_fsf_req_complete - process completion of a FSF request
- * @req: The FSF request that has been completed.
+ * @fsf_req: The FSF request that has been completed.
  *
  * When a request has been completed either from the FCP adapter,
  * or it has been dismissed due to a queue shutdown, this function
@@ -394,7 +389,7 @@ static void zfcp_fsf_protstatus_eval(struct zfcp_fsf_req *req)
  */
 static void zfcp_fsf_req_complete(struct zfcp_fsf_req *req)
 {
-	if (unlikely(zfcp_fsf_req_is_status_read_buffer(req))) {
+	if (unlikely(req->fsf_command == FSF_QTCB_UNSOLICITED_STATUS)) {
 		zfcp_fsf_status_read_handler(req);
 		return;
 	}
@@ -443,9 +438,6 @@ void zfcp_fsf_req_dismiss_all(struct zfcp_adapter *adapter)
 #define ZFCP_FSF_PORTSPEED_10GBIT	(1 <<  3)
 #define ZFCP_FSF_PORTSPEED_8GBIT	(1 <<  4)
 #define ZFCP_FSF_PORTSPEED_16GBIT	(1 <<  5)
-#define ZFCP_FSF_PORTSPEED_32GBIT	(1 <<  6)
-#define ZFCP_FSF_PORTSPEED_64GBIT	(1 <<  7)
-#define ZFCP_FSF_PORTSPEED_128GBIT	(1 <<  8)
 #define ZFCP_FSF_PORTSPEED_NOT_NEGOTIATED (1 << 15)
 
 static u32 zfcp_fsf_convert_portspeed(u32 fsf_speed)
@@ -463,12 +455,6 @@ static u32 zfcp_fsf_convert_portspeed(u32 fsf_speed)
 		fdmi_speed |= FC_PORTSPEED_8GBIT;
 	if (fsf_speed & ZFCP_FSF_PORTSPEED_16GBIT)
 		fdmi_speed |= FC_PORTSPEED_16GBIT;
-	if (fsf_speed & ZFCP_FSF_PORTSPEED_32GBIT)
-		fdmi_speed |= FC_PORTSPEED_32GBIT;
-	if (fsf_speed & ZFCP_FSF_PORTSPEED_64GBIT)
-		fdmi_speed |= FC_PORTSPEED_64GBIT;
-	if (fsf_speed & ZFCP_FSF_PORTSPEED_128GBIT)
-		fdmi_speed |= FC_PORTSPEED_128GBIT;
 	if (fsf_speed & ZFCP_FSF_PORTSPEED_NOT_NEGOTIATED)
 		fdmi_speed |= FC_PORTSPEED_NOT_NEGOTIATED;
 	return fdmi_speed;
@@ -490,8 +476,8 @@ static int zfcp_fsf_exchange_config_evaluate(struct zfcp_fsf_req *req)
 	if (req->data)
 		memcpy(req->data, bottom, sizeof(*bottom));
 
-	fc_host_port_name(shost) = be64_to_cpu(nsp->fl_wwpn);
-	fc_host_node_name(shost) = be64_to_cpu(nsp->fl_wwnn);
+	fc_host_port_name(shost) = nsp->fl_wwpn;
+	fc_host_node_name(shost) = nsp->fl_wwnn;
 	fc_host_supported_classes(shost) = FC_COS_CLASS2 | FC_COS_CLASS3;
 
 	adapter->timer_ticks = bottom->timer_interval & ZFCP_FSF_TIMER_INT_MASK;
@@ -517,8 +503,8 @@ static int zfcp_fsf_exchange_config_evaluate(struct zfcp_fsf_req *req)
 	switch (bottom->fc_topology) {
 	case FSF_TOPO_P2P:
 		adapter->peer_d_id = ntoh24(bottom->peer_d_id);
-		adapter->peer_wwpn = be64_to_cpu(plogi->fl_wwpn);
-		adapter->peer_wwnn = be64_to_cpu(plogi->fl_wwnn);
+		adapter->peer_wwpn = plogi->fl_wwpn;
+		adapter->peer_wwnn = plogi->fl_wwnn;
 		fc_host_port_type(shost) = FC_PORTTYPE_PTP;
 		break;
 	case FSF_TOPO_FABRIC:
@@ -677,7 +663,7 @@ static struct zfcp_fsf_req *zfcp_fsf_alloc(mempool_t *pool)
 	return req;
 }
 
-static struct fsf_qtcb *zfcp_fsf_qtcb_alloc(mempool_t *pool)
+static struct fsf_qtcb *zfcp_qtcb_alloc(mempool_t *pool)
 {
 	struct fsf_qtcb *qtcb;
 
@@ -707,31 +693,32 @@ static struct zfcp_fsf_req *zfcp_fsf_req_create(struct zfcp_qdio *qdio,
 		adapter->req_no++;
 
 	INIT_LIST_HEAD(&req->list);
-	timer_setup(&req->timer, NULL, 0);
+	init_timer(&req->timer);
 	init_completion(&req->completion);
 
 	req->adapter = adapter;
+	req->fsf_command = fsf_cmd;
 	req->req_id = adapter->req_no;
 
 	if (likely(fsf_cmd != FSF_QTCB_UNSOLICITED_STATUS)) {
 		if (likely(pool))
-			req->qtcb = zfcp_fsf_qtcb_alloc(
-				adapter->pool.qtcb_pool);
+			req->qtcb = zfcp_qtcb_alloc(adapter->pool.qtcb_pool);
 		else
-			req->qtcb = zfcp_fsf_qtcb_alloc(NULL);
+			req->qtcb = zfcp_qtcb_alloc(NULL);
 
 		if (unlikely(!req->qtcb)) {
 			zfcp_fsf_req_free(req);
 			return ERR_PTR(-ENOMEM);
 		}
 
+		req->seq_no = adapter->fsf_req_seq_no;
 		req->qtcb->prefix.req_seq_no = adapter->fsf_req_seq_no;
 		req->qtcb->prefix.req_id = req->req_id;
 		req->qtcb->prefix.ulp_info = 26;
-		req->qtcb->prefix.qtcb_type = fsf_qtcb_type[fsf_cmd];
+		req->qtcb->prefix.qtcb_type = fsf_qtcb_type[req->fsf_command];
 		req->qtcb->prefix.qtcb_version = FSF_QTCB_CURRENT_VERSION;
 		req->qtcb->header.req_handle = req->req_id;
-		req->qtcb->header.fsf_command = fsf_cmd;
+		req->qtcb->header.fsf_command = req->fsf_command;
 	}
 
 	zfcp_qdio_req_init(adapter->qdio, &req->qdio_req, req->req_id, sbtype,
@@ -742,9 +729,9 @@ static struct zfcp_fsf_req *zfcp_fsf_req_create(struct zfcp_qdio *qdio,
 
 static int zfcp_fsf_req_send(struct zfcp_fsf_req *req)
 {
-	const bool is_srb = zfcp_fsf_req_is_status_read_buffer(req);
 	struct zfcp_adapter *adapter = req->adapter;
 	struct zfcp_qdio *qdio = adapter->qdio;
+	int with_qtcb = (req->qtcb != NULL);
 	int req_id = req->req_id;
 
 	zfcp_reqlist_add(adapter->req_list, req);
@@ -759,20 +746,8 @@ static int zfcp_fsf_req_send(struct zfcp_fsf_req *req)
 		return -EIO;
 	}
 
-	/*
-	 * NOTE: DO NOT TOUCH ASYNC req PAST THIS POINT.
-	 *	 ONLY TOUCH SYNC req AGAIN ON req->completion.
-	 *
-	 * The request might complete and be freed concurrently at any point
-	 * now. This is not protected by the QDIO-lock (req_q_lock). So any
-	 * uncontrolled access after this might result in an use-after-free bug.
-	 * Only if the request doesn't have ZFCP_STATUS_FSFREQ_CLEANUP set, and
-	 * when it is completed via req->completion, is it safe to use req
-	 * again.
-	 */
-
 	/* Don't increase for unsolicited status */
-	if (!is_srb)
+	if (with_qtcb)
 		adapter->fsf_req_seq_no++;
 	adapter->req_no++;
 
@@ -781,7 +756,8 @@ static int zfcp_fsf_req_send(struct zfcp_fsf_req *req)
 
 /**
  * zfcp_fsf_status_read - send status read request
- * @qdio: pointer to struct zfcp_qdio
+ * @adapter: pointer to struct zfcp_adapter
+ * @req_flags: request flags
  * Returns: 0 on success, ERROR otherwise
  */
 int zfcp_fsf_status_read(struct zfcp_qdio *qdio)
@@ -819,7 +795,6 @@ int zfcp_fsf_status_read(struct zfcp_qdio *qdio)
 	retval = zfcp_fsf_req_send(req);
 	if (retval)
 		goto failed_req_send;
-	/* NOTE: DO NOT TOUCH req PAST THIS POINT! */
 
 	goto out;
 
@@ -928,11 +903,9 @@ struct zfcp_fsf_req *zfcp_fsf_abort_fcp_cmnd(struct scsi_cmnd *scmnd)
 	req->qtcb->header.port_handle = zfcp_sdev->port->handle;
 	req->qtcb->bottom.support.req_handle = (u64) old_req_id;
 
-	zfcp_fsf_start_timer(req, ZFCP_FSF_SCSI_ER_TIMEOUT);
-	if (!zfcp_fsf_req_send(req)) {
-		/* NOTE: DO NOT TOUCH req, UNTIL IT COMPLETES! */
+	zfcp_fsf_start_timer(req, ZFCP_SCSI_ER_TIMEOUT);
+	if (!zfcp_fsf_req_send(req))
 		goto out;
-	}
 
 out_error_free:
 	zfcp_fsf_req_free(req);
@@ -1018,7 +991,8 @@ static int zfcp_fsf_setup_ct_els_sbals(struct zfcp_fsf_req *req,
 		qtcb->bottom.support.resp_buf_length =
 			zfcp_qdio_real_bytes(sg_resp);
 
-		zfcp_qdio_set_data_div(qdio, &req->qdio_req, sg_nents(sg_req));
+		zfcp_qdio_set_data_div(qdio, &req->qdio_req,
+					zfcp_qdio_sbale_count(sg_req));
 		zfcp_qdio_set_sbale_last(qdio, &req->qdio_req);
 		zfcp_qdio_set_scount(qdio, &req->qdio_req);
 		return 0;
@@ -1075,10 +1049,8 @@ static int zfcp_fsf_setup_ct_els(struct zfcp_fsf_req *req,
 
 /**
  * zfcp_fsf_send_ct - initiate a Generic Service request (FC-GS)
- * @wka_port: pointer to zfcp WKA port to send CT/GS to
  * @ct: pointer to struct zfcp_send_ct with data for request
  * @pool: if non-null this mempool is used to allocate struct zfcp_fsf_req
- * @timeout: timeout that hardware should use, and a later software timeout
  */
 int zfcp_fsf_send_ct(struct zfcp_fc_wka_port *wka_port,
 		     struct zfcp_fsf_ct_els *ct, mempool_t *pool,
@@ -1115,7 +1087,6 @@ int zfcp_fsf_send_ct(struct zfcp_fc_wka_port *wka_port,
 	ret = zfcp_fsf_req_send(req);
 	if (ret)
 		goto failed_send;
-	/* NOTE: DO NOT TOUCH req PAST THIS POINT! */
 
 	goto out;
 
@@ -1172,10 +1143,7 @@ skip_fsfstatus:
 
 /**
  * zfcp_fsf_send_els - initiate an ELS command (FC-FS)
- * @adapter: pointer to zfcp adapter
- * @d_id: N_Port_ID to send ELS to
  * @els: pointer to struct zfcp_send_els with data for the command
- * @timeout: timeout that hardware should use, and a later software timeout
  */
 int zfcp_fsf_send_els(struct zfcp_adapter *adapter, u32 d_id,
 		      struct zfcp_fsf_ct_els *els, unsigned int timeout)
@@ -1216,7 +1184,6 @@ int zfcp_fsf_send_els(struct zfcp_adapter *adapter, u32 d_id,
 	ret = zfcp_fsf_req_send(req);
 	if (ret)
 		goto failed_send;
-	/* NOTE: DO NOT TOUCH req PAST THIS POINT! */
 
 	goto out;
 
@@ -1262,7 +1229,6 @@ int zfcp_fsf_exchange_config_data(struct zfcp_erp_action *erp_action)
 		zfcp_fsf_req_free(req);
 		erp_action->fsf_req_id = 0;
 	}
-	/* NOTE: DO NOT TOUCH req PAST THIS POINT! */
 out:
 	spin_unlock_irq(&qdio->req_q_lock);
 	return retval;
@@ -1299,10 +1265,8 @@ int zfcp_fsf_exchange_config_data_sync(struct zfcp_qdio *qdio,
 	zfcp_fsf_start_timer(req, ZFCP_FSF_REQUEST_TIMEOUT);
 	retval = zfcp_fsf_req_send(req);
 	spin_unlock_irq(&qdio->req_q_lock);
-	if (!retval) {
-		/* NOTE: ONLY TOUCH SYNC req AGAIN ON req->completion. */
+	if (!retval)
 		wait_for_completion(&req->completion);
-	}
 
 	zfcp_fsf_req_free(req);
 	return retval;
@@ -1352,7 +1316,6 @@ int zfcp_fsf_exchange_port_data(struct zfcp_erp_action *erp_action)
 		zfcp_fsf_req_free(req);
 		erp_action->fsf_req_id = 0;
 	}
-	/* NOTE: DO NOT TOUCH req PAST THIS POINT! */
 out:
 	spin_unlock_irq(&qdio->req_q_lock);
 	return retval;
@@ -1395,10 +1358,8 @@ int zfcp_fsf_exchange_port_data_sync(struct zfcp_qdio *qdio,
 	retval = zfcp_fsf_req_send(req);
 	spin_unlock_irq(&qdio->req_q_lock);
 
-	if (!retval) {
-		/* NOTE: ONLY TOUCH SYNC req AGAIN ON req->completion. */
+	if (!retval)
 		wait_for_completion(&req->completion);
-	}
 
 	zfcp_fsf_req_free(req);
 
@@ -1433,8 +1394,6 @@ static void zfcp_fsf_open_port_handler(struct zfcp_fsf_req *req)
 	case FSF_ADAPTER_STATUS_AVAILABLE:
 		switch (header->fsf_status_qual.word[0]) {
 		case FSF_SQ_INVOKE_LINK_TEST_PROCEDURE:
-			/* no zfcp_fc_test_link() with failed open port */
-			/* fall through */
 		case FSF_SQ_ULP_DEPENDENT_ERP_REQUIRED:
 		case FSF_SQ_NO_RETRY_POSSIBLE:
 			req->status |= ZFCP_STATUS_FSFREQ_ERROR;
@@ -1518,7 +1477,6 @@ int zfcp_fsf_open_port(struct zfcp_erp_action *erp_action)
 		erp_action->fsf_req_id = 0;
 		put_device(&port->dev);
 	}
-	/* NOTE: DO NOT TOUCH req PAST THIS POINT! */
 out:
 	spin_unlock_irq(&qdio->req_q_lock);
 	return retval;
@@ -1583,7 +1541,6 @@ int zfcp_fsf_close_port(struct zfcp_erp_action *erp_action)
 		zfcp_fsf_req_free(req);
 		erp_action->fsf_req_id = 0;
 	}
-	/* NOTE: DO NOT TOUCH req PAST THIS POINT! */
 out:
 	spin_unlock_irq(&qdio->req_q_lock);
 	return retval;
@@ -1627,7 +1584,6 @@ int zfcp_fsf_open_wka_port(struct zfcp_fc_wka_port *wka_port)
 {
 	struct zfcp_qdio *qdio = wka_port->adapter->qdio;
 	struct zfcp_fsf_req *req;
-	unsigned long req_id = 0;
 	int retval = -EIO;
 
 	spin_lock_irq(&qdio->req_q_lock);
@@ -1650,17 +1606,14 @@ int zfcp_fsf_open_wka_port(struct zfcp_fc_wka_port *wka_port)
 	hton24(req->qtcb->bottom.support.d_id, wka_port->d_id);
 	req->data = wka_port;
 
-	req_id = req->req_id;
-
 	zfcp_fsf_start_timer(req, ZFCP_FSF_REQUEST_TIMEOUT);
 	retval = zfcp_fsf_req_send(req);
 	if (retval)
 		zfcp_fsf_req_free(req);
-	/* NOTE: DO NOT TOUCH req PAST THIS POINT! */
 out:
 	spin_unlock_irq(&qdio->req_q_lock);
 	if (!retval)
-		zfcp_dbf_rec_run_wka("fsowp_1", wka_port, req_id);
+		zfcp_dbf_rec_run_wka("fsowp_1", wka_port, req->req_id);
 	return retval;
 }
 
@@ -1686,7 +1639,6 @@ int zfcp_fsf_close_wka_port(struct zfcp_fc_wka_port *wka_port)
 {
 	struct zfcp_qdio *qdio = wka_port->adapter->qdio;
 	struct zfcp_fsf_req *req;
-	unsigned long req_id = 0;
 	int retval = -EIO;
 
 	spin_lock_irq(&qdio->req_q_lock);
@@ -1709,17 +1661,14 @@ int zfcp_fsf_close_wka_port(struct zfcp_fc_wka_port *wka_port)
 	req->data = wka_port;
 	req->qtcb->header.port_handle = wka_port->handle;
 
-	req_id = req->req_id;
-
 	zfcp_fsf_start_timer(req, ZFCP_FSF_REQUEST_TIMEOUT);
 	retval = zfcp_fsf_req_send(req);
 	if (retval)
 		zfcp_fsf_req_free(req);
-	/* NOTE: DO NOT TOUCH req PAST THIS POINT! */
 out:
 	spin_unlock_irq(&qdio->req_q_lock);
 	if (!retval)
-		zfcp_dbf_rec_run_wka("fscwp_1", wka_port, req_id);
+		zfcp_dbf_rec_run_wka("fscwp_1", wka_port, req->req_id);
 	return retval;
 }
 
@@ -1811,7 +1760,6 @@ int zfcp_fsf_close_physical_port(struct zfcp_erp_action *erp_action)
 		zfcp_fsf_req_free(req);
 		erp_action->fsf_req_id = 0;
 	}
-	/* NOTE: DO NOT TOUCH req PAST THIS POINT! */
 out:
 	spin_unlock_irq(&qdio->req_q_lock);
 	return retval;
@@ -1851,7 +1799,7 @@ static void zfcp_fsf_open_lun_handler(struct zfcp_fsf_req *req)
 	case FSF_LUN_SHARING_VIOLATION:
 		if (qual->word[0])
 			dev_warn(&zfcp_sdev->port->adapter->ccw_device->dev,
-				 "LUN 0x%016Lx on port 0x%016Lx is already in "
+				 "LUN 0x%Lx on port 0x%Lx is already in "
 				 "use by CSS%d, MIF Image ID %x\n",
 				 zfcp_scsi_dev_lun(sdev),
 				 (unsigned long long)zfcp_sdev->port->wwpn,
@@ -1935,7 +1883,6 @@ int zfcp_fsf_open_lun(struct zfcp_erp_action *erp_action)
 		zfcp_fsf_req_free(req);
 		erp_action->fsf_req_id = 0;
 	}
-	/* NOTE: DO NOT TOUCH req PAST THIS POINT! */
 out:
 	spin_unlock_irq(&qdio->req_q_lock);
 	return retval;
@@ -2024,13 +1971,12 @@ int zfcp_fsf_close_lun(struct zfcp_erp_action *erp_action)
 		zfcp_fsf_req_free(req);
 		erp_action->fsf_req_id = 0;
 	}
-	/* NOTE: DO NOT TOUCH req PAST THIS POINT! */
 out:
 	spin_unlock_irq(&qdio->req_q_lock);
 	return retval;
 }
 
-static void zfcp_fsf_update_lat(struct zfcp_latency_record *lat_rec, u32 lat)
+static void zfcp_fsf_update_lat(struct fsf_latency_record *lat_rec, u32 lat)
 {
 	lat_rec->sum += lat;
 	lat_rec->min = min(lat_rec->min, lat);
@@ -2040,7 +1986,7 @@ static void zfcp_fsf_update_lat(struct zfcp_latency_record *lat_rec, u32 lat)
 static void zfcp_fsf_req_trace(struct zfcp_fsf_req *req, struct scsi_cmnd *scsi)
 {
 	struct fsf_qual_latency_info *lat_in;
-	struct zfcp_latency_cont *lat = NULL;
+	struct latency_cont *lat = NULL;
 	struct zfcp_scsi_dev *zfcp_sdev;
 	struct zfcp_blk_drv_data blktrc;
 	int ticks = req->adapter->timer_ticks;
@@ -2090,14 +2036,10 @@ static void zfcp_fsf_req_trace(struct zfcp_fsf_req *req, struct scsi_cmnd *scsi)
 			    sizeof(blktrc));
 }
 
-/**
- * zfcp_fsf_fcp_handler_common() - FCP response handler common to I/O and TMF.
- * @req: Pointer to FSF request.
- * @sdev: Pointer to SCSI device as request context.
- */
-static void zfcp_fsf_fcp_handler_common(struct zfcp_fsf_req *req,
-					struct scsi_device *sdev)
+static void zfcp_fsf_fcp_handler_common(struct zfcp_fsf_req *req)
 {
+	struct scsi_cmnd *scmnd = req->data;
+	struct scsi_device *sdev = scmnd->device;
 	struct zfcp_scsi_dev *zfcp_sdev;
 	struct fsf_qtcb_header *header = &req->qtcb->header;
 
@@ -2109,7 +2051,7 @@ static void zfcp_fsf_fcp_handler_common(struct zfcp_fsf_req *req,
 	switch (header->fsf_status) {
 	case FSF_HANDLE_MISMATCH:
 	case FSF_PORT_HANDLE_NOT_VALID:
-		zfcp_erp_adapter_reopen(req->adapter, 0, "fssfch1");
+		zfcp_erp_adapter_reopen(zfcp_sdev->port->adapter, 0, "fssfch1");
 		req->status |= ZFCP_STATUS_FSFREQ_ERROR;
 		break;
 	case FSF_FCPLUN_NOT_VALID:
@@ -2127,14 +2069,19 @@ static void zfcp_fsf_fcp_handler_common(struct zfcp_fsf_req *req,
 			req->qtcb->bottom.io.data_direction,
 			(unsigned long long)zfcp_scsi_dev_lun(sdev),
 			(unsigned long long)zfcp_sdev->port->wwpn);
-		zfcp_erp_adapter_shutdown(req->adapter, 0, "fssfch3");
+		zfcp_erp_adapter_shutdown(zfcp_sdev->port->adapter, 0,
+					  "fssfch3");
 		req->status |= ZFCP_STATUS_FSFREQ_ERROR;
 		break;
 	case FSF_CMND_LENGTH_NOT_VALID:
 		dev_err(&req->adapter->ccw_device->dev,
-			"Incorrect FCP_CMND length %d, FCP device closed\n",
-			req->qtcb->bottom.io.fcp_cmnd_length);
-		zfcp_erp_adapter_shutdown(req->adapter, 0, "fssfch4");
+			"Incorrect CDB length %d, LUN 0x%016Lx on "
+			"port 0x%016Lx closed\n",
+			req->qtcb->bottom.io.fcp_cmnd_length,
+			(unsigned long long)zfcp_scsi_dev_lun(sdev),
+			(unsigned long long)zfcp_sdev->port->wwpn);
+		zfcp_erp_adapter_shutdown(zfcp_sdev->port->adapter, 0,
+					  "fssfch4");
 		req->status |= ZFCP_STATUS_FSFREQ_ERROR;
 		break;
 	case FSF_PORT_BOXED:
@@ -2173,7 +2120,7 @@ static void zfcp_fsf_fcp_cmnd_handler(struct zfcp_fsf_req *req)
 		return;
 	}
 
-	zfcp_fsf_fcp_handler_common(req, scpnt->device);
+	zfcp_fsf_fcp_handler_common(req);
 
 	if (unlikely(req->status & ZFCP_STATUS_FSFREQ_ERROR)) {
 		set_host_byte(scpnt, DID_TRANSPORT_DISRUPTED);
@@ -2195,8 +2142,7 @@ static void zfcp_fsf_fcp_cmnd_handler(struct zfcp_fsf_req *req)
 		zfcp_scsi_dif_sense_error(scpnt, 0x3);
 		goto skip_fsfstatus;
 	}
-	BUILD_BUG_ON(sizeof(struct fcp_resp_with_ext) > FSF_FCP_RSP_SIZE);
-	fcp_rsp = &req->qtcb->bottom.io.fcp_rsp.iu;
+	fcp_rsp = (struct fcp_resp_with_ext *) &req->qtcb->bottom.io.fcp_rsp;
 	zfcp_fc_eval_fcp_rsp(fcp_rsp, scpnt);
 
 skip_fsfstatus:
@@ -2309,9 +2255,8 @@ int zfcp_fsf_fcp_cmnd(struct scsi_cmnd *scsi_cmnd)
 	if (zfcp_fsf_set_data_dir(scsi_cmnd, &io->data_direction))
 		goto failed_scsi_cmnd;
 
-	BUILD_BUG_ON(sizeof(struct fcp_cmnd) > FSF_FCP_CMND_SIZE);
-	fcp_cmnd = &req->qtcb->bottom.io.fcp_cmnd.iu;
-	zfcp_fc_scsi_to_fcp(fcp_cmnd, scsi_cmnd);
+	fcp_cmnd = (struct fcp_cmnd *) &req->qtcb->bottom.io.fcp_cmnd;
+	zfcp_fc_scsi_to_fcp(fcp_cmnd, scsi_cmnd, 0);
 
 	if ((scsi_get_prot_op(scsi_cmnd) != SCSI_PROT_NORMAL) &&
 	    scsi_prot_sg_count(scsi_cmnd)) {
@@ -2337,7 +2282,6 @@ int zfcp_fsf_fcp_cmnd(struct scsi_cmnd *scsi_cmnd)
 	retval = zfcp_fsf_req_send(req);
 	if (unlikely(retval))
 		goto failed_scsi_cmnd;
-	/* NOTE: DO NOT TOUCH req PAST THIS POINT! */
 
 	goto out;
 
@@ -2351,13 +2295,12 @@ out:
 
 static void zfcp_fsf_fcp_task_mgmt_handler(struct zfcp_fsf_req *req)
 {
-	struct scsi_device *sdev = req->data;
 	struct fcp_resp_with_ext *fcp_rsp;
 	struct fcp_resp_rsp_info *rsp_info;
 
-	zfcp_fsf_fcp_handler_common(req, sdev);
+	zfcp_fsf_fcp_handler_common(req);
 
-	fcp_rsp = &req->qtcb->bottom.io.fcp_rsp.iu;
+	fcp_rsp = (struct fcp_resp_with_ext *) &req->qtcb->bottom.io.fcp_rsp;
 	rsp_info = (struct fcp_resp_rsp_info *) &fcp_rsp[1];
 
 	if ((rsp_info->rsp_code != FCP_TMF_CMPL) ||
@@ -2366,18 +2309,17 @@ static void zfcp_fsf_fcp_task_mgmt_handler(struct zfcp_fsf_req *req)
 }
 
 /**
- * zfcp_fsf_fcp_task_mgmt() - Send SCSI task management command (TMF).
- * @sdev: Pointer to SCSI device to send the task management command to.
- * @tm_flags: Unsigned byte for task management flags.
- *
- * Return: On success pointer to struct zfcp_fsf_req, %NULL otherwise.
+ * zfcp_fsf_fcp_task_mgmt - send SCSI task management command
+ * @scmnd: SCSI command to send the task management command for
+ * @tm_flags: unsigned byte for task management flags
+ * Returns: on success pointer to struct fsf_req, NULL otherwise
  */
-struct zfcp_fsf_req *zfcp_fsf_fcp_task_mgmt(struct scsi_device *sdev,
+struct zfcp_fsf_req *zfcp_fsf_fcp_task_mgmt(struct scsi_cmnd *scmnd,
 					    u8 tm_flags)
 {
 	struct zfcp_fsf_req *req = NULL;
 	struct fcp_cmnd *fcp_cmnd;
-	struct zfcp_scsi_dev *zfcp_sdev = sdev_to_zfcp(sdev);
+	struct zfcp_scsi_dev *zfcp_sdev = sdev_to_zfcp(scmnd->device);
 	struct zfcp_qdio *qdio = zfcp_sdev->port->adapter->qdio;
 
 	if (unlikely(!(atomic_read(&zfcp_sdev->status) &
@@ -2397,8 +2339,7 @@ struct zfcp_fsf_req *zfcp_fsf_fcp_task_mgmt(struct scsi_device *sdev,
 		goto out;
 	}
 
-	req->data = sdev;
-
+	req->data = scmnd;
 	req->handler = zfcp_fsf_fcp_task_mgmt_handler;
 	req->qtcb->header.lun_handle = zfcp_sdev->lun_handle;
 	req->qtcb->header.port_handle = zfcp_sdev->port->handle;
@@ -2408,14 +2349,12 @@ struct zfcp_fsf_req *zfcp_fsf_fcp_task_mgmt(struct scsi_device *sdev,
 
 	zfcp_qdio_set_sbale_last(qdio, &req->qdio_req);
 
-	fcp_cmnd = &req->qtcb->bottom.io.fcp_cmnd.iu;
-	zfcp_fc_fcp_tm(fcp_cmnd, sdev, tm_flags);
+	fcp_cmnd = (struct fcp_cmnd *) &req->qtcb->bottom.io.fcp_cmnd;
+	zfcp_fc_scsi_to_fcp(fcp_cmnd, scmnd, tm_flags);
 
-	zfcp_fsf_start_timer(req, ZFCP_FSF_SCSI_ER_TIMEOUT);
-	if (!zfcp_fsf_req_send(req)) {
-		/* NOTE: DO NOT TOUCH req, UNTIL IT COMPLETES! */
+	zfcp_fsf_start_timer(req, ZFCP_SCSI_ER_TIMEOUT);
+	if (!zfcp_fsf_req_send(req))
 		goto out;
-	}
 
 	zfcp_fsf_req_free(req);
 	req = NULL;
@@ -2426,7 +2365,7 @@ out:
 
 /**
  * zfcp_fsf_reqid_check - validate req_id contained in SBAL returned by QDIO
- * @qdio: pointer to struct zfcp_qdio
+ * @adapter: pointer to struct zfcp_adapter
  * @sbal_idx: response queue index of SBAL to be processed
  */
 void zfcp_fsf_reqid_check(struct zfcp_qdio *qdio, int sbal_idx)
@@ -2454,6 +2393,7 @@ void zfcp_fsf_reqid_check(struct zfcp_qdio *qdio, int sbal_idx)
 			      req_id, dev_name(&adapter->ccw_device->dev));
 		}
 
+		fsf_req->qdio_req.sbal_response = sbal_idx;
 		zfcp_fsf_req_complete(fsf_req);
 
 		if (likely(sbale->eflags & SBAL_EFLAGS_LAST_ENTRY))

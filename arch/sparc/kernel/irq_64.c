@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /* irq.c: UltraSparc IRQ handling/init/registry.
  *
  * Copyright (C) 1997, 2007, 2008 David S. Miller (davem@davemloft.net)
@@ -22,6 +21,7 @@
 #include <linux/seq_file.h>
 #include <linux/ftrace.h>
 #include <linux/irq.h>
+#include <linux/kmemleak.h>
 
 #include <asm/ptrace.h>
 #include <asm/processor.h>
@@ -35,7 +35,7 @@
 #include <asm/timer.h>
 #include <asm/smp.h>
 #include <asm/starfire.h>
-#include <linux/uaccess.h>
+#include <asm/uaccess.h>
 #include <asm/cache.h>
 #include <asm/cpudata.h>
 #include <asm/auxio.h>
@@ -915,7 +915,7 @@ static void map_prom_timers(void)
 	dp = of_find_node_by_path("/");
 	dp = dp->child;
 	while (dp) {
-		if (of_node_name_eq(dp, "counter-timer"))
+		if (!strcmp(dp->name, "counter-timer"))
 			break;
 		dp = dp->sibling;
 	}

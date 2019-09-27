@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0
 rtl8723be-objs :=		\
 		dm.o		\
 		fw.o		\
@@ -13,3 +12,5 @@ rtl8723be-objs :=		\
 
 
 obj-$(CONFIG_RTL8723BE) += rtl8723be.o
+
+ccflags-y += -D__CHECK_ENDIAN__

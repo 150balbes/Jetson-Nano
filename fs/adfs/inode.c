@@ -1,8 +1,11 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  *  linux/fs/adfs/inode.c
  *
  *  Copyright (C) 1997-1999 Russell King
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  */
 #include <linux/buffer_head.h>
 #include <linux/writeback.h>
@@ -94,7 +97,7 @@ adfs_atts2mode(struct super_block *sb, struct inode *inode)
 		return S_IFDIR | S_IXUGO | mode;
 	}
 
-	switch (adfs_filetype(ADFS_I(inode)->loadaddr)) {
+	switch (ADFS_I(inode)->filetype) {
 	case 0xfc0:	/* LinkFS */
 		return S_IFLNK|S_IRWXUGO;
 
@@ -164,7 +167,7 @@ adfs_mode2atts(struct super_block *sb, struct inode *inode)
  * of time to convert from RISC OS epoch to Unix epoch.
  */
 static void
-adfs_adfs2unix_time(struct timespec64 *tv, struct inode *inode)
+adfs_adfs2unix_time(struct timespec *tv, struct inode *inode)
 {
 	unsigned int high, low;
 	/* 01 Jan 1970 00:00:00 (Unix epoch) as nanoseconds since
@@ -174,7 +177,7 @@ adfs_adfs2unix_time(struct timespec64 *tv, struct inode *inode)
 							2208988800000000000LL;
 	s64 nsec;
 
-	if (!adfs_inode_is_stamped(inode))
+	if (ADFS_I(inode)->stamped == 0)
 		goto cur_time;
 
 	high = ADFS_I(inode)->loadaddr & 0xFF; /* top 8 bits of timestamp */
@@ -192,7 +195,7 @@ adfs_adfs2unix_time(struct timespec64 *tv, struct inode *inode)
 	/* convert from RISC OS to Unix epoch */
 	nsec -= nsec_unix_epoch_diff_risc_os_epoch;
 
-	*tv = ns_to_timespec64(nsec);
+	*tv = ns_to_timespec(nsec);
 	return;
 
  cur_time:
@@ -213,7 +216,7 @@ adfs_unix2adfs_time(struct inode *inode, unsigned int secs)
 {
 	unsigned int high, low;
 
-	if (adfs_inode_is_stamped(inode)) {
+	if (ADFS_I(inode)->stamped) {
 		/* convert 32-bit seconds to 40-bit centi-seconds */
 		low  = (secs & 255) * 100;
 		high = (secs / 256) * 100 + (low >> 8) + 0x336e996a;
@@ -247,7 +250,7 @@ adfs_iget(struct super_block *sb, struct object_info *obj)
 
 	inode->i_uid	 = ADFS_SB(sb)->s_uid;
 	inode->i_gid	 = ADFS_SB(sb)->s_gid;
-	inode->i_ino	 = obj->indaddr;
+	inode->i_ino	 = obj->file_id;
 	inode->i_size	 = obj->size;
 	set_nlink(inode, 2);
 	inode->i_blocks	 = (inode->i_size + sb->s_blocksize - 1) >>
@@ -263,6 +266,8 @@ adfs_iget(struct super_block *sb, struct object_info *obj)
 	ADFS_I(inode)->loadaddr  = obj->loadaddr;
 	ADFS_I(inode)->execaddr  = obj->execaddr;
 	ADFS_I(inode)->attr      = obj->attr;
+	ADFS_I(inode)->filetype  = obj->filetype;
+	ADFS_I(inode)->stamped   = ((obj->loadaddr & 0xfff00000) == 0xfff00000);
 
 	inode->i_mode	 = adfs_atts2mode(sb, inode);
 	adfs_adfs2unix_time(&inode->i_mtime, inode);
@@ -279,7 +284,7 @@ adfs_iget(struct super_block *sb, struct object_info *obj)
 		ADFS_I(inode)->mmu_private = inode->i_size;
 	}
 
-	inode_fake_hash(inode);
+	insert_inode_hash(inode);
 
 out:
 	return inode;
@@ -353,7 +358,7 @@ int adfs_write_inode(struct inode *inode, struct writeback_control *wbc)
 	struct object_info obj;
 	int ret;
 
-	obj.indaddr	= inode->i_ino;
+	obj.file_id	= inode->i_ino;
 	obj.name_len	= 0;
 	obj.parent_id	= ADFS_I(inode)->parent_id;
 	obj.loadaddr	= ADFS_I(inode)->loadaddr;

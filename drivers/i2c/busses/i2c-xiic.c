@@ -1,8 +1,17 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * i2c-xiic.c
  * Copyright (c) 2002-2007 Xilinx Inc.
  * Copyright (c) 2009-2010 Intel Corporation
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
  *
  * This code was implemented by Mocean Laboratories AB when porting linux
  * to the automotive development board Russellville. The copyright holder
@@ -24,7 +33,7 @@
 #include <linux/i2c.h>
 #include <linux/interrupt.h>
 #include <linux/wait.h>
-#include <linux/platform_data/i2c-xiic.h>
+#include <linux/i2c-xiic.h>
 #include <linux/io.h>
 #include <linux/slab.h>
 #include <linux/of.h>
@@ -133,6 +142,12 @@ struct xiic_i2c {
 (XIIC_INTR_TX_ERROR_MASK | XIIC_INTR_TX_EMPTY_MASK | XIIC_INTR_TX_HALF_MASK)
 
 #define XIIC_TX_RX_INTERRUPTS (XIIC_INTR_RX_FULL_MASK | XIIC_TX_INTERRUPTS)
+
+/* The following constants are used with the following macros to specify the
+ * operation, a read or write operation.
+ */
+#define XIIC_READ_OPERATION  1
+#define XIIC_WRITE_OPERATION 0
 
 /*
  * Tx Fifo upper bit masks.
@@ -400,7 +415,7 @@ static irqreturn_t xiic_process(int irq, void *dev_id)
 		clr |= XIIC_INTR_RX_FULL_MASK;
 		if (!i2c->rx_msg) {
 			dev_dbg(i2c->adap.dev.parent,
-				"%s unexpected RX IRQ\n", __func__);
+				"%s unexpexted RX IRQ\n", __func__);
 			xiic_clear_rx_fifo(i2c);
 			goto out;
 		}
@@ -455,7 +470,7 @@ static irqreturn_t xiic_process(int irq, void *dev_id)
 
 		if (!i2c->tx_msg) {
 			dev_dbg(i2c->adap.dev.parent,
-				"%s unexpected TX IRQ\n", __func__);
+				"%s unexpexted TX IRQ\n", __func__);
 			goto out;
 		}
 
@@ -543,7 +558,8 @@ static void xiic_start_recv(struct xiic_i2c *i2c)
 	if (!(msg->flags & I2C_M_NOSTART))
 		/* write the address */
 		xiic_setreg16(i2c, XIIC_DTR_REG_OFFSET,
-			i2c_8bit_addr_from_msg(msg) | XIIC_TX_DYN_START_MASK);
+			(msg->addr << 1) | XIIC_READ_OPERATION |
+			XIIC_TX_DYN_START_MASK);
 
 	xiic_irq_clr_en(i2c, XIIC_INTR_BNB_MASK);
 
@@ -573,7 +589,7 @@ static void xiic_start_send(struct xiic_i2c *i2c)
 
 	if (!(msg->flags & I2C_M_NOSTART)) {
 		/* write the address */
-		u16 data = i2c_8bit_addr_from_msg(msg) |
+		u16 data = ((msg->addr << 1) & 0xfe) | XIIC_WRITE_OPERATION |
 			XIIC_TX_DYN_START_MASK;
 		if ((i2c->nmsgs == 1) && msg->len == 0)
 			/* no data and last message -> add STOP */
@@ -709,16 +725,11 @@ static const struct i2c_algorithm xiic_algorithm = {
 	.functionality = xiic_func,
 };
 
-static const struct i2c_adapter_quirks xiic_quirks = {
-	.max_read_len = 255,
-};
-
-static const struct i2c_adapter xiic_adapter = {
+static struct i2c_adapter xiic_adapter = {
 	.owner = THIS_MODULE,
 	.name = DRIVER_NAME,
 	.class = I2C_CLASS_DEPRECATED,
 	.algo = &xiic_algorithm,
-	.quirks = &xiic_quirks,
 };
 
 
@@ -844,18 +855,20 @@ static const struct of_device_id xiic_of_match[] = {
 MODULE_DEVICE_TABLE(of, xiic_of_match);
 #endif
 
-static int __maybe_unused xiic_i2c_runtime_suspend(struct device *dev)
+static int __maybe_unused cdns_i2c_runtime_suspend(struct device *dev)
 {
-	struct xiic_i2c *i2c = dev_get_drvdata(dev);
+	struct platform_device *pdev = to_platform_device(dev);
+	struct xiic_i2c *i2c = platform_get_drvdata(pdev);
 
 	clk_disable(i2c->clk);
 
 	return 0;
 }
 
-static int __maybe_unused xiic_i2c_runtime_resume(struct device *dev)
+static int __maybe_unused cdns_i2c_runtime_resume(struct device *dev)
 {
-	struct xiic_i2c *i2c = dev_get_drvdata(dev);
+	struct platform_device *pdev = to_platform_device(dev);
+	struct xiic_i2c *i2c = platform_get_drvdata(pdev);
 	int ret;
 
 	ret = clk_enable(i2c->clk);
@@ -868,8 +881,8 @@ static int __maybe_unused xiic_i2c_runtime_resume(struct device *dev)
 }
 
 static const struct dev_pm_ops xiic_dev_pm_ops = {
-	SET_RUNTIME_PM_OPS(xiic_i2c_runtime_suspend,
-			   xiic_i2c_runtime_resume, NULL)
+	SET_RUNTIME_PM_OPS(cdns_i2c_runtime_suspend,
+			   cdns_i2c_runtime_resume, NULL)
 };
 static struct platform_driver xiic_i2c_driver = {
 	.probe   = xiic_i2c_probe,

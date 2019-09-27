@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _AHA1740_H
 
 /* $Id$
@@ -135,8 +134,8 @@ struct ecb {			/* Enhanced Control Block 6.1 */
 /* Hardware defined portion ends here, rest is driver defined */
 	u8 sense[MAX_SENSE];	/* Sense area */
 	u8 status[MAX_STATUS];	/* Status area */
-	struct scsi_cmnd *SCpnt;	/* Link to the SCSI Command Block */
-	void (*done) (struct scsi_cmnd *);	/* Completion Function */
+	Scsi_Cmnd *SCpnt;	/* Link to the SCSI Command Block */
+	void (*done) (Scsi_Cmnd *);	/* Completion Function */
 };
 
 #define	AHA1740CMD_NOP	 0x00	/* No OP */

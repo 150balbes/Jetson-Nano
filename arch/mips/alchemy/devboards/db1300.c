@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * DBAu1300 init and platform device setup.
  *
@@ -14,12 +13,12 @@
 #include <linux/i2c.h>
 #include <linux/io.h>
 #include <linux/leds.h>
-#include <linux/interrupt.h>
 #include <linux/ata_platform.h>
 #include <linux/mmc/host.h>
 #include <linux/module.h>
 #include <linux/mtd/mtd.h>
-#include <linux/mtd/platnand.h>
+#include <linux/mtd/nand.h>
+#include <linux/mtd/partitions.h>
 #include <linux/platform_device.h>
 #include <linux/smsc911x.h>
 #include <linux/wm97xx.h>
@@ -148,12 +147,11 @@ static void __init db1300_gpio_config(void)
 
 /**********************************************************************/
 
-static u64 au1300_all_dmamask = DMA_BIT_MASK(32);
-
-static void au1300_nand_cmd_ctrl(struct nand_chip *this, int cmd,
+static void au1300_nand_cmd_ctrl(struct mtd_info *mtd, int cmd,
 				 unsigned int ctrl)
 {
-	unsigned long ioaddr = (unsigned long)this->legacy.IO_ADDR_W;
+	struct nand_chip *this = mtd_to_nand(mtd);
+	unsigned long ioaddr = (unsigned long)this->IO_ADDR_W;
 
 	ioaddr &= 0xffffff00;
 
@@ -165,14 +163,14 @@ static void au1300_nand_cmd_ctrl(struct nand_chip *this, int cmd,
 		/* assume we want to r/w real data  by default */
 		ioaddr += MEM_STNAND_DATA;
 	}
-	this->legacy.IO_ADDR_R = this->legacy.IO_ADDR_W = (void __iomem *)ioaddr;
+	this->IO_ADDR_R = this->IO_ADDR_W = (void __iomem *)ioaddr;
 	if (cmd != NAND_CMD_NONE) {
-		__raw_writeb(cmd, this->legacy.IO_ADDR_W);
+		__raw_writeb(cmd, this->IO_ADDR_W);
 		wmb();
 	}
 }
 
-static int au1300_nand_device_ready(struct nand_chip *this)
+static int au1300_nand_device_ready(struct mtd_info *mtd)
 {
 	return alchemy_rdsmem(AU1000_MEM_STSTAT) & 1;
 }
@@ -440,8 +438,6 @@ static struct resource db1300_ide_res[] = {
 
 static struct platform_device db1300_ide_dev = {
 	.dev	= {
-		.dma_mask		= &au1300_all_dmamask,
-		.coherent_dma_mask	= DMA_BIT_MASK(32),
 		.platform_data	= &db1300_ide_info,
 	},
 	.name		= "pata_platform",
@@ -453,26 +449,23 @@ static struct platform_device db1300_ide_dev = {
 
 static irqreturn_t db1300_mmc_cd(int irq, void *ptr)
 {
-	disable_irq_nosync(irq);
-	return IRQ_WAKE_THREAD;
-}
+	void(*mmc_cd)(struct mmc_host *, unsigned long);
 
-static irqreturn_t db1300_mmc_cdfn(int irq, void *ptr)
-{
-	void (*mmc_cd)(struct mmc_host *, unsigned long);
+	/* disable the one currently screaming. No other way to shut it up */
+	if (irq == DB1300_SD1_INSERT_INT) {
+		disable_irq_nosync(DB1300_SD1_INSERT_INT);
+		enable_irq(DB1300_SD1_EJECT_INT);
+	} else {
+		disable_irq_nosync(DB1300_SD1_EJECT_INT);
+		enable_irq(DB1300_SD1_INSERT_INT);
+	}
 
 	/* link against CONFIG_MMC=m.  We can only be called once MMC core has
 	 * initialized the controller, so symbol_get() should always succeed.
 	 */
 	mmc_cd = symbol_get(mmc_detect_change);
-	mmc_cd(ptr, msecs_to_jiffies(200));
+	mmc_cd(ptr, msecs_to_jiffies(500));
 	symbol_put(mmc_detect_change);
-
-	msleep(100);	/* debounce */
-	if (irq == DB1300_SD1_INSERT_INT)
-		enable_irq(DB1300_SD1_EJECT_INT);
-	else
-		enable_irq(DB1300_SD1_INSERT_INT);
 
 	return IRQ_HANDLED;
 }
@@ -493,13 +486,13 @@ static int db1300_mmc_cd_setup(void *mmc_host, int en)
 	int ret;
 
 	if (en) {
-		ret = request_threaded_irq(DB1300_SD1_INSERT_INT, db1300_mmc_cd,
-				db1300_mmc_cdfn, 0, "sd_insert", mmc_host);
+		ret = request_irq(DB1300_SD1_INSERT_INT, db1300_mmc_cd, 0,
+				  "sd_insert", mmc_host);
 		if (ret)
 			goto out;
 
-		ret = request_threaded_irq(DB1300_SD1_EJECT_INT, db1300_mmc_cd,
-				db1300_mmc_cdfn, 0, "sd_eject", mmc_host);
+		ret = request_irq(DB1300_SD1_EJECT_INT, db1300_mmc_cd, 0,
+				  "sd_eject", mmc_host);
 		if (ret) {
 			free_irq(DB1300_SD1_INSERT_INT, mmc_host);
 			goto out;
@@ -564,9 +557,7 @@ static struct resource au1300_sd1_res[] = {
 
 static struct platform_device db1300_sd1_dev = {
 	.dev = {
-		.dma_mask		= &au1300_all_dmamask,
-		.coherent_dma_mask	= DMA_BIT_MASK(32),
-		.platform_data		= &db1300_sd1_platdata,
+		.platform_data	= &db1300_sd1_platdata,
 	},
 	.name		= "au1xxx-mmc",
 	.id		= 1,
@@ -631,9 +622,7 @@ static struct resource au1300_sd0_res[] = {
 
 static struct platform_device db1300_sd0_dev = {
 	.dev = {
-		.dma_mask		= &au1300_all_dmamask,
-		.coherent_dma_mask	= DMA_BIT_MASK(32),
-		.platform_data		= &db1300_sd0_platdata,
+		.platform_data	= &db1300_sd0_platdata,
 	},
 	.name		= "au1xxx-mmc",
 	.id		= 0,
@@ -660,18 +649,10 @@ static struct platform_device db1300_i2sdma_dev = {
 
 static struct platform_device db1300_sndac97_dev = {
 	.name		= "db1300-ac97",
-	.dev = {
-		.dma_mask		= &au1300_all_dmamask,
-		.coherent_dma_mask	= DMA_BIT_MASK(32),
-	},
 };
 
 static struct platform_device db1300_sndi2s_dev = {
 	.name		= "db1300-i2s",
-	.dev = {
-		.dma_mask		= &au1300_all_dmamask,
-		.coherent_dma_mask	= DMA_BIT_MASK(32),
-	},
 };
 
 /**********************************************************************/
@@ -716,12 +697,13 @@ static struct resource au1300_lcd_res[] = {
 	}
 };
 
+static u64 au1300_lcd_dmamask = DMA_BIT_MASK(32);
 
 static struct platform_device db1300_lcd_dev = {
 	.name		= "au1200-lcd",
 	.id		= 0,
 	.dev = {
-		.dma_mask		= &au1300_all_dmamask,
+		.dma_mask		= &au1300_lcd_dmamask,
 		.coherent_dma_mask	= DMA_BIT_MASK(32),
 		.platform_data		= &db1300fb_pd,
 	},

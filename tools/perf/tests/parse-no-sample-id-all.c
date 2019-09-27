@@ -1,5 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
-#include <linux/kernel.h>
 #include <linux/types.h>
 #include <stddef.h>
 
@@ -52,8 +50,7 @@ static int process_events(union perf_event **events, size_t count)
 }
 
 struct test_attr_event {
-	struct perf_event_header header;
-	struct perf_event_attr	 attr;
+	struct attr_event attr;
 	u64 id;
 };
 
@@ -69,21 +66,25 @@ struct test_attr_event {
  *
  * Return: %0 on success, %-1 if the test fails.
  */
-int test__parse_no_sample_id_all(struct test *test __maybe_unused, int subtest __maybe_unused)
+int test__parse_no_sample_id_all(int subtest __maybe_unused)
 {
 	int err;
 
 	struct test_attr_event event1 = {
-		.header = {
-			.type = PERF_RECORD_HEADER_ATTR,
-			.size = sizeof(struct test_attr_event),
+		.attr = {
+			.header = {
+				.type = PERF_RECORD_HEADER_ATTR,
+				.size = sizeof(struct test_attr_event),
+			},
 		},
 		.id = 1,
 	};
 	struct test_attr_event event2 = {
-		.header = {
-			.type = PERF_RECORD_HEADER_ATTR,
-			.size = sizeof(struct test_attr_event),
+		.attr = {
+			.header = {
+				.type = PERF_RECORD_HEADER_ATTR,
+				.size = sizeof(struct test_attr_event),
+			},
 		},
 		.id = 2,
 	};

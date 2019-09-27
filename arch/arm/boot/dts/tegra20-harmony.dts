@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /dts-v1/;
 
 #include <dt-bindings/input/input.h>
@@ -18,7 +17,7 @@
 		stdout-path = "serial0:115200n8";
 	};
 
-	memory@0 {
+	memory {
 		reg = <0x00000000 0x40000000>;
 	};
 
@@ -567,7 +566,7 @@
 		nvidia,sys-clock-req-active-high;
 	};
 
-	pcie@80003000 {
+	pcie-controller@80003000 {
 		status = "okay";
 
 		avdd-pex-supply = <&pci_vdd_reg>;

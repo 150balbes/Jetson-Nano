@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * FPU data structures:
  */
@@ -68,9 +67,6 @@ struct fxregs_state {
 
 /* Default value for fxregs_state.mxcsr: */
 #define MXCSR_DEFAULT		0x1f80
-
-/* Copy both mxcsr & mxcsr_flags with a single u64 memcpy: */
-#define MXCSR_AND_FLAGS_SIZE sizeof(u64)
 
 /*
  * Software based FPU emulation state. This is arbitrary really,
@@ -294,11 +290,36 @@ struct fpu {
 	unsigned int			last_cpu;
 
 	/*
-	 * @avx512_timestamp:
+	 * @fpstate_active:
 	 *
-	 * Records the timestamp of AVX512 use during last context switch.
+	 * This flag indicates whether this context is active: if the task
+	 * is not running then we can restore from this context, if the task
+	 * is running then we should save into this context.
 	 */
-	unsigned long			avx512_timestamp;
+	unsigned char			fpstate_active;
+
+	/*
+	 * @fpregs_active:
+	 *
+	 * This flag determines whether a given context is actively
+	 * loaded into the FPU's registers and that those registers
+	 * represent the task's current FPU state.
+	 *
+	 * Note the interaction with fpstate_active:
+	 *
+	 *   # task does not use the FPU:
+	 *   fpstate_active == 0
+	 *
+	 *   # task uses the FPU and regs are active:
+	 *   fpstate_active == 1 && fpregs_active == 1
+	 *
+	 *   # the regs are inactive but still match fpstate:
+	 *   fpstate_active == 1 && fpregs_active == 0 && fpregs_owner == fpu
+	 *
+	 * The third state is what we use for the lazy restore optimization
+	 * on lazy-switching CPUs.
+	 */
+	unsigned char			fpregs_active;
 
 	/*
 	 * @state:

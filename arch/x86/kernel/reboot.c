@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 
 #include <linux/export.h>
@@ -38,6 +37,8 @@
  */
 void (*pm_power_off)(void);
 EXPORT_SYMBOL(pm_power_off);
+
+static const struct desc_ptr no_idt = {};
 
 /*
  * This is set if we need to go through the 'emergency' path.
@@ -81,19 +82,6 @@ static int __init set_bios_reboot(const struct dmi_system_id *d)
 	return 0;
 }
 
-/*
- * Some machines don't handle the default ACPI reboot method and
- * require the EFI reboot method:
- */
-static int __init set_efi_reboot(const struct dmi_system_id *d)
-{
-	if (reboot_type != BOOT_EFI && !efi_runtime_disabled()) {
-		reboot_type = BOOT_EFI;
-		pr_info("%s series board detected. Selecting EFI-method for reboot.\n", d->ident);
-	}
-	return 0;
-}
-
 void __noreturn machine_real_restart(unsigned int type)
 {
 	local_irq_disable();
@@ -121,7 +109,7 @@ void __noreturn machine_real_restart(unsigned int type)
 	write_cr3(real_mode_header->trampoline_pgd);
 
 	/* Exiting long mode will fail if CR4.PCIDE is set. */
-	if (boot_cpu_has(X86_FEATURE_PCID))
+	if (static_cpu_has(X86_FEATURE_PCID))
 		cr4_clear_bits(X86_CR4_PCIDE);
 #endif
 
@@ -168,7 +156,7 @@ static int __init set_kbd_reboot(const struct dmi_system_id *d)
 /*
  * This is a single dmi_table handling all reboot quirks.
  */
-static const struct dmi_system_id reboot_dmi_table[] __initconst = {
+static struct dmi_system_id __initdata reboot_dmi_table[] = {
 
 	/* Acer */
 	{	/* Handle reboot issue on Acer Aspire one */
@@ -177,14 +165,6 @@ static const struct dmi_system_id reboot_dmi_table[] __initconst = {
 		.matches = {
 			DMI_MATCH(DMI_SYS_VENDOR, "Acer"),
 			DMI_MATCH(DMI_PRODUCT_NAME, "AOA110"),
-		},
-	},
-	{	/* Handle reboot issue on Acer TravelMate X514-51T */
-		.callback = set_efi_reboot,
-		.ident = "Acer TravelMate X514-51T",
-		.matches = {
-			DMI_MATCH(DMI_SYS_VENDOR, "Acer"),
-			DMI_MATCH(DMI_PRODUCT_NAME, "TravelMate X514-51T"),
 		},
 	},
 
@@ -495,12 +475,12 @@ static int __init reboot_init(void)
 
 	/*
 	 * The DMI quirks table takes precedence. If no quirks entry
-	 * matches and the ACPI Hardware Reduced bit is set and EFI
-	 * runtime services are enabled, force EFI reboot.
+	 * matches and the ACPI Hardware Reduced bit is set, force EFI
+	 * reboot.
 	 */
 	rv = dmi_check_system(reboot_dmi_table);
 
-	if (!rv && efi_reboot_required() && !efi_runtime_disabled())
+	if (!rv && efi_reboot_required())
 		reboot_type = BOOT_EFI;
 
 	return 0;
@@ -662,7 +642,7 @@ static void native_machine_emergency_restart(void)
 			break;
 
 		case BOOT_TRIPLE:
-			idt_invalidate(NULL);
+			load_idt(&no_idt);
 			__asm__ __volatile__("int3");
 
 			/* We're probably dead after this, but... */
@@ -687,7 +667,7 @@ void native_machine_shutdown(void)
 	 * Even without the erratum, it still makes sense to quiet IO APIC
 	 * before disabling Local APIC.
 	 */
-	clear_IO_APIC();
+	disable_IO_APIC();
 #endif
 
 #ifdef CONFIG_SMP
@@ -701,7 +681,6 @@ void native_machine_shutdown(void)
 #endif
 
 	lapic_shutdown();
-	restore_boot_irq_mode();
 
 #ifdef CONFIG_HPET_TIMER
 	hpet_disable();

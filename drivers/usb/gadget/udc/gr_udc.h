@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0+
 /*
  * USB Peripheral Controller driver for Aeroflex Gaisler GRUSBDC.
  *
@@ -9,6 +8,11 @@
  *
  * Full documentation of the GRUSBDC core can be found here:
  * http://www.gaisler.com/products/grlib/grip.pdf
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License as published by the
+ * Free Software Foundation; either version 2 of the License, or (at your
+ * option) any later version.
  *
  * Contributors:
  * - Andreas Larsson <andreas@gaisler.com>
@@ -217,6 +221,7 @@ struct gr_udc {
 	spinlock_t lock; /* General lock, a.k.a. "dev->lock" in comments */
 
 	struct dentry *dfs_root;
+	struct dentry *dfs_state;
 };
 
 #define to_gr_udc(gadget)	(container_of((gadget), struct gr_udc, gadget))

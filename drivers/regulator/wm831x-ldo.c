@@ -1,10 +1,15 @@
-// SPDX-License-Identifier: GPL-2.0+
-//
-// wm831x-ldo.c  --  LDO driver for the WM831x series
-//
-// Copyright 2009 Wolfson Microelectronics PLC.
-//
-// Author: Mark Brown <broonie@opensource.wolfsonmicro.com>
+/*
+ * wm831x-ldo.c  --  LDO driver for the WM831x series
+ *
+ * Copyright 2009 Wolfson Microelectronics PLC.
+ *
+ * Author: Mark Brown <broonie@opensource.wolfsonmicro.com>
+ *
+ *  This program is free software; you can redistribute  it and/or modify it
+ *  under  the terms of  the GNU General  Public License as published by the
+ *  Free Software Foundation;  either version 2 of the  License, or (at your
+ *  option) any later version.
+ */
 
 #include <linux/module.h>
 #include <linux/moduleparam.h>
@@ -46,11 +51,9 @@ static irqreturn_t wm831x_ldo_uv_irq(int irq, void *data)
 {
 	struct wm831x_ldo *ldo = data;
 
-	regulator_lock(ldo->regulator);
 	regulator_notifier_call_chain(ldo->regulator,
 				      REGULATOR_EVENT_UNDER_VOLTAGE,
 				      NULL);
-	regulator_unlock(ldo->regulator);
 
 	return IRQ_HANDLED;
 }

@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0-only
 config DVB_PT3
 	tristate "Earthsoft PT3 cards"
 	depends on DVB_CORE && PCI && I2C

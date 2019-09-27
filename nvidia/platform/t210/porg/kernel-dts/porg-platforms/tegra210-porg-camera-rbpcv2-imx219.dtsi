@@ -1,0 +1,40 @@
+/*
+ * Copyright (c) 2018-2019, NVIDIA CORPORATION.  All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
+#include "tegra210-camera-rbpcv2-imx219.dtsi"
+
+#define CAM1_PWDN		TEGRA_GPIO(S, 7)
+
+/ {
+    host1x {
+		i2c@546c0000 {
+			rbpcv2_imx219_a@10 {
+				status = "disabled";
+				reset-gpios = <&gpio CAM1_PWDN GPIO_ACTIVE_HIGH>;
+			};
+		};
+	};
+
+    gpio@6000d000 {
+		camera-control-output-low {
+			gpio-hog;
+			output-low;
+			gpios = < CAM1_PWDN 0 >;
+			label = "cam1-pwdn";
+		};
+	};
+};

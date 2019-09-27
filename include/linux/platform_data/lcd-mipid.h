@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __LCD_MIPID_H
 #define __LCD_MIPID_H
 

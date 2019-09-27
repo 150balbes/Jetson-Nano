@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
 * OHCI HCD (Host Controller Driver) for USB.
 *
@@ -6,6 +5,10 @@
 * Deepak Sikri<deepak.sikri@st.com>
 *
 * Based on various ohci-*.c drivers
+*
+* This file is licensed under the terms of the GNU General Public
+* License version 2. This program is licensed "as is" without any
+* warranty of any kind, whether express or implied.
 */
 
 #include <linux/clk.h>
@@ -35,6 +38,7 @@ static struct hc_driver __read_mostly ohci_spear_hc_driver;
 static int spear_ohci_hcd_drv_probe(struct platform_device *pdev)
 {
 	const struct hc_driver *driver = &ohci_spear_hc_driver;
+	struct ohci_hcd *ohci;
 	struct usb_hcd *hcd = NULL;
 	struct clk *usbh_clk;
 	struct spear_ohci *sohci_p;
@@ -83,6 +87,8 @@ static int spear_ohci_hcd_drv_probe(struct platform_device *pdev)
 	sohci_p->clk = usbh_clk;
 
 	clk_prepare_enable(sohci_p->clk);
+
+	ohci = hcd_to_ohci(hcd);
 
 	retval = usb_add_hcd(hcd, platform_get_irq(pdev, 0), 0);
 	if (retval == 0) {

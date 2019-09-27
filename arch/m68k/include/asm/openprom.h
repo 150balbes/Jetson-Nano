@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __SPARC_OPENPROM_H
 #define __SPARC_OPENPROM_H
 

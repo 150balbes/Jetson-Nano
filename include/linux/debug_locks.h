@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __LINUX_DEBUG_LOCKING_H
 #define __LINUX_DEBUG_LOCKING_H
 
@@ -8,8 +7,8 @@
 
 struct task_struct;
 
-extern int debug_locks __read_mostly;
-extern int debug_locks_silent __read_mostly;
+extern int debug_locks;
+extern int debug_locks_silent;
 
 
 static inline int __debug_locks_off(void)

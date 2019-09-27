@@ -1,15 +1,12 @@
-// SPDX-License-Identifier: GPL-2.0
 
 #include <linux/ceph/ceph_debug.h>
 
 #include <linux/err.h>
 #include <linux/scatterlist.h>
-#include <linux/sched.h>
 #include <linux/slab.h>
 #include <crypto/aes.h>
 #include <crypto/skcipher.h>
 #include <linux/key-type.h>
-#include <linux/sched/mm.h>
 
 #include <keys/ceph-type.h>
 #include <keys/user-type.h>
@@ -46,9 +43,9 @@ static int set_secret(struct ceph_crypto_key *key, void *buf)
 		goto fail;
 	}
 
-	/* crypto_alloc_sync_skcipher() allocates with GFP_KERNEL */
+	/* crypto_alloc_skcipher() allocates with GFP_KERNEL */
 	noio_flag = memalloc_noio_save();
-	key->tfm = crypto_alloc_sync_skcipher("cbc(aes)", 0, 0);
+	key->tfm = crypto_alloc_skcipher("cbc(aes)", 0, CRYPTO_ALG_ASYNC);
 	memalloc_noio_restore(noio_flag);
 	if (IS_ERR(key->tfm)) {
 		ret = PTR_ERR(key->tfm);
@@ -56,7 +53,7 @@ static int set_secret(struct ceph_crypto_key *key, void *buf)
 		goto fail;
 	}
 
-	ret = crypto_sync_skcipher_setkey(key->tfm, key->key, key->len);
+	ret = crypto_skcipher_setkey(key->tfm, key->key, key->len);
 	if (ret)
 		goto fail;
 
@@ -136,10 +133,8 @@ void ceph_crypto_key_destroy(struct ceph_crypto_key *key)
 	if (key) {
 		kfree(key->key);
 		key->key = NULL;
-		if (key->tfm) {
-			crypto_free_sync_skcipher(key->tfm);
-			key->tfm = NULL;
-		}
+		crypto_free_skcipher(key->tfm);
+		key->tfm = NULL;
 	}
 }
 
@@ -218,7 +213,7 @@ static void teardown_sgtable(struct sg_table *sgt)
 static int ceph_aes_crypt(const struct ceph_crypto_key *key, bool encrypt,
 			  void *buf, int buf_len, int in_len, int *pout_len)
 {
-	SYNC_SKCIPHER_REQUEST_ON_STACK(req, key->tfm);
+	SKCIPHER_REQUEST_ON_STACK(req, key->tfm);
 	struct sg_table sgt;
 	struct scatterlist prealloc_sg;
 	char iv[AES_BLOCK_SIZE] __aligned(8);
@@ -234,7 +229,7 @@ static int ceph_aes_crypt(const struct ceph_crypto_key *key, bool encrypt,
 		return ret;
 
 	memcpy(iv, aes_iv, AES_BLOCK_SIZE);
-	skcipher_request_set_sync_tfm(req, key->tfm);
+	skcipher_request_set_tfm(req, key->tfm);
 	skcipher_request_set_callback(req, 0, NULL, NULL);
 	skcipher_request_set_crypt(req, sgt.sgl, sgt.sgl, crypt_len, iv);
 
@@ -349,12 +344,10 @@ struct key_type key_type_ceph = {
 	.destroy	= ceph_key_destroy,
 };
 
-int __init ceph_crypto_init(void)
-{
+int ceph_crypto_init(void) {
 	return register_key_type(&key_type_ceph);
 }
 
-void ceph_crypto_shutdown(void)
-{
+void ceph_crypto_shutdown(void) {
 	unregister_key_type(&key_type_ceph);
 }

@@ -1,10 +1,9 @@
-# SPDX-License-Identifier: GPL-2.0-only
 #
-# Packet Engines device configuration
+# Packet engine device configuration
 #
 
-config NET_VENDOR_PACKET_ENGINES
-	bool "Packet Engines devices"
+config NET_PACKET_ENGINE
+	bool "Packet Engine devices"
 	default y
 	depends on PCI
 	---help---
@@ -12,10 +11,10 @@ config NET_VENDOR_PACKET_ENGINES
 
 	  Note that the answer to this question doesn't directly affect the
 	  kernel: saying N will just cause the configurator to skip all
-	  the questions about Packet Engines devices. If you say Y, you will
+	  the questions about packet engine devices. If you say Y, you will
 	  be asked for your specific card in the following questions.
 
-if NET_VENDOR_PACKET_ENGINES
+if NET_PACKET_ENGINE
 
 config HAMACHI
 	tristate "Packet Engines Hamachi GNIC-II support"
@@ -41,4 +40,4 @@ config YELLOWFIN
 	  To compile this driver as a module, choose M here: the module
 	  will be called yellowfin.  This is recommended.
 
-endif # NET_VENDOR_PACKET_ENGINES
+endif # NET_PACKET_ENGINE

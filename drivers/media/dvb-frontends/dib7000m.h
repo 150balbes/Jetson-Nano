@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef DIB7000M_H
 #define DIB7000M_H
 

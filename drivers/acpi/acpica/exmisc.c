@@ -1,11 +1,45 @@
-// SPDX-License-Identifier: BSD-3-Clause OR GPL-2.0
 /******************************************************************************
  *
  * Module Name: exmisc - ACPI AML (p-code) execution - specific opcodes
  *
- * Copyright (C) 2000 - 2019, Intel Corp.
- *
  *****************************************************************************/
+
+/*
+ * Copyright (C) 2000 - 2016, Intel Corp.
+ * All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice, this list of conditions, and the following disclaimer,
+ *    without modification.
+ * 2. Redistributions in binary form must reproduce at minimum a disclaimer
+ *    substantially similar to the "NO WARRANTY" disclaimer below
+ *    ("Disclaimer") and any redistribution must be conditioned upon
+ *    including a substantially similar Disclaimer requirement for further
+ *    binary redistribution.
+ * 3. Neither the names of the above-listed copyright holders nor the names
+ *    of any contributors may be used to endorse or promote products derived
+ *    from this software without specific prior written permission.
+ *
+ * Alternatively, this software may be distributed under the terms of the
+ * GNU General Public License ("GPL") version 2 as published by the Free
+ * Software Foundation.
+ *
+ * NO WARRANTY
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+ * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+ * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTIBILITY AND FITNESS FOR
+ * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+ * HOLDERS OR CONTRIBUTORS BE LIABLE FOR SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
+ * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+ * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
+ * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING
+ * IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGES.
+ */
 
 #include <acpi/acpi.h>
 #include "accommon.h"
@@ -215,14 +249,14 @@ acpi_ex_do_logical_numeric_op(u16 opcode,
 	ACPI_FUNCTION_TRACE(ex_do_logical_numeric_op);
 
 	switch (opcode) {
-	case AML_LOGICAL_AND_OP:	/* LAnd (Integer0, Integer1) */
+	case AML_LAND_OP:	/* LAnd (Integer0, Integer1) */
 
 		if (integer0 && integer1) {
 			local_result = TRUE;
 		}
 		break;
 
-	case AML_LOGICAL_OR_OP:	/* LOr (Integer0, Integer1) */
+	case AML_LOR_OP:	/* LOr (Integer0, Integer1) */
 
 		if (integer0 || integer1) {
 			local_result = TRUE;
@@ -231,8 +265,6 @@ acpi_ex_do_logical_numeric_op(u16 opcode,
 
 	default:
 
-		ACPI_ERROR((AE_INFO,
-			    "Invalid numeric logical opcode: %X", opcode));
 		status = AE_AML_INTERNAL;
 		break;
 	}
@@ -296,7 +328,7 @@ acpi_ex_do_logical_op(u16 opcode,
 	case ACPI_TYPE_INTEGER:
 
 		status = acpi_ex_convert_to_integer(operand1, &local_operand1,
-						    ACPI_IMPLICIT_CONVERSION);
+						    ACPI_STRTOUL_BASE16);
 		break;
 
 	case ACPI_TYPE_STRING:
@@ -313,9 +345,6 @@ acpi_ex_do_logical_op(u16 opcode,
 
 	default:
 
-		ACPI_ERROR((AE_INFO,
-			    "Invalid object type for logical operator: %X",
-			    operand0->common.type));
 		status = AE_AML_INTERNAL;
 		break;
 	}
@@ -336,21 +365,21 @@ acpi_ex_do_logical_op(u16 opcode,
 		integer1 = local_operand1->integer.value;
 
 		switch (opcode) {
-		case AML_LOGICAL_EQUAL_OP:	/* LEqual (Operand0, Operand1) */
+		case AML_LEQUAL_OP:	/* LEqual (Operand0, Operand1) */
 
 			if (integer0 == integer1) {
 				local_result = TRUE;
 			}
 			break;
 
-		case AML_LOGICAL_GREATER_OP:	/* LGreater (Operand0, Operand1) */
+		case AML_LGREATER_OP:	/* LGreater (Operand0, Operand1) */
 
 			if (integer0 > integer1) {
 				local_result = TRUE;
 			}
 			break;
 
-		case AML_LOGICAL_LESS_OP:	/* LLess (Operand0, Operand1) */
+		case AML_LLESS_OP:	/* LLess (Operand0, Operand1) */
 
 			if (integer0 < integer1) {
 				local_result = TRUE;
@@ -359,8 +388,6 @@ acpi_ex_do_logical_op(u16 opcode,
 
 		default:
 
-			ACPI_ERROR((AE_INFO,
-				    "Invalid comparison opcode: %X", opcode));
 			status = AE_AML_INTERNAL;
 			break;
 		}
@@ -381,7 +408,7 @@ acpi_ex_do_logical_op(u16 opcode,
 				 (length0 > length1) ? length1 : length0);
 
 		switch (opcode) {
-		case AML_LOGICAL_EQUAL_OP:	/* LEqual (Operand0, Operand1) */
+		case AML_LEQUAL_OP:	/* LEqual (Operand0, Operand1) */
 
 			/* Length and all bytes must be equal */
 
@@ -393,7 +420,7 @@ acpi_ex_do_logical_op(u16 opcode,
 			}
 			break;
 
-		case AML_LOGICAL_GREATER_OP:	/* LGreater (Operand0, Operand1) */
+		case AML_LGREATER_OP:	/* LGreater (Operand0, Operand1) */
 
 			if (compare > 0) {
 				local_result = TRUE;
@@ -410,7 +437,7 @@ acpi_ex_do_logical_op(u16 opcode,
 			}
 			break;
 
-		case AML_LOGICAL_LESS_OP:	/* LLess (Operand0, Operand1) */
+		case AML_LLESS_OP:	/* LLess (Operand0, Operand1) */
 
 			if (compare > 0) {
 				goto cleanup;	/* FALSE */
@@ -429,8 +456,6 @@ acpi_ex_do_logical_op(u16 opcode,
 
 		default:
 
-			ACPI_ERROR((AE_INFO,
-				    "Invalid comparison opcode: %X", opcode));
 			status = AE_AML_INTERNAL;
 			break;
 		}

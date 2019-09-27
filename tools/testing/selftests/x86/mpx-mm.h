@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _MPX_MM_H
 #define _MPX_MM_H
 

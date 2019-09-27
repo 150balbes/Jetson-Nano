@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef ERR_H
 #define ERR_H
 #define MAX_ERRNO	4095

@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  *  linux/fs/affs/dir.c
  *
@@ -14,7 +13,6 @@
  *
  */
 
-#include <linux/iversion.h>
 #include "affs.h"
 
 static int affs_readdir(struct file *, struct dir_context *);
@@ -37,7 +35,7 @@ const struct inode_operations affs_dir_inode_operations = {
 	.symlink	= affs_symlink,
 	.mkdir		= affs_mkdir,
 	.rmdir		= affs_rmdir,
-	.rename		= affs_rename2,
+	.rename		= affs_rename,
 	.setattr	= affs_notify_change,
 };
 
@@ -81,7 +79,7 @@ affs_readdir(struct file *file, struct dir_context *ctx)
 	 * we can jump directly to where we left off.
 	 */
 	ino = (u32)(long)file->private_data;
-	if (ino && inode_eq_iversion(inode, file->f_version)) {
+	if (ino && file->f_version == inode->i_version) {
 		pr_debug("readdir() left off=%d\n", ino);
 		goto inside;
 	}
@@ -131,7 +129,7 @@ inside:
 		} while (ino);
 	}
 done:
-	file->f_version = inode_query_iversion(inode);
+	file->f_version = inode->i_version;
 	file->private_data = (void *)(long)ino;
 	affs_brelse(fh_bh);
 

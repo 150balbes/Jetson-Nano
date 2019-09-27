@@ -1,10 +1,13 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * UFS Host driver for Synopsys Designware Core
  *
  * Copyright (C) 2015-2016 Synopsys, Inc. (www.synopsys.com)
  *
  * Authors: Joao Pinto <jpinto@synopsys.com>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  */
 
 #include "ufshcd.h"
@@ -47,7 +50,7 @@ static void ufshcd_dwc_program_clk_div(struct ufs_hba *hba, u32 divider_val)
 /**
  * ufshcd_dwc_link_is_up()
  * Check if link is up
- * @hba: private structure pointer
+ * @hba: private structure poitner
  *
  * Returns 0 on success, non-zero value on failure
  */
@@ -107,7 +110,7 @@ static int ufshcd_dwc_connection_setup(struct ufs_hba *hba)
 /**
  * ufshcd_dwc_link_startup_notify()
  * UFS Host DWC specific link startup sequence
- * @hba: private structure pointer
+ * @hba: private structure poitner
  * @status: Callback notify status
  *
  * Returns 0 on success, non-zero value on failure

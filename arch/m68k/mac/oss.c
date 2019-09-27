@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  *	Operating System Services (OSS) chip handling
  *	Written by Joshua M. Thompson (funaho@jurai.org)
@@ -32,18 +31,18 @@ volatile struct mac_oss *oss;
 
 /*
  * Initialize the OSS
+ *
+ * The OSS "detection" code is actually in via_init() which is always called
+ * before us. Thus we can count on oss_present being valid on entry.
  */
 
 void __init oss_init(void)
 {
 	int i;
 
-	if (macintosh_config->ident != MAC_MODEL_IIFX)
-		return;
+	if (!oss_present) return;
 
 	oss = (struct mac_oss *) OSS_BASE;
-	pr_debug("OSS detected at %p", oss);
-	oss_present = 1;
 
 	/* Disable all interrupts. Unlike a VIA it looks like we    */
 	/* do this by setting the source's interrupt level to zero. */
@@ -53,41 +52,78 @@ void __init oss_init(void)
 }
 
 /*
- * Handle OSS interrupts.
- * XXX how do you clear a pending IRQ? is it even necessary?
+ * Initialize OSS for Nubus access
  */
 
-static void oss_iopism_irq(struct irq_desc *desc)
+void __init oss_nubus_init(void)
 {
-	generic_handle_irq(IRQ_MAC_ADB);
 }
 
-static void oss_scsi_irq(struct irq_desc *desc)
+/*
+ * Handle miscellaneous OSS interrupts.
+ */
+
+static void oss_irq(struct irq_desc *desc)
 {
-	generic_handle_irq(IRQ_MAC_SCSI);
+	int events = oss->irq_pending &
+		(OSS_IP_IOPSCC | OSS_IP_SCSI | OSS_IP_IOPISM);
+
+#ifdef DEBUG_IRQS
+	if ((console_loglevel == 10) && !(events & OSS_IP_SCSI)) {
+		unsigned int irq = irq_desc_get_irq(desc);
+
+		printk("oss_irq: irq %u events = 0x%04X\n", irq,
+			(int) oss->irq_pending);
+	}
+#endif
+
+	if (events & OSS_IP_IOPSCC) {
+		oss->irq_pending &= ~OSS_IP_IOPSCC;
+		generic_handle_irq(IRQ_MAC_SCC);
+	}
+
+	if (events & OSS_IP_SCSI) {
+		oss->irq_pending &= ~OSS_IP_SCSI;
+		generic_handle_irq(IRQ_MAC_SCSI);
+	}
+
+	if (events & OSS_IP_IOPISM) {
+		oss->irq_pending &= ~OSS_IP_IOPISM;
+		generic_handle_irq(IRQ_MAC_ADB);
+	}
 }
+
+/*
+ * Nubus IRQ handler, OSS style
+ *
+ * Unlike the VIA/RBV this is on its own autovector interrupt level.
+ */
 
 static void oss_nubus_irq(struct irq_desc *desc)
 {
-	u16 events, irq_bit;
-	int irq_num;
+	int events, irq_bit, i;
 
 	events = oss->irq_pending & OSS_IP_NUBUS;
-	irq_num = NUBUS_SOURCE_BASE + 5;
-	irq_bit = OSS_IP_NUBUS5;
-	do {
-		if (events & irq_bit) {
-			events &= ~irq_bit;
-			generic_handle_irq(irq_num);
-		}
-		--irq_num;
-		irq_bit >>= 1;
-	} while (events);
-}
+	if (!events)
+		return;
 
-static void oss_iopscc_irq(struct irq_desc *desc)
-{
-	generic_handle_irq(IRQ_MAC_SCC);
+#ifdef DEBUG_NUBUS_INT
+	if (console_loglevel > 7) {
+		printk("oss_nubus_irq: events = 0x%04X\n", events);
+	}
+#endif
+	/* There are only six slots on the OSS, not seven */
+
+	i = 6;
+	irq_bit = 0x40;
+	do {
+		--i;
+		irq_bit >>= 1;
+		if (events & irq_bit) {
+			oss->irq_pending &= ~irq_bit;
+			generic_handle_irq(NUBUS_SOURCE_BASE + i);
+		}
+	} while(events & (irq_bit - 1));
 }
 
 /*
@@ -107,14 +143,14 @@ static void oss_iopscc_irq(struct irq_desc *desc)
 
 void __init oss_register_interrupts(void)
 {
-	irq_set_chained_handler(OSS_IRQLEV_IOPISM, oss_iopism_irq);
-	irq_set_chained_handler(OSS_IRQLEV_SCSI,   oss_scsi_irq);
+	irq_set_chained_handler(OSS_IRQLEV_IOPISM, oss_irq);
+	irq_set_chained_handler(OSS_IRQLEV_SCSI,   oss_irq);
 	irq_set_chained_handler(OSS_IRQLEV_NUBUS,  oss_nubus_irq);
-	irq_set_chained_handler(OSS_IRQLEV_IOPSCC, oss_iopscc_irq);
+	irq_set_chained_handler(OSS_IRQLEV_IOPSCC, oss_irq);
 	irq_set_chained_handler(OSS_IRQLEV_VIA1,   via1_irq);
 
 	/* OSS_VIA1 gets enabled here because it has no machspec interrupt. */
-	oss->irq_level[OSS_VIA1] = OSS_IRQLEV_VIA1;
+	oss->irq_level[OSS_VIA1] = IRQ_AUTO_6;
 }
 
 /*
@@ -127,6 +163,9 @@ void __init oss_register_interrupts(void)
  */
 
 void oss_irq_enable(int irq) {
+#ifdef DEBUG_IRQUSE
+	printk("oss_irq_enable(%d)\n", irq);
+#endif
 	switch(irq) {
 		case IRQ_MAC_SCC:
 			oss->irq_level[OSS_IOPSCC] = OSS_IRQLEV_IOPSCC;
@@ -160,6 +199,9 @@ void oss_irq_enable(int irq) {
  */
 
 void oss_irq_disable(int irq) {
+#ifdef DEBUG_IRQUSE
+	printk("oss_irq_disable(%d)\n", irq);
+#endif
 	switch(irq) {
 		case IRQ_MAC_SCC:
 			oss->irq_level[OSS_IOPSCC] = 0;

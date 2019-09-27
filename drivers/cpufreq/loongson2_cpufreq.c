@@ -51,11 +51,18 @@ static int loongson2_cpu_freq_notifier(struct notifier_block *nb,
 static int loongson2_cpufreq_target(struct cpufreq_policy *policy,
 				     unsigned int index)
 {
+	unsigned int cpu = policy->cpu;
+	cpumask_t cpus_allowed;
 	unsigned int freq;
+
+	cpus_allowed = current->cpus_allowed;
+	set_cpus_allowed_ptr(current, cpumask_of(cpu));
 
 	freq =
 	    ((cpu_clock_freq / 1000) *
 	     loongson2_clockmod_table[index].driver_data) / 8;
+
+	set_cpus_allowed_ptr(current, &cpus_allowed);
 
 	/* setting the cpu frequency */
 	clk_set_rate(policy->clk, freq * 1000);
@@ -95,8 +102,7 @@ static int loongson2_cpufreq_cpu_init(struct cpufreq_policy *policy)
 	}
 
 	policy->clk = cpuclk;
-	cpufreq_generic_init(policy, &loongson2_clockmod_table[0], 0);
-	return 0;
+	return cpufreq_generic_init(policy, &loongson2_clockmod_table[0], 0);
 }
 
 static int loongson2_cpufreq_exit(struct cpufreq_policy *policy)
@@ -115,7 +121,7 @@ static struct cpufreq_driver loongson2_cpufreq_driver = {
 	.attr = cpufreq_generic_attr,
 };
 
-static const struct platform_device_id platform_device_ids[] = {
+static struct platform_device_id platform_device_ids[] = {
 	{
 		.name = "loongson2_cpufreq",
 	},

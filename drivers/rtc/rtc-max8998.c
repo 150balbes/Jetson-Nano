@@ -1,10 +1,16 @@
-// SPDX-License-Identifier: GPL-2.0+
-//
-// RTC driver for Maxim MAX8998
-//
-// Copyright (C) 2010 Samsung Electronics Co.Ltd
-// Author: Minkyu Kang <mk7.kang@samsung.com>
-// Author: Joonyoung Shim <jy0922.shim@samsung.com>
+/*
+ * RTC driver for Maxim MAX8998
+ *
+ * Copyright (C) 2010 Samsung Electronics Co.Ltd
+ * Author: Minkyu Kang <mk7.kang@samsung.com>
+ * Author: Joonyoung Shim <jy0922.shim@samsung.com>
+ *
+ *  This program is free software; you can redistribute  it and/or modify it
+ *  under  the terms of  the GNU General  Public License as published by the
+ *  Free Software Foundation;  either version 2 of the  License, or (at your
+ *  option) any later version.
+ *
+ */
 
 #include <linux/module.h>
 #include <linux/i2c.h>
@@ -114,7 +120,7 @@ static int max8998_rtc_read_time(struct device *dev, struct rtc_time *tm)
 
 	max8998_data_to_tm(data, tm);
 
-	return 0;
+	return rtc_valid_tm(tm);
 }
 
 static int max8998_rtc_set_time(struct device *dev, struct rtc_time *tm)

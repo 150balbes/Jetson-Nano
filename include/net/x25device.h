@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _X25DEVICE_H
 #define _X25DEVICE_H
 

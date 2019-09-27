@@ -46,6 +46,7 @@
 #include <dt-bindings/gpio/gpio.h>
 #include <dt-bindings/input/input.h>
 #include <dt-bindings/interrupt-controller/irq.h>
+#include <dt-bindings/pinctrl/sun4i-a10.h>
 
 / {
 	model = "iNet-9F Rev 03";
@@ -59,152 +60,156 @@
 		stdout-path = "serial0:115200n8";
 	};
 
-	gpio-keys {
+	gpio_keys {
 		compatible = "gpio-keys-polled";
+		pinctrl-names = "default";
+		pinctrl-0 = <&key_pins_inet9f>;
+		#address-cells = <1>;
+		#size-cells = <0>;
 		poll-interval = <20>;
 
-		left-joystick-left {
+		button@0 {
 			label = "Left Joystick Left";
 			linux,code = <ABS_X>;
 			linux,input-type = <EV_ABS>;
 			linux,input-value = <0xffffffff>; /* -1 */
-			gpios = <&pio 0 6 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>; /* PA6 */
+			gpios = <&pio 0 6 GPIO_ACTIVE_LOW>; /* PA6 */
 		};
 
-		left-joystick-right {
+		button@1 {
 			label = "Left Joystick Right";
 			linux,code = <ABS_X>;
 			linux,input-type = <EV_ABS>;
 			linux,input-value = <1>;
-			gpios = <&pio 0 5 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>; /* PA5 */
+			gpios = <&pio 0 5 GPIO_ACTIVE_LOW>; /* PA5 */
 		};
 
-		left-joystick-up {
+		button@2 {
 			label = "Left Joystick Up";
 			linux,code = <ABS_Y>;
 			linux,input-type = <EV_ABS>;
 			linux,input-value = <0xffffffff>; /* -1 */
-			gpios = <&pio 0 8 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>; /* PA8 */
+			gpios = <&pio 0 8 GPIO_ACTIVE_LOW>; /* PA8 */
 		};
 
-		left-joystick-down {
+		button@3 {
 			label = "Left Joystick Down";
 			linux,code = <ABS_Y>;
 			linux,input-type = <EV_ABS>;
 			linux,input-value = <1>;
-			gpios = <&pio 0 9 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>; /* PA9 */
+			gpios = <&pio 0 9 GPIO_ACTIVE_LOW>; /* PA9 */
 		};
 
-		right-joystick-left {
+		button@4 {
 			label = "Right Joystick Left";
 			linux,code = <ABS_Z>;
 			linux,input-type = <EV_ABS>;
 			linux,input-value = <0xffffffff>; /* -1 */
-			gpios = <&pio 0 1 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>; /* PA1 */
+			gpios = <&pio 0 1 GPIO_ACTIVE_LOW>; /* PA1 */
 		};
 
-		right-joystick-right {
+		button@5 {
 			label = "Right Joystick Right";
 			linux,code = <ABS_Z>;
 			linux,input-type = <EV_ABS>;
 			linux,input-value = <1>;
-			gpios = <&pio 0 0 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>; /* PA0 */
+			gpios = <&pio 0 0 GPIO_ACTIVE_LOW>; /* PA0 */
 		};
 
-		right-joystick-up {
+		button@6 {
 			label = "Right Joystick Up";
 			linux,code = <ABS_RZ>;
 			linux,input-type = <EV_ABS>;
 			linux,input-value = <0xffffffff>; /* -1 */
-			gpios = <&pio 0 3 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>; /* PA3 */
+			gpios = <&pio 0 3 GPIO_ACTIVE_LOW>; /* PA3 */
 		};
 
-		right-joystick-down {
+		button@7 {
 			label = "Right Joystick Down";
 			linux,code = <ABS_RZ>;
 			linux,input-type = <EV_ABS>;
 			linux,input-value = <1>;
-			gpios = <&pio 0 4 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>; /* PA4 */
+			gpios = <&pio 0 4 GPIO_ACTIVE_LOW>; /* PA4 */
 		};
 
-		dpad-left {
+		button@8 {
 			label = "DPad Left";
 			linux,code = <ABS_HAT0X>;
 			linux,input-type = <EV_ABS>;
 			linux,input-value = <0xffffffff>; /* -1 */
-			gpios = <&pio 7 23 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>; /* PH23 */
+			gpios = <&pio 7 23 GPIO_ACTIVE_LOW>; /* PH23 */
 		};
 
-		dpad-right {
+		button@9 {
 			label = "DPad Right";
 			linux,code = <ABS_HAT0X>;
 			linux,input-type = <EV_ABS>;
 			linux,input-value = <1>;
-			gpios = <&pio 7 24 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>; /* PH24 */
+			gpios = <&pio 7 24 GPIO_ACTIVE_LOW>; /* PH24 */
 		};
 
-		dpad-up {
+		button@10 {
 			label = "DPad Up";
 			linux,code = <ABS_HAT0Y>;
 			linux,input-type = <EV_ABS>;
 			linux,input-value = <0xffffffff>; /* -1 */
-			gpios = <&pio 7 25 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>; /* PH25 */
+			gpios = <&pio 7 25 GPIO_ACTIVE_LOW>; /* PH25 */
 		};
 
-		dpad-down {
+		button@11 {
 			label = "DPad Down";
 			linux,code = <ABS_HAT0Y>;
 			linux,input-type = <EV_ABS>;
 			linux,input-value = <1>;
-			gpios = <&pio 7 26 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>; /* PH26 */
+			gpios = <&pio 7 26 GPIO_ACTIVE_LOW>; /* PH26 */
 		};
 
-		x {
+		button@12 {
 			label = "Button X";
 			linux,code = <BTN_X>;
-			gpios = <&pio 0 16 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>; /* PA16 */
+			gpios = <&pio 0 16 GPIO_ACTIVE_LOW>; /* PA16 */
 		};
 
-		y {
+		button@13 {
 			label = "Button Y";
 			linux,code = <BTN_Y>;
-			gpios = <&pio 0 14 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>; /* PA14 */
+			gpios = <&pio 0 14 GPIO_ACTIVE_LOW>; /* PA14 */
 		};
 
-		a {
+		button@14 {
 			label = "Button A";
 			linux,code = <BTN_A>;
-			gpios = <&pio 0 17 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>; /* PA17 */
+			gpios = <&pio 0 17 GPIO_ACTIVE_LOW>; /* PA17 */
 		};
 
-		b {
+		button@15 {
 			label = "Button B";
 			linux,code = <BTN_B>;
-			gpios = <&pio 0 15 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>; /* PA15 */
+			gpios = <&pio 0 15 GPIO_ACTIVE_LOW>; /* PA15 */
 		};
 
-		select {
+		button@16 {
 			label = "Select Button";
 			linux,code = <BTN_SELECT>;
-			gpios = <&pio 0 11 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>; /* PA11 */
+			gpios = <&pio 0 11 GPIO_ACTIVE_LOW>; /* PA11 */
 		};
 
-		start {
+		button@17 {
 			label = "Start Button";
 			linux,code = <BTN_START>;
-			gpios = <&pio 0 12 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>; /* PA12 */
+			gpios = <&pio 0 12 GPIO_ACTIVE_LOW>; /* PA12 */
 		};
 
-		top-left {
+		button@18 {
 			label = "Top Left Button";
 			linux,code = <BTN_TL>;
-			gpios = <&pio 7 22 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>; /* PH22 */
+			gpios = <&pio 7 22 GPIO_ACTIVE_LOW>; /* PH22 */
 		};
 
-		top-right {
+		button@19 {
 			label = "Top Right Button";
 			linux,code = <BTN_TR>;
-			gpios = <&pio 0 13 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>; /* PA13 */
+			gpios = <&pio 0 13 GPIO_ACTIVE_LOW>; /* PA13 */
 		};
 	};
 };
@@ -218,6 +223,8 @@
 };
 
 &i2c0 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&i2c0_pins_a>;
 	status = "okay";
 
 	axp209: pmic@34 {
@@ -229,6 +236,8 @@
 #include "axp209.dtsi"
 
 &i2c1 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&i2c1_pins_a>;
 	status = "okay";
 
 	/* Accelerometer */
@@ -241,6 +250,8 @@
 };
 
 &i2c2 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&i2c2_pins_a>;
 	status = "okay";
 
 	ft5406ee8: touchscreen@38 {
@@ -257,35 +268,35 @@
 	vref-supply = <&reg_ldo2>;
 	status = "okay";
 
-	button-200 {
+	button@200 {
 		label = "Menu";
 		linux,code = <KEY_MENU>;
 		channel = <0>;
 		voltage = <200000>;
 	};
 
-	button-600 {
+	button@600 {
 		label = "Volume Up";
 		linux,code = <KEY_VOLUMEUP>;
 		channel = <0>;
 		voltage = <600000>;
 	};
 
-	button-800 {
+	button@800 {
 		label = "Volume Down";
 		linux,code = <KEY_VOLUMEDOWN>;
 		channel = <0>;
 		voltage = <800000>;
 	};
 
-	button-1000 {
+	button@1000 {
 		label = "Home";
 		linux,code = <KEY_HOMEPAGE>;
 		channel = <0>;
 		voltage = <1000000>;
 	};
 
-	button-1200 {
+	button@1200 {
 		label = "Esc";
 		linux,code = <KEY_ESC>;
 		channel = <0>;
@@ -294,14 +305,44 @@
 };
 
 &mmc0 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&mmc0_pins_a>, <&mmc0_cd_pin_reference_design>;
 	vmmc-supply = <&reg_vcc3v3>;
 	bus-width = <4>;
-	cd-gpios = <&pio 7 1 GPIO_ACTIVE_LOW>; /* PH1 */
+	cd-gpios = <&pio 7 1 GPIO_ACTIVE_HIGH>; /* PH1 */
+	cd-inverted;
 	status = "okay";
 };
 
 &otg_sram {
 	status = "okay";
+};
+
+&pio {
+	key_pins_inet9f: key_pins@0 {
+		allwinner,pins = "PA0", "PA1", "PA3", "PA4",
+				 "PA5", "PA6", "PA8", "PA9",
+				 "PA11", "PA12", "PA13",
+				 "PA14", "PA15", "PA16", "PA17",
+				 "PH22", "PH23", "PH24", "PH25", "PH26";
+		allwinner,function = "gpio_in";
+		allwinner,drive = <SUN4I_PINCTRL_10_MA>;
+		allwinner,pull = <SUN4I_PINCTRL_PULL_UP>;
+	};
+
+	usb0_id_detect_pin: usb0_id_detect_pin@0 {
+		allwinner,pins = "PH4";
+		allwinner,function = "gpio_in";
+		allwinner,drive = <SUN4I_PINCTRL_10_MA>;
+		allwinner,pull = <SUN4I_PINCTRL_PULL_UP>;
+	};
+
+	usb0_vbus_detect_pin: usb0_vbus_detect_pin@0 {
+		allwinner,pins = "PH5";
+		allwinner,function = "gpio_in";
+		allwinner,drive = <SUN4I_PINCTRL_10_MA>;
+		allwinner,pull = <SUN4I_PINCTRL_PULL_DOWN>;
+	};
 };
 
 &reg_dcdc2 {
@@ -339,7 +380,7 @@
 
 &uart0 {
 	pinctrl-names = "default";
-	pinctrl-0 = <&uart0_pb_pins>;
+	pinctrl-0 = <&uart0_pins_a>;
 	status = "okay";
 };
 
@@ -349,8 +390,10 @@
 };
 
 &usbphy {
-	usb0_id_det-gpios = <&pio 7 4 (GPIO_ACTIVE_HIGH | GPIO_PULL_UP)>; /* PH4 */
-	usb0_vbus_det-gpios = <&pio 7 5 (GPIO_ACTIVE_HIGH | GPIO_PULL_DOWN)>; /* PH5 */
+	pinctrl-names = "default";
+	pinctrl-0 = <&usb0_id_detect_pin>, <&usb0_vbus_detect_pin>;
+	usb0_id_det-gpio = <&pio 7 4 GPIO_ACTIVE_HIGH>; /* PH4 */
+	usb0_vbus_det-gpio = <&pio 7 5 GPIO_ACTIVE_HIGH>; /* PH5 */
 	usb0_vbus-supply = <&reg_usb0_vbus>;
 	usb2_vbus-supply = <&reg_usb2_vbus>;
 	status = "okay";

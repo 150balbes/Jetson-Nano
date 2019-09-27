@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0
 #
 # Makefile for 52xx based boards
 #
@@ -11,7 +10,7 @@ obj-$(CONFIG_PPC_LITE5200)	+= lite5200.o
 obj-$(CONFIG_PPC_MEDIA5200)	+= media5200.o
 
 obj-$(CONFIG_PM)		+= mpc52xx_sleep.o mpc52xx_pm.o
-ifdef CONFIG_PPC_LITE5200
+ifeq ($(CONFIG_PPC_LITE5200),y)
 	obj-$(CONFIG_PM)	+= lite5200_sleep.o lite5200_pm.o
 endif
 

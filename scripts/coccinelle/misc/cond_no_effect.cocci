@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 ///Find conditions where if and else branch are functionally
 // identical.
 //
@@ -38,7 +37,7 @@
 // All other cases look like bugs or at least lack of documentation
 //
 // Confidence: Moderate
-// Copyright: (C) 2016 Nicholas Mc Guire, OSADL.
+// Copyright: (C) 2016 Nicholas Mc Guire, OSADL.  GPLv2.
 // Comments:
 // Options: --no-includes --include-headers
 

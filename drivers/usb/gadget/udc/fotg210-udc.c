@@ -1,10 +1,13 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * FOTG210 UDC Driver supports Bulk transfer so far
  *
  * Copyright (C) 2013 Faraday Technology Corporation
  *
  * Author : Yuan-Hsin Chen <yhchen@faraday-tech.com>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; version 2 of the License.
  */
 
 #include <linux/dma-mapping.h>
@@ -326,7 +329,6 @@ dma_reset:
 static void fotg210_start_dma(struct fotg210_ep *ep,
 			struct fotg210_request *req)
 {
-	struct device *dev = &ep->fotg210->gadget.dev;
 	dma_addr_t d;
 	u8 *buffer;
 	u32 length;
@@ -349,13 +351,17 @@ static void fotg210_start_dma(struct fotg210_ep *ep,
 			length = req->req.length;
 	}
 
-	d = dma_map_single(dev, buffer, length,
+	d = dma_map_single(NULL, buffer, length,
 			ep->dir_in ? DMA_TO_DEVICE : DMA_FROM_DEVICE);
 
-	if (dma_mapping_error(dev, d)) {
+	if (dma_mapping_error(NULL, d)) {
 		pr_err("dma_mapping_error\n");
 		return;
 	}
+
+	dma_sync_single_for_device(NULL, d, length,
+				   ep->dir_in ? DMA_TO_DEVICE :
+					DMA_FROM_DEVICE);
 
 	fotg210_enable_dma(ep, d, length);
 
@@ -367,7 +373,7 @@ static void fotg210_start_dma(struct fotg210_ep *ep,
 	/* update actual transfer length */
 	req->req.actual += length;
 
-	dma_unmap_single(dev, d, length, DMA_TO_DEVICE);
+	dma_unmap_single(NULL, d, length, DMA_TO_DEVICE);
 }
 
 static void fotg210_ep0_queue(struct fotg210_ep *ep,
@@ -481,6 +487,7 @@ static int fotg210_set_halt_and_wedge(struct usb_ep *_ep, int value, int wedge)
 	struct fotg210_ep *ep;
 	struct fotg210_udc *fotg210;
 	unsigned long flags;
+	int ret = 0;
 
 	ep = container_of(_ep, struct fotg210_ep, ep);
 
@@ -503,7 +510,7 @@ static int fotg210_set_halt_and_wedge(struct usb_ep *_ep, int value, int wedge)
 	}
 
 	spin_unlock_irqrestore(&ep->fotg210->lock, flags);
-	return 0;
+	return ret;
 }
 
 static int fotg210_ep_set_halt(struct usb_ep *_ep, int value)
@@ -520,7 +527,7 @@ static void fotg210_ep_fifo_flush(struct usb_ep *_ep)
 {
 }
 
-static const struct usb_ep_ops fotg210_ep_ops = {
+static struct usb_ep_ops fotg210_ep_ops = {
 	.enable		= fotg210_ep_enable,
 	.disable	= fotg210_ep_disable,
 
@@ -737,7 +744,7 @@ static void fotg210_get_status(struct fotg210_udc *fotg210,
 	fotg210->ep0_req->length = 2;
 
 	spin_unlock(&fotg210->lock);
-	fotg210_ep_queue(fotg210->gadget.ep0, fotg210->ep0_req, GFP_ATOMIC);
+	fotg210_ep_queue(fotg210->gadget.ep0, fotg210->ep0_req, GFP_KERNEL);
 	spin_lock(&fotg210->lock);
 }
 
@@ -1051,7 +1058,7 @@ static int fotg210_udc_stop(struct usb_gadget *g)
 	return 0;
 }
 
-static const struct usb_gadget_ops fotg210_gadget_ops = {
+static struct usb_gadget_ops fotg210_gadget_ops = {
 	.udc_start		= fotg210_udc_start,
 	.udc_stop		= fotg210_udc_stop,
 };

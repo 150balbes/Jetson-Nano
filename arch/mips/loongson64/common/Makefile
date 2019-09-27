@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0
 #
 # Makefile for loongson based machines.
 #
@@ -25,3 +24,8 @@ obj-$(CONFIG_CS5536) += cs5536/
 #
 
 obj-$(CONFIG_SUSPEND) += pm.o
+
+#
+# Big Memory (SWIOTLB) Support
+#
+obj-$(CONFIG_SWIOTLB) += dma-swiotlb.o

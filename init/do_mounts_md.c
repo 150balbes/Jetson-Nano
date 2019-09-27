@@ -1,4 +1,13 @@
-// SPDX-License-Identifier: GPL-2.0
+/*
+ * Many of the syscalls used in this file expect some of the arguments
+ * to be __user pointers not __kernel pointers.  To limit the sparse
+ * noise, turn off sparse checking for this file.
+ */
+#ifdef __CHECKER__
+#undef __CHECKER__
+#warning "Sparse checking disabled for this file"
+#endif
+
 #include <linux/delay.h>
 #include <linux/raid/md_u.h>
 #include <linux/raid/md_p.h>
@@ -171,17 +180,17 @@ static void __init md_setup_drive(void)
 			partitioned ? "_d" : "", minor,
 			md_setup_args[ent].device_names);
 
-		fd = ksys_open(name, 0, 0);
+		fd = sys_open(name, 0, 0);
 		if (fd < 0) {
 			printk(KERN_ERR "md: open failed - cannot start "
 					"array %s\n", name);
 			continue;
 		}
-		if (ksys_ioctl(fd, SET_ARRAY_INFO, 0) == -EBUSY) {
+		if (sys_ioctl(fd, SET_ARRAY_INFO, 0) == -EBUSY) {
 			printk(KERN_WARNING
 			       "md: Ignoring md=%d, already autodetected. (Use raid=noautodetect)\n",
 			       minor);
-			ksys_close(fd);
+			sys_close(fd);
 			continue;
 		}
 
@@ -200,7 +209,7 @@ static void __init md_setup_drive(void)
 			ainfo.state = (1 << MD_SB_CLEAN);
 			ainfo.layout = 0;
 			ainfo.chunk_size = md_setup_args[ent].chunk;
-			err = ksys_ioctl(fd, SET_ARRAY_INFO, (long)&ainfo);
+			err = sys_ioctl(fd, SET_ARRAY_INFO, (long)&ainfo);
 			for (i = 0; !err && i <= MD_SB_DISKS; i++) {
 				dev = devices[i];
 				if (!dev)
@@ -210,8 +219,7 @@ static void __init md_setup_drive(void)
 				dinfo.state = (1<<MD_DISK_ACTIVE)|(1<<MD_DISK_SYNC);
 				dinfo.major = MAJOR(dev);
 				dinfo.minor = MINOR(dev);
-				err = ksys_ioctl(fd, ADD_NEW_DISK,
-						 (long)&dinfo);
+				err = sys_ioctl(fd, ADD_NEW_DISK, (long)&dinfo);
 			}
 		} else {
 			/* persistent */
@@ -221,11 +229,11 @@ static void __init md_setup_drive(void)
 					break;
 				dinfo.major = MAJOR(dev);
 				dinfo.minor = MINOR(dev);
-				ksys_ioctl(fd, ADD_NEW_DISK, (long)&dinfo);
+				sys_ioctl(fd, ADD_NEW_DISK, (long)&dinfo);
 			}
 		}
 		if (!err)
-			err = ksys_ioctl(fd, RUN_ARRAY, 0);
+			err = sys_ioctl(fd, RUN_ARRAY, 0);
 		if (err)
 			printk(KERN_WARNING "md: starting md%d failed\n", minor);
 		else {
@@ -234,11 +242,11 @@ static void __init md_setup_drive(void)
 			 * boot a kernel with devfs compiled in from partitioned md
 			 * array without it
 			 */
-			ksys_close(fd);
-			fd = ksys_open(name, 0, 0);
-			ksys_ioctl(fd, BLKRRPART, 0);
+			sys_close(fd);
+			fd = sys_open(name, 0, 0);
+			sys_ioctl(fd, BLKRRPART, 0);
 		}
-		ksys_close(fd);
+		sys_close(fd);
 	}
 }
 
@@ -285,10 +293,10 @@ static void __init autodetect_raid(void)
 
 	wait_for_device_probe();
 
-	fd = ksys_open("/dev/md0", 0, 0);
+	fd = sys_open("/dev/md0", 0, 0);
 	if (fd >= 0) {
-		ksys_ioctl(fd, RAID_AUTORUN, raid_autopart);
-		ksys_close(fd);
+		sys_ioctl(fd, RAID_AUTORUN, raid_autopart);
+		sys_close(fd);
 	}
 }
 

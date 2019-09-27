@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  *
  *		SNMP MIB entries for the IP subsystem.
@@ -9,6 +8,12 @@
  *		be silly as SNMP is a pain in the backside in places). We do
  *		however need to collect the MIB statistics and export them
  *		out of /proc (eventually)
+ *
+ *		This program is free software; you can redistribute it and/or
+ *		modify it under the terms of the GNU General Public License
+ *		as published by the Free Software Foundation; either version
+ *		2 of the License, or (at your option) any later version.
+ *
  */
  
 #ifndef _SNMP_H

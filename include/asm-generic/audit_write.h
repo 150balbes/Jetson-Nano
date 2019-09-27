@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #include <asm-generic/audit_dir_write.h>
 __NR_acct,
 #ifdef __NR_swapon
@@ -19,7 +18,4 @@ __NR_ftruncate64,
 #endif
 #ifdef __NR_bind
 __NR_bind,		/* bind can affect fs object only in one way... */
-#endif
-#ifdef __NR_fallocate
-__NR_fallocate,
 #endif

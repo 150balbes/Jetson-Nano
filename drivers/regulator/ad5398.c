@@ -1,10 +1,11 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Voltage and current regulation for AD5398 and AD5821
  *
  * Copyright 2010 Analog Devices Inc.
  *
  * Enter bugs at http://blackfin.uclinux.org/
+ *
+ * Licensed under the GPL-2 or later.
  */
 
 #include <linux/module.h>
@@ -180,7 +181,7 @@ static int ad5398_disable(struct regulator_dev *rdev)
 	return ret;
 }
 
-static const struct regulator_ops ad5398_ops = {
+static struct regulator_ops ad5398_ops = {
 	.get_current_limit = ad5398_get_current_limit,
 	.set_current_limit = ad5398_set_current_limit,
 	.enable = ad5398_enable,

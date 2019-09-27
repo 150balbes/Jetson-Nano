@@ -1,8 +1,11 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * SMBus driver for ACPI SMBus CMI
  *
  * Copyright (C) 2009 Crane Cai <crane.cai@amd.com>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation version 2.
  */
 
 #include <linux/module.h>
@@ -180,8 +183,7 @@ acpi_smbus_cmi_access(struct i2c_adapter *adap, u16 addr, unsigned short flags,
 	status = acpi_evaluate_object(smbus_cmi->handle, method, &input,
 				      &buffer);
 	if (ACPI_FAILURE(status)) {
-		acpi_handle_err(smbus_cmi->handle,
-				"Failed to evaluate %s: %i\n", method, status);
+		ACPI_ERROR((AE_INFO, "Evaluating %s: %i", method, status));
 		return -EIO;
 	}
 
@@ -189,19 +191,19 @@ acpi_smbus_cmi_access(struct i2c_adapter *adap, u16 addr, unsigned short flags,
 	if (pkg && pkg->type == ACPI_TYPE_PACKAGE)
 		obj = pkg->package.elements;
 	else {
-		acpi_handle_err(smbus_cmi->handle, "Invalid argument type\n");
+		ACPI_ERROR((AE_INFO, "Invalid argument type"));
 		result = -EIO;
 		goto out;
 	}
 	if (obj == NULL || obj->type != ACPI_TYPE_INTEGER) {
-		acpi_handle_err(smbus_cmi->handle, "Invalid argument type\n");
+		ACPI_ERROR((AE_INFO, "Invalid argument type"));
 		result = -EIO;
 		goto out;
 	}
 
 	result = obj->integer.value;
-	acpi_handle_debug(smbus_cmi->handle,  "%s return status: %i\n", method,
-			  result);
+	ACPI_DEBUG_PRINT((ACPI_DB_INFO, "%s return status: %i\n",
+			  method, result));
 
 	switch (result) {
 	case ACPI_SMBUS_STATUS_OK:
@@ -226,7 +228,7 @@ acpi_smbus_cmi_access(struct i2c_adapter *adap, u16 addr, unsigned short flags,
 
 	obj = pkg->package.elements + 1;
 	if (obj->type != ACPI_TYPE_INTEGER) {
-		acpi_handle_err(smbus_cmi->handle, "Invalid argument type\n");
+		ACPI_ERROR((AE_INFO, "Invalid argument type"));
 		result = -EIO;
 		goto out;
 	}
@@ -238,8 +240,7 @@ acpi_smbus_cmi_access(struct i2c_adapter *adap, u16 addr, unsigned short flags,
 	case I2C_SMBUS_BYTE_DATA:
 	case I2C_SMBUS_WORD_DATA:
 		if (obj->type != ACPI_TYPE_INTEGER) {
-			acpi_handle_err(smbus_cmi->handle,
-					"Invalid argument type\n");
+			ACPI_ERROR((AE_INFO, "Invalid argument type"));
 			result = -EIO;
 			goto out;
 		}
@@ -250,8 +251,7 @@ acpi_smbus_cmi_access(struct i2c_adapter *adap, u16 addr, unsigned short flags,
 		break;
 	case I2C_SMBUS_BLOCK_DATA:
 		if (obj->type != ACPI_TYPE_BUFFER) {
-			acpi_handle_err(smbus_cmi->handle,
-					"Invalid argument type\n");
+			ACPI_ERROR((AE_INFO, "Invalid argument type"));
 			result = -EIO;
 			goto out;
 		}
@@ -301,7 +301,6 @@ static int acpi_smbus_cmi_add_cap(struct acpi_smbus_cmi *smbus_cmi,
 				  const char *name)
 {
 	struct acpi_buffer buffer = { ACPI_ALLOCATE_BUFFER, NULL };
-	struct acpi_handle *handle = smbus_cmi->handle;
 	union acpi_object *obj;
 	acpi_status status;
 
@@ -310,8 +309,8 @@ static int acpi_smbus_cmi_add_cap(struct acpi_smbus_cmi *smbus_cmi,
 					smbus_cmi->methods->mt_info,
 					NULL, &buffer);
 		if (ACPI_FAILURE(status)) {
-			acpi_handle_err(handle, "Failed to evaluate %s: %i\n",
-					smbus_cmi->methods->mt_info, status);
+			ACPI_ERROR((AE_INFO, "Evaluating %s: %i",
+				   smbus_cmi->methods->mt_info, status));
 			return -EIO;
 		}
 
@@ -319,18 +318,18 @@ static int acpi_smbus_cmi_add_cap(struct acpi_smbus_cmi *smbus_cmi,
 		if (obj && obj->type == ACPI_TYPE_PACKAGE)
 			obj = obj->package.elements;
 		else {
-			acpi_handle_err(handle, "Invalid argument type\n");
+			ACPI_ERROR((AE_INFO, "Invalid argument type"));
 			kfree(buffer.pointer);
 			return -EIO;
 		}
 
 		if (obj->type != ACPI_TYPE_INTEGER) {
-			acpi_handle_err(handle, "Invalid argument type\n");
+			ACPI_ERROR((AE_INFO, "Invalid argument type"));
 			kfree(buffer.pointer);
 			return -EIO;
 		} else
-			acpi_handle_debug(handle, "SMBus CMI Version %x\n",
-					  (int)obj->integer.value);
+			ACPI_DEBUG_PRINT((ACPI_DB_INFO, "SMBus CMI Version %x"
+					  "\n", (int)obj->integer.value));
 
 		kfree(buffer.pointer);
 		smbus_cmi->cap_info = 1;
@@ -339,7 +338,8 @@ static int acpi_smbus_cmi_add_cap(struct acpi_smbus_cmi *smbus_cmi,
 	else if (!strcmp(name, smbus_cmi->methods->mt_sbw))
 		smbus_cmi->cap_write = 1;
 	else
-		acpi_handle_debug(handle, "Unsupported CMI method: %s\n", name);
+		ACPI_DEBUG_PRINT((ACPI_DB_INFO, "Unsupported CMI method: %s\n",
+				 name));
 
 	return 0;
 }
@@ -364,7 +364,6 @@ static int acpi_smbus_cmi_add(struct acpi_device *device)
 {
 	struct acpi_smbus_cmi *smbus_cmi;
 	const struct acpi_device_id *id;
-	int ret;
 
 	smbus_cmi = kzalloc(sizeof(struct acpi_smbus_cmi), GFP_KERNEL);
 	if (!smbus_cmi)
@@ -386,10 +385,8 @@ static int acpi_smbus_cmi_add(struct acpi_device *device)
 	acpi_walk_namespace(ACPI_TYPE_METHOD, smbus_cmi->handle, 1,
 			    acpi_smbus_cmi_query_methods, NULL, smbus_cmi, NULL);
 
-	if (smbus_cmi->cap_info == 0) {
-		ret = -ENODEV;
+	if (smbus_cmi->cap_info == 0)
 		goto err;
-	}
 
 	snprintf(smbus_cmi->adapter.name, sizeof(smbus_cmi->adapter.name),
 		"SMBus CMI adapter %s",
@@ -400,8 +397,7 @@ static int acpi_smbus_cmi_add(struct acpi_device *device)
 	smbus_cmi->adapter.class = I2C_CLASS_HWMON | I2C_CLASS_SPD;
 	smbus_cmi->adapter.dev.parent = &device->dev;
 
-	ret = i2c_add_adapter(&smbus_cmi->adapter);
-	if (ret) {
+	if (i2c_add_adapter(&smbus_cmi->adapter)) {
 		dev_err(&device->dev, "Couldn't register adapter!\n");
 		goto err;
 	}
@@ -411,7 +407,7 @@ static int acpi_smbus_cmi_add(struct acpi_device *device)
 err:
 	kfree(smbus_cmi);
 	device->driver_data = NULL;
-	return ret;
+	return -EIO;
 }
 
 static int acpi_smbus_cmi_remove(struct acpi_device *device)

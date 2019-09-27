@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0
 #
 # Impedance Converter, Network Analyzer drivers
 #
@@ -11,7 +10,7 @@ config AD5933
 	select IIO_KFIFO_BUF
 	help
 	  Say yes here to build support for Analog Devices Impedance Converter,
-	  Network Analyzer, AD5933/4.
+	  Network Analyzer, AD5933/4, provides direct access via sysfs.
 
 	  To compile this driver as a module, choose M here: the
 	  module will be called ad5933.

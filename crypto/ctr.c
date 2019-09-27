@@ -1,8 +1,13 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * CTR: Counter mode
  *
  * (C) Copyright IBM Corp. 2007 - Joy Latten <latten@us.ibm.com>
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License as published by the Free
+ * Software Foundation; either version 2 of the License, or (at your option)
+ * any later version.
+ *
  */
 
 #include <crypto/algapi.h>
@@ -12,7 +17,13 @@
 #include <linux/init.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
+#include <linux/random.h>
+#include <linux/scatterlist.h>
 #include <linux/slab.h>
+
+struct crypto_ctr_ctx {
+	struct crypto_cipher *child;
+};
 
 struct crypto_rfc3686_ctx {
 	struct crypto_skcipher *child;
@@ -24,25 +35,43 @@ struct crypto_rfc3686_req_ctx {
 	struct skcipher_request subreq CRYPTO_MINALIGN_ATTR;
 };
 
-static void crypto_ctr_crypt_final(struct skcipher_walk *walk,
+static int crypto_ctr_setkey(struct crypto_tfm *parent, const u8 *key,
+			     unsigned int keylen)
+{
+	struct crypto_ctr_ctx *ctx = crypto_tfm_ctx(parent);
+	struct crypto_cipher *child = ctx->child;
+	int err;
+
+	crypto_cipher_clear_flags(child, CRYPTO_TFM_REQ_MASK);
+	crypto_cipher_set_flags(child, crypto_tfm_get_flags(parent) &
+				CRYPTO_TFM_REQ_MASK);
+	err = crypto_cipher_setkey(child, key, keylen);
+	crypto_tfm_set_flags(parent, crypto_cipher_get_flags(child) &
+			     CRYPTO_TFM_RES_MASK);
+
+	return err;
+}
+
+static void crypto_ctr_crypt_final(struct blkcipher_walk *walk,
 				   struct crypto_cipher *tfm)
 {
 	unsigned int bsize = crypto_cipher_blocksize(tfm);
 	unsigned long alignmask = crypto_cipher_alignmask(tfm);
 	u8 *ctrblk = walk->iv;
-	u8 tmp[MAX_CIPHER_BLOCKSIZE + MAX_CIPHER_ALIGNMASK];
+	u8 tmp[bsize + alignmask];
 	u8 *keystream = PTR_ALIGN(tmp + 0, alignmask + 1);
 	u8 *src = walk->src.virt.addr;
 	u8 *dst = walk->dst.virt.addr;
 	unsigned int nbytes = walk->nbytes;
 
 	crypto_cipher_encrypt_one(tfm, keystream, ctrblk);
-	crypto_xor_cpy(dst, keystream, src, nbytes);
+	crypto_xor(keystream, src, nbytes);
+	memcpy(dst, keystream, nbytes);
 
 	crypto_inc(ctrblk, bsize);
 }
 
-static int crypto_ctr_crypt_segment(struct skcipher_walk *walk,
+static int crypto_ctr_crypt_segment(struct blkcipher_walk *walk,
 				    struct crypto_cipher *tfm)
 {
 	void (*fn)(struct crypto_tfm *, u8 *, const u8 *) =
@@ -68,7 +97,7 @@ static int crypto_ctr_crypt_segment(struct skcipher_walk *walk,
 	return nbytes;
 }
 
-static int crypto_ctr_crypt_inplace(struct skcipher_walk *walk,
+static int crypto_ctr_crypt_inplace(struct blkcipher_walk *walk,
 				    struct crypto_cipher *tfm)
 {
 	void (*fn)(struct crypto_tfm *, u8 *, const u8 *) =
@@ -78,7 +107,7 @@ static int crypto_ctr_crypt_inplace(struct skcipher_walk *walk,
 	unsigned int nbytes = walk->nbytes;
 	u8 *ctrblk = walk->iv;
 	u8 *src = walk->src.virt.addr;
-	u8 tmp[MAX_CIPHER_BLOCKSIZE + MAX_CIPHER_ALIGNMASK];
+	u8 tmp[bsize + alignmask];
 	u8 *keystream = PTR_ALIGN(tmp + 0, alignmask + 1);
 
 	do {
@@ -95,76 +124,130 @@ static int crypto_ctr_crypt_inplace(struct skcipher_walk *walk,
 	return nbytes;
 }
 
-static int crypto_ctr_crypt(struct skcipher_request *req)
+static int crypto_ctr_crypt(struct blkcipher_desc *desc,
+			      struct scatterlist *dst, struct scatterlist *src,
+			      unsigned int nbytes)
 {
-	struct crypto_skcipher *tfm = crypto_skcipher_reqtfm(req);
-	struct crypto_cipher *cipher = skcipher_cipher_simple(tfm);
-	const unsigned int bsize = crypto_cipher_blocksize(cipher);
-	struct skcipher_walk walk;
-	unsigned int nbytes;
+	struct blkcipher_walk walk;
+	struct crypto_blkcipher *tfm = desc->tfm;
+	struct crypto_ctr_ctx *ctx = crypto_blkcipher_ctx(tfm);
+	struct crypto_cipher *child = ctx->child;
+	unsigned int bsize = crypto_cipher_blocksize(child);
 	int err;
 
-	err = skcipher_walk_virt(&walk, req, false);
+	blkcipher_walk_init(&walk, dst, src, nbytes);
+	err = blkcipher_walk_virt_block(desc, &walk, bsize);
 
 	while (walk.nbytes >= bsize) {
 		if (walk.src.virt.addr == walk.dst.virt.addr)
-			nbytes = crypto_ctr_crypt_inplace(&walk, cipher);
+			nbytes = crypto_ctr_crypt_inplace(&walk, child);
 		else
-			nbytes = crypto_ctr_crypt_segment(&walk, cipher);
+			nbytes = crypto_ctr_crypt_segment(&walk, child);
 
-		err = skcipher_walk_done(&walk, nbytes);
+		err = blkcipher_walk_done(desc, &walk, nbytes);
 	}
 
 	if (walk.nbytes) {
-		crypto_ctr_crypt_final(&walk, cipher);
-		err = skcipher_walk_done(&walk, 0);
+		crypto_ctr_crypt_final(&walk, child);
+		err = blkcipher_walk_done(desc, &walk, 0);
 	}
 
 	return err;
 }
 
-static int crypto_ctr_create(struct crypto_template *tmpl, struct rtattr **tb)
+static int crypto_ctr_init_tfm(struct crypto_tfm *tfm)
 {
-	struct skcipher_instance *inst;
+	struct crypto_instance *inst = (void *)tfm->__crt_alg;
+	struct crypto_spawn *spawn = crypto_instance_ctx(inst);
+	struct crypto_ctr_ctx *ctx = crypto_tfm_ctx(tfm);
+	struct crypto_cipher *cipher;
+
+	cipher = crypto_spawn_cipher(spawn);
+	if (IS_ERR(cipher))
+		return PTR_ERR(cipher);
+
+	ctx->child = cipher;
+
+	return 0;
+}
+
+static void crypto_ctr_exit_tfm(struct crypto_tfm *tfm)
+{
+	struct crypto_ctr_ctx *ctx = crypto_tfm_ctx(tfm);
+
+	crypto_free_cipher(ctx->child);
+}
+
+static struct crypto_instance *crypto_ctr_alloc(struct rtattr **tb)
+{
+	struct crypto_instance *inst;
 	struct crypto_alg *alg;
 	int err;
 
-	inst = skcipher_alloc_instance_simple(tmpl, tb, &alg);
-	if (IS_ERR(inst))
-		return PTR_ERR(inst);
+	err = crypto_check_attr_type(tb, CRYPTO_ALG_TYPE_BLKCIPHER);
+	if (err)
+		return ERR_PTR(err);
+
+	alg = crypto_attr_alg(tb[1], CRYPTO_ALG_TYPE_CIPHER,
+				  CRYPTO_ALG_TYPE_MASK);
+	if (IS_ERR(alg))
+		return ERR_CAST(alg);
 
 	/* Block size must be >= 4 bytes. */
 	err = -EINVAL;
 	if (alg->cra_blocksize < 4)
-		goto out_free_inst;
+		goto out_put_alg;
 
 	/* If this is false we'd fail the alignment of crypto_inc. */
 	if (alg->cra_blocksize % 4)
-		goto out_free_inst;
+		goto out_put_alg;
 
-	/* CTR mode is a stream cipher. */
-	inst->alg.base.cra_blocksize = 1;
+	inst = crypto_alloc_instance("ctr", alg);
+	if (IS_ERR(inst))
+		goto out;
 
-	/*
-	 * To simplify the implementation, configure the skcipher walk to only
-	 * give a partial block at the very end, never earlier.
-	 */
-	inst->alg.chunksize = alg->cra_blocksize;
+	inst->alg.cra_flags = CRYPTO_ALG_TYPE_BLKCIPHER;
+	inst->alg.cra_priority = alg->cra_priority;
+	inst->alg.cra_blocksize = 1;
+	inst->alg.cra_alignmask = alg->cra_alignmask | (__alignof__(u32) - 1);
+	inst->alg.cra_type = &crypto_blkcipher_type;
 
-	inst->alg.encrypt = crypto_ctr_crypt;
-	inst->alg.decrypt = crypto_ctr_crypt;
+	inst->alg.cra_blkcipher.ivsize = alg->cra_blocksize;
+	inst->alg.cra_blkcipher.min_keysize = alg->cra_cipher.cia_min_keysize;
+	inst->alg.cra_blkcipher.max_keysize = alg->cra_cipher.cia_max_keysize;
 
-	err = skcipher_register_instance(tmpl, inst);
-	if (err)
-		goto out_free_inst;
-	goto out_put_alg;
+	inst->alg.cra_ctxsize = sizeof(struct crypto_ctr_ctx);
 
-out_free_inst:
-	inst->free(inst);
-out_put_alg:
+	inst->alg.cra_init = crypto_ctr_init_tfm;
+	inst->alg.cra_exit = crypto_ctr_exit_tfm;
+
+	inst->alg.cra_blkcipher.setkey = crypto_ctr_setkey;
+	inst->alg.cra_blkcipher.encrypt = crypto_ctr_crypt;
+	inst->alg.cra_blkcipher.decrypt = crypto_ctr_crypt;
+
+	inst->alg.cra_blkcipher.geniv = "chainiv";
+
+out:
 	crypto_mod_put(alg);
-	return err;
+	return inst;
+
+out_put_alg:
+	inst = ERR_PTR(err);
+	goto out;
 }
+
+static void crypto_ctr_free(struct crypto_instance *inst)
+{
+	crypto_drop_spawn(crypto_instance_ctx(inst));
+	kfree(inst);
+}
+
+static struct crypto_template crypto_ctr_tmpl = {
+	.name = "ctr",
+	.alloc = crypto_ctr_alloc,
+	.free = crypto_ctr_free,
+	.module = THIS_MODULE,
+};
 
 static int crypto_rfc3686_setkey(struct crypto_skcipher *parent,
 				 const u8 *key, unsigned int keylen)
@@ -229,7 +312,7 @@ static int crypto_rfc3686_init_tfm(struct crypto_skcipher *tfm)
 	unsigned long align;
 	unsigned int reqsize;
 
-	cipher = crypto_spawn_skcipher(spawn);
+	cipher = crypto_spawn_skcipher2(spawn);
 	if (IS_ERR(cipher))
 		return PTR_ERR(cipher);
 
@@ -267,8 +350,6 @@ static int crypto_rfc3686_create(struct crypto_template *tmpl,
 	struct skcipher_alg *alg;
 	struct crypto_skcipher_spawn *spawn;
 	const char *cipher_name;
-	u32 mask;
-
 	int err;
 
 	algt = crypto_get_attr_type(tb);
@@ -286,14 +367,12 @@ static int crypto_rfc3686_create(struct crypto_template *tmpl,
 	if (!inst)
 		return -ENOMEM;
 
-	mask = crypto_requires_sync(algt->type, algt->mask) |
-		crypto_requires_off(algt->type, algt->mask,
-				    CRYPTO_ALG_NEED_FALLBACK);
-
 	spawn = skcipher_instance_ctx(inst);
 
 	crypto_set_skcipher_spawn(spawn, skcipher_crypto_instance(inst));
-	err = crypto_grab_skcipher(spawn, cipher_name, 0, mask);
+	err = crypto_grab_skcipher2(spawn, cipher_name, 0,
+				    crypto_requires_sync(algt->type,
+							 algt->mask));
 	if (err)
 		goto err_free_inst;
 
@@ -355,34 +434,42 @@ err_free_inst:
 	goto out;
 }
 
-static struct crypto_template crypto_ctr_tmpls[] = {
-	{
-		.name = "ctr",
-		.create = crypto_ctr_create,
-		.module = THIS_MODULE,
-	}, {
-		.name = "rfc3686",
-		.create = crypto_rfc3686_create,
-		.module = THIS_MODULE,
-	},
+static struct crypto_template crypto_rfc3686_tmpl = {
+	.name = "rfc3686",
+	.create = crypto_rfc3686_create,
+	.module = THIS_MODULE,
 };
 
 static int __init crypto_ctr_module_init(void)
 {
-	return crypto_register_templates(crypto_ctr_tmpls,
-					 ARRAY_SIZE(crypto_ctr_tmpls));
+	int err;
+
+	err = crypto_register_template(&crypto_ctr_tmpl);
+	if (err)
+		goto out;
+
+	err = crypto_register_template(&crypto_rfc3686_tmpl);
+	if (err)
+		goto out_drop_ctr;
+
+out:
+	return err;
+
+out_drop_ctr:
+	crypto_unregister_template(&crypto_ctr_tmpl);
+	goto out;
 }
 
 static void __exit crypto_ctr_module_exit(void)
 {
-	crypto_unregister_templates(crypto_ctr_tmpls,
-				    ARRAY_SIZE(crypto_ctr_tmpls));
+	crypto_unregister_template(&crypto_rfc3686_tmpl);
+	crypto_unregister_template(&crypto_ctr_tmpl);
 }
 
-subsys_initcall(crypto_ctr_module_init);
+module_init(crypto_ctr_module_init);
 module_exit(crypto_ctr_module_exit);
 
 MODULE_LICENSE("GPL");
-MODULE_DESCRIPTION("CTR block cipher mode of operation");
+MODULE_DESCRIPTION("CTR Counter block mode");
 MODULE_ALIAS_CRYPTO("rfc3686");
 MODULE_ALIAS_CRYPTO("ctr");

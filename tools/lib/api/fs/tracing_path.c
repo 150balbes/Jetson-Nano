@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 #ifndef _GNU_SOURCE
 # define _GNU_SOURCE
 #endif
@@ -13,9 +12,11 @@
 
 #include "tracing_path.h"
 
-static char tracing_mnt[PATH_MAX]  = "/sys/kernel/debug";
-static char tracing_path[PATH_MAX]        = "/sys/kernel/debug/tracing";
-static char tracing_events_path[PATH_MAX] = "/sys/kernel/debug/tracing/events";
+
+char tracing_mnt[PATH_MAX]         = "/sys/kernel/debug";
+char tracing_path[PATH_MAX]        = "/sys/kernel/debug/tracing";
+char tracing_events_path[PATH_MAX] = "/sys/kernel/debug/tracing/events";
+
 
 static void __tracing_path_set(const char *tracing, const char *mountpoint)
 {
@@ -36,7 +37,7 @@ static const char *tracing_path_tracefs_mount(void)
 
 	__tracing_path_set("", mnt);
 
-	return tracing_path;
+	return mnt;
 }
 
 static const char *tracing_path_debugfs_mount(void)
@@ -49,7 +50,7 @@ static const char *tracing_path_debugfs_mount(void)
 
 	__tracing_path_set("tracing/", mnt);
 
-	return tracing_path;
+	return mnt;
 }
 
 const char *tracing_path_mount(void)
@@ -74,7 +75,7 @@ char *get_tracing_file(const char *name)
 {
 	char *file;
 
-	if (asprintf(&file, "%s/%s", tracing_path_mount(), name) < 0)
+	if (asprintf(&file, "%s/%s", tracing_path, name) < 0)
 		return NULL;
 
 	return file;
@@ -85,41 +86,9 @@ void put_tracing_file(char *file)
 	free(file);
 }
 
-char *get_events_file(const char *name)
-{
-	char *file;
-
-	if (asprintf(&file, "%s/events/%s", tracing_path_mount(), name) < 0)
-		return NULL;
-
-	return file;
-}
-
-void put_events_file(char *file)
-{
-	free(file);
-}
-
-DIR *tracing_events__opendir(void)
-{
-	DIR *dir = NULL;
-	char *path = get_tracing_file("events");
-
-	if (path) {
-		dir = opendir(path);
-		put_events_file(path);
-	}
-
-	return dir;
-}
-
-int tracing_path__strerror_open_tp(int err, char *buf, size_t size,
-				   const char *sys, const char *name)
+static int strerror_open(int err, char *buf, size_t size, const char *filename)
 {
 	char sbuf[128];
-	char filename[PATH_MAX];
-
-	snprintf(filename, PATH_MAX, "%s/%s", sys, name ?: "*");
 
 	switch (err) {
 	case ENOENT:
@@ -130,19 +99,10 @@ int tracing_path__strerror_open_tp(int err, char *buf, size_t size,
 		 * - jirka
 		 */
 		if (debugfs__configured() || tracefs__configured()) {
-			/* sdt markers */
-			if (!strncmp(filename, "sdt_", 4)) {
-				snprintf(buf, size,
-					"Error:\tFile %s/%s not found.\n"
-					"Hint:\tSDT event cannot be directly recorded on.\n"
-					"\tPlease first use 'perf probe %s:%s' before recording it.\n",
-					tracing_events_path, filename, sys, name);
-			} else {
-				snprintf(buf, size,
-					 "Error:\tFile %s/%s not found.\n"
-					 "Hint:\tPerhaps this kernel misses some CONFIG_ setting to enable this feature?.\n",
-					 tracing_events_path, filename);
-			}
+			snprintf(buf, size,
+				 "Error:\tFile %s/%s not found.\n"
+				 "Hint:\tPerhaps this kernel misses some CONFIG_ setting to enable this feature?.\n",
+				 tracing_events_path, filename);
 			break;
 		}
 		snprintf(buf, size, "%s",
@@ -155,7 +115,7 @@ int tracing_path__strerror_open_tp(int err, char *buf, size_t size,
 		snprintf(buf, size,
 			 "Error:\tNo permissions to read %s/%s\n"
 			 "Hint:\tTry 'sudo mount -o remount,mode=755 %s'\n",
-			 tracing_events_path, filename, tracing_path_mount());
+			 tracing_events_path, filename, tracing_mnt);
 	}
 		break;
 	default:
@@ -164,4 +124,13 @@ int tracing_path__strerror_open_tp(int err, char *buf, size_t size,
 	}
 
 	return 0;
+}
+
+int tracing_path__strerror_open_tp(int err, char *buf, size_t size, const char *sys, const char *name)
+{
+	char path[PATH_MAX];
+
+	snprintf(path, PATH_MAX, "%s/%s", sys, name ?: "*");
+
+	return strerror_open(err, buf, size, path);
 }

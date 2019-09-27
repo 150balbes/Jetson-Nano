@@ -1,0 +1,20 @@
+Binding for NVS LED Test driver
+
+Required Properties:
+ - compatible: "nvidia,nvs-led-test"
+ - out-gpios: GPIO which is used to light up an attached LED. This will be
+              driven high when the driver fires off a sensor event. The
+              GPIO will remain high for a time interval = the value written
+              to the on_ms sysfs entry.
+
+Optional Properties:
+ - enable-gpio: GPIO which is required to be enabled in order for the
+                attached LED to toggle as expected.
+
+Example:
+
+nvs-led-test {
+	compatible = "nvidia,nvs-led-test";
+	out-gpios = <&tegra_main_gpio TEGRA_MAIN_GPIO(D, 3) 0>;
+	status = "okay";
+};

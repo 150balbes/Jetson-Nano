@@ -155,8 +155,10 @@ nvif_notify_fini(struct nvif_notify *notify)
 	int ret = nvif_notify_put(notify);
 	if (ret >= 0 && object) {
 		ret = nvif_object_ioctl(object, &args, sizeof(args), NULL);
-		notify->object = NULL;
-		kfree((void *)notify->data);
+		if (ret == 0) {
+			notify->object = NULL;
+			kfree((void *)notify->data);
+		}
 	}
 	return ret;
 }

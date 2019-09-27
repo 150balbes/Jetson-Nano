@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * idprom.c: Routines to load the idprom into kernel addresses and
  *           interpret the data contained within.

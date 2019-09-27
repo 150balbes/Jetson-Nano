@@ -1,12 +1,26 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * pluto2.c - Satelco Easywatch Mobile Terrestrial Receiver [DVB-T]
  *
  * Copyright (C) 2005 Andreas Oberritter <obi@linuxtv.org>
  *
  * based on pluto2.c 1.10 - http://instinct-wp8.no-ip.org/pluto/
- *	by Dany Salman <salmandany@yahoo.fr>
+ * 	by Dany Salman <salmandany@yahoo.fr>
  *	Copyright (c) 2004 TDF
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ *
  */
 
 #include <linux/i2c.h>
@@ -19,12 +33,12 @@
 #include <linux/dma-mapping.h>
 #include <linux/slab.h>
 
-#include <media/demux.h>
-#include <media/dmxdev.h>
-#include <media/dvb_demux.h>
-#include <media/dvb_frontend.h>
-#include <media/dvb_net.h>
-#include <media/dvbdev.h>
+#include "demux.h"
+#include "dmxdev.h"
+#include "dvb_demux.h"
+#include "dvb_frontend.h"
+#include "dvb_net.h"
+#include "dvbdev.h"
 #include "tda1004x.h"
 
 DVB_DEFINE_MOD_OPT_ADAPTER_NR(adapter_nr);
@@ -563,12 +577,12 @@ static int pluto_read_serial(struct pluto *pluto)
 		for (j = 0; j < 32; j += 8) {
 			if ((val & 0xff) == 0xff)
 				goto out;
-			printk(KERN_CONT "%c", val & 0xff);
+			printk("%c", val & 0xff);
 			val >>= 8;
 		}
 	}
 out:
-	printk(KERN_CONT "\n");
+	printk("\n");
 	pci_iounmap(pdev, cis);
 
 	return 0;
@@ -623,7 +637,7 @@ static int pluto2_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 
 	/* i2c */
 	i2c_set_adapdata(&pluto->i2c_adap, pluto);
-	strscpy(pluto->i2c_adap.name, DRIVER_NAME, sizeof(pluto->i2c_adap.name));
+	strcpy(pluto->i2c_adap.name, DRIVER_NAME);
 	pluto->i2c_adap.owner = THIS_MODULE;
 	pluto->i2c_adap.dev.parent = &pdev->dev;
 	pluto->i2c_adap.algo_data = &pluto->i2c_bit;
@@ -760,7 +774,7 @@ static void pluto2_remove(struct pci_dev *pdev)
 #define PCI_DEVICE_ID_PLUTO2	0x0001
 #endif
 
-static const struct pci_device_id pluto2_id_table[] = {
+static struct pci_device_id pluto2_id_table[] = {
 	{
 		.vendor = PCI_VENDOR_ID_SCM,
 		.device = PCI_DEVICE_ID_PLUTO2,

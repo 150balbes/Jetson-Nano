@@ -1,8 +1,20 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * OF helpers for IOMMU
  *
- * Copyright (c) 2012, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2012-2018, NVIDIA CORPORATION.  All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms and conditions of the GNU General Public License,
+ * version 2, as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License along with
+ * this program; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin St - Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
 #include <linux/export.h>
@@ -12,9 +24,83 @@
 #include <linux/of_iommu.h>
 #include <linux/of_pci.h>
 #include <linux/slab.h>
-#include <linux/fsl/mc.h>
 
-#define NO_IOMMU	1
+static const struct of_device_id __iommu_of_table_sentinel
+	__used __section(__iommu_of_table_end);
+
+static void parse_dm_regions(struct device_node *resv_node,
+					struct device *dev,
+					char *prop_name)
+{
+	int total_values, i, ret;
+	u64 *prop_values;
+	DEFINE_DMA_ATTRS(attrs);
+
+	dma_set_attr(DMA_ATTR_SKIP_IOVA_GAP, attrs);
+	dma_set_attr(DMA_ATTR_SKIP_CPU_SYNC, attrs);
+
+	total_values = of_property_count_elems_of_size(resv_node,
+			prop_name,
+			sizeof(u64));
+
+	if (total_values % 2 != 0) {
+		pr_warn("iommu-region props must be pairs of <start size>\n");
+		return;
+	}
+	if (total_values < 0)
+		return;
+
+
+	prop_values = devm_kzalloc(dev, sizeof(u64) *total_values, GFP_KERNEL);
+	if (!prop_values)
+		return;
+
+	ret = of_property_read_variable_u64_array(resv_node, prop_name,
+			prop_values, total_values, total_values);
+	if (ret != total_values) {
+		pr_warn("iommu region values reading failed\n");
+		kfree(prop_values);
+		return;
+	}
+
+	for (i = 0; i < total_values; i += 2) {
+		u64 size, start;
+
+		start = prop_values[i];
+		size  = prop_values[i + 1];
+
+		if (size == 0) {
+			continue;
+		}
+
+		/* If there is overflow, replace size with max possible size */
+		if (start + size < start) {
+			size = (~0x0) - start;
+		}
+
+		dev_info(dev, "OF IOVA linear map 0x%llx size (0x%llx)\n",
+				start, size);
+		dma_map_linear_attrs(dev, start, size, 0, attrs);
+	}
+
+	devm_kfree(dev, prop_values);
+}
+
+void of_map_iommu_direct_regions(struct device *dev)
+{
+	struct device_node *dn = dev->of_node;
+	struct device_node *dm_node;
+	int phandle_index = 0;
+
+	dm_node = of_parse_phandle(dn, "iommu-direct-regions", phandle_index++);
+	while (dm_node != NULL) {
+		parse_dm_regions(dm_node, dev, "reg");
+		dm_node = of_parse_phandle(dn, "iommu-direct-regions",
+							phandle_index++);
+	}
+
+	return;
+}
 
 /**
  * of_get_dma_window - Parse *dma-window property and returns 0 if found.
@@ -84,144 +170,137 @@ int of_get_dma_window(struct device_node *dn, const char *prefix, int index,
 }
 EXPORT_SYMBOL_GPL(of_get_dma_window);
 
-static int of_iommu_xlate(struct device *dev,
-			  struct of_phandle_args *iommu_spec)
+struct of_iommu_node {
+	struct list_head list;
+	struct device_node *np;
+	const struct iommu_ops *ops;
+};
+static LIST_HEAD(of_iommu_list);
+static DEFINE_SPINLOCK(of_iommu_lock);
+
+void of_iommu_set_ops(struct device_node *np, const struct iommu_ops *ops)
+{
+	struct of_iommu_node *iommu = kzalloc(sizeof(*iommu), GFP_KERNEL);
+
+	if (WARN_ON(!iommu))
+		return;
+
+	of_node_get(np);
+	INIT_LIST_HEAD(&iommu->list);
+	iommu->np = np;
+	iommu->ops = ops;
+	spin_lock(&of_iommu_lock);
+	list_add_tail(&iommu->list, &of_iommu_list);
+	spin_unlock(&of_iommu_lock);
+}
+
+const struct iommu_ops *of_iommu_get_ops(struct device_node *np)
+{
+	struct of_iommu_node *node;
+	const struct iommu_ops *ops = NULL;
+
+	spin_lock(&of_iommu_lock);
+	list_for_each_entry(node, &of_iommu_list, list)
+		if (node->np == np) {
+			ops = node->ops;
+			break;
+		}
+	spin_unlock(&of_iommu_lock);
+	return ops;
+}
+
+static int __get_pci_rid(struct pci_dev *pdev, u16 alias, void *data)
+{
+	struct of_phandle_args *iommu_spec = data;
+
+	iommu_spec->args[0] = alias;
+	return iommu_spec->np == pdev->bus->dev.of_node;
+}
+
+static const struct iommu_ops
+*of_pci_iommu_configure(struct pci_dev *pdev, struct device_node *bridge_np)
 {
 	const struct iommu_ops *ops;
-	struct fwnode_handle *fwnode = &iommu_spec->np->fwnode;
-	int err;
+	struct of_phandle_args iommu_spec;
 
-	ops = iommu_ops_from_fwnode(fwnode);
-	if ((ops && !ops->of_xlate) ||
-	    !of_device_is_available(iommu_spec->np))
-		return NO_IOMMU;
-
-	err = iommu_fwspec_init(dev, &iommu_spec->np->fwnode, ops);
-	if (err)
-		return err;
 	/*
-	 * The otherwise-empty fwspec handily serves to indicate the specific
-	 * IOMMU device we're waiting for, which will be useful if we ever get
-	 * a proper probe-ordering dependency mechanism in future.
+	 * Start by tracing the RID alias down the PCI topology as
+	 * far as the host bridge whose OF node we have...
+	 * (we're not even attempting to handle multi-alias devices yet)
 	 */
-	if (!ops)
-		return driver_deferred_probe_check_state(dev);
+	iommu_spec.args_count = 1;
+	iommu_spec.np = bridge_np;
+	pci_for_each_dma_alias(pdev, __get_pci_rid, &iommu_spec);
+	/*
+	 * ...then find out what that becomes once it escapes the PCI
+	 * bus into the system beyond, and which IOMMU it ends up at.
+	 */
+	iommu_spec.np = NULL;
+	if (of_pci_map_rid(bridge_np, iommu_spec.args[0], "iommu-map",
+			   "iommu-map-mask", &iommu_spec.np, iommu_spec.args))
+		return NULL;
 
-	return ops->of_xlate(dev, iommu_spec);
-}
+	ops = of_iommu_get_ops(iommu_spec.np);
+	if (!ops || !ops->of_xlate ||
+	    iommu_fwspec_init(&pdev->dev, &iommu_spec.np->fwnode, ops) ||
+	    ops->of_xlate(&pdev->dev, &iommu_spec))
+		ops = NULL;
 
-struct of_pci_iommu_alias_info {
-	struct device *dev;
-	struct device_node *np;
-};
-
-static int of_pci_iommu_init(struct pci_dev *pdev, u16 alias, void *data)
-{
-	struct of_pci_iommu_alias_info *info = data;
-	struct of_phandle_args iommu_spec = { .args_count = 1 };
-	int err;
-
-	err = of_map_rid(info->np, alias, "iommu-map", "iommu-map-mask",
-			 &iommu_spec.np, iommu_spec.args);
-	if (err)
-		return err == -ENODEV ? NO_IOMMU : err;
-
-	err = of_iommu_xlate(info->dev, &iommu_spec);
 	of_node_put(iommu_spec.np);
-	return err;
-}
-
-static int of_fsl_mc_iommu_init(struct fsl_mc_device *mc_dev,
-				struct device_node *master_np)
-{
-	struct of_phandle_args iommu_spec = { .args_count = 1 };
-	int err;
-
-	err = of_map_rid(master_np, mc_dev->icid, "iommu-map",
-			 "iommu-map-mask", &iommu_spec.np,
-			 iommu_spec.args);
-	if (err)
-		return err == -ENODEV ? NO_IOMMU : err;
-
-	err = of_iommu_xlate(&mc_dev->dev, &iommu_spec);
-	of_node_put(iommu_spec.np);
-	return err;
+	return ops;
 }
 
 const struct iommu_ops *of_iommu_configure(struct device *dev,
 					   struct device_node *master_np)
 {
+	struct of_phandle_args iommu_spec;
+	struct device_node *np;
 	const struct iommu_ops *ops = NULL;
-	struct iommu_fwspec *fwspec = dev_iommu_fwspec_get(dev);
-	int err = NO_IOMMU;
+	int idx = 0;
 
-	if (!master_np)
-		return NULL;
-
-	if (fwspec) {
-		if (fwspec->ops)
-			return fwspec->ops;
-
-		/* In the deferred case, start again from scratch */
-		iommu_fwspec_free(dev);
-	}
+	if (dev_is_pci(dev))
+		return of_pci_iommu_configure(to_pci_dev(dev), master_np);
 
 	/*
 	 * We don't currently walk up the tree looking for a parent IOMMU.
 	 * See the `Notes:' section of
 	 * Documentation/devicetree/bindings/iommu/iommu.txt
 	 */
-	if (dev_is_pci(dev)) {
-		struct of_pci_iommu_alias_info info = {
-			.dev = dev,
-			.np = master_np,
-		};
+	while (!of_parse_phandle_with_args(master_np, "iommus",
+					   "#iommu-cells", idx,
+					   &iommu_spec)) {
+		np = iommu_spec.np;
+		ops = of_iommu_get_ops(np);
 
-		err = pci_for_each_dma_alias(to_pci_dev(dev),
-					     of_pci_iommu_init, &info);
-	} else if (dev_is_fsl_mc(dev)) {
-		err = of_fsl_mc_iommu_init(to_fsl_mc_device(dev), master_np);
-	} else {
-		struct of_phandle_args iommu_spec;
-		int idx = 0;
+		if (!ops || !ops->of_xlate ||
+		    iommu_fwspec_init(dev, &np->fwnode, ops) ||
+		    ops->of_xlate(dev, &iommu_spec))
+			goto err_put_node;
 
-		while (!of_parse_phandle_with_args(master_np, "iommus",
-						   "#iommu-cells",
-						   idx, &iommu_spec)) {
-			err = of_iommu_xlate(dev, &iommu_spec);
-			of_node_put(iommu_spec.np);
-			idx++;
-			if (err)
-				break;
-		}
-	}
-
-
-	/*
-	 * Two success conditions can be represented by non-negative err here:
-	 * >0 : there is no IOMMU, or one was unavailable for non-fatal reasons
-	 *  0 : we found an IOMMU, and dev->fwspec is initialised appropriately
-	 * <0 : any actual error
-	 */
-	if (!err) {
-		/* The fwspec pointer changed, read it again */
-		fwspec = dev_iommu_fwspec_get(dev);
-		ops    = fwspec->ops;
-	}
-	/*
-	 * If we have reason to believe the IOMMU driver missed the initial
-	 * probe for dev, replay it to get things in order.
-	 */
-	if (!err && dev->bus && !device_iommu_mapped(dev))
-		err = iommu_probe_device(dev);
-
-	/* Ignore all other errors apart from EPROBE_DEFER */
-	if (err == -EPROBE_DEFER) {
-		ops = ERR_PTR(err);
-	} else if (err < 0) {
-		dev_dbg(dev, "Adding to IOMMU failed: %d\n", err);
-		ops = NULL;
+		of_node_put(np);
+		idx++;
 	}
 
 	return ops;
+
+err_put_node:
+	of_node_put(np);
+	return NULL;
 }
+
+static int __init of_iommu_init(void)
+{
+	struct device_node *np;
+	const struct of_device_id *match, *matches = &__iommu_of_table;
+
+	for_each_matching_node_and_match(np, matches, &match) {
+		const of_iommu_init_fn init_fn = match->data;
+
+		if (init_fn(np))
+			pr_err("Failed to initialise IOMMU %s\n",
+				of_node_full_name(np));
+	}
+
+	return 0;
+}
+postcore_initcall_sync(of_iommu_init);

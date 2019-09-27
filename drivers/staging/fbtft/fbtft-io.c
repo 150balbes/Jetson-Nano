@@ -1,7 +1,6 @@
-// SPDX-License-Identifier: GPL-2.0
 #include <linux/export.h>
 #include <linux/errno.h>
-#include <linux/gpio/consumer.h>
+#include <linux/gpio.h>
 #include <linux/spi/spi.h>
 #include "fbtft.h"
 
@@ -14,7 +13,7 @@ int fbtft_write_spi(struct fbtft_par *par, void *buf, size_t len)
 	struct spi_message m;
 
 	fbtft_par_dbg_hex(DEBUG_WRITE, par, par->info->device, u8, buf, len,
-			  "%s(len=%zu): ", __func__, len);
+		"%s(len=%d): ", __func__, len);
 
 	if (!par->spi) {
 		dev_err(par->info->device,
@@ -23,6 +22,10 @@ int fbtft_write_spi(struct fbtft_par *par, void *buf, size_t len)
 	}
 
 	spi_message_init(&m);
+	if (par->txbuf.dma && buf == par->txbuf.buf) {
+		t.tx_dma = par->txbuf.dma;
+		m.is_dma_mapped = 1;
+	}
 	spi_message_add_tail(&t, &m);
 	return spi_sync(par->spi, &m);
 }
@@ -47,7 +50,7 @@ int fbtft_write_spi_emulate_9(struct fbtft_par *par, void *buf, size_t len)
 	u64 val, dc, tmp;
 
 	fbtft_par_dbg_hex(DEBUG_WRITE, par, par->info->device, u8, buf, len,
-			  "%s(len=%zu): ", __func__, len);
+		"%s(len=%d): ", __func__, len);
 
 	if (!par->extra) {
 		dev_err(par->info->device, "%s: error: par->extra is NULL\n",
@@ -72,7 +75,7 @@ int fbtft_write_spi_emulate_9(struct fbtft_par *par, void *buf, size_t len)
 			src++;
 		}
 		tmp |= ((*src & 0x0100) ? 1 : 0);
-		*(__be64 *)dst = cpu_to_be64(tmp);
+		*(u64 *)dst = cpu_to_be64(tmp);
 		dst += 8;
 		*dst++ = (u8)(*src++ & 0x00FF);
 		added++;
@@ -109,15 +112,14 @@ int fbtft_read_spi(struct fbtft_par *par, void *buf, size_t len)
 		txbuf[0] = par->startbyte | 0x3;
 		t.tx_buf = txbuf;
 		fbtft_par_dbg_hex(DEBUG_READ, par, par->info->device, u8,
-				  txbuf, len, "%s(len=%zu) txbuf => ",
-				  __func__, len);
+			txbuf, len, "%s(len=%d) txbuf => ", __func__, len);
 	}
 
 	spi_message_init(&m);
 	spi_message_add_tail(&t, &m);
 	ret = spi_sync(par->spi, &m);
 	fbtft_par_dbg_hex(DEBUG_READ, par, par->info->device, u8, buf, len,
-			  "%s(len=%zu) buf <= ", __func__, len);
+		"%s(len=%d) buf <= ", __func__, len);
 
 	return ret;
 }
@@ -136,36 +138,36 @@ int fbtft_write_gpio8_wr(struct fbtft_par *par, void *buf, size_t len)
 #endif
 
 	fbtft_par_dbg_hex(DEBUG_WRITE, par, par->info->device, u8, buf, len,
-			  "%s(len=%zu): ", __func__, len);
+		"%s(len=%d): ", __func__, len);
 
 	while (len--) {
 		data = *(u8 *)buf;
 
 		/* Start writing by pulling down /WR */
-		gpiod_set_value(par->gpio.wr, 0);
+		gpio_set_value(par->gpio.wr, 0);
 
 		/* Set data */
 #ifndef DO_NOT_OPTIMIZE_FBTFT_WRITE_GPIO
 		if (data == prev_data) {
-			gpiod_set_value(par->gpio.wr, 0); /* used as delay */
+			gpio_set_value(par->gpio.wr, 0); /* used as delay */
 		} else {
 			for (i = 0; i < 8; i++) {
 				if ((data & 1) != (prev_data & 1))
-					gpiod_set_value(par->gpio.db[i],
-							data & 1);
+					gpio_set_value(par->gpio.db[i],
+								data & 1);
 				data >>= 1;
 				prev_data >>= 1;
 			}
 		}
 #else
 		for (i = 0; i < 8; i++) {
-			gpiod_set_value(par->gpio.db[i], data & 1);
+			gpio_set_value(par->gpio.db[i], data & 1);
 			data >>= 1;
 		}
 #endif
 
 		/* Pullup /WR */
-		gpiod_set_value(par->gpio.wr, 1);
+		gpio_set_value(par->gpio.wr, 1);
 
 #ifndef DO_NOT_OPTIMIZE_FBTFT_WRITE_GPIO
 		prev_data = *(u8 *)buf;
@@ -186,36 +188,36 @@ int fbtft_write_gpio16_wr(struct fbtft_par *par, void *buf, size_t len)
 #endif
 
 	fbtft_par_dbg_hex(DEBUG_WRITE, par, par->info->device, u8, buf, len,
-			  "%s(len=%zu): ", __func__, len);
+		"%s(len=%d): ", __func__, len);
 
 	while (len) {
 		data = *(u16 *)buf;
 
 		/* Start writing by pulling down /WR */
-		gpiod_set_value(par->gpio.wr, 0);
+		gpio_set_value(par->gpio.wr, 0);
 
 		/* Set data */
 #ifndef DO_NOT_OPTIMIZE_FBTFT_WRITE_GPIO
 		if (data == prev_data) {
-			gpiod_set_value(par->gpio.wr, 0); /* used as delay */
+			gpio_set_value(par->gpio.wr, 0); /* used as delay */
 		} else {
 			for (i = 0; i < 16; i++) {
 				if ((data & 1) != (prev_data & 1))
-					gpiod_set_value(par->gpio.db[i],
-							data & 1);
+					gpio_set_value(par->gpio.db[i],
+								data & 1);
 				data >>= 1;
 				prev_data >>= 1;
 			}
 		}
 #else
 		for (i = 0; i < 16; i++) {
-			gpiod_set_value(par->gpio.db[i], data & 1);
+			gpio_set_value(par->gpio.db[i], data & 1);
 			data >>= 1;
 		}
 #endif
 
 		/* Pullup /WR */
-		gpiod_set_value(par->gpio.wr, 1);
+		gpio_set_value(par->gpio.wr, 1);
 
 #ifndef DO_NOT_OPTIMIZE_FBTFT_WRITE_GPIO
 		prev_data = *(u16 *)buf;

@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  *  tracefs.h - a pseudo file system for activating tracing
  *
@@ -6,7 +5,12 @@
  *
  *  Copyright (C) 2014 Red Hat Inc, author: Steven Rostedt <srostedt@redhat.com>
  *
+ *	This program is free software; you can redistribute it and/or
+ *	modify it under the terms of the GNU General Public License version
+ *	2 as published by the Free Software Foundation.
+ *
  * tracefs is the file system that is used by the tracing infrastructure.
+ *
  */
 
 #ifndef _TRACEFS_H_

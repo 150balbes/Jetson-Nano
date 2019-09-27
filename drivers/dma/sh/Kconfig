@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0
 #
 # DMA engine configuration for sh
 #
@@ -13,7 +12,7 @@ config RENESAS_DMA
 
 config SH_DMAE_BASE
 	bool "Renesas SuperH DMA Engine support"
-	depends on SUPERH || COMPILE_TEST
+	depends on SUPERH || ARCH_RENESAS || COMPILE_TEST
 	depends on !SUPERH || SH_DMA
 	depends on !SH_DMA_API
 	default y
@@ -31,6 +30,15 @@ config SH_DMAE
 	help
 	  Enable support for the Renesas SuperH DMA controllers.
 
+if SH_DMAE
+
+config SH_DMAE_R8A73A4
+	def_bool y
+	depends on ARCH_R8A73A4
+	depends on OF
+
+endif
+
 config RCAR_DMAC
 	tristate "Renesas R-Car Gen2 DMA Controller"
 	depends on ARCH_RENESAS || COMPILE_TEST
@@ -47,3 +55,9 @@ config RENESAS_USB_DMAC
 	help
 	  This driver supports the USB-DMA controller found in the Renesas
 	  SoCs.
+
+config SUDMAC
+	tristate "Renesas SUDMAC support"
+	depends on SH_DMAE_BASE
+	help
+	  Enable support for the Renesas SUDMAC controllers.

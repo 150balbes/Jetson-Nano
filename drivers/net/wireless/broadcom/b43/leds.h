@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef B43_LEDS_H_
 #define B43_LEDS_H_
 

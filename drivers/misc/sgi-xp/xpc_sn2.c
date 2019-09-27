@@ -323,16 +323,16 @@ xpc_handle_notify_IRQ_sn2(int irq, void *dev_id)
  * was received.
  */
 static void
-xpc_check_for_dropped_notify_IRQ_sn2(struct timer_list *t)
+xpc_check_for_dropped_notify_IRQ_sn2(struct xpc_partition *part)
 {
-	struct xpc_partition *part =
-		from_timer(part, t, sn.sn2.dropped_notify_IRQ_timer);
+	struct xpc_partition_sn2 *part_sn2 = &part->sn.sn2;
 
 	if (xpc_part_ref(part)) {
 		xpc_check_for_sent_chctl_flags_sn2(part);
 
-		t->expires = jiffies + XPC_DROPPED_NOTIFY_IRQ_WAIT_INTERVAL;
-		add_timer(t);
+		part_sn2->dropped_notify_IRQ_timer.expires = jiffies +
+		    XPC_DROPPED_NOTIFY_IRQ_WAIT_INTERVAL;
+		add_timer(&part_sn2->dropped_notify_IRQ_timer);
 		xpc_part_deref(part);
 	}
 }
@@ -1232,7 +1232,10 @@ xpc_setup_ch_structures_sn2(struct xpc_partition *part)
 
 	/* Setup a timer to check for dropped notify IRQs */
 	timer = &part_sn2->dropped_notify_IRQ_timer;
-	timer_setup(timer, xpc_check_for_dropped_notify_IRQ_sn2, 0);
+	init_timer(timer);
+	timer->function =
+	    (void (*)(unsigned long))xpc_check_for_dropped_notify_IRQ_sn2;
+	timer->data = (unsigned long)part;
 	timer->expires = jiffies + XPC_DROPPED_NOTIFY_IRQ_WAIT_INTERVAL;
 	add_timer(timer);
 
@@ -1671,7 +1674,7 @@ xpc_teardown_msg_structures_sn2(struct xpc_channel *ch)
 {
 	struct xpc_channel_sn2 *ch_sn2 = &ch->sn.sn2;
 
-	lockdep_assert_held(&ch->lock);
+	DBUG_ON(!spin_is_locked(&ch->lock));
 
 	ch_sn2->remote_msgqueue_pa = 0;
 

@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * arch/sh/boards/landisk/gio.c - driver for landisk
  *
@@ -7,6 +6,11 @@
  *
  *   Copylight (C) 2006 kogiidena
  *   Copylight (C) 2002 Atom Create Engineering Co., Ltd. *
+ *
+ * This file is subject to the terms and conditions of the GNU General Public
+ * License.  See the file "COPYING" in the main directory of this archive
+ * for more details.
+ *
  */
 #include <linux/module.h>
 #include <linux/init.h>
@@ -14,7 +18,7 @@
 #include <linux/cdev.h>
 #include <linux/fs.h>
 #include <asm/io.h>
-#include <linux/uaccess.h>
+#include <asm/uaccess.h>
 #include <mach-landisk/mach/gio.h>
 #include <mach-landisk/mach/iodata_landisk.h>
 

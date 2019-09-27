@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * SuperH process tracing
  *
@@ -6,10 +5,13 @@
  * Copyright (C) 2002 - 2009  Paul Mundt
  *
  * Audit support by Yuichi Nakamura <ynakam@hitachisoft.jp>
+ *
+ * This file is subject to the terms and conditions of the GNU General Public
+ * License.  See the file "COPYING" in the main directory of this archive
+ * for more details.
  */
 #include <linux/kernel.h>
 #include <linux/sched.h>
-#include <linux/sched/task_stack.h>
 #include <linux/mm.h>
 #include <linux/smp.h>
 #include <linux/errno.h>
@@ -24,7 +26,7 @@
 #include <linux/elf.h>
 #include <linux/regset.h>
 #include <linux/hw_breakpoint.h>
-#include <linux/uaccess.h>
+#include <asm/uaccess.h>
 #include <asm/pgtable.h>
 #include <asm/processor.h>
 #include <asm/mmu_context.h>

@@ -1,7 +1,10 @@
-/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * aQuantia Corporation Network Driver
  * Copyright (C) 2014-2017 aQuantia Corporation. All rights reserved
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms and conditions of the GNU General Public License,
+ * version 2, as published by the Free Software Foundation.
  */
 
 /* File aq_ring.h: Declaration of functions for Rx/Tx rings. */
@@ -17,8 +20,8 @@ struct aq_nic_cfg_s;
 struct aq_rxpage {
 	struct page *page;
 	dma_addr_t daddr;
-	unsigned int order;
-	unsigned int pg_off;
+	unsigned order;
+	unsigned pg_off;
 };
 
 /*           TxC       SOP        DX         EOP
@@ -27,7 +30,7 @@ struct aq_rxpage {
  *         +----------+----------+----------+-----------
  * 4/8bytes|len pkt   |len pkt   |          | skb
  *         +----------+----------+----------+-----------
- * 4/8bytes|is_gso    |len,flags |len       |len,is_eop
+ * 4/8bytes|is_txc    |len,flags |len       |len,is_eop
  *         +----------+----------+----------+-----------
  *
  *  This aq_ring_buff_s doesn't have endianness dependency.
@@ -44,7 +47,6 @@ struct __packed aq_ring_buff_s {
 			u8 is_hash_l4;
 			u8 rsvd1;
 			struct aq_rxpage rxdata;
-			u16 vlan_rx_tag;
 		};
 		/* EOP */
 		struct {
@@ -60,7 +62,6 @@ struct __packed aq_ring_buff_s {
 			u8 is_ipv6:1;
 			u8 rsvd2:7;
 			u32 len_pkt;
-			u16 vlan_tx_tag;
 		};
 	};
 	union {
@@ -72,12 +73,11 @@ struct __packed aq_ring_buff_s {
 			u32 is_cso_err:1;
 			u32 is_sop:1;
 			u32 is_eop:1;
-			u32 is_gso:1;
+			u32 is_txc:1;
 			u32 is_mapped:1;
 			u32 is_cleaned:1;
 			u32 is_error:1;
-			u32 is_vlan:1;
-			u32 rsvd3:5;
+			u32 rsvd3:6;
 			u16 eop_index;
 			u16 rsvd4;
 		};

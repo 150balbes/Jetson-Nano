@@ -1,0 +1,68 @@
+Tegra External Temperature Sensor driver
+----------------------------------------
+
+This file documents the DT bindings of the NCT1008 external temperature sensor
+driver. NCT1008 belongs to a class of sensors that reports two temperatures,
+one local and one external. On Tegra systems the local sensor measures the
+board temperature and the external sensor measures the junction temperature on
+the die. The sensor is connected as an I2C slave and can be communicated with
+using the SMBus protocol. The Tegra NCT1008 driver supports TMP451 and MAX6649
+in addition to the NCT1008 sensor.
+
+NCT1008 driver is an I2C client that registers itself as two sensors to
+the thermal framework and supports programmable temperature alerts and
+overtemperature shutdown limits. The sensor ids are defined in
+<dt-bindings/misc/nvidia,nct1008.h>.
+
+Required properties :
+- compatible : The compatibility string must match the sensor that is
+  being used and should be one of the following:
+  - onsemi,nct72
+  - ti,tmp451
+  - maxim,max6649
+- reg : An I2C client property which specifies the slave address of the sensor
+  on the I2C bus.
+- #thermal-sensor-cells : Should be 1. See ./thermal.txt for a description of
+  this property.
+- conv-rate : Specifies the value to be programmed into the conversion rate
+  register of the sensor. Valid range is 0 - 9. See the sensor datasheet for the
+  exact conversion rates.
+
+Optional properties :
+- interrupts : An I2C client property which specifies the interrupt used by the
+  sensor for temperature alerts.
+- temp-alert-gpio : This property specifies the gpio used by the sensor to
+  trigger the temperature alert.
+- loc-shutdown-limit : When present, this property specifies the temperature at
+  which the local sensor will assert the thermal trigger signal to the
+  Power Management IC. which can be configured to reset or shutdown the device.
+  In the absence of this property the over temperature shutdown from local
+  sensor will be disabled. Can take any value in the valid temperature range of
+  the sensor.
+- ext-shutdown-limit : Similar to the loc-shutdown-limit. Used to specify the
+  over temperature shutdown limit for the external sensor.
+- extended-range : This property is used to control the range of temperature
+  measurement in the sensor. Allowed values are 0,1. A value of 1 enables
+  extended temperature monitoring range and a missing property disables it.
+- offset : Specifies the offset to be programmed to the offset register. The
+  property is in units of 0.25C and has a valid range of -128C to 127C.
+- offset-hi-res : Similar to the offset property but allows offset to be
+  programmed in units of 0.0625C.
+- support-fuse-offset : When present the driver reads the fuse registers which
+  has the measured offset at a known temperature. After performing linear
+  correction on the true physical temperature (which is offset + known
+  temperature) a value for offset and nfactor are calculated. These values are
+  then used to program the corresponding registers in the sensor hardware. The
+  property takes no value.
+- alpha : Specifies the slope of the linear correction that is performed when
+  support-fuse-offset is specified.
+- beta : Specifies the intercept of the linear correction that is performed when
+  support-fuse-offset is specified.
+
+Note:
+The external temperature reported by the sensor can often be inaccurate which
+can be corrected by progamming the offset register. The NCT1008 driver allows
+offset to be specified in couple of ways as using the various offset properties
+described above. The support-fuse-offset property takes effect only if both
+offset and offset-hi-res are absent. The offset-hi-res property takes effect
+only if offset property is absent.

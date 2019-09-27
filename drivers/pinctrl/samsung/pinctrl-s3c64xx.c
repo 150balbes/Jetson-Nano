@@ -1,16 +1,21 @@
-// SPDX-License-Identifier: GPL-2.0+
-//
-// S3C64xx specific support for pinctrl-samsung driver.
-//
-// Copyright (c) 2013 Tomasz Figa <tomasz.figa@gmail.com>
-//
-// Based on pinctrl-exynos.c, please see the file for original copyrights.
-//
-// This file contains the Samsung S3C64xx specific information required by the
-// the Samsung pinctrl/gpiolib driver. It also includes the implementation of
-// external gpio and wakeup interrupt support.
+/*
+ * S3C64xx specific support for pinctrl-samsung driver.
+ *
+ * Copyright (c) 2013 Tomasz Figa <tomasz.figa@gmail.com>
+ *
+ * Based on pinctrl-exynos.c, please see the file for original copyrights.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This file contains the Samsung S3C64xx specific information required by the
+ * the Samsung pinctrl/gpiolib driver. It also includes the implementation of
+ * external gpio and wakeup interrupt support.
+ */
 
-#include <linux/init.h>
+#include <linux/module.h>
 #include <linux/device.h>
 #include <linux/interrupt.h>
 #include <linux/irqdomain.h>
@@ -483,10 +488,12 @@ static int s3c64xx_eint_gpio_init(struct samsung_pinctrl_drv_data *d)
 		++nr_domains;
 	}
 
-	data = devm_kzalloc(dev, struct_size(data, domains, nr_domains),
-			    GFP_KERNEL);
-	if (!data)
+	data = devm_kzalloc(dev, sizeof(*data)
+			+ nr_domains * sizeof(*data->domains), GFP_KERNEL);
+	if (!data) {
+		dev_err(dev, "failed to allocate handler data\n");
 		return -ENOMEM;
+	}
 	data->drvdata = d;
 
 	bank = d->pin_banks;
@@ -704,8 +711,10 @@ static int s3c64xx_eint_eint0_init(struct samsung_pinctrl_drv_data *d)
 		return -ENODEV;
 
 	data = devm_kzalloc(dev, sizeof(*data), GFP_KERNEL);
-	if (!data)
+	if (!data) {
+		dev_err(dev, "could not allocate memory for wkup eint data\n");
 		return -ENOMEM;
+	}
 	data->drvdata = d;
 
 	for (i = 0; i < NUM_EINT0_IRQ; ++i) {
@@ -738,8 +747,10 @@ static int s3c64xx_eint_eint0_init(struct samsung_pinctrl_drv_data *d)
 
 		ddata = devm_kzalloc(dev,
 				sizeof(*ddata) + nr_eints, GFP_KERNEL);
-		if (!ddata)
+		if (!ddata) {
+			dev_err(dev, "failed to allocate domain data\n");
 			return -ENOMEM;
+		}
 		ddata->bank = bank;
 
 		bank->irq_domain = irq_domain_add_linear(bank->of_node,
@@ -789,7 +800,7 @@ static const struct samsung_pin_bank_data s3c64xx_pin_banks0[] __initconst = {
  * Samsung pinctrl driver data for S3C64xx SoC. S3C64xx SoC includes
  * one gpio/pin-mux/pinconfig controller.
  */
-static const struct samsung_pin_ctrl s3c64xx_pin_ctrl[] __initconst = {
+const struct samsung_pin_ctrl s3c64xx_pin_ctrl[] __initconst = {
 	{
 		/* pin-controller instance 1 data */
 		.pin_banks	= s3c64xx_pin_banks0,
@@ -797,9 +808,4 @@ static const struct samsung_pin_ctrl s3c64xx_pin_ctrl[] __initconst = {
 		.eint_gpio_init = s3c64xx_eint_gpio_init,
 		.eint_wkup_init = s3c64xx_eint_eint0_init,
 	},
-};
-
-const struct samsung_pinctrl_of_match_data s3c64xx_of_data __initconst = {
-	.ctrl		= s3c64xx_pin_ctrl,
-	.num_ctrl	= ARRAY_SIZE(s3c64xx_pin_ctrl),
 };

@@ -28,7 +28,6 @@
 #define __LINUX__AIO_ABI_H
 
 #include <linux/types.h>
-#include <linux/fs.h>
 #include <asm/byteorder.h>
 
 typedef __kernel_ulong_t aio_context_t;
@@ -38,8 +37,10 @@ enum {
 	IOCB_CMD_PWRITE = 1,
 	IOCB_CMD_FSYNC = 2,
 	IOCB_CMD_FDSYNC = 3,
-	/* 4 was the experimental IOCB_CMD_PREADX */
-	IOCB_CMD_POLL = 5,
+	/* These two are experimental.
+	 * IOCB_CMD_PREADX = 4,
+	 * IOCB_CMD_POLL = 5,
+	 */
 	IOCB_CMD_NOOP = 6,
 	IOCB_CMD_PREADV = 7,
 	IOCB_CMD_PWRITEV = 8,
@@ -50,11 +51,8 @@ enum {
  *
  * IOCB_FLAG_RESFD - Set if the "aio_resfd" member of the "struct iocb"
  *                   is valid.
- * IOCB_FLAG_IOPRIO - Set if the "aio_reqprio" member of the "struct iocb"
- *                    is valid.
  */
 #define IOCB_FLAG_RESFD		(1 << 0)
-#define IOCB_FLAG_IOPRIO	(1 << 1)
 
 /* read() from /dev/aio returns these structures. */
 struct io_event {
@@ -63,6 +61,14 @@ struct io_event {
 	__s64		res;		/* result code for this event */
 	__s64		res2;		/* secondary result */
 };
+
+#if defined(__BYTE_ORDER) ? __BYTE_ORDER == __LITTLE_ENDIAN : defined(__LITTLE_ENDIAN)
+#define PADDED(x,y)	x, y
+#elif defined(__BYTE_ORDER) ? __BYTE_ORDER == __BIG_ENDIAN : defined(__BIG_ENDIAN)
+#define PADDED(x,y)	y, x
+#else
+#error edit for your odd byteorder.
+#endif
 
 /*
  * we always use a 64bit off_t when communicating
@@ -73,16 +79,8 @@ struct io_event {
 struct iocb {
 	/* these are internal to the kernel/libc. */
 	__u64	aio_data;	/* data to be returned in event's data */
-
-#if defined(__BYTE_ORDER) ? __BYTE_ORDER == __LITTLE_ENDIAN : defined(__LITTLE_ENDIAN)
-	__u32	aio_key;	/* the kernel sets aio_key to the req # */
-	__kernel_rwf_t aio_rw_flags;	/* RWF_* flags */
-#elif defined(__BYTE_ORDER) ? __BYTE_ORDER == __BIG_ENDIAN : defined(__BIG_ENDIAN)
-	__kernel_rwf_t aio_rw_flags;	/* RWF_* flags */
-	__u32	aio_key;	/* the kernel sets aio_key to the req # */
-#else
-#error edit for your odd byteorder.
-#endif
+	__u32	PADDED(aio_key, aio_reserved1);
+				/* the kernel sets aio_key to the req # */
 
 	/* common fields */
 	__u16	aio_lio_opcode;	/* see IOCB_CMD_ above */

@@ -1,5 +1,9 @@
-// SPDX-License-Identifier: GPL-2.0-only
-/* Copyright (C) 2003-2013 Jozsef Kadlecsik <kadlec@netfilter.org> */
+/* Copyright (C) 2003-2013 Jozsef Kadlecsik <kadlec@blackhole.kfki.hu>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ */
 
 /* Kernel module implementing an IP set type: the hash:net type */
 
@@ -27,7 +31,7 @@
 #define IPSET_TYPE_REV_MAX	6 /* skbinfo mapping support added */
 
 MODULE_LICENSE("GPL");
-MODULE_AUTHOR("Jozsef Kadlecsik <kadlec@netfilter.org>");
+MODULE_AUTHOR("Jozsef Kadlecsik <kadlec@blackhole.kfki.hu>");
 IP_SET_MODULE_DESC("hash:net", IPSET_TYPE_REV_MIN, IPSET_TYPE_REV_MAX);
 MODULE_ALIAS("ip_set_hash:net");
 
@@ -113,7 +117,7 @@ hash_net4_kadt(struct ip_set *set, const struct sk_buff *skb,
 	       const struct xt_action_param *par,
 	       enum ipset_adt adt, struct ip_set_adt_opt *opt)
 {
-	const struct hash_net4 *h = set->data;
+	const struct hash_net *h = set->data;
 	ipset_adtfn adtfn = set->variant->adt[adt];
 	struct hash_net4_elem e = {
 		.cidr = INIT_CIDR(h->nets[0].cidr[0], HOST_MASK),
@@ -135,11 +139,11 @@ static int
 hash_net4_uadt(struct ip_set *set, struct nlattr *tb[],
 	       enum ipset_adt adt, u32 *lineno, u32 flags, bool retried)
 {
-	const struct hash_net4 *h = set->data;
+	const struct hash_net *h = set->data;
 	ipset_adtfn adtfn = set->variant->adt[adt];
 	struct hash_net4_elem e = { .cidr = HOST_MASK };
 	struct ip_set_ext ext = IP_SET_INIT_UEXT(set);
-	u32 ip = 0, ip_to = 0;
+	u32 ip = 0, ip_to = 0, last;
 	int ret;
 
 	if (tb[IPSET_ATTR_LINENO])
@@ -189,15 +193,16 @@ hash_net4_uadt(struct ip_set *set, struct nlattr *tb[],
 	}
 	if (retried)
 		ip = ntohl(h->next.ip);
-	do {
+	while (!after(ip, ip_to)) {
 		e.ip = htonl(ip);
-		ip = ip_set_range_to_cidr(ip, ip_to, &e.cidr);
+		last = ip_set_range_to_cidr(ip, ip_to, &e.cidr);
 		ret = adtfn(set, &e, &ext, &ext, flags);
 		if (ret && !ip_set_eexist(ret, flags))
 			return ret;
 
 		ret = 0;
-	} while (ip++ < ip_to);
+		ip = last + 1;
+	}
 	return ret;
 }
 
@@ -263,7 +268,7 @@ nla_put_failure:
 }
 
 static inline void
-hash_net6_data_next(struct hash_net6_elem *next,
+hash_net6_data_next(struct hash_net4_elem *next,
 		    const struct hash_net6_elem *d)
 {
 }
@@ -281,7 +286,7 @@ hash_net6_kadt(struct ip_set *set, const struct sk_buff *skb,
 	       const struct xt_action_param *par,
 	       enum ipset_adt adt, struct ip_set_adt_opt *opt)
 {
-	const struct hash_net6 *h = set->data;
+	const struct hash_net *h = set->data;
 	ipset_adtfn adtfn = set->variant->adt[adt];
 	struct hash_net6_elem e = {
 		.cidr = INIT_CIDR(h->nets[0].cidr[0], HOST_MASK),

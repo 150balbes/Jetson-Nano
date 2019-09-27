@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __MACH_SH2007_H
 #define __MACH_SH2007_H
 

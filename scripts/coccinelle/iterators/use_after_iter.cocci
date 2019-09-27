@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /// If list_for_each_entry, etc complete a traversal of the list, the iterator
 /// variable ends up pointing to an address at an offset from the list head,
 /// and not a meaningful structure.  Thus this value should not be used after
@@ -8,8 +7,8 @@
 //#may also cause a report to be a false positive.
 ///
 // Confidence: Moderate
-// Copyright: (C) 2012 Julia Lawall, INRIA/LIP6.
-// Copyright: (C) 2012 Gilles Muller, INRIA/LIP6.
+// Copyright: (C) 2012 Julia Lawall, INRIA/LIP6.  GPLv2.
+// Copyright: (C) 2012 Gilles Muller, INRIA/LIP6.  GPLv2.
 // URL: http://coccinelle.lip6.fr/
 // Comments:
 // Options: --no-includes --include-headers
@@ -36,7 +35,6 @@ iterator name hlist_for_each_entry_from;
 iterator name hlist_for_each_entry_safe;
 statement S;
 position p1,p2;
-type T;
 @@
 
 (
@@ -126,8 +124,6 @@ list_remove_head(x,c,...)
 sizeof(<+...c...+>)
 |
  &c->member
-|
-T c;
 |
 c = E
 |

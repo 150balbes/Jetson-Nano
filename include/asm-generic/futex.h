@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _ASM_GENERIC_FUTEX_H
 #define _ASM_GENERIC_FUTEX_H
 
@@ -23,9 +22,7 @@
  *
  * Return:
  * 0 - On success
- * -EFAULT - User access resulted in a page fault
- * -EAGAIN - Atomic operation was unable to complete due to contention
- * -ENOSYS - Operation not supported
+ * <0 - On error
  */
 static inline int
 arch_futex_atomic_op_inuser(int op, u32 oparg, int *oval, u32 __user *uaddr)
@@ -87,9 +84,7 @@ out_pagefault_enable:
  *
  * Return:
  * 0 - On success
- * -EFAULT - User access resulted in a page fault
- * -EAGAIN - Atomic operation was unable to complete due to contention
- * -ENOSYS - Function not implemented (only if !HAVE_FUTEX_CMPXCHG)
+ * <0 - On error
  */
 static inline int
 futex_atomic_cmpxchg_inatomic(u32 *uval, u32 __user *uaddr,
@@ -118,7 +113,26 @@ futex_atomic_cmpxchg_inatomic(u32 *uval, u32 __user *uaddr,
 static inline int
 arch_futex_atomic_op_inuser(int op, u32 oparg, int *oval, u32 __user *uaddr)
 {
-	return -ENOSYS;
+	int oldval = 0, ret;
+
+	pagefault_disable();
+
+	switch (op) {
+	case FUTEX_OP_SET:
+	case FUTEX_OP_ADD:
+	case FUTEX_OP_OR:
+	case FUTEX_OP_ANDN:
+	case FUTEX_OP_XOR:
+	default:
+		ret = -ENOSYS;
+	}
+
+	pagefault_enable();
+
+	if (!ret)
+		*oval = oldval;
+
+	return ret;
 }
 
 static inline int

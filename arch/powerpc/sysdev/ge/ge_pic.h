@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __GEF_PIC_H__
 #define __GEF_PIC_H__
 

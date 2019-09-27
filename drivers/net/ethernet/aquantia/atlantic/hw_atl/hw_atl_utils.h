@@ -1,7 +1,10 @@
-/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * aQuantia Corporation Network Driver
  * Copyright (C) 2014-2017 aQuantia Corporation. All rights reserved
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms and conditions of the GNU General Public License,
+ * version 2, as published by the Free Software Foundation.
  */
 
 /* File hw_atl_utils.h: Declaration of common functions for Atlantic hardware
@@ -72,7 +75,7 @@ union __packed ip_addr {
 	} v4;
 };
 
-struct __packed hw_atl_utils_fw_rpc {
+struct __packed hw_aq_atl_utils_fw_rpc {
 	u32 msg_id;
 
 	union {
@@ -100,7 +103,6 @@ struct __packed hw_atl_utils_fw_rpc {
 			u32 wol_packet_type;
 			u32 pattern_id;
 			u32 next_wol_pattern_offset;
-
 			union {
 				struct {
 					u32 flags;
@@ -129,40 +131,60 @@ struct __packed hw_atl_utils_fw_rpc {
 					u32 pattern_offset;
 					u32 pattern_size;
 				} wol_bit_map_pattern;
-
 				struct {
-					u8 mac_addr[ETH_ALEN];
-				} wol_magic_packet_patter;
+					u8 mac_addr[6];
+				} wol_magic_packet_pattern;
+
 			} wol_pattern;
 		} msg_wol;
 
 		struct {
+			u16 tcQuanta[8];
+			u16 tcThreshold[8];
+		} msg_msm_pfc_quantas;
+
+		struct {
 			union {
 				u32 pattern_mask;
-
 				struct {
-					u32 reason_arp_v4_pkt : 1;
-					u32 reason_ipv4_ping_pkt : 1;
-					u32 reason_ipv6_ns_pkt : 1;
-					u32 reason_ipv6_ping_pkt : 1;
-					u32 reason_link_up : 1;
-					u32 reason_link_down : 1;
-					u32 reason_maximum : 1;
+					u32 aq_pm_wol_reason_arp_v4_pkt : 1;
+					u32 aq_pm_wol_reason_ipv4_ping_pkt : 1;
+					u32 aq_pm_wol_reason_ipv6_ns_pkt : 1;
+					u32 aq_pm_wol_reason_ipv6_ping_pkt : 1;
+					u32 aq_pm_wol_reason_link_up : 1;
+					u32 aq_pm_wol_reason_link_down : 1;
+					u32 aq_pm_wol_reason_maximum : 1;
 				};
 			};
-
 			union {
 				u32 offload_mask;
 			};
 		} msg_enable_wakeup;
 
 		struct {
+			u32 priority;
+			u32 protocol_offload_type;
+			u32 protocol_offload_id;
+			u32 next_protocol_offload_offset;
+
+			union {
+				struct {
+					u32 flags;
+					u8 remote_ipv4_addr[4];
+					u8 host_ipv4_addr[4];
+					u8 mac_addr[6];
+				} ipv4_arp_params;
+			};
+		} msg_offload;
+
+		struct {
 			u32 id;
 		} msg_del_id;
+
 	};
 };
 
-struct __packed hw_atl_utils_mbox_header {
+struct __packed hw_aq_atl_utils_mbox_header {
 	u32 version;
 	u32 transaction_id;
 	u32 error;
@@ -180,14 +202,48 @@ struct __packed hw_aq_info {
 	u32 caps_hi;
 };
 
-struct __packed hw_atl_utils_mbox {
-	struct hw_atl_utils_mbox_header header;
+struct __packed hw_aq_atl_utils_mbox {
+	struct hw_aq_atl_utils_mbox_header header;
 	struct hw_atl_stats_s stats;
 	struct hw_aq_info info;
 };
 
 /* fw2x */
+typedef u16	in_port_t;
+typedef u32	ip4_addr_t;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,33)
+typedef int	int32_t;
+typedef short	int16_t;
+#endif
 typedef u32	fw_offset_t;
+
+struct __packed ip6_addr {
+	u32 addr[4];
+};
+
+struct __packed offload_ka_v4 {
+	u32 timeout;
+	in_port_t local_port;
+	in_port_t remote_port;
+	u8 remote_mac_addr[6];
+	u16 win_size;
+	u32 seq_num;
+	u32 ack_num;
+	ip4_addr_t local_ip;
+	ip4_addr_t remote_ip;
+};
+
+struct __packed offload_ka_v6 {
+	u32 timeout;
+	in_port_t local_port;
+	in_port_t remote_port;
+	u8 remote_mac_addr[6];
+	u16 win_size;
+	u32 seq_num;
+	u32 ack_num;
+	struct ip6_addr local_ip;
+	struct ip6_addr remote_ip;
+};
 
 struct __packed offload_ip_info {
 	u8 v4_local_addr_count;
@@ -224,9 +280,11 @@ struct __packed offload_rr_info {
 };
 
 struct __packed offload_info {
-	u32 version;
-	u32 len;
-	u8 mac_addr[ETH_ALEN];
+	u32 version;		// current version is 0x00000000
+	u32 len;		// The whole structure length
+				// including the variable-size buf
+	u8 mac_addr[6];		// 8 bytes to keep alignment. Only
+				// first 6 meaningful.
 
 	u8 reserved[2];
 
@@ -237,64 +295,6 @@ struct __packed offload_info {
 	u8 buf[0];
 };
 
-enum hw_atl_rx_action_with_traffic {
-	HW_ATL_RX_DISCARD,
-	HW_ATL_RX_HOST,
-};
-
-struct aq_rx_filter_vlan {
-	u8 enable;
-	u8 location;
-	u16 vlan_id;
-	u8 queue;
-};
-
-struct aq_rx_filter_l2 {
-	s8 queue;
-	u8 location;
-	u8 user_priority_en;
-	u8 user_priority;
-	u16 ethertype;
-};
-
-struct aq_rx_filter_l3l4 {
-	u32 cmd;
-	u8 location;
-	u32 ip_dst[4];
-	u32 ip_src[4];
-	u16 p_dst;
-	u16 p_src;
-	u8 is_ipv6;
-};
-
-enum hw_atl_rx_protocol_value_l3l4 {
-	HW_ATL_RX_TCP,
-	HW_ATL_RX_UDP,
-	HW_ATL_RX_SCTP,
-	HW_ATL_RX_ICMP
-};
-
-enum hw_atl_rx_ctrl_registers_l3l4 {
-	HW_ATL_RX_ENABLE_MNGMNT_QUEUE_L3L4 = BIT(22),
-	HW_ATL_RX_ENABLE_QUEUE_L3L4        = BIT(23),
-	HW_ATL_RX_ENABLE_ARP_FLTR_L3       = BIT(24),
-	HW_ATL_RX_ENABLE_CMP_PROT_L4       = BIT(25),
-	HW_ATL_RX_ENABLE_CMP_DEST_PORT_L4  = BIT(26),
-	HW_ATL_RX_ENABLE_CMP_SRC_PORT_L4   = BIT(27),
-	HW_ATL_RX_ENABLE_CMP_DEST_ADDR_L3  = BIT(28),
-	HW_ATL_RX_ENABLE_CMP_SRC_ADDR_L3   = BIT(29),
-	HW_ATL_RX_ENABLE_L3_IPV6           = BIT(30),
-	HW_ATL_RX_ENABLE_FLTR_L3L4         = BIT(31)
-};
-
-#define HW_ATL_RX_QUEUE_FL3L4_SHIFT       8U
-#define HW_ATL_RX_ACTION_FL3F4_SHIFT      16U
-
-#define HW_ATL_RX_CNT_REG_ADDR_IPV6       4U
-
-#define HW_ATL_GET_REG_LOCATION_FL3L4(location) \
-	((location) - AQ_RX_FIRST_LOC_FL3L4)
-
 #define HAL_ATLANTIC_UTILS_CHIP_MIPS         0x00000001U
 #define HAL_ATLANTIC_UTILS_CHIP_TPO2         0x00000002U
 #define HAL_ATLANTIC_UTILS_CHIP_RPF2         0x00000004U
@@ -302,6 +302,7 @@ enum hw_atl_rx_ctrl_registers_l3l4 {
 #define HAL_ATLANTIC_UTILS_CHIP_REVISION_A0  0x01000000U
 #define HAL_ATLANTIC_UTILS_CHIP_REVISION_B0  0x02000000U
 #define HAL_ATLANTIC_UTILS_CHIP_REVISION_B1  0x04000000U
+
 
 #define IS_CHIP_FEATURE(_F_) (HAL_ATLANTIC_UTILS_CHIP_##_F_ & \
 	self->chip_features)
@@ -321,20 +322,17 @@ enum hal_atl_utils_fw_state_e {
 #define HAL_ATLANTIC_RATE_100M       BIT(5)
 #define HAL_ATLANTIC_RATE_INVALID    BIT(6)
 
-#define HAL_ATLANTIC_UTILS_FW_MSG_PING          0x1U
-#define HAL_ATLANTIC_UTILS_FW_MSG_ARP           0x2U
-#define HAL_ATLANTIC_UTILS_FW_MSG_INJECT        0x3U
-#define HAL_ATLANTIC_UTILS_FW_MSG_WOL_ADD       0x4U
-#define HAL_ATLANTIC_UTILS_FW_MSG_WOL_PRIOR     0x10000000U
-#define HAL_ATLANTIC_UTILS_FW_MSG_WOL_PATTERN   0x1U
-#define HAL_ATLANTIC_UTILS_FW_MSG_WOL_MAG_PKT   0x2U
-#define HAL_ATLANTIC_UTILS_FW_MSG_WOL_DEL       0x5U
-#define HAL_ATLANTIC_UTILS_FW_MSG_ENABLE_WAKEUP 0x6U
-#define HAL_ATLANTIC_UTILS_FW_MSG_MSM_PFC       0x7U
-#define HAL_ATLANTIC_UTILS_FW_MSG_PROVISIONING  0x8U
-#define HAL_ATLANTIC_UTILS_FW_MSG_OFFLOAD_ADD   0x9U
-#define HAL_ATLANTIC_UTILS_FW_MSG_OFFLOAD_DEL   0xAU
-#define HAL_ATLANTIC_UTILS_FW_MSG_CABLE_DIAG    0xDU
+#define HAL_ATLANTIC_UTILS_FW_MSG_PING     1U
+#define HAL_ATLANTIC_UTILS_FW_MSG_ARP      2U
+#define HAL_ATLANTIC_UTILS_FW_MSG_INJECT   3U
+#define HAL_ATLANTIC_UTILS_FW_MSG_WOL_ADD 4U
+#define HAL_ATLANTIC_UTILS_FW_MSG_WOL_DEL 5U
+#define HAL_ATLANTIC_UTILS_FW_MSG_ENABLE_WAKEUP 6U
+#define HAL_ATLANTIC_UTILS_FW_MSG_MSM_PFC  7U
+#define HAL_ATLANTIC_UTILS_FW_MSG_PROVISIONING 8U
+#define HAL_ATLANTIC_UTILS_FW_MSG_OFFLOAD_ADD  9U
+#define HAL_ATLANTIC_UTILS_FW_MSG_OFFLOAD_DEL  10U
+#define HAL_ATLANTIC_UTILS_FW_MSG_CABLE_DIAG   13U // 0xd
 
 enum hw_atl_fw2x_rate {
 	FW2X_RATE_100M    = 0x20,
@@ -441,10 +439,10 @@ int hw_atl_utils_soft_reset(struct aq_hw_s *self);
 void hw_atl_utils_hw_chip_features_init(struct aq_hw_s *self, u32 *p);
 
 int hw_atl_utils_mpi_read_mbox(struct aq_hw_s *self,
-			       struct hw_atl_utils_mbox_header *pmbox);
+			       struct hw_aq_atl_utils_mbox_header *pmbox);
 
 void hw_atl_utils_mpi_read_stats(struct aq_hw_s *self,
-				 struct hw_atl_utils_mbox *pmbox);
+				 struct hw_aq_atl_utils_mbox *pmbox);
 
 void hw_atl_utils_mpi_set(struct aq_hw_s *self,
 			  enum hal_atl_utils_fw_state_e state,
@@ -480,7 +478,7 @@ int hw_atl_utils_fw_set_wol(struct aq_hw_s *self, bool wol_enabled, u8 *mac);
 int hw_atl_utils_fw_rpc_call(struct aq_hw_s *self, unsigned int rpc_size);
 
 int hw_atl_utils_fw_rpc_wait(struct aq_hw_s *self,
-			     struct hw_atl_utils_fw_rpc **rpc);
+		    struct hw_aq_atl_utils_fw_rpc **rpc);
 
 extern const struct aq_fw_ops aq_fw_1x_ops;
 extern const struct aq_fw_ops aq_fw_2x_ops;

@@ -1,7 +1,11 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /******************************************************************************
  *
  *   Copyright © International Business Machines  Corp., 2009
+ *
+ *   This program is free software;  you can redistribute it and/or modify
+ *   it under the terms of the GNU General Public License as published by
+ *   the Free Software Foundation; either version 2 of the License, or
+ *   (at your option) any later version.
  *
  * DESCRIPTION
  *      Block on a futex and wait for timeout.
@@ -22,8 +26,6 @@
 #include <time.h>
 #include "futextest.h"
 #include "logging.h"
-
-#define TEST_NAME "futex-wait-timeout"
 
 static long timeout_ns = 100000;	/* 100us default timeout */
 
@@ -64,11 +66,9 @@ int main(int argc, char *argv[])
 		}
 	}
 
-	ksft_print_header();
-	ksft_set_plan(1);
-	ksft_print_msg("%s: Block on a futex and wait for timeout\n",
+	printf("%s: Block on a futex and wait for timeout\n",
 	       basename(argv[0]));
-	ksft_print_msg("\tArguments: timeout=%ldns\n", timeout_ns);
+	printf("\tArguments: timeout=%ldns\n", timeout_ns);
 
 	/* initialize timeout */
 	to.tv_sec = 0;
@@ -81,6 +81,6 @@ int main(int argc, char *argv[])
 		ret = RET_FAIL;
 	}
 
-	print_result(TEST_NAME, ret);
+	print_result(ret);
 	return ret;
 }

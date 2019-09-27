@@ -1,8 +1,16 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Qualcomm Technologies HIDMA Management SYS interface
  *
  * Copyright (c) 2015, The Linux Foundation. All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 and
+ * only version 2 as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
  */
 
 #include <linux/sysfs.h>
@@ -99,7 +107,8 @@ static struct hidma_mgmt_fileinfo hidma_mgmt_files[] = {
 static ssize_t show_values(struct device *dev, struct device_attribute *attr,
 			   char *buf)
 {
-	struct hidma_mgmt_dev *mdev = dev_get_drvdata(dev);
+	struct platform_device *pdev = to_platform_device(dev);
+	struct hidma_mgmt_dev *mdev = platform_get_drvdata(pdev);
 	unsigned int i;
 
 	buf[0] = 0;
@@ -116,7 +125,8 @@ static ssize_t show_values(struct device *dev, struct device_attribute *attr,
 static ssize_t set_values(struct device *dev, struct device_attribute *attr,
 			  const char *buf, size_t count)
 {
-	struct hidma_mgmt_dev *mdev = dev_get_drvdata(dev);
+	struct platform_device *pdev = to_platform_device(dev);
+	struct hidma_mgmt_dev *mdev = platform_get_drvdata(pdev);
 	unsigned long tmp;
 	unsigned int i;
 	int rc;

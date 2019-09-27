@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0-only
 #
 # Makefile for Silicon Integrated Systems (SiS) network device drivers.
 #

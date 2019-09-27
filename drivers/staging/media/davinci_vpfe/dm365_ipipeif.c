@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * Copyright (C) 2012 Texas Instruments Inc
  *
@@ -10,6 +9,10 @@
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
  *
  * Contributors:
  *      Manjunath Hadli <manjunath.hadli@ti.com>
@@ -63,17 +66,17 @@ ipipeif_get_pack_mode(u32 in_pix_fmt)
 	}
 }
 
-static inline u32 ipipeif_read(void __iomem *addr, u32 offset)
+static inline u32 ipipeif_read(void *addr, u32 offset)
 {
 	return readl(addr + offset);
 }
 
-static inline void ipipeif_write(u32 val, void __iomem *addr, u32 offset)
+static inline void ipipeif_write(u32 val, void *addr, u32 offset)
 {
 	writel(val, addr + offset);
 }
 
-static void ipipeif_config_dpc(void __iomem *addr, struct ipipeif_dpc *dpc)
+static void ipipeif_config_dpc(void *addr, struct ipipeif_dpc *dpc)
 {
 	u32 val = 0;
 
@@ -104,7 +107,7 @@ ipipeif_get_cfg_src1(struct vpfe_ipipeif_device *ipipeif)
 
 	informat = &ipipeif->formats[IPIPEIF_PAD_SINK];
 	if (ipipeif->input == IPIPEIF_INPUT_MEMORY &&
-	    (informat->code == MEDIA_BUS_FMT_Y8_1X8 ||
+	   (informat->code == MEDIA_BUS_FMT_Y8_1X8 ||
 	    informat->code == MEDIA_BUS_FMT_UV8_1X8))
 		return IPIPEIF_CCDC;
 
@@ -188,8 +191,8 @@ static int ipipeif_hw_setup(struct v4l2_subdev *sd)
 	struct ipipeif_params params = ipipeif->config;
 	enum ipipeif_input_source ipipeif_source;
 	u32 isif_port_if;
-	void __iomem *ipipeif_base_addr;
-	unsigned long val;
+	void *ipipeif_base_addr;
+	unsigned int val;
 	int data_shift;
 	int pack_mode;
 	int source1;
@@ -296,18 +299,17 @@ static int ipipeif_hw_setup(struct v4l2_subdev *sd)
 		case MEDIA_BUS_FMT_YUYV8_1X16:
 		case MEDIA_BUS_FMT_UYVY8_2X8:
 		case MEDIA_BUS_FMT_Y8_1X8:
-			clear_bit(IPIPEIF_CFG2_YUV8_SHIFT, &val);
-			set_bit(IPIPEIF_CFG2_YUV16_SHIFT, &val);
+			RESETBIT(val, IPIPEIF_CFG2_YUV8_SHIFT);
+			SETBIT(val, IPIPEIF_CFG2_YUV16_SHIFT);
 			ipipeif_write(val, ipipeif_base_addr, IPIPEIF_CFG2);
 			break;
 
 		default:
-			clear_bit(IPIPEIF_CFG2_YUV8_SHIFT, &val);
-			clear_bit(IPIPEIF_CFG2_YUV16_SHIFT, &val);
+			RESETBIT(val, IPIPEIF_CFG2_YUV8_SHIFT);
+			RESETBIT(val, IPIPEIF_CFG2_YUV16_SHIFT);
 			ipipeif_write(val, ipipeif_base_addr, IPIPEIF_CFG2);
 			break;
 		}
-		/* fall through */
 
 	case IPIPEIF_SDRAM_YUV:
 		/* Set clock divider */
@@ -344,23 +346,23 @@ static int ipipeif_hw_setup(struct v4l2_subdev *sd)
 		switch (isif_port_if) {
 		case MEDIA_BUS_FMT_YUYV8_1X16:
 		case MEDIA_BUS_FMT_YUYV10_1X20:
-			clear_bit(IPIPEIF_CFG2_YUV8_SHIFT, &val);
-			set_bit(IPIPEIF_CFG2_YUV16_SHIFT, &val);
+			RESETBIT(val, IPIPEIF_CFG2_YUV8_SHIFT);
+			SETBIT(val, IPIPEIF_CFG2_YUV16_SHIFT);
 			break;
 
 		case MEDIA_BUS_FMT_YUYV8_2X8:
 		case MEDIA_BUS_FMT_UYVY8_2X8:
 		case MEDIA_BUS_FMT_Y8_1X8:
 		case MEDIA_BUS_FMT_YUYV10_2X10:
-			set_bit(IPIPEIF_CFG2_YUV8_SHIFT, &val);
-			set_bit(IPIPEIF_CFG2_YUV16_SHIFT, &val);
+			SETBIT(val, IPIPEIF_CFG2_YUV8_SHIFT);
+			SETBIT(val, IPIPEIF_CFG2_YUV16_SHIFT);
 			val |= IPIPEIF_CBCR_Y << IPIPEIF_CFG2_YUV8P_SHIFT;
 			break;
 
 		default:
 			/* Bayer */
 			ipipeif_write(params.if_5_1.clip, ipipeif_base_addr,
-				      IPIPEIF_OCLIP);
+				IPIPEIF_OCLIP);
 		}
 		ipipeif_write(val, ipipeif_base_addr, IPIPEIF_CFG2);
 		break;
@@ -389,7 +391,7 @@ ipipeif_set_config(struct v4l2_subdev *sd, struct ipipeif_params *config)
 	ipipeif->config.rsz = config->rsz;
 	ipipeif->config.decimation = config->decimation;
 	if (ipipeif->config.decimation &&
-	    (ipipeif->config.rsz < IPIPEIF_RSZ_MIN ||
+	   (ipipeif->config.rsz < IPIPEIF_RSZ_MIN ||
 	    ipipeif->config.rsz > IPIPEIF_RSZ_MAX)) {
 		dev_err(dev, "rsz range is %d to %d\n",
 			IPIPEIF_RSZ_MIN, IPIPEIF_RSZ_MAX);
@@ -416,7 +418,7 @@ ipipeif_set_config(struct v4l2_subdev *sd, struct ipipeif_params *config)
 }
 
 static int
-ipipeif_get_config(struct v4l2_subdev *sd, void *arg)
+ipipeif_get_config(struct v4l2_subdev *sd, void __user *arg)
 {
 	struct vpfe_ipipeif_device *ipipeif = v4l2_get_subdevdata(sd);
 	struct ipipeif_params *config = arg;
@@ -505,7 +507,7 @@ static int ipipeif_s_ctrl(struct v4l2_ctrl *ctrl)
 void vpfe_ipipeif_enable(struct vpfe_device *vpfe_dev)
 {
 	struct vpfe_ipipeif_device *ipipeif = &vpfe_dev->vpfe_ipipeif;
-	void __iomem *ipipeif_base_addr = ipipeif->ipipeif_base_addr;
+	void *ipipeif_base_addr = ipipeif->ipipeif_base_addr;
 	unsigned char val;
 
 	if (ipipeif->input != IPIPEIF_INPUT_MEMORY)
@@ -580,7 +582,7 @@ static int ipipeif_enum_mbus_code(struct v4l2_subdev *sd,
  */
 static int
 ipipeif_get_format(struct v4l2_subdev *sd, struct v4l2_subdev_pad_config *cfg,
-		   struct v4l2_subdev_format *fmt)
+		struct v4l2_subdev_format *fmt)
 {
 	struct vpfe_ipipeif_device *ipipeif = v4l2_get_subdevdata(sd);
 
@@ -679,8 +681,8 @@ ipipeif_enum_frame_size(struct v4l2_subdev *sd,
  */
 static struct v4l2_mbus_framefmt *
 __ipipeif_get_format(struct vpfe_ipipeif_device *ipipeif,
-		     struct v4l2_subdev_pad_config *cfg, unsigned int pad,
-		     enum v4l2_subdev_format_whence which)
+		       struct v4l2_subdev_pad_config *cfg, unsigned int pad,
+		       enum v4l2_subdev_format_whence which)
 {
 	if (which == V4L2_SUBDEV_FORMAT_TRY)
 		return v4l2_subdev_get_try_format(&ipipeif->subdev, cfg, pad);
@@ -697,13 +699,13 @@ __ipipeif_get_format(struct vpfe_ipipeif_device *ipipeif,
  */
 static int
 ipipeif_set_format(struct v4l2_subdev *sd, struct v4l2_subdev_pad_config *cfg,
-		   struct v4l2_subdev_format *fmt)
+		struct v4l2_subdev_format *fmt)
 {
 	struct vpfe_ipipeif_device *ipipeif = v4l2_get_subdevdata(sd);
 	struct v4l2_mbus_framefmt *format;
 
 	format = __ipipeif_get_format(ipipeif, cfg, fmt->pad, fmt->which);
-	if (!format)
+	if (format == NULL)
 		return -EINVAL;
 
 	ipipeif_try_format(ipipeif, cfg, fmt->pad, &fmt->format, fmt->which);
@@ -792,7 +794,7 @@ static int
 ipipeif_video_in_queue(struct vpfe_device *vpfe_dev, unsigned long addr)
 {
 	struct vpfe_ipipeif_device *ipipeif = &vpfe_dev->vpfe_ipipeif;
-	void __iomem *ipipeif_base_addr = ipipeif->ipipeif_base_addr;
+	void *ipipeif_base_addr = ipipeif->ipipeif_base_addr;
 	unsigned int adofs;
 	u32 val;
 
@@ -879,7 +881,7 @@ static const struct vpfe_video_operations video_in_ops = {
 
 static int
 ipipeif_link_setup(struct media_entity *entity, const struct media_pad *local,
-		   const struct media_pad *remote, u32 flags)
+		const struct media_pad *remote, u32 flags)
 {
 	struct v4l2_subdev *sd = media_entity_to_v4l2_subdev(entity);
 	struct vpfe_ipipeif_device *ipipeif = v4l2_get_subdevdata(sd);
@@ -920,7 +922,8 @@ ipipeif_link_setup(struct media_entity *entity, const struct media_pad *local,
 		if (remote->entity == &vpfe->vpfe_ipipe.subdev.entity)
 			/* connencted to ipipe */
 			ipipeif->output = IPIPEIF_OUTPUT_IPIPE;
-		else if (remote->entity == &vpfe->vpfe_resizer.crop_resizer.subdev.entity)
+		else if (remote->entity == &vpfe->vpfe_resizer.
+			crop_resizer.subdev.entity)
 			/* connected to resizer */
 			ipipeif->output = IPIPEIF_OUTPUT_RESIZER;
 		else
@@ -975,7 +978,7 @@ vpfe_ipipeif_register_entities(struct vpfe_ipipeif_device *ipipeif,
 
 	flags = 0;
 	ret = media_create_pad_link(&ipipeif->video_in.video_dev.entity, 0,
-				    &ipipeif->subdev.entity, 0, flags);
+					&ipipeif->subdev.entity, 0, flags);
 	if (ret < 0)
 		goto fail;
 
@@ -1017,7 +1020,7 @@ int vpfe_ipipeif_init(struct vpfe_ipipeif_device *ipipeif,
 	v4l2_subdev_init(sd, &ipipeif_v4l2_ops);
 
 	sd->internal_ops = &ipipeif_v4l2_internal_ops;
-	strscpy(sd->name, "DAVINCI IPIPEIF", sizeof(sd->name));
+	strlcpy(sd->name, "DAVINCI IPIPEIF", sizeof(sd->name));
 	sd->grp_id = 1 << 16;	/* group ID for davinci subdevs */
 
 	v4l2_set_subdevdata(sd, ipipeif);

@@ -1,10 +1,14 @@
-// SPDX-License-Identifier: GPL-2.0+
 /*
  * shmob_drm_plane.c  --  SH Mobile DRM Planes
  *
  * Copyright (C) 2012 Renesas Electronics Corporation
  *
  * Laurent Pinchart (laurent.pinchart@ideasonboard.com)
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
  */
 
 #include <drm/drmP.h>
@@ -12,6 +16,8 @@
 #include <drm/drm_crtc_helper.h>
 #include <drm/drm_fb_cma_helper.h>
 #include <drm/drm_gem_cma_helper.h>
+
+#include <video/sh_mobile_meram.h>
 
 #include "shmob_drm_drv.h"
 #include "shmob_drm_kms.h"
@@ -171,17 +177,16 @@ shmob_drm_plane_update(struct drm_plane *plane, struct drm_crtc *crtc,
 		       struct drm_framebuffer *fb, int crtc_x, int crtc_y,
 		       unsigned int crtc_w, unsigned int crtc_h,
 		       uint32_t src_x, uint32_t src_y,
-		       uint32_t src_w, uint32_t src_h,
-		       struct drm_modeset_acquire_ctx *ctx)
+		       uint32_t src_w, uint32_t src_h)
 {
 	struct shmob_drm_plane *splane = to_shmob_plane(plane);
 	struct shmob_drm_device *sdev = plane->dev->dev_private;
 	const struct shmob_drm_format_info *format;
 
-	format = shmob_drm_format_info(fb->format->format);
+	format = shmob_drm_format_info(fb->pixel_format);
 	if (format == NULL) {
 		dev_dbg(sdev->dev, "update_plane: unsupported format %08x\n",
-			fb->format->format);
+			fb->pixel_format);
 		return -EINVAL;
 	}
 
@@ -203,8 +208,7 @@ shmob_drm_plane_update(struct drm_plane *plane, struct drm_crtc *crtc,
 	return 0;
 }
 
-static int shmob_drm_plane_disable(struct drm_plane *plane,
-				   struct drm_modeset_acquire_ctx *ctx)
+static int shmob_drm_plane_disable(struct drm_plane *plane)
 {
 	struct shmob_drm_plane *splane = to_shmob_plane(plane);
 	struct shmob_drm_device *sdev = plane->dev->dev_private;
@@ -217,7 +221,7 @@ static int shmob_drm_plane_disable(struct drm_plane *plane,
 
 static void shmob_drm_plane_destroy(struct drm_plane *plane)
 {
-	drm_plane_force_disable(plane);
+	shmob_drm_plane_disable(plane);
 	drm_plane_cleanup(plane);
 }
 

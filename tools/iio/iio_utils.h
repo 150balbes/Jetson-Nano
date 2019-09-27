@@ -1,16 +1,19 @@
-/* SPDX-License-Identifier: GPL-2.0-only */
 #ifndef _IIO_UTILS_H_
 #define _IIO_UTILS_H_
 
 /* IIO - useful set of util functionality
  *
  * Copyright (c) 2008 Jonathan Cameron
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License version 2 as published by
+ * the Free Software Foundation.
  */
 
 #include <stdint.h>
 
 /* Made up value to limit allocation sizes */
-#define IIO_MAX_NAME_LENGTH 64
+#define IIO_MAX_NAME_LENGTH 30
 
 #define FORMAT_SCAN_ELEMENTS_DIR "%s/scan_elements"
 #define FORMAT_TYPE_FILE "%s_type"

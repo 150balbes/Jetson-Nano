@@ -72,7 +72,7 @@ static inline void *kmap(struct page *page)
 	 * page table.
 	 */
 	BUILD_BUG_ON(PKMAP_BASE <
-		     TLBTEMP_BASE_1 + TLBTEMP_SIZE);
+		     XCHAL_PAGE_TABLE_VADDR + XCHAL_PAGE_TABLE_SIZE);
 	BUG_ON(in_interrupt());
 	if (!PageHighMem(page))
 		return page_address(page);

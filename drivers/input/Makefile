@@ -1,10 +1,11 @@
-# SPDX-License-Identifier: GPL-2.0
 #
 # Makefile for the input core drivers.
 #
 
 # Each configuration option enables a list of files.
 
+subdir-ccflags-y += -Werror
+ccflags-y += -Werror
 obj-$(CONFIG_INPUT)		+= input-core.o
 input-core-y := input.o input-compat.o input-mt.o ff-core.o
 
@@ -27,5 +28,7 @@ obj-$(CONFIG_INPUT_TOUCHSCREEN)	+= touchscreen/
 obj-$(CONFIG_INPUT_MISC)	+= misc/
 
 obj-$(CONFIG_INPUT_APMPOWER)	+= apm-power.o
+obj-$(CONFIG_INPUT_KEYRESET)	+= keyreset.o
+obj-$(CONFIG_INPUT_KEYCOMBO)	+= keycombo.o
 
 obj-$(CONFIG_RMI4_CORE)		+= rmi4/

@@ -14,8 +14,9 @@
 #include <linux/pci.h>
 #include <linux/pci_ids.h>
 #include <linux/edac.h>
-#include "edac_module.h"
+#include "edac_core.h"
 
+#define  I82860_REVISION " Ver: 2.0.2"
 #define EDAC_MOD_STR	"i82860_edac"
 
 #define i82860_printk(level, fmt, arg...) \
@@ -215,6 +216,7 @@ static int i82860_probe1(struct pci_dev *pdev, int dev_idx)
 	/* I"m not sure about this but I think that all RDRAM is SECDED */
 	mci->edac_cap = EDAC_FLAG_SECDED;
 	mci->mod_name = EDAC_MOD_STR;
+	mci->mod_ver = I82860_REVISION;
 	mci->ctl_name = i82860_devs[dev_idx].ctl_name;
 	mci->dev_name = pci_name(pdev);
 	mci->edac_check = i82860_check;

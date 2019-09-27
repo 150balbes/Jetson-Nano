@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __ASM_IDLE_H
 #define __ASM_IDLE_H
 

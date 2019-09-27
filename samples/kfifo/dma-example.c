@@ -1,8 +1,10 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Sample fifo dma implementation
  *
  * Copyright (C) 2010 Stefani Seibold <stefani@seibold.net>
+ *
+ * Released under the GPL version 2 only.
+ *
  */
 
 #include <linux/init.h>
@@ -73,8 +75,8 @@ static int __init example_init(void)
 	for (i = 0; i < nents; i++) {
 		printk(KERN_INFO
 		"sg[%d] -> "
-		"page %p offset 0x%.8x length 0x%.8x\n",
-			i, sg_page(&sg[i]), sg[i].offset, sg[i].length);
+		"page_link 0x%.8lx offset 0x%.8x length 0x%.8x\n",
+			i, sg[i].page_link, sg[i].offset, sg[i].length);
 
 		if (sg_is_last(&sg[i]))
 			break;
@@ -102,8 +104,8 @@ static int __init example_init(void)
 	for (i = 0; i < nents; i++) {
 		printk(KERN_INFO
 		"sg[%d] -> "
-		"page %p offset 0x%.8x length 0x%.8x\n",
-			i, sg_page(&sg[i]), sg[i].offset, sg[i].length);
+		"page_link 0x%.8lx offset 0x%.8x length 0x%.8x\n",
+			i, sg[i].page_link, sg[i].offset, sg[i].length);
 
 		if (sg_is_last(&sg[i]))
 			break;

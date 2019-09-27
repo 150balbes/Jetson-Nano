@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * fixed.c
  *
@@ -8,6 +7,11 @@
  *
  * Copyright (c) 2009 Nokia Corporation
  * Roger Quadros <ext-roger.quadros@nokia.com>
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License as
+ * published by the Free Software Foundation; either version 2 of the
+ * License, or (at your option) any later version.
  *
  * This is useful for systems with mixed controllable and
  * non-controllable regulators, as well as for allowing testing on
@@ -20,9 +24,10 @@
 #include <linux/platform_device.h>
 #include <linux/regulator/driver.h>
 #include <linux/regulator/fixed.h>
-#include <linux/gpio/consumer.h>
+#include <linux/gpio.h>
 #include <linux/slab.h>
 #include <linux/of.h>
+#include <linux/of_gpio.h>
 #include <linux/regulator/of_regulator.h>
 #include <linux/regulator/machine.h>
 
@@ -73,7 +78,15 @@ of_get_fixed_voltage_config(struct device *dev,
 	if (init_data->constraints.boot_on)
 		config->enabled_at_boot = true;
 
+	config->gpio = of_get_named_gpio(np, "gpio", 0);
+	if ((config->gpio < 0) && (config->gpio != -ENOENT))
+		return ERR_PTR(config->gpio);
+
 	of_property_read_u32(np, "startup-delay-us", &config->startup_delay);
+
+	config->enable_high = of_property_read_bool(np, "enable-active-high");
+	config->gpio_is_open_drain = of_property_read_bool(np,
+							   "gpio-open-drain");
 
 	if (of_find_property(np, "vin-supply", NULL))
 		config->input_supply = "vin";
@@ -89,7 +102,6 @@ static int reg_fixed_voltage_probe(struct platform_device *pdev)
 	struct fixed_voltage_config *config;
 	struct fixed_voltage_data *drvdata;
 	struct regulator_config cfg = { };
-	enum gpiod_flags gflags;
 	int ret;
 
 	drvdata = devm_kzalloc(&pdev->dev, sizeof(struct fixed_voltage_data),
@@ -138,35 +150,25 @@ static int reg_fixed_voltage_probe(struct platform_device *pdev)
 
 	drvdata->desc.fixed_uV = config->microvolts;
 
-	/*
-	 * The signal will be inverted by the GPIO core if flagged so in the
-	 * decriptor.
-	 */
-	if (config->enabled_at_boot)
-		gflags = GPIOD_OUT_HIGH;
-	else
-		gflags = GPIOD_OUT_LOW;
-
-	/*
-	 * Some fixed regulators share the enable line between two
-	 * regulators which makes it necessary to get a handle on the
-	 * same descriptor for two different consumers. This will get
-	 * the GPIO descriptor, but only the first call will initialize
-	 * it so any flags such as inversion or open drain will only
-	 * be set up by the first caller and assumed identical on the
-	 * next caller.
-	 *
-	 * FIXME: find a better way to deal with this.
-	 */
-	gflags |= GPIOD_FLAGS_BIT_NONEXCLUSIVE;
-
-	/*
-	 * Do not use devm* here: the regulator core takes over the
-	 * lifecycle management of the GPIO descriptor.
-	 */
-	cfg.ena_gpiod = gpiod_get_optional(&pdev->dev, NULL, gflags);
-	if (IS_ERR(cfg.ena_gpiod))
-		return PTR_ERR(cfg.ena_gpiod);
+	if (gpio_is_valid(config->gpio)) {
+		cfg.ena_gpio = config->gpio;
+		if (pdev->dev.of_node)
+			cfg.ena_gpio_initialized = true;
+	}
+	cfg.ena_gpio_invert = !config->enable_high;
+	if (config->enabled_at_boot) {
+		if (config->enable_high)
+			cfg.ena_gpio_flags |= GPIOF_OUT_INIT_HIGH;
+		else
+			cfg.ena_gpio_flags |= GPIOF_OUT_INIT_LOW;
+	} else {
+		if (config->enable_high)
+			cfg.ena_gpio_flags |= GPIOF_OUT_INIT_LOW;
+		else
+			cfg.ena_gpio_flags |= GPIOF_OUT_INIT_HIGH;
+	}
+	if (config->gpio_is_open_drain)
+		cfg.ena_gpio_flags |= GPIOF_OPEN_DRAIN;
 
 	cfg.dev = &pdev->dev;
 	cfg.init_data = config->init_data;
@@ -209,13 +211,43 @@ static int __init regulator_fixed_voltage_init(void)
 {
 	return platform_driver_register(&regulator_fixed_voltage_driver);
 }
-subsys_initcall(regulator_fixed_voltage_init);
+arch_initcall(regulator_fixed_voltage_init);
 
 static void __exit regulator_fixed_voltage_exit(void)
 {
 	platform_driver_unregister(&regulator_fixed_voltage_driver);
 }
 module_exit(regulator_fixed_voltage_exit);
+
+
+#if defined(CONFIG_OF)
+static const struct of_device_id fixed_sync_of_match[] = {
+	{ .compatible = "regulator-fixed-sync", },
+	{},
+};
+MODULE_DEVICE_TABLE(of, fixed_sync_of_match);
+#endif
+
+static struct platform_driver regulator_fixed_sync_voltage_driver = {
+	.probe		= reg_fixed_voltage_probe,
+	.driver		= {
+		.name		= "reg-fixed-sync-voltage",
+		.owner		= THIS_MODULE,
+		.of_match_table = of_match_ptr(fixed_sync_of_match),
+	},
+};
+
+static int __init regulator_fixed_sync_voltage_init(void)
+{
+	return platform_driver_register(&regulator_fixed_sync_voltage_driver);
+}
+subsys_initcall_sync(regulator_fixed_sync_voltage_init);
+
+static void __exit regulator_fixed_sync_voltage_exit(void)
+{
+	platform_driver_unregister(&regulator_fixed_sync_voltage_driver);
+}
+module_exit(regulator_fixed_sync_voltage_exit);
 
 MODULE_AUTHOR("Mark Brown <broonie@opensource.wolfsonmicro.com>");
 MODULE_DESCRIPTION("Fixed voltage regulator");

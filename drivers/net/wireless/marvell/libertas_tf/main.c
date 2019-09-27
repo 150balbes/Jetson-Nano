@@ -1,7 +1,11 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  *  Copyright (C) 2008, cozybit Inc.
  *  Copyright (C) 2003-2006, Marvell International Ltd.
+ *
+ *  This program is free software; you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License as published by
+ *  the Free Software Foundation; either version 2 of the License, or (at
+ *  your option) any later version.
  */
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 
@@ -114,6 +118,11 @@ static void lbtf_cmd_work(struct work_struct *work)
 	priv->cmd_timed_out = 0;
 	spin_unlock_irq(&priv->driver_lock);
 
+	if (!priv->fw_ready) {
+		lbtf_deb_leave_args(LBTF_DEB_CMD, "fw not ready");
+		return;
+	}
+
 	/* Execute the next command */
 	if (!priv->cur_cmd)
 		lbtf_execute_next_command(priv);
@@ -122,12 +131,43 @@ static void lbtf_cmd_work(struct work_struct *work)
 }
 
 /**
+ *  lbtf_setup_firmware: initialize firmware.
+ *
+ *  @priv    A pointer to struct lbtf_private structure
+ *
+ *  Returns: 0 on success.
+ */
+static int lbtf_setup_firmware(struct lbtf_private *priv)
+{
+	int ret = -1;
+
+	lbtf_deb_enter(LBTF_DEB_FW);
+	/*
+	 * Read priv address from HW
+	 */
+	eth_broadcast_addr(priv->current_addr);
+	ret = lbtf_update_hw_spec(priv);
+	if (ret) {
+		ret = -1;
+		goto done;
+	}
+
+	lbtf_set_mac_control(priv);
+	lbtf_set_radio_control(priv);
+
+	ret = 0;
+done:
+	lbtf_deb_leave_args(LBTF_DEB_FW, "ret: %d", ret);
+	return ret;
+}
+
+/**
  *  This function handles the timeout of command sending.
  *  It will re-send the same command again.
  */
-static void command_timer_fn(struct timer_list *t)
+static void command_timer_fn(unsigned long data)
 {
-	struct lbtf_private *priv = from_timer(priv, t, command_timer);
+	struct lbtf_private *priv = (struct lbtf_private *)data;
 	unsigned long flags;
 	lbtf_deb_enter(LBTF_DEB_CMD);
 
@@ -156,7 +196,8 @@ static int lbtf_init_adapter(struct lbtf_private *priv)
 	mutex_init(&priv->lock);
 
 	priv->vif = NULL;
-	timer_setup(&priv->command_timer, command_timer_fn, 0);
+	setup_timer(&priv->command_timer, command_timer_fn,
+		(unsigned long)priv);
 
 	INIT_LIST_HEAD(&priv->cmdfreeq);
 	INIT_LIST_HEAD(&priv->cmdpendingq);
@@ -219,7 +260,7 @@ static void lbtf_tx_work(struct work_struct *work)
 
 	len = skb->len;
 	info  = IEEE80211_SKB_CB(skb);
-	txpd = skb_push(skb, sizeof(struct txpd));
+	txpd = (struct txpd *)  skb_push(skb, sizeof(struct txpd));
 
 	if (priv->surpriseremoved) {
 		dev_kfree_skb_any(skb);
@@ -241,7 +282,7 @@ static void lbtf_tx_work(struct work_struct *work)
 	BUG_ON(priv->tx_skb);
 	spin_lock_irq(&priv->driver_lock);
 	priv->tx_skb = skb;
-	err = priv->ops->hw_host_to_card(priv, MVMS_DAT, skb->data, skb->len);
+	err = priv->hw_host_to_card(priv, MVMS_DAT, skb->data, skb->len);
 	spin_unlock_irq(&priv->driver_lock);
 	if (err) {
 		dev_kfree_skb_any(skb);
@@ -254,17 +295,38 @@ static void lbtf_tx_work(struct work_struct *work)
 static int lbtf_op_start(struct ieee80211_hw *hw)
 {
 	struct lbtf_private *priv = hw->priv;
+	void *card = priv->card;
+	int ret = -1;
 
 	lbtf_deb_enter(LBTF_DEB_MACOPS);
 
+	if (!priv->fw_ready)
+		/* Upload firmware */
+		if (priv->hw_prog_firmware(card))
+			goto err_prog_firmware;
+
+	/* poke the firmware */
 	priv->capability = WLAN_CAPABILITY_SHORT_PREAMBLE;
 	priv->radioon = RADIO_ON;
 	priv->mac_control = CMD_ACT_MAC_RX_ON | CMD_ACT_MAC_TX_ON;
-	lbtf_set_mac_control(priv);
-	lbtf_set_radio_control(priv);
+	ret = lbtf_setup_firmware(priv);
+	if (ret)
+		goto err_prog_firmware;
 
+	if ((priv->fwrelease < LBTF_FW_VER_MIN) ||
+	    (priv->fwrelease > LBTF_FW_VER_MAX)) {
+		ret = -1;
+		goto err_prog_firmware;
+	}
+
+	printk(KERN_INFO "libertastf: Marvell WLAN 802.11 thinfirm adapter\n");
 	lbtf_deb_leave(LBTF_DEB_MACOPS);
 	return 0;
+
+err_prog_firmware:
+	priv->hw_reset_device(card);
+	lbtf_deb_leave_args(LBTF_DEB_MACOPS, "error programming fw; ret=%d", ret);
+	return ret;
 }
 
 static void lbtf_op_stop(struct ieee80211_hw *hw)
@@ -490,14 +552,10 @@ int lbtf_rx(struct lbtf_private *priv, struct sk_buff *skb)
 	struct ieee80211_rx_status stats;
 	struct rxpd *prxpd;
 	int need_padding;
+	unsigned int flags;
 	struct ieee80211_hdr *hdr;
 
 	lbtf_deb_enter(LBTF_DEB_RX);
-
-	if (priv->radioon != RADIO_ON) {
-		lbtf_deb_rx("rx before we turned on the radio");
-		goto done;
-	}
 
 	prxpd = (struct rxpd *) skb->data;
 
@@ -506,7 +564,7 @@ int lbtf_rx(struct lbtf_private *priv, struct sk_buff *skb)
 		stats.flag |= RX_FLAG_FAILED_FCS_CRC;
 	stats.freq = priv->cur_freq;
 	stats.band = NL80211_BAND_2GHZ;
-	stats.signal = prxpd->snr - prxpd->nf;
+	stats.signal = prxpd->snr;
 	priv->noise = prxpd->nf;
 	/* Marvell rate index has a hole at value 4 */
 	if (prxpd->rx_rate > 4)
@@ -515,6 +573,7 @@ int lbtf_rx(struct lbtf_private *priv, struct sk_buff *skb)
 	skb_pull(skb, sizeof(struct rxpd));
 
 	hdr = (struct ieee80211_hdr *)skb->data;
+	flags = le32_to_cpu(*(__le32 *)(skb->data + 4));
 
 	need_padding = ieee80211_is_data_qos(hdr->frame_control);
 	need_padding ^= ieee80211_has_a4(hdr->frame_control);
@@ -536,21 +595,19 @@ int lbtf_rx(struct lbtf_private *priv, struct sk_buff *skb)
 
 	ieee80211_rx_irqsafe(priv->hw, skb);
 
-done:
 	lbtf_deb_leave(LBTF_DEB_RX);
 	return 0;
 }
 EXPORT_SYMBOL_GPL(lbtf_rx);
 
 /**
- * lbtf_add_card: Add and initialize the card.
+ * lbtf_add_card: Add and initialize the card, no fw upload yet.
  *
  *  @card    A pointer to card
  *
  *  Returns: pointer to struct lbtf_priv.
  */
-struct lbtf_private *lbtf_add_card(void *card, struct device *dmdev,
-				   const struct lbtf_ops *ops)
+struct lbtf_private *lbtf_add_card(void *card, struct device *dmdev)
 {
 	struct ieee80211_hw *hw;
 	struct lbtf_private *priv = NULL;
@@ -567,13 +624,10 @@ struct lbtf_private *lbtf_add_card(void *card, struct device *dmdev,
 
 	priv->hw = hw;
 	priv->card = card;
-	priv->ops = ops;
 	priv->tx_skb = NULL;
-	priv->radioon = RADIO_OFF;
 
 	hw->queues = 1;
 	ieee80211_hw_set(hw, HOST_BROADCAST_PS_BUFFERING);
-	ieee80211_hw_set(hw, SIGNAL_DBM);
 	hw->extra_tx_headroom = sizeof(struct txpd);
 	memcpy(priv->channels, lbtf_channels, sizeof(lbtf_channels));
 	memcpy(priv->rates, lbtf_rates, sizeof(lbtf_rates));
@@ -587,37 +641,13 @@ struct lbtf_private *lbtf_add_card(void *card, struct device *dmdev,
 		BIT(NL80211_IFTYPE_ADHOC);
 	skb_queue_head_init(&priv->bc_ps_buf);
 
-	wiphy_ext_feature_set(hw->wiphy, NL80211_EXT_FEATURE_CQM_RSSI_LIST);
-
 	SET_IEEE80211_DEV(hw, dmdev);
 
 	INIT_WORK(&priv->cmd_work, lbtf_cmd_work);
 	INIT_WORK(&priv->tx_work, lbtf_tx_work);
-
-	if (priv->ops->hw_prog_firmware(priv)) {
-		lbtf_deb_usbd(dmdev, "Error programming the firmware\n");
-		priv->ops->hw_reset_device(priv);
-		goto err_init_adapter;
-	}
-
-	eth_broadcast_addr(priv->current_addr);
-	if (lbtf_update_hw_spec(priv))
-		goto err_init_adapter;
-
-	if (priv->fwrelease < LBTF_FW_VER_MIN ||
-	    priv->fwrelease > LBTF_FW_VER_MAX) {
-		goto err_init_adapter;
-	}
-
-	/* The firmware seems to start with the radio enabled. Turn it
-	 * off before an actual mac80211 start callback is invoked.
-	 */
-	lbtf_set_radio_control(priv);
-
 	if (ieee80211_register_hw(hw))
 		goto err_init_adapter;
 
-	dev_info(dmdev, "libertastf: Marvell WLAN 802.11 thinfirm adapter\n");
 	goto done;
 
 err_init_adapter:
@@ -645,7 +675,7 @@ int lbtf_remove_card(struct lbtf_private *priv)
 	ieee80211_unregister_hw(hw);
 	ieee80211_free_hw(hw);
 
-	lbtf_deb_leave(LBTF_DEB_MAIN);
+    lbtf_deb_leave(LBTF_DEB_MAIN);
 	return 0;
 }
 EXPORT_SYMBOL_GPL(lbtf_remove_card);

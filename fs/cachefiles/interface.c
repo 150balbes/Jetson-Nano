@@ -1,8 +1,12 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /* FS-Cache interface to CacheFiles
  *
  * Copyright (C) 2007 Red Hat, Inc. All Rights Reserved.
  * Written by David Howells (dhowells@redhat.com)
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public Licence
+ * as published by the Free Software Foundation; either version
+ * 2 of the Licence, or (at your option) any later version.
  */
 
 #include <linux/slab.h>
@@ -28,7 +32,7 @@ static struct fscache_object *cachefiles_alloc_object(
 	struct cachefiles_cache *cache;
 	struct cachefiles_xattr *auxdata;
 	unsigned keylen, auxlen;
-	void *buffer, *p;
+	void *buffer;
 	char *key;
 
 	cache = container_of(_cache, struct cachefiles_cache, cache);
@@ -61,12 +65,8 @@ static struct fscache_object *cachefiles_alloc_object(
 	if (!buffer)
 		goto nomem_buffer;
 
-	keylen = cookie->key_len;
-	if (keylen <= sizeof(cookie->inline_key))
-		p = cookie->inline_key;
-	else
-		p = cookie->key;
-	memcpy(buffer + 2, p, keylen);
+	keylen = cookie->def->get_key(cookie->netfs_data, buffer + 2, 512);
+	ASSERTCMP(keylen, <, 512);
 
 	*(uint16_t *)buffer = keylen;
 	((char *)buffer)[keylen + 2] = 0;
@@ -80,17 +80,15 @@ static struct fscache_object *cachefiles_alloc_object(
 
 	/* get hold of the auxiliary data and prepend the object type */
 	auxdata = buffer;
-	auxlen = cookie->aux_len;
-	if (auxlen) {
-		if (auxlen <= sizeof(cookie->inline_aux))
-			p = cookie->inline_aux;
-		else
-			p = cookie->aux;
-		memcpy(auxdata->data, p, auxlen);
+	auxlen = 0;
+	if (cookie->def->get_aux) {
+		auxlen = cookie->def->get_aux(cookie->netfs_data,
+					      auxdata->data, 511);
+		ASSERTCMP(auxlen, <, 511);
 	}
 
 	auxdata->len = auxlen + 1;
-	auxdata->type = cookie->type;
+	auxdata->type = cookie->def->type;
 
 	lookup_data->auxdata = auxdata;
 	lookup_data->key = key;
@@ -179,12 +177,10 @@ static void cachefiles_lookup_complete(struct fscache_object *_object)
  * increment the usage count on an inode object (may fail if unmounting)
  */
 static
-struct fscache_object *cachefiles_grab_object(struct fscache_object *_object,
-					      enum fscache_obj_ref_trace why)
+struct fscache_object *cachefiles_grab_object(struct fscache_object *_object)
 {
 	struct cachefiles_object *object =
 		container_of(_object, struct cachefiles_object, fscache);
-	int u;
 
 	_enter("{OBJ%x,%d}", _object->debug_id, atomic_read(&object->usage));
 
@@ -192,9 +188,7 @@ struct fscache_object *cachefiles_grab_object(struct fscache_object *_object,
 	ASSERT((atomic_read(&object->usage) & 0xffff0000) != 0x6b6b0000);
 #endif
 
-	u = atomic_inc_return(&object->usage);
-	trace_cachefiles_ref(object, _object->cookie,
-			     (enum cachefiles_obj_ref_trace)why, u);
+	atomic_inc(&object->usage);
 	return &object->fscache;
 }
 
@@ -208,7 +202,6 @@ static void cachefiles_update_object(struct fscache_object *_object)
 	struct cachefiles_cache *cache;
 	struct fscache_cookie *cookie;
 	const struct cred *saved_cred;
-	const void *aux;
 	unsigned auxlen;
 
 	_enter("{OBJ%x}", _object->debug_id);
@@ -223,29 +216,26 @@ static void cachefiles_update_object(struct fscache_object *_object)
 	}
 
 	cookie = object->fscache.cookie;
-	auxlen = cookie->aux_len;
 
-	if (!auxlen) {
+	if (!cookie->def->get_aux) {
 		fscache_unuse_cookie(_object);
 		_leave(" [no aux]");
 		return;
 	}
 
-	auxdata = kmalloc(2 + auxlen + 3, cachefiles_gfp);
+	auxdata = kmalloc(2 + 512 + 3, cachefiles_gfp);
 	if (!auxdata) {
 		fscache_unuse_cookie(_object);
 		_leave(" [nomem]");
 		return;
 	}
 
-	aux = (auxlen <= sizeof(cookie->inline_aux)) ?
-		cookie->inline_aux : cookie->aux;
-
-	memcpy(auxdata->data, aux, auxlen);
+	auxlen = cookie->def->get_aux(cookie->netfs_data, auxdata->data, 511);
 	fscache_unuse_cookie(_object);
+	ASSERTCMP(auxlen, <, 511);
 
 	auxdata->len = auxlen + 1;
-	auxdata->type = cookie->type;
+	auxdata->type = cookie->def->type;
 
 	cachefiles_begin_secure(cache, &saved_cred);
 	cachefiles_update_object_xattr(object, auxdata);
@@ -319,12 +309,10 @@ static void cachefiles_drop_object(struct fscache_object *_object)
 /*
  * dispose of a reference to an object
  */
-static void cachefiles_put_object(struct fscache_object *_object,
-				  enum fscache_obj_ref_trace why)
+static void cachefiles_put_object(struct fscache_object *_object)
 {
 	struct cachefiles_object *object;
 	struct fscache_cache *cache;
-	int u;
 
 	ASSERT(_object);
 
@@ -340,11 +328,7 @@ static void cachefiles_put_object(struct fscache_object *_object,
 	ASSERTIFCMP(object->fscache.parent,
 		    object->fscache.parent->n_children, >, 0);
 
-	u = atomic_dec_return(&object->usage);
-	trace_cachefiles_ref(object, _object->cookie,
-			     (enum cachefiles_obj_ref_trace)why, u);
-	ASSERTCMP(u, !=, -1);
-	if (u == 0) {
+	if (atomic_dec_and_test(&object->usage)) {
 		_debug("- kill object OBJ%x", object->fscache.debug_id);
 
 		ASSERT(!test_bit(CACHEFILES_OBJECT_ACTIVE, &object->flags));
@@ -437,7 +421,7 @@ static int cachefiles_attr_changed(struct fscache_object *_object)
 	loff_t oi_size;
 	int ret;
 
-	ni_size = _object->store_limit_l;
+	_object->cookie->def->get_attr(_object->cookie->netfs_data, &ni_size);
 
 	_enter("{OBJ%x},[%llu]",
 	       _object->debug_id, (unsigned long long) ni_size);
@@ -509,7 +493,8 @@ static void cachefiles_invalidate_object(struct fscache_operation *op)
 	cache = container_of(object->fscache.cache,
 			     struct cachefiles_cache, cache);
 
-	ni_size = op->object->store_limit_l;
+	op->object->cookie->def->get_attr(op->object->cookie->netfs_data,
+					  &ni_size);
 
 	_enter("{OBJ%x},[%llu]",
 	       op->object->debug_id, (unsigned long long)ni_size);

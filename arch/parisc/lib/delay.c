@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  *	Precise Delay Loops for parisc
  *
@@ -16,7 +15,9 @@
 #include <linux/preempt.h>
 #include <linux/init.h>
 
+#include <asm/processor.h>
 #include <asm/delay.h>
+
 #include <asm/special_insns.h>    /* for mfctl() */
 #include <asm/processor.h> /* for boot_cpu_data */
 

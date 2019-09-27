@@ -1,0 +1,20 @@
+if INPUT_KEYBOARD
+
+config KEYBOARD_TIMED_GPIO
+	tristate "Timed GPIO Buttons"
+	depends on GPIOLIB
+	help
+	  This driver implements support for buttons connected
+	  to GPIO pins of various CPUs (and some other chips).
+	  Key presses are timed and can send different key codes
+	  depending on time it was pressed.
+
+	  Say Y here if your device has buttons connected
+	  directly to such GPIO pins.  Your board-specific
+	  setup logic must also provide a platform device,
+	  with configuration data saying which GPIOs are used.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called gpio_timed_keys.
+
+endif

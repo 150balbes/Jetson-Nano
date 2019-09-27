@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0-only
 config UX500_SOC_ID
 	bool "SoC bus for ST-Ericsson ux500"
 	depends on ARCH_U8500 || COMPILE_TEST

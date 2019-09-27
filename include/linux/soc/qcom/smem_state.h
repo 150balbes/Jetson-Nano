@@ -1,8 +1,7 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __QCOM_SMEM_STATE__
 #define __QCOM_SMEM_STATE__
 
-#include <linux/err.h>
+#include <linux/errno.h>
 
 struct device_node;
 struct qcom_smem_state;

@@ -1,9 +1,10 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * Greybus Module code
  *
  * Copyright 2016 Google Inc.
  * Copyright 2016 Linaro Ltd.
+ *
+ * Released under the GPLv2 only.
  */
 
 #ifndef __MODULE_H

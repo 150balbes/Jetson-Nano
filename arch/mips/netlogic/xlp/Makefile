@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0
 obj-y				+= setup.o nlm_hal.o cop2-ex.o dt.o
 obj-$(CONFIG_SMP)		+= wakeup.o
 ifdef CONFIG_USB

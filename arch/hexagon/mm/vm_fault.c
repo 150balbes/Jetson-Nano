@@ -1,8 +1,21 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Memory fault handling for Hexagon
  *
  * Copyright (c) 2010-2011, The Linux Foundation. All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 and
+ * only version 2 as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
+ * 02110-1301, USA.
  */
 
 /*
@@ -13,11 +26,10 @@
 
 #include <asm/pgtable.h>
 #include <asm/traps.h>
-#include <linux/uaccess.h>
+#include <asm/uaccess.h>
 #include <linux/mm.h>
-#include <linux/sched/signal.h>
 #include <linux/signal.h>
-#include <linux/extable.h>
+#include <linux/module.h>
 #include <linux/hardirq.h>
 
 /*
@@ -37,9 +49,9 @@ void do_page_fault(unsigned long address, long cause, struct pt_regs *regs)
 {
 	struct vm_area_struct *vma;
 	struct mm_struct *mm = current->mm;
-	int si_signo;
+	siginfo_t info;
 	int si_code = SEGV_MAPERR;
-	vm_fault_t fault;
+	int fault;
 	const struct exception_table_entry *fixup;
 	unsigned int flags = FAULT_FLAG_ALLOW_RETRY | FAULT_FLAG_KILLABLE;
 
@@ -127,22 +139,28 @@ good_area:
 	 * unable to fix up the page fault.
 	 */
 	if (fault & VM_FAULT_SIGBUS) {
-		si_signo = SIGBUS;
-		si_code = BUS_ADRERR;
+		info.si_signo = SIGBUS;
+		info.si_code = BUS_ADRERR;
 	}
 	/* Address is not in the memory map */
 	else {
-		si_signo = SIGSEGV;
-		si_code  = SEGV_ACCERR;
+		info.si_signo = SIGSEGV;
+		info.si_code = SEGV_ACCERR;
 	}
-	force_sig_fault(si_signo, si_code, (void __user *)address);
+	info.si_errno = 0;
+	info.si_addr = (void __user *)address;
+	force_sig_info(info.si_signo, &info, current);
 	return;
 
 bad_area:
 	up_read(&mm->mmap_sem);
 
 	if (user_mode(regs)) {
-		force_sig_fault(SIGSEGV, si_code, (void __user *)address);
+		info.si_signo = SIGSEGV;
+		info.si_errno = 0;
+		info.si_code = si_code;
+		info.si_addr = (void *)address;
+		force_sig_info(info.si_signo, &info, current);
 		return;
 	}
 	/* Kernel-mode fault falls through */

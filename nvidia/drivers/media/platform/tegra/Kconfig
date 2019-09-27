@@ -1,0 +1,52 @@
+source "drivers/media/platform/tegra/mipical/Kconfig"
+
+config VIDEO_CAMERA
+	tristate "generic camera device support"
+	depends on I2C && ARCH_TEGRA
+	select REGMAP_I2C
+	---help---
+	  This is a driver for generic camera devices
+	  for use with the tegra isp.
+
+config VIDEO_TEGRA_VI
+	depends on TEGRA_GRHOST
+	depends on VIDEO_V4L2 && VIDEO_V4L2_SUBDEV_API && OF
+	select VIDEOBUF2_DMA_CONTIG
+	select V4L2_FWNODE
+	tristate "Tegra video input host1x client driver"
+	default y
+	help
+	  Driver for the Tegra video input hardware based on
+	  media controller framework and interact with host1x
+	  apis to support both user space as well as kernel
+	  programming of VI hardware registers
+	  To compile this driver as a module, choose M here:
+	  the module will be called nvhost-vi.
+
+config VIDEO_TEGRA_VI_TPG
+	depends on VIDEO_TEGRA_VI
+	tristate "Tegra video input test pattern generator driver"
+	default m
+	help
+	  Driver for the Tegra video input test pattern generator
+	  driver is based on media controller framework and interact
+	  with host1x apis to support both user space as well as kernel
+	  programming of VI hardware registers to generate predefined
+	  test patterns.
+	  To compile this driver as a module, choose M here:
+	  the module will be called nvhost-vi-tpg.
+
+config VIDEO_CAMERA_SKT
+	depends on VIDEO_CAMERA && OF
+	tristate "Tegra camera sensor kernel tests"
+	default m
+	help
+	  Enables the Tegra camera sensor kernel tests.
+
+config VIDEO_ISC
+	tristate "ISC(Image Sensor Control) device support"
+	depends on I2C && ARCH_TEGRA
+	---help---
+	  This is a driver for the ISC
+	  for controlling power, interrupt and registering
+	  i2c clients related to image sensor.

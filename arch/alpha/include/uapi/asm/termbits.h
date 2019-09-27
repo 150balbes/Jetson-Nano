@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note */
 #ifndef _ALPHA_TERMBITS_H
 #define _ALPHA_TERMBITS_H
 
@@ -123,11 +122,7 @@ struct ktermios {
 #define VTDLY	00200000
 #define   VT0	00000000
 #define   VT1	00200000
-/*
- * Should be equivalent to TAB3, see description of TAB3 in
- * POSIX.1-2008, Ch. 11.2.3 "Output Modes"
- */
-#define XTABS	TAB3
+#define XTABS	01000000 /* Hmm.. Linux/i386 considers this part of TABDLY.. */
 
 /* c_cflag bit meaning */
 #define CBAUD	0000037

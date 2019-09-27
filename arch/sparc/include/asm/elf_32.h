@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __ASMSPARC_ELF_H
 #define __ASMSPARC_ELF_H
 

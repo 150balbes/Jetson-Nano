@@ -1,8 +1,11 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Xtensa xtfpga SPI controller driver
  *
  * Copyright (c) 2014 Cadence Design Systems Inc.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  */
 
 #include <linux/delay.h>
@@ -51,7 +54,7 @@ static inline void xtfpga_spi_wait_busy(struct xtfpga_spi *xspi)
 }
 
 static u32 xtfpga_spi_txrx_word(struct spi_device *spi, unsigned nsecs,
-				u32 v, u8 bits, unsigned flags)
+				u32 v, u8 bits)
 {
 	struct xtfpga_spi *xspi = spi_master_get_devdata(spi->master);
 

@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #include <linux/mmc/host.h>
 #include <linux/platform_data/mmc-omap.h>
 

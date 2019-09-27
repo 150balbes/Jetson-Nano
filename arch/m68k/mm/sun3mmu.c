@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * linux/arch/m68k/mm/sun3mmu.c
  *
@@ -16,10 +15,10 @@
 #include <linux/string.h>
 #include <linux/types.h>
 #include <linux/init.h>
-#include <linux/memblock.h>
+#include <linux/bootmem.h>
 
 #include <asm/setup.h>
-#include <linux/uaccess.h>
+#include <asm/uaccess.h>
 #include <asm/page.h>
 #include <asm/pgtable.h>
 #include <asm/machdep.h>
@@ -45,10 +44,10 @@ void __init paging_init(void)
 	unsigned long zones_size[MAX_NR_ZONES] = { 0, };
 	unsigned long size;
 
-	empty_zero_page = memblock_alloc(PAGE_SIZE, PAGE_SIZE);
-	if (!empty_zero_page)
-		panic("%s: Failed to allocate %lu bytes align=0x%lx\n",
-		      __func__, PAGE_SIZE, PAGE_SIZE);
+#ifdef TEST_VERIFY_AREA
+	wp_works_ok = 0;
+#endif
+	empty_zero_page = alloc_bootmem_pages(PAGE_SIZE);
 
 	address = PAGE_OFFSET;
 	pg_dir = swapper_pg_dir;
@@ -58,10 +57,7 @@ void __init paging_init(void)
 	size = num_pages * sizeof(pte_t);
 	size = (size + PAGE_SIZE) & ~(PAGE_SIZE-1);
 
-	next_pgtable = (unsigned long)memblock_alloc(size, PAGE_SIZE);
-	if (!next_pgtable)
-		panic("%s: Failed to allocate %lu bytes align=0x%lx\n",
-		      __func__, size, PAGE_SIZE);
+	next_pgtable = (unsigned long)alloc_bootmem_pages(size);
 	bootmem_end = (next_pgtable + size + PAGE_SIZE) & PAGE_MASK;
 
 	/* Map whole memory from PAGE_OFFSET (0x0E000000) */

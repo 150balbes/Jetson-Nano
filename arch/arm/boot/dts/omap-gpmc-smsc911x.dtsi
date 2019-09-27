@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * Common file for GPMC connected smsc911x on omaps
  *

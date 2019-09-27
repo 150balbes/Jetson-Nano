@@ -33,4 +33,5 @@ struct davinci_aemif_timing {
 	u8	ta;
 };
 
+int davinci_aemif_setup(struct platform_device *pdev);
 #endif

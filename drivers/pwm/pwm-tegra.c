@@ -1,11 +1,20 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * drivers/pwm/pwm-tegra.c
  *
  * Tegra pulse-width-modulation controller driver
  *
- * Copyright (c) 2010, NVIDIA Corporation.
+ * Copyright (c) 2010-2017, NVIDIA CORPORATION. All rights reserved.
  * Based on arch/arm/plat-mxc/pwm.c by Sascha Hauer <s.hauer@pengutronix.de>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
  */
 
 #include <linux/clk.h>
@@ -20,17 +29,17 @@
 #include <linux/slab.h>
 #include <linux/reset.h>
 
-#define PWM_ENABLE	(1 << 31)
+#define PWM_ENABLE	BIT(31)
 #define PWM_DUTY_WIDTH	8
 #define PWM_DUTY_SHIFT	16
 #define PWM_SCALE_WIDTH	13
 #define PWM_SCALE_SHIFT	0
 
+#define CLK_1MHZ	1000000UL
+
 struct tegra_pwm_soc {
 	unsigned int num_channels;
-
-	/* Maximum IP frequency for given SoCs */
-	unsigned long max_frequency;
+	unsigned long max_clk_limit;
 };
 
 struct tegra_pwm_chip {
@@ -38,13 +47,16 @@ struct tegra_pwm_chip {
 	struct device *dev;
 
 	struct clk *clk;
-	struct reset_control*rst;
+	struct reset_control *rst;
 
 	unsigned long clk_rate;
 
 	void __iomem *regs;
 
 	const struct tegra_pwm_soc *soc;
+	unsigned long		max_clk_limit;
+	int (*clk_enable)(struct clk *clk);
+	void (*clk_disable)(struct clk *clk);
 };
 
 static inline struct tegra_pwm_chip *to_tegra_pwm_chip(struct pwm_chip *chip)
@@ -58,7 +70,7 @@ static inline u32 pwm_readl(struct tegra_pwm_chip *chip, unsigned int num)
 }
 
 static inline void pwm_writel(struct tegra_pwm_chip *chip, unsigned int num,
-			     unsigned long val)
+			      unsigned long val)
 {
 	writel(val, chip->regs + (num << 4));
 }
@@ -114,11 +126,12 @@ static int tegra_pwm_config(struct pwm_chip *chip, struct pwm_device *pwm,
 	 * before writing the register. Otherwise, keep it enabled.
 	 */
 	if (!pwm_is_enabled(pwm)) {
-		err = clk_prepare_enable(pc->clk);
+		err = pc->clk_enable(pc->clk);
 		if (err < 0)
 			return err;
-	} else
+	} else {
 		val |= PWM_ENABLE;
+	}
 
 	pwm_writel(pc, pwm->hwpwm, val);
 
@@ -126,7 +139,7 @@ static int tegra_pwm_config(struct pwm_chip *chip, struct pwm_device *pwm,
 	 * If the PWM is not enabled, turn the clock off again to save power.
 	 */
 	if (!pwm_is_enabled(pwm))
-		clk_disable_unprepare(pc->clk);
+		pc->clk_disable(pc->clk);
 
 	return 0;
 }
@@ -137,7 +150,7 @@ static int tegra_pwm_enable(struct pwm_chip *chip, struct pwm_device *pwm)
 	int rc = 0;
 	u32 val;
 
-	rc = clk_prepare_enable(pc->clk);
+	rc = pc->clk_enable(pc->clk);
 	if (rc < 0)
 		return rc;
 
@@ -157,7 +170,7 @@ static void tegra_pwm_disable(struct pwm_chip *chip, struct pwm_device *pwm)
 	val &= ~PWM_ENABLE;
 	pwm_writel(pc, pwm->hwpwm, val);
 
-	clk_disable_unprepare(pc->clk);
+	pc->clk_disable(pc->clk);
 }
 
 static const struct pwm_ops tegra_pwm_ops = {
@@ -171,6 +184,10 @@ static int tegra_pwm_probe(struct platform_device *pdev)
 {
 	struct tegra_pwm_chip *pwm;
 	struct resource *r;
+	bool no_clk_sleeping_in_ops;
+	struct clk *parent_clk;
+	struct clk *parent_slow;
+	u32 pval;
 	int ret;
 
 	pwm = devm_kzalloc(&pdev->dev, sizeof(*pwm), GFP_KERNEL);
@@ -187,25 +204,107 @@ static int tegra_pwm_probe(struct platform_device *pdev)
 
 	platform_set_drvdata(pdev, pwm);
 
-	pwm->clk = devm_clk_get(&pdev->dev, NULL);
+	no_clk_sleeping_in_ops = of_property_read_bool(pdev->dev.of_node,
+						       "nvidia,no-clk-sleeping-in-ops");
+	dev_info(&pdev->dev, "PWM clk can%s sleep in ops\n",
+			no_clk_sleeping_in_ops ? "not" : "");
+
+	ret = of_property_read_u32(pdev->dev.of_node,
+				   "pwm-minimum-frequency-hz", &pval);
+	if (!ret)
+		pwm->max_clk_limit = pval * 256 * (1 << PWM_SCALE_WIDTH);
+	else
+		pwm->max_clk_limit = pwm->soc->max_clk_limit;
+
+	pwm->clk = devm_clk_get(&pdev->dev, "pwm");
 	if (IS_ERR(pwm->clk))
 		return PTR_ERR(pwm->clk);
 
-	/* Set maximum frequency of the IP */
-	ret = clk_set_rate(pwm->clk, pwm->soc->max_frequency);
+	parent_clk = devm_clk_get(&pdev->dev, "parent");
+	if (!IS_ERR(parent_clk)) {
+		struct device *dev = &pdev->dev;
+
+		/*
+		 * Set PWM frequency to lower so that it can switch
+		 * to parent with higher clock rate.
+		 */
+		ret = clk_set_rate(pwm->clk, CLK_1MHZ);
+		if (ret < 0) {
+			dev_err(dev, "Failed to set 1M clock rate: %d\n", ret);
+			return ret;
+		}
+
+		ret = clk_set_parent(pwm->clk, parent_clk);
+		if (ret < 0) {
+			dev_err(dev, "Failed to set parent clk: %d\n", ret);
+			return ret;
+		}
+
+		/* Set clock to maximum clock limit */
+		ret = clk_set_rate(pwm->clk, pwm->max_clk_limit);
+		if (ret < 0) {
+			dev_err(dev, "Failed to set max clk rate: %d\n", ret);
+			return ret;
+		}
+	}
+
+	/* Read PWM clock rate from source */
+	pwm->clk_rate = clk_get_rate(pwm->clk);
+
+	/* Limit the maximum clock rate */
+	if (pwm->max_clk_limit &&
+	    (pwm->clk_rate > pwm->max_clk_limit)) {
+		ret = clk_set_rate(pwm->clk, pwm->max_clk_limit);
+		if (ret < 0) {
+			dev_err(&pdev->dev, "Failed to set max clk rate: %d\n",
+				ret);
+			return ret;
+		}
+		pwm->clk_rate = clk_get_rate(pwm->clk);
+	}
+
+	if (pwm->clk_rate <= pwm->max_clk_limit)
+		goto parent_done;
+	/*
+	 * If clk_rate is still higher than the max_clk_limit then
+	 * switch to slow parent if exist
+	 */
+	parent_slow = devm_clk_get(&pdev->dev, "slow-parent");
+	if (IS_ERR(parent_slow)) {
+		dev_warn(&pdev->dev, "Source clock %lu is higher than required %lu\n",
+			 pwm->clk_rate, pwm->max_clk_limit);
+		goto parent_done;
+	}
+
+	ret = clk_set_parent(pwm->clk, parent_slow);
 	if (ret < 0) {
-		dev_err(&pdev->dev, "Failed to set max frequency: %d\n", ret);
+		dev_err(&pdev->dev, "Failed to set slow-parent: %d\n", ret);
 		return ret;
 	}
 
-	/*
-	 * The requested and configured frequency may differ due to
-	 * clock register resolutions. Get the configured frequency
-	 * so that PWM period can be calculated more accurately.
-	 */
+	/* Set clock to maximum clock limit */
+	ret = clk_set_rate(pwm->clk, pwm->max_clk_limit);
+	if (ret < 0) {
+		dev_err(&pdev->dev, "Failed to set max clk rate: %d\n", ret);
+		return ret;
+	}
 	pwm->clk_rate = clk_get_rate(pwm->clk);
 
-	pwm->rst = devm_reset_control_get_exclusive(&pdev->dev, "pwm");
+parent_done:
+	if (no_clk_sleeping_in_ops) {
+		ret = clk_prepare(pwm->clk);
+		if (ret) {
+			dev_err(&pdev->dev, "PWM clock prepare failed\n");
+			return ret;
+		}
+		pwm->clk_enable = clk_enable;
+		pwm->clk_disable = clk_disable;
+	} else {
+		pwm->clk_enable = clk_prepare_enable;
+		pwm->clk_disable = clk_disable_unprepare;
+	}
+
+	pwm->rst = devm_reset_control_get(&pdev->dev, "pwm");
 	if (IS_ERR(pwm->rst)) {
 		ret = PTR_ERR(pwm->rst);
 		dev_err(&pdev->dev, "Reset control is not found: %d\n", ret);
@@ -238,7 +337,7 @@ static int tegra_pwm_remove(struct platform_device *pdev)
 	if (WARN_ON(!pc))
 		return -ENODEV;
 
-	err = clk_prepare_enable(pc->clk);
+	err = pc->clk_enable(pc->clk);
 	if (err < 0)
 		return err;
 
@@ -246,12 +345,12 @@ static int tegra_pwm_remove(struct platform_device *pdev)
 		struct pwm_device *pwm = &pc->chip.pwms[i];
 
 		if (!pwm_is_enabled(pwm))
-			if (clk_prepare_enable(pc->clk) < 0)
+			if (pc->clk_enable(pc->clk) < 0)
 				continue;
 
 		pwm_writel(pc, i, 0);
 
-		clk_disable_unprepare(pc->clk);
+		pc->clk_disable(pc->clk);
 	}
 
 	reset_control_assert(pc->rst);
@@ -274,19 +373,26 @@ static int tegra_pwm_resume(struct device *dev)
 
 static const struct tegra_pwm_soc tegra20_pwm_soc = {
 	.num_channels = 4,
-	.max_frequency = 48000000UL,
+	.max_clk_limit = 48000000UL, /* 48 MHz */
 };
 
 static const struct tegra_pwm_soc tegra186_pwm_soc = {
 	.num_channels = 1,
-	.max_frequency = 102000000UL,
+	.max_clk_limit = 102000000UL, /*102 MHz */
+};
+
+static const struct tegra_pwm_soc tegra194_pwm_soc = {
+	.num_channels = 1,
+	.max_clk_limit = 408000000UL, /*408 MHz */
 };
 
 static const struct of_device_id tegra_pwm_of_match[] = {
 	{ .compatible = "nvidia,tegra20-pwm", .data = &tegra20_pwm_soc },
 	{ .compatible = "nvidia,tegra186-pwm", .data = &tegra186_pwm_soc },
+	{ .compatible = "nvidia,tegra194-pwm", .data = &tegra194_pwm_soc },
 	{ }
 };
+
 MODULE_DEVICE_TABLE(of, tegra_pwm_of_match);
 
 static const struct dev_pm_ops tegra_pwm_pm_ops = {

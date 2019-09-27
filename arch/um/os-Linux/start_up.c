@@ -154,10 +154,10 @@ static int __init nosysemu_cmd_param(char *str, int* add)
 
 __uml_setup("nosysemu", nosysemu_cmd_param,
 "nosysemu\n"
-"    Turns off syscall emulation patch for ptrace (SYSEMU).\n"
+"    Turns off syscall emulation patch for ptrace (SYSEMU) on.\n"
 "    SYSEMU is a performance-patch introduced by Laurent Vivier. It changes\n"
-"    behaviour of ptrace() and helps reduce host context switch rates.\n"
-"    To make it work, you need a kernel patch for your host, too.\n"
+"    behaviour of ptrace() and helps reducing host context switch rate.\n"
+"    To make it working, you need a kernel patch for your host, too.\n"
 "    See http://perso.wanadoo.fr/laurent.vivier/UML/ for further \n"
 "    information.\n\n");
 
@@ -166,7 +166,7 @@ static void __init check_sysemu(void)
 	unsigned long regs[MAX_REG_NR];
 	int pid, n, status, count=0;
 
-	os_info("Checking syscall emulation patch for ptrace...");
+	non_fatal("Checking syscall emulation patch for ptrace...");
 	sysemu_supported = 0;
 	pid = start_ptraced_child();
 
@@ -199,10 +199,10 @@ static void __init check_sysemu(void)
 		goto fail_stopped;
 
 	sysemu_supported = 1;
-	os_info("OK\n");
+	non_fatal("OK\n");
 	set_using_sysemu(!force_sysemu_disabled);
 
-	os_info("Checking advanced syscall emulation patch for ptrace...");
+	non_fatal("Checking advanced syscall emulation patch for ptrace...");
 	pid = start_ptraced_child();
 
 	if ((ptrace(PTRACE_OLDSETOPTIONS, pid, 0,
@@ -244,7 +244,7 @@ static void __init check_sysemu(void)
 		goto fail_stopped;
 
 	sysemu_supported = 2;
-	os_info("OK\n");
+	non_fatal("OK\n");
 
 	if (!force_sysemu_disabled)
 		set_using_sysemu(sysemu_supported);
@@ -260,7 +260,7 @@ static void __init check_ptrace(void)
 {
 	int pid, syscall, n, status;
 
-	os_info("Checking that ptrace can change system call numbers...");
+	non_fatal("Checking that ptrace can change system call numbers...");
 	pid = start_ptraced_child();
 
 	if ((ptrace(PTRACE_OLDSETOPTIONS, pid, 0,
@@ -292,7 +292,7 @@ static void __init check_ptrace(void)
 		}
 	}
 	stop_ptraced_child(pid, 0, 1);
-	os_info("OK\n");
+	non_fatal("OK\n");
 	check_sysemu();
 }
 
@@ -308,17 +308,15 @@ static void __init check_coredump_limit(void)
 		return;
 	}
 
-	os_info("Core dump limits :\n\tsoft - ");
+	printf("Core dump limits :\n\tsoft - ");
 	if (lim.rlim_cur == RLIM_INFINITY)
-		os_info("NONE\n");
-	else
-		os_info("%llu\n", (unsigned long long)lim.rlim_cur);
+		printf("NONE\n");
+	else printf("%lu\n", lim.rlim_cur);
 
-	os_info("\thard - ");
+	printf("\thard - ");
 	if (lim.rlim_max == RLIM_INFINITY)
-		os_info("NONE\n");
-	else
-		os_info("%llu\n", (unsigned long long)lim.rlim_max);
+		printf("NONE\n");
+	else printf("%lu\n", lim.rlim_max);
 }
 
 void __init os_early_checks(void)
@@ -351,7 +349,7 @@ int __init parse_iomem(char *str, int *add)
 	driver = str;
 	file = strchr(str,',');
 	if (file == NULL) {
-		os_warn("parse_iomem : failed to parse iomem\n");
+		fprintf(stderr, "parse_iomem : failed to parse iomem\n");
 		goto out;
 	}
 	*file = '\0';

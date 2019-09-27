@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __MYRI10GE_MCP_H__
 #define __MYRI10GE_MCP_H__
 

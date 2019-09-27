@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Touchscreen driver for Dialog Semiconductor DA9034
  *
@@ -6,6 +5,10 @@
  *	Fengwei Yin <fengwei.yin@marvell.com>
  *	Bin Yang  <bin.yang@marvell.com>
  *	Eric Miao <eric.miao@marvell.com>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  */
 
 #include <linux/module.h>

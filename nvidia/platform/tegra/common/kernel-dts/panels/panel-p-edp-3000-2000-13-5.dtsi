@@ -1,0 +1,75 @@
+/*
+ * arch/arm/boot/dts/panel-p-edp-3000-2000-13-5.dtsi
+ *
+ * Copyright (c) 2014-2018, NVIDIA CORPORATION.  All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with this program; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+ */
+#include <dt-bindings/display/tegra-dc.h>
+#include <dt-bindings/display/tegra-panel.h>
+
+/ {
+	host1x {
+		sor2 {
+			panel_p_edp_3000_2000_13_5: panel-p-edp-3000-2000-13-5 {
+				status = "disabled";
+				compatible = "p-edp,3000-2000-13-5";
+				nvidia,tx-pu-disable = <1>;
+				backlight = <&lp8556_backlight>;
+				disp-default-out {
+					nvidia,is_ext_dp_panel=<0>;
+					nvidia,out-type = <TEGRA_DC_OUT_DP>;
+					nvidia,out-align = <TEGRA_DC_ALIGN_MSB>;
+					nvidia,out-order = <TEGRA_DC_ORDER_RED_BLUE>;
+					nvidia,out-flags = <TEGRA_DC_OUT_CONTINUOUS_MODE>;
+					nvidia,out-pins = <TEGRA_DC_OUT_PIN_H_SYNC TEGRA_DC_OUT_PIN_POL_LOW
+							   TEGRA_DC_OUT_PIN_V_SYNC TEGRA_DC_OUT_PIN_POL_LOW
+							   TEGRA_DC_OUT_PIN_PIXEL_CLOCK TEGRA_DC_OUT_PIN_POL_LOW
+							   TEGRA_DC_OUT_PIN_DATA_ENABLE TEGRA_DC_OUT_PIN_POL_HIGH>;
+					nvidia,out-depth = <24>;
+					nvidia,out-width = <285>;
+					nvidia,out-height = <190>;
+					nvidia,out-xres = <3000>;
+					nvidia,out-yres = <2000>;
+					nvidia,out-rotation = <180>;
+				};
+				display-timings {
+					3000x2000-60HZ {
+						clock-frequency = <417000000>;
+						hactive = <3000>;
+						vactive = <2000>;
+						hfront-porch = <8>;
+						hback-porch = <344>;
+						hsync-len = <8>;
+						vfront-porch = <8>;
+						vback-porch = <48>;
+						vsync-len = <8>;
+						nvidia,h-ref-to-sync = <1>;
+						nvidia,v-ref-to-sync = <1>;
+					};
+				};
+			};
+		};
+	};
+	backlight {
+		panel_p_edp_3000_2000_13_5_bl: panel-p-edp-3000-2000-13-5-bl {
+			status = "okay";
+			compatible = "p-edp,3000-2000-13-5-bl";
+			pwms = <&tegra_pwm4 0 40161>;
+			max-brightness = <255>;
+			default-brightness = <224>;
+		};
+	};
+};

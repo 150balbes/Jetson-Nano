@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 #include "qlge.h"
 
 int ql_unpause_mpi_risc(struct ql_adapter *qdev)
@@ -213,6 +212,7 @@ static int ql_idc_req_aen(struct ql_adapter *qdev)
 	/* Get the status data and start up a thread to
 	 * handle the request.
 	 */
+	mbcp = &qdev->idc_mbc;
 	mbcp->out_count = 4;
 	status = ql_get_mb_sts(qdev, mbcp);
 	if (status) {
@@ -1176,7 +1176,6 @@ void ql_mpi_idc_work(struct work_struct *work)
 	case MB_CMD_PORT_RESET:
 	case MB_CMD_STOP_FW:
 		ql_link_off(qdev);
-		/* Fall through */
 	case MB_CMD_SET_PORT_CFG:
 		/* Signal the resulting link up AEN
 		 * that the frame routing and mac addr

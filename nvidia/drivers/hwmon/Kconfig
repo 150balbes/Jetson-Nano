@@ -1,0 +1,13 @@
+if HWMON
+
+config GENERIC_PWM_TACHOMETER
+	tristate "Generic PWM based tachometer driver"
+	depends on PWM
+	help
+	  Enables a driver to use PWM signal from motor to use
+	  for measuring the motor speed. The RPM is captured by
+	  PWM modules which has PWM capture capability and this
+	  drivers reads the captured data from PWM IP to convert
+	  it to speed in RPM.
+
+endif

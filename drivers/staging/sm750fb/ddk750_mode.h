@@ -1,28 +1,29 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef DDK750_MODE_H__
 #define DDK750_MODE_H__
 
 #include "ddk750_chip.h"
 
-enum spolarity {
+typedef enum _spolarity_t {
 	POS = 0, /* positive */
 	NEG, /* negative */
-};
+}
+spolarity_t;
 
-struct mode_parameter {
+
+typedef struct _mode_parameter_t {
 	/* Horizontal timing. */
 	unsigned long horizontal_total;
 	unsigned long horizontal_display_end;
 	unsigned long horizontal_sync_start;
 	unsigned long horizontal_sync_width;
-	enum spolarity horizontal_sync_polarity;
+	spolarity_t horizontal_sync_polarity;
 
 	/* Vertical timing. */
 	unsigned long vertical_total;
 	unsigned long vertical_display_end;
 	unsigned long vertical_sync_start;
 	unsigned long vertical_sync_height;
-	enum spolarity vertical_sync_polarity;
+	spolarity_t vertical_sync_polarity;
 
 	/* Refresh timing. */
 	unsigned long pixel_clock;
@@ -30,8 +31,11 @@ struct mode_parameter {
 	unsigned long vertical_frequency;
 
 	/* Clock Phase. This clock phase only applies to Panel. */
-	enum spolarity clock_phase_polarity;
-};
+	spolarity_t clock_phase_polarity;
+}
+mode_parameter_t;
 
-int ddk750_setModeTiming(struct mode_parameter *parm, enum clock_type clock);
+int ddk750_setModeTiming(mode_parameter_t *, clock_type_t);
+
+
 #endif

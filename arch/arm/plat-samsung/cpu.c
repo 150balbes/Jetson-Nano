@@ -1,9 +1,14 @@
-// SPDX-License-Identifier: GPL-2.0
-//
-// Copyright (c) 2009-2011 Samsung Electronics Co., Ltd.
-//		http://www.samsung.com
-//
-// Samsung CPU Support
+/* linux/arch/arm/plat-samsung/cpu.c
+ *
+ * Copyright (c) 2009-2011 Samsung Electronics Co., Ltd.
+ *		http://www.samsung.com
+ *
+ * Samsung CPU Support
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+*/
 
 #include <linux/module.h>
 #include <linux/kernel.h>

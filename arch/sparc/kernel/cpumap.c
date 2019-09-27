@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /* cpumap.c: used for optimizing CPU assignment
  *
  * Copyright (C) 2009 Hong H. Pham <hong.pham@windriver.com>
@@ -194,7 +193,8 @@ static struct cpuinfo_tree *build_cpuinfo_tree(void)
 
 	n = enumerate_cpuinfo_nodes(tmp_level);
 
-	new_tree = kzalloc(struct_size(new_tree, nodes, n), GFP_ATOMIC);
+	new_tree = kzalloc(sizeof(struct cpuinfo_tree) +
+	                   (sizeof(struct cpuinfo_node) * n), GFP_ATOMIC);
 	if (!new_tree)
 		return NULL;
 
@@ -328,7 +328,6 @@ static int iterate_cpu(struct cpuinfo_tree *t, unsigned int root_index)
 	case SUN4V_CHIP_NIAGARA5:
 	case SUN4V_CHIP_SPARC_M6:
 	case SUN4V_CHIP_SPARC_M7:
-	case SUN4V_CHIP_SPARC_M8:
 	case SUN4V_CHIP_SPARC_SN:
 	case SUN4V_CHIP_SPARC64X:
 		rover_inc_table = niagara_iterate_method;

@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0
 
 #
 # Makefile for m68k-specific library files..

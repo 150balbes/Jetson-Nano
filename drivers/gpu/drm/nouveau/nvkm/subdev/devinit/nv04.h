@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: MIT */
 #ifndef __NV04_DEVINIT_H__
 #define __NV04_DEVINIT_H__
 #define nv04_devinit(p) container_of((p), struct nv04_devinit, base)

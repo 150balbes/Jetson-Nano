@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0
 all: test mod
 test: virtio_test vringh_test
 virtio_test: virtio_ring.o virtio_test.o

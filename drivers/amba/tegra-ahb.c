@@ -1,6 +1,5 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2012, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2012-2017, NVIDIA CORPORATION.  All rights reserved.
  * Copyright (C) 2011 Google, Inc.
  *
  * Author:
@@ -9,6 +8,16 @@
  *	Benoit Goby <benoit@android.com>
  *	Colin Cross <ccross@android.com>
  *	Hiroshi DOYU <hdoyu@nvidia.com>
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
  */
 
 #include <linux/err.h>
@@ -19,6 +28,8 @@
 #include <linux/of.h>
 
 #include <soc/tegra/ahb.h>
+
+#include <dt-bindings/soc/tegra-ahb.h>
 
 #define DRV_NAME "tegra-ahb"
 
@@ -84,6 +95,7 @@
 #define INCORRECT_BASE_ADDR_LOW_BYTE		0x4
 
 static struct platform_driver tegra_ahb_driver;
+static struct tegra_ahb *_ahb;
 
 static const u32 tegra_ahb_gizmo[] = {
 	AHB_ARBITRATION_DISABLE,
@@ -134,10 +146,10 @@ static inline void gizmo_writel(struct tegra_ahb *ahb, u32 value, u32 offset)
 }
 
 #ifdef CONFIG_TEGRA_IOMMU_SMMU
-static int tegra_ahb_match_by_smmu(struct device *dev, const void *data)
+static int tegra_ahb_match_by_smmu(struct device *dev, void *data)
 {
 	struct tegra_ahb *ahb = dev_get_drvdata(dev);
-	const struct device_node *dn = data;
+	struct device_node *dn = data;
 
 	return (ahb->dev->of_node == dn) ? 1 : 0;
 }
@@ -161,7 +173,38 @@ int tegra_ahb_enable_smmu(struct device_node *dn)
 EXPORT_SYMBOL(tegra_ahb_enable_smmu);
 #endif
 
-static int __maybe_unused tegra_ahb_suspend(struct device *dev)
+int tegra_ahb_get_master_id(struct device *dev)
+{
+	struct device_node *np = dev->of_node;
+	u32 val = 0;
+	int err;
+
+	err = of_property_read_u32(np, "nvidia,ahb-master-id", &val);
+	if (err)
+		return err;
+
+	if (val > TEGRA_AHB_MASTER_ID_MAX)
+		return -EINVAL;
+
+	return val;
+}
+EXPORT_SYMBOL(tegra_ahb_get_master_id);
+
+bool tegra_ahb_is_mem_wrque_busy(u32 mst_id)
+{
+	struct tegra_ahb *ahb = _ahb;
+	u32 val;
+
+	val = gizmo_readl(ahb, AHB_ARBITRATION_AHB_MEM_WRQUE_MST_ID);
+	if (val & (1 << mst_id))
+		return true;
+
+	return false;
+}
+EXPORT_SYMBOL(tegra_ahb_is_mem_wrque_busy);
+
+#ifdef CONFIG_PM
+static int tegra_ahb_suspend(struct device *dev)
 {
 	int i;
 	struct tegra_ahb *ahb = dev_get_drvdata(dev);
@@ -171,7 +214,7 @@ static int __maybe_unused tegra_ahb_suspend(struct device *dev)
 	return 0;
 }
 
-static int __maybe_unused tegra_ahb_resume(struct device *dev)
+static int tegra_ahb_resume(struct device *dev)
 {
 	int i;
 	struct tegra_ahb *ahb = dev_get_drvdata(dev);
@@ -180,6 +223,7 @@ static int __maybe_unused tegra_ahb_resume(struct device *dev)
 		gizmo_writel(ahb, ahb->ctx[i], tegra_ahb_gizmo[i]);
 	return 0;
 }
+#endif
 
 static UNIVERSAL_DEV_PM_OPS(tegra_ahb_pm,
 			    tegra_ahb_suspend,
@@ -271,6 +315,7 @@ static int tegra_ahb_probe(struct platform_device *pdev)
 		return PTR_ERR(ahb->regs);
 
 	ahb->dev = &pdev->dev;
+	_ahb = ahb;
 	platform_set_drvdata(pdev, ahb);
 	tegra_ahb_gizmo_init(ahb);
 	return 0;

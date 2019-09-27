@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 / {
 	#address-cells = <1>;
 	#size-cells = <1>;
@@ -83,7 +82,6 @@
 			interrupts = <2>;
 
 			clocks = <&periph_clk>;
-			clock-names = "refclk";
 
 			status = "disabled";
 		};
@@ -96,7 +94,6 @@
 			interrupts = <3>;
 
 			clocks = <&periph_clk>;
-			clock-names = "refclk";
 
 			status = "disabled";
 		};

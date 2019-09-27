@@ -171,6 +171,7 @@ union cvmx_agl_gmx_bad_reg {
 		uint64_t reserved_38_63:26;
 #endif
 	} cn52xx;
+	struct cvmx_agl_gmx_bad_reg_cn52xx cn52xxp1;
 	struct cvmx_agl_gmx_bad_reg_cn56xx {
 #ifdef __BIG_ENDIAN_BITFIELD
 		uint64_t reserved_35_63:29;
@@ -198,6 +199,13 @@ union cvmx_agl_gmx_bad_reg {
 		uint64_t reserved_35_63:29;
 #endif
 	} cn56xx;
+	struct cvmx_agl_gmx_bad_reg_cn56xx cn56xxp1;
+	struct cvmx_agl_gmx_bad_reg_s cn61xx;
+	struct cvmx_agl_gmx_bad_reg_s cn63xx;
+	struct cvmx_agl_gmx_bad_reg_s cn63xxp1;
+	struct cvmx_agl_gmx_bad_reg_s cn66xx;
+	struct cvmx_agl_gmx_bad_reg_s cn68xx;
+	struct cvmx_agl_gmx_bad_reg_s cn68xxp1;
 };
 
 union cvmx_agl_gmx_bist {
@@ -220,6 +228,15 @@ union cvmx_agl_gmx_bist {
 		uint64_t reserved_10_63:54;
 #endif
 	} cn52xx;
+	struct cvmx_agl_gmx_bist_cn52xx cn52xxp1;
+	struct cvmx_agl_gmx_bist_cn52xx cn56xx;
+	struct cvmx_agl_gmx_bist_cn52xx cn56xxp1;
+	struct cvmx_agl_gmx_bist_s cn61xx;
+	struct cvmx_agl_gmx_bist_s cn63xx;
+	struct cvmx_agl_gmx_bist_s cn63xxp1;
+	struct cvmx_agl_gmx_bist_s cn66xx;
+	struct cvmx_agl_gmx_bist_s cn68xx;
+	struct cvmx_agl_gmx_bist_s cn68xxp1;
 };
 
 union cvmx_agl_gmx_drv_ctl {
@@ -253,6 +270,8 @@ union cvmx_agl_gmx_drv_ctl {
 		uint64_t reserved_49_63:15;
 #endif
 	} s;
+	struct cvmx_agl_gmx_drv_ctl_s cn52xx;
+	struct cvmx_agl_gmx_drv_ctl_s cn52xxp1;
 	struct cvmx_agl_gmx_drv_ctl_cn56xx {
 #ifdef __BIG_ENDIAN_BITFIELD
 		uint64_t reserved_17_63:47;
@@ -270,6 +289,7 @@ union cvmx_agl_gmx_drv_ctl {
 		uint64_t reserved_17_63:47;
 #endif
 	} cn56xx;
+	struct cvmx_agl_gmx_drv_ctl_cn56xx cn56xxp1;
 };
 
 union cvmx_agl_gmx_inf_mode {
@@ -285,6 +305,10 @@ union cvmx_agl_gmx_inf_mode {
 		uint64_t reserved_2_63:62;
 #endif
 	} s;
+	struct cvmx_agl_gmx_inf_mode_s cn52xx;
+	struct cvmx_agl_gmx_inf_mode_s cn52xxp1;
+	struct cvmx_agl_gmx_inf_mode_s cn56xx;
+	struct cvmx_agl_gmx_inf_mode_s cn56xxp1;
 };
 
 union cvmx_agl_gmx_prtx_cfg {
@@ -339,6 +363,15 @@ union cvmx_agl_gmx_prtx_cfg {
 		uint64_t reserved_6_63:58;
 #endif
 	} cn52xx;
+	struct cvmx_agl_gmx_prtx_cfg_cn52xx cn52xxp1;
+	struct cvmx_agl_gmx_prtx_cfg_cn52xx cn56xx;
+	struct cvmx_agl_gmx_prtx_cfg_cn52xx cn56xxp1;
+	struct cvmx_agl_gmx_prtx_cfg_s cn61xx;
+	struct cvmx_agl_gmx_prtx_cfg_s cn63xx;
+	struct cvmx_agl_gmx_prtx_cfg_s cn63xxp1;
+	struct cvmx_agl_gmx_prtx_cfg_s cn66xx;
+	struct cvmx_agl_gmx_prtx_cfg_s cn68xx;
+	struct cvmx_agl_gmx_prtx_cfg_s cn68xxp1;
 };
 
 union cvmx_agl_gmx_rxx_adr_cam0 {
@@ -350,6 +383,16 @@ union cvmx_agl_gmx_rxx_adr_cam0 {
 		uint64_t adr:64;
 #endif
 	} s;
+	struct cvmx_agl_gmx_rxx_adr_cam0_s cn52xx;
+	struct cvmx_agl_gmx_rxx_adr_cam0_s cn52xxp1;
+	struct cvmx_agl_gmx_rxx_adr_cam0_s cn56xx;
+	struct cvmx_agl_gmx_rxx_adr_cam0_s cn56xxp1;
+	struct cvmx_agl_gmx_rxx_adr_cam0_s cn61xx;
+	struct cvmx_agl_gmx_rxx_adr_cam0_s cn63xx;
+	struct cvmx_agl_gmx_rxx_adr_cam0_s cn63xxp1;
+	struct cvmx_agl_gmx_rxx_adr_cam0_s cn66xx;
+	struct cvmx_agl_gmx_rxx_adr_cam0_s cn68xx;
+	struct cvmx_agl_gmx_rxx_adr_cam0_s cn68xxp1;
 };
 
 union cvmx_agl_gmx_rxx_adr_cam1 {
@@ -361,6 +404,16 @@ union cvmx_agl_gmx_rxx_adr_cam1 {
 		uint64_t adr:64;
 #endif
 	} s;
+	struct cvmx_agl_gmx_rxx_adr_cam1_s cn52xx;
+	struct cvmx_agl_gmx_rxx_adr_cam1_s cn52xxp1;
+	struct cvmx_agl_gmx_rxx_adr_cam1_s cn56xx;
+	struct cvmx_agl_gmx_rxx_adr_cam1_s cn56xxp1;
+	struct cvmx_agl_gmx_rxx_adr_cam1_s cn61xx;
+	struct cvmx_agl_gmx_rxx_adr_cam1_s cn63xx;
+	struct cvmx_agl_gmx_rxx_adr_cam1_s cn63xxp1;
+	struct cvmx_agl_gmx_rxx_adr_cam1_s cn66xx;
+	struct cvmx_agl_gmx_rxx_adr_cam1_s cn68xx;
+	struct cvmx_agl_gmx_rxx_adr_cam1_s cn68xxp1;
 };
 
 union cvmx_agl_gmx_rxx_adr_cam2 {
@@ -372,6 +425,16 @@ union cvmx_agl_gmx_rxx_adr_cam2 {
 		uint64_t adr:64;
 #endif
 	} s;
+	struct cvmx_agl_gmx_rxx_adr_cam2_s cn52xx;
+	struct cvmx_agl_gmx_rxx_adr_cam2_s cn52xxp1;
+	struct cvmx_agl_gmx_rxx_adr_cam2_s cn56xx;
+	struct cvmx_agl_gmx_rxx_adr_cam2_s cn56xxp1;
+	struct cvmx_agl_gmx_rxx_adr_cam2_s cn61xx;
+	struct cvmx_agl_gmx_rxx_adr_cam2_s cn63xx;
+	struct cvmx_agl_gmx_rxx_adr_cam2_s cn63xxp1;
+	struct cvmx_agl_gmx_rxx_adr_cam2_s cn66xx;
+	struct cvmx_agl_gmx_rxx_adr_cam2_s cn68xx;
+	struct cvmx_agl_gmx_rxx_adr_cam2_s cn68xxp1;
 };
 
 union cvmx_agl_gmx_rxx_adr_cam3 {
@@ -383,6 +446,16 @@ union cvmx_agl_gmx_rxx_adr_cam3 {
 		uint64_t adr:64;
 #endif
 	} s;
+	struct cvmx_agl_gmx_rxx_adr_cam3_s cn52xx;
+	struct cvmx_agl_gmx_rxx_adr_cam3_s cn52xxp1;
+	struct cvmx_agl_gmx_rxx_adr_cam3_s cn56xx;
+	struct cvmx_agl_gmx_rxx_adr_cam3_s cn56xxp1;
+	struct cvmx_agl_gmx_rxx_adr_cam3_s cn61xx;
+	struct cvmx_agl_gmx_rxx_adr_cam3_s cn63xx;
+	struct cvmx_agl_gmx_rxx_adr_cam3_s cn63xxp1;
+	struct cvmx_agl_gmx_rxx_adr_cam3_s cn66xx;
+	struct cvmx_agl_gmx_rxx_adr_cam3_s cn68xx;
+	struct cvmx_agl_gmx_rxx_adr_cam3_s cn68xxp1;
 };
 
 union cvmx_agl_gmx_rxx_adr_cam4 {
@@ -394,6 +467,16 @@ union cvmx_agl_gmx_rxx_adr_cam4 {
 		uint64_t adr:64;
 #endif
 	} s;
+	struct cvmx_agl_gmx_rxx_adr_cam4_s cn52xx;
+	struct cvmx_agl_gmx_rxx_adr_cam4_s cn52xxp1;
+	struct cvmx_agl_gmx_rxx_adr_cam4_s cn56xx;
+	struct cvmx_agl_gmx_rxx_adr_cam4_s cn56xxp1;
+	struct cvmx_agl_gmx_rxx_adr_cam4_s cn61xx;
+	struct cvmx_agl_gmx_rxx_adr_cam4_s cn63xx;
+	struct cvmx_agl_gmx_rxx_adr_cam4_s cn63xxp1;
+	struct cvmx_agl_gmx_rxx_adr_cam4_s cn66xx;
+	struct cvmx_agl_gmx_rxx_adr_cam4_s cn68xx;
+	struct cvmx_agl_gmx_rxx_adr_cam4_s cn68xxp1;
 };
 
 union cvmx_agl_gmx_rxx_adr_cam5 {
@@ -405,6 +488,16 @@ union cvmx_agl_gmx_rxx_adr_cam5 {
 		uint64_t adr:64;
 #endif
 	} s;
+	struct cvmx_agl_gmx_rxx_adr_cam5_s cn52xx;
+	struct cvmx_agl_gmx_rxx_adr_cam5_s cn52xxp1;
+	struct cvmx_agl_gmx_rxx_adr_cam5_s cn56xx;
+	struct cvmx_agl_gmx_rxx_adr_cam5_s cn56xxp1;
+	struct cvmx_agl_gmx_rxx_adr_cam5_s cn61xx;
+	struct cvmx_agl_gmx_rxx_adr_cam5_s cn63xx;
+	struct cvmx_agl_gmx_rxx_adr_cam5_s cn63xxp1;
+	struct cvmx_agl_gmx_rxx_adr_cam5_s cn66xx;
+	struct cvmx_agl_gmx_rxx_adr_cam5_s cn68xx;
+	struct cvmx_agl_gmx_rxx_adr_cam5_s cn68xxp1;
 };
 
 union cvmx_agl_gmx_rxx_adr_cam_en {
@@ -418,6 +511,16 @@ union cvmx_agl_gmx_rxx_adr_cam_en {
 		uint64_t reserved_8_63:56;
 #endif
 	} s;
+	struct cvmx_agl_gmx_rxx_adr_cam_en_s cn52xx;
+	struct cvmx_agl_gmx_rxx_adr_cam_en_s cn52xxp1;
+	struct cvmx_agl_gmx_rxx_adr_cam_en_s cn56xx;
+	struct cvmx_agl_gmx_rxx_adr_cam_en_s cn56xxp1;
+	struct cvmx_agl_gmx_rxx_adr_cam_en_s cn61xx;
+	struct cvmx_agl_gmx_rxx_adr_cam_en_s cn63xx;
+	struct cvmx_agl_gmx_rxx_adr_cam_en_s cn63xxp1;
+	struct cvmx_agl_gmx_rxx_adr_cam_en_s cn66xx;
+	struct cvmx_agl_gmx_rxx_adr_cam_en_s cn68xx;
+	struct cvmx_agl_gmx_rxx_adr_cam_en_s cn68xxp1;
 };
 
 union cvmx_agl_gmx_rxx_adr_ctl {
@@ -435,6 +538,16 @@ union cvmx_agl_gmx_rxx_adr_ctl {
 		uint64_t reserved_4_63:60;
 #endif
 	} s;
+	struct cvmx_agl_gmx_rxx_adr_ctl_s cn52xx;
+	struct cvmx_agl_gmx_rxx_adr_ctl_s cn52xxp1;
+	struct cvmx_agl_gmx_rxx_adr_ctl_s cn56xx;
+	struct cvmx_agl_gmx_rxx_adr_ctl_s cn56xxp1;
+	struct cvmx_agl_gmx_rxx_adr_ctl_s cn61xx;
+	struct cvmx_agl_gmx_rxx_adr_ctl_s cn63xx;
+	struct cvmx_agl_gmx_rxx_adr_ctl_s cn63xxp1;
+	struct cvmx_agl_gmx_rxx_adr_ctl_s cn66xx;
+	struct cvmx_agl_gmx_rxx_adr_ctl_s cn68xx;
+	struct cvmx_agl_gmx_rxx_adr_ctl_s cn68xxp1;
 };
 
 union cvmx_agl_gmx_rxx_decision {
@@ -448,6 +561,16 @@ union cvmx_agl_gmx_rxx_decision {
 		uint64_t reserved_5_63:59;
 #endif
 	} s;
+	struct cvmx_agl_gmx_rxx_decision_s cn52xx;
+	struct cvmx_agl_gmx_rxx_decision_s cn52xxp1;
+	struct cvmx_agl_gmx_rxx_decision_s cn56xx;
+	struct cvmx_agl_gmx_rxx_decision_s cn56xxp1;
+	struct cvmx_agl_gmx_rxx_decision_s cn61xx;
+	struct cvmx_agl_gmx_rxx_decision_s cn63xx;
+	struct cvmx_agl_gmx_rxx_decision_s cn63xxp1;
+	struct cvmx_agl_gmx_rxx_decision_s cn66xx;
+	struct cvmx_agl_gmx_rxx_decision_s cn68xx;
+	struct cvmx_agl_gmx_rxx_decision_s cn68xxp1;
 };
 
 union cvmx_agl_gmx_rxx_frm_chk {
@@ -504,6 +627,15 @@ union cvmx_agl_gmx_rxx_frm_chk {
 		uint64_t reserved_9_63:55;
 #endif
 	} cn52xx;
+	struct cvmx_agl_gmx_rxx_frm_chk_cn52xx cn52xxp1;
+	struct cvmx_agl_gmx_rxx_frm_chk_cn52xx cn56xx;
+	struct cvmx_agl_gmx_rxx_frm_chk_cn52xx cn56xxp1;
+	struct cvmx_agl_gmx_rxx_frm_chk_s cn61xx;
+	struct cvmx_agl_gmx_rxx_frm_chk_s cn63xx;
+	struct cvmx_agl_gmx_rxx_frm_chk_s cn63xxp1;
+	struct cvmx_agl_gmx_rxx_frm_chk_s cn66xx;
+	struct cvmx_agl_gmx_rxx_frm_chk_s cn68xx;
+	struct cvmx_agl_gmx_rxx_frm_chk_s cn68xxp1;
 };
 
 union cvmx_agl_gmx_rxx_frm_ctl {
@@ -568,6 +700,15 @@ union cvmx_agl_gmx_rxx_frm_ctl {
 		uint64_t reserved_10_63:54;
 #endif
 	} cn52xx;
+	struct cvmx_agl_gmx_rxx_frm_ctl_cn52xx cn52xxp1;
+	struct cvmx_agl_gmx_rxx_frm_ctl_cn52xx cn56xx;
+	struct cvmx_agl_gmx_rxx_frm_ctl_cn52xx cn56xxp1;
+	struct cvmx_agl_gmx_rxx_frm_ctl_s cn61xx;
+	struct cvmx_agl_gmx_rxx_frm_ctl_s cn63xx;
+	struct cvmx_agl_gmx_rxx_frm_ctl_s cn63xxp1;
+	struct cvmx_agl_gmx_rxx_frm_ctl_s cn66xx;
+	struct cvmx_agl_gmx_rxx_frm_ctl_s cn68xx;
+	struct cvmx_agl_gmx_rxx_frm_ctl_s cn68xxp1;
 };
 
 union cvmx_agl_gmx_rxx_frm_max {
@@ -581,6 +722,16 @@ union cvmx_agl_gmx_rxx_frm_max {
 		uint64_t reserved_16_63:48;
 #endif
 	} s;
+	struct cvmx_agl_gmx_rxx_frm_max_s cn52xx;
+	struct cvmx_agl_gmx_rxx_frm_max_s cn52xxp1;
+	struct cvmx_agl_gmx_rxx_frm_max_s cn56xx;
+	struct cvmx_agl_gmx_rxx_frm_max_s cn56xxp1;
+	struct cvmx_agl_gmx_rxx_frm_max_s cn61xx;
+	struct cvmx_agl_gmx_rxx_frm_max_s cn63xx;
+	struct cvmx_agl_gmx_rxx_frm_max_s cn63xxp1;
+	struct cvmx_agl_gmx_rxx_frm_max_s cn66xx;
+	struct cvmx_agl_gmx_rxx_frm_max_s cn68xx;
+	struct cvmx_agl_gmx_rxx_frm_max_s cn68xxp1;
 };
 
 union cvmx_agl_gmx_rxx_frm_min {
@@ -594,6 +745,16 @@ union cvmx_agl_gmx_rxx_frm_min {
 		uint64_t reserved_16_63:48;
 #endif
 	} s;
+	struct cvmx_agl_gmx_rxx_frm_min_s cn52xx;
+	struct cvmx_agl_gmx_rxx_frm_min_s cn52xxp1;
+	struct cvmx_agl_gmx_rxx_frm_min_s cn56xx;
+	struct cvmx_agl_gmx_rxx_frm_min_s cn56xxp1;
+	struct cvmx_agl_gmx_rxx_frm_min_s cn61xx;
+	struct cvmx_agl_gmx_rxx_frm_min_s cn63xx;
+	struct cvmx_agl_gmx_rxx_frm_min_s cn63xxp1;
+	struct cvmx_agl_gmx_rxx_frm_min_s cn66xx;
+	struct cvmx_agl_gmx_rxx_frm_min_s cn68xx;
+	struct cvmx_agl_gmx_rxx_frm_min_s cn68xxp1;
 };
 
 union cvmx_agl_gmx_rxx_ifg {
@@ -607,6 +768,16 @@ union cvmx_agl_gmx_rxx_ifg {
 		uint64_t reserved_4_63:60;
 #endif
 	} s;
+	struct cvmx_agl_gmx_rxx_ifg_s cn52xx;
+	struct cvmx_agl_gmx_rxx_ifg_s cn52xxp1;
+	struct cvmx_agl_gmx_rxx_ifg_s cn56xx;
+	struct cvmx_agl_gmx_rxx_ifg_s cn56xxp1;
+	struct cvmx_agl_gmx_rxx_ifg_s cn61xx;
+	struct cvmx_agl_gmx_rxx_ifg_s cn63xx;
+	struct cvmx_agl_gmx_rxx_ifg_s cn63xxp1;
+	struct cvmx_agl_gmx_rxx_ifg_s cn66xx;
+	struct cvmx_agl_gmx_rxx_ifg_s cn68xx;
+	struct cvmx_agl_gmx_rxx_ifg_s cn68xxp1;
 };
 
 union cvmx_agl_gmx_rxx_int_en {
@@ -701,6 +872,15 @@ union cvmx_agl_gmx_rxx_int_en {
 		uint64_t reserved_20_63:44;
 #endif
 	} cn52xx;
+	struct cvmx_agl_gmx_rxx_int_en_cn52xx cn52xxp1;
+	struct cvmx_agl_gmx_rxx_int_en_cn52xx cn56xx;
+	struct cvmx_agl_gmx_rxx_int_en_cn52xx cn56xxp1;
+	struct cvmx_agl_gmx_rxx_int_en_s cn61xx;
+	struct cvmx_agl_gmx_rxx_int_en_s cn63xx;
+	struct cvmx_agl_gmx_rxx_int_en_s cn63xxp1;
+	struct cvmx_agl_gmx_rxx_int_en_s cn66xx;
+	struct cvmx_agl_gmx_rxx_int_en_s cn68xx;
+	struct cvmx_agl_gmx_rxx_int_en_s cn68xxp1;
 };
 
 union cvmx_agl_gmx_rxx_int_reg {
@@ -795,6 +975,15 @@ union cvmx_agl_gmx_rxx_int_reg {
 		uint64_t reserved_20_63:44;
 #endif
 	} cn52xx;
+	struct cvmx_agl_gmx_rxx_int_reg_cn52xx cn52xxp1;
+	struct cvmx_agl_gmx_rxx_int_reg_cn52xx cn56xx;
+	struct cvmx_agl_gmx_rxx_int_reg_cn52xx cn56xxp1;
+	struct cvmx_agl_gmx_rxx_int_reg_s cn61xx;
+	struct cvmx_agl_gmx_rxx_int_reg_s cn63xx;
+	struct cvmx_agl_gmx_rxx_int_reg_s cn63xxp1;
+	struct cvmx_agl_gmx_rxx_int_reg_s cn66xx;
+	struct cvmx_agl_gmx_rxx_int_reg_s cn68xx;
+	struct cvmx_agl_gmx_rxx_int_reg_s cn68xxp1;
 };
 
 union cvmx_agl_gmx_rxx_jabber {
@@ -808,6 +997,16 @@ union cvmx_agl_gmx_rxx_jabber {
 		uint64_t reserved_16_63:48;
 #endif
 	} s;
+	struct cvmx_agl_gmx_rxx_jabber_s cn52xx;
+	struct cvmx_agl_gmx_rxx_jabber_s cn52xxp1;
+	struct cvmx_agl_gmx_rxx_jabber_s cn56xx;
+	struct cvmx_agl_gmx_rxx_jabber_s cn56xxp1;
+	struct cvmx_agl_gmx_rxx_jabber_s cn61xx;
+	struct cvmx_agl_gmx_rxx_jabber_s cn63xx;
+	struct cvmx_agl_gmx_rxx_jabber_s cn63xxp1;
+	struct cvmx_agl_gmx_rxx_jabber_s cn66xx;
+	struct cvmx_agl_gmx_rxx_jabber_s cn68xx;
+	struct cvmx_agl_gmx_rxx_jabber_s cn68xxp1;
 };
 
 union cvmx_agl_gmx_rxx_pause_drop_time {
@@ -821,6 +1020,16 @@ union cvmx_agl_gmx_rxx_pause_drop_time {
 		uint64_t reserved_16_63:48;
 #endif
 	} s;
+	struct cvmx_agl_gmx_rxx_pause_drop_time_s cn52xx;
+	struct cvmx_agl_gmx_rxx_pause_drop_time_s cn52xxp1;
+	struct cvmx_agl_gmx_rxx_pause_drop_time_s cn56xx;
+	struct cvmx_agl_gmx_rxx_pause_drop_time_s cn56xxp1;
+	struct cvmx_agl_gmx_rxx_pause_drop_time_s cn61xx;
+	struct cvmx_agl_gmx_rxx_pause_drop_time_s cn63xx;
+	struct cvmx_agl_gmx_rxx_pause_drop_time_s cn63xxp1;
+	struct cvmx_agl_gmx_rxx_pause_drop_time_s cn66xx;
+	struct cvmx_agl_gmx_rxx_pause_drop_time_s cn68xx;
+	struct cvmx_agl_gmx_rxx_pause_drop_time_s cn68xxp1;
 };
 
 union cvmx_agl_gmx_rxx_rx_inbnd {
@@ -838,6 +1047,12 @@ union cvmx_agl_gmx_rxx_rx_inbnd {
 		uint64_t reserved_4_63:60;
 #endif
 	} s;
+	struct cvmx_agl_gmx_rxx_rx_inbnd_s cn61xx;
+	struct cvmx_agl_gmx_rxx_rx_inbnd_s cn63xx;
+	struct cvmx_agl_gmx_rxx_rx_inbnd_s cn63xxp1;
+	struct cvmx_agl_gmx_rxx_rx_inbnd_s cn66xx;
+	struct cvmx_agl_gmx_rxx_rx_inbnd_s cn68xx;
+	struct cvmx_agl_gmx_rxx_rx_inbnd_s cn68xxp1;
 };
 
 union cvmx_agl_gmx_rxx_stats_ctl {
@@ -851,6 +1066,16 @@ union cvmx_agl_gmx_rxx_stats_ctl {
 		uint64_t reserved_1_63:63;
 #endif
 	} s;
+	struct cvmx_agl_gmx_rxx_stats_ctl_s cn52xx;
+	struct cvmx_agl_gmx_rxx_stats_ctl_s cn52xxp1;
+	struct cvmx_agl_gmx_rxx_stats_ctl_s cn56xx;
+	struct cvmx_agl_gmx_rxx_stats_ctl_s cn56xxp1;
+	struct cvmx_agl_gmx_rxx_stats_ctl_s cn61xx;
+	struct cvmx_agl_gmx_rxx_stats_ctl_s cn63xx;
+	struct cvmx_agl_gmx_rxx_stats_ctl_s cn63xxp1;
+	struct cvmx_agl_gmx_rxx_stats_ctl_s cn66xx;
+	struct cvmx_agl_gmx_rxx_stats_ctl_s cn68xx;
+	struct cvmx_agl_gmx_rxx_stats_ctl_s cn68xxp1;
 };
 
 union cvmx_agl_gmx_rxx_stats_octs {
@@ -864,6 +1089,16 @@ union cvmx_agl_gmx_rxx_stats_octs {
 		uint64_t reserved_48_63:16;
 #endif
 	} s;
+	struct cvmx_agl_gmx_rxx_stats_octs_s cn52xx;
+	struct cvmx_agl_gmx_rxx_stats_octs_s cn52xxp1;
+	struct cvmx_agl_gmx_rxx_stats_octs_s cn56xx;
+	struct cvmx_agl_gmx_rxx_stats_octs_s cn56xxp1;
+	struct cvmx_agl_gmx_rxx_stats_octs_s cn61xx;
+	struct cvmx_agl_gmx_rxx_stats_octs_s cn63xx;
+	struct cvmx_agl_gmx_rxx_stats_octs_s cn63xxp1;
+	struct cvmx_agl_gmx_rxx_stats_octs_s cn66xx;
+	struct cvmx_agl_gmx_rxx_stats_octs_s cn68xx;
+	struct cvmx_agl_gmx_rxx_stats_octs_s cn68xxp1;
 };
 
 union cvmx_agl_gmx_rxx_stats_octs_ctl {
@@ -877,6 +1112,16 @@ union cvmx_agl_gmx_rxx_stats_octs_ctl {
 		uint64_t reserved_48_63:16;
 #endif
 	} s;
+	struct cvmx_agl_gmx_rxx_stats_octs_ctl_s cn52xx;
+	struct cvmx_agl_gmx_rxx_stats_octs_ctl_s cn52xxp1;
+	struct cvmx_agl_gmx_rxx_stats_octs_ctl_s cn56xx;
+	struct cvmx_agl_gmx_rxx_stats_octs_ctl_s cn56xxp1;
+	struct cvmx_agl_gmx_rxx_stats_octs_ctl_s cn61xx;
+	struct cvmx_agl_gmx_rxx_stats_octs_ctl_s cn63xx;
+	struct cvmx_agl_gmx_rxx_stats_octs_ctl_s cn63xxp1;
+	struct cvmx_agl_gmx_rxx_stats_octs_ctl_s cn66xx;
+	struct cvmx_agl_gmx_rxx_stats_octs_ctl_s cn68xx;
+	struct cvmx_agl_gmx_rxx_stats_octs_ctl_s cn68xxp1;
 };
 
 union cvmx_agl_gmx_rxx_stats_octs_dmac {
@@ -890,6 +1135,16 @@ union cvmx_agl_gmx_rxx_stats_octs_dmac {
 		uint64_t reserved_48_63:16;
 #endif
 	} s;
+	struct cvmx_agl_gmx_rxx_stats_octs_dmac_s cn52xx;
+	struct cvmx_agl_gmx_rxx_stats_octs_dmac_s cn52xxp1;
+	struct cvmx_agl_gmx_rxx_stats_octs_dmac_s cn56xx;
+	struct cvmx_agl_gmx_rxx_stats_octs_dmac_s cn56xxp1;
+	struct cvmx_agl_gmx_rxx_stats_octs_dmac_s cn61xx;
+	struct cvmx_agl_gmx_rxx_stats_octs_dmac_s cn63xx;
+	struct cvmx_agl_gmx_rxx_stats_octs_dmac_s cn63xxp1;
+	struct cvmx_agl_gmx_rxx_stats_octs_dmac_s cn66xx;
+	struct cvmx_agl_gmx_rxx_stats_octs_dmac_s cn68xx;
+	struct cvmx_agl_gmx_rxx_stats_octs_dmac_s cn68xxp1;
 };
 
 union cvmx_agl_gmx_rxx_stats_octs_drp {
@@ -903,6 +1158,16 @@ union cvmx_agl_gmx_rxx_stats_octs_drp {
 		uint64_t reserved_48_63:16;
 #endif
 	} s;
+	struct cvmx_agl_gmx_rxx_stats_octs_drp_s cn52xx;
+	struct cvmx_agl_gmx_rxx_stats_octs_drp_s cn52xxp1;
+	struct cvmx_agl_gmx_rxx_stats_octs_drp_s cn56xx;
+	struct cvmx_agl_gmx_rxx_stats_octs_drp_s cn56xxp1;
+	struct cvmx_agl_gmx_rxx_stats_octs_drp_s cn61xx;
+	struct cvmx_agl_gmx_rxx_stats_octs_drp_s cn63xx;
+	struct cvmx_agl_gmx_rxx_stats_octs_drp_s cn63xxp1;
+	struct cvmx_agl_gmx_rxx_stats_octs_drp_s cn66xx;
+	struct cvmx_agl_gmx_rxx_stats_octs_drp_s cn68xx;
+	struct cvmx_agl_gmx_rxx_stats_octs_drp_s cn68xxp1;
 };
 
 union cvmx_agl_gmx_rxx_stats_pkts {
@@ -916,6 +1181,16 @@ union cvmx_agl_gmx_rxx_stats_pkts {
 		uint64_t reserved_32_63:32;
 #endif
 	} s;
+	struct cvmx_agl_gmx_rxx_stats_pkts_s cn52xx;
+	struct cvmx_agl_gmx_rxx_stats_pkts_s cn52xxp1;
+	struct cvmx_agl_gmx_rxx_stats_pkts_s cn56xx;
+	struct cvmx_agl_gmx_rxx_stats_pkts_s cn56xxp1;
+	struct cvmx_agl_gmx_rxx_stats_pkts_s cn61xx;
+	struct cvmx_agl_gmx_rxx_stats_pkts_s cn63xx;
+	struct cvmx_agl_gmx_rxx_stats_pkts_s cn63xxp1;
+	struct cvmx_agl_gmx_rxx_stats_pkts_s cn66xx;
+	struct cvmx_agl_gmx_rxx_stats_pkts_s cn68xx;
+	struct cvmx_agl_gmx_rxx_stats_pkts_s cn68xxp1;
 };
 
 union cvmx_agl_gmx_rxx_stats_pkts_bad {
@@ -929,6 +1204,16 @@ union cvmx_agl_gmx_rxx_stats_pkts_bad {
 		uint64_t reserved_32_63:32;
 #endif
 	} s;
+	struct cvmx_agl_gmx_rxx_stats_pkts_bad_s cn52xx;
+	struct cvmx_agl_gmx_rxx_stats_pkts_bad_s cn52xxp1;
+	struct cvmx_agl_gmx_rxx_stats_pkts_bad_s cn56xx;
+	struct cvmx_agl_gmx_rxx_stats_pkts_bad_s cn56xxp1;
+	struct cvmx_agl_gmx_rxx_stats_pkts_bad_s cn61xx;
+	struct cvmx_agl_gmx_rxx_stats_pkts_bad_s cn63xx;
+	struct cvmx_agl_gmx_rxx_stats_pkts_bad_s cn63xxp1;
+	struct cvmx_agl_gmx_rxx_stats_pkts_bad_s cn66xx;
+	struct cvmx_agl_gmx_rxx_stats_pkts_bad_s cn68xx;
+	struct cvmx_agl_gmx_rxx_stats_pkts_bad_s cn68xxp1;
 };
 
 union cvmx_agl_gmx_rxx_stats_pkts_ctl {
@@ -942,6 +1227,16 @@ union cvmx_agl_gmx_rxx_stats_pkts_ctl {
 		uint64_t reserved_32_63:32;
 #endif
 	} s;
+	struct cvmx_agl_gmx_rxx_stats_pkts_ctl_s cn52xx;
+	struct cvmx_agl_gmx_rxx_stats_pkts_ctl_s cn52xxp1;
+	struct cvmx_agl_gmx_rxx_stats_pkts_ctl_s cn56xx;
+	struct cvmx_agl_gmx_rxx_stats_pkts_ctl_s cn56xxp1;
+	struct cvmx_agl_gmx_rxx_stats_pkts_ctl_s cn61xx;
+	struct cvmx_agl_gmx_rxx_stats_pkts_ctl_s cn63xx;
+	struct cvmx_agl_gmx_rxx_stats_pkts_ctl_s cn63xxp1;
+	struct cvmx_agl_gmx_rxx_stats_pkts_ctl_s cn66xx;
+	struct cvmx_agl_gmx_rxx_stats_pkts_ctl_s cn68xx;
+	struct cvmx_agl_gmx_rxx_stats_pkts_ctl_s cn68xxp1;
 };
 
 union cvmx_agl_gmx_rxx_stats_pkts_dmac {
@@ -955,6 +1250,16 @@ union cvmx_agl_gmx_rxx_stats_pkts_dmac {
 		uint64_t reserved_32_63:32;
 #endif
 	} s;
+	struct cvmx_agl_gmx_rxx_stats_pkts_dmac_s cn52xx;
+	struct cvmx_agl_gmx_rxx_stats_pkts_dmac_s cn52xxp1;
+	struct cvmx_agl_gmx_rxx_stats_pkts_dmac_s cn56xx;
+	struct cvmx_agl_gmx_rxx_stats_pkts_dmac_s cn56xxp1;
+	struct cvmx_agl_gmx_rxx_stats_pkts_dmac_s cn61xx;
+	struct cvmx_agl_gmx_rxx_stats_pkts_dmac_s cn63xx;
+	struct cvmx_agl_gmx_rxx_stats_pkts_dmac_s cn63xxp1;
+	struct cvmx_agl_gmx_rxx_stats_pkts_dmac_s cn66xx;
+	struct cvmx_agl_gmx_rxx_stats_pkts_dmac_s cn68xx;
+	struct cvmx_agl_gmx_rxx_stats_pkts_dmac_s cn68xxp1;
 };
 
 union cvmx_agl_gmx_rxx_stats_pkts_drp {
@@ -968,6 +1273,16 @@ union cvmx_agl_gmx_rxx_stats_pkts_drp {
 		uint64_t reserved_32_63:32;
 #endif
 	} s;
+	struct cvmx_agl_gmx_rxx_stats_pkts_drp_s cn52xx;
+	struct cvmx_agl_gmx_rxx_stats_pkts_drp_s cn52xxp1;
+	struct cvmx_agl_gmx_rxx_stats_pkts_drp_s cn56xx;
+	struct cvmx_agl_gmx_rxx_stats_pkts_drp_s cn56xxp1;
+	struct cvmx_agl_gmx_rxx_stats_pkts_drp_s cn61xx;
+	struct cvmx_agl_gmx_rxx_stats_pkts_drp_s cn63xx;
+	struct cvmx_agl_gmx_rxx_stats_pkts_drp_s cn63xxp1;
+	struct cvmx_agl_gmx_rxx_stats_pkts_drp_s cn66xx;
+	struct cvmx_agl_gmx_rxx_stats_pkts_drp_s cn68xx;
+	struct cvmx_agl_gmx_rxx_stats_pkts_drp_s cn68xxp1;
 };
 
 union cvmx_agl_gmx_rxx_udd_skp {
@@ -985,6 +1300,16 @@ union cvmx_agl_gmx_rxx_udd_skp {
 		uint64_t reserved_9_63:55;
 #endif
 	} s;
+	struct cvmx_agl_gmx_rxx_udd_skp_s cn52xx;
+	struct cvmx_agl_gmx_rxx_udd_skp_s cn52xxp1;
+	struct cvmx_agl_gmx_rxx_udd_skp_s cn56xx;
+	struct cvmx_agl_gmx_rxx_udd_skp_s cn56xxp1;
+	struct cvmx_agl_gmx_rxx_udd_skp_s cn61xx;
+	struct cvmx_agl_gmx_rxx_udd_skp_s cn63xx;
+	struct cvmx_agl_gmx_rxx_udd_skp_s cn63xxp1;
+	struct cvmx_agl_gmx_rxx_udd_skp_s cn66xx;
+	struct cvmx_agl_gmx_rxx_udd_skp_s cn68xx;
+	struct cvmx_agl_gmx_rxx_udd_skp_s cn68xxp1;
 };
 
 union cvmx_agl_gmx_rx_bp_dropx {
@@ -998,6 +1323,16 @@ union cvmx_agl_gmx_rx_bp_dropx {
 		uint64_t reserved_6_63:58;
 #endif
 	} s;
+	struct cvmx_agl_gmx_rx_bp_dropx_s cn52xx;
+	struct cvmx_agl_gmx_rx_bp_dropx_s cn52xxp1;
+	struct cvmx_agl_gmx_rx_bp_dropx_s cn56xx;
+	struct cvmx_agl_gmx_rx_bp_dropx_s cn56xxp1;
+	struct cvmx_agl_gmx_rx_bp_dropx_s cn61xx;
+	struct cvmx_agl_gmx_rx_bp_dropx_s cn63xx;
+	struct cvmx_agl_gmx_rx_bp_dropx_s cn63xxp1;
+	struct cvmx_agl_gmx_rx_bp_dropx_s cn66xx;
+	struct cvmx_agl_gmx_rx_bp_dropx_s cn68xx;
+	struct cvmx_agl_gmx_rx_bp_dropx_s cn68xxp1;
 };
 
 union cvmx_agl_gmx_rx_bp_offx {
@@ -1011,6 +1346,16 @@ union cvmx_agl_gmx_rx_bp_offx {
 		uint64_t reserved_6_63:58;
 #endif
 	} s;
+	struct cvmx_agl_gmx_rx_bp_offx_s cn52xx;
+	struct cvmx_agl_gmx_rx_bp_offx_s cn52xxp1;
+	struct cvmx_agl_gmx_rx_bp_offx_s cn56xx;
+	struct cvmx_agl_gmx_rx_bp_offx_s cn56xxp1;
+	struct cvmx_agl_gmx_rx_bp_offx_s cn61xx;
+	struct cvmx_agl_gmx_rx_bp_offx_s cn63xx;
+	struct cvmx_agl_gmx_rx_bp_offx_s cn63xxp1;
+	struct cvmx_agl_gmx_rx_bp_offx_s cn66xx;
+	struct cvmx_agl_gmx_rx_bp_offx_s cn68xx;
+	struct cvmx_agl_gmx_rx_bp_offx_s cn68xxp1;
 };
 
 union cvmx_agl_gmx_rx_bp_onx {
@@ -1024,6 +1369,16 @@ union cvmx_agl_gmx_rx_bp_onx {
 		uint64_t reserved_9_63:55;
 #endif
 	} s;
+	struct cvmx_agl_gmx_rx_bp_onx_s cn52xx;
+	struct cvmx_agl_gmx_rx_bp_onx_s cn52xxp1;
+	struct cvmx_agl_gmx_rx_bp_onx_s cn56xx;
+	struct cvmx_agl_gmx_rx_bp_onx_s cn56xxp1;
+	struct cvmx_agl_gmx_rx_bp_onx_s cn61xx;
+	struct cvmx_agl_gmx_rx_bp_onx_s cn63xx;
+	struct cvmx_agl_gmx_rx_bp_onx_s cn63xxp1;
+	struct cvmx_agl_gmx_rx_bp_onx_s cn66xx;
+	struct cvmx_agl_gmx_rx_bp_onx_s cn68xx;
+	struct cvmx_agl_gmx_rx_bp_onx_s cn68xxp1;
 };
 
 union cvmx_agl_gmx_rx_prt_info {
@@ -1041,6 +1396,8 @@ union cvmx_agl_gmx_rx_prt_info {
 		uint64_t reserved_18_63:46;
 #endif
 	} s;
+	struct cvmx_agl_gmx_rx_prt_info_s cn52xx;
+	struct cvmx_agl_gmx_rx_prt_info_s cn52xxp1;
 	struct cvmx_agl_gmx_rx_prt_info_cn56xx {
 #ifdef __BIG_ENDIAN_BITFIELD
 		uint64_t reserved_17_63:47;
@@ -1054,6 +1411,13 @@ union cvmx_agl_gmx_rx_prt_info {
 		uint64_t reserved_17_63:47;
 #endif
 	} cn56xx;
+	struct cvmx_agl_gmx_rx_prt_info_cn56xx cn56xxp1;
+	struct cvmx_agl_gmx_rx_prt_info_s cn61xx;
+	struct cvmx_agl_gmx_rx_prt_info_s cn63xx;
+	struct cvmx_agl_gmx_rx_prt_info_s cn63xxp1;
+	struct cvmx_agl_gmx_rx_prt_info_s cn66xx;
+	struct cvmx_agl_gmx_rx_prt_info_s cn68xx;
+	struct cvmx_agl_gmx_rx_prt_info_s cn68xxp1;
 };
 
 union cvmx_agl_gmx_rx_tx_status {
@@ -1071,6 +1435,8 @@ union cvmx_agl_gmx_rx_tx_status {
 		uint64_t reserved_6_63:58;
 #endif
 	} s;
+	struct cvmx_agl_gmx_rx_tx_status_s cn52xx;
+	struct cvmx_agl_gmx_rx_tx_status_s cn52xxp1;
 	struct cvmx_agl_gmx_rx_tx_status_cn56xx {
 #ifdef __BIG_ENDIAN_BITFIELD
 		uint64_t reserved_5_63:59;
@@ -1084,6 +1450,13 @@ union cvmx_agl_gmx_rx_tx_status {
 		uint64_t reserved_5_63:59;
 #endif
 	} cn56xx;
+	struct cvmx_agl_gmx_rx_tx_status_cn56xx cn56xxp1;
+	struct cvmx_agl_gmx_rx_tx_status_s cn61xx;
+	struct cvmx_agl_gmx_rx_tx_status_s cn63xx;
+	struct cvmx_agl_gmx_rx_tx_status_s cn63xxp1;
+	struct cvmx_agl_gmx_rx_tx_status_s cn66xx;
+	struct cvmx_agl_gmx_rx_tx_status_s cn68xx;
+	struct cvmx_agl_gmx_rx_tx_status_s cn68xxp1;
 };
 
 union cvmx_agl_gmx_smacx {
@@ -1097,6 +1470,16 @@ union cvmx_agl_gmx_smacx {
 		uint64_t reserved_48_63:16;
 #endif
 	} s;
+	struct cvmx_agl_gmx_smacx_s cn52xx;
+	struct cvmx_agl_gmx_smacx_s cn52xxp1;
+	struct cvmx_agl_gmx_smacx_s cn56xx;
+	struct cvmx_agl_gmx_smacx_s cn56xxp1;
+	struct cvmx_agl_gmx_smacx_s cn61xx;
+	struct cvmx_agl_gmx_smacx_s cn63xx;
+	struct cvmx_agl_gmx_smacx_s cn63xxp1;
+	struct cvmx_agl_gmx_smacx_s cn66xx;
+	struct cvmx_agl_gmx_smacx_s cn68xx;
+	struct cvmx_agl_gmx_smacx_s cn68xxp1;
 };
 
 union cvmx_agl_gmx_stat_bp {
@@ -1112,6 +1495,16 @@ union cvmx_agl_gmx_stat_bp {
 		uint64_t reserved_17_63:47;
 #endif
 	} s;
+	struct cvmx_agl_gmx_stat_bp_s cn52xx;
+	struct cvmx_agl_gmx_stat_bp_s cn52xxp1;
+	struct cvmx_agl_gmx_stat_bp_s cn56xx;
+	struct cvmx_agl_gmx_stat_bp_s cn56xxp1;
+	struct cvmx_agl_gmx_stat_bp_s cn61xx;
+	struct cvmx_agl_gmx_stat_bp_s cn63xx;
+	struct cvmx_agl_gmx_stat_bp_s cn63xxp1;
+	struct cvmx_agl_gmx_stat_bp_s cn66xx;
+	struct cvmx_agl_gmx_stat_bp_s cn68xx;
+	struct cvmx_agl_gmx_stat_bp_s cn68xxp1;
 };
 
 union cvmx_agl_gmx_txx_append {
@@ -1131,6 +1524,16 @@ union cvmx_agl_gmx_txx_append {
 		uint64_t reserved_4_63:60;
 #endif
 	} s;
+	struct cvmx_agl_gmx_txx_append_s cn52xx;
+	struct cvmx_agl_gmx_txx_append_s cn52xxp1;
+	struct cvmx_agl_gmx_txx_append_s cn56xx;
+	struct cvmx_agl_gmx_txx_append_s cn56xxp1;
+	struct cvmx_agl_gmx_txx_append_s cn61xx;
+	struct cvmx_agl_gmx_txx_append_s cn63xx;
+	struct cvmx_agl_gmx_txx_append_s cn63xxp1;
+	struct cvmx_agl_gmx_txx_append_s cn66xx;
+	struct cvmx_agl_gmx_txx_append_s cn68xx;
+	struct cvmx_agl_gmx_txx_append_s cn68xxp1;
 };
 
 union cvmx_agl_gmx_txx_clk {
@@ -1144,6 +1547,12 @@ union cvmx_agl_gmx_txx_clk {
 		uint64_t reserved_6_63:58;
 #endif
 	} s;
+	struct cvmx_agl_gmx_txx_clk_s cn61xx;
+	struct cvmx_agl_gmx_txx_clk_s cn63xx;
+	struct cvmx_agl_gmx_txx_clk_s cn63xxp1;
+	struct cvmx_agl_gmx_txx_clk_s cn66xx;
+	struct cvmx_agl_gmx_txx_clk_s cn68xx;
+	struct cvmx_agl_gmx_txx_clk_s cn68xxp1;
 };
 
 union cvmx_agl_gmx_txx_ctl {
@@ -1159,6 +1568,16 @@ union cvmx_agl_gmx_txx_ctl {
 		uint64_t reserved_2_63:62;
 #endif
 	} s;
+	struct cvmx_agl_gmx_txx_ctl_s cn52xx;
+	struct cvmx_agl_gmx_txx_ctl_s cn52xxp1;
+	struct cvmx_agl_gmx_txx_ctl_s cn56xx;
+	struct cvmx_agl_gmx_txx_ctl_s cn56xxp1;
+	struct cvmx_agl_gmx_txx_ctl_s cn61xx;
+	struct cvmx_agl_gmx_txx_ctl_s cn63xx;
+	struct cvmx_agl_gmx_txx_ctl_s cn63xxp1;
+	struct cvmx_agl_gmx_txx_ctl_s cn66xx;
+	struct cvmx_agl_gmx_txx_ctl_s cn68xx;
+	struct cvmx_agl_gmx_txx_ctl_s cn68xxp1;
 };
 
 union cvmx_agl_gmx_txx_min_pkt {
@@ -1172,6 +1591,16 @@ union cvmx_agl_gmx_txx_min_pkt {
 		uint64_t reserved_8_63:56;
 #endif
 	} s;
+	struct cvmx_agl_gmx_txx_min_pkt_s cn52xx;
+	struct cvmx_agl_gmx_txx_min_pkt_s cn52xxp1;
+	struct cvmx_agl_gmx_txx_min_pkt_s cn56xx;
+	struct cvmx_agl_gmx_txx_min_pkt_s cn56xxp1;
+	struct cvmx_agl_gmx_txx_min_pkt_s cn61xx;
+	struct cvmx_agl_gmx_txx_min_pkt_s cn63xx;
+	struct cvmx_agl_gmx_txx_min_pkt_s cn63xxp1;
+	struct cvmx_agl_gmx_txx_min_pkt_s cn66xx;
+	struct cvmx_agl_gmx_txx_min_pkt_s cn68xx;
+	struct cvmx_agl_gmx_txx_min_pkt_s cn68xxp1;
 };
 
 union cvmx_agl_gmx_txx_pause_pkt_interval {
@@ -1185,6 +1614,16 @@ union cvmx_agl_gmx_txx_pause_pkt_interval {
 		uint64_t reserved_16_63:48;
 #endif
 	} s;
+	struct cvmx_agl_gmx_txx_pause_pkt_interval_s cn52xx;
+	struct cvmx_agl_gmx_txx_pause_pkt_interval_s cn52xxp1;
+	struct cvmx_agl_gmx_txx_pause_pkt_interval_s cn56xx;
+	struct cvmx_agl_gmx_txx_pause_pkt_interval_s cn56xxp1;
+	struct cvmx_agl_gmx_txx_pause_pkt_interval_s cn61xx;
+	struct cvmx_agl_gmx_txx_pause_pkt_interval_s cn63xx;
+	struct cvmx_agl_gmx_txx_pause_pkt_interval_s cn63xxp1;
+	struct cvmx_agl_gmx_txx_pause_pkt_interval_s cn66xx;
+	struct cvmx_agl_gmx_txx_pause_pkt_interval_s cn68xx;
+	struct cvmx_agl_gmx_txx_pause_pkt_interval_s cn68xxp1;
 };
 
 union cvmx_agl_gmx_txx_pause_pkt_time {
@@ -1198,6 +1637,16 @@ union cvmx_agl_gmx_txx_pause_pkt_time {
 		uint64_t reserved_16_63:48;
 #endif
 	} s;
+	struct cvmx_agl_gmx_txx_pause_pkt_time_s cn52xx;
+	struct cvmx_agl_gmx_txx_pause_pkt_time_s cn52xxp1;
+	struct cvmx_agl_gmx_txx_pause_pkt_time_s cn56xx;
+	struct cvmx_agl_gmx_txx_pause_pkt_time_s cn56xxp1;
+	struct cvmx_agl_gmx_txx_pause_pkt_time_s cn61xx;
+	struct cvmx_agl_gmx_txx_pause_pkt_time_s cn63xx;
+	struct cvmx_agl_gmx_txx_pause_pkt_time_s cn63xxp1;
+	struct cvmx_agl_gmx_txx_pause_pkt_time_s cn66xx;
+	struct cvmx_agl_gmx_txx_pause_pkt_time_s cn68xx;
+	struct cvmx_agl_gmx_txx_pause_pkt_time_s cn68xxp1;
 };
 
 union cvmx_agl_gmx_txx_pause_togo {
@@ -1211,6 +1660,16 @@ union cvmx_agl_gmx_txx_pause_togo {
 		uint64_t reserved_16_63:48;
 #endif
 	} s;
+	struct cvmx_agl_gmx_txx_pause_togo_s cn52xx;
+	struct cvmx_agl_gmx_txx_pause_togo_s cn52xxp1;
+	struct cvmx_agl_gmx_txx_pause_togo_s cn56xx;
+	struct cvmx_agl_gmx_txx_pause_togo_s cn56xxp1;
+	struct cvmx_agl_gmx_txx_pause_togo_s cn61xx;
+	struct cvmx_agl_gmx_txx_pause_togo_s cn63xx;
+	struct cvmx_agl_gmx_txx_pause_togo_s cn63xxp1;
+	struct cvmx_agl_gmx_txx_pause_togo_s cn66xx;
+	struct cvmx_agl_gmx_txx_pause_togo_s cn68xx;
+	struct cvmx_agl_gmx_txx_pause_togo_s cn68xxp1;
 };
 
 union cvmx_agl_gmx_txx_pause_zero {
@@ -1224,6 +1683,16 @@ union cvmx_agl_gmx_txx_pause_zero {
 		uint64_t reserved_1_63:63;
 #endif
 	} s;
+	struct cvmx_agl_gmx_txx_pause_zero_s cn52xx;
+	struct cvmx_agl_gmx_txx_pause_zero_s cn52xxp1;
+	struct cvmx_agl_gmx_txx_pause_zero_s cn56xx;
+	struct cvmx_agl_gmx_txx_pause_zero_s cn56xxp1;
+	struct cvmx_agl_gmx_txx_pause_zero_s cn61xx;
+	struct cvmx_agl_gmx_txx_pause_zero_s cn63xx;
+	struct cvmx_agl_gmx_txx_pause_zero_s cn63xxp1;
+	struct cvmx_agl_gmx_txx_pause_zero_s cn66xx;
+	struct cvmx_agl_gmx_txx_pause_zero_s cn68xx;
+	struct cvmx_agl_gmx_txx_pause_zero_s cn68xxp1;
 };
 
 union cvmx_agl_gmx_txx_soft_pause {
@@ -1237,6 +1706,16 @@ union cvmx_agl_gmx_txx_soft_pause {
 		uint64_t reserved_16_63:48;
 #endif
 	} s;
+	struct cvmx_agl_gmx_txx_soft_pause_s cn52xx;
+	struct cvmx_agl_gmx_txx_soft_pause_s cn52xxp1;
+	struct cvmx_agl_gmx_txx_soft_pause_s cn56xx;
+	struct cvmx_agl_gmx_txx_soft_pause_s cn56xxp1;
+	struct cvmx_agl_gmx_txx_soft_pause_s cn61xx;
+	struct cvmx_agl_gmx_txx_soft_pause_s cn63xx;
+	struct cvmx_agl_gmx_txx_soft_pause_s cn63xxp1;
+	struct cvmx_agl_gmx_txx_soft_pause_s cn66xx;
+	struct cvmx_agl_gmx_txx_soft_pause_s cn68xx;
+	struct cvmx_agl_gmx_txx_soft_pause_s cn68xxp1;
 };
 
 union cvmx_agl_gmx_txx_stat0 {
@@ -1250,6 +1729,16 @@ union cvmx_agl_gmx_txx_stat0 {
 		uint64_t xsdef:32;
 #endif
 	} s;
+	struct cvmx_agl_gmx_txx_stat0_s cn52xx;
+	struct cvmx_agl_gmx_txx_stat0_s cn52xxp1;
+	struct cvmx_agl_gmx_txx_stat0_s cn56xx;
+	struct cvmx_agl_gmx_txx_stat0_s cn56xxp1;
+	struct cvmx_agl_gmx_txx_stat0_s cn61xx;
+	struct cvmx_agl_gmx_txx_stat0_s cn63xx;
+	struct cvmx_agl_gmx_txx_stat0_s cn63xxp1;
+	struct cvmx_agl_gmx_txx_stat0_s cn66xx;
+	struct cvmx_agl_gmx_txx_stat0_s cn68xx;
+	struct cvmx_agl_gmx_txx_stat0_s cn68xxp1;
 };
 
 union cvmx_agl_gmx_txx_stat1 {
@@ -1263,6 +1752,16 @@ union cvmx_agl_gmx_txx_stat1 {
 		uint64_t scol:32;
 #endif
 	} s;
+	struct cvmx_agl_gmx_txx_stat1_s cn52xx;
+	struct cvmx_agl_gmx_txx_stat1_s cn52xxp1;
+	struct cvmx_agl_gmx_txx_stat1_s cn56xx;
+	struct cvmx_agl_gmx_txx_stat1_s cn56xxp1;
+	struct cvmx_agl_gmx_txx_stat1_s cn61xx;
+	struct cvmx_agl_gmx_txx_stat1_s cn63xx;
+	struct cvmx_agl_gmx_txx_stat1_s cn63xxp1;
+	struct cvmx_agl_gmx_txx_stat1_s cn66xx;
+	struct cvmx_agl_gmx_txx_stat1_s cn68xx;
+	struct cvmx_agl_gmx_txx_stat1_s cn68xxp1;
 };
 
 union cvmx_agl_gmx_txx_stat2 {
@@ -1276,6 +1775,16 @@ union cvmx_agl_gmx_txx_stat2 {
 		uint64_t reserved_48_63:16;
 #endif
 	} s;
+	struct cvmx_agl_gmx_txx_stat2_s cn52xx;
+	struct cvmx_agl_gmx_txx_stat2_s cn52xxp1;
+	struct cvmx_agl_gmx_txx_stat2_s cn56xx;
+	struct cvmx_agl_gmx_txx_stat2_s cn56xxp1;
+	struct cvmx_agl_gmx_txx_stat2_s cn61xx;
+	struct cvmx_agl_gmx_txx_stat2_s cn63xx;
+	struct cvmx_agl_gmx_txx_stat2_s cn63xxp1;
+	struct cvmx_agl_gmx_txx_stat2_s cn66xx;
+	struct cvmx_agl_gmx_txx_stat2_s cn68xx;
+	struct cvmx_agl_gmx_txx_stat2_s cn68xxp1;
 };
 
 union cvmx_agl_gmx_txx_stat3 {
@@ -1289,6 +1798,16 @@ union cvmx_agl_gmx_txx_stat3 {
 		uint64_t reserved_32_63:32;
 #endif
 	} s;
+	struct cvmx_agl_gmx_txx_stat3_s cn52xx;
+	struct cvmx_agl_gmx_txx_stat3_s cn52xxp1;
+	struct cvmx_agl_gmx_txx_stat3_s cn56xx;
+	struct cvmx_agl_gmx_txx_stat3_s cn56xxp1;
+	struct cvmx_agl_gmx_txx_stat3_s cn61xx;
+	struct cvmx_agl_gmx_txx_stat3_s cn63xx;
+	struct cvmx_agl_gmx_txx_stat3_s cn63xxp1;
+	struct cvmx_agl_gmx_txx_stat3_s cn66xx;
+	struct cvmx_agl_gmx_txx_stat3_s cn68xx;
+	struct cvmx_agl_gmx_txx_stat3_s cn68xxp1;
 };
 
 union cvmx_agl_gmx_txx_stat4 {
@@ -1302,6 +1821,16 @@ union cvmx_agl_gmx_txx_stat4 {
 		uint64_t hist1:32;
 #endif
 	} s;
+	struct cvmx_agl_gmx_txx_stat4_s cn52xx;
+	struct cvmx_agl_gmx_txx_stat4_s cn52xxp1;
+	struct cvmx_agl_gmx_txx_stat4_s cn56xx;
+	struct cvmx_agl_gmx_txx_stat4_s cn56xxp1;
+	struct cvmx_agl_gmx_txx_stat4_s cn61xx;
+	struct cvmx_agl_gmx_txx_stat4_s cn63xx;
+	struct cvmx_agl_gmx_txx_stat4_s cn63xxp1;
+	struct cvmx_agl_gmx_txx_stat4_s cn66xx;
+	struct cvmx_agl_gmx_txx_stat4_s cn68xx;
+	struct cvmx_agl_gmx_txx_stat4_s cn68xxp1;
 };
 
 union cvmx_agl_gmx_txx_stat5 {
@@ -1315,6 +1844,16 @@ union cvmx_agl_gmx_txx_stat5 {
 		uint64_t hist3:32;
 #endif
 	} s;
+	struct cvmx_agl_gmx_txx_stat5_s cn52xx;
+	struct cvmx_agl_gmx_txx_stat5_s cn52xxp1;
+	struct cvmx_agl_gmx_txx_stat5_s cn56xx;
+	struct cvmx_agl_gmx_txx_stat5_s cn56xxp1;
+	struct cvmx_agl_gmx_txx_stat5_s cn61xx;
+	struct cvmx_agl_gmx_txx_stat5_s cn63xx;
+	struct cvmx_agl_gmx_txx_stat5_s cn63xxp1;
+	struct cvmx_agl_gmx_txx_stat5_s cn66xx;
+	struct cvmx_agl_gmx_txx_stat5_s cn68xx;
+	struct cvmx_agl_gmx_txx_stat5_s cn68xxp1;
 };
 
 union cvmx_agl_gmx_txx_stat6 {
@@ -1328,6 +1867,16 @@ union cvmx_agl_gmx_txx_stat6 {
 		uint64_t hist5:32;
 #endif
 	} s;
+	struct cvmx_agl_gmx_txx_stat6_s cn52xx;
+	struct cvmx_agl_gmx_txx_stat6_s cn52xxp1;
+	struct cvmx_agl_gmx_txx_stat6_s cn56xx;
+	struct cvmx_agl_gmx_txx_stat6_s cn56xxp1;
+	struct cvmx_agl_gmx_txx_stat6_s cn61xx;
+	struct cvmx_agl_gmx_txx_stat6_s cn63xx;
+	struct cvmx_agl_gmx_txx_stat6_s cn63xxp1;
+	struct cvmx_agl_gmx_txx_stat6_s cn66xx;
+	struct cvmx_agl_gmx_txx_stat6_s cn68xx;
+	struct cvmx_agl_gmx_txx_stat6_s cn68xxp1;
 };
 
 union cvmx_agl_gmx_txx_stat7 {
@@ -1341,6 +1890,16 @@ union cvmx_agl_gmx_txx_stat7 {
 		uint64_t hist7:32;
 #endif
 	} s;
+	struct cvmx_agl_gmx_txx_stat7_s cn52xx;
+	struct cvmx_agl_gmx_txx_stat7_s cn52xxp1;
+	struct cvmx_agl_gmx_txx_stat7_s cn56xx;
+	struct cvmx_agl_gmx_txx_stat7_s cn56xxp1;
+	struct cvmx_agl_gmx_txx_stat7_s cn61xx;
+	struct cvmx_agl_gmx_txx_stat7_s cn63xx;
+	struct cvmx_agl_gmx_txx_stat7_s cn63xxp1;
+	struct cvmx_agl_gmx_txx_stat7_s cn66xx;
+	struct cvmx_agl_gmx_txx_stat7_s cn68xx;
+	struct cvmx_agl_gmx_txx_stat7_s cn68xxp1;
 };
 
 union cvmx_agl_gmx_txx_stat8 {
@@ -1354,6 +1913,16 @@ union cvmx_agl_gmx_txx_stat8 {
 		uint64_t mcst:32;
 #endif
 	} s;
+	struct cvmx_agl_gmx_txx_stat8_s cn52xx;
+	struct cvmx_agl_gmx_txx_stat8_s cn52xxp1;
+	struct cvmx_agl_gmx_txx_stat8_s cn56xx;
+	struct cvmx_agl_gmx_txx_stat8_s cn56xxp1;
+	struct cvmx_agl_gmx_txx_stat8_s cn61xx;
+	struct cvmx_agl_gmx_txx_stat8_s cn63xx;
+	struct cvmx_agl_gmx_txx_stat8_s cn63xxp1;
+	struct cvmx_agl_gmx_txx_stat8_s cn66xx;
+	struct cvmx_agl_gmx_txx_stat8_s cn68xx;
+	struct cvmx_agl_gmx_txx_stat8_s cn68xxp1;
 };
 
 union cvmx_agl_gmx_txx_stat9 {
@@ -1367,6 +1936,16 @@ union cvmx_agl_gmx_txx_stat9 {
 		uint64_t undflw:32;
 #endif
 	} s;
+	struct cvmx_agl_gmx_txx_stat9_s cn52xx;
+	struct cvmx_agl_gmx_txx_stat9_s cn52xxp1;
+	struct cvmx_agl_gmx_txx_stat9_s cn56xx;
+	struct cvmx_agl_gmx_txx_stat9_s cn56xxp1;
+	struct cvmx_agl_gmx_txx_stat9_s cn61xx;
+	struct cvmx_agl_gmx_txx_stat9_s cn63xx;
+	struct cvmx_agl_gmx_txx_stat9_s cn63xxp1;
+	struct cvmx_agl_gmx_txx_stat9_s cn66xx;
+	struct cvmx_agl_gmx_txx_stat9_s cn68xx;
+	struct cvmx_agl_gmx_txx_stat9_s cn68xxp1;
 };
 
 union cvmx_agl_gmx_txx_stats_ctl {
@@ -1380,6 +1959,16 @@ union cvmx_agl_gmx_txx_stats_ctl {
 		uint64_t reserved_1_63:63;
 #endif
 	} s;
+	struct cvmx_agl_gmx_txx_stats_ctl_s cn52xx;
+	struct cvmx_agl_gmx_txx_stats_ctl_s cn52xxp1;
+	struct cvmx_agl_gmx_txx_stats_ctl_s cn56xx;
+	struct cvmx_agl_gmx_txx_stats_ctl_s cn56xxp1;
+	struct cvmx_agl_gmx_txx_stats_ctl_s cn61xx;
+	struct cvmx_agl_gmx_txx_stats_ctl_s cn63xx;
+	struct cvmx_agl_gmx_txx_stats_ctl_s cn63xxp1;
+	struct cvmx_agl_gmx_txx_stats_ctl_s cn66xx;
+	struct cvmx_agl_gmx_txx_stats_ctl_s cn68xx;
+	struct cvmx_agl_gmx_txx_stats_ctl_s cn68xxp1;
 };
 
 union cvmx_agl_gmx_txx_thresh {
@@ -1393,6 +1982,16 @@ union cvmx_agl_gmx_txx_thresh {
 		uint64_t reserved_6_63:58;
 #endif
 	} s;
+	struct cvmx_agl_gmx_txx_thresh_s cn52xx;
+	struct cvmx_agl_gmx_txx_thresh_s cn52xxp1;
+	struct cvmx_agl_gmx_txx_thresh_s cn56xx;
+	struct cvmx_agl_gmx_txx_thresh_s cn56xxp1;
+	struct cvmx_agl_gmx_txx_thresh_s cn61xx;
+	struct cvmx_agl_gmx_txx_thresh_s cn63xx;
+	struct cvmx_agl_gmx_txx_thresh_s cn63xxp1;
+	struct cvmx_agl_gmx_txx_thresh_s cn66xx;
+	struct cvmx_agl_gmx_txx_thresh_s cn68xx;
+	struct cvmx_agl_gmx_txx_thresh_s cn68xxp1;
 };
 
 union cvmx_agl_gmx_tx_bp {
@@ -1406,6 +2005,8 @@ union cvmx_agl_gmx_tx_bp {
 		uint64_t reserved_2_63:62;
 #endif
 	} s;
+	struct cvmx_agl_gmx_tx_bp_s cn52xx;
+	struct cvmx_agl_gmx_tx_bp_s cn52xxp1;
 	struct cvmx_agl_gmx_tx_bp_cn56xx {
 #ifdef __BIG_ENDIAN_BITFIELD
 		uint64_t reserved_1_63:63;
@@ -1415,6 +2016,13 @@ union cvmx_agl_gmx_tx_bp {
 		uint64_t reserved_1_63:63;
 #endif
 	} cn56xx;
+	struct cvmx_agl_gmx_tx_bp_cn56xx cn56xxp1;
+	struct cvmx_agl_gmx_tx_bp_s cn61xx;
+	struct cvmx_agl_gmx_tx_bp_s cn63xx;
+	struct cvmx_agl_gmx_tx_bp_s cn63xxp1;
+	struct cvmx_agl_gmx_tx_bp_s cn66xx;
+	struct cvmx_agl_gmx_tx_bp_s cn68xx;
+	struct cvmx_agl_gmx_tx_bp_s cn68xxp1;
 };
 
 union cvmx_agl_gmx_tx_col_attempt {
@@ -1428,6 +2036,16 @@ union cvmx_agl_gmx_tx_col_attempt {
 		uint64_t reserved_5_63:59;
 #endif
 	} s;
+	struct cvmx_agl_gmx_tx_col_attempt_s cn52xx;
+	struct cvmx_agl_gmx_tx_col_attempt_s cn52xxp1;
+	struct cvmx_agl_gmx_tx_col_attempt_s cn56xx;
+	struct cvmx_agl_gmx_tx_col_attempt_s cn56xxp1;
+	struct cvmx_agl_gmx_tx_col_attempt_s cn61xx;
+	struct cvmx_agl_gmx_tx_col_attempt_s cn63xx;
+	struct cvmx_agl_gmx_tx_col_attempt_s cn63xxp1;
+	struct cvmx_agl_gmx_tx_col_attempt_s cn66xx;
+	struct cvmx_agl_gmx_tx_col_attempt_s cn68xx;
+	struct cvmx_agl_gmx_tx_col_attempt_s cn68xxp1;
 };
 
 union cvmx_agl_gmx_tx_ifg {
@@ -1443,6 +2061,16 @@ union cvmx_agl_gmx_tx_ifg {
 		uint64_t reserved_8_63:56;
 #endif
 	} s;
+	struct cvmx_agl_gmx_tx_ifg_s cn52xx;
+	struct cvmx_agl_gmx_tx_ifg_s cn52xxp1;
+	struct cvmx_agl_gmx_tx_ifg_s cn56xx;
+	struct cvmx_agl_gmx_tx_ifg_s cn56xxp1;
+	struct cvmx_agl_gmx_tx_ifg_s cn61xx;
+	struct cvmx_agl_gmx_tx_ifg_s cn63xx;
+	struct cvmx_agl_gmx_tx_ifg_s cn63xxp1;
+	struct cvmx_agl_gmx_tx_ifg_s cn66xx;
+	struct cvmx_agl_gmx_tx_ifg_s cn68xx;
+	struct cvmx_agl_gmx_tx_ifg_s cn68xxp1;
 };
 
 union cvmx_agl_gmx_tx_int_en {
@@ -1501,6 +2129,7 @@ union cvmx_agl_gmx_tx_int_en {
 		uint64_t reserved_18_63:46;
 #endif
 	} cn52xx;
+	struct cvmx_agl_gmx_tx_int_en_cn52xx cn52xxp1;
 	struct cvmx_agl_gmx_tx_int_en_cn56xx {
 #ifdef __BIG_ENDIAN_BITFIELD
 		uint64_t reserved_17_63:47;
@@ -1526,6 +2155,13 @@ union cvmx_agl_gmx_tx_int_en {
 		uint64_t reserved_17_63:47;
 #endif
 	} cn56xx;
+	struct cvmx_agl_gmx_tx_int_en_cn56xx cn56xxp1;
+	struct cvmx_agl_gmx_tx_int_en_s cn61xx;
+	struct cvmx_agl_gmx_tx_int_en_s cn63xx;
+	struct cvmx_agl_gmx_tx_int_en_s cn63xxp1;
+	struct cvmx_agl_gmx_tx_int_en_s cn66xx;
+	struct cvmx_agl_gmx_tx_int_en_s cn68xx;
+	struct cvmx_agl_gmx_tx_int_en_s cn68xxp1;
 };
 
 union cvmx_agl_gmx_tx_int_reg {
@@ -1584,6 +2220,7 @@ union cvmx_agl_gmx_tx_int_reg {
 		uint64_t reserved_18_63:46;
 #endif
 	} cn52xx;
+	struct cvmx_agl_gmx_tx_int_reg_cn52xx cn52xxp1;
 	struct cvmx_agl_gmx_tx_int_reg_cn56xx {
 #ifdef __BIG_ENDIAN_BITFIELD
 		uint64_t reserved_17_63:47;
@@ -1609,6 +2246,13 @@ union cvmx_agl_gmx_tx_int_reg {
 		uint64_t reserved_17_63:47;
 #endif
 	} cn56xx;
+	struct cvmx_agl_gmx_tx_int_reg_cn56xx cn56xxp1;
+	struct cvmx_agl_gmx_tx_int_reg_s cn61xx;
+	struct cvmx_agl_gmx_tx_int_reg_s cn63xx;
+	struct cvmx_agl_gmx_tx_int_reg_s cn63xxp1;
+	struct cvmx_agl_gmx_tx_int_reg_s cn66xx;
+	struct cvmx_agl_gmx_tx_int_reg_s cn68xx;
+	struct cvmx_agl_gmx_tx_int_reg_s cn68xxp1;
 };
 
 union cvmx_agl_gmx_tx_jam {
@@ -1622,6 +2266,16 @@ union cvmx_agl_gmx_tx_jam {
 		uint64_t reserved_8_63:56;
 #endif
 	} s;
+	struct cvmx_agl_gmx_tx_jam_s cn52xx;
+	struct cvmx_agl_gmx_tx_jam_s cn52xxp1;
+	struct cvmx_agl_gmx_tx_jam_s cn56xx;
+	struct cvmx_agl_gmx_tx_jam_s cn56xxp1;
+	struct cvmx_agl_gmx_tx_jam_s cn61xx;
+	struct cvmx_agl_gmx_tx_jam_s cn63xx;
+	struct cvmx_agl_gmx_tx_jam_s cn63xxp1;
+	struct cvmx_agl_gmx_tx_jam_s cn66xx;
+	struct cvmx_agl_gmx_tx_jam_s cn68xx;
+	struct cvmx_agl_gmx_tx_jam_s cn68xxp1;
 };
 
 union cvmx_agl_gmx_tx_lfsr {
@@ -1635,6 +2289,16 @@ union cvmx_agl_gmx_tx_lfsr {
 		uint64_t reserved_16_63:48;
 #endif
 	} s;
+	struct cvmx_agl_gmx_tx_lfsr_s cn52xx;
+	struct cvmx_agl_gmx_tx_lfsr_s cn52xxp1;
+	struct cvmx_agl_gmx_tx_lfsr_s cn56xx;
+	struct cvmx_agl_gmx_tx_lfsr_s cn56xxp1;
+	struct cvmx_agl_gmx_tx_lfsr_s cn61xx;
+	struct cvmx_agl_gmx_tx_lfsr_s cn63xx;
+	struct cvmx_agl_gmx_tx_lfsr_s cn63xxp1;
+	struct cvmx_agl_gmx_tx_lfsr_s cn66xx;
+	struct cvmx_agl_gmx_tx_lfsr_s cn68xx;
+	struct cvmx_agl_gmx_tx_lfsr_s cn68xxp1;
 };
 
 union cvmx_agl_gmx_tx_ovr_bp {
@@ -1656,6 +2320,8 @@ union cvmx_agl_gmx_tx_ovr_bp {
 		uint64_t reserved_10_63:54;
 #endif
 	} s;
+	struct cvmx_agl_gmx_tx_ovr_bp_s cn52xx;
+	struct cvmx_agl_gmx_tx_ovr_bp_s cn52xxp1;
 	struct cvmx_agl_gmx_tx_ovr_bp_cn56xx {
 #ifdef __BIG_ENDIAN_BITFIELD
 		uint64_t reserved_9_63:55;
@@ -1673,6 +2339,13 @@ union cvmx_agl_gmx_tx_ovr_bp {
 		uint64_t reserved_9_63:55;
 #endif
 	} cn56xx;
+	struct cvmx_agl_gmx_tx_ovr_bp_cn56xx cn56xxp1;
+	struct cvmx_agl_gmx_tx_ovr_bp_s cn61xx;
+	struct cvmx_agl_gmx_tx_ovr_bp_s cn63xx;
+	struct cvmx_agl_gmx_tx_ovr_bp_s cn63xxp1;
+	struct cvmx_agl_gmx_tx_ovr_bp_s cn66xx;
+	struct cvmx_agl_gmx_tx_ovr_bp_s cn68xx;
+	struct cvmx_agl_gmx_tx_ovr_bp_s cn68xxp1;
 };
 
 union cvmx_agl_gmx_tx_pause_pkt_dmac {
@@ -1686,6 +2359,16 @@ union cvmx_agl_gmx_tx_pause_pkt_dmac {
 		uint64_t reserved_48_63:16;
 #endif
 	} s;
+	struct cvmx_agl_gmx_tx_pause_pkt_dmac_s cn52xx;
+	struct cvmx_agl_gmx_tx_pause_pkt_dmac_s cn52xxp1;
+	struct cvmx_agl_gmx_tx_pause_pkt_dmac_s cn56xx;
+	struct cvmx_agl_gmx_tx_pause_pkt_dmac_s cn56xxp1;
+	struct cvmx_agl_gmx_tx_pause_pkt_dmac_s cn61xx;
+	struct cvmx_agl_gmx_tx_pause_pkt_dmac_s cn63xx;
+	struct cvmx_agl_gmx_tx_pause_pkt_dmac_s cn63xxp1;
+	struct cvmx_agl_gmx_tx_pause_pkt_dmac_s cn66xx;
+	struct cvmx_agl_gmx_tx_pause_pkt_dmac_s cn68xx;
+	struct cvmx_agl_gmx_tx_pause_pkt_dmac_s cn68xxp1;
 };
 
 union cvmx_agl_gmx_tx_pause_pkt_type {
@@ -1699,6 +2382,16 @@ union cvmx_agl_gmx_tx_pause_pkt_type {
 		uint64_t reserved_16_63:48;
 #endif
 	} s;
+	struct cvmx_agl_gmx_tx_pause_pkt_type_s cn52xx;
+	struct cvmx_agl_gmx_tx_pause_pkt_type_s cn52xxp1;
+	struct cvmx_agl_gmx_tx_pause_pkt_type_s cn56xx;
+	struct cvmx_agl_gmx_tx_pause_pkt_type_s cn56xxp1;
+	struct cvmx_agl_gmx_tx_pause_pkt_type_s cn61xx;
+	struct cvmx_agl_gmx_tx_pause_pkt_type_s cn63xx;
+	struct cvmx_agl_gmx_tx_pause_pkt_type_s cn63xxp1;
+	struct cvmx_agl_gmx_tx_pause_pkt_type_s cn66xx;
+	struct cvmx_agl_gmx_tx_pause_pkt_type_s cn68xx;
+	struct cvmx_agl_gmx_tx_pause_pkt_type_s cn68xxp1;
 };
 
 union cvmx_agl_prtx_ctl {
@@ -1754,6 +2447,12 @@ union cvmx_agl_prtx_ctl {
 		uint64_t drv_byp:1;
 #endif
 	} s;
+	struct cvmx_agl_prtx_ctl_s cn61xx;
+	struct cvmx_agl_prtx_ctl_s cn63xx;
+	struct cvmx_agl_prtx_ctl_s cn63xxp1;
+	struct cvmx_agl_prtx_ctl_s cn66xx;
+	struct cvmx_agl_prtx_ctl_s cn68xx;
+	struct cvmx_agl_prtx_ctl_s cn68xxp1;
 };
 
 #endif

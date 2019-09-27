@@ -1,7 +1,7 @@
-/* SPDX-License-Identifier: GPL-2.0 OR MIT */
 /**************************************************************************
  *
- * Copyright 2011-2012 VMware, Inc., Palo Alto, CA., USA
+ * Copyright © 2011-2012 VMware, Inc., Palo Alto, CA., USA
+ * All Rights Reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the
@@ -27,8 +27,7 @@
 
 #ifndef _VMWGFX_FENCE_H_
 
-#include <linux/dma-fence.h>
-#include <linux/dma-fence-array.h>
+#include <linux/fence.h>
 
 #define VMW_FENCE_WAIT_TIMEOUT (5*HZ)
 
@@ -53,7 +52,7 @@ struct vmw_fence_action {
 };
 
 struct vmw_fence_obj {
-	struct dma_fence base;
+	struct fence base;
 
 	struct list_head head;
 	struct list_head seq_passed_actions;
@@ -72,14 +71,14 @@ vmw_fence_obj_unreference(struct vmw_fence_obj **fence_p)
 
 	*fence_p = NULL;
 	if (fence)
-		dma_fence_put(&fence->base);
+		fence_put(&fence->base);
 }
 
 static inline struct vmw_fence_obj *
 vmw_fence_obj_reference(struct vmw_fence_obj *fence)
 {
 	if (fence)
-		dma_fence_get(&fence->base);
+		fence_get(&fence->base);
 	return fence;
 }
 
@@ -102,9 +101,6 @@ extern int vmw_user_fence_create(struct drm_file *file_priv,
 				 uint32_t sequence,
 				 struct vmw_fence_obj **p_fence,
 				 uint32_t *p_handle);
-
-extern int vmw_wait_dma_fence(struct vmw_fence_manager *fman,
-			      struct dma_fence *fence);
 
 extern void vmw_fence_fifo_up(struct vmw_fence_manager *fman);
 

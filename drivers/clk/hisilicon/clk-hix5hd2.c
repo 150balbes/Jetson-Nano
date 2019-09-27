@@ -1,7 +1,10 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2014 Linaro Ltd.
  * Copyright (c) 2014 Hisilicon Limited.
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms and conditions of the GNU General Public License,
+ * version 2, as published by the Free Software Foundation.
  */
 
 #include <linux/of_address.h>
@@ -205,7 +208,7 @@ static void clk_ether_unprepare(struct clk_hw *hw)
 	writel_relaxed(val, clk->ctrl_reg);
 }
 
-static const struct clk_ops clk_ether_ops = {
+static struct clk_ops clk_ether_ops = {
 	.prepare = clk_ether_prepare,
 	.unprepare = clk_ether_unprepare,
 };
@@ -244,7 +247,7 @@ static void clk_complex_disable(struct clk_hw *hw)
 	writel_relaxed(val, clk->phy_reg);
 }
 
-static const struct clk_ops clk_complex_ops = {
+static struct clk_ops clk_complex_ops = {
 	.enable = clk_complex_enable,
 	.disable = clk_complex_disable,
 };
@@ -271,7 +274,7 @@ hix5hd2_clk_register_complex(struct hix5hd2_complex_clock *clks, int nums,
 		else
 			init.ops = &clk_complex_ops;
 
-		init.flags = 0;
+		init.flags = CLK_IS_BASIC;
 		init.parent_names =
 			(clks[i].parent_name ? &clks[i].parent_name : NULL);
 		init.num_parents = (clks[i].parent_name ? 1 : 0);

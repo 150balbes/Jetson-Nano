@@ -1,12 +1,9 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _ARM_LIBFDT_ENV_H
 #define _ARM_LIBFDT_ENV_H
 
 #include <linux/types.h>
 #include <linux/string.h>
 #include <asm/byteorder.h>
-
-#define INT_MAX			((int)(~0U>>1))
 
 typedef __be16 fdt16_t;
 typedef __be32 fdt32_t;

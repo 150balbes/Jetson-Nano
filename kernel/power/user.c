@@ -1,13 +1,16 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * linux/kernel/power/user.c
  *
  * This file provides the user space interface for software suspend/resume.
  *
  * Copyright (C) 2006 Rafael J. Wysocki <rjw@sisk.pl>
+ *
+ * This file is released under the GPLv2.
+ *
  */
 
 #include <linux/suspend.h>
+#include <linux/syscalls.h>
 #include <linux/reboot.h>
 #include <linux/string.h>
 #include <linux/device.h>
@@ -22,7 +25,7 @@
 #include <linux/cpu.h>
 #include <linux/freezer.h>
 
-#include <linux/uaccess.h>
+#include <asm/uaccess.h>
 
 #include "power.h"
 
@@ -213,7 +216,7 @@ static long snapshot_ioctl(struct file *filp, unsigned int cmd,
 	if (!capable(CAP_SYS_ADMIN))
 		return -EPERM;
 
-	if (!mutex_trylock(&system_transition_mutex))
+	if (!mutex_trylock(&pm_mutex))
 		return -EBUSY;
 
 	lock_device_hotplug();
@@ -225,7 +228,9 @@ static long snapshot_ioctl(struct file *filp, unsigned int cmd,
 		if (data->frozen)
 			break;
 
-		ksys_sync_helper();
+		printk("Syncing filesystems ... ");
+		sys_sync();
+		printk("done.\n");
 
 		error = freeze_processes();
 		if (error)
@@ -389,7 +394,7 @@ static long snapshot_ioctl(struct file *filp, unsigned int cmd,
 	}
 
 	unlock_device_hotplug();
-	mutex_unlock(&system_transition_mutex);
+	mutex_unlock(&pm_mutex);
 
 	return error;
 }

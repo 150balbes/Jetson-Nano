@@ -1,10 +1,13 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * I2C driver for the Renesas EMEV2 SoC
  *
  * Copyright (C) 2015 Wolfram Sang <wsa@sang-engineering.com>
  * Copyright 2013 Codethink Ltd.
  * Copyright 2010-2015 Renesas Electronics Corporation
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2
+ * as published by the Free Software Foundation.
  */
 
 #include <linux/clk.h>
@@ -69,7 +72,6 @@ struct em_i2c_device {
 	struct completion msg_done;
 	struct clk *sclk;
 	struct i2c_client *slave;
-	int irq;
 };
 
 static inline void em_clear_set_bit(struct em_i2c_device *priv, u8 clear, u8 set, u8 reg)
@@ -147,7 +149,7 @@ static int __em_i2c_xfer(struct i2c_adapter *adap, struct i2c_msg *msg,
 	em_clear_set_bit(priv, 0, I2C_BIT_STT0, I2C_OFS_IICC0);
 
 	/* Send slave address and R/W type */
-	writeb(i2c_8bit_addr_from_msg(msg), priv->base + I2C_OFS_IIC0);
+	writeb((msg->addr << 1) | read, priv->base + I2C_OFS_IIC0);
 
 	/* Wait for transaction */
 	status = em_i2c_wait_for_event(priv);
@@ -340,18 +342,12 @@ static int em_i2c_unreg_slave(struct i2c_client *slave)
 
 	writeb(0, priv->base + I2C_OFS_SVA0);
 
-	/*
-	 * Wait for interrupt to finish. New slave irqs cannot happen because we
-	 * cleared the slave address and, thus, only extension codes will be
-	 * detected which do not use the slave ptr.
-	 */
-	synchronize_irq(priv->irq);
 	priv->slave = NULL;
 
 	return 0;
 }
 
-static const struct i2c_algorithm em_i2c_algo = {
+static struct i2c_algorithm em_i2c_algo = {
 	.master_xfer = em_i2c_xfer,
 	.functionality = em_i2c_func,
 	.reg_slave      = em_i2c_reg_slave,
@@ -362,7 +358,7 @@ static int em_i2c_probe(struct platform_device *pdev)
 {
 	struct em_i2c_device *priv;
 	struct resource *r;
-	int ret;
+	int irq, ret;
 
 	priv = devm_kzalloc(&pdev->dev, sizeof(*priv), GFP_KERNEL);
 	if (!priv)
@@ -379,9 +375,7 @@ static int em_i2c_probe(struct platform_device *pdev)
 	if (IS_ERR(priv->sclk))
 		return PTR_ERR(priv->sclk);
 
-	ret = clk_prepare_enable(priv->sclk);
-	if (ret)
-		return ret;
+	clk_prepare_enable(priv->sclk);
 
 	priv->adap.timeout = msecs_to_jiffies(100);
 	priv->adap.retries = 5;
@@ -397,8 +391,8 @@ static int em_i2c_probe(struct platform_device *pdev)
 
 	em_i2c_reset(&priv->adap);
 
-	priv->irq = platform_get_irq(pdev, 0);
-	ret = devm_request_irq(&pdev->dev, priv->irq, em_i2c_irq_handler, 0,
+	irq = platform_get_irq(pdev, 0);
+	ret = devm_request_irq(&pdev->dev, irq, em_i2c_irq_handler, 0,
 				"em_i2c", priv);
 	if (ret)
 		goto err_clk;
@@ -408,8 +402,7 @@ static int em_i2c_probe(struct platform_device *pdev)
 	if (ret)
 		goto err_clk;
 
-	dev_info(&pdev->dev, "Added i2c controller %d, irq %d\n", priv->adap.nr,
-		 priv->irq);
+	dev_info(&pdev->dev, "Added i2c controller %d, irq %d\n", priv->adap.nr, irq);
 
 	return 0;
 

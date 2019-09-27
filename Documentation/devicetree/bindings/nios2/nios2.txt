@@ -36,7 +36,7 @@ Optional properties:
 
 Example:
 
-cpu@0 {
+cpu@0x0 {
 	device_type = "cpu";
 	compatible = "altr,nios2-1.0";
 	reg = <0>;

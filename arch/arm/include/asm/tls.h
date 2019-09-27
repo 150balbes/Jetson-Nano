@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __ASMARM_TLS_H
 #define __ASMARM_TLS_H
 

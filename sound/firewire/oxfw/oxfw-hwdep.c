@@ -1,8 +1,9 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * oxfw_hwdep.c - a part of driver for OXFW970/971 based devices
  *
  * Copyright (c) 2014 Takashi Sakamoto
+ *
+ * Licensed under the terms of the GNU General Public License, version 2.
  */
 
 /*
@@ -51,17 +52,17 @@ static long hwdep_read(struct snd_hwdep *hwdep, char __user *buf,  long count,
 	return count;
 }
 
-static __poll_t hwdep_poll(struct snd_hwdep *hwdep, struct file *file,
+static unsigned int hwdep_poll(struct snd_hwdep *hwdep, struct file *file,
 			       poll_table *wait)
 {
 	struct snd_oxfw *oxfw = hwdep->private_data;
-	__poll_t events;
+	unsigned int events;
 
 	poll_wait(file, &oxfw->hwdep_wait, wait);
 
 	spin_lock_irq(&oxfw->lock);
 	if (oxfw->dev_lock_changed)
-		events = EPOLLIN | EPOLLRDNORM;
+		events = POLLIN | POLLRDNORM;
 	else
 		events = 0;
 	spin_unlock_irq(&oxfw->lock);

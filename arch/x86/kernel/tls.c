@@ -1,13 +1,11 @@
-// SPDX-License-Identifier: GPL-2.0
 #include <linux/kernel.h>
 #include <linux/errno.h>
 #include <linux/sched.h>
 #include <linux/user.h>
 #include <linux/regset.h>
 #include <linux/syscalls.h>
-#include <linux/nospec.h>
 
-#include <linux/uaccess.h>
+#include <asm/uaccess.h>
 #include <asm/desc.h>
 #include <asm/ldt.h>
 #include <asm/processor.h>
@@ -95,7 +93,7 @@ static void set_tls_desc(struct task_struct *p, int idx,
 
 	while (n-- > 0) {
 		if (LDT_empty(info) || LDT_zero(info))
-			memset(desc, 0, sizeof(*desc));
+			desc->a = desc->b = 0;
 		else
 			fill_ldt(desc, info);
 		++info;
@@ -221,7 +219,6 @@ int do_get_thread_area(struct task_struct *p, int idx,
 		       struct user_desc __user *u_info)
 {
 	struct user_desc info;
-	int index;
 
 	if (idx == -1 && get_user(idx, &u_info->entry_number))
 		return -EFAULT;
@@ -229,11 +226,8 @@ int do_get_thread_area(struct task_struct *p, int idx,
 	if (idx < GDT_ENTRY_TLS_MIN || idx > GDT_ENTRY_TLS_MAX)
 		return -EINVAL;
 
-	index = idx - GDT_ENTRY_TLS_MIN;
-	index = array_index_nospec(index,
-			GDT_ENTRY_TLS_MAX - GDT_ENTRY_TLS_MIN + 1);
-
-	fill_user_desc(&info, idx, &p->thread.tls_array[index]);
+	fill_user_desc(&info, idx,
+		       &p->thread.tls_array[idx - GDT_ENTRY_TLS_MIN]);
 
 	if (copy_to_user(u_info, &info, sizeof(info)))
 		return -EFAULT;

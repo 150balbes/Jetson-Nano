@@ -1,21 +1,32 @@
-// SPDX-License-Identifier: GPL-2.0
-// Copyright (c) 2009,2018 Daniel Mack <daniel@zonque.org>
+/*
+ * LEDs driver for LT3593 controllers
+ *
+ * See the datasheet at http://cds.linear.com/docs/Datasheet/3593f.pdf
+ *
+ * Copyright (c) 2009 Daniel Mack <daniel@caiaq.de>
+ *
+ * Based on leds-gpio.c,
+ *
+ *   Copyright (C) 2007 8D Technologies inc.
+ *   Raphael Assenat <raph@8d.com>
+ *   Copyright (C) 2008 Freescale Semiconductor, Inc.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ */
 
 #include <linux/kernel.h>
 #include <linux/platform_device.h>
 #include <linux/leds.h>
 #include <linux/delay.h>
 #include <linux/gpio.h>
-#include <linux/gpio/consumer.h>
 #include <linux/slab.h>
 #include <linux/module.h>
-#include <linux/of.h>
-#include <uapi/linux/uleds.h>
 
 struct lt3593_led_data {
-	char name[LED_MAX_NAME_SIZE];
 	struct led_classdev cdev;
-	struct gpio_desc *gpiod;
+	unsigned gpio;
 };
 
 static int lt3593_led_set(struct led_classdev *led_cdev,
@@ -35,106 +46,137 @@ static int lt3593_led_set(struct led_classdev *led_cdev,
 	 */
 
 	if (value == 0) {
-		gpiod_set_value_cansleep(led_dat->gpiod, 0);
+		gpio_set_value_cansleep(led_dat->gpio, 0);
 		return 0;
 	}
 
 	pulses = 32 - (value * 32) / 255;
 
 	if (pulses == 0) {
-		gpiod_set_value_cansleep(led_dat->gpiod, 0);
+		gpio_set_value_cansleep(led_dat->gpio, 0);
 		mdelay(1);
-		gpiod_set_value_cansleep(led_dat->gpiod, 1);
+		gpio_set_value_cansleep(led_dat->gpio, 1);
 		return 0;
 	}
 
-	gpiod_set_value_cansleep(led_dat->gpiod, 1);
+	gpio_set_value_cansleep(led_dat->gpio, 1);
 
 	while (pulses--) {
-		gpiod_set_value_cansleep(led_dat->gpiod, 0);
+		gpio_set_value_cansleep(led_dat->gpio, 0);
 		udelay(1);
-		gpiod_set_value_cansleep(led_dat->gpiod, 1);
+		gpio_set_value_cansleep(led_dat->gpio, 1);
 		udelay(1);
 	}
 
 	return 0;
+}
+
+static int create_lt3593_led(const struct gpio_led *template,
+	struct lt3593_led_data *led_dat, struct device *parent)
+{
+	int ret, state;
+
+	/* skip leds on GPIOs that aren't available */
+	if (!gpio_is_valid(template->gpio)) {
+		dev_info(parent, "%s: skipping unavailable LT3593 LED at gpio %d (%s)\n",
+				KBUILD_MODNAME, template->gpio, template->name);
+		return 0;
+	}
+
+	led_dat->cdev.name = template->name;
+	led_dat->cdev.default_trigger = template->default_trigger;
+	led_dat->gpio = template->gpio;
+
+	led_dat->cdev.brightness_set_blocking = lt3593_led_set;
+
+	state = (template->default_state == LEDS_GPIO_DEFSTATE_ON);
+	led_dat->cdev.brightness = state ? LED_FULL : LED_OFF;
+
+	if (!template->retain_state_suspended)
+		led_dat->cdev.flags |= LED_CORE_SUSPENDRESUME;
+
+	ret = devm_gpio_request_one(parent, template->gpio, state ?
+				    GPIOF_OUT_INIT_HIGH : GPIOF_OUT_INIT_LOW,
+				    template->name);
+	if (ret < 0)
+		return ret;
+
+	ret = led_classdev_register(parent, &led_dat->cdev);
+	if (ret < 0)
+		return ret;
+
+	dev_info(parent, "%s: registered LT3593 LED '%s' at GPIO %d\n",
+		KBUILD_MODNAME, template->name, template->gpio);
+
+	return 0;
+}
+
+static void delete_lt3593_led(struct lt3593_led_data *led)
+{
+	if (!gpio_is_valid(led->gpio))
+		return;
+
+	led_classdev_unregister(&led->cdev);
 }
 
 static int lt3593_led_probe(struct platform_device *pdev)
 {
-	struct device *dev = &pdev->dev;
-	struct lt3593_led_data *led_data;
-	struct fwnode_handle *child;
-	int ret, state = LEDS_GPIO_DEFSTATE_OFF;
-	const char *tmp;
+	struct gpio_led_platform_data *pdata = dev_get_platdata(&pdev->dev);
+	struct lt3593_led_data *leds_data;
+	int i, ret = 0;
 
-	if (!dev->of_node)
-		return -ENODEV;
+	if (!pdata)
+		return -EBUSY;
 
-	led_data = devm_kzalloc(dev, sizeof(*led_data), GFP_KERNEL);
-	if (!led_data)
+	leds_data = devm_kzalloc(&pdev->dev,
+			sizeof(struct lt3593_led_data) * pdata->num_leds,
+			GFP_KERNEL);
+	if (!leds_data)
 		return -ENOMEM;
 
-	if (device_get_child_node_count(dev) != 1) {
-		dev_err(dev, "Device must have exactly one LED sub-node.");
-		return -EINVAL;
+	for (i = 0; i < pdata->num_leds; i++) {
+		ret = create_lt3593_led(&pdata->leds[i], &leds_data[i],
+				      &pdev->dev);
+		if (ret < 0)
+			goto err;
 	}
 
-	led_data->gpiod = devm_gpiod_get(dev, "lltc,ctrl", 0);
-	if (IS_ERR(led_data->gpiod))
-		return PTR_ERR(led_data->gpiod);
+	platform_set_drvdata(pdev, leds_data);
 
-	child = device_get_next_child_node(dev, NULL);
+	return 0;
 
-	ret = fwnode_property_read_string(child, "label", &tmp);
-	if (ret < 0)
-		snprintf(led_data->name, sizeof(led_data->name),
-			 "lt3593::");
-	else
-		snprintf(led_data->name, sizeof(led_data->name),
-			 "lt3593:%s", tmp);
+err:
+	for (i = i - 1; i >= 0; i--)
+		delete_lt3593_led(&leds_data[i]);
 
-	fwnode_property_read_string(child, "linux,default-trigger",
-				    &led_data->cdev.default_trigger);
+	return ret;
+}
 
-	if (!fwnode_property_read_string(child, "default-state", &tmp)) {
-		if (!strcmp(tmp, "on"))
-			state = LEDS_GPIO_DEFSTATE_ON;
-	}
+static int lt3593_led_remove(struct platform_device *pdev)
+{
+	int i;
+	struct gpio_led_platform_data *pdata = dev_get_platdata(&pdev->dev);
+	struct lt3593_led_data *leds_data;
 
-	led_data->cdev.name = led_data->name;
-	led_data->cdev.brightness_set_blocking = lt3593_led_set;
-	led_data->cdev.brightness = state ? LED_FULL : LED_OFF;
+	leds_data = platform_get_drvdata(pdev);
 
-	ret = devm_led_classdev_register(dev, &led_data->cdev);
-	if (ret < 0) {
-		fwnode_handle_put(child);
-		return ret;
-	}
-
-	led_data->cdev.dev->of_node = dev->of_node;
-	platform_set_drvdata(pdev, led_data);
+	for (i = 0; i < pdata->num_leds; i++)
+		delete_lt3593_led(&leds_data[i]);
 
 	return 0;
 }
 
-static const struct of_device_id of_lt3593_leds_match[] = {
-	{ .compatible = "lltc,lt3593", },
-	{},
-};
-MODULE_DEVICE_TABLE(of, of_lt3593_leds_match);
-
 static struct platform_driver lt3593_led_driver = {
 	.probe		= lt3593_led_probe,
+	.remove		= lt3593_led_remove,
 	.driver		= {
 		.name	= "leds-lt3593",
-		.of_match_table = of_match_ptr(of_lt3593_leds_match),
 	},
 };
 
 module_platform_driver(lt3593_led_driver);
 
-MODULE_AUTHOR("Daniel Mack <daniel@zonque.org>");
+MODULE_AUTHOR("Daniel Mack <daniel@caiaq.de>");
 MODULE_DESCRIPTION("LED driver for LT3593 controllers");
-MODULE_LICENSE("GPL v2");
+MODULE_LICENSE("GPL");
 MODULE_ALIAS("platform:leds-lt3593");

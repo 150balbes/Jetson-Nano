@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __MATROXFB_MAVEN_H__
 #define __MATROXFB_MAVEN_H__
 

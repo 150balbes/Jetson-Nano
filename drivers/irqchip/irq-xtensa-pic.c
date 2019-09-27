@@ -44,37 +44,35 @@ static const struct irq_domain_ops xtensa_irq_domain_ops = {
 static void xtensa_irq_mask(struct irq_data *d)
 {
 	cached_irq_mask &= ~(1 << d->hwirq);
-	xtensa_set_sr(cached_irq_mask, intenable);
+	set_sr(cached_irq_mask, intenable);
 }
 
 static void xtensa_irq_unmask(struct irq_data *d)
 {
 	cached_irq_mask |= 1 << d->hwirq;
-	xtensa_set_sr(cached_irq_mask, intenable);
+	set_sr(cached_irq_mask, intenable);
 }
 
 static void xtensa_irq_enable(struct irq_data *d)
 {
+	variant_irq_enable(d->hwirq);
 	xtensa_irq_unmask(d);
 }
 
 static void xtensa_irq_disable(struct irq_data *d)
 {
 	xtensa_irq_mask(d);
+	variant_irq_disable(d->hwirq);
 }
 
 static void xtensa_irq_ack(struct irq_data *d)
 {
-	xtensa_set_sr(1 << d->hwirq, intclear);
+	set_sr(1 << d->hwirq, intclear);
 }
 
 static int xtensa_irq_retrigger(struct irq_data *d)
 {
-	unsigned int mask = 1u << d->hwirq;
-
-	if (WARN_ON(mask & ~XCHAL_INTTYPE_MASK_SOFTWARE))
-		return 0;
-	xtensa_set_sr(mask, intset);
+	set_sr(1 << d->hwirq, intset);
 	return 1;
 }
 

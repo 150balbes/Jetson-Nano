@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * Extract CPU cache information and expose them via sysfs.
  *

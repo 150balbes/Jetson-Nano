@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 
 #define DSS_SUBSYS_NAME "HDMI"
 

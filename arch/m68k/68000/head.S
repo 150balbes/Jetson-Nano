@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * head.S - Common startup code for 68000 core based CPU's
  *

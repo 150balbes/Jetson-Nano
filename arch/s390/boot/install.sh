@@ -1,7 +1,10 @@
 #!/bin/sh
-# SPDX-License-Identifier: GPL-2.0
 #
 # arch/s390x/boot/install.sh
+#
+# This file is subject to the terms and conditions of the GNU General Public
+# License.  See the file "COPYING" in the main directory of this archive
+# for more details.
 #
 # Copyright (C) 1995 by Linus Torvalds
 #

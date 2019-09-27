@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: (GPL-2.0 OR BSD-3-Clause)
 /*
  * Sample code to test CAP protocol
  *
@@ -104,7 +103,7 @@ int main(int argc, char *argv[])
 		goto close_fd;
 	}
 
-	printf("UID received: 0x%llx\n", *(unsigned long long int *)(uid.uid));
+	printf("UID received: 0x%llx\n", *(long long unsigned int *)(uid.uid));
 
 	/* Get certificate */
 	printf("Get IMS certificate\n");

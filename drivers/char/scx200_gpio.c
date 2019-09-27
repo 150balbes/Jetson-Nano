@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /* linux/drivers/char/scx200_gpio.c
 
    National Semiconductor SCx200 GPIO driver.  Allows a user space
@@ -13,7 +12,7 @@
 #include <linux/kernel.h>
 #include <linux/init.h>
 #include <linux/platform_device.h>
-#include <linux/uaccess.h>
+#include <asm/uaccess.h>
 #include <asm/io.h>
 
 #include <linux/types.h>

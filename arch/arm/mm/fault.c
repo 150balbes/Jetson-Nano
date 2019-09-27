@@ -1,11 +1,14 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  *  linux/arch/arm/mm/fault.c
  *
  *  Copyright (C) 1995  Linus Torvalds
  *  Modifications for ARM processor (c) 1995-2004 Russell King
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  */
-#include <linux/extable.h>
+#include <linux/module.h>
 #include <linux/signal.h>
 #include <linux/mm.h>
 #include <linux/hardirq.h>
@@ -13,11 +16,11 @@
 #include <linux/kprobes.h>
 #include <linux/uaccess.h>
 #include <linux/page-flags.h>
-#include <linux/sched/signal.h>
-#include <linux/sched/debug.h>
+#include <linux/sched.h>
 #include <linux/highmem.h>
 #include <linux/perf_event.h>
 
+#include <asm/exception.h>
 #include <asm/pgtable.h>
 #include <asm/system_misc.h>
 #include <asm/system_info.h>
@@ -27,20 +30,43 @@
 
 #ifdef CONFIG_MMU
 
+#ifdef CONFIG_KPROBES
+static inline int notify_page_fault(struct pt_regs *regs, unsigned int fsr)
+{
+	int ret = 0;
+
+	if (!user_mode(regs)) {
+		/* kprobe_running() needs smp_processor_id() */
+		preempt_disable();
+		if (kprobe_running() && kprobe_fault_handler(regs, fsr))
+			ret = 1;
+		preempt_enable();
+	}
+
+	return ret;
+}
+#else
+static inline int notify_page_fault(struct pt_regs *regs, unsigned int fsr)
+{
+	return 0;
+}
+#endif
+
 /*
  * This is useful to dump out the page tables associated with
  * 'addr' in mm 'mm'.
  */
-void show_pte(const char *lvl, struct mm_struct *mm, unsigned long addr)
+void show_pte(struct mm_struct *mm, unsigned long addr)
 {
 	pgd_t *pgd;
 
 	if (!mm)
 		mm = &init_mm;
 
-	printk("%spgd = %p\n", lvl, mm->pgd);
+	pr_alert("pgd = %p\n", mm->pgd);
 	pgd = pgd_offset(mm, addr);
-	printk("%s[%08lx] *pgd=%08llx", lvl, addr, (long long)pgd_val(*pgd));
+	pr_alert("[%08lx] *pgd=%08llx",
+			addr, (long long)pgd_val(*pgd));
 
 	do {
 		pud_t *pud;
@@ -95,7 +121,7 @@ void show_pte(const char *lvl, struct mm_struct *mm, unsigned long addr)
 	pr_cont("\n");
 }
 #else					/* CONFIG_MMU */
-void show_pte(const char *lvl, struct mm_struct *mm, unsigned long addr)
+void show_pte(struct mm_struct *mm, unsigned long addr)
 { }
 #endif					/* CONFIG_MMU */
 
@@ -116,12 +142,11 @@ __do_kernel_fault(struct mm_struct *mm, unsigned long addr, unsigned int fsr,
 	 * No handler, we'll have to terminate things with extreme prejudice.
 	 */
 	bust_spinlocks(1);
-	pr_alert("8<--- cut here ---\n");
 	pr_alert("Unable to handle kernel %s at virtual address %08lx\n",
 		 (addr < PAGE_SIZE) ? "NULL pointer dereference" :
 		 "paging request", addr);
 
-	show_pte(KERN_ALERT, mm, addr);
+	show_pte(mm, addr);
 	die("Oops", regs, fsr);
 	bust_spinlocks(0);
 	do_exit(SIGKILL);
@@ -132,10 +157,11 @@ __do_kernel_fault(struct mm_struct *mm, unsigned long addr, unsigned int fsr,
  * User mode accesses just cause a SIGSEGV
  */
 static void
-__do_user_fault(unsigned long addr, unsigned int fsr, unsigned int sig,
-		int code, struct pt_regs *regs)
+__do_user_fault(struct task_struct *tsk, unsigned long addr,
+		unsigned int fsr, unsigned int sig, int code,
+		struct pt_regs *regs)
 {
-	struct task_struct *tsk = current;
+	struct siginfo si;
 
 	if (addr > TASK_SIZE)
 		harden_branch_predictor();
@@ -143,24 +169,21 @@ __do_user_fault(unsigned long addr, unsigned int fsr, unsigned int sig,
 #ifdef CONFIG_DEBUG_USER
 	if (((user_debug & UDBG_SEGV) && (sig == SIGSEGV)) ||
 	    ((user_debug & UDBG_BUS)  && (sig == SIGBUS))) {
-		pr_err("8<--- cut here ---\n");
-		pr_err("%s: unhandled page fault (%d) at 0x%08lx, code 0x%03x\n",
+		printk(KERN_DEBUG "%s: unhandled page fault (%d) at 0x%08lx, code 0x%03x\n",
 		       tsk->comm, sig, addr, fsr);
-		show_pte(KERN_ERR, tsk->mm, addr);
+		show_pte(tsk->mm, addr);
 		show_regs(regs);
 	}
-#endif
-#ifndef CONFIG_KUSER_HELPERS
-	if ((sig == SIGSEGV) && ((addr & PAGE_MASK) == 0xffff0000))
-		printk_ratelimited(KERN_DEBUG
-				   "%s: CONFIG_KUSER_HELPERS disabled at 0x%08lx\n",
-				   tsk->comm, addr);
 #endif
 
 	tsk->thread.address = addr;
 	tsk->thread.error_code = fsr;
 	tsk->thread.trap_no = 14;
-	force_sig_fault(sig, code, (void __user *)addr);
+	si.si_signo = sig;
+	si.si_errno = 0;
+	si.si_code = code;
+	si.si_addr = (void __user *)addr;
+	force_sig_info(sig, &si, tsk);
 }
 
 void do_bad_area(unsigned long addr, unsigned int fsr, struct pt_regs *regs)
@@ -173,7 +196,7 @@ void do_bad_area(unsigned long addr, unsigned int fsr, struct pt_regs *regs)
 	 * have no context to handle this fault with.
 	 */
 	if (user_mode(regs))
-		__do_user_fault(addr, fsr, SIGSEGV, SEGV_MAPERR, regs);
+		__do_user_fault(tsk, addr, fsr, SIGSEGV, SEGV_MAPERR, regs);
 	else
 		__do_kernel_fault(mm, addr, fsr, regs);
 }
@@ -199,12 +222,12 @@ static inline bool access_error(unsigned int fsr, struct vm_area_struct *vma)
 	return vma->vm_flags & mask ? false : true;
 }
 
-static vm_fault_t __kprobes
+static int __kprobes
 __do_page_fault(struct mm_struct *mm, unsigned long addr, unsigned int fsr,
 		unsigned int flags, struct task_struct *tsk)
 {
 	struct vm_area_struct *vma;
-	vm_fault_t fault;
+	int fault;
 
 	vma = find_vma(mm, addr);
 	fault = VM_FAULT_BADMAP;
@@ -239,11 +262,10 @@ do_page_fault(unsigned long addr, unsigned int fsr, struct pt_regs *regs)
 {
 	struct task_struct *tsk;
 	struct mm_struct *mm;
-	int sig, code;
-	vm_fault_t fault;
+	int fault, sig, code;
 	unsigned int flags = FAULT_FLAG_ALLOW_RETRY | FAULT_FLAG_KILLABLE;
 
-	if (kprobe_page_fault(regs, fsr))
+	if (notify_page_fault(regs, fsr))
 		return 0;
 
 	tsk = current;
@@ -254,10 +276,10 @@ do_page_fault(unsigned long addr, unsigned int fsr, struct pt_regs *regs)
 		local_irq_enable();
 
 	/*
-	 * If we're in an interrupt or have no user
+	 * If we're in an interrupt, or have no irqs, or have no user
 	 * context, we must not take the fault..
 	 */
-	if (faulthandler_disabled() || !mm)
+	if (faulthandler_disabled() || irqs_disabled() || !mm)
 		goto no_context;
 
 	if (user_mode(regs))
@@ -369,7 +391,7 @@ retry:
 			SEGV_ACCERR : SEGV_MAPERR;
 	}
 
-	__do_user_fault(addr, fsr, sig, code, regs);
+	__do_user_fault(tsk, addr, fsr, sig, code, regs);
 	return 0;
 
 no_context:
@@ -525,21 +547,24 @@ hook_fault_code(int nr, int (*fn)(unsigned long, unsigned int, struct pt_regs *)
 /*
  * Dispatch a data abort to the relevant handler.
  */
-asmlinkage void
+asmlinkage void __exception
 do_DataAbort(unsigned long addr, unsigned int fsr, struct pt_regs *regs)
 {
 	const struct fsr_info *inf = fsr_info + fsr_fs(fsr);
+	struct siginfo info;
 
 	if (!inf->fn(addr, fsr & ~FSR_LNX_PF, regs))
 		return;
 
-	pr_alert("8<--- cut here ---\n");
 	pr_alert("Unhandled fault: %s (0x%03x) at 0x%08lx\n",
 		inf->name, fsr, addr);
-	show_pte(KERN_ALERT, current->mm, addr);
+	show_pte(current->mm, addr);
 
-	arm_notify_die("", regs, inf->sig, inf->code, (void __user *)addr,
-		       fsr, 0);
+	info.si_signo = inf->sig;
+	info.si_errno = 0;
+	info.si_code  = inf->code;
+	info.si_addr  = (void __user *)addr;
+	arm_notify_die("", regs, &info, fsr, 0);
 }
 
 void __init
@@ -555,10 +580,11 @@ hook_ifault_code(int nr, int (*fn)(unsigned long, unsigned int, struct pt_regs *
 	ifsr_info[nr].name = name;
 }
 
-asmlinkage void
+asmlinkage void __exception
 do_PrefetchAbort(unsigned long addr, unsigned int ifsr, struct pt_regs *regs)
 {
 	const struct fsr_info *inf = ifsr_info + fsr_fs(ifsr);
+	struct siginfo info;
 
 	if (!inf->fn(addr, ifsr | FSR_LNX_PF, regs))
 		return;
@@ -566,8 +592,11 @@ do_PrefetchAbort(unsigned long addr, unsigned int ifsr, struct pt_regs *regs)
 	pr_alert("Unhandled prefetch abort: %s (0x%03x) at 0x%08lx\n",
 		inf->name, ifsr, addr);
 
-	arm_notify_die("", regs, inf->sig, inf->code, (void __user *)addr,
-		       ifsr, 0);
+	info.si_signo = inf->sig;
+	info.si_errno = 0;
+	info.si_code  = inf->code;
+	info.si_addr  = (void __user *)addr;
+	arm_notify_die("", regs, &info, ifsr, 0);
 }
 
 /*

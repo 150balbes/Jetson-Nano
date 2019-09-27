@@ -1,0 +1,101 @@
+/*
+ * Copyright (c) 2015-2018, NVIDIA CORPORATION.  All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
+#include <t19x-common-modules/tegra194-camera-imx274-hdmi.dtsi>
+#include "dt-bindings/clock/tegra194-clock.h"
+
+#define CAM0_RST_HDMI	TEGRA194_MAIN_GPIO(H, 4)
+#define CAM1_RST_HDMI	TEGRA194_MAIN_GPIO(T, 6)
+#define CAM2_RST_HDMI	TEGRA194_MAIN_GPIO(Q, 6) /* 40-pin conn., pin 22 */
+#define TC358840_INT	TEGRA194_MAIN_GPIO(Q, 1) /* 40-pin conn., pin 7 */
+/* camera control gpio definitions */
+
+/ {
+	i2c@3180000 {
+		imx274_a@1a {
+			/* Define any required hw resources needed by driver */
+			/* ie. clocks, io pins, power sources */
+			clocks = <&bpmp_clks TEGRA194_CLK_EXTPERIPH2>,
+					 <&bpmp_clks TEGRA194_CLK_PLLP_OUT0>;
+			clock-names = "extperiph2", "pllp_grtba";
+			mclk = "extperiph2";
+			status = "okay";
+			reset-gpios = <&tegra_main_gpio CAM1_RST_HDMI GPIO_ACTIVE_HIGH>;
+			vana-supply = <&p2822_avdd_cam_2v8>;
+			vif-supply = <&p2822_vdd_1v8_cvb>;
+			/* rework: also enables VDD_1V_SATA_PHY (1.18 V) */
+			vdig-supply = <&p2822_vdd_1v8_cvb>;
+		};
+		tc358840@1f {
+			single-source-max-width = "1920";
+			mclk = "extperiph2";
+			cam2_rst   = <&tegra_main_gpio CAM2_RST_HDMI GPIO_ACTIVE_LOW>;
+			vif-supply = <&p2822_vdd_1v8_cvb>;
+			/* rework: also enables VDD_1V_SATA_PHY (1.18 V) */
+			vdig-supply = <&p2822_vdd_1v8_cvb>;
+			reset-gpios = <&tegra_main_gpio CAM0_RST_HDMI GPIO_ACTIVE_HIGH>;
+			interrupt-parent = <&tegra_main_gpio>;
+			interrupts = <TC358840_INT GPIO_ACTIVE_HIGH>;
+
+			refclk_hz = <40000000>; /* 40 - 50 MHz */
+
+			ddc5v_delay = <1>;        /* 50 ms */
+
+			/* HDCP */
+			/* TODO: Not yet implemented */
+			enable_hdcp = <0>;
+
+			/* CSI Output */
+			csi_port = <1>;            /* Enable TX0 only */
+
+			lineinitcnt = <0x00000FA0>;
+			lptxtimecnt = <0x00000004>;
+			tclk_headercnt = <0x00180203>;
+			tclk_trailcnt = <0x00040005>;
+			ths_headercnt = <0x000D0004>;
+			twakeup = <0x00003E80>;
+			tclk_postcnt = <0x0000000A>;
+			ths_trailcnt = <0x00080006>;
+			hstxvregcnt = <0x00000020>;
+			btacnt = <0>;
+
+			/* PLL */
+			/* Bps per lane is (refclk_hz / pll_prd) * pll_fbd */
+			pll_prd = <10>;
+			pll_fbd = <230>;
+			pll_frs = <0>;
+		};
+	};
+
+	gpio@2200000 {
+		camera-control-output-high {
+			status = "okay";
+			gpio-hog;
+			gpios = <CAM1_RST_HDMI 0>;
+			output-high;
+			label = "cam1-rst";
+		};
+		camera-control-input {
+			status = "okay";
+			gpio-hog;
+			gpios = <TC358840_INT 0>;
+			input;
+			label = "cam-input-p2";
+		};
+	};
+
+};

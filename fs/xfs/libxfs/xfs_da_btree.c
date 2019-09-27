@@ -1,8 +1,20 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * Copyright (c) 2000-2005 Silicon Graphics, Inc.
  * Copyright (c) 2013 Red Hat, Inc.
  * All Rights Reserved.
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it would be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write the Free Software Foundation,
+ * Inc.,  51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
  */
 #include "xfs.h"
 #include "xfs_fs.h"
@@ -12,14 +24,20 @@
 #include "xfs_trans_resv.h"
 #include "xfs_bit.h"
 #include "xfs_mount.h"
+#include "xfs_da_format.h"
+#include "xfs_da_btree.h"
 #include "xfs_dir2.h"
 #include "xfs_dir2_priv.h"
 #include "xfs_inode.h"
 #include "xfs_trans.h"
+#include "xfs_inode_item.h"
+#include "xfs_alloc.h"
 #include "xfs_bmap.h"
+#include "xfs_attr.h"
 #include "xfs_attr_leaf.h"
 #include "xfs_error.h"
 #include "xfs_trace.h"
+#include "xfs_cksum.h"
 #include "xfs_buf_item.h"
 #include "xfs_log.h"
 
@@ -110,58 +128,41 @@ xfs_da_state_free(xfs_da_state_t *state)
 	kmem_zone_free(xfs_da_state_zone, state);
 }
 
-/*
- * Verify an xfs_da3_blkinfo structure. Note that the da3 fields are only
- * accessible on v5 filesystems. This header format is common across da node,
- * attr leaf and dir leaf blocks.
- */
-xfs_failaddr_t
-xfs_da3_blkinfo_verify(
-	struct xfs_buf		*bp,
-	struct xfs_da3_blkinfo	*hdr3)
-{
-	struct xfs_mount	*mp = bp->b_mount;
-	struct xfs_da_blkinfo	*hdr = &hdr3->hdr;
-
-	if (!xfs_verify_magic16(bp, hdr->magic))
-		return __this_address;
-
-	if (xfs_sb_version_hascrc(&mp->m_sb)) {
-		if (!uuid_equal(&hdr3->uuid, &mp->m_sb.sb_meta_uuid))
-			return __this_address;
-		if (be64_to_cpu(hdr3->blkno) != bp->b_bn)
-			return __this_address;
-		if (!xfs_log_check_lsn(mp, be64_to_cpu(hdr3->lsn)))
-			return __this_address;
-	}
-
-	return NULL;
-}
-
-static xfs_failaddr_t
+static bool
 xfs_da3_node_verify(
 	struct xfs_buf		*bp)
 {
-	struct xfs_mount	*mp = bp->b_mount;
+	struct xfs_mount	*mp = bp->b_target->bt_mount;
 	struct xfs_da_intnode	*hdr = bp->b_addr;
 	struct xfs_da3_icnode_hdr ichdr;
 	const struct xfs_dir_ops *ops;
-	xfs_failaddr_t		fa;
 
 	ops = xfs_dir_get_ops(mp, NULL);
 
 	ops->node_hdr_from_disk(&ichdr, hdr);
 
-	fa = xfs_da3_blkinfo_verify(bp, bp->b_addr);
-	if (fa)
-		return fa;
+	if (xfs_sb_version_hascrc(&mp->m_sb)) {
+		struct xfs_da3_node_hdr *hdr3 = bp->b_addr;
 
+		if (ichdr.magic != XFS_DA3_NODE_MAGIC)
+			return false;
+
+		if (!uuid_equal(&hdr3->info.uuid, &mp->m_sb.sb_meta_uuid))
+			return false;
+		if (be64_to_cpu(hdr3->info.blkno) != bp->b_bn)
+			return false;
+		if (!xfs_log_check_lsn(mp, be64_to_cpu(hdr3->info.lsn)))
+			return false;
+	} else {
+		if (ichdr.magic != XFS_DA_NODE_MAGIC)
+			return false;
+	}
 	if (ichdr.level == 0)
-		return __this_address;
+		return false;
 	if (ichdr.level > XFS_DA_NODE_MAXDEPTH)
-		return __this_address;
+		return false;
 	if (ichdr.count == 0)
-		return __this_address;
+		return false;
 
 	/*
 	 * we don't know if the node is for and attribute or directory tree,
@@ -169,25 +170,24 @@ xfs_da3_node_verify(
 	 */
 	if (ichdr.count > mp->m_dir_geo->node_ents &&
 	    ichdr.count > mp->m_attr_geo->node_ents)
-		return __this_address;
+		return false;
 
 	/* XXX: hash order check? */
 
-	return NULL;
+	return true;
 }
 
 static void
 xfs_da3_node_write_verify(
 	struct xfs_buf	*bp)
 {
-	struct xfs_mount	*mp = bp->b_mount;
-	struct xfs_buf_log_item	*bip = bp->b_log_item;
+	struct xfs_mount	*mp = bp->b_target->bt_mount;
+	struct xfs_buf_log_item	*bip = bp->b_fspriv;
 	struct xfs_da3_node_hdr *hdr3 = bp->b_addr;
-	xfs_failaddr_t		fa;
 
-	fa = xfs_da3_node_verify(bp);
-	if (fa) {
-		xfs_verifier_error(bp, -EFSCORRUPTED, fa);
+	if (!xfs_da3_node_verify(bp)) {
+		xfs_buf_ioerror(bp, -EFSCORRUPTED);
+		xfs_verifier_error(bp);
 		return;
 	}
 
@@ -211,20 +211,19 @@ xfs_da3_node_read_verify(
 	struct xfs_buf		*bp)
 {
 	struct xfs_da_blkinfo	*info = bp->b_addr;
-	xfs_failaddr_t		fa;
 
 	switch (be16_to_cpu(info->magic)) {
 		case XFS_DA3_NODE_MAGIC:
 			if (!xfs_buf_verify_cksum(bp, XFS_DA3_NODE_CRC_OFF)) {
-				xfs_verifier_error(bp, -EFSBADCRC,
-						__this_address);
+				xfs_buf_ioerror(bp, -EFSBADCRC);
 				break;
 			}
 			/* fall through */
 		case XFS_DA_NODE_MAGIC:
-			fa = xfs_da3_node_verify(bp);
-			if (fa)
-				xfs_verifier_error(bp, -EFSCORRUPTED, fa);
+			if (!xfs_da3_node_verify(bp)) {
+				xfs_buf_ioerror(bp, -EFSCORRUPTED);
+				break;
+			}
 			return;
 		case XFS_ATTR_LEAF_MAGIC:
 		case XFS_ATTR3_LEAF_MAGIC:
@@ -237,42 +236,18 @@ xfs_da3_node_read_verify(
 			bp->b_ops->verify_read(bp);
 			return;
 		default:
-			xfs_verifier_error(bp, -EFSCORRUPTED, __this_address);
+			xfs_buf_ioerror(bp, -EFSCORRUPTED);
 			break;
 	}
-}
 
-/* Verify the structure of a da3 block. */
-static xfs_failaddr_t
-xfs_da3_node_verify_struct(
-	struct xfs_buf		*bp)
-{
-	struct xfs_da_blkinfo	*info = bp->b_addr;
-
-	switch (be16_to_cpu(info->magic)) {
-	case XFS_DA3_NODE_MAGIC:
-	case XFS_DA_NODE_MAGIC:
-		return xfs_da3_node_verify(bp);
-	case XFS_ATTR_LEAF_MAGIC:
-	case XFS_ATTR3_LEAF_MAGIC:
-		bp->b_ops = &xfs_attr3_leaf_buf_ops;
-		return bp->b_ops->verify_struct(bp);
-	case XFS_DIR2_LEAFN_MAGIC:
-	case XFS_DIR3_LEAFN_MAGIC:
-		bp->b_ops = &xfs_dir3_leafn_buf_ops;
-		return bp->b_ops->verify_struct(bp);
-	default:
-		return __this_address;
-	}
+	/* corrupt block */
+	xfs_verifier_error(bp);
 }
 
 const struct xfs_buf_ops xfs_da3_node_buf_ops = {
 	.name = "xfs_da3_node",
-	.magic16 = { cpu_to_be16(XFS_DA_NODE_MAGIC),
-		     cpu_to_be16(XFS_DA3_NODE_MAGIC) },
 	.verify_read = xfs_da3_node_read_verify,
 	.verify_write = xfs_da3_node_write_verify,
-	.verify_struct = xfs_da3_node_verify_struct,
 };
 
 int
@@ -306,11 +281,9 @@ xfs_da3_node_read(
 			type = XFS_BLFT_DIR_LEAFN_BUF;
 			break;
 		default:
-			XFS_CORRUPTION_ERROR(__func__, XFS_ERRLEVEL_LOW,
-					tp->t_mountp, info, sizeof(*info));
-			xfs_trans_brelse(tp, *bpp);
-			*bpp = NULL;
-			return -EFSCORRUPTED;
+			type = 0;
+			ASSERT(0);
+			break;
 		}
 		xfs_trans_buf_set_type(tp, *bpp, type);
 	}
@@ -487,8 +460,10 @@ xfs_da3_split(
 	ASSERT(state->path.active == 0);
 	oldblk = &state->path.blk[0];
 	error = xfs_da3_root_split(state, oldblk, addblk);
-	if (error)
-		goto out;
+	if (error) {
+		addblk->bp = NULL;
+		return error;	/* GROT: dir is inconsistent */
+	}
 
 	/*
 	 * Update pointers to the node which used to be block 0 and just got
@@ -503,10 +478,7 @@ xfs_da3_split(
 	 */
 	node = oldblk->bp->b_addr;
 	if (node->hdr.info.forw) {
-		if (be32_to_cpu(node->hdr.info.forw) != addblk->blkno) {
-			error = -EFSCORRUPTED;
-			goto out;
-		}
+		ASSERT(be32_to_cpu(node->hdr.info.forw) == addblk->blkno);
 		node = addblk->bp->b_addr;
 		node->hdr.info.back = cpu_to_be32(oldblk->blkno);
 		xfs_trans_log_buf(state->args->trans, addblk->bp,
@@ -515,19 +487,15 @@ xfs_da3_split(
 	}
 	node = oldblk->bp->b_addr;
 	if (node->hdr.info.back) {
-		if (be32_to_cpu(node->hdr.info.back) != addblk->blkno) {
-			error = -EFSCORRUPTED;
-			goto out;
-		}
+		ASSERT(be32_to_cpu(node->hdr.info.back) == addblk->blkno);
 		node = addblk->bp->b_addr;
 		node->hdr.info.forw = cpu_to_be32(oldblk->blkno);
 		xfs_trans_log_buf(state->args->trans, addblk->bp,
 				  XFS_DA_LOGRANGE(node, &node->hdr.info,
 				  sizeof(node->hdr.info)));
 	}
-out:
 	addblk->bp = NULL;
-	return error;
+	return 0;
 }
 
 /*
@@ -1314,7 +1282,7 @@ xfs_da3_fixhashpath(
 			return;
 		break;
 	case XFS_DIR2_LEAFN_MAGIC:
-		lasthash = xfs_dir2_leaf_lasthash(dp, blk->bp, &count);
+		lasthash = xfs_dir2_leafn_lasthash(dp, blk->bp, &count);
 		if (count == 0)
 			return;
 		break;
@@ -1498,8 +1466,6 @@ xfs_da3_node_lookup_int(
 	int			max;
 	int			error;
 	int			retval;
-	unsigned int		expected_level = 0;
-	uint16_t		magic;
 	struct xfs_inode	*dp = state->args->dp;
 
 	args = state->args;
@@ -1508,7 +1474,7 @@ xfs_da3_node_lookup_int(
 	 * Descend thru the B-tree searching each level for the right
 	 * node to use, until the right hashval is found.
 	 */
-	blkno = args->geo->leafblk;
+	blkno = (args->whichfork == XFS_DATA_FORK)? args->geo->leafblk : 0;
 	for (blk = &state->path.blk[0], state->path.active = 1;
 			 state->path.active <= XFS_DA_NODE_MAXDEPTH;
 			 blk++, state->path.active++) {
@@ -1524,27 +1490,25 @@ xfs_da3_node_lookup_int(
 			return error;
 		}
 		curr = blk->bp->b_addr;
-		magic = be16_to_cpu(curr->magic);
+		blk->magic = be16_to_cpu(curr->magic);
 
-		if (magic == XFS_ATTR_LEAF_MAGIC ||
-		    magic == XFS_ATTR3_LEAF_MAGIC) {
+		if (blk->magic == XFS_ATTR_LEAF_MAGIC ||
+		    blk->magic == XFS_ATTR3_LEAF_MAGIC) {
 			blk->magic = XFS_ATTR_LEAF_MAGIC;
 			blk->hashval = xfs_attr_leaf_lasthash(blk->bp, NULL);
 			break;
 		}
 
-		if (magic == XFS_DIR2_LEAFN_MAGIC ||
-		    magic == XFS_DIR3_LEAFN_MAGIC) {
+		if (blk->magic == XFS_DIR2_LEAFN_MAGIC ||
+		    blk->magic == XFS_DIR3_LEAFN_MAGIC) {
 			blk->magic = XFS_DIR2_LEAFN_MAGIC;
-			blk->hashval = xfs_dir2_leaf_lasthash(args->dp,
-							      blk->bp, NULL);
+			blk->hashval = xfs_dir2_leafn_lasthash(args->dp,
+							       blk->bp, NULL);
 			break;
 		}
 
-		if (magic != XFS_DA_NODE_MAGIC && magic != XFS_DA3_NODE_MAGIC)
-			return -EFSCORRUPTED;
-
 		blk->magic = XFS_DA_NODE_MAGIC;
+
 
 		/*
 		 * Search an intermediate node for a match.
@@ -1552,18 +1516,6 @@ xfs_da3_node_lookup_int(
 		node = blk->bp->b_addr;
 		dp->d_ops->node_hdr_from_disk(&nodehdr, node);
 		btree = dp->d_ops->node_tree_p(node);
-
-		/* Tree taller than we can handle; bail out! */
-		if (nodehdr.level >= XFS_DA_NODE_MAXDEPTH)
-			return -EFSCORRUPTED;
-
-		/* Check the level from the root. */
-		if (blkno == args->geo->leafblk)
-			expected_level = nodehdr.level - 1;
-		else if (expected_level != nodehdr.level)
-			return -EFSCORRUPTED;
-		else
-			expected_level--;
 
 		max = nodehdr.count;
 		blk->hashval = be32_to_cpu(btree[max - 1].hashval);
@@ -1610,14 +1562,7 @@ xfs_da3_node_lookup_int(
 			blk->index = probe;
 			blkno = be32_to_cpu(btree[probe].before);
 		}
-
-		/* We can't point back to the root. */
-		if (blkno == args->geo->leafblk)
-			return -EFSCORRUPTED;
 	}
-
-	if (expected_level != 0)
-		return -EFSCORRUPTED;
 
 	/*
 	 * A leaf block that ends in the hashval that we are interested in
@@ -1984,8 +1929,8 @@ xfs_da3_path_shift(
 			blk->magic = XFS_DIR2_LEAFN_MAGIC;
 			ASSERT(level == path->active-1);
 			blk->index = 0;
-			blk->hashval = xfs_dir2_leaf_lasthash(args->dp,
-							      blk->bp, NULL);
+			blk->hashval = xfs_dir2_leafn_lasthash(args->dp,
+							       blk->bp, NULL);
 			break;
 		default:
 			ASSERT(0);
@@ -2007,7 +1952,7 @@ xfs_da3_path_shift(
  * This is implemented with some source-level loop unrolling.
  */
 xfs_dahash_t
-xfs_da_hashname(const uint8_t *name, int namelen)
+xfs_da_hashname(const __uint8_t *name, int namelen)
 {
 	xfs_dahash_t hash;
 
@@ -2080,9 +2025,11 @@ xfs_da_grow_inode_int(
 	 * Try mapping it in one filesystem block.
 	 */
 	nmap = 1;
+	ASSERT(args->firstblock != NULL);
 	error = xfs_bmapi_write(tp, dp, *bno, count,
 			xfs_bmapi_aflag(w)|XFS_BMAPI_METADATA|XFS_BMAPI_CONTIG,
-			args->total, &map, &nmap);
+			args->firstblock, args->total, &map, &nmap,
+			args->dfops);
 	if (error)
 		return error;
 
@@ -2100,11 +2047,12 @@ xfs_da_grow_inode_int(
 		 */
 		mapp = kmem_alloc(sizeof(*mapp) * count, KM_SLEEP);
 		for (b = *bno, mapi = 0; b < *bno + count; ) {
-			nmap = min(XFS_BMAP_MAX_NMAP, count);
+			nmap = MIN(XFS_BMAP_MAX_NMAP, count);
 			c = (int)(*bno + count - b);
 			error = xfs_bmapi_write(tp, dp, b, c,
 					xfs_bmapi_aflag(w)|XFS_BMAPI_METADATA,
-					args->total, &mapp[mapi], &nmap);
+					args->firstblock, args->total,
+					&mapp[mapi], &nmap, args->dfops);
 			if (error)
 				goto out_free_map;
 			if (nmap < 1)
@@ -2393,13 +2341,13 @@ done:
  */
 int
 xfs_da_shrink_inode(
-	struct xfs_da_args	*args,
-	xfs_dablk_t		dead_blkno,
-	struct xfs_buf		*dead_buf)
+	xfs_da_args_t	*args,
+	xfs_dablk_t	dead_blkno,
+	struct xfs_buf	*dead_buf)
 {
-	struct xfs_inode	*dp;
-	int			done, error, w, count;
-	struct xfs_trans	*tp;
+	xfs_inode_t *dp;
+	int done, error, w, count;
+	xfs_trans_t *tp;
 
 	trace_xfs_da_shrink_inode(args);
 
@@ -2413,7 +2361,8 @@ xfs_da_shrink_inode(
 		 * the last block to the place we want to kill.
 		 */
 		error = xfs_bunmapi(tp, dp, dead_blkno, count,
-				    xfs_bmapi_aflag(w), 0, &done);
+				    xfs_bmapi_aflag(w), 0, args->firstblock,
+				    args->dfops, &done);
 		if (error == -ENOSPC) {
 			if (w != XFS_DATA_FORK)
 				break;

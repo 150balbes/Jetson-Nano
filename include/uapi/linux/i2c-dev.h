@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0+ WITH Linux-syscall-note */
 /*
     i2c-dev.h - i2c-bus driver, char device interface
 

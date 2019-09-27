@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /* NG4memset.S: Niagara-4 optimized memset/bzero.
  *
  * Copyright (C) 2012 David S. Miller (davem@davemloft.net)
@@ -103,5 +102,4 @@ NG4bzero:
 	bne,pt		%icc, 1b
 	 add		%o0, 0x30, %o0
 	ba,a,pt		%icc, .Lpostloop
-	 nop
 	.size		NG4bzero,.-NG4bzero

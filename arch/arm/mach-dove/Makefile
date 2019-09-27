@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0
 obj-y				+= common.o
 obj-$(CONFIG_DOVE_LEGACY)	+= irq.o mpp.o
 obj-$(CONFIG_PCI)		+= pcie.o

@@ -1,0 +1,360 @@
+/*
+ * Common include DTS file for CVM:P2888-0001 and CVB:P2822-0000 variants.
+ *
+ * Copyright (c) 2018-2019, NVIDIA CORPORATION.  All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; version 2 of the License.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ */
+
+#include "dt-bindings/extcon-ids.h"
+#include "dt-bindings/gpio/tegra194-gpio.h"
+#include "tegra194-p2888-0000-a00.dtsi"
+#include <t19x-common-platforms/tegra194-platforms-eqos.dtsi>
+#include "tegra194-p2822-0000-a00.dtsi"
+#include "tegra194-power-tree-p2888-0001-p2822-1000.dtsi"
+#include <t19x-common-platforms/tegra194-comms.dtsi>
+#include "tegra194-thermal-p2888.dtsi"
+#include "tegra194-plugin-manager-p2888-0000.dtsi"
+#include "tegra194-plugin-manager-p2822-0000.dtsi"
+#include "tegra194-super-module-e2614-p2888-0000.dtsi"
+
+/ {
+	nvidia,dtsfilename = __FILE__;
+	nvidia,dtbbuildtime = __DATE__, __TIME__;
+	nvidia,fastboot-usb-vid = <0x0955>;
+	nvidia,fastboot-usb-pid = <0xee1e>;
+	model = "Jetson-AGX";
+
+	compatible = "nvidia,jetson-xavier", "nvidia,tegra194";
+
+	chosen {
+		bootargs ="console=ttyTCU0,115200";
+		board-has-eeprom;
+	};
+
+	firmware {
+		android {
+			compatible = "android,firmware";
+			hardware = "jetson-xavier";
+			vbmeta {
+				compatible = "android,vbmeta";
+				parts = "vbmeta,kernel,kernel-dtb,APP,vendor,SOS";
+			};
+			fstab {
+				compatible = "android,fstab";
+				vendor {
+					compatible = "android,vendor";
+					dev = "/dev/block/platform/3460000.sdhci/by-name/vendor";
+					type = "ext4";
+					mnt_flags = "ro";
+					fsmgr_flags = "wait,avb";
+				};
+				odm {
+					compatible = "android,odm";
+					dev = "/dev/block/platform/3460000.sdhci/by-name/odm";
+					type = "ext4";
+					mnt_flags = "ro";
+					fsmgr_flags = "wait,avb";
+				};
+			};
+		};
+	};
+
+	spi@c260000 {
+		status = "disabled";
+	};
+
+	spi@3270000 {
+		status = "disabled";
+	};
+
+	spi@3300000 {
+		status = "disabled";
+	};
+
+	pmc@c370000 {
+		nvidia,invert-interrupt;
+	};
+
+	i2c@c240000 {
+		bmi160@69 {
+			compatible = "bmi,bmi160";
+			reg = <0x69>;
+			interrupt-parent = <&tegra_aon_gpio>;
+			interrupts = <TEGRA194_AON_GPIO(AA, 2) GPIO_ACTIVE_LOW>;
+			accelerometer_matrix    = [01 00 00 00 01 00 00 00 01];
+			gyroscope_matrix        = [01 00 00 00 01 00 00 00 01];
+			accelerometer_delay_us_min = <1250>;
+			gyroscope_delay_us_min = <1250>;
+			status = "disabled";
+		};
+		ucsi_ccg: ucsi_ccg@8 {
+			status = "okay";
+			typec-extcon {
+				typec_port0: port-0 {
+					status = "okay";
+					#extcon-cells = <1>;
+				};
+				typec_port1: port-1 {
+					status = "okay";
+					#extcon-cells = <1>;
+				};
+			};
+			typec-pd {
+				typec_pd: pd {
+					status = "okay";
+					#extcon-cells = <1>;
+				};
+			};
+		};
+	};
+
+#if TEGRA_XUSB_PADCONTROL_VERSION >= DT_VERSION_2
+
+	xusb_padctl: xusb_padctl@3520000 {
+		status = "okay";
+
+		pads {
+			usb2 {
+				lanes {
+					usb2-0 {
+						nvidia,function = "xusb";
+						status = "okay";
+					};
+					usb2-1 {
+						nvidia,function = "xusb";
+						status = "okay";
+					};
+					usb2-2 {
+						nvidia,function = "xusb";
+						status = "okay";
+					};
+					usb2-3 {
+						nvidia,function = "xusb";
+						status = "okay";
+					};
+				};
+			};
+			usb3 {
+				lanes {
+					usb3-0 {
+						nvidia,function = "xusb";
+						status = "okay";
+					};
+					usb3-2 {
+						nvidia,function = "xusb";
+						status = "okay";
+					};
+					usb3-3 {
+						nvidia,function = "xusb";
+						status = "okay";
+					};
+				};
+			};
+		};
+
+		ports {
+			usb2-0 {
+				mode = "otg";
+				status = "okay";
+			};
+			usb2-1 {
+				mode = "host";
+				status = "okay";
+			};
+			usb2-2 {
+				mode = "host";
+				status = "okay";
+			};
+			usb2-3 {
+				mode = "host";
+				status = "okay";
+			};
+			usb3-0 {
+				nvidia,usb2-companion = <1>;
+				status = "okay";
+			};
+			usb3-2 {
+				nvidia,usb2-companion = <0>;
+				status = "okay";
+			};
+			usb3-3 {
+				nvidia,usb2-companion = <3>;
+				nvidia,usb3-gen1-only= <1>;
+				status = "okay";
+			};
+		};
+	};
+#endif
+
+	tegra_xudc: xudc@3550000 {
+		extcon-cables = <&typec_port0 0>;
+		extcon-cable-names = "vbus";
+		#extcon-cells = <1>;
+#if TEGRA_XUSB_PADCONTROL_VERSION >= DT_VERSION_2
+		phys = <&{/xusb_padctl@3520000/pads/usb2/lanes/usb2-0}>,
+			<&{/xusb_padctl@3520000/pads/usb3/lanes/usb3-2}>;
+		phy-names = "usb2", "usb3";
+		nvidia,xusb-padctl = <&xusb_padctl>;
+#endif
+		nvidia,boost_cpu_freq = <1200>;
+		status = "okay";
+	};
+
+	tegra_xhci: xhci@3610000 {
+		extcon-cables = <&typec_port0 1>;
+		extcon-cable-names = "id";
+		#extcon-cells = <1>;
+#if TEGRA_XUSB_PADCONTROL_VERSION >= DT_VERSION_2
+		phys = <&{/xusb_padctl@3520000/pads/usb2/lanes/usb2-0}>,
+			<&{/xusb_padctl@3520000/pads/usb2/lanes/usb2-1}>,
+			<&{/xusb_padctl@3520000/pads/usb2/lanes/usb2-3}>,
+			<&{/xusb_padctl@3520000/pads/usb2/lanes/usb2-2}>,
+			<&{/xusb_padctl@3520000/pads/usb3/lanes/usb3-2}>,
+			<&{/xusb_padctl@3520000/pads/usb3/lanes/usb3-0}>,
+			<&{/xusb_padctl@3520000/pads/usb3/lanes/usb3-3}>;
+		phy-names = "usb2-0", "usb2-1", "usb2-3", "usb2-2",
+			"usb3-2", "usb3-0", "usb3-3";
+		nvidia,xusb-padctl = <&xusb_padctl>;
+#endif
+		status = "okay";
+	};
+
+	arm-pmu {
+		status = "okay";
+	};
+
+	power-domain {
+		status = "disabled";
+	};
+
+	interrupt-controller {
+		status = "disabled";
+	};
+
+	mods-simple-bus {
+		status = "disabled";
+	};
+
+	eeprom-manager {
+		status = "disabled";
+	};
+
+	cpuidle {
+		compatible = "nvidia,tegra19x-cpuidle";
+		status = "okay";
+	};
+
+	thermal-zones {
+		status = "disabled";
+	};
+
+	reserved-memory {
+		ramoops_carveout {
+			status = "okay";
+		};
+	};
+
+	mttcan@c310000 {
+		status = "okay";
+	};
+
+	mttcan@c320000 {
+		status = "okay";
+	};
+
+	serial@3110000 {
+		status = "okay";
+	};
+
+	pwm@3280000 {
+		status = "okay";
+	};
+
+	pwm@32c0000 {
+		status = "okay";
+	};
+
+	pwm@32f0000 {
+		status = "okay";
+	};
+
+	i2c@31e0000 {
+		pinctrl-names = "default";
+		pinctrl-0 = <&dpaux_default>;
+		bmi160@69 {
+			compatible = "bmi,bmi160";
+			reg = <0x69>;
+			accelerometer_matrix    = [01 00 00 00 01 00 00 00 01];
+			gyroscope_matrix        = [01 00 00 00 01 00 00 00 01];
+			status = "disabled";
+		};
+	};
+
+	host1x {
+		dpaux@155F0000 {
+			status = "okay";
+			compatible = "nvidia,tegra194-dpaux3-padctl";
+			/delete-property/ power-domains;
+			dpaux_default: pinmux@0 {
+				dpaux3_pins {
+					pins = "dpaux3-3";
+					function = "i2c";
+				};
+			};
+		};
+	};
+
+	hardwood {
+		compatible = "nvidia,denver-hardwood";
+		interrupts = <0 24 0x4>;
+	};
+
+	ufshci@2450000 {
+		status = "disabled";
+		nvidia,enable-hs-mode;
+		nvidia,cd-gpios = <&tegra_aon_gpio TEGRA194_AON_GPIO(EE, 0) GPIO_ACTIVE_HIGH>;
+		nvidia,cd-wakeup-capable;
+	};
+	pfsd {
+		pwm_polarity= <PWM_POLARITY_NORMAL>;
+		suspend_state = <0>;
+	};
+};
+
+&head0 {
+	extcon-cables = <&typec_port0 2 &typec_port1 2>;
+	extcon-cable-names = "typec0", "typec1";
+	#extcon-cells = <1>;
+};
+
+&head1 {
+	extcon-cables = <&typec_port0 2 &typec_port1 2>;
+	extcon-cable-names = "typec0", "typec1";
+	#extcon-cells = <1>;
+};
+
+&head2 {
+	extcon-cables = <&typec_port0 2 &typec_port1 2>;
+	extcon-cable-names = "typec0", "typec1";
+	#extcon-cells = <1>;
+};
+
+&sor0 {
+	nvidia,typec-port = /bits/ 8 <0>;
+};
+
+&sor1 {
+	nvidia,typec-port = /bits/ 8 <1>;
+};
+
+#if LINUX_VERSION >= 414
+#include <tegra194-linux-4.14.dtsi>
+#endif

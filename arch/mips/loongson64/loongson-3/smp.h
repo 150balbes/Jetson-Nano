@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __LOONGSON_SMP_H_
 #define __LOONGSON_SMP_H_
 

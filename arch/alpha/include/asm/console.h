@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __AXP_CONSOLE_H
 #define __AXP_CONSOLE_H
 

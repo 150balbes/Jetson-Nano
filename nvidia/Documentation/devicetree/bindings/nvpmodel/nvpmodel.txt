@@ -1,0 +1,30 @@
+NVIDIA nvpmodel driver bindings
+
+Nvpmodel is a driver that provides sysfs nodes that allow capping certain clock
+frequencies in order to keep the power consumption under a certain budget.
+
+These caps are designed to be relatively static. They should not be used
+during runtime (under load) to dynamically change the power budget.
+
+Required properties:
+
+- compatible: should be "nvidia,nvpmodel"
+
+Optional properties:
+
+- clocks: Clock IDs that the driver should support capping
+- clock-names: List of strings which identify the relevant clocks
+
+Both properties must have the same number of clocks. The strings that appear
+in the clock-names property will be the names of the sysfs nodes that will be
+provided. The clock IDs and names should appear in the same order.
+
+Sample:
+
+nvpmodel: {
+        compatible = "nvidia,nvpmodel";
+        clocks = <&tegra_car TEGRA186_CLK_NVENC
+                        &tegra_car TEGRA186_CLK_NVDEC>;
+        clock-names = "nvenc", "nvdec";
+        status = "okay";
+};

@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0-only
 menu "TI VLYNQ"
 	depends on AR7
 

@@ -1,9 +1,14 @@
-/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * Key-agreement Protocol Primitives (KPP)
  *
  * Copyright (c) 2016, Intel Corporation
  * Authors: Salvatore Benedetto <salvatore.benedetto@intel.com>
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License as published by the Free
+ * Software Foundation; either version 2 of the License, or (at your option)
+ * any later version.
+ *
  */
 
 #ifndef _CRYPTO_KPP_
@@ -48,7 +53,7 @@ struct crypto_kpp {
  *
  * @set_secret:		Function invokes the protocol specific function to
  *			store the secret private key along with parameters.
- *			The implementation knows how to decode the buffer
+ *			The implementation knows how to decode thie buffer
  * @generate_public_key: Function generate the public key to be sent to the
  *			counterpart. In case of error, where output is not big
  *			enough req->dst_len will be updated to the size
@@ -69,12 +74,12 @@ struct crypto_kpp {
  * @base:		Common crypto API algorithm data structure
  */
 struct kpp_alg {
-	int (*set_secret)(struct crypto_kpp *tfm, const void *buffer,
+	int (*set_secret)(struct crypto_kpp *tfm, void *buffer,
 			  unsigned int len);
 	int (*generate_public_key)(struct kpp_request *req);
 	int (*compute_shared_secret)(struct kpp_request *req);
 
-	unsigned int (*max_size)(struct crypto_kpp *tfm);
+	int (*max_size)(struct crypto_kpp *tfm);
 
 	int (*init)(struct crypto_kpp *tfm);
 	void (*exit)(struct crypto_kpp *tfm);
@@ -97,7 +102,7 @@ struct kpp_alg {
  * @mask: specifies the mask for the algorithm
  *
  * Allocate a handle for kpp algorithm. The returned struct crypto_kpp
- * is required for any following API invocation
+ * is requeried for any following API invocation
  *
  * Return: allocated handle in case of success; IS_ERR() is true in case of
  *	   an error, PTR_ERR() returns the error code.
@@ -138,16 +143,6 @@ static inline void kpp_request_set_tfm(struct kpp_request *req,
 static inline struct crypto_kpp *crypto_kpp_reqtfm(struct kpp_request *req)
 {
 	return __crypto_kpp_tfm(req->base.tfm);
-}
-
-static inline u32 crypto_kpp_get_flags(struct crypto_kpp *tfm)
-{
-	return crypto_tfm_get_flags(crypto_kpp_tfm(tfm));
-}
-
-static inline void crypto_kpp_set_flags(struct crypto_kpp *tfm, u32 flags)
-{
-	crypto_tfm_set_flags(crypto_kpp_tfm(tfm), flags);
 }
 
 /**
@@ -278,17 +273,12 @@ struct kpp_secret {
  *
  * Return: zero on success; error code in case of error
  */
-static inline int crypto_kpp_set_secret(struct crypto_kpp *tfm,
-					const void *buffer, unsigned int len)
+static inline int crypto_kpp_set_secret(struct crypto_kpp *tfm, void *buffer,
+					unsigned int len)
 {
 	struct kpp_alg *alg = crypto_kpp_alg(tfm);
-	struct crypto_alg *calg = tfm->base.__crt_alg;
-	int ret;
 
-	crypto_stats_get(calg);
-	ret = alg->set_secret(tfm, buffer, len);
-	crypto_stats_kpp_set_secret(calg, ret);
-	return ret;
+	return alg->set_secret(tfm, buffer, len);
 }
 
 /**
@@ -308,13 +298,8 @@ static inline int crypto_kpp_generate_public_key(struct kpp_request *req)
 {
 	struct crypto_kpp *tfm = crypto_kpp_reqtfm(req);
 	struct kpp_alg *alg = crypto_kpp_alg(tfm);
-	struct crypto_alg *calg = tfm->base.__crt_alg;
-	int ret;
 
-	crypto_stats_get(calg);
-	ret = alg->generate_public_key(req);
-	crypto_stats_kpp_generate_public_key(calg, ret);
-	return ret;
+	return alg->generate_public_key(req);
 }
 
 /**
@@ -331,26 +316,20 @@ static inline int crypto_kpp_compute_shared_secret(struct kpp_request *req)
 {
 	struct crypto_kpp *tfm = crypto_kpp_reqtfm(req);
 	struct kpp_alg *alg = crypto_kpp_alg(tfm);
-	struct crypto_alg *calg = tfm->base.__crt_alg;
-	int ret;
 
-	crypto_stats_get(calg);
-	ret = alg->compute_shared_secret(req);
-	crypto_stats_kpp_compute_shared_secret(calg, ret);
-	return ret;
+	return alg->compute_shared_secret(req);
 }
 
 /**
  * crypto_kpp_maxsize() - Get len for output buffer
  *
- * Function returns the output buffer size required for a given key.
- * Function assumes that the key is already set in the transformation. If this
- * function is called without a setkey or with a failed setkey, you will end up
- * in a NULL dereference.
+ * Function returns the output buffer size required
  *
  * @tfm:	KPP tfm handle allocated with crypto_alloc_kpp()
+ *
+ * Return: minimum len for output buffer or error code if key hasn't been set
  */
-static inline unsigned int crypto_kpp_maxsize(struct crypto_kpp *tfm)
+static inline int crypto_kpp_maxsize(struct crypto_kpp *tfm)
 {
 	struct kpp_alg *alg = crypto_kpp_alg(tfm);
 

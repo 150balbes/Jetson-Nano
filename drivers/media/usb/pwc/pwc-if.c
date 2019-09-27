@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /* Linux driver for Philips webcam
    USB and Video4Linux interface part.
    (C) 1999-2004 Nemosoft Unv.
@@ -11,6 +10,19 @@
    The decompression routines have been implemented by reverse-engineering the
    Nemosoft binary pwcx module. Caveat emptor.
 
+   This program is free software; you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation; either version 2 of the License, or
+   (at your option) any later version.
+
+   This program is distributed in the hope that it will be useful,
+   but WITHOUT ANY WARRANTY; without even the implied warranty of
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License for more details.
+
+   You should have received a copy of the GNU General Public License
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 
 */
 
@@ -63,9 +75,6 @@
 #include "pwc-timon.h"
 #include "pwc-dec23.h"
 #include "pwc-dec1.h"
-
-#define CREATE_TRACE_POINTS
-#include <trace/events/pwc.h>
 
 /* Function prototypes and driver templates */
 
@@ -137,7 +146,7 @@ static const struct v4l2_file_operations pwc_fops = {
 	.mmap =		vb2_fop_mmap,
 	.unlocked_ioctl = video_ioctl2,
 };
-static const struct video_device pwc_template = {
+static struct video_device pwc_template = {
 	.name =		"Philips Webcam",	/* Filled in later */
 	.release =	video_device_release_empty,
 	.fops =         &pwc_fops,
@@ -146,32 +155,6 @@ static const struct video_device pwc_template = {
 
 /***************************************************************************/
 /* Private functions */
-
-static void *pwc_alloc_urb_buffer(struct device *dev,
-				  size_t size, dma_addr_t *dma_handle)
-{
-	void *buffer = kmalloc(size, GFP_KERNEL);
-
-	if (!buffer)
-		return NULL;
-
-	*dma_handle = dma_map_single(dev, buffer, size, DMA_FROM_DEVICE);
-	if (dma_mapping_error(dev, *dma_handle)) {
-		kfree(buffer);
-		return NULL;
-	}
-
-	return buffer;
-}
-
-static void pwc_free_urb_buffer(struct device *dev,
-				size_t size,
-				void *buffer,
-				dma_addr_t dma_handle)
-{
-	dma_unmap_single(dev, dma_handle, size, DMA_FROM_DEVICE);
-	kfree(buffer);
-}
 
 static struct pwc_frame_buf *pwc_get_next_fill_buf(struct pwc_device *pdev)
 {
@@ -255,8 +238,8 @@ static void pwc_frame_complete(struct pwc_device *pdev)
 	} else {
 		/* Check for underflow first */
 		if (fbuf->filled < pdev->frame_total_size) {
-			PWC_DEBUG_FLOW("Frame buffer underflow (%d bytes); discarded.\n",
-				       fbuf->filled);
+			PWC_DEBUG_FLOW("Frame buffer underflow (%d bytes);"
+				       " discarded.\n", fbuf->filled);
 		} else {
 			fbuf->vb.field = V4L2_FIELD_NONE;
 			fbuf->vb.sequence = pdev->vframe_count;
@@ -277,12 +260,9 @@ static void pwc_isoc_handler(struct urb *urb)
 	int i, fst, flen;
 	unsigned char *iso_buf = NULL;
 
-	trace_pwc_handler_enter(urb, pdev);
-
 	if (urb->status == -ENOENT || urb->status == -ECONNRESET ||
 	    urb->status == -ESHUTDOWN) {
-		PWC_DEBUG_OPEN("URB (%p) unlinked %ssynchronously.\n",
-			       urb, urb->status == -ENOENT ? "" : "a");
+		PWC_DEBUG_OPEN("URB (%p) unlinked %ssynchronuously.\n", urb, urb->status == -ENOENT ? "" : "a");
 		return;
 	}
 
@@ -319,11 +299,6 @@ static void pwc_isoc_handler(struct urb *urb)
 
 	/* Reset ISOC error counter. We did get here, after all. */
 	pdev->visoc_errors = 0;
-
-	dma_sync_single_for_cpu(&urb->dev->dev,
-				urb->transfer_dma,
-				urb->transfer_buffer_length,
-				DMA_FROM_DEVICE);
 
 	/* vsync: 0 = don't copy data
 		  1 = sync-hunt
@@ -371,14 +346,7 @@ static void pwc_isoc_handler(struct urb *urb)
 		pdev->vlast_packet_size = flen;
 	}
 
-	dma_sync_single_for_device(&urb->dev->dev,
-				   urb->transfer_dma,
-				   urb->transfer_buffer_length,
-				   DMA_FROM_DEVICE);
-
 handler_end:
-	trace_pwc_handler_exit(urb, pdev);
-
 	i = usb_submit_urb(urb, GFP_ATOMIC);
 	if (i != 0)
 		PWC_ERROR("Error (%d) re-submitting urb in pwc_isoc_handler.\n", i);
@@ -452,15 +420,16 @@ retry:
 		urb->dev = udev;
 		urb->pipe = usb_rcvisocpipe(udev, pdev->vendpoint);
 		urb->transfer_flags = URB_ISO_ASAP | URB_NO_TRANSFER_DMA_MAP;
-		urb->transfer_buffer_length = ISO_BUFFER_SIZE;
-		urb->transfer_buffer = pwc_alloc_urb_buffer(&udev->dev,
-							    urb->transfer_buffer_length,
-							    &urb->transfer_dma);
+		urb->transfer_buffer = usb_alloc_coherent(udev,
+							  ISO_BUFFER_SIZE,
+							  GFP_KERNEL,
+							  &urb->transfer_dma);
 		if (urb->transfer_buffer == NULL) {
 			PWC_ERROR("Failed to allocate urb buffer %d\n", i);
 			pwc_isoc_cleanup(pdev);
 			return -ENOMEM;
 		}
+		urb->transfer_buffer_length = ISO_BUFFER_SIZE;
 		urb->complete = pwc_isoc_handler;
 		urb->context = pdev;
 		urb->start_frame = 0;
@@ -511,16 +480,15 @@ static void pwc_iso_free(struct pwc_device *pdev)
 
 	/* Freeing ISOC buffers one by one */
 	for (i = 0; i < MAX_ISO_BUFS; i++) {
-		struct urb *urb = pdev->urbs[i];
-
-		if (urb) {
+		if (pdev->urbs[i]) {
 			PWC_DEBUG_MEMORY("Freeing URB\n");
-			if (urb->transfer_buffer)
-				pwc_free_urb_buffer(&urb->dev->dev,
-						    urb->transfer_buffer_length,
-						    urb->transfer_buffer,
-						    urb->transfer_dma);
-			usb_free_urb(urb);
+			if (pdev->urbs[i]->transfer_buffer) {
+				usb_free_coherent(pdev->udev,
+					pdev->urbs[i]->transfer_buffer_length,
+					pdev->urbs[i]->transfer_buffer,
+					pdev->urbs[i]->transfer_dma);
+			}
+			usb_free_urb(pdev->urbs[i]);
 			pdev->urbs[i] = NULL;
 		}
 	}
@@ -641,7 +609,7 @@ static int buffer_prepare(struct vb2_buffer *vb)
 {
 	struct pwc_device *pdev = vb2_get_drv_priv(vb->vb2_queue);
 
-	/* Don't allow queueing new buffers after device disconnection */
+	/* Don't allow queing new buffers after device disconnection */
 	if (!pdev->udev)
 		return -ENODEV;
 
@@ -1058,7 +1026,7 @@ static int usb_pwc_probe(struct usb_interface *intf, const struct usb_device_id 
 
 	/* Init video_device structure */
 	pdev->vdev = pwc_template;
-	strscpy(pdev->vdev.name, name, sizeof(pdev->vdev.name));
+	strcpy(pdev->vdev.name, name);
 	pdev->vdev.queue = &pdev->vb_queue;
 	pdev->vdev.queue->lock = &pdev->vb_queue_lock;
 	video_set_drvdata(&pdev->vdev, pdev);
@@ -1113,8 +1081,6 @@ static int usb_pwc_probe(struct usb_interface *intf, const struct usb_device_id 
 	pdev->v4l2_dev.ctrl_handler = &pdev->ctrl_handler;
 	pdev->vdev.v4l2_dev = &pdev->v4l2_dev;
 	pdev->vdev.lock = &pdev->v4l2_lock;
-	pdev->vdev.device_caps = V4L2_CAP_VIDEO_CAPTURE | V4L2_CAP_STREAMING |
-				 V4L2_CAP_READWRITE;
 
 	rc = video_register_device(&pdev->vdev, VFL_TYPE_GRABBER, -1);
 	if (rc < 0) {

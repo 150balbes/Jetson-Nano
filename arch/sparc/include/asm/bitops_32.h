@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * bitops.h: Bit string operations on the Sparc.
  *

@@ -11,9 +11,7 @@
 #include <linux/string.h>
 #include <linux/utsname.h>
 #include <linux/sched.h>
-#include <linux/sched/task.h>
 #include <linux/kmsg_dump.h>
-
 #include <asm/pgtable.h>
 #include <asm/processor.h>
 #include <asm/sections.h>
@@ -34,7 +32,7 @@ static char __initdata command_line[COMMAND_LINE_SIZE] = { 0 };
 static void __init add_arg(char *arg)
 {
 	if (strlen(command_line) + strlen(arg) + 1 > COMMAND_LINE_SIZE) {
-		os_warn("add_arg: Too many command line arguments!\n");
+		printf("add_arg: Too many command line arguments!\n");
 		exit(1);
 	}
 	if (strlen(command_line) > 0)
@@ -54,7 +52,13 @@ struct cpuinfo_um boot_cpu_data = {
 
 union thread_union cpu0_irqstack
 	__attribute__((__section__(".data..init_irqstack"))) =
-		{ .thread_info = INIT_THREAD_INFO(init_task) };
+		{ INIT_THREAD_INFO(init_task) };
+
+unsigned long thread_saved_pc(struct task_struct *task)
+{
+	/* FIXME: Need to look up userspace_pid by cpu */
+	return os_process_pc(userspace_pid[0]);
+}
 
 /* Changed in setup_arch, which is called in early boot */
 static char host_info[(__NEW_UTS_LEN + 1) * 5];
@@ -120,7 +124,6 @@ static const char *usage_string =
 
 static int __init uml_version_setup(char *line, int *add)
 {
-	/* Explicitly use printf() to show version in stdout */
 	printf("%s\n", init_utsname()->release);
 	exit(0);
 
@@ -149,8 +152,8 @@ __uml_setup("root=", uml_root_setup,
 
 static int __init no_skas_debug_setup(char *line, int *add)
 {
-	os_warn("'debug' is not necessary to gdb UML in skas mode - run\n");
-	os_warn("'gdb linux'\n");
+	printf("'debug' is not necessary to gdb UML in skas mode - run \n");
+	printf("'gdb linux'\n");
 
 	return 0;
 }
@@ -166,7 +169,6 @@ static int __init Usage(char *line, int *add)
 
 	printf(usage_string, init_utsname()->release);
 	p = &__uml_help_start;
-	/* Explicitly use printf() to show help in stdout */
 	while (p < &__uml_help_end) {
 		printf("%s", *p);
 		p++;
@@ -285,8 +287,8 @@ int __init linux_main(int argc, char **argv)
 
 	diff = UML_ROUND_UP(brk_start) - UML_ROUND_UP(&_end);
 	if (diff > 1024 * 1024) {
-		os_info("Adding %ld bytes to physical memory to account for "
-			"exec-shield gap\n", diff);
+		printf("Adding %ld bytes to physical memory to account for "
+		       "exec-shield gap\n", diff);
 		physmem_size += UML_ROUND_UP(brk_start) - UML_ROUND_UP(&_end);
 	}
 
@@ -326,8 +328,8 @@ int __init linux_main(int argc, char **argv)
 	end_vm = start_vm + virtmem_size;
 
 	if (virtmem_size < physmem_size)
-		os_info("Kernel virtual memory size shrunk to %lu bytes\n",
-			virtmem_size);
+		printf("Kernel virtual memory size shrunk to %lu bytes\n",
+		       virtmem_size);
 
 	os_flush_stdout();
 

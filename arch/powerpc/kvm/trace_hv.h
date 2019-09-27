@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #if !defined(_TRACE_KVM_HV_H) || defined(TRACE_HEADER_MULTI_READ)
 #define _TRACE_KVM_HV_H
 
@@ -9,6 +8,8 @@
 
 #undef TRACE_SYSTEM
 #define TRACE_SYSTEM kvm_hv
+#define TRACE_INCLUDE_PATH .
+#define TRACE_INCLUDE_FILE trace_hv
 
 #define kvm_trace_symbol_hcall \
 	{H_REMOVE,			"H_REMOVE"}, \
@@ -448,7 +449,7 @@ TRACE_EVENT(kvmppc_vcore_wakeup,
 		__entry->tgid   = current->tgid;
 	),
 
-	TP_printk("%s time %llu ns, tgid=%d",
+	TP_printk("%s time %lld ns, tgid=%d",
 		__entry->waited ? "wait" : "poll",
 		__entry->ns, __entry->tgid)
 );
@@ -495,11 +496,4 @@ TRACE_EVENT(kvmppc_run_vcpu_exit,
 #endif /* _TRACE_KVM_HV_H */
 
 /* This part must be outside protection */
-
-#undef TRACE_INCLUDE_PATH
-#undef TRACE_INCLUDE_FILE
-
-#define TRACE_INCLUDE_PATH .
-#define TRACE_INCLUDE_FILE trace_hv
-
 #include <trace/define_trace.h>

@@ -1,0 +1,42 @@
+#
+# Realtek device configuration
+#
+
+config R8168
+	tristate "Realtek 8168 gigabit ethernet support"
+	depends on PCI && NET_VENDOR_REALTEK
+	---help---
+	  Say Y here if you have a Realtek 8168 PCI Gigabit Ethernet adapter.
+
+	  To compile this driver as a module, choose M here: the module
+	  will be called r8168.  This is recommended.
+
+config R8168_NAPI
+    bool "Realtek 8168 NAPI"
+    default y
+    depends on PCI && NET_VENDOR_REALTEK
+    ---help---
+      Say Y here if you have a Realtek 8168 PCI Gigabit Ethernet adapter.
+
+config R8168_VLAN
+    bool "Realtek 8168 VLAN"
+    default y
+    depends on PCI && NET_VENDOR_REALTEK
+    ---help---
+      Say Y here if you have a Realtek 8168 PCI Gigabit Ethernet adapter.
+
+config R8168_ASPM
+    bool "Realtek 8168 ASPM"
+    default y
+    depends on PCI && NET_VENDOR_REALTEK
+    ---help---
+      Say Y here if you have a Realtek 8168 PCI Gigabit Ethernet adapter.
+
+config R8168_S5WOL
+    bool "Realtek 8168 S5WOL"
+    default y
+    depends on PCI && NET_VENDOR_REALTEK
+    ---help---
+      Say Y here if you have a Realtek 8168 PCI Gigabit Ethernet adapter.
+
+

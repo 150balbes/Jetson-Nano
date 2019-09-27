@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * Copyright (C) 2015 Chen-Yu Tsai
  *
@@ -10,7 +9,6 @@
 
 #include <linux/clk.h>
 #include <linux/clk-provider.h>
-#include <linux/io.h>
 #include <linux/slab.h>
 #include <linux/spinlock.h>
 #include <linux/of.h>

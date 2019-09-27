@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _ADFS_FS_H
 #define _ADFS_FS_H
 

@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * Sonics Silicon Backplane
  * Broadcom USB-core driver  (SSB bus glue)
@@ -16,6 +15,8 @@
  *
  * Derived from the USBcore related parts of Broadcom-SB
  * Copyright 2005-2011 Broadcom Corporation
+ *
+ * Licensed under the GNU/GPL. See COPYING for details.
  */
 #include <linux/ssb/ssb.h>
 #include <linux/delay.h>

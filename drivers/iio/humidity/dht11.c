@@ -1,8 +1,17 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * DHT11/DHT22 bit banging GPIO driver
  *
  * Copyright (c) Harald Geyer <harald@ccbib.org>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
  */
 
 #include <linux/err.h>
@@ -22,7 +31,8 @@
 #include <linux/completion.h>
 #include <linux/mutex.h>
 #include <linux/delay.h>
-#include <linux/gpio/consumer.h>
+#include <linux/gpio.h>
+#include <linux/of_gpio.h>
 #include <linux/timekeeping.h>
 
 #include <linux/iio/iio.h>
@@ -71,7 +81,7 @@
 struct dht11 {
 	struct device			*dev;
 
-	struct gpio_desc		*gpiod;
+	int				gpio;
 	int				irq;
 
 	struct completion		completion;
@@ -148,8 +158,8 @@ static int dht11_decode(struct dht11 *dht11, int offset)
 		return -EIO;
 	}
 
-	dht11->timestamp = ktime_get_boottime_ns();
-	if (hum_int < 4) {  /* DHT22: 100000 = (3*256+232)*100 */
+	dht11->timestamp = ktime_get_boot_ns();
+	if (hum_int < 20) {  /* DHT22 */
 		dht11->temperature = (((temp_int & 0x7f) << 8) + temp_dec) *
 					((temp_int & 0x80) ? -100 : 100);
 		dht11->humidity = ((hum_int << 8) + hum_dec) * 100;
@@ -176,9 +186,9 @@ static irqreturn_t dht11_handle_irq(int irq, void *data)
 
 	/* TODO: Consider making the handler safe for IRQ sharing */
 	if (dht11->num_edges < DHT11_EDGES_PER_READ && dht11->num_edges >= 0) {
-		dht11->edges[dht11->num_edges].ts = ktime_get_boottime_ns();
+		dht11->edges[dht11->num_edges].ts = ktime_get_boot_ns();
 		dht11->edges[dht11->num_edges++].value =
-						gpiod_get_value(dht11->gpiod);
+						gpio_get_value(dht11->gpio);
 
 		if (dht11->num_edges >= DHT11_EDGES_PER_READ)
 			complete(&dht11->completion);
@@ -195,7 +205,7 @@ static int dht11_read_raw(struct iio_dev *iio_dev,
 	int ret, timeres, offset;
 
 	mutex_lock(&dht11->lock);
-	if (dht11->timestamp + DHT11_DATA_VALID_TIME < ktime_get_boottime_ns()) {
+	if (dht11->timestamp + DHT11_DATA_VALID_TIME < ktime_get_boot_ns()) {
 		timeres = ktime_get_resolution_ns();
 		dev_dbg(dht11->dev, "current timeresolution: %dns\n", timeres);
 		if (timeres > DHT11_MIN_TIMERES) {
@@ -216,12 +226,12 @@ static int dht11_read_raw(struct iio_dev *iio_dev,
 		reinit_completion(&dht11->completion);
 
 		dht11->num_edges = 0;
-		ret = gpiod_direction_output(dht11->gpiod, 0);
+		ret = gpio_direction_output(dht11->gpio, 0);
 		if (ret)
 			goto err;
 		usleep_range(DHT11_START_TRANSMISSION_MIN,
 			     DHT11_START_TRANSMISSION_MAX);
-		ret = gpiod_direction_input(dht11->gpiod);
+		ret = gpio_direction_input(dht11->gpio);
 		if (ret)
 			goto err;
 
@@ -274,6 +284,7 @@ err:
 }
 
 static const struct iio_info dht11_iio_info = {
+	.driver_module		= THIS_MODULE,
 	.read_raw		= dht11_read_raw,
 };
 
@@ -293,8 +304,10 @@ MODULE_DEVICE_TABLE(of, dht11_dt_ids);
 static int dht11_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
+	struct device_node *node = dev->of_node;
 	struct dht11 *dht11;
 	struct iio_dev *iio;
+	int ret;
 
 	iio = devm_iio_device_alloc(dev, sizeof(*dht11));
 	if (!iio) {
@@ -304,17 +317,22 @@ static int dht11_probe(struct platform_device *pdev)
 
 	dht11 = iio_priv(iio);
 	dht11->dev = dev;
-	dht11->gpiod = devm_gpiod_get(dev, NULL, GPIOD_IN);
-	if (IS_ERR(dht11->gpiod))
-		return PTR_ERR(dht11->gpiod);
 
-	dht11->irq = gpiod_to_irq(dht11->gpiod);
+	ret = of_get_gpio(node, 0);
+	if (ret < 0)
+		return ret;
+	dht11->gpio = ret;
+	ret = devm_gpio_request_one(dev, dht11->gpio, GPIOF_IN, pdev->name);
+	if (ret)
+		return ret;
+
+	dht11->irq = gpio_to_irq(dht11->gpio);
 	if (dht11->irq < 0) {
-		dev_err(dev, "GPIO %d has no interrupt\n", desc_to_gpio(dht11->gpiod));
+		dev_err(dev, "GPIO %d has no interrupt\n", dht11->gpio);
 		return -EINVAL;
 	}
 
-	dht11->timestamp = ktime_get_boottime_ns() - DHT11_DATA_VALID_TIME - 1;
+	dht11->timestamp = ktime_get_boot_ns() - DHT11_DATA_VALID_TIME - 1;
 	dht11->num_edges = -1;
 
 	platform_set_drvdata(pdev, iio);

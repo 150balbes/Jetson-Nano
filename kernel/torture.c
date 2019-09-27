@@ -1,15 +1,25 @@
-// SPDX-License-Identifier: GPL-2.0+
 /*
  * Common functions for in-kernel torture tests.
  *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, you can access it online at
+ * http://www.gnu.org/licenses/gpl-2.0.html.
+ *
  * Copyright (C) IBM Corporation, 2014
  *
- * Author: Paul E. McKenney <paulmck@linux.ibm.com>
+ * Author: Paul E. McKenney <paulmck@us.ibm.com>
  *	Based on kernel/rcu/torture.c.
  */
-
-#define pr_fmt(fmt) fmt
-
 #include <linux/types.h>
 #include <linux/kernel.h>
 #include <linux/init.h>
@@ -20,7 +30,6 @@
 #include <linux/smp.h>
 #include <linux/interrupt.h>
 #include <linux/sched.h>
-#include <linux/sched/clock.h>
 #include <linux/atomic.h>
 #include <linux/bitops.h>
 #include <linux/completion.h>
@@ -37,13 +46,12 @@
 #include <linux/ktime.h>
 #include <asm/byteorder.h>
 #include <linux/torture.h>
-#include "rcu/rcu.h"
 
 MODULE_LICENSE("GPL");
-MODULE_AUTHOR("Paul E. McKenney <paulmck@linux.ibm.com>");
+MODULE_AUTHOR("Paul E. McKenney <paulmck@us.ibm.com>");
 
 static char *torture_type;
-static int verbose;
+static bool verbose;
 
 /* Mediate rmmod and system shutdown.  Concurrent rmmod & shutdown illegal! */
 #define FULLSTOP_DONTSTOP 0	/* Normal operation. */
@@ -51,6 +59,7 @@ static int verbose;
 #define FULLSTOP_RMMOD    2	/* Normal rmmod of torture. */
 static int fullstop = FULLSTOP_RMMOD;
 static DEFINE_MUTEX(fullstop_mutex);
+static int *torture_runnable;
 
 #ifdef CONFIG_HOTPLUG_CPU
 
@@ -62,7 +71,6 @@ static DEFINE_MUTEX(fullstop_mutex);
 static struct task_struct *onoff_task;
 static long onoff_holdoff;
 static long onoff_interval;
-static torture_ofl_func *onoff_f;
 static long n_offline_attempts;
 static long n_offline_successes;
 static unsigned long sum_offline;
@@ -88,10 +96,8 @@ bool torture_offline(int cpu, long *n_offl_attempts, long *n_offl_successes,
 
 	if (!cpu_online(cpu) || !cpu_is_hotpluggable(cpu))
 		return false;
-	if (num_online_cpus() <= 1)
-		return false;  /* Can't offline the last CPU. */
 
-	if (verbose > 1)
+	if (verbose)
 		pr_alert("%s" TORTURE_FLAG
 			 "torture_onoff task: offlining %d\n",
 			 torture_type, cpu);
@@ -104,15 +110,13 @@ bool torture_offline(int cpu, long *n_offl_attempts, long *n_offl_successes,
 				 "torture_onoff task: offline %d failed: errno %d\n",
 				 torture_type, cpu, ret);
 	} else {
-		if (verbose > 1)
+		if (verbose)
 			pr_alert("%s" TORTURE_FLAG
 				 "torture_onoff task: offlined %d\n",
 				 torture_type, cpu);
-		if (onoff_f)
-			onoff_f();
 		(*n_offl_successes)++;
 		delta = jiffies - starttime;
-		*sum_offl += delta;
+		sum_offl += delta;
 		if (*min_offl < 0) {
 			*min_offl = delta;
 			*max_offl = delta;
@@ -142,7 +146,7 @@ bool torture_online(int cpu, long *n_onl_attempts, long *n_onl_successes,
 	if (cpu_online(cpu) || !cpu_is_hotpluggable(cpu))
 		return false;
 
-	if (verbose > 1)
+	if (verbose)
 		pr_alert("%s" TORTURE_FLAG
 			 "torture_onoff task: onlining %d\n",
 			 torture_type, cpu);
@@ -155,7 +159,7 @@ bool torture_online(int cpu, long *n_onl_attempts, long *n_onl_successes,
 				 "torture_onoff task: online %d failed: errno %d\n",
 				 torture_type, cpu, ret);
 	} else {
-		if (verbose > 1)
+		if (verbose)
 			pr_alert("%s" TORTURE_FLAG
 				 "torture_onoff task: onlined %d\n",
 				 torture_type, cpu);
@@ -186,23 +190,11 @@ torture_onoff(void *arg)
 	int cpu;
 	int maxcpu = -1;
 	DEFINE_TORTURE_RANDOM(rand);
-	int ret;
 
 	VERBOSE_TOROUT_STRING("torture_onoff task started");
 	for_each_online_cpu(cpu)
 		maxcpu = cpu;
 	WARN_ON(maxcpu < 0);
-	if (!IS_MODULE(CONFIG_TORTURE_TEST))
-		for_each_possible_cpu(cpu) {
-			if (cpu_online(cpu))
-				continue;
-			ret = cpu_up(cpu);
-			if (ret && verbose) {
-				pr_alert("%s" TORTURE_FLAG
-					 "%s: Initial online %d: errno %d\n",
-					 __func__, torture_type, cpu, ret);
-			}
-		}
 
 	if (maxcpu == 0) {
 		VERBOSE_TOROUT_STRING("Only one CPU, so CPU-hotplug testing is disabled");
@@ -235,18 +227,18 @@ stop:
 /*
  * Initiate online-offline handling.
  */
-int torture_onoff_init(long ooholdoff, long oointerval, torture_ofl_func *f)
+int torture_onoff_init(long ooholdoff, long oointerval)
 {
+	int ret = 0;
+
 #ifdef CONFIG_HOTPLUG_CPU
 	onoff_holdoff = ooholdoff;
 	onoff_interval = oointerval;
-	onoff_f = f;
 	if (onoff_interval <= 0)
 		return 0;
-	return torture_create_kthread(torture_onoff, NULL, onoff_task);
-#else /* #ifdef CONFIG_HOTPLUG_CPU */
-	return 0;
-#endif /* #else #ifdef CONFIG_HOTPLUG_CPU */
+	ret = torture_create_kthread(torture_onoff, NULL, onoff_task);
+#endif /* #ifdef CONFIG_HOTPLUG_CPU */
+	return ret;
 }
 EXPORT_SYMBOL_GPL(torture_onoff_init);
 
@@ -319,7 +311,7 @@ EXPORT_SYMBOL_GPL(torture_random);
 /*
  * Variables for shuffling.  The idea is to ensure that each CPU stays
  * idle for an extended period to test interactions with dyntick idle,
- * as well as interactions with any per-CPU variables.
+ * as well as interactions with any per-CPU varibles.
  */
 struct shuffle_task {
 	struct list_head st_l;
@@ -507,7 +499,7 @@ static int torture_shutdown(void *arg)
 		torture_shutdown_hook();
 	else
 		VERBOSE_TOROUT_STRING("No torture_shutdown_hook(), skipping.");
-	rcu_ftrace_dump(DUMP_ALL);
+	ftrace_dump(DUMP_ALL);
 	kernel_power_off();	/* Shut down the system. */
 	return 0;
 }
@@ -517,13 +509,15 @@ static int torture_shutdown(void *arg)
  */
 int torture_shutdown_init(int ssecs, void (*cleanup)(void))
 {
+	int ret = 0;
+
 	torture_shutdown_hook = cleanup;
 	if (ssecs > 0) {
 		shutdown_time = ktime_add(ktime_get(), ktime_set(ssecs, 0));
-		return torture_create_kthread(torture_shutdown, NULL,
+		ret = torture_create_kthread(torture_shutdown, NULL,
 					     shutdown_task);
 	}
-	return 0;
+	return ret;
 }
 EXPORT_SYMBOL_GPL(torture_shutdown_init);
 
@@ -570,32 +564,26 @@ static void torture_shutdown_cleanup(void)
 static struct task_struct *stutter_task;
 static int stutter_pause_test;
 static int stutter;
-static int stutter_gap;
 
 /*
  * Block until the stutter interval ends.  This must be called periodically
  * by all running kthreads that need to be subject to stuttering.
  */
-bool stutter_wait(const char *title)
+void stutter_wait(const char *title)
 {
-	int spt;
-	bool ret = false;
-
-	cond_resched_tasks_rcu_qs();
-	spt = READ_ONCE(stutter_pause_test);
-	for (; spt; spt = READ_ONCE(stutter_pause_test)) {
-		ret = true;
-		if (spt == 1) {
-			schedule_timeout_interruptible(1);
-		} else if (spt == 2) {
-			while (READ_ONCE(stutter_pause_test))
-				cond_resched();
-		} else {
+	cond_resched_rcu_qs();
+	while (READ_ONCE(stutter_pause_test) ||
+	       (torture_runnable && !READ_ONCE(*torture_runnable))) {
+		if (stutter_pause_test)
+			if (READ_ONCE(stutter_pause_test) == 1)
+				schedule_timeout_interruptible(1);
+			else
+				while (READ_ONCE(stutter_pause_test))
+					cond_resched();
+		else
 			schedule_timeout_interruptible(round_jiffies_relative(HZ));
-		}
 		torture_shutdown_absorb(title);
 	}
-	return ret;
 }
 EXPORT_SYMBOL_GPL(stutter_wait);
 
@@ -605,24 +593,19 @@ EXPORT_SYMBOL_GPL(stutter_wait);
  */
 static int torture_stutter(void *arg)
 {
-	int wtime;
-
 	VERBOSE_TOROUT_STRING("torture_stutter task started");
 	do {
-		if (!torture_must_stop() && stutter > 1) {
-			wtime = stutter;
-			if (stutter > HZ + 1) {
-				WRITE_ONCE(stutter_pause_test, 1);
-				wtime = stutter - HZ - 1;
-				schedule_timeout_interruptible(wtime);
-				wtime = HZ + 1;
+		if (!torture_must_stop()) {
+			if (stutter > 1) {
+				schedule_timeout_interruptible(stutter - 1);
+				WRITE_ONCE(stutter_pause_test, 2);
 			}
-			WRITE_ONCE(stutter_pause_test, 2);
-			schedule_timeout_interruptible(wtime);
+			schedule_timeout_interruptible(1);
+			WRITE_ONCE(stutter_pause_test, 1);
 		}
-		WRITE_ONCE(stutter_pause_test, 0);
 		if (!torture_must_stop())
-			schedule_timeout_interruptible(stutter_gap);
+			schedule_timeout_interruptible(stutter);
+		WRITE_ONCE(stutter_pause_test, 0);
 		torture_shutdown_absorb("torture_stutter");
 	} while (!torture_must_stop());
 	torture_kthread_stopping("torture_stutter");
@@ -632,11 +615,13 @@ static int torture_stutter(void *arg)
 /*
  * Initialize and kick off the torture_stutter kthread.
  */
-int torture_stutter_init(const int s, const int sgap)
+int torture_stutter_init(int s)
 {
+	int ret;
+
 	stutter = s;
-	stutter_gap = sgap;
-	return torture_create_kthread(torture_stutter, NULL, stutter_task);
+	ret = torture_create_kthread(torture_stutter, NULL, stutter_task);
+	return ret;
 }
 EXPORT_SYMBOL_GPL(torture_stutter_init);
 
@@ -661,7 +646,7 @@ static void torture_stutter_cleanup(void)
  * The runnable parameter points to a flag that controls whether or not
  * the test is currently runnable.  If there is no such flag, pass in NULL.
  */
-bool torture_init_begin(char *ttype, int v)
+bool torture_init_begin(char *ttype, bool v, int *runnable)
 {
 	mutex_lock(&fullstop_mutex);
 	if (torture_type != NULL) {
@@ -673,6 +658,7 @@ bool torture_init_begin(char *ttype, int v)
 	}
 	torture_type = ttype;
 	verbose = v;
+	torture_runnable = runnable;
 	fullstop = FULLSTOP_DONTSTOP;
 	return true;
 }

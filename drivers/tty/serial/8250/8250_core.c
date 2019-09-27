@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0+
 /*
  *  Universal/legacy driver for 8250/16550-type serial ports
  *
@@ -12,9 +11,13 @@
  *	      userspace-configurable "phantom" ports
  *	      "serial8250" platform devices
  *	      serial8250_register_8250_port() ports
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
  */
 
-#include <linux/acpi.h>
 #include <linux/module.h>
 #include <linux/moduleparam.h>
 #include <linux/ioport.h>
@@ -55,7 +58,15 @@ static struct uart_driver serial8250_reg;
 
 static unsigned int skip_txen_test; /* force skip of txen test at init time */
 
-#define PASS_LIMIT	512
+/*
+ * On -rt we can have a more delays, and legitimately
+ * so - so don't drop work spuriously and spam the
+ * syslog:
+ *
+ * Even in non-rt environment (under hypervisor) this constant might be
+ * too small
+ */
+#define PASS_LIMIT	1000000
 
 #include <asm/serial.h>
 /*
@@ -131,8 +142,12 @@ static irqreturn_t serial8250_interrupt(int irq, void *dev_id)
 
 		l = l->next;
 
-		if (l == i->head && pass_counter++ > PASS_LIMIT)
+		if (l == i->head && pass_counter++ > PASS_LIMIT) {
+			/* If we hit this, we're dead. */
+			printk_ratelimited(KERN_ERR
+				"serial8250: too much work for irq%d\n", irq);
 			break;
+		}
 	} while (l != end);
 
 	spin_unlock(&i->lock);
@@ -211,7 +226,7 @@ static int serial_link_irq_chain(struct uart_8250_port *up)
 		spin_unlock_irq(&i->lock);
 		irq_flags |= up->port.irqflags;
 		ret = request_irq(up->port.irq, serial8250_interrupt,
-				  irq_flags, up->port.name, i);
+				  irq_flags, "serial", i);
 		if (ret < 0)
 			serial_do_unlink(i, up);
 	}
@@ -255,17 +270,17 @@ static void serial_unlink_irq_chain(struct uart_8250_port *up)
  * barely passable results for a 16550A.  (Although at the expense
  * of much CPU overhead).
  */
-static void serial8250_timeout(struct timer_list *t)
+static void serial8250_timeout(unsigned long data)
 {
-	struct uart_8250_port *up = from_timer(up, t, timer);
+	struct uart_8250_port *up = (struct uart_8250_port *)data;
 
 	up->port.handle_irq(&up->port);
 	mod_timer(&up->timer, jiffies + uart_poll_timeout(&up->port));
 }
 
-static void serial8250_backup_timeout(struct timer_list *t)
+static void serial8250_backup_timeout(unsigned long data)
 {
-	struct uart_8250_port *up = from_timer(up, t, timer);
+	struct uart_8250_port *up = (struct uart_8250_port *)data;
 	unsigned int iir, ier = 0, lsr;
 	unsigned long flags;
 
@@ -320,9 +335,10 @@ static int univ8250_setup_irq(struct uart_8250_port *up)
 	 * the port is opened so this value needs to be preserved.
 	 */
 	if (up->bugs & UART_BUG_THRE) {
-		pr_debug("%s - using backup timer\n", port->name);
+		pr_debug("ttyS%d - using backup timer\n", serial_index(port));
 
 		up->timer.function = serial8250_backup_timeout;
+		up->timer.data = (unsigned long)up;
 		mod_timer(&up->timer, jiffies +
 			  uart_poll_timeout(port) + HZ / 5);
 	}
@@ -333,6 +349,7 @@ static int univ8250_setup_irq(struct uart_8250_port *up)
 	 * driver used to do this with IRQ0.
 	 */
 	if (!port->irq) {
+		up->timer.data = (unsigned long)up;
 		mod_timer(&up->timer, jiffies + uart_poll_timeout(port));
 	} else
 		retval = serial_link_irq_chain(up);
@@ -416,10 +433,10 @@ struct uart_8250_port *serial8250_get_port(int line)
 EXPORT_SYMBOL_GPL(serial8250_get_port);
 
 static void (*serial8250_isa_config)(int port, struct uart_port *up,
-	u32 *capabilities);
+	unsigned short *capabilities);
 
 void serial8250_set_isa_configurator(
-	void (*v)(int port, struct uart_port *up, u32 *capabilities))
+	void (*v)(int port, struct uart_port *up, unsigned short *capabilities))
 {
 	serial8250_isa_config = v;
 }
@@ -488,16 +505,12 @@ static void univ8250_rsa_support(struct uart_ops *ops)
 #define univ8250_rsa_support(x)		do { } while (0)
 #endif /* CONFIG_SERIAL_8250_RSA */
 
-static inline void serial8250_apply_quirks(struct uart_8250_port *up)
-{
-	up->port.quirks |= skip_txen_test ? UPQ_NO_TXEN_TEST : 0;
-}
-
 static void __init serial8250_isa_init_ports(void)
 {
 	struct uart_8250_port *up;
 	static int first = 1;
-	int i, irqflag = 0;
+	unsigned int i;
+	int irqflag = 0;
 
 	if (!first)
 		return;
@@ -516,7 +529,8 @@ static void __init serial8250_isa_init_ports(void)
 			base_ops = port->ops;
 		port->ops = &univ8250_port_ops;
 
-		timer_setup(&up->timer, serial8250_timeout, 0);
+		init_timer(&up->timer);
+		up->timer.function = serial8250_timeout;
 
 		up->ops = &univ8250_driver_ops;
 
@@ -572,7 +586,9 @@ serial8250_register_ports(struct uart_driver *drv, struct device *dev)
 
 		up->port.dev = dev;
 
-		serial8250_apply_quirks(up);
+		if (skip_txen_test)
+			up->port.flags |= UPF_NO_TXEN_TEST;
+
 		uart_add_one_port(drv, &up->port);
 	}
 }
@@ -668,7 +684,11 @@ static struct console univ8250_console = {
 	.device		= uart_console_device,
 	.setup		= univ8250_console_setup,
 	.match		= univ8250_console_match,
+#ifdef CONFIG_SERIAL_LOGLEVEL_PRINT
+	.flags		= CON_PRINTBUFFER | CON_ANYTIME | CON_FORCE_LEVEL,
+#else
 	.flags		= CON_PRINTBUFFER | CON_ANYTIME,
+#endif
 	.index		= -1,
 	.data		= &serial8250_reg,
 };
@@ -823,7 +843,6 @@ static int serial8250_probe(struct platform_device *dev)
 		uart.port.handle_irq	= p->handle_irq;
 		uart.port.handle_break	= p->handle_break;
 		uart.port.set_termios	= p->set_termios;
-		uart.port.set_ldisc	= p->set_ldisc;
 		uart.port.get_mctrl	= p->get_mctrl;
 		uart.port.pm		= p->pm;
 		uart.port.dev		= &dev->dev;
@@ -943,21 +962,6 @@ static struct uart_8250_port *serial8250_find_match_or_unused(struct uart_port *
 	return NULL;
 }
 
-static void serial_8250_overrun_backoff_work(struct work_struct *work)
-{
-	struct uart_8250_port *up =
-	    container_of(to_delayed_work(work), struct uart_8250_port,
-			 overrun_backoff);
-	struct uart_port *port = &up->port;
-	unsigned long flags;
-
-	spin_lock_irqsave(&port->lock, flags);
-	up->ier |= UART_IER_RLSI | UART_IER_RDI;
-	up->port.read_status_mask |= UART_LSR_DR;
-	serial_out(up, UART_IER, up->ier);
-	spin_unlock_irqrestore(&port->lock, flags);
-}
-
 /**
  *	serial8250_register_8250_port - register a serial port
  *	@up: serial port template
@@ -983,8 +987,6 @@ int serial8250_register_8250_port(struct uart_8250_port *up)
 
 	uart = serial8250_find_match_or_unused(&up->port);
 	if (uart && uart->port.type != PORT_8250_CIR) {
-		struct mctrl_gpios *gpios;
-
 		if (uart->port.dev)
 			uart_remove_one_port(&serial8250_reg, &uart->port);
 
@@ -1016,24 +1018,11 @@ int serial8250_register_8250_port(struct uart_8250_port *up)
 		if (up->port.dev)
 			uart->port.dev = up->port.dev;
 
+		if (skip_txen_test)
+			uart->port.flags |= UPF_NO_TXEN_TEST;
+
 		if (up->port.flags & UPF_FIXED_TYPE)
 			uart->port.type = up->port.type;
-
-		/*
-		 * Only call mctrl_gpio_init(), if the device has no ACPI
-		 * companion device
-		 */
-		if (!has_acpi_companion(uart->port.dev)) {
-			gpios = mctrl_gpio_init(&uart->port, 0);
-			if (IS_ERR(gpios)) {
-				if (PTR_ERR(gpios) != -ENOSYS) {
-					ret = PTR_ERR(gpios);
-					goto out_unlock;
-				}
-			} else {
-				uart->gpios = gpios;
-			}
-		}
 
 		serial8250_set_defaults(uart);
 
@@ -1047,16 +1036,10 @@ int serial8250_register_8250_port(struct uart_8250_port *up)
 		/*  Possibly override set_termios call */
 		if (up->port.set_termios)
 			uart->port.set_termios = up->port.set_termios;
-		if (up->port.set_ldisc)
-			uart->port.set_ldisc = up->port.set_ldisc;
 		if (up->port.get_mctrl)
 			uart->port.get_mctrl = up->port.get_mctrl;
 		if (up->port.set_mctrl)
 			uart->port.set_mctrl = up->port.set_mctrl;
-		if (up->port.get_divisor)
-			uart->port.get_divisor = up->port.get_divisor;
-		if (up->port.set_divisor)
-			uart->port.set_divisor = up->port.set_divisor;
 		if (up->port.startup)
 			uart->port.startup = up->port.startup;
 		if (up->port.shutdown)
@@ -1075,7 +1058,6 @@ int serial8250_register_8250_port(struct uart_8250_port *up)
 				serial8250_isa_config(0, &uart->port,
 						&uart->capabilities);
 
-			serial8250_apply_quirks(uart);
 			ret = uart_add_one_port(&serial8250_reg,
 						&uart->port);
 			if (ret == 0)
@@ -1089,19 +1071,7 @@ int serial8250_register_8250_port(struct uart_8250_port *up)
 
 			ret = 0;
 		}
-
-		/* Initialise interrupt backoff work if required */
-		if (up->overrun_backoff_time_ms > 0) {
-			uart->overrun_backoff_time_ms =
-				up->overrun_backoff_time_ms;
-			INIT_DELAYED_WORK(&uart->overrun_backoff,
-					serial_8250_overrun_backoff_work);
-		} else {
-			uart->overrun_backoff_time_ms = 0;
-		}
 	}
-
-out_unlock:
 	mutex_unlock(&serial_mutex);
 
 	return ret;
@@ -1132,10 +1102,11 @@ void serial8250_unregister_port(int line)
 	uart_remove_one_port(&serial8250_reg, &uart->port);
 	if (serial8250_isa_devs) {
 		uart->port.flags &= ~UPF_BOOT_AUTOCONF;
+		if (skip_txen_test)
+			uart->port.flags |= UPF_NO_TXEN_TEST;
 		uart->port.type = PORT_UNKNOWN;
 		uart->port.dev = &serial8250_isa_devs->dev;
 		uart->capabilities = 0;
-		serial8250_apply_quirks(uart);
 		uart_add_one_port(&serial8250_reg, &uart->port);
 	} else {
 		uart->port.dev = NULL;
@@ -1230,7 +1201,7 @@ module_exit(serial8250_exit);
 MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION("Generic 8250/16x50 serial driver");
 
-module_param_hw(share_irqs, uint, other, 0644);
+module_param(share_irqs, uint, 0644);
 MODULE_PARM_DESC(share_irqs, "Share IRQs with other non-8250/16x50 devices (unsafe)");
 
 module_param(nr_uarts, uint, 0644);
@@ -1240,7 +1211,7 @@ module_param(skip_txen_test, uint, 0644);
 MODULE_PARM_DESC(skip_txen_test, "Skip checking for the TXEN bug at init time");
 
 #ifdef CONFIG_SERIAL_8250_RSA
-module_param_hw_array(probe_rsa, ulong, ioport, &probe_rsa_count, 0444);
+module_param_array(probe_rsa, ulong, &probe_rsa_count, 0444);
 MODULE_PARM_DESC(probe_rsa, "Probe I/O ports for RSA");
 #endif
 MODULE_ALIAS_CHARDEV_MAJOR(TTY_MAJOR);

@@ -1,8 +1,12 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * xfrm6_output.c - Common IPsec encapsulation code for IPv6.
  * Copyright (C) 2002 USAGI/WIDE Project
  * Copyright (c) 2004 Herbert Xu <herbert@gondor.apana.org.au>
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License
+ * as published by the Free Software Foundation; either version
+ * 2 of the License, or (at your option) any later version.
  */
 
 #include <linux/if_ether.h>
@@ -69,16 +73,11 @@ static int xfrm6_tunnel_check_size(struct sk_buff *skb)
 	int mtu, ret = 0;
 	struct dst_entry *dst = skb_dst(skb);
 
-	if (skb->ignore_df)
-		goto out;
-
 	mtu = dst_mtu(dst);
 	if (mtu < IPV6_MIN_MTU)
 		mtu = IPV6_MIN_MTU;
 
-	if ((!skb_is_gso(skb) && skb->len > mtu) ||
-	    (skb_is_gso(skb) &&
-	     !skb_gso_validate_network_len(skb, ip6_skb_dst_mtu(skb)))) {
+	if (!skb->ignore_df && skb->len > mtu) {
 		skb->dev = dst->dev;
 		skb->protocol = htons(ETH_P_IPV6);
 
@@ -90,7 +89,7 @@ static int xfrm6_tunnel_check_size(struct sk_buff *skb)
 			icmpv6_send(skb, ICMPV6_PKT_TOOBIG, 0, mtu);
 		ret = -EMSGSIZE;
 	}
-out:
+
 	return ret;
 }
 
@@ -107,6 +106,21 @@ int xfrm6_extract_output(struct xfrm_state *x, struct sk_buff *skb)
 	return xfrm6_extract_header(skb);
 }
 
+int xfrm6_prepare_output(struct xfrm_state *x, struct sk_buff *skb)
+{
+	int err;
+
+	err = xfrm_inner_extract_output(x, skb);
+	if (err)
+		return err;
+
+	skb->ignore_df = 1;
+	skb->protocol = htons(ETH_P_IPV6);
+
+	return x->outer_mode->output2(x, skb);
+}
+EXPORT_SYMBOL(xfrm6_prepare_output);
+
 int xfrm6_output_finish(struct sock *sk, struct sk_buff *skb)
 {
 	memset(IP6CB(skb), 0, sizeof(*IP6CB(skb)));
@@ -118,28 +132,11 @@ int xfrm6_output_finish(struct sock *sk, struct sk_buff *skb)
 	return xfrm_output(sk, skb);
 }
 
-static int __xfrm6_output_state_finish(struct xfrm_state *x, struct sock *sk,
-				       struct sk_buff *skb)
-{
-	const struct xfrm_state_afinfo *afinfo;
-	int ret = -EAFNOSUPPORT;
-
-	rcu_read_lock();
-	afinfo = xfrm_state_afinfo_get_rcu(x->outer_mode.family);
-	if (likely(afinfo))
-		ret = afinfo->output_finish(sk, skb);
-	else
-		kfree_skb(skb);
-	rcu_read_unlock();
-
-	return ret;
-}
-
 static int __xfrm6_output_finish(struct net *net, struct sock *sk, struct sk_buff *skb)
 {
 	struct xfrm_state *x = skb_dst(skb)->xfrm;
 
-	return __xfrm6_output_state_finish(x, sk, skb);
+	return x->outer_mode->afinfo->output_finish(sk, skb);
 }
 
 static int __xfrm6_output(struct net *net, struct sock *sk, struct sk_buff *skb)
@@ -181,7 +178,7 @@ static int __xfrm6_output(struct net *net, struct sock *sk, struct sk_buff *skb)
 				    __xfrm6_output_finish);
 
 skip_frag:
-	return __xfrm6_output_state_finish(x, sk, skb);
+	return x->outer_mode->afinfo->output_finish(sk, skb);
 }
 
 int xfrm6_output(struct net *net, struct sock *sk, struct sk_buff *skb)

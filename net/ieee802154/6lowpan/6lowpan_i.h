@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __IEEE802154_6LOWPAN_I_H__
 #define __IEEE802154_6LOWPAN_I_H__
 
@@ -8,7 +7,7 @@
 #include <net/inet_frag.h>
 #include <net/6lowpan.h>
 
-typedef unsigned __bitwise lowpan_rx_result;
+typedef unsigned __bitwise__ lowpan_rx_result;
 #define RX_CONTINUE		((__force lowpan_rx_result) 0u)
 #define RX_DROP_UNUSABLE	((__force lowpan_rx_result) 1u)
 #define RX_DROP			((__force lowpan_rx_result) 2u)
@@ -20,8 +19,8 @@ typedef unsigned __bitwise lowpan_rx_result;
 struct frag_lowpan_compare_key {
 	u16 tag;
 	u16 d_size;
-	struct ieee802154_addr src;
-	struct ieee802154_addr dst;
+	const struct ieee802154_addr src;
+	const struct ieee802154_addr dst;
 };
 
 /* Equivalent of ipv4 struct ipq

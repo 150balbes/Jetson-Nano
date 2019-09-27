@@ -1,6 +1,14 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (C) 2005-2006 Micronas USA Inc.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License (Version 2) as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
  */
 
 #include <linux/kernel.h>
@@ -44,7 +52,7 @@ struct go7007_snd {
 	int capturing;
 };
 
-static const struct snd_pcm_hardware go7007_snd_capture_hw = {
+static struct snd_pcm_hardware go7007_snd_capture_hw = {
 	.info			= (SNDRV_PCM_INFO_MMAP |
 					SNDRV_PCM_INFO_INTERLEAVED |
 					SNDRV_PCM_INFO_BLOCK_TRANSFER |
@@ -67,14 +75,13 @@ static void parse_audio_stream_data(struct go7007 *go, u8 *buf, int length)
 	struct go7007_snd *gosnd = go->snd_context;
 	struct snd_pcm_runtime *runtime = gosnd->substream->runtime;
 	int frames = bytes_to_frames(runtime, length);
-	unsigned long flags;
 
-	spin_lock_irqsave(&gosnd->lock, flags);
+	spin_lock(&gosnd->lock);
 	gosnd->hw_ptr += frames;
 	if (gosnd->hw_ptr >= runtime->buffer_size)
 		gosnd->hw_ptr -= runtime->buffer_size;
 	gosnd->avail += frames;
-	spin_unlock_irqrestore(&gosnd->lock, flags);
+	spin_unlock(&gosnd->lock);
 	if (gosnd->w_idx + length > runtime->dma_bytes) {
 		int cpy = runtime->dma_bytes - gosnd->w_idx;
 
@@ -85,13 +92,13 @@ static void parse_audio_stream_data(struct go7007 *go, u8 *buf, int length)
 	}
 	memcpy(runtime->dma_area + gosnd->w_idx, buf, length);
 	gosnd->w_idx += length;
-	spin_lock_irqsave(&gosnd->lock, flags);
+	spin_lock(&gosnd->lock);
 	if (gosnd->avail < runtime->period_size) {
-		spin_unlock_irqrestore(&gosnd->lock, flags);
+		spin_unlock(&gosnd->lock);
 		return;
 	}
 	gosnd->avail -= runtime->period_size;
-	spin_unlock_irqrestore(&gosnd->lock, flags);
+	spin_unlock(&gosnd->lock);
 	if (gosnd->capturing)
 		snd_pcm_period_elapsed(gosnd->substream);
 }
@@ -220,7 +227,7 @@ int go7007_snd_init(struct go7007 *go)
 {
 	static int dev;
 	struct go7007_snd *gosnd;
-	int ret;
+	int ret = 0;
 
 	if (dev >= SNDRV_CARDS)
 		return -ENODEV;
@@ -252,10 +259,10 @@ int go7007_snd_init(struct go7007 *go)
 		kfree(gosnd);
 		return ret;
 	}
-	strscpy(gosnd->card->driver, "go7007", sizeof(gosnd->card->driver));
-	strscpy(gosnd->card->shortname, go->name, sizeof(gosnd->card->driver));
-	strscpy(gosnd->card->longname, gosnd->card->shortname,
-		sizeof(gosnd->card->longname));
+	strlcpy(gosnd->card->driver, "go7007", sizeof(gosnd->card->driver));
+	strlcpy(gosnd->card->shortname, go->name, sizeof(gosnd->card->driver));
+	strlcpy(gosnd->card->longname, gosnd->card->shortname,
+			sizeof(gosnd->card->longname));
 
 	gosnd->pcm->private_data = go;
 	snd_pcm_set_ops(gosnd->pcm, SNDRV_PCM_STREAM_CAPTURE,

@@ -1,6 +1,12 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Copyright 2012 Freescale Semiconductor, Inc.
+ *
+ * The code contained herein is licensed under the GNU General Public
+ * License. You may obtain a copy of the GNU General Public License
+ * Version 2 or later at the following locations:
+ *
+ * http://www.opensource.org/licenses/gpl-license.html
+ * http://www.gnu.org/copyleft/gpl.html
  */
 
 #include <linux/clk-provider.h>
@@ -101,7 +107,7 @@ static int clk_frac_set_rate(struct clk_hw *hw, unsigned long rate,
 	return mxs_clk_wait(frac->reg, frac->busy);
 }
 
-static const struct clk_ops clk_frac_ops = {
+static struct clk_ops clk_frac_ops = {
 	.recalc_rate = clk_frac_recalc_rate,
 	.round_rate = clk_frac_round_rate,
 	.set_rate = clk_frac_set_rate,

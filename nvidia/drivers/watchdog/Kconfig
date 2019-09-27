@@ -1,0 +1,40 @@
+if WATCHDOG
+
+config TEGRA21X_WATCHDOG
+	tristate "Tegra T21x watchdog"
+	help
+	  Say Y here to include support for the watchdog timer
+	  embedded in NVIDIA Tegra T210 SoCs.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called tegra21x_wdt.
+
+config TEGRA18X_WATCHDOG
+	tristate "Tegra T18x watchdog"
+	depends on ARCH_TEGRA_18x_SOC
+	help
+	  Say Y here to include support for the watchdog timer
+	  embedded in NVIDIA Tegra SoCs.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called tegra18x_wdt.
+
+config TEGRA_HV_WATCHDOG
+	tristate "Tegra Hypervisor watchdog"
+	depends on TEGRA_HV_MANAGER
+	help
+	  Say Y here to include support for the watchdog timer
+	  embedded in NVIDIA Tegra Hypervisor systems.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called tegra_hv_wdt.
+
+config SOFT_PLATFORM_WATCHDOG
+	tristate "Software watchdog platform driver"
+	select WATCHDOG_CORE
+	help 
+	  A software monitoring watchdog platform device driver. This will fail to
+	  reboot your system from some situations that the hardware watchdog will
+	  recover from. Equally it's a lot cheaper to install.
+
+endif

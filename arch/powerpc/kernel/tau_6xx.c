@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * temp.c	Thermal management for cpu's with Thermal Assist Units
  *
@@ -27,9 +26,6 @@
 #include <asm/cache.h>
 #include <asm/8xx_immap.h>
 #include <asm/machdep.h>
-#include <asm/asm-prototypes.h>
-
-#include "setup.h"
 
 static struct tau_temp
 {
@@ -53,7 +49,7 @@ struct timer_list tau_timer;
 #define shrink_timer	2*HZ	/* period between shrinking the window */
 #define min_window	2	/* minimum window size, degrees C */
 
-static void set_thresholds(unsigned long cpu)
+void set_thresholds(unsigned long cpu)
 {
 #ifdef CONFIG_TAU_INT
 	/*
@@ -73,7 +69,7 @@ static void set_thresholds(unsigned long cpu)
 #endif
 }
 
-static void TAUupdate(int cpu)
+void TAUupdate(int cpu)
 {
 	unsigned thrm;
 
@@ -191,7 +187,7 @@ static void tau_timeout(void * info)
 	local_irq_restore(flags);
 }
 
-static void tau_timeout_smp(struct timer_list *unused)
+static void tau_timeout_smp(unsigned long unused)
 {
 
 	/* schedule ourselves to be run again */
@@ -208,7 +204,7 @@ static void tau_timeout_smp(struct timer_list *unused)
 
 int tau_initialized = 0;
 
-static void __init TAU_init_smp(void *info)
+void __init TAU_init_smp(void * info)
 {
 	unsigned long cpu = smp_processor_id();
 
@@ -220,7 +216,7 @@ static void __init TAU_init_smp(void *info)
 	set_thresholds(cpu);
 }
 
-static int __init TAU_init(void)
+int __init TAU_init(void)
 {
 	/* We assume in SMP that if one CPU has TAU support, they
 	 * all have it --BenH
@@ -233,7 +229,8 @@ static int __init TAU_init(void)
 
 
 	/* first, set up the window shrinking timer */
-	timer_setup(&tau_timer, tau_timeout_smp, 0);
+	init_timer(&tau_timer);
+	tau_timer.function = tau_timeout_smp;
 	tau_timer.expires = jiffies + shrink_timer;
 	add_timer(&tau_timer);
 
@@ -262,12 +259,12 @@ u32 cpu_temp_both(unsigned long cpu)
 	return ((tau[cpu].high << 16) | tau[cpu].low);
 }
 
-u32 cpu_temp(unsigned long cpu)
+int cpu_temp(unsigned long cpu)
 {
 	return ((tau[cpu].high + tau[cpu].low) / 2);
 }
 
-u32 tau_interrupts(unsigned long cpu)
+int tau_interrupts(unsigned long cpu)
 {
 	return (tau[cpu].interrupts);
 }

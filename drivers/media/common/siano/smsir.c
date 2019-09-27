@@ -1,13 +1,28 @@
-// SPDX-License-Identifier: GPL-2.0+
-//
-// Siano Mobile Silicon, Inc.
-// MDTV receiver kernel modules.
-// Copyright (C) 2006-2009, Uri Shkolnik
-//
-// Copyright (c) 2010 - Mauro Carvalho Chehab
-//	- Ported the driver to use rc-core
-//	- IR raw event decoding is now done at rc-core
-//	- Code almost re-written
+/****************************************************************
+
+ Siano Mobile Silicon, Inc.
+ MDTV receiver kernel modules.
+ Copyright (C) 2006-2009, Uri Shkolnik
+
+ Copyright (c) 2010 - Mauro Carvalho Chehab
+	- Ported the driver to use rc-core
+	- IR raw event decoding is now done at rc-core
+	- Code almost re-written
+
+ This program is free software: you can redistribute it and/or modify
+ it under the terms of the GNU General Public License as published by
+ the Free Software Foundation, either version 2 of the License, or
+ (at your option) any later version.
+
+ This program is distributed in the hope that it will be useful,
+ but WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ GNU General Public License for more details.
+
+ You should have received a copy of the GNU General Public License
+ along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+ ****************************************************************/
 
 
 #include "smscoreapi.h"
@@ -26,10 +41,10 @@ void sms_ir_event(struct smscore_device_t *coredev, const char *buf, int len)
 	const s32 *samples = (const void *)buf;
 
 	for (i = 0; i < len >> 2; i++) {
-		struct ir_raw_event ev = {
-			.duration = abs(samples[i]) * 1000, /* Convert to ns */
-			.pulse = (samples[i] > 0) ? false : true
-		};
+		DEFINE_IR_RAW_EVENT(ev);
+
+		ev.duration = abs(samples[i]) * 1000; /* Convert to ns */
+		ev.pulse = (samples[i] > 0) ? false : true;
 
 		ir_raw_event_store(coredev->ir.dev, &ev);
 	}
@@ -43,7 +58,7 @@ int sms_ir_init(struct smscore_device_t *coredev)
 	struct rc_dev *dev;
 
 	pr_debug("Allocating rc device\n");
-	dev = rc_allocate_device(RC_DRIVER_IR_RAW);
+	dev = rc_allocate_device();
 	if (!dev)
 		return -ENOMEM;
 
@@ -55,10 +70,10 @@ int sms_ir_init(struct smscore_device_t *coredev)
 	snprintf(coredev->ir.name, sizeof(coredev->ir.name),
 		 "SMS IR (%s)", sms_get_board(board_id)->name);
 
-	strscpy(coredev->ir.phys, coredev->devpath, sizeof(coredev->ir.phys));
+	strlcpy(coredev->ir.phys, coredev->devpath, sizeof(coredev->ir.phys));
 	strlcat(coredev->ir.phys, "/ir0", sizeof(coredev->ir.phys));
 
-	dev->device_name = coredev->ir.name;
+	dev->input_name = coredev->ir.name;
 	dev->input_phys = coredev->ir.phys;
 	dev->dev.parent = coredev->device;
 
@@ -71,12 +86,13 @@ int sms_ir_init(struct smscore_device_t *coredev)
 #endif
 
 	dev->priv = coredev;
-	dev->allowed_protocols = RC_PROTO_BIT_ALL_IR_DECODER;
+	dev->driver_type = RC_DRIVER_IR_RAW;
+	dev->allowed_protocols = RC_BIT_ALL;
 	dev->map_name = sms_get_board(board_id)->rc_codes;
 	dev->driver_name = MODULE_NAME;
 
 	pr_debug("Input device (IR) %s is set for key events\n",
-		 dev->device_name);
+		 dev->input_name);
 
 	err = rc_register_device(dev);
 	if (err < 0) {

@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0
 obj-$(CONFIG_CRYPTO_DEV_VMX_ENCRYPT) += vmx-crypto.o
 vmx-crypto-objs := vmx.o aesp8-ppc.o ghashp8-ppc.o aes.o aes_cbc.o aes_ctr.o aes_xts.o ghash.o
 
@@ -11,12 +10,10 @@ endif
 quiet_cmd_perl = PERL $@
       cmd_perl = $(PERL) $(<) $(TARGET) > $(@)
 
-targets += aesp8-ppc.S ghashp8-ppc.S
-
-$(obj)/aesp8-ppc.S: $(src)/aesp8-ppc.pl FORCE
-	$(call if_changed,perl)
+$(src)/aesp8-ppc.S: $(src)/aesp8-ppc.pl
+	$(call cmd,perl)
   
-$(obj)/ghashp8-ppc.S: $(src)/ghashp8-ppc.pl FORCE
-	$(call if_changed,perl)
+$(src)/ghashp8-ppc.S: $(src)/ghashp8-ppc.pl
+	$(call cmd,perl)
 
-clean-files := aesp8-ppc.S ghashp8-ppc.S
+.PRECIOUS: $(obj)/aesp8-ppc.S $(obj)/ghashp8-ppc.S

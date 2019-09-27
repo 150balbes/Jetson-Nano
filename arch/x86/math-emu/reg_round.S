@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 	.file "reg_round.S"
 /*---------------------------------------------------------------------------+
  |  reg_round.S                                                              |
@@ -707,5 +706,3 @@ L_exception_exit:
 	mov	$-1,%eax
 	jmp	fpu_reg_round_special_exit
 #endif /* PARANOID */ 
-
-ENDPROC(FPU_round)

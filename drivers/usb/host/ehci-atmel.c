@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * Driver for EHCI UHP on Atmel chips
  *
@@ -6,6 +5,10 @@
  *                     Nicolas Ferre <nicolas.ferre@atmel.com>
  *
  *  Based on various ehci-*.c drivers
+ *
+ * This file is subject to the terms and conditions of the GNU General Public
+ * License.  See the file COPYING in the main directory of this archive for
+ * more details.
  */
 
 #include <linux/clk.h>
@@ -202,8 +205,7 @@ static int __maybe_unused ehci_atmel_drv_resume(struct device *dev)
 	struct atmel_ehci_priv *atmel_ehci = hcd_to_atmel_ehci_priv(hcd);
 
 	atmel_start_clock(atmel_ehci);
-	ehci_resume(hcd, false);
-	return 0;
+	return ehci_resume(hcd, false);
 }
 
 #ifdef CONFIG_OF

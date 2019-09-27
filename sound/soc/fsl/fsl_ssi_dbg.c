@@ -1,10 +1,14 @@
-// SPDX-License-Identifier: GPL-2.0
-//
-// Freescale SSI ALSA SoC Digital Audio Interface (DAI) debugging functions
-//
-// Copyright 2014 Markus Pargmann <mpa@pengutronix.de>, Pengutronix
-//
-// Split from fsl_ssi.c
+/*
+ * Freescale SSI ALSA SoC Digital Audio Interface (DAI) debugging functions
+ *
+ * Copyright 2014 Markus Pargmann <mpa@pengutronix.de>, Pengutronix
+ *
+ * Splitted from fsl_ssi.c
+ *
+ * This file is licensed under the terms of the GNU General Public License
+ * version 2.  This program is licensed "as is" without any warranty of any
+ * kind, whether express or implied.
+ */
 
 #include <linux/debugfs.h>
 #include <linux/device.h>
@@ -14,86 +18,86 @@
 
 void fsl_ssi_dbg_isr(struct fsl_ssi_dbg *dbg, u32 sisr)
 {
-	if (sisr & SSI_SISR_RFRC)
+	if (sisr & CCSR_SSI_SISR_RFRC)
 		dbg->stats.rfrc++;
 
-	if (sisr & SSI_SISR_TFRC)
+	if (sisr & CCSR_SSI_SISR_TFRC)
 		dbg->stats.tfrc++;
 
-	if (sisr & SSI_SISR_CMDAU)
+	if (sisr & CCSR_SSI_SISR_CMDAU)
 		dbg->stats.cmdau++;
 
-	if (sisr & SSI_SISR_CMDDU)
+	if (sisr & CCSR_SSI_SISR_CMDDU)
 		dbg->stats.cmddu++;
 
-	if (sisr & SSI_SISR_RXT)
+	if (sisr & CCSR_SSI_SISR_RXT)
 		dbg->stats.rxt++;
 
-	if (sisr & SSI_SISR_RDR1)
+	if (sisr & CCSR_SSI_SISR_RDR1)
 		dbg->stats.rdr1++;
 
-	if (sisr & SSI_SISR_RDR0)
+	if (sisr & CCSR_SSI_SISR_RDR0)
 		dbg->stats.rdr0++;
 
-	if (sisr & SSI_SISR_TDE1)
+	if (sisr & CCSR_SSI_SISR_TDE1)
 		dbg->stats.tde1++;
 
-	if (sisr & SSI_SISR_TDE0)
+	if (sisr & CCSR_SSI_SISR_TDE0)
 		dbg->stats.tde0++;
 
-	if (sisr & SSI_SISR_ROE1)
+	if (sisr & CCSR_SSI_SISR_ROE1)
 		dbg->stats.roe1++;
 
-	if (sisr & SSI_SISR_ROE0)
+	if (sisr & CCSR_SSI_SISR_ROE0)
 		dbg->stats.roe0++;
 
-	if (sisr & SSI_SISR_TUE1)
+	if (sisr & CCSR_SSI_SISR_TUE1)
 		dbg->stats.tue1++;
 
-	if (sisr & SSI_SISR_TUE0)
+	if (sisr & CCSR_SSI_SISR_TUE0)
 		dbg->stats.tue0++;
 
-	if (sisr & SSI_SISR_TFS)
+	if (sisr & CCSR_SSI_SISR_TFS)
 		dbg->stats.tfs++;
 
-	if (sisr & SSI_SISR_RFS)
+	if (sisr & CCSR_SSI_SISR_RFS)
 		dbg->stats.rfs++;
 
-	if (sisr & SSI_SISR_TLS)
+	if (sisr & CCSR_SSI_SISR_TLS)
 		dbg->stats.tls++;
 
-	if (sisr & SSI_SISR_RLS)
+	if (sisr & CCSR_SSI_SISR_RLS)
 		dbg->stats.rls++;
 
-	if (sisr & SSI_SISR_RFF1)
+	if (sisr & CCSR_SSI_SISR_RFF1)
 		dbg->stats.rff1++;
 
-	if (sisr & SSI_SISR_RFF0)
+	if (sisr & CCSR_SSI_SISR_RFF0)
 		dbg->stats.rff0++;
 
-	if (sisr & SSI_SISR_TFE1)
+	if (sisr & CCSR_SSI_SISR_TFE1)
 		dbg->stats.tfe1++;
 
-	if (sisr & SSI_SISR_TFE0)
+	if (sisr & CCSR_SSI_SISR_TFE0)
 		dbg->stats.tfe0++;
 }
 
-/**
- * Show the statistics of a flag only if its interrupt is enabled
- *
- * Compilers will optimize it to a no-op if the interrupt is disabled
+/* Show the statistics of a flag only if its interrupt is enabled.  The
+ * compiler will optimze this code to a no-op if the interrupt is not
+ * enabled.
  */
 #define SIER_SHOW(flag, name) \
 	do { \
-		if (SSI_SIER_##flag) \
+		if (CCSR_SSI_SIER_##flag) \
 			seq_printf(s, #name "=%u\n", ssi_dbg->stats.name); \
 	} while (0)
 
 
 /**
- * Display the statistics for the current SSI device
+ * fsl_sysfs_ssi_show: display SSI statistics
  *
- * To avoid confusion, only show those counts that are enabled
+ * Display the statistics for the current SSI device.  To avoid confusion,
+ * we only show those counts that are enabled.
  */
 static int fsl_ssi_stats_show(struct seq_file *s, void *unused)
 {
@@ -124,17 +128,36 @@ static int fsl_ssi_stats_show(struct seq_file *s, void *unused)
 	return 0;
 }
 
-DEFINE_SHOW_ATTRIBUTE(fsl_ssi_stats);
+static int fsl_ssi_stats_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, fsl_ssi_stats_show, inode->i_private);
+}
 
-void fsl_ssi_debugfs_create(struct fsl_ssi_dbg *ssi_dbg, struct device *dev)
+static const struct file_operations fsl_ssi_stats_ops = {
+	.open = fsl_ssi_stats_open,
+	.read = seq_read,
+	.llseek = seq_lseek,
+	.release = single_release,
+};
+
+int fsl_ssi_debugfs_create(struct fsl_ssi_dbg *ssi_dbg, struct device *dev)
 {
 	ssi_dbg->dbg_dir = debugfs_create_dir(dev_name(dev), NULL);
+	if (!ssi_dbg->dbg_dir)
+		return -ENOMEM;
 
-	debugfs_create_file("stats", 0444, ssi_dbg->dbg_dir, ssi_dbg,
-			    &fsl_ssi_stats_fops);
+	ssi_dbg->dbg_stats = debugfs_create_file("stats", S_IRUGO,
+			ssi_dbg->dbg_dir, ssi_dbg, &fsl_ssi_stats_ops);
+	if (!ssi_dbg->dbg_stats) {
+		debugfs_remove(ssi_dbg->dbg_dir);
+		return -ENOMEM;
+	}
+
+	return 0;
 }
 
 void fsl_ssi_debugfs_remove(struct fsl_ssi_dbg *ssi_dbg)
 {
-	debugfs_remove_recursive(ssi_dbg->dbg_dir);
+	debugfs_remove(ssi_dbg->dbg_stats);
+	debugfs_remove(ssi_dbg->dbg_dir);
 }

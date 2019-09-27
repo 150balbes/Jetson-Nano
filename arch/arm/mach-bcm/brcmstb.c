@@ -14,6 +14,7 @@
 #include <linux/init.h>
 #include <linux/irqchip.h>
 #include <linux/of_platform.h>
+#include <linux/soc/brcmstb/brcmstb.h>
 
 #include <asm/mach-types.h>
 #include <asm/mach/arch.h>
@@ -37,6 +38,7 @@ u32 brcmstb_uart_config[3] = {
 static void __init brcmstb_init_irq(void)
 {
 	irqchip_init();
+	brcmstb_biuctrl_init();
 }
 
 static const char *const brcmstb_match[] __initconst = {

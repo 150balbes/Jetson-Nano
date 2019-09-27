@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0+
 /*
  * FDT Address translation based on u-boot fdt_support.c which in turn was
  * based on the kernel unflattened DT address translation code.
@@ -7,6 +6,11 @@
  * Gerald Van Baren, Custom IDEAS, vanbaren@cideas.com
  *
  * Copyright 2010-2011 Freescale Semiconductor, Inc.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2, or (at your option)
+ * any later version.
  */
 
 #define pr_fmt(fmt)	"OF: fdt: " fmt

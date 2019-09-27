@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 #include <linux/clk-provider.h>
 #include <linux/io.h>
 #include <linux/slab.h>
@@ -107,7 +106,7 @@ static unsigned long clk_pllv1_recalc_rate(struct clk_hw *hw,
 	return ull;
 }
 
-static const struct clk_ops clk_pllv1_ops = {
+static struct clk_ops clk_pllv1_ops = {
 	.recalc_rate = clk_pllv1_recalc_rate,
 };
 

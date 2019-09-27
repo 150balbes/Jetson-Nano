@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * Driver for the NXP ISP1760 chip
  *
@@ -397,6 +396,7 @@ static int handshake(struct usb_hcd *hcd, u32 reg,
 /* reset a non-running (STS_HALT == 1) controller */
 static int ehci_reset(struct usb_hcd *hcd)
 {
+	int retval;
 	struct isp1760_hcd *priv = hcd_to_priv(hcd);
 
 	u32 command = reg_read32(hcd->regs, HC_USBCMD);
@@ -405,8 +405,9 @@ static int ehci_reset(struct usb_hcd *hcd)
 	reg_write32(hcd->regs, HC_USBCMD, command);
 	hcd->state = HC_STATE_HALT;
 	priv->next_statechange = jiffies;
-
-	return handshake(hcd, HC_USBCMD, CMD_RESET, 0, 250 * 1000);
+	retval = handshake(hcd, HC_USBCMD,
+			    CMD_RESET, 0, 250 * 1000);
+	return retval;
 }
 
 static struct isp1760_qh *qh_alloc(gfp_t flags)
@@ -788,11 +789,11 @@ static void collect_qtds(struct usb_hcd *hcd, struct isp1760_qh *qh,
 					mem_reads8(hcd->regs, qtd->payload_addr,
 							qtd->data_buffer,
 							qtd->actual_length);
-					/* Fall through */
+					/* Fall through (?) */
 				case OUT_PID:
 					qtd->urb->actual_length +=
 							qtd->actual_length;
-					/* Fall through */
+					/* Fall through ... */
 				case SETUP_PID:
 					break;
 				}
@@ -1259,11 +1260,10 @@ leave:
 #define SLOT_TIMEOUT 300
 #define SLOT_CHECK_PERIOD 200
 static struct timer_list errata2_timer;
-static struct usb_hcd *errata2_timer_hcd;
 
-static void errata2_function(struct timer_list *unused)
+static void errata2_function(unsigned long data)
 {
-	struct usb_hcd *hcd = errata2_timer_hcd;
+	struct usb_hcd *hcd = (struct usb_hcd *) data;
 	struct isp1760_hcd *priv = hcd_to_priv(hcd);
 	int slot;
 	struct ptd ptd;
@@ -1335,8 +1335,7 @@ static int isp1760_run(struct usb_hcd *hcd)
 	if (retval)
 		return retval;
 
-	errata2_timer_hcd = hcd;
-	timer_setup(&errata2_timer, errata2_function, 0);
+	setup_timer(&errata2_timer, errata2_function, (unsigned long)hcd);
 	errata2_timer.expires = jiffies + msecs_to_jiffies(SLOT_CHECK_PERIOD);
 	add_timer(&errata2_timer);
 
@@ -1467,9 +1466,9 @@ static void packetize_urb(struct usb_hcd *hcd,
 				packet_type = OUT_PID;
 			else
 				packet_type = IN_PID;
-		} else if (usb_pipebulk(urb->pipe)
-				&& (urb->transfer_flags & URB_ZERO_PACKET)
-				&& !(urb->transfer_buffer_length %
+		} else if (maxpacketsize && usb_pipebulk(urb->pipe) &&
+				(urb->transfer_flags & URB_ZERO_PACKET) &&
+				!(urb->transfer_buffer_length %
 							maxpacketsize)) {
 			one_more = 1;
 		}
@@ -1514,13 +1513,9 @@ static int isp1760_urb_enqueue(struct usb_hcd *hcd, struct urb *urb,
 		/* FIXME: Check bandwidth  */
 		ep_queue = &priv->qh_list[QH_INTERRUPT];
 		break;
-	case PIPE_ISOCHRONOUS:
+	default:
 		dev_err(hcd->self.controller, "%s: isochronous USB packets "
 							"not yet supported\n",
-							__func__);
-		return -EPIPE;
-	default:
-		dev_err(hcd->self.controller, "%s: unknown pipe type\n",
 							__func__);
 		return -EPIPE;
 	}
@@ -1817,6 +1812,7 @@ static int isp1760_hub_control(struct usb_hcd *hcd, u16 typeReq,
 	u32 temp, status;
 	unsigned long flags;
 	int retval = 0;
+	unsigned selector;
 
 	/*
 	 * FIXME:  support SetPortFeatures USB_PORT_FEAT_INDICATOR.
@@ -2009,6 +2005,7 @@ static int isp1760_hub_control(struct usb_hcd *hcd, u16 typeReq,
 		}
 		break;
 	case SetPortFeature:
+		selector = wIndex >> 8;
 		wIndex &= 0xff;
 		if (!wIndex || wIndex > ports)
 			goto error;
@@ -2091,7 +2088,7 @@ static void isp1760_stop(struct usb_hcd *hcd)
 
 	isp1760_hub_control(hcd, ClearPortFeature, USB_PORT_FEAT_POWER,	1,
 			NULL, 0);
-	msleep(20);
+	mdelay(20);
 
 	spin_lock_irq(&priv->lock);
 	ehci_reset(hcd);

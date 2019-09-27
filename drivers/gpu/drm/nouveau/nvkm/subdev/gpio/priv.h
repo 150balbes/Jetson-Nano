@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: MIT */
 #ifndef __NVKM_GPIO_PRIV_H__
 #define __NVKM_GPIO_PRIV_H__
 #define nvkm_gpio(p) container_of((p), struct nvkm_gpio, subdev)

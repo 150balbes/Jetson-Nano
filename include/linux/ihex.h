@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * Compact binary representation of ihex records. Some devices need their
  * firmware loaded in strange orders rather than a single big blob, but
@@ -21,24 +20,12 @@ struct ihex_binrec {
 	uint8_t data[0];
 } __attribute__((packed));
 
-static inline uint16_t ihex_binrec_size(const struct ihex_binrec *p)
-{
-	return be16_to_cpu(p->len) + sizeof(*p);
-}
-
 /* Find the next record, taking into account the 4-byte alignment */
-static inline const struct ihex_binrec *
-__ihex_next_binrec(const struct ihex_binrec *rec)
-{
-	const void *p = rec;
-
-	return p + ALIGN(ihex_binrec_size(rec), 4);
-}
-
 static inline const struct ihex_binrec *
 ihex_next_binrec(const struct ihex_binrec *rec)
 {
-	rec = __ihex_next_binrec(rec);
+	int next = ((be16_to_cpu(rec->len) + 5) & ~3) - 2;
+	rec = (void *)&rec->data[next];
 
 	return be16_to_cpu(rec->len) ? rec : NULL;
 }
@@ -46,15 +33,18 @@ ihex_next_binrec(const struct ihex_binrec *rec)
 /* Check that ihex_next_binrec() won't take us off the end of the image... */
 static inline int ihex_validate_fw(const struct firmware *fw)
 {
-	const struct ihex_binrec *end, *rec;
+	const struct ihex_binrec *rec;
+	size_t ofs = 0;
 
-	rec = (const void *)fw->data;
-	end = (const void *)&fw->data[fw->size - sizeof(*end)];
+	while (ofs <= fw->size - sizeof(*rec)) {
+		rec = (void *)&fw->data[ofs];
 
-	for (; rec <= end; rec = __ihex_next_binrec(rec)) {
 		/* Zero length marks end of records */
-		if (rec == end && !be16_to_cpu(rec->len))
+		if (!be16_to_cpu(rec->len))
 			return 0;
+
+		/* Point to next record... */
+		ofs += (sizeof(*rec) + be16_to_cpu(rec->len) + 3) & ~3;
 	}
 	return -EINVAL;
 }

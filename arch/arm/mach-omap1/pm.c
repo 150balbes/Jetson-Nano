@@ -55,7 +55,7 @@
 #include <mach/tc.h>
 #include <mach/mux.h>
 #include <linux/omap-dma.h>
-#include <clocksource/timer-ti-dm.h>
+#include <plat/dmtimer.h>
 
 #include <mach/irqs.h>
 
@@ -532,15 +532,29 @@ static int omap_pm_debug_show(struct seq_file *m, void *v)
 	return 0;
 }
 
-DEFINE_SHOW_ATTRIBUTE(omap_pm_debug);
+static int omap_pm_debug_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, omap_pm_debug_show,
+				&inode->i_private);
+}
+
+static const struct file_operations omap_pm_debug_fops = {
+	.open		= omap_pm_debug_open,
+	.read		= seq_read,
+	.llseek		= seq_lseek,
+	.release	= single_release,
+};
 
 static void omap_pm_init_debugfs(void)
 {
 	struct dentry *d;
 
 	d = debugfs_create_dir("pm_debug", NULL);
-	debugfs_create_file("omap_pm", S_IWUSR | S_IRUGO, d, NULL,
-			    &omap_pm_debug_fops);
+	if (!d)
+		return;
+
+	(void) debugfs_create_file("omap_pm", S_IWUSR | S_IRUGO,
+					d, NULL, &omap_pm_debug_fops);
 }
 
 #endif /* CONFIG_DEBUG_FS */
@@ -567,6 +581,7 @@ static int omap_pm_enter(suspend_state_t state)
 {
 	switch (state)
 	{
+	case PM_SUSPEND_STANDBY:
 	case PM_SUSPEND_MEM:
 		omap1_pm_suspend();
 		break;

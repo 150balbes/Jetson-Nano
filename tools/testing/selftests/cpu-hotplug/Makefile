@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0
 all:
 
 TEST_PROGS := cpu-on-off-test.sh

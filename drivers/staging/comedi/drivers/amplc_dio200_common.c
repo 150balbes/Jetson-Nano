@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0+
 /*
  * comedi/drivers/amplc_dio200_common.c
  *
@@ -8,6 +7,16 @@
  *
  * COMEDI - Linux Control and Measurement Device Interface
  * Copyright (C) 1998,2000 David A. Schleef <ds@schleef.org>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
  */
 
 #include <linux/module.h>
@@ -44,6 +53,18 @@ static unsigned char clk_gat_sce(unsigned int which, unsigned int chan,
 {
 	return (which << 5) | (chan << 3) |
 	       ((source & 030) << 3) | (source & 007);
+}
+
+static unsigned char clk_sce(unsigned int which, unsigned int chan,
+			     unsigned int source)
+{
+	return clk_gat_sce(which, chan, source);
+}
+
+static unsigned char gat_sce(unsigned int which, unsigned int chan,
+			     unsigned int source)
+{
+	return clk_gat_sce(which, chan, source);
 }
 
 /*
@@ -84,7 +105,7 @@ struct dio200_subdev_intr {
 	unsigned int ofs;
 	unsigned int valid_isns;
 	unsigned int enabled_isns;
-	unsigned int active:1;
+	bool active:1;
 };
 
 static unsigned char dio200_read8(struct comedi_device *dev,
@@ -477,7 +498,7 @@ static void dio200_subdev_8254_set_gate_src(struct comedi_device *dev,
 	unsigned int offset = dio200_subdev_8254_offset(dev, s);
 
 	dio200_write8(dev, DIO200_GAT_SCE(offset >> 3),
-		      clk_gat_sce((offset >> 2) & 1, chan, src));
+		      gat_sce((offset >> 2) & 1, chan, src));
 }
 
 static void dio200_subdev_8254_set_clock_src(struct comedi_device *dev,
@@ -488,7 +509,7 @@ static void dio200_subdev_8254_set_clock_src(struct comedi_device *dev,
 	unsigned int offset = dio200_subdev_8254_offset(dev, s);
 
 	dio200_write8(dev, DIO200_CLK_SCE(offset >> 3),
-		      clk_gat_sce((offset >> 2) & 1, chan, src));
+		      clk_sce((offset >> 2) & 1, chan, src));
 }
 
 static int dio200_subdev_8254_config(struct comedi_device *dev,

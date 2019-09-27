@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __LINUX_PAGEISOLATION_H
 #define __LINUX_PAGEISOLATION_H
 
@@ -30,27 +29,33 @@ static inline bool is_migrate_isolate(int migratetype)
 }
 #endif
 
-#define SKIP_HWPOISON	0x1
-#define REPORT_FAILURE	0x2
-
 bool has_unmovable_pages(struct zone *zone, struct page *page, int count,
-			 int migratetype, int flags);
+			 bool skip_hwpoisoned_pages);
 void set_pageblock_migratetype(struct page *page, int migratetype);
 int move_freepages_block(struct zone *zone, struct page *page,
-				int migratetype, int *num_movable);
+				int migratetype);
+int move_freepages(struct zone *zone,
+			  struct page *start_page, struct page *end_page,
+			  int migratetype);
 
 /*
  * Changes migrate type in [start_pfn, end_pfn) to be MIGRATE_ISOLATE.
+ * If specified range includes migrate types other than MOVABLE or CMA,
+ * this will fail with -EBUSY.
+ *
+ * For isolating all pages in the range finally, the caller have to
+ * free all pages in the range. test_page_isolated() can be used for
+ * test it.
  */
 int
 start_isolate_page_range(unsigned long start_pfn, unsigned long end_pfn,
-			 unsigned migratetype, int flags);
+			 unsigned migratetype, bool skip_hwpoisoned_pages);
 
 /*
  * Changes MIGRATE_ISOLATE to MIGRATE_MOVABLE.
  * target range is [start_pfn, end_pfn)
  */
-void
+int
 undo_isolate_page_range(unsigned long start_pfn, unsigned long end_pfn,
 			unsigned migratetype);
 
@@ -60,6 +65,7 @@ undo_isolate_page_range(unsigned long start_pfn, unsigned long end_pfn,
 int test_pages_isolated(unsigned long start_pfn, unsigned long end_pfn,
 			bool skip_hwpoisoned_pages);
 
-struct page *alloc_migrate_target(struct page *page, unsigned long private);
+struct page *alloc_migrate_target(struct page *page, unsigned long private,
+				int **resultp);
 
 #endif

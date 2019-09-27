@@ -1,11 +1,9 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * linux/arch/sparc/mm/extable.c
  */
 
 #include <linux/module.h>
-#include <linux/extable.h>
-#include <linux/uaccess.h>
+#include <asm/uaccess.h>
 
 void sort_extable(struct exception_table_entry *start,
 		  struct exception_table_entry *finish)
@@ -14,11 +12,11 @@ void sort_extable(struct exception_table_entry *start,
 
 /* Caller knows they are in a range if ret->fixup == 0 */
 const struct exception_table_entry *
-search_extable(const struct exception_table_entry *base,
-	       const size_t num,
+search_extable(const struct exception_table_entry *start,
+	       const struct exception_table_entry *last,
 	       unsigned long value)
 {
-	int i;
+	const struct exception_table_entry *walk;
 
 	/* Single insn entries are encoded as:
 	 *	word 1:	insn address
@@ -38,30 +36,30 @@ search_extable(const struct exception_table_entry *base,
 	 */
 
 	/* 1. Try to find an exact match. */
-	for (i = 0; i < num; i++) {
-		if (base[i].fixup == 0) {
+	for (walk = start; walk <= last; walk++) {
+		if (walk->fixup == 0) {
 			/* A range entry, skip both parts. */
-			i++;
+			walk++;
 			continue;
 		}
 
 		/* A deleted entry; see trim_init_extable */
-		if (base[i].fixup == -1)
+		if (walk->fixup == -1)
 			continue;
 
-		if (base[i].insn == value)
-			return &base[i];
+		if (walk->insn == value)
+			return walk;
 	}
 
 	/* 2. Try to find a range match. */
-	for (i = 0; i < (num - 1); i++) {
-		if (base[i].fixup)
+	for (walk = start; walk <= (last - 1); walk++) {
+		if (walk->fixup)
 			continue;
 
-		if (base[i].insn <= value && base[i + 1].insn > value)
-			return &base[i];
+		if (walk[0].insn <= value && walk[1].insn > value)
+			return walk;
 
-		i++;
+		walk++;
 	}
 
         return NULL;

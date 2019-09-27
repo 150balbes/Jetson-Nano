@@ -8,7 +8,7 @@
  * for more details.
  */
 
-#include <linux/extable.h>
+#include <linux/module.h>
 #include <linux/uaccess.h>
 
 int fixup_exception(struct pt_regs *regs)

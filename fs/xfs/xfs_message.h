@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __XFS_MESSAGE_H
 #define __XFS_MESSAGE_H 1
 

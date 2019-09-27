@@ -1,8 +1,20 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * vivid-ctrls.c - control support functions.
  *
  * Copyright 2014 Cisco Systems, Inc. and/or its affiliates. All rights reserved.
+ *
+ * This program is free software; you may redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; version 2 of the License.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+ * EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+ * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+ * NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS
+ * BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN
+ * ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+ * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
  */
 
 #include <linux/errno.h>
@@ -18,7 +30,6 @@
 #include "vivid-radio-common.h"
 #include "vivid-osd.h"
 #include "vivid-ctrls.h"
-#include "vivid-cec.h"
 
 #define VIVID_CID_CUSTOM_BASE		(V4L2_CID_USER_BASE | 0xf000)
 #define VIVID_CID_BUTTON		(VIVID_CID_CUSTOM_BASE + 0)
@@ -68,8 +79,6 @@
 #define VIVID_CID_MAX_EDID_BLOCKS	(VIVID_CID_VIVID_BASE + 40)
 #define VIVID_CID_PERCENTAGE_FILL	(VIVID_CID_VIVID_BASE + 41)
 #define VIVID_CID_REDUCED_FPS		(VIVID_CID_VIVID_BASE + 42)
-#define VIVID_CID_HSV_ENC		(VIVID_CID_VIVID_BASE + 43)
-#define VIVID_CID_DISPLAY_PRESENT	(VIVID_CID_VIVID_BASE + 44)
 
 #define VIVID_CID_STD_SIGNAL_MODE	(VIVID_CID_VIVID_BASE + 60)
 #define VIVID_CID_STANDARD		(VIVID_CID_VIVID_BASE + 61)
@@ -83,7 +92,6 @@
 #define VIVID_CID_START_STR_ERROR	(VIVID_CID_VIVID_BASE + 69)
 #define VIVID_CID_QUEUE_ERROR		(VIVID_CID_VIVID_BASE + 70)
 #define VIVID_CID_CLEAR_FB		(VIVID_CID_VIVID_BASE + 71)
-#define VIVID_CID_REQ_VALIDATE_ERROR	(VIVID_CID_VIVID_BASE + 72)
 
 #define VIVID_CID_RADIO_SEEK_MODE	(VIVID_CID_VIVID_BASE + 90)
 #define VIVID_CID_RADIO_SEEK_PROG_LIM	(VIVID_CID_VIVID_BASE + 91)
@@ -93,6 +101,23 @@
 #define VIVID_CID_RADIO_TX_RDS_BLOCKIO	(VIVID_CID_VIVID_BASE + 94)
 
 #define VIVID_CID_SDR_CAP_FM_DEVIATION	(VIVID_CID_VIVID_BASE + 110)
+
+#define VIVID_CID_COARSE_TIME		(VIVID_CID_VIVID_BASE + 120)
+#define VIVID_CID_COARSE_TIME_SHORT	(VIVID_CID_VIVID_BASE + 121)
+#define VIVID_CID_FRAME_LENGTH		(VIVID_CID_VIVID_BASE + 122)
+#define VIVID_CID_GROUP_HOLD		(VIVID_CID_VIVID_BASE + 123)
+#define VIVID_CID_HDR_EN		(VIVID_CID_VIVID_BASE + 124)
+#define VIVID_CID_SENSOR_SIGNAL_PROPERTIES (VIVID_CID_VIVID_BASE + 125)
+#define VIVID_CID_SENSOR_IMAGE_PROPERTIES (VIVID_CID_VIVID_BASE + 126)
+#define VIVID_CID_SENSOR_CONTROL_PROPERTIES (VIVID_CID_VIVID_BASE + 127)
+#define VIVID_CID_SENSOR_DV_TIMINGS (VIVID_CID_VIVID_BASE + 128)
+/**
+ * This is temporary with the current v4l2 infrastructure
+ * currently discussing with upstream maintainers our proposals and
+ * better approaches to resolve this
+ */
+#define VIVID_CID_SENSOR_MODES		(VIVID_CID_VIVID_BASE + 129)
+#define VIVID_CID_FOCUS_ABSOLUTE	(VIVID_CID_VIVID_BASE + 130)
 
 /* General User Controls */
 
@@ -110,6 +135,9 @@ static int vivid_user_gen_s_ctrl(struct v4l2_ctrl *ctrl)
 		clear_bit(V4L2_FL_REGISTERED, &dev->sdr_cap_dev.flags);
 		clear_bit(V4L2_FL_REGISTERED, &dev->radio_rx_dev.flags);
 		clear_bit(V4L2_FL_REGISTERED, &dev->radio_tx_dev.flags);
+		break;
+	case VIVID_CID_CLEAR_FB:
+		vivid_clear_fb(dev);
 		break;
 	case VIVID_CID_BUTTON:
 		dev->button_pressed = 30;
@@ -262,33 +290,12 @@ static const struct v4l2_ctrl_config vivid_ctrl_disconnect = {
 	.type = V4L2_CTRL_TYPE_BUTTON,
 };
 
-
-/* Framebuffer Controls */
-
-static int vivid_fb_s_ctrl(struct v4l2_ctrl *ctrl)
-{
-	struct vivid_dev *dev = container_of(ctrl->handler,
-					     struct vivid_dev, ctrl_hdl_fb);
-
-	switch (ctrl->id) {
-	case VIVID_CID_CLEAR_FB:
-		vivid_clear_fb(dev);
-		break;
-	}
-	return 0;
-}
-
-static const struct v4l2_ctrl_ops vivid_fb_ctrl_ops = {
-	.s_ctrl = vivid_fb_s_ctrl,
-};
-
 static const struct v4l2_ctrl_config vivid_ctrl_clear_fb = {
-	.ops = &vivid_fb_ctrl_ops,
+	.ops = &vivid_user_gen_ctrl_ops,
 	.id = VIVID_CID_CLEAR_FB,
 	.name = "Clear Framebuffer",
 	.type = V4L2_CTRL_TYPE_BUTTON,
 };
-
 
 /* Video User Controls */
 
@@ -298,7 +305,7 @@ static int vivid_user_vid_g_volatile_ctrl(struct v4l2_ctrl *ctrl)
 
 	switch (ctrl->id) {
 	case V4L2_CID_AUTOGAIN:
-		dev->gain->val = (jiffies_to_msecs(jiffies) / 1000) & 0xff;
+		dev->gain->val = dev->jiffies_vid_cap & 0xff;
 		break;
 	}
 	return 0;
@@ -351,7 +358,7 @@ static int vivid_vid_cap_s_ctrl(struct v4l2_ctrl *ctrl)
 		V4L2_COLORSPACE_SMPTE170M,
 		V4L2_COLORSPACE_REC709,
 		V4L2_COLORSPACE_SRGB,
-		V4L2_COLORSPACE_OPRGB,
+		V4L2_COLORSPACE_ADOBERGB,
 		V4L2_COLORSPACE_BT2020,
 		V4L2_COLORSPACE_DCI_P3,
 		V4L2_COLORSPACE_SMPTE240M,
@@ -359,7 +366,7 @@ static int vivid_vid_cap_s_ctrl(struct v4l2_ctrl *ctrl)
 		V4L2_COLORSPACE_470_SYSTEM_BG,
 	};
 	struct vivid_dev *dev = container_of(ctrl->handler, struct vivid_dev, ctrl_hdl_vid_cap);
-	unsigned int i, j;
+	unsigned i;
 
 	switch (ctrl->id) {
 	case VIVID_CID_TEST_PATTERN:
@@ -382,14 +389,6 @@ static int vivid_vid_cap_s_ctrl(struct v4l2_ctrl *ctrl)
 		break;
 	case VIVID_CID_YCBCR_ENC:
 		tpg_s_ycbcr_enc(&dev->tpg, ctrl->val);
-		vivid_send_source_change(dev, TV);
-		vivid_send_source_change(dev, SVID);
-		vivid_send_source_change(dev, HDMI);
-		vivid_send_source_change(dev, WEBCAM);
-		break;
-	case VIVID_CID_HSV_ENC:
-		tpg_s_hsv_enc(&dev->tpg, ctrl->val ? V4L2_HSV_ENC_256 :
-						     V4L2_HSV_ENC_180);
 		vivid_send_source_change(dev, TV);
 		vivid_send_source_change(dev, SVID);
 		vivid_send_source_change(dev, HDMI);
@@ -465,35 +464,20 @@ static int vivid_vid_cap_s_ctrl(struct v4l2_ctrl *ctrl)
 		tpg_s_show_square(&dev->tpg, ctrl->val);
 		break;
 	case VIVID_CID_STD_ASPECT_RATIO:
-		dev->std_aspect_ratio[dev->input] = ctrl->val;
+		dev->std_aspect_ratio = ctrl->val;
 		tpg_s_video_aspect(&dev->tpg, vivid_get_video_aspect(dev));
 		break;
 	case VIVID_CID_DV_TIMINGS_SIGNAL_MODE:
-		dev->dv_timings_signal_mode[dev->input] =
-			dev->ctrl_dv_timings_signal_mode->val;
-		dev->query_dv_timings[dev->input] = dev->ctrl_dv_timings->val;
-
-		dev->power_present = 0;
-		for (i = 0, j = 0;
-		     i < ARRAY_SIZE(dev->dv_timings_signal_mode);
-		     i++)
-			if (dev->input_type[i] == HDMI) {
-				if (dev->dv_timings_signal_mode[i] != NO_SIGNAL)
-					dev->power_present |= (1 << j);
-				j++;
-			}
-		__v4l2_ctrl_s_ctrl(dev->ctrl_rx_power_present,
-				   dev->power_present);
-
+		dev->dv_timings_signal_mode = dev->ctrl_dv_timings_signal_mode->val;
+		if (dev->dv_timings_signal_mode == SELECTED_DV_TIMINGS)
+			dev->query_dv_timings = dev->ctrl_dv_timings->val;
 		v4l2_ctrl_activate(dev->ctrl_dv_timings,
-			dev->dv_timings_signal_mode[dev->input] ==
-				SELECTED_DV_TIMINGS);
-
+				dev->dv_timings_signal_mode == SELECTED_DV_TIMINGS);
 		vivid_update_quality(dev);
 		vivid_send_source_change(dev, HDMI);
 		break;
 	case VIVID_CID_DV_TIMINGS_ASPECT_RATIO:
-		dev->dv_timings_aspect_ratio[dev->input] = ctrl->val;
+		dev->dv_timings_aspect_ratio = ctrl->val;
 		tpg_s_video_aspect(&dev->tpg, vivid_get_video_aspect(dev));
 		break;
 	case VIVID_CID_TSTAMP_SRC:
@@ -507,12 +491,192 @@ static int vivid_vid_cap_s_ctrl(struct v4l2_ctrl *ctrl)
 		if (dev->edid_blocks > dev->edid_max_blocks)
 			dev->edid_blocks = dev->edid_max_blocks;
 		break;
+	case VIVID_CID_FRAME_LENGTH:
+		vivid_update_timeperframe(dev, ctrl->val);
+		break;
 	}
+	return 0;
+}
+
+int vivid_update_sensorprops(struct vivid_dev *dev)
+{
+	struct v4l2_ctrl *ctrl_signalprops = dev->ctrl_signalprops;
+	struct v4l2_ctrl *ctrl_imageprops = dev->ctrl_imageprops;
+	struct v4l2_ctrl *ctrl_controlprops = dev->ctrl_controlprops;
+	struct v4l2_ctrl *ctrl_dvtimings = dev->ctrl_dvtimings;
+	struct sensor_mode_properties *modes = dev->sensor_props.sensor_modes;
+	u32 i;
+
+	for (i = 0; i < dev->sensor_props.num_modes; i++) {
+		void *ptr = NULL;
+		u32 size = sizeof(struct sensor_signal_properties);
+
+		ptr = ctrl_signalprops->p_new.p + (i * size);
+		memcpy(ptr, &modes[i].signal_properties, size);
+
+		size = sizeof(struct sensor_image_properties);
+		ptr = ctrl_imageprops->p_new.p + (i * size);
+		memcpy(ptr, &modes[i].image_properties, size);
+
+		size = sizeof(struct sensor_control_properties);
+		ptr = ctrl_controlprops->p_new.p + (i * size);
+		memcpy(ptr, &modes[i].control_properties, size);
+
+		size = sizeof(struct sensor_dv_timings);
+		ptr = ctrl_dvtimings->p_new.p + (i * size);
+		memcpy(ptr, &modes[i].dv_timings, size);
+	}
+	ctrl_signalprops->p_cur.p = ctrl_signalprops->p_new.p;
+	ctrl_imageprops->p_cur.p = ctrl_imageprops->p_new.p;
+	ctrl_controlprops->p_cur.p = ctrl_controlprops->p_new.p;
+	ctrl_dvtimings->p_cur.p = ctrl_dvtimings->p_new.p;
+
 	return 0;
 }
 
 static const struct v4l2_ctrl_ops vivid_vid_cap_ctrl_ops = {
 	.s_ctrl = vivid_vid_cap_s_ctrl,
+};
+
+#define MIN_FRAME_LENGTH	0x0
+#define MAX_FRAME_LENGTH	0x7FFF
+#define DEF_FRAME_LENGTH	0x07C0
+#define MIN_EXPOSURE_COARSE	0x0002
+#define MAX_EXPOSURE_COARSE	0x7FF8
+#define DEF_EXPOSURE_COARSE	0x07B8
+
+static const struct v4l2_ctrl_config vivid_ctrl_framelength = {
+	.ops = &vivid_vid_cap_ctrl_ops,
+	.id = VIVID_CID_FRAME_LENGTH,
+	.name = "Frame Length",
+	.type = V4L2_CTRL_TYPE_INTEGER,
+	.flags = V4L2_CTRL_FLAG_SLIDER,
+	.min = MIN_FRAME_LENGTH,
+	.max = MAX_FRAME_LENGTH,
+	.def = DEF_FRAME_LENGTH,
+	.step = 1,
+};
+
+static const struct v4l2_ctrl_config vivid_ctrl_coarsetime = {
+	.ops = &vivid_vid_cap_ctrl_ops,
+	.id = VIVID_CID_COARSE_TIME,
+	.name = "Coarse Time",
+	.type = V4L2_CTRL_TYPE_INTEGER,
+	.flags = V4L2_CTRL_FLAG_SLIDER,
+	.min = MIN_EXPOSURE_COARSE,
+	.max = MAX_EXPOSURE_COARSE,
+	.def = DEF_EXPOSURE_COARSE,
+	.step = 1,
+};
+
+static const struct v4l2_ctrl_config vivid_ctrl_coarsetime_short = {
+	.ops = &vivid_vid_cap_ctrl_ops,
+	.id = VIVID_CID_COARSE_TIME_SHORT,
+	.name = "Coarse Time Short",
+	.type = V4L2_CTRL_TYPE_INTEGER,
+	.flags = V4L2_CTRL_FLAG_SLIDER,
+	.min = MIN_EXPOSURE_COARSE,
+	.max = MAX_EXPOSURE_COARSE,
+	.def = DEF_EXPOSURE_COARSE,
+	.step = 1,
+};
+
+static const struct v4l2_ctrl_config vivid_ctrl_grouphold = {
+	.ops = &vivid_vid_cap_ctrl_ops,
+	.id = VIVID_CID_GROUP_HOLD,
+	.name = "Group Hold",
+	.type = V4L2_CTRL_TYPE_BOOLEAN,
+	.min = 0,
+	.max = 1,
+	.def = 0,
+	.step = 1,
+};
+
+static const struct v4l2_ctrl_config vivid_ctrl_hdrenable = {
+	.ops = &vivid_vid_cap_ctrl_ops,
+	.id = VIVID_CID_HDR_EN,
+	.name = "HDR enable",
+	.type = V4L2_CTRL_TYPE_BOOLEAN,
+	.min = 0,
+	.max = 1,
+	.def = 0,
+	.step = 1,
+};
+
+static const struct v4l2_ctrl_config vivid_ctrl_sensor_modes = {
+	.ops = &vivid_vid_cap_ctrl_ops,
+	.id = VIVID_CID_SENSOR_MODES,
+	.name = "Sensor Modes",
+	.type = V4L2_CTRL_TYPE_INTEGER,
+	.flags = V4L2_CTRL_FLAG_READ_ONLY,
+	.min = 0,
+	.max = MAX_NUM_SENSOR_MODES,
+	.def = MAX_NUM_SENSOR_MODES,
+	.step = 1,
+};
+
+static const struct v4l2_ctrl_config vivid_ctrl_signalprops = {
+	.ops = &vivid_vid_cap_ctrl_ops,
+	.id = VIVID_CID_SENSOR_SIGNAL_PROPERTIES,
+	.name = "Sensor Signal Properties",
+	.type = V4L2_CTRL_TYPE_U32,
+	.flags = V4L2_CTRL_FLAG_HAS_PAYLOAD,
+	.min = 0,
+	.max = 0xFFFFFFFF,
+	.step = 1,
+	.def = 0,
+	.dims = { MAX_NUM_SENSOR_MODES, SENSOR_SIGNAL_PROPERTIES_CID_SIZE },
+};
+
+static const struct v4l2_ctrl_config vivid_ctrl_imageprops = {
+	.ops = &vivid_vid_cap_ctrl_ops,
+	.id = VIVID_CID_SENSOR_IMAGE_PROPERTIES,
+	.name = "Sensor Image Properties",
+	.type = V4L2_CTRL_TYPE_U32,
+	.flags = V4L2_CTRL_FLAG_HAS_PAYLOAD,
+	.min = 0,
+	.max = 0xFFFFFFFF,
+	.step = 1,
+	.def = 0,
+	.dims = { MAX_NUM_SENSOR_MODES, SENSOR_IMAGE_PROPERTIES_CID_SIZE },
+};
+
+static const struct v4l2_ctrl_config vivid_ctrl_controlprops = {
+	.ops = &vivid_vid_cap_ctrl_ops,
+	.id = VIVID_CID_SENSOR_CONTROL_PROPERTIES,
+	.name = "Sensor Control Properties",
+	.type = V4L2_CTRL_TYPE_U32,
+	.flags = V4L2_CTRL_FLAG_HAS_PAYLOAD,
+	.min = 0,
+	.max = 0xFFFFFFFF,
+	.step = 1,
+	.def = 0,
+	.dims = { MAX_NUM_SENSOR_MODES, SENSOR_CONTROL_PROPERTIES_CID_SIZE },
+};
+
+static const struct v4l2_ctrl_config vivid_ctrl_dvtimings = {
+	.ops = &vivid_vid_cap_ctrl_ops,
+	.id = VIVID_CID_SENSOR_DV_TIMINGS,
+	.name = "Sensor DV Timings",
+	.type = V4L2_CTRL_TYPE_U32,
+	.flags = V4L2_CTRL_FLAG_HAS_PAYLOAD,
+	.min = 0,
+	.max = 0xFFFFFFFF,
+	.step = 1,
+	.def = 0,
+	.dims = { MAX_NUM_SENSOR_MODES, SENSOR_DV_TIMINGS_CID_SIZE },
+};
+
+static const struct v4l2_ctrl_config vivid_ctrl_focus_absolute = {
+	.ops = &vivid_vid_cap_ctrl_ops,
+	.id = VIVID_CID_FOCUS_ABSOLUTE,
+	.name = "Focus Absolute",
+	.type = V4L2_CTRL_TYPE_INTEGER,
+	.flags = V4L2_CTRL_FLAG_SLIDER,
+	.min = 0,
+	.max = 1024,
+	.def = 0,
+	.step = 1,
 };
 
 static const char * const vivid_ctrl_hor_movement_strings[] = {
@@ -747,7 +911,7 @@ static const char * const vivid_ctrl_colorspace_strings[] = {
 	"SMPTE 170M",
 	"Rec. 709",
 	"sRGB",
-	"opRGB",
+	"AdobeRGB",
 	"BT.2020",
 	"DCI-P3",
 	"SMPTE 240M",
@@ -770,7 +934,7 @@ static const char * const vivid_ctrl_xfer_func_strings[] = {
 	"Default",
 	"Rec. 709",
 	"sRGB",
-	"opRGB",
+	"AdobeRGB",
 	"SMPTE 240M",
 	"None",
 	"DCI-P3",
@@ -808,21 +972,6 @@ static const struct v4l2_ctrl_config vivid_ctrl_ycbcr_enc = {
 	.menu_skip_mask = 1 << 5,
 	.max = ARRAY_SIZE(vivid_ctrl_ycbcr_enc_strings) - 2,
 	.qmenu = vivid_ctrl_ycbcr_enc_strings,
-};
-
-static const char * const vivid_ctrl_hsv_enc_strings[] = {
-	"Hue 0-179",
-	"Hue 0-256",
-	NULL,
-};
-
-static const struct v4l2_ctrl_config vivid_ctrl_hsv_enc = {
-	.ops = &vivid_vid_cap_ctrl_ops,
-	.id = VIVID_CID_HSV_ENC,
-	.name = "HSV Encoding",
-	.type = V4L2_CTRL_TYPE_MENU,
-	.max = ARRAY_SIZE(vivid_ctrl_hsv_enc_strings) - 2,
-	.qmenu = vivid_ctrl_hsv_enc_strings,
 };
 
 static const char * const vivid_ctrl_quantization_strings[] = {
@@ -925,8 +1074,6 @@ static int vivid_vid_out_s_ctrl(struct v4l2_ctrl *ctrl)
 {
 	struct vivid_dev *dev = container_of(ctrl->handler, struct vivid_dev, ctrl_hdl_vid_out);
 	struct v4l2_bt_timings *bt = &dev->dv_timings_out.bt;
-	u32 display_present = 0;
-	unsigned int i, j, bus_idx;
 
 	switch (ctrl->id) {
 	case VIVID_CID_HAS_CROP_OUT:
@@ -959,37 +1106,6 @@ static int vivid_vid_out_s_ctrl(struct v4l2_ctrl *ctrl)
 		}
 		if (dev->loop_video)
 			vivid_send_source_change(dev, HDMI);
-		break;
-	case VIVID_CID_DISPLAY_PRESENT:
-		if (dev->output_type[dev->output] != HDMI)
-			break;
-
-		dev->display_present[dev->output] = ctrl->val;
-		for (i = 0, j = 0; i < dev->num_outputs; i++)
-			if (dev->output_type[i] == HDMI)
-				display_present |=
-					dev->display_present[i] << j++;
-
-		__v4l2_ctrl_s_ctrl(dev->ctrl_tx_rxsense, display_present);
-
-		if (dev->edid_blocks) {
-			__v4l2_ctrl_s_ctrl(dev->ctrl_tx_edid_present,
-					   display_present);
-			__v4l2_ctrl_s_ctrl(dev->ctrl_tx_hotplug,
-					   display_present);
-		}
-
-		bus_idx = dev->cec_output2bus_map[dev->output];
-		if (!dev->cec_tx_adap[bus_idx])
-			break;
-
-		if (ctrl->val && dev->edid_blocks)
-			cec_s_phys_addr(dev->cec_tx_adap[bus_idx],
-					dev->cec_tx_adap[bus_idx]->phys_addr,
-					false);
-		else
-			cec_phys_addr_invalidate(dev->cec_tx_adap[bus_idx]);
-
 		break;
 	}
 	return 0;
@@ -1029,15 +1145,6 @@ static const struct v4l2_ctrl_config vivid_ctrl_has_scaler_out = {
 	.step = 1,
 };
 
-static const struct v4l2_ctrl_config vivid_ctrl_display_present = {
-	.ops = &vivid_vid_out_ctrl_ops,
-	.id = VIVID_CID_DISPLAY_PRESENT,
-	.name = "Display Present",
-	.type = V4L2_CTRL_TYPE_BOOLEAN,
-	.max = 1,
-	.def = 1,
-	.step = 1,
-};
 
 /* Streaming Controls */
 
@@ -1061,9 +1168,6 @@ static int vivid_streaming_s_ctrl(struct v4l2_ctrl *ctrl)
 		break;
 	case VIVID_CID_START_STR_ERROR:
 		dev->start_streaming_error = true;
-		break;
-	case VIVID_CID_REQ_VALIDATE_ERROR:
-		dev->req_validate_error = true;
 		break;
 	case VIVID_CID_QUEUE_ERROR:
 		if (vb2_start_streaming_called(&dev->vb_vid_cap_q))
@@ -1150,15 +1254,6 @@ static const struct v4l2_ctrl_config vivid_ctrl_queue_error = {
 	.type = V4L2_CTRL_TYPE_BUTTON,
 };
 
-#ifdef CONFIG_MEDIA_CONTROLLER
-static const struct v4l2_ctrl_config vivid_ctrl_req_validate_error = {
-	.ops = &vivid_streaming_ctrl_ops,
-	.id = VIVID_CID_REQ_VALIDATE_ERROR,
-	.name = "Inject req_validate() Error",
-	.type = V4L2_CTRL_TYPE_BUTTON,
-};
-#endif
-
 static const struct v4l2_ctrl_config vivid_ctrl_seq_wrap = {
 	.ops = &vivid_streaming_ctrl_ops,
 	.id = VIVID_CID_SEQ_WRAP,
@@ -1186,14 +1281,10 @@ static int vivid_sdtv_cap_s_ctrl(struct v4l2_ctrl *ctrl)
 
 	switch (ctrl->id) {
 	case VIVID_CID_STD_SIGNAL_MODE:
-		dev->std_signal_mode[dev->input] =
-			dev->ctrl_std_signal_mode->val;
-		if (dev->std_signal_mode[dev->input] == SELECTED_STD)
-			dev->query_std[dev->input] =
-				vivid_standard[dev->ctrl_standard->val];
-		v4l2_ctrl_activate(dev->ctrl_standard,
-				   dev->std_signal_mode[dev->input] ==
-					SELECTED_STD);
+		dev->std_signal_mode = dev->ctrl_std_signal_mode->val;
+		if (dev->std_signal_mode == SELECTED_STD)
+			dev->query_std = vivid_standard[dev->ctrl_standard->val];
+		v4l2_ctrl_activate(dev->ctrl_standard, dev->std_signal_mode == SELECTED_STD);
 		vivid_update_quality(dev);
 		vivid_send_source_change(dev, TV);
 		vivid_send_source_change(dev, SVID);
@@ -1440,7 +1531,6 @@ int vivid_create_controls(struct vivid_dev *dev, bool show_ccs_cap,
 	struct v4l2_ctrl_handler *hdl_streaming = &dev->ctrl_hdl_streaming;
 	struct v4l2_ctrl_handler *hdl_sdtv_cap = &dev->ctrl_hdl_sdtv_cap;
 	struct v4l2_ctrl_handler *hdl_loop_cap = &dev->ctrl_hdl_loop_cap;
-	struct v4l2_ctrl_handler *hdl_fb = &dev->ctrl_hdl_fb;
 	struct v4l2_ctrl_handler *hdl_vid_cap = &dev->ctrl_hdl_vid_cap;
 	struct v4l2_ctrl_handler *hdl_vid_out = &dev->ctrl_hdl_vid_out;
 	struct v4l2_ctrl_handler *hdl_vbi_cap = &dev->ctrl_hdl_vbi_cap;
@@ -1468,12 +1558,10 @@ int vivid_create_controls(struct vivid_dev *dev, bool show_ccs_cap,
 	v4l2_ctrl_new_custom(hdl_sdtv_cap, &vivid_ctrl_class, NULL);
 	v4l2_ctrl_handler_init(hdl_loop_cap, 1);
 	v4l2_ctrl_new_custom(hdl_loop_cap, &vivid_ctrl_class, NULL);
-	v4l2_ctrl_handler_init(hdl_fb, 1);
-	v4l2_ctrl_new_custom(hdl_fb, &vivid_ctrl_class, NULL);
 	v4l2_ctrl_handler_init(hdl_vid_cap, 55);
 	v4l2_ctrl_new_custom(hdl_vid_cap, &vivid_ctrl_class, NULL);
 	v4l2_ctrl_handler_init(hdl_vid_out, 26);
-	if (!no_error_inj || dev->has_fb)
+	if (!no_error_inj)
 		v4l2_ctrl_new_custom(hdl_vid_out, &vivid_ctrl_class, NULL);
 	v4l2_ctrl_handler_init(hdl_vbi_cap, 21);
 	v4l2_ctrl_new_custom(hdl_vbi_cap, &vivid_ctrl_class, NULL);
@@ -1510,7 +1598,7 @@ int vivid_create_controls(struct vivid_dev *dev, bool show_ccs_cap,
 		dev->autogain = v4l2_ctrl_new_std(hdl_user_vid, &vivid_user_vid_ctrl_ops,
 			V4L2_CID_AUTOGAIN, 0, 1, 1, 1);
 		dev->gain = v4l2_ctrl_new_std(hdl_user_vid, &vivid_user_vid_ctrl_ops,
-			V4L2_CID_GAIN, 0, 255, 1, 100);
+			V4L2_CID_GAIN, 1, 256, 1, 100);
 		dev->alpha = v4l2_ctrl_new_std(hdl_user_vid, &vivid_user_vid_ctrl_ops,
 			V4L2_CID_ALPHA_COMPONENT, 0, 255, 1, 0);
 	}
@@ -1564,9 +1652,26 @@ int vivid_create_controls(struct vivid_dev *dev, bool show_ccs_cap,
 			&vivid_ctrl_colorspace, NULL);
 		v4l2_ctrl_new_custom(hdl_vid_cap, &vivid_ctrl_xfer_func, NULL);
 		v4l2_ctrl_new_custom(hdl_vid_cap, &vivid_ctrl_ycbcr_enc, NULL);
-		v4l2_ctrl_new_custom(hdl_vid_cap, &vivid_ctrl_hsv_enc, NULL);
 		v4l2_ctrl_new_custom(hdl_vid_cap, &vivid_ctrl_quantization, NULL);
 		v4l2_ctrl_new_custom(hdl_vid_cap, &vivid_ctrl_alpha_mode, NULL);
+		dev->framelength = v4l2_ctrl_new_custom(hdl_vid_cap,
+			&vivid_ctrl_framelength, NULL);
+		v4l2_ctrl_new_custom(hdl_vid_cap, &vivid_ctrl_coarsetime, NULL);
+		v4l2_ctrl_new_custom(hdl_vid_cap,
+			&vivid_ctrl_coarsetime_short, NULL);
+		v4l2_ctrl_new_custom(hdl_vid_cap, &vivid_ctrl_grouphold, NULL);
+		v4l2_ctrl_new_custom(hdl_vid_cap, &vivid_ctrl_hdrenable, NULL);
+		v4l2_ctrl_new_custom(hdl_vid_cap, &vivid_ctrl_focus_absolute, NULL);
+		dev->ctrl_signalprops = v4l2_ctrl_new_custom(hdl_vid_cap,
+			&vivid_ctrl_signalprops, NULL);
+		dev->ctrl_imageprops = v4l2_ctrl_new_custom(hdl_vid_cap,
+			&vivid_ctrl_imageprops, NULL);
+		dev->ctrl_controlprops = v4l2_ctrl_new_custom(hdl_vid_cap,
+			&vivid_ctrl_controlprops, NULL);
+		dev->ctrl_dvtimings = v4l2_ctrl_new_custom(hdl_vid_cap,
+			&vivid_ctrl_dvtimings, NULL);
+		dev->ctrl_sensormodes = v4l2_ctrl_new_custom(hdl_vid_cap,
+			&vivid_ctrl_sensor_modes, NULL);
 	}
 
 	if (dev->has_vid_out && show_ccs_out) {
@@ -1592,9 +1697,6 @@ int vivid_create_controls(struct vivid_dev *dev, bool show_ccs_cap,
 		v4l2_ctrl_new_custom(hdl_streaming, &vivid_ctrl_buf_prepare_error, NULL);
 		v4l2_ctrl_new_custom(hdl_streaming, &vivid_ctrl_start_streaming_error, NULL);
 		v4l2_ctrl_new_custom(hdl_streaming, &vivid_ctrl_queue_error, NULL);
-#ifdef CONFIG_MEDIA_CONTROLLER
-		v4l2_ctrl_new_custom(hdl_streaming, &vivid_ctrl_req_validate_error, NULL);
-#endif
 		v4l2_ctrl_new_custom(hdl_streaming, &vivid_ctrl_seq_wrap, NULL);
 		v4l2_ctrl_new_custom(hdl_streaming, &vivid_ctrl_time_wrap, NULL);
 	}
@@ -1612,7 +1714,7 @@ int vivid_create_controls(struct vivid_dev *dev, bool show_ccs_cap,
 			v4l2_ctrl_new_custom(hdl_vbi_cap, &vivid_ctrl_vbi_cap_interlaced, NULL);
 	}
 
-	if (dev->num_hdmi_inputs) {
+	if (has_hdmi && dev->has_vid_cap) {
 		dev->ctrl_dv_timings_signal_mode = v4l2_ctrl_new_custom(hdl_vid_cap,
 					&vivid_ctrl_dv_timings_signal_mode, NULL);
 
@@ -1632,13 +1734,8 @@ int vivid_create_controls(struct vivid_dev *dev, bool show_ccs_cap,
 			&vivid_vid_cap_ctrl_ops,
 			V4L2_CID_DV_RX_RGB_RANGE, V4L2_DV_RGB_RANGE_FULL,
 			0, V4L2_DV_RGB_RANGE_AUTO);
-		dev->ctrl_rx_power_present = v4l2_ctrl_new_std(hdl_vid_cap,
-			NULL, V4L2_CID_DV_RX_POWER_PRESENT, 0,
-			(2 << (dev->num_hdmi_inputs - 1)) - 1, 0,
-			(2 << (dev->num_hdmi_inputs - 1)) - 1);
-
 	}
-	if (dev->num_hdmi_outputs) {
+	if (has_hdmi && dev->has_vid_out) {
 		/*
 		 * We aren't doing anything with this at the moment, but
 		 * HDMI outputs typically have this controls.
@@ -1649,27 +1746,13 @@ int vivid_create_controls(struct vivid_dev *dev, bool show_ccs_cap,
 		dev->ctrl_tx_mode = v4l2_ctrl_new_std_menu(hdl_vid_out, NULL,
 			V4L2_CID_DV_TX_MODE, V4L2_DV_TX_MODE_HDMI,
 			0, V4L2_DV_TX_MODE_HDMI);
-		dev->ctrl_display_present = v4l2_ctrl_new_custom(hdl_vid_out,
-			&vivid_ctrl_display_present, NULL);
-		dev->ctrl_tx_hotplug = v4l2_ctrl_new_std(hdl_vid_out,
-			NULL, V4L2_CID_DV_TX_HOTPLUG, 0,
-			(2 << (dev->num_hdmi_outputs - 1)) - 1, 0,
-			(2 << (dev->num_hdmi_outputs - 1)) - 1);
-		dev->ctrl_tx_rxsense = v4l2_ctrl_new_std(hdl_vid_out,
-			NULL, V4L2_CID_DV_TX_RXSENSE, 0,
-			(2 << (dev->num_hdmi_outputs - 1)) - 1, 0,
-			(2 << (dev->num_hdmi_outputs - 1)) - 1);
-		dev->ctrl_tx_edid_present = v4l2_ctrl_new_std(hdl_vid_out,
-			NULL, V4L2_CID_DV_TX_EDID_PRESENT, 0,
-			(2 << (dev->num_hdmi_outputs - 1)) - 1, 0,
-			(2 << (dev->num_hdmi_outputs - 1)) - 1);
 	}
 	if ((dev->has_vid_cap && dev->has_vid_out) ||
 	    (dev->has_vbi_cap && dev->has_vbi_out))
 		v4l2_ctrl_new_custom(hdl_loop_cap, &vivid_ctrl_loop_video, NULL);
 
 	if (dev->has_fb)
-		v4l2_ctrl_new_custom(hdl_fb, &vivid_ctrl_clear_fb, NULL);
+		v4l2_ctrl_new_custom(hdl_user_gen, &vivid_ctrl_clear_fb, NULL);
 
 	if (dev->has_radio_rx) {
 		v4l2_ctrl_new_custom(hdl_radio_rx, &vivid_ctrl_radio_hw_seek_mode, NULL);
@@ -1760,59 +1843,57 @@ int vivid_create_controls(struct vivid_dev *dev, bool show_ccs_cap,
 		v4l2_ctrl_auto_cluster(2, &dev->autogain, 0, true);
 
 	if (dev->has_vid_cap) {
-		v4l2_ctrl_add_handler(hdl_vid_cap, hdl_user_gen, NULL, false);
-		v4l2_ctrl_add_handler(hdl_vid_cap, hdl_user_vid, NULL, false);
-		v4l2_ctrl_add_handler(hdl_vid_cap, hdl_user_aud, NULL, false);
-		v4l2_ctrl_add_handler(hdl_vid_cap, hdl_streaming, NULL, false);
-		v4l2_ctrl_add_handler(hdl_vid_cap, hdl_sdtv_cap, NULL, false);
-		v4l2_ctrl_add_handler(hdl_vid_cap, hdl_loop_cap, NULL, false);
-		v4l2_ctrl_add_handler(hdl_vid_cap, hdl_fb, NULL, false);
+		v4l2_ctrl_add_handler(hdl_vid_cap, hdl_user_gen, NULL);
+		v4l2_ctrl_add_handler(hdl_vid_cap, hdl_user_vid, NULL);
+		v4l2_ctrl_add_handler(hdl_vid_cap, hdl_user_aud, NULL);
+		v4l2_ctrl_add_handler(hdl_vid_cap, hdl_streaming, NULL);
+		v4l2_ctrl_add_handler(hdl_vid_cap, hdl_sdtv_cap, NULL);
+		v4l2_ctrl_add_handler(hdl_vid_cap, hdl_loop_cap, NULL);
 		if (hdl_vid_cap->error)
 			return hdl_vid_cap->error;
 		dev->vid_cap_dev.ctrl_handler = hdl_vid_cap;
 	}
 	if (dev->has_vid_out) {
-		v4l2_ctrl_add_handler(hdl_vid_out, hdl_user_gen, NULL, false);
-		v4l2_ctrl_add_handler(hdl_vid_out, hdl_user_aud, NULL, false);
-		v4l2_ctrl_add_handler(hdl_vid_out, hdl_streaming, NULL, false);
-		v4l2_ctrl_add_handler(hdl_vid_out, hdl_fb, NULL, false);
+		v4l2_ctrl_add_handler(hdl_vid_out, hdl_user_gen, NULL);
+		v4l2_ctrl_add_handler(hdl_vid_out, hdl_user_aud, NULL);
+		v4l2_ctrl_add_handler(hdl_vid_out, hdl_streaming, NULL);
 		if (hdl_vid_out->error)
 			return hdl_vid_out->error;
 		dev->vid_out_dev.ctrl_handler = hdl_vid_out;
 	}
 	if (dev->has_vbi_cap) {
-		v4l2_ctrl_add_handler(hdl_vbi_cap, hdl_user_gen, NULL, false);
-		v4l2_ctrl_add_handler(hdl_vbi_cap, hdl_streaming, NULL, false);
-		v4l2_ctrl_add_handler(hdl_vbi_cap, hdl_sdtv_cap, NULL, false);
-		v4l2_ctrl_add_handler(hdl_vbi_cap, hdl_loop_cap, NULL, false);
+		v4l2_ctrl_add_handler(hdl_vbi_cap, hdl_user_gen, NULL);
+		v4l2_ctrl_add_handler(hdl_vbi_cap, hdl_streaming, NULL);
+		v4l2_ctrl_add_handler(hdl_vbi_cap, hdl_sdtv_cap, NULL);
+		v4l2_ctrl_add_handler(hdl_vbi_cap, hdl_loop_cap, NULL);
 		if (hdl_vbi_cap->error)
 			return hdl_vbi_cap->error;
 		dev->vbi_cap_dev.ctrl_handler = hdl_vbi_cap;
 	}
 	if (dev->has_vbi_out) {
-		v4l2_ctrl_add_handler(hdl_vbi_out, hdl_user_gen, NULL, false);
-		v4l2_ctrl_add_handler(hdl_vbi_out, hdl_streaming, NULL, false);
+		v4l2_ctrl_add_handler(hdl_vbi_out, hdl_user_gen, NULL);
+		v4l2_ctrl_add_handler(hdl_vbi_out, hdl_streaming, NULL);
 		if (hdl_vbi_out->error)
 			return hdl_vbi_out->error;
 		dev->vbi_out_dev.ctrl_handler = hdl_vbi_out;
 	}
 	if (dev->has_radio_rx) {
-		v4l2_ctrl_add_handler(hdl_radio_rx, hdl_user_gen, NULL, false);
-		v4l2_ctrl_add_handler(hdl_radio_rx, hdl_user_aud, NULL, false);
+		v4l2_ctrl_add_handler(hdl_radio_rx, hdl_user_gen, NULL);
+		v4l2_ctrl_add_handler(hdl_radio_rx, hdl_user_aud, NULL);
 		if (hdl_radio_rx->error)
 			return hdl_radio_rx->error;
 		dev->radio_rx_dev.ctrl_handler = hdl_radio_rx;
 	}
 	if (dev->has_radio_tx) {
-		v4l2_ctrl_add_handler(hdl_radio_tx, hdl_user_gen, NULL, false);
-		v4l2_ctrl_add_handler(hdl_radio_tx, hdl_user_aud, NULL, false);
+		v4l2_ctrl_add_handler(hdl_radio_tx, hdl_user_gen, NULL);
+		v4l2_ctrl_add_handler(hdl_radio_tx, hdl_user_aud, NULL);
 		if (hdl_radio_tx->error)
 			return hdl_radio_tx->error;
 		dev->radio_tx_dev.ctrl_handler = hdl_radio_tx;
 	}
 	if (dev->has_sdr_cap) {
-		v4l2_ctrl_add_handler(hdl_sdr_cap, hdl_user_gen, NULL, false);
-		v4l2_ctrl_add_handler(hdl_sdr_cap, hdl_streaming, NULL, false);
+		v4l2_ctrl_add_handler(hdl_sdr_cap, hdl_user_gen, NULL);
+		v4l2_ctrl_add_handler(hdl_sdr_cap, hdl_streaming, NULL);
 		if (hdl_sdr_cap->error)
 			return hdl_sdr_cap->error;
 		dev->sdr_cap_dev.ctrl_handler = hdl_sdr_cap;
@@ -1835,5 +1916,4 @@ void vivid_free_controls(struct vivid_dev *dev)
 	v4l2_ctrl_handler_free(&dev->ctrl_hdl_streaming);
 	v4l2_ctrl_handler_free(&dev->ctrl_hdl_sdtv_cap);
 	v4l2_ctrl_handler_free(&dev->ctrl_hdl_loop_cap);
-	v4l2_ctrl_handler_free(&dev->ctrl_hdl_fb);
 }

@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * rtrap.S: Preparing for return from trap on Sparc V9.
  *
@@ -25,32 +24,13 @@
 		.align			32
 __handle_preemption:
 		call			SCHEDULE_USER
-661:		 wrpr			%g0, RTRAP_PSTATE, %pstate
-		/* If userspace is using ADI, it could potentially pass
-		 * a pointer with version tag embedded in it. To maintain
-		 * the ADI security, we must re-enable PSTATE.mcde before
-		 * we continue execution in the kernel for another thread.
-		 */
-		.section .sun_m7_1insn_patch, "ax"
-		.word	661b
-		 wrpr			%g0, RTRAP_PSTATE|PSTATE_MCDE, %pstate
-		.previous
+		 wrpr			%g0, RTRAP_PSTATE, %pstate
 		ba,pt			%xcc, __handle_preemption_continue
 		 wrpr			%g0, RTRAP_PSTATE_IRQOFF, %pstate
 
 __handle_user_windows:
-		add			%sp, PTREGS_OFF, %o0
 		call			fault_in_user_windows
-661:		 wrpr			%g0, RTRAP_PSTATE, %pstate
-		/* If userspace is using ADI, it could potentially pass
-		 * a pointer with version tag embedded in it. To maintain
-		 * the ADI security, we must re-enable PSTATE.mcde before
-		 * we continue execution in the kernel for another thread.
-		 */
-		.section .sun_m7_1insn_patch, "ax"
-		.word	661b
-		 wrpr			%g0, RTRAP_PSTATE|PSTATE_MCDE, %pstate
-		.previous
+		 wrpr			%g0, RTRAP_PSTATE, %pstate
 		ba,pt			%xcc, __handle_preemption_continue
 		 wrpr			%g0, RTRAP_PSTATE_IRQOFF, %pstate
 
@@ -67,16 +47,7 @@ __handle_signal:
 		add			%sp, PTREGS_OFF, %o0
 		mov			%l0, %o2
 		call			do_notify_resume
-661:		 wrpr			%g0, RTRAP_PSTATE, %pstate
-		/* If userspace is using ADI, it could potentially pass
-		 * a pointer with version tag embedded in it. To maintain
-		 * the ADI security, we must re-enable PSTATE.mcde before
-		 * we continue execution in the kernel for another thread.
-		 */
-		.section .sun_m7_1insn_patch, "ax"
-		.word	661b
-		 wrpr			%g0, RTRAP_PSTATE|PSTATE_MCDE, %pstate
-		.previous
+		 wrpr			%g0, RTRAP_PSTATE, %pstate
 		wrpr			%g0, RTRAP_PSTATE_IRQOFF, %pstate
 
 		/* Signal delivery can modify pt_regs tstate, so we must
@@ -85,9 +56,8 @@ __handle_signal:
 		ldx			[%sp + PTREGS_OFF + PT_V9_TSTATE], %l1
 		sethi			%hi(0xf << 20), %l4
 		and			%l1, %l4, %l4
-		andn			%l1, %l4, %l1
 		ba,pt			%xcc, __handle_preemption_continue
-		 srl			%l4, 20, %l4
+		 andn			%l1, %l4, %l1
 
 		/* When returning from a NMI (%pil==15) interrupt we want to
 		 * avoid running softirqs, doing IRQ tracing, preempting, etc.
@@ -254,19 +224,10 @@ rt_continue:	ldx			[%sp + PTREGS_OFF + PT_V9_G1], %g1
 		rdpr			%otherwin, %l2
 		srl			%l1, 3, %l1
 
-661:		wrpr			%l2, %g0, %canrestore
-		.section		.fast_win_ctrl_1insn_patch, "ax"
-		.word			661b
-		.word			0x89880000	! normalw
-		.previous
-
+		wrpr			%l2, %g0, %canrestore
 		wrpr			%l1, %g0, %wstate
 		brnz,pt			%l2, user_rtt_restore
-661:		 wrpr			%g0, %g0, %otherwin
-		.section		.fast_win_ctrl_1insn_patch, "ax"
-		.word			661b
-		 nop
-		.previous
+		 wrpr			%g0, %g0, %otherwin
 
 		ldx			[%g6 + TI_FLAGS], %g3
 		wr			%g0, ASI_AIUP, %asi
@@ -276,7 +237,6 @@ rt_continue:	ldx			[%sp + PTREGS_OFF + PT_V9_G1], %g1
 		bne,pt			%xcc, user_rtt_fill_32bit
 		 wrpr			%g1, %cwp
 		ba,a,pt			%xcc, user_rtt_fill_64bit
-		 nop
 
 user_rtt_fill_fixup_dax:
 		ba,pt	%xcc, user_rtt_fill_fixup_common

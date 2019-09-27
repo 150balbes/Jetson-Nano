@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * i8253.c  8253/PIT functions
  *
@@ -32,8 +31,7 @@ void __init setup_pit_timer(void)
 
 static int __init init_pit_clocksource(void)
 {
-	if (num_possible_cpus() > 1 || /* PIT does not scale! */
-	    !clockevent_state_periodic(&i8253_clockevent))
+	if (num_possible_cpus() > 1) /* PIT does not scale! */
 		return 0;
 
 	return clocksource_i8253_init();

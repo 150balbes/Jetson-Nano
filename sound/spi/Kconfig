@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0-only
 #SPI drivers
 
 menuconfig SND_SPI

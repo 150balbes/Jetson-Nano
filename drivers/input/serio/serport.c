@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Input device TTY line discipline
  *
@@ -8,8 +7,13 @@
  * 'serial io port' abstraction that the input device drivers use.
  */
 
+/*
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License version 2 as published by
+ * the Free Software Foundation.
+ */
 
-#include <linux/uaccess.h>
+#include <asm/uaccess.h>
 #include <linux/kernel.h>
 #include <linux/sched.h>
 #include <linux/slab.h>
@@ -222,7 +226,7 @@ static int serport_ldisc_ioctl(struct tty_struct *tty, struct file *file,
 
 #ifdef CONFIG_COMPAT
 #define COMPAT_SPIOCSTYPE	_IOW('q', 0x01, compat_ulong_t)
-static int serport_ldisc_compat_ioctl(struct tty_struct *tty,
+static long serport_ldisc_compat_ioctl(struct tty_struct *tty,
 				       struct file *file,
 				       unsigned int cmd, unsigned long arg)
 {

@@ -1,15 +1,19 @@
-// SPDX-License-Identifier: GPL-2.0
-//
-// Regulator Driver for Freescale MC13xxx PMIC
-//
-// Copyright 2010 Yong Shen <yong.shen@linaro.org>
-//
-// Based on mc13783 regulator driver :
-// Copyright (C) 2008 Sascha Hauer, Pengutronix <s.hauer@pengutronix.de>
-// Copyright 2009 Alberto Panizzo <maramaopercheseimorto@gmail.com>
-//
-// Regs infos taken from mc13xxx drivers from freescale and mc13xxx.pdf file
-// from freescale
+/*
+ * Regulator Driver for Freescale MC13xxx PMIC
+ *
+ * Copyright 2010 Yong Shen <yong.shen@linaro.org>
+ *
+ * Based on mc13783 regulator driver :
+ * Copyright (C) 2008 Sascha Hauer, Pengutronix <s.hauer@pengutronix.de>
+ * Copyright 2009 Alberto Panizzo <maramaopercheseimorto@gmail.com>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * Regs infos taken from mc13xxx drivers from freescale and mc13xxx.pdf file
+ * from freescale
+ */
 
 #include <linux/mfd/mc13xxx.h>
 #include <linux/regulator/machine.h>
@@ -99,7 +103,7 @@ static int mc13xxx_regulator_get_voltage(struct regulator_dev *rdev)
 	return rdev->desc->volt_table[val];
 }
 
-const struct regulator_ops mc13xxx_regulator_ops = {
+struct regulator_ops mc13xxx_regulator_ops = {
 	.enable = mc13xxx_regulator_enable,
 	.disable = mc13xxx_regulator_disable,
 	.is_enabled = mc13xxx_regulator_is_enabled,
@@ -127,7 +131,7 @@ int mc13xxx_fixed_regulator_set_voltage(struct regulator_dev *rdev, int min_uV,
 }
 EXPORT_SYMBOL_GPL(mc13xxx_fixed_regulator_set_voltage);
 
-const struct regulator_ops mc13xxx_fixed_regulator_ops = {
+struct regulator_ops mc13xxx_fixed_regulator_ops = {
 	.enable = mc13xxx_regulator_enable,
 	.disable = mc13xxx_regulator_disable,
 	.is_enabled = mc13xxx_regulator_is_enabled,
@@ -171,7 +175,7 @@ struct mc13xxx_regulator_init_data *mc13xxx_parse_regulators_dt(
 	if (!parent)
 		return NULL;
 
-	data = devm_kcalloc(&pdev->dev, priv->num_regulators, sizeof(*data),
+	data = devm_kzalloc(&pdev->dev, sizeof(*data) * priv->num_regulators,
 			    GFP_KERNEL);
 	if (!data) {
 		of_node_put(parent);
@@ -186,7 +190,7 @@ struct mc13xxx_regulator_init_data *mc13xxx_parse_regulators_dt(
 		for (i = 0; i < num_regulators; i++) {
 			if (!regulators[i].desc.name)
 				continue;
-			if (of_node_name_eq(child,
+			if (!of_node_cmp(child->name,
 					 regulators[i].desc.name)) {
 				p->id = i;
 				p->init_data = of_get_regulator_init_data(
@@ -203,7 +207,7 @@ struct mc13xxx_regulator_init_data *mc13xxx_parse_regulators_dt(
 
 		if (!found)
 			dev_warn(&pdev->dev,
-				 "Unknown regulator: %pOFn\n", child);
+				 "Unknown regulator: %s\n", child->name);
 	}
 	of_node_put(parent);
 

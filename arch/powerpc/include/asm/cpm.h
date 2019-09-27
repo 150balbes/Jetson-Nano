@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __CPM_H
 #define __CPM_H
 
@@ -166,6 +165,6 @@ static inline int cpm_command(u32 command, u8 opcode)
 }
 #endif /* CONFIG_CPM */
 
-int cpm2_gpiochip_add32(struct device *dev);
+int cpm2_gpiochip_add32(struct device_node *np);
 
 #endif

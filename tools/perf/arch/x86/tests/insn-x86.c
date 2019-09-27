@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 #include <linux/types.h>
 
 #include "debug.h"
@@ -170,9 +169,9 @@ static int test_data_set(struct test_data *dat_set, int x86_64)
  *
  * If the test passes %0 is returned, otherwise %-1 is returned.  Use the
  * verbose (-v) option to see all the instructions and whether or not they
- * decoded successfully.
+ * decoded successfuly.
  */
-int test__insn_x86(struct test *test __maybe_unused, int subtest __maybe_unused)
+int test__insn_x86(int subtest __maybe_unused)
 {
 	int ret = 0;
 

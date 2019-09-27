@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0-only
 if ARCH_U8500
 
 config PINCTRL_ABX500
@@ -10,6 +9,14 @@ config PINCTRL_ABX500
 
 config PINCTRL_AB8500
 	bool "AB8500 pin controller driver"
+	depends on PINCTRL_ABX500 && ARCH_U8500
+
+config PINCTRL_AB8540
+	bool "AB8540 pin controller driver"
+	depends on PINCTRL_ABX500 && ARCH_U8500
+
+config PINCTRL_AB9540
+	bool "AB9540 pin controller driver"
 	depends on PINCTRL_ABX500 && ARCH_U8500
 
 config PINCTRL_AB8505
@@ -35,6 +42,10 @@ config PINCTRL_STN8815
 
 config PINCTRL_DB8500
 	bool "DB8500 pin controller driver"
+	depends on PINCTRL_NOMADIK && ARCH_U8500
+
+config PINCTRL_DB8540
+	bool "DB8540 pin controller driver"
 	depends on PINCTRL_NOMADIK && ARCH_U8500
 
 endif

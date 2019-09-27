@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  *  linux/fs/minix/namei.c
  *
@@ -28,9 +27,13 @@ static struct dentry *minix_lookup(struct inode * dir, struct dentry *dentry, un
 		return ERR_PTR(-ENAMETOOLONG);
 
 	ino = minix_inode_by_name(dentry);
-	if (ino)
+	if (ino) {
 		inode = minix_iget(dir->i_sb, ino);
-	return d_splice_alias(inode, dentry);
+		if (IS_ERR(inode))
+			return ERR_CAST(inode);
+	}
+	d_add(dentry, inode);
+	return NULL;
 }
 
 static int minix_mknod(struct inode * dir, struct dentry *dentry, umode_t mode, dev_t rdev)

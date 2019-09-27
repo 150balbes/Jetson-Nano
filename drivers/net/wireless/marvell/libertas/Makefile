@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0
 libertas-y += cfg.o
 libertas-y += cmd.o
 libertas-y += cmdresp.o

@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note */
 /*
  * NUMA memory policies for Linux.
  * Copyright 2003,2004 Andi Kleen SuSE Labs
@@ -23,6 +22,13 @@ enum {
 	MPOL_INTERLEAVE,
 	MPOL_LOCAL,
 	MPOL_MAX,	/* always last member of enum */
+};
+
+enum mpol_rebind_step {
+	MPOL_REBIND_ONCE,	/* do rebind work at once(not by two step) */
+	MPOL_REBIND_STEP1,	/* first step(set all the newly nodes) */
+	MPOL_REBIND_STEP2,	/* second step(clean all the disallowed nodes)*/
+	MPOL_REBIND_NSTEP,
 };
 
 /* Flags for set_mempolicy */
@@ -59,6 +65,7 @@ enum {
  */
 #define MPOL_F_SHARED  (1 << 0)	/* identify shared policies */
 #define MPOL_F_LOCAL   (1 << 1)	/* preferred local allocation */
+#define MPOL_F_REBINDING (1 << 2)	/* identify policies in rebinding */
 #define MPOL_F_MOF	(1 << 3) /* this policy wants migrate on fault */
 #define MPOL_F_MORON	(1 << 4) /* Migrate On protnone Reference On Node */
 

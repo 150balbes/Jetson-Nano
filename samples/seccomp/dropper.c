@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * Naive system call dropper built on seccomp_filter.
  *
@@ -12,6 +11,7 @@
  * When run, returns the specified errno for the specified
  * system call number against the given architecture.
  *
+ * Run this one as root as PR_SET_NO_NEW_PRIVS is not called.
  */
 
 #include <errno.h>
@@ -42,12 +42,8 @@ static int install_filter(int nr, int arch, int error)
 		.len = (unsigned short)(sizeof(filter)/sizeof(filter[0])),
 		.filter = filter,
 	};
-	if (prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0)) {
-		perror("prctl(NO_NEW_PRIVS)");
-		return 1;
-	}
 	if (prctl(PR_SET_SECCOMP, 2, &prog)) {
-		perror("prctl(PR_SET_SECCOMP)");
+		perror("prctl");
 		return 1;
 	}
 	return 0;

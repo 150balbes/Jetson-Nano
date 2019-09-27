@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Scaler library
  *
@@ -7,11 +6,14 @@
  * David Griego, <dagriego@biglakesoftware.com>
  * Dale Farnsworth, <dale@farnsworth.org>
  * Archit Taneja, <archit@ti.com>
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License version 2 as published by
+ * the Free Software Foundation.
  */
 
 #include <linux/err.h>
 #include <linux/io.h>
-#include <linux/module.h>
 #include <linux/platform_device.h>
 #include <linux/slab.h>
 
@@ -24,8 +26,6 @@ void sc_dump_regs(struct sc_data *sc)
 
 #define DUMPREG(r) dev_dbg(dev, "%-35s %08x\n", #r, \
 	ioread32(sc->base + CFG_##r))
-
-	dev_dbg(dev, "SC Registers @ %pa:\n", &sc->res->start);
 
 	DUMPREG(SC0);
 	DUMPREG(SC1);
@@ -52,7 +52,6 @@ void sc_dump_regs(struct sc_data *sc)
 
 #undef DUMPREG
 }
-EXPORT_SYMBOL(sc_dump_regs);
 
 /*
  * set the horizontal scaler coefficients according to the ratio of output to
@@ -85,6 +84,9 @@ void sc_set_hs_coeffs(struct sc_data *sc, void *addr, unsigned int src_w,
 		}
 	}
 
+	if (idx == sc->hs_index)
+		return;
+
 	cp = scaler_hs_coeffs[idx];
 
 	for (i = 0; i < SC_NUM_PHASES * 2; i++) {
@@ -99,9 +101,10 @@ void sc_set_hs_coeffs(struct sc_data *sc, void *addr, unsigned int src_w,
 		coeff_h += SC_NUM_TAPS_MEM_ALIGN - SC_H_NUM_TAPS;
 	}
 
+	sc->hs_index = idx;
+
 	sc->load_coeff_h = true;
 }
-EXPORT_SYMBOL(sc_set_hs_coeffs);
 
 /*
  * set the vertical scaler coefficients according to the ratio of output to
@@ -127,6 +130,9 @@ void sc_set_vs_coeffs(struct sc_data *sc, void *addr, unsigned int src_h,
 		idx = VS_LT_9_16_SCALE + sixteenths - 8;
 	}
 
+	if (idx == sc->vs_index)
+		return;
+
 	cp = scaler_vs_coeffs[idx];
 
 	for (i = 0; i < SC_NUM_PHASES * 2; i++) {
@@ -140,9 +146,9 @@ void sc_set_vs_coeffs(struct sc_data *sc, void *addr, unsigned int src_h,
 		coeff_v += SC_NUM_TAPS_MEM_ALIGN - SC_V_NUM_TAPS;
 	}
 
+	sc->vs_index = idx;
 	sc->load_coeff_v = true;
 }
-EXPORT_SYMBOL(sc_set_vs_coeffs);
 
 void sc_config_scaler(struct sc_data *sc, u32 *sc_reg0, u32 *sc_reg8,
 		u32 *sc_reg17, unsigned int src_w, unsigned int src_h,
@@ -270,9 +276,8 @@ void sc_config_scaler(struct sc_data *sc, u32 *sc_reg0, u32 *sc_reg8,
 
 	*sc_reg24 = (src_w << CFG_ORG_W_SHIFT) | (src_h << CFG_ORG_H_SHIFT);
 }
-EXPORT_SYMBOL(sc_config_scaler);
 
-struct sc_data *sc_create(struct platform_device *pdev, const char *res_name)
+struct sc_data *sc_create(struct platform_device *pdev)
 {
 	struct sc_data *sc;
 
@@ -286,10 +291,9 @@ struct sc_data *sc_create(struct platform_device *pdev, const char *res_name)
 
 	sc->pdev = pdev;
 
-	sc->res = platform_get_resource_byname(pdev, IORESOURCE_MEM, res_name);
+	sc->res = platform_get_resource_byname(pdev, IORESOURCE_MEM, "sc");
 	if (!sc->res) {
-		dev_err(&pdev->dev, "missing '%s' platform resources data\n",
-			res_name);
+		dev_err(&pdev->dev, "missing platform resources data\n");
 		return ERR_PTR(-ENODEV);
 	}
 
@@ -301,8 +305,3 @@ struct sc_data *sc_create(struct platform_device *pdev, const char *res_name)
 
 	return sc;
 }
-EXPORT_SYMBOL(sc_create);
-
-MODULE_DESCRIPTION("TI VIP/VPE Scaler");
-MODULE_AUTHOR("Texas Instruments Inc.");
-MODULE_LICENSE("GPL v2");

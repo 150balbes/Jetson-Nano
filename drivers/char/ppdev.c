@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * linux/drivers/char/ppdev.c
  *
@@ -6,6 +5,11 @@
  * application to use the parport subsystem.
  *
  * Copyright (C) 1998-2000, 2002 Tim Waugh <tim@cyberelk.net>
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License
+ * as published by the Free Software Foundation; either version
+ * 2 of the License, or (at your option) any later version.
  *
  * A /dev/parportx device node represents an arbitrary device
  * on port 'x'.  The following operations are possible:
@@ -54,7 +58,7 @@
 
 #include <linux/module.h>
 #include <linux/init.h>
-#include <linux/sched/signal.h>
+#include <linux/sched.h>
 #include <linux/device.h>
 #include <linux/ioctl.h>
 #include <linux/parport.h>
@@ -96,6 +100,9 @@ static DEFINE_IDA(ida_index);
 #define PP_INTERRUPT_TIMEOUT (10 * HZ) /* 10s */
 #define PP_BUFFER_SIZE 1024
 #define PARDEVICE_MAX 8
+
+/* ROUND_UP macro from fs/select.c */
+#define ROUND_UP(x,y) (((x)+(y)-1)/(y))
 
 static DEFINE_MUTEX(pp_do_mutex);
 
@@ -286,7 +293,7 @@ static int register_device(int minor, struct pp_struct *pp)
 	struct pardevice *pdev = NULL;
 	char *name;
 	struct pardev_cb ppdev_cb;
-	int rc = 0, index;
+	int index;
 
 	name = kasprintf(GFP_KERNEL, CHRDEV "%x", minor);
 	if (name == NULL)
@@ -294,9 +301,9 @@ static int register_device(int minor, struct pp_struct *pp)
 
 	port = parport_find_number(minor);
 	if (!port) {
-		pr_warn("%s: no associated port!\n", name);
-		rc = -ENXIO;
-		goto err;
+		printk(KERN_WARNING "%s: no associated port!\n", name);
+		kfree(name);
+		return -ENXIO;
 	}
 
 	index = ida_simple_get(&ida_index, 0, 0, GFP_KERNEL);
@@ -308,18 +315,16 @@ static int register_device(int minor, struct pp_struct *pp)
 	parport_put_port(port);
 
 	if (!pdev) {
-		pr_warn("%s: failed to register device!\n", name);
-		rc = -ENXIO;
+		printk(KERN_WARNING "%s: failed to register device!\n", name);
 		ida_simple_remove(&ida_index, index);
-		goto err;
+		kfree(name);
+		return -ENXIO;
 	}
 
 	pp->pdev = pdev;
 	pp->index = index;
 	dev_dbg(&pdev->dev, "registered pardevice\n");
-err:
-	kfree(name);
-	return rc;
+	return 0;
 }
 
 static enum ieee1284_phase init_phase(int mode)
@@ -765,14 +770,14 @@ static int pp_release(struct inode *inode, struct file *file)
 }
 
 /* No kernel lock held - fine */
-static __poll_t pp_poll(struct file *file, poll_table *wait)
+static unsigned int pp_poll(struct file *file, poll_table *wait)
 {
 	struct pp_struct *pp = file->private_data;
-	__poll_t mask = 0;
+	unsigned int mask = 0;
 
 	poll_wait(file, &pp->irq_wait, wait);
 	if (atomic_read(&pp->irqc))
-		mask |= EPOLLIN | EPOLLRDNORM;
+		mask |= POLLIN | POLLRDNORM;
 
 	return mask;
 }
@@ -844,7 +849,8 @@ static int __init ppdev_init(void)
 	int err = 0;
 
 	if (register_chrdev(PP_MAJOR, CHRDEV, &pp_fops)) {
-		pr_warn(CHRDEV ": unable to get major %d\n", PP_MAJOR);
+		printk(KERN_WARNING CHRDEV ": unable to get major %d\n",
+		       PP_MAJOR);
 		return -EIO;
 	}
 	ppdev_class = class_create(THIS_MODULE, CHRDEV);
@@ -854,11 +860,11 @@ static int __init ppdev_init(void)
 	}
 	err = parport_register_driver(&pp_driver);
 	if (err < 0) {
-		pr_warn(CHRDEV ": unable to register with parport\n");
+		printk(KERN_WARNING CHRDEV ": unable to register with parport\n");
 		goto out_class;
 	}
 
-	pr_info(PP_VERSION "\n");
+	printk(KERN_INFO PP_VERSION "\n");
 	goto out;
 
 out_class:

@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  *    SCLP Event Type (ET) 7 - Diagnostic Test FTP Services, useable on LPAR
  *

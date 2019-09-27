@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _CS4271_PRIV_H
 #define _CS4271_PRIV_H
 

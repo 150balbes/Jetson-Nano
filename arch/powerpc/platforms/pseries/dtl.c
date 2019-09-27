@@ -1,19 +1,33 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Virtual Processor Dispatch Trace Log
  *
  * (C) Copyright IBM Corporation 2009
  *
  * Author: Jeremy Kerr <jk@ozlabs.org>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2, or (at your option)
+ * any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  */
 
 #include <linux/slab.h>
+#include <linux/debugfs.h>
 #include <linux/spinlock.h>
 #include <asm/smp.h>
-#include <linux/uaccess.h>
+#include <asm/uaccess.h>
 #include <asm/firmware.h>
 #include <asm/lppaca.h>
-#include <asm/debugfs.h>
+#include <asm/debug.h>
 #include <asm/plpar_wrappers.h>
 #include <asm/machdep.h>
 
@@ -27,7 +41,13 @@ struct dtl {
 };
 static DEFINE_PER_CPU(struct dtl, cpu_dtl);
 
-static u8 dtl_event_mask = DTL_LOG_ALL;
+/*
+ * Dispatch trace log event mask:
+ * 0x7: 0x1: voluntary virtual processor waits
+ *      0x2: time-slice preempts
+ *      0x4: virtual partition memory page faults
+ */
+static u8 dtl_event_mask = 0x7;
 
 
 /*
@@ -42,6 +62,7 @@ struct dtl_ring {
 	struct dtl_entry *write_ptr;
 	struct dtl_entry *buf;
 	struct dtl_entry *buf_end;
+	u8	saved_dtl_mask;
 };
 
 static DEFINE_PER_CPU(struct dtl_ring, dtl_rings);
@@ -91,6 +112,7 @@ static int dtl_start(struct dtl *dtl)
 	dtlr->write_ptr = dtl->buf;
 
 	/* enable event logging */
+	dtlr->saved_dtl_mask = lppaca_of(dtl->cpu).dtl_enable_mask;
 	lppaca_of(dtl->cpu).dtl_enable_mask |= dtl_event_mask;
 
 	dtl_consumer = consume_dtle;
@@ -108,7 +130,7 @@ static void dtl_stop(struct dtl *dtl)
 	dtlr->buf = NULL;
 
 	/* restore dtl_enable_mask */
-	lppaca_of(dtl->cpu).dtl_enable_mask = DTL_LOG_PREEMPT;
+	lppaca_of(dtl->cpu).dtl_enable_mask = dtlr->saved_dtl_mask;
 
 	if (atomic_dec_and_test(&dtl_count))
 		dtl_consumer = NULL;
@@ -128,7 +150,7 @@ static int dtl_start(struct dtl *dtl)
 
 	/* Register our dtl buffer with the hypervisor. The HV expects the
 	 * buffer size to be passed in the second word of the buffer */
-	((u32 *)dtl->buf)[1] = cpu_to_be32(DISPATCH_LOG_BYTES);
+	((u32 *)dtl->buf)[1] = DISPATCH_LOG_BYTES;
 
 	hwcpu = get_hard_smp_processor_id(dtl->cpu);
 	addr = __pa(dtl->buf);
@@ -163,7 +185,7 @@ static void dtl_stop(struct dtl *dtl)
 
 static u64 dtl_current_index(struct dtl *dtl)
 {
-	return be64_to_cpu(lppaca_of(dtl->cpu).dtl_idx);
+	return lppaca_of(dtl->cpu).dtl_idx;
 }
 #endif /* CONFIG_VIRT_CPU_ACCOUNTING_NATIVE */
 
@@ -180,16 +202,11 @@ static int dtl_enable(struct dtl *dtl)
 	if (dtl->buf)
 		return -EBUSY;
 
-	/* ensure there are no other conflicting dtl users */
-	if (!read_trylock(&dtl_access_lock))
-		return -EBUSY;
-
 	n_entries = dtl_buf_entries;
 	buf = kmem_cache_alloc_node(dtl_cache, GFP_KERNEL, cpu_to_node(dtl->cpu));
 	if (!buf) {
 		printk(KERN_WARNING "%s: buffer alloc failed for cpu %d\n",
 				__func__, dtl->cpu);
-		read_unlock(&dtl_access_lock);
 		return -ENOMEM;
 	}
 
@@ -206,11 +223,8 @@ static int dtl_enable(struct dtl *dtl)
 	}
 	spin_unlock(&dtl->lock);
 
-	if (rc) {
-		read_unlock(&dtl_access_lock);
+	if (rc)
 		kmem_cache_free(dtl_cache, buf);
-	}
-
 	return rc;
 }
 
@@ -222,7 +236,6 @@ static void dtl_disable(struct dtl *dtl)
 	dtl->buf = NULL;
 	dtl->buf_entries = 0;
 	spin_unlock(&dtl->lock);
-	read_unlock(&dtl_access_lock);
 }
 
 /* file interface */

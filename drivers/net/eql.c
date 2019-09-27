@@ -127,7 +127,7 @@
 #include <linux/if_eql.h>
 #include <linux/pkt_sched.h>
 
-#include <linux/uaccess.h>
+#include <asm/uaccess.h>
 
 static int eql_open(struct net_device *dev);
 static int eql_close(struct net_device *dev);
@@ -139,9 +139,9 @@ static netdev_tx_t eql_slave_xmit(struct sk_buff *skb, struct net_device *dev);
 
 static void eql_kill_one_slave(slave_queue_t *queue, slave_t *slave);
 
-static void eql_timer(struct timer_list *t)
+static void eql_timer(unsigned long param)
 {
-	equalizer_t *eql = from_timer(eql, t, timer);
+	equalizer_t *eql = (equalizer_t *) param;
 	struct list_head *this, *tmp, *head;
 
 	spin_lock(&eql->queue.lock);
@@ -178,8 +178,10 @@ static void __init eql_setup(struct net_device *dev)
 {
 	equalizer_t *eql = netdev_priv(dev);
 
-	timer_setup(&eql->timer, eql_timer, 0);
+	init_timer(&eql->timer);
+	eql->timer.data     	= (unsigned long) eql;
 	eql->timer.expires  	= jiffies + EQL_DEFAULT_RESCHED_IVAL;
+	eql->timer.function 	= eql_timer;
 
 	spin_lock_init(&eql->queue.lock);
 	INIT_LIST_HEAD(&eql->queue.all_slaves);

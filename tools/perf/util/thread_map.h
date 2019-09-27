@@ -1,10 +1,9 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __PERF_THREAD_MAP_H
 #define __PERF_THREAD_MAP_H
 
 #include <sys/types.h>
 #include <stdio.h>
-#include <linux/refcount.h>
+#include <linux/atomic.h>
 
 struct thread_map_data {
 	pid_t    pid;
@@ -12,9 +11,8 @@ struct thread_map_data {
 };
 
 struct thread_map {
-	refcount_t refcnt;
+	atomic_t refcnt;
 	int nr;
-	int err_thread;
 	struct thread_map_data map[];
 };
 
@@ -24,7 +22,6 @@ struct thread_map *thread_map__new_dummy(void);
 struct thread_map *thread_map__new_by_pid(pid_t pid);
 struct thread_map *thread_map__new_by_tid(pid_t tid);
 struct thread_map *thread_map__new_by_uid(uid_t uid);
-struct thread_map *thread_map__new_all_cpus(void);
 struct thread_map *thread_map__new(pid_t pid, pid_t tid, uid_t uid);
 struct thread_map *thread_map__new_event(struct thread_map_event *event);
 
@@ -32,7 +29,7 @@ struct thread_map *thread_map__get(struct thread_map *map);
 void thread_map__put(struct thread_map *map);
 
 struct thread_map *thread_map__new_str(const char *pid,
-		const char *tid, uid_t uid, bool all_threads);
+		const char *tid, uid_t uid);
 
 struct thread_map *thread_map__new_by_tid_str(const char *tid_str);
 
@@ -61,5 +58,4 @@ static inline char *thread_map__comm(struct thread_map *map, int thread)
 
 void thread_map__read_comms(struct thread_map *threads);
 bool thread_map__has(struct thread_map *threads, pid_t pid);
-int thread_map__remove(struct thread_map *threads, int idx);
 #endif	/* __PERF_THREAD_MAP_H */

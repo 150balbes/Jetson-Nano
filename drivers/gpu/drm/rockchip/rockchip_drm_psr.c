@@ -1,182 +1,189 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (C) Fuzhou Rockchip Electronics Co.Ltd
  * Author: Yakir Yang <ykk@rock-chips.com>
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
  */
 
 #include <drm/drmP.h>
-#include <drm/drm_atomic.h>
-#include <drm/drm_probe_helper.h>
+#include <drm/drm_crtc_helper.h>
 
 #include "rockchip_drm_drv.h"
 #include "rockchip_drm_psr.h"
 
-#define PSR_FLUSH_TIMEOUT_MS	100
+#define PSR_FLUSH_TIMEOUT	msecs_to_jiffies(100)
+
+enum psr_state {
+	PSR_FLUSH,
+	PSR_ENABLE,
+	PSR_DISABLE,
+};
 
 struct psr_drv {
 	struct list_head	list;
 	struct drm_encoder	*encoder;
 
-	struct mutex		lock;
-	int			inhibit_count;
-	bool			enabled;
+	spinlock_t		lock;
+	bool			active;
+	enum psr_state		state;
 
-	struct delayed_work	flush_work;
+	struct timer_list	flush_timer;
 
-	int (*set)(struct drm_encoder *encoder, bool enable);
+	void (*set)(struct drm_encoder *encoder, bool enable);
 };
 
-static struct psr_drv *find_psr_by_encoder(struct drm_encoder *encoder)
+static struct psr_drv *find_psr_by_crtc(struct drm_crtc *crtc)
 {
-	struct rockchip_drm_private *drm_drv = encoder->dev->dev_private;
+	struct rockchip_drm_private *drm_drv = crtc->dev->dev_private;
 	struct psr_drv *psr;
+	unsigned long flags;
 
-	mutex_lock(&drm_drv->psr_list_lock);
+	spin_lock_irqsave(&drm_drv->psr_list_lock, flags);
 	list_for_each_entry(psr, &drm_drv->psr_list, list) {
-		if (psr->encoder == encoder)
+		if (psr->encoder->crtc == crtc)
 			goto out;
 	}
 	psr = ERR_PTR(-ENODEV);
 
 out:
-	mutex_unlock(&drm_drv->psr_list_lock);
+	spin_unlock_irqrestore(&drm_drv->psr_list_lock, flags);
 	return psr;
 }
 
-static int psr_set_state_locked(struct psr_drv *psr, bool enable)
+static void psr_set_state_locked(struct psr_drv *psr, enum psr_state state)
 {
-	int ret;
+	/*
+	 * Allowed finite state machine:
+	 *
+	 *   PSR_ENABLE  < = = = = = >  PSR_FLUSH
+	 *       | ^                        |
+	 *       | |                        |
+	 *       v |                        |
+	 *   PSR_DISABLE < - - - - - - - - -
+	 */
+	if (state == psr->state || !psr->active)
+		return;
 
-	if (psr->inhibit_count > 0)
-		return -EINVAL;
+	/* Already disabled in flush, change the state, but not the hardware */
+	if (state == PSR_DISABLE && psr->state == PSR_FLUSH) {
+		psr->state = state;
+		return;
+	}
 
-	if (enable == psr->enabled)
-		return 0;
+	psr->state = state;
 
-	ret = psr->set(psr->encoder, enable);
-	if (ret)
-		return ret;
+	/* Actually commit the state change to hardware */
+	switch (psr->state) {
+	case PSR_ENABLE:
+		psr->set(psr->encoder, true);
+		break;
 
-	psr->enabled = enable;
-	return 0;
+	case PSR_DISABLE:
+	case PSR_FLUSH:
+		psr->set(psr->encoder, false);
+		break;
+	}
 }
 
-static void psr_flush_handler(struct work_struct *work)
+static void psr_set_state(struct psr_drv *psr, enum psr_state state)
 {
-	struct psr_drv *psr = container_of(to_delayed_work(work),
-					   struct psr_drv, flush_work);
+	unsigned long flags;
 
-	mutex_lock(&psr->lock);
-	psr_set_state_locked(psr, true);
-	mutex_unlock(&psr->lock);
+	spin_lock_irqsave(&psr->lock, flags);
+	psr_set_state_locked(psr, state);
+	spin_unlock_irqrestore(&psr->lock, flags);
+}
+
+static void psr_flush_handler(unsigned long data)
+{
+	struct psr_drv *psr = (struct psr_drv *)data;
+	unsigned long flags;
+
+	/* If the state has changed since we initiated the flush, do nothing */
+	spin_lock_irqsave(&psr->lock, flags);
+	if (psr->state == PSR_FLUSH)
+		psr_set_state_locked(psr, PSR_ENABLE);
+	spin_unlock_irqrestore(&psr->lock, flags);
 }
 
 /**
- * rockchip_drm_psr_inhibit_put - release PSR inhibit on given encoder
- * @encoder: encoder to obtain the PSR encoder
- *
- * Decrements PSR inhibit count on given encoder. Should be called only
- * for a PSR inhibit count increment done before. If PSR inhibit counter
- * reaches zero, PSR flush work is scheduled to make the hardware enter
- * PSR mode in PSR_FLUSH_TIMEOUT_MS.
+ * rockchip_drm_psr_activate - activate PSR on the given pipe
+ * @crtc: CRTC to obtain the PSR encoder
  *
  * Returns:
  * Zero on success, negative errno on failure.
  */
-int rockchip_drm_psr_inhibit_put(struct drm_encoder *encoder)
+int rockchip_drm_psr_activate(struct drm_crtc *crtc)
 {
-	struct psr_drv *psr = find_psr_by_encoder(encoder);
+	struct psr_drv *psr = find_psr_by_crtc(crtc);
+	unsigned long flags;
 
 	if (IS_ERR(psr))
 		return PTR_ERR(psr);
 
-	mutex_lock(&psr->lock);
-	--psr->inhibit_count;
-	WARN_ON(psr->inhibit_count < 0);
-	if (!psr->inhibit_count)
-		mod_delayed_work(system_wq, &psr->flush_work,
-				 PSR_FLUSH_TIMEOUT_MS);
-	mutex_unlock(&psr->lock);
+	spin_lock_irqsave(&psr->lock, flags);
+	psr->active = true;
+	spin_unlock_irqrestore(&psr->lock, flags);
 
 	return 0;
 }
-EXPORT_SYMBOL(rockchip_drm_psr_inhibit_put);
-
-void rockchip_drm_psr_inhibit_get_state(struct drm_atomic_state *state)
-{
-	struct drm_crtc *crtc;
-	struct drm_crtc_state *crtc_state;
-	struct drm_encoder *encoder;
-	u32 encoder_mask = 0;
-	int i;
-
-	for_each_old_crtc_in_state(state, crtc, crtc_state, i) {
-		encoder_mask |= crtc_state->encoder_mask;
-		encoder_mask |= crtc->state->encoder_mask;
-	}
-
-	drm_for_each_encoder_mask(encoder, state->dev, encoder_mask)
-		rockchip_drm_psr_inhibit_get(encoder);
-}
-EXPORT_SYMBOL(rockchip_drm_psr_inhibit_get_state);
-
-void rockchip_drm_psr_inhibit_put_state(struct drm_atomic_state *state)
-{
-	struct drm_crtc *crtc;
-	struct drm_crtc_state *crtc_state;
-	struct drm_encoder *encoder;
-	u32 encoder_mask = 0;
-	int i;
-
-	for_each_old_crtc_in_state(state, crtc, crtc_state, i) {
-		encoder_mask |= crtc_state->encoder_mask;
-		encoder_mask |= crtc->state->encoder_mask;
-	}
-
-	drm_for_each_encoder_mask(encoder, state->dev, encoder_mask)
-		rockchip_drm_psr_inhibit_put(encoder);
-}
-EXPORT_SYMBOL(rockchip_drm_psr_inhibit_put_state);
+EXPORT_SYMBOL(rockchip_drm_psr_activate);
 
 /**
- * rockchip_drm_psr_inhibit_get - acquire PSR inhibit on given encoder
- * @encoder: encoder to obtain the PSR encoder
- *
- * Increments PSR inhibit count on given encoder. This function guarantees
- * that after it returns PSR is turned off on given encoder and no PSR-related
- * hardware state change occurs at least until a matching call to
- * rockchip_drm_psr_inhibit_put() is done.
+ * rockchip_drm_psr_deactivate - deactivate PSR on the given pipe
+ * @crtc: CRTC to obtain the PSR encoder
  *
  * Returns:
  * Zero on success, negative errno on failure.
  */
-int rockchip_drm_psr_inhibit_get(struct drm_encoder *encoder)
+int rockchip_drm_psr_deactivate(struct drm_crtc *crtc)
 {
-	struct psr_drv *psr = find_psr_by_encoder(encoder);
+	struct psr_drv *psr = find_psr_by_crtc(crtc);
+	unsigned long flags;
 
 	if (IS_ERR(psr))
 		return PTR_ERR(psr);
 
-	mutex_lock(&psr->lock);
-	psr_set_state_locked(psr, false);
-	++psr->inhibit_count;
-	mutex_unlock(&psr->lock);
-	cancel_delayed_work_sync(&psr->flush_work);
+	spin_lock_irqsave(&psr->lock, flags);
+	psr->active = false;
+	spin_unlock_irqrestore(&psr->lock, flags);
+	del_timer_sync(&psr->flush_timer);
 
 	return 0;
 }
-EXPORT_SYMBOL(rockchip_drm_psr_inhibit_get);
+EXPORT_SYMBOL(rockchip_drm_psr_deactivate);
 
 static void rockchip_drm_do_flush(struct psr_drv *psr)
 {
-	cancel_delayed_work_sync(&psr->flush_work);
-
-	mutex_lock(&psr->lock);
-	if (!psr_set_state_locked(psr, false))
-		mod_delayed_work(system_wq, &psr->flush_work,
-				 PSR_FLUSH_TIMEOUT_MS);
-	mutex_unlock(&psr->lock);
+	mod_timer(&psr->flush_timer,
+		  round_jiffies_up(jiffies + PSR_FLUSH_TIMEOUT));
+	psr_set_state(psr, PSR_FLUSH);
 }
+
+/**
+ * rockchip_drm_psr_flush - flush a single pipe
+ * @crtc: CRTC of the pipe to flush
+ *
+ * Returns:
+ * 0 on success, -errno on fail
+ */
+int rockchip_drm_psr_flush(struct drm_crtc *crtc)
+{
+	struct psr_drv *psr = find_psr_by_crtc(crtc);
+	if (IS_ERR(psr))
+		return PTR_ERR(psr);
+
+	rockchip_drm_do_flush(psr);
+	return 0;
+}
+EXPORT_SYMBOL(rockchip_drm_psr_flush);
 
 /**
  * rockchip_drm_psr_flush_all - force to flush all registered PSR encoders
@@ -194,11 +201,12 @@ void rockchip_drm_psr_flush_all(struct drm_device *dev)
 {
 	struct rockchip_drm_private *drm_drv = dev->dev_private;
 	struct psr_drv *psr;
+	unsigned long flags;
 
-	mutex_lock(&drm_drv->psr_list_lock);
+	spin_lock_irqsave(&drm_drv->psr_list_lock, flags);
 	list_for_each_entry(psr, &drm_drv->psr_list, list)
 		rockchip_drm_do_flush(psr);
-	mutex_unlock(&drm_drv->psr_list_lock);
+	spin_unlock_irqrestore(&drm_drv->psr_list_lock, flags);
 }
 EXPORT_SYMBOL(rockchip_drm_psr_flush_all);
 
@@ -207,40 +215,34 @@ EXPORT_SYMBOL(rockchip_drm_psr_flush_all);
  * @encoder: encoder that obtain the PSR function
  * @psr_set: call back to set PSR state
  *
- * The function returns with PSR inhibit counter initialized with one
- * and the caller (typically encoder driver) needs to call
- * rockchip_drm_psr_inhibit_put() when it becomes ready to accept PSR
- * enable request.
- *
  * Returns:
  * Zero on success, negative errno on failure.
  */
 int rockchip_drm_psr_register(struct drm_encoder *encoder,
-			int (*psr_set)(struct drm_encoder *, bool enable))
+			void (*psr_set)(struct drm_encoder *, bool enable))
 {
-	struct rockchip_drm_private *drm_drv;
+	struct rockchip_drm_private *drm_drv = encoder->dev->dev_private;
 	struct psr_drv *psr;
+	unsigned long flags;
 
 	if (!encoder || !psr_set)
 		return -EINVAL;
-
-	drm_drv = encoder->dev->dev_private;
 
 	psr = kzalloc(sizeof(struct psr_drv), GFP_KERNEL);
 	if (!psr)
 		return -ENOMEM;
 
-	INIT_DELAYED_WORK(&psr->flush_work, psr_flush_handler);
-	mutex_init(&psr->lock);
+	setup_timer(&psr->flush_timer, psr_flush_handler, (unsigned long)psr);
+	spin_lock_init(&psr->lock);
 
-	psr->inhibit_count = 1;
-	psr->enabled = false;
+	psr->active = true;
+	psr->state = PSR_DISABLE;
 	psr->encoder = encoder;
 	psr->set = psr_set;
 
-	mutex_lock(&drm_drv->psr_list_lock);
+	spin_lock_irqsave(&drm_drv->psr_list_lock, flags);
 	list_add_tail(&psr->list, &drm_drv->psr_list);
-	mutex_unlock(&drm_drv->psr_list_lock);
+	spin_unlock_irqrestore(&drm_drv->psr_list_lock, flags);
 
 	return 0;
 }
@@ -251,11 +253,6 @@ EXPORT_SYMBOL(rockchip_drm_psr_register);
  * @encoder: encoder that obtain the PSR function
  * @psr_set: call back to set PSR state
  *
- * It is expected that the PSR inhibit counter is 1 when this function is
- * called, which corresponds to a state when related encoder has been
- * disconnected from any CRTCs and its driver called
- * rockchip_drm_psr_inhibit_get() to stop the PSR logic.
- *
  * Returns:
  * Zero on success, negative errno on failure.
  */
@@ -263,20 +260,16 @@ void rockchip_drm_psr_unregister(struct drm_encoder *encoder)
 {
 	struct rockchip_drm_private *drm_drv = encoder->dev->dev_private;
 	struct psr_drv *psr, *n;
+	unsigned long flags;
 
-	mutex_lock(&drm_drv->psr_list_lock);
+	spin_lock_irqsave(&drm_drv->psr_list_lock, flags);
 	list_for_each_entry_safe(psr, n, &drm_drv->psr_list, list) {
 		if (psr->encoder == encoder) {
-			/*
-			 * Any other value would mean that the encoder
-			 * is still in use.
-			 */
-			WARN_ON(psr->inhibit_count != 1);
-
+			del_timer(&psr->flush_timer);
 			list_del(&psr->list);
 			kfree(psr);
 		}
 	}
-	mutex_unlock(&drm_drv->psr_list_lock);
+	spin_unlock_irqrestore(&drm_drv->psr_list_lock, flags);
 }
 EXPORT_SYMBOL(rockchip_drm_psr_unregister);

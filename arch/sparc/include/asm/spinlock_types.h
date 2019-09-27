@@ -1,25 +1,20 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __SPARC_SPINLOCK_TYPES_H
 #define __SPARC_SPINLOCK_TYPES_H
 
-#ifdef CONFIG_QUEUED_SPINLOCKS
-#include <asm-generic/qspinlock_types.h>
-#else
+#ifndef __LINUX_SPINLOCK_TYPES_H
+# error "please don't include this file directly"
+#endif
 
 typedef struct {
 	volatile unsigned char lock;
 } arch_spinlock_t;
 
 #define __ARCH_SPIN_LOCK_UNLOCKED	{ 0 }
-#endif /* CONFIG_QUEUED_SPINLOCKS */
 
-#ifdef CONFIG_QUEUED_RWLOCKS
-#include <asm-generic/qrwlock_types.h>
-#else
 typedef struct {
 	volatile unsigned int lock;
 } arch_rwlock_t;
 
 #define __ARCH_RW_LOCK_UNLOCKED		{ 0 }
-#endif /* CONFIG_QUEUED_RWLOCKS */
+
 #endif

@@ -1,8 +1,20 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * vivid-vid-out.c - video output support functions.
  *
  * Copyright 2014 Cisco Systems, Inc. and/or its affiliates. All rights reserved.
+ *
+ * This program is free software; you may redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; version 2 of the License.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+ * EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+ * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+ * NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS
+ * BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN
+ * ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+ * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
  */
 
 #include <linux/errno.h>
@@ -26,14 +38,13 @@ static int vid_out_queue_setup(struct vb2_queue *vq,
 {
 	struct vivid_dev *dev = vb2_get_drv_priv(vq);
 	const struct vivid_fmt *vfmt = dev->fmt_out;
-	unsigned planes = vfmt->buffers;
+	unsigned planes = dev->fmt_out_metadata_height ? vfmt->buffers : (vfmt->buffers - 1);
 	unsigned h = dev->fmt_out_rect.height;
-	unsigned int size = dev->bytesperline_out[0] * h + vfmt->data_offset[0];
+	unsigned size = dev->bytesperline_out[0] * (h + dev->fmt_out_metadata_height);
 	unsigned p;
 
 	for (p = vfmt->buffers; p < vfmt->planes; p++)
-		size += dev->bytesperline_out[p] * h / vfmt->vdownsampling[p] +
-			vfmt->data_offset[p];
+		size += dev->bytesperline_out[p] * h / vfmt->vdownsampling[p];
 
 	if (dev->field_out == V4L2_FIELD_ALTERNATE) {
 		/*
@@ -63,14 +74,12 @@ static int vid_out_queue_setup(struct vb2_queue *vq,
 		if (sizes[0] < size)
 			return -EINVAL;
 		for (p = 1; p < planes; p++) {
-			if (sizes[p] < dev->bytesperline_out[p] * h +
-				       vfmt->data_offset[p])
+			if (sizes[p] < dev->bytesperline_out[p] * h)
 				return -EINVAL;
 		}
 	} else {
 		for (p = 0; p < planes; p++)
-			sizes[p] = p ? dev->bytesperline_out[p] * h +
-				       vfmt->data_offset[p] : size;
+			sizes[p] = p ? dev->bytesperline_out[p] * h : size;
 	}
 
 	if (vq->num_buffers + *nbuffers < 2)
@@ -84,37 +93,21 @@ static int vid_out_queue_setup(struct vb2_queue *vq,
 	return 0;
 }
 
-static int vid_out_buf_out_validate(struct vb2_buffer *vb)
+static int vid_out_buf_prepare(struct vb2_buffer *vb)
 {
 	struct vb2_v4l2_buffer *vbuf = to_vb2_v4l2_buffer(vb);
 	struct vivid_dev *dev = vb2_get_drv_priv(vb->vb2_queue);
-
-	dprintk(dev, 1, "%s\n", __func__);
-
-	if (dev->field_out != V4L2_FIELD_ALTERNATE)
-		vbuf->field = dev->field_out;
-	else if (vbuf->field != V4L2_FIELD_TOP &&
-		 vbuf->field != V4L2_FIELD_BOTTOM)
-		return -EINVAL;
-	return 0;
-}
-
-static int vid_out_buf_prepare(struct vb2_buffer *vb)
-{
-	struct vivid_dev *dev = vb2_get_drv_priv(vb->vb2_queue);
-	const struct vivid_fmt *vfmt = dev->fmt_out;
-	unsigned int planes = vfmt->buffers;
-	unsigned int h = dev->fmt_out_rect.height;
-	unsigned int size = dev->bytesperline_out[0] * h;
+	unsigned long size;
+	unsigned planes;
 	unsigned p;
-
-	for (p = vfmt->buffers; p < vfmt->planes; p++)
-		size += dev->bytesperline_out[p] * h / vfmt->vdownsampling[p];
 
 	dprintk(dev, 1, "%s\n", __func__);
 
 	if (WARN_ON(NULL == dev->fmt_out))
 		return -EINVAL;
+
+	planes = dev->fmt_out->planes;
+	planes -= dev->fmt_out_metadata_height ? 0 : 1;
 
 	if (dev->buf_prepare_error) {
 		/*
@@ -125,13 +118,18 @@ static int vid_out_buf_prepare(struct vb2_buffer *vb)
 		return -EINVAL;
 	}
 
+	if (dev->field_out != V4L2_FIELD_ALTERNATE)
+		vbuf->field = dev->field_out;
+	else if (vbuf->field != V4L2_FIELD_TOP &&
+		 vbuf->field != V4L2_FIELD_BOTTOM)
+		return -EINVAL;
+
 	for (p = 0; p < planes; p++) {
-		if (p)
-			size = dev->bytesperline_out[p] * h;
-		size += vb->planes[p].data_offset;
+		size = dev->bytesperline_out[p] * dev->fmt_out_rect.height +
+			vb->planes[p].data_offset;
 
 		if (vb2_get_plane_payload(vb, p) < size) {
-			dprintk(dev, 1, "%s the payload is too small for plane %u (%lu < %u)\n",
+			dprintk(dev, 1, "%s the payload is too small for plane %u (%lu < %lu)\n",
 					__func__, p, vb2_get_plane_payload(vb, p), size);
 			return -EINVAL;
 		}
@@ -151,6 +149,8 @@ static void vid_out_buf_queue(struct vb2_buffer *vb)
 	spin_lock(&dev->slock);
 	list_add_tail(&buf->list, &dev->vid_out_active);
 	spin_unlock(&dev->slock);
+	vivid_trace_single_msg(dev->v4l2_dev.name,
+		"buf_queue_output", vb->index);
 }
 
 static int vid_out_start_streaming(struct vb2_queue *vq, unsigned count)
@@ -194,21 +194,12 @@ static void vid_out_stop_streaming(struct vb2_queue *vq)
 	dev->can_loop_video = false;
 }
 
-static void vid_out_buf_request_complete(struct vb2_buffer *vb)
-{
-	struct vivid_dev *dev = vb2_get_drv_priv(vb->vb2_queue);
-
-	v4l2_ctrl_request_complete(vb->req_obj.req, &dev->ctrl_hdl_vid_out);
-}
-
 const struct vb2_ops vivid_vid_out_qops = {
 	.queue_setup		= vid_out_queue_setup,
-	.buf_out_validate		= vid_out_buf_out_validate,
 	.buf_prepare		= vid_out_buf_prepare,
 	.buf_queue		= vid_out_buf_queue,
 	.start_streaming	= vid_out_start_streaming,
 	.stop_streaming		= vid_out_stop_streaming,
-	.buf_request_complete	= vid_out_buf_request_complete,
 	.wait_prepare		= vb2_ops_wait_prepare,
 	.wait_finish		= vb2_ops_wait_finish,
 };
@@ -222,6 +213,7 @@ void vivid_update_format_out(struct vivid_dev *dev)
 	struct v4l2_bt_timings *bt = &dev->dv_timings_out.bt;
 	unsigned size, p;
 	u64 pixelclock;
+	unsigned packedpixels = dev->fmt_out->packedpixels;
 
 	switch (dev->output_type[dev->output]) {
 	case SVID:
@@ -250,7 +242,7 @@ void vivid_update_format_out(struct vivid_dev *dev)
 			pixelclock = bt->pixelclock;
 
 		dev->timeperframe_vid_out = (struct v4l2_fract) {
-			size / 100, (u32)pixelclock / 100
+			size / 10000, (u32)bt->pixelclock / 10000
 		};
 		if (bt->interlaced)
 			dev->field_out = V4L2_FIELD_ALTERNATE;
@@ -268,7 +260,6 @@ void vivid_update_format_out(struct vivid_dev *dev)
 	}
 	dev->xfer_func_out = V4L2_XFER_FUNC_DEFAULT;
 	dev->ycbcr_enc_out = V4L2_YCBCR_ENC_DEFAULT;
-	dev->hsv_enc_out = V4L2_HSV_ENC_180;
 	dev->quantization_out = V4L2_QUANTIZATION_DEFAULT;
 	dev->compose_out = dev->sink_rect;
 	dev->compose_bounds_out = dev->sink_rect;
@@ -276,9 +267,12 @@ void vivid_update_format_out(struct vivid_dev *dev)
 	if (V4L2_FIELD_HAS_T_OR_B(dev->field_out))
 		dev->crop_out.height /= 2;
 	dev->fmt_out_rect = dev->crop_out;
+	if (!packedpixels)
+		packedpixels = 1;
 	for (p = 0; p < dev->fmt_out->planes; p++)
 		dev->bytesperline_out[p] =
-			(dev->sink_rect.width * dev->fmt_out->bit_depth[p]) / 8;
+			(dev->sink_rect.width * dev->fmt_out->bit_depth[p]) /
+				(8 * packedpixels);
 }
 
 /* Map the field to something that is valid for the current output */
@@ -325,20 +319,20 @@ int vivid_g_fmt_vid_out(struct file *file, void *priv,
 	const struct vivid_fmt *fmt = dev->fmt_out;
 	unsigned p;
 
-	mp->width        = dev->fmt_out_rect.width;
+	mp->width	 = dev->fmt_out_rect.width;
 	mp->height       = dev->fmt_out_rect.height;
-	mp->field        = dev->field_out;
+	mp->field	 = dev->field_out;
 	mp->pixelformat  = fmt->fourcc;
 	mp->colorspace   = dev->colorspace_out;
 	mp->xfer_func    = dev->xfer_func_out;
 	mp->ycbcr_enc    = dev->ycbcr_enc_out;
 	mp->quantization = dev->quantization_out;
-	mp->num_planes = fmt->buffers;
+	mp->num_planes = dev->fmt_out_metadata_height ? fmt->buffers : (fmt->buffers - 1);
+	mp->metadata_height = dev->fmt_out_metadata_height;
 	for (p = 0; p < mp->num_planes; p++) {
 		mp->plane_fmt[p].bytesperline = dev->bytesperline_out[p];
 		mp->plane_fmt[p].sizeimage =
-			mp->plane_fmt[p].bytesperline * mp->height +
-			fmt->data_offset[p];
+			mp->plane_fmt[p].bytesperline * dev->height_out[p];
 	}
 	for (p = fmt->buffers; p < fmt->planes; p++) {
 		unsigned stride = dev->bytesperline_out[p];
@@ -361,6 +355,7 @@ int vivid_try_fmt_vid_out(struct file *file, void *priv,
 	unsigned factor = 1;
 	unsigned w, h;
 	unsigned p;
+	unsigned packedpixels;
 
 	fmt = vivid_get_format(dev, mp->pixelformat);
 	if (!fmt) {
@@ -369,6 +364,9 @@ int vivid_try_fmt_vid_out(struct file *file, void *priv,
 		mp->pixelformat = V4L2_PIX_FMT_YUYV;
 		fmt = vivid_get_format(dev, mp->pixelformat);
 	}
+	packedpixels = fmt->packedpixels;
+	if (!packedpixels)
+		packedpixels = 1;
 
 	mp->field = vivid_field_out(dev, mp->field);
 	if (vivid_is_svid_out(dev)) {
@@ -401,30 +399,29 @@ int vivid_try_fmt_vid_out(struct file *file, void *priv,
 		mp->height = r.height / factor;
 	}
 
+	/* clip metadata height maximum value */
+	if (mp->metadata_height > MAX_METADATA_HEIGHT)
+		mp->metadata_height = MAX_METADATA_HEIGHT;
+
 	/* This driver supports custom bytesperline values */
 
-	mp->num_planes = fmt->buffers;
-	for (p = 0; p < fmt->buffers; p++) {
-		/* Calculate the minimum supported bytesperline value */
-		bytesperline = (mp->width * fmt->bit_depth[p]) >> 3;
-		/* Calculate the maximum supported bytesperline value */
-		max_bpl = (MAX_ZOOM * MAX_WIDTH * fmt->bit_depth[p]) >> 3;
-
+	/* Calculate the minimum supported bytesperline value */
+	bytesperline = ((mp->width * fmt->bit_depth[0]) >> 3) / packedpixels;
+	/* Calculate the maximum supported bytesperline value */
+	max_bpl = (MAX_ZOOM * MAX_WIDTH * fmt->bit_depth[0]) >> 3;
+	mp->num_planes = dev->fmt_out_metadata_height ? fmt->buffers : (fmt->buffers - 1);
+	for (p = 0; p < mp->num_planes; p++) {
 		if (pfmt[p].bytesperline > max_bpl)
 			pfmt[p].bytesperline = max_bpl;
 		if (pfmt[p].bytesperline < bytesperline)
 			pfmt[p].bytesperline = bytesperline;
-
-		pfmt[p].sizeimage = (pfmt[p].bytesperline * mp->height) /
-				fmt->vdownsampling[p] + fmt->data_offset[p];
-
+		pfmt[p].sizeimage = pfmt[p].bytesperline *
+			(fmt->is_metadata[p] ? mp->metadata_height : mp->height);
 		memset(pfmt[p].reserved, 0, sizeof(pfmt[p].reserved));
 	}
 	for (p = fmt->buffers; p < fmt->planes; p++)
-		pfmt[0].sizeimage += (pfmt[0].bytesperline * mp->height *
-			(fmt->bit_depth[p] / fmt->vdownsampling[p])) /
-			(fmt->bit_depth[0] / fmt->vdownsampling[0]);
-
+		pfmt[0].sizeimage += (pfmt[0].bytesperline * fmt->bit_depth[p]) /
+				     (fmt->bit_depth[0] * fmt->vdownsampling[p]);
 	mp->xfer_func = V4L2_XFER_FUNC_DEFAULT;
 	mp->ycbcr_enc = V4L2_YCBCR_ENC_DEFAULT;
 	mp->quantization = V4L2_QUANTIZATION_DEFAULT;
@@ -438,7 +435,7 @@ int vivid_try_fmt_vid_out(struct file *file, void *priv,
 		mp->colorspace = V4L2_COLORSPACE_SMPTE170M;
 	} else if (mp->colorspace != V4L2_COLORSPACE_SMPTE170M &&
 		   mp->colorspace != V4L2_COLORSPACE_REC709 &&
-		   mp->colorspace != V4L2_COLORSPACE_OPRGB &&
+		   mp->colorspace != V4L2_COLORSPACE_ADOBERGB &&
 		   mp->colorspace != V4L2_COLORSPACE_BT2020 &&
 		   mp->colorspace != V4L2_COLORSPACE_SRGB) {
 		mp->colorspace = V4L2_COLORSPACE_REC709;
@@ -553,8 +550,12 @@ int vivid_s_fmt_vid_out(struct file *file, void *priv,
 
 	dev->fmt_out_rect.width = mp->width;
 	dev->fmt_out_rect.height = mp->height;
-	for (p = 0; p < mp->num_planes; p++)
+	for (p = 0; p < mp->num_planes; p++) {
 		dev->bytesperline_out[p] = mp->plane_fmt[p].bytesperline;
+		dev->height_out[p] = dev->fmt_out->is_metadata[p] ?
+			mp->metadata_height : mp->height;
+	}
+	dev->fmt_out_metadata_height = mp->metadata_height;
 	for (p = dev->fmt_out->buffers; p < dev->fmt_out->planes; p++)
 		dev->bytesperline_out[p] =
 			(dev->bytesperline_out[0] * dev->fmt_out->bit_depth[p]) /
@@ -798,7 +799,7 @@ int vivid_vid_out_s_selection(struct file *file, void *fh, struct v4l2_selection
 		s->r.height *= factor;
 		if (dev->bitmap_out && (compose->width != s->r.width ||
 					compose->height != s->r.height)) {
-			vfree(dev->bitmap_out);
+			kfree(dev->bitmap_out);
 			dev->bitmap_out = NULL;
 		}
 		*compose = s->r;
@@ -810,24 +811,26 @@ int vivid_vid_out_s_selection(struct file *file, void *fh, struct v4l2_selection
 	return 0;
 }
 
-int vivid_vid_out_g_pixelaspect(struct file *file, void *priv,
-				int type, struct v4l2_fract *f)
+int vivid_vid_out_cropcap(struct file *file, void *priv,
+			      struct v4l2_cropcap *cap)
 {
 	struct vivid_dev *dev = video_drvdata(file);
 
-	if (type != V4L2_BUF_TYPE_VIDEO_OUTPUT)
+	if (cap->type != V4L2_BUF_TYPE_VIDEO_OUTPUT)
 		return -EINVAL;
 
 	switch (vivid_get_pixel_aspect(dev)) {
 	case TPG_PIXEL_ASPECT_NTSC:
-		f->numerator = 11;
-		f->denominator = 10;
+		cap->pixelaspect.numerator = 11;
+		cap->pixelaspect.denominator = 10;
 		break;
 	case TPG_PIXEL_ASPECT_PAL:
-		f->numerator = 54;
-		f->denominator = 59;
+		cap->pixelaspect.numerator = 54;
+		cap->pixelaspect.denominator = 59;
 		break;
-	default:
+	case TPG_PIXEL_ASPECT_SQUARE:
+		cap->pixelaspect.numerator = 1;
+		cap->pixelaspect.denominator = 1;
 		break;
 	}
 	return 0;
@@ -941,19 +944,15 @@ int vidioc_s_fmt_vid_out_overlay(struct file *file, void *priv,
 		return ret;
 
 	if (win->bitmap) {
-		new_bitmap = vzalloc(bitmap_size);
+		new_bitmap = memdup_user(win->bitmap, bitmap_size);
 
-		if (!new_bitmap)
-			return -ENOMEM;
-		if (copy_from_user(new_bitmap, win->bitmap, bitmap_size)) {
-			vfree(new_bitmap);
-			return -EFAULT;
-		}
+		if (IS_ERR(new_bitmap))
+			return PTR_ERR(new_bitmap);
 	}
 
 	dev->overlay_out_top = win->w.top;
 	dev->overlay_out_left = win->w.left;
-	vfree(dev->bitmap_out);
+	kfree(dev->bitmap_out);
 	dev->bitmap_out = new_bitmap;
 	dev->clipcount_out = win->clipcount;
 	if (dev->clipcount_out)
@@ -1094,12 +1093,6 @@ int vidioc_s_output(struct file *file, void *priv, unsigned o)
 
 	dev->vbi_out_dev.tvnorms = dev->vid_out_dev.tvnorms;
 	vivid_update_format_out(dev);
-
-	v4l2_ctrl_activate(dev->ctrl_display_present, vivid_is_hdmi_out(dev));
-	if (vivid_is_hdmi_out(dev))
-		v4l2_ctrl_s_ctrl(dev->ctrl_display_present,
-				 dev->display_present[dev->output]);
-
 	return 0;
 }
 
@@ -1199,12 +1192,14 @@ int vidioc_subscribe_event(struct v4l2_fh *fh,
 			const struct v4l2_event_subscription *sub)
 {
 	switch (sub->type) {
+	case V4L2_EVENT_CTRL:
+		return v4l2_ctrl_subscribe_event(fh, sub);
 	case V4L2_EVENT_SOURCE_CHANGE:
 		if (fh->vdev->vfl_dir == VFL_DIR_RX)
 			return v4l2_src_change_event_subscribe(fh, sub);
 		break;
 	default:
-		return v4l2_ctrl_subscribe_event(fh, sub);
+		break;
 	}
 	return -EINVAL;
 }

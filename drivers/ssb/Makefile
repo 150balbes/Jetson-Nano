@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0
 # core
 ssb-y					+= main.o scan.o
 ssb-$(CONFIG_SSB_EMBEDDED)		+= embedded.o

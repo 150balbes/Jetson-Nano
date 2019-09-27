@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /***************************************************************************/
 
 /*
@@ -28,8 +27,6 @@ DEFINE_CLK(mcftmr1, "mcftmr.1", MCF_BUSCLK);
 DEFINE_CLK(mcfuart0, "mcfuart.0", MCF_BUSCLK);
 DEFINE_CLK(mcfuart1, "mcfuart.1", MCF_BUSCLK);
 DEFINE_CLK(mcfqspi0, "mcfqspi.0", MCF_BUSCLK);
-DEFINE_CLK(mcfi2c0, "imx1-i2c.0", MCF_BUSCLK);
-DEFINE_CLK(mcfi2c1, "imx1-i2c.1", MCF_BUSCLK);
 
 struct clk *mcf_clks[] = {
 	&clk_pll,
@@ -39,8 +36,6 @@ struct clk *mcf_clks[] = {
 	&clk_mcfuart0,
 	&clk_mcfuart1,
 	&clk_mcfqspi0,
-	&clk_mcfi2c0,
-	&clk_mcfi2c1,
 	NULL
 };
 
@@ -64,12 +59,12 @@ static void __init m525x_qspi_init(void)
 
 static void __init m525x_i2c_init(void)
 {
-#if IS_ENABLED(CONFIG_I2C_IMX)
+#if IS_ENABLED(CONFIG_I2C_COLDFIRE)
 	u32 r;
 
 	/* first I2C controller uses regular irq setup */
 	writeb(MCFSIM_ICR_AUTOVEC | MCFSIM_ICR_LEVEL5 | MCFSIM_ICR_PRI0,
-	       MCFSIM_I2CICR);
+		MCFSIM_I2CICR);
 	mcf_mapirq2imr(MCF_IRQ_I2C0, MCFINTC_I2C);
 
 	/* second I2C controller is completely different */
@@ -77,7 +72,7 @@ static void __init m525x_i2c_init(void)
 	r &= ~MCFINTC2_INTPRI_BITS(0xf, MCF_IRQ_I2C1);
 	r |= MCFINTC2_INTPRI_BITS(0x5, MCF_IRQ_I2C1);
 	writel(r, MCFINTC2_INTPRI_REG(MCF_IRQ_I2C1));
-#endif /* IS_ENABLED(CONFIG_I2C_IMX) */
+#endif /* IS_ENABLED(CONFIG_I2C_COLDFIRE) */
 }
 
 /***************************************************************************/

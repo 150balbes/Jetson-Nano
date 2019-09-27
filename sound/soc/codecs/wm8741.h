@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * wm8741.h  --  WM8423 ASoC driver
  *
@@ -7,6 +6,10 @@
  * Author: Ian Lartey <ian@opensource.wolfsonmicro.com>
  *
  * Based on wm8753.h
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  */
 
 #ifndef _WM8741_H

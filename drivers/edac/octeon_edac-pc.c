@@ -15,6 +15,7 @@
 #include <linux/io.h>
 #include <linux/edac.h>
 
+#include "edac_core.h"
 #include "edac_module.h"
 
 #include <asm/octeon/cvmx.h>

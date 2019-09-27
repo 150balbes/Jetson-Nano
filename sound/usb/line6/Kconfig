@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0-only
 config SND_USB_LINE6
 	tristate
 	select SND_RAWMIDI

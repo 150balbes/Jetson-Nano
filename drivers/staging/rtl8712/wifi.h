@@ -1,7 +1,19 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /******************************************************************************
  *
  * Copyright(c) 2007 - 2010 Realtek Corporation. All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of version 2 of the GNU General Public License as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License along with
+ * this program; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin Street, Fifth Floor, Boston, MA 02110, USA
  *
  * Modifications for inclusion into the Linux staging tree are
  * Copyright(c) 2010 Larry Finger. All rights reserved.
@@ -139,135 +151,138 @@ enum WIFI_REG_DOMAIN {
 #define _ORDER_		BIT(15)
 
 #define SetToDs(pbuf) ({ \
-	*(__le16 *)(pbuf) |= cpu_to_le16(_TO_DS_); \
+	*(unsigned short *)(pbuf) |= cpu_to_le16(_TO_DS_); \
 })
 
-#define GetToDs(pbuf)	(((*(__le16 *)(pbuf)) & cpu_to_le16(_TO_DS_)) != 0)
+#define GetToDs(pbuf)	(((*(unsigned short *)(pbuf)) & \
+			le16_to_cpu(_TO_DS_)) != 0)
 
 #define ClearToDs(pbuf)	({ \
-	*(__le16 *)(pbuf) &= (~cpu_to_le16(_TO_DS_)); \
+	*(unsigned short *)(pbuf) &= (~cpu_to_le16(_TO_DS_)); \
 })
 
 #define SetFrDs(pbuf) ({ \
-	*(__le16 *)(pbuf) |= cpu_to_le16(_FROM_DS_); \
+	*(unsigned short *)(pbuf) |= cpu_to_le16(_FROM_DS_); \
 })
 
-#define GetFrDs(pbuf)	(((*(__le16 *)(pbuf)) & cpu_to_le16(_FROM_DS_)) != 0)
+#define GetFrDs(pbuf)	(((*(unsigned short *)(pbuf)) & \
+			le16_to_cpu(_FROM_DS_)) != 0)
 
 #define ClearFrDs(pbuf)	({ \
-	*(__le16 *)(pbuf) &= (~cpu_to_le16(_FROM_DS_)); \
+	*(unsigned short *)(pbuf) &= (~cpu_to_le16(_FROM_DS_)); \
 })
 
-static inline unsigned char get_tofr_ds(unsigned char *pframe)
-{
-	return ((GetToDs(pframe) << 1) | GetFrDs(pframe));
-}
+#define get_tofr_ds(pframe)	((GetToDs(pframe) << 1) | GetFrDs(pframe))
+
 
 #define SetMFrag(pbuf) ({ \
-	*(__le16 *)(pbuf) |= cpu_to_le16(_MORE_FRAG_); \
+	*(unsigned short *)(pbuf) |= cpu_to_le16(_MORE_FRAG_); \
 })
 
-#define GetMFrag(pbuf)	(((*(__le16 *)(pbuf)) & cpu_to_le16(_MORE_FRAG_)) != 0)
+#define GetMFrag(pbuf)	(((*(unsigned short *)(pbuf)) & \
+			le16_to_cpu(_MORE_FRAG_)) != 0)
 
 #define ClearMFrag(pbuf) ({ \
-	*(__le16 *)(pbuf) &= (~cpu_to_le16(_MORE_FRAG_)); \
+	*(unsigned short *)(pbuf) &= (~cpu_to_le16(_MORE_FRAG_)); \
 })
 
 #define SetRetry(pbuf) ({ \
-	*(__le16 *)(pbuf) |= cpu_to_le16(_RETRY_); \
+	*(unsigned short *)(pbuf) |= cpu_to_le16(_RETRY_); \
 })
 
-#define GetRetry(pbuf)	(((*(__le16 *)(pbuf)) & cpu_to_le16(_RETRY_)) != 0)
+#define GetRetry(pbuf)	(((*(unsigned short *)(pbuf)) & \
+			le16_to_cpu(_RETRY_)) != 0)
 
 #define ClearRetry(pbuf) ({ \
-	*(__le16 *)(pbuf) &= (~cpu_to_le16(_RETRY_)); \
+	*(unsigned short *)(pbuf) &= (~cpu_to_le16(_RETRY_)); \
 })
 
 #define SetPwrMgt(pbuf) ({ \
-	*(__le16 *)(pbuf) |= cpu_to_le16(_PWRMGT_); \
+	*(unsigned short *)(pbuf) |= cpu_to_le16(_PWRMGT_); \
 })
 
-#define GetPwrMgt(pbuf)	(((*(__le16 *)(pbuf)) & \
-			cpu_to_le16(_PWRMGT_)) != 0)
+#define GetPwrMgt(pbuf)	(((*(unsigned short *)(pbuf)) & \
+			le16_to_cpu(_PWRMGT_)) != 0)
 
 #define ClearPwrMgt(pbuf) ({ \
-	*(__le16 *)(pbuf) &= (~cpu_to_le16(_PWRMGT_)); \
+	*(unsigned short *)(pbuf) &= (~cpu_to_le16(_PWRMGT_)); \
 })
 
 #define SetMData(pbuf) ({ \
-	*(__le16 *)(pbuf) |= cpu_to_le16(_MORE_DATA_); \
+	*(unsigned short *)(pbuf) |= cpu_to_le16(_MORE_DATA_); \
 })
 
-#define GetMData(pbuf)	(((*(__le16 *)(pbuf)) & \
-			cpu_to_le16(_MORE_DATA_)) != 0)
+#define GetMData(pbuf)	(((*(unsigned short *)(pbuf)) & \
+			le16_to_cpu(_MORE_DATA_)) != 0)
 
 #define ClearMData(pbuf) ({ \
-	*(__le16 *)(pbuf) &= (~cpu_to_le16(_MORE_DATA_)); \
+	*(unsigned short *)(pbuf) &= (~cpu_to_le16(_MORE_DATA_)); \
 })
 
 #define SetPrivacy(pbuf) ({ \
-	*(__le16 *)(pbuf) |= cpu_to_le16(_PRIVACY_); \
+	*(unsigned short *)(pbuf) |= cpu_to_le16(_PRIVACY_); \
 })
 
-#define GetPrivacy(pbuf)	(((*(__le16 *)(pbuf)) & \
-				cpu_to_le16(_PRIVACY_)) != 0)
+#define GetPrivacy(pbuf)	(((*(unsigned short *)(pbuf)) & \
+				le16_to_cpu(_PRIVACY_)) != 0)
 
-#define GetOrder(pbuf)	(((*(__le16 *)(pbuf)) & \
-			cpu_to_le16(_ORDER_)) != 0)
+#define GetOrder(pbuf)	(((*(unsigned short *)(pbuf)) & \
+			le16_to_cpu(_ORDER_)) != 0)
 
-#define GetFrameType(pbuf)	(le16_to_cpu(*(__le16 *)(pbuf)) & \
+#define GetFrameType(pbuf)	(le16_to_cpu(*(unsigned short *)(pbuf)) & \
 				(BIT(3) | BIT(2)))
 
 #define SetFrameType(pbuf, type)	\
 	do {	\
-		*(__le16 *)(pbuf) &= cpu_to_le16(~(BIT(3) | \
+		*(unsigned short *)(pbuf) &= cpu_to_le16(~(BIT(3) | \
 		BIT(2))); \
-		*(__le16 *)(pbuf) |= cpu_to_le16(type); \
+		*(unsigned short *)(pbuf) |= cpu_to_le16(type); \
 	} while (0)
 
-#define GetFrameSubType(pbuf)	(le16_to_cpu(*(__le16 *)(pbuf)) & \
+#define GetFrameSubType(pbuf)	(cpu_to_le16(*(unsigned short *)(pbuf)) & \
 				(BIT(7) | BIT(6) | BIT(5) | BIT(4) | BIT(3) | \
 				BIT(2)))
 
 #define SetFrameSubType(pbuf, type) \
 	do {    \
-		*(__le16 *)(pbuf) &= cpu_to_le16(~(BIT(7) | BIT(6) | \
+		*(unsigned short *)(pbuf) &= cpu_to_le16(~(BIT(7) | BIT(6) | \
 		BIT(5) | BIT(4) | BIT(3) | BIT(2))); \
-		*(__le16 *)(pbuf) |= cpu_to_le16(type); \
+		*(unsigned short *)(pbuf) |= cpu_to_le16(type); \
 	} while (0)
 
-#define GetSequence(pbuf)	(le16_to_cpu(*(__le16 *)\
+#define GetSequence(pbuf)	(cpu_to_le16(*(unsigned short *)\
 				((addr_t)(pbuf) + 22)) >> 4)
 
-#define GetFragNum(pbuf)	(le16_to_cpu(*(__le16 *)((addr_t)\
+#define GetFragNum(pbuf)	(cpu_to_le16(*(unsigned short *)((addr_t)\
 				(pbuf) + 22)) & 0x0f)
 
 #define SetSeqNum(pbuf, num) ({ \
-	*(__le16 *)((addr_t)(pbuf) + 22) = \
-	cpu_to_le16((le16_to_cpu(*(__le16 *)((addr_t)(pbuf) + 22)) & \
-	0x000f) | (0xfff0 & (num << 4))); \
+	*(unsigned short *)((addr_t)(pbuf) + 22) = \
+	((*(unsigned short *)((addr_t)(pbuf) + 22)) & \
+	le16_to_cpu((unsigned short)0x000f)) | \
+	le16_to_cpu((unsigned short)(0xfff0 & (num << 4))); \
 })
 
 #define SetDuration(pbuf, dur) ({ \
-	*(__le16 *)((addr_t)(pbuf) + 2) |= \
+	*(unsigned short *)((addr_t)(pbuf) + 2) |= \
 	cpu_to_le16(0xffff & (dur)); \
 })
 
 #define SetPriority(pbuf, tid) ({ \
-	*(__le16 *)(pbuf) |= cpu_to_le16(tid & 0xf); \
+	*(unsigned short *)(pbuf) |= cpu_to_le16(tid & 0xf); \
 })
 
-#define GetPriority(pbuf)	((le16_to_cpu(*(__le16 *)(pbuf))) & 0xf)
+#define GetPriority(pbuf)	((le16_to_cpu(*(unsigned short *)(pbuf))) & 0xf)
 
 #define SetAckpolicy(pbuf, ack) ({ \
-	*(__le16 *)(pbuf) |= cpu_to_le16((ack & 3) << 5); \
+	*(unsigned short *)(pbuf) |= cpu_to_le16((ack & 3) << 5); \
 })
 
-#define GetAckpolicy(pbuf) (((le16_to_cpu(*(__le16 *)pbuf)) >> 5) & 0x3)
+#define GetAckpolicy(pbuf) (((le16_to_cpu(*(unsigned short *)pbuf)) >> 5) & 0x3)
 
-#define GetAMsdu(pbuf) (((le16_to_cpu(*(__le16 *)pbuf)) >> 7) & 0x1)
+#define GetAMsdu(pbuf) (((le16_to_cpu(*(unsigned short *)pbuf)) >> 7) & 0x1)
 
-#define GetAid(pbuf)	(cpu_to_le16(*(__le16 *)((addr_t)(pbuf) + 2)) \
+#define GetAid(pbuf)	(cpu_to_le16(*(unsigned short *)((addr_t)(pbuf) + 2)) \
 			& 0x3fff)
 
 #define GetAddr1Ptr(pbuf)	((unsigned char *)((addr_t)(pbuf) + 4))
@@ -277,6 +292,17 @@ static inline unsigned char get_tofr_ds(unsigned char *pframe)
 #define GetAddr3Ptr(pbuf)	((unsigned char *)((addr_t)(pbuf) + 16))
 
 #define GetAddr4Ptr(pbuf)	((unsigned char *)((addr_t)(pbuf) + 24))
+
+
+
+static inline int IS_MCAST(unsigned char *da)
+{
+	if ((*da) & 0x01)
+		return true;
+	else
+		return false;
+}
+
 
 static inline unsigned char *get_da(unsigned char *pframe)
 {
@@ -349,7 +375,7 @@ static inline unsigned char *get_hdr_bssid(unsigned char *pframe)
 
 
 /*-----------------------------------------------------------------------------
- *		Below is for the security related definition
+			Below is for the security related definition
  *-----------------------------------------------------------------------------
  */
 #define _RESERVED_FRAME_TYPE_	0
@@ -394,7 +420,7 @@ static inline unsigned char *get_hdr_bssid(unsigned char *pframe)
 
 
 /* ---------------------------------------------------------------------------
- *			Below is the fixed elements...
+					Below is the fixed elements...
  * ---------------------------------------------------------------------------
  */
 #define _AUTH_ALGM_NUM_			2
@@ -423,14 +449,14 @@ static inline unsigned char *get_hdr_bssid(unsigned char *pframe)
 #define cap_ShortPremble BIT(5)
 
 /*-----------------------------------------------------------------------------
- *			Below is the definition for 802.11i / 802.1x
+				Below is the definition for 802.11i / 802.1x
  *------------------------------------------------------------------------------
  */
 #define _IEEE8021X_MGT_			1	/*WPA */
 #define _IEEE8021X_PSK_			2	/* WPA with pre-shared key */
 
 /*-----------------------------------------------------------------------------
- *			Below is the definition for WMM
+				Below is the definition for WMM
  *------------------------------------------------------------------------------
  */
 #define _WMM_IE_Length_				7  /* for WMM STA */
@@ -438,7 +464,7 @@ static inline unsigned char *get_hdr_bssid(unsigned char *pframe)
 
 
 /*-----------------------------------------------------------------------------
- *			Below is the definition for 802.11n
+				Below is the definition for 802.11n
  *------------------------------------------------------------------------------
  */
 
@@ -450,10 +476,10 @@ static inline unsigned char *get_hdr_bssid(unsigned char *pframe)
 #define IEEE80211_DELBA_PARAM_INITIATOR_MASK 0x0800
 
 #define SetOrderBit(pbuf) ({ \
-	*(__le16 *)(pbuf) |= cpu_to_le16(_ORDER_); \
+	*(unsigned short *)(pbuf) |= cpu_to_le16(_ORDER_); \
 })
 
-#define GetOrderBit(pbuf)	(((*(__le16 *)(pbuf)) & \
+#define GetOrderBit(pbuf)	(((*(unsigned short *)(pbuf)) & \
 				le16_to_cpu(_ORDER_)) != 0)
 
 
@@ -464,12 +490,12 @@ static inline unsigned char *get_hdr_bssid(unsigned char *pframe)
  * described in 802.11n draft section 7.2.1.7.1
  */
 struct ieee80211_bar {
-	__le16 frame_control;
-	__le16 duration;
+	unsigned short frame_control;
+	unsigned short duration;
 	unsigned char ra[6];
 	unsigned char ta[6];
-	__le16 control;
-	__le16 start_seq_num;
+	unsigned short control;
+	unsigned short start_seq_num;
 } __packed;
 
 /* 802.11 BAR control masks */
@@ -477,7 +503,7 @@ struct ieee80211_bar {
 #define IEEE80211_BAR_CTRL_CBMTID_COMPRESSED_BA  0x0004
 
 
-/*
+ /**
  * struct ieee80211_ht_cap - HT capabilities
  *
  * This structure refers to "HT capabilities element" as
@@ -485,11 +511,11 @@ struct ieee80211_bar {
  */
 
 struct ieee80211_ht_cap {
-	__le16	cap_info;
+	unsigned short	cap_info;
 	unsigned char	ampdu_params_info;
 	unsigned char	supp_mcs_set[16];
-	__le16	extended_ht_cap_info;
-	__le32	tx_BF_cap_info;
+	unsigned short	extended_ht_cap_info;
+	unsigned int		tx_BF_cap_info;
 	unsigned char	       antenna_selection_info;
 } __packed;
 
@@ -502,8 +528,8 @@ struct ieee80211_ht_cap {
 struct ieee80211_ht_addt_info {
 	unsigned char	control_chan;
 	unsigned char		ht_param;
-	__le16	operation_mode;
-	__le16	stbc_param;
+	unsigned short	operation_mode;
+	unsigned short	stbc_param;
 	unsigned char		basic_set[16];
 } __packed;
 
@@ -551,6 +577,7 @@ struct ieee80211_ht_addt_info {
  * According to IEEE802.11n spec size varies from 8K to 64K (in powers of 2)
  */
 #define IEEE80211_MIN_AMPDU_BUF 0x8
+#define IEEE80211_MAX_AMPDU_BUF 0x40
 
 
 /* Spatial Multiplexing Power Save Modes */

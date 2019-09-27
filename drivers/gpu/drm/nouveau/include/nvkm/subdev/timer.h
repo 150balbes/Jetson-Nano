@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: MIT */
 #ifndef __NVKM_TIMER_H__
 #define __NVKM_TIMER_H__
 #include <core/subdev.h>
@@ -27,18 +26,7 @@ struct nvkm_timer {
 
 u64 nvkm_timer_read(struct nvkm_timer *);
 void nvkm_timer_alarm(struct nvkm_timer *, u32 nsec, struct nvkm_alarm *);
-
-struct nvkm_timer_wait {
-	struct nvkm_timer *tmr;
-	u64 limit;
-	u64 time0;
-	u64 time1;
-	int reads;
-};
-
-void nvkm_timer_wait_init(struct nvkm_device *, u64 nsec,
-			  struct nvkm_timer_wait *);
-s64 nvkm_timer_wait_test(struct nvkm_timer_wait *);
+void nvkm_timer_alarm_cancel(struct nvkm_timer *, struct nvkm_alarm *);
 
 /* Delay based on GPU time (ie. PTIMER).
  *
@@ -50,17 +38,23 @@ s64 nvkm_timer_wait_test(struct nvkm_timer_wait *);
  */
 #define NVKM_DELAY _warn = false;
 #define nvkm_nsec(d,n,cond...) ({                                              \
-	struct nvkm_timer_wait _wait;                                          \
-	bool _warn = true;                                                     \
+	struct nvkm_device *_device = (d);                                     \
+	struct nvkm_timer *_tmr = _device->timer;                              \
+	u64 _nsecs = (n), _time0 = nvkm_timer_read(_tmr);                      \
 	s64 _taken = 0;                                                        \
+	bool _warn = true;                                                     \
                                                                                \
-	nvkm_timer_wait_init((d), (n), &_wait);                                \
 	do {                                                                   \
 		cond                                                           \
-	} while ((_taken = nvkm_timer_wait_test(&_wait)) >= 0);                \
+	} while (_taken = nvkm_timer_read(_tmr) - _time0, _taken < _nsecs);    \
                                                                                \
-	if (_warn && _taken < 0)                                               \
-		dev_WARN(_wait.tmr->subdev.device->dev, "timeout\n");          \
+	if (_taken >= _nsecs) {                                                \
+		if (_warn) {                                                   \
+			dev_warn(_device->dev, "timeout at %s:%d/%s()!\n",     \
+				 __FILE__, __LINE__, __func__);                \
+		}                                                              \
+		_taken = -ETIMEDOUT;                                           \
+	}                                                                      \
 	_taken;                                                                \
 })
 #define nvkm_usec(d,u,cond...) nvkm_nsec((d), (u) * 1000, ##cond)

@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * CHRP pci routines.
  */
@@ -31,7 +30,7 @@ void __iomem *gg2_pci_config_base;
  * limit the bus number to 3 bits
  */
 
-static int gg2_read_config(struct pci_bus *bus, unsigned int devfn, int off,
+int gg2_read_config(struct pci_bus *bus, unsigned int devfn, int off,
 			   int len, u32 *val)
 {
 	volatile void __iomem *cfg_data;
@@ -58,7 +57,7 @@ static int gg2_read_config(struct pci_bus *bus, unsigned int devfn, int off,
 	return PCIBIOS_SUCCESSFUL;
 }
 
-static int gg2_write_config(struct pci_bus *bus, unsigned int devfn, int off,
+int gg2_write_config(struct pci_bus *bus, unsigned int devfn, int off,
 			    int len, u32 val)
 {
 	volatile void __iomem *cfg_data;
@@ -94,8 +93,8 @@ static struct pci_ops gg2_pci_ops =
 /*
  * Access functions for PCI config space using RTAS calls.
  */
-static int rtas_read_config(struct pci_bus *bus, unsigned int devfn, int offset,
-			    int len, u32 *val)
+int rtas_read_config(struct pci_bus *bus, unsigned int devfn, int offset,
+		     int len, u32 *val)
 {
 	struct pci_controller *hose = pci_bus_to_host(bus);
 	unsigned long addr = (offset & 0xff) | ((devfn & 0xff) << 8)
@@ -109,8 +108,8 @@ static int rtas_read_config(struct pci_bus *bus, unsigned int devfn, int offset,
 	return rval? PCIBIOS_DEVICE_NOT_FOUND: PCIBIOS_SUCCESSFUL;
 }
 
-static int rtas_write_config(struct pci_bus *bus, unsigned int devfn, int offset,
-			     int len, u32 val)
+int rtas_write_config(struct pci_bus *bus, unsigned int devfn, int offset,
+		      int len, u32 val)
 {
 	struct pci_controller *hose = pci_bus_to_host(bus);
 	unsigned long addr = (offset & 0xff) | ((devfn & 0xff) << 8)
@@ -230,20 +229,20 @@ chrp_find_bridges(void)
 		else if (strncmp(machine, "Pegasos", 7) == 0)
 			is_pegasos = 1;
 	}
-	for_each_child_of_node(root, dev) {
-		if (!of_node_is_type(dev, "pci"))
+	for (dev = root->child; dev != NULL; dev = dev->sibling) {
+		if (dev->type == NULL || strcmp(dev->type, "pci") != 0)
 			continue;
 		++index;
 		/* The GG2 bridge on the LongTrail doesn't have an address */
 		if (of_address_to_resource(dev, 0, &r) && !is_longtrail) {
-			printk(KERN_WARNING "Can't use %pOF: no address\n",
-			       dev);
+			printk(KERN_WARNING "Can't use %s: no address\n",
+			       dev->full_name);
 			continue;
 		}
 		bus_range = of_get_property(dev, "bus-range", &len);
 		if (bus_range == NULL || len < 2 * sizeof(int)) {
-			printk(KERN_WARNING "Can't get bus-range for %pOF\n",
-				dev);
+			printk(KERN_WARNING "Can't get bus-range for %s\n",
+				dev->full_name);
 			continue;
 		}
 		if (bus_range[1] == bus_range[0])
@@ -251,15 +250,15 @@ chrp_find_bridges(void)
 		else
 			printk(KERN_INFO "PCI buses %d..%d",
 			       bus_range[0], bus_range[1]);
-		printk(" controlled by %pOF", dev);
+		printk(" controlled by %s", dev->full_name);
 		if (!is_longtrail)
 			printk(" at %llx", (unsigned long long)r.start);
 		printk("\n");
 
 		hose = pcibios_alloc_controller(dev);
 		if (!hose) {
-			printk("Can't allocate PCI controller structure for %pOF\n",
-				dev);
+			printk("Can't allocate PCI controller structure for %s\n",
+				dev->full_name);
 			continue;
 		}
 		hose->first_busno = hose->self_busno = bus_range[0];
@@ -298,8 +297,8 @@ chrp_find_bridges(void)
 				}
 			}
 		} else {
-			printk("No methods for %pOF (model %s), using RTAS\n",
-			       dev, model);
+			printk("No methods for %s (model %s), using RTAS\n",
+			       dev->full_name, model);
 			hose->ops = &rtas_pci_ops;
 		}
 

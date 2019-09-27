@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 #include "radeonfb.h"
 
 /* the accelerated functions here are patterned after the 

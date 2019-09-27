@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __SUBCMD_UTIL_H
 #define __SUBCMD_UTIL_H
 
@@ -78,6 +77,15 @@ static inline void astrcat(char **out, const char *add)
 		die("asprintf failed");
 
 	free(tmp);
+}
+
+static inline int prefixcmp(const char *str, const char *prefix)
+{
+	for (; ; str++, prefix++)
+		if (!*prefix)
+			return 0;
+		else if (*str != *prefix)
+			return (unsigned char)*prefix - (unsigned char)*str;
 }
 
 #endif /* __SUBCMD_UTIL_H */

@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * Count register synchronisation.
  *
@@ -30,7 +29,7 @@ void synchronise_count_master(int cpu)
 	int i;
 	unsigned long flags;
 
-	pr_info("Synchronize counters for CPU %u: ", cpu);
+	printk(KERN_INFO "Synchronize counters for CPU %u: ", cpu);
 
 	local_irq_save(flags);
 
@@ -84,7 +83,7 @@ void synchronise_count_master(int cpu)
 	 * count registers were almost certainly out of sync
 	 * so no point in alarming people
 	 */
-	pr_cont("done.\n");
+	printk("done.\n");
 }
 
 void synchronise_count_slave(int cpu)

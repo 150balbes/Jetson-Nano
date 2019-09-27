@@ -1,6 +1,18 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (C) 2010 Texas Instruments Inc
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation version 2.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
  */
 #include <linux/kernel.h>
 #include <linux/init.h>
@@ -43,7 +55,7 @@ MODULE_AUTHOR("Texas Instruments");
 
 /**
  * vpbe_current_encoder_info - Get config info for current encoder
- * @vpbe_dev: vpbe device ptr
+ * @vpbe_dev - vpbe device ptr
  *
  * Return ptr to current encoder config info
  */
@@ -60,8 +72,8 @@ vpbe_current_encoder_info(struct vpbe_device *vpbe_dev)
 /**
  * vpbe_find_encoder_sd_index - Given a name find encoder sd index
  *
- * @cfg: ptr to vpbe cfg
- * @index: index used by application
+ * @vpbe_config - ptr to vpbe cfg
+ * @output_index - index used by application
  *
  * Return sd index of the encoder
  */
@@ -85,9 +97,31 @@ static int vpbe_find_encoder_sd_index(struct vpbe_config *cfg,
 }
 
 /**
+ * vpbe_g_cropcap - Get crop capabilities of the display
+ * @vpbe_dev - vpbe device ptr
+ * @cropcap - cropcap is a ptr to struct v4l2_cropcap
+ *
+ * Update the crop capabilities in crop cap for current
+ * mode
+ */
+static int vpbe_g_cropcap(struct vpbe_device *vpbe_dev,
+			  struct v4l2_cropcap *cropcap)
+{
+	if (NULL == cropcap)
+		return -EINVAL;
+	cropcap->bounds.left = 0;
+	cropcap->bounds.top = 0;
+	cropcap->bounds.width = vpbe_dev->current_timings.xres;
+	cropcap->bounds.height = vpbe_dev->current_timings.yres;
+	cropcap->defrect = cropcap->bounds;
+
+	return 0;
+}
+
+/**
  * vpbe_enum_outputs - enumerate outputs
- * @vpbe_dev: vpbe device ptr
- * @output: ptr to v4l2_output structure
+ * @vpbe_dev - vpbe device ptr
+ * @output - ptr to v4l2_output structure
  *
  * Enumerates the outputs available at the vpbe display
  * returns the status, -EINVAL if end of output list
@@ -96,7 +130,7 @@ static int vpbe_enum_outputs(struct vpbe_device *vpbe_dev,
 			     struct v4l2_output *output)
 {
 	struct vpbe_config *cfg = vpbe_dev->cfg;
-	unsigned int temp_index = output->index;
+	int temp_index = output->index;
 
 	if (temp_index >= cfg->num_outputs)
 		return -EINVAL;
@@ -115,7 +149,7 @@ static int vpbe_get_mode_info(struct vpbe_device *vpbe_dev, char *mode,
 	int curr_output = output_index;
 	int i;
 
-	if (!mode)
+	if (NULL == mode)
 		return -EINVAL;
 
 	for (i = 0; i < cfg->outputs[curr_output].num_modes; i++) {
@@ -132,7 +166,7 @@ static int vpbe_get_mode_info(struct vpbe_device *vpbe_dev, char *mode,
 static int vpbe_get_current_mode_info(struct vpbe_device *vpbe_dev,
 				      struct vpbe_enc_mode_info *mode_info)
 {
-	if (!mode_info)
+	if (NULL == mode_info)
 		return -EINVAL;
 
 	*mode_info = vpbe_dev->current_timings;
@@ -182,8 +216,8 @@ static int vpbe_get_std_info_by_name(struct vpbe_device *vpbe_dev,
 
 /**
  * vpbe_set_output - Set output
- * @vpbe_dev: vpbe device ptr
- * @index: index of output
+ * @vpbe_dev - vpbe device ptr
+ * @index - index of output
  *
  * Set vpbe output to the output specified by the index
  */
@@ -193,9 +227,10 @@ static int vpbe_set_output(struct vpbe_device *vpbe_dev, int index)
 			vpbe_current_encoder_info(vpbe_dev);
 	struct vpbe_config *cfg = vpbe_dev->cfg;
 	struct venc_platform_data *venc_device = vpbe_dev->venc_device;
+	u32 if_params;
 	int enc_out_index;
 	int sd_index;
-	int ret;
+	int ret = 0;
 
 	if (index >= cfg->num_outputs)
 		return -EINVAL;
@@ -219,22 +254,23 @@ static int vpbe_set_output(struct vpbe_device *vpbe_dev, int index)
 		sd_index = vpbe_find_encoder_sd_index(cfg, index);
 		if (sd_index < 0) {
 			ret = -EINVAL;
-			goto unlock;
+			goto out;
 		}
 
-		ret = venc_device->setup_if_config(cfg->outputs[index].if_params);
+		if_params = cfg->outputs[index].if_params;
+		venc_device->setup_if_config(if_params);
 		if (ret)
-			goto unlock;
+			goto out;
 	}
 
 	/* Set output at the encoder */
 	ret = v4l2_subdev_call(vpbe_dev->encoders[sd_index], video,
 				       s_routing, 0, enc_out_index, 0);
 	if (ret)
-		goto unlock;
+		goto out;
 
 	/*
-	 * It is assumed that venc or external encoder will set a default
+	 * It is assumed that venc or extenal encoder will set a default
 	 * mode in the sub device. For external encoder or LCD pannel output,
 	 * we also need to set up the lcd port for the required mode. So setup
 	 * the lcd port for the default mode that is configured in the board
@@ -253,7 +289,7 @@ static int vpbe_set_output(struct vpbe_device *vpbe_dev, int index)
 		vpbe_dev->current_sd_index = sd_index;
 		vpbe_dev->current_out_index = index;
 	}
-unlock:
+out:
 	mutex_unlock(&vpbe_dev->lock);
 	return ret;
 }
@@ -261,24 +297,24 @@ unlock:
 static int vpbe_set_default_output(struct vpbe_device *vpbe_dev)
 {
 	struct vpbe_config *cfg = vpbe_dev->cfg;
+	int ret = 0;
 	int i;
 
 	for (i = 0; i < cfg->num_outputs; i++) {
 		if (!strcmp(def_output,
 			    cfg->outputs[i].output.name)) {
-			int ret = vpbe_set_output(vpbe_dev, i);
-
+			ret = vpbe_set_output(vpbe_dev, i);
 			if (!ret)
 				vpbe_dev->current_out_index = i;
 			return ret;
 		}
 	}
-	return 0;
+	return ret;
 }
 
 /**
  * vpbe_get_output - Get output
- * @vpbe_dev: vpbe device ptr
+ * @vpbe_dev - vpbe device ptr
  *
  * return current vpbe output to the the index
  */
@@ -287,7 +323,7 @@ static unsigned int vpbe_get_output(struct vpbe_device *vpbe_dev)
 	return vpbe_dev->current_out_index;
 }
 
-/*
+/**
  * vpbe_s_dv_timings - Set the given preset timings in the encoder
  *
  * Sets the timings if supported by the current encoder. Return the status.
@@ -320,7 +356,7 @@ static int vpbe_s_dv_timings(struct vpbe_device *vpbe_dev,
 
 	ret = v4l2_subdev_call(vpbe_dev->encoders[sd_index], video,
 					s_dv_timings, dv_timings);
-	if (!ret && vpbe_dev->amp) {
+	if (!ret && (vpbe_dev->amp != NULL)) {
 		/* Call amplifier subdevice */
 		ret = v4l2_subdev_call(vpbe_dev->amp, video,
 				s_dv_timings, dv_timings);
@@ -339,7 +375,7 @@ static int vpbe_s_dv_timings(struct vpbe_device *vpbe_dev,
 	return ret;
 }
 
-/*
+/**
  * vpbe_g_dv_timings - Get the timings in the current encoder
  *
  * Get the timings in the current encoder. Return the status. 0 - success
@@ -364,7 +400,7 @@ static int vpbe_g_dv_timings(struct vpbe_device *vpbe_dev,
 	return -EINVAL;
 }
 
-/*
+/**
  * vpbe_enum_dv_timings - Enumerate the dv timings in the current encoder
  *
  * Get the timings in the current encoder. Return the status. 0 - success
@@ -396,7 +432,7 @@ static int vpbe_enum_dv_timings(struct vpbe_device *vpbe_dev,
 	return 0;
 }
 
-/*
+/**
  * vpbe_s_std - Set the given standard in the encoder
  *
  * Sets the standard if supported by the current encoder. Return the status.
@@ -435,7 +471,7 @@ static int vpbe_s_std(struct vpbe_device *vpbe_dev, v4l2_std_id std_id)
 	return ret;
 }
 
-/*
+/**
  * vpbe_g_std - Get the standard in the current encoder
  *
  * Get the standard in the current encoder. Return the status. 0 - success
@@ -458,7 +494,7 @@ static int vpbe_g_std(struct vpbe_device *vpbe_dev, v4l2_std_id *std_id)
 	return -EINVAL;
 }
 
-/*
+/**
  * vpbe_set_mode - Set mode in the current encoder using mode info
  *
  * Use the mode string to decide what timings to set in the encoder
@@ -473,9 +509,10 @@ static int vpbe_set_mode(struct vpbe_device *vpbe_dev,
 	struct v4l2_dv_timings dv_timings;
 	struct osd_state *osd_device;
 	int out_index = vpbe_dev->current_out_index;
+	int ret = 0;
 	int i;
 
-	if (!mode_info || !mode_info->name)
+	if ((NULL == mode_info) || (NULL == mode_info->name))
 		return -EINVAL;
 
 	for (i = 0; i < cfg->outputs[out_index].num_modes; i++) {
@@ -499,7 +536,7 @@ static int vpbe_set_mode(struct vpbe_device *vpbe_dev,
 	}
 
 	/* Only custom timing should reach here */
-	if (!preset_mode)
+	if (preset_mode == NULL)
 		return -EINVAL;
 
 	mutex_lock(&vpbe_dev->lock);
@@ -512,7 +549,8 @@ static int vpbe_set_mode(struct vpbe_device *vpbe_dev,
 		vpbe_dev->current_timings.upper_margin);
 
 	mutex_unlock(&vpbe_dev->lock);
-	return 0;
+
+	return ret;
 }
 
 static int vpbe_set_default_mode(struct vpbe_device *vpbe_dev)
@@ -532,9 +570,9 @@ static int platform_device_get(struct device *dev, void *data)
 	struct platform_device *pdev = to_platform_device(dev);
 	struct vpbe_device *vpbe_dev = data;
 
-	if (strstr(pdev->name, "vpbe-osd"))
+	if (strstr(pdev->name, "vpbe-osd") != NULL)
 		vpbe_dev->osd_device = platform_get_drvdata(pdev);
-	if (strstr(pdev->name, "vpbe-venc"))
+	if (strstr(pdev->name, "vpbe-venc") != NULL)
 		vpbe_dev->venc_device = dev_get_platdata(&pdev->dev);
 
 	return 0;
@@ -542,8 +580,7 @@ static int platform_device_get(struct device *dev, void *data)
 
 /**
  * vpbe_initialize() - Initialize the vpbe display controller
- * @dev: Master and slave device ptr
- * @vpbe_dev: vpbe device ptr
+ * @vpbe_dev - vpbe device ptr
  *
  * Master frame buffer device drivers calls this to initialize vpbe
  * display controller. This will then registers v4l2 device and the sub
@@ -569,7 +606,7 @@ static int vpbe_initialize(struct device *dev, struct vpbe_device *vpbe_dev)
 	 * from the platform device by iteration of platform drivers and
 	 * matching with device name
 	 */
-	if (!vpbe_dev || !dev) {
+	if (NULL == vpbe_dev || NULL == dev) {
 		printk(KERN_ERR "Null device pointers.\n");
 		return -ENODEV;
 	}
@@ -615,7 +652,7 @@ static int vpbe_initialize(struct device *dev, struct vpbe_device *vpbe_dev)
 	vpbe_dev->venc = venc_sub_dev_init(&vpbe_dev->v4l2_dev,
 					   vpbe_dev->cfg->venc.module_name);
 	/* register venc sub device */
-	if (!vpbe_dev->venc) {
+	if (vpbe_dev->venc == NULL) {
 		v4l2_err(&vpbe_dev->v4l2_dev,
 			"vpbe unable to init venc sub device\n");
 		ret = -ENODEV;
@@ -623,7 +660,8 @@ static int vpbe_initialize(struct device *dev, struct vpbe_device *vpbe_dev)
 	}
 	/* initialize osd device */
 	osd_device = vpbe_dev->osd_device;
-	if (osd_device->ops.initialize) {
+
+	if (NULL != osd_device->ops.initialize) {
 		err = osd_device->ops.initialize(osd_device);
 		if (err) {
 			v4l2_err(&vpbe_dev->v4l2_dev,
@@ -638,10 +676,12 @@ static int vpbe_initialize(struct device *dev, struct vpbe_device *vpbe_dev)
 	 * store venc sd index.
 	 */
 	num_encoders = vpbe_dev->cfg->num_ext_encoders + 1;
-	vpbe_dev->encoders = kmalloc_array(num_encoders,
-					   sizeof(*vpbe_dev->encoders),
-					   GFP_KERNEL);
-	if (!vpbe_dev->encoders) {
+	vpbe_dev->encoders = kmalloc(
+				sizeof(struct v4l2_subdev *)*num_encoders,
+				GFP_KERNEL);
+	if (NULL == vpbe_dev->encoders) {
+		v4l2_err(&vpbe_dev->v4l2_dev,
+			"unable to allocate memory for encoders sub devices");
 		ret = -ENOMEM;
 		goto fail_dev_unregister;
 	}
@@ -665,17 +705,19 @@ static int vpbe_initialize(struct device *dev, struct vpbe_device *vpbe_dev)
 					  "v4l2 sub device %s registered\n",
 					  enc_info->module_name);
 			else {
-				v4l2_err(&vpbe_dev->v4l2_dev, "encoder %s failed to register",
+				v4l2_err(&vpbe_dev->v4l2_dev, "encoder %s"
+					 " failed to register",
 					 enc_info->module_name);
 				ret = -ENODEV;
 				goto fail_kfree_encoders;
 			}
 		} else
-			v4l2_warn(&vpbe_dev->v4l2_dev, "non-i2c encoders currently not supported");
+			v4l2_warn(&vpbe_dev->v4l2_dev, "non-i2c encoders"
+				 " currently not supported");
 	}
 	/* Add amplifier subdevice for dm365 */
 	if ((strcmp(vpbe_dev->cfg->module_name, "dm365-vpbe-display") == 0) &&
-	   vpbe_dev->cfg->amp) {
+			vpbe_dev->cfg->amp != NULL) {
 		amp_info = vpbe_dev->cfg->amp;
 		if (amp_info->is_i2c) {
 			vpbe_dev->amp = v4l2_i2c_new_subdev_board(
@@ -693,7 +735,8 @@ static int vpbe_initialize(struct device *dev, struct vpbe_device *vpbe_dev)
 					  amp_info->module_name);
 		} else {
 			    vpbe_dev->amp = NULL;
-			    v4l2_warn(&vpbe_dev->v4l2_dev, "non-i2c amplifiers currently not supported");
+			    v4l2_warn(&vpbe_dev->v4l2_dev, "non-i2c amplifiers"
+			    " currently not supported");
 		}
 	} else {
 	    vpbe_dev->amp = NULL;
@@ -710,7 +753,7 @@ static int vpbe_initialize(struct device *dev, struct vpbe_device *vpbe_dev)
 	if (ret) {
 		v4l2_err(&vpbe_dev->v4l2_dev, "Failed to set default output %s",
 			 def_output);
-		goto fail_kfree_amp;
+		return ret;
 	}
 
 	printk(KERN_NOTICE "Setting default mode to %s\n", def_mode);
@@ -718,15 +761,12 @@ static int vpbe_initialize(struct device *dev, struct vpbe_device *vpbe_dev)
 	if (ret) {
 		v4l2_err(&vpbe_dev->v4l2_dev, "Failed to set default mode %s",
 			 def_mode);
-		goto fail_kfree_amp;
+		return ret;
 	}
 	vpbe_dev->initialized = 1;
 	/* TBD handling of bootargs for default output and mode */
 	return 0;
 
-fail_kfree_amp:
-	mutex_lock(&vpbe_dev->lock);
-	kfree(vpbe_dev->amp);
 fail_kfree_encoders:
 	kfree(vpbe_dev->encoders);
 fail_dev_unregister:
@@ -743,8 +783,7 @@ fail_mutex_unlock:
 
 /**
  * vpbe_deinitialize() - de-initialize the vpbe display controller
- * @dev: Master and slave device ptr
- * @vpbe_dev: vpbe device ptr
+ * @dev - Master and slave device ptr
  *
  * vpbe_master and slave frame buffer devices calls this to de-initialize
  * the display controller. It is called when master and slave device
@@ -765,7 +804,8 @@ static void vpbe_deinitialize(struct device *dev, struct vpbe_device *vpbe_dev)
 	vpss_enable_clock(VPSS_VPBE_CLOCK, 0);
 }
 
-static const struct vpbe_device_ops vpbe_dev_ops = {
+static struct vpbe_device_ops vpbe_dev_ops = {
+	.g_cropcap = vpbe_g_cropcap,
 	.enum_outputs = vpbe_enum_outputs,
 	.set_output = vpbe_set_output,
 	.get_output = vpbe_get_output,
@@ -784,8 +824,9 @@ static int vpbe_probe(struct platform_device *pdev)
 {
 	struct vpbe_device *vpbe_dev;
 	struct vpbe_config *cfg;
+	int ret = -EINVAL;
 
-	if (!pdev->dev.platform_data) {
+	if (pdev->dev.platform_data == NULL) {
 		v4l2_err(pdev->dev.driver, "No platform data\n");
 		return -ENODEV;
 	}
@@ -794,14 +835,17 @@ static int vpbe_probe(struct platform_device *pdev)
 	if (!cfg->module_name[0] ||
 	    !cfg->osd.module_name[0] ||
 	    !cfg->venc.module_name[0]) {
-		v4l2_err(pdev->dev.driver, "vpbe display module names not defined\n");
-		return -EINVAL;
+		v4l2_err(pdev->dev.driver, "vpbe display module names not"
+			 " defined\n");
+		return ret;
 	}
 
 	vpbe_dev = kzalloc(sizeof(*vpbe_dev), GFP_KERNEL);
-	if (!vpbe_dev)
+	if (vpbe_dev == NULL) {
+		v4l2_err(pdev->dev.driver, "Unable to allocate memory"
+			 " for vpbe_device\n");
 		return -ENOMEM;
-
+	}
 	vpbe_dev->cfg = cfg;
 	vpbe_dev->ops = vpbe_dev_ops;
 	vpbe_dev->pdev = &pdev->dev;

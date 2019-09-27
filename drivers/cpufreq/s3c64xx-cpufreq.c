@@ -1,8 +1,11 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright 2009 Wolfson Microelectronics plc
  *
  * S3C64xx CPUfreq Support
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  */
 
 #define pr_fmt(fmt) "cpufreq: " fmt
@@ -104,7 +107,7 @@ static int s3c64xx_cpufreq_set_target(struct cpufreq_policy *policy,
 }
 
 #ifdef CONFIG_REGULATOR
-static void s3c64xx_cpufreq_config_regulator(void)
+static void __init s3c64xx_cpufreq_config_regulator(void)
 {
 	int count, v, i, found;
 	struct cpufreq_frequency_table *freq;
@@ -144,6 +147,7 @@ out:
 
 static int s3c64xx_cpufreq_driver_init(struct cpufreq_policy *policy)
 {
+	int ret;
 	struct cpufreq_frequency_table *freq;
 
 	if (policy->cpu != 0)
@@ -164,7 +168,8 @@ static int s3c64xx_cpufreq_driver_init(struct cpufreq_policy *policy)
 #ifdef CONFIG_REGULATOR
 	vddarm = regulator_get(NULL, "vddarm");
 	if (IS_ERR(vddarm)) {
-		pr_err("Failed to obtain VDDARM: %ld\n", PTR_ERR(vddarm));
+		ret = PTR_ERR(vddarm);
+		pr_err("Failed to obtain VDDARM: %d\n", ret);
 		pr_err("Only frequency scaling available\n");
 		vddarm = NULL;
 	} else {
@@ -194,9 +199,16 @@ static int s3c64xx_cpufreq_driver_init(struct cpufreq_policy *policy)
 	 * the PLLs, which we don't currently) is ~300us worst case,
 	 * but add some fudge.
 	 */
-	cpufreq_generic_init(policy, s3c64xx_freq_table,
+	ret = cpufreq_generic_init(policy, s3c64xx_freq_table,
 			(500 * 1000) + regulator_latency);
-	return 0;
+	if (ret != 0) {
+		pr_err("Failed to configure frequency table: %d\n",
+		       ret);
+		regulator_put(vddarm);
+		clk_put(policy->clk);
+	}
+
+	return ret;
 }
 
 static struct cpufreq_driver s3c64xx_cpufreq_driver = {

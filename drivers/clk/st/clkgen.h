@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /************************************************************************
 File  : Clock H/w specific Information
 

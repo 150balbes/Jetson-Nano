@@ -1,12 +1,16 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  *  Copyright (C) 2002 - 2005 Benjamin Herrenschmidt <benh@kernel.crashing.org>
  *  Copyright (C) 2004        John Steele Scott <toojays@toojays.net>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  *
  * TODO: Need a big cleanup here. Basically, we need to have different
  * cpufreq_driver structures for the different type of HW instead of the
  * current mess. We also need to better deal with the detection of the
  * type of machine.
+ *
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
@@ -124,7 +128,7 @@ static int cpu_750fx_cpu_speed(int low_speed)
 			mtspr(SPRN_HID2, hid2);
 		}
 	}
-#ifdef CONFIG_PPC_BOOK3S_32
+#ifdef CONFIG_6xx
 	low_choose_750fx_pll(low_speed);
 #endif
 	if (low_speed == 1) {
@@ -162,7 +166,7 @@ static int dfs_set_cpu_speed(int low_speed)
 	}
 
 	/* set frequency */
-#ifdef CONFIG_PPC_BOOK3S_32
+#ifdef CONFIG_6xx
 	low_choose_7447a_dfs(low_speed);
 #endif
 	udelay(100);
@@ -372,8 +376,7 @@ static int pmac_cpufreq_target(	struct cpufreq_policy *policy,
 
 static int pmac_cpufreq_cpu_init(struct cpufreq_policy *policy)
 {
-	cpufreq_generic_init(policy, pmac_cpu_freqs, transition_latency);
-	return 0;
+	return cpufreq_generic_init(policy, pmac_cpu_freqs, transition_latency);
 }
 
 static u32 read_gpio(struct device_node *np)
@@ -439,8 +442,7 @@ static struct cpufreq_driver pmac_cpufreq_driver = {
 	.init		= pmac_cpufreq_cpu_init,
 	.suspend	= pmac_cpufreq_suspend,
 	.resume		= pmac_cpufreq_resume,
-	.flags		= CPUFREQ_PM_NO_WARN |
-			  CPUFREQ_NO_AUTO_DYNAMIC_SWITCHING,
+	.flags		= CPUFREQ_PM_NO_WARN,
 	.attr		= cpufreq_generic_attr,
 	.name		= "powermac",
 };
@@ -549,7 +551,6 @@ static int pmac_cpufreq_init_7447A(struct device_node *cpunode)
 	volt_gpio_np = of_find_node_by_name(NULL, "cpu-vcore-select");
 	if (volt_gpio_np)
 		voltage_gpio = read_gpio(volt_gpio_np);
-	of_node_put(volt_gpio_np);
 	if (!voltage_gpio){
 		pr_err("missing cpu-vcore-select gpio\n");
 		return 1;
@@ -586,7 +587,6 @@ static int pmac_cpufreq_init_750FX(struct device_node *cpunode)
 	if (volt_gpio_np)
 		voltage_gpio = read_gpio(volt_gpio_np);
 
-	of_node_put(volt_gpio_np);
 	pvr = mfspr(SPRN_PVR);
 	has_cpu_l2lve = !((pvr & 0xf00) == 0x100);
 
@@ -626,16 +626,14 @@ static int __init pmac_cpufreq_setup(void)
 	if (!value)
 		goto out;
 	cur_freq = (*value) / 1000;
+	transition_latency = CPUFREQ_ETERNAL;
 
 	/*  Check for 7447A based MacRISC3 */
 	if (of_machine_is_compatible("MacRISC3") &&
 	    of_get_property(cpunode, "dynamic-power-step", NULL) &&
 	    PVR_VER(mfspr(SPRN_PVR)) == 0x8003) {
 		pmac_cpufreq_init_7447A(cpunode);
-
-		/* Allow dynamic switching */
 		transition_latency = 8000000;
-		pmac_cpufreq_driver.flags &= ~CPUFREQ_NO_AUTO_DYNAMIC_SWITCHING;
 	/* Check for other MacRISC3 machines */
 	} else if (of_machine_is_compatible("PowerBook3,4") ||
 		   of_machine_is_compatible("PowerBook3,5") ||

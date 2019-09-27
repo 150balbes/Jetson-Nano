@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * drivers/atm/suni.c - S/UNI PHY driver
  *
@@ -24,7 +23,7 @@
 #include <linux/atm_suni.h>
 #include <linux/slab.h>
 #include <asm/param.h>
-#include <linux/uaccess.h>
+#include <asm/uaccess.h>
 #include <linux/atomic.h>
 
 #include "suni.h"
@@ -54,7 +53,7 @@ static DEFINE_SPINLOCK(sunis_lock);
     if (atomic_read(&stats->s) < 0) atomic_set(&stats->s,INT_MAX);
 
 
-static void suni_hz(struct timer_list *timer)
+static void suni_hz(unsigned long from_timer)
 {
 	struct suni_priv *walk;
 	struct atm_dev *dev;
@@ -86,7 +85,7 @@ static void suni_hz(struct timer_list *timer)
 		    ((GET(TACP_TCC) & 0xff) << 8) |
 		    ((GET(TACP_TCCM) & 7) << 16));
 	}
-	if (timer) mod_timer(&poll_timer,jiffies+HZ);
+	if (from_timer) mod_timer(&poll_timer,jiffies+HZ);
 }
 
 
@@ -178,7 +177,7 @@ static int set_loopback(struct atm_dev *dev,int mode)
 		default:
 			return -EINVAL;
 	}
-	dev->ops->phy_put(dev, control, reg);
+	 dev->ops->phy_put(dev, control, reg);
 	PRIV(dev)->loop_mode = mode;
 	return 0;
 }
@@ -323,11 +322,13 @@ static int suni_start(struct atm_dev *dev)
 		printk(KERN_WARNING "%s(itf %d): no signal\n",dev->type,
 		    dev->number);
 	PRIV(dev)->loop_mode = ATM_LM_NONE;
-	suni_hz(NULL); /* clear SUNI counters */
+	suni_hz(0); /* clear SUNI counters */
 	(void) fetch_stats(dev,NULL,1); /* clear kernel counters */
 	if (first) {
-		timer_setup(&poll_timer, suni_hz, 0);
+		init_timer(&poll_timer);
 		poll_timer.expires = jiffies+HZ;
+		poll_timer.function = suni_hz;
+		poll_timer.data = 1;
 #if 0
 printk(KERN_DEBUG "[u] p=0x%lx,n=0x%lx\n",(unsigned long) poll_timer.list.prev,
     (unsigned long) poll_timer.list.next);

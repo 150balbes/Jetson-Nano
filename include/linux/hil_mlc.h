@@ -144,12 +144,12 @@ struct hil_mlc {
 	hil_packet		ipacket[16];
 	hil_packet		imatch;
 	int			icount;
-	unsigned long		instart;
-	unsigned long		intimeout;
+	struct timeval		instart;
+	suseconds_t		intimeout;
 
 	int			ddi;	/* Last operational device id */
 	int			lcv;	/* LCV to throttle loops */
-	time64_t		lcv_time; /* Time loop was started */
+	struct timeval		lcv_tv; /* Time loop was started */
 
 	int			di_map[7]; /* Maps below items to live devs */
 	struct hil_mlc_devinfo	di[HIL_MLC_DEVMEM];

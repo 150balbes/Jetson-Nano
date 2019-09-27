@@ -1,0 +1,105 @@
+append_menu "Misc devices"
+
+config MODS
+	tristate "NVIDIA MODS driver"
+	select OF_DYNAMIC
+	select OF_RESOLVE
+	default n
+	---help---
+	The NVIDIA MODS driver gives user space software direct access to
+	hardware.  The NVIDIA Diagnostic Software uses this to test hardware.
+	This driver should normally be disabled in all production builds.
+
+	Say Y here to compile the NVIDIA MODS driver into the kernel or say M
+	to compile it as a module.
+
+	If unsure, say N here.
+
+config SAF775x_HWDEP
+        tristate "SAF775x HWDEP Driver"
+        default n
+        depends on I2C || SPI
+
+config SAF36XX_HWDEP
+        tristate "SAF36XX HWDEP Driver"
+        default n
+        depends on SPI && SPI_MASTER
+        help
+          Provides interfaces for flashing SAF36XX
+
+config SENSORS_NCT1008
+	tristate "ON Semiconductor Temperature Sensor"
+	default n
+	depends on I2C
+	help
+	 Say yes here if you wish to include the ON Semiconductor
+	 NCT1008 Temperature sensor.
+
+config TEGRA_CPC
+	tristate "Tegra content protection controller"
+	depends on I2C
+	help
+	  This driver allows authenticated IO access to storage blocks on
+	  CPC controller via i2c.
+
+config THERM_EST
+	bool "Thermal estimator driver"
+	default n
+	---help---
+	Thermal driver which estimates temperature based of other sensors.
+
+config FAN_THERM_EST
+	tristate "Fan driving temp estimator"
+	---help---
+	Thermal driver that estimates the fan driving temperature based on
+	other sensors.
+
+	This enables a virtual sensor that polls other registered thermal
+	zone devices for temperature updates.
+
+config EQOS_APE_HWDEP
+	tristate "EQOS APE HWDEP Driver"
+	default n
+	depends on TEGRA_NVADSP
+	help
+	  Driver provides mechanism to synchronize EAVB and APE clock.
+	  This driver copies the EAVB time stamp on APE time registers
+	  to synchroniza the initial phase offset. It calculates the
+	  frequency offset between the two clocks  by taking subsequent
+	  snapshots of the clock and taking the difference. Based on the
+	  calculated frequency offset, the pll_a clock (parent of APE clock)
+	  frequency is adjusted.
+
+config TEGRA_SKIN
+	tristate "Thermal skin temperature estimator"
+	---help---
+	  Thermal driver which estimates hotspot(s) tempeature based on power
+	  features like rail power, rail current, backlight brightness. The
+	  driver estimates multiple hotspot temperatures based on OF configuration.
+
+config TEGRA_PCIE_EP_MEM
+	tristate "Client driver for Tegra PCIe end point"
+	depends on PCI
+	help
+	 Say Y if Tegra is working in PCIe-End Point mode and a client
+	 driver is required
+
+if ARCH_TEGRA
+source "drivers/misc/nvs-dfsh/Kconfig"
+source "drivers/misc/nvs/Kconfig"
+source "drivers/misc/nvs-aonsh/Kconfig"
+source "drivers/misc/tegra-profiler/Kconfig"
+source "drivers/misc/eventlib/Kconfig"
+endif
+
+config BLUEDROID_PM
+	tristate "Bluedroid_pm driver support"
+	help
+	  Bluetooth Bluedroid power management Driver.
+	  This driver provides power control and dynamic active power saving
+	  mechanism for bluetooth radio devices.
+
+	  Say Y here to compile support for bluedroid_pm support into the kernel
+	  or say M to compile it as module (bluedroid_pm).
+
+endmenu

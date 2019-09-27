@@ -1,6 +1,5 @@
 /*
  * Copyright 2013-2014 Freescale Semiconductor, Inc.
- * Copyright 2018 NXP
  *
  * This file is dual-licensed: you can use it either under the terms
  * of the GPL or the X11 license, at your option. Note that this dual
@@ -51,7 +50,6 @@
 
 / {
 	model = "LS1021A QDS Board";
-	compatible = "fsl,ls1021a-qds", "fsl,ls1021a";
 
 	aliases {
 		enet0_rgmii_phy = &rgmii_phy1;
@@ -146,10 +144,6 @@
 	status = "okay";
 };
 
-&esdhc {
-	status = "okay";
-};
-
 &i2c0 {
 	status = "okay";
 
@@ -241,14 +235,8 @@
 		#size-cells = <1>;
 		compatible = "cfi-flash";
 		reg = <0x0 0x0 0x8000000>;
-		big-endian;
 		bank-width = <2>;
 		device-width = <1>;
-	};
-
-	nand@2,0 {
-		compatible = "fsl,ifc-nand";
-		reg = <0x2 0x0 0x10000>;
 	};
 
 	fpga: board-control@3,0 {
@@ -342,20 +330,4 @@
 
 &uart1 {
 	status = "okay";
-};
-
-&can0 {
-	status = "okay";
-};
-
-&can1 {
-	status = "okay";
-};
-
-&can2 {
-	status = "disabled";
-};
-
-&can3 {
-	status = "disabled";
 };

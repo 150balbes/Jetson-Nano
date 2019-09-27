@@ -1,8 +1,12 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Coda multi-standard codec IP - JPEG support functions
  *
  * Copyright (C) 2014 Philipp Zabel, Pengutronix
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
  */
 
 #include <linux/kernel.h>
@@ -99,7 +103,7 @@ static const unsigned char chroma_ac_value[162 + 2] = {
 
 /*
  * Quantization tables for luminance and chrominance components in
- * zig-zag scan order from the Freescale i.MX VPU libraries
+ * zig-zag scan order from the Freescale i.MX VPU libaries
  */
 
 static unsigned char luma_q[64] = {

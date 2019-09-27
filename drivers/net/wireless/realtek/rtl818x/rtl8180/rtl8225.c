@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 
 /*
  * Radio tuning for RTL8225 on RTL8180
@@ -10,6 +9,10 @@
  * Copyright 2005 Andrea Merello <andrea.merello@gmail.com>, et al.
  *
  * Thanks to Realtek for their support!
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  */
 
 #include <linux/pci.h>

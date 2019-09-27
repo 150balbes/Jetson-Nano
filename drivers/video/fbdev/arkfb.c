@@ -954,8 +954,10 @@ static int ark_pci_probe(struct pci_dev *dev, const struct pci_device_id *id)
 
 	/* Allocate and fill driver data structure */
 	info = framebuffer_alloc(sizeof(struct arkfb_info), &(dev->dev));
-	if (!info)
+	if (! info) {
+		dev_err(&(dev->dev), "cannot allocate memory\n");
 		return -ENOMEM;
+	}
 
 	par = info->par;
 	mutex_init(&par->open_lock);
@@ -1155,7 +1157,7 @@ fail:
 
 /* List of boards that we are trying to support */
 
-static const struct pci_device_id ark_devices[] = {
+static struct pci_device_id ark_devices[] = {
 	{PCI_DEVICE(0xEDD8, 0xA099)},
 	{0, 0, 0, 0, 0, 0, 0}
 };

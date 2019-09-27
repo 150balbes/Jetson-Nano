@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * Copyright (c) 2011 Bryan Schumaker <bjschuma@netapp.com>
  *
@@ -11,8 +10,7 @@
 #include <linux/module.h>
 #include <linux/nsproxy.h>
 #include <linux/sunrpc/addr.h>
-#include <linux/uaccess.h>
-#include <linux/kernel.h>
+#include <asm/uaccess.h>
 
 #include "state.h"
 #include "netns.h"
@@ -127,16 +125,26 @@ static struct nfsd_fault_inject_op inject_ops[] = {
 	},
 };
 
-void nfsd_fault_inject_init(void)
+#define NUM_INJECT_OPS (sizeof(inject_ops)/sizeof(struct nfsd_fault_inject_op))
+
+int nfsd_fault_inject_init(void)
 {
 	unsigned int i;
 	struct nfsd_fault_inject_op *op;
 	umode_t mode = S_IFREG | S_IRUSR | S_IWUSR;
 
 	debug_dir = debugfs_create_dir("nfsd", NULL);
+	if (!debug_dir)
+		goto fail;
 
-	for (i = 0; i < ARRAY_SIZE(inject_ops); i++) {
+	for (i = 0; i < NUM_INJECT_OPS; i++) {
 		op = &inject_ops[i];
-		debugfs_create_file(op->file, mode, debug_dir, op, &fops_nfsd);
+		if (!debugfs_create_file(op->file, mode, debug_dir, op, &fops_nfsd))
+			goto fail;
 	}
+	return 0;
+
+fail:
+	nfsd_fault_inject_cleanup();
+	return -ENOMEM;
 }

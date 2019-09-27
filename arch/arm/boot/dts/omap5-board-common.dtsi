@@ -1,6 +1,9 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (C) 2013 Texas Instruments Incorporated - http://www.ti.com/
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  */
 #include "omap5.dtsi"
 #include <dt-bindings/interrupt-controller/irq.h>
@@ -9,10 +12,6 @@
 / {
 	aliases {
 		display0 = &hdmi0;
-	};
-
-	chosen {
-		stdout-path = &uart3;
 	};
 
 	vmain: fixedregulator-vmain {
@@ -70,14 +69,12 @@
 		clocks = <&auxclk1_ck>;
 		clock-names = "main_clk";
 		clock-frequency = <19200000>;
-		#phy-cells = <0>;
 	};
 
 	/* HS USB Host PHY on PORT 3 */
 	hsusb3_phy: hsusb3_phy {
 		compatible = "usb-nop-xceiv";
 		reset-gpios = <&gpio3 15 GPIO_ACTIVE_LOW>; /* gpio3_79 ETH_NRESET */
-		#phy-cells = <0>;
 	};
 
 	tpd12s015: encoder {
@@ -293,7 +290,7 @@
 
 	dss_hdmi_pins: pinmux_dss_hdmi_pins {
 		pinctrl-single,pins = <
-			OMAP5_IOPAD(0x13c, PIN_INPUT | MUX_MODE0)	/* hdmi_cec.hdmi_cec */
+			OMAP5_IOPAD(0x13c, PIN_INPUT_PULLUP | MUX_MODE0)	/* hdmi_cec.hdmi_cec */
 			OMAP5_IOPAD(0x140, PIN_INPUT | MUX_MODE0)	/* hdmi_ddc_scl.hdmi_ddc_scl */
 			OMAP5_IOPAD(0x142, PIN_INPUT | MUX_MODE0)	/* hdmi_ddc_sda.hdmi_ddc_sda */
 		>;
@@ -314,8 +311,7 @@
 
 	palmas_sys_nirq_pins: pinmux_palmas_sys_nirq_pins {
 		pinctrl-single,pins = <
-			/* sys_nirq1 is pulled down as the SoC is inverting it for GIC */
-			OMAP5_IOPAD(0x068, PIN_INPUT_PULLUP | MUX_MODE0)
+			OMAP5_IOPAD(0x068, PIN_INPUT_PULLUP | MUX_MODE0) /* sys_nirq1 */
 		>;
 	};
 
@@ -362,7 +358,7 @@
 		pinctrl-names = "default";
 		pinctrl-0 = <&wlcore_irq_pin>;
 		interrupt-parent = <&gpio1>;
-		interrupts = <14 IRQ_TYPE_EDGE_RISING>;	/* gpio 14 */
+		interrupts = <14 IRQ_TYPE_LEVEL_HIGH>;	/* gpio 14 */
 		ref-clock-frequency = <26000000>;
 	};
 };
@@ -383,8 +379,7 @@
 
 	palmas: palmas@48 {
 		compatible = "ti,palmas";
-		/* sys_nirq/ext_sys_irq pins get inverted at mpuss wakeupgen */
-		interrupts = <GIC_SPI 7 IRQ_TYPE_LEVEL_LOW>;
+		interrupts = <GIC_SPI 7 IRQ_TYPE_NONE>; /* IRQ_SYS_1N */
 		reg = <0x48>;
 		interrupt-controller;
 		#interrupt-cells = <2>;
@@ -650,8 +645,7 @@
 		pinctrl-names = "default";
 		pinctrl-0 = <&twl6040_pins>;
 
-		/* sys_nirq/ext_sys_irq pins get inverted at mpuss wakeupgen */
-		interrupts = <GIC_SPI 119 IRQ_TYPE_LEVEL_LOW>;
+		interrupts = <GIC_SPI 119 IRQ_TYPE_NONE>; /* IRQ_SYS_2N cascaded to gic */
 
 		/* audpwron gpio defined in the board specific dts */
 
@@ -659,21 +653,19 @@
 		v2v1-supply = <&smps9_reg>;
 		enable-active-high;
 
-		clocks = <&clk32kgaudio>, <&fref_xtal_ck>;
-		clock-names = "clk32k", "mclk";
+		clocks = <&clk32kgaudio>;
+		clock-names = "clk32k";
 	};
 };
 
-&mcpdm_module {
-	/* Module on the SoC needs external clock from the PMIC */
+&mcpdm {
 	pinctrl-names = "default";
 	pinctrl-0 = <&mcpdm_pins>;
-	status = "okay";
-};
 
-&mcpdm {
 	clocks = <&twl6040>;
 	clock-names = "pdmclk";
+
+	status = "okay";
 };
 
 &mcbsp1 {
@@ -700,11 +692,6 @@
 &usb3 {
 	extcon = <&extcon_usb3>;
 	vbus-supply = <&smps10_out1_reg>;
-};
-
-&dwc3 {
-	extcon = <&extcon_usb3>;
-	dr_mode = "otg";
 };
 
 &mcspi1 {

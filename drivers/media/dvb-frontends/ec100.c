@@ -1,11 +1,25 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * E3C EC100 demodulator driver
  *
  * Copyright (C) 2009 Antti Palosaari <crope@iki.fi>
+ *
+ *    This program is free software; you can redistribute it and/or modify
+ *    it under the terms of the GNU General Public License as published by
+ *    the Free Software Foundation; either version 2 of the License, or
+ *    (at your option) any later version.
+ *
+ *    This program is distributed in the hope that it will be useful,
+ *    but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *    GNU General Public License for more details.
+ *
+ *    You should have received a copy of the GNU General Public License
+ *    along with this program; if not, write to the Free Software
+ *    Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ *
  */
 
-#include <media/dvb_frontend.h>
+#include "dvb_frontend.h"
 #include "ec100.h"
 
 struct ec100_state {
@@ -266,7 +280,7 @@ static void ec100_release(struct dvb_frontend *fe)
 	kfree(state);
 }
 
-static const struct dvb_frontend_ops ec100_ops;
+static struct dvb_frontend_ops ec100_ops;
 
 struct dvb_frontend *ec100_attach(const struct ec100_config *config,
 	struct i2c_adapter *i2c)
@@ -301,7 +315,7 @@ error:
 }
 EXPORT_SYMBOL(ec100_attach);
 
-static const struct dvb_frontend_ops ec100_ops = {
+static struct dvb_frontend_ops ec100_ops = {
 	.delsys = { SYS_DVBT },
 	.info = {
 		.name = "E3C EC100 DVB-T",

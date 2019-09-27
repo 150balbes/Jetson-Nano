@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0-only
 # ALSA SH drivers
 
 menuconfig SND_SUPERH

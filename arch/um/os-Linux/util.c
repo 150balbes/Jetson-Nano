@@ -13,7 +13,6 @@
 #include <wait.h>
 #include <sys/mman.h>
 #include <sys/utsname.h>
-#include <init.h>
 #include <os.h>
 
 void stack_protections(unsigned long address)
@@ -152,37 +151,4 @@ void os_dump_core(void)
 void um_early_printk(const char *s, unsigned int n)
 {
 	printf("%.*s", n, s);
-}
-
-static int quiet_info;
-
-static int __init quiet_cmd_param(char *str, int *add)
-{
-	quiet_info = 1;
-	return 0;
-}
-
-__uml_setup("quiet", quiet_cmd_param,
-"quiet\n"
-"    Turns off information messages during boot.\n\n");
-
-void os_info(const char *fmt, ...)
-{
-	va_list list;
-
-	if (quiet_info)
-		return;
-
-	va_start(list, fmt);
-	vfprintf(stderr, fmt, list);
-	va_end(list);
-}
-
-void os_warn(const char *fmt, ...)
-{
-	va_list list;
-
-	va_start(list, fmt);
-	vfprintf(stderr, fmt, list);
-	va_end(list);
 }

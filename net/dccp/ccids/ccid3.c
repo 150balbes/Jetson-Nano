@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  *  Copyright (c) 2007   The University of Aberdeen, Scotland, UK
  *  Copyright (c) 2005-7 The University of Waikato, Hamilton, New Zealand.
@@ -18,6 +17,20 @@
  *  Arnaldo Carvalho de Melo <acme@conectiva.com.br>.
  *
  *  Copyright (c) 2005 Arnaldo Carvalho de Melo <acme@conectiva.com.br>
+ *
+ *  This program is free software; you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License as published by
+ *  the Free Software Foundation; either version 2 of the License, or
+ *  (at your option) any later version.
+ *
+ *  This program is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *  GNU General Public License for more details.
+ *
+ *  You should have received a copy of the GNU General Public License
+ *  along with this program; if not, write to the Free Software
+ *  Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  */
 #include "../dccp.h"
 #include "ccid3.h"
@@ -182,10 +195,10 @@ static inline void ccid3_hc_tx_update_win_count(struct ccid3_hc_tx_sock *hc,
 	}
 }
 
-static void ccid3_hc_tx_no_feedback_timer(struct timer_list *t)
+static void ccid3_hc_tx_no_feedback_timer(unsigned long data)
 {
-	struct ccid3_hc_tx_sock *hc = from_timer(hc, t, tx_no_feedback_timer);
-	struct sock *sk = hc->sk;
+	struct sock *sk = (struct sock *)data;
+	struct ccid3_hc_tx_sock *hc = ccid3_hc_tx_sk(sk);
 	unsigned long t_nfb = USEC_PER_SEC / 5;
 
 	bh_lock_sock(sk);
@@ -492,9 +505,8 @@ static int ccid3_hc_tx_init(struct ccid *ccid, struct sock *sk)
 
 	hc->tx_state = TFRC_SSTATE_NO_SENT;
 	hc->tx_hist  = NULL;
-	hc->sk	     = sk;
-	timer_setup(&hc->tx_no_feedback_timer,
-		    ccid3_hc_tx_no_feedback_timer, 0);
+	setup_timer(&hc->tx_no_feedback_timer,
+			ccid3_hc_tx_no_feedback_timer, (unsigned long)sk);
 	return 0;
 }
 

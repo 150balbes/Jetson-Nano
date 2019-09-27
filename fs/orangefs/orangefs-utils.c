@@ -1,11 +1,8 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * (C) 2001 Clemson University and The University of Chicago
- * Copyright 2018 Omnibond Systems, L.L.C.
  *
  * See COPYING in top-level directory.
  */
-#include <linux/kernel.h>
 #include "protocol.h"
 #include "orangefs-kernel.h"
 #include "orangefs-dev-proto.h"
@@ -136,49 +133,87 @@ static int orangefs_inode_perms(struct ORANGEFS_sys_attr_s *attrs)
  * NOTE: in kernel land, we never use the sys_attr->link_target for
  * anything, so don't bother copying it into the sys_attr object here.
  */
-static inline void copy_attributes_from_inode(struct inode *inode,
-    struct ORANGEFS_sys_attr_s *attrs)
+static inline int copy_attributes_from_inode(struct inode *inode,
+					     struct ORANGEFS_sys_attr_s *attrs,
+					     struct iattr *iattr)
 {
-	struct orangefs_inode_s *orangefs_inode = ORANGEFS_I(inode);
+	umode_t tmp_mode;
+
+	if (!iattr || !inode || !attrs) {
+		gossip_err("NULL iattr (%p), inode (%p), attrs (%p) "
+			   "in copy_attributes_from_inode!\n",
+			   iattr,
+			   inode,
+			   attrs);
+		return -EINVAL;
+	}
+	/*
+	 * We need to be careful to only copy the attributes out of the
+	 * iattr object that we know are valid.
+	 */
 	attrs->mask = 0;
-	if (orangefs_inode->attr_valid & ATTR_UID) {
-		attrs->owner = from_kuid(&init_user_ns, inode->i_uid);
+	if (iattr->ia_valid & ATTR_UID) {
+		attrs->owner = from_kuid(&init_user_ns, iattr->ia_uid);
 		attrs->mask |= ORANGEFS_ATTR_SYS_UID;
 		gossip_debug(GOSSIP_UTILS_DEBUG, "(UID) %d\n", attrs->owner);
 	}
-	if (orangefs_inode->attr_valid & ATTR_GID) {
-		attrs->group = from_kgid(&init_user_ns, inode->i_gid);
+	if (iattr->ia_valid & ATTR_GID) {
+		attrs->group = from_kgid(&init_user_ns, iattr->ia_gid);
 		attrs->mask |= ORANGEFS_ATTR_SYS_GID;
 		gossip_debug(GOSSIP_UTILS_DEBUG, "(GID) %d\n", attrs->group);
 	}
 
-	if (orangefs_inode->attr_valid & ATTR_ATIME) {
+	if (iattr->ia_valid & ATTR_ATIME) {
 		attrs->mask |= ORANGEFS_ATTR_SYS_ATIME;
-		if (orangefs_inode->attr_valid & ATTR_ATIME_SET) {
-			attrs->atime = (time64_t)inode->i_atime.tv_sec;
+		if (iattr->ia_valid & ATTR_ATIME_SET) {
+			attrs->atime = (time64_t)iattr->ia_atime.tv_sec;
 			attrs->mask |= ORANGEFS_ATTR_SYS_ATIME_SET;
 		}
 	}
-	if (orangefs_inode->attr_valid & ATTR_MTIME) {
+	if (iattr->ia_valid & ATTR_MTIME) {
 		attrs->mask |= ORANGEFS_ATTR_SYS_MTIME;
-		if (orangefs_inode->attr_valid & ATTR_MTIME_SET) {
-			attrs->mtime = (time64_t)inode->i_mtime.tv_sec;
+		if (iattr->ia_valid & ATTR_MTIME_SET) {
+			attrs->mtime = (time64_t)iattr->ia_mtime.tv_sec;
 			attrs->mask |= ORANGEFS_ATTR_SYS_MTIME_SET;
 		}
 	}
-	if (orangefs_inode->attr_valid & ATTR_CTIME)
+	if (iattr->ia_valid & ATTR_CTIME)
 		attrs->mask |= ORANGEFS_ATTR_SYS_CTIME;
 
 	/*
-	 * ORANGEFS cannot set size with a setattr operation. Probably not
-	 * likely to be requested through the VFS, but just in case, don't
-	 * worry about ATTR_SIZE
+	 * ORANGEFS cannot set size with a setattr operation.  Probably not likely
+	 * to be requested through the VFS, but just in case, don't worry about
+	 * ATTR_SIZE
 	 */
 
-	if (orangefs_inode->attr_valid & ATTR_MODE) {
-		attrs->perms = ORANGEFS_util_translate_mode(inode->i_mode);
+	if (iattr->ia_valid & ATTR_MODE) {
+		tmp_mode = iattr->ia_mode;
+		if (tmp_mode & (S_ISVTX)) {
+			if (is_root_handle(inode)) {
+				/*
+				 * allow sticky bit to be set on root (since
+				 * it shows up that way by default anyhow),
+				 * but don't show it to the server
+				 */
+				tmp_mode -= S_ISVTX;
+			} else {
+				gossip_debug(GOSSIP_UTILS_DEBUG,
+					     "User attempted to set sticky bit on non-root directory; returning EINVAL.\n");
+				return -EINVAL;
+			}
+		}
+
+		if (tmp_mode & (S_ISUID)) {
+			gossip_debug(GOSSIP_UTILS_DEBUG,
+				     "Attempting to set setuid bit (not supported); returning EINVAL.\n");
+			return -EINVAL;
+		}
+
+		attrs->perms = ORANGEFS_util_translate_mode(tmp_mode);
 		attrs->mask |= ORANGEFS_ATTR_SYS_PERM;
 	}
+
+	return 0;
 }
 
 static int orangefs_inode_type(enum orangefs_ds_type objtype)
@@ -193,164 +228,105 @@ static int orangefs_inode_type(enum orangefs_ds_type objtype)
 		return -1;
 }
 
-static void orangefs_make_bad_inode(struct inode *inode)
-{
-	if (is_root_handle(inode)) {
-		/*
-		 * if this occurs, the pvfs2-client-core was killed but we
-		 * can't afford to lose the inode operations and such
-		 * associated with the root handle in any case.
-		 */
-		gossip_debug(GOSSIP_UTILS_DEBUG,
-			     "*** NOT making bad root inode %pU\n",
-			     get_khandle_from_ino(inode));
-	} else {
-		gossip_debug(GOSSIP_UTILS_DEBUG,
-			     "*** making bad inode %pU\n",
-			     get_khandle_from_ino(inode));
-		make_bad_inode(inode);
-	}
-}
-
-static int orangefs_inode_is_stale(struct inode *inode,
+static int orangefs_inode_is_stale(struct inode *inode, int new,
     struct ORANGEFS_sys_attr_s *attrs, char *link_target)
 {
 	struct orangefs_inode_s *orangefs_inode = ORANGEFS_I(inode);
 	int type = orangefs_inode_type(attrs->objtype);
-	/*
-	 * If the inode type or symlink target have changed then this
-	 * inode is stale.
-	 */
-	if (type == -1 || !(inode->i_mode & type)) {
-		orangefs_make_bad_inode(inode);
-		return 1;
-	}
-	if (type == S_IFLNK && strncmp(orangefs_inode->link_target,
-	    link_target, ORANGEFS_NAME_MAX)) {
-		orangefs_make_bad_inode(inode);
-		return 1;
+	if (!new) {
+		/*
+		 * If the inode type or symlink target have changed then this
+		 * inode is stale.
+		 */
+		if (type == -1 || !(inode->i_mode & type)) {
+			orangefs_make_bad_inode(inode);
+			return 1;
+		}
+		if (type == S_IFLNK && strncmp(orangefs_inode->link_target,
+		    link_target, ORANGEFS_NAME_MAX)) {
+			orangefs_make_bad_inode(inode);
+			return 1;
+		}
 	}
 	return 0;
 }
 
-int orangefs_inode_getattr(struct inode *inode, int flags)
+int orangefs_inode_getattr(struct inode *inode, int new, int bypass)
 {
 	struct orangefs_inode_s *orangefs_inode = ORANGEFS_I(inode);
 	struct orangefs_kernel_op_s *new_op;
-	loff_t inode_size;
+	loff_t inode_size, rounded_up_size;
 	int ret, type;
 
-	gossip_debug(GOSSIP_UTILS_DEBUG, "%s: called on inode %pU flags %d\n",
-	    __func__, get_khandle_from_ino(inode), flags);
+	gossip_debug(GOSSIP_UTILS_DEBUG, "%s: called on inode %pU\n", __func__,
+	    get_khandle_from_ino(inode));
 
-again:
-	spin_lock(&inode->i_lock);
-	/* Must have all the attributes in the mask and be within cache time. */
-	if ((!flags && time_before(jiffies, orangefs_inode->getattr_time)) ||
-	    orangefs_inode->attr_valid || inode->i_state & I_DIRTY_PAGES) {
-		if (orangefs_inode->attr_valid) {
-			spin_unlock(&inode->i_lock);
-			write_inode_now(inode, 1);
-			goto again;
-		}
-		spin_unlock(&inode->i_lock);
-		return 0;
+	if (!new && !bypass) {
+		if (time_before(jiffies, orangefs_inode->getattr_time))
+			return 0;
 	}
-	spin_unlock(&inode->i_lock);
 
 	new_op = op_alloc(ORANGEFS_VFS_OP_GETATTR);
 	if (!new_op)
 		return -ENOMEM;
 	new_op->upcall.req.getattr.refn = orangefs_inode->refn;
-	/*
-	 * Size is the hardest attribute to get.  The incremental cost of any
-	 * other attribute is essentially zero.
-	 */
-	if (flags)
-		new_op->upcall.req.getattr.mask = ORANGEFS_ATTR_SYS_ALL_NOHINT;
-	else
-		new_op->upcall.req.getattr.mask =
-		    ORANGEFS_ATTR_SYS_ALL_NOHINT & ~ORANGEFS_ATTR_SYS_SIZE;
+	new_op->upcall.req.getattr.mask = ORANGEFS_ATTR_SYS_ALL_NOHINT;
 
 	ret = service_operation(new_op, __func__,
 	    get_interruptible_flag(inode));
 	if (ret != 0)
 		goto out;
 
-again2:
-	spin_lock(&inode->i_lock);
-	/* Must have all the attributes in the mask and be within cache time. */
-	if ((!flags && time_before(jiffies, orangefs_inode->getattr_time)) ||
-	    orangefs_inode->attr_valid || inode->i_state & I_DIRTY_PAGES) {
-		if (orangefs_inode->attr_valid) {
-			spin_unlock(&inode->i_lock);
-			write_inode_now(inode, 1);
-			goto again2;
-		}
-		if (inode->i_state & I_DIRTY_PAGES) {
-			ret = 0;
-			goto out_unlock;
-		}
-		gossip_debug(GOSSIP_UTILS_DEBUG, "%s: in cache or dirty\n",
-		    __func__);
-		ret = 0;
-		goto out_unlock;
-	}
-
-	if (!(flags & ORANGEFS_GETATTR_NEW)) {
-		ret = orangefs_inode_is_stale(inode,
-		    &new_op->downcall.resp.getattr.attributes,
-		    new_op->downcall.resp.getattr.link_target);
-		if (ret) {
-			ret = -ESTALE;
-			goto out_unlock;
-		}
-	}
-
 	type = orangefs_inode_type(new_op->
 	    downcall.resp.getattr.attributes.objtype);
+	ret = orangefs_inode_is_stale(inode, new,
+	    &new_op->downcall.resp.getattr.attributes,
+	    new_op->downcall.resp.getattr.link_target);
+	if (ret) {
+		ret = -ESTALE;
+		goto out;
+	}
+
 	switch (type) {
 	case S_IFREG:
 		inode->i_flags = orangefs_inode_flags(&new_op->
 		    downcall.resp.getattr.attributes);
-		if (flags) {
-			inode_size = (loff_t)new_op->
-			    downcall.resp.getattr.attributes.size;
-			inode->i_size = inode_size;
-			inode->i_blkbits = ffs(new_op->downcall.resp.getattr.
-			    attributes.blksize);
-			inode->i_bytes = inode_size;
-			inode->i_blocks =
-			    (inode_size + 512 - inode_size % 512)/512;
-		}
+		inode_size = (loff_t)new_op->
+		    downcall.resp.getattr.attributes.size;
+		rounded_up_size =
+		    (inode_size + (4096 - (inode_size % 4096)));
+		inode->i_size = inode_size;
+		orangefs_inode->blksize =
+		    new_op->downcall.resp.getattr.attributes.blksize;
+		spin_lock(&inode->i_lock);
+		inode->i_bytes = inode_size;
+		inode->i_blocks =
+		    (unsigned long)(rounded_up_size / 512);
+		spin_unlock(&inode->i_lock);
 		break;
 	case S_IFDIR:
-		if (flags) {
-			inode->i_size = PAGE_SIZE;
-			inode_set_bytes(inode, inode->i_size);
-		}
+		inode->i_size = PAGE_SIZE;
+		orangefs_inode->blksize = i_blocksize(inode);
+		spin_lock(&inode->i_lock);
+		inode_set_bytes(inode, inode->i_size);
+		spin_unlock(&inode->i_lock);
 		set_nlink(inode, 1);
 		break;
 	case S_IFLNK:
-		if (flags & ORANGEFS_GETATTR_NEW) {
+		if (new) {
 			inode->i_size = (loff_t)strlen(new_op->
 			    downcall.resp.getattr.link_target);
+			orangefs_inode->blksize = i_blocksize(inode);
 			ret = strscpy(orangefs_inode->link_target,
 			    new_op->downcall.resp.getattr.link_target,
 			    ORANGEFS_NAME_MAX);
 			if (ret == -E2BIG) {
 				ret = -EIO;
-				goto out_unlock;
+				goto out;
 			}
 			inode->i_link = orangefs_inode->link_target;
 		}
 		break;
-	/* i.e. -1 */
-	default:
-		/* XXX: ESTALE?  This is what is done if it is not new. */
-		orangefs_make_bad_inode(inode);
-		ret = -ESTALE;
-		goto out_unlock;
 	}
 
 	inode->i_uid = make_kuid(&init_user_ns, new_op->
@@ -374,8 +350,6 @@ again2:
 	orangefs_inode->getattr_time = jiffies +
 	    orangefs_getattr_timeout_msecs*HZ/1000;
 	ret = 0;
-out_unlock:
-	spin_unlock(&inode->i_lock);
 out:
 	op_release(new_op);
 	return ret;
@@ -402,7 +376,7 @@ int orangefs_inode_check_changed(struct inode *inode)
 	if (ret != 0)
 		goto out;
 
-	ret = orangefs_inode_is_stale(inode,
+	ret = orangefs_inode_is_stale(inode, 0,
 	    &new_op->downcall.resp.getattr.attributes,
 	    new_op->downcall.resp.getattr.link_target);
 out:
@@ -414,7 +388,7 @@ out:
  * issues a orangefs setattr request to make sure the new attribute values
  * take effect if successful.  returns 0 on success; -errno otherwise
  */
-int orangefs_inode_setattr(struct inode *inode)
+int orangefs_inode_setattr(struct inode *inode, struct iattr *iattr)
 {
 	struct orangefs_inode_s *orangefs_inode = ORANGEFS_I(inode);
 	struct orangefs_kernel_op_s *new_op;
@@ -424,32 +398,160 @@ int orangefs_inode_setattr(struct inode *inode)
 	if (!new_op)
 		return -ENOMEM;
 
-	spin_lock(&inode->i_lock);
-	new_op->upcall.uid = from_kuid(&init_user_ns, orangefs_inode->attr_uid);
-	new_op->upcall.gid = from_kgid(&init_user_ns, orangefs_inode->attr_gid);
 	new_op->upcall.req.setattr.refn = orangefs_inode->refn;
-	copy_attributes_from_inode(inode,
-	    &new_op->upcall.req.setattr.attributes);
-	orangefs_inode->attr_valid = 0;
-	if (!new_op->upcall.req.setattr.attributes.mask) {
-		spin_unlock(&inode->i_lock);
-		op_release(new_op);
-		return 0;
-	}
-	spin_unlock(&inode->i_lock);
+	ret = copy_attributes_from_inode(inode,
+		       &new_op->upcall.req.setattr.attributes,
+		       iattr);
+	if (ret >= 0) {
+		ret = service_operation(new_op, __func__,
+				get_interruptible_flag(inode));
 
-	ret = service_operation(new_op, __func__,
-	    get_interruptible_flag(inode) | ORANGEFS_OP_WRITEBACK);
-	gossip_debug(GOSSIP_UTILS_DEBUG,
-	    "orangefs_inode_setattr: returning %d\n", ret);
-	if (ret)
-		orangefs_make_bad_inode(inode);
+		gossip_debug(GOSSIP_UTILS_DEBUG,
+			     "orangefs_inode_setattr: returning %d\n",
+			     ret);
+	}
 
 	op_release(new_op);
 
-	if (ret == 0)
+	/*
+	 * successful setattr should clear the atime, mtime and
+	 * ctime flags.
+	 */
+	if (ret == 0) {
+		ClearAtimeFlag(orangefs_inode);
+		ClearMtimeFlag(orangefs_inode);
+		ClearCtimeFlag(orangefs_inode);
+		ClearModeFlag(orangefs_inode);
 		orangefs_inode->getattr_time = jiffies - 1;
+	}
+
 	return ret;
+}
+
+int orangefs_flush_inode(struct inode *inode)
+{
+	/*
+	 * If it is a dirty inode, this function gets called.
+	 * Gather all the information that needs to be setattr'ed
+	 * Right now, this will only be used for mode, atime, mtime
+	 * and/or ctime.
+	 */
+	struct iattr wbattr;
+	int ret;
+	int mtime_flag;
+	int ctime_flag;
+	int atime_flag;
+	int mode_flag;
+	struct orangefs_inode_s *orangefs_inode = ORANGEFS_I(inode);
+
+	memset(&wbattr, 0, sizeof(wbattr));
+
+	/*
+	 * check inode flags up front, and clear them if they are set.  This
+	 * will prevent multiple processes from all trying to flush the same
+	 * inode if they call close() simultaneously
+	 */
+	mtime_flag = MtimeFlag(orangefs_inode);
+	ClearMtimeFlag(orangefs_inode);
+	ctime_flag = CtimeFlag(orangefs_inode);
+	ClearCtimeFlag(orangefs_inode);
+	atime_flag = AtimeFlag(orangefs_inode);
+	ClearAtimeFlag(orangefs_inode);
+	mode_flag = ModeFlag(orangefs_inode);
+	ClearModeFlag(orangefs_inode);
+
+	/*  -- Lazy atime,mtime and ctime update --
+	 * Note: all times are dictated by server in the new scheme
+	 * and not by the clients
+	 *
+	 * Also mode updates are being handled now..
+	 */
+
+	if (mtime_flag)
+		wbattr.ia_valid |= ATTR_MTIME;
+	if (ctime_flag)
+		wbattr.ia_valid |= ATTR_CTIME;
+	if (atime_flag)
+		wbattr.ia_valid |= ATTR_ATIME;
+
+	if (mode_flag) {
+		wbattr.ia_mode = inode->i_mode;
+		wbattr.ia_valid |= ATTR_MODE;
+	}
+
+	gossip_debug(GOSSIP_UTILS_DEBUG,
+		     "*********** orangefs_flush_inode: %pU "
+		     "(ia_valid %d)\n",
+		     get_khandle_from_ino(inode),
+		     wbattr.ia_valid);
+	if (wbattr.ia_valid == 0) {
+		gossip_debug(GOSSIP_UTILS_DEBUG,
+			     "orangefs_flush_inode skipping setattr()\n");
+		return 0;
+	}
+
+	gossip_debug(GOSSIP_UTILS_DEBUG,
+		     "orangefs_flush_inode (%pU) writing mode %o\n",
+		     get_khandle_from_ino(inode),
+		     inode->i_mode);
+
+	ret = orangefs_inode_setattr(inode, &wbattr);
+
+	return ret;
+}
+
+int orangefs_unmount_sb(struct super_block *sb)
+{
+	int ret = -EINVAL;
+	struct orangefs_kernel_op_s *new_op = NULL;
+
+	gossip_debug(GOSSIP_UTILS_DEBUG,
+		     "orangefs_unmount_sb called on sb %p\n",
+		     sb);
+
+	new_op = op_alloc(ORANGEFS_VFS_OP_FS_UMOUNT);
+	if (!new_op)
+		return -ENOMEM;
+	new_op->upcall.req.fs_umount.id = ORANGEFS_SB(sb)->id;
+	new_op->upcall.req.fs_umount.fs_id = ORANGEFS_SB(sb)->fs_id;
+	strncpy(new_op->upcall.req.fs_umount.orangefs_config_server,
+		ORANGEFS_SB(sb)->devname,
+		ORANGEFS_MAX_SERVER_ADDR_LEN);
+
+	gossip_debug(GOSSIP_UTILS_DEBUG,
+		     "Attempting ORANGEFS Unmount via host %s\n",
+		     new_op->upcall.req.fs_umount.orangefs_config_server);
+
+	ret = service_operation(new_op, "orangefs_fs_umount", 0);
+
+	gossip_debug(GOSSIP_UTILS_DEBUG,
+		     "orangefs_unmount: got return value of %d\n", ret);
+	if (ret)
+		sb = ERR_PTR(ret);
+	else
+		ORANGEFS_SB(sb)->mount_pending = 1;
+
+	op_release(new_op);
+	return ret;
+}
+
+void orangefs_make_bad_inode(struct inode *inode)
+{
+	if (is_root_handle(inode)) {
+		/*
+		 * if this occurs, the pvfs2-client-core was killed but we
+		 * can't afford to lose the inode operations and such
+		 * associated with the root handle in any case.
+		 */
+		gossip_debug(GOSSIP_UTILS_DEBUG,
+			     "*** NOT making bad root inode %pU\n",
+			     get_khandle_from_ino(inode));
+	} else {
+		gossip_debug(GOSSIP_UTILS_DEBUG,
+			     "*** making bad inode %pU\n",
+			     get_khandle_from_ino(inode));
+		make_bad_inode(inode);
+	}
 }
 
 /*
@@ -483,7 +585,7 @@ int orangefs_normalize_to_errno(__s32 error_code)
 	 * server.
 	 */
 	} else if (error_code > 0) {
-		gossip_err("orangefs: error status received.\n");
+		gossip_err("orangefs: error status receieved.\n");
 		gossip_err("orangefs: assuming error code is inverted.\n");
 		error_code = -error_code;
 	}
@@ -508,16 +610,14 @@ int orangefs_normalize_to_errno(__s32 error_code)
 			error_code = -ETIMEDOUT;
 		} else {
 			/* assume a default error code */
-			gossip_err("%s: bad error code :%d:.\n",
-				__func__,
-				error_code);
+			gossip_err("orangefs: warning: got error code without errno equivalent: %d.\n", error_code);
 			error_code = -EINVAL;
 		}
 
 	/* Convert ORANGEFS encoded errno values into regular errno values. */
 	} else if ((-error_code) & ORANGEFS_ERROR_BIT) {
 		i = (-error_code) & ~(ORANGEFS_ERROR_BIT|ORANGEFS_ERROR_CLASS_BITS);
-		if (i < ARRAY_SIZE(PINT_errno_mapping))
+		if (i < sizeof(PINT_errno_mapping)/sizeof(*PINT_errno_mapping))
 			error_code = -PINT_errno_mapping[i];
 		else
 			error_code = -EINVAL;
@@ -527,8 +627,7 @@ int orangefs_normalize_to_errno(__s32 error_code)
 	 * there is a bug somewhere.
 	 */
 	} else {
-		gossip_err("%s: unknown error code.\n", __func__);
-		error_code = -EINVAL;
+		gossip_err("orangefs: orangefs_normalize_to_errno: got error code which is not from ORANGEFS.\n");
 	}
 	return error_code;
 }

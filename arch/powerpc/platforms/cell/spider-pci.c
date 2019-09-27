@@ -1,8 +1,21 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * IO workarounds for PCI on Celleb/Cell platform
  *
  * (C) Copyright 2006-2007 TOSHIBA CORPORATION
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with this program; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
 #undef DEBUG
@@ -117,10 +130,10 @@ int __init spiderpci_iowa_init(struct iowa_bus *bus, void *data)
 	struct resource r;
 	unsigned long offset = (unsigned long)data;
 
-	pr_debug("SPIDERPCI-IOWA:Bus initialize for spider(%pOF)\n",
-		 np);
+	pr_debug("SPIDERPCI-IOWA:Bus initialize for spider(%s)\n",
+		 np->full_name);
 
-	priv = kzalloc(sizeof(*priv), GFP_KERNEL);
+	priv = kzalloc(sizeof(struct spiderpci_iowa_private), GFP_KERNEL);
 	if (!priv) {
 		pr_err("SPIDERPCI-IOWA:"
 		       "Can't allocate struct spiderpci_iowa_private");

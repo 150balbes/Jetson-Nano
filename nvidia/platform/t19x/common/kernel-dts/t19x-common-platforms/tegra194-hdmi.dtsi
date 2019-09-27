@@ -1,0 +1,80 @@
+/*
+ * tegra194-hdmi.dtsi:
+ *
+ * Copyright (c) 2017, NVIDIA CORPORATION.  All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; version 2 of the License.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ */
+
+#include <dt-bindings/display/tegra-dc.h>
+
+&sor0 {
+	nvidia,hpd-gpio = <&tegra_main_gpio TEGRA194_MAIN_GPIO(M, 0) GPIO_ACTIVE_HIGH>;
+	nvidia,ddc-i2c-bus = <&dp_aux_ch0_i2c>;
+};
+
+&sor1 {
+	nvidia,hpd-gpio = <&tegra_main_gpio TEGRA194_MAIN_GPIO(M, 1) GPIO_ACTIVE_HIGH>;
+	nvidia,ddc-i2c-bus = <&dp_aux_ch1_i2c>;
+};
+
+&sor2 {
+	nvidia,hpd-gpio = <&tegra_main_gpio TEGRA194_MAIN_GPIO(M, 2) GPIO_ACTIVE_HIGH>;
+	nvidia,ddc-i2c-bus = <&dp_aux_ch2_i2c>;
+};
+
+&sor3 {
+	nvidia,hpd-gpio = <&tegra_main_gpio TEGRA194_MAIN_GPIO(M, 3) GPIO_ACTIVE_HIGH>;
+	nvidia,ddc-i2c-bus = <&dp_aux_ch3_i2c>;
+};
+
+&sor0_hdmi_display {
+	generic-infoframe-type = <HDMI_INFOFRAME_TYPE_HDR>;
+	disp-default-out {
+		nvidia,out-type = <TEGRA_DC_OUT_HDMI>;
+		nvidia,out-hotplug-state = <0>;
+		nvidia,out-parent-clk = "pll_d";
+		nvidia,out-xres = <4096>;
+		nvidia,out-yres = <2160>;
+	};
+};
+
+&sor1_hdmi_display {
+	generic-infoframe-type = <HDMI_INFOFRAME_TYPE_HDR>;
+	disp-default-out {
+		nvidia,out-type = <TEGRA_DC_OUT_HDMI>;
+		nvidia,out-hotplug-state = <0>;
+		nvidia,out-parent-clk = "plld2";
+		nvidia,out-xres = <4096>;
+		nvidia,out-yres = <2160>;
+	};
+};
+
+&sor2_hdmi_display {
+	generic-infoframe-type = <HDMI_INFOFRAME_TYPE_HDR>;
+	disp-default-out {
+		nvidia,out-type = <TEGRA_DC_OUT_HDMI>;
+		nvidia,out-hotplug-state = <0>;
+		nvidia,out-parent-clk = "plld3";
+		nvidia,out-xres = <4096>;
+		nvidia,out-yres = <2160>;
+	};
+};
+
+&sor3_hdmi_display {
+	generic-infoframe-type = <HDMI_INFOFRAME_TYPE_HDR>;
+	disp-default-out {
+		nvidia,out-type = <TEGRA_DC_OUT_HDMI>;
+		nvidia,out-hotplug-state = <0>;
+		nvidia,out-parent-clk = "plld4";
+		nvidia,out-xres = <4096>;
+		nvidia,out-yres = <2160>;
+	};
+};

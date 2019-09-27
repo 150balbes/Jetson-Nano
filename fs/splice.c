@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * "splice": joining two ropes together by interweaving their strands.
  *
@@ -18,7 +17,6 @@
  * Copyright (C) 2006 Ingo Molnar <mingo@elte.hu>
  *
  */
-#include <linux/bvec.h>
 #include <linux/fs.h>
 #include <linux/file.h>
 #include <linux/pagemap.h>
@@ -34,8 +32,6 @@
 #include <linux/gfp.h>
 #include <linux/socket.h>
 #include <linux/compat.h>
-#include <linux/sched/signal.h>
-
 #include "internal.h"
 
 /*
@@ -139,6 +135,7 @@ error:
 }
 
 const struct pipe_buf_operations page_cache_pipe_buf_ops = {
+	.can_merge = 0,
 	.confirm = page_cache_pipe_buf_confirm,
 	.release = page_cache_pipe_buf_release,
 	.steal = page_cache_pipe_buf_steal,
@@ -156,6 +153,7 @@ static int user_page_pipe_buf_steal(struct pipe_inode_info *pipe,
 }
 
 static const struct pipe_buf_operations user_page_pipe_buf_ops = {
+	.can_merge = 0,
 	.confirm = generic_pipe_buf_confirm,
 	.release = page_cache_pipe_buf_release,
 	.steal = user_page_pipe_buf_steal,
@@ -246,21 +244,25 @@ ssize_t add_to_pipe(struct pipe_inode_info *pipe, struct pipe_buffer *buf)
 }
 EXPORT_SYMBOL(add_to_pipe);
 
+void spd_release_page(struct splice_pipe_desc *spd, unsigned int i)
+{
+	put_page(spd->pages[i]);
+}
+
 /*
  * Check if we need to grow the arrays holding pages and partial page
  * descriptions.
  */
 int splice_grow_spd(const struct pipe_inode_info *pipe, struct splice_pipe_desc *spd)
 {
-	unsigned int buffers = READ_ONCE(pipe->buffers);
+	unsigned int buffers = ACCESS_ONCE(pipe->buffers);
 
 	spd->nr_pages_max = buffers;
 	if (buffers <= PIPE_DEF_BUFFERS)
 		return 0;
 
-	spd->pages = kmalloc_array(buffers, sizeof(struct page *), GFP_KERNEL);
-	spd->partial = kmalloc_array(buffers, sizeof(struct partial_page),
-				     GFP_KERNEL);
+	spd->pages = kmalloc(buffers * sizeof(struct page *), GFP_KERNEL);
+	spd->partial = kmalloc(buffers * sizeof(struct partial_page), GFP_KERNEL);
 
 	if (spd->pages && spd->partial)
 		return 0;
@@ -300,11 +302,11 @@ ssize_t generic_file_splice_read(struct file *in, loff_t *ppos,
 	struct kiocb kiocb;
 	int idx, ret;
 
-	iov_iter_pipe(&to, READ, pipe, len);
+	iov_iter_pipe(&to, ITER_PIPE | READ, pipe, len);
 	idx = to.idx;
 	init_sync_kiocb(&kiocb, in);
 	kiocb.ki_pos = *ppos;
-	ret = call_read_iter(in, &kiocb, &to);
+	ret = in->f_op->read_iter(&kiocb, &to);
 	if (ret > 0) {
 		*ppos = kiocb.ki_pos;
 		file_accessed(in);
@@ -325,20 +327,22 @@ ssize_t generic_file_splice_read(struct file *in, loff_t *ppos,
 EXPORT_SYMBOL(generic_file_splice_read);
 
 const struct pipe_buf_operations default_pipe_buf_ops = {
+	.can_merge = 0,
 	.confirm = generic_pipe_buf_confirm,
 	.release = generic_pipe_buf_release,
 	.steal = generic_pipe_buf_steal,
 	.get = generic_pipe_buf_get,
 };
 
-int generic_pipe_buf_nosteal(struct pipe_inode_info *pipe,
-			     struct pipe_buffer *buf)
+static int generic_pipe_buf_nosteal(struct pipe_inode_info *pipe,
+				    struct pipe_buffer *buf)
 {
 	return 1;
 }
 
 /* Pipe buffer operations for a socket and similar. */
 const struct pipe_buf_operations nosteal_pipe_buf_ops = {
+	.can_merge = 0,
 	.confirm = generic_pipe_buf_confirm,
 	.release = generic_pipe_buf_release,
 	.steal = generic_pipe_buf_nosteal,
@@ -354,13 +358,29 @@ static ssize_t kernel_readv(struct file *file, const struct kvec *vec,
 	ssize_t res;
 
 	old_fs = get_fs();
-	set_fs(KERNEL_DS);
+	set_fs(get_ds());
 	/* The cast to a user pointer is valid due to the set_fs() */
 	res = vfs_readv(file, (const struct iovec __user *)vec, vlen, &pos, 0);
 	set_fs(old_fs);
 
 	return res;
 }
+
+ssize_t kernel_write(struct file *file, const char *buf, size_t count,
+			    loff_t pos)
+{
+	mm_segment_t old_fs;
+	ssize_t res;
+
+	old_fs = get_fs();
+	set_fs(get_ds());
+	/* The cast to a user pointer is valid due to the set_fs() */
+	res = vfs_write(file, (__force const char __user *)buf, count, &pos);
+	set_fs(old_fs);
+
+	return res;
+}
+EXPORT_SYMBOL(kernel_write);
 
 static ssize_t default_file_splice_read(struct file *in, loff_t *ppos,
 				 struct pipe_inode_info *pipe, size_t len,
@@ -370,7 +390,7 @@ static ssize_t default_file_splice_read(struct file *in, loff_t *ppos,
 	struct iov_iter to;
 	struct page **pages;
 	unsigned int nr_pages;
-	size_t offset, base, copied = 0;
+	size_t offset, dummy, copied = 0;
 	ssize_t res;
 	int i;
 
@@ -383,17 +403,18 @@ static ssize_t default_file_splice_read(struct file *in, loff_t *ppos,
 	 */
 	offset = *ppos & ~PAGE_MASK;
 
-	iov_iter_pipe(&to, READ, pipe, len + offset);
+	iov_iter_pipe(&to, ITER_PIPE | READ, pipe, len + offset);
 
-	res = iov_iter_get_pages_alloc(&to, &pages, len + offset, &base);
+	res = iov_iter_get_pages_alloc(&to, &pages, len + offset, &dummy);
 	if (res <= 0)
 		return -ENOMEM;
 
-	nr_pages = DIV_ROUND_UP(res + base, PAGE_SIZE);
+	BUG_ON(dummy);
+	nr_pages = DIV_ROUND_UP(res, PAGE_SIZE);
 
 	vec = __vec;
 	if (nr_pages > PIPE_DEF_BUFFERS) {
-		vec = kmalloc_array(nr_pages, sizeof(struct kvec), GFP_KERNEL);
+		vec = kmalloc(nr_pages * sizeof(struct kvec), GFP_KERNEL);
 		if (unlikely(!vec)) {
 			res = -ENOMEM;
 			goto out;
@@ -742,8 +763,9 @@ iter_file_splice_write(struct pipe_inode_info *pipe, struct file *out,
 			left -= this_len;
 		}
 
-		iov_iter_bvec(&from, WRITE, array, n, sd.total_len - left);
-		ret = vfs_iter_write(out, &from, &sd.pos, 0);
+		iov_iter_bvec(&from, ITER_BVEC | WRITE, array, n,
+			      sd.total_len - left);
+		ret = vfs_iter_write(out, &from, &sd.pos);
 		if (ret <= 0)
 			break;
 
@@ -942,16 +964,11 @@ ssize_t splice_direct_to_actor(struct file *in, struct splice_desc *sd,
 	sd->flags &= ~SPLICE_F_NONBLOCK;
 	more = sd->flags & SPLICE_F_MORE;
 
-	WARN_ON_ONCE(pipe->nrbufs != 0);
-
 	while (len) {
 		size_t read_len;
 		loff_t pos = sd->pos, prev_pos = pos;
 
-		/* Don't try to read more the pipe has space for. */
-		read_len = min_t(size_t, len,
-				 (pipe->buffers - pipe->nrbufs) << PAGE_SHIFT);
-		ret = do_splice_to(in, &pos, pipe, read_len, flags);
+		ret = do_splice_to(in, &pos, pipe, len, flags);
 		if (unlikely(ret <= 0))
 			goto out_release;
 
@@ -1120,9 +1137,6 @@ static long do_splice(struct file *in, loff_t __user *off_in,
 		if (ipipe == opipe)
 			return -EINVAL;
 
-		if ((in->f_flags | out->f_flags) & O_NONBLOCK)
-			flags |= SPLICE_F_NONBLOCK;
-
 		return splice_pipe_to_pipe(ipipe, opipe, len, flags);
 	}
 
@@ -1148,9 +1162,6 @@ static long do_splice(struct file *in, loff_t __user *off_in,
 		if (unlikely(ret < 0))
 			return ret;
 
-		if (in->f_flags & O_NONBLOCK)
-			flags |= SPLICE_F_NONBLOCK;
-
 		file_start_write(out);
 		ret = do_splice_from(ipipe, out, &offset, len, flags);
 		file_end_write(out);
@@ -1174,9 +1185,6 @@ static long do_splice(struct file *in, loff_t __user *off_in,
 		} else {
 			offset = in->f_pos;
 		}
-
-		if (out->f_flags & O_NONBLOCK)
-			flags |= SPLICE_F_NONBLOCK;
 
 		pipe_lock(opipe);
 		ret = wait_for_space(opipe, flags);
@@ -1253,19 +1261,30 @@ static int pipe_to_user(struct pipe_inode_info *pipe, struct pipe_buffer *buf,
  * For lack of a better implementation, implement vmsplice() to userspace
  * as a simple copy of the pipes pages to the user iov.
  */
-static long vmsplice_to_user(struct file *file, struct iov_iter *iter,
-			     unsigned int flags)
+static long vmsplice_to_user(struct file *file, const struct iovec __user *uiov,
+			     unsigned long nr_segs, unsigned int flags)
 {
-	struct pipe_inode_info *pipe = get_pipe_info(file);
-	struct splice_desc sd = {
-		.total_len = iov_iter_count(iter),
-		.flags = flags,
-		.u.data = iter
-	};
-	long ret = 0;
+	struct pipe_inode_info *pipe;
+	struct splice_desc sd;
+	long ret;
+	struct iovec iovstack[UIO_FASTIOV];
+	struct iovec *iov = iovstack;
+	struct iov_iter iter;
 
+	pipe = get_pipe_info(file);
 	if (!pipe)
 		return -EBADF;
+
+	ret = import_iovec(READ, uiov, nr_segs,
+			   ARRAY_SIZE(iovstack), &iov, &iter);
+	if (ret < 0)
+		return ret;
+
+	sd.total_len = iov_iter_count(&iter);
+	sd.len = 0;
+	sd.flags = flags;
+	sd.u.data = &iter;
+	sd.pos = 0;
 
 	if (sd.total_len) {
 		pipe_lock(pipe);
@@ -1273,6 +1292,7 @@ static long vmsplice_to_user(struct file *file, struct iov_iter *iter,
 		pipe_unlock(pipe);
 	}
 
+	kfree(iov);
 	return ret;
 }
 
@@ -1281,11 +1301,14 @@ static long vmsplice_to_user(struct file *file, struct iov_iter *iter,
  * as splice-from-memory, where the regular splice is splice-from-file (or
  * to file). In both cases the output is a pipe, naturally.
  */
-static long vmsplice_to_pipe(struct file *file, struct iov_iter *iter,
-			     unsigned int flags)
+static long vmsplice_to_pipe(struct file *file, const struct iovec __user *uiov,
+			     unsigned long nr_segs, unsigned int flags)
 {
 	struct pipe_inode_info *pipe;
-	long ret = 0;
+	struct iovec iovstack[UIO_FASTIOV];
+	struct iovec *iov = iovstack;
+	struct iov_iter from;
+	long ret;
 	unsigned buf_flag = 0;
 
 	if (flags & SPLICE_F_GIFT)
@@ -1295,29 +1318,20 @@ static long vmsplice_to_pipe(struct file *file, struct iov_iter *iter,
 	if (!pipe)
 		return -EBADF;
 
+	ret = import_iovec(WRITE, uiov, nr_segs,
+			   ARRAY_SIZE(iovstack), &iov, &from);
+	if (ret < 0)
+		return ret;
+
 	pipe_lock(pipe);
 	ret = wait_for_space(pipe, flags);
 	if (!ret)
-		ret = iter_to_pipe(iter, pipe, buf_flag);
+		ret = iter_to_pipe(&from, pipe, buf_flag);
 	pipe_unlock(pipe);
 	if (ret > 0)
 		wakeup_pipe_readers(pipe);
+	kfree(iov);
 	return ret;
-}
-
-static int vmsplice_type(struct fd f, int *type)
-{
-	if (!f.file)
-		return -EBADF;
-	if (f.file->f_mode & FMODE_WRITE) {
-		*type = WRITE;
-	} else if (f.file->f_mode & FMODE_READ) {
-		*type = READ;
-	} else {
-		fdput(f);
-		return -EBADF;
-	}
-	return 0;
 }
 
 /*
@@ -1336,42 +1350,28 @@ static int vmsplice_type(struct fd f, int *type)
  * Currently we punt and implement it as a normal copy, see pipe_to_user().
  *
  */
-static long do_vmsplice(struct file *f, struct iov_iter *iter, unsigned int flags)
-{
-	if (unlikely(flags & ~SPLICE_F_ALL))
-		return -EINVAL;
-
-	if (!iov_iter_count(iter))
-		return 0;
-
-	if (iov_iter_rw(iter) == WRITE)
-		return vmsplice_to_pipe(f, iter, flags);
-	else
-		return vmsplice_to_user(f, iter, flags);
-}
-
-SYSCALL_DEFINE4(vmsplice, int, fd, const struct iovec __user *, uiov,
+SYSCALL_DEFINE4(vmsplice, int, fd, const struct iovec __user *, iov,
 		unsigned long, nr_segs, unsigned int, flags)
 {
-	struct iovec iovstack[UIO_FASTIOV];
-	struct iovec *iov = iovstack;
-	struct iov_iter iter;
-	ssize_t error;
 	struct fd f;
-	int type;
+	long error;
 
+	if (unlikely(nr_segs > UIO_MAXIOV))
+		return -EINVAL;
+	else if (unlikely(!nr_segs))
+		return 0;
+
+	error = -EBADF;
 	f = fdget(fd);
-	error = vmsplice_type(f, &type);
-	if (error)
-		return error;
+	if (f.file) {
+		if (f.file->f_mode & FMODE_WRITE)
+			error = vmsplice_to_pipe(f.file, iov, nr_segs, flags);
+		else if (f.file->f_mode & FMODE_READ)
+			error = vmsplice_to_user(f.file, iov, nr_segs, flags);
 
-	error = import_iovec(type, uiov, nr_segs,
-			     ARRAY_SIZE(iovstack), &iov, &iter);
-	if (error >= 0) {
-		error = do_vmsplice(f.file, &iter, flags);
-		kfree(iov);
+		fdput(f);
 	}
-	fdput(f);
+
 	return error;
 }
 
@@ -1379,26 +1379,20 @@ SYSCALL_DEFINE4(vmsplice, int, fd, const struct iovec __user *, uiov,
 COMPAT_SYSCALL_DEFINE4(vmsplice, int, fd, const struct compat_iovec __user *, iov32,
 		    unsigned int, nr_segs, unsigned int, flags)
 {
-	struct iovec iovstack[UIO_FASTIOV];
-	struct iovec *iov = iovstack;
-	struct iov_iter iter;
-	ssize_t error;
-	struct fd f;
-	int type;
-
-	f = fdget(fd);
-	error = vmsplice_type(f, &type);
-	if (error)
-		return error;
-
-	error = compat_import_iovec(type, iov32, nr_segs,
-			     ARRAY_SIZE(iovstack), &iov, &iter);
-	if (error >= 0) {
-		error = do_vmsplice(f.file, &iter, flags);
-		kfree(iov);
+	unsigned i;
+	struct iovec __user *iov;
+	if (nr_segs > UIO_MAXIOV)
+		return -EINVAL;
+	iov = compat_alloc_user_space(nr_segs * sizeof(struct iovec));
+	for (i = 0; i < nr_segs; i++) {
+		struct compat_iovec v;
+		if (get_user(v.iov_base, &iov32[i].iov_base) ||
+		    get_user(v.iov_len, &iov32[i].iov_len) ||
+		    put_user(compat_ptr(v.iov_base), &iov[i].iov_base) ||
+		    put_user(v.iov_len, &iov[i].iov_len))
+			return -EFAULT;
 	}
-	fdput(f);
-	return error;
+	return sys_vmsplice(fd, iov, nr_segs, flags);
 }
 #endif
 
@@ -1411,9 +1405,6 @@ SYSCALL_DEFINE6(splice, int, fd_in, loff_t __user *, off_in,
 
 	if (unlikely(!len))
 		return 0;
-
-	if (unlikely(flags & ~SPLICE_F_ALL))
-		return -EINVAL;
 
 	error = -EBADF;
 	in = fdget(fd_in);
@@ -1594,11 +1585,7 @@ retry:
 			 * Get a reference to this pipe buffer,
 			 * so we can copy the contents over.
 			 */
-			if (!pipe_buf_get(ipipe, ibuf)) {
-				if (ret == 0)
-					ret = -EFAULT;
-				break;
-			}
+			pipe_buf_get(ipipe, ibuf);
 			*obuf = *ibuf;
 
 			/*
@@ -1606,8 +1593,6 @@ retry:
 			 * prevent multiple steals of this page.
 			 */
 			obuf->flags &= ~PIPE_BUF_FLAG_GIFT;
-
-			pipe_buf_mark_unmergeable(obuf);
 
 			obuf->len = len;
 			opipe->nrbufs++;
@@ -1672,11 +1657,7 @@ static int link_pipe(struct pipe_inode_info *ipipe,
 		 * Get a reference to this pipe buffer,
 		 * so we can copy the contents over.
 		 */
-		if (!pipe_buf_get(ipipe, ibuf)) {
-			if (ret == 0)
-				ret = -EFAULT;
-			break;
-		}
+		pipe_buf_get(ipipe, ibuf);
 
 		obuf = opipe->bufs + nbuf;
 		*obuf = *ibuf;
@@ -1686,8 +1667,6 @@ static int link_pipe(struct pipe_inode_info *ipipe,
 		 * prevent multiple steals of this page.
 		 */
 		obuf->flags &= ~PIPE_BUF_FLAG_GIFT;
-
-		pipe_buf_mark_unmergeable(obuf);
 
 		if (obuf->len > len)
 			obuf->len = len;
@@ -1735,9 +1714,6 @@ static long do_tee(struct file *in, struct file *out, size_t len,
 	 * copying the data.
 	 */
 	if (ipipe && opipe && ipipe != opipe) {
-		if ((in->f_flags | out->f_flags) & O_NONBLOCK)
-			flags |= SPLICE_F_NONBLOCK;
-
 		/*
 		 * Keep going, unless we encounter an error. The ipipe/opipe
 		 * ordering doesn't really matter.
@@ -1757,9 +1733,6 @@ SYSCALL_DEFINE4(tee, int, fdin, int, fdout, size_t, len, unsigned int, flags)
 {
 	struct fd in;
 	int error;
-
-	if (unlikely(flags & ~SPLICE_F_ALL))
-		return -EINVAL;
 
 	if (unlikely(!len))
 		return 0;

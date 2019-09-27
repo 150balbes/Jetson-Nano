@@ -12,14 +12,6 @@
 / {
 	compatible = "brcm,bcm4708";
 
-	aliases {
-		serial0 = &uart0;
-	};
-
-	chosen {
-		stdout-path = "serial0:115200n8";
-	};
-
 	cpus {
 		#address-cells = <1>;
 		#size-cells = <0>;
@@ -41,8 +33,4 @@
 		};
 	};
 
-};
-
-&uart0 {
-	status = "okay";
 };

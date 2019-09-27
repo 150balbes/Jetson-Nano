@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * tree.c: Basic device tree traversal/scanning for the Linux
  *         prom library.

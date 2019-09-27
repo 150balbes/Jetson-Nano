@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-1.0+ WITH Linux-syscall-note */
 /*
  * Copyright (C) 2012 Google, Inc.
  *

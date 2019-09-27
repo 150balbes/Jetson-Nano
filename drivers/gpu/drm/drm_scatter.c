@@ -31,14 +31,9 @@
  * DEALINGS IN THE SOFTWARE.
  */
 
-#include <linux/mm.h>
-#include <linux/slab.h>
 #include <linux/vmalloc.h>
-
-#include <drm/drm.h>
-#include <drm/drm_drv.h>
-#include <drm/drm_print.h>
-
+#include <linux/slab.h>
+#include <drm/drmP.h>
 #include "drm_legacy.h"
 
 #define DEBUG_SCATTER 0
@@ -94,10 +89,10 @@ int drm_legacy_sg_alloc(struct drm_device *dev, void *data,
 	DRM_DEBUG("\n");
 
 	if (!drm_core_check_feature(dev, DRIVER_LEGACY))
-		return -EOPNOTSUPP;
+		return -EINVAL;
 
 	if (!drm_core_check_feature(dev, DRIVER_SG))
-		return -EOPNOTSUPP;
+		return -EINVAL;
 
 	if (dev->sg)
 		return -EINVAL;
@@ -207,10 +202,10 @@ int drm_legacy_sg_free(struct drm_device *dev, void *data,
 	struct drm_sg_mem *entry;
 
 	if (!drm_core_check_feature(dev, DRIVER_LEGACY))
-		return -EOPNOTSUPP;
+		return -EINVAL;
 
 	if (!drm_core_check_feature(dev, DRIVER_SG))
-		return -EOPNOTSUPP;
+		return -EINVAL;
 
 	entry = dev->sg;
 	dev->sg = NULL;

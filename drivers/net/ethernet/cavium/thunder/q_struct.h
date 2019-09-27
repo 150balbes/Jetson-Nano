@@ -1,9 +1,12 @@
-/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * This file contains HW queue descriptor formats, config register
  * structures etc
  *
  * Copyright (C) 2015 Cavium, Inc.
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of version 2 of the GNU General Public License
+ * as published by the Free Software Foundation.
  */
 
 #ifndef Q_STRUCT_H
@@ -356,7 +359,15 @@ union cq_desc_t {
 };
 
 struct rbdr_entry_t {
-	u64   buf_addr;
+#if defined(__BIG_ENDIAN_BITFIELD)
+	u64   rsvd0:15;
+	u64   buf_addr:42;
+	u64   cache_align:7;
+#elif defined(__LITTLE_ENDIAN_BITFIELD)
+	u64   cache_align:7;
+	u64   buf_addr:42;
+	u64   rsvd0:15;
+#endif
 };
 
 /* TCP reassembly context */
@@ -613,9 +624,7 @@ struct cq_cfg {
 
 struct sq_cfg {
 #if defined(__BIG_ENDIAN_BITFIELD)
-	u64 reserved_32_63:32;
-	u64 cq_limit:8;
-	u64 reserved_20_23:4;
+	u64 reserved_20_63:44;
 	u64 ena:1;
 	u64 reserved_18_18:1;
 	u64 reset:1;
@@ -633,9 +642,7 @@ struct sq_cfg {
 	u64 reset:1;
 	u64 reserved_18_18:1;
 	u64 ena:1;
-	u64 reserved_20_23:4;
-	u64 cq_limit:8;
-	u64 reserved_32_63:32;
+	u64 reserved_20_63:44;
 #endif
 };
 

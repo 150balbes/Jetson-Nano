@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  *	Copyright (C) 1992, 1998 Linus Torvalds, Ingo Molnar
  *
@@ -51,8 +50,8 @@ static inline int check_stack_overflow(void) { return 0; }
 static inline void print_stack_overflow(void) { }
 #endif
 
-DEFINE_PER_CPU(struct irq_stack *, hardirq_stack_ptr);
-DEFINE_PER_CPU(struct irq_stack *, softirq_stack_ptr);
+DEFINE_PER_CPU(struct irq_stack *, hardirq_stack);
+DEFINE_PER_CPU(struct irq_stack *, softirq_stack);
 
 static void call_on_stack(void *func, void *stack)
 {
@@ -76,7 +75,7 @@ static inline int execute_on_irq_stack(int overflow, struct irq_desc *desc)
 	u32 *isp, *prev_esp, arg1;
 
 	curstk = (struct irq_stack *) current_stack();
-	irqstk = __this_cpu_read(hardirq_stack_ptr);
+	irqstk = __this_cpu_read(hardirq_stack);
 
 	/*
 	 * this is where we switch to the IRQ stack. However, if we are
@@ -107,28 +106,27 @@ static inline int execute_on_irq_stack(int overflow, struct irq_desc *desc)
 }
 
 /*
- * Allocate per-cpu stacks for hardirq and softirq processing
+ * allocate per-cpu stacks for hardirq and for softirq processing
  */
-int irq_init_percpu_irqstack(unsigned int cpu)
+void irq_ctx_init(int cpu)
 {
-	int node = cpu_to_node(cpu);
-	struct page *ph, *ps;
+	struct irq_stack *irqstk;
 
-	if (per_cpu(hardirq_stack_ptr, cpu))
-		return 0;
+	if (per_cpu(hardirq_stack, cpu))
+		return;
 
-	ph = alloc_pages_node(node, THREADINFO_GFP, THREAD_SIZE_ORDER);
-	if (!ph)
-		return -ENOMEM;
-	ps = alloc_pages_node(node, THREADINFO_GFP, THREAD_SIZE_ORDER);
-	if (!ps) {
-		__free_pages(ph, THREAD_SIZE_ORDER);
-		return -ENOMEM;
-	}
+	irqstk = page_address(alloc_pages_node(cpu_to_node(cpu),
+					       THREADINFO_GFP,
+					       THREAD_SIZE_ORDER));
+	per_cpu(hardirq_stack, cpu) = irqstk;
 
-	per_cpu(hardirq_stack_ptr, cpu) = page_address(ph);
-	per_cpu(softirq_stack_ptr, cpu) = page_address(ps);
-	return 0;
+	irqstk = page_address(alloc_pages_node(cpu_to_node(cpu),
+					       THREADINFO_GFP,
+					       THREAD_SIZE_ORDER));
+	per_cpu(softirq_stack, cpu) = irqstk;
+
+	printk(KERN_DEBUG "CPU %u irqstacks, hard=%p soft=%p\n",
+	       cpu, per_cpu(hardirq_stack, cpu),  per_cpu(softirq_stack, cpu));
 }
 
 void do_softirq_own_stack(void)
@@ -136,7 +134,7 @@ void do_softirq_own_stack(void)
 	struct irq_stack *irqstk;
 	u32 *isp, *prev_esp;
 
-	irqstk = __this_cpu_read(softirq_stack_ptr);
+	irqstk = __this_cpu_read(softirq_stack);
 
 	/* build the stack frame on the softirq stack */
 	isp = (u32 *) ((char *)irqstk + sizeof(*irqstk));

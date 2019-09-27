@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * core.c - contains all core device and protocol registration functions
  *

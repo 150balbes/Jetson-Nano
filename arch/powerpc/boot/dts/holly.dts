@@ -191,6 +191,6 @@
 	};
 
 	chosen {
-		stdout-path = "/tsi109@c0000000/serial@7808";
+		linux,stdout-path = "/tsi109@c0000000/serial@7808";
 	};
 };

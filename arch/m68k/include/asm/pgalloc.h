@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef M68K_PGALLOC_H
 #define M68K_PGALLOC_H
 

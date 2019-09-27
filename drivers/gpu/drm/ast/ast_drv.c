@@ -30,7 +30,6 @@
 
 #include <drm/drmP.h>
 #include <drm/drm_crtc_helper.h>
-#include <drm/drm_probe_helper.h>
 
 #include "ast_drv.h"
 
@@ -61,29 +60,8 @@ static const struct pci_device_id pciidlist[] = {
 
 MODULE_DEVICE_TABLE(pci, pciidlist);
 
-static void ast_kick_out_firmware_fb(struct pci_dev *pdev)
-{
-	struct apertures_struct *ap;
-	bool primary = false;
-
-	ap = alloc_apertures(1);
-	if (!ap)
-		return;
-
-	ap->ranges[0].base = pci_resource_start(pdev, 0);
-	ap->ranges[0].size = pci_resource_len(pdev, 0);
-
-#ifdef CONFIG_X86
-	primary = pdev->resource[PCI_ROM_RESOURCE].flags & IORESOURCE_ROM_SHADOW;
-#endif
-	drm_fb_helper_remove_conflicting_framebuffers(ap, "astdrmfb", primary);
-	kfree(ap);
-}
-
 static int ast_pci_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 {
-	ast_kick_out_firmware_fb(pdev);
-
 	return drm_get_pci_dev(pdev, ent, &driver);
 }
 
@@ -205,7 +183,15 @@ static struct pci_driver ast_pci_driver = {
 
 static const struct file_operations ast_fops = {
 	.owner = THIS_MODULE,
-	DRM_VRAM_MM_FILE_OPERATIONS
+	.open = drm_open,
+	.release = drm_release,
+	.unlocked_ioctl = drm_ioctl,
+	.mmap = ast_mmap,
+	.poll = drm_poll,
+#ifdef CONFIG_COMPAT
+	.compat_ioctl = drm_compat_ioctl,
+#endif
+	.read = drm_read,
 };
 
 static struct drm_driver driver = {
@@ -213,6 +199,7 @@ static struct drm_driver driver = {
 
 	.load = ast_driver_load,
 	.unload = ast_driver_unload,
+	.set_busid = drm_pci_set_busid,
 
 	.fops = &ast_fops,
 	.name = DRIVER_NAME,
@@ -222,7 +209,11 @@ static struct drm_driver driver = {
 	.minor = DRIVER_MINOR,
 	.patchlevel = DRIVER_PATCHLEVEL,
 
-	DRM_GEM_VRAM_DRIVER
+	.gem_free_object_unlocked = ast_gem_free_object,
+	.dumb_create = ast_dumb_create,
+	.dumb_map_offset = ast_dumb_mmap_offset,
+	.dumb_destroy = drm_gem_dumb_destroy,
+
 };
 
 static int __init ast_init(void)
@@ -232,11 +223,11 @@ static int __init ast_init(void)
 
 	if (ast_modeset == 0)
 		return -EINVAL;
-	return pci_register_driver(&ast_pci_driver);
+	return drm_pci_init(&driver, &ast_pci_driver);
 }
 static void __exit ast_exit(void)
 {
-	pci_unregister_driver(&ast_pci_driver);
+	drm_pci_exit(&driver, &ast_pci_driver);
 }
 
 module_init(ast_init);

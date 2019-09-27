@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0+ WITH Linux-syscall-note */
 /*
  * Motion Eye video4linux driver for Sony Vaio PictureBook
  *

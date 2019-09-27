@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * Written by Pat Gaughen (gone@us.ibm.com) Mar 2002
  *

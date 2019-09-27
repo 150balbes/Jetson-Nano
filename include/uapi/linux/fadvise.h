@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note */
 #ifndef FADVISE_H_INCLUDED
 #define FADVISE_H_INCLUDED
 

@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * arch/arm/mach-ixp4xx/include/mach/platform.h
  *

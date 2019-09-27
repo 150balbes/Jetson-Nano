@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * linux/drivers/video/omap2/dss/dss.c
  *
@@ -7,6 +6,18 @@
  *
  * Some code and ideas taken from drivers/video/omap/ driver
  * by Imre Deak.
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License version 2 as published by
+ * the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License along with
+ * this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 #define DSS_SUBSYS_NAME "DSS"
@@ -29,7 +40,6 @@
 #include <linux/regulator/consumer.h>
 #include <linux/suspend.h>
 #include <linux/component.h>
-#include <linux/pinctrl/consumer.h>
 
 #include <video/omapfb_dss.h>
 
@@ -877,37 +887,58 @@ static const struct dss_features dra7xx_dss_feats = {
 	.num_ports		=	ARRAY_SIZE(dra7xx_ports),
 };
 
-static const struct dss_features *dss_get_features(void)
+static int dss_init_features(struct platform_device *pdev)
 {
+	const struct dss_features *src;
+	struct dss_features *dst;
+
+	dst = devm_kzalloc(&pdev->dev, sizeof(*dst), GFP_KERNEL);
+	if (!dst) {
+		dev_err(&pdev->dev, "Failed to allocate local DSS Features\n");
+		return -ENOMEM;
+	}
+
 	switch (omapdss_get_version()) {
 	case OMAPDSS_VER_OMAP24xx:
-		return &omap24xx_dss_feats;
+		src = &omap24xx_dss_feats;
+		break;
 
 	case OMAPDSS_VER_OMAP34xx_ES1:
 	case OMAPDSS_VER_OMAP34xx_ES3:
 	case OMAPDSS_VER_AM35xx:
-		return &omap34xx_dss_feats;
+		src = &omap34xx_dss_feats;
+		break;
 
 	case OMAPDSS_VER_OMAP3630:
-		return &omap3630_dss_feats;
+		src = &omap3630_dss_feats;
+		break;
 
 	case OMAPDSS_VER_OMAP4430_ES1:
 	case OMAPDSS_VER_OMAP4430_ES2:
 	case OMAPDSS_VER_OMAP4:
-		return &omap44xx_dss_feats;
+		src = &omap44xx_dss_feats;
+		break;
 
 	case OMAPDSS_VER_OMAP5:
-		return &omap54xx_dss_feats;
+		src = &omap54xx_dss_feats;
+		break;
 
 	case OMAPDSS_VER_AM43xx:
-		return &am43xx_dss_feats;
+		src = &am43xx_dss_feats;
+		break;
 
 	case OMAPDSS_VER_DRA7xx:
-		return &dra7xx_dss_feats;
+		src = &dra7xx_dss_feats;
+		break;
 
 	default:
-		return NULL;
+		return -ENODEV;
 	}
+
+	memcpy(dst, src, sizeof(*dst));
+	dss.feat = dst;
+
+	return 0;
 }
 
 static void dss_uninit_ports(struct platform_device *pdev);
@@ -1073,9 +1104,9 @@ static int dss_bind(struct device *dev)
 
 	dss.pdev = pdev;
 
-	dss.feat = dss_get_features();
-	if (!dss.feat)
-		return -ENODEV;
+	r = dss_init_features(dss.pdev);
+	if (r)
+		return r;
 
 	dss_mem = platform_get_resource(dss.pdev, IORESOURCE_MEM, 0);
 	if (!dss_mem) {

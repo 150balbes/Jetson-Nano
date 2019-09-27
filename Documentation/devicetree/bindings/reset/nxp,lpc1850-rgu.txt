@@ -80,4 +80,5 @@ mac: ethernet@40010000 {
 	clock-names = "stmmaceth";
 	resets = <&rgu 22>;
 	reset-names = "stmmaceth";
+	status = "disabled";
 };

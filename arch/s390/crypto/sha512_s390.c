@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0+
 /*
  * Cryptographic API.
  *
@@ -6,6 +5,12 @@
  *
  * Copyright IBM Corp. 2007
  * Author(s): Jan Glauber (jang@de.ibm.com)
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License as published by the Free
+ * Software Foundation; either version 2 of the License, or (at your option)
+ * any later version.
+ *
  */
 #include <crypto/internal/hash.h>
 #include <crypto/sha.h>
@@ -76,6 +81,7 @@ static struct shash_alg sha512_alg = {
 		.cra_name	=	"sha512",
 		.cra_driver_name=	"sha512-s390",
 		.cra_priority	=	300,
+		.cra_flags	=	CRYPTO_ALG_TYPE_SHASH,
 		.cra_blocksize	=	SHA512_BLOCK_SIZE,
 		.cra_module	=	THIS_MODULE,
 	}
@@ -114,6 +120,7 @@ static struct shash_alg sha384_alg = {
 		.cra_name	=	"sha384",
 		.cra_driver_name=	"sha384-s390",
 		.cra_priority	=	300,
+		.cra_flags	=	CRYPTO_ALG_TYPE_SHASH,
 		.cra_blocksize	=	SHA384_BLOCK_SIZE,
 		.cra_ctxsize	=	sizeof(struct s390_sha_ctx),
 		.cra_module	=	THIS_MODULE,
@@ -127,7 +134,7 @@ static int __init init(void)
 	int ret;
 
 	if (!cpacf_query_func(CPACF_KIMD, CPACF_KIMD_SHA_512))
-		return -ENODEV;
+		return -EOPNOTSUPP;
 	if ((ret = crypto_register_shash(&sha512_alg)) < 0)
 		goto out;
 	if ((ret = crypto_register_shash(&sha384_alg)) < 0)

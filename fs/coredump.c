@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 #include <linux/slab.h>
 #include <linux/file.h>
 #include <linux/fdtable.h>
@@ -7,7 +6,6 @@
 #include <linux/stat.h>
 #include <linux/fcntl.h>
 #include <linux/swap.h>
-#include <linux/ctype.h>
 #include <linux/string.h>
 #include <linux/init.h>
 #include <linux/pagemap.h>
@@ -18,9 +16,6 @@
 #include <linux/personality.h>
 #include <linux/binfmts.h>
 #include <linux/coredump.h>
-#include <linux/sched/coredump.h>
-#include <linux/sched/signal.h>
-#include <linux/sched/task_stack.h>
 #include <linux/utsname.h>
 #include <linux/pid_namespace.h>
 #include <linux/module.h>
@@ -38,11 +33,12 @@
 #include <linux/pipe_fs_i.h>
 #include <linux/oom.h>
 #include <linux/compat.h>
+#include <linux/sched.h>
 #include <linux/fs.h>
 #include <linux/path.h>
 #include <linux/timekeeping.h>
 
-#include <linux/uaccess.h>
+#include <asm/uaccess.h>
 #include <asm/mmu_context.h>
 #include <asm/tlb.h>
 #include <asm/exec.h>
@@ -163,7 +159,7 @@ static int cn_print_exe_file(struct core_name *cn)
 	if (!exe_file)
 		return cn_esc_printf(cn, "%s (path unknown)", current->comm);
 
-	pathbuf = kmalloc(PATH_MAX, GFP_KERNEL);
+	pathbuf = kmalloc(PATH_MAX, GFP_TEMPORARY);
 	if (!pathbuf) {
 		ret = -ENOMEM;
 		goto put_exe_file;
@@ -188,13 +184,11 @@ put_exe_file:
  * name into corename, which must have space for at least
  * CORENAME_MAX_SIZE bytes plus one byte for the zero terminator.
  */
-static int format_corename(struct core_name *cn, struct coredump_params *cprm,
-			   size_t **argv, int *argc)
+static int format_corename(struct core_name *cn, struct coredump_params *cprm)
 {
 	const struct cred *cred = current_cred();
 	const char *pat_ptr = core_pattern;
 	int ispipe = (*pat_ptr == '|');
-	bool was_space = false;
 	int pid_in_pattern = 0;
 	int err = 0;
 
@@ -204,35 +198,12 @@ static int format_corename(struct core_name *cn, struct coredump_params *cprm,
 		return -ENOMEM;
 	cn->corename[0] = '\0';
 
-	if (ispipe) {
-		int argvs = sizeof(core_pattern) / 2;
-		(*argv) = kmalloc_array(argvs, sizeof(**argv), GFP_KERNEL);
-		if (!(*argv))
-			return -ENOMEM;
-		(*argv)[(*argc)++] = 0;
+	if (ispipe)
 		++pat_ptr;
-	}
 
 	/* Repeat as long as we have more pattern to process and more output
 	   space */
 	while (*pat_ptr) {
-		/*
-		 * Split on spaces before doing template expansion so that
-		 * %e and %E don't get split if they have spaces in them
-		 */
-		if (ispipe) {
-			if (isspace(*pat_ptr)) {
-				was_space = true;
-				pat_ptr++;
-				continue;
-			} else if (was_space) {
-				was_space = false;
-				err = cn_printf(cn, "%c", '\0');
-				if (err)
-					return err;
-				(*argv)[(*argc)++] = cn->used;
-			}
-		}
 		if (*pat_ptr != '%') {
 			err = cn_printf(cn, "%c", *pat_ptr++);
 		} else {
@@ -562,7 +533,7 @@ static int umh_pipe_setup(struct subprocess_info *info, struct cred *new)
 	return err;
 }
 
-void do_coredump(const kernel_siginfo_t *siginfo)
+void do_coredump(const siginfo_t *siginfo)
 {
 	struct core_state core_state;
 	struct core_name cn;
@@ -572,8 +543,6 @@ void do_coredump(const kernel_siginfo_t *siginfo)
 	struct cred *cred;
 	int retval = 0;
 	int ispipe;
-	size_t *argv = NULL;
-	int argc = 0;
 	struct files_struct *displaced;
 	/* require nonrelative corefile path and be extra careful */
 	bool need_suid_safe = false;
@@ -620,10 +589,9 @@ void do_coredump(const kernel_siginfo_t *siginfo)
 
 	old_cred = override_creds(cred);
 
-	ispipe = format_corename(&cn, &cprm, &argv, &argc);
+	ispipe = format_corename(&cn, &cprm);
 
 	if (ispipe) {
-		int argi;
 		int dump_count;
 		char **helper_argv;
 		struct subprocess_info *sub_info;
@@ -666,16 +634,12 @@ void do_coredump(const kernel_siginfo_t *siginfo)
 			goto fail_dropcount;
 		}
 
-		helper_argv = kmalloc_array(argc + 1, sizeof(*helper_argv),
-					    GFP_KERNEL);
+		helper_argv = argv_split(GFP_KERNEL, cn.corename, NULL);
 		if (!helper_argv) {
 			printk(KERN_WARNING "%s failed to allocate memory\n",
 			       __func__);
 			goto fail_dropcount;
 		}
-		for (argi = 0; argi < argc; argi++)
-			helper_argv[argi] = cn.corename + argv[argi];
-		helper_argv[argi] = NULL;
 
 		retval = -ENOMEM;
 		sub_info = call_usermodehelper_setup(helper_argv[0],
@@ -685,7 +649,7 @@ void do_coredump(const kernel_siginfo_t *siginfo)
 			retval = call_usermodehelper_exec(sub_info,
 							  UMH_WAIT_EXEC);
 
-		kfree(helper_argv);
+		argv_free(helper_argv);
 		if (retval) {
 			printk(KERN_INFO "Core dump to |%s pipe failed\n",
 			       cn.corename);
@@ -713,11 +677,16 @@ void do_coredump(const kernel_siginfo_t *siginfo)
 		 * privs and don't want to unlink another user's coredump.
 		 */
 		if (!need_suid_safe) {
+			mm_segment_t old_fs;
+
+			old_fs = get_fs();
+			set_fs(KERNEL_DS);
 			/*
 			 * If it doesn't exist, that's fine. If there's some
 			 * other problem, we'll catch it at the filp_open().
 			 */
-			do_unlinkat(AT_FDCWD, getname_kernel(cn.corename));
+			(void) sys_unlink((const char __user *)cn.corename);
+			set_fs(old_fs);
 		}
 
 		/*
@@ -775,7 +744,7 @@ void do_coredump(const kernel_siginfo_t *siginfo)
 			goto close_fail;
 		if (!(cprm.file->f_mode & FMODE_CAN_WRITE))
 			goto close_fail;
-		if (do_truncate(cprm.file->f_path.dentry, 0, 0, cprm.file))
+		if (do_truncate2(cprm.file->f_path.mnt, cprm.file->f_path.dentry, 0, 0, cprm.file))
 			goto close_fail;
 	}
 
@@ -792,6 +761,8 @@ void do_coredump(const kernel_siginfo_t *siginfo)
 	}
 	if (ispipe && core_pipe_limit)
 		wait_for_dump_helpers(cprm.file);
+	if (cprm.file->f_op->fsync != NULL)
+		cprm.file->f_op->fsync(cprm.file, 0, LLONG_MAX, 0);
 close_fail:
 	if (cprm.file)
 		filp_close(cprm.file, NULL);
@@ -799,7 +770,6 @@ fail_dropcount:
 	if (ispipe)
 		atomic_dec(&core_dump_count);
 fail_unlock:
-	kfree(argv);
 	kfree(cn.corename);
 	coredump_finish(mm, core_dumped);
 	revert_creds(old_cred);

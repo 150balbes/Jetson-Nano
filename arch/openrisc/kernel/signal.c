@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * OpenRISC signal.c
  *
@@ -9,6 +8,11 @@
  * Modifications for the OpenRISC architecture:
  * Copyright (C) 2003 Matjaz Breskvar <phoenix@bsemi.com>
  * Copyright (C) 2010-2011 Jonas Bonn <jonas@southpole.se>
+ *
+ *      This program is free software; you can redistribute it and/or
+ *      modify it under the terms of the GNU General Public License
+ *      as published by the Free Software Foundation; either version
+ *      2 of the License, or (at your option) any later version.
  */
 
 #include <linux/sched.h>
@@ -26,7 +30,7 @@
 #include <asm/processor.h>
 #include <asm/syscall.h>
 #include <asm/ucontext.h>
-#include <linux/uaccess.h>
+#include <asm/uaccess.h>
 
 #define DEBUG_SIG 0
 
@@ -46,7 +50,7 @@ static int restore_sigcontext(struct pt_regs *regs,
 
 	/*
 	 * Restore the regs from &sc->regs.
-	 * (sc is already checked since the sigframe was
+	 * (sc is already checked for VERIFY_READ since the sigframe was
 	 *  checked in sys_sigreturn previously)
 	 */
 	err |= __copy_from_user(regs, sc->regs.gpr, 32 * sizeof(unsigned long));
@@ -79,7 +83,7 @@ asmlinkage long _sys_rt_sigreturn(struct pt_regs *regs)
 	if (((long)frame) & 3)
 		goto badframe;
 
-	if (!access_ok(frame, sizeof(*frame)))
+	if (!access_ok(VERIFY_READ, frame, sizeof(*frame)))
 		goto badframe;
 	if (__copy_from_user(&set, &frame->uc.uc_sigmask, sizeof(set)))
 		goto badframe;
@@ -95,7 +99,7 @@ asmlinkage long _sys_rt_sigreturn(struct pt_regs *regs)
 	return regs->gpr[11];
 
 badframe:
-	force_sig(SIGSEGV);
+	force_sig(SIGSEGV, current);
 	return 0;
 }
 
@@ -157,7 +161,7 @@ static int setup_rt_frame(struct ksignal *ksig, sigset_t *set,
 
 	frame = get_sigframe(ksig, regs, sizeof(*frame));
 
-	if (!access_ok(frame, sizeof(*frame)))
+	if (!access_ok(VERIFY_WRITE, frame, sizeof(*frame)))
 		return -EFAULT;
 
 	/* Create siginfo.  */

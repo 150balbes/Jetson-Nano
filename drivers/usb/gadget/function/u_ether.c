@@ -1,10 +1,15 @@
-// SPDX-License-Identifier: GPL-2.0+
 /*
  * u_ether.c -- Ethernet-over-USB link layer utilities for Gadget stack
  *
  * Copyright (C) 2003-2005,2008 David Brownell
  * Copyright (C) 2003-2004 Robert Schwebel, Benedikt Spranger
  * Copyright (C) 2008 Nokia Corporation
+ * Copyright (c) 2017, NVIDIA CORPORATION. All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
  */
 
 /* #define VERBOSE_DEBUG */
@@ -138,6 +143,15 @@ static inline int qlen(struct usb_gadget *gadget, unsigned qmult)
 
 /* NETWORK DRIVER HOOKUP (to the layer above this driver) */
 
+static int ueth_change_mtu(struct net_device *net, int new_mtu)
+{
+	if (new_mtu <= ETH_HLEN || new_mtu > GETHER_MAX_ETH_FRAME_LEN)
+		return -ERANGE;
+	net->mtu = new_mtu;
+
+	return 0;
+}
+
 static void eth_get_drvinfo(struct net_device *net, struct ethtool_drvinfo *p)
 {
 	struct eth_dev *dev = netdev_priv(net);
@@ -174,7 +188,6 @@ static void rx_complete(struct usb_ep *ep, struct usb_request *req);
 static int
 rx_submit(struct eth_dev *dev, struct usb_request *req, gfp_t gfp_flags)
 {
-	struct usb_gadget *g = dev->gadget;
 	struct sk_buff	*skb;
 	int		retval = -ENOMEM;
 	size_t		size = 0;
@@ -187,8 +200,7 @@ rx_submit(struct eth_dev *dev, struct usb_request *req, gfp_t gfp_flags)
 	else
 		out = NULL;
 
-	if (!out)
-	{
+	if (!out) {
 		spin_unlock_irqrestore(&dev->lock, flags);
 		return -ENOTCONN;
 	}
@@ -207,17 +219,15 @@ rx_submit(struct eth_dev *dev, struct usb_request *req, gfp_t gfp_flags)
 	 */
 	size += sizeof(struct ethhdr) + dev->net->mtu + RX_EXTRA;
 	size += dev->port_usb->header_len;
-
-	if (g->quirk_ep_out_aligned_size) {
-		size += out->maxpacket - 1;
-		size -= size % out->maxpacket;
-	}
+	size += out->maxpacket - 1;
+	size -= size % out->maxpacket;
 
 	if (dev->port_usb->is_fixed)
 		size = max_t(size_t, size, dev->port_usb->fixed_out_len);
+
 	spin_unlock_irqrestore(&dev->lock, flags);
 
-	skb = __netdev_alloc_skb(dev->net, size + NET_IP_ALIGN, gfp_flags);
+	skb = alloc_skb(size + NET_IP_ALIGN, gfp_flags);
 	if (skb == NULL) {
 		DBG(dev, "no rx skb\n");
 		goto enomem;
@@ -408,7 +418,8 @@ static void rx_fill(struct eth_dev *dev, gfp_t gfp_flags)
 	/* fill unused rxq slots with some skb */
 	spin_lock_irqsave(&dev->req_lock, flags);
 	while (!list_empty(&dev->rx_reqs)) {
-		req = list_first_entry(&dev->rx_reqs, struct usb_request, list);
+		req = container_of(dev->rx_reqs.next,
+				struct usb_request, list);
 		list_del_init(&req->list);
 		spin_unlock_irqrestore(&dev->req_lock, flags);
 
@@ -447,17 +458,16 @@ static void tx_complete(struct usb_ep *ep, struct usb_request *req)
 		/* FALLTHROUGH */
 	case -ECONNRESET:		/* unlink */
 	case -ESHUTDOWN:		/* disconnect etc */
-		dev_kfree_skb_any(skb);
 		break;
 	case 0:
 		dev->net->stats.tx_bytes += skb->len;
-		dev_consume_skb_any(skb);
 	}
 	dev->net->stats.tx_packets++;
 
 	spin_lock(&dev->req_lock);
 	list_add(&req->list, &dev->tx_reqs);
 	spin_unlock(&dev->req_lock);
+	dev_kfree_skb_any(skb);
 
 	atomic_dec(&dev->tx_qlen);
 	if (netif_carrier_ok(dev->net))
@@ -479,11 +489,15 @@ static netdev_tx_t eth_start_xmit(struct sk_buff *skb,
 	unsigned long		flags;
 	struct usb_ep		*in;
 	u16			cdc_filter;
+	bool			is_fixed = false;
+	u32			fixed_in_len = 0;
 
 	spin_lock_irqsave(&dev->lock, flags);
 	if (dev->port_usb) {
 		in = dev->port_usb->in_ep;
 		cdc_filter = dev->port_usb->cdc_filter;
+		is_fixed = dev->port_usb->is_fixed;
+		fixed_in_len = dev->port_usb->fixed_in_len;
 	} else {
 		in = NULL;
 		cdc_filter = 0;
@@ -528,7 +542,7 @@ static netdev_tx_t eth_start_xmit(struct sk_buff *skb,
 		return NETDEV_TX_BUSY;
 	}
 
-	req = list_first_entry(&dev->tx_reqs, struct usb_request, list);
+	req = container_of(dev->tx_reqs.next, struct usb_request, list);
 	list_del(&req->list);
 
 	/* temporarily stop TX queue when the freelist empties */
@@ -564,9 +578,7 @@ static netdev_tx_t eth_start_xmit(struct sk_buff *skb,
 	req->complete = tx_complete;
 
 	/* NCM requires no zlp if transfer is dwNtbInMaxSize */
-	if (dev->port_usb &&
-	    dev->port_usb->is_fixed &&
-	    length == dev->port_usb->fixed_in_len &&
+	if (is_fixed && length == fixed_in_len &&
 	    (length % in->maxpacket) == 0)
 		req->zero = 0;
 	else
@@ -722,6 +734,7 @@ static const struct net_device_ops eth_netdev_ops = {
 	.ndo_open		= eth_open,
 	.ndo_stop		= eth_stop,
 	.ndo_start_xmit		= eth_start_xmit,
+	.ndo_change_mtu		= ueth_change_mtu,
 	.ndo_set_mac_address 	= eth_mac_addr,
 	.ndo_validate_addr	= eth_validate_addr,
 };
@@ -784,10 +797,6 @@ struct eth_dev *gether_setup_name(struct usb_gadget *g,
 
 	net->ethtool_ops = &ops;
 
-	/* MTU range: 14 - 15412 */
-	net->min_mtu = ETH_HLEN;
-	net->max_mtu = GETHER_MAX_ETH_FRAME_LEN;
-
 	dev->gadget = g;
 	SET_NETDEV_DEV(net, &g->dev);
 	SET_NETDEV_DEVTYPE(net, &gadget_type);
@@ -846,10 +855,6 @@ struct net_device *gether_setup_name_default(const char *netname)
 	net->ethtool_ops = &ops;
 	SET_NETDEV_DEVTYPE(net, &gadget_type);
 
-	/* MTU range: 14 - 15412 */
-	net->min_mtu = ETH_HLEN;
-	net->max_mtu = GETHER_MAX_ETH_FRAME_LEN;
-
 	return net;
 }
 EXPORT_SYMBOL_GPL(gether_setup_name_default);
@@ -881,7 +886,7 @@ int gether_register_netdev(struct net_device *net)
 	sa.sa_family = net->type;
 	memcpy(sa.sa_data, dev->dev_mac, ETH_ALEN);
 	rtnl_lock();
-	status = dev_set_mac_address(net, &sa, NULL);
+	status = dev_set_mac_address(net, &sa);
 	rtnl_unlock();
 	if (status)
 		pr_warn("cannot set self ethernet address: %d\n", status);
@@ -918,16 +923,9 @@ EXPORT_SYMBOL_GPL(gether_set_dev_addr);
 int gether_get_dev_addr(struct net_device *net, char *dev_addr, int len)
 {
 	struct eth_dev *dev;
-	int ret;
 
 	dev = netdev_priv(net);
-	ret = get_ether_addr_str(dev->dev_mac, dev_addr, len);
-	if (ret + 1 < len) {
-		dev_addr[ret++] = '\n';
-		dev_addr[ret] = '\0';
-	}
-
-	return ret;
+	return get_ether_addr_str(dev->dev_mac, dev_addr, len);
 }
 EXPORT_SYMBOL_GPL(gether_get_dev_addr);
 
@@ -947,16 +945,9 @@ EXPORT_SYMBOL_GPL(gether_set_host_addr);
 int gether_get_host_addr(struct net_device *net, char *host_addr, int len)
 {
 	struct eth_dev *dev;
-	int ret;
 
 	dev = netdev_priv(net);
-	ret = get_ether_addr_str(dev->host_mac, host_addr, len);
-	if (ret + 1 < len) {
-		host_addr[ret++] = '\n';
-		host_addr[ret] = '\0';
-	}
-
-	return ret;
+	return get_ether_addr_str(dev->host_mac, host_addr, len);
 }
 EXPORT_SYMBOL_GPL(gether_get_host_addr);
 
@@ -1003,12 +994,10 @@ EXPORT_SYMBOL_GPL(gether_get_qmult);
 
 int gether_get_ifname(struct net_device *net, char *name, int len)
 {
-	int ret;
-
 	rtnl_lock();
-	ret = scnprintf(name, len, "%s\n", netdev_name(net));
+	strlcpy(name, netdev_name(net), len);
 	rtnl_unlock();
-	return ret;
+	return strlen(name);
 }
 EXPORT_SYMBOL_GPL(gether_get_ifname);
 
@@ -1075,7 +1064,7 @@ struct net_device *gether_connect(struct gether *link)
 
 	if (result == 0) {
 		dev->zlp = link->is_zlp_ok;
-		dev->no_skb_reserve = gadget_avoids_skb_reserve(dev->gadget);
+		dev->no_skb_reserve = link->no_skb_reserve;
 		DBG(dev, "qlen %d\n", qlen(dev->gadget, dev->qmult));
 
 		dev->header_len = link->header_len;
@@ -1144,7 +1133,8 @@ void gether_disconnect(struct gether *link)
 	usb_ep_disable(link->in_ep);
 	spin_lock(&dev->req_lock);
 	while (!list_empty(&dev->tx_reqs)) {
-		req = list_first_entry(&dev->tx_reqs, struct usb_request, list);
+		req = container_of(dev->tx_reqs.next,
+					struct usb_request, list);
 		list_del(&req->list);
 
 		spin_unlock(&dev->req_lock);
@@ -1157,7 +1147,8 @@ void gether_disconnect(struct gether *link)
 	usb_ep_disable(link->out_ep);
 	spin_lock(&dev->req_lock);
 	while (!list_empty(&dev->rx_reqs)) {
-		req = list_first_entry(&dev->rx_reqs, struct usb_request, list);
+		req = container_of(dev->rx_reqs.next,
+					struct usb_request, list);
 		list_del(&req->list);
 
 		spin_unlock(&dev->req_lock);

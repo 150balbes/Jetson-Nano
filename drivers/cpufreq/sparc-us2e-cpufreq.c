@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /* us2e_cpufreq.c: UltraSPARC-IIe cpu frequency support
  *
  * Copyright (C) 2003 David S. Miller (davem@redhat.com)
@@ -119,6 +118,10 @@ static void us2e_transition(unsigned long estar, unsigned long new_bits,
 			    unsigned long clock_tick,
 			    unsigned long old_divisor, unsigned long divisor)
 {
+	unsigned long flags;
+
+	local_irq_save(flags);
+
 	estar &= ~ESTAR_MODE_DIV_MASK;
 
 	/* This is based upon the state transition diagram in the IIe manual.  */
@@ -149,6 +152,8 @@ static void us2e_transition(unsigned long estar, unsigned long new_bits,
 	} else {
 		BUG();
 	}
+
+	local_irq_restore(flags);
 }
 
 static unsigned long index_to_estar_mode(unsigned int index)
@@ -224,51 +229,48 @@ static unsigned long estar_to_divisor(unsigned long estar)
 	return ret;
 }
 
-static void __us2e_freq_get(void *arg)
-{
-	unsigned long *estar = arg;
-
-	*estar = read_hbreg(HBIRD_ESTAR_MODE_ADDR);
-}
-
 static unsigned int us2e_freq_get(unsigned int cpu)
 {
+	cpumask_t cpus_allowed;
 	unsigned long clock_tick, estar;
 
+	cpumask_copy(&cpus_allowed, tsk_cpus_allowed(current));
+	set_cpus_allowed_ptr(current, cpumask_of(cpu));
+
 	clock_tick = sparc64_get_clock_tick(cpu) / 1000;
-	if (smp_call_function_single(cpu, __us2e_freq_get, &estar, 1))
-		return 0;
+	estar = read_hbreg(HBIRD_ESTAR_MODE_ADDR);
+
+	set_cpus_allowed_ptr(current, &cpus_allowed);
 
 	return clock_tick / estar_to_divisor(estar);
 }
 
-static void __us2e_freq_target(void *arg)
+static int us2e_freq_target(struct cpufreq_policy *policy, unsigned int index)
 {
-	unsigned int cpu = smp_processor_id();
-	unsigned int *index = arg;
+	unsigned int cpu = policy->cpu;
 	unsigned long new_bits, new_freq;
 	unsigned long clock_tick, divisor, old_divisor, estar;
+	cpumask_t cpus_allowed;
+
+	cpumask_copy(&cpus_allowed, tsk_cpus_allowed(current));
+	set_cpus_allowed_ptr(current, cpumask_of(cpu));
 
 	new_freq = clock_tick = sparc64_get_clock_tick(cpu) / 1000;
-	new_bits = index_to_estar_mode(*index);
-	divisor = index_to_divisor(*index);
+	new_bits = index_to_estar_mode(index);
+	divisor = index_to_divisor(index);
 	new_freq /= divisor;
 
 	estar = read_hbreg(HBIRD_ESTAR_MODE_ADDR);
 
 	old_divisor = estar_to_divisor(estar);
 
-	if (old_divisor != divisor) {
+	if (old_divisor != divisor)
 		us2e_transition(estar, new_bits, clock_tick * 1000,
 				old_divisor, divisor);
-	}
-}
 
-static int us2e_freq_target(struct cpufreq_policy *policy, unsigned int index)
-{
-	unsigned int cpu = policy->cpu;
+	set_cpus_allowed_ptr(current, &cpus_allowed);
 
-	return smp_call_function_single(cpu, __us2e_freq_target, &index, 1);
+	return 0;
 }
 
 static int __init us2e_freq_cpu_init(struct cpufreq_policy *policy)
@@ -293,9 +295,8 @@ static int __init us2e_freq_cpu_init(struct cpufreq_policy *policy)
 
 	policy->cpuinfo.transition_latency = 0;
 	policy->cur = clock_tick;
-	policy->freq_table = table;
 
-	return 0;
+	return cpufreq_table_validate_and_show(policy, table);
 }
 
 static int us2e_freq_cpu_exit(struct cpufreq_policy *policy)

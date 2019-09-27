@@ -1,10 +1,13 @@
-/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * arch/arm/mach-ixp4xx/include/mach/io.h
  *
  * Author: Deepak Saxena <dsaxena@plexity.net>
  *
  * Copyright (C) 2002-2005  MontaVista Software, Inc.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  */
 
 #ifndef __ASM_ARM_ARCH_IO_H
@@ -92,10 +95,8 @@ static inline void __indirect_writeb(u8 value, volatile void __iomem *p)
 }
 
 static inline void __indirect_writesb(volatile void __iomem *bus_addr,
-				      const void *p, int count)
+				      const u8 *vaddr, int count)
 {
-	const u8 *vaddr = p;
-
 	while (count--)
 		writeb(*vaddr++, bus_addr);
 }
@@ -117,10 +118,8 @@ static inline void __indirect_writew(u16 value, volatile void __iomem *p)
 }
 
 static inline void __indirect_writesw(volatile void __iomem *bus_addr,
-				      const void *p, int count)
+				      const u16 *vaddr, int count)
 {
-	const u16 *vaddr = p;
-
 	while (count--)
 		writew(*vaddr++, bus_addr);
 }
@@ -138,9 +137,8 @@ static inline void __indirect_writel(u32 value, volatile void __iomem *p)
 }
 
 static inline void __indirect_writesl(volatile void __iomem *bus_addr,
-				      const void *p, int count)
+				      const u32 *vaddr, int count)
 {
-	const u32 *vaddr = p;
 	while (count--)
 		writel(*vaddr++, bus_addr);
 }
@@ -162,10 +160,8 @@ static inline u8 __indirect_readb(const volatile void __iomem *p)
 }
 
 static inline void __indirect_readsb(const volatile void __iomem *bus_addr,
-				     void *p, u32 count)
+				     u8 *vaddr, u32 count)
 {
-	u8 *vaddr = p;
-
 	while (count--)
 		*vaddr++ = readb(bus_addr);
 }
@@ -187,10 +183,8 @@ static inline u16 __indirect_readw(const volatile void __iomem *p)
 }
 
 static inline void __indirect_readsw(const volatile void __iomem *bus_addr,
-				     void *p, u32 count)
+				     u16 *vaddr, u32 count)
 {
-	u16 *vaddr = p;
-
 	while (count--)
 		*vaddr++ = readw(bus_addr);
 }
@@ -210,10 +204,8 @@ static inline u32 __indirect_readl(const volatile void __iomem *p)
 }
 
 static inline void __indirect_readsl(const volatile void __iomem *bus_addr,
-				     void *p, u32 count)
+				     u32 *vaddr, u32 count)
 {
-	u32 *vaddr = p;
-
 	while (count--)
 		*vaddr++ = readl(bus_addr);
 }
@@ -531,15 +523,8 @@ static inline void iowrite32_rep(void __iomem *addr, const void *vaddr,
 #endif
 }
 
-#define ioport_map(port, nr) ioport_map(port, nr)
-static inline void __iomem *ioport_map(unsigned long port, unsigned int nr)
-{
-	return ((void __iomem*)((port) + PIO_OFFSET));
-}
-#define	ioport_unmap(addr) ioport_unmap(addr)
-static inline void ioport_unmap(void __iomem *addr)
-{
-}
+#define	ioport_map(port, nr)		((void __iomem*)(port + PIO_OFFSET))
+#define	ioport_unmap(addr)
 #endif /* CONFIG_PCI */
 
 #endif /* __ASM_ARM_ARCH_IO_H */

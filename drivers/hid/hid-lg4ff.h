@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __HID_LG4FF_H
 #define __HID_LG4FF_H
 

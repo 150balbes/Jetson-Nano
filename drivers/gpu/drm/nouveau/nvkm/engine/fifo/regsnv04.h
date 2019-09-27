@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: MIT */
 #ifndef __NV04_FIFO_REGS_H__
 #define __NV04_FIFO_REGS_H__
 

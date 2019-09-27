@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /* Lasat 100 */
 #define PVC_REG_100		KSEG1ADDR(0x1c820000)
 #define PVC_DATA_SHIFT_100	0

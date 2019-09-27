@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note */
 /*
  * linux/arch/unicore32/include/asm/ptrace.h
  *

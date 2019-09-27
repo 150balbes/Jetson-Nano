@@ -1,78 +1,42 @@
-// SPDX-License-Identifier: GPL-2.0-only
 #include <linux/debugfs.h>
-#include <linux/efi.h>
 #include <linux/module.h>
 #include <linux/seq_file.h>
 #include <asm/pgtable.h>
 
 static int ptdump_show(struct seq_file *m, void *v)
 {
-	ptdump_walk_pgd_level_debugfs(m, NULL, false);
+	ptdump_walk_pgd_level(m, NULL);
 	return 0;
 }
 
-DEFINE_SHOW_ATTRIBUTE(ptdump);
-
-static int ptdump_curknl_show(struct seq_file *m, void *v)
+static int ptdump_open(struct inode *inode, struct file *filp)
 {
-	if (current->mm->pgd) {
-		down_read(&current->mm->mmap_sem);
-		ptdump_walk_pgd_level_debugfs(m, current->mm->pgd, false);
-		up_read(&current->mm->mmap_sem);
-	}
-	return 0;
+	return single_open(filp, ptdump_show, NULL);
 }
 
-DEFINE_SHOW_ATTRIBUTE(ptdump_curknl);
+static const struct file_operations ptdump_fops = {
+	.owner		= THIS_MODULE,
+	.open		= ptdump_open,
+	.read		= seq_read,
+	.llseek		= seq_lseek,
+	.release	= single_release,
+};
 
-#ifdef CONFIG_PAGE_TABLE_ISOLATION
-static int ptdump_curusr_show(struct seq_file *m, void *v)
-{
-	if (current->mm->pgd) {
-		down_read(&current->mm->mmap_sem);
-		ptdump_walk_pgd_level_debugfs(m, current->mm->pgd, true);
-		up_read(&current->mm->mmap_sem);
-	}
-	return 0;
-}
-
-DEFINE_SHOW_ATTRIBUTE(ptdump_curusr);
-#endif
-
-#if defined(CONFIG_EFI) && defined(CONFIG_X86_64)
-static int ptdump_efi_show(struct seq_file *m, void *v)
-{
-	if (efi_mm.pgd)
-		ptdump_walk_pgd_level_debugfs(m, efi_mm.pgd, false);
-	return 0;
-}
-
-DEFINE_SHOW_ATTRIBUTE(ptdump_efi);
-#endif
-
-static struct dentry *dir;
+static struct dentry *pe;
 
 static int __init pt_dump_debug_init(void)
 {
-	dir = debugfs_create_dir("page_tables", NULL);
+	pe = debugfs_create_file("kernel_page_tables", S_IRUSR, NULL, NULL,
+				 &ptdump_fops);
+	if (!pe)
+		return -ENOMEM;
 
-	debugfs_create_file("kernel", 0400, dir, NULL, &ptdump_fops);
-	debugfs_create_file("current_kernel", 0400, dir, NULL,
-			    &ptdump_curknl_fops);
-
-#ifdef CONFIG_PAGE_TABLE_ISOLATION
-	debugfs_create_file("current_user", 0400, dir, NULL,
-			    &ptdump_curusr_fops);
-#endif
-#if defined(CONFIG_EFI) && defined(CONFIG_X86_64)
-	debugfs_create_file("efi", 0400, dir, NULL, &ptdump_efi_fops);
-#endif
 	return 0;
 }
 
 static void __exit pt_dump_debug_exit(void)
 {
-	debugfs_remove_recursive(dir);
+	debugfs_remove_recursive(pe);
 }
 
 module_init(pt_dump_debug_init);

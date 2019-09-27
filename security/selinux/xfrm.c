@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  *  NSA Security-Enhanced Linux (SELinux) security module
  *
@@ -13,6 +12,10 @@
  *
  *  Copyright (C) 2005 International Business Machines Corporation
  *  Copyright (C) 2006 Trusted Computer Solutions, Inc.
+ *
+ *	This program is free software; you can redistribute it and/or modify
+ *	it under the terms of the GNU General Public License version 2,
+ *	as published by the Free Software Foundation.
  */
 
 /*
@@ -76,7 +79,7 @@ static int selinux_xfrm_alloc_user(struct xfrm_sec_ctx **ctxp,
 				   gfp_t gfp)
 {
 	int rc;
-	const struct task_security_struct *tsec = selinux_cred(current_cred());
+	const struct task_security_struct *tsec = current_security();
 	struct xfrm_sec_ctx *ctx = NULL;
 	u32 str_len;
 
@@ -98,13 +101,11 @@ static int selinux_xfrm_alloc_user(struct xfrm_sec_ctx **ctxp,
 	ctx->ctx_len = str_len;
 	memcpy(ctx->ctx_str, &uctx[1], str_len);
 	ctx->ctx_str[str_len] = '\0';
-	rc = security_context_to_sid(&selinux_state, ctx->ctx_str, str_len,
-				     &ctx->ctx_sid, gfp);
+	rc = security_context_to_sid(ctx->ctx_str, str_len, &ctx->ctx_sid, gfp);
 	if (rc)
 		goto err;
 
-	rc = avc_has_perm(&selinux_state,
-			  tsec->sid, ctx->ctx_sid,
+	rc = avc_has_perm(tsec->sid, ctx->ctx_sid,
 			  SECCLASS_ASSOCIATION, ASSOCIATION__SETCONTEXT, NULL);
 	if (rc)
 		goto err;
@@ -135,13 +136,12 @@ static void selinux_xfrm_free(struct xfrm_sec_ctx *ctx)
  */
 static int selinux_xfrm_delete(struct xfrm_sec_ctx *ctx)
 {
-	const struct task_security_struct *tsec = selinux_cred(current_cred());
+	const struct task_security_struct *tsec = current_security();
 
 	if (!ctx)
 		return 0;
 
-	return avc_has_perm(&selinux_state,
-			    tsec->sid, ctx->ctx_sid,
+	return avc_has_perm(tsec->sid, ctx->ctx_sid,
 			    SECCLASS_ASSOCIATION, ASSOCIATION__SETCONTEXT,
 			    NULL);
 }
@@ -163,8 +163,7 @@ int selinux_xfrm_policy_lookup(struct xfrm_sec_ctx *ctx, u32 fl_secid, u8 dir)
 	if (!selinux_authorizable_ctx(ctx))
 		return -EINVAL;
 
-	rc = avc_has_perm(&selinux_state,
-			  fl_secid, ctx->ctx_sid,
+	rc = avc_has_perm(fl_secid, ctx->ctx_sid,
 			  SECCLASS_ASSOCIATION, ASSOCIATION__POLMATCH, NULL);
 	return (rc == -EACCES ? -ESRCH : rc);
 }
@@ -203,8 +202,7 @@ int selinux_xfrm_state_pol_flow_match(struct xfrm_state *x,
 	/* We don't need a separate SA Vs. policy polmatch check since the SA
 	 * is now of the same label as the flow and a flow Vs. policy polmatch
 	 * check had already happened in selinux_xfrm_policy_lookup() above. */
-	return (avc_has_perm(&selinux_state,
-			     fl->flowi_secid, state_sid,
+	return (avc_has_perm(fl->flowi_secid, state_sid,
 			    SECCLASS_ASSOCIATION, ASSOCIATION__SENDTO,
 			    NULL) ? 0 : 1);
 }
@@ -227,7 +225,7 @@ static int selinux_xfrm_skb_sid_ingress(struct sk_buff *skb,
 					u32 *sid, int ckall)
 {
 	u32 sid_session = SECSID_NULL;
-	struct sec_path *sp = skb_sec_path(skb);
+	struct sec_path *sp = skb->sp;
 
 	if (sp) {
 		int i;
@@ -354,8 +352,7 @@ int selinux_xfrm_state_alloc_acquire(struct xfrm_state *x,
 	if (secid == 0)
 		return -EINVAL;
 
-	rc = security_sid_to_context(&selinux_state, secid, &ctx_str,
-				     &str_len);
+	rc = security_sid_to_context(secid, &ctx_str, &str_len);
 	if (rc)
 		return rc;
 
@@ -405,7 +402,7 @@ int selinux_xfrm_sock_rcv_skb(u32 sk_sid, struct sk_buff *skb,
 			      struct common_audit_data *ad)
 {
 	int i;
-	struct sec_path *sp = skb_sec_path(skb);
+	struct sec_path *sp = skb->sp;
 	u32 peer_sid = SECINITSID_UNLABELED;
 
 	if (sp) {
@@ -423,8 +420,7 @@ int selinux_xfrm_sock_rcv_skb(u32 sk_sid, struct sk_buff *skb,
 	/* This check even when there's no association involved is intended,
 	 * according to Trent Jaeger, to make sure a process can't engage in
 	 * non-IPsec communication unless explicitly allowed by policy. */
-	return avc_has_perm(&selinux_state,
-			    sk_sid, peer_sid,
+	return avc_has_perm(sk_sid, peer_sid,
 			    SECCLASS_ASSOCIATION, ASSOCIATION__RECVFROM, ad);
 }
 
@@ -456,7 +452,7 @@ int selinux_xfrm_postroute_last(u32 sk_sid, struct sk_buff *skb,
 	if (dst) {
 		struct dst_entry *iter;
 
-		for (iter = dst; iter != NULL; iter = xfrm_dst_child(iter)) {
+		for (iter = dst; iter != NULL; iter = iter->child) {
 			struct xfrm_state *x = iter->xfrm;
 
 			if (x && selinux_authorizable_xfrm(x))
@@ -467,6 +463,6 @@ int selinux_xfrm_postroute_last(u32 sk_sid, struct sk_buff *skb,
 	/* This check even when there's no association involved is intended,
 	 * according to Trent Jaeger, to make sure a process can't engage in
 	 * non-IPsec communication unless explicitly allowed by policy. */
-	return avc_has_perm(&selinux_state, sk_sid, SECINITSID_UNLABELED,
+	return avc_has_perm(sk_sid, SECINITSID_UNLABELED,
 			    SECCLASS_ASSOCIATION, ASSOCIATION__SENDTO, ad);
 }

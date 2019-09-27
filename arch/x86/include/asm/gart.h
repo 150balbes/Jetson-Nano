@@ -1,8 +1,7 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _ASM_X86_GART_H
 #define _ASM_X86_GART_H
 
-#include <asm/e820/api.h>
+#include <asm/e820.h>
 
 extern void set_up_gart_resume(u32, u32);
 
@@ -98,7 +97,7 @@ static inline int aperture_valid(u64 aper_base, u32 aper_size, u32 min_size)
 		printk(KERN_INFO "Aperture beyond 4GB. Ignoring.\n");
 		return 0;
 	}
-	if (e820__mapped_any(aper_base, aper_base + aper_size, E820_TYPE_RAM)) {
+	if (e820_any_mapped(aper_base, aper_base + aper_size, E820_RAM)) {
 		printk(KERN_INFO "Aperture pointing to e820 RAM. Ignoring.\n");
 		return 0;
 	}

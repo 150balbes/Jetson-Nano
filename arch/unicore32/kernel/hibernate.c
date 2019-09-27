@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  *  linux/arch/unicore32/kernel/hibernate.c
  *
@@ -6,11 +5,15 @@
  *
  *	Maintained by GUAN Xue-tao <gxt@mprc.pku.edu.cn>
  *	Copyright (C) 2001-2010 Guan Xuetao
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  */
 
 #include <linux/gfp.h>
 #include <linux/suspend.h>
-#include <linux/memblock.h>
+#include <linux/bootmem.h>
 
 #include <asm/page.h>
 #include <asm/pgtable.h>

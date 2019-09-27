@@ -96,8 +96,7 @@ struct ib_fmr_pool {
 						   void *              arg);
 	void                     *flush_arg;
 
-	struct kthread_worker	  *worker;
-	struct kthread_work	  work;
+	struct task_struct       *thread;
 
 	atomic_t                  req_ser;
 	atomic_t                  flush_ser;
@@ -175,19 +174,29 @@ static void ib_fmr_batch_release(struct ib_fmr_pool *pool)
 	spin_unlock_irq(&pool->pool_lock);
 }
 
-static void ib_fmr_cleanup_func(struct kthread_work *work)
+static int ib_fmr_cleanup_thread(void *pool_ptr)
 {
-	struct ib_fmr_pool *pool = container_of(work, struct ib_fmr_pool, work);
+	struct ib_fmr_pool *pool = pool_ptr;
 
-	ib_fmr_batch_release(pool);
-	atomic_inc(&pool->flush_ser);
-	wake_up_interruptible(&pool->force_wait);
+	do {
+		if (atomic_read(&pool->flush_ser) - atomic_read(&pool->req_ser) < 0) {
+			ib_fmr_batch_release(pool);
 
-	if (pool->flush_function)
-		pool->flush_function(pool, pool->flush_arg);
+			atomic_inc(&pool->flush_ser);
+			wake_up_interruptible(&pool->force_wait);
 
-	if (atomic_read(&pool->flush_ser) - atomic_read(&pool->req_ser) < 0)
-		kthread_queue_work(pool->worker, &pool->work);
+			if (pool->flush_function)
+				pool->flush_function(pool, pool->flush_arg);
+		}
+
+		set_current_state(TASK_INTERRUPTIBLE);
+		if (atomic_read(&pool->flush_ser) - atomic_read(&pool->req_ser) >= 0 &&
+		    !kthread_should_stop())
+			schedule();
+		__set_current_state(TASK_RUNNING);
+	} while (!kthread_should_stop());
+
+	return 0;
 }
 
 /**
@@ -211,9 +220,9 @@ struct ib_fmr_pool *ib_create_fmr_pool(struct ib_pd             *pd,
 		return ERR_PTR(-EINVAL);
 
 	device = pd->device;
-	if (!device->ops.alloc_fmr    || !device->ops.dealloc_fmr  ||
-	    !device->ops.map_phys_fmr || !device->ops.unmap_fmr) {
-		dev_info(&device->dev, "Device does not support FMRs\n");
+	if (!device->alloc_fmr    || !device->dealloc_fmr  ||
+	    !device->map_phys_fmr || !device->unmap_fmr) {
+		pr_info(PFX "Device %s does not support FMRs\n", device->name);
 		return ERR_PTR(-ENOSYS);
 	}
 
@@ -235,10 +244,10 @@ struct ib_fmr_pool *ib_create_fmr_pool(struct ib_pd             *pd,
 
 	if (params->cache) {
 		pool->cache_bucket =
-			kmalloc_array(IB_FMR_HASH_SIZE,
-				      sizeof(*pool->cache_bucket),
-				      GFP_KERNEL);
+			kmalloc(IB_FMR_HASH_SIZE * sizeof *pool->cache_bucket,
+				GFP_KERNEL);
 		if (!pool->cache_bucket) {
+			pr_warn(PFX "Failed to allocate cache in pool\n");
 			ret = -ENOMEM;
 			goto out_free_pool;
 		}
@@ -257,14 +266,15 @@ struct ib_fmr_pool *ib_create_fmr_pool(struct ib_pd             *pd,
 	atomic_set(&pool->flush_ser, 0);
 	init_waitqueue_head(&pool->force_wait);
 
-	pool->worker =
-		kthread_create_worker(0, "ib_fmr(%s)", dev_name(&device->dev));
-	if (IS_ERR(pool->worker)) {
-		pr_warn(PFX "couldn't start cleanup kthread worker\n");
-		ret = PTR_ERR(pool->worker);
+	pool->thread = kthread_run(ib_fmr_cleanup_thread,
+				   pool,
+				   "ib_fmr(%s)",
+				   device->name);
+	if (IS_ERR(pool->thread)) {
+		pr_warn(PFX "couldn't start cleanup thread\n");
+		ret = PTR_ERR(pool->thread);
 		goto out_free_pool;
 	}
-	kthread_init_work(&pool->work, ib_fmr_cleanup_func);
 
 	{
 		struct ib_pool_fmr *fmr;
@@ -329,7 +339,7 @@ void ib_destroy_fmr_pool(struct ib_fmr_pool *pool)
 	LIST_HEAD(fmr_list);
 	int                 i;
 
-	kthread_destroy_worker(pool->worker);
+	kthread_stop(pool->thread);
 	ib_fmr_batch_release(pool);
 
 	i = 0;
@@ -379,7 +389,7 @@ int ib_flush_fmr_pool(struct ib_fmr_pool *pool)
 	spin_unlock_irq(&pool->pool_lock);
 
 	serial = atomic_inc_return(&pool->req_ser);
-	kthread_queue_work(pool->worker, &pool->work);
+	wake_up_process(pool->thread);
 
 	if (wait_event_interruptible(pool->force_wait,
 				     atomic_read(&pool->flush_ser) - serial >= 0))
@@ -390,11 +400,13 @@ int ib_flush_fmr_pool(struct ib_fmr_pool *pool)
 EXPORT_SYMBOL(ib_flush_fmr_pool);
 
 /**
- * ib_fmr_pool_map_phys - Map an FMR from an FMR pool.
- * @pool_handle: FMR pool to allocate FMR from
- * @page_list: List of pages to map
- * @list_len: Number of pages in @page_list
- * @io_virtual_address: I/O virtual address for new FMR
+ * ib_fmr_pool_map_phys -
+ * @pool:FMR pool to allocate FMR from
+ * @page_list:List of pages to map
+ * @list_len:Number of pages in @page_list
+ * @io_virtual_address:I/O virtual address for new FMR
+ *
+ * Map an FMR from an FMR pool.
  */
 struct ib_pool_fmr *ib_fmr_pool_map_phys(struct ib_fmr_pool *pool_handle,
 					 u64                *page_list,
@@ -474,7 +486,7 @@ EXPORT_SYMBOL(ib_fmr_pool_map_phys);
  * Unmap an FMR.  The FMR mapping may remain valid until the FMR is
  * reused (or until ib_flush_fmr_pool() is called).
  */
-void ib_fmr_pool_unmap(struct ib_pool_fmr *fmr)
+int ib_fmr_pool_unmap(struct ib_pool_fmr *fmr)
 {
 	struct ib_fmr_pool *pool;
 	unsigned long flags;
@@ -491,7 +503,7 @@ void ib_fmr_pool_unmap(struct ib_pool_fmr *fmr)
 			list_add_tail(&fmr->list, &pool->dirty_list);
 			if (++pool->dirty_len >= pool->dirty_watermark) {
 				atomic_inc(&pool->req_ser);
-				kthread_queue_work(pool->worker, &pool->work);
+				wake_up_process(pool->thread);
 			}
 		}
 	}
@@ -503,5 +515,7 @@ void ib_fmr_pool_unmap(struct ib_pool_fmr *fmr)
 #endif
 
 	spin_unlock_irqrestore(&pool->pool_lock, flags);
+
+	return 0;
 }
 EXPORT_SYMBOL(ib_fmr_pool_unmap);

@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef LINUX_BCM47XX_PRIVATE_H_
 #define LINUX_BCM47XX_PRIVATE_H_
 

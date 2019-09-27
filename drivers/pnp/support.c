@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * support.c - standard functions for the use of pnp protocol drivers
  *

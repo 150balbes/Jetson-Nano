@@ -1,16 +1,23 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * arch/arm/mach-tegra/reset.c
  *
  * Copyright (C) 2011,2012 NVIDIA Corporation.
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
  */
 
 #include <linux/bitops.h>
 #include <linux/cpumask.h>
 #include <linux/init.h>
 #include <linux/io.h>
-
-#include <linux/firmware/trusted_foundations.h>
 
 #include <soc/tegra/fuse.h>
 
@@ -70,7 +77,7 @@ static void __init tegra_cpu_reset_handler_enable(void)
 	switch (err) {
 	case -ENOSYS:
 		tegra_cpu_reset_handler_set(reset_address);
-		/* fall through */
+		/* pass-through */
 	case 0:
 		is_enabled = true;
 		break;
@@ -82,21 +89,19 @@ static void __init tegra_cpu_reset_handler_enable(void)
 
 void __init tegra_cpu_reset_handler_init(void)
 {
-	__tegra_cpu_reset_handler_data[TEGRA_RESET_TF_PRESENT] =
-		trusted_foundations_registered();
 
 #ifdef CONFIG_SMP
 	__tegra_cpu_reset_handler_data[TEGRA_RESET_MASK_PRESENT] =
 		*((u32 *)cpu_possible_mask);
 	__tegra_cpu_reset_handler_data[TEGRA_RESET_STARTUP_SECONDARY] =
-		__pa_symbol((void *)secondary_startup);
+		virt_to_phys((void *)secondary_startup);
 #endif
 
 #ifdef CONFIG_PM_SLEEP
 	__tegra_cpu_reset_handler_data[TEGRA_RESET_STARTUP_LP1] =
 		TEGRA_IRAM_LPx_RESUME_AREA;
 	__tegra_cpu_reset_handler_data[TEGRA_RESET_STARTUP_LP2] =
-		__pa_symbol((void *)tegra_resume);
+		virt_to_phys((void *)tegra_resume);
 #endif
 
 	tegra_cpu_reset_handler_enable();

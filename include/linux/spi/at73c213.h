@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * Board-specific data used to set up AT73c213 audio DAC driver.
  */

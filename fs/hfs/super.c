@@ -71,7 +71,7 @@ void hfs_mark_mdb_dirty(struct super_block *sb)
 	struct hfs_sb_info *sbi = HFS_SB(sb);
 	unsigned long delay;
 
-	if (sb_rdonly(sb))
+	if (sb->s_flags & MS_RDONLY)
 		return;
 
 	spin_lock(&sbi->work_lock);
@@ -114,18 +114,18 @@ static int hfs_statfs(struct dentry *dentry, struct kstatfs *buf)
 static int hfs_remount(struct super_block *sb, int *flags, char *data)
 {
 	sync_filesystem(sb);
-	*flags |= SB_NODIRATIME;
-	if ((bool)(*flags & SB_RDONLY) == sb_rdonly(sb))
+	*flags |= MS_NODIRATIME;
+	if ((*flags & MS_RDONLY) == (sb->s_flags & MS_RDONLY))
 		return 0;
-	if (!(*flags & SB_RDONLY)) {
+	if (!(*flags & MS_RDONLY)) {
 		if (!(HFS_SB(sb)->mdb->drAtrb & cpu_to_be16(HFS_SB_ATTRIB_UNMNT))) {
 			pr_warn("filesystem was not cleanly unmounted, running fsck.hfs is recommended.  leaving read-only.\n");
-			sb->s_flags |= SB_RDONLY;
-			*flags |= SB_RDONLY;
+			sb->s_flags |= MS_RDONLY;
+			*flags |= MS_RDONLY;
 		} else if (HFS_SB(sb)->mdb->drAtrb & cpu_to_be16(HFS_SB_ATTRIB_SLOCK)) {
 			pr_warn("filesystem is marked locked, leaving read-only.\n");
-			sb->s_flags |= SB_RDONLY;
-			*flags |= SB_RDONLY;
+			sb->s_flags |= MS_RDONLY;
+			*flags |= MS_RDONLY;
 		}
 	}
 	return 0;
@@ -167,14 +167,20 @@ static struct inode *hfs_alloc_inode(struct super_block *sb)
 	return i ? &i->vfs_inode : NULL;
 }
 
-static void hfs_free_inode(struct inode *inode)
+static void hfs_i_callback(struct rcu_head *head)
 {
+	struct inode *inode = container_of(head, struct inode, i_rcu);
 	kmem_cache_free(hfs_inode_cachep, HFS_I(inode));
+}
+
+static void hfs_destroy_inode(struct inode *inode)
+{
+	call_rcu(&inode->i_rcu, hfs_i_callback);
 }
 
 static const struct super_operations hfs_super_operations = {
 	.alloc_inode	= hfs_alloc_inode,
-	.free_inode	= hfs_free_inode,
+	.destroy_inode	= hfs_destroy_inode,
 	.write_inode	= hfs_write_inode,
 	.evict_inode	= hfs_evict_inode,
 	.put_super	= hfs_put_super,
@@ -401,7 +407,7 @@ static int hfs_fill_super(struct super_block *sb, void *data, int silent)
 
 	sb->s_op = &hfs_super_operations;
 	sb->s_xattr = hfs_xattr_handlers;
-	sb->s_flags |= SB_NODIRATIME;
+	sb->s_flags |= MS_NODIRATIME;
 	mutex_init(&sbi->bitmap_lock);
 
 	res = hfs_mdb_get(sb);

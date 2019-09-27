@@ -1,9 +1,13 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Backlight Lowlevel Control Abstraction
  *
  * Copyright (C) 2003,2004 Hewlett-Packard Company
  *
+ * Copyright (c) 2017, NVIDIA CORPORATION, All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
@@ -17,6 +21,8 @@
 #include <linux/err.h>
 #include <linux/fb.h>
 #include <linux/slab.h>
+#include <linux/of.h>
+#include <linux/of_device.h>
 
 #ifdef CONFIG_PMAC_BACKLIGHT
 #include <asm/backlight.h>
@@ -31,6 +37,48 @@ static const char *const backlight_types[] = {
 	[BACKLIGHT_PLATFORM] = "platform",
 	[BACKLIGHT_FIRMWARE] = "firmware",
 };
+
+struct backlight_device *get_backlight_device_by_name(char *name)
+{
+	struct list_head *ptr;
+	struct backlight_device *entry = NULL;
+
+	if (!name)
+		return NULL;
+
+	mutex_lock(&backlight_dev_list_mutex);
+	list_for_each(ptr, &backlight_dev_list) {
+		entry = list_entry(ptr, struct backlight_device, entry);
+		if (strcmp(dev_name(&entry->dev), name) == 0)
+			goto done;
+	}
+	entry = NULL;
+done:
+	mutex_unlock(&backlight_dev_list_mutex);
+	return entry;
+}
+EXPORT_SYMBOL(get_backlight_device_by_name);
+
+struct backlight_device *get_backlight_device_by_node(struct device_node *np)
+{
+	struct list_head *ptr;
+	struct backlight_device *entry = NULL;
+
+	if (!np)
+		return NULL;
+
+	mutex_lock(&backlight_dev_list_mutex);
+	list_for_each(ptr, &backlight_dev_list) {
+		entry = list_entry(ptr, struct backlight_device, entry);
+		if (entry->dev.of_node && (entry->dev.of_node == np))
+			goto done;
+	}
+	entry = NULL;
+done:
+	mutex_unlock(&backlight_dev_list_mutex);
+	return entry;
+}
+EXPORT_SYMBOL(get_backlight_device_by_node);
 
 #if defined(CONFIG_FB) || (defined(CONFIG_FB_MODULE) && \
 			   defined(CONFIG_BACKLIGHT_CLASS_DEVICE_MODULE))
@@ -47,7 +95,7 @@ static int fb_notifier_callback(struct notifier_block *self,
 	int fb_blank = 0;
 
 	/* If we aren't interested in this event, skip it immediately ... */
-	if (event != FB_EVENT_BLANK)
+	if (event != FB_EVENT_BLANK && event != FB_EVENT_CONBLANK)
 		return 0;
 
 	bd = container_of(self, struct backlight_device, fb_notif);
@@ -211,6 +259,60 @@ static ssize_t brightness_store(struct device *dev,
 }
 static DEVICE_ATTR_RW(brightness);
 
+static ssize_t low_persistence_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct backlight_device *bd = to_backlight_device(dev);
+
+	return sprintf(buf, "%d\n", ((bd->props.state & BL_CORE_LPMODE) != 0));
+}
+
+static ssize_t low_persistence_store(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t count)
+{
+	int rc;
+	struct backlight_device *bd = to_backlight_device(dev);
+	unsigned long lp_mode;
+
+	rc = kstrtoul(buf, 0, &lp_mode);
+	if (rc)
+		return rc;
+
+	lp_mode = !!lp_mode;
+	rc = -ENXIO;
+
+	mutex_lock(&bd->ops_lock);
+	if (bd->ops) {
+		pr_debug("set low_persistence to %lu\n", lp_mode);
+		if (bd->props.low_persistence_capable) {
+			if (lp_mode && !(bd->props.state & BL_CORE_LPMODE)) {
+				bd->props.state |= BL_CORE_LPMODE;
+				backlight_update_status(bd);
+			} else if (!lp_mode &&
+				(bd->props.state & BL_CORE_LPMODE)) {
+				bd->props.state &= ~BL_CORE_LPMODE;
+				backlight_update_status(bd);
+			}
+		} else {
+			pr_err("low_persistence mode isn't supported\n");
+		}
+		rc = count;
+	}
+	mutex_unlock(&bd->ops_lock);
+
+	return rc;
+}
+static DEVICE_ATTR_RW(low_persistence);
+
+static ssize_t low_persistence_capable_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct backlight_device *bd = to_backlight_device(dev);
+
+	return sprintf(buf, "%d\n", bd->props.low_persistence_capable);
+}
+static DEVICE_ATTR_RO(low_persistence_capable);
+
 static ssize_t type_show(struct device *dev, struct device_attribute *attr,
 		char *buf)
 {
@@ -290,6 +392,8 @@ static void bl_device_release(struct device *dev)
 static struct attribute *bl_device_attrs[] = {
 	&dev_attr_bl_power.attr,
 	&dev_attr_brightness.attr,
+	&dev_attr_low_persistence.attr,
+	&dev_attr_low_persistence_capable.attr,
 	&dev_attr_actual_brightness.attr,
 	&dev_attr_max_brightness.attr,
 	&dev_attr_type.attr,
@@ -350,6 +454,8 @@ struct backlight_device *backlight_device_register(const char *name,
 	new_bd->dev.release = bl_device_release;
 	dev_set_name(&new_bd->dev, "%s", name);
 	dev_set_drvdata(&new_bd->dev, devdata);
+
+	BLOCKING_INIT_NOTIFIER_HEAD(&new_bd->notifier);
 
 	/* Set default properties */
 	if (props) {
@@ -493,6 +599,48 @@ int backlight_unregister_notifier(struct notifier_block *nb)
 EXPORT_SYMBOL(backlight_unregister_notifier);
 
 /**
+ * backlight_device_register_notifier - get notified of backlight (un)registration
+ * @bl: backlight device
+ * @nb: notifier block with the notifier to call on backlight (un)registration
+ *
+ * @return 0 on success, otherwise a negative error code
+ *
+ * Register a notifier to get notified when backlight devices get registered
+ * or unregistered.
+ */
+int backlight_device_register_notifier(struct backlight_device *bd,
+	struct notifier_block *nb)
+{
+	return blocking_notifier_chain_register(&bd->notifier, nb);
+}
+EXPORT_SYMBOL(backlight_device_register_notifier);
+
+/**
+ * backlight_device_unregister_notifier - unregister a backlight notifier
+ * from device
+ * @bd: Backlight device
+ * @nb: notifier block to unregister
+ *
+ * @return 0 on success, otherwise a negative error code
+ *
+ * Register a notifier to get notified when backlight devices get registered
+ * or unregistered.
+ */
+int backlight_device_unregister_notifier(struct backlight_device *bd,
+	struct notifier_block *nb)
+{
+	return blocking_notifier_chain_unregister(&bd->notifier, nb);
+}
+EXPORT_SYMBOL(backlight_device_unregister_notifier);
+
+int backlight_device_notifier_call_chain(struct backlight_device *bd,
+	unsigned long event, void *data)
+{
+	return blocking_notifier_call_chain(&bd->notifier, event, data);
+}
+EXPORT_SYMBOL(backlight_device_notifier_call_chain);
+
+/**
  * devm_backlight_device_register - resource managed backlight_device_register()
  * @dev: the device to register
  * @name: the name of the device
@@ -580,79 +728,6 @@ struct backlight_device *of_find_backlight_by_node(struct device_node *node)
 }
 EXPORT_SYMBOL(of_find_backlight_by_node);
 #endif
-
-/**
- * of_find_backlight - Get backlight device
- * @dev: Device
- *
- * This function looks for a property named 'backlight' on the DT node
- * connected to @dev and looks up the backlight device.
- *
- * Call backlight_put() to drop the reference on the backlight device.
- *
- * Returns:
- * A pointer to the backlight device if found.
- * Error pointer -EPROBE_DEFER if the DT property is set, but no backlight
- * device is found.
- * NULL if there's no backlight property.
- */
-struct backlight_device *of_find_backlight(struct device *dev)
-{
-	struct backlight_device *bd = NULL;
-	struct device_node *np;
-
-	if (!dev)
-		return NULL;
-
-	if (IS_ENABLED(CONFIG_OF) && dev->of_node) {
-		np = of_parse_phandle(dev->of_node, "backlight", 0);
-		if (np) {
-			bd = of_find_backlight_by_node(np);
-			of_node_put(np);
-			if (!bd)
-				return ERR_PTR(-EPROBE_DEFER);
-			/*
-			 * Note: gpio_backlight uses brightness as
-			 * power state during probe
-			 */
-			if (!bd->props.brightness)
-				bd->props.brightness = bd->props.max_brightness;
-		}
-	}
-
-	return bd;
-}
-EXPORT_SYMBOL(of_find_backlight);
-
-static void devm_backlight_release(void *data)
-{
-	backlight_put(data);
-}
-
-/**
- * devm_of_find_backlight - Resource-managed of_find_backlight()
- * @dev: Device
- *
- * Device managed version of of_find_backlight().
- * The reference on the backlight device is automatically
- * dropped on driver detach.
- */
-struct backlight_device *devm_of_find_backlight(struct device *dev)
-{
-	struct backlight_device *bd;
-	int ret;
-
-	bd = of_find_backlight(dev);
-	if (IS_ERR_OR_NULL(bd))
-		return bd;
-	ret = devm_add_action(dev, devm_backlight_release, bd);
-	if (ret) {
-		backlight_put(bd);
-		return ERR_PTR(ret);
-	}
-	return bd;
-}
-EXPORT_SYMBOL(devm_of_find_backlight);
 
 static void __exit backlight_class_exit(void)
 {

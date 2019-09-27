@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 
 MEMSET_FN(memset_orig,
 	"x86-64-unrolled",

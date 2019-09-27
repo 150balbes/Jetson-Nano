@@ -406,7 +406,7 @@ static int siimage_dma_test_irq(ide_drive_t *drive)
  *	yet.
  */
 
-static blk_status_t sil_sata_reset_poll(ide_drive_t *drive)
+static int sil_sata_reset_poll(ide_drive_t *drive)
 {
 	ide_hwif_t *hwif = drive->hwif;
 	void __iomem *sata_status_addr
@@ -419,11 +419,11 @@ static blk_status_t sil_sata_reset_poll(ide_drive_t *drive)
 		if ((sata_stat & 0x03) != 0x03) {
 			printk(KERN_WARNING "%s: reset phy dead, status=0x%08x\n",
 					    hwif->name, sata_stat);
-			return BLK_STS_IOERR;
+			return -ENXIO;
 		}
 	}
 
-	return BLK_STS_OK;
+	return 0;
 }
 
 /**

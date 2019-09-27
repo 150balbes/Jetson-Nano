@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Picvue PVC160206 display driver
  *
@@ -157,7 +156,7 @@ static const struct file_operations pvc_scroll_proc_fops = {
 	.write		= pvc_scroll_proc_write,
 };
 
-void pvc_proc_timerfunc(struct timer_list *unused)
+void pvc_proc_timerfunc(unsigned long data)
 {
 	if (scroll_dir < 0)
 		pvc_move(DISPLAY|RIGHT);
@@ -198,7 +197,8 @@ static int __init pvc_proc_init(void)
 	if (proc_entry == NULL)
 		goto error;
 
-	timer_setup(&timer, pvc_proc_timerfunc, 0);
+	init_timer(&timer);
+	timer.function = pvc_proc_timerfunc;
 
 	return 0;
 error:

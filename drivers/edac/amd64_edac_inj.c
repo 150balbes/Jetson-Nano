@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 #include "amd64_edac.h"
 
 static ssize_t amd64_inject_section_show(struct device *dev,

@@ -1,9 +1,12 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * JZ4780 NAND/external memory controller (NEMC)
  *
  * Copyright (c) 2015 Imagination Technologies
  * Author: Alex Smith <alex@alex-smith.me.uk>
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License version 2 as published
+ * by the Free Software Foundation.
  */
 
 #include <linux/clk.h>
@@ -41,14 +44,9 @@
 #define NEMC_NFCSR_NFCEn(n)	BIT((((n) - 1) << 1) + 1)
 #define NEMC_NFCSR_TNFEn(n)	BIT(16 + (n) - 1)
 
-struct jz_soc_info {
-	u8 tas_tah_cycles_max;
-};
-
 struct jz4780_nemc {
 	spinlock_t lock;
 	struct device *dev;
-	const struct jz_soc_info *soc_info;
 	void __iomem *base;
 	struct clk *clk;
 	uint32_t clk_period;
@@ -61,7 +59,7 @@ struct jz4780_nemc {
  *
  * Return: The number of unique NEMC banks referred to by the specified NEMC
  * child device. Unique here means that a device that references the same bank
- * multiple times in its "reg" property will only count once.
+ * multiple times in the its "reg" property will only count once.
  */
 unsigned int jz4780_nemc_num_banks(struct device *dev)
 {
@@ -163,7 +161,7 @@ static bool jz4780_nemc_configure_bank(struct jz4780_nemc *nemc,
 	 * Conversion of tBP and tAW cycle counts to values supported by the
 	 * hardware (round up to the next supported value).
 	 */
-	static const u8 convert_tBP_tAW[] = {
+	static const uint32_t convert_tBP_tAW[] = {
 		0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10,
 
 		/* 11 - 12 -> 12 cycles */
@@ -204,7 +202,7 @@ static bool jz4780_nemc_configure_bank(struct jz4780_nemc *nemc,
 	if (of_property_read_u32(node, "ingenic,nemc-tAS", &val) == 0) {
 		smcr &= ~NEMC_SMCR_TAS_MASK;
 		cycles = jz4780_nemc_ns_to_cycles(nemc, val);
-		if (cycles > nemc->soc_info->tas_tah_cycles_max) {
+		if (cycles > 15) {
 			dev_err(nemc->dev, "tAS %u is too high (%u cycles)\n",
 				val, cycles);
 			return false;
@@ -216,7 +214,7 @@ static bool jz4780_nemc_configure_bank(struct jz4780_nemc *nemc,
 	if (of_property_read_u32(node, "ingenic,nemc-tAH", &val) == 0) {
 		smcr &= ~NEMC_SMCR_TAH_MASK;
 		cycles = jz4780_nemc_ns_to_cycles(nemc, val);
-		if (cycles > nemc->soc_info->tas_tah_cycles_max) {
+		if (cycles > 15) {
 			dev_err(nemc->dev, "tAH %u is too high (%u cycles)\n",
 				val, cycles);
 			return false;
@@ -280,10 +278,6 @@ static int jz4780_nemc_probe(struct platform_device *pdev)
 	if (!nemc)
 		return -ENOMEM;
 
-	nemc->soc_info = device_get_match_data(dev);
-	if (!nemc->soc_info)
-		return -EINVAL;
-
 	spin_lock_init(&nemc->lock);
 	nemc->dev = dev;
 
@@ -328,8 +322,8 @@ static int jz4780_nemc_probe(struct platform_device *pdev)
 			bank = of_read_number(prop, 1);
 			if (bank < 1 || bank >= JZ4780_NEMC_NUM_BANKS) {
 				dev_err(nemc->dev,
-					"%pOF requests invalid bank %u\n",
-					child, bank);
+					"%s requests invalid bank %u\n",
+					child->full_name, bank);
 
 				/* Will continue the outer loop below. */
 				referenced = 0;
@@ -340,12 +334,12 @@ static int jz4780_nemc_probe(struct platform_device *pdev)
 		}
 
 		if (!referenced) {
-			dev_err(nemc->dev, "%pOF has no addresses\n",
-				child);
+			dev_err(nemc->dev, "%s has no addresses\n",
+				child->full_name);
 			continue;
 		} else if (nemc->banks_present & referenced) {
-			dev_err(nemc->dev, "%pOF conflicts with another node\n",
-				child);
+			dev_err(nemc->dev, "%s conflicts with another node\n",
+				child->full_name);
 			continue;
 		}
 
@@ -376,17 +370,8 @@ static int jz4780_nemc_remove(struct platform_device *pdev)
 	return 0;
 }
 
-static const struct jz_soc_info jz4740_soc_info = {
-	.tas_tah_cycles_max = 7,
-};
-
-static const struct jz_soc_info jz4780_soc_info = {
-	.tas_tah_cycles_max = 15,
-};
-
 static const struct of_device_id jz4780_nemc_dt_match[] = {
-	{ .compatible = "ingenic,jz4740-nemc", .data = &jz4740_soc_info, },
-	{ .compatible = "ingenic,jz4780-nemc", .data = &jz4780_soc_info, },
+	{ .compatible = "ingenic,jz4780-nemc" },
 	{},
 };
 

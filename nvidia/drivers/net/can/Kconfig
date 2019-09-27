@@ -1,0 +1,5 @@
+if CAN_DEV
+source "drivers/net/can/mttcan/native/Kconfig"
+source "drivers/net/can/mttcan/ivc/Kconfig"
+source "drivers/net/can/nvsec/Kconfig"
+endif

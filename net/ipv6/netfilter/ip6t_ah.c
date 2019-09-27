@@ -1,7 +1,10 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /* Kernel module to match AH parameters. */
 
 /* (C) 2001-2002 Andras Kis-Szabo <kisza@sch.bme.hu>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  */
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 #include <linux/module.h>
@@ -55,7 +58,7 @@ static bool ah_mt6(const struct sk_buff *skb, struct xt_action_param *par)
 		return false;
 	}
 
-	hdrlen = ipv6_authlen(ah);
+	hdrlen = (ah->hdrlen + 2) << 2;
 
 	pr_debug("IPv6 AH LEN %u %u ", hdrlen, ah->hdrlen);
 	pr_debug("RES %04X ", ah->reserved);

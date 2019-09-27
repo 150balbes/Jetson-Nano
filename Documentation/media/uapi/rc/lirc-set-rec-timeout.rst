@@ -1,29 +1,18 @@
-.. Permission is granted to copy, distribute and/or modify this
-.. document under the terms of the GNU Free Documentation License,
-.. Version 1.1 or any later version published by the Free Software
-.. Foundation, with no Invariant Sections, no Front-Cover Texts
-.. and no Back-Cover Texts. A copy of the license is included at
-.. Documentation/media/uapi/fdl-appendix.rst.
-..
-.. TODO: replace it to GFDL-1.1-or-later WITH no-invariant-sections
+.. -*- coding: utf-8; mode: rst -*-
 
 .. _lirc_set_rec_timeout:
-.. _lirc_get_rec_timeout:
 
-***************************************************
-ioctl LIRC_GET_REC_TIMEOUT and LIRC_SET_REC_TIMEOUT
-***************************************************
+**************************
+ioctl LIRC_SET_REC_TIMEOUT
+**************************
 
 Name
 ====
 
-LIRC_GET_REC_TIMEOUT/LIRC_SET_REC_TIMEOUT - Get/set the integer value for IR inactivity timeout.
+LIRC_SET_REC_TIMEOUT - sets the integer value for IR inactivity timeout.
 
 Synopsis
 ========
-
-.. c:function:: int ioctl( int fd, LIRC_GET_REC_TIMEOUT, __u32 *timeout )
-    :name: LIRC_GET_REC_TIMEOUT
 
 .. c:function:: int ioctl( int fd, LIRC_SET_REC_TIMEOUT, __u32 *timeout )
     :name: LIRC_SET_REC_TIMEOUT
@@ -41,7 +30,7 @@ Arguments
 Description
 ===========
 
-Get and set the integer value for IR inactivity timeout.
+Sets the integer value for IR inactivity timeout.
 
 If supported by the hardware, setting it to 0  disables all hardware timeouts
 and data should be reported as soon as possible. If the exact value

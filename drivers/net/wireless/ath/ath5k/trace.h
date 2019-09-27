@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #if !defined(__TRACE_ATH5K_H) || defined(TRACE_HEADER_MULTI_READ)
 #define __TRACE_ATH5K_H
 

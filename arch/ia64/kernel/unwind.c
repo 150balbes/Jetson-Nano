@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * Copyright (C) 1999-2004 Hewlett-Packard Co
  *	David Mosberger-Tang <davidm@hpl.hp.com>
@@ -28,7 +27,7 @@
  *	  acquired, then the read-write lock must be acquired first.
  */
 #include <linux/module.h>
-#include <linux/memblock.h>
+#include <linux/bootmem.h>
 #include <linux/elf.h>
 #include <linux/kernel.h>
 #include <linux/sched.h>
@@ -42,7 +41,7 @@
 #include <asm/ptrace_offsets.h>
 #include <asm/rse.h>
 #include <asm/sections.h>
-#include <linux/uaccess.h>
+#include <asm/uaccess.h>
 
 #include "entry.h"
 #include "unwind_i.h"

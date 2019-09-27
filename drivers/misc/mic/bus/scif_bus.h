@@ -1,8 +1,16 @@
-/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Intel MIC Platform Software Stack (MPSS)
  *
  * Copyright(c) 2014 Intel Corporation.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License, version 2, as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+ * General Public License for more details.
  *
  * Intel Symmetric Communications Interface Bus driver.
  */
@@ -80,8 +88,8 @@ struct scif_driver {
  * @send_intr: Send an interrupt to the remote node on a specified doorbell.
  * @send_p2p_intr: Send an interrupt to the peer node on a specified doorbell
  * which is specifically targeted for a peer to peer node.
- * @remap: Map a buffer with the specified physical address and length.
- * @unmap: Unmap a buffer previously mapped.
+ * @ioremap: Map a buffer with the specified physical address and length.
+ * @iounmap: Unmap a buffer previously mapped.
  */
 struct scif_hw_ops {
 	int (*next_db)(struct scif_hw_dev *sdev);
@@ -96,16 +104,16 @@ struct scif_hw_ops {
 	void (*send_intr)(struct scif_hw_dev *sdev, int db);
 	void (*send_p2p_intr)(struct scif_hw_dev *sdev, int db,
 			      struct mic_mw *mw);
-	void __iomem * (*remap)(struct scif_hw_dev *sdev,
+	void __iomem * (*ioremap)(struct scif_hw_dev *sdev,
 				  phys_addr_t pa, size_t len);
-	void (*unmap)(struct scif_hw_dev *sdev, void __iomem *va);
+	void (*iounmap)(struct scif_hw_dev *sdev, void __iomem *va);
 };
 
 int scif_register_driver(struct scif_driver *driver);
 void scif_unregister_driver(struct scif_driver *driver);
 struct scif_hw_dev *
 scif_register_device(struct device *pdev, int id,
-		     const struct dma_map_ops *dma_ops,
+		     struct dma_map_ops *dma_ops,
 		     struct scif_hw_ops *hw_ops, u8 dnode, u8 snode,
 		     struct mic_mw *mmio, struct mic_mw *aper,
 		     void *dp, void __iomem *rdp,

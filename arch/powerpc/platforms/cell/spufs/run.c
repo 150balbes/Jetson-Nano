@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 #define DEBUG
 
 #include <linux/wait.h>
@@ -443,7 +442,7 @@ long spufs_run_spu(struct spu_context *ctx, u32 *npc, u32 *event)
 
 	else if (unlikely((status & SPU_STATUS_STOPPED_BY_STOP)
 	    && (status >> SPU_STOP_STATUS_SHIFT) == 0x3fff)) {
-		force_sig(SIGTRAP);
+		force_sig(SIGTRAP, current);
 		ret = -ERESTARTSYS;
 	}
 

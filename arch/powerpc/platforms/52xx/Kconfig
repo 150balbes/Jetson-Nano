@@ -1,9 +1,8 @@
-# SPDX-License-Identifier: GPL-2.0
 config PPC_MPC52xx
 	bool "52xx-based boards"
-	depends on PPC_BOOK3S_32
+	depends on 6xx
 	select COMMON_CLK
-	select HAVE_PCI
+	select PPC_PCI_CHOICE
 
 config PPC_MPC5200_SIMPLE
 	bool "Generic support for simple MPC5200 based boards"
@@ -34,6 +33,7 @@ config PPC_EFIKA
 	bool "bPlan Efika 5k2. MPC5200B based computer"
 	depends on PPC_MPC52xx
 	select PPC_RTAS
+	select RTAS_PROC
 	select PPC_NATIVE
 
 config PPC_LITE5200

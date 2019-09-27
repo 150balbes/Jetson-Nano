@@ -1,9 +1,11 @@
-# SPDX-License-Identifier: GPL-2.0
+# arch/arm/mach-s3c24xx/Makefile
 #
 # Copyright (c) 2012 Samsung Electronics Co., Ltd.
 #		http://www.samsung.com/
 #
 # Copyright 2007 Simtec Electronics
+#
+# Licensed under GPLv2
 
 # core
 

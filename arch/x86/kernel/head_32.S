@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  *
  *  Copyright (C) 1991, 1992  Linus Torvalds
@@ -25,7 +24,6 @@
 #include <asm/nops.h>
 #include <asm/bootparam.h>
 #include <asm/export.h>
-#include <asm/pgtable_32.h>
 
 /* Physical address */
 #define pa(X) ((X) - __PAGE_OFFSET)
@@ -43,8 +41,40 @@
 #define X86_CAPABILITY	new_cpu_data+CPUINFO_x86_capability
 #define X86_VENDOR_ID	new_cpu_data+CPUINFO_x86_vendor_id
 
+/*
+ * This is how much memory in addition to the memory covered up to
+ * and including _end we need mapped initially.
+ * We need:
+ *     (KERNEL_IMAGE_SIZE/4096) / 1024 pages (worst case, non PAE)
+ *     (KERNEL_IMAGE_SIZE/4096) / 512 + 4 pages (worst case for PAE)
+ *
+ * Modulo rounding, each megabyte assigned here requires a kilobyte of
+ * memory, which is currently unreclaimed.
+ *
+ * This should be a multiple of a page.
+ *
+ * KERNEL_IMAGE_SIZE should be greater than pa(_end)
+ * and small than max_low_pfn, otherwise will waste some page table entries
+ */
 
-#define SIZEOF_PTREGS 17*4
+#if PTRS_PER_PMD > 1
+#define PAGE_TABLE_SIZE(pages) (((pages) / PTRS_PER_PMD) + PTRS_PER_PGD)
+#else
+#define PAGE_TABLE_SIZE(pages) ((pages) / PTRS_PER_PGD)
+#endif
+
+/*
+ * Number of possible pages in the lowmem region.
+ *
+ * We shift 2 by 31 instead of 1 by 32 to the left in order to avoid a
+ * gas warning about overflowing shift count when gas has been compiled
+ * with only a host target support using a 32-bit type for internal
+ * representation.
+ */
+LOWMEM_PAGES = (((2<<31) - __PAGE_OFFSET) >> PAGE_SHIFT)
+
+/* Enough space to fit pagetables for the low memory linear map */
+MAPPING_BEYOND_END = PAGE_TABLE_SIZE(LOWMEM_PAGES) << PAGE_SHIFT
 
 /*
  * Worst-case size of the kernel mapping we need to make:
@@ -128,34 +158,110 @@ ENTRY(startup_32)
 	call load_ucode_bsp
 #endif
 
-	/* Create early pagetables. */
-	call  mk_early_pgtbl_32
+/*
+ * Initialize page tables.  This creates a PDE and a set of page
+ * tables, which are located immediately beyond __brk_base.  The variable
+ * _brk_end is set up to point to the first "safe" location.
+ * Mappings are created both at virtual address 0 (identity mapping)
+ * and PAGE_OFFSET for up to _end.
+ */
+#ifdef CONFIG_X86_PAE
+
+	/*
+	 * In PAE mode initial_page_table is statically defined to contain
+	 * enough entries to cover the VMSPLIT option (that is the top 1, 2 or 3
+	 * entries). The identity mapping is handled by pointing two PGD entries
+	 * to the first kernel PMD.
+	 *
+	 * Note the upper half of each PMD or PTE are always zero at this stage.
+	 */
+
+#define KPMDS (((-__PAGE_OFFSET) >> 30) & 3) /* Number of kernel PMDs */
+
+	xorl %ebx,%ebx				/* %ebx is kept at zero */
+
+	movl $pa(__brk_base), %edi
+	movl $pa(initial_pg_pmd), %edx
+	movl $PTE_IDENT_ATTR, %eax
+10:
+	leal PDE_IDENT_ATTR(%edi),%ecx		/* Create PMD entry */
+	movl %ecx,(%edx)			/* Store PMD entry */
+						/* Upper half already zero */
+	addl $8,%edx
+	movl $512,%ecx
+11:
+	stosl
+	xchgl %eax,%ebx
+	stosl
+	xchgl %eax,%ebx
+	addl $0x1000,%eax
+	loop 11b
+
+	/*
+	 * End condition: we must map up to the end + MAPPING_BEYOND_END.
+	 */
+	movl $pa(_end) + MAPPING_BEYOND_END + PTE_IDENT_ATTR, %ebp
+	cmpl %ebp,%eax
+	jb 10b
+1:
+	addl $__PAGE_OFFSET, %edi
+	movl %edi, pa(_brk_end)
+	shrl $12, %eax
+	movl %eax, pa(max_pfn_mapped)
 
 	/* Do early initialization of the fixmap area */
 	movl $pa(initial_pg_fixmap)+PDE_IDENT_ATTR,%eax
-#ifdef  CONFIG_X86_PAE
-#define KPMDS (((-__PAGE_OFFSET) >> 30) & 3) /* Number of kernel PMDs */
 	movl %eax,pa(initial_pg_pmd+0x1000*KPMDS-8)
-#else
+#else	/* Not PAE */
+
+page_pde_offset = (__PAGE_OFFSET >> 20);
+
+	movl $pa(__brk_base), %edi
+	movl $pa(initial_page_table), %edx
+	movl $PTE_IDENT_ATTR, %eax
+10:
+	leal PDE_IDENT_ATTR(%edi),%ecx		/* Create PDE entry */
+	movl %ecx,(%edx)			/* Store identity PDE entry */
+	movl %ecx,page_pde_offset(%edx)		/* Store kernel PDE entry */
+	addl $4,%edx
+	movl $1024, %ecx
+11:
+	stosl
+	addl $0x1000,%eax
+	loop 11b
+	/*
+	 * End condition: we must map up to the end + MAPPING_BEYOND_END.
+	 */
+	movl $pa(_end) + MAPPING_BEYOND_END + PTE_IDENT_ATTR, %ebp
+	cmpl %ebp,%eax
+	jb 10b
+	addl $__PAGE_OFFSET, %edi
+	movl %edi, pa(_brk_end)
+	shrl $12, %eax
+	movl %eax, pa(max_pfn_mapped)
+
+	/* Do early initialization of the fixmap area */
+	movl $pa(initial_pg_fixmap)+PDE_IDENT_ATTR,%eax
 	movl %eax,pa(initial_page_table+0xffc)
 #endif
 
 #ifdef CONFIG_PARAVIRT
 	/* This is can only trip for a broken bootloader... */
 	cmpw $0x207, pa(boot_params + BP_version)
-	jb .Ldefault_entry
+	jb default_entry
 
 	/* Paravirt-compatible boot parameters.  Look to see what architecture
 		we're booting under. */
 	movl pa(boot_params + BP_hardware_subarch), %eax
 	cmpl $num_subarch_entries, %eax
-	jae .Lbad_subarch
+	jae bad_subarch
 
 	movl pa(subarch_entries)(,%eax,4), %eax
 	subl $__PAGE_OFFSET, %eax
 	jmp *%eax
 
-.Lbad_subarch:
+bad_subarch:
+WEAK(lguest_entry)
 WEAK(xen_entry)
 	/* Unknown implementation; there's really
 	   nothing we can do at this point. */
@@ -164,13 +270,14 @@ WEAK(xen_entry)
 	__INITDATA
 
 subarch_entries:
-	.long .Ldefault_entry		/* normal x86/PC */
+	.long default_entry		/* normal x86/PC */
+	.long lguest_entry		/* lguest hypervisor */
 	.long xen_entry			/* Xen hypervisor */
-	.long .Ldefault_entry		/* Moorestown MID */
+	.long default_entry		/* Moorestown MID */
 num_subarch_entries = (. - subarch_entries) / 4
 .previous
 #else
-	jmp .Ldefault_entry
+	jmp default_entry
 #endif /* CONFIG_PARAVIRT */
 
 #ifdef CONFIG_HOTPLUG_CPU
@@ -182,8 +289,7 @@ num_subarch_entries = (. - subarch_entries) / 4
 ENTRY(start_cpu0)
 	movl initial_stack, %ecx
 	movl %ecx, %esp
-	call *(initial_code)
-1:	jmp 1b
+	jmp  *(initial_code)
 ENDPROC(start_cpu0)
 #endif
 
@@ -211,7 +317,10 @@ ENTRY(startup_32_smp)
 	call load_ucode_ap
 #endif
 
-.Ldefault_entry:
+default_entry:
+#define CR0_STATE	(X86_CR0_PE | X86_CR0_MP | X86_CR0_ET | \
+			 X86_CR0_NE | X86_CR0_WP | X86_CR0_AM | \
+			 X86_CR0_PG)
 	movl $(CR0_STATE & ~X86_CR0_PG),%eax
 	movl %eax,%cr0
 
@@ -238,7 +347,7 @@ ENTRY(startup_32_smp)
 	pushfl
 	popl %eax			# get EFLAGS
 	testl $X86_EFLAGS_ID,%eax	# did EFLAGS.ID remained set?
-	jz .Lenable_paging		# hw disallowed setting of ID bit
+	jz enable_paging		# hw disallowed setting of ID bit
 					# which means no CPUID and no CR4
 
 	xorl %eax,%eax
@@ -248,13 +357,13 @@ ENTRY(startup_32_smp)
 	movl $1,%eax
 	cpuid
 	andl $~1,%edx			# Ignore CPUID.FPU
-	jz .Lenable_paging		# No flags or only CPUID.FPU = no CR4
+	jz enable_paging		# No flags or only CPUID.FPU = no CR4
 
 	movl pa(mmu_cr4_features),%eax
 	movl %eax,%cr4
 
 	testb $X86_CR4_PAE, %al		# check if PAE is enabled
-	jz .Lenable_paging
+	jz enable_paging
 
 	/* Check if extended functions are implemented */
 	movl $0x80000000, %eax
@@ -262,7 +371,7 @@ ENTRY(startup_32_smp)
 	/* Value must be in the range 0x80000001 to 0x8000ffff */
 	subl $0x80000001, %eax
 	cmpl $(0x8000ffff-0x80000001), %eax
-	ja .Lenable_paging
+	ja enable_paging
 
 	/* Clear bogus XD_DISABLE bits */
 	call verify_cpu
@@ -271,7 +380,7 @@ ENTRY(startup_32_smp)
 	cpuid
 	/* Execute Disable bit supported? */
 	btl $(X86_FEATURE_NX & 31), %edx
-	jnc .Lenable_paging
+	jnc enable_paging
 
 	/* Setup EFER (Extended Feature Enable Register) */
 	movl $MSR_EFER, %ecx
@@ -281,7 +390,7 @@ ENTRY(startup_32_smp)
 	/* Make changes effective */
 	wrmsr
 
-.Lenable_paging:
+enable_paging:
 
 /*
  * Enable paging
@@ -310,7 +419,7 @@ ENTRY(startup_32_smp)
  */
 	movb $4,X86			# at least 486
 	cmpl $-1,X86_CPUID
-	je .Lis486
+	je is486
 
 	/* get vendor info */
 	xorl %eax,%eax			# call CPUID with 0 -> return vendor ID
@@ -321,7 +430,7 @@ ENTRY(startup_32_smp)
 	movl %ecx,X86_VENDOR_ID+8	# last 4 chars
 
 	orl %eax,%eax			# do we have processor info as well?
-	je .Lis486
+	je is486
 
 	movl $1,%eax		# Use the CPUID instruction to get CPU type
 	cpuid
@@ -335,7 +444,7 @@ ENTRY(startup_32_smp)
 	movb %cl,X86_STEPPING
 	movl %edx,X86_CAPABILITY
 
-.Lis486:
+is486:
 	movl $0x50022,%ecx	# set AM, WP, NE and MP
 	movl %cr0,%eax
 	andl $0x80000011,%eax	# Save PG,PE,ET
@@ -343,6 +452,7 @@ ENTRY(startup_32_smp)
 	movl %eax,%cr0
 
 	lgdt early_gdt_descr
+	lidt idt_descr
 	ljmp $(__KERNEL_CS),$1f
 1:	movl $(__KERNEL_DS),%eax	# reload all the segment registers
 	movl %eax,%ss			# after changing gdt.
@@ -360,9 +470,8 @@ ENTRY(startup_32_smp)
 	xorl %eax,%eax			# Clear LDT
 	lldt %ax
 
-	call *(initial_code)
-1:	jmp 1b
-ENDPROC(startup_32_smp)
+	pushl $0		# fake return address for unwinder
+	jmp *(initial_code)
 
 #include "verify_cpu.S"
 
@@ -375,7 +484,38 @@ ENDPROC(startup_32_smp)
  */
 __INIT
 setup_once:
-#ifdef CONFIG_STACKPROTECTOR
+	/*
+	 * Set up a idt with 256 interrupt gates that push zero if there
+	 * is no error code and then jump to early_idt_handler_common.
+	 * It doesn't actually load the idt - that needs to be done on
+	 * each CPU. Interrupts are enabled elsewhere, when we can be
+	 * relatively sure everything is ok.
+	 */
+
+	movl $idt_table,%edi
+	movl $early_idt_handler_array,%eax
+	movl $NUM_EXCEPTION_VECTORS,%ecx
+1:
+	movl %eax,(%edi)
+	movl %eax,4(%edi)
+	/* interrupt gate, dpl=0, present */
+	movl $(0x8E000000 + __KERNEL_CS),2(%edi)
+	addl $EARLY_IDT_HANDLER_SIZE,%eax
+	addl $8,%edi
+	loop 1b
+
+	movl $256 - NUM_EXCEPTION_VECTORS,%ecx
+	movl $ignore_int,%edx
+	movl $(__KERNEL_CS << 16),%eax
+	movw %dx,%ax		/* selector = 0x0010 = cs */
+	movw $0x8E00,%dx	/* interrupt gate - dpl=0, present */
+2:
+	movl %eax,(%edi)
+	movl %edx,4(%edi)
+	addl $8,%edi
+	loop 2b
+
+#ifdef CONFIG_CC_STACKPROTECTOR
 	/*
 	 * Configure the stack canary. The linker can't handle this by
 	 * relocation.  Manually set base address in stack canary
@@ -399,7 +539,7 @@ ENTRY(early_idt_handler_array)
 	# 24(%rsp) error code
 	i = 0
 	.rept NUM_EXCEPTION_VECTORS
-	.if ((EXCEPTION_ERRCODE_MASK >> i) & 1) == 0
+	.ifeq (EXCEPTION_ERRCODE_MASK >> i) & 1
 	pushl $0		# Dummy error code, to make stack frame uniform
 	.endif
 	pushl $i		# 20(%esp) Vector number
@@ -421,9 +561,12 @@ early_idt_handler_common:
 	/* The vector number is in pt_regs->gs */
 
 	cld
-	pushl	%fs		/* pt_regs->fs (__fsh varies by model) */
-	pushl	%es		/* pt_regs->es (__esh varies by model) */
-	pushl	%ds		/* pt_regs->ds (__dsh varies by model) */
+	pushl	%fs		/* pt_regs->fs */
+	movw	$0, 2(%esp)	/* clear high bits (some CPUs leave garbage) */
+	pushl	%es		/* pt_regs->es */
+	movw	$0, 2(%esp)	/* clear high bits (some CPUs leave garbage) */
+	pushl	%ds		/* pt_regs->ds */
+	movw	$0, 2(%esp)	/* clear high bits (some CPUs leave garbage) */
 	pushl	%eax		/* pt_regs->ax */
 	pushl	%ebp		/* pt_regs->bp */
 	pushl	%edi		/* pt_regs->di */
@@ -440,8 +583,9 @@ early_idt_handler_common:
 	/* Load the vector number into EDX */
 	movl	PT_GS(%esp), %edx
 
-	/* Load GS into pt_regs->gs (and maybe clobber __gsh) */
+	/* Load GS into pt_regs->gs and clear high bits */
 	movw	%gs, PT_GS(%esp)
+	movw	$0, PT_GS+2(%esp)
 
 	movl	%esp, %eax	/* args are pt_regs (EAX), trapnr (EDX) */
 	call	early_fixup_exception
@@ -453,17 +597,18 @@ early_idt_handler_common:
 	popl	%edi		/* pt_regs->di */
 	popl	%ebp		/* pt_regs->bp */
 	popl	%eax		/* pt_regs->ax */
-	popl	%ds		/* pt_regs->ds (always ignores __dsh) */
-	popl	%es		/* pt_regs->es (always ignores __esh) */
-	popl	%fs		/* pt_regs->fs (always ignores __fsh) */
-	popl	%gs		/* pt_regs->gs (always ignores __gsh) */
+	popl	%ds		/* pt_regs->ds */
+	popl	%es		/* pt_regs->es */
+	popl	%fs		/* pt_regs->fs */
+	popl	%gs		/* pt_regs->gs */
 	decl	%ss:early_recursion_flag
 	addl	$4, %esp	/* pop pt_regs->orig_ax */
 	iret
 ENDPROC(early_idt_handler_common)
 
 /* This is the default interrupt "handler" :-) */
-ENTRY(early_ignore_irq)
+	ALIGN
+ignore_int:
 	cld
 #ifdef CONFIG_PRINTK
 	pushl %eax
@@ -498,8 +643,7 @@ ENTRY(early_ignore_irq)
 hlt_loop:
 	hlt
 	jmp hlt_loop
-ENDPROC(early_ignore_irq)
-
+ENDPROC(ignore_int)
 __INITDATA
 	.align 4
 GLOBAL(early_recursion_flag)
@@ -512,20 +656,12 @@ ENTRY(initial_code)
 ENTRY(setup_once_ref)
 	.long setup_once
 
-#ifdef CONFIG_PAGE_TABLE_ISOLATION
-#define	PGD_ALIGN	(2 * PAGE_SIZE)
-#define PTI_USER_PGD_FILL	1024
-#else
-#define	PGD_ALIGN	(PAGE_SIZE)
-#define PTI_USER_PGD_FILL	0
-#endif
 /*
  * BSS section
  */
 __PAGE_ALIGNED_BSS
-	.align PGD_ALIGN
+	.align PAGE_SIZE
 #ifdef CONFIG_X86_PAE
-.globl initial_pg_pmd
 initial_pg_pmd:
 	.fill 1024*KPMDS,4,0
 #else
@@ -533,17 +669,14 @@ initial_pg_pmd:
 initial_page_table:
 	.fill 1024,4,0
 #endif
-	.align PGD_ALIGN
 initial_pg_fixmap:
 	.fill 1024,4,0
-.globl swapper_pg_dir
-	.align PGD_ALIGN
-swapper_pg_dir:
-	.fill 1024,4,0
-	.fill PTI_USER_PGD_FILL,4,0
 .globl empty_zero_page
 empty_zero_page:
 	.fill 4096,1,0
+.globl swapper_pg_dir
+swapper_pg_dir:
+	.fill 1024,4,0
 EXPORT_SYMBOL(empty_zero_page)
 
 /*
@@ -552,7 +685,7 @@ EXPORT_SYMBOL(empty_zero_page)
 #ifdef CONFIG_X86_PAE
 __PAGE_ALIGNED_DATA
 	/* Page-aligned for the benefit of paravirt? */
-	.align PGD_ALIGN
+	.align PAGE_SIZE
 ENTRY(initial_page_table)
 	.long	pa(initial_pg_pmd+PGD_IDENT_ATTR),0	/* low identity map */
 # if KPMDS == 3
@@ -576,12 +709,7 @@ ENTRY(initial_page_table)
 .data
 .balign 4
 ENTRY(initial_stack)
-	/*
-	 * The SIZEOF_PTREGS gap is a convention which helps the in-kernel
-	 * unwinder reliably detect the end of the stack.
-	 */
-	.long init_thread_union + THREAD_SIZE - SIZEOF_PTREGS - \
-	      TOP_OF_KERNEL_STACK_PADDING;
+	.long init_thread_union+THREAD_SIZE
 
 __INITRODATA
 int_msg:
@@ -598,6 +726,7 @@ int_msg:
 
 	.data
 .globl boot_gdt_descr
+.globl idt_descr
 
 	ALIGN
 # early boot GDT descriptor (must use 1:1 address mapping)
@@ -605,6 +734,11 @@ int_msg:
 boot_gdt_descr:
 	.word __BOOT_DS+7
 	.long boot_gdt - __PAGE_OFFSET
+
+	.word 0				# 32-bit align idt_desc.address
+idt_descr:
+	.word IDT_ENTRIES*8-1		# idt contains 256 entries
+	.long idt_table
 
 # boot GDT descriptor (later on used by CPU#0):
 	.word 0				# 32 bit align gdt_desc.address

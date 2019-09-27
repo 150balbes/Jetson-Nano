@@ -1,5 +1,11 @@
-// SPDX-License-Identifier: GPL-2.0-only
-/* Copyright (C) 2014-2019 aQuantia Corporation. */
+/*
+ * aQuantia Corporation Network Driver
+ * Copyright (C) 2014-2017 aQuantia Corporation. All rights reserved
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms and conditions of the GNU General Public License,
+ * version 2, as published by the Free Software Foundation.
+ */
 
 /* File aq_drvinfo.c: Definition of common code for firmware info in sys.*/
 
@@ -8,123 +14,98 @@
 #include <linux/module.h>
 #include <linux/stat.h>
 #include <linux/string.h>
+#include <linux/hwmon-sysfs.h>
 #include <linux/hwmon.h>
 #include <linux/uaccess.h>
 
 #include "aq_drvinfo.h"
 
-#if IS_REACHABLE(CONFIG_HWMON)
-static int aq_hwmon_read(struct device *dev, enum hwmon_sensor_types type,
-			 u32 attr, int channel, long *value)
+static ssize_t temperature_show(struct device *ndev,
+				struct device_attribute *attr, char *buf)
 {
-	struct aq_nic_s *aq_nic = dev_get_drvdata(dev);
-	int temp;
 	int err;
 
-	if (!aq_nic)
-		return -EIO;
+	struct aq_nic_s *aq_nic = pci_get_drvdata(to_pci_dev(ndev));
 
-	if (type != hwmon_temp)
-		return -EOPNOTSUPP;
+	int temp = 0;
 
-	if (!aq_nic->aq_fw_ops->get_phy_temp)
-		return -EOPNOTSUPP;
+	if (!aq_nic->aq_fw_ops->get_temp)
+		return -ENXIO;
 
-	switch (attr) {
-	case hwmon_temp_input:
-		err = aq_nic->aq_fw_ops->get_phy_temp(aq_nic->aq_hw, &temp);
-		*value = temp;
-		return err;
-	default:
-		return -EOPNOTSUPP;
-	}
+	err = aq_nic->aq_fw_ops->get_temp(aq_nic->aq_hw, &temp);
+
+	if (err == 0)
+		return sprintf(buf, "%d\n", temp * 10);
+	return -ENXIO;
 }
 
-static int aq_hwmon_read_string(struct device *dev,
-				enum hwmon_sensor_types type,
-				u32 attr, int channel, const char **str)
+static ssize_t cable_show(struct device *ndev,
+			  struct device_attribute *attr, char *buf)
 {
-	struct aq_nic_s *aq_nic = dev_get_drvdata(dev);
+	int err;
 
-	if (!aq_nic)
-		return -EIO;
+	struct aq_nic_s *aq_nic = pci_get_drvdata(to_pci_dev(ndev));
 
-	if (type != hwmon_temp)
-		return -EOPNOTSUPP;
+	int cable_len = 0;
 
-	if (!aq_nic->aq_fw_ops->get_phy_temp)
-		return -EOPNOTSUPP;
+	if (!aq_nic->aq_fw_ops->get_cable_len)
+		return -ENXIO;
 
-	switch (attr) {
-	case hwmon_temp_label:
-		*str = "PHY Temperature";
-		return 0;
-	default:
-		return -EOPNOTSUPP;
-	}
+	err = aq_nic->aq_fw_ops->get_cable_len(aq_nic->aq_hw, &cable_len);
+
+	if (err == 0)
+		return sprintf(buf, "%d\n", cable_len);
+	return -ENXIO;
 }
 
-static umode_t aq_hwmon_is_visible(const void *data,
-				   enum hwmon_sensor_types type,
-				   u32 attr, int channel)
+static ssize_t cable_label_show(struct device *ndev,
+				struct device_attribute *attr, char *buf)
 {
-	if (type != hwmon_temp)
-		return 0;
-
-	switch (attr) {
-	case hwmon_temp_input:
-	case hwmon_temp_label:
-		return 0444;
-	default:
-		return 0;
-	}
+	return sprintf(buf, "Estimated cable length (meters)\n");
 }
 
-static const struct hwmon_ops aq_hwmon_ops = {
-	.is_visible = aq_hwmon_is_visible,
-	.read = aq_hwmon_read,
-	.read_string = aq_hwmon_read_string,
+static ssize_t temperature_label_show(struct device *ndev,
+				      struct device_attribute *attr, char *buf)
+{
+	return sprintf(buf, "PHY temperature\n");
+}
+
+static DEVICE_ATTR(temp1_label, S_IWUSR | S_IRUGO, temperature_label_show,
+		   NULL);
+static SENSOR_DEVICE_ATTR(temp1_input, S_IWUSR | S_IRUGO, temperature_show,
+			  NULL, 0);
+static DEVICE_ATTR(cable_label, S_IWUSR | S_IRUGO, cable_label_show, NULL);
+static SENSOR_DEVICE_ATTR(cable_input, S_IWUSR | S_IRUGO, cable_show, NULL, 1);
+
+static struct attribute *aq_dev_attrs[] = {
+	&dev_attr_temp1_label.attr,
+	&sensor_dev_attr_temp1_input.dev_attr.attr,
+	&dev_attr_cable_label.attr,
+	&sensor_dev_attr_cable_input.dev_attr.attr,
+	NULL
 };
 
-static u32 aq_hwmon_temp_config[] = {
-	HWMON_T_INPUT | HWMON_T_LABEL,
-	0,
-};
-
-static const struct hwmon_channel_info aq_hwmon_temp = {
-	.type = hwmon_temp,
-	.config = aq_hwmon_temp_config,
-};
-
-static const struct hwmon_channel_info *aq_hwmon_info[] = {
-	&aq_hwmon_temp,
-	NULL,
-};
-
-static const struct hwmon_chip_info aq_hwmon_chip_info = {
-	.ops = &aq_hwmon_ops,
-	.info = aq_hwmon_info,
-};
+ATTRIBUTE_GROUPS(aq_dev);
 
 int aq_drvinfo_init(struct net_device *ndev)
 {
-	struct aq_nic_s *aq_nic = netdev_priv(ndev);
-	struct device *dev = &aq_nic->pdev->dev;
-	struct device *hwmon_dev;
 	int err = 0;
+	struct device *dev;
 
-	hwmon_dev = devm_hwmon_device_register_with_info(dev,
-							 ndev->name,
-							 aq_nic,
-							 &aq_hwmon_chip_info,
-							 NULL);
+	struct aq_nic_s *aq_nic = netdev_priv(ndev);
 
-	if (IS_ERR(hwmon_dev))
-		err = PTR_ERR(hwmon_dev);
+	dev = devm_hwmon_device_register_with_groups(&aq_nic->pdev->dev,
+			 ndev->name, dev_get_drvdata(&aq_nic->pdev->dev),
+			 aq_dev_groups);
+
+	if (IS_ERR(dev))
+		err = PTR_ERR(dev);
 
 	return err;
 }
 
-#else
-int aq_drvinfo_init(struct net_device *ndev) { return 0; }
-#endif
+void aq_drvinfo_exit(struct net_device *ndev)
+{
+
+}
+

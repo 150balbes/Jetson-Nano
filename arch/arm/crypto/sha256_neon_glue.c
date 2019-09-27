@@ -1,16 +1,20 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Glue code for the SHA256 Secure Hash Algorithm assembly implementation
  * using NEON instructions.
  *
- * Copyright Â© 2015 Google Inc.
+ * Copyright © 2015 Google Inc.
  *
  * This file is based on sha512_neon_glue.c:
- *   Copyright Â© 2014 Jussi Kivilinna <jussi.kivilinna@iki.fi>
+ *   Copyright © 2014 Jussi Kivilinna <jussi.kivilinna@iki.fi>
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License as published by the Free
+ * Software Foundation; either version 2 of the License, or (at your option)
+ * any later version.
+ *
  */
 
 #include <crypto/internal/hash.h>
-#include <crypto/internal/simd.h>
 #include <linux/cryptohash.h>
 #include <linux/types.h>
 #include <linux/string.h>
@@ -30,7 +34,7 @@ static int sha256_update(struct shash_desc *desc, const u8 *data,
 {
 	struct sha256_state *sctx = shash_desc_ctx(desc);
 
-	if (!crypto_simd_usable() ||
+	if (!may_use_simd() ||
 	    (sctx->count % SHA256_BLOCK_SIZE) + len < SHA256_BLOCK_SIZE)
 		return crypto_sha256_arm_update(desc, data, len);
 
@@ -45,7 +49,7 @@ static int sha256_update(struct shash_desc *desc, const u8 *data,
 static int sha256_finup(struct shash_desc *desc, const u8 *data,
 			unsigned int len, u8 *out)
 {
-	if (!crypto_simd_usable())
+	if (!may_use_simd())
 		return crypto_sha256_arm_finup(desc, data, len, out);
 
 	kernel_neon_begin();
@@ -75,6 +79,7 @@ struct shash_alg sha256_neon_algs[] = { {
 		.cra_name	=	"sha256",
 		.cra_driver_name =	"sha256-neon",
 		.cra_priority	=	250,
+		.cra_flags	=	CRYPTO_ALG_TYPE_SHASH,
 		.cra_blocksize	=	SHA256_BLOCK_SIZE,
 		.cra_module	=	THIS_MODULE,
 	}
@@ -89,6 +94,7 @@ struct shash_alg sha256_neon_algs[] = { {
 		.cra_name	=	"sha224",
 		.cra_driver_name =	"sha224-neon",
 		.cra_priority	=	250,
+		.cra_flags	=	CRYPTO_ALG_TYPE_SHASH,
 		.cra_blocksize	=	SHA224_BLOCK_SIZE,
 		.cra_module	=	THIS_MODULE,
 	}

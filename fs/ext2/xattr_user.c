@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * linux/fs/ext2/xattr_user.c
  * Handler for extended user attributes.

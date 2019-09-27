@@ -1,9 +1,8 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /// Make sure pm_runtime_* calls does not use unnecessary IS_ERR_VALUE
 ///
 // Keywords: pm_runtime
 // Confidence: Medium
-// Copyright (C) 2013 Texas Instruments Incorporated -
+// Copyright (C) 2013 Texas Instruments Incorporated - GPLv2.
 // URL: http://coccinelle.lip6.fr/
 // Options: --include-headers
 

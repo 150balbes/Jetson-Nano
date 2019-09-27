@@ -31,4 +31,5 @@ Example:
 		atmel,watchdog-type = "hardware";
 		atmel,dbg-halt;
 		atmel,idle-halt;
+		status = "okay";
 	};

@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef  __MOVS_H__
 #define __MOVS_H__
 

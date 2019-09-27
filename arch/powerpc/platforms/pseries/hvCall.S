@@ -1,7 +1,11 @@
-/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * This file contains the generic code to perform a call to the
  * pSeries LPAR hypervisor.
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License
+ * as published by the Free Software Foundation; either version
+ * 2 of the License, or (at your option) any later version.
  */
 #include <linux/jump_label.h>
 #include <asm/hvcall.h>
@@ -9,18 +13,17 @@
 #include <asm/ppc_asm.h>
 #include <asm/asm-offsets.h>
 #include <asm/ptrace.h>
-#include <asm/feature-fixups.h>
 
 	.section	".text"
 	
 #ifdef CONFIG_TRACEPOINTS
 
-#ifndef CONFIG_JUMP_LABEL
+#ifndef HAVE_JUMP_LABEL
 	.section	".toc","aw"
 
 	.globl hcall_tracepoint_refcount
 hcall_tracepoint_refcount:
-	.8byte	0
+	.llong	0
 
 	.section	".text"
 #endif
@@ -75,7 +78,7 @@ hcall_tracepoint_refcount:
 	mr	r5,BUFREG;					\
 	__HCALL_INST_POSTCALL
 
-#ifdef CONFIG_JUMP_LABEL
+#ifdef HAVE_JUMP_LABEL
 #define HCALL_BRANCH(LABEL)					\
 	ARCH_STATIC_BRANCH(LABEL, hcall_tracepoint_key)
 #else

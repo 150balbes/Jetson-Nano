@@ -1,10 +1,13 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2006-2008 Simtec Electronics
  *	http://armlinux.simtec.co.uk/
  *	Ben Dooks <ben@simtec.co.uk>
  *
  * S3C24XX CPU Frequency scaling
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
 */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
@@ -348,8 +351,11 @@ struct clk *s3c_cpufreq_clk_get(struct device *dev, const char *name)
 static int s3c_cpufreq_init(struct cpufreq_policy *policy)
 {
 	policy->clk = clk_arm;
+
 	policy->cpuinfo.transition_latency = cpu_cur.info->latency;
-	policy->freq_table = ftab;
+
+	if (ftab)
+		return cpufreq_table_validate_and_show(policy, ftab);
 
 	return 0;
 }
@@ -473,8 +479,10 @@ int __init s3c_cpufreq_setboard(struct s3c_cpufreq_board *board)
 	 * initdata. */
 
 	ours = kzalloc(sizeof(*ours), GFP_KERNEL);
-	if (!ours)
+	if (ours == NULL) {
+		pr_err("%s: no memory\n", __func__);
 		return -ENOMEM;
+	}
 
 	*ours = *board;
 	cpu_cur.board = ours;
@@ -559,9 +567,11 @@ static int s3c_cpufreq_build_freq(void)
 	size = cpu_cur.info->calc_freqtable(&cpu_cur, NULL, 0);
 	size++;
 
-	ftab = kcalloc(size, sizeof(*ftab), GFP_KERNEL);
-	if (!ftab)
+	ftab = kzalloc(sizeof(*ftab) * size, GFP_KERNEL);
+	if (!ftab) {
+		pr_err("%s: no memory for tables\n", __func__);
 		return -ENOMEM;
+	}
 
 	ftab_size = size;
 

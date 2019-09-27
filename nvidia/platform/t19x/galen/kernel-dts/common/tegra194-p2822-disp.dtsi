@@ -1,0 +1,123 @@
+/*
+ * tegra194-p2822-disp.dtsi:
+ *
+ * Copyright (c) 2017-2018, NVIDIA CORPORATION.  All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; version 2 of the License.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ *
+ *
+ * t194 galen product uses 3 display heads out of the 4 available on t194:
+ *	fb0: Head0->SOR2->HDMI
+ *	fb1: Head1->SOR0->DP0
+ *	fb2: Head2->SOR1->DP1
+ * Each display head is assigned two windows each.
+ */
+
+#include <dt-bindings/display/tegra-dc.h>
+#include <dt-bindings/display/tegra-panel.h>
+#include <t19x-common-platforms/tegra194-hdmi.dtsi>
+#include <t19x-common-platforms/tegra194-dp.dtsi>
+#include "tegra194-fixed-regulator-p2822-1000.dtsi"
+#include "tegra194-spmic-p2888-0001.dtsi"
+
+&head0 {
+	status = "okay";
+	nvidia,fb-bpp = <32>;
+	nvidia,fbmem-size = <265420800>; /* 8K (7680*4320) 32bpp double buffered */
+	nvidia,fb-flags = <TEGRA_FB_FLIP_ON_PROBE>;
+	win-mask = <0x3>;
+	nvidia,fb-win = <0>;
+	nvidia,dc-connector = <&sor2>;
+	nvidia,dc-flags = <TEGRA_DC_FLAG_ENABLED>;
+	avdd_hdmi-supply = <&p2888_spmic_sd0>; /* 1v0 */
+	avdd_hdmi_pll-supply = <&p2888_spmic_sd1>; /* 1v8 */
+	vdd_hdmi_5v0-supply = <&p2822_vdd_hdmi_5v0>; /* 5v0 */
+};
+
+&head1 {
+	status = "okay";
+	nvidia,fb-bpp = <32>;
+	nvidia,fbmem-size = <265420800>; /* 8K (7680*4320) 32bpp double buffered */
+	nvidia,fb-flags = <TEGRA_FB_FLIP_ON_PROBE>;
+	win-mask = <0xC>;
+	nvidia,fb-win = <2>;
+	nvidia,dc-connector = <&sor0>;
+	nvidia,dc-flags = <TEGRA_DC_FLAG_ENABLED>;
+	vdd-dp-pwr-supply = <&p2888_spmic_sd0>;
+	avdd-dp-pll-supply = <&p2888_spmic_sd1>;
+	vdd-edp-sec-mode-supply = <&battery_reg>;
+	vdd-dp-pad-supply = <&battery_reg>;
+	vdd_hdmi_5v0-supply = <&p2822_vdd_hdmi_5v0>;
+};
+
+&head2 {
+	status = "okay";
+	nvidia,fb-bpp = <32>;
+	nvidia,fbmem-size = <265420800>; /* 8K (7680*4320) 32bpp double buffered */
+	nvidia,fb-flags = <TEGRA_FB_FLIP_ON_PROBE>;
+	win-mask = <0x30>;
+	nvidia,fb-win = <4>;
+	nvidia,dc-connector = <&sor1>;
+	nvidia,dc-flags = <TEGRA_DC_FLAG_ENABLED>;
+	vdd-dp-pwr-supply = <&p2888_spmic_sd0>;
+	avdd-dp-pll-supply = <&p2888_spmic_sd1>;
+	vdd-edp-sec-mode-supply = <&battery_reg>;
+	vdd-dp-pad-supply = <&battery_reg>;
+	vdd_hdmi_5v0-supply = <&p2822_vdd_hdmi_5v0>;
+};
+
+
+&sor0 {
+	status = "okay";
+	nvidia,active-panel = <&sor0_dp_display>;
+};
+
+&sor0_dp_display {
+	status = "okay";
+	nvidia,is_ext_dp_panel = <1>;
+};
+
+&sor1 {
+	status = "okay";
+	nvidia,active-panel = <&sor1_dp_display>;
+};
+
+&sor1_dp_display {
+	status = "okay";
+	nvidia,is_ext_dp_panel = <1>;
+};
+
+&sor2 {
+	status = "okay";
+	nvidia,active-panel = <&sor2_hdmi_display>;
+};
+
+&sor2_hdmi_display {
+	status = "okay";
+	disp-default-out {
+		nvidia,out-flags = <TEGRA_DC_OUT_HOTPLUG_LOW>;
+	};
+};
+
+&dpaux0 {
+	status = "okay";
+};
+
+&dpaux1 {
+	status = "okay";
+};
+
+&dpaux2 {
+	status = "okay";
+};
+
+&tegra_cec {
+	status = "okay";
+};

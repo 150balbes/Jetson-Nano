@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * linux/arch/sh/boards/sh03/rtc.c -- CTP/PCI-SH03 on-chip RTC support
  *
@@ -13,9 +12,8 @@
 #include <linux/bcd.h>
 #include <linux/rtc.h>
 #include <linux/spinlock.h>
-#include <linux/io.h>
-#include <linux/rtc.h>
-#include <linux/platform_device.h>
+#include <asm/io.h>
+#include <asm/rtc.h>
 
 #define RTC_BASE	0xb0000000
 #define RTC_SEC1	(RTC_BASE + 0)
@@ -39,7 +37,7 @@
 
 static DEFINE_SPINLOCK(sh03_rtc_lock);
 
-static int sh03_rtc_gettimeofday(struct device *dev, struct rtc_time *tm)
+unsigned long get_cmos_time(void)
 {
 	unsigned int year, mon, day, hour, min, sec;
 
@@ -76,18 +74,17 @@ static int sh03_rtc_gettimeofday(struct device *dev, struct rtc_time *tm)
 	}
 
 	spin_unlock(&sh03_rtc_lock);
-
-	tm->tm_sec  = sec;
-	tm->tm_min  = min;
-	tm->tm_hour = hour;
-	tm->tm_mday = day;
-	tm->tm_mon  = mon;
-	tm->tm_year = year - 1900;
-
-	return 0;
+	return mktime(year, mon, day, hour, min, sec);
 }
 
-static int set_rtc_mmss(struct rtc_time *tm)
+void sh03_rtc_gettimeofday(struct timespec *tv)
+{
+
+	tv->tv_sec = get_cmos_time();
+	tv->tv_nsec = 0;
+}
+
+static int set_rtc_mmss(unsigned long nowtime)
 {
 	int retval = 0;
 	int real_seconds, real_minutes, cmos_minutes;
@@ -99,8 +96,8 @@ static int set_rtc_mmss(struct rtc_time *tm)
 		if (!(__raw_readb(RTC_CTL) & RTC_BUSY))
 			break;
 	cmos_minutes = (__raw_readb(RTC_MIN1) & 0xf) + (__raw_readb(RTC_MIN10) & 0xf) * 10;
-	real_seconds = tm->tm_sec;
-	real_minutes = tm->tm_min;
+	real_seconds = nowtime % 60;
+	real_minutes = nowtime / 60;
 	if (((abs(real_minutes - cmos_minutes) + 15)/30) & 1)
 		real_minutes += 30;		/* correct for half hour time zone */
 	real_minutes %= 60;
@@ -114,31 +111,22 @@ static int set_rtc_mmss(struct rtc_time *tm)
 		printk_once(KERN_NOTICE
 		       "set_rtc_mmss: can't update from %d to %d\n",
 		       cmos_minutes, real_minutes);
-		retval = -EINVAL;
+		retval = -1;
 	}
 	spin_unlock(&sh03_rtc_lock);
 
 	return retval;
 }
 
-int sh03_rtc_settimeofday(struct device *dev, struct rtc_time *tm)
+int sh03_rtc_settimeofday(const time_t secs)
 {
-	return set_rtc_mmss(tm);
+	unsigned long nowtime = secs;
+
+	return set_rtc_mmss(nowtime);
 }
 
-static const struct rtc_class_ops rtc_generic_ops = {
-	.read_time = sh03_rtc_gettimeofday,
-	.set_time = sh03_rtc_settimeofday,
-};
-
-static int __init sh03_time_init(void)
+void sh03_time_init(void)
 {
-	struct platform_device *pdev;
-
-	pdev = platform_device_register_data(NULL, "rtc-generic", -1,
-					     &rtc_generic_ops,
-					     sizeof(rtc_generic_ops));
-
-	return PTR_ERR_OR_ZERO(pdev);
+	rtc_sh_get_time = sh03_rtc_gettimeofday;
+	rtc_sh_set_time = sh03_rtc_settimeofday;
 }
-arch_initcall(sh03_time_init);

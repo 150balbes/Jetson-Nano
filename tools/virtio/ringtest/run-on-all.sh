@@ -1,5 +1,4 @@
 #!/bin/sh
-# SPDX-License-Identifier: GPL-2.0
 
 CPUS_ONLINE=$(lscpu --online -p=cpu|grep -v -e '#')
 #use last CPU for host. Why not the first?

@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __WATCHDOG_PRETIMEOUT_H
 #define __WATCHDOG_PRETIMEOUT_H
 

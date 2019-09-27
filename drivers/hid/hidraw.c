@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * HID raw devices, giving access to raw HID events.
  *
@@ -10,6 +9,15 @@
  *  Copyright (c) 2007-2014 Jiri Kosina
  */
 
+/*
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms and conditions of the GNU General Public License,
+ * version 2, as published by the Free Software Foundation.
+ *
+ * You should have received a copy of the GNU General Public License along with
+ * this program; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin St - Fifth Floor, Boston, MA 02110-1301 USA.
+ */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 
@@ -25,7 +33,7 @@
 #include <linux/slab.h>
 #include <linux/hid.h>
 #include <linux/mutex.h>
-#include <linux/sched/signal.h>
+#include <linux/sched.h>
 #include <linux/string.h>
 
 #include <linux/hidraw.h>
@@ -99,15 +107,15 @@ out:
 
 /*
  * The first byte of the report buffer is expected to be a report number.
+ *
+ * This function is to be called with the minors_lock mutex held.
  */
 static ssize_t hidraw_send_report(struct file *file, const char __user *buffer, size_t count, unsigned char report_type)
 {
 	unsigned int minor = iminor(file_inode(file));
 	struct hid_device *dev;
 	__u8 *buf;
-	int ret = 0;
-
-	lockdep_assert_held(&minors_lock);
+	long ret = 0;
 
 	if (!hidraw_table[minor] || !hidraw_table[minor]->exist) {
 		ret = -ENODEV;
@@ -173,6 +181,8 @@ static ssize_t hidraw_write(struct file *file, const char __user *buffer, size_t
  * of buffer is the report number to request, or 0x0 if the defice does not
  * use numbered reports. The report_type parameter can be HID_FEATURE_REPORT
  * or HID_INPUT_REPORT.
+ *
+ * This function is to be called with the minors_lock mutex held.
  */
 static ssize_t hidraw_get_report(struct file *file, char __user *buffer, size_t count, unsigned char report_type)
 {
@@ -181,8 +191,6 @@ static ssize_t hidraw_get_report(struct file *file, char __user *buffer, size_t 
 	__u8 *buf;
 	int ret = 0, len;
 	unsigned char report_number;
-
-	lockdep_assert_held(&minors_lock);
 
 	if (!hidraw_table[minor] || !hidraw_table[minor]->exist) {
 		ret = -ENODEV;
@@ -210,7 +218,7 @@ static ssize_t hidraw_get_report(struct file *file, char __user *buffer, size_t 
 		goto out;
 	}
 
-	buf = kmalloc(count, GFP_KERNEL);
+	buf = kmalloc(count * sizeof(__u8), GFP_KERNEL);
 	if (!buf) {
 		ret = -ENOMEM;
 		goto out;
@@ -246,15 +254,15 @@ out:
 	return ret;
 }
 
-static __poll_t hidraw_poll(struct file *file, poll_table *wait)
+static unsigned int hidraw_poll(struct file *file, poll_table *wait)
 {
 	struct hidraw_list *list = file->private_data;
 
 	poll_wait(file, &list->hidraw->wait, wait);
 	if (list->head != list->tail)
-		return EPOLLIN | EPOLLRDNORM;
+		return POLLIN | POLLRDNORM;
 	if (!list->hidraw->exist)
-		return EPOLLERR | EPOLLHUP;
+		return POLLERR | POLLHUP;
 	return 0;
 }
 
@@ -334,8 +342,8 @@ static void drop_ref(struct hidraw *hidraw, int exists_bit)
 			kfree(hidraw);
 		} else {
 			/* close device for last reader */
-			hid_hw_close(hidraw->hid);
 			hid_hw_power(hidraw->hid, PM_HINT_NORMAL);
+			hid_hw_close(hidraw->hid);
 		}
 	}
 }
@@ -488,6 +496,7 @@ int hidraw_report_event(struct hid_device *hid, u8 *data, int len)
 		if (new_head == list->tail)
 			continue;
 
+		kfree(list->buffer[list->head].value);
 		if (!(list->buffer[list->head].value = kmemdup(data, len, GFP_ATOMIC))) {
 			ret = -ENOMEM;
 			break;

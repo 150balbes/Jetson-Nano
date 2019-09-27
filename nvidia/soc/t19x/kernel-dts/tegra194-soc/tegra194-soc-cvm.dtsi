@@ -1,0 +1,355 @@
+/*
+ * tegra194-soc-cvm.dtsi: CVM based platform common SoC specific DTSI file
+ *			  with required node enabled.
+ *
+ * Copyright (c) 2017-2018, NVIDIA CORPORATION.  All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; version 2 of the License.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ */
+
+#include <tegra194-soc/tegra194-soc-base.dtsi>
+#include <tegra194-soc/tegra194-cpus.dtsi>
+#include <tegra194-soc/mods-simple-bus.dtsi>
+#include <tegra194-soc/tegra194-soc-prod.dtsi>
+#include <tegra194-soc/tegra194-soc-floor-sweeping.dtsi>
+
+/ {
+
+	cpus {
+		cpu@1 {
+			status = "okay";
+		};
+
+		cpu@2 {
+			status = "okay";
+		};
+
+		cpu@3 {
+			status = "okay";
+		};
+
+		cpu@4 {
+			status = "okay";
+		};
+
+		cpu@5 {
+			status = "okay";
+		};
+
+		cpu@6 {
+			status = "okay";
+		};
+
+		cpu@7 {
+			status = "okay";
+		};
+	};
+
+	L2_1: l2-cache1 {
+		status = "okay";
+	};
+
+	L2_2: l2-cache2 {
+		status = "okay";
+	};
+
+	L2_3: l2-cache3 {
+		status = "okay";
+	};
+
+	tegra-carveouts {
+		status = "okay";
+	};
+
+	reserved-memory {
+		vpr: vpr-carveout {
+			compatible = "nvidia,vpr-carveout";
+			size = <0 0x2a000000>;
+			alignment = <0 0x400000>;
+			alloc-ranges = <0x0 0x80000000 0x0 0x70000000>;
+			reusable;
+		};
+	};
+
+	mc {
+		status = "okay";
+	};
+
+	power-domain {
+		status = "okay";
+	};
+
+	interrupt-controller {
+		status = "okay";
+	};
+
+	clock@0 {
+		status = "okay";
+	};
+
+	ether_qos@2490000 {
+		status = "okay";
+	};
+
+	bpmp_reset@0 {
+		status = "okay";
+	};
+
+	bpmp {
+		status = "okay";
+	};
+
+	gv11b {
+	        status = "okay";
+	};
+
+	dma@2600000 {
+		status = "okay";
+	};
+
+	pinmux@2430000 {
+		status = "okay";
+	};
+
+	gpio@2200000 {
+		status = "okay";
+		port-GG-interrupt-line = <0x0>;
+	};
+
+	gpio@c2f0000 {
+		status = "okay";
+	};
+
+	i2c@3160000 {
+		status = "okay";
+	};
+
+	i2c@c240000 {
+		status = "okay";
+	};
+
+	i2c@3180000 {
+		status = "okay";
+	};
+
+	i2c@3190000 {
+		status = "okay";
+	};
+
+	bpmp_i2c {
+		status = "okay";
+	};
+
+	i2c@31b0000 {
+		status = "okay";
+	};
+
+	i2c@31c0000 {
+		status = "okay";
+	};
+
+	i2c@c250000 {
+		status = "okay";
+	};
+
+	i2c@31e0000 {
+		status = "okay";
+	};
+
+	efuse@3820000 {
+		status = "okay";
+		efuse-burn {
+			status = "okay";
+		};
+	};
+
+	kfuse@3830000 {
+		status = "okay";
+	};
+
+	tegra194-pm-irq {
+		status = "okay";
+	};
+
+	pwm@c340000 {
+		status = "okay";
+	};
+
+	tachometer@39c0000 {
+		status = "okay";
+	};
+
+	generic_pwm_tachometer  {
+		status = "okay";
+	};
+
+	host1x {
+		se@15810000 {
+			status = "okay";
+		};
+
+		se@15820000 {
+			status = "okay";
+		};
+
+		se@15830000 {
+			status = "okay";
+		};
+
+		se@15840000 {
+			status = "okay";
+		};
+	};
+
+	se_elp@3ad0000 {
+		status = "okay";
+	};
+
+	pmc@c360000 {
+		status = "okay";
+	};
+
+	pmc@c370000 {
+		status = "okay";
+	};
+
+	rtc@c2a0000 {
+		status = "okay";
+	};
+
+	/* L3 cache */
+	tegra-cache {
+		status = "okay";
+	};
+
+	reserved-memory {
+		grid-of-semaphores {
+			status = "okay";
+		};
+	};
+
+	tegra-cvnas {
+		status = "okay";
+	};
+
+	mc {
+		status = "okay";
+	};
+
+	mc_sid@2c00000 {
+		status = "okay";
+	};
+
+	interrupt-controller@3881000 {
+		status = "okay";
+	};
+
+	timer {
+		status = "okay";
+	};
+
+	cbb-noc@2300000 {
+		status = "okay";
+	};
+
+	aon-noc@C600000 {
+		status = "okay";
+	};
+
+	bpmp-noc@D600000 {
+		status = "okay";
+	};
+
+	rce-noc@BE00000 {
+		status = "okay";
+	};
+
+	sce-noc@B600000 {
+		status = "okay";
+	};
+
+	cv-noc@14040000 {
+		status = "okay";
+	};
+
+	axi2apb@2390000 {
+		status = "okay";
+	};
+
+	actmon@d230000 {
+		status = "okay";
+		mc_all {
+			status = "okay";
+		};
+	};
+
+	iommu@12000000 {
+		status = "okay";
+	};
+
+	tegra-hsp@c150000 {
+		status = "okay";
+	};
+
+	tegra-hsp@3c00000 {
+		status = "okay";
+	};
+
+	host1x {
+		ctx0 {
+			status = "okay";
+		};
+
+		ctx1 {
+			status = "okay";
+		};
+
+		ctx2 {
+			status = "okay";
+		};
+
+		ctx3 {
+			status = "okay";
+		};
+
+		ctx4 {
+			status = "okay";
+		};
+
+		ctx5 {
+			status = "okay";
+		};
+
+		ctx6 {
+			status = "okay";
+		};
+
+		ctx7 {
+			status = "okay";
+		};
+	};
+
+	psci {
+		status = "okay";
+	};
+
+	cpufreq {
+		status = "okay";
+		cpufreq_single_policy;
+	};
+
+	arm64_ras {
+		status = "okay";
+	};
+
+	carmel_ras {
+		status = "okay";
+	};
+};

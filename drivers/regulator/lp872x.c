@@ -1,8 +1,12 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright 2012 Texas Instruments
  *
  * Author: Milo(Woogyom) Kim <milo.kim@ti.com>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
  */
 
 #include <linux/module.h>
@@ -349,6 +353,64 @@ static int lp872x_buck_get_voltage_sel(struct regulator_dev *rdev)
 	return val & LP872X_VOUT_M;
 }
 
+static int lp8725_buck_set_current_limit(struct regulator_dev *rdev,
+					int min_uA, int max_uA)
+{
+	struct lp872x *lp = rdev_get_drvdata(rdev);
+	enum lp872x_regulator_id buck = rdev_get_id(rdev);
+	int i;
+	u8 addr;
+
+	switch (buck) {
+	case LP8725_ID_BUCK1:
+		addr = LP8725_BUCK1_VOUT2;
+		break;
+	case LP8725_ID_BUCK2:
+		addr = LP8725_BUCK2_VOUT2;
+		break;
+	default:
+		return -EINVAL;
+	}
+
+	for (i = ARRAY_SIZE(lp8725_buck_uA) - 1; i >= 0; i--) {
+		if (lp8725_buck_uA[i] >= min_uA &&
+			lp8725_buck_uA[i] <= max_uA)
+			return lp872x_update_bits(lp, addr,
+						  LP8725_BUCK_CL_M,
+						  i << LP8725_BUCK_CL_S);
+	}
+
+	return -EINVAL;
+}
+
+static int lp8725_buck_get_current_limit(struct regulator_dev *rdev)
+{
+	struct lp872x *lp = rdev_get_drvdata(rdev);
+	enum lp872x_regulator_id buck = rdev_get_id(rdev);
+	u8 addr, val;
+	int ret;
+
+	switch (buck) {
+	case LP8725_ID_BUCK1:
+		addr = LP8725_BUCK1_VOUT2;
+		break;
+	case LP8725_ID_BUCK2:
+		addr = LP8725_BUCK2_VOUT2;
+		break;
+	default:
+		return -EINVAL;
+	}
+
+	ret = lp872x_read_byte(lp, addr, &val);
+	if (ret)
+		return ret;
+
+	val = (val & LP8725_BUCK_CL_M) >> LP8725_BUCK_CL_S;
+
+	return (val < ARRAY_SIZE(lp8725_buck_uA)) ?
+			lp8725_buck_uA[val] : -EINVAL;
+}
+
 static int lp872x_buck_set_mode(struct regulator_dev *rdev, unsigned int mode)
 {
 	struct lp872x *lp = rdev_get_drvdata(rdev);
@@ -416,7 +478,7 @@ static unsigned int lp872x_buck_get_mode(struct regulator_dev *rdev)
 	return val & mask ? REGULATOR_MODE_FAST : REGULATOR_MODE_NORMAL;
 }
 
-static const struct regulator_ops lp872x_ldo_ops = {
+static struct regulator_ops lp872x_ldo_ops = {
 	.list_voltage = regulator_list_voltage_table,
 	.map_voltage = regulator_map_voltage_ascend,
 	.set_voltage_sel = regulator_set_voltage_sel_regmap,
@@ -427,7 +489,7 @@ static const struct regulator_ops lp872x_ldo_ops = {
 	.enable_time = lp872x_regulator_enable_time,
 };
 
-static const struct regulator_ops lp8720_buck_ops = {
+static struct regulator_ops lp8720_buck_ops = {
 	.list_voltage = regulator_list_voltage_table,
 	.map_voltage = regulator_map_voltage_ascend,
 	.set_voltage_sel = lp872x_buck_set_voltage_sel,
@@ -440,7 +502,7 @@ static const struct regulator_ops lp8720_buck_ops = {
 	.get_mode = lp872x_buck_get_mode,
 };
 
-static const struct regulator_ops lp8725_buck_ops = {
+static struct regulator_ops lp8725_buck_ops = {
 	.list_voltage = regulator_list_voltage_table,
 	.map_voltage = regulator_map_voltage_ascend,
 	.set_voltage_sel = lp872x_buck_set_voltage_sel,
@@ -451,11 +513,11 @@ static const struct regulator_ops lp8725_buck_ops = {
 	.enable_time = lp872x_regulator_enable_time,
 	.set_mode = lp872x_buck_set_mode,
 	.get_mode = lp872x_buck_get_mode,
-	.set_current_limit = regulator_set_current_limit_regmap,
-	.get_current_limit = regulator_get_current_limit_regmap,
+	.set_current_limit = lp8725_buck_set_current_limit,
+	.get_current_limit = lp8725_buck_get_current_limit,
 };
 
-static const struct regulator_desc lp8720_regulator_desc[] = {
+static struct regulator_desc lp8720_regulator_desc[] = {
 	{
 		.name = "ldo1",
 		.of_match = of_match_ptr("ldo1"),
@@ -540,7 +602,7 @@ static const struct regulator_desc lp8720_regulator_desc[] = {
 	},
 };
 
-static const struct regulator_desc lp8725_regulator_desc[] = {
+static struct regulator_desc lp8725_regulator_desc[] = {
 	{
 		.name = "ldo1",
 		.of_match = of_match_ptr("ldo1"),
@@ -650,10 +712,6 @@ static const struct regulator_desc lp8725_regulator_desc[] = {
 		.owner = THIS_MODULE,
 		.enable_reg = LP872X_GENERAL_CFG,
 		.enable_mask = LP8725_BUCK1_EN_M,
-		.curr_table = lp8725_buck_uA,
-		.n_current_limits = ARRAY_SIZE(lp8725_buck_uA),
-		.csel_reg = LP8725_BUCK1_VOUT2,
-		.csel_mask = LP8725_BUCK_CL_M,
 	},
 	{
 		.name = "buck2",
@@ -666,10 +724,6 @@ static const struct regulator_desc lp8725_regulator_desc[] = {
 		.owner = THIS_MODULE,
 		.enable_reg = LP872X_GENERAL_CFG,
 		.enable_mask = LP8725_BUCK2_EN_M,
-		.curr_table = lp8725_buck_uA,
-		.n_current_limits = ARRAY_SIZE(lp8725_buck_uA),
-		.csel_reg = LP8725_BUCK2_VOUT2,
-		.csel_mask = LP8725_BUCK_CL_M,
 	},
 };
 
@@ -766,7 +820,7 @@ static struct regulator_init_data
 
 static int lp872x_regulator_register(struct lp872x *lp)
 {
-	const struct regulator_desc *desc;
+	struct regulator_desc *desc;
 	struct regulator_config cfg = { };
 	struct regulator_dev *rdev;
 	int i;

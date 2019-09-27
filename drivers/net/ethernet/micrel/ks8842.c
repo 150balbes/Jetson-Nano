@@ -1,7 +1,19 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * ks8842.c timberdale KS8842 ethernet driver
  * Copyright (c) 2009 Intel Corporation
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  */
 
 /* Supports:
@@ -657,7 +669,7 @@ static void ks8842_rx_frame(struct net_device *netdev,
 			ks8842_update_rx_counters(netdev, status, len);
 
 			if (adapter->conf_flags & KS884X_16BIT) {
-				u16 *data16 = skb_put(skb, len);
+				u16 *data16 = (u16 *)skb_put(skb, len);
 				ks8842_select_bank(adapter, 17);
 				while (len > 0) {
 					*data16++ = ioread16(adapter->hw_addr +
@@ -667,7 +679,7 @@ static void ks8842_rx_frame(struct net_device *netdev,
 					len -= sizeof(u32);
 				}
 			} else {
-				u32 *data = skb_put(skb, len);
+				u32 *data = (u32 *)skb_put(skb, len);
 
 				ks8842_select_bank(adapter, 17);
 				while (len > 0) {

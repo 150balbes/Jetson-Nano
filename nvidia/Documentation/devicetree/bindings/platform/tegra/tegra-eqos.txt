@@ -1,0 +1,176 @@
+Device tree binding for NVIDIA Tegra186 Ethernet QOS Controller
+=================================================================
+
+The Tegra186 EQOS (Ethernet QOS) device is an Ethernet controller which
+supports Quality of Service features.
+
+Supported Hardware Features are
+=====================================================/
+10/100 Mbps Support                         : YES
+1000 Mbps Support                           : YES
+Half-duplex Support                         : YES
+PCS Registers(TBI/SGMII/RTBI PHY interface) : NO
+VLAN Hash Filter Selected                   : NO
+SMA (MDIO) Interface                        : YES
+PMT Remote Wake-up Packet Enable            : YES
+PMT Magic Packet Enable                     : YES
+RMON/MMC Module Enable                      : YES
+ARP Offload Enabled                         : YES
+IEEE 1588-2008 Timestamp Enabled            : YES
+Energy Efficient Ethernet Enabled           : YES
+Transmit Checksum Offload Enabled           : YES
+Receive Checksum Offload Enabled            : YES
+MAC Addresses 16–31 Selected                : YES
+MAC Addresses 32–63 Selected                : YES
+MAC Addresses 64–127 Selected               : YES
+Timestamp System Time Source                : INTERNAL
+Source Address or VLAN Insertion Enable     : YES
+Active PHY Selected                         : RGMII
+MTL Receive FIFO Size                       : 16 KBytes
+MTL Transmit FIFO Size                       : 16 KBytes
+IEEE 1588 High Word Register Enable          : YES
+DCB Feature Enable                           : NO
+Split Header Feature Enable                  : YES
+TCP Segmentation Offload Enable              : YES
+DMA Debug Registers Enabled                  : YES
+AV Feature Enabled                           : YES
+Low Power Mode Enabled                       : YES
+Hash Table Size                              : No hash table selected
+Total number of L3 or L4 Filters             : 8 L3/L4 Filter
+Number of MTL Receive Queues                 : 4
+Number of MTL Transmit Queues                : 4
+Number of DMA Receive Channels               : 4
+Number of DMA Transmit Channels              : 4
+Number of PPS Outputs                        : No PPS output
+Number of Auxiliary Snapshot Inputs          : 1 auxiliary input
+=====================================================/
+
+Required properties:
+- compatible:			should be "nvidia,eqos"
+- reg: 				Physical base address and length of registers.
+- interrupts: 			An array of tuples specifying IRQ number for
+				each tx/rx queue in case of multi-queue, and
+				for the only tx/rx queue,in case of single queue.
+				please check example at end for reference.
+- clocks: 			Specifies the needed clocks.
+- clock-names: 			Specifies the names of the needed clocks.
+- resets: 			Specifies the reset line.
+- reset-names: 			Specifies the name of the reset line.
+- iommu-group-id:		Specifies IOMMU group ID.
+- nvidia,csr_clock_speed:	This is a free-running clock input provided
+				by the application. The MAC Control Interface,
+				CSR, and Station Management Agent (SMA) of the
+				MAC run on this clock. The valid frequency range
+				of this clock is 20–300 MHz (minimum frequency
+				is 25 MHz when the MMC module is active in
+				1000 Mbps mode). Frequencies outside this range
+				may result in incorrect operation
+- nvidia,use_multi_queues:	EQOS HW supports upto 4 Tx/Rx Queues/Channels.
+				This property enables us to make use of 4Queues,
+				each queue size is configured to 4KB. if this
+				property is not defined then EQOS HW is
+				configured to make use of a single queue with a
+				total of 16KB size.To support Jumbo frame
+				feature we makes use of a single queue so that
+				9k packet size can be fit into a single queue.
+- nvidia,ptp_ref_clock_speed: 	This is reference for PTP clock frequency and
+				the value set for tegra is 125MHz.
+				The frequency of this clock is programmable and
+				can be configured based on the requirements.
+				The maximum frequency it can take is 125MHz and
+				minimum frequency is 25MHz
+- nvidia,queue_prio: 		An array where each entry specifies priority of
+				rx queue. Based on the VLAN tag PCP priority
+				value rx packets will be routed the corresponding
+				channel.
+				For example - If the values are "0 7 2 3", it
+				means that packets with priority 0 will be
+				mapped to DMA channel 0, similarly 7 will be
+				mapped to 1 and so on.
+				"nvidia,queue_prio = <0 7 2 3> " means
+				priority-0 = DMA-0, priority-7 = DMA-1,
+				priority-2 = DMA-2, priority-3 = DMA-3
+- nvidia,phy-reset-gpio:	If this gpio is provided, then the PHY is reset
+				by toggling this gpio LOW during driver probe.
+- nvidia,phy-intr-gpio: 	Specifies gpio pin for PHY interrupts.
+- nvidia,rxq_enable_ctrl:	Mode of the RxQ to enabled either AV mode or legacy mode.
+				example: rxq_enable_ctrl = <rx0 rx1 rx2 rx3>
+					0x0 = Not enabled, 0x1 = Enabled for AV
+					0x2 = Enabled for Legacy, 0x3 = Reserved
+- nvidia,phy-max-frame-size: 	Specifies maximum frame size supported by PHY
+				in kilobytes. Default is 10kb. It Will determine
+				jumbo frame size.
+- phy-mode: 			should be "rgmii".
+- pinctrl-names			If we define these property, then we can control
+				EQOS pin-mux states dynamically so that we can
+				save power based on the Ethernet link.
+- pinctrl-0			Valid only when "pinctrl-names" is defined, this
+				property has the configuration that need to be
+				set to EQOS signals when Ethernet link is down.
+- pinctrl-1			Valid only when "pinctrl-names" is defined, this
+				property has the configuration that need to be
+				set when Ethernet link is up.
+
+Optional properties:
+- nvidia,use_tagged_ptp: 	if this property is set we will make use of the
+				channel/Queue which is defined in "ptp_dma_ch"
+				for routing the rx ptp packets.
+- nvidia,ptp_dma_ch: 		Specifies channel/Queue number where the rx PTP
+				packets need to be be routed.
+				Channel 0 is default.
+- nvidia,chan_napi_quota: 	Specifies number of tx/rx completions to process
+				when napi handler is called.  Default is "64".
+- nvidia,pause_frames: 		Used to disable/enable PAUSE frames support.
+				This is a flag. If this property is present
+				then PAUSE frames will be enabled.
+- nvidia,brcm_phy_apd_mode: 	Flag specifies the Auto Power Down mode for
+				BRCM89610 PHY.
+- nvidia,iso_bw:		ISO BW, indicates sum of read and write bandwidth.
+- nvidia,eth_iso_enable:	Specifies whether ISO enabled for EQOS or not.
+- nvidia,slot_intvl_val:	Specifies slot interval for fetching the data from DMA.
+				In T186 EQOS - 125usec is default and fixed value.
+				In T194 EQOS this value can be changed based on the usecase.
+- nvidia,rx_riwt:		Specifies the RX wathcdog interrupt timeout in usec
+				for an Rx descriptor for which IOC bit is not set.
+				The RIWT field is programmed as (<val> * 256) / 62.5
+
+Example:
+
+	ether_qos@2490000 {
+		compatible = "nvidia,eqos";
+		reg = <0x0 0x02490000 0x0 0x10000>;    /* EQOS Base Register */
+		reg-names = "eqos_base";
+		interrupts =	<0 194 0x4>,    /* common */
+				<0 195 0x4>,    /* power */
+				<0 190 0x4>,    /* rx0 */
+				<0 186 0x4>,    /* tx0 */
+				<0 191 0x4>,    /* rx1 */
+				<0 187 0x4>,    /* tx1 */
+				<0 192 0x4>,    /* rx2 */
+				<0 188 0x4>,    /* tx2 */
+				<0 193 0x4>,    /* rx3 */
+				<0 189 0x4>;    /* tx3 */
+		nvidia,csr_clock_speed = <0x19>; /* CSR clock speed 25MHz */
+		clocks = <&tegra_car TEGRA186_CLK_EQOS_AXI>,
+			<&tegra_car TEGRA186_CLK_EQOS_RX>,
+			<&tegra_car TEGRA186_CLK_EQOS_PTP_REF>,
+			<&tegra_car TEGRA186_CLK_EQOS_TX>,
+			<&tegra_car TEGRA186_CLK_AXI_CBB>;
+		clock-names = "eqos_axi", "eqos_rx", "eqos_ptp_ref", "eqos_tx", "axi_cbb";
+		resets = <&tegra_car TEGRA186_RESET_EQOS>;
+		reset-names = "eqos_rst";
+		phy-mode = "rgmii";
+		status = "disabled";
+		pinctrl-names = "idle", "default";
+                pinctrl-0 = <&eqos_tx_tri_state_idle>;
+                pinctrl-1 = <&eqos_tx_tri_state_default>;
+		nvidia,queue_prio = <0 1 2 3>;
+		nvidia,use_tagged_ptp;
+		nvidia,chan_napi_quota = <64 64 64 64>;
+		nvidia,ptp_dma_ch = <3>;
+		nvidia,phy-max-frame-size = <10>;
+		nvidia,ptp_ref_clock_speed = <125>;
+		nvidia,use_multi_queues
+		nvidia,brcm_phy_apd_mode;
+
+	}

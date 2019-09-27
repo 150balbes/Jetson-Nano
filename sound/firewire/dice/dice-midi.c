@@ -1,8 +1,9 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * dice_midi.c - a part of driver for Dice based devices
  *
  * Copyright (c) 2014 Takashi Sakamoto
+ *
+ * Licensed under the terms of the GNU General Public License, version 2.
  */
 #include "dice.h"
 
@@ -17,13 +18,8 @@ static int midi_open(struct snd_rawmidi_substream *substream)
 
 	mutex_lock(&dice->mutex);
 
-	err = snd_dice_stream_reserve_duplex(dice, 0);
-	if (err >= 0) {
-		++dice->substreams_counter;
-		err = snd_dice_stream_start_duplex(dice);
-		if (err < 0)
-			--dice->substreams_counter;
-	}
+	dice->substreams_counter++;
+	err = snd_dice_stream_start_duplex(dice, 0);
 
 	mutex_unlock(&dice->mutex);
 
@@ -39,7 +35,7 @@ static int midi_close(struct snd_rawmidi_substream *substream)
 
 	mutex_lock(&dice->mutex);
 
-	--dice->substreams_counter;
+	dice->substreams_counter--;
 	snd_dice_stream_stop_duplex(dice);
 
 	mutex_unlock(&dice->mutex);
@@ -82,6 +78,18 @@ static void midi_playback_trigger(struct snd_rawmidi_substream *substrm, int up)
 	spin_unlock_irqrestore(&dice->lock, flags);
 }
 
+static struct snd_rawmidi_ops capture_ops = {
+	.open		= midi_open,
+	.close		= midi_close,
+	.trigger	= midi_capture_trigger,
+};
+
+static struct snd_rawmidi_ops playback_ops = {
+	.open		= midi_open,
+	.close		= midi_close,
+	.trigger	= midi_playback_trigger,
+};
+
 static void set_midi_substream_names(struct snd_dice *dice,
 				     struct snd_rawmidi_str *str)
 {
@@ -95,28 +103,27 @@ static void set_midi_substream_names(struct snd_dice *dice,
 
 int snd_dice_create_midi(struct snd_dice *dice)
 {
-	static const struct snd_rawmidi_ops capture_ops = {
-		.open		= midi_open,
-		.close		= midi_close,
-		.trigger	= midi_capture_trigger,
-	};
-	static const struct snd_rawmidi_ops playback_ops = {
-		.open		= midi_open,
-		.close		= midi_close,
-		.trigger	= midi_playback_trigger,
-	};
+	__be32 reg;
 	struct snd_rawmidi *rmidi;
 	struct snd_rawmidi_str *str;
 	unsigned int midi_in_ports, midi_out_ports;
-	int i;
 	int err;
 
-	midi_in_ports = 0;
-	midi_out_ports = 0;
-	for (i = 0; i < MAX_STREAMS; ++i) {
-		midi_in_ports = max(midi_in_ports, dice->tx_midi_ports[i]);
-		midi_out_ports = max(midi_out_ports, dice->rx_midi_ports[i]);
-	}
+	/*
+	 * Use the number of MIDI conformant data channel at current sampling
+	 * transfer frequency.
+	 */
+	err = snd_dice_transaction_read_tx(dice, TX_NUMBER_MIDI,
+					   &reg, sizeof(reg));
+	if (err < 0)
+		return err;
+	midi_in_ports = be32_to_cpu(reg);
+
+	err = snd_dice_transaction_read_rx(dice, RX_NUMBER_MIDI,
+					   &reg, sizeof(reg));
+	if (err < 0)
+		return err;
+	midi_out_ports = be32_to_cpu(reg);
 
 	if (midi_in_ports + midi_out_ports == 0)
 		return 0;

@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /* us3_cpufreq.c: UltraSPARC-III cpu frequency support
  *
  * Copyright (C) 2003 David S. Miller (davem@redhat.com)
@@ -36,28 +35,22 @@ static struct us3_freq_percpu_info *us3_freq_table;
 #define SAFARI_CFG_DIV_32	0x0000000080000000UL
 #define SAFARI_CFG_DIV_MASK	0x00000000C0000000UL
 
-static void read_safari_cfg(void *arg)
+static unsigned long read_safari_cfg(void)
 {
-	unsigned long ret, *val = arg;
+	unsigned long ret;
 
 	__asm__ __volatile__("ldxa	[%%g0] %1, %0"
 			     : "=&r" (ret)
 			     : "i" (ASI_SAFARI_CONFIG));
-	*val = ret;
+	return ret;
 }
 
-static void update_safari_cfg(void *arg)
+static void write_safari_cfg(unsigned long val)
 {
-	unsigned long reg, *new_bits = arg;
-
-	read_safari_cfg(&reg);
-	reg &= ~SAFARI_CFG_DIV_MASK;
-	reg |= *new_bits;
-
 	__asm__ __volatile__("stxa	%0, [%%g0] %1\n\t"
 			     "membar	#Sync"
 			     : /* no outputs */
-			     : "r" (reg), "i" (ASI_SAFARI_CONFIG)
+			     : "r" (val), "i" (ASI_SAFARI_CONFIG)
 			     : "memory");
 }
 
@@ -85,17 +78,29 @@ static unsigned long get_current_freq(unsigned int cpu, unsigned long safari_cfg
 
 static unsigned int us3_freq_get(unsigned int cpu)
 {
+	cpumask_t cpus_allowed;
 	unsigned long reg;
+	unsigned int ret;
 
-	if (smp_call_function_single(cpu, read_safari_cfg, &reg, 1))
-		return 0;
-	return get_current_freq(cpu, reg);
+	cpumask_copy(&cpus_allowed, tsk_cpus_allowed(current));
+	set_cpus_allowed_ptr(current, cpumask_of(cpu));
+
+	reg = read_safari_cfg();
+	ret = get_current_freq(cpu, reg);
+
+	set_cpus_allowed_ptr(current, &cpus_allowed);
+
+	return ret;
 }
 
 static int us3_freq_target(struct cpufreq_policy *policy, unsigned int index)
 {
 	unsigned int cpu = policy->cpu;
-	unsigned long new_bits, new_freq;
+	unsigned long new_bits, new_freq, reg;
+	cpumask_t cpus_allowed;
+
+	cpumask_copy(&cpus_allowed, tsk_cpus_allowed(current));
+	set_cpus_allowed_ptr(current, cpumask_of(cpu));
 
 	new_freq = sparc64_get_clock_tick(cpu) / 1000;
 	switch (index) {
@@ -116,7 +121,15 @@ static int us3_freq_target(struct cpufreq_policy *policy, unsigned int index)
 		BUG();
 	}
 
-	return smp_call_function_single(cpu, update_safari_cfg, &new_bits, 1);
+	reg = read_safari_cfg();
+
+	reg &= ~SAFARI_CFG_DIV_MASK;
+	reg |= new_bits;
+	write_safari_cfg(reg);
+
+	set_cpus_allowed_ptr(current, &cpus_allowed);
+
+	return 0;
 }
 
 static int __init us3_freq_cpu_init(struct cpufreq_policy *policy)
@@ -137,9 +150,8 @@ static int __init us3_freq_cpu_init(struct cpufreq_policy *policy)
 
 	policy->cpuinfo.transition_latency = 0;
 	policy->cur = clock_tick;
-	policy->freq_table = table;
 
-	return 0;
+	return cpufreq_table_validate_and_show(policy, table);
 }
 
 static int us3_freq_cpu_exit(struct cpufreq_policy *policy)

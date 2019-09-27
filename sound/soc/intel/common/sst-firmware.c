@@ -1,8 +1,17 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Intel SST Firmware Loader
  *
  * Copyright (C) 2013, Intel Corporation. All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License version
+ * 2 as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
  */
 
 #include <linux/kernel.h>
@@ -10,7 +19,6 @@
 #include <linux/sched.h>
 #include <linux/firmware.h>
 #include <linux/export.h>
-#include <linux/module.h>
 #include <linux/platform_device.h>
 #include <linux/dma-mapping.h>
 #include <linux/dmaengine.h>
@@ -261,7 +269,7 @@ void sst_dsp_dma_put_channel(struct sst_dsp *dsp)
 }
 EXPORT_SYMBOL_GPL(sst_dsp_dma_put_channel);
 
-static int sst_dma_new(struct sst_dsp *sst)
+int sst_dma_new(struct sst_dsp *sst)
 {
 	struct sst_pdata *sst_pdata = sst->pdata;
 	struct sst_dma *dma;
@@ -311,8 +319,9 @@ err_dma_dev:
 	devm_kfree(sst->dev, dma);
 	return ret;
 }
+EXPORT_SYMBOL(sst_dma_new);
 
-static void sst_dma_free(struct sst_dma *dma)
+void sst_dma_free(struct sst_dma *dma)
 {
 
 	if (dma == NULL)
@@ -325,6 +334,7 @@ static void sst_dma_free(struct sst_dma *dma)
 		dw_remove(dma->chip);
 
 }
+EXPORT_SYMBOL(sst_dma_free);
 
 /* create new generic firmware object */
 struct sst_fw *sst_fw_new(struct sst_dsp *dsp, 
@@ -346,7 +356,7 @@ struct sst_fw *sst_fw_new(struct sst_dsp *dsp,
 
 	/* allocate DMA buffer to store FW data */
 	sst_fw->dma_buf = dma_alloc_coherent(dsp->dma_dev, sst_fw->size,
-				&sst_fw->dmable_fw_paddr, GFP_KERNEL);
+				&sst_fw->dmable_fw_paddr, GFP_DMA | GFP_KERNEL);
 	if (!sst_fw->dma_buf) {
 		dev_err(dsp->dev, "error: DMA alloc failed\n");
 		kfree(sst_fw);
@@ -1242,15 +1252,11 @@ struct sst_dsp *sst_dsp_new(struct device *dev,
 		goto irq_err;
 
 	err = sst_dma_new(sst);
-	if (err)  {
-		dev_err(dev, "sst_dma_new failed %d\n", err);
-		goto dma_err;
-	}
+	if (err)
+		dev_warn(dev, "sst_dma_new failed %d\n", err);
 
 	return sst;
 
-dma_err:
-	free_irq(sst->irq, sst);
 irq_err:
 	if (sst->ops->free)
 		sst->ops->free(sst);

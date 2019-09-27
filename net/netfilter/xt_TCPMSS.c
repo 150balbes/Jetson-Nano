@@ -1,9 +1,12 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * This is a module which is used for setting the MSS option in TCP packets.
  *
  * Copyright (C) 2000 Marc Boucher <marc@mbsi.ca>
  * Copyright (C) 2007 Patrick McHardy <kaber@trash.net>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  */
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 #include <linux/module.h>
@@ -45,6 +48,7 @@ static u_int32_t tcpmss_reverse_mtu(struct net *net,
 				    unsigned int family)
 {
 	struct flowi fl;
+	const struct nf_afinfo *ai;
 	struct rtable *rt = NULL;
 	u_int32_t mtu     = ~0U;
 
@@ -58,8 +62,12 @@ static u_int32_t tcpmss_reverse_mtu(struct net *net,
 		memset(fl6, 0, sizeof(*fl6));
 		fl6->daddr = ipv6_hdr(skb)->saddr;
 	}
+	rcu_read_lock();
+	ai = nf_get_afinfo(family);
+	if (ai != NULL)
+		ai->route(net, (struct dst_entry **)&rt, &fl, false);
+	rcu_read_unlock();
 
-	nf_route(net, (struct dst_entry **)&rt, &fl, false, family);
 	if (rt != NULL) {
 		mtu = dst_mtu(&rt->dst);
 		dst_release(&rt->dst);
@@ -86,7 +94,7 @@ tcpmss_mangle_packet(struct sk_buff *skb,
 	if (par->fragoff != 0)
 		return 0;
 
-	if (skb_ensure_writable(skb, skb->len))
+	if (!skb_make_writable(skb, skb->len))
 		return -1;
 
 	len = skb->len - tcphoff;
@@ -100,7 +108,7 @@ tcpmss_mangle_packet(struct sk_buff *skb,
 		return -1;
 
 	if (info->mss == XT_TCPMSS_CLAMP_PMTU) {
-		struct net *net = xt_net(par);
+		struct net *net = par->net;
 		unsigned int in_mtu = tcpmss_reverse_mtu(net, skb, family);
 		unsigned int min_mtu = min(dst_mtu(skb_dst(skb)), in_mtu);
 
@@ -168,7 +176,7 @@ tcpmss_mangle_packet(struct sk_buff *skb,
 	 * length IPv6 header of 60, ergo the default MSS value is 1220
 	 * Since no MSS was provided, we must use the default values
 	 */
-	if (xt_family(par) == NFPROTO_IPV4)
+	if (par->family == NFPROTO_IPV4)
 		newmss = min(newmss, (u16)536);
 	else
 		newmss = min(newmss, (u16)1220);
@@ -270,7 +278,8 @@ static int tcpmss_tg4_check(const struct xt_tgchk_param *par)
 	    (par->hook_mask & ~((1 << NF_INET_FORWARD) |
 			   (1 << NF_INET_LOCAL_OUT) |
 			   (1 << NF_INET_POST_ROUTING))) != 0) {
-		pr_info_ratelimited("path-MTU clamping only supported in FORWARD, OUTPUT and POSTROUTING hooks\n");
+		pr_info("path-MTU clamping only supported in "
+			"FORWARD, OUTPUT and POSTROUTING hooks\n");
 		return -EINVAL;
 	}
 	if (par->nft_compat)
@@ -279,7 +288,7 @@ static int tcpmss_tg4_check(const struct xt_tgchk_param *par)
 	xt_ematch_foreach(ematch, e)
 		if (find_syn_match(ematch))
 			return 0;
-	pr_info_ratelimited("Only works on TCP SYN packets\n");
+	pr_info("Only works on TCP SYN packets\n");
 	return -EINVAL;
 }
 
@@ -294,7 +303,8 @@ static int tcpmss_tg6_check(const struct xt_tgchk_param *par)
 	    (par->hook_mask & ~((1 << NF_INET_FORWARD) |
 			   (1 << NF_INET_LOCAL_OUT) |
 			   (1 << NF_INET_POST_ROUTING))) != 0) {
-		pr_info_ratelimited("path-MTU clamping only supported in FORWARD, OUTPUT and POSTROUTING hooks\n");
+		pr_info("path-MTU clamping only supported in "
+			"FORWARD, OUTPUT and POSTROUTING hooks\n");
 		return -EINVAL;
 	}
 	if (par->nft_compat)
@@ -303,7 +313,7 @@ static int tcpmss_tg6_check(const struct xt_tgchk_param *par)
 	xt_ematch_foreach(ematch, e)
 		if (find_syn_match(ematch))
 			return 0;
-	pr_info_ratelimited("Only works on TCP SYN packets\n");
+	pr_info("Only works on TCP SYN packets\n");
 	return -EINVAL;
 }
 #endif

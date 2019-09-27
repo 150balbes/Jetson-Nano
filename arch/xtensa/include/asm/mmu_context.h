@@ -17,7 +17,6 @@
 
 #include <linux/stringify.h>
 #include <linux/sched.h>
-#include <linux/mm_types.h>
 
 #include <asm/vectors.h>
 
@@ -52,7 +51,6 @@ DECLARE_PER_CPU(unsigned long, asid_cache);
 #define ASID_INSERT(x)	(0x03020001 | (((x) & ASID_MASK) << 8))
 
 void init_mmu(void);
-void init_kio(void);
 
 static inline void set_rasid_register (unsigned long val)
 {

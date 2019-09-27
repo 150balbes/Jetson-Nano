@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0
 # Greybus core
 greybus-y :=	core.o		\
 		debugfs.o	\
@@ -11,7 +10,9 @@ greybus-y :=	core.o		\
 		control.o	\
 		svc.o		\
 		svc_watchdog.o	\
-		operation.o
+		operation.o	\
+		timesync.o	\
+		timesync_platform.o
 
 obj-$(CONFIG_GREYBUS)		+= greybus.o
 
@@ -92,4 +93,4 @@ obj-$(CONFIG_GREYBUS_USB)		+= gb-usb.o
 # Greybus Platform driver
 gb-arche-y	:= arche-platform.o arche-apb-ctrl.o
 
-obj-$(CONFIG_GREYBUS_ARCHE)	+= gb-arche.o
+obj-$(CONFIG_USB_HSIC_USB3613)	+= gb-arche.o

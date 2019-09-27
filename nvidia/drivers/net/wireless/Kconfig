@@ -1,0 +1,2 @@
+source "drivers/net/wireless/bcmdhd/Kconfig"
+source "drivers/net/wireless/bcmdhd_pcie/Kconfig"

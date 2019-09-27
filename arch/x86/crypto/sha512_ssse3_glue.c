@@ -28,16 +28,16 @@
 #define pr_fmt(fmt)	KBUILD_MODNAME ": " fmt
 
 #include <crypto/internal/hash.h>
-#include <crypto/internal/simd.h>
 #include <linux/init.h>
 #include <linux/module.h>
 #include <linux/mm.h>
 #include <linux/cryptohash.h>
-#include <linux/string.h>
 #include <linux/types.h>
 #include <crypto/sha.h>
 #include <crypto/sha512_base.h>
-#include <asm/simd.h>
+#include <asm/fpu/api.h>
+
+#include <linux/string.h>
 
 asmlinkage void sha512_transform_ssse3(u64 *digest, const char *data,
 				       u64 rounds);
@@ -49,7 +49,7 @@ static int sha512_update(struct shash_desc *desc, const u8 *data,
 {
 	struct sha512_state *sctx = shash_desc_ctx(desc);
 
-	if (!crypto_simd_usable() ||
+	if (!irq_fpu_usable() ||
 	    (sctx->count[0] % SHA512_BLOCK_SIZE) + len < SHA512_BLOCK_SIZE)
 		return crypto_sha512_update(desc, data, len);
 
@@ -67,7 +67,7 @@ static int sha512_update(struct shash_desc *desc, const u8 *data,
 static int sha512_finup(struct shash_desc *desc, const u8 *data,
 	      unsigned int len, u8 *out, sha512_transform_fn *sha512_xform)
 {
-	if (!crypto_simd_usable())
+	if (!irq_fpu_usable())
 		return crypto_sha512_finup(desc, data, len, out);
 
 	kernel_fpu_begin();
@@ -109,6 +109,7 @@ static struct shash_alg sha512_ssse3_algs[] = { {
 		.cra_name	=	"sha512",
 		.cra_driver_name =	"sha512-ssse3",
 		.cra_priority	=	150,
+		.cra_flags	=	CRYPTO_ALG_TYPE_SHASH,
 		.cra_blocksize	=	SHA512_BLOCK_SIZE,
 		.cra_module	=	THIS_MODULE,
 	}
@@ -123,6 +124,7 @@ static struct shash_alg sha512_ssse3_algs[] = { {
 		.cra_name	=	"sha384",
 		.cra_driver_name =	"sha384-ssse3",
 		.cra_priority	=	150,
+		.cra_flags	=	CRYPTO_ALG_TYPE_SHASH,
 		.cra_blocksize	=	SHA384_BLOCK_SIZE,
 		.cra_module	=	THIS_MODULE,
 	}
@@ -186,6 +188,7 @@ static struct shash_alg sha512_avx_algs[] = { {
 		.cra_name	=	"sha512",
 		.cra_driver_name =	"sha512-avx",
 		.cra_priority	=	160,
+		.cra_flags	=	CRYPTO_ALG_TYPE_SHASH,
 		.cra_blocksize	=	SHA512_BLOCK_SIZE,
 		.cra_module	=	THIS_MODULE,
 	}
@@ -200,6 +203,7 @@ static struct shash_alg sha512_avx_algs[] = { {
 		.cra_name	=	"sha384",
 		.cra_driver_name =	"sha384-avx",
 		.cra_priority	=	160,
+		.cra_flags	=	CRYPTO_ALG_TYPE_SHASH,
 		.cra_blocksize	=	SHA384_BLOCK_SIZE,
 		.cra_module	=	THIS_MODULE,
 	}
@@ -257,6 +261,7 @@ static struct shash_alg sha512_avx2_algs[] = { {
 		.cra_name	=	"sha512",
 		.cra_driver_name =	"sha512-avx2",
 		.cra_priority	=	170,
+		.cra_flags	=	CRYPTO_ALG_TYPE_SHASH,
 		.cra_blocksize	=	SHA512_BLOCK_SIZE,
 		.cra_module	=	THIS_MODULE,
 	}
@@ -271,6 +276,7 @@ static struct shash_alg sha512_avx2_algs[] = { {
 		.cra_name	=	"sha384",
 		.cra_driver_name =	"sha384-avx2",
 		.cra_priority	=	170,
+		.cra_flags	=	CRYPTO_ALG_TYPE_SHASH,
 		.cra_blocksize	=	SHA384_BLOCK_SIZE,
 		.cra_module	=	THIS_MODULE,
 	}

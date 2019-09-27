@@ -1,11 +1,24 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * probe-finder.c : C expression to kprobe event converter
  *
  * Written by Masami Hiramatsu <mhiramat@redhat.com>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
+ *
  */
 
-#include <inttypes.h>
 #include <sys/utsname.h>
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -19,16 +32,14 @@
 #include <dwarf-regs.h>
 
 #include <linux/bitops.h>
-#include <linux/zalloc.h>
 #include "event.h"
 #include "dso.h"
 #include "debug.h"
 #include "intlist.h"
-#include "strlist.h"
+#include "util.h"
 #include "symbol.h"
 #include "probe-finder.h"
 #include "probe-file.h"
-#include "string2.h"
 
 /* Kprobe tracer basic type is up to u64 */
 #define MAX_BASIC_TYPE_BITS	64
@@ -280,7 +291,7 @@ static_var:
 
 static int convert_variable_type(Dwarf_Die *vr_die,
 				 struct probe_trace_arg *tvar,
-				 const char *cast, bool user_access)
+				 const char *cast)
 {
 	struct probe_trace_arg_ref **ref_ptr = &tvar->ref;
 	Dwarf_Die type;
@@ -320,8 +331,7 @@ static int convert_variable_type(Dwarf_Die *vr_die,
 	pr_debug("%s type is %s.\n",
 		 dwarf_diename(vr_die), dwarf_diename(&type));
 
-	if (cast && (!strcmp(cast, "string") || !strcmp(cast, "ustring"))) {
-		/* String type */
+	if (cast && strcmp(cast, "string") == 0) {	/* String type */
 		ret = dwarf_tag(&type);
 		if (ret != DW_TAG_pointer_type &&
 		    ret != DW_TAG_array_type) {
@@ -344,7 +354,6 @@ static int convert_variable_type(Dwarf_Die *vr_die,
 				pr_warning("Out of memory error\n");
 				return -ENOMEM;
 			}
-			(*ref_ptr)->user_access = user_access;
 		}
 		if (!die_compare_name(&type, "char") &&
 		    !die_compare_name(&type, "unsigned char")) {
@@ -399,7 +408,7 @@ formatted:
 static int convert_variable_fields(Dwarf_Die *vr_die, const char *varname,
 				    struct perf_probe_arg_field *field,
 				    struct probe_trace_arg_ref **ref_ptr,
-				    Dwarf_Die *die_mem, bool user_access)
+				    Dwarf_Die *die_mem)
 {
 	struct probe_trace_arg_ref *ref = *ref_ptr;
 	Dwarf_Die type;
@@ -411,20 +420,20 @@ static int convert_variable_fields(Dwarf_Die *vr_die, const char *varname,
 		pr_warning("Failed to get the type of %s.\n", varname);
 		return -ENOENT;
 	}
-	pr_debug2("Var real type: %s (%x)\n", dwarf_diename(&type),
-		  (unsigned)dwarf_dieoffset(&type));
+	pr_debug2("Var real type: (%x)\n", (unsigned)dwarf_dieoffset(&type));
 	tag = dwarf_tag(&type);
 
 	if (field->name[0] == '[' &&
 	    (tag == DW_TAG_array_type || tag == DW_TAG_pointer_type)) {
-		/* Save original type for next field or type */
-		memcpy(die_mem, &type, sizeof(*die_mem));
+		if (field->next)
+			/* Save original type for next field */
+			memcpy(die_mem, &type, sizeof(*die_mem));
 		/* Get the type of this array */
 		if (die_get_real_type(&type, &type) == NULL) {
 			pr_warning("Failed to get the type of %s.\n", varname);
 			return -ENOENT;
 		}
-		pr_debug2("Array real type: %s (%x)\n", dwarf_diename(&type),
+		pr_debug2("Array real type: (%x)\n",
 			 (unsigned)dwarf_dieoffset(&type));
 		if (tag == DW_TAG_pointer_type) {
 			ref = zalloc(sizeof(struct probe_trace_arg_ref));
@@ -436,7 +445,9 @@ static int convert_variable_fields(Dwarf_Die *vr_die, const char *varname,
 				*ref_ptr = ref;
 		}
 		ref->offset += dwarf_bytesize(&type) * field->index;
-		ref->user_access = user_access;
+		if (!field->next)
+			/* Save vr_die for converting types */
+			memcpy(die_mem, vr_die, sizeof(*die_mem));
 		goto next;
 	} else if (tag == DW_TAG_pointer_type) {
 		/* Check the pointer and dereference */
@@ -453,7 +464,7 @@ static int convert_variable_fields(Dwarf_Die *vr_die, const char *varname,
 		/* Verify it is a data structure  */
 		tag = dwarf_tag(&type);
 		if (tag != DW_TAG_structure_type && tag != DW_TAG_union_type) {
-			pr_warning("%s is not a data structure nor a union.\n",
+			pr_warning("%s is not a data structure nor an union.\n",
 				   varname);
 			return -EINVAL;
 		}
@@ -468,7 +479,7 @@ static int convert_variable_fields(Dwarf_Die *vr_die, const char *varname,
 	} else {
 		/* Verify it is a data structure  */
 		if (tag != DW_TAG_structure_type && tag != DW_TAG_union_type) {
-			pr_warning("%s is not a data structure nor a union.\n",
+			pr_warning("%s is not a data structure nor an union.\n",
 				   varname);
 			return -EINVAL;
 		}
@@ -508,18 +519,17 @@ static int convert_variable_fields(Dwarf_Die *vr_die, const char *varname,
 		}
 	}
 	ref->offset += (long)offs;
-	ref->user_access = user_access;
 
 	/* If this member is unnamed, we need to reuse this field */
 	if (!dwarf_diename(die_mem))
 		return convert_variable_fields(die_mem, varname, field,
-						&ref, die_mem, user_access);
+						&ref, die_mem);
 
 next:
 	/* Converting next field */
 	if (field->next)
 		return convert_variable_fields(die_mem, field->name,
-				field->next, &ref, die_mem, user_access);
+					field->next, &ref, die_mem);
 	else
 		return 0;
 }
@@ -545,12 +555,11 @@ static int convert_variable(Dwarf_Die *vr_die, struct probe_finder *pf)
 	else if (ret == 0 && pf->pvar->field) {
 		ret = convert_variable_fields(vr_die, pf->pvar->var,
 					      pf->pvar->field, &pf->tvar->ref,
-					      &die_mem, pf->pvar->user_access);
+					      &die_mem);
 		vr_die = &die_mem;
 	}
 	if (ret == 0)
-		ret = convert_variable_type(vr_die, pf->tvar, pf->pvar->type,
-					    pf->pvar->user_access);
+		ret = convert_variable_type(vr_die, pf->tvar, pf->pvar->type);
 	/* *expr will be cached in libdw. Don't free it. */
 	return ret;
 }

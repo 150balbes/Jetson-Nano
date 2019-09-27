@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Watchdog driver for z/VM and LPAR using the diag 288 interface.
  *
@@ -206,7 +205,7 @@ static int wdt_set_timeout(struct watchdog_device * dev, unsigned int new_to)
 	return wdt_ping(dev);
 }
 
-static const struct watchdog_ops wdt_ops = {
+static struct watchdog_ops wdt_ops = {
 	.owner = THIS_MODULE,
 	.start = wdt_start,
 	.stop = wdt_stop,
@@ -214,7 +213,7 @@ static const struct watchdog_ops wdt_ops = {
 	.set_timeout = wdt_set_timeout,
 };
 
-static const struct watchdog_info wdt_info = {
+static struct watchdog_info wdt_info = {
 	.options = WDIOF_SETTIMEOUT | WDIOF_KEEPALIVEPING | WDIOF_MAGICCLOSE,
 	.firmware_version = 0,
 	.identity = "z Watchdog",

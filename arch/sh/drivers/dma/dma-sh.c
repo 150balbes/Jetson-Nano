@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * arch/sh/drivers/dma/dma-sh.c
  *
@@ -7,6 +6,10 @@
  * Copyright (C) 2000 Takashi YOSHII
  * Copyright (C) 2003, 2004 Paul Mundt
  * Copyright (C) 2005 Andriy Skulysh
+ *
+ * This file is subject to the terms and conditions of the GNU General Public
+ * License.  See the file "COPYING" in the main directory of this archive
+ * for more details.
  */
 #include <linux/init.h>
 #include <linux/interrupt.h>
@@ -411,4 +414,4 @@ module_exit(sh_dmac_exit);
 
 MODULE_AUTHOR("Takashi YOSHII, Paul Mundt, Andriy Skulysh");
 MODULE_DESCRIPTION("SuperH On-Chip DMAC Support");
-MODULE_LICENSE("GPL v2");
+MODULE_LICENSE("GPL");

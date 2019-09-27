@@ -1,11 +1,9 @@
-// SPDX-License-Identifier: GPL-2.0
 #include <linux/kernel.h>
 
 #include <linux/string.h>
 #include <linux/bitops.h>
 #include <linux/smp.h>
 #include <linux/sched.h>
-#include <linux/sched/clock.h>
 #include <linux/thread_info.h>
 #include <linux/init.h>
 #include <linux/uaccess.h>
@@ -16,9 +14,6 @@
 #include <asm/bugs.h>
 #include <asm/cpu.h>
 #include <asm/intel-family.h>
-#include <asm/microcode_intel.h>
-#include <asm/hwcap2.h>
-#include <asm/elf.h>
 
 #ifdef CONFIG_X86_64
 #include <linux/topology.h>
@@ -64,68 +59,6 @@ void check_mpx_erratum(struct cpuinfo_x86 *c)
 		setup_clear_cpu_cap(X86_FEATURE_MPX);
 		pr_warn("x86/mpx: Disabling MPX since SMEP not present\n");
 	}
-}
-
-/*
- * Processors which have self-snooping capability can handle conflicting
- * memory type across CPUs by snooping its own cache. However, there exists
- * CPU models in which having conflicting memory types still leads to
- * unpredictable behavior, machine check errors, or hangs. Clear this
- * feature to prevent its use on machines with known erratas.
- */
-static void check_memory_type_self_snoop_errata(struct cpuinfo_x86 *c)
-{
-	switch (c->x86_model) {
-	case INTEL_FAM6_CORE_YONAH:
-	case INTEL_FAM6_CORE2_MEROM:
-	case INTEL_FAM6_CORE2_MEROM_L:
-	case INTEL_FAM6_CORE2_PENRYN:
-	case INTEL_FAM6_CORE2_DUNNINGTON:
-	case INTEL_FAM6_NEHALEM:
-	case INTEL_FAM6_NEHALEM_G:
-	case INTEL_FAM6_NEHALEM_EP:
-	case INTEL_FAM6_NEHALEM_EX:
-	case INTEL_FAM6_WESTMERE:
-	case INTEL_FAM6_WESTMERE_EP:
-	case INTEL_FAM6_SANDYBRIDGE:
-		setup_clear_cpu_cap(X86_FEATURE_SELFSNOOP);
-	}
-}
-
-static bool ring3mwait_disabled __read_mostly;
-
-static int __init ring3mwait_disable(char *__unused)
-{
-	ring3mwait_disabled = true;
-	return 0;
-}
-__setup("ring3mwait=disable", ring3mwait_disable);
-
-static void probe_xeon_phi_r3mwait(struct cpuinfo_x86 *c)
-{
-	/*
-	 * Ring 3 MONITOR/MWAIT feature cannot be detected without
-	 * cpu model and family comparison.
-	 */
-	if (c->x86 != 6)
-		return;
-	switch (c->x86_model) {
-	case INTEL_FAM6_XEON_PHI_KNL:
-	case INTEL_FAM6_XEON_PHI_KNM:
-		break;
-	default:
-		return;
-	}
-
-	if (ring3mwait_disabled)
-		return;
-
-	set_cpu_cap(c, X86_FEATURE_RING3MWAIT);
-	this_cpu_or(msr_misc_features_shadow,
-		    1UL << MSR_MISC_FEATURES_ENABLES_RING3MWAIT_BIT);
-
-	if (c == &boot_cpu_data)
-		ELF_HWCAP2 |= HWCAP2_RING3MWAIT;
 }
 
 /*
@@ -204,8 +137,14 @@ static void early_init_intel(struct cpuinfo_x86 *c)
 		(c->x86 == 0x6 && c->x86_model >= 0x0e))
 		set_cpu_cap(c, X86_FEATURE_CONSTANT_TSC);
 
-	if (c->x86 >= 6 && !cpu_has(c, X86_FEATURE_IA64))
-		c->microcode = intel_get_microcode_revision();
+	if (c->x86 >= 6 && !cpu_has(c, X86_FEATURE_IA64)) {
+		unsigned lower_word;
+
+		wrmsr(MSR_IA32_UCODE_REV, 0, 0);
+		/* Required by the SDM */
+		sync_core();
+		rdmsr(MSR_IA32_UCODE_REV, lower_word, c->microcode);
+	}
 
 	/* Now if any of them are set, check the blacklist and clear the lot */
 	if ((cpu_has(c, X86_FEATURE_SPEC_CTRL) ||
@@ -260,6 +199,8 @@ static void early_init_intel(struct cpuinfo_x86 *c)
 	if (c->x86_power & (1 << 8)) {
 		set_cpu_cap(c, X86_FEATURE_CONSTANT_TSC);
 		set_cpu_cap(c, X86_FEATURE_NONSTOP_TSC);
+		if (!check_tsc_unstable())
+			set_sched_clock_stable();
 	}
 
 	/* Penwell and Cloverview have the TSC which doesn't sleep on S3 */
@@ -287,6 +228,21 @@ static void early_init_intel(struct cpuinfo_x86 *c)
 	 */
 	if (c->x86 == 6 && c->x86_model < 15)
 		clear_cpu_cap(c, X86_FEATURE_PAT);
+
+#ifdef CONFIG_KMEMCHECK
+	/*
+	 * P4s have a "fast strings" feature which causes single-
+	 * stepping REP instructions to only generate a #DB on
+	 * cache-line boundaries.
+	 *
+	 * Ingo Molnar reported a Pentium D (model 6) and a Xeon
+	 * (model 2) with the same problem.
+	 */
+	if (c->x86 == 15)
+		if (msr_clear_bit(MSR_IA32_MISC_ENABLE,
+				  MSR_IA32_MISC_ENABLE_FAST_STRING_BIT) > 0)
+			pr_info("kmemcheck: Disabling fast string operations\n");
+#endif
 
 	/*
 	 * If fast string is not enabled in IA32_MISC_ENABLE for any reason,
@@ -330,7 +286,6 @@ static void early_init_intel(struct cpuinfo_x86 *c)
 	}
 
 	check_mpx_erratum(c);
-	check_memory_type_self_snoop_errata(c);
 
 	/*
 	 * Get the number of SMT siblings early from the extended topology
@@ -493,6 +448,24 @@ static void srat_detect_node(struct cpuinfo_x86 *c)
 #endif
 }
 
+/*
+ * find out the number of processor cores on the die
+ */
+static int intel_num_cpu_cores(struct cpuinfo_x86 *c)
+{
+	unsigned int eax, ebx, ecx, edx;
+
+	if (!IS_ENABLED(CONFIG_SMP) || c->cpuid_level < 4)
+		return 1;
+
+	/* Intel has a non-standard dependency on %ecx for this CPUID level. */
+	cpuid_count(4, 0, &eax, &ebx, &ecx, &edx);
+	if (eax & 0x1f)
+		return (eax >> 26) + 1;
+	else
+		return 1;
+}
+
 static void detect_vmx_virtcap(struct cpuinfo_x86 *c)
 {
 	/* Intel VMX MSR indicated features */
@@ -502,17 +475,14 @@ static void detect_vmx_virtcap(struct cpuinfo_x86 *c)
 #define X86_VMX_FEATURE_PROC_CTLS2_VIRT_APIC	0x00000001
 #define X86_VMX_FEATURE_PROC_CTLS2_EPT		0x00000002
 #define X86_VMX_FEATURE_PROC_CTLS2_VPID		0x00000020
-#define x86_VMX_FEATURE_EPT_CAP_AD		0x00200000
 
 	u32 vmx_msr_low, vmx_msr_high, msr_ctl, msr_ctl2;
-	u32 msr_vpid_cap, msr_ept_cap;
 
 	clear_cpu_cap(c, X86_FEATURE_TPR_SHADOW);
 	clear_cpu_cap(c, X86_FEATURE_VNMI);
 	clear_cpu_cap(c, X86_FEATURE_FLEXPRIORITY);
 	clear_cpu_cap(c, X86_FEATURE_EPT);
 	clear_cpu_cap(c, X86_FEATURE_VPID);
-	clear_cpu_cap(c, X86_FEATURE_EPT_AD);
 
 	rdmsr(MSR_IA32_VMX_PROCBASED_CTLS, vmx_msr_low, vmx_msr_high);
 	msr_ctl = vmx_msr_high | vmx_msr_low;
@@ -527,132 +497,47 @@ static void detect_vmx_virtcap(struct cpuinfo_x86 *c)
 		if ((msr_ctl2 & X86_VMX_FEATURE_PROC_CTLS2_VIRT_APIC) &&
 		    (msr_ctl & X86_VMX_FEATURE_PROC_CTLS_TPR_SHADOW))
 			set_cpu_cap(c, X86_FEATURE_FLEXPRIORITY);
-		if (msr_ctl2 & X86_VMX_FEATURE_PROC_CTLS2_EPT) {
+		if (msr_ctl2 & X86_VMX_FEATURE_PROC_CTLS2_EPT)
 			set_cpu_cap(c, X86_FEATURE_EPT);
-			rdmsr(MSR_IA32_VMX_EPT_VPID_CAP,
-			      msr_ept_cap, msr_vpid_cap);
-			if (msr_ept_cap & x86_VMX_FEATURE_EPT_CAP_AD)
-				set_cpu_cap(c, X86_FEATURE_EPT_AD);
-		}
 		if (msr_ctl2 & X86_VMX_FEATURE_PROC_CTLS2_VPID)
 			set_cpu_cap(c, X86_FEATURE_VPID);
 	}
 }
 
-#define MSR_IA32_TME_ACTIVATE		0x982
-
-/* Helpers to access TME_ACTIVATE MSR */
-#define TME_ACTIVATE_LOCKED(x)		(x & 0x1)
-#define TME_ACTIVATE_ENABLED(x)		(x & 0x2)
-
-#define TME_ACTIVATE_POLICY(x)		((x >> 4) & 0xf)	/* Bits 7:4 */
-#define TME_ACTIVATE_POLICY_AES_XTS_128	0
-
-#define TME_ACTIVATE_KEYID_BITS(x)	((x >> 32) & 0xf)	/* Bits 35:32 */
-
-#define TME_ACTIVATE_CRYPTO_ALGS(x)	((x >> 48) & 0xffff)	/* Bits 63:48 */
-#define TME_ACTIVATE_CRYPTO_AES_XTS_128	1
-
-/* Values for mktme_status (SW only construct) */
-#define MKTME_ENABLED			0
-#define MKTME_DISABLED			1
-#define MKTME_UNINITIALIZED		2
-static int mktme_status = MKTME_UNINITIALIZED;
-
-static void detect_tme(struct cpuinfo_x86 *c)
+static void init_intel_energy_perf(struct cpuinfo_x86 *c)
 {
-	u64 tme_activate, tme_policy, tme_crypto_algs;
-	int keyid_bits = 0, nr_keyids = 0;
-	static u64 tme_activate_cpu0 = 0;
-
-	rdmsrl(MSR_IA32_TME_ACTIVATE, tme_activate);
-
-	if (mktme_status != MKTME_UNINITIALIZED) {
-		if (tme_activate != tme_activate_cpu0) {
-			/* Broken BIOS? */
-			pr_err_once("x86/tme: configuration is inconsistent between CPUs\n");
-			pr_err_once("x86/tme: MKTME is not usable\n");
-			mktme_status = MKTME_DISABLED;
-
-			/* Proceed. We may need to exclude bits from x86_phys_bits. */
-		}
-	} else {
-		tme_activate_cpu0 = tme_activate;
-	}
-
-	if (!TME_ACTIVATE_LOCKED(tme_activate) || !TME_ACTIVATE_ENABLED(tme_activate)) {
-		pr_info_once("x86/tme: not enabled by BIOS\n");
-		mktme_status = MKTME_DISABLED;
-		return;
-	}
-
-	if (mktme_status != MKTME_UNINITIALIZED)
-		goto detect_keyid_bits;
-
-	pr_info("x86/tme: enabled by BIOS\n");
-
-	tme_policy = TME_ACTIVATE_POLICY(tme_activate);
-	if (tme_policy != TME_ACTIVATE_POLICY_AES_XTS_128)
-		pr_warn("x86/tme: Unknown policy is active: %#llx\n", tme_policy);
-
-	tme_crypto_algs = TME_ACTIVATE_CRYPTO_ALGS(tme_activate);
-	if (!(tme_crypto_algs & TME_ACTIVATE_CRYPTO_AES_XTS_128)) {
-		pr_err("x86/mktme: No known encryption algorithm is supported: %#llx\n",
-				tme_crypto_algs);
-		mktme_status = MKTME_DISABLED;
-	}
-detect_keyid_bits:
-	keyid_bits = TME_ACTIVATE_KEYID_BITS(tme_activate);
-	nr_keyids = (1UL << keyid_bits) - 1;
-	if (nr_keyids) {
-		pr_info_once("x86/mktme: enabled by BIOS\n");
-		pr_info_once("x86/mktme: %d KeyIDs available\n", nr_keyids);
-	} else {
-		pr_info_once("x86/mktme: disabled by BIOS\n");
-	}
-
-	if (mktme_status == MKTME_UNINITIALIZED) {
-		/* MKTME is usable */
-		mktme_status = MKTME_ENABLED;
-	}
+	u64 epb;
 
 	/*
-	 * KeyID bits effectively lower the number of physical address
-	 * bits.  Update cpuinfo_x86::x86_phys_bits accordingly.
+	 * Initialize MSR_IA32_ENERGY_PERF_BIAS if not already initialized.
+	 * (x86_energy_perf_policy(8) is available to change it at run-time.)
 	 */
-	c->x86_phys_bits -= keyid_bits;
-}
-
-static void init_cpuid_fault(struct cpuinfo_x86 *c)
-{
-	u64 msr;
-
-	if (!rdmsrl_safe(MSR_PLATFORM_INFO, &msr)) {
-		if (msr & MSR_PLATFORM_INFO_CPUID_FAULT)
-			set_cpu_cap(c, X86_FEATURE_CPUID_FAULT);
-	}
-}
-
-static void init_intel_misc_features(struct cpuinfo_x86 *c)
-{
-	u64 msr;
-
-	if (rdmsrl_safe(MSR_MISC_FEATURES_ENABLES, &msr))
+	if (!cpu_has(c, X86_FEATURE_EPB))
 		return;
 
-	/* Clear all MISC features */
-	this_cpu_write(msr_misc_features_shadow, 0);
+	rdmsrl(MSR_IA32_ENERGY_PERF_BIAS, epb);
+	if ((epb & 0xF) != ENERGY_PERF_BIAS_PERFORMANCE)
+		return;
 
-	/* Check features and update capabilities and shadow control bits */
-	init_cpuid_fault(c);
-	probe_xeon_phi_r3mwait(c);
+	pr_warn_once("ENERGY_PERF_BIAS: Set to 'normal', was 'performance'\n");
+	pr_warn_once("ENERGY_PERF_BIAS: View and update with x86_energy_perf_policy(8)\n");
+	epb = (epb & ~0xF) | ENERGY_PERF_BIAS_NORMAL;
+	wrmsrl(MSR_IA32_ENERGY_PERF_BIAS, epb);
+}
 
-	msr = this_cpu_read(msr_misc_features_shadow);
-	wrmsrl(MSR_MISC_FEATURES_ENABLES, msr);
+static void intel_bsp_resume(struct cpuinfo_x86 *c)
+{
+	/*
+	 * MSR_IA32_ENERGY_PERF_BIAS is lost across suspend/resume,
+	 * so reinitialize it properly like during bootup:
+	 */
+	init_intel_energy_perf(c);
 }
 
 static void init_intel(struct cpuinfo_x86 *c)
 {
+	unsigned int l2 = 0;
+
 	early_init_intel(c);
 
 	intel_workarounds(c);
@@ -669,13 +554,19 @@ static void init_intel(struct cpuinfo_x86 *c)
 		 * let's use the legacy cpuid vector 0x1 and 0x4 for topology
 		 * detection.
 		 */
-		detect_num_cpu_cores(c);
+		c->x86_max_cores = intel_num_cpu_cores(c);
 #ifdef CONFIG_X86_32
 		detect_ht(c);
 #endif
 	}
 
-	init_intel_cacheinfo(c);
+	l2 = init_intel_cacheinfo(c);
+
+	/* Detect legacy cache sizes if init_intel_cacheinfo did not */
+	if (l2 == 0) {
+		cpu_detect_cache_sizes(c);
+		l2 = c->x86_cache_size;
+	}
 
 	if (c->cpuid_level > 9) {
 		unsigned eax = cpuid_eax(10);
@@ -688,8 +579,7 @@ static void init_intel(struct cpuinfo_x86 *c)
 		set_cpu_cap(c, X86_FEATURE_LFENCE_RDTSC);
 
 	if (boot_cpu_has(X86_FEATURE_DS)) {
-		unsigned int l1, l2;
-
+		unsigned int l1;
 		rdmsr(MSR_IA32_MISC_ENABLE, l1, l2);
 		if (!(l1 & (1<<11)))
 			set_cpu_cap(c, X86_FEATURE_BTS);
@@ -717,7 +607,6 @@ static void init_intel(struct cpuinfo_x86 *c)
 	 * Dixon is NOT a Celeron.
 	 */
 	if (c->x86 == 6) {
-		unsigned int l2 = c->x86_cache_size;
 		char *p = NULL;
 
 		switch (c->x86_model) {
@@ -757,10 +646,7 @@ static void init_intel(struct cpuinfo_x86 *c)
 	if (cpu_has(c, X86_FEATURE_VMX))
 		detect_vmx_virtcap(c);
 
-	if (cpu_has(c, X86_FEATURE_TME))
-		detect_tme(c);
-
-	init_intel_misc_features(c);
+	init_intel_energy_perf(c);
 }
 
 #ifdef CONFIG_X86_32
@@ -827,9 +713,6 @@ static const struct _tlb_table intel_tlb_table[] = {
 	{ 0x5d, TLB_DATA_4K_4M,		256,	" TLB_DATA 4 KByte and 4 MByte pages" },
 	{ 0x61, TLB_INST_4K,		48,	" TLB_INST 4 KByte pages, full associative" },
 	{ 0x63, TLB_DATA_1G,		4,	" TLB_DATA 1 GByte pages, 4-way set associative" },
-	{ 0x6b, TLB_DATA_4K,		256,	" TLB_DATA 4 KByte pages, 8-way associative" },
-	{ 0x6c, TLB_DATA_2M_4M,		128,	" TLB_DATA 2 MByte or 4 MByte pages, 8-way associative" },
-	{ 0x6d, TLB_DATA_1G,		16,	" TLB_DATA 1 GByte pages, fully associative" },
 	{ 0x76, TLB_INST_2M_4M,		8,	" TLB_INST 2-MByte or 4-MByte pages, fully associative" },
 	{ 0xb0, TLB_INST_4K,		128,	" TLB_INST 4 KByte pages, 4-way set associative" },
 	{ 0xb1, TLB_INST_2M_4M,		4,	" TLB_INST 2M pages, 4-way, 8 entries or 4M pages, 4-way entries" },
@@ -1018,7 +901,9 @@ static const struct cpu_dev intel_cpu_dev = {
 	.c_detect_tlb	= intel_detect_tlb,
 	.c_early_init   = early_init_intel,
 	.c_init		= init_intel,
+	.c_bsp_resume	= intel_bsp_resume,
 	.c_x86_vendor	= X86_VENDOR_INTEL,
 };
 
 cpu_dev_register(intel_cpu_dev);
+

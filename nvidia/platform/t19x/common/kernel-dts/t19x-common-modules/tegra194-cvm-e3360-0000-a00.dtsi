@@ -1,0 +1,163 @@
+/*
+ * T194 E3360-1099 CVM DTSI file.
+ *
+ * Copyright (c) 2017, NVIDIA CORPORATION.  All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; version 2 of the License.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ */
+
+#include <dt-bindings/types.h>
+/dts-v1/;
+
+/memreserve/ 0x80000000 0x00010000;
+
+#include <tegra194-soc/tegra194-soc-cvm.dtsi>
+
+/ {
+	model = "e3360_1099";
+	compatible = "nvidia,e3360_1099", "nvidia,tegra194";
+
+	#address-cells = <2>;
+	#size-cells = <2>;
+
+	pmc@c360000 {
+		iopad_defaults: iopad-defaults {
+			sdmmc-io-pads {
+				pins = "sdmmc1-hv", "sdmmc3-hv";
+				nvidia,enable-voltage-switching;
+			};
+		};
+	};
+
+	pmc@c370000 {
+		nvidia,invert-interrupt;
+	};
+
+	plugin-manager {
+		fragment-e3360-a00-mods {
+			odm-data = "mods-build";
+			override@0 {
+				target = <&gpcdma>;
+				_overlay_ {
+					nvidia,bypass-smmu;
+				};
+			};
+			override@1 {
+				target = <&dp_aux_ch0_i2c>;
+				_overlay_ {
+					delete-target-property = "dmas";
+				};
+			};
+			override@2 {
+				target = <&dp_aux_ch1_i2c>;
+				_overlay_ {
+					delete-target-property = "dmas";
+				};
+			};
+			override@3 {
+				target = <&dp_aux_ch2_i2c>;
+				_overlay_ {
+					delete-target-property = "dmas";
+				};
+			};
+			override@4 {
+				target = <&dp_aux_ch3_i2c>;
+				_overlay_ {
+					delete-target-property = "dmas";
+				};
+			};
+		};
+		fragment-e3360-a00-xusb {
+			ids = "3360-1099-000", "3360-1098-000";
+			override@0 {
+				target = <&e3360_gpio_u5061>;
+				_overlay_ {
+					usb_mux_sel {
+						gpio-hog;
+						output-high;
+						gpios = <0 0>;
+						label = "usb_mux_sel";
+						status = "okay";
+					};
+					usb_mux_oe0 {
+						gpio-hog;
+						output-low;
+						gpios = <1 0>;
+						label = "usb_mux_oe0";
+						status = "okay";
+					};
+					usb_mux_oe1 {
+						gpio-hog;
+						output-low;
+						gpios = <2 0>;
+						label = "usb_mux_oe1";
+						status = "okay";
+					};
+				};
+			};
+		};
+
+		fragment-e3360-a01-xusb {
+			ids = "3360-1099-100", "3360-1098-100";
+			override@0 {
+				target = <&e3360_gpio_u5061>;
+				_overlay_ {
+					usb_mux_oe {
+						gpio-hog;
+						output-low;
+						gpios = <0 0>;
+						label = "usb_mux_oe";
+						status = "okay";
+					};
+					usb_mux_sel0 {
+						gpio-hog;
+						output-high;
+						gpios = <1 0>;
+						label = "usb_mux_sel0";
+						status = "okay";
+					};
+					usb_mux_sel1 {
+						gpio-hog;
+						output-high;
+						gpios = <2 0>;
+						label = "usb_mux_sel1";
+						status = "okay";
+					};
+				};
+			};
+			override@1 {
+				target = <&e3360_gpio_u5062>;
+				_overlay_ {
+					pex_mux_sel_0 {
+						gpio-hog;
+						output-low;
+						gpios = <3 0>;
+						label = "pex_mux_sel_0";
+						status = "okay";
+					};
+					pex_mux_sel_1 {
+						gpio-hog;
+						output-low;
+						gpios = <4 0>;
+						label = "pex_mux_sel_1";
+						status = "okay";
+					};
+					pex_mux_sel_2 {
+						gpio-hog;
+						output-low;
+						gpios = <5 0>;
+						label = "pex_mux_sel_2";
+						status = "okay";
+					};
+				};
+			};
+		};
+	};
+};

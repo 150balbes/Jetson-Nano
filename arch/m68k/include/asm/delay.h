@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _M68K_DELAY_H
 #define _M68K_DELAY_H
 
@@ -49,6 +48,8 @@ extern void __bad_udelay(void);
  * The simpler m68k and ColdFire processors do not have a 32*32->64
  * multiply instruction. So we need to handle them a little differently.
  * We use a bit of shifting and a single 32*32->32 multiply to get close.
+ * This is a macro so that the const version can factor out the first
+ * multiply and shift.
  */
 #define	HZSCALE		(268435456 / (1000000 / HZ))
 
@@ -113,13 +114,6 @@ static inline void __udelay(unsigned long usecs)
  */
 #define	HZSCALE		(268435456 / (1000000 / HZ))
 
-static inline void ndelay(unsigned long nsec)
-{
-	__delay(DIV_ROUND_UP(nsec *
-			     ((((HZSCALE) >> 11) *
-			       (loops_per_jiffy >> 11)) >> 6),
-			     1000));
-}
-#define ndelay(n) ndelay(n)
+#define ndelay(n) __delay(DIV_ROUND_UP((n) * ((((HZSCALE) >> 11) * (loops_per_jiffy >> 11)) >> 6), 1000))
 
 #endif /* defined(_M68K_DELAY_H) */

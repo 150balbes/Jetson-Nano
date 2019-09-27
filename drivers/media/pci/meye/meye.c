@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Motion Eye video4linux driver for Sony Vaio PictureBook
  *
@@ -12,6 +11,20 @@
  *
  * Some parts borrowed from various video4linux drivers, especially
  * bttv-driver.c and zoran.c, see original files for credits.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  */
 #include <linux/module.h>
 #include <linux/pci.h>
@@ -24,7 +37,7 @@
 #include <media/v4l2-ioctl.h>
 #include <media/v4l2-fh.h>
 #include <media/v4l2-event.h>
-#include <linux/uaccess.h>
+#include <asm/uaccess.h>
 #include <asm/io.h>
 #include <linux/delay.h>
 #include <linux/interrupt.h>
@@ -47,7 +60,8 @@ MODULE_PARM_DESC(gbuffers, "number of capture buffers, default is 2 (32 max)");
 /* size of a grab buffer */
 static unsigned int gbufsize = MEYE_MAX_BUFSIZE;
 module_param(gbufsize, int, 0444);
-MODULE_PARM_DESC(gbufsize, "size of the capture buffers, default is 614400 (will be rounded up to a page multiple)");
+MODULE_PARM_DESC(gbufsize, "size of the capture buffers, default is 614400"
+		 " (will be rounded up to a page multiple)");
 
 /* /dev/videoX registration number */
 static int video_nr = -1;
@@ -573,7 +587,10 @@ static void mchip_hic_stop(void)
 /* get the next ready frame from the dma engine */
 static u32 mchip_get_frame(void)
 {
-	return mchip_read(MCHIP_MM_FIR(meye.mchip_fnum));
+	u32 v;
+
+	v = mchip_read(MCHIP_MM_FIR(meye.mchip_fnum));
+	return v;
 }
 
 /* frees the current frame from the dma engine */
@@ -796,7 +813,7 @@ again:
 				      mchip_hsize() * mchip_vsize() * 2);
 		meye.grab_buffer[reqnr].size = mchip_hsize() * mchip_vsize() * 2;
 		meye.grab_buffer[reqnr].state = MEYE_BUF_DONE;
-		meye.grab_buffer[reqnr].ts = ktime_get_ns();
+		v4l2_get_timestamp(&meye.grab_buffer[reqnr].timestamp);
 		meye.grab_buffer[reqnr].sequence = sequence++;
 		kfifo_in_locked(&meye.doneq, (unsigned char *)&reqnr,
 				sizeof(int), &meye.doneq_lock);
@@ -817,7 +834,7 @@ again:
 		       size);
 		meye.grab_buffer[reqnr].size = size;
 		meye.grab_buffer[reqnr].state = MEYE_BUF_DONE;
-		meye.grab_buffer[reqnr].ts = ktime_get_ns();
+		v4l2_get_timestamp(&meye.grab_buffer[reqnr].timestamp);
 		meye.grab_buffer[reqnr].sequence = sequence++;
 		kfifo_in_locked(&meye.doneq, (unsigned char *)&reqnr,
 				sizeof(int), &meye.doneq_lock);
@@ -1010,9 +1027,14 @@ static int meyeioc_stilljcapt(int *len)
 static int vidioc_querycap(struct file *file, void *fh,
 				struct v4l2_capability *cap)
 {
-	strscpy(cap->driver, "meye", sizeof(cap->driver));
-	strscpy(cap->card, "meye", sizeof(cap->card));
+	strcpy(cap->driver, "meye");
+	strcpy(cap->card, "meye");
 	sprintf(cap->bus_info, "PCI:%s", pci_name(meye.mchip_dev));
+
+	cap->device_caps = V4L2_CAP_VIDEO_CAPTURE |
+			    V4L2_CAP_STREAMING;
+	cap->capabilities = cap->device_caps | V4L2_CAP_DEVICE_CAPS;
+
 	return 0;
 }
 
@@ -1021,7 +1043,7 @@ static int vidioc_enum_input(struct file *file, void *fh, struct v4l2_input *i)
 	if (i->index != 0)
 		return -EINVAL;
 
-	strscpy(i->name, "Camera", sizeof(i->name));
+	strcpy(i->name, "Camera");
 	i->type = V4L2_INPUT_TYPE_CAMERA;
 
 	return 0;
@@ -1104,12 +1126,12 @@ static int vidioc_enum_fmt_vid_cap(struct file *file, void *fh,
 	if (f->index == 0) {
 		/* standard YUV 422 capture */
 		f->flags = 0;
-		strscpy(f->description, "YUV422", sizeof(f->description));
+		strcpy(f->description, "YUV422");
 		f->pixelformat = V4L2_PIX_FMT_YUYV;
 	} else {
 		/* compressed MJPEG capture */
 		f->flags = V4L2_FMT_FLAG_COMPRESSED;
-		strscpy(f->description, "MJPEG", sizeof(f->description));
+		strcpy(f->description, "MJPEG");
 		f->pixelformat = V4L2_PIX_FMT_MJPEG;
 	}
 
@@ -1239,7 +1261,8 @@ static int vidioc_reqbufs(struct file *file, void *fh,
 	meye.grab_fbuffer = rvmalloc(gbuffers * gbufsize);
 
 	if (!meye.grab_fbuffer) {
-		printk(KERN_ERR "meye: v4l framebuffer allocation failed\n");
+		printk(KERN_ERR "meye: v4l framebuffer allocation"
+				" failed\n");
 		mutex_unlock(&meye.lock);
 		return -ENOMEM;
 	}
@@ -1269,7 +1292,7 @@ static int vidioc_querybuf(struct file *file, void *fh, struct v4l2_buffer *buf)
 		buf->flags |= V4L2_BUF_FLAG_DONE;
 
 	buf->field = V4L2_FIELD_NONE;
-	buf->timestamp = ns_to_timeval(meye.grab_buffer[index].ts);
+	buf->timestamp = meye.grab_buffer[index].timestamp;
 	buf->sequence = meye.grab_buffer[index].sequence;
 	buf->memory = V4L2_MEMORY_MMAP;
 	buf->m.offset = index * gbufsize;
@@ -1335,7 +1358,7 @@ static int vidioc_dqbuf(struct file *file, void *fh, struct v4l2_buffer *buf)
 	buf->bytesused = meye.grab_buffer[reqnr].size;
 	buf->flags = V4L2_BUF_FLAG_MAPPED | V4L2_BUF_FLAG_TIMESTAMP_MONOTONIC;
 	buf->field = V4L2_FIELD_NONE;
-	buf->timestamp = ns_to_timeval(meye.grab_buffer[reqnr].ts);
+	buf->timestamp = meye.grab_buffer[reqnr].timestamp;
 	buf->sequence = meye.grab_buffer[reqnr].sequence;
 	buf->memory = V4L2_MEMORY_MMAP;
 	buf->m.offset = reqnr * gbufsize;
@@ -1409,14 +1432,14 @@ static long vidioc_default(struct file *file, void *fh, bool valid_prio,
 
 }
 
-static __poll_t meye_poll(struct file *file, poll_table *wait)
+static unsigned int meye_poll(struct file *file, poll_table *wait)
 {
-	__poll_t res = v4l2_ctrl_poll(file, wait);
+	unsigned int res = v4l2_ctrl_poll(file, wait);
 
 	mutex_lock(&meye.lock);
 	poll_wait(file, &meye.proc_list, wait);
 	if (kfifo_len(&meye.doneq))
-		res |= EPOLLIN | EPOLLRDNORM;
+		res |= POLLIN | POLLRDNORM;
 	mutex_unlock(&meye.lock);
 	return res;
 }
@@ -1446,7 +1469,7 @@ static int meye_mmap(struct file *file, struct vm_area_struct *vma)
 	unsigned long page, pos;
 
 	mutex_lock(&meye.lock);
-	if (size > gbuffers * gbufsize || offset > gbuffers * gbufsize - size) {
+	if (size > gbuffers * gbufsize) {
 		mutex_unlock(&meye.lock);
 		return -EINVAL;
 	}
@@ -1519,12 +1542,11 @@ static const struct v4l2_ioctl_ops meye_ioctl_ops = {
 	.vidioc_default		= vidioc_default,
 };
 
-static const struct video_device meye_template = {
+static struct video_device meye_template = {
 	.name		= "meye",
 	.fops		= &meye_fops,
-	.ioctl_ops	= &meye_ioctl_ops,
+	.ioctl_ops 	= &meye_ioctl_ops,
 	.release	= video_device_release_empty,
-	.device_caps	= V4L2_CAP_VIDEO_CAPTURE | V4L2_CAP_STREAMING,
 };
 
 static const struct v4l2_ctrl_ops meye_ctrl_ops = {
@@ -1612,37 +1634,41 @@ static int meye_probe(struct pci_dev *pcidev, const struct pci_device_id *ent)
 	ret = -ENOMEM;
 	meye.mchip_dev = pcidev;
 
-	meye.grab_temp = vmalloc(array_size(PAGE_SIZE, MCHIP_NB_PAGES_MJPEG));
-	if (!meye.grab_temp)
+	meye.grab_temp = vmalloc(MCHIP_NB_PAGES_MJPEG * PAGE_SIZE);
+	if (!meye.grab_temp) {
+		v4l2_err(v4l2_dev, "grab buffer allocation failed\n");
 		goto outvmalloc;
+	}
 
 	spin_lock_init(&meye.grabq_lock);
 	if (kfifo_alloc(&meye.grabq, sizeof(int) * MEYE_MAX_BUFNBRS,
-			GFP_KERNEL))
+				GFP_KERNEL)) {
+		v4l2_err(v4l2_dev, "fifo allocation failed\n");
 		goto outkfifoalloc1;
-
+	}
 	spin_lock_init(&meye.doneq_lock);
 	if (kfifo_alloc(&meye.doneq, sizeof(int) * MEYE_MAX_BUFNBRS,
-			GFP_KERNEL))
+				GFP_KERNEL)) {
+		v4l2_err(v4l2_dev, "fifo allocation failed\n");
 		goto outkfifoalloc2;
+	}
 
 	meye.vdev = meye_template;
 	meye.vdev.v4l2_dev = &meye.v4l2_dev;
 
-	ret = sony_pic_camera_command(SONY_PIC_COMMAND_SETCAMERA, 1);
-	if (ret) {
+	ret = -EIO;
+	if ((ret = sony_pic_camera_command(SONY_PIC_COMMAND_SETCAMERA, 1))) {
 		v4l2_err(v4l2_dev, "meye: unable to power on the camera\n");
-		v4l2_err(v4l2_dev, "meye: did you enable the camera in sonypi using the module options ?\n");
+		v4l2_err(v4l2_dev, "meye: did you enable the camera in "
+				"sonypi using the module options ?\n");
 		goto outsonypienable;
 	}
 
-	ret = pci_enable_device(meye.mchip_dev);
-	if (ret) {
+	if ((ret = pci_enable_device(meye.mchip_dev))) {
 		v4l2_err(v4l2_dev, "meye: pci_enable_device failed\n");
 		goto outenabledev;
 	}
 
-	ret = -EIO;
 	mchip_adr = pci_resource_start(meye.mchip_dev,0);
 	if (!mchip_adr) {
 		v4l2_err(v4l2_dev, "meye: mchip has no device base address\n");
@@ -1784,7 +1810,7 @@ static void meye_remove(struct pci_dev *pcidev)
 	printk(KERN_INFO "meye: removed\n");
 }
 
-static const struct pci_device_id meye_pci_tbl[] = {
+static struct pci_device_id meye_pci_tbl[] = {
 	{ PCI_VDEVICE(KAWASAKI, PCI_DEVICE_ID_MCHIP_KL5A72002), 0 },
 	{ }
 };
@@ -1808,7 +1834,8 @@ static int __init meye_init(void)
 	if (gbufsize > MEYE_MAX_BUFSIZE)
 		gbufsize = MEYE_MAX_BUFSIZE;
 	gbufsize = PAGE_ALIGN(gbufsize);
-	printk(KERN_INFO "meye: using %d buffers with %dk (%dk total) for capture\n",
+	printk(KERN_INFO "meye: using %d buffers with %dk (%dk total) "
+			 "for capture\n",
 			 gbuffers,
 			 gbufsize / 1024, gbuffers * gbufsize / 1024);
 	return pci_register_driver(&meye_driver);

@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * SH SCI SPI interface
  *
@@ -7,6 +6,11 @@
  * Based on S3C24XX GPIO based SPI driver, which is:
  *   Copyright (c) 2006 Ben Dooks
  *   Copyright (c) 2006 Simtec Electronics
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
  */
 
 #include <linux/kernel.h>
@@ -76,31 +80,27 @@ static inline u32 getmiso(struct spi_device *dev)
 #include "spi-bitbang-txrx.h"
 
 static u32 sh_sci_spi_txrx_mode0(struct spi_device *spi,
-				 unsigned nsecs, u32 word, u8 bits,
-				 unsigned flags)
+				      unsigned nsecs, u32 word, u8 bits)
 {
-	return bitbang_txrx_be_cpha0(spi, nsecs, 0, flags, word, bits);
+	return bitbang_txrx_be_cpha0(spi, nsecs, 0, 0, word, bits);
 }
 
 static u32 sh_sci_spi_txrx_mode1(struct spi_device *spi,
-				 unsigned nsecs, u32 word, u8 bits,
-				 unsigned flags)
+				      unsigned nsecs, u32 word, u8 bits)
 {
-	return bitbang_txrx_be_cpha1(spi, nsecs, 0, flags, word, bits);
+	return bitbang_txrx_be_cpha1(spi, nsecs, 0, 0, word, bits);
 }
 
 static u32 sh_sci_spi_txrx_mode2(struct spi_device *spi,
-				 unsigned nsecs, u32 word, u8 bits,
-				 unsigned flags)
+				      unsigned nsecs, u32 word, u8 bits)
 {
-	return bitbang_txrx_be_cpha0(spi, nsecs, 1, flags, word, bits);
+	return bitbang_txrx_be_cpha0(spi, nsecs, 1, 0, word, bits);
 }
 
 static u32 sh_sci_spi_txrx_mode3(struct spi_device *spi,
-				 unsigned nsecs, u32 word, u8 bits,
-				 unsigned flags)
+				      unsigned nsecs, u32 word, u8 bits)
 {
-	return bitbang_txrx_be_cpha1(spi, nsecs, 1, flags, word, bits);
+	return bitbang_txrx_be_cpha1(spi, nsecs, 1, 0, word, bits);
 }
 
 static void sh_sci_spi_chipselect(struct spi_device *dev, int value)

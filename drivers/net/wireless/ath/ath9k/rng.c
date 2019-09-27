@@ -22,9 +22,7 @@
 #include "ar9003_phy.h"
 
 #define ATH9K_RNG_BUF_SIZE	320
-#define ATH9K_RNG_ENTROPY(x)	(((x) * 8 * 10) >> 5) /* quality: 10/32 */
-
-static DECLARE_WAIT_QUEUE_HEAD(rng_queue);
+#define ATH9K_RNG_ENTROPY(x)	(((x) * 8 * 320) >> 10) /* quality: 320/1024 */
 
 static int ath9k_rng_data_read(struct ath_softc *sc, u32 *buf, u32 buf_size)
 {
@@ -87,9 +85,7 @@ static int ath9k_rng_kthread(void *data)
 						 ATH9K_RNG_BUF_SIZE);
 		if (unlikely(!bytes_read)) {
 			delay = ath9k_rng_delay_get(++fail_stats);
-			wait_event_interruptible_timeout(rng_queue,
-							 kthread_should_stop(),
-							 msecs_to_jiffies(delay));
+			msleep_interruptible(delay);
 			continue;
 		}
 

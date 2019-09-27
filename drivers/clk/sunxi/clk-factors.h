@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __MACH_SUNXI_CLK_FACTORS_H
 #define __MACH_SUNXI_CLK_FACTORS_H
 
@@ -55,10 +54,6 @@ struct clk *sunxi_factors_register(struct device_node *node,
 				   const struct factors_data *data,
 				   spinlock_t *lock,
 				   void __iomem *reg);
-struct clk *sunxi_factors_register_critical(struct device_node *node,
-					    const struct factors_data *data,
-					    spinlock_t *lock,
-					    void __iomem *reg);
 
 void sunxi_factors_unregister(struct device_node *node, struct clk *clk);
 

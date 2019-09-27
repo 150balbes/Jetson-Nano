@@ -1,8 +1,9 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * usb_a9g20.dts - Device Tree file for Caloa USB A9G20 board
  *
  *  Copyright (C) 2011 Jean-Christophe PLAGNIOL-VILLARD <plagnioj@jcrosoft.com>
+ *
+ * Licensed under GPLv2 or later.
  */
 
 #include "at91sam9g20.dtsi"
@@ -19,8 +20,8 @@
 	};
 
 	i2c-gpio-0 {
-		rtc@56 {
-			compatible = "microcrystal,rv3029";
+		rv3029c2@56 {
+			compatible = "rv3029c2";
 			reg = <0x56>;
 		};
 	};

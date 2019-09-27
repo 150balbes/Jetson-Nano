@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _LINUX_CACHEINFO_H
 #define _LINUX_CACHEINFO_H
 
@@ -17,11 +16,8 @@ enum cache_type {
 	CACHE_TYPE_UNIFIED = BIT(2),
 };
 
-extern unsigned int coherency_max_size;
-
 /**
  * struct cacheinfo - represent a cache leaf node
- * @id: This cache's id. It is unique among caches with the same (type, level).
  * @type: type of the cache - data, inst or unified
  * @level: represents the hierarchy in the multi-level cache
  * @coherency_line_size: size of each cache line usually representing
@@ -36,8 +32,9 @@ extern unsigned int coherency_max_size;
  * @shared_cpu_map: logical cpumask representing all the cpus sharing
  *	this cache node
  * @attributes: bitfield representing various cache attributes
- * @fw_token: Unique value used to determine if different cacheinfo
- *	structures represent a single hardware cache instance.
+ * @of_node: if devicetree is used, this represents either the cpu node in
+ *	case there's no explicit cache node or the cache node itself in the
+ *	device tree
  * @disable_sysfs: indicates whether this node is visible to the user via
  *	sysfs or not
  * @priv: pointer to any private data structure specific to particular
@@ -47,7 +44,6 @@ extern unsigned int coherency_max_size;
  * keeping, the remaining members form the core properties of the cache
  */
 struct cacheinfo {
-	unsigned int id;
 	enum cache_type type;
 	unsigned int level;
 	unsigned int coherency_line_size;
@@ -65,8 +61,8 @@ struct cacheinfo {
 #define CACHE_WRITE_ALLOCATE	BIT(3)
 #define CACHE_ALLOCATE_POLICY_MASK	\
 	(CACHE_READ_ALLOCATE | CACHE_WRITE_ALLOCATE)
-#define CACHE_ID		BIT(4)
-	void *fw_token;
+
+	struct device_node *of_node;
 	bool disable_sysfs;
 	void *priv;
 };
@@ -99,23 +95,6 @@ int func(unsigned int cpu)					\
 struct cpu_cacheinfo *get_cpu_cacheinfo(unsigned int cpu);
 int init_cache_level(unsigned int cpu);
 int populate_cache_leaves(unsigned int cpu);
-int cache_setup_acpi(unsigned int cpu);
-#ifndef CONFIG_ACPI_PPTT
-/*
- * acpi_find_last_cache_level is only called on ACPI enabled
- * platforms using the PPTT for topology. This means that if
- * the platform supports other firmware configuration methods
- * we need to stub out the call when ACPI is disabled.
- * ACPI enabled platforms not using PPTT won't be making calls
- * to this function so we need not worry about them.
- */
-static inline int acpi_find_last_cache_level(unsigned int cpu)
-{
-	return 0;
-}
-#else
-int acpi_find_last_cache_level(unsigned int cpu);
-#endif
 
 const struct attribute_group *cache_get_priv_group(struct cacheinfo *this_leaf);
 

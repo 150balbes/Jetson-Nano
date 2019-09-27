@@ -1,0 +1,254 @@
+config DENVER_CPU
+	bool "Denver CPU"
+	help
+	  Support for NVIDIA Denver CPU
+
+config DENVER_MCA
+	tristate "Denver Machine Check Handler"
+	depends on DENVER_CPU
+	select SERROR_HANDLER
+	help
+	  The Denver Machine Check handler. It collects and reports errors from
+	  the Denver CPUs.
+
+config TEGRA_AON
+	bool "Tegra AON driver"
+	depends on ARCH_TEGRA_18x_SOC
+	select NV_TEGRA_IVC
+	select TEGRA_HSP
+
+config TEGRA_ARI_MCA
+	tristate "Tegra Abstract Request Interface (ARI) Machine Check"
+	select SERROR_HANDLER
+	help
+	  The Tegra Abstract Request Interface (ARI) Machine Check handler. This
+	  handles the Machine Check registers that are accessible via ARI.
+
+config TEGRA_BRIDGE_MCA
+	tristate "AXI/APB Bridge Machine Check"
+	select SERROR_HANDLER
+	help
+	  The Tegra AXI/APB Bridge Machine Check handler. This
+	  handes the SERRs from failed AXI/APB transactions.
+
+config TEGRA_A57_SERR
+        tristate "A57 SError Handler"
+	select SERROR_HANDLER
+	help
+	  The A57 SError Handler.  This handles the SERRs from A57 cores,
+	  specifically L1 ECC errors.
+
+config TEGRA_18X_SERROR
+        tristate "Tegra18 SError handler"
+        depends on ARCH_TEGRA_18x_SOC
+        select DENVER_MCA
+	select TEGRA_ARI_MCA
+	select TEGRA_BRIDGE_MCA
+	select TEGRA_A57_SERR
+        help
+          The Tegra18 SError handler. This handles Denver SErrors, A57 SErrors,
+	  CCPLEX errors, and fabric slave errors.
+
+config TEGRA_BWMGR
+        bool "Enable EMC Bandwidth Manager"
+        depends on COMMON_CLK
+        default n
+        help
+          Enables Bandwidth manager support for EMC clock. Required when using Common Clock Framework
+
+config TEGRA_CAMERA_RTCPU
+	bool "Enable Tegra Camera RTCPU Driver"
+	depends on ARCH_TEGRA_18x_SOC
+	select NV_TEGRA_IVC
+	select TEGRA_HSP
+
+config TEGRA_ISOMGR
+        bool "Isochronous Bandwidth Manager "
+        help
+          When enabled, drivers for ISO units can obtain ISO BW.
+          The memory controller (MC) for each Tegra platform can supply
+          a limited amount of isochronous (real-time) bandwidth.  When
+          enabled, isomgr will manage a pool of ISO BW.
+
+config TEGRA_ISOMGR_POOL_KB_PER_SEC
+        int "Size of isomgr pool "
+        default 0
+        help
+          Set this maximum ISO BW (in Kbytes/sec) that platform supports.
+          The memory controller (MC) for each Tegra platform can supply
+          a limited amount of isochronous (real-time) bandwidth.  Each
+          platform must specify the maximum amount of ISO BW that isomgr
+          should manage.
+
+config TEGRA_ISOMGR_SYSFS
+        bool "Visibility into Isochronous Bandwidth Manager state "
+        depends on TEGRA_ISOMGR
+        help
+          When enabled, sysfs can be used to query isomgr state.
+          This is used for visibility into isomgr state.  It could
+          be useful in debug or in understanding performance on a
+          running system.
+
+config TEGRA_ISOMGR_MAX_ISO_BW_QUIRK
+        bool "Relax Max ISO Bw limit"
+        depends on TEGRA_ISOMGR
+        default n
+        help
+          When enabled, allows system with less ISO bw continue to
+          work. This is necessary for systems running at lower
+          EMC clock freq or on FPGA.
+
+config TEGRA_MC
+        bool "Tegra MC"
+        default y
+        help
+          Enable Tegra MC.
+
+config TEGRA_MC_TRACE_PRINTK
+	bool "Enable trace_printk debugging for MC"
+	depends on FTRACE_PRINTK
+
+config TEGRA_OF_MCERR
+        bool "Tegra MCERR OF"
+        default y
+        help
+          Enable Tegra MC ERR OF.
+
+config TEGRA_PM_IRQ
+	bool "Enable PM IRQ"
+	default y if ARCH_TEGRA_18x_SOC || ARCH_TEGRA_19x_SOC
+
+config TEGRA_PMC_AO_WAKE
+	bool "Enable AO WAKE from PMC"
+	default y if ARCH_TEGRA_18x_SOC || ARCH_TEGRA_19x_SOC
+
+config TEGRA_WAKEUP
+	bool "Enable WAKEUP"
+	default y if ARCH_TEGRA_18x_SOC || ARCH_TEGRA_19x_SOC
+
+config TEGRA_PTP_NOTIFIER
+	tristate "Enable PTP Notifier"
+	depends on ARCH_TEGRA_18x_SOC
+	default y if EQOS
+
+config TEGRA_SAFETY_SCE
+	tristate "Enable CCPLEX-SCE communication Driver for Safety"
+	depends on ARCH_TEGRA_18x_SOC
+	select NV_TEGRA_IVC
+	select TEGRA_HSP
+	help
+	  This enables communication between CCPLEX and SCE over IVC channel.
+	  This also provides a userspace command response interface as
+	  character device which will be used by other safety modules.
+
+config TEGRA_19X_RAS
+	tristate "Tegra19 RAS Handler"
+	depends on ARCH_TEGRA_19x_SOC && RAS && ARM64_RAS
+	default y
+	select SERROR_HANDLER
+	help
+	  This driver adds RAS handlers for Carmel Correctable Errors,
+	  Uncorrectable Errors per core, per core cluster and per CCPLEX
+
+config TEGRA_CBB_NOC
+	tristate "Tegar19x CBB NOC Bridge Error handler"
+	depends on ARCH_TEGRA_19x_SOC
+	default y
+	select SERROR_HANDLER
+	help
+	  The Tegra Control Backbone(CBB)/Network-on-chip(NOC) error handler.
+	  This drivers handles SError from bridges due to failed transactions.
+
+config POWERGATE_TEGRA_BPMP
+        def_bool NV_TEGRA_BPMP
+
+config TEGRA_HV_XHCI_DEBUG
+	bool "Enable Tegra Hypervisor XHCI Server Debug"
+	depends on TEGRA_HV_MANAGER
+	default n
+	help
+	  Enable Tegra XHCI Server debugging when runs in virtualization.
+
+config TEGRA_HSP
+	bool "Enable Tegra Hardware Synchronization Primitives driver"
+	default y
+
+config TEGRA_NVDUMPER
+	bool "Enable nvdumper"
+	depends on ARCH_TEGRA
+	default n
+	help
+	  This is debug feature to dump whole memory when system crashes.
+
+config TEGRA_CENTRAL_ACTMON
+	bool "Tegra Activity Monitor"
+	depends on ARCH_TEGRA
+	default n
+	help
+	  Actmon is a hardware block that can be used to track the activity of
+	  certain hardware units. It can boost EMC clock depending
+	  on the memory trafic among various client. It is called central actmon
+	  as it monitors central activity for example MC activity. HW fabric of
+	  central and unit actmon is different. If unsure, say Y here.
+
+config TEGRA_FIRMWARES_CLASS
+	bool
+	default n
+
+config TEGRA_FIRMWARES_INVENTORY
+	tristate "Tegra firmwares inventory"
+	select TEGRA_FIRMWARES_CLASS
+	default y
+	help
+	  Register version readers for firmwares
+
+config TEGRA_FIQ_DEBUGGER
+	bool "Enable the FIQ serial debugger on Tegra"
+	default n
+	select FIQ_DEBUGGER
+	select FIQ_GLUE
+	help
+	  Enables the FIQ serial debugger on Tegra
+
+config TEGRA_BOOTLOADER_DEBUG
+	tristate "Creates sys-fs interface dumping registers read by bootloader"
+	default n
+	select TEGRA_BOOTLOADER_DEBUG_INIT
+	help
+	  When enabled, tegra_bootloader_verify_regs sys-fs is created.
+
+config TEGRA_BOOTLOADER_DEBUG_INIT
+	bool
+	depends on TEGRA_BOOTLOADER_DEBUG
+
+config TEGRA_BOOTLOADER_BOOT_CFG
+	tristate "Creates sysfs interface for BCP data"
+	depends on TEGRA_BOOTLOADER_DEBUG_INIT
+	default n
+	help
+	  When enabled, boot_cfg sys-fs is created.
+
+config NV_TEGRA_IVC
+	bool "Tegra IVC protocol support (Downstream version)"
+	default n
+	help
+	  Enable the Tegra IVC library, which implements a lockless, shared-
+	  memory queue.
+
+config TEGRA_CPU_TOPOLOGY_DEBUGFS
+	bool "Tegra CPU topology in debugfs"
+	depends on ARCH_TEGRA_18x_SOC
+	default n
+	help
+	  When enabled, make symbolic links to cpux (sysfs nodes) inside directories
+	  in debugfs, build as per cpu type available for classifiying the cpus.
+
+config TEGRA_CPU_TOPOLOGY_SYSFS
+	tristate "Tegra CPU topology in sysfs"
+	depends on ARCH_TEGRA_18x_SOC
+	default m
+	help
+	  When enabled, make symbolic links to cpux (sysfs nodes) inside directories
+	  in sysfs, build as per cpu type available for classifiying the cpus.
+
+source "drivers/platform/tegra/nvadsp/Kconfig"

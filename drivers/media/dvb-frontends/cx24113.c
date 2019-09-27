@@ -1,10 +1,24 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  *  Driver for Conexant CX24113/CX24128 Tuner (Satellite)
  *
  *  Copyright (C) 2007-8 Patrick Boettcher <pb@linuxtv.org>
  *
  *  Developed for BBTI / Technisat
+ *
+ *  This program is free software; you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License as published by
+ *  the Free Software Foundation; either version 2 of the License, or
+ *  (at your option) any later version.
+ *
+ *  This program is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *
+ *  GNU General Public License for more details.
+ *
+ *  You should have received a copy of the GNU General Public License
+ *  along with this program; if not, write to the Free Software
+ *  Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  */
 
 #include <linux/slab.h>
@@ -12,7 +26,7 @@
 #include <linux/module.h>
 #include <linux/init.h>
 
-#include <media/dvb_frontend.h>
+#include "dvb_frontend.h"
 #include "cx24113.h"
 
 static int debug;
@@ -94,8 +108,8 @@ static int cx24113_writereg(struct cx24113_state *state, int reg, int data)
 		.flags = 0, .buf = buf, .len = 2 };
 	int err = i2c_transfer(state->i2c, &msg, 1);
 	if (err != 1) {
-		printk(KERN_DEBUG "%s: writereg error(err == %i, reg == 0x%02x, data == 0x%02x)\n",
-		       __func__, err, reg, data);
+		printk(KERN_DEBUG "%s: writereg error(err == %i, reg == 0x%02x,"
+			 " data == 0x%02x)\n", __func__, err, reg, data);
 		return err;
 	}
 
@@ -513,20 +527,21 @@ static int cx24113_get_frequency(struct dvb_frontend *fe, u32 *frequency)
 	return 0;
 }
 
-static void cx24113_release(struct dvb_frontend *fe)
+static int cx24113_release(struct dvb_frontend *fe)
 {
 	struct cx24113_state *state = fe->tuner_priv;
 	dprintk("\n");
 	fe->tuner_priv = NULL;
 	kfree(state);
+	return 0;
 }
 
 static const struct dvb_tuner_ops cx24113_tuner_ops = {
 	.info = {
-		.name              = "Conexant CX24113",
-		.frequency_min_hz  =  950 * MHz,
-		.frequency_max_hz  = 2150 * MHz,
-		.frequency_step_hz =  125 * kHz,
+		.name           = "Conexant CX24113",
+		.frequency_min  = 950000,
+		.frequency_max  = 2150000,
+		.frequency_step = 125,
 	},
 
 	.release       = cx24113_release,
@@ -542,11 +557,13 @@ struct dvb_frontend *cx24113_attach(struct dvb_frontend *fe,
 		const struct cx24113_config *config, struct i2c_adapter *i2c)
 {
 	/* allocate memory for the internal state */
-	struct cx24113_state *state = kzalloc(sizeof(*state), GFP_KERNEL);
+	struct cx24113_state *state =
+		kzalloc(sizeof(struct cx24113_state), GFP_KERNEL);
 	int rc;
-
-	if (!state)
-		return NULL;
+	if (state == NULL) {
+		cx_err("Unable to kzalloc\n");
+		goto error;
+	}
 
 	/* setup the state */
 	state->config = config;

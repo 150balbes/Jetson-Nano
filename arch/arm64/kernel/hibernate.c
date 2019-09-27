@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*:
  * Hibernate support specific for ARM64
  *
@@ -12,6 +11,8 @@
  *  https://patchwork.kernel.org/patch/96442/
  *
  * Copyright (C) 2006 Rafael J. Wysocki <rjw@sisk.pl>
+ *
+ * License terms: GNU General Public License (GPL) version 2
  */
 #define pr_fmt(x) "hibernate: " x
 #include <linux/cpu.h>
@@ -26,9 +27,7 @@
 #include <asm/barrier.h>
 #include <asm/cacheflush.h>
 #include <asm/cputype.h>
-#include <asm/daifflags.h>
 #include <asm/irqflags.h>
-#include <asm/kexec.h>
 #include <asm/memory.h>
 #include <asm/mmu_context.h>
 #include <asm/pgalloc.h>
@@ -103,8 +102,7 @@ int pfn_is_nosave(unsigned long pfn)
 	unsigned long nosave_begin_pfn = sym_to_pfn(&__nosave_begin);
 	unsigned long nosave_end_pfn = sym_to_pfn(&__nosave_end - 1);
 
-	return ((pfn >= nosave_begin_pfn) && (pfn <= nosave_end_pfn)) ||
-		crash_is_nosave(pfn);
+	return (pfn >= nosave_begin_pfn) && (pfn <= nosave_end_pfn);
 }
 
 void notrace save_processor_state(void)
@@ -135,7 +133,7 @@ int arch_hibernation_header_save(void *addr, unsigned int max_size)
 
 	/* Save the mpidr of the cpu we called cpu_suspend() on... */
 	if (sleep_cpu < 0) {
-		pr_err("Failing to hibernate on an unknown CPU.\n");
+		pr_err("Failing to hibernate on an unkown CPU.\n");
 		return -ENODEV;
 	}
 	hdr->sleep_cpu_mpidr = cpu_logical_map(sleep_cpu);
@@ -201,10 +199,10 @@ static int create_safe_exec_page(void *src_start, size_t length,
 				 gfp_t mask)
 {
 	int rc = 0;
-	pgd_t *pgdp;
-	pud_t *pudp;
-	pmd_t *pmdp;
-	pte_t *ptep;
+	pgd_t *pgd;
+	pud_t *pud;
+	pmd_t *pmd;
+	pte_t *pte;
 	unsigned long dst = (unsigned long)allocator(mask);
 
 	if (!dst) {
@@ -213,40 +211,41 @@ static int create_safe_exec_page(void *src_start, size_t length,
 	}
 
 	memcpy((void *)dst, src_start, length);
-	__flush_icache_range(dst, dst + length);
+	flush_icache_range(dst, dst + length);
 
-	pgdp = pgd_offset_raw(allocator(mask), dst_addr);
-	if (pgd_none(READ_ONCE(*pgdp))) {
-		pudp = allocator(mask);
-		if (!pudp) {
+	pgd = pgd_offset_raw(allocator(mask), dst_addr);
+	if (pgd_none(*pgd)) {
+		pud = allocator(mask);
+		if (!pud) {
 			rc = -ENOMEM;
 			goto out;
 		}
-		pgd_populate(&init_mm, pgdp, pudp);
+		pgd_populate(&init_mm, pgd, pud);
 	}
 
-	pudp = pud_offset(pgdp, dst_addr);
-	if (pud_none(READ_ONCE(*pudp))) {
-		pmdp = allocator(mask);
-		if (!pmdp) {
+	pud = pud_offset(pgd, dst_addr);
+	if (pud_none(*pud)) {
+		pmd = allocator(mask);
+		if (!pmd) {
 			rc = -ENOMEM;
 			goto out;
 		}
-		pud_populate(&init_mm, pudp, pmdp);
+		pud_populate(&init_mm, pud, pmd);
 	}
 
-	pmdp = pmd_offset(pudp, dst_addr);
-	if (pmd_none(READ_ONCE(*pmdp))) {
-		ptep = allocator(mask);
-		if (!ptep) {
+	pmd = pmd_offset(pud, dst_addr);
+	if (pmd_none(*pmd)) {
+		pte = allocator(mask);
+		if (!pte) {
 			rc = -ENOMEM;
 			goto out;
 		}
-		pmd_populate_kernel(&init_mm, pmdp, ptep);
+		pmd_populate_kernel(&init_mm, pmd, pte);
 	}
 
-	ptep = pte_offset_kernel(pmdp, dst_addr);
-	set_pte(ptep, pfn_pte(virt_to_pfn(dst), PAGE_KERNEL_EXEC));
+	pte = pte_offset_kernel(pmd, dst_addr);
+	set_pte(pte, __pte(virt_to_phys((void *)dst) |
+			 pgprot_val(PAGE_KERNEL_EXEC)));
 
 	/*
 	 * Load our new page tables. A strict BBM approach requires that we
@@ -262,7 +261,7 @@ static int create_safe_exec_page(void *src_start, size_t length,
 	 */
 	cpu_set_reserved_ttbr0();
 	local_flush_tlb_all();
-	write_sysreg(phys_to_ttbr(virt_to_phys(pgdp)), ttbr0_el1);
+	write_sysreg(virt_to_phys(pgd), ttbr0_el1);
 	isb();
 
 	*phys_dst_addr = virt_to_phys((void *)dst);
@@ -284,12 +283,9 @@ int swsusp_arch_suspend(void)
 		return -EBUSY;
 	}
 
-	flags = local_daif_save();
+	local_dbg_save(flags);
 
 	if (__cpu_suspend_enter(&state)) {
-		/* make the crash dump kernel image visible/saveable */
-		crash_prepare_suspend();
-
 		sleep_cpu = smp_processor_id();
 		ret = swsusp_save();
 	} else {
@@ -298,13 +294,8 @@ int swsusp_arch_suspend(void)
 		dcache_clean_range(__idmap_text_start, __idmap_text_end);
 
 		/* Clean kvm setup code to PoC? */
-		if (el2_reset_needed()) {
+		if (el2_reset_needed())
 			dcache_clean_range(__hyp_idmap_text_start, __hyp_idmap_text_end);
-			dcache_clean_range(__hyp_text_start, __hyp_text_end);
-		}
-
-		/* make the crash dump kernel image protected again */
-		crash_post_resume();
 
 		/*
 		 * Tell the hibernation core that we've just restored
@@ -327,14 +318,14 @@ int swsusp_arch_suspend(void)
 		}
 	}
 
-	local_daif_restore(flags);
+	local_dbg_restore(flags);
 
 	return ret;
 }
 
-static void _copy_pte(pte_t *dst_ptep, pte_t *src_ptep, unsigned long addr)
+static void _copy_pte(pte_t *dst_pte, pte_t *src_pte, unsigned long addr)
 {
-	pte_t pte = READ_ONCE(*src_ptep);
+	pte_t pte = *src_pte;
 
 	if (pte_valid(pte)) {
 		/*
@@ -342,7 +333,7 @@ static void _copy_pte(pte_t *dst_ptep, pte_t *src_ptep, unsigned long addr)
 		 * read only (code, rodata). Clear the RDONLY bit from
 		 * the temporary mappings we use during restore.
 		 */
-		set_pte(dst_ptep, pte_mkwrite(pte));
+		set_pte(dst_pte, pte_clear_rdonly(pte));
 	} else if (debug_pagealloc_enabled() && !pte_none(pte)) {
 		/*
 		 * debug_pagealloc will removed the PTE_VALID bit if
@@ -355,116 +346,112 @@ static void _copy_pte(pte_t *dst_ptep, pte_t *src_ptep, unsigned long addr)
 		 */
 		BUG_ON(!pfn_valid(pte_pfn(pte)));
 
-		set_pte(dst_ptep, pte_mkpresent(pte_mkwrite(pte)));
+		set_pte(dst_pte, pte_mkpresent(pte_clear_rdonly(pte)));
 	}
 }
 
-static int copy_pte(pmd_t *dst_pmdp, pmd_t *src_pmdp, unsigned long start,
+static int copy_pte(pmd_t *dst_pmd, pmd_t *src_pmd, unsigned long start,
 		    unsigned long end)
 {
-	pte_t *src_ptep;
-	pte_t *dst_ptep;
+	pte_t *src_pte;
+	pte_t *dst_pte;
 	unsigned long addr = start;
 
-	dst_ptep = (pte_t *)get_safe_page(GFP_ATOMIC);
-	if (!dst_ptep)
+	dst_pte = (pte_t *)get_safe_page(GFP_ATOMIC);
+	if (!dst_pte)
 		return -ENOMEM;
-	pmd_populate_kernel(&init_mm, dst_pmdp, dst_ptep);
-	dst_ptep = pte_offset_kernel(dst_pmdp, start);
+	pmd_populate_kernel(&init_mm, dst_pmd, dst_pte);
+	dst_pte = pte_offset_kernel(dst_pmd, start);
 
-	src_ptep = pte_offset_kernel(src_pmdp, start);
+	src_pte = pte_offset_kernel(src_pmd, start);
 	do {
-		_copy_pte(dst_ptep, src_ptep, addr);
-	} while (dst_ptep++, src_ptep++, addr += PAGE_SIZE, addr != end);
+		_copy_pte(dst_pte, src_pte, addr);
+	} while (dst_pte++, src_pte++, addr += PAGE_SIZE, addr != end);
 
 	return 0;
 }
 
-static int copy_pmd(pud_t *dst_pudp, pud_t *src_pudp, unsigned long start,
+static int copy_pmd(pud_t *dst_pud, pud_t *src_pud, unsigned long start,
 		    unsigned long end)
 {
-	pmd_t *src_pmdp;
-	pmd_t *dst_pmdp;
+	pmd_t *src_pmd;
+	pmd_t *dst_pmd;
 	unsigned long next;
 	unsigned long addr = start;
 
-	if (pud_none(READ_ONCE(*dst_pudp))) {
-		dst_pmdp = (pmd_t *)get_safe_page(GFP_ATOMIC);
-		if (!dst_pmdp)
+	if (pud_none(*dst_pud)) {
+		dst_pmd = (pmd_t *)get_safe_page(GFP_ATOMIC);
+		if (!dst_pmd)
 			return -ENOMEM;
-		pud_populate(&init_mm, dst_pudp, dst_pmdp);
+		pud_populate(&init_mm, dst_pud, dst_pmd);
 	}
-	dst_pmdp = pmd_offset(dst_pudp, start);
+	dst_pmd = pmd_offset(dst_pud, start);
 
-	src_pmdp = pmd_offset(src_pudp, start);
+	src_pmd = pmd_offset(src_pud, start);
 	do {
-		pmd_t pmd = READ_ONCE(*src_pmdp);
-
 		next = pmd_addr_end(addr, end);
-		if (pmd_none(pmd))
+		if (pmd_none(*src_pmd))
 			continue;
-		if (pmd_table(pmd)) {
-			if (copy_pte(dst_pmdp, src_pmdp, addr, next))
+		if (pmd_table(*src_pmd)) {
+			if (copy_pte(dst_pmd, src_pmd, addr, next))
 				return -ENOMEM;
 		} else {
-			set_pmd(dst_pmdp,
-				__pmd(pmd_val(pmd) & ~PMD_SECT_RDONLY));
+			set_pmd(dst_pmd,
+				__pmd(pmd_val(*src_pmd) & ~PMD_SECT_RDONLY));
 		}
-	} while (dst_pmdp++, src_pmdp++, addr = next, addr != end);
+	} while (dst_pmd++, src_pmd++, addr = next, addr != end);
 
 	return 0;
 }
 
-static int copy_pud(pgd_t *dst_pgdp, pgd_t *src_pgdp, unsigned long start,
+static int copy_pud(pgd_t *dst_pgd, pgd_t *src_pgd, unsigned long start,
 		    unsigned long end)
 {
-	pud_t *dst_pudp;
-	pud_t *src_pudp;
+	pud_t *dst_pud;
+	pud_t *src_pud;
 	unsigned long next;
 	unsigned long addr = start;
 
-	if (pgd_none(READ_ONCE(*dst_pgdp))) {
-		dst_pudp = (pud_t *)get_safe_page(GFP_ATOMIC);
-		if (!dst_pudp)
+	if (pgd_none(*dst_pgd)) {
+		dst_pud = (pud_t *)get_safe_page(GFP_ATOMIC);
+		if (!dst_pud)
 			return -ENOMEM;
-		pgd_populate(&init_mm, dst_pgdp, dst_pudp);
+		pgd_populate(&init_mm, dst_pgd, dst_pud);
 	}
-	dst_pudp = pud_offset(dst_pgdp, start);
+	dst_pud = pud_offset(dst_pgd, start);
 
-	src_pudp = pud_offset(src_pgdp, start);
+	src_pud = pud_offset(src_pgd, start);
 	do {
-		pud_t pud = READ_ONCE(*src_pudp);
-
 		next = pud_addr_end(addr, end);
-		if (pud_none(pud))
+		if (pud_none(*src_pud))
 			continue;
-		if (pud_table(pud)) {
-			if (copy_pmd(dst_pudp, src_pudp, addr, next))
+		if (pud_table(*(src_pud))) {
+			if (copy_pmd(dst_pud, src_pud, addr, next))
 				return -ENOMEM;
 		} else {
-			set_pud(dst_pudp,
-				__pud(pud_val(pud) & ~PMD_SECT_RDONLY));
+			set_pud(dst_pud,
+				__pud(pud_val(*src_pud) & ~PMD_SECT_RDONLY));
 		}
-	} while (dst_pudp++, src_pudp++, addr = next, addr != end);
+	} while (dst_pud++, src_pud++, addr = next, addr != end);
 
 	return 0;
 }
 
-static int copy_page_tables(pgd_t *dst_pgdp, unsigned long start,
+static int copy_page_tables(pgd_t *dst_pgd, unsigned long start,
 			    unsigned long end)
 {
 	unsigned long next;
 	unsigned long addr = start;
-	pgd_t *src_pgdp = pgd_offset_k(start);
+	pgd_t *src_pgd = pgd_offset_k(start);
 
-	dst_pgdp = pgd_offset_raw(dst_pgdp, start);
+	dst_pgd = pgd_offset_raw(dst_pgd, start);
 	do {
 		next = pgd_addr_end(addr, end);
-		if (pgd_none(READ_ONCE(*src_pgdp)))
+		if (pgd_none(*src_pgd))
 			continue;
-		if (copy_pud(dst_pgdp, src_pgdp, addr, next))
+		if (copy_pud(dst_pgd, src_pgd, addr, next))
 			return -ENOMEM;
-	} while (dst_pgdp++, src_pgdp++, addr = next, addr != end);
+	} while (dst_pgd++, src_pgd++, addr = next, addr != end);
 
 	return 0;
 }
@@ -492,7 +479,7 @@ int swsusp_arch_resume(void)
 	 */
 	tmp_pg_dir = (pgd_t *)get_safe_page(GFP_ATOMIC);
 	if (!tmp_pg_dir) {
-		pr_err("Failed to allocate memory for temporary page tables.\n");
+		pr_err("Failed to allocate memory for temporary page tables.");
 		rc = -ENOMEM;
 		goto out;
 	}
@@ -506,7 +493,7 @@ int swsusp_arch_resume(void)
 	 */
 	zero_page = (void *)get_safe_page(GFP_ATOMIC);
 	if (!zero_page) {
-		pr_err("Failed to allocate zero page.\n");
+		pr_err("Failed to allocate zero page.");
 		rc = -ENOMEM;
 		goto out;
 	}
@@ -526,7 +513,7 @@ int swsusp_arch_resume(void)
 				   &phys_hibernate_exit,
 				   (void *)get_safe_page, GFP_ATOMIC);
 	if (rc) {
-		pr_err("Failed to create safe executable page for hibernate_exit code.\n");
+		pr_err("Failed to create safe executable page for hibernate_exit code.");
 		goto out;
 	}
 
@@ -561,7 +548,7 @@ out:
 int hibernate_resume_nonboot_cpu_disable(void)
 {
 	if (sleep_cpu < 0) {
-		pr_err("Failing to resume from hibernate on an unknown CPU.\n");
+		pr_err("Failing to resume from hibernate on an unkown CPU.\n");
 		return -ENODEV;
 	}
 

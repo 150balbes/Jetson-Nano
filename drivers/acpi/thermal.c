@@ -1,9 +1,22 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  *  acpi_thermal.c - ACPI Thermal Zone Driver ($Revision: 41 $)
  *
  *  Copyright (C) 2001, 2002 Andy Grover <andrew.grover@intel.com>
  *  Copyright (C) 2001, 2002 Paul Diefenbaugh <paul.s.diefenbaugh@intel.com>
+ *
+ * ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+ *
+ *  This program is free software; you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License as published by
+ *  the Free Software Foundation; either version 2 of the License, or (at
+ *  your option) any later version.
+ *
+ *  This program is distributed in the hope that it will be useful, but
+ *  WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ *  General Public License for more details.
+ *
+ * ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
  *
  *  This driver fully implements the ACPI thermal policy as described in the
  *  ACPI 2.0 Specification.
@@ -11,6 +24,7 @@
  *  TBD: 1. Implement passive cooling hysteresis.
  *       2. Enhance passive cooling (CPU) states/limit interface to support
  *          concepts of 'multiple limiters', upper/lower limits, etc.
+ *
  */
 
 #include <linux/kernel.h>
@@ -26,7 +40,7 @@
 #include <linux/thermal.h>
 #include <linux/acpi.h>
 #include <linux/workqueue.h>
-#include <linux/uaccess.h>
+#include <asm/uaccess.h>
 
 #define PREFIX "ACPI: "
 
@@ -1195,7 +1209,7 @@ static int thermal_psv(const struct dmi_system_id *d) {
 	return 0;
 }
 
-static const struct dmi_system_id thermal_dmi_table[] __initconst = {
+static struct dmi_system_id thermal_dmi_table[] __initdata = {
 	/*
 	 * Award BIOS on this AOpen makes thermal control almost worthless.
 	 * http://bugzilla.kernel.org/show_bug.cgi?id=8842

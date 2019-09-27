@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  *pxa168 ethernet platform device data definition file.
  */

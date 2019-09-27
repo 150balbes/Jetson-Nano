@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * seq_buf.c
  *
@@ -140,17 +139,13 @@ int seq_buf_bprintf(struct seq_buf *s, const char *fmt, const u32 *binary)
  */
 int seq_buf_puts(struct seq_buf *s, const char *str)
 {
-	size_t len = strlen(str);
+	unsigned int len = strlen(str);
 
 	WARN_ON(s->size == 0);
 
-	/* Add 1 to len for the trailing null byte which must be there */
-	len += 1;
-
 	if (seq_buf_can_fit(s, len)) {
 		memcpy(s->buffer + s->len, str, len);
-		/* Don't count the trailing null byte against the capacity */
-		s->len += len - 1;
+		s->len += len;
 		return 0;
 	}
 	seq_buf_set_overflow(s);

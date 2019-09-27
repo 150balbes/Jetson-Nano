@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * APM X-Gene SoC RNG Driver
  *
@@ -6,6 +5,20 @@
  * Author: Rameshwar Prasad Sahu <rsahu@apm.com>
  *	   Shamal Winchurkar <swinchurkar@apm.com>
  *	   Feng Kan <fkan@apm.com>
+ *
+ * This program is free software; you can redistribute  it and/or modify it
+ * under  the terms of  the GNU General  Public License as published by the
+ * Free Software Foundation;  either version 2 of the  License, or (at your
+ * option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ *
  */
 
 #include <linux/acpi.h>
@@ -87,9 +100,9 @@ struct xgene_rng_dev {
 	struct clk *clk;
 };
 
-static void xgene_rng_expired_timer(struct timer_list *t)
+static void xgene_rng_expired_timer(unsigned long arg)
 {
-	struct xgene_rng_dev *ctx = from_timer(ctx, t, failure_timer);
+	struct xgene_rng_dev *ctx = (struct xgene_rng_dev *) arg;
 
 	/* Clear failure counter as timer expired */
 	disable_irq(ctx->irq);
@@ -100,6 +113,8 @@ static void xgene_rng_expired_timer(struct timer_list *t)
 
 static void xgene_rng_start_timer(struct xgene_rng_dev *ctx)
 {
+	ctx->failure_timer.data = (unsigned long) ctx;
+	ctx->failure_timer.function = xgene_rng_expired_timer;
 	ctx->failure_timer.expires = jiffies + 120 * HZ;
 	add_timer(&ctx->failure_timer);
 }
@@ -277,7 +292,7 @@ static int xgene_rng_init(struct hwrng *rng)
 	struct xgene_rng_dev *ctx = (struct xgene_rng_dev *) rng->priv;
 
 	ctx->failure_cnt = 0;
-	timer_setup(&ctx->failure_timer, xgene_rng_expired_timer, 0);
+	init_timer(&ctx->failure_timer);
 
 	ctx->revision = readl(ctx->csr_base + RNG_EIP_REV);
 

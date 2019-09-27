@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  *  linux/fs/sysv/balloc.c
  *
@@ -232,7 +231,7 @@ trust_sb:
 Ecount:
 	printk("sysv_count_free_blocks: free block count was %d, "
 		"correcting to %d\n", sb_count, count);
-	if (!sb_rdonly(sb)) {
+	if (!(sb->s_flags & MS_RDONLY)) {
 		*sbi->s_free_blocks = cpu_to_fs32(sbi, count);
 		dirty_sb(sb);
 	}

@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /* auxio.c: Probing for the Sparc AUXIO register at boot time.
  *
  * Copyright (C) 1996 David S. Miller (davem@caip.rutgers.edu)
@@ -108,22 +107,23 @@ static int auxio_probe(struct platform_device *dev)
 	struct device_node *dp = dev->dev.of_node;
 	unsigned long size;
 
-	if (of_node_name_eq(dp->parent, "ebus")) {
+	if (!strcmp(dp->parent->name, "ebus")) {
 		auxio_devtype = AUXIO_TYPE_EBUS;
 		size = sizeof(u32);
-	} else if (of_node_name_eq(dp->parent, "sbus")) {
+	} else if (!strcmp(dp->parent->name, "sbus")) {
 		auxio_devtype = AUXIO_TYPE_SBUS;
 		size = 1;
 	} else {
-		printk("auxio: Unknown parent bus type [%pOFn]\n",
-		       dp->parent);
+		printk("auxio: Unknown parent bus type [%s]\n",
+		       dp->parent->name);
 		return -ENODEV;
 	}
 	auxio_register = of_ioremap(&dev->resource[0], 0, size, "auxio");
 	if (!auxio_register)
 		return -ENODEV;
 
-	printk(KERN_INFO "AUXIO: Found device at %pOF\n", dp);
+	printk(KERN_INFO "AUXIO: Found device at %s\n",
+	       dp->full_name);
 
 	if (auxio_devtype == AUXIO_TYPE_EBUS)
 		auxio_set_led(AUXIO_LED_ON);

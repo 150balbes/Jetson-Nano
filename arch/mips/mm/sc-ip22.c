@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * sc-ip22.c: Indy cache management functions.
  *

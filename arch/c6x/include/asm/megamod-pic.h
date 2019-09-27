@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _C6X_MEGAMOD_PIC_H
 #define _C6X_MEGAMOD_PIC_H
 

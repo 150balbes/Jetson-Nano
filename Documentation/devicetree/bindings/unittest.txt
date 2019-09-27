@@ -10,6 +10,7 @@ All other properties are optional.
 Example:
 	unittest {
 		compatible = "unittest";
+		status = "okay";
 	};
 
 2) OF unittest i2c adapter platform device
@@ -24,6 +25,7 @@ Children nodes contain unittest i2c devices.
 Example:
 	unittest-i2c-bus {
 		compatible = "unittest-i2c-bus";
+		status = "okay";
 	};
 
 3) OF unittest i2c device
@@ -38,6 +40,7 @@ All other properties are optional
 Example:
 	unittest-i2c-dev {
 		compatible = "unittest-i2c-dev";
+		status = "okay";
 	};
 
 4) OF unittest i2c mux device
@@ -52,6 +55,7 @@ Children nodes contain unittest i2c bus nodes per channel.
 Example:
 	unittest-i2c-mux {
 		compatible = "unittest-i2c-mux";
+		status = "okay";
 		#address-cells = <1>;
 		#size-cells = <0>;
 		channel-0 {
@@ -61,6 +65,7 @@ Example:
 			i2c-dev {
 				reg = <8>;
 				compatible = "unittest-i2c-dev";
+				status = "okay";
 			};
 		};
 	};

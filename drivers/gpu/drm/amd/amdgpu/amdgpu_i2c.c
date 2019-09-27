@@ -23,10 +23,9 @@
  * Authors: Dave Airlie
  *          Alex Deucher
  */
-
 #include <linux/export.h>
-#include <linux/pci.h>
 
+#include <drm/drmP.h>
 #include <drm/drm_edid.h>
 #include <drm/amdgpu_drm.h>
 #include "amdgpu.h"
@@ -232,7 +231,8 @@ void amdgpu_i2c_init(struct amdgpu_device *adev)
 	if (amdgpu_hw_i2c)
 		DRM_INFO("hw_i2c forced on, you may experience display detection problems!\n");
 
-	amdgpu_atombios_i2c_init(adev);
+	if (adev->is_atom_bios)
+		amdgpu_atombios_i2c_init(adev);
 }
 
 /* remove all the buses */

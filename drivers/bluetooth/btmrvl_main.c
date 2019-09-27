@@ -183,18 +183,18 @@ static int btmrvl_send_sync_cmd(struct btmrvl_private *priv, u16 opcode,
 		return -EFAULT;
 	}
 
-	skb = bt_skb_alloc(HCI_COMMAND_HDR_SIZE + len, GFP_KERNEL);
+	skb = bt_skb_alloc(HCI_COMMAND_HDR_SIZE + len, GFP_ATOMIC);
 	if (!skb) {
 		BT_ERR("No free skb");
 		return -ENOMEM;
 	}
 
-	hdr = skb_put(skb, HCI_COMMAND_HDR_SIZE);
+	hdr = (struct hci_command_hdr *)skb_put(skb, HCI_COMMAND_HDR_SIZE);
 	hdr->opcode = cpu_to_le16(opcode);
 	hdr->plen = len;
 
 	if (len)
-		skb_put_data(skb, param, len);
+		memcpy(skb_put(skb, len), param, len);
 
 	hci_skb_pkt_type(skb) = MRVL_VENDOR_PKT;
 
@@ -358,6 +358,12 @@ int btmrvl_prepare_command(struct btmrvl_private *priv)
 	return ret;
 }
 
+void btmrvl_firmware_dump(struct btmrvl_private *priv)
+{
+	if (priv->firmware_dump)
+		priv->firmware_dump(priv);
+}
+
 static int btmrvl_tx_pkt(struct btmrvl_private *priv, struct sk_buff *skb)
 {
 	int ret = 0;
@@ -496,7 +502,7 @@ static int btmrvl_download_cal_data(struct btmrvl_private *priv,
 	ret = btmrvl_send_sync_cmd(priv, BT_CMD_LOAD_CONFIG_DATA, data,
 				   BT_CAL_HDR_LEN + len);
 	if (ret)
-		BT_ERR("Failed to download calibration data");
+		BT_ERR("Failed to download caibration data");
 
 	return 0;
 }
@@ -596,7 +602,7 @@ static int btmrvl_service_main_thread(void *data)
 	struct btmrvl_thread *thread = data;
 	struct btmrvl_private *priv = thread->priv;
 	struct btmrvl_adapter *adapter = priv->adapter;
-	wait_queue_entry_t wait;
+	wait_queue_t wait;
 	struct sk_buff *skb;
 	ulong flags;
 

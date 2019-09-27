@@ -1,0 +1,20 @@
+if SPI
+if SPI_MASTER
+
+config SPI_TEGRA186_AON
+	bool "Tegra18x AON SPI proxy driver"
+	depends on ARCH_TEGRA_18x_SOC
+	default y
+	select NV_TEGRA_IVC
+	select TEGRA_HSP
+
+endif
+
+config SPI_AURIX_TEGRA
+	tristate "Nvidia Aurix-Tegra SPI Protocol Driver"
+	depends on SPI_TEGRA124_SLAVE && TEGRA_HV_PM_CTL
+	default n
+	help
+	 SPI protocol driver for communication between Aurix and Tegra
+
+endif

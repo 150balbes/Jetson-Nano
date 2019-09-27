@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * swift.S: MicroSparc-II mmu/cache operations.
  *

@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: MIT */
 #ifndef __NVBIOS_EXTDEV_H__
 #define __NVBIOS_EXTDEV_H__
 enum nvbios_extdev_type {

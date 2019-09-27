@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 #define pr_fmt(fmt) KBUILD_MODNAME ":%s: " fmt, __func__
 
 #include <linux/kernel.h>
@@ -96,7 +95,7 @@ static netdev_tx_t mpc_send_packet(struct sk_buff *skb,
 static int mpoa_event_listener(struct notifier_block *mpoa_notifier,
 			       unsigned long event, void *dev);
 static void mpc_timer_refresh(void);
-static void mpc_cache_check(struct timer_list *unused);
+static void mpc_cache_check(unsigned long checking_time);
 
 static struct llc_snap_hdr llc_snap_mpoa_ctrl = {
 	0xaa, 0xaa, 0x03,
@@ -122,7 +121,7 @@ static struct notifier_block mpoa_notifier = {
 
 struct mpoa_client *mpcs = NULL; /* FIXME */
 static struct atm_mpoa_qos *qos_head = NULL;
-static DEFINE_TIMER(mpc_timer, mpc_cache_check);
+static DEFINE_TIMER(mpc_timer, NULL, 0, 0);
 
 
 static struct mpoa_client *find_mpc_by_itfnum(int itf)
@@ -452,7 +451,7 @@ static void lane2_assoc_ind(struct net_device *dev, const u8 *mac_addr,
 			return;
 	}
 	if (end_of_tlvs - tlvs != 0)
-		pr_info("(%s) ignoring %zd bytes of trailing TLV garbage\n",
+		pr_info("(%s) ignoring %Zd bytes of trailing TLV garbage\n",
 			dev->name, end_of_tlvs - tlvs);
 }
 
@@ -473,7 +472,7 @@ static const uint8_t *copy_macs(struct mpoa_client *mpc,
 		if (mpc->number_of_mps_macs != 0)
 			kfree(mpc->mps_macs);
 		mpc->number_of_mps_macs = 0;
-		mpc->mps_macs = kmalloc_array(ETH_ALEN, num_macs, GFP_KERNEL);
+		mpc->mps_macs = kmalloc(num_macs * ETH_ALEN, GFP_KERNEL);
 		if (mpc->mps_macs == NULL) {
 			pr_info("(%s) out of mem\n", mpc->dev->name);
 			return NULL;
@@ -556,7 +555,8 @@ static int send_via_shortcut(struct sk_buff *skb, struct mpoa_client *mpc)
 					sizeof(struct llc_snap_hdr));
 	}
 
-	atm_account_tx(entry->shortcut, skb);
+	atomic_add(skb->truesize, &sk_atm(entry->shortcut)->sk_wmem_alloc);
+	ATM_SKB(skb)->atm_options = entry->shortcut->atm_options;
 	entry->shortcut->send(entry->shortcut, skb);
 	entry->packets_fwded++;
 	mpc->in_ops->put(entry);
@@ -779,7 +779,7 @@ static void mpc_push(struct atm_vcc *vcc, struct sk_buff *skb)
 	netif_rx(new_skb);
 }
 
-static const struct atmdev_ops mpc_ops = { /* only send is required */
+static struct atmdev_ops mpc_ops = { /* only send is required */
 	.close	= mpoad_close,
 	.send	= msg_from_mpoad
 };
@@ -799,6 +799,7 @@ static int atm_mpoa_mpoad_attach(struct atm_vcc *vcc, int arg)
 	int err;
 
 	if (mpcs == NULL) {
+		init_timer(&mpc_timer);
 		mpc_timer_refresh();
 
 		/* This lets us now how our LECs are doing */
@@ -910,7 +911,7 @@ static int msg_from_mpoad(struct atm_vcc *vcc, struct sk_buff *skb)
 
 	struct mpoa_client *mpc = find_mpc_by_vcc(vcc);
 	struct k_message *mesg = (struct k_message *)skb->data;
-	WARN_ON(refcount_sub_and_test(skb->truesize, &sk_atm(vcc)->sk_wmem_alloc));
+	atomic_sub(skb->truesize, &sk_atm(vcc)->sk_wmem_alloc);
 
 	if (mpc == NULL) {
 		pr_info("no mpc found\n");
@@ -1089,7 +1090,7 @@ static void MPOA_trigger_rcvd(struct k_message *msg, struct mpoa_client *mpc)
 		msg->type = SND_MPOA_RES_RQST;
 		msg->content.in_info = entry->ctrl_info;
 		msg_to_mpoad(msg, mpc);
-		entry->reply_wait = ktime_get_seconds();
+		do_gettimeofday(&(entry->reply_wait));
 		mpc->in_ops->put(entry);
 		return;
 	}
@@ -1099,7 +1100,7 @@ static void MPOA_trigger_rcvd(struct k_message *msg, struct mpoa_client *mpc)
 		msg->type = SND_MPOA_RES_RQST;
 		msg->content.in_info = entry->ctrl_info;
 		msg_to_mpoad(msg, mpc);
-		entry->reply_wait = ktime_get_seconds();
+		do_gettimeofday(&(entry->reply_wait));
 		mpc->in_ops->put(entry);
 		return;
 	}
@@ -1175,9 +1176,8 @@ static void MPOA_res_reply_rcvd(struct k_message *msg, struct mpoa_client *mpc)
 	}
 
 	entry->ctrl_info = msg->content.in_info;
-	entry->time = ktime_get_seconds();
-	/* Used in refreshing func from now on */
-	entry->reply_wait = ktime_get_seconds();
+	do_gettimeofday(&(entry->tv));
+	do_gettimeofday(&(entry->reply_wait)); /* Used in refreshing func from now on */
 	entry->refresh_time = 0;
 	ddprintk_cont("entry->shortcut = %p\n", entry->shortcut);
 
@@ -1408,16 +1408,15 @@ static void clean_up(struct k_message *msg, struct mpoa_client *mpc, int action)
 	msg_to_mpoad(msg, mpc);
 }
 
-static unsigned long checking_time;
-
 static void mpc_timer_refresh(void)
 {
 	mpc_timer.expires = jiffies + (MPC_P2 * HZ);
-	checking_time = mpc_timer.expires;
+	mpc_timer.data = mpc_timer.expires;
+	mpc_timer.function = mpc_cache_check;
 	add_timer(&mpc_timer);
 }
 
-static void mpc_cache_check(struct timer_list *unused)
+static void mpc_cache_check(unsigned long checking_time)
 {
 	struct mpoa_client *mpc = mpcs;
 	static unsigned long previous_resolving_check_time;

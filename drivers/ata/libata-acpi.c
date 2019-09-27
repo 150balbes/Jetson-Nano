@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * libata-acpi.c
  * Provides ACPI support for PATA/SATA.

@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 
 #include <dt-bindings/gpio/gpio.h>
 
@@ -71,19 +70,6 @@
 			pins = "gpio32";
 			drive-strength = <2>;
 			bias-disable;
-		};
-	};
-
-	msm_key_volp_n_default: msm_key_volp_n_default {
-		pinmux {
-			function = "gpio";
-			pins = "gpio107";
-		};
-		pinconf {
-			pins = "gpio107";
-			drive-strength = <8>;
-			input-enable;
-			bias-pull-up;
 		};
 	};
 };

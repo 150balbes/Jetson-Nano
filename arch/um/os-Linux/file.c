@@ -610,13 +610,3 @@ unsigned long long os_makedev(unsigned major, unsigned minor)
 {
 	return makedev(major, minor);
 }
-
-int os_falloc_punch(int fd, unsigned long long offset, int len)
-{
-	int n = fallocate(fd, FALLOC_FL_PUNCH_HOLE|FALLOC_FL_KEEP_SIZE, offset, len);
-
-	if (n < 0)
-		return -errno;
-	return n;
-}
-

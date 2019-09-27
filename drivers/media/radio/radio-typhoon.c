@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /* Typhoon Radio Card driver for radio support
  * (c) 1999 Dr. Henrik Seidel <Henrik.Seidel@gmx.de>
  *
@@ -26,7 +25,7 @@
  * The frequency change is necessary since the card never seems to be
  * completely silent.
  *
- * Converted to V4L2 API by Mauro Carvalho Chehab <mchehab@kernel.org>
+ * Converted to V4L2 API by Mauro Carvalho Chehab <mchehab@infradead.org>
  */
 
 #include <linux/module.h>	/* Modules                        */

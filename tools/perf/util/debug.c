@@ -1,28 +1,19 @@
-// SPDX-License-Identifier: GPL-2.0
 /* For general debugging purposes */
 
 #include "../perf.h"
 
-#include <inttypes.h>
 #include <string.h>
 #include <stdarg.h>
 #include <stdio.h>
-#include <stdlib.h>
-#include <sys/wait.h>
 #include <api/debug.h>
 #include <linux/time64.h>
-#ifdef HAVE_BACKTRACE_SUPPORT
-#include <execinfo.h>
-#endif
+
 #include "cache.h"
 #include "color.h"
 #include "event.h"
 #include "debug.h"
-#include "print_binary.h"
 #include "util.h"
 #include "target.h"
-
-#include <linux/ctype.h>
 
 int verbose;
 bool dump_trace = false, quiet = false;
@@ -113,53 +104,50 @@ int dump_printf(const char *fmt, ...)
 	return ret;
 }
 
-static int trace_event_printer(enum binary_printer_ops op,
-			       unsigned int val, void *extra, FILE *fp)
+static void trace_event_printer(enum binary_printer_ops op,
+				unsigned int val, void *extra)
 {
 	const char *color = PERF_COLOR_BLUE;
 	union perf_event *event = (union perf_event *)extra;
 	unsigned char ch = (unsigned char)val;
-	int printed = 0;
 
 	switch (op) {
 	case BINARY_PRINT_DATA_BEGIN:
-		printed += fprintf(fp, ".");
-		printed += color_fprintf(fp, color, "\n. ... raw event: size %d bytes\n",
-					 event->header.size);
+		printf(".");
+		color_fprintf(stdout, color, "\n. ... raw event: size %d bytes\n",
+				event->header.size);
 		break;
 	case BINARY_PRINT_LINE_BEGIN:
-		printed += fprintf(fp, ".");
+		printf(".");
 		break;
 	case BINARY_PRINT_ADDR:
-		printed += color_fprintf(fp, color, "  %04x: ", val);
+		color_fprintf(stdout, color, "  %04x: ", val);
 		break;
 	case BINARY_PRINT_NUM_DATA:
-		printed += color_fprintf(fp, color, " %02x", val);
+		color_fprintf(stdout, color, " %02x", val);
 		break;
 	case BINARY_PRINT_NUM_PAD:
-		printed += color_fprintf(fp, color, "   ");
+		color_fprintf(stdout, color, "   ");
 		break;
 	case BINARY_PRINT_SEP:
-		printed += color_fprintf(fp, color, "  ");
+		color_fprintf(stdout, color, "  ");
 		break;
 	case BINARY_PRINT_CHAR_DATA:
-		printed += color_fprintf(fp, color, "%c",
+		color_fprintf(stdout, color, "%c",
 			      isprint(ch) ? ch : '.');
 		break;
 	case BINARY_PRINT_CHAR_PAD:
-		printed += color_fprintf(fp, color, " ");
+		color_fprintf(stdout, color, " ");
 		break;
 	case BINARY_PRINT_LINE_END:
-		printed += color_fprintf(fp, color, "\n");
+		color_fprintf(stdout, color, "\n");
 		break;
 	case BINARY_PRINT_DATA_END:
-		printed += fprintf(fp, "\n");
+		printf("\n");
 		break;
 	default:
 		break;
 	}
-
-	return printed;
 }
 
 void trace_event(union perf_event *event)
@@ -215,24 +203,8 @@ int perf_debug_option(const char *str)
 		v = (v < 0) || (v > 10) ? 0 : v;
 	}
 
-	if (quiet)
-		v = -1;
-
 	*var->ptr = v;
 	free(s);
-	return 0;
-}
-
-int perf_quiet_option(void)
-{
-	struct debug_variable *var = &debug_variables[0];
-
-	/* disable all debug messages */
-	while (var->name) {
-		*var->ptr = -1;
-		var++;
-	}
-
 	return 0;
 }
 
@@ -254,32 +226,4 @@ DEBUG_WRAPPER(debug, 1);
 void perf_debug_setup(void)
 {
 	libapi_set_print(pr_warning_wrapper, pr_warning_wrapper, pr_debug_wrapper);
-}
-
-/* Obtain a backtrace and print it to stdout. */
-#ifdef HAVE_BACKTRACE_SUPPORT
-void dump_stack(void)
-{
-	void *array[16];
-	size_t size = backtrace(array, ARRAY_SIZE(array));
-	char **strings = backtrace_symbols(array, size);
-	size_t i;
-
-	printf("Obtained %zd stack frames.\n", size);
-
-	for (i = 0; i < size; i++)
-		printf("%s\n", strings[i]);
-
-	free(strings);
-}
-#else
-void dump_stack(void) {}
-#endif
-
-void sighandler_dump_stack(int sig)
-{
-	psignal(sig, "perf");
-	dump_stack();
-	signal(sig, SIG_DFL);
-	raise(sig);
 }

@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Xen PCI - handle PCI (INTx) and MSI infrastructure calls for PV, HVM and
  * initial domain support. We also handle the DSDT _PRT callbacks for GSI's
@@ -169,7 +168,7 @@ static int xen_setup_msi_irqs(struct pci_dev *dev, int nvec, int type)
 	if (type == PCI_CAP_ID_MSI && nvec > 1)
 		return 1;
 
-	v = kcalloc(max(1, nvec), sizeof(int), GFP_KERNEL);
+	v = kzalloc(sizeof(int) * max(1, nvec), GFP_KERNEL);
 	if (!v)
 		return -ENOMEM;
 
@@ -256,8 +255,8 @@ static int xen_hvm_setup_msi_irqs(struct pci_dev *dev, int nvec, int type)
 	return 0;
 
 error:
-	dev_err(&dev->dev, "Failed to create MSI%s! ret=%d!\n",
-		type == PCI_CAP_ID_MSI ? "" : "-X", irq);
+	dev_err(&dev->dev,
+		"Xen PCI frontend has not registered MSI/MSI-X support!\n");
 	return irq;
 }
 
@@ -410,8 +409,10 @@ int __init pci_xen_init(void)
 	pcibios_enable_irq = xen_pcifront_enable_irq;
 	pcibios_disable_irq = NULL;
 
+#ifdef CONFIG_ACPI
 	/* Keep ACPI out of the picture */
-	acpi_noirq_set();
+	acpi_noirq = 1;
+#endif
 
 #ifdef CONFIG_PCI_MSI
 	x86_msi.setup_msi_irqs = xen_setup_msi_irqs;

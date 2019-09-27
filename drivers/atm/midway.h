@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /* drivers/atm/midway.h - Efficient Networks Midway (SAR) description */
  
 /* Written 1995-1999 by Werner Almesberger, EPFL LRC/ICA */
@@ -57,7 +56,7 @@
 #define MID_CON_SUNI	0x00000040	/* 0: UTOPIA; 1: SUNI */
 #define MID_CON_V6	0x00000020	/* 0: non-pipel UTOPIA (required iff
 					   !CON_SUNI; 1: UTOPIA */
-#define DAUGHTER_ID	0x0000001f	/* daughter board id */
+#define DAUGTHER_ID	0x0000001f	/* daugther board id */
 
 /*
  * Interrupt Status Acknowledge, Interrupt Status & Interrupt Enable

@@ -32,21 +32,43 @@
 #include "iwch_provider.h"
 #include "iwch.h"
 
-static int __iwch_poll_cq_one(struct iwch_dev *rhp, struct iwch_cq *chp,
-			      struct iwch_qp *qhp, struct ib_wc *wc)
+/*
+ * Get one cq entry from cxio and map it to openib.
+ *
+ * Returns:
+ *	0			EMPTY;
+ *	1			cqe returned
+ *	-EAGAIN		caller must try again
+ *	any other -errno	fatal error
+ */
+static int iwch_poll_cq_one(struct iwch_dev *rhp, struct iwch_cq *chp,
+			    struct ib_wc *wc)
 {
-	struct t3_wq *wq = qhp ? &qhp->wq : NULL;
-	struct t3_cqe cqe;
+	struct iwch_qp *qhp = NULL;
+	struct t3_cqe cqe, *rd_cqe;
+	struct t3_wq *wq;
 	u32 credit = 0;
 	u8 cqe_flushed;
 	u64 cookie;
 	int ret = 1;
 
+	rd_cqe = cxio_next_cqe(&chp->cq);
+
+	if (!rd_cqe)
+		return 0;
+
+	qhp = get_qhp(rhp, CQE_QPID(*rd_cqe));
+	if (!qhp)
+		wq = NULL;
+	else {
+		spin_lock(&qhp->lock);
+		wq = &(qhp->wq);
+	}
 	ret = cxio_poll_cq(wq, &(chp->cq), &cqe, &cqe_flushed, &cookie,
 				   &credit);
 	if (t3a_device(chp->rhp) && credit) {
-		pr_debug("%s updating %d cq credits on id %d\n", __func__,
-			 credit, chp->cq.cqid);
+		PDBG("%s updating %d cq credits on id %d\n", __func__,
+		     credit, chp->cq.cqid);
 		cxio_hal_cq_op(&rhp->rdev, &chp->cq, CQ_CREDIT_UPDATE, credit);
 	}
 
@@ -57,15 +79,15 @@ static int __iwch_poll_cq_one(struct iwch_dev *rhp, struct iwch_cq *chp,
 	ret = 1;
 
 	wc->wr_id = cookie;
-	wc->qp = qhp ? &qhp->ibqp : NULL;
+	wc->qp = &qhp->ibqp;
 	wc->vendor_err = CQE_STATUS(cqe);
 	wc->wc_flags = 0;
 
-	pr_debug("%s qpid 0x%x type %d opcode %d status 0x%x wrid hi 0x%x lo 0x%x cookie 0x%llx\n",
-		 __func__,
-		 CQE_QPID(cqe), CQE_TYPE(cqe),
-		 CQE_OPCODE(cqe), CQE_STATUS(cqe), CQE_WRID_HI(cqe),
-		 CQE_WRID_LOW(cqe), (unsigned long long)cookie);
+	PDBG("%s qpid 0x%x type %d opcode %d status 0x%x wrid hi 0x%x "
+	     "lo 0x%x cookie 0x%llx\n", __func__,
+	     CQE_QPID(cqe), CQE_TYPE(cqe),
+	     CQE_OPCODE(cqe), CQE_STATUS(cqe), CQE_WRID_HI(cqe),
+	     CQE_WRID_LOW(cqe), (unsigned long long) cookie);
 
 	if (CQE_TYPE(cqe) == 0) {
 		if (!CQE_STATUS(cqe))
@@ -100,7 +122,8 @@ static int __iwch_poll_cq_one(struct iwch_dev *rhp, struct iwch_cq *chp,
 			wc->opcode = IB_WC_REG_MR;
 			break;
 		default:
-			pr_err("Unexpected opcode %d in the CQE received for QPID=0x%0x\n",
+			printk(KERN_ERR MOD "Unexpected opcode %d "
+			       "in the CQE received for QPID=0x%0x\n",
 			       CQE_OPCODE(cqe), CQE_QPID(cqe));
 			ret = -EINVAL;
 			goto out;
@@ -154,44 +177,14 @@ static int __iwch_poll_cq_one(struct iwch_dev *rhp, struct iwch_cq *chp,
 			wc->status = IB_WC_WR_FLUSH_ERR;
 			break;
 		default:
-			pr_err("Unexpected cqe_status 0x%x for QPID=0x%0x\n",
-			       CQE_STATUS(cqe), CQE_QPID(cqe));
+			printk(KERN_ERR MOD "Unexpected cqe_status 0x%x for "
+			       "QPID=0x%0x\n", CQE_STATUS(cqe), CQE_QPID(cqe));
 			ret = -EINVAL;
 		}
 	}
 out:
-	return ret;
-}
-
-/*
- * Get one cq entry from cxio and map it to openib.
- *
- * Returns:
- *	0			EMPTY;
- *	1			cqe returned
- *	-EAGAIN		caller must try again
- *	any other -errno	fatal error
- */
-static int iwch_poll_cq_one(struct iwch_dev *rhp, struct iwch_cq *chp,
-			    struct ib_wc *wc)
-{
-	struct iwch_qp *qhp;
-	struct t3_cqe *rd_cqe;
-	int ret;
-
-	rd_cqe = cxio_next_cqe(&chp->cq);
-
-	if (!rd_cqe)
-		return 0;
-
-	qhp = get_qhp(rhp, CQE_QPID(*rd_cqe));
-	if (qhp) {
-		spin_lock(&qhp->lock);
-		ret = __iwch_poll_cq_one(rhp, chp, qhp, wc);
+	if (wq)
 		spin_unlock(&qhp->lock);
-	} else {
-		ret = __iwch_poll_cq_one(rhp, chp, NULL, wc);
-	}
 	return ret;
 }
 
@@ -208,6 +201,9 @@ int iwch_poll_cq(struct ib_cq *ibcq, int num_entries, struct ib_wc *wc)
 
 	spin_lock_irqsave(&chp->lock, flags);
 	for (npolled = 0; npolled < num_entries; ++npolled) {
+#ifdef DEBUG
+		int i=0;
+#endif
 
 		/*
 		 * Because T3 can post CQEs that are _not_ associated
@@ -216,6 +212,9 @@ int iwch_poll_cq(struct ib_cq *ibcq, int num_entries, struct ib_wc *wc)
 		 */
 		do {
 			err = iwch_poll_cq_one(rhp, chp, wc + npolled);
+#ifdef DEBUG
+			BUG_ON(++i > 1000);
+#endif
 		} while (err == -EAGAIN);
 		if (err <= 0)
 			break;

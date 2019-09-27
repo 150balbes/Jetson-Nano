@@ -1,8 +1,9 @@
-/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (C) 2007-2009 ST-Ericsson AB
+ * License terms: GNU General Public License (GPL) version 2
  * AB3100 core access functions
  * Author: Linus Walleij <linus.walleij@stericsson.com>
+ *
  */
 
 #include <linux/regulator/machine.h>

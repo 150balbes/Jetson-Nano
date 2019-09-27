@@ -1,10 +1,23 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  *
  * device driver for philips saa7134 based TV cards
  * card-specific stuff.
  *
  * (c) 2001-04 Gerd Knorr <kraxel@bytesex.org> [SuSE Labs]
+ *
+ *  This program is free software; you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License as published by
+ *  the Free Software Foundation; either version 2 of the License, or
+ *  (at your option) any later version.
+ *
+ *  This program is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *  GNU General Public License for more details.
+ *
+ *  You should have received a copy of the GNU General Public License
+ *  along with this program; if not, write to the Free Software
+ *  Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  */
 
 #include "saa7134.h"
@@ -314,7 +327,7 @@ struct saa7134_board saa7134_boards[] = {
 		.radio_type     = UNSET,
 		.tuner_addr	= ADDR_UNSET,
 		.radio_addr	= ADDR_UNSET,
-		.empress_addr	= 0x20,
+		.empress_addr 	= 0x20,
 
 		.inputs         = {{
 			.type = SAA7134_INPUT_COMPOSITE1,
@@ -445,7 +458,7 @@ struct saa7134_board saa7134_boards[] = {
 		.radio_type     = UNSET,
 		.tuner_addr	= ADDR_UNSET,
 		.radio_addr	= ADDR_UNSET,
-		.empress_addr	= 0x20,
+		.empress_addr 	= 0x20,
 		.tda9887_conf	= TDA9887_PRESENT,
 		.gpiomask	= 0x820000,
 		.inputs		= {{
@@ -840,7 +853,7 @@ struct saa7134_board saa7134_boards[] = {
 		.radio_type     = UNSET,
 		.tuner_addr	= ADDR_UNSET,
 		.radio_addr	= ADDR_UNSET,
-		.empress_addr	= 0x20,
+		.empress_addr 	= 0x20,
 		.inputs         = {{
 			.type = SAA7134_INPUT_COMPOSITE1,
 			.vmux = 4,
@@ -997,7 +1010,7 @@ struct saa7134_board saa7134_boards[] = {
 		.radio_type     = UNSET,
 		.tuner_addr	= ADDR_UNSET,
 		.radio_addr	= ADDR_UNSET,
-		.empress_addr	= 0x20,
+		.empress_addr 	= 0x20,
 		.inputs         = {{
 			.type = SAA7134_INPUT_COMPOSITE1,
 			.vmux = 1,
@@ -1758,7 +1771,7 @@ struct saa7134_board saa7134_boards[] = {
 		.radio_type     = UNSET,
 		.tuner_addr	= ADDR_UNSET,
 		.radio_addr	= ADDR_UNSET,
-		.rds_addr	= 0x10,
+		.rds_addr 	= 0x10,
 		.tda9887_conf   = TDA9887_PRESENT,
 		.inputs         = {{
 			.type = SAA7134_INPUT_TV,
@@ -2403,7 +2416,7 @@ struct saa7134_board saa7134_boards[] = {
 		.radio_type	= UNSET,
 		.tuner_addr	= ADDR_UNSET,
 		.radio_addr	= ADDR_UNSET,
-		.empress_addr	= 0x21,
+		.empress_addr 	= 0x21,
 		.inputs		= {{
 			.type = SAA7134_INPUT_COMPOSITE0,
 			.vmux   = 0,
@@ -3619,21 +3632,6 @@ struct saa7134_board saa7134_boards[] = {
 			.vmux   = 1,
 			.amux   = TV,
 			.gpio   = 0x0200000,
-		},{
-			.type = SAA7134_INPUT_COMPOSITE1,
-			.vmux = 3,
-			.amux = LINE2,
-			.gpio = 0x0200000,
-		},{
-			.type = SAA7134_INPUT_COMPOSITE2,
-			.vmux = 0,
-			.amux = LINE2,
-			.gpio = 0x0200000,
-		},{
-			.type = SAA7134_INPUT_SVIDEO,
-			.vmux = 8,
-			.amux = LINE2,
-			.gpio = 0x0200000,
 		}},
 	},
 	[SAA7134_BOARD_ASUSTeK_P7131_HYBRID_LNA] = {
@@ -3984,13 +3982,13 @@ struct saa7134_board saa7134_boards[] = {
 	[SAA7134_BOARD_BEHOLD_407] = {
 		/*       Beholder Intl. Ltd. 2008      */
 		/*Dmitry Belimov <d.belimov@gmail.com> */
-		.name		= "Beholder BeholdTV 407",
-		.audio_clock	= 0x00187de7,
-		.tuner_type	= TUNER_PHILIPS_FM1216ME_MK3,
-		.radio_type	= UNSET,
-		.tuner_addr	= ADDR_UNSET,
-		.radio_addr	= ADDR_UNSET,
-		.tda9887_conf	= TDA9887_PRESENT,
+		.name 		= "Beholder BeholdTV 407",
+		.audio_clock 	= 0x00187de7,
+		.tuner_type 	= TUNER_PHILIPS_FM1216ME_MK3,
+		.radio_type 	= UNSET,
+		.tuner_addr 	= ADDR_UNSET,
+		.radio_addr 	= ADDR_UNSET,
+		.tda9887_conf 	= TDA9887_PRESENT,
 		.gpiomask       = 0x00008000,
 		.inputs = {{
 			.type = SAA7134_INPUT_SVIDEO,
@@ -4012,13 +4010,13 @@ struct saa7134_board saa7134_boards[] = {
 	[SAA7134_BOARD_BEHOLD_407FM] = {
 		/*       Beholder Intl. Ltd. 2008      */
 		/*Dmitry Belimov <d.belimov@gmail.com> */
-		.name		= "Beholder BeholdTV 407 FM",
-		.audio_clock	= 0x00187de7,
-		.tuner_type	= TUNER_PHILIPS_FM1216ME_MK3,
-		.radio_type	= UNSET,
-		.tuner_addr	= ADDR_UNSET,
-		.radio_addr	= ADDR_UNSET,
-		.tda9887_conf	= TDA9887_PRESENT,
+		.name 		= "Beholder BeholdTV 407 FM",
+		.audio_clock 	= 0x00187de7,
+		.tuner_type 	= TUNER_PHILIPS_FM1216ME_MK3,
+		.radio_type 	= UNSET,
+		.tuner_addr 	= ADDR_UNSET,
+		.radio_addr 	= ADDR_UNSET,
+		.tda9887_conf 	= TDA9887_PRESENT,
 		.gpiomask       = 0x00008000,
 		.inputs = {{
 			.type = SAA7134_INPUT_SVIDEO,
@@ -4109,7 +4107,7 @@ struct saa7134_board saa7134_boards[] = {
 		.radio_type     = UNSET,
 		.tuner_addr     = ADDR_UNSET,
 		.radio_addr     = ADDR_UNSET,
-		.rds_addr	= 0x10,
+		.rds_addr 	= 0x10,
 		.tda9887_conf   = TDA9887_PRESENT,
 		.gpiomask       = 0x00008000,
 		.inputs         = {{
@@ -4172,7 +4170,7 @@ struct saa7134_board saa7134_boards[] = {
 		.radio_type     = UNSET,
 		.tuner_addr     = ADDR_UNSET,
 		.radio_addr     = ADDR_UNSET,
-		.rds_addr	= 0x10,
+		.rds_addr 	= 0x10,
 		.tda9887_conf   = TDA9887_PRESENT,
 		.gpiomask       = 0x00008000,
 		.inputs         = {{
@@ -4202,7 +4200,7 @@ struct saa7134_board saa7134_boards[] = {
 		.radio_type     = UNSET,
 		.tuner_addr     = ADDR_UNSET,
 		.radio_addr     = ADDR_UNSET,
-		.rds_addr	= 0x10,
+		.rds_addr 	= 0x10,
 		.tda9887_conf   = TDA9887_PRESENT,
 		.gpiomask       = 0x00008000,
 		.inputs         = {{
@@ -4372,7 +4370,7 @@ struct saa7134_board saa7134_boards[] = {
 		.radio_type     = UNSET,
 		.tuner_addr     = ADDR_UNSET,
 		.radio_addr     = ADDR_UNSET,
-		.rds_addr	= 0x10,
+		.rds_addr 	= 0x10,
 		.tda9887_conf   = TDA9887_PRESENT,
 		.inputs         = {{
 			.type = SAA7134_INPUT_TV,
@@ -4400,7 +4398,7 @@ struct saa7134_board saa7134_boards[] = {
 		.radio_type     = UNSET,
 		.tuner_addr     = ADDR_UNSET,
 		.radio_addr     = ADDR_UNSET,
-		.rds_addr	= 0x10,
+		.rds_addr 	= 0x10,
 		.tda9887_conf   = TDA9887_PRESENT,
 		.inputs         = {{
 			.type = SAA7134_INPUT_TV,
@@ -4428,7 +4426,7 @@ struct saa7134_board saa7134_boards[] = {
 		.radio_type     = UNSET,
 		.tuner_addr     = ADDR_UNSET,
 		.radio_addr     = ADDR_UNSET,
-		.rds_addr	= 0x10,
+		.rds_addr 	= 0x10,
 		.tda9887_conf   = TDA9887_PRESENT,
 		.inputs         = {{
 			.type = SAA7134_INPUT_TV,
@@ -4456,7 +4454,7 @@ struct saa7134_board saa7134_boards[] = {
 		.radio_type     = UNSET,
 		.tuner_addr     = ADDR_UNSET,
 		.radio_addr     = ADDR_UNSET,
-		.rds_addr	= 0x10,
+		.rds_addr 	= 0x10,
 		.tda9887_conf   = TDA9887_PRESENT,
 		.inputs         = {{
 			.type = SAA7134_INPUT_TV,
@@ -4487,7 +4485,7 @@ struct saa7134_board saa7134_boards[] = {
 		.radio_type     = UNSET,
 		.tuner_addr     = ADDR_UNSET,
 		.radio_addr     = ADDR_UNSET,
-		.empress_addr	= 0x20,
+		.empress_addr 	= 0x20,
 		.tda9887_conf   = TDA9887_PRESENT,
 		.inputs         = { {
 			.type = SAA7134_INPUT_TV,
@@ -4523,7 +4521,7 @@ struct saa7134_board saa7134_boards[] = {
 		.radio_type     = UNSET,
 		.tuner_addr     = ADDR_UNSET,
 		.radio_addr     = ADDR_UNSET,
-		.empress_addr	= 0x20,
+		.empress_addr 	= 0x20,
 		.tda9887_conf   = TDA9887_PRESENT,
 		.inputs         = { {
 			.type = SAA7134_INPUT_TV,
@@ -4560,8 +4558,8 @@ struct saa7134_board saa7134_boards[] = {
 		.radio_type     = UNSET,
 		.tuner_addr     = ADDR_UNSET,
 		.radio_addr     = ADDR_UNSET,
-		.rds_addr	= 0x10,
-		.empress_addr	= 0x20,
+		.rds_addr 	= 0x10,
+		.empress_addr 	= 0x20,
 		.tda9887_conf   = TDA9887_PRESENT,
 		.inputs         = { {
 			.type = SAA7134_INPUT_TV,
@@ -5303,7 +5301,7 @@ struct saa7134_board saa7134_boards[] = {
 		.radio_type     = UNSET,
 		.tuner_addr     = ADDR_UNSET,
 		.radio_addr     = ADDR_UNSET,
-		.rds_addr	= 0x10,
+		.rds_addr 	= 0x10,
 		.tda9887_conf   = TDA9887_PRESENT,
 		.gpiomask       = 0x00008000,
 		.inputs         = {{
@@ -6414,7 +6412,7 @@ struct pci_device_id saa7134_pci_tbl[] = {
 		.vendor       = PCI_VENDOR_ID_PHILIPS,
 		.device       = PCI_DEVICE_ID_PHILIPS_SAA7133,
 		.subvendor    = 0x5168,
-		.subdevice    = 0x3502,  /* what's the difference to 0x3306 ?*/
+		.subdevice    = 0x3502,  /* whats the difference to 0x3306 ?*/
 		.driver_data  = SAA7134_BOARD_FLYDVBT_HYBRID_CARDBUS,
 	},{
 		.vendor       = PCI_VENDOR_ID_PHILIPS,
@@ -7325,7 +7323,7 @@ static void hauppauge_eeprom(struct saa7134_dev *dev, u8 *eeprom_data)
 {
 	struct tveeprom tv;
 
-	tveeprom_hauppauge_analog(&tv, eeprom_data);
+	tveeprom_hauppauge_analog(&dev->i2c_client, &tv, eeprom_data);
 
 	/* Make sure we support the board model */
 	switch (tv.model) {
@@ -7343,8 +7341,8 @@ static void hauppauge_eeprom(struct saa7134_dev *dev, u8 *eeprom_data)
 	case 67659: /* WinTV-HVR1110 (OEM, no IR, hybrid, FM, SVid/Comp, RCA aud) */
 		break;
 	default:
-		pr_warn("%s: warning: unknown hauppauge model #%d\n",
-			dev->name, tv.model);
+		pr_warn("%s: warning: "
+		       "unknown hauppauge model #%d\n", dev->name, tv.model);
 		break;
 	}
 
@@ -7812,7 +7810,7 @@ int saa7134_board_init2(struct saa7134_dev *dev)
 				dev->name, saa7134_boards[dev->board].name);
 			break;
 		}
-		/* fall-through */
+		/* break intentionally omitted */
 	case SAA7134_BOARD_VIDEOMATE_DVBT_300:
 	case SAA7134_BOARD_ASUS_EUROPA2_HYBRID:
 	case SAA7134_BOARD_ASUS_EUROPA_HYBRID:
@@ -7870,7 +7868,7 @@ int saa7134_board_init2(struct saa7134_dev *dev)
 		break;
 	case SAA7134_BOARD_HAUPPAUGE_HVR1110:
 		hauppauge_eeprom(dev, dev->eedata+0x80);
-		/* fall-through */
+		/* break intentionally omitted */
 	case SAA7134_BOARD_PINNACLE_PCTV_310i:
 	case SAA7134_BOARD_KWORLD_DVBT_210:
 	case SAA7134_BOARD_TEVION_DVBT_220RF:
@@ -7922,8 +7920,8 @@ int saa7134_board_init2(struct saa7134_dev *dev)
 		msg.addr = 0x0b;
 		msg.len = 1;
 		if (1 != i2c_transfer(&dev->i2c_adap, &msg, 1)) {
-			pr_warn("%s: send wake up byte to pic16C505(IR chip) failed\n",
-				dev->name);
+			pr_warn("%s: send wake up byte to pic16C505"
+					"(IR chip) failed\n", dev->name);
 		} else {
 			msg.flags = I2C_M_RD;
 			rc = i2c_transfer(&dev->i2c_adap, &msg, 1);

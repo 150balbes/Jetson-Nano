@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note */
 #ifndef _UAPI__LINUX_ATALK_H__
 #define _UAPI__LINUX_ATALK_H__
 

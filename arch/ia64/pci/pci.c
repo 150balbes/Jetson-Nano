@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * pci.c - Low-Level PCI Access in IA-64
  *
@@ -21,7 +20,7 @@
 #include <linux/ioport.h>
 #include <linux/slab.h>
 #include <linux/spinlock.h>
-#include <linux/memblock.h>
+#include <linux/bootmem.h>
 #include <linux/export.h>
 
 #include <asm/machvec.h>
@@ -399,7 +398,7 @@ pcibios_enable_device (struct pci_dev *dev, int mask)
 	if (ret < 0)
 		return ret;
 
-	if (!pci_dev_msi_enabled(dev))
+	if (!dev->msi_enabled)
 		return acpi_pci_irq_enable(dev);
 	return 0;
 }
@@ -408,8 +407,61 @@ void
 pcibios_disable_device (struct pci_dev *dev)
 {
 	BUG_ON(atomic_read(&dev->enable_cnt));
-	if (!pci_dev_msi_enabled(dev))
+	if (!dev->msi_enabled)
 		acpi_pci_irq_disable(dev);
+}
+
+resource_size_t
+pcibios_align_resource (void *data, const struct resource *res,
+		        resource_size_t size, resource_size_t align)
+{
+	return res->start;
+}
+
+int
+pci_mmap_page_range (struct pci_dev *dev, struct vm_area_struct *vma,
+		     enum pci_mmap_state mmap_state, int write_combine)
+{
+	unsigned long size = vma->vm_end - vma->vm_start;
+	pgprot_t prot;
+
+	/*
+	 * I/O space cannot be accessed via normal processor loads and
+	 * stores on this platform.
+	 */
+	if (mmap_state == pci_mmap_io)
+		/*
+		 * XXX we could relax this for I/O spaces for which ACPI
+		 * indicates that the space is 1-to-1 mapped.  But at the
+		 * moment, we don't support multiple PCI address spaces and
+		 * the legacy I/O space is not 1-to-1 mapped, so this is moot.
+		 */
+		return -EINVAL;
+
+	if (!valid_mmap_phys_addr_range(vma->vm_pgoff, size))
+		return -EINVAL;
+
+	prot = phys_mem_access_prot(NULL, vma->vm_pgoff, size,
+				    vma->vm_page_prot);
+
+	/*
+	 * If the user requested WC, the kernel uses UC or WC for this region,
+	 * and the chipset supports WC, we can use WC. Otherwise, we have to
+	 * use the same attribute the kernel uses.
+	 */
+	if (write_combine &&
+	    ((pgprot_val(prot) & _PAGE_MA_MASK) == _PAGE_MA_UC ||
+	     (pgprot_val(prot) & _PAGE_MA_MASK) == _PAGE_MA_WC) &&
+	    efi_range_is_wc(vma->vm_start, vma->vm_end - vma->vm_start))
+		vma->vm_page_prot = pgprot_writecombine(vma->vm_page_prot);
+	else
+		vma->vm_page_prot = prot;
+
+	if (remap_pfn_range(vma, vma->vm_start, vma->vm_pgoff,
+			     vma->vm_end - vma->vm_start, vma->vm_page_prot))
+		return -EAGAIN;
+
+	return 0;
 }
 
 /**
@@ -450,7 +502,7 @@ pci_mmap_legacy_page_range(struct pci_bus *bus, struct vm_area_struct *vma,
 		return -ENOSYS;
 
 	/*
-	 * Avoid attribute aliasing.  See Documentation/ia64/aliasing.rst
+	 * Avoid attribute aliasing.  See Documentation/ia64/aliasing.txt
 	 * for more details.
 	 */
 	if (!valid_mmap_phys_addr_range(vma->vm_pgoff, size))
@@ -568,6 +620,32 @@ static void __init set_pci_dfl_cacheline_size(void)
 	}
 	pci_dfl_cache_line_size = (1 << cci.pcci_line_size) / 4;
 }
+
+u64 ia64_dma_get_required_mask(struct device *dev)
+{
+	u32 low_totalram = ((max_pfn - 1) << PAGE_SHIFT);
+	u32 high_totalram = ((max_pfn - 1) >> (32 - PAGE_SHIFT));
+	u64 mask;
+
+	if (!high_totalram) {
+		/* convert to mask just covering totalram */
+		low_totalram = (1 << (fls(low_totalram) - 1));
+		low_totalram += low_totalram - 1;
+		mask = low_totalram;
+	} else {
+		high_totalram = (1 << (fls(high_totalram) - 1));
+		high_totalram += high_totalram - 1;
+		mask = (((u64)high_totalram) << 32) + 0xffffffff;
+	}
+	return mask;
+}
+EXPORT_SYMBOL_GPL(ia64_dma_get_required_mask);
+
+u64 dma_get_required_mask(struct device *dev)
+{
+	return platform_dma_get_required_mask(dev);
+}
+EXPORT_SYMBOL_GPL(dma_get_required_mask);
 
 static int __init pcibios_init(void)
 {

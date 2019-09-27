@@ -79,7 +79,6 @@ class LxPs(gdb.Command):
                 pid=task["pid"],
                 comm=task["comm"].string()))
 
-
 LxPs()
 
 
@@ -134,6 +133,5 @@ variable."""
             return get_thread_info(task.dereference())
         else:
             raise gdb.GdbError("No task of PID " + str(pid))
-
 
 LxThreadInfoByPidFunc()

@@ -1,11 +1,13 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (C) STMicroelectronics SA 2015
  * Authors: Arnaud Pouliquen <arnaud.pouliquen@st.com>
  *          for STMicroelectronics.
+ * License terms:  GNU General Public License (GPL), version 2
  */
 
 #include <linux/clk.h>
+#include <linux/delay.h>
+#include <linux/io.h>
 #include <linux/mfd/syscon.h>
 
 #include <sound/asoundef.h>
@@ -53,6 +55,25 @@ static const struct snd_pcm_hardware uni_player_pcm_hw = {
 	.buffer_bytes_max = 256 * PAGE_SIZE
 };
 
+static inline int reset_player(struct uniperif *player)
+{
+	int count = 10;
+
+	if (player->ver < SND_ST_UNIPERIF_VERSION_UNI_PLR_TOP_1_0) {
+		while (GET_UNIPERIF_SOFT_RST_SOFT_RST(player) && count) {
+			udelay(5);
+			count--;
+		}
+	}
+
+	if (!count) {
+		dev_err(player->dev, "Failed to reset uniperif");
+		return -EIO;
+	}
+
+	return 0;
+}
+
 /*
  * uni_player_irq_handler
  * In case of error audio stream is stopped; stop action is protected via PCM
@@ -65,13 +86,10 @@ static irqreturn_t uni_player_irq_handler(int irq, void *dev_id)
 	unsigned int status;
 	unsigned int tmp;
 
-	spin_lock(&player->irq_lock);
-	if (!player->substream)
-		goto irq_spin_unlock;
-
-	snd_pcm_stream_lock(player->substream);
-	if (player->state == UNIPERIF_STATE_STOPPED)
-		goto stream_unlock;
+	if (player->state == UNIPERIF_STATE_STOPPED) {
+		/* Unexpected IRQ: do nothing */
+		return IRQ_NONE;
+	}
 
 	/* Get interrupt status & clear them immediately */
 	status = GET_UNIPERIF_ITS(player);
@@ -79,7 +97,7 @@ static irqreturn_t uni_player_irq_handler(int irq, void *dev_id)
 
 	/* Check for fifo error (underrun) */
 	if (unlikely(status & UNIPERIF_ITS_FIFO_ERROR_MASK(player))) {
-		dev_err(player->dev, "FIFO underflow error detected\n");
+		dev_err(player->dev, "FIFO underflow error detected");
 
 		/* Interrupt is just for information when underflow recovery */
 		if (player->underflow_enabled) {
@@ -91,7 +109,9 @@ static irqreturn_t uni_player_irq_handler(int irq, void *dev_id)
 			SET_UNIPERIF_ITM_BCLR_FIFO_ERROR(player);
 
 			/* Stop the player */
-			snd_pcm_stop_xrun(player->substream);
+			snd_pcm_stream_lock(player->substream);
+			snd_pcm_stop(player->substream, SNDRV_PCM_STATE_XRUN);
+			snd_pcm_stream_unlock(player->substream);
 		}
 
 		ret = IRQ_HANDLED;
@@ -99,13 +119,15 @@ static irqreturn_t uni_player_irq_handler(int irq, void *dev_id)
 
 	/* Check for dma error (overrun) */
 	if (unlikely(status & UNIPERIF_ITS_DMA_ERROR_MASK(player))) {
-		dev_err(player->dev, "DMA error detected\n");
+		dev_err(player->dev, "DMA error detected");
 
 		/* Disable interrupt so doesn't continually fire */
 		SET_UNIPERIF_ITM_BCLR_DMA_ERROR(player);
 
 		/* Stop the player */
-		snd_pcm_stop_xrun(player->substream);
+		snd_pcm_stream_lock(player->substream);
+		snd_pcm_stop(player->substream, SNDRV_PCM_STATE_XRUN);
+		snd_pcm_stream_unlock(player->substream);
 
 		ret = IRQ_HANDLED;
 	}
@@ -113,15 +135,11 @@ static irqreturn_t uni_player_irq_handler(int irq, void *dev_id)
 	/* Check for underflow recovery done */
 	if (unlikely(status & UNIPERIF_ITM_UNDERFLOW_REC_DONE_MASK(player))) {
 		if (!player->underflow_enabled) {
-			dev_err(player->dev,
-				"unexpected Underflow recovering\n");
-			ret = -EPERM;
-			goto stream_unlock;
+			dev_err(player->dev, "unexpected Underflow recovering");
+			return -EPERM;
 		}
 		/* Read the underflow recovery duration */
 		tmp = GET_UNIPERIF_STATUS_1_UNDERFLOW_DURATION(player);
-		dev_dbg(player->dev, "Underflow recovered (%d LR clocks max)\n",
-			tmp);
 
 		/* Clear the underflow recovery duration */
 		SET_UNIPERIF_BIT_CONTROL_CLR_UNDERFLOW_DURATION(player);
@@ -135,18 +153,15 @@ static irqreturn_t uni_player_irq_handler(int irq, void *dev_id)
 	/* Check if underflow recovery failed */
 	if (unlikely(status &
 		     UNIPERIF_ITM_UNDERFLOW_REC_FAILED_MASK(player))) {
-		dev_err(player->dev, "Underflow recovery failed\n");
+		dev_err(player->dev, "Underflow recovery failed");
 
 		/* Stop the player */
-		snd_pcm_stop_xrun(player->substream);
+		snd_pcm_stream_lock(player->substream);
+		snd_pcm_stop(player->substream, SNDRV_PCM_STATE_XRUN);
+		snd_pcm_stream_unlock(player->substream);
 
 		ret = IRQ_HANDLED;
 	}
-
-stream_unlock:
-	snd_pcm_stream_unlock(player->substream);
-irq_spin_unlock:
-	spin_unlock(&player->irq_lock);
 
 	return ret;
 }
@@ -321,7 +336,7 @@ static int uni_player_prepare_iec958(struct uniperif *player,
 
 	/* Oversampling must be multiple of 128 as iec958 frame is 32-bits */
 	if ((clk_div % 128) || (clk_div <= 0)) {
-		dev_err(player->dev, "%s: invalid clk_div %d\n",
+		dev_err(player->dev, "%s: invalid clk_div %d",
 			__func__, clk_div);
 		return -EINVAL;
 	}
@@ -344,7 +359,7 @@ static int uni_player_prepare_iec958(struct uniperif *player,
 		SET_UNIPERIF_I2S_FMT_DATA_SIZE_24(player);
 		break;
 	default:
-		dev_err(player->dev, "format not supported\n");
+		dev_err(player->dev, "format not supported");
 		return -EINVAL;
 	}
 
@@ -433,12 +448,12 @@ static int uni_player_prepare_pcm(struct uniperif *player,
 	 * for 16 bits must be a multiple of 64
 	 */
 	if ((slot_width == 32) && (clk_div % 128)) {
-		dev_err(player->dev, "%s: invalid clk_div\n", __func__);
+		dev_err(player->dev, "%s: invalid clk_div", __func__);
 		return -EINVAL;
 	}
 
 	if ((slot_width == 16) && (clk_div % 64)) {
-		dev_err(player->dev, "%s: invalid clk_div\n", __func__);
+		dev_err(player->dev, "%s: invalid clk_div", __func__);
 		return -EINVAL;
 	}
 
@@ -456,7 +471,7 @@ static int uni_player_prepare_pcm(struct uniperif *player,
 		SET_UNIPERIF_I2S_FMT_DATA_SIZE_16(player);
 		break;
 	default:
-		dev_err(player->dev, "subframe format not supported\n");
+		dev_err(player->dev, "subframe format not supported");
 		return -EINVAL;
 	}
 
@@ -476,7 +491,7 @@ static int uni_player_prepare_pcm(struct uniperif *player,
 		break;
 
 	default:
-		dev_err(player->dev, "format not supported\n");
+		dev_err(player->dev, "format not supported");
 		return -EINVAL;
 	}
 
@@ -489,7 +504,7 @@ static int uni_player_prepare_pcm(struct uniperif *player,
 	/* Number of channelsmust be even*/
 	if ((runtime->channels % 2) || (runtime->channels < 2) ||
 	    (runtime->channels > 10)) {
-		dev_err(player->dev, "%s: invalid nb of channels\n", __func__);
+		dev_err(player->dev, "%s: invalid nb of channels", __func__);
 		return -EINVAL;
 	}
 
@@ -591,7 +606,6 @@ static int uni_player_ctl_iec958_put(struct snd_kcontrol *kcontrol,
 	struct sti_uniperiph_data *priv = snd_soc_dai_get_drvdata(dai);
 	struct uniperif *player = priv->dai_data.uni;
 	struct snd_aes_iec958 *iec958 =  &player->stream_settings.iec958;
-	unsigned long flags;
 
 	mutex_lock(&player->ctrl_lock);
 	iec958->status[0] = ucontrol->value.iec958.status[0];
@@ -600,14 +614,12 @@ static int uni_player_ctl_iec958_put(struct snd_kcontrol *kcontrol,
 	iec958->status[3] = ucontrol->value.iec958.status[3];
 	mutex_unlock(&player->ctrl_lock);
 
-	spin_lock_irqsave(&player->irq_lock, flags);
 	if (player->substream && player->substream->runtime)
 		uni_player_set_channel_status(player,
 					      player->substream->runtime);
 	else
 		uni_player_set_channel_status(player, NULL);
 
-	spin_unlock_irqrestore(&player->irq_lock, flags);
 	return 0;
 }
 
@@ -692,12 +704,9 @@ static int uni_player_startup(struct snd_pcm_substream *substream,
 {
 	struct sti_uniperiph_data *priv = snd_soc_dai_get_drvdata(dai);
 	struct uniperif *player = priv->dai_data.uni;
-	unsigned long flags;
 	int ret;
 
-	spin_lock_irqsave(&player->irq_lock, flags);
 	player->substream = substream;
-	spin_unlock_irqrestore(&player->irq_lock, flags);
 
 	player->clk_adj = 0;
 
@@ -753,7 +762,7 @@ static int uni_player_prepare(struct snd_pcm_substream *substream,
 
 	/* The player should be stopped */
 	if (player->state != UNIPERIF_STATE_STOPPED) {
-		dev_err(player->dev, "%s: invalid player state %d\n", __func__,
+		dev_err(player->dev, "%s: invalid player state %d", __func__,
 			player->state);
 		return -EINVAL;
 	}
@@ -782,8 +791,7 @@ static int uni_player_prepare(struct snd_pcm_substream *substream,
 	/* Trigger limit must be an even number */
 	if ((!trigger_limit % 2) || (trigger_limit != 1 && transfer_size % 2) ||
 	    (trigger_limit > UNIPERIF_CONFIG_DMA_TRIG_LIMIT_MASK(player))) {
-		dev_err(player->dev, "invalid trigger limit %d\n",
-			trigger_limit);
+		dev_err(player->dev, "invalid trigger limit %d", trigger_limit);
 		return -EINVAL;
 	}
 
@@ -804,7 +812,7 @@ static int uni_player_prepare(struct snd_pcm_substream *substream,
 		ret = uni_player_prepare_tdm(player, runtime);
 		break;
 	default:
-		dev_err(player->dev, "invalid player type\n");
+		dev_err(player->dev, "invalid player type");
 		return -EINVAL;
 	}
 
@@ -844,14 +852,16 @@ static int uni_player_prepare(struct snd_pcm_substream *substream,
 		SET_UNIPERIF_I2S_FMT_PADDING_SONY_MODE(player);
 		break;
 	default:
-		dev_err(player->dev, "format not supported\n");
+		dev_err(player->dev, "format not supported");
 		return -EINVAL;
 	}
 
 	SET_UNIPERIF_I2S_FMT_NO_OF_SAMPLES_TO_READ(player, 0);
 
+	/* Reset uniperipheral player */
+	SET_UNIPERIF_SOFT_RST_SOFT_RST(player);
 
-	return sti_uniperiph_reset(player);
+	return reset_player(player);
 }
 
 static int uni_player_start(struct uniperif *player)
@@ -860,13 +870,13 @@ static int uni_player_start(struct uniperif *player)
 
 	/* The player should be stopped */
 	if (player->state != UNIPERIF_STATE_STOPPED) {
-		dev_err(player->dev, "%s: invalid player state\n", __func__);
+		dev_err(player->dev, "%s: invalid player state", __func__);
 		return -EINVAL;
 	}
 
 	ret = clk_prepare_enable(player->clk);
 	if (ret) {
-		dev_err(player->dev, "%s: Failed to enable clock\n", __func__);
+		dev_err(player->dev, "%s: Failed to enable clock", __func__);
 		return ret;
 	}
 
@@ -883,7 +893,10 @@ static int uni_player_start(struct uniperif *player)
 		SET_UNIPERIF_ITM_BSET_UNDERFLOW_REC_FAILED(player);
 	}
 
-	ret = sti_uniperiph_reset(player);
+	/* Reset uniperipheral player */
+	SET_UNIPERIF_SOFT_RST_SOFT_RST(player);
+
+	ret = reset_player(player);
 	if (ret < 0) {
 		clk_disable_unprepare(player->clk);
 		return ret;
@@ -925,14 +938,17 @@ static int uni_player_stop(struct uniperif *player)
 
 	/* The player should not be in stopped state */
 	if (player->state == UNIPERIF_STATE_STOPPED) {
-		dev_err(player->dev, "%s: invalid player state\n", __func__);
+		dev_err(player->dev, "%s: invalid player state", __func__);
 		return -EINVAL;
 	}
 
 	/* Turn the player off */
 	SET_UNIPERIF_CTRL_OPERATION_OFF(player);
 
-	ret = sti_uniperiph_reset(player);
+	/* Soft reset the player */
+	SET_UNIPERIF_SOFT_RST_SOFT_RST(player);
+
+	ret = reset_player(player);
 	if (ret < 0)
 		return ret;
 
@@ -957,7 +973,7 @@ int uni_player_resume(struct uniperif *player)
 		ret = regmap_field_write(player->clk_sel, 1);
 		if (ret) {
 			dev_err(player->dev,
-				"%s: Failed to select freq synth clock\n",
+				"%s: Failed to select freq synth clock",
 				__func__);
 			return ret;
 		}
@@ -995,15 +1011,12 @@ static void uni_player_shutdown(struct snd_pcm_substream *substream,
 {
 	struct sti_uniperiph_data *priv = snd_soc_dai_get_drvdata(dai);
 	struct uniperif *player = priv->dai_data.uni;
-	unsigned long flags;
 
-	spin_lock_irqsave(&player->irq_lock, flags);
 	if (player->state != UNIPERIF_STATE_STOPPED)
 		/* Stop the player */
 		uni_player_stop(player);
 
 	player->substream = NULL;
-	spin_unlock_irqrestore(&player->irq_lock, flags);
 }
 
 static int uni_player_parse_dt_audio_glue(struct platform_device *pdev,
@@ -1057,7 +1070,7 @@ int uni_player_init(struct platform_device *pdev,
 	ret = uni_player_parse_dt_audio_glue(pdev, player);
 
 	if (ret < 0) {
-		dev_err(player->dev, "Failed to parse DeviceTree\n");
+		dev_err(player->dev, "Failed to parse DeviceTree");
 		return ret;
 	}
 
@@ -1072,17 +1085,15 @@ int uni_player_init(struct platform_device *pdev,
 
 	/* Get uniperif resource */
 	player->clk = of_clk_get(pdev->dev.of_node, 0);
-	if (IS_ERR(player->clk)) {
-		dev_err(player->dev, "Failed to get clock\n");
-		return PTR_ERR(player->clk);
-	}
+	if (IS_ERR(player->clk))
+		ret = PTR_ERR(player->clk);
 
 	/* Select the frequency synthesizer clock */
 	if (player->clk_sel) {
 		ret = regmap_field_write(player->clk_sel, 1);
 		if (ret) {
 			dev_err(player->dev,
-				"%s: Failed to select freq synth clock\n",
+				"%s: Failed to select freq synth clock",
 				__func__);
 			return ret;
 		}
@@ -1094,7 +1105,7 @@ int uni_player_init(struct platform_device *pdev,
 		ret = regmap_field_write(player->valid_sel, player->id);
 		if (ret) {
 			dev_err(player->dev,
-				"%s: unable to connect to tdm bus\n", __func__);
+				"%s: unable to connect to tdm bus", __func__);
 			return ret;
 		}
 	}
@@ -1102,13 +1113,10 @@ int uni_player_init(struct platform_device *pdev,
 	ret = devm_request_irq(&pdev->dev, player->irq,
 			       uni_player_irq_handler, IRQF_SHARED,
 			       dev_name(&pdev->dev), player);
-	if (ret < 0) {
-		dev_err(player->dev, "unable to request IRQ %d\n", player->irq);
+	if (ret < 0)
 		return ret;
-	}
 
 	mutex_init(&player->ctrl_lock);
-	spin_lock_init(&player->irq_lock);
 
 	/* Ensure that disabled by default */
 	SET_UNIPERIF_CONFIG_BACK_STALL_REQ_DISABLE(player);

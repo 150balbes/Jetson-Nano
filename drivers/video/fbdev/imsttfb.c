@@ -30,8 +30,9 @@
 #include <asm/io.h>
 #include <linux/uaccess.h>
 
-#if defined(CONFIG_PPC_PMAC)
+#if defined(CONFIG_PPC)
 #include <linux/nvram.h>
+#include <asm/prom.h>
 #include "macmodes.h"
 #endif
 
@@ -326,13 +327,14 @@ enum {
 	TVP = 1
 };
 
+#define USE_NV_MODES		1
 #define INIT_BPP		8
 #define INIT_XRES		640
 #define INIT_YRES		480
 
 static int inverse = 0;
 static char fontname[40] __initdata = { 0 };
-#if defined(CONFIG_PPC_PMAC)
+#if defined(CONFIG_PPC)
 static signed char init_vmode = -1, init_cmode = -1;
 #endif
 
@@ -1316,7 +1318,7 @@ imsttfb_ioctl(struct fb_info *info, u_int cmd, u_long arg)
 	}
 }
 
-static const struct pci_device_id imsttfb_pci_tbl[] = {
+static struct pci_device_id imsttfb_pci_tbl[] = {
 	{ PCI_VENDOR_ID_IMS, PCI_DEVICE_ID_IMS_TT128,
 	  PCI_ANY_ID, PCI_ANY_ID, 0, 0, IBM },
 	{ PCI_VENDOR_ID_IMS, PCI_DEVICE_ID_IMS_TT3D,
@@ -1388,8 +1390,8 @@ static void init_imstt(struct fb_info *info)
 		}
 	}
 
-#if defined(CONFIG_PPC_PMAC) && defined(CONFIG_PPC32)
-	if (IS_REACHABLE(CONFIG_NVRAM) && machine_is(powermac)) {
+#if USE_NV_MODES && defined(CONFIG_PPC32)
+	{
 		int vmode = init_vmode, cmode = init_cmode;
 
 		if (vmode == -1) {
@@ -1407,13 +1409,12 @@ static void init_imstt(struct fb_info *info)
 			info->var.yres = info->var.yres_virtual = INIT_YRES;
 			info->var.bits_per_pixel = INIT_BPP;
 		}
-	} else
-#endif
-	{
-		info->var.xres = info->var.xres_virtual = INIT_XRES;
-		info->var.yres = info->var.yres_virtual = INIT_YRES;
-		info->var.bits_per_pixel = INIT_BPP;
 	}
+#else
+	info->var.xres = info->var.xres_virtual = INIT_XRES;
+	info->var.yres = info->var.yres_virtual = INIT_YRES;
+	info->var.bits_per_pixel = INIT_BPP;
+#endif
 
 	if ((info->var.xres * info->var.yres) * (info->var.bits_per_pixel >> 3) > info->fix.smem_len
 	    || !(compute_imstt_regvals(par, info->var.xres, info->var.yres))) {
@@ -1472,13 +1473,16 @@ static int imsttfb_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	
 	dp = pci_device_to_OF_node(pdev);
 	if(dp)
-		printk(KERN_INFO "%s: OF name %pOFn\n",__func__, dp);
+		printk(KERN_INFO "%s: OF name %s\n",__func__, dp->name);
 	else if (IS_ENABLED(CONFIG_OF))
 		printk(KERN_ERR "imsttfb: no OF node for pci device\n");
 
 	info = framebuffer_alloc(sizeof(struct imstt_par), &pdev->dev);
-	if (!info)
+
+	if (!info) {
+		printk(KERN_ERR "imsttfb: Can't allocate memory\n");
 		return -ENOMEM;
+	}
 
 	par = info->par;
 
@@ -1494,8 +1498,8 @@ static int imsttfb_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	switch (pdev->device) {
 		case PCI_DEVICE_ID_IMS_TT128: /* IMS,tt128mbA */
 			par->ramdac = IBM;
-			if (of_node_name_eq(dp, "IMS,tt128mb8") ||
-			    of_node_name_eq(dp, "IMS,tt128mb8A"))
+			if (dp && ((strcmp(dp->name, "IMS,tt128mb8") == 0) ||
+				   (strcmp(dp->name, "IMS,tt128mb8A") == 0)))
 				par->ramdac = TVP;
 			break;
 		case PCI_DEVICE_ID_IMS_TT3D:  /* IMS,tt3d */
@@ -1512,11 +1516,6 @@ static int imsttfb_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	info->fix.smem_start = addr;
 	info->screen_base = (__u8 *)ioremap(addr, par->ramdac == IBM ?
 					    0x400000 : 0x800000);
-	if (!info->screen_base) {
-		release_mem_region(addr, size);
-		framebuffer_release(info);
-		return -ENOMEM;
-	}
 	info->fix.mmio_start = addr + 0x800000;
 	par->dc_regs = ioremap(addr + 0x800000, 0x1000);
 	par->cmap_regs_phys = addr + 0x840000;
@@ -1566,7 +1565,7 @@ imsttfb_setup(char *options)
 			inverse = 1;
 			fb_invert_cmaps();
 		}
-#if defined(CONFIG_PPC_PMAC)
+#if defined(CONFIG_PPC)
 		else if (!strncmp(this_opt, "vmode:", 6)) {
 			int vmode = simple_strtoul(this_opt+6, NULL, 0);
 			if (vmode > 0 && vmode <= VMODE_MAX)

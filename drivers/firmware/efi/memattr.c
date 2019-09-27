@@ -1,6 +1,9 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * Copyright (C) 2016 Linaro Ltd. <ard.biesheuvel@linaro.org>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  */
 
 #define pr_fmt(fmt)	"efi: memattr: " fmt
@@ -40,7 +43,6 @@ int __init efi_memattr_init(void)
 
 	tbl_size = sizeof(*tbl) + tbl->num_entries * tbl->desc_size;
 	memblock_reserve(efi.mem_attr_table, tbl_size);
-	set_bit(EFI_MEM_ATTR, &efi.flags);
 
 unmap:
 	early_memunmap(tbl, sizeof(*tbl));
@@ -91,7 +93,7 @@ static bool entry_is_valid(const efi_memory_desc_t *in, efi_memory_desc_t *out)
 
 		if (!(md->attribute & EFI_MEMORY_RUNTIME))
 			continue;
-		if (md->virt_addr == 0 && md->phys_addr != 0) {
+		if (md->virt_addr == 0) {
 			/* no virtual mapping has been installed by the stub */
 			break;
 		}
@@ -172,11 +174,8 @@ int __init efi_memattr_apply_permissions(struct mm_struct *mm,
 				md.phys_addr + size - 1,
 				efi_md_typeattr_format(buf, sizeof(buf), &md));
 
-		if (valid) {
+		if (valid)
 			ret = fn(mm, &md);
-			if (ret)
-				pr_err("Error updating mappings, skipping subsequent md's\n");
-		}
 	}
 	memunmap(tbl);
 	return ret;

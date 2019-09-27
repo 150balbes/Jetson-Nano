@@ -50,20 +50,27 @@
 
 /**
  * rvt_alloc_pd - allocate a protection domain
- * @ibpd: PD
+ * @ibdev: ib device
+ * @context: optional user context
  * @udata: optional user data
  *
  * Allocate and keep track of a PD.
  *
  * Return: 0 on success
  */
-int rvt_alloc_pd(struct ib_pd *ibpd, struct ib_udata *udata)
+struct ib_pd *rvt_alloc_pd(struct ib_device *ibdev,
+			   struct ib_ucontext *context,
+			   struct ib_udata *udata)
 {
-	struct ib_device *ibdev = ibpd->device;
 	struct rvt_dev_info *dev = ib_to_rvt(ibdev);
-	struct rvt_pd *pd = ibpd_to_rvtpd(ibpd);
-	int ret = 0;
+	struct rvt_pd *pd;
+	struct ib_pd *ret;
 
+	pd = kmalloc(sizeof(*pd), GFP_KERNEL);
+	if (!pd) {
+		ret = ERR_PTR(-ENOMEM);
+		goto bail;
+	}
 	/*
 	 * While we could continue allocating protecetion domains, being
 	 * constrained only by system resources. The IBTA spec defines that
@@ -74,7 +81,8 @@ int rvt_alloc_pd(struct ib_pd *ibpd, struct ib_udata *udata)
 	spin_lock(&dev->n_pds_lock);
 	if (dev->n_pds_allocated == dev->dparms.props.max_pd) {
 		spin_unlock(&dev->n_pds_lock);
-		ret = -ENOMEM;
+		kfree(pd);
+		ret = ERR_PTR(-ENOMEM);
 		goto bail;
 	}
 
@@ -82,7 +90,9 @@ int rvt_alloc_pd(struct ib_pd *ibpd, struct ib_udata *udata)
 	spin_unlock(&dev->n_pds_lock);
 
 	/* ib_alloc_pd() will initialize pd->ibpd. */
-	pd->user = !!udata;
+	pd->user = udata ? 1 : 0;
+
+	ret = &pd->ibpd;
 
 bail:
 	return ret;
@@ -91,15 +101,19 @@ bail:
 /**
  * rvt_dealloc_pd - Free PD
  * @ibpd: Free up PD
- * @udata: Valid user data or NULL for kernel object
  *
  * Return: always 0
  */
-void rvt_dealloc_pd(struct ib_pd *ibpd, struct ib_udata *udata)
+int rvt_dealloc_pd(struct ib_pd *ibpd)
 {
+	struct rvt_pd *pd = ibpd_to_rvtpd(ibpd);
 	struct rvt_dev_info *dev = ib_to_rvt(ibpd->device);
 
 	spin_lock(&dev->n_pds_lock);
 	dev->n_pds_allocated--;
 	spin_unlock(&dev->n_pds_lock);
+
+	kfree(pd);
+
+	return 0;
 }

@@ -1,11 +1,14 @@
-// SPDX-License-Identifier: GPL-2.0-only
+/*
+ *  This program is free software; you can redistribute it and/or
+ *  modify it under the terms of the GNU General Public License as
+ *  published by the Free Software Foundation, version 2 of the
+ *  License.
+ */
 
 #include <linux/stat.h>
 #include <linux/sysctl.h>
 #include <linux/slab.h>
-#include <linux/cred.h>
 #include <linux/hash.h>
-#include <linux/kmemleak.h>
 #include <linux/user_namespace.h>
 
 #define UCOUNTS_HASHTABLE_BITS 10
@@ -52,14 +55,16 @@ static struct ctl_table_root set_root = {
 	.permissions = set_permissions,
 };
 
-#define UCOUNT_ENTRY(name)				\
+static int zero = 0;
+static int int_max = INT_MAX;
+#define UCOUNT_ENTRY(name) 				\
 	{						\
 		.procname	= name,			\
 		.maxlen		= sizeof(int),		\
 		.mode		= 0644,			\
 		.proc_handler	= proc_dointvec_minmax,	\
-		.extra1		= SYSCTL_ZERO,		\
-		.extra2		= SYSCTL_INT_MAX,	\
+		.extra1		= &zero,		\
+		.extra2		= &int_max,		\
 	}
 static struct ctl_table user_table[] = {
 	UCOUNT_ENTRY("max_user_namespaces"),
@@ -69,10 +74,6 @@ static struct ctl_table user_table[] = {
 	UCOUNT_ENTRY("max_net_namespaces"),
 	UCOUNT_ENTRY("max_mnt_namespaces"),
 	UCOUNT_ENTRY("max_cgroup_namespaces"),
-#ifdef CONFIG_INOTIFY_USER
-	UCOUNT_ENTRY("max_inotify_instances"),
-	UCOUNT_ENTRY("max_inotify_watches"),
-#endif
 	{ }
 };
 #endif /* CONFIG_SYSCTL */

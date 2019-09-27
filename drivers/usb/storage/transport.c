@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0+
 /*
  * Driver for USB Mass Storage compliant devices
  *
@@ -13,6 +12,8 @@
  * Initial work by:
  *   (c) 1999 Michael Gee (michael@linuxspecific.com)
  *
+ * Copyright (c) 2019, NVIDIA CORPORATION. All rights reserved.
+ *
  * This driver is based on the 'USB Mass Storage Class' document. This
  * describes in detail the protocol used to communicate with such
  * devices.  Clearly, the designers had SCSI and ATAPI commands in
@@ -26,6 +27,23 @@
  *
  * Also, for certain devices, the interrupt endpoint is used to convey
  * status of a command.
+ *
+ * Please see http://www.one-eyed-alien.net/~mdharm/linux-usb for more
+ * information about this driver.
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License as published by the
+ * Free Software Foundation; either version 2, or (at your option) any
+ * later version.
+ *
+ * This program is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with this program; if not, write to the Free Software Foundation, Inc.,
+ * 675 Mass Ave, Cambridge, MA 02139, USA.
  */
 
 #include <linux/sched.h>
@@ -48,6 +66,7 @@
 #include <linux/blkdev.h>
 #include "../../scsi/sd.h"
 
+#define MSC_BULK_XFER_TIMEOUT	(msecs_to_jiffies(USB_CTRL_SET_TIMEOUT))
 
 /***********************************************************************
  * Data transfer routines
@@ -392,7 +411,7 @@ int usb_stor_bulk_transfer_buf(struct us_data *us, unsigned int pipe,
 	/* fill and submit the URB */
 	usb_fill_bulk_urb(us->current_urb, us->pusb_dev, pipe, buf, length,
 		      usb_stor_blocking_completion, NULL);
-	result = usb_stor_msg_common(us, 0);
+	result = usb_stor_msg_common(us, MSC_BULK_XFER_TIMEOUT);
 
 	/* store the actual length of the data transferred */
 	if (act_len)
@@ -401,6 +420,15 @@ int usb_stor_bulk_transfer_buf(struct us_data *us, unsigned int pipe,
 			us->current_urb->actual_length);
 }
 EXPORT_SYMBOL_GPL(usb_stor_bulk_transfer_buf);
+
+
+static void usb_stor_bulk_transfer_timeout(unsigned long data)
+{
+	struct us_data *us = (struct us_data *)data;
+
+	usb_stor_dbg(us, "Timeout -- cancelling sg request\n");
+	usb_sg_cancel(&us->current_sg);
+}
 
 /*
  * Transfer a scatter-gather list via bulk transfer
@@ -412,6 +440,7 @@ static int usb_stor_bulk_transfer_sglist(struct us_data *us, unsigned int pipe,
 		struct scatterlist *sg, int num_sg, unsigned int length,
 		unsigned int *act_len)
 {
+	struct timer_list timeout;
 	int result;
 
 	/* don't submit s-g requests during abort processing */
@@ -444,8 +473,13 @@ static int usb_stor_bulk_transfer_sglist(struct us_data *us, unsigned int pipe,
 	}
 
 	/* wait for the completion of the transfer */
+	setup_timer(&timeout, usb_stor_bulk_transfer_timeout,
+		(unsigned long)us);
+	mod_timer(&timeout, jiffies +
+		MSC_BULK_XFER_TIMEOUT * us->current_sg.entries);
 	usb_sg_wait(&us->current_sg);
 	clear_bit(US_FLIDX_SG_ACTIVE, &us->dflags);
+	del_timer(&timeout);
 
 	result = us->current_sg.status;
 	if (act_len)

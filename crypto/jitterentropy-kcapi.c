@@ -39,6 +39,7 @@
 
 #include <linux/module.h>
 #include <linux/slab.h>
+#include <linux/module.h>
 #include <linux/fips.h>
 #include <linux/time.h>
 #include <linux/crypto.h>
@@ -55,6 +56,11 @@ void jent_entropy_collector_free(struct rand_data *entropy_collector);
 /***************************************************************************
  * Helper function
  ***************************************************************************/
+
+__u64 jent_rol64(__u64 word, unsigned int shift)
+{
+	return rol64(word, shift);
+}
 
 void *jent_zalloc(unsigned int len)
 {

@@ -20,13 +20,13 @@
  * OTHER DEALINGS IN THE SOFTWARE.
  *
  */
-#include "pp_debug.h"
 #include <linux/module.h>
 #include <linux/slab.h>
 
 #include "process_pptables_v1_0.h"
 #include "ppatomctrl.h"
 #include "atombios.h"
+#include "pp_debug.h"
 #include "hwmgr.h"
 #include "cgs_common.h"
 #include "pptable_v1_0.h"
@@ -131,7 +131,7 @@ static int set_platform_caps(struct pp_hwmgr *hwmgr, uint32_t powerplay_caps)
 /**
  * Private Function to get the PowerPlay Table Address.
  */
-static const void *get_powerplay_table(struct pp_hwmgr *hwmgr)
+const void *get_powerplay_table(struct pp_hwmgr *hwmgr)
 {
 	int index = GetIndexIntoMasterTable(DATA, PowerPlayInfo);
 
@@ -141,7 +141,7 @@ static const void *get_powerplay_table(struct pp_hwmgr *hwmgr)
 
 	if (!table_address) {
 		table_address = (ATOM_Tonga_POWERPLAYTABLE *)
-				smu_atom_get_data_table(hwmgr->adev,
+				cgs_atom_get_data_table(hwmgr->device,
 						index, &size, &frev, &crev);
 		hwmgr->soft_pp_table = table_address;	/*Cache the result in RAM.*/
 		hwmgr->soft_pp_table_size = size;
@@ -173,6 +173,8 @@ static int get_vddc_lookup_table(
 	if (NULL == table)
 		return -ENOMEM;
 
+	memset(table, 0x00, table_size);
+
 	table->count = vddc_lookup_pp_tables->ucNumEntries;
 
 	for (i = 0; i < vddc_lookup_pp_tables->ucNumEntries; i++) {
@@ -183,10 +185,10 @@ static int get_vddc_lookup_table(
 					ATOM_Tonga_Voltage_Lookup_Record,
 					entries, vddc_lookup_pp_tables, i);
 		record->us_calculated = 0;
-		record->us_vdd = le16_to_cpu(atom_record->usVdd);
-		record->us_cac_low = le16_to_cpu(atom_record->usCACLow);
-		record->us_cac_mid = le16_to_cpu(atom_record->usCACMid);
-		record->us_cac_high = le16_to_cpu(atom_record->usCACHigh);
+		record->us_vdd = atom_record->usVdd;
+		record->us_cac_low = atom_record->usCACLow;
+		record->us_cac_mid = atom_record->usCACMid;
+		record->us_cac_high = atom_record->usCACHigh;
 	}
 
 	*lookup_table = table;
@@ -214,23 +216,23 @@ static int get_platform_power_management_table(
 	ptr->ppm_design
 		= atom_ppm_table->ucPpmDesign;
 	ptr->cpu_core_number
-		= le16_to_cpu(atom_ppm_table->usCpuCoreNumber);
+		= atom_ppm_table->usCpuCoreNumber;
 	ptr->platform_tdp
-		= le32_to_cpu(atom_ppm_table->ulPlatformTDP);
+		= atom_ppm_table->ulPlatformTDP;
 	ptr->small_ac_platform_tdp
-		= le32_to_cpu(atom_ppm_table->ulSmallACPlatformTDP);
+		= atom_ppm_table->ulSmallACPlatformTDP;
 	ptr->platform_tdc
-		= le32_to_cpu(atom_ppm_table->ulPlatformTDC);
+		= atom_ppm_table->ulPlatformTDC;
 	ptr->small_ac_platform_tdc
-		= le32_to_cpu(atom_ppm_table->ulSmallACPlatformTDC);
+		= atom_ppm_table->ulSmallACPlatformTDC;
 	ptr->apu_tdp
-		= le32_to_cpu(atom_ppm_table->ulApuTDP);
+		= atom_ppm_table->ulApuTDP;
 	ptr->dgpu_tdp
-		= le32_to_cpu(atom_ppm_table->ulDGpuTDP);
+		= atom_ppm_table->ulDGpuTDP;
 	ptr->dgpu_ulv_power
-		= le32_to_cpu(atom_ppm_table->ulDGpuUlvPower);
+		= atom_ppm_table->ulDGpuUlvPower;
 	ptr->tj_max
-		= le32_to_cpu(atom_ppm_table->ulTjmax);
+		= atom_ppm_table->ulTjmax;
 
 	pp_table_information->ppm_parameter_table = ptr;
 
@@ -333,6 +335,8 @@ static int get_valid_clk(
 	if (NULL == table)
 		return -ENOMEM;
 
+	memset(table, 0x00, table_size);
+
 	table->count = (uint32_t)clk_volt_pp_table->count;
 
 	for (i = 0; i < table->count; i++) {
@@ -355,11 +359,11 @@ static int get_hard_limits(
 	PP_ASSERT_WITH_CODE((0 != limitable->ucNumEntries), "Invalid PowerPlay Table!", return -1);
 
 	/* currently we always take entries[0] parameters */
-	limits->sclk = le32_to_cpu(limitable->entries[0].ulSCLKLimit);
-	limits->mclk = le32_to_cpu(limitable->entries[0].ulMCLKLimit);
-	limits->vddc = le16_to_cpu(limitable->entries[0].usVddcLimit);
-	limits->vddci = le16_to_cpu(limitable->entries[0].usVddciLimit);
-	limits->vddgfx = le16_to_cpu(limitable->entries[0].usVddgfxLimit);
+	limits->sclk = (uint32_t)limitable->entries[0].ulSCLKLimit;
+	limits->mclk = (uint32_t)limitable->entries[0].ulMCLKLimit;
+	limits->vddc = (uint16_t)limitable->entries[0].usVddcLimit;
+	limits->vddci = (uint16_t)limitable->entries[0].usVddciLimit;
+	limits->vddgfx = (uint16_t)limitable->entries[0].usVddgfxLimit;
 
 	return 0;
 }
@@ -386,6 +390,8 @@ static int get_mclk_voltage_dependency_table(
 	if (NULL == mclk_table)
 		return -ENOMEM;
 
+	memset(mclk_table, 0x00, table_size);
+
 	mclk_table->count = (uint32_t)mclk_dep_table->ucNumEntries;
 
 	for (i = 0; i < mclk_dep_table->ucNumEntries; i++) {
@@ -396,10 +402,10 @@ static int get_mclk_voltage_dependency_table(
 					ATOM_Tonga_MCLK_Dependency_Record,
 						entries, mclk_dep_table, i);
 		mclk_table_record->vddInd = mclk_dep_record->ucVddcInd;
-		mclk_table_record->vdd_offset = le16_to_cpu(mclk_dep_record->usVddgfxOffset);
-		mclk_table_record->vddci = le16_to_cpu(mclk_dep_record->usVddci);
-		mclk_table_record->mvdd = le16_to_cpu(mclk_dep_record->usMvdd);
-		mclk_table_record->clk = le32_to_cpu(mclk_dep_record->ulMclk);
+		mclk_table_record->vdd_offset = mclk_dep_record->usVddgfxOffset;
+		mclk_table_record->vddci = mclk_dep_record->usVddci;
+		mclk_table_record->mvdd = mclk_dep_record->usMvdd;
+		mclk_table_record->clk = mclk_dep_record->ulMclk;
 	}
 
 	*pp_tonga_mclk_dep_table = mclk_table;
@@ -433,6 +439,8 @@ static int get_sclk_voltage_dependency_table(
 		if (NULL == sclk_table)
 			return -ENOMEM;
 
+		memset(sclk_table, 0x00, table_size);
+
 		sclk_table->count = (uint32_t)tonga_table->ucNumEntries;
 
 		for (i = 0; i < tonga_table->ucNumEntries; i++) {
@@ -443,8 +451,8 @@ static int get_sclk_voltage_dependency_table(
 						phm_ppt_v1_clock_voltage_dependency_record,
 						entries, sclk_table, i);
 			sclk_table_record->vddInd = sclk_dep_record->ucVddInd;
-			sclk_table_record->vdd_offset = le16_to_cpu(sclk_dep_record->usVddcOffset);
-			sclk_table_record->clk = le32_to_cpu(sclk_dep_record->ulSclk);
+			sclk_table_record->vdd_offset = sclk_dep_record->usVddcOffset;
+			sclk_table_record->clk = sclk_dep_record->ulSclk;
 			sclk_table_record->cks_enable =
 				(((sclk_dep_record->ucCKSVOffsetandDisable & 0x80) >> 7) == 0) ? 1 : 0;
 			sclk_table_record->cks_voffset = (sclk_dep_record->ucCKSVOffsetandDisable & 0x7F);
@@ -465,6 +473,8 @@ static int get_sclk_voltage_dependency_table(
 		if (NULL == sclk_table)
 			return -ENOMEM;
 
+		memset(sclk_table, 0x00, table_size);
+
 		sclk_table->count = (uint32_t)polaris_table->ucNumEntries;
 
 		for (i = 0; i < polaris_table->ucNumEntries; i++) {
@@ -475,12 +485,12 @@ static int get_sclk_voltage_dependency_table(
 						phm_ppt_v1_clock_voltage_dependency_record,
 						entries, sclk_table, i);
 			sclk_table_record->vddInd = sclk_dep_record->ucVddInd;
-			sclk_table_record->vdd_offset = le16_to_cpu(sclk_dep_record->usVddcOffset);
-			sclk_table_record->clk = le32_to_cpu(sclk_dep_record->ulSclk);
+			sclk_table_record->vdd_offset = sclk_dep_record->usVddcOffset;
+			sclk_table_record->clk = sclk_dep_record->ulSclk;
 			sclk_table_record->cks_enable =
 				(((sclk_dep_record->ucCKSVOffsetandDisable & 0x80) >> 7) == 0) ? 1 : 0;
 			sclk_table_record->cks_voffset = (sclk_dep_record->ucCKSVOffsetandDisable & 0x7F);
-			sclk_table_record->sclk_offset = le32_to_cpu(sclk_dep_record->ulSclkOffset);
+			sclk_table_record->sclk_offset = sclk_dep_record->ulSclkOffset;
 		}
 	}
 	*pp_tonga_sclk_dep_table = sclk_table;
@@ -515,6 +525,8 @@ static int get_pcie_table(
 		if (pcie_table == NULL)
 			return -ENOMEM;
 
+		memset(pcie_table, 0x00, table_size);
+
 		/*
 		* Make sure the number of pcie entries are less than or equal to sclk dpm levels.
 		* Since first PCIE entry is for ULV, #pcie has to be <= SclkLevel + 1.
@@ -523,7 +535,8 @@ static int get_pcie_table(
 		if ((uint32_t)atom_pcie_table->ucNumEntries <= pcie_count)
 			pcie_count = (uint32_t)atom_pcie_table->ucNumEntries;
 		else
-			pr_err("Number of Pcie Entries exceed the number of SCLK Dpm Levels! Disregarding the excess entries...\n");
+			printk(KERN_ERR "[ powerplay ] Number of Pcie Entries exceed the number of SCLK Dpm Levels! \
+			Disregarding the excess entries... \n");
 
 		pcie_table->count = pcie_count;
 		for (i = 0; i < pcie_count; i++) {
@@ -534,7 +547,7 @@ static int get_pcie_table(
 						ATOM_Tonga_PCIE_Record,
 						entries, atom_pcie_table, i);
 			pcie_record->gen_speed = atom_pcie_record->ucPCIEGenSpeed;
-			pcie_record->lane_width = le16_to_cpu(atom_pcie_record->usPCIELaneWidth);
+			pcie_record->lane_width = atom_pcie_record->usPCIELaneWidth;
 		}
 
 		*pp_tonga_pcie_table = pcie_table;
@@ -554,6 +567,8 @@ static int get_pcie_table(
 		if (pcie_table == NULL)
 			return -ENOMEM;
 
+		memset(pcie_table, 0x00, table_size);
+
 		/*
 		* Make sure the number of pcie entries are less than or equal to sclk dpm levels.
 		* Since first PCIE entry is for ULV, #pcie has to be <= SclkLevel + 1.
@@ -562,7 +577,8 @@ static int get_pcie_table(
 		if ((uint32_t)atom_pcie_table->ucNumEntries <= pcie_count)
 			pcie_count = (uint32_t)atom_pcie_table->ucNumEntries;
 		else
-			pr_err("Number of Pcie Entries exceed the number of SCLK Dpm Levels! Disregarding the excess entries...\n");
+			printk(KERN_ERR "[ powerplay ] Number of Pcie Entries exceed the number of SCLK Dpm Levels! \
+			Disregarding the excess entries... \n");
 
 		pcie_table->count = pcie_count;
 
@@ -574,8 +590,8 @@ static int get_pcie_table(
 						ATOM_Polaris10_PCIE_Record,
 						entries, atom_pcie_table, i);
 			pcie_record->gen_speed = atom_pcie_record->ucPCIEGenSpeed;
-			pcie_record->lane_width = le16_to_cpu(atom_pcie_record->usPCIELaneWidth);
-			pcie_record->pcie_sclk = le32_to_cpu(atom_pcie_record->ulPCIE_Sclk);
+			pcie_record->lane_width = atom_pcie_record->usPCIELaneWidth;
+			pcie_record->pcie_sclk = atom_pcie_record->ulPCIE_Sclk;
 		}
 
 		*pp_tonga_pcie_table = pcie_table;
@@ -599,6 +615,8 @@ static int get_cac_tdp_table(
 	if (NULL == tdp_table)
 		return -ENOMEM;
 
+	memset(tdp_table, 0x00, table_size);
+
 	hwmgr->dyn_state.cac_dtp_table = kzalloc(table_size, GFP_KERNEL);
 
 	if (NULL == hwmgr->dyn_state.cac_dtp_table) {
@@ -606,67 +624,69 @@ static int get_cac_tdp_table(
 		return -ENOMEM;
 	}
 
+	memset(hwmgr->dyn_state.cac_dtp_table, 0x00, table_size);
+
 	if (table->ucRevId < 3) {
 		const ATOM_Tonga_PowerTune_Table *tonga_table =
 			(ATOM_Tonga_PowerTune_Table *)table;
-		tdp_table->usTDP = le16_to_cpu(tonga_table->usTDP);
+		tdp_table->usTDP = tonga_table->usTDP;
 		tdp_table->usConfigurableTDP =
-			le16_to_cpu(tonga_table->usConfigurableTDP);
-		tdp_table->usTDC = le16_to_cpu(tonga_table->usTDC);
+			tonga_table->usConfigurableTDP;
+		tdp_table->usTDC = tonga_table->usTDC;
 		tdp_table->usBatteryPowerLimit =
-			le16_to_cpu(tonga_table->usBatteryPowerLimit);
+			tonga_table->usBatteryPowerLimit;
 		tdp_table->usSmallPowerLimit =
-			le16_to_cpu(tonga_table->usSmallPowerLimit);
+			tonga_table->usSmallPowerLimit;
 		tdp_table->usLowCACLeakage =
-			le16_to_cpu(tonga_table->usLowCACLeakage);
+			tonga_table->usLowCACLeakage;
 		tdp_table->usHighCACLeakage =
-			le16_to_cpu(tonga_table->usHighCACLeakage);
+			tonga_table->usHighCACLeakage;
 		tdp_table->usMaximumPowerDeliveryLimit =
-			le16_to_cpu(tonga_table->usMaximumPowerDeliveryLimit);
+			tonga_table->usMaximumPowerDeliveryLimit;
 		tdp_table->usDefaultTargetOperatingTemp =
-			le16_to_cpu(tonga_table->usTjMax);
+			tonga_table->usTjMax;
 		tdp_table->usTargetOperatingTemp =
-			le16_to_cpu(tonga_table->usTjMax); /*Set the initial temp to the same as default */
+			tonga_table->usTjMax; /*Set the initial temp to the same as default */
 		tdp_table->usPowerTuneDataSetID =
-			le16_to_cpu(tonga_table->usPowerTuneDataSetID);
+			tonga_table->usPowerTuneDataSetID;
 		tdp_table->usSoftwareShutdownTemp =
-			le16_to_cpu(tonga_table->usSoftwareShutdownTemp);
+			tonga_table->usSoftwareShutdownTemp;
 		tdp_table->usClockStretchAmount =
-			le16_to_cpu(tonga_table->usClockStretchAmount);
+			tonga_table->usClockStretchAmount;
 	} else {   /* Fiji and newer */
 		const ATOM_Fiji_PowerTune_Table *fijitable =
 			(ATOM_Fiji_PowerTune_Table *)table;
-		tdp_table->usTDP = le16_to_cpu(fijitable->usTDP);
-		tdp_table->usConfigurableTDP = le16_to_cpu(fijitable->usConfigurableTDP);
-		tdp_table->usTDC = le16_to_cpu(fijitable->usTDC);
-		tdp_table->usBatteryPowerLimit = le16_to_cpu(fijitable->usBatteryPowerLimit);
-		tdp_table->usSmallPowerLimit = le16_to_cpu(fijitable->usSmallPowerLimit);
-		tdp_table->usLowCACLeakage = le16_to_cpu(fijitable->usLowCACLeakage);
-		tdp_table->usHighCACLeakage = le16_to_cpu(fijitable->usHighCACLeakage);
+		tdp_table->usTDP = fijitable->usTDP;
+		tdp_table->usConfigurableTDP = fijitable->usConfigurableTDP;
+		tdp_table->usTDC = fijitable->usTDC;
+		tdp_table->usBatteryPowerLimit = fijitable->usBatteryPowerLimit;
+		tdp_table->usSmallPowerLimit = fijitable->usSmallPowerLimit;
+		tdp_table->usLowCACLeakage = fijitable->usLowCACLeakage;
+		tdp_table->usHighCACLeakage = fijitable->usHighCACLeakage;
 		tdp_table->usMaximumPowerDeliveryLimit =
-			le16_to_cpu(fijitable->usMaximumPowerDeliveryLimit);
+			fijitable->usMaximumPowerDeliveryLimit;
 		tdp_table->usDefaultTargetOperatingTemp =
-			le16_to_cpu(fijitable->usTjMax);
+			fijitable->usTjMax;
 		tdp_table->usTargetOperatingTemp =
-			le16_to_cpu(fijitable->usTjMax); /*Set the initial temp to the same as default */
+			fijitable->usTjMax; /*Set the initial temp to the same as default */
 		tdp_table->usPowerTuneDataSetID =
-			le16_to_cpu(fijitable->usPowerTuneDataSetID);
+			fijitable->usPowerTuneDataSetID;
 		tdp_table->usSoftwareShutdownTemp =
-			le16_to_cpu(fijitable->usSoftwareShutdownTemp);
+			fijitable->usSoftwareShutdownTemp;
 		tdp_table->usClockStretchAmount =
-			le16_to_cpu(fijitable->usClockStretchAmount);
+			fijitable->usClockStretchAmount;
 		tdp_table->usTemperatureLimitHotspot =
-			le16_to_cpu(fijitable->usTemperatureLimitHotspot);
+			fijitable->usTemperatureLimitHotspot;
 		tdp_table->usTemperatureLimitLiquid1 =
-			le16_to_cpu(fijitable->usTemperatureLimitLiquid1);
+			fijitable->usTemperatureLimitLiquid1;
 		tdp_table->usTemperatureLimitLiquid2 =
-			le16_to_cpu(fijitable->usTemperatureLimitLiquid2);
+			fijitable->usTemperatureLimitLiquid2;
 		tdp_table->usTemperatureLimitVrVddc =
-			le16_to_cpu(fijitable->usTemperatureLimitVrVddc);
+			fijitable->usTemperatureLimitVrVddc;
 		tdp_table->usTemperatureLimitVrMvdd =
-			le16_to_cpu(fijitable->usTemperatureLimitVrMvdd);
+			fijitable->usTemperatureLimitVrMvdd;
 		tdp_table->usTemperatureLimitPlx =
-			le16_to_cpu(fijitable->usTemperatureLimitPlx);
+			fijitable->usTemperatureLimitPlx;
 		tdp_table->ucLiquid1_I2C_address =
 			fijitable->ucLiquid1_I2C_address;
 		tdp_table->ucLiquid2_I2C_address =
@@ -705,6 +725,8 @@ static int get_mm_clock_voltage_table(
 	if (NULL == mm_table)
 		return -ENOMEM;
 
+	memset(mm_table, 0x00, table_size);
+
 	mm_table->count = mm_dependency_table->ucNumEntries;
 
 	for (i = 0; i < mm_dependency_table->ucNumEntries; i++) {
@@ -715,12 +737,12 @@ static int get_mm_clock_voltage_table(
 					phm_ppt_v1_mm_clock_voltage_dependency_record,
 					entries, mm_table, i);
 		mm_table_record->vddcInd = mm_dependency_record->ucVddcInd;
-		mm_table_record->vddgfx_offset = le16_to_cpu(mm_dependency_record->usVddgfxOffset);
-		mm_table_record->aclk = le32_to_cpu(mm_dependency_record->ulAClk);
-		mm_table_record->samclock = le32_to_cpu(mm_dependency_record->ulSAMUClk);
-		mm_table_record->eclk = le32_to_cpu(mm_dependency_record->ulEClk);
-		mm_table_record->vclk = le32_to_cpu(mm_dependency_record->ulVClk);
-		mm_table_record->dclk = le32_to_cpu(mm_dependency_record->ulDClk);
+		mm_table_record->vddgfx_offset = mm_dependency_record->usVddgfxOffset;
+		mm_table_record->aclk = mm_dependency_record->ulAClk;
+		mm_table_record->samclock = mm_dependency_record->ulSAMUClk;
+		mm_table_record->eclk = mm_dependency_record->ulEClk;
+		mm_table_record->vclk = mm_dependency_record->ulVClk;
+		mm_table_record->dclk = mm_dependency_record->ulDClk;
 	}
 
 	*tonga_mm_table = mm_table;
@@ -728,32 +750,6 @@ static int get_mm_clock_voltage_table(
 	return 0;
 }
 
-static int get_gpio_table(struct pp_hwmgr *hwmgr,
-		struct phm_ppt_v1_gpio_table **pp_tonga_gpio_table,
-		const ATOM_Tonga_GPIO_Table *atom_gpio_table)
-{
-	uint32_t table_size;
-	struct phm_ppt_v1_gpio_table *pp_gpio_table;
-	struct phm_ppt_v1_information *pp_table_information =
-			(struct phm_ppt_v1_information *)(hwmgr->pptable);
-
-	table_size = sizeof(struct phm_ppt_v1_gpio_table);
-	pp_gpio_table = kzalloc(table_size, GFP_KERNEL);
-	if (!pp_gpio_table)
-		return -ENOMEM;
-
-	if (pp_table_information->vdd_dep_on_sclk->count <
-			atom_gpio_table->ucVRHotTriggeredSclkDpmIndex)
-		PP_ASSERT_WITH_CODE(false,
-				"SCLK DPM index for VRHot cannot exceed the total sclk level count!",);
-	else
-		pp_gpio_table->vrhot_triggered_sclk_dpm_index =
-				atom_gpio_table->ucVRHotTriggeredSclkDpmIndex;
-
-	*pp_tonga_gpio_table = pp_gpio_table;
-
-	return 0;
-}
 /**
  * Private Function used during initialization.
  * Initialize clock voltage dependency
@@ -787,15 +783,11 @@ static int init_clock_voltage_dependency(
 	const PPTable_Generic_SubTable_Header *pcie_table =
 		(const PPTable_Generic_SubTable_Header *)(((unsigned long) powerplay_table) +
 		le16_to_cpu(powerplay_table->usPCIETableOffset));
-	const ATOM_Tonga_GPIO_Table *gpio_table =
-		(const ATOM_Tonga_GPIO_Table *)(((unsigned long) powerplay_table) +
-		le16_to_cpu(powerplay_table->usGPIOTableOffset));
 
 	pp_table_information->vdd_dep_on_sclk = NULL;
 	pp_table_information->vdd_dep_on_mclk = NULL;
 	pp_table_information->mm_dep_table = NULL;
 	pp_table_information->pcie_table = NULL;
-	pp_table_information->gpio_table = NULL;
 
 	if (powerplay_table->usMMDependencyTableOffset != 0)
 		result = get_mm_clock_voltage_table(hwmgr,
@@ -840,10 +832,6 @@ static int init_clock_voltage_dependency(
 		result = get_valid_clk(hwmgr, &pp_table_information->valid_sclk_values,
 		pp_table_information->vdd_dep_on_sclk);
 
-	if (!result && gpio_table)
-		result = get_gpio_table(hwmgr, &pp_table_information->gpio_table,
-				gpio_table);
-
 	return result;
 }
 
@@ -869,6 +857,12 @@ static int init_over_drive_limits(
 	hwmgr->platform_descriptor.minOverdriveVDDC = 0;
 	hwmgr->platform_descriptor.maxOverdriveVDDC = 0;
 	hwmgr->platform_descriptor.overdriveVDDCStep = 0;
+
+	if (hwmgr->platform_descriptor.overdriveLimit.engineClock > 0 \
+		&& hwmgr->platform_descriptor.overdriveLimit.memoryClock > 0) {
+		phm_cap_set(hwmgr->platform_descriptor.platformCaps,
+			PHM_PlatformCaps_ACOverdriveSupport);
+	}
 
 	return 0;
 }
@@ -916,10 +910,8 @@ static int init_thermal_controller(
 			PHM_PlatformCaps_ThermalController
 		  );
 
-	if (0 == powerplay_table->usFanTableOffset) {
-		hwmgr->thermal_controller.use_hw_fan_control = 1;
+	if (0 == powerplay_table->usFanTableOffset)
 		return 0;
-	}
 
 	fan_table = (const PPTable_Generic_SubTable_Header *)
 		(((unsigned long)powerplay_table) +
@@ -941,33 +933,33 @@ static int init_thermal_controller(
 		hwmgr->thermal_controller.advanceFanControlParameters.ucTHyst
 			= tonga_fan_table->ucTHyst;
 		hwmgr->thermal_controller.advanceFanControlParameters.usTMin
-			= le16_to_cpu(tonga_fan_table->usTMin);
+			= tonga_fan_table->usTMin;
 		hwmgr->thermal_controller.advanceFanControlParameters.usTMed
-			= le16_to_cpu(tonga_fan_table->usTMed);
+			= tonga_fan_table->usTMed;
 		hwmgr->thermal_controller.advanceFanControlParameters.usTHigh
-			= le16_to_cpu(tonga_fan_table->usTHigh);
+			= tonga_fan_table->usTHigh;
 		hwmgr->thermal_controller.advanceFanControlParameters.usPWMMin
-			= le16_to_cpu(tonga_fan_table->usPWMMin);
+			= tonga_fan_table->usPWMMin;
 		hwmgr->thermal_controller.advanceFanControlParameters.usPWMMed
-			= le16_to_cpu(tonga_fan_table->usPWMMed);
+			= tonga_fan_table->usPWMMed;
 		hwmgr->thermal_controller.advanceFanControlParameters.usPWMHigh
-			= le16_to_cpu(tonga_fan_table->usPWMHigh);
+			= tonga_fan_table->usPWMHigh;
 		hwmgr->thermal_controller.advanceFanControlParameters.usTMax
 			= 10900;                  /* hard coded */
 		hwmgr->thermal_controller.advanceFanControlParameters.usTMax
-			= le16_to_cpu(tonga_fan_table->usTMax);
+			= tonga_fan_table->usTMax;
 		hwmgr->thermal_controller.advanceFanControlParameters.ucFanControlMode
 			= tonga_fan_table->ucFanControlMode;
 		hwmgr->thermal_controller.advanceFanControlParameters.usDefaultMaxFanPWM
-			= le16_to_cpu(tonga_fan_table->usFanPWMMax);
+			= tonga_fan_table->usFanPWMMax;
 		hwmgr->thermal_controller.advanceFanControlParameters.usDefaultFanOutputSensitivity
 			= 4836;
 		hwmgr->thermal_controller.advanceFanControlParameters.usFanOutputSensitivity
-			= le16_to_cpu(tonga_fan_table->usFanOutputSensitivity);
+			= tonga_fan_table->usFanOutputSensitivity;
 		hwmgr->thermal_controller.advanceFanControlParameters.usDefaultMaxFanRPM
-			= le16_to_cpu(tonga_fan_table->usFanRPMMax);
+			= tonga_fan_table->usFanRPMMax;
 		hwmgr->thermal_controller.advanceFanControlParameters.ulMinFanSCLKAcousticLimit
-			= (le32_to_cpu(tonga_fan_table->ulMinFanSCLKAcousticLimit) / 100); /* PPTable stores it in 10Khz unit for 2 decimal places.  SMC wants MHz. */
+			= (tonga_fan_table->ulMinFanSCLKAcousticLimit / 100); /* PPTable stores it in 10Khz unit for 2 decimal places.  SMC wants MHz. */
 		hwmgr->thermal_controller.advanceFanControlParameters.ucTargetTemperature
 			= tonga_fan_table->ucTargetTemperature;
 		hwmgr->thermal_controller.advanceFanControlParameters.ucMinimumPWMLimit
@@ -978,50 +970,50 @@ static int init_thermal_controller(
 		hwmgr->thermal_controller.advanceFanControlParameters.ucTHyst
 			= fiji_fan_table->ucTHyst;
 		hwmgr->thermal_controller.advanceFanControlParameters.usTMin
-			= le16_to_cpu(fiji_fan_table->usTMin);
+			= fiji_fan_table->usTMin;
 		hwmgr->thermal_controller.advanceFanControlParameters.usTMed
-			= le16_to_cpu(fiji_fan_table->usTMed);
+			= fiji_fan_table->usTMed;
 		hwmgr->thermal_controller.advanceFanControlParameters.usTHigh
-			= le16_to_cpu(fiji_fan_table->usTHigh);
+			= fiji_fan_table->usTHigh;
 		hwmgr->thermal_controller.advanceFanControlParameters.usPWMMin
-			= le16_to_cpu(fiji_fan_table->usPWMMin);
+			= fiji_fan_table->usPWMMin;
 		hwmgr->thermal_controller.advanceFanControlParameters.usPWMMed
-			= le16_to_cpu(fiji_fan_table->usPWMMed);
+			= fiji_fan_table->usPWMMed;
 		hwmgr->thermal_controller.advanceFanControlParameters.usPWMHigh
-			= le16_to_cpu(fiji_fan_table->usPWMHigh);
+			= fiji_fan_table->usPWMHigh;
 		hwmgr->thermal_controller.advanceFanControlParameters.usTMax
-			= le16_to_cpu(fiji_fan_table->usTMax);
+			= fiji_fan_table->usTMax;
 		hwmgr->thermal_controller.advanceFanControlParameters.ucFanControlMode
 			= fiji_fan_table->ucFanControlMode;
 		hwmgr->thermal_controller.advanceFanControlParameters.usDefaultMaxFanPWM
-			= le16_to_cpu(fiji_fan_table->usFanPWMMax);
+			= fiji_fan_table->usFanPWMMax;
 		hwmgr->thermal_controller.advanceFanControlParameters.usDefaultFanOutputSensitivity
 			= 4836;
 		hwmgr->thermal_controller.advanceFanControlParameters.usFanOutputSensitivity
-			= le16_to_cpu(fiji_fan_table->usFanOutputSensitivity);
+			= fiji_fan_table->usFanOutputSensitivity;
 		hwmgr->thermal_controller.advanceFanControlParameters.usDefaultMaxFanRPM
-			= le16_to_cpu(fiji_fan_table->usFanRPMMax);
+			= fiji_fan_table->usFanRPMMax;
 		hwmgr->thermal_controller.advanceFanControlParameters.ulMinFanSCLKAcousticLimit
-			= (le32_to_cpu(fiji_fan_table->ulMinFanSCLKAcousticLimit) / 100); /* PPTable stores it in 10Khz unit for 2 decimal places.  SMC wants MHz. */
+			= (fiji_fan_table->ulMinFanSCLKAcousticLimit / 100); /* PPTable stores it in 10Khz unit for 2 decimal places.  SMC wants MHz. */
 		hwmgr->thermal_controller.advanceFanControlParameters.ucTargetTemperature
 			= fiji_fan_table->ucTargetTemperature;
 		hwmgr->thermal_controller.advanceFanControlParameters.ucMinimumPWMLimit
 			= fiji_fan_table->ucMinimumPWMLimit;
 
 		hwmgr->thermal_controller.advanceFanControlParameters.usFanGainEdge
-			= le16_to_cpu(fiji_fan_table->usFanGainEdge);
+			= fiji_fan_table->usFanGainEdge;
 		hwmgr->thermal_controller.advanceFanControlParameters.usFanGainHotspot
-			= le16_to_cpu(fiji_fan_table->usFanGainHotspot);
+			= fiji_fan_table->usFanGainHotspot;
 		hwmgr->thermal_controller.advanceFanControlParameters.usFanGainLiquid
-			= le16_to_cpu(fiji_fan_table->usFanGainLiquid);
+			= fiji_fan_table->usFanGainLiquid;
 		hwmgr->thermal_controller.advanceFanControlParameters.usFanGainVrVddc
-			= le16_to_cpu(fiji_fan_table->usFanGainVrVddc);
+			= fiji_fan_table->usFanGainVrVddc;
 		hwmgr->thermal_controller.advanceFanControlParameters.usFanGainVrMvdd
-			= le16_to_cpu(fiji_fan_table->usFanGainVrMvdd);
+			= fiji_fan_table->usFanGainVrMvdd;
 		hwmgr->thermal_controller.advanceFanControlParameters.usFanGainPlx
-			= le16_to_cpu(fiji_fan_table->usFanGainPlx);
+			= fiji_fan_table->usFanGainPlx;
 		hwmgr->thermal_controller.advanceFanControlParameters.usFanGainHbm
-			= le16_to_cpu(fiji_fan_table->usFanGainHbm);
+			= fiji_fan_table->usFanGainHbm;
 	}
 
 	return 0;
@@ -1057,7 +1049,7 @@ static int check_powerplay_tables(
 	return 0;
 }
 
-static int pp_tables_v1_0_initialize(struct pp_hwmgr *hwmgr)
+int pp_tables_v1_0_initialize(struct pp_hwmgr *hwmgr)
 {
 	int result = 0;
 	const ATOM_Tonga_POWERPLAYTABLE *powerplay_table;
@@ -1066,6 +1058,8 @@ static int pp_tables_v1_0_initialize(struct pp_hwmgr *hwmgr)
 
 	PP_ASSERT_WITH_CODE((NULL != hwmgr->pptable),
 			    "Failed to allocate hwmgr->pptable!", return -ENOMEM);
+
+	memset(hwmgr->pptable, 0x00, sizeof(struct phm_ppt_v1_information));
 
 	powerplay_table = get_powerplay_table(hwmgr);
 
@@ -1106,7 +1100,7 @@ static int pp_tables_v1_0_initialize(struct pp_hwmgr *hwmgr)
 	return result;
 }
 
-static int pp_tables_v1_0_uninitialize(struct pp_hwmgr *hwmgr)
+int pp_tables_v1_0_uninitialize(struct pp_hwmgr *hwmgr)
 {
 	struct phm_ppt_v1_information *pp_table_information =
 		(struct phm_ppt_v1_information *)(hwmgr->pptable);
@@ -1143,9 +1137,6 @@ static int pp_tables_v1_0_uninitialize(struct pp_hwmgr *hwmgr)
 
 	kfree(pp_table_information->pcie_table);
 	pp_table_information->pcie_table = NULL;
-
-	kfree(pp_table_information->gpio_table);
-	pp_table_information->gpio_table = NULL;
 
 	kfree(hwmgr->pptable);
 	hwmgr->pptable = NULL;
@@ -1223,7 +1214,7 @@ static int ppt_get_num_of_vce_state_table_entries_v1_0(struct pp_hwmgr *hwmgr)
 }
 
 static int ppt_get_vce_state_table_entry_v1_0(struct pp_hwmgr *hwmgr, uint32_t i,
-		struct amd_vce_state *vce_state, void **clock_info, uint32_t *flag)
+		struct pp_vce_state *vce_state, void **clock_info, uint32_t *flag)
 {
 	const ATOM_Tonga_VCE_State_Record *vce_state_record;
 	ATOM_Tonga_SCLK_Dependency_Record *sclk_dep_record;
@@ -1256,9 +1247,9 @@ static int ppt_get_vce_state_table_entry_v1_0(struct pp_hwmgr *hwmgr, uint32_t i
 					vce_state_record->ucVCEClockIndex);
 	*flag = vce_state_record->ucFlag;
 
-	vce_state->evclk = le32_to_cpu(mm_dep_record->ulEClk);
-	vce_state->ecclk = le32_to_cpu(mm_dep_record->ulEClk);
-	vce_state->sclk = le32_to_cpu(sclk_dep_record->ulSclk);
+	vce_state->evclk = mm_dep_record->ulEClk;
+	vce_state->ecclk = mm_dep_record->ulEClk;
+	vce_state->sclk = sclk_dep_record->ulSclk;
 
 	if (vce_state_record->ucMCLKIndex >= mclk_dep_table->ucNumEntries)
 		mclk_dep_record = GET_FLEXIBLE_ARRAY_MEMBER_ADDR(
@@ -1271,7 +1262,7 @@ static int ppt_get_vce_state_table_entry_v1_0(struct pp_hwmgr *hwmgr, uint32_t i
 					entries, mclk_dep_table,
 					vce_state_record->ucMCLKIndex);
 
-	vce_state->mclk = le32_to_cpu(mclk_dep_record->ulMclk);
+	vce_state->mclk = mclk_dep_record->ulMclk;
 	return 0;
 }
 
@@ -1327,7 +1318,7 @@ int get_powerplay_table_entry_v1_0(struct pp_hwmgr *hwmgr,
 
 	hwmgr->num_vce_state_tables = i = ppt_get_num_of_vce_state_table_entries_v1_0(hwmgr);
 
-	if ((i != 0) && (i <= AMD_MAX_VCE_LEVELS)) {
+	if ((i != 0) && (i <= PP_MAX_VCE_LEVELS)) {
 		for (j = 0; j < i; j++)
 			ppt_get_vce_state_table_entry_v1_0(hwmgr, j, &(hwmgr->vce_states[j]), NULL, &flags);
 	}

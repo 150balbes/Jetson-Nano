@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * Author(s)......: Holger Smolinski <Holger.Smolinski@de.ibm.com>
  * Bugreports.to..: <Linux390@de.ibm.com>
@@ -8,11 +7,6 @@
 
 #ifndef DASD_FBA_H
 #define DASD_FBA_H
-
-/*
- * Maximum number of blocks to be chained
- */
-#define DASD_FBA_MAX_BLOCKS		96
 
 struct DE_fba_data {
 	struct {

@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * This file handles the architecture dependent parts of process handling.
  *
@@ -12,9 +11,6 @@
 #include <linux/compiler.h>
 #include <linux/cpu.h>
 #include <linux/sched.h>
-#include <linux/sched/debug.h>
-#include <linux/sched/task.h>
-#include <linux/sched/task_stack.h>
 #include <linux/kernel.h>
 #include <linux/mm.h>
 #include <linux/elfcore.h>
@@ -27,9 +23,8 @@
 #include <linux/compat.h>
 #include <linux/kprobes.h>
 #include <linux/random.h>
-#include <linux/export.h>
+#include <linux/module.h>
 #include <linux/init_task.h>
-#include <asm/cpu_mf.h>
 #include <asm/io.h>
 #include <asm/processor.h>
 #include <asm/vtimer.h>
@@ -37,32 +32,57 @@
 #include <asm/irq.h>
 #include <asm/nmi.h>
 #include <asm/smp.h>
-#include <asm/stacktrace.h>
 #include <asm/switch_to.h>
 #include <asm/runtime_instr.h>
 #include "entry.h"
 
 asmlinkage void ret_from_fork(void) asm ("ret_from_fork");
 
+/*
+ * Return saved PC of a blocked thread. used in kernel/sched.
+ * resume in entry.S does not create a new stack frame, it
+ * just stores the registers %r6-%r15 to the frame given by
+ * schedule. We want to return the address of the caller of
+ * schedule, so we have to walk the backchain one time to
+ * find the frame schedule() store its return address.
+ */
+unsigned long thread_saved_pc(struct task_struct *tsk)
+{
+	struct stack_frame *sf, *low, *high;
+
+	if (!tsk || !task_stack_page(tsk))
+		return 0;
+	low = task_stack_page(tsk);
+	high = (struct stack_frame *) task_pt_regs(tsk);
+	sf = (struct stack_frame *) tsk->thread.ksp;
+	if (sf <= low || sf > high)
+		return 0;
+	sf = (struct stack_frame *) sf->back_chain;
+	if (sf <= low || sf > high)
+		return 0;
+	return sf->gprs[8];
+}
+
 extern void kernel_thread_starter(void);
+
+/*
+ * Free current thread data structures etc..
+ */
+void exit_thread(struct task_struct *tsk)
+{
+}
 
 void flush_thread(void)
 {
 }
 
-void arch_setup_new_exec(void)
+void release_thread(struct task_struct *dead_task)
 {
-	if (S390_lowcore.current_pid != current->pid) {
-		S390_lowcore.current_pid = current->pid;
-		if (test_facility(40))
-			lpp(&S390_lowcore.lpp);
-	}
 }
 
 void arch_release_task_struct(struct task_struct *tsk)
 {
 	runtime_instr_release(tsk);
-	guarded_storage_release(tsk);
 }
 
 int arch_dup_task_struct(struct task_struct *dst, struct task_struct *src)
@@ -79,9 +99,10 @@ int arch_dup_task_struct(struct task_struct *dst, struct task_struct *src)
 	return 0;
 }
 
-int copy_thread_tls(unsigned long clone_flags, unsigned long new_stackp,
-		    unsigned long arg, struct task_struct *p, unsigned long tls)
+int copy_thread(unsigned long clone_flags, unsigned long new_stackp,
+		unsigned long arg, struct task_struct *p)
 {
+	struct thread_info *ti;
 	struct fake_frame
 	{
 		struct stack_frame sf;
@@ -100,11 +121,9 @@ int copy_thread_tls(unsigned long clone_flags, unsigned long new_stackp,
 	clear_tsk_thread_flag(p, TIF_SINGLE_STEP);
 	p->thread.per_flags = 0;
 	/* Initialize per thread user and system timer values */
-	p->thread.user_timer = 0;
-	p->thread.guest_timer = 0;
-	p->thread.system_timer = 0;
-	p->thread.hardirq_timer = 0;
-	p->thread.softirq_timer = 0;
+	ti = task_thread_info(p);
+	ti->user_timer = 0;
+	ti->system_timer = 0;
 
 	frame->sf.back_chain = 0;
 	/* new return point is ret_from_fork */
@@ -136,12 +155,10 @@ int copy_thread_tls(unsigned long clone_flags, unsigned long new_stackp,
 	/* Don't copy runtime instrumentation info */
 	p->thread.ri_cb = NULL;
 	frame->childregs.psw.mask &= ~PSW_MASK_RI;
-	/* Don't copy guarded storage control block */
-	p->thread.gs_cb = NULL;
-	p->thread.gs_bc_cb = NULL;
 
 	/* Set a new TLS ?  */
 	if (clone_flags & CLONE_SETTLS) {
+		unsigned long tls = frame->childregs.gprs[6];
 		if (is_compat_task()) {
 			p->thread.acrs[0] = (unsigned int)tls;
 		} else {
@@ -218,17 +235,4 @@ unsigned long arch_randomize_brk(struct mm_struct *mm)
 
 	ret = PAGE_ALIGN(mm->brk + brk_rnd());
 	return (ret > mm->brk) ? ret : mm->brk;
-}
-
-void set_fs_fixup(void)
-{
-	struct pt_regs *regs = current_pt_regs();
-	static bool warned;
-
-	set_fs(USER_DS);
-	if (warned)
-		return;
-	WARN(1, "Unbalanced set_fs - int code: 0x%x\n", regs->int_code);
-	show_registers(regs);
-	warned = true;
 }

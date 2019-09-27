@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /***************************************************************************
  *            au88x0_a3d.c
  *
@@ -10,6 +9,19 @@
  ****************************************************************************/
 
 /*
+ *  This program is free software; you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License as published by
+ *  the Free Software Foundation; either version 2 of the License, or
+ *  (at your option) any later version.
+ *
+ *  This program is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *  GNU Library General Public License for more details.
+ *
+ *  You should have received a copy of the GNU General Public License
+ *  along with this program; if not, write to the Free Software
+ *  Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
  */
 
 #include "au88x0_a3d.h"
@@ -765,7 +777,7 @@ snd_vortex_a3d_hrtf_put(struct snd_kcontrol *kcontrol,
 			struct snd_ctl_elem_value *ucontrol)
 {
 	a3dsrc_t *a = kcontrol->private_data;
-	int i;
+	int changed = 1, i;
 	int coord[6];
 	for (i = 0; i < 6; i++)
 		coord[i] = ucontrol->value.integer.value[i];
@@ -774,7 +786,7 @@ snd_vortex_a3d_hrtf_put(struct snd_kcontrol *kcontrol,
 	vortex_a3d_coord2hrtf(a->hrtf[1], coord);
 	a3dsrc_SetHrtfTarget(a, a->hrtf[0], a->hrtf[1]);
 	a3dsrc_SetHrtfCurrent(a, a->hrtf[0], a->hrtf[1]);
-	return 1;
+	return changed;
 }
 
 static int
@@ -783,7 +795,7 @@ snd_vortex_a3d_itd_put(struct snd_kcontrol *kcontrol,
 {
 	a3dsrc_t *a = kcontrol->private_data;
 	int coord[6];
-	int i;
+	int i, changed = 1;
 	for (i = 0; i < 6; i++)
 		coord[i] = ucontrol->value.integer.value[i];
 	/* Translate orientation coordinates to a3d params. */
@@ -793,7 +805,7 @@ snd_vortex_a3d_itd_put(struct snd_kcontrol *kcontrol,
 	a3dsrc_SetItdTarget(a, a->itd[0], a->itd[1]);
 	a3dsrc_SetItdCurrent(a, a->itd[0], a->itd[1]);
 	a3dsrc_SetItdDline(a, a->dline);
-	return 1;
+	return changed;
 }
 
 static int
@@ -801,6 +813,7 @@ snd_vortex_a3d_ild_put(struct snd_kcontrol *kcontrol,
 		       struct snd_ctl_elem_value *ucontrol)
 {
 	a3dsrc_t *a = kcontrol->private_data;
+	int changed = 1;
 	int l, r;
 	/* There may be some scale tranlation needed here. */
 	l = ucontrol->value.integer.value[0];
@@ -809,7 +822,7 @@ snd_vortex_a3d_ild_put(struct snd_kcontrol *kcontrol,
 	/* Left Right panning. */
 	a3dsrc_SetGainTarget(a, l, r);
 	a3dsrc_SetGainCurrent(a, l, r);
-	return 1;
+	return changed;
 }
 
 static int
@@ -817,7 +830,7 @@ snd_vortex_a3d_filter_put(struct snd_kcontrol *kcontrol,
 			  struct snd_ctl_elem_value *ucontrol)
 {
 	a3dsrc_t *a = kcontrol->private_data;
-	int i;
+	int i, changed = 1;
 	int params[6];
 	for (i = 0; i < 6; i++)
 		params[i] = ucontrol->value.integer.value[i];
@@ -830,10 +843,10 @@ snd_vortex_a3d_filter_put(struct snd_kcontrol *kcontrol,
 	a3dsrc_SetAtmosCurrent(a, a->filter[0],
 			       a->filter[1], a->filter[2],
 			       a->filter[3], a->filter[4]);
-	return 1;
+	return changed;
 }
 
-static const struct snd_kcontrol_new vortex_a3d_kcontrol = {
+static struct snd_kcontrol_new vortex_a3d_kcontrol = {
 	.iface = SNDRV_CTL_ELEM_IFACE_PCM,
 	.name = "Playback PCM advanced processing",
 	.access = SNDRV_CTL_ELEM_ACCESS_READWRITE,

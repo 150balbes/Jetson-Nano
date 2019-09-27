@@ -1,8 +1,7 @@
-// SPDX-License-Identifier: GPL-2.0
 #include <linux/highmem.h>
-#include <linux/memblock.h>
+#include <linux/bootmem.h>
 #include <linux/crash_dump.h>
-#include <linux/uaccess.h>
+#include <asm/uaccess.h>
 #include <linux/slab.h>
 
 static void *kdump_buf_page;

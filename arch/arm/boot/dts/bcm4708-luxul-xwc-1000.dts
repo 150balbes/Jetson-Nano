@@ -1,9 +1,10 @@
-// SPDX-License-Identifier: GPL-2.0-or-later OR MIT
 /*
  * Broadcom BCM470X / BCM5301X ARM platform code.
  * DTS for Luxul XWC-1000
  *
  * Copyright 2014 Luxul Inc.
+ *
+ * Licensed under the GNU/GPL. See COPYING for details.
  */
 
 /dts-v1/;
@@ -19,22 +20,15 @@
 		bootargs = "console=ttyS0,115200 earlycon";
 	};
 
-	memory@0 {
-		device_type = "memory";
+	memory {
 		reg = <0x00000000 0x08000000>;
 	};
 
 	nand: nand@18028000 {
 		nandcs@0 {
-			partitions {
-				compatible = "fixed-partitions";
-				#address-cells = <1>;
-				#size-cells = <1>;
-
-				partition@0 {
-					label = "ubi";
-					reg = <0x00000000 0x08000000>;
-				};
+			partition@0 {
+				label = "ubi";
+				reg = <0x00000000 0x08000000>;
 			};
 		};
 	};
@@ -51,6 +45,8 @@
 
 	gpio-keys {
 		compatible = "gpio-keys";
+		#address-cells = <1>;
+		#size-cells = <0>;
 
 		restart {
 			label = "Reset";
@@ -60,10 +56,10 @@
 	};
 };
 
-&spi_nor {
+&uart0 {
 	status = "okay";
 };
 
-&usb3_phy {
+&spi_nor {
 	status = "okay";
 };

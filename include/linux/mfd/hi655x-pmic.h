@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Device driver for regulators in hi655x IC
  *
@@ -7,6 +6,10 @@
  * Authors:
  * Chen Feng <puck.chen@hisilicon.com>
  * Fei  Wang <w.f@huawei.com>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  */
 
 #ifndef __HI655X_PMIC_H

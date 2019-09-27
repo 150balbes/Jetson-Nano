@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0-only
 config DVB_TTUSB_BUDGET
 	tristate "Technotrend/Hauppauge Nova-USB devices"
 	depends on DVB_CORE && USB && I2C && PCI

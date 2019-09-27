@@ -18,14 +18,16 @@
 
 #include <linux/io.h>
 #include <linux/i2c.h>
+#include <linux/gpio.h>
 #include <linux/slab.h>
 #include <linux/delay.h>
 #include <linux/errno.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
-#include <linux/gpio/consumer.h>
+#include <linux/of_gpio.h>
 #include <linux/interrupt.h>
 #include <linux/platform_device.h>
+#include <linux/platform_data/i2c-cbus-gpio.h>
 
 /*
  * Bit counts are derived from Nokia implementation. These should be checked
@@ -37,9 +39,9 @@
 struct cbus_host {
 	spinlock_t	lock;		/* host lock */
 	struct device	*dev;
-	struct gpio_desc *clk;
-	struct gpio_desc *dat;
-	struct gpio_desc *sel;
+	int		clk_gpio;
+	int		dat_gpio;
+	int		sel_gpio;
 };
 
 /**
@@ -49,9 +51,9 @@ struct cbus_host {
  */
 static void cbus_send_bit(struct cbus_host *host, unsigned bit)
 {
-	gpiod_set_value(host->dat, bit ? 1 : 0);
-	gpiod_set_value(host->clk, 1);
-	gpiod_set_value(host->clk, 0);
+	gpio_set_value(host->dat_gpio, bit ? 1 : 0);
+	gpio_set_value(host->clk_gpio, 1);
+	gpio_set_value(host->clk_gpio, 0);
 }
 
 /**
@@ -76,9 +78,9 @@ static int cbus_receive_bit(struct cbus_host *host)
 {
 	int ret;
 
-	gpiod_set_value(host->clk, 1);
-	ret = gpiod_get_value(host->dat);
-	gpiod_set_value(host->clk, 0);
+	gpio_set_value(host->clk_gpio, 1);
+	ret = gpio_get_value(host->dat_gpio);
+	gpio_set_value(host->clk_gpio, 0);
 	return ret;
 }
 
@@ -121,10 +123,10 @@ static int cbus_transfer(struct cbus_host *host, char rw, unsigned dev,
 	spin_lock_irqsave(&host->lock, flags);
 
 	/* Reset state and start of transfer, SEL stays down during transfer */
-	gpiod_set_value(host->sel, 0);
+	gpio_set_value(host->sel_gpio, 0);
 
 	/* Set the DAT pin to output */
-	gpiod_direction_output(host->dat, 1);
+	gpio_direction_output(host->dat_gpio, 1);
 
 	/* Send the device address */
 	cbus_send_data(host, dev, CBUS_ADDR_BITS);
@@ -139,12 +141,12 @@ static int cbus_transfer(struct cbus_host *host, char rw, unsigned dev,
 		cbus_send_data(host, data, 16);
 		ret = 0;
 	} else {
-		ret = gpiod_direction_input(host->dat);
+		ret = gpio_direction_input(host->dat_gpio);
 		if (ret) {
 			dev_dbg(host->dev, "failed setting direction\n");
 			goto out;
 		}
-		gpiod_set_value(host->clk, 1);
+		gpio_set_value(host->clk_gpio, 1);
 
 		ret = cbus_receive_word(host);
 		if (ret < 0) {
@@ -154,9 +156,9 @@ static int cbus_transfer(struct cbus_host *host, char rw, unsigned dev,
 	}
 
 	/* Indicate end of transfer, SEL goes up until next transfer */
-	gpiod_set_value(host->sel, 1);
-	gpiod_set_value(host->clk, 1);
-	gpiod_set_value(host->clk, 0);
+	gpio_set_value(host->sel_gpio, 1);
+	gpio_set_value(host->clk_gpio, 1);
+	gpio_set_value(host->clk_gpio, 0);
 
 out:
 	spin_unlock_irqrestore(&host->lock, flags);
@@ -212,6 +214,7 @@ static int cbus_i2c_probe(struct platform_device *pdev)
 {
 	struct i2c_adapter *adapter;
 	struct cbus_host *chost;
+	int ret;
 
 	adapter = devm_kzalloc(&pdev->dev, sizeof(struct i2c_adapter),
 			       GFP_KERNEL);
@@ -222,20 +225,22 @@ static int cbus_i2c_probe(struct platform_device *pdev)
 	if (!chost)
 		return -ENOMEM;
 
-	if (gpiod_count(&pdev->dev, NULL) != 3)
+	if (pdev->dev.of_node) {
+		struct device_node *dnode = pdev->dev.of_node;
+		if (of_gpio_count(dnode) != 3)
+			return -ENODEV;
+		chost->clk_gpio = of_get_gpio(dnode, 0);
+		chost->dat_gpio = of_get_gpio(dnode, 1);
+		chost->sel_gpio = of_get_gpio(dnode, 2);
+	} else if (dev_get_platdata(&pdev->dev)) {
+		struct i2c_cbus_platform_data *pdata =
+			dev_get_platdata(&pdev->dev);
+		chost->clk_gpio = pdata->clk_gpio;
+		chost->dat_gpio = pdata->dat_gpio;
+		chost->sel_gpio = pdata->sel_gpio;
+	} else {
 		return -ENODEV;
-	chost->clk = devm_gpiod_get_index(&pdev->dev, NULL, 0, GPIOD_OUT_LOW);
-	if (IS_ERR(chost->clk))
-		return PTR_ERR(chost->clk);
-	chost->dat = devm_gpiod_get_index(&pdev->dev, NULL, 1, GPIOD_IN);
-	if (IS_ERR(chost->dat))
-		return PTR_ERR(chost->dat);
-	chost->sel = devm_gpiod_get_index(&pdev->dev, NULL, 2, GPIOD_OUT_HIGH);
-	if (IS_ERR(chost->sel))
-		return PTR_ERR(chost->sel);
-	gpiod_set_consumer_name(chost->clk, "CBUS clk");
-	gpiod_set_consumer_name(chost->dat, "CBUS dat");
-	gpiod_set_consumer_name(chost->sel, "CBUS sel");
+	}
 
 	adapter->owner		= THIS_MODULE;
 	adapter->class		= I2C_CLASS_HWMON;
@@ -248,6 +253,21 @@ static int cbus_i2c_probe(struct platform_device *pdev)
 
 	spin_lock_init(&chost->lock);
 	chost->dev = &pdev->dev;
+
+	ret = devm_gpio_request_one(&pdev->dev, chost->clk_gpio,
+				    GPIOF_OUT_INIT_LOW, "CBUS clk");
+	if (ret)
+		return ret;
+
+	ret = devm_gpio_request_one(&pdev->dev, chost->dat_gpio, GPIOF_IN,
+				    "CBUS data");
+	if (ret)
+		return ret;
+
+	ret = devm_gpio_request_one(&pdev->dev, chost->sel_gpio,
+				    GPIOF_OUT_INIT_HIGH, "CBUS sel");
+	if (ret)
+		return ret;
 
 	i2c_set_adapdata(adapter, chost);
 	platform_set_drvdata(pdev, adapter);

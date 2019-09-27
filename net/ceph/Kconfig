@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0-only
 config CEPH_LIB
 	tristate "Ceph core library"
 	depends on INET
@@ -42,3 +41,4 @@ config CEPH_LIB_USE_DNS_RESOLVER
 	  Documentation/networking/dns_resolver.txt
 
 	  If unsure, say N.
+

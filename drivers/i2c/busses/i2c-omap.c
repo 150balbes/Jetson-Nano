@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * TI OMAP I2C master mode driver
  *
@@ -13,6 +12,16 @@
  *	Juha Yrjölä <juha.yrjola@solidboot.com>
  *	Syed Khasim <x0khasim@ti.com>
  *	Nishant Menon <nm@ti.com>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
  */
 
 #include <linux/module.h>
@@ -27,7 +36,7 @@
 #include <linux/of.h>
 #include <linux/of_device.h>
 #include <linux/slab.h>
-#include <linux/platform_data/i2c-omap.h>
+#include <linux/i2c-omap.h>
 #include <linux/pm_runtime.h>
 #include <linux/pinctrl/consumer.h>
 
@@ -260,8 +269,6 @@ static const u8 reg_map_ip_v2[] = {
 	[OMAP_I2C_IP_V2_IRQENABLE_CLR] = 0x30,
 };
 
-static int omap_i2c_xfer_data(struct omap_i2c_dev *omap);
-
 static inline void omap_i2c_write_reg(struct omap_i2c_dev *omap,
 				      int reg, u16 val)
 {
@@ -353,7 +360,6 @@ static int omap_i2c_init(struct omap_i2c_dev *omap)
 	unsigned long fclk_rate = 12000000;
 	unsigned long internal_clk = 0;
 	struct clk *fclk;
-	int error;
 
 	if (omap->rev >= OMAP_I2C_REV_ON_3430_3530) {
 		/*
@@ -372,13 +378,6 @@ static int omap_i2c_init(struct omap_i2c_dev *omap)
 		 * do this bit unconditionally.
 		 */
 		fclk = clk_get(omap->dev, "fck");
-		if (IS_ERR(fclk)) {
-			error = PTR_ERR(fclk);
-			dev_err(omap->dev, "could not get fck: %i\n", error);
-
-			return error;
-		}
-
 		fclk_rate = clk_get_rate(fclk);
 		clk_put(fclk);
 
@@ -411,12 +410,6 @@ static int omap_i2c_init(struct omap_i2c_dev *omap)
 		else
 			internal_clk = 4000;
 		fclk = clk_get(omap->dev, "fck");
-		if (IS_ERR(fclk)) {
-			error = PTR_ERR(fclk);
-			dev_err(omap->dev, "could not get fck: %i\n", error);
-
-			return error;
-		}
 		fclk_rate = clk_get_rate(fclk) / 1000;
 		clk_put(fclk);
 
@@ -480,22 +473,6 @@ static int omap_i2c_init(struct omap_i2c_dev *omap)
 }
 
 /*
- * Try bus recovery, but only if SDA is actually low.
- */
-static int omap_i2c_recover_bus(struct omap_i2c_dev *omap)
-{
-	u16 systest;
-
-	systest = omap_i2c_read_reg(omap, OMAP_I2C_SYSTEST_REG);
-	if ((systest & OMAP_I2C_SYSTEST_SCL_I_FUNC) &&
-	    (systest & OMAP_I2C_SYSTEST_SDA_I_FUNC))
-		return 0; /* bus seems to already be fine */
-	if (!(systest & OMAP_I2C_SYSTEST_SCL_I_FUNC))
-		return -EBUSY; /* recovery would not fix SCL */
-	return i2c_recover_bus(&omap->adapter);
-}
-
-/*
  * Waiting on Bus Busy
  */
 static int omap_i2c_wait_for_bb(struct omap_i2c_dev *omap)
@@ -505,7 +482,7 @@ static int omap_i2c_wait_for_bb(struct omap_i2c_dev *omap)
 	timeout = jiffies + OMAP_I2C_TIMEOUT;
 	while (omap_i2c_read_reg(omap, OMAP_I2C_STAT_REG) & OMAP_I2C_STAT_BB) {
 		if (time_after(jiffies, timeout))
-			return omap_i2c_recover_bus(omap);
+			return i2c_recover_bus(&omap->adapter);
 		msleep(1);
 	}
 
@@ -586,13 +563,8 @@ static int omap_i2c_wait_for_bb_valid(struct omap_i2c_dev *omap)
 		}
 
 		if (time_after(jiffies, timeout)) {
-			/*
-			 * SDA or SCL were low for the entire timeout without
-			 * any activity detected. Most likely, a slave is
-			 * locking up the bus with no master driving the clock.
-			 */
 			dev_warn(omap->dev, "timeout waiting for bus ready\n");
-			return omap_i2c_recover_bus(omap);
+			return -ETIMEDOUT;
 		}
 
 		msleep(1);
@@ -641,31 +613,21 @@ static void omap_i2c_resize_fifo(struct omap_i2c_dev *omap, u8 size, bool is_rx)
 			(1000 * omap->speed / 8);
 }
 
-static void omap_i2c_wait(struct omap_i2c_dev *omap)
-{
-	u16 stat;
-	u16 mask = omap_i2c_read_reg(omap, OMAP_I2C_IE_REG);
-	int count = 0;
-
-	do {
-		stat = omap_i2c_read_reg(omap, OMAP_I2C_STAT_REG);
-		count++;
-	} while (!(stat & mask) && count < 5);
-}
-
 /*
  * Low level master read/write transaction.
  */
 static int omap_i2c_xfer_msg(struct i2c_adapter *adap,
-			     struct i2c_msg *msg, int stop, bool polling)
+			     struct i2c_msg *msg, int stop)
 {
 	struct omap_i2c_dev *omap = i2c_get_adapdata(adap);
 	unsigned long timeout;
 	u16 w;
-	int ret;
 
 	dev_dbg(omap->dev, "addr: 0x%04x, len: %d, flags: 0x%x, stop: %d\n",
 		msg->addr, msg->len, msg->flags, stop);
+
+	if (msg->len == 0)
+		return -EINVAL;
 
 	omap->receiver = !!(msg->flags & I2C_M_RD);
 	omap_i2c_resize_fifo(omap, msg->len, omap->receiver);
@@ -686,8 +648,7 @@ static int omap_i2c_xfer_msg(struct i2c_adapter *adap,
 	w |= OMAP_I2C_BUF_RXFIF_CLR | OMAP_I2C_BUF_TXFIF_CLR;
 	omap_i2c_write_reg(omap, OMAP_I2C_BUF_REG, w);
 
-	if (!polling)
-		reinit_completion(&omap->cmd_complete);
+	reinit_completion(&omap->cmd_complete);
 	omap->cmd_err = 0;
 
 	w = OMAP_I2C_CON_EN | OMAP_I2C_CON_MST | OMAP_I2C_CON_STT;
@@ -739,18 +700,8 @@ static int omap_i2c_xfer_msg(struct i2c_adapter *adap,
 	 * REVISIT: We should abort the transfer on signals, but the bus goes
 	 * into arbitration and we're currently unable to recover from it.
 	 */
-	if (!polling) {
-		timeout = wait_for_completion_timeout(&omap->cmd_complete,
-						      OMAP_I2C_TIMEOUT);
-	} else {
-		do {
-			omap_i2c_wait(omap);
-			ret = omap_i2c_xfer_data(omap);
-		} while (ret == -EAGAIN);
-
-		timeout = !ret;
-	}
-
+	timeout = wait_for_completion_timeout(&omap->cmd_complete,
+						OMAP_I2C_TIMEOUT);
 	if (timeout == 0) {
 		dev_err(omap->dev, "controller timed out\n");
 		omap_i2c_reset(omap);
@@ -789,8 +740,7 @@ static int omap_i2c_xfer_msg(struct i2c_adapter *adap,
  * to do the work during IRQ processing.
  */
 static int
-omap_i2c_xfer_common(struct i2c_adapter *adap, struct i2c_msg msgs[], int num,
-		     bool polling)
+omap_i2c_xfer(struct i2c_adapter *adap, struct i2c_msg msgs[], int num)
 {
 	struct omap_i2c_dev *omap = i2c_get_adapdata(adap);
 	int i;
@@ -812,8 +762,7 @@ omap_i2c_xfer_common(struct i2c_adapter *adap, struct i2c_msg msgs[], int num,
 		omap->set_mpu_wkup_lat(omap->dev, omap->latency);
 
 	for (i = 0; i < num; i++) {
-		r = omap_i2c_xfer_msg(adap, &msgs[i], (i == (num - 1)),
-				      polling);
+		r = omap_i2c_xfer_msg(adap, &msgs[i], (i == (num - 1)));
 		if (r != 0)
 			break;
 	}
@@ -830,18 +779,6 @@ out:
 	pm_runtime_mark_last_busy(omap->dev);
 	pm_runtime_put_autosuspend(omap->dev);
 	return r;
-}
-
-static int
-omap_i2c_xfer_irq(struct i2c_adapter *adap, struct i2c_msg msgs[], int num)
-{
-	return omap_i2c_xfer_common(adap, msgs, num, false);
-}
-
-static int
-omap_i2c_xfer_polling(struct i2c_adapter *adap, struct i2c_msg msgs[], int num)
-{
-	return omap_i2c_xfer_common(adap, msgs, num, true);
 }
 
 static u32
@@ -1066,8 +1003,10 @@ omap_i2c_isr(int irq, void *dev_id)
 	return ret;
 }
 
-static int omap_i2c_xfer_data(struct omap_i2c_dev *omap)
+static irqreturn_t
+omap_i2c_isr_thread(int this_irq, void *dev_id)
 {
+	struct omap_i2c_dev *omap = dev_id;
 	u16 bits;
 	u16 stat;
 	int err = 0, count = 0;
@@ -1085,8 +1024,7 @@ static int omap_i2c_xfer_data(struct omap_i2c_dev *omap)
 
 		if (!stat) {
 			/* my work here is done */
-			err = -EAGAIN;
-			break;
+			goto out;
 		}
 
 		dev_dbg(omap->dev, "IRQ (ISR = 0x%04x)\n", stat);
@@ -1195,30 +1133,15 @@ static int omap_i2c_xfer_data(struct omap_i2c_dev *omap)
 		}
 	} while (stat);
 
-	return err;
-}
+	omap_i2c_complete_cmd(omap, err);
 
-static irqreturn_t
-omap_i2c_isr_thread(int this_irq, void *dev_id)
-{
-	int ret;
-	struct omap_i2c_dev *omap = dev_id;
-
-	ret = omap_i2c_xfer_data(omap);
-	if (ret != -EAGAIN)
-		omap_i2c_complete_cmd(omap, ret);
-
+out:
 	return IRQ_HANDLED;
 }
 
 static const struct i2c_algorithm omap_i2c_algo = {
-	.master_xfer	= omap_i2c_xfer_irq,
-	.master_xfer_atomic	= omap_i2c_xfer_polling,
+	.master_xfer	= omap_i2c_xfer,
 	.functionality	= omap_i2c_func,
-};
-
-static const struct i2c_adapter_quirks omap_i2c_quirks = {
-	.flags = I2C_AQ_NO_ZERO_LEN,
 };
 
 #ifdef CONFIG_OF
@@ -1495,7 +1418,6 @@ omap_i2c_probe(struct platform_device *pdev)
 	adap->class = I2C_CLASS_DEPRECATED;
 	strlcpy(adap->name, "OMAP I2C adapter", sizeof(adap->name));
 	adap->algo = &omap_i2c_algo;
-	adap->quirks = &omap_i2c_quirks;
 	adap->dev.parent = &pdev->dev;
 	adap->dev.of_node = pdev->dev.of_node;
 	adap->bus_recovery_info = &omap_i2c_bus_recovery_info;
@@ -1541,7 +1463,8 @@ static int omap_i2c_remove(struct platform_device *pdev)
 	return 0;
 }
 
-static int __maybe_unused omap_i2c_runtime_suspend(struct device *dev)
+#ifdef CONFIG_PM
+static int omap_i2c_runtime_suspend(struct device *dev)
 {
 	struct omap_i2c_dev *omap = dev_get_drvdata(dev);
 
@@ -1567,7 +1490,7 @@ static int __maybe_unused omap_i2c_runtime_suspend(struct device *dev)
 	return 0;
 }
 
-static int __maybe_unused omap_i2c_runtime_resume(struct device *dev)
+static int omap_i2c_runtime_resume(struct device *dev)
 {
 	struct omap_i2c_dev *omap = dev_get_drvdata(dev);
 
@@ -1581,19 +1504,21 @@ static int __maybe_unused omap_i2c_runtime_resume(struct device *dev)
 	return 0;
 }
 
-static const struct dev_pm_ops omap_i2c_pm_ops = {
-	SET_NOIRQ_SYSTEM_SLEEP_PM_OPS(pm_runtime_force_suspend,
-				      pm_runtime_force_resume)
+static struct dev_pm_ops omap_i2c_pm_ops = {
 	SET_RUNTIME_PM_OPS(omap_i2c_runtime_suspend,
 			   omap_i2c_runtime_resume, NULL)
 };
+#define OMAP_I2C_PM_OPS (&omap_i2c_pm_ops)
+#else
+#define OMAP_I2C_PM_OPS NULL
+#endif /* CONFIG_PM */
 
 static struct platform_driver omap_i2c_driver = {
 	.probe		= omap_i2c_probe,
 	.remove		= omap_i2c_remove,
 	.driver		= {
 		.name	= "omap_i2c",
-		.pm	= &omap_i2c_pm_ops,
+		.pm	= OMAP_I2C_PM_OPS,
 		.of_match_table = of_match_ptr(omap_i2c_of_match),
 	},
 };

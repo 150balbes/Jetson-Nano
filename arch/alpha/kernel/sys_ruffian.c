@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  *	linux/arch/alpha/kernel/sys_ruffian.c
  *
@@ -118,10 +117,10 @@ ruffian_kill_arch (int mode)
  *
  */
 
-static int
+static int __init
 ruffian_map_irq(const struct pci_dev *dev, u8 slot, u8 pin)
 {
-        static char irq_tab[11][5] = {
+        static char irq_tab[11][5] __initdata = {
 	      /*INT  INTA INTB INTC INTD */
 		{-1,  -1,  -1,  -1,  -1},  /* IdSel 13,  21052	     */
 		{-1,  -1,  -1,  -1,  -1},  /* IdSel 14,  SIO	     */
@@ -140,7 +139,7 @@ ruffian_map_irq(const struct pci_dev *dev, u8 slot, u8 pin)
 	return COMMON_TABLE_LOOKUP;
 }
 
-static u8
+static u8 __init
 ruffian_swizzle(struct pci_dev *dev, u8 *pinp)
 {
 	int slot, pin = *pinp;

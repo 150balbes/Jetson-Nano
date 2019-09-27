@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __SPI_CAVIUM_H
 #define __SPI_CAVIUM_H
 

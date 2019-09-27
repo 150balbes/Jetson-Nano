@@ -81,6 +81,11 @@ union cvmx_fpa_addr_range_error {
 		uint64_t reserved_38_63:26;
 #endif
 	} s;
+	struct cvmx_fpa_addr_range_error_s cn61xx;
+	struct cvmx_fpa_addr_range_error_s cn66xx;
+	struct cvmx_fpa_addr_range_error_s cn68xx;
+	struct cvmx_fpa_addr_range_error_s cn68xxp1;
+	struct cvmx_fpa_addr_range_error_s cnf71xx;
 };
 
 union cvmx_fpa_bist_status {
@@ -102,6 +107,24 @@ union cvmx_fpa_bist_status {
 		uint64_t reserved_5_63:59;
 #endif
 	} s;
+	struct cvmx_fpa_bist_status_s cn30xx;
+	struct cvmx_fpa_bist_status_s cn31xx;
+	struct cvmx_fpa_bist_status_s cn38xx;
+	struct cvmx_fpa_bist_status_s cn38xxp2;
+	struct cvmx_fpa_bist_status_s cn50xx;
+	struct cvmx_fpa_bist_status_s cn52xx;
+	struct cvmx_fpa_bist_status_s cn52xxp1;
+	struct cvmx_fpa_bist_status_s cn56xx;
+	struct cvmx_fpa_bist_status_s cn56xxp1;
+	struct cvmx_fpa_bist_status_s cn58xx;
+	struct cvmx_fpa_bist_status_s cn58xxp1;
+	struct cvmx_fpa_bist_status_s cn61xx;
+	struct cvmx_fpa_bist_status_s cn63xx;
+	struct cvmx_fpa_bist_status_s cn63xxp1;
+	struct cvmx_fpa_bist_status_s cn66xx;
+	struct cvmx_fpa_bist_status_s cn68xx;
+	struct cvmx_fpa_bist_status_s cn68xxp1;
+	struct cvmx_fpa_bist_status_s cnf71xx;
 };
 
 union cvmx_fpa_ctl_status {
@@ -150,6 +173,23 @@ union cvmx_fpa_ctl_status {
 		uint64_t reserved_18_63:46;
 #endif
 	} cn30xx;
+	struct cvmx_fpa_ctl_status_cn30xx cn31xx;
+	struct cvmx_fpa_ctl_status_cn30xx cn38xx;
+	struct cvmx_fpa_ctl_status_cn30xx cn38xxp2;
+	struct cvmx_fpa_ctl_status_cn30xx cn50xx;
+	struct cvmx_fpa_ctl_status_cn30xx cn52xx;
+	struct cvmx_fpa_ctl_status_cn30xx cn52xxp1;
+	struct cvmx_fpa_ctl_status_cn30xx cn56xx;
+	struct cvmx_fpa_ctl_status_cn30xx cn56xxp1;
+	struct cvmx_fpa_ctl_status_cn30xx cn58xx;
+	struct cvmx_fpa_ctl_status_cn30xx cn58xxp1;
+	struct cvmx_fpa_ctl_status_s cn61xx;
+	struct cvmx_fpa_ctl_status_s cn63xx;
+	struct cvmx_fpa_ctl_status_cn30xx cn63xxp1;
+	struct cvmx_fpa_ctl_status_s cn66xx;
+	struct cvmx_fpa_ctl_status_s cn68xx;
+	struct cvmx_fpa_ctl_status_s cn68xxp1;
+	struct cvmx_fpa_ctl_status_s cnf71xx;
 };
 
 union cvmx_fpa_fpfx_marks {
@@ -165,6 +205,19 @@ union cvmx_fpa_fpfx_marks {
 		uint64_t reserved_22_63:42;
 #endif
 	} s;
+	struct cvmx_fpa_fpfx_marks_s cn38xx;
+	struct cvmx_fpa_fpfx_marks_s cn38xxp2;
+	struct cvmx_fpa_fpfx_marks_s cn56xx;
+	struct cvmx_fpa_fpfx_marks_s cn56xxp1;
+	struct cvmx_fpa_fpfx_marks_s cn58xx;
+	struct cvmx_fpa_fpfx_marks_s cn58xxp1;
+	struct cvmx_fpa_fpfx_marks_s cn61xx;
+	struct cvmx_fpa_fpfx_marks_s cn63xx;
+	struct cvmx_fpa_fpfx_marks_s cn63xxp1;
+	struct cvmx_fpa_fpfx_marks_s cn66xx;
+	struct cvmx_fpa_fpfx_marks_s cn68xx;
+	struct cvmx_fpa_fpfx_marks_s cn68xxp1;
+	struct cvmx_fpa_fpfx_marks_s cnf71xx;
 };
 
 union cvmx_fpa_fpfx_size {
@@ -178,6 +231,19 @@ union cvmx_fpa_fpfx_size {
 		uint64_t reserved_11_63:53;
 #endif
 	} s;
+	struct cvmx_fpa_fpfx_size_s cn38xx;
+	struct cvmx_fpa_fpfx_size_s cn38xxp2;
+	struct cvmx_fpa_fpfx_size_s cn56xx;
+	struct cvmx_fpa_fpfx_size_s cn56xxp1;
+	struct cvmx_fpa_fpfx_size_s cn58xx;
+	struct cvmx_fpa_fpfx_size_s cn58xxp1;
+	struct cvmx_fpa_fpfx_size_s cn61xx;
+	struct cvmx_fpa_fpfx_size_s cn63xx;
+	struct cvmx_fpa_fpfx_size_s cn63xxp1;
+	struct cvmx_fpa_fpfx_size_s cn66xx;
+	struct cvmx_fpa_fpfx_size_s cn68xx;
+	struct cvmx_fpa_fpfx_size_s cn68xxp1;
+	struct cvmx_fpa_fpfx_size_s cnf71xx;
 };
 
 union cvmx_fpa_fpf0_marks {
@@ -193,6 +259,19 @@ union cvmx_fpa_fpf0_marks {
 		uint64_t reserved_24_63:40;
 #endif
 	} s;
+	struct cvmx_fpa_fpf0_marks_s cn38xx;
+	struct cvmx_fpa_fpf0_marks_s cn38xxp2;
+	struct cvmx_fpa_fpf0_marks_s cn56xx;
+	struct cvmx_fpa_fpf0_marks_s cn56xxp1;
+	struct cvmx_fpa_fpf0_marks_s cn58xx;
+	struct cvmx_fpa_fpf0_marks_s cn58xxp1;
+	struct cvmx_fpa_fpf0_marks_s cn61xx;
+	struct cvmx_fpa_fpf0_marks_s cn63xx;
+	struct cvmx_fpa_fpf0_marks_s cn63xxp1;
+	struct cvmx_fpa_fpf0_marks_s cn66xx;
+	struct cvmx_fpa_fpf0_marks_s cn68xx;
+	struct cvmx_fpa_fpf0_marks_s cn68xxp1;
+	struct cvmx_fpa_fpf0_marks_s cnf71xx;
 };
 
 union cvmx_fpa_fpf0_size {
@@ -206,6 +285,19 @@ union cvmx_fpa_fpf0_size {
 		uint64_t reserved_12_63:52;
 #endif
 	} s;
+	struct cvmx_fpa_fpf0_size_s cn38xx;
+	struct cvmx_fpa_fpf0_size_s cn38xxp2;
+	struct cvmx_fpa_fpf0_size_s cn56xx;
+	struct cvmx_fpa_fpf0_size_s cn56xxp1;
+	struct cvmx_fpa_fpf0_size_s cn58xx;
+	struct cvmx_fpa_fpf0_size_s cn58xxp1;
+	struct cvmx_fpa_fpf0_size_s cn61xx;
+	struct cvmx_fpa_fpf0_size_s cn63xx;
+	struct cvmx_fpa_fpf0_size_s cn63xxp1;
+	struct cvmx_fpa_fpf0_size_s cn66xx;
+	struct cvmx_fpa_fpf0_size_s cn68xx;
+	struct cvmx_fpa_fpf0_size_s cn68xxp1;
+	struct cvmx_fpa_fpf0_size_s cnf71xx;
 };
 
 union cvmx_fpa_fpf8_marks {
@@ -221,6 +313,8 @@ union cvmx_fpa_fpf8_marks {
 		uint64_t reserved_22_63:42;
 #endif
 	} s;
+	struct cvmx_fpa_fpf8_marks_s cn68xx;
+	struct cvmx_fpa_fpf8_marks_s cn68xxp1;
 };
 
 union cvmx_fpa_fpf8_size {
@@ -234,6 +328,8 @@ union cvmx_fpa_fpf8_size {
 		uint64_t reserved_12_63:52;
 #endif
 	} s;
+	struct cvmx_fpa_fpf8_size_s cn68xx;
+	struct cvmx_fpa_fpf8_size_s cn68xxp1;
 };
 
 union cvmx_fpa_int_enb {
@@ -400,6 +496,16 @@ union cvmx_fpa_int_enb {
 		uint64_t reserved_28_63:36;
 #endif
 	} cn30xx;
+	struct cvmx_fpa_int_enb_cn30xx cn31xx;
+	struct cvmx_fpa_int_enb_cn30xx cn38xx;
+	struct cvmx_fpa_int_enb_cn30xx cn38xxp2;
+	struct cvmx_fpa_int_enb_cn30xx cn50xx;
+	struct cvmx_fpa_int_enb_cn30xx cn52xx;
+	struct cvmx_fpa_int_enb_cn30xx cn52xxp1;
+	struct cvmx_fpa_int_enb_cn30xx cn56xx;
+	struct cvmx_fpa_int_enb_cn30xx cn56xxp1;
+	struct cvmx_fpa_int_enb_cn30xx cn58xx;
+	struct cvmx_fpa_int_enb_cn30xx cn58xxp1;
 	struct cvmx_fpa_int_enb_cn61xx {
 #ifdef __BIG_ENDIAN_BITFIELD
 		uint64_t reserved_50_63:14;
@@ -594,6 +700,8 @@ union cvmx_fpa_int_enb {
 		uint64_t reserved_44_63:20;
 #endif
 	} cn63xx;
+	struct cvmx_fpa_int_enb_cn30xx cn63xxp1;
+	struct cvmx_fpa_int_enb_cn61xx cn66xx;
 	struct cvmx_fpa_int_enb_cn68xx {
 #ifdef __BIG_ENDIAN_BITFIELD
 		uint64_t reserved_50_63:14;
@@ -701,6 +809,8 @@ union cvmx_fpa_int_enb {
 		uint64_t reserved_50_63:14;
 #endif
 	} cn68xx;
+	struct cvmx_fpa_int_enb_cn68xx cn68xxp1;
+	struct cvmx_fpa_int_enb_cn61xx cnf71xx;
 };
 
 union cvmx_fpa_int_sum {
@@ -875,6 +985,16 @@ union cvmx_fpa_int_sum {
 		uint64_t reserved_28_63:36;
 #endif
 	} cn30xx;
+	struct cvmx_fpa_int_sum_cn30xx cn31xx;
+	struct cvmx_fpa_int_sum_cn30xx cn38xx;
+	struct cvmx_fpa_int_sum_cn30xx cn38xxp2;
+	struct cvmx_fpa_int_sum_cn30xx cn50xx;
+	struct cvmx_fpa_int_sum_cn30xx cn52xx;
+	struct cvmx_fpa_int_sum_cn30xx cn52xxp1;
+	struct cvmx_fpa_int_sum_cn30xx cn56xx;
+	struct cvmx_fpa_int_sum_cn30xx cn56xxp1;
+	struct cvmx_fpa_int_sum_cn30xx cn58xx;
+	struct cvmx_fpa_int_sum_cn30xx cn58xxp1;
 	struct cvmx_fpa_int_sum_cn61xx {
 #ifdef __BIG_ENDIAN_BITFIELD
 		uint64_t reserved_50_63:14;
@@ -1069,6 +1189,11 @@ union cvmx_fpa_int_sum {
 		uint64_t reserved_44_63:20;
 #endif
 	} cn63xx;
+	struct cvmx_fpa_int_sum_cn30xx cn63xxp1;
+	struct cvmx_fpa_int_sum_cn61xx cn66xx;
+	struct cvmx_fpa_int_sum_s cn68xx;
+	struct cvmx_fpa_int_sum_s cn68xxp1;
+	struct cvmx_fpa_int_sum_cn61xx cnf71xx;
 };
 
 union cvmx_fpa_packet_threshold {
@@ -1082,6 +1207,12 @@ union cvmx_fpa_packet_threshold {
 		uint64_t reserved_32_63:32;
 #endif
 	} s;
+	struct cvmx_fpa_packet_threshold_s cn61xx;
+	struct cvmx_fpa_packet_threshold_s cn63xx;
+	struct cvmx_fpa_packet_threshold_s cn66xx;
+	struct cvmx_fpa_packet_threshold_s cn68xx;
+	struct cvmx_fpa_packet_threshold_s cn68xxp1;
+	struct cvmx_fpa_packet_threshold_s cnf71xx;
 };
 
 union cvmx_fpa_poolx_end_addr {
@@ -1095,6 +1226,11 @@ union cvmx_fpa_poolx_end_addr {
 		uint64_t reserved_33_63:31;
 #endif
 	} s;
+	struct cvmx_fpa_poolx_end_addr_s cn61xx;
+	struct cvmx_fpa_poolx_end_addr_s cn66xx;
+	struct cvmx_fpa_poolx_end_addr_s cn68xx;
+	struct cvmx_fpa_poolx_end_addr_s cn68xxp1;
+	struct cvmx_fpa_poolx_end_addr_s cnf71xx;
 };
 
 union cvmx_fpa_poolx_start_addr {
@@ -1108,6 +1244,11 @@ union cvmx_fpa_poolx_start_addr {
 		uint64_t reserved_33_63:31;
 #endif
 	} s;
+	struct cvmx_fpa_poolx_start_addr_s cn61xx;
+	struct cvmx_fpa_poolx_start_addr_s cn66xx;
+	struct cvmx_fpa_poolx_start_addr_s cn68xx;
+	struct cvmx_fpa_poolx_start_addr_s cn68xxp1;
+	struct cvmx_fpa_poolx_start_addr_s cnf71xx;
 };
 
 union cvmx_fpa_poolx_threshold {
@@ -1130,6 +1271,11 @@ union cvmx_fpa_poolx_threshold {
 		uint64_t reserved_29_63:35;
 #endif
 	} cn61xx;
+	struct cvmx_fpa_poolx_threshold_cn61xx cn63xx;
+	struct cvmx_fpa_poolx_threshold_cn61xx cn66xx;
+	struct cvmx_fpa_poolx_threshold_s cn68xx;
+	struct cvmx_fpa_poolx_threshold_s cn68xxp1;
+	struct cvmx_fpa_poolx_threshold_cn61xx cnf71xx;
 };
 
 union cvmx_fpa_quex_available {
@@ -1152,6 +1298,23 @@ union cvmx_fpa_quex_available {
 		uint64_t reserved_29_63:35;
 #endif
 	} cn30xx;
+	struct cvmx_fpa_quex_available_cn30xx cn31xx;
+	struct cvmx_fpa_quex_available_cn30xx cn38xx;
+	struct cvmx_fpa_quex_available_cn30xx cn38xxp2;
+	struct cvmx_fpa_quex_available_cn30xx cn50xx;
+	struct cvmx_fpa_quex_available_cn30xx cn52xx;
+	struct cvmx_fpa_quex_available_cn30xx cn52xxp1;
+	struct cvmx_fpa_quex_available_cn30xx cn56xx;
+	struct cvmx_fpa_quex_available_cn30xx cn56xxp1;
+	struct cvmx_fpa_quex_available_cn30xx cn58xx;
+	struct cvmx_fpa_quex_available_cn30xx cn58xxp1;
+	struct cvmx_fpa_quex_available_cn30xx cn61xx;
+	struct cvmx_fpa_quex_available_cn30xx cn63xx;
+	struct cvmx_fpa_quex_available_cn30xx cn63xxp1;
+	struct cvmx_fpa_quex_available_cn30xx cn66xx;
+	struct cvmx_fpa_quex_available_s cn68xx;
+	struct cvmx_fpa_quex_available_s cn68xxp1;
+	struct cvmx_fpa_quex_available_cn30xx cnf71xx;
 };
 
 union cvmx_fpa_quex_page_index {
@@ -1165,6 +1328,24 @@ union cvmx_fpa_quex_page_index {
 		uint64_t reserved_25_63:39;
 #endif
 	} s;
+	struct cvmx_fpa_quex_page_index_s cn30xx;
+	struct cvmx_fpa_quex_page_index_s cn31xx;
+	struct cvmx_fpa_quex_page_index_s cn38xx;
+	struct cvmx_fpa_quex_page_index_s cn38xxp2;
+	struct cvmx_fpa_quex_page_index_s cn50xx;
+	struct cvmx_fpa_quex_page_index_s cn52xx;
+	struct cvmx_fpa_quex_page_index_s cn52xxp1;
+	struct cvmx_fpa_quex_page_index_s cn56xx;
+	struct cvmx_fpa_quex_page_index_s cn56xxp1;
+	struct cvmx_fpa_quex_page_index_s cn58xx;
+	struct cvmx_fpa_quex_page_index_s cn58xxp1;
+	struct cvmx_fpa_quex_page_index_s cn61xx;
+	struct cvmx_fpa_quex_page_index_s cn63xx;
+	struct cvmx_fpa_quex_page_index_s cn63xxp1;
+	struct cvmx_fpa_quex_page_index_s cn66xx;
+	struct cvmx_fpa_quex_page_index_s cn68xx;
+	struct cvmx_fpa_quex_page_index_s cn68xxp1;
+	struct cvmx_fpa_quex_page_index_s cnf71xx;
 };
 
 union cvmx_fpa_que8_page_index {
@@ -1178,6 +1359,8 @@ union cvmx_fpa_que8_page_index {
 		uint64_t reserved_25_63:39;
 #endif
 	} s;
+	struct cvmx_fpa_que8_page_index_s cn68xx;
+	struct cvmx_fpa_que8_page_index_s cn68xxp1;
 };
 
 union cvmx_fpa_que_act {
@@ -1193,6 +1376,24 @@ union cvmx_fpa_que_act {
 		uint64_t reserved_29_63:35;
 #endif
 	} s;
+	struct cvmx_fpa_que_act_s cn30xx;
+	struct cvmx_fpa_que_act_s cn31xx;
+	struct cvmx_fpa_que_act_s cn38xx;
+	struct cvmx_fpa_que_act_s cn38xxp2;
+	struct cvmx_fpa_que_act_s cn50xx;
+	struct cvmx_fpa_que_act_s cn52xx;
+	struct cvmx_fpa_que_act_s cn52xxp1;
+	struct cvmx_fpa_que_act_s cn56xx;
+	struct cvmx_fpa_que_act_s cn56xxp1;
+	struct cvmx_fpa_que_act_s cn58xx;
+	struct cvmx_fpa_que_act_s cn58xxp1;
+	struct cvmx_fpa_que_act_s cn61xx;
+	struct cvmx_fpa_que_act_s cn63xx;
+	struct cvmx_fpa_que_act_s cn63xxp1;
+	struct cvmx_fpa_que_act_s cn66xx;
+	struct cvmx_fpa_que_act_s cn68xx;
+	struct cvmx_fpa_que_act_s cn68xxp1;
+	struct cvmx_fpa_que_act_s cnf71xx;
 };
 
 union cvmx_fpa_que_exp {
@@ -1208,6 +1409,24 @@ union cvmx_fpa_que_exp {
 		uint64_t reserved_29_63:35;
 #endif
 	} s;
+	struct cvmx_fpa_que_exp_s cn30xx;
+	struct cvmx_fpa_que_exp_s cn31xx;
+	struct cvmx_fpa_que_exp_s cn38xx;
+	struct cvmx_fpa_que_exp_s cn38xxp2;
+	struct cvmx_fpa_que_exp_s cn50xx;
+	struct cvmx_fpa_que_exp_s cn52xx;
+	struct cvmx_fpa_que_exp_s cn52xxp1;
+	struct cvmx_fpa_que_exp_s cn56xx;
+	struct cvmx_fpa_que_exp_s cn56xxp1;
+	struct cvmx_fpa_que_exp_s cn58xx;
+	struct cvmx_fpa_que_exp_s cn58xxp1;
+	struct cvmx_fpa_que_exp_s cn61xx;
+	struct cvmx_fpa_que_exp_s cn63xx;
+	struct cvmx_fpa_que_exp_s cn63xxp1;
+	struct cvmx_fpa_que_exp_s cn66xx;
+	struct cvmx_fpa_que_exp_s cn68xx;
+	struct cvmx_fpa_que_exp_s cn68xxp1;
+	struct cvmx_fpa_que_exp_s cnf71xx;
 };
 
 union cvmx_fpa_wart_ctl {
@@ -1221,6 +1440,17 @@ union cvmx_fpa_wart_ctl {
 		uint64_t reserved_16_63:48;
 #endif
 	} s;
+	struct cvmx_fpa_wart_ctl_s cn30xx;
+	struct cvmx_fpa_wart_ctl_s cn31xx;
+	struct cvmx_fpa_wart_ctl_s cn38xx;
+	struct cvmx_fpa_wart_ctl_s cn38xxp2;
+	struct cvmx_fpa_wart_ctl_s cn50xx;
+	struct cvmx_fpa_wart_ctl_s cn52xx;
+	struct cvmx_fpa_wart_ctl_s cn52xxp1;
+	struct cvmx_fpa_wart_ctl_s cn56xx;
+	struct cvmx_fpa_wart_ctl_s cn56xxp1;
+	struct cvmx_fpa_wart_ctl_s cn58xx;
+	struct cvmx_fpa_wart_ctl_s cn58xxp1;
 };
 
 union cvmx_fpa_wart_status {
@@ -1234,6 +1464,17 @@ union cvmx_fpa_wart_status {
 		uint64_t reserved_32_63:32;
 #endif
 	} s;
+	struct cvmx_fpa_wart_status_s cn30xx;
+	struct cvmx_fpa_wart_status_s cn31xx;
+	struct cvmx_fpa_wart_status_s cn38xx;
+	struct cvmx_fpa_wart_status_s cn38xxp2;
+	struct cvmx_fpa_wart_status_s cn50xx;
+	struct cvmx_fpa_wart_status_s cn52xx;
+	struct cvmx_fpa_wart_status_s cn52xxp1;
+	struct cvmx_fpa_wart_status_s cn56xx;
+	struct cvmx_fpa_wart_status_s cn56xxp1;
+	struct cvmx_fpa_wart_status_s cn58xx;
+	struct cvmx_fpa_wart_status_s cn58xxp1;
 };
 
 union cvmx_fpa_wqe_threshold {
@@ -1247,6 +1488,12 @@ union cvmx_fpa_wqe_threshold {
 		uint64_t reserved_32_63:32;
 #endif
 	} s;
+	struct cvmx_fpa_wqe_threshold_s cn61xx;
+	struct cvmx_fpa_wqe_threshold_s cn63xx;
+	struct cvmx_fpa_wqe_threshold_s cn66xx;
+	struct cvmx_fpa_wqe_threshold_s cn68xx;
+	struct cvmx_fpa_wqe_threshold_s cn68xxp1;
+	struct cvmx_fpa_wqe_threshold_s cnf71xx;
 };
 
 #endif

@@ -1,8 +1,12 @@
-// SPDX-License-Identifier: GPL-2.0+
 /* Renesas R-Car CAN device driver
  *
  * Copyright (C) 2013 Cogent Embedded, Inc. <source@cogentembedded.com>
  * Copyright (C) 2013 Renesas Solutions Corp.
+ *
+ * This program is free software; you can redistribute  it and/or modify it
+ * under  the terms of  the GNU General  Public License as published by the
+ * Free Software Foundation;  either version 2 of the  License, or (at your
+ * option) any later version.
  */
 
 #include <linux/module.h>
@@ -19,9 +23,6 @@
 #include <linux/of.h>
 
 #define RCAR_CAN_DRV_NAME	"rcar_can"
-
-#define RCAR_SUPPORTED_CLOCKS	(BIT(CLKR_CLKP1) | BIT(CLKR_CLKP2) | \
-				 BIT(CLKR_CLKEXT))
 
 /* Mailbox configuration:
  * mailbox 60 - 63 - Rx FIFO mailboxes
@@ -694,7 +695,7 @@ static int rcar_can_rx_poll(struct napi_struct *napi, int quota)
 	}
 	/* All packets processed */
 	if (num_pkts < quota) {
-		napi_complete_done(napi, num_pkts);
+		napi_complete(napi);
 		priv->ier |= RCAR_CAN_IER_RXFIE;
 		writeb(priv->ier, &priv->regs->ier);
 	}
@@ -788,7 +789,7 @@ static int rcar_can_probe(struct platform_device *pdev)
 		goto fail_clk;
 	}
 
-	if (!(BIT(clock_select) & RCAR_SUPPORTED_CLOCKS)) {
+	if (clock_select >= ARRAY_SIZE(clock_names)) {
 		err = -EINVAL;
 		dev_err(&pdev->dev, "invalid CAN clock selected\n");
 		goto fail_clk;
@@ -825,7 +826,8 @@ static int rcar_can_probe(struct platform_device *pdev)
 
 	devm_can_led_init(ndev);
 
-	dev_info(&pdev->dev, "device registered (IRQ%d)\n", ndev->irq);
+	dev_info(&pdev->dev, "device registered (regs @ %p, IRQ%d)\n",
+		 priv->regs, ndev->irq);
 
 	return 0;
 fail_candev:

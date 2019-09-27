@@ -34,7 +34,6 @@
 
 #include <linux/module.h>
 #include <linux/fs.h>
-#include <linux/fs_context.h>
 #include <linux/mount.h>
 #include <linux/pagemap.h>
 #include <linux/init.h>
@@ -507,13 +506,13 @@ bail:
  * after device init.  The direct add_cntr_files() call handles adding
  * them from the init code, when the fs is already mounted.
  */
-static int qibfs_fill_super(struct super_block *sb, struct fs_context *fc)
+static int qibfs_fill_super(struct super_block *sb, void *data, int silent)
 {
-	struct qib_devdata *dd;
-	unsigned long index;
+	struct qib_devdata *dd, *tmp;
+	unsigned long flags;
 	int ret;
 
-	static const struct tree_descr files[] = {
+	static struct tree_descr files[] = {
 		[2] = {"driver_stats", &driver_ops[0], S_IRUGO},
 		[3] = {"driver_stats_names", &driver_ops[1], S_IRUGO},
 		{""},
@@ -525,32 +524,31 @@ static int qibfs_fill_super(struct super_block *sb, struct fs_context *fc)
 		goto bail;
 	}
 
-	xa_for_each(&qib_dev_table, index, dd) {
+	spin_lock_irqsave(&qib_devs_lock, flags);
+
+	list_for_each_entry_safe(dd, tmp, &qib_dev_list, list) {
+		spin_unlock_irqrestore(&qib_devs_lock, flags);
 		ret = add_cntr_files(sb, dd);
 		if (ret)
 			goto bail;
+		spin_lock_irqsave(&qib_devs_lock, flags);
 	}
+
+	spin_unlock_irqrestore(&qib_devs_lock, flags);
 
 bail:
 	return ret;
 }
 
-static int qibfs_get_tree(struct fs_context *fc)
+static struct dentry *qibfs_mount(struct file_system_type *fs_type, int flags,
+			const char *dev_name, void *data)
 {
-	int ret = get_tree_single(fc, qibfs_fill_super);
-	if (ret == 0)
-		qib_super = fc->root->d_sb;
+	struct dentry *ret;
+
+	ret = mount_single(fs_type, flags, data, qibfs_fill_super);
+	if (!IS_ERR(ret))
+		qib_super = ret->d_sb;
 	return ret;
-}
-
-static const struct fs_context_operations qibfs_context_ops = {
-	.get_tree	= qibfs_get_tree,
-};
-
-static int qibfs_init_fs_context(struct fs_context *fc)
-{
-	fc->ops = &qibfs_context_ops;
-	return 0;
 }
 
 static void qibfs_kill_super(struct super_block *s)
@@ -591,7 +589,7 @@ int qibfs_remove(struct qib_devdata *dd)
 static struct file_system_type qibfs_fs_type = {
 	.owner =        THIS_MODULE,
 	.name =         "ipathfs",
-	.init_fs_context = qibfs_init_fs_context,
+	.mount =        qibfs_mount,
 	.kill_sb =      qibfs_kill_super,
 };
 MODULE_ALIAS_FS("ipathfs");

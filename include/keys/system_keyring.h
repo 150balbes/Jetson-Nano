@@ -1,8 +1,12 @@
-/* SPDX-License-Identifier: GPL-2.0-or-later */
 /* System keyring containing trusted public keys.
  *
  * Copyright (C) 2013 Red Hat, Inc. All Rights Reserved.
  * Written by David Howells (dhowells@redhat.com)
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public Licence
+ * as published by the Free Software Foundation; either version
+ * 2 of the Licence, or (at your option) any later version.
  */
 
 #ifndef _KEYS_SYSTEM_KEYRING_H
@@ -14,8 +18,7 @@
 
 extern int restrict_link_by_builtin_trusted(struct key *keyring,
 					    const struct key_type *type,
-					    const union key_payload *payload,
-					    struct key *restriction_key);
+					    const union key_payload *payload);
 
 #else
 #define restrict_link_by_builtin_trusted restrict_link_reject
@@ -25,22 +28,9 @@ extern int restrict_link_by_builtin_trusted(struct key *keyring,
 extern int restrict_link_by_builtin_and_secondary_trusted(
 	struct key *keyring,
 	const struct key_type *type,
-	const union key_payload *payload,
-	struct key *restriction_key);
+	const union key_payload *payload);
 #else
 #define restrict_link_by_builtin_and_secondary_trusted restrict_link_by_builtin_trusted
-#endif
-
-#ifdef CONFIG_SYSTEM_BLACKLIST_KEYRING
-extern int mark_hash_blacklisted(const char *hash);
-extern int is_hash_blacklisted(const u8 *hash, size_t hash_len,
-			       const char *type);
-#else
-static inline int is_hash_blacklisted(const u8 *hash, size_t hash_len,
-				      const char *type)
-{
-	return 0;
-}
 #endif
 
 #ifdef CONFIG_IMA_BLACKLIST_KEYRING
@@ -57,13 +47,5 @@ static inline struct key *get_ima_blacklist_keyring(void)
 }
 #endif /* CONFIG_IMA_BLACKLIST_KEYRING */
 
-#if defined(CONFIG_INTEGRITY_PLATFORM_KEYRING) && \
-	defined(CONFIG_SYSTEM_TRUSTED_KEYRING)
-extern void __init set_platform_trusted_keys(struct key *keyring);
-#else
-static inline void set_platform_trusted_keys(struct key *keyring)
-{
-}
-#endif
 
 #endif /* _KEYS_SYSTEM_KEYRING_H */

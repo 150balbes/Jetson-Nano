@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _ASM_X86_SEGMENT_H
 #define _ASM_X86_SEGMENT_H
 
@@ -146,7 +145,7 @@
 # define __KERNEL_PERCPU		0
 #endif
 
-#ifdef CONFIG_STACKPROTECTOR
+#ifdef CONFIG_CC_STACKPROTECTOR
 # define __KERNEL_STACK_CANARY		(GDT_ENTRY_STACK_CANARY*8)
 #else
 # define __KERNEL_STACK_CANARY		0
@@ -186,7 +185,8 @@
 #define GDT_ENTRY_TLS_MIN		12
 #define GDT_ENTRY_TLS_MAX		14
 
-#define GDT_ENTRY_CPUNODE		15
+/* Abused to load per CPU data from limit */
+#define GDT_ENTRY_PER_CPU		15
 
 /*
  * Number of entries in the GDT table:
@@ -206,11 +206,11 @@
 #define __USER_DS			(GDT_ENTRY_DEFAULT_USER_DS*8 + 3)
 #define __USER32_DS			__USER_DS
 #define __USER_CS			(GDT_ENTRY_DEFAULT_USER_CS*8 + 3)
-#define __CPUNODE_SEG			(GDT_ENTRY_CPUNODE*8 + 3)
+#define __PER_CPU_SEG			(GDT_ENTRY_PER_CPU*8 + 3)
 
 #endif
 
-#ifndef CONFIG_PARAVIRT_XXL
+#ifndef CONFIG_PARAVIRT
 # define get_kernel_rpl()		0
 #endif
 
@@ -224,47 +224,6 @@
 #define GDT_ENTRY_TLS_ENTRIES		3
 #define TLS_SIZE			(GDT_ENTRY_TLS_ENTRIES* 8)
 
-#ifdef CONFIG_X86_64
-
-/* Bit size and mask of CPU number stored in the per CPU data (and TSC_AUX) */
-#define VDSO_CPUNODE_BITS		12
-#define VDSO_CPUNODE_MASK		0xfff
-
-#ifndef __ASSEMBLY__
-
-/* Helper functions to store/load CPU and node numbers */
-
-static inline unsigned long vdso_encode_cpunode(int cpu, unsigned long node)
-{
-	return (node << VDSO_CPUNODE_BITS) | cpu;
-}
-
-static inline void vdso_read_cpunode(unsigned *cpu, unsigned *node)
-{
-	unsigned int p;
-
-	/*
-	 * Load CPU and node number from the GDT.  LSL is faster than RDTSCP
-	 * and works on all CPUs.  This is volatile so that it orders
-	 * correctly with respect to barrier() and to keep GCC from cleverly
-	 * hoisting it out of the calling function.
-	 *
-	 * If RDPID is available, use it.
-	 */
-	alternative_io ("lsl %[seg],%[p]",
-			".byte 0xf3,0x0f,0xc7,0xf8", /* RDPID %eax/rax */
-			X86_FEATURE_RDPID,
-			[p] "=a" (p), [seg] "r" (__CPUNODE_SEG));
-
-	if (cpu)
-		*cpu = (p & VDSO_CPUNODE_MASK);
-	if (node)
-		*node = (p >> VDSO_CPUNODE_BITS);
-}
-
-#endif /* !__ASSEMBLY__ */
-#endif /* CONFIG_X86_64 */
-
 #ifdef __KERNEL__
 
 /*
@@ -276,21 +235,11 @@ static inline void vdso_read_cpunode(unsigned *cpu, unsigned *node)
  */
 #define EARLY_IDT_HANDLER_SIZE 9
 
-/*
- * xen_early_idt_handler_array is for Xen pv guests: for each entry in
- * early_idt_handler_array it contains a prequel in the form of
- * pop %rcx; pop %r11; jmp early_idt_handler_array[i]; summing up to
- * max 8 bytes.
- */
-#define XEN_EARLY_IDT_HANDLER_SIZE 8
-
 #ifndef __ASSEMBLY__
 
 extern const char early_idt_handler_array[NUM_EXCEPTION_VECTORS][EARLY_IDT_HANDLER_SIZE];
-extern void early_ignore_irq(void);
-
-#if defined(CONFIG_X86_64) && defined(CONFIG_XEN_PV)
-extern const char xen_early_idt_handler_array[NUM_EXCEPTION_VECTORS][XEN_EARLY_IDT_HANDLER_SIZE];
+#ifdef CONFIG_TRACING
+# define trace_early_idt_handler_array early_idt_handler_array
 #endif
 
 /*

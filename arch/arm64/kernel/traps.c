@@ -1,9 +1,20 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Based on arch/arm/kernel/traps.c
  *
  * Copyright (C) 1995-2009 Russell King
  * Copyright (C) 2012 ARM Ltd.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 #include <linux/bug.h>
@@ -18,23 +29,16 @@
 #include <linux/kexec.h>
 #include <linux/delay.h>
 #include <linux/init.h>
-#include <linux/sched/signal.h>
-#include <linux/sched/debug.h>
-#include <linux/sched/task_stack.h>
-#include <linux/sizes.h>
+#include <linux/sched.h>
 #include <linux/syscalls.h>
-#include <linux/mm_types.h>
-#include <linux/kasan.h>
 
 #include <asm/atomic.h>
+#include <asm/barrier.h>
 #include <asm/bug.h>
-#include <asm/cpufeature.h>
-#include <asm/daifflags.h>
 #include <asm/debug-monitors.h>
 #include <asm/esr.h>
 #include <asm/insn.h>
 #include <asm/traps.h>
-#include <asm/smp.h>
 #include <asm/stack_pointer.h>
 #include <asm/stacktrace.h>
 #include <asm/exception.h>
@@ -50,24 +54,69 @@ static const char *handler[]= {
 
 int show_unhandled_signals = 0;
 
+#ifdef CONFIG_DEBUG_VERBOSE_OOPS
+/*
+ * Dump out the contents of some kernel memory nicely...
+ */
+static void dump_mem(const char *lvl, const char *str, unsigned long bottom,
+		     unsigned long top)
+{
+	unsigned long first;
+	mm_segment_t fs;
+	int i;
+
+	/*
+	 * We need to switch to kernel mode so that we can use __get_user
+	 * to safely read from kernel space.
+	 */
+	fs = get_fs();
+	set_fs(KERNEL_DS);
+
+	printk("%s%s(0x%016lx to 0x%016lx)\n", lvl, str, bottom, top);
+
+	for (first = bottom & ~31; first < top; first += 32) {
+		unsigned long p;
+		char str[sizeof(" 12345678") * 8 + 1];
+
+		memset(str, ' ', sizeof(str));
+		str[sizeof(str) - 1] = '\0';
+
+		for (p = first, i = 0; i < (32 / 8)
+					&& p < top; i++, p += 8) {
+			if (p >= bottom && p < top) {
+				unsigned long val;
+
+				if (__get_user(val, (unsigned long *)p) == 0)
+					sprintf(str + i * 17, " %016lx", val);
+				else
+					sprintf(str + i * 17, " ????????????????");
+			}
+		}
+		printk("%s%04lx:%s\n", lvl, first & 0xffff, str);
+	}
+
+	set_fs(fs);
+}
+#endif
+
 static void dump_backtrace_entry(unsigned long where)
 {
-	printk(" %pS\n", (void *)where);
+	/*
+	 * Note that 'where' can have a physical address, but it's not handled.
+	 */
+	print_ip_sym(where);
 }
 
-static void dump_kernel_instr(const char *lvl, struct pt_regs *regs)
+static void __dump_instr(const char *lvl, struct pt_regs *regs)
 {
 	unsigned long addr = instruction_pointer(regs);
 	char str[sizeof("00000000 ") * 5 + 2 + 1], *p = str;
 	int i;
 
-	if (user_mode(regs))
-		return;
-
 	for (i = -4; i < 1; i++) {
 		unsigned int val, bad;
 
-		bad = aarch64_insn_read(&((u32 *)addr)[i], &val);
+		bad = get_user(val, &((u32 *)addr)[i]);
 
 		if (!bad)
 			p += sprintf(p, i == 0 ? "(%08x) " : "%08x ", val);
@@ -76,22 +125,28 @@ static void dump_kernel_instr(const char *lvl, struct pt_regs *regs)
 			break;
 		}
 	}
-
 	printk("%sCode: %s\n", lvl, str);
 }
 
-void dump_backtrace(struct pt_regs *regs, struct task_struct *tsk)
+static void dump_instr(const char *lvl, struct pt_regs *regs)
+{
+	if (!user_mode(regs)) {
+		mm_segment_t fs = get_fs();
+		set_fs(KERNEL_DS);
+		__dump_instr(lvl, regs);
+		set_fs(fs);
+	} else {
+		__dump_instr(lvl, regs);
+	}
+}
+
+static void dump_backtrace(struct pt_regs *regs, struct task_struct *tsk)
 {
 	struct stackframe frame;
-	int skip = 0;
+	unsigned long irq_stack_ptr;
+	int skip;
 
 	pr_debug("%s(regs = %p tsk = %p)\n", __func__, regs, tsk);
-
-	if (regs) {
-		if (user_mode(regs))
-			return;
-		skip = 1;
-	}
 
 	if (!tsk)
 		tsk = current;
@@ -99,24 +154,41 @@ void dump_backtrace(struct pt_regs *regs, struct task_struct *tsk)
 	if (!try_get_task_stack(tsk))
 		return;
 
+	/*
+	 * Switching between stacks is valid when tracing current and in
+	 * non-preemptible context.
+	 */
+	if (tsk == current && !preemptible())
+		irq_stack_ptr = IRQ_STACK_PTR(smp_processor_id());
+	else
+		irq_stack_ptr = 0;
+
 	if (tsk == current) {
-		start_backtrace(&frame,
-				(unsigned long)__builtin_frame_address(0),
-				(unsigned long)dump_backtrace);
+		frame.fp = (unsigned long)__builtin_frame_address(0);
+		frame.sp = current_stack_pointer;
+		frame.pc = (unsigned long)dump_backtrace;
 	} else {
 		/*
 		 * task blocked in __switch_to
 		 */
-		start_backtrace(&frame,
-				thread_saved_fp(tsk),
-				thread_saved_pc(tsk));
+		frame.fp = thread_saved_fp(tsk);
+		frame.sp = thread_saved_sp(tsk);
+		frame.pc = thread_saved_pc(tsk);
 	}
+#ifdef CONFIG_FUNCTION_GRAPH_TRACER
+	frame.graph = tsk->curr_ret_stack;
+#endif
 
+	skip = !!regs;
 	printk("Call trace:\n");
-	do {
+	while (1) {
+		unsigned long where = frame.pc;
+		unsigned long stack;
+		int ret;
+
 		/* skip until specified stack frame */
 		if (!skip) {
-			dump_backtrace_entry(frame.pc);
+			dump_backtrace_entry(where);
 		} else if (frame.fp == regs->regs[29]) {
 			skip = 0;
 			/*
@@ -128,7 +200,27 @@ void dump_backtrace(struct pt_regs *regs, struct task_struct *tsk)
 			 */
 			dump_backtrace_entry(regs->pc);
 		}
-	} while (!unwind_frame(tsk, &frame));
+		ret = unwind_frame(tsk, &frame);
+		if (ret < 0)
+			break;
+		stack = frame.sp;
+#ifdef CONFIG_DEBUG_VERBOSE_OOPS
+		if (in_exception_text(where)) {
+			/*
+			 * If we switched to the irq_stack before calling this
+			 * exception handler, then the pt_regs will be on the
+			 * task stack. The easiest way to tell is if the large
+			 * pt_regs would overlap with the end of the irq_stack.
+			 */
+			if (stack < irq_stack_ptr &&
+			    (stack + sizeof(struct pt_regs)) > irq_stack_ptr)
+				stack = IRQ_STACK_TO_TASK_STACK(irq_stack_ptr);
+
+			dump_mem("", "Exception stack", stack,
+				 stack + sizeof(struct pt_regs));
+		}
+#endif
+	}
 
 	put_task_stack(tsk);
 }
@@ -148,6 +240,7 @@ void show_stack(struct task_struct *tsk, unsigned long *sp)
 
 static int __die(const char *str, int err, struct pt_regs *regs)
 {
+	struct task_struct *tsk = current;
 	static int die_counter;
 	int ret;
 
@@ -160,9 +253,22 @@ static int __die(const char *str, int err, struct pt_regs *regs)
 		return ret;
 
 	print_modules();
-	show_regs(regs);
+	__show_regs(regs);
+	pr_emerg("Process %.*s (pid: %d, stack limit = 0x%p)\n",
+		 TASK_COMM_LEN, tsk->comm, task_pid_nr(tsk),
+		 end_of_stack(tsk));
 
-	dump_kernel_instr(KERN_EMERG, regs);
+	if (!user_mode(regs)) {
+#ifdef CONFIG_DEBUG_VERBOSE_OOPS
+		dump_mem(KERN_EMERG, "Stack: ", regs->sp,
+			 THREAD_SIZE + (unsigned long)task_stack_page(tsk));
+#endif
+		dump_backtrace(regs, tsk);
+
+#ifdef CONFIG_DEBUG_VERBOSE_OOPS
+		dump_instr(KERN_EMERG, regs);
+#endif
+	}
 
 	return ret;
 }
@@ -177,10 +283,11 @@ void die(const char *str, struct pt_regs *regs, int err)
 	int ret;
 	unsigned long flags;
 
-	raw_spin_lock_irqsave(&die_lock, flags);
+	local_irq_save(flags);
 
 	oops_enter();
 
+	raw_spin_lock(&die_lock);
 	console_verbose();
 	bust_spinlocks(1);
 	ret = __die(str, err, regs);
@@ -190,6 +297,7 @@ void die(const char *str, struct pt_regs *regs, int err)
 
 	bust_spinlocks(0);
 	add_taint(TAINT_DIE, LOCKDEP_NOW_UNRELIABLE);
+	raw_spin_unlock(&die_lock);
 	oops_exit();
 
 	if (in_interrupt())
@@ -197,85 +305,22 @@ void die(const char *str, struct pt_regs *regs, int err)
 	if (panic_on_oops)
 		panic("Fatal exception");
 
-	raw_spin_unlock_irqrestore(&die_lock, flags);
+	local_irq_restore(flags);
 
 	if (ret != NOTIFY_STOP)
 		do_exit(SIGSEGV);
 }
 
-static void arm64_show_signal(int signo, const char *str)
-{
-	static DEFINE_RATELIMIT_STATE(rs, DEFAULT_RATELIMIT_INTERVAL,
-				      DEFAULT_RATELIMIT_BURST);
-	struct task_struct *tsk = current;
-	unsigned int esr = tsk->thread.fault_code;
-	struct pt_regs *regs = task_pt_regs(tsk);
-
-	/* Leave if the signal won't be shown */
-	if (!show_unhandled_signals ||
-	    !unhandled_signal(tsk, signo) ||
-	    !__ratelimit(&rs))
-		return;
-
-	pr_info("%s[%d]: unhandled exception: ", tsk->comm, task_pid_nr(tsk));
-	if (esr)
-		pr_cont("%s, ESR 0x%08x, ", esr_get_class_string(esr), esr);
-
-	pr_cont("%s", str);
-	print_vma_addr(KERN_CONT " in ", regs->pc);
-	pr_cont("\n");
-	__show_regs(regs);
-}
-
-void arm64_force_sig_fault(int signo, int code, void __user *addr,
-			   const char *str)
-{
-	arm64_show_signal(signo, str);
-	if (signo == SIGKILL)
-		force_sig(SIGKILL);
-	else
-		force_sig_fault(signo, code, addr);
-}
-
-void arm64_force_sig_mceerr(int code, void __user *addr, short lsb,
-			    const char *str)
-{
-	arm64_show_signal(SIGBUS, str);
-	force_sig_mceerr(code, addr, lsb);
-}
-
-void arm64_force_sig_ptrace_errno_trap(int errno, void __user *addr,
-				       const char *str)
-{
-	arm64_show_signal(SIGTRAP, str);
-	force_sig_ptrace_errno_trap(errno, addr);
-}
-
 void arm64_notify_die(const char *str, struct pt_regs *regs,
-		      int signo, int sicode, void __user *addr,
-		      int err)
+		      struct siginfo *info, int err)
 {
 	if (user_mode(regs)) {
-		WARN_ON(regs != current_pt_regs());
 		current->thread.fault_address = 0;
 		current->thread.fault_code = err;
-
-		arm64_force_sig_fault(signo, sicode, addr, str);
+		force_sig_info(info->si_signo, info, current);
 	} else {
 		die(str, regs, err);
 	}
-}
-
-void arm64_skip_faulting_instruction(struct pt_regs *regs, unsigned long size)
-{
-	regs->pc += size;
-
-	/*
-	 * If we were single stepping, we want to get the step exception after
-	 * we return from the trap.
-	 */
-	if (user_mode(regs))
-		user_fastforward_single_step(current);
 }
 
 static LIST_HEAD(undef_hook);
@@ -308,30 +353,25 @@ static int call_undef_hook(struct pt_regs *regs)
 	void __user *pc = (void __user *)instruction_pointer(regs);
 
 	if (!user_mode(regs)) {
-		__le32 instr_le;
-		if (probe_kernel_address((__force __le32 *)pc, instr_le))
-			goto exit;
-		instr = le32_to_cpu(instr_le);
+		instr = *((u32 *)pc);
 	} else if (compat_thumb_mode(regs)) {
 		/* 16-bit Thumb instruction */
-		__le16 instr_le;
-		if (get_user(instr_le, (__le16 __user *)pc))
+		if (get_user(instr, (u16 __user *)pc))
 			goto exit;
-		instr = le16_to_cpu(instr_le);
+		instr = le16_to_cpu(instr);
 		if (aarch32_insn_is_wide(instr)) {
 			u32 instr2;
 
-			if (get_user(instr_le, (__le16 __user *)(pc + 2)))
+			if (get_user(instr2, (u16 __user *)(pc + 2)))
 				goto exit;
-			instr2 = le16_to_cpu(instr_le);
+			instr2 = le16_to_cpu(instr2);
 			instr = (instr << 16) | instr2;
 		}
 	} else {
 		/* 32-bit ARM instruction */
-		__le32 instr_le;
-		if (get_user(instr_le, (__le32 __user *)pc))
+		if (get_user(instr, (u32 __user *)pc))
 			goto exit;
-		instr = le32_to_cpu(instr_le);
+		instr = le32_to_cpu(instr);
 	}
 
 	raw_spin_lock_irqsave(&undef_lock, flags);
@@ -345,13 +385,12 @@ exit:
 	return fn ? fn(regs, instr) : 1;
 }
 
-void force_signal_inject(int signal, int code, unsigned long address)
+static void force_signal_inject(int signal, int code, struct pt_regs *regs,
+				unsigned long address)
 {
+	siginfo_t info;
+	void __user *pc = (void __user *)instruction_pointer(regs);
 	const char *desc;
-	struct pt_regs *regs = current_pt_regs();
-
-	if (WARN_ON(!user_mode(regs)))
-		return;
 
 	switch (signal) {
 	case SIGILL:
@@ -361,23 +400,29 @@ void force_signal_inject(int signal, int code, unsigned long address)
 		desc = "illegal memory access";
 		break;
 	default:
-		desc = "unknown or unrecoverable error";
+		desc = "bad mode";
 		break;
 	}
 
-	/* Force signals we don't understand to SIGKILL */
-	if (WARN_ON(signal != SIGKILL &&
-		    siginfo_layout(signal, code) != SIL_FAULT)) {
-		signal = SIGKILL;
+	if (unhandled_signal(current, signal) &&
+	    show_unhandled_signals_ratelimited()) {
+		pr_info("%s[%d]: %s: pc=%p\n",
+			current->comm, task_pid_nr(current), desc, pc);
+		dump_instr(KERN_INFO, regs);
 	}
 
-	arm64_notify_die(desc, regs, signal, code, (void __user *)address, 0);
+	info.si_signo = signal;
+	info.si_errno = 0;
+	info.si_code  = code;
+	info.si_addr  = pc;
+
+	arm64_notify_die(desc, regs, &info, 0);
 }
 
 /*
  * Set up process info to signal segmentation fault - called on access error.
  */
-void arm64_notify_segfault(unsigned long addr)
+void arm64_notify_segfault(struct pt_regs *regs, unsigned long addr)
 {
 	int code;
 
@@ -388,7 +433,7 @@ void arm64_notify_segfault(unsigned long addr)
 		code = SEGV_ACCERR;
 	up_read(&current->mm->mmap_sem);
 
-	force_signal_inject(SIGSEGV, code, addr);
+	force_signal_inject(SIGSEGV, code, regs, addr);
 }
 
 asmlinkage void __exception do_undefinstr(struct pt_regs *regs)
@@ -400,8 +445,13 @@ asmlinkage void __exception do_undefinstr(struct pt_regs *regs)
 	if (call_undef_hook(regs) == 0)
 		return;
 
-	BUG_ON(!user_mode(regs));
-	force_signal_inject(SIGILL, ILL_ILLOPC, regs->pc);
+	force_signal_inject(SIGILL, ILL_ILLOPC, regs, 0);
+}
+
+int cpu_enable_cache_maint_trap(void *__unused)
+{
+	config_sctlr_el1(SCTLR_EL1_UCI, 0);
+	return 0;
 }
 
 #define __user_cache_maint(insn, address, res)			\
@@ -427,11 +477,11 @@ asmlinkage void __exception do_undefinstr(struct pt_regs *regs)
 static void user_cache_maint_handler(unsigned int esr, struct pt_regs *regs)
 {
 	unsigned long address;
-	int rt = ESR_ELx_SYS64_ISS_RT(esr);
+	int rt = (esr & ESR_ELx_SYS64_ISS_RT_MASK) >> ESR_ELx_SYS64_ISS_RT_SHIFT;
 	int crm = (esr & ESR_ELx_SYS64_ISS_CRM_MASK) >> ESR_ELx_SYS64_ISS_CRM_SHIFT;
 	int ret = 0;
 
-	address = untagged_addr(pt_regs_read_reg(regs, rt));
+	address = (rt == 31) ? 0 : untagged_addr(regs->regs[rt]);
 
 	switch (crm) {
 	case ESR_ELx_SYS64_ISS_CRM_DC_CVAU:	/* DC CVAU, gets promoted */
@@ -440,12 +490,6 @@ static void user_cache_maint_handler(unsigned int esr, struct pt_regs *regs)
 	case ESR_ELx_SYS64_ISS_CRM_DC_CVAC:	/* DC CVAC, gets promoted */
 		__user_cache_maint("dc civac", address, ret);
 		break;
-	case ESR_ELx_SYS64_ISS_CRM_DC_CVADP:	/* DC CVADP */
-		__user_cache_maint("sys 3, c7, c13, 1", address, ret);
-		break;
-	case ESR_ELx_SYS64_ISS_CRM_DC_CVAP:	/* DC CVAP */
-		__user_cache_maint("sys 3, c7, c12, 1", address, ret);
-		break;
 	case ESR_ELx_SYS64_ISS_CRM_DC_CIVAC:	/* DC CIVAC */
 		__user_cache_maint("dc civac", address, ret);
 		break;
@@ -453,56 +497,41 @@ static void user_cache_maint_handler(unsigned int esr, struct pt_regs *regs)
 		__user_cache_maint("ic ivau", address, ret);
 		break;
 	default:
-		force_signal_inject(SIGILL, ILL_ILLOPC, regs->pc);
+		force_signal_inject(SIGILL, ILL_ILLOPC, regs, 0);
 		return;
 	}
 
 	if (ret)
-		arm64_notify_segfault(address);
+		arm64_notify_segfault(regs, address);
 	else
-		arm64_skip_faulting_instruction(regs, AARCH64_INSN_SIZE);
+		regs->pc += 4;
 }
 
 static void ctr_read_handler(unsigned int esr, struct pt_regs *regs)
 {
-	int rt = ESR_ELx_SYS64_ISS_RT(esr);
-	unsigned long val = arm64_ftr_reg_user_value(&arm64_ftr_reg_ctrel0);
+	int rt = (esr & ESR_ELx_SYS64_ISS_RT_MASK) >> ESR_ELx_SYS64_ISS_RT_SHIFT;
 
-	pt_regs_write_reg(regs, rt, val);
-
-	arm64_skip_faulting_instruction(regs, AARCH64_INSN_SIZE);
+	regs->regs[rt] = arm64_ftr_reg_ctrel0.sys_val;
+	regs->pc += 4;
 }
 
 static void cntvct_read_handler(unsigned int esr, struct pt_regs *regs)
 {
-	int rt = ESR_ELx_SYS64_ISS_RT(esr);
+	int rt = (esr & ESR_ELx_SYS64_ISS_RT_MASK) >> ESR_ELx_SYS64_ISS_RT_SHIFT;
 
-	pt_regs_write_reg(regs, rt, arch_timer_read_counter());
-	arm64_skip_faulting_instruction(regs, AARCH64_INSN_SIZE);
+	isb();
+	if (rt != 31)
+		regs->regs[rt] = arch_counter_get_cntvct();
+	regs->pc += 4;
 }
 
 static void cntfrq_read_handler(unsigned int esr, struct pt_regs *regs)
 {
-	int rt = ESR_ELx_SYS64_ISS_RT(esr);
+	int rt = (esr & ESR_ELx_SYS64_ISS_RT_MASK) >> ESR_ELx_SYS64_ISS_RT_SHIFT;
 
-	pt_regs_write_reg(regs, rt, arch_timer_get_rate());
-	arm64_skip_faulting_instruction(regs, AARCH64_INSN_SIZE);
-}
-
-static void mrs_handler(unsigned int esr, struct pt_regs *regs)
-{
-	u32 sysreg, rt;
-
-	rt = ESR_ELx_SYS64_ISS_RT(esr);
-	sysreg = esr_sys64_to_sysreg(esr);
-
-	if (do_emulate_mrs(regs, sysreg, rt) != 0)
-		force_signal_inject(SIGILL, ILL_ILLOPC, regs->pc);
-}
-
-static void wfi_handler(unsigned int esr, struct pt_regs *regs)
-{
-	arm64_skip_faulting_instruction(regs, AARCH64_INSN_SIZE);
+	if (rt != 31)
+		regs->regs[rt] = read_sysreg(cntfrq_el0);
+	regs->pc += 4;
 }
 
 struct sys64_hook {
@@ -535,175 +564,8 @@ static struct sys64_hook sys64_hooks[] = {
 		.esr_val = ESR_ELx_SYS64_ISS_SYS_CNTFRQ,
 		.handler = cntfrq_read_handler,
 	},
-	{
-		/* Trap read access to CPUID registers */
-		.esr_mask = ESR_ELx_SYS64_ISS_SYS_MRS_OP_MASK,
-		.esr_val = ESR_ELx_SYS64_ISS_SYS_MRS_OP_VAL,
-		.handler = mrs_handler,
-	},
-	{
-		/* Trap WFI instructions executed in userspace */
-		.esr_mask = ESR_ELx_WFx_MASK,
-		.esr_val = ESR_ELx_WFx_WFI_VAL,
-		.handler = wfi_handler,
-	},
 	{},
 };
-
-
-#ifdef CONFIG_COMPAT
-#define PSTATE_IT_1_0_SHIFT	25
-#define PSTATE_IT_1_0_MASK	(0x3 << PSTATE_IT_1_0_SHIFT)
-#define PSTATE_IT_7_2_SHIFT	10
-#define PSTATE_IT_7_2_MASK	(0x3f << PSTATE_IT_7_2_SHIFT)
-
-static u32 compat_get_it_state(struct pt_regs *regs)
-{
-	u32 it, pstate = regs->pstate;
-
-	it  = (pstate & PSTATE_IT_1_0_MASK) >> PSTATE_IT_1_0_SHIFT;
-	it |= ((pstate & PSTATE_IT_7_2_MASK) >> PSTATE_IT_7_2_SHIFT) << 2;
-
-	return it;
-}
-
-static void compat_set_it_state(struct pt_regs *regs, u32 it)
-{
-	u32 pstate_it;
-
-	pstate_it  = (it << PSTATE_IT_1_0_SHIFT) & PSTATE_IT_1_0_MASK;
-	pstate_it |= ((it >> 2) << PSTATE_IT_7_2_SHIFT) & PSTATE_IT_7_2_MASK;
-
-	regs->pstate &= ~PSR_AA32_IT_MASK;
-	regs->pstate |= pstate_it;
-}
-
-static bool cp15_cond_valid(unsigned int esr, struct pt_regs *regs)
-{
-	int cond;
-
-	/* Only a T32 instruction can trap without CV being set */
-	if (!(esr & ESR_ELx_CV)) {
-		u32 it;
-
-		it = compat_get_it_state(regs);
-		if (!it)
-			return true;
-
-		cond = it >> 4;
-	} else {
-		cond = (esr & ESR_ELx_COND_MASK) >> ESR_ELx_COND_SHIFT;
-	}
-
-	return aarch32_opcode_cond_checks[cond](regs->pstate);
-}
-
-static void advance_itstate(struct pt_regs *regs)
-{
-	u32 it;
-
-	/* ARM mode */
-	if (!(regs->pstate & PSR_AA32_T_BIT) ||
-	    !(regs->pstate & PSR_AA32_IT_MASK))
-		return;
-
-	it  = compat_get_it_state(regs);
-
-	/*
-	 * If this is the last instruction of the block, wipe the IT
-	 * state. Otherwise advance it.
-	 */
-	if (!(it & 7))
-		it = 0;
-	else
-		it = (it & 0xe0) | ((it << 1) & 0x1f);
-
-	compat_set_it_state(regs, it);
-}
-
-static void arm64_compat_skip_faulting_instruction(struct pt_regs *regs,
-						   unsigned int sz)
-{
-	advance_itstate(regs);
-	arm64_skip_faulting_instruction(regs, sz);
-}
-
-static void compat_cntfrq_read_handler(unsigned int esr, struct pt_regs *regs)
-{
-	int reg = (esr & ESR_ELx_CP15_32_ISS_RT_MASK) >> ESR_ELx_CP15_32_ISS_RT_SHIFT;
-
-	pt_regs_write_reg(regs, reg, arch_timer_get_rate());
-	arm64_compat_skip_faulting_instruction(regs, 4);
-}
-
-static struct sys64_hook cp15_32_hooks[] = {
-	{
-		.esr_mask = ESR_ELx_CP15_32_ISS_SYS_MASK,
-		.esr_val = ESR_ELx_CP15_32_ISS_SYS_CNTFRQ,
-		.handler = compat_cntfrq_read_handler,
-	},
-	{},
-};
-
-static void compat_cntvct_read_handler(unsigned int esr, struct pt_regs *regs)
-{
-	int rt = (esr & ESR_ELx_CP15_64_ISS_RT_MASK) >> ESR_ELx_CP15_64_ISS_RT_SHIFT;
-	int rt2 = (esr & ESR_ELx_CP15_64_ISS_RT2_MASK) >> ESR_ELx_CP15_64_ISS_RT2_SHIFT;
-	u64 val = arch_timer_read_counter();
-
-	pt_regs_write_reg(regs, rt, lower_32_bits(val));
-	pt_regs_write_reg(regs, rt2, upper_32_bits(val));
-	arm64_compat_skip_faulting_instruction(regs, 4);
-}
-
-static struct sys64_hook cp15_64_hooks[] = {
-	{
-		.esr_mask = ESR_ELx_CP15_64_ISS_SYS_MASK,
-		.esr_val = ESR_ELx_CP15_64_ISS_SYS_CNTVCT,
-		.handler = compat_cntvct_read_handler,
-	},
-	{},
-};
-
-asmlinkage void __exception do_cp15instr(unsigned int esr, struct pt_regs *regs)
-{
-	struct sys64_hook *hook, *hook_base;
-
-	if (!cp15_cond_valid(esr, regs)) {
-		/*
-		 * There is no T16 variant of a CP access, so we
-		 * always advance PC by 4 bytes.
-		 */
-		arm64_compat_skip_faulting_instruction(regs, 4);
-		return;
-	}
-
-	switch (ESR_ELx_EC(esr)) {
-	case ESR_ELx_EC_CP15_32:
-		hook_base = cp15_32_hooks;
-		break;
-	case ESR_ELx_EC_CP15_64:
-		hook_base = cp15_64_hooks;
-		break;
-	default:
-		do_undefinstr(regs);
-		return;
-	}
-
-	for (hook = hook_base; hook->handler; hook++)
-		if ((hook->esr_mask & esr) == hook->esr_val) {
-			hook->handler(esr, regs);
-			return;
-		}
-
-	/*
-	 * New cp15 instructions may previously have been undefined at
-	 * EL0. Fall back to our usual undefined instruction handler
-	 * so that we handle these consistently.
-	 */
-	do_undefinstr(regs);
-}
-#endif
 
 asmlinkage void __exception do_sysinstr(unsigned int esr, struct pt_regs *regs)
 {
@@ -715,12 +577,31 @@ asmlinkage void __exception do_sysinstr(unsigned int esr, struct pt_regs *regs)
 			return;
 		}
 
-	/*
-	 * New SYS instructions may previously have been undefined at EL0. Fall
-	 * back to our usual undefined instruction handler so that we handle
-	 * these consistently.
-	 */
-	do_undefinstr(regs);
+	force_signal_inject(SIGILL, ILL_ILLOPC, regs, 0);
+}
+
+long compat_arm_syscall(struct pt_regs *regs);
+
+asmlinkage long do_ni_syscall(struct pt_regs *regs)
+{
+#ifdef CONFIG_COMPAT
+	long ret;
+	if (is_compat_task()) {
+		ret = compat_arm_syscall(regs);
+		if (ret != -ENOSYS)
+			return ret;
+	}
+#endif
+
+	if (show_unhandled_signals_ratelimited()) {
+		pr_info("%s[%d]: syscall %d\n", current->comm,
+			task_pid_nr(current), (int)regs->syscallno);
+		dump_instr("", regs);
+		if (user_mode(regs))
+			__show_regs(regs);
+	}
+
+	return sys_ni_syscall();
 }
 
 static const char *esr_class_str[] = {
@@ -733,7 +614,6 @@ static const char *esr_class_str[] = {
 	[ESR_ELx_EC_CP14_LS]		= "CP14 LDC/STC",
 	[ESR_ELx_EC_FP_ASIMD]		= "ASIMD",
 	[ESR_ELx_EC_CP10_ID]		= "CP10 MRC/VMRS",
-	[ESR_ELx_EC_PAC]		= "PAC",
 	[ESR_ELx_EC_CP14_64]		= "CP14 MCRR/MRRC",
 	[ESR_ELx_EC_ILL]		= "PSTATE.IL",
 	[ESR_ELx_EC_SVC32]		= "SVC (AArch32)",
@@ -770,6 +650,31 @@ const char *esr_get_class_string(u32 esr)
 	return esr_class_str[ESR_ELx_EC(esr)];
 }
 
+#ifdef CONFIG_SERROR_HANDLER
+static LIST_HEAD(serr_hook);
+static DEFINE_RAW_SPINLOCK(serr_lock);
+
+void register_serr_hook(struct serr_hook *hook)
+{
+	unsigned long flags;
+
+	raw_spin_lock_irqsave(&serr_lock, flags);
+	list_add(&hook->node, &serr_hook);
+	raw_spin_unlock_irqrestore(&serr_lock, flags);
+}
+EXPORT_SYMBOL(register_serr_hook);
+
+void unregister_serr_hook(struct serr_hook *hook)
+{
+	unsigned long flags;
+
+	raw_spin_lock_irqsave(&serr_lock, flags);
+	list_del(&hook->node);
+	raw_spin_unlock_irqrestore(&serr_lock, flags);
+}
+EXPORT_SYMBOL(unregister_serr_hook);
+#endif
+
 /*
  * bad_mode handles the impossible case in the exception vector. This is always
  * fatal.
@@ -782,7 +687,8 @@ asmlinkage void bad_mode(struct pt_regs *regs, int reason, unsigned int esr)
 		handler[reason], smp_processor_id(), esr,
 		esr_get_class_string(esr));
 
-	local_daif_mask();
+	die("Oops - bad mode", regs, 0);
+	local_irq_disable();
 	panic("bad mode");
 }
 
@@ -792,112 +698,54 @@ asmlinkage void bad_mode(struct pt_regs *regs, int reason, unsigned int esr)
  */
 asmlinkage void bad_el0_sync(struct pt_regs *regs, int reason, unsigned int esr)
 {
+	siginfo_t info;
 	void __user *pc = (void __user *)instruction_pointer(regs);
 
-	current->thread.fault_address = 0;
-	current->thread.fault_code = esr;
-
-	arm64_force_sig_fault(SIGILL, ILL_ILLOPC, pc,
-			      "Bad EL0 synchronous exception");
-}
-
-#ifdef CONFIG_VMAP_STACK
-
-DEFINE_PER_CPU(unsigned long [OVERFLOW_STACK_SIZE/sizeof(long)], overflow_stack)
-	__aligned(16);
-
-asmlinkage void handle_bad_stack(struct pt_regs *regs)
-{
-	unsigned long tsk_stk = (unsigned long)current->stack;
-	unsigned long irq_stk = (unsigned long)this_cpu_read(irq_stack_ptr);
-	unsigned long ovf_stk = (unsigned long)this_cpu_ptr(overflow_stack);
-	unsigned int esr = read_sysreg(esr_el1);
-	unsigned long far = read_sysreg(far_el1);
-
 	console_verbose();
-	pr_emerg("Insufficient stack space to handle exception!");
 
-	pr_emerg("ESR: 0x%08x -- %s\n", esr, esr_get_class_string(esr));
-	pr_emerg("FAR: 0x%016lx\n", far);
-
-	pr_emerg("Task stack:     [0x%016lx..0x%016lx]\n",
-		 tsk_stk, tsk_stk + THREAD_SIZE);
-	pr_emerg("IRQ stack:      [0x%016lx..0x%016lx]\n",
-		 irq_stk, irq_stk + THREAD_SIZE);
-	pr_emerg("Overflow stack: [0x%016lx..0x%016lx]\n",
-		 ovf_stk, ovf_stk + OVERFLOW_STACK_SIZE);
-
+	pr_crit("Bad EL0 synchronous exception detected on CPU%d, code 0x%08x -- %s\n",
+		smp_processor_id(), esr, esr_get_class_string(esr));
+#ifdef CONFIG_DEBUG_VERBOSE_OOPS
 	__show_regs(regs);
-
-	/*
-	 * We use nmi_panic to limit the potential for recusive overflows, and
-	 * to get a better stack trace.
-	 */
-	nmi_panic(NULL, "kernel stack overflow");
-	cpu_park_loop();
-}
 #endif
 
-void __noreturn arm64_serror_panic(struct pt_regs *regs, u32 esr)
-{
-	console_verbose();
+	info.si_signo = SIGILL;
+	info.si_errno = 0;
+	info.si_code  = ILL_ILLOPC;
+	info.si_addr  = pc;
 
-	pr_crit("SError Interrupt on CPU%d, code 0x%08x -- %s\n",
-		smp_processor_id(), esr, esr_get_class_string(esr));
-	if (regs)
-		__show_regs(regs);
+	current->thread.fault_address = 0;
+	current->thread.fault_code = 0;
 
-	nmi_panic(regs, "Asynchronous SError Interrupt");
-
-	cpu_park_loop();
-	unreachable();
+	force_sig_info(info.si_signo, &info, current);
 }
 
-bool arm64_is_fatal_ras_serror(struct pt_regs *regs, unsigned int esr)
+asmlinkage void handle_serr(unsigned long daif, unsigned long spsr,
+                            struct pt_regs *regs)
 {
-	u32 aet = arm64_ras_serror_get_severity(esr);
+#ifdef CONFIG_SERROR_HANDLER
+	struct serr_hook *hook;
+	unsigned long flags;
+#endif
+	ulong mpidr;
+	ulong esr;
+	bool enter_bad_mode = false;
 
-	switch (aet) {
-	case ESR_ELx_AET_CE:	/* corrected error */
-	case ESR_ELx_AET_UEO:	/* restartable, not yet consumed */
-		/*
-		 * The CPU can make progress. We may take UEO again as
-		 * a more severe error.
-		 */
-		return false;
+	asm volatile("mrs %0, mpidr_el1" : "=r"(mpidr));
+	asm volatile ("mrs %0, esr_el1" : "=r"(esr));
 
-	case ESR_ELx_AET_UEU:	/* Uncorrected Unrecoverable */
-	case ESR_ELx_AET_UER:	/* Uncorrected Recoverable */
-		/*
-		 * The CPU can't make progress. The exception may have
-		 * been imprecise.
-		 *
-		 * Neoverse-N1 #1349291 means a non-KVM SError reported as
-		 * Unrecoverable should be treated as Uncontainable. We
-		 * call arm64_serror_panic() in both cases.
-		 */
-		return true;
-
-	case ESR_ELx_AET_UC:	/* Uncontainable or Uncategorized error */
-	default:
-		/* Error has been silently propagated */
-		arm64_serror_panic(regs, esr);
-	}
-}
-
-asmlinkage void do_serror(struct pt_regs *regs, unsigned int esr)
-{
-	const bool was_in_nmi = in_nmi();
-
-	if (!was_in_nmi)
-		nmi_enter();
-
-	/* non-RAS errors are not containable */
-	if (!arm64_is_ras_serror(esr) || arm64_is_fatal_ras_serror(regs, esr))
-		arm64_serror_panic(regs, esr);
-
-	if (!was_in_nmi)
-		nmi_exit();
+	pr_crit("CPU%d: SError detected, daif=%lx, "
+	        "spsr=0x%lx, mpidr=%lx, esr=%lx\n",
+	        smp_processor_id(), daif, spsr, mpidr, esr);
+#ifdef CONFIG_SERROR_HANDLER
+	raw_spin_lock_irqsave(&serr_lock, flags);
+	list_for_each_entry(hook, &serr_hook, node)
+		if (!hook->fn(regs, 3, esr, hook->priv))
+			enter_bad_mode = true;
+	raw_spin_unlock_irqrestore(&serr_lock, flags);
+#endif
+	if (enter_bad_mode)
+		bad_mode(regs, 3, esr);
 }
 
 void __pte_error(const char *file, int line, unsigned long val)
@@ -936,12 +784,17 @@ int is_valid_bugaddr(unsigned long addr)
 
 static int bug_handler(struct pt_regs *regs, unsigned int esr)
 {
+	if (user_mode(regs))
+		return DBG_HOOK_ERROR;
+
 	switch (report_bug(regs->pc, regs)) {
 	case BUG_TRAP_TYPE_BUG:
 		die("Oops - BUG", regs, 0);
 		break;
 
 	case BUG_TRAP_TYPE_WARN:
+		/* Ideally, report_bug() should backtrace for us... but no. */
+		dump_backtrace(regs, NULL);
 		break;
 
 	default:
@@ -950,60 +803,15 @@ static int bug_handler(struct pt_regs *regs, unsigned int esr)
 	}
 
 	/* If thread survives, skip over the BUG instruction and continue: */
-	arm64_skip_faulting_instruction(regs, AARCH64_INSN_SIZE);
+	regs->pc += AARCH64_INSN_SIZE;	/* skip BRK and resume */
 	return DBG_HOOK_HANDLED;
 }
 
 static struct break_hook bug_break_hook = {
+	.esr_val = 0xf2000000 | BUG_BRK_IMM,
+	.esr_mask = 0xffffffff,
 	.fn = bug_handler,
-	.imm = BUG_BRK_IMM,
 };
-
-#ifdef CONFIG_KASAN_SW_TAGS
-
-#define KASAN_ESR_RECOVER	0x20
-#define KASAN_ESR_WRITE	0x10
-#define KASAN_ESR_SIZE_MASK	0x0f
-#define KASAN_ESR_SIZE(esr)	(1 << ((esr) & KASAN_ESR_SIZE_MASK))
-
-static int kasan_handler(struct pt_regs *regs, unsigned int esr)
-{
-	bool recover = esr & KASAN_ESR_RECOVER;
-	bool write = esr & KASAN_ESR_WRITE;
-	size_t size = KASAN_ESR_SIZE(esr);
-	u64 addr = regs->regs[0];
-	u64 pc = regs->pc;
-
-	kasan_report(addr, size, write, pc);
-
-	/*
-	 * The instrumentation allows to control whether we can proceed after
-	 * a crash was detected. This is done by passing the -recover flag to
-	 * the compiler. Disabling recovery allows to generate more compact
-	 * code.
-	 *
-	 * Unfortunately disabling recovery doesn't work for the kernel right
-	 * now. KASAN reporting is disabled in some contexts (for example when
-	 * the allocator accesses slab object metadata; this is controlled by
-	 * current->kasan_depth). All these accesses are detected by the tool,
-	 * even though the reports for them are not printed.
-	 *
-	 * This is something that might be fixed at some point in the future.
-	 */
-	if (!recover)
-		die("Oops - KASAN", regs, 0);
-
-	/* If thread survives, skip over the brk instruction and continue: */
-	arm64_skip_faulting_instruction(regs, AARCH64_INSN_SIZE);
-	return DBG_HOOK_HANDLED;
-}
-
-static struct break_hook kasan_break_hook = {
-	.fn	= kasan_handler,
-	.imm	= KASAN_BRK_IMM,
-	.mask	= KASAN_BRK_MASK,
-};
-#endif
 
 /*
  * Initial handler for AArch64 BRK exceptions
@@ -1012,20 +820,11 @@ static struct break_hook kasan_break_hook = {
 int __init early_brk64(unsigned long addr, unsigned int esr,
 		struct pt_regs *regs)
 {
-#ifdef CONFIG_KASAN_SW_TAGS
-	unsigned int comment = esr & ESR_ELx_BRK64_ISS_COMMENT_MASK;
-
-	if ((comment & ~KASAN_BRK_MASK) == KASAN_BRK_IMM)
-		return kasan_handler(regs, esr) != DBG_HOOK_HANDLED;
-#endif
 	return bug_handler(regs, esr) != DBG_HOOK_HANDLED;
 }
 
 /* This registration must happen early, before debug_traps_init(). */
 void __init trap_init(void)
 {
-	register_kernel_break_hook(&bug_break_hook);
-#ifdef CONFIG_KASAN_SW_TAGS
-	register_kernel_break_hook(&kasan_break_hook);
-#endif
+	register_break_hook(&bug_break_hook);
 }

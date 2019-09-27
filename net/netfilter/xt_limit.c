@@ -1,7 +1,10 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /* (C) 1999 Jérôme de Vivie <devivie@info.enserb.u-bordeaux.fr>
  * (C) 1999 Hervé Eychenne <eychenne@info.enserb.u-bordeaux.fr>
  * (C) 2006-2012 Patrick McHardy <kaber@trash.net>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  */
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 
@@ -15,7 +18,6 @@
 #include <linux/netfilter/xt_limit.h>
 
 struct xt_limit_priv {
-	spinlock_t lock;
 	unsigned long prev;
 	uint32_t credit;
 };
@@ -30,6 +32,8 @@ MODULE_ALIAS("ip6t_limit");
  * see net/sched/sch_tbf.c in the linux source tree
  */
 
+static DEFINE_SPINLOCK(limit_lock);
+
 /* Rusty: This is my (non-mathematically-inclined) understanding of
    this algorithm.  The `average rate' in jiffies becomes your initial
    amount of credit `credit' and the most credit you can ever have
@@ -43,7 +47,7 @@ MODULE_ALIAS("ip6t_limit");
 
    See Alexey's formal explanation in net/sched/sch_tbf.c.
 
-   To get the maximum range, we multiply by this factor (ie. you get N
+   To get the maxmum range, we multiply by this factor (ie. you get N
    credits per jiffy).  We want to allow a rate as low as 1 per day
    (slowest userspace tool allows), which means
    CREDITS_PER_JIFFY*HZ*60*60*24 < 2^32. ie. */
@@ -68,7 +72,7 @@ limit_mt(const struct sk_buff *skb, struct xt_action_param *par)
 	struct xt_limit_priv *priv = r->master;
 	unsigned long now = jiffies;
 
-	spin_lock_bh(&priv->lock);
+	spin_lock_bh(&limit_lock);
 	priv->credit += (now - xchg(&priv->prev, now)) * CREDITS_PER_JIFFY;
 	if (priv->credit > r->credit_cap)
 		priv->credit = r->credit_cap;
@@ -76,11 +80,11 @@ limit_mt(const struct sk_buff *skb, struct xt_action_param *par)
 	if (priv->credit >= r->cost) {
 		/* We're not limited. */
 		priv->credit -= r->cost;
-		spin_unlock_bh(&priv->lock);
+		spin_unlock_bh(&limit_lock);
 		return true;
 	}
 
-	spin_unlock_bh(&priv->lock);
+	spin_unlock_bh(&limit_lock);
 	return false;
 }
 
@@ -103,8 +107,8 @@ static int limit_mt_check(const struct xt_mtchk_param *par)
 	/* Check for overflow. */
 	if (r->burst == 0
 	    || user2credits(r->avg * r->burst) < user2credits(r->avg)) {
-		pr_info_ratelimited("Overflow, try lower: %u/%u\n",
-				    r->avg, r->burst);
+		pr_info("Overflow, try lower: %u/%u\n",
+			r->avg, r->burst);
 		return -ERANGE;
 	}
 
@@ -122,8 +126,6 @@ static int limit_mt_check(const struct xt_mtchk_param *par)
 		r->credit_cap = priv->credit; /* Credits full. */
 		r->cost = user2credits(r->avg);
 	}
-	spin_lock_init(&priv->lock);
-
 	return 0;
 }
 
@@ -191,7 +193,6 @@ static struct xt_match limit_mt_reg __read_mostly = {
 	.compat_from_user = limit_mt_compat_from_user,
 	.compat_to_user   = limit_mt_compat_to_user,
 #endif
-	.usersize         = offsetof(struct xt_rateinfo, prev),
 	.me               = THIS_MODULE,
 };
 

@@ -1,10 +1,22 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Intel MIC Platform Software Stack (MPSS)
  *
  * Copyright(c) 2016 Intel Corporation.
  *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License, version 2, as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+ * General Public License for more details.
+ *
+ * The full GNU General Public License is included in this distribution in
+ * the file called "COPYING".
+ *
  * Intel Virtio Over PCIe (VOP) driver.
+ *
  */
 #include <linux/sched.h>
 #include <linux/poll.h>
@@ -68,7 +80,7 @@ static void vop_virtio_init_post(struct vop_vdev *vdev)
 			continue;
 		}
 		vdev->vvr[i].vrh.vring.used =
-			(void __force *)vpdev->hw_ops->remap(
+			(void __force *)vpdev->hw_ops->ioremap(
 			vpdev,
 			le64_to_cpu(vqconfig[i].used_address),
 			used_size);
@@ -516,15 +528,15 @@ static int vop_virtio_copy_to_user(struct vop_vdev *vdev, void __user *ubuf,
 				   int vr_idx)
 {
 	struct vop_device *vpdev = vdev->vpdev;
-	void __iomem *dbuf = vpdev->hw_ops->remap(vpdev, daddr, len);
+	void __iomem *dbuf = vpdev->hw_ops->ioremap(vpdev, daddr, len);
 	struct vop_vringh *vvr = &vdev->vvr[vr_idx];
 	struct vop_info *vi = dev_get_drvdata(&vpdev->dev);
-	size_t dma_alignment;
-	bool x200;
+	size_t dma_alignment = 1 << vi->dma_ch->device->copy_align;
+	bool x200 = is_dma_copy_aligned(vi->dma_ch->device, 1, 1, 1);
 	size_t dma_offset, partlen;
 	int err;
 
-	if (!VOP_USE_DMA || !vi->dma_ch) {
+	if (!VOP_USE_DMA) {
 		if (copy_to_user(ubuf, (void __force *)dbuf, len)) {
 			err = -EFAULT;
 			dev_err(vop_dev(vdev), "%s %d err %d\n",
@@ -535,9 +547,6 @@ static int vop_virtio_copy_to_user(struct vop_vdev *vdev, void __user *ubuf,
 		err = 0;
 		goto err;
 	}
-
-	dma_alignment = 1 << vi->dma_ch->device->copy_align;
-	x200 = is_dma_copy_aligned(vi->dma_ch->device, 1, 1, 1);
 
 	dma_offset = daddr - round_down(daddr, dma_alignment);
 	daddr -= dma_offset;
@@ -576,9 +585,9 @@ static int vop_virtio_copy_to_user(struct vop_vdev *vdev, void __user *ubuf,
 	}
 	err = 0;
 err:
-	vpdev->hw_ops->unmap(vpdev, dbuf);
+	vpdev->hw_ops->iounmap(vpdev, dbuf);
 	dev_dbg(vop_dev(vdev),
-		"%s: ubuf %p dbuf %p len 0x%zx vr_idx 0x%x\n",
+		"%s: ubuf %p dbuf %p len 0x%lx vr_idx 0x%x\n",
 		__func__, ubuf, dbuf, len, vr_idx);
 	return err;
 }
@@ -594,26 +603,21 @@ static int vop_virtio_copy_from_user(struct vop_vdev *vdev, void __user *ubuf,
 				     int vr_idx)
 {
 	struct vop_device *vpdev = vdev->vpdev;
-	void __iomem *dbuf = vpdev->hw_ops->remap(vpdev, daddr, len);
+	void __iomem *dbuf = vpdev->hw_ops->ioremap(vpdev, daddr, len);
 	struct vop_vringh *vvr = &vdev->vvr[vr_idx];
 	struct vop_info *vi = dev_get_drvdata(&vdev->vpdev->dev);
-	size_t dma_alignment;
-	bool x200;
+	size_t dma_alignment = 1 << vi->dma_ch->device->copy_align;
+	bool x200 = is_dma_copy_aligned(vi->dma_ch->device, 1, 1, 1);
 	size_t partlen;
-	bool dma = VOP_USE_DMA && vi->dma_ch;
+	bool dma = VOP_USE_DMA;
 	int err = 0;
 
-	if (dma) {
-		dma_alignment = 1 << vi->dma_ch->device->copy_align;
-		x200 = is_dma_copy_aligned(vi->dma_ch->device, 1, 1, 1);
-
-		if (daddr & (dma_alignment - 1)) {
-			vdev->tx_dst_unaligned += len;
-			dma = false;
-		} else if (ALIGN(len, dma_alignment) > dlen) {
-			vdev->tx_len_unaligned += len;
-			dma = false;
-		}
+	if (daddr & (dma_alignment - 1)) {
+		vdev->tx_dst_unaligned += len;
+		dma = false;
+	} else if (ALIGN(len, dma_alignment) > dlen) {
+		vdev->tx_len_unaligned += len;
+		dma = false;
 	}
 
 	if (!dma)
@@ -664,9 +668,9 @@ memcpy:
 	vdev->out_bytes += len;
 	err = 0;
 err:
-	vpdev->hw_ops->unmap(vpdev, dbuf);
+	vpdev->hw_ops->iounmap(vpdev, dbuf);
 	dev_dbg(vop_dev(vdev),
-		"%s: ubuf %p dbuf %p len 0x%zx vr_idx 0x%x\n",
+		"%s: ubuf %p dbuf %p len 0x%lx vr_idx 0x%x\n",
 		__func__, ubuf, dbuf, len, vr_idx);
 	return err;
 }
@@ -700,17 +704,16 @@ static int vop_vringh_copy(struct vop_vdev *vdev, struct vringh_kiov *iov,
 
 	while (len && iov->i < iov->used) {
 		struct kvec *kiov = &iov->iov[iov->i];
-		unsigned long daddr = (unsigned long)kiov->iov_base;
 
 		partlen = min(kiov->iov_len, len);
 		if (read)
 			ret = vop_virtio_copy_to_user(vdev, ubuf, partlen,
-						      daddr,
+						      (u64)kiov->iov_base,
 						      kiov->iov_len,
 						      vr_idx);
 		else
 			ret = vop_virtio_copy_from_user(vdev, ubuf, partlen,
-							daddr,
+							(u64)kiov->iov_base,
 							kiov->iov_len,
 							vr_idx);
 		if (ret) {
@@ -934,10 +937,13 @@ static long vop_ioctl(struct file *f, unsigned int cmd, unsigned long arg)
 		    dd.num_vq > MIC_MAX_VRINGS)
 			return -EINVAL;
 
-		dd_config = memdup_user(argp, mic_desc_size(&dd));
-		if (IS_ERR(dd_config))
-			return PTR_ERR(dd_config);
-
+		dd_config = kzalloc(mic_desc_size(&dd), GFP_KERNEL);
+		if (!dd_config)
+			return -ENOMEM;
+		if (copy_from_user(dd_config, argp, mic_desc_size(&dd))) {
+			ret = -EFAULT;
+			goto free_ret;
+		}
 		/* Ensure desc has not changed between the two reads */
 		if (memcmp(&dd, dd_config, sizeof(dd))) {
 			ret = -EINVAL;
@@ -989,12 +995,17 @@ _unlock_ret:
 		ret = vop_vdev_inited(vdev);
 		if (ret)
 			goto __unlock_ret;
-		buf = memdup_user(argp, vdev->dd->config_len);
-		if (IS_ERR(buf)) {
-			ret = PTR_ERR(buf);
+		buf = kzalloc(vdev->dd->config_len, GFP_KERNEL);
+		if (!buf) {
+			ret = -ENOMEM;
 			goto __unlock_ret;
 		}
+		if (copy_from_user(buf, argp, vdev->dd->config_len)) {
+			ret = -EFAULT;
+			goto done;
+		}
 		ret = vop_virtio_config_change(vdev, buf);
+done:
 		kfree(buf);
 __unlock_ret:
 		mutex_unlock(&vdev->vdev_mutex);
@@ -1007,27 +1018,27 @@ __unlock_ret:
 }
 
 /*
- * We return EPOLLIN | EPOLLOUT from poll when new buffers are enqueued, and
+ * We return POLLIN | POLLOUT from poll when new buffers are enqueued, and
  * not when previously enqueued buffers may be available. This means that
  * in the card->host (TX) path, when userspace is unblocked by poll it
  * must drain all available descriptors or it can stall.
  */
-static __poll_t vop_poll(struct file *f, poll_table *wait)
+static unsigned int vop_poll(struct file *f, poll_table *wait)
 {
 	struct vop_vdev *vdev = f->private_data;
-	__poll_t mask = 0;
+	int mask = 0;
 
 	mutex_lock(&vdev->vdev_mutex);
 	if (vop_vdev_inited(vdev)) {
-		mask = EPOLLERR;
+		mask = POLLERR;
 		goto done;
 	}
 	poll_wait(f, &vdev->waitq, wait);
 	if (vop_vdev_inited(vdev)) {
-		mask = EPOLLERR;
+		mask = POLLERR;
 	} else if (vdev->poll_wake) {
 		vdev->poll_wake = 0;
-		mask = EPOLLIN | EPOLLOUT;
+		mask = POLLIN | POLLOUT;
 	}
 done:
 	mutex_unlock(&vdev->vdev_mutex);

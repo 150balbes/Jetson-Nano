@@ -1,0 +1,30 @@
+config TEGRA_HV_PM_CTL
+	bool "Nvidia Tegra hypervisor PM control"
+	depends on TEGRA_HV_MANAGER
+	help
+	  Nvidia Tegra hypervisor PM control driver handles power state
+	  transition commands over IVC channel.
+
+config TEGRA_HV_MANAGER
+	bool "Nvidia Tegra hypervisor management & IVC"
+	depends on TEGRA_VIRTUALIZATION
+	select NV_TEGRA_IVC
+	help
+	  The NVIDIA hypervisor management driver provides IVC channels
+	  configured by the hypervisor.
+
+	  Select Y to enable
+
+config	TEGRA_VIRTUALIZATION
+	bool "Tegra Virtualization support"
+	depends on ARCH_TEGRA_12x_SOC || ARCH_TEGRA_210_SOC || ARCH_TEGRA_18x_SOC
+	select VIRTUALIZATION
+	default n
+	help
+	  Enable Tegra Virtualization support; turning this option on
+	  enables features like the tegra virtualization manager and
+	  all others than depend on it.
+
+	  Select y to enable virtualization features on the tegra platforms
+	  that support it.
+

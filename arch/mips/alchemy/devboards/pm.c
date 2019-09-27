@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * Alchemy Development Board example suspend userspace interface.
  *

@@ -1,8 +1,13 @@
-// SPDX-License-Identifier: GPL-2.0
-//
-// Copyright 2009 Simtec Electronics
-//	Ben Dooks <ben@simtec.co.uk>
-//	http://armlinux.simtec.co.uk/
+/* linux/arch/arm/mach-s3c64xx/cpu.c
+ *
+ * Copyright 2009 Simtec Electronics
+ *	Ben Dooks <ben@simtec.co.uk>
+ *	http://armlinux.simtec.co.uk/
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+*/
 
 /*
  * NOTE: Code in this file is not used when booting with Device Tree support.

@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * SMC 37C93X initialization code
  */
@@ -11,6 +10,7 @@
 
 #include <asm/hwrpb.h>
 #include <asm/io.h>
+#include <asm/segment.h>
 
 #define SMC_DEBUG 0
 

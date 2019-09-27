@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: BSD-3-Clause */
 /*
 	usa67msg.h
 

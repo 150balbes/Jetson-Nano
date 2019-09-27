@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 #include <stdlib.h>
 #include <elfutils/libdw.h>
 

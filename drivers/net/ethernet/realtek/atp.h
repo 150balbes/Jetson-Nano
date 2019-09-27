@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /* Linux header file for the ATP pocket ethernet adapter. */
 /* v1.09 8/9/2000 becker@scyld.com. */
 

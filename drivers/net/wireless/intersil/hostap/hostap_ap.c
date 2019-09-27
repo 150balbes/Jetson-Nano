@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * Intersil Prism2 driver with Host AP (software access point) support
  * Copyright (c) 2001-2002, SSH Communications Security Corp and Jouni Malinen
@@ -66,10 +65,10 @@ static void prism2_send_mgmt(struct net_device *dev,
 #endif /* PRISM2_NO_KERNEL_IEEE80211_MGMT */
 
 
-#if !defined(PRISM2_NO_PROCFS_DEBUG) && defined(CONFIG_PROC_FS)
+#ifndef PRISM2_NO_PROCFS_DEBUG
 static int ap_debug_proc_show(struct seq_file *m, void *v)
 {
-	struct ap_data *ap = PDE_DATA(file_inode(m->file));
+	struct ap_data *ap = m->private;
 
 	seq_printf(m, "BridgedUnicastFrames=%u\n", ap->bridged_unicast);
 	seq_printf(m, "BridgedMulticastFrames=%u\n", ap->bridged_multicast);
@@ -81,7 +80,20 @@ static int ap_debug_proc_show(struct seq_file *m, void *v)
 	seq_printf(m, "tx_drop_nonassoc=%u\n", ap->tx_drop_nonassoc);
 	return 0;
 }
-#endif
+
+static int ap_debug_proc_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, ap_debug_proc_show, PDE_DATA(inode));
+}
+
+static const struct file_operations ap_debug_proc_fops = {
+	.open		= ap_debug_proc_open,
+	.read		= seq_read,
+	.llseek		= seq_lseek,
+	.release	= single_release,
+};
+#endif /* PRISM2_NO_PROCFS_DEBUG */
+
 
 static void ap_sta_hash_add(struct ap_data *ap, struct sta_info *sta)
 {
@@ -172,9 +184,9 @@ static void hostap_event_expired_sta(struct net_device *dev,
 
 #ifndef PRISM2_NO_KERNEL_IEEE80211_MGMT
 
-static void ap_handle_timer(struct timer_list *t)
+static void ap_handle_timer(unsigned long data)
 {
-	struct sta_info *sta = from_timer(sta, t, timer);
+	struct sta_info *sta = (struct sta_info *) data;
 	local_info_t *local;
 	struct ap_data *ap;
 	unsigned long next_time = 0;
@@ -320,7 +332,7 @@ void hostap_deauth_all_stas(struct net_device *dev, struct ap_data *ap,
 
 static int ap_control_proc_show(struct seq_file *m, void *v)
 {
-	struct ap_data *ap = PDE_DATA(file_inode(m->file));
+	struct ap_data *ap = m->private;
 	char *policy_txt;
 	struct mac_entry *entry;
 
@@ -352,20 +364,20 @@ static int ap_control_proc_show(struct seq_file *m, void *v)
 
 static void *ap_control_proc_start(struct seq_file *m, loff_t *_pos)
 {
-	struct ap_data *ap = PDE_DATA(file_inode(m->file));
+	struct ap_data *ap = m->private;
 	spin_lock_bh(&ap->mac_restrictions.lock);
 	return seq_list_start_head(&ap->mac_restrictions.mac_list, *_pos);
 }
 
 static void *ap_control_proc_next(struct seq_file *m, void *v, loff_t *_pos)
 {
-	struct ap_data *ap = PDE_DATA(file_inode(m->file));
+	struct ap_data *ap = m->private;
 	return seq_list_next(v, &ap->mac_restrictions.mac_list, _pos);
 }
 
 static void ap_control_proc_stop(struct seq_file *m, void *v)
 {
-	struct ap_data *ap = PDE_DATA(file_inode(m->file));
+	struct ap_data *ap = m->private;
 	spin_unlock_bh(&ap->mac_restrictions.lock);
 }
 
@@ -375,6 +387,24 @@ static const struct seq_operations ap_control_proc_seqops = {
 	.stop	= ap_control_proc_stop,
 	.show	= ap_control_proc_show,
 };
+
+static int ap_control_proc_open(struct inode *inode, struct file *file)
+{
+	int ret = seq_open(file, &ap_control_proc_seqops);
+	if (ret == 0) {
+		struct seq_file *m = file->private_data;
+		m->private = PDE_DATA(inode);
+	}
+	return ret;
+}
+
+static const struct file_operations ap_control_proc_fops = {
+	.open		= ap_control_proc_open,
+	.read		= seq_read,
+	.llseek		= seq_lseek,
+	.release	= seq_release,
+};
+
 
 int ap_control_add_mac(struct mac_restrictions *mac_restrictions, u8 *mac)
 {
@@ -554,20 +584,20 @@ static int prism2_ap_proc_show(struct seq_file *m, void *v)
 
 static void *prism2_ap_proc_start(struct seq_file *m, loff_t *_pos)
 {
-	struct ap_data *ap = PDE_DATA(file_inode(m->file));
+	struct ap_data *ap = m->private;
 	spin_lock_bh(&ap->sta_table_lock);
 	return seq_list_start_head(&ap->sta_list, *_pos);
 }
 
 static void *prism2_ap_proc_next(struct seq_file *m, void *v, loff_t *_pos)
 {
-	struct ap_data *ap = PDE_DATA(file_inode(m->file));
+	struct ap_data *ap = m->private;
 	return seq_list_next(v, &ap->sta_list, _pos);
 }
 
 static void prism2_ap_proc_stop(struct seq_file *m, void *v)
 {
-	struct ap_data *ap = PDE_DATA(file_inode(m->file));
+	struct ap_data *ap = m->private;
 	spin_unlock_bh(&ap->sta_table_lock);
 }
 
@@ -576,6 +606,23 @@ static const struct seq_operations prism2_ap_proc_seqops = {
 	.next	= prism2_ap_proc_next,
 	.stop	= prism2_ap_proc_stop,
 	.show	= prism2_ap_proc_show,
+};
+
+static int prism2_ap_proc_open(struct inode *inode, struct file *file)
+{
+	int ret = seq_open(file, &prism2_ap_proc_seqops);
+	if (ret == 0) {
+		struct seq_file *m = file->private_data;
+		m->private = PDE_DATA(inode);
+	}
+	return ret;
+}
+
+static const struct file_operations prism2_ap_proc_fops = {
+	.open		= prism2_ap_proc_open,
+	.read		= seq_read,
+	.llseek		= seq_lseek,
+	.release	= seq_release,
 };
 #endif /* PRISM2_NO_KERNEL_IEEE80211_MGMT */
 
@@ -848,13 +895,12 @@ void hostap_init_ap_proc(local_info_t *local)
 		return;
 
 #ifndef PRISM2_NO_PROCFS_DEBUG
-	proc_create_single_data("ap_debug", 0, ap->proc, ap_debug_proc_show, ap);
+	proc_create_data("ap_debug", 0, ap->proc, &ap_debug_proc_fops, ap);
 #endif /* PRISM2_NO_PROCFS_DEBUG */
 
 #ifndef PRISM2_NO_KERNEL_IEEE80211_MGMT
-	proc_create_seq_data("ap_control", 0, ap->proc, &ap_control_proc_seqops,
-			ap);
-	proc_create_seq_data("ap", 0, ap->proc, &prism2_ap_proc_seqops, ap);
+	proc_create_data("ap_control", 0, ap->proc, &ap_control_proc_fops, ap);
+	proc_create_data("ap", 0, ap->proc, &prism2_ap_proc_fops, ap);
 #endif /* PRISM2_NO_KERNEL_IEEE80211_MGMT */
 
 }
@@ -952,9 +998,11 @@ static void prism2_send_mgmt(struct net_device *dev,
 
 	fc = type_subtype;
 	hdrlen = hostap_80211_get_hdrlen(cpu_to_le16(type_subtype));
-	hdr = skb_put_zero(skb, hdrlen);
+	hdr = (struct ieee80211_hdr *) skb_put(skb, hdrlen);
 	if (body)
-		skb_put_data(skb, body, body_len);
+		memcpy(skb_put(skb, body_len), body, body_len);
+
+	memset(hdr, 0, hdrlen);
 
 	/* FIX: ctrl::ack sending used special HFA384X_TX_CTRL_802_11
 	 * tx_control instead of using local->tx_control */
@@ -989,7 +1037,7 @@ static void prism2_send_mgmt(struct net_device *dev,
 }
 #endif /* PRISM2_NO_KERNEL_IEEE80211_MGMT */
 
-#ifdef CONFIG_PROC_FS
+
 static int prism2_sta_proc_show(struct seq_file *m, void *v)
 {
 	struct sta_info *sta = m->private;
@@ -1058,7 +1106,18 @@ static int prism2_sta_proc_show(struct seq_file *m, void *v)
 
 	return 0;
 }
-#endif
+
+static int prism2_sta_proc_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, prism2_sta_proc_show, PDE_DATA(inode));
+}
+
+static const struct file_operations prism2_sta_proc_fops = {
+	.open		= prism2_sta_proc_open,
+	.read		= seq_read,
+	.llseek		= seq_lseek,
+	.release	= single_release,
+};
 
 static void handle_add_proc_queue(struct work_struct *work)
 {
@@ -1080,9 +1139,9 @@ static void handle_add_proc_queue(struct work_struct *work)
 
 		if (sta) {
 			sprintf(name, "%pM", sta->addr);
-			sta->proc = proc_create_single_data(
+			sta->proc = proc_create_data(
 				name, 0, ap->proc,
-				prism2_sta_proc_show, sta);
+				&prism2_sta_proc_fops, sta);
 
 			atomic_dec(&sta->users);
 		}
@@ -1131,8 +1190,10 @@ static struct sta_info * ap_add_sta(struct ap_data *ap, u8 *addr)
 	}
 
 #ifndef PRISM2_NO_KERNEL_IEEE80211_MGMT
-	timer_setup(&sta->timer, ap_handle_timer, 0);
+	init_timer(&sta->timer);
 	sta->timer.expires = jiffies + ap->max_inactivity;
+	sta->timer.data = (unsigned long) sta;
+	sta->timer.function = ap_handle_timer;
 	if (!ap->local->hostapd)
 		add_timer(&sta->timer);
 #endif /* PRISM2_NO_KERNEL_IEEE80211_MGMT */
@@ -1264,7 +1325,8 @@ static char * ap_auth_make_challenge(struct ap_data *ap)
 	}
 
 	skb_reserve(skb, ap->crypt->extra_mpdu_prefix_len);
-	skb_put_zero(skb, WLAN_AUTH_CHALLENGE_LEN);
+	memset(skb_put(skb, WLAN_AUTH_CHALLENGE_LEN), 0,
+	       WLAN_AUTH_CHALLENGE_LEN);
 	if (ap->crypt->encrypt_mpdu(skb, 0, ap->crypt_priv)) {
 		dev_kfree_skb(skb);
 		kfree(tmpbuf);
@@ -2302,7 +2364,7 @@ static void schedule_packet_send(local_info_t *local, struct sta_info *sta)
 		return;
 	}
 
-	hdr = skb_put(skb, 16);
+	hdr = (struct ieee80211_hdr *) skb_put(skb, 16);
 
 	/* Generate a fake pspoll frame to start packet delivery */
 	hdr->frame_control = cpu_to_le16(

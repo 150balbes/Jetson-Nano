@@ -1,14 +1,11 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef MPOA_CACHES_H
 #define MPOA_CACHES_H
 
-#include <linux/time64.h>
 #include <linux/netdevice.h>
 #include <linux/types.h>
 #include <linux/atm.h>
 #include <linux/atmdev.h>
 #include <linux/atmmpc.h>
-#include <linux/refcount.h>
 
 struct mpoa_client;
 
@@ -17,9 +14,9 @@ void atm_mpoa_init_cache(struct mpoa_client *mpc);
 typedef struct in_cache_entry {
 	struct in_cache_entry *next;
 	struct in_cache_entry *prev;
-	time64_t  time;
-	time64_t  reply_wait;
-	time64_t  hold_down;
+	struct timeval  tv;
+	struct timeval  reply_wait;
+	struct timeval  hold_down;
 	uint32_t  packets_fwded;
 	uint16_t  entry_state;
 	uint32_t retry_time;
@@ -28,7 +25,7 @@ typedef struct in_cache_entry {
 	struct   atm_vcc *shortcut;
 	uint8_t  MPS_ctrl_ATM_addr[ATM_ESA_LEN];
 	struct   in_ctrl_info ctrl_info;
-	refcount_t use;
+	atomic_t use;
 } in_cache_entry;
 
 struct in_cache_ops{
@@ -54,14 +51,14 @@ struct in_cache_ops{
 typedef struct eg_cache_entry{
 	struct               eg_cache_entry *next;
 	struct               eg_cache_entry *prev;
-	time64_t	     time;
+	struct               timeval  tv;
 	uint8_t              MPS_ctrl_ATM_addr[ATM_ESA_LEN];
 	struct atm_vcc       *shortcut;
 	uint32_t             packets_rcvd;
 	uint16_t             entry_state;
 	__be32             latest_ip_addr;    /* The src IP address of the last packet */
 	struct eg_ctrl_info  ctrl_info;
-	refcount_t             use;
+	atomic_t             use;
 } eg_cache_entry;
 
 struct eg_cache_ops{

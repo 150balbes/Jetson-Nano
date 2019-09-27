@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * timer.h:  Definitions for the timer chips on the Sparc.
  *

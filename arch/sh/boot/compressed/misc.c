@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * arch/sh/boot/compressed/misc.c
  *
@@ -12,7 +11,7 @@
  * Modified to use standard LinuxSH BIOS by Greg Banks 7Jul2000
  */
 
-#include <linux/uaccess.h>
+#include <asm/uaccess.h>
 #include <asm/addrspace.h>
 #include <asm/page.h>
 
@@ -102,13 +101,6 @@ static void error(char *x)
 	puts("\n\n -- System halted");
 
 	while(1);	/* Halt */
-}
-
-const unsigned long __stack_chk_guard = 0x000a0dff;
-
-void __stack_chk_fail(void)
-{
-	error("stack-protector: Kernel stack is corrupted\n");
 }
 
 #ifdef CONFIG_SUPERH64

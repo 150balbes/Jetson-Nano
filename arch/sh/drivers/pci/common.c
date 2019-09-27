@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 #include <linux/pci.h>
 #include <linux/interrupt.h>
 #include <linux/timer.h>
@@ -85,18 +84,18 @@ int __init pci_is_66mhz_capable(struct pci_channel *hose,
 	return cap66 > 0;
 }
 
-static void pcibios_enable_err(struct timer_list *t)
+static void pcibios_enable_err(unsigned long __data)
 {
-	struct pci_channel *hose = from_timer(hose, t, err_timer);
+	struct pci_channel *hose = (struct pci_channel *)__data;
 
 	del_timer(&hose->err_timer);
 	printk(KERN_DEBUG "PCI: re-enabling error IRQ.\n");
 	enable_irq(hose->err_irq);
 }
 
-static void pcibios_enable_serr(struct timer_list *t)
+static void pcibios_enable_serr(unsigned long __data)
 {
-	struct pci_channel *hose = from_timer(hose, t, serr_timer);
+	struct pci_channel *hose = (struct pci_channel *)__data;
 
 	del_timer(&hose->serr_timer);
 	printk(KERN_DEBUG "PCI: re-enabling system error IRQ.\n");
@@ -106,11 +105,15 @@ static void pcibios_enable_serr(struct timer_list *t)
 void pcibios_enable_timers(struct pci_channel *hose)
 {
 	if (hose->err_irq) {
-		timer_setup(&hose->err_timer, pcibios_enable_err, 0);
+		init_timer(&hose->err_timer);
+		hose->err_timer.data = (unsigned long)hose;
+		hose->err_timer.function = pcibios_enable_err;
 	}
 
 	if (hose->serr_irq) {
-		timer_setup(&hose->serr_timer, pcibios_enable_serr, 0);
+		init_timer(&hose->serr_timer);
+		hose->serr_timer.data = (unsigned long)hose;
+		hose->serr_timer.function = pcibios_enable_serr;
 	}
 }
 

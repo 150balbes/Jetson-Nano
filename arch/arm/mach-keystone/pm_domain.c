@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * PM domain driver for Keystone2 devices
  *
@@ -7,6 +6,10 @@
  *
  * Based on Kevins work on DAVINCI SOCs
  *	Kevin Hilman <khilman@linaro.org>
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms and conditions of the GNU General Public License,
+ * version 2, as published by the Free Software Foundation.
  */
 
 #include <linux/init.h>
@@ -26,13 +29,10 @@ static struct dev_pm_domain keystone_pm_domain = {
 
 static struct pm_clk_notifier_block platform_domain_notifier = {
 	.pm_domain = &keystone_pm_domain,
-	.con_ids = { NULL },
 };
 
 static const struct of_device_id of_keystone_table[] = {
-	{.compatible = "ti,k2hk"},
-	{.compatible = "ti,k2e"},
-	{.compatible = "ti,k2l"},
+	{.compatible = "ti,keystone"},
 	{ /* end of list */ },
 };
 

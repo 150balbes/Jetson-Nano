@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * Regression1
  * Description:
@@ -44,6 +43,7 @@
 #include "regression.h"
 
 static RADIX_TREE(mt_tree, GFP_KERNEL);
+static pthread_mutex_t mt_lock = PTHREAD_MUTEX_INITIALIZER;
 
 struct page {
 	pthread_mutex_t lock;
@@ -52,12 +52,12 @@ struct page {
 	unsigned long index;
 };
 
-static struct page *page_alloc(int index)
+static struct page *page_alloc(void)
 {
 	struct page *p;
 	p = malloc(sizeof(struct page));
 	p->count = 1;
-	p->index = index;
+	p->index = 1;
 	pthread_mutex_init(&p->lock, NULL);
 
 	return p;
@@ -79,33 +79,53 @@ static void page_free(struct page *p)
 static unsigned find_get_pages(unsigned long start,
 			    unsigned int nr_pages, struct page **pages)
 {
-	XA_STATE(xas, &mt_tree, start);
-	struct page *page;
-	unsigned int ret = 0;
+	unsigned int i;
+	unsigned int ret;
+	unsigned int nr_found;
 
 	rcu_read_lock();
-	xas_for_each(&xas, page, ULONG_MAX) {
-		if (xas_retry(&xas, page))
+restart:
+	nr_found = radix_tree_gang_lookup_slot(&mt_tree,
+				(void ***)pages, NULL, start, nr_pages);
+	ret = 0;
+	for (i = 0; i < nr_found; i++) {
+		struct page *page;
+repeat:
+		page = radix_tree_deref_slot((void **)pages[i]);
+		if (unlikely(!page))
 			continue;
 
-		pthread_mutex_lock(&page->lock);
-		if (!page->count)
-			goto unlock;
+		if (radix_tree_exception(page)) {
+			if (radix_tree_deref_retry(page)) {
+				/*
+				 * Transient condition which can only trigger
+				 * when entry at index 0 moves out of or back
+				 * to root: none yet gotten, safe to restart.
+				 */
+				assert((start | i) == 0);
+				goto restart;
+			}
+			/*
+			 * No exceptional entries are inserted in this test.
+			 */
+			assert(0);
+		}
 
+		pthread_mutex_lock(&page->lock);
+		if (!page->count) {
+			pthread_mutex_unlock(&page->lock);
+			goto repeat;
+		}
 		/* don't actually update page refcount */
 		pthread_mutex_unlock(&page->lock);
 
 		/* Has the page moved? */
-		if (unlikely(page != xas_reload(&xas)))
-			goto put_page;
+		if (unlikely(page != *((void **)pages[i]))) {
+			goto repeat;
+		}
 
 		pages[ret] = page;
 		ret++;
-		continue;
-unlock:
-		pthread_mutex_unlock(&page->lock);
-put_page:
-		xas_reset(&xas);
 	}
 	rcu_read_unlock();
 	return ret;
@@ -124,30 +144,30 @@ static void *regression1_fn(void *arg)
 		for (j = 0; j < 1000000; j++) {
 			struct page *p;
 
-			p = page_alloc(0);
-			xa_lock(&mt_tree);
+			p = page_alloc();
+			pthread_mutex_lock(&mt_lock);
 			radix_tree_insert(&mt_tree, 0, p);
-			xa_unlock(&mt_tree);
+			pthread_mutex_unlock(&mt_lock);
 
-			p = page_alloc(1);
-			xa_lock(&mt_tree);
+			p = page_alloc();
+			pthread_mutex_lock(&mt_lock);
 			radix_tree_insert(&mt_tree, 1, p);
-			xa_unlock(&mt_tree);
+			pthread_mutex_unlock(&mt_lock);
 
-			xa_lock(&mt_tree);
+			pthread_mutex_lock(&mt_lock);
 			p = radix_tree_delete(&mt_tree, 1);
 			pthread_mutex_lock(&p->lock);
 			p->count--;
 			pthread_mutex_unlock(&p->lock);
-			xa_unlock(&mt_tree);
+			pthread_mutex_unlock(&mt_lock);
 			page_free(p);
 
-			xa_lock(&mt_tree);
+			pthread_mutex_lock(&mt_lock);
 			p = radix_tree_delete(&mt_tree, 0);
 			pthread_mutex_lock(&p->lock);
 			p->count--;
 			pthread_mutex_unlock(&p->lock);
-			xa_unlock(&mt_tree);
+			pthread_mutex_unlock(&mt_lock);
 			page_free(p);
 		}
 	} else {
@@ -173,7 +193,7 @@ void regression1_test(void)
 	long arg;
 
 	/* Regression #1 */
-	printv(1, "running regression test 1, should finish in under a minute\n");
+	printf("running regression test 1, should finish in under a minute\n");
 	nr_threads = 2;
 	pthread_barrier_init(&worker_barrier, NULL, nr_threads);
 
@@ -196,5 +216,5 @@ void regression1_test(void)
 
 	free(threads);
 
-	printv(1, "regression test 1, done\n");
+	printf("regression test 1, done\n");
 }

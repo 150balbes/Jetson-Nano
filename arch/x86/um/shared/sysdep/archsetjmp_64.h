@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * arch/um/include/sysdep-x86_64/archsetjmp.h
  */

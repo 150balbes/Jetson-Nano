@@ -1,10 +1,22 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
 	STB0899 Multistandard Frontend driver
 	Copyright (C) Manu Abraham (abraham.manu@gmail.com)
 
 	Copyright (C) ST Microelectronics
 
+	This program is free software; you can redistribute it and/or modify
+	it under the terms of the GNU General Public License as published by
+	the Free Software Foundation; either version 2 of the License, or
+	(at your option) any later version.
+
+	This program is distributed in the hope that it will be useful,
+	but WITHOUT ANY WARRANTY; without even the implied warranty of
+	MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+	GNU General Public License for more details.
+
+	You should have received a copy of the GNU General Public License
+	along with this program; if not, write to the Free Software
+	Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 */
 
 #include <linux/bitops.h>
@@ -199,7 +211,7 @@ static enum stb0899_status stb0899_search_tmg(struct stb0899_state *state)
 
 	short int derot_step, derot_freq = 0, derot_limit, next_loop = 3;
 	int index = 0;
-	u8 cfr[2];
+	u8 cfr[2] = {0xff, 0xff};
 
 	internal->status = NOTIMING;
 
@@ -269,7 +281,7 @@ static enum stb0899_status stb0899_search_carrier(struct stb0899_state *state)
 
 	short int derot_freq = 0, last_derot_freq = 0, derot_limit, next_loop = 3;
 	int index = 0;
-	u8 cfr[2];
+	u8 cfr[2] = {0xff, 0xff};
 	u8 reg;
 
 	internal->status = NOCARRIER;
@@ -377,7 +389,7 @@ static enum stb0899_status stb0899_check_data(struct stb0899_state *state)
 static enum stb0899_status stb0899_search_data(struct stb0899_state *state)
 {
 	short int derot_freq, derot_step, derot_limit, next_loop = 3;
-	u8 cfr[2];
+	u8 cfr[2] = {0xff, 0xff};
 	u8 reg;
 	int index = 1;
 
@@ -823,8 +835,8 @@ static u32 stb0899_dvbs2_calc_dev(struct stb0899_state *state)
 	dec_ratio = (internal->master_clk * 2) / (5 * internal->srate);
 	dec_ratio = (dec_ratio == 0) ? 1 : dec_ratio;
 
-	master_clk = internal->master_clk / 1000;	/* for integer Calculation*/
-	srate = internal->srate / 1000;	/* for integer Calculation*/
+	master_clk = internal->master_clk / 1000;	/* for integer Caculation*/
+	srate = internal->srate / 1000;	/* for integer Caculation*/
 	correction = (512 * master_clk) / (2 * dec_ratio * srate);
 
 	return	correction;
@@ -852,7 +864,7 @@ static void stb0899_dvbs2_set_srate(struct stb0899_state *state)
 		win_sel = dec_rate - 4;
 
 	decim = (1 << dec_rate);
-	/* (FSamp/Fsymbol *100) for integer Calculation */
+	/* (FSamp/Fsymbol *100) for integer Caculation */
 	f_sym = internal->master_clk / ((decim * internal->srate) / 1000);
 
 	if (f_sym <= 2250)	/* don't band limit signal going into btr block*/
@@ -913,7 +925,8 @@ static void stb0899_dvbs2_set_btr_loopbw(struct stb0899_state *state)
 		wn = (4 * zeta * zeta) + 1000000;
 		wn = (2 * (loopbw_percent * 1000) * 40 * zeta) /wn;  /*wn =wn 10^-8*/
 
-		k_indirect = (wn * wn) / K;	/*kindirect = kindirect 10^-6*/
+		k_indirect = (wn * wn) / K;
+		k_indirect = k_indirect;	  /*kindirect = kindirect 10^-6*/
 		k_direct   = (2 * wn * zeta) / K;	/*kDirect = kDirect 10^-2*/
 		k_direct  *= 100;
 

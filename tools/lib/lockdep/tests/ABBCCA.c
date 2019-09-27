@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 #include <liblockdep/mutex.h>
 #include "common.h"
 
@@ -13,8 +12,4 @@ void main(void)
 	LOCK_UNLOCK_2(a, b);
 	LOCK_UNLOCK_2(b, c);
 	LOCK_UNLOCK_2(c, a);
-
-	pthread_mutex_destroy(&c);
-	pthread_mutex_destroy(&b);
-	pthread_mutex_destroy(&a);
 }

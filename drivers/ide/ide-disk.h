@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __IDE_DISK_H
 #define __IDE_DISK_H
 

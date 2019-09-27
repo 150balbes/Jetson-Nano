@@ -1,9 +1,13 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  *  drivers/irqchip/irq-crossbar.c
  *
  *  Copyright (C) 2013 Texas Instruments Incorporated - http://www.ti.com
  *  Author: Sricharan R <r.sricharan@ti.com>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
  */
 #include <linux/err.h>
 #include <linux/io.h>
@@ -194,8 +198,8 @@ static const struct irq_domain_ops crossbar_domain_ops = {
 
 static int __init crossbar_of_init(struct device_node *node)
 {
-	u32 max = 0, entry, reg_size;
 	int i, size, reserved = 0;
+	u32 max = 0, entry, reg_size;
 	const __be32 *irqsr;
 	int ret = -ENOMEM;
 
@@ -337,13 +341,13 @@ static int __init irqcrossbar_init(struct device_node *node,
 	int err;
 
 	if (!parent) {
-		pr_err("%pOF: no parent, giving up\n", node);
+		pr_err("%s: no parent, giving up\n", node->full_name);
 		return -ENODEV;
 	}
 
 	parent_domain = irq_find_host(parent);
 	if (!parent_domain) {
-		pr_err("%pOF: unable to obtain parent domain\n", node);
+		pr_err("%s: unable to obtain parent domain\n", node->full_name);
 		return -ENXIO;
 	}
 
@@ -356,7 +360,7 @@ static int __init irqcrossbar_init(struct device_node *node,
 					  node, &crossbar_domain_ops,
 					  NULL);
 	if (!domain) {
-		pr_err("%pOF: failed to allocated domain\n", node);
+		pr_err("%s: failed to allocated domain\n", node->full_name);
 		return -ENOMEM;
 	}
 

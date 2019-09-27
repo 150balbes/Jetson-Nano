@@ -263,12 +263,12 @@ static int bcm63xx_pcmcia_get_status(struct pcmcia_socket *sock,
 /*
  * socket polling timer callback
  */
-static void bcm63xx_pcmcia_poll(struct timer_list *t)
+static void bcm63xx_pcmcia_poll(unsigned long data)
 {
 	struct bcm63xx_pcmcia_socket *skt;
 	unsigned int stat, events;
 
-	skt = from_timer(skt, t, timer);
+	skt = (struct bcm63xx_pcmcia_socket *)data;
 
 	spin_lock_bh(&skt->lock);
 
@@ -392,7 +392,7 @@ static int bcm63xx_drv_pcmcia_probe(struct platform_device *pdev)
 	sock->map_size = resource_size(skt->common_res);
 
 	/* initialize polling timer */
-	timer_setup(&skt->timer, bcm63xx_pcmcia_poll, 0);
+	setup_timer(&skt->timer, bcm63xx_pcmcia_poll, (unsigned long)skt);
 
 	/* initialize  pcmcia  control register,  drive  VS[12] to  0,
 	 * leave CB IDSEL to the old  value since it is set by the PCI

@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _RAYCTL_H_
 #define _RAYCTL_H_
 

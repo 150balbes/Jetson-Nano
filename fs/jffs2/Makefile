@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0
 #
 # Makefile for the Linux Journalling Flash File System v2 (JFFS2)
 #

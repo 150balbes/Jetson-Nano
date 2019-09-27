@@ -4,6 +4,7 @@ Properties:
  - compatible : should contain two values. First value must be one from following list:
 		   - "samsung,exynos3250-pmu" - for Exynos3250 SoC,
 		   - "samsung,exynos4210-pmu" - for Exynos4210 SoC,
+		   - "samsung,exynos4212-pmu" - for Exynos4212 SoC,
 		   - "samsung,exynos4412-pmu" - for Exynos4412 SoC,
 		   - "samsung,exynos5250-pmu" - for Exynos5250 SoC,
 		   - "samsung,exynos5260-pmu" - for Exynos5260 SoC.
@@ -40,11 +41,8 @@ following properties:
 - #interrupt-cells: must be identical to the that of the parent interrupt
   controller.
 
-
-Optional nodes:
-
-- nodes defining the restart and poweroff syscon children
-
+- interrupt-parent: a phandle indicating which interrupt controller
+  this PMU signals interrupts to.
 
 Example :
 pmu_system_controller: system-controller@10040000 {
@@ -64,7 +62,7 @@ pmu_system_controller: system-controller@10040000 {
 
 Example of clock consumer :
 
-usb3503: usb3503@8 {
+usb3503: usb3503@08 {
 	/* ... */
 	clock-names = "refclk";
 	clocks = <&pmu_system_controller 0>;

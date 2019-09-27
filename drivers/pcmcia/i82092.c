@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /* 
  * Driver for Intel I82092AA PCI-PCMCIA bridge.
  *

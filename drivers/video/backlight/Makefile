@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0
 # Backlight & LCD drivers
 
 obj-$(CONFIG_LCD_AMS369FG06)		+= ams369fg06.o
@@ -9,11 +8,12 @@ obj-$(CONFIG_LCD_HX8357)		+= hx8357.o
 obj-$(CONFIG_LCD_ILI922X)		+= ili922x.o
 obj-$(CONFIG_LCD_ILI9320)		+= ili9320.o
 obj-$(CONFIG_LCD_L4F00242T03)		+= l4f00242t03.o
+obj-$(CONFIG_LCD_LD9040)		+= ld9040.o
 obj-$(CONFIG_LCD_LMS283GF05)		+= lms283gf05.o
 obj-$(CONFIG_LCD_LMS501KF03)		+= lms501kf03.o
 obj-$(CONFIG_LCD_LTV350QV)		+= ltv350qv.o
-obj-$(CONFIG_LCD_OTM3225A)		+= otm3225a.o
 obj-$(CONFIG_LCD_PLATFORM)		+= platform_lcd.o
+obj-$(CONFIG_LCD_S6E63M0)		+= s6e63m0.o
 obj-$(CONFIG_LCD_TDO24M)		+= tdo24m.o
 obj-$(CONFIG_LCD_TOSA)			+= tosa_lcd.o
 obj-$(CONFIG_LCD_VGG2432A4)		+= vgg2432a4.o
@@ -42,6 +42,8 @@ obj-$(CONFIG_BACKLIGHT_LM3639)		+= lm3639_bl.o
 obj-$(CONFIG_BACKLIGHT_LOCOMO)		+= locomolcd.o
 obj-$(CONFIG_BACKLIGHT_LP855X)		+= lp855x_bl.o
 obj-$(CONFIG_BACKLIGHT_LP8788)		+= lp8788_bl.o
+obj-$(CONFIG_BACKLIGHT_LP88XX_I2C)	+= lp88xx_core.o lp88xx_i2c.o
+obj-$(CONFIG_BACKLIGHT_LP88XX_SPI)	+= lp88xx_core.o lp88xx_spi.o
 obj-$(CONFIG_BACKLIGHT_LV5207LP)	+= lv5207lp.o
 obj-$(CONFIG_BACKLIGHT_MAX8925)		+= max8925_bl.o
 obj-$(CONFIG_BACKLIGHT_OMAP1)		+= omap1_bl.o
@@ -55,5 +57,3 @@ obj-$(CONFIG_BACKLIGHT_SKY81452)	+= sky81452-backlight.o
 obj-$(CONFIG_BACKLIGHT_TOSA)		+= tosa_bl.o
 obj-$(CONFIG_BACKLIGHT_TPS65217)	+= tps65217_bl.o
 obj-$(CONFIG_BACKLIGHT_WM831X)		+= wm831x_bl.o
-obj-$(CONFIG_BACKLIGHT_ARCXCNN) 	+= arcxcnn_bl.o
-obj-$(CONFIG_BACKLIGHT_RAVE_SP)		+= rave-sp-backlight.o

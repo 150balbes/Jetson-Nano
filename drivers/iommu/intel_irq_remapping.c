@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 
 #define pr_fmt(fmt)     "DMAR-IR: " fmt
 
@@ -76,8 +75,8 @@ static struct hpet_scope ir_hpet[MAX_HPET_TBS];
  * in single-threaded environment with interrupt disabled, so no need to tabke
  * the dmar_global_lock.
  */
-DEFINE_RAW_SPINLOCK(irq_2_ir_lock);
-static const struct irq_domain_ops intel_ir_domain_ops;
+static DEFINE_RAW_SPINLOCK(irq_2_ir_lock);
+static struct irq_domain_ops intel_ir_domain_ops;
 
 static void iommu_disable_irq_remapping(struct intel_iommu *iommu);
 static int __init parse_ioapics_under_ir(void);
@@ -101,7 +100,7 @@ static void init_ir_status(struct intel_iommu *iommu)
 		iommu->flags |= VTD_FLAG_IRQ_REMAP_PRE_ENABLED;
 }
 
-static int alloc_irte(struct intel_iommu *iommu,
+static int alloc_irte(struct intel_iommu *iommu, int irq,
 		      struct irq_2_iommu *irq_iommu, u16 count)
 {
 	struct ir_table *table = iommu->ir_table;
@@ -145,11 +144,9 @@ static int qi_flush_iec(struct intel_iommu *iommu, int index, int mask)
 {
 	struct qi_desc desc;
 
-	desc.qw0 = QI_IEC_IIDEX(index) | QI_IEC_TYPE | QI_IEC_IM(mask)
+	desc.low = QI_IEC_IIDEX(index) | QI_IEC_TYPE | QI_IEC_IM(mask)
 		   | QI_IEC_SELECTIVE;
-	desc.qw1 = 0;
-	desc.qw2 = 0;
-	desc.qw3 = 0;
+	desc.high = 0;
 
 	return qi_submit_sync(&desc, iommu);
 }
@@ -294,18 +291,6 @@ static void set_irte_sid(struct irte *irte, unsigned int svt,
 	irte->sid = sid;
 }
 
-/*
- * Set an IRTE to match only the bus number. Interrupt requests that reference
- * this IRTE must have a requester-id whose bus number is between or equal
- * to the start_bus and end_bus arguments.
- */
-static void set_irte_verify_bus(struct irte *irte, unsigned int start_bus,
-				unsigned int end_bus)
-{
-	set_irte_sid(irte, SVT_VERIFY_BUS, SQ_ALL_16,
-		     (start_bus << 8) | end_bus);
-}
-
 static int set_ioapic_sid(struct irte *irte, int apic)
 {
 	int i;
@@ -368,8 +353,6 @@ static int set_hpet_sid(struct irte *irte, u8 id)
 struct set_msi_sid_data {
 	struct pci_dev *pdev;
 	u16 alias;
-	int count;
-	int busmatch_count;
 };
 
 static int set_msi_sid_cb(struct pci_dev *pdev, u16 alias, void *opaque)
@@ -378,10 +361,6 @@ static int set_msi_sid_cb(struct pci_dev *pdev, u16 alias, void *opaque)
 
 	data->pdev = pdev;
 	data->alias = alias;
-	data->count++;
-
-	if (PCI_BUS_NUM(alias) == pdev->bus->number)
-		data->busmatch_count++;
 
 	return 0;
 }
@@ -393,8 +372,6 @@ static int set_msi_sid(struct irte *irte, struct pci_dev *dev)
 	if (!irte || !dev)
 		return -1;
 
-	data.count = 0;
-	data.busmatch_count = 0;
 	pci_for_each_dma_alias(dev, set_msi_sid_cb, &data);
 
 	/*
@@ -402,11 +379,6 @@ static int set_msi_sid(struct irte *irte, struct pci_dev *dev)
 	 * where the it will return an alias on a different bus than the
 	 * device is the case of a PCIe-to-PCI bridge, where the alias is for
 	 * the subordinate bus.  In this case we can only verify the bus.
-	 *
-	 * If there are multiple aliases, all with the same bus number,
-	 * then all we can do is verify the bus. This is typical in NTB
-	 * hardware which use proxy IDs where the device will generate traffic
-	 * from multiple devfn numbers on the same bus.
 	 *
 	 * If the alias device is on a different bus than our source device
 	 * then we have a topology based alias, use it.
@@ -416,15 +388,14 @@ static int set_msi_sid(struct irte *irte, struct pci_dev *dev)
 	 * original device.
 	 */
 	if (PCI_BUS_NUM(data.alias) != data.pdev->bus->number)
-		set_irte_verify_bus(irte, PCI_BUS_NUM(data.alias),
-				    dev->bus->number);
-	else if (data.count >= 2 && data.busmatch_count == data.count)
-		set_irte_verify_bus(irte, dev->bus->number, dev->bus->number);
+		set_irte_sid(irte, SVT_VERIFY_BUS, SQ_ALL_16,
+			     PCI_DEVID(PCI_BUS_NUM(data.alias),
+				       dev->bus->number));
 	else if (data.pdev->bus->number != dev->bus->number)
 		set_irte_sid(irte, SVT_VERIFY_SID_SQ, SQ_ALL_16, data.alias);
 	else
 		set_irte_sid(irte, SVT_VERIFY_SID_SQ, SQ_ALL_16,
-			     pci_dev_id(dev));
+			     PCI_DEVID(dev->bus->number, dev->devfn));
 
 	return 0;
 }
@@ -436,6 +407,14 @@ static int iommu_load_old_irte(struct intel_iommu *iommu)
 	unsigned int i;
 	size_t size;
 	u64 irta;
+
+	if (!is_kdump_kernel()) {
+		pr_warn("IRQ remapping was enabled on %s but we are not in kdump mode\n",
+			iommu->name);
+		clear_ir_pre_enabled(iommu);
+		iommu_disable_irq_remapping(iommu);
+		return -EINVAL;
+	}
 
 	/* Check whether the old ir-table has the same size as ours */
 	irta = dmar_readq(iommu->reg + DMAR_IRTA_REG);
@@ -529,9 +508,8 @@ static void iommu_enable_irq_remapping(struct intel_iommu *iommu)
 static int intel_setup_irq_remapping(struct intel_iommu *iommu)
 {
 	struct ir_table *ir_table;
-	struct fwnode_handle *fn;
-	unsigned long *bitmap;
 	struct page *pages;
+	unsigned long *bitmap;
 
 	if (iommu->ir_table)
 		return 0;
@@ -548,30 +526,22 @@ static int intel_setup_irq_remapping(struct intel_iommu *iommu)
 		goto out_free_table;
 	}
 
-	bitmap = bitmap_zalloc(INTR_REMAP_TABLE_ENTRIES, GFP_ATOMIC);
+	bitmap = kcalloc(BITS_TO_LONGS(INTR_REMAP_TABLE_ENTRIES),
+			 sizeof(long), GFP_ATOMIC);
 	if (bitmap == NULL) {
 		pr_err("IR%d: failed to allocate bitmap\n", iommu->seq_id);
 		goto out_free_pages;
 	}
 
-	fn = irq_domain_alloc_named_id_fwnode("INTEL-IR", iommu->seq_id);
-	if (!fn)
-		goto out_free_bitmap;
-
-	iommu->ir_domain =
-		irq_domain_create_hierarchy(arch_get_ir_parent_domain(),
-					    0, INTR_REMAP_TABLE_ENTRIES,
-					    fn, &intel_ir_domain_ops,
-					    iommu);
-	irq_domain_free_fwnode(fn);
+	iommu->ir_domain = irq_domain_add_hierarchy(arch_get_ir_parent_domain(),
+						    0, INTR_REMAP_TABLE_ENTRIES,
+						    NULL, &intel_ir_domain_ops,
+						    iommu);
 	if (!iommu->ir_domain) {
 		pr_err("IR%d: failed to allocate irqdomain\n", iommu->seq_id);
 		goto out_free_bitmap;
 	}
-	iommu->ir_msi_domain =
-		arch_create_remap_msi_irq_domain(iommu->ir_domain,
-						 "INTEL-IR-MSI",
-						 iommu->seq_id);
+	iommu->ir_msi_domain = arch_create_msi_irq_domain(iommu->ir_domain);
 
 	ir_table->base = page_address(pages);
 	ir_table->bitmap = bitmap;
@@ -597,12 +567,7 @@ static int intel_setup_irq_remapping(struct intel_iommu *iommu)
 	init_ir_status(iommu);
 
 	if (ir_pre_enabled(iommu)) {
-		if (!is_kdump_kernel()) {
-			pr_warn("IRQ remapping was enabled on %s but we are not in kdump mode\n",
-				iommu->name);
-			clear_ir_pre_enabled(iommu);
-			iommu_disable_irq_remapping(iommu);
-		} else if (iommu_load_old_irte(iommu))
+		if (iommu_load_old_irte(iommu))
 			pr_err("Failed to copy IR table for %s from previous kernel\n",
 			       iommu->name);
 		else
@@ -615,7 +580,7 @@ static int intel_setup_irq_remapping(struct intel_iommu *iommu)
 	return 0;
 
 out_free_bitmap:
-	bitmap_free(bitmap);
+	kfree(bitmap);
 out_free_pages:
 	__free_pages(pages, INTR_REMAP_PAGE_ORDER);
 out_free_table:
@@ -639,7 +604,7 @@ static void intel_teardown_irq_remapping(struct intel_iommu *iommu)
 		}
 		free_pages((unsigned long)iommu->ir_table->base,
 			   INTR_REMAP_PAGE_ORDER);
-		bitmap_free(iommu->ir_table->bitmap);
+		kfree(iommu->ir_table->bitmap);
 		kfree(iommu->ir_table);
 		iommu->ir_table = NULL;
 	}
@@ -1149,24 +1114,6 @@ struct irq_remap_ops intel_irq_remap_ops = {
 	.get_irq_domain		= intel_get_irq_domain,
 };
 
-static void intel_ir_reconfigure_irte(struct irq_data *irqd, bool force)
-{
-	struct intel_ir_data *ir_data = irqd->chip_data;
-	struct irte *irte = &ir_data->irte_entry;
-	struct irq_cfg *cfg = irqd_cfg(irqd);
-
-	/*
-	 * Atomically updates the IRTE with the new destination, vector
-	 * and flushes the interrupt entry cache.
-	 */
-	irte->vector = cfg->vector;
-	irte->dest_id = IRTE_DEST(cfg->dest_apicid);
-
-	/* Update the hardware only if the interrupt is in remapped mode. */
-	if (force || ir_data->irq_2_iommu.mode == IRQ_REMAPPING)
-		modify_irte(&ir_data->irq_2_iommu, irte);
-}
-
 /*
  * Migrate the IO-APIC irq in the presence of intr-remapping.
  *
@@ -1185,15 +1132,27 @@ static int
 intel_ir_set_affinity(struct irq_data *data, const struct cpumask *mask,
 		      bool force)
 {
-	struct irq_data *parent = data->parent_data;
+	struct intel_ir_data *ir_data = data->chip_data;
+	struct irte *irte = &ir_data->irte_entry;
 	struct irq_cfg *cfg = irqd_cfg(data);
+	struct irq_data *parent = data->parent_data;
 	int ret;
 
 	ret = parent->chip->irq_set_affinity(parent, mask, force);
 	if (ret < 0 || ret == IRQ_SET_MASK_OK_DONE)
 		return ret;
 
-	intel_ir_reconfigure_irte(data, false);
+	/*
+	 * Atomically updates the IRTE with the new destination, vector
+	 * and flushes the interrupt entry cache.
+	 */
+	irte->vector = cfg->vector;
+	irte->dest_id = IRTE_DEST(cfg->dest_apicid);
+
+	/* Update the hardware only if the interrupt is in remapped mode. */
+	if (ir_data->irq_2_iommu.mode == IRQ_REMAPPING)
+		modify_irte(&ir_data->irq_2_iommu, irte);
+
 	/*
 	 * After this point, all the interrupts will start arriving
 	 * at the new destination. So, time to cleanup the previous
@@ -1249,11 +1208,10 @@ static int intel_ir_set_vcpu_affinity(struct irq_data *data, void *info)
 }
 
 static struct irq_chip intel_ir_chip = {
-	.name			= "INTEL-IR",
-	.irq_ack		= apic_ack_irq,
-	.irq_set_affinity	= intel_ir_set_affinity,
-	.irq_compose_msi_msg	= intel_ir_compose_msi_msg,
-	.irq_set_vcpu_affinity	= intel_ir_set_vcpu_affinity,
+	.irq_ack = ir_ack_apic_edge,
+	.irq_set_affinity = intel_ir_set_affinity,
+	.irq_compose_msi_msg = intel_ir_compose_msi_msg,
+	.irq_set_vcpu_affinity = intel_ir_set_vcpu_affinity,
 };
 
 static void intel_irq_remapping_prepare_irte(struct intel_ir_data *data,
@@ -1374,7 +1332,7 @@ static int intel_irq_remapping_alloc(struct irq_domain *domain,
 		goto out_free_parent;
 
 	down_read(&dmar_global_lock);
-	index = alloc_irte(iommu, &data->irq_2_iommu, nr_irqs);
+	index = alloc_irte(iommu, virq, &data->irq_2_iommu, nr_irqs);
 	up_read(&dmar_global_lock);
 	if (index < 0) {
 		pr_warn("Failed to allocate IRTE\n");
@@ -1423,11 +1381,12 @@ static void intel_irq_remapping_free(struct irq_domain *domain,
 	irq_domain_free_irqs_common(domain, virq, nr_irqs);
 }
 
-static int intel_irq_remapping_activate(struct irq_domain *domain,
-					struct irq_data *irq_data, bool reserve)
+static void intel_irq_remapping_activate(struct irq_domain *domain,
+					 struct irq_data *irq_data)
 {
-	intel_ir_reconfigure_irte(irq_data, true);
-	return 0;
+	struct intel_ir_data *data = irq_data->chip_data;
+
+	modify_irte(&data->irq_2_iommu, &data->irte_entry);
 }
 
 static void intel_irq_remapping_deactivate(struct irq_domain *domain,
@@ -1440,7 +1399,7 @@ static void intel_irq_remapping_deactivate(struct irq_domain *domain,
 	modify_irte(&data->irq_2_iommu, &entry);
 }
 
-static const struct irq_domain_ops intel_ir_domain_ops = {
+static struct irq_domain_ops intel_ir_domain_ops = {
 	.alloc = intel_irq_remapping_alloc,
 	.free = intel_irq_remapping_free,
 	.activate = intel_irq_remapping_activate,

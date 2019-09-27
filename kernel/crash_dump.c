@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 #include <linux/kernel.h>
 #include <linux/crash_dump.h>
 #include <linux/init.h>

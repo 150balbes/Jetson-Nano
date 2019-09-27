@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #include <asm/lasat/lasat.h>
 
 /* Lasat 100 boards serial configuration */

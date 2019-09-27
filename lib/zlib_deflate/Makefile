@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0-only
 #
 # This is a modified version of zlib, which does all memory
 # allocation ahead of time.

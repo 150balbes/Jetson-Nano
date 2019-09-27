@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * rtrap.S: Return from Sparc trap low-level code.
  *

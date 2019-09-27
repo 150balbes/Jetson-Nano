@@ -1,10 +1,17 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2016 HGST, a Western Digital Company.
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms and conditions of the GNU General Public License,
+ * version 2, as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
  */
 #include <linux/moduleparam.h>
 #include <linux/slab.h>
-#include <linux/pci-p2pdma.h>
 #include <rdma/mr_pool.h>
 #include <rdma/rw.h>
 
@@ -51,23 +58,24 @@ static inline bool rdma_rw_io_needs_mr(struct ib_device *dev, u8 port_num,
 	return false;
 }
 
-static inline u32 rdma_rw_fr_page_list_len(struct ib_device *dev,
-					   bool pi_support)
+static inline u32 rdma_rw_fr_page_list_len(struct ib_device *dev)
 {
-	u32 max_pages;
-
-	if (pi_support)
-		max_pages = dev->attrs.max_pi_fast_reg_page_list_len;
-	else
-		max_pages = dev->attrs.max_fast_reg_page_list_len;
-
 	/* arbitrary limit to avoid allocating gigantic resources */
-	return min_t(u32, max_pages, 256);
+	return min_t(u32, dev->attrs.max_fast_reg_page_list_len, 256);
 }
 
-static inline int rdma_rw_inv_key(struct rdma_rw_reg_ctx *reg)
+/* Caller must have zero-initialized *reg. */
+static int rdma_rw_init_one_mr(struct ib_qp *qp, u8 port_num,
+		struct rdma_rw_reg_ctx *reg, struct scatterlist *sg,
+		u32 sg_cnt, u32 offset)
 {
-	int count = 0;
+	u32 pages_per_mr = rdma_rw_fr_page_list_len(qp->pd->device);
+	u32 nents = min(sg_cnt, pages_per_mr);
+	int count = 0, ret;
+
+	reg->mr = ib_mr_pool_get(qp, &qp->rdma_mrs);
+	if (!reg->mr)
+		return -EAGAIN;
 
 	if (reg->mr->need_inval) {
 		reg->inv_wr.opcode = IB_WR_LOCAL_INV;
@@ -77,25 +85,6 @@ static inline int rdma_rw_inv_key(struct rdma_rw_reg_ctx *reg)
 	} else {
 		reg->inv_wr.next = NULL;
 	}
-
-	return count;
-}
-
-/* Caller must have zero-initialized *reg. */
-static int rdma_rw_init_one_mr(struct ib_qp *qp, u8 port_num,
-		struct rdma_rw_reg_ctx *reg, struct scatterlist *sg,
-		u32 sg_cnt, u32 offset)
-{
-	u32 pages_per_mr = rdma_rw_fr_page_list_len(qp->pd->device,
-						    qp->integrity_en);
-	u32 nents = min(sg_cnt, pages_per_mr);
-	int count = 0, ret;
-
-	reg->mr = ib_mr_pool_get(qp, &qp->rdma_mrs);
-	if (!reg->mr)
-		return -EAGAIN;
-
-	count += rdma_rw_inv_key(reg);
 
 	ret = ib_map_mr_sg(reg->mr, sg, nents, &offset, PAGE_SIZE);
 	if (ret < 0 || ret < nents) {
@@ -120,8 +109,7 @@ static int rdma_rw_init_mr_wrs(struct rdma_rw_ctx *ctx, struct ib_qp *qp,
 		u64 remote_addr, u32 rkey, enum dma_data_direction dir)
 {
 	struct rdma_rw_reg_ctx *prev = NULL;
-	u32 pages_per_mr = rdma_rw_fr_page_list_len(qp->pd->device,
-						    qp->integrity_en);
+	u32 pages_per_mr = rdma_rw_fr_page_list_len(qp->pd->device);
 	int i, j, ret = 0, count = 0;
 
 	ctx->nr_ops = (sg_cnt + pages_per_mr - 1) / pages_per_mr;
@@ -190,6 +178,7 @@ static int rdma_rw_init_map_wrs(struct rdma_rw_ctx *ctx, struct ib_qp *qp,
 		struct scatterlist *sg, u32 sg_cnt, u32 offset,
 		u64 remote_addr, u32 rkey, enum dma_data_direction dir)
 {
+	struct ib_device *dev = qp->pd->device;
 	u32 max_sge = dir == DMA_TO_DEVICE ? qp->max_write_sge :
 		      qp->max_read_sge;
 	struct ib_sge *sge;
@@ -219,8 +208,8 @@ static int rdma_rw_init_map_wrs(struct rdma_rw_ctx *ctx, struct ib_qp *qp,
 		rdma_wr->wr.sg_list = sge;
 
 		for (j = 0; j < nr_sge; j++, sg = sg_next(sg)) {
-			sge->addr = sg_dma_address(sg) + offset;
-			sge->length = sg_dma_len(sg) - offset;
+			sge->addr = ib_sg_dma_address(dev, sg) + offset;
+			sge->length = ib_sg_dma_len(dev, sg) - offset;
 			sge->lkey = qp->pd->local_dma_lkey;
 
 			total_len += sge->length;
@@ -246,13 +235,14 @@ static int rdma_rw_init_single_wr(struct rdma_rw_ctx *ctx, struct ib_qp *qp,
 		struct scatterlist *sg, u32 offset, u64 remote_addr, u32 rkey,
 		enum dma_data_direction dir)
 {
+	struct ib_device *dev = qp->pd->device;
 	struct ib_rdma_wr *rdma_wr = &ctx->single.wr;
 
 	ctx->nr_ops = 1;
 
 	ctx->single.sge.lkey = qp->pd->local_dma_lkey;
-	ctx->single.sge.addr = sg_dma_address(sg) + offset;
-	ctx->single.sge.length = sg_dma_len(sg) - offset;
+	ctx->single.sge.addr = ib_sg_dma_address(dev, sg) + offset;
+	ctx->single.sge.length = ib_sg_dma_len(dev, sg) - offset;
 
 	memset(rdma_wr, 0, sizeof(*rdma_wr));
 	if (dir == DMA_TO_DEVICE)
@@ -290,11 +280,7 @@ int rdma_rw_ctx_init(struct rdma_rw_ctx *ctx, struct ib_qp *qp, u8 port_num,
 	struct ib_device *dev = qp->pd->device;
 	int ret;
 
-	if (is_pci_p2pdma_page(sg_page(sg)))
-		ret = pci_p2pdma_map_sg(dev->dma_device, sg, sg_cnt, dir);
-	else
-		ret = ib_dma_map_sg(dev, sg, sg_cnt, dir);
-
+	ret = ib_dma_map_sg(dev, sg, sg_cnt, dir);
 	if (!ret)
 		return -ENOMEM;
 	sg_cnt = ret;
@@ -303,7 +289,7 @@ int rdma_rw_ctx_init(struct rdma_rw_ctx *ctx, struct ib_qp *qp, u8 port_num,
 	 * Skip to the S/G entry that sg_offset falls into:
 	 */
 	for (;;) {
-		u32 len = sg_dma_len(sg);
+		u32 len = ib_sg_dma_len(dev, sg);
 
 		if (sg_offset < len)
 			break;
@@ -339,7 +325,7 @@ out_unmap_sg:
 EXPORT_SYMBOL(rdma_rw_ctx_init);
 
 /**
- * rdma_rw_ctx_signature_init - initialize a RW context with signature offload
+ * rdma_rw_ctx_signature init - initialize a RW context with signature offload
  * @ctx:	context to initialize
  * @qp:		queue pair to operate on
  * @port_num:	port num to which the connection is bound
@@ -362,14 +348,13 @@ int rdma_rw_ctx_signature_init(struct rdma_rw_ctx *ctx, struct ib_qp *qp,
 		u64 remote_addr, u32 rkey, enum dma_data_direction dir)
 {
 	struct ib_device *dev = qp->pd->device;
-	u32 pages_per_mr = rdma_rw_fr_page_list_len(qp->pd->device,
-						    qp->integrity_en);
+	u32 pages_per_mr = rdma_rw_fr_page_list_len(qp->pd->device);
 	struct ib_rdma_wr *rdma_wr;
+	struct ib_send_wr *prev_wr = NULL;
 	int count = 0, ret;
 
 	if (sg_cnt > pages_per_mr || prot_sg_cnt > pages_per_mr) {
-		pr_err("SG count too large: sg_cnt=%d, prot_sg_cnt=%d, pages_per_mr=%d\n",
-		       sg_cnt, prot_sg_cnt, pages_per_mr);
+		pr_err("SG count too large\n");
 		return -EINVAL;
 	}
 
@@ -378,58 +363,79 @@ int rdma_rw_ctx_signature_init(struct rdma_rw_ctx *ctx, struct ib_qp *qp,
 		return -ENOMEM;
 	sg_cnt = ret;
 
-	if (prot_sg_cnt) {
-		ret = ib_dma_map_sg(dev, prot_sg, prot_sg_cnt, dir);
-		if (!ret) {
-			ret = -ENOMEM;
-			goto out_unmap_sg;
-		}
-		prot_sg_cnt = ret;
+	ret = ib_dma_map_sg(dev, prot_sg, prot_sg_cnt, dir);
+	if (!ret) {
+		ret = -ENOMEM;
+		goto out_unmap_sg;
 	}
+	prot_sg_cnt = ret;
 
 	ctx->type = RDMA_RW_SIG_MR;
 	ctx->nr_ops = 1;
-	ctx->reg = kcalloc(1, sizeof(*ctx->reg), GFP_KERNEL);
-	if (!ctx->reg) {
+	ctx->sig = kcalloc(1, sizeof(*ctx->sig), GFP_KERNEL);
+	if (!ctx->sig) {
 		ret = -ENOMEM;
 		goto out_unmap_prot_sg;
 	}
 
-	ctx->reg->mr = ib_mr_pool_get(qp, &qp->sig_mrs);
-	if (!ctx->reg->mr) {
-		ret = -EAGAIN;
+	ret = rdma_rw_init_one_mr(qp, port_num, &ctx->sig->data, sg, sg_cnt, 0);
+	if (ret < 0)
 		goto out_free_ctx;
+	count += ret;
+	prev_wr = &ctx->sig->data.reg_wr.wr;
+
+	if (prot_sg_cnt) {
+		ret = rdma_rw_init_one_mr(qp, port_num, &ctx->sig->prot,
+				prot_sg, prot_sg_cnt, 0);
+		if (ret < 0)
+			goto out_destroy_data_mr;
+		count += ret;
+
+		if (ctx->sig->prot.inv_wr.next)
+			prev_wr->next = &ctx->sig->prot.inv_wr;
+		else
+			prev_wr->next = &ctx->sig->prot.reg_wr.wr;
+		prev_wr = &ctx->sig->prot.reg_wr.wr;
+	} else {
+		ctx->sig->prot.mr = NULL;
 	}
 
-	count += rdma_rw_inv_key(ctx->reg);
-
-	memcpy(ctx->reg->mr->sig_attrs, sig_attrs, sizeof(struct ib_sig_attrs));
-
-	ret = ib_map_mr_sg_pi(ctx->reg->mr, sg, sg_cnt, NULL, prot_sg,
-			      prot_sg_cnt, NULL, SZ_4K);
-	if (unlikely(ret)) {
-		pr_err("failed to map PI sg (%d)\n", sg_cnt + prot_sg_cnt);
-		goto out_destroy_sig_mr;
+	ctx->sig->sig_mr = ib_mr_pool_get(qp, &qp->sig_mrs);
+	if (!ctx->sig->sig_mr) {
+		ret = -EAGAIN;
+		goto out_destroy_prot_mr;
 	}
 
-	ctx->reg->reg_wr.wr.opcode = IB_WR_REG_MR_INTEGRITY;
-	ctx->reg->reg_wr.wr.wr_cqe = NULL;
-	ctx->reg->reg_wr.wr.num_sge = 0;
-	ctx->reg->reg_wr.wr.send_flags = 0;
-	ctx->reg->reg_wr.access = IB_ACCESS_LOCAL_WRITE;
-	if (rdma_protocol_iwarp(qp->device, port_num))
-		ctx->reg->reg_wr.access |= IB_ACCESS_REMOTE_WRITE;
-	ctx->reg->reg_wr.mr = ctx->reg->mr;
-	ctx->reg->reg_wr.key = ctx->reg->mr->lkey;
+	if (ctx->sig->sig_mr->need_inval) {
+		memset(&ctx->sig->sig_inv_wr, 0, sizeof(ctx->sig->sig_inv_wr));
+
+		ctx->sig->sig_inv_wr.opcode = IB_WR_LOCAL_INV;
+		ctx->sig->sig_inv_wr.ex.invalidate_rkey = ctx->sig->sig_mr->rkey;
+
+		prev_wr->next = &ctx->sig->sig_inv_wr;
+		prev_wr = &ctx->sig->sig_inv_wr;
+	}
+
+	ctx->sig->sig_wr.wr.opcode = IB_WR_REG_SIG_MR;
+	ctx->sig->sig_wr.wr.wr_cqe = NULL;
+	ctx->sig->sig_wr.wr.sg_list = &ctx->sig->data.sge;
+	ctx->sig->sig_wr.wr.num_sge = 1;
+	ctx->sig->sig_wr.access_flags = IB_ACCESS_LOCAL_WRITE;
+	ctx->sig->sig_wr.sig_attrs = sig_attrs;
+	ctx->sig->sig_wr.sig_mr = ctx->sig->sig_mr;
+	if (prot_sg_cnt)
+		ctx->sig->sig_wr.prot = &ctx->sig->prot.sge;
+	prev_wr->next = &ctx->sig->sig_wr.wr;
+	prev_wr = &ctx->sig->sig_wr.wr;
 	count++;
 
-	ctx->reg->sge.addr = ctx->reg->mr->iova;
-	ctx->reg->sge.length = ctx->reg->mr->length;
-	if (sig_attrs->wire.sig_type == IB_SIG_TYPE_NONE)
-		ctx->reg->sge.length -= ctx->reg->mr->sig_attrs->meta_length;
+	ctx->sig->sig_sge.addr = 0;
+	ctx->sig->sig_sge.length = ctx->sig->data.sge.length;
+	if (sig_attrs->wire.sig_type != IB_SIG_TYPE_NONE)
+		ctx->sig->sig_sge.length += ctx->sig->prot.sge.length;
 
-	rdma_wr = &ctx->reg->wr;
-	rdma_wr->wr.sg_list = &ctx->reg->sge;
+	rdma_wr = &ctx->sig->data.wr;
+	rdma_wr->wr.sg_list = &ctx->sig->sig_sge;
 	rdma_wr->wr.num_sge = 1;
 	rdma_wr->remote_addr = remote_addr;
 	rdma_wr->rkey = rkey;
@@ -437,18 +443,21 @@ int rdma_rw_ctx_signature_init(struct rdma_rw_ctx *ctx, struct ib_qp *qp,
 		rdma_wr->wr.opcode = IB_WR_RDMA_WRITE;
 	else
 		rdma_wr->wr.opcode = IB_WR_RDMA_READ;
-	ctx->reg->reg_wr.wr.next = &rdma_wr->wr;
+	prev_wr->next = &rdma_wr->wr;
+	prev_wr = &rdma_wr->wr;
 	count++;
 
 	return count;
 
-out_destroy_sig_mr:
-	ib_mr_pool_put(qp, &qp->sig_mrs, ctx->reg->mr);
-out_free_ctx:
-	kfree(ctx->reg);
-out_unmap_prot_sg:
+out_destroy_prot_mr:
 	if (prot_sg_cnt)
-		ib_dma_unmap_sg(dev, prot_sg, prot_sg_cnt, dir);
+		ib_mr_pool_put(qp, &qp->rdma_mrs, ctx->sig->prot.mr);
+out_destroy_data_mr:
+	ib_mr_pool_put(qp, &qp->rdma_mrs, ctx->sig->data.mr);
+out_free_ctx:
+	kfree(ctx->sig);
+out_unmap_prot_sg:
+	ib_dma_unmap_sg(dev, prot_sg, prot_sg_cnt, dir);
 out_unmap_sg:
 	ib_dma_unmap_sg(dev, sg, sg_cnt, dir);
 	return ret;
@@ -491,8 +500,22 @@ struct ib_send_wr *rdma_rw_ctx_wrs(struct rdma_rw_ctx *ctx, struct ib_qp *qp,
 
 	switch (ctx->type) {
 	case RDMA_RW_SIG_MR:
+		rdma_rw_update_lkey(&ctx->sig->data, true);
+		if (ctx->sig->prot.mr)
+			rdma_rw_update_lkey(&ctx->sig->prot, true);
+	
+		ctx->sig->sig_mr->need_inval = true;
+		ib_update_fast_reg_key(ctx->sig->sig_mr,
+			ib_inc_rkey(ctx->sig->sig_mr->lkey));
+		ctx->sig->sig_sge.lkey = ctx->sig->sig_mr->lkey;
+
+		if (ctx->sig->data.inv_wr.next)
+			first_wr = &ctx->sig->data.inv_wr;
+		else
+			first_wr = &ctx->sig->data.reg_wr.wr;
+		last_wr = &ctx->sig->data.wr.wr;
+		break;
 	case RDMA_RW_MR:
-		/* fallthrough */
 		for (i = 0; i < ctx->nr_ops; i++) {
 			rdma_rw_update_lkey(&ctx->reg[i],
 				ctx->reg[i].wr.wr.opcode !=
@@ -545,10 +568,10 @@ EXPORT_SYMBOL(rdma_rw_ctx_wrs);
 int rdma_rw_ctx_post(struct rdma_rw_ctx *ctx, struct ib_qp *qp, u8 port_num,
 		struct ib_cqe *cqe, struct ib_send_wr *chain_wr)
 {
-	struct ib_send_wr *first_wr;
+	struct ib_send_wr *first_wr, *bad_wr;
 
 	first_wr = rdma_rw_ctx_wrs(ctx, qp, port_num, cqe, chain_wr);
-	return ib_post_send(qp, first_wr, NULL);
+	return ib_post_send(qp, first_wr, &bad_wr);
 }
 EXPORT_SYMBOL(rdma_rw_ctx_post);
 
@@ -583,15 +606,13 @@ void rdma_rw_ctx_destroy(struct rdma_rw_ctx *ctx, struct ib_qp *qp, u8 port_num,
 		break;
 	}
 
-	/* P2PDMA contexts do not need to be unmapped */
-	if (!is_pci_p2pdma_page(sg_page(sg)))
-		ib_dma_unmap_sg(qp->pd->device, sg, sg_cnt, dir);
+	ib_dma_unmap_sg(qp->pd->device, sg, sg_cnt, dir);
 }
 EXPORT_SYMBOL(rdma_rw_ctx_destroy);
 
 /**
  * rdma_rw_ctx_destroy_signature - release all resources allocated by
- *	rdma_rw_ctx_signature_init
+ *	rdma_rw_ctx_init_signature
  * @ctx:	context to release
  * @qp:		queue pair to operate on
  * @port_num:	port num to which the connection is bound
@@ -609,38 +630,18 @@ void rdma_rw_ctx_destroy_signature(struct rdma_rw_ctx *ctx, struct ib_qp *qp,
 	if (WARN_ON_ONCE(ctx->type != RDMA_RW_SIG_MR))
 		return;
 
-	ib_mr_pool_put(qp, &qp->sig_mrs, ctx->reg->mr);
-	kfree(ctx->reg);
-
+	ib_mr_pool_put(qp, &qp->rdma_mrs, ctx->sig->data.mr);
 	ib_dma_unmap_sg(qp->pd->device, sg, sg_cnt, dir);
-	if (prot_sg_cnt)
+
+	if (ctx->sig->prot.mr) {
+		ib_mr_pool_put(qp, &qp->rdma_mrs, ctx->sig->prot.mr);
 		ib_dma_unmap_sg(qp->pd->device, prot_sg, prot_sg_cnt, dir);
+	}
+
+	ib_mr_pool_put(qp, &qp->sig_mrs, ctx->sig->sig_mr);
+	kfree(ctx->sig);
 }
 EXPORT_SYMBOL(rdma_rw_ctx_destroy_signature);
-
-/**
- * rdma_rw_mr_factor - return number of MRs required for a payload
- * @device:	device handling the connection
- * @port_num:	port num to which the connection is bound
- * @maxpages:	maximum payload pages per rdma_rw_ctx
- *
- * Returns the number of MRs the device requires to move @maxpayload
- * bytes. The returned value is used during transport creation to
- * compute max_rdma_ctxts and the size of the transport's Send and
- * Send Completion Queues.
- */
-unsigned int rdma_rw_mr_factor(struct ib_device *device, u8 port_num,
-			       unsigned int maxpages)
-{
-	unsigned int mr_pages;
-
-	if (rdma_rw_can_use_mr(device, port_num))
-		mr_pages = rdma_rw_fr_page_list_len(device, false);
-	else
-		mr_pages = device->attrs.max_sge_rd;
-	return DIV_ROUND_UP(maxpages, mr_pages);
-}
-EXPORT_SYMBOL(rdma_rw_mr_factor);
 
 void rdma_rw_init_qp(struct ib_device *dev, struct ib_qp_init_attr *attr)
 {
@@ -661,8 +662,9 @@ void rdma_rw_init_qp(struct ib_device *dev, struct ib_qp_init_attr *attr)
 	 * we'll need two additional MRs for the registrations and the
 	 * invalidation.
 	 */
-	if (attr->create_flags & IB_QP_CREATE_INTEGRITY_EN ||
-	    rdma_rw_can_use_mr(dev, attr->port_num))
+	if (attr->create_flags & IB_QP_CREATE_SIGNATURE_EN)
+		factor += 6;	/* (inv + reg) * (data + prot + sig) */
+	else if (rdma_rw_can_use_mr(dev, attr->port_num))
 		factor += 2;	/* inv + reg */
 
 	attr->cap.max_send_wr += factor * attr->cap.max_rdma_ctxs;
@@ -678,22 +680,20 @@ void rdma_rw_init_qp(struct ib_device *dev, struct ib_qp_init_attr *attr)
 int rdma_rw_init_mrs(struct ib_qp *qp, struct ib_qp_init_attr *attr)
 {
 	struct ib_device *dev = qp->pd->device;
-	u32 nr_mrs = 0, nr_sig_mrs = 0, max_num_sg = 0;
+	u32 nr_mrs = 0, nr_sig_mrs = 0;
 	int ret = 0;
 
-	if (attr->create_flags & IB_QP_CREATE_INTEGRITY_EN) {
+	if (attr->create_flags & IB_QP_CREATE_SIGNATURE_EN) {
 		nr_sig_mrs = attr->cap.max_rdma_ctxs;
-		nr_mrs = attr->cap.max_rdma_ctxs;
-		max_num_sg = rdma_rw_fr_page_list_len(dev, true);
+		nr_mrs = attr->cap.max_rdma_ctxs * 2;
 	} else if (rdma_rw_can_use_mr(dev, attr->port_num)) {
 		nr_mrs = attr->cap.max_rdma_ctxs;
-		max_num_sg = rdma_rw_fr_page_list_len(dev, false);
 	}
 
 	if (nr_mrs) {
 		ret = ib_mr_pool_init(qp, &qp->rdma_mrs, nr_mrs,
 				IB_MR_TYPE_MEM_REG,
-				max_num_sg, 0);
+				rdma_rw_fr_page_list_len(dev));
 		if (ret) {
 			pr_err("%s: failed to allocated %d MRs\n",
 				__func__, nr_mrs);
@@ -703,10 +703,10 @@ int rdma_rw_init_mrs(struct ib_qp *qp, struct ib_qp_init_attr *attr)
 
 	if (nr_sig_mrs) {
 		ret = ib_mr_pool_init(qp, &qp->sig_mrs, nr_sig_mrs,
-				IB_MR_TYPE_INTEGRITY, max_num_sg, max_num_sg);
+				IB_MR_TYPE_SIGNATURE, 2);
 		if (ret) {
 			pr_err("%s: failed to allocated %d SIG MRs\n",
-				__func__, nr_sig_mrs);
+				__func__, nr_mrs);
 			goto out_free_rdma_mrs;
 		}
 	}

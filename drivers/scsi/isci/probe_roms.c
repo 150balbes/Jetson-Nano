@@ -54,7 +54,6 @@ struct isci_orom *isci_request_oprom(struct pci_dev *pdev)
 	len = pci_biosrom_size(pdev);
 	rom = devm_kzalloc(&pdev->dev, sizeof(*rom), GFP_KERNEL);
 	if (!rom) {
-		pci_unmap_biosrom(oprom);
 		dev_warn(&pdev->dev,
 			 "Unable to allocate memory for orom\n");
 		return NULL;

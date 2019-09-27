@@ -1,9 +1,12 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * wanXL serial card driver for Linux
  * host part
  *
  * Copyright (C) 2003 Krzysztof Halasa <khc@pm.waw.pl>
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of version 2 of the GNU General Public License
+ * as published by the Free Software Foundation.
  *
  * Status:
  *   - Only DTE (external clock) support with NRZ and NRZI encodings
@@ -182,7 +185,7 @@ static inline void wanxl_tx_intr(struct port *port)
                 desc->stat = PACKET_EMPTY; /* Free descriptor */
 		pci_unmap_single(port->card->pdev, desc->address, skb->len,
 				 PCI_DMA_TODEVICE);
-		dev_consume_skb_irq(skb);
+		dev_kfree_skb_irq(skb);
                 port->tx_in = (port->tx_in + 1) % TX_BUFFERS;
         }
 }
@@ -548,6 +551,7 @@ static void wanxl_pci_remove_one(struct pci_dev *pdev)
 static const struct net_device_ops wanxl_ops = {
 	.ndo_open       = wanxl_open,
 	.ndo_stop       = wanxl_close,
+	.ndo_change_mtu = hdlc_change_mtu,
 	.ndo_start_xmit = hdlc_start_xmit,
 	.ndo_do_ioctl   = wanxl_ioctl,
 	.ndo_get_stats  = wanxl_get_stats,
@@ -562,7 +566,7 @@ static int wanxl_pci_init_one(struct pci_dev *pdev,
 	u32 plx_phy;		/* PLX PCI base address */
 	u32 mem_phy;		/* memory PCI base addr */
 	u8 __iomem *mem;	/* memory virtual base addr */
-	int i, ports;
+	int i, ports, alloc_size;
 
 #ifndef MODULE
 	pr_info_once("%s\n", version);
@@ -598,7 +602,8 @@ static int wanxl_pci_init_one(struct pci_dev *pdev,
 	default: ports = 4;
 	}
 
-	card = kzalloc(struct_size(card, ports, ports), GFP_KERNEL);
+	alloc_size = sizeof(struct card) + ports * sizeof(struct port);
+	card = kzalloc(alloc_size, GFP_KERNEL);
 	if (card == NULL) {
 		pci_release_regions(pdev);
 		pci_disable_device(pdev);
@@ -730,6 +735,7 @@ static int wanxl_pci_init_one(struct pci_dev *pdev,
 		return -ENODEV;
 	}
 
+	stat = 0;
 	timeout = jiffies + 5 * HZ;
 	do {
 		if ((stat = readl(card->plx + PLX_MAILBOX_5)) != 0)

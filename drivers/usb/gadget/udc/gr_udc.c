@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0+
 /*
  * USB Peripheral Controller driver for Aeroflex Gaisler GRUSBDC.
  *
@@ -9,6 +8,11 @@
  *
  * Full documentation of the GRUSBDC core can be found here:
  * http://www.gaisler.com/products/grlib/grip.pdf
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License as published by the
+ * Free Software Foundation; either version 2 of the License, or (at your
+ * option) any later version.
  *
  * Contributors:
  * - Andreas Larsson <andreas@gaisler.com>
@@ -179,7 +183,8 @@ static void gr_seq_ep_show(struct seq_file *seq, struct gr_ep *ep)
 	seq_puts(seq, "\n");
 }
 
-static int gr_dfs_show(struct seq_file *seq, void *v)
+
+static int gr_seq_show(struct seq_file *seq, void *v)
 {
 	struct gr_udc *dev = seq->private;
 	u32 control = gr_read32(&dev->regs->control);
@@ -202,19 +207,34 @@ static int gr_dfs_show(struct seq_file *seq, void *v)
 
 	return 0;
 }
-DEFINE_SHOW_ATTRIBUTE(gr_dfs);
+
+static int gr_dfs_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, gr_seq_show, inode->i_private);
+}
+
+static const struct file_operations gr_dfs_fops = {
+	.owner		= THIS_MODULE,
+	.open		= gr_dfs_open,
+	.read		= seq_read,
+	.llseek		= seq_lseek,
+	.release	= single_release,
+};
 
 static void gr_dfs_create(struct gr_udc *dev)
 {
 	const char *name = "gr_udc_state";
 
 	dev->dfs_root = debugfs_create_dir(dev_name(dev->dev), NULL);
-	debugfs_create_file(name, 0444, dev->dfs_root, dev, &gr_dfs_fops);
+	dev->dfs_state = debugfs_create_file(name, 0444, dev->dfs_root, dev,
+					     &gr_dfs_fops);
 }
 
 static void gr_dfs_delete(struct gr_udc *dev)
 {
-	debugfs_remove_recursive(dev->dfs_root);
+	/* Handles NULL and ERR pointers internally */
+	debugfs_remove(dev->dfs_state);
+	debugfs_remove(dev->dfs_root);
 }
 
 #else /* !CONFIG_USB_GADGET_DEBUG_FS */
@@ -1241,7 +1261,7 @@ static int gr_handle_in_ep(struct gr_ep *ep)
 	if (!req->last_desc)
 		return 0;
 
-	if (READ_ONCE(req->last_desc->ctrl) & GR_DESC_IN_CTRL_EN)
+	if (ACCESS_ONCE(req->last_desc->ctrl) & GR_DESC_IN_CTRL_EN)
 		return 0; /* Not put in hardware buffers yet */
 
 	if (gr_read32(&ep->regs->epstat) & (GR_EPSTAT_B1 | GR_EPSTAT_B0))
@@ -1270,7 +1290,7 @@ static int gr_handle_out_ep(struct gr_ep *ep)
 	if (!req->curr_desc)
 		return 0;
 
-	ctrl = READ_ONCE(req->curr_desc->ctrl);
+	ctrl = ACCESS_ONCE(req->curr_desc->ctrl);
 	if (ctrl & GR_DESC_OUT_CTRL_EN)
 		return 0; /* Not received yet */
 
@@ -1518,8 +1538,8 @@ static int gr_ep_enable(struct usb_ep *_ep,
 	 * Bits 10-0 set the max payload. 12-11 set the number of
 	 * additional transactions.
 	 */
-	max = usb_endpoint_maxp(desc);
-	nt = usb_endpoint_maxp_mult(desc) - 1;
+	max = 0x7ff & usb_endpoint_maxp(desc);
+	nt = 0x3 & (usb_endpoint_maxp(desc) >> 11);
 	buffer_size = GR_BUFFER_SIZE(epctrl);
 	if (nt && (mode == 0 || mode == 2)) {
 		dev_err(dev->dev,
@@ -1821,7 +1841,7 @@ static void gr_fifo_flush(struct usb_ep *_ep)
 	spin_unlock(&ep->dev->lock);
 }
 
-static const struct usb_ep_ops gr_ep_ops = {
+static struct usb_ep_ops gr_ep_ops = {
 	.enable		= gr_ep_enable,
 	.disable	= gr_ep_disable,
 

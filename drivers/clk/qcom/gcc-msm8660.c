@@ -1,6 +1,14 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2013, The Linux Foundation. All rights reserved.
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
  */
 
 #include <linux/kernel.h>
@@ -1550,6 +1558,7 @@ static struct clk_rcg sdc1_src = {
 			.parent_names = gcc_pxo_pll8,
 			.num_parents = 2,
 			.ops = &clk_rcg_ops,
+			.flags = CLK_SET_RATE_GATE,
 		},
 	}
 };
@@ -1598,6 +1607,7 @@ static struct clk_rcg sdc2_src = {
 			.parent_names = gcc_pxo_pll8,
 			.num_parents = 2,
 			.ops = &clk_rcg_ops,
+			.flags = CLK_SET_RATE_GATE,
 		},
 	}
 };
@@ -1646,6 +1656,7 @@ static struct clk_rcg sdc3_src = {
 			.parent_names = gcc_pxo_pll8,
 			.num_parents = 2,
 			.ops = &clk_rcg_ops,
+			.flags = CLK_SET_RATE_GATE,
 		},
 	}
 };
@@ -1694,6 +1705,7 @@ static struct clk_rcg sdc4_src = {
 			.parent_names = gcc_pxo_pll8,
 			.num_parents = 2,
 			.ops = &clk_rcg_ops,
+			.flags = CLK_SET_RATE_GATE,
 		},
 	}
 };
@@ -1742,6 +1754,7 @@ static struct clk_rcg sdc5_src = {
 			.parent_names = gcc_pxo_pll8,
 			.num_parents = 2,
 			.ops = &clk_rcg_ops,
+			.flags = CLK_SET_RATE_GATE,
 		},
 	}
 };

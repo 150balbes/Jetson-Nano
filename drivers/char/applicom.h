@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /* $Id: applicom.h,v 1.2 1999/08/28 15:09:49 dwmw2 Exp $ */
 
 

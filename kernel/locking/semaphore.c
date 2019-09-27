@@ -1,7 +1,8 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2008 Intel Corporation
  * Author: Matthew Wilcox <willy@linux.intel.com>
+ *
+ * Distributed under the terms of the GNU GPL, version 2
  *
  * This file implements counting semaphores.
  * A counting semaphore may be acquired 'n' times before sleeping.
@@ -28,7 +29,6 @@
 #include <linux/kernel.h>
 #include <linux/export.h>
 #include <linux/sched.h>
-#include <linux/sched/debug.h>
 #include <linux/semaphore.h>
 #include <linux/spinlock.h>
 #include <linux/ftrace.h>
@@ -204,18 +204,19 @@ struct semaphore_waiter {
 static inline int __sched __down_common(struct semaphore *sem, long state,
 								long timeout)
 {
+	struct task_struct *task = current;
 	struct semaphore_waiter waiter;
 
 	list_add_tail(&waiter.list, &sem->wait_list);
-	waiter.task = current;
+	waiter.task = task;
 	waiter.up = false;
 
 	for (;;) {
-		if (signal_pending_state(state, current))
+		if (signal_pending_state(state, task))
 			goto interrupted;
 		if (unlikely(timeout <= 0))
 			goto timed_out;
-		__set_current_state(state);
+		__set_task_state(task, state);
 		raw_spin_unlock_irq(&sem->lock);
 		timeout = schedule_timeout(timeout);
 		raw_spin_lock_irq(&sem->lock);

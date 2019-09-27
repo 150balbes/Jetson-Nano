@@ -1,10 +1,13 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * Register map access API internal header
  *
  * Copyright 2011 Wolfson Microelectronics plc
  *
  * Author: Mark Brown <broonie@opensource.wolfsonmicro.com>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  */
 
 #ifndef _REGMAP_INTERNAL_H
@@ -74,7 +77,6 @@ struct regmap {
 	int async_ret;
 
 #ifdef CONFIG_DEBUG_FS
-	bool debugfs_disable;
 	struct dentry *debugfs;
 	const char *debugfs_name;
 
@@ -91,14 +93,12 @@ struct regmap {
 	bool (*readable_reg)(struct device *dev, unsigned int reg);
 	bool (*volatile_reg)(struct device *dev, unsigned int reg);
 	bool (*precious_reg)(struct device *dev, unsigned int reg);
-	bool (*writeable_noinc_reg)(struct device *dev, unsigned int reg);
-	bool (*readable_noinc_reg)(struct device *dev, unsigned int reg);
+	int (*reg_volatile_set)(struct device *dev, unsigned int reg,
+				bool is_volatile);
 	const struct regmap_access_table *wr_table;
 	const struct regmap_access_table *rd_table;
 	const struct regmap_access_table *volatile_table;
 	const struct regmap_access_table *precious_table;
-	const struct regmap_access_table *wr_noinc_table;
-	const struct regmap_access_table *rd_noinc_table;
 
 	int (*reg_read)(void *context, unsigned int reg, unsigned int *val);
 	int (*reg_write)(void *context, unsigned int reg, unsigned int val);
@@ -148,7 +148,7 @@ struct regmap {
 
 	/* if set, converts bulk read to single read */
 	bool use_single_read;
-	/* if set, converts bulk write to single write */
+	/* if set, converts bulk read to single read */
 	bool use_single_write;
 	/* if set, the device supports multi write mode */
 	bool can_multi_write;
@@ -159,8 +159,6 @@ struct regmap {
 
 	struct rb_root range_tree;
 	void *selector_work_buf;	/* Scratch buffer used for selector */
-
-	struct hwspinlock *hwlock;
 };
 
 struct regcache_ops {
@@ -182,8 +180,6 @@ bool regmap_writeable(struct regmap *map, unsigned int reg);
 bool regmap_readable(struct regmap *map, unsigned int reg);
 bool regmap_volatile(struct regmap *map, unsigned int reg);
 bool regmap_precious(struct regmap *map, unsigned int reg);
-bool regmap_writeable_noinc(struct regmap *map, unsigned int reg);
-bool regmap_readable_noinc(struct regmap *map, unsigned int reg);
 
 int _regmap_write(struct regmap *map, unsigned int reg,
 		  unsigned int val);
@@ -219,17 +215,10 @@ struct regmap_field {
 extern void regmap_debugfs_initcall(void);
 extern void regmap_debugfs_init(struct regmap *map, const char *name);
 extern void regmap_debugfs_exit(struct regmap *map);
-
-static inline void regmap_debugfs_disable(struct regmap *map)
-{
-	map->debugfs_disable = true;
-}
-
 #else
 static inline void regmap_debugfs_initcall(void) { }
 static inline void regmap_debugfs_init(struct regmap *map, const char *name) { }
 static inline void regmap_debugfs_exit(struct regmap *map) { }
-static inline void regmap_debugfs_disable(struct regmap *map) { }
 #endif
 
 /* regcache core declarations */

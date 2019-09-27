@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef NILFS_EXPORT_H
 #define NILFS_EXPORT_H
 

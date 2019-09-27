@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _AV7110_CA_H_
 #define _AV7110_CA_H_
 

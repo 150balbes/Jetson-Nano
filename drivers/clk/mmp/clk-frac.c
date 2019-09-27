@@ -78,10 +78,11 @@ static int clk_factor_set_rate(struct clk_hw *hw, unsigned long drate,
 	struct mmp_clk_factor_masks *masks = factor->masks;
 	int i;
 	unsigned long val;
-	unsigned long rate = 0;
+	unsigned long prev_rate, rate = 0;
 	unsigned long flags = 0;
 
 	for (i = 0; i < factor->ftbl_cnt; i++) {
+		prev_rate = rate;
 		rate = (((prate / 10000) * factor->ftbl[i].den) /
 			(factor->ftbl[i].num * factor->masks->factor)) * 10000;
 		if (rate > drate)
@@ -148,7 +149,7 @@ static void clk_factor_init(struct clk_hw *hw)
 		spin_unlock_irqrestore(factor->lock, flags);
 }
 
-static const struct clk_ops clk_factor_ops = {
+static struct clk_ops clk_factor_ops = {
 	.recalc_rate = clk_factor_recalc_rate,
 	.round_rate = clk_factor_round_rate,
 	.set_rate = clk_factor_set_rate,
@@ -171,8 +172,10 @@ struct clk *mmp_clk_register_factor(const char *name, const char *parent_name,
 	}
 
 	factor = kzalloc(sizeof(*factor), GFP_KERNEL);
-	if (!factor)
+	if (!factor) {
+		pr_err("%s: could not allocate factor  clk\n", __func__);
 		return ERR_PTR(-ENOMEM);
+	}
 
 	/* struct clk_aux assignments */
 	factor->base = base;

@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (C) ST-Ericsson SA 2012
  *
@@ -6,6 +5,10 @@
  *         for ST-Ericsson.
  *
  * License terms:
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as published
+ * by the Free Software Foundation.
  */
 
 #include <asm/mach-types.h>
@@ -24,30 +27,26 @@
 #include "mop500_ab8500.h"
 
 /* Define the whole MOP500 soundcard, linking platform to the codec-drivers  */
-SND_SOC_DAILINK_DEFS(link1,
-	DAILINK_COMP_ARRAY(COMP_CPU("ux500-msp-i2s.1")),
-	DAILINK_COMP_ARRAY(COMP_CODEC("ab8500-codec.0", "ab8500-codec-dai.0")),
-	DAILINK_COMP_ARRAY(COMP_PLATFORM("ux500-msp-i2s.1")));
-
-SND_SOC_DAILINK_DEFS(link2,
-	DAILINK_COMP_ARRAY(COMP_CPU("ux500-msp-i2s.3")),
-	DAILINK_COMP_ARRAY(COMP_CODEC("ab8500-codec.0", "ab8500-codec-dai.1")),
-	DAILINK_COMP_ARRAY(COMP_PLATFORM("ux500-msp-i2s.3")));
-
 static struct snd_soc_dai_link mop500_dai_links[] = {
 	{
 		.name = "ab8500_0",
 		.stream_name = "ab8500_0",
+		.cpu_dai_name = "ux500-msp-i2s.1",
+		.codec_dai_name = "ab8500-codec-dai.0",
+		.platform_name = "ux500-msp-i2s.1",
+		.codec_name = "ab8500-codec.0",
 		.init = mop500_ab8500_machine_init,
 		.ops = mop500_ab8500_ops,
-		SND_SOC_DAILINK_REG(link1),
 	},
 	{
 		.name = "ab8500_1",
 		.stream_name = "ab8500_1",
+		.cpu_dai_name = "ux500-msp-i2s.3",
+		.codec_dai_name = "ab8500-codec-dai.1",
+		.platform_name = "ux500-msp-i2s.3",
+		.codec_name = "ab8500-codec.0",
 		.init = NULL,
 		.ops = mop500_ab8500_ops,
-		SND_SOC_DAILINK_REG(link2),
 	},
 };
 
@@ -64,8 +63,8 @@ static void mop500_of_node_put(void)
 	int i;
 
 	for (i = 0; i < 2; i++) {
-		of_node_put(mop500_dai_links[i].cpus->of_node);
-		of_node_put(mop500_dai_links[i].codecs->of_node);
+		of_node_put(mop500_dai_links[i].cpu_of_node);
+		of_node_put(mop500_dai_links[i].codec_of_node);
 	}
 }
 
@@ -86,12 +85,12 @@ static int mop500_of_probe(struct platform_device *pdev,
 	}
 
 	for (i = 0; i < 2; i++) {
-		mop500_dai_links[i].cpus->of_node = msp_np[i];
-		mop500_dai_links[i].cpus->dai_name = NULL;
-		mop500_dai_links[i].platforms->of_node = msp_np[i];
-		mop500_dai_links[i].platforms->name = NULL;
-		mop500_dai_links[i].codecs->of_node = codec_np;
-		mop500_dai_links[i].codecs->name = NULL;
+		mop500_dai_links[i].cpu_of_node = msp_np[i];
+		mop500_dai_links[i].cpu_dai_name = NULL;
+		mop500_dai_links[i].platform_of_node = msp_np[i];
+		mop500_dai_links[i].platform_name = NULL;
+		mop500_dai_links[i].codec_of_node = codec_np;
+		mop500_dai_links[i].codec_name = NULL;
 	}
 
 	snd_soc_of_parse_card_name(&mop500_card, "stericsson,card-name");
@@ -116,6 +115,7 @@ static int mop500_probe(struct platform_device *pdev)
 
 	dev_dbg(&pdev->dev, "%s: Card %s: Set platform drvdata.\n",
 		__func__, mop500_card.name);
+	platform_set_drvdata(pdev, &mop500_card);
 
 	snd_soc_card_set_drvdata(&mop500_card, NULL);
 

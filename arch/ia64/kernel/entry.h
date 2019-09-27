@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 
 /*
  * Preserved registers that are shared between code in ivt.S and

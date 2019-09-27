@@ -1,6 +1,9 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright 2015, Heiner Kallweit <hkallweit1@gmail.com>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  */
 
 #include <net/bluetooth/bluetooth.h>
@@ -40,7 +43,7 @@ void hci_leds_update_powered(struct hci_dev *hdev, bool enabled)
 	led_trigger_event(bt_power_led_trigger, enabled ? LED_FULL : LED_OFF);
 }
 
-static int power_activate(struct led_classdev *led_cdev)
+static void power_activate(struct led_classdev *led_cdev)
 {
 	struct hci_basic_led_trigger *htrig;
 	bool powered;
@@ -49,12 +52,10 @@ static int power_activate(struct led_classdev *led_cdev)
 	powered = test_bit(HCI_UP, &htrig->hdev->flags);
 
 	led_trigger_event(led_cdev->trigger, powered ? LED_FULL : LED_OFF);
-
-	return 0;
 }
 
 static struct led_trigger *led_allocate_basic(struct hci_dev *hdev,
-			int (*activate)(struct led_classdev *led_cdev),
+			void (*activate)(struct led_classdev *led_cdev),
 			const char *name)
 {
 	struct hci_basic_led_trigger *htrig;

@@ -44,14 +44,11 @@ from sphinx.domains.c import CDomain as Base_CDomain
 __version__  = '1.0'
 
 # Get Sphinx version
-major, minor, patch = sphinx.version_info[:3]
+major, minor, patch = map(int, sphinx.__version__.split("."))
 
 def setup(app):
 
-    if (major == 1 and minor < 8):
-        app.override_domain(CDomain)
-    else:
-        app.add_domain(CDomain, override=True)
+    app.override_domain(CDomain)
 
     return dict(
         version = __version__,

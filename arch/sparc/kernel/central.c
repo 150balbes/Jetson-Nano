@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /* central.c: Central FHC driver for Sunfire/Starfire/Wildfire.
  *
  * Copyright (C) 1997, 1999, 2008 David S. Miller (davem@davemloft.net)
@@ -168,7 +167,7 @@ static int fhc_probe(struct platform_device *op)
 		goto out;
 	}
 
-	if (of_node_name_eq(op->dev.of_node->parent, "central"))
+	if (!strcmp(op->dev.of_node->parent->name, "central"))
 		p->central = true;
 
 	p->pregs = of_ioremap(&op->resource[0], 0,

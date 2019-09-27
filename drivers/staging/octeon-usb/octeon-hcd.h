@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * Octeon HCD hardware register definitions.
  *
@@ -1711,7 +1710,7 @@ union cvmx_usbnx_usbp_ctl_status {
 	 *	Indicates an internal error was detected during
 	 *	the BIST sequence.
 	 * @tdata_out: PHY Test Data Out.
-	 *	Presents either internally generated signals or
+	 *	Presents either internaly generated signals or
 	 *	test register contents, based upon the value of
 	 *	test_data_out_sel.
 	 * @siddq: Drives the USBP (USB-PHY) SIDDQ input.
@@ -1737,7 +1736,7 @@ union cvmx_usbnx_usbp_ctl_status {
 	 *	to D+. When an A/B device is acting as a host
 	 *	(downstream-facing port), dp_pulldown and
 	 *	dm_pulldown are enabled. This must not toggle
-	 *	during normal operation.
+	 *	during normal opeartion.
 	 * @dm_pulld: PHY DM_PULLDOWN input to the USB-PHY.
 	 *	This signal enables the pull-down resistance on
 	 *	the D- line. '1' pull down-resistance is connected
@@ -1745,7 +1744,7 @@ union cvmx_usbnx_usbp_ctl_status {
 	 *	to D-. When an A/B device is acting as a host
 	 *	(downstream-facing port), dp_pulldown and
 	 *	dm_pulldown are enabled. This must not toggle
-	 *	during normal operation.
+	 *	during normal opeartion.
 	 * @hst_mode: When '0' the USB is acting as HOST, when '1'
 	 *	USB is acting as device. This field needs to be
 	 *	set while the USB is in reset.
@@ -1784,7 +1783,7 @@ union cvmx_usbnx_usbp_ctl_status {
 	 *	Used to activate BIST in the PHY.
 	 * @tdata_sel: Test Data Out Select.
 	 *	'1' test_data_out[3:0] (PHY) register contents
-	 *	are output. '0' internally generated signals are
+	 *	are output. '0' internaly generated signals are
 	 *	output.
 	 * @taddr_in: Mode Address for Test Interface.
 	 *	Specifies the register address for writing to or
@@ -1797,7 +1796,7 @@ union cvmx_usbnx_usbp_ctl_status {
 	 *	This is a test signal. When the USB Core is
 	 *	powered up (not in Susned Mode), an automatic
 	 *	tester can use this to disable phy_clock and
-	 *	free_clk, then re-enable them with an aligned
+	 *	free_clk, then re-eanable them with an aligned
 	 *	phase.
 	 *	'1': The phy_clk and free_clk outputs are
 	 *	disabled. "0": The phy_clock and free_clk outputs

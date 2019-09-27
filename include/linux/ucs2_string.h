@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _LINUX_UCS2_STRING_H_
 #define _LINUX_UCS2_STRING_H_
 

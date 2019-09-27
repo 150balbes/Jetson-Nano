@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _IA64_MSI_DEF_H
 #define _IA64_MSI_DEF_H
 

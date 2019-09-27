@@ -1,5 +1,3 @@
-.. SPDX-License-Identifier: GPL-2.0
-
 PXA-Camera Host Driver
 ======================
 
@@ -18,7 +16,7 @@ Global video workflow
 ---------------------
 
 a) QCI stopped
-   Initially, the QCI interface is stopped.
+   Initialy, the QCI interface is stopped.
    When a buffer is queued (pxa_videobuf_ops->buf_queue), the QCI starts.
 
 b) QCI started

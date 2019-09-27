@@ -1,10 +1,14 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * TI LP8788 MFD - ldo regulator driver
  *
  * Copyright 2012 Texas Instruments
  *
  * Author: Milo(Woogyom) Kim <milo.kim@ti.com>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
  */
 
 #include <linux/module.h>
@@ -12,7 +16,7 @@
 #include <linux/err.h>
 #include <linux/platform_device.h>
 #include <linux/regulator/driver.h>
-#include <linux/gpio/consumer.h>
+#include <linux/gpio.h>
 #include <linux/mfd/lp8788.h>
 
 /* register address */
@@ -81,6 +85,8 @@
 #define LP8788_STARTUP_TIME_S		3
 
 #define ENABLE_TIME_USEC		32
+#define ENABLE				GPIOF_OUT_INIT_HIGH
+#define DISABLE				GPIOF_OUT_INIT_LOW
 
 enum lp8788_ldo_id {
 	DLDO1,
@@ -111,7 +117,7 @@ struct lp8788_ldo {
 	struct lp8788 *lp;
 	struct regulator_desc *desc;
 	struct regulator_dev *regulator;
-	struct gpio_desc *ena_gpiod;
+	struct lp8788_ldo_enable_pin *en_pin;
 };
 
 /* DLDO 1, 2, 3, 9 voltage table */
@@ -182,7 +188,7 @@ static const struct regulator_ops lp8788_ldo_voltage_fixed_ops = {
 	.enable_time = lp8788_ldo_enable_time,
 };
 
-static const struct regulator_desc lp8788_dldo_desc[] = {
+static struct regulator_desc lp8788_dldo_desc[] = {
 	{
 		.name = "dldo1",
 		.id = DLDO1,
@@ -339,7 +345,7 @@ static const struct regulator_desc lp8788_dldo_desc[] = {
 	},
 };
 
-static const struct regulator_desc lp8788_aldo_desc[] = {
+static struct regulator_desc lp8788_aldo_desc[] = {
 	{
 		.name = "aldo1",
 		.id = ALDO1,
@@ -463,6 +469,7 @@ static int lp8788_config_ldo_enable_mode(struct platform_device *pdev,
 					enum lp8788_ldo_id id)
 {
 	struct lp8788 *lp = ldo->lp;
+	struct lp8788_platform_data *pdata = lp->pdata;
 	enum lp8788_ext_ldo_en_id enable_id;
 	u8 en_mask[] = {
 		[EN_ALDO1]   = LP8788_EN_SEL_ALDO1_M,
@@ -497,23 +504,11 @@ static int lp8788_config_ldo_enable_mode(struct platform_device *pdev,
 		return 0;
 	}
 
-	/*
-	 * Do not use devm* here: the regulator core takes over the
-	 * lifecycle management of the GPIO descriptor.
-	 * FIXME: check default mode for GPIO here: high or low?
-	 */
-	ldo->ena_gpiod = gpiod_get_index_optional(&pdev->dev,
-					       "enable",
-					       enable_id,
-					       GPIOD_OUT_HIGH |
-					       GPIOD_FLAGS_BIT_NONEXCLUSIVE);
-	if (IS_ERR(ldo->ena_gpiod))
-		return PTR_ERR(ldo->ena_gpiod);
-
-	/* if no GPIO for ldo pin, then set default enable mode */
-	if (!ldo->ena_gpiod)
+	/* if no platform data for ldo pin, then set default enable mode */
+	if (!pdata || !pdata->ldo_pin || !pdata->ldo_pin[enable_id])
 		goto set_default_ldo_enable_mode;
 
+	ldo->en_pin = pdata->ldo_pin[enable_id];
 	return 0;
 
 set_default_ldo_enable_mode:
@@ -538,8 +533,10 @@ static int lp8788_dldo_probe(struct platform_device *pdev)
 	if (ret)
 		return ret;
 
-	if (ldo->ena_gpiod)
-		cfg.ena_gpiod = ldo->ena_gpiod;
+	if (ldo->en_pin) {
+		cfg.ena_gpio = ldo->en_pin->gpio;
+		cfg.ena_gpio_flags = ldo->en_pin->init_state;
+	}
 
 	cfg.dev = pdev->dev.parent;
 	cfg.init_data = lp->pdata ? lp->pdata->dldo_data[id] : NULL;
@@ -585,8 +582,10 @@ static int lp8788_aldo_probe(struct platform_device *pdev)
 	if (ret)
 		return ret;
 
-	if (ldo->ena_gpiod)
-		cfg.ena_gpiod = ldo->ena_gpiod;
+	if (ldo->en_pin) {
+		cfg.ena_gpio = ldo->en_pin->gpio;
+		cfg.ena_gpio_flags = ldo->en_pin->init_state;
+	}
 
 	cfg.dev = pdev->dev.parent;
 	cfg.init_data = lp->pdata ? lp->pdata->aldo_data[id] : NULL;

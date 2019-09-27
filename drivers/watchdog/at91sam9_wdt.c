@@ -1,9 +1,12 @@
-// SPDX-License-Identifier: GPL-2.0+
 /*
  * Watchdog driver for Atmel AT91SAM9x processors.
  *
  * Copyright (C) 2008 Renaud CERRATO r.cerrato@til-technologies.fr
  *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License
+ * as published by the Free Software Foundation; either version
+ * 2 of the License, or (at your option) any later version.
  */
 
 /*
@@ -117,9 +120,9 @@ static inline void at91_wdt_reset(struct at91wdt *wdt)
 /*
  * Timer tick
  */
-static void at91_ping(struct timer_list *t)
+static void at91_ping(unsigned long data)
 {
-	struct at91wdt *wdt = from_timer(wdt, t, timer);
+	struct at91wdt *wdt = (struct at91wdt *)data;
 	if (time_before(jiffies, wdt->next_heartbeat) ||
 	    !watchdog_active(&wdt->wdd)) {
 		at91_wdt_reset(wdt);
@@ -219,7 +222,7 @@ static int at91_wdt_init(struct platform_device *pdev, struct at91wdt *wdt)
 			 "watchdog already configured differently (mr = %x expecting %x)\n",
 			 tmp & wdt->mr_mask, wdt->mr & wdt->mr_mask);
 
-	timer_setup(&wdt->timer, at91_ping, 0);
+	setup_timer(&wdt->timer, at91_ping, (unsigned long)wdt);
 
 	/*
 	 * Use min_heartbeat the first time to avoid spurious watchdog reset:
@@ -327,6 +330,7 @@ static inline int of_at91wdt_init(struct device_node *np, struct at91wdt *wdt)
 
 static int __init at91wdt_probe(struct platform_device *pdev)
 {
+	struct resource	*r;
 	int err;
 	struct at91wdt *wdt;
 
@@ -345,7 +349,8 @@ static int __init at91wdt_probe(struct platform_device *pdev)
 	wdt->wdd.min_timeout = 1;
 	wdt->wdd.max_timeout = 0xFFFF;
 
-	wdt->base = devm_platform_ioremap_resource(pdev, 0);
+	r = platform_get_resource(pdev, IORESOURCE_MEM, 0);
+	wdt->base = devm_ioremap_resource(&pdev->dev, r);
 	if (IS_ERR(wdt->base))
 		return PTR_ERR(wdt->base);
 

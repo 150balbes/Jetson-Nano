@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  *  User-space visible declarations for NFS client per-mount
  *  point statistics

@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /* include/asm/current.h
  *
  * Copyright (C) 1999 IBM Deutschland Entwicklung GmbH, IBM Corporation

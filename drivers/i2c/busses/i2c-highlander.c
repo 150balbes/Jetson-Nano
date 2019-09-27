@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * Renesas Solutions Highlander FPGA I2C/SMBus support.
  *
@@ -7,6 +6,10 @@
  * Copyright (C) 2008  Paul Mundt
  * Copyright (C) 2008  Renesas Solutions Corp.
  * Copyright (C) 2008  Atom Create Engineering Co., Ltd.
+ *
+ * This file is subject to the terms and conditions of the GNU General
+ * Public License version 2. See the file "COPYING" in the main directory
+ * of this archive for more details.
  */
 #include <linux/module.h>
 #include <linux/interrupt.h>

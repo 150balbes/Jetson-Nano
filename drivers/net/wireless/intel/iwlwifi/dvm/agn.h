@@ -16,6 +16,11 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * General Public License for more details.
  *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110,
+ * USA
+ *
  * The full GNU General Public License is included in this distribution
  * in the file called COPYING.
  *
@@ -439,10 +444,13 @@ static inline void iwl_dvm_set_pmi(struct iwl_priv *priv, bool state)
 }
 
 #ifdef CONFIG_IWLWIFI_DEBUGFS
-void iwl_dbgfs_register(struct iwl_priv *priv, struct dentry *dbgfs_dir);
+int iwl_dbgfs_register(struct iwl_priv *priv, struct dentry *dbgfs_dir);
 #else
-static inline void iwl_dbgfs_register(struct iwl_priv *priv,
-				      struct dentry *dbgfs_dir) { }
+static inline int iwl_dbgfs_register(struct iwl_priv *priv,
+				     struct dentry *dbgfs_dir)
+{
+	return 0;
+}
 #endif /* CONFIG_IWLWIFI_DEBUGFS */
 
 #ifdef CONFIG_IWLWIFI_DEBUG

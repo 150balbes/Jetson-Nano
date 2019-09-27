@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * linux/fs/befs/datastream.c
  *
@@ -85,11 +84,13 @@ befs_read_datastream(struct super_block *sb, const befs_data_stream *ds,
  *
  * Takes a file position and gives back a brun who's starting block
  * is block number fblock of the file.
- *
+ * 
  * Returns BEFS_OK or BEFS_ERR.
- *
+ * 
  * Calls specialized functions for each of the three possible
  * datastream regions.
+ *
+ * 2001-11-15 Will Dyson
  */
 int
 befs_fblock2brun(struct super_block *sb, const befs_data_stream *data,
@@ -119,7 +120,7 @@ befs_fblock2brun(struct super_block *sb, const befs_data_stream *data,
 
 /**
  * befs_read_lsmylink - read long symlink from datastream.
- * @sb: Filesystem superblock
+ * @sb: Filesystem superblock 
  * @ds: Datastream to read from
  * @buff: Buffer in which to place long symlink data
  * @len: Length of the long symlink in bytes

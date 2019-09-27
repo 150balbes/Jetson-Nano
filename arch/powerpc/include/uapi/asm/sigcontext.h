@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0+ WITH Linux-syscall-note */
 #ifndef _ASM_POWERPC_SIGCONTEXT_H
 #define _ASM_POWERPC_SIGCONTEXT_H
 
@@ -22,11 +21,7 @@ struct sigcontext {
 #endif
 	unsigned long	handler;
 	unsigned long	oldmask;
-#ifdef __KERNEL__
-	struct user_pt_regs __user *regs;
-#else
-	struct pt_regs	*regs;
-#endif
+	struct pt_regs	__user *regs;
 #ifdef __powerpc64__
 	elf_gregset_t	gp_regs;
 	elf_fpregset_t	fp_regs;

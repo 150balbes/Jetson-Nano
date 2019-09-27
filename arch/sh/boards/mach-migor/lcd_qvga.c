@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * Support for SuperH MigoR Quarter VGA LCD Panel
  *
@@ -6,6 +5,10 @@
  *
  * Based on lcd_powertip.c from Kenati Technologies Pvt Ltd.
  * Copyright (c) 2007 Ujjwal Pande <ujjwal@kenati.com>,
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  */
 
 #include <linux/delay.h>

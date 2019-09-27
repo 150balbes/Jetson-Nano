@@ -1,7 +1,7 @@
-// SPDX-License-Identifier: GPL-2.0 OR MIT
 /**************************************************************************
  *
- * Copyright 2014-2015 VMware, Inc., Palo Alto, CA., USA
+ * Copyright © 2014-2015 VMware, Inc., Palo Alto, CA., USA
+ * All Rights Reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the
@@ -89,7 +89,8 @@ vmw_cmdbuf_res_lookup(struct vmw_cmdbuf_res_manager *man,
 	if (unlikely(ret != 0))
 		return ERR_PTR(ret);
 
-	return drm_hash_entry(hash, struct vmw_cmdbuf_res, hash)->res;
+	return vmw_resource_reference
+		(drm_hash_entry(hash, struct vmw_cmdbuf_res, hash)->res);
 }
 
 /**
@@ -204,7 +205,7 @@ int vmw_cmdbuf_res_add(struct vmw_cmdbuf_res_manager *man,
 	int ret;
 
 	cres = kzalloc(sizeof(*cres), GFP_KERNEL);
-	if (unlikely(!cres))
+	if (unlikely(cres == NULL))
 		return -ENOMEM;
 
 	cres->hash.key = user_key | (res_type << 24);
@@ -290,7 +291,7 @@ vmw_cmdbuf_res_man_create(struct vmw_private *dev_priv)
 	int ret;
 
 	man = kzalloc(sizeof(*man), GFP_KERNEL);
-	if (!man)
+	if (man == NULL)
 		return ERR_PTR(-ENOMEM);
 
 	man->dev_priv = dev_priv;

@@ -1,8 +1,13 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /* ----------------------------------------------------------------------- *
  *
  *   Copyright 2000-2008 H. Peter Anvin - All Rights Reserved
  *   Copyright 2009 Intel Corporation; author: H. Peter Anvin
+ *
+ *   This program is free software; you can redistribute it and/or modify
+ *   it under the terms of the GNU General Public License as published by
+ *   the Free Software Foundation, Inc., 675 Mass Ave, Cambridge MA 02139,
+ *   USA; either version 2 of the License, or (at your option) any later
+ *   version; incorporated herein by reference.
  *
  * ----------------------------------------------------------------------- */
 
@@ -39,7 +44,6 @@
 #include <asm/msr.h>
 
 static struct class *msr_class;
-static enum cpuhp_state cpuhp_msr_state;
 
 static ssize_t msr_read(struct file *file, char __user *buf,
 			size_t count, loff_t *ppos)
@@ -110,14 +114,14 @@ static long msr_ioctl(struct file *file, unsigned int ioc, unsigned long arg)
 			err = -EBADF;
 			break;
 		}
-		if (copy_from_user(&regs, uregs, sizeof(regs))) {
+		if (copy_from_user(&regs, uregs, sizeof regs)) {
 			err = -EFAULT;
 			break;
 		}
 		err = rdmsr_safe_regs_on_cpu(cpu, regs);
 		if (err)
 			break;
-		if (copy_to_user(uregs, &regs, sizeof(regs)))
+		if (copy_to_user(uregs, &regs, sizeof regs))
 			err = -EFAULT;
 		break;
 
@@ -126,14 +130,14 @@ static long msr_ioctl(struct file *file, unsigned int ioc, unsigned long arg)
 			err = -EBADF;
 			break;
 		}
-		if (copy_from_user(&regs, uregs, sizeof(regs))) {
+		if (copy_from_user(&regs, uregs, sizeof regs)) {
 			err = -EFAULT;
 			break;
 		}
 		err = wrmsr_safe_regs_on_cpu(cpu, regs);
 		if (err)
 			break;
-		if (copy_to_user(uregs, &regs, sizeof(regs)))
+		if (copy_to_user(uregs, &regs, sizeof regs))
 			err = -EFAULT;
 		break;
 
@@ -176,7 +180,7 @@ static const struct file_operations msr_fops = {
 	.compat_ioctl = msr_ioctl,
 };
 
-static int msr_device_create(unsigned int cpu)
+static int msr_device_create(int cpu)
 {
 	struct device *dev;
 
@@ -185,11 +189,33 @@ static int msr_device_create(unsigned int cpu)
 	return PTR_ERR_OR_ZERO(dev);
 }
 
-static int msr_device_destroy(unsigned int cpu)
+static void msr_device_destroy(int cpu)
 {
 	device_destroy(msr_class, MKDEV(MSR_MAJOR, cpu));
-	return 0;
 }
+
+static int msr_class_cpu_callback(struct notifier_block *nfb,
+				  unsigned long action, void *hcpu)
+{
+	unsigned int cpu = (unsigned long)hcpu;
+	int err = 0;
+
+	switch (action) {
+	case CPU_UP_PREPARE:
+		err = msr_device_create(cpu);
+		break;
+	case CPU_UP_CANCELED:
+	case CPU_UP_CANCELED_FROZEN:
+	case CPU_DEAD:
+		msr_device_destroy(cpu);
+		break;
+	}
+	return notifier_from_errno(err);
+}
+
+static struct notifier_block __refdata msr_class_cpu_notifier = {
+	.notifier_call = msr_class_cpu_callback,
+};
 
 static char *msr_devnode(struct device *dev, umode_t *mode)
 {
@@ -198,11 +224,13 @@ static char *msr_devnode(struct device *dev, umode_t *mode)
 
 static int __init msr_init(void)
 {
-	int err;
+	int i, err = 0;
+	i = 0;
 
 	if (__register_chrdev(MSR_MAJOR, 0, NR_CPUS, "cpu/msr", &msr_fops)) {
 		pr_err("unable to get major %d for msr\n", MSR_MAJOR);
-		return -EBUSY;
+		err = -EBUSY;
+		goto out;
 	}
 	msr_class = class_create(THIS_MODULE, "msr");
 	if (IS_ERR(msr_class)) {
@@ -211,27 +239,44 @@ static int __init msr_init(void)
 	}
 	msr_class->devnode = msr_devnode;
 
-	err  = cpuhp_setup_state(CPUHP_AP_ONLINE_DYN, "x86/msr:online",
-				 msr_device_create, msr_device_destroy);
-	if (err < 0)
-		goto out_class;
-	cpuhp_msr_state = err;
-	return 0;
+	cpu_notifier_register_begin();
+	for_each_online_cpu(i) {
+		err = msr_device_create(i);
+		if (err != 0)
+			goto out_class;
+	}
+	__register_hotcpu_notifier(&msr_class_cpu_notifier);
+	cpu_notifier_register_done();
+
+	err = 0;
+	goto out;
 
 out_class:
+	i = 0;
+	for_each_online_cpu(i)
+		msr_device_destroy(i);
+	cpu_notifier_register_done();
 	class_destroy(msr_class);
 out_chrdev:
 	__unregister_chrdev(MSR_MAJOR, 0, NR_CPUS, "cpu/msr");
+out:
 	return err;
 }
-module_init(msr_init);
 
 static void __exit msr_exit(void)
 {
-	cpuhp_remove_state(cpuhp_msr_state);
+	int cpu = 0;
+
+	cpu_notifier_register_begin();
+	for_each_online_cpu(cpu)
+		msr_device_destroy(cpu);
 	class_destroy(msr_class);
 	__unregister_chrdev(MSR_MAJOR, 0, NR_CPUS, "cpu/msr");
+	__unregister_hotcpu_notifier(&msr_class_cpu_notifier);
+	cpu_notifier_register_done();
 }
+
+module_init(msr_init);
 module_exit(msr_exit)
 
 MODULE_AUTHOR("H. Peter Anvin <hpa@zytor.com>");

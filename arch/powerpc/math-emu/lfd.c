@@ -1,7 +1,6 @@
-// SPDX-License-Identifier: GPL-2.0
 #include <linux/types.h>
 #include <linux/errno.h>
-#include <linux/uaccess.h>
+#include <asm/uaccess.h>
 
 #include <asm/sfp-machine.h>
 #include <math-emu/double.h>

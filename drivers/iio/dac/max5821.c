@@ -1,7 +1,10 @@
-// SPDX-License-Identifier: GPL-2.0-only
  /*
   * iio/dac/max5821.c
   * Copyright (C) 2014 Philippe Reynes
+  *
+  * This program is free software; you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License version 2 as
+  * published by the Free Software Foundation.
   */
 
 #include <linux/kernel.h>
@@ -267,7 +270,8 @@ static int max5821_write_raw(struct iio_dev *indio_dev,
 	}
 }
 
-static int __maybe_unused max5821_suspend(struct device *dev)
+#ifdef CONFIG_PM_SLEEP
+static int max5821_suspend(struct device *dev)
 {
 	u8 outbuf[2] = { MAX5821_EXTENDED_COMMAND_MODE,
 			 MAX5821_EXTENDED_DAC_A |
@@ -277,7 +281,7 @@ static int __maybe_unused max5821_suspend(struct device *dev)
 	return i2c_master_send(to_i2c_client(dev), outbuf, 2);
 }
 
-static int __maybe_unused max5821_resume(struct device *dev)
+static int max5821_resume(struct device *dev)
 {
 	u8 outbuf[2] = { MAX5821_EXTENDED_COMMAND_MODE,
 			 MAX5821_EXTENDED_DAC_A |
@@ -288,10 +292,15 @@ static int __maybe_unused max5821_resume(struct device *dev)
 }
 
 static SIMPLE_DEV_PM_OPS(max5821_pm_ops, max5821_suspend, max5821_resume);
+#define MAX5821_PM_OPS (&max5821_pm_ops)
+#else
+#define MAX5821_PM_OPS NULL
+#endif /* CONFIG_PM_SLEEP */
 
 static const struct iio_info max5821_info = {
 	.read_raw = max5821_read_raw,
 	.write_raw = max5821_write_raw,
+	.driver_module = THIS_MODULE,
 };
 
 static int max5821_probe(struct i2c_client *client,
@@ -383,8 +392,7 @@ MODULE_DEVICE_TABLE(of, max5821_of_match);
 static struct i2c_driver max5821_driver = {
 	.driver = {
 		.name	= "max5821",
-		.of_match_table = max5821_of_match,
-		.pm     = &max5821_pm_ops,
+		.pm     = MAX5821_PM_OPS,
 	},
 	.probe		= max5821_probe,
 	.remove		= max5821_remove,

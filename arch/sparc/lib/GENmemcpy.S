@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /* GENmemcpy.S: Generic sparc64 memcpy.
  *
  * Copyright (C) 2007 David S. Miller (davem@davemloft.net)

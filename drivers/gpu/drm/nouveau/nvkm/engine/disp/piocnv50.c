@@ -29,7 +29,7 @@
 static void
 nv50_disp_pioc_fini(struct nv50_disp_chan *chan)
 {
-	struct nv50_disp *disp = chan->disp;
+	struct nv50_disp *disp = chan->root->disp;
 	struct nvkm_subdev *subdev = &disp->base.engine.subdev;
 	struct nvkm_device *device = subdev->device;
 	int ctrl = chan->chid.ctrl;
@@ -48,7 +48,7 @@ nv50_disp_pioc_fini(struct nv50_disp_chan *chan)
 static int
 nv50_disp_pioc_init(struct nv50_disp_chan *chan)
 {
-	struct nv50_disp *disp = chan->disp;
+	struct nv50_disp *disp = chan->root->disp;
 	struct nvkm_subdev *subdev = &disp->base.engine.subdev;
 	struct nvkm_device *device = subdev->device;
 	int ctrl = chan->chid.ctrl;
@@ -82,6 +82,4 @@ const struct nv50_disp_chan_func
 nv50_disp_pioc_func = {
 	.init = nv50_disp_pioc_init,
 	.fini = nv50_disp_pioc_fini,
-	.intr = nv50_disp_chan_intr,
-	.user = nv50_disp_chan_user,
 };

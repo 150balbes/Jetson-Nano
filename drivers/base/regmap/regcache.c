@@ -1,10 +1,14 @@
-// SPDX-License-Identifier: GPL-2.0
-//
-// Register cache access API
-//
-// Copyright 2011 Wolfson Microelectronics plc
-//
-// Author: Dimitris Papastamos <dp@opensource.wolfsonmicro.com>
+/*
+ * Register cache access API
+ *
+ * Copyright 2011 Wolfson Microelectronics plc
+ *
+ * Author: Dimitris Papastamos <dp@opensource.wolfsonmicro.com>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ */
 
 #include <linux/bsearch.h>
 #include <linux/device.h>
@@ -17,9 +21,7 @@
 
 static const struct regcache_ops *cache_types[] = {
 	&regcache_rbtree_ops,
-#if IS_ENABLED(CONFIG_REGCACHE_COMPRESSED)
 	&regcache_lzo_ops,
-#endif
 	&regcache_flat_ops,
 };
 
@@ -133,6 +135,12 @@ int regcache_init(struct regmap *map, const struct regmap_config *config)
 		return -EINVAL;
 	}
 
+	if (!config->reg_defaults && config->num_reg_defaults) {
+		dev_err(map->dev,
+			 "Register defaults are not set with the number!\n");
+		return -EINVAL;
+	}
+
 	for (i = 0; i < config->num_reg_defaults; i++)
 		if (config->reg_defaults[i].reg % map->reg_stride)
 			return -EINVAL;
@@ -222,7 +230,7 @@ void regcache_exit(struct regmap *map)
 }
 
 /**
- * regcache_read - Fetch the value of a given register from the cache.
+ * regcache_read: Fetch the value of a given register from the cache.
  *
  * @map: map to configure.
  * @reg: The register index.
@@ -253,7 +261,7 @@ int regcache_read(struct regmap *map,
 }
 
 /**
- * regcache_write - Set the value of a given register in the cache.
+ * regcache_write: Set the value of a given register in the cache.
  *
  * @map: map to configure.
  * @reg: The register index.
@@ -326,7 +334,7 @@ static int regcache_default_sync(struct regmap *map, unsigned int min,
 }
 
 /**
- * regcache_sync - Sync the register cache with the hardware.
+ * regcache_sync: Sync the register cache with the hardware.
  *
  * @map: map to configure.
  *
@@ -394,7 +402,7 @@ out:
 EXPORT_SYMBOL_GPL(regcache_sync);
 
 /**
- * regcache_sync_region - Sync part  of the register cache with the hardware.
+ * regcache_sync_region: Sync part  of the register cache with the hardware.
  *
  * @map: map to sync.
  * @min: first register to sync
@@ -450,7 +458,7 @@ out:
 EXPORT_SYMBOL_GPL(regcache_sync_region);
 
 /**
- * regcache_drop_region - Discard part of the register cache
+ * regcache_drop_region: Discard part of the register cache
  *
  * @map: map to operate on
  * @min: first register to discard
@@ -481,10 +489,10 @@ int regcache_drop_region(struct regmap *map, unsigned int min,
 EXPORT_SYMBOL_GPL(regcache_drop_region);
 
 /**
- * regcache_cache_only - Put a register map into cache only mode
+ * regcache_cache_only: Put a register map into cache only mode
  *
  * @map: map to configure
- * @enable: flag if changes should be written to the hardware
+ * @cache_only: flag if changes should be written to the hardware
  *
  * When a register map is marked as cache only writes to the register
  * map API will only update the register cache, they will not cause
@@ -503,7 +511,7 @@ void regcache_cache_only(struct regmap *map, bool enable)
 EXPORT_SYMBOL_GPL(regcache_cache_only);
 
 /**
- * regcache_mark_dirty - Indicate that HW registers were reset to default values
+ * regcache_mark_dirty: Indicate that HW registers were reset to default values
  *
  * @map: map to mark
  *
@@ -525,10 +533,10 @@ void regcache_mark_dirty(struct regmap *map)
 EXPORT_SYMBOL_GPL(regcache_mark_dirty);
 
 /**
- * regcache_cache_bypass - Put a register map into cache bypass mode
+ * regcache_cache_bypass: Put a register map into cache bypass mode
  *
  * @map: map to configure
- * @enable: flag if changes should not be written to the cache
+ * @cache_bypass: flag if changes should not be written to the cache
  *
  * When a register map is marked with the cache bypass option, writes
  * to the register map API will only update the hardware and not the
@@ -544,6 +552,52 @@ void regcache_cache_bypass(struct regmap *map, bool enable)
 	map->unlock(map->lock_arg);
 }
 EXPORT_SYMBOL_GPL(regcache_cache_bypass);
+
+static int _regcache_volatile_set(struct regmap *map, unsigned int reg,
+				  bool is_volatile)
+{
+	int ret;
+
+	if (is_volatile == regmap_volatile(map, reg))
+		return 0;
+
+	if (!map->cache_ops || !map->cache_ops->drop)
+		return -EINVAL;
+
+	if (!map->reg_volatile_set)
+		return -ENOSYS;
+
+	ret = map->reg_volatile_set(map->dev, reg, is_volatile);
+	if (ret)
+		return ret;
+
+	return map->cache_ops->drop(map, reg, reg);
+}
+
+/**
+ * regcache_volatile_set: Set single register as volatile or cached
+ *
+ * @map: map to apply change to
+ * @reg: register to be set as volatile or cached
+ * @is_volatile: if true, register is set as volatile, otherwise as cached
+ *
+ * Set access attribute to the specified register as volatile or cached. Clear
+ * cache_present bit (i.e., invalidate cache) on successful exit.
+ *
+ * Return a negative value on failure, 0 on success.
+ */
+int regcache_volatile_set(struct regmap *map, unsigned int reg,
+			  bool is_volatile)
+{
+	int ret;
+
+	map->lock(map->lock_arg);
+	ret = _regcache_volatile_set(map, reg, is_volatile);
+	map->unlock(map->lock_arg);
+
+	return ret;
+}
+EXPORT_SYMBOL_GPL(regcache_volatile_set);
 
 bool regcache_set_val(struct regmap *map, void *base, unsigned int idx,
 		      unsigned int val)

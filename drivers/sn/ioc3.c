@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * SGI IOC3 master driver and IRQ demuxer
  *

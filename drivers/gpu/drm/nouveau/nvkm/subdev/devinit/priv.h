@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: MIT */
 #ifndef __NVKM_DEVINIT_PRIV_H__
 #define __NVKM_DEVINIT_PRIV_H__
 #define nvkm_devinit(p) container_of((p), struct nvkm_devinit, subdev)

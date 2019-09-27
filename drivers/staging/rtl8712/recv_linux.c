@@ -1,9 +1,21 @@
-// SPDX-License-Identifier: GPL-2.0
 /******************************************************************************
  * recv_linux.c
  *
  * Copyright(c) 2007 - 2010 Realtek Corporation. All rights reserved.
  * Linux device driver for RTL8192SU
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of version 2 of the GNU General Public License as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License along with
+ * this program; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin Street, Fifth Floor, Boston, MA 02110, USA
  *
  * Modifications for inclusion into the Linux staging tree are
  * Copyright(c) 2010 Larry Finger. All rights reserved.
@@ -72,11 +84,11 @@ int r8712_os_recvbuf_resource_free(struct _adapter *padapter,
 	return _SUCCESS;
 }
 
-void r8712_handle_tkip_mic_err(struct _adapter *adapter, u8 bgroup)
+void r8712_handle_tkip_mic_err(struct _adapter *padapter, u8 bgroup)
 {
 	union iwreq_data wrqu;
 	struct iw_michaelmicfailure ev;
-	struct mlme_priv *mlmepriv  = &adapter->mlmepriv;
+	struct mlme_priv *pmlmepriv  = &padapter->mlmepriv;
 
 	memset(&ev, 0x00, sizeof(ev));
 	if (bgroup)
@@ -84,58 +96,59 @@ void r8712_handle_tkip_mic_err(struct _adapter *adapter, u8 bgroup)
 	else
 		ev.flags |= IW_MICFAILURE_PAIRWISE;
 	ev.src_addr.sa_family = ARPHRD_ETHER;
-	ether_addr_copy(ev.src_addr.sa_data, &mlmepriv->assoc_bssid[0]);
+	ether_addr_copy(ev.src_addr.sa_data, &pmlmepriv->assoc_bssid[0]);
 	memset(&wrqu, 0x00, sizeof(wrqu));
 	wrqu.data.length = sizeof(ev);
-	wireless_send_event(adapter->pnetdev, IWEVMICHAELMICFAILURE, &wrqu,
+	wireless_send_event(padapter->pnetdev, IWEVMICHAELMICFAILURE, &wrqu,
 			    (char *)&ev);
 }
 
-void r8712_recv_indicatepkt(struct _adapter *adapter,
-			    union recv_frame *recvframe)
+void r8712_recv_indicatepkt(struct _adapter *padapter,
+			    union recv_frame *precv_frame)
 {
-	struct recv_priv *recvpriv;
-	struct  __queue	*free_recv_queue;
+	struct recv_priv *precvpriv;
+	struct  __queue	*pfree_recv_queue;
 	_pkt *skb;
-	struct rx_pkt_attrib *attrib = &recvframe->u.hdr.attrib;
+	struct rx_pkt_attrib *pattrib = &precv_frame->u.hdr.attrib;
 
-	recvpriv = &adapter->recvpriv;
-	free_recv_queue = &recvpriv->free_recv_queue;
-	skb = recvframe->u.hdr.pkt;
+	precvpriv = &(padapter->recvpriv);
+	pfree_recv_queue = &(precvpriv->free_recv_queue);
+	skb = precv_frame->u.hdr.pkt;
 	if (!skb)
 		goto _recv_indicatepkt_drop;
-	skb->data = recvframe->u.hdr.rx_data;
-	skb->len = recvframe->u.hdr.len;
+	skb->data = precv_frame->u.hdr.rx_data;
+	skb->len = precv_frame->u.hdr.len;
 	skb_set_tail_pointer(skb, skb->len);
-	if ((attrib->tcpchk_valid == 1) && (attrib->tcp_chkrpt == 1))
+	if ((pattrib->tcpchk_valid == 1) && (pattrib->tcp_chkrpt == 1))
 		skb->ip_summed = CHECKSUM_UNNECESSARY;
 	else
 		skb->ip_summed = CHECKSUM_NONE;
-	skb->dev = adapter->pnetdev;
-	skb->protocol = eth_type_trans(skb, adapter->pnetdev);
+	skb->dev = padapter->pnetdev;
+	skb->protocol = eth_type_trans(skb, padapter->pnetdev);
 	netif_rx(skb);
-	recvframe->u.hdr.pkt = NULL; /* pointers to NULL before
+	precv_frame->u.hdr.pkt = NULL; /* pointers to NULL before
 					* r8712_free_recvframe()
 					*/
-	r8712_free_recvframe(recvframe, free_recv_queue);
+	r8712_free_recvframe(precv_frame, pfree_recv_queue);
 	return;
 _recv_indicatepkt_drop:
 	 /*enqueue back to free_recv_queue*/
-	if (recvframe)
-		r8712_free_recvframe(recvframe, free_recv_queue);
-	recvpriv->rx_drop++;
+	if (precv_frame)
+		r8712_free_recvframe(precv_frame, pfree_recv_queue);
+	precvpriv->rx_drop++;
 }
 
-static void _r8712_reordering_ctrl_timeout_handler (struct timer_list *t)
+static void _r8712_reordering_ctrl_timeout_handler (unsigned long data)
 {
-	struct recv_reorder_ctrl *reorder_ctrl =
-			 from_timer(reorder_ctrl, t, reordering_ctrl_timer);
+	struct recv_reorder_ctrl *preorder_ctrl =
+			 (struct recv_reorder_ctrl *)data;
 
-	r8712_reordering_ctrl_timeout_handler(reorder_ctrl);
+	r8712_reordering_ctrl_timeout_handler(preorder_ctrl);
 }
 
 void r8712_init_recv_timer(struct recv_reorder_ctrl *preorder_ctrl)
 {
-	timer_setup(&preorder_ctrl->reordering_ctrl_timer,
-		    _r8712_reordering_ctrl_timeout_handler, 0);
+	setup_timer(&preorder_ctrl->reordering_ctrl_timer,
+		     _r8712_reordering_ctrl_timeout_handler,
+		     (unsigned long)preorder_ctrl);
 }

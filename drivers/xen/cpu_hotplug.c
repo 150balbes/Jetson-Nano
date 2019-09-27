@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 #define pr_fmt(fmt) "xen:" KBUILD_MODNAME ": " fmt
 
 #include <linux/notifier.h>
@@ -54,7 +53,7 @@ static int vcpu_online(unsigned int cpu)
 }
 static void vcpu_hotplug(unsigned int cpu)
 {
-	if (cpu >= nr_cpu_ids || !cpu_possible(cpu))
+	if (!cpu_possible(cpu))
 		return;
 
 	switch (vcpu_online(cpu)) {
@@ -70,12 +69,13 @@ static void vcpu_hotplug(unsigned int cpu)
 }
 
 static void handle_vcpu_hotplug_event(struct xenbus_watch *watch,
-				      const char *path, const char *token)
+					const char **vec, unsigned int len)
 {
 	unsigned int cpu;
 	char *cpustr;
+	const char *node = vec[XS_WATCH_PATH];
 
-	cpustr = strstr(path, "cpu/");
+	cpustr = strstr(node, "cpu/");
 	if (cpustr != NULL) {
 		sscanf(cpustr, "cpu/%u", &cpu);
 		vcpu_hotplug(cpu);
@@ -108,7 +108,7 @@ static int __init setup_vcpu_hotplug_event(void)
 		.notifier_call = setup_cpu_watcher };
 
 #ifdef CONFIG_X86
-	if (!xen_pv_domain() && !xen_pvh_domain())
+	if (!xen_pv_domain())
 #else
 	if (!xen_domain())
 #endif

@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * hibernate_asm.S:  Hibernaton support specific for sparc64.
  *

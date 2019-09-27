@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * Copyright (c) 2004 Hewlett-Packard Development Company, L.P.
  *   Contributed by David Mosberger-Tang <davidm@hpl.hp.com>
@@ -19,7 +18,7 @@
 #include <linux/export.h>
 #include <asm/machvec.h>
 
-extern const struct dma_map_ops sba_dma_ops;
+extern struct dma_map_ops sba_dma_ops, swiotlb_dma_ops;
 
 /* swiotlb declarations & definitions: */
 extern int swiotlb_late_init_with_default_size (size_t size);
@@ -35,10 +34,10 @@ static inline int use_swiotlb(struct device *dev)
 		!sba_dma_ops.dma_supported(dev, *dev->dma_mask);
 }
 
-const struct dma_map_ops *hwsw_dma_get_ops(struct device *dev)
+struct dma_map_ops *hwsw_dma_get_ops(struct device *dev)
 {
 	if (use_swiotlb(dev))
-		return NULL;
+		return &swiotlb_dma_ops;
 	return &sba_dma_ops;
 }
 EXPORT_SYMBOL(hwsw_dma_get_ops);

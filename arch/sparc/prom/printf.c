@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * printf.c:  Internal prom library printf facility.
  *

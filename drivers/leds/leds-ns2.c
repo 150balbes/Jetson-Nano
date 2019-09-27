@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * leds-ns2.c - Driver for the Network Space v2 (and parents) dual-GPIO LED
  *
@@ -7,6 +6,20 @@
  * Author: Simon Guinot <sguinot@lacie.com>
  *
  * Based on leds-gpio.c by Raphael Assenat <raph@8d.com>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
 
 #include <linux/kernel.h>
@@ -29,8 +42,8 @@
 
 struct ns2_led_data {
 	struct led_classdev	cdev;
-	unsigned int		cmd;
-	unsigned int		slow;
+	unsigned		cmd;
+	unsigned		slow;
 	bool			can_sleep;
 	unsigned char		sata; /* True when SATA mode active. */
 	rwlock_t		rw_lock; /* Lock GPIOs. */
@@ -251,7 +264,7 @@ ns2_leds_get_of_pdata(struct device *dev, struct ns2_led_platform_data *pdata)
 	if (!num_leds)
 		return -ENODEV;
 
-	leds = devm_kcalloc(dev, num_leds, sizeof(struct ns2_led),
+	leds = devm_kzalloc(dev, num_leds * sizeof(struct ns2_led),
 			    GFP_KERNEL);
 	if (!leds)
 		return -ENOMEM;
@@ -285,9 +298,8 @@ ns2_leds_get_of_pdata(struct device *dev, struct ns2_led_platform_data *pdata)
 		}
 
 		num_modes = ret / 3;
-		modval = devm_kcalloc(dev,
-				      num_modes,
-				      sizeof(struct ns2_led_modval),
+		modval = devm_kzalloc(dev,
+				      num_modes * sizeof(struct ns2_led_modval),
 				      GFP_KERNEL);
 		if (!modval)
 			return -ENOMEM;

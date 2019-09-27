@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _IOP13XX_IRQS_H_
 #define _IOP13XX_IRQS_H_
 

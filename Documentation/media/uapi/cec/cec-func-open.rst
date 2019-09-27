@@ -1,11 +1,4 @@
-.. Permission is granted to copy, distribute and/or modify this
-.. document under the terms of the GNU Free Documentation License,
-.. Version 1.1 or any later version published by the Free Software
-.. Foundation, with no Invariant Sections, no Front-Cover Texts
-.. and no Back-Cover Texts. A copy of the license is included at
-.. Documentation/media/uapi/fdl-appendix.rst.
-..
-.. TODO: replace it to GFDL-1.1-or-later WITH no-invariant-sections
+.. -*- coding: utf-8; mode: rst -*-
 
 .. _cec-func-open:
 
@@ -40,7 +33,7 @@ Arguments
     Open flags. Access mode must be ``O_RDWR``.
 
     When the ``O_NONBLOCK`` flag is given, the
-    :ref:`CEC_RECEIVE <CEC_RECEIVE>` and :ref:`CEC_DQEVENT <CEC_DQEVENT>` ioctls
+    :ref:`CEC_RECEIVE <CEC_RECEIVE>` and :c:func:`CEC_DQEVENT` ioctls
     will return the ``EAGAIN`` error code when no message or event is available, and
     ioctls :ref:`CEC_TRANSMIT <CEC_TRANSMIT>`,
     :ref:`CEC_ADAP_S_PHYS_ADDR <CEC_ADAP_S_PHYS_ADDR>` and
@@ -53,7 +46,12 @@ Arguments
 Description
 ===========
 
-To open a cec device applications call :c:func:`open() <cec-open>` with the
+.. note::
+
+   This documents the proposed CEC API. This API is not yet finalized
+   and is currently only available as a staging kernel module.
+
+To open a cec device applications call :c:func:`open()` with the
 desired device name. The function has no side effects; the device
 configuration remain unchanged.
 
@@ -65,7 +63,7 @@ EBADF.
 Return Value
 ============
 
-:c:func:`open() <cec-open>` returns the new file descriptor on success. On error,
+:c:func:`open()` returns the new file descriptor on success. On error,
 -1 is returned, and ``errno`` is set appropriately. Possible error codes
 include:
 

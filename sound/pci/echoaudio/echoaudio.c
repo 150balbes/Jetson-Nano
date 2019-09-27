@@ -1,7 +1,19 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  *  ALSA driver for Echoaudio soundcards.
  *  Copyright (C) 2003-2004 Giuliano Pochini <pochini@shiny.it>
+ *
+ *  This program is free software; you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License as published by
+ *  the Free Software Foundation; version 2 of the License.
+ *
+ *  This program is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *  GNU General Public License for more details.
+ *
+ *  You should have received a copy of the GNU General Public License
+ *  along with this program; if not, write to the Free Software
+ *  Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
  */
 
 #include <linux/module.h>
@@ -47,7 +59,7 @@ static int get_firmware(const struct firmware **fw_entry,
 	dev_dbg(chip->card->dev,
 		"firmware requested: %s\n", card_fw[fw_index].data);
 	snprintf(name, sizeof(name), "ea/%s", card_fw[fw_index].data);
-	err = request_firmware(fw_entry, name, &chip->pci->dev);
+	err = request_firmware(fw_entry, name, pci_device(chip));
 	if (err < 0)
 		dev_err(chip->card->dev,
 			"get_firmware(): Firmware not available (%d)\n", err);
@@ -701,7 +713,6 @@ static int pcm_prepare(struct snd_pcm_substream *substream)
 		break;
 	case SNDRV_PCM_FORMAT_S32_BE:
 		format.data_are_bigendian = 1;
-		/* fall through */
 	case SNDRV_PCM_FORMAT_S32_LE:
 		format.bits_per_sample = 32;
 		break;
@@ -725,7 +736,8 @@ static int pcm_prepare(struct snd_pcm_substream *substream)
 static int pcm_trigger(struct snd_pcm_substream *substream, int cmd)
 {
 	struct echoaudio *chip = snd_pcm_substream_chip(substream);
-	struct audiopipe *pipe;
+	struct snd_pcm_runtime *runtime = substream->runtime;
+	struct audiopipe *pipe = runtime->private_data;
 	int i, err;
 	u32 channelmask = 0;
 	struct snd_pcm_substream *s;
@@ -753,7 +765,6 @@ static int pcm_trigger(struct snd_pcm_substream *substream, int cmd)
 					pipe->last_counter = 0;
 					pipe->position = 0;
 					*pipe->dma_counter = 0;
-					/* fall through */
 				case PIPE_STATE_PAUSED:
 					pipe->state = PIPE_STATE_STARTED;
 					break;
@@ -815,7 +826,7 @@ static snd_pcm_uframes_t pcm_pointer(struct snd_pcm_substream *substream)
 
 
 /* pcm *_ops structures */
-static const struct snd_pcm_ops analog_playback_ops = {
+static struct snd_pcm_ops analog_playback_ops = {
 	.open = pcm_analog_out_open,
 	.close = pcm_close,
 	.ioctl = snd_pcm_lib_ioctl,
@@ -826,7 +837,7 @@ static const struct snd_pcm_ops analog_playback_ops = {
 	.pointer = pcm_pointer,
 	.page = snd_pcm_sgbuf_ops_page,
 };
-static const struct snd_pcm_ops analog_capture_ops = {
+static struct snd_pcm_ops analog_capture_ops = {
 	.open = pcm_analog_in_open,
 	.close = pcm_close,
 	.ioctl = snd_pcm_lib_ioctl,
@@ -839,7 +850,7 @@ static const struct snd_pcm_ops analog_capture_ops = {
 };
 #ifdef ECHOCARD_HAS_DIGITAL_IO
 #ifndef ECHOCARD_HAS_VMIXER
-static const struct snd_pcm_ops digital_playback_ops = {
+static struct snd_pcm_ops digital_playback_ops = {
 	.open = pcm_digital_out_open,
 	.close = pcm_close,
 	.ioctl = snd_pcm_lib_ioctl,
@@ -851,7 +862,7 @@ static const struct snd_pcm_ops digital_playback_ops = {
 	.page = snd_pcm_sgbuf_ops_page,
 };
 #endif /* !ECHOCARD_HAS_VMIXER */
-static const struct snd_pcm_ops digital_capture_ops = {
+static struct snd_pcm_ops digital_capture_ops = {
 	.open = pcm_digital_in_open,
 	.close = pcm_close,
 	.ioctl = snd_pcm_lib_ioctl,
@@ -872,15 +883,17 @@ static const struct snd_pcm_ops digital_capture_ops = {
 static int snd_echo_preallocate_pages(struct snd_pcm *pcm, struct device *dev)
 {
 	struct snd_pcm_substream *ss;
-	int stream;
+	int stream, err;
 
 	for (stream = 0; stream < 2; stream++)
-		for (ss = pcm->streams[stream].substream; ss; ss = ss->next)
-			snd_pcm_lib_preallocate_pages(ss, SNDRV_DMA_TYPE_DEV_SG,
-						      dev,
-						      ss->number ? 0 : 128<<10,
-						      256<<10);
-
+		for (ss = pcm->streams[stream].substream; ss; ss = ss->next) {
+			err = snd_pcm_lib_preallocate_pages(ss, SNDRV_DMA_TYPE_DEV_SG,
+							    dev,
+							    ss->number ? 0 : 128<<10,
+							    256<<10);
+			if (err < 0)
+				return err;
+		}
 	return 0;
 }
 
@@ -1026,7 +1039,7 @@ static int snd_echo_output_gain_put(struct snd_kcontrol *kcontrol,
 
 #ifdef ECHOCARD_HAS_LINE_OUT_GAIN
 /* On the Mia this one controls the line-out volume */
-static const struct snd_kcontrol_new snd_echo_line_output_gain = {
+static struct snd_kcontrol_new snd_echo_line_output_gain = {
 	.name = "Line Playback Volume",
 	.iface = SNDRV_CTL_ELEM_IFACE_MIXER,
 	.access = SNDRV_CTL_ELEM_ACCESS_READWRITE |
@@ -1037,7 +1050,7 @@ static const struct snd_kcontrol_new snd_echo_line_output_gain = {
 	.tlv = {.p = db_scale_output_gain},
 };
 #else
-static const struct snd_kcontrol_new snd_echo_pcm_output_gain = {
+static struct snd_kcontrol_new snd_echo_pcm_output_gain = {
 	.name = "PCM Playback Volume",
 	.iface = SNDRV_CTL_ELEM_IFACE_MIXER,
 	.access = SNDRV_CTL_ELEM_ACCESS_READWRITE | SNDRV_CTL_ELEM_ACCESS_TLV_READ,
@@ -1107,7 +1120,7 @@ static int snd_echo_input_gain_put(struct snd_kcontrol *kcontrol,
 
 static const DECLARE_TLV_DB_SCALE(db_scale_input_gain, -2500, 50, 0);
 
-static const struct snd_kcontrol_new snd_echo_line_input_gain = {
+static struct snd_kcontrol_new snd_echo_line_input_gain = {
 	.name = "Line Capture Volume",
 	.iface = SNDRV_CTL_ELEM_IFACE_MIXER,
 	.access = SNDRV_CTL_ELEM_ACCESS_READWRITE | SNDRV_CTL_ELEM_ACCESS_TLV_READ,
@@ -1171,7 +1184,7 @@ static int snd_echo_output_nominal_put(struct snd_kcontrol *kcontrol,
 	return changed;
 }
 
-static const struct snd_kcontrol_new snd_echo_output_nominal_level = {
+static struct snd_kcontrol_new snd_echo_output_nominal_level = {
 	.name = "Line Playback Switch (-10dBV)",
 	.iface = SNDRV_CTL_ELEM_IFACE_MIXER,
 	.info = snd_echo_output_nominal_info,
@@ -1237,7 +1250,7 @@ static int snd_echo_input_nominal_put(struct snd_kcontrol *kcontrol,
 	return changed;
 }
 
-static const struct snd_kcontrol_new snd_echo_intput_nominal_level = {
+static struct snd_kcontrol_new snd_echo_intput_nominal_level = {
 	.name = "Line Capture Switch (-10dBV)",
 	.iface = SNDRV_CTL_ELEM_IFACE_MIXER,
 	.info = snd_echo_input_nominal_info,
@@ -1464,7 +1477,7 @@ static int snd_echo_digital_mode_put(struct snd_kcontrol *kcontrol,
 	return changed;
 }
 
-static const struct snd_kcontrol_new snd_echo_digital_mode_switch = {
+static struct snd_kcontrol_new snd_echo_digital_mode_switch = {
 	.name = "Digital mode Switch",
 	.iface = SNDRV_CTL_ELEM_IFACE_CARD,
 	.info = snd_echo_digital_mode_info,
@@ -1514,7 +1527,7 @@ static int snd_echo_spdif_mode_put(struct snd_kcontrol *kcontrol,
 	return 0;
 }
 
-static const struct snd_kcontrol_new snd_echo_spdif_mode_switch = {
+static struct snd_kcontrol_new snd_echo_spdif_mode_switch = {
 	.name = "S/PDIF mode Switch",
 	.iface = SNDRV_CTL_ELEM_IFACE_CARD,
 	.info = snd_echo_spdif_mode_info,
@@ -1587,7 +1600,7 @@ static int snd_echo_clock_source_put(struct snd_kcontrol *kcontrol,
 	return changed;
 }
 
-static const struct snd_kcontrol_new snd_echo_clock_source_switch = {
+static struct snd_kcontrol_new snd_echo_clock_source_switch = {
 	.name = "Sample Clock Source",
 	.iface = SNDRV_CTL_ELEM_IFACE_PCM,
 	.info = snd_echo_clock_source_info,
@@ -1630,7 +1643,7 @@ static int snd_echo_phantom_power_put(struct snd_kcontrol *kcontrol,
 	return changed;
 }
 
-static const struct snd_kcontrol_new snd_echo_phantom_power_switch = {
+static struct snd_kcontrol_new snd_echo_phantom_power_switch = {
 	.name = "Phantom power Switch",
 	.iface = SNDRV_CTL_ELEM_IFACE_CARD,
 	.info = snd_echo_phantom_power_info,
@@ -1673,7 +1686,7 @@ static int snd_echo_automute_put(struct snd_kcontrol *kcontrol,
 	return changed;
 }
 
-static const struct snd_kcontrol_new snd_echo_automute_switch = {
+static struct snd_kcontrol_new snd_echo_automute_switch = {
 	.name = "Digital Capture Switch (automute)",
 	.iface = SNDRV_CTL_ELEM_IFACE_CARD,
 	.info = snd_echo_automute_info,
@@ -1700,7 +1713,7 @@ static int snd_echo_vumeters_switch_put(struct snd_kcontrol *kcontrol,
 	return 1;
 }
 
-static const struct snd_kcontrol_new snd_echo_vumeters_switch = {
+static struct snd_kcontrol_new snd_echo_vumeters_switch = {
 	.name = "VU-meters Switch",
 	.iface = SNDRV_CTL_ELEM_IFACE_CARD,
 	.access = SNDRV_CTL_ELEM_ACCESS_WRITE,
@@ -1738,7 +1751,7 @@ static int snd_echo_vumeters_get(struct snd_kcontrol *kcontrol,
 	return 0;
 }
 
-static const struct snd_kcontrol_new snd_echo_vumeters = {
+static struct snd_kcontrol_new snd_echo_vumeters = {
 	.name = "VU-meters",
 	.iface = SNDRV_CTL_ELEM_IFACE_MIXER,
 	.access = SNDRV_CTL_ELEM_ACCESS_READ |
@@ -1791,7 +1804,7 @@ static int snd_echo_channels_info_get(struct snd_kcontrol *kcontrol,
 	return 0;
 }
 
-static const struct snd_kcontrol_new snd_echo_channels_info = {
+static struct snd_kcontrol_new snd_echo_channels_info = {
 	.name = "Channels info",
 	.iface = SNDRV_CTL_ELEM_IFACE_HWDEP,
 	.access = SNDRV_CTL_ELEM_ACCESS_READ | SNDRV_CTL_ELEM_ACCESS_VOLATILE,
@@ -1940,11 +1953,6 @@ static int snd_echo_create(struct snd_card *card,
 	}
 	chip->dsp_registers = (volatile u32 __iomem *)
 		ioremap_nocache(chip->dsp_registers_phys, sz);
-	if (!chip->dsp_registers) {
-		dev_err(chip->card->dev, "ioremap failed\n");
-		snd_echo_free(chip);
-		return -ENOMEM;
-	}
 
 	if (request_irq(pci->irq, snd_echo_interrupt, IRQF_SHARED,
 			KBUILD_MODNAME, chip)) {
@@ -2155,6 +2163,9 @@ ctl_error:
 static int snd_echo_suspend(struct device *dev)
 {
 	struct echoaudio *chip = dev_get_drvdata(dev);
+
+	snd_pcm_suspend_all(chip->analog_pcm);
+	snd_pcm_suspend_all(chip->digital_pcm);
 
 #ifdef ECHOCARD_HAS_MIDI
 	/* This call can sleep */

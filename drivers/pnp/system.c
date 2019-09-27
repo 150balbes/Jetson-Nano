@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * system.c - a driver for reserving pnp system resources
  *

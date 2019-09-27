@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0-or-later */
 /**
  * eCryptfs: Linux filesystem encryption layer
  * Kernel declarations.
@@ -9,6 +8,21 @@
  *   Author(s): Michael A. Halcrow <mahalcro@us.ibm.com>
  *              Trevor S. Highland <trevor.highland@gmail.com>
  *              Tyler Hicks <tyhicks@ou.edu>
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License as
+ * published by the Free Software Foundation; either version 2 of the
+ * License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA
+ * 02111-1307, USA.
  */
 
 #ifndef ECRYPTFS_KERNEL_H
@@ -17,7 +31,6 @@
 #include <crypto/skcipher.h>
 #include <keys/user-type.h>
 #include <keys/encrypted-type.h>
-#include <linux/kernel.h>
 #include <linux/fs.h>
 #include <linux/fs_stack.h>
 #include <linux/namei.h>
@@ -38,13 +51,7 @@
 #define ECRYPTFS_XATTR_NAME "user.ecryptfs"
 
 void ecryptfs_dump_auth_tok(struct ecryptfs_auth_tok *auth_tok);
-static inline void
-ecryptfs_to_hex(char *dst, char *src, size_t src_size)
-{
-	char *end = bin2hex(dst, src, src_size);
-	*end = '\0';
-}
-
+extern void ecryptfs_to_hex(char *dst, char *src, size_t src_size);
 extern void ecryptfs_from_hex(char *dst, char *src, int dst_size);
 
 struct ecryptfs_key_record {
@@ -112,7 +119,7 @@ static inline struct ecryptfs_auth_tok *
 ecryptfs_get_key_payload_data(struct key *key)
 {
 	struct ecryptfs_auth_tok *auth_tok;
-	struct user_key_payload *ukp;
+	const struct user_key_payload *ukp;
 
 	auth_tok = ecryptfs_get_encrypted_key_payload_data(key);
 	if (auth_tok)
@@ -352,6 +359,7 @@ struct ecryptfs_mount_crypt_stat {
 struct ecryptfs_sb_info {
 	struct super_block *wsi_sb;
 	struct ecryptfs_mount_crypt_stat mount_crypt_stat;
+	struct backing_dev_info bdi;
 };
 
 /* file private data. */

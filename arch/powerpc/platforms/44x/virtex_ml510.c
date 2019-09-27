@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 #include <asm/i8259.h>
 #include <linux/pci.h>
 #include "44x.h"

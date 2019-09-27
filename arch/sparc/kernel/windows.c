@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /* windows.c: Routines to deal with register window management
  *            at the C-code level.
  *
@@ -12,7 +11,7 @@
 #include <linux/smp.h>
 
 #include <asm/cacheflush.h>
-#include <linux/uaccess.h>
+#include <asm/uaccess.h>
 
 #include "kernel.h"
 

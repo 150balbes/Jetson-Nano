@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * Copyright (C) 2012 Texas Instruments Inc
  *
@@ -10,6 +9,10 @@
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
  *
  * Contributors:
  *      Manjunath Hadli <manjunath.hadli@ti.com>
@@ -427,6 +430,9 @@ ipipe_set_lutdpc_regs(void __iomem *base_addr, void __iomem *isp5_base_addr,
 	regw_ip(base_addr, LUT_DPC_START_ADDR, DPC_LUT_ADR);
 	regw_ip(base_addr, dpc->dpc_size, DPC_LUT_SIZ & LUT_DPC_SIZE_MASK);
 
+	if (dpc->table == NULL)
+		return;
+
 	for (count = 0; count < dpc->dpc_size; count++) {
 		if (count >= max_tbl_size)
 			lut_start_addr = DPC_TB1_START_ADDR;
@@ -754,13 +760,13 @@ ipipe_set_gamma_regs(void __iomem *base_addr, void __iomem *isp5_base_addr,
 
 	table_size = gamma->tbl_size;
 
-	if (!gamma->bypass_r)
+	if (!gamma->bypass_r && gamma->table_r != NULL)
 		ipipe_update_gamma_tbl(isp5_base_addr, gamma->table_r,
 			table_size, GAMMA_R_START_ADDR);
-	if (!gamma->bypass_b)
+	if (!gamma->bypass_b && gamma->table_b != NULL)
 		ipipe_update_gamma_tbl(isp5_base_addr, gamma->table_b,
 			table_size, GAMMA_B_START_ADDR);
-	if (!gamma->bypass_g)
+	if (!gamma->bypass_g && gamma->table_g != NULL)
 		ipipe_update_gamma_tbl(isp5_base_addr, gamma->table_g,
 			table_size, GAMMA_G_START_ADDR);
 }
@@ -781,7 +787,11 @@ ipipe_set_3d_lut_regs(void __iomem *base_addr, void __iomem *isp5_base_addr,
 	if (!lut_3d->en)
 		return;
 
-	/* valid table */
+	/* lut_3d enabled */
+	if (!lut_3d->table)
+		return;
+
+	/* valied table */
 	tbl = lut_3d->table;
 	for (i = 0; i < VPFE_IPIPE_MAX_SIZE_3D_LUT; i++) {
 		/*
@@ -825,10 +835,8 @@ ipipe_set_lum_adj_regs(void __iomem *base_addr, struct ipipe_lum_adj *lum_adj)
 	regw_ip(base_addr, val, YUV_ADJ);
 }
 
-inline u32 ipipe_s12q8(unsigned short decimal, short integer)
-{
-	return (decimal & 0xff) | ((integer & 0xf) << 8);
-}
+#define IPIPE_S12Q8(decimal, integer) \
+	(((decimal & 0xff) | ((integer & 0xf) << 8)))
 
 void ipipe_set_rgb2ycbcr_regs(void __iomem *base_addr,
 			      struct vpfe_ipipe_rgb2yuv *yuv)
@@ -837,23 +845,23 @@ void ipipe_set_rgb2ycbcr_regs(void __iomem *base_addr,
 
 	/* S10Q8 */
 	ipipe_clock_enable(base_addr);
-	val = ipipe_s12q8(yuv->coef_ry.decimal, yuv->coef_ry.integer);
+	val = IPIPE_S12Q8(yuv->coef_ry.decimal, yuv->coef_ry.integer);
 	regw_ip(base_addr, val, YUV_MUL_RY);
-	val = ipipe_s12q8(yuv->coef_gy.decimal, yuv->coef_gy.integer);
+	val = IPIPE_S12Q8(yuv->coef_gy.decimal, yuv->coef_gy.integer);
 	regw_ip(base_addr, val, YUV_MUL_GY);
-	val = ipipe_s12q8(yuv->coef_by.decimal, yuv->coef_by.integer);
+	val = IPIPE_S12Q8(yuv->coef_by.decimal, yuv->coef_by.integer);
 	regw_ip(base_addr, val, YUV_MUL_BY);
-	val = ipipe_s12q8(yuv->coef_rcb.decimal, yuv->coef_rcb.integer);
+	val = IPIPE_S12Q8(yuv->coef_rcb.decimal, yuv->coef_rcb.integer);
 	regw_ip(base_addr, val, YUV_MUL_RCB);
-	val = ipipe_s12q8(yuv->coef_gcb.decimal, yuv->coef_gcb.integer);
+	val = IPIPE_S12Q8(yuv->coef_gcb.decimal, yuv->coef_gcb.integer);
 	regw_ip(base_addr, val, YUV_MUL_GCB);
-	val = ipipe_s12q8(yuv->coef_bcb.decimal, yuv->coef_bcb.integer);
+	val = IPIPE_S12Q8(yuv->coef_bcb.decimal, yuv->coef_bcb.integer);
 	regw_ip(base_addr, val, YUV_MUL_BCB);
-	val = ipipe_s12q8(yuv->coef_rcr.decimal, yuv->coef_rcr.integer);
+	val = IPIPE_S12Q8(yuv->coef_rcr.decimal, yuv->coef_rcr.integer);
 	regw_ip(base_addr, val, YUV_MUL_RCR);
-	val = ipipe_s12q8(yuv->coef_gcr.decimal, yuv->coef_gcr.integer);
+	val = IPIPE_S12Q8(yuv->coef_gcr.decimal, yuv->coef_gcr.integer);
 	regw_ip(base_addr, val, YUV_MUL_GCR);
-	val = ipipe_s12q8(yuv->coef_bcr.decimal, yuv->coef_bcr.integer);
+	val = IPIPE_S12Q8(yuv->coef_bcr.decimal, yuv->coef_bcr.integer);
 	regw_ip(base_addr, val, YUV_MUL_BCR);
 	regw_ip(base_addr, yuv->out_ofst_y & RGB2YCBCR_OFST_MASK, YUV_OFT_Y);
 	regw_ip(base_addr, yuv->out_ofst_cb & RGB2YCBCR_OFST_MASK, YUV_OFT_CB);
@@ -891,6 +899,9 @@ ipipe_set_gbce_regs(void __iomem *base_addr, void __iomem *isp5_base_addr,
 		return;
 
 	regw_ip(base_addr, gbce->type, GBCE_TYP);
+
+	if (!gbce->table)
+		return;
 
 	for (count = 0; count < VPFE_IPIPE_MAX_SIZE_GBCE_LUT; count += 2)
 		w_ip_table(isp5_base_addr, ((gbce->table[count + 1] & mask) <<
@@ -931,6 +942,9 @@ ipipe_set_ee_regs(void __iomem *base_addr, void __iomem *isp5_base_addr,
 	regw_ip(base_addr, ee->es_thr2 & YEE_THR_MASK, YEE_E_THR2);
 	regw_ip(base_addr, ee->es_gain_grad & YEE_THR_MASK, YEE_G_GAN);
 	regw_ip(base_addr, ee->es_ofst_grad & YEE_THR_MASK, YEE_G_OFT);
+
+	if (ee->table == NULL)
+		return;
 
 	for (count = 0; count < VPFE_IPIPE_MAX_SIZE_YEE_LUT; count += 2)
 		w_ip_table(isp5_base_addr, ((ee->table[count + 1] &
@@ -989,8 +1003,8 @@ void ipipe_set_car_regs(void __iomem *base_addr, struct vpfe_ipipe_car *car)
 		ipipe_set_mf(base_addr);
 		ipipe_set_gain_ctrl(base_addr, car);
 		/* Set the threshold for switching between
-		 * the two Here we overwrite the MF SW0 value
-		 */
+		  * the two Here we overwrite the MF SW0 value
+		  */
 		regw_ip(base_addr, VPFE_IPIPE_CAR_DYN_SWITCH, CAR_TYP);
 		val = car->sw1;
 		val <<= CAR_SW1_SHIFT;

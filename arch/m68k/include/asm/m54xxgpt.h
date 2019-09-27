@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * File:	m54xxgpt.h
  * Purpose:	Register and bit definitions for the MCF54XX

@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0-only
 config ADFS_FS
 	tristate "ADFS file system support"
 	depends on BLOCK

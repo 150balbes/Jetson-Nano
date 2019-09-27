@@ -1,8 +1,9 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Driver for the Himax HX-8357 LCD Controller
  *
  * Copyright 2012 Free Electrons
+ *
+ * Licensed under the GPLv2 or later.
  */
 
 #include <linux/delay.h>

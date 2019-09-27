@@ -14,7 +14,7 @@
 #include <linux/init.h>
 #include <linux/io.h>
 #include <linux/stat.h>
-#include <linux/sizes.h>
+#include <asm/sizes.h>
 #include "internals.h"
 
 static void __iomem *uimask;

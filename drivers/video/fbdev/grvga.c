@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Driver for Aeroflex Gaisler SVGACTRL framebuffer device.
  *
@@ -7,7 +6,13 @@
  * Full documentation of the core can be found here:
  * http://www.gaisler.com/products/grlib/grip.pdf
  *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License as published by the
+ * Free Software Foundation; either version 2 of the License, or (at your
+ * option) any later version.
+ *
  * Contributors: Kristoffer Glembo <kristoffer@gaisler.com>
+ *
  */
 
 #include <linux/platform_device.h>
@@ -65,7 +70,7 @@ static const struct fb_videomode grvga_modedb[] = {
     }
  };
 
-static const struct fb_fix_screeninfo grvga_fix = {
+static struct fb_fix_screeninfo grvga_fix = {
 	.id =		"AG SVGACTRL",
 	.type =		FB_TYPE_PACKED_PIXELS,
 	.visual =       FB_VISUAL_PSEUDOCOLOR,
@@ -336,8 +341,10 @@ static int grvga_probe(struct platform_device *dev)
 	char *options = NULL, *mode_opt = NULL;
 
 	info = framebuffer_alloc(sizeof(struct grvga_par), &dev->dev);
-	if (!info)
+	if (!info) {
+		dev_err(&dev->dev, "framebuffer_alloc failed\n");
 		return -ENOMEM;
+	}
 
 	/* Expecting: "grvga: modestring, [addr:<framebuffer physical address>], [size:<framebuffer size>]
 	 *

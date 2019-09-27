@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  *  drivers/s390/net/iucv.h
  *    IUCV base support.

@@ -44,7 +44,7 @@
 #include <linux/vmalloc.h>
 #include <asm/pgtable.h>
 #include <asm/irq.h>
-#include <linux/uaccess.h>
+#include <asm/uaccess.h>
 
 #include "fs_enet.h"
 
@@ -118,22 +118,22 @@ static int fs_enet_napi(struct napi_struct *napi, int budget)
 			  BD_ENET_TX_RL | BD_ENET_TX_UN | BD_ENET_TX_CSL)) {
 
 			if (sc & BD_ENET_TX_HB)	/* No heartbeat */
-				dev->stats.tx_heartbeat_errors++;
+				fep->stats.tx_heartbeat_errors++;
 			if (sc & BD_ENET_TX_LC)	/* Late collision */
-				dev->stats.tx_window_errors++;
+				fep->stats.tx_window_errors++;
 			if (sc & BD_ENET_TX_RL)	/* Retrans limit */
-				dev->stats.tx_aborted_errors++;
+				fep->stats.tx_aborted_errors++;
 			if (sc & BD_ENET_TX_UN)	/* Underrun */
-				dev->stats.tx_fifo_errors++;
+				fep->stats.tx_fifo_errors++;
 			if (sc & BD_ENET_TX_CSL)	/* Carrier lost */
-				dev->stats.tx_carrier_errors++;
+				fep->stats.tx_carrier_errors++;
 
 			if (sc & (BD_ENET_TX_LC | BD_ENET_TX_RL | BD_ENET_TX_UN)) {
-				dev->stats.tx_errors++;
+				fep->stats.tx_errors++;
 				do_restart = 1;
 			}
 		} else
-			dev->stats.tx_packets++;
+			fep->stats.tx_packets++;
 
 		if (sc & BD_ENET_TX_READY) {
 			dev_warn(fep->dev,
@@ -145,7 +145,7 @@ static int fs_enet_napi(struct napi_struct *napi, int budget)
 		 * but we eventually sent the packet OK.
 		 */
 		if (sc & BD_ENET_TX_DEF)
-			dev->stats.collisions++;
+			fep->stats.collisions++;
 
 		/* unmap */
 		if (fep->mapped_as_page[dirtyidx])
@@ -212,19 +212,19 @@ static int fs_enet_napi(struct napi_struct *napi, int budget)
 		 */
 		if (sc & (BD_ENET_RX_LG | BD_ENET_RX_SH | BD_ENET_RX_CL |
 			  BD_ENET_RX_NO | BD_ENET_RX_CR | BD_ENET_RX_OV)) {
-			dev->stats.rx_errors++;
+			fep->stats.rx_errors++;
 			/* Frame too long or too short. */
 			if (sc & (BD_ENET_RX_LG | BD_ENET_RX_SH))
-				dev->stats.rx_length_errors++;
+				fep->stats.rx_length_errors++;
 			/* Frame alignment */
 			if (sc & (BD_ENET_RX_NO | BD_ENET_RX_CL))
-				dev->stats.rx_frame_errors++;
+				fep->stats.rx_frame_errors++;
 			/* CRC Error */
 			if (sc & BD_ENET_RX_CR)
-				dev->stats.rx_crc_errors++;
+				fep->stats.rx_crc_errors++;
 			/* FIFO overrun */
 			if (sc & BD_ENET_RX_OV)
-				dev->stats.rx_crc_errors++;
+				fep->stats.rx_crc_errors++;
 
 			skbn = fep->rx_skbuff[curidx];
 		} else {
@@ -233,9 +233,9 @@ static int fs_enet_napi(struct napi_struct *napi, int budget)
 			/*
 			 * Process the incoming frame.
 			 */
-			dev->stats.rx_packets++;
+			fep->stats.rx_packets++;
 			pkt_len = CBDR_DATLEN(bdp) - 4;	/* remove CRC */
-			dev->stats.rx_bytes += pkt_len + 4;
+			fep->stats.rx_bytes += pkt_len + 4;
 
 			if (pkt_len <= fpi->rx_copybreak) {
 				/* +2 to make IP header L1 cache aligned */
@@ -277,7 +277,7 @@ static int fs_enet_napi(struct napi_struct *napi, int budget)
 				received++;
 				netif_receive_skb(skb);
 			} else {
-				dev->stats.rx_dropped++;
+				fep->stats.rx_dropped++;
 				skbn = skb;
 			}
 		}
@@ -301,7 +301,7 @@ static int fs_enet_napi(struct napi_struct *napi, int budget)
 
 	if (received < budget && tx_left) {
 		/* done */
-		napi_complete_done(napi, received);
+		napi_complete(napi);
 		(*fep->ops->napi_enable)(dev);
 
 		return received;
@@ -481,8 +481,7 @@ static struct sk_buff *tx_skb_align_workaround(struct net_device *dev,
 }
 #endif
 
-static netdev_tx_t
-fs_enet_start_xmit(struct sk_buff *skb, struct net_device *dev)
+static int fs_enet_start_xmit(struct sk_buff *skb, struct net_device *dev)
 {
 	struct fs_enet_private *fep = netdev_priv(dev);
 	cbd_t __iomem *bdp;
@@ -544,7 +543,7 @@ fs_enet_start_xmit(struct sk_buff *skb, struct net_device *dev)
 	curidx = bdp - fep->tx_bd_base;
 
 	len = skb->len;
-	dev->stats.tx_bytes += len;
+	fep->stats.tx_bytes += len;
 	if (nr_frags)
 		len -= skb->data_len;
 	fep->tx_free -= nr_frags + 1;
@@ -622,7 +621,7 @@ static void fs_timeout_work(struct work_struct *work)
 	unsigned long flags;
 	int wake = 0;
 
-	dev->stats.tx_errors++;
+	fep->stats.tx_errors++;
 
 	spin_lock_irqsave(&fep->lock, flags);
 
@@ -784,6 +783,12 @@ static int fs_enet_close(struct net_device *dev)
 	return 0;
 }
 
+static struct net_device_stats *fs_enet_get_stats(struct net_device *dev)
+{
+	struct fs_enet_private *fep = netdev_priv(dev);
+	return &fep->stats;
+}
+
 /*************************************************************************/
 
 static void fs_get_drvinfo(struct net_device *dev,
@@ -815,6 +820,11 @@ static void fs_get_regs(struct net_device *dev, struct ethtool_regs *regs,
 
 	if (r == 0)
 		regs->version = 0;
+}
+
+static int fs_nway_reset(struct net_device *dev)
+{
+	return 0;
 }
 
 static u32 fs_get_msglevel(struct net_device *dev)
@@ -870,7 +880,7 @@ static int fs_set_tunable(struct net_device *dev,
 static const struct ethtool_ops fs_ethtool_ops = {
 	.get_drvinfo = fs_get_drvinfo,
 	.get_regs_len = fs_get_regs_len,
-	.nway_reset = phy_ethtool_nway_reset,
+	.nway_reset = fs_nway_reset,
 	.get_link = ethtool_op_get_link,
 	.get_msglevel = fs_get_msglevel,
 	.set_msglevel = fs_set_msglevel,
@@ -904,12 +914,14 @@ extern void fs_mii_disconnect(struct net_device *dev);
 static const struct net_device_ops fs_enet_netdev_ops = {
 	.ndo_open		= fs_enet_open,
 	.ndo_stop		= fs_enet_close,
+	.ndo_get_stats		= fs_enet_get_stats,
 	.ndo_start_xmit		= fs_enet_start_xmit,
 	.ndo_tx_timeout		= fs_timeout,
 	.ndo_set_rx_mode	= fs_set_multicast_list,
 	.ndo_do_ioctl		= fs_ioctl,
 	.ndo_validate_addr	= eth_validate_addr,
 	.ndo_set_mac_address	= eth_mac_addr,
+	.ndo_change_mtu		= eth_change_mtu,
 #ifdef CONFIG_NET_POLL_CONTROLLER
 	.ndo_poll_controller	= fs_enet_netpoll,
 #endif
@@ -974,10 +986,11 @@ static int fs_enet_probe(struct platform_device *ofdev)
 	 */
 	clk = devm_clk_get(&ofdev->dev, "per");
 	if (!IS_ERR(clk)) {
-		ret = clk_prepare_enable(clk);
-		if (ret)
+		err = clk_prepare_enable(clk);
+		if (err) {
+			ret = err;
 			goto out_deregister_fixed_link;
-
+		}
 		fpi->clk_per = clk;
 	}
 
@@ -1014,8 +1027,8 @@ static int fs_enet_probe(struct platform_device *ofdev)
 	spin_lock_init(&fep->tx_lock);
 
 	mac_addr = of_get_mac_address(ofdev->dev.of_node);
-	if (!IS_ERR(mac_addr))
-		ether_addr_copy(ndev->dev_addr, mac_addr);
+	if (mac_addr)
+		memcpy(ndev->dev_addr, mac_addr, ETH_ALEN);
 
 	ret = fep->ops->allocate_bd(ndev);
 	if (ret)
@@ -1033,6 +1046,8 @@ static int fs_enet_probe(struct platform_device *ofdev)
 	netif_napi_add(ndev, &fep->napi, fs_enet_napi, fpi->napi_weight);
 
 	ndev->ethtool_ops = &fs_ethtool_ops;
+
+	init_timer(&fep->phy_timer_list);
 
 	netif_carrier_off(ndev);
 
@@ -1053,10 +1068,10 @@ out_cleanup_data:
 out_free_dev:
 	free_netdev(ndev);
 out_put:
+	of_node_put(fpi->phy_node);
 	if (fpi->clk_per)
 		clk_disable_unprepare(fpi->clk_per);
 out_deregister_fixed_link:
-	of_node_put(fpi->phy_node);
 	if (of_phy_is_fixed_link(ofdev->dev.of_node))
 		of_phy_deregister_fixed_link(ofdev->dev.of_node);
 out_free_fpi:

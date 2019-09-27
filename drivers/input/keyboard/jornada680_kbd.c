@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * drivers/input/keyboard/jornada680_kbd.c
  *
@@ -11,6 +10,10 @@
  * Split from drivers/input/keyboard/hp600_keyb.c
  *  Copyright (C) 2000 Yaegashi Takeshi (hp6xx kbd scan routine and translation table)
  *  Copyright (C) 2000 Niibe Yutaka (HP620 Keyb translation table)
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  */
 
 #include <linux/device.h>
@@ -193,6 +196,8 @@ static int jornada680kbd_probe(struct platform_device *pdev)
 		dev_err(&pdev->dev, "failed to allocate polled input device\n");
 		return -ENOMEM;
 	}
+
+	platform_set_drvdata(pdev, jornadakbd);
 
 	jornadakbd->poll_dev = poll_dev;
 

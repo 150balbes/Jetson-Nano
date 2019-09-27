@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _ELF_RANDOMIZE_H
 #define _ELF_RANDOMIZE_H
 

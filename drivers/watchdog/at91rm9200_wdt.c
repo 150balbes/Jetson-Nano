@@ -1,9 +1,12 @@
-// SPDX-License-Identifier: GPL-2.0+
 /*
  * Watchdog driver for Atmel AT91RM9200 (Thunder)
  *
  *  Copyright (C) 2003 SAN People (Pty) Ltd
  *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License
+ * as published by the Free Software Foundation; either version
+ * 2 of the License, or (at your option) any later version.
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
@@ -110,7 +113,7 @@ static int at91_wdt_open(struct inode *inode, struct file *file)
 		return -EBUSY;
 
 	at91_wdt_start();
-	return stream_open(inode, file);
+	return nonseekable_open(inode, file);
 }
 
 /*

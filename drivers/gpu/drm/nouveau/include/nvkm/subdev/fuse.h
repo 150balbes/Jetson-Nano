@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: MIT */
 #ifndef __NVKM_FUSE_H__
 #define __NVKM_FUSE_H__
 #include <core/subdev.h>

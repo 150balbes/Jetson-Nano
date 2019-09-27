@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  *  linux/fs/affs/bitmap.c
  *
@@ -20,7 +19,7 @@ affs_count_free_blocks(struct super_block *sb)
 
 	pr_debug("%s()\n", __func__);
 
-	if (sb_rdonly(sb))
+	if (sb->s_flags & MS_RDONLY)
 		return 0;
 
 	mutex_lock(&AFFS_SB(sb)->s_bmlock);
@@ -250,12 +249,12 @@ int affs_init_bitmap(struct super_block *sb, int *flags)
 	int i, res = 0;
 	struct affs_sb_info *sbi = AFFS_SB(sb);
 
-	if (*flags & SB_RDONLY)
+	if (*flags & MS_RDONLY)
 		return 0;
 
 	if (!AFFS_ROOT_TAIL(sb, sbi->s_root_bh)->bm_flag) {
 		pr_notice("Bitmap invalid - mounting %s read only\n", sb->s_id);
-		*flags |= SB_RDONLY;
+		*flags |= MS_RDONLY;
 		return 0;
 	}
 
@@ -288,7 +287,7 @@ int affs_init_bitmap(struct super_block *sb, int *flags)
 		if (affs_checksum_block(sb, bh)) {
 			pr_warn("Bitmap %u invalid - mounting %s read only.\n",
 				bm->bm_key, sb->s_id);
-			*flags |= SB_RDONLY;
+			*flags |= MS_RDONLY;
 			goto out;
 		}
 		pr_debug("read bitmap block %d: %d\n", blk, bm->bm_key);

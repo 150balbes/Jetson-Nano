@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /* GENbzero.S: Generic sparc64 memset/clear_user.
  *
  * Copyright (C) 2007 David S. Miller (davem@davemloft.net)

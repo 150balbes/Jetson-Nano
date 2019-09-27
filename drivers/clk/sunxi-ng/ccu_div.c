@@ -1,35 +1,36 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Copyright (C) 2016 Maxime Ripard
  * Maxime Ripard <maxime.ripard@free-electrons.com>
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License as
+ * published by the Free Software Foundation; either version 2 of
+ * the License, or (at your option) any later version.
  */
 
 #include <linux/clk-provider.h>
-#include <linux/io.h>
 
 #include "ccu_gate.h"
 #include "ccu_div.h"
 
 static unsigned long ccu_div_round_rate(struct ccu_mux_internal *mux,
-					struct clk_hw *parent,
-					unsigned long *parent_rate,
+					unsigned long parent_rate,
 					unsigned long rate,
 					void *data)
 {
 	struct ccu_div *cd = data;
+	unsigned long val;
 
-	if (cd->common.features & CCU_FEATURE_FIXED_POSTDIV)
-		rate *= cd->fixed_post_div;
+	/*
+	 * We can't use divider_round_rate that assumes that there's
+	 * several parents, while we might be called to evaluate
+	 * several different parents.
+	 */
+	val = divider_get_val(rate, parent_rate, cd->div.table, cd->div.width,
+			      cd->div.flags);
 
-	rate = divider_round_rate_parent(&cd->common.hw, parent,
-					 rate, parent_rate,
-					 cd->div.table, cd->div.width,
-					 cd->div.flags);
-
-	if (cd->common.features & CCU_FEATURE_FIXED_POSTDIV)
-		rate /= cd->fixed_post_div;
-
-	return rate;
+	return divider_recalc_rate(&cd->common.hw, parent_rate, val,
+				   cd->div.table, cd->div.flags);
 }
 
 static void ccu_div_disable(struct clk_hw *hw)
@@ -64,16 +65,11 @@ static unsigned long ccu_div_recalc_rate(struct clk_hw *hw,
 	val = reg >> cd->div.shift;
 	val &= (1 << cd->div.width) - 1;
 
-	parent_rate = ccu_mux_helper_apply_prediv(&cd->common, &cd->mux, -1,
-						  parent_rate);
+	ccu_mux_helper_adjust_parent_for_prediv(&cd->common, &cd->mux, -1,
+						&parent_rate);
 
-	val = divider_recalc_rate(hw, parent_rate, val, cd->div.table,
-				  cd->div.flags, cd->div.width);
-
-	if (cd->common.features & CCU_FEATURE_FIXED_POSTDIV)
-		val /= cd->fixed_post_div;
-
-	return val;
+	return divider_recalc_rate(hw, parent_rate, val, cd->div.table,
+				   cd->div.flags);
 }
 
 static int ccu_div_determine_rate(struct clk_hw *hw,
@@ -93,11 +89,8 @@ static int ccu_div_set_rate(struct clk_hw *hw, unsigned long rate,
 	unsigned long val;
 	u32 reg;
 
-	parent_rate = ccu_mux_helper_apply_prediv(&cd->common, &cd->mux, -1,
-						  parent_rate);
-
-	if (cd->common.features & CCU_FEATURE_FIXED_POSTDIV)
-		rate *= cd->fixed_post_div;
+	ccu_mux_helper_adjust_parent_for_prediv(&cd->common, &cd->mux, -1,
+						&parent_rate);
 
 	val = divider_get_val(rate, parent_rate, cd->div.table, cd->div.width,
 			      cd->div.flags);

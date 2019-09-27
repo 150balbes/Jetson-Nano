@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note */
 /*
 ** asm/bootinfo-apollo.h -- Apollo-specific boot information definitions
 */

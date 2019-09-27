@@ -1,10 +1,22 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Abilis Systems interrupt controller driver
  *
  * Copyright (C) Abilis Systems 2012
  *
  * Author: Christian Ruppert <christian.ruppert@abilis.com>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
  */
 
 #include <linux/interrupt.h>
@@ -103,21 +115,21 @@ static int __init of_tb10x_init_irq(struct device_node *ictl,
 	void __iomem *reg_base;
 
 	if (of_address_to_resource(ictl, 0, &mem)) {
-		pr_err("%pOFn: No registers declared in DeviceTree.\n",
-			ictl);
+		pr_err("%s: No registers declared in DeviceTree.\n",
+			ictl->name);
 		return -EINVAL;
 	}
 
 	if (!request_mem_region(mem.start, resource_size(&mem),
-		ictl->full_name)) {
-		pr_err("%pOFn: Request mem region failed.\n", ictl);
+		ictl->name)) {
+		pr_err("%s: Request mem region failed.\n", ictl->name);
 		return -EBUSY;
 	}
 
 	reg_base = ioremap(mem.start, resource_size(&mem));
 	if (!reg_base) {
 		ret = -EBUSY;
-		pr_err("%pOFn: ioremap failed.\n", ictl);
+		pr_err("%s: ioremap failed.\n", ictl->name);
 		goto ioremap_fail;
 	}
 
@@ -125,8 +137,8 @@ static int __init of_tb10x_init_irq(struct device_node *ictl,
 					&irq_generic_chip_ops, NULL);
 	if (!domain) {
 		ret = -ENOMEM;
-		pr_err("%pOFn: Could not register interrupt domain.\n",
-			ictl);
+		pr_err("%s: Could not register interrupt domain.\n",
+			ictl->name);
 		goto irq_domain_add_fail;
 	}
 
@@ -135,8 +147,8 @@ static int __init of_tb10x_init_irq(struct device_node *ictl,
 				IRQ_NOREQUEST, IRQ_NOPROBE,
 				IRQ_GC_INIT_MASK_CACHE);
 	if (ret) {
-		pr_err("%pOFn: Could not allocate generic interrupt chip.\n",
-			ictl);
+		pr_err("%s: Could not allocate generic interrupt chip.\n",
+			ictl->name);
 		goto gc_alloc_fail;
 	}
 

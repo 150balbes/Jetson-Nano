@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * Performance events ring-buffer code:
  *
@@ -6,6 +5,8 @@
  *  Copyright (C) 2008-2011 Red Hat, Inc., Ingo Molnar
  *  Copyright (C) 2008-2011 Red Hat, Inc., Peter Zijlstra
  *  Copyright  ©  2009 Paul Mackerras, IBM Corp. <paulus@au1.ibm.com>
+ *
+ * For licensing details see kernel-base/COPYING
  */
 
 #include <linux/perf_event.h>
@@ -19,7 +20,7 @@
 
 static void perf_output_wakeup(struct perf_output_handle *handle)
 {
-	atomic_set(&handle->rb->poll, EPOLLIN);
+	atomic_set(&handle->rb->poll, POLLIN);
 
 	handle->event->pending_wakeup = 1;
 	irq_work_queue(&handle->event->pending);
@@ -38,12 +39,7 @@ static void perf_output_get_handle(struct perf_output_handle *handle)
 	struct ring_buffer *rb = handle->rb;
 
 	preempt_disable();
-
-	/*
-	 * Avoid an explicit LOAD/STORE such that architectures with memops
-	 * can use them.
-	 */
-	(*(volatile unsigned int *)&rb->nest)++;
+	local_inc(&rb->nest);
 	handle->wakeup = local_read(&rb->wakeup);
 }
 
@@ -51,34 +47,16 @@ static void perf_output_put_handle(struct perf_output_handle *handle)
 {
 	struct ring_buffer *rb = handle->rb;
 	unsigned long head;
-	unsigned int nest;
-
-	/*
-	 * If this isn't the outermost nesting, we don't have to update
-	 * @rb->user_page->data_head.
-	 */
-	nest = READ_ONCE(rb->nest);
-	if (nest > 1) {
-		WRITE_ONCE(rb->nest, nest - 1);
-		goto out;
-	}
 
 again:
-	/*
-	 * In order to avoid publishing a head value that goes backwards,
-	 * we must ensure the load of @rb->head happens after we've
-	 * incremented @rb->nest.
-	 *
-	 * Otherwise we can observe a @rb->head value before one published
-	 * by an IRQ/NMI happening between the load and the increment.
-	 */
-	barrier();
 	head = local_read(&rb->head);
 
 	/*
-	 * IRQ/NMI can happen here and advance @rb->head, causing our
-	 * load above to be stale.
+	 * IRQ/NMI can happen here, which means we can miss a head update.
 	 */
+
+	if (!local_dec_and_test(&rb->nest))
+		goto out;
 
 	/*
 	 * Since the mmap() consumer (userspace) can run on a different CPU:
@@ -107,23 +85,14 @@ again:
 	 * See perf_output_begin().
 	 */
 	smp_wmb(); /* B, matches C */
-	WRITE_ONCE(rb->user_page->data_head, head);
+	rb->user_page->data_head = head;
 
 	/*
-	 * We must publish the head before decrementing the nest count,
-	 * otherwise an IRQ/NMI can publish a more recent head value and our
-	 * write will (temporarily) publish a stale value.
+	 * Now check if we missed an update -- rely on previous implied
+	 * compiler barriers to force a re-read.
 	 */
-	barrier();
-	WRITE_ONCE(rb->nest, 0);
-
-	/*
-	 * Ensure we decrement @rb->nest before we validate the @rb->head.
-	 * Otherwise we cannot be sure we caught the 'last' nested update.
-	 */
-	barrier();
 	if (unlikely(head != local_read(&rb->head))) {
-		WRITE_ONCE(rb->nest, 1);
+		local_inc(&rb->nest);
 		goto again;
 	}
 
@@ -134,7 +103,7 @@ out:
 	preempt_enable();
 }
 
-static __always_inline bool
+static bool __always_inline
 ring_buffer_has_space(unsigned long head, unsigned long tail,
 		      unsigned long data_size, unsigned int size,
 		      bool backward)
@@ -145,7 +114,7 @@ ring_buffer_has_space(unsigned long head, unsigned long tail,
 		return CIRC_SPACE(tail, head, data_size) >= size;
 }
 
-static __always_inline int
+static int __always_inline
 __perf_output_begin(struct perf_output_handle *handle,
 		    struct perf_event *event, unsigned int size,
 		    bool backward)
@@ -316,7 +285,7 @@ ring_buffer_init(struct ring_buffer *rb, long watermark, int flags)
 	else
 		rb->overwrite = 1;
 
-	refcount_set(&rb->refcount, 1);
+	atomic_set(&rb->refcount, 1);
 
 	INIT_LIST_HEAD(&rb->event_list);
 	spin_lock_init(&rb->event_lock);
@@ -328,19 +297,6 @@ ring_buffer_init(struct ring_buffer *rb, long watermark, int flags)
 	if (!rb->nr_pages)
 		rb->paused = 1;
 }
-
-void perf_aux_output_flag(struct perf_output_handle *handle, u64 flags)
-{
-	/*
-	 * OVERWRITE is determined by perf_aux_output_end() and can't
-	 * be passed in directly.
-	 */
-	if (WARN_ON_ONCE(flags & PERF_AUX_FLAG_OVERWRITE))
-		return;
-
-	handle->aux_flags |= flags;
-}
-EXPORT_SYMBOL_GPL(perf_aux_output_flag);
 
 /*
  * This is called before hardware starts writing to the AUX area to
@@ -362,7 +318,6 @@ void *perf_aux_output_begin(struct perf_output_handle *handle,
 	struct perf_event *output_event = event;
 	unsigned long aux_head, aux_tail;
 	struct ring_buffer *rb;
-	unsigned int nest;
 
 	if (output_event->parent)
 		output_event = output_event->parent;
@@ -390,26 +345,22 @@ void *perf_aux_output_begin(struct perf_output_handle *handle,
 	if (!atomic_read(&rb->aux_mmap_count))
 		goto err;
 
-	if (!refcount_inc_not_zero(&rb->aux_refcount))
+	if (!atomic_inc_not_zero(&rb->aux_refcount))
 		goto err;
 
-	nest = READ_ONCE(rb->aux_nest);
 	/*
 	 * Nesting is not supported for AUX area, make sure nested
 	 * writers are caught early
 	 */
-	if (WARN_ON_ONCE(nest))
+	if (WARN_ON_ONCE(local_xchg(&rb->aux_nest, 1)))
 		goto err_put;
 
-	WRITE_ONCE(rb->aux_nest, nest + 1);
-
-	aux_head = rb->aux_head;
+	aux_head = local_read(&rb->aux_head);
 
 	handle->rb = rb;
 	handle->event = event;
 	handle->head = aux_head;
 	handle->size = 0;
-	handle->aux_flags = 0;
 
 	/*
 	 * In overwrite mode, AUX data stores do not depend on aux_tail,
@@ -417,8 +368,8 @@ void *perf_aux_output_begin(struct perf_output_handle *handle,
 	 * (B) <-> (C) ordering is still observed by the pmu driver.
 	 */
 	if (!rb->aux_overwrite) {
-		aux_tail = READ_ONCE(rb->user_page->aux_tail);
-		handle->wakeup = rb->aux_wakeup + rb->aux_watermark;
+		aux_tail = ACCESS_ONCE(rb->user_page->aux_tail);
+		handle->wakeup = local_read(&rb->aux_wakeup) + rb->aux_watermark;
 		if (aux_head - aux_tail < perf_aux_size(rb))
 			handle->size = CIRC_SPACE(aux_head, aux_tail, perf_aux_size(rb));
 
@@ -428,9 +379,9 @@ void *perf_aux_output_begin(struct perf_output_handle *handle,
 		 * store that will be enabled on successful return
 		 */
 		if (!handle->size) { /* A, matches D */
-			event->pending_disable = smp_processor_id();
+			event->pending_disable = 1;
 			perf_output_wakeup(handle);
-			WRITE_ONCE(rb->aux_nest, 0);
+			local_set(&rb->aux_nest, 0);
 			goto err_put;
 		}
 	}
@@ -447,20 +398,6 @@ err:
 
 	return NULL;
 }
-EXPORT_SYMBOL_GPL(perf_aux_output_begin);
-
-static __always_inline bool rb_need_aux_wakeup(struct ring_buffer *rb)
-{
-	if (rb->aux_overwrite)
-		return false;
-
-	if (rb->aux_head - rb->aux_wakeup >= rb->aux_watermark) {
-		rb->aux_wakeup = rounddown(rb->aux_head, rb->aux_watermark);
-		return true;
-	}
-
-	return false;
-}
 
 /*
  * Commit the data written by hardware into the ring buffer by adjusting
@@ -472,59 +409,56 @@ static __always_inline bool rb_need_aux_wakeup(struct ring_buffer *rb)
  * of the AUX buffer management code is that after pmu::stop(), the AUX
  * transaction must be stopped and therefore drop the AUX reference count.
  */
-void perf_aux_output_end(struct perf_output_handle *handle, unsigned long size)
+void perf_aux_output_end(struct perf_output_handle *handle, unsigned long size,
+			 bool truncated)
 {
-	bool wakeup = !!(handle->aux_flags & PERF_AUX_FLAG_TRUNCATED);
 	struct ring_buffer *rb = handle->rb;
+	bool wakeup = truncated;
 	unsigned long aux_head;
+	u64 flags = 0;
+
+	if (truncated)
+		flags |= PERF_AUX_FLAG_TRUNCATED;
 
 	/* in overwrite mode, driver provides aux_head via handle */
 	if (rb->aux_overwrite) {
-		handle->aux_flags |= PERF_AUX_FLAG_OVERWRITE;
+		flags |= PERF_AUX_FLAG_OVERWRITE;
 
 		aux_head = handle->head;
-		rb->aux_head = aux_head;
+		local_set(&rb->aux_head, aux_head);
 	} else {
-		handle->aux_flags &= ~PERF_AUX_FLAG_OVERWRITE;
-
-		aux_head = rb->aux_head;
-		rb->aux_head += size;
+		aux_head = local_read(&rb->aux_head);
+		local_add(size, &rb->aux_head);
 	}
 
-	/*
-	 * Only send RECORD_AUX if we have something useful to communicate
-	 *
-	 * Note: the OVERWRITE records by themselves are not considered
-	 * useful, as they don't communicate any *new* information,
-	 * aside from the short-lived offset, that becomes history at
-	 * the next event sched-in and therefore isn't useful.
-	 * The userspace that needs to copy out AUX data in overwrite
-	 * mode should know to use user_page::aux_head for the actual
-	 * offset. So, from now on we don't output AUX records that
-	 * have *only* OVERWRITE flag set.
-	 */
-	if (size || (handle->aux_flags & ~(u64)PERF_AUX_FLAG_OVERWRITE))
-		perf_event_aux_event(handle->event, aux_head, size,
-				     handle->aux_flags);
+	if (size || flags) {
+		/*
+		 * Only send RECORD_AUX if we have something useful to communicate
+		 */
 
-	WRITE_ONCE(rb->user_page->aux_head, rb->aux_head);
-	if (rb_need_aux_wakeup(rb))
+		perf_event_aux_event(handle->event, aux_head, size, flags);
+	}
+
+	aux_head = rb->user_page->aux_head = local_read(&rb->aux_head);
+
+	if (aux_head - local_read(&rb->aux_wakeup) >= rb->aux_watermark) {
 		wakeup = true;
+		local_add(rb->aux_watermark, &rb->aux_wakeup);
+	}
 
 	if (wakeup) {
-		if (handle->aux_flags & PERF_AUX_FLAG_TRUNCATED)
-			handle->event->pending_disable = smp_processor_id();
+		if (truncated)
+			handle->event->pending_disable = 1;
 		perf_output_wakeup(handle);
 	}
 
 	handle->event = NULL;
 
-	WRITE_ONCE(rb->aux_nest, 0);
+	local_set(&rb->aux_nest, 0);
 	/* can't be last */
 	rb_free_aux(rb);
 	ring_buffer_put(rb);
 }
-EXPORT_SYMBOL_GPL(perf_aux_output_end);
 
 /*
  * Skip over a given number of bytes in the AUX buffer, due to, for example,
@@ -533,24 +467,26 @@ EXPORT_SYMBOL_GPL(perf_aux_output_end);
 int perf_aux_output_skip(struct perf_output_handle *handle, unsigned long size)
 {
 	struct ring_buffer *rb = handle->rb;
+	unsigned long aux_head;
 
 	if (size > handle->size)
 		return -ENOSPC;
 
-	rb->aux_head += size;
+	local_add(size, &rb->aux_head);
 
-	WRITE_ONCE(rb->user_page->aux_head, rb->aux_head);
-	if (rb_need_aux_wakeup(rb)) {
+	aux_head = rb->user_page->aux_head = local_read(&rb->aux_head);
+	if (aux_head - local_read(&rb->aux_wakeup) >= rb->aux_watermark) {
 		perf_output_wakeup(handle);
-		handle->wakeup = rb->aux_wakeup + rb->aux_watermark;
+		local_add(rb->aux_watermark, &rb->aux_wakeup);
+		handle->wakeup = local_read(&rb->aux_wakeup) +
+				 rb->aux_watermark;
 	}
 
-	handle->head = rb->aux_head;
+	handle->head = aux_head;
 	handle->size -= size;
 
 	return 0;
 }
-EXPORT_SYMBOL_GPL(perf_aux_output_skip);
 
 void *perf_get_aux(struct perf_output_handle *handle)
 {
@@ -560,7 +496,6 @@ void *perf_get_aux(struct perf_output_handle *handle)
 
 	return handle->rb->aux_priv;
 }
-EXPORT_SYMBOL_GPL(perf_get_aux);
 
 #define PERF_AUX_GFP	(GFP_KERNEL | __GFP_ZERO | __GFP_NOWARN | __GFP_NORETRY)
 
@@ -631,30 +566,32 @@ int rb_alloc_aux(struct ring_buffer *rb, struct perf_event *event,
 {
 	bool overwrite = !(flags & RING_BUFFER_WRITABLE);
 	int node = (event->cpu == -1) ? -1 : cpu_to_node(event->cpu);
-	int ret = -ENOMEM, max_order;
+	int ret = -ENOMEM, max_order = 0;
 
 	if (!has_aux(event))
-		return -EOPNOTSUPP;
+		return -ENOTSUPP;
 
-	/*
-	 * We need to start with the max_order that fits in nr_pages,
-	 * not the other way around, hence ilog2() and not get_order.
-	 */
-	max_order = ilog2(nr_pages);
+	if (event->pmu->capabilities & PERF_PMU_CAP_AUX_NO_SG) {
+		/*
+		 * We need to start with the max_order that fits in nr_pages,
+		 * not the other way around, hence ilog2() and not get_order.
+		 */
+		max_order = ilog2(nr_pages);
 
-	/*
-	 * PMU requests more than one contiguous chunks of memory
-	 * for SW double buffering
-	 */
-	if (!overwrite) {
-		if (!max_order)
-			return -EINVAL;
+		/*
+		 * PMU requests more than one contiguous chunks of memory
+		 * for SW double buffering
+		 */
+		if ((event->pmu->capabilities & PERF_PMU_CAP_AUX_SW_DOUBLEBUF) &&
+		    !overwrite) {
+			if (!max_order)
+				return -EINVAL;
 
-		max_order--;
+			max_order--;
+		}
 	}
 
-	rb->aux_pages = kcalloc_node(nr_pages, sizeof(void *), GFP_KERNEL,
-				     node);
+	rb->aux_pages = kzalloc_node(nr_pages * sizeof(void *), GFP_KERNEL, node);
 	if (!rb->aux_pages)
 		return -ENOMEM;
 
@@ -687,7 +624,7 @@ int rb_alloc_aux(struct ring_buffer *rb, struct perf_event *event,
 			goto out;
 	}
 
-	rb->aux_priv = event->pmu->setup_aux(event, rb->aux_pages, nr_pages,
+	rb->aux_priv = event->pmu->setup_aux(event->cpu, rb->aux_pages, nr_pages,
 					     overwrite);
 	if (!rb->aux_priv)
 		goto out;
@@ -700,7 +637,7 @@ int rb_alloc_aux(struct ring_buffer *rb, struct perf_event *event,
 	 * we keep a refcount here to make sure either of the two can
 	 * reference them safely.
 	 */
-	refcount_set(&rb->aux_refcount, 1);
+	atomic_set(&rb->aux_refcount, 1);
 
 	rb->aux_overwrite = overwrite;
 	rb->aux_watermark = watermark;
@@ -719,7 +656,7 @@ out:
 
 void rb_free_aux(struct ring_buffer *rb)
 {
-	if (refcount_dec_and_test(&rb->aux_refcount))
+	if (atomic_dec_and_test(&rb->aux_refcount))
 		__rb_free_aux(rb);
 }
 
@@ -762,9 +699,6 @@ struct ring_buffer *rb_alloc(int nr_pages, long watermark, int cpu, int flags)
 
 	size = sizeof(struct ring_buffer);
 	size += nr_pages * sizeof(void *);
-
-	if (order_base_2(size) >= PAGE_SHIFT+MAX_ORDER)
-		goto fail;
 
 	rb = kzalloc(size, GFP_KERNEL);
 	if (!rb)

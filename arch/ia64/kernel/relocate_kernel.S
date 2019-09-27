@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * arch/ia64/kernel/relocate_kernel.S
  *
@@ -7,6 +6,9 @@
  * Copyright (C) 2005 Hewlett-Packard Development Company, L.P.
  * Copyright (C) 2005 Khalid Aziz  <khalid.aziz@hp.com>
  * Copyright (C) 2005 Intel Corp,  Zou Nan hai <nanhai.zou@intel.com>
+ *
+ * This source code is licensed under the GNU General Public License,
+ * Version 2.  See the file COPYING for more details.
  */
 #include <asm/asmmacro.h>
 #include <asm/kregs.h>

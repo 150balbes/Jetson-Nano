@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0+ WITH Linux-syscall-note */
 /*
  * Include file for the interface to an APM BIOS
  * Copyright 1994-2001 Stephen Rothwell (sfr@canb.auug.org.au)

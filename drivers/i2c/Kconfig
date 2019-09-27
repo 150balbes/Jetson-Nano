@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0-only
 #
 # I2C subsystem configuration
 #
@@ -8,7 +7,6 @@ menu "I2C support"
 config I2C
 	tristate "I2C support"
 	select RT_MUTEXES
-	select IRQ_DOMAIN
 	---help---
 	  I2C (pronounce: I-squared-C) is a slow serial bus protocol used in
 	  many micro controller applications and developed by Philips.  SMBus,
@@ -69,7 +67,7 @@ config I2C_MUX
 	  This support is also available as a module.  If so, the module
 	  will be called i2c-mux.
 
-source "drivers/i2c/muxes/Kconfig"
+source drivers/i2c/muxes/Kconfig
 
 config I2C_HELPER_AUTO
 	bool "Autoselect pertinent helper modules"
@@ -95,8 +93,8 @@ config I2C_SMBUS
 	  This support is also available as a module.  If so, the module
 	  will be called i2c-smbus.
 
-source "drivers/i2c/algos/Kconfig"
-source "drivers/i2c/busses/Kconfig"
+source drivers/i2c/algos/Kconfig
+source drivers/i2c/busses/Kconfig
 
 config I2C_STUB
 	tristate "I2C/SMBus Test Stub"

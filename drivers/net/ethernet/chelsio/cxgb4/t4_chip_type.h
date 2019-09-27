@@ -34,8 +34,6 @@
 #ifndef __T4_CHIP_TYPE_H__
 #define __T4_CHIP_TYPE_H__
 
-#define CHELSIO_PCI_ID_VER(__DeviceID)  ((__DeviceID) >> 12)
-
 #define CHELSIO_T4		0x4
 #define CHELSIO_T5		0x5
 #define CHELSIO_T6		0x6

@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0-only */
 #ifndef _ASM_X86_IPI_H
 #define _ASM_X86_IPI_H
 
@@ -6,6 +5,7 @@
 
 /*
  * Copyright 2004 James Cleverdon, IBM.
+ * Subject to the GNU Public License, v.2
  *
  * Generic APIC InterProcessor Interrupt code.
  *
@@ -17,6 +17,7 @@
  * (c) 1995 Alan Cox, Building #3 <alan@redhat.com>
  * (c) 1998-99, 2000 Ingo Molnar <mingo@redhat.com>
  * (c) 2002,2003 Andi Kleen, SuSE Labs.
+ * Subject to the GNU Public License, v.2
  */
 
 #include <asm/hw_irq.h>

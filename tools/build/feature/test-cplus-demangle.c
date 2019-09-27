@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 extern int printf(const char *format, ...);
 extern char *cplus_demangle(const char *, int);
 

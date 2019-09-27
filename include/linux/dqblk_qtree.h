@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  *	Definitions of structures and functions for quota formats using trie
  */

@@ -1,0 +1,6 @@
+menu "NVIDIA overlay V4L platform devices"
+source "drivers/media/platform/tegra/Kconfig"
+if V4L_TEST_DRIVERS
+source "drivers/media/platform/tegra-vivid/Kconfig"
+endif #V4L_TEST_DRIVERS
+endmenu

@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef CAIAQ_CONTROL_H
 #define CAIAQ_CONTROL_H
 

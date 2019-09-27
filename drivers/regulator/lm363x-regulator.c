@@ -1,10 +1,13 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * TI LM363X Regulator Driver
  *
  * Copyright 2015 Texas Instruments
  *
  * Author: Milo Kim <milo.kim@ti.com>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  */
 
 #include <linux/err.h>
@@ -13,7 +16,7 @@
 #include <linux/mfd/ti-lmu-register.h>
 #include <linux/module.h>
 #include <linux/of.h>
-#include <linux/gpio/consumer.h>
+#include <linux/of_gpio.h>
 #include <linux/platform_device.h>
 #include <linux/regulator/driver.h>
 #include <linux/regulator/of_regulator.h>
@@ -34,11 +37,6 @@
 #define LM3632_VBOOST_MIN		4500000
 #define LM3632_VLDO_MIN			4000000
 
-/* LM36274 */
-#define LM36274_BOOST_VSEL_MAX		0x3f
-#define LM36274_LDO_VSEL_MAX		0x34
-#define LM36274_VOLTAGE_MIN		4000000
-
 /* Common */
 #define LM363X_STEP_50mV		50000
 #define LM363X_STEP_500mV		500000
@@ -50,7 +48,7 @@ static const int ldo_cont_enable_time[] = {
 static int lm363x_regulator_enable_time(struct regulator_dev *rdev)
 {
 	enum lm363x_regulator_id id = rdev_get_id(rdev);
-	unsigned int val, addr, mask;
+	u8 val, addr, mask;
 
 	switch (id) {
 	case LM3631_LDO_CONT:
@@ -73,7 +71,7 @@ static int lm363x_regulator_enable_time(struct regulator_dev *rdev)
 		return 0;
 	}
 
-	if (regmap_read(rdev->regmap, addr, &val))
+	if (regmap_read(rdev->regmap, addr, (unsigned int *)&val))
 		return -EINVAL;
 
 	val = (val & mask) >> LM3631_ENTIME_SHIFT;
@@ -84,13 +82,13 @@ static int lm363x_regulator_enable_time(struct regulator_dev *rdev)
 		return ENABLE_TIME_USEC * val;
 }
 
-static const struct regulator_ops lm363x_boost_voltage_table_ops = {
+static struct regulator_ops lm363x_boost_voltage_table_ops = {
 	.list_voltage     = regulator_list_voltage_linear,
 	.set_voltage_sel  = regulator_set_voltage_sel_regmap,
 	.get_voltage_sel  = regulator_get_voltage_sel_regmap,
 };
 
-static const struct regulator_ops lm363x_regulator_voltage_table_ops = {
+static struct regulator_ops lm363x_regulator_voltage_table_ops = {
 	.list_voltage     = regulator_list_voltage_linear,
 	.set_voltage_sel  = regulator_set_voltage_sel_regmap,
 	.get_voltage_sel  = regulator_get_voltage_sel_regmap,
@@ -219,94 +217,22 @@ static const struct regulator_desc lm363x_regulator_desc[] = {
 		.enable_reg     = LM3632_REG_BIAS_CONFIG,
 		.enable_mask    = LM3632_EN_VNEG_MASK,
 	},
-
-	/* LM36274 */
-	{
-		.name           = "vboost",
-		.of_match	= "vboost",
-		.id             = LM36274_BOOST,
-		.ops            = &lm363x_boost_voltage_table_ops,
-		.n_voltages     = LM36274_BOOST_VSEL_MAX,
-		.min_uV         = LM36274_VOLTAGE_MIN,
-		.uV_step        = LM363X_STEP_50mV,
-		.type           = REGULATOR_VOLTAGE,
-		.owner          = THIS_MODULE,
-		.vsel_reg       = LM36274_REG_VOUT_BOOST,
-		.vsel_mask      = LM36274_VOUT_MASK,
-	},
-	{
-		.name           = "ldo_vpos",
-		.of_match	= "vpos",
-		.id             = LM36274_LDO_POS,
-		.ops            = &lm363x_regulator_voltage_table_ops,
-		.n_voltages     = LM36274_LDO_VSEL_MAX,
-		.min_uV         = LM36274_VOLTAGE_MIN,
-		.uV_step        = LM363X_STEP_50mV,
-		.type           = REGULATOR_VOLTAGE,
-		.owner          = THIS_MODULE,
-		.vsel_reg       = LM36274_REG_VOUT_POS,
-		.vsel_mask      = LM36274_VOUT_MASK,
-		.enable_reg     = LM36274_REG_BIAS_CONFIG_1,
-		.enable_mask    = LM36274_EN_VPOS_MASK,
-	},
-	{
-		.name           = "ldo_vneg",
-		.of_match	= "vneg",
-		.id             = LM36274_LDO_NEG,
-		.ops            = &lm363x_regulator_voltage_table_ops,
-		.n_voltages     = LM36274_LDO_VSEL_MAX,
-		.min_uV         = LM36274_VOLTAGE_MIN,
-		.uV_step        = LM363X_STEP_50mV,
-		.type           = REGULATOR_VOLTAGE,
-		.owner          = THIS_MODULE,
-		.vsel_reg       = LM36274_REG_VOUT_NEG,
-		.vsel_mask      = LM36274_VOUT_MASK,
-		.enable_reg     = LM36274_REG_BIAS_CONFIG_1,
-		.enable_mask    = LM36274_EN_VNEG_MASK,
-	},
 };
 
-static struct gpio_desc *lm363x_regulator_of_get_enable_gpio(struct device *dev, int id)
+static int lm363x_regulator_of_get_enable_gpio(struct device_node *np, int id)
 {
 	/*
 	 * Check LCM_EN1/2_GPIO is configured.
 	 * Those pins are used for enabling VPOS/VNEG LDOs.
-	 * Do not use devm* here: the regulator core takes over the
-	 * lifecycle management of the GPIO descriptor.
 	 */
 	switch (id) {
 	case LM3632_LDO_POS:
-	case LM36274_LDO_POS:
-		return gpiod_get_index_optional(dev, "enable", 0,
-				GPIOD_OUT_LOW | GPIOD_FLAGS_BIT_NONEXCLUSIVE);
+		return of_get_named_gpio(np, "ti,lcm-en1-gpio", 0);
 	case LM3632_LDO_NEG:
-	case LM36274_LDO_NEG:
-		return gpiod_get_index_optional(dev, "enable", 1,
-				GPIOD_OUT_LOW | GPIOD_FLAGS_BIT_NONEXCLUSIVE);
+		return of_get_named_gpio(np, "ti,lcm-en2-gpio", 0);
 	default:
-		return NULL;
+		return -EINVAL;
 	}
-}
-
-static int lm363x_regulator_set_ext_en(struct regmap *regmap, int id)
-{
-	int ext_en_mask = 0;
-
-	switch (id) {
-	case LM3632_LDO_POS:
-	case LM3632_LDO_NEG:
-		ext_en_mask = LM3632_EXT_EN_MASK;
-		break;
-	case LM36274_LDO_POS:
-	case LM36274_LDO_NEG:
-		ext_en_mask = LM36274_EXT_EN_MASK;
-		break;
-	default:
-		return -ENODEV;
-	}
-
-	return regmap_update_bits(regmap, lm363x_regulator_desc[id].enable_reg,
-				 ext_en_mask, ext_en_mask);
 }
 
 static int lm363x_regulator_probe(struct platform_device *pdev)
@@ -317,8 +243,7 @@ static int lm363x_regulator_probe(struct platform_device *pdev)
 	struct regulator_dev *rdev;
 	struct device *dev = &pdev->dev;
 	int id = pdev->id;
-	struct gpio_desc *gpiod;
-	int ret;
+	int ret, ena_gpio;
 
 	cfg.dev = dev;
 	cfg.regmap = regmap;
@@ -327,15 +252,15 @@ static int lm363x_regulator_probe(struct platform_device *pdev)
 	 * LM3632 LDOs can be controlled by external pin.
 	 * Register update is required if the pin is used.
 	 */
-	gpiod = lm363x_regulator_of_get_enable_gpio(dev, id);
-	if (IS_ERR(gpiod))
-		return PTR_ERR(gpiod);
+	ena_gpio = lm363x_regulator_of_get_enable_gpio(dev->of_node, id);
+	if (gpio_is_valid(ena_gpio)) {
+		cfg.ena_gpio = ena_gpio;
+		cfg.ena_gpio_flags = GPIOF_OUT_INIT_LOW;
 
-	if (gpiod) {
-		cfg.ena_gpiod = gpiod;
-		ret = lm363x_regulator_set_ext_en(regmap, id);
+		ret = regmap_update_bits(regmap, LM3632_REG_BIAS_CONFIG,
+					 LM3632_EXT_EN_MASK,
+					 LM3632_EXT_EN_MASK);
 		if (ret) {
-			gpiod_put(gpiod);
 			dev_err(dev, "External pin err: %d\n", ret);
 			return ret;
 		}

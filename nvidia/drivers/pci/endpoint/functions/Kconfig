@@ -1,0 +1,22 @@
+#
+# Tegra PCIe Endpoint Test Function
+#
+
+config PCIE_EPF_NV_TEST
+	tristate "Tegra PCIe Endpoint Test driver"
+	depends on PCI_ENDPOINT
+	help
+	   Enable this configuration option to enable the test driver
+	   for Tegra PCIe Endpoint.
+
+	   If in doubt, say "N" to disable Tegra PCIe Endpoint test driver.
+
+config PCIE_EPF_TEGRA_VNET
+	tristate "Tegra PCIe Endpoint virtual network driver"
+	depends on PCI_ENDPOINT
+	help
+	   Enable this configuration option to enable the virtual network
+	   driver for Tegra PCIe Endpoint.
+
+	   If in doubt, say "N" to disable Tegra PCIe Endpoint virtual
+	   network driver.

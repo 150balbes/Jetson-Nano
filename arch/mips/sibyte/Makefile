@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0
 #
 # Sibyte SB1250 / BCM1480 family of SOCs
 #

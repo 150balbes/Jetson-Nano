@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  *	Real Time Clock interface for Linux on the MVME16x
  *
@@ -20,7 +19,7 @@
 #include <asm/mvme16xhw.h>
 
 #include <asm/io.h>
-#include <linux/uaccess.h>
+#include <asm/uaccess.h>
 #include <asm/setup.h>
 
 /*
@@ -159,7 +158,7 @@ static int __init rtc_MK48T08_init(void)
 	if (!MACH_IS_MVME16x)
 		return -ENODEV;
 
-	pr_info("MK48T08 Real Time Clock Driver v%s\n", RTC_VERSION);
+	printk(KERN_INFO "MK48T08 Real Time Clock Driver v%s\n", RTC_VERSION);
 	return misc_register(&rtc_dev);
 }
 device_initcall(rtc_MK48T08_init);

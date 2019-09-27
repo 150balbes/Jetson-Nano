@@ -1,10 +1,14 @@
-// SPDX-License-Identifier: GPL-2.0
-//
-// Register map access API - SPI support
-//
-// Copyright 2011 Wolfson Microelectronics plc
-//
-// Author: Mark Brown <broonie@opensource.wolfsonmicro.com>
+/*
+ * Register map access API - SPI support
+ *
+ * Copyright 2011 Wolfson Microelectronics plc
+ *
+ * Author: Mark Brown <broonie@opensource.wolfsonmicro.com>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ */
 
 #include <linux/regmap.h>
 #include <linux/spi/spi.h>
@@ -98,7 +102,7 @@ static int regmap_spi_read(void *context,
 	return spi_write_then_read(spi, reg, reg_size, val, val_size);
 }
 
-static const struct regmap_bus regmap_spi = {
+static struct regmap_bus regmap_spi = {
 	.write = regmap_spi_write,
 	.gather_write = regmap_spi_gather_write,
 	.async_write = regmap_spi_async_write,

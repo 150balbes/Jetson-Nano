@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 #include <linux/sched.h>
 #include <asm/ptrace-abi.h>
 

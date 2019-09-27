@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * arch/sh/boards/renesas/edosk7705/setup.c
  *
@@ -16,7 +15,7 @@
 #include <linux/smc91x.h>
 #include <linux/sh_intc.h>
 #include <asm/machvec.h>
-#include <linux/sizes.h>
+#include <asm/sizes.h>
 
 #define SMC_IOBASE	0xA2000000
 #define SMC_IO_OFFSET	0x300

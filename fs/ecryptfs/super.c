@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /**
  * eCryptfs: Linux filesystem encryption layer
  *
@@ -7,6 +6,21 @@
  * Copyright (C) 2004-2006 International Business Machines Corp.
  *   Author(s): Michael A. Halcrow <mahalcro@us.ibm.com>
  *              Michael C. Thompson <mcthomps@us.ibm.com>
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License as
+ * published by the Free Software Foundation; either version 2 of the
+ * License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA
+ * 02111-1307, USA.
  */
 
 #include <linux/fs.h>
@@ -53,8 +67,9 @@ out:
 	return inode;
 }
 
-static void ecryptfs_free_inode(struct inode *inode)
+static void ecryptfs_i_callback(struct rcu_head *head)
 {
+	struct inode *inode = container_of(head, struct inode, i_rcu);
 	struct ecryptfs_inode_info *inode_info;
 	inode_info = ecryptfs_inode_to_private(inode);
 
@@ -77,6 +92,7 @@ static void ecryptfs_destroy_inode(struct inode *inode)
 	inode_info = ecryptfs_inode_to_private(inode);
 	BUG_ON(inode_info->lower_file);
 	ecryptfs_destroy_crypt_stat(&inode_info->crypt_stat);
+	call_rcu(&inode->i_rcu, ecryptfs_i_callback);
 }
 
 /**
@@ -170,7 +186,6 @@ static int ecryptfs_show_options(struct seq_file *m, struct dentry *root)
 const struct super_operations ecryptfs_sops = {
 	.alloc_inode = ecryptfs_alloc_inode,
 	.destroy_inode = ecryptfs_destroy_inode,
-	.free_inode = ecryptfs_free_inode,
 	.statfs = ecryptfs_statfs,
 	.remount_fs = NULL,
 	.evict_inode = ecryptfs_evict_inode,

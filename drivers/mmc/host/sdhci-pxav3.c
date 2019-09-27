@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (C) 2010 Marvell International Ltd.
  *		Zhangfei Gao <zhangfei.gao@marvell.com>
@@ -6,20 +5,33 @@
  *		Mingwei Wang <mwwang@marvell.com>
  *		Philip Rakity <prakity@marvell.com>
  *		Mark Brown <markb@marvell.com>
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
  */
 #include <linux/err.h>
 #include <linux/init.h>
 #include <linux/platform_device.h>
 #include <linux/clk.h>
 #include <linux/io.h>
+#include <linux/gpio.h>
 #include <linux/mmc/card.h>
 #include <linux/mmc/host.h>
+#include <linux/mmc/slot-gpio.h>
 #include <linux/platform_data/pxa_sdhci.h>
 #include <linux/slab.h>
 #include <linux/delay.h>
 #include <linux/module.h>
 #include <linux/of.h>
 #include <linux/of_device.h>
+#include <linux/of_gpio.h>
 #include <linux/pm.h>
 #include <linux/pm_runtime.h>
 #include <linux/mbus.h>
@@ -311,8 +323,11 @@ static void pxav3_set_power(struct sdhci_host *host, unsigned char mode,
 	if (host->pwr == 0)
 		vdd = 0;
 
-	if (!IS_ERR(mmc->supply.vmmc))
+	if (!IS_ERR(mmc->supply.vmmc)) {
+		spin_unlock_irq(&host->lock);
 		mmc_regulator_set_ocr(mmc, mmc->supply.vmmc, vdd);
+		spin_lock_irq(&host->lock);
+	}
 }
 
 static const struct sdhci_ops pxav3_sdhci_ops = {
@@ -325,7 +340,7 @@ static const struct sdhci_ops pxav3_sdhci_ops = {
 	.set_uhs_signaling = pxav3_set_uhs_signaling,
 };
 
-static const struct sdhci_pltfm_data sdhci_pxav3_pdata = {
+static struct sdhci_pltfm_data sdhci_pxav3_pdata = {
 	.quirks = SDHCI_QUIRK_DATA_TIMEOUT_USES_SDCLK
 		| SDHCI_QUIRK_NO_ENDATTR_IN_NOPDESC
 		| SDHCI_QUIRK_32BIT_ADMA_SIZE
@@ -440,6 +455,16 @@ static int sdhci_pxav3_probe(struct platform_device *pdev)
 			host->mmc->caps2 |= pdata->host_caps2;
 		if (pdata->pm_caps)
 			host->mmc->pm_caps |= pdata->pm_caps;
+
+		if (gpio_is_valid(pdata->ext_cd_gpio)) {
+			ret = mmc_gpio_request_cd(host->mmc, pdata->ext_cd_gpio,
+						  0);
+			if (ret) {
+				dev_err(mmc_dev(host->mmc),
+					"failed to allocate card detect gpio\n");
+				goto err_cd_req;
+			}
+		}
 	}
 
 	pm_runtime_get_noresume(&pdev->dev);
@@ -450,8 +475,12 @@ static int sdhci_pxav3_probe(struct platform_device *pdev)
 	pm_suspend_ignore_children(&pdev->dev, 1);
 
 	ret = sdhci_add_host(host);
-	if (ret)
+	if (ret) {
+		dev_err(&pdev->dev, "failed to add host\n");
 		goto err_add_host;
+	}
+
+	platform_set_drvdata(pdev, host);
 
 	if (host->mmc->pm_caps & MMC_PM_WAKE_SDIO_IRQ)
 		device_init_wakeup(&pdev->dev, 1);
@@ -464,6 +493,7 @@ err_add_host:
 	pm_runtime_disable(&pdev->dev);
 	pm_runtime_put_noidle(&pdev->dev);
 err_of_parse:
+err_cd_req:
 err_mbus_win:
 	clk_disable_unprepare(pxa->clk_io);
 	clk_disable_unprepare(pxa->clk_core);
@@ -499,8 +529,6 @@ static int sdhci_pxav3_suspend(struct device *dev)
 	struct sdhci_host *host = dev_get_drvdata(dev);
 
 	pm_runtime_get_sync(dev);
-	if (host->tuning_mode != SDHCI_TUNING_MODE_3)
-		mmc_retune_needed(host->mmc);
 	ret = sdhci_suspend_host(host);
 	pm_runtime_mark_last_busy(dev);
 	pm_runtime_put_autosuspend(dev);
@@ -534,9 +562,6 @@ static int sdhci_pxav3_runtime_suspend(struct device *dev)
 	if (ret)
 		return ret;
 
-	if (host->tuning_mode != SDHCI_TUNING_MODE_3)
-		mmc_retune_needed(host->mmc);
-
 	clk_disable_unprepare(pxa->clk_io);
 	if (!IS_ERR(pxa->clk_core))
 		clk_disable_unprepare(pxa->clk_core);
@@ -554,7 +579,7 @@ static int sdhci_pxav3_runtime_resume(struct device *dev)
 	if (!IS_ERR(pxa->clk_core))
 		clk_prepare_enable(pxa->clk_core);
 
-	return sdhci_runtime_resume_host(host, 0);
+	return sdhci_runtime_resume_host(host);
 }
 #endif
 

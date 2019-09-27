@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  *  Copyright (C) 2005 Sven Luther <sl@bplan-gmbh.de>
  *  Thanks to :
@@ -64,7 +63,7 @@ static struct platform_device mv643xx_eth_mvmdio_device = {
 	.name		= "orion-mdio",
 	.id		= -1,
 	.num_resources	= ARRAY_SIZE(mv643xx_eth_mvmdio_resources),
-	.resource	= mv643xx_eth_mvmdio_resources,
+	.resource	= mv643xx_eth_shared_resources,
 };
 
 static struct resource mv643xx_eth_port1_resources[] = {

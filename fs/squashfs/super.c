@@ -1,9 +1,22 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Squashfs - a compressed read only filesystem for Linux
  *
  * Copyright (c) 2002, 2003, 2004, 2005, 2006, 2007, 2008
  * Phillip Lougher <phillip@squashfs.org.uk>
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License
+ * as published by the Free Software Foundation; either version 2,
+ * or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
  *
  * super.c
  */
@@ -183,7 +196,7 @@ static int squashfs_fill_super(struct super_block *sb, void *data, int silent)
 		(u64) le64_to_cpu(sblk->id_table_start));
 
 	sb->s_maxbytes = MAX_LFS_FILESIZE;
-	sb->s_flags |= SB_RDONLY;
+	sb->s_flags |= MS_RDONLY;
 	sb->s_op = &squashfs_super_ops;
 
 	err = -ENOMEM;
@@ -361,7 +374,7 @@ static int squashfs_statfs(struct dentry *dentry, struct kstatfs *buf)
 static int squashfs_remount(struct super_block *sb, int *flags, char *data)
 {
 	sync_filesystem(sb);
-	*flags |= SB_RDONLY;
+	*flags |= MS_RDONLY;
 	return 0;
 }
 
@@ -432,9 +445,15 @@ static int __init init_squashfs_fs(void)
 	if (err)
 		return err;
 
+	if (!squashfs_init_read_wq()) {
+		destroy_inodecache();
+		return -ENOMEM;
+	}
+
 	err = register_filesystem(&squashfs_fs_type);
 	if (err) {
 		destroy_inodecache();
+		squashfs_destroy_read_wq();
 		return err;
 	}
 
@@ -448,6 +467,7 @@ static void __exit exit_squashfs_fs(void)
 {
 	unregister_filesystem(&squashfs_fs_type);
 	destroy_inodecache();
+	squashfs_destroy_read_wq();
 }
 
 
@@ -460,10 +480,17 @@ static struct inode *squashfs_alloc_inode(struct super_block *sb)
 }
 
 
-static void squashfs_free_inode(struct inode *inode)
+static void squashfs_i_callback(struct rcu_head *head)
 {
+	struct inode *inode = container_of(head, struct inode, i_rcu);
 	kmem_cache_free(squashfs_inode_cachep, squashfs_i(inode));
 }
+
+static void squashfs_destroy_inode(struct inode *inode)
+{
+	call_rcu(&inode->i_rcu, squashfs_i_callback);
+}
+
 
 static struct file_system_type squashfs_fs_type = {
 	.owner = THIS_MODULE,
@@ -476,7 +503,7 @@ MODULE_ALIAS_FS("squashfs");
 
 static const struct super_operations squashfs_super_ops = {
 	.alloc_inode = squashfs_alloc_inode,
-	.free_inode = squashfs_free_inode,
+	.destroy_inode = squashfs_destroy_inode,
 	.statfs = squashfs_statfs,
 	.put_super = squashfs_put_super,
 	.remount_fs = squashfs_remount

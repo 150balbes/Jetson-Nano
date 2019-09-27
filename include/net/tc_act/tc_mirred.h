@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __NET_TC_MIR_H
 #define __NET_TC_MIR_H
 
@@ -8,33 +7,34 @@
 struct tcf_mirred {
 	struct tc_action	common;
 	int			tcfm_eaction;
-	bool			tcfm_mac_header_xmit;
+	int			tcfm_ifindex;
+	int			tcfm_ok_push;
 	struct net_device __rcu	*tcfm_dev;
 	struct list_head	tcfm_list;
 };
 #define to_mirred(a) ((struct tcf_mirred *)a)
 
-static inline bool is_tcf_mirred_egress_redirect(const struct tc_action *a)
+static inline bool is_tcf_mirred_redirect(const struct tc_action *a)
 {
 #ifdef CONFIG_NET_CLS_ACT
-	if (a->ops && a->ops->id == TCA_ID_MIRRED)
+	if (a->ops && a->ops->type == TCA_ACT_MIRRED)
 		return to_mirred(a)->tcfm_eaction == TCA_EGRESS_REDIR;
 #endif
 	return false;
 }
 
-static inline bool is_tcf_mirred_egress_mirror(const struct tc_action *a)
+static inline bool is_tcf_mirred_mirror(const struct tc_action *a)
 {
 #ifdef CONFIG_NET_CLS_ACT
-	if (a->ops && a->ops->id == TCA_ID_MIRRED)
+	if (a->ops && a->ops->type == TCA_ACT_MIRRED)
 		return to_mirred(a)->tcfm_eaction == TCA_EGRESS_MIRROR;
 #endif
 	return false;
 }
 
-static inline struct net_device *tcf_mirred_dev(const struct tc_action *a)
+static inline int tcf_mirred_ifindex(const struct tc_action *a)
 {
-	return rtnl_dereference(to_mirred(a)->tcfm_dev);
+	return to_mirred(a)->tcfm_ifindex;
 }
 
 #endif /* __NET_TC_MIR_H */

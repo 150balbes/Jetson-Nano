@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0-only */
 /* linux/drivers/media/platform/s5p-jpeg/jpeg-regs.h
  *
  * Register definition file for Samsung JPEG codec driver
@@ -6,8 +5,12 @@
  * Copyright (c) 2011-2014 Samsung Electronics Co., Ltd.
  *		http://www.samsung.com
  *
- * Author: Andrzej Pietrasiewicz <andrzejtp2010@gmail.com>
+ * Author: Andrzej Pietrasiewicz <andrzej.p@samsung.com>
  * Author: Jacek Anaszewski <j.anaszewski@samsung.com>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  */
 
 #ifndef JPEG_REGS_H_
@@ -368,7 +371,7 @@
 #define EXYNOS4_NF_SHIFT			16
 #define EXYNOS4_NF_MASK				0xff
 #define EXYNOS4_NF(x)				\
-	(((x) & EXYNOS4_NF_MASK) << EXYNOS4_NF_SHIFT)
+	(((x) << EXYNOS4_NF_SHIFT) & EXYNOS4_NF_MASK)
 
 /* JPEG quantizer table register */
 #define EXYNOS4_QTBL_CONTENT(n)	(0x100 + (n) * 0x40)

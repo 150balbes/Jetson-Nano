@@ -1,5 +1,31 @@
-// SPDX-License-Identifier: GPL-2.0
-/* Copyright(c) 2009-2012  Realtek Corporation.*/
+/******************************************************************************
+ *
+ * Copyright(c) 2009-2012  Realtek Corporation.
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of version 2 of the GNU General Public License as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License along with
+ * this program; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin Street, Fifth Floor, Boston, MA 02110, USA
+ *
+ * The full GNU General Public License is included in this distribution in the
+ * file called LICENSE.
+ *
+ * Contact Information:
+ * wlanfae <wlanfae@realtek.com>
+ * Realtek Corporation, No. 2, Innovation Road II, Hsinchu Science Park,
+ * Hsinchu 300, Taiwan.
+ *
+ * Larry Finger <Larry.Finger@lwfinger.net>
+ *
+ *****************************************************************************/
 
 #include "../wifi.h"
 #include "../rtl8192ce/reg.h"
@@ -55,7 +81,7 @@ EXPORT_SYMBOL(rtl92c_phy_set_bb_reg);
 u32 _rtl92c_phy_fw_rf_serial_read(struct ieee80211_hw *hw,
 				  enum radio_path rfpath, u32 offset)
 {
-	WARN_ONCE(true, "rtl8192c-common: _rtl92c_phy_fw_rf_serial_read deprecated!\n");
+	RT_ASSERT(false, "deprecated!\n");
 	return 0;
 }
 EXPORT_SYMBOL(_rtl92c_phy_fw_rf_serial_read);
@@ -64,7 +90,7 @@ void _rtl92c_phy_fw_rf_serial_write(struct ieee80211_hw *hw,
 				    enum radio_path rfpath, u32 offset,
 				    u32 data)
 {
-	WARN_ONCE(true, "rtl8192c-common: _rtl92c_phy_fw_rf_serial_write deprecated!\n");
+	RT_ASSERT(false, "deprecated!\n");
 }
 EXPORT_SYMBOL(_rtl92c_phy_fw_rf_serial_write);
 
@@ -82,7 +108,7 @@ u32 _rtl92c_phy_rf_serial_read(struct ieee80211_hw *hw,
 	offset &= 0x3f;
 	newoffset = offset;
 	if (RT_CANNOT_IO(hw)) {
-		pr_err("return all one\n");
+		RT_TRACE(rtlpriv, COMP_ERR, DBG_EMERG, "return all one\n");
 		return 0xFFFFFFFF;
 	}
 	tmplong = rtl_get_bbreg(hw, RFPGA0_XA_HSSIPARAMETER2, MASKDWORD);
@@ -130,7 +156,7 @@ void _rtl92c_phy_rf_serial_write(struct ieee80211_hw *hw,
 	struct bb_reg_def *pphyreg = &rtlphy->phyreg_def[rfpath];
 
 	if (RT_CANNOT_IO(hw)) {
-		pr_err("stop\n");
+		RT_TRACE(rtlpriv, COMP_ERR, DBG_EMERG, "stop\n");
 		return;
 	}
 	offset &= 0x3f;
@@ -187,7 +213,7 @@ bool _rtl92c_phy_bb8192c_config_parafile(struct ieee80211_hw *hw)
 	rtstatus = rtlpriv->cfg->ops->config_bb_with_headerfile(hw,
 						 BASEBAND_CONFIG_PHY_REG);
 	if (!rtstatus) {
-		pr_err("Write BB Reg Fail!!\n");
+		RT_TRACE(rtlpriv, COMP_ERR, DBG_EMERG, "Write BB Reg Fail!!\n");
 		return false;
 	}
 	if (rtlphy->rf_type == RF_1T2R) {
@@ -200,13 +226,13 @@ bool _rtl92c_phy_bb8192c_config_parafile(struct ieee80211_hw *hw)
 						   BASEBAND_CONFIG_PHY_REG);
 	}
 	if (!rtstatus) {
-		pr_err("BB_PG Reg Fail!!\n");
+		RT_TRACE(rtlpriv, COMP_ERR, DBG_EMERG, "BB_PG Reg Fail!!\n");
 		return false;
 	}
 	rtstatus = rtlpriv->cfg->ops->config_bb_with_headerfile(hw,
 						 BASEBAND_CONFIG_AGC_TAB);
 	if (!rtstatus) {
-		pr_err("AGC Table Fail\n");
+		RT_TRACE(rtlpriv, COMP_ERR, DBG_EMERG, "AGC Table Fail\n");
 		return false;
 	}
 	rtlphy->cck_high_power =
@@ -217,7 +243,7 @@ bool _rtl92c_phy_bb8192c_config_parafile(struct ieee80211_hw *hw)
 
 EXPORT_SYMBOL(_rtl92c_phy_bb8192c_config_parafile);
 
-void _rtl92c_store_pwrindex_diffrate_offset(struct ieee80211_hw *hw,
+void _rtl92c_store_pwrIndex_diffrate_offset(struct ieee80211_hw *hw,
 					    u32 regaddr, u32 bitmask,
 					    u32 data)
 {
@@ -371,7 +397,7 @@ void _rtl92c_store_pwrindex_diffrate_offset(struct ieee80211_hw *hw,
 		rtlphy->pwrgroup_cnt++;
 	}
 }
-EXPORT_SYMBOL(_rtl92c_store_pwrindex_diffrate_offset);
+EXPORT_SYMBOL(_rtl92c_store_pwrIndex_diffrate_offset);
 
 void rtl92c_phy_get_hw_reg_originalvalue(struct ieee80211_hw *hw)
 {
@@ -430,10 +456,10 @@ void _rtl92c_phy_init_bb_rf_register_definition(struct ieee80211_hw *hw)
 	rtlphy->phyreg_def[RF90_PATH_B].rf3wire_offset =
 	    RFPGA0_XB_LSSIPARAMETER;
 
-	rtlphy->phyreg_def[RF90_PATH_A].rflssi_select = RFPGA0_XAB_RFPARAMETER;
-	rtlphy->phyreg_def[RF90_PATH_B].rflssi_select = RFPGA0_XAB_RFPARAMETER;
-	rtlphy->phyreg_def[RF90_PATH_C].rflssi_select = RFPGA0_XCD_RFPARAMETER;
-	rtlphy->phyreg_def[RF90_PATH_D].rflssi_select = RFPGA0_XCD_RFPARAMETER;
+	rtlphy->phyreg_def[RF90_PATH_A].rflssi_select = rFPGA0_XAB_RFPARAMETER;
+	rtlphy->phyreg_def[RF90_PATH_B].rflssi_select = rFPGA0_XAB_RFPARAMETER;
+	rtlphy->phyreg_def[RF90_PATH_C].rflssi_select = rFPGA0_XCD_RFPARAMETER;
+	rtlphy->phyreg_def[RF90_PATH_D].rflssi_select = rFPGA0_XCD_RFPARAMETER;
 
 	rtlphy->phyreg_def[RF90_PATH_A].rftxgain_stage = RFPGA0_TXGAINSTAGE;
 	rtlphy->phyreg_def[RF90_PATH_B].rftxgain_stage = RFPGA0_TXGAINSTAGE;
@@ -723,8 +749,8 @@ u8 rtl92c_phy_sw_chnl(struct ieee80211_hw *hw)
 		return 0;
 	if (rtlphy->set_bwmode_inprogress)
 		return 0;
-	WARN_ONCE((rtlphy->current_channel > 14),
-		  "rtl8192c-common: WIRELESS_MODE_G but channel>14");
+	RT_ASSERT((rtlphy->current_channel <= 14),
+		  "WIRELESS_MODE_G but channel>14");
 	rtlphy->sw_chnl_inprogress = true;
 	rtlphy->sw_chnl_stage = 0;
 	rtlphy->sw_chnl_step = 0;
@@ -747,7 +773,6 @@ static void _rtl92c_phy_sw_rf_seting(struct ieee80211_hw *hw, u8 channel)
 	struct rtl_priv *rtlpriv = rtl_priv(hw);
 	struct rtl_phy *rtlphy = &(rtlpriv->phy);
 	struct rtl_hal *rtlhal = rtl_hal(rtl_priv(hw));
-
 	if (IS_81XXC_VENDOR_UMC_B_CUT(rtlhal->version)) {
 		if (channel == 6 &&
 		    rtlphy->current_chan_bw == HT_CHANNEL_WIDTH_20) {
@@ -771,7 +796,7 @@ static bool _rtl92c_phy_set_sw_chnl_cmdarray(struct swchnlcmd *cmdtable,
 	struct swchnlcmd *pcmd;
 
 	if (cmdtable == NULL) {
-		WARN_ONCE(true, "rtl8192c-common: cmdtable cannot be NULL.\n");
+		RT_ASSERT(false, "cmdtable cannot be NULL.\n");
 		return false;
 	}
 
@@ -816,8 +841,8 @@ bool _rtl92c_phy_sw_chnl_step_by_step(struct ieee80211_hw *hw,
 
 	rfdependcmdcnt = 0;
 
-	WARN_ONCE((channel < 1 || channel > 14),
-		  "rtl8192c-common: illegal channel for Zebra: %d\n", channel);
+	RT_ASSERT((channel >= 1 && channel <= 14),
+		  "illegal channel for Zebra: %d\n", channel);
 
 	_rtl92c_phy_set_sw_chnl_cmdarray(rfdependcmd, rfdependcmdcnt++,
 					 MAX_RFDEPENDCMD_CNT, CMDID_RF_WRITEREG,
@@ -839,8 +864,8 @@ bool _rtl92c_phy_sw_chnl_step_by_step(struct ieee80211_hw *hw,
 			currentcmd = &postcommoncmd[*step];
 			break;
 		default:
-			pr_err("Invalid 'stage' = %d, Check it!\n",
-			       *stage);
+			RT_TRACE(rtlpriv, COMP_ERR, DBG_EMERG,
+				 "Invalid 'stage' = %d, Check it!\n", *stage);
 			return true;
 		}
 
@@ -1099,19 +1124,19 @@ static void _rtl92c_phy_reload_mac_registers(struct ieee80211_hw *hw,
 static void _rtl92c_phy_path_adda_on(struct ieee80211_hw *hw,
 				     u32 *addareg, bool is_patha_on, bool is2t)
 {
-	u32 pathon;
+	u32 pathOn;
 	u32 i;
 
-	pathon = is_patha_on ? 0x04db25a4 : 0x0b1b25a4;
+	pathOn = is_patha_on ? 0x04db25a4 : 0x0b1b25a4;
 	if (false == is2t) {
-		pathon = 0x0bdb25a0;
+		pathOn = 0x0bdb25a0;
 		rtl_set_bbreg(hw, addareg[0], MASKDWORD, 0x0b1b25a0);
 	} else {
-		rtl_set_bbreg(hw, addareg[0], MASKDWORD, pathon);
+		rtl_set_bbreg(hw, addareg[0], MASKDWORD, pathOn);
 	}
 
 	for (i = 1; i < IQK_ADDA_REG_NUM; i++)
-		rtl_set_bbreg(hw, addareg[i], MASKDWORD, pathon);
+		rtl_set_bbreg(hw, addareg[i], MASKDWORD, pathOn);
 }
 
 static void _rtl92c_phy_mac_setting_calibration(struct ieee80211_hw *hw,
@@ -1340,7 +1365,7 @@ static void _rtl92c_phy_set_rfpath_switch(struct ieee80211_hw *hw,
 
 	if (is_hal_stop(rtlhal)) {
 		rtl_set_bbreg(hw, REG_LEDCFG0, BIT(23), 0x01);
-		rtl_set_bbreg(hw, RFPGA0_XAB_RFPARAMETER, BIT(13), 0x01);
+		rtl_set_bbreg(hw, rFPGA0_XAB_RFPARAMETER, BIT(13), 0x01);
 	}
 	if (is2t) {
 		if (bmain)

@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * DLCI		Implementation of Frame Relay protocol for Linux, according to
  *		RFC 1490.  This generic device provides en/decapsulation for an
@@ -22,6 +21,11 @@
  *		0.25	Mike McLagan	Converted to use SIOC IOCTL calls
  *		0.30	Jim Freeman	Fixed to allow IPX traffic
  *		0.35	Michael Elizabeth	Fixed incorrect memcpy_fromfs
+ *
+ *		This program is free software; you can redistribute it and/or
+ *		modify it under the terms of the GNU General Public License
+ *		as published by the Free Software Foundation; either version
+ *		2 of the License, or (at your option) any later version.
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
@@ -48,7 +52,7 @@
 
 #include <asm/io.h>
 #include <asm/dma.h>
-#include <linux/uaccess.h>
+#include <asm/uaccess.h>
 
 static const char version[] = "DLCI driver v0.35, 4 Jan 1997, mike.mclagan@linux.org";
 
@@ -471,7 +475,7 @@ static void dlci_setup(struct net_device *dev)
 	dev->flags		= 0;
 	dev->header_ops		= &dlci_header_ops;
 	dev->netdev_ops		= &dlci_netdev_ops;
-	dev->needs_free_netdev	= true;
+	dev->destructor		= free_netdev;
 
 	dlp->receive		= dlci_receive;
 

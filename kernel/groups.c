@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * Supplementary group IDs
  */
@@ -6,11 +5,10 @@
 #include <linux/export.h>
 #include <linux/slab.h>
 #include <linux/security.h>
-#include <linux/sort.h>
 #include <linux/syscalls.h>
 #include <linux/user_namespace.h>
 #include <linux/vmalloc.h>
-#include <linux/uaccess.h>
+#include <asm/uaccess.h>
 
 struct group_info *groups_alloc(int gidsetsize)
 {
@@ -20,7 +18,7 @@ struct group_info *groups_alloc(int gidsetsize)
 	len = sizeof(struct group_info) + sizeof(kgid_t) * gidsetsize;
 	gi = kmalloc(len, GFP_KERNEL_ACCOUNT|__GFP_NOWARN|__GFP_NORETRY);
 	if (!gi)
-		gi = __vmalloc(len, GFP_KERNEL_ACCOUNT, PAGE_KERNEL);
+		gi = __vmalloc(len, GFP_KERNEL_ACCOUNT|__GFP_HIGHMEM, PAGE_KERNEL);
 	if (!gi)
 		return NULL;
 
@@ -78,18 +76,32 @@ static int groups_from_user(struct group_info *group_info,
 	return 0;
 }
 
-static int gid_cmp(const void *_a, const void *_b)
-{
-	kgid_t a = *(kgid_t *)_a;
-	kgid_t b = *(kgid_t *)_b;
-
-	return gid_gt(a, b) - gid_lt(a, b);
-}
-
+/* a simple Shell sort */
 void groups_sort(struct group_info *group_info)
 {
-	sort(group_info->gid, group_info->ngroups, sizeof(*group_info->gid),
-	     gid_cmp, NULL);
+	int base, max, stride;
+	int gidsetsize = group_info->ngroups;
+
+	for (stride = 1; stride < gidsetsize; stride = 3 * stride + 1)
+		; /* nothing */
+	stride /= 3;
+
+	while (stride) {
+		max = gidsetsize - stride;
+		for (base = 0; base < max; base++) {
+			int left = base;
+			int right = left + stride;
+			kgid_t tmp = group_info->gid[right];
+
+			while (left >= 0 && gid_gt(group_info->gid[left], tmp)) {
+				group_info->gid[right] = group_info->gid[left];
+				right = left;
+				left -= stride;
+			}
+			group_info->gid[right] = tmp;
+		}
+		stride /= 3;
+	}
 }
 EXPORT_SYMBOL(groups_sort);
 

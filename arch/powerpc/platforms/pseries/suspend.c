@@ -1,6 +1,19 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
   * Copyright (C) 2010 Brian King IBM Corporation
+  *
+  * This program is free software; you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License as published by
+  * the Free Software Foundation; either version 2 of the License, or
+  * (at your option) any later version.
+  *
+  * This program is distributed in the hope that it will be useful,
+  * but WITHOUT ANY WARRANTY; without even the implied warranty of
+  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  * GNU General Public License for more details.
+  *
+  * You should have received a copy of the GNU General Public License
+  * along with this program; if not, write to the Free Software
+  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
   */
 
 #include <linux/cpu.h>
@@ -138,7 +151,7 @@ static ssize_t store_hibernate(struct device *dev,
 	if (!capable(CAP_SYS_ADMIN))
 		return -EPERM;
 
-	if (!alloc_cpumask_var(&offline_mask, GFP_KERNEL))
+	if (!alloc_cpumask_var(&offline_mask, GFP_TEMPORARY))
 		return -ENOMEM;
 
 	stream_id = simple_strtoul(buf, NULL, 16);
@@ -201,7 +214,8 @@ static ssize_t show_hibernate(struct device *dev,
 	return sprintf(buf, "%d\n", KERN_DT_UPDATE);
 }
 
-static DEVICE_ATTR(hibernate, 0644, show_hibernate, store_hibernate);
+static DEVICE_ATTR(hibernate, S_IWUSR | S_IRUGO,
+		   show_hibernate, store_hibernate);
 
 static struct bus_type suspend_subsys = {
 	.name = "power",

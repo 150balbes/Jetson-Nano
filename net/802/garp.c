@@ -1,8 +1,11 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  *	IEEE 802.1D Generic Attribute Registration Protocol (GARP)
  *
  *	Copyright (c) 2008 Patrick McHardy <kaber@trash.net>
+ *
+ *	This program is free software; you can redistribute it and/or
+ *	modify it under the terms of the GNU General Public License
+ *	version 2 as published by the Free Software Foundation.
  */
 #include <linux/kernel.h>
 #include <linux/timer.h>
@@ -218,7 +221,7 @@ static int garp_pdu_init(struct garp_applicant *app)
 	skb->protocol = htons(ETH_P_802_2);
 	skb_reserve(skb, LL_RESERVED_SPACE(app->dev) + LLC_RESERVE);
 
-	gp = __skb_put(skb, sizeof(*gp));
+	gp = (struct garp_pdu_hdr *)__skb_put(skb, sizeof(*gp));
 	put_unaligned(htons(GARP_PROTOCOL_ID), &gp->protocol);
 
 	app->pdu = skb;
@@ -229,7 +232,7 @@ static int garp_pdu_append_end_mark(struct garp_applicant *app)
 {
 	if (skb_tailroom(app->pdu) < sizeof(u8))
 		return -1;
-	__skb_put_u8(app->pdu, GARP_END_MARK);
+	*(u8 *)__skb_put(app->pdu, sizeof(u8)) = GARP_END_MARK;
 	return 0;
 }
 
@@ -265,7 +268,7 @@ static int garp_pdu_append_msg(struct garp_applicant *app, u8 attrtype)
 
 	if (skb_tailroom(app->pdu) < sizeof(*gm))
 		return -1;
-	gm = __skb_put(app->pdu, sizeof(*gm));
+	gm = (struct garp_msg_hdr *)__skb_put(app->pdu, sizeof(*gm));
 	gm->attrtype = attrtype;
 	garp_cb(app->pdu)->cur_type = attrtype;
 	return 0;
@@ -296,7 +299,7 @@ again:
 	len = sizeof(*ga) + attr->dlen;
 	if (skb_tailroom(app->pdu) < len)
 		goto queue;
-	ga = __skb_put(app->pdu, len);
+	ga = (struct garp_attr_hdr *)__skb_put(app->pdu, len);
 	ga->len   = len;
 	ga->event = event;
 	memcpy(ga->data, attr->data, attr->dlen);
@@ -398,9 +401,9 @@ static void garp_join_timer_arm(struct garp_applicant *app)
 	mod_timer(&app->join_timer, jiffies + delay);
 }
 
-static void garp_join_timer(struct timer_list *t)
+static void garp_join_timer(unsigned long data)
 {
-	struct garp_applicant *app = from_timer(app, t, join_timer);
+	struct garp_applicant *app = (struct garp_applicant *)data;
 
 	spin_lock(&app->lock);
 	garp_gid_event(app, GARP_EVENT_TRANSMIT_PDU);
@@ -581,7 +584,7 @@ int garp_init_applicant(struct net_device *dev, struct garp_application *appl)
 	spin_lock_init(&app->lock);
 	skb_queue_head_init(&app->queue);
 	rcu_assign_pointer(dev->garp_port->applicants[appl->type], app);
-	timer_setup(&app->join_timer, garp_join_timer, 0);
+	setup_timer(&app->join_timer, garp_join_timer, (unsigned long)app);
 	garp_join_timer_arm(app);
 	return 0;
 

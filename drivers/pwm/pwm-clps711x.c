@@ -1,7 +1,12 @@
-// SPDX-License-Identifier: GPL-2.0+
 /*
  * Cirrus Logic CLPS711X PWM driver
- * Author: Alexander Shiyan <shc_work@mail.ru>
+ *
+ * Copyright (C) 2014 Alexander Shiyan <shc_work@mail.ru>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
  */
 
 #include <linux/clk.h>
@@ -43,7 +48,7 @@ static void clps711x_pwm_update_val(struct clps711x_chip *priv, u32 n, u32 v)
 static unsigned int clps711x_get_duty(struct pwm_device *pwm, unsigned int v)
 {
 	/* Duty cycle 0..15 max */
-	return DIV_ROUND_CLOSEST(v * 0xf, pwm->args.period);
+	return DIV_ROUND_CLOSEST(v * 0xf, pwm_get_period(pwm));
 }
 
 static int clps711x_pwm_request(struct pwm_chip *chip, struct pwm_device *pwm)
@@ -66,7 +71,7 @@ static int clps711x_pwm_config(struct pwm_chip *chip, struct pwm_device *pwm,
 	struct clps711x_chip *priv = to_clps711x_chip(chip);
 	unsigned int duty;
 
-	if (period_ns != pwm->args.period)
+	if (period_ns != pwm_get_period(pwm))
 		return -EINVAL;
 
 	duty = clps711x_get_duty(pwm, duty_ns);

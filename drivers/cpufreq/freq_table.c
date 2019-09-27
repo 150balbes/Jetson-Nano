@@ -1,8 +1,12 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * linux/drivers/cpufreq/freq_table.c
  *
  * Copyright (C) 2002 - 2003 Dominik Brodowski
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
@@ -139,9 +143,10 @@ int cpufreq_table_index_unsorted(struct cpufreq_policy *policy,
 		break;
 	}
 
-	cpufreq_for_each_valid_entry_idx(pos, table, i) {
+	cpufreq_for_each_valid_entry(pos, table) {
 		freq = pos->frequency;
 
+		i = pos - table;
 		if ((freq < policy->min) || (freq > policy->max))
 			continue;
 		if (freq == target_freq) {
@@ -206,16 +211,15 @@ int cpufreq_frequency_table_get_index(struct cpufreq_policy *policy,
 		unsigned int freq)
 {
 	struct cpufreq_frequency_table *pos, *table = policy->freq_table;
-	int idx;
 
 	if (unlikely(!table)) {
 		pr_debug("%s: Unable to find frequency table\n", __func__);
 		return -ENOENT;
 	}
 
-	cpufreq_for_each_valid_entry_idx(pos, table, idx)
+	cpufreq_for_each_valid_entry(pos, table)
 		if (pos->frequency == freq)
-			return idx;
+			return pos - table;
 
 	return -EINVAL;
 }
@@ -286,6 +290,9 @@ EXPORT_SYMBOL_GPL(cpufreq_freq_attr_scaling_boost_freqs);
 
 struct freq_attr *cpufreq_generic_attr[] = {
 	&cpufreq_freq_attr_scaling_available_freqs,
+#ifdef CONFIG_CPU_FREQ_BOOST_SW
+	&cpufreq_freq_attr_scaling_boost_freqs,
+#endif
 	NULL,
 };
 EXPORT_SYMBOL_GPL(cpufreq_generic_attr);
@@ -345,19 +352,19 @@ static int set_freq_table_sorted(struct cpufreq_policy *policy)
 	return 0;
 }
 
-int cpufreq_table_validate_and_sort(struct cpufreq_policy *policy)
+int cpufreq_table_validate_and_show(struct cpufreq_policy *policy,
+				      struct cpufreq_frequency_table *table)
 {
 	int ret;
 
-	if (!policy->freq_table)
-		return 0;
-
-	ret = cpufreq_frequency_table_cpuinfo(policy, policy->freq_table);
+	ret = cpufreq_frequency_table_cpuinfo(policy, table);
 	if (ret)
 		return ret;
 
+	policy->freq_table = table;
 	return set_freq_table_sorted(policy);
 }
+EXPORT_SYMBOL_GPL(cpufreq_table_validate_and_show);
 
 MODULE_AUTHOR("Dominik Brodowski <linux@brodo.de>");
 MODULE_DESCRIPTION("CPUfreq frequency table helpers");

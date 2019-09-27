@@ -1,5 +1,6 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
+ * linux/kernel/itimer.c
+ *
  * Copyright (C) 1992 Darren Senn
  */
 
@@ -9,14 +10,11 @@
 #include <linux/interrupt.h>
 #include <linux/syscalls.h>
 #include <linux/time.h>
-#include <linux/sched/signal.h>
-#include <linux/sched/cputime.h>
 #include <linux/posix-timers.h>
 #include <linux/hrtimer.h>
 #include <trace/events/timer.h>
-#include <linux/compat.h>
 
-#include <linux/uaccess.h>
+#include <asm/uaccess.h>
 
 /**
  * itimer_get_remtime - get remaining time for the timer
@@ -36,10 +34,10 @@ static struct timeval itimer_get_remtime(struct hrtimer *timer)
 	 * then we return 0 - which is correct.
 	 */
 	if (hrtimer_active(timer)) {
-		if (rem <= 0)
-			rem = NSEC_PER_USEC;
+		if (rem.tv64 <= 0)
+			rem.tv64 = NSEC_PER_USEC;
 	} else
-		rem = 0;
+		rem.tv64 = 0;
 
 	return ktime_to_timeval(rem);
 }
@@ -47,16 +45,16 @@ static struct timeval itimer_get_remtime(struct hrtimer *timer)
 static void get_cpu_itimer(struct task_struct *tsk, unsigned int clock_id,
 			   struct itimerval *const value)
 {
-	u64 val, interval;
+	cputime_t cval, cinterval;
 	struct cpu_itimer *it = &tsk->signal->it[clock_id];
 
 	spin_lock_irq(&tsk->sighand->siglock);
 
-	val = it->expires;
-	interval = it->incr;
-	if (val) {
+	cval = it->expires;
+	cinterval = it->incr;
+	if (cval) {
 		struct task_cputime cputime;
-		u64 t;
+		cputime_t t;
 
 		thread_group_cputimer(tsk, &cputime);
 		if (clock_id == CPUCLOCK_PROF)
@@ -65,17 +63,17 @@ static void get_cpu_itimer(struct task_struct *tsk, unsigned int clock_id,
 			/* CPUCLOCK_VIRT */
 			t = cputime.utime;
 
-		if (val < t)
+		if (cval < t)
 			/* about to fire */
-			val = TICK_NSEC;
+			cval = cputime_one_jiffy;
 		else
-			val -= t;
+			cval = cval - t;
 	}
 
 	spin_unlock_irq(&tsk->sighand->siglock);
 
-	value->it_value = ns_to_timeval(val);
-	value->it_interval = ns_to_timeval(interval);
+	cputime_to_timeval(cval, &value->it_value);
+	cputime_to_timeval(cinterval, &value->it_interval);
 }
 
 int do_getitimer(int which, struct itimerval *value)
@@ -116,19 +114,6 @@ SYSCALL_DEFINE2(getitimer, int, which, struct itimerval __user *, value)
 	return error;
 }
 
-#ifdef CONFIG_COMPAT
-COMPAT_SYSCALL_DEFINE2(getitimer, int, which,
-		       struct compat_itimerval __user *, it)
-{
-	struct itimerval kit;
-	int error = do_getitimer(which, &kit);
-
-	if (!error && put_compat_itimerval(it, &kit))
-		error = -EFAULT;
-	return error;
-}
-#endif
-
 
 /*
  * The timer is automagically restarted, when interval != 0
@@ -137,47 +122,62 @@ enum hrtimer_restart it_real_fn(struct hrtimer *timer)
 {
 	struct signal_struct *sig =
 		container_of(timer, struct signal_struct, real_timer);
-	struct pid *leader_pid = sig->pids[PIDTYPE_TGID];
 
-	trace_itimer_expire(ITIMER_REAL, leader_pid, 0);
-	kill_pid_info(SIGALRM, SEND_SIG_PRIV, leader_pid);
+	trace_itimer_expire(ITIMER_REAL, sig->leader_pid, 0);
+	kill_pid_info(SIGALRM, SEND_SIG_PRIV, sig->leader_pid);
 
 	return HRTIMER_NORESTART;
+}
+
+static inline u32 cputime_sub_ns(cputime_t ct, s64 real_ns)
+{
+	struct timespec ts;
+	s64 cpu_ns;
+
+	cputime_to_timespec(ct, &ts);
+	cpu_ns = timespec_to_ns(&ts);
+
+	return (cpu_ns <= real_ns) ? 0 : cpu_ns - real_ns;
 }
 
 static void set_cpu_itimer(struct task_struct *tsk, unsigned int clock_id,
 			   const struct itimerval *const value,
 			   struct itimerval *const ovalue)
 {
-	u64 oval, nval, ointerval, ninterval;
+	cputime_t cval, nval, cinterval, ninterval;
+	s64 ns_ninterval, ns_nval;
+	u32 error, incr_error;
 	struct cpu_itimer *it = &tsk->signal->it[clock_id];
 
-	/*
-	 * Use the to_ktime conversion because that clamps the maximum
-	 * value to KTIME_MAX and avoid multiplication overflows.
-	 */
-	nval = ktime_to_ns(timeval_to_ktime(value->it_value));
-	ninterval = ktime_to_ns(timeval_to_ktime(value->it_interval));
+	nval = timeval_to_cputime(&value->it_value);
+	ns_nval = timeval_to_ns(&value->it_value);
+	ninterval = timeval_to_cputime(&value->it_interval);
+	ns_ninterval = timeval_to_ns(&value->it_interval);
+
+	error = cputime_sub_ns(nval, ns_nval);
+	incr_error = cputime_sub_ns(ninterval, ns_ninterval);
 
 	spin_lock_irq(&tsk->sighand->siglock);
 
-	oval = it->expires;
-	ointerval = it->incr;
-	if (oval || nval) {
+	cval = it->expires;
+	cinterval = it->incr;
+	if (cval || nval) {
 		if (nval > 0)
-			nval += TICK_NSEC;
-		set_process_cpu_timer(tsk, clock_id, &nval, &oval);
+			nval += cputime_one_jiffy;
+		set_process_cpu_timer(tsk, clock_id, &nval, &cval);
 	}
 	it->expires = nval;
 	it->incr = ninterval;
+	it->error = error;
+	it->incr_error = incr_error;
 	trace_itimer_state(clock_id == CPUCLOCK_VIRT ?
 			   ITIMER_VIRTUAL : ITIMER_PROF, value, nval);
 
 	spin_unlock_irq(&tsk->sighand->siglock);
 
 	if (ovalue) {
-		ovalue->it_value = ns_to_timeval(oval);
-		ovalue->it_interval = ns_to_timeval(ointerval);
+		cputime_to_timeval(cval, &ovalue->it_value);
+		cputime_to_timeval(cinterval, &ovalue->it_interval);
 	}
 }
 
@@ -216,12 +216,12 @@ again:
 			goto again;
 		}
 		expires = timeval_to_ktime(value->it_value);
-		if (expires != 0) {
+		if (expires.tv64 != 0) {
 			tsk->signal->it_real_incr =
 				timeval_to_ktime(value->it_interval);
 			hrtimer_start(timer, expires, HRTIMER_MODE_REL);
 		} else
-			tsk->signal->it_real_incr = 0;
+			tsk->signal->it_real_incr.tv64 = 0;
 
 		trace_itimer_state(ITIMER_REAL, value, 0);
 		spin_unlock_irq(&tsk->sighand->siglock);
@@ -238,8 +238,6 @@ again:
 	return 0;
 }
 
-#ifdef __ARCH_WANT_SYS_ALARM
-
 /**
  * alarm_setitimer - set alarm in seconds
  *
@@ -252,7 +250,7 @@ again:
  * On 32 bit machines the seconds value is limited to (INT_MAX/2) to avoid
  * negative timeval settings which would cause immediate expiry.
  */
-static unsigned int alarm_setitimer(unsigned int seconds)
+unsigned int alarm_setitimer(unsigned int seconds)
 {
 	struct itimerval it_new, it_old;
 
@@ -276,17 +274,6 @@ static unsigned int alarm_setitimer(unsigned int seconds)
 
 	return it_old.it_value.tv_sec;
 }
-
-/*
- * For backwards compatibility?  This can be done in libc so Alpha
- * and all newer ports shouldn't need it.
- */
-SYSCALL_DEFINE1(alarm, unsigned int, seconds)
-{
-	return alarm_setitimer(seconds);
-}
-
-#endif
 
 SYSCALL_DEFINE3(setitimer, int, which, struct itimerval __user *, value,
 		struct itimerval __user *, ovalue)
@@ -312,27 +299,3 @@ SYSCALL_DEFINE3(setitimer, int, which, struct itimerval __user *, value,
 		return -EFAULT;
 	return 0;
 }
-
-#ifdef CONFIG_COMPAT
-COMPAT_SYSCALL_DEFINE3(setitimer, int, which,
-		       struct compat_itimerval __user *, in,
-		       struct compat_itimerval __user *, out)
-{
-	struct itimerval kin, kout;
-	int error;
-
-	if (in) {
-		if (get_compat_itimerval(&kin, in))
-			return -EFAULT;
-	} else {
-		memset(&kin, 0, sizeof(kin));
-	}
-
-	error = do_setitimer(which, &kin, out ? &kout : NULL);
-	if (error || !out)
-		return error;
-	if (put_compat_itimerval(out, &kout))
-		return -EFAULT;
-	return 0;
-}
-#endif

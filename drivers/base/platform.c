@@ -1,11 +1,13 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * platform.c - platform 'pseudo' bus for legacy devices
  *
  * Copyright (c) 2002-3 Patrick Mochel
  * Copyright (c) 2002-3 Open Source Development Labs
+ * Copyright (c) 2017, NVIDIA CORPORATION. All rights reserved.
  *
- * Please see Documentation/driver-api/driver-model/platform.rst for more
+ * This file is released under the GPLv2
+ *
+ * Please see Documentation/driver-model/platform.txt for more
  * information.
  */
 
@@ -16,7 +18,7 @@
 #include <linux/module.h>
 #include <linux/init.h>
 #include <linux/dma-mapping.h>
-#include <linux/memblock.h>
+#include <linux/bootmem.h>
 #include <linux/err.h>
 #include <linux/slab.h>
 #include <linux/pm_runtime.h>
@@ -26,7 +28,6 @@
 #include <linux/clk/clk-conf.h>
 #include <linux/limits.h>
 #include <linux/property.h>
-#include <linux/kmemleak.h>
 
 #include "base.h"
 #include "power/power.h"
@@ -80,26 +81,6 @@ struct resource *platform_get_resource(struct platform_device *dev,
 EXPORT_SYMBOL_GPL(platform_get_resource);
 
 /**
- * devm_platform_ioremap_resource - call devm_ioremap_resource() for a platform
- *				    device
- *
- * @pdev: platform device to use both for memory resource lookup as well as
- *        resource management
- * @index: resource index
- */
-#ifdef CONFIG_HAS_IOMEM
-void __iomem *devm_platform_ioremap_resource(struct platform_device *pdev,
-					     unsigned int index)
-{
-	struct resource *res;
-
-	res = platform_get_resource(pdev, IORESOURCE_MEM, index);
-	return devm_ioremap_resource(&pdev->dev, res);
-}
-EXPORT_SYMBOL_GPL(devm_platform_ioremap_resource);
-#endif /* CONFIG_HAS_IOMEM */
-
-/**
  * platform_get_irq - get an IRQ for a device
  * @dev: platform device
  * @num: IRQ number index
@@ -122,16 +103,6 @@ int platform_get_irq(struct platform_device *dev, unsigned int num)
 	}
 
 	r = platform_get_resource(dev, IORESOURCE_IRQ, num);
-	if (has_acpi_companion(&dev->dev)) {
-		if (r && r->flags & IORESOURCE_DISABLED) {
-			int ret;
-
-			ret = acpi_irq_get(ACPI_HANDLE(&dev->dev), num, r);
-			if (ret)
-				return ret;
-		}
-	}
-
 	/*
 	 * The resources may pass trigger flags to the irqs that need
 	 * to be set up. It so happens that the trigger flags for
@@ -147,25 +118,7 @@ int platform_get_irq(struct platform_device *dev, unsigned int num)
 		irqd_set_trigger_type(irqd, r->flags & IORESOURCE_BITS);
 	}
 
-	if (r)
-		return r->start;
-
-	/*
-	 * For the index 0 interrupt, allow falling back to GpioInt
-	 * resources. While a device could have both Interrupt and GpioInt
-	 * resources, making this fallback ambiguous, in many common cases
-	 * the device will only expose one IRQ, and this fallback
-	 * allows a common code path across either kind of resource.
-	 */
-	if (num == 0 && has_acpi_companion(&dev->dev)) {
-		int ret = acpi_dev_gpio_irq_get(ACPI_COMPANION(&dev->dev), num);
-
-		/* Our callers expect -ENXIO for missing IRQs. */
-		if (ret >= 0 || ret == -EPROBE_DEFER)
-			return ret;
-	}
-
-	return -ENXIO;
+	return r ? r->start : -ENXIO;
 #endif
 }
 EXPORT_SYMBOL_GPL(platform_get_irq);
@@ -273,7 +226,7 @@ struct platform_object {
  */
 void platform_device_put(struct platform_device *pdev)
 {
-	if (!IS_ERR_OR_NULL(pdev))
+	if (pdev)
 		put_device(&pdev->dev);
 }
 EXPORT_SYMBOL_GPL(platform_device_put);
@@ -382,7 +335,7 @@ EXPORT_SYMBOL_GPL(platform_device_add_data);
  * platform device is released.
  */
 int platform_device_add_properties(struct platform_device *pdev,
-				   const struct property_entry *properties)
+				   struct property_entry *properties)
 {
 	return device_add_properties(&pdev->dev, properties);
 }
@@ -443,12 +396,10 @@ int platform_device_add(struct platform_device *pdev)
 				p = &ioport_resource;
 		}
 
-		if (p) {
-			ret = insert_resource(p, r);
-			if (ret) {
-				dev_err(&pdev->dev, "failed to claim resource %d: %pR\n", i, r);
-				goto failed;
-			}
+		if (p && insert_resource(p, r)) {
+			dev_err(&pdev->dev, "failed to claim resource %d\n", i);
+			ret = -EBUSY;
+			goto failed;
 		}
 	}
 
@@ -488,7 +439,8 @@ void platform_device_del(struct platform_device *pdev)
 {
 	int i;
 
-	if (!IS_ERR_OR_NULL(pdev)) {
+	if (pdev) {
+		device_remove_properties(&pdev->dev);
 		device_del(&pdev->dev);
 
 		if (pdev->id_auto) {
@@ -548,12 +500,10 @@ struct platform_device *platform_device_register_full(
 
 	pdev = platform_device_alloc(pdevinfo->name, pdevinfo->id);
 	if (!pdev)
-		return ERR_PTR(-ENOMEM);
+		goto err_alloc;
 
 	pdev->dev.parent = pdevinfo->parent;
 	pdev->dev.fwnode = pdevinfo->fwnode;
-	pdev->dev.of_node = of_node_get(to_of_node(pdev->dev.fwnode));
-	pdev->dev.of_node_reused = pdevinfo->of_node_reused;
 
 	if (pdevinfo->dma_mask) {
 		/*
@@ -566,8 +516,6 @@ struct platform_device *platform_device_register_full(
 			kmalloc(sizeof(*pdev->dev.dma_mask), GFP_KERNEL);
 		if (!pdev->dev.dma_mask)
 			goto err;
-
-		kmemleak_ignore(pdev->dev.dma_mask);
 
 		*pdev->dev.dma_mask = pdevinfo->dma_mask;
 		pdev->dev.coherent_dma_mask = pdevinfo->dma_mask;
@@ -595,6 +543,8 @@ struct platform_device *platform_device_register_full(
 err:
 		ACPI_COMPANION_SET(&pdev->dev, NULL);
 		kfree(pdev->dev.dma_mask);
+
+err_alloc:
 		platform_device_put(pdev);
 		return ERR_PTR(ret);
 	}
@@ -614,16 +564,17 @@ static int platform_drv_probe(struct device *_dev)
 		return ret;
 
 	ret = dev_pm_domain_attach(_dev, true);
-	if (ret)
-		goto out;
-
-	if (drv->probe) {
-		ret = drv->probe(dev);
-		if (ret)
-			dev_pm_domain_detach(_dev, true);
+	if (ret != -EPROBE_DEFER) {
+		if (drv->probe) {
+			ret = drv->probe(dev);
+			if (ret)
+				dev_pm_domain_detach(_dev, true);
+		} else {
+			/* don't fail if just dev_pm_domain_attach failed */
+			ret = 0;
+		}
 	}
 
-out:
 	if (drv->prevent_deferred_probe && ret == -EPROBE_DEFER) {
 		dev_warn(_dev, "probe deferral not supported\n");
 		ret = -ENXIO;
@@ -659,6 +610,15 @@ static void platform_drv_shutdown(struct device *_dev)
 		drv->shutdown(dev);
 }
 
+static void platform_drv_late_shutdown(struct device *_dev)
+{
+	struct platform_driver *drv = to_platform_driver(_dev->driver);
+	struct platform_device *dev = to_platform_device(_dev);
+
+	if (drv->late_shutdown)
+		drv->late_shutdown(dev);
+}
+
 /**
  * __platform_driver_register - register a driver for platform-level devices
  * @drv: platform driver structure
@@ -672,6 +632,7 @@ int __platform_driver_register(struct platform_driver *drv,
 	drv->driver.probe = platform_drv_probe;
 	drv->driver.remove = platform_drv_remove;
 	drv->driver.shutdown = platform_drv_shutdown;
+	drv->driver.late_shutdown = platform_drv_late_shutdown;
 
 	return driver_register(&drv->driver);
 }
@@ -887,7 +848,7 @@ static ssize_t modalias_show(struct device *dev, struct device_attribute *a,
 	struct platform_device	*pdev = to_platform_device(dev);
 	int len;
 
-	len = of_device_modalias(dev, buf, PAGE_SIZE);
+	len = of_device_get_modalias(dev, buf, PAGE_SIZE -1);
 	if (len != -ENODEV)
 		return len;
 
@@ -1171,21 +1132,6 @@ int platform_pm_restore(struct device *dev)
 
 #endif /* CONFIG_HIBERNATE_CALLBACKS */
 
-int platform_dma_configure(struct device *dev)
-{
-	enum dev_dma_attr attr;
-	int ret = 0;
-
-	if (dev->of_node) {
-		ret = of_dma_configure(dev, dev->of_node, true);
-	} else if (has_acpi_companion(dev)) {
-		attr = acpi_get_dma_attr(to_acpi_device_node(dev->fwnode));
-		ret = acpi_dma_configure(dev, attr);
-	}
-
-	return ret;
-}
-
 static const struct dev_pm_ops platform_dev_pm_ops = {
 	.runtime_suspend = pm_generic_runtime_suspend,
 	.runtime_resume = pm_generic_runtime_resume,
@@ -1197,7 +1143,6 @@ struct bus_type platform_bus_type = {
 	.dev_groups	= platform_dev_groups,
 	.match		= platform_match,
 	.uevent		= platform_uevent,
-	.dma_configure	= platform_dma_configure,
 	.pm		= &platform_dev_pm_ops,
 };
 EXPORT_SYMBOL_GPL(platform_bus_type);
@@ -1209,16 +1154,38 @@ int __init platform_bus_init(void)
 	early_platform_cleanup();
 
 	error = device_register(&platform_bus);
-	if (error) {
-		put_device(&platform_bus);
+	if (error)
 		return error;
-	}
 	error =  bus_register(&platform_bus_type);
 	if (error)
 		device_unregister(&platform_bus);
 	of_platform_register_reconfig_notifier();
 	return error;
 }
+
+#ifndef ARCH_HAS_DMA_GET_REQUIRED_MASK
+u64 dma_get_required_mask(struct device *dev)
+{
+	u32 low_totalram = ((max_pfn - 1) << PAGE_SHIFT);
+	u32 high_totalram = ((max_pfn - 1) >> (32 - PAGE_SHIFT));
+	u64 mask;
+
+	if (!high_totalram) {
+		/* convert to mask just covering totalram */
+		if (low_totalram) {
+			low_totalram = (1 << (fls(low_totalram) - 1));
+			low_totalram += low_totalram - 1;
+		}
+		mask = low_totalram;
+	} else {
+		high_totalram = (1 << (fls(high_totalram) - 1));
+		high_totalram += high_totalram - 1;
+		mask = (((u64)high_totalram) << 32) + 0xffffffff;
+	}
+	return mask;
+}
+EXPORT_SYMBOL_GPL(dma_get_required_mask);
+#endif
 
 static __initdata LIST_HEAD(early_platform_driver_list);
 static __initdata LIST_HEAD(early_platform_device_list);

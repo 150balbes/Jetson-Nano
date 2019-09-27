@@ -1,7 +1,7 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * OMFS (as used by RIO Karma) directory operations.
  * Copyright (C) 2005 Bob Copeland <me@bobcopeland.com>
+ * Released under GPL v2.
  */
 
 #include <linux/fs.h>
@@ -305,10 +305,11 @@ static struct dentry *omfs_lookup(struct inode *dir, struct dentry *dentry,
 		ino_t ino = be64_to_cpu(oi->i_head.h_self);
 		brelse(bh);
 		inode = omfs_iget(dir->i_sb, ino);
-	} else if (bh != ERR_PTR(-ENOENT)) {
-		inode = ERR_CAST(bh);
+		if (IS_ERR(inode))
+			return ERR_CAST(inode);
 	}
-	return d_splice_alias(inode, dentry);
+	d_add(dentry, inode);
+	return NULL;
 }
 
 /* sanity check block's self pointer */

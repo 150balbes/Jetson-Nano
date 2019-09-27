@@ -53,42 +53,62 @@ static int sanitize_arg(const char *val, char *intf, int intf_len)
 	return len;
 }
 
+static void rxe_set_port_state(struct net_device *ndev)
+{
+	struct rxe_dev *rxe = net_to_rxe(ndev);
+	bool is_up = netif_running(ndev) && netif_carrier_ok(ndev);
+
+	if (!rxe)
+		goto out;
+
+	if (is_up)
+		rxe_port_up(rxe);
+	else
+		rxe_port_down(rxe); /* down for unknown state */
+out:
+	return;
+}
+
 static int rxe_param_set_add(const char *val, const struct kernel_param *kp)
 {
 	int len;
 	int err = 0;
 	char intf[32];
-	struct net_device *ndev;
-	struct rxe_dev *exists;
+	struct net_device *ndev = NULL;
+	struct rxe_dev *rxe;
 
 	len = sanitize_arg(val, intf, sizeof(intf));
 	if (!len) {
 		pr_err("add: invalid interface name\n");
-		return -EINVAL;
+		err = -EINVAL;
+		goto err;
 	}
 
 	ndev = dev_get_by_name(&init_net, intf);
 	if (!ndev) {
 		pr_err("interface %s not found\n", intf);
-		return -EINVAL;
+		err = -EINVAL;
+		goto err;
 	}
 
-	exists = rxe_get_dev_from_net(ndev);
-	if (exists) {
-		ib_device_put(&exists->ib_dev);
+	if (net_to_rxe(ndev)) {
 		pr_err("already configured on %s\n", intf);
 		err = -EINVAL;
 		goto err;
 	}
 
-	err = rxe_net_add("rxe%d", ndev);
-	if (err) {
+	rxe = rxe_net_add(ndev);
+	if (!rxe) {
 		pr_err("failed to add %s\n", intf);
+		err = -EINVAL;
 		goto err;
 	}
 
+	rxe_set_port_state(ndev);
+	pr_info("added %s to %s\n", rxe->ib_dev.name, intf);
 err:
-	dev_put(ndev);
+	if (ndev)
+		dev_put(ndev);
 	return err;
 }
 
@@ -96,7 +116,7 @@ static int rxe_param_set_remove(const char *val, const struct kernel_param *kp)
 {
 	int len;
 	char intf[32];
-	struct ib_device *ib_dev;
+	struct rxe_dev *rxe;
 
 	len = sanitize_arg(val, intf, sizeof(intf));
 	if (!len) {
@@ -106,17 +126,19 @@ static int rxe_param_set_remove(const char *val, const struct kernel_param *kp)
 
 	if (strncmp("all", intf, len) == 0) {
 		pr_info("rxe_sys: remove all");
-		ib_unregister_driver(RDMA_DRIVER_RXE);
+		rxe_remove_all();
 		return 0;
 	}
 
-	ib_dev = ib_device_get_by_name(intf, RDMA_DRIVER_RXE);
-	if (!ib_dev) {
+	rxe = get_rxe_by_name(intf);
+
+	if (!rxe) {
 		pr_err("not configured on %s\n", intf);
 		return -EINVAL;
 	}
 
-	ib_unregister_device_and_put(ib_dev);
+	list_del(&rxe->list);
+	rxe_remove(rxe);
 
 	return 0;
 }
@@ -130,6 +152,6 @@ static const struct kernel_param_ops rxe_remove_ops = {
 };
 
 module_param_cb(add, &rxe_add_ops, NULL, 0200);
-MODULE_PARM_DESC(add, "DEPRECATED.  Create RXE device over network interface");
+MODULE_PARM_DESC(add, "Create RXE device over network interface");
 module_param_cb(remove, &rxe_remove_ops, NULL, 0200);
-MODULE_PARM_DESC(remove, "DEPRECATED.  Remove RXE device over network interface");
+MODULE_PARM_DESC(remove, "Remove RXE device over network interface");

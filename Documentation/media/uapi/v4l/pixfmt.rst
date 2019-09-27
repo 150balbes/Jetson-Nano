@@ -1,11 +1,4 @@
-.. Permission is granted to copy, distribute and/or modify this
-.. document under the terms of the GNU Free Documentation License,
-.. Version 1.1 or any later version published by the Free Software
-.. Foundation, with no Invariant Sections, no Front-Cover Texts
-.. and no Back-Cover Texts. A copy of the license is included at
-.. Documentation/media/uapi/fdl-appendix.rst.
-..
-.. TODO: replace it to GFDL-1.1-or-later WITH no-invariant-sections
+.. -*- coding: utf-8; mode: rst -*-
 
 .. _pixfmt:
 
@@ -26,19 +19,18 @@ see also :ref:`VIDIOC_G_FBUF <VIDIOC_G_FBUF>`.)
 .. toctree::
     :maxdepth: 1
 
-    pixfmt-v4l2
-    pixfmt-v4l2-mplane
-    pixfmt-intro
+    pixfmt-002
+    pixfmt-003
+    pixfmt-004
+    colorspaces
+    pixfmt-006
+    pixfmt-007
+    pixfmt-008
     pixfmt-indexed
     pixfmt-rgb
     yuv-formats
-    hsv-formats
     depth-formats
-    pixfmt-compressed
+    pixfmt-013
     sdr-formats
     tch-formats
-    meta-formats
     pixfmt-reserved
-    colorspaces
-    colorspaces-defs
-    colorspaces-details

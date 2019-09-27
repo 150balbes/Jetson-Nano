@@ -1,6 +1,17 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2012, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2012-2017, NVIDIA CORPORATION.  All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms and conditions of the GNU General Public License,
+ * version 2, as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 #include <linux/kernel.h>
@@ -9,6 +20,7 @@
 #include <linux/err.h>
 #include <linux/slab.h>
 #include <linux/clk-provider.h>
+#include <soc/tegra/tegra-dvfs.h>
 
 #include "clk.h"
 
@@ -92,7 +104,7 @@ static int clk_super_set_parent(struct clk_hw *hw, u8 index)
 
 		val ^= SUPER_LP_DIV2_BYPASS;
 		writel_relaxed(val, mux->reg);
-		udelay(2);
+		fence_udelay(2, mux->reg);
 
 		if (index == mux->div2_index)
 			index = mux->pllx_index;
@@ -101,29 +113,42 @@ static int clk_super_set_parent(struct clk_hw *hw, u8 index)
 	val |= (index & (super_state_to_src_mask(mux))) << shift;
 
 	writel_relaxed(val, mux->reg);
-	udelay(2);
+	fence_udelay(2, mux->reg);
 
 out:
 	if (mux->lock)
 		spin_unlock_irqrestore(mux->lock, flags);
 
+	pr_debug("%s: done switching to %u (%d)\n", __func__, index, err);
 	return err;
 }
 
-static const struct clk_ops tegra_clk_super_mux_ops = {
+static int clk_super_prepare(struct clk_hw *hw)
+{
+	return tegra_dvfs_set_rate(hw->clk, clk_hw_get_rate(hw));
+}
+
+static void clk_super_unprepare(struct clk_hw *hw)
+{
+	tegra_dvfs_set_rate(hw->clk, 0);
+}
+
+const struct clk_ops tegra_clk_super_mux_ops = {
 	.get_parent = clk_super_get_parent,
 	.set_parent = clk_super_set_parent,
+	.prepare = clk_super_prepare,
+	.unprepare = clk_super_unprepare,
 };
 
-static long clk_super_round_rate(struct clk_hw *hw, unsigned long rate,
-				 unsigned long *parent_rate)
+static int clk_super_determine_rate(struct clk_hw *hw,
+				    struct clk_rate_request *req)
 {
 	struct tegra_clk_super_mux *super = to_clk_super_mux(hw);
 	struct clk_hw *div_hw = &super->frac_div.hw;
 
 	__clk_hw_set_clk(div_hw, hw);
 
-	return super->div_ops->round_rate(div_hw, rate, parent_rate);
+	return super->div_ops->determine_rate(div_hw, req);
 }
 
 static unsigned long clk_super_recalc_rate(struct clk_hw *hw,
@@ -152,8 +177,10 @@ const struct clk_ops tegra_clk_super_ops = {
 	.get_parent = clk_super_get_parent,
 	.set_parent = clk_super_set_parent,
 	.set_rate = clk_super_set_rate,
-	.round_rate = clk_super_round_rate,
+	.determine_rate = clk_super_determine_rate,
 	.recalc_rate = clk_super_recalc_rate,
+	.prepare = clk_super_prepare,
+	.unprepare = clk_super_unprepare,
 };
 
 struct clk *tegra_clk_register_super_mux(const char *name,
@@ -220,6 +247,7 @@ struct clk *tegra_clk_register_super_clk(const char *name,
 	super->frac_div.width = 8;
 	super->frac_div.frac_width = 1;
 	super->frac_div.lock = lock;
+	super->frac_div.flags = TEGRA_DIVIDER_ROUND_UP;
 	super->div_ops = &tegra_clk_frac_div_ops;
 
 	/* Data in .init is copied by clk_register(), so stack variable OK */

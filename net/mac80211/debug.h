@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __MAC80211_DEBUG_H
 #define __MAC80211_DEBUG_H
 #include <net/cfg80211.h>

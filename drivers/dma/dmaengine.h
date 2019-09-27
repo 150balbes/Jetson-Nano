@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * The contents of this file are private to DMA engine drivers, and is not
  * part of the API to be used by DMA engine users.
@@ -169,6 +168,13 @@ static inline bool
 dmaengine_desc_callback_valid(struct dmaengine_desc_callback *cb)
 {
 	return (cb->callback) ? true : false;
+}
+
+static inline void dma_set_bytes_transferred(struct dma_tx_state *state,
+	u64 total_bytes_transferred)
+{
+	if (state)
+		state->total_bytes_transferred = total_bytes_transferred;
 }
 
 #endif

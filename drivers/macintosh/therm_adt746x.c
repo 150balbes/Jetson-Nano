@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Device driver for the i2c thermostat found on the iBook G4, Albook G4
  *
@@ -231,7 +230,7 @@ static void update_fans_speed (struct thermostat *th)
 
 	/* we don't care about local sensor, so we start at sensor 1 */
 	for (i = 1; i < 3; i++) {
-		bool started = false;
+		int started = 0;
 		int fan_number = (th->type == ADT7460 && i == 2);
 		int var = th->temps[i] - th->limits[i];
 
@@ -244,7 +243,7 @@ static void update_fans_speed (struct thermostat *th)
 			if (abs(var - th->last_var[fan_number]) < 2)
 				continue;
 
-			started = true;
+			started = 1;
 			new_speed = fan_speed + ((var-1)*step);
 
 			if (new_speed < fan_speed)

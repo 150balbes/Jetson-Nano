@@ -1,13 +1,12 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _LINUX_MIGRATE_H
 #define _LINUX_MIGRATE_H
 
 #include <linux/mm.h>
 #include <linux/mempolicy.h>
 #include <linux/migrate_mode.h>
-#include <linux/hugetlb.h>
 
-typedef struct page *new_page_t(struct page *page, unsigned long private);
+typedef struct page *new_page_t(struct page *page, unsigned long private,
+				int **reason);
 typedef void free_page_t(struct page *page, unsigned long private);
 
 /*
@@ -24,50 +23,23 @@ enum migrate_reason {
 	MR_SYSCALL,		/* also applies to cpusets */
 	MR_MEMPOLICY_MBIND,
 	MR_NUMA_MISPLACED,
-	MR_CONTIG_RANGE,
+	MR_CMA,
 	MR_TYPES
 };
 
 /* In mm/debug.c; also keep sync with include/trace/events/migrate.h */
-extern const char *migrate_reason_names[MR_TYPES];
-
-static inline struct page *new_page_nodemask(struct page *page,
-				int preferred_nid, nodemask_t *nodemask)
-{
-	gfp_t gfp_mask = GFP_USER | __GFP_MOVABLE | __GFP_RETRY_MAYFAIL;
-	unsigned int order = 0;
-	struct page *new_page = NULL;
-
-	if (PageHuge(page))
-		return alloc_huge_page_nodemask(page_hstate(compound_head(page)),
-				preferred_nid, nodemask);
-
-	if (PageTransHuge(page)) {
-		gfp_mask |= GFP_TRANSHUGE;
-		order = HPAGE_PMD_ORDER;
-	}
-
-	if (PageHighMem(page) || (zone_idx(page_zone(page)) == ZONE_MOVABLE))
-		gfp_mask |= __GFP_HIGHMEM;
-
-	new_page = __alloc_pages_nodemask(gfp_mask, order,
-				preferred_nid, nodemask);
-
-	if (new_page && PageTransHuge(new_page))
-		prep_transhuge_page(new_page);
-
-	return new_page;
-}
+extern char *migrate_reason_names[MR_TYPES];
 
 #ifdef CONFIG_MIGRATION
 
+extern int migrate_replace_page(struct page *oldpage, struct page *newpage);
+
 extern void putback_movable_pages(struct list_head *l);
-extern int migrate_page(struct address_space *mapping,
-			struct page *newpage, struct page *page,
-			enum migrate_mode mode);
+extern int migrate_page(struct address_space *,
+			struct page *, struct page *, enum migrate_mode);
 extern int migrate_pages(struct list_head *l, new_page_t new, free_page_t free,
 		unsigned long private, enum migrate_mode mode, int reason);
-extern int isolate_movable_page(struct page *page, isolate_mode_t mode);
+extern bool isolate_movable_page(struct page *page, isolate_mode_t mode);
 extern void putback_movable_page(struct page *page);
 
 extern int migrate_prep(void);
@@ -77,16 +49,19 @@ extern void migrate_page_copy(struct page *newpage, struct page *page);
 extern int migrate_huge_page_move_mapping(struct address_space *mapping,
 				  struct page *newpage, struct page *page);
 extern int migrate_page_move_mapping(struct address_space *mapping,
-		struct page *newpage, struct page *page, int extra_count);
+		struct page *newpage, struct page *page,
+		struct buffer_head *head, enum migrate_mode mode,
+		int extra_count);
 #else
+
+static inline int migrate_replace_page(struct page *oldpage,
+		struct page *newpage) { return -ENOSYS; }
 
 static inline void putback_movable_pages(struct list_head *l) {}
 static inline int migrate_pages(struct list_head *l, new_page_t new,
 		free_page_t free, unsigned long private, enum migrate_mode mode,
 		int reason)
 	{ return -ENOSYS; }
-static inline int isolate_movable_page(struct page *page, isolate_mode_t mode)
-	{ return -EBUSY; }
 
 static inline int migrate_prep(void) { return -ENOSYS; }
 static inline int migrate_prep_local(void) { return -ENOSYS; }
@@ -263,7 +238,6 @@ struct migrate_vma_ops {
 				 void *private);
 };
 
-#if defined(CONFIG_MIGRATE_VMA_HELPER)
 int migrate_vma(const struct migrate_vma_ops *ops,
 		struct vm_area_struct *vma,
 		unsigned long start,
@@ -271,18 +245,6 @@ int migrate_vma(const struct migrate_vma_ops *ops,
 		unsigned long *src,
 		unsigned long *dst,
 		void *private);
-#else
-static inline int migrate_vma(const struct migrate_vma_ops *ops,
-			      struct vm_area_struct *vma,
-			      unsigned long start,
-			      unsigned long end,
-			      unsigned long *src,
-			      unsigned long *dst,
-			      void *private)
-{
-	return -EINVAL;
-}
-#endif /* IS_ENABLED(CONFIG_MIGRATE_VMA_HELPER) */
 
 #endif /* CONFIG_MIGRATION */
 

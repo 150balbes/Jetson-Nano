@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0-only
 #
 # Makefile for Linux filesystem routines that are shared by client and server.
 #

@@ -1,0 +1,5 @@
+append_menu "Firmware Drivers"
+
+source "drivers/firmware/tegra/Kconfig"
+
+endmenu

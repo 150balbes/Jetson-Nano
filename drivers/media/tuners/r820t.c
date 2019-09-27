@@ -1,26 +1,36 @@
-// SPDX-License-Identifier: GPL-2.0
-// Rafael Micro R820T driver
-//
-// Copyright (C) 2013 Mauro Carvalho Chehab
-//
-// This driver was written from scratch, based on an existing driver
-// that it is part of rtl-sdr git tree, released under GPLv2:
-//	https://groups.google.com/forum/#!topic/ultra-cheap-sdr/Y3rBEOFtHug
-//	https://github.com/n1gp/gr-baz
-//
-// From what I understood from the threads, the original driver was converted
-// to userspace from a Realtek tree. I couldn't find the original tree.
-// However, the original driver look awkward on my eyes. So, I decided to
-// write a new version from it from the scratch, while trying to reproduce
-// everything found there.
-//
-// TODO:
-//	After locking, the original driver seems to have some routines to
-//		improve reception. This was not implemented here yet.
-//
-//	RF Gain set/get is not implemented.
-
-#define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
+/*
+ * Rafael Micro R820T driver
+ *
+ * Copyright (C) 2013 Mauro Carvalho Chehab
+ *
+ * This driver was written from scratch, based on an existing driver
+ * that it is part of rtl-sdr git tree, released under GPLv2:
+ *	https://groups.google.com/forum/#!topic/ultra-cheap-sdr/Y3rBEOFtHug
+ *	https://github.com/n1gp/gr-baz
+ *
+ * From what I understood from the threads, the original driver was converted
+ * to userspace from a Realtek tree. I couldn't find the original tree.
+ * However, the original driver look awkward on my eyes. So, I decided to
+ * write a new version from it from the scratch, while trying to reproduce
+ * everything found there.
+ *
+ * TODO:
+ *	After locking, the original driver seems to have some routines to
+ *		improve reception. This was not implemented here yet.
+ *
+ *	RF Gain set/get is not implemented.
+ *
+ *    This program is free software; you can redistribute it and/or modify
+ *    it under the terms of the GNU General Public License as published by
+ *    the Free Software Foundation; either version 2 of the License, or
+ *    (at your option) any later version.
+ *
+ *    This program is distributed in the hope that it will be useful,
+ *    but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *    GNU General Public License for more details.
+ *
+ */
 
 #include <linux/videodev2.h>
 #include <linux/mutex.h>
@@ -1664,7 +1674,7 @@ static int r820t_iq_tree(struct r820t_priv *priv,
 
 	/*
 	 * record IMC results by input gain/phase location then adjust
-	 * gain or phase positive 1 step and negative 1 step,
+	 * gain or phase positive 1 step and negtive 1 step,
 	 * both record results
 	 */
 
@@ -2066,7 +2076,7 @@ static int r820t_imr_callibrate(struct r820t_priv *priv)
 	}
 
 	/*
-	 * Disables IMR calibration. That emulates the same behaviour
+	 * Disables IMR callibration. That emulates the same behaviour
 	 * as what is done by rtl-sdr userspace library. Useful for testing
 	 */
 	if (no_imr_cal) {
@@ -2279,7 +2289,7 @@ static int r820t_get_if_frequency(struct dvb_frontend *fe, u32 *frequency)
 	return 0;
 }
 
-static void r820t_release(struct dvb_frontend *fe)
+static int r820t_release(struct dvb_frontend *fe)
 {
 	struct r820t_priv *priv = fe->tuner_priv;
 
@@ -2293,13 +2303,15 @@ static void r820t_release(struct dvb_frontend *fe)
 	mutex_unlock(&r820t_list_mutex);
 
 	fe->tuner_priv = NULL;
+
+	return 0;
 }
 
 static const struct dvb_tuner_ops r820t_tuner_ops = {
 	.info = {
-		.name             = "Rafael Micro R820T",
-		.frequency_min_hz =   42 * MHz,
-		.frequency_max_hz = 1002 * MHz,
+		.name           = "Rafael Micro R820T",
+		.frequency_min  =   42000000,
+		.frequency_max  = 1002000000,
 	},
 	.init = r820t_init,
 	.release = r820t_release,
@@ -2373,7 +2385,7 @@ err:
 err_no_gate:
 	mutex_unlock(&r820t_list_mutex);
 
-	pr_info("%s: failed=%d\n", __func__, rc);
+	tuner_info("%s: failed=%d\n", __func__, rc);
 	r820t_release(fe);
 	return NULL;
 }
@@ -2381,4 +2393,4 @@ EXPORT_SYMBOL_GPL(r820t_attach);
 
 MODULE_DESCRIPTION("Rafael Micro r820t silicon tuner driver");
 MODULE_AUTHOR("Mauro Carvalho Chehab");
-MODULE_LICENSE("GPL v2");
+MODULE_LICENSE("GPL");

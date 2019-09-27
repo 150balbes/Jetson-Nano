@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _LINUX_U64_STATS_SYNC_H
 #define _LINUX_U64_STATS_SYNC_H
 
@@ -90,25 +89,17 @@ static inline void u64_stats_update_end(struct u64_stats_sync *syncp)
 #endif
 }
 
-static inline unsigned long
-u64_stats_update_begin_irqsave(struct u64_stats_sync *syncp)
+static inline void u64_stats_update_begin_raw(struct u64_stats_sync *syncp)
 {
-	unsigned long flags = 0;
-
 #if BITS_PER_LONG==32 && defined(CONFIG_SMP)
-	local_irq_save(flags);
-	write_seqcount_begin(&syncp->seq);
+	raw_write_seqcount_begin(&syncp->seq);
 #endif
-	return flags;
 }
 
-static inline void
-u64_stats_update_end_irqrestore(struct u64_stats_sync *syncp,
-				unsigned long flags)
+static inline void u64_stats_update_end_raw(struct u64_stats_sync *syncp)
 {
 #if BITS_PER_LONG==32 && defined(CONFIG_SMP)
-	write_seqcount_end(&syncp->seq);
-	local_irq_restore(flags);
+	raw_write_seqcount_end(&syncp->seq);
 #endif
 }
 

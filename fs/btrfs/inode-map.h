@@ -1,7 +1,5 @@
-/* SPDX-License-Identifier: GPL-2.0 */
-
-#ifndef BTRFS_INODE_MAP_H
-#define BTRFS_INODE_MAP_H
+#ifndef __BTRFS_INODE_MAP
+#define __BTRFS_INODE_MAP
 
 void btrfs_init_free_ino_ctl(struct btrfs_root *root);
 void btrfs_unpin_free_ino(struct btrfs_root *root);

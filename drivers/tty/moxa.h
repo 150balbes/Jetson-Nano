@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef MOXA_H_FILE
 #define MOXA_H_FILE
 
@@ -301,7 +300,5 @@
 #define	MX_PARNONE	0x00
 #define	MX_PAREVEN	0x40
 #define	MX_PARODD	0xC0
-#define	MX_PARMARK	0xA0
-#define	MX_PARSPACE	0x20
 
 #endif

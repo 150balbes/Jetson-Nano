@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  *	Implement 'Simple Boot Flag Specification 2.0'
  */

@@ -1,7 +1,7 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (C) ST-Ericsson AB 2010
  * Author:	Sjur Brendeland
+ * License terms: GNU General Public License (GPL) version 2
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ":%s(): " fmt, __func__
@@ -9,7 +9,7 @@
 #include <linux/fs.h>
 #include <linux/init.h>
 #include <linux/module.h>
-#include <linux/sched/signal.h>
+#include <linux/sched.h>
 #include <linux/spinlock.h>
 #include <linux/mutex.h>
 #include <linux/list.h>
@@ -754,10 +754,6 @@ static int caif_connect(struct socket *sock, struct sockaddr *uaddr,
 
 	lock_sock(sk);
 
-	err = -EINVAL;
-	if (addr_len < offsetofend(struct sockaddr, sa_family))
-		goto out;
-
 	err = -EAFNOSUPPORT;
 	if (uaddr->sa_family != AF_CAIF)
 		goto out;
@@ -924,7 +920,7 @@ static int caif_release(struct socket *sock)
 
 	caif_disconnect_client(sock_net(sk), &cf_sk->layer);
 	cf_sk->sk.sk_socket->state = SS_DISCONNECTING;
-	wake_up_interruptible_poll(sk_sleep(sk), EPOLLERR|EPOLLHUP);
+	wake_up_interruptible_poll(sk_sleep(sk), POLLERR|POLLHUP);
 
 	sock_orphan(sk);
 	sk_stream_kill_queues(&cf_sk->sk);
@@ -934,35 +930,35 @@ static int caif_release(struct socket *sock)
 }
 
 /* Copied from af_unix.c:unix_poll(), added CAIF tx_flow handling */
-static __poll_t caif_poll(struct file *file,
+static unsigned int caif_poll(struct file *file,
 			      struct socket *sock, poll_table *wait)
 {
 	struct sock *sk = sock->sk;
-	__poll_t mask;
+	unsigned int mask;
 	struct caifsock *cf_sk = container_of(sk, struct caifsock, sk);
 
-	sock_poll_wait(file, sock, wait);
+	sock_poll_wait(file, sk_sleep(sk), wait);
 	mask = 0;
 
 	/* exceptional events? */
 	if (sk->sk_err)
-		mask |= EPOLLERR;
+		mask |= POLLERR;
 	if (sk->sk_shutdown == SHUTDOWN_MASK)
-		mask |= EPOLLHUP;
+		mask |= POLLHUP;
 	if (sk->sk_shutdown & RCV_SHUTDOWN)
-		mask |= EPOLLRDHUP;
+		mask |= POLLRDHUP;
 
 	/* readable? */
 	if (!skb_queue_empty(&sk->sk_receive_queue) ||
 		(sk->sk_shutdown & RCV_SHUTDOWN))
-		mask |= EPOLLIN | EPOLLRDNORM;
+		mask |= POLLIN | POLLRDNORM;
 
 	/*
 	 * we set writable also when the other side has shut down the
 	 * connection. This prevents stuck sockets.
 	 */
 	if (sock_writeable(sk) && tx_flow_is_on(cf_sk))
-		mask |= EPOLLOUT | EPOLLWRNORM | EPOLLWRBAND;
+		mask |= POLLOUT | POLLWRNORM | POLLWRBAND;
 
 	return mask;
 }
@@ -1013,7 +1009,7 @@ static const struct proto_ops caif_stream_ops = {
 static void caif_sock_destructor(struct sock *sk)
 {
 	struct caifsock *cf_sk = container_of(sk, struct caifsock, sk);
-	caif_assert(!refcount_read(&sk->sk_wmem_alloc));
+	caif_assert(!atomic_read(&sk->sk_wmem_alloc));
 	caif_assert(sk_unhashed(sk));
 	caif_assert(!sk->sk_socket);
 	if (!sock_flag(sk, SOCK_DEAD)) {
@@ -1032,8 +1028,6 @@ static int caif_create(struct net *net, struct socket *sock, int protocol,
 	static struct proto prot = {.name = "PF_CAIF",
 		.owner = THIS_MODULE,
 		.obj_size = sizeof(struct caifsock),
-		.useroffset = offsetof(struct caifsock, conn_req.param),
-		.usersize = sizeof_field(struct caifsock, conn_req.param)
 	};
 
 	if (!capable(CAP_SYS_ADMIN) && !capable(CAP_NET_ADMIN))
@@ -1105,7 +1099,7 @@ static int caif_create(struct net *net, struct socket *sock, int protocol,
 }
 
 
-static const struct net_proto_family caif_family_ops = {
+static struct net_proto_family caif_family_ops = {
 	.family = PF_CAIF,
 	.create = caif_create,
 	.owner = THIS_MODULE,

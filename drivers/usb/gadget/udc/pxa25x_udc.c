@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0+
 /*
  * Intel PXA25x and IXP4xx on-chip full speed USB device controllers
  *
@@ -7,6 +6,11 @@
  * Copyright (C) 2003 Benedikt Spranger, Pengutronix
  * Copyright (C) 2003 David Brownell
  * Copyright (C) 2003 Joshua Wise
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
  */
 
 /* #define VERBOSE_DEBUG */
@@ -1233,7 +1237,8 @@ static const struct usb_gadget_ops pxa25x_udc_ops = {
 
 #ifdef CONFIG_USB_GADGET_DEBUG_FS
 
-static int udc_debug_show(struct seq_file *m, void *_d)
+static int
+udc_seq_show(struct seq_file *m, void *_d)
 {
 	struct pxa25x_udc	*dev = m->private;
 	unsigned long		flags;
@@ -1334,12 +1339,25 @@ done:
 	local_irq_restore(flags);
 	return 0;
 }
-DEFINE_SHOW_ATTRIBUTE(udc_debug);
+
+static int
+udc_debugfs_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, udc_seq_show, inode->i_private);
+}
+
+static const struct file_operations debug_fops = {
+	.open		= udc_debugfs_open,
+	.read		= seq_read,
+	.llseek		= seq_lseek,
+	.release	= single_release,
+	.owner		= THIS_MODULE,
+};
 
 #define create_debug_files(dev) \
 	do { \
 		dev->debugfs_udc = debugfs_create_file(dev->gadget.name, \
-			S_IRUGO, NULL, dev, &udc_debug_fops); \
+			S_IRUGO, NULL, dev, &debug_fops); \
 	} while (0)
 #define remove_debug_files(dev) debugfs_remove(dev->debugfs_udc)
 
@@ -1610,9 +1628,9 @@ static inline void clear_ep_state (struct pxa25x_udc *dev)
 		nuke(&dev->ep[i], -ECONNABORTED);
 }
 
-static void udc_watchdog(struct timer_list *t)
+static void udc_watchdog(unsigned long _dev)
 {
-	struct pxa25x_udc	*dev = from_timer(dev, t, timer);
+	struct pxa25x_udc	*dev = (void *)_dev;
 
 	local_irq_disable();
 	if (dev->ep0state == EP0_STALL
@@ -2399,7 +2417,9 @@ static int pxa25x_udc_probe(struct platform_device *pdev)
 		gpio_direction_output(dev->mach->gpio_pullup, 0);
 	}
 
-	timer_setup(&dev->timer, udc_watchdog, 0);
+	init_timer(&dev->timer);
+	dev->timer.function = udc_watchdog;
+	dev->timer.data = (unsigned long) dev;
 
 	the_controller = dev;
 	platform_set_drvdata(pdev, dev);

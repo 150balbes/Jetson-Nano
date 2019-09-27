@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  *
  * Hardware accelerated Matrox Millennium I, II, Mystique, G100, G200 and G400
@@ -739,10 +738,7 @@ static int Ti3026_preinit(struct matrox_fb_info *minfo)
 }
 
 struct matrox_switch matrox_millennium = {
-	.preinit	= Ti3026_preinit,
-	.reset		= Ti3026_reset,
-	.init		= Ti3026_init,
-	.restore	= Ti3026_restore
+	Ti3026_preinit, Ti3026_reset, Ti3026_init, Ti3026_restore
 };
 EXPORT_SYMBOL(matrox_millennium);
 #endif

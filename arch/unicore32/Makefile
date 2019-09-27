@@ -41,10 +41,11 @@ libs-y			+= arch/unicore32/lib/
 
 boot			:= arch/unicore32/boot
 
-# Default target when executing plain make
-KBUILD_IMAGE		:= $(boot)/zImage
+# Default defconfig and target when executing plain make
+KBUILD_DEFCONFIG	:= $(ARCH)_defconfig
+KBUILD_IMAGE		:= zImage
 
-all:	zImage
+all:	$(KBUILD_IMAGE)
 
 zImage Image uImage: vmlinux
 	$(Q)$(MAKE) $(build)=$(boot) $(boot)/$@

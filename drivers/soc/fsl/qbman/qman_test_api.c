@@ -65,7 +65,7 @@ static void fd_init(struct qm_fd *fd)
 {
 	qm_fd_addr_set64(fd, 0xabdeadbeefLLU);
 	qm_fd_set_contig_big(fd, 0x0000ffff);
-	fd->cmd = cpu_to_be32(0xfeedf00d);
+	fd->cmd = 0xfeedf00d;
 }
 
 static void fd_inc(struct qm_fd *fd)
@@ -86,19 +86,26 @@ static void fd_inc(struct qm_fd *fd)
 	len--;
 	qm_fd_set_param(fd, fmt, off, len);
 
-	fd->cmd = cpu_to_be32(be32_to_cpu(fd->cmd) + 1);
+	fd->cmd++;
 }
 
 /* The only part of the 'fd' we can't memcmp() is the ppid */
-static bool fd_neq(const struct qm_fd *a, const struct qm_fd *b)
+static int fd_cmp(const struct qm_fd *a, const struct qm_fd *b)
 {
-	bool neq = qm_fd_addr_get64(a) != qm_fd_addr_get64(b);
+	int r = (qm_fd_addr_get64(a) == qm_fd_addr_get64(b)) ? 0 : -1;
 
-	neq |= qm_fd_get_format(a) != qm_fd_get_format(b);
-	neq |= a->cfg != b->cfg;
-	neq |= a->cmd != b->cmd;
+	if (!r) {
+		enum qm_fd_format fmt_a, fmt_b;
 
-	return neq;
+		fmt_a = qm_fd_get_format(a);
+		fmt_b = qm_fd_get_format(b);
+		r = fmt_a - fmt_b;
+	}
+	if (!r)
+		r = a->cfg - b->cfg;
+	if (!r)
+		r = a->cmd - b->cmd;
+	return r;
 }
 
 /* test */
@@ -210,12 +217,12 @@ static enum qman_cb_dqrr_result cb_dqrr(struct qman_portal *p,
 					struct qman_fq *fq,
 					const struct qm_dqrr_entry *dq)
 {
-	if (WARN_ON(fd_neq(&fd_dq, &dq->fd))) {
+	if (WARN_ON(fd_cmp(&fd_dq, &dq->fd))) {
 		pr_err("BADNESS: dequeued frame doesn't match;\n");
 		return qman_cb_dqrr_consume;
 	}
 	fd_inc(&fd_dq);
-	if (!(dq->stat & QM_DQRR_STAT_UNSCHEDULED) && !fd_neq(&fd_dq, &fd)) {
+	if (!(dq->stat & QM_DQRR_STAT_UNSCHEDULED) && !fd_cmp(&fd_dq, &fd)) {
 		sdqcr_complete = 1;
 		wake_up(&waitqueue);
 	}

@@ -26,7 +26,6 @@
 #include <linux/interrupt.h>
 #include <linux/io.h>
 #include <linux/module.h>
-#include <linux/of_graph.h>
 #include <linux/pinctrl/consumer.h>
 #include <linux/platform_device.h>
 #include <linux/pm_runtime.h>
@@ -37,7 +36,7 @@
 #include <media/v4l2-common.h>
 #include <media/v4l2-ctrls.h>
 #include <media/v4l2-event.h>
-#include <media/v4l2-fwnode.h>
+#include <media/v4l2-of.h>
 
 #include "am437x-vpfe.h"
 
@@ -1408,8 +1407,8 @@ static int vpfe_querycap(struct file *file, void  *priv,
 
 	vpfe_dbg(2, vpfe, "vpfe_querycap\n");
 
-	strscpy(cap->driver, VPFE_MODULE_NAME, sizeof(cap->driver));
-	strscpy(cap->card, "TI AM437x VPFE", sizeof(cap->card));
+	strlcpy(cap->driver, VPFE_MODULE_NAME, sizeof(cap->driver));
+	strlcpy(cap->card, "TI AM437x VPFE", sizeof(cap->card));
 	snprintf(cap->bus_info, sizeof(cap->bus_info),
 			"platform:%s", vpfe->v4l2_dev.name);
 	cap->device_caps = V4L2_CAP_VIDEO_CAPTURE | V4L2_CAP_STREAMING |
@@ -1540,7 +1539,7 @@ static int vpfe_enum_fmt(struct file *file, void  *priv,
 	if (!fmt)
 		return -EINVAL;
 
-	strscpy(f->description, fmt->name, sizeof(f->description));
+	strncpy(f->description, fmt->name, sizeof(f->description) - 1);
 	f->pixelformat = fmt->fourcc;
 	f->type = vpfe->fmt.type;
 
@@ -2081,18 +2080,24 @@ static void vpfe_stop_streaming(struct vb2_queue *vq)
 	spin_unlock_irqrestore(&vpfe->dma_queue_lock, flags);
 }
 
-static int vpfe_g_pixelaspect(struct file *file, void *priv,
-			      int type, struct v4l2_fract *f)
+static int vpfe_cropcap(struct file *file, void *priv,
+			struct v4l2_cropcap *crop)
 {
 	struct vpfe_device *vpfe = video_drvdata(file);
 
-	vpfe_dbg(2, vpfe, "vpfe_g_pixelaspect\n");
+	vpfe_dbg(2, vpfe, "vpfe_cropcap\n");
 
-	if (type != V4L2_BUF_TYPE_VIDEO_CAPTURE ||
-	    vpfe->std_index >= ARRAY_SIZE(vpfe_standards))
+	if (vpfe->std_index >= ARRAY_SIZE(vpfe_standards))
 		return -EINVAL;
 
-	*f = vpfe_standards[vpfe->std_index].pixelaspect;
+	memset(crop, 0, sizeof(struct v4l2_cropcap));
+
+	crop->type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+	crop->defrect.width = vpfe_standards[vpfe->std_index].width;
+	crop->bounds.width = crop->defrect.width;
+	crop->defrect.height = vpfe_standards[vpfe->std_index].height;
+	crop->bounds.height = crop->defrect.height;
+	crop->pixelaspect = vpfe_standards[vpfe->std_index].pixelaspect;
 
 	return 0;
 }
@@ -2102,17 +2107,12 @@ vpfe_g_selection(struct file *file, void *fh, struct v4l2_selection *s)
 {
 	struct vpfe_device *vpfe = video_drvdata(file);
 
-	if (s->type != V4L2_BUF_TYPE_VIDEO_CAPTURE ||
-	    vpfe->std_index >= ARRAY_SIZE(vpfe_standards))
-		return -EINVAL;
-
 	switch (s->target) {
 	case V4L2_SEL_TGT_CROP_BOUNDS:
 	case V4L2_SEL_TGT_CROP_DEFAULT:
-		s->r.left = 0;
-		s->r.top = 0;
-		s->r.width = vpfe_standards[vpfe->std_index].width;
-		s->r.height = vpfe_standards[vpfe->std_index].height;
+		s->r.left = s->r.top = 0;
+		s->r.width = vpfe->crop.width;
+		s->r.height = vpfe->crop.height;
 		break;
 
 	case V4L2_SEL_TGT_CROP:
@@ -2281,7 +2281,7 @@ static const struct v4l2_ioctl_ops vpfe_ioctl_ops = {
 	.vidioc_subscribe_event		= v4l2_ctrl_subscribe_event,
 	.vidioc_unsubscribe_event	= v4l2_event_unsubscribe,
 
-	.vidioc_g_pixelaspect		= vpfe_g_pixelaspect,
+	.vidioc_cropcap			= vpfe_cropcap,
 	.vidioc_g_selection		= vpfe_g_selection,
 	.vidioc_s_selection		= vpfe_s_selection,
 
@@ -2303,8 +2303,7 @@ vpfe_async_bound(struct v4l2_async_notifier *notifier,
 	vpfe_dbg(1, vpfe, "vpfe_async_bound\n");
 
 	for (i = 0; i < ARRAY_SIZE(vpfe->cfg->asd); i++) {
-		if (vpfe->cfg->asd[i]->match.fwnode ==
-		    asd[i].match.fwnode) {
+		if (vpfe->cfg->asd[i]->match.of.node == asd[i].match.of.node) {
 			sdinfo = &vpfe->cfg->sub_devs[i];
 			vpfe->sd[i] = subdev;
 			vpfe->sd[i]->grp_id = sdinfo->grp_id;
@@ -2385,7 +2384,7 @@ static int vpfe_probe_complete(struct vpfe_device *vpfe)
 	INIT_LIST_HEAD(&vpfe->dma_queue);
 
 	vdev = &vpfe->video_dev;
-	strscpy(vdev->name, VPFE_MODULE_NAME, sizeof(vdev->name));
+	strlcpy(vdev->name, VPFE_MODULE_NAME, sizeof(vdev->name));
 	vdev->release = video_device_release_empty;
 	vdev->fops = &vpfe_fops;
 	vdev->ioctl_ops = &vpfe_ioctl_ops;
@@ -2416,38 +2415,31 @@ static int vpfe_async_complete(struct v4l2_async_notifier *notifier)
 	return vpfe_probe_complete(vpfe);
 }
 
-static const struct v4l2_async_notifier_operations vpfe_async_ops = {
-	.bound = vpfe_async_bound,
-	.complete = vpfe_async_complete,
-};
-
 static struct vpfe_config *
-vpfe_get_pdata(struct vpfe_device *vpfe)
+vpfe_get_pdata(struct platform_device *pdev)
 {
 	struct device_node *endpoint = NULL;
-	struct device *dev = vpfe->pdev;
+	struct v4l2_of_endpoint bus_cfg;
 	struct vpfe_subdev_info *sdinfo;
 	struct vpfe_config *pdata;
 	unsigned int flags;
 	unsigned int i;
 	int err;
 
-	dev_dbg(dev, "vpfe_get_pdata\n");
+	dev_dbg(&pdev->dev, "vpfe_get_pdata\n");
 
-	v4l2_async_notifier_init(&vpfe->notifier);
+	if (!IS_ENABLED(CONFIG_OF) || !pdev->dev.of_node)
+		return pdev->dev.platform_data;
 
-	if (!IS_ENABLED(CONFIG_OF) || !dev->of_node)
-		return dev->platform_data;
-
-	pdata = devm_kzalloc(dev, sizeof(*pdata), GFP_KERNEL);
+	pdata = devm_kzalloc(&pdev->dev, sizeof(*pdata), GFP_KERNEL);
 	if (!pdata)
 		return NULL;
 
 	for (i = 0; ; i++) {
-		struct v4l2_fwnode_endpoint bus_cfg = { .bus_type = 0 };
 		struct device_node *rem;
 
-		endpoint = of_graph_get_next_endpoint(dev->of_node, endpoint);
+		endpoint = of_graph_get_next_endpoint(pdev->dev.of_node,
+						      endpoint);
 		if (!endpoint)
 			break;
 
@@ -2456,8 +2448,7 @@ vpfe_get_pdata(struct vpfe_device *vpfe)
 
 		/* we only support camera */
 		sdinfo->inputs[0].index = i;
-		strscpy(sdinfo->inputs[0].name, "Camera",
-			sizeof(sdinfo->inputs[0].name));
+		strcpy(sdinfo->inputs[0].name, "Camera");
 		sdinfo->inputs[0].type = V4L2_INPUT_TYPE_CAMERA;
 		sdinfo->inputs[0].std = V4L2_STD_ALL;
 		sdinfo->inputs[0].capabilities = V4L2_IN_CAP_STD;
@@ -2472,19 +2463,18 @@ vpfe_get_pdata(struct vpfe_device *vpfe)
 			sdinfo->vpfe_param.if_type = VPFE_RAW_BAYER;
 		}
 
-		err = v4l2_fwnode_endpoint_parse(of_fwnode_handle(endpoint),
-						 &bus_cfg);
+		err = v4l2_of_parse_endpoint(endpoint, &bus_cfg);
 		if (err) {
-			dev_err(dev, "Could not parse the endpoint\n");
-			goto cleanup;
+			dev_err(&pdev->dev, "Could not parse the endpoint\n");
+			goto done;
 		}
 
 		sdinfo->vpfe_param.bus_width = bus_cfg.bus.parallel.bus_width;
 
 		if (sdinfo->vpfe_param.bus_width < 8 ||
 			sdinfo->vpfe_param.bus_width > 16) {
-			dev_err(dev, "Invalid bus width.\n");
-			goto cleanup;
+			dev_err(&pdev->dev, "Invalid bus width.\n");
+			goto done;
 		}
 
 		flags = bus_cfg.bus.parallel.flags;
@@ -2497,25 +2487,29 @@ vpfe_get_pdata(struct vpfe_device *vpfe)
 
 		rem = of_graph_get_remote_port_parent(endpoint);
 		if (!rem) {
-			dev_err(dev, "Remote device at %pOF not found\n",
-				endpoint);
-			goto cleanup;
+			dev_err(&pdev->dev, "Remote device at %s not found\n",
+				endpoint->full_name);
+			goto done;
 		}
 
-		pdata->asd[i] = v4l2_async_notifier_add_fwnode_subdev(
-			&vpfe->notifier, of_fwnode_handle(rem),
-			sizeof(struct v4l2_async_subdev));
-		if (IS_ERR(pdata->asd[i])) {
+		pdata->asd[i] = devm_kzalloc(&pdev->dev,
+					     sizeof(struct v4l2_async_subdev),
+					     GFP_KERNEL);
+		if (!pdata->asd[i]) {
 			of_node_put(rem);
-			goto cleanup;
+			pdata = NULL;
+			goto done;
 		}
+
+		pdata->asd[i]->match_type = V4L2_ASYNC_MATCH_OF;
+		pdata->asd[i]->match.of.node = rem;
+		of_node_put(rem);
 	}
 
 	of_node_put(endpoint);
 	return pdata;
 
-cleanup:
-	v4l2_async_notifier_cleanup(&vpfe->notifier);
+done:
 	of_node_put(endpoint);
 	return NULL;
 }
@@ -2527,39 +2521,34 @@ cleanup:
  */
 static int vpfe_probe(struct platform_device *pdev)
 {
-	struct vpfe_config *vpfe_cfg;
+	struct vpfe_config *vpfe_cfg = vpfe_get_pdata(pdev);
 	struct vpfe_device *vpfe;
 	struct vpfe_ccdc *ccdc;
 	struct resource	*res;
 	int ret;
+
+	if (!vpfe_cfg) {
+		dev_err(&pdev->dev, "No platform data\n");
+		return -EINVAL;
+	}
 
 	vpfe = devm_kzalloc(&pdev->dev, sizeof(*vpfe), GFP_KERNEL);
 	if (!vpfe)
 		return -ENOMEM;
 
 	vpfe->pdev = &pdev->dev;
-
-	vpfe_cfg = vpfe_get_pdata(vpfe);
-	if (!vpfe_cfg) {
-		dev_err(&pdev->dev, "No platform data\n");
-		return -EINVAL;
-	}
-
 	vpfe->cfg = vpfe_cfg;
 	ccdc = &vpfe->ccdc;
 
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	ccdc->ccdc_cfg.base_addr = devm_ioremap_resource(&pdev->dev, res);
-	if (IS_ERR(ccdc->ccdc_cfg.base_addr)) {
-		ret = PTR_ERR(ccdc->ccdc_cfg.base_addr);
-		goto probe_out_cleanup;
-	}
+	if (IS_ERR(ccdc->ccdc_cfg.base_addr))
+		return PTR_ERR(ccdc->ccdc_cfg.base_addr);
 
 	ret = platform_get_irq(pdev, 0);
 	if (ret <= 0) {
 		dev_err(&pdev->dev, "No IRQ resource\n");
-		ret = -ENODEV;
-		goto probe_out_cleanup;
+		return -ENODEV;
 	}
 	vpfe->irq = ret;
 
@@ -2567,15 +2556,14 @@ static int vpfe_probe(struct platform_device *pdev)
 			       "vpfe_capture0", vpfe);
 	if (ret) {
 		dev_err(&pdev->dev, "Unable to request interrupt\n");
-		ret = -EINVAL;
-		goto probe_out_cleanup;
+		return -EINVAL;
 	}
 
 	ret = v4l2_device_register(&pdev->dev, &vpfe->v4l2_dev);
 	if (ret) {
 		vpfe_err(vpfe,
 			"Unable to register v4l2 device.\n");
-		goto probe_out_cleanup;
+		return ret;
 	}
 
 	/* set the driver data in platform device */
@@ -2590,17 +2578,19 @@ static int vpfe_probe(struct platform_device *pdev)
 
 	pm_runtime_put_sync(&pdev->dev);
 
-	vpfe->sd = devm_kcalloc(&pdev->dev,
-				ARRAY_SIZE(vpfe->cfg->asd),
-				sizeof(struct v4l2_subdev *),
-				GFP_KERNEL);
+	vpfe->sd = devm_kzalloc(&pdev->dev, sizeof(struct v4l2_subdev *) *
+				ARRAY_SIZE(vpfe->cfg->asd), GFP_KERNEL);
 	if (!vpfe->sd) {
 		ret = -ENOMEM;
 		goto probe_out_v4l2_unregister;
 	}
 
-	vpfe->notifier.ops = &vpfe_async_ops;
-	ret = v4l2_async_notifier_register(&vpfe->v4l2_dev, &vpfe->notifier);
+	vpfe->notifier.subdevs = vpfe->cfg->asd;
+	vpfe->notifier.num_subdevs = ARRAY_SIZE(vpfe->cfg->asd);
+	vpfe->notifier.bound = vpfe_async_bound;
+	vpfe->notifier.complete = vpfe_async_complete;
+	ret = v4l2_async_notifier_register(&vpfe->v4l2_dev,
+						&vpfe->notifier);
 	if (ret) {
 		vpfe_err(vpfe, "Error registering async notifier\n");
 		ret = -EINVAL;
@@ -2611,8 +2601,6 @@ static int vpfe_probe(struct platform_device *pdev)
 
 probe_out_v4l2_unregister:
 	v4l2_device_unregister(&vpfe->v4l2_dev);
-probe_out_cleanup:
-	v4l2_async_notifier_cleanup(&vpfe->notifier);
 	return ret;
 }
 
@@ -2628,7 +2616,6 @@ static int vpfe_remove(struct platform_device *pdev)
 	pm_runtime_disable(&pdev->dev);
 
 	v4l2_async_notifier_unregister(&vpfe->notifier);
-	v4l2_async_notifier_cleanup(&vpfe->notifier);
 	v4l2_device_unregister(&vpfe->v4l2_dev);
 	video_unregister_device(&vpfe->video_dev);
 
@@ -2668,7 +2655,8 @@ static void vpfe_save_context(struct vpfe_ccdc *ccdc)
 
 static int vpfe_suspend(struct device *dev)
 {
-	struct vpfe_device *vpfe = dev_get_drvdata(dev);
+	struct platform_device *pdev = to_platform_device(dev);
+	struct vpfe_device *vpfe = platform_get_drvdata(pdev);
 	struct vpfe_ccdc *ccdc = &vpfe->ccdc;
 
 	/* if streaming has not started we don't care */
@@ -2725,7 +2713,8 @@ static void vpfe_restore_context(struct vpfe_ccdc *ccdc)
 
 static int vpfe_resume(struct device *dev)
 {
-	struct vpfe_device *vpfe = dev_get_drvdata(dev);
+	struct platform_device *pdev = to_platform_device(dev);
+	struct vpfe_device *vpfe = platform_get_drvdata(pdev);
 	struct vpfe_ccdc *ccdc = &vpfe->ccdc;
 
 	/* if streaming has not started we don't care */

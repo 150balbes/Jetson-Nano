@@ -1,20 +1,14 @@
-// SPDX-License-Identifier: GPL-2.0
 #include <linux/bug.h>
 #include <linux/io.h>
 #include <linux/types.h>
 #include <linux/kdebug.h>
 #include <linux/signal.h>
 #include <linux/sched.h>
-#include <linux/sched/debug.h>
-#include <linux/sched/task_stack.h>
 #include <linux/uaccess.h>
 #include <linux/hardirq.h>
 #include <linux/kernel.h>
 #include <linux/kexec.h>
-#include <linux/sched/signal.h>
-
-#include <linux/extable.h>
-#include <linux/module.h>	/* print_modules */
+#include <linux/module.h>
 #include <asm/unwinder.h>
 #include <asm/traps.h>
 
@@ -141,7 +135,7 @@ BUILD_TRAP_HANDLER(debug)
 		       SIGTRAP) == NOTIFY_STOP)
 		return;
 
-	force_sig(SIGTRAP);
+	force_sig(SIGTRAP, current);
 }
 
 /*
@@ -167,7 +161,7 @@ BUILD_TRAP_HANDLER(bug)
 	}
 #endif
 
-	force_sig(SIGTRAP);
+	force_sig(SIGTRAP, current);
 }
 
 BUILD_TRAP_HANDLER(nmi)

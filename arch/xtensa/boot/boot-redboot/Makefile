@@ -32,4 +32,4 @@ $(obj)/../zImage.redboot: $(obj)/zImage.elf
 	$(Q)$(OBJCOPY) -S -O binary $< $@
 	$(Q)$(kecho) '  Kernel: $@ is ready'
 
-all zImage: $(obj)/../zImage.redboot
+zImage: $(obj)/../zImage.redboot

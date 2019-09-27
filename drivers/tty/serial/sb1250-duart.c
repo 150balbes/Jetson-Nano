@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0+
 /*
  *	Support for the asynchronous serial interface (DUART) included
  *	in the BCM1250 and derived System-On-a-Chip (SOC) devices.
@@ -9,6 +8,11 @@
  *	copyright applies:
  *
  *	Copyright (c) 2000, 2001, 2002, 2003, 2004  Broadcom Corporation
+ *
+ *	This program is free software; you can redistribute it and/or
+ *	modify it under the terms of the GNU General Public License
+ *	as published by the Free Software Foundation; either version
+ *	2 of the License, or (at your option) any later version.
  *
  *	References:
  *
@@ -37,7 +41,7 @@
 #include <linux/tty_flip.h>
 #include <linux/types.h>
 
-#include <linux/refcount.h>
+#include <linux/atomic.h>
 #include <asm/io.h>
 #include <asm/war.h>
 
@@ -99,7 +103,7 @@ struct sbd_port {
 struct sbd_duart {
 	struct sbd_port		sport[2];
 	unsigned long		mapctrl;
-	refcount_t		map_guard;
+	atomic_t		map_guard;
 };
 
 #define to_sport(uport) container_of(uport, struct sbd_port, port)
@@ -650,13 +654,15 @@ static void sbd_release_port(struct uart_port *uport)
 {
 	struct sbd_port *sport = to_sport(uport);
 	struct sbd_duart *duart = sport->duart;
+	int map_guard;
 
 	iounmap(sport->memctrl);
 	sport->memctrl = NULL;
 	iounmap(uport->membase);
 	uport->membase = NULL;
 
-	if(refcount_dec_and_test(&duart->map_guard))
+	map_guard = atomic_add_return(-1, &duart->map_guard);
+	if (!map_guard)
 		release_mem_region(duart->mapctrl, DUART_CHANREG_SPACING);
 	release_mem_region(uport->mapbase, DUART_CHANREG_SPACING);
 }
@@ -692,6 +698,7 @@ static int sbd_request_port(struct uart_port *uport)
 {
 	const char *err = KERN_ERR "sbd: Unable to reserve MMIO resource\n";
 	struct sbd_duart *duart = to_sport(uport)->duart;
+	int map_guard;
 	int ret = 0;
 
 	if (!request_mem_region(uport->mapbase, DUART_CHANREG_SPACING,
@@ -699,11 +706,11 @@ static int sbd_request_port(struct uart_port *uport)
 		printk(err);
 		return -EBUSY;
 	}
-	refcount_inc(&duart->map_guard);
-	if (refcount_read(&duart->map_guard) == 1) {
+	map_guard = atomic_add_return(1, &duart->map_guard);
+	if (map_guard == 1) {
 		if (!request_mem_region(duart->mapctrl, DUART_CHANREG_SPACING,
 					"sb1250-duart")) {
-			refcount_dec(&duart->map_guard);
+			atomic_add(-1, &duart->map_guard);
 			printk(err);
 			ret = -EBUSY;
 		}
@@ -711,7 +718,8 @@ static int sbd_request_port(struct uart_port *uport)
 	if (!ret) {
 		ret = sbd_map_port(uport);
 		if (ret) {
-			if (refcount_dec_and_test(&duart->map_guard))
+			map_guard = atomic_add_return(-1, &duart->map_guard);
+			if (!map_guard)
 				release_mem_region(duart->mapctrl,
 						   DUART_CHANREG_SPACING);
 		}

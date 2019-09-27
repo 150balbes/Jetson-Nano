@@ -1,19 +1,11 @@
-.. Permission is granted to copy, distribute and/or modify this
-.. document under the terms of the GNU Free Documentation License,
-.. Version 1.1 or any later version published by the Free Software
-.. Foundation, with no Invariant Sections, no Front-Cover Texts
-.. and no Back-Cover Texts. A copy of the license is included at
-.. Documentation/media/uapi/fdl-appendix.rst.
-..
-.. TODO: replace it to GFDL-1.1-or-later WITH no-invariant-sections
+.. -*- coding: utf-8; mode: rst -*-
 
 .. _net:
 
-######################
-Digital TV Network API
-######################
-
-The Digital TV net device controls the mapping of data packages that are part
+###############
+DVB Network API
+###############
+The DVB net device controls the mapping of data packages that are part
 of a transport stream to be mapped into a virtual network interface,
 visible through the standard Linux network protocol stack.
 
@@ -36,13 +28,13 @@ header.
 
 .. _net_fcalls:
 
-Digital TV net Function Calls
-#############################
+######################
+DVB net Function Calls
+######################
 
 .. toctree::
     :maxdepth: 1
 
-    net-types
     net-add-if
     net-remove-if
     net-get-if

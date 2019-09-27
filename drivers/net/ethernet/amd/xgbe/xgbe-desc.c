@@ -176,8 +176,8 @@ static void xgbe_free_ring_resources(struct xgbe_prv_data *pdata)
 
 	DBGPR("-->xgbe_free_ring_resources\n");
 
-	for (i = 0; i < pdata->channel_count; i++) {
-		channel = pdata->channel[i];
+	channel = pdata->channel;
+	for (i = 0; i < pdata->channel_count; i++, channel++) {
 		xgbe_free_ring(pdata, channel->tx_ring);
 		xgbe_free_ring(pdata, channel->rx_ring);
 	}
@@ -185,60 +185,34 @@ static void xgbe_free_ring_resources(struct xgbe_prv_data *pdata)
 	DBGPR("<--xgbe_free_ring_resources\n");
 }
 
-static void *xgbe_alloc_node(size_t size, int node)
-{
-	void *mem;
-
-	mem = kzalloc_node(size, GFP_KERNEL, node);
-	if (!mem)
-		mem = kzalloc(size, GFP_KERNEL);
-
-	return mem;
-}
-
-static void *xgbe_dma_alloc_node(struct device *dev, size_t size,
-				 dma_addr_t *dma, int node)
-{
-	void *mem;
-	int cur_node = dev_to_node(dev);
-
-	set_dev_node(dev, node);
-	mem = dma_alloc_coherent(dev, size, dma, GFP_KERNEL);
-	set_dev_node(dev, cur_node);
-
-	if (!mem)
-		mem = dma_alloc_coherent(dev, size, dma, GFP_KERNEL);
-
-	return mem;
-}
-
 static int xgbe_init_ring(struct xgbe_prv_data *pdata,
 			  struct xgbe_ring *ring, unsigned int rdesc_count)
 {
-	size_t size;
+	DBGPR("-->xgbe_init_ring\n");
 
 	if (!ring)
 		return 0;
 
 	/* Descriptors */
-	size = rdesc_count * sizeof(struct xgbe_ring_desc);
-
 	ring->rdesc_count = rdesc_count;
-	ring->rdesc = xgbe_dma_alloc_node(pdata->dev, size, &ring->rdesc_dma,
-					  ring->node);
+	ring->rdesc = dma_alloc_coherent(pdata->dev,
+					 (sizeof(struct xgbe_ring_desc) *
+					  rdesc_count), &ring->rdesc_dma,
+					 GFP_KERNEL);
 	if (!ring->rdesc)
 		return -ENOMEM;
 
 	/* Descriptor information */
-	size = rdesc_count * sizeof(struct xgbe_ring_data);
-
-	ring->rdata = xgbe_alloc_node(size, ring->node);
+	ring->rdata = kcalloc(rdesc_count, sizeof(struct xgbe_ring_data),
+			      GFP_KERNEL);
 	if (!ring->rdata)
 		return -ENOMEM;
 
 	netif_dbg(pdata, drv, pdata->netdev,
-		  "rdesc=%p, rdesc_dma=%pad, rdata=%p, node=%d\n",
-		  ring->rdesc, &ring->rdesc_dma, ring->rdata, ring->node);
+		  "rdesc=%p, rdesc_dma=%pad, rdata=%p\n",
+		  ring->rdesc, &ring->rdesc_dma, ring->rdata);
+
+	DBGPR("<--xgbe_init_ring\n");
 
 	return 0;
 }
@@ -249,8 +223,10 @@ static int xgbe_alloc_ring_resources(struct xgbe_prv_data *pdata)
 	unsigned int i;
 	int ret;
 
-	for (i = 0; i < pdata->channel_count; i++) {
-		channel = pdata->channel[i];
+	DBGPR("-->xgbe_alloc_ring_resources\n");
+
+	channel = pdata->channel;
+	for (i = 0; i < pdata->channel_count; i++, channel++) {
 		netif_dbg(pdata, drv, pdata->netdev, "%s - Tx ring:\n",
 			  channel->name);
 
@@ -274,6 +250,8 @@ static int xgbe_alloc_ring_resources(struct xgbe_prv_data *pdata)
 		}
 	}
 
+	DBGPR("<--xgbe_alloc_ring_resources\n");
+
 	return 0;
 
 err_ring:
@@ -283,42 +261,31 @@ err_ring:
 }
 
 static int xgbe_alloc_pages(struct xgbe_prv_data *pdata,
-			    struct xgbe_page_alloc *pa, int alloc_order,
-			    int node)
+			    struct xgbe_page_alloc *pa, gfp_t gfp, int order)
 {
 	struct page *pages = NULL;
 	dma_addr_t pages_dma;
-	gfp_t gfp;
-	int order;
-
-again:
-	order = alloc_order;
+	int ret;
 
 	/* Try to obtain pages, decreasing order if necessary */
-	gfp = GFP_ATOMIC | __GFP_COMP | __GFP_NOWARN;
+	gfp |= __GFP_COLD | __GFP_COMP | __GFP_NOWARN;
 	while (order >= 0) {
-		pages = alloc_pages_node(node, gfp, order);
+		pages = alloc_pages(gfp, order);
 		if (pages)
 			break;
 
 		order--;
 	}
-
-	/* If we couldn't get local pages, try getting from anywhere */
-	if (!pages && (node != NUMA_NO_NODE)) {
-		node = NUMA_NO_NODE;
-		goto again;
-	}
-
 	if (!pages)
 		return -ENOMEM;
 
 	/* Map the pages */
 	pages_dma = dma_map_page(pdata->dev, pages, 0,
 				 PAGE_SIZE << order, DMA_FROM_DEVICE);
-	if (dma_mapping_error(pdata->dev, pages_dma)) {
+	ret = dma_mapping_error(pdata->dev, pages_dma);
+	if (ret) {
 		put_page(pages);
-		return -ENOMEM;
+		return ret;
 	}
 
 	pa->pages = pages;
@@ -357,17 +324,18 @@ static int xgbe_map_rx_buffer(struct xgbe_prv_data *pdata,
 			      struct xgbe_ring *ring,
 			      struct xgbe_ring_data *rdata)
 {
-	int ret;
+	int order, ret;
 
 	if (!ring->rx_hdr_pa.pages) {
-		ret = xgbe_alloc_pages(pdata, &ring->rx_hdr_pa, 0, ring->node);
+		ret = xgbe_alloc_pages(pdata, &ring->rx_hdr_pa, GFP_ATOMIC, 0);
 		if (ret)
 			return ret;
 	}
 
 	if (!ring->rx_buf_pa.pages) {
-		ret = xgbe_alloc_pages(pdata, &ring->rx_buf_pa,
-				       PAGE_ALLOC_COSTLY_ORDER, ring->node);
+		order = max_t(int, PAGE_ALLOC_COSTLY_ORDER - 1, 0);
+		ret = xgbe_alloc_pages(pdata, &ring->rx_buf_pa, GFP_ATOMIC,
+				       order);
 		if (ret)
 			return ret;
 	}
@@ -395,8 +363,8 @@ static void xgbe_wrapper_tx_descriptor_init(struct xgbe_prv_data *pdata)
 
 	DBGPR("-->xgbe_wrapper_tx_descriptor_init\n");
 
-	for (i = 0; i < pdata->channel_count; i++) {
-		channel = pdata->channel[i];
+	channel = pdata->channel;
+	for (i = 0; i < pdata->channel_count; i++, channel++) {
 		ring = channel->tx_ring;
 		if (!ring)
 			break;
@@ -436,8 +404,8 @@ static void xgbe_wrapper_rx_descriptor_init(struct xgbe_prv_data *pdata)
 
 	DBGPR("-->xgbe_wrapper_rx_descriptor_init\n");
 
-	for (i = 0; i < pdata->channel_count; i++) {
-		channel = pdata->channel[i];
+	channel = pdata->channel;
+	for (i = 0; i < pdata->channel_count; i++, channel++) {
 		ring = channel->rx_ring;
 		if (!ring)
 			break;

@@ -135,7 +135,6 @@ and can help identify the state of hotplugged CPUs"""
         gdb.write("Online CPUs   : {}\n".format(list(each_online_cpu())))
         gdb.write("Active CPUs   : {}\n".format(list(each_active_cpu())))
 
-
 LxCpus()
 
 

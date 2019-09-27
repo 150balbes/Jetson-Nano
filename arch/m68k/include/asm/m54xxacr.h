@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * Bit definitions for the MCF54xx ACR and CACR registers.
  */

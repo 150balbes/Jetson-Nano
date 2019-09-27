@@ -1,6 +1,9 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /* (C) 1999-2001 Paul `Rusty' Russell
  * (C) 2002-2004 Netfilter Core Team <coreteam@netfilter.org>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
@@ -21,7 +24,7 @@
 #include <linux/netfilter/xt_LOG.h>
 #include <net/netfilter/nf_log.h>
 
-static const struct nf_loginfo default_loginfo = {
+static struct nf_loginfo default_loginfo = {
 	.type	= NF_LOG_TYPE_LOG,
 	.u = {
 		.log = {
@@ -32,7 +35,7 @@ static const struct nf_loginfo default_loginfo = {
 };
 
 /* One level of recursion won't kill us */
-static void dump_ipv4_packet(struct net *net, struct nf_log_buf *m,
+static void dump_ipv4_packet(struct nf_log_buf *m,
 			     const struct nf_loginfo *info,
 			     const struct sk_buff *skb, unsigned int iphoff)
 {
@@ -180,7 +183,7 @@ static void dump_ipv4_packet(struct net *net, struct nf_log_buf *m,
 			/* Max length: 3+maxlen */
 			if (!iphoff) { /* Only recurse once. */
 				nf_log_buf_add(m, "[");
-				dump_ipv4_packet(net, m, info, skb,
+				dump_ipv4_packet(m, info, skb,
 					    iphoff + ih->ihl*4+sizeof(_icmph));
 				nf_log_buf_add(m, "] ");
 			}
@@ -248,7 +251,7 @@ static void dump_ipv4_packet(struct net *net, struct nf_log_buf *m,
 
 	/* Max length: 15 "UID=4294967295 " */
 	if ((logflags & NF_LOG_UID) && !iphoff)
-		nf_log_dump_sk_uid_gid(net, m, skb->sk);
+		nf_log_dump_sk_uid_gid(m, skb->sk);
 
 	/* Max length: 16 "MARK=0xFFFFFFFF " */
 	if (!iphoff && skb->mark)
@@ -316,7 +319,7 @@ static void nf_log_ip_packet(struct net *net, u_int8_t pf,
 	struct nf_log_buf *m;
 
 	/* FIXME: Disabled from containers until syslog ns is supported */
-	if (!net_eq(net, &init_net) && !sysctl_nf_log_all_netns)
+	if (!net_eq(net, &init_net))
 		return;
 
 	m = nf_log_buf_open();
@@ -330,7 +333,7 @@ static void nf_log_ip_packet(struct net *net, u_int8_t pf,
 	if (in != NULL)
 		dump_ipv4_mac_header(m, loginfo, skb);
 
-	dump_ipv4_packet(net, m, loginfo, skb, 0);
+	dump_ipv4_packet(m, loginfo, skb, 0);
 
 	nf_log_buf_close(m);
 }

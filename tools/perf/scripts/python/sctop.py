@@ -8,14 +8,7 @@
 # will be refreshed every [interval] seconds.  The default interval is
 # 3 seconds.
 
-from __future__ import print_function
-
-import os, sys, time
-
-try:
-	import thread
-except ImportError:
-	import _thread as thread
+import os, sys, thread, time
 
 sys.path.append(os.environ['PERF_EXEC_PATH'] + \
 	'/scripts/python/Perf-Trace-Util/lib/Perf/Trace')
@@ -69,20 +62,18 @@ def print_syscall_totals(interval):
 	while 1:
 		clear_term()
 		if for_comm is not None:
-			print("\nsyscall events for %s:\n" % (for_comm))
+			print "\nsyscall events for %s:\n\n" % (for_comm),
 		else:
-			print("\nsyscall events:\n")
+			print "\nsyscall events:\n\n",
 
-		print("%-40s  %10s" % ("event", "count"))
-		print("%-40s  %10s" %
-			("----------------------------------------",
-			"----------"))
+		print "%-40s  %10s\n" % ("event", "count"),
+		print "%-40s  %10s\n" % ("----------------------------------------", \
+						 "----------"),
 
-		for id, val in sorted(syscalls.items(),
-				key = lambda kv: (kv[1], kv[0]),
-				reverse = True):
+		for id, val in sorted(syscalls.iteritems(), key = lambda(k, v): (v, k), \
+					      reverse = True):
 			try:
-				print("%-40s  %10d" % (syscall_name(id), val))
+				print "%-40s  %10d\n" % (syscall_name(id), val),
 			except TypeError:
 				pass
 		syscalls.clear()

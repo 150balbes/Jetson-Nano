@@ -105,7 +105,7 @@ static int clk_gpt_set_rate(struct clk_hw *hw, unsigned long drate,
 	return 0;
 }
 
-static const struct clk_ops clk_gpt_ops = {
+static struct clk_ops clk_gpt_ops = {
 	.recalc_rate = clk_gpt_recalc_rate,
 	.round_rate = clk_gpt_round_rate,
 	.set_rate = clk_gpt_set_rate,
@@ -120,13 +120,15 @@ struct clk *clk_register_gpt(const char *name, const char *parent_name, unsigned
 	struct clk *clk;
 
 	if (!name || !parent_name || !reg || !rtbl || !rtbl_cnt) {
-		pr_err("Invalid arguments passed\n");
+		pr_err("Invalid arguments passed");
 		return ERR_PTR(-EINVAL);
 	}
 
 	gpt = kzalloc(sizeof(*gpt), GFP_KERNEL);
-	if (!gpt)
+	if (!gpt) {
+		pr_err("could not allocate gpt clk\n");
 		return ERR_PTR(-ENOMEM);
+	}
 
 	/* struct clk_gpt assignments */
 	gpt->reg = reg;

@@ -1,10 +1,14 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  *	Ioctl handler
  *	Linux ethernet bridge
  *
  *	Authors:
  *	Lennert Buytenhek		<buytenh@gnu.org>
+ *
+ *	This program is free software; you can redistribute it and/or
+ *	modify it under the terms of the GNU General Public License
+ *	as published by the Free Software Foundation; either version
+ *	2 of the License, or (at your option) any later version.
  */
 
 #include <linux/capability.h>
@@ -14,7 +18,7 @@
 #include <linux/slab.h>
 #include <linux/times.h>
 #include <net/net_namespace.h>
-#include <linux/uaccess.h>
+#include <asm/uaccess.h>
 #include "br_private.h"
 
 static int get_bridge_ifindices(struct net *net, int *indices, int num)
@@ -94,7 +98,7 @@ static int add_del_if(struct net_bridge *br, int ifindex, int isadd)
 		return -EINVAL;
 
 	if (isadd)
-		ret = br_add_if(br, dev, NULL);
+		ret = br_add_if(br, dev);
 	else
 		ret = br_del_if(br, dev);
 
@@ -145,7 +149,7 @@ static int old_dev_ioctl(struct net_device *dev, struct ifreq *rq, int cmd)
 		b.hello_timer_value = br_timer_value(&br->hello_timer);
 		b.tcn_timer_value = br_timer_value(&br->tcn_timer);
 		b.topology_change_timer_value = br_timer_value(&br->topology_change_timer);
-		b.gc_timer_value = br_timer_value(&br->gc_work.timer);
+		b.gc_timer_value = br_timer_value(&br->gc_timer);
 		rcu_read_unlock();
 
 		if (copy_to_user((void __user *)args[1], &b, sizeof(b)))
@@ -289,7 +293,7 @@ static int old_dev_ioctl(struct net_device *dev, struct ifreq *rq, int cmd)
 
 	if (!ret) {
 		if (p)
-			br_ifinfo_notify(RTM_NEWLINK, NULL, p);
+			br_ifinfo_notify(RTM_NEWLINK, p);
 		else
 			netdev_state_change(br->dev);
 	}

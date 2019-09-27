@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Interface the pinmux subsystem
  *
@@ -7,6 +6,8 @@
  * Based on bits of regulator core, gpio core and clk core
  *
  * Author: Linus Walleij <linus.walleij@linaro.org>
+ *
+ * License terms: GNU General Public License (GPL) version 2
  */
 #ifndef __LINUX_PINCTRL_PINMUX_H
 #define __LINUX_PINCTRL_PINMUX_H
@@ -14,6 +15,8 @@
 #include <linux/list.h>
 #include <linux/seq_file.h>
 #include <linux/pinctrl/pinctrl.h>
+
+#ifdef CONFIG_PINMUX
 
 struct pinctrl_dev;
 
@@ -53,6 +56,8 @@ struct pinctrl_dev;
  *	depending on whether the GPIO is configured as input or output,
  *	a direction selector function may be implemented as a backing
  *	to the GPIO controllers that need pin muxing.
+ * @gpio_save_config: Save the GPIo configurations.
+ * @gpio_restore_config: Restore GPIO configurations.
  * @strict: do not allow simultaneous use of the same pin for GPIO and another
  *	function. Check both gpio_owner and mux_owner strictly before approving
  *	the pin request.
@@ -79,7 +84,16 @@ struct pinmux_ops {
 				   struct pinctrl_gpio_range *range,
 				   unsigned offset,
 				   bool input);
+	int (*gpio_save_config) (struct pinctrl_dev *pctldev,
+				 struct pinctrl_gpio_range *range,
+				 unsigned offset);
+	int (*gpio_restore_config) (struct pinctrl_dev *pctldev,
+				    struct pinctrl_gpio_range *range,
+				    unsigned offset);
+
 	bool strict;
 };
+
+#endif /* CONFIG_PINMUX */
 
 #endif /* __LINUX_PINCTRL_PINMUX_H */

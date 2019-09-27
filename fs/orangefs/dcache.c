@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * (C) 2001 Clemson University and The University of Chicago
  *
@@ -33,7 +32,7 @@ static int orangefs_revalidate_lookup(struct dentry *dentry)
 	new_op->upcall.req.lookup.parent_refn = parent->refn;
 	strncpy(new_op->upcall.req.lookup.d_name,
 		dentry->d_name.name,
-		ORANGEFS_NAME_MAX - 1);
+		ORANGEFS_NAME_MAX);
 
 	gossip_debug(GOSSIP_DCACHE_DEBUG,
 		     "%s:%s:%d interrupt flag [%d]\n",
@@ -118,12 +117,8 @@ static int orangefs_d_revalidate(struct dentry *dentry, unsigned int flags)
 		return 0;
 
 	/* We do not need to continue with negative dentries. */
-	if (!dentry->d_inode) {
-		gossip_debug(GOSSIP_DCACHE_DEBUG,
-		    "%s: negative dentry or positive dentry and inode valid.\n",
-		    __func__);
-		return 1;
-	}
+	if (!dentry->d_inode)
+		goto out;
 
 	/* Now we must perform a getattr to validate the inode contents. */
 
@@ -133,7 +128,14 @@ static int orangefs_d_revalidate(struct dentry *dentry, unsigned int flags)
 		    __FILE__, __func__, __LINE__);
 		return 0;
 	}
-	return !ret;
+	if (ret == 0)
+		return 0;
+
+out:
+	gossip_debug(GOSSIP_DCACHE_DEBUG,
+	    "%s: negative dentry or positive dentry and inode valid.\n",
+	    __func__);
+	return 1;
 }
 
 const struct dentry_operations orangefs_dentry_operations = {

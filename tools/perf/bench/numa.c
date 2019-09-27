@@ -1,16 +1,15 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * numa.c
  *
  * numa: Simulate NUMA-sensitive workload and measure their NUMA performance
  */
 
-#include <inttypes.h>
 /* For the CLR_() macros */
 #include <pthread.h>
 
 #include "../perf.h"
 #include "../builtin.h"
+#include "../util/util.h"
 #include <subcmd/parse-options.h>
 #include "../util/cloexec.h"
 
@@ -31,17 +30,10 @@
 #include <sys/wait.h>
 #include <sys/prctl.h>
 #include <sys/types.h>
-#include <linux/kernel.h>
 #include <linux/time64.h>
-#include <linux/numa.h>
-#include <linux/zalloc.h>
 
 #include <numa.h>
 #include <numaif.h>
-
-#ifndef RUSAGE_THREAD
-# define RUSAGE_THREAD 1
-#endif
 
 /*
  * Regular printout to the terminal, supressed if -q is specified:
@@ -51,7 +43,6 @@
 /*
  * Debug printf:
  */
-#undef dprintf
 #define dprintf(x...) do { if (g && g->p.show_details >= 1) printf(x); } while (0)
 
 struct thread_data {
@@ -180,7 +171,7 @@ static const struct option options[] = {
 	OPT_UINTEGER('s', "nr_secs"	, &p0.nr_secs,		"max number of seconds to run (default: 5 secs)"),
 	OPT_UINTEGER('u', "usleep"	, &p0.sleep_usecs,	"usecs to sleep per loop iteration"),
 
-	OPT_BOOLEAN('R', "data_reads"	, &p0.data_reads,	"access the data via reads (can be mixed with -W)"),
+	OPT_BOOLEAN('R', "data_reads"	, &p0.data_reads,	"access the data via writes (can be mixed with -W)"),
 	OPT_BOOLEAN('W', "data_writes"	, &p0.data_writes,	"access the data via writes (can be mixed with -R)"),
 	OPT_BOOLEAN('B', "data_backwards", &p0.data_backwards,	"access the data backwards as well"),
 	OPT_BOOLEAN('Z', "data_zero_memset", &p0.data_zero_memset,"access the data via glibc bzero only"),
@@ -195,8 +186,7 @@ static const struct option options[] = {
 	OPT_INCR   ('d', "show_details"	, &p0.show_details,	"Show details"),
 	OPT_INCR   ('a', "all"		, &p0.run_all,		"Run all tests in the suite"),
 	OPT_INTEGER('H', "thp"		, &p0.thp,		"MADV_NOHUGEPAGE < 0 < MADV_HUGEPAGE"),
-	OPT_BOOLEAN('c', "show_convergence", &p0.show_convergence, "show convergence details, "
-		    "convergence is reached when each process (all its threads) is running on a single NUMA node."),
+	OPT_BOOLEAN('c', "show_convergence", &p0.show_convergence, "show convergence details"),
 	OPT_BOOLEAN('m', "measure_convergence",	&p0.measure_convergence, "measure convergence latency"),
 	OPT_BOOLEAN('q', "quiet"	, &p0.show_quiet,	"quiet mode"),
 	OPT_BOOLEAN('S', "serialize-startup", &p0.serialize_startup,"serialize thread startup"),
@@ -303,7 +293,7 @@ static cpu_set_t bind_to_node(int target_node)
 
 	CPU_ZERO(&mask);
 
-	if (target_node == NUMA_NO_NODE) {
+	if (target_node == -1) {
 		for (cpu = 0; cpu < g->p.nr_cpus; cpu++)
 			CPU_SET(cpu, &mask);
 	} else {
@@ -344,7 +334,7 @@ static void bind_to_memnode(int node)
 	unsigned long nodemask;
 	int ret;
 
-	if (node == NUMA_NO_NODE)
+	if (node == -1)
 		return;
 
 	BUG_ON(g->p.nr_nodes > (int)sizeof(nodemask)*8);
@@ -379,10 +369,8 @@ static u8 *alloc_data(ssize_t bytes0, int map_flags,
 
 	/* Allocate and initialize all memory on CPU#0: */
 	if (init_cpu0) {
-		int node = numa_node_of_cpu(0);
-
-		orig_mask = bind_to_node(node);
-		bind_to_memnode(node);
+		orig_mask = bind_to_node(0);
+		bind_to_memnode(0);
 	}
 
 	bytes = bytes0 + HPSIZE;
@@ -749,7 +737,7 @@ static inline uint32_t lfsr_32(uint32_t lfsr)
  * kernel (KSM, zero page, etc.) cannot optimize away RAM
  * accesses:
  */
-static inline u64 access_data(u64 *data, u64 val)
+static inline u64 access_data(u64 *data __attribute__((unused)), u64 val)
 {
 	if (g->p.data_reads)
 		val += *data;
@@ -1370,7 +1358,7 @@ static void init_thread_data(void)
 		int cpu;
 
 		/* Allow all nodes by default: */
-		td->bind_node = NUMA_NO_NODE;
+		td->bind_node = -1;
 
 		/* Allow all CPUs by default: */
 		CPU_ZERO(&td->bind_cpumask);
@@ -1824,7 +1812,7 @@ static int bench_all(void)
 	return 0;
 }
 
-int bench_numa(int argc, const char **argv)
+int bench_numa(int argc, const char **argv, const char *prefix __maybe_unused)
 {
 	init_params(&p0, "main,", argc, argv);
 	argc = parse_options(argc, argv, options, bench_numa_usage, 0);

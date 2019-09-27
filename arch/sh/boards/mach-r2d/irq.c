@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * linux/arch/sh/boards/renesas/rts7751r2d/irq.c
  *

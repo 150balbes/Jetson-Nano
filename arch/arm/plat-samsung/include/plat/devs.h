@@ -1,5 +1,5 @@
-/* SPDX-License-Identifier: GPL-2.0 */
-/*
+/* arch/arm/plat-samsung/include/plat/devs.h
+ *
  * Copyright (c) 2011 Samsung Electronics Co., Ltd.
  *		http://www.samsung.com
  *
@@ -7,7 +7,11 @@
  * Ben Dooks <ben@simtec.co.uk>
  *
  * Header file for s3c2410 standard platform devices
- */
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+*/
 
 #ifndef __PLAT_DEVS_H
 #define __PLAT_DEVS_H __FILE__

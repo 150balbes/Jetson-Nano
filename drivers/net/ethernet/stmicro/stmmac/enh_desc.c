@@ -1,9 +1,23 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*******************************************************************************
   This contains the functions to handle the enhanced descriptors.
 
   Copyright (C) 2007-2014  STMicroelectronics Ltd
 
+  This program is free software; you can redistribute it and/or modify it
+  under the terms and conditions of the GNU General Public License,
+  version 2, as published by the Free Software Foundation.
+
+  This program is distributed in the hope it will be useful, but WITHOUT
+  ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+  FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+  more details.
+
+  You should have received a copy of the GNU General Public License along with
+  this program; if not, write to the Free Software Foundation, Inc.,
+  51 Franklin St - Fifth Floor, Boston, MA 02110-1301 USA.
+
+  The full GNU General Public License is included in this distribution in
+  the file called "COPYING".
 
   Author: Giuseppe Cavallaro <peppe.cavallaro@st.com>
 *******************************************************************************/
@@ -16,7 +30,7 @@ static int enh_desc_get_tx_status(void *data, struct stmmac_extra_stats *x,
 				  struct dma_desc *p, void __iomem *ioaddr)
 {
 	struct net_device_stats *stats = (struct net_device_stats *)data;
-	unsigned int tdes0 = le32_to_cpu(p->des0);
+	unsigned int tdes0 = p->des0;
 	int ret = tx_done;
 
 	/* Get tx owner first */
@@ -81,7 +95,7 @@ static int enh_desc_get_tx_status(void *data, struct stmmac_extra_stats *x,
 
 static int enh_desc_get_tx_len(struct dma_desc *p)
 {
-	return (le32_to_cpu(p->des1) & ETDES1_BUFFER1_SIZE_MASK);
+	return (p->des1 & ETDES1_BUFFER1_SIZE_MASK);
 }
 
 static int enh_desc_coe_rdes0(int ipc_err, int type, int payload_err)
@@ -120,8 +134,8 @@ static int enh_desc_coe_rdes0(int ipc_err, int type, int payload_err)
 static void enh_desc_get_ext_status(void *data, struct stmmac_extra_stats *x,
 				    struct dma_extended_desc *p)
 {
-	unsigned int rdes0 = le32_to_cpu(p->basic.des0);
-	unsigned int rdes4 = le32_to_cpu(p->des4);
+	unsigned int rdes0 = p->basic.des0;
+	unsigned int rdes4 = p->des4;
 
 	if (unlikely(rdes0 & ERDES0_RX_MAC_ADDR)) {
 		int message_type = (rdes4 & ERDES4_MSG_TYPE_MASK) >> 8;
@@ -185,16 +199,11 @@ static int enh_desc_get_rx_status(void *data, struct stmmac_extra_stats *x,
 				  struct dma_desc *p)
 {
 	struct net_device_stats *stats = (struct net_device_stats *)data;
-	unsigned int rdes0 = le32_to_cpu(p->des0);
+	unsigned int rdes0 = p->des0;
 	int ret = good_frame;
 
 	if (unlikely(rdes0 & RDES0_OWN))
 		return dma_own;
-
-	if (unlikely(!(rdes0 & RDES0_LAST_DESCRIPTOR))) {
-		stats->rx_length_errors++;
-		return discard_frame;
-	}
 
 	if (unlikely(rdes0 & RDES0_ERROR_SUMMARY)) {
 		if (unlikely(rdes0 & RDES0_DESCRIPTOR_ERROR)) {
@@ -216,7 +225,7 @@ static int enh_desc_get_rx_status(void *data, struct stmmac_extra_stats *x,
 			x->rx_mii++;
 
 		if (unlikely(rdes0 & RDES0_CRC_ERROR)) {
-			x->rx_crc_errors++;
+			x->rx_crc++;
 			stats->rx_crc_errors++;
 		}
 		ret = discard_frame;
@@ -226,10 +235,9 @@ static int enh_desc_get_rx_status(void *data, struct stmmac_extra_stats *x,
 	 * It doesn't match with the information reported into the databook.
 	 * At any rate, we need to understand if the CSUM hw computation is ok
 	 * and report this info to the upper layers. */
-	if (likely(ret == good_frame))
-		ret = enh_desc_coe_rdes0(!!(rdes0 & RDES0_IPC_CSUM_ERROR),
-					 !!(rdes0 & RDES0_FRAME_TYPE),
-					 !!(rdes0 & ERDES0_RX_MAC_ADDR));
+	ret = enh_desc_coe_rdes0(!!(rdes0 & RDES0_IPC_CSUM_ERROR),
+				 !!(rdes0 & RDES0_FRAME_TYPE),
+				 !!(rdes0 & ERDES0_RX_MAC_ADDR));
 
 	if (unlikely(rdes0 & RDES0_DRIBBLING))
 		x->dribbling_bit++;
@@ -255,27 +263,23 @@ static int enh_desc_get_rx_status(void *data, struct stmmac_extra_stats *x,
 }
 
 static void enh_desc_init_rx_desc(struct dma_desc *p, int disable_rx_ic,
-				  int mode, int end, int bfsize)
+				  int mode, int end)
 {
-	int bfsize1;
-
-	p->des0 |= cpu_to_le32(RDES0_OWN);
-
-	bfsize1 = min(bfsize, BUF_SIZE_8KiB);
-	p->des1 |= cpu_to_le32(bfsize1 & ERDES1_BUFFER1_SIZE_MASK);
+	p->des0 |= RDES0_OWN;
+	p->des1 |= ((BUF_SIZE_8KiB - 1) & ERDES1_BUFFER1_SIZE_MASK);
 
 	if (mode == STMMAC_CHAIN_MODE)
 		ehn_desc_rx_set_on_chain(p);
 	else
-		ehn_desc_rx_set_on_ring(p, end, bfsize);
+		ehn_desc_rx_set_on_ring(p, end);
 
 	if (disable_rx_ic)
-		p->des1 |= cpu_to_le32(ERDES1_DISABLE_IC);
+		p->des1 |= ERDES1_DISABLE_IC;
 }
 
 static void enh_desc_init_tx_desc(struct dma_desc *p, int mode, int end)
 {
-	p->des0 &= cpu_to_le32(~ETDES0_OWN);
+	p->des0 &= ~ETDES0_OWN;
 	if (mode == STMMAC_CHAIN_MODE)
 		enh_desc_end_tx_desc_on_chain(p);
 	else
@@ -284,27 +288,27 @@ static void enh_desc_init_tx_desc(struct dma_desc *p, int mode, int end)
 
 static int enh_desc_get_tx_owner(struct dma_desc *p)
 {
-	return (le32_to_cpu(p->des0) & ETDES0_OWN) >> 31;
+	return (p->des0 & ETDES0_OWN) >> 31;
 }
 
 static void enh_desc_set_tx_owner(struct dma_desc *p)
 {
-	p->des0 |= cpu_to_le32(ETDES0_OWN);
+	p->des0 |= ETDES0_OWN;
 }
 
-static void enh_desc_set_rx_owner(struct dma_desc *p, int disable_rx_ic)
+static void enh_desc_set_rx_owner(struct dma_desc *p)
 {
-	p->des0 |= cpu_to_le32(RDES0_OWN);
+	p->des0 |= RDES0_OWN;
 }
 
 static int enh_desc_get_tx_ls(struct dma_desc *p)
 {
-	return (le32_to_cpu(p->des0) & ETDES0_LAST_SEGMENT) >> 29;
+	return (p->des0 & ETDES0_LAST_SEGMENT) >> 29;
 }
 
 static void enh_desc_release_tx_desc(struct dma_desc *p, int mode)
 {
-	int ter = (le32_to_cpu(p->des0) & ETDES0_END_RING) >> 21;
+	int ter = (p->des0 & ETDES0_END_RING) >> 21;
 
 	memset(p, 0, offsetof(struct dma_desc, des2));
 	if (mode == STMMAC_CHAIN_MODE)
@@ -315,9 +319,9 @@ static void enh_desc_release_tx_desc(struct dma_desc *p, int mode)
 
 static void enh_desc_prepare_tx_desc(struct dma_desc *p, int is_fs, int len,
 				     bool csum_flag, int mode, bool tx_own,
-				     bool ls, unsigned int tot_pkt_len)
+				     bool ls)
 {
-	unsigned int tdes0 = le32_to_cpu(p->des0);
+	unsigned int tdes0 = p->des0;
 
 	if (mode == STMMAC_CHAIN_MODE)
 		enh_set_tx_desc_len_on_chain(p, len);
@@ -341,19 +345,19 @@ static void enh_desc_prepare_tx_desc(struct dma_desc *p, int is_fs, int len,
 	if (tx_own)
 		tdes0 |= ETDES0_OWN;
 
-	if (is_fs && tx_own)
+	if (is_fs & tx_own)
 		/* When the own bit, for the first frame, has to be set, all
 		 * descriptors for the same frame has to be set before, to
 		 * avoid race condition.
 		 */
-		dma_wmb();
+		wmb();
 
-	p->des0 = cpu_to_le32(tdes0);
+	p->des0 = tdes0;
 }
 
 static void enh_desc_set_tx_ic(struct dma_desc *p)
 {
-	p->des0 |= cpu_to_le32(ETDES0_INTERRUPT);
+	p->des0 |= ETDES0_INTERRUPT;
 }
 
 static int enh_desc_get_rx_frame_len(struct dma_desc *p, int rx_coe_type)
@@ -368,48 +372,46 @@ static int enh_desc_get_rx_frame_len(struct dma_desc *p, int rx_coe_type)
 	if (rx_coe_type == STMMAC_RX_COE_TYPE1)
 		csum = 2;
 
-	return (((le32_to_cpu(p->des0) & RDES0_FRAME_LEN_MASK)
-				>> RDES0_FRAME_LEN_SHIFT) - csum);
+	return (((p->des0 & RDES0_FRAME_LEN_MASK) >> RDES0_FRAME_LEN_SHIFT) -
+		csum);
 }
 
 static void enh_desc_enable_tx_timestamp(struct dma_desc *p)
 {
-	p->des0 |= cpu_to_le32(ETDES0_TIME_STAMP_ENABLE);
+	p->des0 |= ETDES0_TIME_STAMP_ENABLE;
 }
 
 static int enh_desc_get_tx_timestamp_status(struct dma_desc *p)
 {
-	return (le32_to_cpu(p->des0) & ETDES0_TIME_STAMP_STATUS) >> 17;
+	return (p->des0 & ETDES0_TIME_STAMP_STATUS) >> 17;
 }
 
-static void enh_desc_get_timestamp(void *desc, u32 ats, u64 *ts)
+static u64 enh_desc_get_timestamp(void *desc, u32 ats)
 {
 	u64 ns;
 
 	if (ats) {
 		struct dma_extended_desc *p = (struct dma_extended_desc *)desc;
-		ns = le32_to_cpu(p->des6);
+		ns = p->des6;
 		/* convert high/sec time stamp value to nanosecond */
-		ns += le32_to_cpu(p->des7) * 1000000000ULL;
+		ns += p->des7 * 1000000000ULL;
 	} else {
 		struct dma_desc *p = (struct dma_desc *)desc;
-		ns = le32_to_cpu(p->des2);
-		ns += le32_to_cpu(p->des3) * 1000000000ULL;
+		ns = p->des2;
+		ns += p->des3 * 1000000000ULL;
 	}
 
-	*ts = ns;
+	return ns;
 }
 
-static int enh_desc_get_rx_timestamp_status(void *desc, void *next_desc,
-					    u32 ats)
+static int enh_desc_get_rx_timestamp_status(void *desc, u32 ats)
 {
 	if (ats) {
 		struct dma_extended_desc *p = (struct dma_extended_desc *)desc;
-		return (le32_to_cpu(p->basic.des0) & RDES0_IPC_CSUM_ERROR) >> 7;
+		return (p->basic.des0 & RDES0_IPC_CSUM_ERROR) >> 7;
 	} else {
 		struct dma_desc *p = (struct dma_desc *)desc;
-		if ((le32_to_cpu(p->des2) == 0xffffffff) &&
-		    (le32_to_cpu(p->des3) == 0xffffffff))
+		if ((p->des2 == 0xffffffff) && (p->des3 == 0xffffffff))
 			/* timestamp is corrupted, hence don't store it */
 			return 0;
 		else
@@ -428,28 +430,13 @@ static void enh_desc_display_ring(void *head, unsigned int size, bool rx)
 		u64 x;
 
 		x = *(u64 *)ep;
-		pr_info("%03d [0x%x]: 0x%x 0x%x 0x%x 0x%x\n",
+		pr_info("%d [0x%x]: 0x%x 0x%x 0x%x 0x%x\n",
 			i, (unsigned int)virt_to_phys(ep),
 			(unsigned int)x, (unsigned int)(x >> 32),
 			ep->basic.des2, ep->basic.des3);
 		ep++;
 	}
 	pr_info("\n");
-}
-
-static void enh_desc_get_addr(struct dma_desc *p, unsigned int *addr)
-{
-	*addr = le32_to_cpu(p->des2);
-}
-
-static void enh_desc_set_addr(struct dma_desc *p, dma_addr_t addr)
-{
-	p->des2 = cpu_to_le32(addr);
-}
-
-static void enh_desc_clear(struct dma_desc *p)
-{
-	p->des2 = 0;
 }
 
 const struct stmmac_desc_ops enh_desc_ops = {
@@ -472,7 +459,4 @@ const struct stmmac_desc_ops enh_desc_ops = {
 	.get_timestamp = enh_desc_get_timestamp,
 	.get_rx_timestamp_status = enh_desc_get_rx_timestamp_status,
 	.display_ring = enh_desc_display_ring,
-	.get_addr = enh_desc_get_addr,
-	.set_addr = enh_desc_set_addr,
-	.clear = enh_desc_clear,
 };

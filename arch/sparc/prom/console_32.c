@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * console.c: Routines that deal with sending and receiving IO
  *            to/from the current console device using the PROM.

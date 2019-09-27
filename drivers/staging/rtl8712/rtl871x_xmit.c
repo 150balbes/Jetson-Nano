@@ -1,9 +1,21 @@
-// SPDX-License-Identifier: GPL-2.0
 /******************************************************************************
  * rtl871x_xmit.c
  *
  * Copyright(c) 2007 - 2010 Realtek Corporation. All rights reserved.
  * Linux device driver for RTL8192SU
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of version 2 of the GNU General Public License as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License along with
+ * this program; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin Street, Fifth Floor, Boston, MA 02110, USA
  *
  * Modifications for inclusion into the Linux staging tree are
  * Copyright(c) 2010 Larry Finger. All rights reserved.
@@ -59,8 +71,8 @@ sint _r8712_init_xmit_priv(struct xmit_priv *pxmitpriv,
 	memset((unsigned char *)pxmitpriv, 0, sizeof(struct xmit_priv));
 	spin_lock_init(&pxmitpriv->lock);
 	/*
-	 *Please insert all the queue initialization using _init_queue below
-	 */
+	Please insert all the queue initialization using _init_queue below
+	*/
 	pxmitpriv->adapter = padapter;
 	_init_queue(&pxmitpriv->be_pending);
 	_init_queue(&pxmitpriv->bk_pending);
@@ -71,12 +83,12 @@ sint _r8712_init_xmit_priv(struct xmit_priv *pxmitpriv,
 	_init_queue(&pxmitpriv->apsd_queue);
 	_init_queue(&pxmitpriv->free_xmit_queue);
 	/*
-	 * Please allocate memory with the sz = (struct xmit_frame) * NR_XMITFRAME,
-	 * and initialize free_xmit_frame below.
-	 * Please also apply  free_txobj to link_up all the xmit_frames...
-	 */
-	pxmitpriv->pallocated_frame_buf =
-		kmalloc(NR_XMITFRAME * sizeof(struct xmit_frame) + 4, GFP_ATOMIC);
+	Please allocate memory with the sz = (struct xmit_frame) * NR_XMITFRAME,
+	and initialize free_xmit_frame below.
+	Please also apply  free_txobj to link_up all the xmit_frames...
+	*/
+	pxmitpriv->pallocated_frame_buf = kmalloc(NR_XMITFRAME * sizeof(struct xmit_frame) + 4,
+						  GFP_ATOMIC);
 	if (!pxmitpriv->pallocated_frame_buf) {
 		pxmitpriv->pxmit_frame_buf = NULL;
 		return _FAIL;
@@ -97,8 +109,8 @@ sint _r8712_init_xmit_priv(struct xmit_priv *pxmitpriv,
 	}
 	pxmitpriv->free_xmitframe_cnt = NR_XMITFRAME;
 	/*
-	 * init xmit hw_txqueue
-	 */
+		init xmit hw_txqueue
+	*/
 	_r8712_init_hw_txqueue(&pxmitpriv->be_txqueue, BE_QUEUE_INX);
 	_r8712_init_hw_txqueue(&pxmitpriv->bk_txqueue, BK_QUEUE_INX);
 	_r8712_init_hw_txqueue(&pxmitpriv->vi_txqueue, VI_QUEUE_INX);
@@ -114,13 +126,10 @@ sint _r8712_init_xmit_priv(struct xmit_priv *pxmitpriv,
 	/*init xmit_buf*/
 	_init_queue(&pxmitpriv->free_xmitbuf_queue);
 	_init_queue(&pxmitpriv->pending_xmitbuf_queue);
-	pxmitpriv->pallocated_xmitbuf =
-		kmalloc(NR_XMITBUFF * sizeof(struct xmit_buf) + 4, GFP_ATOMIC);
-	if (!pxmitpriv->pallocated_xmitbuf) {
-		kfree(pxmitpriv->pallocated_frame_buf);
-		pxmitpriv->pallocated_frame_buf = NULL;
+	pxmitpriv->pallocated_xmitbuf = kmalloc(NR_XMITBUFF * sizeof(struct xmit_buf) + 4,
+						GFP_ATOMIC);
+	if (!pxmitpriv->pallocated_xmitbuf)
 		return _FAIL;
-	}
 	pxmitpriv->pxmitbuf = pxmitpriv->pallocated_xmitbuf + 4 -
 			      ((addr_t)(pxmitpriv->pallocated_xmitbuf) & 3);
 	pxmitbuf = (struct xmit_buf *)pxmitpriv->pxmitbuf;
@@ -133,14 +142,13 @@ sint _r8712_init_xmit_priv(struct xmit_priv *pxmitpriv,
 		pxmitbuf->pbuf = pxmitbuf->pallocated_buf + XMITBUF_ALIGN_SZ -
 				 ((addr_t) (pxmitbuf->pallocated_buf) &
 				 (XMITBUF_ALIGN_SZ - 1));
-		if (r8712_xmit_resource_alloc(padapter, pxmitbuf))
-			return _FAIL;
+		r8712_xmit_resource_alloc(padapter, pxmitbuf);
 		list_add_tail(&pxmitbuf->list,
 				 &(pxmitpriv->free_xmitbuf_queue.queue));
 		pxmitbuf++;
 	}
 	pxmitpriv->free_xmitbuf_cnt = NR_XMITBUFF;
-	INIT_WORK(&padapter->wk_filter_rx_ff0, r8712_SetFilter);
+	INIT_WORK(&padapter->wkFilterRxFF0, r8712_SetFilter);
 	alloc_hwxmits(padapter);
 	init_hwxmits(pxmitpriv->hwxmits, pxmitpriv->hwxmit_entry);
 	tasklet_init(&pxmitpriv->xmit_tasklet,
@@ -182,7 +190,7 @@ sint r8712_update_attrib(struct _adapter *padapter, _pkt *pkt,
 
 	struct tx_cmd txdesc;
 
-	bool bmcast;
+	sint bmcast;
 	struct sta_priv		*pstapriv = &padapter->stapriv;
 	struct security_priv	*psecuritypriv = &padapter->securitypriv;
 	struct mlme_priv	*pmlmepriv = &padapter->mlmepriv;
@@ -194,20 +202,19 @@ sint r8712_update_attrib(struct _adapter *padapter, _pkt *pkt,
 
 	pattrib->ether_type = ntohs(etherhdr.h_proto);
 
-	/*
-	 * If driver xmit ARP packet, driver can set ps mode to initial
+{
+	/*If driver xmit ARP packet, driver can set ps mode to initial
 	 * setting. It stands for getting DHCP or fix IP.
 	 */
 	if (pattrib->ether_type == 0x0806) {
 		if (padapter->pwrctrlpriv.pwr_mode !=
 		    padapter->registrypriv.power_mgnt) {
 			del_timer_sync(&pmlmepriv->dhcp_timer);
-			r8712_set_ps_mode(padapter,
-					  padapter->registrypriv.power_mgnt,
-					  padapter->registrypriv.smart_ps);
+			r8712_set_ps_mode(padapter, padapter->registrypriv.
+				power_mgnt, padapter->registrypriv.smart_ps);
 		}
 	}
-
+}
 	memcpy(pattrib->dst, &etherhdr.h_dest, ETH_ALEN);
 	memcpy(pattrib->src, &etherhdr.h_source, ETH_ALEN);
 	pattrib->pctrl = 0;
@@ -258,7 +265,7 @@ sint r8712_update_attrib(struct _adapter *padapter, _pkt *pkt,
 			}
 		}
 	}
-	bmcast = is_multicast_ether_addr(pattrib->ra);
+	bmcast = IS_MCAST(pattrib->ra);
 	/* get sta_info*/
 	if (bmcast) {
 		psta = r8712_get_bcmc_stainfo(padapter);
@@ -354,7 +361,7 @@ static sint xmitframe_addmic(struct _adapter *padapter,
 	struct	security_priv *psecuritypriv = &padapter->securitypriv;
 	struct	xmit_priv *pxmitpriv = &padapter->xmitpriv;
 	u8 priority[4] = {0x0, 0x0, 0x0, 0x0};
-	bool bmcst = is_multicast_ether_addr(pattrib->ra);
+	sint bmcst = IS_MCAST(pattrib->ra);
 
 	if (pattrib->psta)
 		stainfo = pattrib->psta;
@@ -406,13 +413,15 @@ static sint xmitframe_addmic(struct _adapter *padapter,
 							   &pframe[10], 6);
 			}
 			if (pqospriv->qos_option == 1)
-				priority[0] = (u8)pxmitframe->attrib.priority;
+					priority[0] = (u8)pxmitframe->
+						      attrib.priority;
 			r8712_secmicappend(&micdata, &priority[0], 4);
 			payload = pframe;
 			for (curfragnum = 0; curfragnum < pattrib->nr_frags;
 			     curfragnum++) {
 				payload = (u8 *)RND4((addr_t)(payload));
-				payload += pattrib->hdrlen + pattrib->iv_len;
+				payload = payload + pattrib->
+					  hdrlen + pattrib->iv_len;
 				if ((curfragnum + 1) == pattrib->nr_frags) {
 					length = pattrib->last_txcmdsz -
 						  pattrib->hdrlen -
@@ -422,7 +431,7 @@ static sint xmitframe_addmic(struct _adapter *padapter,
 					r8712_secmicappend(&micdata, payload,
 							   length);
 					payload = payload + length;
-				} else {
+				} else{
 					length = pxmitpriv->frag_len -
 					    pattrib->hdrlen - pattrib->iv_len -
 					    ((psecuritypriv->sw_encrypt) ?
@@ -524,7 +533,7 @@ static sint make_wlanhdr(struct _adapter *padapter, u8 *hdr,
 		/* Update Seq Num will be handled by f/w */
 		{
 			struct sta_info *psta;
-			bool bmcst = is_multicast_ether_addr(pattrib->ra);
+			sint bmcst = IS_MCAST(pattrib->ra);
 
 			if (pattrib->psta) {
 				psta = pattrib->psta;
@@ -595,7 +604,7 @@ sint r8712_xmitframe_coalesce(struct _adapter *padapter, _pkt *pkt,
 	struct xmit_priv	*pxmitpriv = &padapter->xmitpriv;
 	struct pkt_attrib	*pattrib = &pxmitframe->attrib;
 	u8 *pbuf_start;
-	bool bmcst = is_multicast_ether_addr(pattrib->ra);
+	sint bmcst = IS_MCAST(pattrib->ra);
 
 	if (pattrib->psta == NULL)
 		return _FAIL;
@@ -706,7 +715,7 @@ void r8712_update_protection(struct _adapter *padapter, u8 *ie, uint ie_len)
 {
 	uint	protection;
 	u8	*perp;
-	uint	erp_len;
+	sint	 erp_len;
 	struct	xmit_priv *pxmitpriv = &padapter->xmitpriv;
 	struct	registry_priv *pregistrypriv = &padapter->registrypriv;
 
@@ -769,23 +778,24 @@ int r8712_free_xmitbuf(struct xmit_priv *pxmitpriv, struct xmit_buf *pxmitbuf)
 }
 
 /*
- * Calling context:
- * 1. OS_TXENTRY
- * 2. RXENTRY (rx_thread or RX_ISR/RX_CallBack)
- *
- * If we turn on USE_RXTHREAD, then, no need for critical section.
- * Otherwise, we must use _enter/_exit critical to protect free_xmit_queue...
- *
- * Must be very very cautious...
- *
- */
+Calling context:
+1. OS_TXENTRY
+2. RXENTRY (rx_thread or RX_ISR/RX_CallBack)
+
+If we turn on USE_RXTHREAD, then, no need for critical section.
+Otherwise, we must use _enter/_exit critical to protect free_xmit_queue...
+
+Must be very very cautious...
+
+*/
+
 struct xmit_frame *r8712_alloc_xmitframe(struct xmit_priv *pxmitpriv)
 {
 	/*
-	 * Please remember to use all the osdep_service api,
-	 * and lock/unlock or _enter/_exit critical to protect
-	 * pfree_xmit_queue
-	 */
+		Please remember to use all the osdep_service api,
+		and lock/unlock or _enter/_exit critical to protect
+		pfree_xmit_queue
+	*/
 	unsigned long irqL;
 	struct xmit_frame *pxframe;
 	struct  __queue *pfree_xmit_queue = &pxmitpriv->free_xmit_queue;
@@ -904,7 +914,7 @@ sint r8712_xmit_classifier(struct _adapter *padapter,
 	struct pkt_attrib *pattrib = &pxmitframe->attrib;
 	struct sta_priv *pstapriv = &padapter->stapriv;
 	struct mlme_priv *pmlmepriv = &padapter->mlmepriv;
-	bool bmcst = is_multicast_ether_addr(pattrib->ra);
+	sint bmcst = IS_MCAST(pattrib->ra);
 
 	if (pattrib->psta) {
 		psta = pattrib->psta;
@@ -950,7 +960,7 @@ static void alloc_hwxmits(struct _adapter *padapter)
 		pxmitpriv->vo_txqueue.head = 0;
 		hwxmits[1] .phwtxqueue = &pxmitpriv->vo_txqueue;
 		hwxmits[1] .sta_queue = &pxmitpriv->vo_pending;
-		pxmitpriv->vi_txqueue.head = 0;
+	pxmitpriv->vi_txqueue.head = 0;
 		hwxmits[2] .phwtxqueue = &pxmitpriv->vi_txqueue;
 		hwxmits[2] .sta_queue = &pxmitpriv->vi_pending;
 		pxmitpriv->bk_txqueue.head = 0;

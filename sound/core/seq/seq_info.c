@@ -1,7 +1,22 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  *   ALSA sequencer /proc interface
  *   Copyright (c) 1998 by Frank van de Pol <fvdpol@coil.demon.nl>
+ *
+ *
+ *   This program is free software; you can redistribute it and/or modify
+ *   it under the terms of the GNU General Public License as published by
+ *   the Free Software Foundation; either version 2 of the License, or
+ *   (at your option) any later version.
+ *
+ *   This program is distributed in the hope that it will be useful,
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *   GNU General Public License for more details.
+ *
+ *   You should have received a copy of the GNU General Public License
+ *   along with this program; if not, write to the Free Software
+ *   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+ *
  */
 
 #include <linux/init.h>
@@ -35,7 +50,7 @@ create_info_entry(char *name, void (*read)(struct snd_info_entry *,
 	return entry;
 }
 
-void snd_seq_info_done(void)
+static void free_info_entries(void)
 {
 	snd_info_free_entry(queues_entry);
 	snd_info_free_entry(clients_entry);
@@ -55,6 +70,12 @@ int __init snd_seq_info_init(void)
 	return 0;
 
  error:
-	snd_seq_info_done();
+	free_info_entries();
 	return -ENOMEM;
+}
+
+int __exit snd_seq_info_done(void)
+{
+	free_info_entries();
+	return 0;
 }

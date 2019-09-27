@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: MIT */
 #ifndef __NVKM_ICCSENSE_PRIV_H__
 #define __NVKM_ICCSENSE_PRIV_H__
 #define nvkm_iccsense(p) container_of((p), struct nvkm_iccsense, subdev)
@@ -11,7 +10,7 @@ struct nvkm_iccsense_sensor {
 	enum nvbios_extdev_type type;
 	struct i2c_adapter *i2c;
 	u8 addr;
-	u16 config;
+	u8 rail_mask;
 };
 
 struct nvkm_iccsense_rail {

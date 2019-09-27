@@ -1,5 +1,4 @@
-#!/usr/bin/env perl
-# SPDX-License-Identifier: GPL-2.0
+#!/usr/bin/perl -w
 #
 # extract-mod-sig <part> <module-file>
 #
@@ -13,7 +12,6 @@
 #  -k: Just the key ID
 #  -s: Just the crypto signature or PKCS#7 message
 #
-use warnings;
 use strict;
 
 die "Format: $0 -[0adnks] module-file >out\n"

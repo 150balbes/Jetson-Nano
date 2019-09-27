@@ -68,6 +68,13 @@ union cvmx_pemx_bar1_indexx {
 		uint64_t reserved_20_63:44;
 #endif
 	} s;
+	struct cvmx_pemx_bar1_indexx_s cn61xx;
+	struct cvmx_pemx_bar1_indexx_s cn63xx;
+	struct cvmx_pemx_bar1_indexx_s cn63xxp1;
+	struct cvmx_pemx_bar1_indexx_s cn66xx;
+	struct cvmx_pemx_bar1_indexx_s cn68xx;
+	struct cvmx_pemx_bar1_indexx_s cn68xxp1;
+	struct cvmx_pemx_bar1_indexx_s cnf71xx;
 };
 
 union cvmx_pemx_bar2_mask {
@@ -83,6 +90,11 @@ union cvmx_pemx_bar2_mask {
 		uint64_t reserved_38_63:26;
 #endif
 	} s;
+	struct cvmx_pemx_bar2_mask_s cn61xx;
+	struct cvmx_pemx_bar2_mask_s cn66xx;
+	struct cvmx_pemx_bar2_mask_s cn68xx;
+	struct cvmx_pemx_bar2_mask_s cn68xxp1;
+	struct cvmx_pemx_bar2_mask_s cnf71xx;
 };
 
 union cvmx_pemx_bar_ctl {
@@ -102,6 +114,13 @@ union cvmx_pemx_bar_ctl {
 		uint64_t reserved_7_63:57;
 #endif
 	} s;
+	struct cvmx_pemx_bar_ctl_s cn61xx;
+	struct cvmx_pemx_bar_ctl_s cn63xx;
+	struct cvmx_pemx_bar_ctl_s cn63xxp1;
+	struct cvmx_pemx_bar_ctl_s cn66xx;
+	struct cvmx_pemx_bar_ctl_s cn68xx;
+	struct cvmx_pemx_bar_ctl_s cn68xxp1;
+	struct cvmx_pemx_bar_ctl_s cnf71xx;
 };
 
 union cvmx_pemx_bist_status {
@@ -129,6 +148,13 @@ union cvmx_pemx_bist_status {
 		uint64_t reserved_8_63:56;
 #endif
 	} s;
+	struct cvmx_pemx_bist_status_s cn61xx;
+	struct cvmx_pemx_bist_status_s cn63xx;
+	struct cvmx_pemx_bist_status_s cn63xxp1;
+	struct cvmx_pemx_bist_status_s cn66xx;
+	struct cvmx_pemx_bist_status_s cn68xx;
+	struct cvmx_pemx_bist_status_s cn68xxp1;
+	struct cvmx_pemx_bist_status_s cnf71xx;
 };
 
 union cvmx_pemx_bist_status2 {
@@ -160,6 +186,13 @@ union cvmx_pemx_bist_status2 {
 		uint64_t reserved_10_63:54;
 #endif
 	} s;
+	struct cvmx_pemx_bist_status2_s cn61xx;
+	struct cvmx_pemx_bist_status2_s cn63xx;
+	struct cvmx_pemx_bist_status2_s cn63xxp1;
+	struct cvmx_pemx_bist_status2_s cn66xx;
+	struct cvmx_pemx_bist_status2_s cn68xx;
+	struct cvmx_pemx_bist_status2_s cn68xxp1;
+	struct cvmx_pemx_bist_status2_s cnf71xx;
 };
 
 union cvmx_pemx_cfg_rd {
@@ -173,6 +206,13 @@ union cvmx_pemx_cfg_rd {
 		uint64_t data:32;
 #endif
 	} s;
+	struct cvmx_pemx_cfg_rd_s cn61xx;
+	struct cvmx_pemx_cfg_rd_s cn63xx;
+	struct cvmx_pemx_cfg_rd_s cn63xxp1;
+	struct cvmx_pemx_cfg_rd_s cn66xx;
+	struct cvmx_pemx_cfg_rd_s cn68xx;
+	struct cvmx_pemx_cfg_rd_s cn68xxp1;
+	struct cvmx_pemx_cfg_rd_s cnf71xx;
 };
 
 union cvmx_pemx_cfg_wr {
@@ -186,6 +226,13 @@ union cvmx_pemx_cfg_wr {
 		uint64_t data:32;
 #endif
 	} s;
+	struct cvmx_pemx_cfg_wr_s cn61xx;
+	struct cvmx_pemx_cfg_wr_s cn63xx;
+	struct cvmx_pemx_cfg_wr_s cn63xxp1;
+	struct cvmx_pemx_cfg_wr_s cn66xx;
+	struct cvmx_pemx_cfg_wr_s cn68xx;
+	struct cvmx_pemx_cfg_wr_s cn68xxp1;
+	struct cvmx_pemx_cfg_wr_s cnf71xx;
 };
 
 union cvmx_pemx_cpl_lut_valid {
@@ -199,6 +246,13 @@ union cvmx_pemx_cpl_lut_valid {
 		uint64_t reserved_32_63:32;
 #endif
 	} s;
+	struct cvmx_pemx_cpl_lut_valid_s cn61xx;
+	struct cvmx_pemx_cpl_lut_valid_s cn63xx;
+	struct cvmx_pemx_cpl_lut_valid_s cn63xxp1;
+	struct cvmx_pemx_cpl_lut_valid_s cn66xx;
+	struct cvmx_pemx_cpl_lut_valid_s cn68xx;
+	struct cvmx_pemx_cpl_lut_valid_s cn68xxp1;
+	struct cvmx_pemx_cpl_lut_valid_s cnf71xx;
 };
 
 union cvmx_pemx_ctl_status {
@@ -244,6 +298,13 @@ union cvmx_pemx_ctl_status {
 		uint64_t reserved_48_63:16;
 #endif
 	} s;
+	struct cvmx_pemx_ctl_status_s cn61xx;
+	struct cvmx_pemx_ctl_status_s cn63xx;
+	struct cvmx_pemx_ctl_status_s cn63xxp1;
+	struct cvmx_pemx_ctl_status_s cn66xx;
+	struct cvmx_pemx_ctl_status_s cn68xx;
+	struct cvmx_pemx_ctl_status_s cn68xxp1;
+	struct cvmx_pemx_ctl_status_s cnf71xx;
 };
 
 union cvmx_pemx_dbg_info {
@@ -317,6 +378,13 @@ union cvmx_pemx_dbg_info {
 		uint64_t reserved_31_63:33;
 #endif
 	} s;
+	struct cvmx_pemx_dbg_info_s cn61xx;
+	struct cvmx_pemx_dbg_info_s cn63xx;
+	struct cvmx_pemx_dbg_info_s cn63xxp1;
+	struct cvmx_pemx_dbg_info_s cn66xx;
+	struct cvmx_pemx_dbg_info_s cn68xx;
+	struct cvmx_pemx_dbg_info_s cn68xxp1;
+	struct cvmx_pemx_dbg_info_s cnf71xx;
 };
 
 union cvmx_pemx_dbg_info_en {
@@ -390,6 +458,13 @@ union cvmx_pemx_dbg_info_en {
 		uint64_t reserved_31_63:33;
 #endif
 	} s;
+	struct cvmx_pemx_dbg_info_en_s cn61xx;
+	struct cvmx_pemx_dbg_info_en_s cn63xx;
+	struct cvmx_pemx_dbg_info_en_s cn63xxp1;
+	struct cvmx_pemx_dbg_info_en_s cn66xx;
+	struct cvmx_pemx_dbg_info_en_s cn68xx;
+	struct cvmx_pemx_dbg_info_en_s cn68xxp1;
+	struct cvmx_pemx_dbg_info_en_s cnf71xx;
 };
 
 union cvmx_pemx_diag_status {
@@ -409,6 +484,13 @@ union cvmx_pemx_diag_status {
 		uint64_t reserved_4_63:60;
 #endif
 	} s;
+	struct cvmx_pemx_diag_status_s cn61xx;
+	struct cvmx_pemx_diag_status_s cn63xx;
+	struct cvmx_pemx_diag_status_s cn63xxp1;
+	struct cvmx_pemx_diag_status_s cn66xx;
+	struct cvmx_pemx_diag_status_s cn68xx;
+	struct cvmx_pemx_diag_status_s cn68xxp1;
+	struct cvmx_pemx_diag_status_s cnf71xx;
 };
 
 union cvmx_pemx_inb_read_credits {
@@ -422,6 +504,10 @@ union cvmx_pemx_inb_read_credits {
 		uint64_t reserved_6_63:58;
 #endif
 	} s;
+	struct cvmx_pemx_inb_read_credits_s cn61xx;
+	struct cvmx_pemx_inb_read_credits_s cn66xx;
+	struct cvmx_pemx_inb_read_credits_s cn68xx;
+	struct cvmx_pemx_inb_read_credits_s cnf71xx;
 };
 
 union cvmx_pemx_int_enb {
@@ -461,6 +547,13 @@ union cvmx_pemx_int_enb {
 		uint64_t reserved_14_63:50;
 #endif
 	} s;
+	struct cvmx_pemx_int_enb_s cn61xx;
+	struct cvmx_pemx_int_enb_s cn63xx;
+	struct cvmx_pemx_int_enb_s cn63xxp1;
+	struct cvmx_pemx_int_enb_s cn66xx;
+	struct cvmx_pemx_int_enb_s cn68xx;
+	struct cvmx_pemx_int_enb_s cn68xxp1;
+	struct cvmx_pemx_int_enb_s cnf71xx;
 };
 
 union cvmx_pemx_int_enb_int {
@@ -500,6 +593,13 @@ union cvmx_pemx_int_enb_int {
 		uint64_t reserved_14_63:50;
 #endif
 	} s;
+	struct cvmx_pemx_int_enb_int_s cn61xx;
+	struct cvmx_pemx_int_enb_int_s cn63xx;
+	struct cvmx_pemx_int_enb_int_s cn63xxp1;
+	struct cvmx_pemx_int_enb_int_s cn66xx;
+	struct cvmx_pemx_int_enb_int_s cn68xx;
+	struct cvmx_pemx_int_enb_int_s cn68xxp1;
+	struct cvmx_pemx_int_enb_int_s cnf71xx;
 };
 
 union cvmx_pemx_int_sum {
@@ -539,6 +639,13 @@ union cvmx_pemx_int_sum {
 		uint64_t reserved_14_63:50;
 #endif
 	} s;
+	struct cvmx_pemx_int_sum_s cn61xx;
+	struct cvmx_pemx_int_sum_s cn63xx;
+	struct cvmx_pemx_int_sum_s cn63xxp1;
+	struct cvmx_pemx_int_sum_s cn66xx;
+	struct cvmx_pemx_int_sum_s cn68xx;
+	struct cvmx_pemx_int_sum_s cn68xxp1;
+	struct cvmx_pemx_int_sum_s cnf71xx;
 };
 
 union cvmx_pemx_p2n_bar0_start {
@@ -552,6 +659,13 @@ union cvmx_pemx_p2n_bar0_start {
 		uint64_t addr:50;
 #endif
 	} s;
+	struct cvmx_pemx_p2n_bar0_start_s cn61xx;
+	struct cvmx_pemx_p2n_bar0_start_s cn63xx;
+	struct cvmx_pemx_p2n_bar0_start_s cn63xxp1;
+	struct cvmx_pemx_p2n_bar0_start_s cn66xx;
+	struct cvmx_pemx_p2n_bar0_start_s cn68xx;
+	struct cvmx_pemx_p2n_bar0_start_s cn68xxp1;
+	struct cvmx_pemx_p2n_bar0_start_s cnf71xx;
 };
 
 union cvmx_pemx_p2n_bar1_start {
@@ -565,6 +679,13 @@ union cvmx_pemx_p2n_bar1_start {
 		uint64_t addr:38;
 #endif
 	} s;
+	struct cvmx_pemx_p2n_bar1_start_s cn61xx;
+	struct cvmx_pemx_p2n_bar1_start_s cn63xx;
+	struct cvmx_pemx_p2n_bar1_start_s cn63xxp1;
+	struct cvmx_pemx_p2n_bar1_start_s cn66xx;
+	struct cvmx_pemx_p2n_bar1_start_s cn68xx;
+	struct cvmx_pemx_p2n_bar1_start_s cn68xxp1;
+	struct cvmx_pemx_p2n_bar1_start_s cnf71xx;
 };
 
 union cvmx_pemx_p2n_bar2_start {
@@ -578,6 +699,13 @@ union cvmx_pemx_p2n_bar2_start {
 		uint64_t addr:23;
 #endif
 	} s;
+	struct cvmx_pemx_p2n_bar2_start_s cn61xx;
+	struct cvmx_pemx_p2n_bar2_start_s cn63xx;
+	struct cvmx_pemx_p2n_bar2_start_s cn63xxp1;
+	struct cvmx_pemx_p2n_bar2_start_s cn66xx;
+	struct cvmx_pemx_p2n_bar2_start_s cn68xx;
+	struct cvmx_pemx_p2n_bar2_start_s cn68xxp1;
+	struct cvmx_pemx_p2n_bar2_start_s cnf71xx;
 };
 
 union cvmx_pemx_p2p_barx_end {
@@ -591,6 +719,11 @@ union cvmx_pemx_p2p_barx_end {
 		uint64_t addr:52;
 #endif
 	} s;
+	struct cvmx_pemx_p2p_barx_end_s cn63xx;
+	struct cvmx_pemx_p2p_barx_end_s cn63xxp1;
+	struct cvmx_pemx_p2p_barx_end_s cn66xx;
+	struct cvmx_pemx_p2p_barx_end_s cn68xx;
+	struct cvmx_pemx_p2p_barx_end_s cn68xxp1;
 };
 
 union cvmx_pemx_p2p_barx_start {
@@ -604,6 +737,11 @@ union cvmx_pemx_p2p_barx_start {
 		uint64_t addr:52;
 #endif
 	} s;
+	struct cvmx_pemx_p2p_barx_start_s cn63xx;
+	struct cvmx_pemx_p2p_barx_start_s cn63xxp1;
+	struct cvmx_pemx_p2p_barx_start_s cn66xx;
+	struct cvmx_pemx_p2p_barx_start_s cn68xx;
+	struct cvmx_pemx_p2p_barx_start_s cn68xxp1;
 };
 
 union cvmx_pemx_tlp_credits {
@@ -646,6 +784,12 @@ union cvmx_pemx_tlp_credits {
 		uint64_t reserved_56_63:8;
 #endif
 	} cn61xx;
+	struct cvmx_pemx_tlp_credits_s cn63xx;
+	struct cvmx_pemx_tlp_credits_s cn63xxp1;
+	struct cvmx_pemx_tlp_credits_s cn66xx;
+	struct cvmx_pemx_tlp_credits_s cn68xx;
+	struct cvmx_pemx_tlp_credits_s cn68xxp1;
+	struct cvmx_pemx_tlp_credits_cn61xx cnf71xx;
 };
 
 #endif

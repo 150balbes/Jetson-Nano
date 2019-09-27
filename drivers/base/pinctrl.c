@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * Driver core interface to the pinctrl subsystem.
  *
@@ -7,6 +6,8 @@
  * Based on bits of regulator core, gpio core and clk core
  *
  * Author: Linus Walleij <linus.walleij@linaro.org>
+ *
+ * License terms: GNU General Public License (GPL) version 2
  */
 
 #include <linux/device.h>
@@ -21,9 +22,6 @@
 int pinctrl_bind_pins(struct device *dev)
 {
 	int ret;
-
-	if (dev->of_node_reused)
-		return 0;
 
 	dev->pins = devm_kzalloc(dev, sizeof(*(dev->pins)), GFP_KERNEL);
 	if (!dev->pins)

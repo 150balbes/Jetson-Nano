@@ -25,7 +25,6 @@
 #include "agp.h"
 #include "intel-agp.h"
 #include <drm/intel-gtt.h>
-#include <asm/set_memory.h>
 
 /*
  * If we have Intel graphics, we're not going to have anything other than
@@ -80,7 +79,7 @@ static struct _intel_private {
 	unsigned int needs_dmar : 1;
 	phys_addr_t gma_bus_addr;
 	/*  Size of memory reserved for graphics by the BIOS */
-	resource_size_t stolen_size;
+	unsigned int stolen_size;
 	/* Total number of gtt entries. */
 	unsigned int gtt_total_entries;
 	/* Part of the gtt that is mappable by the cpu, for those chips where
@@ -333,13 +332,21 @@ static void i810_write_entry(dma_addr_t addr, unsigned int entry,
 	writel_relaxed(addr | pte_flags, intel_private.gtt + entry);
 }
 
-static resource_size_t intel_gtt_stolen_size(void)
+static const struct aper_size_info_fixed intel_fake_agp_sizes[] = {
+	{32, 8192, 3},
+	{64, 16384, 4},
+	{128, 32768, 5},
+	{256, 65536, 6},
+	{512, 131072, 7},
+};
+
+static unsigned int intel_gtt_stolen_size(void)
 {
 	u16 gmch_ctrl;
 	u8 rdct;
 	int local = 0;
 	static const int ddt[4] = { 0, 16, 32, 64 };
-	resource_size_t stolen_size = 0;
+	unsigned int stolen_size = 0;
 
 	if (INTEL_GTT_GEN == 1)
 		return 0; /* no stolen mem on i81x */
@@ -417,8 +424,8 @@ static resource_size_t intel_gtt_stolen_size(void)
 	}
 
 	if (stolen_size > 0) {
-		dev_info(&intel_private.bridge_dev->dev, "detected %lluK %s memory\n",
-		       (u64)stolen_size / KB(1), local ? "local" : "stolen");
+		dev_info(&intel_private.bridge_dev->dev, "detected %dK %s memory\n",
+		       stolen_size / KB(1), local ? "local" : "stolen");
 	} else {
 		dev_info(&intel_private.bridge_dev->dev,
 		       "no pre-allocated video memory detected\n");
@@ -663,14 +670,6 @@ static int intel_gtt_init(void)
 }
 
 #if IS_ENABLED(CONFIG_AGP_INTEL)
-static const struct aper_size_info_fixed intel_fake_agp_sizes[] = {
-	{32, 8192, 3},
-	{64, 16384, 4},
-	{128, 32768, 5},
-	{256, 65536, 6},
-	{512, 131072, 7},
-};
-
 static int intel_fake_agp_fetch_size(void)
 {
 	int num_sizes = ARRAY_SIZE(intel_fake_agp_sizes);
@@ -1423,11 +1422,11 @@ int intel_gmch_probe(struct pci_dev *bridge_pdev, struct pci_dev *gpu_pdev,
 }
 EXPORT_SYMBOL(intel_gmch_probe);
 
-void intel_gtt_get(u64 *gtt_total,
-		   phys_addr_t *mappable_base,
-		   resource_size_t *mappable_end)
+void intel_gtt_get(u64 *gtt_total, size_t *stolen_size,
+		   phys_addr_t *mappable_base, u64 *mappable_end)
 {
 	*gtt_total = intel_private.gtt_total_entries << PAGE_SHIFT;
+	*stolen_size = intel_private.stolen_size;
 	*mappable_base = intel_private.gma_bus_addr;
 	*mappable_end = intel_private.gtt_mappable_entries << PAGE_SHIFT;
 }

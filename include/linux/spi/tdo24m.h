@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __TDO24M_H__
 #define __TDO24M_H__
 

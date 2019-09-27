@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
    /* SQCIF */
    {
       {0, 0, {0x04, 0x01, 0x03}},

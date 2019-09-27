@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * arch/arm/mach-iop33x/include/mach/hardware.h
  */

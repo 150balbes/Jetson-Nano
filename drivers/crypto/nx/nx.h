@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 
 #ifndef __NX_H__
 #define __NX_H__
@@ -76,12 +75,20 @@ struct nx_stats {
 	atomic_t last_error_pid;
 };
 
+struct nx_debugfs {
+	struct dentry *dfs_root;
+	struct dentry *dfs_aes_ops, *dfs_aes_bytes;
+	struct dentry *dfs_sha256_ops, *dfs_sha256_bytes;
+	struct dentry *dfs_sha512_ops, *dfs_sha512_bytes;
+	struct dentry *dfs_errors, *dfs_last_error, *dfs_last_error_pid;
+};
+
 struct nx_crypto_driver {
 	struct nx_stats    stats;
 	struct nx_of       of;
 	struct vio_dev    *viodev;
 	struct vio_driver  viodriver;
-	struct dentry     *dfs_root;
+	struct nx_debugfs  dfs;
 };
 
 #define NX_GCM4106_NONCE_LEN		(4)
@@ -169,7 +176,7 @@ struct nx_sg *nx_walk_and_build(struct nx_sg *, unsigned int,
 #define NX_DEBUGFS_INIT(drv)	nx_debugfs_init(drv)
 #define NX_DEBUGFS_FINI(drv)	nx_debugfs_fini(drv)
 
-void nx_debugfs_init(struct nx_crypto_driver *);
+int nx_debugfs_init(struct nx_crypto_driver *);
 void nx_debugfs_fini(struct nx_crypto_driver *);
 #else
 #define NX_DEBUGFS_INIT(drv)	(0)

@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  *	linux/arch/alpha/kernel/sys_takara.c
  *
@@ -156,10 +155,10 @@ takara_init_irq(void)
  * assign it whatever the hell IRQ we like and it doesn't matter.
  */
 
-static int
+static int __init
 takara_map_irq_srm(const struct pci_dev *dev, u8 slot, u8 pin)
 {
-	static char irq_tab[15][5] = {
+	static char irq_tab[15][5] __initdata = {
 		{ 16+3, 16+3, 16+3, 16+3, 16+3},   /* slot  6 == device 3 */
 		{ 16+2, 16+2, 16+2, 16+2, 16+2},   /* slot  7 == device 2 */
 		{ 16+1, 16+1, 16+1, 16+1, 16+1},   /* slot  8 == device 1 */
@@ -211,7 +210,7 @@ takara_map_irq(const struct pci_dev *dev, u8 slot, u8 pin)
 	return COMMON_TABLE_LOOKUP;
 }
 
-static u8
+static u8 __init
 takara_swizzle(struct pci_dev *dev, u8 *pinp)
 {
 	int slot = PCI_SLOT(dev->devfn);

@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 
 #include <linux/slab.h>
@@ -17,7 +16,7 @@
 #include <xen/events.h>
 #include <asm/xen/hypervisor.h>
 
-#include "xenbus.h"
+#include "xenbus_comms.h"
 
 static int xenbus_backend_open(struct inode *inode, struct file *filp)
 {

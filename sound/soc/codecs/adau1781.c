@@ -1,9 +1,10 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Driver for ADAU1381/ADAU1781 codec
  *
  * Copyright 2011-2013 Analog Devices Inc.
  * Author: Lars-Peter Clausen <lars@metafoo.de>
+ *
+ * Licensed under the GPL-2 or later.
  */
 
 #include <linux/module.h>
@@ -173,8 +174,8 @@ static const struct snd_kcontrol_new adau1781_mono_mixer_controls[] = {
 static int adau1781_dejitter_fixup(struct snd_soc_dapm_widget *w,
 	struct snd_kcontrol *kcontrol, int event)
 {
-	struct snd_soc_component *component = snd_soc_dapm_to_component(w->dapm);
-	struct adau *adau = snd_soc_component_get_drvdata(component);
+	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
+	struct adau *adau = snd_soc_codec_get_drvdata(codec);
 
 	/* After any power changes have been made the dejitter circuit
 	 * has to be reinitialized. */
@@ -313,10 +314,10 @@ static const struct snd_soc_dapm_route adau1781_dmic_dapm_routes[] = {
 	{ "Right Decimator", NULL, "DMIC Select" },
 };
 
-static int adau1781_set_bias_level(struct snd_soc_component *component,
+static int adau1781_set_bias_level(struct snd_soc_codec *codec,
 		enum snd_soc_bias_level level)
 {
-	struct adau *adau = snd_soc_component_get_drvdata(component);
+	struct adau *adau = snd_soc_codec_get_drvdata(codec);
 
 	switch (level) {
 	case SND_SOC_BIAS_ON:
@@ -379,14 +380,14 @@ static int adau1781_set_input_mode(struct adau *adau, unsigned int reg,
 		ADAU1781_INPUT_DIFFERNTIAL, val);
 }
 
-static int adau1781_component_probe(struct snd_soc_component *component)
+static int adau1781_codec_probe(struct snd_soc_codec *codec)
 {
-	struct snd_soc_dapm_context *dapm = snd_soc_component_get_dapm(component);
-	struct adau1781_platform_data *pdata = dev_get_platdata(component->dev);
-	struct adau *adau = snd_soc_component_get_drvdata(component);
+	struct snd_soc_dapm_context *dapm = snd_soc_codec_get_dapm(codec);
+	struct adau1781_platform_data *pdata = dev_get_platdata(codec->dev);
+	struct adau *adau = snd_soc_codec_get_drvdata(codec);
 	int ret;
 
-	ret = adau17x1_add_widgets(component);
+	ret = adau17x1_add_widgets(codec);
 	if (ret)
 		return ret;
 
@@ -418,28 +419,27 @@ static int adau1781_component_probe(struct snd_soc_component *component)
 			return ret;
 	}
 
-	ret = adau17x1_add_routes(component);
+	ret = adau17x1_add_routes(codec);
 	if (ret < 0)
 		return ret;
 
 	return 0;
 }
 
-static const struct snd_soc_component_driver adau1781_component_driver = {
-	.probe			= adau1781_component_probe,
-	.resume			= adau17x1_resume,
-	.set_bias_level		= adau1781_set_bias_level,
-	.controls		= adau1781_controls,
-	.num_controls		= ARRAY_SIZE(adau1781_controls),
-	.dapm_widgets		= adau1781_dapm_widgets,
-	.num_dapm_widgets	= ARRAY_SIZE(adau1781_dapm_widgets),
-	.dapm_routes		= adau1781_dapm_routes,
-	.num_dapm_routes	= ARRAY_SIZE(adau1781_dapm_routes),
-	.suspend_bias_off	= 1,
-	.idle_bias_on		= 1,
-	.use_pmdown_time	= 1,
-	.endianness		= 1,
-	.non_legacy_dai_naming	= 1,
+static const struct snd_soc_codec_driver adau1781_codec_driver = {
+	.probe = adau1781_codec_probe,
+	.resume = adau17x1_resume,
+	.set_bias_level = adau1781_set_bias_level,
+	.suspend_bias_off = true,
+
+	.component_driver = {
+		.controls		= adau1781_controls,
+		.num_controls		= ARRAY_SIZE(adau1781_controls),
+		.dapm_widgets		= adau1781_dapm_widgets,
+		.num_dapm_widgets	= ARRAY_SIZE(adau1781_dapm_widgets),
+		.dapm_routes		= adau1781_dapm_routes,
+		.num_dapm_routes	= ARRAY_SIZE(adau1781_dapm_routes),
+	},
 };
 
 #define ADAU1781_FORMATS (SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S24_LE | \
@@ -498,7 +498,7 @@ int adau1781_probe(struct device *dev, struct regmap *regmap,
 	if (ret)
 		return ret;
 
-	return devm_snd_soc_register_component(dev, &adau1781_component_driver,
+	return snd_soc_register_codec(dev, &adau1781_codec_driver,
 		&adau1781_dai_driver, 1);
 }
 EXPORT_SYMBOL_GPL(adau1781_probe);

@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __NETNS_SCTP_H__
 #define __NETNS_SCTP_H__
 
@@ -119,14 +118,8 @@ struct netns_sctp {
 	/* Flag to indicate if PR-SCTP is enabled. */
 	int prsctp_enable;
 
-	/* Flag to indicate if PR-CONFIG is enabled. */
-	int reconf_enable;
-
-	/* Flag to indicate if SCTP-AUTH is enabled */
+	/* Flag to idicate if SCTP-AUTH is enabled */
 	int auth_enable;
-
-	/* Flag to indicate if stream interleave is enabled */
-	int intl_enable;
 
 	/*
 	 * Policy to control SCTP IPv4 address scoping

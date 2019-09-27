@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  *	Handle firewalling
  *	Linux ethernet bridge
@@ -6,6 +5,11 @@
  *	Authors:
  *	Lennert Buytenhek		<buytenh@gnu.org>
  *	Bart De Schuymer		<bdschuym@pandora.be>
+ *
+ *	This program is free software; you can redistribute it and/or
+ *	modify it under the terms of the GNU General Public License
+ *	as published by the Free Software Foundation; either version
+ *	2 of the License, or (at your option) any later version.
  *
  *	Lennert dedicates this file to Kerstin Wurdinger.
  */
@@ -34,7 +38,7 @@
 #include <net/route.h>
 #include <net/netfilter/br_netfilter.h>
 
-#include <linux/uaccess.h>
+#include <asm/uaccess.h>
 #include "br_private.h"
 #ifdef CONFIG_SYSCTL
 #include <linux/sysctl.h>
@@ -127,7 +131,6 @@ int br_validate_ipv6(struct net *net, struct sk_buff *skb)
 					IPSTATS_MIB_INDISCARDS);
 			goto drop;
 		}
-		hdr = ipv6_hdr(skb);
 	}
 	if (hdr->nexthdr == NEXTHDR_HOP && br_nf_check_hbh_len(skb))
 		goto drop;
@@ -221,18 +224,16 @@ unsigned int br_nf_pre_routing_ipv6(void *priv,
 	if (br_validate_ipv6(state->net, skb))
 		return NF_DROP;
 
-	nf_bridge = nf_bridge_alloc(skb);
-	if (!nf_bridge)
+	nf_bridge_put(skb->nf_bridge);
+	if (!nf_bridge_alloc(skb))
 		return NF_DROP;
-	if (!setup_pre_routing(skb, state->net))
+	if (!setup_pre_routing(skb))
 		return NF_DROP;
 
 	nf_bridge = nf_bridge_info_get(skb);
 	nf_bridge->ipv6_daddr = ipv6_hdr(skb)->daddr;
 
 	skb->protocol = htons(ETH_P_IPV6);
-	skb->transport_header = skb->network_header + sizeof(struct ipv6hdr);
-
 	NF_HOOK(NFPROTO_IPV6, NF_INET_PRE_ROUTING, state->net, state->sk, skb,
 		skb->dev, NULL,
 		br_nf_pre_routing_finish_ipv6);

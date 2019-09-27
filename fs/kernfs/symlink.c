@@ -1,10 +1,11 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * fs/kernfs/symlink.c - kernfs symlink implementation
  *
  * Copyright (c) 2001-3 Patrick Mochel
  * Copyright (c) 2007 SUSE Linux Products GmbH
  * Copyright (c) 2007, 2013 Tejun Heo <tj@kernel.org>
+ *
+ * This file is released under the GPLv2.
  */
 
 #include <linux/fs.h>
@@ -20,7 +21,6 @@
  * @target: target node for the symlink to point to
  *
  * Returns the created node on success, ERR_PTR() value on error.
- * Ownership of the link matches ownership of the target.
  */
 struct kernfs_node *kernfs_create_link(struct kernfs_node *parent,
 				       const char *name,
@@ -28,16 +28,8 @@ struct kernfs_node *kernfs_create_link(struct kernfs_node *parent,
 {
 	struct kernfs_node *kn;
 	int error;
-	kuid_t uid = GLOBAL_ROOT_UID;
-	kgid_t gid = GLOBAL_ROOT_GID;
 
-	if (target->iattr) {
-		uid = target->iattr->ia_uid;
-		gid = target->iattr->ia_gid;
-	}
-
-	kn = kernfs_new_node(parent, name, S_IFLNK|S_IRWXUGO, uid, gid,
-			     KERNFS_LINK);
+	kn = kernfs_new_node(parent, name, S_IFLNK|S_IRWXUGO, KERNFS_LINK);
 	if (!kn)
 		return ERR_PTR(-ENOMEM);
 
@@ -71,9 +63,6 @@ static int kernfs_get_target_path(struct kernfs_node *parent,
 		if (base == kn)
 			break;
 
-		if ((s - path) + 3 >= PATH_MAX)
-			return -ENAMETOOLONG;
-
 		strcpy(s, "../");
 		s += 3;
 		base = base->parent;
@@ -90,7 +79,7 @@ static int kernfs_get_target_path(struct kernfs_node *parent,
 	if (len < 2)
 		return -EINVAL;
 	len--;
-	if ((s - path) + len >= PATH_MAX)
+	if ((s - path) + len > PATH_MAX)
 		return -ENAMETOOLONG;
 
 	/* reverse fillup of target string from target to base */
@@ -99,7 +88,7 @@ static int kernfs_get_target_path(struct kernfs_node *parent,
 		int slen = strlen(kn->name);
 
 		len -= slen;
-		memcpy(s + len, kn->name, slen);
+		strncpy(s + len, kn->name, slen);
 		if (len)
 			s[--len] = '/';
 
@@ -109,9 +98,9 @@ static int kernfs_get_target_path(struct kernfs_node *parent,
 	return 0;
 }
 
-static int kernfs_getlink(struct inode *inode, char *path)
+static int kernfs_getlink(struct dentry *dentry, char *path)
 {
-	struct kernfs_node *kn = inode->i_private;
+	struct kernfs_node *kn = dentry->d_fsdata;
 	struct kernfs_node *parent = kn->parent;
 	struct kernfs_node *target = kn->symlink.target_kn;
 	int error;
@@ -135,7 +124,7 @@ static const char *kernfs_iop_get_link(struct dentry *dentry,
 	body = kzalloc(PAGE_SIZE, GFP_KERNEL);
 	if (!body)
 		return ERR_PTR(-ENOMEM);
-	error = kernfs_getlink(inode, body);
+	error = kernfs_getlink(dentry, body);
 	if (unlikely(error < 0)) {
 		kfree(body);
 		return ERR_PTR(error);
@@ -146,6 +135,7 @@ static const char *kernfs_iop_get_link(struct dentry *dentry,
 
 const struct inode_operations kernfs_symlink_iops = {
 	.listxattr	= kernfs_iop_listxattr,
+	.readlink	= generic_readlink,
 	.get_link	= kernfs_iop_get_link,
 	.setattr	= kernfs_iop_setattr,
 	.getattr	= kernfs_iop_getattr,

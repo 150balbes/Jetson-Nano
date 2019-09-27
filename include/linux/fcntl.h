@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _LINUX_FCNTL_H
 #define _LINUX_FCNTL_H
 
@@ -12,7 +11,7 @@
 	 O_NOATIME | O_CLOEXEC | O_PATH | __O_TMPFILE)
 
 #ifndef force_o_largefile
-#define force_o_largefile() (!IS_ENABLED(CONFIG_ARCH_32BIT_OFF_T))
+#define force_o_largefile() (BITS_PER_LONG != 32)
 #endif
 
 #if BITS_PER_LONG == 32

@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /dts-v1/;
 
 #include <dt-bindings/input/input.h>
@@ -18,7 +17,7 @@
 		stdout-path = "serial0:115200n8";
 	};
 
-	memory@80000000 {
+	memory {
 		reg = <0x0 0x80000000 0x0 0x80000000>;
 	};
 
@@ -613,7 +612,7 @@
 			compatible = "maxim,max98090";
 			reg = <0x10>;
 			interrupt-parent = <&gpio>;
-			interrupts = <TEGRA_GPIO(H, 4) IRQ_TYPE_EDGE_FALLING>;
+			interrupts = <TEGRA_GPIO(H, 4) GPIO_ACTIVE_HIGH>;
 		};
 	};
 
@@ -859,7 +858,7 @@
 					reg = <0x9>;
 					interrupt-parent = <&gpio>;
 					interrupts = <TEGRA_GPIO(J, 0)
-							IRQ_TYPE_EDGE_BOTH>;
+							GPIO_ACTIVE_HIGH>;
 					ti,ac-detect-gpios = <&gpio
 							TEGRA_GPIO(J, 0)
 							GPIO_ACTIVE_HIGH>;
@@ -879,7 +878,7 @@
 		status = "okay";
 		spi-max-frequency = <25000000>;
 		spi-flash@0 {
-			compatible = "winbond,w25q32dw", "jedec,spi-nor";
+			compatible = "winbond,w25q32dw";
 			reg = <0>;
 			spi-max-frequency = <20000000>;
 		};
@@ -921,11 +920,6 @@
 	};
 
 	padctl@7009f000 {
-		avdd-pll-utmip-supply = <&vddio_1v8>;
-		avdd-pll-erefe-supply = <&avdd_1v05_run>;
-		avdd-pex-pll-supply = <&vdd_1v05_run>;
-		hvdd-pex-pll-e-supply = <&vdd_3v3_lp0>;
-
 		pads {
 			usb2 {
 				status = "okay";
@@ -953,6 +947,11 @@
 
 				lanes {
 					pcie-0 {
+						nvidia,function = "usb3-ss";
+						status = "okay";
+					};
+
+					pcie-1 {
 						nvidia,function = "usb3-ss";
 						status = "okay";
 					};

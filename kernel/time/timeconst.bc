@@ -1,5 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
-
 scale=0
 
 define gcd(a,b) {

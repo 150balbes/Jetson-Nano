@@ -1,13 +1,14 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (C) ST-Ericsson AB 2010
  * Author:	Sjur Brendeland
+ * License terms: GNU General Public License (GPL) version 2
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ":%s(): " fmt, __func__
 
 #include <linux/string.h>
 #include <linux/skbuff.h>
+#include <linux/hardirq.h>
 #include <linux/export.h>
 #include <net/caif/cfpkt.h>
 
@@ -319,12 +320,16 @@ struct cfpkt *cfpkt_append(struct cfpkt *dstpkt,
 		if (tmppkt == NULL)
 			return NULL;
 		tmp = pkt_to_skb(tmppkt);
-		skb_put_data(tmp, dst->data, dstlen);
+		skb_set_tail_pointer(tmp, dstlen);
+		tmp->len = dstlen;
+		memcpy(tmp->data, dst->data, dstlen);
 		cfpkt_destroy(dstpkt);
 		dst = tmp;
 	}
-	skb_put_data(dst, add->data, skb_headlen(add));
+	memcpy(skb_tail_pointer(dst), add->data, skb_headlen(add));
 	cfpkt_destroy(addpkt);
+	dst->tail += addlen;
+	dst->len += addlen;
 	return skb_to_pkt(dst);
 }
 
@@ -355,11 +360,13 @@ struct cfpkt *cfpkt_split(struct cfpkt *pkt, u16 pos)
 	if (skb2 == NULL)
 		return NULL;
 
-	skb_put_data(skb2, split, len2nd);
-
 	/* Reduce the length of the original packet */
-	skb_trim(skb, pos);
+	skb_set_tail_pointer(skb, pos);
+	skb->len = pos;
 
+	memcpy(skb2->data, split, len2nd);
+	skb2->tail += len2nd;
+	skb2->len += len2nd;
 	skb2->priority = skb->priority;
 	return skb_to_pkt(skb2);
 }

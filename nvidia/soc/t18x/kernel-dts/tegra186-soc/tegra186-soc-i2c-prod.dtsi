@@ -1,0 +1,246 @@
+/*
+ * tegra186-soc-i2c-prod.dtsi: I2C SoC specific DTSI file with required prod values.
+ *
+ * Copyright (c) 2016-2017, NVIDIA CORPORATION.  All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; version 2 of the License.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with this program; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+ *
+ */
+
+/ {
+	i2c@3160000 {
+		prod-settings {
+			prod_c_fm {
+				prod = <
+					0x6c 0xffff0000 0x00190000
+					0x94 0x00003f00 0x00000200>;
+			};
+			prod_c_fmplus {
+				prod = <
+					0x6c 0xffff0000 0x00100000
+					0x94 0x00003f00 0x00000200>;
+			};
+			prod_c_hs {
+				prod = <
+					0x6c 0x0000ffff 0x00000002
+					0x9c 0x00003f00 0x00000300>;
+			};
+			prod_c_sm {
+				prod = <
+					0x6c 0xffff0000 0x00160000
+					0x94 0x00003f00 0x00000300>;
+			};
+		};
+	};
+
+	i2c@c240000 {
+		prod-settings {
+			prod_c_fm {
+				prod = <
+					0x6c 0xffff0000 0x00190000
+					0x94 0x00003f00 0x00000200>;
+			};
+			prod_c_fmplus {
+				prod = <
+					0x6c 0xffff0000 0x00100000
+					0x94 0x00003f00 0x00000200>;
+			};
+			prod_c_hs {
+				prod = <
+					0x6c 0x0000ffff 0x00000002
+					0x9c 0x00003f00 0x00000300>;
+			};
+			prod_c_sm {
+				prod = <
+					0x6c 0xffff0000 0x00160000
+					0x94 0x00003f00 0x00000300>;
+			};
+		};
+	};
+
+	i2c@3180000 {
+		prod-settings {
+			prod_c_fm {
+				prod = <
+					0x6c 0xffff0000 0x00190000
+					0x94 0x00003f00 0x00000200>;
+			};
+			prod_c_fmplus {
+				prod = <
+					0x6c 0xffff0000 0x00100000
+					0x94 0x00003f00 0x00000200>;
+			};
+			prod_c_hs {
+				prod = <
+					0x6c 0x0000ffff 0x00000002
+					0x9c 0x00003f00 0x00000300>;
+			};
+			prod_c_sm {
+				prod = <
+					0x6c 0xffff0000 0x00160000
+					0x94 0x00003f00 0x00000300>;
+			};
+		};
+	};
+
+	i2c@3190000 {
+		prod-settings {
+			prod_c_fm {
+				prod = <
+					0x6c 0xffff0000 0x00190000
+					0x94 0x00003f00 0x00000200>;
+			};
+			prod_c_fmplus {
+				prod = <
+					0x6c 0xffff0000 0x00100000
+					0x94 0x00003f00 0x00000200>;
+			};
+			prod_c_hs {
+				prod = <
+					0x6c 0x0000ffff 0x00000002
+					0x9c 0x00003f00 0x00000300>;
+			};
+			prod_c_sm {
+				prod = <
+					0x6c 0xffff0000 0x00160000
+					0x94 0x00003f00 0x00000300>;
+			};
+		};
+	};
+
+	i2c@31a0000 {
+		prod-settings {
+			prod_c_fm {
+				prod = <
+					0x6c 0xffff0000 0x00190000
+					0x94 0x00003f00 0x00000200>;
+			};
+			prod_c_fmplus {
+				prod = <
+					0x6c 0xffff0000 0x00100000
+					0x94 0x00003f00 0x00000200>;
+			};
+			prod_c_hs {
+				prod = <
+					0x6c 0x0000ffff 0x00000002
+					0x9c 0x00003f00 0x00000300>;
+			};
+			prod_c_sm {
+				prod = <
+					0x6c 0xffff0000 0x00160000
+					0x94 0x00003f00 0x00000300>;
+			};
+		};
+	};
+
+	i2c@31b0000 {
+		prod-settings {
+			prod_c_fm {
+				prod = <
+					0x6c 0xffff0000 0x00190000
+					0x94 0x00003f00 0x00000200>;
+			};
+			prod_c_fmplus {
+				prod = <
+					0x6c 0xffff0000 0x00100000
+					0x94 0x00003f00 0x00000200>;
+			};
+			prod_c_hs {
+				prod = <
+					0x6c 0x0000ffff 0x00000002
+					0x9c 0x00003f00 0x00000300>;
+			};
+			prod_c_sm {
+				prod = <
+					0x6c 0xffff0000 0x00160000
+					0x94 0x00003f00 0x00000300>;
+			};
+		};
+	};
+
+	i2c@31c0000 {
+		prod-settings {
+			prod_c_fm {
+				prod = <
+					0x6c 0xffff0000 0x00190000
+					0x94 0x00003f00 0x00000200>;
+			};
+			prod_c_fmplus {
+				prod = <
+					0x6c 0xffff0000 0x00100000
+					0x94 0x00003f00 0x00000200>;
+			};
+			prod_c_hs {
+				prod = <
+					0x6c 0x0000ffff 0x00000002
+					0x9c 0x00003f00 0x00000300>;
+			};
+			prod_c_sm {
+				prod = <
+					0x6c 0xffff0000 0x00160000
+					0x94 0x00003f00 0x00000300>;
+			};
+		};
+	};
+
+	i2c@c250000 {
+		prod-settings {
+			prod_c_fm {
+				prod = <
+					0x6c 0xffff0000 0x00190000
+					0x94 0x00003f00 0x00000200>;
+			};
+			prod_c_fmplus {
+				prod = <
+					0x6c 0xffff0000 0x00100000
+					0x94 0x00003f00 0x00000200>;
+			};
+			prod_c_hs {
+				prod = <
+					0x6c 0x0000ffff 0x00000002
+					0x9c 0x00003f00 0x00000300>;
+			};
+			prod_c_sm {
+				prod = <
+					0x6c 0xffff0000 0x00160000
+					0x94 0x00003f00 0x00000300>;
+			};
+		};
+	};
+
+	i2c@31e0000 {
+		prod-settings {
+			prod_c_fm {
+				prod = <
+					0x6c 0xffff0000 0x00190000
+					0x94 0x00003f00 0x00000200>;
+			};
+			prod_c_fmplus {
+				prod = <
+					0x6c 0xffff0000 0x00100000
+					0x94 0x00003f00 0x00000200>;
+			};
+			prod_c_hs {
+				prod = <
+					0x6c 0x0000ffff 0x00000002
+					0x9c 0x00003f00 0x00000300>;
+			};
+			prod_c_sm {
+				prod = <
+					0x6c 0xffff0000 0x00160000
+					0x94 0x00003f00 0x00000300>;
+			};
+		};
+	};
+};

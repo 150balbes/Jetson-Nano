@@ -1,8 +1,19 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Secure Element driver for STMicroelectronics NFC NCI chip
  *
  * Copyright (C) 2014-2015 STMicroelectronics SAS. All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms and conditions of the GNU General Public License,
+ * version 2, as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, see <http://www.gnu.org/licenses/>.
  */
 
 #include <linux/module.h>
@@ -333,8 +344,6 @@ static int st_nci_hci_connectivity_event_received(struct nci_dev *ndev,
 
 		transaction = (struct nfc_evt_transaction *)devm_kzalloc(dev,
 					    skb->len - 2, GFP_KERNEL);
-		if (!transaction)
-			return -ENOMEM;
 
 		transaction->aid_len = skb->data[1];
 		memcpy(transaction->aid, &skb->data[2], transaction->aid_len);
@@ -668,7 +677,7 @@ int st_nci_se_io(struct nci_dev *ndev, u32 se_idx,
 }
 EXPORT_SYMBOL(st_nci_se_io);
 
-static void st_nci_se_wt_timeout(struct timer_list *t)
+static void st_nci_se_wt_timeout(unsigned long data)
 {
 	/*
 	 * No answer from the secure element
@@ -681,7 +690,7 @@ static void st_nci_se_wt_timeout(struct timer_list *t)
 	 */
 	/* hardware reset managed through VCC_UICC_OUT power supply */
 	u8 param = 0x01;
-	struct st_nci_info *info = from_timer(info, t, se_info.bwi_timer);
+	struct st_nci_info *info = (struct st_nci_info *) data;
 
 	pr_debug("\n");
 
@@ -699,10 +708,9 @@ static void st_nci_se_wt_timeout(struct timer_list *t)
 	info->se_info.cb(info->se_info.cb_context, NULL, 0, -ETIME);
 }
 
-static void st_nci_se_activation_timeout(struct timer_list *t)
+static void st_nci_se_activation_timeout(unsigned long data)
 {
-	struct st_nci_info *info = from_timer(info, t,
-					      se_info.se_active_timer);
+	struct st_nci_info *info = (struct st_nci_info *) data;
 
 	pr_debug("\n");
 
@@ -717,11 +725,15 @@ int st_nci_se_init(struct nci_dev *ndev, struct st_nci_se_status *se_status)
 
 	init_completion(&info->se_info.req_completion);
 	/* initialize timers */
-	timer_setup(&info->se_info.bwi_timer, st_nci_se_wt_timeout, 0);
+	init_timer(&info->se_info.bwi_timer);
+	info->se_info.bwi_timer.data = (unsigned long)info;
+	info->se_info.bwi_timer.function = st_nci_se_wt_timeout;
 	info->se_info.bwi_active = false;
 
-	timer_setup(&info->se_info.se_active_timer,
-		    st_nci_se_activation_timeout, 0);
+	init_timer(&info->se_info.se_active_timer);
+	info->se_info.se_active_timer.data = (unsigned long)info;
+	info->se_info.se_active_timer.function =
+			st_nci_se_activation_timeout;
 	info->se_info.se_active = false;
 
 	info->se_info.xch_error = false;

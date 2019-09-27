@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _ASM_PARISC_FUTEX_H
 #define _ASM_PARISC_FUTEX_H
 
@@ -92,10 +91,10 @@ futex_atomic_cmpxchg_inatomic(u32 *uval, u32 __user *uaddr,
 	/* futex.c wants to do a cmpxchg_inatomic on kernel NULL, which is
 	 * our gateway page, and causes no end of trouble...
 	 */
-	if (uaccess_kernel() && !uaddr)
+	if (segment_eq(KERNEL_DS, get_fs()) && !uaddr)
 		return -EFAULT;
 
-	if (!access_ok(uaddr, sizeof(u32)))
+	if (!access_ok(VERIFY_WRITE, uaddr, sizeof(u32)))
 		return -EFAULT;
 
 	/* HPPA has no cmpxchg in hardware and therefore the

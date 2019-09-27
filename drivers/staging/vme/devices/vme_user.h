@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _VME_USER_H_
 #define _VME_USER_H_
 

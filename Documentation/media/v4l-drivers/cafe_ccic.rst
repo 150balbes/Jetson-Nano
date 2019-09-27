@@ -1,12 +1,10 @@
-.. SPDX-License-Identifier: GPL-2.0
-
 The cafe_ccic driver
 ====================
 
 Author: Jonathan Corbet <corbet@lwn.net>
 
-Introduction
-------------
+Introdution
+-----------
 
 "cafe_ccic" is a driver for the Marvell 88ALP01 "cafe" CMOS camera
 controller.  This is the controller found in first-generation OLPC systems,

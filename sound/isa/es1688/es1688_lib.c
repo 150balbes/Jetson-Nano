@@ -1,7 +1,22 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  *  Copyright (c) by Jaroslav Kysela <perex@perex.cz>
  *  Routines for control of ESS ES1688/688/488 chip
+ *
+ *
+ *   This program is free software; you can redistribute it and/or modify
+ *   it under the terms of the GNU General Public License as published by
+ *   the Free Software Foundation; either version 2 of the License, or
+ *   (at your option) any later version.
+ *
+ *   This program is distributed in the hope that it will be useful,
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *   GNU General Public License for more details.
+ *
+ *   You should have received a copy of the GNU General Public License
+ *   along with this program; if not, write to the Free Software
+ *   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+ *
  */
 
 #include <linux/init.h>
@@ -106,7 +121,7 @@ EXPORT_SYMBOL(snd_es1688_reset);
 static int snd_es1688_probe(struct snd_es1688 *chip)
 {
 	unsigned long flags;
-	unsigned short major, minor;
+	unsigned short major, minor, hw;
 	int i;
 
 	/*
@@ -151,12 +166,14 @@ static int snd_es1688_probe(struct snd_es1688 *chip)
 	if (!chip->version)
 		return -ENODEV;	/* probably SB */
 
+	hw = ES1688_HW_AUTO;
 	switch (chip->version & 0xfff0) {
 	case 0x4880:
 		snd_printk(KERN_ERR "[0x%lx] ESS: AudioDrive ES488 detected, "
 			   "but driver is in another place\n", chip->port);
 		return -ENODEV;
 	case 0x6880:
+		hw = (chip->version & 0x0f) >= 8 ? ES1688_HW_1688 : ES1688_HW_688;
 		break;
 	default:
 		snd_printk(KERN_ERR "[0x%lx] ESS: unknown AudioDrive chip "
@@ -273,7 +290,7 @@ static int snd_es1688_init(struct snd_es1688 * chip, int enable)
 
  */
 
-static const struct snd_ratnum clocks[2] = {
+static struct snd_ratnum clocks[2] = {
 	{
 		.num = 795444,
 		.den_min = 1,
@@ -288,7 +305,7 @@ static const struct snd_ratnum clocks[2] = {
 	}
 };
 
-static const struct snd_pcm_hw_constraint_ratnums hw_constraints_clocks  = {
+static struct snd_pcm_hw_constraint_ratnums hw_constraints_clocks  = {
 	.nrats = 2,
 	.rats = clocks,
 };
@@ -509,7 +526,7 @@ static snd_pcm_uframes_t snd_es1688_capture_pointer(struct snd_pcm_substream *su
 
  */
 
-static const struct snd_pcm_hardware snd_es1688_playback =
+static struct snd_pcm_hardware snd_es1688_playback =
 {
 	.info =			(SNDRV_PCM_INFO_MMAP | SNDRV_PCM_INFO_INTERLEAVED |
 				 SNDRV_PCM_INFO_MMAP_VALID),
@@ -527,7 +544,7 @@ static const struct snd_pcm_hardware snd_es1688_playback =
 	.fifo_size =		0,
 };
 
-static const struct snd_pcm_hardware snd_es1688_capture =
+static struct snd_pcm_hardware snd_es1688_capture =
 {
 	.info =			(SNDRV_PCM_INFO_MMAP | SNDRV_PCM_INFO_INTERLEAVED |
 				 SNDRV_PCM_INFO_MMAP_VALID),
@@ -689,7 +706,7 @@ exit:
 	return err;
 }
 
-static const struct snd_pcm_ops snd_es1688_playback_ops = {
+static struct snd_pcm_ops snd_es1688_playback_ops = {
 	.open =			snd_es1688_playback_open,
 	.close =		snd_es1688_playback_close,
 	.ioctl =		snd_es1688_ioctl,
@@ -700,7 +717,7 @@ static const struct snd_pcm_ops snd_es1688_playback_ops = {
 	.pointer =		snd_es1688_playback_pointer,
 };
 
-static const struct snd_pcm_ops snd_es1688_capture_ops = {
+static struct snd_pcm_ops snd_es1688_capture_ops = {
 	.open =			snd_es1688_capture_open,
 	.close =		snd_es1688_capture_close,
 	.ioctl =		snd_es1688_ioctl,
@@ -725,11 +742,11 @@ int snd_es1688_pcm(struct snd_card *card, struct snd_es1688 *chip, int device)
 
 	pcm->private_data = chip;
 	pcm->info_flags = SNDRV_PCM_INFO_HALF_DUPLEX;
-	strcpy(pcm->name, snd_es1688_chip_id(chip));
+	sprintf(pcm->name, snd_es1688_chip_id(chip));
 	chip->pcm = pcm;
 
 	snd_pcm_lib_preallocate_pages_for_all(pcm, SNDRV_DMA_TYPE_DEV,
-					      card->dev,
+					      snd_dma_isa_data(),
 					      64*1024, 64*1024);
 	return 0;
 }
@@ -1012,3 +1029,19 @@ EXPORT_SYMBOL(snd_es1688_mixer_write);
 EXPORT_SYMBOL(snd_es1688_create);
 EXPORT_SYMBOL(snd_es1688_pcm);
 EXPORT_SYMBOL(snd_es1688_mixer);
+
+/*
+ *  INIT part
+ */
+
+static int __init alsa_es1688_init(void)
+{
+	return 0;
+}
+
+static void __exit alsa_es1688_exit(void)
+{
+}
+
+module_init(alsa_es1688_init)
+module_exit(alsa_es1688_exit)

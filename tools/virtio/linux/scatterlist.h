@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef SCATTERLIST_H
 #define SCATTERLIST_H
 #include <linux/kernel.h>
@@ -36,6 +35,7 @@ static inline void sg_assign_page(struct scatterlist *sg, struct page *page)
 	 */
 	BUG_ON((unsigned long) page & 0x03);
 #ifdef CONFIG_DEBUG_SG
+	BUG_ON(sg->sg_magic != SG_MAGIC);
 	BUG_ON(sg_is_chain(sg));
 #endif
 	sg->page_link = page_link | (unsigned long) page;
@@ -66,6 +66,7 @@ static inline void sg_set_page(struct scatterlist *sg, struct page *page,
 static inline struct page *sg_page(struct scatterlist *sg)
 {
 #ifdef CONFIG_DEBUG_SG
+	BUG_ON(sg->sg_magic != SG_MAGIC);
 	BUG_ON(sg_is_chain(sg));
 #endif
 	return (struct page *)((sg)->page_link & ~0x3);
@@ -114,6 +115,9 @@ static inline void sg_chain(struct scatterlist *prv, unsigned int prv_nents,
  **/
 static inline void sg_mark_end(struct scatterlist *sg)
 {
+#ifdef CONFIG_DEBUG_SG
+	BUG_ON(sg->sg_magic != SG_MAGIC);
+#endif
 	/*
 	 * Set termination bit, clear potential chain bit
 	 */
@@ -131,11 +135,17 @@ static inline void sg_mark_end(struct scatterlist *sg)
  **/
 static inline void sg_unmark_end(struct scatterlist *sg)
 {
+#ifdef CONFIG_DEBUG_SG
+	BUG_ON(sg->sg_magic != SG_MAGIC);
+#endif
 	sg->page_link &= ~0x02;
 }
 
 static inline struct scatterlist *sg_next(struct scatterlist *sg)
 {
+#ifdef CONFIG_DEBUG_SG
+	BUG_ON(sg->sg_magic != SG_MAGIC);
+#endif
 	if (sg_is_last(sg))
 		return NULL;
 
@@ -149,6 +159,13 @@ static inline struct scatterlist *sg_next(struct scatterlist *sg)
 static inline void sg_init_table(struct scatterlist *sgl, unsigned int nents)
 {
 	memset(sgl, 0, sizeof(*sgl) * nents);
+#ifdef CONFIG_DEBUG_SG
+	{
+		unsigned int i;
+		for (i = 0; i < nents; i++)
+			sgl[i].sg_magic = SG_MAGIC;
+	}
+#endif
 	sg_mark_end(&sgl[nents - 1]);
 }
 

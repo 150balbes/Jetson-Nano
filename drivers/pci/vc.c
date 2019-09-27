@@ -1,9 +1,12 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * PCI Virtual Channel support
  *
  * Copyright (C) 2013 Red Hat, Inc.  All rights reserved.
  *     Author: Alex Williamson <alex.williamson@redhat.com>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  */
 
 #include <linux/device.h>
@@ -54,7 +57,7 @@ static void pci_vc_load_arb_table(struct pci_dev *dev, int pos)
 				 PCI_VC_PORT_STATUS_TABLE))
 		return;
 
-	pci_err(dev, "VC arbitration table failed to load\n");
+	dev_err(&dev->dev, "VC arbitration table failed to load\n");
 }
 
 /**
@@ -82,7 +85,7 @@ static void pci_vc_load_port_arb_table(struct pci_dev *dev, int pos, int res)
 	if (pci_wait_for_pending(dev, status_pos, PCI_VC_RES_STATUS_TABLE))
 		return;
 
-	pci_err(dev, "VC%d port arbitration table failed to load\n", res);
+	dev_err(&dev->dev, "VC%d port arbitration table failed to load\n", res);
 }
 
 /**
@@ -158,11 +161,11 @@ enable:
 	pci_write_config_dword(dev, ctrl_pos, ctrl);
 
 	if (!pci_wait_for_pending(dev, status_pos, PCI_VC_RES_STATUS_NEGO))
-		pci_err(dev, "VC%d negotiation stuck pending\n", id);
+		dev_err(&dev->dev, "VC%d negotiation stuck pending\n", id);
 
 	if (link && !pci_wait_for_pending(link, status_pos2,
 					  PCI_VC_RES_STATUS_NEGO))
-		pci_err(link, "VC%d negotiation stuck pending\n", id);
+		dev_err(&link->dev, "VC%d negotiation stuck pending\n", id);
 }
 
 /**
@@ -192,7 +195,8 @@ static int pci_vc_do_save_buffer(struct pci_dev *dev, int pos,
 	/* Sanity check buffer size for save/restore */
 	if (buf && save_state->cap.size !=
 	    pci_vc_do_save_buffer(dev, pos, NULL, save)) {
-		pci_err(dev, "VC save buffer size does not match @0x%x\n", pos);
+		dev_err(&dev->dev,
+			"VC save buffer size does not match @0x%x\n", pos);
 		return -ENOMEM;
 	}
 
@@ -362,14 +366,14 @@ int pci_save_vc_state(struct pci_dev *dev)
 
 		save_state = pci_find_saved_ext_cap(dev, vc_caps[i].id);
 		if (!save_state) {
-			pci_err(dev, "%s buffer not found in %s\n",
+			dev_err(&dev->dev, "%s buffer not found in %s\n",
 				vc_caps[i].name, __func__);
 			return -ENOMEM;
 		}
 
 		ret = pci_vc_do_save_buffer(dev, pos, save_state, true);
 		if (ret) {
-			pci_err(dev, "%s save unsuccessful %s\n",
+			dev_err(&dev->dev, "%s save unsuccessful %s\n",
 				vc_caps[i].name, __func__);
 			return ret;
 		}
@@ -422,7 +426,8 @@ void pci_allocate_vc_save_buffers(struct pci_dev *dev)
 
 		len = pci_vc_do_save_buffer(dev, pos, NULL, false);
 		if (pci_add_ext_cap_save_buffer(dev, vc_caps[i].id, len))
-			pci_err(dev, "unable to preallocate %s save buffer\n",
+			dev_err(&dev->dev,
+				"unable to preallocate %s save buffer\n",
 				vc_caps[i].name);
 	}
 }

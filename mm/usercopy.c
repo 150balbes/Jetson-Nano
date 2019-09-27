@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * This implements the various checks for CONFIG_HARDENED_USERCOPY*,
  * which are designed to protect kernel memory from needless exposure
@@ -7,18 +6,24 @@
  *
  * Copyright (C) 2001-2016 PaX Team, Bradley Spengler, Open Source
  * Security Inc.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
  */
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 
 #include <linux/mm.h>
 #include <linux/slab.h>
-#include <linux/sched.h>
-#include <linux/sched/task.h>
-#include <linux/sched/task_stack.h>
-#include <linux/thread_info.h>
-#include <linux/atomic.h>
-#include <linux/jump_label.h>
 #include <asm/sections.h>
+
+enum {
+	BAD_STACK = -1,
+	NOT_STACK = 0,
+	GOOD_FRAME,
+	GOOD_STACK,
+};
 
 /*
  * Checks if a given pointer and length is contained by the current
@@ -56,40 +61,12 @@ static noinline int check_stack_object(const void *obj, unsigned long len)
 	return GOOD_STACK;
 }
 
-/*
- * If these functions are reached, then CONFIG_HARDENED_USERCOPY has found
- * an unexpected state during a copy_from_user() or copy_to_user() call.
- * There are several checks being performed on the buffer by the
- * __check_object_size() function. Normal stack buffer usage should never
- * trip the checks, and kernel text addressing will always trip the check.
- * For cache objects, it is checking that only the whitelisted range of
- * bytes for a given cache is being accessed (via the cache's usersize and
- * useroffset fields). To adjust a cache whitelist, use the usercopy-aware
- * kmem_cache_create_usercopy() function to create the cache (and
- * carefully audit the whitelist range).
- */
-void usercopy_warn(const char *name, const char *detail, bool to_user,
-		   unsigned long offset, unsigned long len)
+static void report_usercopy(const void *ptr, unsigned long len,
+			    bool to_user, const char *type)
 {
-	WARN_ONCE(1, "Bad or missing usercopy whitelist? Kernel memory %s attempt detected %s %s%s%s%s (offset %lu, size %lu)!\n",
-		 to_user ? "exposure" : "overwrite",
-		 to_user ? "from" : "to",
-		 name ? : "unknown?!",
-		 detail ? " '" : "", detail ? : "", detail ? "'" : "",
-		 offset, len);
-}
-
-void __noreturn usercopy_abort(const char *name, const char *detail,
-			       bool to_user, unsigned long offset,
-			       unsigned long len)
-{
-	pr_emerg("Kernel memory %s attempt detected %s %s%s%s%s (offset %lu, size %lu)!\n",
-		 to_user ? "exposure" : "overwrite",
-		 to_user ? "from" : "to",
-		 name ? : "unknown?!",
-		 detail ? " '" : "", detail ? : "", detail ? "'" : "",
-		 offset, len);
-
+	pr_emerg("kernel memory %s attempt detected %s %p (%s) (%lu bytes)\n",
+		to_user ? "exposure" : "overwrite",
+		to_user ? "from" : "to", ptr, type ? : "unknown", len);
 	/*
 	 * For greater effect, it would be nice to do do_group_exit(),
 	 * but BUG() actually hooks all the lock-breaking and per-arch
@@ -99,10 +76,10 @@ void __noreturn usercopy_abort(const char *name, const char *detail,
 }
 
 /* Returns true if any portion of [ptr,ptr+n) over laps with [low,high). */
-static bool overlaps(const unsigned long ptr, unsigned long n,
-		     unsigned long low, unsigned long high)
+static bool overlaps(const void *ptr, unsigned long n, unsigned long low,
+		     unsigned long high)
 {
-	const unsigned long check_low = ptr;
+	unsigned long check_low = (uintptr_t)ptr;
 	unsigned long check_high = check_low + n;
 
 	/* Does not overlap if entirely above or entirely below. */
@@ -113,15 +90,15 @@ static bool overlaps(const unsigned long ptr, unsigned long n,
 }
 
 /* Is this address range in the kernel text area? */
-static inline void check_kernel_text_object(const unsigned long ptr,
-					    unsigned long n, bool to_user)
+static inline const char *check_kernel_text_object(const void *ptr,
+						   unsigned long n)
 {
 	unsigned long textlow = (unsigned long)_stext;
 	unsigned long texthigh = (unsigned long)_etext;
 	unsigned long textlow_linear, texthigh_linear;
 
 	if (overlaps(ptr, n, textlow, texthigh))
-		usercopy_abort("kernel text", NULL, to_user, ptr - textlow, n);
+		return "<kernel text>";
 
 	/*
 	 * Some architectures have virtual memory mappings with a secondary
@@ -131,33 +108,35 @@ static inline void check_kernel_text_object(const unsigned long ptr,
 	 * __pa() is not just the reverse of __va(). This can be detected
 	 * and checked:
 	 */
-	textlow_linear = (unsigned long)lm_alias(textlow);
+	textlow_linear = (unsigned long)__va(__pa(textlow));
 	/* No different mapping: we're done. */
 	if (textlow_linear == textlow)
-		return;
+		return NULL;
 
 	/* Check the secondary mapping... */
-	texthigh_linear = (unsigned long)lm_alias(texthigh);
+	texthigh_linear = (unsigned long)__va(__pa(texthigh));
 	if (overlaps(ptr, n, textlow_linear, texthigh_linear))
-		usercopy_abort("linear kernel text", NULL, to_user,
-			       ptr - textlow_linear, n);
+		return "<linear kernel text>";
+
+	return NULL;
 }
 
-static inline void check_bogus_address(const unsigned long ptr, unsigned long n,
-				       bool to_user)
+static inline const char *check_bogus_address(const void *ptr, unsigned long n)
 {
 	/* Reject if object wraps past end of memory. */
-	if (ptr + (n - 1) < ptr)
-		usercopy_abort("wrapped address", NULL, to_user, 0, ptr + n);
+	if ((unsigned long)ptr + n < (unsigned long)ptr)
+		return "<wrapped address>";
 
 	/* Reject if NULL or ZERO-allocation. */
 	if (ZERO_OR_NULL_PTR(ptr))
-		usercopy_abort("null address", NULL, to_user, ptr, n);
+		return "<null>";
+
+	return NULL;
 }
 
 /* Checks for allocs that are marked in some way as spanning multiple pages. */
-static inline void check_page_span(const void *ptr, unsigned long n,
-				   struct page *page, bool to_user)
+static inline const char *check_page_span(const void *ptr, unsigned long n,
+					  struct page *page, bool to_user)
 {
 #ifdef CONFIG_HARDENED_USERCOPY_PAGESPAN
 	const void *end = ptr + n - 1;
@@ -174,28 +153,28 @@ static inline void check_page_span(const void *ptr, unsigned long n,
 	if (ptr >= (const void *)__start_rodata &&
 	    end <= (const void *)__end_rodata) {
 		if (!to_user)
-			usercopy_abort("rodata", NULL, to_user, 0, n);
-		return;
+			return "<rodata>";
+		return NULL;
 	}
 
 	/* Allow kernel data region (if not marked as Reserved). */
 	if (ptr >= (const void *)_sdata && end <= (const void *)_edata)
-		return;
+		return NULL;
 
 	/* Allow kernel bss region (if not marked as Reserved). */
 	if (ptr >= (const void *)__bss_start &&
 	    end <= (const void *)__bss_stop)
-		return;
+		return NULL;
 
 	/* Is the object wholly within one base page? */
 	if (likely(((unsigned long)ptr & (unsigned long)PAGE_MASK) ==
 		   ((unsigned long)end & (unsigned long)PAGE_MASK)))
-		return;
+		return NULL;
 
 	/* Allow if fully inside the same compound (__GFP_COMP) page. */
 	endpage = virt_to_head_page(end);
 	if (likely(endpage == page))
-		return;
+		return NULL;
 
 	/*
 	 * Reject if range is entirely either Reserved (i.e. special or
@@ -205,59 +184,72 @@ static inline void check_page_span(const void *ptr, unsigned long n,
 	is_reserved = PageReserved(page);
 	is_cma = is_migrate_cma_page(page);
 	if (!is_reserved && !is_cma)
-		usercopy_abort("spans multiple pages", NULL, to_user, 0, n);
+		return "<spans multiple pages>";
 
 	for (ptr += PAGE_SIZE; ptr <= end; ptr += PAGE_SIZE) {
 		page = virt_to_head_page(ptr);
 		if (is_reserved && !PageReserved(page))
-			usercopy_abort("spans Reserved and non-Reserved pages",
-				       NULL, to_user, 0, n);
+			return "<spans Reserved and non-Reserved pages>";
 		if (is_cma && !is_migrate_cma_page(page))
-			usercopy_abort("spans CMA and non-CMA pages", NULL,
-				       to_user, 0, n);
+			return "<spans CMA and non-CMA pages>";
 	}
 #endif
+
+	return NULL;
 }
 
-static inline void check_heap_object(const void *ptr, unsigned long n,
-				     bool to_user)
+static inline const char *check_heap_object(const void *ptr, unsigned long n,
+					    bool to_user)
 {
 	struct page *page;
 
+	/*
+	 * Some architectures (arm64) return true for virt_addr_valid() on
+	 * vmalloced addresses. Work around this by checking for vmalloc
+	 * first.
+	 *
+	 * We also need to check for module addresses explicitly since we
+	 * may copy static data from modules to userspace
+	 */
+	if (is_vmalloc_or_module_addr(ptr))
+		return NULL;
+
 	if (!virt_addr_valid(ptr))
-		return;
+		return NULL;
 
 	page = virt_to_head_page(ptr);
 
-	if (PageSlab(page)) {
-		/* Check slab allocator for flags and size. */
-		__check_heap_object(ptr, n, page, to_user);
-	} else {
-		/* Verify object does not incorrectly span multiple pages. */
-		check_page_span(ptr, n, page, to_user);
-	}
-}
+	/* Check slab allocator for flags and size. */
+	if (PageSlab(page))
+		return __check_heap_object(ptr, n, page);
 
-static DEFINE_STATIC_KEY_FALSE_RO(bypass_usercopy_checks);
+	/* Verify object does not incorrectly span multiple pages. */
+	return check_page_span(ptr, n, page, to_user);
+}
 
 /*
  * Validates that the given object is:
  * - not bogus address
- * - fully contained by stack (or stack frame, when available)
- * - fully within SLAB object (or object whitelist area, when available)
+ * - known-safe heap or stack object
  * - not in kernel text
  */
 void __check_object_size(const void *ptr, unsigned long n, bool to_user)
 {
-	if (static_branch_unlikely(&bypass_usercopy_checks))
-		return;
+	const char *err;
 
 	/* Skip all tests if size is zero. */
 	if (!n)
 		return;
 
 	/* Check for invalid addresses. */
-	check_bogus_address((const unsigned long)ptr, n, to_user);
+	err = check_bogus_address(ptr, n);
+	if (err)
+		goto report;
+
+	/* Check for bad heap object. */
+	err = check_heap_object(ptr, n, to_user);
+	if (err)
+		goto report;
 
 	/* Check for bad stack object. */
 	switch (check_stack_object(ptr, n)) {
@@ -273,31 +265,16 @@ void __check_object_size(const void *ptr, unsigned long n, bool to_user)
 		 */
 		return;
 	default:
-		usercopy_abort("process stack", NULL, to_user, 0, n);
+		err = "<process stack>";
+		goto report;
 	}
 
-	/* Check for bad heap object. */
-	check_heap_object(ptr, n, to_user);
-
 	/* Check for object in kernel to avoid text exposure. */
-	check_kernel_text_object((const unsigned long)ptr, n, to_user);
+	err = check_kernel_text_object(ptr, n);
+	if (!err)
+		return;
+
+report:
+	report_usercopy(ptr, n, to_user, err);
 }
 EXPORT_SYMBOL(__check_object_size);
-
-static bool enable_checks __initdata = true;
-
-static int __init parse_hardened_usercopy(char *str)
-{
-	return strtobool(str, &enable_checks);
-}
-
-__setup("hardened_usercopy=", parse_hardened_usercopy);
-
-static int __init set_hardened_usercopy(void)
-{
-	if (enable_checks == false)
-		static_branch_enable(&bypass_usercopy_checks);
-	return 1;
-}
-
-late_initcall(set_hardened_usercopy);

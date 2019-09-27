@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Industrial I/O driver for Microchip digital potentiometers
  *
@@ -24,6 +23,10 @@
  * mcp4252	2	257		5, 10, 50, 100
  * mcp4261	2	257		5, 10, 50, 100
  * mcp4262	2	257		5, 10, 50, 100
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License version 2 as published by
+ * the Free Software Foundation.
  */
 
 /*
@@ -39,7 +42,6 @@
 #include <linux/module.h>
 #include <linux/mutex.h>
 #include <linux/of.h>
-#include <linux/of_device.h>
 #include <linux/spi/spi.h>
 
 #define MCP4131_WRITE		(0x00 << 2)
@@ -235,13 +237,14 @@ static int mcp4131_write_raw(struct iio_dev *indio_dev,
 static const struct iio_info mcp4131_info = {
 	.read_raw = mcp4131_read_raw,
 	.write_raw = mcp4131_write_raw,
+	.driver_module = THIS_MODULE,
 };
 
 static int mcp4131_probe(struct spi_device *spi)
 {
 	int err;
 	struct device *dev = &spi->dev;
-	unsigned long devid;
+	unsigned long devid = spi_get_device_id(spi)->driver_data;
 	struct mcp4131_data *data;
 	struct iio_dev *indio_dev;
 
@@ -252,11 +255,7 @@ static int mcp4131_probe(struct spi_device *spi)
 	data = iio_priv(indio_dev);
 	spi_set_drvdata(spi, indio_dev);
 	data->spi = spi;
-	data->cfg = of_device_get_match_data(&spi->dev);
-	if (!data->cfg) {
-		devid = spi_get_device_id(spi)->driver_data;
-		data->cfg = &mcp4131_cfg[devid];
-	}
+	data->cfg = &mcp4131_cfg[devid];
 
 	mutex_init(&data->lock);
 
@@ -275,6 +274,7 @@ static int mcp4131_probe(struct spi_device *spi)
 	return 0;
 }
 
+#if defined(CONFIG_OF)
 static const struct of_device_id mcp4131_dt_ids[] = {
 	{ .compatible = "microchip,mcp4131-502",
 		.data = &mcp4131_cfg[MCP413x_502] },
@@ -407,6 +407,7 @@ static const struct of_device_id mcp4131_dt_ids[] = {
 	{}
 };
 MODULE_DEVICE_TABLE(of, mcp4131_dt_ids);
+#endif /* CONFIG_OF */
 
 static const struct spi_device_id mcp4131_id[] = {
 	{ "mcp4131-502", MCP413x_502 },

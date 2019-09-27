@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __ASM_SH_SYSCALL_64_H
 #define __ASM_SH_SYSCALL_64_H
 
@@ -47,19 +46,23 @@ static inline void syscall_set_return_value(struct task_struct *task,
 
 static inline void syscall_get_arguments(struct task_struct *task,
 					 struct pt_regs *regs,
+					 unsigned int i, unsigned int n,
 					 unsigned long *args)
 {
-	memcpy(args, &regs->regs[2], 6 * sizeof(args[0]));
+	BUG_ON(i + n > 6);
+	memcpy(args, &regs->regs[2 + i], n * sizeof(args[0]));
 }
 
 static inline void syscall_set_arguments(struct task_struct *task,
 					 struct pt_regs *regs,
+					 unsigned int i, unsigned int n,
 					 const unsigned long *args)
 {
-	memcpy(&regs->regs[2], args, 6 * sizeof(args[0]));
+	BUG_ON(i + n > 6);
+	memcpy(&regs->regs[2 + i], args, n * sizeof(args[0]));
 }
 
-static inline int syscall_get_arch(struct task_struct *task)
+static inline int syscall_get_arch(void)
 {
 	int arch = AUDIT_ARCH_SH;
 

@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
    cx231xx_avcore.c - driver for Conexant Cx23100/101/102
 		      USB video capture devices
@@ -8,6 +7,19 @@
    This program contains the specific code to control the avdecoder chip and
    other related usb control functions for cx231xx based chipset.
 
+   This program is free software; you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation; either version 2 of the License, or
+   (at your option) any later version.
+
+   This program is distributed in the hope that it will be useful,
+   but WITHOUT ANY WARRANTY; without even the implied warranty of
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License for more details.
+
+   You should have received a copy of the GNU General Public License
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  */
 
 #include "cx231xx.h"
@@ -93,7 +105,7 @@ void uninitGPIO(struct cx231xx *dev)
 
 /******************************************************************************
  *                    A F E - B L O C K    C O N T R O L   functions          *
- *				[ANALOG FRONT END]			      *
+ * 				[ANALOG FRONT END]			      *
  ******************************************************************************/
 static int afe_write_byte(struct cx231xx *dev, u16 saddr, u8 data)
 {
@@ -2156,7 +2168,7 @@ int cx231xx_tuner_post_channel_change(struct cx231xx *dev)
 }
 
 /******************************************************************************
- *		    I 2 S - B L O C K    C O N T R O L   functions            *
+ *        	    I 2 S - B L O C K    C O N T R O L   functions            *
  ******************************************************************************/
 int cx231xx_i2s_blk_initialize(struct cx231xx *dev)
 {
@@ -2281,6 +2293,10 @@ int cx231xx_set_power_mode(struct cx231xx *dev, enum AV_MODE mode)
 	case POLARIS_AVMODE_ANALOGT_TV:
 
 		tmp |= PWR_DEMOD_EN;
+		if (is_model_avermedia_h837_series(dev->model))
+			tmp |= I2C_DEMOD_EN;
+		if (dev->model == CX231XX_BOARD_AVERMEDIA_H837B)
+			tmp &= ~PWR_DEMOD_EN;
 		value[0] = (u8) tmp;
 		value[1] = (u8) (tmp >> 8);
 		value[2] = (u8) (tmp >> 16);
@@ -2377,6 +2393,8 @@ int cx231xx_set_power_mode(struct cx231xx *dev, enum AV_MODE mode)
 
 		tmp &= (~PWR_AV_MODE);
 		tmp |= POLARIS_AVMODE_DIGITAL;
+		if (is_model_avermedia_h837_series(dev->model))
+			tmp |= I2C_DEMOD_EN;
 		value[0] = (u8) tmp;
 		value[1] = (u8) (tmp >> 8);
 		value[2] = (u8) (tmp >> 16);
@@ -2384,8 +2402,19 @@ int cx231xx_set_power_mode(struct cx231xx *dev, enum AV_MODE mode)
 		status = cx231xx_write_ctrl_reg(dev, VRT_SET_REGISTER,
 						PWR_CTL_EN, value, 4);
 		msleep(PWR_SLEEP_INTERVAL);
-
-		if (!(tmp & PWR_DEMOD_EN)) {
+		if (is_model_avermedia_h837_series(dev->model)) {
+			if (dev->model == CX231XX_BOARD_AVERMEDIA_H837B)
+				tmp |= PWR_DEMOD_EN;
+			else
+				tmp &= ~PWR_DEMOD_EN;
+			value[0] = (u8) tmp;
+			value[1] = (u8) (tmp >> 8);
+			value[2] = (u8) (tmp >> 16);
+			value[3] = (u8) (tmp >> 24);
+			status = cx231xx_write_ctrl_reg(dev, VRT_SET_REGISTER,
+							PWR_CTL_EN, value, 4);
+			msleep(5 * PWR_SLEEP_INTERVAL);
+		} else if (!(tmp & PWR_DEMOD_EN)) {
 			tmp |= PWR_DEMOD_EN;
 			value[0] = (u8) tmp;
 			value[1] = (u8) (tmp >> 8);
@@ -2403,6 +2432,22 @@ int cx231xx_set_power_mode(struct cx231xx *dev, enum AV_MODE mode)
 
 			if (dev->cx231xx_reset_analog_tuner)
 				dev->cx231xx_reset_analog_tuner(dev);
+		}
+		break;
+
+	case POLARIS_AVMODE_DEFAULT:
+		if (is_model_avermedia_h837_series(dev->model)) {
+			tmp &= ~PWR_MODE_MASK;
+			if (dev->model == CX231XX_BOARD_AVERMEDIA_H837A ||
+			    dev->model == CX231XX_BOARD_AVERMEDIA_H837M)
+				tmp |= PWR_DEMOD_EN;
+			value[0] = (u8) tmp;
+			value[1] = (u8) (tmp >> 8);
+			value[2] = (u8) (tmp >> 16);
+			value[3] = (u8) (tmp >> 24);
+			cx231xx_write_ctrl_reg(dev, VRT_SET_REGISTER, PWR_CTL_EN, value, 4);
+			msleep(PWR_SLEEP_INTERVAL);
+			return 0;
 		}
 		break;
 
@@ -2580,8 +2625,13 @@ int cx231xx_initialize_stream_xfer(struct cx231xx *dev, u32 media_type)
 				dev_dbg(dev->dev, "%s: BDA\n", __func__);
 				status = cx231xx_mode_register(dev,
 							 TS_MODE_REG, 0x101);
-				status = cx231xx_mode_register(dev,
+				if (is_model_avermedia_h837_series(dev->model)) {
+					status = cx231xx_mode_register(dev,
+							TS1_CFG_REG, 0x408);
+				} else {
+					status = cx231xx_mode_register(dev,
 							TS1_CFG_REG, 0x010);
+				}
 			}
 			break;
 
@@ -2975,7 +3025,7 @@ int cx231xx_gpio_i2c_write_ack(struct cx231xx *dev)
 {
 	int status = 0;
 
-	/* set SDA to output */
+	/* set SDA to ouput */
 	dev->gpio_dir |= 1 << dev->board.tuner_sda_gpio;
 	status = cx231xx_set_gpio_bit(dev, dev->gpio_dir, dev->gpio_val);
 

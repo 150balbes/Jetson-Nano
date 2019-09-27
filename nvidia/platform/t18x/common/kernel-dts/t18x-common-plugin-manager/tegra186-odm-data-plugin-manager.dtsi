@@ -1,0 +1,236 @@
+/*
+ * tegra186-odm-data-plugin-manager.dtsi: Tegra186 ODM data P3310 plugin manager
+ *
+ * Copyright (c) 2015-2018, NVIDIA CORPORATION.  All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; version 2 of the License.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ */
+
+/ {
+	plugin-manager {
+		fragement@0 {
+			odm-data = "enable-denver-wdt";
+			override@0 {
+				target = <&tegra_wdt>;
+				_overlay_ {
+					status = "okay";
+				};
+			};
+		};
+
+		fragement@1 {
+			odm-data = "disable-denver-wdt";
+			override@0 {
+				target = <&tegra_pmc>;
+				_overlay_ {
+					nvidia,enable-halt-in-fiq;
+				};
+			};
+		};
+
+		fragement@2 {
+			odm-data = "enable-pmic-wdt";
+			override@0 {
+				target = <&spmic_wdt>;
+				_overlay_ {
+					status = "okay";
+				};
+			};
+		};
+
+		fragement@4 {
+			odm-data = "enable-pmic-wdt",
+				   "enable-denver-wdt";
+			override@0 {
+				target = <&soft_wdt>;
+				_overlay_ {
+					status = "disabled";
+				};
+			};
+		};
+
+		fragement@6 {
+			odm-data = "mods-build";
+			override@0 {
+				target = <&xusb_mbox>;
+				_overlay_ {
+					status = "disabled";
+				};
+			};
+			override@1 {
+				target = <&tegra_xusb_padctl>;
+				_overlay_ {
+					delete-target-property = "mboxes";
+				};
+			};
+			override@2 {
+				target = <&gpcdma>;
+				_overlay_ {
+					nvidia,bypass-smmu;
+				};
+			};
+
+			override@3 {
+				target = <&sdmmc3>;
+				_overlay_ {
+					status = "disabled";
+				};
+			};
+
+			override@4 {
+				target = <&sdmmc1>;
+				_overlay_ {
+					status = "disabled";
+				};
+			};
+
+			override@5 {
+				target = <&sdmmc4>;
+				_overlay_ {
+					delete-target-property = "nvidia,enable-hwcq";
+				};
+			};
+
+			override@7 {
+				target = <&{/host1x}>;
+				_overlay_ {
+					nvdisplay@15200000 {
+						status = "okay";
+					};
+					nvdisplay@15210000 {
+						status = "okay";
+					};
+					nvdisplay@15220000 {
+						status = "okay";
+					};
+					sor {
+						status = "okay";
+						dp-display {
+							status = "okay";
+						};
+						hdmi-display {
+							status = "disabled";
+						};
+						panel-s-edp-uhdtv-15-6 {
+							smartdimmer {
+								status = "disabled";
+							};
+						};
+					};
+					dpaux@155c0000 {
+						status = "okay";
+					};
+					sor1 {
+						status = "okay";
+						hdmi-display {
+							status = "okay";
+						};
+						dp-display {
+							status = "disabled";
+						};
+					};
+					dsi {
+						status = "okay";
+						nvidia,dsi-csi-loopback;
+						nvidia,active-panel = <&panel_s_wuxga_8_0>;
+						panel-s-wuxga-8-0 {
+							status = "okay";
+						};
+					};
+				};
+			};
+		};
+
+		fragement@7 {
+			odm-data = "enable-high-speed-uart";
+			override@0 {
+				target = <&uarta>;
+				_overlay_ {
+					compatible = "nvidia,tegra186-hsuart";
+					early-print-console-channel;
+					resets = <&tegra_car TEGRA186_RESET_UARTA>;
+					reset-names = "serial";
+				};
+			};
+		};
+
+		fragement@8 {
+			odm-data = "enable-sdmmc-hwcq";
+			override@0 {
+				target = <&sdmmc4>;
+				_overlay_ {
+					nvidia,enable-hwcq;
+				};
+			};
+		};
+		fragement@9 {
+			odm-data = "enable-ufs-on-uphy-lane5";
+			override@0 {
+				target = <&tegra_ufs>;
+				_overlay_ {
+					status = "okay";
+				};
+			};
+			override@1 {
+				target = <&tegra_sata>;
+				_overlay_ {
+					status = "disabled";
+				};
+			};
+			override@3 {
+				target = <&gen1_i2c>;
+				_overlay_ {
+					gpio@76 {
+						ufs_lane5_mux {
+							status = "okay";
+						};
+						sata_lane5_mux {
+							status = "disabled";
+						};
+					};
+				};
+			};
+		};
+		fragement@10 {
+			odm-data = "enable-ufs-on-uphy-lane4";
+			override@0 {
+				target = <&tegra_ufs>;
+				_overlay_ {
+					status = "okay";
+				};
+			};
+			override@1 {
+				target = <&tegra_sata>;
+				_overlay_ {
+					status = "disabled";
+				};
+			};
+			override@3 {
+				target = <&gen1_i2c>;
+				_overlay_ {
+					gpio@76 {
+						pcie0_lane4_mux {
+							status = "disabled";
+						};
+						ufs_lane4_mux {
+							status = "okay";
+						};
+						sata_lane5_mux {
+							status = "disabled";
+						};
+						ufs_lane5_mux {
+							status = "okay";
+						};
+					};
+				};
+			};
+		};
+	};
+};

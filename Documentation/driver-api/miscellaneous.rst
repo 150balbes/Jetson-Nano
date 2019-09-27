@@ -47,3 +47,4 @@ used by one consumer at a time.
 
 .. kernel-doc:: drivers/pwm/core.c
    :export:
+   

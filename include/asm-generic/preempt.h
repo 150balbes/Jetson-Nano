@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __ASM_PREEMPT_H
 #define __ASM_PREEMPT_H
 

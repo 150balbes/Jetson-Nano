@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Helpers for matrix keyboard bindings
  *
@@ -6,18 +5,27 @@
  *
  * Author:
  *	Olof Johansson <olof@lixom.net>
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
  */
 
 #include <linux/device.h>
-#include <linux/export.h>
 #include <linux/gfp.h>
-#include <linux/input.h>
-#include <linux/input/matrix_keypad.h>
 #include <linux/kernel.h>
-#include <linux/module.h>
-#include <linux/property.h>
-#include <linux/slab.h>
 #include <linux/types.h>
+#include <linux/input.h>
+#include <linux/of.h>
+#include <linux/export.h>
+#include <linux/module.h>
+#include <linux/input/matrix_keypad.h>
 
 static bool matrix_keypad_map_key(struct input_dev *input_dev,
 				  unsigned int rows, unsigned int cols,
@@ -41,22 +49,18 @@ static bool matrix_keypad_map_key(struct input_dev *input_dev,
 	return true;
 }
 
-/**
- * matrix_keypad_parse_properties() - Read properties of matrix keypad
- *
- * @dev: Device containing properties
- * @rows: Returns number of matrix rows
- * @cols: Returns number of matrix columns
- * @return 0 if OK, <0 on error
- */
-int matrix_keypad_parse_properties(struct device *dev,
-				   unsigned int *rows, unsigned int *cols)
+#ifdef CONFIG_OF
+int matrix_keypad_parse_of_params(struct device *dev,
+				  unsigned int *rows, unsigned int *cols)
 {
-	*rows = *cols = 0;
+	struct device_node *np = dev->of_node;
 
-	device_property_read_u32(dev, "keypad,num-rows", rows);
-	device_property_read_u32(dev, "keypad,num-columns", cols);
-
+	if (!np) {
+		dev_err(dev, "missing DT data");
+		return -EINVAL;
+	}
+	of_property_read_u32(np, "keypad,num-rows", rows);
+	of_property_read_u32(np, "keypad,num-columns", cols);
 	if (!*rows || !*cols) {
 		dev_err(dev, "number of keypad rows/columns not specified\n");
 		return -EINVAL;
@@ -64,61 +68,62 @@ int matrix_keypad_parse_properties(struct device *dev,
 
 	return 0;
 }
-EXPORT_SYMBOL_GPL(matrix_keypad_parse_properties);
+EXPORT_SYMBOL_GPL(matrix_keypad_parse_of_params);
 
-static int matrix_keypad_parse_keymap(const char *propname,
-				      unsigned int rows, unsigned int cols,
-				      struct input_dev *input_dev)
+static int matrix_keypad_parse_of_keymap(const char *propname,
+					 unsigned int rows, unsigned int cols,
+					 struct input_dev *input_dev)
 {
 	struct device *dev = input_dev->dev.parent;
+	struct device_node *np = dev->of_node;
 	unsigned int row_shift = get_count_order(cols);
 	unsigned int max_keys = rows << row_shift;
-	u32 *keys;
-	int i;
-	int size;
-	int retval;
+	unsigned int proplen, i, size;
+	const __be32 *prop;
+
+	if (!np)
+		return -ENOENT;
 
 	if (!propname)
 		propname = "linux,keymap";
 
-	size = device_property_read_u32_array(dev, propname, NULL, 0);
-	if (size <= 0) {
-		dev_err(dev, "missing or malformed property %s: %d\n",
-			propname, size);
-		return size < 0 ? size : -EINVAL;
+	prop = of_get_property(np, propname, &proplen);
+	if (!prop) {
+		dev_err(dev, "OF: %s property not defined in %s\n",
+			propname, np->full_name);
+		return -ENOENT;
 	}
 
-	if (size > max_keys) {
-		dev_err(dev, "%s size overflow (%d vs max %u)\n",
-			propname, size, max_keys);
+	if (proplen % sizeof(u32)) {
+		dev_err(dev, "OF: Malformed keycode property %s in %s\n",
+			propname, np->full_name);
 		return -EINVAL;
 	}
 
-	keys = kmalloc_array(size, sizeof(u32), GFP_KERNEL);
-	if (!keys)
-		return -ENOMEM;
-
-	retval = device_property_read_u32_array(dev, propname, keys, size);
-	if (retval) {
-		dev_err(dev, "failed to read %s property: %d\n",
-			propname, retval);
-		goto out;
+	size = proplen / sizeof(u32);
+	if (size > max_keys) {
+		dev_err(dev, "OF: %s size overflow\n", propname);
+		return -EINVAL;
 	}
 
 	for (i = 0; i < size; i++) {
+		unsigned int key = be32_to_cpup(prop + i);
+
 		if (!matrix_keypad_map_key(input_dev, rows, cols,
-					   row_shift, keys[i])) {
-			retval = -EINVAL;
-			goto out;
-		}
+					   row_shift, key))
+			return -EINVAL;
 	}
 
-	retval = 0;
-
-out:
-	kfree(keys);
-	return retval;
+	return 0;
 }
+#else
+static int matrix_keypad_parse_of_keymap(const char *propname,
+					 unsigned int rows, unsigned int cols,
+					 struct input_dev *input_dev)
+{
+	return -ENOSYS;
+}
+#endif
 
 /**
  * matrix_keypad_build_keymap - convert platform keymap into matrix keymap
@@ -162,8 +167,8 @@ int matrix_keypad_build_keymap(const struct matrix_keymap_data *keymap_data,
 		return -EINVAL;
 
 	if (!keymap) {
-		keymap = devm_kcalloc(input_dev->dev.parent,
-				      max_keys, sizeof(*keymap),
+		keymap = devm_kzalloc(input_dev->dev.parent,
+				      max_keys * sizeof(*keymap),
 				      GFP_KERNEL);
 		if (!keymap) {
 			dev_err(input_dev->dev.parent,
@@ -187,8 +192,8 @@ int matrix_keypad_build_keymap(const struct matrix_keymap_data *keymap_data,
 				return -EINVAL;
 		}
 	} else {
-		error = matrix_keypad_parse_keymap(keymap_name, rows, cols,
-						   input_dev);
+		error = matrix_keypad_parse_of_keymap(keymap_name, rows, cols,
+						      input_dev);
 		if (error)
 			return error;
 	}

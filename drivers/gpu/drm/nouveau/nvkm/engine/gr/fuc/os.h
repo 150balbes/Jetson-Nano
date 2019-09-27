@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: MIT */
 #ifndef __NVKM_GRAPH_OS_H__
 #define __NVKM_GRAPH_OS_H__
 

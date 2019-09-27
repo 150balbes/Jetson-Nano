@@ -1,11 +1,9 @@
-// SPDX-License-Identifier: GPL-2.0
 #define _GNU_SOURCE
 #include <pthread.h>
 #include <stdio.h>
 #include <dlfcn.h>
 #include <stdlib.h>
 #include <sysexits.h>
-#include <unistd.h>
 #include "include/liblockdep/mutex.h"
 #include "../../include/linux/rbtree.h"
 
@@ -124,6 +122,8 @@ static struct rb_node **__get_lock_node(void *lock, struct rb_node **parent)
 #define LIBLOCKDEP_STATIC_ENTRIES	1024
 #endif
 
+#define ARRAY_SIZE(arr) (sizeof(arr) / sizeof((arr)[0]))
+
 static struct lock_lookup __locks[LIBLOCKDEP_STATIC_ENTRIES];
 static int __locks_nr;
 
@@ -149,7 +149,7 @@ static struct lock_lookup *alloc_lock(void)
 
 		int idx = __locks_nr++;
 		if (idx >= ARRAY_SIZE(__locks)) {
-			dprintf(STDERR_FILENO,
+			fprintf(stderr,
 		"LOCKDEP error: insufficient LIBLOCKDEP_STATIC_ENTRIES\n");
 			exit(EX_UNAVAILABLE);
 		}

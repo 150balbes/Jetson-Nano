@@ -1,7 +1,19 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * Copyright (c) 2006-2007 Silicon Graphics, Inc.
  * All Rights Reserved.
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it would be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write the Free Software Foundation,
+ * Inc.,  51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
  */
 #include "xfs.h"
 #include "xfs_mru_cache.h"
@@ -100,7 +112,6 @@ struct xfs_mru_cache {
 	xfs_mru_cache_free_func_t free_func; /* Function pointer for freeing. */
 	struct delayed_work	work;      /* Workqueue data for reaping.   */
 	unsigned int		queued;	   /* work has been queued */
-	void			*data;
 };
 
 static struct workqueue_struct	*xfs_mru_reap_wq;
@@ -248,7 +259,7 @@ _xfs_mru_cache_clear_reap_list(
 
 	list_for_each_entry_safe(elem, next, &tmp, list_node) {
 		list_del_init(&elem->list_node);
-		mru->free_func(mru->data, elem);
+		mru->free_func(elem);
 	}
 
 	spin_lock(&mru->lock);
@@ -315,7 +326,6 @@ xfs_mru_cache_uninit(void)
 int
 xfs_mru_cache_create(
 	struct xfs_mru_cache	**mrup,
-	void			*data,
 	unsigned int		lifetime_ms,
 	unsigned int		grp_count,
 	xfs_mru_cache_free_func_t free_func)
@@ -359,7 +369,7 @@ xfs_mru_cache_create(
 
 	mru->grp_time  = grp_time;
 	mru->free_func = free_func;
-	mru->data = data;
+
 	*mrup = mru;
 
 exit:
@@ -482,7 +492,7 @@ xfs_mru_cache_delete(
 
 	elem = xfs_mru_cache_remove(mru, key);
 	if (elem)
-		mru->free_func(mru->data, elem);
+		mru->free_func(elem);
 }
 
 /*

@@ -1,14 +1,21 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (C) 2013 Texas Instruments
  * Author: Tomi Valkeinen <tomi.valkeinen@ti.com>
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License version 2 as published by
+ * the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
  */
 
 #include <linux/device.h>
 #include <linux/err.h>
 #include <linux/module.h>
 #include <linux/of.h>
-#include <linux/of_graph.h>
 #include <linux/seq_file.h>
 
 #include <video/omapfb_dss.h>
@@ -52,7 +59,7 @@ omapdss_of_get_next_port(const struct device_node *parent,
 				return NULL;
 			}
 			prev = port;
-		} while (!of_node_name_eq(port, "port"));
+		} while (of_node_cmp(port->name, "port") != 0);
 
 		of_node_put(ports);
 	}
@@ -75,7 +82,7 @@ omapdss_of_get_next_endpoint(const struct device_node *parent,
 		if (!ep)
 			return NULL;
 		prev = ep;
-	} while (!of_node_name_eq(ep, "endpoint"));
+	} while (of_node_cmp(ep->name, "endpoint") != 0);
 
 	return ep;
 }
@@ -121,7 +128,7 @@ static struct device_node *omapdss_of_get_remote_port(const struct device_node *
 {
 	struct device_node *np;
 
-	np = of_graph_get_remote_endpoint(node);
+	np = of_parse_phandle(node, "remote-endpoint", 0);
 	if (!np)
 		return NULL;
 

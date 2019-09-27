@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  *	Anycast support for IPv6
  *	Linux INET6 implementation
@@ -7,6 +6,11 @@
  *	David L Stevens (dlstevens@us.ibm.com)
  *
  *	based heavily on net/ipv6/mcast.c
+ *
+ *	This program is free software; you can redistribute it and/or
+ *      modify it under the terms of the GNU General Public License
+ *      as published by the Free Software Foundation; either version
+ *      2 of the License, or (at your option) any later version.
  */
 
 #include <linux/capability.h>
@@ -40,21 +44,7 @@
 
 #include <net/checksum.h>
 
-#define IN6_ADDR_HSIZE_SHIFT	8
-#define IN6_ADDR_HSIZE		BIT(IN6_ADDR_HSIZE_SHIFT)
-/*	anycast address hash table
- */
-static struct hlist_head inet6_acaddr_lst[IN6_ADDR_HSIZE];
-static DEFINE_SPINLOCK(acaddr_hash_lock);
-
 static int ipv6_dev_ac_dec(struct net_device *dev, const struct in6_addr *addr);
-
-static u32 inet6_acaddr_hash(struct net *net, const struct in6_addr *addr)
-{
-	u32 val = ipv6_addr_hash(addr) ^ net_hash_mix(net);
-
-	return hash_32(val, IN6_ADDR_HSIZE_SHIFT);
-}
 
 /*
  *	socket join an anycast group
@@ -76,11 +66,7 @@ int ipv6_sock_ac_join(struct sock *sk, int ifindex, const struct in6_addr *addr)
 		return -EPERM;
 	if (ipv6_addr_is_multicast(addr))
 		return -EINVAL;
-
-	if (ifindex)
-		dev = __dev_get_by_index(net, ifindex);
-
-	if (ipv6_chk_addr_and_flags(net, addr, dev, true, 0, IFA_F_TENTATIVE))
+	if (ipv6_chk_addr(net, addr, NULL, 0))
 		return -EINVAL;
 
 	pac = sock_kmalloc(sk, sizeof(struct ipv6_ac_socklist), GFP_KERNEL);
@@ -92,7 +78,7 @@ int ipv6_sock_ac_join(struct sock *sk, int ifindex, const struct in6_addr *addr)
 	if (ifindex == 0) {
 		struct rt6_info *rt;
 
-		rt = rt6_lookup(net, addr, NULL, 0, NULL, 0);
+		rt = rt6_lookup(net, addr, NULL, 0, 0);
 		if (rt) {
 			dev = rt->dst.dev;
 			ip6_rt_put(rt);
@@ -104,7 +90,8 @@ int ipv6_sock_ac_join(struct sock *sk, int ifindex, const struct in6_addr *addr)
 			dev = __dev_get_by_flags(net, IFF_UP,
 						 IFF_UP | IFF_LOOPBACK);
 		}
-	}
+	} else
+		dev = __dev_get_by_index(net, ifindex);
 
 	if (!dev) {
 		err = -ENODEV;
@@ -214,45 +201,24 @@ void ipv6_sock_ac_close(struct sock *sk)
 	rtnl_unlock();
 }
 
-static void ipv6_add_acaddr_hash(struct net *net, struct ifacaddr6 *aca)
-{
-	unsigned int hash = inet6_acaddr_hash(net, &aca->aca_addr);
-
-	spin_lock(&acaddr_hash_lock);
-	hlist_add_head_rcu(&aca->aca_addr_lst, &inet6_acaddr_lst[hash]);
-	spin_unlock(&acaddr_hash_lock);
-}
-
-static void ipv6_del_acaddr_hash(struct ifacaddr6 *aca)
-{
-	spin_lock(&acaddr_hash_lock);
-	hlist_del_init_rcu(&aca->aca_addr_lst);
-	spin_unlock(&acaddr_hash_lock);
-}
-
 static void aca_get(struct ifacaddr6 *aca)
 {
-	refcount_inc(&aca->aca_refcnt);
-}
-
-static void aca_free_rcu(struct rcu_head *h)
-{
-	struct ifacaddr6 *aca = container_of(h, struct ifacaddr6, rcu);
-
-	fib6_info_release(aca->aca_rt);
-	kfree(aca);
+	atomic_inc(&aca->aca_refcnt);
 }
 
 static void aca_put(struct ifacaddr6 *ac)
 {
-	if (refcount_dec_and_test(&ac->aca_refcnt)) {
-		call_rcu(&ac->rcu, aca_free_rcu);
+	if (atomic_dec_and_test(&ac->aca_refcnt)) {
+		in6_dev_put(ac->aca_idev);
+		dst_release(&ac->aca_rt->dst);
+		kfree(ac);
 	}
 }
 
-static struct ifacaddr6 *aca_alloc(struct fib6_info *f6i,
+static struct ifacaddr6 *aca_alloc(struct rt6_info *rt,
 				   const struct in6_addr *addr)
 {
+	struct inet6_dev *idev = rt->rt6i_idev;
 	struct ifacaddr6 *aca;
 
 	aca = kzalloc(sizeof(*aca), GFP_ATOMIC);
@@ -260,13 +226,13 @@ static struct ifacaddr6 *aca_alloc(struct fib6_info *f6i,
 		return NULL;
 
 	aca->aca_addr = *addr;
-	fib6_info_hold(f6i);
-	aca->aca_rt = f6i;
-	INIT_HLIST_NODE(&aca->aca_addr_lst);
+	in6_dev_hold(idev);
+	aca->aca_idev = idev;
+	aca->aca_rt = rt;
 	aca->aca_users = 1;
 	/* aca_tstamp should be updated upon changes */
 	aca->aca_cstamp = aca->aca_tstamp = jiffies;
-	refcount_set(&aca->aca_refcnt, 1);
+	atomic_set(&aca->aca_refcnt, 1);
 
 	return aca;
 }
@@ -277,8 +243,7 @@ static struct ifacaddr6 *aca_alloc(struct fib6_info *f6i,
 int __ipv6_dev_ac_inc(struct inet6_dev *idev, const struct in6_addr *addr)
 {
 	struct ifacaddr6 *aca;
-	struct fib6_info *f6i;
-	struct net *net;
+	struct rt6_info *rt;
 	int err;
 
 	ASSERT_RTNL();
@@ -297,15 +262,14 @@ int __ipv6_dev_ac_inc(struct inet6_dev *idev, const struct in6_addr *addr)
 		}
 	}
 
-	net = dev_net(idev->dev);
-	f6i = addrconf_f6i_alloc(net, idev, addr, true, GFP_ATOMIC);
-	if (IS_ERR(f6i)) {
-		err = PTR_ERR(f6i);
+	rt = addrconf_dst_alloc(idev, addr, true);
+	if (IS_ERR(rt)) {
+		err = PTR_ERR(rt);
 		goto out;
 	}
-	aca = aca_alloc(f6i, addr);
+	aca = aca_alloc(rt, addr);
 	if (!aca) {
-		fib6_info_release(f6i);
+		ip6_rt_put(rt);
 		err = -ENOMEM;
 		goto out;
 	}
@@ -319,9 +283,7 @@ int __ipv6_dev_ac_inc(struct inet6_dev *idev, const struct in6_addr *addr)
 	aca_get(aca);
 	write_unlock_bh(&idev->lock);
 
-	ipv6_add_acaddr_hash(net, aca);
-
-	ip6_ins_rt(net, f6i);
+	ip6_ins_rt(rt);
 
 	addrconf_join_solict(idev->dev, &aca->aca_addr);
 
@@ -361,10 +323,10 @@ int __ipv6_dev_ac_dec(struct inet6_dev *idev, const struct in6_addr *addr)
 	else
 		idev->ac_list = aca->aca_next;
 	write_unlock_bh(&idev->lock);
-	ipv6_del_acaddr_hash(aca);
 	addrconf_leave_solict(idev, &aca->aca_addr);
 
-	ip6_del_rt(dev_net(idev->dev), aca->aca_rt);
+	dst_hold(&aca->aca_rt->dst);
+	ip6_del_rt(aca->aca_rt);
 
 	aca_put(aca);
 	return 0;
@@ -389,11 +351,10 @@ void ipv6_ac_destroy_dev(struct inet6_dev *idev)
 		idev->ac_list = aca->aca_next;
 		write_unlock_bh(&idev->lock);
 
-		ipv6_del_acaddr_hash(aca);
-
 		addrconf_leave_solict(idev, &aca->aca_addr);
 
-		ip6_del_rt(dev_net(idev->dev), aca->aca_rt);
+		dst_hold(&aca->aca_rt->dst);
+		ip6_del_rt(aca->aca_rt);
 
 		aca_put(aca);
 
@@ -429,27 +390,17 @@ static bool ipv6_chk_acast_dev(struct net_device *dev, const struct in6_addr *ad
 bool ipv6_chk_acast_addr(struct net *net, struct net_device *dev,
 			 const struct in6_addr *addr)
 {
-	struct net_device *nh_dev;
-	struct ifacaddr6 *aca;
 	bool found = false;
 
 	rcu_read_lock();
 	if (dev)
 		found = ipv6_chk_acast_dev(dev, addr);
-	else {
-		unsigned int hash = inet6_acaddr_hash(net, addr);
-
-		hlist_for_each_entry_rcu(aca, &inet6_acaddr_lst[hash],
-					 aca_addr_lst) {
-			nh_dev = fib6_info_nh_dev(aca->aca_rt);
-			if (!nh_dev || !net_eq(dev_net(nh_dev), net))
-				continue;
-			if (ipv6_addr_equal(&aca->aca_addr, addr)) {
+	else
+		for_each_netdev_rcu(net, dev)
+			if (ipv6_chk_acast_dev(dev, addr)) {
 				found = true;
 				break;
 			}
-		}
-	}
 	rcu_read_unlock();
 	return found;
 }
@@ -575,10 +526,23 @@ static const struct seq_operations ac6_seq_ops = {
 	.show	=	ac6_seq_show,
 };
 
+static int ac6_seq_open(struct inode *inode, struct file *file)
+{
+	return seq_open_net(inode, file, &ac6_seq_ops,
+			    sizeof(struct ac6_iter_state));
+}
+
+static const struct file_operations ac6_seq_fops = {
+	.owner		=	THIS_MODULE,
+	.open		=	ac6_seq_open,
+	.read		=	seq_read,
+	.llseek		=	seq_lseek,
+	.release	=	seq_release_net,
+};
+
 int __net_init ac6_proc_init(struct net *net)
 {
-	if (!proc_create_net("anycast6", 0444, net->proc_net, &ac6_seq_ops,
-			sizeof(struct ac6_iter_state)))
+	if (!proc_create("anycast6", S_IRUGO, net->proc_net, &ac6_seq_fops))
 		return -ENOMEM;
 
 	return 0;
@@ -590,23 +554,3 @@ void ac6_proc_exit(struct net *net)
 }
 #endif
 
-/*	Init / cleanup code
- */
-int __init ipv6_anycast_init(void)
-{
-	int i;
-
-	for (i = 0; i < IN6_ADDR_HSIZE; i++)
-		INIT_HLIST_HEAD(&inet6_acaddr_lst[i]);
-	return 0;
-}
-
-void ipv6_anycast_cleanup(void)
-{
-	int i;
-
-	spin_lock(&acaddr_hash_lock);
-	for (i = 0; i < IN6_ADDR_HSIZE; i++)
-		WARN_ON(!hlist_empty(&inet6_acaddr_lst[i]));
-	spin_unlock(&acaddr_hash_lock);
-}

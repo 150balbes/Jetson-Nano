@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __ARCOM_PCMCIA_H
 #define __ARCOM_PCMCIA_H
 

@@ -1,8 +1,12 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /* Storage object read/write
  *
  * Copyright (C) 2007 Red Hat, Inc. All Rights Reserved.
  * Written by David Howells (dhowells@redhat.com)
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public Licence
+ * as published by the Free Software Foundation; either version
+ * 2 of the Licence, or (at your option) any later version.
  */
 
 #include <linux/mount.h>
@@ -17,7 +21,7 @@
  * - we use this to detect read completion of backing pages
  * - the caller holds the waitqueue lock
  */
-static int cachefiles_read_waiter(wait_queue_entry_t *wait, unsigned mode,
+static int cachefiles_read_waiter(wait_queue_t *wait, unsigned mode,
 				  int sync, void *_key)
 {
 	struct cachefiles_one_read *monitor =
@@ -45,7 +49,7 @@ static int cachefiles_read_waiter(wait_queue_entry_t *wait, unsigned mode,
 	}
 
 	/* remove from the waitqueue */
-	list_del(&wait->entry);
+	list_del(&wait->task_list);
 
 	/* move onto the action list and queue for FS-Cache thread pool */
 	ASSERT(op);
@@ -259,7 +263,8 @@ static int cachefiles_read_backing_file_one(struct cachefiles_object *object,
 			goto backing_page_already_present;
 
 		if (!newpage) {
-			newpage = __page_cache_alloc(cachefiles_gfp);
+			newpage = __page_cache_alloc(cachefiles_gfp |
+						     __GFP_COLD);
 			if (!newpage)
 				goto nomem_monitor;
 		}
@@ -495,7 +500,8 @@ static int cachefiles_read_backing_file(struct cachefiles_object *object,
 				goto backing_page_already_present;
 
 			if (!newpage) {
-				newpage = __page_cache_alloc(cachefiles_gfp);
+				newpage = __page_cache_alloc(cachefiles_gfp |
+							     __GFP_COLD);
 				if (!newpage)
 					goto nomem;
 			}
@@ -531,10 +537,7 @@ static int cachefiles_read_backing_file(struct cachefiles_object *object,
 					    netpage->index, cachefiles_gfp);
 		if (ret < 0) {
 			if (ret == -EEXIST) {
-				put_page(backpage);
-				backpage = NULL;
 				put_page(netpage);
-				netpage = NULL;
 				fscache_retrieval_complete(op, 1);
 				continue;
 			}
@@ -607,10 +610,7 @@ static int cachefiles_read_backing_file(struct cachefiles_object *object,
 					    netpage->index, cachefiles_gfp);
 		if (ret < 0) {
 			if (ret == -EEXIST) {
-				put_page(backpage);
-				backpage = NULL;
 				put_page(netpage);
-				netpage = NULL;
 				fscache_retrieval_complete(op, 1);
 				continue;
 			}
@@ -717,7 +717,7 @@ int cachefiles_read_or_alloc_pages(struct fscache_retrieval *op,
 	/* calculate the shift required to use bmap */
 	shift = PAGE_SHIFT - inode->i_sb->s_blocksize_bits;
 
-	pagevec_init(&pagevec);
+	pagevec_init(&pagevec, 0);
 
 	op->op.flags &= FSCACHE_OP_KEEP_FLAGS;
 	op->op.flags |= FSCACHE_OP_ASYNC;
@@ -851,7 +851,7 @@ int cachefiles_allocate_pages(struct fscache_retrieval *op,
 
 	ret = cachefiles_has_space(cache, 0, *nr_pages);
 	if (ret == 0) {
-		pagevec_init(&pagevec);
+		pagevec_init(&pagevec, 0);
 
 		list_for_each_entry(page, pages, lru) {
 			if (pagevec_add(&pagevec, page) == 0)
@@ -961,11 +961,13 @@ error:
  * - cache withdrawal is prevented by the caller
  */
 void cachefiles_uncache_page(struct fscache_object *_object, struct page *page)
-	__releases(&object->fscache.cookie->lock)
 {
 	struct cachefiles_object *object;
+	struct cachefiles_cache *cache;
 
 	object = container_of(_object, struct cachefiles_object, fscache);
+	cache = container_of(object->fscache.cache,
+			     struct cachefiles_cache, cache);
 
 	_enter("%p,{%lu}", object, page->index);
 

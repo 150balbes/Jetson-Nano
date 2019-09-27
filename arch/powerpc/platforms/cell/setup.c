@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  *  linux/arch/powerpc/platforms/cell/cell_setup.c
  *
@@ -7,6 +6,11 @@
  *  Modified by Cort Dougan (cort@cs.nmt.edu)
  *  Modified by PPC64 Team, IBM Corp
  *  Modified by Cell Team, IBM Deutschland Entwicklung GmbH
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License
+ * as published by the Free Software Foundation; either version
+ * 2 of the License, or (at your option) any later version.
  */
 #undef DEBUG
 
@@ -127,7 +131,7 @@ static int cell_setup_phb(struct pci_controller *phb)
 
 	np = phb->dn;
 	model = of_get_property(np, "model", NULL);
-	if (model == NULL || !of_node_name_eq(np, "pci"))
+	if (model == NULL || strcmp(np->name, "pci"))
 		return 0;
 
 	/* Setup workarounds for spider */
@@ -164,7 +168,8 @@ static int __init cell_publish_devices(void)
 	 * platform devices for the PCI host bridges
 	 */
 	for_each_child_of_node(root, np) {
-		if (!of_node_is_type(np, "pci") && !of_node_is_type(np, "pciex"))
+		if (np->type == NULL || (strcmp(np->type, "pci") != 0 &&
+					 strcmp(np->type, "pciex") != 0))
 			continue;
 		of_platform_device_create(np, NULL, NULL);
 	}
@@ -187,7 +192,8 @@ static void __init mpic_init_IRQ(void)
 	struct device_node *dn;
 	struct mpic *mpic;
 
-	for_each_node_by_name(dn, "interrupt-controller") {
+	for (dn = NULL;
+	     (dn = of_find_node_by_name(dn, "interrupt-controller"));) {
 		if (!of_device_is_compatible(dn, "CBEA,platform-open-pic"))
 			continue;
 

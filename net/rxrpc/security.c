@@ -1,8 +1,12 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /* RxRPC security handling
  *
  * Copyright (C) 2007 Red Hat, Inc. All Rights Reserved.
  * Written by David Howells (dhowells@redhat.com)
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License
+ * as published by the Free Software Foundation; either version
+ * 2 of the License, or (at your option) any later version.
  */
 
 #include <linux/module.h>
@@ -14,6 +18,9 @@
 #include <net/af_rxrpc.h>
 #include <keys/rxrpc-type.h>
 #include "ar-internal.h"
+
+static LIST_HEAD(rxrpc_security_methods);
+static DECLARE_RWSEM(rxrpc_security_sem);
 
 static const struct rxrpc_security *rxrpc_security_types[] = {
 	[RXRPC_SECURITY_NONE]	= &rxrpc_no_security,
@@ -114,7 +121,7 @@ int rxrpc_init_server_conn_security(struct rxrpc_connection *conn)
 
 	_enter("");
 
-	sprintf(kdesc, "%u:%u", conn->service_id, conn->security_ix);
+	sprintf(kdesc, "%u:%u", conn->params.service_id, conn->security_ix);
 
 	sec = rxrpc_security_lookup(conn->security_ix);
 	if (!sec) {
@@ -126,8 +133,7 @@ int rxrpc_init_server_conn_security(struct rxrpc_connection *conn)
 	read_lock(&local->services_lock);
 	rx = rcu_dereference_protected(local->service,
 				       lockdep_is_held(&local->services_lock));
-	if (rx && (rx->srx.srx_service == conn->service_id ||
-		   rx->second_service == conn->service_id))
+	if (rx && rx->srx.srx_service == conn->params.service_id)
 		goto found_service;
 
 	/* the service appears to have died */
@@ -144,7 +150,7 @@ found_service:
 
 	/* look through the service's keyring */
 	kref = keyring_search(make_key_ref(rx->securities, 1UL),
-			      &key_type_rxrpc_s, kdesc, true);
+			      &key_type_rxrpc_s, kdesc);
 	if (IS_ERR(kref)) {
 		read_unlock(&local->services_lock);
 		_leave(" = %ld [search]", PTR_ERR(kref));

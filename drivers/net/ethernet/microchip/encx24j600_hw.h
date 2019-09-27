@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /**
  * encx24j600_hw.h: Register definitions
  *

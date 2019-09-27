@@ -31,7 +31,6 @@
 #include <linux/types.h>
 #include <linux/vmalloc.h>
 #include <linux/init.h>
-#include <linux/mm_types.h>
 
 #include <asm/pgtable.h>
 #include <asm/pgalloc.h>
@@ -75,7 +74,7 @@ static void __iomem *__ioremap(phys_addr_t addr, unsigned long size,
 		p >= memory_start && p < virt_to_phys(high_memory) &&
 		!(p >= __virt_to_phys((phys_addr_t)__bss_stop) &&
 		p < __virt_to_phys((phys_addr_t)__bss_stop))) {
-		pr_warn("__ioremap(): phys addr "PTE_FMT" is RAM lr %ps\n",
+		pr_warn("__ioremap(): phys addr "PTE_FMT" is RAM lr %pf\n",
 			(unsigned long)p, __builtin_return_address(0));
 		return NULL;
 	}
@@ -127,7 +126,7 @@ void __iomem *ioremap(phys_addr_t addr, unsigned long size)
 }
 EXPORT_SYMBOL(ioremap);
 
-void iounmap(volatile void __iomem *addr)
+void iounmap(void __iomem *addr)
 {
 	if ((__force void *)addr > high_memory &&
 					(unsigned long) addr < ioremap_bot)
@@ -235,7 +234,8 @@ unsigned long iopa(unsigned long addr)
 	return pa;
 }
 
-__ref pte_t *pte_alloc_one_kernel(struct mm_struct *mm)
+__ref pte_t *pte_alloc_one_kernel(struct mm_struct *mm,
+		unsigned long address)
 {
 	pte_t *pte;
 	if (mem_init_done) {

@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * locks.S: SMP low-level lock primitives on Sparc.
  *

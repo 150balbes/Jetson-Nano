@@ -1,10 +1,12 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /* iptables module for using new netfilter netlink queue
  *
  * (C) 2005 by Harald Welte <laforge@netfilter.org>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
  */
-
-#define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 
 #include <linux/module.h>
 #include <linux/skbuff.h>
@@ -41,7 +43,7 @@ nfqueue_tg_v1(struct sk_buff *skb, const struct xt_action_param *par)
 
 	if (info->queues_total > 1) {
 		queue = nfqueue_hash(skb, queue, info->queues_total,
-				     xt_family(par), jhash_initval);
+				     par->family, jhash_initval);
 	}
 	return NF_QUEUE_NR(queue);
 }
@@ -65,13 +67,13 @@ static int nfqueue_tg_check(const struct xt_tgchk_param *par)
 	init_hashrandom(&jhash_initval);
 
 	if (info->queues_total == 0) {
-		pr_info_ratelimited("number of total queues is 0\n");
+		pr_err("NFQUEUE: number of total queues is 0\n");
 		return -EINVAL;
 	}
 	maxid = info->queues_total - 1 + info->queuenum;
 	if (maxid > 0xffff) {
-		pr_info_ratelimited("number of queues (%u) out of range (got %u)\n",
-				    info->queues_total, maxid);
+		pr_err("NFQUEUE: number of queues (%u) out of range (got %u)\n",
+		       info->queues_total, maxid);
 		return -ERANGE;
 	}
 	if (par->target->revision == 2 && info->flags > 1)
@@ -96,7 +98,7 @@ nfqueue_tg_v3(struct sk_buff *skb, const struct xt_action_param *par)
 			queue = info->queuenum + cpu % info->queues_total;
 		} else {
 			queue = nfqueue_hash(skb, queue, info->queues_total,
-					     xt_family(par), jhash_initval);
+					     par->family, jhash_initval);
 		}
 	}
 

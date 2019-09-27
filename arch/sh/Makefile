@@ -15,12 +15,6 @@ ifneq ($(SUBARCH),$(ARCH))
   endif
 endif
 
-ifeq ($(ARCH),sh)
-KBUILD_DEFCONFIG	:= shx3_defconfig
-else
-KBUILD_DEFCONFIG	:= cayman_defconfig
-endif
-
 isa-y					:= any
 isa-$(CONFIG_SH_DSP)			:= sh
 isa-$(CONFIG_CPU_SH2)			:= sh2
@@ -100,8 +94,7 @@ defaultimage-$(CONFIG_SH_7206_SOLUTION_ENGINE)	:= vmlinux
 defaultimage-$(CONFIG_SH_7619_SOLUTION_ENGINE)	:= vmlinux
 
 # Set some sensible Kbuild defaults
-boot := arch/sh/boot
-KBUILD_IMAGE		:= $(boot)/$(defaultimage-y)
+KBUILD_IMAGE		:= $(defaultimage-y)
 
 #
 # Choosing incompatible machines durings configuration will result in
@@ -111,22 +104,24 @@ ifdef CONFIG_SUPERH32
 UTS_MACHINE		:= sh
 BITS			:= 32
 LDFLAGS_vmlinux		+= -e _stext
+KBUILD_DEFCONFIG	:= shx3_defconfig
 else
 UTS_MACHINE		:= sh64
 BITS			:= 64
 LDFLAGS_vmlinux		+= --defsym phys_stext=_stext-$(CONFIG_PAGE_OFFSET) \
 			   --defsym phys_stext_shmedia=phys_stext+1 \
 			   -e phys_stext_shmedia
+KBUILD_DEFCONFIG	:= cayman_defconfig
 endif
 
 ifdef CONFIG_CPU_LITTLE_ENDIAN
 ld-bfd			:= elf32-$(UTS_MACHINE)-linux
 LDFLAGS_vmlinux		+= --defsym jiffies=jiffies_64 --oformat $(ld-bfd)
-KBUILD_LDFLAGS		+= -EL
+LDFLAGS			+= -EL
 else
 ld-bfd			:= elf32-$(UTS_MACHINE)big-linux
 LDFLAGS_vmlinux		+= --defsym jiffies=jiffies_64+4 --oformat $(ld-bfd)
-KBUILD_LDFLAGS		+= -EB
+LDFLAGS			+= -EB
 endif
 
 export ld-bfd BITS
@@ -191,8 +186,10 @@ cpuincdir-y			+= cpu-common	# Must be last
 drivers-y			+= arch/sh/drivers/
 drivers-$(CONFIG_OPROFILE)	+= arch/sh/oprofile/
 
-cflags-y	+= $(foreach d, $(cpuincdir-y), -I $(srctree)/arch/sh/include/$(d)) \
-		   $(foreach d, $(machdir-y), -I $(srctree)/arch/sh/include/$(d))
+boot := arch/sh/boot
+
+cflags-y	+= $(foreach d, $(cpuincdir-y), -Iarch/sh/include/$(d)) \
+		   $(foreach d, $(machdir-y), -Iarch/sh/include/$(d))
 
 KBUILD_CFLAGS		+= -pipe $(cflags-y)
 KBUILD_CPPFLAGS		+= $(cflags-y)
@@ -214,7 +211,7 @@ BOOT_TARGETS = uImage uImage.bz2 uImage.gz uImage.lzma uImage.xz uImage.lzo \
 	       romImage
 PHONY += $(BOOT_TARGETS)
 
-all: $(notdir $(KBUILD_IMAGE))
+all: $(KBUILD_IMAGE)
 
 $(BOOT_TARGETS): vmlinux
 	$(Q)$(MAKE) $(build)=$(boot) $(boot)/$@
@@ -227,9 +224,6 @@ archprepare:
 archclean:
 	$(Q)$(MAKE) $(clean)=$(boot)
 	$(Q)$(MAKE) $(clean)=arch/sh/kernel/vsyscall
-
-archheaders:
-	$(Q)$(MAKE) $(build)=arch/sh/kernel/syscalls all
 
 define archhelp
 	@echo '  zImage 	           - Compressed kernel image'

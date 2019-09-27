@@ -254,9 +254,14 @@ static struct sk_buff *ch9200_tx_fixup(struct usbnet *dev, struct sk_buff *skb,
 	tx_overhead = 0x40;
 
 	len = skb->len;
-	if (skb_cow_head(skb, tx_overhead)) {
+	if (skb_headroom(skb) < tx_overhead) {
+		struct sk_buff *skb2;
+
+		skb2 = skb_copy_expand(skb, tx_overhead, 0, flags);
 		dev_kfree_skb_any(skb);
-		return NULL;
+		skb = skb2;
+		if (!skb)
+			return NULL;
 	}
 
 	__skb_push(skb, tx_overhead);
@@ -310,8 +315,8 @@ static int get_mac_address(struct usbnet *dev, unsigned char *data)
 	int rd_mac_len = 0;
 
 	netdev_dbg(dev->net, "get_mac_address:\n\tusbnet VID:%0x PID:%0x\n",
-		   le16_to_cpu(dev->udev->descriptor.idVendor),
-		   le16_to_cpu(dev->udev->descriptor.idProduct));
+		   dev->udev->descriptor.idVendor,
+		   dev->udev->descriptor.idProduct);
 
 	memset(mac_addr, 0, sizeof(mac_addr));
 	rd_mac_len = control_read(dev, REQUEST_READ, 0,

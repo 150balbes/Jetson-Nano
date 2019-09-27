@@ -59,6 +59,10 @@ ENTRY(_start)
 
 	.align	4
 	.literal_position
+.Lstartup:
+	.word	_startup
+
+	.align	4
 _SetupOCD:
 	/*
 	 * Initialize WB, WS, and clear PS.EXCM (to allow loop instructions).
@@ -95,12 +99,12 @@ _SetupMMU:
 1:
 #endif
 #endif
+	.end	no-absolute-literals
 
-	movi	a0, _startup
+	l32r	a0, .Lstartup
 	jx	a0
 
 ENDPROC(_start)
-	.end	no-absolute-literals
 
 	__REF
 	.literal_position
@@ -179,8 +183,6 @@ ENTRY(_startup)
 	___invalidate_icache_all a2 a3
 
 	isync
-
-	initialize_cacheattr
 
 #ifdef CONFIG_HAVE_SMP
 	movi	a2, CCON	# MX External Register to Configure Cache
@@ -265,8 +267,11 @@ ENTRY(_startup)
 
 	/* init_arch kick-starts the linux kernel */
 
-	call4	init_arch
-	call4	start_kernel
+	movi	a4, init_arch
+	callx4	a4
+
+	movi	a4, start_kernel
+	callx4	a4
 
 should_never_return:
 	j	should_never_return
@@ -276,13 +281,12 @@ should_never_return:
 
 	movi	a2, cpu_start_ccount
 1:
-	memw
 	l32i	a3, a2, 0
 	beqi	a3, 0, 1b
 	movi	a3, 0
 	s32i	a3, a2, 0
-1:
 	memw
+1:
 	l32i	a3, a2, 0
 	beqi	a3, 0, 1b
 	wsr	a3, ccount
@@ -293,7 +297,8 @@ should_never_return:
 	movi	a6, 0
 	wsr	a6, excsave1
 
-	call4	secondary_start_kernel
+	movi	a4, secondary_start_kernel
+	callx4	a4
 	j	should_never_return
 
 #endif  /* CONFIG_SMP */
@@ -318,13 +323,11 @@ ENTRY(cpu_restart)
 	rsr	a0, prid
 	neg	a2, a0
 	movi	a3, cpu_start_id
-	memw
 	s32i	a2, a3, 0
 #if XCHAL_DCACHE_IS_WRITEBACK
 	dhwbi	a3, 0
 #endif
 1:
-	memw
 	l32i	a2, a3, 0
 	dhi	a3, 0
 	bne	a2, a0, 1b

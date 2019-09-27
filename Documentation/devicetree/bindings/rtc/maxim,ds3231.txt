@@ -1,8 +1,7 @@
 * Maxim DS3231 Real Time Clock
 
 Required properties:
-- compatible: Should contain "maxim,ds3231".
-- reg: I2C address for chip.
+see: Documentation/devicetree/bindings/i2c/trivial-devices.txt
 
 Optional property:
 - #clock-cells: Should be 1.

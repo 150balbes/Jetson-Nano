@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0-only
 config JBD2
 	tristate
 	select CRC32

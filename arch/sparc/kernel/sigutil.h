@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _SIGUTIL_H
 #define _SIGUTIL_H
 

@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __ARCH_S390_PERCPU__
 #define __ARCH_S390_PERCPU__
 
@@ -16,7 +15,7 @@
  * per cpu area, use weak definitions to force the compiler to
  * generate external references.
  */
-#if defined(MODULE)
+#if defined(CONFIG_SMP) && defined(MODULE)
 #define ARCH_NEEDS_WEAK_PER_CPU
 #endif
 

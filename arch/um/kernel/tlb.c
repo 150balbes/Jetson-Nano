@@ -5,8 +5,7 @@
 
 #include <linux/mm.h>
 #include <linux/module.h>
-#include <linux/sched/signal.h>
-
+#include <linux/sched.h>
 #include <asm/pgtable.h>
 #include <asm/tlbflush.h>
 #include <as-layout.h>
@@ -37,19 +36,17 @@ struct host_vm_change {
 			} mprotect;
 		} u;
 	} ops[1];
-	int userspace;
 	int index;
-	struct mm_struct *mm;
+	struct mm_id *id;
 	void *data;
 	int force;
 };
 
-#define INIT_HVC(mm, force, userspace) \
+#define INIT_HVC(mm, force) \
 	((struct host_vm_change) \
 	 { .ops		= { { .type = NONE } },	\
-	   .mm		= mm, \
+	   .id		= &mm->context.id, \
        	   .data	= NULL, \
-	   .userspace	= userspace, \
 	   .index	= 0, \
 	   .force	= force })
 
@@ -70,40 +67,18 @@ static int do_ops(struct host_vm_change *hvc, int end,
 		op = &hvc->ops[i];
 		switch (op->type) {
 		case MMAP:
-			if (hvc->userspace)
-				ret = map(&hvc->mm->context.id, op->u.mmap.addr,
-					  op->u.mmap.len, op->u.mmap.prot,
-					  op->u.mmap.fd,
-					  op->u.mmap.offset, finished,
-					  &hvc->data);
-			else
-				map_memory(op->u.mmap.addr, op->u.mmap.offset,
-					   op->u.mmap.len, 1, 1, 1);
+			ret = map(hvc->id, op->u.mmap.addr, op->u.mmap.len,
+				  op->u.mmap.prot, op->u.mmap.fd,
+				  op->u.mmap.offset, finished, &hvc->data);
 			break;
 		case MUNMAP:
-			if (hvc->userspace)
-				ret = unmap(&hvc->mm->context.id,
-					    op->u.munmap.addr,
-					    op->u.munmap.len, finished,
-					    &hvc->data);
-			else
-				ret = os_unmap_memory(
-					(void *) op->u.munmap.addr,
-						      op->u.munmap.len);
-
+			ret = unmap(hvc->id, op->u.munmap.addr,
+				    op->u.munmap.len, finished, &hvc->data);
 			break;
 		case MPROTECT:
-			if (hvc->userspace)
-				ret = protect(&hvc->mm->context.id,
-					      op->u.mprotect.addr,
-					      op->u.mprotect.len,
-					      op->u.mprotect.prot,
-					      finished, &hvc->data);
-			else
-				ret = os_protect_memory(
-					(void *) op->u.mprotect.addr,
-							op->u.mprotect.len,
-							1, 1, 1);
+			ret = protect(hvc->id, op->u.mprotect.addr,
+				      op->u.mprotect.len, op->u.mprotect.prot,
+				      finished, &hvc->data);
 			break;
 		default:
 			printk(KERN_ERR "Unknown op type %d in do_ops\n",
@@ -124,12 +99,9 @@ static int add_mmap(unsigned long virt, unsigned long phys, unsigned long len,
 {
 	__u64 offset;
 	struct host_vm_op *last;
-	int fd = -1, ret = 0;
+	int fd, ret = 0;
 
-	if (hvc->userspace)
-		fd = phys_mapping(phys, &offset);
-	else
-		offset = phys;
+	fd = phys_mapping(phys, &offset);
 	if (hvc->index != 0) {
 		last = &hvc->ops[hvc->index - 1];
 		if ((last->type == MMAP) &&
@@ -242,11 +214,10 @@ static inline int update_pte_range(pmd_t *pmd, unsigned long addr,
 		prot = ((r ? UM_PROT_READ : 0) | (w ? UM_PROT_WRITE : 0) |
 			(x ? UM_PROT_EXEC : 0));
 		if (hvc->force || pte_newpage(*pte)) {
-			if (pte_present(*pte)) {
-				if (pte_newpage(*pte))
-					ret = add_mmap(addr, pte_val(*pte) & PAGE_MASK,
-						       PAGE_SIZE, prot, hvc);
-			} else
+			if (pte_present(*pte))
+				ret = add_mmap(addr, pte_val(*pte) & PAGE_MASK,
+					       PAGE_SIZE, prot, hvc);
+			else
 				ret = add_munmap(addr, PAGE_SIZE, hvc);
 		} else if (pte_newprot(*pte))
 			ret = add_mprotect(addr, PAGE_SIZE, prot, hvc);
@@ -305,9 +276,9 @@ void fix_range_common(struct mm_struct *mm, unsigned long start_addr,
 	pgd_t *pgd;
 	struct host_vm_change hvc;
 	unsigned long addr = start_addr, next;
-	int ret = 0, userspace = 1;
+	int ret = 0;
 
-	hvc = INIT_HVC(mm, force, userspace);
+	hvc = INIT_HVC(mm, force);
 	pgd = pgd_offset(mm, addr);
 	do {
 		next = pgd_addr_end(addr, end_addr);
@@ -329,7 +300,7 @@ void fix_range_common(struct mm_struct *mm, unsigned long start_addr,
 		       "process: %d\n", task_tgid_vnr(current));
 		/* We are under mmap_sem, release it such that current can terminate */
 		up_write(&current->mm->mmap_sem);
-		force_sig(SIGKILL);
+		force_sig(SIGKILL, current);
 		do_signal(&current->thread.regs);
 	}
 }
@@ -342,11 +313,9 @@ static int flush_tlb_kernel_range_common(unsigned long start, unsigned long end)
 	pmd_t *pmd;
 	pte_t *pte;
 	unsigned long addr, last;
-	int updated = 0, err = 0, force = 0, userspace = 0;
-	struct host_vm_change hvc;
+	int updated = 0, err;
 
 	mm = &init_mm;
-	hvc = INIT_HVC(mm, force, userspace);
 	for (addr = start; addr < end;) {
 		pgd = pgd_offset(mm, addr);
 		if (!pgd_present(*pgd)) {
@@ -355,7 +324,8 @@ static int flush_tlb_kernel_range_common(unsigned long start, unsigned long end)
 				last = end;
 			if (pgd_newpage(*pgd)) {
 				updated = 1;
-				err = add_munmap(addr, last - addr, &hvc);
+				err = os_unmap_memory((void *) addr,
+						      last - addr);
 				if (err < 0)
 					panic("munmap failed, errno = %d\n",
 					      -err);
@@ -371,7 +341,8 @@ static int flush_tlb_kernel_range_common(unsigned long start, unsigned long end)
 				last = end;
 			if (pud_newpage(*pud)) {
 				updated = 1;
-				err = add_munmap(addr, last - addr, &hvc);
+				err = os_unmap_memory((void *) addr,
+						      last - addr);
 				if (err < 0)
 					panic("munmap failed, errno = %d\n",
 					      -err);
@@ -387,7 +358,8 @@ static int flush_tlb_kernel_range_common(unsigned long start, unsigned long end)
 				last = end;
 			if (pmd_newpage(*pmd)) {
 				updated = 1;
-				err = add_munmap(addr, last - addr, &hvc);
+				err = os_unmap_memory((void *) addr,
+						      last - addr);
 				if (err < 0)
 					panic("munmap failed, errno = %d\n",
 					      -err);
@@ -399,25 +371,22 @@ static int flush_tlb_kernel_range_common(unsigned long start, unsigned long end)
 		pte = pte_offset_kernel(pmd, addr);
 		if (!pte_present(*pte) || pte_newpage(*pte)) {
 			updated = 1;
-			err = add_munmap(addr, PAGE_SIZE, &hvc);
+			err = os_unmap_memory((void *) addr,
+					      PAGE_SIZE);
 			if (err < 0)
 				panic("munmap failed, errno = %d\n",
 				      -err);
 			if (pte_present(*pte))
-				err = add_mmap(addr, pte_val(*pte) & PAGE_MASK,
-					       PAGE_SIZE, 0, &hvc);
+				map_memory(addr,
+					   pte_val(*pte) & PAGE_MASK,
+					   PAGE_SIZE, 1, 1, 1);
 		}
 		else if (pte_newprot(*pte)) {
 			updated = 1;
-			err = add_mprotect(addr, PAGE_SIZE, 0, &hvc);
+			os_protect_memory((void *) addr, PAGE_SIZE, 1, 1, 1);
 		}
 		addr += PAGE_SIZE;
 	}
-	if (!err)
-		err = do_ops(&hvc, hvc.index, 1);
-
-	if (err < 0)
-		panic("flush_tlb_kernel failed, errno = %d\n", err);
 	return updated;
 }
 
@@ -487,7 +456,7 @@ void flush_tlb_page(struct vm_area_struct *vma, unsigned long address)
 
 kill:
 	printk(KERN_ERR "Failed to flush page for address 0x%lx\n", address);
-	force_sig(SIGKILL);
+	force_sig(SIGKILL, current);
 }
 
 pgd_t *pgd_offset_proc(struct mm_struct *mm, unsigned long address)
@@ -521,13 +490,6 @@ pte_t *addr_pte(struct task_struct *task, unsigned long addr)
 
 void flush_tlb_all(void)
 {
-	/*
-	 * Don't bother flushing if this address space is about to be
-	 * destroyed.
-	 */
-	if (atomic_read(&current->mm->mm_users) == 0)
-		return;
-
 	flush_tlb_mm(current->mm);
 }
 
@@ -549,13 +511,6 @@ void __flush_tlb_one(unsigned long addr)
 static void fix_range(struct mm_struct *mm, unsigned long start_addr,
 		      unsigned long end_addr, int force)
 {
-	/*
-	 * Don't bother flushing if this address space is about to be
-	 * destroyed.
-	 */
-	if (atomic_read(&mm->mm_users) == 0)
-		return;
-
 	fix_range_common(mm, start_addr, end_addr, force);
 }
 
@@ -571,6 +526,13 @@ EXPORT_SYMBOL(flush_tlb_range);
 void flush_tlb_mm_range(struct mm_struct *mm, unsigned long start,
 			unsigned long end)
 {
+	/*
+	 * Don't bother flushing if this address space is about to be
+	 * destroyed.
+	 */
+	if (atomic_read(&mm->mm_users) == 0)
+		return;
+
 	fix_range(mm, start, end, 0);
 }
 

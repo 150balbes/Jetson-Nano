@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * ALSA SoC SPDIF DIT driver
  *
@@ -9,6 +8,10 @@
  * Author:      Steve Chen,  <schen@mvista.com>
  * Copyright:   (C) 2009 MontaVista Software, Inc., <source@mvista.com>
  * Copyright:   (C) 2009  Texas Instruments, India
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  */
 
 #include <linux/module.h>
@@ -24,26 +27,26 @@
 #define STUB_RATES	SNDRV_PCM_RATE_8000_192000
 #define STUB_FORMATS	(SNDRV_PCM_FMTBIT_S16_LE | \
 			SNDRV_PCM_FMTBIT_S20_3LE | \
-			SNDRV_PCM_FMTBIT_S24_LE  | \
+			SNDRV_PCM_FMTBIT_S24_LE | \
 			SNDRV_PCM_FMTBIT_S32_LE)
 
 static const struct snd_soc_dapm_widget dit_widgets[] = {
-	SND_SOC_DAPM_OUTPUT("spdif-out"),
+	SND_SOC_DAPM_OUTPUT("OUT"),
+	SND_SOC_DAPM_INPUT("IN"),
 };
 
 static const struct snd_soc_dapm_route dit_routes[] = {
-	{ "spdif-out", NULL, "Playback" },
+	{ "OUT", NULL, "Playback" },
+	{ "Capture", NULL, "IN" },
 };
 
-static struct snd_soc_component_driver soc_codec_spdif_dit = {
-	.dapm_widgets		= dit_widgets,
-	.num_dapm_widgets	= ARRAY_SIZE(dit_widgets),
-	.dapm_routes		= dit_routes,
-	.num_dapm_routes	= ARRAY_SIZE(dit_routes),
-	.idle_bias_on		= 1,
-	.use_pmdown_time	= 1,
-	.endianness		= 1,
-	.non_legacy_dai_naming	= 1,
+static struct snd_soc_codec_driver soc_codec_spdif_dit = {
+	.component_driver = {
+		.dapm_widgets		= dit_widgets,
+		.num_dapm_widgets	= ARRAY_SIZE(dit_widgets),
+		.dapm_routes		= dit_routes,
+		.num_dapm_routes	= ARRAY_SIZE(dit_routes),
+	},
 };
 
 static struct snd_soc_dai_driver dit_stub_dai = {
@@ -55,13 +58,25 @@ static struct snd_soc_dai_driver dit_stub_dai = {
 		.rates		= STUB_RATES,
 		.formats	= STUB_FORMATS,
 	},
+	.capture	= {
+		.stream_name	= "Capture",
+		.channels_min	= 1,
+		.channels_max	= 384,
+		.rates		= STUB_RATES,
+		.formats	= STUB_FORMATS,
+	},
 };
 
 static int spdif_dit_probe(struct platform_device *pdev)
 {
-	return devm_snd_soc_register_component(&pdev->dev,
-			&soc_codec_spdif_dit,
+	return snd_soc_register_codec(&pdev->dev, &soc_codec_spdif_dit,
 			&dit_stub_dai, 1);
+}
+
+static int spdif_dit_remove(struct platform_device *pdev)
+{
+	snd_soc_unregister_codec(&pdev->dev);
+	return 0;
 }
 
 #ifdef CONFIG_OF
@@ -74,6 +89,7 @@ MODULE_DEVICE_TABLE(of, spdif_dit_dt_ids);
 
 static struct platform_driver spdif_dit_driver = {
 	.probe		= spdif_dit_probe,
+	.remove		= spdif_dit_remove,
 	.driver		= {
 		.name	= DRV_NAME,
 		.of_match_table = of_match_ptr(spdif_dit_dt_ids),

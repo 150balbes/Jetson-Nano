@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: MIT */
 #ifndef __NVKM_DEVICE_ACPI_H__
 #define __NVKM_DEVICE_ACPI_H__
 #include <core/os.h>

@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0-only
 config BT_RFCOMM
 	tristate "RFCOMM protocol support"
 	depends on BT_BREDR

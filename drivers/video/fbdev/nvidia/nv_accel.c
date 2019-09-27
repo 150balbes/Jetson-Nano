@@ -48,8 +48,6 @@
  */
 
 #include <linux/fb.h>
-#include <linux/nmi.h>
-
 #include "nv_type.h"
 #include "nv_proto.h"
 #include "nv_dma.h"

@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /* dummy.c: a dummy net driver
 
 	The purpose of this driver is to provide a device to point a
@@ -33,11 +32,9 @@
 #include <linux/kernel.h>
 #include <linux/netdevice.h>
 #include <linux/etherdevice.h>
-#include <linux/ethtool.h>
 #include <linux/init.h>
 #include <linux/moduleparam.h>
 #include <linux/rtnetlink.h>
-#include <linux/net_tstamp.h>
 #include <net/rtnetlink.h>
 #include <linux/u64_stats_sync.h>
 
@@ -57,8 +54,8 @@ struct pcpu_dstats {
 	struct u64_stats_sync	syncp;
 };
 
-static void dummy_get_stats64(struct net_device *dev,
-			      struct rtnl_link_stats64 *stats)
+static struct rtnl_link_stats64 *dummy_get_stats64(struct net_device *dev,
+						   struct rtnl_link_stats64 *stats)
 {
 	int i;
 
@@ -76,6 +73,7 @@ static void dummy_get_stats64(struct net_device *dev,
 		stats->tx_bytes += tbytes;
 		stats->tx_packets += tpackets;
 	}
+	return stats;
 }
 
 static netdev_tx_t dummy_xmit(struct sk_buff *skb, struct net_device *dev)
@@ -87,7 +85,6 @@ static netdev_tx_t dummy_xmit(struct sk_buff *skb, struct net_device *dev)
 	dstats->tx_bytes += skb->len;
 	u64_stats_update_end(&dstats->syncp);
 
-	skb_tx_timestamp(skb);
 	dev_kfree_skb(skb);
 	return NETDEV_TX_OK;
 }
@@ -135,7 +132,6 @@ static void dummy_get_drvinfo(struct net_device *dev,
 
 static const struct ethtool_ops dummy_ethtool_ops = {
 	.get_drvinfo            = dummy_get_drvinfo,
-	.get_ts_info		= ethtool_op_get_ts_info,
 };
 
 static void dummy_setup(struct net_device *dev)
@@ -145,26 +141,22 @@ static void dummy_setup(struct net_device *dev)
 	/* Initialize the device structure. */
 	dev->netdev_ops = &dummy_netdev_ops;
 	dev->ethtool_ops = &dummy_ethtool_ops;
-	dev->needs_free_netdev = true;
+	dev->destructor = free_netdev;
 
 	/* Fill in device structure with ethernet-generic values. */
 	dev->flags |= IFF_NOARP;
 	dev->flags &= ~IFF_MULTICAST;
 	dev->priv_flags |= IFF_LIVE_ADDR_CHANGE | IFF_NO_QUEUE;
 	dev->features	|= NETIF_F_SG | NETIF_F_FRAGLIST;
-	dev->features	|= NETIF_F_ALL_TSO;
+	dev->features	|= NETIF_F_ALL_TSO | NETIF_F_UFO;
 	dev->features	|= NETIF_F_HW_CSUM | NETIF_F_HIGHDMA | NETIF_F_LLTX;
 	dev->features	|= NETIF_F_GSO_ENCAP_ALL;
 	dev->hw_features |= dev->features;
 	dev->hw_enc_features |= dev->features;
 	eth_hw_addr_random(dev);
-
-	dev->min_mtu = 0;
-	dev->max_mtu = 0;
 }
 
-static int dummy_validate(struct nlattr *tb[], struct nlattr *data[],
-			  struct netlink_ext_ack *extack)
+static int dummy_validate(struct nlattr *tb[], struct nlattr *data[])
 {
 	if (tb[IFLA_ADDRESS]) {
 		if (nla_len(tb[IFLA_ADDRESS]) != ETH_ALEN)
@@ -190,7 +182,7 @@ static int __init dummy_init_one(void)
 	struct net_device *dev_dummy;
 	int err;
 
-	dev_dummy = alloc_netdev(0, "dummy%d", NET_NAME_ENUM, dummy_setup);
+	dev_dummy = alloc_netdev(0, "dummy%d", NET_NAME_UNKNOWN, dummy_setup);
 	if (!dev_dummy)
 		return -ENOMEM;
 
@@ -209,7 +201,6 @@ static int __init dummy_init_module(void)
 {
 	int i, err = 0;
 
-	down_write(&pernet_ops_rwsem);
 	rtnl_lock();
 	err = __rtnl_link_register(&dummy_link_ops);
 	if (err < 0)
@@ -224,7 +215,6 @@ static int __init dummy_init_module(void)
 
 out:
 	rtnl_unlock();
-	up_write(&pernet_ops_rwsem);
 
 	return err;
 }

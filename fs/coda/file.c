@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * File operations for Coda.
  * Original version: (C) 1996 Peter Braam 
@@ -20,43 +19,22 @@
 #include <linux/string.h>
 #include <linux/slab.h>
 #include <linux/uaccess.h>
-#include <linux/uio.h>
 
 #include <linux/coda.h>
-#include "coda_psdev.h"
+#include <linux/coda_psdev.h>
+
 #include "coda_linux.h"
 #include "coda_int.h"
-
-struct coda_vm_ops {
-	atomic_t refcnt;
-	struct file *coda_file;
-	const struct vm_operations_struct *host_vm_ops;
-	struct vm_operations_struct vm_ops;
-};
 
 static ssize_t
 coda_file_read_iter(struct kiocb *iocb, struct iov_iter *to)
 {
 	struct file *coda_file = iocb->ki_filp;
-	struct inode *coda_inode = file_inode(coda_file);
-	struct coda_file_info *cfi = coda_ftoc(coda_file);
-	loff_t ki_pos = iocb->ki_pos;
-	size_t count = iov_iter_count(to);
-	ssize_t ret;
+	struct coda_file_info *cfi = CODA_FTOC(coda_file);
 
-	ret = venus_access_intent(coda_inode->i_sb, coda_i2f(coda_inode),
-				  &cfi->cfi_access_intent,
-				  count, ki_pos, CODA_ACCESS_TYPE_READ);
-	if (ret)
-		goto finish_read;
+	BUG_ON(!cfi || cfi->cfi_magic != CODA_MAGIC);
 
-	ret = vfs_iter_read(cfi->cfi_container, to, &iocb->ki_pos, 0);
-
-finish_read:
-	venus_access_intent(coda_inode->i_sb, coda_i2f(coda_inode),
-			    &cfi->cfi_access_intent,
-			    count, ki_pos, CODA_ACCESS_TYPE_READ_FINISH);
-	return ret;
+	return vfs_iter_read(cfi->cfi_container, to, &iocb->ki_pos);
 }
 
 static ssize_t
@@ -64,93 +42,41 @@ coda_file_write_iter(struct kiocb *iocb, struct iov_iter *to)
 {
 	struct file *coda_file = iocb->ki_filp;
 	struct inode *coda_inode = file_inode(coda_file);
-	struct coda_file_info *cfi = coda_ftoc(coda_file);
-	struct file *host_file = cfi->cfi_container;
-	loff_t ki_pos = iocb->ki_pos;
-	size_t count = iov_iter_count(to);
+	struct coda_file_info *cfi = CODA_FTOC(coda_file);
+	struct file *host_file;
 	ssize_t ret;
 
-	ret = venus_access_intent(coda_inode->i_sb, coda_i2f(coda_inode),
-				  &cfi->cfi_access_intent,
-				  count, ki_pos, CODA_ACCESS_TYPE_WRITE);
-	if (ret)
-		goto finish_write;
+	BUG_ON(!cfi || cfi->cfi_magic != CODA_MAGIC);
 
+	host_file = cfi->cfi_container;
 	file_start_write(host_file);
 	inode_lock(coda_inode);
-	ret = vfs_iter_write(cfi->cfi_container, to, &iocb->ki_pos, 0);
+	ret = vfs_iter_write(cfi->cfi_container, to, &iocb->ki_pos);
 	coda_inode->i_size = file_inode(host_file)->i_size;
 	coda_inode->i_blocks = (coda_inode->i_size + 511) >> 9;
 	coda_inode->i_mtime = coda_inode->i_ctime = current_time(coda_inode);
 	inode_unlock(coda_inode);
 	file_end_write(host_file);
-
-finish_write:
-	venus_access_intent(coda_inode->i_sb, coda_i2f(coda_inode),
-			    &cfi->cfi_access_intent,
-			    count, ki_pos, CODA_ACCESS_TYPE_WRITE_FINISH);
 	return ret;
-}
-
-static void
-coda_vm_open(struct vm_area_struct *vma)
-{
-	struct coda_vm_ops *cvm_ops =
-		container_of(vma->vm_ops, struct coda_vm_ops, vm_ops);
-
-	atomic_inc(&cvm_ops->refcnt);
-
-	if (cvm_ops->host_vm_ops && cvm_ops->host_vm_ops->open)
-		cvm_ops->host_vm_ops->open(vma);
-}
-
-static void
-coda_vm_close(struct vm_area_struct *vma)
-{
-	struct coda_vm_ops *cvm_ops =
-		container_of(vma->vm_ops, struct coda_vm_ops, vm_ops);
-
-	if (cvm_ops->host_vm_ops && cvm_ops->host_vm_ops->close)
-		cvm_ops->host_vm_ops->close(vma);
-
-	if (atomic_dec_and_test(&cvm_ops->refcnt)) {
-		vma->vm_ops = cvm_ops->host_vm_ops;
-		fput(cvm_ops->coda_file);
-		kfree(cvm_ops);
-	}
 }
 
 static int
 coda_file_mmap(struct file *coda_file, struct vm_area_struct *vma)
 {
-	struct inode *coda_inode = file_inode(coda_file);
-	struct coda_file_info *cfi = coda_ftoc(coda_file);
-	struct file *host_file = cfi->cfi_container;
-	struct inode *host_inode = file_inode(host_file);
+	struct coda_file_info *cfi;
 	struct coda_inode_info *cii;
-	struct coda_vm_ops *cvm_ops;
-	loff_t ppos;
-	size_t count;
-	int ret;
+	struct file *host_file;
+	struct inode *coda_inode, *host_inode;
+
+	cfi = CODA_FTOC(coda_file);
+	BUG_ON(!cfi || cfi->cfi_magic != CODA_MAGIC);
+	host_file = cfi->cfi_container;
 
 	if (!host_file->f_op->mmap)
 		return -ENODEV;
 
-	if (WARN_ON(coda_file != vma->vm_file))
-		return -EIO;
-
-	count = vma->vm_end - vma->vm_start;
-	ppos = vma->vm_pgoff * PAGE_SIZE;
-
-	ret = venus_access_intent(coda_inode->i_sb, coda_i2f(coda_inode),
-				  &cfi->cfi_access_intent,
-				  count, ppos, CODA_ACCESS_TYPE_MMAP);
-	if (ret)
-		return ret;
-
-	cvm_ops = kmalloc(sizeof(struct coda_vm_ops), GFP_KERNEL);
-	if (!cvm_ops)
-		return -ENOMEM;
+	coda_inode = file_inode(coda_file);
+	host_inode = file_inode(host_file);
 
 	cii = ITOC(coda_inode);
 	spin_lock(&cii->c_lock);
@@ -162,7 +88,6 @@ coda_file_mmap(struct file *coda_file, struct vm_area_struct *vma)
 	 * the container file on us! */
 	else if (coda_inode->i_mapping != host_inode->i_mapping) {
 		spin_unlock(&cii->c_lock);
-		kfree(cvm_ops);
 		return -EBUSY;
 	}
 
@@ -171,29 +96,7 @@ coda_file_mmap(struct file *coda_file, struct vm_area_struct *vma)
 	cfi->cfi_mapcount++;
 	spin_unlock(&cii->c_lock);
 
-	vma->vm_file = get_file(host_file);
-	ret = call_mmap(vma->vm_file, vma);
-
-	if (ret) {
-		/* if call_mmap fails, our caller will put coda_file so we
-		 * should drop the reference to the host_file that we got.
-		 */
-		fput(host_file);
-		kfree(cvm_ops);
-	} else {
-		/* here we add redirects for the open/close vm_operations */
-		cvm_ops->host_vm_ops = vma->vm_ops;
-		if (vma->vm_ops)
-			cvm_ops->vm_ops = *vma->vm_ops;
-
-		cvm_ops->vm_ops.open = coda_vm_open;
-		cvm_ops->vm_ops.close = coda_vm_close;
-		cvm_ops->coda_file = coda_file;
-		atomic_set(&cvm_ops->refcnt, 1);
-
-		vma->vm_ops = &cvm_ops->vm_ops;
-	}
-	return ret;
+	return host_file->f_op->mmap(host_file, vma);
 }
 
 int coda_open(struct inode *coda_inode, struct file *coda_file)
@@ -223,8 +126,6 @@ int coda_open(struct inode *coda_inode, struct file *coda_file)
 	cfi->cfi_magic = CODA_MAGIC;
 	cfi->cfi_mapcount = 0;
 	cfi->cfi_container = host_file;
-	/* assume access intents are supported unless we hear otherwise */
-	cfi->cfi_access_intent = true;
 
 	BUG_ON(coda_file->private_data != NULL);
 	coda_file->private_data = cfi;
@@ -240,7 +141,8 @@ int coda_release(struct inode *coda_inode, struct file *coda_file)
 	struct inode *host_inode;
 	int err;
 
-	cfi = coda_ftoc(coda_file);
+	cfi = CODA_FTOC(coda_file);
+	BUG_ON(!cfi || cfi->cfi_magic != CODA_MAGIC);
 
 	err = venus_close(coda_inode->i_sb, coda_i2f(coda_inode),
 			  coda_flags, coda_file->f_cred->fsuid);
@@ -282,7 +184,8 @@ int coda_fsync(struct file *coda_file, loff_t start, loff_t end, int datasync)
 		return err;
 	inode_lock(coda_inode);
 
-	cfi = coda_ftoc(coda_file);
+	cfi = CODA_FTOC(coda_file);
+	BUG_ON(!cfi || cfi->cfi_magic != CODA_MAGIC);
 	host_file = cfi->cfi_container;
 
 	err = vfs_fsync(host_file, datasync);
@@ -303,3 +206,4 @@ const struct file_operations coda_file_operations = {
 	.fsync		= coda_fsync,
 	.splice_read	= generic_file_splice_read,
 };
+

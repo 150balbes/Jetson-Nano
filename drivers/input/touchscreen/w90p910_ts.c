@@ -1,8 +1,12 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2008 Nuvoton technology corporation.
  *
  * Wan ZongShun <mcuos.com@gmail.com>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation;version 2 of the License.
+ *
  */
 
 #include <linux/delay.h>
@@ -142,9 +146,9 @@ static irqreturn_t w90p910_ts_interrupt(int irq, void *dev_id)
 	return IRQ_HANDLED;
 }
 
-static void w90p910_check_pen_up(struct timer_list *t)
+static void w90p910_check_pen_up(unsigned long data)
 {
-	struct w90p910_ts *w90p910_ts = from_timer(w90p910_ts, t, timer);
+	struct w90p910_ts *w90p910_ts = (struct w90p910_ts *) data;
 	unsigned long flags;
 
 	spin_lock_irqsave(&w90p910_ts->lock, flags);
@@ -228,7 +232,8 @@ static int w90x900ts_probe(struct platform_device *pdev)
 	w90p910_ts->input = input_dev;
 	w90p910_ts->state = TS_IDLE;
 	spin_lock_init(&w90p910_ts->lock);
-	timer_setup(&w90p910_ts->timer, w90p910_check_pen_up, 0);
+	setup_timer(&w90p910_ts->timer, w90p910_check_pen_up,
+		    (unsigned long)w90p910_ts);
 
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	if (!res) {

@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _ALPHA_AGP_BACKEND_H
 #define _ALPHA_AGP_BACKEND_H 1
 

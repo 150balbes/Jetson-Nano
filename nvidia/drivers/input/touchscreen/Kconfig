@@ -1,0 +1,69 @@
+if INPUT_TOUCHSCREEN
+
+config TOUCHSCREEN_NVIDIA_ATMEL_MXT
+        tristate "NVIDIA Atmel mXT I2C Touchscreen"
+        depends on I2C
+        select FW_LOADER
+        help
+          Say Y here if you have Atmel mXT series I2C touchscreen,
+          such as AT42QT602240/ATMXT224, connected to your system.
+
+          If unsure, say N.
+
+          To compile this driver as a module, choose M here: the
+          module will be called atmel_mxt_ts.
+
+          It is Nvidia Atmel driver which is impoved based on
+          atmel k3.14 driver.
+
+config TOUCHSCREEN_LR388K7
+	tristate "Sharp LR388K7 touchscreen"
+	depends on SPI_MASTER
+	help
+	  Say Y here if you have a LR388K7 and want to enable
+	  support for the built-in touchscreen.
+
+	  If unsure, say N.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called lr388k7.
+
+config TOUCHSCREEN_RM31080A
+	tristate "RAYDIUM_31080A based touchscreens"
+	depends on SPI_MASTER
+	help
+	  Say Y here if you have a touchscreen interface using the
+	  RAYDIUM_T31080A controller, and your board-specific initialization
+	  code includes that in its table of SPI devices.
+
+	  If unsure, say N (but it's safe to say "Y").
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called RAYDIUM_31080A.
+
+config TOUCHSCREEN_EXC80
+	tristate "EGALAX_EXC80 based touchscreens"
+	depends on I2C
+	help
+	  Say Y here if you have a touchscreen interface using the
+	  EGALAX controller, and your board-specific initialization
+	  code includes that in its table of I2C devices.
+
+	  If unsure, say N (but it's safe to say "Y").
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called EGALAX.
+
+config TOUCHSCREEN_EXC80_USB
+	tristate "EGALAX_EXC80 USB based touchscreens"
+	help
+	  Say Y here if you have a touchscreen interface using the
+	  EGALAX controller, and your board-specific initialization
+	  code includes that in its table.
+
+	  If unsure, say N (but it's safe to say "Y").
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called egalax_ts_usb.
+
+endif

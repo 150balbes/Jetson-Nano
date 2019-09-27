@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * arch/arm/mach-vexpress/tc2_pm.c - TC2 power management support
  *
@@ -7,6 +6,10 @@
  *
  * Some portions of this file were originally written by Achin Gupta
  * Copyright:   (C) 2012  ARM Limited
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  */
 
 #include <linux/delay.h>
@@ -51,7 +54,7 @@ static int tc2_pm_cpu_powerup(unsigned int cpu, unsigned int cluster)
 	if (cluster >= TC2_CLUSTERS || cpu >= tc2_nr_cpus[cluster])
 		return -EINVAL;
 	ve_spc_set_resume_addr(cluster, cpu,
-			       __pa_symbol(mcpm_entry_point));
+			       virt_to_phys(mcpm_entry_point));
 	ve_spc_cpu_wakeup_irq(cluster, cpu, true);
 	return 0;
 }
@@ -156,7 +159,7 @@ static int tc2_pm_wait_for_powerdown(unsigned int cpu, unsigned int cluster)
 
 static void tc2_pm_cpu_suspend_prepare(unsigned int cpu, unsigned int cluster)
 {
-	ve_spc_set_resume_addr(cluster, cpu, __pa_symbol(mcpm_entry_point));
+	ve_spc_set_resume_addr(cluster, cpu, virt_to_phys(mcpm_entry_point));
 }
 
 static void tc2_pm_cpu_is_up(unsigned int cpu, unsigned int cluster)

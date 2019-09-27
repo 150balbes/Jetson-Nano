@@ -1,8 +1,7 @@
-# SPDX-License-Identifier: GPL-2.0-only
 config IR_IMG
 	tristate "ImgTec IR Decoder"
 	depends on RC_CORE
-	depends on MIPS || COMPILE_TEST
+	depends on METAG || MIPS || COMPILE_TEST
 	select IR_IMG_HW if !IR_IMG_RAW
 	help
 	   Say Y or M here if you want to use the ImgTec infrared decoder

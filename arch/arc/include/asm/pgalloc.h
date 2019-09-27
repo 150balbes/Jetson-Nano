@@ -1,6 +1,9 @@
-/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (C) 2004, 2007-2010, 2011-2012 Synopsys, Inc. (www.synopsys.com)
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  *
  * vineetg: June 2011
  *  -"/proc/meminfo | grep PageTables" kept on increasing
@@ -87,7 +90,8 @@ static inline int __get_order_pte(void)
 	return get_order(PTRS_PER_PTE * sizeof(pte_t));
 }
 
-static inline pte_t *pte_alloc_one_kernel(struct mm_struct *mm)
+static inline pte_t *pte_alloc_one_kernel(struct mm_struct *mm,
+					unsigned long address)
 {
 	pte_t *pte;
 
@@ -98,7 +102,7 @@ static inline pte_t *pte_alloc_one_kernel(struct mm_struct *mm)
 }
 
 static inline pgtable_t
-pte_alloc_one(struct mm_struct *mm)
+pte_alloc_one(struct mm_struct *mm, unsigned long address)
 {
 	pgtable_t pte_pg;
 	struct page *page;

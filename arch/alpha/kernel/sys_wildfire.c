@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  *  linux/arch/alpha/kernel/sys_wildfire.c
  *
@@ -289,10 +288,10 @@ wildfire_device_interrupt(unsigned long vector)
  *   7	 64 bit PCI 1 option slot 7
  */
 
-static int
+static int __init
 wildfire_map_irq(const struct pci_dev *dev, u8 slot, u8 pin)
 {
-	static char irq_tab[8][5] = {
+	static char irq_tab[8][5] __initdata = {
 		/*INT    INTA   INTB   INTC   INTD */
 		{ -1,    -1,    -1,    -1,    -1}, /* IdSel 0 ISA Bridge */
 		{ 36,    36,    36+1, 36+2, 36+3}, /* IdSel 1 SCSI builtin */

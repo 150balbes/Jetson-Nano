@@ -1,8 +1,9 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Driver for the Analog Devices digital potentiometers (I2C bus)
  *
  * Copyright (C) 2010-2011 Michael Hennerich, Analog Devices Inc.
+ *
+ * Licensed under the GPL-2 or later.
  */
 
 #include <linux/i2c.h>
@@ -113,6 +114,6 @@ static struct i2c_driver ad_dpot_i2c_driver = {
 
 module_i2c_driver(ad_dpot_i2c_driver);
 
-MODULE_AUTHOR("Michael Hennerich <michael.hennerich@analog.com>");
+MODULE_AUTHOR("Michael Hennerich <hennerich@blackfin.uclinux.org>");
 MODULE_DESCRIPTION("digital potentiometer I2C bus driver");
 MODULE_LICENSE("GPL");

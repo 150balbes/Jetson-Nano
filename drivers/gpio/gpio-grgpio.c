@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Driver for Aeroflex Gaisler GRGPIO General Purpose I/O cores.
  *
@@ -13,6 +12,11 @@
  * See "Documentation/devicetree/bindings/gpio/gpio-grgpio.txt" for
  * information on open firmware properties.
  *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License as published by the
+ * Free Software Foundation; either version 2 of the License, or (at your
+ * option) any later version.
+ *
  * Contributors: Andreas Larsson <andreas@gaisler.com>
  */
 
@@ -22,14 +26,15 @@
 #include <linux/spinlock.h>
 #include <linux/io.h>
 #include <linux/of.h>
+#include <linux/of_gpio.h>
 #include <linux/of_platform.h>
-#include <linux/gpio/driver.h>
+#include <linux/gpio.h>
 #include <linux/slab.h>
 #include <linux/err.h>
+#include <linux/gpio/driver.h>
 #include <linux/interrupt.h>
 #include <linux/irq.h>
 #include <linux/irqdomain.h>
-#include <linux/bitops.h>
 
 #define GRGPIO_MAX_NGPIO 32
 
@@ -91,11 +96,12 @@ static void grgpio_set_imask(struct grgpio_priv *priv, unsigned int offset,
 			     int val)
 {
 	struct gpio_chip *gc = &priv->gc;
+	unsigned long mask = gc->pin2mask(gc, offset);
 
 	if (val)
-		priv->imask |= BIT(offset);
+		priv->imask |= mask;
 	else
-		priv->imask &= ~BIT(offset);
+		priv->imask &= ~mask;
 	gc->write_reg(priv->regs + GRGPIO_IMASK, priv->imask);
 }
 
@@ -329,6 +335,7 @@ static int grgpio_probe(struct platform_device *ofdev)
 	void  __iomem *regs;
 	struct gpio_chip *gc;
 	struct grgpio_priv *priv;
+	struct resource *res;
 	int err;
 	u32 prop;
 	s32 *irqmap;
@@ -339,7 +346,8 @@ static int grgpio_probe(struct platform_device *ofdev)
 	if (!priv)
 		return -ENOMEM;
 
-	regs = devm_platform_ioremap_resource(ofdev, 0);
+	res = platform_get_resource(ofdev, IORESOURCE_MEM, 0);
+	regs = devm_ioremap_resource(&ofdev->dev, res);
 	if (IS_ERR(regs))
 		return PTR_ERR(regs);
 
@@ -359,7 +367,7 @@ static int grgpio_probe(struct platform_device *ofdev)
 	gc->of_node = np;
 	gc->owner = THIS_MODULE;
 	gc->to_irq = grgpio_to_irq;
-	gc->label = devm_kasprintf(&ofdev->dev, GFP_KERNEL, "%pOF", np);
+	gc->label = np->full_name;
 	gc->base = -1;
 
 	err = of_property_read_u32(np, "nbits", &prop);

@@ -1,17 +1,15 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _KERNEL_EVENTS_INTERNAL_H
 #define _KERNEL_EVENTS_INTERNAL_H
 
 #include <linux/hardirq.h>
 #include <linux/uaccess.h>
-#include <linux/refcount.h>
 
 /* Buffer handling */
 
 #define RING_BUFFER_WRITABLE		0x01
 
 struct ring_buffer {
-	refcount_t			refcount;
+	atomic_t			refcount;
 	struct rcu_head			rcu_head;
 #ifdef CONFIG_PERF_USE_VMALLOC
 	struct work_struct		work;
@@ -24,7 +22,7 @@ struct ring_buffer {
 	atomic_t			poll;		/* POLL_ for wakeups */
 
 	local_t				head;		/* write position    */
-	unsigned int			nest;		/* nested writers    */
+	local_t				nest;		/* nested writers    */
 	local_t				events;		/* event limit       */
 	local_t				wakeup;		/* wakeup stamp      */
 	local_t				lost;		/* nr records lost   */
@@ -40,16 +38,16 @@ struct ring_buffer {
 	struct user_struct		*mmap_user;
 
 	/* AUX area */
-	long				aux_head;
-	unsigned int			aux_nest;
-	long				aux_wakeup;	/* last aux_watermark boundary crossed by aux_head */
+	local_t				aux_head;
+	local_t				aux_nest;
+	local_t				aux_wakeup;
 	unsigned long			aux_pgoff;
 	int				aux_nr_pages;
 	int				aux_overwrite;
 	atomic_t			aux_mmap_count;
 	unsigned long			aux_mmap_locked;
 	void				(*free_aux)(void *);
-	refcount_t			aux_refcount;
+	atomic_t			aux_refcount;
 	void				**aux_pages;
 	void				*aux_priv;
 
@@ -202,11 +200,15 @@ arch_perf_out_copy_user(void *dst, const void *src, unsigned long n)
 
 DEFINE_OUTPUT_COPY(__output_copy_user, arch_perf_out_copy_user)
 
+/* Callchain handling */
+extern struct perf_callchain_entry *
+perf_callchain(struct perf_event *event, struct pt_regs *regs);
+
 static inline int get_recursion_context(int *recursion)
 {
 	int rctx;
 
-	if (unlikely(in_nmi()))
+	if (in_nmi())
 		rctx = 3;
 	else if (in_irq())
 		rctx = 2;

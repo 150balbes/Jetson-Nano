@@ -1,9 +1,23 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*******************************************************************************
   Copyright (C) 2013  Vayavya Labs Pvt Ltd
 
   This implements all the API for managing HW timestamp & PTP.
 
+  This program is free software; you can redistribute it and/or modify it
+  under the terms and conditions of the GNU General Public License,
+  version 2, as published by the Free Software Foundation.
+
+  This program is distributed in the hope it will be useful, but WITHOUT
+  ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+  FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+  more details.
+
+  You should have received a copy of the GNU General Public License along with
+  this program; if not, write to the Free Software Foundation, Inc.,
+  51 Franklin St - Fifth Floor, Boston, MA 02110-1301 USA.
+
+  The full GNU General Public License is included in this distribution in
+  the file called "COPYING".
 
   Author: Rayagond Kokatanur <rayagond@vayavyalabs.com>
   Author: Giuseppe Cavallaro <peppe.cavallaro@st.com>
@@ -14,13 +28,13 @@
 #include "common.h"
 #include "stmmac_ptp.h"
 
-static void config_hw_tstamping(void __iomem *ioaddr, u32 data)
+static void stmmac_config_hw_tstamping(void __iomem *ioaddr, u32 data)
 {
 	writel(data, ioaddr + PTP_TCR);
 }
 
-static void config_sub_second_increment(void __iomem *ioaddr,
-		u32 ptp_clock, int gmac4, u32 *ssinc)
+static u32 stmmac_config_sub_second_increment(void __iomem *ioaddr,
+					      u32 ptp_clock, int gmac4)
 {
 	u32 value = readl(ioaddr + PTP_TCR);
 	unsigned long data;
@@ -47,11 +61,10 @@ static void config_sub_second_increment(void __iomem *ioaddr,
 
 	writel(reg_value, ioaddr + PTP_SSIR);
 
-	if (ssinc)
-		*ssinc = data;
+	return data;
 }
 
-static int init_systime(void __iomem *ioaddr, u32 sec, u32 nsec)
+static int stmmac_init_systime(void __iomem *ioaddr, u32 sec, u32 nsec)
 {
 	int limit;
 	u32 value;
@@ -76,7 +89,7 @@ static int init_systime(void __iomem *ioaddr, u32 sec, u32 nsec)
 	return 0;
 }
 
-static int config_addend(void __iomem *ioaddr, u32 addend)
+static int stmmac_config_addend(void __iomem *ioaddr, u32 addend)
 {
 	u32 value;
 	int limit;
@@ -100,8 +113,8 @@ static int config_addend(void __iomem *ioaddr, u32 addend)
 	return 0;
 }
 
-static int adjust_systime(void __iomem *ioaddr, u32 sec, u32 nsec,
-		int add_sub, int gmac4)
+static int stmmac_adjust_systime(void __iomem *ioaddr, u32 sec, u32 nsec,
+				 int add_sub, int gmac4)
 {
 	u32 value;
 	int limit;
@@ -112,7 +125,7 @@ static int adjust_systime(void __iomem *ioaddr, u32 sec, u32 nsec,
 		 * programmed with (2^32 – <new_sec_value>)
 		 */
 		if (gmac4)
-			sec = -sec;
+			sec = (100000000ULL - sec);
 
 		value = readl(ioaddr + PTP_TCR);
 		if (value & PTP_TCR_TSCTRLSSR)
@@ -143,7 +156,7 @@ static int adjust_systime(void __iomem *ioaddr, u32 sec, u32 nsec,
 	return 0;
 }
 
-static void get_systime(void __iomem *ioaddr, u64 *systime)
+static u64 stmmac_get_systime(void __iomem *ioaddr)
 {
 	u64 ns;
 
@@ -152,15 +165,14 @@ static void get_systime(void __iomem *ioaddr, u64 *systime)
 	/* Get the TSS and convert sec time value to nanosecond */
 	ns += readl(ioaddr + PTP_STSR) * 1000000000ULL;
 
-	if (systime)
-		*systime = ns;
+	return ns;
 }
 
 const struct stmmac_hwtimestamp stmmac_ptp = {
-	.config_hw_tstamping = config_hw_tstamping,
-	.init_systime = init_systime,
-	.config_sub_second_increment = config_sub_second_increment,
-	.config_addend = config_addend,
-	.adjust_systime = adjust_systime,
-	.get_systime = get_systime,
+	.config_hw_tstamping = stmmac_config_hw_tstamping,
+	.init_systime = stmmac_init_systime,
+	.config_sub_second_increment = stmmac_config_sub_second_increment,
+	.config_addend = stmmac_config_addend,
+	.adjust_systime = stmmac_adjust_systime,
+	.get_systime = stmmac_get_systime,
 };

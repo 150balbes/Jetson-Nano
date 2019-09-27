@@ -1,14 +1,10 @@
-// SPDX-License-Identifier: GPL-2.0
-#include <inttypes.h>
 #include <stdio.h>
 #include <stdbool.h>
 #include <traceevent/event-parse.h>
 #include "evsel.h"
 #include "callchain.h"
 #include "map.h"
-#include "strlist.h"
 #include "symbol.h"
-#include "srcline.h"
 
 static int comma_fprintf(FILE *fp, bool *first, const char *fmt, ...)
 {
@@ -73,7 +69,7 @@ int perf_evsel__fprintf(struct perf_evsel *evsel,
 	}
 
 	if (details->trace_fields) {
-		struct tep_format_field *field;
+		struct format_field *field;
 
 		if (evsel->attr.type != PERF_TYPE_TRACEPOINT) {
 			printed += comma_fprintf(fp, &first, " (not a tracepoint)");
@@ -112,10 +108,7 @@ int sample__fprintf_callchain(struct perf_sample *sample, int left_alignment,
 	int print_oneline = print_opts & EVSEL__PRINT_ONELINE;
 	int print_srcline = print_opts & EVSEL__PRINT_SRCLINE;
 	int print_unknown_as_addr = print_opts & EVSEL__PRINT_UNKNOWN_AS_ADDR;
-	int print_arrow = print_opts & EVSEL__PRINT_CALLCHAIN_ARROW;
-	int print_skip_ignored = print_opts & EVSEL__PRINT_SKIP_IGNORED;
 	char s = print_oneline ? ' ' : '\t';
-	bool first = true;
 
 	if (sample->callchain) {
 		struct addr_location node_al;
@@ -129,13 +122,7 @@ int sample__fprintf_callchain(struct perf_sample *sample, int left_alignment,
 			if (!node)
 				break;
 
-			if (node->sym && node->sym->ignore && print_skip_ignored)
-				goto next;
-
 			printed += fprintf(fp, "%-*.*s", left_alignment, left_alignment, " ");
-
-			if (print_arrow && !first)
-				printed += fprintf(fp, " <-");
 
 			if (print_ip)
 				printed += fprintf(fp, "%c%16" PRIx64, s, node->ip);
@@ -150,15 +137,14 @@ int sample__fprintf_callchain(struct perf_sample *sample, int left_alignment,
 
 				if (print_symoffset) {
 					printed += __symbol__fprintf_symname_offs(node->sym, &node_al,
-										  print_unknown_as_addr,
-										  true, fp);
+										  print_unknown_as_addr, fp);
 				} else {
 					printed += __symbol__fprintf_symname(node->sym, &node_al,
 									     print_unknown_as_addr, fp);
 				}
 			}
 
-			if (print_dso && (!node->sym || !node->sym->inlined)) {
+			if (print_dso) {
 				printed += fprintf(fp, " (");
 				printed += map__fprintf_dsoname(node->map, fp);
 				printed += fprintf(fp, ")");
@@ -167,22 +153,9 @@ int sample__fprintf_callchain(struct perf_sample *sample, int left_alignment,
 			if (print_srcline)
 				printed += map__fprintf_srcline(node->map, addr, "\n  ", fp);
 
-			if (node->sym && node->sym->inlined)
-				printed += fprintf(fp, " (inlined)");
-
 			if (!print_oneline)
 				printed += fprintf(fp, "\n");
 
-			/* Add srccode here too? */
-			if (symbol_conf.bt_stop_list &&
-			    node->sym &&
-			    strlist__has_entry(symbol_conf.bt_stop_list,
-					       node->sym->name)) {
-				break;
-			}
-
-			first = false;
-next:
 			callchain_cursor_advance(cursor);
 		}
 	}
@@ -215,8 +188,7 @@ int sample__fprintf_sym(struct perf_sample *sample, struct addr_location *al,
 			printed += fprintf(fp, " ");
 			if (print_symoffset) {
 				printed += __symbol__fprintf_symname_offs(al->sym, al,
-									  print_unknown_as_addr,
-									  true, fp);
+									  print_unknown_as_addr, fp);
 			} else {
 				printed += __symbol__fprintf_symname(al->sym, al,
 								     print_unknown_as_addr, fp);

@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * HD-audio stream operations
  */
@@ -38,6 +37,10 @@ int snd_hdac_get_stream_stripe_ctl(struct hdac_bus *bus,
 		else
 			value = (channels * bits_per_sample) / sdo_line;
 
+		/* WAR to avoid boundary condition */
+		if (bus->avoid_compact_sdo_bw && (value == 8))
+			continue;
+
 		if (value >= 8)
 			break;
 	}
@@ -66,6 +69,7 @@ void snd_hdac_stream_init(struct hdac_bus *bus, struct hdac_stream *azx_dev,
 	/* int mask: SDI0=0x01, SDI1=0x02, ... SDO3=0x80 */
 	azx_dev->sd_int_sta_mask = 1 << idx;
 	azx_dev->index = idx;
+	azx_dev->stripe_ctl = 0;
 	azx_dev->direction = direction;
 	azx_dev->stream_tag = tag;
 	snd_hdac_dsp_lock_init(azx_dev);
@@ -92,14 +96,9 @@ void snd_hdac_stream_start(struct hdac_stream *azx_dev, bool fresh_start)
 		azx_dev->start_wallclk -= azx_dev->period_wallclk;
 
 	/* enable SIE */
-	snd_hdac_chip_updatel(bus, INTCTL,
-			      1 << azx_dev->index,
-			      1 << azx_dev->index);
+	snd_hdac_chip_updatel(bus, INTCTL, 0, 1 << azx_dev->index);
 	/* set stripe control */
-	if (azx_dev->substream)
-		stripe_ctl = snd_hdac_get_stream_stripe_ctl(bus, azx_dev->substream);
-	else
-		stripe_ctl = 0;
+	stripe_ctl = snd_hdac_get_stream_stripe_ctl(bus, azx_dev->substream);
 	snd_hdac_stream_updateb(azx_dev, SD_CTL_3B, SD_CTL_STRIPE_MASK,
 				stripe_ctl);
 	/* set DMA start and interrupt mask */
@@ -160,6 +159,8 @@ void snd_hdac_stream_reset(struct hdac_stream *azx_dev)
 			break;
 	} while (--timeout);
 	val &= ~SD_CTL_STREAM_RESET;
+	/* WAR: Delay added to avoid mcerr */
+	udelay(100);
 	snd_hdac_stream_writeb(azx_dev, SD_CTL, val);
 	udelay(3);
 
@@ -511,7 +512,7 @@ int snd_hdac_stream_set_params(struct hdac_stream *azx_dev,
 }
 EXPORT_SYMBOL_GPL(snd_hdac_stream_set_params);
 
-static u64 azx_cc_read(const struct cyclecounter *cc)
+static cycle_t azx_cc_read(const struct cyclecounter *cc)
 {
 	struct hdac_stream *azx_dev = container_of(cc, struct hdac_stream, cc);
 
@@ -519,7 +520,7 @@ static u64 azx_cc_read(const struct cyclecounter *cc)
 }
 
 static void azx_timecounter_init(struct hdac_stream *azx_dev,
-				 bool force, u64 last)
+				 bool force, cycle_t last)
 {
 	struct timecounter *tc = &azx_dev->tc;
 	struct cyclecounter *cc = &azx_dev->cc;
@@ -569,7 +570,7 @@ void snd_hdac_stream_timecounter_init(struct hdac_stream *azx_dev,
 	struct snd_pcm_runtime *runtime = azx_dev->substream->runtime;
 	struct hdac_stream *s;
 	bool inited = false;
-	u64 cycle_last = 0;
+	cycle_t cycle_last = 0;
 	int i = 0;
 
 	list_for_each_entry(s, &bus->stream_list, list) {
@@ -601,12 +602,12 @@ void snd_hdac_stream_sync_trigger(struct hdac_stream *azx_dev, bool set,
 
 	if (!reg)
 		reg = AZX_REG_SSYNC;
-	val = _snd_hdac_chip_readl(bus, reg);
+	val = _snd_hdac_chip_read(l, bus, reg);
 	if (set)
 		val |= streams;
 	else
 		val &= ~streams;
-	_snd_hdac_chip_writel(bus, reg, val);
+	_snd_hdac_chip_write(l, bus, reg, val);
 }
 EXPORT_SYMBOL_GPL(snd_hdac_stream_sync_trigger);
 
@@ -667,7 +668,7 @@ int snd_hdac_dsp_prepare(struct hdac_stream *azx_dev, unsigned int format,
 			 unsigned int byte_size, struct snd_dma_buffer *bufp)
 {
 	struct hdac_bus *bus = azx_dev->bus;
-	__le32 *bdl;
+	u32 *bdl;
 	int err;
 
 	snd_hdac_dsp_lock(azx_dev);
@@ -697,7 +698,7 @@ int snd_hdac_dsp_prepare(struct hdac_stream *azx_dev, unsigned int format,
 	snd_hdac_stream_writel(azx_dev, SD_BDLPU, 0);
 
 	azx_dev->frags = 0;
-	bdl = (__le32 *)azx_dev->bdl.area;
+	bdl = (u32 *)azx_dev->bdl.area;
 	err = setup_bdle(bus, bufp, azx_dev, &bdl, 0, byte_size, 0);
 	if (err < 0)
 		goto error;

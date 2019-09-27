@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * A security context is a set of security attributes
  * associated with each subject and object controlled
@@ -11,7 +10,7 @@
  * security server and can be changed without affecting
  * clients of the security server.
  *
- * Author : Stephen Smalley, <sds@tycho.nsa.gov>
+ * Author : Stephen Smalley, <sds@epoch.ncsc.mil>
  */
 #ifndef _SS_CONTEXT_H_
 #define _SS_CONTEXT_H_

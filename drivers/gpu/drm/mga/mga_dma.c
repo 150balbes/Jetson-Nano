@@ -1145,10 +1145,12 @@ int mga_dma_buffers(struct drm_device *dev, void *data,
 /**
  * Called just before the module is unloaded.
  */
-void mga_driver_unload(struct drm_device *dev)
+int mga_driver_unload(struct drm_device *dev)
 {
 	kfree(dev->dev_private);
 	dev->dev_private = NULL;
+
+	return 0;
 }
 
 /**

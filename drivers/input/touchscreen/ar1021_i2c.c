@@ -1,11 +1,11 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
- * Microchip AR1020 and AR1021 driver for I2C
+ * Microchip AR1021 driver for I2C
  *
  * Author: Christian Gmeiner <christian.gmeiner@gmail.com>
+ *
+ * License: GPLv2 as published by the FSF.
  */
 
-#include <linux/bitops.h>
 #include <linux/module.h>
 #include <linux/input.h>
 #include <linux/of.h>
@@ -17,10 +17,6 @@
 
 #define AR1021_MAX_X	4095
 #define AR1021_MAX_Y	4095
-
-#define AR1021_CMD	0x55
-
-#define AR1021_CMD_ENABLE_TOUCH		0x12
 
 struct ar1021_i2c {
 	struct i2c_client *client;
@@ -37,12 +33,12 @@ static irqreturn_t ar1021_i2c_irq(int irq, void *dev_id)
 	int retval;
 
 	retval = i2c_master_recv(ar1021->client,
-				 ar1021->data, sizeof(ar1021->data));
+				ar1021->data, sizeof(ar1021->data));
 	if (retval != sizeof(ar1021->data))
 		goto out;
 
 	/* sync bit set ? */
-	if (!(data[0] & BIT(7)))
+	if ((data[0] & 0x80) == 0)
 		goto out;
 
 	button = data[0] & BIT(0);
@@ -60,19 +56,8 @@ out:
 
 static int ar1021_i2c_open(struct input_dev *dev)
 {
-	static const u8 cmd_enable_touch[] = {
-		AR1021_CMD,
-		0x01, /* number of bytes after this */
-		AR1021_CMD_ENABLE_TOUCH
-	};
 	struct ar1021_i2c *ar1021 = input_get_drvdata(dev);
 	struct i2c_client *client = ar1021->client;
-	int error;
-
-	error = i2c_master_send(ar1021->client, cmd_enable_touch,
-				sizeof(cmd_enable_touch));
-	if (error < 0)
-		return error;
 
 	enable_irq(client->irq);
 
@@ -88,7 +73,7 @@ static void ar1021_i2c_close(struct input_dev *dev)
 }
 
 static int ar1021_i2c_probe(struct i2c_client *client,
-			    const struct i2c_device_id *id)
+				     const struct i2c_device_id *id)
 {
 	struct ar1021_i2c *ar1021;
 	struct input_dev *input;
@@ -116,7 +101,6 @@ static int ar1021_i2c_probe(struct i2c_client *client,
 	input->open = ar1021_i2c_open;
 	input->close = ar1021_i2c_close;
 
-	__set_bit(INPUT_PROP_DIRECT, input->propbit);
 	input_set_capability(input, EV_KEY, BTN_TOUCH);
 	input_set_abs_params(input, ABS_X, 0, AR1021_MAX_X, 0, 0);
 	input_set_abs_params(input, ABS_Y, 0, AR1021_MAX_Y, 0, 0);
@@ -125,7 +109,7 @@ static int ar1021_i2c_probe(struct i2c_client *client,
 
 	error = devm_request_threaded_irq(&client->dev, client->irq,
 					  NULL, ar1021_i2c_irq,
-					  IRQF_ONESHOT,
+					  IRQF_TRIGGER_RISING | IRQF_ONESHOT,
 					  "ar1021_i2c", ar1021);
 	if (error) {
 		dev_err(&client->dev,
@@ -143,6 +127,7 @@ static int ar1021_i2c_probe(struct i2c_client *client,
 		return error;
 	}
 
+	i2c_set_clientdata(client, ar1021);
 	return 0;
 }
 
@@ -191,5 +176,5 @@ static struct i2c_driver ar1021_i2c_driver = {
 module_i2c_driver(ar1021_i2c_driver);
 
 MODULE_AUTHOR("Christian Gmeiner <christian.gmeiner@gmail.com>");
-MODULE_DESCRIPTION("Microchip AR1020 and AR1021 I2C Driver");
+MODULE_DESCRIPTION("Microchip AR1021 I2C Driver");
 MODULE_LICENSE("GPL");

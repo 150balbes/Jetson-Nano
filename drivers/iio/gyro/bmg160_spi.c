@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 #include <linux/spi/spi.h>
 #include <linux/regmap.h>
 #include <linux/iio/iio.h>

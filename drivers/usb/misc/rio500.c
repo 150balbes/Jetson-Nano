@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0+
 /* -*- linux-c -*- */
 
 /* 
@@ -7,6 +6,20 @@
  * Cesar Miquel (miquel@df.uba.ar)
  * 
  * based on hp_scanner.c by David E. Nelson (dnelson@jump.net)
+ * 
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License as
+ * published by the Free Software Foundation; either version 2 of the
+ * License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  *
  * Based upon mouse.c (Brad Keryan) and printer.c (Michael Gee).
  *
@@ -18,7 +31,7 @@
 #include <linux/module.h>
 #include <linux/kernel.h>
 #include <linux/signal.h>
-#include <linux/sched/signal.h>
+#include <linux/sched.h>
 #include <linux/mutex.h>
 #include <linux/errno.h>
 #include <linux/random.h>
@@ -30,6 +43,10 @@
 
 #include "rio500_usb.h"
 
+/*
+ * Version Information
+ */
+#define DRIVER_VERSION "v1.1"
 #define DRIVER_AUTHOR "Cesar Miquel <miquel@df.uba.ar>"
 #define DRIVER_DESC "USB Rio 500 driver"
 
@@ -86,22 +103,9 @@ static int close_rio(struct inode *inode, struct file *file)
 {
 	struct rio_usb_data *rio = &rio_instance;
 
-	/* against disconnect() */
-	mutex_lock(&rio500_mutex);
-	mutex_lock(&(rio->lock));
-
 	rio->isopen = 0;
-	if (!rio->present) {
-		/* cleanup has been delayed */
-		kfree(rio->ibuf);
-		kfree(rio->obuf);
-		rio->ibuf = NULL;
-		rio->obuf = NULL;
-	} else {
-		dev_info(&rio->rio_dev->dev, "Rio closed.\n");
-	}
-	mutex_unlock(&(rio->lock));
-	mutex_unlock(&rio500_mutex);
+
+	dev_info(&rio->rio_dev->dev, "Rio closed.\n");
 	return 0;
 }
 
@@ -417,7 +421,7 @@ read_rio(struct file *file, char __user *buffer, size_t count, loff_t * ppos)
 		} else if (result != -EREMOTEIO) {
 			mutex_unlock(&(rio->lock));
 			dev_err(&rio->rio_dev->dev,
-				"Read Whoops - result:%d partial:%u this_read:%u\n",
+				"Read Whoops - result:%u partial:%u this_read:%u\n",
 				result, partial, this_read);
 			return -EIO;
 		} else {
@@ -460,23 +464,15 @@ static int probe_rio(struct usb_interface *intf,
 {
 	struct usb_device *dev = interface_to_usbdev(intf);
 	struct rio_usb_data *rio = &rio_instance;
-	int retval = 0;
+	int retval;
 
-	mutex_lock(&rio500_mutex);
-	if (rio->present) {
-		dev_info(&intf->dev, "Second USB Rio at address %d refused\n", dev->devnum);
-		retval = -EBUSY;
-		goto bail_out;
-	} else {
-		dev_info(&intf->dev, "USB Rio found at address %d\n", dev->devnum);
-	}
+	dev_info(&intf->dev, "USB Rio found at address %d\n", dev->devnum);
 
 	retval = usb_register_dev(intf, &usb_rio_class);
 	if (retval) {
 		dev_err(&dev->dev,
 			"Not able to get a minor for this device.\n");
-		retval = -ENOMEM;
-		goto bail_out;
+		return -ENOMEM;
 	}
 
 	rio->rio_dev = dev;
@@ -485,8 +481,7 @@ static int probe_rio(struct usb_interface *intf,
 		dev_err(&dev->dev,
 			"probe_rio: Not enough memory for the output buffer\n");
 		usb_deregister_dev(intf, &usb_rio_class);
-		retval = -ENOMEM;
-		goto bail_out;
+		return -ENOMEM;
 	}
 	dev_dbg(&intf->dev, "obuf address:%p\n", rio->obuf);
 
@@ -495,8 +490,7 @@ static int probe_rio(struct usb_interface *intf,
 			"probe_rio: Not enough memory for the input buffer\n");
 		usb_deregister_dev(intf, &usb_rio_class);
 		kfree(rio->obuf);
-		retval = -ENOMEM;
-		goto bail_out;
+		return -ENOMEM;
 	}
 	dev_dbg(&intf->dev, "ibuf address:%p\n", rio->ibuf);
 
@@ -504,10 +498,8 @@ static int probe_rio(struct usb_interface *intf,
 
 	usb_set_intfdata (intf, rio);
 	rio->present = 1;
-bail_out:
-	mutex_unlock(&rio500_mutex);
 
-	return retval;
+	return 0;
 }
 
 static void disconnect_rio(struct usb_interface *intf)

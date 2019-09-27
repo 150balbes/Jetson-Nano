@@ -1,8 +1,9 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * fireworks_hwdep.c - a part of driver for Fireworks based devices
  *
  * Copyright (c) 2013-2014 Takashi Sakamoto
+ *
+ * Licensed under the terms of the GNU General Public License, version 2.
  */
 
 /*
@@ -183,22 +184,22 @@ end:
 	return count;
 }
 
-static __poll_t
+static unsigned int
 hwdep_poll(struct snd_hwdep *hwdep, struct file *file, poll_table *wait)
 {
 	struct snd_efw *efw = hwdep->private_data;
-	__poll_t events;
+	unsigned int events;
 
 	poll_wait(file, &efw->hwdep_wait, wait);
 
 	spin_lock_irq(&efw->lock);
 	if (efw->dev_lock_changed || efw->pull_ptr != efw->push_ptr)
-		events = EPOLLIN | EPOLLRDNORM;
+		events = POLLIN | POLLRDNORM;
 	else
 		events = 0;
 	spin_unlock_irq(&efw->lock);
 
-	return events | EPOLLOUT;
+	return events | POLLOUT;
 }
 
 static int
@@ -302,16 +303,17 @@ hwdep_compat_ioctl(struct snd_hwdep *hwdep, struct file *file,
 #define hwdep_compat_ioctl NULL
 #endif
 
+static const struct snd_hwdep_ops hwdep_ops = {
+	.read		= hwdep_read,
+	.write		= hwdep_write,
+	.release	= hwdep_release,
+	.poll		= hwdep_poll,
+	.ioctl		= hwdep_ioctl,
+	.ioctl_compat	= hwdep_compat_ioctl,
+};
+
 int snd_efw_create_hwdep_device(struct snd_efw *efw)
 {
-	static const struct snd_hwdep_ops ops = {
-		.read		= hwdep_read,
-		.write		= hwdep_write,
-		.release	= hwdep_release,
-		.poll		= hwdep_poll,
-		.ioctl		= hwdep_ioctl,
-		.ioctl_compat	= hwdep_compat_ioctl,
-	};
 	struct snd_hwdep *hwdep;
 	int err;
 
@@ -320,7 +322,7 @@ int snd_efw_create_hwdep_device(struct snd_efw *efw)
 		goto end;
 	strcpy(hwdep->name, "Fireworks");
 	hwdep->iface = SNDRV_HWDEP_IFACE_FW_FIREWORKS;
-	hwdep->ops = ops;
+	hwdep->ops = hwdep_ops;
 	hwdep->private_data = efw;
 	hwdep->exclusive = true;
 end:

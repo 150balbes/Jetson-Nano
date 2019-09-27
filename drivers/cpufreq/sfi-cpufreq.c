@@ -1,6 +1,14 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  *  SFI Performance States Driver
+ *
+ *  This program is free software; you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License as published by
+ *  the Free Software Foundation; either version 2 of the License.
+ *
+ *  This program is distributed in the hope that it will be useful, but
+ *  WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ *  General Public License for more details.
  *
  *  Author: Vishwesh M Rudramuni <vishwesh.m.rudramuni@intel.com>
  *  Author: Srinidhi Kasagar <srinidhi.kasagar@intel.com>
@@ -16,7 +24,7 @@
 
 #include <asm/msr.h>
 
-static struct cpufreq_frequency_table *freq_table;
+struct cpufreq_frequency_table *freq_table;
 static struct sfi_freq_table_entry *sfi_cpufreq_array;
 static int num_freq_table_entries;
 
@@ -64,9 +72,8 @@ static int sfi_cpufreq_cpu_init(struct cpufreq_policy *policy)
 {
 	policy->shared_type = CPUFREQ_SHARED_TYPE_HW;
 	policy->cpuinfo.transition_latency = 100000;	/* 100us */
-	policy->freq_table = freq_table;
 
-	return 0;
+	return cpufreq_table_validate_and_show(policy, freq_table);
 }
 
 static struct cpufreq_driver sfi_cpufreq_driver = {
@@ -87,8 +94,8 @@ static int __init sfi_cpufreq_init(void)
 	if (ret)
 		return ret;
 
-	freq_table = kcalloc(num_freq_table_entries + 1, sizeof(*freq_table),
-			     GFP_KERNEL);
+	freq_table = kzalloc(sizeof(*freq_table) *
+			(num_freq_table_entries + 1), GFP_KERNEL);
 	if (!freq_table) {
 		ret = -ENOMEM;
 		goto err_free_array;

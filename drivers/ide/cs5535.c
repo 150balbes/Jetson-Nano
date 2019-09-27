@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (C) 2004-2005 Advanced Micro Devices, Inc.
  * Copyright (C)      2007 Bartlomiej Zolnierkiewicz
@@ -14,6 +13,10 @@
  *
  * Development of this chipset driver was funded
  * by the nice folks at National Semiconductor/AMD.
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License version 2 as published by
+ * the Free Software Foundation.
  *
  * Documentation:
  *  CS5535 documentation available from AMD

@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /* net/atm/pvc.c - ATM PVC sockets */
 
 /* Written 1995-2000 by Werner Almesberger, EPFL LRC/ICA */
@@ -87,20 +86,21 @@ static int pvc_getsockopt(struct socket *sock, int level, int optname,
 }
 
 static int pvc_getname(struct socket *sock, struct sockaddr *sockaddr,
-		       int peer)
+		       int *sockaddr_len, int peer)
 {
 	struct sockaddr_atmpvc *addr;
 	struct atm_vcc *vcc = ATM_SD(sock);
 
 	if (!vcc->dev || !test_bit(ATM_VF_ADDR, &vcc->flags))
 		return -ENOTCONN;
+	*sockaddr_len = sizeof(struct sockaddr_atmpvc);
 	addr = (struct sockaddr_atmpvc *)sockaddr;
 	memset(addr, 0, sizeof(*addr));
 	addr->sap_family = AF_ATMPVC;
 	addr->sap_addr.itf = vcc->dev->number;
 	addr->sap_addr.vpi = vcc->vpi;
 	addr->sap_addr.vci = vcc->vci;
-	return sizeof(struct sockaddr_atmpvc);
+	return 0;
 }
 
 static const struct proto_ops pvc_proto_ops = {
@@ -118,7 +118,6 @@ static const struct proto_ops pvc_proto_ops = {
 #ifdef CONFIG_COMPAT
 	.compat_ioctl = vcc_compat_ioctl,
 #endif
-	.gettstamp =	sock_gettstamp,
 	.listen =	sock_no_listen,
 	.shutdown =	pvc_shutdown,
 	.setsockopt =	pvc_setsockopt,

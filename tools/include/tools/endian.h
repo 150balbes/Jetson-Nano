@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _TOOLS_ENDIAN_H
 #define _TOOLS_ENDIAN_H
 

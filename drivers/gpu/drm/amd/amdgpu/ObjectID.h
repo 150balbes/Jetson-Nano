@@ -90,6 +90,7 @@
 #define ENCODER_OBJECT_ID_INTERNAL_VCE            0x24
 #define ENCODER_OBJECT_ID_INTERNAL_UNIPHY3        0x25
 #define ENCODER_OBJECT_ID_INTERNAL_AMCLK          0x27
+#define ENCODER_OBJECT_ID_VIRTUAL                 0x28
 
 #define ENCODER_OBJECT_ID_GENERAL_EXTERNAL_DVO    0xFF
 
@@ -119,6 +120,7 @@
 #define CONNECTOR_OBJECT_ID_eDP                   0x14
 #define CONNECTOR_OBJECT_ID_MXM                   0x15
 #define CONNECTOR_OBJECT_ID_LVDS_eDP              0x16
+#define CONNECTOR_OBJECT_ID_VIRTUAL               0x17
 
 /* deleted */
 
@@ -136,7 +138,6 @@
 #define GENERIC_OBJECT_ID_PX2_NON_DRIVABLE        0x02
 #define GENERIC_OBJECT_ID_MXM_OPM                 0x03
 #define GENERIC_OBJECT_ID_STEREO_PIN              0x04        //This object could show up from Misc Object table, it follows ATOM_OBJECT format, and contains one ATOM_OBJECT_GPIO_CNTL_RECORD for the stereo pin
-#define GENERIC_OBJECT_ID_BRACKET_LAYOUT          0x05
 
 /****************************************************/
 /* Graphics Object ENUM ID Definition               */
@@ -148,6 +149,7 @@
 #define GRAPH_OBJECT_ENUM_ID5                     0x05
 #define GRAPH_OBJECT_ENUM_ID6                     0x06
 #define GRAPH_OBJECT_ENUM_ID7                     0x07
+#define GRAPH_OBJECT_ENUM_VIRTUAL                 0x08
 
 /****************************************************/
 /* Graphics Object ID Bit definition                */
@@ -408,6 +410,10 @@
 #define ENCODER_HDMI_ANX9805_ENUM_ID1            ( GRAPH_OBJECT_TYPE_ENCODER << OBJECT_TYPE_SHIFT |\
                                                   GRAPH_OBJECT_ENUM_ID1 << ENUM_ID_SHIFT |\
                                                   ENCODER_OBJECT_ID_HDMI_ANX9805 << OBJECT_ID_SHIFT)
+
+#define ENCODER_VIRTUAL_ENUM_VIRTUAL            ( GRAPH_OBJECT_TYPE_ENCODER << OBJECT_TYPE_SHIFT |\
+                                                  GRAPH_OBJECT_ENUM_VIRTUAL << ENUM_ID_SHIFT |\
+                                                  ENCODER_OBJECT_ID_VIRTUAL << OBJECT_ID_SHIFT)
 
 /****************************************************/
 /* Connector Object ID definition - Shared with BIOS */
@@ -715,13 +721,6 @@
                                                  GRAPH_OBJECT_ENUM_ID1 << ENUM_ID_SHIFT |\
                                                  GENERIC_OBJECT_ID_STEREO_PIN << OBJECT_ID_SHIFT)
 
-#define GENERICOBJECT_BRACKET_LAYOUT_ENUM_ID1    (GRAPH_OBJECT_TYPE_GENERIC << OBJECT_TYPE_SHIFT |\
-                                                 GRAPH_OBJECT_ENUM_ID1 << ENUM_ID_SHIFT |\
-                                                 GENERIC_OBJECT_ID_BRACKET_LAYOUT << OBJECT_ID_SHIFT)
-
-#define GENERICOBJECT_BRACKET_LAYOUT_ENUM_ID2    (GRAPH_OBJECT_TYPE_GENERIC << OBJECT_TYPE_SHIFT |\
-                                                 GRAPH_OBJECT_ENUM_ID2 << ENUM_ID_SHIFT |\
-                                                 GENERIC_OBJECT_ID_BRACKET_LAYOUT << OBJECT_ID_SHIFT)
 /****************************************************/
 /* Object Cap definition - Shared with BIOS         */
 /****************************************************/

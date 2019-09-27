@@ -136,9 +136,9 @@ static enum ib_wc_opcode wr_to_wc_opcode(enum ib_wr_opcode opcode)
 	}
 }
 
-void retransmit_timer(struct timer_list *t)
+void retransmit_timer(unsigned long data)
 {
-	struct rxe_qp *qp = from_timer(qp, t, retrans_timer);
+	struct rxe_qp *qp = (struct rxe_qp *)data;
 
 	if (qp->valid) {
 		qp->comp.timeout = 1;
@@ -146,16 +146,14 @@ void retransmit_timer(struct timer_list *t)
 	}
 }
 
-void rxe_comp_queue_pkt(struct rxe_qp *qp, struct sk_buff *skb)
+void rxe_comp_queue_pkt(struct rxe_dev *rxe, struct rxe_qp *qp,
+			struct sk_buff *skb)
 {
 	int must_sched;
 
 	skb_queue_tail(&qp->resp_pkts, skb);
 
 	must_sched = skb_queue_len(&qp->resp_pkts) > 1;
-	if (must_sched != 0)
-		rxe_counter_inc(SKB_TO_PKT(skb)->rxe, RXE_CNT_COMPLETER_SCHED);
-
 	rxe_run_task(&qp->comp.task, must_sched);
 }
 
@@ -191,7 +189,6 @@ static inline void reset_retry_counters(struct rxe_qp *qp)
 {
 	qp->comp.retry_cnt = qp->attr.retry_cnt;
 	qp->comp.rnr_retry = qp->attr.rnr_retry;
-	qp->comp.started_retry = 0;
 }
 
 static inline enum comp_state check_psn(struct rxe_qp *qp,
@@ -227,7 +224,7 @@ static inline enum comp_state check_psn(struct rxe_qp *qp,
 		else
 			return COMPST_DONE;
 	} else if ((diff > 0) && (wqe->mask & WR_ATOMIC_OR_READ_MASK)) {
-		return COMPST_DONE;
+		return COMPST_ERROR_RETRY;
 	} else {
 		return COMPST_CHECK_ACK;
 	}
@@ -239,7 +236,6 @@ static inline enum comp_state check_ack(struct rxe_qp *qp,
 {
 	unsigned int mask = pkt->mask;
 	u8 syn;
-	struct rxe_dev *rxe = to_rdev(qp->ibqp.device);
 
 	/* Check the sequence only */
 	switch (qp->comp.opcode) {
@@ -254,22 +250,11 @@ static inline enum comp_state check_ack(struct rxe_qp *qp,
 	case IB_OPCODE_RC_RDMA_READ_RESPONSE_MIDDLE:
 		if (pkt->opcode != IB_OPCODE_RC_RDMA_READ_RESPONSE_MIDDLE &&
 		    pkt->opcode != IB_OPCODE_RC_RDMA_READ_RESPONSE_LAST) {
-			/* read retries of partial data may restart from
-			 * read response first or response only.
-			 */
-			if ((pkt->psn == wqe->first_psn &&
-			     pkt->opcode ==
-			     IB_OPCODE_RC_RDMA_READ_RESPONSE_FIRST) ||
-			    (wqe->first_psn == wqe->last_psn &&
-			     pkt->opcode ==
-			     IB_OPCODE_RC_RDMA_READ_RESPONSE_ONLY))
-				break;
-
 			return COMPST_ERROR;
 		}
 		break;
 	default:
-		WARN_ON_ONCE(1);
+		WARN_ON(1);
 	}
 
 	/* Check operation validity. */
@@ -282,8 +267,8 @@ static inline enum comp_state check_ack(struct rxe_qp *qp,
 		if ((syn & AETH_TYPE_MASK) != AETH_ACK)
 			return COMPST_ERROR;
 
-		/* fall through */
-		/* (IB_OPCODE_RC_RDMA_READ_RESPONSE_MIDDLE doesn't have an AETH)
+		/* Fall through (IB_OPCODE_RC_RDMA_READ_RESPONSE_MIDDLE
+		 * doesn't have an AETH)
 		 */
 	case IB_OPCODE_RC_RDMA_READ_RESPONSE_MIDDLE:
 		if (wqe->wr.opcode != IB_WR_RDMA_READ &&
@@ -314,7 +299,6 @@ static inline enum comp_state check_ack(struct rxe_qp *qp,
 			return COMPST_WRITE_SEND;
 
 		case AETH_RNR_NAK:
-			rxe_counter_inc(rxe, RXE_CNT_RCV_RNR);
 			return COMPST_RNR_RETRY;
 
 		case AETH_NAK:
@@ -324,8 +308,6 @@ static inline enum comp_state check_ack(struct rxe_qp *qp,
 				 * before
 				 */
 				if (psn_compare(pkt->psn, qp->comp.psn) > 0) {
-					rxe_counter_inc(rxe,
-							RXE_CNT_RCV_SEQ_ERR);
 					qp->comp.psn = pkt->psn;
 					if (qp->req.wait_psn) {
 						qp->req.wait_psn = 0;
@@ -368,9 +350,10 @@ static inline enum comp_state do_read(struct rxe_qp *qp,
 				      struct rxe_pkt_info *pkt,
 				      struct rxe_send_wqe *wqe)
 {
+	struct rxe_dev *rxe = to_rdev(qp->ibqp.device);
 	int ret;
 
-	ret = copy_data(qp->pd, IB_ACCESS_LOCAL_WRITE,
+	ret = copy_data(rxe, qp->pd, IB_ACCESS_LOCAL_WRITE,
 			&wqe->dma, payload_addr(pkt),
 			payload_size(pkt), to_mem_obj, NULL);
 	if (ret)
@@ -386,11 +369,12 @@ static inline enum comp_state do_atomic(struct rxe_qp *qp,
 					struct rxe_pkt_info *pkt,
 					struct rxe_send_wqe *wqe)
 {
+	struct rxe_dev *rxe = to_rdev(qp->ibqp.device);
 	int ret;
 
 	u64 atomic_orig = atmack_orig(pkt);
 
-	ret = copy_data(qp->pd, IB_ACCESS_LOCAL_WRITE,
+	ret = copy_data(rxe, qp->pd, IB_ACCESS_LOCAL_WRITE,
 			&wqe->dma, &atomic_orig,
 			sizeof(u64), to_mem_obj, NULL);
 	if (ret)
@@ -429,33 +413,18 @@ static void make_send_cqe(struct rxe_qp *qp, struct rxe_send_wqe *wqe,
 	}
 }
 
-/*
- * IBA Spec. Section 10.7.3.1 SIGNALED COMPLETIONS
- * ---------8<---------8<-------------
- * ...Note that if a completion error occurs, a Work Completion
- * will always be generated, even if the signaling
- * indicator requests an Unsignaled Completion.
- * ---------8<---------8<-------------
- */
 static void do_complete(struct rxe_qp *qp, struct rxe_send_wqe *wqe)
 {
-	struct rxe_dev *rxe = to_rdev(qp->ibqp.device);
 	struct rxe_cqe cqe;
 
 	if ((qp->sq_sig_type == IB_SIGNAL_ALL_WR) ||
 	    (wqe->wr.send_flags & IB_SEND_SIGNALED) ||
-	    wqe->status != IB_WC_SUCCESS) {
+	    (qp->req.state == QP_STATE_ERROR)) {
 		make_send_cqe(qp, wqe, &cqe);
-		advance_consumer(qp->sq.queue);
 		rxe_cq_post(qp->scq, &cqe, 0);
-	} else {
-		advance_consumer(qp->sq.queue);
 	}
 
-	if (wqe->wr.opcode == IB_WR_SEND ||
-	    wqe->wr.opcode == IB_WR_SEND_WITH_IMM ||
-	    wqe->wr.opcode == IB_WR_SEND_WITH_INV)
-		rxe_counter_inc(rxe, RXE_CNT_RDMA_SEND);
+	advance_consumer(qp->sq.queue);
 
 	/*
 	 * we completed something so let req run again
@@ -517,11 +486,11 @@ static inline enum comp_state complete_wqe(struct rxe_qp *qp,
 					   struct rxe_pkt_info *pkt,
 					   struct rxe_send_wqe *wqe)
 {
-	if (pkt && wqe->state == wqe_state_pending) {
-		if (psn_compare(wqe->last_psn, qp->comp.psn) >= 0) {
-			qp->comp.psn = (wqe->last_psn + 1) & BTH_PSN_MASK;
-			qp->comp.opcode = -1;
-		}
+	qp->comp.opcode = -1;
+
+	if (pkt) {
+		if (psn_compare(pkt->psn, qp->comp.psn) >= 0)
+			qp->comp.psn = (pkt->psn + 1) & BTH_PSN_MASK;
 
 		if (qp->req.wait_psn) {
 			qp->req.wait_psn = 0;
@@ -534,41 +503,55 @@ static inline enum comp_state complete_wqe(struct rxe_qp *qp,
 	return COMPST_GET_WQE;
 }
 
-static void rxe_drain_resp_pkts(struct rxe_qp *qp, bool notify)
-{
-	struct sk_buff *skb;
-	struct rxe_send_wqe *wqe;
-
-	while ((skb = skb_dequeue(&qp->resp_pkts))) {
-		rxe_drop_ref(qp);
-		kfree_skb(skb);
-	}
-
-	while ((wqe = queue_head(qp->sq.queue))) {
-		if (notify) {
-			wqe->status = IB_WC_WR_FLUSH_ERR;
-			do_complete(qp, wqe);
-		} else {
-			advance_consumer(qp->sq.queue);
-		}
-	}
-}
-
 int rxe_completer(void *arg)
 {
 	struct rxe_qp *qp = (struct rxe_qp *)arg;
-	struct rxe_dev *rxe = to_rdev(qp->ibqp.device);
-	struct rxe_send_wqe *wqe = NULL;
+	struct rxe_send_wqe *wqe = wqe;
 	struct sk_buff *skb = NULL;
 	struct rxe_pkt_info *pkt = NULL;
 	enum comp_state state;
 
-	rxe_add_ref(qp);
+	if (!qp->valid) {
+		while ((skb = skb_dequeue(&qp->resp_pkts))) {
+			rxe_drop_ref(qp);
+			kfree_skb(skb);
+		}
+		skb = NULL;
+		pkt = NULL;
 
-	if (!qp->valid || qp->req.state == QP_STATE_ERROR ||
-	    qp->req.state == QP_STATE_RESET) {
-		rxe_drain_resp_pkts(qp, qp->valid &&
-				    qp->req.state == QP_STATE_ERROR);
+		while (queue_head(qp->sq.queue))
+			advance_consumer(qp->sq.queue);
+
+		goto exit;
+	}
+
+	if (qp->req.state == QP_STATE_ERROR) {
+		while ((skb = skb_dequeue(&qp->resp_pkts))) {
+			rxe_drop_ref(qp);
+			kfree_skb(skb);
+		}
+		skb = NULL;
+		pkt = NULL;
+
+		while ((wqe = queue_head(qp->sq.queue))) {
+			wqe->status = IB_WC_WR_FLUSH_ERR;
+			do_complete(qp, wqe);
+		}
+
+		goto exit;
+	}
+
+	if (qp->req.state == QP_STATE_RESET) {
+		while ((skb = skb_dequeue(&qp->resp_pkts))) {
+			rxe_drop_ref(qp);
+			kfree_skb(skb);
+		}
+		skb = NULL;
+		pkt = NULL;
+
+		while (queue_head(qp->sq.queue))
+			advance_consumer(qp->sq.queue);
+
 		goto exit;
 	}
 
@@ -654,7 +637,6 @@ int rxe_completer(void *arg)
 			if (pkt) {
 				rxe_drop_ref(pkt->qp);
 				kfree_skb(skb);
-				skb = NULL;
 			}
 			goto done;
 
@@ -690,23 +672,8 @@ int rxe_completer(void *arg)
 			 */
 
 			/* there is nothing to retry in this case */
-			if (!wqe || (wqe->state == wqe_state_posted)) {
+			if (!wqe || (wqe->state == wqe_state_posted))
 				goto exit;
-			}
-
-			/* if we've started a retry, don't start another
-			 * retry sequence, unless this is a timeout.
-			 */
-			if (qp->comp.started_retry &&
-			    !qp->comp.timeout_retry) {
-				if (pkt) {
-					rxe_drop_ref(pkt->qp);
-					kfree_skb(skb);
-					skb = NULL;
-				}
-
-				goto done;
-			}
 
 			if (qp->comp.retry_cnt > 0) {
 				if (qp->comp.retry_cnt != 7)
@@ -719,25 +686,20 @@ int rxe_completer(void *arg)
 				if (psn_compare(qp->req.psn,
 						qp->comp.psn) > 0) {
 					/* tell the requester to retry the
-					 * send queue next time around
+					 * send send queue next time around
 					 */
-					rxe_counter_inc(rxe,
-							RXE_CNT_COMP_RETRY);
 					qp->req.need_retry = 1;
-					qp->comp.started_retry = 1;
 					rxe_run_task(&qp->req.task, 1);
 				}
 
 				if (pkt) {
 					rxe_drop_ref(pkt->qp);
 					kfree_skb(skb);
-					skb = NULL;
 				}
 
-				goto done;
+				goto exit;
 
 			} else {
-				rxe_counter_inc(rxe, RXE_CNT_RETRY_EXCEEDED);
 				wqe->status = IB_WC_RETRY_EXC_ERR;
 				state = COMPST_ERROR;
 			}
@@ -754,27 +716,20 @@ int rxe_completer(void *arg)
 				mod_timer(&qp->rnr_nak_timer,
 					  jiffies + rnrnak_jiffies(aeth_syn(pkt)
 						& ~AETH_TYPE_MASK));
-				rxe_drop_ref(pkt->qp);
-				kfree_skb(skb);
-				skb = NULL;
 				goto exit;
 			} else {
-				rxe_counter_inc(rxe,
-						RXE_CNT_RNR_RETRY_EXCEEDED);
 				wqe->status = IB_WC_RNR_RETRY_EXC_ERR;
 				state = COMPST_ERROR;
 			}
 			break;
 
 		case COMPST_ERROR:
-			WARN_ON_ONCE(wqe->status == IB_WC_SUCCESS);
 			do_complete(qp, wqe);
 			rxe_qp_error(qp);
 
 			if (pkt) {
 				rxe_drop_ref(pkt->qp);
 				kfree_skb(skb);
-				skb = NULL;
 			}
 
 			goto exit;
@@ -785,15 +740,11 @@ exit:
 	/* we come here if we are done with processing and want the task to
 	 * exit from the loop calling us
 	 */
-	WARN_ON_ONCE(skb);
-	rxe_drop_ref(qp);
 	return -EAGAIN;
 
 done:
 	/* we come here if we have processed a packet we want the task to call
 	 * us again to see if there is anything else to do
 	 */
-	WARN_ON_ONCE(skb);
-	rxe_drop_ref(qp);
 	return 0;
 }

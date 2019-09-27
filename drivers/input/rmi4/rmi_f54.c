@@ -1,7 +1,10 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2012-2015 Synaptics Incorporated
  * Copyright (C) 2016 Zodiac Inflight Innovations
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License version 2 as published by
+ * the Free Software Foundation.
  */
 
 #include <linux/kernel.h>
@@ -27,6 +30,9 @@
 /* F54 commands */
 #define F54_GET_REPORT          1
 #define F54_FORCE_CAL           2
+
+/* Fixed sizes of reports */
+#define F54_QUERY_LEN			27
 
 /* F54 capabilities */
 #define F54_CAP_BASELINE	(1 << 2)
@@ -70,7 +76,7 @@ enum rmi_f54_report_type {
 	F54_MAX_REPORT_TYPE,
 };
 
-static const char * const rmi_f54_report_type_names[] = {
+const char *rmi_f54_report_type_names[] = {
 	[F54_REPORT_NONE]		= "Unknown",
 	[F54_8BIT_IMAGE]		= "Normalized 8-Bit Image",
 	[F54_16BIT_IMAGE]		= "Normalized 16-Bit Image",
@@ -89,6 +95,7 @@ struct rmi_f54_reports {
 struct f54_data {
 	struct rmi_function *fn;
 
+	u8 qry[F54_QUERY_LEN];
 	u8 num_rx_electrodes;
 	u8 num_tx_electrodes;
 	u8 capabilities;
@@ -210,10 +217,8 @@ unlock:
 
 static size_t rmi_f54_get_report_size(struct f54_data *f54)
 {
-	struct rmi_device *rmi_dev = f54->fn->rmi_dev;
-	struct rmi_driver_data *drv_data = dev_get_drvdata(&rmi_dev->dev);
-	u8 rx = drv_data->num_rx_electrodes ? : f54->num_rx_electrodes;
-	u8 tx = drv_data->num_tx_electrodes ? : f54->num_tx_electrodes;
+	u8 rx = f54->num_rx_electrodes ? : f54->num_rx_electrodes;
+	u8 tx = f54->num_tx_electrodes ? : f54->num_tx_electrodes;
 	size_t size;
 
 	switch (rmi_f54_get_reptype(f54, f54->input)) {
@@ -397,10 +402,6 @@ static int rmi_f54_vidioc_enum_input(struct file *file, void *priv,
 
 static int rmi_f54_set_input(struct f54_data *f54, unsigned int i)
 {
-	struct rmi_device *rmi_dev = f54->fn->rmi_dev;
-	struct rmi_driver_data *drv_data = dev_get_drvdata(&rmi_dev->dev);
-	u8 rx = drv_data->num_rx_electrodes ? : f54->num_rx_electrodes;
-	u8 tx = drv_data->num_tx_electrodes ? : f54->num_tx_electrodes;
 	struct v4l2_pix_format *f = &f54->format;
 	enum rmi_f54_report_type reptype;
 	int ret;
@@ -415,8 +416,8 @@ static int rmi_f54_set_input(struct f54_data *f54, unsigned int i)
 
 	f54->input = i;
 
-	f->width = rx;
-	f->height = tx;
+	f->width = f54->num_rx_electrodes;
+	f->height = f54->num_tx_electrodes;
 	f->field = V4L2_FIELD_NONE;
 	f->colorspace = V4L2_COLORSPACE_RAW;
 	f->bytesperline = f->width * sizeof(u16);
@@ -453,15 +454,25 @@ static int rmi_f54_vidioc_fmt(struct file *file, void *priv,
 static int rmi_f54_vidioc_enum_fmt(struct file *file, void *priv,
 				   struct v4l2_fmtdesc *fmt)
 {
-	struct f54_data *f54 = video_drvdata(file);
-
 	if (fmt->type != V4L2_BUF_TYPE_VIDEO_CAPTURE)
 		return -EINVAL;
 
-	if (fmt->index)
-		return -EINVAL;
+	switch (fmt->index) {
+	case 0:
+		fmt->pixelformat = V4L2_TCH_FMT_DELTA_TD16;
+		break;
 
-	fmt->pixelformat = f54->format.pixelformat;
+	case 1:
+		fmt->pixelformat = V4L2_TCH_FMT_DELTA_TD08;
+		break;
+
+	case 2:
+		fmt->pixelformat = V4L2_TCH_FMT_TU16;
+		break;
+
+	default:
+		return -EINVAL;
+	}
 
 	return 0;
 }
@@ -597,6 +608,11 @@ error:
 	mutex_unlock(&f54->data_mutex);
 }
 
+static int rmi_f54_attention(struct rmi_function *fn, unsigned long *irqbits)
+{
+	return 0;
+}
+
 static int rmi_f54_config(struct rmi_function *fn)
 {
 	struct rmi_driver *drv = fn->rmi_dev->driver;
@@ -610,23 +626,22 @@ static int rmi_f54_detect(struct rmi_function *fn)
 {
 	int error;
 	struct f54_data *f54;
-	u8 buf[6];
 
 	f54 = dev_get_drvdata(&fn->dev);
 
 	error = rmi_read_block(fn->rmi_dev, fn->fd.query_base_addr,
-			       buf, sizeof(buf));
+			       &f54->qry, sizeof(f54->qry));
 	if (error) {
 		dev_err(&fn->dev, "%s: Failed to query F54 properties\n",
 			__func__);
 		return error;
 	}
 
-	f54->num_rx_electrodes = buf[0];
-	f54->num_tx_electrodes = buf[1];
-	f54->capabilities = buf[2];
-	f54->clock_rate = buf[3] | (buf[4] << 8);
-	f54->family = buf[5];
+	f54->num_rx_electrodes = f54->qry[0];
+	f54->num_tx_electrodes = f54->qry[1];
+	f54->capabilities = f54->qry[2];
+	f54->clock_rate = f54->qry[3] | (f54->qry[4] << 8);
+	f54->family = f54->qry[5];
 
 	rmi_dbg(RMI_DEBUG_FN, &fn->dev, "F54 num_rx_electrodes: %d\n",
 		f54->num_rx_electrodes);
@@ -667,7 +682,7 @@ static int rmi_f54_probe(struct rmi_function *fn)
 	rx = f54->num_rx_electrodes;
 	tx = f54->num_tx_electrodes;
 	f54->report_data = devm_kzalloc(&fn->dev,
-					array3_size(tx, rx, sizeof(u16)),
+					sizeof(u16) * tx * rx,
 					GFP_KERNEL);
 	if (f54->report_data == NULL)
 		return -ENOMEM;
@@ -679,7 +694,6 @@ static int rmi_f54_probe(struct rmi_function *fn)
 		return -ENOMEM;
 
 	rmi_f54_create_input_map(f54);
-	rmi_f54_set_input(f54, 0);
 
 	/* register video device */
 	strlcpy(f54->v4l2.name, F54_NAME, sizeof(f54->v4l2.name));
@@ -739,5 +753,6 @@ struct rmi_function_handler rmi_f54_handler = {
 	.func = 0x54,
 	.probe = rmi_f54_probe,
 	.config = rmi_f54_config,
+	.attention = rmi_f54_attention,
 	.remove = rmi_f54_remove,
 };

@@ -1,5 +1,4 @@
 #!/bin/bash
-# SPDX-License-Identifier: GPL-2.0+
 #
 # Given the results directories for previous KVM-based torture runs,
 # check the build and console output for errors.  Given a directory
@@ -7,14 +6,26 @@
 #
 # Usage: kvm-recheck.sh resdir ...
 #
-# Returns status reflecting the success or not of the last run specified.
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 2 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, you can access it online at
+# http://www.gnu.org/licenses/gpl-2.0.html.
 #
 # Copyright (C) IBM Corporation, 2011
 #
-# Authors: Paul E. McKenney <paulmck@linux.ibm.com>
+# Authors: Paul E. McKenney <paulmck@linux.vnet.ibm.com>
 
 PATH=`pwd`/tools/testing/selftests/rcutorture/bin:$PATH; export PATH
-. functions.sh
+. tools/testing/selftests/rcutorture/bin/functions.sh
 for rd in "$@"
 do
 	firsttime=1
@@ -28,24 +39,19 @@ do
 			head -1 $resdir/log
 		fi
 		TORTURE_SUITE="`cat $i/../TORTURE_SUITE`"
-		rm -f $i/console.log.*.diags
 		kvm-recheck-${TORTURE_SUITE}.sh $i
-		if test -f "$i/qemu-retval" && test "`cat $i/qemu-retval`" -ne 0 && test "`cat $i/qemu-retval`" -ne 137
+		if test -f "$i/console.log"
 		then
-			echo QEMU error, output:
-			cat $i/qemu-output
-		elif test -f "$i/console.log"
-		then
-			if test -f "$i/qemu-retval" && test "`cat $i/qemu-retval`" -eq 137
-			then
-				echo QEMU killed
-			fi
 			configcheck.sh $i/.config $i/ConfigFragment
 			if test -r $i/Make.oldconfig.err
 			then
 				cat $i/Make.oldconfig.err
 			fi
 			parse-build.sh $i/Make.out $configfile
+			if test "$TORTURE_SUITE" != rcuperf
+			then
+				parse-torture.sh $i/console.log $configfile
+			fi
 			parse-console.sh $i/console.log $configfile
 			if test -r $i/Warnings
 			then
@@ -68,4 +74,3 @@ do
 		fi
 	done
 done
-EDITOR=echo kvm-find-errors.sh "${@: -1}" > /dev/null 2>&1

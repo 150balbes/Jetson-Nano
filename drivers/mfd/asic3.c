@@ -1,8 +1,11 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * driver/mfd/asic3.c
  *
  * Compaq ASIC3 support.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  *
  * Copyright 2001 Compaq Computer Corporation.
  * Copyright 2004-2005 Phil Blundell
@@ -10,6 +13,7 @@
  *
  * Authors: Phil Blundell <pb@handhelds.org>,
  *	    Samuel Ortiz <sameo@openedhand.com>
+ *
  */
 
 #include <linux/kernel.h>
@@ -26,8 +30,6 @@
 #include <linux/mfd/core.h>
 #include <linux/mfd/ds1wm.h>
 #include <linux/mfd/tmio.h>
-
-#include <linux/mmc/host.h>
 
 enum {
 	ASIC3_CLOCK_SPI,
@@ -76,7 +78,7 @@ struct asic3 {
 	unsigned int bus_shift;
 	unsigned int irq_nr;
 	unsigned int irq_base;
-	raw_spinlock_t lock;
+	spinlock_t lock;
 	u16 irq_bothedge[4];
 	struct gpio_chip gpio;
 	struct device *dev;
@@ -106,14 +108,14 @@ static void asic3_set_register(struct asic3 *asic, u32 reg, u32 bits, bool set)
 	unsigned long flags;
 	u32 val;
 
-	raw_spin_lock_irqsave(&asic->lock, flags);
+	spin_lock_irqsave(&asic->lock, flags);
 	val = asic3_read_register(asic, reg);
 	if (set)
 		val |= bits;
 	else
 		val &= ~bits;
 	asic3_write_register(asic, reg, val);
-	raw_spin_unlock_irqrestore(&asic->lock, flags);
+	spin_unlock_irqrestore(&asic->lock, flags);
 }
 
 /* IRQs */
@@ -127,13 +129,13 @@ static void asic3_irq_flip_edge(struct asic3 *asic,
 	u16 edge;
 	unsigned long flags;
 
-	raw_spin_lock_irqsave(&asic->lock, flags);
+	spin_lock_irqsave(&asic->lock, flags);
 	edge = asic3_read_register(asic,
 				   base + ASIC3_GPIO_EDGE_TRIGGER);
 	edge ^= bit;
 	asic3_write_register(asic,
 			     base + ASIC3_GPIO_EDGE_TRIGGER, edge);
-	raw_spin_unlock_irqrestore(&asic->lock, flags);
+	spin_unlock_irqrestore(&asic->lock, flags);
 }
 
 static void asic3_irq_demux(struct irq_desc *desc)
@@ -149,10 +151,10 @@ static void asic3_irq_demux(struct irq_desc *desc)
 		u32 status;
 		int bank;
 
-		raw_spin_lock_irqsave(&asic->lock, flags);
+		spin_lock_irqsave(&asic->lock, flags);
 		status = asic3_read_register(asic,
 					     ASIC3_OFFSET(INTR, P_INT_STAT));
-		raw_spin_unlock_irqrestore(&asic->lock, flags);
+		spin_unlock_irqrestore(&asic->lock, flags);
 
 		/* Check all ten register bits */
 		if ((status & 0x3ff) == 0)
@@ -165,7 +167,7 @@ static void asic3_irq_demux(struct irq_desc *desc)
 
 				base = ASIC3_GPIO_A_BASE
 				       + bank * ASIC3_GPIO_BASE_INCR;
-				raw_spin_lock_irqsave(&asic->lock, flags);
+				spin_lock_irqsave(&asic->lock, flags);
 				istat = asic3_read_register(asic,
 							    base +
 							    ASIC3_GPIO_INT_STATUS);
@@ -173,7 +175,7 @@ static void asic3_irq_demux(struct irq_desc *desc)
 				asic3_write_register(asic,
 						     base +
 						     ASIC3_GPIO_INT_STATUS, 0);
-				raw_spin_unlock_irqrestore(&asic->lock, flags);
+				spin_unlock_irqrestore(&asic->lock, flags);
 
 				for (i = 0; i < ASIC3_GPIOS_PER_BANK; i++) {
 					int bit = (1 << i);
@@ -228,11 +230,11 @@ static void asic3_mask_gpio_irq(struct irq_data *data)
 	bank = asic3_irq_to_bank(asic, data->irq);
 	index = asic3_irq_to_index(asic, data->irq);
 
-	raw_spin_lock_irqsave(&asic->lock, flags);
+	spin_lock_irqsave(&asic->lock, flags);
 	val = asic3_read_register(asic, bank + ASIC3_GPIO_MASK);
 	val |= 1 << index;
 	asic3_write_register(asic, bank + ASIC3_GPIO_MASK, val);
-	raw_spin_unlock_irqrestore(&asic->lock, flags);
+	spin_unlock_irqrestore(&asic->lock, flags);
 }
 
 static void asic3_mask_irq(struct irq_data *data)
@@ -241,7 +243,7 @@ static void asic3_mask_irq(struct irq_data *data)
 	int regval;
 	unsigned long flags;
 
-	raw_spin_lock_irqsave(&asic->lock, flags);
+	spin_lock_irqsave(&asic->lock, flags);
 	regval = asic3_read_register(asic,
 				     ASIC3_INTR_BASE +
 				     ASIC3_INTR_INT_MASK);
@@ -253,7 +255,7 @@ static void asic3_mask_irq(struct irq_data *data)
 			     ASIC3_INTR_BASE +
 			     ASIC3_INTR_INT_MASK,
 			     regval);
-	raw_spin_unlock_irqrestore(&asic->lock, flags);
+	spin_unlock_irqrestore(&asic->lock, flags);
 }
 
 static void asic3_unmask_gpio_irq(struct irq_data *data)
@@ -265,11 +267,11 @@ static void asic3_unmask_gpio_irq(struct irq_data *data)
 	bank = asic3_irq_to_bank(asic, data->irq);
 	index = asic3_irq_to_index(asic, data->irq);
 
-	raw_spin_lock_irqsave(&asic->lock, flags);
+	spin_lock_irqsave(&asic->lock, flags);
 	val = asic3_read_register(asic, bank + ASIC3_GPIO_MASK);
 	val &= ~(1 << index);
 	asic3_write_register(asic, bank + ASIC3_GPIO_MASK, val);
-	raw_spin_unlock_irqrestore(&asic->lock, flags);
+	spin_unlock_irqrestore(&asic->lock, flags);
 }
 
 static void asic3_unmask_irq(struct irq_data *data)
@@ -278,7 +280,7 @@ static void asic3_unmask_irq(struct irq_data *data)
 	int regval;
 	unsigned long flags;
 
-	raw_spin_lock_irqsave(&asic->lock, flags);
+	spin_lock_irqsave(&asic->lock, flags);
 	regval = asic3_read_register(asic,
 				     ASIC3_INTR_BASE +
 				     ASIC3_INTR_INT_MASK);
@@ -290,7 +292,7 @@ static void asic3_unmask_irq(struct irq_data *data)
 			     ASIC3_INTR_BASE +
 			     ASIC3_INTR_INT_MASK,
 			     regval);
-	raw_spin_unlock_irqrestore(&asic->lock, flags);
+	spin_unlock_irqrestore(&asic->lock, flags);
 }
 
 static int asic3_gpio_irq_type(struct irq_data *data, unsigned int type)
@@ -304,7 +306,7 @@ static int asic3_gpio_irq_type(struct irq_data *data, unsigned int type)
 	index = asic3_irq_to_index(asic, data->irq);
 	bit = 1<<index;
 
-	raw_spin_lock_irqsave(&asic->lock, flags);
+	spin_lock_irqsave(&asic->lock, flags);
 	level = asic3_read_register(asic,
 				    bank + ASIC3_GPIO_LEVEL_TRIGGER);
 	edge = asic3_read_register(asic,
@@ -346,7 +348,7 @@ static int asic3_gpio_irq_type(struct irq_data *data, unsigned int type)
 			     edge);
 	asic3_write_register(asic, bank + ASIC3_GPIO_TRIGGER_TYPE,
 			     trigger);
-	raw_spin_unlock_irqrestore(&asic->lock, flags);
+	spin_unlock_irqrestore(&asic->lock, flags);
 	return 0;
 }
 
@@ -453,7 +455,7 @@ static int asic3_gpio_direction(struct gpio_chip *chip,
 		return -EINVAL;
 	}
 
-	raw_spin_lock_irqsave(&asic->lock, flags);
+	spin_lock_irqsave(&asic->lock, flags);
 
 	out_reg = asic3_read_register(asic, gpio_base + ASIC3_GPIO_DIRECTION);
 
@@ -465,7 +467,7 @@ static int asic3_gpio_direction(struct gpio_chip *chip,
 
 	asic3_write_register(asic, gpio_base + ASIC3_GPIO_DIRECTION, out_reg);
 
-	raw_spin_unlock_irqrestore(&asic->lock, flags);
+	spin_unlock_irqrestore(&asic->lock, flags);
 
 	return 0;
 
@@ -522,7 +524,7 @@ static void asic3_gpio_set(struct gpio_chip *chip,
 
 	mask = ASIC3_GPIO_TO_MASK(offset);
 
-	raw_spin_lock_irqsave(&asic->lock, flags);
+	spin_lock_irqsave(&asic->lock, flags);
 
 	out_reg = asic3_read_register(asic, gpio_base + ASIC3_GPIO_OUT);
 
@@ -533,7 +535,7 @@ static void asic3_gpio_set(struct gpio_chip *chip,
 
 	asic3_write_register(asic, gpio_base + ASIC3_GPIO_OUT, out_reg);
 
-	raw_spin_unlock_irqrestore(&asic->lock, flags);
+	spin_unlock_irqrestore(&asic->lock, flags);
 }
 
 static int asic3_gpio_to_irq(struct gpio_chip *chip, unsigned offset)
@@ -609,13 +611,13 @@ static void asic3_clk_enable(struct asic3 *asic, struct asic3_clk *clk)
 	unsigned long flags;
 	u32 cdex;
 
-	raw_spin_lock_irqsave(&asic->lock, flags);
+	spin_lock_irqsave(&asic->lock, flags);
 	if (clk->enabled++ == 0) {
 		cdex = asic3_read_register(asic, ASIC3_OFFSET(CLOCK, CDEX));
 		cdex |= clk->cdex;
 		asic3_write_register(asic, ASIC3_OFFSET(CLOCK, CDEX), cdex);
 	}
-	raw_spin_unlock_irqrestore(&asic->lock, flags);
+	spin_unlock_irqrestore(&asic->lock, flags);
 }
 
 static void asic3_clk_disable(struct asic3 *asic, struct asic3_clk *clk)
@@ -625,13 +627,13 @@ static void asic3_clk_disable(struct asic3 *asic, struct asic3_clk *clk)
 
 	WARN_ON(clk->enabled == 0);
 
-	raw_spin_lock_irqsave(&asic->lock, flags);
+	spin_lock_irqsave(&asic->lock, flags);
 	if (--clk->enabled == 0) {
 		cdex = asic3_read_register(asic, ASIC3_OFFSET(CLOCK, CDEX));
 		cdex &= ~clk->cdex;
 		asic3_write_register(asic, ASIC3_OFFSET(CLOCK, CDEX), cdex);
 	}
-	raw_spin_unlock_irqrestore(&asic->lock, flags);
+	spin_unlock_irqrestore(&asic->lock, flags);
 }
 
 /* MFD cells (SPI, PWM, LED, DS1WM, MMC) */
@@ -717,7 +719,6 @@ static void asic3_mmc_clk_div(struct platform_device *pdev, int state)
 
 static struct tmio_mmc_data asic3_mmc_data = {
 	.hclk           = 24576000,
-	.ocr_mask	= MMC_VDD_32_33 | MMC_VDD_33_34,
 	.set_pwr        = asic3_mmc_pwr,
 	.set_clk_div    = asic3_mmc_clk_div,
 };
@@ -962,7 +963,7 @@ static int __init asic3_probe(struct platform_device *pdev)
 	if (!asic)
 		return -ENOMEM;
 
-	raw_spin_lock_init(&asic->lock);
+	spin_lock_init(&asic->lock);
 	platform_set_drvdata(pdev, asic);
 	asic->dev = &pdev->dev;
 

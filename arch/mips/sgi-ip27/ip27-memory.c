@@ -15,9 +15,10 @@
 #include <linux/memblock.h>
 #include <linux/mm.h>
 #include <linux/mmzone.h>
-#include <linux/export.h>
+#include <linux/module.h>
 #include <linux/nodemask.h>
 #include <linux/swap.h>
+#include <linux/bootmem.h>
 #include <linux/pfn.h>
 #include <linux/highmem.h>
 #include <asm/page.h>
@@ -44,7 +45,7 @@ static int is_fine_dirmode(void)
 	return ((LOCAL_HUB_L(NI_STATUS_REV_ID) & NSRI_REGIONSIZE_MASK) >> NSRI_REGIONSIZE_SHFT) & REGIONSIZE_FINE;
 }
 
-static u64 get_region(cnodeid_t cnode)
+static hubreg_t get_region(cnodeid_t cnode)
 {
 	if (fine_mode)
 		return COMPACT_TO_NASID_NODEID(cnode) >> NASID_TO_FINEREG_SHFT;
@@ -52,9 +53,9 @@ static u64 get_region(cnodeid_t cnode)
 		return COMPACT_TO_NASID_NODEID(cnode) >> NASID_TO_COARSEREG_SHFT;
 }
 
-static u64 region_mask;
+static hubreg_t region_mask;
 
-static void gen_region_mask(u64 *region_mask)
+static void gen_region_mask(hubreg_t *region_mask)
 {
 	cnodeid_t cnode;
 
@@ -154,11 +155,11 @@ static int __init compute_node_distance(nasid_t nasid_a, nasid_t nasid_b)
 	}
 
 	if (router_a == NULL) {
-		pr_info("node_distance: router_a NULL\n");
+		printk("node_distance: router_a NULL\n");
 		return -1;
 	}
 	if (router_b == NULL) {
-		pr_info("node_distance: router_b NULL\n");
+		printk("node_distance: router_b NULL\n");
 		return -1;
 	}
 
@@ -203,17 +204,17 @@ static void __init dump_topology(void)
 	klrou_t *router;
 	cnodeid_t row, col;
 
-	pr_info("************** Topology ********************\n");
+	printk("************** Topology ********************\n");
 
-	pr_info("    ");
+	printk("    ");
 	for_each_online_node(col)
-		pr_cont("%02d ", col);
-	pr_cont("\n");
+		printk("%02d ", col);
+	printk("\n");
 	for_each_online_node(row) {
-		pr_info("%02d  ", row);
+		printk("%02d  ", row);
 		for_each_online_node(col)
-			pr_cont("%2d ", node_distance(row, col));
-		pr_cont("\n");
+			printk("%2d ", node_distance(row, col));
+		printk("\n");
 	}
 
 	for_each_online_node(cnode) {
@@ -230,7 +231,7 @@ static void __init dump_topology(void)
 		do {
 			if (brd->brd_flags & DUPLICATE_BOARD)
 				continue;
-			pr_cont("Router %d:", router_num);
+			printk("Router %d:", router_num);
 			router_num++;
 
 			router = (klrou_t *)NODE_OFFSET_TO_K0(NASID_GET(brd), brd->brd_compts[0]);
@@ -244,11 +245,11 @@ static void __init dump_topology(void)
 					router->rou_port[port].port_offset);
 
 				if (dest_brd->brd_type == KLTYPE_IP27)
-					pr_cont(" %d", dest_brd->brd_nasid);
+					printk(" %d", dest_brd->brd_nasid);
 				if (dest_brd->brd_type == KLTYPE_ROUTER)
-					pr_cont(" r");
+					printk(" r");
 			}
-			pr_cont("\n");
+			printk("\n");
 
 		} while ( (brd = find_lboard_class(KLCF_NEXT(brd), KLTYPE_ROUTER)) );
 	}
@@ -373,7 +374,7 @@ static void __init szmem(void)
 
 			if ((nodebytes >> PAGE_SHIFT) * (sizeof(struct page)) >
 						(slot0sz << PAGE_SHIFT)) {
-				pr_info("Ignoring slot %d onwards on node %d\n",
+				printk("Ignoring slot %d onwards on node %d\n",
 								slot, node);
 				slot = MAX_MEM_SLOTS;
 				continue;
@@ -388,6 +389,7 @@ static void __init node_mem_init(cnodeid_t node)
 {
 	unsigned long slot_firstpfn = slot_getbasepfn(node, 0);
 	unsigned long slot_freepfn = node_getfirstfree(node);
+	unsigned long bootmap_size;
 	unsigned long start_pfn, end_pfn;
 
 	get_pfn_range_for_nid(node, &start_pfn, &end_pfn);
@@ -398,6 +400,7 @@ static void __init node_mem_init(cnodeid_t node)
 	__node_data[node] = __va(slot_freepfn << PAGE_SHIFT);
 	memset(__node_data[node], 0, PAGE_SIZE);
 
+	NODE_DATA(node)->bdata = &bootmem_node_data[node];
 	NODE_DATA(node)->node_start_pfn = start_pfn;
 	NODE_DATA(node)->node_spanned_pages = end_pfn - start_pfn;
 
@@ -406,11 +409,12 @@ static void __init node_mem_init(cnodeid_t node)
 	slot_freepfn += PFN_UP(sizeof(struct pglist_data) +
 			       sizeof(struct hub_data));
 
+	bootmap_size = init_bootmem_node(NODE_DATA(node), slot_freepfn,
+					start_pfn, end_pfn);
 	free_bootmem_with_active_regions(node, end_pfn);
-
-	memblock_reserve(slot_firstpfn << PAGE_SHIFT,
-			 ((slot_freepfn - slot_firstpfn) << PAGE_SHIFT));
-
+	reserve_bootmem_node(NODE_DATA(node), slot_firstpfn << PAGE_SHIFT,
+		((slot_freepfn - slot_firstpfn) << PAGE_SHIFT) + bootmap_size,
+		BOOTMEM_DEFAULT);
 	sparse_memory_present_with_active_regions(node);
 }
 
@@ -435,7 +439,6 @@ void __init prom_meminit(void)
 
 	mlreset();
 	szmem();
-	max_low_pfn = PHYS_PFN(memblock_end_of_DRAM());
 
 	for (node = 0; node < MAX_COMPACT_NODES; node++) {
 		if (node_online(node)) {
@@ -456,8 +459,18 @@ extern void setup_zero_pages(void);
 void __init paging_init(void)
 {
 	unsigned long zones_size[MAX_NR_ZONES] = {0, };
+	unsigned node;
 
 	pagetable_init();
+
+	for_each_online_node(node) {
+		unsigned long start_pfn, end_pfn;
+
+		get_pfn_range_for_nid(node, &start_pfn, &end_pfn);
+
+		if (end_pfn > max_low_pfn)
+			max_low_pfn = end_pfn;
+	}
 	zones_size[ZONE_NORMAL] = max_low_pfn;
 	free_area_init_nodes(zones_size);
 }
@@ -465,7 +478,7 @@ void __init paging_init(void)
 void __init mem_init(void)
 {
 	high_memory = (void *) __va(get_num_physpages() << PAGE_SHIFT);
-	memblock_free_all();
+	free_all_bootmem();
 	setup_zero_pages();	/* This comes from node 0 */
 	mem_init_print_info(NULL);
 }

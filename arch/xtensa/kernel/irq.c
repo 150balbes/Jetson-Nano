@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * linux/arch/xtensa/kernel/irq.c
  *
@@ -26,7 +25,7 @@
 #include <linux/of.h>
 
 #include <asm/mxregs.h>
-#include <linux/uaccess.h>
+#include <asm/uaccess.h>
 #include <asm/platform.h>
 
 DECLARE_PER_CPU(unsigned long, nmi_count);
@@ -158,6 +157,7 @@ void __init init_IRQ(void)
 #ifdef CONFIG_SMP
 	ipi_init();
 #endif
+	variant_init_irq();
 }
 
 #ifdef CONFIG_HOTPLUG_CPU

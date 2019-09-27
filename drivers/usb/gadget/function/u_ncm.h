@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * u_ncm.h
  *
@@ -7,7 +6,11 @@
  * Copyright (c) 2013 Samsung Electronics Co., Ltd.
  *		http://www.samsung.com
  *
- * Author: Andrzej Pietrasiewicz <andrzejtp2010@gmail.com>
+ * Author: Andrzej Pietrasiewicz <andrzej.p@samsung.com>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  */
 
 #ifndef U_NCM_H
@@ -20,9 +23,6 @@ struct f_ncm_opts {
 	struct net_device		*net;
 	bool				bound;
 
-	struct config_group		*ncm_interf_group;
-	struct usb_os_desc		ncm_os_desc;
-	char				ncm_ext_compat_id[16];
 	/*
 	 * Read/write access to configfs attributes is handled by configfs.
 	 *

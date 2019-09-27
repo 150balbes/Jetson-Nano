@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * arch/arm/mach-ks8695/include/mach/hardware.h
  *
@@ -6,12 +5,16 @@
  * Copyright (C) 2006 Simtec Electronics
  *
  * KS8695 - Memory Map definitions
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
 */
 
 #ifndef __ASM_ARCH_HARDWARE_H
 #define __ASM_ARCH_HARDWARE_H
 
-#include <linux/sizes.h>
+#include <asm/sizes.h>
 
 /*
  * Clocks are derived from MCLK, which is 25MHz

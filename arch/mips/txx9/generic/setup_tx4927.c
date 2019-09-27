@@ -183,14 +183,15 @@ void __init tx4927_setup(void)
 	if (!(____raw_readq(&tx4927_ccfgptr->ccfg) & TX4927_CCFG_PCIARB))
 		txx9_clear64(&tx4927_ccfgptr->pcfg, TX4927_PCFG_PCICLKEN_ALL);
 
-	pr_info("%s -- %dMHz(M%dMHz) CRIR:%08x CCFG:%llx PCFG:%llx\n",
-		txx9_pcode_str, (cpuclk + 500000) / 1000000,
-		(txx9_master_clock + 500000) / 1000000,
-		(__u32)____raw_readq(&tx4927_ccfgptr->crir),
-		____raw_readq(&tx4927_ccfgptr->ccfg),
-		____raw_readq(&tx4927_ccfgptr->pcfg));
+	printk(KERN_INFO "%s -- %dMHz(M%dMHz) CRIR:%08x CCFG:%llx PCFG:%llx\n",
+	       txx9_pcode_str,
+	       (cpuclk + 500000) / 1000000,
+	       (txx9_master_clock + 500000) / 1000000,
+	       (__u32)____raw_readq(&tx4927_ccfgptr->crir),
+	       (unsigned long long)____raw_readq(&tx4927_ccfgptr->ccfg),
+	       (unsigned long long)____raw_readq(&tx4927_ccfgptr->pcfg));
 
-	pr_info("%s SDRAMC --", txx9_pcode_str);
+	printk(KERN_INFO "%s SDRAMC --", txx9_pcode_str);
 	for (i = 0; i < 4; i++) {
 		__u64 cr = TX4927_SDRAMC_CR(i);
 		unsigned long base, size;
@@ -198,14 +199,15 @@ void __init tx4927_setup(void)
 			continue;	/* disabled */
 		base = (unsigned long)(cr >> 49) << 21;
 		size = (((unsigned long)(cr >> 33) & 0x7fff) + 1) << 21;
-		pr_cont(" CR%d:%016llx", i, cr);
+		printk(" CR%d:%016llx", i, (unsigned long long)cr);
 		tx4927_sdram_resource[i].name = "SDRAM";
 		tx4927_sdram_resource[i].start = base;
 		tx4927_sdram_resource[i].end = base + size - 1;
 		tx4927_sdram_resource[i].flags = IORESOURCE_MEM;
 		request_resource(&iomem_resource, &tx4927_sdram_resource[i]);
 	}
-	pr_cont(" TR:%09llx\n", ____raw_readq(&tx4927_sdramcptr->tr));
+	printk(" TR:%09llx\n",
+	       (unsigned long long)____raw_readq(&tx4927_sdramcptr->tr));
 
 	/* TMR */
 	/* disable all timers */

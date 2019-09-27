@@ -10,7 +10,6 @@
  * Author: Wu Zhangjin <wuzhangjin@gmail.com>
  */
 
-#include <asm/export.h>
 #include <asm/regdef.h>
 #include <asm/stackframe.h>
 #include <asm/ftrace.h>
@@ -67,7 +66,6 @@
 NESTED(ftrace_caller, PT_SIZE, ra)
 	.globl _mcount
 _mcount:
-EXPORT_SYMBOL(_mcount)
 	b	ftrace_stub
 #ifdef CONFIG_32BIT
 	 addiu sp,sp,8
@@ -116,7 +114,6 @@ ftrace_stub:
 #else	/* ! CONFIG_DYNAMIC_FTRACE */
 
 NESTED(_mcount, PT_SIZE, ra)
-EXPORT_SYMBOL(_mcount)
 	PTR_LA	t1, ftrace_stub
 	PTR_L	t2, ftrace_trace_function /* Prepare t2 for (1) */
 	beq	t1, t2, fgraph_trace

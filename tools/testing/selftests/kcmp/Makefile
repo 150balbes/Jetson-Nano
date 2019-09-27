@@ -1,9 +1,10 @@
-# SPDX-License-Identifier: GPL-2.0-only
 CFLAGS += -I../../../../usr/include/
 
-TEST_GEN_PROGS := kcmp_test
+all: kcmp_test
 
-EXTRA_CLEAN := $(OUTPUT)/kcmp-test-file
+TEST_PROGS := kcmp_test
 
 include ../lib.mk
 
+clean:
+	$(RM) kcmp_test kcmp-test-file

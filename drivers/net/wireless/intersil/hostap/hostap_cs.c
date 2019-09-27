@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 #define PRISM2_PCCARD
 
 #include <linux/module.h>

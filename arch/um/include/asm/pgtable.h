@@ -27,12 +27,14 @@
 #include <asm/pgtable-2level.h>
 #endif
 
+typedef unsigned long	pteval_t;
+
 extern pgd_t swapper_pg_dir[PTRS_PER_PGD];
 
 /* zero page used for uninitialized stuff */
 extern unsigned long *empty_zero_page;
 
-#define pgtable_cache_init() do ; while (0)
+#define pgtable_cache_init() do { } while (0)
 
 /* Just any arbitrary offset to the start of the vmalloc VM area: the
  * current 8MB value just means that there will be a 8MB "hole" after the
@@ -197,17 +199,12 @@ static inline pte_t pte_mkold(pte_t pte)
 
 static inline pte_t pte_wrprotect(pte_t pte)
 { 
-	if (likely(pte_get_bits(pte, _PAGE_RW)))
-		pte_clear_bits(pte, _PAGE_RW);
-	else
-		return pte;
+	pte_clear_bits(pte, _PAGE_RW);
 	return(pte_mknewprot(pte)); 
 }
 
 static inline pte_t pte_mkread(pte_t pte)
 { 
-	if (unlikely(pte_get_bits(pte, _PAGE_USER)))
-		return pte;
 	pte_set_bits(pte, _PAGE_USER);
 	return(pte_mknewprot(pte)); 
 }
@@ -226,8 +223,6 @@ static inline pte_t pte_mkyoung(pte_t pte)
 
 static inline pte_t pte_mkwrite(pte_t pte)	
 {
-	if (unlikely(pte_get_bits(pte,  _PAGE_RW)))
-		return pte;
 	pte_set_bits(pte, _PAGE_RW);
 	return(pte_mknewprot(pte)); 
 }
@@ -263,12 +258,7 @@ static inline void set_pte(pte_t *pteptr, pte_t pteval)
 	*pteptr = pte_mknewpage(*pteptr);
 	if(pte_present(*pteptr)) *pteptr = pte_mknewprot(*pteptr);
 }
-
-static inline void set_pte_at(struct mm_struct *mm, unsigned long addr,
-			      pte_t *pteptr, pte_t pteval)
-{
-	set_pte(pteptr, pteval);
-}
+#define set_pte_at(mm,addr,ptep,pteval) set_pte(ptep,pteval)
 
 #define __HAVE_ARCH_PTE_SAME
 static inline int pte_same(pte_t pte_a, pte_t pte_b)
@@ -348,7 +338,7 @@ static inline pte_t pte_modify(pte_t pte, pgprot_t newprot)
 struct mm_struct;
 extern pte_t *virt_to_pte(struct mm_struct *mm, unsigned long addr);
 
-#define update_mmu_cache(vma,address,ptep) do ; while (0)
+#define update_mmu_cache(vma,address,ptep) do { } while (0)
 
 /* Encode and de-code a swap entry */
 #define __swp_type(x)			(((x).val >> 5) & 0x1f)

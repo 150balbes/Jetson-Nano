@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0
 ccflags-y := -I$(src)/../../../../drivers/nvdimm/
 ccflags-y += -I$(src)/../../../../drivers/acpi/nfit/
 

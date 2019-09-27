@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * twl4030-irq.c - TWL4030/TPS659x0 irq support
  *
@@ -12,6 +11,20 @@
  *
  * Code cleanup and modifications to IRQ handler.
  * by syed khasim <x0khasim@ti.com>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
  */
 
 #include <linux/export.h>
@@ -20,7 +33,7 @@
 #include <linux/slab.h>
 #include <linux/of.h>
 #include <linux/irqdomain.h>
-#include <linux/mfd/twl.h>
+#include <linux/i2c/twl.h>
 
 #include "twl-core.h"
 
@@ -625,10 +638,8 @@ int twl4030_sih_setup(struct device *dev, int module, int irq_base)
 		}
 	}
 
-	if (status < 0) {
-		dev_err(dev, "module to setup SIH for not found\n");
+	if (status < 0)
 		return status;
-	}
 
 	agent = kzalloc(sizeof(*agent), GFP_KERNEL);
 	if (!agent)

@@ -1,10 +1,15 @@
-// SPDX-License-Identifier: GPL-2.0+
 /*
  * bdc_dbg.c - BRCM BDC USB3.0 device controller debug functions
  *
  * Copyright (C) 2014 Broadcom Corporation
  *
  * Author: Ashwini Pahuja
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License as published by the
+ * Free Software Foundation; either version 2 of the License, or (at your
+ * option) any later version.
+ *
  */
 
 #include "bdc.h"
@@ -35,28 +40,28 @@ void bdc_dump_epsts(struct bdc *bdc)
 {
 	u32 temp;
 
-	temp = bdc_readl(bdc->regs, BDC_EPSTS0);
+	temp = bdc_readl(bdc->regs, BDC_EPSTS0(0));
 	dev_vdbg(bdc->dev, "BDC_EPSTS0:0x%08x\n", temp);
 
-	temp = bdc_readl(bdc->regs, BDC_EPSTS1);
+	temp = bdc_readl(bdc->regs, BDC_EPSTS1(0));
 	dev_vdbg(bdc->dev, "BDC_EPSTS1:0x%x\n", temp);
 
-	temp = bdc_readl(bdc->regs, BDC_EPSTS2);
+	temp = bdc_readl(bdc->regs, BDC_EPSTS2(0));
 	dev_vdbg(bdc->dev, "BDC_EPSTS2:0x%08x\n", temp);
 
-	temp = bdc_readl(bdc->regs, BDC_EPSTS3);
+	temp = bdc_readl(bdc->regs, BDC_EPSTS3(0));
 	dev_vdbg(bdc->dev, "BDC_EPSTS3:0x%08x\n", temp);
 
-	temp = bdc_readl(bdc->regs, BDC_EPSTS4);
+	temp = bdc_readl(bdc->regs, BDC_EPSTS4(0));
 	dev_vdbg(bdc->dev, "BDC_EPSTS4:0x%08x\n", temp);
 
-	temp = bdc_readl(bdc->regs, BDC_EPSTS5);
+	temp = bdc_readl(bdc->regs, BDC_EPSTS5(0));
 	dev_vdbg(bdc->dev, "BDC_EPSTS5:0x%08x\n", temp);
 
-	temp = bdc_readl(bdc->regs, BDC_EPSTS6);
+	temp = bdc_readl(bdc->regs, BDC_EPSTS6(0));
 	dev_vdbg(bdc->dev, "BDC_EPSTS6:0x%08x\n", temp);
 
-	temp = bdc_readl(bdc->regs, BDC_EPSTS7);
+	temp = bdc_readl(bdc->regs, BDC_EPSTS7(0));
 	dev_vdbg(bdc->dev, "BDC_EPSTS7:0x%08x\n", temp);
 }
 

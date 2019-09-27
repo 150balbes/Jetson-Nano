@@ -1,8 +1,22 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Handles the M-Systems DiskOnChip G3 chip
  *
  * Copyright (C) 2011 Robert Jarzmik
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ *
  */
 
 #include <linux/kernel.h>
@@ -890,6 +904,9 @@ static int doc_read_oob(struct mtd_info *mtd, loff_t from,
 	if (ooblen % DOC_LAYOUT_OOB_SIZE)
 		return -EINVAL;
 
+	if (from + len > mtd->size)
+		return -EINVAL;
+
 	ops->oobretlen = 0;
 	ops->retlen = 0;
 	ret = 0;
@@ -971,6 +988,36 @@ out:
 err_in_read:
 	doc_read_page_finish(docg3);
 	goto out;
+}
+
+/**
+ * doc_read - Read bytes from flash
+ * @mtd: the device
+ * @from: the offset from first block and first page, in bytes, aligned on page
+ *        size
+ * @len: the number of bytes to read (must be a multiple of 4)
+ * @retlen: the number of bytes actually read
+ * @buf: the filled in buffer
+ *
+ * Reads flash memory pages. This function does not read the OOB chunk, but only
+ * the page data.
+ *
+ * Returns 0 if read successful, of -EIO, -EINVAL if an error occurred
+ */
+static int doc_read(struct mtd_info *mtd, loff_t from, size_t len,
+	     size_t *retlen, u_char *buf)
+{
+	struct mtd_oob_ops ops;
+	size_t ret;
+
+	memset(&ops, 0, sizeof(ops));
+	ops.datbuf = buf;
+	ops.len = len;
+	ops.mode = MTD_OPS_AUTO_OOB;
+
+	ret = doc_read_oob(mtd, from, &ops);
+	*retlen = ops.retlen;
+	return ret;
 }
 
 static int doc_reload_bbt(struct docg3 *docg3)
@@ -1177,27 +1224,39 @@ static int doc_erase(struct mtd_info *mtd, struct erase_info *info)
 {
 	struct docg3 *docg3 = mtd->priv;
 	uint64_t len;
-	int block0, block1, page, ret = 0, ofs = 0;
+	int block0, block1, page, ret, ofs = 0;
 
 	doc_dbg("doc_erase(from=%lld, len=%lld\n", info->addr, info->len);
 
+	info->state = MTD_ERASE_PENDING;
 	calc_block_sector(info->addr + info->len, &block0, &block1, &page,
 			  &ofs, docg3->reliable);
+	ret = -EINVAL;
 	if (info->addr + info->len > mtd->size || page || ofs)
-		return -EINVAL;
+		goto reset_err;
 
+	ret = 0;
 	calc_block_sector(info->addr, &block0, &block1, &page, &ofs,
 			  docg3->reliable);
 	mutex_lock(&docg3->cascade->lock);
 	doc_set_device_id(docg3, docg3->device_id);
 	doc_set_reliable_mode(docg3);
 	for (len = info->len; !ret && len > 0; len -= mtd->erasesize) {
+		info->state = MTD_ERASING;
 		ret = doc_erase_block(docg3, block0, block1);
 		block0 += 2;
 		block1 += 2;
 	}
 	mutex_unlock(&docg3->cascade->lock);
 
+	if (ret)
+		goto reset_err;
+
+	info->state = MTD_ERASE_DONE;
+	return 0;
+
+reset_err:
+	info->state = MTD_ERASE_FAILED;
 	return ret;
 }
 
@@ -1412,6 +1471,8 @@ static int doc_write_oob(struct mtd_info *mtd, loff_t ofs,
 	if (len && ooblen &&
 	    (len / DOC_LAYOUT_PAGE_SIZE) != (ooblen / oobdelta))
 		return -EINVAL;
+	if (ofs + len > mtd->size)
+		return -EINVAL;
 
 	ops->oobretlen = 0;
 	ops->retlen = 0;
@@ -1452,11 +1513,45 @@ static int doc_write_oob(struct mtd_info *mtd, loff_t ofs,
 	return ret;
 }
 
+/**
+ * doc_write - Write a buffer to the chip
+ * @mtd: the device
+ * @to: the offset from first block and first page, in bytes, aligned on page
+ *      size
+ * @len: the number of bytes to write (must be a full page size, ie. 512)
+ * @retlen: the number of bytes actually written (0 or 512)
+ * @buf: the buffer to get bytes from
+ *
+ * Writes data to the chip.
+ *
+ * Returns 0 if write successful, -EIO if write error
+ */
+static int doc_write(struct mtd_info *mtd, loff_t to, size_t len,
+		     size_t *retlen, const u_char *buf)
+{
+	struct docg3 *docg3 = mtd->priv;
+	int ret;
+	struct mtd_oob_ops ops;
+
+	doc_dbg("doc_write(to=%lld, len=%zu)\n", to, len);
+	ops.datbuf = (char *)buf;
+	ops.len = len;
+	ops.mode = MTD_OPS_PLACE_OOB;
+	ops.oobbuf = NULL;
+	ops.ooblen = 0;
+	ops.ooboffs = 0;
+
+	ret = doc_write_oob(mtd, to, &ops);
+	*retlen = ops.retlen;
+	return ret;
+}
+
 static struct docg3 *sysfs_dev2docg3(struct device *dev,
 				     struct device_attribute *attr)
 {
 	int floor;
-	struct mtd_info **docg3_floors = dev_get_drvdata(dev);
+	struct platform_device *pdev = to_platform_device(dev);
+	struct mtd_info **docg3_floors = platform_get_drvdata(pdev);
 
 	floor = attr->attr.name[1] - '0';
 	if (floor < 0 || floor >= DOC_MAX_NBFLOORS)
@@ -1589,7 +1684,7 @@ static void doc_unregister_sysfs(struct platform_device *pdev,
 /*
  * Debug sysfs entries
  */
-static int flashcontrol_show(struct seq_file *s, void *p)
+static int dbg_flashctrl_show(struct seq_file *s, void *p)
 {
 	struct docg3 *docg3 = (struct docg3 *)s->private;
 
@@ -1609,9 +1704,9 @@ static int flashcontrol_show(struct seq_file *s, void *p)
 
 	return 0;
 }
-DEFINE_SHOW_ATTRIBUTE(flashcontrol);
+DEBUGFS_RO_ATTR(flashcontrol, dbg_flashctrl_show);
 
-static int asic_mode_show(struct seq_file *s, void *p)
+static int dbg_asicmode_show(struct seq_file *s, void *p)
 {
 	struct docg3 *docg3 = (struct docg3 *)s->private;
 
@@ -1646,9 +1741,9 @@ static int asic_mode_show(struct seq_file *s, void *p)
 	seq_puts(s, ")\n");
 	return 0;
 }
-DEFINE_SHOW_ATTRIBUTE(asic_mode);
+DEBUGFS_RO_ATTR(asic_mode, dbg_asicmode_show);
 
-static int device_id_show(struct seq_file *s, void *p)
+static int dbg_device_id_show(struct seq_file *s, void *p)
 {
 	struct docg3 *docg3 = (struct docg3 *)s->private;
 	int id;
@@ -1660,9 +1755,9 @@ static int device_id_show(struct seq_file *s, void *p)
 	seq_printf(s, "DeviceId = %d\n", id);
 	return 0;
 }
-DEFINE_SHOW_ATTRIBUTE(device_id);
+DEBUGFS_RO_ATTR(device_id, dbg_device_id_show);
 
-static int protection_show(struct seq_file *s, void *p)
+static int dbg_protection_show(struct seq_file *s, void *p)
 {
 	struct docg3 *docg3 = (struct docg3 *)s->private;
 	int protect, dps0, dps0_low, dps0_high, dps1, dps1_low, dps1_high;
@@ -1712,29 +1807,39 @@ static int protection_show(struct seq_file *s, void *p)
 		   !!(dps1 & DOC_DPS_KEY_OK));
 	return 0;
 }
-DEFINE_SHOW_ATTRIBUTE(protection);
+DEBUGFS_RO_ATTR(protection, dbg_protection_show);
 
-static void __init doc_dbg_register(struct mtd_info *floor)
+static int __init doc_dbg_register(struct docg3 *docg3)
 {
-	struct dentry *root = floor->dbg.dfs_dir;
-	struct docg3 *docg3 = floor->priv;
+	struct dentry *root, *entry;
 
-	if (IS_ERR_OR_NULL(root)) {
-		if (IS_ENABLED(CONFIG_DEBUG_FS) &&
-		    !IS_ENABLED(CONFIG_MTD_PARTITIONED_MASTER))
-			dev_warn(floor->dev.parent,
-				 "CONFIG_MTD_PARTITIONED_MASTER must be enabled to expose debugfs stuff\n");
-		return;
+	root = debugfs_create_dir("docg3", NULL);
+	if (!root)
+		return -ENOMEM;
+
+	entry = debugfs_create_file("flashcontrol", S_IRUSR, root, docg3,
+				  &flashcontrol_fops);
+	if (entry)
+		entry = debugfs_create_file("asic_mode", S_IRUSR, root,
+					    docg3, &asic_mode_fops);
+	if (entry)
+		entry = debugfs_create_file("device_id", S_IRUSR, root,
+					    docg3, &device_id_fops);
+	if (entry)
+		entry = debugfs_create_file("protection", S_IRUSR, root,
+					    docg3, &protection_fops);
+	if (entry) {
+		docg3->debugfs_root = root;
+		return 0;
+	} else {
+		debugfs_remove_recursive(root);
+		return -ENOMEM;
 	}
+}
 
-	debugfs_create_file("docg3_flashcontrol", S_IRUSR, root, docg3,
-			    &flashcontrol_fops);
-	debugfs_create_file("docg3_asic_mode", S_IRUSR, root, docg3,
-			    &asic_mode_fops);
-	debugfs_create_file("docg3_device_id", S_IRUSR, root, docg3,
-			    &device_id_fops);
-	debugfs_create_file("docg3_protection", S_IRUSR, root, docg3,
-			    &protection_fops);
+static void doc_dbg_unregister(struct docg3 *docg3)
+{
+	debugfs_remove_recursive(docg3->debugfs_root);
 }
 
 /**
@@ -1753,8 +1858,8 @@ static int __init doc_set_driver_info(int chip_id, struct mtd_info *mtd)
 
 	switch (chip_id) {
 	case DOC_CHIPID_G3:
-		mtd->name = devm_kasprintf(docg3->dev, GFP_KERNEL, "docg3.%d",
-					   docg3->device_id);
+		mtd->name = kasprintf(GFP_KERNEL, "docg3.%d",
+				      docg3->device_id);
 		if (!mtd->name)
 			return -ENOMEM;
 		docg3->max_block = 2047;
@@ -1771,6 +1876,8 @@ static int __init doc_set_driver_info(int chip_id, struct mtd_info *mtd)
 	mtd->writebufsize = mtd->writesize = DOC_LAYOUT_PAGE_SIZE;
 	mtd->oobsize = DOC_LAYOUT_OOB_SIZE;
 	mtd->_erase = doc_erase;
+	mtd->_read = doc_read;
+	mtd->_write = doc_write;
 	mtd->_read_oob = doc_read_oob;
 	mtd->_write_oob = doc_write_oob;
 	mtd->_block_isbad = doc_block_isbad;
@@ -1813,7 +1920,7 @@ doc_probe_device(struct docg3_cascade *cascade, int floor, struct device *dev)
 	mtd->dev.parent = dev;
 	bbt_nbpages = DIV_ROUND_UP(docg3->max_block + 1,
 				   8 * DOC_LAYOUT_PAGE_SIZE);
-	docg3->bbt = kcalloc(DOC_LAYOUT_PAGE_SIZE, bbt_nbpages, GFP_KERNEL);
+	docg3->bbt = kzalloc(bbt_nbpages * DOC_LAYOUT_PAGE_SIZE, GFP_KERNEL);
 	if (!docg3->bbt)
 		goto nomem3;
 
@@ -1858,7 +1965,7 @@ nomem3:
 nomem2:
 	kfree(docg3);
 nomem1:
-	return ret ? ERR_PTR(ret) : NULL;
+	return ERR_PTR(ret);
 }
 
 /**
@@ -1872,6 +1979,7 @@ static void doc_release_device(struct mtd_info *mtd)
 	mtd_device_unregister(mtd);
 	kfree(docg3->bbt);
 	kfree(docg3);
+	kfree(mtd->name);
 	kfree(mtd);
 }
 
@@ -1978,7 +2086,7 @@ static int __init docg3_probe(struct platform_device *pdev)
 	base = devm_ioremap(dev, ress->start, DOC_IOSPACE_SIZE);
 
 	ret = -ENOMEM;
-	cascade = devm_kcalloc(dev, DOC_MAX_NBFLOORS, sizeof(*cascade),
+	cascade = devm_kzalloc(dev, sizeof(*cascade) * DOC_MAX_NBFLOORS,
 			       GFP_KERNEL);
 	if (!cascade)
 		return ret;
@@ -2006,8 +2114,6 @@ static int __init docg3_probe(struct platform_device *pdev)
 						0);
 		if (ret)
 			goto err_probe;
-
-		doc_dbg_register(cascade->floors[floor]);
 	}
 
 	ret = doc_register_sysfs(pdev, cascade);
@@ -2015,6 +2121,7 @@ static int __init docg3_probe(struct platform_device *pdev)
 		goto err_probe;
 
 	platform_set_drvdata(pdev, cascade);
+	doc_dbg_register(cascade->floors[0]->priv);
 	return 0;
 
 notfound:
@@ -2041,6 +2148,7 @@ static int docg3_release(struct platform_device *pdev)
 	int floor;
 
 	doc_unregister_sysfs(pdev, cascade);
+	doc_dbg_unregister(docg3);
 	for (floor = 0; floor < DOC_MAX_NBFLOORS; floor++)
 		if (cascade->floors[floor])
 			doc_release_device(cascade->floors[floor]);

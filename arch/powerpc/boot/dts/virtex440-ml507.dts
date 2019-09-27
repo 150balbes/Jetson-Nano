@@ -32,7 +32,7 @@
 	} ;
 	chosen {
 		bootargs = "console=ttyS0 root=/dev/ram";
-		stdout-path = &RS232_Uart_1;
+		linux,stdout-path = &RS232_Uart_1;
 	} ;
 	cpus {
 		#address-cells = <1>;

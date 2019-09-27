@@ -1,9 +1,7 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _NET_DN_FIB_H
 #define _NET_DN_FIB_H
 
 #include <linux/netlink.h>
-#include <linux/refcount.h>
 
 extern const struct nla_policy rtm_dn_policy[];
 
@@ -30,7 +28,7 @@ struct dn_fib_info {
 	struct dn_fib_info	*fib_next;
 	struct dn_fib_info	*fib_prev;
 	int 			fib_treeref;
-	refcount_t		fib_clntref;
+	atomic_t		fib_clntref;
 	int			fib_dead;
 	unsigned int		fib_flags;
 	int			fib_protocol;
@@ -132,7 +130,7 @@ void dn_fib_free_info(struct dn_fib_info *fi);
 
 static inline void dn_fib_info_put(struct dn_fib_info *fi)
 {
-	if (refcount_dec_and_test(&fi->fib_clntref))
+	if (atomic_dec_and_test(&fi->fib_clntref))
 		dn_fib_free_info(fi);
 }
 

@@ -13,7 +13,7 @@
 #include <linux/err.h>
 #include <linux/vmalloc.h>
 #include <linux/fs.h>
-#include <linux/memblock.h>
+#include <linux/bootmem.h>
 #include <asm/page.h>
 #include <asm/cacheflush.h>
 
@@ -183,11 +183,10 @@ int kvm_mips_irq_deliver_cb(struct kvm_vcpu *vcpu, unsigned int priority,
 					  (exccode << CAUSEB_EXCCODE));
 
 		/* XXXSL Set PC to the interrupt exception entry point */
-		arch->pc = kvm_mips_guest_exception_base(vcpu);
 		if (kvm_read_c0_guest_cause(cop0) & CAUSEF_IV)
-			arch->pc += 0x200;
+			arch->pc = KVM_GUEST_KSEG0 + 0x200;
 		else
-			arch->pc += 0x180;
+			arch->pc = KVM_GUEST_KSEG0 + 0x180;
 
 		clear_bit(priority, &vcpu->arch.pending_exceptions);
 	}

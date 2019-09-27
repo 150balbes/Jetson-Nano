@@ -1,11 +1,15 @@
-/* SPDX-License-Identifier: GPL-2.0 */
-/*
+/* linux/include/asm-arm/plat-s3c/map.h
+ *
  * Copyright 2003, 2007 Simtec Electronics
  *	http://armlinux.simtec.co.uk/
  *	Ben Dooks <ben@simtec.co.uk>
  *
  * S3C - Memory map definitions (virtual addresses)
- */
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+*/
 
 #ifndef __ASM_PLAT_MAP_H
 #define __ASM_PLAT_MAP_H __FILE__

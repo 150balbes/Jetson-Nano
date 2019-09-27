@@ -455,11 +455,6 @@ static int alloc_pg_chunk(struct adapter *adapter, struct sge_fl *q,
 		q->pg_chunk.offset = 0;
 		mapping = pci_map_page(adapter->pdev, q->pg_chunk.page,
 				       0, q->alloc_size, PCI_DMA_FROMDEVICE);
-		if (unlikely(pci_dma_mapping_error(adapter->pdev, mapping))) {
-			__free_pages(q->pg_chunk.page, order);
-			q->pg_chunk.page = NULL;
-			return -EIO;
-		}
 		q->pg_chunk.mapping = mapping;
 	}
 	sd->pg_chunk = q->pg_chunk;
@@ -633,6 +628,7 @@ static void *alloc_ring(struct pci_dev *pdev, size_t nelem, size_t elem_size,
 		}
 		*(void **)metadata = s;
 	}
+	memset(p, 0, len);
 	return p;
 }
 
@@ -953,78 +949,40 @@ static inline unsigned int calc_tx_descs(const struct sk_buff *skb)
 	return flits_to_desc(flits);
 }
 
-/*	map_skb - map a packet main body and its page fragments
- *	@pdev: the PCI device
- *	@skb: the packet
- *	@addr: placeholder to save the mapped addresses
- *
- *	map the main body of an sk_buff and its page fragments, if any.
- */
-static int map_skb(struct pci_dev *pdev, const struct sk_buff *skb,
-		   dma_addr_t *addr)
-{
-	const skb_frag_t *fp, *end;
-	const struct skb_shared_info *si;
-
-	if (skb_headlen(skb)) {
-		*addr = pci_map_single(pdev, skb->data, skb_headlen(skb),
-				       PCI_DMA_TODEVICE);
-		if (pci_dma_mapping_error(pdev, *addr))
-			goto out_err;
-		addr++;
-	}
-
-	si = skb_shinfo(skb);
-	end = &si->frags[si->nr_frags];
-
-	for (fp = si->frags; fp < end; fp++) {
-		*addr = skb_frag_dma_map(&pdev->dev, fp, 0, skb_frag_size(fp),
-					 DMA_TO_DEVICE);
-		if (pci_dma_mapping_error(pdev, *addr))
-			goto unwind;
-		addr++;
-	}
-	return 0;
-
-unwind:
-	while (fp-- > si->frags)
-		dma_unmap_page(&pdev->dev, *--addr, skb_frag_size(fp),
-			       DMA_TO_DEVICE);
-
-	pci_unmap_single(pdev, addr[-1], skb_headlen(skb), PCI_DMA_TODEVICE);
-out_err:
-	return -ENOMEM;
-}
-
 /**
- *	write_sgl - populate a scatter/gather list for a packet
+ *	make_sgl - populate a scatter/gather list for a packet
  *	@skb: the packet
  *	@sgp: the SGL to populate
  *	@start: start address of skb main body data to include in the SGL
  *	@len: length of skb main body data to include in the SGL
- *	@addr: the list of the mapped addresses
+ *	@pdev: the PCI device
  *
- *	Copies the scatter/gather list for the buffers that make up a packet
+ *	Generates a scatter/gather list for the buffers that make up a packet
  *	and returns the SGL size in 8-byte words.  The caller must size the SGL
  *	appropriately.
  */
-static inline unsigned int write_sgl(const struct sk_buff *skb,
-				     struct sg_ent *sgp, unsigned char *start,
-				     unsigned int len, const dma_addr_t *addr)
+static inline unsigned int make_sgl(const struct sk_buff *skb,
+				    struct sg_ent *sgp, unsigned char *start,
+				    unsigned int len, struct pci_dev *pdev)
 {
-	unsigned int i, j = 0, k = 0, nfrags;
+	dma_addr_t mapping;
+	unsigned int i, j = 0, nfrags;
 
 	if (len) {
+		mapping = pci_map_single(pdev, start, len, PCI_DMA_TODEVICE);
 		sgp->len[0] = cpu_to_be32(len);
-		sgp->addr[j++] = cpu_to_be64(addr[k++]);
+		sgp->addr[0] = cpu_to_be64(mapping);
+		j = 1;
 	}
 
 	nfrags = skb_shinfo(skb)->nr_frags;
 	for (i = 0; i < nfrags; i++) {
 		const skb_frag_t *frag = &skb_shinfo(skb)->frags[i];
 
+		mapping = skb_frag_dma_map(&pdev->dev, frag, 0, skb_frag_size(frag),
+					   DMA_TO_DEVICE);
 		sgp->len[j] = cpu_to_be32(skb_frag_size(frag));
-		sgp->addr[j] = cpu_to_be64(addr[k++]);
+		sgp->addr[j] = cpu_to_be64(mapping);
 		j ^= 1;
 		if (j == 0)
 			++sgp;
@@ -1180,7 +1138,7 @@ static void write_tx_pkt_wr(struct adapter *adap, struct sk_buff *skb,
 			    const struct port_info *pi,
 			    unsigned int pidx, unsigned int gen,
 			    struct sge_txq *q, unsigned int ndesc,
-			    unsigned int compl, const dma_addr_t *addr)
+			    unsigned int compl)
 {
 	unsigned int flits, sgl_flits, cntrl, tso_info;
 	struct sg_ent *sgp, sgl[MAX_SKB_FRAGS / 2 + 1];
@@ -1238,7 +1196,7 @@ static void write_tx_pkt_wr(struct adapter *adap, struct sk_buff *skb,
 	}
 
 	sgp = ndesc == 1 ? (struct sg_ent *)&d->flit[flits] : sgl;
-	sgl_flits = write_sgl(skb, sgp, skb->data, skb_headlen(skb), addr);
+	sgl_flits = make_sgl(skb, sgp, skb->data, skb_headlen(skb), adap->pdev);
 
 	write_wr_hdr_sgl(ndesc, skb, d, pidx, q, sgl, flits, sgl_flits, gen,
 			 htonl(V_WR_OP(FW_WROPCODE_TUNNEL_TX_PKT) | compl),
@@ -1269,7 +1227,6 @@ netdev_tx_t t3_eth_xmit(struct sk_buff *skb, struct net_device *dev)
 	struct netdev_queue *txq;
 	struct sge_qset *qs;
 	struct sge_txq *q;
-	dma_addr_t addr[MAX_SKB_FRAGS + 1];
 
 	/*
 	 * The chip min packet length is 9 octets but play safe and reject
@@ -1296,14 +1253,6 @@ netdev_tx_t t3_eth_xmit(struct sk_buff *skb, struct net_device *dev)
 			"%s: Tx ring %u full while queue awake!\n",
 			dev->name, q->cntxt_id & 7);
 		return NETDEV_TX_BUSY;
-	}
-
-	/* Check if ethernet packet can't be sent as immediate data */
-	if (skb->len > (WR_LEN - sizeof(struct cpl_tx_pkt))) {
-		if (unlikely(map_skb(adap->pdev, skb, addr) < 0)) {
-			dev_kfree_skb(skb);
-			return NETDEV_TX_OK;
-		}
 	}
 
 	q->in_use += ndesc;
@@ -1363,7 +1312,7 @@ netdev_tx_t t3_eth_xmit(struct sk_buff *skb, struct net_device *dev)
 	if (likely(!skb_shared(skb)))
 		skb_orphan(skb);
 
-	write_tx_pkt_wr(adap, skb, pi, pidx, gen, q, ndesc, compl, addr);
+	write_tx_pkt_wr(adap, skb, pi, pidx, gen, q, ndesc, compl);
 	check_ring_tx_db(adap, q);
 	return NETDEV_TX_OK;
 }
@@ -1628,8 +1577,7 @@ static void setup_deferred_unmapping(struct sk_buff *skb, struct pci_dev *pdev,
  */
 static void write_ofld_wr(struct adapter *adap, struct sk_buff *skb,
 			  struct sge_txq *q, unsigned int pidx,
-			  unsigned int gen, unsigned int ndesc,
-			  const dma_addr_t *addr)
+			  unsigned int gen, unsigned int ndesc)
 {
 	unsigned int sgl_flits, flits;
 	struct work_request_hdr *from;
@@ -1650,9 +1598,10 @@ static void write_ofld_wr(struct adapter *adap, struct sk_buff *skb,
 
 	flits = skb_transport_offset(skb) / 8;
 	sgp = ndesc == 1 ? (struct sg_ent *)&d->flit[flits] : sgl;
-	sgl_flits = write_sgl(skb, sgp, skb_transport_header(skb),
-			      skb_tail_pointer(skb) - skb_transport_header(skb),
-			      addr);
+	sgl_flits = make_sgl(skb, sgp, skb_transport_header(skb),
+			     skb_tail_pointer(skb) -
+			     skb_transport_header(skb),
+			     adap->pdev);
 	if (need_skb_unmap()) {
 		setup_deferred_unmapping(skb, adap->pdev, sgp, sgl_flits);
 		skb->destructor = deferred_unmap_destructor;
@@ -1710,12 +1659,6 @@ again:	reclaim_completed_tx(adap, q, TX_RECLAIM_CHUNK);
 		goto again;
 	}
 
-	if (!immediate(skb) &&
-	    map_skb(adap->pdev, skb, (dma_addr_t *)skb->head)) {
-		spin_unlock(&q->lock);
-		return NET_XMIT_SUCCESS;
-	}
-
 	gen = q->gen;
 	q->in_use += ndesc;
 	pidx = q->pidx;
@@ -1726,7 +1669,7 @@ again:	reclaim_completed_tx(adap, q, TX_RECLAIM_CHUNK);
 	}
 	spin_unlock(&q->lock);
 
-	write_ofld_wr(adap, skb, q, pidx, gen, ndesc, (dma_addr_t *)skb->head);
+	write_ofld_wr(adap, skb, q, pidx, gen, ndesc);
 	check_ring_tx_db(adap, q);
 	return NET_XMIT_SUCCESS;
 }
@@ -1744,7 +1687,6 @@ static void restart_offloadq(unsigned long data)
 	struct sge_txq *q = &qs->txq[TXQ_OFLD];
 	const struct port_info *pi = netdev_priv(qs->netdev);
 	struct adapter *adap = pi->adapter;
-	unsigned int written = 0;
 
 	spin_lock(&q->lock);
 again:	reclaim_completed_tx(adap, q, TX_RECLAIM_CHUNK);
@@ -1764,15 +1706,10 @@ again:	reclaim_completed_tx(adap, q, TX_RECLAIM_CHUNK);
 			break;
 		}
 
-		if (!immediate(skb) &&
-		    map_skb(adap->pdev, skb, (dma_addr_t *)skb->head))
-			break;
-
 		gen = q->gen;
 		q->in_use += ndesc;
 		pidx = q->pidx;
 		q->pidx += ndesc;
-		written += ndesc;
 		if (q->pidx >= q->size) {
 			q->pidx -= q->size;
 			q->gen ^= 1;
@@ -1780,8 +1717,7 @@ again:	reclaim_completed_tx(adap, q, TX_RECLAIM_CHUNK);
 		__skb_unlink(skb, &q->sendq);
 		spin_unlock(&q->lock);
 
-		write_ofld_wr(adap, skb, q, pidx, gen, ndesc,
-			      (dma_addr_t *)skb->head);
+		write_ofld_wr(adap, skb, q, pidx, gen, ndesc);
 		spin_lock(&q->lock);
 	}
 	spin_unlock(&q->lock);
@@ -1791,9 +1727,8 @@ again:	reclaim_completed_tx(adap, q, TX_RECLAIM_CHUNK);
 	set_bit(TXQ_LAST_PKT_DB, &q->flags);
 #endif
 	wmb();
-	if (likely(written))
-		t3_write_reg(adap, A_SG_KDOORBELL,
-			     F_SELEGRCNTX | V_EGRCNTX(q->cntxt_id));
+	t3_write_reg(adap, A_SG_KDOORBELL,
+		     F_SELEGRCNTX | V_EGRCNTX(q->cntxt_id));
 }
 
 /**
@@ -1908,7 +1843,7 @@ static int ofld_poll(struct napi_struct *napi, int budget)
 		__skb_queue_head_init(&queue);
 		skb_queue_splice_init(&q->rx_queue, &queue);
 		if (skb_queue_empty(&queue)) {
-			napi_complete_done(napi, work_done);
+			napi_complete(napi);
 			spin_unlock_irq(&q->lock);
 			return work_done;
 		}
@@ -2347,7 +2282,7 @@ static int process_responses(struct adapter *adap, struct sge_qset *qs,
 			if (!skb)
 				goto no_mem;
 
-			__skb_put_data(skb, r, AN_PKT_SIZE);
+			memcpy(__skb_put(skb, AN_PKT_SIZE), r, AN_PKT_SIZE);
 			skb->data[0] = CPL_ASYNC_NOTIF;
 			rss_hi = htonl(CPL_ASYNC_NOTIF << 24);
 			q->async_notif++;
@@ -2381,7 +2316,7 @@ no_mem:
 					lro_add_page(adap, qs, fl,
 						     G_RSPD_LEN(len),
 						     flags & F_RSPD_EOP);
-					goto next_fl;
+					 goto next_fl;
 				}
 
 				skb = get_packet_pg(adap, fl, q,
@@ -2479,7 +2414,7 @@ static int napi_rx_handler(struct napi_struct *napi, int budget)
 	int work_done = process_responses(adap, qs, budget);
 
 	if (likely(work_done < budget)) {
-		napi_complete_done(napi, work_done);
+		napi_complete(napi);
 
 		/*
 		 * Because we don't atomically flush the following
@@ -2918,9 +2853,9 @@ void t3_sge_err_intr_handler(struct adapter *adapter)
  *	bother cleaning them up here.
  *
  */
-static void sge_timer_tx(struct timer_list *t)
+static void sge_timer_tx(unsigned long data)
 {
-	struct sge_qset *qs = from_timer(qs, t, tx_reclaim_timer);
+	struct sge_qset *qs = (struct sge_qset *)data;
 	struct port_info *pi = netdev_priv(qs->netdev);
 	struct adapter *adap = pi->adapter;
 	unsigned int tbd[SGE_TXQ_PER_SET] = {0, 0};
@@ -2958,10 +2893,10 @@ static void sge_timer_tx(struct timer_list *t)
  *	starved.
  *
  */
-static void sge_timer_rx(struct timer_list *t)
+static void sge_timer_rx(unsigned long data)
 {
 	spinlock_t *lock;
-	struct sge_qset *qs = from_timer(qs, t, rx_reclaim_timer);
+	struct sge_qset *qs = (struct sge_qset *)data;
 	struct port_info *pi = netdev_priv(qs->netdev);
 	struct adapter *adap = pi->adapter;
 	u32 status;
@@ -3041,8 +2976,8 @@ int t3_sge_alloc_qset(struct adapter *adapter, unsigned int id, int nports,
 	struct sge_qset *q = &adapter->sge.qs[id];
 
 	init_qset_cntxt(q, id);
-	timer_setup(&q->tx_reclaim_timer, sge_timer_tx, 0);
-	timer_setup(&q->rx_reclaim_timer, sge_timer_rx, 0);
+	setup_timer(&q->tx_reclaim_timer, sge_timer_tx, (unsigned long)q);
+	setup_timer(&q->rx_reclaim_timer, sge_timer_rx, (unsigned long)q);
 
 	q->fl[0].desc = alloc_ring(adapter->pdev, p->fl_size,
 				   sizeof(struct rx_desc),
@@ -3214,13 +3149,11 @@ void t3_start_sge_timers(struct adapter *adap)
 	for (i = 0; i < SGE_QSETS; ++i) {
 		struct sge_qset *q = &adap->sge.qs[i];
 
-		if (q->tx_reclaim_timer.function)
-			mod_timer(&q->tx_reclaim_timer,
-				  jiffies + TX_RECLAIM_PERIOD);
+	if (q->tx_reclaim_timer.function)
+		mod_timer(&q->tx_reclaim_timer, jiffies + TX_RECLAIM_PERIOD);
 
-		if (q->rx_reclaim_timer.function)
-			mod_timer(&q->rx_reclaim_timer,
-				  jiffies + RX_RECLAIM_PERIOD);
+	if (q->rx_reclaim_timer.function)
+		mod_timer(&q->rx_reclaim_timer, jiffies + RX_RECLAIM_PERIOD);
 	}
 }
 

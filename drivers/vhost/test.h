@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef LINUX_VHOST_TEST_H
 #define LINUX_VHOST_TEST_H
 

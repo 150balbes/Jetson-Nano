@@ -1,4 +1,3 @@
-! SPDX-License-Identifier: GPL-2.0
 ! entry.S macro define
 	
 	.macro	cli

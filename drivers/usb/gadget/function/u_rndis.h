@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * u_rndis.h
  *
@@ -7,7 +6,11 @@
  * Copyright (c) 2013 Samsung Electronics Co., Ltd.
  *		http://www.samsung.com
  *
- * Author: Andrzej Pietrasiewicz <andrzejtp2010@gmail.com>
+ * Author: Andrzej Pietrasiewicz <andrzej.p@samsung.com>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  */
 
 #ifndef U_RNDIS_H
@@ -26,10 +29,6 @@ struct f_rndis_opts {
 	struct config_group		*rndis_interf_group;
 	struct usb_os_desc		rndis_os_desc;
 	char				rndis_ext_compat_id[16];
-
-	u8				class;
-	u8				subclass;
-	u8				protocol;
 
 	/*
 	 * Read/write access to configfs attributes is handled by configfs.

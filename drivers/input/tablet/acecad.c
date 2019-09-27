@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  *  Copyright (c) 2001-2005 Edouard TISSERANT   <edouard.tisserant@wanadoo.fr>
  *  Copyright (c) 2004-2005 Stephane VOLTZ      <svoltz@numericable.fr>
@@ -10,6 +9,20 @@
  */
 
 /*
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
+ *
  */
 
 #include <linux/kernel.h>
@@ -17,9 +30,17 @@
 #include <linux/module.h>
 #include <linux/usb/input.h>
 
-MODULE_AUTHOR("Edouard TISSERANT <edouard.tisserant@wanadoo.fr>");
-MODULE_DESCRIPTION("USB Acecad Flair tablet driver");
-MODULE_LICENSE("GPL");
+/*
+ * Version Information
+ */
+#define DRIVER_VERSION "v3.2"
+#define DRIVER_DESC    "USB Acecad Flair tablet driver"
+#define DRIVER_LICENSE "GPL"
+#define DRIVER_AUTHOR  "Edouard TISSERANT <edouard.tisserant@wanadoo.fr>"
+
+MODULE_AUTHOR(DRIVER_AUTHOR);
+MODULE_DESCRIPTION(DRIVER_DESC);
+MODULE_LICENSE(DRIVER_LICENSE);
 
 #define USB_VENDOR_ID_ACECAD	0x0460
 #define USB_DEVICE_ID_FLAIR	0x0004
@@ -239,7 +260,7 @@ static void usb_acecad_disconnect(struct usb_interface *intf)
 	kfree(acecad);
 }
 
-static const struct usb_device_id usb_acecad_id_table[] = {
+static struct usb_device_id usb_acecad_id_table [] = {
 	{ USB_DEVICE(USB_VENDOR_ID_ACECAD, USB_DEVICE_ID_FLAIR), .driver_info = 0 },
 	{ USB_DEVICE(USB_VENDOR_ID_ACECAD, USB_DEVICE_ID_302),	 .driver_info = 1 },
 	{ }

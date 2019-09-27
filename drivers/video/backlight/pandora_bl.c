@@ -1,10 +1,13 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Backlight driver for Pandora handheld.
  * Pandora uses TWL4030 PWM0 -> TPS61161 combo for control backlight.
  * Based on pwm_bl.c
  *
  * Copyright 2009,2012 Gražvydas Ignotas <notasas@gmail.com>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  */
 
 #include <linux/module.h>
@@ -13,7 +16,7 @@
 #include <linux/delay.h>
 #include <linux/fb.h>
 #include <linux/backlight.h>
-#include <linux/mfd/twl.h>
+#include <linux/i2c/twl.h>
 #include <linux/err.h>
 
 #define TWL_PWM0_ON		0x00
@@ -32,15 +35,11 @@
 #define MAX_VALUE 63
 #define MAX_USER_VALUE (MAX_VALUE - MIN_VALUE)
 
-struct pandora_private {
-	unsigned old_state;
-#define PANDORABL_WAS_OFF 1
-};
+#define PANDORABL_WAS_OFF BL_CORE_DRIVER1
 
 static int pandora_backlight_update_status(struct backlight_device *bl)
 {
 	int brightness = bl->props.brightness;
-	struct pandora_private *priv = bl_get_data(bl);
 	u8 r;
 
 	if (bl->props.power != FB_BLANK_UNBLANK)
@@ -54,7 +53,7 @@ static int pandora_backlight_update_status(struct backlight_device *bl)
 		brightness = MAX_USER_VALUE;
 
 	if (brightness == 0) {
-		if (priv->old_state == PANDORABL_WAS_OFF)
+		if (bl->props.state & PANDORABL_WAS_OFF)
 			goto done;
 
 		/* first disable PWM0 output, then clock */
@@ -67,7 +66,7 @@ static int pandora_backlight_update_status(struct backlight_device *bl)
 		goto done;
 	}
 
-	if (priv->old_state == PANDORABL_WAS_OFF) {
+	if (bl->props.state & PANDORABL_WAS_OFF) {
 		/*
 		 * set PWM duty cycle to max. TPS61161 seems to use this
 		 * to calibrate it's PWM sensitivity when it starts.
@@ -94,9 +93,9 @@ static int pandora_backlight_update_status(struct backlight_device *bl)
 
 done:
 	if (brightness != 0)
-		priv->old_state = 0;
+		bl->props.state &= ~PANDORABL_WAS_OFF;
 	else
-		priv->old_state = PANDORABL_WAS_OFF;
+		bl->props.state |= PANDORABL_WAS_OFF;
 
 	return 0;
 }
@@ -110,20 +109,13 @@ static int pandora_backlight_probe(struct platform_device *pdev)
 {
 	struct backlight_properties props;
 	struct backlight_device *bl;
-	struct pandora_private *priv;
 	u8 r;
-
-	priv = devm_kmalloc(&pdev->dev, sizeof(*priv), GFP_KERNEL);
-	if (!priv) {
-		dev_err(&pdev->dev, "failed to allocate driver private data\n");
-		return -ENOMEM;
-	}
 
 	memset(&props, 0, sizeof(props));
 	props.max_brightness = MAX_USER_VALUE;
 	props.type = BACKLIGHT_RAW;
 	bl = devm_backlight_device_register(&pdev->dev, pdev->name, &pdev->dev,
-					priv, &pandora_backlight_ops, &props);
+					NULL, &pandora_backlight_ops, &props);
 	if (IS_ERR(bl)) {
 		dev_err(&pdev->dev, "failed to register backlight\n");
 		return PTR_ERR(bl);
@@ -134,7 +126,7 @@ static int pandora_backlight_probe(struct platform_device *pdev)
 	/* 64 cycle period, ON position 0 */
 	twl_i2c_write_u8(TWL_MODULE_PWM, 0x80, TWL_PWM0_ON);
 
-	priv->old_state = PANDORABL_WAS_OFF;
+	bl->props.state |= PANDORABL_WAS_OFF;
 	bl->props.brightness = MAX_USER_VALUE;
 	backlight_update_status(bl);
 

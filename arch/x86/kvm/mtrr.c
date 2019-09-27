@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * vMTRR implementation
  *
@@ -12,6 +11,9 @@
  *   Marcelo Tosatti <mtosatti@redhat.com>
  *   Paolo Bonzini <pbonzini@redhat.com>
  *   Xiao Guangrong <guangrong.xiao@linux.intel.com>
+ *
+ * This work is licensed under the terms of the GNU GPL, version 2.  See
+ * the COPYING file in the top-level directory.
  */
 
 #include <linux/kvm_host.h>
@@ -46,6 +48,11 @@ static bool msr_mtrr_valid(unsigned msr)
 	return false;
 }
 
+static bool valid_pat_type(unsigned t)
+{
+	return t < 8 && (1 << t) & 0xf3; /* 0, 1, 4, 5, 6, 7 */
+}
+
 static bool valid_mtrr_type(unsigned t)
 {
 	return t < 8 && (1 << t) & 0x73; /* 0, 1, 4, 5, 6 */
@@ -60,7 +67,10 @@ bool kvm_mtrr_valid(struct kvm_vcpu *vcpu, u32 msr, u64 data)
 		return false;
 
 	if (msr == MSR_IA32_CR_PAT) {
-		return kvm_pat_valid(data);
+		for (i = 0; i < 8; i++)
+			if (!valid_pat_type((data >> (i * 8)) & 0xff))
+				return false;
+		return true;
 	} else if (msr == MSR_MTRRdefType) {
 		if (data & ~0xcff)
 			return false;
@@ -120,7 +130,7 @@ static u8 mtrr_disabled_type(struct kvm_vcpu *vcpu)
 	 * enable MTRRs and it is obviously undesirable to run the
 	 * guest entirely with UC memory and we use WB.
 	 */
-	if (guest_cpuid_has(vcpu, X86_FEATURE_MTRR))
+	if (guest_cpuid_has_mtrr(vcpu))
 		return MTRR_TYPE_UNCACHABLE;
 	else
 		return MTRR_TYPE_WRBACK;

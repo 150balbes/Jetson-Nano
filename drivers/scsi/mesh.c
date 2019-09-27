@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * SCSI low-level driver for the MESH (Macintosh Enhanced SCSI Hardware)
  * bus adaptor found on Power Macintosh computers.
@@ -595,9 +594,9 @@ static void mesh_done(struct mesh_state *ms, int start_next)
 	ms->current_req = NULL;
 	tp->current_req = NULL;
 	if (cmd) {
-		cmd->result = (ms->stat << 16) | cmd->SCp.Status;
+		cmd->result = (ms->stat << 16) + cmd->SCp.Status;
 		if (ms->stat == DID_OK)
-			cmd->result |= cmd->SCp.Message << 8;
+			cmd->result += (cmd->SCp.Message << 8);
 		if (DEBUG_TARGET(cmd)) {
 			printk(KERN_DEBUG "mesh_done: result = %x, data_ptr=%d, buflen=%d\n",
 			       cmd->result, ms->data_ptr, scsi_bufflen(cmd));
@@ -1839,7 +1838,7 @@ static struct scsi_host_template mesh_template = {
 	.this_id			= 7,
 	.sg_tablesize			= SG_ALL,
 	.cmd_per_lun			= 2,
-	.max_segment_size		= 65535,
+	.use_clustering			= DISABLE_CLUSTERING,
 };
 
 static int mesh_probe(struct macio_dev *mdev, const struct of_device_id *match)
@@ -1916,9 +1915,8 @@ static int mesh_probe(struct macio_dev *mdev, const struct of_device_id *match)
 	/* We use the PCI APIs for now until the generic one gets fixed
 	 * enough or until we get some macio-specific versions
 	 */
-	dma_cmd_space = dma_alloc_coherent(&macio_get_pci_dev(mdev)->dev,
-					   ms->dma_cmd_size, &dma_cmd_bus,
-					   GFP_KERNEL);
+	dma_cmd_space = pci_zalloc_consistent(macio_get_pci_dev(mdev),
+					      ms->dma_cmd_size, &dma_cmd_bus);
 	if (dma_cmd_space == NULL) {
 		printk(KERN_ERR "mesh: can't allocate DMA table\n");
 		goto out_unmap;
@@ -1976,7 +1974,7 @@ static int mesh_probe(struct macio_dev *mdev, const struct of_device_id *match)
 	 */
 	mesh_shutdown(mdev);
 	set_mesh_power(ms, 0);
-	dma_free_coherent(&macio_get_pci_dev(mdev)->dev, ms->dma_cmd_size,
+	pci_free_consistent(macio_get_pci_dev(mdev), ms->dma_cmd_size,
 			    ms->dma_cmd_space, ms->dma_cmd_bus);
  out_unmap:
 	iounmap(ms->dma);
@@ -2009,7 +2007,7 @@ static int mesh_remove(struct macio_dev *mdev)
        	iounmap(ms->dma);
 
 	/* Free DMA commands memory */
-	dma_free_coherent(&macio_get_pci_dev(mdev)->dev, ms->dma_cmd_size,
+	pci_free_consistent(macio_get_pci_dev(mdev), ms->dma_cmd_size,
 			    ms->dma_cmd_space, ms->dma_cmd_bus);
 
 	/* Release memory resources */

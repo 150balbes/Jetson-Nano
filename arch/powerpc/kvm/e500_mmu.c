@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (C) 2008-2013 Freescale Semiconductor, Inc. All rights reserved.
  *
@@ -11,6 +10,10 @@
  * Description:
  * This file is based on arch/powerpc/kvm/44x_tlb.c,
  * by Hollis Blanchard <hollisb@us.ibm.com>.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License, version 2, as
+ * published by the Free Software Foundation.
  */
 
 #include <linux/kernel.h>
@@ -510,7 +513,7 @@ void kvmppc_mmu_itlb_miss(struct kvm_vcpu *vcpu)
 {
 	unsigned int as = !!(vcpu->arch.shared->msr & MSR_IS);
 
-	kvmppc_e500_deliver_tlb_miss(vcpu, vcpu->arch.regs.nip, as);
+	kvmppc_e500_deliver_tlb_miss(vcpu, vcpu->arch.pc, as);
 }
 
 void kvmppc_mmu_dtlb_miss(struct kvm_vcpu *vcpu)
@@ -780,7 +783,7 @@ int kvm_vcpu_ioctl_config_tlb(struct kvm_vcpu *vcpu,
 	if (!pages)
 		return -ENOMEM;
 
-	ret = get_user_pages_fast(cfg->array, num_pages, FOLL_WRITE, pages);
+	ret = get_user_pages_fast(cfg->array, num_pages, 1, pages);
 	if (ret < 0)
 		goto free_pages;
 

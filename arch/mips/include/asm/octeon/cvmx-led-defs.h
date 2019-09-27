@@ -53,6 +53,12 @@ union cvmx_led_blink {
 		uint64_t reserved_8_63:56;
 #endif
 	} s;
+	struct cvmx_led_blink_s cn38xx;
+	struct cvmx_led_blink_s cn38xxp2;
+	struct cvmx_led_blink_s cn56xx;
+	struct cvmx_led_blink_s cn56xxp1;
+	struct cvmx_led_blink_s cn58xx;
+	struct cvmx_led_blink_s cn58xxp1;
 };
 
 union cvmx_led_clk_phase {
@@ -66,6 +72,12 @@ union cvmx_led_clk_phase {
 		uint64_t reserved_7_63:57;
 #endif
 	} s;
+	struct cvmx_led_clk_phase_s cn38xx;
+	struct cvmx_led_clk_phase_s cn38xxp2;
+	struct cvmx_led_clk_phase_s cn56xx;
+	struct cvmx_led_clk_phase_s cn56xxp1;
+	struct cvmx_led_clk_phase_s cn58xx;
+	struct cvmx_led_clk_phase_s cn58xxp1;
 };
 
 union cvmx_led_cylon {
@@ -79,6 +91,12 @@ union cvmx_led_cylon {
 		uint64_t reserved_16_63:48;
 #endif
 	} s;
+	struct cvmx_led_cylon_s cn38xx;
+	struct cvmx_led_cylon_s cn38xxp2;
+	struct cvmx_led_cylon_s cn56xx;
+	struct cvmx_led_cylon_s cn56xxp1;
+	struct cvmx_led_cylon_s cn58xx;
+	struct cvmx_led_cylon_s cn58xxp1;
 };
 
 union cvmx_led_dbg {
@@ -92,6 +110,12 @@ union cvmx_led_dbg {
 		uint64_t reserved_1_63:63;
 #endif
 	} s;
+	struct cvmx_led_dbg_s cn38xx;
+	struct cvmx_led_dbg_s cn38xxp2;
+	struct cvmx_led_dbg_s cn56xx;
+	struct cvmx_led_dbg_s cn56xxp1;
+	struct cvmx_led_dbg_s cn58xx;
+	struct cvmx_led_dbg_s cn58xxp1;
 };
 
 union cvmx_led_en {
@@ -105,6 +129,12 @@ union cvmx_led_en {
 		uint64_t reserved_1_63:63;
 #endif
 	} s;
+	struct cvmx_led_en_s cn38xx;
+	struct cvmx_led_en_s cn38xxp2;
+	struct cvmx_led_en_s cn56xx;
+	struct cvmx_led_en_s cn56xxp1;
+	struct cvmx_led_en_s cn58xx;
+	struct cvmx_led_en_s cn58xxp1;
 };
 
 union cvmx_led_polarity {
@@ -118,6 +148,12 @@ union cvmx_led_polarity {
 		uint64_t reserved_1_63:63;
 #endif
 	} s;
+	struct cvmx_led_polarity_s cn38xx;
+	struct cvmx_led_polarity_s cn38xxp2;
+	struct cvmx_led_polarity_s cn56xx;
+	struct cvmx_led_polarity_s cn56xxp1;
+	struct cvmx_led_polarity_s cn58xx;
+	struct cvmx_led_polarity_s cn58xxp1;
 };
 
 union cvmx_led_prt {
@@ -131,6 +167,12 @@ union cvmx_led_prt {
 		uint64_t reserved_8_63:56;
 #endif
 	} s;
+	struct cvmx_led_prt_s cn38xx;
+	struct cvmx_led_prt_s cn38xxp2;
+	struct cvmx_led_prt_s cn56xx;
+	struct cvmx_led_prt_s cn56xxp1;
+	struct cvmx_led_prt_s cn58xx;
+	struct cvmx_led_prt_s cn58xxp1;
 };
 
 union cvmx_led_prt_fmt {
@@ -144,6 +186,12 @@ union cvmx_led_prt_fmt {
 		uint64_t reserved_4_63:60;
 #endif
 	} s;
+	struct cvmx_led_prt_fmt_s cn38xx;
+	struct cvmx_led_prt_fmt_s cn38xxp2;
+	struct cvmx_led_prt_fmt_s cn56xx;
+	struct cvmx_led_prt_fmt_s cn56xxp1;
+	struct cvmx_led_prt_fmt_s cn58xx;
+	struct cvmx_led_prt_fmt_s cn58xxp1;
 };
 
 union cvmx_led_prt_statusx {
@@ -157,6 +205,12 @@ union cvmx_led_prt_statusx {
 		uint64_t reserved_6_63:58;
 #endif
 	} s;
+	struct cvmx_led_prt_statusx_s cn38xx;
+	struct cvmx_led_prt_statusx_s cn38xxp2;
+	struct cvmx_led_prt_statusx_s cn56xx;
+	struct cvmx_led_prt_statusx_s cn56xxp1;
+	struct cvmx_led_prt_statusx_s cn58xx;
+	struct cvmx_led_prt_statusx_s cn58xxp1;
 };
 
 union cvmx_led_udd_cntx {
@@ -170,6 +224,12 @@ union cvmx_led_udd_cntx {
 		uint64_t reserved_6_63:58;
 #endif
 	} s;
+	struct cvmx_led_udd_cntx_s cn38xx;
+	struct cvmx_led_udd_cntx_s cn38xxp2;
+	struct cvmx_led_udd_cntx_s cn56xx;
+	struct cvmx_led_udd_cntx_s cn56xxp1;
+	struct cvmx_led_udd_cntx_s cn58xx;
+	struct cvmx_led_udd_cntx_s cn58xxp1;
 };
 
 union cvmx_led_udd_datx {
@@ -183,6 +243,12 @@ union cvmx_led_udd_datx {
 		uint64_t reserved_32_63:32;
 #endif
 	} s;
+	struct cvmx_led_udd_datx_s cn38xx;
+	struct cvmx_led_udd_datx_s cn38xxp2;
+	struct cvmx_led_udd_datx_s cn56xx;
+	struct cvmx_led_udd_datx_s cn56xxp1;
+	struct cvmx_led_udd_datx_s cn58xx;
+	struct cvmx_led_udd_datx_s cn58xxp1;
 };
 
 union cvmx_led_udd_dat_clrx {
@@ -196,6 +262,12 @@ union cvmx_led_udd_dat_clrx {
 		uint64_t reserved_32_63:32;
 #endif
 	} s;
+	struct cvmx_led_udd_dat_clrx_s cn38xx;
+	struct cvmx_led_udd_dat_clrx_s cn38xxp2;
+	struct cvmx_led_udd_dat_clrx_s cn56xx;
+	struct cvmx_led_udd_dat_clrx_s cn56xxp1;
+	struct cvmx_led_udd_dat_clrx_s cn58xx;
+	struct cvmx_led_udd_dat_clrx_s cn58xxp1;
 };
 
 union cvmx_led_udd_dat_setx {
@@ -209,6 +281,12 @@ union cvmx_led_udd_dat_setx {
 		uint64_t reserved_32_63:32;
 #endif
 	} s;
+	struct cvmx_led_udd_dat_setx_s cn38xx;
+	struct cvmx_led_udd_dat_setx_s cn38xxp2;
+	struct cvmx_led_udd_dat_setx_s cn56xx;
+	struct cvmx_led_udd_dat_setx_s cn56xxp1;
+	struct cvmx_led_udd_dat_setx_s cn58xx;
+	struct cvmx_led_udd_dat_setx_s cn58xxp1;
 };
 
 #endif

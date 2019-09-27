@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Libata driver for the HighPoint 371N, 372N, and 302N UDMA66 ATA controllers.
  *

@@ -1,9 +1,21 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Driver for the Texas Instruments WL1273 FM radio.
  *
  * Copyright (C) 2011 Nokia Corporation
  * Author: Matti J. Aaltonen <matti.j.aaltonen@nokia.com>
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License
+ * version 2 as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.	See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
  */
 
 #include <linux/delay.h>
@@ -602,21 +614,10 @@ static int wl1273_fm_start(struct wl1273_device *radio, int new_mode)
 			}
 		}
 
-		if (radio->rds_on) {
+		if (radio->rds_on)
 			r = core->write(core, WL1273_RDS_DATA_ENB, 1);
-			if (r) {
-				dev_err(dev, "%s: RDS_DATA_ENB ON fails\n",
-					__func__);
-				goto fail;
-			}
-		} else {
+		else
 			r = core->write(core, WL1273_RDS_DATA_ENB, 0);
-			if (r) {
-				dev_err(dev, "%s: RDS_DATA_ENB OFF fails\n",
-					__func__);
-				goto fail;
-			}
-		}
 	} else {
 		dev_warn(dev, "%s: Illegal mode.\n", __func__);
 	}
@@ -663,7 +664,7 @@ fail:
 static int wl1273_fm_suspend(struct wl1273_device *radio)
 {
 	struct wl1273_core *core = radio->core;
-	int r;
+	int r = 0;
 
 	/* Cannot go from OFF to SUSPENDED */
 	if (core->mode == WL1273_MODE_RX)
@@ -1081,14 +1082,14 @@ out:
 	return r;
 }
 
-static __poll_t wl1273_fm_fops_poll(struct file *file,
+static unsigned int wl1273_fm_fops_poll(struct file *file,
 					struct poll_table_struct *pts)
 {
 	struct wl1273_device *radio = video_get_drvdata(video_devdata(file));
 	struct wl1273_core *core = radio->core;
 
 	if (radio->owner && radio->owner != file)
-		return EPOLLERR;
+		return -EBUSY;
 
 	radio->owner = file;
 
@@ -1096,10 +1097,10 @@ static __poll_t wl1273_fm_fops_poll(struct file *file,
 		poll_wait(file, &radio->read_queue, pts);
 
 		if (radio->rd_index != radio->wr_index)
-			return EPOLLIN | EPOLLRDNORM;
+			return POLLIN | POLLRDNORM;
 
 	} else if (core->mode == WL1273_MODE_TX) {
-		return EPOLLOUT | EPOLLWRNORM;
+		return POLLOUT | POLLWRNORM;
 	}
 
 	return 0;
@@ -1278,12 +1279,20 @@ static int wl1273_fm_vidioc_querycap(struct file *file, void *priv,
 
 	dev_dbg(radio->dev, "%s\n", __func__);
 
-	strscpy(capability->driver, WL1273_FM_DRIVER_NAME,
+	strlcpy(capability->driver, WL1273_FM_DRIVER_NAME,
 		sizeof(capability->driver));
-	strscpy(capability->card, "Texas Instruments Wl1273 FM Radio",
+	strlcpy(capability->card, "Texas Instruments Wl1273 FM Radio",
 		sizeof(capability->card));
-	strscpy(capability->bus_info, radio->bus_type,
+	strlcpy(capability->bus_info, radio->bus_type,
 		sizeof(capability->bus_info));
+
+	capability->device_caps = V4L2_CAP_HW_FREQ_SEEK |
+		V4L2_CAP_TUNER | V4L2_CAP_RADIO | V4L2_CAP_AUDIO |
+		V4L2_CAP_RDS_CAPTURE | V4L2_CAP_MODULATOR |
+		V4L2_CAP_RDS_OUTPUT;
+	capability->capabilities = capability->device_caps |
+		V4L2_CAP_DEVICE_CAPS;
+
 	return 0;
 }
 
@@ -1314,7 +1323,7 @@ static int wl1273_fm_vidioc_s_input(struct file *file, void *priv,
 
 /**
  * wl1273_fm_set_tx_power() -	Set the transmission power value.
- * @radio:			A pointer to the device struct.
+ * @core:			A pointer to the device struct.
  * @power:			The new power value.
  */
 static int wl1273_fm_set_tx_power(struct wl1273_device *radio, u16 power)
@@ -1472,7 +1481,7 @@ static int wl1273_fm_vidioc_g_audio(struct file *file, void *priv,
 	if (audio->index > 1)
 		return -EINVAL;
 
-	strscpy(audio->name, "Radio", sizeof(audio->name));
+	strlcpy(audio->name, "Radio", sizeof(audio->name));
 	audio->capability = V4L2_AUDCAP_STEREO;
 
 	return 0;
@@ -1507,7 +1516,7 @@ static int wl1273_fm_vidioc_g_tuner(struct file *file, void *priv,
 	if (tuner->index > 0)
 		return -EINVAL;
 
-	strscpy(tuner->name, WL1273_FM_DRIVER_NAME, sizeof(tuner->name));
+	strlcpy(tuner->name, WL1273_FM_DRIVER_NAME, sizeof(tuner->name));
 	tuner->type = V4L2_TUNER_RADIO;
 
 	tuner->rangelow	= WL1273_FREQ(WL1273_BAND_JAPAN_LOW);
@@ -1765,7 +1774,7 @@ static int wl1273_fm_vidioc_g_modulator(struct file *file, void *priv,
 
 	dev_dbg(radio->dev, "%s\n", __func__);
 
-	strscpy(modulator->name, WL1273_FM_DRIVER_NAME,
+	strlcpy(modulator->name, WL1273_FM_DRIVER_NAME,
 		sizeof(modulator->name));
 
 	modulator->rangelow = WL1273_FREQ(WL1273_BAND_JAPAN_LOW);
@@ -1966,16 +1975,12 @@ static const struct v4l2_ioctl_ops wl1273_ioctl_ops = {
 	.vidioc_log_status      = wl1273_fm_vidioc_log_status,
 };
 
-static const struct video_device wl1273_viddev_template = {
+static struct video_device wl1273_viddev_template = {
 	.fops			= &wl1273_fops,
 	.ioctl_ops		= &wl1273_ioctl_ops,
 	.name			= WL1273_FM_DRIVER_NAME,
 	.release		= wl1273_vdev_release,
 	.vfl_dir		= VFL_DIR_TX,
-	.device_caps		= V4L2_CAP_HW_FREQ_SEEK | V4L2_CAP_TUNER |
-				  V4L2_CAP_RADIO | V4L2_CAP_AUDIO |
-				  V4L2_CAP_RDS_CAPTURE | V4L2_CAP_MODULATOR |
-				  V4L2_CAP_RDS_OUTPUT,
 };
 
 static int wl1273_fm_radio_remove(struct platform_device *pdev)
@@ -2063,7 +2068,8 @@ static int wl1273_fm_radio_probe(struct platform_device *pdev)
 			goto err_request_irq;
 		}
 	} else {
-		dev_err(radio->dev, WL1273_FM_DRIVER_NAME ": Core WL1273 IRQ not configured");
+		dev_err(radio->dev, WL1273_FM_DRIVER_NAME ": Core WL1273 IRQ"
+			" not configured");
 		r = -EINVAL;
 		goto pdata_err;
 	}

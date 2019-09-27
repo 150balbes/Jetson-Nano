@@ -1,8 +1,20 @@
-/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (C) 2008 Advanced Micro Devices, Inc.
  *
  * Author: Joerg Roedel <joerg.roedel@amd.com>
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License version 2 as published
+ * by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
  */
 
 #ifndef __DMA_DEBUG_H
@@ -18,17 +30,19 @@ struct bus_type;
 
 extern void dma_debug_add_bus(struct bus_type *bus);
 
-extern void debug_dma_map_single(struct device *dev, const void *addr,
-				 unsigned long len);
+extern void dma_debug_init(u32 num_entries);
+
+extern int dma_debug_resize_entries(u32 num_entries);
 
 extern void debug_dma_map_page(struct device *dev, struct page *page,
 			       size_t offset, size_t size,
-			       int direction, dma_addr_t dma_addr);
+			       int direction, dma_addr_t dma_addr,
+			       bool map_single);
 
 extern void debug_dma_mapping_error(struct device *dev, dma_addr_t dma_addr);
 
 extern void debug_dma_unmap_page(struct device *dev, dma_addr_t addr,
-				 size_t size, int direction);
+				 size_t size, int direction, bool map_single);
 
 extern void debug_dma_map_sg(struct device *dev, struct scatterlist *sg,
 			     int nents, int mapped_ents, int direction);
@@ -57,6 +71,17 @@ extern void debug_dma_sync_single_for_device(struct device *dev,
 					     dma_addr_t dma_handle,
 					     size_t size, int direction);
 
+extern void debug_dma_sync_single_range_for_cpu(struct device *dev,
+						dma_addr_t dma_handle,
+						unsigned long offset,
+						size_t size,
+						int direction);
+
+extern void debug_dma_sync_single_range_for_device(struct device *dev,
+						   dma_addr_t dma_handle,
+						   unsigned long offset,
+						   size_t size, int direction);
+
 extern void debug_dma_sync_sg_for_cpu(struct device *dev,
 				      struct scatterlist *sg,
 				      int nelems, int direction);
@@ -75,14 +100,19 @@ static inline void dma_debug_add_bus(struct bus_type *bus)
 {
 }
 
-static inline void debug_dma_map_single(struct device *dev, const void *addr,
-					unsigned long len)
+static inline void dma_debug_init(u32 num_entries)
 {
+}
+
+static inline int dma_debug_resize_entries(u32 num_entries)
+{
+	return 0;
 }
 
 static inline void debug_dma_map_page(struct device *dev, struct page *page,
 				      size_t offset, size_t size,
-				      int direction, dma_addr_t dma_addr)
+				      int direction, dma_addr_t dma_addr,
+				      bool map_single)
 {
 }
 
@@ -92,7 +122,8 @@ static inline void debug_dma_mapping_error(struct device *dev,
 }
 
 static inline void debug_dma_unmap_page(struct device *dev, dma_addr_t addr,
-					size_t size, int direction)
+					size_t size, int direction,
+					bool map_single)
 {
 }
 
@@ -141,6 +172,22 @@ static inline void debug_dma_sync_single_for_device(struct device *dev,
 {
 }
 
+static inline void debug_dma_sync_single_range_for_cpu(struct device *dev,
+						       dma_addr_t dma_handle,
+						       unsigned long offset,
+						       size_t size,
+						       int direction)
+{
+}
+
+static inline void debug_dma_sync_single_range_for_device(struct device *dev,
+							  dma_addr_t dma_handle,
+							  unsigned long offset,
+							  size_t size,
+							  int direction)
+{
+}
+
 static inline void debug_dma_sync_sg_for_cpu(struct device *dev,
 					     struct scatterlist *sg,
 					     int nelems, int direction)
@@ -162,5 +209,8 @@ static inline void debug_dma_assert_idle(struct page *page)
 }
 
 #endif /* CONFIG_DMA_API_DEBUG */
+
+/* get architecture specific interesting data */
+char *__weak debug_dma_platformdata(struct device *dev);
 
 #endif /* __DMA_DEBUG_H */

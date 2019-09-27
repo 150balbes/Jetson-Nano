@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _LINUX_CY8CTMG110_PDATA_H
 #define _LINUX_CY8CTMG110_PDATA_H
 

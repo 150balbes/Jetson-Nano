@@ -47,6 +47,7 @@
 #include "sunxi-common-regulators.dtsi"
 
 #include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/pinctrl/sun4i-a10.h>
 
 / {
 	model = "PineRiver Mini X-Plus";
@@ -70,6 +71,8 @@
 };
 
 &i2c0 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&i2c0_pins_a>;
 	status = "okay";
 
 	axp209: pmic@34 {
@@ -84,19 +87,22 @@
 
 &ir0 {
 	pinctrl-names = "default";
-	pinctrl-0 = <&ir0_rx_pins>;
+	pinctrl-0 = <&ir0_rx_pins_a>;
 	status = "okay";
 };
 
-&ir0_rx_pins {
+&ir0_rx_pins_a {
 	/* The ir receiver is not always populated */
-	bias-pull-up;
+	allwinner,pull = <SUN4I_PINCTRL_PULL_UP>;
 };
 
 &mmc0 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&mmc0_pins_a>, <&mmc0_cd_pin_reference_design>;
 	vmmc-supply = <&reg_vcc3v3>;
 	bus-width = <4>;
-	cd-gpios = <&pio 7 1 GPIO_ACTIVE_LOW>; /* PH1 */
+	cd-gpios = <&pio 7 1 GPIO_ACTIVE_HIGH>; /* PH1 */
+	cd-inverted;
 	status = "okay";
 };
 
@@ -127,7 +133,7 @@
 
 &uart0 {
 	pinctrl-names = "default";
-	pinctrl-0 = <&uart0_pb_pins>;
+	pinctrl-0 = <&uart0_pins_a>;
 	status = "okay";
 };
 

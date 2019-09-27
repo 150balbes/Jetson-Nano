@@ -1,0 +1,27 @@
+config NVS_BMI160_IIO
+	tristate "Bosch BMI160 IMU using IIO transport"
+	depends on I2C && SYSFS && IIO
+	select NVS
+	select NVS_IIO
+	default n
+	help
+	  Enable Bosch BMI160 IMU
+
+config NVS_BMI160_INPUT
+	tristate "Bosch BMI160 IMU using INPUT transport"
+	depends on I2C && SYSFS && INPUT
+	select NVS
+	select NVS_INPUT
+	default n
+	help
+	  Enable Bosch BMI160 IMU
+
+config NVS_BMI160_RELAY
+	tristate "Bosch BMI160 IMU using RELAYFS transport"
+	depends on I2C && SYSFS
+	select NVS
+	select NVS_RELAY
+	default n
+	help
+	  Enable Bosch BMI160 IMU
+

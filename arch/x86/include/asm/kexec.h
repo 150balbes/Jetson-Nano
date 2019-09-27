@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _ASM_X86_KEXEC_H
 #define _ASM_X86_KEXEC_H
 
@@ -21,7 +20,6 @@
 #ifndef __ASSEMBLY__
 
 #include <linux/string.h>
-#include <linux/kernel.h>
 
 #include <asm/page.h>
 #include <asm/ptrace.h>
@@ -68,7 +66,23 @@ struct kimage;
 
 /* Memory to backup during crash kdump */
 #define KEXEC_BACKUP_SRC_START	(0UL)
-#define KEXEC_BACKUP_SRC_END	(640 * 1024UL - 1)	/* 640K */
+#define KEXEC_BACKUP_SRC_END	(640 * 1024UL)	/* 640K */
+
+/*
+ * CPU does not save ss and sp on stack if execution is already
+ * running in kernel mode at the time of NMI occurrence. This code
+ * fixes it.
+ */
+static inline void crash_fixup_ss_esp(struct pt_regs *newregs,
+				      struct pt_regs *oldregs)
+{
+#ifdef CONFIG_X86_32
+	newregs->sp = (unsigned long)&(oldregs->sp);
+	asm volatile("xorl %%eax, %%eax\n\t"
+		     "movw %%ss, %%ax\n\t"
+		     :"=a"(newregs->ss));
+#endif
+}
 
 /*
  * This function is responsible for capturing register states if coming
@@ -80,6 +94,7 @@ static inline void crash_setup_regs(struct pt_regs *newregs,
 {
 	if (oldregs) {
 		memcpy(newregs, oldregs, sizeof(*newregs));
+		crash_fixup_ss_esp(newregs, oldregs);
 	} else {
 #ifdef CONFIG_X86_32
 		asm volatile("movl %%ebx,%0" : "=m"(newregs->bx));
@@ -116,7 +131,7 @@ static inline void crash_setup_regs(struct pt_regs *newregs,
 		asm volatile("movl %%cs, %%eax;" :"=a"(newregs->cs));
 		asm volatile("pushfq; popq %0" :"=m"(newregs->flags));
 #endif
-		newregs->ip = _THIS_IP_;
+		newregs->ip = (unsigned long)current_text_addr();
 	}
 }
 
@@ -132,8 +147,7 @@ unsigned long
 relocate_kernel(unsigned long indirection_page,
 		unsigned long page_list,
 		unsigned long start_address,
-		unsigned int preserve_context,
-		unsigned int sme_active);
+		unsigned int preserve_context);
 #endif
 
 #define ARCH_HAS_KIMAGE_ARCH
@@ -150,7 +164,6 @@ struct kimage_arch {
 };
 #else
 struct kimage_arch {
-	p4d_t *p4d;
 	pud_t *pud;
 	pmd_t *pmd;
 	pte_t *pte;
@@ -193,14 +206,6 @@ struct kexec_entry64_regs {
 	uint64_t r15;
 	uint64_t rip;
 };
-
-extern int arch_kexec_post_alloc_pages(void *vaddr, unsigned int pages,
-				       gfp_t gfp);
-#define arch_kexec_post_alloc_pages arch_kexec_post_alloc_pages
-
-extern void arch_kexec_pre_free_pages(void *vaddr, unsigned int pages);
-#define arch_kexec_pre_free_pages arch_kexec_pre_free_pages
-
 #endif
 
 typedef void crash_vmclear_fn(void);

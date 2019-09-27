@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * (C) 2001 Clemson University and The University of Chicago
  *
@@ -53,7 +52,12 @@
  */
 #define ORANGEFS_MAX_DEBUG_STRING_LEN	0x00000800
 
-#define ORANGEFS_MAX_DIRENT_COUNT_READDIR 512
+/*
+ * The maximum number of directory entries in a single request is 96.
+ * XXX: Why can this not be higher. The client-side code can handle up to 512.
+ * XXX: What happens if we expect more than the client can return?
+ */
+#define ORANGEFS_MAX_DIRENT_COUNT_READDIR 96
 
 #include "upcall.h"
 #include "downcall.h"

@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  *  fs/ext4/mballoc.h
  *
@@ -79,8 +78,10 @@ do {									\
 
 
 struct ext4_free_data {
-	/* this links the free block information from sb_info */
-	struct list_head		efd_list;
+	/* MUST be the first member */
+	struct ext4_journal_cb_entry	efd_jce;
+
+	/* ext4_free_data private data starts from here */
 
 	/* this links the free block information from group_info */
 	struct rb_node			efd_node;
@@ -198,21 +199,4 @@ static inline ext4_fsblk_t ext4_grp_offs_to_block(struct super_block *sb,
 	return ext4_group_first_block_no(sb, fex->fe_group) +
 		(fex->fe_start << EXT4_SB(sb)->s_cluster_bits);
 }
-
-typedef int (*ext4_mballoc_query_range_fn)(
-	struct super_block		*sb,
-	ext4_group_t			agno,
-	ext4_grpblk_t			start,
-	ext4_grpblk_t			len,
-	void				*priv);
-
-int
-ext4_mballoc_query_range(
-	struct super_block		*sb,
-	ext4_group_t			agno,
-	ext4_grpblk_t			start,
-	ext4_grpblk_t			end,
-	ext4_mballoc_query_range_fn	formatter,
-	void				*priv);
-
 #endif

@@ -1,6 +1,6 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright 2014, Michael Ellerman, IBM Corp.
+ * Licensed under GPLv2.
  */
 
 #define _GNU_SOURCE	/* For CPU_ZERO etc. */
@@ -193,9 +193,9 @@ bool require_paranoia_below(int level)
 	long current;
 	char *end, buf[16];
 	FILE *f;
-	bool rc;
+	int rc;
 
-	rc = false;
+	rc = -1;
 
 	f = fopen(PARANOID_PATH, "r");
 	if (!f) {
@@ -218,7 +218,7 @@ bool require_paranoia_below(int level)
 	if (current >= level)
 		goto out_close;
 
-	rc = true;
+	rc = 0;
 out_close:
 	fclose(f);
 out:

@@ -1,8 +1,7 @@
-// SPDX-License-Identifier: GPL-2.0-only
 ///
 /// Use *_pool_zalloc rather than *_pool_alloc followed by memset with 0
 ///
-// Copyright: (C) 2015 Intel Corp.
+// Copyright: (C) 2015 Intel Corp.  GPLv2.
 // Options: --no-includes --include-headers
 //
 // Keywords: dma_pool_zalloc, pci_pool_zalloc

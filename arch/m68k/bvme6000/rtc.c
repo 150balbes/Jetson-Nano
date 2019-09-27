@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  *	Real Time Clock interface for Linux on the BVME6000
  *
@@ -21,7 +20,7 @@
 #include <asm/bvme6000hw.h>
 
 #include <asm/io.h>
-#include <linux/uaccess.h>
+#include <asm/uaccess.h>
 #include <asm/setup.h>
 
 /*
@@ -169,7 +168,7 @@ static int __init rtc_DP8570A_init(void)
 	if (!MACH_IS_BVME6000)
 		return -ENODEV;
 
-	pr_info("DP8570A Real Time Clock Driver v%s\n", RTC_VERSION);
+	printk(KERN_INFO "DP8570A Real Time Clock Driver v%s\n", RTC_VERSION);
 	return misc_register(&rtc_dev);
 }
 module_init(rtc_DP8570A_init);

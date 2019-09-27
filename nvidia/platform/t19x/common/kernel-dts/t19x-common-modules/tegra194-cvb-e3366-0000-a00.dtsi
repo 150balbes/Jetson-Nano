@@ -1,0 +1,52 @@
+/*
+ * Copyright (c) 2017, NVIDIA CORPORATION.  All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; version 2 of the License.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ */
+
+/ {
+	soft_wdt:soft_watchdog {
+		compatible = "softdog-platform";
+		status = "okay";
+	};
+
+	plugin-manager {
+		fragement-tegra-wdt-en {
+			odm-data = "enable-denver-wdt";
+			override@0 {
+				target = <&tegra_wdt>;
+				_overlay_ {
+					status = "okay";
+				};
+			};
+		};
+
+		fragemen-tegra-wdt-dis {
+			odm-data = "disable-denver-wdt";
+			override@0 {
+				target = <&tegra_pmc>;
+				_overlay_ {
+					nvidia,enable-halt-in-fiq;
+				};
+			};
+		};
+
+		fragement-soft-wdt {
+			odm-data = "enable-pmic-wdt",
+				   "enable-denver-wdt";
+			override@0 {
+				target = <&soft_wdt>;
+				_overlay_ {
+					status = "disabled";
+				};
+			};
+		};
+	};
+};

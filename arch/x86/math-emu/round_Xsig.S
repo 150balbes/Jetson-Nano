@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*---------------------------------------------------------------------------+
  |  round_Xsig.S                                                             |
  |                                                                           |
@@ -79,7 +78,7 @@ L_exit:
 	popl	%ebx
 	leave
 	ret
-ENDPROC(round_Xsig)
+
 
 
 
@@ -139,4 +138,4 @@ L_n_exit:
 	popl	%ebx
 	leave
 	ret
-ENDPROC(norm_Xsig)
+

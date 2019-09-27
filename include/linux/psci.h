@@ -1,5 +1,12 @@
-/* SPDX-License-Identifier: GPL-2.0-only */
 /*
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
  *
  * Copyright (C) 2015 ARM Limited
  */
@@ -42,8 +49,12 @@ struct psci_operations {
 	enum smccc_version smccc_version;
 };
 
-extern struct psci_operations psci_ops;
+struct extended_psci_operations {
+	u32 (*make_power_state)(u32 state);
+};
 
+extern struct psci_operations psci_ops;
+extern struct extended_psci_operations extended_ops;
 #if defined(CONFIG_ARM_PSCI_FW)
 int __init psci_dt_init(void);
 #else
@@ -53,11 +64,13 @@ static inline int psci_dt_init(void) { return 0; }
 #if defined(CONFIG_ARM_PSCI_FW) && defined(CONFIG_ACPI)
 int __init psci_acpi_init(void);
 bool __init acpi_psci_present(void);
-bool acpi_psci_use_hvc(void);
+bool __init acpi_psci_use_hvc(void);
 #else
 static inline int psci_acpi_init(void) { return 0; }
 static inline bool acpi_psci_present(void) { return false; }
-static inline bool acpi_psci_use_hvc(void) {return false; }
 #endif
+
+extern void (*psci_handle_reboot_cmd)(const char *cmd);
+extern void (*psci_prepare_poweroff)(void);
 
 #endif /* __LINUX_PSCI_H */

@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  *  PowerPC version
  *    Copyright (C) 1995-1996 Gary Thomas (gdt@linuxppc.org)
@@ -10,6 +9,12 @@
  *
  *  Derived from "arch/i386/mm/init.c"
  *    Copyright (C) 1991, 1992, 1993, 1994  Linus Torvalds
+ *
+ *  This program is free software; you can redistribute it and/or
+ *  modify it under the terms of the GNU General Public License
+ *  as published by the Free Software Foundation; either version
+ *  2 of the License, or (at your option) any later version.
+ *
  */
 
 #include <linux/module.h>
@@ -40,10 +45,8 @@
 #include <asm/tlb.h>
 #include <asm/sections.h>
 #include <asm/hugetlb.h>
-#include <asm/kup.h>
-#include <asm/kasan.h>
 
-#include <mm/mmu_decl.h>
+#include "mmu_decl.h"
 
 #if defined(CONFIG_KERNEL_START_BOOL) || defined(CONFIG_LOWMEM_SIZE_BOOL)
 /* The amount of lowmem must be within 0xF0000000 - KERNELBASE. */
@@ -85,13 +88,18 @@ void MMU_init(void);
 int __map_without_bats;
 int __map_without_ltlbs;
 
+/*
+ * This tells the system to allow ioremapping memory marked as reserved.
+ */
+int __allow_ioremap_reserved;
+
 /* max amount of low RAM to map in */
 unsigned long __max_low_memory = MAX_LOW_MEM;
 
 /*
  * Check for command-line options that affect what MMU_init will do.
  */
-static void __init MMU_setup(void)
+void __init MMU_setup(void)
 {
 	/* Check for nobats option (used in mapin_ram). */
 	if (strstr(boot_command_line, "nobats")) {
@@ -105,8 +113,6 @@ static void __init MMU_setup(void)
 		__map_without_bats = 1;
 		__map_without_ltlbs = 1;
 	}
-	if (strict_kernel_rwx_enabled() && !IS_ENABLED(CONFIG_PPC_8xx))
-		__map_without_ltlbs = 1;
 }
 
 /*
@@ -126,6 +132,8 @@ void __init MMU_init(void)
 	 * Reserve gigantic pages for hugetlb.  This MUST occur before
 	 * lowmem_end_addr is initialized below.
 	 */
+	reserve_hugetlb_gpages();
+
 	if (memblock.memory.cnt > 1) {
 #ifndef CONFIG_WII
 		memblock_enforce_memory_limit(memblock.memory.regions[0].size);
@@ -174,10 +182,6 @@ void __init MMU_init(void)
 #ifdef CONFIG_BOOTX_TEXT
 	btext_unmap();
 #endif
-
-	kasan_mmu_init();
-
-	setup_kup();
 
 	/* Shortly after that, the entire linear mapping will be available */
 	memblock_set_current_limit(lowmem_end_addr);

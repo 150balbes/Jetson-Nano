@@ -1,7 +1,20 @@
-// SPDX-License-Identifier: GPL-2.0+
 /*
  * Copyright (c) 1996, 2003 VIA Networking Technologies, Inc.
  * All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with this program; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  *
  * File: srom.c
  *
@@ -51,7 +64,7 @@
  *
  * Parameters:
  *  In:
- *      iobase          - I/O base address
+ *      dwIoBase        - I/O base address
  *      byContntOffset  - address of EEPROM
  *  Out:
  *      none
@@ -59,7 +72,7 @@
  * Return Value: data read
  *
  */
-unsigned char SROMbyReadEmbedded(void __iomem *iobase,
+unsigned char SROMbyReadEmbedded(void __iomem *dwIoBase,
 				 unsigned char byContntOffset)
 {
 	unsigned short wDelay, wNoACK;
@@ -68,18 +81,18 @@ unsigned char SROMbyReadEmbedded(void __iomem *iobase,
 	unsigned char byOrg;
 
 	byData = 0xFF;
-	VNSvInPortB(iobase + MAC_REG_I2MCFG, &byOrg);
+	VNSvInPortB(dwIoBase + MAC_REG_I2MCFG, &byOrg);
 	/* turn off hardware retry for getting NACK */
-	VNSvOutPortB(iobase + MAC_REG_I2MCFG, (byOrg & (~I2MCFG_NORETRY)));
+	VNSvOutPortB(dwIoBase + MAC_REG_I2MCFG, (byOrg & (~I2MCFG_NORETRY)));
 	for (wNoACK = 0; wNoACK < W_MAX_I2CRETRY; wNoACK++) {
-		VNSvOutPortB(iobase + MAC_REG_I2MTGID, EEP_I2C_DEV_ID);
-		VNSvOutPortB(iobase + MAC_REG_I2MTGAD, byContntOffset);
+		VNSvOutPortB(dwIoBase + MAC_REG_I2MTGID, EEP_I2C_DEV_ID);
+		VNSvOutPortB(dwIoBase + MAC_REG_I2MTGAD, byContntOffset);
 
 		/* issue read command */
-		VNSvOutPortB(iobase + MAC_REG_I2MCSR, I2MCSR_EEMR);
+		VNSvOutPortB(dwIoBase + MAC_REG_I2MCSR, I2MCSR_EEMR);
 		/* wait DONE be set */
 		for (wDelay = 0; wDelay < W_MAX_TIMEOUT; wDelay++) {
-			VNSvInPortB(iobase + MAC_REG_I2MCSR, &byWait);
+			VNSvInPortB(dwIoBase + MAC_REG_I2MCSR, &byWait);
 			if (byWait & (I2MCSR_DONE | I2MCSR_NACK))
 				break;
 			PCAvDelayByIO(CB_DELAY_LOOP_WAIT);
@@ -89,8 +102,8 @@ unsigned char SROMbyReadEmbedded(void __iomem *iobase,
 			break;
 		}
 	}
-	VNSvInPortB(iobase + MAC_REG_I2MDIPT, &byData);
-	VNSvOutPortB(iobase + MAC_REG_I2MCFG, byOrg);
+	VNSvInPortB(dwIoBase + MAC_REG_I2MDIPT, &byData);
+	VNSvOutPortB(dwIoBase + MAC_REG_I2MCFG, byOrg);
 	return byData;
 }
 
@@ -99,20 +112,20 @@ unsigned char SROMbyReadEmbedded(void __iomem *iobase,
  *
  * Parameters:
  *  In:
- *      iobase          - I/O base address
+ *      dwIoBase        - I/O base address
  *  Out:
  *      pbyEepromRegs   - EEPROM content Buffer
  *
  * Return Value: none
  *
  */
-void SROMvReadAllContents(void __iomem *iobase, unsigned char *pbyEepromRegs)
+void SROMvReadAllContents(void __iomem *dwIoBase, unsigned char *pbyEepromRegs)
 {
 	int     ii;
 
 	/* ii = Rom Address */
 	for (ii = 0; ii < EEP_MAX_CONTEXT_SIZE; ii++) {
-		*pbyEepromRegs = SROMbyReadEmbedded(iobase,
+		*pbyEepromRegs = SROMbyReadEmbedded(dwIoBase,
 						    (unsigned char)ii);
 		pbyEepromRegs++;
 	}
@@ -123,21 +136,21 @@ void SROMvReadAllContents(void __iomem *iobase, unsigned char *pbyEepromRegs)
  *
  * Parameters:
  *  In:
- *      iobase          - I/O base address
+ *      dwIoBase        - I/O base address
  *  Out:
  *      pbyEtherAddress - Ethernet Address buffer
  *
  * Return Value: none
  *
  */
-void SROMvReadEtherAddress(void __iomem *iobase,
+void SROMvReadEtherAddress(void __iomem *dwIoBase,
 			   unsigned char *pbyEtherAddress)
 {
 	unsigned char ii;
 
 	/* ii = Rom Address */
 	for (ii = 0; ii < ETH_ALEN; ii++) {
-		*pbyEtherAddress = SROMbyReadEmbedded(iobase, ii);
+		*pbyEtherAddress = SROMbyReadEmbedded(dwIoBase, ii);
 		pbyEtherAddress++;
 	}
 }

@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * arch/arm/mach-ixp4xx/gateway7001-setup.c
  *
@@ -27,8 +26,6 @@
 #include <asm/mach-types.h>
 #include <asm/mach/arch.h>
 #include <asm/mach/flash.h>
-
-#include "irqs.h"
 
 static struct flash_platform_data gateway7001_flash_data = {
 	.map_name	= "cfi_probe",

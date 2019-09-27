@@ -1,10 +1,7 @@
-/* SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note */
 #ifndef _IP6_TUNNEL_H
 #define _IP6_TUNNEL_H
 
 #include <linux/types.h>
-#include <linux/if.h>		/* For IFNAMSIZ. */
-#include <linux/in6.h>		/* For struct in6_addr. */
 
 #define IPV6_TLV_TNL_ENCAP_LIMIT 4
 #define IPV6_DEFAULT_TNL_ENCAP_LIMIT 4
@@ -21,8 +18,6 @@
 #define IP6_TNL_F_RCV_DSCP_COPY 0x10
 /* copy fwmark from inner packet */
 #define IP6_TNL_F_USE_ORIG_FWMARK 0x20
-/* allow remote endpoint on the local node */
-#define IP6_TNL_F_ALLOW_LOCAL_REMOTE 0x40
 
 struct ip6_tnl_parm {
 	char name[IFNAMSIZ];	/* name of tunnel device */

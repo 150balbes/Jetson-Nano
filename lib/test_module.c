@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * This module emits "Hello, world" on printk when loaded.
  *

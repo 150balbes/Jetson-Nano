@@ -1,14 +1,23 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * tsacct.c - System accounting over taskstats interface
  *
  * Copyright (C) Jay Lan,	<jlan@sgi.com>
+ *
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
  */
 
 #include <linux/kernel.h>
-#include <linux/sched/signal.h>
-#include <linux/sched/mm.h>
-#include <linux/sched/cputime.h>
+#include <linux/sched.h>
 #include <linux/tsacct_kern.h>
 #include <linux/acct.h>
 #include <linux/jiffies.h>
@@ -22,7 +31,7 @@ void bacct_add_tsk(struct user_namespace *user_ns,
 		   struct taskstats *stats, struct task_struct *tsk)
 {
 	const struct cred *tcred;
-	u64 utime, stime, utimescaled, stimescaled;
+	cputime_t utime, stime, utimescaled, stimescaled;
 	u64 delta;
 
 	BUILD_BUG_ON(TS_COMM_LEN < TASK_COMM_LEN);
@@ -58,12 +67,12 @@ void bacct_add_tsk(struct user_namespace *user_ns,
 	rcu_read_unlock();
 
 	task_cputime(tsk, &utime, &stime);
-	stats->ac_utime = div_u64(utime, NSEC_PER_USEC);
-	stats->ac_stime = div_u64(stime, NSEC_PER_USEC);
+	stats->ac_utime = cputime_to_usecs(utime);
+	stats->ac_stime = cputime_to_usecs(stime);
 
 	task_cputime_scaled(tsk, &utimescaled, &stimescaled);
-	stats->ac_utimescaled = div_u64(utimescaled, NSEC_PER_USEC);
-	stats->ac_stimescaled = div_u64(stimescaled, NSEC_PER_USEC);
+	stats->ac_utimescaled = cputime_to_usecs(utimescaled);
+	stats->ac_stimescaled = cputime_to_usecs(stimescaled);
 
 	stats->ac_minflt = tsk->min_flt;
 	stats->ac_majflt = tsk->maj_flt;
@@ -114,15 +123,18 @@ void xacct_add_tsk(struct taskstats *stats, struct task_struct *p)
 #undef MB
 
 static void __acct_update_integrals(struct task_struct *tsk,
-				    u64 utime, u64 stime)
+				    cputime_t utime, cputime_t stime)
 {
-	u64 time, delta;
+	cputime_t time, dtime;
+	u64 delta;
 
 	if (!likely(tsk->mm))
 		return;
 
 	time = stime + utime;
-	delta = time - tsk->acct_timexpd;
+	dtime = time - tsk->acct_timexpd;
+	/* Avoid division: cputime_t is often in nanoseconds already. */
+	delta = cputime_to_nsecs(dtime);
 
 	if (delta < TICK_NSEC)
 		return;
@@ -143,7 +155,7 @@ static void __acct_update_integrals(struct task_struct *tsk,
  */
 void acct_update_integrals(struct task_struct *tsk)
 {
-	u64 utime, stime;
+	cputime_t utime, stime;
 	unsigned long flags;
 
 	local_irq_save(flags);

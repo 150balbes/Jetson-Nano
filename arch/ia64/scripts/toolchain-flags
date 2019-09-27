@@ -1,5 +1,4 @@
 #!/bin/sh
-# SPDX-License-Identifier: GPL-2.0
 #
 # Check whether linker can handle cross-segment @segrel():
 #

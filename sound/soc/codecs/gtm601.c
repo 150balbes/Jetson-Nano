@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * This is a simple driver for the GTM601 Voice PCM interface
  *
@@ -7,6 +6,10 @@
  * Author: Marek Belisko <marek@goldelico.com>
  *
  * Based on wm8727.c driver
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  */
 
 #include <linux/init.h>
@@ -16,6 +19,7 @@
 #include <linux/device.h>
 #include <sound/core.h>
 #include <sound/pcm.h>
+#include <sound/ac97_codec.h>
 #include <sound/initval.h>
 #include <sound/soc.h>
 
@@ -47,21 +51,25 @@ static struct snd_soc_dai_driver gtm601_dai = {
 	},
 };
 
-static const struct snd_soc_component_driver soc_component_dev_gtm601 = {
-	.dapm_widgets		= gtm601_dapm_widgets,
-	.num_dapm_widgets	= ARRAY_SIZE(gtm601_dapm_widgets),
-	.dapm_routes		= gtm601_dapm_routes,
-	.num_dapm_routes	= ARRAY_SIZE(gtm601_dapm_routes),
-	.idle_bias_on		= 1,
-	.use_pmdown_time	= 1,
-	.endianness		= 1,
-	.non_legacy_dai_naming	= 1,
+static const struct snd_soc_codec_driver soc_codec_dev_gtm601 = {
+	.component_driver = {
+		.dapm_widgets		= gtm601_dapm_widgets,
+		.num_dapm_widgets	= ARRAY_SIZE(gtm601_dapm_widgets),
+		.dapm_routes		= gtm601_dapm_routes,
+		.num_dapm_routes	= ARRAY_SIZE(gtm601_dapm_routes),
+	},
 };
 
 static int gtm601_platform_probe(struct platform_device *pdev)
 {
-	return devm_snd_soc_register_component(&pdev->dev,
-			&soc_component_dev_gtm601, &gtm601_dai, 1);
+	return snd_soc_register_codec(&pdev->dev,
+			&soc_codec_dev_gtm601, &gtm601_dai, 1);
+}
+
+static int gtm601_platform_remove(struct platform_device *pdev)
+{
+	snd_soc_unregister_codec(&pdev->dev);
+	return 0;
 }
 
 #if defined(CONFIG_OF)
@@ -78,6 +86,7 @@ static struct platform_driver gtm601_codec_driver = {
 		.of_match_table = of_match_ptr(gtm601_codec_of_match),
 	},
 	.probe = gtm601_platform_probe,
+	.remove = gtm601_platform_remove,
 };
 
 module_platform_driver(gtm601_codec_driver);

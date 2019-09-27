@@ -1,8 +1,21 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  *  Driver for NEC VR4100 series Real Time Clock unit.
  *
  *  Copyright (C) 2003-2008  Yoichi Yuasa <yuasa@linux-mips.org>
+ *
+ *  This program is free software; you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License as published by
+ *  the Free Software Foundation; either version 2 of the License, or
+ *  (at your option) any later version.
+ *
+ *  This program is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *  GNU General Public License for more details.
+ *
+ *  You should have received a copy of the GNU General Public License
+ *  along with this program; if not, write to the Free Software
+ *  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
 #include <linux/err.h>
 #include <linux/fs.h>
@@ -75,7 +88,7 @@ static unsigned int alarm_enabled;
 static int aie_irq;
 static int pie_irq;
 
-static inline time64_t read_elapsed_second(void)
+static inline unsigned long read_elapsed_second(void)
 {
 
 	unsigned long first_low, first_mid, first_high;
@@ -92,10 +105,10 @@ static inline time64_t read_elapsed_second(void)
 	} while (first_low != second_low || first_mid != second_mid ||
 		 first_high != second_high);
 
-	return ((u64)first_high << 17) | (first_mid << 1) | (first_low >> 15);
+	return (first_high << 17) | (first_mid << 1) | (first_low >> 15);
 }
 
-static inline void write_elapsed_second(time64_t sec)
+static inline void write_elapsed_second(unsigned long sec)
 {
 	spin_lock_irq(&rtc_lock);
 
@@ -106,24 +119,42 @@ static inline void write_elapsed_second(time64_t sec)
 	spin_unlock_irq(&rtc_lock);
 }
 
+static void vr41xx_rtc_release(struct device *dev)
+{
+
+	spin_lock_irq(&rtc_lock);
+
+	rtc1_write(ECMPLREG, 0);
+	rtc1_write(ECMPMREG, 0);
+	rtc1_write(ECMPHREG, 0);
+	rtc1_write(RTCL1LREG, 0);
+	rtc1_write(RTCL1HREG, 0);
+
+	spin_unlock_irq(&rtc_lock);
+
+	disable_irq(aie_irq);
+	disable_irq(pie_irq);
+}
+
 static int vr41xx_rtc_read_time(struct device *dev, struct rtc_time *time)
 {
-	time64_t epoch_sec, elapsed_sec;
+	unsigned long epoch_sec, elapsed_sec;
 
-	epoch_sec = mktime64(epoch, 1, 1, 0, 0, 0);
+	epoch_sec = mktime(epoch, 1, 1, 0, 0, 0);
 	elapsed_sec = read_elapsed_second();
 
-	rtc_time64_to_tm(epoch_sec + elapsed_sec, time);
+	rtc_time_to_tm(epoch_sec + elapsed_sec, time);
 
 	return 0;
 }
 
 static int vr41xx_rtc_set_time(struct device *dev, struct rtc_time *time)
 {
-	time64_t epoch_sec, current_sec;
+	unsigned long epoch_sec, current_sec;
 
-	epoch_sec = mktime64(epoch, 1, 1, 0, 0, 0);
-	current_sec = rtc_tm_to_time64(time);
+	epoch_sec = mktime(epoch, 1, 1, 0, 0, 0);
+	current_sec = mktime(time->tm_year + 1900, time->tm_mon + 1, time->tm_mday,
+			     time->tm_hour, time->tm_min, time->tm_sec);
 
 	write_elapsed_second(current_sec - epoch_sec);
 
@@ -144,16 +175,18 @@ static int vr41xx_rtc_read_alarm(struct device *dev, struct rtc_wkalrm *wkalrm)
 
 	spin_unlock_irq(&rtc_lock);
 
-	rtc_time64_to_tm((high << 17) | (mid << 1) | (low >> 15), time);
+	rtc_time_to_tm((high << 17) | (mid << 1) | (low >> 15), time);
 
 	return 0;
 }
 
 static int vr41xx_rtc_set_alarm(struct device *dev, struct rtc_wkalrm *wkalrm)
 {
-	time64_t alarm_sec;
+	unsigned long alarm_sec;
+	struct rtc_time *time = &wkalrm->time;
 
-	alarm_sec = rtc_tm_to_time64(&wkalrm->time);
+	alarm_sec = mktime(time->tm_year + 1900, time->tm_mon + 1, time->tm_mday,
+			   time->tm_hour, time->tm_min, time->tm_sec);
 
 	spin_lock_irq(&rtc_lock);
 
@@ -239,6 +272,7 @@ static irqreturn_t rtclong1_interrupt(int irq, void *dev_id)
 }
 
 static const struct rtc_class_ops vr41xx_rtc_ops = {
+	.release		= vr41xx_rtc_release,
 	.ioctl			= vr41xx_rtc_ioctl,
 	.read_time		= vr41xx_rtc_read_time,
 	.set_time		= vr41xx_rtc_set_time,
@@ -276,16 +310,13 @@ static int rtc_probe(struct platform_device *pdev)
 		goto err_rtc1_iounmap;
 	}
 
-	rtc = devm_rtc_allocate_device(&pdev->dev);
+	rtc = devm_rtc_device_register(&pdev->dev, rtc_name, &vr41xx_rtc_ops,
+					THIS_MODULE);
 	if (IS_ERR(rtc)) {
 		retval = PTR_ERR(rtc);
 		goto err_iounmap_all;
 	}
 
-	rtc->ops = &vr41xx_rtc_ops;
-
-	/* 48-bit counter at 32.768 kHz */
-	rtc->range_max = (1ULL << 33) - 1;
 	rtc->max_user_freq = MAX_PERIODIC_RATE;
 
 	spin_lock_irq(&rtc_lock);
@@ -326,10 +357,6 @@ static int rtc_probe(struct platform_device *pdev)
 	disable_irq(pie_irq);
 
 	dev_info(&pdev->dev, "Real Time Clock of NEC VR4100 series\n");
-
-	retval = rtc_register_device(rtc);
-	if (retval)
-		goto err_iounmap_all;
 
 	return 0;
 

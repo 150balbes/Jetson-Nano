@@ -1,6 +1,15 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (C) 2016 Google, Inc.
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
  */
 
 #define _GNU_SOURCE
@@ -28,19 +37,17 @@ void child(int cpu)
 	CPU_ZERO(&set);
 	CPU_SET(cpu, &set);
 	if (sched_setaffinity(0, sizeof(set), &set) != 0) {
-		ksft_print_msg("sched_setaffinity() failed: %s\n",
-			strerror(errno));
+		perror("sched_setaffinity() failed");
 		_exit(1);
 	}
 
 	if (ptrace(PTRACE_TRACEME, 0, NULL, NULL) != 0) {
-		ksft_print_msg("ptrace(PTRACE_TRACEME) failed: %s\n",
-			strerror(errno));
+		perror("ptrace(PTRACE_TRACEME) failed");
 		_exit(1);
 	}
 
 	if (raise(SIGSTOP) != 0) {
-		ksft_print_msg("raise(SIGSTOP) failed: %s\n", strerror(errno));
+		perror("raise(SIGSTOP) failed");
 		_exit(1);
 	}
 
@@ -54,7 +61,7 @@ bool run_test(int cpu)
 	pid_t wpid;
 
 	if (pid < 0) {
-		ksft_print_msg("fork() failed: %s\n", strerror(errno));
+		perror("fork() failed");
 		return false;
 	}
 	if (pid == 0)
@@ -62,64 +69,57 @@ bool run_test(int cpu)
 
 	wpid = waitpid(pid, &status, __WALL);
 	if (wpid != pid) {
-		ksft_print_msg("waitpid() failed: %s\n", strerror(errno));
+		perror("waitpid() failed");
 		return false;
 	}
 	if (!WIFSTOPPED(status)) {
-		ksft_print_msg("child did not stop: %s\n", strerror(errno));
+		printf("child did not stop\n");
 		return false;
 	}
 	if (WSTOPSIG(status) != SIGSTOP) {
-		ksft_print_msg("child did not stop with SIGSTOP: %s\n",
-			strerror(errno));
+		printf("child did not stop with SIGSTOP\n");
 		return false;
 	}
 
 	if (ptrace(PTRACE_SINGLESTEP, pid, NULL, NULL) < 0) {
 		if (errno == EIO) {
-			ksft_exit_skip(
-				"ptrace(PTRACE_SINGLESTEP) not supported on this architecture: %s\n",
-				strerror(errno));
+			printf("ptrace(PTRACE_SINGLESTEP) not supported on this architecture\n");
+			ksft_exit_skip();
 		}
-		ksft_print_msg("ptrace(PTRACE_SINGLESTEP) failed: %s\n",
-			strerror(errno));
+		perror("ptrace(PTRACE_SINGLESTEP) failed");
 		return false;
 	}
 
 	wpid = waitpid(pid, &status, __WALL);
 	if (wpid != pid) {
-		ksft_print_msg("waitpid() failed: $s\n", strerror(errno));
+		perror("waitpid() failed");
 		return false;
 	}
 	if (WIFEXITED(status)) {
-		ksft_print_msg("child did not single-step: %s\n",
-			strerror(errno));
+		printf("child did not single-step\n");
 		return false;
 	}
 	if (!WIFSTOPPED(status)) {
-		ksft_print_msg("child did not stop: %s\n", strerror(errno));
+		printf("child did not stop\n");
 		return false;
 	}
 	if (WSTOPSIG(status) != SIGTRAP) {
-		ksft_print_msg("child did not stop with SIGTRAP: %s\n",
-			strerror(errno));
+		printf("child did not stop with SIGTRAP\n");
 		return false;
 	}
 
 	if (ptrace(PTRACE_CONT, pid, NULL, NULL) < 0) {
-		ksft_print_msg("ptrace(PTRACE_CONT) failed: %s\n",
-			strerror(errno));
+		perror("ptrace(PTRACE_CONT) failed");
 		return false;
 	}
 
 	wpid = waitpid(pid, &status, __WALL);
 	if (wpid != pid) {
-		ksft_print_msg("waitpid() failed: %s\n", strerror(errno));
+		perror("waitpid() failed");
 		return false;
 	}
 	if (!WIFEXITED(status)) {
-		ksft_print_msg("child did not exit after PTRACE_CONT: %s\n",
-			strerror(errno));
+		printf("child did not exit after PTRACE_CONT\n");
 		return false;
 	}
 
@@ -134,26 +134,29 @@ void suspend(void)
 	int err;
 	struct itimerspec spec = {};
 
-	if (getuid() != 0)
-		ksft_exit_skip("Please run the test as root - Exiting.\n");
-
 	power_state_fd = open("/sys/power/state", O_RDWR);
-	if (power_state_fd < 0)
-		ksft_exit_fail_msg(
-			"open(\"/sys/power/state\") failed %s)\n",
-			strerror(errno));
+	if (power_state_fd < 0) {
+		perror("open(\"/sys/power/state\") failed (is this test running as root?)");
+		ksft_exit_fail();
+	}
 
 	timerfd = timerfd_create(CLOCK_BOOTTIME_ALARM, 0);
-	if (timerfd < 0)
-		ksft_exit_fail_msg("timerfd_create() failed\n");
+	if (timerfd < 0) {
+		perror("timerfd_create() failed");
+		ksft_exit_fail();
+	}
 
 	spec.it_value.tv_sec = 5;
 	err = timerfd_settime(timerfd, 0, &spec, NULL);
-	if (err < 0)
-		ksft_exit_fail_msg("timerfd_settime() failed\n");
+	if (err < 0) {
+		perror("timerfd_settime() failed");
+		ksft_exit_fail();
+	}
 
-	if (write(power_state_fd, "mem", strlen("mem")) != strlen("mem"))
-		ksft_exit_fail_msg("Failed to enter Suspend state\n");
+	if (write(power_state_fd, "mem", strlen("mem")) != strlen("mem")) {
+		perror("entering suspend failed");
+		ksft_exit_fail();
+	}
 
 	close(timerfd);
 	close(power_state_fd);
@@ -164,12 +167,9 @@ int main(int argc, char **argv)
 	int opt;
 	bool do_suspend = true;
 	bool succeeded = true;
-	unsigned int tests = 0;
 	cpu_set_t available_cpus;
 	int err;
 	int cpu;
-
-	ksft_print_header();
 
 	while ((opt = getopt(argc, argv, "n")) != -1) {
 		switch (opt) {
@@ -183,19 +183,14 @@ int main(int argc, char **argv)
 		}
 	}
 
-	for (cpu = 0; cpu < CPU_SETSIZE; cpu++) {
-		if (!CPU_ISSET(cpu, &available_cpus))
-			continue;
-		tests++;
-	}
-	ksft_set_plan(tests);
-
 	if (do_suspend)
 		suspend();
 
 	err = sched_getaffinity(0, sizeof(available_cpus), &available_cpus);
-	if (err < 0)
-		ksft_exit_fail_msg("sched_getaffinity() failed\n");
+	if (err < 0) {
+		perror("sched_getaffinity() failed");
+		ksft_exit_fail();
+	}
 
 	for (cpu = 0; cpu < CPU_SETSIZE; cpu++) {
 		bool test_success;
@@ -204,14 +199,18 @@ int main(int argc, char **argv)
 			continue;
 
 		test_success = run_test(cpu);
+		printf("CPU %d: ", cpu);
 		if (test_success) {
-			ksft_test_result_pass("CPU %d\n", cpu);
+			printf("[OK]\n");
+			ksft_inc_pass_cnt();
 		} else {
-			ksft_test_result_fail("CPU %d\n", cpu);
+			printf("[FAILED]\n");
+			ksft_inc_fail_cnt();
 			succeeded = false;
 		}
 	}
 
+	ksft_print_cnts();
 	if (succeeded)
 		ksft_exit_pass();
 	else

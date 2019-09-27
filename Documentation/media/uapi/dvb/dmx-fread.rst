@@ -1,22 +1,15 @@
-.. Permission is granted to copy, distribute and/or modify this
-.. document under the terms of the GNU Free Documentation License,
-.. Version 1.1 or any later version published by the Free Software
-.. Foundation, with no Invariant Sections, no Front-Cover Texts
-.. and no Back-Cover Texts. A copy of the license is included at
-.. Documentation/media/uapi/fdl-appendix.rst.
-..
-.. TODO: replace it to GFDL-1.1-or-later WITH no-invariant-sections
+.. -*- coding: utf-8; mode: rst -*-
 
 .. _dmx_fread:
 
-=======================
-Digital TV demux read()
-=======================
+================
+DVB demux read()
+================
 
 Name
 ----
 
-Digital TV demux read()
+DVB demux read()
 
 
 Synopsis
@@ -40,48 +33,62 @@ Arguments
 Description
 -----------
 
-This system call returns filtered data, which might be section or Packetized
-Elementary Stream (PES) data. The filtered data is transferred from
-the driver’s internal circular buffer to ``buf``. The maximum amount of data
-to be transferred is implied by count.
-
-.. note::
-
-   if a section filter created with
-   :c:type:`DMX_CHECK_CRC <dmx_sct_filter_params>` flag set,
-   data that fails on CRC check will be silently ignored.
-
+This system call returns filtered data, which might be section or PES
+data. The filtered data is transferred from the driver’s internal
+circular buffer to buf. The maximum amount of data to be transferred is
+implied by count.
 
 Return Value
 ------------
-
-On success 0 is returned.
-
-On error -1 is returned, and the ``errno`` variable is set
-appropriately.
 
 .. tabularcolumns:: |p{2.5cm}|p{15.0cm}|
 
 .. flat-table::
     :header-rows:  0
     :stub-columns: 0
-    :widths: 1 16
 
-    -  -  ``EWOULDBLOCK``
-       -  No data to return and ``O_NONBLOCK`` was specified.
 
-    -  -  ``EOVERFLOW``
+    -  .. row 1
+
+       -  ``EWOULDBLOCK``
+
+       -  No data to return and O_NONBLOCK was specified.
+
+    -  .. row 2
+
+       -  ``EBADF``
+
+       -  fd is not a valid open file descriptor.
+
+    -  .. row 3
+
+       -  ``ECRC``
+
+       -  Last section had a CRC error - no data returned. The buffer is
+	  flushed.
+
+    -  .. row 4
+
+       -  ``EOVERFLOW``
+
+       -
+
+    -  .. row 5
+
+       -
        -  The filtered data was not read from the buffer in due time,
 	  resulting in non-read data being lost. The buffer is flushed.
 
-    -  -  ``ETIMEDOUT``
-       -  The section was not loaded within the stated timeout period.
-          See ioctl :ref:`DMX_SET_FILTER` for how to set a timeout.
+    -  .. row 6
 
-    -  -  ``EFAULT``
-       -  The driver failed to write to the callers buffer due to an
-          invalid \*buf pointer.
+       -  ``ETIMEDOUT``
 
+       -  The section was not loaded within the stated timeout period. See
+	  ioctl DMX_SET_FILTER for how to set a timeout.
 
-The generic error codes are described at the
-:ref:`Generic Error Codes <gen-errors>` chapter.
+    -  .. row 7
+
+       -  ``EFAULT``
+
+       -  The driver failed to write to the callers buffer due to an invalid
+	  \*buf pointer.

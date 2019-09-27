@@ -1,6 +1,5 @@
 /*
- * Copyright (c) 2015,2017 Qualcomm Atheros, Inc.
- * Copyright (c) 2018-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2015 Qualcomm Atheros, Inc.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -37,9 +36,6 @@ static int wil_fw_get_crash_dump_bounds(struct wil6210_priv *wil,
 	for (i = 1; i < ARRAY_SIZE(fw_mapping); i++) {
 		map = &fw_mapping[i];
 
-		if (!map->crash_dump)
-			continue;
-
 		if (map->host < host_min)
 			host_min = map->host;
 
@@ -57,45 +53,36 @@ static int wil_fw_get_crash_dump_bounds(struct wil6210_priv *wil,
 
 int wil_fw_copy_crash_dump(struct wil6210_priv *wil, void *dest, u32 size)
 {
-	int i, rc;
+	int i;
 	const struct fw_map *map;
 	void *data;
 	u32 host_min, dump_size, offset, len;
 
 	if (wil_fw_get_crash_dump_bounds(wil, &dump_size, &host_min)) {
-		wil_err(wil, "fail to obtain crash dump size\n");
+		wil_err(wil, "%s: fail to obtain crash dump size\n", __func__);
 		return -EINVAL;
 	}
 
 	if (dump_size > size) {
-		wil_err(wil, "not enough space for dump. Need %d have %d\n",
-			dump_size, size);
+		wil_err(wil, "%s: not enough space for dump. Need %d have %d\n",
+			__func__, dump_size, size);
 		return -EINVAL;
 	}
-
-	rc = wil_mem_access_lock(wil);
-	if (rc)
-		return rc;
 
 	/* copy to crash dump area */
 	for (i = 0; i < ARRAY_SIZE(fw_mapping); i++) {
 		map = &fw_mapping[i];
 
-		if (!map->crash_dump)
-			continue;
-
 		data = (void * __force)wil->csr + HOSTADDR(map->host);
 		len = map->to - map->from;
 		offset = map->host - host_min;
 
-		wil_dbg_misc(wil,
-			     "fw_copy_crash_dump: - dump %s, size %d, offset %d\n",
-			     fw_mapping[i].name, len, offset);
+		wil_dbg_misc(wil, "%s() - dump %s, size %d, offset %d\n",
+			     __func__, fw_mapping[i].name, len, offset);
 
 		wil_memcpy_fromio_32((void * __force)(dest + offset),
 				     (const void __iomem * __force)data, len);
 	}
-	wil_mem_access_unlock(wil);
 
 	return 0;
 }
@@ -106,7 +93,7 @@ void wil_fw_core_dump(struct wil6210_priv *wil)
 	u32 fw_dump_size;
 
 	if (wil_fw_get_crash_dump_bounds(wil, &fw_dump_size, NULL)) {
-		wil_err(wil, "fail to get fw dump size\n");
+		wil_err(wil, "%s: fail to get fw dump size\n", __func__);
 		return;
 	}
 
@@ -122,5 +109,6 @@ void wil_fw_core_dump(struct wil6210_priv *wil)
 	 * after 5 min
 	 */
 	dev_coredumpv(wil_to_dev(wil), fw_dump_data, fw_dump_size, GFP_KERNEL);
-	wil_info(wil, "fw core dumped, size %d bytes\n", fw_dump_size);
+	wil_info(wil, "%s: fw core dumped, size %d bytes\n", __func__,
+		 fw_dump_size);
 }

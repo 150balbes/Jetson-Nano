@@ -75,7 +75,7 @@
 #include <linux/skbuff.h>
 #include <net/sock.h>
 #include <linux/timer.h>
-#include <linux/uaccess.h>
+#include <asm/uaccess.h>
 #include <net/checksum.h>
 #include <asm/unaligned.h>
 
@@ -153,7 +153,7 @@ out_fail:
 void
 slhc_free(struct slcompress *comp)
 {
-	if ( IS_ERR_OR_NULL(comp) )
+	if ( comp == NULLSLCOMPR )
 		return;
 
 	if ( comp->tstate != NULLSLSTATE )

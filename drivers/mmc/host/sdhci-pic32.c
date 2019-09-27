@@ -97,7 +97,7 @@ static const struct sdhci_ops pic32_sdhci_ops = {
 	.get_ro = pic32_sdhci_get_ro,
 };
 
-static const struct sdhci_pltfm_data sdhci_pic32_pdata = {
+static struct sdhci_pltfm_data sdhci_pic32_pdata = {
 	.ops = &pic32_sdhci_ops,
 	.quirks = SDHCI_QUIRK_NO_HISPD_BIT,
 	.quirks2 = SDHCI_QUIRK2_NO_1_8_V,
@@ -200,8 +200,10 @@ static int pic32_sdhci_probe(struct platform_device *pdev)
 	}
 
 	ret = sdhci_add_host(host);
-	if (ret)
+	if (ret) {
+		dev_err(&pdev->dev, "error adding host\n");
 		goto err_base_clk;
+	}
 
 	dev_info(&pdev->dev, "Successfully added sdhci host\n");
 	return 0;

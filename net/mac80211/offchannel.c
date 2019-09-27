@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Off-channel operation helpers
  *
@@ -8,6 +7,10 @@
  * Copyright 2006-2007	Jiri Benc <jbenc@suse.cz>
  * Copyright 2007, Michael Wu <flamingice@sourmilk.net>
  * Copyright 2009	Johannes Berg <johannes@sipsolutions.net>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  */
 #include <linux/export.h>
 #include <net/mac80211.h>
@@ -199,10 +202,6 @@ static void ieee80211_roc_notify_destroy(struct ieee80211_roc_work *roc)
 		cfg80211_remain_on_channel_expired(&roc->sdata->wdev,
 						   roc->cookie, roc->chan,
 						   GFP_KERNEL);
-	else
-		cfg80211_tx_mgmt_expired(&roc->sdata->wdev,
-					 roc->mgmt_tx_cookie,
-					 roc->chan, GFP_KERNEL);
 
 	list_del(&roc->list);
 	kfree(roc);
@@ -263,7 +262,7 @@ static void ieee80211_handle_roc_started(struct ieee80211_roc_work *roc,
 	if (roc->mgmt_tx_cookie) {
 		if (!WARN_ON(!roc->frame)) {
 			ieee80211_tx_skb_tid_band(roc->sdata, roc->frame, 7,
-						  roc->chan->band, 0);
+						  roc->chan->band);
 			roc->frame = NULL;
 		}
 	} else {
@@ -802,14 +801,14 @@ int ieee80211_mgmt_tx(struct wiphy *wiphy, struct wireless_dev *wdev,
 	case NL80211_IFTYPE_ADHOC:
 		if (!sdata->vif.bss_conf.ibss_joined)
 			need_offchan = true;
-#ifdef CONFIG_MAC80211_MESH
 		/* fall through */
+#ifdef CONFIG_MAC80211_MESH
 	case NL80211_IFTYPE_MESH_POINT:
 		if (ieee80211_vif_is_mesh(&sdata->vif) &&
 		    !sdata->u.mesh.mesh_id_len)
 			need_offchan = true;
-#endif
 		/* fall through */
+#endif
 	case NL80211_IFTYPE_AP:
 	case NL80211_IFTYPE_AP_VLAN:
 	case NL80211_IFTYPE_P2P_GO:
@@ -888,7 +887,8 @@ int ieee80211_mgmt_tx(struct wiphy *wiphy, struct wireless_dev *wdev,
 	}
 	skb_reserve(skb, local->hw.extra_tx_headroom);
 
-	data = skb_put_data(skb, params->buf, params->len);
+	data = skb_put(skb, params->len);
+	memcpy(data, params->buf, params->len);
 
 	/* Update CSA counters */
 	if (sdata->vif.csa_active &&

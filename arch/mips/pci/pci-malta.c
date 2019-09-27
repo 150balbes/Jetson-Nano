@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (C) 1999, 2000, 2004, 2005	 MIPS Technologies, Inc.
  *	All rights reserved.
@@ -6,6 +5,19 @@
  *		 Maciej W. Rozycki <macro@mips.com>
  *
  * Copyright (C) 2004 by Ralf Baechle (ralf@linux-mips.org)
+ *
+ *  This program is free software; you can distribute it and/or modify it
+ *  under the terms of the GNU General Public License (Version 2) as
+ *  published by the Free Software Foundation.
+ *
+ *  This program is distributed in the hope it will be useful, but WITHOUT
+ *  ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ *  FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+ *  for more details.
+ *
+ *  You should have received a copy of the GNU General Public License along
+ *  with this program; if not, write to the Free Software Foundation, Inc.,
+ *  59 Temple Place - Suite 330, Boston MA 02111-1307, USA.
  *
  * MIPS boards specific PCI support.
  */
@@ -15,7 +27,7 @@
 #include <linux/init.h>
 
 #include <asm/gt64120.h>
-#include <asm/mips-cps.h>
+#include <asm/mips-cm.h>
 #include <asm/mips-boards/generic.h>
 #include <asm/mips-boards/bonito64.h>
 #include <asm/mips-boards/msc01_pci.h>
@@ -189,7 +201,7 @@ void __init mips_pcibios_init(void)
 		msc_mem_resource.start = start & mask;
 		msc_mem_resource.end = (start & mask) | ~mask;
 		msc_controller.mem_offset = (start & mask) - (map & mask);
-		if (mips_cps_numiocu(0)) {
+		if (mips_cm_numiocu()) {
 			write_gcr_reg0_base(start);
 			write_gcr_reg0_mask(mask |
 					    CM_GCR_REGn_MASK_CMTGT_IOCU0);
@@ -201,7 +213,7 @@ void __init mips_pcibios_init(void)
 		msc_io_resource.end = (map & mask) | ~mask;
 		msc_controller.io_offset = 0;
 		ioport_resource.end = ~mask;
-		if (mips_cps_numiocu(0)) {
+		if (mips_cm_numiocu()) {
 			write_gcr_reg1_base(start);
 			write_gcr_reg1_mask(mask |
 					    CM_GCR_REGn_MASK_CMTGT_IOCU0);

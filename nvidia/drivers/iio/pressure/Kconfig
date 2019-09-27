@@ -1,0 +1,18 @@
+append_menu "Pressure sensors"
+
+#
+# Pressure drivers
+#
+# When adding new entries keep the list in alphabetical order
+
+config NVI_BMPX80
+	tristate "Bosch Digital pressure sensor"
+	depends on I2C && IIO_BUFFER && IIO_TRIGGERED_BUFFER && NVS_IIO
+	help
+	  Say yes here to build support for Bosch pressure sensor
+	  that can be connected via Invensense MPU.
+
+	  To compile this driver as a module, choose M here: the module
+	  will be called nvi-bmpX80.
+
+endmenu

@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _N2_CORE_H
 #define _N2_CORE_H
 

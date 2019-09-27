@@ -1,12 +1,11 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Link physical devices with ACPI devices support
  *
  * Copyright (c) 2005 David Shaohua Li <shaohua.li@intel.com>
  * Copyright (c) 2005 Intel Corp.
+ *
+ * This file is released under the GPLv2.
  */
-
-#include <linux/acpi_iort.h>
 #include <linux/export.h>
 #include <linux/init.h>
 #include <linux/list.h>
@@ -15,7 +14,6 @@
 #include <linux/rwsem.h>
 #include <linux/acpi.h>
 #include <linux/dma-mapping.h>
-#include <linux/platform_device.h>
 
 #include "internal.h"
 
@@ -178,6 +176,7 @@ int acpi_bind_one(struct device *dev, struct acpi_device *acpi_dev)
 	struct list_head *physnode_list;
 	unsigned int node_id;
 	int retval = -EINVAL;
+	enum dev_dma_attr attr;
 
 	if (has_acpi_companion(dev)) {
 		if (acpi_dev) {
@@ -233,6 +232,11 @@ int acpi_bind_one(struct device *dev, struct acpi_device *acpi_dev)
 
 	if (!has_acpi_companion(dev))
 		ACPI_COMPANION_SET(dev, acpi_dev);
+
+	attr = acpi_get_dma_attr(acpi_dev);
+	if (attr != DEV_DMA_NOT_SUPPORTED)
+		arch_setup_dma_ops(dev, 0, 0, NULL,
+				   attr == DEV_DMA_COHERENT);
 
 	acpi_physnode_link_name(physical_node_name, node_id);
 	retval = sysfs_create_link(&acpi_dev->dev.kobj, &dev->kobj,
@@ -295,7 +299,7 @@ int acpi_unbind_one(struct device *dev)
 }
 EXPORT_SYMBOL_GPL(acpi_unbind_one);
 
-static int acpi_device_notify(struct device *dev)
+static int acpi_platform_notify(struct device *dev)
 {
 	struct acpi_bus_type *type = acpi_get_bus_type(dev);
 	struct acpi_device *adev;
@@ -319,9 +323,6 @@ static int acpi_device_notify(struct device *dev)
 	if (!adev)
 		goto out;
 
-	if (dev_is_platform(dev))
-		acpi_configure_pmsi_domain(dev);
-
 	if (type && type->setup)
 		type->setup(dev);
 	else if (adev->handler && adev->handler->bind)
@@ -342,7 +343,7 @@ static int acpi_device_notify(struct device *dev)
 	return ret;
 }
 
-static int acpi_device_notify_remove(struct device *dev)
+static int acpi_platform_notify_remove(struct device *dev)
 {
 	struct acpi_device *adev = ACPI_COMPANION(dev);
 	struct acpi_bus_type *type;
@@ -360,17 +361,12 @@ static int acpi_device_notify_remove(struct device *dev)
 	return 0;
 }
 
-int acpi_platform_notify(struct device *dev, enum kobject_action action)
+void __init init_acpi_device_notify(void)
 {
-	switch (action) {
-	case KOBJ_ADD:
-		acpi_device_notify(dev);
-		break;
-	case KOBJ_REMOVE:
-		acpi_device_notify_remove(dev);
-		break;
-	default:
-		break;
+	if (platform_notify || platform_notify_remove) {
+		printk(KERN_ERR PREFIX "Can't use platform_notify\n");
+		return;
 	}
-	return 0;
+	platform_notify = acpi_platform_notify;
+	platform_notify_remove = acpi_platform_notify_remove;
 }

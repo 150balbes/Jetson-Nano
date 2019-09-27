@@ -1,1 +1,1 @@
-#include <xen/arm/hypercall.h>
+#include <../../arm/include/asm/xen/hypercall.h>

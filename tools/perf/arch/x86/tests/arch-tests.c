@@ -1,39 +1,32 @@
-// SPDX-License-Identifier: GPL-2.0
 #include <string.h>
 #include "tests/tests.h"
 #include "arch-tests.h"
 
 struct test arch_tests[] = {
 	{
-		.desc = "x86 rdpmc",
+		.desc = "x86 rdpmc test",
 		.func = test__rdpmc,
 	},
 	{
-		.desc = "Convert perf time to TSC",
+		.desc = "Test converting perf time to TSC",
 		.func = test__perf_time_to_tsc,
 	},
 #ifdef HAVE_DWARF_UNWIND_SUPPORT
 	{
-		.desc = "DWARF unwind",
+		.desc = "Test dwarf unwind",
 		.func = test__dwarf_unwind,
 	},
 #endif
 #ifdef HAVE_AUXTRACE_SUPPORT
 	{
-		.desc = "x86 instruction decoder - new instructions",
+		.desc = "Test x86 instruction decoder - new instructions",
 		.func = test__insn_x86,
 	},
-	{
-		.desc = "Intel PT packet decoder",
-		.func = test__intel_pt_pkt_decoder,
-	},
 #endif
-#if defined(__x86_64__)
 	{
-		.desc = "x86 bp modify",
-		.func = test__bp_modify,
+		.desc = "Test intel cqm nmi context read",
+		.func = test__intel_cqm_count_nmi_context,
 	},
-#endif
 	{
 		.func = NULL,
 	},

@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _M68K_STRING_H_
 #define _M68K_STRING_H_
 

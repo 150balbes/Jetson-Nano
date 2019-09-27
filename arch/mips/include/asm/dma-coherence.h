@@ -20,17 +20,11 @@ enum coherent_io_user_state {
 #elif defined(CONFIG_DMA_MAYBE_COHERENT)
 extern enum coherent_io_user_state coherentio;
 extern int hw_coherentio;
-
-static inline bool dev_is_dma_coherent(struct device *dev)
-{
-	return coherentio == IO_COHERENCE_ENABLED ||
-		(coherentio == IO_COHERENCE_DEFAULT && hw_coherentio);
-}
 #else
-#ifdef CONFIG_DMA_NONCOHERENT
-#define coherentio	IO_COHERENCE_DISABLED
-#else
+#ifdef CONFIG_DMA_COHERENT
 #define coherentio	IO_COHERENCE_ENABLED
+#else
+#define coherentio	IO_COHERENCE_DISABLED
 #endif
 #define hw_coherentio	0
 #endif /* CONFIG_DMA_MAYBE_COHERENT */

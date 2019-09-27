@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * HD-audio core bus driver
  */
@@ -9,6 +8,8 @@
 #include <linux/export.h>
 #include <sound/hdaudio.h>
 #include "trace.h"
+
+static void process_unsol_events(struct work_struct *work);
 
 static const struct hdac_bus_ops default_ops = {
 	.command = snd_hdac_bus_send_cmd,
@@ -36,11 +37,9 @@ int snd_hdac_bus_init(struct hdac_bus *bus, struct device *dev,
 	bus->io_ops = io_ops;
 	INIT_LIST_HEAD(&bus->stream_list);
 	INIT_LIST_HEAD(&bus->codec_list);
-	INIT_WORK(&bus->unsol_work, snd_hdac_bus_process_unsol_events);
+	INIT_WORK(&bus->unsol_work, process_unsol_events);
 	spin_lock_init(&bus->reg_lock);
 	mutex_init(&bus->cmd_mutex);
-	mutex_init(&bus->lock);
-	INIT_LIST_HEAD(&bus->hlink_list);
 	bus->irq = -1;
 	return 0;
 }
@@ -149,7 +148,7 @@ EXPORT_SYMBOL_GPL(snd_hdac_bus_queue_event);
 /*
  * process queued unsolicited events
  */
-void snd_hdac_bus_process_unsol_events(struct work_struct *work)
+static void process_unsol_events(struct work_struct *work)
 {
 	struct hdac_bus *bus = container_of(work, struct hdac_bus, unsol_work);
 	struct hdac_device *codec;
@@ -172,7 +171,6 @@ void snd_hdac_bus_process_unsol_events(struct work_struct *work)
 			drv->unsol_event(codec, res);
 	}
 }
-EXPORT_SYMBOL_GPL(snd_hdac_bus_process_unsol_events);
 
 /**
  * snd_hdac_bus_add_device - Add a codec to bus
@@ -214,6 +212,5 @@ void snd_hdac_bus_remove_device(struct hdac_bus *bus,
 	bus->caddr_tbl[codec->addr] = NULL;
 	clear_bit(codec->addr, &bus->codec_powered);
 	bus->num_codecs--;
-	flush_work(&bus->unsol_work);
 }
 EXPORT_SYMBOL_GPL(snd_hdac_bus_remove_device);

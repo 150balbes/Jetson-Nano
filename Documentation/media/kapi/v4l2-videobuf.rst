@@ -1,5 +1,3 @@
-.. SPDX-License-Identifier: GPL-2.0
-
 .. _vb_framework:
 
 Videobuf Framework

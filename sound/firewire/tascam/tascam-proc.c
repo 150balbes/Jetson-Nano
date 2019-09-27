@@ -1,8 +1,9 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * tascam-proc.h - a part of driver for TASCAM FireWire series
  *
  * Copyright (c) 2015 Takashi Sakamoto
+ *
+ * Licensed under the terms of the GNU General Public License, version 2.
  */
 
 #include "./tascam.h"
@@ -57,8 +58,12 @@ static void add_node(struct snd_tscm *tscm, struct snd_info_entry *root,
 	struct snd_info_entry *entry;
 
 	entry = snd_info_create_card_entry(tscm->card, name, root);
-	if (entry)
-		snd_info_set_text_ops(entry, tscm, op);
+	if (entry == NULL)
+		return;
+
+	snd_info_set_text_ops(entry, tscm, op);
+	if (snd_info_register(entry) < 0)
+		snd_info_free_entry(entry);
 }
 
 void snd_tscm_proc_init(struct snd_tscm *tscm)
@@ -73,7 +78,11 @@ void snd_tscm_proc_init(struct snd_tscm *tscm)
 					  tscm->card->proc_root);
 	if (root == NULL)
 		return;
-	root->mode = S_IFDIR | 0555;
+	root->mode = S_IFDIR | S_IRUGO | S_IXUGO;
+	if (snd_info_register(root) < 0) {
+		snd_info_free_entry(root);
+		return;
+	}
 
 	add_node(tscm, root, "firmware", proc_read_firmware);
 }

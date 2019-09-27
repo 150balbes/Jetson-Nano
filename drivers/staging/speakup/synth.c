@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 #include <linux/types.h>
 #include <linux/ctype.h>	/* for isdigit() and friends */
 #include <linux/fs.h>
@@ -9,7 +8,7 @@
 #include <linux/delay.h>	/* for loops_per_sec */
 #include <linux/kmod.h>
 #include <linux/jiffies.h>
-#include <linux/uaccess.h>	/* for copy_from_user */
+#include <linux/uaccess.h> /* for copy_from_user */
 #include <linux/sched.h>
 #include <linux/timer.h>
 #include <linux/kthread.h>
@@ -18,7 +17,8 @@
 #include "speakup.h"
 #include "serialio.h"
 
-static LIST_HEAD(synths);
+#define MAXSYNTHS       16      /* Max number of synths in array. */
+static struct spk_synth *synths[MAXSYNTHS + 1];
 struct spk_synth *synth;
 char spk_pitch_buff[32] = "";
 static int module_status;
@@ -44,16 +44,44 @@ EXPORT_SYMBOL_GPL(speakup_info);
 
 static int do_synth_init(struct spk_synth *in_synth);
 
-/*
- * Main loop of the progression thread: keep eating from the buffer
+int spk_serial_synth_probe(struct spk_synth *synth)
+{
+	const struct old_serial_port *ser;
+	int failed = 0;
+
+	if ((synth->ser >= SPK_LO_TTY) && (synth->ser <= SPK_HI_TTY)) {
+		ser = spk_serial_init(synth->ser);
+		if (ser == NULL) {
+			failed = -1;
+		} else {
+			outb_p(0, ser->port);
+			mdelay(1);
+			outb_p('\r', ser->port);
+		}
+	} else {
+		failed = -1;
+		pr_warn("ttyS%i is an invalid port\n", synth->ser);
+	}
+	if (failed) {
+		pr_info("%s: not found\n", synth->long_name);
+		return -ENODEV;
+	}
+	pr_info("%s: ttyS%i, Driver Version %s\n",
+			synth->long_name, synth->ser, synth->version);
+	synth->alive = 1;
+	return 0;
+}
+EXPORT_SYMBOL_GPL(spk_serial_synth_probe);
+
+/* Main loop of the progression thread: keep eating from the buffer
  * and push to the serial port, waiting as needed
  *
  * For devices that have a "full" notification mechanism, the driver can
  * adapt the loop the way they prefer.
  */
-static void _spk_do_catch_up(struct spk_synth *synth, int unicode)
+void spk_do_catch_up(struct spk_synth *synth)
 {
-	u16 ch;
+	u_char ch;
 	unsigned long flags;
 	unsigned long jiff_max;
 	struct var_t *delay_time;
@@ -62,7 +90,6 @@ static void _spk_do_catch_up(struct spk_synth *synth, int unicode)
 	int jiffy_delta_val;
 	int delay_time_val;
 	int full_time_val;
-	int ret;
 
 	jiffy_delta = spk_get_var(JIFFY);
 	full_time = spk_get_var(FULL);
@@ -81,8 +108,6 @@ static void _spk_do_catch_up(struct spk_synth *synth, int unicode)
 			synth->flush(synth);
 			continue;
 		}
-		if (!unicode)
-			synth_buffer_skip_nonlatin1();
 		if (synth_buffer_empty()) {
 			spin_unlock_irqrestore(&speakup_info.spinlock, flags);
 			break;
@@ -93,11 +118,7 @@ static void _spk_do_catch_up(struct spk_synth *synth, int unicode)
 		spin_unlock_irqrestore(&speakup_info.spinlock, flags);
 		if (ch == '\n')
 			ch = synth->procspeech;
-		if (unicode)
-			ret = synth->io_ops->synth_out_unicode(synth, ch);
-		else
-			ret = synth->io_ops->synth_out(synth, ch);
-		if (!ret) {
+		if (!spk_serial_out(ch)) {
 			schedule_timeout(msecs_to_jiffies(full_time_val));
 			continue;
 		}
@@ -107,7 +128,7 @@ static void _spk_do_catch_up(struct spk_synth *synth, int unicode)
 			delay_time_val = delay_time->u.n.value;
 			full_time_val = full_time->u.n.value;
 			spin_unlock_irqrestore(&speakup_info.spinlock, flags);
-			if (synth->io_ops->synth_out(synth, synth->procspeech))
+			if (spk_serial_out(synth->procspeech))
 				schedule_timeout(
 					msecs_to_jiffies(delay_time_val));
 			else
@@ -120,33 +141,32 @@ static void _spk_do_catch_up(struct spk_synth *synth, int unicode)
 		synth_buffer_getc();
 		spin_unlock_irqrestore(&speakup_info.spinlock, flags);
 	}
-	synth->io_ops->synth_out(synth, synth->procspeech);
-}
-
-void spk_do_catch_up(struct spk_synth *synth)
-{
-	_spk_do_catch_up(synth, 0);
+	spk_serial_out(synth->procspeech);
 }
 EXPORT_SYMBOL_GPL(spk_do_catch_up);
 
-void spk_do_catch_up_unicode(struct spk_synth *synth)
+const char *spk_synth_immediate(struct spk_synth *synth, const char *buff)
 {
-	_spk_do_catch_up(synth, 1);
+	u_char ch;
+
+	while ((ch = *buff)) {
+		if (ch == '\n')
+			ch = synth->procspeech;
+		if (spk_wait_for_xmitr())
+			outb(ch, speakup_info.port_tts);
+		else
+			return buff;
+		buff++;
+	}
+	return NULL;
 }
-EXPORT_SYMBOL_GPL(spk_do_catch_up_unicode);
+EXPORT_SYMBOL_GPL(spk_synth_immediate);
 
 void spk_synth_flush(struct spk_synth *synth)
 {
-	synth->io_ops->flush_buffer();
-	synth->io_ops->synth_out(synth, synth->clear);
+	spk_serial_out(synth->clear);
 }
 EXPORT_SYMBOL_GPL(spk_synth_flush);
-
-unsigned char spk_synth_get_index(struct spk_synth *synth)
-{
-	return synth->io_ops->synth_in_nowait();
-}
-EXPORT_SYMBOL_GPL(spk_synth_get_index);
 
 int spk_synth_is_alive_nop(struct spk_synth *synth)
 {
@@ -159,7 +179,7 @@ int spk_synth_is_alive_restart(struct spk_synth *synth)
 {
 	if (synth->alive)
 		return 1;
-	if (spk_wait_for_xmitr(synth) > 0) {
+	if (spk_wait_for_xmitr() > 0) {
 		/* restart */
 		synth->alive = 1;
 		synth_printf("%s", synth->init);
@@ -170,12 +190,12 @@ int spk_synth_is_alive_restart(struct spk_synth *synth)
 }
 EXPORT_SYMBOL_GPL(spk_synth_is_alive_restart);
 
-static void thread_wake_up(struct timer_list *unused)
+static void thread_wake_up(u_long data)
 {
 	wake_up_interruptible_all(&speakup_event);
 }
 
-static DEFINE_TIMER(thread_timer, thread_wake_up);
+static DEFINE_TIMER(thread_timer, thread_wake_up, 0, 0);
 
 void synth_start(void)
 {
@@ -234,35 +254,6 @@ void synth_printf(const char *fmt, ...)
 }
 EXPORT_SYMBOL_GPL(synth_printf);
 
-void synth_putwc(u16 wc)
-{
-	synth_buffer_add(wc);
-}
-EXPORT_SYMBOL_GPL(synth_putwc);
-
-void synth_putwc_s(u16 wc)
-{
-	synth_buffer_add(wc);
-	synth_start();
-}
-EXPORT_SYMBOL_GPL(synth_putwc_s);
-
-void synth_putws(const u16 *buf)
-{
-	const u16 *p;
-
-	for (p = buf; *p; p++)
-		synth_buffer_add(*p);
-}
-EXPORT_SYMBOL_GPL(synth_putws);
-
-void synth_putws_s(const u16 *buf)
-{
-	synth_putws(buf);
-	synth_start();
-}
-EXPORT_SYMBOL_GPL(synth_putws_s);
-
 static int index_count;
 static int sentence_count;
 
@@ -273,14 +264,14 @@ void spk_reset_index_count(int sc)
 	if (first)
 		first = 0;
 	else
-		synth->get_index(synth);
+		synth->get_index();
 	index_count = 0;
 	sentence_count = sc;
 }
 
 int synth_supports_indexing(void)
 {
-	if (synth->get_index)
+	if (synth->get_index != NULL)
 		return 1;
 	return 0;
 }
@@ -306,17 +297,18 @@ void synth_insert_next_index(int sent_num)
 
 void spk_get_index_count(int *linecount, int *sentcount)
 {
-	int ind = synth->get_index(synth);
+	int ind = synth->get_index();
 
 	if (ind) {
 		sentence_count = ind % 10;
 
 		if ((ind / 10) <= synth->indexing.currindex)
-			index_count = synth->indexing.currindex - (ind / 10);
+			index_count = synth->indexing.currindex-(ind/10);
 		else
 			index_count = synth->indexing.currindex
-				- synth->indexing.lowindex
-				+ synth->indexing.highindex - (ind / 10) + 1;
+				-synth->indexing.lowindex
+				+ synth->indexing.highindex-(ind/10)+1;
+
 	}
 	*sentcount = sentence_count;
 	*linecount = index_count;
@@ -354,10 +346,11 @@ struct var_t synth_time_vars[] = {
 /* called by: speakup_init() */
 int synth_init(char *synth_name)
 {
+	int i;
 	int ret = 0;
-	struct spk_synth *tmp, *synth = NULL;
+	struct spk_synth *synth = NULL;
 
-	if (!synth_name)
+	if (synth_name == NULL)
 		return 0;
 
 	if (strcmp(synth_name, "none") == 0) {
@@ -369,10 +362,9 @@ int synth_init(char *synth_name)
 
 	mutex_lock(&spk_mutex);
 	/* First, check if we already have it loaded. */
-	list_for_each_entry(tmp, &synths, node) {
-		if (strcmp(tmp->name, synth_name) == 0)
-			synth = tmp;
-	}
+	for (i = 0; i < MAXSYNTHS && synths[i] != NULL; i++)
+		if (strcmp(synths[i]->name, synth_name) == 0)
+			synth = synths[i];
 
 	/* If we got one, initialize it now. */
 	if (synth)
@@ -414,8 +406,8 @@ static int do_synth_init(struct spk_synth *in_synth)
 		speakup_register_var(var);
 	if (!spk_quiet_boot)
 		synth_printf("%s found\n", synth->long_name);
-	if (synth->attributes.name &&
-	    sysfs_create_group(speakup_kobj, &synth->attributes) < 0)
+	if (synth->attributes.name
+	&& sysfs_create_group(speakup_kobj, &synth->attributes) < 0)
 		return -ENOMEM;
 	synth_flags = synth->flags;
 	wake_up_interruptible_all(&speakup_event);
@@ -429,7 +421,7 @@ void synth_release(void)
 	struct var_t *var;
 	unsigned long flags;
 
-	if (!synth)
+	if (synth == NULL)
 		return;
 	spin_lock_irqsave(&speakup_info.spinlock, flags);
 	pr_info("releasing synth %s\n", synth->name);
@@ -440,6 +432,7 @@ void synth_release(void)
 		sysfs_remove_group(speakup_kobj, &synth->attributes);
 	for (var = synth->vars; var->var_id != MAXVARS; var++)
 		speakup_unregister_var(var->var_id);
+	spk_stop_serial_interrupt();
 	synth->release();
 	synth = NULL;
 }
@@ -447,24 +440,25 @@ void synth_release(void)
 /* called by: all_driver_init() */
 int synth_add(struct spk_synth *in_synth)
 {
+	int i;
 	int status = 0;
-	struct spk_synth *tmp;
 
 	mutex_lock(&spk_mutex);
-
-	list_for_each_entry(tmp, &synths, node) {
-		if (tmp == in_synth) {
+	for (i = 0; i < MAXSYNTHS && synths[i] != NULL; i++)
+		/* synth_remove() is responsible for rotating the array down */
+		if (in_synth == synths[i]) {
 			mutex_unlock(&spk_mutex);
 			return 0;
 		}
+	if (i == MAXSYNTHS) {
+		pr_warn("Error: attempting to add a synth past end of array\n");
+		mutex_unlock(&spk_mutex);
+		return -1;
 	}
-
+	synths[i++] = in_synth;
+	synths[i] = NULL;
 	if (in_synth->startup)
 		status = do_synth_init(in_synth);
-
-	if (!status)
-		list_add_tail(&in_synth->node, &synths);
-
 	mutex_unlock(&spk_mutex);
 	return status;
 }
@@ -472,19 +466,20 @@ EXPORT_SYMBOL_GPL(synth_add);
 
 void synth_remove(struct spk_synth *in_synth)
 {
+	int i;
+
 	mutex_lock(&spk_mutex);
 	if (synth == in_synth)
 		synth_release();
-	list_del(&in_synth->node);
+	for (i = 0; synths[i] != NULL; i++) {
+		if (in_synth == synths[i])
+			break;
+	}
+	for ( ; synths[i] != NULL; i++) /* compress table */
+		synths[i] = synths[i+1];
 	module_status = 0;
 	mutex_unlock(&spk_mutex);
 }
 EXPORT_SYMBOL_GPL(synth_remove);
 
-struct spk_synth *synth_current(void)
-{
-	return synth;
-}
-EXPORT_SYMBOL_GPL(synth_current);
-
-short spk_punc_masks[] = { 0, SOME, MOST, PUNC, PUNC | B_SYM };
+short spk_punc_masks[] = { 0, SOME, MOST, PUNC, PUNC|B_SYM };

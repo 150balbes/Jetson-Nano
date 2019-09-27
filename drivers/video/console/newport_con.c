@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * newport_con.c: Abscon for newport hardware
  * 
@@ -22,7 +21,7 @@
 #include <linux/slab.h>
 
 #include <asm/io.h>
-#include <linux/uaccess.h>
+#include <asm/uaccess.h>
 #include <asm/page.h>
 #include <asm/pgtable.h>
 #include <asm/gio_device.h>
@@ -575,8 +574,8 @@ static int newport_font_set(struct vc_data *vc, struct console_font *font, unsig
 	return newport_set_font(vc->vc_num, font);
 }
 
-static bool newport_scroll(struct vc_data *vc, unsigned int t, unsigned int b,
-		enum con_scroll dir, unsigned int lines)
+static int newport_scroll(struct vc_data *vc, int t, int b, int dir,
+			  int lines)
 {
 	int count, x, y;
 	unsigned short *s, *d;
@@ -596,7 +595,7 @@ static bool newport_scroll(struct vc_data *vc, unsigned int t, unsigned int b,
 					    (vc->vc_color & 0xf0) >> 4);
 		}
 		npregs->cset.topscan = (topscan - 1) & 0x3ff;
-		return false;
+		return 0;
 	}
 
 	count = (b - t - lines) * vc->vc_cols;
@@ -671,15 +670,15 @@ static bool newport_scroll(struct vc_data *vc, unsigned int t, unsigned int b,
 			}
 		}
 	}
-	return true;
+	return 1;
 }
 
-static int newport_set_origin(struct vc_data *vc)
+static int newport_dummy(struct vc_data *c)
 {
 	return 0;
 }
 
-static void newport_save_screen(struct vc_data *vc) { }
+#define DUMMY (void *) newport_dummy
 
 const struct consw newport_con = {
 	.owner		  = THIS_MODULE,
@@ -695,8 +694,8 @@ const struct consw newport_con = {
 	.con_blank	  = newport_blank,
 	.con_font_set	  = newport_font_set,
 	.con_font_default = newport_font_default,
-	.con_set_origin	  = newport_set_origin,
-	.con_save_screen  = newport_save_screen
+	.con_set_origin	  = DUMMY,
+	.con_save_screen  = DUMMY
 };
 
 static int newport_probe(struct gio_device *dev,

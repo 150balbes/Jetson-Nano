@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * CAN driver for PEAK System PCAN-USB adapter
  * Derived from the PCAN project file driver/src/pcan_usb.c
@@ -7,6 +6,15 @@
  * Copyright (C) 2011-2012 Stephane Grosjean <s.grosjean@peak-system.com>
  *
  * Many thanks to Klaus Hitschler <klaus.hitschler@gmx.de>
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License as published
+ * by the Free Software Foundation; version 2 of the License.
+ *
+ * This program is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
  */
 #include <linux/netdevice.h>
 #include <linux/usb.h>
@@ -251,13 +259,10 @@ static int pcan_usb_write_mode(struct peak_usb_device *dev, u8 onoff)
 /*
  * handle end of waiting for the device to reset
  */
-static void pcan_usb_restart(struct timer_list *t)
+static void pcan_usb_restart(unsigned long arg)
 {
-	struct pcan_usb *pdev = from_timer(pdev, t, restart_timer);
-	struct peak_usb_device *dev = &pdev->dev;
-
 	/* notify candev and netdev */
-	peak_usb_restart_complete(dev);
+	peak_usb_restart_complete((struct peak_usb_device *)arg);
 }
 
 /*
@@ -325,7 +330,7 @@ static int pcan_usb_get_serial(struct peak_usb_device *dev, u32 *serial_number)
  */
 static int pcan_usb_get_device_id(struct peak_usb_device *dev, u32 *device_id)
 {
-	u8 args[PCAN_USB_CMD_ARGS_LEN];
+	u8 args[PCAN_USB_CMD_ARGS_LEN] = {0};
 	int err;
 
 	err = pcan_usb_wait_rsp(dev, 4, 1, args);
@@ -400,6 +405,7 @@ static int pcan_usb_decode_error(struct pcan_usb_msg_context *mc, u8 n,
 {
 	struct sk_buff *skb;
 	struct can_frame *cf;
+	struct timeval tv;
 	enum can_state new_state;
 
 	/* ignore this error until 1st ts received */
@@ -415,7 +421,6 @@ static int pcan_usb_decode_error(struct pcan_usb_msg_context *mc, u8 n,
 			new_state = CAN_STATE_ERROR_WARNING;
 			break;
 		}
-		/* fall through */
 
 	case CAN_STATE_ERROR_WARNING:
 		if (n & PCAN_USB_ERROR_BUS_HEAVY) {
@@ -517,8 +522,8 @@ static int pcan_usb_decode_error(struct pcan_usb_msg_context *mc, u8 n,
 	if (status_len & PCAN_USB_STATUSLEN_TIMESTAMP) {
 		struct skb_shared_hwtstamps *hwts = skb_hwtstamps(skb);
 
-		peak_usb_get_ts_time(&mc->pdev->time_ref, mc->ts16,
-				     &hwts->hwtstamp);
+		peak_usb_get_ts_tv(&mc->pdev->time_ref, mc->ts16, &tv);
+		hwts->hwtstamp = timeval_to_ktime(tv);
 	}
 
 	mc->netdev->stats.rx_packets++;
@@ -602,6 +607,7 @@ static int pcan_usb_decode_data(struct pcan_usb_msg_context *mc, u8 status_len)
 	u8 rec_len = status_len & PCAN_USB_STATUSLEN_DLC;
 	struct sk_buff *skb;
 	struct can_frame *cf;
+	struct timeval tv;
 	struct skb_shared_hwtstamps *hwts;
 
 	skb = alloc_can_skb(mc->netdev, &cf);
@@ -649,8 +655,9 @@ static int pcan_usb_decode_data(struct pcan_usb_msg_context *mc, u8 status_len)
 	}
 
 	/* convert timestamp into kernel time */
+	peak_usb_get_ts_tv(&mc->pdev->time_ref, mc->ts16, &tv);
 	hwts = skb_hwtstamps(skb);
-	peak_usb_get_ts_time(&mc->pdev->time_ref, mc->ts16, &hwts->hwtstamp);
+	hwts->hwtstamp = timeval_to_ktime(tv);
 
 	/* update statistics */
 	mc->netdev->stats.rx_packets++;
@@ -791,7 +798,9 @@ static int pcan_usb_init(struct peak_usb_device *dev)
 	int err;
 
 	/* initialize a timer needed to wait for hardware restart */
-	timer_setup(&pdev->restart_timer, pcan_usb_restart, 0);
+	init_timer(&pdev->restart_timer);
+	pdev->restart_timer.function = pcan_usb_restart;
+	pdev->restart_timer.data = (unsigned long)dev;
 
 	/*
 	 * explicit use of dev_xxx() instead of netdev_xxx() here:

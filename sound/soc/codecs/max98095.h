@@ -1,8 +1,11 @@
-/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * max98095.h -- MAX98095 ALSA SoC Audio driver
  *
  * Copyright 2011 Maxim Integrated Products
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  */
 
 #ifndef _MAX98095_H
@@ -312,7 +315,7 @@
 /* Default Delay used in Slew Rate Calculation for Jack detection */
 #define M98095_DEFAULT_SLEW_DELAY		0x18
 
-extern int max98095_jack_detect(struct snd_soc_component *component,
+extern int max98095_jack_detect(struct snd_soc_codec *codec,
 	struct snd_soc_jack *hp_jack, struct snd_soc_jack *mic_jack);
 
 #endif

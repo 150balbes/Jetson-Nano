@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0-only
 config DM_PERSISTENT_DATA
        tristate
        depends on BLK_DEV_DM

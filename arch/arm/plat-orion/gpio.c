@@ -478,13 +478,13 @@ static void orion_gpio_dbg_show(struct seq_file *s, struct gpio_chip *chip)
 			   (data_in ^ in_pol) & msk  ? "hi" : "lo",
 			   in_pol & msk ? "lo" : "hi");
 		if (!((edg_msk | lvl_msk) & msk)) {
-			seq_puts(s, " disabled\n");
+			seq_printf(s, " disabled\n");
 			continue;
 		}
 		if (edg_msk & msk)
-			seq_puts(s, " edge ");
+			seq_printf(s, " edge ");
 		if (lvl_msk & msk)
-			seq_puts(s, " level");
+			seq_printf(s, " level");
 		seq_printf(s, " (%s)\n", cause & msk ? "pending" : "clear  ");
 	}
 }

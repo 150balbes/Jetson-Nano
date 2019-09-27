@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * include/linux/extcon/extcon-adc-jack.h
  *
@@ -6,6 +5,11 @@
  *
  * Copyright (C) 2012 Samsung Electronics
  * MyungJoo Ham <myungjoo.ham@samsung.com>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
  */
 
 #ifndef _EXTCON_ADC_JACK_H_
@@ -30,8 +34,8 @@
  */
 struct adc_jack_cond {
 	unsigned int id;
-	u32 min_adc;
-	u32 max_adc;
+	int min_adc;
+	int max_adc;
 };
 
 /**
@@ -55,7 +59,7 @@ struct adc_jack_pdata {
 	const char *name;
 	const char *consumer_channel;
 
-	const unsigned int *cable_names;
+	unsigned int *cable_names;
 
 	/* The last entry's state should be 0 */
 	struct adc_jack_cond *adc_conditions;
@@ -63,6 +67,7 @@ struct adc_jack_pdata {
 	unsigned long irq_flags;
 	unsigned long handling_delay_ms; /* in ms */
 	bool wakeup_source;
+	int debounce_ms;
 };
 
 #endif /* _EXTCON_ADC_JACK_H */

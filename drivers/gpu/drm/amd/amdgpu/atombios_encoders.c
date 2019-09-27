@@ -23,21 +23,18 @@
  * Authors: Dave Airlie
  *          Alex Deucher
  */
-
-#include <linux/pci.h>
-
+#include <drm/drmP.h>
 #include <drm/drm_crtc_helper.h>
 #include <drm/amdgpu_drm.h>
 #include "amdgpu.h"
 #include "amdgpu_connectors.h"
-#include "amdgpu_display.h"
 #include "atom.h"
 #include "atombios_encoders.h"
 #include "atombios_dp.h"
 #include <linux/backlight.h>
 #include "bif/bif_4_1_d.h"
 
-u8
+static u8
 amdgpu_atombios_encoder_get_backlight_level_from_reg(struct amdgpu_device *adev)
 {
 	u8 backlight_level;
@@ -51,7 +48,7 @@ amdgpu_atombios_encoder_get_backlight_level_from_reg(struct amdgpu_device *adev)
 	return backlight_level;
 }
 
-void
+static void
 amdgpu_atombios_encoder_set_backlight_level_to_reg(struct amdgpu_device *adev,
 					    u8 backlight_level)
 {
@@ -184,6 +181,9 @@ void amdgpu_atombios_encoder_init_backlight(struct amdgpu_encoder *amdgpu_encode
 	if (!amdgpu_encoder->enc_priv)
 		return;
 
+	if (!adev->is_atom_bios)
+		return;
+
 	if (!(adev->mode_info.firmware_flags & ATOM_BIOS_INFO_BL_CONTROLLED_BY_GPU))
 		return;
 
@@ -234,6 +234,9 @@ amdgpu_atombios_encoder_fini_backlight(struct amdgpu_encoder *amdgpu_encoder)
 	struct amdgpu_encoder_atom_dig *dig;
 
 	if (!amdgpu_encoder->enc_priv)
+		return;
+
+	if (!adev->is_atom_bios)
 		return;
 
 	if (!(adev->mode_info.firmware_flags & ATOM_BIOS_INFO_BL_CONTROLLED_BY_GPU))

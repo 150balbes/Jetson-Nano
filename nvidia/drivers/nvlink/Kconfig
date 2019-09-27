@@ -1,0 +1,13 @@
+config TEGRA_NVLINK
+	bool "Tegra NVLINK Support"
+	depends on ARCH_TEGRA_19x_SOC
+	default y
+	help
+	  This config enables the Tegra NVLINK driver stack. NVLINK is a high
+	  speed serial communication protocol and an interconnect developed by
+	  NVIDIA. NVLINK provides higher bandwidth and lower latency in
+	  comparison to PCIe.
+
+	  NVLINK can be used to connect the Tegra SOC to various external
+	  devices. High speed memory accesses can be made over NVLINK between
+	  Tegra and the external device.

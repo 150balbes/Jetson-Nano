@@ -1,10 +1,14 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Corenet based SoC DS Setup
  *
  * Maintained by Kumar Gala (see MAINTAINERS for contact information)
  *
  * Copyright 2009-2011 Freescale Semiconductor Inc.
+ *
+ * This program is free software; you can redistribute  it and/or modify it
+ * under  the terms of  the GNU General  Public License as published by the
+ * Free Software Foundation;  either version 2 of the  License, or (at your
+ * option) any later version.
  */
 
 #include <linux/kernel.h>
@@ -23,7 +27,6 @@
 #include <asm/udbg.h>
 #include <asm/mpic.h>
 #include <asm/ehv_pic.h>
-#include <asm/swiotlb.h>
 #include <soc/fsl/qe/qe_ic.h>
 
 #include <linux/of_platform.h>
@@ -65,6 +68,16 @@ void __init corenet_gen_setup_arch(void)
 
 	swiotlb_detect_4g();
 
+#if defined(CONFIG_FSL_PCI) && defined(CONFIG_ZONE_DMA32)
+	/*
+	 * Inbound windows don't cover the full lower 4 GiB
+	 * due to conflicts with PCICSRBAR and outbound windows,
+	 * so limit the DMA32 zone to 2 GiB, to allow consistent
+	 * allocations to succeed.
+	 */
+	limit_zone_pfn(ZONE_DMA32, 1UL << (31 - PAGE_SHIFT));
+#endif
+
 	pr_info("%s board\n", ppc_md.name);
 
 	mpc85xx_qe_init();
@@ -103,6 +116,9 @@ static const struct of_device_id of_device_ids[] = {
 	},
 	{
 		.compatible	= "fsl,qe",
+	},
+	{
+		.compatible    = "fsl,fman",
 	},
 	/* The following two are for the Freescale hypervisor */
 	{
@@ -144,7 +160,6 @@ static const char * const boards[] __initconst = {
 	"fsl,T1040RDB",
 	"fsl,T1042RDB",
 	"fsl,T1042RDB_PI",
-	"keymile,kmcent2",
 	"keymile,kmcoge4",
 	"varisys,CYRUS",
 	NULL
@@ -205,7 +220,7 @@ define_machine(corenet_generic) {
  *
  * Likewise, problems have been seen with kexec when coreint is enabled.
  */
-#if defined(CONFIG_HOTPLUG_CPU) || defined(CONFIG_KEXEC_CORE)
+#if defined(CONFIG_HOTPLUG_CPU) || defined(CONFIG_KEXEC)
 	.get_irq		= mpic_get_irq,
 #else
 	.get_irq		= mpic_get_coreint_irq,
@@ -220,3 +235,7 @@ define_machine(corenet_generic) {
 };
 
 machine_arch_initcall(corenet_generic, corenet_gen_publish_devices);
+
+#ifdef CONFIG_SWIOTLB
+machine_arch_initcall(corenet_generic, swiotlb_setup_bus_notifier);
+#endif

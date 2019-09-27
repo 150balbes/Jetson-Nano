@@ -11,7 +11,6 @@
 #include <linux/clk-provider.h>
 #include <linux/dma-mapping.h>
 #include <linux/init.h>
-#include <linux/io.h>
 #include <linux/of.h>
 #include <linux/of_platform.h>
 #include <linux/platform_data/dma-mv_xor.h>

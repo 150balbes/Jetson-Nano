@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  *	vfsv0 quota IO operations on file
  */
@@ -380,7 +379,7 @@ int qtree_write_dquot(struct qtree_mem_dqinfo *info, struct dquot *dquot)
 	if (!ddquot)
 		return -ENOMEM;
 
-	/* dq_off is guarded by dqio_sem */
+	/* dq_off is guarded by dqio_mutex */
 	if (!dquot->dq_off) {
 		ret = dq_insert_tree(info, dquot);
 		if (ret < 0) {
@@ -390,9 +389,9 @@ int qtree_write_dquot(struct qtree_mem_dqinfo *info, struct dquot *dquot)
 			return ret;
 		}
 	}
-	spin_lock(&dquot->dq_dqb_lock);
+	spin_lock(&dq_data_lock);
 	info->dqi_ops->mem2disk_dqblk(ddquot, dquot);
-	spin_unlock(&dquot->dq_dqb_lock);
+	spin_unlock(&dq_data_lock);
 	ret = sb->s_op->quota_write(sb, type, ddquot, info->dqi_entry_size,
 				    dquot->dq_off);
 	if (ret != info->dqi_entry_size) {
@@ -650,14 +649,14 @@ int qtree_read_dquot(struct qtree_mem_dqinfo *info, struct dquot *dquot)
 		kfree(ddquot);
 		goto out;
 	}
-	spin_lock(&dquot->dq_dqb_lock);
+	spin_lock(&dq_data_lock);
 	info->dqi_ops->disk2mem_dqblk(dquot, ddquot);
 	if (!dquot->dq_dqb.dqb_bhardlimit &&
 	    !dquot->dq_dqb.dqb_bsoftlimit &&
 	    !dquot->dq_dqb.dqb_ihardlimit &&
 	    !dquot->dq_dqb.dqb_isoftlimit)
 		set_bit(DQ_FAKE_B, &dquot->dq_flags);
-	spin_unlock(&dquot->dq_dqb_lock);
+	spin_unlock(&dq_data_lock);
 	kfree(ddquot);
 out:
 	dqstats_inc(DQST_READS);

@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  *  linux/arch/arm/mach-ep93xx/micro9.c
  *
@@ -6,6 +5,10 @@
  *                    Manfred Gruber <m.gruber@tirol.com>
  * Copyright (C) 2009 Contec Steuerungstechnik & Automation GmbH
  *                    Hubert Feurstein <hubert.feurstein@contec.at>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  */
 
 #include <linux/kernel.h>
@@ -13,7 +16,7 @@
 #include <linux/platform_device.h>
 #include <linux/io.h>
 
-#include "hardware.h"
+#include <mach/hardware.h>
 
 #include <asm/mach-types.h>
 #include <asm/mach/arch.h>

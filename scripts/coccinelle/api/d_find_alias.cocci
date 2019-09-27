@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /// Make sure calls to d_find_alias() have a corresponding call to dput().
 //
 // Keywords: d_find_alias, dput

@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 #include <linux/module.h>
 #include <linux/kernel.h>
 #include <linux/i2c.h>
@@ -32,7 +31,7 @@ struct tda9887_priv {
 	struct tuner_i2c_props i2c_props;
 	struct list_head hybrid_tuner_instance_list;
 
-	unsigned char	   data[4];
+	unsigned char 	   data[4];
 	unsigned int       config;
 	unsigned int       mode;
 	unsigned int       audmode;
@@ -95,7 +94,7 @@ struct tvnorm {
 #define cAudioGain6             0x80    // bit c7
 
 #define cTopMask                0x1f    // bit c0:4
-#define cTopDefault		0x10	// bit c0:4
+#define cTopDefault		0x10 	// bit c0:4
 
 //// third reg (e)
 #define cAudioIF_4_5             0x00    // bit e0:1
@@ -660,7 +659,7 @@ static void tda9887_release(struct dvb_frontend *fe)
 	fe->analog_demod_priv = NULL;
 }
 
-static const struct analog_demod_ops tda9887_ops = {
+static struct analog_demod_ops tda9887_ops = {
 	.info		= {
 		.name	= "tda9887",
 	},

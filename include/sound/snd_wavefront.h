@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __SOUND_SND_WAVEFRONT_H__
 #define __SOUND_SND_WAVEFRONT_H__
 
@@ -29,7 +28,6 @@ struct _snd_wavefront_midi {
 	struct snd_rawmidi_substream	 *substream_output[2];
 	struct snd_rawmidi_substream	 *substream_input[2];
 	struct timer_list	 timer;
-	snd_wavefront_card_t	 *timer_card;
         spinlock_t               open;
         spinlock_t               virtual;     /* protects isvirtual */
 };
@@ -39,8 +37,8 @@ struct _snd_wavefront_midi {
 #define	MPU_ACK		0xFE
 #define	UART_MODE_ON	0x3F
 
-extern const struct snd_rawmidi_ops snd_wavefront_midi_output;
-extern const struct snd_rawmidi_ops snd_wavefront_midi_input;
+extern struct snd_rawmidi_ops snd_wavefront_midi_output;
+extern struct snd_rawmidi_ops snd_wavefront_midi_input;
 
 extern void   snd_wavefront_midi_enable_virtual (snd_wavefront_card_t *);
 extern void   snd_wavefront_midi_disable_virtual (snd_wavefront_card_t *);

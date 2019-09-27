@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __ROCKCHIP_BOOT_MODE_H
 #define __ROCKCHIP_BOOT_MODE_H
 

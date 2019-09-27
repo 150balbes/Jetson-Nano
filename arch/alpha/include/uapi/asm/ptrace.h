@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note */
 #ifndef _UAPI_ASMAXP_PTRACE_H
 #define _UAPI_ASMAXP_PTRACE_H
 
@@ -8,7 +7,7 @@
  * kernel stack during a system call or other kernel entry
  *
  * NOTE! I want to minimize the overhead of system calls, so this
- * struct has as little information as possible. It does not have
+ * struct has as little information as possible.  I does not have
  *
  *  - floating point regs: the kernel doesn't change those
  *  - r9-15: saved by the C compiler

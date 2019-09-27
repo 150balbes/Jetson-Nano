@@ -1,8 +1,19 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * SPI driver for Nvidia's Tegra20/Tegra30 SLINK Controller.
  *
  * Copyright (c) 2012, NVIDIA CORPORATION.  All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms and conditions of the GNU General Public License,
+ * version 2, as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 #include <linux/clk.h>
@@ -265,10 +276,10 @@ static unsigned tegra_slink_calculate_curr_xfer_param(
 	tspi->bytes_per_word = DIV_ROUND_UP(bits_per_word, 8);
 
 	if (bits_per_word == 8 || bits_per_word == 16) {
-		tspi->is_packed = true;
+		tspi->is_packed = 1;
 		tspi->words_per_32bit = 32/bits_per_word;
 	} else {
-		tspi->is_packed = false;
+		tspi->is_packed = 0;
 		tspi->words_per_32bit = 1;
 	}
 	tspi->packed_size = tegra_slink_get_packed_size(tspi, t);
@@ -706,6 +717,9 @@ static int tegra_slink_start_transfer_one(struct spi_device *spi,
 	command2 = tspi->command2_reg;
 	command2 &= ~(SLINK_RXEN | SLINK_TXEN);
 
+	tegra_slink_writel(tspi, command, SLINK_COMMAND);
+	tspi->command_reg = command;
+
 	tspi->cur_direction = 0;
 	if (t->rx_buf) {
 		command2 |= SLINK_RXEN;
@@ -715,17 +729,8 @@ static int tegra_slink_start_transfer_one(struct spi_device *spi,
 		command2 |= SLINK_TXEN;
 		tspi->cur_direction |= DATA_DIR_TX;
 	}
-
-	/*
-	 * Writing to the command2 register bevore the command register prevents
-	 * a spike in chip_select line 0. This selects the chip_select line
-	 * before changing the chip_select value.
-	 */
 	tegra_slink_writel(tspi, command2, SLINK_COMMAND2);
 	tspi->command2_reg = command2;
-
-	tegra_slink_writel(tspi, command, SLINK_COMMAND);
-	tspi->command_reg = command;
 
 	if (total_fifo_words > SLINK_FIFO_DEPTH)
 		ret = tegra_slink_start_dma_based_transfer(tspi, t);
@@ -819,7 +824,7 @@ static int tegra_slink_transfer_one(struct spi_master *master,
 					  SLINK_DMA_TIMEOUT);
 	if (WARN_ON(ret == 0)) {
 		dev_err(tspi->dev,
-			"spi transfer timeout, err %d\n", ret);
+			"spi trasfer timeout, err %d\n", ret);
 		return -EIO;
 	}
 
@@ -1087,7 +1092,7 @@ static int tegra_slink_probe(struct platform_device *pdev)
 		goto exit_clk_disable;
 	}
 
-	tspi->rst = devm_reset_control_get_exclusive(&pdev->dev, "spi");
+	tspi->rst = devm_reset_control_get(&pdev->dev, "spi");
 	if (IS_ERR(tspi->rst)) {
 		dev_err(&pdev->dev, "can not get reset\n");
 		ret = PTR_ERR(tspi->rst);

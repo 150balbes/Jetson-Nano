@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #undef TRACE_SYSTEM
 #define TRACE_SYSTEM kmem
 
@@ -172,21 +171,24 @@ TRACE_EVENT(mm_page_free,
 
 TRACE_EVENT(mm_page_free_batched,
 
-	TP_PROTO(struct page *page),
+	TP_PROTO(struct page *page, int cold),
 
-	TP_ARGS(page),
+	TP_ARGS(page, cold),
 
 	TP_STRUCT__entry(
 		__field(	unsigned long,	pfn		)
+		__field(	int,		cold		)
 	),
 
 	TP_fast_assign(
 		__entry->pfn		= page_to_pfn(page);
+		__entry->cold		= cold;
 	),
 
-	TP_printk("page=%p pfn=%lu order=0",
+	TP_printk("page=%p pfn=%lu order=0 cold=%d",
 			pfn_to_page(__entry->pfn),
-			__entry->pfn)
+			__entry->pfn,
+			__entry->cold)
 );
 
 TRACE_EVENT(mm_page_alloc,

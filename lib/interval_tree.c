@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 #include <linux/interval_tree.h>
 #include <linux/interval_tree_generic.h>
 #include <linux/compiler.h>

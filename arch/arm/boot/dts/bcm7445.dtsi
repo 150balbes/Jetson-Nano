@@ -1,5 +1,6 @@
-// SPDX-License-Identifier: GPL-2.0
 #include <dt-bindings/interrupt-controller/arm-gic.h>
+
+#include "skeleton.dtsi"
 
 / {
 	#address-cells = <2>;
@@ -63,7 +64,7 @@
 			     <GIC_PPI 10 (GIC_CPU_MASK_RAW(15) | IRQ_TYPE_LEVEL_LOW)>;
 	};
 
-	rdb@f0000000 {
+	rdb {
 		#address-cells = <1>;
 		#size-cells = <1>;
 		compatible = "simple-bus";
@@ -224,7 +225,7 @@
 
 	};
 
-	memory_controllers@f1100000 {
+	memory_controllers {
 		compatible = "simple-bus";
 		ranges = <0x0 0x0 0xf1100000 0x200000>;
 		#address-cells = <1>;
@@ -252,7 +253,7 @@
 			};
 		};
 
-		memc@80000 {
+		memc@1 {
 			compatible = "brcm,brcmstb-memc", "simple-bus";
 			#address-cells = <1>;
 			#size-cells = <1>;
@@ -274,7 +275,7 @@
 			};
 		};
 
-		memc@100000 {
+		memc@2 {
 			compatible = "brcm,brcmstb-memc", "simple-bus";
 			#address-cells = <1>;
 			#size-cells = <1>;

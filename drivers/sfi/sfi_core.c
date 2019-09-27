@@ -59,7 +59,7 @@
 #define KMSG_COMPONENT "SFI"
 #define pr_fmt(fmt) KMSG_COMPONENT ": " fmt
 
-#include <linux/memblock.h>
+#include <linux/bootmem.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/errno.h>
@@ -68,7 +68,6 @@
 #include <linux/init.h>
 #include <linux/sfi.h>
 #include <linux/slab.h>
-#include <linux/io.h>
 
 #include "sfi_core.h"
 
@@ -87,13 +86,13 @@ static struct sfi_table_simple *syst_va __read_mostly;
 /*
  * FW creates and saves the SFI tables in memory. When these tables get
  * used, they may need to be mapped to virtual address space, and the mapping
- * can happen before or after the memremap() is ready, so a flag is needed
+ * can happen before or after the ioremap() is ready, so a flag is needed
  * to indicating this
  */
-static u32 sfi_use_memremap __read_mostly;
+static u32 sfi_use_ioremap __read_mostly;
 
 /*
- * sfi_un/map_memory calls early_memremap/memunmap which is a __init function
+ * sfi_un/map_memory calls early_ioremap/iounmap which is a __init function
  * and introduces section mismatch. So use __ref to make it calm.
  */
 static void __iomem * __ref sfi_map_memory(u64 phys, u32 size)
@@ -101,10 +100,10 @@ static void __iomem * __ref sfi_map_memory(u64 phys, u32 size)
 	if (!phys || !size)
 		return NULL;
 
-	if (sfi_use_memremap)
-		return memremap(phys, size, MEMREMAP_WB);
+	if (sfi_use_ioremap)
+		return ioremap_cache(phys, size);
 	else
-		return early_memremap(phys, size);
+		return early_ioremap(phys, size);
 }
 
 static void __ref sfi_unmap_memory(void __iomem *virt, u32 size)
@@ -112,10 +111,10 @@ static void __ref sfi_unmap_memory(void __iomem *virt, u32 size)
 	if (!virt || !size)
 		return;
 
-	if (sfi_use_memremap)
-		memunmap(virt);
+	if (sfi_use_ioremap)
+		iounmap(virt);
 	else
-		early_memunmap(virt, size);
+		early_iounmap(virt, size);
 }
 
 static void sfi_print_table_header(unsigned long long pa,
@@ -508,8 +507,8 @@ void __init sfi_init_late(void)
 	length = syst_va->header.len;
 	sfi_unmap_memory(syst_va, sizeof(struct sfi_table_simple));
 
-	/* Use memremap now after it is ready */
-	sfi_use_memremap = 1;
+	/* Use ioremap now after it is ready */
+	sfi_use_ioremap = 1;
 	syst_va = sfi_map_memory(syst_pa, length);
 
 	sfi_acpi_init();

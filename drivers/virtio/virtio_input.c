@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 #include <linux/module.h>
 #include <linux/virtio.h>
 #include <linux/virtio_config.h>
@@ -174,7 +173,7 @@ static int virtinput_init_vqs(struct virtio_input *vi)
 	static const char * const names[] = { "events", "status" };
 	int err;
 
-	err = virtio_find_vqs(vi->vdev, 2, vqs, cbs, names, NULL);
+	err = vi->vdev->config->find_vqs(vi->vdev, 2, vqs, cbs, names);
 	if (err)
 		return err;
 	vi->evt = vqs[0];

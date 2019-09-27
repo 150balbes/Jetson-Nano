@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * highmem.h: virtual kernel memory mappings for high memory
  *
@@ -26,6 +25,9 @@
 #include <asm/cpu-features.h>
 #include <asm/kmap_types.h>
 
+/* undef for production */
+#define HIGHMEM_DEBUG 1
+
 /* declarations for highmem.c */
 extern unsigned long highstart_pfn, highend_pfn;
 
@@ -36,12 +38,7 @@ extern pte_t *pkmap_page_table;
  * easily, subsequent pte tables have to be allocated in one physical
  * chunk of RAM.
  */
-#ifdef CONFIG_PHYS_ADDR_T_64BIT
-#define LAST_PKMAP 512
-#else
 #define LAST_PKMAP 1024
-#endif
-
 #define LAST_PKMAP_MASK (LAST_PKMAP-1)
 #define PKMAP_NR(virt)	((virt-PKMAP_BASE) >> PAGE_SHIFT)
 #define PKMAP_ADDR(nr)	(PKMAP_BASE + ((nr) << PAGE_SHIFT))

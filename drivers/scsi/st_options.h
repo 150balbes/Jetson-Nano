@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
    The compile-time configurable defaults for the Linux SCSI tape driver.
 

@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __NET_WEXT_H
 #define __NET_WEXT_H
 
@@ -7,7 +6,7 @@
 struct net;
 
 #ifdef CONFIG_WEXT_CORE
-int wext_handle_ioctl(struct net *net, unsigned int cmd,
+int wext_handle_ioctl(struct net *net, struct ifreq *ifr, unsigned int cmd,
 		      void __user *arg);
 int compat_wext_handle_ioctl(struct net *net, unsigned int cmd,
 			     unsigned long arg);
@@ -15,7 +14,7 @@ int compat_wext_handle_ioctl(struct net *net, unsigned int cmd,
 struct iw_statistics *get_wireless_stats(struct net_device *dev);
 int call_commit_handler(struct net_device *dev);
 #else
-static inline int wext_handle_ioctl(struct net *net, unsigned int cmd,
+static inline int wext_handle_ioctl(struct net *net, struct ifreq *ifr, unsigned int cmd,
 				    void __user *arg)
 {
 	return -EINVAL;

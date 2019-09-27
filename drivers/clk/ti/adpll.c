@@ -14,7 +14,6 @@
 #include <linux/clk-provider.h>
 #include <linux/delay.h>
 #include <linux/err.h>
-#include <linux/io.h>
 #include <linux/math64.h>
 #include <linux/module.h>
 #include <linux/of_device.h>
@@ -223,7 +222,7 @@ static int ti_adpll_setup_clock(struct ti_adpll_data *d, struct clk *clock,
 
 	/* Separate con_id in format "pll040dcoclkldo" to fit MAX_CON_ID */
 	postfix = strrchr(name, '.');
-	if (postfix && strlen(postfix) > 1) {
+	if (strlen(postfix) > 1) {
 		if (strlen(postfix) > ADPLL_MAX_CON_ID)
 			dev_warn(d->dev, "clock %s con_id lookup may fail\n",
 				 name);
@@ -487,7 +486,7 @@ static u8 ti_adpll_get_parent(struct clk_hw *hw)
 	return 0;
 }
 
-static const struct clk_ops ti_adpll_ops = {
+static struct clk_ops ti_adpll_ops = {
 	.prepare = ti_adpll_prepare,
 	.unprepare = ti_adpll_unprepare,
 	.is_prepared = ti_adpll_is_prepared,
@@ -502,9 +501,8 @@ static int ti_adpll_init_dco(struct ti_adpll_data *d)
 	const char *postfix;
 	int width, err;
 
-	d->outputs.clks = devm_kcalloc(d->dev,
+	d->outputs.clks = devm_kzalloc(d->dev, sizeof(struct clk *) *
 				       MAX_ADPLL_OUTPUTS,
-				       sizeof(struct clk *),
 				       GFP_KERNEL);
 	if (!d->outputs.clks)
 		return -ENOMEM;
@@ -615,7 +613,7 @@ static int ti_adpll_init_clkout(struct ti_adpll_data *d,
 
 	init.name = child_name;
 	init.ops = ops;
-	init.flags = 0;
+	init.flags = CLK_IS_BASIC;
 	co->hw.init = &init;
 	parent_names[0] = __clk_get_name(clk0);
 	parent_names[1] = __clk_get_name(clk1);
@@ -917,9 +915,8 @@ static int ti_adpll_probe(struct platform_device *pdev)
 	if (err)
 		return err;
 
-	d->clocks = devm_kcalloc(d->dev,
+	d->clocks = devm_kzalloc(d->dev, sizeof(struct ti_adpll_clock) *
 				 TI_ADPLL_NR_CLOCKS,
-				 sizeof(struct ti_adpll_clock),
 				 GFP_KERNEL);
 	if (!d->clocks)
 		return -ENOMEM;

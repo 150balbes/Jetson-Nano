@@ -209,7 +209,7 @@ struct bus_type superhyway_bus_type = {
 	.name		= "superhyway",
 	.match		= superhyway_bus_match,
 #ifdef CONFIG_SYSFS
-	.dev_groups	= superhyway_dev_groups,
+	.dev_attrs	= superhyway_dev_attrs,
 #endif
 	.probe		= superhyway_device_probe,
 	.remove		= superhyway_device_remove,

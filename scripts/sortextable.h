@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * sortextable.h
  *
@@ -8,6 +7,9 @@
  *
  * Copyright 2009 John F. Reiser <jreiser@BitWagon.com>.  All rights reserved.
  * Copyright 2010 Steven Rostedt <srostedt@redhat.com>, Red Hat Inc.
+ *
+ *
+ * Licensed under the GNU General Public License, version 2 (GPLv2).
  */
 
 #undef extable_ent_size

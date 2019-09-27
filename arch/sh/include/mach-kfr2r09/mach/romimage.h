@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifdef __ASSEMBLY__
 
 /* kfr2r09 board specific boot code:

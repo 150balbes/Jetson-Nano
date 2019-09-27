@@ -1,10 +1,13 @@
-# SPDX-License-Identifier: GPL-2.0
-menu "ARM devices"
+config DRM_ARM
+	bool
+	help
+	  Choose this option to select drivers for ARM's devices
 
 config DRM_HDLCD
 	tristate "ARM HDLCD"
 	depends on DRM && OF && (ARM || ARM64)
 	depends on COMMON_CLK
+	select DRM_ARM
 	select DRM_KMS_HELPER
 	select DRM_KMS_CMA_HELPER
 	help
@@ -26,6 +29,7 @@ config DRM_MALI_DISPLAY
 	tristate "ARM Mali Display Processor"
 	depends on DRM && OF && (ARM || ARM64)
 	depends on COMMON_CLK
+	select DRM_ARM
 	select DRM_KMS_HELPER
 	select DRM_KMS_CMA_HELPER
 	select DRM_GEM_CMA_HELPER
@@ -36,7 +40,3 @@ config DRM_MALI_DISPLAY
 	  of the hardware.
 
 	  If compiled as a module it will be called mali-dp.
-
-source "drivers/gpu/drm/arm/display/Kconfig"
-
-endmenu

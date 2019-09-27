@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * File:	mca_asm.S
  * Purpose:	assembly portion of the IA64 MCA handling

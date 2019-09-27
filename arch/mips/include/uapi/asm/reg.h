@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note */
 /*
  * Various register offset definitions for debuggers, core file
  * examiners and whatnot.

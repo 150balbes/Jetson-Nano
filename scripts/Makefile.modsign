@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0
 # ==========================================================================
 # Signing modules
 # ==========================================================================
@@ -8,7 +7,8 @@ __modsign:
 
 include scripts/Kbuild.include
 
-modules := $(sort $(shell cat modules.order))
+__modules := $(sort $(shell grep -h '\.ko$$' /dev/null $(wildcard $(MODVERDIR)/*.mod)))
+modules := $(patsubst %.o,%.ko,$(wildcard $(__modules:.ko=.o)))
 
 PHONY += $(modules)
 __modsign: $(modules)
@@ -25,5 +25,8 @@ modinst_dir = $(if $(KBUILD_EXTMOD),$(ext-mod-dir),kernel/$(@D))
 
 $(modules):
 	$(call cmd,sign_ko,$(MODLIB)/$(modinst_dir))
+
+# Declare the contents of the .PHONY variable as phony.  We keep that
+# information in a variable se we can use it in if_changed and friends.
 
 .PHONY: $(PHONY)

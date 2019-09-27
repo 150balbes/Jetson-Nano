@@ -1,9 +1,14 @@
-/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * Diffie-Hellman secret to be used with kpp API along with helper functions
  *
  * Copyright (c) 2016, Intel Corporation
  * Authors: Salvatore Benedetto <salvatore.benedetto@intel.com>
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License as published by the Free
+ * Software Foundation; either version 2 of the License, or (at your option)
+ * any later version.
+ *
  */
 #ifndef _CRYPTO_DH_
 #define _CRYPTO_DH_
@@ -24,21 +29,17 @@
  *
  * @key:	Private DH key
  * @p:		Diffie-Hellman parameter P
- * @q:		Diffie-Hellman parameter Q
  * @g:		Diffie-Hellman generator G
  * @key_size:	Size of the private DH key
  * @p_size:	Size of DH parameter P
- * @q_size:	Size of DH parameter Q
  * @g_size:	Size of DH generator G
  */
 struct dh {
 	void *key;
 	void *p;
-	void *q;
 	void *g;
 	unsigned int key_size;
 	unsigned int p_size;
-	unsigned int q_size;
 	unsigned int g_size;
 };
 
@@ -52,7 +53,7 @@ struct dh {
  *
  * Return: size of the key in bytes
  */
-unsigned int crypto_dh_key_len(const struct dh *params);
+int crypto_dh_key_len(const struct dh *params);
 
 /**
  * crypto_dh_encode_key() - encode the private key
@@ -74,7 +75,7 @@ int crypto_dh_encode_key(char *buf, unsigned int len, const struct dh *params);
  * @buf:	Buffer holding a packet key that should be decoded
  * @len:	Length of the packet private key buffer
  * @params:	Buffer allocated by the caller that is filled with the
- *		unpacked DH private key.
+ *		unpacket DH private key.
  *
  * The unpacking obtains the private key by pointing @p to the correct location
  * in @buf. Thus, both pointers refer to the same memory.

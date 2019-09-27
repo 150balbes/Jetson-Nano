@@ -1,9 +1,18 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (C) 2010 Google, Inc.
  * Author: Erik Gilling <konkers@android.com>
  *
  * Copyright (C) 2011-2013 NVIDIA Corporation
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
  */
 
 #include <linux/debugfs.h>
@@ -31,34 +40,27 @@ void host1x_debug_output(struct output *o, const char *fmt, ...)
 	len = vsnprintf(o->buf, sizeof(o->buf), fmt, args);
 	va_end(args);
 
-	o->fn(o->ctx, o->buf, len, false);
+	o->fn(o->ctx, o->buf, len);
 }
 
-void host1x_debug_cont(struct output *o, const char *fmt, ...)
-{
-	va_list args;
-	int len;
-
-	va_start(args, fmt);
-	len = vsnprintf(o->buf, sizeof(o->buf), fmt, args);
-	va_end(args);
-
-	o->fn(o->ctx, o->buf, len, true);
-}
-
-static int show_channel(struct host1x_channel *ch, void *data, bool show_fifo)
+static int show_channels(struct host1x_channel *ch, void *data, bool show_fifo)
 {
 	struct host1x *m = dev_get_drvdata(ch->dev->parent);
 	struct output *o = data;
 
-	mutex_lock(&ch->cdma.lock);
+	mutex_lock(&ch->reflock);
 
-	if (show_fifo)
-		host1x_hw_show_channel_fifo(m, ch, o);
+	if (ch->refcount) {
+		mutex_lock(&ch->cdma.lock);
 
-	host1x_hw_show_channel_cdma(m, ch, o);
+		if (show_fifo)
+			host1x_hw_show_channel_fifo(m, ch, o);
 
-	mutex_unlock(&ch->cdma.lock);
+		host1x_hw_show_channel_cdma(m, ch, o);
+		mutex_unlock(&ch->cdma.lock);
+	}
+
+	mutex_unlock(&ch->reflock);
 
 	return 0;
 }
@@ -92,22 +94,28 @@ static void show_syncpts(struct host1x *m, struct output *o)
 	host1x_debug_output(o, "\n");
 }
 
-static void show_all(struct host1x *m, struct output *o, bool show_fifo)
+static void show_all(struct host1x *m, struct output *o)
 {
-	unsigned int i;
+	struct host1x_channel *ch;
 
 	host1x_hw_show_mlocks(m, o);
 	show_syncpts(m, o);
 	host1x_debug_output(o, "---- channels ----\n");
 
-	for (i = 0; i < m->info->nb_channels; ++i) {
-		struct host1x_channel *ch = host1x_channel_get_index(m, i);
+	host1x_for_each_channel(m, ch)
+		show_channels(ch, o, true);
+}
 
-		if (ch) {
-			show_channel(ch, o, show_fifo);
-			host1x_channel_put(ch);
-		}
-	}
+static void show_all_no_fifo(struct host1x *host1x, struct output *o)
+{
+	struct host1x_channel *ch;
+
+	host1x_hw_show_mlocks(host1x, o);
+	show_syncpts(host1x, o);
+	host1x_debug_output(o, "---- channels ----\n");
+
+	host1x_for_each_channel(host1x, ch)
+		show_channels(ch, o, false);
 }
 
 static int host1x_debug_show_all(struct seq_file *s, void *unused)
@@ -117,7 +125,7 @@ static int host1x_debug_show_all(struct seq_file *s, void *unused)
 		.ctx = s
 	};
 
-	show_all(s->private, &o, true);
+	show_all(s->private, &o);
 
 	return 0;
 }
@@ -129,7 +137,7 @@ static int host1x_debug_show(struct seq_file *s, void *unused)
 		.ctx = s
 	};
 
-	show_all(s->private, &o, false);
+	show_all_no_fifo(s->private, &o);
 
 	return 0;
 }
@@ -161,6 +169,9 @@ static const struct file_operations host1x_debug_fops = {
 static void host1x_debugfs_init(struct host1x *host1x)
 {
 	struct dentry *de = debugfs_create_dir("tegra-host1x", NULL);
+
+	if (!de)
+		return;
 
 	/* Store the created entry */
 	host1x->debugfs = de;
@@ -205,7 +216,7 @@ void host1x_debug_dump(struct host1x *host1x)
 		.fn = write_to_printk
 	};
 
-	show_all(host1x, &o, true);
+	show_all(host1x, &o);
 }
 
 void host1x_debug_dump_syncpts(struct host1x *host1x)

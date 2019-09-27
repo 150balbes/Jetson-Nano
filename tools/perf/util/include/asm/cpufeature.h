@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 
 #ifndef PERF_CPUFEATURE_H
 #define PERF_CPUFEATURE_H

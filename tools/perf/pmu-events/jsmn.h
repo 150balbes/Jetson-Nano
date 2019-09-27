@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __JSMN_H_
 #define __JSMN_H_
 

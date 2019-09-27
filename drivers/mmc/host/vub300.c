@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Remote VUB300 SDIO/SDmem Host Controller Driver
  *
@@ -7,6 +6,10 @@
  * based on USB Skeleton driver - 2.2
  *
  * Copyright (C) 2001-2004 Greg Kroah-Hartman (greg@kroah.com)
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License as
+ * published by the Free Software Foundation, version 2
  *
  * VUB300: is a USB 2.0 client device with a single SDIO/SDmem/MMC slot
  *         Any SDIO/SDmem/MMC device plugged into the VUB300 will appear,
@@ -263,7 +266,7 @@ MODULE_PARM_DESC(firmware_rom_wait_states,
 #define ELAN_VENDOR_ID		0x2201
 #define VUB300_VENDOR_ID	0x0424
 #define VUB300_PRODUCT_ID	0x012C
-static const struct usb_device_id vub300_table[] = {
+static struct usb_device_id vub300_table[] = {
 	{USB_DEVICE(ELAN_VENDOR_ID, VUB300_PRODUCT_ID)},
 	{USB_DEVICE(VUB300_VENDOR_ID, VUB300_PRODUCT_ID)},
 	{} /* Terminating entry */
@@ -637,6 +640,8 @@ static void __vub300_irqpoll_response(struct vub300_mmc_host *vub300)
 		mutex_lock(&vub300->irq_mutex);
 		if (vub300->irq_enabled)
 			mmc_signal_sdio_irq(vub300->mmc);
+		else if (vub300->irqs_queued)
+			vub300->irqs_queued += 1;
 		else
 			vub300->irqs_queued += 1;
 		vub300->irq_disabled = 0;
@@ -723,7 +728,8 @@ static void vub300_deadwork_thread(struct work_struct *work)
 		 */
 	} else if (vub300->card_present) {
 		check_vub300_port_status(vub300);
-	} else if (vub300->mmc && vub300->mmc->card) {
+	} else if (vub300->mmc && vub300->mmc->card &&
+		   mmc_card_present(vub300->mmc->card)) {
 		/*
 		 * the MMC core must not have responded
 		 * to the previous indication - lets
@@ -738,10 +744,9 @@ static void vub300_deadwork_thread(struct work_struct *work)
 	kref_put(&vub300->kref, vub300_delete);
 }
 
-static void vub300_inactivity_timer_expired(struct timer_list *t)
+static void vub300_inactivity_timer_expired(unsigned long data)
 {				/* softirq */
-	struct vub300_mmc_host *vub300 = from_timer(vub300, t,
-						    inactivity_timer);
+	struct vub300_mmc_host *vub300 = (struct vub300_mmc_host *)data;
 	if (!vub300->interface) {
 		kref_put(&vub300->kref, vub300_delete);
 	} else if (vub300->cmd) {
@@ -1178,10 +1183,9 @@ static void send_command(struct vub300_mmc_host *vub300)
  * timer callback runs in atomic mode
  *       so it cannot call usb_kill_urb()
  */
-static void vub300_sg_timed_out(struct timer_list *t)
+static void vub300_sg_timed_out(unsigned long data)
 {
-	struct vub300_mmc_host *vub300 = from_timer(vub300, t,
-						    sg_transfer_timer);
+	struct vub300_mmc_host *vub300 = (struct vub300_mmc_host *)data;
 	vub300->usb_timed_out = 1;
 	usb_sg_cancel(&vub300->sg_request);
 	usb_unlink_urb(vub300->command_out_urb);
@@ -1243,8 +1247,12 @@ static void __download_offload_pseudocode(struct vub300_mmc_host *vub300,
 						USB_RECIP_DEVICE, 0x0000, 0x0000,
 						xfer_buffer, xfer_length, HZ);
 			kfree(xfer_buffer);
-			if (retval < 0)
-				goto copy_error_message;
+			if (retval < 0) {
+				strncpy(vub300->vub_name,
+					"SDIO pseudocode download failed",
+					sizeof(vub300->vub_name));
+				return;
+			}
 		} else {
 			dev_err(&vub300->udev->dev,
 				"not enough memory for xfer buffer to send"
@@ -1286,8 +1294,12 @@ static void __download_offload_pseudocode(struct vub300_mmc_host *vub300,
 						USB_RECIP_DEVICE, 0x0000, 0x0000,
 						xfer_buffer, xfer_length, HZ);
 			kfree(xfer_buffer);
-			if (retval < 0)
-				goto copy_error_message;
+			if (retval < 0) {
+				strncpy(vub300->vub_name,
+					"SDIO pseudocode download failed",
+					sizeof(vub300->vub_name));
+				return;
+			}
 		} else {
 			dev_err(&vub300->udev->dev,
 				"not enough memory for xfer buffer to send"
@@ -1340,12 +1352,6 @@ static void __download_offload_pseudocode(struct vub300_mmc_host *vub300,
 			sizeof(vub300->vub_name));
 		return;
 	}
-
-	return;
-
-copy_error_message:
-	strncpy(vub300->vub_name, "SDIO pseudocode download failed",
-		sizeof(vub300->vub_name));
 }
 
 /*
@@ -1750,7 +1756,8 @@ static void vub300_cmndwork_thread(struct work_struct *work)
 		int data_length;
 		mutex_lock(&vub300->cmd_mutex);
 		init_completion(&vub300->command_complete);
-		if (likely(vub300->vub_name[0]) || !vub300->mmc->card) {
+		if (likely(vub300->vub_name[0]) || !vub300->mmc->card ||
+		    !mmc_card_present(vub300->mmc->card)) {
 			/*
 			 * the name of the EMPTY Pseudo firmware file
 			 * is used as a flag to indicate that the file
@@ -2076,7 +2083,7 @@ static void vub300_init_card(struct mmc_host *mmc, struct mmc_card *card)
 	dev_info(&vub300->udev->dev, "NO host QUIRKS for this card\n");
 }
 
-static const struct mmc_host_ops vub300_mmc_ops = {
+static struct mmc_host_ops vub300_mmc_ops = {
 	.request = vub300_mmc_request,
 	.set_ios = vub300_mmc_set_ios,
 	.get_ro = vub300_mmc_get_ro,
@@ -2104,8 +2111,7 @@ static int vub300_probe(struct usb_interface *interface,
 	usb_string(udev, udev->descriptor.iSerialNumber, serial_number,
 		   sizeof(serial_number));
 	dev_info(&udev->dev, "probing VID:PID(%04X:%04X) %s %s %s\n",
-		 le16_to_cpu(udev->descriptor.idVendor),
-		 le16_to_cpu(udev->descriptor.idProduct),
+		 udev->descriptor.idVendor, udev->descriptor.idProduct,
 		 manufacturer, product, serial_number);
 	command_out_urb = usb_alloc_urb(0, GFP_KERNEL);
 	if (!command_out_urb) {
@@ -2320,10 +2326,13 @@ static int vub300_probe(struct usb_interface *interface,
 	INIT_WORK(&vub300->cmndwork, vub300_cmndwork_thread);
 	INIT_WORK(&vub300->deadwork, vub300_deadwork_thread);
 	kref_init(&vub300->kref);
-	timer_setup(&vub300->sg_transfer_timer, vub300_sg_timed_out, 0);
+	init_timer(&vub300->sg_transfer_timer);
+	vub300->sg_transfer_timer.data = (unsigned long)vub300;
+	vub300->sg_transfer_timer.function = vub300_sg_timed_out;
 	kref_get(&vub300->kref);
-	timer_setup(&vub300->inactivity_timer,
-		    vub300_inactivity_timer_expired, 0);
+	init_timer(&vub300->inactivity_timer);
+	vub300->inactivity_timer.data = (unsigned long)vub300;
+	vub300->inactivity_timer.function = vub300_inactivity_timer_expired;
 	vub300->inactivity_timer.expires = jiffies + HZ;
 	add_timer(&vub300->inactivity_timer);
 	if (vub300->card_present)

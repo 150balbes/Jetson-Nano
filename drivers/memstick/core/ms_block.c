@@ -1,17 +1,21 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  *  ms_block.c - Sony MemoryStick (legacy) storage support
 
  *  Copyright (C) 2013 Maxim Levitsky <maximlevitsky@gmail.com>
  *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
  * Minor portions of the driver were copied from mspro_block.c which is
  * Copyright (C) 2007 Alex Dubov <oakad@yahoo.com>
+ *
  */
 #define DRIVER_NAME "ms_block"
 #define pr_fmt(fmt) DRIVER_NAME ": " fmt
 
 #include <linux/module.h>
-#include <linux/blk-mq.h>
+#include <linux/blkdev.h>
 #include <linux/memstick.h>
 #include <linux/idr.h>
 #include <linux/hdreg.h>
@@ -1197,8 +1201,7 @@ static int msb_read_boot_blocks(struct msb_data *msb)
 	dbg_verbose("Start of a scan for the boot blocks");
 
 	if (!msb->boot_page) {
-		page = kmalloc_array(2, sizeof(struct ms_boot_page),
-				     GFP_KERNEL);
+		page = kmalloc(sizeof(struct ms_boot_page)*2, GFP_KERNEL);
 		if (!page)
 			return -ENOMEM;
 
@@ -1338,8 +1341,7 @@ static int msb_ftl_initialize(struct msb_data *msb)
 	msb->used_blocks_bitmap = kzalloc(msb->block_count / 8, GFP_KERNEL);
 	msb->erased_blocks_bitmap = kzalloc(msb->block_count / 8, GFP_KERNEL);
 	msb->lba_to_pba_table =
-		kmalloc_array(msb->logical_block_count, sizeof(u16),
-			      GFP_KERNEL);
+		kmalloc(msb->logical_block_count * sizeof(u16), GFP_KERNEL);
 
 	if (!msb->used_blocks_bitmap || !msb->lba_to_pba_table ||
 						!msb->erased_blocks_bitmap) {
@@ -1490,9 +1492,9 @@ static int msb_ftl_scan(struct msb_data *msb)
 	return 0;
 }
 
-static void msb_cache_flush_timer(struct timer_list *t)
+static void msb_cache_flush_timer(unsigned long data)
 {
-	struct msb_data *msb = from_timer(msb, t, cache_flush_timer);
+	struct msb_data *msb = (struct msb_data *)data;
 	msb->need_flush_cache = true;
 	queue_work(msb->io_queue, &msb->io_work);
 }
@@ -1512,7 +1514,8 @@ static void msb_cache_discard(struct msb_data *msb)
 
 static int msb_cache_init(struct msb_data *msb)
 {
-	timer_setup(&msb->cache_flush_timer, msb_cache_flush_timer, 0);
+	setup_timer(&msb->cache_flush_timer, msb_cache_flush_timer,
+		(unsigned long)msb);
 
 	if (!msb->cache)
 		msb->cache = kzalloc(msb->block_size, GFP_KERNEL);
@@ -1869,65 +1872,68 @@ static void msb_io_work(struct work_struct *work)
 	struct msb_data *msb = container_of(work, struct msb_data, io_work);
 	int page, error, len;
 	sector_t lba;
+	unsigned long flags;
 	struct scatterlist *sg = msb->prealloc_sg;
-	struct request *req;
 
 	dbg_verbose("IO: work started");
 
 	while (1) {
-		spin_lock_irq(&msb->q_lock);
+		spin_lock_irqsave(&msb->q_lock, flags);
 
 		if (msb->need_flush_cache) {
 			msb->need_flush_cache = false;
-			spin_unlock_irq(&msb->q_lock);
+			spin_unlock_irqrestore(&msb->q_lock, flags);
 			msb_cache_flush(msb);
 			continue;
 		}
 
-		req = msb->req;
-		if (!req) {
-			dbg_verbose("IO: no more requests exiting");
-			spin_unlock_irq(&msb->q_lock);
-			return;
+		if (!msb->req) {
+			msb->req = blk_fetch_request(msb->queue);
+			if (!msb->req) {
+				dbg_verbose("IO: no more requests exiting");
+				spin_unlock_irqrestore(&msb->q_lock, flags);
+				return;
+			}
 		}
 
-		spin_unlock_irq(&msb->q_lock);
+		spin_unlock_irqrestore(&msb->q_lock, flags);
+
+		/* If card was removed meanwhile */
+		if (!msb->req)
+			return;
 
 		/* process the request */
 		dbg_verbose("IO: processing new request");
-		blk_rq_map_sg(msb->queue, req, sg);
+		blk_rq_map_sg(msb->queue, msb->req, sg);
 
-		lba = blk_rq_pos(req);
+		lba = blk_rq_pos(msb->req);
 
 		sector_div(lba, msb->page_size / 512);
 		page = sector_div(lba, msb->pages_in_block);
 
 		if (rq_data_dir(msb->req) == READ)
 			error = msb_do_read_request(msb, lba, page, sg,
-				blk_rq_bytes(req), &len);
+				blk_rq_bytes(msb->req), &len);
 		else
 			error = msb_do_write_request(msb, lba, page, sg,
-				blk_rq_bytes(req), &len);
+				blk_rq_bytes(msb->req), &len);
 
-		if (len && !blk_update_request(req, BLK_STS_OK, len)) {
-			__blk_mq_end_request(req, BLK_STS_OK);
-			spin_lock_irq(&msb->q_lock);
-			msb->req = NULL;
-			spin_unlock_irq(&msb->q_lock);
-		}
+		spin_lock_irqsave(&msb->q_lock, flags);
+
+		if (len)
+			if (!__blk_end_request(msb->req, 0, len))
+				msb->req = NULL;
 
 		if (error && msb->req) {
-			blk_status_t ret = errno_to_blk_status(error);
-
 			dbg_verbose("IO: ending one sector of the request with error");
-			blk_mq_end_request(req, ret);
-			spin_lock_irq(&msb->q_lock);
-			msb->req = NULL;
-			spin_unlock_irq(&msb->q_lock);
+			if (!__blk_end_request(msb->req, error, msb->page_size))
+				msb->req = NULL;
 		}
 
 		if (msb->req)
 			dbg_verbose("IO: request still pending");
+
+		spin_unlock_irqrestore(&msb->q_lock, flags);
 	}
 }
 
@@ -1994,40 +2000,39 @@ static int msb_bd_getgeo(struct block_device *bdev,
 	return 0;
 }
 
-static blk_status_t msb_queue_rq(struct blk_mq_hw_ctx *hctx,
-				 const struct blk_mq_queue_data *bd)
+static int msb_prepare_req(struct request_queue *q, struct request *req)
 {
-	struct memstick_dev *card = hctx->queue->queuedata;
+	if (req->cmd_type != REQ_TYPE_FS) {
+		blk_dump_rq_flags(req, "MS unsupported request");
+		return BLKPREP_KILL;
+	}
+	req->cmd_flags |= REQ_DONTPREP;
+	return BLKPREP_OK;
+}
+
+static void msb_submit_req(struct request_queue *q)
+{
+	struct memstick_dev *card = q->queuedata;
 	struct msb_data *msb = memstick_get_drvdata(card);
-	struct request *req = bd->rq;
+	struct request *req = NULL;
 
 	dbg_verbose("Submit request");
-
-	spin_lock_irq(&msb->q_lock);
 
 	if (msb->card_dead) {
 		dbg("Refusing requests on removed card");
 
 		WARN_ON(!msb->io_queue_stopped);
 
-		spin_unlock_irq(&msb->q_lock);
-		blk_mq_start_request(req);
-		return BLK_STS_IOERR;
+		while ((req = blk_fetch_request(q)) != NULL)
+			__blk_end_request_all(req, -ENODEV);
+		return;
 	}
 
-	if (msb->req) {
-		spin_unlock_irq(&msb->q_lock);
-		return BLK_STS_DEV_RESOURCE;
-	}
-
-	blk_mq_start_request(req);
-	msb->req = req;
+	if (msb->req)
+		return;
 
 	if (!msb->io_queue_stopped)
 		queue_work(msb->io_queue, &msb->io_work);
-
-	spin_unlock_irq(&msb->q_lock);
-	return BLK_STS_OK;
 }
 
 static int msb_check_card(struct memstick_dev *card)
@@ -2043,20 +2048,21 @@ static void msb_stop(struct memstick_dev *card)
 
 	dbg("Stopping all msblock IO");
 
-	blk_mq_stop_hw_queues(msb->queue);
 	spin_lock_irqsave(&msb->q_lock, flags);
+	blk_stop_queue(msb->queue);
 	msb->io_queue_stopped = true;
 	spin_unlock_irqrestore(&msb->q_lock, flags);
 
 	del_timer_sync(&msb->cache_flush_timer);
 	flush_workqueue(msb->io_queue);
 
-	spin_lock_irqsave(&msb->q_lock, flags);
 	if (msb->req) {
-		blk_mq_requeue_request(msb->req, false);
+		spin_lock_irqsave(&msb->q_lock, flags);
+		blk_requeue_request(msb->queue, msb->req);
 		msb->req = NULL;
+		spin_unlock_irqrestore(&msb->q_lock, flags);
 	}
-	spin_unlock_irqrestore(&msb->q_lock, flags);
+
 }
 
 static void msb_start(struct memstick_dev *card)
@@ -2079,7 +2085,9 @@ static void msb_start(struct memstick_dev *card)
 	msb->need_flush_cache = true;
 	msb->io_queue_stopped = false;
 
-	blk_mq_start_hw_queues(msb->queue);
+	spin_lock_irqsave(&msb->q_lock, flags);
+	blk_start_queue(msb->queue);
+	spin_unlock_irqrestore(&msb->q_lock, flags);
 
 	queue_work(msb->io_queue, &msb->io_work);
 
@@ -2092,16 +2100,17 @@ static const struct block_device_operations msb_bdops = {
 	.owner   = THIS_MODULE
 };
 
-static const struct blk_mq_ops msb_mq_ops = {
-	.queue_rq	= msb_queue_rq,
-};
-
 /* Registers the block device */
 static int msb_init_disk(struct memstick_dev *card)
 {
 	struct msb_data *msb = memstick_get_drvdata(card);
+	struct memstick_host *host = card->host;
 	int rc;
+	u64 limit = BLK_BOUNCE_HIGH;
 	unsigned long capacity;
+
+	if (host->dev.dma_mask && *(host->dev.dma_mask))
+		limit = *(host->dev.dma_mask);
 
 	mutex_lock(&msb_disk_lock);
 	msb->disk_id = idr_alloc(&msb_disk_idr, card, 0, 256, GFP_KERNEL);
@@ -2116,16 +2125,16 @@ static int msb_init_disk(struct memstick_dev *card)
 		goto out_release_id;
 	}
 
-	msb->queue = blk_mq_init_sq_queue(&msb->tag_set, &msb_mq_ops, 2,
-						BLK_MQ_F_SHOULD_MERGE);
-	if (IS_ERR(msb->queue)) {
-		rc = PTR_ERR(msb->queue);
-		msb->queue = NULL;
+	msb->queue = blk_init_queue(msb_submit_req, &msb->q_lock);
+	if (!msb->queue) {
+		rc = -ENOMEM;
 		goto out_put_disk;
 	}
 
 	msb->queue->queuedata = card;
+	blk_queue_prep_rq(msb->queue, msb_prepare_req);
 
+	blk_queue_bounce_limit(msb->queue, limit);
 	blk_queue_max_hw_sectors(msb->queue, MS_BLOCK_MAX_PAGES);
 	blk_queue_max_segments(msb->queue, MS_BLOCK_MAX_SEGS);
 	blk_queue_max_segment_size(msb->queue,
@@ -2152,7 +2161,7 @@ static int msb_init_disk(struct memstick_dev *card)
 		set_disk_ro(msb->disk, 1);
 
 	msb_start(card);
-	device_add_disk(&card->dev, msb->disk, NULL);
+	device_add_disk(&card->dev, msb->disk);
 	dbg("Disk added");
 	return 0;
 
@@ -2208,13 +2217,12 @@ static void msb_remove(struct memstick_dev *card)
 	/* Take care of unhandled + new requests from now on */
 	spin_lock_irqsave(&msb->q_lock, flags);
 	msb->card_dead = true;
+	blk_start_queue(msb->queue);
 	spin_unlock_irqrestore(&msb->q_lock, flags);
-	blk_mq_start_hw_queues(msb->queue);
 
 	/* Remove the disk */
 	del_gendisk(msb->disk);
 	blk_cleanup_queue(msb->queue);
-	blk_mq_free_tag_set(&msb->tag_set);
 	msb->queue = NULL;
 
 	mutex_lock(&msb_disk_lock);

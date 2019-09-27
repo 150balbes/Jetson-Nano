@@ -1,10 +1,7 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _ASM_X86_MPX_H
 #define _ASM_X86_MPX_H
 
 #include <linux/types.h>
-#include <linux/mm_types.h>
-
 #include <asm/ptrace.h>
 #include <asm/insn.h>
 
@@ -57,38 +54,27 @@
 #define MPX_BNDCFG_ADDR_MASK	(~((1UL<<MPX_BNDCFG_TAIL)-1))
 #define MPX_BNDSTA_ERROR_CODE	0x3
 
-struct mpx_fault_info {
-	void __user *addr;
-	void __user *lower;
-	void __user *upper;
-};
-
 #ifdef CONFIG_X86_INTEL_MPX
-
-extern int mpx_fault_info(struct mpx_fault_info *info, struct pt_regs *regs);
-extern int mpx_handle_bd_fault(void);
-
+siginfo_t *mpx_generate_siginfo(struct pt_regs *regs);
+int mpx_handle_bd_fault(void);
 static inline int kernel_managing_mpx_tables(struct mm_struct *mm)
 {
-	return (mm->context.bd_addr != MPX_INVALID_BOUNDS_DIR);
+	return (mm->bd_addr != MPX_INVALID_BOUNDS_DIR);
 }
-
 static inline void mpx_mm_init(struct mm_struct *mm)
 {
 	/*
 	 * NULL is theoretically a valid place to put the bounds
 	 * directory, so point this at an invalid address.
 	 */
-	mm->context.bd_addr = MPX_INVALID_BOUNDS_DIR;
+	mm->bd_addr = MPX_INVALID_BOUNDS_DIR;
 }
-
-extern void mpx_notify_unmap(struct mm_struct *mm, unsigned long start, unsigned long end);
-extern unsigned long mpx_unmapped_area_check(unsigned long addr, unsigned long len, unsigned long flags);
-
+void mpx_notify_unmap(struct mm_struct *mm, struct vm_area_struct *vma,
+		      unsigned long start, unsigned long end);
 #else
-static inline int mpx_fault_info(struct mpx_fault_info *info, struct pt_regs *regs)
+static inline siginfo_t *mpx_generate_siginfo(struct pt_regs *regs)
 {
-	return -EINVAL;
+	return NULL;
 }
 static inline int mpx_handle_bd_fault(void)
 {
@@ -102,14 +88,9 @@ static inline void mpx_mm_init(struct mm_struct *mm)
 {
 }
 static inline void mpx_notify_unmap(struct mm_struct *mm,
+				    struct vm_area_struct *vma,
 				    unsigned long start, unsigned long end)
 {
-}
-
-static inline unsigned long mpx_unmapped_area_check(unsigned long addr,
-		unsigned long len, unsigned long flags)
-{
-	return addr;
 }
 #endif /* CONFIG_X86_INTEL_MPX */
 

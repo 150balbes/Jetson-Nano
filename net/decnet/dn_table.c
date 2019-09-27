@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * DECnet       An implementation of the DECnet protocol suite for the LINUX
  *              operating system.  DECnet is implemented using the  BSD Socket
@@ -26,7 +25,7 @@
 #include <linux/timer.h>
 #include <linux/spinlock.h>
 #include <linux/atomic.h>
-#include <linux/uaccess.h>
+#include <asm/uaccess.h>
 #include <linux/route.h> /* RTF_xxx */
 #include <net/neighbour.h>
 #include <net/netlink.h>
@@ -156,7 +155,6 @@ static void dn_rehash_zone(struct dn_zone *dz)
 	default:
 		printk(KERN_DEBUG "DECnet: dn_rehash_zone: BUG! %d\n",
 		       old_divisor);
-		/* fall through */
 	case 256:
 		new_divisor = 1024;
 		new_hashmask = 0x3FF;
@@ -348,8 +346,7 @@ static int dn_fib_dump_info(struct sk_buff *skb, u32 portid, u32 seq, int event,
 		struct rtnexthop *nhp;
 		struct nlattr *mp_head;
 
-		mp_head = nla_nest_start_noflag(skb, RTA_MULTIPATH);
-		if (!mp_head)
+		if (!(mp_head = nla_nest_start(skb, RTA_MULTIPATH)))
 			goto errout;
 
 		for_nexthops(fi) {

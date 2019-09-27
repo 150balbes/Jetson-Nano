@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * gspca ViCam subdriver
  *
@@ -11,6 +10,20 @@
  *                    Pavel Machek (pavel@ucw.cz),
  *                    John Tyner (jtyner@cs.ucr.edu),
  *                    Monroe Williams (monroe@pobox.com)
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
@@ -173,7 +186,7 @@ static void vicam_dostream(struct work_struct *work)
 
 	frame_sz = gspca_dev->cam.cam_mode[gspca_dev->curr_mode].sizeimage +
 		   HEADER_SIZE;
-	buffer = kmalloc(frame_sz, GFP_KERNEL);
+	buffer = kmalloc(frame_sz, GFP_KERNEL | GFP_DMA);
 	if (!buffer) {
 		pr_err("Couldn't allocate USB buffer\n");
 		goto exit;

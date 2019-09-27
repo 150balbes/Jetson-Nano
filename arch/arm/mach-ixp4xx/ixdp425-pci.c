@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * arch/arm/mach-ixp4xx/ixdp425-pci.c
  *
@@ -8,6 +7,11 @@
  * Copyright (C) 2003-2004 MontaVista Software, Inc.
  *
  * Maintainer: Deepak Saxena <dsaxena@plexity.net>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
  */
 
 #include <linux/kernel.h>
@@ -19,8 +23,6 @@
 #include <asm/irq.h>
 #include <mach/hardware.h>
 #include <asm/mach-types.h>
-
-#include "irqs.h"
 
 #define MAX_DEV		4
 #define IRQ_LINES	4

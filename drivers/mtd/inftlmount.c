@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * inftlmount.c -- INFTL mount code with extensive checks.
  *
@@ -8,13 +7,27 @@
  * Based heavily on the nftlmount.c code which is:
  * Author: Fabrice Bellard (fabrice.bellard@netgem.com)
  * Copyright © 2000 Netgem S.A.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
 
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <asm/errno.h>
 #include <asm/io.h>
-#include <linux/uaccess.h>
+#include <asm/uaccess.h>
 #include <linux/delay.h>
 #include <linux/slab.h>
 #include <linux/mtd/mtd.h>
@@ -195,6 +208,8 @@ static int find_boot_record(struct INFTLrecord *inftl)
 			if (ip->Reserved0 != ip->firstUnit) {
 				struct erase_info *instr = &inftl->instr;
 
+				instr->mtd = inftl->mbd.mtd;
+
 				/*
 				 * 	Most likely this is using the
 				 * 	undocumented qiuck mount feature.
@@ -257,8 +272,7 @@ static int find_boot_record(struct INFTLrecord *inftl)
 		inftl->nb_blocks = ip->lastUnit + 1;
 
 		/* Memory alloc */
-		inftl->PUtable = kmalloc_array(inftl->nb_blocks, sizeof(u16),
-					       GFP_KERNEL);
+		inftl->PUtable = kmalloc(inftl->nb_blocks * sizeof(u16), GFP_KERNEL);
 		if (!inftl->PUtable) {
 			printk(KERN_WARNING "INFTL: allocation of PUtable "
 				"failed (%zd bytes)\n",
@@ -266,8 +280,7 @@ static int find_boot_record(struct INFTLrecord *inftl)
 			return -ENOMEM;
 		}
 
-		inftl->VUtable = kmalloc_array(inftl->nb_blocks, sizeof(u16),
-					       GFP_KERNEL);
+		inftl->VUtable = kmalloc(inftl->nb_blocks * sizeof(u16), GFP_KERNEL);
 		if (!inftl->VUtable) {
 			kfree(inftl->PUtable);
 			printk(KERN_WARNING "INFTL: allocation of VUtable "
@@ -323,37 +336,28 @@ static int memcmpb(void *a, int c, int n)
 static int check_free_sectors(struct INFTLrecord *inftl, unsigned int address,
 	int len, int check_oob)
 {
+	u8 buf[SECTORSIZE + inftl->mbd.mtd->oobsize];
 	struct mtd_info *mtd = inftl->mbd.mtd;
 	size_t retlen;
-	int i, ret;
-	u8 *buf;
+	int i;
 
-	buf = kmalloc(SECTORSIZE + mtd->oobsize, GFP_KERNEL);
-	if (!buf)
-		return -1;
-
-	ret = -1;
 	for (i = 0; i < len; i += SECTORSIZE) {
 		if (mtd_read(mtd, address, SECTORSIZE, &retlen, buf))
-			goto out;
+			return -1;
 		if (memcmpb(buf, 0xff, SECTORSIZE) != 0)
-			goto out;
+			return -1;
 
 		if (check_oob) {
 			if(inftl_read_oob(mtd, address, mtd->oobsize,
 					  &retlen, &buf[SECTORSIZE]) < 0)
-				goto out;
+				return -1;
 			if (memcmpb(buf + SECTORSIZE, 0xff, mtd->oobsize) != 0)
-				goto out;
+				return -1;
 		}
 		address += SECTORSIZE;
 	}
 
-	ret = 0;
-
-out:
-	kfree(buf);
-	return ret;
+	return 0;
 }
 
 /*
@@ -381,6 +385,7 @@ int INFTL_formatblock(struct INFTLrecord *inftl, int block)
 	   _first_? */
 
 	/* Use async erase interface, test return code */
+	instr->mtd = inftl->mbd.mtd;
 	instr->addr = block * inftl->EraseSize;
 	instr->len = inftl->mbd.mtd->erasesize;
 	/* Erase one physical eraseblock at a time, even though the NAND api
@@ -388,10 +393,9 @@ int INFTL_formatblock(struct INFTLrecord *inftl, int block)
 	   mark only the failed block in the bbt. */
 	for (physblock = 0; physblock < inftl->EraseSize;
 	     physblock += instr->len, instr->addr += instr->len) {
-		int ret;
+		mtd_erase(inftl->mbd.mtd, instr);
 
-		ret = mtd_erase(inftl->mbd.mtd, instr);
-		if (ret) {
+		if (instr->state == MTD_ERASE_FAILED) {
 			printk(KERN_WARNING "INFTL: error while formatting block %d\n",
 				block);
 			goto fail;

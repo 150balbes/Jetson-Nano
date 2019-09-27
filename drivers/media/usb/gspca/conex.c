@@ -1,9 +1,22 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  *		Connexant Cx11646 library
  *		Copyright (C) 2004 Michel Xhaard mxhaard@magic.fr
  *
  * V4L2 by Jean-Francois Moine <http://moinejf.free.fr>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
@@ -61,7 +74,7 @@ static void reg_r(struct gspca_dev *gspca_dev,
 	struct usb_device *dev = gspca_dev->dev;
 
 	if (len > USB_BUF_SZ) {
-		gspca_err(gspca_dev, "reg_r: buffer overflow\n");
+		PERR("reg_r: buffer overflow\n");
 		return;
 	}
 
@@ -72,8 +85,8 @@ static void reg_r(struct gspca_dev *gspca_dev,
 			0,
 			index, gspca_dev->usb_buf, len,
 			500);
-	gspca_dbg(gspca_dev, D_USBI, "reg read [%02x] -> %02x ..\n",
-		  index, gspca_dev->usb_buf[0]);
+	PDEBUG(D_USBI, "reg read [%02x] -> %02x ..",
+			index, gspca_dev->usb_buf[0]);
 }
 
 /* the bytes to write are in gspca_dev->usb_buf */
@@ -100,11 +113,10 @@ static void reg_w(struct gspca_dev *gspca_dev,
 	struct usb_device *dev = gspca_dev->dev;
 
 	if (len > USB_BUF_SZ) {
-		gspca_err(gspca_dev, "reg_w: buffer overflow\n");
+		PERR("reg_w: buffer overflow\n");
 		return;
 	}
-	gspca_dbg(gspca_dev, D_USBO, "reg write [%02x] = %02x..\n",
-		  index, *buffer);
+	PDEBUG(D_USBO, "reg write [%02x] = %02x..", index, *buffer);
 
 	memcpy(gspca_dev->usb_buf, buffer, len);
 	usb_control_msg(dev,
@@ -675,7 +687,7 @@ static void cx11646_jpeg(struct gspca_dev*gspca_dev)
 		reg_w_val(gspca_dev, 0x0053, 0x00);
 	} while (--retry);
 	if (retry == 0)
-		gspca_err(gspca_dev, "Damned Errors sending jpeg Table\n");
+		PERR("Damned Errors sending jpeg Table");
 	/* send the qtable now */
 	reg_r(gspca_dev, 0x0001, 1);		/* -> 0x18 */
 	length = 8;

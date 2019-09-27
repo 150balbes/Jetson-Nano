@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * apb.h: Advanced PCI Bridge Configuration Registers and Bits
  *

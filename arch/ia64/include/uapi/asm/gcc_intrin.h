@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note */
 /*
  *
  * Copyright (C) 2002,2003 Jun Nakajima <jun.nakajima@intel.com>

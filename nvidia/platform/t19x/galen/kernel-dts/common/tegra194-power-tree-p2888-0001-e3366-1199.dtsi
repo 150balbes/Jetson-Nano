@@ -1,0 +1,60 @@
+/*
+ * Copyright (c) 2017, NVIDIA CORPORATION.  All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ */
+
+#include "tegra194-spmic-p2888-0001.dtsi"
+#include "tegra194-fixed-regulator-p2888-0001.dtsi"
+#include "tegra194-fixed-regulator-e3366-1199.dtsi"
+/ {
+	sdhci@3460000 {
+		vmmc-supply = <&p2888_spmic_ldo3>;
+		vqmmc-supply = <&p2888_spmic_sd2>;
+	};
+#if TEGRA_XUSB_PADCONTROL_VERSION >= DT_VERSION_2
+	xusb_padctl@3520000 {
+
+		pex_dvdd-supply = <&p2888_spmic_sd0>;
+		pex_hvdd-supply = <&p2888_spmic_sd1>;
+		pex_pll_hvdd-supply = <&p2888_spmic_sd1>;
+		vclamp_usb-supply = <&p2888_spmic_sd3>;
+		avdd_usb-supply = <&p2888_spmic_ldo5>;
+		avdd_pll_nvhs_eutmip-supply = <&p2888_spmic_sd1>;
+
+		ports {
+			usb2-0 {
+				vbus-supply = <&e3366_vdd_usb32_5v0>;
+			};
+			usb2-1 {
+				vbus-supply = <&e3366_vdd_usb33_5v0>;
+			};
+			usb2-2 {
+				vbus-supply = <&e3366_vdd_usb30_5v0>;
+			};
+			usb2-3 {
+				vbus-supply = <&e3366_vdd_usb31_5v0>;
+			};
+		};
+	};
+#endif
+	xudc@3550000 {
+		avdd-usb-supply = <&p2888_spmic_ldo5>;
+	};
+
+	ether_qos@2490000 {
+		vddio_sys_enet_bias-supply = <&battery_reg>;
+		vddio_enet-supply = <&battery_reg>;
+		phy_vdd_1v8-supply = <&p2888_spmic_sd2>;
+		phy_ovdd_rgmii-supply = <&p2888_spmic_sd2>;
+		phy_pllvdd-supply = <&battery_reg>;
+	};
+};

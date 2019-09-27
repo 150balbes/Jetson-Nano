@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  *  linux/fs/hpfs/dnode.c
  *
@@ -33,8 +32,7 @@ int hpfs_add_pos(struct inode *inode, loff_t *pos)
 			if (hpfs_inode->i_rddir_off[i] == pos)
 				return 0;
 	if (!(i&0x0f)) {
-		ppos = kmalloc_array(i + 0x11, sizeof(loff_t *), GFP_NOFS);
-		if (!ppos) {
+		if (!(ppos = kmalloc((i+0x11) * sizeof(loff_t*), GFP_NOFS))) {
 			pr_err("out of memory for position list\n");
 			return -ENOMEM;
 		}
@@ -420,6 +418,7 @@ int hpfs_add_dirent(struct inode *i,
 		c = 1;
 		goto ret;
 	}	
+	i->i_version++;
 	c = hpfs_add_to_dnode(i, dno, name, namelen, new_de, 0);
 	ret:
 	return c;
@@ -726,6 +725,7 @@ int hpfs_remove_dirent(struct inode *i, dnode_secno dno, struct hpfs_dirent *de,
 			return 2;
 		}
 	}
+	i->i_version++;
 	for_all_poss(i, hpfs_pos_del, (t = get_pos(dnode, de)) + 1, 1);
 	hpfs_delete_de(i->i_sb, dnode, de);
 	hpfs_mark_4buffers_dirty(qbh);

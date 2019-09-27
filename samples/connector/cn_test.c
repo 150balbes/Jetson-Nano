@@ -1,9 +1,22 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * 	cn_test.c
  * 
  * 2004+ Copyright (c) Evgeniy Polyakov <zbr@ioremap.net>
  * All rights reserved.
+ * 
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
 
 #define pr_fmt(fmt) "cn_test: " fmt
@@ -112,12 +125,12 @@ static int cn_test_want_notify(void)
 #endif
 
 static u32 cn_test_timer_counter;
-static void cn_test_timer_func(struct timer_list *unused)
+static void cn_test_timer_func(unsigned long __data)
 {
 	struct cn_msg *m;
 	char data[32];
 
-	pr_debug("%s: timer fired\n", __func__);
+	pr_debug("%s: timer fired with data %lu\n", __func__, __data);
 
 	m = kzalloc(sizeof(*m) + sizeof(data), GFP_ATOMIC);
 	if (m) {
@@ -155,7 +168,7 @@ static int cn_test_init(void)
 		goto err_out;
 	}
 
-	timer_setup(&cn_test_timer, cn_test_timer_func, 0);
+	setup_timer(&cn_test_timer, cn_test_timer_func, 0);
 	mod_timer(&cn_test_timer, jiffies + msecs_to_jiffies(1000));
 
 	pr_info("initialized with id={%u.%u}\n",

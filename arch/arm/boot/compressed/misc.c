@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * misc.c
  * 
@@ -22,9 +21,9 @@ unsigned int __machine_arch_type;
 #include <linux/compiler.h>	/* for inline */
 #include <linux/types.h>
 #include <linux/linkage.h>
-#include "misc.h"
 
 static void putstr(const char *ptr);
+extern void error(char *x);
 
 #include CONFIG_UNCOMPRESS_INCLUDE
 
@@ -128,7 +127,12 @@ asmlinkage void __div0(void)
 	error("Attempting division by 0!");
 }
 
-const unsigned long __stack_chk_guard = 0x000a0dff;
+unsigned long __stack_chk_guard;
+
+void __stack_chk_guard_setup(void)
+{
+	__stack_chk_guard = 0x000a0dff;
+}
 
 void __stack_chk_fail(void)
 {
@@ -145,6 +149,8 @@ decompress_kernel(unsigned long output_start, unsigned long free_mem_ptr_p,
 {
 	int ret;
 
+	__stack_chk_guard_setup();
+
 	output_data		= (unsigned char *)output_start;
 	free_mem_ptr		= free_mem_ptr_p;
 	free_mem_end_ptr	= free_mem_ptr_end_p;
@@ -159,9 +165,4 @@ decompress_kernel(unsigned long output_start, unsigned long free_mem_ptr_p,
 		error("decompressor returned an error");
 	else
 		putstr(" done, booting the kernel.\n");
-}
-
-void fortify_panic(const char *name)
-{
-	error("detected buffer overflow");
 }

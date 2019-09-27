@@ -1,10 +1,7 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _H8300_PTRACE_H
 #define _H8300_PTRACE_H
 
 #include <uapi/asm/ptrace.h>
-
-struct task_struct;
 
 #ifndef __ASSEMBLY__
 #ifndef PS_S

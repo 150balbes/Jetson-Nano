@@ -1,6 +1,11 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright 2006-2007, Michael Ellerman, IBM Corporation.
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License
+ * as published by the Free Software Foundation; version 2 of the
+ * License.
+ *
  */
 
 #include <linux/irq.h>
@@ -55,7 +60,7 @@ static int mpic_msi_reserve_u3_hwirqs(struct mpic *mpic)
 
 	np = NULL;
 	while ((np = of_find_all_nodes(np))) {
-		pr_debug("mpic: mapping hwirqs for %pOF\n", np);
+		pr_debug("mpic: mapping hwirqs for %s\n", np->full_name);
 
 		index = 0;
 		while (of_irq_parse_one(np, index++, &oirq) == 0) {

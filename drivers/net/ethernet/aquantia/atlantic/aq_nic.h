@@ -1,7 +1,10 @@
-/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * aQuantia Corporation Network Driver
  * Copyright (C) 2014-2017 aQuantia Corporation. All rights reserved
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms and conditions of the GNU General Public License,
+ * version 2, as published by the Free Software Foundation.
  */
 
 /* File aq_nic.h: Declaration of common code for NIC. */
@@ -20,11 +23,10 @@ struct aq_vec_s;
 
 struct aq_nic_cfg_s {
 	const struct aq_hw_caps_s *aq_hw_caps;
-	u64 features;
+	u64 hw_features;
 	u32 rxds;		/* rx ring size, descriptors # */
 	u32 txds;		/* tx ring size, descriptors # */
-	u32 vecs;		/* allocated rx/tx vectors */
-	u32 link_irq_vec;
+	u32 vecs;		/* vecs==allocated irqs */
 	u32 irq_type;
 	u32 itr;
 	u16 rx_itr;
@@ -34,19 +36,18 @@ struct aq_nic_cfg_s {
 	u32 mtu;
 	u32 flow_control;
 	u32 link_speed_msk;
+	u32 vlan_id;
 	u32 wol;
-	u8 is_vlan_rx_strip;
-	u8 is_vlan_tx_insert;
-	bool is_vlan_force_promisc;
 	u16 is_mc_list_enabled;
 	u16 mc_list_count;
 	bool is_autoneg;
 	bool is_polling;
 	bool is_rss;
 	bool is_lro;
+	u32 test_loopback;
 	u8  tcs;
 	struct aq_rss_parameters aq_rss;
-	u32 eee_speeds;
+	u32 eee_enabled;
 };
 
 #define AQ_NIC_FLAG_STARTED     0x00000004U
@@ -57,27 +58,13 @@ struct aq_nic_cfg_s {
 #define AQ_NIC_FLAG_ERR_UNPLUG  0x40000000U
 #define AQ_NIC_FLAG_ERR_HW      0x80000000U
 
-#define AQ_NIC_WOL_ENABLED	BIT(0)
+
+#define AQ_NIC_WOL_ENABLED           BIT(0)
+
 
 #define AQ_NIC_TCVEC2RING(_NIC_, _TC_, _VEC_) \
 	((_TC_) * AQ_CFG_TCS_MAX + (_VEC_))
 
-struct aq_hw_rx_fl2 {
-	struct aq_rx_filter_vlan aq_vlans[AQ_VLAN_MAX_FILTERS];
-};
-
-struct aq_hw_rx_fl3l4 {
-	u8   active_ipv4;
-	u8   active_ipv6:2;
-	u8 is_ipv6;
-};
-
-struct aq_hw_rx_fltrs_s {
-	struct hlist_head     filter_list;
-	u16                   active_filters;
-	struct aq_hw_rx_fl2   fl2;
-	struct aq_hw_rx_fl3l4 fl3l4;
-};
 
 struct aq_nic_s {
 	atomic_t flags;
@@ -93,28 +80,29 @@ struct aq_nic_s {
 	const struct aq_fw_ops *aq_fw_ops;
 	struct aq_nic_cfg_s aq_nic_cfg;
 	struct timer_list service_timer;
-	struct work_struct service_task;
 	struct timer_list polling_timer;
 	struct aq_hw_link_status_s link_status;
 	struct {
 		u32 count;
 		u8 ar[AQ_HW_MULTICAST_ADDRESS_MAX][ETH_ALEN];
 	} mc_list;
-	/* Bitmask of currently assigned vlans from linux */
-	unsigned long active_vlans[BITS_TO_LONGS(VLAN_N_VID)];
 
 	struct pci_dev *pdev;
 	unsigned int msix_entry_mask;
 	u32 irqvecs;
-	/* mutex to serialize FW interface access operations */
-	struct mutex fwreq_mutex;
-	struct aq_hw_rx_fltrs_s aq_hw_rx_fltrs;
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 7, 0)
+	unsigned int irq_type;
+	struct msix_entry msix_entry[AQ_CFG_PCI_FUNC_MSIX_IRQS];
+#endif
+	spinlock_t aq_spinlock;
 };
 
 static inline struct device *aq_nic_get_dev(struct aq_nic_s *self)
 {
 	return self->ndev->dev.parent;
 }
+
+extern unsigned aq_rx_refill_thres;
 
 void aq_nic_ndev_init(struct aq_nic_s *self);
 struct aq_nic_s *aq_nic_alloc_hot(struct net_device *ndev);
@@ -139,12 +127,20 @@ int aq_nic_set_mac(struct aq_nic_s *self, struct net_device *ndev);
 int aq_nic_set_packet_filter(struct aq_nic_s *self, unsigned int flags);
 int aq_nic_set_multicast_list(struct aq_nic_s *self, struct net_device *ndev);
 unsigned int aq_nic_get_link_speed(struct aq_nic_s *self);
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 6, 0)
 void aq_nic_get_link_ksettings(struct aq_nic_s *self,
 			       struct ethtool_link_ksettings *cmd);
 int aq_nic_set_link_ksettings(struct aq_nic_s *self,
 			      const struct ethtool_link_ksettings *cmd);
+#else
+void aq_nic_get_link_settings(struct aq_nic_s *self, struct ethtool_cmd *cmd);
+int aq_nic_set_link_settings(struct aq_nic_s *self, struct ethtool_cmd *cmd);
+#endif
 struct aq_nic_cfg_s *aq_nic_get_cfg(struct aq_nic_s *self);
 u32 aq_nic_get_fw_version(struct aq_nic_s *self);
+u32 aq_nic_getloopback(struct aq_nic_s *self);
+int aq_nic_setloopback(struct aq_nic_s *self, u32 flags);
 int aq_nic_change_pm_state(struct aq_nic_s *self, pm_message_t *pm_msg);
 int aq_nic_update_interrupt_moderation_settings(struct aq_nic_s *self);
 void aq_nic_shutdown(struct aq_nic_s *self);

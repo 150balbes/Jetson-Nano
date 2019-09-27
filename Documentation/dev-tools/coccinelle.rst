@@ -4,8 +4,6 @@
 
 .. highlight:: none
 
-.. _devtools_coccinelle:
-
 Coccinelle
 ==========
 
@@ -32,28 +30,20 @@ of many distributions, e.g. :
  - NetBSD
  - FreeBSD
 
-Some distribution packages are obsolete and it is recommended
-to use the latest version released from the Coccinelle homepage at
+You can get the latest version released from the Coccinelle homepage at
 http://coccinelle.lip6.fr/
 
-Or from Github at:
+Information and tips about Coccinelle are also provided on the wiki
+pages at http://cocci.ekstranet.diku.dk/wiki/doku.php
 
-https://github.com/coccinelle/coccinelle
+Once you have it, run the following command::
 
-Once you have it, run the following commands::
-
-        ./autogen
-        ./configure
+     	./configure
         make
 
 as a regular user, and install it with::
 
         sudo make install
-
-More detailed installation instructions to build from source can be
-found at:
-
-https://github.com/coccinelle/coccinelle/blob/master/install.txt
 
 Supplemental documentation
 ---------------------------
@@ -63,10 +53,6 @@ For supplemental documentation refer to the wiki:
 https://bottest.wiki.kernel.org/coccicheck
 
 The wiki documentation always refers to the linux-next version of the script.
-
-For Semantic Patch Language(SmPL) grammar documentation refer to:
-
-http://coccinelle.lip6.fr/documentation.php
 
 Using Coccinelle on the Linux kernel
 ------------------------------------
@@ -223,7 +209,7 @@ err.log will now have the profiling information, while stdout will
 provide some progress information as Coccinelle moves forward with
 work.
 
-DEBUG_FILE support is only supported when using coccinelle >= 1.0.2.
+DEBUG_FILE support is only supported when using coccinelle >= 1.2.
 
 .cocciconfig support
 --------------------
@@ -240,7 +226,7 @@ Since coccicheck runs through make, it naturally runs from the kernel
 proper dir, as such the second rule above would be implied for picking up a
 .cocciconfig when using ``make coccicheck``.
 
-``make coccicheck`` also supports using M= targets. If you do not supply
+``make coccicheck`` also supports using M= targets.If you do not supply
 any M= target, it is assumed you want to target the entire kernel.
 The kernel coccicheck script has::
 

@@ -10,6 +10,7 @@
 
 #include <asm/hwrpb.h>
 #include <asm/io.h>
+#include <asm/segment.h>
 
 #if 0
 # define DBG_DEVS(args)         printk args
@@ -2006,8 +2007,11 @@ static void __init SMC37c669_config_mode(
 static unsigned char __init SMC37c669_read_config( 
     unsigned char index )
 {
-	wb(&SMC37c669->index_port, index);
-	return rb(&SMC37c669->data_port);
+    unsigned char data;
+
+    wb( &SMC37c669->index_port, index );
+    data = rb( &SMC37c669->data_port );
+    return data;
 }
 
 /*

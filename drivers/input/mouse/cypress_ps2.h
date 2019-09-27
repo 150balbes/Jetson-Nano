@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _CYPRESS_PS2_H
 #define _CYPRESS_PS2_H
 

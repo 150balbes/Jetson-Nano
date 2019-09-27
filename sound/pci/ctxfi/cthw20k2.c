@@ -1,6 +1,9 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /**
  * Copyright (C) 2008, Creative Technology Ltd. All Rights Reserved.
+ *
+ * This source file is released under GPL v2 license (no other versions).
+ * See the COPYING file included in the main directory of this source
+ * distribution for the license terms and conditions.
  *
  * @File	cthw20k2.c
  *
@@ -9,6 +12,7 @@
  *
  * @Author	Liu Chun
  * @Date 	May 14 2008
+ *
  */
 
 #include <linux/types.h>
@@ -1312,12 +1316,12 @@ static int hw_pll_init(struct hw *hw, unsigned int rsr)
 	set_field(&pllctl, PLLCTL_FD, 48000 == rsr ? 16 - 4 : 147 - 4);
 	set_field(&pllctl, PLLCTL_RD, 48000 == rsr ? 1 - 1 : 10 - 1);
 	hw_write_20kx(hw, PLL_CTL, pllctl);
-	msleep(40);
+	mdelay(40);
 
 	pllctl = hw_read_20kx(hw, PLL_CTL);
 	set_field(&pllctl, PLLCTL_FD, 48000 == rsr ? 16 - 2 : 147 - 2);
 	hw_write_20kx(hw, PLL_CTL, pllctl);
-	msleep(40);
+	mdelay(40);
 
 	for (i = 0; i < 1000; i++) {
 		pllstat = hw_read_20kx(hw, PLL_STAT);
@@ -1580,7 +1584,7 @@ static void hw_dac_stop(struct hw *hw)
 	data = hw_read_20kx(hw, GPIO_DATA);
 	data &= 0xFFFFFFFD;
 	hw_write_20kx(hw, GPIO_DATA, data);
-	usleep_range(10000, 11000);
+	mdelay(10);
 }
 
 static void hw_dac_start(struct hw *hw)
@@ -1589,7 +1593,7 @@ static void hw_dac_start(struct hw *hw)
 	data = hw_read_20kx(hw, GPIO_DATA);
 	data |= 0x2;
 	hw_write_20kx(hw, GPIO_DATA, data);
-	msleep(50);
+	mdelay(50);
 }
 
 static void hw_dac_reset(struct hw *hw)
@@ -1860,11 +1864,11 @@ static int hw_adc_init(struct hw *hw, const struct adc_conf *info)
 		hw_write_20kx(hw, GPIO_DATA, data);
 	}
 
-	usleep_range(10000, 11000);
+	mdelay(10);
 	/* Return the ADC to normal operation. */
 	data |= (0x1 << 15);
 	hw_write_20kx(hw, GPIO_DATA, data);
-	msleep(50);
+	mdelay(50);
 
 	/* I2C write to register offset 0x0B to set ADC LRCLK polarity */
 	/* invert bit, interface format to I2S, word length to 24-bit, */
@@ -2216,7 +2220,7 @@ static void hw_write_20kx(struct hw *hw, u32 reg, u32 data)
 	writel(data, hw->mem_base + reg);
 }
 
-static const struct hw ct20k2_preset = {
+static struct hw ct20k2_preset = {
 	.irq = -1,
 
 	.card_init = hw_card_init,

@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * pnpbios -- PnP BIOS driver
  *
@@ -18,6 +17,20 @@
  *
  * Ported to the PnP Layer and several additional improvements (C) 2002
  * by Adam Belay <ambx1@neo.rr.com>
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License as published by the
+ * Free Software Foundation; either version 2, or (at your option) any
+ * later version.
+ *
+ * This program is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
 
 /* Change Log
@@ -85,7 +98,6 @@ static struct completion unload_sem;
  */
 static int pnp_dock_event(int dock, struct pnp_docking_station_info *info)
 {
-	static char const sbin_pnpbios[] = "/sbin/pnpbios";
 	char *argv[3], **envp, *buf, *scratch;
 	int i = 0, value;
 
@@ -100,7 +112,7 @@ static int pnp_dock_event(int dock, struct pnp_docking_station_info *info)
 	 * integrated into the driver core and use the usual infrastructure
 	 * like sysfs and uevents
 	 */
-	argv[0] = (char *)sbin_pnpbios;
+	argv[0] = "/sbin/pnpbios";
 	argv[1] = "dock";
 	argv[2] = NULL;
 
@@ -127,7 +139,7 @@ static int pnp_dock_event(int dock, struct pnp_docking_station_info *info)
 			   info->location_id, info->serial, info->capabilities);
 	envp[i] = NULL;
 
-	value = call_usermodehelper(sbin_pnpbios, argv, envp, UMH_WAIT_EXEC);
+	value = call_usermodehelper(argv [0], argv, envp, UMH_WAIT_EXEC);
 	kfree(buf);
 	kfree(envp);
 	return 0;
@@ -482,7 +494,7 @@ static int __init exploding_pnp_bios(const struct dmi_system_id *d)
 	return 0;
 }
 
-static const struct dmi_system_id pnpbios_dmi_table[] __initconst = {
+static struct dmi_system_id pnpbios_dmi_table[] __initdata = {
 	{			/* PnPBIOS GPF on boot */
 	 .callback = exploding_pnp_bios,
 	 .ident = "Higraded P14H",
@@ -568,7 +580,10 @@ static int __init pnpbios_thread_init(void)
 
 	init_completion(&unload_sem);
 	task = kthread_run(pnp_dock_thread, NULL, "kpnpbiosd");
-	return PTR_ERR_OR_ZERO(task);
+	if (IS_ERR(task))
+		return PTR_ERR(task);
+
+	return 0;
 }
 
 /* Start the kernel thread later: */

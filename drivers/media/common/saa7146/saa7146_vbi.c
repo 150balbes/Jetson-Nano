@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 #include <media/drv-intf/saa7146_vv.h>
 
 static int vbi_pixel_to_capture = 720 * 2;
@@ -309,7 +308,7 @@ static void buffer_release(struct videobuf_queue *q, struct videobuf_buffer *vb)
 	saa7146_dma_free(dev,q,buf);
 }
 
-static const struct videobuf_queue_ops vbi_qops = {
+static struct videobuf_queue_ops vbi_qops = {
 	.buf_setup    = buffer_setup,
 	.buf_prepare  = buffer_prepare,
 	.buf_queue    = buffer_queue,
@@ -349,10 +348,9 @@ static void vbi_stop(struct saa7146_fh *fh, struct file *file)
 	spin_unlock_irqrestore(&dev->slock, flags);
 }
 
-static void vbi_read_timeout(struct timer_list *t)
+static void vbi_read_timeout(unsigned long data)
 {
-	struct saa7146_vv *vv = from_timer(vv, t, vbi_read_timeout);
-	struct file *file = vv->vbi_read_timeout_file;
+	struct file *file = (struct file*)data;
 	struct saa7146_fh *fh = file->private_data;
 	struct saa7146_dev *dev = fh->dev;
 
@@ -367,7 +365,9 @@ static void vbi_init(struct saa7146_dev *dev, struct saa7146_vv *vv)
 
 	INIT_LIST_HEAD(&vv->vbi_dmaq.queue);
 
-	timer_setup(&vv->vbi_dmaq.timeout, saa7146_buffer_timeout, 0);
+	init_timer(&vv->vbi_dmaq.timeout);
+	vv->vbi_dmaq.timeout.function = saa7146_buffer_timeout;
+	vv->vbi_dmaq.timeout.data     = (unsigned long)(&vv->vbi_dmaq);
 	vv->vbi_dmaq.dev              = dev;
 
 	init_waitqueue_head(&vv->vbi_wq);
@@ -403,7 +403,7 @@ static int vbi_open(struct saa7146_dev *dev, struct file *file)
 			    file, &dev->v4l2_lock);
 
 	vv->vbi_read_timeout.function = vbi_read_timeout;
-	vv->vbi_read_timeout_file = file;
+	vv->vbi_read_timeout.data = (unsigned long)file;
 
 	/* initialize the brs */
 	if ( 0 != (SAA7146_USE_PORT_B_FOR_VBI & dev->ext_vv_data->flags)) {
@@ -489,7 +489,7 @@ static ssize_t vbi_read(struct file *file, char __user *data, size_t count, loff
 	return ret;
 }
 
-const struct saa7146_use_ops saa7146_vbi_uops = {
+struct saa7146_use_ops saa7146_vbi_uops = {
 	.init		= vbi_init,
 	.open		= vbi_open,
 	.release	= vbi_close,

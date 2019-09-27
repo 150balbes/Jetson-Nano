@@ -1,10 +1,18 @@
-// SPDX-License-Identifier: GPL-1.0+
 /*
  * Renesas USB driver
  *
  * Copyright (C) 2011 Renesas Solutions Corp.
- * Copyright (C) 2019 Renesas Electronics Corporation
  * Kuninori Morimoto <kuninori.morimoto.gx@renesas.com>
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+ *
  */
 #include <linux/delay.h>
 #include <linux/dma-mapping.h>
@@ -503,7 +511,6 @@ static int usbhsg_irq_ctrl_stage(struct usbhs_priv *priv,
 	case READ_STATUS_STAGE:
 	case WRITE_STATUS_STAGE:
 		usbhs_dcp_control_transfer_done(pipe);
-		/* fall through */
 	default:
 		return ret;
 	}
@@ -757,7 +764,7 @@ static int usbhsg_ep_set_wedge(struct usb_ep *ep)
 	return __usbhsg_ep_set_halt_wedge(ep, 1, 1);
 }
 
-static const struct usb_ep_ops usbhsg_ep_ops = {
+static struct usb_ep_ops usbhsg_ep_ops = {
 	.enable		= usbhsg_ep_enable,
 	.disable	= usbhsg_ep_disable,
 
@@ -915,8 +922,8 @@ static void usbhs_mod_phy_mode(struct usbhs_priv *priv)
 {
 	struct usbhs_mod_info *info = &priv->mod_info;
 
-	info->irq_vbus = NULL;
-	info->get_vbus = usbhsm_phy_get_vbus;
+	info->irq_vbus		= NULL;
+	priv->pfunc.get_vbus	= usbhsm_phy_get_vbus;
 
 	usbhs_irq_callback_update(priv, NULL);
 }
@@ -1024,7 +1031,7 @@ static int usbhsg_vbus_session(struct usb_gadget *gadget, int is_active)
 
 	gpriv->vbus_active = !!is_active;
 
-	usbhsc_schedule_notify_hotplug(pdev);
+	renesas_usbhs_call_notify_hotplug(pdev);
 
 	return 0;
 }
@@ -1070,7 +1077,7 @@ int usbhs_mod_gadget_probe(struct usbhs_priv *priv)
 	if (!gpriv)
 		return -ENOMEM;
 
-	uep = kcalloc(pipe_size, sizeof(struct usbhsg_uep), GFP_KERNEL);
+	uep = kzalloc(sizeof(struct usbhsg_uep) * pipe_size, GFP_KERNEL);
 	if (!uep) {
 		ret = -ENOMEM;
 		goto usbhs_mod_gadget_probe_err_gpriv;

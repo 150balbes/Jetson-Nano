@@ -34,7 +34,18 @@
 #include <fcntl.h>
 #include <string.h>
 #include <sys/wait.h>
+#ifdef KTEST
 #include "../kselftest.h"
+#else
+static inline int ksft_exit_pass(void)
+{
+	exit(0);
+}
+static inline int ksft_exit_fail(void)
+{
+	exit(1);
+}
+#endif
 
 
 int get_clocksources(char list[][30])
@@ -50,7 +61,7 @@ int get_clocksources(char list[][30])
 
 	close(fd);
 
-	for (i = 0; i < 10; i++)
+	for (i = 0; i < 30; i++)
 		list[i][0] = '\0';
 
 	head = buf;
@@ -148,7 +159,7 @@ int main(int argv, char **argc)
 	}
 
 
-	printf("Running Asynchronous Switching Tests...\n");
+	printf("Running Asyncrhonous Switching Tests...\n");
 	pid = fork();
 	if (!pid)
 		return run_tests(60);

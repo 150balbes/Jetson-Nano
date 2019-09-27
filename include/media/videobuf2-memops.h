@@ -16,17 +16,16 @@
 
 #include <media/videobuf2-v4l2.h>
 #include <linux/mm.h>
-#include <linux/refcount.h>
 
 /**
- * struct vb2_vmarea_handler - common vma refcount tracking handler.
+ * struct vb2_vmarea_handler - common vma refcount tracking handler
  *
- * @refcount:	pointer to &refcount_t entry in the buffer.
- * @put:	callback to function that decreases buffer refcount.
- * @arg:	argument for @put callback.
+ * @refcount:	pointer to refcount entry in the buffer
+ * @put:	callback to function that decreases buffer refcount
+ * @arg:	argument for @put callback
  */
 struct vb2_vmarea_handler {
-	refcount_t		*refcount;
+	atomic_t		*refcount;
 	void			(*put)(void *arg);
 	void			*arg;
 };
@@ -34,7 +33,8 @@ struct vb2_vmarea_handler {
 extern const struct vm_operations_struct vb2_common_vm_ops;
 
 struct frame_vector *vb2_create_framevec(unsigned long start,
-					 unsigned long length);
+					 unsigned long length,
+					 bool write);
 void vb2_destroy_framevec(struct frame_vector *vec);
 
 #endif

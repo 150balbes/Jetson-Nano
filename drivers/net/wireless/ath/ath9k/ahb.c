@@ -19,7 +19,6 @@
 #include <linux/nl80211.h>
 #include <linux/platform_device.h>
 #include <linux/module.h>
-#include <linux/mod_devicetable.h>
 #include "ath9k.h"
 
 static const struct platform_device_id ath9k_platform_id_table[] = {
@@ -63,7 +62,7 @@ static bool ath_ahb_eeprom_read(struct ath_common *common, u32 off, u16 *data)
 	return false;
 }
 
-static const struct ath_bus_ops ath_ahb_bus_ops  = {
+static struct ath_bus_ops ath_ahb_bus_ops  = {
 	.ath_bus_type = ATH_AHB,
 	.read_cachesize = ath_ahb_read_cachesize,
 	.eeprom_read = ath_ahb_eeprom_read,

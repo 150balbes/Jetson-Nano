@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0+ WITH Linux-syscall-note */
 /*
  * INET		An implementation of the TCP/IP protocol suite for the LINUX
  *		operating system.  INET is implemented using the  BSD Socket
@@ -24,10 +23,6 @@
 #include <linux/types.h>		/* for "__kernel_caddr_t" et al	*/
 #include <linux/socket.h>		/* for "struct sockaddr" et al	*/
 #include <linux/compiler.h>		/* for "__user" et al           */
-
-#ifndef __KERNEL__
-#include <sys/socket.h>			/* for struct sockaddr.		*/
-#endif
 
 #if __UAPI_DEF_IF_IFNAMSIZ
 #define	IFNAMSIZ	16

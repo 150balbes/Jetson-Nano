@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Device driver for the SYMBIOS/LSILOGIC 53C8XX and 53C1010 family 
  * of PCI-SCSI IO processors.
@@ -23,6 +22,20 @@
  * Copyright (C) 1997 Richard Waltham <dormouse@farsrobt.demon.co.uk>
  *
  *-----------------------------------------------------------------------------
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
 #include <linux/ctype.h>
 #include <linux/init.h>
@@ -239,7 +252,7 @@ void sym_set_cam_result_error(struct sym_hcb *np, struct sym_ccb *cp, int resid)
 		cam_status = sym_xerr_cam_status(DID_ERROR, cp->xerr_status);
 	}
 	scsi_set_resid(cmd, resid);
-	cmd->result = (drv_status << 24) | (cam_status << 16) | scsi_status;
+	cmd->result = (drv_status << 24) + (cam_status << 16) + scsi_status;
 }
 
 static int sym_scatter(struct sym_hcb *np, struct sym_ccb *cp, struct scsi_cmnd *cmd)
@@ -552,9 +565,9 @@ static irqreturn_t sym53c8xx_intr(int irq, void *dev_id)
 /*
  *  Linux entry point of the timer handler
  */
-static void sym53c8xx_timer(struct timer_list *t)
+static void sym53c8xx_timer(unsigned long npref)
 {
-	struct sym_hcb *np = from_timer(np, t, s.timer);
+	struct sym_hcb *np = (struct sym_hcb *)npref;
 	unsigned long flags;
 
 	spin_lock_irqsave(np->s.host->host_lock, flags);
@@ -1299,9 +1312,9 @@ static struct Scsi_Host *sym_attach(struct scsi_host_template *tpnt, int unit,
 	sprintf(np->s.inst_name, "sym%d", np->s.unit);
 
 	if ((SYM_CONF_DMA_ADDRESSING_MODE > 0) && (np->features & FE_DAC) &&
-			!dma_set_mask(&pdev->dev, DMA_DAC_MASK)) {
+			!pci_set_dma_mask(pdev, DMA_DAC_MASK)) {
 		set_dac(np);
-	} else if (dma_set_mask(&pdev->dev, DMA_BIT_MASK(32))) {
+	} else if (pci_set_dma_mask(pdev, DMA_BIT_MASK(32))) {
 		printf_warning("%s: No suitable DMA available\n", sym_name(np));
 		goto attach_failed;
 	}
@@ -1338,7 +1351,9 @@ static struct Scsi_Host *sym_attach(struct scsi_host_template *tpnt, int unit,
 	/*
 	 *  Start the timer daemon
 	 */
-	timer_setup(&np->s.timer, sym53c8xx_timer, 0);
+	init_timer(&np->s.timer);
+	np->s.timer.data     = (unsigned long) np;
+	np->s.timer.function = sym53c8xx_timer;
 	np->s.lasttime=0;
 	sym_timer (np);
 
@@ -1380,7 +1395,7 @@ static struct Scsi_Host *sym_attach(struct scsi_host_template *tpnt, int unit,
 		scsi_host_put(shost);
 
 	return NULL;
-}
+ }
 
 
 /*
@@ -1647,6 +1662,7 @@ static struct scsi_host_template sym2_template = {
 	.eh_bus_reset_handler	= sym53c8xx_eh_bus_reset_handler,
 	.eh_host_reset_handler	= sym53c8xx_eh_host_reset_handler,
 	.this_id		= 7,
+	.use_clustering		= ENABLE_CLUSTERING,
 	.max_sectors		= 0xFFFF,
 #ifdef SYM_LINUX_PROC_INFO_SUPPORT
 	.show_info		= sym_show_info,

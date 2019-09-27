@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /* -*- mode: c; c-basic-offset: 8; -*-
  * vim: noexpandtab sw=8 ts=8 sts=0:
  *
@@ -20,6 +19,21 @@
  *   linux/fs/minix/dir.c
  *
  *   Copyright (C) 1991, 1992 Linux Torvalds
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public
+ * License as published by the Free Software Foundation; either
+ * version 2 of the License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public
+ * License along with this program; if not, write to the
+ * Free Software Foundation, Inc., 59 Temple Place - Suite 330,
+ * Boston, MA 021110-1307, USA.
  */
 
 #include <linux/fs.h>
@@ -27,7 +41,6 @@
 #include <linux/slab.h>
 #include <linux/highmem.h>
 #include <linux/quotaops.h>
-#include <linux/iversion.h>
 
 #include <cluster/masklog.h>
 
@@ -503,7 +516,6 @@ static int __ocfs2_mknod_locked(struct inode *dir,
 	struct ocfs2_extent_list *fel;
 	u16 feat;
 	struct ocfs2_inode_info *oi = OCFS2_I(inode);
-	struct timespec64 ts;
 
 	*new_fe_bh = NULL;
 
@@ -511,7 +523,7 @@ static int __ocfs2_mknod_locked(struct inode *dir,
 	 * these are used by the support functions here and in
 	 * callers. */
 	inode->i_ino = ino_from_blkno(osb->sb, fe_blkno);
-	oi->ip_blkno = fe_blkno;
+	OCFS2_I(inode)->ip_blkno = fe_blkno;
 	spin_lock(&osb->osb_lock);
 	inode->i_generation = osb->s_next_generation++;
 	spin_unlock(&osb->osb_lock);
@@ -552,11 +564,10 @@ static int __ocfs2_mknod_locked(struct inode *dir,
 	fe->i_last_eb_blk = 0;
 	strcpy(fe->i_signature, OCFS2_INODE_SIGNATURE);
 	fe->i_flags |= cpu_to_le32(OCFS2_VALID_FL);
-	ktime_get_real_ts64(&ts);
 	fe->i_atime = fe->i_ctime = fe->i_mtime =
-		cpu_to_le64(ts.tv_sec);
+		cpu_to_le64(CURRENT_TIME.tv_sec);
 	fe->i_mtime_nsec = fe->i_ctime_nsec = fe->i_atime_nsec =
-		cpu_to_le32(ts.tv_nsec);
+		cpu_to_le32(CURRENT_TIME.tv_nsec);
 	fe->i_dtime = 0;
 
 	/*
@@ -1172,8 +1183,8 @@ static int ocfs2_double_lock(struct ocfs2_super *osb,
 	}
 
 	trace_ocfs2_double_lock_end(
-			(unsigned long long)oi1->ip_blkno,
-			(unsigned long long)oi2->ip_blkno);
+			(unsigned long long)OCFS2_I(inode1)->ip_blkno,
+			(unsigned long long)OCFS2_I(inode2)->ip_blkno);
 
 bail:
 	if (status)
@@ -1507,7 +1518,7 @@ static int ocfs2_rename(struct inode *old_dir,
 			mlog_errno(status);
 			goto bail;
 		}
-		inode_inc_iversion(new_dir);
+		new_dir->i_version++;
 
 		if (S_ISDIR(new_inode->i_mode))
 			ocfs2_set_links_count(newfe, 0);
@@ -2318,7 +2329,8 @@ int ocfs2_orphan_del(struct ocfs2_super *osb,
 		     struct buffer_head *orphan_dir_bh,
 		     bool dio)
 {
-	char name[OCFS2_DIO_ORPHAN_PREFIX_LEN + OCFS2_ORPHAN_NAMELEN + 1];
+	const int namelen = OCFS2_DIO_ORPHAN_PREFIX_LEN + OCFS2_ORPHAN_NAMELEN;
+	char name[namelen + 1];
 	struct ocfs2_dinode *orphan_fe;
 	int status = 0;
 	struct ocfs2_dir_lookup_result lookup = { NULL, };

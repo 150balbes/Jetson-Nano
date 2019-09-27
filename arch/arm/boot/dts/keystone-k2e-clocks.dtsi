@@ -1,8 +1,11 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
+ * Copyright 2014 Texas Instruments, Inc.
+ *
  * Keystone 2 Edison SoC specific device tree
  *
- * Copyright (C) 2014-2017 Texas Instruments Incorporated - http://www.ti.com/
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  */
 
 clocks {
@@ -32,7 +35,7 @@ clocks {
 		reg-names = "control";
 	};
 
-	clkusb1: clkusb1@2350004 {
+	clkusb1: clkusb1 {
 		#clock-cells = <0>;
 		compatible = "ti,keystone,psc-clock";
 		clocks = <&chipclk16>;
@@ -42,7 +45,7 @@ clocks {
 		domain-id = <0>;
 	};
 
-	clkhyperlink0: clkhyperlink0@2350030 {
+	clkhyperlink0: clkhyperlink0 {
 		#clock-cells = <0>;
 		compatible = "ti,keystone,psc-clock";
 		clocks = <&chipclk12>;
@@ -52,7 +55,7 @@ clocks {
 		domain-id = <5>;
 	};
 
-	clkpcie1: clkpcie1@235006c {
+	clkpcie1: clkpcie1 {
 		#clock-cells = <0>;
 		compatible = "ti,keystone,psc-clock";
 		clocks = <&chipclk12>;
@@ -62,7 +65,7 @@ clocks {
 		domain-id = <18>;
 	};
 
-	clkxge: clkxge@23500c8 {
+	clkxge: clkxge {
 		#clock-cells = <0>;
 		compatible = "ti,keystone,psc-clock";
 		clocks = <&chipclk13>;

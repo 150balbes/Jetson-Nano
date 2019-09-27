@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /* sunsab.h: Register Definitions for the Siemens SAB82532 DUSCC
  *
  * Copyright (C) 1997  Eddie C. Dost  (ecd@skynet.be)

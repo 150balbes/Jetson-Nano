@@ -134,13 +134,6 @@ struct knav_dma_chan {
 
 static struct knav_dma_pool_device *kdev;
 
-static bool device_ready;
-bool knav_dma_device_ready(void)
-{
-	return device_ready;
-}
-EXPORT_SYMBOL_GPL(knav_dma_device_ready);
-
 static bool check_config(struct knav_dma_chan *chan, struct knav_dma_cfg *cfg)
 {
 	if (!memcmp(&chan->cfg, cfg, sizeof(*cfg)))
@@ -402,7 +395,7 @@ static int of_channel_match_helper(struct device_node *np, const char *name,
 
 	if (of_parse_phandle_with_fixed_args(np, "ti,navigator-dmas",
 					1, index, &args)) {
-		dev_err(kdev->dev, "Missing the phandle args name %s\n", name);
+		dev_err(kdev->dev, "Missing the pahndle args name %s\n", name);
 		return -ENODEV;
 	}
 
@@ -420,7 +413,7 @@ static int of_channel_match_helper(struct device_node *np, const char *name,
  * @name:	slave channel name
  * @config:	dma configuration parameters
  *
- * Returns pointer to appropriate DMA channel on success or error.
+ * Returns pointer to appropriate DMA channel on success or NULL.
  */
 void *knav_dma_open_channel(struct device *dev, const char *name,
 					struct knav_dma_cfg *config)
@@ -438,12 +431,12 @@ void *knav_dma_open_channel(struct device *dev, const char *name,
 
 	chan_num = of_channel_match_helper(dev->of_node, name, &instance);
 	if (chan_num < 0) {
-		dev_err(kdev->dev, "No DMA instance with name %s\n", name);
+		dev_err(kdev->dev, "No DMA instace with name %s\n", name);
 		return (void *)-EINVAL;
 	}
 
 	dev_dbg(kdev->dev, "initializing %s channel %d from DMA %s\n",
-		  config->direction == DMA_MEM_TO_DEV ? "transmit" :
+		  config->direction == DMA_MEM_TO_DEV   ? "transmit" :
 		  config->direction == DMA_DEV_TO_MEM ? "receive"  :
 		  "unknown", chan_num, instance);
 
@@ -461,7 +454,7 @@ void *knav_dma_open_channel(struct device *dev, const char *name,
 		}
 	}
 	if (!found) {
-		dev_err(kdev->dev, "No DMA instance with name %s\n", instance);
+		dev_err(kdev->dev, "No DMA instace with name %s\n", instance);
 		return (void *)-EINVAL;
 	}
 
@@ -544,15 +537,15 @@ static void __iomem *pktdma_get_regs(struct knav_dma_device *dma,
 
 	ret = of_address_to_resource(node, index, &res);
 	if (ret) {
-		dev_err(dev, "Can't translate of node(%pOFn) address for index(%d)\n",
-			node, index);
+		dev_err(dev, "Can't translate of node(%s) address for index(%d)\n",
+			node->name, index);
 		return ERR_PTR(ret);
 	}
 
 	regs = devm_ioremap_resource(kdev->dev, &res);
 	if (IS_ERR(regs))
-		dev_err(dev, "Failed to map register base for index(%d) node(%pOFn)\n",
-			index, node);
+		dev_err(dev, "Failed to map register base for index(%d) node(%s)\n",
+			index, node->name);
 	if (_size)
 		*_size = resource_size(&res);
 
@@ -598,7 +591,7 @@ static int pktdma_init_chan(struct knav_dma_device *dma,
 
 	INIT_LIST_HEAD(&chan->list);
 	chan->dma	= dma;
-	chan->direction	= DMA_TRANS_NONE;
+	chan->direction	= DMA_NONE;
 	atomic_set(&chan->ref_count, 0);
 	spin_lock_init(&chan->lock);
 
@@ -780,7 +773,6 @@ static int knav_dma_probe(struct platform_device *pdev)
 	debugfs_create_file("knav_dma", S_IFREG | S_IRUGO, NULL, NULL,
 			    &knav_dma_debug_ops);
 
-	device_ready = true;
 	return ret;
 }
 

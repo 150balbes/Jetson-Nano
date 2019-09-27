@@ -1,6 +1,7 @@
-/* SPDX-License-Identifier: GPL-2.0
- *
+/*
  * Arch specific extensions to struct device
+ *
+ * This file is released under the GPLv2
  */
 #ifndef __ASM_SH_DEVICE_H
 #define __ASM_SH_DEVICE_H

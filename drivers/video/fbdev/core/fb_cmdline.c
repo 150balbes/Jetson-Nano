@@ -75,33 +75,36 @@ EXPORT_SYMBOL(fb_get_options);
  *	NOTE: This function is a __setup and __init function.
  *            It only stores the options.  Drivers have to call
  *            fb_get_options() as necessary.
+ *
+ *	Returns zero.
+ *
  */
 static int __init video_setup(char *options)
 {
-	if (!options || !*options)
-		goto out;
+	int i, global = 0;
 
-	if (!strncmp(options, "ofonly", 6)) {
+	if (!options || !*options)
+		global = 1;
+
+	if (!global && !strncmp(options, "ofonly", 6)) {
 		ofonly = 1;
-		goto out;
+		global = 1;
 	}
 
-	if (strchr(options, ':')) {
-		/* named */
-		int i;
+	if (!global && !strchr(options, ':')) {
+		fb_mode_option = options;
+		global = 1;
+	}
 
+	if (!global) {
 		for (i = 0; i < FB_MAX; i++) {
 			if (video_options[i] == NULL) {
 				video_options[i] = options;
 				break;
 			}
 		}
-	} else {
-		/* global */
-		fb_mode_option = options;
 	}
 
-out:
 	return 1;
 }
 __setup("video=", video_setup);

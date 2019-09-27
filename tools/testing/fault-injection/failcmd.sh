@@ -1,5 +1,4 @@
 #!/bin/bash
-# SPDX-License-Identifier: GPL-2.0
 #
 # NAME
 #	failcmd.sh - run a command with injecting slab/page allocation failures
@@ -42,7 +41,7 @@ OPTIONS
 	--interval=value, --space=value, --verbose=value, --task-filter=value,
 	--stacktrace-depth=value, --require-start=value, --require-end=value,
 	--reject-start=value, --reject-end=value, --ignore-gfp-wait=value
-		See Documentation/fault-injection/fault-injection.rst for more
+		See Documentation/fault-injection/fault-injection.txt for more
 		information
 
 	failslab options:

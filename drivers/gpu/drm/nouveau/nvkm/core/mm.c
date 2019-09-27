@@ -31,15 +31,15 @@ nvkm_mm_dump(struct nvkm_mm *mm, const char *header)
 {
 	struct nvkm_mm_node *node;
 
-	pr_err("nvkm: %s\n", header);
-	pr_err("nvkm: node list:\n");
+	printk(KERN_ERR "nvkm: %s\n", header);
+	printk(KERN_ERR "nvkm: node list:\n");
 	list_for_each_entry(node, &mm->nodes, nl_entry) {
-		pr_err("nvkm: \t%08x %08x %d\n",
+		printk(KERN_ERR "nvkm: \t%08x %08x %d\n",
 		       node->offset, node->length, node->type);
 	}
-	pr_err("nvkm: free list:\n");
+	printk(KERN_ERR "nvkm: free list:\n");
 	list_for_each_entry(node, &mm->free, fl_entry) {
-		pr_err("nvkm: \t%08x %08x %d\n",
+		printk(KERN_ERR "nvkm: \t%08x %08x %d\n",
 		       node->offset, node->length, node->type);
 	}
 }
@@ -147,7 +147,6 @@ nvkm_mm_head(struct nvkm_mm *mm, u8 heap, u8 type, u32 size_max, u32 size_min,
 		if (!this)
 			return -ENOMEM;
 
-		this->next = NULL;
 		this->type = type;
 		list_del(&this->fl_entry);
 		*pnode = this;
@@ -226,7 +225,6 @@ nvkm_mm_tail(struct nvkm_mm *mm, u8 heap, u8 type, u32 size_max, u32 size_min,
 		if (!this)
 			return -ENOMEM;
 
-		this->next = NULL;
 		this->type = type;
 		list_del(&this->fl_entry);
 		*pnode = this;
@@ -237,7 +235,7 @@ nvkm_mm_tail(struct nvkm_mm *mm, u8 heap, u8 type, u32 size_max, u32 size_min,
 }
 
 int
-nvkm_mm_init(struct nvkm_mm *mm, u8 heap, u32 offset, u32 length, u32 block)
+nvkm_mm_init(struct nvkm_mm *mm, u32 offset, u32 length, u32 block)
 {
 	struct nvkm_mm_node *node, *prev;
 	u32 next;
@@ -274,8 +272,7 @@ nvkm_mm_init(struct nvkm_mm *mm, u8 heap, u32 offset, u32 length, u32 block)
 
 	list_add_tail(&node->nl_entry, &mm->nodes);
 	list_add_tail(&node->fl_entry, &mm->free);
-	node->heap = heap;
-	mm->heap_nodes++;
+	node->heap = ++mm->heap_nodes;
 	return 0;
 }
 

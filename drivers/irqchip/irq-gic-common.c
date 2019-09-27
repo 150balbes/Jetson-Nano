@@ -1,6 +1,18 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (C) 2002 ARM Limited, All Rights Reserved.
+ * Copyright (C) 2018, NVIDIA CORPORATION.  All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 #include <linux/interrupt.h>
@@ -25,27 +37,14 @@ void gic_set_kvm_info(const struct gic_kvm_info *info)
 	gic_kvm_info = info;
 }
 
-void gic_enable_of_quirks(const struct device_node *np,
-			  const struct gic_quirk *quirks, void *data)
-{
-	for (; quirks->desc; quirks++) {
-		if (!of_device_is_compatible(np, quirks->compatible))
-			continue;
-		if (quirks->init(data))
-			pr_info("GIC: enabling workaround for %s\n",
-				quirks->desc);
-	}
-}
-
 void gic_enable_quirks(u32 iidr, const struct gic_quirk *quirks,
 		void *data)
 {
 	for (; quirks->desc; quirks++) {
 		if (quirks->iidr != (quirks->mask & iidr))
 			continue;
-		if (quirks->init(data))
-			pr_info("GIC: enabling workaround for %s\n",
-				quirks->desc);
+		quirks->init(data);
+		pr_info("GIC: enabling workaround for %s\n", quirks->desc);
 	}
 }
 
@@ -114,9 +113,10 @@ void gic_dist_config(void __iomem *base, int gic_irqs,
 	/*
 	 * Set priority on all global interrupts.
 	 */
+#ifndef CONFIG_MINIMAL_GIC_INIT
 	for (i = 32; i < gic_irqs; i += 4)
 		writel_relaxed(GICD_INT_DEF_PRI_X4, base + GIC_DIST_PRI + i);
-
+#endif
 	/*
 	 * Deactivate and disable all SPIs. Leave the PPI and SGIs
 	 * alone as they are in the redistributor registers on GICv3.

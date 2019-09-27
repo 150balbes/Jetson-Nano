@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __MACH_SSI_H
 #define __MACH_SSI_H
 

@@ -24,8 +24,21 @@
 #include <linux/time.h>
 #include <linux/jiffies.h>
 
-/* Nanosecond scalar representation for kernel time values */
-typedef s64	ktime_t;
+/*
+ * ktime_t:
+ *
+ * A single 64-bit variable is used to store the hrtimers
+ * internal representation of time values in scalar nanoseconds. The
+ * design plays out best on 64-bit CPUs, where most conversions are
+ * NOPs and most arithmetic ktime_t operations are plain arithmetic
+ * operations.
+ *
+ */
+union ktime {
+	s64	tv64;
+};
+
+typedef union ktime ktime_t;		/* Kill this */
 
 /**
  * ktime_set - Set a ktime_t variable from a seconds/nanoseconds value
@@ -37,34 +50,39 @@ typedef s64	ktime_t;
 static inline ktime_t ktime_set(const s64 secs, const unsigned long nsecs)
 {
 	if (unlikely(secs >= KTIME_SEC_MAX))
-		return KTIME_MAX;
+		return (ktime_t){ .tv64 = KTIME_MAX };
 
-	return secs * NSEC_PER_SEC + (s64)nsecs;
+	return (ktime_t) { .tv64 = secs * NSEC_PER_SEC + (s64)nsecs };
 }
 
 /* Subtract two ktime_t variables. rem = lhs -rhs: */
-#define ktime_sub(lhs, rhs)	((lhs) - (rhs))
+#define ktime_sub(lhs, rhs) \
+		({ (ktime_t){ .tv64 = (lhs).tv64 - (rhs).tv64 }; })
 
 /* Add two ktime_t variables. res = lhs + rhs: */
-#define ktime_add(lhs, rhs)	((lhs) + (rhs))
+#define ktime_add(lhs, rhs) \
+		({ (ktime_t){ .tv64 = (lhs).tv64 + (rhs).tv64 }; })
 
 /*
  * Same as ktime_add(), but avoids undefined behaviour on overflow; however,
  * this means that you must check the result for overflow yourself.
  */
-#define ktime_add_unsafe(lhs, rhs)	((u64) (lhs) + (rhs))
+#define ktime_add_unsafe(lhs, rhs) \
+		({ (ktime_t){ .tv64 = (u64) (lhs).tv64 + (rhs).tv64 }; })
 
 /*
  * Add a ktime_t variable and a scalar nanosecond value.
  * res = kt + nsval:
  */
-#define ktime_add_ns(kt, nsval)		((kt) + (nsval))
+#define ktime_add_ns(kt, nsval) \
+		({ (ktime_t){ .tv64 = (kt).tv64 + (nsval) }; })
 
 /*
  * Subtract a scalar nanosecod from a ktime_t variable
  * res = kt - nsval:
  */
-#define ktime_sub_ns(kt, nsval)		((kt) - (nsval))
+#define ktime_sub_ns(kt, nsval) \
+		({ (ktime_t){ .tv64 = (kt).tv64 - (nsval) }; })
 
 /* convert a timespec to ktime_t format: */
 static inline ktime_t timespec_to_ktime(struct timespec ts)
@@ -85,18 +103,30 @@ static inline ktime_t timeval_to_ktime(struct timeval tv)
 }
 
 /* Map the ktime_t to timespec conversion to ns_to_timespec function */
-#define ktime_to_timespec(kt)		ns_to_timespec((kt))
+#define ktime_to_timespec(kt)		ns_to_timespec((kt).tv64)
 
 /* Map the ktime_t to timespec conversion to ns_to_timespec function */
-#define ktime_to_timespec64(kt)		ns_to_timespec64((kt))
+#define ktime_to_timespec64(kt)		ns_to_timespec64((kt).tv64)
 
 /* Map the ktime_t to timeval conversion to ns_to_timeval function */
-#define ktime_to_timeval(kt)		ns_to_timeval((kt))
+#define ktime_to_timeval(kt)		ns_to_timeval((kt).tv64)
 
-/* Convert ktime_t to nanoseconds */
-static inline s64 ktime_to_ns(const ktime_t kt)
+/* Convert ktime_t to nanoseconds - NOP in the scalar storage format: */
+#define ktime_to_ns(kt)			((kt).tv64)
+
+
+/**
+ * ktime_equal - Compares two ktime_t variables to see if they are equal
+ * @cmp1:	comparable1
+ * @cmp2:	comparable2
+ *
+ * Compare two ktime_t variables.
+ *
+ * Return: 1 if equal.
+ */
+static inline int ktime_equal(const ktime_t cmp1, const ktime_t cmp2)
 {
-	return kt;
+	return cmp1.tv64 == cmp2.tv64;
 }
 
 /**
@@ -111,9 +141,9 @@ static inline s64 ktime_to_ns(const ktime_t kt)
  */
 static inline int ktime_compare(const ktime_t cmp1, const ktime_t cmp2)
 {
-	if (cmp1 < cmp2)
+	if (cmp1.tv64 < cmp2.tv64)
 		return -1;
-	if (cmp1 > cmp2)
+	if (cmp1.tv64 > cmp2.tv64)
 		return 1;
 	return 0;
 }
@@ -152,7 +182,7 @@ static inline s64 ktime_divns(const ktime_t kt, s64 div)
 	 */
 	BUG_ON(div < 0);
 	if (__builtin_constant_p(div) && !(div >> 32)) {
-		s64 ns = kt;
+		s64 ns = kt.tv64;
 		u64 tmp = ns < 0 ? -ns : ns;
 
 		do_div(tmp, div);
@@ -169,7 +199,7 @@ static inline s64 ktime_divns(const ktime_t kt, s64 div)
 	 * so catch them on 64bit as well.
 	 */
 	WARN_ON(div < 0);
-	return kt / div;
+	return kt.tv64 / div;
 }
 #endif
 
@@ -226,7 +256,7 @@ extern ktime_t ktime_add_safe(const ktime_t lhs, const ktime_t rhs);
 static inline __must_check bool ktime_to_timespec_cond(const ktime_t kt,
 						       struct timespec *ts)
 {
-	if (kt) {
+	if (kt.tv64) {
 		*ts = ktime_to_timespec(kt);
 		return true;
 	} else {
@@ -245,7 +275,7 @@ static inline __must_check bool ktime_to_timespec_cond(const ktime_t kt,
 static inline __must_check bool ktime_to_timespec64_cond(const ktime_t kt,
 						       struct timespec64 *ts)
 {
-	if (kt) {
+	if (kt.tv64) {
 		*ts = ktime_to_timespec64(kt);
 		return true;
 	} else {
@@ -260,19 +290,22 @@ static inline __must_check bool ktime_to_timespec64_cond(const ktime_t kt,
  * this resolution values.
  */
 #define LOW_RES_NSEC		TICK_NSEC
-#define KTIME_LOW_RES		(LOW_RES_NSEC)
+#define KTIME_LOW_RES		(ktime_t){ .tv64 = LOW_RES_NSEC }
 
 static inline ktime_t ns_to_ktime(u64 ns)
 {
-	return ns;
+	static const ktime_t ktime_zero = { .tv64 = 0 };
+
+	return ktime_add_ns(ktime_zero, ns);
 }
 
 static inline ktime_t ms_to_ktime(u64 ms)
 {
-	return ms * NSEC_PER_MSEC;
+	static const ktime_t ktime_zero = { .tv64 = 0 };
+
+	return ktime_add_ms(ktime_zero, ms);
 }
 
 # include <linux/timekeeping.h>
-# include <linux/timekeeping32.h>
 
 #endif

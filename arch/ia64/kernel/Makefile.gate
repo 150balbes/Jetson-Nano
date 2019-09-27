@@ -1,27 +1,25 @@
-# SPDX-License-Identifier: GPL-2.0
 # The gate DSO image is built using a special linker script.
 
-targets += gate.so gate.lds gate.o gate-dummy.o
+targets += gate.so gate-syms.o
 
-obj-y += gate-syms.o
+extra-y += gate.so gate-syms.o gate.lds gate.o
 
 CPPFLAGS_gate.lds := -P -C -U$(ARCH)
 
-quiet_cmd_gate = GATE    $@
+quiet_cmd_gate = GATE $@
       cmd_gate = $(CC) -nostdlib $(GATECFLAGS_$(@F)) -Wl,-T,$(filter-out FORCE,$^) -o $@
 
 GATECFLAGS_gate.so = -shared -s -Wl,-soname=linux-gate.so.1 \
-		     -Wl,--hash-style=sysv
+		     $(call cc-ldoption, -Wl$(comma)--hash-style=sysv)
 $(obj)/gate.so: $(obj)/gate.lds $(obj)/gate.o FORCE
 	$(call if_changed,gate)
 
-GATECFLAGS_gate-dummy.o = -r
-$(obj)/gate-dummy.o: $(obj)/gate.lds $(obj)/gate.o FORCE
-	$(call if_changed,gate)
+$(obj)/built-in.o: $(obj)/gate-syms.o
+$(obj)/built-in.o: ld_flags += -R $(obj)/gate-syms.o
 
-LDFLAGS_gate-syms.o := -r -R
-$(obj)/gate-syms.o: $(obj)/gate-dummy.o FORCE
-	$(call if_changed,ld)
+GATECFLAGS_gate-syms.o = -r
+$(obj)/gate-syms.o: $(obj)/gate.lds $(obj)/gate.o FORCE
+	$(call if_changed,gate)
 
 # gate-data.o contains the gate DSO image as data in section .data..gate.
 # We must build gate.so before we can assemble it.

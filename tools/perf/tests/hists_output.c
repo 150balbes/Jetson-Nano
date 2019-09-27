@@ -1,8 +1,5 @@
-// SPDX-License-Identifier: GPL-2.0
 #include "perf.h"
 #include "util/debug.h"
-#include "util/event.h"
-#include "util/map.h"
 #include "util/symbol.h"
 #include "util/sort.h"
 #include "util/evsel.h"
@@ -12,7 +9,6 @@
 #include "util/parse-events.h"
 #include "tests/tests.h"
 #include "tests/hists_common.h"
-#include <linux/kernel.h>
 
 struct sample {
 	u32 cpu;
@@ -92,8 +88,8 @@ out:
 static void del_hist_entries(struct hists *hists)
 {
 	struct hist_entry *he;
-	struct rb_root_cached *root_in;
-	struct rb_root_cached *root_out;
+	struct rb_root *root_in;
+	struct rb_root *root_out;
 	struct rb_node *node;
 
 	if (hists__has(hists, need_collapse))
@@ -103,12 +99,12 @@ static void del_hist_entries(struct hists *hists)
 
 	root_out = &hists->entries;
 
-	while (!RB_EMPTY_ROOT(&root_out->rb_root)) {
-		node = rb_first_cached(root_out);
+	while (!RB_EMPTY_ROOT(root_out)) {
+		node = rb_first(root_out);
 
 		he = rb_entry(node, struct hist_entry, rb_node);
-		rb_erase_cached(node, root_out);
-		rb_erase_cached(&he->rb_node_in, root_in);
+		rb_erase(node, root_out);
+		rb_erase(&he->rb_node_in, root_in);
 		hist_entry__delete(he);
 	}
 }
@@ -127,7 +123,7 @@ static int test1(struct perf_evsel *evsel, struct machine *machine)
 	int err;
 	struct hists *hists = evsel__hists(evsel);
 	struct hist_entry *he;
-	struct rb_root_cached *root;
+	struct rb_root *root;
 	struct rb_node *node;
 
 	field_order = NULL;
@@ -163,7 +159,7 @@ static int test1(struct perf_evsel *evsel, struct machine *machine)
 	}
 
 	root = &hists->entries;
-	node = rb_first_cached(root);
+	node = rb_first(root);
 	he = rb_entry(node, struct hist_entry, rb_node);
 	TEST_ASSERT_VAL("Invalid hist entry",
 			!strcmp(COMM(he), "perf") && !strcmp(DSO(he), "perf") &&
@@ -229,7 +225,7 @@ static int test2(struct perf_evsel *evsel, struct machine *machine)
 	int err;
 	struct hists *hists = evsel__hists(evsel);
 	struct hist_entry *he;
-	struct rb_root_cached *root;
+	struct rb_root *root;
 	struct rb_node *node;
 
 	field_order = "overhead,cpu";
@@ -263,7 +259,7 @@ static int test2(struct perf_evsel *evsel, struct machine *machine)
 	}
 
 	root = &hists->entries;
-	node = rb_first_cached(root);
+	node = rb_first(root);
 	he = rb_entry(node, struct hist_entry, rb_node);
 	TEST_ASSERT_VAL("Invalid hist entry",
 			CPU(he) == 1 && PID(he) == 100 && he->stat.period == 300);
@@ -285,7 +281,7 @@ static int test3(struct perf_evsel *evsel, struct machine *machine)
 	int err;
 	struct hists *hists = evsel__hists(evsel);
 	struct hist_entry *he;
-	struct rb_root_cached *root;
+	struct rb_root *root;
 	struct rb_node *node;
 
 	field_order = "comm,overhead,dso";
@@ -317,7 +313,7 @@ static int test3(struct perf_evsel *evsel, struct machine *machine)
 	}
 
 	root = &hists->entries;
-	node = rb_first_cached(root);
+	node = rb_first(root);
 	he = rb_entry(node, struct hist_entry, rb_node);
 	TEST_ASSERT_VAL("Invalid hist entry",
 			!strcmp(COMM(he), "bash") && !strcmp(DSO(he), "bash") &&
@@ -359,7 +355,7 @@ static int test4(struct perf_evsel *evsel, struct machine *machine)
 	int err;
 	struct hists *hists = evsel__hists(evsel);
 	struct hist_entry *he;
-	struct rb_root_cached *root;
+	struct rb_root *root;
 	struct rb_node *node;
 
 	field_order = "dso,sym,comm,overhead,dso";
@@ -395,7 +391,7 @@ static int test4(struct perf_evsel *evsel, struct machine *machine)
 	}
 
 	root = &hists->entries;
-	node = rb_first_cached(root);
+	node = rb_first(root);
 	he = rb_entry(node, struct hist_entry, rb_node);
 	TEST_ASSERT_VAL("Invalid hist entry",
 			!strcmp(DSO(he), "perf") && !strcmp(SYM(he), "cmd_record") &&
@@ -461,7 +457,7 @@ static int test5(struct perf_evsel *evsel, struct machine *machine)
 	int err;
 	struct hists *hists = evsel__hists(evsel);
 	struct hist_entry *he;
-	struct rb_root_cached *root;
+	struct rb_root *root;
 	struct rb_node *node;
 
 	field_order = "cpu,pid,comm,dso,sym";
@@ -498,7 +494,7 @@ static int test5(struct perf_evsel *evsel, struct machine *machine)
 	}
 
 	root = &hists->entries;
-	node = rb_first_cached(root);
+	node = rb_first(root);
 	he = rb_entry(node, struct hist_entry, rb_node);
 
 	TEST_ASSERT_VAL("Invalid hist entry",
@@ -575,7 +571,7 @@ out:
 	return err;
 }
 
-int test__hists_output(struct test *test __maybe_unused, int subtest __maybe_unused)
+int test__hists_output(int subtest __maybe_unused)
 {
 	int err = TEST_FAIL;
 	struct machines machines;

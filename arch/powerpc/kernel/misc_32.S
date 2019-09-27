@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * This file contains miscellaneous low-level functions.
  *    Copyright (C) 1995-1996 Gary Thomas (gdt@linuxppc.org)
@@ -11,6 +10,12 @@
  * GameCube/ppc32 port Copyright (C) 2004 Albert Herranz
  * PPC44x port. Copyright (C) 2011,  IBM Corporation
  * 		Author: Suzuki Poulose <suzuki@in.ibm.com>
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License
+ * as published by the Free Software Foundation; either version
+ * 2 of the License, or (at your option) any later version.
+ *
  */
 
 #include <linux/sys.h>
@@ -29,7 +34,6 @@
 #include <asm/bug.h>
 #include <asm/ptrace.h>
 #include <asm/export.h>
-#include <asm/feature-fixups.h>
 
 	.text
 
@@ -41,10 +45,11 @@ _GLOBAL(call_do_softirq)
 	mflr	r0
 	stw	r0,4(r1)
 	lwz	r10,THREAD+KSP_LIMIT(r2)
-	stw	r3, THREAD+KSP_LIMIT(r2)
+	addi	r11,r3,THREAD_INFO_GAP
 	stwu	r1,THREAD_SIZE-STACK_FRAME_OVERHEAD(r3)
 	mr	r1,r3
 	stw	r10,8(r1)
+	stw	r11,THREAD+KSP_LIMIT(r2)
 	bl	__do_softirq
 	lwz	r10,8(r1)
 	lwz	r1,0(r1)
@@ -54,16 +59,17 @@ _GLOBAL(call_do_softirq)
 	blr
 
 /*
- * void call_do_irq(struct pt_regs *regs, void *sp);
+ * void call_do_irq(struct pt_regs *regs, struct thread_info *irqtp);
  */
 _GLOBAL(call_do_irq)
 	mflr	r0
 	stw	r0,4(r1)
 	lwz	r10,THREAD+KSP_LIMIT(r2)
-	stw	r4, THREAD+KSP_LIMIT(r2)
+	addi	r11,r4,THREAD_INFO_GAP
 	stwu	r1,THREAD_SIZE-STACK_FRAME_OVERHEAD(r4)
 	mr	r1,r4
 	stw	r10,8(r1)
+	stw	r11,THREAD+KSP_LIMIT(r2)
 	bl	__do_irq
 	lwz	r10,8(r1)
 	lwz	r1,0(r1)
@@ -146,7 +152,7 @@ _GLOBAL(call_setup_cpu)
 	mtctr	r5
 	bctr
 
-#if defined(CONFIG_CPU_FREQ_PMAC) && defined(CONFIG_PPC_BOOK3S_32)
+#if defined(CONFIG_CPU_FREQ_PMAC) && defined(CONFIG_6xx)
 
 /* This gets called by via-pmu.c to switch the PLL selection
  * on 750fx CPU. This function should really be moved to some
@@ -176,13 +182,10 @@ _GLOBAL(low_choose_750fx_pll)
 	or	r4,r4,r5
 	mtspr	SPRN_HID1,r4
 
-#ifdef CONFIG_SMP
 	/* Store new HID1 image */
-	lwz	r6,TASK_CPU(r2)
+	CURRENT_THREAD_INFO(r6, r1)
+	lwz	r6,TI_CPU(r6)
 	slwi	r6,r6,2
-#else
-	li	r6, 0
-#endif
 	addis	r6,r6,nap_save_hid1@ha
 	stw	r4,nap_save_hid1@l(r6)
 
@@ -219,7 +222,7 @@ _GLOBAL(low_choose_7447a_dfs)
 	mtmsr	r7
 	blr
 
-#endif /* CONFIG_CPU_FREQ_PMAC && CONFIG_PPC_BOOK3S_32 */
+#endif /* CONFIG_CPU_FREQ_PMAC && CONFIG_6xx */
 
 /*
  * complement mask on the msr then "or" some values on.
@@ -241,7 +244,8 @@ _GLOBAL(_nmask_and_or_msr)
  */
 _GLOBAL(real_readb)
 	mfmsr	r7
-	rlwinm	r0,r7,0,~MSR_DR
+	ori	r0,r7,MSR_DR
+	xori	r0,r0,MSR_DR
 	sync
 	mtmsr	r0
 	sync
@@ -258,7 +262,8 @@ _GLOBAL(real_readb)
  */
 _GLOBAL(real_writeb)
 	mfmsr	r7
-	rlwinm	r0,r7,0,~MSR_DR
+	ori	r0,r7,MSR_DR
+	xori	r0,r0,MSR_DR
 	sync
 	mtmsr	r0
 	sync
@@ -595,7 +600,7 @@ EXPORT_SYMBOL(__bswapdi2)
 #ifdef CONFIG_SMP
 _GLOBAL(start_secondary_resume)
 	/* Reset stack */
-	rlwinm	r1, r1, 0, 0, 31 - THREAD_SHIFT
+	CURRENT_THREAD_INFO(r1, r1)
 	addi	r1,r1,THREAD_SIZE-STACK_FRAME_OVERHEAD
 	li	r3,0
 	stw	r3,0(r1)		/* Zero the stack frame pointer	*/
@@ -609,7 +614,7 @@ _GLOBAL(start_secondary_resume)
 _GLOBAL(__main)
 	blr
 
-#ifdef CONFIG_KEXEC_CORE
+#ifdef CONFIG_KEXEC
 	/*
 	 * Must be relocatable PIC code callable as a C function.
 	 */

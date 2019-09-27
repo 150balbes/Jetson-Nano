@@ -170,14 +170,18 @@ static irqreturn_t spear_rtc_irq(int irq, void *dev_id)
 
 }
 
-static void tm2bcd(struct rtc_time *tm)
+static int tm2bcd(struct rtc_time *tm)
 {
+	if (rtc_valid_tm(tm) != 0)
+		return -EINVAL;
 	tm->tm_sec = bin2bcd(tm->tm_sec);
 	tm->tm_min = bin2bcd(tm->tm_min);
 	tm->tm_hour = bin2bcd(tm->tm_hour);
 	tm->tm_mday = bin2bcd(tm->tm_mday);
 	tm->tm_mon = bin2bcd(tm->tm_mon + 1);
 	tm->tm_year = bin2bcd(tm->tm_year);
+
+	return 0;
 }
 
 static void bcd2tm(struct rtc_time *tm)
@@ -233,7 +237,8 @@ static int spear_rtc_set_time(struct device *dev, struct rtc_time *tm)
 	struct spear_rtc_config *config = dev_get_drvdata(dev);
 	unsigned int time, date;
 
-	tm2bcd(tm);
+	if (tm2bcd(tm) < 0)
+		return -EINVAL;
 
 	rtc_wait_not_busy(config);
 	time = (tm->tm_sec << SECOND_SHIFT) | (tm->tm_min << MINUTE_SHIFT) |
@@ -290,7 +295,8 @@ static int spear_rtc_set_alarm(struct device *dev, struct rtc_wkalrm *alm)
 	unsigned int time, date;
 	int err;
 
-	tm2bcd(&alm->time);
+	if (tm2bcd(&alm->time) < 0)
+		return -EINVAL;
 
 	rtc_wait_not_busy(config);
 

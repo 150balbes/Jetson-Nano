@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 #include <linux/kernel.h>
 #include <linux/errno.h>
 #include <linux/string.h>
@@ -116,7 +115,7 @@ static struct fb_ops dn_fb_ops = {
 	.fb_imageblit	= cfb_imageblit,
 };
 
-static const struct fb_var_screeninfo dnfb_var = {
+struct fb_var_screeninfo dnfb_var = {
 	.xres		= 1280,
 	.yres		= 1024,
 	.xres_virtual	= 2048,
@@ -127,7 +126,7 @@ static const struct fb_var_screeninfo dnfb_var = {
 	.vmode		= FB_VMODE_NONINTERLACED,
 };
 
-static const struct fb_fix_screeninfo dnfb_fix = {
+static struct fb_fix_screeninfo dnfb_fix = {
 	.id		= "Apollo Mono",
 	.smem_start	= (FRAME_BUFFER_START + IO_BASE),
 	.smem_len	= FRAME_BUFFER_LEN,
@@ -243,13 +242,16 @@ static int dnfb_probe(struct platform_device *dev)
 	info->screen_base = (u_char *) info->fix.smem_start;
 
 	err = fb_alloc_cmap(&info->cmap, 2, 0);
-	if (err < 0)
-		goto release_framebuffer;
+	if (err < 0) {
+		framebuffer_release(info);
+		return err;
+	}
 
 	err = register_framebuffer(info);
 	if (err < 0) {
 		fb_dealloc_cmap(&info->cmap);
-		goto release_framebuffer;
+		framebuffer_release(info);
+		return err;
 	}
 	platform_set_drvdata(dev, info);
 
@@ -262,10 +264,6 @@ static int dnfb_probe(struct platform_device *dev)
 	out_be16(AP_ROP_1, SWAP(0x3));
 
 	printk("apollo frame buffer alive and kicking !\n");
-	return err;
-
-release_framebuffer:
-	framebuffer_release(info);
 	return err;
 }
 

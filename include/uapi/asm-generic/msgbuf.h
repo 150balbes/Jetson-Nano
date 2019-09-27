@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note */
 #ifndef __ASM_GENERIC_MSGBUF_H
 #define __ASM_GENERIC_MSGBUF_H
 
@@ -18,30 +17,31 @@
  * On big-endian systems, the padding is in the wrong place.
  *
  * Pad space is left for:
+ * - 64-bit time_t to solve y2038 problem
  * - 2 miscellaneous 32-bit values
  */
 
 struct msqid64_ds {
 	struct ipc64_perm msg_perm;
-#if __BITS_PER_LONG == 64
 	__kernel_time_t msg_stime;	/* last msgsnd time */
-	__kernel_time_t msg_rtime;	/* last msgrcv time */
-	__kernel_time_t msg_ctime;	/* last change time */
-#else
-	unsigned long	msg_stime;	/* last msgsnd time */
-	unsigned long	msg_stime_high;
-	unsigned long	msg_rtime;	/* last msgrcv time */
-	unsigned long	msg_rtime_high;
-	unsigned long	msg_ctime;	/* last change time */
-	unsigned long	msg_ctime_high;
+#if __BITS_PER_LONG != 64
+	unsigned long	__unused1;
 #endif
-	unsigned long	msg_cbytes;	/* current number of bytes on queue */
-	unsigned long	msg_qnum;	/* number of messages in queue */
-	unsigned long	 msg_qbytes;	/* max number of bytes on queue */
+	__kernel_time_t msg_rtime;	/* last msgrcv time */
+#if __BITS_PER_LONG != 64
+	unsigned long	__unused2;
+#endif
+	__kernel_time_t msg_ctime;	/* last change time */
+#if __BITS_PER_LONG != 64
+	unsigned long	__unused3;
+#endif
+	__kernel_ulong_t msg_cbytes;	/* current number of bytes on queue */
+	__kernel_ulong_t msg_qnum;	/* number of messages in queue */
+	__kernel_ulong_t msg_qbytes;	/* max number of bytes on queue */
 	__kernel_pid_t msg_lspid;	/* pid of last msgsnd */
 	__kernel_pid_t msg_lrpid;	/* last receive pid */
-	unsigned long	 __unused4;
-	unsigned long	 __unused5;
+	__kernel_ulong_t __unused4;
+	__kernel_ulong_t __unused5;
 };
 
 #endif /* __ASM_GENERIC_MSGBUF_H */

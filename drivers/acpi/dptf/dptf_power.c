@@ -1,7 +1,16 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * dptf_power:  DPTF platform power driver
  * Copyright (c) 2016, Intel Corporation.
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms and conditions of the GNU General Public License,
+ * version 2, as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ *
  */
 
 #include <linux/kernel.h>
@@ -22,7 +31,8 @@ static ssize_t name##_show(struct device *dev,\
 			   struct device_attribute *attr,\
 			   char *buf)\
 {\
-	struct acpi_device *acpi_dev = dev_get_drvdata(dev);\
+	struct platform_device *pdev = to_platform_device(dev);\
+	struct acpi_device *acpi_dev = platform_get_drvdata(pdev);\
 	unsigned long long val;\
 	acpi_status status;\
 \
@@ -55,7 +65,7 @@ static struct attribute *dptf_power_attrs[] = {
 	NULL
 };
 
-static const struct attribute_group dptf_power_attribute_group = {
+static struct attribute_group dptf_power_attribute_group = {
 	.attrs = dptf_power_attrs,
 	.name = "dptf_power"
 };

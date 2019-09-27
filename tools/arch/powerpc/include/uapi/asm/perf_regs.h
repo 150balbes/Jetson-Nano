@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note */
 #ifndef _UAPI_ASM_POWERPC_PERF_REGS_H
 #define _UAPI_ASM_POWERPC_PERF_REGS_H
 
@@ -46,8 +45,6 @@ enum perf_event_powerpc_regs {
 	PERF_REG_POWERPC_TRAP,
 	PERF_REG_POWERPC_DAR,
 	PERF_REG_POWERPC_DSISR,
-	PERF_REG_POWERPC_SIER,
-	PERF_REG_POWERPC_MMCRA,
 	PERF_REG_POWERPC_MAX,
 };
 #endif /* _UAPI_ASM_POWERPC_PERF_REGS_H */

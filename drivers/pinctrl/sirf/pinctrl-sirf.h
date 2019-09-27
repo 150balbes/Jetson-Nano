@@ -1,8 +1,9 @@
-/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * pinmux driver shared headfile for CSR SiRFsoc
  *
  * Copyright (c) 2011 Cambridge Silicon Radio Limited, a CSR plc group company.
+ *
+ * Licensed under GPLv2 or later.
  */
 
 #ifndef __PINMUX_SIRF_H__

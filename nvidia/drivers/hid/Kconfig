@@ -1,0 +1,29 @@
+append_menu "HID support"
+
+config HID_NVIDIA_STAND
+	tristate "NVIDIA Stand driver support"
+	depends on HID
+	---help---
+	  Provides support for NVIDIA Stand device to process vendor specific
+	  HID data.
+
+	  Say Y here to enable this driver and to compile this driver as a module,
+	  choose M here. If unsure, say N
+
+menu "SHIELD accessory HID drivers"
+
+config HID_SHIELD_BLAKE
+	tristate "SHIELD game controller"
+	depends on USB_HID
+	---help---
+	Support for NVIDIA SHIELD game controller.
+
+config HID_SHIELD_REMOTE
+	tristate "SHIELD remote control support"
+	depends on USB_HID
+	---help---
+	Support for NVIDIA SHIELD remote control.
+
+endmenu
+
+endmenu

@@ -1,0 +1,62 @@
+* STM A3G4250D Gyro sensor
+
+This driver uses the NVidia Sensor (NVS) framework.
+See the nvs.txt documentation for NVS DT capabilities.
+The nvs_a3g4250d.c sensor drivers supports the STM devices.
+
+Required properties:
+- compatible: Device or generic name.
+	      Supported device names:
+	      - stm,a3g4250d
+  Note: If the part is known and is populated, then it can be specified:
+	Example: compatible = "stm,ais328dq";
+	When specifying a device this way, the driver will assume this specific
+	device is populated during system boot and will not verify its
+	existence. If the device is not found, the driver will unload itself.
+	This requires regulators to be setup correctly for the probe function.
+- reg: i2c address of the device. It should be 0x68.
+- interrupt-parent:  GPIO number
+- interrupts:  GPIO macro
+
+Optional properties:
+- status: set to "ok" or "okay" for normal operation.  Set to anything else
+	  to unload the driver without ever communicating with the device.
+  Note: The "anything else" above is typically "disabled".
+	Since the driver will unload without communicating with the device, the
+	device will be left in its POR state.
+- gyroscope_disable: Setting this property to <1> will disable the gyroscope.
+	gyroscope_disable = <1>;
+- vdd-supply: regulator supply for the chip
+- vlogic-supply: regulator supply for the chip
+  Note: These are required if the driver is to control the regulators.
+- gyro_matrix:  Orientation matrix for this device.
+- gyro_delay_us_min: Change the max supported sampling rate.
+- gyro_delay_us_max: Change the min supported sampling rate.
+- stm_odr_override: Override the HW odr setting. This property is defined as
+		    a list of tuples of the following form:
+		    stm_odr_override = <
+				20000	22222	0x20
+				10000	11111	0x28
+				2500	2778	0x30
+				>;
+		    where each tuple is described as follows:
+			< Current_ODR override_ODR override_hw_ODR >
+		    Current_ODR will be replaced by the override_ODR in the
+		    stm_odr_tbl in the driver. The hw value will be replaced
+		    by the override_hw_ODR.
+
+Example:
+	ais328dq@18 {
+		compatible = "stm,ais328dq";
+                reg = <0x68>;
+                interrupt-parent = <&gpio>;
+                interrupts = <TEGRA_GPIO(X, 2) 0x01>;
+		gyro_matrix = [00 ff 00 ff 00 00 00 00 ff];
+		gyro_delay_us_min = <2500>;
+		stm_odr_override = <
+				20000	22222	0x20
+				10000	11111	0x28
+				2500	2778	0x30
+				>;
+	};
+

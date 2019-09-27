@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __6LOWPAN_NHC_H
 #define __6LOWPAN_NHC_H
 

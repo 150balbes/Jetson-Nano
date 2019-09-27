@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  *	xt_conntrack - Netfilter module to match connection tracking
  *	information. (Superset of Rusty's minimalistic state match.)
@@ -6,6 +5,10 @@
  *	(C) 2001  Marc Boucher (marc@mbsi.ca).
  *	(C) 2006-2012 Patrick McHardy <kaber@trash.net>
  *	Copyright © CC Computer Consultants GmbH, 2007 - 2008
+ *
+ *	This program is free software; you can redistribute it and/or modify
+ *	it under the terms of the GNU General Public License version 2 as
+ *	published by the Free Software Foundation.
  */
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 #include <linux/module.h>
@@ -169,11 +172,12 @@ conntrack_mt(const struct sk_buff *skb, struct xt_action_param *par,
 
 	ct = nf_ct_get(skb, &ctinfo);
 
-	if (ct)
-		statebit = XT_CONNTRACK_STATE_BIT(ctinfo);
-	else if (ctinfo == IP_CT_UNTRACKED)
-		statebit = XT_CONNTRACK_STATE_UNTRACKED;
-	else
+	if (ct) {
+		if (nf_ct_is_untracked(ct))
+			statebit = XT_CONNTRACK_STATE_UNTRACKED;
+		else
+			statebit = XT_CONNTRACK_STATE_BIT(ctinfo);
+	} else
 		statebit = XT_CONNTRACK_STATE_INVALID;
 
 	if (info->match_flags & XT_CONNTRACK_STATE) {
@@ -196,22 +200,22 @@ conntrack_mt(const struct sk_buff *skb, struct xt_action_param *par,
 		return false;
 
 	if (info->match_flags & XT_CONNTRACK_ORIGSRC)
-		if (conntrack_mt_origsrc(ct, info, xt_family(par)) ^
+		if (conntrack_mt_origsrc(ct, info, par->family) ^
 		    !(info->invert_flags & XT_CONNTRACK_ORIGSRC))
 			return false;
 
 	if (info->match_flags & XT_CONNTRACK_ORIGDST)
-		if (conntrack_mt_origdst(ct, info, xt_family(par)) ^
+		if (conntrack_mt_origdst(ct, info, par->family) ^
 		    !(info->invert_flags & XT_CONNTRACK_ORIGDST))
 			return false;
 
 	if (info->match_flags & XT_CONNTRACK_REPLSRC)
-		if (conntrack_mt_replsrc(ct, info, xt_family(par)) ^
+		if (conntrack_mt_replsrc(ct, info, par->family) ^
 		    !(info->invert_flags & XT_CONNTRACK_REPLSRC))
 			return false;
 
 	if (info->match_flags & XT_CONNTRACK_REPLDST)
-		if (conntrack_mt_repldst(ct, info, xt_family(par)) ^
+		if (conntrack_mt_repldst(ct, info, par->family) ^
 		    !(info->invert_flags & XT_CONNTRACK_REPLDST))
 			return false;
 
@@ -267,16 +271,16 @@ static int conntrack_mt_check(const struct xt_mtchk_param *par)
 {
 	int ret;
 
-	ret = nf_ct_netns_get(par->net, par->family);
+	ret = nf_ct_l3proto_try_module_get(par->family);
 	if (ret < 0)
-		pr_info_ratelimited("cannot load conntrack support for proto=%u\n",
-				    par->family);
+		pr_info("cannot load conntrack support for proto=%u\n",
+			par->family);
 	return ret;
 }
 
 static void conntrack_mt_destroy(const struct xt_mtdtor_param *par)
 {
-	nf_ct_netns_put(par->net, par->family);
+	nf_ct_l3proto_module_put(par->family);
 }
 
 static struct xt_match conntrack_mt_reg[] __read_mostly = {

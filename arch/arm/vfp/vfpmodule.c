@@ -1,9 +1,12 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  *  linux/arch/arm/vfp/vfpmodule.c
  *
  *  Copyright (C) 2004 ARM Limited.
  *  Written by Deep Blue Solutions Limited.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  */
 #include <linux/types.h>
 #include <linux/cpu.h>
@@ -12,7 +15,7 @@
 #include <linux/kernel.h>
 #include <linux/notifier.h>
 #include <linux/signal.h>
-#include <linux/sched/signal.h>
+#include <linux/sched.h>
 #include <linux/smp.h>
 #include <linux/init.h>
 #include <linux/uaccess.h>
@@ -31,11 +34,11 @@
 /*
  * Our undef handlers (in entry.S)
  */
-asmlinkage void vfp_testing_entry(void);
-asmlinkage void vfp_support_entry(void);
-asmlinkage void vfp_null_entry(void);
+void vfp_testing_entry(void);
+void vfp_support_entry(void);
+void vfp_null_entry(void);
 
-asmlinkage void (*vfp_vector)(void) = vfp_null_entry;
+void (*vfp_vector)(void) = vfp_null_entry;
 
 /*
  * Dual-use variable.
@@ -213,6 +216,14 @@ static struct notifier_block vfp_notifier_block = {
  */
 static void vfp_raise_sigfpe(unsigned int sicode, struct pt_regs *regs)
 {
+	siginfo_t info;
+
+	memset(&info, 0, sizeof(info));
+
+	info.si_signo = SIGFPE;
+	info.si_code = sicode;
+	info.si_addr = (void __user *)(instruction_pointer(regs) - 4);
+
 	/*
 	 * This is the same as NWFPE, because it's not clear what
 	 * this is used for
@@ -220,9 +231,7 @@ static void vfp_raise_sigfpe(unsigned int sicode, struct pt_regs *regs)
 	current->thread.error_code = 0;
 	current->thread.trap_no = 6;
 
-	send_sig_fault(SIGFPE, sicode,
-		       (void __user *)(instruction_pointer(regs) - 4),
-		       current);
+	send_sig_info(SIGFPE, &info, current);
 }
 
 static void vfp_panic(char *reason, u32 inst)
@@ -248,7 +257,7 @@ static void vfp_raise_exceptions(u32 exceptions, u32 inst, u32 fpscr, struct pt_
 
 	if (exceptions == VFP_EXCEPTION_ERROR) {
 		vfp_panic("unhandled bounce", inst);
-		vfp_raise_sigfpe(FPE_FLTINV, regs);
+		vfp_raise_sigfpe(0, regs);
 		return;
 	}
 
@@ -545,11 +554,12 @@ void vfp_flush_hwstate(struct thread_info *thread)
  * Save the current VFP state into the provided structures and prepare
  * for entry into a new function (signal handler).
  */
-int vfp_preserve_user_clear_hwstate(struct user_vfp *ufp,
-				    struct user_vfp_exc *ufp_exc)
+int vfp_preserve_user_clear_hwstate(struct user_vfp __user *ufp,
+				    struct user_vfp_exc __user *ufp_exc)
 {
 	struct thread_info *thread = current_thread_info();
 	struct vfp_hard_struct *hwstate = &thread->vfpstate.hard;
+	int err = 0;
 
 	/* Ensure that the saved hwstate is up-to-date. */
 	vfp_sync_hwstate(thread);
@@ -558,19 +568,22 @@ int vfp_preserve_user_clear_hwstate(struct user_vfp *ufp,
 	 * Copy the floating point registers. There can be unused
 	 * registers see asm/hwcap.h for details.
 	 */
-	memcpy(&ufp->fpregs, &hwstate->fpregs, sizeof(hwstate->fpregs));
-
+	err |= __copy_to_user(&ufp->fpregs, &hwstate->fpregs,
+			      sizeof(hwstate->fpregs));
 	/*
 	 * Copy the status and control register.
 	 */
-	ufp->fpscr = hwstate->fpscr;
+	__put_user_error(hwstate->fpscr, &ufp->fpscr, err);
 
 	/*
 	 * Copy the exception registers.
 	 */
-	ufp_exc->fpexc = hwstate->fpexc;
-	ufp_exc->fpinst = hwstate->fpinst;
-	ufp_exc->fpinst2 = hwstate->fpinst2;
+	__put_user_error(hwstate->fpexc, &ufp_exc->fpexc, err);
+	__put_user_error(hwstate->fpinst, &ufp_exc->fpinst, err);
+	__put_user_error(hwstate->fpinst2, &ufp_exc->fpinst2, err);
+
+	if (err)
+		return -EFAULT;
 
 	/* Ensure that VFP is disabled. */
 	vfp_flush_hwstate(thread);
@@ -783,7 +796,7 @@ static int __init vfp_init(void)
 	}
 
 	cpuhp_setup_state_nocalls(CPUHP_AP_ARM_VFP_STARTING,
-				  "arm/vfp:starting", vfp_starting_cpu,
+				  "AP_ARM_VFP_STARTING", vfp_starting_cpu,
 				  vfp_dying_cpu);
 
 	vfp_vector = vfp_support_entry;

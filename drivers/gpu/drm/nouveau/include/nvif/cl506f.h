@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: MIT */
 #ifndef __NVIF_CL506F_H__
 #define __NVIF_CL506F_H__
 
@@ -9,6 +8,6 @@ struct nv50_channel_gpfifo_v0 {
 	__u32 ilength;
 	__u64 ioffset;
 	__u64 pushbuf;
-	__u64 vmm;
+	__u64 vm;
 };
 #endif

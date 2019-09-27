@@ -1,13 +1,12 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (C) STMicroelectronics SA 2015
  * Authors: Arnaud Pouliquen <arnaud.pouliquen@st.com>
  *          for STMicroelectronics.
+ * License terms:  GNU General Public License (GPL), version 2
  */
 
 #include <linux/module.h>
 #include <linux/pinctrl/consumer.h>
-#include <linux/delay.h>
 
 #include "uniperif.h"
 
@@ -97,28 +96,6 @@ static const struct of_device_id snd_soc_sti_match[] = {
 	},
 	{},
 };
-
-int  sti_uniperiph_reset(struct uniperif *uni)
-{
-	int count = 10;
-
-	/* Reset uniperipheral uni */
-	SET_UNIPERIF_SOFT_RST_SOFT_RST(uni);
-
-	if (uni->ver < SND_ST_UNIPERIF_VERSION_UNI_PLR_TOP_1_0) {
-		while (GET_UNIPERIF_SOFT_RST_SOFT_RST(uni) && count) {
-			udelay(5);
-			count--;
-		}
-	}
-
-	if (!count) {
-		dev_err(uni->dev, "Failed to reset uniperif\n");
-		return -EIO;
-	}
-
-	return 0;
-}
 
 int sti_uniperiph_set_tdm_slot(struct snd_soc_dai *dai, unsigned int tx_mask,
 			       unsigned int rx_mask, int slots,
@@ -316,7 +293,7 @@ static int sti_uniperiph_dai_suspend(struct snd_soc_dai *dai)
 
 	/* The uniperipheral should be in stopped state */
 	if (uni->state != UNIPERIF_STATE_STOPPED) {
-		dev_err(uni->dev, "%s: invalid uni state( %d)\n",
+		dev_err(uni->dev, "%s: invalid uni state( %d)",
 			__func__, (int)uni->state);
 		return -EBUSY;
 	}
@@ -324,7 +301,7 @@ static int sti_uniperiph_dai_suspend(struct snd_soc_dai *dai)
 	/* Pinctrl: switch pinstate to sleep */
 	ret = pinctrl_pm_select_sleep_state(uni->dev);
 	if (ret)
-		dev_err(uni->dev, "%s: failed to select pinctrl state\n",
+		dev_err(uni->dev, "%s: failed to select pinctrl state",
 			__func__);
 
 	return ret;
@@ -345,7 +322,7 @@ static int sti_uniperiph_dai_resume(struct snd_soc_dai *dai)
 	/* pinctrl: switch pinstate to default */
 	ret = pinctrl_pm_select_default_state(uni->dev);
 	if (ret)
-		dev_err(uni->dev, "%s: failed to select pinctrl state\n",
+		dev_err(uni->dev, "%s: failed to select pinctrl state",
 			__func__);
 
 	return ret;
@@ -389,12 +366,11 @@ static int sti_uniperiph_cpu_dai_of(struct device_node *node,
 	const struct of_device_id *of_id;
 	const struct sti_uniperiph_dev_data *dev_data;
 	const char *mode;
-	int ret;
 
 	/* Populate data structure depending on compatibility */
 	of_id = of_match_node(snd_soc_sti_match, node);
 	if (!of_id->data) {
-		dev_err(dev, "data associated to device is missing\n");
+		dev_err(dev, "data associated to device is missing");
 		return -EINVAL;
 	}
 	dev_data = (struct sti_uniperiph_dev_data *)of_id->data;
@@ -413,7 +389,7 @@ static int sti_uniperiph_cpu_dai_of(struct device_node *node,
 	uni->mem_region = platform_get_resource(priv->pdev, IORESOURCE_MEM, 0);
 
 	if (!uni->mem_region) {
-		dev_err(dev, "Failed to get memory resource\n");
+		dev_err(dev, "Failed to get memory resource");
 		return -ENODEV;
 	}
 
@@ -427,7 +403,7 @@ static int sti_uniperiph_cpu_dai_of(struct device_node *node,
 
 	uni->irq = platform_get_irq(priv->pdev, 0);
 	if (uni->irq < 0) {
-		dev_err(dev, "Failed to get IRQ resource\n");
+		dev_err(dev, "Failed to get IRQ resource");
 		return -ENXIO;
 	}
 
@@ -445,15 +421,12 @@ static int sti_uniperiph_cpu_dai_of(struct device_node *node,
 	dai_data->stream = dev_data->stream;
 
 	if (priv->dai_data.stream == SNDRV_PCM_STREAM_PLAYBACK) {
-		ret = uni_player_init(priv->pdev, uni);
+		uni_player_init(priv->pdev, uni);
 		stream = &dai->playback;
 	} else {
-		ret = uni_reader_init(priv->pdev, uni);
+		uni_reader_init(priv->pdev, uni);
 		stream = &dai->capture;
 	}
-	if (ret < 0)
-		return ret;
-
 	dai->ops = uni->dai_ops;
 
 	stream->stream_name = dai->name;

@@ -1,8 +1,9 @@
-/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Windfarm PowerMac thermal control
  *
  * Copyright 2012 Benjamin Herrenschmidt, IBM Corp.
+ *
+ * Released under the term of the GNU GPL v2.
  */
 
 #ifndef __WINDFARM_MPU_H

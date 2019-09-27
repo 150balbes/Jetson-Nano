@@ -327,7 +327,7 @@ int ath5k_hw_init(struct ath5k_hw *ah)
 	ath5k_hw_set_lladdr(ah, zero_mac);
 
 	/* Set BSSID to bcast address: ff:ff:ff:ff:ff:ff for now */
-	eth_broadcast_addr(common->curbssid);
+	memcpy(common->curbssid, ath_bcast_mac, ETH_ALEN);
 	ath5k_hw_set_bssid(ah);
 	ath5k_hw_set_opmode(ah, ah->opmode);
 

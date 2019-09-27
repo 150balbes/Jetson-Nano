@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-1.0+
 /*
  * OHCI HCD (Host Controller Driver) for USB.
  *
@@ -385,8 +384,6 @@ struct ohci_hcd {
 
 	/*
 	 * memory management for queue data structures
-	 *
-	 * @td_cache and @ed_cache are %NULL if &usb_hcd.localmem_pool is used.
 	 */
 	struct dma_pool		*td_cache;
 	struct dma_pool		*ed_cache;
@@ -433,13 +430,16 @@ struct ohci_hcd {
 	struct work_struct	nec_work;	/* Worker for NEC quirk */
 
 	struct dentry		*debug_dir;
+	struct dentry		*debug_async;
+	struct dentry		*debug_periodic;
+	struct dentry		*debug_registers;
 
 	/* platform-specific data -- must come last */
 	unsigned long           priv[0] __aligned(sizeof(s64));
 
 };
 
-#ifdef CONFIG_USB_PCI
+#ifdef CONFIG_PCI
 static inline int quirk_nec(struct ohci_hcd *ohci)
 {
 	return ohci->flags & OHCI_QUIRK_NEC;

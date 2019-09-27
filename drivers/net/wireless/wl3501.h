@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __WL3501_H__
 #define __WL3501_H__
 

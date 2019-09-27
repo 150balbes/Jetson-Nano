@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note */
 /*
  * linux/include/linux/edd.h
  *  Copyright (C) 2002, 2003, 2004 Dell Inc.

@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0
 include ../../scripts/Makefile.include
 include ../../scripts/utilities.mak
 BINDIR=usr/bin

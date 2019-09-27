@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * linux/lib/zlib_inflate/inflate_syms.c
  *

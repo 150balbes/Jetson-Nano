@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0
 #
 # Makefile for the Intel 82586/82593/82596 chipset device drivers.
 #

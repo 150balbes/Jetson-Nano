@@ -1,10 +1,19 @@
-// SPDX-License-Identifier: GPL-2.0+
 /*
  * dmm32at.c
  * Diamond Systems Diamond-MM-32-AT Comedi driver
  *
  * COMEDI - Linux Control and Measurement Device Interface
  * Copyright (C) 2000 David A. Schleef <ds@schleef.org>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
  */
 
 /*
@@ -501,7 +510,7 @@ static int dmm32at_reset(struct comedi_device *dev)
 	outb(DMM32AT_CTRL_RESETA, dev->iobase + DMM32AT_CTRL_REG);
 
 	/* allow a millisecond to reset */
-	usleep_range(1000, 3000);
+	udelay(1000);
 
 	/* zero scan and fifo control */
 	outb(0x0, dev->iobase + DMM32AT_FIFO_CTRL_REG);
@@ -517,7 +526,7 @@ static int dmm32at_reset(struct comedi_device *dev)
 	outb(DMM32AT_RANGE_U10, dev->iobase + DMM32AT_AI_CFG_REG);
 
 	/* should take 10 us to settle, here's a hundred */
-	usleep_range(100, 200);
+	udelay(100);
 
 	/* read back the values */
 	ailo = inb(dev->iobase + DMM32AT_AI_LO_CHAN_REG);

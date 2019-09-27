@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * zs.c: Serial port driver for IOASIC DECstations.
  *
@@ -1046,7 +1045,7 @@ static int zs_verify_port(struct uart_port *uport, struct serial_struct *ser)
 }
 
 
-static const struct uart_ops zs_ops = {
+static struct uart_ops zs_ops = {
 	.tx_empty	= zs_tx_empty,
 	.set_mctrl	= zs_set_mctrl,
 	.get_mctrl	= zs_get_mctrl,

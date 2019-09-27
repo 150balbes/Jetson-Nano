@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __ARCH_M68K_CMPXCHG__
 #define __ARCH_M68K_CMPXCHG__
 

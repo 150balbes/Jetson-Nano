@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __ACPI_PROCESSOR_H
 #define __ACPI_PROCESSOR_H
 
@@ -250,12 +249,9 @@ extern int acpi_processor_register_performance(struct acpi_processor_performance
 					       *performance, unsigned int cpu);
 extern void acpi_processor_unregister_performance(unsigned int cpu);
 
-int acpi_processor_pstate_control(void);
 /* note: this locks both the calling module and the processor module
          if a _PPC object exists, rmmod is disallowed then */
 int acpi_processor_notify_smm(struct module *calling_module);
-int acpi_processor_get_psd(acpi_handle handle,
-			   struct acpi_psd_package *pdomain);
 
 /* parsing the _P* objects. */
 extern int acpi_processor_get_performance_info(struct acpi_processor *pr);
@@ -298,7 +294,7 @@ static inline void acpi_processor_ffh_cstate_enter(struct acpi_processor_cx
 #ifdef CONFIG_CPU_FREQ
 void acpi_processor_ppc_init(void);
 void acpi_processor_ppc_exit(void);
-void acpi_processor_ppc_has_changed(struct acpi_processor *pr, int event_flag);
+int acpi_processor_ppc_has_changed(struct acpi_processor *pr, int event_flag);
 extern int acpi_processor_get_bios_limit(int cpu, unsigned int *limit);
 #else
 static inline void acpi_processor_ppc_init(void)
@@ -309,7 +305,7 @@ static inline void acpi_processor_ppc_exit(void)
 {
 	return;
 }
-static inline void acpi_processor_ppc_has_changed(struct acpi_processor *pr,
+static inline int acpi_processor_ppc_has_changed(struct acpi_processor *pr,
 								int event_flag)
 {
 	static unsigned int printout = 1;
@@ -320,6 +316,7 @@ static inline void acpi_processor_ppc_has_changed(struct acpi_processor *pr,
 		       "Consider compiling CPUfreq support into your kernel.\n");
 		printout = 0;
 	}
+	return 0;
 }
 static inline int acpi_processor_get_bios_limit(int cpu, unsigned int *limit)
 {

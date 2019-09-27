@@ -47,6 +47,7 @@
 #define ATAFB_EXT
 #define ATAFB_FALCON
 
+#include <linux/module.h>
 #include <linux/kernel.h>
 #include <linux/errno.h>
 #include <linux/string.h>
@@ -54,7 +55,6 @@
 #include <linux/delay.h>
 #include <linux/init.h>
 #include <linux/interrupt.h>
-#include <linux/platform_device.h>
 
 #include <asm/setup.h>
 #include <linux/uaccess.h>
@@ -77,7 +77,28 @@
 #define SWITCH_SND7 0x80
 #define SWITCH_NONE 0x00
 
+
 #define up(x, r) (((x) + (r) - 1) & ~((r)-1))
+
+	/*
+	 * Interface to the world
+	 */
+
+static int atafb_check_var(struct fb_var_screeninfo *var, struct fb_info *info);
+static int atafb_set_par(struct fb_info *info);
+static int atafb_setcolreg(unsigned int regno, unsigned int red, unsigned int green,
+			   unsigned int blue, unsigned int transp,
+			   struct fb_info *info);
+static int atafb_blank(int blank, struct fb_info *info);
+static int atafb_pan_display(struct fb_var_screeninfo *var,
+			     struct fb_info *info);
+static void atafb_fillrect(struct fb_info *info,
+			   const struct fb_fillrect *rect);
+static void atafb_copyarea(struct fb_info *info,
+			   const struct fb_copyarea *region);
+static void atafb_imageblit(struct fb_info *info, const struct fb_image *image);
+static int atafb_ioctl(struct fb_info *info, unsigned int cmd,
+		       unsigned long arg);
 
 
 static int default_par;		/* default resolution (0=none) */
@@ -3052,22 +3073,28 @@ int __init atafb_setup(char *options)
 	return 0;
 }
 
-static int __init atafb_probe(struct platform_device *pdev)
+int __init atafb_init(void)
 {
 	int pad, detected_mode, error;
 	unsigned int defmode = 0;
 	unsigned long mem_req;
+
+#ifndef MODULE
 	char *option = NULL;
 
 	if (fb_get_options("atafb", &option))
 		return -ENODEV;
 	atafb_setup(option);
-	dev_dbg(&pdev->dev, "%s: start\n", __func__);
+#endif
+	printk("atafb_init: start\n");
+
+	if (!MACH_IS_ATARI)
+		return -ENODEV;
 
 	do {
 #ifdef ATAFB_EXT
 		if (external_addr) {
-			dev_dbg(&pdev->dev, "initializing external hw\n");
+			printk("atafb_init: initializing external hw\n");
 			fbhw = &ext_switch;
 			atafb_ops.fb_setcolreg = &ext_setcolreg;
 			defmode = DEFMODE_EXT;
@@ -3076,7 +3103,7 @@ static int __init atafb_probe(struct platform_device *pdev)
 #endif
 #ifdef ATAFB_TT
 		if (ATARIHW_PRESENT(TT_SHIFTER)) {
-			dev_dbg(&pdev->dev, "initializing TT hw\n");
+			printk("atafb_init: initializing TT hw\n");
 			fbhw = &tt_switch;
 			atafb_ops.fb_setcolreg = &tt_setcolreg;
 			defmode = DEFMODE_TT;
@@ -3085,7 +3112,7 @@ static int __init atafb_probe(struct platform_device *pdev)
 #endif
 #ifdef ATAFB_FALCON
 		if (ATARIHW_PRESENT(VIDEL_SHIFTER)) {
-			dev_dbg(&pdev->dev, "initializing Falcon hw\n");
+			printk("atafb_init: initializing Falcon hw\n");
 			fbhw = &falcon_switch;
 			atafb_ops.fb_setcolreg = &falcon_setcolreg;
 			error = request_irq(IRQ_AUTO_4, falcon_vbl_switcher, 0,
@@ -3100,7 +3127,7 @@ static int __init atafb_probe(struct platform_device *pdev)
 #ifdef ATAFB_STE
 		if (ATARIHW_PRESENT(STND_SHIFTER) ||
 		    ATARIHW_PRESENT(EXTD_SHIFTER)) {
-			dev_dbg(&pdev->dev, "initializing ST/E hw\n");
+			printk("atafb_init: initializing ST/E hw\n");
 			fbhw = &st_switch;
 			atafb_ops.fb_setcolreg = &stste_setcolreg;
 			defmode = DEFMODE_STE;
@@ -3108,8 +3135,7 @@ static int __init atafb_probe(struct platform_device *pdev)
 		}
 		fbhw = &st_switch;
 		atafb_ops.fb_setcolreg = &stste_setcolreg;
-		dev_warn(&pdev->dev,
-			 "Cannot determine video hardware; defaulting to ST(e)\n");
+		printk("Cannot determine video hardware; defaulting to ST(e)\n");
 #else /* ATAFB_STE */
 		/* no default driver included */
 		/* Nobody will ever see this message :-) */
@@ -3149,8 +3175,8 @@ static int __init atafb_probe(struct platform_device *pdev)
 			kernel_set_cachemode(screen_base, screen_len,
 					     IOMAP_WRITETHROUGH);
 		}
-		dev_info(&pdev->dev, "phys_screen_base %lx screen_len %d\n",
-			 phys_screen_base, screen_len);
+		printk("atafb: screen_base %p phys_screen_base %lx screen_len %d\n",
+			screen_base, phys_screen_base, screen_len);
 #ifdef ATAFB_EXT
 	} else {
 		/* Map the video memory (physical address given) to somewhere
@@ -3197,12 +3223,12 @@ static int __init atafb_probe(struct platform_device *pdev)
 	fb_alloc_cmap(&(fb_info.cmap), 1 << fb_info.var.bits_per_pixel, 0);
 
 
-	dev_info(&pdev->dev, "Determined %dx%d, depth %d\n", fb_info.var.xres,
-		 fb_info.var.yres, fb_info.var.bits_per_pixel);
+	printk("Determined %dx%d, depth %d\n",
+	       fb_info.var.xres, fb_info.var.yres, fb_info.var.bits_per_pixel);
 	if ((fb_info.var.xres != fb_info.var.xres_virtual) ||
 	    (fb_info.var.yres != fb_info.var.yres_virtual))
-		dev_info(&pdev->dev, "   virtual %dx%d\n",
-			 fb_info.var.xres_virtual, fb_info.var.yres_virtual);
+		printk("   virtual %dx%d\n", fb_info.var.xres_virtual,
+		       fb_info.var.yres_virtual);
 
 	if (register_framebuffer(&fb_info) < 0) {
 #ifdef ATAFB_EXT
@@ -3225,32 +3251,14 @@ static int __init atafb_probe(struct platform_device *pdev)
 	return 0;
 }
 
-static void atafb_shutdown(struct platform_device *pdev)
+module_init(atafb_init);
+
+#ifdef MODULE
+MODULE_LICENSE("GPL");
+
+int cleanup_module(void)
 {
-	/* Unblank before kexec */
-	if (fbhw->blank)
-		fbhw->blank(0);
+	unregister_framebuffer(&fb_info);
+	return atafb_deinit();
 }
-
-static struct platform_driver atafb_driver = {
-	.shutdown	= atafb_shutdown,
-	.driver	= {
-		.name	= "atafb",
-	},
-};
-
-static int __init atafb_init(void)
-{
-	struct platform_device *pdev;
-
-	if (!MACH_IS_ATARI)
-		return -ENODEV;
-
-	pdev = platform_device_register_simple("atafb", -1, NULL, 0);
-	if (IS_ERR(pdev))
-		return PTR_ERR(pdev);
-
-	return platform_driver_probe(&atafb_driver, atafb_probe);
-}
-
-device_initcall(atafb_init);
+#endif /* MODULE */

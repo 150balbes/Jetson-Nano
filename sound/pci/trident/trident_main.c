@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  *  Maintained by Jaroslav Kysela <perex@perex.cz>
  *  Originated by audio@tridentmicro.com
@@ -9,6 +8,21 @@
  *
  *  TODO:
  *    ---
+ *
+ *   This program is free software; you can redistribute it and/or modify
+ *   it under the terms of the GNU General Public License as published by
+ *   the Free Software Foundation; either version 2 of the License, or
+ *   (at your option) any later version.
+ *
+ *   This program is distributed in the hope that it will be useful,
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *   GNU General Public License for more details.
+ *
+ *   You should have received a copy of the GNU General Public License
+ *   along with this program; if not, write to the Free Software
+ *   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+ *
  *
  *  SiS7018 S/PDIF support by Thomas Winischhofer <thomas@winischhofer.net>
  */
@@ -1713,7 +1727,7 @@ static snd_pcm_uframes_t snd_trident_spdif_pointer(struct snd_pcm_substream *sub
  *  Playback support device description
  */
 
-static const struct snd_pcm_hardware snd_trident_playback =
+static struct snd_pcm_hardware snd_trident_playback =
 {
 	.info =			(SNDRV_PCM_INFO_MMAP | SNDRV_PCM_INFO_INTERLEAVED |
 				 SNDRV_PCM_INFO_BLOCK_TRANSFER |
@@ -1738,7 +1752,7 @@ static const struct snd_pcm_hardware snd_trident_playback =
  *  Capture support device description
  */
 
-static const struct snd_pcm_hardware snd_trident_capture =
+static struct snd_pcm_hardware snd_trident_capture =
 {
 	.info =			(SNDRV_PCM_INFO_MMAP | SNDRV_PCM_INFO_INTERLEAVED |
 				 SNDRV_PCM_INFO_BLOCK_TRANSFER |
@@ -1763,7 +1777,7 @@ static const struct snd_pcm_hardware snd_trident_capture =
  *  Foldback capture support device description
  */
 
-static const struct snd_pcm_hardware snd_trident_foldback =
+static struct snd_pcm_hardware snd_trident_foldback =
 {
 	.info =			(SNDRV_PCM_INFO_MMAP | SNDRV_PCM_INFO_INTERLEAVED |
 				 SNDRV_PCM_INFO_BLOCK_TRANSFER |
@@ -1787,7 +1801,7 @@ static const struct snd_pcm_hardware snd_trident_foldback =
  *  SPDIF playback support device description
  */
 
-static const struct snd_pcm_hardware snd_trident_spdif =
+static struct snd_pcm_hardware snd_trident_spdif =
 {
 	.info =			(SNDRV_PCM_INFO_MMAP | SNDRV_PCM_INFO_INTERLEAVED |
 				 SNDRV_PCM_INFO_BLOCK_TRANSFER |
@@ -1808,7 +1822,7 @@ static const struct snd_pcm_hardware snd_trident_spdif =
 	.fifo_size =		0,
 };
 
-static const struct snd_pcm_hardware snd_trident_spdif_7018 =
+static struct snd_pcm_hardware snd_trident_spdif_7018 =
 {
 	.info =			(SNDRV_PCM_INFO_MMAP | SNDRV_PCM_INFO_INTERLEAVED |
 				 SNDRV_PCM_INFO_BLOCK_TRANSFER |
@@ -2079,7 +2093,7 @@ static const struct snd_pcm_ops snd_trident_nx_playback_ops = {
 	.page =		snd_pcm_sgbuf_ops_page,
 };
 
-static const struct snd_pcm_ops snd_trident_capture_ops = {
+static struct snd_pcm_ops snd_trident_capture_ops = {
 	.open =		snd_trident_capture_open,
 	.close =	snd_trident_capture_close,
 	.ioctl =	snd_trident_ioctl,
@@ -2090,7 +2104,7 @@ static const struct snd_pcm_ops snd_trident_capture_ops = {
 	.pointer =	snd_trident_capture_pointer,
 };
 
-static const struct snd_pcm_ops snd_trident_si7018_capture_ops = {
+static struct snd_pcm_ops snd_trident_si7018_capture_ops = {
 	.open =		snd_trident_capture_open,
 	.close =	snd_trident_capture_close,
 	.ioctl =	snd_trident_ioctl,
@@ -2342,7 +2356,7 @@ static int snd_trident_spdif_control_put(struct snd_kcontrol *kcontrol,
 	return change;
 }
 
-static const struct snd_kcontrol_new snd_trident_spdif_control =
+static struct snd_kcontrol_new snd_trident_spdif_control =
 {
 	.iface =	SNDRV_CTL_ELEM_IFACE_MIXER,
 	.name =         SNDRV_CTL_NAME_IEC958("",PLAYBACK,SWITCH),
@@ -2405,7 +2419,7 @@ static int snd_trident_spdif_default_put(struct snd_kcontrol *kcontrol,
 	return change;
 }
 
-static const struct snd_kcontrol_new snd_trident_spdif_default =
+static struct snd_kcontrol_new snd_trident_spdif_default =
 {
 	.iface =	SNDRV_CTL_ELEM_IFACE_PCM,
 	.name =         SNDRV_CTL_NAME_IEC958("",PLAYBACK,DEFAULT),
@@ -2438,7 +2452,7 @@ static int snd_trident_spdif_mask_get(struct snd_kcontrol *kcontrol,
 	return 0;
 }
 
-static const struct snd_kcontrol_new snd_trident_spdif_mask =
+static struct snd_kcontrol_new snd_trident_spdif_mask =
 {
 	.access =	SNDRV_CTL_ELEM_ACCESS_READ,
 	.iface =	SNDRV_CTL_ELEM_IFACE_PCM,
@@ -2500,7 +2514,7 @@ static int snd_trident_spdif_stream_put(struct snd_kcontrol *kcontrol,
 	return change;
 }
 
-static const struct snd_kcontrol_new snd_trident_spdif_stream =
+static struct snd_kcontrol_new snd_trident_spdif_stream =
 {
 	.access =	SNDRV_CTL_ELEM_ACCESS_READWRITE | SNDRV_CTL_ELEM_ACCESS_INACTIVE,
 	.iface =	SNDRV_CTL_ELEM_IFACE_PCM,
@@ -2550,7 +2564,7 @@ static int snd_trident_ac97_control_put(struct snd_kcontrol *kcontrol,
 	return change;
 }
 
-static const struct snd_kcontrol_new snd_trident_ac97_rear_control =
+static struct snd_kcontrol_new snd_trident_ac97_rear_control =
 {
 	.iface =	SNDRV_CTL_ELEM_IFACE_MIXER,
 	.name =         "Rear Path",
@@ -2608,7 +2622,7 @@ static int snd_trident_vol_control_put(struct snd_kcontrol *kcontrol,
 	return change;
 }
 
-static const struct snd_kcontrol_new snd_trident_vol_music_control =
+static struct snd_kcontrol_new snd_trident_vol_music_control =
 {
 	.iface =	SNDRV_CTL_ELEM_IFACE_MIXER,
 	.name =         "Music Playback Volume",
@@ -2619,7 +2633,7 @@ static const struct snd_kcontrol_new snd_trident_vol_music_control =
 	.tlv = { .p = db_scale_gvol },
 };
 
-static const struct snd_kcontrol_new snd_trident_vol_wave_control =
+static struct snd_kcontrol_new snd_trident_vol_wave_control =
 {
 	.iface =	SNDRV_CTL_ELEM_IFACE_MIXER,
 	.name =         "Wave Playback Volume",
@@ -2686,7 +2700,7 @@ static int snd_trident_pcm_vol_control_put(struct snd_kcontrol *kcontrol,
 	return change;
 }
 
-static const struct snd_kcontrol_new snd_trident_pcm_vol_control =
+static struct snd_kcontrol_new snd_trident_pcm_vol_control =
 {
 	.iface =	SNDRV_CTL_ELEM_IFACE_MIXER,
 	.name =         "PCM Front Playback Volume",
@@ -2750,7 +2764,7 @@ static int snd_trident_pcm_pan_control_put(struct snd_kcontrol *kcontrol,
 	return change;
 }
 
-static const struct snd_kcontrol_new snd_trident_pcm_pan_control =
+static struct snd_kcontrol_new snd_trident_pcm_pan_control =
 {
 	.iface =	SNDRV_CTL_ELEM_IFACE_MIXER,
 	.name =         "PCM Pan Playback Control",
@@ -2807,7 +2821,7 @@ static int snd_trident_pcm_rvol_control_put(struct snd_kcontrol *kcontrol,
 
 static const DECLARE_TLV_DB_SCALE(db_scale_crvol, -3175, 25, 1);
 
-static const struct snd_kcontrol_new snd_trident_pcm_rvol_control =
+static struct snd_kcontrol_new snd_trident_pcm_rvol_control =
 {
 	.iface =	SNDRV_CTL_ELEM_IFACE_MIXER,
 	.name =         "PCM Reverb Playback Volume",
@@ -2863,7 +2877,7 @@ static int snd_trident_pcm_cvol_control_put(struct snd_kcontrol *kcontrol,
 	return change;
 }
 
-static const struct snd_kcontrol_new snd_trident_pcm_cvol_control =
+static struct snd_kcontrol_new snd_trident_pcm_cvol_control =
 {
 	.iface =	SNDRV_CTL_ELEM_IFACE_MIXER,
 	.name =         "PCM Chorus Playback Volume",
@@ -3106,7 +3120,7 @@ static int snd_trident_mixer(struct snd_trident *trident, int pcm_spdif_device)
  * gameport interface
  */
 
-#if IS_REACHABLE(CONFIG_GAMEPORT)
+#if defined(CONFIG_GAMEPORT) || (defined(MODULE) && defined(CONFIG_GAMEPORT_MODULE))
 
 static unsigned char snd_trident_gameport_read(struct gameport *gameport)
 {
@@ -3306,11 +3320,13 @@ static void snd_trident_proc_read(struct snd_info_entry *entry,
 
 static void snd_trident_proc_init(struct snd_trident *trident)
 {
+	struct snd_info_entry *entry;
 	const char *s = "trident";
 	
 	if (trident->device == TRIDENT_DEVICE_ID_SI7018)
 		s = "sis7018";
-	snd_card_ro_proc_new(trident->card, s, trident, snd_trident_proc_read);
+	if (! snd_card_proc_new(trident->card, s, &entry))
+		snd_info_set_text_ops(entry, trident, snd_trident_proc_read);
 }
 
 static int snd_trident_dev_free(struct snd_device *device)
@@ -3343,15 +3359,15 @@ static int snd_trident_tlb_alloc(struct snd_trident *trident)
 		dev_err(trident->card->dev, "unable to allocate TLB buffer\n");
 		return -ENOMEM;
 	}
-	trident->tlb.entries = (__le32 *)ALIGN((unsigned long)trident->tlb.buffer.area, SNDRV_TRIDENT_MAX_PAGES * 4);
+	trident->tlb.entries = (unsigned int*)ALIGN((unsigned long)trident->tlb.buffer.area, SNDRV_TRIDENT_MAX_PAGES * 4);
 	trident->tlb.entries_dmaaddr = ALIGN(trident->tlb.buffer.addr, SNDRV_TRIDENT_MAX_PAGES * 4);
 	/* allocate shadow TLB page table (virtual addresses) */
-	trident->tlb.shadow_entries =
-		vmalloc(array_size(SNDRV_TRIDENT_MAX_PAGES,
-				   sizeof(unsigned long)));
-	if (!trident->tlb.shadow_entries)
+	trident->tlb.shadow_entries = vmalloc(SNDRV_TRIDENT_MAX_PAGES*sizeof(unsigned long));
+	if (trident->tlb.shadow_entries == NULL) {
+		dev_err(trident->card->dev,
+			"unable to allocate shadow TLB entries\n");
 		return -ENOMEM;
-
+	}
 	/* allocate and setup silent page and initialise TLB entries */
 	if (snd_dma_alloc_pages(SNDRV_DMA_TYPE_DEV, snd_dma_pci_data(trident->pci),
 				SNDRV_TRIDENT_PAGE_SIZE, &trident->tlb.silent_page) < 0) {
@@ -3899,6 +3915,10 @@ static int snd_trident_suspend(struct device *dev)
 
 	trident->in_suspend = 1;
 	snd_power_change_state(card, SNDRV_CTL_POWER_D3hot);
+	snd_pcm_suspend_all(trident->pcm);
+	snd_pcm_suspend_all(trident->foldback);
+	snd_pcm_suspend_all(trident->spdif);
+
 	snd_ac97_suspend(trident->ac97);
 	snd_ac97_suspend(trident->ac97_sec);
 	return 0;

@@ -1,11 +1,10 @@
-// SPDX-License-Identifier: GPL-2.0
-
 /*
  * media_device_test.c - Media Controller Device ioctl loop Test
  *
  * Copyright (c) 2016 Shuah Khan <shuahkh@osg.samsung.com>
  * Copyright (c) 2016 Samsung Electronics Co., Ltd.
  *
+ * This file is released under the GPLv2.
  */
 
 /*
@@ -39,8 +38,6 @@
 #include <time.h>
 #include <linux/media.h>
 
-#include "../kselftest.h"
-
 int main(int argc, char **argv)
 {
 	int opt;
@@ -68,8 +65,10 @@ int main(int argc, char **argv)
 		}
 	}
 
-	if (getuid() != 0)
-		ksft_exit_skip("Please run the test as root - Exiting.\n");
+	if (getuid() != 0) {
+		printf("Please run the test as root - Exiting.\n");
+		exit(-1);
+	}
 
 	/* Generate random number of interations */
 	srand((unsigned int) time(NULL));
@@ -88,7 +87,7 @@ int main(int argc, char **argv)
 	       "other Oops in the dmesg. Enable KaSan kernel\n"
 	       "config option for use-after-free error detection.\n\n");
 
-	printf("Running test for %d iterations\n", count);
+	printf("Running test for %d iternations\n", count);
 
 	while (count > 0) {
 		ret = ioctl(fd, MEDIA_IOC_DEVICE_INFO, &mdi);

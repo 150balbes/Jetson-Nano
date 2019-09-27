@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  *
  * FIXME: Properly make this race free with refcounting etc...
@@ -644,7 +643,7 @@ static int pmf_add_function_prop(struct pmf_device *dev, void *driverdata,
 
 	while (length >= 12) {
 		/* Allocate a structure */
-		func = kzalloc(sizeof(*func), GFP_KERNEL);
+		func = kzalloc(sizeof(struct pmf_function), GFP_KERNEL);
 		if (func == NULL)
 			goto bail;
 		kref_init(&func->ref);
@@ -709,7 +708,7 @@ int pmf_register_driver(struct device_node *np,
 	if (handlers == NULL)
 		return -EINVAL;
 
-	DBG("pmf: registering driver for node %pOF\n", np);
+	DBG("pmf: registering driver for node %s\n", np->full_name);
 
 	spin_lock_irqsave(&pmf_lock, flags);
 	dev = pmf_find_device(np);
@@ -720,7 +719,7 @@ int pmf_register_driver(struct device_node *np,
 		return -EBUSY;
 	}
 
-	dev = kzalloc(sizeof(*dev), GFP_KERNEL);
+	dev = kzalloc(sizeof(struct pmf_device), GFP_KERNEL);
 	if (dev == NULL) {
 		DBG("pmf: no memory !\n");
 		return -ENOMEM;
@@ -782,7 +781,7 @@ void pmf_unregister_driver(struct device_node *np)
 	struct pmf_device *dev;
 	unsigned long flags;
 
-	DBG("pmf: unregistering driver for node %pOF\n", np);
+	DBG("pmf: unregistering driver for node %s\n", np->full_name);
 
 	spin_lock_irqsave(&pmf_lock, flags);
 	dev = pmf_find_device(np);
@@ -941,7 +940,7 @@ int pmf_call_one(struct pmf_function *func, struct pmf_args *args)
 	void *instdata = NULL;
 	int rc = 0;
 
-	DBG(" ** pmf_call_one(%pOF/%s) **\n", dev->node, func->name);
+	DBG(" ** pmf_call_one(%s/%s) **\n", dev->node->full_name, func->name);
 
 	if (dev->handlers->begin)
 		instdata = dev->handlers->begin(func, args);

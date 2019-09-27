@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  *  HID driver for the Prodikeys PC-MIDI Keyboard
  *  providing midi & extra multimedia keys functionality
@@ -7,9 +6,14 @@
  *
  *  Controls for Octave Shift Up/Down, Channel, and
  *  Sustain Duration available via sysfs.
+ *
  */
 
 /*
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License as published by the Free
+ * Software Foundation; either version 2 of the License, or (at your option)
+ * any later version.
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
@@ -235,9 +239,9 @@ drop_note:
 	return;
 }
 
-static void pcmidi_sustained_note_release(struct timer_list *t)
+static void pcmidi_sustained_note_release(unsigned long data)
 {
-	struct pcmidi_sustain *pms = from_timer(pms, t, timer);
+	struct pcmidi_sustain *pms = (struct pcmidi_sustain *)data;
 
 	pcmidi_send_note(pms->pm, pms->status, pms->note, pms->velocity);
 	pms->in_use = 0;
@@ -252,7 +256,8 @@ static void init_sustain_timers(struct pcmidi_snd *pm)
 		pms = &pm->sustained_notes[i];
 		pms->in_use = 0;
 		pms->pm = pm;
-		timer_setup(&pms->timer, pcmidi_sustained_note_release, 0);
+		setup_timer(&pms->timer, pcmidi_sustained_note_release,
+			(unsigned long)pms);
 	}
 }
 
@@ -588,7 +593,7 @@ static void pcmidi_in_trigger(struct snd_rawmidi_substream *substream, int up)
 	pm->in_triggered = up;
 }
 
-static const struct snd_rawmidi_ops pcmidi_in_ops = {
+static struct snd_rawmidi_ops pcmidi_in_ops = {
 	.open = pcmidi_in_open,
 	.close = pcmidi_in_close,
 	.trigger = pcmidi_in_trigger

@@ -1,9 +1,10 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Analog devices AD5380, AD5381, AD5382, AD5383, AD5390, AD5391, AD5392
  * multi-channel Digital to Analog Converters driver
  *
  * Copyright 2011 Analog Devices Inc.
+ *
+ * Licensed under the GPL-2.
  */
 
 #include <linux/device.h>
@@ -157,7 +158,7 @@ static unsigned int ad5380_info_to_reg(struct iio_chan_spec const *chan,
 	long info)
 {
 	switch (info) {
-	case IIO_CHAN_INFO_RAW:
+	case 0:
 		return AD5380_REG_DATA(chan->address);
 	case IIO_CHAN_INFO_CALIBBIAS:
 		return AD5380_REG_OFFSET(chan->address);
@@ -236,6 +237,7 @@ static int ad5380_read_raw(struct iio_dev *indio_dev,
 static const struct iio_info ad5380_info = {
 	.read_raw = ad5380_read_raw,
 	.write_raw = ad5380_write_raw,
+	.driver_module = THIS_MODULE,
 };
 
 static struct iio_chan_spec_ext_info ad5380_ext_info[] = {

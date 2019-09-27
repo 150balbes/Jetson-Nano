@@ -45,6 +45,7 @@
 #include "sunxi-common-regulators.dtsi"
 
 #include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/pinctrl/sun4i-a10.h>
 
 / {
 	model = "Sinlinx SinA31s Core Board";
@@ -135,7 +136,7 @@
 /* UART0 pads available on core board */
 &uart0 {
 	pinctrl-names = "default";
-	pinctrl-0 = <&uart0_ph_pins>;
+	pinctrl-0 = <&uart0_pins_a>;
 	status = "okay";
 };
 

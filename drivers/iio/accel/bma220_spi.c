@@ -1,8 +1,11 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /**
  * BMA220 Digital triaxial acceleration sensor driver
  *
  * Copyright (c) 2016, Intel Corporation.
+ *
+ * This file is subject to the terms and conditions of version 2 of
+ * the GNU General Public License. See the file COPYING in the main
+ * directory of this archive for more details.
  */
 
 #include <linux/acpi.h>
@@ -183,6 +186,7 @@ static int bma220_write_raw(struct iio_dev *indio_dev,
 }
 
 static const struct iio_info bma220_info = {
+	.driver_module		= THIS_MODULE,
 	.read_raw		= bma220_read_raw,
 	.write_raw		= bma220_write_raw,
 	.attrs			= &bma220_attribute_group,

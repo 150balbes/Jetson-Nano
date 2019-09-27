@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  *  Copyright IBM Corp. 2012
  *  Author(s): Holger Dengler <hd@linux.vnet.ibm.com>

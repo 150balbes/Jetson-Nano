@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  *	Driver for Allwinner A10 PS2 host controller
  *

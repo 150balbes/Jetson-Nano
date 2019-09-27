@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  *  linux/arch/arm/mach-omap1/clock.c
  *
@@ -7,6 +6,10 @@
  *
  *  Modified to use omap shared clock framework by
  *  Tony Lindgren <tony@atomide.com>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  */
 #include <linux/kernel.h>
 #include <linux/export.h>
@@ -717,6 +720,26 @@ EXPORT_SYMBOL(clk_get_parent);
  * OMAP specific clock functions shared between omap1 and omap2
  */
 
+int __initdata mpurate;
+
+/*
+ * By default we use the rate set by the bootloader.
+ * You can override this with mpurate= cmdline option.
+ */
+static int __init omap_clk_setup(char *str)
+{
+	get_option(&str, &mpurate);
+
+	if (!mpurate)
+		return 1;
+
+	if (mpurate < 1000)
+		mpurate *= 1000000;
+
+	return 1;
+}
+__setup("mpurate=", omap_clk_setup);
+
 /* Used for clocks that always have same value as the parent clock */
 unsigned long followparent_recalc(struct clk *clk)
 {
@@ -965,7 +988,7 @@ late_initcall(omap_clk_enable_autoidle_all);
 
 static struct dentry *clk_debugfs_root;
 
-static int debug_clock_show(struct seq_file *s, void *unused)
+static int clk_dbg_show_summary(struct seq_file *s, void *unused)
 {
 	struct clk *c;
 	struct clk *pa;
@@ -985,46 +1008,96 @@ static int debug_clock_show(struct seq_file *s, void *unused)
 	return 0;
 }
 
-DEFINE_SHOW_ATTRIBUTE(debug_clock);
-
-static void clk_debugfs_register_one(struct clk *c)
+static int clk_dbg_open(struct inode *inode, struct file *file)
 {
+	return single_open(file, clk_dbg_show_summary, inode->i_private);
+}
+
+static const struct file_operations debug_clock_fops = {
+	.open           = clk_dbg_open,
+	.read           = seq_read,
+	.llseek         = seq_lseek,
+	.release        = single_release,
+};
+
+static int clk_debugfs_register_one(struct clk *c)
+{
+	int err;
 	struct dentry *d;
 	struct clk *pa = c->parent;
 
 	d = debugfs_create_dir(c->name, pa ? pa->dent : clk_debugfs_root);
+	if (!d)
+		return -ENOMEM;
 	c->dent = d;
 
-	debugfs_create_u8("usecount", S_IRUGO, c->dent, &c->usecount);
-	debugfs_create_ulong("rate", S_IRUGO, c->dent, &c->rate);
-	debugfs_create_x8("flags", S_IRUGO, c->dent, &c->flags);
+	d = debugfs_create_u8("usecount", S_IRUGO, c->dent, &c->usecount);
+	if (!d) {
+		err = -ENOMEM;
+		goto err_out;
+	}
+	d = debugfs_create_ulong("rate", S_IRUGO, c->dent, &c->rate);
+	if (!d) {
+		err = -ENOMEM;
+		goto err_out;
+	}
+	d = debugfs_create_x8("flags", S_IRUGO, c->dent, &c->flags);
+	if (!d) {
+		err = -ENOMEM;
+		goto err_out;
+	}
+	return 0;
+
+err_out:
+	debugfs_remove_recursive(c->dent);
+	return err;
 }
 
-static void clk_debugfs_register(struct clk *c)
+static int clk_debugfs_register(struct clk *c)
 {
+	int err;
 	struct clk *pa = c->parent;
 
-	if (pa && !pa->dent)
-		clk_debugfs_register(pa);
+	if (pa && !pa->dent) {
+		err = clk_debugfs_register(pa);
+		if (err)
+			return err;
+	}
 
-	if (!c->dent)
-		clk_debugfs_register_one(c);
+	if (!c->dent) {
+		err = clk_debugfs_register_one(c);
+		if (err)
+			return err;
+	}
+	return 0;
 }
 
 static int __init clk_debugfs_init(void)
 {
 	struct clk *c;
 	struct dentry *d;
+	int err;
 
 	d = debugfs_create_dir("clock", NULL);
+	if (!d)
+		return -ENOMEM;
 	clk_debugfs_root = d;
 
-	list_for_each_entry(c, &clocks, node)
-		clk_debugfs_register(c);
+	list_for_each_entry(c, &clocks, node) {
+		err = clk_debugfs_register(c);
+		if (err)
+			goto err_out;
+	}
 
-	debugfs_create_file("summary", S_IRUGO, d, NULL, &debug_clock_fops);
+	d = debugfs_create_file("summary", S_IRUGO,
+		d, NULL, &debug_clock_fops);
+	if (!d)
+		return -ENOMEM;
 
 	return 0;
+err_out:
+	debugfs_remove_recursive(clk_debugfs_root);
+	return err;
 }
 late_initcall(clk_debugfs_init);
 

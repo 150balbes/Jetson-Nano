@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _LINUX_FIREWIRE_H
 #define _LINUX_FIREWIRE_H
 

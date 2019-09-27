@@ -28,7 +28,18 @@
 #include <sys/timex.h>
 #include <string.h>
 #include <signal.h>
+#ifdef KTEST
 #include "../kselftest.h"
+#else
+static inline int ksft_exit_pass(void)
+{
+	exit(0);
+}
+static inline int ksft_exit_fail(void)
+{
+	exit(1);
+}
+#endif
 
 #define CALLS_PER_LOOP 64
 #define NSEC_PER_SEC 1000000000ULL
@@ -107,7 +118,7 @@ int consistency_test(int clock_type, unsigned long seconds)
 	start_str = ctime(&t);
 
 	while (seconds == -1 || now - then < seconds) {
-		inconsistent = -1;
+		inconsistent = 0;
 
 		/* Fill list */
 		for (i = 0; i < CALLS_PER_LOOP; i++)
@@ -119,7 +130,7 @@ int consistency_test(int clock_type, unsigned long seconds)
 				inconsistent = i;
 
 		/* display inconsistency */
-		if (inconsistent >= 0) {
+		if (inconsistent) {
 			unsigned long long delta;
 
 			printf("\%s\n", start_str);

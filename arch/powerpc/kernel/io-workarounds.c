@@ -1,23 +1,24 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Support PCI IO workaround
  *
  *  Copyright (C) 2006 Benjamin Herrenschmidt <benh@kernel.crashing.org>
  *		       IBM, Corp.
  *  (C) Copyright 2007-2008 TOSHIBA CORPORATION
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  */
 #undef DEBUG
 
 #include <linux/kernel.h>
-#include <linux/sched/mm.h>	/* for init_mm */
+#include <linux/sched.h>	/* for init_mm */
 
 #include <asm/io.h>
 #include <asm/machdep.h>
 #include <asm/pgtable.h>
 #include <asm/ppc-pci.h>
 #include <asm/io-workarounds.h>
-#include <asm/pte-walk.h>
-
 
 #define IOWA_MAX_BUS	8
 
@@ -74,7 +75,8 @@ struct iowa_bus *iowa_mem_find_bus(const PCI_IO_ADDR addr)
 		 * We won't find huge pages here (iomem). Also can't hit
 		 * a page table free due to init_mm
 		 */
-		ptep = find_init_mm_pte(vaddr, &hugepage_shift);
+		ptep = __find_linux_pte_or_hugepte(init_mm.pgd, vaddr,
+						   NULL, &hugepage_shift);
 		if (ptep == NULL)
 			paddr = 0;
 		else {
@@ -150,10 +152,10 @@ static const struct ppc_pci_io iowa_pci_io = {
 
 #ifdef CONFIG_PPC_INDIRECT_MMIO
 static void __iomem *iowa_ioremap(phys_addr_t addr, unsigned long size,
-				  pgprot_t prot, void *caller)
+				  unsigned long flags, void *caller)
 {
 	struct iowa_bus *bus;
-	void __iomem *res = __ioremap_caller(addr, size, prot, caller);
+	void __iomem *res = __ioremap_caller(addr, size, flags, caller);
 	int busno;
 
 	bus = iowa_pci_find(0, (unsigned long)addr);
@@ -190,7 +192,7 @@ void iowa_register_bus(struct pci_controller *phb, struct ppc_pci_io *ops,
 
 	if (iowa_bus_count >= IOWA_MAX_BUS) {
 		pr_err("IOWA:Too many pci bridges, "
-		       "workarounds disabled for %pOF\n", np);
+		       "workarounds disabled for %s\n", np->full_name);
 		return;
 	}
 
@@ -205,6 +207,6 @@ void iowa_register_bus(struct pci_controller *phb, struct ppc_pci_io *ops,
 
 	iowa_bus_count++;
 
-	pr_debug("IOWA:[%d]Add bus, %pOF.\n", iowa_bus_count-1, np);
+	pr_debug("IOWA:[%d]Add bus, %s.\n", iowa_bus_count-1, np->full_name);
 }
 

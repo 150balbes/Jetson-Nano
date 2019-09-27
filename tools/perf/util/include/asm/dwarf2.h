@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 
 #ifndef PERF_DWARF2_H
 #define PERF_DWARF2_H

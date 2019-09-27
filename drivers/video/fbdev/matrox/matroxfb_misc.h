@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __MATROXFB_MISC_H__
 #define __MATROXFB_MISC_H__
 

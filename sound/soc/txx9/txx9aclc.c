@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Generic TXx9 ACLC platform driver
  *
@@ -6,6 +5,10 @@
  *
  * Based on RBTX49xx patch from CELF patch archive.
  * (C) Copyright TOSHIBA CORPORATION 2004-2006
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  */
 
 #include <linux/module.h>
@@ -19,8 +22,6 @@
 #include <sound/pcm_params.h>
 #include <sound/soc.h>
 #include "txx9aclc.h"
-
-#define DRV_NAME "txx9aclc"
 
 static struct txx9aclc_soc_device {
 	struct txx9aclc_dmadata dmadata[2];
@@ -52,7 +53,6 @@ static int txx9aclc_pcm_hw_params(struct snd_pcm_substream *substream,
 {
 	struct snd_soc_pcm_runtime *rtd = snd_pcm_substream_chip(substream);
 	struct snd_pcm_runtime *runtime = substream->runtime;
-	struct snd_soc_component *component = snd_soc_rtdcom_lookup(rtd, DRV_NAME);
 	struct txx9aclc_dmadata *dmadata = runtime->private_data;
 	int ret;
 
@@ -60,13 +60,13 @@ static int txx9aclc_pcm_hw_params(struct snd_pcm_substream *substream,
 	if (ret < 0)
 		return ret;
 
-	dev_dbg(component->dev,
+	dev_dbg(rtd->platform->dev,
 		"runtime->dma_area = %#lx dma_addr = %#lx dma_bytes = %zd "
 		"runtime->min_align %ld\n",
 		(unsigned long)runtime->dma_area,
 		(unsigned long)runtime->dma_addr, runtime->dma_bytes,
 		runtime->min_align);
-	dev_dbg(component->dev,
+	dev_dbg(rtd->platform->dev,
 		"periods %d period_bytes %d stream %d\n",
 		params_periods(params), params_period_bytes(params),
 		substream->stream);
@@ -206,7 +206,7 @@ static void txx9aclc_dma_tasklet(unsigned long data)
 static int txx9aclc_pcm_trigger(struct snd_pcm_substream *substream, int cmd)
 {
 	struct txx9aclc_dmadata *dmadata = substream->runtime->private_data;
-	struct txx9aclc_plat_drvdata *drvdata = txx9aclc_drvdata;
+	struct txx9aclc_plat_drvdata *drvdata =txx9aclc_drvdata;
 	void __iomem *base = drvdata->base;
 	unsigned long flags;
 	int ret = 0;
@@ -271,7 +271,7 @@ static int txx9aclc_pcm_close(struct snd_pcm_substream *substream)
 	return 0;
 }
 
-static const struct snd_pcm_ops txx9aclc_pcm_ops = {
+static struct snd_pcm_ops txx9aclc_pcm_ops = {
 	.open		= txx9aclc_pcm_open,
 	.close		= txx9aclc_pcm_close,
 	.ioctl		= snd_pcm_lib_ioctl,
@@ -287,8 +287,7 @@ static int txx9aclc_pcm_new(struct snd_soc_pcm_runtime *rtd)
 	struct snd_card *card = rtd->card->snd_card;
 	struct snd_soc_dai *dai = rtd->cpu_dai;
 	struct snd_pcm *pcm = rtd->pcm;
-	struct snd_soc_component *component = snd_soc_rtdcom_lookup(rtd, DRV_NAME);
-	struct platform_device *pdev = to_platform_device(component->dev);
+	struct platform_device *pdev = to_platform_device(rtd->platform->dev);
 	struct txx9aclc_soc_device *dev;
 	struct resource *r;
 	int i;
@@ -310,10 +309,8 @@ static int txx9aclc_pcm_new(struct snd_soc_pcm_runtime *rtd)
 		if (ret)
 			goto exit;
 	}
-
-	snd_pcm_lib_preallocate_pages_for_all(pcm, SNDRV_DMA_TYPE_DEV,
+	return snd_pcm_lib_preallocate_pages_for_all(pcm, SNDRV_DMA_TYPE_DEV,
 		card->dev, 64 * 1024, 4 * 1024 * 1024);
-	return 0;
 
 exit:
 	for (i = 0; i < 2; i++) {
@@ -343,7 +340,7 @@ static bool filter(struct dma_chan *chan, void *param)
 static int txx9aclc_dma_init(struct txx9aclc_soc_device *dev,
 			     struct txx9aclc_dmadata *dmadata)
 {
-	struct txx9aclc_plat_drvdata *drvdata = txx9aclc_drvdata;
+	struct txx9aclc_plat_drvdata *drvdata =txx9aclc_drvdata;
 	struct txx9dmac_slave *ds = &dmadata->dma_slave;
 	dma_cap_mask_t mask;
 
@@ -374,15 +371,15 @@ static int txx9aclc_dma_init(struct txx9aclc_soc_device *dev,
 	return 0;
 }
 
-static int txx9aclc_pcm_probe(struct snd_soc_component *component)
+static int txx9aclc_pcm_probe(struct snd_soc_platform *platform)
 {
-	snd_soc_component_set_drvdata(component, &txx9aclc_soc_device);
+	snd_soc_platform_set_drvdata(platform, &txx9aclc_soc_device);
 	return 0;
 }
 
-static void txx9aclc_pcm_remove(struct snd_soc_component *component)
+static int txx9aclc_pcm_remove(struct snd_soc_platform *platform)
 {
-	struct txx9aclc_soc_device *dev = snd_soc_component_get_drvdata(component);
+	struct txx9aclc_soc_device *dev = snd_soc_platform_get_drvdata(platform);
 	struct txx9aclc_plat_drvdata *drvdata = txx9aclc_drvdata;
 	void __iomem *base = drvdata->base;
 	int i;
@@ -395,7 +392,6 @@ static void txx9aclc_pcm_remove(struct snd_soc_component *component)
 	for (i = 0; i < 2; i++) {
 		struct txx9aclc_dmadata *dmadata = &dev->dmadata[i];
 		struct dma_chan *chan = dmadata->dma_chan;
-
 		if (chan) {
 			dmadata->frag_count = -1;
 			dmaengine_terminate_all(chan);
@@ -403,10 +399,10 @@ static void txx9aclc_pcm_remove(struct snd_soc_component *component)
 		}
 		dev->dmadata[i].dma_chan = NULL;
 	}
+	return 0;
 }
 
-static const struct snd_soc_component_driver txx9aclc_soc_component = {
-	.name		= DRV_NAME,
+static struct snd_soc_platform_driver txx9aclc_soc_platform = {
 	.probe		= txx9aclc_pcm_probe,
 	.remove		= txx9aclc_pcm_remove,
 	.ops		= &txx9aclc_pcm_ops,
@@ -415,8 +411,8 @@ static const struct snd_soc_component_driver txx9aclc_soc_component = {
 
 static int txx9aclc_soc_platform_probe(struct platform_device *pdev)
 {
-	return devm_snd_soc_register_component(&pdev->dev,
-					&txx9aclc_soc_component, NULL, 0);
+	return devm_snd_soc_register_platform(&pdev->dev,
+					      &txx9aclc_soc_platform);
 }
 
 static struct platform_driver txx9aclc_pcm_driver = {

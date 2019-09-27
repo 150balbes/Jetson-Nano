@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __LINUX_BCM963XX_TAG_H__
 #define __LINUX_BCM963XX_TAG_H__
 

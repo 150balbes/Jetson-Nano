@@ -1,5 +1,27 @@
-// SPDX-License-Identifier: GPL-2.0
-/* Copyright(c) 2009-2012  Realtek Corporation.*/
+/******************************************************************************
+ *
+ * Copyright(c) 2009-2012  Realtek Corporation.
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of version 2 of the GNU General Public License as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ *
+ * The full GNU General Public License is included in this distribution in the
+ * file called LICENSE.
+ *
+ * Contact Information:
+ * wlanfae <wlanfae@realtek.com>
+ * Realtek Corporation, No. 2, Innovation Road II, Hsinchu Science Park,
+ * Hsinchu 300, Taiwan.
+ *
+ * Larry Finger <Larry.Finger@lwfinger.net>
+ *
+ *****************************************************************************/
 
 #include "../wifi.h"
 #include "../pci.h"
@@ -280,7 +302,7 @@ bool rtl8723e_rx_query_desc(struct ieee80211_hw *hw,
 	status->isfirst_ampdu = (bool)((GET_RX_DESC_PAGGR(pdesc) == 1) &&
 				       (GET_RX_DESC_FAGGR(pdesc) == 1));
 	status->timestamp_low = GET_RX_DESC_TSFL(pdesc);
-	status->rx_is40mhzpacket = (bool)GET_RX_DESC_BW(pdesc);
+	status->rx_is40Mhzpacket = (bool)GET_RX_DESC_BW(pdesc);
 	status->is_ht = (bool)GET_RX_DESC_RXHT(pdesc);
 
 	status->is_cck = RX_HAL_IS_CCK_RATE(status->rate);
@@ -294,11 +316,11 @@ bool rtl8723e_rx_query_desc(struct ieee80211_hw *hw,
 	if (status->crc)
 		rx_status->flag |= RX_FLAG_FAILED_FCS_CRC;
 
-	if (status->rx_is40mhzpacket)
-		rx_status->bw = RATE_INFO_BW_40;
+	if (status->rx_is40Mhzpacket)
+		rx_status->flag |= RX_FLAG_40MHZ;
 
 	if (status->is_ht)
-		rx_status->encoding = RX_ENC_HT;
+		rx_status->flag |= RX_FLAG_HT;
 
 	rx_status->flag |= RX_FLAG_MACTIME_START;
 
@@ -595,7 +617,7 @@ void rtl8723e_set_desc(struct ieee80211_hw *hw, u8 *pdesc,
 			SET_TX_DESC_NEXT_DESC_ADDRESS(pdesc, *(u32 *) val);
 			break;
 		default:
-			WARN_ONCE(true, "rtl8723ae: ERR txdesc :%d not processed\n",
+			RT_ASSERT(false, "ERR txdesc :%d not process\n",
 				  desc_name);
 			break;
 		}
@@ -614,15 +636,14 @@ void rtl8723e_set_desc(struct ieee80211_hw *hw, u8 *pdesc,
 			SET_RX_DESC_EOR(pdesc, 1);
 			break;
 		default:
-			WARN_ONCE(true, "rtl8723ae: ERR rxdesc :%d not processed\n",
+			RT_ASSERT(false, "ERR rxdesc :%d not process\n",
 				  desc_name);
 			break;
 		}
 	}
 }
 
-u64 rtl8723e_get_desc(struct ieee80211_hw *hw,
-		      u8 *pdesc, bool istx, u8 desc_name)
+u32 rtl8723e_get_desc(u8 *pdesc, bool istx, u8 desc_name)
 {
 	u32 ret = 0;
 
@@ -635,7 +656,7 @@ u64 rtl8723e_get_desc(struct ieee80211_hw *hw,
 			ret = GET_TX_DESC_TX_BUFFER_ADDRESS(pdesc);
 			break;
 		default:
-			WARN_ONCE(true, "rtl8723ae: ERR txdesc :%d not processed\n",
+			RT_ASSERT(false, "ERR txdesc :%d not process\n",
 				  desc_name);
 			break;
 		}
@@ -651,7 +672,7 @@ u64 rtl8723e_get_desc(struct ieee80211_hw *hw,
 			ret = GET_RX_DESC_BUFF_ADDR(pdesc);
 			break;
 		default:
-			WARN_ONCE(true, "rtl8723ae: ERR rxdesc :%d not processed\n",
+			RT_ASSERT(false, "ERR rxdesc :%d not process\n",
 				  desc_name);
 			break;
 		}
@@ -665,7 +686,7 @@ bool rtl8723e_is_tx_desc_closed(struct ieee80211_hw *hw,
 	struct rtl_pci *rtlpci = rtl_pcidev(rtl_pcipriv(hw));
 	struct rtl8192_tx_ring *ring = &rtlpci->tx_ring[hw_queue];
 	u8 *entry = (u8 *)(&ring->desc[ring->idx]);
-	u8 own = (u8)rtl8723e_get_desc(hw, entry, true, HW_DESC_OWN);
+	u8 own = (u8)rtl8723e_get_desc(entry, true, HW_DESC_OWN);
 
 	/**
 	 *beacon packet will only use the first
@@ -686,4 +707,11 @@ void rtl8723e_tx_polling(struct ieee80211_hw *hw, u8 hw_queue)
 		rtl_write_word(rtlpriv, REG_PCIE_CTRL_REG,
 			       BIT(0) << (hw_queue));
 	}
+}
+
+u32 rtl8723e_rx_command_packet(struct ieee80211_hw *hw,
+			       const struct rtl_stats *status,
+			       struct sk_buff *skb)
+{
+	return 0;
 }

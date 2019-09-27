@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __API_DEBUG_INTERNAL_H__
 #define __API_DEBUG_INTERNAL_H__
 

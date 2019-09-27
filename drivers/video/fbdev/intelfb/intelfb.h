@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _INTELFB_H
 #define _INTELFB_H
 

@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __DRBD_STRINGS_H
 #define __DRBD_STRINGS_H
 

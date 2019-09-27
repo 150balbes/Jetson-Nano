@@ -1,8 +1,7 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __MT2063_H__
 #define __MT2063_H__
 
-#include <media/dvb_frontend.h>
+#include "dvb_frontend.h"
 
 struct mt2063_config {
 	u8 tuner_address;

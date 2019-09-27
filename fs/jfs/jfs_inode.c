@@ -1,6 +1,19 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  *   Copyright (C) International Business Machines Corp., 2000-2004
+ *
+ *   This program is free software;  you can redistribute it and/or modify
+ *   it under the terms of the GNU General Public License as published by
+ *   the Free Software Foundation; either version 2 of the License, or
+ *   (at your option) any later version.
+ *
+ *   This program is distributed in the hope that it will be useful,
+ *   but WITHOUT ANY WARRANTY;  without even the implied warranty of
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See
+ *   the GNU General Public License for more details.
+ *
+ *   You should have received a copy of the GNU General Public License
+ *   along with this program;  if not, write to the Free Software
+ *   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
  */
 
 #include <linux/fs.h>
@@ -32,6 +45,24 @@ void jfs_set_inode_flags(struct inode *inode)
 			S_DIRSYNC | S_SYNC);
 }
 
+void jfs_get_inode_flags(struct jfs_inode_info *jfs_ip)
+{
+	unsigned int flags = jfs_ip->vfs_inode.i_flags;
+
+	jfs_ip->mode2 &= ~(JFS_IMMUTABLE_FL | JFS_APPEND_FL | JFS_NOATIME_FL |
+			   JFS_DIRSYNC_FL | JFS_SYNC_FL);
+	if (flags & S_IMMUTABLE)
+		jfs_ip->mode2 |= JFS_IMMUTABLE_FL;
+	if (flags & S_APPEND)
+		jfs_ip->mode2 |= JFS_APPEND_FL;
+	if (flags & S_NOATIME)
+		jfs_ip->mode2 |= JFS_NOATIME_FL;
+	if (flags & S_DIRSYNC)
+		jfs_ip->mode2 |= JFS_DIRSYNC_FL;
+	if (flags & S_SYNC)
+		jfs_ip->mode2 |= JFS_SYNC_FL;
+}
+
 /*
  * NAME:	ialloc()
  *
@@ -48,7 +79,8 @@ struct inode *ialloc(struct inode *parent, umode_t mode)
 	inode = new_inode(sb);
 	if (!inode) {
 		jfs_warn("ialloc: new_inode returned NULL!");
-		return ERR_PTR(-ENOMEM);
+		rc = -ENOMEM;
+		goto fail;
 	}
 
 	jfs_inode = JFS_IP(inode);
@@ -56,6 +88,8 @@ struct inode *ialloc(struct inode *parent, umode_t mode)
 	rc = diAlloc(parent, S_ISDIR(mode), inode);
 	if (rc) {
 		jfs_warn("ialloc: diAlloc returned %d!", rc);
+		if (rc == -EIO)
+			make_bad_inode(inode);
 		goto fail_put;
 	}
 
@@ -125,10 +159,9 @@ fail_drop:
 	dquot_drop(inode);
 	inode->i_flags |= S_NOQUOTA;
 	clear_nlink(inode);
-	discard_new_inode(inode);
-	return ERR_PTR(rc);
-
+	unlock_new_inode(inode);
 fail_put:
 	iput(inode);
+fail:
 	return ERR_PTR(rc);
 }

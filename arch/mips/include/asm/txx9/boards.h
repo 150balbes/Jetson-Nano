@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifdef CONFIG_TOSHIBA_JMR3927
 BOARD_VEC(jmr3927_vec)
 #endif

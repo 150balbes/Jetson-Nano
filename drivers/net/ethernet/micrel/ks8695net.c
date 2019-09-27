@@ -1,6 +1,15 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Micrel KS8695 (Centaur) Ethernet.
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License as
+ * published by the Free Software Foundation; either version 2 of the
+ * License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.	 See the GNU
+ * General Public License for more details.
  *
  * Copyright 2008 Simtec Electronics
  *		  Daniel Silverstone <dsilvers@simtec.co.uk>
@@ -382,7 +391,7 @@ ks8695_tx_irq(int irq, void *dev_id)
 					 ksp->tx_buffers[buff_n].dma_ptr,
 					 ksp->tx_buffers[buff_n].length,
 					 DMA_TO_DEVICE);
-			dev_consume_skb_irq(ksp->tx_buffers[buff_n].skb);
+			dev_kfree_skb_irq(ksp->tx_buffers[buff_n].skb);
 			ksp->tx_buffers[buff_n].skb = NULL;
 			ksp->tx_ring_used--;
 		}
@@ -510,7 +519,7 @@ static int ks8695_rx(struct ks8695_priv *ksp, int budget)
 			/* Relinquish the SKB to the network layer */
 			skb_put(skb, pktlen);
 			skb->protocol = eth_type_trans(skb, ndev);
-			napi_gro_receive(&ksp->napi, skb);
+			netif_receive_skb(skb);
 
 			/* Record stats */
 			ndev->stats.rx_packets++;
@@ -552,17 +561,18 @@ rx_finished:
 static int ks8695_poll(struct napi_struct *napi, int budget)
 {
 	struct ks8695_priv *ksp = container_of(napi, struct ks8695_priv, napi);
+	unsigned long  work_done;
+
 	unsigned long isr = readl(KS8695_IRQ_VA + KS8695_INTEN);
 	unsigned long mask_bit = 1 << ks8695_get_rx_enable_bit(ksp);
-	int work_done;
 
 	work_done = ks8695_rx(ksp, budget);
 
-	if (work_done < budget && napi_complete_done(napi, work_done)) {
+	if (work_done < budget) {
 		unsigned long flags;
-
 		spin_lock_irqsave(&ksp->rx_lock, flags);
-		/* enable rx interrupt */
+		__napi_complete(napi);
+		/*enable rx interrupt*/
 		writel(isr | mask_bit, KS8695_IRQ_VA + KS8695_INTEN);
 		spin_unlock_irqrestore(&ksp->rx_lock, flags);
 	}
@@ -845,94 +855,85 @@ ks8695_set_msglevel(struct net_device *ndev, u32 value)
 }
 
 /**
- *	ks8695_wan_get_link_ksettings - Get device-specific settings.
+ *	ks8695_wan_get_settings - Get device-specific settings.
  *	@ndev: The network device to read settings from
  *	@cmd: The ethtool structure to read into
  */
 static int
-ks8695_wan_get_link_ksettings(struct net_device *ndev,
-			      struct ethtool_link_ksettings *cmd)
+ks8695_wan_get_settings(struct net_device *ndev, struct ethtool_cmd *cmd)
 {
 	struct ks8695_priv *ksp = netdev_priv(ndev);
 	u32 ctrl;
-	u32 supported, advertising;
 
 	/* All ports on the KS8695 support these... */
-	supported = (SUPPORTED_10baseT_Half | SUPPORTED_10baseT_Full |
+	cmd->supported = (SUPPORTED_10baseT_Half | SUPPORTED_10baseT_Full |
 			  SUPPORTED_100baseT_Half | SUPPORTED_100baseT_Full |
 			  SUPPORTED_TP | SUPPORTED_MII);
+	cmd->transceiver = XCVR_INTERNAL;
 
-	advertising = ADVERTISED_TP | ADVERTISED_MII;
-	cmd->base.port = PORT_MII;
-	supported |= (SUPPORTED_Autoneg | SUPPORTED_Pause);
-	cmd->base.phy_address = 0;
+	cmd->advertising = ADVERTISED_TP | ADVERTISED_MII;
+	cmd->port = PORT_MII;
+	cmd->supported |= (SUPPORTED_Autoneg | SUPPORTED_Pause);
+	cmd->phy_address = 0;
 
 	ctrl = readl(ksp->phyiface_regs + KS8695_WMC);
 	if ((ctrl & WMC_WAND) == 0) {
 		/* auto-negotiation is enabled */
-		advertising |= ADVERTISED_Autoneg;
+		cmd->advertising |= ADVERTISED_Autoneg;
 		if (ctrl & WMC_WANA100F)
-			advertising |= ADVERTISED_100baseT_Full;
+			cmd->advertising |= ADVERTISED_100baseT_Full;
 		if (ctrl & WMC_WANA100H)
-			advertising |= ADVERTISED_100baseT_Half;
+			cmd->advertising |= ADVERTISED_100baseT_Half;
 		if (ctrl & WMC_WANA10F)
-			advertising |= ADVERTISED_10baseT_Full;
+			cmd->advertising |= ADVERTISED_10baseT_Full;
 		if (ctrl & WMC_WANA10H)
-			advertising |= ADVERTISED_10baseT_Half;
+			cmd->advertising |= ADVERTISED_10baseT_Half;
 		if (ctrl & WMC_WANAP)
-			advertising |= ADVERTISED_Pause;
-		cmd->base.autoneg = AUTONEG_ENABLE;
+			cmd->advertising |= ADVERTISED_Pause;
+		cmd->autoneg = AUTONEG_ENABLE;
 
-		cmd->base.speed = (ctrl & WMC_WSS) ? SPEED_100 : SPEED_10;
-		cmd->base.duplex = (ctrl & WMC_WDS) ?
+		ethtool_cmd_speed_set(cmd,
+				      (ctrl & WMC_WSS) ? SPEED_100 : SPEED_10);
+		cmd->duplex = (ctrl & WMC_WDS) ?
 			DUPLEX_FULL : DUPLEX_HALF;
 	} else {
 		/* auto-negotiation is disabled */
-		cmd->base.autoneg = AUTONEG_DISABLE;
+		cmd->autoneg = AUTONEG_DISABLE;
 
-		cmd->base.speed = (ctrl & WMC_WANF100) ?
-					    SPEED_100 : SPEED_10;
-		cmd->base.duplex = (ctrl & WMC_WANFF) ?
+		ethtool_cmd_speed_set(cmd, ((ctrl & WMC_WANF100) ?
+					    SPEED_100 : SPEED_10));
+		cmd->duplex = (ctrl & WMC_WANFF) ?
 			DUPLEX_FULL : DUPLEX_HALF;
 	}
-
-	ethtool_convert_legacy_u32_to_link_mode(cmd->link_modes.supported,
-						supported);
-	ethtool_convert_legacy_u32_to_link_mode(cmd->link_modes.advertising,
-						advertising);
 
 	return 0;
 }
 
 /**
- *	ks8695_wan_set_link_ksettings - Set device-specific settings.
+ *	ks8695_wan_set_settings - Set device-specific settings.
  *	@ndev: The network device to configure
  *	@cmd: The settings to configure
  */
 static int
-ks8695_wan_set_link_ksettings(struct net_device *ndev,
-			      const struct ethtool_link_ksettings *cmd)
+ks8695_wan_set_settings(struct net_device *ndev, struct ethtool_cmd *cmd)
 {
 	struct ks8695_priv *ksp = netdev_priv(ndev);
 	u32 ctrl;
-	u32 advertising;
 
-	ethtool_convert_link_mode_to_legacy_u32(&advertising,
-						cmd->link_modes.advertising);
-
-	if ((cmd->base.speed != SPEED_10) && (cmd->base.speed != SPEED_100))
+	if ((cmd->speed != SPEED_10) && (cmd->speed != SPEED_100))
 		return -EINVAL;
-	if ((cmd->base.duplex != DUPLEX_HALF) &&
-	    (cmd->base.duplex != DUPLEX_FULL))
+	if ((cmd->duplex != DUPLEX_HALF) && (cmd->duplex != DUPLEX_FULL))
 		return -EINVAL;
-	if (cmd->base.port != PORT_MII)
+	if (cmd->port != PORT_MII)
 		return -EINVAL;
-	if ((cmd->base.autoneg != AUTONEG_DISABLE) &&
-	    (cmd->base.autoneg != AUTONEG_ENABLE))
+	if (cmd->transceiver != XCVR_INTERNAL)
+		return -EINVAL;
+	if ((cmd->autoneg != AUTONEG_DISABLE) &&
+	    (cmd->autoneg != AUTONEG_ENABLE))
 		return -EINVAL;
 
-	if (cmd->base.autoneg == AUTONEG_ENABLE) {
-		if ((advertising & (ADVERTISED_10baseT_Half |
+	if (cmd->autoneg == AUTONEG_ENABLE) {
+		if ((cmd->advertising & (ADVERTISED_10baseT_Half |
 				ADVERTISED_10baseT_Full |
 				ADVERTISED_100baseT_Half |
 				ADVERTISED_100baseT_Full)) == 0)
@@ -942,13 +943,13 @@ ks8695_wan_set_link_ksettings(struct net_device *ndev,
 
 		ctrl &= ~(WMC_WAND | WMC_WANA100F | WMC_WANA100H |
 			  WMC_WANA10F | WMC_WANA10H);
-		if (advertising & ADVERTISED_100baseT_Full)
+		if (cmd->advertising & ADVERTISED_100baseT_Full)
 			ctrl |= WMC_WANA100F;
-		if (advertising & ADVERTISED_100baseT_Half)
+		if (cmd->advertising & ADVERTISED_100baseT_Half)
 			ctrl |= WMC_WANA100H;
-		if (advertising & ADVERTISED_10baseT_Full)
+		if (cmd->advertising & ADVERTISED_10baseT_Full)
 			ctrl |= WMC_WANA10F;
-		if (advertising & ADVERTISED_10baseT_Half)
+		if (cmd->advertising & ADVERTISED_10baseT_Half)
 			ctrl |= WMC_WANA10H;
 
 		/* force a re-negotiation */
@@ -961,9 +962,9 @@ ks8695_wan_set_link_ksettings(struct net_device *ndev,
 		ctrl |= WMC_WAND;
 		ctrl &= ~(WMC_WANF100 | WMC_WANFF);
 
-		if (cmd->base.speed == SPEED_100)
+		if (cmd->speed == SPEED_100)
 			ctrl |= WMC_WANF100;
-		if (cmd->base.duplex == DUPLEX_FULL)
+		if (cmd->duplex == DUPLEX_FULL)
 			ctrl |= WMC_WANFF;
 
 		writel(ctrl, ksp->phyiface_regs + KS8695_WMC);
@@ -1042,12 +1043,12 @@ static const struct ethtool_ops ks8695_ethtool_ops = {
 static const struct ethtool_ops ks8695_wan_ethtool_ops = {
 	.get_msglevel	= ks8695_get_msglevel,
 	.set_msglevel	= ks8695_set_msglevel,
+	.get_settings	= ks8695_wan_get_settings,
+	.set_settings	= ks8695_wan_set_settings,
 	.nway_reset	= ks8695_wan_nwayreset,
 	.get_link	= ethtool_op_get_link,
 	.get_pauseparam = ks8695_wan_get_pause,
 	.get_drvinfo	= ks8695_get_drvinfo,
-	.get_link_ksettings = ks8695_wan_get_link_ksettings,
-	.set_link_ksettings = ks8695_wan_set_link_ksettings,
 };
 
 /* Network device interface functions */
@@ -1155,7 +1156,7 @@ ks8695_timeout(struct net_device *ndev)
  *	sk_buff and adds it to the TX ring. It then kicks the TX DMA
  *	engine to ensure transmission begins.
  */
-static netdev_tx_t
+static int
 ks8695_start_xmit(struct sk_buff *skb, struct net_device *ndev)
 {
 	struct ks8695_priv *ksp = netdev_priv(ndev);

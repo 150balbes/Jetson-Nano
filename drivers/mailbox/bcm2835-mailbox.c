@@ -1,8 +1,14 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  *  Copyright (C) 2010,2015 Broadcom
  *  Copyright (C) 2013-2014 Lubomir Rintel
  *  Copyright (C) 2013 Craig McGeachie
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This device provides a mechanism for writing to the mailboxes,
+ * that are shared between the ARM and the VideoCore processor
  *
  * Parts of the driver are based on:
  *  - arch/arm/mach-bcm2708/vcio.c file written by Gray Girling that was
@@ -128,7 +134,7 @@ static struct mbox_chan *bcm2835_mbox_index_xlate(struct mbox_controller *mbox,
 		    const struct of_phandle_args *sp)
 {
 	if (sp->args_count != 0)
-		return ERR_PTR(-EINVAL);
+		return NULL;
 
 	return &mbox->chans[0];
 }
@@ -172,7 +178,7 @@ static int bcm2835_mbox_probe(struct platform_device *pdev)
 	if (!mbox->controller.chans)
 		return -ENOMEM;
 
-	ret = devm_mbox_controller_register(dev, &mbox->controller);
+	ret = mbox_controller_register(&mbox->controller);
 	if (ret)
 		return ret;
 
@@ -180,6 +186,13 @@ static int bcm2835_mbox_probe(struct platform_device *pdev)
 	dev_info(dev, "mailbox enabled\n");
 
 	return ret;
+}
+
+static int bcm2835_mbox_remove(struct platform_device *pdev)
+{
+	struct bcm2835_mbox *mbox = platform_get_drvdata(pdev);
+	mbox_controller_unregister(&mbox->controller);
+	return 0;
 }
 
 static const struct of_device_id bcm2835_mbox_of_match[] = {
@@ -194,6 +207,7 @@ static struct platform_driver bcm2835_mbox_driver = {
 		.of_match_table = bcm2835_mbox_of_match,
 	},
 	.probe		= bcm2835_mbox_probe,
+	.remove		= bcm2835_mbox_remove,
 };
 module_platform_driver(bcm2835_mbox_driver);
 

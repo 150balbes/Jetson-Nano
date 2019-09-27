@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef PMU_EVENTS_H
 #define PMU_EVENTS_H
 
@@ -11,12 +10,6 @@ struct pmu_event {
 	const char *desc;
 	const char *topic;
 	const char *long_desc;
-	const char *pmu;
-	const char *unit;
-	const char *perpkg;
-	const char *metric_expr;
-	const char *metric_name;
-	const char *metric_group;
 };
 
 /*

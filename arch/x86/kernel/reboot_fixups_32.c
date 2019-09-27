@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * This is a good place to put board specific reboot fixups.
  *

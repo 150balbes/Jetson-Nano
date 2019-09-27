@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0
 obj-$(CONFIG_SPEAKUP_SYNTH_ACNTSA) += speakup_acntsa.o
 obj-$(CONFIG_SPEAKUP_SYNTH_ACNTPC) += speakup_acntpc.o
 obj-$(CONFIG_SPEAKUP_SYNTH_APOLLO) += speakup_apollo.o
@@ -26,7 +25,6 @@ speakup-y := \
 	kobjects.o \
 	selection.o \
 	serialio.o \
-	spk_ttyio.o \
 	synth.o \
 	thread.o \
 	varhandlers.o

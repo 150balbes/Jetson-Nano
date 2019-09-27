@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __ARCH_ORION5X_MPP_H
 #define __ARCH_ORION5X_MPP_H
 

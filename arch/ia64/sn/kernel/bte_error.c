@@ -27,12 +27,15 @@
  * transfers to be queued.
  */
 
+void bte_error_handler(unsigned long);
+
 /*
  * Wait until all BTE related CRBs are completed
  * and then reset the interfaces.
  */
-static int shub1_bte_error_handler(struct nodepda_s *err_nodepda)
+int shub1_bte_error_handler(unsigned long _nodepda)
 {
+	struct nodepda_s *err_nodepda = (struct nodepda_s *)_nodepda;
 	struct timer_list *recovery_timer = &err_nodepda->bte_recovery_timer;
 	nasid_t nasid;
 	int i;
@@ -128,8 +131,9 @@ static int shub1_bte_error_handler(struct nodepda_s *err_nodepda)
  * Wait until all BTE related CRBs are completed
  * and then reset the interfaces.
  */
-static int shub2_bte_error_handler(struct nodepda_s *err_nodepda)
+int shub2_bte_error_handler(unsigned long _nodepda)
 {
+	struct nodepda_s *err_nodepda = (struct nodepda_s *)_nodepda;
 	struct timer_list *recovery_timer = &err_nodepda->bte_recovery_timer;
 	struct bteinfo_s *bte;
 	nasid_t nasid;
@@ -166,8 +170,9 @@ static int shub2_bte_error_handler(struct nodepda_s *err_nodepda)
  * Wait until all BTE related CRBs are completed
  * and then reset the interfaces.
  */
-void bte_error_handler(struct nodepda_s *err_nodepda)
+void bte_error_handler(unsigned long _nodepda)
 {
+	struct nodepda_s *err_nodepda = (struct nodepda_s *)_nodepda;
 	spinlock_t *recovery_lock = &err_nodepda->bte_recovery_lock;
 	int i;
 	unsigned long irq_flags;
@@ -194,12 +199,12 @@ void bte_error_handler(struct nodepda_s *err_nodepda)
 	}
 
 	if (is_shub1()) {
-		if (shub1_bte_error_handler(err_nodepda)) {
+		if (shub1_bte_error_handler(_nodepda)) {
 			spin_unlock_irqrestore(recovery_lock, irq_flags);
 			return;
 		}
 	} else {
-		if (shub2_bte_error_handler(err_nodepda)) {
+		if (shub2_bte_error_handler(_nodepda)) {
 			spin_unlock_irqrestore(recovery_lock, irq_flags);
 			return;
 		}
@@ -250,6 +255,6 @@ bte_crb_error_handler(cnodeid_t cnode, int btenum,
 
 	BTE_PRINTK(("Got an error on cnode %d bte %d: HW error type 0x%x\n",
 		bte->bte_cnode, bte->bte_num, ioe->ie_errortype));
-	bte_error_handler(NODEPDA(cnode));
+	bte_error_handler((unsigned long) NODEPDA(cnode));
 }
 

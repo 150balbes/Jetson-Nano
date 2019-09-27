@@ -1,8 +1,7 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * Implementation of the symbol table type.
  *
- * Author : Stephen Smalley, <sds@tycho.nsa.gov>
+ * Author : Stephen Smalley, <sds@epoch.ncsc.mil>
  */
 #include <linux/kernel.h>
 #include <linux/string.h>

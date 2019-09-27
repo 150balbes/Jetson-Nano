@@ -1,7 +1,6 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * ni_labpc ISA DMA support.
- */
+*/
 
 #ifndef _NI_LABPC_ISADMA_H
 #define _NI_LABPC_ISADMA_H

@@ -1,8 +1,19 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Tegra host1x Interrupt Management
  *
  * Copyright (c) 2010-2013, NVIDIA Corporation.
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms and conditions of the GNU General Public License,
+ * version 2, as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 #include <linux/clk.h>
@@ -133,7 +144,7 @@ static const action_handler action_handlers[HOST1X_INTR_ACTION_COUNT] = {
 static void run_handlers(struct list_head completed[HOST1X_INTR_ACTION_COUNT])
 {
 	struct list_head *head = completed;
-	unsigned int i;
+	int i;
 
 	for (i = 0; i < HOST1X_INTR_ACTION_COUNT; ++i, ++head) {
 		action_handler handler = action_handlers[i];
@@ -200,11 +211,11 @@ static void syncpt_thresh_work(struct work_struct *work)
 				host1x_syncpt_load(host->syncpt + id));
 }
 
-int host1x_intr_add_action(struct host1x *host, struct host1x_syncpt *syncpt,
-			   u32 thresh, enum host1x_intr_action action,
-			   void *data, struct host1x_waitlist *waiter,
-			   void **ref)
+int host1x_intr_add_action(struct host1x *host, unsigned int id, u32 thresh,
+			   enum host1x_intr_action action, void *data,
+			   struct host1x_waitlist *waiter, void **ref)
 {
+	struct host1x_syncpt *syncpt;
 	int queue_was_empty;
 
 	if (waiter == NULL) {
@@ -223,17 +234,19 @@ int host1x_intr_add_action(struct host1x *host, struct host1x_syncpt *syncpt,
 	waiter->data = data;
 	waiter->count = 1;
 
+	syncpt = host->syncpt + id;
+
 	spin_lock(&syncpt->intr.lock);
 
 	queue_was_empty = list_empty(&syncpt->intr.wait_head);
 
 	if (add_waiter_to_queue(waiter, &syncpt->intr.wait_head)) {
 		/* added at head of list - new threshold value */
-		host1x_hw_intr_set_syncpt_threshold(host, syncpt->id, thresh);
+		host1x_hw_intr_set_syncpt_threshold(host, id, thresh);
 
 		/* added as first waiter - enable interrupt */
 		if (queue_was_empty)
-			host1x_hw_intr_enable_syncpt_intr(host, syncpt->id);
+			host1x_hw_intr_enable_syncpt_intr(host, id);
 	}
 
 	spin_unlock(&syncpt->intr.lock);

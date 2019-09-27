@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * I2C bus driver for Kontron COM modules
  *
@@ -6,6 +5,15 @@
  * Author: Michael Brunner <michael.brunner@kontron.com>
  *
  * The driver is based on the i2c-ocores driver by Peter Korsgaard.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License 2 as published
+ * by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
  */
 
 #include <linux/module.h>
@@ -116,13 +124,14 @@ static int kempld_i2c_process(struct kempld_i2c_data *i2c)
 		/* 10 bit address? */
 		if (i2c->msg->flags & I2C_M_TEN) {
 			addr = 0xf0 | ((i2c->msg->addr >> 7) & 0x6);
-			/* Set read bit if necessary */
-			addr |= (i2c->msg->flags & I2C_M_RD) ? 1 : 0;
 			i2c->state = STATE_ADDR10;
 		} else {
-			addr = i2c_8bit_addr_from_msg(i2c->msg);
+			addr = (i2c->msg->addr << 1);
 			i2c->state = STATE_START;
 		}
+
+		/* Set read bit if necessary */
+		addr |= (i2c->msg->flags & I2C_M_RD) ? 1 : 0;
 
 		kempld_write8(pld, KEMPLD_I2C_DATA, addr);
 		kempld_write8(pld, KEMPLD_I2C_CMD, I2C_CMD_START);
@@ -280,7 +289,7 @@ static const struct i2c_algorithm kempld_i2c_algorithm = {
 	.functionality	= kempld_i2c_func,
 };
 
-static const struct i2c_adapter kempld_i2c_adapter = {
+static struct i2c_adapter kempld_i2c_adapter = {
 	.owner		= THIS_MODULE,
 	.name		= "i2c-kempld",
 	.class		= I2C_CLASS_HWMON | I2C_CLASS_SPD,

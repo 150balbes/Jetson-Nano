@@ -1,32 +1,22 @@
-// SPDX-License-Identifier: GPL-2.0
-//
-// Copyright 2012 Steffen Trumtrar, Pengutronix
-//
-// based on imx27.dtsi
+/*
+ * Copyright 2012 Steffen Trumtrar, Pengutronix
+ *
+ * based on imx27.dtsi
+ *
+ * This program is free software; you can redistribute it and/or modify it under
+ * the terms of the GNU General Public License version 2 as published by the
+ * Free Software Foundation.
+ */
 
+#include "skeleton.dtsi"
 #include "imx35-pinfunc.h"
 
 / {
-	#address-cells = <1>;
-	#size-cells = <1>;
-	/*
-	 * The decompressor and also some bootloaders rely on a
-	 * pre-existing /chosen node to be available to insert the
-	 * command line and merge other ATAGS info.
-	 */
-	chosen {};
-
 	aliases {
 		ethernet0 = &fec;
 		gpio0 = &gpio1;
 		gpio1 = &gpio2;
 		gpio2 = &gpio3;
-		i2c0 = &i2c1;
-		i2c1 = &i2c2;
-		i2c2 = &i2c3;
-		mmc0 = &esdhc1;
-		mmc1 = &esdhc2;
-		mmc2 = &esdhc3;
 		serial0 = &uart1;
 		serial1 = &uart2;
 		serial2 = &uart3;
@@ -35,13 +25,12 @@
 	};
 
 	cpus {
-		#address-cells = <1>;
+		#address-cells = <0>;
 		#size-cells = <0>;
 
-		cpu@0 {
+		cpu {
 			compatible = "arm,arm1136jf-s";
 			device_type = "cpu";
-			reg = <0>;
 		};
 	};
 
@@ -137,7 +126,7 @@
 				status = "disabled";
 			};
 
-			spi1: spi@43fa4000 {
+			spi1: cspi@43fa4000 {
 				#address-cells = <1>;
 				#size-cells = <0>;
 				compatible = "fsl,imx35-cspi";
@@ -178,7 +167,7 @@
 				status = "disabled";
 			};
 
-			spi2: spi@50010000 {
+			spi2: cspi@50010000 {
 				#address-cells = <1>;
 				#size-cells = <0>;
 				compatible = "fsl,imx35-cspi";
@@ -303,7 +292,7 @@
 			};
 
 			can1: can@53fe4000 {
-				compatible = "fsl,imx35-flexcan", "fsl,imx25-flexcan";
+				compatible = "fsl,imx35-flexcan", "fsl,p1010-flexcan";
 				reg = <0x53fe4000 0x1000>;
 				clocks = <&clks 33>, <&clks 33>;
 				clock-names = "ipg", "per";
@@ -312,7 +301,7 @@
 			};
 
 			can2: can@53fe8000 {
-				compatible = "fsl,imx35-flexcan", "fsl,imx25-flexcan";
+				compatible = "fsl,imx35-flexcan", "fsl,p1010-flexcan";
 				reg = <0x53fe8000 0x1000>;
 				clocks = <&clks 34>, <&clks 34>;
 				clock-names = "ipg", "per";
@@ -402,13 +391,11 @@
 		usbphy0: usb-phy@0 {
 			reg = <0>;
 			compatible = "usb-nop-xceiv";
-			#phy-cells = <0>;
 		};
 
 		usbphy1: usb-phy@1 {
 			reg = <1>;
 			compatible = "usb-nop-xceiv";
-			#phy-cells = <0>;
 		};
 	};
 };

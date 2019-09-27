@@ -1,7 +1,25 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /******************************************************************************
  *
+ * GPL LICENSE SUMMARY
+ *
  * Copyright(c) 2008 - 2014 Intel Corporation. All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of version 2 of the GNU General Public License as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110,
+ * USA
+ *
+ * The full GNU General Public License is included in this distribution
+ * in the file called COPYING.
  *
  * Contact Information:
  *  Intel Linux Wireless <linuxwifi@intel.com>
@@ -301,7 +319,8 @@ int iwlagn_tx_skb(struct iwl_priv *priv,
 		if (noa_data &&
 		    pskb_expand_head(skb, 0, noa_data->length,
 				     GFP_ATOMIC) == 0) {
-			skb_put_data(skb, noa_data->data, noa_data->length);
+			memcpy(skb_put(skb, noa_data->length),
+			       noa_data->data, noa_data->length);
 			hdr = (struct ieee80211_hdr *)skb->data;
 		}
 	}

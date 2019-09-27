@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * arch/arm/mach-w90x900/include/mach/mfp.h
  *
@@ -7,6 +6,11 @@
  * Wan ZongShun <mcuos.com@gmail.com>
  *
  * Based on arch/arm/mach-s3c2410/include/mach/map.h
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation;version 2 of the License.
+ *
  */
 
 #ifndef __ASM_ARCH_MFP_H

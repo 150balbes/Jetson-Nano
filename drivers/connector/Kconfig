@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0-only
 
 menuconfig CONNECTOR
 	tristate "Connector - unified userspace <-> kernelspace linker"

@@ -49,7 +49,6 @@
 #include <linux/vmalloc.h>
 #include <linux/mm.h>
 #include <asm/pgtable.h>
-#include <rdma/uverbs_ioctl.h>
 #include "mmap.h"
 
 /**
@@ -151,18 +150,17 @@ done:
  * rvt_create_mmap_info - allocate information for hfi1_mmap
  * @rdi: rvt dev struct
  * @size: size in bytes to map
- * @udata: user data (must be valid!)
+ * @context: user context
  * @obj: opaque pointer to a cq, wq etc
  *
  * Return: rvt_mmap struct on success
  */
-struct rvt_mmap_info *rvt_create_mmap_info(struct rvt_dev_info *rdi, u32 size,
-					   struct ib_udata *udata, void *obj)
+struct rvt_mmap_info *rvt_create_mmap_info(struct rvt_dev_info *rdi,
+					   u32 size,
+					   struct ib_ucontext *context,
+					   void *obj)
 {
 	struct rvt_mmap_info *ip;
-
-	if (!udata)
-		return ERR_PTR(-EINVAL);
 
 	ip = kmalloc_node(sizeof(*ip), GFP_KERNEL, rdi->dparms.node);
 	if (!ip)
@@ -179,9 +177,7 @@ struct rvt_mmap_info *rvt_create_mmap_info(struct rvt_dev_info *rdi, u32 size,
 
 	INIT_LIST_HEAD(&ip->pending_mmaps);
 	ip->size = size;
-	ip->context =
-		container_of(udata, struct uverbs_attr_bundle, driver_udata)
-			->context;
+	ip->context = context;
 	ip->obj = obj;
 	kref_init(&ip->ref);
 

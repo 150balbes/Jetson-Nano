@@ -71,11 +71,10 @@ gk110b_grctx_pack_tpc[] = {
 
 const struct gf100_grctx_func
 gk110b_grctx = {
-	.main  = gf100_grctx_generate_main,
+	.main  = gk104_grctx_generate_main,
 	.unkn  = gk104_grctx_generate_unkn,
 	.hub   = gk110_grctx_pack_hub,
-	.gpc_0 = gk110_grctx_pack_gpc_0,
-	.gpc_1 = gk110_grctx_pack_gpc_1,
+	.gpc   = gk110_grctx_pack_gpc,
 	.zcull = gf100_grctx_pack_zcull,
 	.tpc   = gk110b_grctx_pack_tpc,
 	.ppc   = gk110_grctx_pack_ppc,
@@ -92,13 +91,4 @@ gk110b_grctx = {
 	.attrib_nr = 0x218,
 	.alpha_nr_max = 0x7ff,
 	.alpha_nr = 0x648,
-	.patch_ltc = gk104_grctx_generate_patch_ltc,
-	.sm_id = gf100_grctx_generate_sm_id,
-	.tpc_nr = gf100_grctx_generate_tpc_nr,
-	.rop_mapping = gf117_grctx_generate_rop_mapping,
-	.alpha_beta_tables = gk104_grctx_generate_alpha_beta_tables,
-	.dist_skip_table = gf117_grctx_generate_dist_skip_table,
-	.gpc_tpc_nr = gk104_grctx_generate_gpc_tpc_nr,
-	.r418800 = gk104_grctx_generate_r418800,
-	.r419eb0 = gk110_grctx_generate_r419eb0,
 };

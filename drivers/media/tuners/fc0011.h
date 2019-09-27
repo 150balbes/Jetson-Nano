@@ -1,8 +1,7 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef LINUX_FC0011_H_
 #define LINUX_FC0011_H_
 
-#include <media/dvb_frontend.h>
+#include "dvb_frontend.h"
 
 
 /** struct fc0011_config - fc0011 hardware config

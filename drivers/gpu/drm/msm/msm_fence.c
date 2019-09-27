@@ -1,10 +1,21 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (C) 2013-2016 Red Hat
  * Author: Rob Clark <robdclark@gmail.com>
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License version 2 as published by
+ * the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License along with
+ * this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include <linux/dma-fence.h>
+#include <linux/fence.h>
 
 #include "msm_drv.h"
 #include "msm_fence.h"
@@ -20,8 +31,8 @@ msm_fence_context_alloc(struct drm_device *dev, const char *name)
 		return ERR_PTR(-ENOMEM);
 
 	fctx->dev = dev;
-	strncpy(fctx->name, name, sizeof(fctx->name));
-	fctx->context = dma_fence_context_alloc(1);
+	fctx->name = name;
+	fctx->context = fence_context_alloc(1);
 	init_waitqueue_head(&fctx->event);
 	spin_lock_init(&fctx->spinlock);
 
@@ -88,39 +99,53 @@ void msm_update_fence(struct msm_fence_context *fctx, uint32_t fence)
 }
 
 struct msm_fence {
-	struct dma_fence base;
 	struct msm_fence_context *fctx;
+	struct fence base;
 };
 
-static inline struct msm_fence *to_msm_fence(struct dma_fence *fence)
+static inline struct msm_fence *to_msm_fence(struct fence *fence)
 {
 	return container_of(fence, struct msm_fence, base);
 }
 
-static const char *msm_fence_get_driver_name(struct dma_fence *fence)
+static const char *msm_fence_get_driver_name(struct fence *fence)
 {
 	return "msm";
 }
 
-static const char *msm_fence_get_timeline_name(struct dma_fence *fence)
+static const char *msm_fence_get_timeline_name(struct fence *fence)
 {
 	struct msm_fence *f = to_msm_fence(fence);
 	return f->fctx->name;
 }
 
-static bool msm_fence_signaled(struct dma_fence *fence)
+static bool msm_fence_enable_signaling(struct fence *fence)
+{
+	return true;
+}
+
+static bool msm_fence_signaled(struct fence *fence)
 {
 	struct msm_fence *f = to_msm_fence(fence);
 	return fence_completed(f->fctx, f->base.seqno);
 }
 
-static const struct dma_fence_ops msm_fence_ops = {
+static void msm_fence_release(struct fence *fence)
+{
+	struct msm_fence *f = to_msm_fence(fence);
+	kfree_rcu(f, base.rcu);
+}
+
+static const struct fence_ops msm_fence_ops = {
 	.get_driver_name = msm_fence_get_driver_name,
 	.get_timeline_name = msm_fence_get_timeline_name,
+	.enable_signaling = msm_fence_enable_signaling,
 	.signaled = msm_fence_signaled,
+	.wait = fence_default_wait,
+	.release = msm_fence_release,
 };
 
-struct dma_fence *
+struct fence *
 msm_fence_alloc(struct msm_fence_context *fctx)
 {
 	struct msm_fence *f;
@@ -131,8 +156,8 @@ msm_fence_alloc(struct msm_fence_context *fctx)
 
 	f->fctx = fctx;
 
-	dma_fence_init(&f->base, &msm_fence_ops, &fctx->spinlock,
-		       fctx->context, ++fctx->last_fence);
+	fence_init(&f->base, &msm_fence_ops, &fctx->spinlock,
+			fctx->context, ++fctx->last_fence);
 
 	return &f->base;
 }

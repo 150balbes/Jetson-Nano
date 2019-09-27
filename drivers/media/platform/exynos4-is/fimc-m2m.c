@@ -1,9 +1,13 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Samsung S5P/EXYNOS4 SoC series FIMC (video postprocessor) driver
  *
  * Copyright (C) 2012 - 2013 Samsung Electronics Co., Ltd.
  * Sylwester Nawrocki <s.nawrocki@samsung.com>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published
+ * by the Free Software Foundation, either version 2 of the License,
+ * or (at your option) any later version.
  */
 
 #include <linux/module.h>
@@ -232,13 +236,22 @@ static int fimc_m2m_querycap(struct file *file, void *fh,
 				     struct v4l2_capability *cap)
 {
 	struct fimc_dev *fimc = video_drvdata(file);
+	unsigned int caps;
 
-	__fimc_vidioc_querycap(&fimc->pdev->dev, cap);
+	/*
+	 * This is only a mem-to-mem video device. The capture and output
+	 * device capability flags are left only for backward compatibility
+	 * and are scheduled for removal.
+	 */
+	caps = V4L2_CAP_STREAMING | V4L2_CAP_VIDEO_M2M_MPLANE |
+		V4L2_CAP_VIDEO_CAPTURE_MPLANE | V4L2_CAP_VIDEO_OUTPUT_MPLANE;
+
+	__fimc_vidioc_querycap(&fimc->pdev->dev, cap, caps);
 	return 0;
 }
 
-static int fimc_m2m_enum_fmt(struct file *file, void *priv,
-			     struct v4l2_fmtdesc *f)
+static int fimc_m2m_enum_fmt_mplane(struct file *file, void *priv,
+				    struct v4l2_fmtdesc *f)
 {
 	struct fimc_fmt *fmt;
 
@@ -247,7 +260,7 @@ static int fimc_m2m_enum_fmt(struct file *file, void *priv,
 	if (!fmt)
 		return -EINVAL;
 
-	strscpy(f->description, fmt->name, sizeof(f->description));
+	strncpy(f->description, fmt->name, sizeof(f->description) - 1);
 	f->pixelformat = fmt->fourcc;
 	return 0;
 }
@@ -378,80 +391,60 @@ static int fimc_m2m_s_fmt_mplane(struct file *file, void *fh,
 	return 0;
 }
 
-static int fimc_m2m_g_selection(struct file *file, void *fh,
-				struct v4l2_selection *s)
+static int fimc_m2m_cropcap(struct file *file, void *fh,
+			    struct v4l2_cropcap *cr)
 {
 	struct fimc_ctx *ctx = fh_to_ctx(fh);
 	struct fimc_frame *frame;
 
-	frame = ctx_get_frame(ctx, s->type);
+	frame = ctx_get_frame(ctx, cr->type);
 	if (IS_ERR(frame))
 		return PTR_ERR(frame);
 
-	switch (s->target) {
-	case V4L2_SEL_TGT_CROP:
-	case V4L2_SEL_TGT_CROP_DEFAULT:
-	case V4L2_SEL_TGT_CROP_BOUNDS:
-		if (s->type != V4L2_BUF_TYPE_VIDEO_OUTPUT)
-			return -EINVAL;
-		break;
-	case V4L2_SEL_TGT_COMPOSE:
-	case V4L2_SEL_TGT_COMPOSE_DEFAULT:
-	case V4L2_SEL_TGT_COMPOSE_BOUNDS:
-		if (s->type != V4L2_BUF_TYPE_VIDEO_CAPTURE)
-			return -EINVAL;
-		break;
-	default:
-		return -EINVAL;
-	}
+	cr->bounds.left = 0;
+	cr->bounds.top = 0;
+	cr->bounds.width = frame->o_width;
+	cr->bounds.height = frame->o_height;
+	cr->defrect = cr->bounds;
 
-	switch (s->target) {
-	case V4L2_SEL_TGT_CROP:
-	case V4L2_SEL_TGT_COMPOSE:
-		s->r.left = frame->offs_h;
-		s->r.top = frame->offs_v;
-		s->r.width = frame->width;
-		s->r.height = frame->height;
-		break;
-	case V4L2_SEL_TGT_CROP_DEFAULT:
-	case V4L2_SEL_TGT_CROP_BOUNDS:
-	case V4L2_SEL_TGT_COMPOSE_DEFAULT:
-	case V4L2_SEL_TGT_COMPOSE_BOUNDS:
-		s->r.left = 0;
-		s->r.top = 0;
-		s->r.width = frame->o_width;
-		s->r.height = frame->o_height;
-		break;
-	default:
-		return -EINVAL;
-	}
 	return 0;
 }
 
-static int fimc_m2m_try_selection(struct fimc_ctx *ctx,
-				  struct v4l2_selection *s)
+static int fimc_m2m_g_crop(struct file *file, void *fh, struct v4l2_crop *cr)
+{
+	struct fimc_ctx *ctx = fh_to_ctx(fh);
+	struct fimc_frame *frame;
+
+	frame = ctx_get_frame(ctx, cr->type);
+	if (IS_ERR(frame))
+		return PTR_ERR(frame);
+
+	cr->c.left = frame->offs_h;
+	cr->c.top = frame->offs_v;
+	cr->c.width = frame->width;
+	cr->c.height = frame->height;
+
+	return 0;
+}
+
+static int fimc_m2m_try_crop(struct fimc_ctx *ctx, struct v4l2_crop *cr)
 {
 	struct fimc_dev *fimc = ctx->fimc_dev;
 	struct fimc_frame *f;
 	u32 min_size, halign, depth = 0;
 	int i;
 
-	if (s->r.top < 0 || s->r.left < 0) {
+	if (cr->c.top < 0 || cr->c.left < 0) {
 		v4l2_err(&fimc->m2m.vfd,
 			"doesn't support negative values for top & left\n");
 		return -EINVAL;
 	}
-	if (s->type == V4L2_BUF_TYPE_VIDEO_CAPTURE) {
+	if (cr->type == V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE)
 		f = &ctx->d_frame;
-		if (s->target != V4L2_SEL_TGT_COMPOSE)
-			return -EINVAL;
-	} else if (s->type == V4L2_BUF_TYPE_VIDEO_OUTPUT) {
+	else if (cr->type == V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE)
 		f = &ctx->s_frame;
-		if (s->target != V4L2_SEL_TGT_CROP)
-			return -EINVAL;
-	} else {
+	else
 		return -EINVAL;
-	}
 
 	min_size = (f == &ctx->s_frame) ?
 		fimc->variant->min_inp_pixsize : fimc->variant->min_out_pixsize;
@@ -465,61 +458,61 @@ static int fimc_m2m_try_selection(struct fimc_ctx *ctx,
 	for (i = 0; i < f->fmt->memplanes; i++)
 		depth += f->fmt->depth[i];
 
-	v4l_bound_align_image(&s->r.width, min_size, f->o_width,
+	v4l_bound_align_image(&cr->c.width, min_size, f->o_width,
 			      ffs(min_size) - 1,
-			      &s->r.height, min_size, f->o_height,
+			      &cr->c.height, min_size, f->o_height,
 			      halign, 64/(ALIGN(depth, 8)));
 
 	/* adjust left/top if cropping rectangle is out of bounds */
-	if (s->r.left + s->r.width > f->o_width)
-		s->r.left = f->o_width - s->r.width;
-	if (s->r.top + s->r.height > f->o_height)
-		s->r.top = f->o_height - s->r.height;
+	if (cr->c.left + cr->c.width > f->o_width)
+		cr->c.left = f->o_width - cr->c.width;
+	if (cr->c.top + cr->c.height > f->o_height)
+		cr->c.top = f->o_height - cr->c.height;
 
-	s->r.left = round_down(s->r.left, min_size);
-	s->r.top  = round_down(s->r.top, fimc->variant->hor_offs_align);
+	cr->c.left = round_down(cr->c.left, min_size);
+	cr->c.top  = round_down(cr->c.top, fimc->variant->hor_offs_align);
 
 	dbg("l:%d, t:%d, w:%d, h:%d, f_w: %d, f_h: %d",
-	    s->r.left, s->r.top, s->r.width, s->r.height,
+	    cr->c.left, cr->c.top, cr->c.width, cr->c.height,
 	    f->f_width, f->f_height);
 
 	return 0;
 }
 
-static int fimc_m2m_s_selection(struct file *file, void *fh,
-				struct v4l2_selection *s)
+static int fimc_m2m_s_crop(struct file *file, void *fh, const struct v4l2_crop *crop)
 {
 	struct fimc_ctx *ctx = fh_to_ctx(fh);
 	struct fimc_dev *fimc = ctx->fimc_dev;
+	struct v4l2_crop cr = *crop;
 	struct fimc_frame *f;
 	int ret;
 
-	ret = fimc_m2m_try_selection(ctx, s);
+	ret = fimc_m2m_try_crop(ctx, &cr);
 	if (ret)
 		return ret;
 
-	f = (s->type == V4L2_BUF_TYPE_VIDEO_OUTPUT) ?
+	f = (cr.type == V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE) ?
 		&ctx->s_frame : &ctx->d_frame;
 
 	/* Check to see if scaling ratio is within supported range */
-	if (s->type == V4L2_BUF_TYPE_VIDEO_OUTPUT) {
-		ret = fimc_check_scaler_ratio(ctx, s->r.width,
-				s->r.height, ctx->d_frame.width,
+	if (cr.type == V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE) {
+		ret = fimc_check_scaler_ratio(ctx, cr.c.width,
+				cr.c.height, ctx->d_frame.width,
 				ctx->d_frame.height, ctx->rotation);
 	} else {
 		ret = fimc_check_scaler_ratio(ctx, ctx->s_frame.width,
-				ctx->s_frame.height, s->r.width,
-				s->r.height, ctx->rotation);
+				ctx->s_frame.height, cr.c.width,
+				cr.c.height, ctx->rotation);
 	}
 	if (ret) {
 		v4l2_err(&fimc->m2m.vfd, "Out of scaler range\n");
 		return -EINVAL;
 	}
 
-	f->offs_h = s->r.left;
-	f->offs_v = s->r.top;
-	f->width  = s->r.width;
-	f->height = s->r.height;
+	f->offs_h = cr.c.left;
+	f->offs_v = cr.c.top;
+	f->width  = cr.c.width;
+	f->height = cr.c.height;
 
 	fimc_ctx_state_set(FIMC_PARAMS, ctx);
 
@@ -528,8 +521,8 @@ static int fimc_m2m_s_selection(struct file *file, void *fh,
 
 static const struct v4l2_ioctl_ops fimc_m2m_ioctl_ops = {
 	.vidioc_querycap		= fimc_m2m_querycap,
-	.vidioc_enum_fmt_vid_cap	= fimc_m2m_enum_fmt,
-	.vidioc_enum_fmt_vid_out	= fimc_m2m_enum_fmt,
+	.vidioc_enum_fmt_vid_cap_mplane	= fimc_m2m_enum_fmt_mplane,
+	.vidioc_enum_fmt_vid_out_mplane	= fimc_m2m_enum_fmt_mplane,
 	.vidioc_g_fmt_vid_cap_mplane	= fimc_m2m_g_fmt_mplane,
 	.vidioc_g_fmt_vid_out_mplane	= fimc_m2m_g_fmt_mplane,
 	.vidioc_try_fmt_vid_cap_mplane	= fimc_m2m_try_fmt_mplane,
@@ -543,8 +536,9 @@ static const struct v4l2_ioctl_ops fimc_m2m_ioctl_ops = {
 	.vidioc_expbuf			= v4l2_m2m_ioctl_expbuf,
 	.vidioc_streamon		= v4l2_m2m_ioctl_streamon,
 	.vidioc_streamoff		= v4l2_m2m_ioctl_streamoff,
-	.vidioc_g_selection		= fimc_m2m_g_selection,
-	.vidioc_s_selection		= fimc_m2m_s_selection,
+	.vidioc_g_crop			= fimc_m2m_g_crop,
+	.vidioc_s_crop			= fimc_m2m_s_crop,
+	.vidioc_cropcap			= fimc_m2m_cropcap
 
 };
 
@@ -669,8 +663,8 @@ error_m2m_ctx:
 	v4l2_m2m_ctx_release(ctx->fh.m2m_ctx);
 error_c:
 	fimc_ctrls_delete(ctx);
-	v4l2_fh_del(&ctx->fh);
 error_fh:
+	v4l2_fh_del(&ctx->fh);
 	v4l2_fh_exit(&ctx->fh);
 	kfree(ctx);
 unlock:
@@ -710,7 +704,7 @@ static const struct v4l2_file_operations fimc_m2m_fops = {
 	.mmap		= v4l2_m2m_fop_mmap,
 };
 
-static const struct v4l2_m2m_ops m2m_ops = {
+static struct v4l2_m2m_ops m2m_ops = {
 	.device_run	= fimc_device_run,
 	.job_abort	= fimc_job_abort,
 };
@@ -731,8 +725,6 @@ int fimc_register_m2m_device(struct fimc_dev *fimc,
 	vfd->release = video_device_release_empty;
 	vfd->lock = &fimc->lock;
 	vfd->vfl_dir = VFL_DIR_M2M;
-	vfd->device_caps = V4L2_CAP_STREAMING | V4L2_CAP_VIDEO_M2M_MPLANE;
-	set_bit(V4L2_FL_QUIRK_INVERTED_CROP, &vfd->flags);
 
 	snprintf(vfd->name, sizeof(vfd->name), "fimc.%d.m2m", fimc->id);
 	video_set_drvdata(vfd, fimc);

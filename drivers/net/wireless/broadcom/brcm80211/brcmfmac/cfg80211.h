@@ -1,6 +1,17 @@
-// SPDX-License-Identifier: ISC
 /*
  * Copyright (c) 2010 Broadcom Corporation
+ *
+ * Permission to use, copy, modify, and/or distribute this software for any
+ * purpose with or without fee is hereby granted, provided that the above
+ * copyright notice and this permission notice appear in all copies.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+ * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+ * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY
+ * SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+ * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION
+ * OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN
+ * CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
 #ifndef BRCMFMAC_CFG80211_H
@@ -12,8 +23,6 @@
 #include "core.h"
 #include "fwil_types.h"
 #include "p2p.h"
-
-#define BRCMF_SCAN_IE_LEN_MAX		2048
 
 #define WL_NUM_SCAN_MAX			10
 #define WL_TLV_INFO_MAX			1024
@@ -104,12 +113,6 @@ struct brcmf_cfg80211_security {
 	u32 cipher_group;
 };
 
-enum brcmf_profile_fwsup {
-	BRCMF_PROFILE_FWSUP_NONE,
-	BRCMF_PROFILE_FWSUP_PSK,
-	BRCMF_PROFILE_FWSUP_1X
-};
-
 /**
  * struct brcmf_cfg80211_profile - profile information.
  *
@@ -121,7 +124,6 @@ struct brcmf_cfg80211_profile {
 	u8 bssid[ETH_ALEN];
 	struct brcmf_cfg80211_security sec;
 	struct brcmf_wsec_key key[BRCMF_MAX_DEFAULT_KEYS];
-	enum brcmf_profile_fwsup use_fwsup;
 };
 
 /**
@@ -129,20 +131,16 @@ struct brcmf_cfg80211_profile {
  *
  * @BRCMF_VIF_STATUS_READY: ready for operation.
  * @BRCMF_VIF_STATUS_CONNECTING: connect/join in progress.
- * @BRCMF_VIF_STATUS_CONNECTED: connected/joined successfully.
+ * @BRCMF_VIF_STATUS_CONNECTED: connected/joined succesfully.
  * @BRCMF_VIF_STATUS_DISCONNECTING: disconnect/disable in progress.
  * @BRCMF_VIF_STATUS_AP_CREATED: AP operation started.
- * @BRCMF_VIF_STATUS_EAP_SUCCUSS: EAPOL handshake successful.
- * @BRCMF_VIF_STATUS_ASSOC_SUCCESS: successful SET_SSID received.
  */
 enum brcmf_vif_status {
 	BRCMF_VIF_STATUS_READY,
 	BRCMF_VIF_STATUS_CONNECTING,
 	BRCMF_VIF_STATUS_CONNECTED,
 	BRCMF_VIF_STATUS_DISCONNECTING,
-	BRCMF_VIF_STATUS_AP_CREATED,
-	BRCMF_VIF_STATUS_EAP_SUCCESS,
-	BRCMF_VIF_STATUS_ASSOC_SUCCESS,
+	BRCMF_VIF_STATUS_AP_CREATED
 };
 
 /**
@@ -272,7 +270,8 @@ struct brcmf_cfg80211_wowl {
  * @scan_status: scan activity on the dongle.
  * @pub: common driver information.
  * @channel: current channel.
- * @int_escan_map: bucket map for which internal e-scan is done.
+ * @active_scan: current scan mode.
+ * @sched_escan: e-scan for scheduled scan support running.
  * @ibss_starter: indicates this sta is ibss starter.
  * @pwr_save: indicate whether dongle to support power save mode.
  * @dongle_up: indicate whether dongle up or not.
@@ -288,7 +287,6 @@ struct brcmf_cfg80211_wowl {
  * @vif_cnt: number of vif instances.
  * @vif_event: vif event signalling.
  * @wowl: wowl related information.
- * @pno: information of pno module.
  */
 struct brcmf_cfg80211_info {
 	struct wiphy *wiphy;
@@ -304,7 +302,8 @@ struct brcmf_cfg80211_info {
 	unsigned long scan_status;
 	struct brcmf_pub *pub;
 	u32 channel;
-	u32 int_escan_map;
+	bool active_scan;
+	bool sched_escan;
 	bool ibss_starter;
 	bool pwr_save;
 	bool dongle_up;
@@ -321,7 +320,6 @@ struct brcmf_cfg80211_info {
 	struct brcmu_d11inf d11inf;
 	struct brcmf_assoclist_le assoclist;
 	struct brcmf_cfg80211_wowl wowl;
-	struct brcmf_pno_info *pno;
 };
 
 /**
@@ -344,24 +342,20 @@ static inline struct wiphy *cfg_to_wiphy(struct brcmf_cfg80211_info *cfg)
 
 static inline struct brcmf_cfg80211_info *wiphy_to_cfg(struct wiphy *w)
 {
-	struct brcmf_pub *drvr = wiphy_priv(w);
-	return drvr->config;
+	return (struct brcmf_cfg80211_info *)(wiphy_priv(w));
 }
 
 static inline struct brcmf_cfg80211_info *wdev_to_cfg(struct wireless_dev *wd)
 {
-	return wiphy_to_cfg(wd->wiphy);
-}
-
-static inline struct brcmf_cfg80211_vif *wdev_to_vif(struct wireless_dev *wdev)
-{
-	return container_of(wdev, struct brcmf_cfg80211_vif, wdev);
+	return (struct brcmf_cfg80211_info *)(wdev_priv(wd));
 }
 
 static inline
 struct net_device *cfg_to_ndev(struct brcmf_cfg80211_info *cfg)
 {
-	return brcmf_get_ifp(cfg->pub, 0)->ndev;
+	struct brcmf_cfg80211_vif *vif;
+	vif = list_first_entry(&cfg->vif_list, struct brcmf_cfg80211_vif, list);
+	return vif->wdev.netdev;
 }
 
 static inline struct brcmf_cfg80211_info *ndev_to_cfg(struct net_device *ndev)
@@ -388,12 +382,11 @@ brcmf_cfg80211_connect_info *cfg_to_conn(struct brcmf_cfg80211_info *cfg)
 }
 
 struct brcmf_cfg80211_info *brcmf_cfg80211_attach(struct brcmf_pub *drvr,
-						  struct cfg80211_ops *ops,
+						  struct device *busdev,
 						  bool p2pdev_forced);
 void brcmf_cfg80211_detach(struct brcmf_cfg80211_info *cfg);
 s32 brcmf_cfg80211_up(struct net_device *ndev);
 s32 brcmf_cfg80211_down(struct net_device *ndev);
-struct cfg80211_ops *brcmf_cfg80211_get_ops(struct brcmf_mp_device *settings);
 enum nl80211_iftype brcmf_cfg80211_get_iftype(struct brcmf_if *ifp);
 
 struct brcmf_cfg80211_vif *brcmf_alloc_vif(struct brcmf_cfg80211_info *cfg,
@@ -403,6 +396,8 @@ void brcmf_free_vif(struct brcmf_cfg80211_vif *vif);
 s32 brcmf_vif_set_mgmt_ie(struct brcmf_cfg80211_vif *vif, s32 pktflag,
 			  const u8 *vndr_ie_buf, u32 vndr_ie_len);
 s32 brcmf_vif_clear_mgmt_ies(struct brcmf_cfg80211_vif *vif);
+const struct brcmf_tlv *
+brcmf_parse_tlvs(const void *buf, int buflen, uint key);
 u16 channel_to_chanspec(struct brcmu_d11inf *d11inf,
 			struct ieee80211_channel *ch);
 bool brcmf_get_vif_state_any(struct brcmf_cfg80211_info *cfg,

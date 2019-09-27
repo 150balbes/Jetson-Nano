@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * Copyright (C) 2004-6 Patrick Boettcher (patrick.boettcher@posteo.de)
  * see dvb-usb-init.c for copyright information.

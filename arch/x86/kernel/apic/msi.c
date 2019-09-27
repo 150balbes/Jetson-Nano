@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Support of MSI, HPET and DMAR interrupts.
  *
@@ -6,6 +5,10 @@
  *	Moved from arch/x86/kernel/apic/io_apic.c.
  * Jiang Liu <jiang.liu@linux.intel.com>
  *	Convert to hierarchical irqdomain
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  */
 #include <linux/mm.h>
 #include <linux/interrupt.h>
@@ -37,13 +40,17 @@ static void irq_msi_compose_msg(struct irq_data *data, struct msi_msg *msg)
 		((apic->irq_dest_mode == 0) ?
 			MSI_ADDR_DEST_MODE_PHYSICAL :
 			MSI_ADDR_DEST_MODE_LOGICAL) |
-		MSI_ADDR_REDIRECTION_CPU |
+		((apic->irq_delivery_mode != dest_LowestPrio) ?
+			MSI_ADDR_REDIRECTION_CPU :
+			MSI_ADDR_REDIRECTION_LOWPRI) |
 		MSI_ADDR_DEST_ID(cfg->dest_apicid);
 
 	msg->data =
 		MSI_DATA_TRIGGER_EDGE |
 		MSI_DATA_LEVEL_ASSERT |
-		MSI_DATA_DELIVERY_FIXED |
+		((apic->irq_delivery_mode != dest_LowestPrio) ?
+			MSI_DATA_DELIVERY_FIXED :
+			MSI_DATA_DELIVERY_LOWPRI) |
 		MSI_DATA_VECTOR(cfg->vector);
 }
 
@@ -76,7 +83,7 @@ int native_setup_msi_irqs(struct pci_dev *dev, int nvec, int type)
 	if (domain == NULL)
 		return -ENOSYS;
 
-	return msi_domain_alloc_irqs(domain, &dev->dev, nvec);
+	return pci_msi_domain_alloc_irqs(domain, dev, nvec, type);
 }
 
 void native_teardown_msi_irq(unsigned int irq)
@@ -130,20 +137,13 @@ static struct msi_domain_info pci_msi_domain_info = {
 	.handler_name	= "edge",
 };
 
-void __init arch_init_msi_domain(struct irq_domain *parent)
+void arch_init_msi_domain(struct irq_domain *parent)
 {
-	struct fwnode_handle *fn;
-
 	if (disable_apic)
 		return;
 
-	fn = irq_domain_alloc_named_fwnode("PCI-MSI");
-	if (fn) {
-		msi_default_domain =
-			pci_msi_create_irq_domain(fn, &pci_msi_domain_info,
-						  parent);
-		irq_domain_free_fwnode(fn);
-	}
+	msi_default_domain = pci_msi_create_irq_domain(NULL,
+					&pci_msi_domain_info, parent);
 	if (!msi_default_domain)
 		pr_warn("failed to initialize irqdomain for MSI/MSI-x.\n");
 }
@@ -168,18 +168,9 @@ static struct msi_domain_info pci_msi_ir_domain_info = {
 	.handler_name	= "edge",
 };
 
-struct irq_domain *arch_create_remap_msi_irq_domain(struct irq_domain *parent,
-						    const char *name, int id)
+struct irq_domain *arch_create_msi_irq_domain(struct irq_domain *parent)
 {
-	struct fwnode_handle *fn;
-	struct irq_domain *d;
-
-	fn = irq_domain_alloc_named_id_fwnode(name, id);
-	if (!fn)
-		return NULL;
-	d = pci_msi_create_irq_domain(fn, &pci_msi_ir_domain_info, parent);
-	irq_domain_free_fwnode(fn);
-	return d;
+	return pci_msi_create_irq_domain(NULL, &pci_msi_ir_domain_info, parent);
 }
 #endif
 
@@ -231,20 +222,13 @@ static struct irq_domain *dmar_get_irq_domain(void)
 {
 	static struct irq_domain *dmar_domain;
 	static DEFINE_MUTEX(dmar_lock);
-	struct fwnode_handle *fn;
 
 	mutex_lock(&dmar_lock);
-	if (dmar_domain)
-		goto out;
-
-	fn = irq_domain_alloc_named_fwnode("DMAR-MSI");
-	if (fn) {
-		dmar_domain = msi_create_irq_domain(fn, &dmar_msi_domain_info,
+	if (dmar_domain == NULL)
+		dmar_domain = msi_create_irq_domain(NULL, &dmar_msi_domain_info,
 						    x86_vector_domain);
-		irq_domain_free_fwnode(fn);
-	}
-out:
 	mutex_unlock(&dmar_lock);
+
 	return dmar_domain;
 }
 
@@ -334,10 +318,9 @@ static struct msi_domain_info hpet_msi_domain_info = {
 
 struct irq_domain *hpet_create_irq_domain(int hpet_id)
 {
-	struct msi_domain_info *domain_info;
-	struct irq_domain *parent, *d;
+	struct irq_domain *parent;
 	struct irq_alloc_info info;
-	struct fwnode_handle *fn;
+	struct msi_domain_info *domain_info;
 
 	if (x86_vector_domain == NULL)
 		return NULL;
@@ -358,26 +341,17 @@ struct irq_domain *hpet_create_irq_domain(int hpet_id)
 	else
 		hpet_msi_controller.name = "IR-HPET-MSI";
 
-	fn = irq_domain_alloc_named_id_fwnode(hpet_msi_controller.name,
-					      hpet_id);
-	if (!fn) {
-		kfree(domain_info);
-		return NULL;
-	}
-
-	d = msi_create_irq_domain(fn, domain_info, parent);
-	irq_domain_free_fwnode(fn);
-	return d;
+	return msi_create_irq_domain(NULL, domain_info, parent);
 }
 
-int hpet_assign_irq(struct irq_domain *domain, struct hpet_channel *hc,
+int hpet_assign_irq(struct irq_domain *domain, struct hpet_dev *dev,
 		    int dev_num)
 {
 	struct irq_alloc_info info;
 
 	init_irq_alloc_info(&info, NULL);
 	info.type = X86_IRQ_ALLOC_TYPE_HPET;
-	info.hpet_data = hc;
+	info.hpet_data = dev;
 	info.hpet_id = hpet_dev_id(domain);
 	info.hpet_index = dev_num;
 

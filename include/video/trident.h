@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 
 #ifndef TRIDENTFB_DEBUG
 #define TRIDENTFB_DEBUG 0

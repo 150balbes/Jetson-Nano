@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0-only
 #
 #  Copyright 2000, 2008 MontaVista Software Inc.
 #  Author: MontaVista Software, Inc. <source@mvista.com>

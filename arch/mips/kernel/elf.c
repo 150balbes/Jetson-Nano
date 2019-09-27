@@ -1,7 +1,11 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Copyright (C) 2014 Imagination Technologies
- * Author: Paul Burton <paul.burton@mips.com>
+ * Author: Paul Burton <paul.burton@imgtec.com>
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License as published by the
+ * Free Software Foundation;  either version 2 of the  License, or (at your
+ * option) any later version.
  */
 
 #include <linux/binfmts.h>
@@ -11,8 +15,6 @@
 
 #include <asm/cpu-features.h>
 #include <asm/cpu-info.h>
-
-#ifdef CONFIG_MIPS_FP_SUPPORT
 
 /* Whether to accept legacy-NaN and 2008-NaN user binaries.  */
 bool mips_use_nan_legacy;
@@ -85,7 +87,6 @@ int arch_elf_pt_proc(void *_ehdr, void *_phdr, struct file *elf,
 	bool elf32;
 	u32 flags;
 	int ret;
-	loff_t pos;
 
 	elf32 = ehdr->e32.e_ident[EI_CLASS] == ELFCLASS32;
 	flags = elf32 ? ehdr->e32.e_flags : ehdr->e64.e_flags;
@@ -107,16 +108,21 @@ int arch_elf_pt_proc(void *_ehdr, void *_phdr, struct file *elf,
 
 		if (phdr32->p_filesz < sizeof(abiflags))
 			return -EINVAL;
-		pos = phdr32->p_offset;
+
+		ret = kernel_read(elf, phdr32->p_offset,
+				  (char *)&abiflags,
+				  sizeof(abiflags));
 	} else {
 		if (phdr64->p_type != PT_MIPS_ABIFLAGS)
 			return 0;
 		if (phdr64->p_filesz < sizeof(abiflags))
 			return -EINVAL;
-		pos = phdr64->p_offset;
+
+		ret = kernel_read(elf, phdr64->p_offset,
+				  (char *)&abiflags,
+				  sizeof(abiflags));
 	}
 
-	ret = kernel_read(elf, &abiflags, sizeof(abiflags), &pos);
 	if (ret < 0)
 		return ret;
 	if (ret != sizeof(abiflags))
@@ -323,8 +329,6 @@ void mips_set_personality_nan(struct arch_elf_state *state)
 		BUG();
 	}
 }
-
-#endif /* CONFIG_MIPS_FP_SUPPORT */
 
 int mips_elf_read_implies_exec(void *elf_ex, int exstack)
 {

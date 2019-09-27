@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * MIPS-specific debug support for pre-boot environment
  *

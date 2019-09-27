@@ -1,5 +1,16 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
+ *   This program is free software; you can redistribute it and/or modify it
+ *   under the terms of the GNU General Public License version 2 as published
+ *   by the Free Software Foundation.
+ *
+ *   This program is distributed in the hope that it will be useful,
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *   GNU General Public License for more details.
+ *
+ *   You should have received a copy of the GNU General Public License
+ *   along with this program; if not, write to the Free Software
+ *   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307, USA.
  *
  *   Copyright (C) 2011 John Crispin <john@phrozen.org>
  */
@@ -8,8 +19,7 @@
 #include <linux/platform_device.h>
 #include <linux/io.h>
 #include <linux/dma-mapping.h>
-#include <linux/export.h>
-#include <linux/spinlock.h>
+#include <linux/module.h>
 #include <linux/clk.h>
 #include <linux/err.h>
 
@@ -49,17 +59,16 @@
 						ltq_dma_membase + (z))
 
 static void __iomem *ltq_dma_membase;
-static DEFINE_SPINLOCK(ltq_dma_lock);
 
 void
 ltq_dma_enable_irq(struct ltq_dma_channel *ch)
 {
 	unsigned long flags;
 
-	spin_lock_irqsave(&ltq_dma_lock, flags);
+	local_irq_save(flags);
 	ltq_dma_w32(ch->nr, LTQ_DMA_CS);
 	ltq_dma_w32_mask(0, 1 << ch->nr, LTQ_DMA_IRNEN);
-	spin_unlock_irqrestore(&ltq_dma_lock, flags);
+	local_irq_restore(flags);
 }
 EXPORT_SYMBOL_GPL(ltq_dma_enable_irq);
 
@@ -68,10 +77,10 @@ ltq_dma_disable_irq(struct ltq_dma_channel *ch)
 {
 	unsigned long flags;
 
-	spin_lock_irqsave(&ltq_dma_lock, flags);
+	local_irq_save(flags);
 	ltq_dma_w32(ch->nr, LTQ_DMA_CS);
 	ltq_dma_w32_mask(1 << ch->nr, 0, LTQ_DMA_IRNEN);
-	spin_unlock_irqrestore(&ltq_dma_lock, flags);
+	local_irq_restore(flags);
 }
 EXPORT_SYMBOL_GPL(ltq_dma_disable_irq);
 
@@ -80,10 +89,10 @@ ltq_dma_ack_irq(struct ltq_dma_channel *ch)
 {
 	unsigned long flags;
 
-	spin_lock_irqsave(&ltq_dma_lock, flags);
+	local_irq_save(flags);
 	ltq_dma_w32(ch->nr, LTQ_DMA_CS);
 	ltq_dma_w32(DMA_IRQ_ACK, LTQ_DMA_CIS);
-	spin_unlock_irqrestore(&ltq_dma_lock, flags);
+	local_irq_restore(flags);
 }
 EXPORT_SYMBOL_GPL(ltq_dma_ack_irq);
 
@@ -92,10 +101,11 @@ ltq_dma_open(struct ltq_dma_channel *ch)
 {
 	unsigned long flag;
 
-	spin_lock_irqsave(&ltq_dma_lock, flag);
+	local_irq_save(flag);
 	ltq_dma_w32(ch->nr, LTQ_DMA_CS);
 	ltq_dma_w32_mask(0, DMA_CHAN_ON, LTQ_DMA_CCTRL);
-	spin_unlock_irqrestore(&ltq_dma_lock, flag);
+	ltq_dma_enable_irq(ch);
+	local_irq_restore(flag);
 }
 EXPORT_SYMBOL_GPL(ltq_dma_open);
 
@@ -104,11 +114,11 @@ ltq_dma_close(struct ltq_dma_channel *ch)
 {
 	unsigned long flag;
 
-	spin_lock_irqsave(&ltq_dma_lock, flag);
+	local_irq_save(flag);
 	ltq_dma_w32(ch->nr, LTQ_DMA_CS);
 	ltq_dma_w32_mask(DMA_CHAN_ON, 0, LTQ_DMA_CCTRL);
-	ltq_dma_w32_mask(1 << ch->nr, 0, LTQ_DMA_IRNEN);
-	spin_unlock_irqrestore(&ltq_dma_lock, flag);
+	ltq_dma_disable_irq(ch);
+	local_irq_restore(flag);
 }
 EXPORT_SYMBOL_GPL(ltq_dma_close);
 
@@ -118,11 +128,12 @@ ltq_dma_alloc(struct ltq_dma_channel *ch)
 	unsigned long flags;
 
 	ch->desc = 0;
-	ch->desc_base = dma_alloc_coherent(ch->dev,
-					   LTQ_DESC_NUM * LTQ_DESC_SIZE,
-					   &ch->phys, GFP_ATOMIC);
+	ch->desc_base = dma_alloc_coherent(NULL,
+				LTQ_DESC_NUM * LTQ_DESC_SIZE,
+				&ch->phys, GFP_ATOMIC);
+	memset(ch->desc_base, 0, LTQ_DESC_NUM * LTQ_DESC_SIZE);
 
-	spin_lock_irqsave(&ltq_dma_lock, flags);
+	local_irq_save(flags);
 	ltq_dma_w32(ch->nr, LTQ_DMA_CS);
 	ltq_dma_w32(ch->phys, LTQ_DMA_CDBA);
 	ltq_dma_w32(LTQ_DESC_NUM, LTQ_DMA_CDLEN);
@@ -131,7 +142,7 @@ ltq_dma_alloc(struct ltq_dma_channel *ch)
 	ltq_dma_w32_mask(0, DMA_CHAN_RST, LTQ_DMA_CCTRL);
 	while (ltq_dma_r32(LTQ_DMA_CCTRL) & DMA_CHAN_RST)
 		;
-	spin_unlock_irqrestore(&ltq_dma_lock, flags);
+	local_irq_restore(flags);
 }
 
 void
@@ -141,11 +152,11 @@ ltq_dma_alloc_tx(struct ltq_dma_channel *ch)
 
 	ltq_dma_alloc(ch);
 
-	spin_lock_irqsave(&ltq_dma_lock, flags);
+	local_irq_save(flags);
 	ltq_dma_w32(DMA_DESCPT, LTQ_DMA_CIE);
 	ltq_dma_w32_mask(0, 1 << ch->nr, LTQ_DMA_IRNEN);
 	ltq_dma_w32(DMA_WEIGHT | DMA_TX, LTQ_DMA_CCTRL);
-	spin_unlock_irqrestore(&ltq_dma_lock, flags);
+	local_irq_restore(flags);
 }
 EXPORT_SYMBOL_GPL(ltq_dma_alloc_tx);
 
@@ -156,11 +167,11 @@ ltq_dma_alloc_rx(struct ltq_dma_channel *ch)
 
 	ltq_dma_alloc(ch);
 
-	spin_lock_irqsave(&ltq_dma_lock, flags);
+	local_irq_save(flags);
 	ltq_dma_w32(DMA_DESCPT, LTQ_DMA_CIE);
 	ltq_dma_w32_mask(0, 1 << ch->nr, LTQ_DMA_IRNEN);
 	ltq_dma_w32(DMA_WEIGHT, LTQ_DMA_CCTRL);
-	spin_unlock_irqrestore(&ltq_dma_lock, flags);
+	local_irq_restore(flags);
 }
 EXPORT_SYMBOL_GPL(ltq_dma_alloc_rx);
 
@@ -170,7 +181,7 @@ ltq_dma_free(struct ltq_dma_channel *ch)
 	if (!ch->desc_base)
 		return;
 	ltq_dma_close(ch);
-	dma_free_coherent(ch->dev, LTQ_DESC_NUM * LTQ_DESC_SIZE,
+	dma_free_coherent(NULL, LTQ_DESC_NUM * LTQ_DESC_SIZE,
 		ch->desc_base, ch->phys);
 }
 EXPORT_SYMBOL_GPL(ltq_dma_free);
@@ -244,6 +255,7 @@ static const struct of_device_id dma_match[] = {
 	{ .compatible = "lantiq,dma-xway" },
 	{},
 };
+MODULE_DEVICE_TABLE(of, dma_match);
 
 static struct platform_driver dma_driver = {
 	.probe = ltq_dma_init,

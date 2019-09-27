@@ -1,3 +1,4 @@
-# SPDX-License-Identifier: GPL-2.0-only
-obj-$(CONFIG_SMP)	+= platsmp.o
-obj-y			+= mediatek.o
+ifeq ($(CONFIG_SMP),y)
+obj-$(CONFIG_ARCH_MEDIATEK) += platsmp.o
+endif
+obj-$(CONFIG_ARCH_MEDIATEK) += mediatek.o

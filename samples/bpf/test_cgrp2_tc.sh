@@ -1,5 +1,4 @@
 #!/bin/bash
-# SPDX-License-Identifier: GPL-2.0
 
 MY_DIR=$(dirname $0)
 # Details on the bpf prog

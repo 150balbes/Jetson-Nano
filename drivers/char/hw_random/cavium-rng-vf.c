@@ -57,11 +57,7 @@ static int cavium_rng_probe_vf(struct	pci_dev		*pdev,
 		return -ENOMEM;
 	}
 
-	rng->ops.name = devm_kasprintf(&pdev->dev, GFP_KERNEL,
-				       "cavium-rng-%s", dev_name(&pdev->dev));
-	if (!rng->ops.name)
-		return -ENOMEM;
-
+	rng->ops.name    = "cavium rng";
 	rng->ops.read    = cavium_rng_read;
 	rng->ops.quality = 1000;
 
@@ -77,7 +73,7 @@ static int cavium_rng_probe_vf(struct	pci_dev		*pdev,
 }
 
 /* Remove the VF */
-static void  cavium_rng_remove_vf(struct pci_dev *pdev)
+void  cavium_rng_remove_vf(struct pci_dev *pdev)
 {
 	struct cavium_rng *rng;
 

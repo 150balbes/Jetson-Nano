@@ -1,10 +1,13 @@
-/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Common Low Level Interrupts/Traps/Exceptions(non-TLB) Handling for ARC
  * (included from entry-<isa>.S
  *
  * Copyright (C) 2014-15 Synopsys, Inc. (www.synopsys.com)
  * Copyright (C) 2004, 2007-2010, 2011-2012 Synopsys, Inc. (www.synopsys.com)
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  */
 
 /*------------------------------------------------------------------
@@ -232,8 +235,8 @@ ENTRY(EV_Trap)
 	EXCEPTION_PROLOGUE
 
 	;============ TRAP 1   :breakpoints
-	; Check ECR for trap with arg (PROLOGUE ensures r10 has ECR)
-	bmsk.f 0, r10, 7
+	; Check ECR for trap with arg (PROLOGUE ensures r9 has ECR)
+	bmsk.f 0, r9, 7
 	bnz    trap_with_param
 
 	;============ TRAP  (no param): syscall top level

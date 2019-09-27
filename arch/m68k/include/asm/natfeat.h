@@ -6,7 +6,6 @@
  * This software may be used and distributed according to the terms of
  * the GNU General Public License (GPL), incorporated herein by reference.
  */
-#include <linux/compiler.h>
 
 #ifndef _NATFEAT_H
 #define _NATFEAT_H
@@ -18,6 +17,6 @@ void nf_init(void);
 void nf_shutdown(void);
 
 void nfprint(const char *fmt, ...)
-	__printf(1, 2);
+	__attribute__ ((format (printf, 1, 2)));
 
 # endif /* _NATFEAT_H */

@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  *  PowerPC version derived from arch/arm/mm/consistent.c
  *    Copyright (C) 2001 Dan Malek (dmalek@jlc.net)
@@ -17,6 +16,10 @@
  * Added in_interrupt() safe dma_alloc_coherent()/dma_free_coherent()
  * implementation. This is pulled straight from ARM and barely
  * modified. -Matt
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  */
 
 #include <linux/sched.h>
@@ -26,14 +29,13 @@
 #include <linux/string.h>
 #include <linux/types.h>
 #include <linux/highmem.h>
-#include <linux/dma-direct.h>
-#include <linux/dma-noncoherent.h>
+#include <linux/dma-mapping.h>
 #include <linux/export.h>
 
 #include <asm/tlbflush.h>
 #include <asm/dma.h>
 
-#include <mm/mmu_decl.h>
+#include "mmu_decl.h"
 
 /*
  * This address range defaults to a value that is safe for all
@@ -149,8 +151,8 @@ static struct ppc_vm_region *ppc_vm_region_find(struct ppc_vm_region *head, unsi
  * Allocate DMA-coherent memory space and return both the kernel remapped
  * virtual and bus address for that space.
  */
-void *arch_dma_alloc(struct device *dev, size_t size, dma_addr_t *dma_handle,
-		gfp_t gfp, unsigned long attrs)
+void *
+__dma_alloc_coherent(struct device *dev, size_t size, dma_addr_t *handle, gfp_t gfp)
 {
 	struct page *page;
 	struct ppc_vm_region *c;
@@ -221,12 +223,12 @@ void *arch_dma_alloc(struct device *dev, size_t size, dma_addr_t *dma_handle,
 		/*
 		 * Set the "dma handle"
 		 */
-		*dma_handle = phys_to_dma(dev, page_to_phys(page));
+		*handle = page_to_phys(page);
 
 		do {
 			SetPageReserved(page);
-			map_kernel_page(vaddr, page_to_phys(page),
-					pgprot_noncached(PAGE_KERNEL));
+			map_page(vaddr, page_to_phys(page),
+				 pgprot_val(pgprot_noncached(PAGE_KERNEL)));
 			page++;
 			vaddr += PAGE_SIZE;
 		} while (size -= PAGE_SIZE);
@@ -247,12 +249,12 @@ void *arch_dma_alloc(struct device *dev, size_t size, dma_addr_t *dma_handle,
  no_page:
 	return NULL;
 }
+EXPORT_SYMBOL(__dma_alloc_coherent);
 
 /*
  * free a page as defined by the above mapping.
  */
-void arch_dma_free(struct device *dev, size_t size, void *vaddr,
-		dma_addr_t dma_handle, unsigned long attrs)
+void __dma_free_coherent(size_t size, void *vaddr)
 {
 	struct ppc_vm_region *c;
 	unsigned long flags, addr;
@@ -307,11 +309,12 @@ void arch_dma_free(struct device *dev, size_t size, void *vaddr,
 	       __func__, vaddr);
 	dump_stack();
 }
+EXPORT_SYMBOL(__dma_free_coherent);
 
 /*
  * make an area consistent.
  */
-static void __dma_sync(void *vaddr, size_t size, int direction)
+void __dma_sync(void *vaddr, size_t size, int direction)
 {
 	unsigned long start = (unsigned long)vaddr;
 	unsigned long end   = start + size;
@@ -337,6 +340,7 @@ static void __dma_sync(void *vaddr, size_t size, int direction)
 		break;
 	}
 }
+EXPORT_SYMBOL(__dma_sync);
 
 #ifdef CONFIG_HIGHMEM
 /*
@@ -383,42 +387,28 @@ static inline void __dma_sync_page_highmem(struct page *page,
  * __dma_sync_page makes memory consistent. identical to __dma_sync, but
  * takes a struct page instead of a virtual address
  */
-static void __dma_sync_page(phys_addr_t paddr, size_t size, int dir)
+void __dma_sync_page(struct page *page, unsigned long offset,
+	size_t size, int direction)
 {
-	struct page *page = pfn_to_page(paddr >> PAGE_SHIFT);
-	unsigned offset = paddr & ~PAGE_MASK;
-
 #ifdef CONFIG_HIGHMEM
-	__dma_sync_page_highmem(page, offset, size, dir);
+	__dma_sync_page_highmem(page, offset, size, direction);
 #else
 	unsigned long start = (unsigned long)page_address(page) + offset;
-	__dma_sync((void *)start, size, dir);
+	__dma_sync((void *)start, size, direction);
 #endif
 }
-
-void arch_sync_dma_for_device(struct device *dev, phys_addr_t paddr,
-		size_t size, enum dma_data_direction dir)
-{
-	__dma_sync_page(paddr, size, dir);
-}
-
-void arch_sync_dma_for_cpu(struct device *dev, phys_addr_t paddr,
-		size_t size, enum dma_data_direction dir)
-{
-	__dma_sync_page(paddr, size, dir);
-}
+EXPORT_SYMBOL(__dma_sync_page);
 
 /*
- * Return the PFN for a given cpu virtual address returned by arch_dma_alloc.
+ * Return the PFN for a given cpu virtual address returned by
+ * __dma_alloc_coherent. This is used by dma_mmap_coherent()
  */
-long arch_dma_coherent_to_pfn(struct device *dev, void *vaddr,
-		dma_addr_t dma_addr)
+unsigned long __dma_get_coherent_pfn(unsigned long cpu_addr)
 {
 	/* This should always be populated, so we don't test every
 	 * level. If that fails, we'll have a nice crash which
 	 * will be as good as a BUG_ON()
 	 */
-	unsigned long cpu_addr = (unsigned long)vaddr;
 	pgd_t *pgd = pgd_offset_k(cpu_addr);
 	pud_t *pud = pud_offset(pgd, cpu_addr);
 	pmd_t *pmd = pmd_offset(pud, cpu_addr);

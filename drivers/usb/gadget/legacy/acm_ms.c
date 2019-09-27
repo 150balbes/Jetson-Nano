@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0+
 /*
  * acm_ms.c -- Composite driver, with ACM and mass storage support
  *
@@ -8,6 +7,11 @@
  * Modified: Klaus Schwarzkopf <schwarzkopf@sensortherm.de>
  *
  * Heavily based on multi.c and cdc2.c
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
  */
 
 #include <linux/kernel.h>

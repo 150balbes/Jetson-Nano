@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _CRYPTO_MD5_H
 #define _CRYPTO_MD5_H
 

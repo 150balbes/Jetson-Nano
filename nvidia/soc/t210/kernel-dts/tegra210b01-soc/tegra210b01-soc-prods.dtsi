@@ -1,0 +1,1056 @@
+/*
+ * tegra210b01-soc-prod.dtsi: SOC specific DTSI file Prod nodes.
+ *
+ * Copyright (c) 2017, NVIDIA CORPORATION.  All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; version 2 of the License.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ */
+#include "tegra210b01-prods-legacy.dtsi"
+#include "tegra210b01-soc-i2c-prods.dtsi"
+
+/ {
+        pinmux@700008d4 {
+                prod-settings {
+                        #prod-cells = <4>;
+                        eqos {
+                                status = "disabled";
+                                nvidia,prod-boot-init;
+                                prod = <0 0x8 0x00000001 0x00000000>;
+			};
+
+			dmic1_prod {
+				nvidia,prod-boot-init;
+				prod = <0 0xB0 0x01F1F000 0x01F1F000
+					0 0xB4 0x01F1F000 0x01F1F000>;
+			};
+			dmic2_prod {
+				nvidia,prod-boot-init;
+				prod = <0 0xB8 0x01F1F000 0x01F1F000
+					0 0xBC 0x01F1F000 0x01F1F000>;
+			};
+			dmic3_prod {
+				nvidia,prod-boot-init;
+				prod = <0 0xC0 0x01F1F000 0x01F1F000
+					0 0xC4 0x01F1F000 0x01F1F000>;
+			};
+			i2s4a_uart2_prod {
+				status = "disabled";
+				nvidia,prod-boot-init;
+				prod = <0 0x258 0x01F1F000 0x01F1F000 // I2S4A
+					0 0x25C 0x01F1F000 0x01F1F000
+					0 0x260 0x01F1F000 0x01F1F000
+					0 0x264 0x01F1F000 0x01F1F000>;
+			};
+			dap4_prod {
+				nvidia,prod-boot-init;
+				prod = <0 0xA0 0x01F1F000 0x01616000 // I2S4B
+					0 0xA4 0x01F1F000 0x01616000
+					0 0xA8 0x01F1F000 0x01616000
+					0 0xAC 0x01F1F000 0x01616000>;
+			};
+			gpio_pe6_7_prod {
+				nvidia,prod-boot-init;
+				prod = <0 0xF4 0x01F1F000 0x01F1F000 // I2S5A
+					0 0xF8 0x01F1F000 0x01F1F000>;
+			};
+			spdif_prod {
+				nvidia,prod-boot-init;
+				prod = <0 0x1FC 0x01F1F000 0x01818000 // SPDIF
+					0 0x1F8 0x01F1F000 0x01818000>;
+			};
+			spdif_uart2_bt_prod {
+				status = "disabled";
+				nvidia,prod-boot-init;
+				prod = <0 0x260 0x01F1F000 0x01818000
+					0 0x264 0x01F1F000 0x01818000
+					0 0x18 0x01F1F000 0x01818000
+					0 0x28 0x01F1F000 0x01818000>;
+			};
+			uart1_prod {
+				nvidia,prod-boot-init;
+				char {
+					prod = <0 0x248 0x1F1F000 0x00000000
+						0 0x24c 0x1F1F000 0x00000000
+						0 0x250 0x1F1F000 0x00000000
+						0 0x254 0x1F1F000 0x00000000>;
+				};
+			};
+			uart2_prod {
+				nvidia,prod-boot-init;
+				status = "disabled";
+				char {
+					prod = <0 0x258 0x1F1F000 0x00000000
+						0 0x25c 0x1F1F000 0x00000000
+						0 0x260 0x1F1F000 0x00000000
+						0 0x264 0x1F1F000 0x00000000>;
+				};
+			};
+			uart3_prod {
+				nvidia,prod-boot-init;
+				status = "disabled";
+				char {
+					prod = <0 0x268 0x1F1F000 0x00000000
+						0 0x26c 0x1F1F000 0x00000000
+						0 0x270 0x1F1F000 0x00000000
+						0 0x274 0x1F1F000 0x00000000>;
+				};
+			};
+			uart4_prod {
+				nvidia,prod-boot-init;
+				char {
+					prod = <0 0x278 0x1F1F000 0x00000000
+						0 0x27c 0x1F1F000 0x00000000
+						0 0x280 0x1F1F000 0x00000000
+						0 0x284 0x1F1F000 0x00000000>;
+				};
+			};
+                        spi1_prod {
+                                nvidia,prod-boot-init;
+                                prod = <0 0x200 0x0000ffff 0x0000a0a0
+				        1 0x050 0x00006000 0x00006000
+				        1 0x054 0x00006000 0x00006000
+				        1 0x058 0x00006000 0x00006000
+				        1 0x05c 0x00006000 0x00006000
+				        1 0x060 0x00006000 0x00006000>;
+                        };
+                        spi2_prod {
+                                nvidia,prod-boot-init;
+                                prod = <0 0x214 0xf0000000 0xa0000000
+                                        0 0x218 0xf0000000 0xa0000000
+                                        0 0x21c 0xf0000000 0xa0000000
+                                        0 0x220 0xf0000000 0xa0000000
+                                        0 0x224 0xf0000000 0xa0000000
+				        1 0x064 0x00006000 0x00006000
+				        1 0x068 0x00006000 0x00006000
+				        1 0x06c 0x00006000 0x00006000
+				        1 0x070 0x00006000 0x00006000
+					1 0x074 0x00006000 0x00006000>;
+                        };
+                        spi3_prod {
+                                nvidia,prod-boot-init;
+                                prod = <0 0x0cc 0x01f1f000 0x01a1a000
+                                        0 0x0d0 0x01f1f000 0x01a1a000
+                                        0 0x140 0x01f1f000 0x01a1a000
+                                        0 0x144 0x01f1f000 0x01a1a000
+				        1 0x004 0x00006000 0x00006000
+				        1 0x008 0x00006000 0x00006000
+				        1 0x00c 0x00006000 0x00006000
+				        1 0x010 0x00006000 0x00006000>;
+                        };
+                        spi4_prod {
+                                nvidia,prod-boot-init;
+                                prod = <0 0x268 0x01f1f000 0x01a1a000
+                                        0 0x26c 0x01f1f000 0x01a1a000
+                                        0 0x270 0x01f1f000 0x01a1a000
+                                        0 0x274 0x01f1f000 0x01a1a000
+				        1 0x078 0x00006000 0x00006000
+				        1 0x07c 0x00006000 0x00006000
+				        1 0x080 0x00006000 0x00006000
+				        1 0x084 0x00006000 0x00006000>;
+                        };
+			sdmmc1_prod {
+				nvidia,prod-boot-init;
+				char {
+					prod = <1 0x00 0x00001000 0x00001000 //PINMUX_AUX_SDMMC1_CLK 12:12=E_SCHMT 0x1
+						1 0x04 0x00001000 0x00001000 //PINMUX_AUX_SDMMC1_CMD 12:12=E_SCHMT 0x1
+						1 0x08 0x00001000 0x00001000 //PINMUX_AUX_SDMMC1_DAT3 12:12=E_SCHMT 0x1
+						1 0x0c 0x00001000 0x00001000 //PINMUX_AUX_SDMMC1_DAT2 12:12=E_SCHMT 0x1
+						1 0x10 0x00001000 0x00001000 //PINMUX_AUX_SDMMC1_DAT1 12:12=E_SCHMT 0x1
+						1 0x14 0x00001000 0x00001000 //PINMUX_AUX_SDMMC1_DAT0 12:12=E_SCHMT 0x1
+						>;
+				};
+			};
+			sdmmc2_prod {
+				nvidia,prod-boot-init;
+				char {
+					prod = <1 0x294 0x00009000 0x00001000 //PINMUX_AUX_SDMMC2_DAT0_0 15:15=E_PREEMP 0x0 12:12=E_SCHMT 0x1
+						1 0x298 0x00009000 0x00001000 //PINMUX_AUX_SDMMC2_DAT1_0 15:15=E_PREEMP 0x0 12:12=E_SCHMT 0x1
+						1 0x29C 0x00009000 0x00001000 //PINMUX_AUX_SDMMC2_DAT2_0 15:15=E_PREEMP 0x0 12:12=E_SCHMT 0x1
+						1 0x2A0 0x00009000 0x00001000 //PINMUX_AUX_SDMMC2_DAT3_0 15:15=E_PREEMP 0x0 12:12=E_SCHMT 0x1
+						1 0x2A4 0x00009000 0x00001000 //PINMUX_AUX_SDMMC2_DAT4_0 15:15=E_PREEMP 0x0 12:12=E_SCHMT 0x1
+						1 0x2A8 0x00009000 0x00001000 //PINMUX_AUX_SDMMC2_DAT5_0 15:15=E_PREEMP 0x0 12:12=E_SCHMT 0x1
+						1 0x2AC 0x00009000 0x00001000 //PINMUX_AUX_SDMMC2_DAT6_0 15:15=E_PREEMP 0x0 12:12=E_SCHMT 0x1
+						1 0x2B0 0x00009000 0x00001000 //PINMUX_AUX_SDMMC2_DAT7_0 15:15=E_PREEMP 0x0 12:12=E_SCHMT 0x1
+						1 0x2B4 0x00009000 0x00001000 //PINMUX_AUX_SDMMC2_CLK_0 15:15=E_PREEMP 0x0 12:12=E_SCHMT 0x1
+						1 0x2BC 0x00009000 0x00001000 //PINMUX_AUX_SDMMC2_CMD_0 15:15=E_PREEMP 0x0 12:12=E_SCHMT 0x1
+						0 0x1C8 0xF7F7F000 0x00A0A000 //APB_MISC_GP_SDMMC2_PAD_CFGPADCTRL_0 18:12=CFG2TMC_SDMMC2_PAD_CAL_DRVDN 0xA
+									      //				    26:20=CFG2TMC_SDMMC2_PAD_CAL_DRVUP 0xA
+									      //				    29:28=CFG2TMC_SDMMC2_CLK_CFG_CAL_DRVDN_SLWR 0x0
+									      //				    31:30=CFG2TMC_SDMMC2_CLK_CFG_CAL_DRVUP_SLWF 0x0
+						>;
+				};
+			};
+			sdmmc4_prod {
+				nvidia,prod-boot-init;
+				char {
+					prod = <0 0x1E0 0x00000001 0x00000001 //APB_MISC_GP_EMMC4_PAD_CFGPADCTRL_0 0:0=CFG2TMC_EMMC4_PAD_E_SCH 0x1
+						0 0x1E8 0x00000004 0x00000000 //APB_MISC_GP_EMMC4_PAD_PUPD_CFGPADCTRL_0 2:2=CFG2TMC_EMMC4_PAD_CLK_PUPD_PULLD 0x0
+						>;
+				};
+			};
+		};
+	};
+
+	sdhci@700b0600 {
+		prod-settings {
+			#prod-cells = <3>;
+
+			prod_c_ds {
+				asic {
+					prod = <0x00000100 0x1FFF0000 0x0D090000 // SDMMC_VENDOR_CLOCK_CNTRL_0	28:24=TRIM_VAL  0xD
+										 //				23:16=TAP_VAL   0x9
+						0x000001E0 0x0000000F 0x00000007 // SDMMC_SDMEMCOMPPADCTRL_0	3:0=SDMMC2TMC_CFG_SDMEMCOMP_VREF_SEL 0x7
+						0x000001E4 0x30007F7F 0x30000000 // SDMMC_AUTO_CAL_CONFIG_0 	14:8=AUTO_CAL_PD_OFFSET 0x0
+										 //				6:0=AUTO_CAL_PU_OFFSET 0x0
+										 //				28:28=AUTO_CAL_SLW_OVERRIDE 0x1
+										 //				29:29=AUTO_CAL_ENABLE 0x1
+					>;
+				};
+				char {
+					prod = <0x00000100 0x00FF0000 0x000B0000 // SDMMC_VENDOR_CLOCK_CNTRL_0 // 23:16=TAP_VAL   0xB
+						0x000001E4 0x00007F7F 0x00000505 // SDMMC_AUTO_CAL_CONFIG_0 	14:8=AUTO_CAL_PD_OFFSET 0x5
+										 //				6:0=AUTO_CAL_PU_OFFSET 0x5
+					>;
+				};
+			};
+			prod_c_hs {
+				asic {
+					prod = <0x00000100 0x1FFF0000 0x0D090000 // SDMMC_VENDOR_CLOCK_CNTRL_0  28:24=TRIM_VAL  0xD
+										 //				23:16=TAP_VAL   0x9
+						0x000001E0 0x0000000F 0x00000007 // SDMMC_SDMEMCOMPPADCTRL_0	3:0=SDMMC2TMC_CFG_SDMEMCOMP_VREF_SEL 0x7
+						0x000001E4 0x30007F7F 0x30000000 // SDMMC_AUTO_CAL_CONFIG_0 	14:8=AUTO_CAL_PD_OFFSET 0x0
+										 //				6:0=AUTO_CAL_PU_OFFSET 0x0
+										 //				28:28=AUTO_CAL_SLW_OVERRIDE 0x1
+										 //				29:29=AUTO_CAL_ENABLE 0x1
+					>;
+				};
+				char {
+					prod = <0x00000100 0x00FF0000 0x000B0000 // SDMMC_VENDOR_CLOCK_CNTRL_0 // 23:16=TAP_VAL   0xB
+						0x000001E4 0x00007F7F 0x00000505 // SDMMC_AUTO_CAL_CONFIG_0 	14:8=AUTO_CAL_PD_OFFSET 0x5
+										 //				6:0=AUTO_CAL_PU_OFFSET 0x5
+					>;
+				};
+			};
+			prod_c_ddr52 {
+				asic {
+					prod = <0x00000100 0x1FFF0000 0x0D090000 // SDMMC_VENDOR_CLOCK_CNTRL_0  28:24=TRIM_VAL  0xD
+										 //				23:16=TAP_VAL   0x9
+						0x000001E0 0x0000000F 0x00000007 // SDMMC_SDMEMCOMPPADCTRL_0	3:0=SDMMC2TMC_CFG_SDMEMCOMP_VREF_SEL 0x7
+						0x000001E4 0x30007F7F 0x30000000 // SDMMC_AUTO_CAL_CONFIG_0 	14:8=AUTO_CAL_PD_OFFSET 0x0
+										 //				6:0=AUTO_CAL_PU_OFFSET 0x0
+										 //				28:28=AUTO_CAL_SLW_OVERRIDE 0x1
+										 //				29:29=AUTO_CAL_ENABLE 0x1
+					>;
+				};
+				char {
+					prod = <0x00000100 0x00FF0000 0x000B0000 // SDMMC_VENDOR_CLOCK_CNTRL_0 // 23:16=TAP_VAL   0xB
+						0x000001E4 0x00007F7F 0x00000505 // SDMMC_AUTO_CAL_CONFIG_0 	14:8=AUTO_CAL_PD_OFFSET 0x5
+										 //				6:0=AUTO_CAL_PU_OFFSET 0x5
+					>;
+				};
+			};
+			prod_c_hs200 {
+				asic {
+					prod = <0x00000100 0x1FFF0000 0x0D090000 // SDMMC_VENDOR_CLOCK_CNTRL_0  28:24=TRIM_VAL  0xD
+										 //				23:16=TAP_VAL   0x9
+						0x000001C0 0x0000E000 0x00004000 // SDMMC_VENDOR_TUNING_CNTRL0_0 15:13=NUM_TUNING_ITERATIONS 0x2
+						0x000001E0 0x0000000F 0x00000007 // SDMMC_SDMEMCOMPPADCTRL_0	3:0=SDMMC2TMC_CFG_SDMEMCOMP_VREF_SEL 0x7
+						0x000001E4 0x30007F7F 0x30000000 // SDMMC_AUTO_CAL_CONFIG_0 	14:8=AUTO_CAL_PD_OFFSET 0x0
+										 //				6:0=AUTO_CAL_PU_OFFSET 0x0
+										 //				28:28=AUTO_CAL_SLW_OVERRIDE 0x1
+										 //				29:29=AUTO_CAL_ENABLE 0x1
+					>;
+				};
+				char {
+					prod = <
+						0x000001E4 0x00007F7F 0x00000505 // SDMMC_AUTO_CAL_CONFIG_0 	14:8=AUTO_CAL_PD_OFFSET 0x5
+										 //				6:0=AUTO_CAL_PU_OFFSET 0x5
+						>;
+				};
+			};
+			prod_c_hs400 {
+				asic {
+					prod = <0x00000100 0x1FFF0000 0x0D090000 // SDMMC_VENDOR_CLOCK_CNTRL_0  28:24=TRIM_VAL  0xD
+										 //				23:16=TAP_VAL   0x9
+						0x000001C0 0x0000E000 0x00004000 // SDMMC_VENDOR_TUNING_CNTRL0_0 15:13=NUM_TUNING_ITERATIONS 0x2
+						0x000001E0 0x0000000F 0x00000007 // SDMMC_SDMEMCOMPPADCTRL_0	3:0=SDMMC2TMC_CFG_SDMEMCOMP_VREF_SEL 0x7
+						0x000001E4 0x30007F7F 0x30000000 // SDMMC_AUTO_CAL_CONFIG_0 	14:8=AUTO_CAL_PD_OFFSET 0x0
+										 //				6:0=AUTO_CAL_PU_OFFSET 0x0
+										 //				28:28=AUTO_CAL_SLW_OVERRIDE 0x1
+										 //				29:29=AUTO_CAL_ENABLE 0x1
+					>;
+				};
+				char {
+					prod = <0x00000100 0x00FF0000 0x000B0000 // SDMMC_VENDOR_CLOCK_CNTRL_0 // 23:16=TAP_VAL   0xB
+						0x000001E4 0x00007F7F 0x00000505 // SDMMC_AUTO_CAL_CONFIG_0 	14:8=AUTO_CAL_PD_OFFSET 0x5
+										 //				6:0=AUTO_CAL_PU_OFFSET 0x5
+					>;
+				};
+			};
+
+			prod {
+				asic {
+					prod = <
+						0x0000100 0x1FFF000E 0x0D090028	// SDMMC_VENDOR_CLOCK_CNTRL_0	28:24=TRIM_VAL	0xD
+										//				23:16=TAP_VAL	0x9
+										//				05:05=SDR50_TUNING_OVERRIDE	0x1
+										//				03:03=PADPIPE_CLKEN_OVERRIDE	0x1
+										// 				02:02=SPI_MODE_CLKEN_OVERRIDE	0x0
+										// 				01:01=INPUT_IO_CLK	0x0
+						0x000010C 0x00003F00 0x00002800	// SDMMC_VNDR_CAP_OVERRIDES_0	 13:8=DQS_TRIM_VALUE 0x28
+						0x00001C0 0x08001FC0 0x8000040	// SDMMC_VENDOR_TUNING_CNTRL0_0	12:06=MUL_M	0x1
+										//				27:27=RETUNING_REQ_EN_ON_CRC_ERR_DETECTION	0x1
+						0x00001C4 0x00000077 0x0	// SDMMC_VENDOR_TUNING_CNTRL1_0 02:00=STEP_SIZE_SDR50	0x0
+										// 				06:04=STEP_SIZE_SDR104_HS200	0x0
+						0x0000120 0x00020001 0x00001	// SDMMC_VENDOR_MISC_CNTRL_0	0:0=ERASE_TIMEOUT_LIMIT	0x1
+										// 				17:17=SDMMC_SPARE1[1]	0x0
+						0x00001F0 0x00080000 0x00080000	// SDMMC_IO_SPARE_0		19:19=SPARE_OUT[3] 0x1
+					>;
+				};
+				char {
+					prod = <0x00000100 0x00FF0000 0x000B0000 // SDMMC_VENDOR_CLOCK_CNTRL_0 // 23:16=TAP_VAL   0xB
+					>;
+				};
+			};
+		};
+	};
+
+	sdhci@700b0400 {
+		prod-settings {
+			#prod-cells = <3>;
+
+			prod_c_ds {
+				asic {
+					prod = <0x00000100 0x1FFF0000 0x120B0000 // SDMMC_VENDOR_CLOCK_CNTRL_0	28:24=TRIM_VAL  0x12
+										 //				23:16=TAP_VAL   0xB
+						0x000001E0 0x0000000F 0x00000000 // SDMMC_SDMEMCOMPPADCTRL_0	3:0=SDMMC2TMC_CFG_SDMEMCOMP_VREF_SEL 0x0
+						0x000001E4 0x30007F7F 0x30000000 // SDMMC_AUTO_CAL_CONFIG_0 	14:8=AUTO_CAL_PD_OFFSET 0x0
+										 //				6:0=AUTO_CAL_PU_OFFSET 0x0
+										 //				28:28=AUTO_CAL_SLW_OVERRIDE 0x1
+										 //				29:29=AUTO_CAL_ENABLE 0x1
+					>;
+				};
+				char {
+					prod = <
+						0x000001E4 0x00007F7F 0x00000000 // SDMMC_AUTO_CAL_CONFIG_0 	14:8=AUTO_CAL_PD_OFFSET 0x0
+										 //				6:0=AUTO_CAL_PU_OFFSET 0x0
+						>;
+				};
+			};
+			prod_c_hs {
+				asic {
+					prod = <0x00000100 0x1FFF0000 0x120B0000 // SDMMC_VENDOR_CLOCK_CNTRL_0	28:24=TRIM_VAL  0x12
+										 //				23:16=TAP_VAL   0xB
+						0x000001E0 0x0000000F 0x00000000 // SDMMC_SDMEMCOMPPADCTRL_0	3:0=SDMMC2TMC_CFG_SDMEMCOMP_VREF_SEL 0x0
+						0x000001E4 0x30007F7F 0x30000000 // SDMMC_AUTO_CAL_CONFIG_0 	14:8=AUTO_CAL_PD_OFFSET 0x0
+										 //				6:0=AUTO_CAL_PU_OFFSET 0x0
+										 //				28:28=AUTO_CAL_SLW_OVERRIDE 0x1
+										 //				29:29=AUTO_CAL_ENABLE 0x1
+					>;
+				};
+				char {
+					prod = <
+						0x000001E4 0x00007F7F 0x00000000 // SDMMC_AUTO_CAL_CONFIG_0 	14:8=AUTO_CAL_PD_OFFSET 0x0
+										 //				6:0=AUTO_CAL_PU_OFFSET 0x0
+						>;
+				};
+			};
+			prod_c_sdr12 {
+				asic {
+					prod = <0x00000100 0x1FFF0000 0x120B0000 // SDMMC_VENDOR_CLOCK_CNTRL_0	28:24=TRIM_VAL  0x12
+										 //				23:16=TAP_VAL   0xB
+						0x000001E0 0x0000000F 0x00000000 // SDMMC_SDMEMCOMPPADCTRL_0	3:0=SDMMC2TMC_CFG_SDMEMCOMP_VREF_SEL 0x0
+						0x000001E4 0x30007F7F 0x30000000 // SDMMC_AUTO_CAL_CONFIG_0 	14:8=AUTO_CAL_PD_OFFSET 0x0
+										 //				6:0=AUTO_CAL_PU_OFFSET 0x0
+										 //				28:28=AUTO_CAL_SLW_OVERRIDE 0x1
+										 //				29:29=AUTO_CAL_ENABLE 0x1
+					>;
+				};
+				char {
+					prod = <
+						0x000001E4 0x00007F7F 0x00000000 // SDMMC_AUTO_CAL_CONFIG_0 	14:8=AUTO_CAL_PD_OFFSET 0x0
+										 //				6:0=AUTO_CAL_PU_OFFSET 0x0
+						>;
+				};
+			};
+			prod_c_sdr25 {
+				asic {
+					prod = <0x00000100 0x1FFF0000 0x120B0000 // SDMMC_VENDOR_CLOCK_CNTRL_0	28:24=TRIM_VAL  0x12
+										 //				23:16=TAP_VAL   0xB
+						0x000001E0 0x0000000F 0x00000000 // SDMMC_SDMEMCOMPPADCTRL_0	3:0=SDMMC2TMC_CFG_SDMEMCOMP_VREF_SEL 0x0
+						0x000001E4 0x30007F7F 0x30000000 // SDMMC_AUTO_CAL_CONFIG_0 	14:8=AUTO_CAL_PD_OFFSET 0x0
+										 //				6:0=AUTO_CAL_PU_OFFSET 0x0
+										 //				28:28=AUTO_CAL_SLW_OVERRIDE 0x1
+										 //				29:29=AUTO_CAL_ENABLE 0x1
+					>;
+				};
+				char {
+					prod = <
+						0x000001E4 0x00007F7F 0x00000000 // SDMMC_AUTO_CAL_CONFIG_0 	14:8=AUTO_CAL_PD_OFFSET 0x0
+										 //				6:0=AUTO_CAL_PU_OFFSET 0x0
+						>;
+				};
+			};
+			prod_c_sdr50 {
+				asic {
+					prod = <0x00000100 0x1F000000 0x12000000 // SDMMC_VENDOR_CLOCK_CNTRL_0	28:24=TRIM_VAL  0x12
+										 //				23:16=TAP_VAL   auto-tuned
+						0x000001C0 0x0000E000 0x00008000 // SDMMC_VENDOR_TUNING_CNTRL0_0 15:13=NUM_TUNING_ITERATIONS 0x4
+						0x000001E0 0x0000000F 0x00000000 // SDMMC_SDMEMCOMPPADCTRL_0	3:0=SDMMC2TMC_CFG_SDMEMCOMP_VREF_SEL 0x0
+						0x000001E4 0x30007F7F 0x30000000 // SDMMC_AUTO_CAL_CONFIG_0 	14:8=AUTO_CAL_PD_OFFSET 0x0
+										 //				6:0=AUTO_CAL_PU_OFFSET 0x0
+										 //				28:28=AUTO_CAL_SLW_OVERRIDE 0x1
+										 //				29:29=AUTO_CAL_ENABLE 0x1
+					>;
+				};
+				char {
+					prod = <
+						0x000001E4 0x00007F7F 0x00000000 // SDMMC_AUTO_CAL_CONFIG_0 	14:8=AUTO_CAL_PD_OFFSET 0x0
+										 //				6:0=AUTO_CAL_PU_OFFSET 0x0
+						>;
+				};
+			};
+			prod_c_sdr104 {
+				asic {
+					prod = <0x00000100 0x1F000000 0x12000000 // SDMMC_VENDOR_CLOCK_CNTRL_0	28:24=TRIM_VAL  0x12
+										 //				23:16=TAP_VAL   auto-tuned
+						0x000001C0 0x0000E000 0x00004000 // SDMMC_VENDOR_TUNING_CNTRL0_0 15:13=NUM_TUNING_ITERATIONS 0x2
+						0x000001E0 0x0000000F 0x00000000 // SDMMC_SDMEMCOMPPADCTRL_0	3:0=SDMMC2TMC_CFG_SDMEMCOMP_VREF_SEL 0x0
+						0x000001E4 0x30007F7F 0x30000000 // SDMMC_AUTO_CAL_CONFIG_0 	14:8=AUTO_CAL_PD_OFFSET 0x0
+										 //				6:0=AUTO_CAL_PU_OFFSET 0x0
+										 //				28:28=AUTO_CAL_SLW_OVERRIDE 0x1
+										 //				29:29=AUTO_CAL_ENABLE 0x1
+					>;
+				};
+				char {
+					prod = <
+						0x000001E4 0x00007F7F 0x00000000 // SDMMC_AUTO_CAL_CONFIG_0 	14:8=AUTO_CAL_PD_OFFSET 0x0
+										 //				6:0=AUTO_CAL_PU_OFFSET 0x0
+						>;
+				};
+			};
+			prod_c_ddr52 {
+				asic {
+					prod = <0x00000100 0x1FFF0000 0x120B0000 // SDMMC_VENDOR_CLOCK_CNTRL_0	28:24=TRIM_VAL  0x12
+										 //				23:16=TAP_VAL   0xB
+						0x000001E0 0x0000000F 0x00000000 // SDMMC_SDMEMCOMPPADCTRL_0	3:0=SDMMC2TMC_CFG_SDMEMCOMP_VREF_SEL 0x0
+						0x000001E4 0x30007F7F 0x30000000 // SDMMC_AUTO_CAL_CONFIG_0 	14:8=AUTO_CAL_PD_OFFSET 0x0
+										 //				6:0=AUTO_CAL_PU_OFFSET 0x0
+										 //				28:28=AUTO_CAL_SLW_OVERRIDE 0x1
+										 //				29:29=AUTO_CAL_ENABLE 0x1
+					>;
+				};
+				char {
+					prod = <
+						0x000001E4 0x00007F7F 0x00000000 // SDMMC_AUTO_CAL_CONFIG_0 	14:8=AUTO_CAL_PD_OFFSET 0x0
+										 //				6:0=AUTO_CAL_PU_OFFSET 0x0
+						>;
+				};
+			};
+			prod_c_hs200 {
+				asic {
+					prod = <0x00000100 0x1F000000 0x12000000 // SDMMC_VENDOR_CLOCK_CNTRL_0  28:24=TRIM_VAL  0x12
+										 //				23:16=TAP_VAL   auto-tuned
+						0x000001C0 0x0000E000 0x00004000 // SDMMC_VENDOR_TUNING_CNTRL0_0 15:13=NUM_TUNING_ITERATIONS 0x2
+						0x000001E0 0x0000000F 0x00000000 // SDMMC_SDMEMCOMPPADCTRL_0	3:0=SDMMC2TMC_CFG_SDMEMCOMP_VREF_SEL 0x0
+						0x000001E4 0x30007F7F 0x30000000 // SDMMC_AUTO_CAL_CONFIG_0 	14:8=AUTO_CAL_PD_OFFSET 0x0
+										 //				6:0=AUTO_CAL_PU_OFFSET 0x0
+										 //				28:28=AUTO_CAL_SLW_OVERRIDE 0x1
+										 //				29:29=AUTO_CAL_ENABLE 0x1
+					>;
+				};
+				char {
+					prod = <
+						0x000001E4 0x00007F7F 0x00000000 // SDMMC_AUTO_CAL_CONFIG_0 	14:8=AUTO_CAL_PD_OFFSET 0x0
+										 //				6:0=AUTO_CAL_PU_OFFSET 0x0
+						>;
+				};
+			};
+
+			prod {
+				asic {
+					prod = <
+						0x0000100 0x1FFF000E 0x120B0028	// SDMMC_VENDOR_CLOCK_CNTRL_0	28:24=TRIM_VAL	0x12
+										//				23:16=TAP_VAL	0xB
+										//				05:05=SDR50_TUNING_OVERRIDE	0x1
+										//				03:03=PADPIPE_CLKEN_OVERRIDE	0x1
+										// 				02:02=SPI_MODE_CLKEN_OVERRIDE	0x0
+										// 				01:01=INPUT_IO_CLK	0x0
+						0x00001C0 0x08001FC0 0x8000040	// SDMMC_VENDOR_TUNING_CNTRL0_0	12:06=MUL_M	0x1
+										//				27:27=RETUNING_REQ_EN_ON_CRC_ERR_DETECTION	0x1
+						0x00001C4 0x00000077 0x0	// SDMMC_VENDOR_TUNING_CNTRL1_0 02:00=STEP_SIZE_SDR50	0x0
+										// 				06:04=STEP_SIZE_SDR104_HS200	0x0
+						0x0000120 0x00020001 0x00001	// SDMMC_VENDOR_MISC_CNTRL_0	0:0=ERASE_TIMEOUT_LIMIT	0x1
+										// 				17:17=SDMMC_SPARE1[1]	0x0
+						0x00001F0 0x00080000 0x00080000	// SDMMC_IO_SPARE_0		19:19=SPARE_OUT[3] 0x1
+					>;
+				};
+			};
+		};
+	};
+
+	sdhci@700b0200 {
+		prod-settings {
+			#prod-cells = <3>;
+
+			prod_c_ds {
+				asic {
+					prod = <0x00000100 0x1FFF0000 0x0D080000 // SDMMC_VENDOR_CLOCK_CNTRL_0  28:24=TRIM_VAL  0xD
+										 //				23:16=TAP_VAL   0x8
+						0x000001E0 0x0000000F 0x00000007 // SDMMC_SDMEMCOMPPADCTRL_0	3:0=SDMMC2TMC_CFG_SDMEMCOMP_VREF_SEL 0x7
+						0x000001E4 0x30007F7F 0x30000000 // SDMMC_AUTO_CAL_CONFIG_0 	14:8=AUTO_CAL_PD_OFFSET 0x0
+										 //				6:0=AUTO_CAL_PU_OFFSET 0x0
+										 //				28:28=AUTO_CAL_SLW_OVERRIDE 0x1
+										 //				29:29=AUTO_CAL_ENABLE 0x1
+					>;
+				};
+				char {
+					prod = <0x00000100 0x00FF0000 0x000B0000 // SDMMC_VENDOR_CLOCK_CNTRL_0 // 23:16=TAP_VAL   0xB
+						0x000001E4 0x00007F7F 0x00000505 // SDMMC_AUTO_CAL_CONFIG_0 	14:8=AUTO_CAL_PD_OFFSET 0x5
+										 //				6:0=AUTO_CAL_PU_OFFSET 0x5
+					>;
+				};
+			};
+			prod_c_hs {
+				asic {
+					prod = <0x00000100 0x1FFF0000 0x0D080000 // SDMMC_VENDOR_CLOCK_CNTRL_0  28:24=TRIM_VAL  0xD
+										 //				23:16=TAP_VAL   0x8
+						0x000001E0 0x0000000F 0x00000007 // SDMMC_SDMEMCOMPPADCTRL_0	3:0=SDMMC2TMC_CFG_SDMEMCOMP_VREF_SEL 0x7
+						0x000001E4 0x30007F7F 0x30000000 // SDMMC_AUTO_CAL_CONFIG_0 	14:8=AUTO_CAL_PD_OFFSET 0x0
+										 //				6:0=AUTO_CAL_PU_OFFSET 0x0
+										 //				28:28=AUTO_CAL_SLW_OVERRIDE 0x1
+										 //				29:29=AUTO_CAL_ENABLE 0x1
+					>;
+				};
+				char {
+					prod = <0x00000100 0x00FF0000 0x000B0000 // SDMMC_VENDOR_CLOCK_CNTRL_0 // 23:16=TAP_VAL   0xB
+						0x000001E4 0x00007F7F 0x00000505 // SDMMC_AUTO_CAL_CONFIG_0 	14:8=AUTO_CAL_PD_OFFSET 0x5
+										 //				6:0=AUTO_CAL_PU_OFFSET 0x5
+					>;
+				};
+			};
+			prod_c_sdr12 {
+				asic {
+					prod = <0x00000100 0x1FFF0000 0x0D080000 // SDMMC_VENDOR_CLOCK_CNTRL_0  28:24=TRIM_VAL  0xD
+										 //				23:16=TAP_VAL   0x8
+						0x000001E0 0x0000000F 0x00000007 // SDMMC_SDMEMCOMPPADCTRL_0	3:0=SDMMC2TMC_CFG_SDMEMCOMP_VREF_SEL 0x7
+						0x000001E4 0x30007F7F 0x30000000 // SDMMC_AUTO_CAL_CONFIG_0 	14:8=AUTO_CAL_PD_OFFSET 0x0
+										 //				6:0=AUTO_CAL_PU_OFFSET 0x0
+										 //				28:28=AUTO_CAL_SLW_OVERRIDE 0x1
+										 //				29:29=AUTO_CAL_ENABLE 0x1
+					>;
+				};
+				char {
+					prod = <0x00000100 0x00FF0000 0x000B0000 // SDMMC_VENDOR_CLOCK_CNTRL_0 // 23:16=TAP_VAL   0xB
+						0x000001E4 0x00007F7F 0x00000505 // SDMMC_AUTO_CAL_CONFIG_0 	14:8=AUTO_CAL_PD_OFFSET 0x5
+										 //				6:0=AUTO_CAL_PU_OFFSET 0x5
+					>;
+				};
+			};
+			prod_c_sdr25 {
+				asic {
+					prod = <0x00000100 0x1FFF0000 0x0D080000 // SDMMC_VENDOR_CLOCK_CNTRL_0  28:24=TRIM_VAL  0xD
+										 //				23:16=TAP_VAL   0x8
+						0x000001E0 0x0000000F 0x00000007 // SDMMC_SDMEMCOMPPADCTRL_0	3:0=SDMMC2TMC_CFG_SDMEMCOMP_VREF_SEL 0x7
+						0x000001E4 0x30007F7F 0x30000000 // SDMMC_AUTO_CAL_CONFIG_0 	14:8=AUTO_CAL_PD_OFFSET 0x0
+										 //				6:0=AUTO_CAL_PU_OFFSET 0x0
+										 //				28:28=AUTO_CAL_SLW_OVERRIDE 0x1
+										 //				29:29=AUTO_CAL_ENABLE 0x1
+					>;
+				};
+				char {
+					prod = <0x00000100 0x00FF0000 0x000B0000 // SDMMC_VENDOR_CLOCK_CNTRL_0 // 23:16=TAP_VAL   0xB
+						0x000001E4 0x00007F7F 0x00000505 // SDMMC_AUTO_CAL_CONFIG_0 	14:8=AUTO_CAL_PD_OFFSET 0x5
+										 //				6:0=AUTO_CAL_PU_OFFSET 0x5
+					>;
+				};
+			};
+			prod_c_sdr50 {
+				asic {
+					prod = <0x00000100 0x1FFF0000 0x0D080000 // SDMMC_VENDOR_CLOCK_CNTRL_0  28:24=TRIM_VAL  0xD
+										 //				23:16=TAP_VAL   0x8
+						0x000001C0 0x0000E000 0x00008000 // SDMMC_VENDOR_TUNING_CNTRL0_0 15:13=NUM_TUNING_ITERATIONS 0x4
+						0x000001E0 0x0000000F 0x00000007 // SDMMC_SDMEMCOMPPADCTRL_0	3:0=SDMMC2TMC_CFG_SDMEMCOMP_VREF_SEL 0x7
+						0x000001E4 0x30007F7F 0x30000000 // SDMMC_AUTO_CAL_CONFIG_0 	14:8=AUTO_CAL_PD_OFFSET 0x0
+										 //				6:0=AUTO_CAL_PU_OFFSET 0x0
+										 //				28:28=AUTO_CAL_SLW_OVERRIDE 0x1
+										 //				29:29=AUTO_CAL_ENABLE 0x1
+					>;
+				};
+				char {
+					prod = <0x00000100 0x00FF0000 0x000B0000 // SDMMC_VENDOR_CLOCK_CNTRL_0 // 23:16=TAP_VAL   0xB
+						0x000001E4 0x00007F7F 0x00000505 // SDMMC_AUTO_CAL_CONFIG_0 	14:8=AUTO_CAL_PD_OFFSET 0x5
+										 //				6:0=AUTO_CAL_PU_OFFSET 0x5
+					>;
+				};
+			};
+			prod_c_sdr104 {
+				asic {
+					prod = <0x00000100 0x1FFF0000 0x0D080000 // SDMMC_VENDOR_CLOCK_CNTRL_0  28:24=TRIM_VAL  0xD
+										 //				23:16=TAP_VAL   0x8
+						0x000001C0 0x0000E000 0x00004000 // SDMMC_VENDOR_TUNING_CNTRL0_0 15:13=NUM_TUNING_ITERATIONS 0x2
+						0x000001E0 0x0000000F 0x00000007 // SDMMC_SDMEMCOMPPADCTRL_0	3:0=SDMMC2TMC_CFG_SDMEMCOMP_VREF_SEL 0x7
+						0x000001E4 0x30007F7F 0x30000000 // SDMMC_AUTO_CAL_CONFIG_0 	14:8=AUTO_CAL_PD_OFFSET 0x0
+										 //				6:0=AUTO_CAL_PU_OFFSET 0x0
+										 //				28:28=AUTO_CAL_SLW_OVERRIDE 0x1
+										 //				29:29=AUTO_CAL_ENABLE 0x1
+					>;
+				};
+				char {
+					prod = <0x00000100 0x00FF0000 0x000B0000 // SDMMC_VENDOR_CLOCK_CNTRL_0 // 23:16=TAP_VAL   0xB
+						0x000001E4 0x00007F7F 0x00000505 // SDMMC_AUTO_CAL_CONFIG_0 	14:8=AUTO_CAL_PD_OFFSET 0x5
+										 //				6:0=AUTO_CAL_PU_OFFSET 0x5
+					>;
+				};
+			};
+			prod_c_ddr52 {
+				asic {
+					prod = <0x00000100 0x1FFF0000 0x0D080000 // SDMMC_VENDOR_CLOCK_CNTRL_0  28:24=TRIM_VAL  0xD
+										 //				23:16=TAP_VAL   0x8
+						0x000001E0 0x0000000F 0x00000007 // SDMMC_SDMEMCOMPPADCTRL_0	3:0=SDMMC2TMC_CFG_SDMEMCOMP_VREF_SEL 0x7
+						0x000001E4 0x30007F7F 0x30000000 // SDMMC_AUTO_CAL_CONFIG_0 	14:8=AUTO_CAL_PD_OFFSET 0x0
+										 //				6:0=AUTO_CAL_PU_OFFSET 0x0
+										 //				28:28=AUTO_CAL_SLW_OVERRIDE 0x1
+										 //				29:29=AUTO_CAL_ENABLE 0x1
+					>;
+				};
+				char {
+					prod = <0x00000100 0x00FF0000 0x000B0000 // SDMMC_VENDOR_CLOCK_CNTRL_0 // 23:16=TAP_VAL   0xB
+						0x000001E4 0x00007F7F 0x00000505 // SDMMC_AUTO_CAL_CONFIG_0 	14:8=AUTO_CAL_PD_OFFSET 0x5
+										 //				6:0=AUTO_CAL_PU_OFFSET 0x5
+					>;
+				};
+			};
+			prod_c_hs200 {
+				asic {
+					prod = <0x00000100 0x1FFF0000 0x0D080000 // SDMMC_VENDOR_CLOCK_CNTRL_0  28:24=TRIM_VAL  0xD
+										 //				23:16=TAP_VAL   0x8
+						0x000001C0 0x0000E000 0x00004000 // SDMMC_VENDOR_TUNING_CNTRL0_0 15:13=NUM_TUNING_ITERATIONS 0x2
+						0x000001E0 0x0000000F 0x00000007 // SDMMC_SDMEMCOMPPADCTRL_0	3:0=SDMMC2TMC_CFG_SDMEMCOMP_VREF_SEL 0x7
+						0x000001E4 0x30007F7F 0x30000000 // SDMMC_AUTO_CAL_CONFIG_0 	14:8=AUTO_CAL_PD_OFFSET 0x0
+										 //				6:0=AUTO_CAL_PU_OFFSET 0x0
+										 //				28:28=AUTO_CAL_SLW_OVERRIDE 0x1
+										 //				29:29=AUTO_CAL_ENABLE 0x1
+					>;
+				};
+				char {
+					prod = <0x00000100 0x00FF0000 0x000B0000 // SDMMC_VENDOR_CLOCK_CNTRL_0 // 23:16=TAP_VAL   0xB
+						0x000001E4 0x00007F7F 0x00000505 // SDMMC_AUTO_CAL_CONFIG_0 	14:8=AUTO_CAL_PD_OFFSET 0x5
+										 //				6:0=AUTO_CAL_PU_OFFSET 0x5
+					>;
+				};
+			};
+			prod_c_hs400 {
+				asic {
+					prod = <0x00000100 0x1FFF0000 0x0D080000 // SDMMC_VENDOR_CLOCK_CNTRL_0  28:24=TRIM_VAL  0xD
+										 //				 23:16=TAP_VAL   0x8
+						0x000001C0 0x0000E000 0x00004000 // SDMMC_VENDOR_TUNING_CNTRL0_0 15:13=NUM_TUNING_ITERATIONS 0x2
+						0x000001E0 0x0000000F 0x00000007 // SDMMC_SDMEMCOMPPADCTRL_0	3:0=SDMMC2TMC_CFG_SDMEMCOMP_VREF_SEL 0x7
+						0x000001E4 0x30007F7F 0x30000000 // SDMMC_AUTO_CAL_CONFIG_0 	14:8=AUTO_CAL_PD_OFFSET 0x0
+										 //				6:0=AUTO_CAL_PU_OFFSET 0x0
+										 //				28:28=AUTO_CAL_SLW_OVERRIDE 0x1
+										 //				29:29=AUTO_CAL_ENABLE 0x1
+					>;
+				};
+				char {
+					prod = <0x00000100 0x00FF0000 0x000B0000 // SDMMC_VENDOR_CLOCK_CNTRL_0 // 23:16=TAP_VAL   0xB
+						0x000001E4 0x00007F7F 0x00000505 // SDMMC_AUTO_CAL_CONFIG_0 	14:8=AUTO_CAL_PD_OFFSET 0x5
+										 //				6:0=AUTO_CAL_PU_OFFSET 0x5
+					>;
+				};
+			};
+
+			prod {
+				asic {
+					prod = <
+						0x0000100 0x1FFF000E 0x0D080028	// SDMMC_VENDOR_CLOCK_CNTRL_0	28:24=TRIM_VAL	0xD
+										//				23:16=TAP_VAL	0x8
+										//				05:05=SDR50_TUNING_OVERRIDE	0x1
+										//				03:03=PADPIPE_CLKEN_OVERRIDE	0x1
+										// 				02:02=SPI_MODE_CLKEN_OVERRIDE	0x0
+										// 				01:01=INPUT_IO_CLK	0x0
+						0x00001C0 0x08001FC0 0x8000040	// SDMMC_VENDOR_TUNING_CNTRL0_0	12:06=MUL_M	0x1
+										//				27:27=RETUNING_REQ_EN_ON_CRC_ERR_DETECTION	0x1
+						0x00001C4 0x00000077 0x0	// SDMMC_VENDOR_TUNING_CNTRL1_0 02:00=STEP_SIZE_SDR50	0x0
+										// 				06:04=STEP_SIZE_SDR104_HS200	0x0
+						0x0000120 0x00020001 0x00001	// SDMMC_VENDOR_MISC_CNTRL_0	0:0=ERASE_TIMEOUT_LIMIT	0x1
+										// 				17:17=SDMMC_SPARE1[1]	0x0
+						0x00001F0 0x00080000 0x00080000	// SDMMC_IO_SPARE_0		19:19=SPARE_OUT[3] 0x1
+					>;
+				};
+				char {
+					prod = <0x00000100 0x00FF0000 0x000B0000 // SDMMC_VENDOR_CLOCK_CNTRL_0 // 23:16=TAP_VAL   0xB
+						0x000001E4 0x00007F7F 0x00000505 // SDMMC_AUTO_CAL_CONFIG_0 	14:8=AUTO_CAL_PD_OFFSET 0x5
+										 //				6:0=AUTO_CAL_PU_OFFSET 0x5
+					>;
+				};
+			};
+		};
+	};
+
+	sdhci@700b0000 {
+		prod-settings {
+			#prod-cells = <3>;
+
+			prod_c_ds {
+				asic {
+					prod = <0x00000100 0x1FFF0000 0x0E0B0000 // SDMMC_VENDOR_CLOCK_CNTRL_0  28:24=TRIM_VAL  0xE
+										 //				23:16=TAP_VAL   0xB
+						0x000001E0 0x0000000F 0x00000000 // SDMMC_SDMEMCOMPPADCTRL_0	3:0=SDMMC2TMC_CFG_SDMEMCOMP_VREF_SEL 0x0
+						0x000001E4 0x30007F7F 0x30000000 // SDMMC_AUTO_CAL_CONFIG_0 	14:8=AUTO_CAL_PD_OFFSET 0x0
+										 //				6:0=AUTO_CAL_PU_OFFSET 0x0
+										 //				28:28=AUTO_CAL_SLW_OVERRIDE 0x1
+										 //				29:29=AUTO_CAL_ENABLE 0x1
+					>;
+				};
+				char {
+					prod = <
+						0x000001E4 0x00007F7F 0x00000000 // SDMMC_AUTO_CAL_CONFIG_0 	14:8=AUTO_CAL_PD_OFFSET 0x0
+										 //				6:0=AUTO_CAL_PU_OFFSET 0x0
+						>;
+				};
+			};
+			prod_c_hs {
+				asic {
+					prod = <0x00000100 0x1FFF0000 0x0E0B0000 // SDMMC_VENDOR_CLOCK_CNTRL_0  28:24=TRIM_VAL  0xE
+										 //				23:16=TAP_VAL   0xB
+						0x000001E0 0x0000000F 0x00000000 // SDMMC_SDMEMCOMPPADCTRL_0	3:0=SDMMC2TMC_CFG_SDMEMCOMP_VREF_SEL 0x0
+						0x000001E4 0x30007F7F 0x30000000 // SDMMC_AUTO_CAL_CONFIG_0 	14:8=AUTO_CAL_PD_OFFSET 0x0
+										 //				6:0=AUTO_CAL_PU_OFFSET 0x0
+										 //				28:28=AUTO_CAL_SLW_OVERRIDE 0x1
+										 //				29:29=AUTO_CAL_ENABLE 0x1
+					>;
+				};
+				char {
+					prod = <
+						0x000001E4 0x00007F7F 0x00000000 // SDMMC_AUTO_CAL_CONFIG_0 	14:8=AUTO_CAL_PD_OFFSET 0x0
+										 //				6:0=AUTO_CAL_PU_OFFSET 0x0
+						>;
+				};
+			};
+			prod_c_sdr12 {
+				asic {
+					prod = <0x00000100 0x1FFF0000 0x0E0B0000 // SDMMC_VENDOR_CLOCK_CNTRL_0  28:24=TRIM_VAL  0xE
+										 //				23:16=TAP_VAL   0xB
+						0x000001E0 0x0000000F 0x00000000 // SDMMC_SDMEMCOMPPADCTRL_0	3:0=SDMMC2TMC_CFG_SDMEMCOMP_VREF_SEL 0x0
+						0x000001E4 0x30007F7F 0x30000000 // SDMMC_AUTO_CAL_CONFIG_0 	14:8=AUTO_CAL_PD_OFFSET 0x0
+										 //				6:0=AUTO_CAL_PU_OFFSET 0x0
+										 //				28:28=AUTO_CAL_SLW_OVERRIDE 0x1
+										 //				29:29=AUTO_CAL_ENABLE 0x1
+					>;
+				};
+				char {
+					prod = <
+						0x000001E4 0x00007F7F 0x00000000 // SDMMC_AUTO_CAL_CONFIG_0 	14:8=AUTO_CAL_PD_OFFSET 0x0
+										 //				6:0=AUTO_CAL_PU_OFFSET 0x0
+						>;
+				};
+			};
+			prod_c_sdr25 {
+				asic {
+					prod = <0x00000100 0x1FFF0000 0x0E0B0000 // SDMMC_VENDOR_CLOCK_CNTRL_0  28:24=TRIM_VAL  0xE
+										 //				23:16=TAP_VAL   0xB
+						0x000001E0 0x0000000F 0x00000000 // SDMMC_SDMEMCOMPPADCTRL_0	3:0=SDMMC2TMC_CFG_SDMEMCOMP_VREF_SEL 0x0
+						0x000001E4 0x30007F7F 0x30000000 // SDMMC_AUTO_CAL_CONFIG_0 	14:8=AUTO_CAL_PD_OFFSET 0x0
+										 //				6:0=AUTO_CAL_PU_OFFSET 0x0
+										 //				28:28=AUTO_CAL_SLW_OVERRIDE 0x1
+										 //				29:29=AUTO_CAL_ENABLE 0x1
+					>;
+				};
+				char {
+					prod = <
+						0x000001E4 0x00007F7F 0x00000000 // SDMMC_AUTO_CAL_CONFIG_0 	14:8=AUTO_CAL_PD_OFFSET 0x0
+										 //				6:0=AUTO_CAL_PU_OFFSET 0x0
+						>;
+				};
+			};
+			prod_c_sdr50 {
+				asic {
+					prod = <0x00000100 0x1F000000 0x0E000000 // SDMMC_VENDOR_CLOCK_CNTRL_0  28:24=TRIM_VAL  0xE
+										 //				23:16=TAP_VAL   auto-tuned
+						0x000001C0 0x0000E000 0x00008000 // SDMMC_VENDOR_TUNING_CNTRL0_0 15:13=NUM_TUNING_ITERATIONS 0x4
+						0x000001E0 0x0000000F 0x00000000 // SDMMC_SDMEMCOMPPADCTRL_0	3:0=SDMMC2TMC_CFG_SDMEMCOMP_VREF_SEL 0x0
+						0x000001E4 0x30007F7F 0x30000000 // SDMMC_AUTO_CAL_CONFIG_0 	14:8=AUTO_CAL_PD_OFFSET 0x0
+										 //				6:0=AUTO_CAL_PU_OFFSET 0x0
+										 //				28:28=AUTO_CAL_SLW_OVERRIDE 0x1
+										 //				29:29=AUTO_CAL_ENABLE 0x1
+					>;
+				};
+				char {
+					prod = <
+						0x000001E4 0x00007F7F 0x00000000 // SDMMC_AUTO_CAL_CONFIG_0 	14:8=AUTO_CAL_PD_OFFSET 0x0
+										 //				6:0=AUTO_CAL_PU_OFFSET 0x0
+						>;
+				};
+			};
+			prod_c_sdr104 {
+				asic {
+					prod = <0x00000100 0x1F000000 0x0E000000 // SDMMC_VENDOR_CLOCK_CNTRL_0  28:24=TRIM_VAL  0xE
+										 //				23:16=TAP_VAL   auto-tuned
+						0x000001C0 0x0000E000 0x00004000 // SDMMC_VENDOR_TUNING_CNTRL0_0 15:13=NUM_TUNING_ITERATIONS 0x2
+						0x000001E0 0x0000000F 0x00000000 // SDMMC_SDMEMCOMPPADCTRL_0	3:0=SDMMC2TMC_CFG_SDMEMCOMP_VREF_SEL 0x0
+						0x000001E4 0x30007F7F 0x30000000 // SDMMC_AUTO_CAL_CONFIG_0 	14:8=AUTO_CAL_PD_OFFSET 0x0
+										 //				6:0=AUTO_CAL_PU_OFFSET 0x0
+										 //				28:28=AUTO_CAL_SLW_OVERRIDE 0x1
+										 //				29:29=AUTO_CAL_ENABLE 0x1
+					>;
+				};
+				char {
+					prod = <
+						0x000001E4 0x00007F7F 0x00000609 // SDMMC_AUTO_CAL_CONFIG_0 	14:8=AUTO_CAL_PD_OFFSET 0x6
+										 //				6:0=AUTO_CAL_PU_OFFSET 0x9
+						>;
+				};
+			};
+			prod_c_ddr52 {
+				asic {
+					prod = <0x00000100 0x1FFF0000 0x0E0B0000 // SDMMC_VENDOR_CLOCK_CNTRL_0  28:24=TRIM_VAL  0xE
+										 //				23:16=TAP_VAL   0xB
+						0x000001E0 0x0000000F 0x00000000 // SDMMC_SDMEMCOMPPADCTRL_0	3:0=SDMMC2TMC_CFG_SDMEMCOMP_VREF_SEL 0x0
+						0x000001E4 0x30007F7F 0x30000000 // SDMMC_AUTO_CAL_CONFIG_0 	14:8=AUTO_CAL_PD_OFFSET 0x0
+										 //				6:0=AUTO_CAL_PU_OFFSET 0x0
+										 //				28:28=AUTO_CAL_SLW_OVERRIDE 0x1
+										 //				29:29=AUTO_CAL_ENABLE 0x1
+					>;
+				};
+				char {
+					prod = <
+						0x000001E4 0x00007F7F 0x00000000 // SDMMC_AUTO_CAL_CONFIG_0 	14:8=AUTO_CAL_PD_OFFSET 0x0
+										 //				6:0=AUTO_CAL_PU_OFFSET 0x0
+						>;
+				};
+			};
+
+			prod {
+				asic {
+					prod = <
+						0x0000100 0x1FFF000E 0x0E0B0028	// SDMMC_VENDOR_CLOCK_CNTRL_0	28:24=TRIM_VAL	0xE
+										//				23:16=TAP_VAL	0xB
+										//				05:05=SDR50_TUNING_OVERRIDE	0x1
+										//				03:03=PADPIPE_CLKEN_OVERRIDE	0x1
+										// 				02:02=SPI_MODE_CLKEN_OVERRIDE	0x0
+										// 				01:01=INPUT_IO_CLK	0x0
+						0x00001C0 0x08001FC0 0x8000040	// SDMMC_VENDOR_TUNING_CNTRL0_0	12:06=MUL_M	0x1
+										//				27:27=RETUNING_REQ_EN_ON_CRC_ERR_DETECTION 0x1
+						0x00001C4 0x00000077 0x0	// SDMMC_VENDOR_TUNING_CNTRL1_0 02:00=STEP_SIZE_SDR50	0x0
+										// 				06:04=STEP_SIZE_SDR104_HS200	0x0
+						0x0000120 0x00020001 0x00001	// SDMMC_VENDOR_MISC_CNTRL_0	0:0=ERASE_TIMEOUT_LIMIT	0x1
+										// 				17:17=SDMMC_SPARE1[1]	0x0
+						0x00001F0 0x00080000 0x00080000	// SDMMC_IO_SPARE_0		19:19=SPARE_OUT[3] 0x1
+					>;
+				};
+			};
+		};
+	};
+
+	pcie@1003000 {
+		prod-settings {
+			#prod-cells = <3>;
+			mask-one-style;
+			prod_c_pad {
+				prod = <
+					0x000000C8 0xFFFFFFFF 0xb0b880b8	// PADS_REFCLK_CFG0	31:0			0xb0b880b8
+				>;
+			};
+			prod_c_rp {
+				prod = <
+					0x00000E80 0x0000003F 0x00000027        // RP_ECTL_1_R1_x	5:0=TX_DRV_AMP_1C	0x27
+					0x00000EA0 0x0000003F 0x00000027        // RP_ECTL_1_R2_x	5:0=TX_DRV_AMP_1C	0x27
+				>;
+			};
+		};
+	};
+#if TEGRA_XUSB_PADCONTROL_VERSION >= DT_VERSION_2
+	xusb_padctl@7009f000 {
+#else
+	pinctrl@7009f000 {
+#endif
+		prod-settings {
+			#prod-cells = <4>;
+			mask-one-style;
+			prod_c_bias {
+				asic {
+					prod = <
+						0 0x00000284 0x0000003f 0x0000003a
+						>;
+				};
+				char {
+					prod = <
+						0 0x00000284 0x00000700 0x00000300
+						>;
+				};
+			};
+			prod_c_bias_a02 {
+				prod = <
+					0 0x00000284 0x0000003f 0x00000038
+				>;
+			};
+			prod_c_utmi0 {
+				prod = <
+					0 0x00000084 0x00000020 0x00000040
+				>;
+			};
+			prod_c_utmi1 {
+				prod = <
+					0 0x000000C4 0x00000020 0x00000040
+				>;
+			};
+			prod_c_utmi2 {
+				prod = <
+					0 0x00000104 0x00000020 0x00000040
+				>;
+			};
+			prod_c_utmi3 {
+				prod = <
+					0 0x00000144 0x00000020 0x00000040
+				>;
+			};
+			prod_c_ss0 {
+				asic {
+					prod = <
+						0 0x00000a60 0x00030000 0x00020000
+					>;
+				};
+				char {
+					prod = <
+						0 0x00000a60 0x0000003f 0x00000027
+					>;
+				};
+			};
+			prod_c_ss1 {
+				asic {
+					prod = <
+						0 0x00000aa0 0x00030000 0x00020000
+					>;
+				};
+				char {
+					prod = <
+						0 0x00000aa0 0x0000003f 0x00000027
+					>;
+				};
+			};
+			prod_c_ss2 {
+				asic {
+					prod = <
+						0 0x00000ae0 0x00030000 0x00020000
+					>;
+				};
+				char {
+					prod = <
+						0 0x00000ae0 0x0000003f 0x00000027
+					>;
+				};
+			};
+			prod_c_ss3 {
+				prod = <
+					0 0x00000b20 0x00030000 0x00020000
+				>;
+			};
+			prod_c_hsic0 {
+				prod = <
+					0 0x00000344 0x0000001f 0x0000001c
+				>;
+			};
+			prod_c_hsic1 {
+				prod = <
+					0 0x00000344 0x0000001f 0x0000001c
+				>;
+			};
+		};
+	};
+
+	host1x {
+		sor1 {
+			prod-settings {
+				#prod-cells = <3>;
+                               prod_c_dp {
+                                           prod = <
+                                               0x0000004c 0x00000003 0x00000003        // SOR_NV_PDISP_SOR_CLK_CNTRL_0 1:0=DIFF_DPCLK          0x3
+                                               0x0000005c 0x000f0000 0x00050000        // SOR_NV_PDISP_SOR_PLL0_0      27:24=ICHPMP            0x01
+                                                                                       //                              11:08=VCOCAP            0x03
+                                                                                       //                              04:04=RESISTORSEL       0x01
+                                               0x00000060 0x00f00100 0x00400100        // SOR_NV_PDISP_SOR_PLL1_0      25:24=LVDSCM            0x00
+                                                                                       //                              08:08=TMDS_TERM         0x01
+                                               0x00000070 0xffffffff 0x00000000        // SOR_NV_PDISP_SOR_LVDS_0
+                                               0x00000170 0x00002000 0x00002000        // SOR_NV_PDISP_SOR_DP_PADCTL0  15:8=TX_PU_VALUE        0x20
+                                               0x00000180 0x00000001 0x00000001        // SOR_NV_PDISP_SOR_DP_SPARE0_0 00:00=SEQ_ENABLE        0x01
+                                               0x000001c8 0x00400000 0x00000000        // SOR_NV_PDISP_SOR_PLL4_0      22:22=ENABLE_LCKDET     0x00
+                                               0x000001cc 0xff000000 0x34000000        // SOR_NV_PDISP_SOR_PADCTL2_0   31:24=SPAREPLL          0x34
+                                           >;
+                               };
+                               prod_c_hbr {
+                                       prod = <
+                                               0x0000004c 0x00000003 0x00000003        // SOR_NV_PDISP_SOR_CLK_CNTRL_0 1:0=DIFF_DPCLK          0x3
+                                               0x00000170 0x00001000 0x00001000        // SOR_NV_PDISP_SOR_DP_PADCTL0  15:8=TX_PU_VALUE        0x10
+                                       >;
+                               };
+                               prod_c_hbr2 {
+                                       prod = <
+                                               0x0000004c 0x00000003 0x00000003        // SOR_NV_PDISP_SOR_CLK_CNTRL_0 1:0=DIFF_DPCLK          0x3
+                                               0x00000170 0x00002000 0x00002000        // SOR_NV_PDISP_SOR_DP_PADCTL0  15:8=TX_PU_VALUE        0x20
+                                       >;
+                               };
+                               prod_c_rbr {
+                                       prod = <
+                                               0x0000004c 0x00000003 0x00000003        // SOR_NV_PDISP_SOR_CLK_CNTRL_0 1:0=DIFF_DPCLK          0x3
+                                               0x00000170 0x00001000 0x00001000        // SOR_NV_PDISP_SOR_DP_PADCTL0  15:8=TX_PU_VALUE        0x10
+                                       >;
+                               };
+			};
+		};
+
+		dpaux1 {
+			prod-settings	{
+				#prod-cells = <3>;
+				mask-one-style;
+				prod_c_dpaux_dp {
+					asic {
+						prod = <
+							0x00000124 0x000037fe 0x000023a2
+							>;
+					};
+				};
+				prod_c_dpaux_hdmi {
+					asic {
+						prod = <
+							0x00000124 0x00000700 0x00000400
+							>;
+					};
+				};
+			};
+		};
+	};
+
+	mipical {
+		prod-settings {
+			#prod-cells = <3>;
+			prod_c_dphy_dsi {
+				prod = <
+					0x00000038 0x0000001f 0x00000006 // MIPI_CAL_DSIA_MIPI_CAL_CONFIG_0	4:0=MIPI_CAL_TERMOSDSIA	0x6
+					0x0000003c 0x0000001f 0x00000006 // MIPI_CAL_DSIB_MIPI_CAL_CONFIG_0	4:0=MIPI_CAL_TERMOSDSIB	0x6
+					0x00000040 0x0000001f 0x00000006 // MIPI_CAL_DSIC_MIPI_CAL_CONFIG_0	4:0=MIPI_CAL_TERMOSDSIC	0x6
+					0x00000044 0x0000001f 0x00000006 // MIPI_CAL_DSID_MIPI_CAL_CONFIG_0	4:0=MIPI_CAL_TERMOSDSID	0x6
+
+					0x00000064 0x001f0000 0x00060000 // MIPI_CAL_DSIA_MIPI_CAL_CONFIG_2_0	20:16=MIPI_CAL_HSCLKTERMOSDSIA	0x6
+					0x00000068 0x001f0000 0x00060000 // MIPI_CAL_DSIB_MIPI_CAL_CONFIG_2_0	20:16=MIPI_CAL_HSCLKTERMOSDSIB	0x6
+					0x00000070 0x001f0000 0x00060000 // MIPI_CAL_DSIC_MIPI_CAL_CONFIG_2_0	20:16=MIPI_CAL_HSCLKTERMOSDSIC 	0x6
+					0x00000074 0x001f0000 0x00060000 // MIPI_CAL_DSID_MIPI_CAL_CONFIG_2_0	20:16=MIPI_CAL_HSCLKTERMOSDSID 	0x6
+
+				>;
+			};
+			prod_c_dphy_csi {
+				prod = <
+					0x00000000 0x00000010 0x00000010 // MIPI_CAL_MIPI_CAL_CTRL_0	4=MIPI_CAL_CLKEN_OVR	0x1
+				>;
+			};
+		};
+	};
+
+};

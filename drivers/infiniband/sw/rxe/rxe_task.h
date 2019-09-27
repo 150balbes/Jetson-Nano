@@ -54,7 +54,6 @@ struct rxe_task {
 	int			(*func)(void *arg);
 	int			ret;
 	char			name[16];
-	bool			destroyed;
 };
 
 /*

@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * bootstr.c:  Boot string/argument acquisition from the PROM.
  *

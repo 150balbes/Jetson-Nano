@@ -175,7 +175,7 @@ static DEFINE_PER_CPU(struct hp_cpu, hp_cpus);
 
 /* links together the hp_cpu structs, in first-come first-serve order. */
 static LIST_HEAD(hp_cpu_list);
-static DEFINE_SPINLOCK(hp_lock);
+static spinlock_t hp_lock = __SPIN_LOCK_UNLOCKED(hp_lock);
 
 static unsigned int hp_cpu_list_length;
 
@@ -190,9 +190,6 @@ static struct kmem_cache *hp_handler_slab;
 static void *__frame_ptr;
 static u32 *frame_ptr;
 static dma_addr_t frame_dma;
-
-/* needed for dma_map*() */
-static const struct qm_portal_config *pcfg;
 
 /* the main function waits on this */
 static DECLARE_WAIT_QUEUE_HEAD(queue);
@@ -213,14 +210,16 @@ static int allocate_frame_data(void)
 {
 	u32 lfsr = HP_FIRST_WORD;
 	int loop;
+	struct platform_device *pdev = platform_device_alloc("foobar", -1);
 
-	if (!qman_dma_portal) {
-		pr_crit("portal not available\n");
+	if (!pdev) {
+		pr_crit("platform_device_alloc() failed");
 		return -EIO;
 	}
-
-	pcfg = qman_get_qm_portal_config(qman_dma_portal);
-
+	if (platform_device_add(pdev)) {
+		pr_crit("platform_device_add() failed");
+		return -EIO;
+	}
 	__frame_ptr = kmalloc(4 * HP_NUM_WORDS, GFP_KERNEL);
 	if (!__frame_ptr)
 		return -ENOMEM;
@@ -230,22 +229,15 @@ static int allocate_frame_data(void)
 		frame_ptr[loop] = lfsr;
 		lfsr = do_lfsr(lfsr);
 	}
-
-	frame_dma = dma_map_single(pcfg->dev, frame_ptr, 4 * HP_NUM_WORDS,
+	frame_dma = dma_map_single(&pdev->dev, frame_ptr, 4 * HP_NUM_WORDS,
 				   DMA_BIDIRECTIONAL);
-	if (dma_mapping_error(pcfg->dev, frame_dma)) {
-		pr_crit("dma mapping failure\n");
-		kfree(__frame_ptr);
-		return -EIO;
-	}
-
+	platform_device_del(pdev);
+	platform_device_put(pdev);
 	return 0;
 }
 
 static void deallocate_frame_data(void)
 {
-	dma_unmap_single(pcfg->dev, frame_dma, 4 * HP_NUM_WORDS,
-			 DMA_BIDIRECTIONAL);
 	kfree(__frame_ptr);
 }
 
@@ -257,8 +249,7 @@ static inline int process_frame_data(struct hp_handler *handler,
 	int loop;
 
 	if (qm_fd_addr_get64(fd) != handler->addr) {
-		pr_crit("bad frame address, [%llX != %llX]\n",
-			qm_fd_addr_get64(fd), handler->addr);
+		pr_crit("bad frame address");
 		return -EIO;
 	}
 	for (loop = 0; loop < HP_NUM_WORDS; loop++, p++) {
@@ -406,9 +397,8 @@ static int init_handler(void *h)
 		goto failed;
 	}
 	memset(&opts, 0, sizeof(opts));
-	opts.we_mask = cpu_to_be16(QM_INITFQ_WE_FQCTRL |
-				   QM_INITFQ_WE_CONTEXTA);
-	opts.fqd.fq_ctrl = cpu_to_be16(QM_FQCTRL_CTXASTASHING);
+	opts.we_mask = QM_INITFQ_WE_FQCTRL | QM_INITFQ_WE_CONTEXTA;
+	opts.fqd.fq_ctrl = QM_FQCTRL_CTXASTASHING;
 	qm_fqd_set_stashing(&opts.fqd, 0, STASH_DATA_CL, STASH_CTX_CL);
 	err = qman_init_fq(&handler->rx, QMAN_INITFQ_FLAG_SCHED |
 			   QMAN_INITFQ_FLAG_LOCAL, &opts);

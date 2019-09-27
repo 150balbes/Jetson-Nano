@@ -1,10 +1,13 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * Trapped io support
  *
  * Copyright (C) 2008 Magnus Damm
  *
  * Intercept io operations by trapping.
+ *
+ * This file is subject to the terms and conditions of the GNU General Public
+ * License.  See the file "COPYING" in the main directory of this archive
+ * for more details.
  */
 #include <linux/kernel.h>
 #include <linux/mm.h>
@@ -13,7 +16,7 @@
 #include <linux/module.h>
 #include <linux/init.h>
 #include <asm/mmu_context.h>
-#include <linux/uaccess.h>
+#include <asm/uaccess.h>
 #include <asm/io.h>
 #include <asm/io_trapped.h>
 

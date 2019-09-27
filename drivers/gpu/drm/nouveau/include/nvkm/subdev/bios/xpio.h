@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: MIT */
 #ifndef __NVBIOS_XPIO_H__
 #define __NVBIOS_XPIO_H__
 

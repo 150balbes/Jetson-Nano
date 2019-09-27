@@ -9,6 +9,7 @@
  */
 
 #include <linux/mmc/sh_mmcif.h>
+#include <linux/mmc/boot.h>
 #include <mach/romimage.h>
 
 #define MMCIF_BASE      (void __iomem *)0xa4ca0000
@@ -21,13 +22,6 @@
 #define HIZCRC		0xa405015c
 #define DRVCRA		0xa405018a
 
-enum {
-	MMCIF_PROGRESS_ENTER,
-	MMCIF_PROGRESS_INIT,
-	MMCIF_PROGRESS_LOAD,
-	MMCIF_PROGRESS_DONE
-};
-
 /* SH7724 specific MMCIF loader
  *
  * loads the romImage from an MMC card starting from block 512
@@ -36,7 +30,7 @@ enum {
  */
 asmlinkage void mmcif_loader(unsigned char *buf, unsigned long no_bytes)
 {
-	mmcif_update_progress(MMCIF_PROGRESS_ENTER);
+	mmcif_update_progress(MMC_PROGRESS_ENTER);
 
 	/* enable clock to the MMCIF hardware block */
 	__raw_writel(__raw_readl(MSTPCR2) & ~0x20000000, MSTPCR2);
@@ -59,12 +53,12 @@ asmlinkage void mmcif_loader(unsigned char *buf, unsigned long no_bytes)
 	/* high drive capability for MMC pins */
 	__raw_writew(__raw_readw(DRVCRA) | 0x3000, DRVCRA);
 
-	mmcif_update_progress(MMCIF_PROGRESS_INIT);
+	mmcif_update_progress(MMC_PROGRESS_INIT);
 
 	/* setup MMCIF hardware */
 	sh_mmcif_boot_init(MMCIF_BASE);
 
-	mmcif_update_progress(MMCIF_PROGRESS_LOAD);
+	mmcif_update_progress(MMC_PROGRESS_LOAD);
 
 	/* load kernel via MMCIF interface */
 	sh_mmcif_boot_do_read(MMCIF_BASE, 512,
@@ -74,5 +68,5 @@ asmlinkage void mmcif_loader(unsigned char *buf, unsigned long no_bytes)
 	/* disable clock to the MMCIF hardware block */
 	__raw_writel(__raw_readl(MSTPCR2) | 0x20000000, MSTPCR2);
 
-	mmcif_update_progress(MMCIF_PROGRESS_DONE);
+	mmcif_update_progress(MMC_PROGRESS_DONE);
 }

@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * PKUnity Inter-integrated Circuit (I2C) Registers
  */

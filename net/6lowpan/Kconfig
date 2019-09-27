@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0-only
 menuconfig 6LOWPAN
 	tristate "6LoWPAN Support"
 	depends on IPV6

@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * This file contains definitions and data structures specific
  * to Marvell 802.11 NIC. It contains the Device Information

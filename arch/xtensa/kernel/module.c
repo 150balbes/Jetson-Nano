@@ -22,6 +22,8 @@
 #include <linux/kernel.h>
 #include <linux/cache.h>
 
+#undef DEBUG_RELOCATE
+
 static int
 decode_calln_opcode (unsigned char *location)
 {
@@ -56,9 +58,10 @@ int apply_relocate_add(Elf32_Shdr *sechdrs,
 	unsigned char *location;
 	uint32_t value;
 
-	pr_debug("Applying relocate section %u to %u\n", relsec,
-		 sechdrs[relsec].sh_info);
-
+#ifdef DEBUG_RELOCATE
+	printk("Applying relocate section %u to %u\n", relsec,
+	       sechdrs[relsec].sh_info);
+#endif
 	for (i = 0; i < sechdrs[relsec].sh_size / sizeof(*rela); i++) {
 		location = (char *)sechdrs[sechdrs[relsec].sh_info].sh_addr
 			+ rela[i].r_offset;
@@ -84,7 +87,7 @@ int apply_relocate_add(Elf32_Shdr *sechdrs,
 				value -= ((unsigned long)location & -4) + 4;
 				if ((value & 3) != 0 ||
 				    ((value + (1 << 19)) >> 20) != 0) {
-					pr_err("%s: relocation out of range, "
+					printk("%s: relocation out of range, "
 					       "section %d reloc %d "
 					       "sym '%s'\n",
 					       mod->name, relsec, i,
@@ -108,7 +111,7 @@ int apply_relocate_add(Elf32_Shdr *sechdrs,
 				value -= (((unsigned long)location + 3) & -4);
 				if ((value & 3) != 0 ||
 				    (signed int)value >> 18 != -1) {
-					pr_err("%s: relocation out of range, "
+					printk("%s: relocation out of range, "
 					       "section %d reloc %d "
 					       "sym '%s'\n",
 					       mod->name, relsec, i,
@@ -153,7 +156,7 @@ int apply_relocate_add(Elf32_Shdr *sechdrs,
 		case R_XTENSA_SLOT12_OP:
 		case R_XTENSA_SLOT13_OP:
 		case R_XTENSA_SLOT14_OP:
-			pr_err("%s: unexpected FLIX relocation: %u\n",
+			printk("%s: unexpected FLIX relocation: %u\n",
 			       mod->name,
 			       ELF32_R_TYPE(rela[i].r_info));
 			return -ENOEXEC;
@@ -173,13 +176,13 @@ int apply_relocate_add(Elf32_Shdr *sechdrs,
 		case R_XTENSA_SLOT12_ALT:
 		case R_XTENSA_SLOT13_ALT:
 		case R_XTENSA_SLOT14_ALT:
-			pr_err("%s: unexpected ALT relocation: %u\n",
+			printk("%s: unexpected ALT relocation: %u\n",
 			       mod->name,
 			       ELF32_R_TYPE(rela[i].r_info));
 			return -ENOEXEC;
 
 		default:
-			pr_err("%s: unexpected relocation: %u\n",
+			printk("%s: unexpected relocation: %u\n",
 			       mod->name,
 			       ELF32_R_TYPE(rela[i].r_info));
 			return -ENOEXEC;

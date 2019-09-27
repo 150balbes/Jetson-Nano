@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0+
 /*
  * devices.c
  * (C) Copyright 1999 Randy Dunlap.
@@ -6,12 +5,26 @@
  *     (proc file per device)
  * (C) Copyright 1999 Deti Fliegl (new USB architecture)
  *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ *
  *************************************************************
  *
  * <mountpoint>/devices contains USB topology, device, config, class,
  * interface, & endpoint data.
  *
- * I considered using /dev/bus/usb/device# for each device
+ * I considered using /proc/bus/usb/devices/device# for each device
  * as it is attached or detached, but I didn't like this for some
  * reason -- maybe it's just too deep of a directory structure.
  * I also don't like looking in multiple places to gather and view
@@ -27,7 +40,7 @@
  *   Converted the whole proc stuff to real
  *   read methods. Now not the whole device list needs to fit
  *   into one page, only the device list for one bus.
- *   Added a poll method to /sys/kernel/debug/usb/devices, to wake
+ *   Added a poll method to /proc/bus/usb/devices, to wake
  *   up an eventual usbd
  * 2000-01-04: Thomas Sailer <sailer@ife.ee.ethz.ch>
  *   Turned into its own filesystem
@@ -169,8 +182,14 @@ static char *usb_dump_endpoint_descriptor(int speed, char *start, char *end,
 
 	dir = usb_endpoint_dir_in(desc) ? 'I' : 'O';
 
-	if (speed == USB_SPEED_HIGH)
-		bandwidth = usb_endpoint_maxp_mult(desc);
+	if (speed == USB_SPEED_HIGH) {
+		switch (usb_endpoint_maxp(desc) & (0x03 << 11)) {
+		case 1 << 11:
+			bandwidth = 2; break;
+		case 2 << 11:
+			bandwidth = 3; break;
+		}
+	}
 
 	/* this isn't checking for illegal values */
 	switch (usb_endpoint_type(desc)) {
@@ -214,7 +233,7 @@ static char *usb_dump_endpoint_descriptor(int speed, char *start, char *end,
 
 	start += sprintf(start, format_endpt, desc->bEndpointAddress, dir,
 			 desc->bmAttributes, type,
-			 usb_endpoint_maxp(desc) *
+			 (usb_endpoint_maxp(desc) & 0x07ff) *
 			 bandwidth,
 			 interval, unit);
 	return start;
@@ -598,7 +617,7 @@ static ssize_t usb_device_read(struct file *file, char __user *buf,
 		return -EINVAL;
 	if (nbytes <= 0)
 		return 0;
-	if (!access_ok(buf, nbytes))
+	if (!access_ok(VERIFY_WRITE, buf, nbytes))
 		return -EFAULT;
 
 	mutex_lock(&usb_bus_idr_lock);
@@ -622,7 +641,7 @@ static ssize_t usb_device_read(struct file *file, char __user *buf,
 }
 
 /* Kernel lock for "lastev" protection */
-static __poll_t usb_device_poll(struct file *file,
+static unsigned int usb_device_poll(struct file *file,
 				    struct poll_table_struct *wait)
 {
 	unsigned int event_count;
@@ -632,7 +651,7 @@ static __poll_t usb_device_poll(struct file *file,
 	event_count = atomic_read(&device_event.count);
 	if (file->f_version != event_count) {
 		file->f_version = event_count;
-		return EPOLLIN | EPOLLRDNORM;
+		return POLLIN | POLLRDNORM;
 	}
 
 	return 0;

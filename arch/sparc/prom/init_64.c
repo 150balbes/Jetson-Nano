@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * init.c:  Initialize internal variables used by the PROM
  *          library functions.

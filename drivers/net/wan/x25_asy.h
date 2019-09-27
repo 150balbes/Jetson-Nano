@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _LINUX_X25_ASY_H
 #define _LINUX_X25_ASY_H
 

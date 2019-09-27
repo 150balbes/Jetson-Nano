@@ -151,7 +151,7 @@ Include Files
 #include <pcmcia/cistpl.h>
 #include <pcmcia/ds.h>
 
-#include <linux/uaccess.h>
+#include <asm/uaccess.h>
 #include <asm/io.h>
 
 /* ----------------------------------------------------------------------------
@@ -359,6 +359,7 @@ typedef struct _mace_statistics {
 
 typedef struct _mace_private {
 	struct pcmcia_device	*p_dev;
+    struct net_device_stats linux_stats; /* Linux statistics counters */
     mace_statistics mace_stats; /* MACE chip statistics counters */
 
     /* restore_multicast_list() state variables */
@@ -426,6 +427,7 @@ static const struct net_device_ops mace_netdev_ops = {
 	.ndo_set_config		= mace_config,
 	.ndo_get_stats		= mace_get_stats,
 	.ndo_set_rx_mode	= set_multicast_list,
+	.ndo_change_mtu		= eth_change_mtu,
 	.ndo_set_mac_address 	= eth_mac_addr,
 	.ndo_validate_addr	= eth_validate_addr,
 };
@@ -878,7 +880,7 @@ static netdev_tx_t mace_start_xmit(struct sk_buff *skb,
        service a transmit interrupt while we are in here.
     */
 
-    dev->stats.tx_bytes += skb->len;
+    lp->linux_stats.tx_bytes += skb->len;
     lp->tx_free_frames--;
 
     /* WARNING: Write the _exact_ number of bytes written in the header! */
@@ -966,7 +968,7 @@ static irqreturn_t mace_interrupt(int irq, void *dev_id)
 
       fifofc = inb(ioaddr + AM2150_MACE_BASE + MACE_FIFOFC);
       if ((fifofc & MACE_FIFOFC_XMTFC)==0) {
-	dev->stats.tx_errors++;
+	lp->linux_stats.tx_errors++;
 	outb(0xFF, ioaddr + AM2150_XMT_SKIP);
       }
 
@@ -1015,7 +1017,7 @@ static irqreturn_t mace_interrupt(int irq, void *dev_id)
 
       } /* if (xmtfs & MACE_XMTFS_XMTSV) */
 
-      dev->stats.tx_packets++;
+      lp->linux_stats.tx_packets++;
       lp->tx_free_frames++;
       netif_wake_queue(dev);
     } /* if (status & MACE_IR_XMTINT) */
@@ -1076,7 +1078,7 @@ static int mace_rx(struct net_device *dev, unsigned char RxCnt)
 	  " 0x%X.\n", dev->name, rx_framecnt, rx_status);
 
     if (rx_status & MACE_RCVFS_RCVSTS) { /* Error, update stats. */
-      dev->stats.rx_errors++;
+      lp->linux_stats.rx_errors++;
       if (rx_status & MACE_RCVFS_OFLO) {
         lp->mace_stats.oflo++;
       }
@@ -1113,14 +1115,14 @@ static int mace_rx(struct net_device *dev, unsigned char RxCnt)
 	
 	netif_rx(skb); /* Send the packet to the upper (protocol) layers. */
 
-	dev->stats.rx_packets++;
-	dev->stats.rx_bytes += pkt_len;
+	lp->linux_stats.rx_packets++;
+	lp->linux_stats.rx_bytes += pkt_len;
 	outb(0xFF, ioaddr + AM2150_RCV_NEXT); /* skip to next frame */
 	continue;
       } else {
 	pr_debug("%s: couldn't allocate a sk_buff of size"
 	      " %d.\n", dev->name, pkt_len);
-	dev->stats.rx_dropped++;
+	lp->linux_stats.rx_dropped++;
       }
     }
     outb(0xFF, ioaddr + AM2150_RCV_NEXT); /* skip to next frame */
@@ -1230,13 +1232,13 @@ static void update_stats(unsigned int ioaddr, struct net_device *dev)
   lp->mace_stats.rntpc += mace_read(lp, ioaddr, MACE_RNTPC);
   lp->mace_stats.mpc += mace_read(lp, ioaddr, MACE_MPC);
   /* At this point, mace_stats is fully updated for this call.
-     We may now update the netdev stats. */
+     We may now update the linux_stats. */
 
-  /* The MACE has no equivalent for netdev stats field which are commented
+  /* The MACE has no equivalent for linux_stats field which are commented
      out. */
 
-  /* dev->stats.multicast; */
-  dev->stats.collisions =
+  /* lp->linux_stats.multicast; */
+  lp->linux_stats.collisions = 
     lp->mace_stats.rcvcco * 256 + lp->mace_stats.rcvcc;
     /* Collision: The MACE may retry sending a packet 15 times
        before giving up.  The retry count is in XMTRC.
@@ -1244,22 +1246,22 @@ static void update_stats(unsigned int ioaddr, struct net_device *dev)
        If so, why doesn't the RCVCC record these collisions? */
 
   /* detailed rx_errors: */
-  dev->stats.rx_length_errors =
+  lp->linux_stats.rx_length_errors = 
     lp->mace_stats.rntpco * 256 + lp->mace_stats.rntpc;
-  /* dev->stats.rx_over_errors */
-  dev->stats.rx_crc_errors = lp->mace_stats.fcs;
-  dev->stats.rx_frame_errors = lp->mace_stats.fram;
-  dev->stats.rx_fifo_errors = lp->mace_stats.oflo;
-  dev->stats.rx_missed_errors =
+  /* lp->linux_stats.rx_over_errors */
+  lp->linux_stats.rx_crc_errors = lp->mace_stats.fcs;
+  lp->linux_stats.rx_frame_errors = lp->mace_stats.fram;
+  lp->linux_stats.rx_fifo_errors = lp->mace_stats.oflo;
+  lp->linux_stats.rx_missed_errors = 
     lp->mace_stats.mpco * 256 + lp->mace_stats.mpc;
 
   /* detailed tx_errors */
-  dev->stats.tx_aborted_errors = lp->mace_stats.rtry;
-  dev->stats.tx_carrier_errors = lp->mace_stats.lcar;
+  lp->linux_stats.tx_aborted_errors = lp->mace_stats.rtry;
+  lp->linux_stats.tx_carrier_errors = lp->mace_stats.lcar;
     /* LCAR usually results from bad cabling. */
-  dev->stats.tx_fifo_errors = lp->mace_stats.uflo;
-  dev->stats.tx_heartbeat_errors = lp->mace_stats.cerr;
-  /* dev->stats.tx_window_errors; */
+  lp->linux_stats.tx_fifo_errors = lp->mace_stats.uflo;
+  lp->linux_stats.tx_heartbeat_errors = lp->mace_stats.cerr;
+  /* lp->linux_stats.tx_window_errors; */
 } /* update_stats */
 
 /* ----------------------------------------------------------------------------
@@ -1273,10 +1275,10 @@ static struct net_device_stats *mace_get_stats(struct net_device *dev)
   update_stats(dev->base_addr, dev);
 
   pr_debug("%s: updating the statistics.\n", dev->name);
-  pr_linux_stats(&dev->stats);
+  pr_linux_stats(&lp->linux_stats);
   pr_mace_stats(&lp->mace_stats);
 
-  return &dev->stats;
+  return &lp->linux_stats;
 } /* net_device_stats */
 
 /* ----------------------------------------------------------------------------

@@ -1,5 +1,4 @@
 #!/bin/bash
-# SPDX-License-Identifier: GPL-2.0
 
 # This example script activates an interface based on the specified
 # configuration.
@@ -12,7 +11,7 @@
 # be used to configure the interface.
 #
 # Each Distro is expected to implement this script in a distro specific
-# fashion. For instance, on Distros that ship with Network Manager enabled,
+# fashion. For instance on Distros that ship with Network Manager enabled,
 # this script can be based on the Network Manager APIs for configuring the
 # interface.
 #

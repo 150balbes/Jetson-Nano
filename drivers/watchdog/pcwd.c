@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * PC Watchdog Driver
  * by Ken Hollis (khollis@bitgate.com)
@@ -368,7 +367,7 @@ static void pcwd_show_card_info(void)
 		pr_info("No previous trip detected - Cold boot or reset\n");
 }
 
-static void pcwd_timer_ping(struct timer_list *unused)
+static void pcwd_timer_ping(unsigned long data)
 {
 	int wdrst_stat;
 
@@ -651,7 +650,7 @@ static long pcwd_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 			return -EINVAL;
 
 		pcwd_keepalive();
-		/* Fall through */
+		/* Fall */
 
 	case WDIOC_GETTIMEOUT:
 		return put_user(heartbeat, argp);
@@ -696,7 +695,7 @@ static int pcwd_open(struct inode *inode, struct file *file)
 	/* Activate */
 	pcwd_start();
 	pcwd_keepalive();
-	return stream_open(inode, file);
+	return nonseekable_open(inode, file);
 }
 
 static int pcwd_close(struct inode *inode, struct file *file)
@@ -735,7 +734,7 @@ static int pcwd_temp_open(struct inode *inode, struct file *file)
 	if (!pcwd_private.supports_temp)
 		return -ENODEV;
 
-	return stream_open(inode, file);
+	return nonseekable_open(inode, file);
 }
 
 static int pcwd_temp_close(struct inode *inode, struct file *file)
@@ -894,7 +893,7 @@ static int pcwd_isa_probe(struct device *dev, unsigned int id)
 	/* clear the "card caused reboot" flag */
 	pcwd_clear_status();
 
-	timer_setup(&pcwd_private.timer, pcwd_timer_ping, 0);
+	setup_timer(&pcwd_private.timer, pcwd_timer_ping, 0);
 
 	/*  Disable the board  */
 	pcwd_stop();

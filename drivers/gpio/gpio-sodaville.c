@@ -1,22 +1,26 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  *  GPIO interface for Intel Sodaville SoCs.
  *
  *  Copyright (c) 2010, 2011 Intel Corporation
  *
  *  Author: Hans J. Koch <hjk@linutronix.de>
+ *
+ *  This program is free software; you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License 2 as published
+ *  by the Free Software Foundation.
+ *
  */
 
 #include <linux/errno.h>
-#include <linux/gpio/driver.h>
 #include <linux/init.h>
-#include <linux/interrupt.h>
 #include <linux/io.h>
 #include <linux/irq.h>
+#include <linux/interrupt.h>
 #include <linux/kernel.h>
-#include <linux/of_irq.h>
 #include <linux/pci.h>
 #include <linux/platform_device.h>
+#include <linux/of_irq.h>
+#include <linux/gpio/driver.h>
 
 #define DRV_NAME		"sdv_gpio"
 #define SDV_NUM_PUB_GPIOS	12
@@ -76,15 +80,18 @@ static int sdv_gpio_pub_set_type(struct irq_data *d, unsigned int type)
 static irqreturn_t sdv_gpio_pub_irq_handler(int irq, void *data)
 {
 	struct sdv_gpio_chip_data *sd = data;
-	unsigned long irq_stat = readl(sd->gpio_pub_base + GPSTR);
-	int irq_bit;
+	u32 irq_stat = readl(sd->gpio_pub_base + GPSTR);
 
 	irq_stat &= readl(sd->gpio_pub_base + GPIO_INT);
 	if (!irq_stat)
 		return IRQ_NONE;
 
-	for_each_set_bit(irq_bit, &irq_stat, 32)
+	while (irq_stat) {
+		u32 irq_bit = __fls(irq_stat);
+
+		irq_stat &= ~BIT(irq_bit);
 		generic_handle_irq(irq_find_mapping(sd->id, irq_bit));
+	}
 
 	return IRQ_HANDLED;
 }
@@ -128,8 +135,7 @@ static int sdv_register_irqsupport(struct sdv_gpio_chip_data *sd,
 	struct irq_chip_type *ct;
 	int ret;
 
-	sd->irq_base = devm_irq_alloc_descs(&pdev->dev, -1, 0,
-					    SDV_NUM_PUB_GPIOS, -1);
+	sd->irq_base = irq_alloc_descs(-1, 0, SDV_NUM_PUB_GPIOS, -1);
 	if (sd->irq_base < 0)
 		return sd->irq_base;
 
@@ -137,23 +143,22 @@ static int sdv_register_irqsupport(struct sdv_gpio_chip_data *sd,
 	writel(0, sd->gpio_pub_base + GPIO_INT);
 	writel((1 << 11) - 1, sd->gpio_pub_base + GPSTR);
 
-	ret = devm_request_irq(&pdev->dev, pdev->irq,
-			       sdv_gpio_pub_irq_handler, IRQF_SHARED,
-			       "sdv_gpio", sd);
+	ret = request_irq(pdev->irq, sdv_gpio_pub_irq_handler, IRQF_SHARED,
+			"sdv_gpio", sd);
 	if (ret)
-		return ret;
+		goto out_free_desc;
 
 	/*
 	 * This gpio irq controller latches level irqs. Testing shows that if
 	 * we unmask & ACK the IRQ before the source of the interrupt is gone
 	 * then the interrupt is active again.
 	 */
-	sd->gc = devm_irq_alloc_generic_chip(&pdev->dev, "sdv-gpio", 1,
-					     sd->irq_base,
-					     sd->gpio_pub_base,
-					     handle_fasteoi_irq);
-	if (!sd->gc)
-		return -ENOMEM;
+	sd->gc = irq_alloc_generic_chip("sdv-gpio", 1, sd->irq_base,
+			sd->gpio_pub_base, handle_fasteoi_irq);
+	if (!sd->gc) {
+		ret = -ENOMEM;
+		goto out_free_irq;
+	}
 
 	sd->gc->private = sd;
 	ct = sd->gc->chip_types;
@@ -171,62 +176,86 @@ static int sdv_register_irqsupport(struct sdv_gpio_chip_data *sd,
 
 	sd->id = irq_domain_add_legacy(pdev->dev.of_node, SDV_NUM_PUB_GPIOS,
 				sd->irq_base, 0, &irq_domain_sdv_ops, sd);
-	if (!sd->id)
-		return -ENODEV;
-
+	if (!sd->id) {
+		ret = -ENODEV;
+		goto out_free_irq;
+	}
 	return 0;
+out_free_irq:
+	free_irq(pdev->irq, sd);
+out_free_desc:
+	irq_free_descs(sd->irq_base, SDV_NUM_PUB_GPIOS);
+	return ret;
 }
 
 static int sdv_gpio_probe(struct pci_dev *pdev,
 					const struct pci_device_id *pci_id)
 {
 	struct sdv_gpio_chip_data *sd;
+	unsigned long addr;
+	const void *prop;
+	int len;
 	int ret;
 	u32 mux_val;
 
-	sd = devm_kzalloc(&pdev->dev, sizeof(*sd), GFP_KERNEL);
+	sd = kzalloc(sizeof(struct sdv_gpio_chip_data), GFP_KERNEL);
 	if (!sd)
 		return -ENOMEM;
-
-	ret = pcim_enable_device(pdev);
+	ret = pci_enable_device(pdev);
 	if (ret) {
 		dev_err(&pdev->dev, "can't enable device.\n");
-		return ret;
+		goto done;
 	}
 
-	ret = pcim_iomap_regions(pdev, 1 << GPIO_BAR, DRV_NAME);
+	ret = pci_request_region(pdev, GPIO_BAR, DRV_NAME);
 	if (ret) {
 		dev_err(&pdev->dev, "can't alloc PCI BAR #%d\n", GPIO_BAR);
-		return ret;
+		goto disable_pci;
 	}
 
-	sd->gpio_pub_base = pcim_iomap_table(pdev)[GPIO_BAR];
+	addr = pci_resource_start(pdev, GPIO_BAR);
+	if (!addr) {
+		ret = -ENODEV;
+		goto release_reg;
+	}
+	sd->gpio_pub_base = ioremap(addr, pci_resource_len(pdev, GPIO_BAR));
 
-	ret = of_property_read_u32(pdev->dev.of_node, "intel,muxctl", &mux_val);
-	if (!ret)
+	prop = of_get_property(pdev->dev.of_node, "intel,muxctl", &len);
+	if (prop && len == 4) {
+		mux_val = of_read_number(prop, 1);
 		writel(mux_val, sd->gpio_pub_base + GPMUXCTL);
+	}
 
 	ret = bgpio_init(&sd->chip, &pdev->dev, 4,
 			sd->gpio_pub_base + GPINR, sd->gpio_pub_base + GPOUTR,
 			NULL, sd->gpio_pub_base + GPOER, NULL, 0);
 	if (ret)
-		return ret;
-
+		goto unmap;
 	sd->chip.ngpio = SDV_NUM_PUB_GPIOS;
 
-	ret = devm_gpiochip_add_data(&pdev->dev, &sd->chip, sd);
+	ret = gpiochip_add_data(&sd->chip, sd);
 	if (ret < 0) {
 		dev_err(&pdev->dev, "gpiochip_add() failed.\n");
-		return ret;
+		goto unmap;
 	}
 
 	ret = sdv_register_irqsupport(sd, pdev);
 	if (ret)
-		return ret;
+		goto unmap;
 
 	pci_set_drvdata(pdev, sd);
 	dev_info(&pdev->dev, "Sodaville GPIO driver registered.\n");
 	return 0;
+
+unmap:
+	iounmap(sd->gpio_pub_base);
+release_reg:
+	pci_release_region(pdev, GPIO_BAR);
+disable_pci:
+	pci_disable_device(pdev);
+done:
+	kfree(sd);
+	return ret;
 }
 
 static const struct pci_device_id sdv_gpio_pci_ids[] = {

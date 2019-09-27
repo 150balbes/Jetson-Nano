@@ -29,13 +29,9 @@
  * ath_dynack_ewma - EWMA (Exponentially Weighted Moving Average) calculation
  *
  */
-static inline int ath_dynack_ewma(int old, int new)
+static inline u32 ath_dynack_ewma(u32 old, u32 new)
 {
-	if (old > 0)
-		return (new * (EWMA_DIV - EWMA_LEVEL) +
-			old * EWMA_LEVEL) / EWMA_DIV;
-	else
-		return new;
+	return (new * (EWMA_DIV - EWMA_LEVEL) + old * EWMA_LEVEL) / EWMA_DIV;
 }
 
 /**
@@ -86,10 +82,10 @@ static inline bool ath_dynack_bssidmask(struct ath_hw *ah, const u8 *mac)
  */
 static void ath_dynack_compute_ackto(struct ath_hw *ah)
 {
-	struct ath_common *common = ath9k_hw_common(ah);
-	struct ath_dynack *da = &ah->dynack;
 	struct ath_node *an;
-	int to = 0;
+	u32 to = 0;
+	struct ath_dynack *da = &ah->dynack;
+	struct ath_common *common = ath9k_hw_common(ah);
 
 	list_for_each_entry(an, &da->nodes, list)
 		if (an->ackto > to)
@@ -148,8 +144,7 @@ static void ath_dynack_compute_to(struct ath_hw *ah)
 					an->ackto = ath_dynack_ewma(an->ackto,
 								    ackto);
 					ath_dbg(ath9k_hw_common(ah), DYNACK,
-						"%pM to %d [%u]\n", dst,
-						an->ackto, ackto);
+						"%pM to %u\n", dst, an->ackto);
 					if (time_is_before_jiffies(da->lto)) {
 						ath_dynack_compute_ackto(ah);
 						da->lto = jiffies + COMPUTE_TO;
@@ -171,21 +166,18 @@ static void ath_dynack_compute_to(struct ath_hw *ah)
  * @ah: ath hw
  * @skb: socket buffer
  * @ts: tx status info
- * @sta: station pointer
  *
  */
 void ath_dynack_sample_tx_ts(struct ath_hw *ah, struct sk_buff *skb,
-			     struct ath_tx_status *ts,
-			     struct ieee80211_sta *sta)
+			     struct ath_tx_status *ts)
 {
+	u8 ridx;
 	struct ieee80211_hdr *hdr;
 	struct ath_dynack *da = &ah->dynack;
 	struct ath_common *common = ath9k_hw_common(ah);
 	struct ieee80211_tx_info *info = IEEE80211_SKB_CB(skb);
-	u32 dur = ts->duration;
-	u8 ridx;
 
-	if (!da->enabled || (info->flags & IEEE80211_TX_CTL_NO_ACK))
+	if ((info->flags & IEEE80211_TX_CTL_NO_ACK) || !da->enabled)
 		return;
 
 	spin_lock_bh(&da->qlock);
@@ -195,19 +187,11 @@ void ath_dynack_sample_tx_ts(struct ath_hw *ah, struct sk_buff *skb,
 	/* late ACK */
 	if (ts->ts_status & ATH9K_TXERR_XRETRY) {
 		if (ieee80211_is_assoc_req(hdr->frame_control) ||
-		    ieee80211_is_assoc_resp(hdr->frame_control) ||
-		    ieee80211_is_auth(hdr->frame_control)) {
+		    ieee80211_is_assoc_resp(hdr->frame_control)) {
 			ath_dbg(common, DYNACK, "late ack\n");
-
 			ath9k_hw_setslottime(ah, (LATEACK_TO - 3) / 2);
 			ath9k_hw_set_ack_timeout(ah, LATEACK_TO);
 			ath9k_hw_set_cts_timeout(ah, LATEACK_TO);
-			if (sta) {
-				struct ath_node *an;
-
-				an = (struct ath_node *)sta->drv_priv;
-				an->ackto = -1;
-			}
 			da->lto = jiffies + LATEACK_DELAY;
 		}
 
@@ -218,13 +202,14 @@ void ath_dynack_sample_tx_ts(struct ath_hw *ah, struct sk_buff *skb,
 	ridx = ts->ts_rateindex;
 
 	da->st_rbf.ts[da->st_rbf.t_rb].tstamp = ts->ts_tstamp;
+	da->st_rbf.ts[da->st_rbf.t_rb].dur = ts->duration;
 	ether_addr_copy(da->st_rbf.addr[da->st_rbf.t_rb].h_dest, hdr->addr1);
 	ether_addr_copy(da->st_rbf.addr[da->st_rbf.t_rb].h_src, hdr->addr2);
 
 	if (!(info->status.rates[ridx].flags & IEEE80211_TX_RC_MCS)) {
+		u32 phy, sifs;
 		const struct ieee80211_rate *rate;
 		struct ieee80211_tx_rate *rates = info->status.rates;
-		u32 phy;
 
 		rate = &common->sbands[info->band].bitrates[rates[ridx].idx];
 		if (info->band == NL80211_BAND_2GHZ &&
@@ -233,17 +218,18 @@ void ath_dynack_sample_tx_ts(struct ath_hw *ah, struct sk_buff *skb,
 		else
 			phy = WLAN_RC_PHY_OFDM;
 
-		dur -= ath_dynack_get_sifs(ah, phy);
+		sifs = ath_dynack_get_sifs(ah, phy);
+		da->st_rbf.ts[da->st_rbf.t_rb].dur -= sifs;
 	}
-	da->st_rbf.ts[da->st_rbf.t_rb].dur = dur;
+
+	ath_dbg(common, DYNACK, "{%pM} tx sample %u [dur %u][h %u-t %u]\n",
+		hdr->addr1, da->st_rbf.ts[da->st_rbf.t_rb].tstamp,
+		da->st_rbf.ts[da->st_rbf.t_rb].dur, da->st_rbf.h_rb,
+		(da->st_rbf.t_rb + 1) % ATH_DYN_BUF);
 
 	INCR(da->st_rbf.t_rb, ATH_DYN_BUF);
 	if (da->st_rbf.t_rb == da->st_rbf.h_rb)
 		INCR(da->st_rbf.h_rb, ATH_DYN_BUF);
-
-	ath_dbg(common, DYNACK, "{%pM} tx sample %u [dur %u][h %u-t %u]\n",
-		hdr->addr1, ts->ts_tstamp, dur, da->st_rbf.h_rb,
-		da->st_rbf.t_rb);
 
 	ath_dynack_compute_to(ah);
 
@@ -265,18 +251,19 @@ void ath_dynack_sample_ack_ts(struct ath_hw *ah, struct sk_buff *skb,
 	struct ath_common *common = ath9k_hw_common(ah);
 	struct ieee80211_hdr *hdr = (struct ieee80211_hdr *)skb->data;
 
-	if (!da->enabled || !ath_dynack_bssidmask(ah, hdr->addr1))
+	if (!ath_dynack_bssidmask(ah, hdr->addr1) || !da->enabled)
 		return;
 
 	spin_lock_bh(&da->qlock);
 	da->ack_rbf.tstamp[da->ack_rbf.t_rb] = ts;
 
+	ath_dbg(common, DYNACK, "rx sample %u [h %u-t %u]\n",
+		da->ack_rbf.tstamp[da->ack_rbf.t_rb],
+		da->ack_rbf.h_rb, (da->ack_rbf.t_rb + 1) % ATH_DYN_BUF);
+
 	INCR(da->ack_rbf.t_rb, ATH_DYN_BUF);
 	if (da->ack_rbf.t_rb == da->ack_rbf.h_rb)
 		INCR(da->ack_rbf.h_rb, ATH_DYN_BUF);
-
-	ath_dbg(common, DYNACK, "rx sample %u [h %u-t %u]\n",
-		ts, da->ack_rbf.h_rb, da->ack_rbf.t_rb);
 
 	ath_dynack_compute_to(ah);
 

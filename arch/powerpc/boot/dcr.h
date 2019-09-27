@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _PPC_BOOT_DCR_H_
 #define _PPC_BOOT_DCR_H_
 

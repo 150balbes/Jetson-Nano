@@ -117,7 +117,7 @@ store_call_start(struct device *dev, struct device_attribute *attr,
 
 #ifdef ERR_INJ_DEBUG
 	printk(KERN_DEBUG "Returns: status=%d,\n", (int)status[cpu]);
-	printk(KERN_DEBUG "capabilities=%lx,\n", capabilities[cpu]);
+	printk(KERN_DEBUG "capapbilities=%lx,\n", capabilities[cpu]);
 	printk(KERN_DEBUG "resources=%lx\n", resources[cpu]);
 #endif
 	return size;
@@ -224,45 +224,85 @@ static struct attribute_group err_inject_attr_group = {
 	.name = "err_inject"
 };
 /* Add/Remove err_inject interface for CPU device */
-static int err_inject_add_dev(unsigned int cpu)
+static int err_inject_add_dev(struct device *sys_dev)
 {
-	struct device *sys_dev = get_cpu_device(cpu);
-
 	return sysfs_create_group(&sys_dev->kobj, &err_inject_attr_group);
 }
 
-static int err_inject_remove_dev(unsigned int cpu)
+static int err_inject_remove_dev(struct device *sys_dev)
 {
-	struct device *sys_dev = get_cpu_device(cpu);
-
 	sysfs_remove_group(&sys_dev->kobj, &err_inject_attr_group);
 	return 0;
 }
-
-static enum cpuhp_state hp_online;
-
-static int __init err_inject_init(void)
+static int err_inject_cpu_callback(struct notifier_block *nfb,
+		unsigned long action, void *hcpu)
 {
-	int ret;
+	unsigned int cpu = (unsigned long)hcpu;
+	struct device *sys_dev;
+
+	sys_dev = get_cpu_device(cpu);
+	switch (action) {
+	case CPU_ONLINE:
+	case CPU_ONLINE_FROZEN:
+		err_inject_add_dev(sys_dev);
+		break;
+	case CPU_DEAD:
+	case CPU_DEAD_FROZEN:
+		err_inject_remove_dev(sys_dev);
+		break;
+	}
+
+	return NOTIFY_OK;
+}
+
+static struct notifier_block err_inject_cpu_notifier =
+{
+	.notifier_call = err_inject_cpu_callback,
+};
+
+static int __init
+err_inject_init(void)
+{
+	int i;
+
 #ifdef ERR_INJ_DEBUG
 	printk(KERN_INFO "Enter error injection driver.\n");
 #endif
 
-	ret = cpuhp_setup_state(CPUHP_AP_ONLINE_DYN, "ia64/err_inj:online",
-				err_inject_add_dev, err_inject_remove_dev);
-	if (ret >= 0) {
-		hp_online = ret;
-		ret = 0;
+	cpu_notifier_register_begin();
+
+	for_each_online_cpu(i) {
+		err_inject_cpu_callback(&err_inject_cpu_notifier, CPU_ONLINE,
+				(void *)(long)i);
 	}
-	return ret;
+
+	__register_hotcpu_notifier(&err_inject_cpu_notifier);
+
+	cpu_notifier_register_done();
+
+	return 0;
 }
 
-static void __exit err_inject_exit(void)
+static void __exit
+err_inject_exit(void)
 {
+	int i;
+	struct device *sys_dev;
+
 #ifdef ERR_INJ_DEBUG
 	printk(KERN_INFO "Exit error injection driver.\n");
 #endif
-	cpuhp_remove_state(hp_online);
+
+	cpu_notifier_register_begin();
+
+	for_each_online_cpu(i) {
+		sys_dev = get_cpu_device(i);
+		sysfs_remove_group(&sys_dev->kobj, &err_inject_attr_group);
+	}
+
+	__unregister_hotcpu_notifier(&err_inject_cpu_notifier);
+
+	cpu_notifier_register_done();
 }
 
 module_init(err_inject_init);

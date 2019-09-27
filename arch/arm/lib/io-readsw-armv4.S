@@ -1,8 +1,11 @@
-/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  *  linux/arch/arm/lib/io-readsw-armv4.S
  *
  *  Copyright (C) 1995-2000 Russell King
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  */
 #include <linux/linkage.h>
 #include <asm/assembler.h>
@@ -73,8 +76,8 @@ ENTRY(__raw_readsw)
 		pack	r3, r3, ip
 		str	r3, [r1], #4
 
-.Lno_insw_2:	ldrhne	r3, [r0]
-		strhne	r3, [r1]
+.Lno_insw_2:	ldrneh	r3, [r0]
+		strneh	r3, [r1]
 
 		ldmfd	sp!, {r4, r5, pc}
 
@@ -91,7 +94,7 @@ ENTRY(__raw_readsw)
 #endif
 
 .Linsw_noalign:	stmfd	sp!, {r4, lr}
-		ldrbcc	ip, [r1, #-1]!
+		ldrccb	ip, [r1, #-1]!
 		bcc	1f
 
 		ldrh	ip, [r0]
@@ -118,11 +121,11 @@ ENTRY(__raw_readsw)
 
 3:		tst	r2, #1
 		strb	ip, [r1], #1
-		ldrhne	ip, [r0]
+		ldrneh	ip, [r0]
    _BE_ONLY_(	movne	ip, ip, ror #8		)
-		strbne	ip, [r1], #1
+		strneb	ip, [r1], #1
    _LE_ONLY_(	movne	ip, ip, lsr #8		)
    _BE_ONLY_(	movne	ip, ip, lsr #24		)
-		strbne	ip, [r1]
+		strneb	ip, [r1]
 		ldmfd	sp!, {r4, pc}
 ENDPROC(__raw_readsw)

@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Per-device information from the pin control system.
  * This is the stuff that get included into the device
@@ -9,6 +8,8 @@
  * This interface is used in the core to keep track of pins.
  *
  * Author: Linus Walleij <linus.walleij@linaro.org>
+ *
+ * License terms: GNU General Public License (GPL) version 2
  */
 
 #ifndef PINCTRL_DEVINFO_H
@@ -41,8 +42,6 @@ extern int pinctrl_bind_pins(struct device *dev);
 extern int pinctrl_init_done(struct device *dev);
 
 #else
-
-struct device;
 
 /* Stubs if we're not using pinctrl */
 

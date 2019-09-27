@@ -1,8 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
-/*
- * Released under the GPLv2 only.
- */
-
 #include <linux/usb.h>
 #include <linux/usb/ch9.h>
 #include <linux/usb/hcd.h>
@@ -552,7 +547,7 @@ static int usb_parse_configuration(struct usb_device *dev, int cfgidx,
 	unsigned char *buffer2;
 	int size2;
 	struct usb_descriptor_header *header;
-	int retval;
+	int len, retval;
 	u8 inums[USB_MAXINTERFACES], nalts[USB_MAXINTERFACES];
 	unsigned iad_num = 0;
 
@@ -707,8 +702,8 @@ static int usb_parse_configuration(struct usb_device *dev, int cfgidx,
 			nalts[i] = j = USB_MAXALTSETTING;
 		}
 
-		intfc = kzalloc(struct_size(intfc, altsetting, j), GFP_KERNEL);
-		config->intf_cache[i] = intfc;
+		len = sizeof(*intfc) + sizeof(struct usb_host_interface) * j;
+		config->intf_cache[i] = intfc = kzalloc(len, GFP_KERNEL);
 		if (!intfc)
 			return -ENOMEM;
 		kref_init(&intfc->ref);
@@ -768,18 +763,21 @@ void usb_destroy_configuration(struct usb_device *dev)
 		return;
 
 	if (dev->rawdescriptors) {
-		for (i = 0; i < dev->descriptor.bNumConfigurations; i++)
+		for (i = 0; i < dev->descriptor.bNumConfigurations &&
+				i < USB_MAXCONFIG; i++)
 			kfree(dev->rawdescriptors[i]);
 
 		kfree(dev->rawdescriptors);
 		dev->rawdescriptors = NULL;
 	}
 
-	for (c = 0; c < dev->descriptor.bNumConfigurations; c++) {
+	for (c = 0; c < dev->descriptor.bNumConfigurations &&
+			c < USB_MAXCONFIG; c++) {
 		struct usb_host_config *cf = &dev->config[c];
 
 		kfree(cf->string);
-		for (i = 0; i < cf->desc.bNumInterfaces; i++) {
+		for (i = 0; i < cf->desc.bNumInterfaces &&
+				i < USB_MAXINTERFACES; i++) {
 			if (cf->intf_cache[i])
 				kref_put(&cf->intf_cache[i]->ref,
 					  usb_release_interface_cache);
@@ -800,11 +798,13 @@ int usb_get_configuration(struct usb_device *dev)
 {
 	struct device *ddev = &dev->dev;
 	int ncfg = dev->descriptor.bNumConfigurations;
-	int result = -ENOMEM;
+	int result = 0;
 	unsigned int cfgno, length;
 	unsigned char *bigbuffer;
 	struct usb_config_descriptor *desc;
 
+	cfgno = 0;
+	result = -ENOMEM;
 	if (ncfg > USB_MAXCONFIG) {
 		dev_warn(ddev, "too many configurations: %d, "
 		    "using maximum allowed: %d\n", ncfg, USB_MAXCONFIG);
@@ -830,7 +830,8 @@ int usb_get_configuration(struct usb_device *dev)
 	if (!desc)
 		goto err2;
 
-	for (cfgno = 0; cfgno < ncfg; cfgno++) {
+	result = 0;
+	for (; cfgno < ncfg; cfgno++) {
 		/* We grab just the first descriptor so we know how long
 		 * the whole configuration is */
 		result = usb_get_descriptor(dev, USB_DT_CONFIG, cfgno,
@@ -886,6 +887,7 @@ int usb_get_configuration(struct usb_device *dev)
 			goto err;
 		}
 	}
+	result = 0;
 
 err:
 	kfree(desc);
@@ -932,8 +934,8 @@ int usb_get_bos_descriptor(struct usb_device *dev)
 
 	/* Get BOS descriptor */
 	ret = usb_get_descriptor(dev, USB_DT_BOS, 0, bos, USB_DT_BOS_SIZE);
-	if (ret < USB_DT_BOS_SIZE || bos->bLength < USB_DT_BOS_SIZE) {
-		dev_err(ddev, "unable to get BOS descriptor or descriptor too short\n");
+	if (ret < USB_DT_BOS_SIZE) {
+		dev_err(ddev, "unable to get BOS descriptor\n");
 		if (ret >= 0)
 			ret = -ENOMSG;
 		kfree(bos);

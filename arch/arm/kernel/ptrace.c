@@ -1,14 +1,16 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  *  linux/arch/arm/kernel/ptrace.c
  *
  *  By Ross Biro 1/23/92
  * edited by Linus Torvalds
  * ARM modifications Copyright (C) 2000 Russell King
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  */
 #include <linux/kernel.h>
-#include <linux/sched/signal.h>
-#include <linux/sched/task_stack.h>
+#include <linux/sched.h>
 #include <linux/mm.h>
 #include <linux/elf.h>
 #include <linux/smp.h>
@@ -198,15 +200,21 @@ void ptrace_disable(struct task_struct *child)
 /*
  * Handle hitting a breakpoint.
  */
-void ptrace_break(struct pt_regs *regs)
+void ptrace_break(struct task_struct *tsk, struct pt_regs *regs)
 {
-	force_sig_fault(SIGTRAP, TRAP_BRKPT,
-			(void __user *)instruction_pointer(regs));
+	siginfo_t info;
+
+	info.si_signo = SIGTRAP;
+	info.si_errno = 0;
+	info.si_code  = TRAP_BRKPT;
+	info.si_addr  = (void __user *)instruction_pointer(regs);
+
+	force_sig_info(SIGTRAP, &info, tsk);
 }
 
 static int break_trap(struct pt_regs *regs, unsigned int instr)
 {
-	ptrace_break(regs);
+	ptrace_break(current, regs);
 	return 0;
 }
 
@@ -381,6 +389,7 @@ static void ptrace_hbptriggered(struct perf_event *bp,
 	struct arch_hw_breakpoint *bkpt = counter_arch_bp(bp);
 	long num;
 	int i;
+	siginfo_t info;
 
 	for (i = 0; i < ARM_MAX_HBP_SLOTS; ++i)
 		if (current->thread.debug.hbp[i] == bp)
@@ -388,7 +397,12 @@ static void ptrace_hbptriggered(struct perf_event *bp,
 
 	num = (i == ARM_MAX_HBP_SLOTS) ? 0 : ptrace_hbp_idx_to_num(i);
 
-	force_sig_ptrace_errno_trap((int)num, (void __user *)(bkpt->trigger));
+	info.si_signo	= SIGTRAP;
+	info.si_errno	= (int)num;
+	info.si_code	= TRAP_HWBKPT;
+	info.si_addr	= (void __user *)(bkpt->trigger);
+
+	force_sig_info(SIGTRAP, &info, current);
 }
 
 /*

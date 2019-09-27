@@ -12,8 +12,6 @@
 #include <linux/syscalls.h>
 #include <linux/moduleloader.h>
 #include <linux/atomic.h>
-#include <linux/sched/signal.h>
-
 #include <asm/mipsmtregs.h>
 #include <asm/mips_mt.h>
 #include <asm/processor.h>
@@ -336,10 +334,10 @@ static int file_release(struct inode *inode, struct file *filp)
 	return rtlx_release(iminor(inode));
 }
 
-static __poll_t file_poll(struct file *file, poll_table *wait)
+static unsigned int file_poll(struct file *file, poll_table *wait)
 {
 	int minor = iminor(file_inode(file));
-	__poll_t mask = 0;
+	unsigned int mask = 0;
 
 	poll_wait(file, &channel_wqs[minor].rt_queue, wait);
 	poll_wait(file, &channel_wqs[minor].lx_queue, wait);
@@ -349,11 +347,11 @@ static __poll_t file_poll(struct file *file, poll_table *wait)
 
 	/* data available to read? */
 	if (rtlx_read_poll(minor, 0))
-		mask |= EPOLLIN | EPOLLRDNORM;
+		mask |= POLLIN | POLLRDNORM;
 
 	/* space to write */
 	if (rtlx_write_poll(minor))
-		mask |= EPOLLOUT | EPOLLWRNORM;
+		mask |= POLLOUT | POLLWRNORM;
 
 	return mask;
 }

@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /* drivers/atm/zeprom.h - ZeitNet ZN122x EEPROM (NM93C46) declarations */
 
 /* Written 1995,1996 by Werner Almesberger, EPFL LRC */

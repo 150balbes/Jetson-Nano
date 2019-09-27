@@ -1,7 +1,6 @@
-# SPDX-License-Identifier: GPL-2.0-only
 config DRM_GMA500
 	tristate "Intel GMA5/600 KMS Framebuffer"
-	depends on DRM && PCI && X86 && MMU
+	depends on DRM && PCI && X86
 	select DRM_KMS_HELPER
 	select DRM_TTM
 	# GMA500 depends on ACPI_VIDEO when ACPI is enabled, just like i915

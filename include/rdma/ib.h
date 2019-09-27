@@ -35,7 +35,6 @@
 
 #include <linux/types.h>
 #include <linux/sched.h>
-#include <linux/cred.h>
 
 struct ib_addr {
 	union {
@@ -53,12 +52,12 @@ struct ib_addr {
 #define sib_interface_id	ib_u.uib_addr64[1]
 };
 
-static inline bool ib_addr_any(const struct ib_addr *a)
+static inline int ib_addr_any(const struct ib_addr *a)
 {
 	return ((a->sib_addr64[0] | a->sib_addr64[1]) == 0);
 }
 
-static inline bool ib_addr_loopback(const struct ib_addr *a)
+static inline int ib_addr_loopback(const struct ib_addr *a)
 {
 	return ((a->sib_addr32[0] | a->sib_addr32[1] |
 		 a->sib_addr32[2] | (a->sib_addr32[3] ^ htonl(1))) == 0);
@@ -100,7 +99,7 @@ struct sockaddr_ib {
  */
 static inline bool ib_safe_file_access(struct file *filp)
 {
-	return filp->f_cred == current_cred() && !uaccess_kernel();
+	return filp->f_cred == current_cred() && segment_eq(get_fs(), USER_DS);
 }
 
 #endif /* _RDMA_IB_H */

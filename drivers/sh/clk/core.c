@@ -197,11 +197,10 @@ int clk_rate_table_find(struct clk *clk,
 			unsigned long rate)
 {
 	struct cpufreq_frequency_table *pos;
-	int idx;
 
-	cpufreq_for_each_valid_entry_idx(pos, freq_table, idx)
+	cpufreq_for_each_valid_entry(pos, freq_table)
 		if (pos->frequency == rate)
-			return idx;
+			return pos - freq_table;
 
 	return -ENOENT;
 }

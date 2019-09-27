@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _SCSI_IOCTL_H
 #define _SCSI_IOCTL_H 
 

@@ -1,7 +1,10 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (C) Sistina Software, Inc.  1997-2003 All rights reserved.
  * Copyright (C) 2004-2006 Red Hat, Inc.  All rights reserved.
+ *
+ * This copyrighted material is made available to anyone wishing to use,
+ * modify, copy, or redistribute it subject to the terms and conditions
+ * of the GNU General Public License version 2.
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
@@ -11,12 +14,11 @@
 #include <linux/buffer_head.h>
 #include <linux/crc32.h>
 #include <linux/gfs2_ondisk.h>
-#include <linux/uaccess.h>
+#include <asm/uaccess.h>
 
 #include "gfs2.h"
 #include "incore.h"
 #include "glock.h"
-#include "rgrp.h"
 #include "util.h"
 
 struct kmem_cache *gfs2_glock_cachep __read_mostly;
@@ -41,19 +43,17 @@ int gfs2_lm_withdraw(struct gfs2_sbd *sdp, const char *fmt, ...)
 	struct va_format vaf;
 
 	if (sdp->sd_args.ar_errors == GFS2_ERRORS_WITHDRAW &&
-	    test_and_set_bit(SDF_WITHDRAWN, &sdp->sd_flags))
+	    test_and_set_bit(SDF_SHUTDOWN, &sdp->sd_flags))
 		return 0;
 
-	if (fmt) {
-		va_start(args, fmt);
+	va_start(args, fmt);
 
-		vaf.fmt = fmt;
-		vaf.va = &args;
+	vaf.fmt = fmt;
+	vaf.va = &args;
 
-		fs_err(sdp, "%pV", &vaf);
+	fs_err(sdp, "%pV", &vaf);
 
-		va_end(args);
-	}
+	va_end(args);
 
 	if (sdp->sd_args.ar_errors == GFS2_ERRORS_WITHDRAW) {
 		fs_err(sdp, "about to withdraw this file system\n");
@@ -178,11 +178,7 @@ int gfs2_consist_rgrpd_i(struct gfs2_rgrpd *rgd, int cluster_wide,
 			 const char *function, char *file, unsigned int line)
 {
 	struct gfs2_sbd *sdp = rgd->rd_sbd;
-	char fs_id_buf[GFS2_FSNAME_LEN + 3 * sizeof(int) + 2];
 	int rv;
-
-	sprintf(fs_id_buf, "fsid=%s: ", sdp->sd_fsname);
-	gfs2_rgrp_dump(NULL, rgd->rd_gl, fs_id_buf);
 	rv = gfs2_lm_withdraw(sdp,
 			      "fatal: filesystem consistency error\n"
 			      "  RG = %llu\n"
@@ -250,22 +246,21 @@ int gfs2_io_error_i(struct gfs2_sbd *sdp, const char *function, char *file,
 }
 
 /**
- * gfs2_io_error_bh_i - Flag a buffer I/O error
- * @withdraw: withdraw the filesystem
+ * gfs2_io_error_bh_i - Flag a buffer I/O error and withdraw
+ * Returns: -1 if this call withdrew the machine,
+ *          0 if it was already withdrawn
  */
 
-void gfs2_io_error_bh_i(struct gfs2_sbd *sdp, struct buffer_head *bh,
-			const char *function, char *file, unsigned int line,
-			bool withdraw)
+int gfs2_io_error_bh_i(struct gfs2_sbd *sdp, struct buffer_head *bh,
+		       const char *function, char *file, unsigned int line)
 {
-	if (!test_bit(SDF_WITHDRAWN, &sdp->sd_flags))
-		fs_err(sdp,
-		       "fatal: I/O error\n"
-		       "  block = %llu\n"
-		       "  function = %s, file = %s, line = %u\n",
-		       (unsigned long long)bh->b_blocknr,
-		       function, file, line);
-	if (withdraw)
-		gfs2_lm_withdraw(sdp, NULL);
+	int rv;
+	rv = gfs2_lm_withdraw(sdp,
+			      "fatal: I/O error\n"
+			      "  block = %llu\n"
+			      "  function = %s, file = %s, line = %u\n",
+			      (unsigned long long)bh->b_blocknr,
+			      function, file, line);
+	return rv;
 }
 

@@ -1,0 +1,7 @@
+config EVENTLIB
+	tristate "Enable Eventlib"
+	default y
+	depends on SYSFS
+	help
+	  This option enables Eventlib.
+	  Say Y or M if you want to enable Eventlib.

@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0-only
 menuconfig NET_TEAM
 	tristate "Ethernet team driver support"
 	---help---

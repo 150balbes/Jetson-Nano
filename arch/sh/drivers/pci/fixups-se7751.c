@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 #include <linux/kernel.h>
 #include <linux/types.h>
 #include <linux/init.h>
@@ -8,7 +7,7 @@
 #include <linux/sh_intc.h>
 #include "pci-sh4.h"
 
-int pcibios_map_platform_irq(const struct pci_dev *, u8 slot, u8 pin)
+int __init pcibios_map_platform_irq(const struct pci_dev *, u8 slot, u8 pin)
 {
         switch (slot) {
         case 0: return evt2irq(0x3a0);

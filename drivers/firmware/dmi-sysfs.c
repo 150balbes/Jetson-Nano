@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * dmi-sysfs.c
  *
@@ -26,7 +25,6 @@
 #include <linux/slab.h>
 #include <linux/list.h>
 #include <linux/io.h>
-#include <asm/dmi.h>
 
 #define MAX_ENTRY_TYPE 255 /* Most of these aren't used, but we consider
 			      the top entry type is only 8 bits */
@@ -382,7 +380,7 @@ static ssize_t dmi_sel_raw_read_phys32(struct dmi_sysfs_entry *entry,
 	u8 __iomem *mapped;
 	ssize_t wrote = 0;
 
-	mapped = dmi_remap(sel->access_method_address, sel->area_length);
+	mapped = ioremap(sel->access_method_address, sel->area_length);
 	if (!mapped)
 		return -EIO;
 
@@ -392,7 +390,7 @@ static ssize_t dmi_sel_raw_read_phys32(struct dmi_sysfs_entry *entry,
 		wrote++;
 	}
 
-	dmi_unmap(mapped);
+	iounmap(mapped);
 	return wrote;
 }
 
@@ -653,7 +651,7 @@ static int __init dmi_sysfs_init(void)
 	int val;
 
 	if (!dmi_kobj) {
-		pr_debug("dmi-sysfs: dmi entry is absent.\n");
+		pr_err("dmi-sysfs: dmi entry is absent.\n");
 		error = -ENODATA;
 		goto err;
 	}

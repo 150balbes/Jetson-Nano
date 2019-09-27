@@ -1,0 +1,29 @@
+/*
+ * arch/arm64/boot/dts/tegra210-p3448-0000-p3449-0000-a00.dts
+ *
+ * Copyright (c) 2018-2019, NVIDIA CORPORATION.  All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; version 2 of the License.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with this program; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+ *
+ */
+
+#include "tegra210-porg-p3448-common.dtsi"
+#include "porg-platforms/tegra210-porg-pinmux-p3448-0000-a00.dtsi"
+#include "porg-platforms/tegra210-porg-gpio-p3448-0000-a00.dtsi"
+
+/ {
+	model = "NVIDIA Jetson Nano Developer Kit";
+	compatible = "nvidia,jetson-nano", "nvidia,tegra210";
+	nvidia,dtsfilename = __FILE__;
+};

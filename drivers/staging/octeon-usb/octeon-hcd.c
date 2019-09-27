@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * This file is subject to the terms and conditions of the GNU General Public
  * License.  See the file "COPYING" in the main directory of this archive
@@ -50,7 +49,6 @@
 #include <linux/module.h>
 #include <linux/usb/hcd.h>
 #include <linux/prefetch.h>
-#include <linux/dma-mapping.h>
 #include <linux/platform_device.h>
 
 #include <asm/octeon/octeon.h>
@@ -378,6 +376,29 @@ struct octeon_hcd {
 	struct cvmx_usb_tx_fifo nonperiodic;
 };
 
+/* This macro spins on a register waiting for it to reach a condition. */
+#define CVMX_WAIT_FOR_FIELD32(address, _union, cond, timeout_usec)	    \
+	({int result;							    \
+	do {								    \
+		u64 done = cvmx_get_cycle() + (u64)timeout_usec *	    \
+			   octeon_get_clock_rate() / 1000000;		    \
+		union _union c;						    \
+									    \
+		while (1) {						    \
+			c.u32 = cvmx_usb_read_csr32(usb, address);	    \
+									    \
+			if (cond) {					    \
+				result = 0;				    \
+				break;					    \
+			} else if (cvmx_get_cycle() > done) {		    \
+				result = -1;				    \
+				break;					    \
+			} else						    \
+				cvmx_wait(100);				    \
+		}							    \
+	} while (0);							    \
+	result; })
+
 /*
  * This macro logically sets a single field in a CSR. It does the sequence
  * read, modify, and write
@@ -521,7 +542,8 @@ static void octeon_unmap_urb_for_dma(struct usb_hcd *hcd, struct urb *urb)
  */
 static inline u32 cvmx_usb_read_csr32(struct octeon_hcd *usb, u64 address)
 {
-	return cvmx_read64_uint32(address ^ 4);
+	u32 result = cvmx_read64_uint32(address ^ 4);
+	return result;
 }
 
 /**
@@ -570,33 +592,6 @@ static inline int cvmx_usb_get_data_pid(struct cvmx_usb_pipe *pipe)
 	return 0; /* Data0 */
 }
 
-/* Loops through register until txfflsh or rxfflsh become zero.*/
-static int cvmx_wait_tx_rx(struct octeon_hcd *usb, int fflsh_type)
-{
-	int result;
-	u64 address = CVMX_USBCX_GRSTCTL(usb->index);
-	u64 done = cvmx_get_cycle() + 100 *
-		   (u64)octeon_get_clock_rate / 1000000;
-	union cvmx_usbcx_grstctl c;
-
-	while (1) {
-		c.u32 = cvmx_usb_read_csr32(usb, address);
-		if (fflsh_type == 0 && c.s.txfflsh == 0) {
-			result = 0;
-			break;
-		} else if (fflsh_type == 1 && c.s.rxfflsh == 0) {
-			result = 0;
-			break;
-		} else if (cvmx_get_cycle() > done) {
-			result = -1;
-			break;
-		}
-
-		__delay(100);
-	}
-	return result;
-}
-
 static void cvmx_fifo_setup(struct octeon_hcd *usb)
 {
 	union cvmx_usbcx_ghwcfg3 usbcx_ghwcfg3;
@@ -638,10 +633,12 @@ static void cvmx_fifo_setup(struct octeon_hcd *usb)
 			cvmx_usbcx_grstctl, txfnum, 0x10);
 	USB_SET_FIELD32(CVMX_USBCX_GRSTCTL(usb->index),
 			cvmx_usbcx_grstctl, txfflsh, 1);
-	cvmx_wait_tx_rx(usb, 0);
+	CVMX_WAIT_FOR_FIELD32(CVMX_USBCX_GRSTCTL(usb->index),
+			      cvmx_usbcx_grstctl, c.s.txfflsh == 0, 100);
 	USB_SET_FIELD32(CVMX_USBCX_GRSTCTL(usb->index),
 			cvmx_usbcx_grstctl, rxfflsh, 1);
-	cvmx_wait_tx_rx(usb, 1);
+	CVMX_WAIT_FOR_FIELD32(CVMX_USBCX_GRSTCTL(usb->index),
+			      cvmx_usbcx_grstctl, c.s.rxfflsh == 0, 100);
 }
 
 /**
@@ -777,7 +774,7 @@ retry:
 	usbn_clk_ctl.s.hclk_rst = 1;
 	cvmx_write64_uint64(CVMX_USBNX_CLK_CTL(usb->index), usbn_clk_ctl.u64);
 	/* 2e.  Wait 64 core-clock cycles for HCLK to stabilize */
-	__delay(64);
+	cvmx_wait(64);
 	/*
 	 * 3. Program the power-on reset field in the USBN clock-control
 	 *    register:
@@ -798,7 +795,7 @@ retry:
 	cvmx_write64_uint64(CVMX_USBNX_USBP_CTL_STATUS(usb->index),
 			    usbn_usbp_ctl_status.u64);
 	/* 6. Wait 10 cycles */
-	__delay(10);
+	cvmx_wait(10);
 	/*
 	 * 7. Clear ATE_RESET field in the USBN clock-control register:
 	 *    USBN_USBP_CTL_STATUS[ATE_RESET] = 0
@@ -2384,11 +2381,13 @@ static int cvmx_usb_close_pipe(struct octeon_hcd *usb,
  */
 static int cvmx_usb_get_frame_number(struct octeon_hcd *usb)
 {
+	int frame_number;
 	union cvmx_usbcx_hfnum usbc_hfnum;
 
 	usbc_hfnum.u32 = cvmx_usb_read_csr32(usb, CVMX_USBCX_HFNUM(usb->index));
+	frame_number = usbc_hfnum.s.frnum;
 
-	return usbc_hfnum.s.frnum;
+	return frame_number;
 }
 
 static void cvmx_usb_transfer_control(struct octeon_hcd *usb,
@@ -2768,7 +2767,7 @@ static int cvmx_usb_poll_channel(struct octeon_hcd *usb, int channel)
 	    (pipe->transfer_dir == CVMX_USB_DIRECTION_OUT))
 		pipe->flags |= CVMX_USB_PIPE_FLAGS_NEED_PING;
 
-	if (WARN_ON_ONCE(bytes_this_transfer < 0)) {
+	if (unlikely(WARN_ON_ONCE(bytes_this_transfer < 0))) {
 		/*
 		 * In some rare cases the DMA engine seems to get stuck and
 		 * keeps substracting same byte count over and over again. In
@@ -3604,9 +3603,8 @@ static int octeon_usb_probe(struct platform_device *pdev)
 	 * Set the DMA mask to 64bits so we get buffers already translated for
 	 * DMA.
 	 */
-	i = dma_coerce_mask_and_coherent(dev, DMA_BIT_MASK(64));
-	if (i)
-		return i;
+	dev->coherent_dma_mask = ~0;
+	dev->dma_mask = &dev->coherent_dma_mask;
 
 	/*
 	 * Only cn52XX and cn56XX have DWC_OTG USB hardware and the
@@ -3661,14 +3659,14 @@ static int octeon_usb_probe(struct platform_device *pdev)
 	status = cvmx_usb_initialize(dev, usb);
 	if (status) {
 		dev_dbg(dev, "USB initialization failed with %d\n", status);
-		usb_put_hcd(hcd);
+		kfree(hcd);
 		return -1;
 	}
 
 	status = usb_add_hcd(hcd, irq, 0);
 	if (status) {
 		dev_dbg(dev, "USB add HCD failed with %d\n", status);
-		usb_put_hcd(hcd);
+		kfree(hcd);
 		return -1;
 	}
 	device_wakeup_enable(hcd->self.controller);
@@ -3693,7 +3691,7 @@ static int octeon_usb_remove(struct platform_device *pdev)
 	if (status)
 		dev_dbg(dev, "USB shutdown failed with %d\n", status);
 
-	usb_put_hcd(hcd);
+	kfree(hcd);
 
 	return 0;
 }

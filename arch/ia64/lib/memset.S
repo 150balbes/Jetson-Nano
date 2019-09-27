@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /* Optimized version of the standard memset() function.
 
    Copyright (c) 2002 Hewlett-Packard Co/CERN

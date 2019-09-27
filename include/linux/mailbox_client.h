@@ -1,7 +1,11 @@
-/* SPDX-License-Identifier: GPL-2.0-only */
 /*
+ * Copyright (c) 2017, NVIDIA CORPORATION.  All rights reserved.
  * Copyright (C) 2013-2014 Linaro Ltd.
  * Author: Jassi Brar <jassisinghbrar@gmail.com>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  */
 
 #ifndef __MAILBOX_CLIENT_H
@@ -41,9 +45,9 @@ struct mbox_chan *mbox_request_channel_byname(struct mbox_client *cl,
 					      const char *name);
 struct mbox_chan *mbox_request_channel(struct mbox_client *cl, int index);
 int mbox_send_message(struct mbox_chan *chan, void *mssg);
-int mbox_flush(struct mbox_chan *chan, unsigned long timeout);
 void mbox_client_txdone(struct mbox_chan *chan, int r); /* atomic */
 bool mbox_client_peek_data(struct mbox_chan *chan); /* atomic */
 void mbox_free_channel(struct mbox_chan *chan); /* may sleep */
+int mbox_get_max_txsize(struct mbox_chan *chan);
 
 #endif /* __MAILBOX_CLIENT_H */

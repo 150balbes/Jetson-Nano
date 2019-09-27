@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0
 # ==========================================================================
 # Cleaning up
 # ==========================================================================
@@ -12,7 +11,11 @@ include scripts/Kbuild.include
 
 # The filename Kbuild has precedence over Makefile
 kbuild-dir := $(if $(filter /%,$(src)),$(src),$(srctree)/$(src))
-include $(if $(wildcard $(kbuild-dir)/Kbuild), $(kbuild-dir)/Kbuild, $(kbuild-dir)/Makefile)
+kbuild-file := $(if $(wildcard $(kbuild-dir)/Kbuild),$(kbuild-dir)/Kbuild, $(kbuild-dir)/Makefile)
+ifneq ("$(wildcard $(kbuild-file))", "")
+-include $(kbuild-file)
+endif
+-include $(srctree)/scripts/Makefile.tegra
 
 # Figure out what we need to build from the various variables
 # ==========================================================================
@@ -38,6 +41,7 @@ subdir-ymn	:= $(addprefix $(obj)/,$(subdir-ymn))
 
 __clean-files	:= $(extra-y) $(extra-m) $(extra-)       \
 		   $(always) $(targets) $(clean-files)   \
+		   $(host-progs)                         \
 		   $(hostprogs-y) $(hostprogs-m) $(hostprogs-) \
 		   $(hostlibs-y) $(hostlibs-m) $(hostlibs-) \
 		   $(hostcxxlibs-y) $(hostcxxlibs-m)
@@ -86,5 +90,8 @@ endif
 PHONY += $(subdir-ymn)
 $(subdir-ymn):
 	$(Q)$(MAKE) $(clean)=$@
+
+# Declare the contents of the .PHONY variable as phony.  We keep that
+# information in a variable se we can use it in if_changed and friends.
 
 .PHONY: $(PHONY)

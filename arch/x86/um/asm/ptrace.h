@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __UM_X86_PTRACE_H
 #define __UM_X86_PTRACE_H
 
@@ -79,7 +78,7 @@ static inline int ptrace_set_thread_area(struct task_struct *child, int idx,
         return -ENOSYS;
 }
 
-extern long arch_prctl(struct task_struct *task, int option,
+extern long arch_prctl(struct task_struct *task, int code,
 		       unsigned long __user *addr);
 
 #endif

@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef LINUX_EXPORTFS_H
 #define LINUX_EXPORTFS_H 1
 

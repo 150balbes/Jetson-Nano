@@ -27,7 +27,6 @@
 static const struct nv50_fb_func
 g84_fb = {
 	.ram_new = nv50_ram_new,
-	.tags = nv20_fb_tags,
 	.trap = 0x001d07ff,
 };
 

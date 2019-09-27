@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __ASM_ARCH_PXA930_TRKBALL_H
 #define __ASM_ARCH_PXA930_TRKBALL_H
 

@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * linux/fs/hfsplus/xattr.h
  *
@@ -36,6 +35,9 @@ ssize_t hfsplus_getxattr(struct inode *inode, const char *name,
 ssize_t hfsplus_listxattr(struct dentry *dentry, char *buffer, size_t size);
 
 int hfsplus_init_security(struct inode *inode, struct inode *dir,
+				const struct qstr *qstr);
+
+int hfsplus_init_inode_security(struct inode *inode, struct inode *dir,
 				const struct qstr *qstr);
 
 #endif

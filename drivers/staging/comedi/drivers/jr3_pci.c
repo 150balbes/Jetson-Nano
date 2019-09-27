@@ -1,10 +1,19 @@
-// SPDX-License-Identifier: GPL-2.0+
 /*
  * comedi/drivers/jr3_pci.c
  * hardware driver for JR3/PCI force sensor board
  *
  * COMEDI - Linux Control and Measurement Device Interface
  * Copyright (C) 2007 Anders Blomdell <anders.blomdell@control.lth.se>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
  */
 /*
  * Driver: jr3_pci
@@ -86,31 +95,27 @@ struct jr3_pci_poll_delay {
 };
 
 struct jr3_pci_dev_private {
+	struct jr3_t __iomem *iobase;
 	struct timer_list timer;
-	struct comedi_device *dev;
-};
-
-union jr3_pci_single_range {
-	struct comedi_lrange l;
-	char _reserved[offsetof(struct comedi_lrange, range[1])];
-};
-
-enum jr3_pci_poll_state {
-	state_jr3_poll,
-	state_jr3_init_wait_for_offset,
-	state_jr3_init_transform_complete,
-	state_jr3_init_set_full_scale_complete,
-	state_jr3_init_use_offset_complete,
-	state_jr3_done
 };
 
 struct jr3_pci_subdev_private {
-	struct jr3_sensor __iomem *sensor;
+	struct jr3_channel __iomem *channel;
 	unsigned long next_time_min;
-	enum jr3_pci_poll_state state;
+	unsigned long next_time_max;
+	enum { state_jr3_poll,
+		state_jr3_init_wait_for_offset,
+		state_jr3_init_transform_complete,
+		state_jr3_init_set_full_scale_complete,
+		state_jr3_init_use_offset_complete,
+		state_jr3_done
+	} state;
 	int serial_no;
 	int model_no;
-	union jr3_pci_single_range range[9];
+	struct {
+		int length;
+		struct comedi_krange range;
+	} range[9];
 	const struct comedi_lrange *range_table_list[8 * 7 + 2];
 	unsigned int maxdata_list[8 * 7 + 2];
 	u16 errors;
@@ -126,43 +131,43 @@ static struct jr3_pci_poll_delay poll_delay_min_max(int min, int max)
 	return result;
 }
 
-static int is_complete(struct jr3_sensor __iomem *sensor)
+static int is_complete(struct jr3_channel __iomem *channel)
 {
-	return get_s16(&sensor->command_word0) == 0;
+	return get_s16(&channel->command_word0) == 0;
 }
 
-static void set_transforms(struct jr3_sensor __iomem *sensor,
-			   const struct jr3_pci_transform *transf, short num)
+static void set_transforms(struct jr3_channel __iomem *channel,
+			   struct jr3_pci_transform transf, short num)
 {
 	int i;
 
 	num &= 0x000f;		/* Make sure that 0 <= num <= 15 */
 	for (i = 0; i < 8; i++) {
-		set_u16(&sensor->transforms[num].link[i].link_type,
-			transf->link[i].link_type);
+		set_u16(&channel->transforms[num].link[i].link_type,
+			transf.link[i].link_type);
 		udelay(1);
-		set_s16(&sensor->transforms[num].link[i].link_amount,
-			transf->link[i].link_amount);
+		set_s16(&channel->transforms[num].link[i].link_amount,
+			transf.link[i].link_amount);
 		udelay(1);
-		if (transf->link[i].link_type == end_x_form)
+		if (transf.link[i].link_type == end_x_form)
 			break;
 	}
 }
 
-static void use_transform(struct jr3_sensor __iomem *sensor,
+static void use_transform(struct jr3_channel __iomem *channel,
 			  short transf_num)
 {
-	set_s16(&sensor->command_word0, 0x0500 + (transf_num & 0x000f));
+	set_s16(&channel->command_word0, 0x0500 + (transf_num & 0x000f));
 }
 
-static void use_offset(struct jr3_sensor __iomem *sensor, short offset_num)
+static void use_offset(struct jr3_channel __iomem *channel, short offset_num)
 {
-	set_s16(&sensor->command_word0, 0x0600 + (offset_num & 0x000f));
+	set_s16(&channel->command_word0, 0x0600 + (offset_num & 0x000f));
 }
 
-static void set_offset(struct jr3_sensor __iomem *sensor)
+static void set_offset(struct jr3_channel __iomem *channel)
 {
-	set_s16(&sensor->command_word0, 0x0700);
+	set_s16(&channel->command_word0, 0x0700);
 }
 
 struct six_axis_t {
@@ -174,41 +179,43 @@ struct six_axis_t {
 	s16 mz;
 };
 
-static void set_full_scales(struct jr3_sensor __iomem *sensor,
+static void set_full_scales(struct jr3_channel __iomem *channel,
 			    struct six_axis_t full_scale)
 {
-	set_s16(&sensor->full_scale.fx, full_scale.fx);
-	set_s16(&sensor->full_scale.fy, full_scale.fy);
-	set_s16(&sensor->full_scale.fz, full_scale.fz);
-	set_s16(&sensor->full_scale.mx, full_scale.mx);
-	set_s16(&sensor->full_scale.my, full_scale.my);
-	set_s16(&sensor->full_scale.mz, full_scale.mz);
-	set_s16(&sensor->command_word0, 0x0a00);
+	set_s16(&channel->full_scale.fx, full_scale.fx);
+	set_s16(&channel->full_scale.fy, full_scale.fy);
+	set_s16(&channel->full_scale.fz, full_scale.fz);
+	set_s16(&channel->full_scale.mx, full_scale.mx);
+	set_s16(&channel->full_scale.my, full_scale.my);
+	set_s16(&channel->full_scale.mz, full_scale.mz);
+	set_s16(&channel->command_word0, 0x0a00);
 }
 
-static struct six_axis_t get_min_full_scales(struct jr3_sensor __iomem *sensor)
+static struct six_axis_t get_min_full_scales(struct jr3_channel __iomem
+					     *channel)
 {
 	struct six_axis_t result;
 
-	result.fx = get_s16(&sensor->min_full_scale.fx);
-	result.fy = get_s16(&sensor->min_full_scale.fy);
-	result.fz = get_s16(&sensor->min_full_scale.fz);
-	result.mx = get_s16(&sensor->min_full_scale.mx);
-	result.my = get_s16(&sensor->min_full_scale.my);
-	result.mz = get_s16(&sensor->min_full_scale.mz);
+	result.fx = get_s16(&channel->min_full_scale.fx);
+	result.fy = get_s16(&channel->min_full_scale.fy);
+	result.fz = get_s16(&channel->min_full_scale.fz);
+	result.mx = get_s16(&channel->min_full_scale.mx);
+	result.my = get_s16(&channel->min_full_scale.my);
+	result.mz = get_s16(&channel->min_full_scale.mz);
 	return result;
 }
 
-static struct six_axis_t get_max_full_scales(struct jr3_sensor __iomem *sensor)
+static struct six_axis_t get_max_full_scales(struct jr3_channel __iomem
+					     *channel)
 {
 	struct six_axis_t result;
 
-	result.fx = get_s16(&sensor->max_full_scale.fx);
-	result.fy = get_s16(&sensor->max_full_scale.fy);
-	result.fz = get_s16(&sensor->max_full_scale.fz);
-	result.mx = get_s16(&sensor->max_full_scale.mx);
-	result.my = get_s16(&sensor->max_full_scale.my);
-	result.mz = get_s16(&sensor->max_full_scale.mz);
+	result.fx = get_s16(&channel->max_full_scale.fx);
+	result.fy = get_s16(&channel->max_full_scale.fy);
+	result.fz = get_s16(&channel->max_full_scale.fz);
+	result.mx = get_s16(&channel->max_full_scale.mx);
+	result.my = get_s16(&channel->max_full_scale.my);
+	result.mz = get_s16(&channel->max_full_scale.mz);
 	return result;
 }
 
@@ -228,35 +235,35 @@ static unsigned int jr3_pci_ai_read_chan(struct comedi_device *dev,
 
 		switch (axis) {
 		case 0:
-			val = get_s16(&spriv->sensor->filter[filter].fx);
+			val = get_s16(&spriv->channel->filter[filter].fx);
 			break;
 		case 1:
-			val = get_s16(&spriv->sensor->filter[filter].fy);
+			val = get_s16(&spriv->channel->filter[filter].fy);
 			break;
 		case 2:
-			val = get_s16(&spriv->sensor->filter[filter].fz);
+			val = get_s16(&spriv->channel->filter[filter].fz);
 			break;
 		case 3:
-			val = get_s16(&spriv->sensor->filter[filter].mx);
+			val = get_s16(&spriv->channel->filter[filter].mx);
 			break;
 		case 4:
-			val = get_s16(&spriv->sensor->filter[filter].my);
+			val = get_s16(&spriv->channel->filter[filter].my);
 			break;
 		case 5:
-			val = get_s16(&spriv->sensor->filter[filter].mz);
+			val = get_s16(&spriv->channel->filter[filter].mz);
 			break;
 		case 6:
-			val = get_s16(&spriv->sensor->filter[filter].v1);
+			val = get_s16(&spriv->channel->filter[filter].v1);
 			break;
 		case 7:
-			val = get_s16(&spriv->sensor->filter[filter].v2);
+			val = get_s16(&spriv->channel->filter[filter].v2);
 			break;
 		}
 		val += 0x4000;
 	} else if (chan == 56) {
-		val = get_u16(&spriv->sensor->model_no);
+		val = get_u16(&spriv->channel->model_no);
 	} else if (chan == 57) {
-		val = get_u16(&spriv->sensor->serial_no);
+		val = get_u16(&spriv->channel->serial_no);
 	}
 
 	return val;
@@ -272,7 +279,10 @@ static int jr3_pci_ai_insn_read(struct comedi_device *dev,
 	u16 errors;
 	int i;
 
-	errors = get_u16(&spriv->sensor->errors);
+	if (!spriv)
+		return -EINVAL;
+
+	errors = get_u16(&spriv->channel->errors);
 	if (spriv->state != state_jr3_done ||
 	    (errors & (watch_dog | watch_dog2 | sensor_change))) {
 		/* No sensor or sensor changed */
@@ -295,11 +305,13 @@ static int jr3_pci_open(struct comedi_device *dev)
 	struct comedi_subdevice *s;
 	int i;
 
+	dev_dbg(dev->class_dev, "jr3_pci_open\n");
 	for (i = 0; i < dev->n_subdevices; i++) {
 		s = &dev->subdevices[i];
 		spriv = s->private;
-		dev_dbg(dev->class_dev, "serial[%d]: %d\n", s->index,
-			spriv->serial_no);
+		if (spriv)
+			dev_dbg(dev->class_dev, "serial: %p %d (%d)\n",
+				spriv, spriv->serial_no, s->index);
 	}
 	return 0;
 }
@@ -363,7 +375,8 @@ static int jr3_check_firmware(struct comedi_device *dev,
 static void jr3_write_firmware(struct comedi_device *dev,
 			       int subdev, const u8 *data, size_t size)
 {
-	struct jr3_block __iomem *block = dev->mmio;
+	struct jr3_pci_dev_private *devpriv = dev->private;
+	struct jr3_t __iomem *iobase = devpriv->iobase;
 	u32 __iomem *lo;
 	u32 __iomem *hi;
 	int more = 1;
@@ -396,8 +409,8 @@ static void jr3_write_firmware(struct comedi_device *dev,
 				unsigned int data1 = 0;
 				unsigned int data2 = 0;
 
-				lo = &block[subdev].program_lo[addr];
-				hi = &block[subdev].program_hi[addr];
+				lo = &iobase->channel[subdev].program_lo[addr];
+				hi = &iobase->channel[subdev].program_hi[addr];
 
 				more = more &&
 				       read_idm_word(data, size, &pos, &data1);
@@ -440,14 +453,17 @@ jr3_pci_poll_subdevice(struct comedi_subdevice *s)
 {
 	struct jr3_pci_subdev_private *spriv = s->private;
 	struct jr3_pci_poll_delay result = poll_delay_min_max(1000, 2000);
-	struct jr3_sensor __iomem *sensor;
+	struct jr3_channel __iomem *channel;
 	u16 model_no;
 	u16 serial_no;
 	int errors;
 	int i;
 
-	sensor = spriv->sensor;
-	errors = get_u16(&sensor->errors);
+	if (!spriv)
+		return result;
+
+	channel = spriv->channel;
+	errors = get_u16(&channel->errors);
 
 	if (errors != spriv->errors)
 		spriv->errors = errors;
@@ -458,8 +474,8 @@ jr3_pci_poll_subdevice(struct comedi_subdevice *s)
 
 	switch (spriv->state) {
 	case state_jr3_poll:
-		model_no = get_u16(&sensor->model_no);
-		serial_no = get_u16(&sensor->serial_no);
+		model_no = get_u16(&channel->model_no);
+		serial_no = get_u16(&channel->serial_no);
 
 		if ((errors & (watch_dog | watch_dog2)) ||
 		    model_no == 0 || serial_no == 0) {
@@ -483,8 +499,8 @@ jr3_pci_poll_subdevice(struct comedi_subdevice *s)
 		} else {
 			struct jr3_pci_transform transf;
 
-			spriv->model_no = get_u16(&sensor->model_no);
-			spriv->serial_no = get_u16(&sensor->serial_no);
+			spriv->model_no = get_u16(&channel->model_no);
+			spriv->serial_no = get_u16(&channel->serial_no);
 
 			/* Transformation all zeros */
 			for (i = 0; i < ARRAY_SIZE(transf.link); i++) {
@@ -492,24 +508,24 @@ jr3_pci_poll_subdevice(struct comedi_subdevice *s)
 				transf.link[i].link_amount = 0;
 			}
 
-			set_transforms(sensor, &transf, 0);
-			use_transform(sensor, 0);
+			set_transforms(channel, transf, 0);
+			use_transform(channel, 0);
 			spriv->state = state_jr3_init_transform_complete;
 			/* Allow 20 ms for completion */
 			result = poll_delay_min_max(20, 100);
 		}
 		break;
 	case state_jr3_init_transform_complete:
-		if (!is_complete(sensor)) {
+		if (!is_complete(channel)) {
 			result = poll_delay_min_max(20, 100);
 		} else {
 			/* Set full scale */
 			struct six_axis_t min_full_scale;
 			struct six_axis_t max_full_scale;
 
-			min_full_scale = get_min_full_scales(sensor);
-			max_full_scale = get_max_full_scales(sensor);
-			set_full_scales(sensor, max_full_scale);
+			min_full_scale = get_min_full_scales(channel);
+			max_full_scale = get_max_full_scales(channel);
+			set_full_scales(channel, max_full_scale);
 
 			spriv->state = state_jr3_init_set_full_scale_complete;
 			/* Allow 20 ms for completion */
@@ -517,51 +533,50 @@ jr3_pci_poll_subdevice(struct comedi_subdevice *s)
 		}
 		break;
 	case state_jr3_init_set_full_scale_complete:
-		if (!is_complete(sensor)) {
+		if (!is_complete(channel)) {
 			result = poll_delay_min_max(20, 100);
 		} else {
-			struct force_array __iomem *fs = &sensor->full_scale;
-			union jr3_pci_single_range *r = spriv->range;
+			struct force_array __iomem *fs = &channel->full_scale;
 
 			/* Use ranges in kN or we will overflow around 2000N! */
-			r[0].l.range[0].min = -get_s16(&fs->fx) * 1000;
-			r[0].l.range[0].max = get_s16(&fs->fx) * 1000;
-			r[1].l.range[0].min = -get_s16(&fs->fy) * 1000;
-			r[1].l.range[0].max = get_s16(&fs->fy) * 1000;
-			r[2].l.range[0].min = -get_s16(&fs->fz) * 1000;
-			r[2].l.range[0].max = get_s16(&fs->fz) * 1000;
-			r[3].l.range[0].min = -get_s16(&fs->mx) * 100;
-			r[3].l.range[0].max = get_s16(&fs->mx) * 100;
-			r[4].l.range[0].min = -get_s16(&fs->my) * 100;
-			r[4].l.range[0].max = get_s16(&fs->my) * 100;
-			r[5].l.range[0].min = -get_s16(&fs->mz) * 100;
+			spriv->range[0].range.min = -get_s16(&fs->fx) * 1000;
+			spriv->range[0].range.max = get_s16(&fs->fx) * 1000;
+			spriv->range[1].range.min = -get_s16(&fs->fy) * 1000;
+			spriv->range[1].range.max = get_s16(&fs->fy) * 1000;
+			spriv->range[2].range.min = -get_s16(&fs->fz) * 1000;
+			spriv->range[2].range.max = get_s16(&fs->fz) * 1000;
+			spriv->range[3].range.min = -get_s16(&fs->mx) * 100;
+			spriv->range[3].range.max = get_s16(&fs->mx) * 100;
+			spriv->range[4].range.min = -get_s16(&fs->my) * 100;
+			spriv->range[4].range.max = get_s16(&fs->my) * 100;
+			spriv->range[5].range.min = -get_s16(&fs->mz) * 100;
 			/* the next five are questionable */
-			r[5].l.range[0].max = get_s16(&fs->mz) * 100;
-			r[6].l.range[0].min = -get_s16(&fs->v1) * 100;
-			r[6].l.range[0].max = get_s16(&fs->v1) * 100;
-			r[7].l.range[0].min = -get_s16(&fs->v2) * 100;
-			r[7].l.range[0].max = get_s16(&fs->v2) * 100;
-			r[8].l.range[0].min = 0;
-			r[8].l.range[0].max = 65535;
+			spriv->range[5].range.max = get_s16(&fs->mz) * 100;
+			spriv->range[6].range.min = -get_s16(&fs->v1) * 100;
+			spriv->range[6].range.max = get_s16(&fs->v1) * 100;
+			spriv->range[7].range.min = -get_s16(&fs->v2) * 100;
+			spriv->range[7].range.max = get_s16(&fs->v2) * 100;
+			spriv->range[8].range.min = 0;
+			spriv->range[8].range.max = 65535;
 
-			use_offset(sensor, 0);
+			use_offset(channel, 0);
 			spriv->state = state_jr3_init_use_offset_complete;
 			/* Allow 40 ms for completion */
 			result = poll_delay_min_max(40, 100);
 		}
 		break;
 	case state_jr3_init_use_offset_complete:
-		if (!is_complete(sensor)) {
+		if (!is_complete(channel)) {
 			result = poll_delay_min_max(20, 100);
 		} else {
-			set_s16(&sensor->offsets.fx, 0);
-			set_s16(&sensor->offsets.fy, 0);
-			set_s16(&sensor->offsets.fz, 0);
-			set_s16(&sensor->offsets.mx, 0);
-			set_s16(&sensor->offsets.my, 0);
-			set_s16(&sensor->offsets.mz, 0);
+			set_s16(&channel->offsets.fx, 0);
+			set_s16(&channel->offsets.fy, 0);
+			set_s16(&channel->offsets.fz, 0);
+			set_s16(&channel->offsets.mx, 0);
+			set_s16(&channel->offsets.my, 0);
+			set_s16(&channel->offsets.mz, 0);
 
-			set_offset(sensor);
+			set_offset(channel);
 
 			spriv->state = state_jr3_done;
 		}
@@ -576,10 +591,10 @@ jr3_pci_poll_subdevice(struct comedi_subdevice *s)
 	return result;
 }
 
-static void jr3_pci_poll_dev(struct timer_list *t)
+static void jr3_pci_poll_dev(unsigned long data)
 {
-	struct jr3_pci_dev_private *devpriv = from_timer(devpriv, t, timer);
-	struct comedi_device *dev = devpriv->dev;
+	struct comedi_device *dev = (struct comedi_device *)data;
+	struct jr3_pci_dev_private *devpriv = dev->private;
 	struct jr3_pci_subdev_private *spriv;
 	struct comedi_subdevice *s;
 	unsigned long flags;
@@ -591,7 +606,7 @@ static void jr3_pci_poll_dev(struct timer_list *t)
 	delay = 1000;
 	now = jiffies;
 
-	/* Poll all sensors that are ready to be polled */
+	/* Poll all channels that are ready to be polled */
 	for (i = 0; i < dev->n_subdevices; i++) {
 		s = &dev->subdevices[i];
 		spriv = s->private;
@@ -603,11 +618,13 @@ static void jr3_pci_poll_dev(struct timer_list *t)
 
 			spriv->next_time_min = jiffies +
 					       msecs_to_jiffies(sub_delay.min);
+			spriv->next_time_max = jiffies +
+					       msecs_to_jiffies(sub_delay.max);
 
 			if (sub_delay.max && sub_delay.max < delay)
 				/*
 				 * Wake up as late as possible ->
-				 * poll as many sensors as possible at once.
+				 * poll as many channels as possible at once.
 				 */
 				delay = sub_delay.max;
 		}
@@ -621,7 +638,7 @@ static void jr3_pci_poll_dev(struct timer_list *t)
 static struct jr3_pci_subdev_private *
 jr3_pci_alloc_spriv(struct comedi_device *dev, struct comedi_subdevice *s)
 {
-	struct jr3_block __iomem *block = dev->mmio;
+	struct jr3_pci_dev_private *devpriv = dev->private;
 	struct jr3_pci_subdev_private *spriv;
 	int j;
 	int k;
@@ -630,41 +647,34 @@ jr3_pci_alloc_spriv(struct comedi_device *dev, struct comedi_subdevice *s)
 	if (!spriv)
 		return NULL;
 
-	spriv->sensor = &block[s->index].sensor;
+	spriv->channel = &devpriv->iobase->channel[s->index].data;
 
 	for (j = 0; j < 8; j++) {
-		spriv->range[j].l.length = 1;
-		spriv->range[j].l.range[0].min = -1000000;
-		spriv->range[j].l.range[0].max = 1000000;
+		spriv->range[j].length = 1;
+		spriv->range[j].range.min = -1000000;
+		spriv->range[j].range.max = 1000000;
 
 		for (k = 0; k < 7; k++) {
-			spriv->range_table_list[j + k * 8] = &spriv->range[j].l;
+			spriv->range_table_list[j + k * 8] =
+				(struct comedi_lrange *)&spriv->range[j];
 			spriv->maxdata_list[j + k * 8] = 0x7fff;
 		}
 	}
-	spriv->range[8].l.length = 1;
-	spriv->range[8].l.range[0].min = 0;
-	spriv->range[8].l.range[0].max = 65535;
+	spriv->range[8].length = 1;
+	spriv->range[8].range.min = 0;
+	spriv->range[8].range.max = 65536;
 
-	spriv->range_table_list[56] = &spriv->range[8].l;
-	spriv->range_table_list[57] = &spriv->range[8].l;
+	spriv->range_table_list[56] = (struct comedi_lrange *)&spriv->range[8];
+	spriv->range_table_list[57] = (struct comedi_lrange *)&spriv->range[8];
 	spriv->maxdata_list[56] = 0xffff;
 	spriv->maxdata_list[57] = 0xffff;
 
+	dev_dbg(dev->class_dev, "p->channel %p %p (%tx)\n",
+		spriv->channel, devpriv->iobase,
+		((char __iomem *)spriv->channel -
+		 (char __iomem *)devpriv->iobase));
+
 	return spriv;
-}
-
-static void jr3_pci_show_copyright(struct comedi_device *dev)
-{
-	struct jr3_block __iomem *block = dev->mmio;
-	struct jr3_sensor __iomem *sensor0 = &block[0].sensor;
-	char copy[ARRAY_SIZE(sensor0->copyright) + 1];
-	int i;
-
-	for (i = 0; i < ARRAY_SIZE(sensor0->copyright); i++)
-		copy[i] = (char)(get_u16(&sensor0->copyright[i]) >> 8);
-	copy[i] = '\0';
-	dev_dbg(dev->class_dev, "Firmware copyright: %s\n", copy);
 }
 
 static int jr3_pci_auto_attach(struct comedi_device *dev,
@@ -674,12 +684,16 @@ static int jr3_pci_auto_attach(struct comedi_device *dev,
 	static const struct jr3_pci_board *board;
 	struct jr3_pci_dev_private *devpriv;
 	struct jr3_pci_subdev_private *spriv;
-	struct jr3_block __iomem *block;
 	struct comedi_subdevice *s;
 	int ret;
 	int i;
 
-	BUILD_BUG_ON(sizeof(struct jr3_block) != 0x80000);
+	if (sizeof(struct jr3_channel) != 0xc00) {
+		dev_err(dev->class_dev,
+			"sizeof(struct jr3_channel) = %x [expected %x]\n",
+			(unsigned int)sizeof(struct jr3_channel), 0xc00);
+		return -EINVAL;
+	}
 
 	if (context < ARRAY_SIZE(jr3_pci_boards))
 		board = &jr3_pci_boards[context];
@@ -696,14 +710,9 @@ static int jr3_pci_auto_attach(struct comedi_device *dev,
 	if (ret)
 		return ret;
 
-	if (pci_resource_len(pcidev, 0) < board->n_subdevs * sizeof(*block))
-		return -ENXIO;
-
-	dev->mmio = pci_ioremap_bar(pcidev, 0);
-	if (!dev->mmio)
+	devpriv->iobase = pci_ioremap_bar(pcidev, 0);
+	if (!devpriv->iobase)
 		return -ENOMEM;
-
-	block = dev->mmio;
 
 	ret = comedi_alloc_subdevices(dev, board->n_subdevs);
 	if (ret)
@@ -727,8 +736,7 @@ static int jr3_pci_auto_attach(struct comedi_device *dev,
 	}
 
 	/* Reset DSP card */
-	for (i = 0; i < dev->n_subdevices; i++)
-		writel(0, &block[i].reset);
+	writel(0, &devpriv->iobase->channel[0].reset);
 
 	ret = comedi_load_firmware(dev, &comedi_to_pci_dev(dev)->dev,
 				   "comedi/jr3pci.idm",
@@ -751,7 +759,11 @@ static int jr3_pci_auto_attach(struct comedi_device *dev,
 	 * can read firmware version
 	 */
 	msleep_interruptible(25);
-	jr3_pci_show_copyright(dev);
+	for (i = 0; i < 0x18; i++) {
+		dev_dbg(dev->class_dev, "%c\n",
+			get_u16(&devpriv->iobase->channel[0].
+				data.copyright[i]) >> 8);
+	}
 
 	/* Start card timer */
 	for (i = 0; i < dev->n_subdevices; i++) {
@@ -759,10 +771,10 @@ static int jr3_pci_auto_attach(struct comedi_device *dev,
 		spriv = s->private;
 
 		spriv->next_time_min = jiffies + msecs_to_jiffies(500);
+		spriv->next_time_max = jiffies + msecs_to_jiffies(2000);
 	}
 
-	devpriv->dev = dev;
-	timer_setup(&devpriv->timer, jr3_pci_poll_dev, 0);
+	setup_timer(&devpriv->timer, jr3_pci_poll_dev, (unsigned long)dev);
 	devpriv->timer.expires = jiffies + msecs_to_jiffies(1000);
 	add_timer(&devpriv->timer);
 
@@ -773,10 +785,13 @@ static void jr3_pci_detach(struct comedi_device *dev)
 {
 	struct jr3_pci_dev_private *devpriv = dev->private;
 
-	if (devpriv)
+	if (devpriv) {
 		del_timer_sync(&devpriv->timer);
 
-	comedi_pci_detach(dev);
+		if (devpriv->iobase)
+			iounmap(devpriv->iobase);
+	}
+	comedi_pci_disable(dev);
 }
 
 static struct comedi_driver jr3_pci_driver = {
@@ -811,6 +826,6 @@ static struct pci_driver jr3_pci_pci_driver = {
 module_comedi_pci_driver(jr3_pci_driver, jr3_pci_pci_driver);
 
 MODULE_AUTHOR("Comedi http://www.comedi.org");
-MODULE_DESCRIPTION("Comedi driver for JR3/PCI force sensor board");
+MODULE_DESCRIPTION("Comedi low-level driver");
 MODULE_LICENSE("GPL");
 MODULE_FIRMWARE("comedi/jr3pci.idm");

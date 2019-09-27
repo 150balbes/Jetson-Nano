@@ -419,7 +419,7 @@ static void xenvif_rx_extra_slot(struct xenvif_queue *queue,
 	BUG();
 }
 
-static void xenvif_rx_skb(struct xenvif_queue *queue)
+void xenvif_rx_skb(struct xenvif_queue *queue)
 {
 	struct xenvif_pkt_state pkt;
 

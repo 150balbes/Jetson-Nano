@@ -120,9 +120,6 @@ struct cxgbi_sock {
 	int wr_max_cred;
 	int wr_cred;
 	int wr_una_cred;
-#ifdef CONFIG_CHELSIO_T4_DCB
-	u8 dcb_priority;
-#endif
 	unsigned char hcrc_len;
 	unsigned char dcrc_len;
 
@@ -149,7 +146,6 @@ struct cxgbi_sock {
 	struct sk_buff_head receive_queue;
 	struct sk_buff_head write_queue;
 	struct timer_list retry_timer;
-	struct completion cmpl;
 	int err;
 	rwlock_t callback_lock;
 	void *user_data;
@@ -191,7 +187,6 @@ enum cxgbi_sock_flags {
 	CTPF_HAS_ATID,		/* reserved atid */
 	CTPF_HAS_TID,		/* reserved hw tid */
 	CTPF_OFFLOAD_DOWN,	/* offload function off */
-	CTPF_LOGOUT_RSP_RCVD,   /* received logout response */
 };
 
 struct cxgbi_skb_rx_cb {
@@ -200,8 +195,7 @@ struct cxgbi_skb_rx_cb {
 };
 
 struct cxgbi_skb_tx_cb {
-	void *handle;
-	void *arp_err_handler;
+	void *l2t;
 	struct sk_buff *wr_next;
 };
 
@@ -213,7 +207,6 @@ enum cxgbi_skcb_flags {
 	SKCBF_RX_HDR,		/* received pdu header */
 	SKCBF_RX_DATA,		/* received pdu payload */
 	SKCBF_RX_STATUS,	/* received ddp status */
-	SKCBF_RX_ISCSI_COMPL,   /* received iscsi completion */
 	SKCBF_RX_DATA_DDPD,	/* pdu payload ddp'd */
 	SKCBF_RX_HCRC_ERR,	/* header digest error */
 	SKCBF_RX_DCRC_ERR,	/* data digest error */
@@ -221,13 +214,13 @@ enum cxgbi_skcb_flags {
 };
 
 struct cxgbi_skb_cb {
+	unsigned char ulp_mode;
+	unsigned long flags;
+	unsigned int seq;
 	union {
 		struct cxgbi_skb_rx_cb rx;
 		struct cxgbi_skb_tx_cb tx;
 	};
-	unsigned char ulp_mode;
-	unsigned long flags;
-	unsigned int seq;
 };
 
 #define CXGBI_SKB_CB(skb)	((struct cxgbi_skb_cb *)&((skb)->cb[0]))
@@ -307,7 +300,7 @@ static inline void __cxgbi_sock_put(const char *fn, struct cxgbi_sock *csk)
 {
 	log_debug(1 << CXGBI_DBG_SOCK,
 		"%s, put csk 0x%p, ref %u-1.\n",
-		fn, csk, kref_read(&csk->refcnt));
+		fn, csk, atomic_read(&csk->refcnt.refcount));
 	kref_put(&csk->refcnt, cxgbi_sock_free);
 }
 #define cxgbi_sock_put(csk)	__cxgbi_sock_put(__func__, csk)
@@ -316,7 +309,7 @@ static inline void __cxgbi_sock_get(const char *fn, struct cxgbi_sock *csk)
 {
 	log_debug(1 << CXGBI_DBG_SOCK,
 		"%s, get csk 0x%p, ref %u+1.\n",
-		fn, csk, kref_read(&csk->refcnt));
+		fn, csk, atomic_read(&csk->refcnt.refcount));
 	kref_get(&csk->refcnt);
 }
 #define cxgbi_sock_get(csk)	__cxgbi_sock_get(__func__, csk)
@@ -380,9 +373,11 @@ static inline void cxgbi_sock_enqueue_wr(struct cxgbi_sock *csk,
 	cxgbi_skcb_tx_wr_next(skb) = NULL;
 	/*
 	 * We want to take an extra reference since both us and the driver
-	 * need to free the packet before it's really freed.
+	 * need to free the packet before it's really freed. We know there's
+	 * just one user currently so we use atomic_set rather than skb_get
+	 * to avoid the atomic op.
 	 */
-	skb_get(skb);
+	atomic_set(&skb->users, 2);
 
 	if (!csk->wr_pending_head)
 		csk->wr_pending_head = skb;
@@ -472,7 +467,6 @@ struct cxgbi_device {
 	struct pci_dev *pdev;
 	struct dentry *debugfs_root;
 	struct iscsi_transport *itp;
-	struct module *owner;
 
 	unsigned int pfvf;
 	unsigned int rx_credit_thres;
@@ -480,7 +474,6 @@ struct cxgbi_device {
 	unsigned int skb_rx_extra;	/* for msg coalesced mode */
 	unsigned int tx_max_size;
 	unsigned int rx_max_size;
-	unsigned int rxq_idx_cntr;
 	struct cxgbi_ports_map pmap;
 
 	void (*dev_ddp_cleanup)(struct cxgbi_device *);
@@ -491,9 +484,9 @@ struct cxgbi_device {
 				  struct cxgbi_ppm *,
 				  struct cxgbi_task_tag_info *);
 	int (*csk_ddp_setup_digest)(struct cxgbi_sock *,
-				    unsigned int, int, int);
+				unsigned int, int, int, int);
 	int (*csk_ddp_setup_pgidx)(struct cxgbi_sock *,
-				   unsigned int, int);
+				unsigned int, int, bool);
 
 	void (*csk_release_offload_resources)(struct cxgbi_sock *);
 	int (*csk_rx_pdu_ready)(struct cxgbi_sock *, struct sk_buff *);
@@ -617,9 +610,8 @@ void cxgbi_ddp_page_size_factor(int *);
 void cxgbi_ddp_set_one_ppod(struct cxgbi_pagepod *,
 			    struct cxgbi_task_tag_info *,
 			    struct scatterlist **sg_pp, unsigned int *sg_off);
-int cxgbi_ddp_ppm_setup(void **ppm_pp, struct cxgbi_device *cdev,
-			struct cxgbi_tag_format *tformat,
-			unsigned int iscsi_size, unsigned int llimit,
-			unsigned int start, unsigned int rsvd_factor,
-			unsigned int edram_start, unsigned int edram_size);
+void cxgbi_ddp_ppm_setup(void **ppm_pp, struct cxgbi_device *,
+			 struct cxgbi_tag_format *, unsigned int ppmax,
+			 unsigned int llimit, unsigned int start,
+			 unsigned int rsvd_factor);
 #endif	/*__LIBCXGBI_H__*/

@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __ASM_ARM_SWITCH_TO_H
 #define __ASM_ARM_SWITCH_TO_H
 

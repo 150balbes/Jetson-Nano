@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /// Use BUG_ON instead of a if condition followed by BUG.
 ///
 //# This makes an effort to find cases where BUG() follows an if
@@ -7,7 +6,7 @@
 //# as argument.
 //
 // Confidence: High
-// Copyright: (C) 2014 Himangi Saraogi.
+// Copyright: (C) 2014 Himangi Saraogi.  GPLv2.
 // Comments:
 // Options: --no-includes --include-headers
 

@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * Primary bucket allocation code
  *
@@ -69,8 +68,6 @@
 #include <linux/random.h>
 #include <trace/events/bcache.h>
 
-#define MAX_OPEN_BUCKETS 128
-
 /* Bucket heap / gen */
 
 uint8_t bch_inc_gen(struct cache *ca, struct bucket *b)
@@ -87,8 +84,8 @@ void bch_rescale_priorities(struct cache_set *c, int sectors)
 {
 	struct cache *ca;
 	struct bucket *b;
-	unsigned int next = c->nbuckets * c->sb.bucket_size / 1024;
-	unsigned int i;
+	unsigned next = c->nbuckets * c->sb.bucket_size / 1024;
+	unsigned i;
 	int r;
 
 	atomic_sub(sectors, &c->rescale);
@@ -169,7 +166,7 @@ static void bch_invalidate_one_bucket(struct cache *ca, struct bucket *b)
 
 #define bucket_prio(b)							\
 ({									\
-	unsigned int min_prio = (INITIAL_PRIO - ca->set->min_prio) / 8;	\
+	unsigned min_prio = (INITIAL_PRIO - ca->set->min_prio) / 8;	\
 									\
 	(b->prio - ca->set->min_prio + min_prio) * GC_SECTORS_USED(b);	\
 })
@@ -244,7 +241,6 @@ static void invalidate_buckets_random(struct cache *ca)
 
 	while (!fifo_full(&ca->free_inc)) {
 		size_t n;
-
 		get_random_bytes(&n, sizeof(n));
 
 		n %= (size_t) (ca->sb.nbuckets - ca->sb.first_bucket);
@@ -288,10 +284,9 @@ do {									\
 			break;						\
 									\
 		mutex_unlock(&(ca)->set->bucket_lock);			\
-		if (kthread_should_stop() ||				\
-		    test_bit(CACHE_SET_IO_DISABLE, &ca->set->flags)) {	\
+		if (kthread_should_stop()) {				\
 			set_current_state(TASK_RUNNING);		\
-			goto out;					\
+			return 0;					\
 		}							\
 									\
 		schedule();						\
@@ -302,7 +297,7 @@ do {									\
 
 static int bch_allocator_push(struct cache *ca, long bucket)
 {
-	unsigned int i;
+	unsigned i;
 
 	/* Prios/gens are actually the most important reserve */
 	if (fifo_push(&ca->free[RESERVE_PRIO], bucket))
@@ -327,11 +322,10 @@ static int bch_allocator_thread(void *arg)
 		 * possibly issue discards to them, then we add the bucket to
 		 * the free list:
 		 */
-		while (1) {
+		while (!fifo_empty(&ca->free_inc)) {
 			long bucket;
 
-			if (!fifo_pop(&ca->free_inc, bucket))
-				break;
+			fifo_pop(&ca->free_inc, bucket);
 
 			if (ca->discard) {
 				mutex_unlock(&ca->set->bucket_lock);
@@ -380,23 +374,15 @@ retry_invalidate:
 			bch_prio_write(ca);
 		}
 	}
-out:
-	wait_for_kthread_stop();
-	return 0;
 }
 
 /* Allocation */
 
-long bch_bucket_alloc(struct cache *ca, unsigned int reserve, bool wait)
+long bch_bucket_alloc(struct cache *ca, unsigned reserve, bool wait)
 {
 	DEFINE_WAIT(w);
 	struct bucket *b;
 	long r;
-
-
-	/* No allocation if CACHE_SET_IO_DISABLE bit is set */
-	if (unlikely(test_bit(CACHE_SET_IO_DISABLE, &ca->set->flags)))
-		return -1;
 
 	/* fastpath */
 	if (fifo_pop(&ca->free[RESERVE_NONE], r) ||
@@ -428,7 +414,7 @@ out:
 	if (expensive_debug_checks(ca->set)) {
 		size_t iter;
 		long i;
-		unsigned int j;
+		unsigned j;
 
 		for (iter = 0; iter < prio_buckets(ca) * 2; iter++)
 			BUG_ON(ca->prio_buckets[iter] == (uint64_t) r);
@@ -456,11 +442,6 @@ out:
 		b->prio = INITIAL_PRIO;
 	}
 
-	if (ca->set->avail_nbuckets > 0) {
-		ca->set->avail_nbuckets--;
-		bch_update_bucket_in_use(ca->set, &ca->set->gc_stats);
-	}
-
 	return r;
 }
 
@@ -468,33 +449,24 @@ void __bch_bucket_free(struct cache *ca, struct bucket *b)
 {
 	SET_GC_MARK(b, 0);
 	SET_GC_SECTORS_USED(b, 0);
-
-	if (ca->set->avail_nbuckets < ca->set->nbuckets) {
-		ca->set->avail_nbuckets++;
-		bch_update_bucket_in_use(ca->set, &ca->set->gc_stats);
-	}
 }
 
 void bch_bucket_free(struct cache_set *c, struct bkey *k)
 {
-	unsigned int i;
+	unsigned i;
 
 	for (i = 0; i < KEY_PTRS(k); i++)
 		__bch_bucket_free(PTR_CACHE(c, k, i),
 				  PTR_BUCKET(c, k, i));
 }
 
-int __bch_bucket_alloc_set(struct cache_set *c, unsigned int reserve,
+int __bch_bucket_alloc_set(struct cache_set *c, unsigned reserve,
 			   struct bkey *k, int n, bool wait)
 {
 	int i;
 
-	/* No allocation if CACHE_SET_IO_DISABLE bit is set */
-	if (unlikely(test_bit(CACHE_SET_IO_DISABLE, &c->flags)))
-		return -1;
-
 	lockdep_assert_held(&c->bucket_lock);
-	BUG_ON(!n || n > c->caches_loaded || n > MAX_CACHES_PER_SET);
+	BUG_ON(!n || n > c->caches_loaded || n > 8);
 
 	bkey_init(k);
 
@@ -521,11 +493,10 @@ err:
 	return -1;
 }
 
-int bch_bucket_alloc_set(struct cache_set *c, unsigned int reserve,
+int bch_bucket_alloc_set(struct cache_set *c, unsigned reserve,
 			 struct bkey *k, int n, bool wait)
 {
 	int ret;
-
 	mutex_lock(&c->bucket_lock);
 	ret = __bch_bucket_alloc_set(c, reserve, k, n, wait);
 	mutex_unlock(&c->bucket_lock);
@@ -536,8 +507,8 @@ int bch_bucket_alloc_set(struct cache_set *c, unsigned int reserve,
 
 struct open_bucket {
 	struct list_head	list;
-	unsigned int		last_write_point;
-	unsigned int		sectors_free;
+	unsigned		last_write_point;
+	unsigned		sectors_free;
 	BKEY_PADDED(key);
 };
 
@@ -568,7 +539,7 @@ struct open_bucket {
  */
 static struct open_bucket *pick_data_bucket(struct cache_set *c,
 					    const struct bkey *search,
-					    unsigned int write_point,
+					    unsigned write_point,
 					    struct bkey *alloc)
 {
 	struct open_bucket *ret, *ret_task = NULL;
@@ -607,16 +578,12 @@ found:
  *
  * If s->writeback is true, will not fail.
  */
-bool bch_alloc_sectors(struct cache_set *c,
-		       struct bkey *k,
-		       unsigned int sectors,
-		       unsigned int write_point,
-		       unsigned int write_prio,
-		       bool wait)
+bool bch_alloc_sectors(struct cache_set *c, struct bkey *k, unsigned sectors,
+		       unsigned write_point, unsigned write_prio, bool wait)
 {
 	struct open_bucket *b;
 	BKEY_PADDED(key) alloc;
-	unsigned int i;
+	unsigned i;
 
 	/*
 	 * We might have to allocate a new bucket, which we can't do with a
@@ -629,7 +596,7 @@ bool bch_alloc_sectors(struct cache_set *c,
 	spin_lock(&c->data_bucket_lock);
 
 	while (!(b = pick_data_bucket(c, k, write_point, &alloc.key))) {
-		unsigned int watermark = write_prio
+		unsigned watermark = write_prio
 			? RESERVE_MOVINGGC
 			: RESERVE_NONE;
 
@@ -643,7 +610,7 @@ bool bch_alloc_sectors(struct cache_set *c,
 
 	/*
 	 * If we had to allocate, we might race and not need to allocate the
-	 * second time we call pick_data_bucket(). If we allocated a bucket but
+	 * second time we call find_data_bucket(). If we allocated a bucket but
 	 * didn't use it, drop the refcount bch_bucket_alloc_set() took:
 	 */
 	if (KEY_PTRS(&alloc.key))
@@ -716,9 +683,8 @@ int bch_open_buckets_alloc(struct cache_set *c)
 
 	spin_lock_init(&c->data_bucket_lock);
 
-	for (i = 0; i < MAX_OPEN_BUCKETS; i++) {
+	for (i = 0; i < 6; i++) {
 		struct open_bucket *b = kzalloc(sizeof(*b), GFP_KERNEL);
-
 		if (!b)
 			return -ENOMEM;
 

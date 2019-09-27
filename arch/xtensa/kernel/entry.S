@@ -14,7 +14,6 @@
 
 #include <linux/linkage.h>
 #include <asm/asm-offsets.h>
-#include <asm/asmmacro.h>
 #include <asm/processor.h>
 #include <asm/coprocessor.h>
 #include <asm/thread_info.h>
@@ -126,7 +125,6 @@
  *
  * Note: _user_exception might be at an odd address. Don't use call0..call12
  */
-	.literal_position
 
 ENTRY(user_exception)
 
@@ -364,7 +362,7 @@ common_exception:
 	s32i	a2, a1, PT_DEBUGCAUSE
 	s32i	a3, a1, PT_PC
 
-	movi	a2, NO_SYSCALL
+	movi	a2, -1
 	rsr	a3, excvaddr
 	s32i	a2, a1, PT_SYSCALL
 	movi	a2, 0
@@ -477,7 +475,8 @@ common_exception_return:
 1:
 	irq_save a2, a3
 #ifdef CONFIG_TRACE_IRQFLAGS
-	call4	trace_hardirqs_off
+	movi	a4, trace_hardirqs_off
+	callx4	a4
 #endif
 
 	/* Jump if we are returning from kernel exceptions. */
@@ -504,20 +503,24 @@ common_exception_return:
 	/* Call do_signal() */
 
 #ifdef CONFIG_TRACE_IRQFLAGS
-	call4	trace_hardirqs_on
+	movi	a4, trace_hardirqs_on
+	callx4	a4
 #endif
 	rsil	a2, 0
+	movi	a4, do_notify_resume	# int do_notify_resume(struct pt_regs*)
 	mov	a6, a1
-	call4	do_notify_resume	# int do_notify_resume(struct pt_regs*)
+	callx4	a4
 	j	1b
 
 3:	/* Reschedule */
 
 #ifdef CONFIG_TRACE_IRQFLAGS
-	call4	trace_hardirqs_on
+	movi	a4, trace_hardirqs_on
+	callx4	a4
 #endif
 	rsil	a2, 0
-	call4	schedule	# void schedule (void)
+	movi	a4, schedule	# void schedule (void)
+	callx4	a4
 	j	1b
 
 #ifdef CONFIG_PREEMPT
@@ -528,7 +531,8 @@ common_exception_return:
 
 	l32i	a4, a2, TI_PRE_COUNT
 	bnez	a4, 4f
-	call4	preempt_schedule_irq
+	movi	a4, preempt_schedule_irq
+	callx4	a4
 	j	1b
 #endif
 
@@ -541,20 +545,23 @@ common_exception_return:
 5:
 #ifdef CONFIG_HAVE_HW_BREAKPOINT
 	_bbci.l	a4, TIF_DB_DISABLED, 7f
-	call4	restore_dbreak
+	movi	a4, restore_dbreak
+	callx4	a4
 7:
 #endif
 #ifdef CONFIG_DEBUG_TLB_SANITY
 	l32i	a4, a1, PT_DEPC
 	bgeui	a4, VALID_DOUBLE_EXCEPTION_ADDRESS, 4f
-	call4	check_tlb_sanity
+	movi	a4, check_tlb_sanity
+	callx4	a4
 #endif
 6:
 4:
 #ifdef CONFIG_TRACE_IRQFLAGS
 	extui	a4, a3, PS_INTLEVEL_SHIFT, PS_INTLEVEL_WIDTH
 	bgei	a4, LOCKLEVEL, 1f
-	call4	trace_hardirqs_on
+	movi	a4, trace_hardirqs_on
+	callx4	a4
 1:
 #endif
 	/* Restore optional registers. */
@@ -770,8 +777,6 @@ ENDPROC(kernel_exception)
  * When we get here,  a0 is trashed and saved to excsave[debuglevel]
  */
 
-	.literal_position
-
 ENTRY(debug_exception)
 
 	rsr	a0, SREG_EPS + XCHAL_DEBUGLEVEL
@@ -911,8 +916,6 @@ ENDPROC(debug_exception)
 unrecoverable_text:
 	.ascii "Unrecoverable error in exception handler\0"
 
-	.literal_position
-
 ENTRY(unrecoverable_exception)
 
 	movi	a0, 1
@@ -930,8 +933,10 @@ ENTRY(unrecoverable_exception)
 	movi	a0, 0
 	addi	a1, a1, PT_REGS_OFFSET
 
+	movi	a4, panic
 	movi	a6, unrecoverable_text
-	call4	panic
+
+	callx4	a4
 
 1:	j	1b
 
@@ -1022,6 +1027,25 @@ ENDPROC(fast_alloca)
  *   excsave_1:	dispatch table
  */
 
+ENTRY(fast_syscall_kernel)
+
+	/* Skip syscall. */
+
+	rsr	a0, epc1
+	addi	a0, a0, 3
+	wsr	a0, epc1
+
+	l32i	a0, a2, PT_DEPC
+	bgeui	a0, VALID_DOUBLE_EXCEPTION_ADDRESS, fast_syscall_unrecoverable
+
+	rsr	a0, depc			# get syscall-nr
+	_beqz	a0, fast_syscall_spill_registers
+	_beqi	a0, __NR_xtensa, fast_syscall_xtensa
+
+	j	kernel_exception
+
+ENDPROC(fast_syscall_kernel)
+
 ENTRY(fast_syscall_user)
 
 	/* Skip syscall. */
@@ -1049,7 +1073,8 @@ ENTRY(fast_syscall_unrecoverable)
 	xsr     a2, depc                # restore a2, depc
 
 	wsr     a0, excsave1
-	call0	unrecoverable_exception
+	movi    a0, unrecoverable_exception
+	callx0  a0
 
 ENDPROC(fast_syscall_unrecoverable)
 
@@ -1076,11 +1101,32 @@ ENDPROC(fast_syscall_unrecoverable)
  *	     <  VALID_DOUBLE_EXCEPTION_ADDRESS: regular exception
  *
  * Note: we don't have to save a2; a2 holds the return value
+ *
+ * We use the two macros TRY and CATCH:
+ *
+ * TRY	 adds an entry to the __ex_table fixup table for the immediately
+ *	 following instruction.
+ *
+ * CATCH catches any exception that occurred at one of the preceding TRY
+ *       statements and continues from there
+ *
+ * Usage TRY	l32i	a0, a1, 0
+ *		<other code>
+ *	 done:	rfe
+ *	 CATCH	<set return code>
+ *		j done
  */
 
-	.literal_position
-
 #ifdef CONFIG_FAST_SYSCALL_XTENSA
+
+#define TRY								\
+	.section __ex_table, "a";					\
+	.word	66f, 67f;						\
+	.text;								\
+66:
+
+#define CATCH								\
+67:
 
 ENTRY(fast_syscall_xtensa)
 
@@ -1095,9 +1141,9 @@ ENTRY(fast_syscall_xtensa)
 
 .Lswp:	/* Atomic compare and swap */
 
-EX(.Leac) l32i	a0, a3, 0		# read old value
+TRY	l32i	a0, a3, 0		# read old value
 	bne	a0, a4, 1f		# same as old value? jump
-EX(.Leac) s32i	a5, a3, 0		# different, modify value
+TRY	s32i	a5, a3, 0		# different, modify value
 	l32i	a7, a2, PT_AREG7	# restore a7
 	l32i	a0, a2, PT_AREG0	# restore a0
 	movi	a2, 1			# and return 1
@@ -1110,12 +1156,12 @@ EX(.Leac) s32i	a5, a3, 0		# different, modify value
 
 .Lnswp:	/* Atomic set, add, and exg_add. */
 
-EX(.Leac) l32i	a7, a3, 0		# orig
+TRY	l32i	a7, a3, 0		# orig
 	addi	a6, a6, -SYS_XTENSA_ATOMIC_SET
 	add	a0, a4, a7		# + arg
 	moveqz	a0, a4, a6		# set
 	addi	a6, a6, SYS_XTENSA_ATOMIC_SET
-EX(.Leac) s32i	a0, a3, 0		# write new value
+TRY	s32i	a0, a3, 0		# write new value
 
 	mov	a0, a2
 	mov	a2, a7
@@ -1123,6 +1169,7 @@ EX(.Leac) s32i	a0, a3, 0		# write new value
 	l32i	a0, a0, PT_AREG0	# restore a0
 	rfe
 
+CATCH
 .Leac:	l32i	a7, a2, PT_AREG7	# restore a7
 	l32i	a0, a2, PT_AREG0	# restore a0
 	movi	a2, -EFAULT
@@ -1364,12 +1411,14 @@ ENTRY(fast_syscall_spill_registers)
 	rsync
 
 	movi	a6, SIGSEGV
-	call4	do_exit
+	movi	a4, do_exit
+	callx4	a4
 
 	/* shouldn't return, so panic */
 
 	wsr	a0, excsave1
-	call0	unrecoverable_exception		# should not return
+	movi	a0, unrecoverable_exception
+	callx0	a0		# should not return
 1:	j	1b
 
 
@@ -1515,8 +1564,8 @@ ENDPROC(fast_syscall_spill_registers)
 
 ENTRY(fast_second_level_miss_double_kernel)
 
-1:
-	call0	unrecoverable_exception		# should not return
+1:	movi	a0, unrecoverable_exception
+	callx0	a0		# should not return
 1:	j	1b
 
 ENDPROC(fast_second_level_miss_double_kernel)
@@ -1838,39 +1887,27 @@ ENDPROC(fast_store_prohibited)
  * void system_call (struct pt_regs* regs, int exccause)
  *                            a2                 a3
  */
-	.literal_position
 
 ENTRY(system_call)
 
-	/* reserve 4 bytes on stack for function parameter */
-	abi_entry(4)
+	entry	a1, 32
 
 	/* regs->syscall = regs->areg[2] */
 
-	l32i	a7, a2, PT_AREG2
-	s32i	a7, a2, PT_SYSCALL
-
-	GET_THREAD_INFO(a4, a1)
-	l32i	a3, a4, TI_FLAGS
-	movi	a4, _TIF_WORK_MASK
-	and	a3, a3, a4
-	beqz	a3, 1f
-
+	l32i	a3, a2, PT_AREG2
 	mov	a6, a2
-	call4	do_syscall_trace_enter
-	l32i	a7, a2, PT_SYSCALL
-
-1:
-	s32i	a7, a1, 4
+	movi	a4, do_syscall_trace_enter
+	s32i	a3, a2, PT_SYSCALL
+	callx4	a4
 
 	/* syscall = sys_call_table[syscall_nr] */
 
-	movi	a4, sys_call_table
-	movi	a5, __NR_syscalls
+	movi	a4, sys_call_table;
+	movi	a5, __NR_syscall_count
 	movi	a6, -ENOSYS
-	bgeu	a7, a5, 1f
+	bgeu	a3, a5, 1f
 
-	addx4	a4, a7, a4
+	addx4	a4, a3, a4
 	l32i	a4, a4, 0
 	movi	a5, sys_ni_syscall;
 	beq	a4, a5, 1f
@@ -1892,17 +1929,10 @@ ENTRY(system_call)
 1:	/* regs->areg[2] = return_value */
 
 	s32i	a6, a2, PT_AREG2
-	bnez	a3, 1f
-	abi_ret(4)
-
-1:
-	l32i	a4, a1, 4
-	l32i	a3, a2, PT_SYSCALL
-	s32i	a4, a2, PT_SYSCALL
+	movi	a4, do_syscall_trace_leave
 	mov	a6, a2
-	call4	do_syscall_trace_leave
-	s32i	a3, a2, PT_SYSCALL
-	abi_ret(4)
+	callx4	a4
+	retw
 
 ENDPROC(system_call)
 
@@ -1953,7 +1983,7 @@ ENDPROC(system_call)
 
 ENTRY(_switch_to)
 
-	abi_entry(XTENSA_SPILL_STACK_RESERVE)
+	entry	a1, 48
 
 	mov	a11, a3			# and 'next' (a3)
 
@@ -1969,12 +1999,6 @@ ENTRY(_switch_to)
 #else
 	s32i	a0, a2, THREAD_RA	# save return address
 	s32i	a1, a2, THREAD_SP	# save stack pointer
-#endif
-
-#if defined(CONFIG_STACKPROTECTOR) && !defined(CONFIG_SMP)
-	movi	a6, __stack_chk_guard
-	l32i	a8, a3, TASK_STACK_CANARY
-	s32i	a8, a6, 0
 #endif
 
 	/* Disable ints while we manipulate the stack pointer. */
@@ -2014,7 +2038,7 @@ ENTRY(_switch_to)
 	wsr	a14, ps
 	rsync
 
-	abi_ret(XTENSA_SPILL_STACK_RESERVE)
+	retw
 
 ENDPROC(_switch_to)
 
@@ -2023,10 +2047,12 @@ ENTRY(ret_from_fork)
 	/* void schedule_tail (struct task_struct *prev)
 	 * Note: prev is still in a6 (return value from fake call4 frame)
 	 */
-	call4	schedule_tail
+	movi	a4, schedule_tail
+	callx4	a4
 
+	movi	a4, do_syscall_trace_leave
 	mov	a6, a1
-	call4	do_syscall_trace_leave
+	callx4	a4
 
 	j	common_exception_return
 

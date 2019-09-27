@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifdef __ASSEMBLY__
 
 /* EcoVec board specific boot code:

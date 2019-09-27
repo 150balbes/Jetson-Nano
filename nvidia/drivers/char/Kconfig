@@ -1,0 +1,13 @@
+#
+# Character device configuration
+#
+
+config HMM_DMIRROR
+	tristate "HMM dummy driver, to test Heterogeneous Memory Management"
+	depends on HMM
+	default n
+	help
+	  Say Y here if you want to build the HMM dummy mirror driver.
+	  Doing so will allow you to test the HMM mirror infrastructure.
+
+	  If in doubt, say "N".

@@ -1,0 +1,178 @@
+/*
+ * Copyright (c) 2014-2017, NVIDIA CORPORATION.  All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with this program; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+ */
+
+#include "tegra210-pin-drive-sdmmc-common.dtsi"
+
+/ {
+        aliases {
+                sdhci0 = &sdmmc1;
+                sdhci1 = &sdmmc2;
+                sdhci2 = &sdmmc3;
+                sdhci3 = &sdmmc4;
+        };
+
+	sdmmc4: sdhci@700b0600 {
+		tap-delay = <4>;
+		trim-delay = <8>;
+		nvidia,is-ddr-tap-delay;
+		nvidia,ddr-tap-delay = <0>;
+		mmc-ocr-mask = <0>;
+		max-clk-limit = <199680000>;
+		bus-width = <8>;
+		built-in;
+		calib-3v3-offsets = <0x0505>;
+		calib-1v8-offsets = <0x0505>;
+		compad-vref-3v3 = <0x7>;
+		compad-vref-1v8 = <0x7>;
+		nvidia,en-io-trim-volt;
+		nvidia,is-emmc;
+		nvidia,enable-cq;
+		ignore-pm-notify;
+		keep-power-in-suspend;
+		non-removable;
+		cap-mmc-highspeed;
+		cap-sd-highspeed;
+		mmc-ddr-1_8v;
+		mmc-hs200-1_8v;
+		mmc-hs400-1_8v;
+		nvidia,enable-strobe-mode;
+		mmc-hs400-enhanced-strobe;
+		nvidia,min-tap-delay = <106>;
+		nvidia,max-tap-delay = <185>;
+		pll_source = "pll_p", "pll_c4_out0";
+		resets = <&tegra_car TEGRA210_CLK_SDMMC4>;
+		reset-names = "sdhci";
+		clocks = <&tegra_car TEGRA210_CLK_SDMMC4>,
+		       <&tegra_car TEGRA210_CLK_PLL_P>,
+		       <&tegra_car TEGRA210_CLK_PLL_C4_OUT0>,
+		       <&tegra_car TEGRA210_CLK_SDMMC_LEGACY>;
+		clock-names = "sdmmc", "pll_p", "pll_c4_out0", "sdmmc_legacy_tm";
+	};
+
+	sdmmc3: sdhci@700b0400 {
+		tap-delay = <1>;
+		trim-delay = <3>;
+		mmc-ocr-mask = <0>;
+		max-clk-limit = <204000000>;
+		ddr-clk-limit = <48000000>;
+		bus-width = <4>;
+		calib-3v3-offsets = <0x007D>;
+		calib-1v8-offsets = <0x7B7B>;
+		compad-vref-3v3 = <0x7>;
+		compad-vref-1v8 = <0x7>;
+		pll_source = "pll_p", "pll_c4_out2";
+		resets = <&tegra_car TEGRA210_CLK_SDMMC3>;
+		reset-names = "sdhci";
+		clocks = <&tegra_car TEGRA210_CLK_SDMMC3>,
+		       <&tegra_car TEGRA210_CLK_PLL_P>,
+		       <&tegra_car TEGRA210_CLK_PLL_C4_OUT2>,
+		       <&tegra_car TEGRA210_CLK_SDMMC_LEGACY>;
+		clock-names = "sdmmc", "pll_p", "pll_c4_out2", "sdmmc_legacy_tm";
+		keep-power-in-suspend;
+		ignore-pm-notify;
+		non-removable;
+		cap-mmc-highspeed;
+		cap-sd-highspeed;
+		nvidia,en-io-trim-volt;
+		nvidia,en-periodic-calib;
+                cd-inverted;
+                wp-inverted;
+		pwrdet-support;
+		nvidia,min-tap-delay = <106>;
+		nvidia,max-tap-delay = <185>;
+		pinctrl-names = "sdmmc_schmitt_enable", "sdmmc_schmitt_disable", "sdmmc_clk_schmitt_enable", "sdmmc_clk_schmitt_disable", "sdmmc_drv_code", "sdmmc_default_drv_code", "sdmmc_e_33v_enable", "sdmmc_e_33v_disable";
+		pinctrl-0 = <&sdmmc3_schmitt_enable_state>;
+		pinctrl-1 = <&sdmmc3_schmitt_disable_state>;
+		pinctrl-2 = <&sdmmc3_clk_schmitt_enable_state>;
+		pinctrl-3 = <&sdmmc3_clk_schmitt_disable_state>;
+		pinctrl-4 = <&sdmmc3_drv_code_1_8V>;
+		pinctrl-5 = <&sdmmc3_default_drv_code_3_3V>;
+		pinctrl-6 = <&sdmmc3_e_33V_enable>;
+		pinctrl-7 = <&sdmmc3_e_33V_disable>;
+	};
+
+	sdmmc2: sdhci@700b0200 {
+		tap-delay = <4>;
+		trim-delay = <8>;
+		mmc-ocr-mask = <0>;
+		max-clk-limit = <204000000>;
+		ddr-clk-limit = <41000000>;
+		bus-width = <4>;
+		calib-3v3-offsets = <0x0505>;
+		calib-1v8-offsets = <0x0505>;
+		compad-vref-3v3 = <0x7>;
+		compad-vref-1v8 = <0x7>;
+		default-drive-type = <1>;
+		nvidia,min-tap-delay = <106>;
+		nvidia,max-tap-delay = <185>;
+		pll_source = "pll_p";
+		resets = <&tegra_car TEGRA210_CLK_SDMMC2>;
+		reset-names = "sdhci";
+		clocks = <&tegra_car TEGRA210_CLK_SDMMC2>,
+		       <&tegra_car TEGRA210_CLK_PLL_P>,
+		       <&tegra_car TEGRA210_CLK_SDMMC_LEGACY>;
+		clock-names = "sdmmc", "pll_p", "sdmmc_legacy_tm";
+		non-removable;
+		cap-mmc-highspeed;
+		cap-sd-highspeed;
+		keep-power-in-suspend;
+		ignore-pm-notify;
+		nvidia,en-io-trim-volt;
+	};
+
+	sdmmc1: sdhci@700b0000 {
+		tap-delay = <4>;
+		trim-delay = <2>;
+		max-clk-limit = <204000000>;
+		ddr-clk-limit = <48000000>;
+		bus-width = <4>;
+		mmc-ocr-mask = <3>;
+		calib-3v3-offsets = <0x007D>;
+		calib-1v8-offsets = <0x7B7B>;
+		compad-vref-3v3 = <0x7>;
+		compad-vref-1v8 = <0x7>;
+		cd-gpios = <&gpio TEGRA_GPIO(Z, 1) 0>;
+		pll_source = "pll_p";
+		cap-mmc-highspeed;
+		cap-sd-highspeed;
+		nvidia,en-io-trim-volt;
+		nvidia,en-periodic-calib;
+		keep-power-in-suspend;
+		ignore-pm-notify;
+                cd-inverted;
+                wp-inverted;
+		nvidia,min-tap-delay = <106>;
+		nvidia,max-tap-delay = <185>;
+		resets = <&tegra_car TEGRA210_CLK_SDMMC1>;
+		reset-names = "sdhci";
+		clocks = <&tegra_car TEGRA210_CLK_SDMMC1>,
+		       <&tegra_car TEGRA210_CLK_PLL_P>,
+		       <&tegra_car TEGRA210_CLK_SDMMC_LEGACY>;
+		clock-names = "sdmmc", "pll_p", "sdmmc_legacy_tm";
+		pwrdet-support;
+		pinctrl-names = "sdmmc_schmitt_enable", "sdmmc_schmitt_disable", "sdmmc_clk_schmitt_enable", "sdmmc_clk_schmitt_disable", "sdmmc_drv_code", "sdmmc_default_drv_code", "sdmmc_e_33v_enable", "sdmmc_e_33v_disable";
+		pinctrl-0 = <&sdmmc1_schmitt_enable_state>;
+		pinctrl-1 = <&sdmmc1_schmitt_disable_state>;
+		pinctrl-2 = <&sdmmc1_clk_schmitt_enable_state>;
+		pinctrl-3 = <&sdmmc1_clk_schmitt_disable_state>;
+		pinctrl-4 = <&sdmmc1_drv_code_1_8V>;
+		pinctrl-5 = <&sdmmc1_default_drv_code_3_3V>;
+		pinctrl-6 = <&sdmmc1_e_33V_enable>;
+		pinctrl-7 = <&sdmmc1_e_33V_disable>;
+	};
+};

@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  *  linux/fs/nfs/file.c
  *
@@ -8,6 +7,7 @@
 #include <linux/file.h>
 #include <linux/falloc.h>
 #include <linux/nfs_fs.h>
+#include <uapi/linux/btrfs.h>	/* BTRFS_IOC_CLONE/BTRFS_IOC_CLONE_RANGE */
 #include "delegation.h"
 #include "internal.h"
 #include "iostat.h"
@@ -49,7 +49,7 @@ nfs4_file_open(struct inode *inode, struct file *filp)
 		return err;
 
 	if ((openflags & O_ACCMODE) == 3)
-		return nfs_open(inode, filp);
+		openflags--;
 
 	/* We can't create new files here */
 	openflags &= ~(O_CREAT|O_EXCL);
@@ -57,7 +57,7 @@ nfs4_file_open(struct inode *inode, struct file *filp)
 	parent = dget_parent(dentry);
 	dir = d_inode(parent);
 
-	ctx = alloc_nfs_open_context(file_dentry(filp), filp->f_mode, filp);
+	ctx = alloc_nfs_open_context(file_dentry(filp), filp->f_mode);
 	err = PTR_ERR(ctx);
 	if (IS_ERR(ctx))
 		goto out;
@@ -73,13 +73,13 @@ nfs4_file_open(struct inode *inode, struct file *filp)
 	if (IS_ERR(inode)) {
 		err = PTR_ERR(inode);
 		switch (err) {
-		default:
+		case -EPERM:
+		case -EACCES:
+		case -EDQUOT:
+		case -ENOSPC:
+		case -EROFS:
 			goto out_put_ctx;
-		case -ENOENT:
-		case -ESTALE:
-		case -EISDIR:
-		case -ENOTDIR:
-		case -ELOOP:
+		default:
 			goto out_drop;
 		}
 	}
@@ -125,36 +125,18 @@ nfs4_file_flush(struct file *file, fl_owner_t id)
 		return filemap_fdatawrite(file->f_mapping);
 
 	/* Flush writes to the server and return any errors */
-	return nfs_wb_all(inode);
+	return vfs_fsync(file, 0);
 }
 
 #ifdef CONFIG_NFS_V4_2
-static ssize_t __nfs4_copy_file_range(struct file *file_in, loff_t pos_in,
-				      struct file *file_out, loff_t pos_out,
-				      size_t count, unsigned int flags)
-{
-	/* Only offload copy if superblock is the same */
-	if (file_inode(file_in)->i_sb != file_inode(file_out)->i_sb)
-		return -EXDEV;
-	if (!nfs_server_capable(file_inode(file_out), NFS_CAP_COPY))
-		return -EOPNOTSUPP;
-	if (file_inode(file_in) == file_inode(file_out))
-		return -EOPNOTSUPP;
-	return nfs42_proc_copy(file_in, pos_in, file_out, pos_out, count);
-}
-
 static ssize_t nfs4_copy_file_range(struct file *file_in, loff_t pos_in,
 				    struct file *file_out, loff_t pos_out,
 				    size_t count, unsigned int flags)
 {
-	ssize_t ret;
+	if (file_inode(file_in) == file_inode(file_out))
+		return -EINVAL;
 
-	ret = __nfs4_copy_file_range(file_in, pos_in, file_out, pos_out, count,
-				     flags);
-	if (ret == -EOPNOTSUPP || ret == -EXDEV)
-		ret = generic_copy_file_range(file_in, pos_in, file_out,
-					      pos_out, count, flags);
-	return ret;
+	return nfs42_proc_copy(file_in, pos_in, file_out, pos_out, count);
 }
 
 static loff_t nfs4_file_llseek(struct file *filep, loff_t offset, int whence)
@@ -167,7 +149,6 @@ static loff_t nfs4_file_llseek(struct file *filep, loff_t offset, int whence)
 		ret = nfs42_proc_llseek(filep, offset, whence);
 		if (ret != -ENOTSUPP)
 			return ret;
-		/* Fall through */
 	default:
 		return nfs_file_llseek(filep, offset, whence);
 	}
@@ -193,9 +174,8 @@ static long nfs42_fallocate(struct file *filep, int mode, loff_t offset, loff_t 
 	return nfs42_proc_allocate(filep, offset, len);
 }
 
-static loff_t nfs42_remap_file_range(struct file *src_file, loff_t src_off,
-		struct file *dst_file, loff_t dst_off, loff_t count,
-		unsigned int remap_flags)
+static int nfs42_clone_file_range(struct file *src_file, loff_t src_off,
+		struct file *dst_file, loff_t dst_off, u64 count)
 {
 	struct inode *dst_inode = file_inode(dst_file);
 	struct nfs_server *server = NFS_SERVER(dst_inode);
@@ -203,13 +183,6 @@ static loff_t nfs42_remap_file_range(struct file *src_file, loff_t src_off,
 	unsigned int bs = server->clone_blksize;
 	bool same_inode = false;
 	int ret;
-
-	/* NFS does not support deduplication. */
-	if (remap_flags & REMAP_FILE_DEDUP)
-		return -EOPNOTSUPP;
-
-	if (remap_flags & ~REMAP_FILE_ADVISORY)
-		return -EINVAL;
 
 	/* check alignment w.r.t. clone_blksize */
 	ret = -EINVAL;
@@ -261,7 +234,7 @@ out_unlock:
 		inode_unlock(src_inode);
 	}
 out:
-	return ret < 0 ? ret : count;
+	return ret;
 }
 #endif /* CONFIG_NFS_V4_2 */
 
@@ -283,7 +256,7 @@ const struct file_operations nfs4_file_operations = {
 	.copy_file_range = nfs4_copy_file_range,
 	.llseek		= nfs4_file_llseek,
 	.fallocate	= nfs42_fallocate,
-	.remap_file_range = nfs42_remap_file_range,
+	.clone_file_range = nfs42_clone_file_range,
 #else
 	.llseek		= nfs_file_llseek,
 #endif

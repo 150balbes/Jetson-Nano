@@ -95,9 +95,18 @@ static const struct file_operations segments_fops = {
 
 static int __init segments_info(void)
 {
-	if (cpu_has_segments)
-		debugfs_create_file("segments", S_IRUGO, mips_debugfs_dir, NULL,
-				    &segments_fops);
+	struct dentry *segments;
+
+	if (cpu_has_segments) {
+		if (!mips_debugfs_dir)
+			return -ENODEV;
+
+		segments = debugfs_create_file("segments", S_IRUGO,
+					       mips_debugfs_dir, NULL,
+					       &segments_fops);
+		if (!segments)
+			return -ENOMEM;
+	}
 	return 0;
 }
 

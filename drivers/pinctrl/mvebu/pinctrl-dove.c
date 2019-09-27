@@ -1,13 +1,18 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Marvell Dove pinctrl driver based on mvebu pinctrl core
  *
  * Author: Sebastian Hesselbarth <sebastian.hesselbarth@gmail.com>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
  */
 
 #include <linux/err.h>
 #include <linux/init.h>
 #include <linux/io.h>
+#include <linux/module.h>
 #include <linux/bitops.h>
 #include <linux/platform_device.h>
 #include <linux/clk.h>
@@ -56,20 +61,30 @@
 
 #define CONFIG_PMU	BIT(4)
 
+static void __iomem *mpp_base;
 static void __iomem *mpp4_base;
 static void __iomem *pmu_base;
 static struct regmap *gconfmap;
 
-static int dove_pmu_mpp_ctrl_get(struct mvebu_mpp_ctrl_data *data,
-				 unsigned pid, unsigned long *config)
+static int dove_mpp_ctrl_get(unsigned pid, unsigned long *config)
+{
+	return default_mpp_ctrl_get(mpp_base, pid, config);
+}
+
+static int dove_mpp_ctrl_set(unsigned pid, unsigned long config)
+{
+	return default_mpp_ctrl_set(mpp_base, pid, config);
+}
+
+static int dove_pmu_mpp_ctrl_get(unsigned pid, unsigned long *config)
 {
 	unsigned off = (pid / MVEBU_MPPS_PER_REG) * MVEBU_MPP_BITS;
 	unsigned shift = (pid % MVEBU_MPPS_PER_REG) * MVEBU_MPP_BITS;
-	unsigned long pmu = readl(data->base + PMU_MPP_GENERAL_CTRL);
+	unsigned long pmu = readl(mpp_base + PMU_MPP_GENERAL_CTRL);
 	unsigned long func;
 
 	if ((pmu & BIT(pid)) == 0)
-		return mvebu_mmio_mpp_ctrl_get(data, pid, config);
+		return default_mpp_ctrl_get(mpp_base, pid, config);
 
 	func = readl(pmu_base + PMU_SIGNAL_SELECT_0 + off);
 	*config = (func >> shift) & MVEBU_MPP_MASK;
@@ -78,20 +93,19 @@ static int dove_pmu_mpp_ctrl_get(struct mvebu_mpp_ctrl_data *data,
 	return 0;
 }
 
-static int dove_pmu_mpp_ctrl_set(struct mvebu_mpp_ctrl_data *data,
-				 unsigned pid, unsigned long config)
+static int dove_pmu_mpp_ctrl_set(unsigned pid, unsigned long config)
 {
 	unsigned off = (pid / MVEBU_MPPS_PER_REG) * MVEBU_MPP_BITS;
 	unsigned shift = (pid % MVEBU_MPPS_PER_REG) * MVEBU_MPP_BITS;
-	unsigned long pmu = readl(data->base + PMU_MPP_GENERAL_CTRL);
+	unsigned long pmu = readl(mpp_base + PMU_MPP_GENERAL_CTRL);
 	unsigned long func;
 
 	if ((config & CONFIG_PMU) == 0) {
-		writel(pmu & ~BIT(pid), data->base + PMU_MPP_GENERAL_CTRL);
-		return mvebu_mmio_mpp_ctrl_set(data, pid, config);
+		writel(pmu & ~BIT(pid), mpp_base + PMU_MPP_GENERAL_CTRL);
+		return default_mpp_ctrl_set(mpp_base, pid, config);
 	}
 
-	writel(pmu | BIT(pid), data->base + PMU_MPP_GENERAL_CTRL);
+	writel(pmu | BIT(pid), mpp_base + PMU_MPP_GENERAL_CTRL);
 	func = readl(pmu_base + PMU_SIGNAL_SELECT_0 + off);
 	func &= ~(MVEBU_MPP_MASK << shift);
 	func |= (config & MVEBU_MPP_MASK) << shift;
@@ -100,8 +114,7 @@ static int dove_pmu_mpp_ctrl_set(struct mvebu_mpp_ctrl_data *data,
 	return 0;
 }
 
-static int dove_mpp4_ctrl_get(struct mvebu_mpp_ctrl_data *data, unsigned pid,
-			      unsigned long *config)
+static int dove_mpp4_ctrl_get(unsigned pid, unsigned long *config)
 {
 	unsigned long mpp4 = readl(mpp4_base);
 	unsigned long mask;
@@ -131,8 +144,7 @@ static int dove_mpp4_ctrl_get(struct mvebu_mpp_ctrl_data *data, unsigned pid,
 	return 0;
 }
 
-static int dove_mpp4_ctrl_set(struct mvebu_mpp_ctrl_data *data, unsigned pid,
-			      unsigned long config)
+static int dove_mpp4_ctrl_set(unsigned pid, unsigned long config)
 {
 	unsigned long mpp4 = readl(mpp4_base);
 	unsigned long mask;
@@ -166,8 +178,7 @@ static int dove_mpp4_ctrl_set(struct mvebu_mpp_ctrl_data *data, unsigned pid,
 	return 0;
 }
 
-static int dove_nand_ctrl_get(struct mvebu_mpp_ctrl_data *data, unsigned pid,
-			      unsigned long *config)
+static int dove_nand_ctrl_get(unsigned pid, unsigned long *config)
 {
 	unsigned int gmpp;
 
@@ -177,8 +188,7 @@ static int dove_nand_ctrl_get(struct mvebu_mpp_ctrl_data *data, unsigned pid,
 	return 0;
 }
 
-static int dove_nand_ctrl_set(struct mvebu_mpp_ctrl_data *data, unsigned pid,
-			      unsigned long config)
+static int dove_nand_ctrl_set(unsigned pid, unsigned long config)
 {
 	regmap_update_bits(gconfmap, MPP_GENERAL_CONFIG,
 			   NAND_GPIO_EN,
@@ -186,31 +196,28 @@ static int dove_nand_ctrl_set(struct mvebu_mpp_ctrl_data *data, unsigned pid,
 	return 0;
 }
 
-static int dove_audio0_ctrl_get(struct mvebu_mpp_ctrl_data *data, unsigned pid,
-				unsigned long *config)
+static int dove_audio0_ctrl_get(unsigned pid, unsigned long *config)
 {
-	unsigned long pmu = readl(data->base + PMU_MPP_GENERAL_CTRL);
+	unsigned long pmu = readl(mpp_base + PMU_MPP_GENERAL_CTRL);
 
 	*config = ((pmu & AU0_AC97_SEL) != 0);
 
 	return 0;
 }
 
-static int dove_audio0_ctrl_set(struct mvebu_mpp_ctrl_data *data, unsigned pid,
-				unsigned long config)
+static int dove_audio0_ctrl_set(unsigned pid, unsigned long config)
 {
-	unsigned long pmu = readl(data->base + PMU_MPP_GENERAL_CTRL);
+	unsigned long pmu = readl(mpp_base + PMU_MPP_GENERAL_CTRL);
 
 	pmu &= ~AU0_AC97_SEL;
 	if (config)
 		pmu |= AU0_AC97_SEL;
-	writel(pmu, data->base + PMU_MPP_GENERAL_CTRL);
+	writel(pmu, mpp_base + PMU_MPP_GENERAL_CTRL);
 
 	return 0;
 }
 
-static int dove_audio1_ctrl_get(struct mvebu_mpp_ctrl_data *data, unsigned pid,
-				unsigned long *config)
+static int dove_audio1_ctrl_get(unsigned pid, unsigned long *config)
 {
 	unsigned int mpp4 = readl(mpp4_base);
 	unsigned int sspc1;
@@ -240,8 +247,7 @@ static int dove_audio1_ctrl_get(struct mvebu_mpp_ctrl_data *data, unsigned pid,
 	return 0;
 }
 
-static int dove_audio1_ctrl_set(struct mvebu_mpp_ctrl_data *data, unsigned pid,
-				unsigned long config)
+static int dove_audio1_ctrl_set(unsigned pid, unsigned long config)
 {
 	unsigned int mpp4 = readl(mpp4_base);
 
@@ -268,12 +274,11 @@ static int dove_audio1_ctrl_set(struct mvebu_mpp_ctrl_data *data, unsigned pid,
  * break other functions. If you require all mpps as gpio
  * enforce gpio setting by pinctrl mapping.
  */
-static int dove_audio1_ctrl_gpio_req(struct mvebu_mpp_ctrl_data *data,
-				     unsigned pid)
+static int dove_audio1_ctrl_gpio_req(unsigned pid)
 {
 	unsigned long config;
 
-	dove_audio1_ctrl_get(data, pid, &config);
+	dove_audio1_ctrl_get(pid, &config);
 
 	switch (config) {
 	case 0x02: /* i2s1 : gpio[56:57] */
@@ -296,16 +301,14 @@ static int dove_audio1_ctrl_gpio_req(struct mvebu_mpp_ctrl_data *data,
 }
 
 /* mpp[52:57] has gpio pins capable of in and out */
-static int dove_audio1_ctrl_gpio_dir(struct mvebu_mpp_ctrl_data *data,
-				     unsigned pid, bool input)
+static int dove_audio1_ctrl_gpio_dir(unsigned pid, bool input)
 {
 	if (pid < 52 || pid > 57)
 		return -ENOTSUPP;
 	return 0;
 }
 
-static int dove_twsi_ctrl_get(struct mvebu_mpp_ctrl_data *data, unsigned pid,
-			      unsigned long *config)
+static int dove_twsi_ctrl_get(unsigned pid, unsigned long *config)
 {
 	unsigned int gcfg1;
 	unsigned int gcfg2;
@@ -324,8 +327,7 @@ static int dove_twsi_ctrl_get(struct mvebu_mpp_ctrl_data *data, unsigned pid,
 	return 0;
 }
 
-static int dove_twsi_ctrl_set(struct mvebu_mpp_ctrl_data *data, unsigned pid,
-			      unsigned long config)
+static int dove_twsi_ctrl_set(unsigned pid, unsigned long config)
 {
 	unsigned int gcfg1 = 0;
 	unsigned int gcfg2 = 0;
@@ -352,9 +354,9 @@ static int dove_twsi_ctrl_set(struct mvebu_mpp_ctrl_data *data, unsigned pid,
 	return 0;
 }
 
-static const struct mvebu_mpp_ctrl dove_mpp_controls[] = {
+static struct mvebu_mpp_ctrl dove_mpp_controls[] = {
 	MPP_FUNC_CTRL(0, 15, NULL, dove_pmu_mpp_ctrl),
-	MPP_FUNC_CTRL(16, 23, NULL, mvebu_mmio_mpp_ctrl),
+	MPP_FUNC_CTRL(16, 23, NULL, dove_mpp_ctrl),
 	MPP_FUNC_CTRL(24, 39, "mpp_camera", dove_mpp4_ctrl),
 	MPP_FUNC_CTRL(40, 45, "mpp_sdio0", dove_mpp4_ctrl),
 	MPP_FUNC_CTRL(46, 51, "mpp_sdio1", dove_mpp4_ctrl),
@@ -767,10 +769,6 @@ static int dove_pinctrl_probe(struct platform_device *pdev)
 	struct resource fb_res;
 	const struct of_device_id *match =
 		of_match_device(dove_pinctrl_of_match, &pdev->dev);
-	struct mvebu_mpp_ctrl_data *mpp_data;
-	void __iomem *base;
-	int i;
-
 	pdev->dev.platform_data = (void *)match->data;
 
 	/*
@@ -785,18 +783,9 @@ static int dove_pinctrl_probe(struct platform_device *pdev)
 	clk_prepare_enable(clk);
 
 	mpp_res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
-	base = devm_ioremap_resource(&pdev->dev, mpp_res);
-	if (IS_ERR(base))
-		return PTR_ERR(base);
-
-	mpp_data = devm_kcalloc(&pdev->dev, dove_pinctrl_info.ncontrols,
-				sizeof(*mpp_data), GFP_KERNEL);
-	if (!mpp_data)
-		return -ENOMEM;
-
-	dove_pinctrl_info.control_data = mpp_data;
-	for (i = 0; i < ARRAY_SIZE(dove_mpp_controls); i++)
-		mpp_data[i].base = base;
+	mpp_base = devm_ioremap_resource(&pdev->dev, mpp_res);
+	if (IS_ERR(mpp_base))
+		return PTR_ERR(mpp_base);
 
 	/* prepare fallback resource */
 	memcpy(&fb_res, mpp_res, sizeof(struct resource));
@@ -849,12 +838,24 @@ static int dove_pinctrl_probe(struct platform_device *pdev)
 	return mvebu_pinctrl_probe(pdev);
 }
 
+static int dove_pinctrl_remove(struct platform_device *pdev)
+{
+	if (!IS_ERR(clk))
+		clk_disable_unprepare(clk);
+	return 0;
+}
+
 static struct platform_driver dove_pinctrl_driver = {
 	.driver = {
 		.name = "dove-pinctrl",
-		.suppress_bind_attrs = true,
 		.of_match_table = dove_pinctrl_of_match,
 	},
 	.probe = dove_pinctrl_probe,
+	.remove = dove_pinctrl_remove,
 };
-builtin_platform_driver(dove_pinctrl_driver);
+
+module_platform_driver(dove_pinctrl_driver);
+
+MODULE_AUTHOR("Sebastian Hesselbarth <sebastian.hesselbarth@gmail.com>");
+MODULE_DESCRIPTION("Marvell Dove pinctrl driver");
+MODULE_LICENSE("GPL v2");

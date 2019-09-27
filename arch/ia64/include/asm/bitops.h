@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _ASM_IA64_BITOPS_H
 #define _ASM_IA64_BITOPS_H
 
@@ -388,7 +387,8 @@ ia64_fls (unsigned long x)
  * Find the last (most significant) bit set.  Returns 0 for x==0 and
  * bits are numbered from 1..32 (e.g., fls(9) == 4).
  */
-static inline int fls(unsigned int t)
+static inline int
+fls (int t)
 {
 	unsigned long x = t & 0xffffffffu;
 

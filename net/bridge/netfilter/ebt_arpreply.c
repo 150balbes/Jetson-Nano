@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  *  ebt_arpreply
  *
@@ -52,8 +51,7 @@ ebt_arpreply_tg(struct sk_buff *skb, const struct xt_action_param *par)
 	if (diptr == NULL)
 		return EBT_DROP;
 
-	arp_send(ARPOP_REPLY, ETH_P_ARP, *siptr,
-		 (struct net_device *)xt_in(par),
+	arp_send(ARPOP_REPLY, ETH_P_ARP, *siptr, (struct net_device *)par->in,
 		 *diptr, shp, info->mac, shp);
 
 	return info->target;

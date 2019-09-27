@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * ldt_gdt.c - Test cases for LDT and GDT access
  * Copyright (c) 2015 Andrew Lutomirski
@@ -115,14 +114,7 @@ static void check_valid_segment(uint16_t index, int ldt,
 		return;
 	}
 
-	/* The SDM says "bits 19:16 are undefined".  Thanks. */
-	ar &= ~0xF0000;
-
-	/*
-	 * NB: Different Linux versions do different things with the
-	 * accessed bit in set_thread_area().
-	 */
-	if (ar != expected_ar && ar != (expected_ar | AR_ACCESSED)) {
+	if (ar != expected_ar) {
 		printf("[FAIL]\t%s entry %hu has AR 0x%08X but expected 0x%08X\n",
 		       (ldt ? "LDT" : "GDT"), index, ar, expected_ar);
 		nerrs++;
@@ -136,51 +128,30 @@ static void check_valid_segment(uint16_t index, int ldt,
 	}
 }
 
-static bool install_valid_mode(const struct user_desc *d, uint32_t ar,
-			       bool oldmode, bool ldt)
+static bool install_valid_mode(const struct user_desc *desc, uint32_t ar,
+			       bool oldmode)
 {
-	struct user_desc desc = *d;
-	int ret;
-
-	if (!ldt) {
-#ifndef __i386__
-		/* No point testing set_thread_area in a 64-bit build */
-		return false;
-#endif
-		if (!gdt_entry_num)
-			return false;
-		desc.entry_number = gdt_entry_num;
-
-		ret = syscall(SYS_set_thread_area, &desc);
-	} else {
-		ret = syscall(SYS_modify_ldt, oldmode ? 1 : 0x11,
-			      &desc, sizeof(desc));
-
-		if (ret < -1)
-			errno = -ret;
-
-		if (ret != 0 && errno == ENOSYS) {
-			printf("[OK]\tmodify_ldt returned -ENOSYS\n");
-			return false;
-		}
-	}
-
+	int ret = syscall(SYS_modify_ldt, oldmode ? 1 : 0x11,
+			  desc, sizeof(*desc));
+	if (ret < -1)
+		errno = -ret;
 	if (ret == 0) {
-		uint32_t limit = desc.limit;
-		if (desc.limit_in_pages)
+		uint32_t limit = desc->limit;
+		if (desc->limit_in_pages)
 			limit = (limit << 12) + 4095;
-		check_valid_segment(desc.entry_number, ldt, ar, limit, true);
+		check_valid_segment(desc->entry_number, 1, ar, limit, true);
 		return true;
+	} else if (errno == ENOSYS) {
+		printf("[OK]\tmodify_ldt returned -ENOSYS\n");
+		return false;
 	} else {
-		if (desc.seg_32bit) {
-			printf("[FAIL]\tUnexpected %s failure %d\n",
-			       ldt ? "modify_ldt" : "set_thread_area",
+		if (desc->seg_32bit) {
+			printf("[FAIL]\tUnexpected modify_ldt failure %d\n",
 			       errno);
 			nerrs++;
 			return false;
 		} else {
-			printf("[OK]\t%s rejected 16 bit segment\n",
-			       ldt ? "modify_ldt" : "set_thread_area");
+			printf("[OK]\tmodify_ldt rejected 16 bit segment\n");
 			return false;
 		}
 	}
@@ -188,15 +159,7 @@ static bool install_valid_mode(const struct user_desc *d, uint32_t ar,
 
 static bool install_valid(const struct user_desc *desc, uint32_t ar)
 {
-	bool ret = install_valid_mode(desc, ar, false, true);
-
-	if (desc->contents <= 1 && desc->seg_32bit &&
-	    !desc->seg_not_present) {
-		/* Should work in the GDT, too. */
-		install_valid_mode(desc, ar, false, false);
-	}
-
-	return ret;
+	return install_valid_mode(desc, ar, false);
 }
 
 static void install_invalid(const struct user_desc *desc, bool oldmode)
@@ -626,10 +589,13 @@ static void do_multicpu_tests(void)
 static int finish_exec_test(void)
 {
 	/*
-	 * Older kernel versions did inherit the LDT on exec() which is
-	 * wrong because exec() starts from a clean state.
+	 * In a sensible world, this would be check_invalid_segment(0, 1);
+	 * For better or for worse, though, the LDT is inherited across exec.
+	 * We can probably change this safely, but for now we test it.
 	 */
-	check_invalid_segment(0, 1);
+	check_valid_segment(0, 1,
+			    AR_DPL3 | AR_TYPE_XRCODE | AR_S | AR_P | AR_DB,
+			    42, true);
 
 	return nerrs ? 1 : 0;
 }

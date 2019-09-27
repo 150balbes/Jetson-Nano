@@ -1,7 +1,15 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /******************************************************************************
  *
  * Copyright(c) 2007 - 2011 Realtek Corporation. All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of version 2 of the GNU General Public License as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
+ * more details.
  *
  ******************************************************************************/
 #ifndef _RTW_IOCTL_H_
@@ -50,6 +58,12 @@
 #define OID_MP_SEG3		0xFF818700
 #define OID_MP_SEG4		0xFF011100
 
+#define DEBUG_OID(dbg, str)						\
+	if ((!dbg)) {							\
+		RT_TRACE(_module_rtl871x_ioctl_c_, _drv_info_,		\
+			 ("%s(%d): %s", __func__, __line__, str));	\
+	}
+
 enum oid_type {
 	QUERY_OID,
 	SET_OID
@@ -67,8 +81,7 @@ struct oid_par_priv {
 };
 
 #if defined(_RTW_MP_IOCTL_C_)
-static int oid_null_function(struct oid_par_priv *poid_par_priv)
-{
+static int oid_null_function(struct oid_par_priv *poid_par_priv) {
 	return NDIS_STATUS_SUCCESS;
 }
 #endif

@@ -1,6 +1,7 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * (C) 2002 - 2003  Dominik Brodowski <linux@brodo.de>
+ *
+ *  Licensed under the terms of the GNU GPL License version 2.
  *
  *  BIG FAT DISCLAIMER: Work in progress code. Possibly *dangerous*
  */
@@ -269,6 +270,7 @@ static int longrun_cpu_init(struct cpufreq_policy *policy)
 	/* cpuinfo and default policy values */
 	policy->cpuinfo.min_freq = longrun_low_freq;
 	policy->cpuinfo.max_freq = longrun_high_freq;
+	policy->cpuinfo.transition_latency = CPUFREQ_ETERNAL;
 	longrun_get_policy(policy);
 
 	return 0;

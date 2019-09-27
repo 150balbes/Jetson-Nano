@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: MIT */
 #ifndef __NV40_FB_RAM_H__
 #define __NV40_FB_RAM_H__
 #define nv40_ram(p) container_of((p), struct nv40_ram, base)
@@ -10,6 +9,6 @@ struct nv40_ram {
 	u32 coef;
 };
 
-int nv40_ram_new_(struct nvkm_fb *fb, enum nvkm_ram_type, u64,
+int nv40_ram_new_(struct nvkm_fb *fb, enum nvkm_ram_type, u64, u32,
 		  struct nvkm_ram **);
 #endif

@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef WM8785_H_INCLUDED
 #define WM8785_H_INCLUDED
 

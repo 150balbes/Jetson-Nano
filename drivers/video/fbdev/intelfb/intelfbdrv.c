@@ -173,7 +173,7 @@ static int intelfb_set_fbinfo(struct intelfb_info *dinfo);
 #define INTELFB_CLASS_MASK 0
 #endif
 
-static const struct pci_device_id intelfb_pci_table[] = {
+static struct pci_device_id intelfb_pci_table[] = {
 	{ PCI_VENDOR_ID_INTEL, PCI_DEVICE_ID_INTEL_830M, PCI_ANY_ID, PCI_ANY_ID, PCI_CLASS_DISPLAY_VGA << 8, INTELFB_CLASS_MASK, INTEL_830M },
 	{ PCI_VENDOR_ID_INTEL, PCI_DEVICE_ID_INTEL_845G, PCI_ANY_ID, PCI_ANY_ID, PCI_CLASS_DISPLAY_VGA << 8, INTELFB_CLASS_MASK, INTEL_845G },
 	{ PCI_VENDOR_ID_INTEL, PCI_DEVICE_ID_INTEL_85XGM, PCI_ANY_ID, PCI_ANY_ID, PCI_CLASS_DISPLAY_VGA << 8, INTELFB_CLASS_MASK, INTEL_85XGM },
@@ -491,9 +491,10 @@ static int intelfb_pci_register(struct pci_dev *pdev,
 	}
 
 	info = framebuffer_alloc(sizeof(struct intelfb_info), &pdev->dev);
-	if (!info)
-		return -ENOMEM;
-
+	if (!info) {
+		ERR_MSG("Could not allocate memory for intelfb_info.\n");
+		return -ENODEV;
+	}
 	if (fb_alloc_cmap(&info->cmap, 256, 1) < 0) {
 		ERR_MSG("Could not allocate cmap for intelfb_info.\n");
 		goto err_out_cmap;
@@ -906,7 +907,7 @@ static void intelfb_pci_unregister(struct pci_dev *pdev)
  *                       helper functions                      *
  ***************************************************************/
 
-__inline__ int intelfb_var_to_depth(const struct fb_var_screeninfo *var)
+int __inline__ intelfb_var_to_depth(const struct fb_var_screeninfo *var)
 {
 	DBG_MSG("intelfb_var_to_depth: bpp: %d, green.length is %d\n",
 		var->bits_per_pixel, var->green.length);
@@ -933,7 +934,7 @@ static __inline__ int var_to_refresh(const struct fb_var_screeninfo *var)
 }
 
 /***************************************************************
- *                Various initialisation functions             *
+ *                Various intialisation functions              *
  ***************************************************************/
 
 static void get_initial_mode(struct intelfb_info *dinfo)

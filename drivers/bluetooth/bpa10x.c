@@ -1,9 +1,24 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  *
  *  Digianswer Bluetooth USB driver
  *
  *  Copyright (C) 2004-2007  Marcel Holtmann <marcel@holtmann.org>
+ *
+ *
+ *  This program is free software; you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License as published by
+ *  the Free Software Foundation; either version 2 of the License, or
+ *  (at your option) any later version.
+ *
+ *  This program is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *  GNU General Public License for more details.
+ *
+ *  You should have received a copy of the GNU General Public License
+ *  along with this program; if not, write to the Free Software
+ *  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ *
  */
 
 #include <linux/kernel.h>
@@ -20,7 +35,7 @@
 #include <net/bluetooth/bluetooth.h>
 #include <net/bluetooth/hci_core.h>
 
-#include "h4_recv.h"
+#include "hci_uart.h"
 
 #define VERSION "0.11"
 
@@ -102,7 +117,7 @@ static void bpa10x_rx_complete(struct urb *urb)
 						bpa10x_recv_pkts,
 						ARRAY_SIZE(bpa10x_recv_pkts));
 		if (IS_ERR(data->rx_skb[idx])) {
-			bt_dev_err(hdev, "corrupted event packet");
+			BT_ERR("%s corrupted event packet", hdev->name);
 			hdev->stat.err_rx++;
 			data->rx_skb[idx] = NULL;
 		}
@@ -112,7 +127,8 @@ static void bpa10x_rx_complete(struct urb *urb)
 
 	err = usb_submit_urb(urb, GFP_ATOMIC);
 	if (err < 0) {
-		bt_dev_err(hdev, "urb %p failed to resubmit (%d)", urb, -err);
+		BT_ERR("%s urb %p failed to resubmit (%d)",
+						hdev->name, urb, -err);
 		usb_unanchor_urb(urb);
 	}
 }
@@ -148,7 +164,8 @@ static inline int bpa10x_submit_intr_urb(struct hci_dev *hdev)
 
 	err = usb_submit_urb(urb, GFP_KERNEL);
 	if (err < 0) {
-		bt_dev_err(hdev, "urb %p submission failed (%d)", urb, -err);
+		BT_ERR("%s urb %p submission failed (%d)",
+						hdev->name, urb, -err);
 		usb_unanchor_urb(urb);
 	}
 
@@ -188,7 +205,8 @@ static inline int bpa10x_submit_bulk_urb(struct hci_dev *hdev)
 
 	err = usb_submit_urb(urb, GFP_KERNEL);
 	if (err < 0) {
-		bt_dev_err(hdev, "urb %p submission failed (%d)", urb, -err);
+		BT_ERR("%s urb %p submission failed (%d)",
+						hdev->name, urb, -err);
 		usb_unanchor_urb(urb);
 	}
 
@@ -244,7 +262,7 @@ static int bpa10x_flush(struct hci_dev *hdev)
 
 static int bpa10x_setup(struct hci_dev *hdev)
 {
-	static const u8 req[] = { 0x07 };
+	const u8 req[] = { 0x07 };
 	struct sk_buff *skb;
 
 	BT_DBG("%s", hdev->name);
@@ -254,7 +272,7 @@ static int bpa10x_setup(struct hci_dev *hdev)
 	if (IS_ERR(skb))
 		return PTR_ERR(skb);
 
-	bt_dev_info(hdev, "%s", (char *)(skb->data + 1));
+	BT_INFO("%s: %s", hdev->name, (char *)(skb->data + 1));
 
 	hci_set_fw_info(hdev, "%s", skb->data + 1);
 
@@ -274,16 +292,16 @@ static int bpa10x_send_frame(struct hci_dev *hdev, struct sk_buff *skb)
 
 	skb->dev = (void *) hdev;
 
-	urb = usb_alloc_urb(0, GFP_KERNEL);
+	urb = usb_alloc_urb(0, GFP_ATOMIC);
 	if (!urb)
 		return -ENOMEM;
 
 	/* Prepend skb with frame type */
-	*(u8 *)skb_push(skb, 1) = hci_skb_pkt_type(skb);
+	*skb_push(skb, 1) = hci_skb_pkt_type(skb);
 
 	switch (hci_skb_pkt_type(skb)) {
 	case HCI_COMMAND_PKT:
-		dr = kmalloc(sizeof(*dr), GFP_KERNEL);
+		dr = kmalloc(sizeof(*dr), GFP_ATOMIC);
 		if (!dr) {
 			usb_free_urb(urb);
 			return -ENOMEM;
@@ -328,16 +346,16 @@ static int bpa10x_send_frame(struct hci_dev *hdev, struct sk_buff *skb)
 
 	usb_anchor_urb(urb, &data->tx_anchor);
 
-	err = usb_submit_urb(urb, GFP_KERNEL);
+	err = usb_submit_urb(urb, GFP_ATOMIC);
 	if (err < 0) {
-		bt_dev_err(hdev, "urb %p submission failed", urb);
+		BT_ERR("%s urb %p submission failed", hdev->name, urb);
 		kfree(urb->setup_packet);
 		usb_unanchor_urb(urb);
 	}
 
 	usb_free_urb(urb);
 
-	return err;
+	return 0;
 }
 
 static int bpa10x_set_diag(struct hci_dev *hdev, bool enable)
@@ -359,8 +377,7 @@ static int bpa10x_set_diag(struct hci_dev *hdev, bool enable)
 	return 0;
 }
 
-static int bpa10x_probe(struct usb_interface *intf,
-			const struct usb_device_id *id)
+static int bpa10x_probe(struct usb_interface *intf, const struct usb_device_id *id)
 {
 	struct bpa10x_data *data;
 	struct hci_dev *hdev;

@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __CPUPOWER_CPUPOWER_H__
 #define __CPUPOWER_CPUPOWER_H__
 

@@ -1,8 +1,11 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  *  linux/arch/arm/mm/flush.c
  *
  *  Copyright (C) 1995-2002 Russell King
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  */
 #include <linux/module.h>
 #include <linux/mm.h>
@@ -282,7 +285,7 @@ void __sync_icache_dcache(pte_t pteval)
 
 	page = pfn_to_page(pfn);
 	if (cache_is_vipt_aliasing())
-		mapping = page_mapping_file(page);
+		mapping = page_mapping(page);
 	else
 		mapping = NULL;
 
@@ -324,13 +327,7 @@ void flush_dcache_page(struct page *page)
 	if (page == ZERO_PAGE(0))
 		return;
 
-	if (!cache_ops_need_broadcast() && cache_is_vipt_nonaliasing()) {
-		if (test_bit(PG_dcache_clean, &page->flags))
-			clear_bit(PG_dcache_clean, &page->flags);
-		return;
-	}
-
-	mapping = page_mapping_file(page);
+	mapping = page_mapping(page);
 
 	if (!cache_ops_need_broadcast() &&
 	    mapping && !page_mapcount(page))
@@ -360,7 +357,7 @@ void flush_kernel_dcache_page(struct page *page)
 	if (cache_is_vivt() || cache_is_vipt_aliasing()) {
 		struct address_space *mapping;
 
-		mapping = page_mapping_file(page);
+		mapping = page_mapping(page);
 
 		if (!mapping || mapping_mapped(mapping)) {
 			void *addr;

@@ -1,5 +1,4 @@
-/* SPDX-License-Identifier: MIT */
-static uint32_t gf117_grhub_data[] = {
+uint32_t gf117_grhub_data[] = {
 /* 0x0000: hub_mmio_list_head */
 	0x00000300,
 /* 0x0004: hub_mmio_list_tail */
@@ -206,7 +205,7 @@ static uint32_t gf117_grhub_data[] = {
 	0x0417e91c,
 };
 
-static uint32_t gf117_grhub_code[] = {
+uint32_t gf117_grhub_code[] = {
 	0x039b0ef5,
 /* 0x0004: queue_put */
 	0x9800d898,

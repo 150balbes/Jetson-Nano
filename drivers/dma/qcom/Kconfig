@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0-only
 config QCOM_BAM_DMA
 	tristate "QCOM BAM DMA support"
 	depends on ARCH_QCOM || (COMPILE_TEST && OF && ARM)

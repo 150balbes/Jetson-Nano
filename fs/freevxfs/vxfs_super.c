@@ -116,7 +116,7 @@ vxfs_statfs(struct dentry *dentry, struct kstatfs *bufp)
 static int vxfs_remount(struct super_block *sb, int *flags, char *data)
 {
 	sync_filesystem(sb);
-	*flags |= SB_RDONLY;
+	*flags |= MS_RDONLY;
 	return 0;
 }
 
@@ -131,14 +131,21 @@ static struct inode *vxfs_alloc_inode(struct super_block *sb)
 	return &vi->vfs_inode;
 }
 
-static void vxfs_free_inode(struct inode *inode)
+static void vxfs_i_callback(struct rcu_head *head)
 {
+	struct inode *inode = container_of(head, struct inode, i_rcu);
+
 	kmem_cache_free(vxfs_inode_cachep, VXFS_INO(inode));
+}
+
+static void vxfs_destroy_inode(struct inode *inode)
+{
+	call_rcu(&inode->i_rcu, vxfs_i_callback);
 }
 
 static const struct super_operations vxfs_super_ops = {
 	.alloc_inode		= vxfs_alloc_inode,
-	.free_inode		= vxfs_free_inode,
+	.destroy_inode		= vxfs_destroy_inode,
 	.evict_inode		= vxfs_evict_inode,
 	.put_super		= vxfs_put_super,
 	.statfs			= vxfs_statfs,
@@ -213,7 +220,7 @@ static int vxfs_fill_super(struct super_block *sbp, void *dp, int silent)
 	int ret = -EINVAL;
 	u32 j;
 
-	sbp->s_flags |= SB_RDONLY;
+	sbp->s_flags |= MS_RDONLY;
 
 	infp = kzalloc(sizeof(*infp), GFP_KERNEL);
 	if (!infp) {
@@ -325,13 +332,9 @@ vxfs_init(void)
 {
 	int rv;
 
-	vxfs_inode_cachep = kmem_cache_create_usercopy("vxfs_inode",
+	vxfs_inode_cachep = kmem_cache_create("vxfs_inode",
 			sizeof(struct vxfs_inode_info), 0,
-			SLAB_RECLAIM_ACCOUNT|SLAB_MEM_SPREAD,
-			offsetof(struct vxfs_inode_info, vii_immed.vi_immed),
-			sizeof_field(struct vxfs_inode_info,
-				vii_immed.vi_immed),
-			NULL);
+			SLAB_RECLAIM_ACCOUNT|SLAB_MEM_SPREAD, NULL);
 	if (!vxfs_inode_cachep)
 		return -ENOMEM;
 	rv = register_filesystem(&vxfs_fs_type);

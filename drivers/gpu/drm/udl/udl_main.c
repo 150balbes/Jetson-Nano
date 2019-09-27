@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (C) 2012 Red Hat
  *
@@ -6,10 +5,12 @@
  * Copyright (C) 2009 Roberto De Ioris <roberto@unbit.it>
  * Copyright (C) 2009 Jaya Kumar <jayakumar.lkml@gmail.com>
  * Copyright (C) 2009 Bernie Thompson <bernie@plugable.com>
+ *
+ * This file is subject to the terms and conditions of the GNU General Public
+ * License v2. See the file COPYING in the main directory of this archive for
+ * more details.
  */
 #include <drm/drmP.h>
-#include <drm/drm_crtc_helper.h>
-#include <drm/drm_probe_helper.h>
 #include "udl_drv.h"
 
 /* -BULK_SIZE as per usb-skeleton. Can we get full page and avoid overhead? */
@@ -27,7 +28,7 @@
 static int udl_parse_vendor_descriptor(struct drm_device *dev,
 				       struct usb_device *usbdev)
 {
-	struct udl_device *udl = to_udl(dev);
+	struct udl_device *udl = dev->dev_private;
 	char *desc;
 	char *buf;
 	char *desc_end;
@@ -163,11 +164,12 @@ void udl_urb_completion(struct urb *urb)
 
 static void udl_free_urb_list(struct drm_device *dev)
 {
-	struct udl_device *udl = to_udl(dev);
+	struct udl_device *udl = dev->dev_private;
 	int count = udl->urbs.count;
 	struct list_head *node;
 	struct urb_node *unode;
 	struct urb *urb;
+	unsigned long flags;
 
 	DRM_DEBUG("Waiting for completes and freeing all render urbs\n");
 
@@ -175,12 +177,12 @@ static void udl_free_urb_list(struct drm_device *dev)
 	while (count--) {
 		down(&udl->urbs.limit_sem);
 
-		spin_lock_irq(&udl->urbs.lock);
+		spin_lock_irqsave(&udl->urbs.lock, flags);
 
 		node = udl->urbs.list.next; /* have reserved one with sem */
 		list_del_init(node);
 
-		spin_unlock_irq(&udl->urbs.lock);
+		spin_unlock_irqrestore(&udl->urbs.lock, flags);
 
 		unode = list_entry(node, struct urb_node, entry);
 		urb = unode->urb;
@@ -196,7 +198,7 @@ static void udl_free_urb_list(struct drm_device *dev)
 
 static int udl_alloc_urb_list(struct drm_device *dev, int count, size_t size)
 {
-	struct udl_device *udl = to_udl(dev);
+	struct udl_device *udl = dev->dev_private;
 	struct urb *urb;
 	struct urb_node *unode;
 	char *buf;
@@ -260,11 +262,12 @@ retry:
 
 struct urb *udl_get_urb(struct drm_device *dev)
 {
-	struct udl_device *udl = to_udl(dev);
+	struct udl_device *udl = dev->dev_private;
 	int ret = 0;
 	struct list_head *entry;
 	struct urb_node *unode;
 	struct urb *urb = NULL;
+	unsigned long flags;
 
 	/* Wait for an in-flight buffer to complete and get re-queued */
 	ret = down_timeout(&udl->urbs.limit_sem, GET_URB_TIMEOUT);
@@ -275,14 +278,14 @@ struct urb *udl_get_urb(struct drm_device *dev)
 		goto error;
 	}
 
-	spin_lock_irq(&udl->urbs.lock);
+	spin_lock_irqsave(&udl->urbs.lock, flags);
 
 	BUG_ON(list_empty(&udl->urbs.list)); /* reserved one with limit_sem */
 	entry = udl->urbs.list.next;
 	list_del_init(entry);
 	udl->urbs.available--;
 
-	spin_unlock_irq(&udl->urbs.lock);
+	spin_unlock_irqrestore(&udl->urbs.lock, flags);
 
 	unode = list_entry(entry, struct urb_node, entry);
 	urb = unode->urb;
@@ -293,7 +296,7 @@ error:
 
 int udl_submit_urb(struct drm_device *dev, struct urb *urb, size_t len)
 {
-	struct udl_device *udl = to_udl(dev);
+	struct udl_device *udl = dev->dev_private;
 	int ret;
 
 	BUG_ON(len > udl->urbs.size);
@@ -308,14 +311,20 @@ int udl_submit_urb(struct drm_device *dev, struct urb *urb, size_t len)
 	return ret;
 }
 
-int udl_init(struct udl_device *udl)
+int udl_driver_load(struct drm_device *dev, unsigned long flags)
 {
-	struct drm_device *dev = &udl->drm;
+	struct usb_device *udev = (void*)flags;
+	struct udl_device *udl;
 	int ret = -ENOMEM;
 
 	DRM_DEBUG("\n");
+	udl = kzalloc(sizeof(struct udl_device), GFP_KERNEL);
+	if (!udl)
+		return -ENOMEM;
 
-	mutex_init(&udl->gem_lock);
+	udl->udev = udev;
+	udl->ddev = dev;
+	dev->dev_private = udl;
 
 	if (!udl_parse_vendor_descriptor(dev, udl->udev)) {
 		ret = -ENODEV;
@@ -340,13 +349,17 @@ int udl_init(struct udl_device *udl)
 	if (ret)
 		goto err;
 
-	drm_kms_helper_poll_init(dev);
+	ret = drm_vblank_init(dev, 1);
+	if (ret)
+		goto err_fb;
 
 	return 0;
-
+err_fb:
+	udl_fbdev_cleanup(dev);
 err:
 	if (udl->urbs.count)
 		udl_free_urb_list(dev);
+	kfree(udl);
 	DRM_ERROR("%d\n", ret);
 	return ret;
 }
@@ -357,14 +370,17 @@ int udl_drop_usb(struct drm_device *dev)
 	return 0;
 }
 
-void udl_fini(struct drm_device *dev)
+int udl_driver_unload(struct drm_device *dev)
 {
-	struct udl_device *udl = to_udl(dev);
+	struct udl_device *udl = dev->dev_private;
 
-	drm_kms_helper_poll_fini(dev);
+	drm_vblank_cleanup(dev);
 
 	if (udl->urbs.count)
 		udl_free_urb_list(dev);
 
 	udl_fbdev_cleanup(dev);
+	udl_modeset_cleanup(dev);
+	kfree(udl);
+	return 0;
 }

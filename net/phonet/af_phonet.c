@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * File: af_phonet.c
  *
@@ -8,6 +7,20 @@
  *
  * Authors: Sakari Ailus <sakari.ailus@nokia.com>
  *          Rémi Denis-Courmont
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License
+ * version 2 as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA
+ * 02110-1301 USA
  */
 
 #include <linux/kernel.h>
@@ -22,11 +35,11 @@
 #include <net/phonet/pn_dev.h>
 
 /* Transport protocol registration */
-static const struct phonet_protocol *proto_tab[PHONET_NPROTO] __read_mostly;
+static struct phonet_protocol *proto_tab[PHONET_NPROTO] __read_mostly;
 
-static const struct phonet_protocol *phonet_proto_get(unsigned int protocol)
+static struct phonet_protocol *phonet_proto_get(unsigned int protocol)
 {
-	const struct phonet_protocol *pp;
+	struct phonet_protocol *pp;
 
 	if (protocol >= PHONET_NPROTO)
 		return NULL;
@@ -40,7 +53,7 @@ static const struct phonet_protocol *phonet_proto_get(unsigned int protocol)
 	return pp;
 }
 
-static inline void phonet_proto_put(const struct phonet_protocol *pp)
+static inline void phonet_proto_put(struct phonet_protocol *pp)
 {
 	module_put(pp->prot->owner);
 }
@@ -52,7 +65,7 @@ static int pn_socket_create(struct net *net, struct socket *sock, int protocol,
 {
 	struct sock *sk;
 	struct pn_sock *pn;
-	const struct phonet_protocol *pnp;
+	struct phonet_protocol *pnp;
 	int err;
 
 	if (!capable(CAP_SYS_ADMIN))
@@ -136,7 +149,7 @@ static int pn_header_parse(const struct sk_buff *skb, unsigned char *haddr)
 	return 1;
 }
 
-const struct header_ops phonet_header_ops = {
+struct header_ops phonet_header_ops = {
 	.create = pn_header_create,
 	.parse = pn_header_parse,
 };
@@ -457,7 +470,7 @@ static struct packet_type phonet_packet_type __read_mostly = {
 static DEFINE_MUTEX(proto_tab_lock);
 
 int __init_or_module phonet_proto_register(unsigned int protocol,
-				const struct phonet_protocol *pp)
+						struct phonet_protocol *pp)
 {
 	int err = 0;
 
@@ -479,8 +492,7 @@ int __init_or_module phonet_proto_register(unsigned int protocol,
 }
 EXPORT_SYMBOL(phonet_proto_register);
 
-void phonet_proto_unregister(unsigned int protocol,
-			const struct phonet_protocol *pp)
+void phonet_proto_unregister(unsigned int protocol, struct phonet_protocol *pp)
 {
 	mutex_lock(&proto_tab_lock);
 	BUG_ON(proto_tab[protocol] != pp);

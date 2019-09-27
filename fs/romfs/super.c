@@ -213,7 +213,7 @@ static struct dentry *romfs_lookup(struct inode *dir, struct dentry *dentry,
 				   unsigned int flags)
 {
 	unsigned long offset, maxoff;
-	struct inode *inode = NULL;
+	struct inode *inode;
 	struct romfs_inode ri;
 	const char *name;		/* got from dentry */
 	int len, ret;
@@ -233,7 +233,7 @@ static struct dentry *romfs_lookup(struct inode *dir, struct dentry *dentry,
 
 	for (;;) {
 		if (!offset || offset >= maxoff)
-			break;
+			goto out0;
 
 		ret = romfs_dev_read(dir->i_sb, offset, &ri, sizeof(ri));
 		if (ret < 0)
@@ -244,19 +244,37 @@ static struct dentry *romfs_lookup(struct inode *dir, struct dentry *dentry,
 				       len);
 		if (ret < 0)
 			goto error;
-		if (ret == 1) {
-			/* Hard link handling */
-			if ((be32_to_cpu(ri.next) & ROMFH_TYPE) == ROMFH_HRD)
-				offset = be32_to_cpu(ri.spec) & ROMFH_MASK;
-			inode = romfs_iget(dir->i_sb, offset);
+		if (ret == 1)
 			break;
-		}
 
 		/* next entry */
 		offset = be32_to_cpu(ri.next) & ROMFH_MASK;
 	}
 
-	return d_splice_alias(inode, dentry);
+	/* Hard link handling */
+	if ((be32_to_cpu(ri.next) & ROMFH_TYPE) == ROMFH_HRD)
+		offset = be32_to_cpu(ri.spec) & ROMFH_MASK;
+
+	inode = romfs_iget(dir->i_sb, offset);
+	if (IS_ERR(inode)) {
+		ret = PTR_ERR(inode);
+		goto error;
+	}
+	goto outi;
+
+	/*
+	 * it's a bit funky, _lookup needs to return an error code
+	 * (negative) or a NULL, both as a dentry.  ENOENT should not
+	 * be returned, instead we need to create a negative dentry by
+	 * d_add(dentry, NULL); and return 0 as no error.
+	 * (Although as I see, it only matters on writable file
+	 * systems).
+	 */
+out0:
+	inode = NULL;
+outi:
+	d_add(dentry, inode);
+	ret = 0;
 error:
 	return ERR_PTR(ret);
 }
@@ -381,9 +399,16 @@ static struct inode *romfs_alloc_inode(struct super_block *sb)
 /*
  * return a spent inode to the slab cache
  */
-static void romfs_free_inode(struct inode *inode)
+static void romfs_i_callback(struct rcu_head *head)
 {
+	struct inode *inode = container_of(head, struct inode, i_rcu);
+
 	kmem_cache_free(romfs_inode_cachep, ROMFS_I(inode));
+}
+
+static void romfs_destroy_inode(struct inode *inode)
+{
+	call_rcu(&inode->i_rcu, romfs_i_callback);
 }
 
 /*
@@ -426,13 +451,13 @@ static int romfs_statfs(struct dentry *dentry, struct kstatfs *buf)
 static int romfs_remount(struct super_block *sb, int *flags, char *data)
 {
 	sync_filesystem(sb);
-	*flags |= SB_RDONLY;
+	*flags |= MS_RDONLY;
 	return 0;
 }
 
 static const struct super_operations romfs_super_ops = {
 	.alloc_inode	= romfs_alloc_inode,
-	.free_inode	= romfs_free_inode,
+	.destroy_inode	= romfs_destroy_inode,
 	.statfs		= romfs_statfs,
 	.remount_fs	= romfs_remount,
 };
@@ -477,7 +502,7 @@ static int romfs_fill_super(struct super_block *sb, void *data, int silent)
 
 	sb->s_maxbytes = 0xFFFFFFFF;
 	sb->s_magic = ROMFS_MAGIC;
-	sb->s_flags |= SB_RDONLY | SB_NOATIME;
+	sb->s_flags |= MS_RDONLY | MS_NOATIME;
 	sb->s_op = &romfs_super_ops;
 
 #ifdef CONFIG_ROMFS_ON_MTD

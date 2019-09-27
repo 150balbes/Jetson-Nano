@@ -34,6 +34,12 @@ typedef int (*read_sfp_module_eeprom_func_p)(struct bnx2x_phy *phy,
 					     u8 dev_addr, u16 addr, u8 byte_cnt,
 					     u8 *o_buf, u8);
 /********************************************************/
+#define ETH_HLEN			14
+/* L2 header size + 2*VLANs (8 bytes) + LLC SNAP (8 bytes) */
+#define ETH_OVREHEAD			(ETH_HLEN + 8 + 8)
+#define ETH_MIN_PACKET_SIZE		60
+#define ETH_MAX_PACKET_SIZE		1500
+#define ETH_MAX_JUMBO_PACKET_SIZE	9600
 #define MDIO_ACCESS_TIMEOUT		1000
 #define WC_LANE_MAX			4
 #define I2C_SWITCH_WIDTH		2
@@ -837,45 +843,49 @@ static int bnx2x_ets_e3b0_set_cos_bw(struct bnx2x *bp,
 
 	switch (cos_entry) {
 	case 0:
-		nig_reg_adress_crd_weight =
-			(port) ? NIG_REG_P1_TX_ARB_CREDIT_WEIGHT_0 :
-			NIG_REG_P0_TX_ARB_CREDIT_WEIGHT_0;
-		pbf_reg_adress_crd_weight = (port) ?
-		    PBF_REG_COS0_WEIGHT_P1 : PBF_REG_COS0_WEIGHT_P0;
-		break;
+	    nig_reg_adress_crd_weight =
+		 (port) ? NIG_REG_P1_TX_ARB_CREDIT_WEIGHT_0 :
+		     NIG_REG_P0_TX_ARB_CREDIT_WEIGHT_0;
+	     pbf_reg_adress_crd_weight = (port) ?
+		 PBF_REG_COS0_WEIGHT_P1 : PBF_REG_COS0_WEIGHT_P0;
+	     break;
 	case 1:
-		nig_reg_adress_crd_weight = (port) ?
-			NIG_REG_P1_TX_ARB_CREDIT_WEIGHT_1 :
-			NIG_REG_P0_TX_ARB_CREDIT_WEIGHT_1;
-		pbf_reg_adress_crd_weight = (port) ?
-			PBF_REG_COS1_WEIGHT_P1 : PBF_REG_COS1_WEIGHT_P0;
-		break;
+	     nig_reg_adress_crd_weight = (port) ?
+		 NIG_REG_P1_TX_ARB_CREDIT_WEIGHT_1 :
+		 NIG_REG_P0_TX_ARB_CREDIT_WEIGHT_1;
+	     pbf_reg_adress_crd_weight = (port) ?
+		 PBF_REG_COS1_WEIGHT_P1 : PBF_REG_COS1_WEIGHT_P0;
+	     break;
 	case 2:
-		nig_reg_adress_crd_weight = (port) ?
-			NIG_REG_P1_TX_ARB_CREDIT_WEIGHT_2 :
-			NIG_REG_P0_TX_ARB_CREDIT_WEIGHT_2;
+	     nig_reg_adress_crd_weight = (port) ?
+		 NIG_REG_P1_TX_ARB_CREDIT_WEIGHT_2 :
+		 NIG_REG_P0_TX_ARB_CREDIT_WEIGHT_2;
 
-		pbf_reg_adress_crd_weight = (port) ?
-			PBF_REG_COS2_WEIGHT_P1 : PBF_REG_COS2_WEIGHT_P0;
-		break;
+		 pbf_reg_adress_crd_weight = (port) ?
+		     PBF_REG_COS2_WEIGHT_P1 : PBF_REG_COS2_WEIGHT_P0;
+	     break;
 	case 3:
-		if (port)
+	    if (port)
 			return -EINVAL;
-		nig_reg_adress_crd_weight = NIG_REG_P0_TX_ARB_CREDIT_WEIGHT_3;
-		pbf_reg_adress_crd_weight = PBF_REG_COS3_WEIGHT_P0;
-		break;
+	     nig_reg_adress_crd_weight =
+		 NIG_REG_P0_TX_ARB_CREDIT_WEIGHT_3;
+	     pbf_reg_adress_crd_weight =
+		 PBF_REG_COS3_WEIGHT_P0;
+	     break;
 	case 4:
-		if (port)
-			return -EINVAL;
-		nig_reg_adress_crd_weight = NIG_REG_P0_TX_ARB_CREDIT_WEIGHT_4;
-		pbf_reg_adress_crd_weight = PBF_REG_COS4_WEIGHT_P0;
-		break;
+	    if (port)
+		return -EINVAL;
+	     nig_reg_adress_crd_weight =
+		 NIG_REG_P0_TX_ARB_CREDIT_WEIGHT_4;
+	     pbf_reg_adress_crd_weight = PBF_REG_COS4_WEIGHT_P0;
+	     break;
 	case 5:
-		if (port)
-			return -EINVAL;
-		nig_reg_adress_crd_weight = NIG_REG_P0_TX_ARB_CREDIT_WEIGHT_5;
-		pbf_reg_adress_crd_weight = PBF_REG_COS5_WEIGHT_P0;
-		break;
+	    if (port)
+		return -EINVAL;
+	     nig_reg_adress_crd_weight =
+		 NIG_REG_P0_TX_ARB_CREDIT_WEIGHT_5;
+	     pbf_reg_adress_crd_weight = PBF_REG_COS5_WEIGHT_P0;
+	     break;
 	}
 
 	REG_WR(bp, nig_reg_adress_crd_weight, cos_bw_nig);
@@ -962,7 +972,7 @@ static int bnx2x_ets_e3b0_sp_pri_to_cos_set(const struct link_params *params,
 	if (pri >= max_num_of_cos) {
 		DP(NETIF_MSG_LINK, "bnx2x_ets_e3b0_sp_pri_to_cos_set invalid "
 		   "parameter Illegal strict priority\n");
-		return -EINVAL;
+	    return -EINVAL;
 	}
 
 	if (sp_pri_to_cos[pri] != DCBX_INVALID_COS) {
@@ -1841,28 +1851,28 @@ static int bnx2x_emac_enable(struct link_params *params,
 	bnx2x_bits_en(bp, emac_base + EMAC_REG_EMAC_TX_MODE,
 		      EMAC_TX_MODE_RESET);
 
-	/* pause enable/disable */
-	bnx2x_bits_dis(bp, emac_base + EMAC_REG_EMAC_RX_MODE,
-		       EMAC_RX_MODE_FLOW_EN);
+		/* pause enable/disable */
+		bnx2x_bits_dis(bp, emac_base + EMAC_REG_EMAC_RX_MODE,
+			       EMAC_RX_MODE_FLOW_EN);
 
-	bnx2x_bits_dis(bp,  emac_base + EMAC_REG_EMAC_TX_MODE,
-		       (EMAC_TX_MODE_EXT_PAUSE_EN |
-			EMAC_TX_MODE_FLOW_EN));
-	if (!(params->feature_config_flags &
-	      FEATURE_CONFIG_PFC_ENABLED)) {
-		if (vars->flow_ctrl & BNX2X_FLOW_CTRL_RX)
-			bnx2x_bits_en(bp, emac_base +
-				      EMAC_REG_EMAC_RX_MODE,
-				      EMAC_RX_MODE_FLOW_EN);
+		bnx2x_bits_dis(bp,  emac_base + EMAC_REG_EMAC_TX_MODE,
+			       (EMAC_TX_MODE_EXT_PAUSE_EN |
+				EMAC_TX_MODE_FLOW_EN));
+		if (!(params->feature_config_flags &
+		      FEATURE_CONFIG_PFC_ENABLED)) {
+			if (vars->flow_ctrl & BNX2X_FLOW_CTRL_RX)
+				bnx2x_bits_en(bp, emac_base +
+					      EMAC_REG_EMAC_RX_MODE,
+					      EMAC_RX_MODE_FLOW_EN);
 
-		if (vars->flow_ctrl & BNX2X_FLOW_CTRL_TX)
-			bnx2x_bits_en(bp, emac_base +
-				      EMAC_REG_EMAC_TX_MODE,
-				      (EMAC_TX_MODE_EXT_PAUSE_EN |
-				       EMAC_TX_MODE_FLOW_EN));
-	} else
-		bnx2x_bits_en(bp, emac_base + EMAC_REG_EMAC_TX_MODE,
-			      EMAC_TX_MODE_FLOW_EN);
+			if (vars->flow_ctrl & BNX2X_FLOW_CTRL_TX)
+				bnx2x_bits_en(bp, emac_base +
+					      EMAC_REG_EMAC_TX_MODE,
+					      (EMAC_TX_MODE_EXT_PAUSE_EN |
+					       EMAC_TX_MODE_FLOW_EN));
+		} else
+			bnx2x_bits_en(bp, emac_base + EMAC_REG_EMAC_TX_MODE,
+				      EMAC_TX_MODE_FLOW_EN);
 
 	/* KEEP_VLAN_TAG, promiscuous */
 	val = REG_RD(bp, emac_base + EMAC_REG_EMAC_RX_MODE);
@@ -1907,7 +1917,7 @@ static int bnx2x_emac_enable(struct link_params *params,
 	/* Enable emac for jumbo packets */
 	EMAC_WR(bp, EMAC_REG_EMAC_RX_MTU_SIZE,
 		(EMAC_RX_MTU_SIZE_JUMBO_ENA |
-		 (ETH_MAX_JUMBO_PACKET_SIZE + ETH_OVERHEAD)));
+		 (ETH_MAX_JUMBO_PACKET_SIZE + ETH_OVREHEAD)));
 
 	/* Strip CRC */
 	REG_WR(bp, NIG_REG_NIG_INGRESS_EMAC0_NO_CRC + port*4, 0x1);
@@ -2304,19 +2314,19 @@ static int bnx2x_bmac1_enable(struct link_params *params,
 	REG_WR_DMAE(bp, bmac_addr + BIGMAC_REGISTER_BMAC_CONTROL, wb_data, 2);
 
 	/* Set rx mtu */
-	wb_data[0] = ETH_MAX_JUMBO_PACKET_SIZE + ETH_OVERHEAD;
+	wb_data[0] = ETH_MAX_JUMBO_PACKET_SIZE + ETH_OVREHEAD;
 	wb_data[1] = 0;
 	REG_WR_DMAE(bp, bmac_addr + BIGMAC_REGISTER_RX_MAX_SIZE, wb_data, 2);
 
 	bnx2x_update_pfc_bmac1(params, vars);
 
 	/* Set tx mtu */
-	wb_data[0] = ETH_MAX_JUMBO_PACKET_SIZE + ETH_OVERHEAD;
+	wb_data[0] = ETH_MAX_JUMBO_PACKET_SIZE + ETH_OVREHEAD;
 	wb_data[1] = 0;
 	REG_WR_DMAE(bp, bmac_addr + BIGMAC_REGISTER_TX_MAX_SIZE, wb_data, 2);
 
 	/* Set cnt max size */
-	wb_data[0] = ETH_MAX_JUMBO_PACKET_SIZE + ETH_OVERHEAD;
+	wb_data[0] = ETH_MAX_JUMBO_PACKET_SIZE + ETH_OVREHEAD;
 	wb_data[1] = 0;
 	REG_WR_DMAE(bp, bmac_addr + BIGMAC_REGISTER_CNT_MAX_SIZE, wb_data, 2);
 
@@ -2374,18 +2384,18 @@ static int bnx2x_bmac2_enable(struct link_params *params,
 	udelay(30);
 
 	/* Set RX MTU */
-	wb_data[0] = ETH_MAX_JUMBO_PACKET_SIZE + ETH_OVERHEAD;
+	wb_data[0] = ETH_MAX_JUMBO_PACKET_SIZE + ETH_OVREHEAD;
 	wb_data[1] = 0;
 	REG_WR_DMAE(bp, bmac_addr + BIGMAC2_REGISTER_RX_MAX_SIZE, wb_data, 2);
 	udelay(30);
 
 	/* Set TX MTU */
-	wb_data[0] = ETH_MAX_JUMBO_PACKET_SIZE + ETH_OVERHEAD;
+	wb_data[0] = ETH_MAX_JUMBO_PACKET_SIZE + ETH_OVREHEAD;
 	wb_data[1] = 0;
 	REG_WR_DMAE(bp, bmac_addr + BIGMAC2_REGISTER_TX_MAX_SIZE, wb_data, 2);
 	udelay(30);
 	/* Set cnt max size */
-	wb_data[0] = ETH_MAX_JUMBO_PACKET_SIZE + ETH_OVERHEAD - 2;
+	wb_data[0] = ETH_MAX_JUMBO_PACKET_SIZE + ETH_OVREHEAD - 2;
 	wb_data[1] = 0;
 	REG_WR_DMAE(bp, bmac_addr + BIGMAC2_REGISTER_CNT_MAX_SIZE, wb_data, 2);
 	udelay(30);
@@ -2506,7 +2516,7 @@ static int bnx2x_pbf_update(struct link_params *params, u32 flow_ctrl,
 
 	} else {
 		u32 thresh = (ETH_MAX_JUMBO_PACKET_SIZE +
-			      ETH_OVERHEAD)/16;
+			      ETH_OVREHEAD)/16;
 		REG_WR(bp, PBF_REG_P0_PAUSE_ENABLE + port*4, 0);
 		/* Update threshold */
 		REG_WR(bp, PBF_REG_P0_ARB_THRSH + port*4, thresh);
@@ -6157,40 +6167,103 @@ static void bnx2x_link_int_ack(struct link_params *params,
 	}
 }
 
-static int bnx2x_null_format_ver(u32 spirom_ver, u8 *str, u16 *len)
-{
-	str[0] = '\0';
-	(*len)--;
-	return 0;
-}
-
 static int bnx2x_format_ver(u32 num, u8 *str, u16 *len)
 {
-	u16 ret;
-
+	u8 *str_ptr = str;
+	u32 mask = 0xf0000000;
+	u8 shift = 8*4;
+	u8 digit;
+	u8 remove_leading_zeros = 1;
 	if (*len < 10) {
 		/* Need more than 10chars for this format */
-		bnx2x_null_format_ver(num, str, len);
+		*str_ptr = '\0';
+		(*len)--;
 		return -EINVAL;
 	}
+	while (shift > 0) {
 
-	ret = scnprintf(str, *len, "%hx.%hx", num >> 16, num);
-	*len -= ret;
+		shift -= 4;
+		digit = ((num & mask) >> shift);
+		if (digit == 0 && remove_leading_zeros) {
+			*str_ptr = '0';
+		} else {
+			if (digit < 0xa)
+				*str_ptr = digit + '0';
+			else
+				*str_ptr = digit - 0xa + 'a';
+
+			remove_leading_zeros = 0;
+			str_ptr++;
+			(*len)--;
+		}
+		mask = mask >> 4;
+		if (shift == 4*4) {
+			if (remove_leading_zeros) {
+				str_ptr++;
+				(*len)--;
+			}
+			*str_ptr = '.';
+			str_ptr++;
+			(*len)--;
+			remove_leading_zeros = 1;
+		}
+	}
+	if (remove_leading_zeros)
+		(*len)--;
 	return 0;
 }
 
 static int bnx2x_3_seq_format_ver(u32 num, u8 *str, u16 *len)
 {
-	u16 ret;
+	u8 *str_ptr = str;
+	u32 mask = 0x00f00000;
+	u8 shift = 8*3;
+	u8 digit;
+	u8 remove_leading_zeros = 1;
 
 	if (*len < 10) {
 		/* Need more than 10chars for this format */
-		bnx2x_null_format_ver(num, str, len);
+		*str_ptr = '\0';
+		(*len)--;
 		return -EINVAL;
 	}
 
-	ret = scnprintf(str, *len, "%hhx.%hhx.%hhx", num >> 16, num >> 8, num);
-	*len -= ret;
+	while (shift > 0) {
+		shift -= 4;
+		digit = ((num & mask) >> shift);
+		if (digit == 0 && remove_leading_zeros) {
+			*str_ptr = '0';
+		} else {
+			if (digit < 0xa)
+				*str_ptr = digit + '0';
+			else
+				*str_ptr = digit - 0xa + 'a';
+
+			remove_leading_zeros = 0;
+			str_ptr++;
+			(*len)--;
+		}
+		mask = mask >> 4;
+		if ((shift == 4*4) || (shift == 4*2)) {
+			if (remove_leading_zeros) {
+				str_ptr++;
+				(*len)--;
+			}
+			*str_ptr = '.';
+			str_ptr++;
+			(*len)--;
+			remove_leading_zeros = 1;
+		}
+	}
+	if (remove_leading_zeros)
+		(*len)--;
+	return 0;
+}
+
+static int bnx2x_null_format_ver(u32 spirom_ver, u8 *str, u16 *len)
+{
+	str[0] = '\0';
+	(*len)--;
 	return 0;
 }
 
@@ -6335,7 +6408,6 @@ int bnx2x_set_led(struct link_params *params,
 		 */
 		if (!vars->link_up)
 			break;
-		/* fall through */
 	case LED_MODE_ON:
 		if (((params->phy[EXT_PHY1].type ==
 			  PORT_HW_CFG_XGXS_EXT_PHY_TYPE_BCM8727) ||
@@ -6474,9 +6546,9 @@ int bnx2x_test_link(struct link_params *params, struct link_vars *vars,
 			  MDIO_REG_BANK_GP_STATUS,
 			  MDIO_GP_STATUS_TOP_AN_STATUS1,
 			  &gp_status);
-		/* Link is up only if both local phy and external phy are up */
-		if (!(gp_status & MDIO_GP_STATUS_TOP_AN_STATUS1_LINK_STATUS))
-			return -ESRCH;
+	/* Link is up only if both local phy and external phy are up */
+	if (!(gp_status & MDIO_GP_STATUS_TOP_AN_STATUS1_LINK_STATUS))
+		return -ESRCH;
 	}
 	/* In XGXS loopback mode, do not check external PHY */
 	if (params->loopback_mode == LOOPBACK_XGXS)
@@ -6891,7 +6963,7 @@ int bnx2x_link_update(struct link_params *params, struct link_vars *vars)
 			 * hence its link is expected to be down
 			 * - SECOND_PHY means that first phy should not be able
 			 * to link up by itself (using configuration)
-			 * - DEFAULT should be overridden during initialization
+			 * - DEFAULT should be overriden during initialiazation
 			 */
 				DP(NETIF_MSG_LINK, "Invalid link indication"
 					   "mpc=0x%x. DISABLING LINK !!!\n",
@@ -7289,8 +7361,8 @@ static int bnx2x_8073_xaui_wa(struct bnx2x *bp, struct bnx2x_phy *phy)
 					DP(NETIF_MSG_LINK,
 					  "XAUI workaround has completed\n");
 					return 0;
-				}
-				usleep_range(3000, 6000);
+				 }
+				 usleep_range(3000, 6000);
 			}
 			break;
 		}
@@ -10615,19 +10687,22 @@ static u8 bnx2x_848xx_read_status(struct bnx2x_phy *phy,
 
 static int bnx2x_8485x_format_ver(u32 raw_ver, u8 *str, u16 *len)
 {
+	int status = 0;
 	u32 num;
 
 	num = ((raw_ver & 0xF80) >> 7) << 16 | ((raw_ver & 0x7F) << 8) |
 	      ((raw_ver & 0xF000) >> 12);
-	return bnx2x_3_seq_format_ver(num, str, len);
+	status = bnx2x_3_seq_format_ver(num, str, len);
+	return status;
 }
 
 static int bnx2x_848xx_format_ver(u32 raw_ver, u8 *str, u16 *len)
 {
+	int status = 0;
 	u32 spirom_ver;
-
 	spirom_ver = ((raw_ver & 0xF80) >> 7) << 16 | (raw_ver & 0x7F);
-	return bnx2x_format_ver(spirom_ver, str, len);
+	status = bnx2x_format_ver(spirom_ver, str, len);
+	return status;
 }
 
 static void bnx2x_8481_hw_reset(struct bnx2x_phy *phy,
@@ -12478,12 +12553,13 @@ static int bnx2x_populate_ext_phy(struct bnx2x *bp,
 static int bnx2x_populate_phy(struct bnx2x *bp, u8 phy_index, u32 shmem_base,
 			      u32 shmem2_base, u8 port, struct bnx2x_phy *phy)
 {
+	int status = 0;
 	phy->type = PORT_HW_CFG_XGXS_EXT_PHY_TYPE_NOT_CONN;
 	if (phy_index == INT_PHY)
 		return bnx2x_populate_int_phy(bp, shmem_base, port, phy);
-
-	return bnx2x_populate_ext_phy(bp, phy_index, shmem_base, shmem2_base,
+	status = bnx2x_populate_ext_phy(bp, phy_index, shmem_base, shmem2_base,
 					port, phy);
+	return status;
 }
 
 static void bnx2x_phy_def_cfg(struct link_params *params,
@@ -12518,13 +12594,11 @@ static void bnx2x_phy_def_cfg(struct link_params *params,
 	switch (link_config  & PORT_FEATURE_LINK_SPEED_MASK) {
 	case PORT_FEATURE_LINK_SPEED_10M_HALF:
 		phy->req_duplex = DUPLEX_HALF;
-		/* fall through */
 	case PORT_FEATURE_LINK_SPEED_10M_FULL:
 		phy->req_line_speed = SPEED_10;
 		break;
 	case PORT_FEATURE_LINK_SPEED_100M_HALF:
 		phy->req_duplex = DUPLEX_HALF;
-		/* fall through */
 	case PORT_FEATURE_LINK_SPEED_100M_FULL:
 		phy->req_line_speed = SPEED_100;
 		break;
@@ -12671,39 +12745,39 @@ static void bnx2x_init_bmac_loopback(struct link_params *params,
 				     struct link_vars *vars)
 {
 	struct bnx2x *bp = params->bp;
-	vars->link_up = 1;
-	vars->line_speed = SPEED_10000;
-	vars->duplex = DUPLEX_FULL;
-	vars->flow_ctrl = BNX2X_FLOW_CTRL_NONE;
-	vars->mac_type = MAC_TYPE_BMAC;
+		vars->link_up = 1;
+		vars->line_speed = SPEED_10000;
+		vars->duplex = DUPLEX_FULL;
+		vars->flow_ctrl = BNX2X_FLOW_CTRL_NONE;
+		vars->mac_type = MAC_TYPE_BMAC;
 
-	vars->phy_flags = PHY_XGXS_FLAG;
+		vars->phy_flags = PHY_XGXS_FLAG;
 
-	bnx2x_xgxs_deassert(params);
+		bnx2x_xgxs_deassert(params);
 
-	/* Set bmac loopback */
-	bnx2x_bmac_enable(params, vars, 1, 1);
+		/* Set bmac loopback */
+		bnx2x_bmac_enable(params, vars, 1, 1);
 
-	REG_WR(bp, NIG_REG_EGRESS_DRAIN0_MODE + params->port * 4, 0);
+		REG_WR(bp, NIG_REG_EGRESS_DRAIN0_MODE + params->port*4, 0);
 }
 
 static void bnx2x_init_emac_loopback(struct link_params *params,
 				     struct link_vars *vars)
 {
 	struct bnx2x *bp = params->bp;
-	vars->link_up = 1;
-	vars->line_speed = SPEED_1000;
-	vars->duplex = DUPLEX_FULL;
-	vars->flow_ctrl = BNX2X_FLOW_CTRL_NONE;
-	vars->mac_type = MAC_TYPE_EMAC;
+		vars->link_up = 1;
+		vars->line_speed = SPEED_1000;
+		vars->duplex = DUPLEX_FULL;
+		vars->flow_ctrl = BNX2X_FLOW_CTRL_NONE;
+		vars->mac_type = MAC_TYPE_EMAC;
 
-	vars->phy_flags = PHY_XGXS_FLAG;
+		vars->phy_flags = PHY_XGXS_FLAG;
 
-	bnx2x_xgxs_deassert(params);
-	/* Set bmac loopback */
-	bnx2x_emac_enable(params, vars, 1);
-	bnx2x_emac_program(params, vars);
-	REG_WR(bp, NIG_REG_EGRESS_DRAIN0_MODE + params->port * 4, 0);
+		bnx2x_xgxs_deassert(params);
+		/* Set bmac loopback */
+		bnx2x_emac_enable(params, vars, 1);
+		bnx2x_emac_program(params, vars);
+		REG_WR(bp, NIG_REG_EGRESS_DRAIN0_MODE + params->port*4, 0);
 }
 
 static void bnx2x_init_xmac_loopback(struct link_params *params,
@@ -13069,12 +13143,12 @@ int bnx2x_link_reset(struct link_params *params, struct link_vars *vars,
 		REG_WR(bp, NIG_REG_EGRESS_EMAC0_OUT_EN + port*4, 0);
 	}
 
-	if (!CHIP_IS_E3(bp)) {
-		bnx2x_set_bmac_rx(bp, params->chip_id, port, 0);
-	} else {
-		bnx2x_set_xmac_rxtx(params, 0);
-		bnx2x_set_umac_rxtx(params, 0);
-	}
+		if (!CHIP_IS_E3(bp)) {
+			bnx2x_set_bmac_rx(bp, params->chip_id, port, 0);
+		} else {
+			bnx2x_set_xmac_rxtx(params, 0);
+			bnx2x_set_umac_rxtx(params, 0);
+		}
 	/* Disable emac */
 	if (!CHIP_IS_E3(bp))
 		REG_WR(bp, NIG_REG_NIG_EMAC0_EN + port*4, 0);

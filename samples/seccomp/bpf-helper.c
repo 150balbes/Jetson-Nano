@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * Seccomp BPF helper functions
  *
@@ -19,41 +18,41 @@
 int bpf_resolve_jumps(struct bpf_labels *labels,
 		      struct sock_filter *filter, size_t count)
 {
-	size_t i;
+	struct sock_filter *begin = filter;
+	__u8 insn = count - 1;
 
-	if (count < 1 || count > BPF_MAXINSNS)
+	if (count < 1)
 		return -1;
 	/*
 	* Walk it once, backwards, to build the label table and do fixups.
 	* Since backward jumps are disallowed by BPF, this is easy.
 	*/
-	for (i = 0; i < count; ++i) {
-		size_t offset = count - i - 1;
-		struct sock_filter *instr = &filter[offset];
-		if (instr->code != (BPF_JMP+BPF_JA))
+	filter += insn;
+	for (; filter >= begin; --insn, --filter) {
+		if (filter->code != (BPF_JMP+BPF_JA))
 			continue;
-		switch ((instr->jt<<8)|instr->jf) {
+		switch ((filter->jt<<8)|filter->jf) {
 		case (JUMP_JT<<8)|JUMP_JF:
-			if (labels->labels[instr->k].location == 0xffffffff) {
+			if (labels->labels[filter->k].location == 0xffffffff) {
 				fprintf(stderr, "Unresolved label: '%s'\n",
-					labels->labels[instr->k].label);
+					labels->labels[filter->k].label);
 				return 1;
 			}
-			instr->k = labels->labels[instr->k].location -
-				    (offset + 1);
-			instr->jt = 0;
-			instr->jf = 0;
+			filter->k = labels->labels[filter->k].location -
+				    (insn + 1);
+			filter->jt = 0;
+			filter->jf = 0;
 			continue;
 		case (LABEL_JT<<8)|LABEL_JF:
-			if (labels->labels[instr->k].location != 0xffffffff) {
+			if (labels->labels[filter->k].location != 0xffffffff) {
 				fprintf(stderr, "Duplicate label use: '%s'\n",
-					labels->labels[instr->k].label);
+					labels->labels[filter->k].label);
 				return 1;
 			}
-			labels->labels[instr->k].location = offset;
-			instr->k = 0; /* fall through */
-			instr->jt = 0;
-			instr->jf = 0;
+			labels->labels[filter->k].location = insn;
+			filter->k = 0; /* fall through */
+			filter->jt = 0;
+			filter->jf = 0;
 			continue;
 		}
 	}

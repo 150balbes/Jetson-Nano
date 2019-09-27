@@ -76,10 +76,10 @@
 #include <linux/delay.h>
 
 
-void pnic2_timer(struct timer_list *t)
+void pnic2_timer(unsigned long data)
 {
-	struct tulip_private *tp = from_timer(tp, t, timer);
-	struct net_device *dev = tp->dev;
+	struct net_device *dev = (struct net_device *)data;
+	struct tulip_private *tp = netdev_priv(dev);
 	void __iomem *ioaddr = tp->base_addr;
 	int next_tick = 60*HZ;
 

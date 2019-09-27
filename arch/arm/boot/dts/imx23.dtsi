@@ -1,20 +1,19 @@
-// SPDX-License-Identifier: GPL-2.0+
-//
-// Copyright 2012 Freescale Semiconductor, Inc.
+/*
+ * Copyright 2012 Freescale Semiconductor, Inc.
+ *
+ * The code contained herein is licensed under the GNU General Public
+ * License. You may obtain a copy of the GNU General Public License
+ * Version 2 or later at the following locations:
+ *
+ * http://www.opensource.org/licenses/gpl-license.html
+ * http://www.gnu.org/copyleft/gpl.html
+ */
 
+#include "skeleton.dtsi"
 #include "imx23-pinfunc.h"
 
 / {
-	#address-cells = <1>;
-	#size-cells = <1>;
-
 	interrupt-parent = <&icoll>;
-	/*
-	 * The decompressor and also some bootloaders rely on a
-	 * pre-existing /chosen node to be available to insert the
-	 * command line and merge other ATAGS info.
-	 */
-	chosen {};
 
 	aliases {
 		gpio0 = &gpio0;
@@ -28,13 +27,12 @@
 	};
 
 	cpus {
-		#address-cells = <1>;
+		#address-cells = <0>;
 		#size-cells = <0>;
 
-		cpu@0 {
+		cpu {
 			compatible = "arm,arm926ej-s";
 			device_type = "cpu";
-			reg = <0>;
 		};
 	};
 
@@ -91,7 +89,7 @@
 				status = "disabled";
 			};
 
-			ssp0: spi@80010000 {
+			ssp0: ssp@80010000 {
 				reg = <0x80010000 0x2000>;
 				interrupts = <15>;
 				clocks = <&clks 33>;
@@ -213,8 +211,7 @@
 					fsl,pull-up = <MXS_PULL_DISABLE>;
 				};
 
-				gpmi_pins_fixup: gpmi-pins-fixup@0 {
-					reg = <0>;
+				gpmi_pins_fixup: gpmi-pins-fixup {
 					fsl,pinmux-ids = <
 						MX23_PAD_GPMI_WPN__GPMI_WPN
 						MX23_PAD_GPMI_WRN__GPMI_WRN
@@ -258,8 +255,7 @@
 					fsl,pull-up = <MXS_PULL_ENABLE>;
 				};
 
-				mmc0_pins_fixup: mmc0-pins-fixup@0 {
-					reg = <0>;
+				mmc0_pins_fixup: mmc0-pins-fixup {
 					fsl,pinmux-ids = <
 						MX23_PAD_SSP1_DETECT__SSP1_DETECT
 						MX23_PAD_SSP1_SCK__SSP1_SCK
@@ -455,7 +451,7 @@
 				status = "disabled";
 			};
 
-			ssp1: spi@80034000 {
+			ssp1: ssp@80034000 {
 				reg = <0x80034000 0x2000>;
 				interrupts = <2>;
 				clocks = <&clks 33>;
@@ -468,7 +464,7 @@
 				reg = <0x80038000 0x2000>;
 				status = "disabled";
 			};
-		};
+                };
 
 		apbx@80040000 {
 			compatible = "simple-bus";

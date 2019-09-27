@@ -1,6 +1,5 @@
-# SPDX-License-Identifier: GPL-2.0
 #
-# Makefile for the Linux/SuperH CPU-specific backends.
+# Makefile for the Linux/SuperH CPU-specifc backends.
 #
 
 obj-$(CONFIG_CPU_SH2)		= sh2/

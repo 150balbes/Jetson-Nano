@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef DDK750_REG_H__
 #define DDK750_REG_H__
 
@@ -532,6 +531,7 @@
 #define GPIO_INTERRUPT_STATUS_27                        BIT(18)
 #define GPIO_INTERRUPT_STATUS_26                        BIT(17)
 #define GPIO_INTERRUPT_STATUS_25                        BIT(16)
+
 
 #define PANEL_DISPLAY_CTRL                            0x080000
 #define PANEL_DISPLAY_CTRL_RESERVED_MASK              0xc0f08000
@@ -1279,6 +1279,7 @@
 #define I2C_DATA14                                      0x010052
 #define I2C_DATA15                                      0x010053
 
+
 #define ZV0_CAPTURE_CTRL                                0x090000
 #define ZV0_CAPTURE_CTRL_FIELD_INPUT                    BIT(27)
 #define ZV0_CAPTURE_CTRL_SCAN                           BIT(26)
@@ -1444,6 +1445,7 @@
 #define DEFAULT_I2C_SCL                     30
 #define DEFAULT_I2C_SDA                     31
 
+
 #define GPIO_DATA_SM750LE                               0x020018
 #define GPIO_DATA_SM750LE_1                             BIT(1)
 #define GPIO_DATA_SM750LE_0                             BIT(0)
@@ -1451,5 +1453,6 @@
 #define GPIO_DATA_DIRECTION_SM750LE                     0x02001C
 #define GPIO_DATA_DIRECTION_SM750LE_1                   BIT(1)
 #define GPIO_DATA_DIRECTION_SM750LE_0                   BIT(0)
+
 
 #endif

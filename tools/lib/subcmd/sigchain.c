@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 #include <signal.h>
 #include "subcmd-util.h"
 #include "sigchain.h"

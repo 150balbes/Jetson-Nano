@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * Just like strncpy() except that if a fault occurs during copying,
  * -EFAULT is returned.

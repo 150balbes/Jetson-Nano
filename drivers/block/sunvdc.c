@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /* sunvdc.c: Sun LDOM Virtual Disk Client.
  *
  * Copyright (C) 2007, 2008 David S. Miller <davem@davemloft.net>
@@ -7,7 +6,7 @@
 #include <linux/module.h>
 #include <linux/kernel.h>
 #include <linux/types.h>
-#include <linux/blk-mq.h>
+#include <linux/blkdev.h>
 #include <linux/hdreg.h>
 #include <linux/genhd.h>
 #include <linux/cdrom.h>
@@ -35,18 +34,11 @@ MODULE_LICENSE("GPL");
 MODULE_VERSION(DRV_MODULE_VERSION);
 
 #define VDC_TX_RING_SIZE	512
-#define VDC_DEFAULT_BLK_SIZE	512
-
-#define MAX_XFER_BLKS		(128 * 1024)
-#define MAX_XFER_SIZE		(MAX_XFER_BLKS / VDC_DEFAULT_BLK_SIZE)
-#define MAX_RING_COOKIES	((MAX_XFER_BLKS / PAGE_SIZE) + 2)
 
 #define WAITING_FOR_LINK_UP	0x01
 #define WAITING_FOR_TX_SPACE	0x02
 #define WAITING_FOR_GEN_CMD	0x04
 #define WAITING_FOR_ANY		-1
-
-#define	VDC_MAX_RETRIES	10
 
 static struct workqueue_struct *sunvdc_wq;
 
@@ -69,10 +61,9 @@ struct vdc_port {
 
 	u64			max_xfer_size;
 	u32			vdisk_block_size;
-	u32			drain;
 
 	u64			ldc_timeout;
-	struct delayed_work	ldc_reset_timer_work;
+	struct timer_list	ldc_reset_timer;
 	struct work_struct	ldc_reset_work;
 
 	/* The server fills these in for us in the disk attribute
@@ -82,16 +73,13 @@ struct vdc_port {
 	u32			vdisk_size;
 	u8			vdisk_type;
 	u8			vdisk_mtype;
-	u32			vdisk_phys_blksz;
-
-	struct blk_mq_tag_set	tag_set;
 
 	char			disk_name[32];
 };
 
 static void vdc_ldc_reset(struct vdc_port *port);
 static void vdc_ldc_reset_work(struct work_struct *work);
-static void vdc_ldc_reset_timer_work(struct work_struct *work);
+static void vdc_ldc_reset_timer(unsigned long _arg);
 
 static inline struct vdc_port *to_vdc_port(struct vio_driver_state *vio)
 {
@@ -100,7 +88,6 @@ static inline struct vdc_port *to_vdc_port(struct vio_driver_state *vio)
 
 /* Ordered from largest major to lowest */
 static struct vio_version vdc_versions[] = {
-	{ .major = 1, .minor = 2 },
 	{ .major = 1, .minor = 1 },
 	{ .major = 1, .minor = 0 },
 };
@@ -181,8 +168,11 @@ static void vdc_blk_queue_start(struct vdc_port *port)
 	 * handshake completes, so check for initial handshake before we've
 	 * allocated a disk.
 	 */
-	if (port->disk && vdc_tx_dring_avail(dr) * 100 / VDC_TX_RING_SIZE >= 50)
-		blk_mq_start_stopped_hw_queues(port->disk->queue, true);
+	if (port->disk && blk_queue_stopped(port->disk->queue) &&
+	    vdc_tx_dring_avail(dr) * 100 / VDC_TX_RING_SIZE >= 50) {
+		blk_start_queue(port->disk->queue);
+	}
+
 }
 
 static void vdc_finish(struct vio_driver_state *vio, int err, int waiting_for)
@@ -200,7 +190,7 @@ static void vdc_handshake_complete(struct vio_driver_state *vio)
 {
 	struct vdc_port *port = to_vdc_port(vio);
 
-	cancel_delayed_work(&port->ldc_reset_timer_work);
+	del_timer(&port->ldc_reset_timer);
 	vdc_finish(vio, 0, WAITING_FOR_LINK_UP);
 	vdc_blk_queue_start(port);
 }
@@ -281,11 +271,6 @@ static int vdc_handle_attr(struct vio_driver_state *vio, void *arg)
 		if (pkt->max_xfer_size < port->max_xfer_size)
 			port->max_xfer_size = pkt->max_xfer_size;
 		port->vdisk_block_size = pkt->vdisk_block_size;
-
-		port->vdisk_phys_blksz = VDC_DEFAULT_BLK_SIZE;
-		if (vdc_version_supported(port, 1, 2))
-			port->vdisk_phys_blksz = pkt->phys_block_size;
-
 		return 0;
 	} else {
 		printk(KERN_ERR PFX "%s: Attribute NACK\n", vio->name);
@@ -323,7 +308,7 @@ static void vdc_end_one(struct vdc_port *port, struct vio_dring_state *dr,
 
 	rqe->req = NULL;
 
-	blk_mq_end_request(req, desc->status ? BLK_STS_IOERR : 0);
+	__blk_end_request(req, (desc->status ? -EIO : 0), desc->size);
 
 	vdc_blk_queue_start(port);
 }
@@ -434,7 +419,6 @@ static int __vdc_tx_trigger(struct vdc_port *port)
 		.end_idx		= dr->prod,
 	};
 	int err, delay;
-	int retries = 0;
 
 	hdr.seq = dr->snd_nxt;
 	delay = 1;
@@ -447,8 +431,6 @@ static int __vdc_tx_trigger(struct vdc_port *port)
 		udelay(delay);
 		if ((delay <<= 1) > 128)
 			delay = 128;
-		if (retries++ > VDC_MAX_RETRIES)
-			break;
 	} while (err == -EAGAIN);
 
 	if (err == -ENOTCONN)
@@ -460,16 +442,13 @@ static int __send_request(struct request *req)
 {
 	struct vdc_port *port = req->rq_disk->private_data;
 	struct vio_dring_state *dr = &port->vio.drings[VIO_DRIVER_TX_RING];
-	struct scatterlist sg[MAX_RING_COOKIES];
+	struct scatterlist sg[port->ring_cookies];
 	struct vdc_req_entry *rqe;
 	struct vio_disk_desc *desc;
 	unsigned int map_perm;
 	int nsg, err, i;
 	u64 len;
 	u8 op;
-
-	if (WARN_ON(port->ring_cookies > MAX_RING_COOKIES))
-		return -EINVAL;
 
 	map_perm = LDC_MAP_SHADOW | LDC_MAP_DIRECT | LDC_MAP_IO;
 
@@ -531,40 +510,29 @@ static int __send_request(struct request *req)
 	return err;
 }
 
-static blk_status_t vdc_queue_rq(struct blk_mq_hw_ctx *hctx,
-				 const struct blk_mq_queue_data *bd)
+static void do_vdc_request(struct request_queue *rq)
 {
-	struct vdc_port *port = hctx->queue->queuedata;
-	struct vio_dring_state *dr;
-	unsigned long flags;
+	struct request *req;
 
-	dr = &port->vio.drings[VIO_DRIVER_TX_RING];
+	while ((req = blk_peek_request(rq)) != NULL) {
+		struct vdc_port *port;
+		struct vio_dring_state *dr;
 
-	blk_mq_start_request(bd->rq);
+		port = req->rq_disk->private_data;
+		dr = &port->vio.drings[VIO_DRIVER_TX_RING];
+		if (unlikely(vdc_tx_dring_avail(dr) < 1))
+			goto wait;
 
-	spin_lock_irqsave(&port->vio.lock, flags);
+		blk_start_request(req);
 
-	/*
-	 * Doing drain, just end the request in error
-	 */
-	if (unlikely(port->drain)) {
-		spin_unlock_irqrestore(&port->vio.lock, flags);
-		return BLK_STS_IOERR;
+		if (__send_request(req) < 0) {
+			blk_requeue_request(rq, req);
+wait:
+			/* Avoid pointless unplugs. */
+			blk_stop_queue(rq);
+			break;
+		}
 	}
-
-	if (unlikely(vdc_tx_dring_avail(dr) < 1)) {
-		spin_unlock_irqrestore(&port->vio.lock, flags);
-		blk_mq_stop_hw_queue(hctx);
-		return BLK_STS_DEV_RESOURCE;
-	}
-
-	if (__send_request(bd->rq) < 0) {
-		spin_unlock_irqrestore(&port->vio.lock, flags);
-		return BLK_STS_IOERR;
-	}
-
-	spin_unlock_irqrestore(&port->vio.lock, flags);
-	return BLK_STS_OK;
 }
 
 static int generic_request(struct vdc_port *port, u8 op, void *buf, int len)
@@ -634,6 +602,7 @@ static int generic_request(struct vdc_port *port, u8 op, void *buf, int len)
 	case VD_OP_GET_EFI:
 	case VD_OP_SET_EFI:
 		return -EOPNOTSUPP;
+		break;
 	};
 
 	map_perm |= LDC_MAP_SHADOW | LDC_MAP_DIRECT | LDC_MAP_IO;
@@ -775,31 +744,6 @@ static void vdc_port_down(struct vdc_port *port)
 	vio_ldc_free(&port->vio);
 }
 
-static const struct blk_mq_ops vdc_mq_ops = {
-	.queue_rq	= vdc_queue_rq,
-};
-
-static void cleanup_queue(struct request_queue *q)
-{
-	struct vdc_port *port = q->queuedata;
-
-	blk_cleanup_queue(q);
-	blk_mq_free_tag_set(&port->tag_set);
-}
-
-static struct request_queue *init_queue(struct vdc_port *port)
-{
-	struct request_queue *q;
-
-	q = blk_mq_init_sq_queue(&port->tag_set, &vdc_mq_ops, VDC_TX_RING_SIZE,
-					BLK_MQ_F_SHOULD_MERGE);
-	if (IS_ERR(q))
-		return q;
-
-	q->queuedata = port;
-	return q;
-}
-
 static int probe_disk(struct vdc_port *port)
 {
 	struct request_queue *q;
@@ -809,12 +753,6 @@ static int probe_disk(struct vdc_port *port)
 	err = vdc_port_up(port);
 	if (err)
 		return err;
-
-	/* Using version 1.2 means vdisk_phys_blksz should be set unless the
-	 * disk is reserved by another system.
-	 */
-	if (vdc_version_supported(port, 1, 2) && !port->vdisk_phys_blksz)
-		return -ENODEV;
 
 	if (vdc_version_supported(port, 1, 1)) {
 		/* vdisk_size should be set during the handshake, if it wasn't
@@ -837,17 +775,17 @@ static int probe_disk(struct vdc_port *port)
 				    (u64)geom.num_sec);
 	}
 
-	q = init_queue(port);
-	if (IS_ERR(q)) {
+	q = blk_init_queue(do_vdc_request, &port->vio.lock);
+	if (!q) {
 		printk(KERN_ERR PFX "%s: Could not allocate queue.\n",
 		       port->vio.name);
-		return PTR_ERR(q);
+		return -ENOMEM;
 	}
 	g = alloc_disk(1 << PARTITION_SHIFT);
 	if (!g) {
 		printk(KERN_ERR PFX "%s: Could not allocate gendisk.\n",
 		       port->vio.name);
-		cleanup_queue(q);
+		blk_cleanup_queue(q);
 		return -ENOMEM;
 	}
 
@@ -891,14 +829,12 @@ static int probe_disk(struct vdc_port *port)
 		}
 	}
 
-	blk_queue_physical_block_size(q, port->vdisk_phys_blksz);
-
 	pr_info(PFX "%s: %u sectors (%u MB) protocol %d.%d\n",
 	       g->disk_name,
 	       port->vdisk_size, (port->vdisk_size >> (20 - 9)),
 	       port->vio.ver.major, port->vio.ver.minor);
 
-	device_add_disk(&port->vio.vdev->dev, g, NULL);
+	device_add_disk(&port->vio.vdev->dev, g);
 
 	return 0;
 }
@@ -923,56 +859,6 @@ static void print_version(void)
 		printk(KERN_INFO "%s", version);
 }
 
-struct vdc_check_port_data {
-	int	dev_no;
-	char	*type;
-};
-
-static int vdc_device_probed(struct device *dev, void *arg)
-{
-	struct vio_dev *vdev = to_vio_dev(dev);
-	struct vdc_check_port_data *port_data;
-
-	port_data = (struct vdc_check_port_data *)arg;
-
-	if ((vdev->dev_no == port_data->dev_no) &&
-	    (!(strcmp((char *)&vdev->type, port_data->type))) &&
-		dev_get_drvdata(dev)) {
-		/* This device has already been configured
-		 * by vdc_port_probe()
-		 */
-		return 1;
-	} else {
-		return 0;
-	}
-}
-
-/* Determine whether the VIO device is part of an mpgroup
- * by locating all the virtual-device-port nodes associated
- * with the parent virtual-device node for the VIO device
- * and checking whether any of these nodes are vdc-ports
- * which have already been configured.
- *
- * Returns true if this device is part of an mpgroup and has
- * already been probed.
- */
-static bool vdc_port_mpgroup_check(struct vio_dev *vdev)
-{
-	struct vdc_check_port_data port_data;
-	struct device *dev;
-
-	port_data.dev_no = vdev->dev_no;
-	port_data.type = (char *)&vdev->type;
-
-	dev = device_find_child(vdev->dev.parent, &port_data,
-				vdc_device_probed);
-
-	if (dev)
-		return true;
-
-	return false;
-}
-
 static int vdc_port_probe(struct vio_dev *vdev, const struct vio_device_id *id)
 {
 	struct mdesc_handle *hp;
@@ -988,14 +874,6 @@ static int vdc_port_probe(struct vio_dev *vdev, const struct vio_device_id *id)
 	if ((vdev->dev_no << PARTITION_SHIFT) & ~(u64)MINORMASK) {
 		printk(KERN_ERR PFX "Port id [%llu] too large.\n",
 		       vdev->dev_no);
-		goto err_out_release_mdesc;
-	}
-
-	/* Check if this device is part of an mpgroup */
-	if (vdc_port_mpgroup_check(vdev)) {
-		printk(KERN_WARNING
-			"VIO: Ignoring extra vdisk port %s",
-			dev_name(&vdev->dev));
 		goto err_out_release_mdesc;
 	}
 
@@ -1022,7 +900,8 @@ static int vdc_port_probe(struct vio_dev *vdev, const struct vio_device_id *id)
 	 */
 	ldc_timeout = mdesc_get_property(hp, vdev->mp, "vdc-timeout", NULL);
 	port->ldc_timeout = ldc_timeout ? *ldc_timeout : 0;
-	INIT_DELAYED_WORK(&port->ldc_reset_timer_work, vdc_ldc_reset_timer_work);
+	setup_timer(&port->ldc_reset_timer, vdc_ldc_reset_timer,
+		    (unsigned long)port);
 	INIT_WORK(&port->ldc_reset_work, vdc_ldc_reset_work);
 
 	err = vio_driver_init(&port->vio, vdev, VDEV_DISK,
@@ -1031,9 +910,10 @@ static int vdc_port_probe(struct vio_dev *vdev, const struct vio_device_id *id)
 	if (err)
 		goto err_out_free_port;
 
-	port->vdisk_block_size = VDC_DEFAULT_BLK_SIZE;
-	port->max_xfer_size = MAX_XFER_SIZE;
-	port->ring_cookies = MAX_RING_COOKIES;
+	port->vdisk_block_size = 512;
+	port->max_xfer_size = ((128 * 1024) / port->vdisk_block_size);
+	port->ring_cookies = ((port->max_xfer_size *
+			       port->vdisk_block_size) / PAGE_SIZE) + 2;
 
 	err = vio_ldc_alloc(&port->vio, &vdc_ldc_cfg, port);
 	if (err)
@@ -1047,9 +927,6 @@ static int vdc_port_probe(struct vio_dev *vdev, const struct vio_device_id *id)
 	if (err)
 		goto err_out_free_tx_ring;
 
-	/* Note that the device driver_data is used to determine
-	 * whether the port has been probed.
-	 */
 	dev_set_drvdata(&vdev->dev, port);
 
 	mdesc_release(hp);
@@ -1075,14 +952,18 @@ static int vdc_port_remove(struct vio_dev *vdev)
 	struct vdc_port *port = dev_get_drvdata(&vdev->dev);
 
 	if (port) {
-		blk_mq_stop_hw_queues(port->disk->queue);
+		unsigned long flags;
+
+		spin_lock_irqsave(&port->vio.lock, flags);
+		blk_stop_queue(port->disk->queue);
+		spin_unlock_irqrestore(&port->vio.lock, flags);
 
 		flush_work(&port->ldc_reset_work);
-		cancel_delayed_work_sync(&port->ldc_reset_timer_work);
+		del_timer_sync(&port->ldc_reset_timer);
 		del_timer_sync(&port->vio.timer);
 
 		del_gendisk(port->disk);
-		cleanup_queue(port->disk->queue);
+		blk_cleanup_queue(port->disk->queue);
 		put_disk(port->disk);
 		port->disk = NULL;
 
@@ -1117,46 +998,32 @@ static void vdc_requeue_inflight(struct vdc_port *port)
 		}
 
 		rqe->req = NULL;
-		blk_mq_requeue_request(req, false);
+		blk_requeue_request(port->disk->queue, req);
 	}
 }
 
 static void vdc_queue_drain(struct vdc_port *port)
 {
-	struct request_queue *q = port->disk->queue;
+	struct request *req;
 
-	/*
-	 * Mark the queue as draining, then freeze/quiesce to ensure
-	 * that all existing requests are seen in ->queue_rq() and killed
-	 */
-	port->drain = 1;
-	spin_unlock_irq(&port->vio.lock);
-
-	blk_mq_freeze_queue(q);
-	blk_mq_quiesce_queue(q);
-
-	spin_lock_irq(&port->vio.lock);
-	port->drain = 0;
-	blk_mq_unquiesce_queue(q);
-	blk_mq_unfreeze_queue(q);
+	while ((req = blk_fetch_request(port->disk->queue)) != NULL)
+		__blk_end_request_all(req, -EIO);
 }
 
-static void vdc_ldc_reset_timer_work(struct work_struct *work)
+static void vdc_ldc_reset_timer(unsigned long _arg)
 {
-	struct vdc_port *port;
-	struct vio_driver_state *vio;
+	struct vdc_port *port = (struct vdc_port *) _arg;
+	struct vio_driver_state *vio = &port->vio;
+	unsigned long flags;
 
-	port = container_of(work, struct vdc_port, ldc_reset_timer_work.work);
-	vio = &port->vio;
-
-	spin_lock_irq(&vio->lock);
+	spin_lock_irqsave(&vio->lock, flags);
 	if (!(port->vio.hs_state & VIO_HS_COMPLETE)) {
 		pr_warn(PFX "%s ldc down %llu seconds, draining queue\n",
 			port->disk_name, port->ldc_timeout);
 		vdc_queue_drain(port);
 		vdc_blk_queue_start(port);
 	}
-	spin_unlock_irq(&vio->lock);
+	spin_unlock_irqrestore(&vio->lock, flags);
 }
 
 static void vdc_ldc_reset_work(struct work_struct *work)
@@ -1180,7 +1047,7 @@ static void vdc_ldc_reset(struct vdc_port *port)
 	assert_spin_locked(&port->vio.lock);
 
 	pr_warn(PFX "%s ldc link reset\n", port->disk_name);
-	blk_mq_stop_hw_queues(port->disk->queue);
+	blk_stop_queue(port->disk->queue);
 	vdc_requeue_inflight(port);
 	vdc_port_down(port);
 
@@ -1197,7 +1064,7 @@ static void vdc_ldc_reset(struct vdc_port *port)
 	}
 
 	if (port->ldc_timeout)
-		mod_delayed_work(system_wq, &port->ldc_reset_timer_work,
+		mod_timer(&port->ldc_reset_timer,
 			  round_jiffies(jiffies + HZ * port->ldc_timeout));
 	mod_timer(&port->vio.timer, round_jiffies(jiffies + HZ));
 	return;

@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /// Find missing unlocks.  This semantic match considers the specific case
 /// where the unlock is missing from an if branch, and there is a lock
 /// before the if and an unlock after the if.  False positives are due to
@@ -7,9 +6,9 @@
 /// function call that releases the lock.
 ///
 // Confidence: Moderate
-// Copyright: (C) 2010-2012 Nicolas Palix.
-// Copyright: (C) 2010-2012 Julia Lawall, INRIA/LIP6.
-// Copyright: (C) 2010-2012 Gilles Muller, INRIA/LiP6.
+// Copyright: (C) 2010-2012 Nicolas Palix.  GPLv2.
+// Copyright: (C) 2010-2012 Julia Lawall, INRIA/LIP6.  GPLv2.
+// Copyright: (C) 2010-2012 Gilles Muller, INRIA/LiP6.  GPLv2.
 // URL: http://coccinelle.lip6.fr/
 // Comments:
 // Options: --no-includes --include-headers
@@ -68,14 +67,12 @@ identifier lock,unlock;
 @@
 
 *lock(E1@p,...);
-... when != E1
-    when any
+<+... when != E1
 if (...) {
   ... when != E1
 *  return@r ...;
 }
-... when != E1
-    when any
+...+>
 *unlock@up(E1,...);
 
 @script:python depends on org@

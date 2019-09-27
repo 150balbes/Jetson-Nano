@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * NUMA support for s390
  *
@@ -13,6 +12,7 @@
 #include <linux/kernel.h>
 #include <linux/mmzone.h>
 #include <linux/cpumask.h>
+#include <linux/bootmem.h>
 #include <linux/memblock.h>
 #include <linux/slab.h>
 #include <linux/node.h>
@@ -53,9 +53,20 @@ int __node_distance(int a, int b)
 {
 	return mode->distance ? mode->distance(a, b) : 0;
 }
-EXPORT_SYMBOL(__node_distance);
 
 int numa_debug_enabled;
+
+/*
+ * alloc_node_data() - Allocate node data
+ */
+static __init pg_data_t *alloc_node_data(void)
+{
+	pg_data_t *res;
+
+	res = (pg_data_t *) memblock_alloc(sizeof(pg_data_t), 8);
+	memset(res, 0, sizeof(pg_data_t));
+	return res;
+}
 
 /*
  * numa_setup_memory() - Assign bootmem to nodes
@@ -92,12 +103,8 @@ static void __init numa_setup_memory(void)
 	} while (cur_base < end_of_dram);
 
 	/* Allocate and fill out node_data */
-	for (nid = 0; nid < MAX_NUMNODES; nid++) {
-		NODE_DATA(nid) = memblock_alloc(sizeof(pg_data_t), 8);
-		if (!NODE_DATA(nid))
-			panic("%s: Failed to allocate %zu bytes align=0x%x\n",
-			      __func__, sizeof(pg_data_t), 8);
-	}
+	for (nid = 0; nid < MAX_NUMNODES; nid++)
+		NODE_DATA(nid) = alloc_node_data();
 
 	for_each_online_node(nid) {
 		unsigned long start_pfn, end_pfn;

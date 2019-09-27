@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * sound/soc/rockchip/rockchip_i2s.h
  *
@@ -6,6 +5,10 @@
  *
  * Copyright (c) 2014 Rockchip Electronics Co. Ltd.
  * Author: Jianqun xu <jay.xu@rock-chips.com>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  */
 
 #ifndef _ROCKCHIP_IIS_H
@@ -38,7 +41,6 @@
 #define I2S_TXCR_TFS_SHIFT	5
 #define I2S_TXCR_TFS_I2S	(0 << I2S_TXCR_TFS_SHIFT)
 #define I2S_TXCR_TFS_PCM	(1 << I2S_TXCR_TFS_SHIFT)
-#define I2S_TXCR_TFS_MASK	(1 << I2S_TXCR_TFS_SHIFT)
 #define I2S_TXCR_VDW_SHIFT	0
 #define I2S_TXCR_VDW(x)		((x - 1) << I2S_TXCR_VDW_SHIFT)
 #define I2S_TXCR_VDW_MASK	(0x1f << I2S_TXCR_VDW_SHIFT)
@@ -68,7 +70,6 @@
 #define I2S_RXCR_TFS_SHIFT	5
 #define I2S_RXCR_TFS_I2S	(0 << I2S_RXCR_TFS_SHIFT)
 #define I2S_RXCR_TFS_PCM	(1 << I2S_RXCR_TFS_SHIFT)
-#define I2S_RXCR_TFS_MASK	(1 << I2S_RXCR_TFS_SHIFT)
 #define I2S_RXCR_VDW_SHIFT	0
 #define I2S_RXCR_VDW(x)		((x - 1) << I2S_RXCR_VDW_SHIFT)
 #define I2S_RXCR_VDW_MASK	(0x1f << I2S_RXCR_VDW_SHIFT)
@@ -90,7 +91,6 @@
 #define I2S_CKR_CKP_SHIFT	26
 #define I2S_CKR_CKP_NEG		(0 << I2S_CKR_CKP_SHIFT)
 #define I2S_CKR_CKP_POS		(1 << I2S_CKR_CKP_SHIFT)
-#define I2S_CKR_CKP_MASK	(1 << I2S_CKR_CKP_SHIFT)
 #define I2S_CKR_RLP_SHIFT	25
 #define I2S_CKR_RLP_NORMAL	(0 << I2S_CKR_RLP_SHIFT)
 #define I2S_CKR_RLP_OPPSITE	(1 << I2S_CKR_RLP_SHIFT)

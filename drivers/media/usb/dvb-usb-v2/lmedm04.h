@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0-only */
 /* DVB USB compliant linux driver for
  *
  * DM04/QQBOX DVB-S USB BOX	LME2510C + SHARP:BS2F7HZ7395
@@ -13,8 +12,11 @@
  *
  * MVB0001F (LME2510C+LGTDQT-P001F)
  *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License as published by the Free
+ * Software Foundation,  version 2.
  * *
- * see Documentation/media/dvb-drivers/dvb-usb.rst for more information
+ * see Documentation/dvb/README.dvb-usb for more information
  */
 #ifndef _DVB_USB_LME2510_H_
 #define _DVB_USB_LME2510_H_

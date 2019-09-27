@@ -21,4 +21,5 @@ Example:
 		interrupt-parent = <&mic>;
 		interrupts = <0x3d 0>, <0x3e 0>, <0x3c 0>, <0x3a 0>;
 		transceiver = <&isp1301>;
+		status = "okay";
 	};

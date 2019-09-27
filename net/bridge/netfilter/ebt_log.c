@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  *  ebt_log
  *
@@ -63,10 +62,10 @@ print_ports(const struct sk_buff *skb, uint8_t protocol, int offset)
 		pptr = skb_header_pointer(skb, offset,
 					  sizeof(_ports), &_ports);
 		if (pptr == NULL) {
-			pr_cont(" INCOMPLETE TCP/UDP header");
+			printk(" INCOMPLETE TCP/UDP header");
 			return;
 		}
-		pr_cont(" SPT=%u DPT=%u", ntohs(pptr->src), ntohs(pptr->dst));
+		printk(" SPT=%u DPT=%u", ntohs(pptr->src), ntohs(pptr->dst));
 	}
 }
 
@@ -79,7 +78,7 @@ ebt_log_packet(struct net *net, u_int8_t pf, unsigned int hooknum,
 	unsigned int bitmask;
 
 	/* FIXME: Disabled from containers until syslog ns is supported */
-	if (!net_eq(net, &init_net) && !sysctl_nf_log_all_netns)
+	if (!net_eq(net, &init_net))
 		return;
 
 	spin_lock_bh(&ebt_log_lock);
@@ -101,11 +100,11 @@ ebt_log_packet(struct net *net, u_int8_t pf, unsigned int hooknum,
 
 		ih = skb_header_pointer(skb, 0, sizeof(_iph), &_iph);
 		if (ih == NULL) {
-			pr_cont(" INCOMPLETE IP header");
+			printk(" INCOMPLETE IP header");
 			goto out;
 		}
-		pr_cont(" IP SRC=%pI4 IP DST=%pI4, IP tos=0x%02X, IP proto=%d",
-			&ih->saddr, &ih->daddr, ih->tos, ih->protocol);
+		printk(" IP SRC=%pI4 IP DST=%pI4, IP tos=0x%02X, IP proto=%d",
+		       &ih->saddr, &ih->daddr, ih->tos, ih->protocol);
 		print_ports(skb, ih->protocol, ih->ihl*4);
 		goto out;
 	}
@@ -121,11 +120,11 @@ ebt_log_packet(struct net *net, u_int8_t pf, unsigned int hooknum,
 
 		ih = skb_header_pointer(skb, 0, sizeof(_iph), &_iph);
 		if (ih == NULL) {
-			pr_cont(" INCOMPLETE IPv6 header");
+			printk(" INCOMPLETE IPv6 header");
 			goto out;
 		}
-		pr_cont(" IPv6 SRC=%pI6 IPv6 DST=%pI6, IPv6 priority=0x%01X, Next Header=%d",
-			&ih->saddr, &ih->daddr, ih->priority, ih->nexthdr);
+		printk(" IPv6 SRC=%pI6 IPv6 DST=%pI6, IPv6 priority=0x%01X, Next Header=%d",
+		       &ih->saddr, &ih->daddr, ih->priority, ih->nexthdr);
 		nexthdr = ih->nexthdr;
 		offset_ph = ipv6_skip_exthdr(skb, sizeof(_iph), &nexthdr, &frag_off);
 		if (offset_ph == -1)
@@ -143,12 +142,12 @@ ebt_log_packet(struct net *net, u_int8_t pf, unsigned int hooknum,
 
 		ah = skb_header_pointer(skb, 0, sizeof(_arph), &_arph);
 		if (ah == NULL) {
-			pr_cont(" INCOMPLETE ARP header");
+			printk(" INCOMPLETE ARP header");
 			goto out;
 		}
-		pr_cont(" ARP HTYPE=%d, PTYPE=0x%04x, OPCODE=%d",
-			ntohs(ah->ar_hrd), ntohs(ah->ar_pro),
-			ntohs(ah->ar_op));
+		printk(" ARP HTYPE=%d, PTYPE=0x%04x, OPCODE=%d",
+		       ntohs(ah->ar_hrd), ntohs(ah->ar_pro),
+		       ntohs(ah->ar_op));
 
 		/* If it's for Ethernet and the lengths are OK,
 		 * then log the ARP payload
@@ -162,17 +161,17 @@ ebt_log_packet(struct net *net, u_int8_t pf, unsigned int hooknum,
 			ap = skb_header_pointer(skb, sizeof(_arph),
 						sizeof(_arpp), &_arpp);
 			if (ap == NULL) {
-				pr_cont(" INCOMPLETE ARP payload");
+				printk(" INCOMPLETE ARP payload");
 				goto out;
 			}
-			pr_cont(" ARP MAC SRC=%pM ARP IP SRC=%pI4 ARP MAC DST=%pM ARP IP DST=%pI4",
-				ap->mac_src, ap->ip_src,
-				ap->mac_dst, ap->ip_dst);
+			printk(" ARP MAC SRC=%pM ARP IP SRC=%pI4 ARP MAC DST=%pM ARP IP DST=%pI4",
+					ap->mac_src, ap->ip_src, ap->mac_dst, ap->ip_dst);
 		}
 	}
 out:
-	pr_cont("\n");
+	printk("\n");
 	spin_unlock_bh(&ebt_log_lock);
+
 }
 
 static unsigned int
@@ -180,7 +179,7 @@ ebt_log_tg(struct sk_buff *skb, const struct xt_action_param *par)
 {
 	const struct ebt_log_info *info = par->targinfo;
 	struct nf_loginfo li;
-	struct net *net = xt_net(par);
+	struct net *net = par->net;
 
 	li.type = NF_LOG_TYPE_LOG;
 	li.u.log.level = info->loglevel;
@@ -191,12 +190,11 @@ ebt_log_tg(struct sk_buff *skb, const struct xt_action_param *par)
 	 * nf_log_packet() with NFT_LOG_TYPE_LOG here. --Pablo
 	 */
 	if (info->bitmask & EBT_LOG_NFLOG)
-		nf_log_packet(net, NFPROTO_BRIDGE, xt_hooknum(par), skb,
-			      xt_in(par), xt_out(par), &li, "%s",
-			      info->prefix);
+		nf_log_packet(net, NFPROTO_BRIDGE, par->hooknum, skb,
+			      par->in, par->out, &li, "%s", info->prefix);
 	else
-		ebt_log_packet(net, NFPROTO_BRIDGE, xt_hooknum(par), skb,
-			       xt_in(par), xt_out(par), &li, info->prefix);
+		ebt_log_packet(net, NFPROTO_BRIDGE, par->hooknum, skb, par->in,
+			       par->out, &li, info->prefix);
 	return EBT_CONTINUE;
 }
 

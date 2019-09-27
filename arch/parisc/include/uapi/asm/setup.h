@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note */
 #ifndef _PARISC_SETUP_H
 #define _PARISC_SETUP_H
 

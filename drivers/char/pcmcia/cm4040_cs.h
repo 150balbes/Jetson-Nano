@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef	_CM4040_H_
 #define	_CM4040_H_
 

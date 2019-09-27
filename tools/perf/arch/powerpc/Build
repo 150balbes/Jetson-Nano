@@ -1,2 +1,2 @@
-perf-y += util/
-perf-y += tests/
+libperf-y += util/
+libperf-y += tests/

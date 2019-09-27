@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0-only
 # Used by common drivers, when they need to ask questions
 config MEDIA_COMMON_OPTIONS
 	bool
@@ -17,7 +16,6 @@ config CYPRESS_FIRMWARE
 	tristate "Cypress firmware helper routines"
 	depends on USB
 
-source "drivers/media/common/videobuf2/Kconfig"
 source "drivers/media/common/b2c2/Kconfig"
 source "drivers/media/common/saa7146/Kconfig"
 source "drivers/media/common/siano/Kconfig"

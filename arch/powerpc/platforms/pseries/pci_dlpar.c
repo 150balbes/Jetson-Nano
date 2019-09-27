@@ -38,7 +38,7 @@ struct pci_controller *init_phb_dynamic(struct device_node *dn)
 {
 	struct pci_controller *phb;
 
-	pr_debug("PCI: Initializing new hotplug PHB %pOF\n", dn);
+	pr_debug("PCI: Initializing new hotplug PHB %s\n", dn->full_name);
 
 	phb = pcibios_alloc_controller(dn);
 	if (!phb)

@@ -25,7 +25,7 @@
  *          Alex Deucher
  *          Jerome Glisse
  */
-
+#include <drm/drmP.h>
 #include <drm/radeon_drm.h>
 #include "radeon_reg.h"
 #include "radeon.h"
@@ -537,7 +537,8 @@ int r200_packet0_check(struct radeon_cs_parser *p,
 		track->tex_dirty = true;
 		break;
 	default:
-		pr_err("Forbidden register 0x%04X in cs at %d\n", reg, idx);
+		printk(KERN_ERR "Forbidden register 0x%04X in cs at %d\n",
+		       reg, idx);
 		return -EINVAL;
 	}
 	return 0;

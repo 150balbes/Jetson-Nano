@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _DVB_USB_VP7021_H_
 #define _DVB_USB_VP7021_H_
 

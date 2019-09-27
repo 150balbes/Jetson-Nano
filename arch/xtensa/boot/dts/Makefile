@@ -7,11 +7,14 @@
 #
 #
 
-BUILTIN_DTB_SOURCE := $(patsubst "%",%,$(CONFIG_BUILTIN_DTB_SOURCE)).dtb.o
-ifneq ($(CONFIG_BUILTIN_DTB_SOURCE),"")
-obj-$(CONFIG_OF) += $(BUILTIN_DTB_SOURCE)
+BUILTIN_DTB := $(patsubst "%",%,$(CONFIG_BUILTIN_DTB)).dtb.o
+ifneq ($(CONFIG_BUILTIN_DTB),"")
+obj-$(CONFIG_OF) += $(BUILTIN_DTB)
 endif
 
-# for CONFIG_OF_ALL_DTBS test
-dtstree	:= $(srctree)/$(src)
-dtb-	:= $(patsubst $(dtstree)/%.dts,%.dtb, $(wildcard $(dtstree)/*.dts))
+dtstree := $(srctree)/$(src)
+dtb-$(CONFIG_OF_ALL_DTBS) := $(patsubst $(dtstree)/%.dts,%.dtb, $(wildcard $(dtstree)/*.dts))
+
+always += $(dtb-y)
+clean-files += *.dtb *.dtb.S
+

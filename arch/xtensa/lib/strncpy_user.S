@@ -11,10 +11,16 @@
  *  Copyright (C) 2002 Tensilica Inc.
  */
 
+#include <variant/core.h>
 #include <linux/errno.h>
-#include <linux/linkage.h>
-#include <asm/asmmacro.h>
-#include <asm/core.h>
+
+/* Load or store instructions that may cause exceptions use the EX macro. */
+
+#define EX(insn,reg1,reg2,offset,handler)	\
+9:	insn	reg1, reg2, offset;		\
+	.section __ex_table, "a";		\
+	.word	9b, handler;			\
+	.previous
 
 /*
  * char *__strncpy_user(char *dst, const char *src, size_t len)
@@ -48,9 +54,11 @@
 #   a12/ tmp
 
 .text
-ENTRY(__strncpy_user)
-
-	abi_entry_default
+.align	4
+.global	__strncpy_user
+.type	__strncpy_user,@function
+__strncpy_user:
+	entry	sp, 16		# minimal stack frame
 	# a2/ dst, a3/ src, a4/ len
 	mov	a11, a2		# leave dst in return value register
 	beqz	a4, .Lret	# if len is zero
@@ -67,9 +75,9 @@ ENTRY(__strncpy_user)
 	j	.Ldstunaligned
 
 .Lsrc1mod2:	# src address is odd
-EX(11f)	l8ui	a9, a3, 0		# get byte 0
+	EX(l8ui, a9, a3, 0, fixup_l)	# get byte 0
 	addi	a3, a3, 1		# advance src pointer
-EX(10f)	s8i	a9, a11, 0		# store byte 0
+	EX(s8i, a9, a11, 0, fixup_s)	# store byte 0
 	beqz	a9, .Lret		# if byte 0 is zero
 	addi	a11, a11, 1		# advance dst pointer
 	addi	a4, a4, -1		# decrement len
@@ -77,23 +85,23 @@ EX(10f)	s8i	a9, a11, 0		# store byte 0
 	bbci.l	a3, 1, .Lsrcaligned	# if src is now word-aligned
 
 .Lsrc2mod4:	# src address is 2 mod 4
-EX(11f)	l8ui	a9, a3, 0		# get byte 0
+	EX(l8ui, a9, a3, 0, fixup_l)	# get byte 0
 	/* 1-cycle interlock */
-EX(10f)	s8i	a9, a11, 0		# store byte 0
+	EX(s8i, a9, a11, 0, fixup_s)	# store byte 0
 	beqz	a9, .Lret		# if byte 0 is zero
 	addi	a11, a11, 1		# advance dst pointer
 	addi	a4, a4, -1		# decrement len
 	beqz	a4, .Lret		# if len is zero
-EX(11f)	l8ui	a9, a3, 1		# get byte 0
+	EX(l8ui, a9, a3, 1, fixup_l)	# get byte 0
 	addi	a3, a3, 2		# advance src pointer
-EX(10f)	s8i	a9, a11, 0		# store byte 0
+	EX(s8i, a9, a11, 0, fixup_s)	# store byte 0
 	beqz	a9, .Lret		# if byte 0 is zero
 	addi	a11, a11, 1		# advance dst pointer
 	addi	a4, a4, -1		# decrement len
 	bnez	a4, .Lsrcaligned	# if len is nonzero
 .Lret:
 	sub	a2, a11, a2		# compute strlen
-	abi_ret_default
+	retw
 
 /*
  * dst is word-aligned, src is word-aligned
@@ -109,12 +117,12 @@ EX(10f)	s8i	a9, a11, 0		# store byte 0
 	add	a12, a12, a11	# a12 = end of last 4B chunck
 #endif
 .Loop1:
-EX(11f)	l32i	a9, a3, 0		# get word from src
+	EX(l32i, a9, a3, 0, fixup_l)	# get word from src
 	addi	a3, a3, 4		# advance src pointer
 	bnone	a9, a5, .Lz0		# if byte 0 is zero
 	bnone	a9, a6, .Lz1		# if byte 1 is zero
 	bnone	a9, a7, .Lz2		# if byte 2 is zero
-EX(10f)	s32i	a9, a11, 0		# store word to dst
+	EX(s32i, a9, a11, 0, fixup_s)	# store word to dst
 	bnone	a9, a8, .Lz3		# if byte 3 is zero
 	addi	a11, a11, 4		# advance dst pointer
 #if !XCHAL_HAVE_LOOPS
@@ -124,7 +132,7 @@ EX(10f)	s32i	a9, a11, 0		# store word to dst
 .Loop1done:
 	bbci.l	a4, 1, .L100
 	# copy 2 bytes
-EX(11f)	l16ui	a9, a3, 0
+	EX(l16ui, a9, a3, 0, fixup_l)
 	addi	a3, a3, 2		# advance src pointer
 #ifdef __XTENSA_EB__
 	bnone	a9, a7, .Lz0		# if byte 2 is zero
@@ -133,13 +141,13 @@ EX(11f)	l16ui	a9, a3, 0
 	bnone	a9, a5, .Lz0		# if byte 0 is zero
 	bnone	a9, a6, .Lz1		# if byte 1 is zero
 #endif
-EX(10f)	s16i	a9, a11, 0
+	EX(s16i, a9, a11, 0, fixup_s)
 	addi	a11, a11, 2		# advance dst pointer
 .L100:
 	bbci.l	a4, 0, .Lret
-EX(11f)	l8ui	a9, a3, 0
+	EX(l8ui, a9, a3, 0, fixup_l)
 	/* slot */
-EX(10f)	s8i	a9, a11, 0
+	EX(s8i, a9, a11, 0, fixup_s)
 	beqz	a9, .Lret		# if byte is zero
 	addi	a11, a11, 1-3		# advance dst ptr 1, but also cancel
 					# the effect of adding 3 in .Lz3 code
@@ -148,32 +156,32 @@ EX(10f)	s8i	a9, a11, 0
 .Lz3:	# byte 3 is zero
 	addi	a11, a11, 3		# advance dst pointer
 	sub	a2, a11, a2		# compute strlen
-	abi_ret_default
+	retw
 .Lz0:	# byte 0 is zero
 #ifdef __XTENSA_EB__
 	movi	a9, 0
 #endif /* __XTENSA_EB__ */
-EX(10f)	s8i	a9, a11, 0
+	EX(s8i, a9, a11, 0, fixup_s)
 	sub	a2, a11, a2		# compute strlen
-	abi_ret_default
+	retw
 .Lz1:	# byte 1 is zero
 #ifdef __XTENSA_EB__
 	extui   a9, a9, 16, 16
 #endif /* __XTENSA_EB__ */
-EX(10f)	s16i	a9, a11, 0
+	EX(s16i, a9, a11, 0, fixup_s)
 	addi	a11, a11, 1		# advance dst pointer
 	sub	a2, a11, a2		# compute strlen
-	abi_ret_default
+	retw
 .Lz2:	# byte 2 is zero
 #ifdef __XTENSA_EB__
 	extui   a9, a9, 16, 16
 #endif /* __XTENSA_EB__ */
-EX(10f)	s16i	a9, a11, 0
+	EX(s16i, a9, a11, 0, fixup_s)
 	movi	a9, 0
-EX(10f)	s8i	a9, a11, 2
+	EX(s8i, a9, a11, 2, fixup_s)
 	addi	a11, a11, 2		# advance dst pointer
 	sub	a2, a11, a2		# compute strlen
-	abi_ret_default
+	retw
 
 	.align	4		# 1 mod 4 alignment for LOOPNEZ
 	.byte	0		# (0 mod 4 alignment for LBEG)
@@ -188,9 +196,9 @@ EX(10f)	s8i	a9, a11, 2
 	add	a12, a11, a4		# a12 = ending address
 #endif /* XCHAL_HAVE_LOOPS */
 .Lnextbyte:
-EX(11f)	l8ui	a9, a3, 0
+	EX(l8ui, a9, a3, 0, fixup_l)
 	addi	a3, a3, 1
-EX(10f)	s8i	a9, a11, 0
+	EX(s8i, a9, a11, 0, fixup_s)
 	beqz	a9, .Lunalignedend
 	addi	a11, a11, 1
 #if !XCHAL_HAVE_LOOPS
@@ -199,9 +207,8 @@ EX(10f)	s8i	a9, a11, 0
 
 .Lunalignedend:
 	sub	a2, a11, a2		# compute strlen
-	abi_ret_default
+	retw
 
-ENDPROC(__strncpy_user)
 
 	.section .fixup, "ax"
 	.align	4
@@ -211,7 +218,8 @@ ENDPROC(__strncpy_user)
 	 * implementation in memset().  Thus, we differentiate between
 	 * load/store fixups. */
 
-10:
-11:
+fixup_s:
+fixup_l:
 	movi	a2, -EFAULT
-	abi_ret_default
+	retw
+

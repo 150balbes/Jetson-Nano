@@ -1,9 +1,22 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Faraday FTMAC100 10/100 Ethernet
  *
  * (C) Copyright 2009-2011 Faraday Technology
  * Po-Yu Chuang <ratbert@faraday-tech.com>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  */
 
 #define pr_fmt(fmt)	KBUILD_MODNAME ": " fmt
@@ -16,7 +29,6 @@
 #include <linux/io.h>
 #include <linux/mii.h>
 #include <linux/module.h>
-#include <linux/mod_devicetable.h>
 #include <linux/netdevice.h>
 #include <linux/platform_device.h>
 
@@ -390,7 +402,6 @@ static bool ftmac100_rx_packet(struct ftmac100 *priv, int *processed)
 	struct page *page;
 	dma_addr_t map;
 	int length;
-	bool ret;
 
 	rxdes = ftmac100_rx_locate_first_segment(priv);
 	if (!rxdes)
@@ -405,8 +416,8 @@ static bool ftmac100_rx_packet(struct ftmac100 *priv, int *processed)
 	 * It is impossible to get multi-segment packets
 	 * because we always provide big enough receive buffers.
 	 */
-	ret = ftmac100_rxdes_last_segment(rxdes);
-	BUG_ON(!ret);
+	if (unlikely(!ftmac100_rxdes_last_segment(rxdes)))
+		BUG();
 
 	/* start processing */
 	skb = netdev_alloc_skb_ip_align(netdev, 128);
@@ -621,8 +632,8 @@ static void ftmac100_tx_complete(struct ftmac100 *priv)
 		;
 }
 
-static netdev_tx_t ftmac100_xmit(struct ftmac100 *priv, struct sk_buff *skb,
-				 dma_addr_t map)
+static int ftmac100_xmit(struct ftmac100 *priv, struct sk_buff *skb,
+			 dma_addr_t map)
 {
 	struct net_device *netdev = priv->netdev;
 	struct ftmac100_txdes *txdes;
@@ -721,9 +732,10 @@ static int ftmac100_alloc_buffers(struct ftmac100 *priv)
 {
 	int i;
 
-	priv->descs = dma_alloc_coherent(priv->dev,
-					 sizeof(struct ftmac100_descs),
-					 &priv->descs_dma_addr, GFP_KERNEL);
+	priv->descs = dma_zalloc_coherent(priv->dev,
+					  sizeof(struct ftmac100_descs),
+					  &priv->descs_dma_addr,
+					  GFP_KERNEL);
 	if (!priv->descs)
 		return -ENOMEM;
 
@@ -813,21 +825,16 @@ static void ftmac100_get_drvinfo(struct net_device *netdev,
 	strlcpy(info->bus_info, dev_name(&netdev->dev), sizeof(info->bus_info));
 }
 
-static int ftmac100_get_link_ksettings(struct net_device *netdev,
-				       struct ethtool_link_ksettings *cmd)
+static int ftmac100_get_settings(struct net_device *netdev, struct ethtool_cmd *cmd)
 {
 	struct ftmac100 *priv = netdev_priv(netdev);
-
-	mii_ethtool_get_link_ksettings(&priv->mii, cmd);
-
-	return 0;
+	return mii_ethtool_gset(&priv->mii, cmd);
 }
 
-static int ftmac100_set_link_ksettings(struct net_device *netdev,
-				       const struct ethtool_link_ksettings *cmd)
+static int ftmac100_set_settings(struct net_device *netdev, struct ethtool_cmd *cmd)
 {
 	struct ftmac100 *priv = netdev_priv(netdev);
-	return mii_ethtool_set_link_ksettings(&priv->mii, cmd);
+	return mii_ethtool_sset(&priv->mii, cmd);
 }
 
 static int ftmac100_nway_reset(struct net_device *netdev)
@@ -843,11 +850,11 @@ static u32 ftmac100_get_link(struct net_device *netdev)
 }
 
 static const struct ethtool_ops ftmac100_ethtool_ops = {
+	.set_settings		= ftmac100_set_settings,
+	.get_settings		= ftmac100_get_settings,
 	.get_drvinfo		= ftmac100_get_drvinfo,
 	.nway_reset		= ftmac100_nway_reset,
 	.get_link		= ftmac100_get_link,
-	.get_link_ksettings	= ftmac100_get_link_ksettings,
-	.set_link_ksettings	= ftmac100_set_link_ksettings,
 };
 
 /******************************************************************************
@@ -858,10 +865,11 @@ static irqreturn_t ftmac100_interrupt(int irq, void *dev_id)
 	struct net_device *netdev = dev_id;
 	struct ftmac100 *priv = netdev_priv(netdev);
 
-	/* Disable interrupts for polling */
-	ftmac100_disable_all_int(priv);
-	if (likely(netif_running(netdev)))
+	if (likely(netif_running(netdev))) {
+		/* Disable interrupts for polling */
+		ftmac100_disable_all_int(priv);
 		napi_schedule(&priv->napi);
+	}
 
 	return IRQ_HANDLED;
 }
@@ -1001,8 +1009,7 @@ static int ftmac100_stop(struct net_device *netdev)
 	return 0;
 }
 
-static netdev_tx_t
-ftmac100_hard_start_xmit(struct sk_buff *skb, struct net_device *netdev)
+static int ftmac100_hard_start_xmit(struct sk_buff *skb, struct net_device *netdev)
 {
 	struct ftmac100 *priv = netdev_priv(netdev);
 	dma_addr_t map;
@@ -1147,7 +1154,7 @@ err_alloc_etherdev:
 	return err;
 }
 
-static int ftmac100_remove(struct platform_device *pdev)
+static int __exit ftmac100_remove(struct platform_device *pdev)
 {
 	struct net_device *netdev;
 	struct ftmac100 *priv;
@@ -1165,17 +1172,11 @@ static int ftmac100_remove(struct platform_device *pdev)
 	return 0;
 }
 
-static const struct of_device_id ftmac100_of_ids[] = {
-	{ .compatible = "andestech,atmac100" },
-	{ }
-};
-
 static struct platform_driver ftmac100_driver = {
 	.probe		= ftmac100_probe,
-	.remove		= ftmac100_remove,
+	.remove		= __exit_p(ftmac100_remove),
 	.driver		= {
 		.name	= DRV_NAME,
-		.of_match_table = ftmac100_of_ids
 	},
 };
 
@@ -1199,4 +1200,3 @@ module_exit(ftmac100_exit);
 MODULE_AUTHOR("Po-Yu Chuang <ratbert@faraday-tech.com>");
 MODULE_DESCRIPTION("FTMAC100 driver");
 MODULE_LICENSE("GPL");
-MODULE_DEVICE_TABLE(of, ftmac100_of_ids);

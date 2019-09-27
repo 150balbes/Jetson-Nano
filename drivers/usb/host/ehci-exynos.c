@@ -1,10 +1,15 @@
-// SPDX-License-Identifier: GPL-2.0+
 /*
  * SAMSUNG EXYNOS USB HOST EHCI Controller
  *
  * Copyright (C) 2011 Samsung Electronics Co.Ltd
  * Author: Jingoo Han <jg1.han@samsung.com>
  * Author: Joonyoung Shim <jy0922.shim@samsung.com>
+ *
+ * This program is free software; you can redistribute  it and/or modify it
+ * under  the terms of  the GNU General  Public License as published by the
+ * Free Software Foundation;  either version 2 of the  License, or (at your
+ * option) any later version.
+ *
  */
 
 #include <linux/clk.h>
@@ -39,7 +44,6 @@ static struct hc_driver __read_mostly exynos_ehci_hc_driver;
 
 struct exynos_ehci_hcd {
 	struct clk *clk;
-	struct device_node *of_node;
 	struct phy *phy[PHY_NUMBER];
 };
 
@@ -162,9 +166,15 @@ static int exynos_ehci_probe(struct platform_device *pdev)
 	}
 	exynos_ehci = to_exynos_ehci(hcd);
 
+	if (of_device_is_compatible(pdev->dev.of_node,
+					"samsung,exynos5440-ehci"))
+		goto skip_phy;
+
 	err = exynos_ehci_get_phy(&pdev->dev, exynos_ehci);
 	if (err)
 		goto fail_clk;
+
+skip_phy:
 
 	exynos_ehci->clk = devm_clk_get(&pdev->dev, "usbhost");
 
@@ -204,13 +214,6 @@ static int exynos_ehci_probe(struct platform_device *pdev)
 	ehci = hcd_to_ehci(hcd);
 	ehci->caps = hcd->regs;
 
-	/*
-	 * Workaround: reset of_node pointer to avoid conflict between Exynos
-	 * EHCI port subnodes and generic USB device bindings
-	 */
-	exynos_ehci->of_node = pdev->dev.of_node;
-	pdev->dev.of_node = NULL;
-
 	/* DMA burst Enable */
 	writel(EHCI_INSNREG00_ENABLE_DMA_BURST, EHCI_INSNREG00(hcd->regs));
 
@@ -227,7 +230,6 @@ static int exynos_ehci_probe(struct platform_device *pdev)
 
 fail_add_hcd:
 	exynos_ehci_phy_disable(&pdev->dev);
-	pdev->dev.of_node = exynos_ehci->of_node;
 fail_io:
 	clk_disable_unprepare(exynos_ehci->clk);
 fail_clk:
@@ -239,8 +241,6 @@ static int exynos_ehci_remove(struct platform_device *pdev)
 {
 	struct usb_hcd *hcd = platform_get_drvdata(pdev);
 	struct exynos_ehci_hcd *exynos_ehci = to_exynos_ehci(hcd);
-
-	pdev->dev.of_node = exynos_ehci->of_node;
 
 	usb_remove_hcd(hcd);
 
@@ -279,9 +279,7 @@ static int exynos_ehci_resume(struct device *dev)
 	struct exynos_ehci_hcd *exynos_ehci = to_exynos_ehci(hcd);
 	int ret;
 
-	ret = clk_prepare_enable(exynos_ehci->clk);
-	if (ret)
-		return ret;
+	clk_prepare_enable(exynos_ehci->clk);
 
 	ret = exynos_ehci_phy_enable(dev);
 	if (ret) {
@@ -309,6 +307,7 @@ static const struct dev_pm_ops exynos_ehci_pm_ops = {
 #ifdef CONFIG_OF
 static const struct of_device_id exynos_ehci_match[] = {
 	{ .compatible = "samsung,exynos4210-ehci" },
+	{ .compatible = "samsung,exynos5440-ehci" },
 	{},
 };
 MODULE_DEVICE_TABLE(of, exynos_ehci_match);

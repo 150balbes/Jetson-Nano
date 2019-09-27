@@ -1,8 +1,16 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  *  pti.c - PTI driver for cJTAG data extration
  *
  *  Copyright (C) Intel 2010
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
  *
  * ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
  *
@@ -24,7 +32,7 @@
 #include <linux/pci.h>
 #include <linux/mutex.h>
 #include <linux/miscdevice.h>
-#include <linux/intel-pti.h>
+#include <linux/pti.h>
 #include <linux/slab.h>
 #include <linux/uaccess.h>
 

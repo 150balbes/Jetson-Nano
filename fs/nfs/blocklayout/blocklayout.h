@@ -92,9 +92,10 @@ struct pnfs_block_volume {
 };
 
 struct pnfs_block_dev_map {
-	u64			start;
-	u64			len;
-	u64			disk_offset;
+	sector_t			start;
+	sector_t			len;
+
+	sector_t			disk_offset;
 	struct block_device		*bdev;
 };
 

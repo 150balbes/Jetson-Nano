@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 #undef DEBUG
 
 #include <linux/kernel.h>

@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /********************************
  * adapted from font_sun12x22.c *
  * by Jurriaan Kalkman 06-2005  *

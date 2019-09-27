@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * Tahvo USB transceiver driver
  *
@@ -10,12 +9,21 @@
  *
  * Original driver written by Juha Yrjölä, Tony Lindgren and Timo Teräs.
  * Modified for Retu/Tahvo MFD by Aaro Koskinen.
+ *
+ * This file is subject to the terms and conditions of the GNU General
+ * Public License. See the file "COPYING" in the main directory of this
+ * archive for more details.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
  */
 
 #include <linux/io.h>
 #include <linux/clk.h>
 #include <linux/usb.h>
-#include <linux/extcon-provider.h>
+#include <linux/extcon.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/usb/otg.h>
@@ -59,13 +67,13 @@ static const unsigned int tahvo_cable[] = {
 	EXTCON_NONE,
 };
 
-static ssize_t vbus_show(struct device *device,
+static ssize_t vbus_state_show(struct device *device,
 			       struct device_attribute *attr, char *buf)
 {
 	struct tahvo_usb *tu = dev_get_drvdata(device);
 	return sprintf(buf, "%s\n", tu->vbus_state ? "on" : "off");
 }
-static DEVICE_ATTR_RO(vbus);
+static DEVICE_ATTR(vbus, 0444, vbus_state_show, NULL);
 
 static void check_vbus_state(struct tahvo_usb *tu)
 {
@@ -113,7 +121,7 @@ static void check_vbus_state(struct tahvo_usb *tu)
 	prev_state = tu->vbus_state;
 	tu->vbus_state = reg & TAHVO_STAT_VBUS;
 	if (prev_state != tu->vbus_state) {
-		extcon_set_state_sync(tu->extcon, EXTCON_USB, tu->vbus_state);
+		extcon_set_cable_state_(tu->extcon, EXTCON_USB, tu->vbus_state);
 		sysfs_notify(&tu->pt_dev->dev.kobj, NULL, "vbus_state");
 	}
 }
@@ -122,7 +130,7 @@ static void tahvo_usb_become_host(struct tahvo_usb *tu)
 {
 	struct retu_dev *rdev = dev_get_drvdata(tu->pt_dev->dev.parent);
 
-	extcon_set_state_sync(tu->extcon, EXTCON_USB_HOST, true);
+	extcon_set_cable_state_(tu->extcon, EXTCON_USB_HOST, true);
 
 	/* Power up the transceiver in USB host mode */
 	retu_write(rdev, TAHVO_REG_USBR, USBR_REGOUT | USBR_NSUSPEND |
@@ -141,7 +149,7 @@ static void tahvo_usb_become_peripheral(struct tahvo_usb *tu)
 {
 	struct retu_dev *rdev = dev_get_drvdata(tu->pt_dev->dev.parent);
 
-	extcon_set_state_sync(tu->extcon, EXTCON_USB_HOST, false);
+	extcon_set_cable_state_(tu->extcon, EXTCON_USB_HOST, false);
 
 	/* Power up transceiver and set it in USB peripheral mode */
 	retu_write(rdev, TAHVO_REG_USBR, USBR_SLAVE_CONTROL | USBR_REGOUT |
@@ -310,7 +318,7 @@ static ssize_t otg_mode_store(struct device *device,
 
 	return r;
 }
-static DEVICE_ATTR_RW(otg_mode);
+static DEVICE_ATTR(otg_mode, 0644, otg_mode_show, otg_mode_store);
 
 static struct attribute *tahvo_attributes[] = {
 	&dev_attr_vbus.attr,
@@ -318,7 +326,7 @@ static struct attribute *tahvo_attributes[] = {
 	NULL
 };
 
-static const struct attribute_group tahvo_attr_group = {
+static struct attribute_group tahvo_attr_group = {
 	.attrs = tahvo_attributes,
 };
 
@@ -372,9 +380,9 @@ static int tahvo_usb_probe(struct platform_device *pdev)
 	}
 
 	/* Set the initial cable state. */
-	extcon_set_state_sync(tu->extcon, EXTCON_USB_HOST,
+	extcon_set_cable_state_(tu->extcon, EXTCON_USB_HOST,
 			       tu->tahvo_mode == TAHVO_MODE_HOST);
-	extcon_set_state_sync(tu->extcon, EXTCON_USB, tu->vbus_state);
+	extcon_set_cable_state_(tu->extcon, EXTCON_USB, tu->vbus_state);
 
 	/* Create OTG interface */
 	tahvo_usb_power_off(tu);

@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  *	linux/mm/mincore.c
  *
@@ -15,10 +14,9 @@
 #include <linux/syscalls.h>
 #include <linux/swap.h>
 #include <linux/swapops.h>
-#include <linux/shmem_fs.h>
 #include <linux/hugetlb.h>
 
-#include <linux/uaccess.h>
+#include <asm/uaccess.h>
 #include <asm/pgtable.h>
 
 static int mincore_hugetlb(pte_t *pte, unsigned long hmask, unsigned long addr,
@@ -66,18 +64,10 @@ static unsigned char mincore_page(struct address_space *mapping, pgoff_t pgoff)
 		 * shmem/tmpfs may return swap: account for swapcache
 		 * page too.
 		 */
-		if (xa_is_value(page)) {
+		if (radix_tree_exceptional_entry(page)) {
 			swp_entry_t swp = radix_to_swp_entry(page);
-			struct swap_info_struct *si;
-
-			/* Prevent swap device to being swapoff under us */
-			si = get_swap_device(swp);
-			if (si) {
-				page = find_get_page(swap_address_space(swp),
-						     swp_offset(swp));
-				put_swap_device(si);
-			} else
-				page = NULL;
+			page = find_get_page(swap_address_space(swp),
+					     swp_offset(swp));
 		}
 	} else
 		page = find_get_page(mapping, pgoff);
@@ -177,22 +167,6 @@ out:
 	return 0;
 }
 
-static inline bool can_do_mincore(struct vm_area_struct *vma)
-{
-	if (vma_is_anonymous(vma))
-		return true;
-	if (!vma->vm_file)
-		return false;
-	/*
-	 * Reveal pagecache information only for non-anonymous mappings that
-	 * correspond to the files the calling process could (if tried) open
-	 * for writing; otherwise we'd be including shared non-exclusive
-	 * mappings, which opens a side channel.
-	 */
-	return inode_owner_or_capable(file_inode(vma->vm_file)) ||
-		inode_permission(file_inode(vma->vm_file), MAY_WRITE) == 0;
-}
-
 /*
  * Do a chunk of "sys_mincore()". We've already checked
  * all the arguments, we hold the mmap semaphore: we should
@@ -213,13 +187,8 @@ static long do_mincore(unsigned long addr, unsigned long pages, unsigned char *v
 	vma = find_vma(current->mm, addr);
 	if (!vma || addr < vma->vm_start)
 		return -ENOMEM;
-	end = min(vma->vm_end, addr + (pages << PAGE_SHIFT));
-	if (!can_do_mincore(vma)) {
-		unsigned long pages = DIV_ROUND_UP(end - addr, PAGE_SIZE);
-		memset(vec, 1, pages);
-		return pages;
-	}
 	mincore_walk.mm = vma->vm_mm;
+	end = min(vma->vm_end, addr + (pages << PAGE_SHIFT));
 	err = walk_page_range(addr, end, &mincore_walk);
 	if (err < 0)
 		return err;
@@ -262,14 +231,14 @@ SYSCALL_DEFINE3(mincore, unsigned long, start, size_t, len,
 		return -EINVAL;
 
 	/* ..and we need to be passed a valid user-space range */
-	if (!access_ok((void __user *) start, len))
+	if (!access_ok(VERIFY_READ, (void __user *) start, len))
 		return -ENOMEM;
 
 	/* This also avoids any overflows on PAGE_ALIGN */
 	pages = len >> PAGE_SHIFT;
 	pages += (offset_in_page(len)) != 0;
 
-	if (!access_ok(vec, pages))
+	if (!access_ok(VERIFY_WRITE, vec, pages))
 		return -EFAULT;
 
 	tmp = (void *) __get_free_page(GFP_USER);

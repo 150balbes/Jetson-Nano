@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0
 obj-$(CONFIG_RDS) += rds.o
 rds-y :=	af_rds.o bind.o cong.o connection.o info.o message.o   \
 			recv.o send.o stats.o sysctl.o threads.o transport.o \
@@ -15,3 +14,4 @@ rds_tcp-y :=		tcp.o tcp_connect.o tcp_listen.o tcp_recv.o \
 			tcp_send.o tcp_stats.o
 
 ccflags-$(CONFIG_RDS_DEBUG)	:=	-DRDS_DEBUG
+

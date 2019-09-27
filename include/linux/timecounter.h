@@ -1,9 +1,18 @@
-/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * linux/include/linux/timecounter.h
  *
  * based on code that migrated away from
  * linux/include/linux/clocksource.h
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
  */
 #ifndef _LINUX_TIMECOUNTER_H
 #define _LINUX_TIMECOUNTER_H
@@ -11,7 +20,7 @@
 #include <linux/types.h>
 
 /* simplify initialization of mask field */
-#define CYCLECOUNTER_MASK(bits) (u64)((bits) < 64 ? ((1ULL<<(bits))-1) : -1)
+#define CYCLECOUNTER_MASK(bits) (cycle_t)((bits) < 64 ? ((1ULL<<(bits))-1) : -1)
 
 /**
  * struct cyclecounter - hardware abstraction for a free running counter
@@ -28,8 +37,8 @@
  * @shift:		cycle to nanosecond divisor (power of two)
  */
 struct cyclecounter {
-	u64 (*read)(const struct cyclecounter *cc);
-	u64 mask;
+	cycle_t (*read)(const struct cyclecounter *cc);
+	cycle_t mask;
 	u32 mult;
 	u32 shift;
 };
@@ -54,7 +63,7 @@ struct cyclecounter {
  */
 struct timecounter {
 	const struct cyclecounter *cc;
-	u64 cycle_last;
+	cycle_t cycle_last;
 	u64 nsec;
 	u64 mask;
 	u64 frac;
@@ -68,7 +77,7 @@ struct timecounter {
  * @frac:	pointer to storage for the fractional nanoseconds.
  */
 static inline u64 cyclecounter_cyc2ns(const struct cyclecounter *cc,
-				      u64 cycles, u64 mask, u64 *frac)
+				      cycle_t cycles, u64 mask, u64 *frac)
 {
 	u64 ns = (u64) cycles;
 
@@ -125,6 +134,6 @@ extern u64 timecounter_read(struct timecounter *tc);
  * in the past.
  */
 extern u64 timecounter_cyc2time(struct timecounter *tc,
-				u64 cycle_tstamp);
+				cycle_t cycle_tstamp);
 
 #endif

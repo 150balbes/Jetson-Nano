@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * Author: Mikhail Ulyanov
  * Copyright (C) 2014-2015 Cogent Embedded, Inc.  <source@cogentembedded.com>
@@ -12,6 +11,10 @@
  *      1) Rotation
  *      2) Cropping
  *      3) V4L2_CID_JPEG_ACTIVE_MARKER
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  */
 
 #include <asm/unaligned.h>
@@ -195,6 +198,7 @@
  * @vfd_decoder: video device node for decoder mem2mem mode
  * @m2m_dev: v4l2 mem2mem device data
  * @curr: pointer to current context
+ * @irq_queue:	interrupt handler waitqueue
  * @regs: JPEG IP registers mapping
  * @irq: JPEG IP irq
  * @clk: JPEG IP clock
@@ -209,6 +213,7 @@ struct jpu {
 	struct video_device	vfd_decoder;
 	struct v4l2_m2m_dev	*m2m_dev;
 	struct jpu_ctx		*curr;
+	wait_queue_head_t	irq_queue;
 
 	void __iomem		*regs;
 	unsigned int		irq;
@@ -252,7 +257,7 @@ struct jpu_fmt {
 };
 
 /**
- * struct jpu_q_data - parameters of one queue
+ * jpu_q_data - parameters of one queue
  * @fmtinfo: driver-specific format of this queue
  * @format: multiplanar format of this queue
  * @sequence: sequence number
@@ -264,7 +269,7 @@ struct jpu_q_data {
 };
 
 /**
- * struct jpu_ctx - the device context data
+ * jpu_ctx - the device context data
  * @jpu: JPEG IP device for this context
  * @encoder: compression (encode) operation or decompression (decode)
  * @compr_quality: destination image quality in compression (encode) mode
@@ -664,13 +669,15 @@ static int jpu_querycap(struct file *file, void *priv,
 	struct jpu_ctx *ctx = fh_to_ctx(priv);
 
 	if (ctx->encoder)
-		strscpy(cap->card, DRV_NAME " encoder", sizeof(cap->card));
+		strlcpy(cap->card, DRV_NAME " encoder", sizeof(cap->card));
 	else
-		strscpy(cap->card, DRV_NAME " decoder", sizeof(cap->card));
+		strlcpy(cap->card, DRV_NAME " decoder", sizeof(cap->card));
 
-	strscpy(cap->driver, DRV_NAME, sizeof(cap->driver));
+	strlcpy(cap->driver, DRV_NAME, sizeof(cap->driver));
 	snprintf(cap->bus_info, sizeof(cap->bus_info), "platform:%s",
 		 dev_name(ctx->jpu->dev));
+	cap->device_caps |= V4L2_CAP_STREAMING | V4L2_CAP_VIDEO_M2M_MPLANE;
+	cap->capabilities = V4L2_CAP_DEVICE_CAPS | cap->device_caps;
 	memset(cap->reserved, 0, sizeof(cap->reserved));
 
 	return 0;
@@ -946,8 +953,8 @@ static int jpu_streamon(struct file *file, void *priv, enum v4l2_buf_type type)
 static const struct v4l2_ioctl_ops jpu_ioctl_ops = {
 	.vidioc_querycap		= jpu_querycap,
 
-	.vidioc_enum_fmt_vid_cap	= jpu_enum_fmt_cap,
-	.vidioc_enum_fmt_vid_out	= jpu_enum_fmt_out,
+	.vidioc_enum_fmt_vid_cap_mplane = jpu_enum_fmt_cap,
+	.vidioc_enum_fmt_vid_out_mplane = jpu_enum_fmt_out,
 	.vidioc_g_fmt_vid_cap_mplane	= jpu_g_fmt,
 	.vidioc_g_fmt_vid_out_mplane	= jpu_g_fmt,
 	.vidioc_try_fmt_vid_cap_mplane	= jpu_try_fmt,
@@ -1487,8 +1494,24 @@ static void jpu_device_run(void *priv)
 	spin_unlock_irqrestore(&ctx->jpu->lock, flags);
 }
 
-static const struct v4l2_m2m_ops jpu_m2m_ops = {
+static int jpu_job_ready(void *priv)
+{
+	return 1;
+}
+
+static void jpu_job_abort(void *priv)
+{
+	struct jpu_ctx *ctx = priv;
+
+	if (!wait_event_timeout(ctx->jpu->irq_queue, !ctx->jpu->curr,
+				msecs_to_jiffies(JPU_JOB_TIMEOUT)))
+		jpu_cleanup(ctx, true);
+}
+
+static struct v4l2_m2m_ops jpu_m2m_ops = {
 	.device_run	= jpu_device_run,
+	.job_ready	= jpu_job_ready,
+	.job_abort	= jpu_job_abort,
 };
 
 /*
@@ -1569,6 +1592,9 @@ static irqreturn_t jpu_irq_handler(int irq, void *dev_id)
 
 	v4l2_m2m_job_finish(jpu->m2m_dev, curr_ctx->fh.m2m_ctx);
 
+	/* ...wakeup abort routine if needed */
+	wake_up(&jpu->irq_queue);
+
 	return IRQ_HANDLED;
 
 handled:
@@ -1602,6 +1628,7 @@ static int jpu_probe(struct platform_device *pdev)
 	if (!jpu)
 		return -ENOMEM;
 
+	init_waitqueue_head(&jpu->irq_queue);
 	mutex_init(&jpu->mutex);
 	spin_lock_init(&jpu->lock);
 	jpu->dev = &pdev->dev;
@@ -1652,7 +1679,7 @@ static int jpu_probe(struct platform_device *pdev)
 	for (i = 0; i < JPU_MAX_QUALITY; i++)
 		jpu_generate_hdr(i, (unsigned char *)jpeg_hdrs[i]);
 
-	strscpy(jpu->vfd_encoder.name, DRV_NAME, sizeof(jpu->vfd_encoder.name));
+	strlcpy(jpu->vfd_encoder.name, DRV_NAME, sizeof(jpu->vfd_encoder.name));
 	jpu->vfd_encoder.fops		= &jpu_fops;
 	jpu->vfd_encoder.ioctl_ops	= &jpu_ioctl_ops;
 	jpu->vfd_encoder.minor		= -1;
@@ -1660,8 +1687,6 @@ static int jpu_probe(struct platform_device *pdev)
 	jpu->vfd_encoder.lock		= &jpu->mutex;
 	jpu->vfd_encoder.v4l2_dev	= &jpu->v4l2_dev;
 	jpu->vfd_encoder.vfl_dir	= VFL_DIR_M2M;
-	jpu->vfd_encoder.device_caps	= V4L2_CAP_STREAMING |
-					  V4L2_CAP_VIDEO_M2M_MPLANE;
 
 	ret = video_register_device(&jpu->vfd_encoder, VFL_TYPE_GRABBER, -1);
 	if (ret) {
@@ -1671,7 +1696,7 @@ static int jpu_probe(struct platform_device *pdev)
 
 	video_set_drvdata(&jpu->vfd_encoder, jpu);
 
-	strscpy(jpu->vfd_decoder.name, DRV_NAME, sizeof(jpu->vfd_decoder.name));
+	strlcpy(jpu->vfd_decoder.name, DRV_NAME, sizeof(jpu->vfd_decoder.name));
 	jpu->vfd_decoder.fops		= &jpu_fops;
 	jpu->vfd_decoder.ioctl_ops	= &jpu_ioctl_ops;
 	jpu->vfd_decoder.minor		= -1;
@@ -1679,8 +1704,6 @@ static int jpu_probe(struct platform_device *pdev)
 	jpu->vfd_decoder.lock		= &jpu->mutex;
 	jpu->vfd_decoder.v4l2_dev	= &jpu->v4l2_dev;
 	jpu->vfd_decoder.vfl_dir	= VFL_DIR_M2M;
-	jpu->vfd_decoder.device_caps	= V4L2_CAP_STREAMING |
-					  V4L2_CAP_VIDEO_M2M_MPLANE;
 
 	ret = video_register_device(&jpu->vfd_decoder, VFL_TYPE_GRABBER, -1);
 	if (ret) {

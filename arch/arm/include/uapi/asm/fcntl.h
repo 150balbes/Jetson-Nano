@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note */
 #ifndef _ARM_FCNTL_H
 #define _ARM_FCNTL_H
 

@@ -20,65 +20,77 @@
  * OTHER DEALINGS IN THE SOFTWARE.
  */
 
+#include <linux/slab.h>
 #include <linux/types.h>
 #include "kfd_priv.h"
-#include "amdgpu_ids.h"
 
-static unsigned int pasid_bits = 16;
-static const struct kfd2kgd_calls *kfd2kgd;
+static unsigned long *pasid_bitmap;
+static unsigned int pasid_limit;
+static DEFINE_MUTEX(pasid_mutex);
+
+int kfd_pasid_init(void)
+{
+	pasid_limit = KFD_MAX_NUM_OF_PROCESSES;
+
+	pasid_bitmap = kcalloc(BITS_TO_LONGS(pasid_limit), sizeof(long), GFP_KERNEL);
+	if (!pasid_bitmap)
+		return -ENOMEM;
+
+	set_bit(0, pasid_bitmap); /* PASID 0 is reserved. */
+
+	return 0;
+}
+
+void kfd_pasid_exit(void)
+{
+	kfree(pasid_bitmap);
+}
 
 bool kfd_set_pasid_limit(unsigned int new_limit)
 {
-	if (new_limit < 2)
-		return false;
+	if (new_limit < pasid_limit) {
+		bool ok;
 
-	if (new_limit < (1U << pasid_bits)) {
-		if (kfd2kgd)
-			/* We've already allocated user PASIDs, too late to
-			 * change the limit
-			 */
-			return false;
+		mutex_lock(&pasid_mutex);
 
-		while (new_limit < (1U << pasid_bits))
-			pasid_bits--;
+		/* ensure that no pasids >= new_limit are in-use */
+		ok = (find_next_bit(pasid_bitmap, pasid_limit, new_limit) ==
+								pasid_limit);
+		if (ok)
+			pasid_limit = new_limit;
+
+		mutex_unlock(&pasid_mutex);
+
+		return ok;
 	}
 
 	return true;
 }
 
-unsigned int kfd_get_pasid_limit(void)
+inline unsigned int kfd_get_pasid_limit(void)
 {
-	return 1U << pasid_bits;
+	return pasid_limit;
 }
 
 unsigned int kfd_pasid_alloc(void)
 {
-	int r;
+	unsigned int found;
 
-	/* Find the first best KFD device for calling KGD */
-	if (!kfd2kgd) {
-		struct kfd_dev *dev = NULL;
-		unsigned int i = 0;
+	mutex_lock(&pasid_mutex);
 
-		while ((kfd_topology_enum_kfd_devices(i, &dev)) == 0) {
-			if (dev && dev->kfd2kgd) {
-				kfd2kgd = dev->kfd2kgd;
-				break;
-			}
-			i++;
-		}
+	found = find_first_zero_bit(pasid_bitmap, pasid_limit);
+	if (found == pasid_limit)
+		found = 0;
+	else
+		set_bit(found, pasid_bitmap);
 
-		if (!kfd2kgd)
-			return false;
-	}
+	mutex_unlock(&pasid_mutex);
 
-	r = amdgpu_pasid_alloc(pasid_bits);
-
-	return r > 0 ? r : 0;
+	return found;
 }
 
 void kfd_pasid_free(unsigned int pasid)
 {
-	if (kfd2kgd)
-		amdgpu_pasid_free(pasid);
+	BUG_ON(pasid == 0 || pasid >= pasid_limit);
+	clear_bit(pasid, pasid_bitmap);
 }

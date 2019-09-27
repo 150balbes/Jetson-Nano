@@ -1,1 +1,1 @@
-#include <arm/uniphier-pinctrl.dtsi>
+../../../../arm/boot/dts/uniphier-pinctrl.dtsi

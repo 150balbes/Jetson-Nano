@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Network device driver for the MACE ethernet controller on
  * Apple Powermacs.  Assumes it's under a DBDMA controller.
@@ -79,7 +78,7 @@ struct mace_data {
 
 static int mace_open(struct net_device *dev);
 static int mace_close(struct net_device *dev);
-static netdev_tx_t mace_xmit_start(struct sk_buff *skb, struct net_device *dev);
+static int mace_xmit_start(struct sk_buff *skb, struct net_device *dev);
 static void mace_set_multicast(struct net_device *dev);
 static void mace_reset(struct net_device *dev);
 static int mace_set_address(struct net_device *dev, void *addr);
@@ -87,7 +86,7 @@ static irqreturn_t mace_interrupt(int irq, void *dev_id);
 static irqreturn_t mace_txdma_intr(int irq, void *dev_id);
 static irqreturn_t mace_rxdma_intr(int irq, void *dev_id);
 static void mace_set_timeout(struct net_device *dev);
-static void mace_tx_timeout(struct timer_list *t);
+static void mace_tx_timeout(unsigned long data);
 static inline void dbdma_reset(volatile struct dbdma_regs __iomem *dma);
 static inline void mace_clean_rings(struct mace_data *mp);
 static void __mace_set_address(struct net_device *dev, void *addr);
@@ -103,6 +102,7 @@ static const struct net_device_ops mace_netdev_ops = {
 	.ndo_start_xmit		= mace_xmit_start,
 	.ndo_set_rx_mode	= mace_set_multicast,
 	.ndo_set_mac_address	= mace_set_address,
+	.ndo_change_mtu		= eth_change_mtu,
 	.ndo_validate_addr	= eth_validate_addr,
 };
 
@@ -115,8 +115,8 @@ static int mace_probe(struct macio_dev *mdev, const struct of_device_id *match)
 	int j, rev, rc = -EBUSY;
 
 	if (macio_resource_count(mdev) != 3 || macio_irq_count(mdev) != 3) {
-		printk(KERN_ERR "can't use MACE %pOF: need 3 addrs and 3 irqs\n",
-		       mace);
+		printk(KERN_ERR "can't use MACE %s: need 3 addrs and 3 irqs\n",
+		       mace->full_name);
 		return -ENODEV;
 	}
 
@@ -124,8 +124,8 @@ static int mace_probe(struct macio_dev *mdev, const struct of_device_id *match)
 	if (addr == NULL) {
 		addr = of_get_property(mace, "local-mac-address", NULL);
 		if (addr == NULL) {
-			printk(KERN_ERR "Can't get mac-address for MACE %pOF\n",
-			       mace);
+			printk(KERN_ERR "Can't get mac-address for MACE %s\n",
+			       mace->full_name);
 			return -ENODEV;
 		}
 	}
@@ -197,7 +197,7 @@ static int mace_probe(struct macio_dev *mdev, const struct of_device_id *match)
 
 	memset((char *) mp->tx_cmds, 0,
 	       (NCMDS_TX*N_TX_RING + N_RX_RING + 2) * sizeof(struct dbdma_cmd));
-	timer_setup(&mp->tx_timeout, mace_tx_timeout, 0);
+	init_timer(&mp->tx_timeout);
 	spin_lock_init(&mp->lock);
 	mp->timeout_active = 0;
 
@@ -522,11 +522,13 @@ static inline void mace_set_timeout(struct net_device *dev)
     if (mp->timeout_active)
 	del_timer(&mp->tx_timeout);
     mp->tx_timeout.expires = jiffies + TX_TIMEOUT;
+    mp->tx_timeout.function = mace_tx_timeout;
+    mp->tx_timeout.data = (unsigned long) dev;
     add_timer(&mp->tx_timeout);
     mp->timeout_active = 1;
 }
 
-static netdev_tx_t mace_xmit_start(struct sk_buff *skb, struct net_device *dev)
+static int mace_xmit_start(struct sk_buff *skb, struct net_device *dev)
 {
     struct mace_data *mp = netdev_priv(dev);
     volatile struct dbdma_regs __iomem *td = mp->tx_dma;
@@ -765,7 +767,7 @@ static irqreturn_t mace_interrupt(int irq, void *dev_id)
 	    dev->stats.tx_bytes += mp->tx_bufs[i]->len;
 	    ++dev->stats.tx_packets;
 	}
-	dev_consume_skb_irq(mp->tx_bufs[i]);
+	dev_kfree_skb_irq(mp->tx_bufs[i]);
 	--mp->tx_active;
 	if (++i >= N_TX_RING)
 	    i = 0;
@@ -800,10 +802,10 @@ static irqreturn_t mace_interrupt(int irq, void *dev_id)
     return IRQ_HANDLED;
 }
 
-static void mace_tx_timeout(struct timer_list *t)
+static void mace_tx_timeout(unsigned long data)
 {
-    struct mace_data *mp = from_timer(mp, t, tx_timeout);
-    struct net_device *dev = macio_get_drvdata(mp->mdev);
+    struct net_device *dev = (struct net_device *) data;
+    struct mace_data *mp = netdev_priv(dev);
     volatile struct mace __iomem *mb = mp->mace;
     volatile struct dbdma_regs __iomem *td = mp->tx_dma;
     volatile struct dbdma_regs __iomem *rd = mp->rx_dma;

@@ -1,8 +1,17 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * ISHTP bus layer messages handling
  *
  * Copyright (c) 2003-2016, Intel Corporation.
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms and conditions of the GNU General Public License,
+ * version 2, as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
+ * more details.
+ *
  */
 
 #include <linux/export.h>
@@ -10,6 +19,7 @@
 #include <linux/sched.h>
 #include <linux/wait.h>
 #include <linux/spinlock.h>
+#include <linux/miscdevice.h>
 #include "ishtp-dev.h"
 #include "hbm.h"
 #include "client.h"
@@ -127,14 +137,19 @@ int ishtp_hbm_start_wait(struct ishtp_device *dev)
 int ishtp_hbm_start_req(struct ishtp_device *dev)
 {
 	struct ishtp_msg_hdr hdr;
-	struct hbm_host_version_request start_req = { 0 };
+	unsigned char data[128];
+	struct ishtp_msg_hdr *ishtp_hdr = &hdr;
+	struct hbm_host_version_request *start_req;
+	const size_t len = sizeof(struct hbm_host_version_request);
 
-	ishtp_hbm_hdr(&hdr, sizeof(start_req));
+	ishtp_hbm_hdr(ishtp_hdr, len);
 
 	/* host start message */
-	start_req.hbm_cmd = HOST_START_REQ_CMD;
-	start_req.host_version.major_version = HBM_MAJOR_VERSION;
-	start_req.host_version.minor_version = HBM_MINOR_VERSION;
+	start_req = (struct hbm_host_version_request *)data;
+	memset(start_req, 0, len);
+	start_req->hbm_cmd = HOST_START_REQ_CMD;
+	start_req->host_version.major_version = HBM_MAJOR_VERSION;
+	start_req->host_version.minor_version = HBM_MINOR_VERSION;
 
 	/*
 	 * (!) Response to HBM start may be so quick that this thread would get
@@ -142,7 +157,7 @@ int ishtp_hbm_start_req(struct ishtp_device *dev)
 	 * So set it at first, change back to ISHTP_HBM_IDLE upon failure
 	 */
 	dev->hbm_state = ISHTP_HBM_START;
-	if (ishtp_write_message(dev, &hdr, &start_req)) {
+	if (ishtp_write_message(dev, ishtp_hdr, data)) {
 		dev_err(dev->devc, "version message send failed\n");
 		dev->dev_state = ISHTP_DEV_RESETTING;
 		dev->hbm_state = ISHTP_HBM_IDLE;
@@ -164,13 +179,19 @@ int ishtp_hbm_start_req(struct ishtp_device *dev)
 void ishtp_hbm_enum_clients_req(struct ishtp_device *dev)
 {
 	struct ishtp_msg_hdr hdr;
-	struct hbm_host_enum_request enum_req = { 0 };
+	unsigned char data[128];
+	struct ishtp_msg_hdr *ishtp_hdr = &hdr;
+	struct hbm_host_enum_request *enum_req;
+	const size_t len = sizeof(struct hbm_host_enum_request);
 
 	/* enumerate clients */
-	ishtp_hbm_hdr(&hdr, sizeof(enum_req));
-	enum_req.hbm_cmd = HOST_ENUM_REQ_CMD;
+	ishtp_hbm_hdr(ishtp_hdr, len);
 
-	if (ishtp_write_message(dev, &hdr, &enum_req)) {
+	enum_req = (struct hbm_host_enum_request *)data;
+	memset(enum_req, 0, len);
+	enum_req->hbm_cmd = HOST_ENUM_REQ_CMD;
+
+	if (ishtp_write_message(dev, ishtp_hdr, data)) {
 		dev->dev_state = ISHTP_DEV_RESETTING;
 		dev_err(dev->devc, "enumeration request send failed\n");
 		ish_hw_reset(dev);
@@ -188,8 +209,12 @@ void ishtp_hbm_enum_clients_req(struct ishtp_device *dev)
  */
 static int ishtp_hbm_prop_req(struct ishtp_device *dev)
 {
+
 	struct ishtp_msg_hdr hdr;
-	struct hbm_props_request prop_req = { 0 };
+	unsigned char data[128];
+	struct ishtp_msg_hdr *ishtp_hdr = &hdr;
+	struct hbm_props_request *prop_req;
+	const size_t len = sizeof(struct hbm_props_request);
 	unsigned long next_client_index;
 	uint8_t client_num;
 
@@ -213,12 +238,15 @@ static int ishtp_hbm_prop_req(struct ishtp_device *dev)
 
 	dev->fw_clients[client_num].client_id = next_client_index;
 
-	ishtp_hbm_hdr(&hdr, sizeof(prop_req));
+	ishtp_hbm_hdr(ishtp_hdr, len);
+	prop_req = (struct hbm_props_request *)data;
 
-	prop_req.hbm_cmd = HOST_CLIENT_PROPERTIES_REQ_CMD;
-	prop_req.address = next_client_index;
+	memset(prop_req, 0, sizeof(struct hbm_props_request));
 
-	if (ishtp_write_message(dev, &hdr, &prop_req)) {
+	prop_req->hbm_cmd = HOST_CLIENT_PROPERTIES_REQ_CMD;
+	prop_req->address = next_client_index;
+
+	if (ishtp_write_message(dev, ishtp_hdr, data)) {
 		dev->dev_state = ISHTP_DEV_RESETTING;
 		dev_err(dev->devc, "properties request send failed\n");
 		ish_hw_reset(dev);
@@ -239,14 +267,19 @@ static int ishtp_hbm_prop_req(struct ishtp_device *dev)
 static void ishtp_hbm_stop_req(struct ishtp_device *dev)
 {
 	struct ishtp_msg_hdr hdr;
-	struct hbm_host_stop_request stop_req = { 0 } ;
+	unsigned char data[128];
+	struct ishtp_msg_hdr *ishtp_hdr = &hdr;
+	struct hbm_host_stop_request *req;
+	const size_t len = sizeof(struct hbm_host_stop_request);
 
-	ishtp_hbm_hdr(&hdr, sizeof(stop_req));
+	ishtp_hbm_hdr(ishtp_hdr, len);
+	req = (struct hbm_host_stop_request *)data;
 
-	stop_req.hbm_cmd = HOST_STOP_REQ_CMD;
-	stop_req.reason = DRIVER_STOP_REQUEST;
+	memset(req, 0, sizeof(struct hbm_host_stop_request));
+	req->hbm_cmd = HOST_STOP_REQ_CMD;
+	req->reason = DRIVER_STOP_REQUEST;
 
-	ishtp_write_message(dev, &hdr, &stop_req);
+	ishtp_write_message(dev, ishtp_hdr, data);
 }
 
 /**
@@ -262,15 +295,16 @@ int ishtp_hbm_cl_flow_control_req(struct ishtp_device *dev,
 				  struct ishtp_cl *cl)
 {
 	struct ishtp_msg_hdr hdr;
-	struct hbm_flow_control flow_ctrl;
-	const size_t len = sizeof(flow_ctrl);
+	unsigned char data[128];
+	struct ishtp_msg_hdr *ishtp_hdr = &hdr;
+	const size_t len = sizeof(struct hbm_flow_control);
 	int	rv;
+	unsigned int	num_frags;
 	unsigned long	flags;
 
 	spin_lock_irqsave(&cl->fc_spinlock, flags);
-
-	ishtp_hbm_hdr(&hdr, len);
-	ishtp_hbm_cl_hdr(cl, ISHTP_FLOW_CONTROL_CMD, &flow_ctrl, len);
+	ishtp_hbm_hdr(ishtp_hdr, len);
+	ishtp_hbm_cl_hdr(cl, ISHTP_FLOW_CONTROL_CMD, data, len);
 
 	/*
 	 * Sync possible race when RB recycle and packet receive paths
@@ -281,16 +315,20 @@ int ishtp_hbm_cl_flow_control_req(struct ishtp_device *dev,
 		return	0;
 	}
 
+	num_frags = cl->recv_msg_num_frags;
 	cl->recv_msg_num_frags = 0;
 
-	rv = ishtp_write_message(dev, &hdr, &flow_ctrl);
+	rv = ishtp_write_message(dev, ishtp_hdr, data);
 	if (!rv) {
 		++cl->out_flow_ctrl_creds;
 		++cl->out_flow_ctrl_cnt;
-		cl->ts_out_fc = ktime_get();
-		if (cl->ts_rx) {
-			ktime_t ts_diff = ktime_sub(cl->ts_out_fc, cl->ts_rx);
-			if (ktime_after(ts_diff, cl->ts_max_fc_delay))
+		getnstimeofday(&cl->ts_out_fc);
+		if (cl->ts_rx.tv_sec && cl->ts_rx.tv_nsec) {
+			struct timespec ts_diff;
+
+			ts_diff = timespec_sub(cl->ts_out_fc, cl->ts_rx);
+			if (timespec_compare(&ts_diff, &cl->ts_max_fc_delay)
+					> 0)
 				cl->ts_max_fc_delay = ts_diff;
 		}
 	} else {
@@ -313,13 +351,14 @@ int ishtp_hbm_cl_flow_control_req(struct ishtp_device *dev,
 int ishtp_hbm_cl_disconnect_req(struct ishtp_device *dev, struct ishtp_cl *cl)
 {
 	struct ishtp_msg_hdr hdr;
-	struct hbm_client_connect_request disconn_req;
-	const size_t len = sizeof(disconn_req);
+	unsigned char data[128];
+	struct ishtp_msg_hdr *ishtp_hdr = &hdr;
+	const size_t len = sizeof(struct hbm_client_connect_request);
 
-	ishtp_hbm_hdr(&hdr, len);
-	ishtp_hbm_cl_hdr(cl, CLIENT_DISCONNECT_REQ_CMD, &disconn_req, len);
+	ishtp_hbm_hdr(ishtp_hdr, len);
+	ishtp_hbm_cl_hdr(cl, CLIENT_DISCONNECT_REQ_CMD, data, len);
 
-	return ishtp_write_message(dev, &hdr, &disconn_req);
+	return ishtp_write_message(dev, ishtp_hdr, data);
 }
 
 /**
@@ -339,10 +378,11 @@ static void ishtp_hbm_cl_disconnect_res(struct ishtp_device *dev,
 	list_for_each_entry(cl, &dev->cl_list, link) {
 		if (!rs->status && ishtp_hbm_cl_addr_equal(cl, rs)) {
 			cl->state = ISHTP_CL_DISCONNECTED;
-			wake_up_interruptible(&cl->wait_ctrl_res);
 			break;
 		}
 	}
+	if (cl)
+		wake_up_interruptible(&cl->wait_ctrl_res);
 	spin_unlock_irqrestore(&dev->cl_list_lock, flags);
 }
 
@@ -358,13 +398,14 @@ static void ishtp_hbm_cl_disconnect_res(struct ishtp_device *dev,
 int ishtp_hbm_cl_connect_req(struct ishtp_device *dev, struct ishtp_cl *cl)
 {
 	struct ishtp_msg_hdr hdr;
-	struct hbm_client_connect_request conn_req;
-	const size_t len = sizeof(conn_req);
+	unsigned char data[128];
+	struct ishtp_msg_hdr *ishtp_hdr = &hdr;
+	const size_t len = sizeof(struct hbm_client_connect_request);
 
-	ishtp_hbm_hdr(&hdr, len);
-	ishtp_hbm_cl_hdr(cl, CLIENT_CONNECT_REQ_CMD, &conn_req, len);
+	ishtp_hbm_hdr(ishtp_hdr, len);
+	ishtp_hbm_cl_hdr(cl, CLIENT_CONNECT_REQ_CMD, data, len);
 
-	return ishtp_write_message(dev, &hdr, &conn_req);
+	return ishtp_write_message(dev, ishtp_hdr, data);
 }
 
 /**
@@ -390,10 +431,11 @@ static void ishtp_hbm_cl_connect_res(struct ishtp_device *dev,
 				cl->state = ISHTP_CL_DISCONNECTED;
 				cl->status = -ENODEV;
 			}
-			wake_up_interruptible(&cl->wait_ctrl_res);
 			break;
 		}
 	}
+	if (cl)
+		wake_up_interruptible(&cl->wait_ctrl_res);
 	spin_unlock_irqrestore(&dev->cl_list_lock, flags);
 }
 

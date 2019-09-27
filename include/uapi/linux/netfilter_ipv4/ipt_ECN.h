@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note */
 /* Header file for iptables ipt_ECN target
  *
  * (C) 2002 by Harald Welte <laforge@gnumonks.org>

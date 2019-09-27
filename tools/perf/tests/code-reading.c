@@ -1,13 +1,9 @@
-// SPDX-License-Identifier: GPL-2.0
-#include <errno.h>
-#include <linux/kernel.h>
 #include <linux/types.h>
-#include <inttypes.h>
 #include <stdlib.h>
 #include <unistd.h>
 #include <stdio.h>
+#include <ctype.h>
 #include <string.h>
-#include <sys/param.h>
 
 #include "parse-events.h"
 #include "evlist.h"
@@ -15,14 +11,10 @@
 #include "thread_map.h"
 #include "cpumap.h"
 #include "machine.h"
-#include "map.h"
-#include "symbol.h"
 #include "event.h"
 #include "thread.h"
 
 #include "tests.h"
-
-#include <linux/ctype.h>
 
 #define BUFSZ	1024
 #define READLEN	128
@@ -232,20 +224,13 @@ static int read_object_code(u64 addr, size_t len, u8 cpumode,
 	unsigned char buf2[BUFSZ];
 	size_t ret_len;
 	u64 objdump_addr;
-	const char *objdump_name;
-	char decomp_name[KMOD_DECOMP_LEN];
-	bool decomp = false;
 	int ret;
 
 	pr_debug("Reading object code for memory address: %#"PRIx64"\n", addr);
 
-	if (!thread__find_map(thread, cpumode, addr, &al) || !al.map->dso) {
-		if (cpumode == PERF_RECORD_MISC_HYPERVISOR) {
-			pr_debug("Hypervisor address can not be resolved - skipping\n");
-			return 0;
-		}
-
-		pr_debug("thread__find_map failed\n");
+	thread__find_addr_map(thread, cpumode, MAP__FUNCTION, addr, &al);
+	if (!al.map || !al.map->dso) {
+		pr_debug("thread__find_addr_map failed\n");
 		return -1;
 	}
 
@@ -299,26 +284,9 @@ static int read_object_code(u64 addr, size_t len, u8 cpumode,
 		state->done[state->done_cnt++] = al.map->start;
 	}
 
-	objdump_name = al.map->dso->long_name;
-	if (dso__needs_decompress(al.map->dso)) {
-		if (dso__decompress_kmodule_path(al.map->dso, objdump_name,
-						 decomp_name,
-						 sizeof(decomp_name)) < 0) {
-			pr_debug("decompression failed\n");
-			return -1;
-		}
-
-		decomp = true;
-		objdump_name = decomp_name;
-	}
-
 	/* Read the object code using objdump */
 	objdump_addr = map__rip_2objdump(al.map, al.addr);
-	ret = read_via_objdump(objdump_name, objdump_addr, buf2, len);
-
-	if (decomp)
-		unlink(objdump_name);
-
+	ret = read_via_objdump(al.map->dso->long_name, objdump_addr, buf2, len);
 	if (ret > 0) {
 		/*
 		 * The kernel maps are inaccurate - assume objdump is right in
@@ -412,21 +380,15 @@ static int process_events(struct machine *machine, struct perf_evlist *evlist,
 			  struct state *state)
 {
 	union perf_event *event;
-	struct perf_mmap *md;
 	int i, ret;
 
 	for (i = 0; i < evlist->nr_mmaps; i++) {
-		md = &evlist->mmap[i];
-		if (perf_mmap__read_init(md) < 0)
-			continue;
-
-		while ((event = perf_mmap__read_event(md)) != NULL) {
+		while ((event = perf_evlist__mmap_read(evlist, i)) != NULL) {
 			ret = process_event(machine, evlist, event, state);
-			perf_mmap__consume(md);
+			perf_evlist__mmap_consume(evlist, i);
 			if (ret < 0)
 				return ret;
 		}
-		perf_mmap__read_done(md);
 	}
 	return 0;
 }
@@ -491,34 +453,6 @@ static void fs_something(void)
 	}
 }
 
-static const char *do_determine_event(bool excl_kernel)
-{
-	const char *event = excl_kernel ? "cycles:u" : "cycles";
-
-#ifdef __s390x__
-	char cpuid[128], model[16], model_c[16], cpum_cf_v[16];
-	unsigned int family;
-	int ret, cpum_cf_a;
-
-	if (get_cpuid(cpuid, sizeof(cpuid)))
-		goto out_clocks;
-	ret = sscanf(cpuid, "%*[^,],%u,%[^,],%[^,],%[^,],%x", &family, model_c,
-		     model, cpum_cf_v, &cpum_cf_a);
-	if (ret != 5)		 /* Not available */
-		goto out_clocks;
-	if (excl_kernel && (cpum_cf_a & 4))
-		return event;
-	if (!excl_kernel && (cpum_cf_a & 2))
-		return event;
-
-	/* Fall through: missing authorization */
-out_clocks:
-	event = excl_kernel ? "cpu-clock:u" : "cpu-clock";
-
-#endif
-	return event;
-}
-
 static void do_something(void)
 {
 	fs_something();
@@ -564,7 +498,6 @@ static int do_test_code_reading(bool try_kcore)
 	pid = getpid();
 
 	machine = machine__new_host();
-	machine->env = &perf_env;
 
 	ret = machine__create_kernel_maps(machine);
 	if (ret < 0) {
@@ -601,7 +534,7 @@ static int do_test_code_reading(bool try_kcore)
 	}
 
 	ret = perf_event__synthesize_thread_map(NULL, threads,
-						perf_event__process, machine, false);
+						perf_event__process, machine, false, 500);
 	if (ret < 0) {
 		pr_debug("perf_event__synthesize_thread_map failed\n");
 		goto out_err;
@@ -630,7 +563,10 @@ static int do_test_code_reading(bool try_kcore)
 
 		perf_evlist__set_maps(evlist, cpus, threads);
 
-		str = do_determine_event(excl_kernel);
+		if (excl_kernel)
+			str = "cycles:u";
+		else
+			str = "cycles";
 		pr_debug("Parsing event '%s'\n", str);
 		ret = parse_events(evlist, str, NULL);
 		if (ret < 0) {
@@ -663,7 +599,7 @@ static int do_test_code_reading(bool try_kcore)
 				continue;
 			}
 
-			if (verbose > 0) {
+			if (verbose) {
 				char errbuf[512];
 				perf_evlist__strerror_open(evlist, errno, errbuf, sizeof(errbuf));
 				pr_debug("perf_evlist__open() failed!\n%s\n", errbuf);
@@ -674,7 +610,7 @@ static int do_test_code_reading(bool try_kcore)
 		break;
 	}
 
-	ret = perf_evlist__mmap(evlist, UINT_MAX);
+	ret = perf_evlist__mmap(evlist, UINT_MAX, false);
 	if (ret < 0) {
 		pr_debug("perf_evlist__mmap failed\n");
 		goto out_put;
@@ -714,7 +650,7 @@ out_err:
 	return err;
 }
 
-int test__code_reading(struct test *test __maybe_unused, int subtest __maybe_unused)
+int test__code_reading(int subtest __maybe_unused)
 {
 	int ret;
 

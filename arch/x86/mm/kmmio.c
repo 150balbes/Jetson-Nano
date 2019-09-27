@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /* Support for MMIO probes.
  * Benfit many code from kprobes
  * (C) 2002 Louis Zhuang <louis.zhuang@intel.com>.
@@ -173,7 +172,7 @@ static int clear_page_presence(struct kmmio_fault_page *f, bool clear)
 		return -1;
 	}
 
-	__flush_tlb_one_kernel(f->addr);
+	__flush_tlb_one(f->addr);
 	return 0;
 }
 

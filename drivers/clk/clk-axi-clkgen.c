@@ -1,9 +1,11 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * AXI clkgen driver
  *
  * Copyright 2012-2013 Analog Devices Inc.
  *  Author: Lars-Peter Clausen <lars@metafoo.de>
+ *
+ * Licensed under the GPL-2.
+ *
  */
 
 #include <linux/platform_device.h>
@@ -300,17 +302,13 @@ static long axi_clkgen_round_rate(struct clk_hw *hw, unsigned long rate,
 	unsigned long *parent_rate)
 {
 	unsigned int d, m, dout;
-	unsigned long long tmp;
 
 	axi_clkgen_calc_params(*parent_rate, rate, &d, &m, &dout);
 
 	if (d == 0 || dout == 0 || m == 0)
 		return -EINVAL;
 
-	tmp = (unsigned long long)*parent_rate * m;
-	tmp = DIV_ROUND_CLOSEST_ULL(tmp, dout * d);
-
-	return min_t(unsigned long long, tmp, LONG_MAX);
+	return *parent_rate / d * m / dout;
 }
 
 static unsigned long axi_clkgen_recalc_rate(struct clk_hw *clk_hw,
@@ -346,8 +344,8 @@ static unsigned long axi_clkgen_recalc_rate(struct clk_hw *clk_hw,
 	if (d == 0 || dout == 0)
 		return 0;
 
-	tmp = (unsigned long long)parent_rate * m;
-	tmp = DIV_ROUND_CLOSEST_ULL(tmp, dout * d);
+	tmp = (unsigned long long)(parent_rate / d) * m;
+	do_div(tmp, dout);
 
 	return min_t(unsigned long long, tmp, ULONG_MAX);
 }

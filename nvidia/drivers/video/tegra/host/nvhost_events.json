@@ -1,0 +1,293 @@
+{
+    "Copyright": "Copyright (c) 2017-2019, NVIDIA Corporation.  All rights reserved.",
+
+    "Type"   : "EventProvider",
+    "Version": "1",
+
+    "EventProviderDomain": "NvMedia",
+    "EventProviderName": "nv_mm_nvhost",
+    "StructPrefix"     : "nv_mm_nvhost_",
+    "MacroPrefix"      : "NV_MM_NVHOST_",
+
+    "EventTypes": [
+
+        {
+            "Name"   : "task_submit",
+            "Comment": "Marks that the task is submitted to hardware",
+            "Fields" : [
+                { "Name": "class_id",        "Comment": "Engine class ID",
+                  "Type": "uint32_t",        "Format": "%x" },
+                { "Name": "syncpt_id",       "Comment": "Syncpoint ID",
+                  "Type": "uint32_t",        "Format": "%u" },
+                { "Name": "syncpt_thresh",   "Comment": "Threshold for task completion",
+                  "Type": "uint32_t",        "Format": "%u" },
+                { "Name": "pid",             "Comment": "PID",
+                  "Type": "uint32_t",        "Format": "%u" },
+                { "Name": "tid",             "Comment": "TID",
+                  "Type": "uint32_t",        "Format": "%u" }
+            ]
+        },
+
+        {
+            "Name"   : "task_begin",
+            "Comment": "Marks that the task is moving to execution",
+            "Fields" : [
+                { "Name": "class_id",        "Comment": "Engine class ID",
+                  "Type": "uint32_t",        "Format": "%x" },
+                { "Name": "syncpt_id",       "Comment": "Syncpoint ID",
+                  "Type": "uint32_t",        "Format": "%u" },
+                { "Name": "syncpt_thresh",   "Comment": "Threshold for task completion",
+                  "Type": "uint32_t",        "Format": "%u" }
+            ]
+        },
+
+        {
+            "Name"   : "task_end",
+            "Comment": "Marks that the task is completed",
+            "Fields" : [
+                { "Name": "class_id",        "Comment": "Engine class ID",
+                  "Type": "uint32_t",        "Format": "%x" },
+                { "Name": "syncpt_id",       "Comment": "Syncpoint ID",
+                  "Type": "uint32_t",        "Format": "%u" },
+                { "Name": "syncpt_thresh",   "Comment": "Threshold for task completion",
+                  "Type": "uint32_t",        "Format": "%u" }
+            ]
+        },
+
+        {
+            "Name"   : "task_fence",
+            "Comment": "Marks that the task waits for prefence or emits postfence",
+            "Fields" : [
+                { "Name": "class_id",        "Comment": "Engine class ID",
+                  "Type": "uint32_t",        "Format": "%x" },
+                { "Name": "kind",            "Comment": "Fence kind",
+                  "Type": "uint32_t",        "Format": "%u" },
+                { "Name": "fence_type",      "Comment": "Fence type",
+                  "Type": "uint32_t",        "Format": "%u" },
+                { "Name": "syncpt_id",       "Comment": "Syncpoint ID",
+                  "Type": "uint32_t",        "Format": "%u" },
+                { "Name": "syncpt_thresh",   "Comment": "Syncpoint threshold",
+                  "Type": "uint32_t",        "Format": "%u" },
+                { "Name": "task_syncpt_id",  "Comment": "Task syncpoint ID",
+                  "Type": "uint32_t",        "Format": "%u" },
+                { "Name": "task_syncpt_thresh", "Comment": "Task syncpoint threshold",
+                  "Type": "uint32_t",        "Format": "%u" },
+                { "Name": "sync_fd",         "Comment": "Syncpoint file descriptor",
+                  "Type": "uint32_t",        "Format": "%u" },
+                { "Name": "semaphore_handle", "Comment": "Syncpoint semaphore handle",
+                  "Type": "uint32_t",        "Format": "%u" },
+                { "Name": "semaphore_offset", "Comment": "Syncpoint semaphore offset",
+                  "Type": "uint32_t",        "Format": "%u" },
+                { "Name": "semaphore_value", "Comment": "Syncpoint semaphore value",
+                  "Type": "uint32_t",        "Format": "%u" }
+            ]
+        },
+
+        {
+          "Name"   : "vpu_perf_counter_begin",
+          "Comment": "Performance counters from Vision Processing Unit",
+          "Fields" : [
+              { "Name": "class_id",        "Comment": "Engine class ID",
+                "Type": "uint32_t",        "Format": "%x" },
+              { "Name": "syncpt_id",       "Comment": "Syncpoint ID",
+                "Type": "uint32_t",        "Format": "%u" },
+              { "Name": "syncpt_thresh",   "Comment": "Threshold for task completion",
+                "Type": "uint32_t",        "Format": "%u" },
+              { "Name": "operation",       "Comment": "VPU Operation ID",
+                "Type": "uint32_t",        "Format": "%u" },
+              { "Name": "tag",             "Comment": "Numeric tag for performance counter",
+                "Type": "uint32_t",        "Format": "%u" },
+              { "Name": "count",           "Comment": "Hit count",
+                "Type": "uint32_t",        "Format": "%u" },
+              { "Name": "average",         "Comment": "Average cycle count",
+                "Type": "uint32_t",        "Format": "%u" },
+              { "Name": "variance",        "Comment": "Variance of cycle count",
+                "Type": "uint64_t",        "Format": "%llu" },
+              { "Name": "minimum",         "Comment": "Best case (minimum VPU cycles)",
+                "Type": "uint32_t",        "Format": "%u" },
+              { "Name": "maximum",         "Comment": "Worst case (maximum VPU cycles)",
+                "Type": "uint32_t",        "Format": "%u" }
+          ]
+      },
+
+      {
+          "Name"   : "vpu_perf_counter_end",
+          "Comment": "Performance counters from Vision Processing Unit",
+          "Fields" : [
+              { "Name": "class_id",        "Comment": "Engine class ID",
+                "Type": "uint32_t",        "Format": "%x" },
+              { "Name": "syncpt_id",       "Comment": "Syncpoint ID",
+                "Type": "uint32_t",        "Format": "%u" },
+              { "Name": "syncpt_thresh",   "Comment": "Threshold for task completion",
+                "Type": "uint32_t",        "Format": "%u" },
+              { "Name": "operation",       "Comment": "VPU Operation ID",
+                "Type": "uint32_t",        "Format": "%u" },
+              { "Name": "tag",             "Comment": "Numeric tag for performance counter",
+                "Type": "uint32_t",        "Format": "%u" },
+              { "Name": "count",           "Comment": "Hit count",
+                "Type": "uint32_t",        "Format": "%u" },
+              { "Name": "average",         "Comment": "Average cycle count",
+                "Type": "uint32_t",        "Format": "%u" },
+              { "Name": "variance",        "Comment": "Variance of cycle count",
+                "Type": "uint64_t",        "Format": "%llu" },
+              { "Name": "minimum",         "Comment": "Best case (minimum VPU cycles)",
+                "Type": "uint32_t",        "Format": "%u" },
+              { "Name": "maximum",         "Comment": "Worst case (maximum VPU cycles)",
+                "Type": "uint32_t",        "Format": "%u" }
+          ]
+      },
+
+      {
+        "Name"   : "pva_queue_begin",
+        "Comment": "Task is placed in R5 queue",
+        "Fields" : [
+            { "Name": "class_id",        "Comment": "Engine class ID",
+              "Type": "uint32_t",        "Format": "%x" },
+            { "Name": "syncpt_id",       "Comment": "Syncpoint ID",
+              "Type": "uint32_t",        "Format": "%u" },
+            { "Name": "syncpt_thresh",   "Comment": "Threshold for task completion",
+              "Type": "uint32_t",        "Format": "%u" },
+            { "Name": "operation",       "Comment": "VPU Operation ID",
+              "Type": "uint32_t",        "Format": "%u" }
+        ]
+      },
+
+      {
+        "Name"   : "pva_queue_end",
+        "Comment": "Task is dequed from R5 queue",
+        "Fields" : [
+            { "Name": "class_id",        "Comment": "Engine class ID",
+              "Type": "uint32_t",        "Format": "%x" },
+            { "Name": "syncpt_id",       "Comment": "Syncpoint ID",
+              "Type": "uint32_t",        "Format": "%u" },
+            { "Name": "syncpt_thresh",   "Comment": "Threshold for task completion",
+              "Type": "uint32_t",        "Format": "%u" },
+            { "Name": "operation",       "Comment": "VPU Operation ID",
+              "Type": "uint32_t",        "Format": "%u" }
+        ]
+      },
+
+      {
+        "Name"   : "pva_prepare_begin",
+        "Comment": "Task is prepared for VPU",
+        "Fields" : [
+          { "Name": "class_id",        "Comment": "Engine class ID",
+            "Type": "uint32_t",        "Format": "%x" },
+          { "Name": "syncpt_id",       "Comment": "Syncpoint ID",
+            "Type": "uint32_t",        "Format": "%u" },
+          { "Name": "syncpt_thresh",   "Comment": "Threshold for task completion",
+            "Type": "uint32_t",        "Format": "%u" },
+          { "Name": "operation",       "Comment": "VPU Operation ID",
+            "Type": "uint32_t",        "Format": "%u" }
+        ]
+      },
+
+      {
+        "Name"   : "pva_prepare_end",
+        "Comment": "Task preparation is done",
+        "Fields" : [
+          { "Name": "class_id",        "Comment": "Engine class ID",
+            "Type": "uint32_t",        "Format": "%x" },
+          { "Name": "syncpt_id",       "Comment": "Syncpoint ID",
+            "Type": "uint32_t",        "Format": "%u" },
+          { "Name": "syncpt_thresh",   "Comment": "Threshold for task completion",
+            "Type": "uint32_t",        "Format": "%u" },
+          { "Name": "operation",       "Comment": "VPU Operation ID",
+            "Type": "uint32_t",        "Format": "%u" }
+        ]
+      },
+
+      {
+        "Name"   : "pva_vpu0_begin",
+        "Comment": "Start execution on VPU0",
+        "Fields" : [
+          { "Name": "class_id",        "Comment": "Engine class ID",
+            "Type": "uint32_t",        "Format": "%x" },
+          { "Name": "syncpt_id",       "Comment": "Syncpoint ID",
+            "Type": "uint32_t",        "Format": "%u" },
+          { "Name": "syncpt_thresh",   "Comment": "Threshold for task completion",
+            "Type": "uint32_t",        "Format": "%u" },
+          { "Name": "operation",       "Comment": "VPU Operation ID",
+            "Type": "uint32_t",        "Format": "%u" }
+        ]
+      },
+
+      {
+        "Name"   : "pva_vpu0_end",
+        "Comment": "Finish execution on VPU0",
+        "Fields" : [
+          { "Name": "class_id",        "Comment": "Engine class ID",
+            "Type": "uint32_t",        "Format": "%x" },
+          { "Name": "syncpt_id",       "Comment": "Syncpoint ID",
+            "Type": "uint32_t",        "Format": "%u" },
+          { "Name": "syncpt_thresh",   "Comment": "Threshold for task completion",
+            "Type": "uint32_t",        "Format": "%u" },
+          { "Name": "operation",       "Comment": "VPU Operation ID",
+            "Type": "uint32_t",        "Format": "%u" }
+        ]
+      },
+
+      {
+        "Name"   : "pva_vpu1_begin",
+        "Comment": "Start execution on VPU1",
+        "Fields" : [
+          { "Name": "class_id",        "Comment": "Engine class ID",
+            "Type": "uint32_t",        "Format": "%x" },
+          { "Name": "syncpt_id",       "Comment": "Syncpoint ID",
+            "Type": "uint32_t",        "Format": "%u" },
+          { "Name": "syncpt_thresh",   "Comment": "Threshold for task completion",
+            "Type": "uint32_t",        "Format": "%u" },
+          { "Name": "operation",       "Comment": "VPU Operation ID",
+            "Type": "uint32_t",        "Format": "%u" }
+        ]
+      },
+
+      {
+        "Name"   : "pva_vpu1_end",
+        "Comment": "Finish execution on VPU1",
+        "Fields" : [
+          { "Name": "class_id",        "Comment": "Engine class ID",
+            "Type": "uint32_t",        "Format": "%x" },
+          { "Name": "syncpt_id",       "Comment": "Syncpoint ID",
+            "Type": "uint32_t",        "Format": "%u" },
+          { "Name": "syncpt_thresh",   "Comment": "Threshold for task completion",
+            "Type": "uint32_t",        "Format": "%u" },
+          { "Name": "operation",       "Comment": "VPU Operation ID",
+            "Type": "uint32_t",        "Format": "%u" }
+        ]
+      },
+
+      {
+        "Name"   : "pva_post_begin",
+        "Comment": "Post actions of the kernel",
+        "Fields" : [
+          { "Name": "class_id",        "Comment": "Engine class ID",
+            "Type": "uint32_t",        "Format": "%x" },
+          { "Name": "syncpt_id",       "Comment": "Syncpoint ID",
+            "Type": "uint32_t",        "Format": "%u" },
+          { "Name": "syncpt_thresh",   "Comment": "Threshold for task completion",
+            "Type": "uint32_t",        "Format": "%u" },
+          { "Name": "operation",       "Comment": "VPU Operation ID",
+            "Type": "uint32_t",        "Format": "%u" }
+        ]
+      },
+
+      {
+        "Name"   : "pva_post_end",
+        "Comment": "Task is done",
+        "Fields" : [
+          { "Name": "class_id",        "Comment": "Engine class ID",
+            "Type": "uint32_t",        "Format": "%x" },
+          { "Name": "syncpt_id",       "Comment": "Syncpoint ID",
+            "Type": "uint32_t",        "Format": "%u" },
+          { "Name": "syncpt_thresh",   "Comment": "Threshold for task completion",
+            "Type": "uint32_t",        "Format": "%u" },
+          { "Name": "operation",       "Comment": "VPU Operation ID",
+            "Type": "uint32_t",        "Format": "%u" }
+        ]
+      }
+    ],
+
+    "Filtering": {
+    }
+}

@@ -1,20 +1,18 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __USBAUDIO_CARD_H
 #define __USBAUDIO_CARD_H
 
 #define MAX_NR_RATES	1024
-#define MAX_PACKS	6		/* per URB */
+#define MAX_PACKS	20
 #define MAX_PACKS_HS	(MAX_PACKS * 8)	/* in high speed mode */
-#define MAX_URBS	12
+#define MAX_URBS	8
 #define SYNC_URBS	4	/* always four urbs for sync */
-#define MAX_QUEUE	18	/* try not to exceed this queue length, in ms */
+#define MAX_QUEUE	24	/* try not to exceed this queue length, in ms */
 
 struct audioformat {
 	struct list_head list;
 	u64 formats;			/* ALSA format bits */
 	unsigned int channels;		/* # channels */
 	unsigned int fmt_type;		/* USB audio format type (1-3) */
-	unsigned int fmt_bits;		/* number of significant bits */
 	unsigned int frame_size;	/* samples per frame for non-audio */
 	int iface;			/* interface number */
 	unsigned char altsetting;	/* corresponding alternate setting */
@@ -23,7 +21,7 @@ struct audioformat {
 	unsigned char endpoint;		/* endpoint */
 	unsigned char ep_attr;		/* endpoint attributes */
 	unsigned char datainterval;	/* log_2 of data packet interval */
-	unsigned char protocol;		/* UAC_VERSION_1/2/3 */
+	unsigned char protocol;		/* UAC_VERSION_1/2 */
 	unsigned int maxpacksize;	/* max. packet size */
 	unsigned int rates;		/* rate bitmasks */
 	unsigned int rate_min, rate_max;	/* min/max rates */
@@ -33,12 +31,10 @@ struct audioformat {
 	struct snd_pcm_chmap_elem *chmap; /* (optional) channel map */
 	bool dsd_dop;			/* add DOP headers in case of DSD samples */
 	bool dsd_bitrev;		/* reverse the bits of each DSD sample */
-	bool dsd_raw;			/* altsetting is raw DSD */
 };
 
 struct snd_usb_substream;
 struct snd_usb_endpoint;
-struct snd_usb_power_domain;
 
 struct snd_urb_ctx {
 	struct urb *urb;
@@ -91,7 +87,6 @@ struct snd_usb_endpoint {
 	unsigned int phase;		/* phase accumulator */
 	unsigned int maxpacksize;	/* max packet size in bytes */
 	unsigned int maxframesize;      /* max packet size in frames */
-	unsigned int max_urb_frames;	/* max URB size in frames */
 	unsigned int curpacksize;	/* current packet size in bytes (for capture) */
 	unsigned int curframesize;      /* current packet size in frames (for capture) */
 	unsigned int syncmaxsize;	/* sync endpoint packet size */
@@ -109,8 +104,6 @@ struct snd_usb_endpoint {
 	struct list_head list;
 };
 
-struct media_ctl;
-
 struct snd_usb_substream {
 	struct snd_usb_stream *stream;
 	struct usb_device *dev;
@@ -119,14 +112,11 @@ struct snd_usb_substream {
 	int interface;	/* current interface */
 	int endpoint;	/* assigned endpoint */
 	struct audioformat *cur_audiofmt;	/* current audioformat pointer (for hw_params callback) */
-	struct snd_usb_power_domain *str_pd;	/* UAC3 Power Domain for streaming path */
 	snd_pcm_format_t pcm_format;	/* current audio format (for hw_params callback) */
 	unsigned int channels;		/* current number of channels (for hw_params callback) */
 	unsigned int channels_max;	/* max channels in the all audiofmts */
 	unsigned int cur_rate;		/* current rate (for hw_params callback) */
 	unsigned int period_bytes;	/* current period bytes (for hw_params callback) */
-	unsigned int period_frames;	/* current frames per period */
-	unsigned int buffer_periods;	/* current periods per buffer */
 	unsigned int altset_idx;     /* USB data format: index of alternate setting */
 	unsigned int txfr_quirk:1;	/* allow sub-frame alignment */
 	unsigned int tx_length_quirk:1;	/* add length specifier to transfers */
@@ -137,7 +127,6 @@ struct snd_usb_substream {
 
 	unsigned int hwptr_done;	/* processed byte position in the buffer */
 	unsigned int transfer_done;		/* processed frames since last period update */
-	unsigned int frame_limit;	/* limits number of packets in URB */
 
 	/* data and sync endpoints for this stream */
 	unsigned int ep_num;		/* the endpoint number */
@@ -163,7 +152,7 @@ struct snd_usb_substream {
 	} dsd_dop;
 
 	bool trigger_tstamp_pending_update; /* trigger timestamp being updated from initial estimate */
-	struct media_ctl *media_ctl;
+	unsigned long last_prepare;
 };
 
 struct snd_usb_stream {

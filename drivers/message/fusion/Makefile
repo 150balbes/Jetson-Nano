@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0
 # Fusion MPT drivers; recognized debug defines...
 
 # enable verbose logging

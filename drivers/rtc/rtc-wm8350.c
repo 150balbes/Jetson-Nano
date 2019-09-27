@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  *	Real Time Clock driver for Wolfson Microelectronics WM8350
  *
@@ -6,6 +5,12 @@
  *
  *  Author: Liam Girdwood
  *          linux@wolfsonmicro.com
+ *
+ *  This program is free software; you can redistribute  it and/or modify it
+ *  under  the terms of  the GNU General  Public License as published by the
+ *  Free Software Foundation;  either version 2 of the  License, or (at your
+ *  option) any later version.
+ *
  */
 
 #include <linux/module.h>
@@ -24,6 +29,8 @@
 #define WM8350_SET_ALM_RETRIES	5
 #define WM8350_SET_TIME_RETRIES	5
 #define WM8350_GET_TIME_RETRIES	5
+
+#define to_wm8350_from_rtc_dev(d) container_of(d, struct wm8350, rtc.pdev.dev)
 
 /*
  * Read current time and date in RTC
@@ -335,7 +342,8 @@ static const struct rtc_class_ops wm8350_rtc_ops = {
 #ifdef CONFIG_PM_SLEEP
 static int wm8350_rtc_suspend(struct device *dev)
 {
-	struct wm8350 *wm8350 = dev_get_drvdata(dev);
+	struct platform_device *pdev = to_platform_device(dev);
+	struct wm8350 *wm8350 = dev_get_drvdata(&pdev->dev);
 	int ret = 0;
 	u16 reg;
 
@@ -345,7 +353,8 @@ static int wm8350_rtc_suspend(struct device *dev)
 	    reg & WM8350_RTC_ALMSTS) {
 		ret = wm8350_rtc_stop_alarm(wm8350);
 		if (ret != 0)
-			dev_err(dev, "Failed to stop RTC alarm: %d\n", ret);
+			dev_err(&pdev->dev, "Failed to stop RTC alarm: %d\n",
+				ret);
 	}
 
 	return ret;
@@ -353,13 +362,15 @@ static int wm8350_rtc_suspend(struct device *dev)
 
 static int wm8350_rtc_resume(struct device *dev)
 {
-	struct wm8350 *wm8350 = dev_get_drvdata(dev);
+	struct platform_device *pdev = to_platform_device(dev);
+	struct wm8350 *wm8350 = dev_get_drvdata(&pdev->dev);
 	int ret;
 
 	if (wm8350->rtc.alarm_enabled) {
 		ret = wm8350_rtc_start_alarm(wm8350);
 		if (ret != 0)
-			dev_err(dev, "Failed to restart RTC alarm: %d\n", ret);
+			dev_err(&pdev->dev,
+				"Failed to restart RTC alarm: %d\n", ret);
 	}
 
 	return 0;

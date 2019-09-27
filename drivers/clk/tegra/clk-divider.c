@@ -1,12 +1,25 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2012, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2012-2017, NVIDIA CORPORATION.  All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms and conditions of the GNU General Public License,
+ * version 2, as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include <linux/clk.h>
 #include <linux/kernel.h>
 #include <linux/io.h>
 #include <linux/err.h>
 #include <linux/slab.h>
+#include <linux/delay.h>
 #include <linux/clk-provider.h>
 
 #include "clk.h"
@@ -23,8 +36,8 @@ static int get_div(struct tegra_clk_frac_div *divider, unsigned long rate,
 {
 	int div;
 
-	div = div_frac_get(rate, parent_rate, divider->width,
-			   divider->frac_width, divider->flags);
+	div = div71_get(rate, parent_rate, divider->width, divider->frac_width,
+			divider->flags);
 
 	if (div < 0)
 		return 0;
@@ -53,23 +66,33 @@ static unsigned long clk_frac_div_recalc_rate(struct clk_hw *hw,
 	return rate;
 }
 
-static long clk_frac_div_round_rate(struct clk_hw *hw, unsigned long rate,
-				   unsigned long *prate)
+static int clk_frac_div_determine_rate(struct clk_hw *hw,
+				       struct clk_rate_request *req)
 {
 	struct tegra_clk_frac_div *divider = to_clk_frac_div(hw);
 	int div, mul;
-	unsigned long output_rate = *prate;
+	unsigned long output_rate = req->best_parent_rate;
 
-	if (!rate)
+	req->rate = max(req->rate, req->min_rate);
+	req->rate = min(req->rate, req->max_rate);
+
+	if (!req->rate)
 		return output_rate;
 
-	div = get_div(divider, rate, output_rate);
-	if (div < 0)
-		return *prate;
+	div = get_div(divider, req->rate, output_rate);
+	if (div < 0) {
+		req->rate = req->best_parent_rate;
+		return 0;
+	}
 
 	mul = get_mul(divider);
 
-	return DIV_ROUND_UP(output_rate * mul, div + mul);
+	if (divider->flags & TEGRA_DIVIDER_ROUND_UP)
+		req->rate =  DIV_ROUND_UP(output_rate * mul, div + mul);
+	else
+		req->rate =  output_rate * mul / (div + mul);
+
+	return 0;
 }
 
 static int clk_frac_div_set_rate(struct clk_hw *hw, unsigned long rate,
@@ -102,6 +125,7 @@ static int clk_frac_div_set_rate(struct clk_hw *hw, unsigned long rate,
 		val |= pll_out_override(divider);
 
 	writel_relaxed(val, divider->reg);
+	fence_udelay(2, divider->reg);
 
 	if (divider->lock)
 		spin_unlock_irqrestore(divider->lock, flags);
@@ -112,7 +136,7 @@ static int clk_frac_div_set_rate(struct clk_hw *hw, unsigned long rate,
 const struct clk_ops tegra_clk_frac_div_ops = {
 	.recalc_rate = clk_frac_div_recalc_rate,
 	.set_rate = clk_frac_div_set_rate,
-	.round_rate = clk_frac_div_round_rate,
+	.determine_rate = clk_frac_div_determine_rate,
 };
 
 struct clk *tegra_clk_register_divider(const char *name,
@@ -163,8 +187,38 @@ static const struct clk_div_table mc_div_table[] = {
 struct clk *tegra_clk_register_mc(const char *name, const char *parent_name,
 				  void __iomem *reg, spinlock_t *lock)
 {
-	return clk_register_divider_table(NULL, name, parent_name,
-					  CLK_IS_CRITICAL,
-					  reg, 16, 1, CLK_DIVIDER_READ_ONLY,
-					  mc_div_table, lock);
+	return clk_register_divider_table(NULL, name, parent_name, 0, reg,
+					  16, 1, 0, mc_div_table, lock);
 }
+
+static const struct clk_div_table mc_div_table_t210[] = {
+	{ .val = 0, .div = 2 },
+	{ .val = 1, .div = 4 },
+	{ .val = 2, .div = 1 },
+	{ .val = 3, .div = 2 },
+	{ .val = 0, .div = 0 },
+};
+
+struct clk *tegra_clk_register_mc_t210(const char *name,
+		const char *parent_name, void __iomem *reg, spinlock_t *lock)
+{
+	return clk_register_divider_table(NULL, name, parent_name, 0, reg,
+		15, 2, CLK_DIVIDER_READ_ONLY, mc_div_table_t210, lock);
+}
+
+#if defined(CONFIG_PM_SLEEP)
+void tegra_clk_divider_resume(struct clk_hw *hw, unsigned long rate)
+{
+	struct clk_hw *parent = clk_hw_get_parent(hw);
+	unsigned long parent_rate;
+
+	if (IS_ERR(parent)) {
+		WARN_ON(1);
+		return;
+	}
+	parent_rate = clk_hw_get_rate(parent);
+
+	if (clk_frac_div_set_rate(hw, rate, parent_rate) < 0)
+		WARN_ON(1);
+}
+#endif

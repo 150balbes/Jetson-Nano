@@ -1,8 +1,21 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  *  linux/arch/arm/mach-integrator/integrator_ap.c
  *
  *  Copyright (C) 2000-2003 Deep Blue Solutions Ltd
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
 #include <linux/kernel.h>
 #include <linux/init.h>
@@ -14,8 +27,6 @@
 #include <linux/of_address.h>
 #include <linux/of_platform.h>
 #include <linux/termios.h>
-#include <linux/mfd/syscon.h>
-#include <linux/regmap.h>
 
 #include <asm/mach/arch.h>
 #include <asm/mach/map.h>
@@ -23,10 +34,14 @@
 #include "hardware.h"
 #include "cm.h"
 #include "common.h"
+#include "pci_v3.h"
 #include "lm.h"
 
-/* Regmap to the AP system controller */
-static struct regmap *ap_syscon_map;
+/* Base address to the AP system controller */
+void __iomem *ap_syscon_base;
+/* Base address to the external bus interface */
+static void __iomem *ebi_base;
+
 
 /*
  * All IO addresses are mapped onto VA 0xFFFx.xxxx, where x.xxxx
@@ -60,6 +75,7 @@ static struct map_desc ap_io_desc[] __initdata __maybe_unused = {
 static void __init ap_map_io(void)
 {
 	iotable_init(ap_io_desc, ARRAY_SIZE(ap_io_desc));
+	pci_v3_early_init();
 }
 
 #ifdef CONFIG_PM
@@ -109,7 +125,6 @@ static void integrator_uart_set_mctrl(struct amba_device *dev,
 {
 	unsigned int ctrls = 0, ctrlc = 0, rts_mask, dtr_mask;
 	u32 phybase = dev->res.start;
-	int ret;
 
 	if (phybase == INTEGRATOR_UART0_BASE) {
 		/* UART0 */
@@ -131,17 +146,8 @@ static void integrator_uart_set_mctrl(struct amba_device *dev,
 	else
 		ctrls |= dtr_mask;
 
-	ret = regmap_write(ap_syscon_map,
-			   INTEGRATOR_SC_CTRLS_OFFSET,
-			   ctrls);
-	if (ret)
-		pr_err("MODEM: unable to write PL010 UART CTRLS\n");
-
-	ret = regmap_write(ap_syscon_map,
-			   INTEGRATOR_SC_CTRLC_OFFSET,
-			   ctrlc);
-	if (ret)
-		pr_err("MODEM: unable to write PL010 UART CRTLC\n");
+	__raw_writel(ctrls, ap_syscon_base + INTEGRATOR_SC_CTRLS_OFFSET);
+	__raw_writel(ctrlc, ap_syscon_base + INTEGRATOR_SC_CTRLC_OFFSET);
 }
 
 struct amba_pl010_data ap_uart_data = {
@@ -172,32 +178,35 @@ static const struct of_device_id ap_syscon_match[] = {
 	{ },
 };
 
+static const struct of_device_id ebi_match[] = {
+	{ .compatible = "arm,external-bus-interface"},
+	{ },
+};
+
 static void __init ap_init_of(void)
 {
-	u32 sc_dec;
+	unsigned long sc_dec;
 	struct device_node *syscon;
-	int ret;
+	struct device_node *ebi;
 	int i;
-
-	of_platform_default_populate(NULL, ap_auxdata_lookup, NULL);
 
 	syscon = of_find_matching_node(NULL, ap_syscon_match);
 	if (!syscon)
 		return;
-	ap_syscon_map = syscon_node_to_regmap(syscon);
-	if (IS_ERR(ap_syscon_map)) {
-		pr_crit("could not find Integrator/AP system controller\n");
+	ebi = of_find_matching_node(NULL, ebi_match);
+	if (!ebi)
 		return;
-	}
 
-	ret = regmap_read(ap_syscon_map,
-			  INTEGRATOR_SC_DEC_OFFSET,
-			  &sc_dec);
-	if (ret) {
-		pr_crit("could not read from Integrator/AP syscon\n");
+	ap_syscon_base = of_iomap(syscon, 0);
+	if (!ap_syscon_base)
 		return;
-	}
+	ebi_base = of_iomap(ebi, 0);
+	if (!ebi_base)
+		return;
 
+	of_platform_default_populate(NULL, ap_auxdata_lookup, NULL);
+
+	sc_dec = readl(ap_syscon_base + INTEGRATOR_SC_DEC_OFFSET);
 	for (i = 0; i < 4; i++) {
 		struct lm_device *lmdev;
 

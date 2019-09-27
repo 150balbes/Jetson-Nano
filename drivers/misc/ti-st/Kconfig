@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0-only
 #
 # TI's shared transport line discipline and the protocol
 # drivers (BT, FM and GPS)
@@ -6,8 +5,7 @@
 menu "Texas Instruments shared transport line discipline"
 config TI_ST
 	tristate "Shared transport core driver"
-	depends on NET && TTY
-	depends on GPIOLIB || COMPILE_TEST
+	depends on NET && GPIOLIB && TTY
 	select FW_LOADER
 	help
 	  This enables the shared transport core driver for TI

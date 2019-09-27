@@ -1,9 +1,18 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Sony NFC Port-100 Series driver
  * Copyright (c) 2013, Intel Corporation.
  *
  * Partly based/Inspired by Stephen Tiedemann's nfcpy
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms and conditions of the GNU General Public License,
+ * version 2, as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ *
  */
 
 #include <linux/module.h>
@@ -12,9 +21,8 @@
 
 #define VERSION "0.1"
 
-#define SONY_VENDOR_ID		0x054c
-#define RCS380S_PRODUCT_ID	0x06c1
-#define RCS380P_PRODUCT_ID	0x06c3
+#define SONY_VENDOR_ID    0x054c
+#define RCS380_PRODUCT_ID 0x06c1
 
 #define PORT100_PROTOCOLS (NFC_PROTO_JEWEL_MASK    | \
 			   NFC_PROTO_MIFARE_MASK   | \
@@ -982,7 +990,7 @@ static int port100_set_command_type(struct port100 *dev, u8 command_type)
 	if (!skb)
 		return -ENOMEM;
 
-	skb_put_u8(skb, command_type);
+	*skb_put(skb, sizeof(u8)) = command_type;
 
 	resp = port100_send_cmd_sync(dev, PORT100_CMD_SET_COMMAND_TYPE, skb);
 	if (IS_ERR(resp))
@@ -1050,7 +1058,7 @@ static int port100_switch_rf(struct nfc_digital_dev *ddev, bool on)
 	if (!skb)
 		return -ENOMEM;
 
-	skb_put_u8(skb, on ? 1 : 0);
+	*skb_put(skb, 1) = on ? 1 : 0;
 
 	/* Cancel the last command if the device is being switched off */
 	if (!on)
@@ -1080,8 +1088,9 @@ static int port100_in_set_rf(struct nfc_digital_dev *ddev, u8 rf)
 	if (!skb)
 		return -ENOMEM;
 
-	skb_put_data(skb, &in_rf_settings[rf],
-		     sizeof(struct port100_in_rf_setting));
+	memcpy(skb_put(skb, sizeof(struct port100_in_rf_setting)),
+	       &in_rf_settings[rf],
+	       sizeof(struct port100_in_rf_setting));
 
 	resp = port100_send_cmd_sync(dev, PORT100_CMD_IN_SET_RF, skb);
 
@@ -1123,7 +1132,7 @@ static int port100_in_set_framing(struct nfc_digital_dev *ddev, int param)
 	if (!skb)
 		return -ENOMEM;
 
-	skb_put_data(skb, protocols, size);
+	memcpy(skb_put(skb, size), protocols, size);
 
 	resp = port100_send_cmd_sync(dev, PORT100_CMD_IN_SET_PROTOCOL, skb);
 
@@ -1237,8 +1246,9 @@ static int port100_tg_set_rf(struct nfc_digital_dev *ddev, u8 rf)
 	if (!skb)
 		return -ENOMEM;
 
-	skb_put_data(skb, &tg_rf_settings[rf],
-		     sizeof(struct port100_tg_rf_setting));
+	memcpy(skb_put(skb, sizeof(struct port100_tg_rf_setting)),
+	       &tg_rf_settings[rf],
+	       sizeof(struct port100_tg_rf_setting));
 
 	resp = port100_send_cmd_sync(dev, PORT100_CMD_TG_SET_RF, skb);
 
@@ -1280,7 +1290,7 @@ static int port100_tg_set_framing(struct nfc_digital_dev *ddev, int param)
 	if (!skb)
 		return -ENOMEM;
 
-	skb_put_data(skb, protocols, size);
+	memcpy(skb_put(skb, size), protocols, size);
 
 	resp = port100_send_cmd_sync(dev, PORT100_CMD_TG_SET_PROTOCOL, skb);
 
@@ -1477,8 +1487,7 @@ static struct nfc_digital_ops port100_digital_ops = {
 };
 
 static const struct usb_device_id port100_table[] = {
-	{ USB_DEVICE(SONY_VENDOR_ID, RCS380S_PRODUCT_ID), },
-	{ USB_DEVICE(SONY_VENDOR_ID, RCS380P_PRODUCT_ID), },
+	{ USB_DEVICE(SONY_VENDOR_ID, RCS380_PRODUCT_ID), },
 	{ }
 };
 MODULE_DEVICE_TABLE(usb, port100_table);
@@ -1539,7 +1548,6 @@ static int port100_probe(struct usb_interface *interface,
 	usb_fill_bulk_urb(dev->out_urb, dev->udev,
 			  usb_sndbulkpipe(dev->udev, out_endpoint),
 			  NULL, 0, port100_send_complete, dev);
-	dev->out_urb->transfer_flags = URB_ZERO_PACKET;
 
 	dev->skb_headroom = PORT100_FRAME_HEADER_LEN +
 			    PORT100_COMM_RF_HEAD_MAX_LEN;

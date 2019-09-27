@@ -1,5 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0
-#include <linux/sched/signal.h>
+#include <linux/sched.h>
 #include <linux/errno.h>
 #include <linux/dcache.h>
 #include <linux/path.h>
@@ -81,42 +80,11 @@ static const struct file_operations proc_fdinfo_file_operations = {
 	.release	= single_release,
 };
 
-static bool tid_fd_mode(struct task_struct *task, unsigned fd, fmode_t *mode)
-{
-	struct files_struct *files = get_files_struct(task);
-	struct file *file;
-
-	if (!files)
-		return false;
-
-	rcu_read_lock();
-	file = fcheck_files(files, fd);
-	if (file)
-		*mode = file->f_mode;
-	rcu_read_unlock();
-	put_files_struct(files);
-	return !!file;
-}
-
-static void tid_fd_update_inode(struct task_struct *task, struct inode *inode,
-				fmode_t f_mode)
-{
-	task_dump_owner(task, 0, &inode->i_uid, &inode->i_gid);
-
-	if (S_ISLNK(inode->i_mode)) {
-		unsigned i_mode = S_IFLNK;
-		if (f_mode & FMODE_READ)
-			i_mode |= S_IRUSR | S_IXUSR;
-		if (f_mode & FMODE_WRITE)
-			i_mode |= S_IWUSR | S_IXUSR;
-		inode->i_mode = i_mode;
-	}
-	security_task_to_inode(task, inode);
-}
-
 static int tid_fd_revalidate(struct dentry *dentry, unsigned int flags)
 {
+	struct files_struct *files;
 	struct task_struct *task;
+	const struct cred *cred;
 	struct inode *inode;
 	unsigned int fd;
 
@@ -128,11 +96,44 @@ static int tid_fd_revalidate(struct dentry *dentry, unsigned int flags)
 	fd = proc_fd(inode);
 
 	if (task) {
-		fmode_t f_mode;
-		if (tid_fd_mode(task, fd, &f_mode)) {
-			tid_fd_update_inode(task, inode, f_mode);
-			put_task_struct(task);
-			return 1;
+		files = get_files_struct(task);
+		if (files) {
+			struct file *file;
+
+			rcu_read_lock();
+			file = fcheck_files(files, fd);
+			if (file) {
+				unsigned f_mode = file->f_mode;
+
+				rcu_read_unlock();
+				put_files_struct(files);
+
+				if (task_dumpable(task)) {
+					rcu_read_lock();
+					cred = __task_cred(task);
+					inode->i_uid = cred->euid;
+					inode->i_gid = cred->egid;
+					rcu_read_unlock();
+				} else {
+					inode->i_uid = GLOBAL_ROOT_UID;
+					inode->i_gid = GLOBAL_ROOT_GID;
+				}
+
+				if (S_ISLNK(inode->i_mode)) {
+					unsigned i_mode = S_IFLNK;
+					if (f_mode & FMODE_READ)
+						i_mode |= S_IRUSR | S_IXUSR;
+					if (f_mode & FMODE_WRITE)
+						i_mode |= S_IWUSR | S_IXUSR;
+					inode->i_mode = i_mode;
+				}
+
+				security_task_to_inode(task, inode);
+				put_task_struct(task);
+				return 1;
+			}
+			rcu_read_unlock();
+			put_files_struct(files);
 		}
 		put_task_struct(task);
 	}
@@ -174,33 +175,35 @@ static int proc_fd_link(struct dentry *dentry, struct path *path)
 	return ret;
 }
 
-struct fd_data {
-	fmode_t mode;
-	unsigned fd;
-};
-
-static struct dentry *proc_fd_instantiate(struct dentry *dentry,
-	struct task_struct *task, const void *ptr)
+static int
+proc_fd_instantiate(struct inode *dir, struct dentry *dentry,
+		    struct task_struct *task, const void *ptr)
 {
-	const struct fd_data *data = ptr;
+	unsigned fd = (unsigned long)ptr;
 	struct proc_inode *ei;
 	struct inode *inode;
 
-	inode = proc_pid_make_inode(dentry->d_sb, task, S_IFLNK);
+	inode = proc_pid_make_inode(dir->i_sb, task);
 	if (!inode)
-		return ERR_PTR(-ENOENT);
+		goto out;
 
 	ei = PROC_I(inode);
-	ei->fd = data->fd;
+	ei->fd = fd;
 
+	inode->i_mode = S_IFLNK;
 	inode->i_op = &proc_pid_link_inode_operations;
 	inode->i_size = 64;
 
 	ei->op.proc_get_link = proc_fd_link;
-	tid_fd_update_inode(task, inode, data->mode);
 
 	d_set_d_op(dentry, &tid_fd_dentry_operations);
-	return d_splice_alias(inode, dentry);
+	d_add(dentry, inode);
+
+	/* Close the race of the process dying before we return the dentry */
+	if (tid_fd_revalidate(dentry, 0))
+		return 0;
+ out:
+	return -ENOENT;
 }
 
 static struct dentry *proc_lookupfd_common(struct inode *dir,
@@ -208,21 +211,19 @@ static struct dentry *proc_lookupfd_common(struct inode *dir,
 					   instantiate_t instantiate)
 {
 	struct task_struct *task = get_proc_task(dir);
-	struct fd_data data = {.fd = name_to_int(&dentry->d_name)};
-	struct dentry *result = ERR_PTR(-ENOENT);
+	int result = -ENOENT;
+	unsigned fd = name_to_int(&dentry->d_name);
 
 	if (!task)
 		goto out_no_task;
-	if (data.fd == ~0U)
-		goto out;
-	if (!tid_fd_mode(task, data.fd, &data.mode))
+	if (fd == ~0U)
 		goto out;
 
-	result = instantiate(dentry, task, &data);
+	result = instantiate(dir, dentry, task, (void *)(unsigned long)fd);
 out:
 	put_task_struct(task);
 out_no_task:
-	return result;
+	return ERR_PTR(result);
 }
 
 static int proc_readfd_common(struct file *file, struct dir_context *ctx,
@@ -245,22 +246,17 @@ static int proc_readfd_common(struct file *file, struct dir_context *ctx,
 	for (fd = ctx->pos - 2;
 	     fd < files_fdtable(files)->max_fds;
 	     fd++, ctx->pos++) {
-		struct file *f;
-		struct fd_data data;
-		char name[10 + 1];
-		unsigned int len;
+		char name[PROC_NUMBUF];
+		int len;
 
-		f = fcheck_files(files, fd);
-		if (!f)
+		if (!fcheck_files(files, fd))
 			continue;
-		data.mode = f->f_mode;
 		rcu_read_unlock();
-		data.fd = fd;
 
 		len = snprintf(name, sizeof(name), "%u", fd);
 		if (!proc_fill_cache(file, ctx,
 				     name, len, instantiate, p,
-				     &data))
+				     (void *)(unsigned long)fd))
 			goto out_fd_loop;
 		cond_resched();
 		rcu_read_lock();
@@ -318,25 +314,32 @@ const struct inode_operations proc_fd_inode_operations = {
 	.setattr	= proc_setattr,
 };
 
-static struct dentry *proc_fdinfo_instantiate(struct dentry *dentry,
-	struct task_struct *task, const void *ptr)
+static int
+proc_fdinfo_instantiate(struct inode *dir, struct dentry *dentry,
+			struct task_struct *task, const void *ptr)
 {
-	const struct fd_data *data = ptr;
+	unsigned fd = (unsigned long)ptr;
 	struct proc_inode *ei;
 	struct inode *inode;
 
-	inode = proc_pid_make_inode(dentry->d_sb, task, S_IFREG | S_IRUSR);
+	inode = proc_pid_make_inode(dir->i_sb, task);
 	if (!inode)
-		return ERR_PTR(-ENOENT);
+		goto out;
 
 	ei = PROC_I(inode);
-	ei->fd = data->fd;
+	ei->fd = fd;
 
+	inode->i_mode = S_IFREG | S_IRUSR;
 	inode->i_fop = &proc_fdinfo_file_operations;
-	tid_fd_update_inode(task, inode, 0);
 
 	d_set_d_op(dentry, &tid_fd_dentry_operations);
-	return d_splice_alias(inode, dentry);
+	d_add(dentry, inode);
+
+	/* Close the race of the process dying before we return the dentry */
+	if (tid_fd_revalidate(dentry, 0))
+		return 0;
+ out:
+	return -ENOENT;
 }
 
 static struct dentry *

@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * A constraint is a condition that must be satisfied in
  * order for one or more permissions to be granted.
@@ -11,7 +10,7 @@
  * process from labeling an object with a different user
  * identity.
  *
- * Author : Stephen Smalley, <sds@tycho.nsa.gov>
+ * Author : Stephen Smalley, <sds@epoch.ncsc.mil>
  */
 #ifndef _SS_CONSTRAINT_H_
 #define _SS_CONSTRAINT_H_

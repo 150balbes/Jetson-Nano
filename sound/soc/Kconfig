@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0-only
 #
 # SoC audio configuration
 #
@@ -23,6 +22,14 @@ menuconfig SND_SOC
 
 if SND_SOC
 
+config NON_RECURSIVE_DAPM
+	def_tristate SND_SOC_TEGRA_VIRT_T210REF_PCM
+	prompt "Non-recursive DAPM implementation"
+	help
+	  Select 'y' to enable non-recursive implementation of DAPM
+	  is_connected_ep function. This should be used if your codec
+	  has a long list of widgets and very long DAPM routes are possible.
+
 config SND_SOC_AC97_BUS
 	bool
 
@@ -37,27 +44,24 @@ config SND_SOC_COMPRESS
 config SND_SOC_TOPOLOGY
 	bool
 
-config SND_SOC_ACPI
-	tristate
-
 # All the supported SoCs
 source "sound/soc/adi/Kconfig"
 source "sound/soc/amd/Kconfig"
 source "sound/soc/atmel/Kconfig"
 source "sound/soc/au1x/Kconfig"
 source "sound/soc/bcm/Kconfig"
+source "sound/soc/blackfin/Kconfig"
 source "sound/soc/cirrus/Kconfig"
+source "sound/soc/davinci/Kconfig"
 source "sound/soc/dwc/Kconfig"
 source "sound/soc/fsl/Kconfig"
-source "sound/soc/hisilicon/Kconfig"
 source "sound/soc/jz4740/Kconfig"
 source "sound/soc/nuc900/Kconfig"
+source "sound/soc/omap/Kconfig"
 source "sound/soc/kirkwood/Kconfig"
 source "sound/soc/img/Kconfig"
 source "sound/soc/intel/Kconfig"
 source "sound/soc/mediatek/Kconfig"
-source "sound/soc/meson/Kconfig"
-source "sound/soc/meson-gx/Kconfig"
 source "sound/soc/mxs/Kconfig"
 source "sound/soc/pxa/Kconfig"
 source "sound/soc/qcom/Kconfig"
@@ -65,18 +69,12 @@ source "sound/soc/rockchip/Kconfig"
 source "sound/soc/samsung/Kconfig"
 source "sound/soc/sh/Kconfig"
 source "sound/soc/sirf/Kconfig"
-source "sound/soc/sof/Kconfig"
 source "sound/soc/spear/Kconfig"
-source "sound/soc/sprd/Kconfig"
 source "sound/soc/sti/Kconfig"
-source "sound/soc/stm/Kconfig"
 source "sound/soc/sunxi/Kconfig"
 source "sound/soc/tegra/Kconfig"
-source "sound/soc/ti/Kconfig"
 source "sound/soc/txx9/Kconfig"
-source "sound/soc/uniphier/Kconfig"
 source "sound/soc/ux500/Kconfig"
-source "sound/soc/xilinx/Kconfig"
 source "sound/soc/xtensa/Kconfig"
 source "sound/soc/zte/Kconfig"
 
@@ -87,4 +85,3 @@ source "sound/soc/codecs/Kconfig"
 source "sound/soc/generic/Kconfig"
 
 endif	# SND_SOC
-

@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0+
 /*
  * addi_apci_3501.c
  * Copyright (C) 2004,2005  ADDI-DATA GmbH for the source code of this module.
@@ -11,6 +10,16 @@
  *	Fax: +49(0)7223/9493-92
  *	http://www.addi-data.com
  *	info@addi-data.com
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License as published by the
+ * Free Software Foundation; either version 2 of the License, or (at your
+ * option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
+ * more details.
  */
 
 /*
@@ -85,7 +94,7 @@ struct apci3501_private {
 	unsigned char timer_mode;
 };
 
-static const struct comedi_lrange apci3501_ao_range = {
+static struct comedi_lrange apci3501_ao_range = {
 	2, {
 		BIP_RANGE(10),
 		UNI_RANGE(10)
@@ -258,15 +267,8 @@ static int apci3501_eeprom_insn_read(struct comedi_device *dev,
 {
 	struct apci3501_private *devpriv = dev->private;
 	unsigned short addr = CR_CHAN(insn->chanspec);
-	unsigned int val;
-	unsigned int i;
 
-	if (insn->n) {
-		/* No point reading the same EEPROM location more than once. */
-		val = apci3501_eeprom_readw(devpriv->amcc, 2 * addr);
-		for (i = 0; i < insn->n; i++)
-			data[i] = val;
-	}
+	data[0] = apci3501_eeprom_readw(devpriv->amcc, 2 * addr);
 
 	return insn->n;
 }

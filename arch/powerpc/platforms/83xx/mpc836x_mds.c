@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Copyright 2006 Freescale Semiconductor, Inc. All rights reserved.
  *
@@ -10,6 +9,11 @@
  *
  * Changelog:
  * Jun 21, 2006	Initial version
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under  the terms of  the GNU General  Public License as published by the
+ * Free Software Foundation;  either version 2 of the  License, or (at your
+ * option) any later version.
  */
 
 #include <linux/stddef.h>
@@ -79,7 +83,7 @@ static void __init mpc836x_mds_setup_arch(void)
 		par_io_init(np);
 		of_node_put(np);
 
-		for_each_node_by_name(np, "ucc")
+		for (np = NULL; (np = of_find_node_by_name(np, "ucc")) != NULL;)
 			par_io_of_config(np);
 #ifdef CONFIG_QE_USB
 		/* Must fixup Par IO before QE GPIO chips are registered. */

@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _LINUX_IF_LINK_H
 #define _LINUX_IF_LINK_H
 
@@ -13,8 +12,6 @@ struct ifla_vf_stats {
 	__u64 tx_bytes;
 	__u64 broadcast;
 	__u64 multicast;
-	__u64 rx_dropped;
-	__u64 tx_dropped;
 };
 
 struct ifla_vf_info {

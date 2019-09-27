@@ -1,13 +1,26 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  *   ALSA sequencer FIFO
  *   Copyright (c) 1998 by Frank van de Pol <fvdpol@coil.demon.nl>
+ *
+ *
+ *   This program is free software; you can redistribute it and/or modify
+ *   it under the terms of the GNU General Public License as published by
+ *   the Free Software Foundation; either version 2 of the License, or
+ *   (at your option) any later version.
+ *
+ *   This program is distributed in the hope that it will be useful,
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *   GNU General Public License for more details.
+ *
+ *   You should have received a copy of the GNU General Public License
+ *   along with this program; if not, write to the Free Software
+ *   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+ *
  */
 
 #include <sound/core.h>
 #include <linux/slab.h>
-#include <linux/sched/signal.h>
-
 #include "seq_fifo.h"
 #include "seq_lock.h"
 
@@ -83,17 +96,18 @@ static struct snd_seq_event_cell *fifo_cell_out(struct snd_seq_fifo *f);
 void snd_seq_fifo_clear(struct snd_seq_fifo *f)
 {
 	struct snd_seq_event_cell *cell;
+	unsigned long flags;
 
 	/* clear overflow flag */
 	atomic_set(&f->overflow, 0);
 
 	snd_use_lock_sync(&f->use_lock);
-	spin_lock_irq(&f->lock);
+	spin_lock_irqsave(&f->lock, flags);
 	/* drain the fifo */
 	while ((cell = fifo_cell_out(f)) != NULL) {
 		snd_seq_cell_free(cell);
 	}
-	spin_unlock_irq(&f->lock);
+	spin_unlock_irqrestore(&f->lock, flags);
 }
 
 
@@ -163,7 +177,7 @@ int snd_seq_fifo_cell_out(struct snd_seq_fifo *f,
 {
 	struct snd_seq_event_cell *cell;
 	unsigned long flags;
-	wait_queue_entry_t wait;
+	wait_queue_t wait;
 
 	if (snd_BUG_ON(!f))
 		return -EINVAL;
@@ -179,9 +193,9 @@ int snd_seq_fifo_cell_out(struct snd_seq_fifo *f,
 		}
 		set_current_state(TASK_INTERRUPTIBLE);
 		add_wait_queue(&f->input_sleep, &wait);
-		spin_unlock_irqrestore(&f->lock, flags);
+		spin_unlock_irq(&f->lock);
 		schedule();
-		spin_lock_irqsave(&f->lock, flags);
+		spin_lock_irq(&f->lock);
 		remove_wait_queue(&f->input_sleep, &wait);
 		if (signal_pending(current)) {
 			spin_unlock_irqrestore(&f->lock, flags);
@@ -223,6 +237,7 @@ int snd_seq_fifo_poll_wait(struct snd_seq_fifo *f, struct file *file,
 /* change the size of pool; all old events are removed */
 int snd_seq_fifo_resize(struct snd_seq_fifo *f, int poolsize)
 {
+	unsigned long flags;
 	struct snd_seq_pool *newpool, *oldpool;
 	struct snd_seq_event_cell *cell, *next, *oldhead;
 
@@ -238,7 +253,7 @@ int snd_seq_fifo_resize(struct snd_seq_fifo *f, int poolsize)
 		return -ENOMEM;
 	}
 
-	spin_lock_irq(&f->lock);
+	spin_lock_irqsave(&f->lock, flags);
 	/* remember old pool */
 	oldpool = f->pool;
 	oldhead = f->head;
@@ -248,7 +263,7 @@ int snd_seq_fifo_resize(struct snd_seq_fifo *f, int poolsize)
 	f->tail = NULL;
 	f->cells = 0;
 	/* NOTE: overflow flag is not cleared */
-	spin_unlock_irq(&f->lock);
+	spin_unlock_irqrestore(&f->lock, flags);
 
 	/* close the old pool and wait until all users are gone */
 	snd_seq_pool_mark_closing(oldpool);
@@ -262,21 +277,4 @@ int snd_seq_fifo_resize(struct snd_seq_fifo *f, int poolsize)
 	snd_seq_pool_delete(&oldpool);
 
 	return 0;
-}
-
-/* get the number of unused cells safely */
-int snd_seq_fifo_unused_cells(struct snd_seq_fifo *f)
-{
-	unsigned long flags;
-	int cells;
-
-	if (!f)
-		return 0;
-
-	snd_use_lock_use(&f->use_lock);
-	spin_lock_irqsave(&f->lock, flags);
-	cells = snd_seq_unused_cells(f->pool);
-	spin_unlock_irqrestore(&f->lock, flags);
-	snd_use_lock_free(&f->use_lock);
-	return cells;
 }

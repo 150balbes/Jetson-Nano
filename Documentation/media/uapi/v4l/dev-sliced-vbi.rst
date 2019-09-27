@@ -1,11 +1,4 @@
-.. Permission is granted to copy, distribute and/or modify this
-.. document under the terms of the GNU Free Documentation License,
-.. Version 1.1 or any later version published by the Free Software
-.. Foundation, with no Invariant Sections, no Front-Cover Texts
-.. and no Back-Cover Texts. A copy of the license is included at
-.. Documentation/media/uapi/fdl-appendix.rst.
-..
-.. TODO: replace it to GFDL-1.1-or-later WITH no-invariant-sections
+.. -*- coding: utf-8; mode: rst -*-
 
 .. _sliced:
 
@@ -112,13 +105,7 @@ which may return ``EBUSY`` can be the
 struct v4l2_sliced_vbi_format
 -----------------------------
 
-.. raw:: latex
-
-    \begingroup
-    \scriptsize
-    \setlength{\tabcolsep}{2pt}
-
-.. tabularcolumns:: |p{.85cm}|p{3.3cm}|p{4.4cm}|p{4.4cm}|p{4.4cm}|
+.. tabularcolumns:: |p{1.0cm}|p{4.5cm}|p{4.0cm}|p{4.0cm}|p{4.0cm}|
 
 .. cssclass:: longtable
 
@@ -212,9 +199,6 @@ struct v4l2_sliced_vbi_format
 
 	Applications and drivers must set it to zero.
 
-.. raw:: latex
-
-    \endgroup
 
 .. _vbi-services2:
 
@@ -223,9 +207,9 @@ Sliced VBI services
 
 .. raw:: latex
 
-    \scriptsize
+    \begin{adjustbox}{width=\columnwidth}
 
-.. tabularcolumns:: |p{4.1cm}|p{1.1cm}|p{2.4cm}|p{2.0cm}|p{7.3cm}|
+.. tabularcolumns:: |p{5.0cm}|p{1.4cm}|p{3.0cm}|p{2.5cm}|p{9.0cm}|
 
 .. flat-table::
     :header-rows:  1
@@ -279,7 +263,7 @@ Sliced VBI services
 
 .. raw:: latex
 
-    \normalsize
+    \end{adjustbox}\newline\newline
 
 
 Drivers may return an ``EINVAL`` error code when applications attempt to
@@ -438,7 +422,7 @@ MPEG stream.
 *Historical context*: This format specification originates from a
 custom, embedded, sliced VBI data format used by the ``ivtv`` driver.
 This format has already been informally specified in the kernel sources
-in the file ``Documentation/media/v4l-drivers/cx2341x.rst`` . The
+in the file ``Documentation/video4linux/cx2341x/README.vbi`` . The
 maximum size of the payload and other aspects of this format are driven
 by the CX23415 MPEG decoder's capabilities and limitations with respect
 to extracting, decoding, and displaying sliced VBI data embedded within
@@ -473,7 +457,7 @@ number).
 struct v4l2_mpeg_vbi_fmt_ivtv
 -----------------------------
 
-.. tabularcolumns:: |p{1.0cm}|p{3.8cm}|p{1.0cm}|p{11.2cm}|
+.. tabularcolumns:: |p{1.0cm}|p{3.5cm}|p{1.0cm}|p{11.5cm}|
 
 .. flat-table::
     :header-rows:  0
@@ -541,7 +525,7 @@ Magic Constants for struct v4l2_mpeg_vbi_fmt_ivtv magic field
 structs v4l2_mpeg_vbi_itv0 and v4l2_mpeg_vbi_ITV0
 -------------------------------------------------
 
-.. tabularcolumns:: |p{5.2cm}|p{2.4cm}|p{9.9cm}|
+.. tabularcolumns:: |p{4.4cm}|p{2.4cm}|p{10.7cm}|
 
 .. flat-table::
     :header-rows:  0
@@ -561,12 +545,12 @@ structs v4l2_mpeg_vbi_itv0 and v4l2_mpeg_vbi_ITV0
 
 	::
 
-	    linemask[0] b0:     line  6  first field
-	    linemask[0] b17:    line 23  first field
-	    linemask[0] b18:    line  6  second field
-	    linemask[0] b31:    line 19  second field
-	    linemask[1] b0:     line 20  second field
-	    linemask[1] b3:     line 23  second field
+	    linemask[0] b0:     line  6     first field
+	    linemask[0] b17:    line 23     first field
+	    linemask[0] b18:    line  6     second field
+	    linemask[0] b31:    line 19     second field
+	    linemask[1] b0:     line 20     second field
+	    linemask[1] b3:     line 23     second field
 	    linemask[1] b4-b31: unused and set to 0
     * - struct
 	:c:type:`v4l2_mpeg_vbi_itv0_line`
@@ -590,7 +574,7 @@ structs v4l2_mpeg_vbi_itv0 and v4l2_mpeg_vbi_ITV0
 struct v4l2_mpeg_vbi_ITV0
 -------------------------
 
-.. tabularcolumns:: |p{5.2cm}|p{2.4cm}|p{9.9cm}|
+.. tabularcolumns:: |p{4.4cm}|p{4.4cm}|p{8.7cm}|
 
 .. flat-table::
     :header-rows:  0
@@ -635,7 +619,7 @@ struct v4l2_mpeg_vbi_itv0_line
 Line Identifiers for struct v4l2_mpeg_vbi_itv0_line id field
 ------------------------------------------------------------
 
-.. tabularcolumns:: |p{7.0cm}|p{1.8cm}|p{8.7cm}|
+.. tabularcolumns:: |p{6.6cm}|p{2.2cm}|p{8.7cm}|
 
 .. flat-table::
     :header-rows:  1

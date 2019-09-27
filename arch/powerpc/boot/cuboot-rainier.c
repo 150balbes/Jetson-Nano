@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Old U-boot compatibility for Rainier
  *
@@ -10,6 +9,10 @@
  *
  * Based on Bamboo code by Josh Boyer <jwboyer@linux.vnet.ibm.com>
  * Copyright IBM Corporation, 2007
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License
+ * as published by the Free Software Foundation; version 2 of the License
  */
 
 #include <stdarg.h>

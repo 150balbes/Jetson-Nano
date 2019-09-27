@@ -1,7 +1,21 @@
-// SPDX-License-Identifier: GPL-2.0+
 /*
  * Copyright (c) 1996, 2003 VIA Networking Technologies, Inc.
  * All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with this program; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ *
  *
  * File: mac.c
  *
@@ -12,6 +26,7 @@
  * Date: May 21, 1996
  *
  * Functions:
+ *      MACbIsRegBitsOn - Test if All test Bits On
  *      MACbIsRegBitsOff - Test if All test Bits Off
  *      MACbIsIntDisable - Test if MAC interrupt disable
  *      MACvSetShortRetryLimit - Set 802.11 Short Retry limit
@@ -40,6 +55,29 @@
 
 #include "tmacro.h"
 #include "mac.h"
+
+/*
+ * Description:
+ *      Test if all test bits on
+ *
+ * Parameters:
+ *  In:
+ *      io_base    - Base Address for MAC
+ *      byRegOfs    - Offset of MAC Register
+ *      byTestBits  - Test bits
+ *  Out:
+ *      none
+ *
+ * Return Value: true if all test bits On; otherwise false
+ *
+ */
+bool MACbIsRegBitsOn(struct vnt_private *priv, unsigned char byRegOfs,
+		     unsigned char byTestBits)
+{
+	void __iomem *io_base = priv->PortOffset;
+
+	return (ioread8(io_base + byRegOfs) & byTestBits) == byTestBits;
+}
 
 /*
  * Description:
@@ -108,6 +146,7 @@ void MACvSetShortRetryLimit(struct vnt_private *priv,
 	/* set SRT */
 	iowrite8(byRetryLimit, io_base + MAC_REG_SRT);
 }
+
 
 /*
  * Description:
@@ -282,7 +321,7 @@ bool MACbSoftwareReset(struct vnt_private *priv)
  */
 bool MACbSafeSoftwareReset(struct vnt_private *priv)
 {
-	unsigned char abyTmpRegData[MAC_MAX_CONTEXT_SIZE_PAGE0 + MAC_MAX_CONTEXT_SIZE_PAGE1];
+	unsigned char abyTmpRegData[MAC_MAX_CONTEXT_SIZE_PAGE0+MAC_MAX_CONTEXT_SIZE_PAGE1];
 	bool bRetVal;
 
 	/* PATCH....
@@ -569,6 +608,7 @@ void MACvSetCurrRx1DescAddr(struct vnt_private *priv, u32 curr_desc_addr)
 	iowrite32(curr_desc_addr, io_base + MAC_REG_RXDMAPTR1);
 	if (org_dma_ctl & DMACTL_RUN)
 		iowrite8(DMACTL_RUN, io_base + MAC_REG_RXDMACTL1);
+
 }
 
 /*
@@ -775,7 +815,7 @@ void MACvSetKeyEntry(struct vnt_private *priv, unsigned short wKeyCtl,
 	if (byLocalID <= 1)
 		return;
 
-	pr_debug("%s\n", __func__);
+	pr_debug("MACvSetKeyEntry\n");
 	offset = MISCFIFO_KEYETRY0;
 	offset += (uEntryIdx * MISCFIFO_KEYENTRYSIZE);
 

@@ -1,10 +1,14 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  *  GPIO driven matrix keyboard driver
  *
  *  Copyright (c) 2008 Marek Vasut <marek.vasut@gmail.com>
  *
  *  Based on corgikbd.c
+ *
+ *  This program is free software; you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License version 2 as
+ *  published by the Free Software Foundation.
+ *
  */
 
 #include <linux/types.h>
@@ -38,10 +42,9 @@ struct matrix_keypad {
 };
 
 /*
- * NOTE: If drive_inactive_cols is false, then the GPIO has to be put into
- * HiZ when de-activated to cause minmal side effect when scanning other
- * columns. In that case it is configured here to be input, otherwise it is
- * driven with the inactive value.
+ * NOTE: normally the GPIO has to be put into HiZ when de-activated to cause
+ * minmal side effect when scanning other columns, here it is configured to
+ * be input, and it should work on most platforms.
  */
 static void __activate_col(const struct matrix_keypad_platform_data *pdata,
 			   int col, bool on)
@@ -52,8 +55,7 @@ static void __activate_col(const struct matrix_keypad_platform_data *pdata,
 		gpio_direction_output(pdata->col_gpios[col], level_on);
 	} else {
 		gpio_set_value_cansleep(pdata->col_gpios[col], !level_on);
-		if (!pdata->drive_inactive_cols)
-			gpio_direction_input(pdata->col_gpios[col]);
+		gpio_direction_input(pdata->col_gpios[col]);
 	}
 }
 
@@ -218,7 +220,7 @@ static void matrix_keypad_stop(struct input_dev *dev)
 	keypad->stopped = true;
 	spin_unlock_irq(&keypad->lock);
 
-	flush_delayed_work(&keypad->work);
+	flush_work(&keypad->work.work);
 	/*
 	 * matrix_keypad_scan() will leave IRQs enabled;
 	 * we should disable them now.
@@ -403,7 +405,7 @@ matrix_keypad_parse_dt(struct device *dev)
 	struct matrix_keypad_platform_data *pdata;
 	struct device_node *np = dev->of_node;
 	unsigned int *gpios;
-	int ret, i, nrow, ncol;
+	int i, nrow, ncol;
 
 	if (!np) {
 		dev_err(dev, "device lacks DT data\n");
@@ -432,35 +434,25 @@ matrix_keypad_parse_dt(struct device *dev)
 	if (of_get_property(np, "gpio-activelow", NULL))
 		pdata->active_low = true;
 
-	pdata->drive_inactive_cols =
-		of_property_read_bool(np, "drive-inactive-cols");
-
 	of_property_read_u32(np, "debounce-delay-ms", &pdata->debounce_ms);
 	of_property_read_u32(np, "col-scan-delay-us",
 						&pdata->col_scan_delay_us);
 
-	gpios = devm_kcalloc(dev,
-			     pdata->num_row_gpios + pdata->num_col_gpios,
-			     sizeof(unsigned int),
+	gpios = devm_kzalloc(dev,
+			     sizeof(unsigned int) *
+				(pdata->num_row_gpios + pdata->num_col_gpios),
 			     GFP_KERNEL);
 	if (!gpios) {
 		dev_err(dev, "could not allocate memory for gpios\n");
 		return ERR_PTR(-ENOMEM);
 	}
 
-	for (i = 0; i < nrow; i++) {
-		ret = of_get_named_gpio(np, "row-gpios", i);
-		if (ret < 0)
-			return ERR_PTR(ret);
-		gpios[i] = ret;
-	}
+	for (i = 0; i < pdata->num_row_gpios; i++)
+		gpios[i] = of_get_named_gpio(np, "row-gpios", i);
 
-	for (i = 0; i < ncol; i++) {
-		ret = of_get_named_gpio(np, "col-gpios", i);
-		if (ret < 0)
-			return ERR_PTR(ret);
-		gpios[nrow + i] = ret;
-	}
+	for (i = 0; i < pdata->num_col_gpios; i++)
+		gpios[pdata->num_row_gpios + i] =
+			of_get_named_gpio(np, "col-gpios", i);
 
 	pdata->row_gpios = gpios;
 	pdata->col_gpios = &gpios[pdata->num_row_gpios];
@@ -487,8 +479,10 @@ static int matrix_keypad_probe(struct platform_device *pdev)
 	pdata = dev_get_platdata(&pdev->dev);
 	if (!pdata) {
 		pdata = matrix_keypad_parse_dt(&pdev->dev);
-		if (IS_ERR(pdata))
+		if (IS_ERR(pdata)) {
+			dev_err(&pdev->dev, "no platform data defined\n");
 			return PTR_ERR(pdata);
+		}
 	} else if (!pdata->keymap_data) {
 		dev_err(&pdev->dev, "no keymap data defined\n");
 		return -EINVAL;
@@ -552,6 +546,8 @@ err_free_mem:
 static int matrix_keypad_remove(struct platform_device *pdev)
 {
 	struct matrix_keypad *keypad = platform_get_drvdata(pdev);
+
+	device_init_wakeup(&pdev->dev, 0);
 
 	matrix_keypad_free_gpio(keypad);
 	input_unregister_device(keypad->input_dev);

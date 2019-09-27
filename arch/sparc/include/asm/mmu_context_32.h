@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __SPARC_MMU_CONTEXT_H
 #define __SPARC_MMU_CONTEXT_H
 

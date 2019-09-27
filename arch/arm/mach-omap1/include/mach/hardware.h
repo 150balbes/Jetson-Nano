@@ -36,7 +36,7 @@
 #ifndef __ASM_ARCH_OMAP_HARDWARE_H
 #define __ASM_ARCH_OMAP_HARDWARE_H
 
-#include <linux/sizes.h>
+#include <asm/sizes.h>
 #ifndef __ASSEMBLER__
 #include <asm/types.h>
 #include <mach/soc.h>

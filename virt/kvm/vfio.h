@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __KVM_VFIO_H
 #define __KVM_VFIO_H
 

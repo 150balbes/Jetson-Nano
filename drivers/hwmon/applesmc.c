@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * drivers/hwmon/applesmc.c - driver for Apple's SMC (accelerometer, temperature
  * sensors, fan control, keyboard backlight control) used in Intel-based Apple
@@ -13,6 +12,19 @@
  *
  * Fan control based on smcFanControl:
  * Copyright (C) 2006 Hendrik Holtmann <holtmann@mac.com>
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License v2 as published by the
+ * Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License along with
+ * this program; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
@@ -554,8 +566,6 @@ static int applesmc_init_smcreg_try(void)
 	if (ret)
 		return ret;
 	s->fan_count = tmp[0];
-	if (s->fan_count > 10)
-		s->fan_count = 10;
 
 	ret = applesmc_get_lower_bound(&s->temp_begin, "T");
 	if (ret)
@@ -801,8 +811,7 @@ static ssize_t applesmc_show_fan_speed(struct device *dev,
 	char newkey[5];
 	u8 buffer[2];
 
-	scnprintf(newkey, sizeof(newkey), fan_speed_fmt[to_option(attr)],
-		  to_index(attr));
+	sprintf(newkey, fan_speed_fmt[to_option(attr)], to_index(attr));
 
 	ret = applesmc_read_key(newkey, buffer, 2);
 	speed = ((buffer[0] << 8 | buffer[1]) >> 2);
@@ -825,8 +834,7 @@ static ssize_t applesmc_store_fan_speed(struct device *dev,
 	if (kstrtoul(sysfsbuf, 10, &speed) < 0 || speed >= 0x4000)
 		return -EINVAL;		/* Bigger than a 14-bit value */
 
-	scnprintf(newkey, sizeof(newkey), fan_speed_fmt[to_option(attr)],
-		  to_index(attr));
+	sprintf(newkey, fan_speed_fmt[to_option(attr)], to_index(attr));
 
 	buffer[0] = (speed >> 6) & 0xff;
 	buffer[1] = (speed << 2) & 0xff;
@@ -895,7 +903,7 @@ static ssize_t applesmc_show_fan_position(struct device *dev,
 	char newkey[5];
 	u8 buffer[17];
 
-	scnprintf(newkey, sizeof(newkey), FAN_ID_FMT, to_index(attr));
+	sprintf(newkey, FAN_ID_FMT, to_index(attr));
 
 	ret = applesmc_read_key(newkey, buffer, 16);
 	buffer[16] = 0;
@@ -1108,15 +1116,14 @@ static int applesmc_create_nodes(struct applesmc_node_group *groups, int num)
 		}
 		for (i = 0; i < num; i++) {
 			node = &grp->nodes[i];
-			scnprintf(node->name, sizeof(node->name), grp->format,
-				  i + 1);
+			sprintf(node->name, grp->format, i + 1);
 			node->sda.index = (grp->option << 16) | (i & 0xffff);
 			node->sda.dev_attr.show = grp->show;
 			node->sda.dev_attr.store = grp->store;
 			attr = &node->sda.dev_attr.attr;
 			sysfs_attr_init(attr);
 			attr->name = node->name;
-			attr->mode = 0444 | (grp->store ? 0200 : 0);
+			attr->mode = S_IRUGO | (grp->store ? S_IWUSR : 0);
 			ret = sysfs_create_file(&pdev->dev.kobj, attr);
 			if (ret) {
 				attr->name = NULL;
@@ -1235,7 +1242,7 @@ static int applesmc_dmi_match(const struct dmi_system_id *id)
  * Note that DMI_MATCH(...,"MacBook") will match "MacBookPro1,1".
  * So we need to put "Apple MacBook Pro" before "Apple MacBook".
  */
-static const struct dmi_system_id applesmc_whitelist[] __initconst = {
+static __initdata struct dmi_system_id applesmc_whitelist[] = {
 	{ applesmc_dmi_match, "Apple MacBook Air", {
 	  DMI_MATCH(DMI_BOARD_VENDOR, "Apple"),
 	  DMI_MATCH(DMI_PRODUCT_NAME, "MacBookAir") },

@@ -115,6 +115,7 @@ static struct tps_info tps6507x_pmic_regs[] = {
 struct tps6507x_pmic {
 	struct regulator_desc desc[TPS6507X_NUM_REGULATOR];
 	struct tps6507x_dev *mfd;
+	struct regulator_dev *rdev[TPS6507X_NUM_REGULATOR];
 	struct tps_info *info[TPS6507X_NUM_REGULATOR];
 	struct mutex io_lock;
 };
@@ -348,7 +349,7 @@ static int tps6507x_pmic_set_voltage_sel(struct regulator_dev *dev,
 	return tps6507x_pmic_reg_write(tps, reg, data);
 }
 
-static const struct regulator_ops tps6507x_pmic_ops = {
+static struct regulator_ops tps6507x_pmic_ops = {
 	.is_enabled = tps6507x_pmic_is_enabled,
 	.enable = tps6507x_pmic_enable,
 	.disable = tps6507x_pmic_disable,
@@ -358,20 +359,66 @@ static const struct regulator_ops tps6507x_pmic_ops = {
 	.map_voltage = regulator_map_voltage_ascend,
 };
 
-static int tps6507x_pmic_of_parse_cb(struct device_node *np,
-				     const struct regulator_desc *desc,
-				     struct regulator_config *config)
+static struct of_regulator_match tps6507x_matches[] = {
+	{ .name = "VDCDC1"},
+	{ .name = "VDCDC2"},
+	{ .name = "VDCDC3"},
+	{ .name = "LDO1"},
+	{ .name = "LDO2"},
+};
+
+static struct tps6507x_board *tps6507x_parse_dt_reg_data(
+		struct platform_device *pdev,
+		struct of_regulator_match **tps6507x_reg_matches)
 {
-	struct tps6507x_pmic *tps = config->driver_data;
-	struct tps_info *info = tps->info[desc->id];
-	u32 prop;
-	int ret;
+	struct tps6507x_board *tps_board;
+	struct device_node *np = pdev->dev.parent->of_node;
+	struct device_node *regulators;
+	struct of_regulator_match *matches;
+	static struct regulator_init_data *reg_data;
+	int idx = 0, count, ret;
 
-	ret = of_property_read_u32(np, "ti,defdcdc_default", &prop);
-	if (!ret)
-		info->defdcdc_default = prop;
+	tps_board = devm_kzalloc(&pdev->dev, sizeof(*tps_board),
+					GFP_KERNEL);
+	if (!tps_board)
+		return NULL;
 
-	return 0;
+	regulators = of_get_child_by_name(np, "regulators");
+	if (!regulators) {
+		dev_err(&pdev->dev, "regulator node not found\n");
+		return NULL;
+	}
+
+	count = ARRAY_SIZE(tps6507x_matches);
+	matches = tps6507x_matches;
+
+	ret = of_regulator_match(&pdev->dev, regulators, matches, count);
+	of_node_put(regulators);
+	if (ret < 0) {
+		dev_err(&pdev->dev, "Error parsing regulator init data: %d\n",
+			ret);
+		return NULL;
+	}
+
+	*tps6507x_reg_matches = matches;
+
+	reg_data = devm_kzalloc(&pdev->dev, (sizeof(struct regulator_init_data)
+					* TPS6507X_NUM_REGULATOR), GFP_KERNEL);
+	if (!reg_data)
+		return NULL;
+
+	tps_board->tps6507x_pmic_init_data = reg_data;
+
+	for (idx = 0; idx < count; idx++) {
+		if (!matches[idx].init_data || !matches[idx].of_node)
+			continue;
+
+		memcpy(&reg_data[idx], matches[idx].init_data,
+				sizeof(struct regulator_init_data));
+
+	}
+
+	return tps_board;
 }
 
 static int tps6507x_pmic_probe(struct platform_device *pdev)
@@ -379,11 +426,14 @@ static int tps6507x_pmic_probe(struct platform_device *pdev)
 	struct tps6507x_dev *tps6507x_dev = dev_get_drvdata(pdev->dev.parent);
 	struct tps_info *info = &tps6507x_pmic_regs[0];
 	struct regulator_config config = { };
-	struct regulator_init_data *init_data = NULL;
+	struct regulator_init_data *init_data;
 	struct regulator_dev *rdev;
 	struct tps6507x_pmic *tps;
 	struct tps6507x_board *tps_board;
+	struct of_regulator_match *tps6507x_reg_matches = NULL;
 	int i;
+	int error;
+	unsigned int prop;
 
 	/**
 	 * tps_board points to pmic related constants
@@ -391,8 +441,20 @@ static int tps6507x_pmic_probe(struct platform_device *pdev)
 	 */
 
 	tps_board = dev_get_platdata(tps6507x_dev->dev);
-	if (tps_board)
-		init_data = tps_board->tps6507x_pmic_init_data;
+	if (IS_ENABLED(CONFIG_OF) && !tps_board &&
+		tps6507x_dev->dev->of_node)
+		tps_board = tps6507x_parse_dt_reg_data(pdev,
+				&tps6507x_reg_matches);
+	if (!tps_board)
+		return -EINVAL;
+
+	/**
+	 * init_data points to array of regulator_init structures
+	 * coming from the board-evm file.
+	 */
+	init_data = tps_board->tps6507x_pmic_init_data;
+	if (!init_data)
+		return -EINVAL;
 
 	tps = devm_kzalloc(&pdev->dev, sizeof(*tps), GFP_KERNEL);
 	if (!tps)
@@ -403,19 +465,16 @@ static int tps6507x_pmic_probe(struct platform_device *pdev)
 	/* common for all regulators */
 	tps->mfd = tps6507x_dev;
 
-	for (i = 0; i < TPS6507X_NUM_REGULATOR; i++, info++) {
+	for (i = 0; i < TPS6507X_NUM_REGULATOR; i++, info++, init_data++) {
 		/* Register the regulators */
 		tps->info[i] = info;
-		if (init_data && init_data[i].driver_data) {
+		if (init_data->driver_data) {
 			struct tps6507x_reg_platform_data *data =
-					init_data[i].driver_data;
-			info->defdcdc_default = data->defdcdc_default;
+					init_data->driver_data;
+			tps->info[i]->defdcdc_default = data->defdcdc_default;
 		}
 
 		tps->desc[i].name = info->name;
-		tps->desc[i].of_match = of_match_ptr(info->name);
-		tps->desc[i].regulators_node = of_match_ptr("regulators");
-		tps->desc[i].of_parse_cb = tps6507x_pmic_of_parse_cb;
 		tps->desc[i].id = i;
 		tps->desc[i].n_voltages = info->table_len;
 		tps->desc[i].volt_table = info->table;
@@ -427,6 +486,17 @@ static int tps6507x_pmic_probe(struct platform_device *pdev)
 		config.init_data = init_data;
 		config.driver_data = tps;
 
+		if (tps6507x_reg_matches) {
+			error = of_property_read_u32(
+				tps6507x_reg_matches[i].of_node,
+					"ti,defdcdc_default", &prop);
+
+			if (!error)
+				tps->info[i]->defdcdc_default = prop;
+
+			config.of_node = tps6507x_reg_matches[i].of_node;
+		}
+
 		rdev = devm_regulator_register(&pdev->dev, &tps->desc[i],
 					       &config);
 		if (IS_ERR(rdev)) {
@@ -435,6 +505,9 @@ static int tps6507x_pmic_probe(struct platform_device *pdev)
 				pdev->name);
 			return PTR_ERR(rdev);
 		}
+
+		/* Save regulator for cleanup */
+		tps->rdev[i] = rdev;
 	}
 
 	tps6507x_dev->pmic = tps;

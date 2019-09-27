@@ -1,6 +1,19 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * Copyright (C) 2008 Oracle.  All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public
+ * License v2 as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public
+ * License along with this program; if not, write to the
+ * Free Software Foundation, Inc., 59 Temple Place - Suite 330,
+ * Boston, MA 021110-1307, USA.
  *
  * Based on jffs2 zlib code:
  * Copyright © 2001-2007 Red Hat, Inc.
@@ -11,72 +24,42 @@
 #include <linux/slab.h>
 #include <linux/zlib.h>
 #include <linux/zutil.h>
-#include <linux/mm.h>
+#include <linux/vmalloc.h>
 #include <linux/init.h>
 #include <linux/err.h>
 #include <linux/sched.h>
 #include <linux/pagemap.h>
 #include <linux/bio.h>
-#include <linux/refcount.h>
 #include "compression.h"
 
 struct workspace {
 	z_stream strm;
 	char *buf;
 	struct list_head list;
-	int level;
 };
-
-static struct workspace_manager wsm;
-
-static void zlib_init_workspace_manager(void)
-{
-	btrfs_init_workspace_manager(&wsm, &btrfs_zlib_compress);
-}
-
-static void zlib_cleanup_workspace_manager(void)
-{
-	btrfs_cleanup_workspace_manager(&wsm);
-}
-
-static struct list_head *zlib_get_workspace(unsigned int level)
-{
-	struct list_head *ws = btrfs_get_workspace(&wsm, level);
-	struct workspace *workspace = list_entry(ws, struct workspace, list);
-
-	workspace->level = level;
-
-	return ws;
-}
-
-static void zlib_put_workspace(struct list_head *ws)
-{
-	btrfs_put_workspace(&wsm, ws);
-}
 
 static void zlib_free_workspace(struct list_head *ws)
 {
 	struct workspace *workspace = list_entry(ws, struct workspace, list);
 
-	kvfree(workspace->strm.workspace);
+	vfree(workspace->strm.workspace);
 	kfree(workspace->buf);
 	kfree(workspace);
 }
 
-static struct list_head *zlib_alloc_workspace(unsigned int level)
+static struct list_head *zlib_alloc_workspace(void)
 {
 	struct workspace *workspace;
 	int workspacesize;
 
-	workspace = kzalloc(sizeof(*workspace), GFP_KERNEL);
+	workspace = kzalloc(sizeof(*workspace), GFP_NOFS);
 	if (!workspace)
 		return ERR_PTR(-ENOMEM);
 
 	workspacesize = max(zlib_deflate_workspacesize(MAX_WBITS, MAX_MEM_LEVEL),
 			zlib_inflate_workspacesize());
-	workspace->strm.workspace = kvmalloc(workspacesize, GFP_KERNEL);
-	workspace->level = level;
-	workspace->buf = kmalloc(PAGE_SIZE, GFP_KERNEL);
+	workspace->strm.workspace = vmalloc(workspacesize);
+	workspace->buf = kmalloc(PAGE_SIZE, GFP_NOFS);
 	if (!workspace->strm.workspace || !workspace->buf)
 		goto fail;
 
@@ -90,11 +73,13 @@ fail:
 
 static int zlib_compress_pages(struct list_head *ws,
 			       struct address_space *mapping,
-			       u64 start,
+			       u64 start, unsigned long len,
 			       struct page **pages,
+			       unsigned long nr_dest_pages,
 			       unsigned long *out_pages,
 			       unsigned long *total_in,
-			       unsigned long *total_out)
+			       unsigned long *total_out,
+			       unsigned long max_out)
 {
 	struct workspace *workspace = list_entry(ws, struct workspace, list);
 	int ret;
@@ -104,15 +89,12 @@ static int zlib_compress_pages(struct list_head *ws,
 	struct page *in_page = NULL;
 	struct page *out_page = NULL;
 	unsigned long bytes_left;
-	unsigned long len = *total_out;
-	unsigned long nr_dest_pages = *out_pages;
-	const unsigned long max_out = nr_dest_pages * PAGE_SIZE;
 
 	*out_pages = 0;
 	*total_out = 0;
 	*total_in = 0;
 
-	if (Z_OK != zlib_deflateInit(&workspace->strm, workspace->level)) {
+	if (Z_OK != zlib_deflateInit(&workspace->strm, 3)) {
 		pr_warn("BTRFS: deflateInit failed\n");
 		ret = -EIO;
 		goto out;
@@ -228,7 +210,11 @@ out:
 	return ret;
 }
 
-static int zlib_decompress_bio(struct list_head *ws, struct compressed_bio *cb)
+static int zlib_decompress_biovec(struct list_head *ws, struct page **pages_in,
+				  u64 disk_start,
+				  struct bio_vec *bvec,
+				  int vcnt,
+				  size_t srclen)
 {
 	struct workspace *workspace = list_entry(ws, struct workspace, list);
 	int ret = 0, ret2;
@@ -236,12 +222,10 @@ static int zlib_decompress_bio(struct list_head *ws, struct compressed_bio *cb)
 	char *data_in;
 	size_t total_out = 0;
 	unsigned long page_in_index = 0;
-	size_t srclen = cb->compressed_len;
+	unsigned long page_out_index = 0;
 	unsigned long total_pages_in = DIV_ROUND_UP(srclen, PAGE_SIZE);
 	unsigned long buf_start;
-	struct page **pages_in = cb->compressed_pages;
-	u64 disk_start = cb->start;
-	struct bio *orig_bio = cb->orig_bio;
+	unsigned long pg_offset;
 
 	data_in = kmap(pages_in[page_in_index]);
 	workspace->strm.next_in = data_in;
@@ -251,6 +235,7 @@ static int zlib_decompress_bio(struct list_head *ws, struct compressed_bio *cb)
 	workspace->strm.total_out = 0;
 	workspace->strm.next_out = workspace->buf;
 	workspace->strm.avail_out = PAGE_SIZE;
+	pg_offset = 0;
 
 	/* If it's deflate, and it's got no preset dictionary, then
 	   we can tell zlib to skip the adler32 check. */
@@ -265,7 +250,6 @@ static int zlib_decompress_bio(struct list_head *ws, struct compressed_bio *cb)
 
 	if (Z_OK != zlib_inflateInit2(&workspace->strm, wbits)) {
 		pr_warn("BTRFS: inflateInit failed\n");
-		kunmap(pages_in[page_in_index]);
 		return -EIO;
 	}
 	while (workspace->strm.total_in < srclen) {
@@ -282,7 +266,8 @@ static int zlib_decompress_bio(struct list_head *ws, struct compressed_bio *cb)
 
 		ret2 = btrfs_decompress_buf2page(workspace->buf, buf_start,
 						 total_out, disk_start,
-						 orig_bio);
+						 bvec, vcnt,
+						 &page_out_index, &pg_offset);
 		if (ret2 == 0) {
 			ret = 0;
 			goto done;
@@ -315,7 +300,7 @@ done:
 	if (data_in)
 		kunmap(pages_in[page_in_index]);
 	if (!ret)
-		zero_fill_bio(orig_bio);
+		btrfs_clear_biovec_end(bvec, vcnt, page_out_index, pg_offset);
 	return ret;
 }
 
@@ -418,23 +403,10 @@ next:
 	return ret;
 }
 
-static unsigned int zlib_set_level(unsigned int level)
-{
-	if (!level)
-		return BTRFS_ZLIB_DEFAULT_LEVEL;
-
-	return min_t(unsigned int, level, 9);
-}
-
 const struct btrfs_compress_op btrfs_zlib_compress = {
-	.init_workspace_manager	= zlib_init_workspace_manager,
-	.cleanup_workspace_manager = zlib_cleanup_workspace_manager,
-	.get_workspace		= zlib_get_workspace,
-	.put_workspace		= zlib_put_workspace,
 	.alloc_workspace	= zlib_alloc_workspace,
 	.free_workspace		= zlib_free_workspace,
 	.compress_pages		= zlib_compress_pages,
-	.decompress_bio		= zlib_decompress_bio,
+	.decompress_biovec	= zlib_decompress_biovec,
 	.decompress		= zlib_decompress,
-	.set_level              = zlib_set_level,
 };

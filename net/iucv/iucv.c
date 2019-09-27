@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * IUCV base infrastructure.
  *
@@ -18,6 +17,20 @@
  * Documentation used:
  *    The original source
  *    CP Programming Service, IBM document # SC24-5760
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2, or (at your option)
+ * any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  */
 
 #define KMSG_COMPONENT "iucv"
@@ -626,7 +639,7 @@ static void iucv_disable(void)
 	put_online_cpus();
 }
 
-static int iucv_cpu_dead(unsigned int cpu)
+static void free_iucv_data(int cpu)
 {
 	kfree(iucv_param_irq[cpu]);
 	iucv_param_irq[cpu] = NULL;
@@ -634,10 +647,9 @@ static int iucv_cpu_dead(unsigned int cpu)
 	iucv_param[cpu] = NULL;
 	kfree(iucv_irq_data[cpu]);
 	iucv_irq_data[cpu] = NULL;
-	return 0;
 }
 
-static int iucv_cpu_prepare(unsigned int cpu)
+static int alloc_iucv_data(int cpu)
 {
 	/* Note: GFP_DMA used to get memory below 2G */
 	iucv_irq_data[cpu] = kmalloc_node(sizeof(struct iucv_irq_data),
@@ -659,38 +671,58 @@ static int iucv_cpu_prepare(unsigned int cpu)
 	return 0;
 
 out_free:
-	iucv_cpu_dead(cpu);
+	free_iucv_data(cpu);
 	return -ENOMEM;
 }
 
-static int iucv_cpu_online(unsigned int cpu)
-{
-	if (!iucv_path_table)
-		return 0;
-	iucv_declare_cpu(NULL);
-	return 0;
-}
-
-static int iucv_cpu_down_prep(unsigned int cpu)
+static int iucv_cpu_notify(struct notifier_block *self,
+				     unsigned long action, void *hcpu)
 {
 	cpumask_t cpumask;
+	long cpu = (long) hcpu;
 
-	if (!iucv_path_table)
-		return 0;
-
-	cpumask_copy(&cpumask, &iucv_buffer_cpumask);
-	cpumask_clear_cpu(cpu, &cpumask);
-	if (cpumask_empty(&cpumask))
-		/* Can't offline last IUCV enabled cpu. */
-		return -EINVAL;
-
-	iucv_retrieve_cpu(NULL);
-	if (!cpumask_empty(&iucv_irq_cpumask))
-		return 0;
-	smp_call_function_single(cpumask_first(&iucv_buffer_cpumask),
-				 iucv_allow_cpu, NULL, 1);
-	return 0;
+	switch (action) {
+	case CPU_UP_PREPARE:
+	case CPU_UP_PREPARE_FROZEN:
+		if (alloc_iucv_data(cpu))
+			return notifier_from_errno(-ENOMEM);
+		break;
+	case CPU_UP_CANCELED:
+	case CPU_UP_CANCELED_FROZEN:
+	case CPU_DEAD:
+	case CPU_DEAD_FROZEN:
+		free_iucv_data(cpu);
+		break;
+	case CPU_ONLINE:
+	case CPU_ONLINE_FROZEN:
+	case CPU_DOWN_FAILED:
+	case CPU_DOWN_FAILED_FROZEN:
+		if (!iucv_path_table)
+			break;
+		smp_call_function_single(cpu, iucv_declare_cpu, NULL, 1);
+		break;
+	case CPU_DOWN_PREPARE:
+	case CPU_DOWN_PREPARE_FROZEN:
+		if (!iucv_path_table)
+			break;
+		cpumask_copy(&cpumask, &iucv_buffer_cpumask);
+		cpumask_clear_cpu(cpu, &cpumask);
+		if (cpumask_empty(&cpumask))
+			/* Can't offline last IUCV enabled cpu. */
+			return notifier_from_errno(-EINVAL);
+		smp_call_function_single(cpu, iucv_retrieve_cpu, NULL, 1);
+		if (cpumask_empty(&iucv_irq_cpumask))
+			smp_call_function_single(
+				cpumask_first(&iucv_buffer_cpumask),
+				iucv_allow_cpu, NULL, 1);
+		break;
+	}
+	return NOTIFY_OK;
 }
+
+static struct notifier_block __refdata iucv_cpu_notifier = {
+	.notifier_call = iucv_cpu_notify,
+};
 
 /**
  * iucv_sever_pathid
@@ -1861,7 +1893,7 @@ static void iucv_pm_complete(struct device *dev)
  * Returns 0 if there are still iucv pathes defined
  *	   1 if there are no iucv pathes defined
  */
-static int iucv_path_table_empty(void)
+int iucv_path_table_empty(void)
 {
 	int i;
 
@@ -1995,7 +2027,6 @@ struct iucv_interface iucv_if = {
 };
 EXPORT_SYMBOL(iucv_if);
 
-static enum cpuhp_state iucv_online;
 /**
  * iucv_init
  *
@@ -2004,6 +2035,7 @@ static enum cpuhp_state iucv_online;
 static int __init iucv_init(void)
 {
 	int rc;
+	int cpu;
 
 	if (!MACHINE_IS_VM) {
 		rc = -EPROTONOSUPPORT;
@@ -2022,19 +2054,23 @@ static int __init iucv_init(void)
 		goto out_int;
 	}
 
-	rc = cpuhp_setup_state(CPUHP_NET_IUCV_PREPARE, "net/iucv:prepare",
-			       iucv_cpu_prepare, iucv_cpu_dead);
+	cpu_notifier_register_begin();
+
+	for_each_online_cpu(cpu) {
+		if (alloc_iucv_data(cpu)) {
+			rc = -ENOMEM;
+			goto out_free;
+		}
+	}
+	rc = __register_hotcpu_notifier(&iucv_cpu_notifier);
 	if (rc)
-		goto out_dev;
-	rc = cpuhp_setup_state(CPUHP_AP_ONLINE_DYN, "net/iucv:online",
-			       iucv_cpu_online, iucv_cpu_down_prep);
-	if (rc < 0)
-		goto out_prep;
-	iucv_online = rc;
+		goto out_free;
+
+	cpu_notifier_register_done();
 
 	rc = register_reboot_notifier(&iucv_reboot_notifier);
 	if (rc)
-		goto out_remove_hp;
+		goto out_cpu;
 	ASCEBC(iucv_error_no_listener, 16);
 	ASCEBC(iucv_error_no_memory, 16);
 	ASCEBC(iucv_error_pathid, 16);
@@ -2048,11 +2084,15 @@ static int __init iucv_init(void)
 
 out_reboot:
 	unregister_reboot_notifier(&iucv_reboot_notifier);
-out_remove_hp:
-	cpuhp_remove_state(iucv_online);
-out_prep:
-	cpuhp_remove_state(CPUHP_NET_IUCV_PREPARE);
-out_dev:
+out_cpu:
+	cpu_notifier_register_begin();
+	__unregister_hotcpu_notifier(&iucv_cpu_notifier);
+out_free:
+	for_each_possible_cpu(cpu)
+		free_iucv_data(cpu);
+
+	cpu_notifier_register_done();
+
 	root_device_unregister(iucv_root);
 out_int:
 	unregister_external_irq(EXT_IRQ_IUCV, iucv_external_interrupt);
@@ -2070,6 +2110,7 @@ out:
 static void __exit iucv_exit(void)
 {
 	struct iucv_irq_list *p, *n;
+	int cpu;
 
 	spin_lock_irq(&iucv_queue_lock);
 	list_for_each_entry_safe(p, n, &iucv_task_queue, list)
@@ -2078,9 +2119,11 @@ static void __exit iucv_exit(void)
 		kfree(p);
 	spin_unlock_irq(&iucv_queue_lock);
 	unregister_reboot_notifier(&iucv_reboot_notifier);
-
-	cpuhp_remove_state_nocalls(iucv_online);
-	cpuhp_remove_state(CPUHP_NET_IUCV_PREPARE);
+	cpu_notifier_register_begin();
+	__unregister_hotcpu_notifier(&iucv_cpu_notifier);
+	for_each_possible_cpu(cpu)
+		free_iucv_data(cpu);
+	cpu_notifier_register_done();
 	root_device_unregister(iucv_root);
 	bus_unregister(&iucv_bus);
 	unregister_external_irq(EXT_IRQ_IUCV, iucv_external_interrupt);

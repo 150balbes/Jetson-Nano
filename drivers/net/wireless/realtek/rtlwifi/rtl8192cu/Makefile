@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0
 rtl8192cu-objs :=		\
 		dm.o		\
 		hw.o		\
@@ -11,3 +10,5 @@ rtl8192cu-objs :=		\
 		trx.o
 
 obj-$(CONFIG_RTL8192CU) += rtl8192cu.o
+
+ccflags-y += -D__CHECK_ENDIAN__

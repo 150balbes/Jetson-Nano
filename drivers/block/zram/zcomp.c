@@ -1,6 +1,10 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Copyright (C) 2014 Sergey Senozhatsky.
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License
+ * as published by the Free Software Foundation; either version
+ * 2 of the License, or (at your option) any later version.
  */
 
 #include <linux/kernel.h>
@@ -16,18 +20,17 @@
 
 static const char * const backends[] = {
 	"lzo",
-	"lzo-rle",
 #if IS_ENABLED(CONFIG_CRYPTO_LZ4)
 	"lz4",
+#endif
+#if IS_ENABLED(CONFIG_CRYPTO_DEFLATE)
+	"deflate",
 #endif
 #if IS_ENABLED(CONFIG_CRYPTO_LZ4HC)
 	"lz4hc",
 #endif
 #if IS_ENABLED(CONFIG_CRYPTO_842)
 	"842",
-#endif
-#if IS_ENABLED(CONFIG_CRYPTO_ZSTD)
-	"zstd",
 #endif
 	NULL
 };
@@ -65,11 +68,13 @@ static struct zcomp_strm *zcomp_strm_alloc(struct zcomp *comp)
 
 bool zcomp_available_algorithm(const char *comp)
 {
-	int i;
+	int i = 0;
 
-	i = __sysfs_match_string(backends, -1, comp);
-	if (i >= 0)
-		return true;
+	while (backends[i]) {
+		if (sysfs_streq(comp, backends[i]))
+			return true;
+		i++;
+	}
 
 	/*
 	 * Crypto does not ignore a trailing new line symbol,
@@ -155,56 +160,82 @@ int zcomp_decompress(struct zcomp_strm *zstrm,
 			dst, &dst_len);
 }
 
-int zcomp_cpu_up_prepare(unsigned int cpu, struct hlist_node *node)
+static int __zcomp_cpu_notifier(struct zcomp *comp,
+		unsigned long action, unsigned long cpu)
 {
-	struct zcomp *comp = hlist_entry(node, struct zcomp, node);
 	struct zcomp_strm *zstrm;
 
-	if (WARN_ON(*per_cpu_ptr(comp->stream, cpu)))
-		return 0;
-
-	zstrm = zcomp_strm_alloc(comp);
-	if (IS_ERR_OR_NULL(zstrm)) {
-		pr_err("Can't allocate a compression stream\n");
-		return -ENOMEM;
+	switch (action) {
+	case CPU_UP_PREPARE:
+		if (WARN_ON(*per_cpu_ptr(comp->stream, cpu)))
+			break;
+		zstrm = zcomp_strm_alloc(comp);
+		if (IS_ERR_OR_NULL(zstrm)) {
+			pr_err("Can't allocate a compression stream\n");
+			return NOTIFY_BAD;
+		}
+		*per_cpu_ptr(comp->stream, cpu) = zstrm;
+		break;
+	case CPU_DEAD:
+	case CPU_UP_CANCELED:
+		zstrm = *per_cpu_ptr(comp->stream, cpu);
+		if (!IS_ERR_OR_NULL(zstrm))
+			zcomp_strm_free(zstrm);
+		*per_cpu_ptr(comp->stream, cpu) = NULL;
+		break;
+	default:
+		break;
 	}
-	*per_cpu_ptr(comp->stream, cpu) = zstrm;
-	return 0;
+	return NOTIFY_OK;
 }
 
-int zcomp_cpu_dead(unsigned int cpu, struct hlist_node *node)
+static int zcomp_cpu_notifier(struct notifier_block *nb,
+		unsigned long action, void *pcpu)
 {
-	struct zcomp *comp = hlist_entry(node, struct zcomp, node);
-	struct zcomp_strm *zstrm;
+	unsigned long cpu = (unsigned long)pcpu;
+	struct zcomp *comp = container_of(nb, typeof(*comp), notifier);
 
-	zstrm = *per_cpu_ptr(comp->stream, cpu);
-	if (!IS_ERR_OR_NULL(zstrm))
-		zcomp_strm_free(zstrm);
-	*per_cpu_ptr(comp->stream, cpu) = NULL;
-	return 0;
+	return __zcomp_cpu_notifier(comp, action, cpu);
 }
 
 static int zcomp_init(struct zcomp *comp)
 {
+	unsigned long cpu;
 	int ret;
+
+	comp->notifier.notifier_call = zcomp_cpu_notifier;
 
 	comp->stream = alloc_percpu(struct zcomp_strm *);
 	if (!comp->stream)
 		return -ENOMEM;
 
-	ret = cpuhp_state_add_instance(CPUHP_ZCOMP_PREPARE, &comp->node);
-	if (ret < 0)
-		goto cleanup;
+	cpu_notifier_register_begin();
+	for_each_online_cpu(cpu) {
+		ret = __zcomp_cpu_notifier(comp, CPU_UP_PREPARE, cpu);
+		if (ret == NOTIFY_BAD)
+			goto cleanup;
+	}
+	__register_cpu_notifier(&comp->notifier);
+	cpu_notifier_register_done();
 	return 0;
 
 cleanup:
-	free_percpu(comp->stream);
-	return ret;
+	for_each_online_cpu(cpu)
+		__zcomp_cpu_notifier(comp, CPU_UP_CANCELED, cpu);
+	cpu_notifier_register_done();
+	return -ENOMEM;
 }
 
 void zcomp_destroy(struct zcomp *comp)
 {
-	cpuhp_state_remove_instance(CPUHP_ZCOMP_PREPARE, &comp->node);
+	unsigned long cpu;
+
+	cpu_notifier_register_begin();
+	for_each_online_cpu(cpu)
+		__zcomp_cpu_notifier(comp, CPU_UP_CANCELED, cpu);
+	__unregister_cpu_notifier(&comp->notifier);
+	cpu_notifier_register_done();
+
 	free_percpu(comp->stream);
 	kfree(comp);
 }

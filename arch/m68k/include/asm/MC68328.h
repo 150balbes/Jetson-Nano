@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 
 /* include/asm-m68knommu/MC68328.h: '328 control registers
  *
@@ -9,7 +8,6 @@
  * Copyright (C) 1998  Kenneth Albanowski <kjahds@kjahds.com>,
  *
  */
-#include <linux/compiler.h>
 
 #ifndef _MC68328_H_
 #define _MC68328_H_
@@ -995,7 +993,7 @@ typedef volatile struct {
   volatile unsigned short int pad1;
   volatile unsigned short int pad2;
   volatile unsigned short int pad3;
-} __packed m68328_uart;
+} __attribute__((packed)) m68328_uart;
 
 
 /**********

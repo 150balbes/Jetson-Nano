@@ -92,8 +92,7 @@ static ssize_t dm_attr_suspended_show(struct mapped_device *md, char *buf)
 
 static ssize_t dm_attr_use_blk_mq_show(struct mapped_device *md, char *buf)
 {
-	/* Purely for userspace compatibility */
-	sprintf(buf, "%d\n", true);
+	sprintf(buf, "%d\n", dm_use_blk_mq(md));
 
 	return strlen(buf);
 }

@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0+ WITH Linux-syscall-note */
 #ifndef __UHID_H_
 #define __UHID_H_
 

@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef KERNEL_H
 #define KERNEL_H
 #include <stdbool.h>
@@ -22,10 +21,6 @@
 #define PAGE_SIZE getpagesize()
 #define PAGE_MASK (~(PAGE_SIZE-1))
 #define PAGE_ALIGN(x) ((x + PAGE_SIZE - 1) & PAGE_MASK)
-
-/* generic data direction definitions */
-#define READ                    0
-#define WRITE                   1
 
 typedef unsigned long long phys_addr_t;
 typedef unsigned long long dma_addr_t;
@@ -56,11 +51,6 @@ static inline void *kmalloc(size_t s, gfp_t gfp)
 		return __kmalloc_fake;
 	return malloc(s);
 }
-static inline void *kmalloc_array(unsigned n, size_t s, gfp_t gfp)
-{
-	return kmalloc(n * s, gfp);
-}
-
 static inline void *kzalloc(size_t s, gfp_t gfp)
 {
 	void *p = kmalloc(s, gfp);
@@ -127,7 +117,7 @@ static inline void free_page(unsigned long addr)
 #define dev_err(dev, format, ...) fprintf (stderr, format, ## __VA_ARGS__)
 #define dev_warn(dev, format, ...) fprintf (stderr, format, ## __VA_ARGS__)
 
-#define WARN_ON_ONCE(cond) (unlikely(cond) ? fprintf (stderr, "WARNING\n") : 0)
+#define WARN_ON_ONCE(cond) ((cond) && fprintf (stderr, "WARNING\n"))
 
 #define min(x, y) ({				\
 	typeof(x) _min1 = (x);			\

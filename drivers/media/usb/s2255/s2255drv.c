@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  *  s2255drv.c - a driver for the Sensoray 2255 USB video capture device
  *
@@ -21,6 +20,20 @@
  * -half size, color mode YUYV or YUV422P: all 4 channels at once
  * -full size, color mode YUYV or YUV422P 1/2 frame rate: all 4 channels
  *  at once.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  */
 
 #include <linux/module.h>
@@ -341,7 +354,7 @@ static void s2255_fillbuff(struct s2255_vc *vc, struct s2255_buffer *buf,
 			   int jpgsize);
 static int s2255_set_mode(struct s2255_vc *vc, struct s2255_mode *mode);
 static int s2255_board_shutdown(struct s2255_dev *dev);
-static void s2255_fwload_start(struct s2255_dev *dev);
+static void s2255_fwload_start(struct s2255_dev *dev, int reset);
 static void s2255_destroy(struct s2255_dev *dev);
 static long s2255_vendor_req(struct s2255_dev *dev, unsigned char req,
 			     u16 index, u16 value, void *buf,
@@ -372,7 +385,7 @@ MODULE_PARM_DESC(jpeg_enable, "Jpeg enable(1-on 0-off) default 1");
 
 /* USB device table */
 #define USB_SENSORAY_VID	0x1943
-static const struct usb_device_id s2255_table[] = {
+static struct usb_device_id s2255_table[] = {
 	{USB_DEVICE(USB_SENSORAY_VID, 0x2255)},
 	{USB_DEVICE(USB_SENSORAY_VID, 0x2257)}, /*same family as 2255*/
 	{ }			/* Terminating entry */
@@ -467,7 +480,7 @@ static void planar422p_to_yuv_packed(const unsigned char *in,
 static void s2255_reset_dsppower(struct s2255_dev *dev)
 {
 	s2255_vendor_req(dev, 0x40, 0x0000, 0x0001, NULL, 0, 1);
-	msleep(50);
+	msleep(20);
 	s2255_vendor_req(dev, 0x50, 0x0000, 0x0000, NULL, 0, 1);
 	msleep(600);
 	s2255_vendor_req(dev, 0x10, 0x0000, 0x0000, NULL, 0, 1);
@@ -476,10 +489,9 @@ static void s2255_reset_dsppower(struct s2255_dev *dev)
 
 /* kickstarts the firmware loading. from probe
  */
-static void s2255_timer(struct timer_list *t)
+static void s2255_timer(unsigned long user_data)
 {
-	struct s2255_dev *dev = from_timer(dev, t, timer);
-	struct s2255_fw *data = dev->fw_data;
+	struct s2255_fw *data = (struct s2255_fw *)user_data;
 	if (usb_submit_urb(data->fw_urb, GFP_ATOMIC) < 0) {
 		pr_err("s2255: can't submit urb\n");
 		atomic_set(&data->fw_state, S2255_FW_FAILED);
@@ -639,8 +651,8 @@ static void s2255_fillbuff(struct s2255_vc *vc,
 		pr_err("s2255: =======no frame\n");
 		return;
 	}
-	dprintk(dev, 2, "s2255fill at : Buffer %p size= %d\n",
-		vbuf, pos);
+	dprintk(dev, 2, "s2255fill at : Buffer 0x%08lx size= %d\n",
+		(unsigned long)vbuf, pos);
 }
 
 
@@ -721,9 +733,12 @@ static int vidioc_querycap(struct file *file, void *priv,
 	struct s2255_vc *vc = video_drvdata(file);
 	struct s2255_dev *dev = vc->dev;
 
-	strscpy(cap->driver, "s2255", sizeof(cap->driver));
-	strscpy(cap->card, "s2255", sizeof(cap->card));
+	strlcpy(cap->driver, "s2255", sizeof(cap->driver));
+	strlcpy(cap->card, "s2255", sizeof(cap->card));
 	usb_make_path(dev->udev, cap->bus_info, sizeof(cap->bus_info));
+	cap->device_caps = V4L2_CAP_VIDEO_CAPTURE | V4L2_CAP_STREAMING |
+		V4L2_CAP_READWRITE;
+	cap->capabilities = cap->device_caps | V4L2_CAP_DEVICE_CAPS;
 	return 0;
 }
 
@@ -737,7 +752,7 @@ static int vidioc_enum_fmt_vid_cap(struct file *file, void *priv,
 	if (!jpeg_enable && ((formats[index].fourcc == V4L2_PIX_FMT_JPEG) ||
 			(formats[index].fourcc == V4L2_PIX_FMT_MJPEG)))
 		return -EINVAL;
-	strscpy(f->description, formats[index].name, sizeof(f->description));
+	strlcpy(f->description, formats[index].name, sizeof(f->description));
 	f->pixelformat = formats[index].fourcc;
 	return 0;
 }
@@ -791,6 +806,10 @@ static int vidioc_try_fmt_vid_cap(struct file *file, void *priv,
 		}
 		if (f->fmt.pix.width >= LINE_SZ_4CIFS_NTSC)
 			f->fmt.pix.width = LINE_SZ_4CIFS_NTSC;
+		else if (f->fmt.pix.width >= LINE_SZ_2CIFS_NTSC)
+			f->fmt.pix.width = LINE_SZ_2CIFS_NTSC;
+		else if (f->fmt.pix.width >= LINE_SZ_1CIFS_NTSC)
+			f->fmt.pix.width = LINE_SZ_1CIFS_NTSC;
 		else
 			f->fmt.pix.width = LINE_SZ_1CIFS_NTSC;
 	} else {
@@ -804,6 +823,10 @@ static int vidioc_try_fmt_vid_cap(struct file *file, void *priv,
 		}
 		if (f->fmt.pix.width >= LINE_SZ_4CIFS_PAL)
 			f->fmt.pix.width = LINE_SZ_4CIFS_PAL;
+		else if (f->fmt.pix.width >= LINE_SZ_2CIFS_PAL)
+			f->fmt.pix.width = LINE_SZ_2CIFS_PAL;
+		else if (f->fmt.pix.width >= LINE_SZ_1CIFS_PAL)
+			f->fmt.pix.width = LINE_SZ_1CIFS_PAL;
 		else
 			f->fmt.pix.width = LINE_SZ_1CIFS_PAL;
 	}
@@ -1183,10 +1206,10 @@ static int vidioc_enum_input(struct file *file, void *priv,
 	switch (dev->pid) {
 	case 0x2255:
 	default:
-		strscpy(inp->name, "Composite", sizeof(inp->name));
+		strlcpy(inp->name, "Composite", sizeof(inp->name));
 		break;
 	case 0x2257:
-		strscpy(inp->name, (vc->idx < 2) ? "Composite" : "S-Video",
+		strlcpy(inp->name, (vc->idx < 2) ? "Composite" : "S-Video",
 			sizeof(inp->name));
 		break;
 	}
@@ -1430,7 +1453,7 @@ static int s2255_open(struct file *file)
 	case S2255_FW_FAILED:
 		s2255_dev_err(&dev->udev->dev,
 			"firmware load failed. retrying.\n");
-		s2255_fwload_start(dev);
+		s2255_fwload_start(dev, 1);
 		wait_event_timeout(dev->fw_data->wait_fw,
 				   ((atomic_read(&dev->fw_data->fw_state)
 				     == S2255_FW_SUCCESS) ||
@@ -1571,7 +1594,7 @@ static void s2255_video_device_release(struct video_device *vdev)
 	return;
 }
 
-static const struct video_device template = {
+static struct video_device template = {
 	.name = "s2255v",
 	.fops = &s2255_fops_v4l,
 	.ioctl_ops = &s2255_ioctl_ops,
@@ -1654,8 +1677,6 @@ static int s2255_probe_v4l(struct s2255_dev *dev)
 		vc->vdev.ctrl_handler = &vc->hdl;
 		vc->vdev.lock = &dev->lock;
 		vc->vdev.v4l2_dev = &dev->v4l2_dev;
-		vc->vdev.device_caps = V4L2_CAP_VIDEO_CAPTURE |
-				       V4L2_CAP_STREAMING | V4L2_CAP_READWRITE;
 		video_set_drvdata(&vc->vdev, vc);
 		if (video_nr == -1)
 			ret = video_register_device(&vc->vdev,
@@ -1786,8 +1807,6 @@ static int save_frame(struct s2255_dev *dev, struct s2255_pipeinfo *pipe_info)
 				default:
 					pr_info("s2255 unknown resp\n");
 				}
-				pdata++;
-				break;
 			default:
 				pdata++;
 				break;
@@ -2191,9 +2210,10 @@ static void s2255_stop_readpipe(struct s2255_dev *dev)
 	return;
 }
 
-static void s2255_fwload_start(struct s2255_dev *dev)
+static void s2255_fwload_start(struct s2255_dev *dev, int reset)
 {
-	s2255_reset_dsppower(dev);
+	if (reset)
+		s2255_reset_dsppower(dev);
 	dev->fw_data->fw_size = dev->fw_data->fw->size;
 	atomic_set(&dev->fw_data->fw_state, S2255_FW_NOTLOADED);
 	memcpy(dev->fw_data->pfw_data,
@@ -2265,7 +2285,7 @@ static int s2255_probe(struct usb_interface *interface,
 		dev_err(&interface->dev, "Could not find bulk-in endpoint\n");
 		goto errorEP;
 	}
-	timer_setup(&dev->timer, s2255_timer, 0);
+	setup_timer(&dev->timer, s2255_timer, (unsigned long)dev->fw_data);
 	init_waitqueue_head(&dev->fw_data->wait_fw);
 	for (i = 0; i < MAX_CHANNELS; i++) {
 		struct s2255_vc *vc = &dev->vc[i];
@@ -2318,7 +2338,7 @@ static int s2255_probe(struct usb_interface *interface,
 	retval = s2255_board_init(dev);
 	if (retval)
 		goto errorBOARDINIT;
-	s2255_fwload_start(dev);
+	s2255_fwload_start(dev, 0);
 	/* loads v4l specific */
 	retval = s2255_probe_v4l(dev);
 	if (retval)

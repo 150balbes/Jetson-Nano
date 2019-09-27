@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  *  libata-sff.c - helper library for PCI IDE BMDMA
  *
@@ -9,11 +8,28 @@
  *  Copyright 2003-2006 Red Hat, Inc.  All rights reserved.
  *  Copyright 2003-2006 Jeff Garzik
  *
+ *
+ *  This program is free software; you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License as published by
+ *  the Free Software Foundation; either version 2, or (at your option)
+ *  any later version.
+ *
+ *  This program is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *  GNU General Public License for more details.
+ *
+ *  You should have received a copy of the GNU General Public License
+ *  along with this program; see the file COPYING.  If not, write to
+ *  the Free Software Foundation, 675 Mass Ave, Cambridge, MA 02139, USA.
+ *
+ *
  *  libata documentation is available via 'make {ps|pdf}docs',
- *  as Documentation/driver-api/libata.rst
+ *  as Documentation/DocBook/libata.*
  *
  *  Hardware documentation available from http://www.t13.org/ and
  *  http://www.sata-io.org/
+ *
  */
 
 #include <linux/kernel.h>
@@ -526,7 +542,7 @@ static inline void ata_tf_to_host(struct ata_port *ap,
 
 /**
  *	ata_sff_data_xfer - Transfer data by PIO
- *	@qc: queued command
+ *	@dev: device to target
  *	@buf: data buffer
  *	@buflen: buffer length
  *	@rw: read/write
@@ -539,10 +555,10 @@ static inline void ata_tf_to_host(struct ata_port *ap,
  *	RETURNS:
  *	Bytes consumed.
  */
-unsigned int ata_sff_data_xfer(struct ata_queued_cmd *qc, unsigned char *buf,
+unsigned int ata_sff_data_xfer(struct ata_device *dev, unsigned char *buf,
 			       unsigned int buflen, int rw)
 {
-	struct ata_port *ap = qc->dev->link->ap;
+	struct ata_port *ap = dev->link->ap;
 	void __iomem *data_addr = ap->ioaddr.data_addr;
 	unsigned int words = buflen >> 1;
 
@@ -579,7 +595,7 @@ EXPORT_SYMBOL_GPL(ata_sff_data_xfer);
 
 /**
  *	ata_sff_data_xfer32 - Transfer data by PIO
- *	@qc: queued command
+ *	@dev: device to target
  *	@buf: data buffer
  *	@buflen: buffer length
  *	@rw: read/write
@@ -594,17 +610,16 @@ EXPORT_SYMBOL_GPL(ata_sff_data_xfer);
  *	Bytes consumed.
  */
 
-unsigned int ata_sff_data_xfer32(struct ata_queued_cmd *qc, unsigned char *buf,
+unsigned int ata_sff_data_xfer32(struct ata_device *dev, unsigned char *buf,
 			       unsigned int buflen, int rw)
 {
-	struct ata_device *dev = qc->dev;
 	struct ata_port *ap = dev->link->ap;
 	void __iomem *data_addr = ap->ioaddr.data_addr;
 	unsigned int words = buflen >> 2;
 	int slop = buflen & 3;
 
 	if (!(ap->pflags & ATA_PFLAG_PIO32))
-		return ata_sff_data_xfer(qc, buf, buflen, rw);
+		return ata_sff_data_xfer(dev, buf, buflen, rw);
 
 	/* Transfer multiple of 4 bytes */
 	if (rw == READ)
@@ -642,6 +657,36 @@ unsigned int ata_sff_data_xfer32(struct ata_queued_cmd *qc, unsigned char *buf,
 EXPORT_SYMBOL_GPL(ata_sff_data_xfer32);
 
 /**
+ *	ata_sff_data_xfer_noirq - Transfer data by PIO
+ *	@dev: device to target
+ *	@buf: data buffer
+ *	@buflen: buffer length
+ *	@rw: read/write
+ *
+ *	Transfer data from/to the device data register by PIO. Do the
+ *	transfer with interrupts disabled.
+ *
+ *	LOCKING:
+ *	Inherited from caller.
+ *
+ *	RETURNS:
+ *	Bytes consumed.
+ */
+unsigned int ata_sff_data_xfer_noirq(struct ata_device *dev, unsigned char *buf,
+				     unsigned int buflen, int rw)
+{
+	unsigned long flags;
+	unsigned int consumed;
+
+	local_irq_save(flags);
+	consumed = ata_sff_data_xfer32(dev, buf, buflen, rw);
+	local_irq_restore(flags);
+
+	return consumed;
+}
+EXPORT_SYMBOL_GPL(ata_sff_data_xfer_noirq);
+
+/**
  *	ata_pio_sector - Transfer a sector of data.
  *	@qc: Command on going
  *
@@ -658,10 +703,6 @@ static void ata_pio_sector(struct ata_queued_cmd *qc)
 	unsigned int offset;
 	unsigned char *buf;
 
-	if (!qc->cursg) {
-		qc->curbytes = qc->nbytes;
-		return;
-	}
 	if (qc->curbytes == qc->nbytes - qc->sect_size)
 		ap->hsm_task_state = HSM_ST_LAST;
 
@@ -674,10 +715,24 @@ static void ata_pio_sector(struct ata_queued_cmd *qc)
 
 	DPRINTK("data %s\n", qc->tf.flags & ATA_TFLAG_WRITE ? "write" : "read");
 
-	/* do the actual data transfer */
-	buf = kmap_atomic(page);
-	ap->ops->sff_data_xfer(qc, buf + offset, qc->sect_size, do_write);
-	kunmap_atomic(buf);
+	if (PageHighMem(page)) {
+		unsigned long flags;
+
+		/* FIXME: use a bounce buffer */
+		local_irq_save(flags);
+		buf = kmap_atomic(page);
+
+		/* do the actual data transfer */
+		ap->ops->sff_data_xfer(qc->dev, buf + offset, qc->sect_size,
+				       do_write);
+
+		kunmap_atomic(buf);
+		local_irq_restore(flags);
+	} else {
+		buf = page_address(page);
+		ap->ops->sff_data_xfer(qc->dev, buf + offset, qc->sect_size,
+				       do_write);
+	}
 
 	if (!do_write && !PageSlab(page))
 		flush_dcache_page(page);
@@ -687,8 +742,6 @@ static void ata_pio_sector(struct ata_queued_cmd *qc)
 
 	if (qc->cursg_ofs == qc->cursg->length) {
 		qc->cursg = sg_next(qc->cursg);
-		if (!qc->cursg)
-			ap->hsm_task_state = HSM_ST_LAST;
 		qc->cursg_ofs = 0;
 	}
 }
@@ -738,7 +791,7 @@ static void atapi_send_cdb(struct ata_port *ap, struct ata_queued_cmd *qc)
 	DPRINTK("send cdb\n");
 	WARN_ON_ONCE(qc->dev->cdb_len < 12);
 
-	ap->ops->sff_data_xfer(qc, qc->cdb, qc->dev->cdb_len, 1);
+	ap->ops->sff_data_xfer(qc->dev, qc->cdb, qc->dev->cdb_len, 1);
 	ata_sff_sync(ap);
 	/* FIXME: If the CDB is for DMA do we need to do the transition delay
 	   or is bmdma_start guaranteed to do it ? */
@@ -800,17 +853,31 @@ next_sg:
 	offset %= PAGE_SIZE;
 
 	/* don't overrun current sg */
-	count = min(sg->length - qc->cursg_ofs, bytes);
+	count = min(sg->length - qc->cursg_ofs, (size_t)bytes);
 
 	/* don't cross page boundaries */
 	count = min(count, (unsigned int)PAGE_SIZE - offset);
 
 	DPRINTK("data %s\n", qc->tf.flags & ATA_TFLAG_WRITE ? "write" : "read");
 
-	/* do the actual data transfer */
-	buf = kmap_atomic(page);
-	consumed = ap->ops->sff_data_xfer(qc, buf + offset, count, rw);
-	kunmap_atomic(buf);
+	if (PageHighMem(page)) {
+		unsigned long flags;
+
+		/* FIXME: use bounce buffer */
+		local_irq_save(flags);
+		buf = kmap_atomic(page);
+
+		/* do the actual data transfer */
+		consumed = ap->ops->sff_data_xfer(dev,  buf + offset,
+								count, rw);
+
+		kunmap_atomic(buf);
+		local_irq_restore(flags);
+	} else {
+		buf = page_address(page);
+		consumed = ap->ops->sff_data_xfer(dev,  buf + offset,
+								count, rw);
+	}
 
 	bytes -= min(bytes, consumed);
 	qc->curbytes += count;
@@ -2359,21 +2426,11 @@ int ata_pci_sff_activate_host(struct ata_host *host,
 		return rc;
 
 	if ((pdev->class >> 8) == PCI_CLASS_STORAGE_IDE) {
-		u8 tmp8, mask = 0;
+		u8 tmp8, mask;
 
-		/*
-		 * ATA spec says we should use legacy mode when one
-		 * port is in legacy mode, but disabled ports on some
-		 * PCI hosts appear as fixed legacy ports, e.g SB600/700
-		 * on which the secondary port is not wired, so
-		 * ignore ports that are marked as 'dummy' during
-		 * this check
-		 */
+		/* TODO: What if one channel is in native mode ... */
 		pci_read_config_byte(pdev, PCI_CLASS_PROG, &tmp8);
-		if (!ata_port_is_dummy(host->ports[0]))
-			mask |= (1 << 0);
-		if (!ata_port_is_dummy(host->ports[1]))
-			mask |= (1 << 2);
+		mask = (1 << 2) | (1 << 0);
 		if ((tmp8 & mask) != mask)
 			legacy_mode = 1;
 	}

@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __QCOM_WNCSS_H__
 #define __QCOM_WNCSS_H__
 

@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __SOCK_DIAG_H__
 #define __SOCK_DIAG_H__
 

@@ -48,6 +48,8 @@ static unsigned long long relative_base;
 static struct addr_range text_ranges[] = {
 	{ "_stext",     "_etext"     },
 	{ "_sinittext", "_einittext" },
+	{ "_stext_l1",  "_etext_l1"  },	/* Blackfin on-chip L1 inst SRAM */
+	{ "_stext_l2",  "_etext_l2"  },	/* Blackfin on-chip L2 SRAM */
 };
 #define text_range_text     (&text_ranges[0])
 #define text_range_inittext (&text_ranges[1])
@@ -60,18 +62,21 @@ static struct sym_entry *table;
 static unsigned int table_size, table_cnt;
 static int all_symbols = 0;
 static int absolute_percpu = 0;
+static char symbol_prefix_char = '\0';
 static int base_relative = 0;
 
-static int token_profit[0x10000];
+int token_profit[0x10000];
 
 /* the table that holds the result of the compression */
-static unsigned char best_table[256][2];
-static unsigned char best_table_len[256];
+unsigned char best_table[256][2];
+unsigned char best_table_len[256];
 
 
 static void usage(void)
 {
 	fprintf(stderr, "Usage: kallsyms [--all-symbols] "
+			"[--symbol-prefix=<prefix char>] "
+			"[--page-offset=<CONFIG_PAGE_OFFSET>] "
 			"[--base-relative] < in.map > out.S\n");
 	exit(1);
 }
@@ -80,7 +85,7 @@ static void usage(void)
  * This ignores the intensely annoying "mapping symbols" found
  * in ARM ELF files: $a, $t and $d.
  */
-static int is_arm_mapping_symbol(const char *str)
+static inline int is_arm_mapping_symbol(const char *str)
 {
 	return str[0] == '$' && strchr("axtd", str[1])
 	       && (str[2] == '\0' || str[2] == '.');
@@ -109,21 +114,27 @@ static int check_symbol_range(const char *sym, unsigned long long addr,
 
 static int read_symbol(FILE *in, struct sym_entry *s)
 {
-	char sym[500], stype;
+	char str[500];
+	char *sym, stype;
 	int rc;
 
-	rc = fscanf(in, "%llx %c %499s\n", &s->addr, &stype, sym);
+	rc = fscanf(in, "%llx %c %499s\n", &s->addr, &stype, str);
 	if (rc != 3) {
-		if (rc != EOF && fgets(sym, 500, in) == NULL)
+		if (rc != EOF && fgets(str, 500, in) == NULL)
 			fprintf(stderr, "Read error or end of file.\n");
 		return -1;
 	}
-	if (strlen(sym) >= KSYM_NAME_LEN) {
-		fprintf(stderr, "Symbol %s too long for kallsyms (%zu >= %d).\n"
+	if (strlen(str) > KSYM_NAME_LEN) {
+		fprintf(stderr, "Symbol %s too long for kallsyms (%zu vs %d).\n"
 				"Please increase KSYM_NAME_LEN both in kernel and kallsyms.c\n",
-			sym, strlen(sym), KSYM_NAME_LEN);
+			str, strlen(str), KSYM_NAME_LEN);
 		return -1;
 	}
+
+	sym = str;
+	/* skip prefix char */
+	if (symbol_prefix_char && str[0] == symbol_prefix_char)
+		sym++;
 
 	/* Ignore most absolute/undefined (?) symbols. */
 	if (strcmp(sym, "_text") == 0)
@@ -145,25 +156,22 @@ static int read_symbol(FILE *in, struct sym_entry *s)
 		 is_arm_mapping_symbol(sym))
 		return -1;
 	/* exclude also MIPS ELF local symbols ($L123 instead of .L123) */
-	else if (sym[0] == '$')
+	else if (str[0] == '$')
 		return -1;
 	/* exclude debugging symbols */
-	else if (stype == 'N' || stype == 'n')
-		return -1;
-	/* exclude s390 kasan local symbols */
-	else if (!strncmp(sym, ".LASANPC", 8))
+	else if (stype == 'N')
 		return -1;
 
 	/* include the type field in the symbol name, so that it gets
 	 * compressed together */
-	s->len = strlen(sym) + 1;
+	s->len = strlen(str) + 1;
 	s->sym = malloc(s->len + 1);
 	if (!s->sym) {
 		fprintf(stderr, "kallsyms failure: "
 			"unable to allocate required amount of memory\n");
 		exit(EXIT_FAILURE);
 	}
-	strcpy((char *)s->sym + 1, sym);
+	strcpy((char *)s->sym + 1, str);
 	s->sym[0] = stype;
 
 	s->percpu_absolute = 0;
@@ -212,11 +220,6 @@ static int symbol_valid(struct sym_entry *s)
 		"_SDA2_BASE_",		/* ppc */
 		NULL };
 
-	static char *special_prefixes[] = {
-		"__crc_",		/* modversions */
-		"__efistub_",		/* arm64 EFI stub namespace */
-		NULL };
-
 	static char *special_suffixes[] = {
 		"_veneer",		/* arm */
 		"_from_arm",		/* arm */
@@ -225,6 +228,11 @@ static int symbol_valid(struct sym_entry *s)
 
 	int i;
 	char *sym_name = (char *)s->sym + 1;
+
+	/* skip prefix char */
+	if (symbol_prefix_char && *sym_name == symbol_prefix_char)
+		sym_name++;
+
 
 	/* if --all-symbols is not specified, then symbols outside the text
 	 * and inittext sections are discarded */
@@ -251,14 +259,6 @@ static int symbol_valid(struct sym_entry *s)
 	for (i = 0; special_symbols[i]; i++)
 		if (strcmp(sym_name, special_symbols[i]) == 0)
 			return 0;
-
-	for (i = 0; special_prefixes[i]; i++) {
-		int l = strlen(special_prefixes[i]);
-
-		if (l <= strlen(sym_name) &&
-		    strncmp(sym_name, special_prefixes[i], l) == 0)
-			return 0;
-	}
 
 	for (i = 0; special_suffixes[i]; i++) {
 		int l = strlen(sym_name) - strlen(special_suffixes[i]);
@@ -290,9 +290,15 @@ static void read_map(FILE *in)
 
 static void output_label(char *label)
 {
-	printf(".globl %s\n", label);
+	if (symbol_prefix_char)
+		printf(".globl %c%s\n", symbol_prefix_char, label);
+	else
+		printf(".globl %s\n", label);
 	printf("\tALGN\n");
-	printf("%s:\n", label);
+	if (symbol_prefix_char)
+		printf("%c%s:\n", symbol_prefix_char, label);
+	else
+		printf("%s:\n", label);
 }
 
 /* uncompress a compressed symbol. When this function is called, the best table
@@ -334,13 +340,13 @@ static void write_src(void)
 	unsigned int *markers;
 	char buf[KSYM_NAME_LEN];
 
-	printf("#include <asm/bitsperlong.h>\n");
+	printf("#include <asm/types.h>\n");
 	printf("#if BITS_PER_LONG == 64\n");
 	printf("#define PTR .quad\n");
-	printf("#define ALGN .balign 8\n");
+	printf("#define ALGN .align 8\n");
 	printf("#else\n");
 	printf("#define PTR .long\n");
-	printf("#define ALGN .balign 4\n");
+	printf("#define ALGN .align 4\n");
 	printf("#endif\n");
 
 	printf("\t.section .rodata, \"a\"\n");
@@ -406,7 +412,7 @@ static void write_src(void)
 	}
 
 	output_label("kallsyms_num_syms");
-	printf("\t.long\t%u\n", table_cnt);
+	printf("\tPTR\t%d\n", table_cnt);
 	printf("\n");
 
 	/* table of offset markers, that give the offset in the compressed stream
@@ -435,7 +441,7 @@ static void write_src(void)
 
 	output_label("kallsyms_markers");
 	for (i = 0; i < ((table_cnt + 255) >> 8); i++)
-		printf("\t.long\t%u\n", markers[i]);
+		printf("\tPTR\t%d\n", markers[i]);
 	printf("\n");
 
 	free(markers);
@@ -578,7 +584,7 @@ static void optimize_result(void)
 		 * original char code */
 		if (!best_table_len[i]) {
 
-			/* find the token with the best profit value */
+			/* find the token with the breates profit value */
 			best = find_best_token();
 			if (token_profit[best] == 0)
 				break;
@@ -598,6 +604,9 @@ static void optimize_result(void)
 static void insert_real_symbols_in_table(void)
 {
 	unsigned int i, j, c;
+
+	memset(best_table, 0, sizeof(best_table));
+	memset(best_table_len, 0, sizeof(best_table_len));
 
 	for (i = 0; i < table_cnt; i++) {
 		for (j = 0; j < table[i].len; j++) {
@@ -747,7 +756,13 @@ int main(int argc, char **argv)
 				all_symbols = 1;
 			else if (strcmp(argv[i], "--absolute-percpu") == 0)
 				absolute_percpu = 1;
-			else if (strcmp(argv[i], "--base-relative") == 0)
+			else if (strncmp(argv[i], "--symbol-prefix=", 16) == 0) {
+				char *p = &argv[i][16];
+				/* skip quote */
+				if ((*p == '"' && *(p+2) == '"') || (*p == '\'' && *(p+2) == '\''))
+					p++;
+				symbol_prefix_char = *p;
+			} else if (strcmp(argv[i], "--base-relative") == 0)
 				base_relative = 1;
 			else
 				usage();

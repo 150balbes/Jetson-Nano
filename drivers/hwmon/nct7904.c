@@ -1,12 +1,18 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * nct7904.c - driver for Nuvoton NCT7904D.
  *
  * Copyright (c) 2015 Kontron
  * Author: Vadim V. Vlasov <vvlasov@dev.rtsoft.ru>
  *
- * Copyright (c) 2019 Advantech
- * Author: Amy.Shih <amy.shih@advantech.com.tw>
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
  */
 
 #include <linux/module.h>
@@ -53,8 +59,6 @@
 #define T_CPU1_HV_REG		0xA0	/* Bank 0; 2 regs (HV/LV) per sensor */
 
 #define PRTS_REG		0x03	/* Bank 2 */
-#define PFE_REG			0x00	/* Bank 2; PECI Function Enable */
-#define TSI_CTRL_REG		0x50	/* Bank 2; TSI Control Register */
 #define FANCTL1_FMR_REG		0x00	/* Bank 3; 1 reg per channel */
 #define FANCTL1_OUT_REG		0x10	/* Bank 3; 1 reg per channel */
 
@@ -70,12 +74,10 @@ struct nct7904_data {
 	u32 vsen_mask;
 	u32 tcpu_mask;
 	u8 fan_mode[FANCTL_MAX];
-	u8 enable_dts;
-	u8 has_dts;
 };
 
 /* Access functions */
-static int nct7904_bank_lock(struct nct7904_data *data, unsigned int bank)
+static int nct7904_bank_lock(struct nct7904_data *data, unsigned bank)
 {
 	int ret;
 
@@ -97,7 +99,7 @@ static inline void nct7904_bank_release(struct nct7904_data *data)
 
 /* Read 1-byte register. Returns unsigned reg or -ERRNO on error. */
 static int nct7904_read_reg(struct nct7904_data *data,
-			    unsigned int bank, unsigned int reg)
+			    unsigned bank, unsigned reg)
 {
 	struct i2c_client *client = data->client;
 	int ret;
@@ -115,7 +117,7 @@ static int nct7904_read_reg(struct nct7904_data *data,
  * -ERRNO on error.
  */
 static int nct7904_read_reg16(struct nct7904_data *data,
-			      unsigned int bank, unsigned int reg)
+			      unsigned bank, unsigned reg)
 {
 	struct i2c_client *client = data->client;
 	int ret, hi;
@@ -137,7 +139,7 @@ static int nct7904_read_reg16(struct nct7904_data *data,
 
 /* Write 1-byte register. Returns 0 or -ERRNO on error. */
 static int nct7904_write_reg(struct nct7904_data *data,
-			     unsigned int bank, unsigned int reg, u8 val)
+			     unsigned bank, unsigned reg, u8 val)
 {
 	struct i2c_client *client = data->client;
 	int ret;
@@ -157,7 +159,7 @@ static int nct7904_read_fan(struct device *dev, u32 attr, int channel,
 	unsigned int cnt, rpm;
 	int ret;
 
-	switch (attr) {
+	switch(attr) {
 	case hwmon_fan_input:
 		ret = nct7904_read_reg16(data, BANK_0,
 					 FANIN1_HV_REG + channel * 2);
@@ -180,7 +182,7 @@ static umode_t nct7904_fan_is_visible(const void *_data, u32 attr, int channel)
 	const struct nct7904_data *data = _data;
 
 	if (attr == hwmon_fan_input && data->fanin_mask & (1 << channel))
-		return 0444;
+		return S_IRUGO;
 	return 0;
 }
 
@@ -198,7 +200,7 @@ static int nct7904_read_in(struct device *dev, u32 attr, int channel,
 
 	index = nct7904_chan_to_index[channel];
 
-	switch (attr) {
+	switch(attr) {
 	case hwmon_in_input:
 		ret = nct7904_read_reg16(data, BANK_0,
 					 VSEN1_HV_REG + index * 2);
@@ -223,7 +225,7 @@ static umode_t nct7904_in_is_visible(const void *_data, u32 attr, int channel)
 
 	if (channel > 0 && attr == hwmon_in_input &&
 	    (data->vsen_mask & BIT(index)))
-		return 0444;
+		return S_IRUGO;
 
 	return 0;
 }
@@ -234,17 +236,13 @@ static int nct7904_read_temp(struct device *dev, u32 attr, int channel,
 	struct nct7904_data *data = dev_get_drvdata(dev);
 	int ret, temp;
 
-	switch (attr) {
+	switch(attr) {
 	case hwmon_temp_input:
-		if (channel == 4)
+		if (channel == 0)
 			ret = nct7904_read_reg16(data, BANK_0, LTD_HV_REG);
-		else if (channel < 5)
-			ret = nct7904_read_reg16(data, BANK_0,
-						 TEMP_CH1_HV_REG + channel * 4);
 		else
 			ret = nct7904_read_reg16(data, BANK_0,
-						 T_CPU1_HV_REG + (channel - 5)
-						 * 2);
+					T_CPU1_HV_REG + (channel - 1) * 2);
 		if (ret < 0)
 			return ret;
 		temp = ((ret & 0xff00) >> 5) | (ret & 0x7);
@@ -260,12 +258,12 @@ static umode_t nct7904_temp_is_visible(const void *_data, u32 attr, int channel)
 	const struct nct7904_data *data = _data;
 
 	if (attr == hwmon_temp_input) {
-		if (channel < 5) {
-			if (data->tcpu_mask & BIT(channel))
-				return 0444;
+		if (channel == 0) {
+			if (data->vsen_mask & BIT(17))
+				return S_IRUGO;
 		} else {
-			if (data->has_dts & BIT(channel - 5))
-				return 0444;
+			if (data->tcpu_mask & BIT(channel - 1))
+				return S_IRUGO;
 		}
 	}
 
@@ -278,7 +276,7 @@ static int nct7904_read_pwm(struct device *dev, u32 attr, int channel,
 	struct nct7904_data *data = dev_get_drvdata(dev);
 	int ret;
 
-	switch (attr) {
+	switch(attr) {
 	case hwmon_pwm_input:
 		ret = nct7904_read_reg(data, BANK_3, FANCTL1_OUT_REG + channel);
 		if (ret < 0)
@@ -303,7 +301,7 @@ static int nct7904_write_pwm(struct device *dev, u32 attr, int channel,
 	struct nct7904_data *data = dev_get_drvdata(dev);
 	int ret;
 
-	switch (attr) {
+	switch(attr) {
 	case hwmon_pwm_input:
 		if (val < 0 || val > 255)
 			return -EINVAL;
@@ -324,10 +322,10 @@ static int nct7904_write_pwm(struct device *dev, u32 attr, int channel,
 
 static umode_t nct7904_pwm_is_visible(const void *_data, u32 attr, int channel)
 {
-	switch (attr) {
+	switch(attr) {
 	case hwmon_pwm_input:
 	case hwmon_pwm_enable:
-		return 0644;
+		return S_IRUGO | S_IWUSR;
 	default:
 		return 0;
 	}
@@ -402,53 +400,89 @@ static int nct7904_detect(struct i2c_client *client,
 	return 0;
 }
 
+static const u32 nct7904_in_config[] = {
+	HWMON_I_INPUT,                  /* dummy, skipped in is_visible */
+	HWMON_I_INPUT,
+	HWMON_I_INPUT,
+	HWMON_I_INPUT,
+	HWMON_I_INPUT,
+	HWMON_I_INPUT,
+	HWMON_I_INPUT,
+	HWMON_I_INPUT,
+	HWMON_I_INPUT,
+	HWMON_I_INPUT,
+	HWMON_I_INPUT,
+	HWMON_I_INPUT,
+	HWMON_I_INPUT,
+	HWMON_I_INPUT,
+	HWMON_I_INPUT,
+	HWMON_I_INPUT,
+	HWMON_I_INPUT,
+	HWMON_I_INPUT,
+	HWMON_I_INPUT,
+	HWMON_I_INPUT,
+	HWMON_I_INPUT,
+	0
+};
+
+static const struct hwmon_channel_info nct7904_in = {
+	.type = hwmon_in,
+	.config = nct7904_in_config,
+};
+
+static const u32 nct7904_fan_config[] = {
+            HWMON_F_INPUT,
+            HWMON_F_INPUT,
+            HWMON_F_INPUT,
+            HWMON_F_INPUT,
+            HWMON_F_INPUT,
+            HWMON_F_INPUT,
+            HWMON_F_INPUT,
+            HWMON_F_INPUT,
+	    0
+};
+
+static const struct hwmon_channel_info nct7904_fan = {
+	.type = hwmon_fan,
+	.config = nct7904_fan_config,
+};
+
+static const u32 nct7904_pwm_config[] = {
+            HWMON_PWM_INPUT | HWMON_PWM_ENABLE,
+            HWMON_PWM_INPUT | HWMON_PWM_ENABLE,
+            HWMON_PWM_INPUT | HWMON_PWM_ENABLE,
+            HWMON_PWM_INPUT | HWMON_PWM_ENABLE,
+	    0
+};
+
+static const struct hwmon_channel_info nct7904_pwm = {
+	.type = hwmon_pwm,
+	.config = nct7904_pwm_config,
+};
+
+static const u32 nct7904_temp_config[] = {
+            HWMON_T_INPUT,
+            HWMON_T_INPUT,
+            HWMON_T_INPUT,
+            HWMON_T_INPUT,
+            HWMON_T_INPUT,
+            HWMON_T_INPUT,
+            HWMON_T_INPUT,
+            HWMON_T_INPUT,
+            HWMON_T_INPUT,
+	    0
+};
+
+static const struct hwmon_channel_info nct7904_temp = {
+	.type = hwmon_temp,
+	.config = nct7904_temp_config,
+};
+
 static const struct hwmon_channel_info *nct7904_info[] = {
-	HWMON_CHANNEL_INFO(in,
-			   HWMON_I_INPUT, /* dummy, skipped in is_visible */
-			   HWMON_I_INPUT,
-			   HWMON_I_INPUT,
-			   HWMON_I_INPUT,
-			   HWMON_I_INPUT,
-			   HWMON_I_INPUT,
-			   HWMON_I_INPUT,
-			   HWMON_I_INPUT,
-			   HWMON_I_INPUT,
-			   HWMON_I_INPUT,
-			   HWMON_I_INPUT,
-			   HWMON_I_INPUT,
-			   HWMON_I_INPUT,
-			   HWMON_I_INPUT,
-			   HWMON_I_INPUT,
-			   HWMON_I_INPUT,
-			   HWMON_I_INPUT,
-			   HWMON_I_INPUT,
-			   HWMON_I_INPUT,
-			   HWMON_I_INPUT,
-			   HWMON_I_INPUT),
-	HWMON_CHANNEL_INFO(fan,
-			   HWMON_F_INPUT,
-			   HWMON_F_INPUT,
-			   HWMON_F_INPUT,
-			   HWMON_F_INPUT,
-			   HWMON_F_INPUT,
-			   HWMON_F_INPUT,
-			   HWMON_F_INPUT,
-			   HWMON_F_INPUT),
-	HWMON_CHANNEL_INFO(pwm,
-			   HWMON_PWM_INPUT | HWMON_PWM_ENABLE,
-			   HWMON_PWM_INPUT | HWMON_PWM_ENABLE,
-			   HWMON_PWM_INPUT | HWMON_PWM_ENABLE,
-			   HWMON_PWM_INPUT | HWMON_PWM_ENABLE),
-	HWMON_CHANNEL_INFO(temp,
-			   HWMON_T_INPUT,
-			   HWMON_T_INPUT,
-			   HWMON_T_INPUT,
-			   HWMON_T_INPUT,
-			   HWMON_T_INPUT,
-			   HWMON_T_INPUT,
-			   HWMON_T_INPUT,
-			   HWMON_T_INPUT,
-			   HWMON_T_INPUT),
+	&nct7904_in,
+	&nct7904_fan,
+	&nct7904_pwm,
+	&nct7904_temp,
 	NULL
 };
 
@@ -471,7 +505,6 @@ static int nct7904_probe(struct i2c_client *client,
 	struct device *dev = &client->dev;
 	int ret, i;
 	u32 mask;
-	u8 val, bit;
 
 	data = devm_kzalloc(dev, sizeof(struct nct7904_data), GFP_KERNEL);
 	if (!data)
@@ -505,65 +538,10 @@ static int nct7904_probe(struct i2c_client *client,
 	data->vsen_mask = mask;
 
 	/* CPU_TEMP attributes */
-	ret = nct7904_read_reg(data, BANK_0, VT_ADC_CTRL0_REG);
+	ret = nct7904_read_reg16(data, BANK_0, DTS_T_CTRL0_REG);
 	if (ret < 0)
 		return ret;
-
-	if ((ret & 0x6) == 0x6)
-		data->tcpu_mask |= 1; /* TR1 */
-	if ((ret & 0x18) == 0x18)
-		data->tcpu_mask |= 2; /* TR2 */
-	if ((ret & 0x20) == 0x20)
-		data->tcpu_mask |= 4; /* TR3 */
-	if ((ret & 0x80) == 0x80)
-		data->tcpu_mask |= 8; /* TR4 */
-
-	/* LTD */
-	ret = nct7904_read_reg(data, BANK_0, VT_ADC_CTRL2_REG);
-	if (ret < 0)
-		return ret;
-	if ((ret & 0x02) == 0x02)
-		data->tcpu_mask |= 0x10;
-
-	/* Multi-Function detecting for Volt and TR/TD */
-	ret = nct7904_read_reg(data, BANK_0, VT_ADC_MD_REG);
-	if (ret < 0)
-		return ret;
-
-	for (i = 0; i < 4; i++) {
-		val = (ret & (0x03 << i)) >> (i * 2);
-		bit = (1 << i);
-		if (val == 0)
-			data->tcpu_mask &= ~bit;
-	}
-
-	/* PECI */
-	ret = nct7904_read_reg(data, BANK_2, PFE_REG);
-	if (ret < 0)
-		return ret;
-	if (ret & 0x80) {
-		data->enable_dts = 1; /* Enable DTS & PECI */
-	} else {
-		ret = nct7904_read_reg(data, BANK_2, TSI_CTRL_REG);
-		if (ret < 0)
-			return ret;
-		if (ret & 0x80)
-			data->enable_dts = 0x3; /* Enable DTS & TSI */
-	}
-
-	/* Check DTS enable status */
-	if (data->enable_dts) {
-		ret = nct7904_read_reg(data, BANK_0, DTS_T_CTRL0_REG);
-		if (ret < 0)
-			return ret;
-		data->has_dts = ret & 0xF;
-		if (data->enable_dts & 0x2) {
-			ret = nct7904_read_reg(data, BANK_0, DTS_T_CTRL1_REG);
-			if (ret < 0)
-				return ret;
-			data->has_dts |= (ret & 0xF) << 4;
-		}
-	}
+	data->tcpu_mask = ((ret >> 8) & 0xf) | ((ret & 0xf) << 4);
 
 	for (i = 0; i < FANCTL_MAX; i++) {
 		ret = nct7904_read_reg(data, BANK_3, FANCTL1_FMR_REG + i);

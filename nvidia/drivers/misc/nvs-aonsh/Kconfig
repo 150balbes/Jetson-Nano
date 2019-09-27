@@ -1,0 +1,10 @@
+config NVS_AON_SHUB
+	tristate "Tegra T18x AON Sensor Hub driver"
+	depends on ARCH_TEGRA_18x_SOC && TEGRA_AON && NVS_IIO
+	select NV_TEGRA_IVC
+	select TEGRA_HSP
+	help
+	  Say Y here for Tegra T18x sensor hub for projects that only use
+	  sensors connected to an auxilliary CPU.
+
+	  The driver uses the NVS (NVidia Sensor) IIO framework.

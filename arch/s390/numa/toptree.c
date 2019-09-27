@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * NUMA support for s390
  *
@@ -8,7 +7,6 @@
  */
 
 #include <linux/kernel.h>
-#include <linux/memblock.h>
 #include <linux/cpumask.h>
 #include <linux/list.h>
 #include <linux/list_sort.h>
@@ -27,14 +25,10 @@
  * RETURNS:
  * Pointer to the new tree node or NULL on error
  */
-struct toptree __ref *toptree_alloc(int level, int id)
+struct toptree *toptree_alloc(int level, int id)
 {
-	struct toptree *res;
+	struct toptree *res = kzalloc(sizeof(struct toptree), GFP_KERNEL);
 
-	if (slab_is_available())
-		res = kzalloc(sizeof(*res), GFP_KERNEL);
-	else
-		res = memblock_alloc(sizeof(*res), 8);
 	if (!res)
 		return res;
 
@@ -71,7 +65,7 @@ static void toptree_remove(struct toptree *cand)
  * cleanly using toptree_remove. Possible children are freed
  * recursively. In the end @cand itself is freed.
  */
-void __ref toptree_free(struct toptree *cand)
+void toptree_free(struct toptree *cand)
 {
 	struct toptree *child, *tmp;
 
@@ -79,10 +73,7 @@ void __ref toptree_free(struct toptree *cand)
 		toptree_remove(cand);
 	toptree_for_each_child_safe(child, tmp, cand)
 		toptree_free(child);
-	if (slab_is_available())
-		kfree(cand);
-	else
-		memblock_free_early((unsigned long)cand, sizeof(*cand));
+	kfree(cand);
 }
 
 /**

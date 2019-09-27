@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * arch/arm/mach-ixp4xx/common-pci.c 
  *
@@ -9,6 +8,11 @@
  * Copyright (C) 2002 Intel Corporation.
  * Copyright (C) 2003 Greg Ungerer <gerg@snapgear.com>
  * Copyright (C) 2003-2004 MontaVista Software, Inc.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
  */
 
 #include <linux/sched.h>
@@ -27,7 +31,7 @@
 
 #include <asm/cputype.h>
 #include <asm/irq.h>
-#include <linux/sizes.h>
+#include <asm/sizes.h>
 #include <asm/mach/pci.h>
 #include <mach/hardware.h>
 
@@ -39,14 +43,14 @@
 int (*ixp4xx_pci_read)(u32 addr, u32 cmd, u32* data);
 
 /*
- * Base address for PCI register region
+ * Base address for PCI regsiter region
  */
 unsigned long ixp4xx_pci_reg_base = 0;
 
 /*
  * PCI cfg an I/O routines are done by programming a 
  * command/byte enable register, and then read/writing
- * the data from a data register. We need to ensure
+ * the data from a data regsiter. We need to ensure
  * these transactions are atomic or we will end up
  * with corrupt data on the bus or in a driver.
  */
@@ -417,7 +421,7 @@ int ixp4xx_setup(int nr, struct pci_sys_data *sys)
 	if (nr >= 1)
 		return 0;
 
-	res = kcalloc(2, sizeof(*res), GFP_KERNEL);
+	res = kzalloc(sizeof(*res) * 2, GFP_KERNEL);
 	if (res == NULL) {
 		/* 
 		 * If we're out of memory this early, something is wrong,

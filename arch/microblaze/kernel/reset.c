@@ -18,7 +18,7 @@
 static int handle; /* reset pin handle */
 static unsigned int reset_val;
 
-static int of_platform_reset_gpio_probe(void)
+void of_platform_reset_gpio_probe(void)
 {
 	int ret;
 	handle = of_get_named_gpio(of_find_node_by_path("/"),
@@ -27,13 +27,13 @@ static int of_platform_reset_gpio_probe(void)
 	if (!gpio_is_valid(handle)) {
 		pr_info("Skipping unavailable RESET gpio %d (%s)\n",
 				handle, "reset");
-		return -ENODEV;
+		return;
 	}
 
 	ret = gpio_request(handle, "reset");
 	if (ret < 0) {
 		pr_info("GPIO pin is already allocated\n");
-		return ret;
+		return;
 	}
 
 	/* get current setup value */
@@ -51,12 +51,11 @@ static int of_platform_reset_gpio_probe(void)
 
 	pr_info("RESET: Registered gpio device: %d, current val: %d\n",
 							handle, reset_val);
-	return 0;
+	return;
 err:
 	gpio_free(handle);
-	return ret;
+	return;
 }
-device_initcall(of_platform_reset_gpio_probe);
 
 
 static void gpio_system_reset(void)

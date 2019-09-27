@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef BCM63XX_IOREMAP_H_
 #define BCM63XX_IOREMAP_H_
 

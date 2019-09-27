@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * processor_driver.c - ACPI Processor Driver
  *
@@ -9,6 +8,20 @@
  *  			- Added processor hotplug support
  *  Copyright (C) 2013, Intel Corporation
  *                      Rafael J. Wysocki <rafael.j.wysocki@intel.com>
+ *
+ * ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+ *
+ *  This program is free software; you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License as published by
+ *  the Free Software Foundation; either version 2 of the License, or (at
+ *  your option) any later version.
+ *
+ *  This program is distributed in the hope that it will be useful, but
+ *  WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ *  General Public License for more details.
+ *
+ * ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
  */
 
 #include <linux/kernel.h>
@@ -224,7 +237,7 @@ static int __acpi_processor_start(struct acpi_device *device)
 
 	result = acpi_cppc_processor_probe(pr);
 	if (result && !IS_ENABLED(CONFIG_ACPI_CPU_FREQ_PSS))
-		dev_dbg(&device->dev, "CPPC data invalid or not present\n");
+		dev_warn(&device->dev, "CPPC data invalid or not present\n");
 
 	if (!cpuidle_get_driver() || cpuidle_get_driver() == &acpi_idle_driver)
 		acpi_processor_power_init(pr);
@@ -255,9 +268,9 @@ static int acpi_processor_start(struct device *dev)
 		return -ENODEV;
 
 	/* Protect against concurrent CPU hotplug operations */
-	cpu_hotplug_disable();
+	get_online_cpus();
 	ret = __acpi_processor_start(device);
-	cpu_hotplug_enable();
+	put_online_cpus();
 	return ret;
 }
 

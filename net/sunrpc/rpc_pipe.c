@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * net/sunrpc/rpc_pipe.c
  *
@@ -14,7 +13,6 @@
 #include <linux/string.h>
 #include <linux/pagemap.h>
 #include <linux/mount.h>
-#include <linux/fs_context.h>
 #include <linux/namei.h>
 #include <linux/fsnotify.h>
 #include <linux/kernel.h>
@@ -204,9 +202,16 @@ rpc_alloc_inode(struct super_block *sb)
 }
 
 static void
-rpc_free_inode(struct inode *inode)
+rpc_i_callback(struct rcu_head *head)
 {
+	struct inode *inode = container_of(head, struct inode, i_rcu);
 	kmem_cache_free(rpc_inode_cachep, RPC_I(inode));
+}
+
+static void
+rpc_destroy_inode(struct inode *inode)
+{
+	call_rcu(&inode->i_rcu, rpc_i_callback);
 }
 
 static int
@@ -335,20 +340,20 @@ rpc_pipe_write(struct file *filp, const char __user *buf, size_t len, loff_t *of
 	return res;
 }
 
-static __poll_t
+static unsigned int
 rpc_pipe_poll(struct file *filp, struct poll_table_struct *wait)
 {
 	struct inode *inode = file_inode(filp);
 	struct rpc_inode *rpci = RPC_I(inode);
-	__poll_t mask = EPOLLOUT | EPOLLWRNORM;
+	unsigned int mask = POLLOUT | POLLWRNORM;
 
 	poll_wait(filp, &rpci->waitq, wait);
 
 	inode_lock(inode);
 	if (rpci->pipe == NULL)
-		mask |= EPOLLERR | EPOLLHUP;
+		mask |= POLLERR | POLLHUP;
 	else if (filp->private_data || !list_empty(&rpci->pipe->pipe))
-		mask |= EPOLLIN | EPOLLRDNORM;
+		mask |= POLLIN | POLLRDNORM;
 	inode_unlock(inode);
 	return mask;
 }
@@ -599,12 +604,26 @@ static int __rpc_rmdir(struct inode *dir, struct dentry *dentry)
 
 	dget(dentry);
 	ret = simple_rmdir(dir, dentry);
-	if (!ret)
-		fsnotify_rmdir(dir, dentry);
 	d_delete(dentry);
 	dput(dentry);
 	return ret;
 }
+
+int rpc_rmdir(struct dentry *dentry)
+{
+	struct dentry *parent;
+	struct inode *dir;
+	int error;
+
+	parent = dget_parent(dentry);
+	dir = d_inode(parent);
+	inode_lock_nested(dir, I_MUTEX_PARENT);
+	error = __rpc_rmdir(dir, dentry);
+	inode_unlock(dir);
+	dput(parent);
+	return error;
+}
+EXPORT_SYMBOL_GPL(rpc_rmdir);
 
 static int __rpc_unlink(struct inode *dir, struct dentry *dentry)
 {
@@ -612,8 +631,6 @@ static int __rpc_unlink(struct inode *dir, struct dentry *dentry)
 
 	dget(dentry);
 	ret = simple_unlink(dir, dentry);
-	if (!ret)
-		fsnotify_unlink(dir, dentry);
 	d_delete(dentry);
 	dput(dentry);
 	return ret;
@@ -803,13 +820,13 @@ struct dentry *rpc_mkpipe_dentry(struct dentry *parent, const char *name,
 {
 	struct dentry *dentry;
 	struct inode *dir = d_inode(parent);
-	umode_t umode = S_IFIFO | 0600;
+	umode_t umode = S_IFIFO | S_IRUSR | S_IWUSR;
 	int err;
 
 	if (pipe->ops->upcall == NULL)
-		umode &= ~0444;
+		umode &= ~S_IRUGO;
 	if (pipe->ops->downcall == NULL)
-		umode &= ~0222;
+		umode &= ~S_IWUGO;
 
 	inode_lock_nested(dir, I_MUTEX_PARENT);
 	dentry = __rpc_lookup_create_exclusive(parent, name);
@@ -1018,7 +1035,7 @@ static const struct rpc_filelist authfiles[] = {
 	[RPCAUTH_info] = {
 		.name = "info",
 		.i_fop = &rpc_info_operations,
-		.mode = S_IFREG | 0400,
+		.mode = S_IFREG | S_IRUSR,
 	},
 };
 
@@ -1051,8 +1068,8 @@ struct dentry *rpc_create_client_dir(struct dentry *dentry,
 {
 	struct dentry *ret;
 
-	ret = rpc_mkdir_populate(dentry, name, 0555, NULL,
-				 rpc_clntdir_populate, rpc_client);
+	ret = rpc_mkdir_populate(dentry, name, S_IRUGO | S_IXUGO, NULL,
+			rpc_clntdir_populate, rpc_client);
 	if (!IS_ERR(ret)) {
 		rpc_client->cl_pipedir_objects.pdh_dentry = ret;
 		rpc_create_pipe_dir_objects(&rpc_client->cl_pipedir_objects);
@@ -1079,17 +1096,17 @@ static const struct rpc_filelist cache_pipefs_files[3] = {
 	[0] = {
 		.name = "channel",
 		.i_fop = &cache_file_operations_pipefs,
-		.mode = S_IFREG | 0600,
+		.mode = S_IFREG|S_IRUSR|S_IWUSR,
 	},
 	[1] = {
 		.name = "content",
 		.i_fop = &content_file_operations_pipefs,
-		.mode = S_IFREG | 0400,
+		.mode = S_IFREG|S_IRUSR,
 	},
 	[2] = {
 		.name = "flush",
 		.i_fop = &cache_flush_operations_pipefs,
-		.mode = S_IFREG | 0600,
+		.mode = S_IFREG|S_IRUSR|S_IWUSR,
 	},
 };
 
@@ -1122,7 +1139,7 @@ void rpc_remove_cache_dir(struct dentry *dentry)
  */
 static const struct super_operations s_ops = {
 	.alloc_inode	= rpc_alloc_inode,
-	.free_inode	= rpc_free_inode,
+	.destroy_inode	= rpc_destroy_inode,
 	.statfs		= simple_statfs,
 };
 
@@ -1147,39 +1164,39 @@ enum {
 static const struct rpc_filelist files[] = {
 	[RPCAUTH_lockd] = {
 		.name = "lockd",
-		.mode = S_IFDIR | 0555,
+		.mode = S_IFDIR | S_IRUGO | S_IXUGO,
 	},
 	[RPCAUTH_mount] = {
 		.name = "mount",
-		.mode = S_IFDIR | 0555,
+		.mode = S_IFDIR | S_IRUGO | S_IXUGO,
 	},
 	[RPCAUTH_nfs] = {
 		.name = "nfs",
-		.mode = S_IFDIR | 0555,
+		.mode = S_IFDIR | S_IRUGO | S_IXUGO,
 	},
 	[RPCAUTH_portmap] = {
 		.name = "portmap",
-		.mode = S_IFDIR | 0555,
+		.mode = S_IFDIR | S_IRUGO | S_IXUGO,
 	},
 	[RPCAUTH_statd] = {
 		.name = "statd",
-		.mode = S_IFDIR | 0555,
+		.mode = S_IFDIR | S_IRUGO | S_IXUGO,
 	},
 	[RPCAUTH_nfsd4_cb] = {
 		.name = "nfsd4_cb",
-		.mode = S_IFDIR | 0555,
+		.mode = S_IFDIR | S_IRUGO | S_IXUGO,
 	},
 	[RPCAUTH_cache] = {
 		.name = "cache",
-		.mode = S_IFDIR | 0555,
+		.mode = S_IFDIR | S_IRUGO | S_IXUGO,
 	},
 	[RPCAUTH_nfsd] = {
 		.name = "nfsd",
-		.mode = S_IFDIR | 0555,
+		.mode = S_IFDIR | S_IRUGO | S_IXUGO,
 	},
 	[RPCAUTH_gssd] = {
 		.name = "gssd",
-		.mode = S_IFDIR | 0555,
+		.mode = S_IFDIR | S_IRUGO | S_IXUGO,
 	},
 };
 
@@ -1244,7 +1261,7 @@ EXPORT_SYMBOL_GPL(rpc_put_sb_net);
 static const struct rpc_filelist gssd_dummy_clnt_dir[] = {
 	[0] = {
 		.name = "clntXX",
-		.mode = S_IFDIR | 0555,
+		.mode = S_IFDIR | S_IRUGO | S_IXUGO,
 	},
 };
 
@@ -1265,7 +1282,7 @@ static const struct rpc_pipe_ops gssd_dummy_pipe_ops = {
  * that this file will be there and have a certain format.
  */
 static int
-rpc_dummy_info_show(struct seq_file *m, void *v)
+rpc_show_dummy_info(struct seq_file *m, void *v)
 {
 	seq_printf(m, "RPC server: %s\n", utsname()->nodename);
 	seq_printf(m, "service: foo (1) version 0\n");
@@ -1274,13 +1291,26 @@ rpc_dummy_info_show(struct seq_file *m, void *v)
 	seq_printf(m, "port: 0\n");
 	return 0;
 }
-DEFINE_SHOW_ATTRIBUTE(rpc_dummy_info);
+
+static int
+rpc_dummy_info_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, rpc_show_dummy_info, NULL);
+}
+
+static const struct file_operations rpc_dummy_info_operations = {
+	.owner		= THIS_MODULE,
+	.open		= rpc_dummy_info_open,
+	.read		= seq_read,
+	.llseek		= seq_lseek,
+	.release	= single_release,
+};
 
 static const struct rpc_filelist gssd_dummy_info_file[] = {
 	[0] = {
 		.name = "info",
-		.i_fop = &rpc_dummy_info_fops,
-		.mode = S_IFREG | 0400,
+		.i_fop = &rpc_dummy_info_operations,
+		.mode = S_IFREG | S_IRUSR,
 	},
 };
 
@@ -1353,11 +1383,11 @@ rpc_gssd_dummy_depopulate(struct dentry *pipe_dentry)
 }
 
 static int
-rpc_fill_super(struct super_block *sb, struct fs_context *fc)
+rpc_fill_super(struct super_block *sb, void *data, int silent)
 {
 	struct inode *inode;
 	struct dentry *root, *gssd_dentry;
-	struct net *net = sb->s_fs_info;
+	struct net *net = get_net(sb->s_fs_info);
 	struct sunrpc_net *sn = net_generic(net, sunrpc_net_id);
 	int err;
 
@@ -1368,7 +1398,7 @@ rpc_fill_super(struct super_block *sb, struct fs_context *fc)
 	sb->s_d_op = &simple_dentry_operations;
 	sb->s_time_gran = 1;
 
-	inode = rpc_get_inode(sb, S_IFDIR | 0555);
+	inode = rpc_get_inode(sb, S_IFDIR | S_IRUGO | S_IXUGO);
 	sb->s_root = root = d_make_root(inode);
 	if (!root)
 		return -ENOMEM;
@@ -1381,8 +1411,8 @@ rpc_fill_super(struct super_block *sb, struct fs_context *fc)
 		return PTR_ERR(gssd_dentry);
 	}
 
-	dprintk("RPC:       sending pipefs MOUNT notification for net %x%s\n",
-		net->ns.inum, NET_NAME(net));
+	dprintk("RPC:       sending pipefs MOUNT notification for net %p%s\n",
+		net, NET_NAME(net));
 	mutex_lock(&sn->pipefs_sb_lock);
 	sn->pipefs_sb = sb;
 	err = blocking_notifier_call_chain(&rpc_pipefs_notifier_list,
@@ -1414,29 +1444,12 @@ gssd_running(struct net *net)
 }
 EXPORT_SYMBOL_GPL(gssd_running);
 
-static int rpc_fs_get_tree(struct fs_context *fc)
+static struct dentry *
+rpc_mount(struct file_system_type *fs_type,
+		int flags, const char *dev_name, void *data)
 {
-	fc->s_fs_info = get_net(fc->net_ns);
-	return vfs_get_super(fc, vfs_get_keyed_super, rpc_fill_super);
-}
-
-static void rpc_fs_free_fc(struct fs_context *fc)
-{
-	if (fc->s_fs_info)
-		put_net(fc->s_fs_info);
-}
-
-static const struct fs_context_operations rpc_fs_context_ops = {
-	.free		= rpc_fs_free_fc,
-	.get_tree	= rpc_fs_get_tree,
-};
-
-static int rpc_init_fs_context(struct fs_context *fc)
-{
-	put_user_ns(fc->user_ns);
-	fc->user_ns = get_user_ns(fc->net_ns->user_ns);
-	fc->ops = &rpc_fs_context_ops;
-	return 0;
+	struct net *net = current->nsproxy->net_ns;
+	return mount_ns(fs_type, flags, data, net, net->user_ns, rpc_fill_super);
 }
 
 static void rpc_kill_sb(struct super_block *sb)
@@ -1450,8 +1463,8 @@ static void rpc_kill_sb(struct super_block *sb)
 		goto out;
 	}
 	sn->pipefs_sb = NULL;
-	dprintk("RPC:       sending pipefs UMOUNT notification for net %x%s\n",
-		net->ns.inum, NET_NAME(net));
+	dprintk("RPC:       sending pipefs UMOUNT notification for net %p%s\n",
+		net, NET_NAME(net));
 	blocking_notifier_call_chain(&rpc_pipefs_notifier_list,
 					   RPC_PIPEFS_UMOUNT,
 					   sb);
@@ -1464,7 +1477,7 @@ out:
 static struct file_system_type rpc_pipe_fs_type = {
 	.owner		= THIS_MODULE,
 	.name		= "rpc_pipefs",
-	.init_fs_context = rpc_init_fs_context,
+	.mount		= rpc_mount,
 	.kill_sb	= rpc_kill_sb,
 };
 MODULE_ALIAS_FS("rpc_pipefs");

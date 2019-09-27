@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * arch/x86/kernel/nmi-selftest.c
  *
@@ -79,7 +78,7 @@ static void __init test_nmi_ipi(struct cpumask *mask)
 
 	/* Don't wait longer than a second */
 	timeout = USEC_PER_SEC;
-	while (!cpumask_empty(mask) && --timeout)
+	while (!cpumask_empty(mask) && timeout--)
 	        udelay(1);
 
 	/* What happens if we timeout, do we still unregister?? */

@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __PXA168FB_H__
 #define __PXA168FB_H__
 

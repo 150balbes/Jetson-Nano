@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #include "libgcc.h"
 
 ; numerator in A0/A1

@@ -1,6 +1,4 @@
-# SPDX-License-Identifier: GPL-2.0
-
-from __future__ import print_function
+#! /usr/bin/python
 
 import os
 import sys
@@ -9,25 +7,7 @@ import optparse
 import tempfile
 import logging
 import shutil
-
-try:
-    import configparser
-except ImportError:
-    import ConfigParser as configparser
-
-def data_equal(a, b):
-    # Allow multiple values in assignment separated by '|'
-    a_list = a.split('|')
-    b_list = b.split('|')
-
-    for a_item in a_list:
-        for b_item in b_list:
-            if (a_item == b_item):
-                return True
-            elif (a_item == '*') or (b_item == '*'):
-                return True
-
-    return False
+import ConfigParser
 
 class Fail(Exception):
     def __init__(self, test, msg):
@@ -35,13 +15,6 @@ class Fail(Exception):
         self.test = test
     def getMsg(self):
         return '\'%s\' - %s' % (self.test.path, self.msg)
-
-class Notest(Exception):
-    def __init__(self, test, arch):
-        self.arch = arch
-        self.test = test
-    def getMsg(self):
-        return '[%s] \'%s\'' % (self.arch, self.test.path)
 
 class Unsup(Exception):
     def __init__(self, test):
@@ -102,26 +75,35 @@ class Event(dict):
         self.add(base)
         self.add(data)
 
+    def compare_data(self, a, b):
+        # Allow multiple values in assignment separated by '|'
+        a_list = a.split('|')
+        b_list = b.split('|')
+
+        for a_item in a_list:
+            for b_item in b_list:
+                if (a_item == b_item):
+                    return True
+                elif (a_item == '*') or (b_item == '*'):
+                    return True
+
+        return False
+
     def equal(self, other):
         for t in Event.terms:
             log.debug("      [%s] %s %s" % (t, self[t], other[t]));
-            if t not in self or t not in other:
+            if not self.has_key(t) or not other.has_key(t):
                 return False
-            if not data_equal(self[t], other[t]):
+            if not self.compare_data(self[t], other[t]):
                 return False
         return True
 
-    def optional(self):
-        if 'optional' in self and self['optional'] == '1':
-            return True
-        return False
-
     def diff(self, other):
         for t in Event.terms:
-            if t not in self or t not in other:
+            if not self.has_key(t) or not other.has_key(t):
                 continue
-            if not data_equal(self[t], other[t]):
-                log.warning("expected %s=%s, got %s" % (t, self[t], other[t]))
+            if not self.compare_data(self[t], other[t]):
+		log.warning("expected %s=%s, got %s" % (t, self[t], other[t]))
 
 # Test file description needs to have following sections:
 # [config]
@@ -130,16 +112,13 @@ class Event(dict):
 #     'command' - perf command name
 #     'args'    - special command arguments
 #     'ret'     - expected command return value (0 by default)
-#     'arch'    - architecture specific test (optional)
-#                 comma separated list, ! at the beginning
-#                 negates it.
 #
 # [eventX:base]
 #   - one or multiple instances in file
 #   - expected values assignments
 class Test(object):
     def __init__(self, path, options):
-        parser = configparser.SafeConfigParser()
+        parser = ConfigParser.SafeConfigParser()
         parser.read(path)
 
         log.warning("running '%s'" % path)
@@ -155,12 +134,6 @@ class Test(object):
         except:
             self.ret  = 0
 
-        try:
-            self.arch  = parser.get('config', 'arch')
-            log.warning("test limitation '%s'" % self.arch)
-        except:
-            self.arch  = ''
-
         self.expect   = {}
         self.result   = {}
         log.debug("  loading expected events");
@@ -172,33 +145,8 @@ class Test(object):
         else:
             return True
 
-    def skip_test(self, myarch):
-        # If architecture not set always run test
-        if self.arch == '':
-            # log.warning("test for arch %s is ok" % myarch)
-            return False
-
-        # Allow multiple values in assignment separated by ','
-        arch_list = self.arch.split(',')
-
-        # Handle negated list such as !s390x,ppc
-        if arch_list[0][0] == '!':
-            arch_list[0] = arch_list[0][1:]
-            log.warning("excluded architecture list %s" % arch_list)
-            for arch_item in arch_list:
-                # log.warning("test for %s arch is %s" % (arch_item, myarch))
-                if arch_item == myarch:
-                    return True
-            return False
-
-        for arch_item in arch_list:
-            # log.warning("test for architecture '%s' current '%s'" % (arch_item, myarch))
-            if arch_item == myarch:
-                return False
-        return True
-
     def load_events(self, path, events):
-        parser_event = configparser.SafeConfigParser()
+        parser_event = ConfigParser.SafeConfigParser()
         parser_event.read(path)
 
         # The event record section header contains 'event' word,
@@ -212,7 +160,7 @@ class Test(object):
             # Read parent event if there's any
             if (':' in section):
                 base = section[section.index(':') + 1:]
-                parser_base = configparser.SafeConfigParser()
+                parser_base = ConfigParser.SafeConfigParser()
                 parser_base.read(self.test_dir + '/' + base)
                 base_items = parser_base.items('event')
 
@@ -220,18 +168,13 @@ class Test(object):
             events[section] = e
 
     def run_cmd(self, tempdir):
-        junk1, junk2, junk3, junk4, myarch = (os.uname())
-
-        if self.skip_test(myarch):
-            raise Notest(self, myarch)
-
         cmd = "PERF_TEST_ATTR=%s %s %s -o %s/perf.data %s" % (tempdir,
               self.perf, self.command, tempdir, self.args)
         ret = os.WEXITSTATUS(os.system(cmd))
 
-        log.info("  '%s' ret '%s', expected '%s'" % (cmd, str(ret), str(self.ret)))
+        log.info("  '%s' ret %d " % (cmd, ret))
 
-        if not data_equal(str(ret), str(self.ret)):
+        if ret != int(self.ret):
             raise Unsup(self)
 
     def compare(self, expect, result):
@@ -243,7 +186,6 @@ class Test(object):
         # events in result. Fail if there's not any.
         for exp_name, exp_event in expect.items():
             exp_list = []
-            res_event = {}
             log.debug("    matching [%s]" % exp_name)
             for res_name, res_event in result.items():
                 log.debug("      to [%s]" % res_name)
@@ -256,15 +198,9 @@ class Test(object):
             log.debug("    match: [%s] matches %s" % (exp_name, str(exp_list)))
 
             # we did not any matching event - fail
-            if not exp_list:
-                if exp_event.optional():
-                    log.debug("    %s does not match, but is optional" % exp_name)
-                else:
-                    if not res_event:
-                        log.debug("    res_event is empty");
-                    else:
-                        exp_event.diff(res_event)
-                    raise Fail(self, 'match failure');
+            if (not exp_list):
+		exp_event.diff(res_event)
+                raise Fail(self, 'match failure');
 
             match[exp_name] = exp_list
 
@@ -327,10 +263,8 @@ def run_tests(options):
     for f in glob.glob(options.test_dir + '/' + options.test):
         try:
             Test(f, options).run()
-        except Unsup as obj:
+        except Unsup, obj:
             log.warning("unsupp  %s" % obj.getMsg())
-        except Notest as obj:
-            log.warning("skipped %s" % obj.getMsg())
 
 def setup_log(verbose):
     global log
@@ -368,7 +302,7 @@ def main():
     parser.add_option("-p", "--perf",
                       action="store", type="string", dest="perf")
     parser.add_option("-v", "--verbose",
-                      default=0, action="count", dest="verbose")
+                      action="count", dest="verbose")
 
     options, args = parser.parse_args()
     if args:
@@ -378,7 +312,7 @@ def main():
     setup_log(options.verbose)
 
     if not options.test_dir:
-        print('FAILED no -d option specified')
+        print 'FAILED no -d option specified'
         sys.exit(-1)
 
     if not options.test:
@@ -387,8 +321,8 @@ def main():
     try:
         run_tests(options)
 
-    except Fail as obj:
-        print("FAILED %s" % obj.getMsg())
+    except Fail, obj:
+        print "FAILED %s" % obj.getMsg();
         sys.exit(-1)
 
     sys.exit(0)

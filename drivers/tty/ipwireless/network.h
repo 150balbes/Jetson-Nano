@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * IPWireless 3G PCMCIA Network Driver
  *

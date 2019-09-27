@@ -63,12 +63,12 @@ static int mlx4_en_test_loopback_xmit(struct mlx4_en_priv *priv)
 
 	skb_reserve(skb, NET_IP_ALIGN);
 
-	ethh = skb_put(skb, sizeof(struct ethhdr));
-	packet = skb_put(skb, packet_size);
+	ethh = (struct ethhdr *)skb_put(skb, sizeof(struct ethhdr));
+	packet	= (unsigned char *)skb_put(skb, packet_size);
 	memcpy(ethh->h_dest, priv->dev->dev_addr, ETH_ALEN);
 	eth_zero_addr(ethh->h_source);
 	ethh->h_proto = htons(ETH_P_ARP);
-	skb_reset_mac_header(skb);
+	skb_set_mac_header(skb, 0);
 	for (i = 0; i < packet_size; ++i)	/* fill our packet */
 		packet[i] = (unsigned char)(i & 0xff);
 
@@ -81,11 +81,14 @@ static int mlx4_en_test_loopback(struct mlx4_en_priv *priv)
 {
 	u32 loopback_ok = 0;
 	int i;
+	bool gro_enabled;
 
         priv->loopback_ok = 0;
 	priv->validate_loopback = 1;
+	gro_enabled = priv->dev->features & NETIF_F_GRO;
 
 	mlx4_en_update_loopback_state(priv->dev, priv->dev->features);
+	priv->dev->features &= ~NETIF_F_GRO;
 
 	/* xmit */
 	if (mlx4_en_test_loopback_xmit(priv)) {
@@ -107,6 +110,9 @@ static int mlx4_en_test_loopback(struct mlx4_en_priv *priv)
 mlx4_en_test_loopback_exit:
 
 	priv->validate_loopback = 0;
+
+	if (gro_enabled)
+		priv->dev->features |= NETIF_F_GRO;
 
 	mlx4_en_update_loopback_state(priv->dev, priv->dev->features);
 	return !loopback_ok;
@@ -185,7 +191,7 @@ void mlx4_en_ex_selftest(struct net_device *dev, u32 *flags, u64 *buf)
 		if (priv->mdev->dev->caps.flags &
 					MLX4_DEV_CAP_FLAG_UC_LOOPBACK) {
 			buf[3] = mlx4_en_test_registers(priv);
-			if (priv->port_up && dev->mtu >= MLX4_SELFTEST_LB_MIN_MTU)
+			if (priv->port_up)
 				buf[4] = mlx4_en_test_loopback(priv);
 		}
 

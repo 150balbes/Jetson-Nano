@@ -1,9 +1,9 @@
-// SPDX-License-Identifier: (GPL-2.0+ OR BSD-3-Clause)
 /*
  * f_mass_storage.c -- Mass Storage USB Composite Function
  *
  * Copyright (C) 2003-2008 Alan Stern
  * Copyright (C) 2009 Samsung Electronics
+ * Copyright (c) 2019, NVIDIA CORPORATION.  All rights reserved.
  *                    Author: Michal Nazarewicz <mina86@mina86.com>
  * All rights reserved.
  *
@@ -47,7 +47,7 @@
  *
  * For more information about MSF and in particular its module
  * parameters and sysfs interface read the
- * <Documentation/usb/mass-storage.rst> file.
+ * <Documentation/usb/mass-storage.txt> file.
  */
 
 /*
@@ -206,8 +206,8 @@
 #include <linux/fcntl.h>
 #include <linux/file.h>
 #include <linux/fs.h>
+#include <linux/kref.h>
 #include <linux/kthread.h>
-#include <linux/sched/signal.h>
 #include <linux/limits.h>
 #include <linux/rwsem.h>
 #include <linux/slab.h>
@@ -261,14 +261,13 @@ struct fsg_common;
 struct fsg_common {
 	struct usb_gadget	*gadget;
 	struct usb_composite_dev *cdev;
-	struct fsg_dev		*fsg;
-	wait_queue_head_t	io_wait;
+	struct fsg_dev		*fsg, *new_fsg;
 	wait_queue_head_t	fsg_wait;
 
 	/* filesem protects: backing files in use */
 	struct rw_semaphore	filesem;
 
-	/* lock protects: state and thread_task */
+	/* lock protects: state, all the req_busy's */
 	spinlock_t		lock;
 
 	struct usb_ep		*ep0;		/* Copy of gadget->ep0 */
@@ -290,7 +289,6 @@ struct fsg_common {
 	unsigned int		bulk_out_maxpacket;
 	enum fsg_state		state;		/* For exception handling */
 	unsigned int		exception_req_tag;
-	void			*exception_arg;
 
 	enum data_direction	data_dir;
 	u32			data_size;
@@ -307,6 +305,7 @@ struct fsg_common {
 	unsigned int		running:1;
 	unsigned int		sysfs:1;
 
+	int			thread_wakeup_needed;
 	struct completion	thread_notifier;
 	struct task_struct	*thread_task;
 
@@ -314,6 +313,8 @@ struct fsg_common {
 	void			*private_data;
 
 	char inquiry_string[INQUIRY_STRING_LEN];
+
+	struct kref		ref;
 };
 
 struct fsg_dev {
@@ -354,7 +355,7 @@ typedef void (*fsg_routine_t)(struct fsg_dev *);
 
 static int exception_in_progress(struct fsg_common *common)
 {
-	return common->state > FSG_STATE_NORMAL;
+	return common->state > FSG_STATE_IDLE;
 }
 
 /* Make bulk-out requests be divisible by the maxpacket size */
@@ -392,8 +393,21 @@ static int fsg_set_halt(struct fsg_dev *fsg, struct usb_ep *ep)
 
 /* These routines may be called in process context or in_irq */
 
-static void __raise_exception(struct fsg_common *common, enum fsg_state new_state,
-			      void *arg)
+/* Caller must hold fsg->lock */
+static void wakeup_thread(struct fsg_common *common)
+{
+	/*
+	 * Ensure the reading of thread_wakeup_needed
+	 * and the writing of bh->state are completed
+	 */
+	smp_mb();
+	/* Tell the main thread that something has happened */
+	common->thread_wakeup_needed = 1;
+	if (common->thread_task)
+		wake_up_process(common->thread_task);
+}
+
+static void raise_exception(struct fsg_common *common, enum fsg_state new_state)
 {
 	unsigned long		flags;
 
@@ -406,18 +420,13 @@ static void __raise_exception(struct fsg_common *common, enum fsg_state new_stat
 	if (common->state <= new_state) {
 		common->exception_req_tag = common->ep0_req_tag;
 		common->state = new_state;
-		common->exception_arg = arg;
 		if (common->thread_task)
-			send_sig_info(SIGUSR1, SEND_SIG_PRIV,
+			send_sig_info(SIGUSR1, SEND_SIG_FORCED,
 				      common->thread_task);
 	}
 	spin_unlock_irqrestore(&common->lock, flags);
 }
 
-static void raise_exception(struct fsg_common *common, enum fsg_state new_state)
-{
-	__raise_exception(common, new_state, NULL);
-}
 
 /*-------------------------------------------------------------------------*/
 
@@ -451,9 +460,13 @@ static void bulk_in_complete(struct usb_ep *ep, struct usb_request *req)
 	if (req->status == -ECONNRESET)		/* Request was cancelled */
 		usb_ep_fifo_flush(ep);
 
-	/* Synchronize with the smp_load_acquire() in sleep_thread() */
-	smp_store_release(&bh->state, BUF_STATE_EMPTY);
-	wake_up(&common->io_wait);
+	/* Hold the lock while we update the request and buffer states */
+	smp_wmb();
+	spin_lock(&common->lock);
+	bh->inreq_busy = 0;
+	bh->state = BUF_STATE_EMPTY;
+	wakeup_thread(common);
+	spin_unlock(&common->lock);
 }
 
 static void bulk_out_complete(struct usb_ep *ep, struct usb_request *req)
@@ -468,9 +481,13 @@ static void bulk_out_complete(struct usb_ep *ep, struct usb_request *req)
 	if (req->status == -ECONNRESET)		/* Request was cancelled */
 		usb_ep_fifo_flush(ep);
 
-	/* Synchronize with the smp_load_acquire() in sleep_thread() */
-	smp_store_release(&bh->state, BUF_STATE_FULL);
-	wake_up(&common->io_wait);
+	/* Hold the lock while we update the request and buffer states */
+	smp_wmb();
+	spin_lock(&common->lock);
+	bh->outreq_busy = 0;
+	bh->state = BUF_STATE_FULL;
+	wakeup_thread(common);
+	spin_unlock(&common->lock);
 }
 
 static int _fsg_common_get_max_lun(struct fsg_common *common)
@@ -515,7 +532,7 @@ static int fsg_setup(struct usb_function *f,
 		 * and reinitialize our state.
 		 */
 		DBG(fsg, "bulk reset request\n");
-		raise_exception(fsg->common, FSG_STATE_PROTOCOL_RESET);
+		raise_exception(fsg->common, FSG_STATE_RESET);
 		return USB_GADGET_DELAYED_STATUS;
 
 	case US_BULK_GET_MAX_LUN:
@@ -546,39 +563,43 @@ static int fsg_setup(struct usb_function *f,
 /* All the following routines run in process context */
 
 /* Use this for bulk or interrupt transfers, not ep0 */
-static int start_transfer(struct fsg_dev *fsg, struct usb_ep *ep,
-			   struct usb_request *req)
+static void start_transfer(struct fsg_dev *fsg, struct usb_ep *ep,
+			   struct usb_request *req, int *pbusy,
+			   enum fsg_buffer_state *state)
 {
 	int	rc;
 
 	if (ep == fsg->bulk_in)
 		dump_msg(fsg, "bulk-in", req->buf, req->length);
 
+	spin_lock_irq(&fsg->common->lock);
+	*pbusy = 1;
+	*state = BUF_STATE_BUSY;
+	spin_unlock_irq(&fsg->common->lock);
+
 	rc = usb_ep_queue(ep, req, GFP_KERNEL);
-	if (rc) {
+	if (rc == 0)
+		return;  /* All good, we're done */
 
-		/* We can't do much more than wait for a reset */
-		req->status = rc;
+	*pbusy = 0;
+	*state = BUF_STATE_EMPTY;
 
-		/*
-		 * Note: currently the net2280 driver fails zero-length
-		 * submissions if DMA is enabled.
-		 */
-		if (rc != -ESHUTDOWN &&
-				!(rc == -EOPNOTSUPP && req->length == 0))
-			WARNING(fsg, "error in submission: %s --> %d\n",
-					ep->name, rc);
-	}
-	return rc;
+	/* We can't do much more than wait for a reset */
+
+	/*
+	 * Note: currently the net2280 driver fails zero-length
+	 * submissions if DMA is enabled.
+	 */
+	if (rc != -ESHUTDOWN && !(rc == -EOPNOTSUPP && req->length == 0))
+		WARNING(fsg, "error in submission: %s --> %d\n", ep->name, rc);
 }
 
 static bool start_in_transfer(struct fsg_common *common, struct fsg_buffhd *bh)
 {
 	if (!fsg_is_set(common))
 		return false;
-	bh->state = BUF_STATE_SENDING;
-	if (start_transfer(common->fsg, common->fsg->bulk_in, bh->inreq))
-		bh->state = BUF_STATE_EMPTY;
+	start_transfer(common->fsg, common->fsg->bulk_in,
+		       bh->inreq, &bh->inreq_busy, &bh->state);
 	return true;
 }
 
@@ -586,31 +607,37 @@ static bool start_out_transfer(struct fsg_common *common, struct fsg_buffhd *bh)
 {
 	if (!fsg_is_set(common))
 		return false;
-	bh->state = BUF_STATE_RECEIVING;
-	if (start_transfer(common->fsg, common->fsg->bulk_out, bh->outreq))
-		bh->state = BUF_STATE_FULL;
+	start_transfer(common->fsg, common->fsg->bulk_out,
+		       bh->outreq, &bh->outreq_busy, &bh->state);
 	return true;
 }
 
-static int sleep_thread(struct fsg_common *common, bool can_freeze,
-		struct fsg_buffhd *bh)
+static int sleep_thread(struct fsg_common *common, bool can_freeze)
 {
-	int	rc;
+	int	rc = 0;
 
-	/* Wait until a signal arrives or bh is no longer busy */
-	if (can_freeze)
-		/*
-		 * synchronize with the smp_store_release(&bh->state) in
-		 * bulk_in_complete() or bulk_out_complete()
-		 */
-		rc = wait_event_freezable(common->io_wait,
-				bh && smp_load_acquire(&bh->state) >=
-					BUF_STATE_EMPTY);
-	else
-		rc = wait_event_interruptible(common->io_wait,
-				bh && smp_load_acquire(&bh->state) >=
-					BUF_STATE_EMPTY);
-	return rc ? -EINTR : 0;
+	/* Wait until a signal arrives or we are woken up */
+	for (;;) {
+		if (can_freeze)
+			try_to_freeze();
+		set_current_state(TASK_INTERRUPTIBLE);
+		if (signal_pending(current)) {
+			rc = -EINTR;
+			break;
+		}
+		if (common->thread_wakeup_needed)
+			break;
+		schedule();
+	}
+	__set_current_state(TASK_RUNNING);
+	common->thread_wakeup_needed = 0;
+
+	/*
+	 * Ensure the writing of thread_wakeup_needed
+	 * and the reading of bh->state are completed
+	 */
+	smp_mb();
+	return rc;
 }
 
 
@@ -670,9 +697,11 @@ static int do_read(struct fsg_common *common)
 
 		/* Wait for the next buffer to become available */
 		bh = common->next_buffhd_to_fill;
-		rc = sleep_thread(common, false, bh);
-		if (rc)
-			return rc;
+		while (bh->state != BUF_STATE_EMPTY) {
+			rc = sleep_thread(common, false);
+			if (rc)
+				return rc;
+		}
 
 		/*
 		 * If we were asked to read past the end of file,
@@ -691,8 +720,9 @@ static int do_read(struct fsg_common *common)
 
 		/* Perform the read */
 		file_offset_tmp = file_offset;
-		nread = kernel_read(curlun->filp, bh->buf, amount,
-				&file_offset_tmp);
+		nread = vfs_read(curlun->filp,
+				 (char __user *)bh->buf,
+				 amount, &file_offset_tmp);
 		VLDBG(curlun, "file read %u @ %llu -> %d\n", amount,
 		      (unsigned long long)file_offset, (int)nread);
 		if (signal_pending(current))
@@ -848,80 +878,84 @@ static int do_write(struct fsg_common *common)
 		bh = common->next_buffhd_to_drain;
 		if (bh->state == BUF_STATE_EMPTY && !get_some_more)
 			break;			/* We stopped early */
+		if (bh->state == BUF_STATE_FULL) {
+			smp_rmb();
+			common->next_buffhd_to_drain = bh->next;
+			bh->state = BUF_STATE_EMPTY;
 
-		/* Wait for the data to be received */
-		rc = sleep_thread(common, false, bh);
-		if (rc)
-			return rc;
-
-		common->next_buffhd_to_drain = bh->next;
-		bh->state = BUF_STATE_EMPTY;
-
-		/* Did something go wrong with the transfer? */
-		if (bh->outreq->status != 0) {
-			curlun->sense_data = SS_COMMUNICATION_FAILURE;
-			curlun->sense_data_info =
+			/* Did something go wrong with the transfer? */
+			if (bh->outreq->status != 0) {
+				curlun->sense_data = SS_COMMUNICATION_FAILURE;
+				curlun->sense_data_info =
 					file_offset >> curlun->blkbits;
-			curlun->info_valid = 1;
-			break;
-		}
+				curlun->info_valid = 1;
+				break;
+			}
 
-		amount = bh->outreq->actual;
-		if (curlun->file_length - file_offset < amount) {
-			LERROR(curlun, "write %u @ %llu beyond end %llu\n",
+			amount = bh->outreq->actual;
+			if (curlun->file_length - file_offset < amount) {
+				LERROR(curlun,
+				       "write %u @ %llu beyond end %llu\n",
 				       amount, (unsigned long long)file_offset,
 				       (unsigned long long)curlun->file_length);
-			amount = curlun->file_length - file_offset;
-		}
+				amount = curlun->file_length - file_offset;
+			}
 
-		/*
-		 * Don't accept excess data.  The spec doesn't say
-		 * what to do in this case.  We'll ignore the error.
-		 */
-		amount = min(amount, bh->bulk_out_intended_length);
+			/* Don't accept excess data.  The spec doesn't say
+			 * what to do in this case.  We'll ignore the error.
+			 */
+			amount = min(amount, bh->bulk_out_intended_length);
 
-		/* Don't write a partial block */
-		amount = round_down(amount, curlun->blksize);
-		if (amount == 0)
-			goto empty_write;
+			/* Don't write a partial block */
+			amount = round_down(amount, curlun->blksize);
+			if (amount == 0)
+				goto empty_write;
 
-		/* Perform the write */
-		file_offset_tmp = file_offset;
-		nwritten = kernel_write(curlun->filp, bh->buf, amount,
-				&file_offset_tmp);
-		VLDBG(curlun, "file write %u @ %llu -> %d\n", amount,
-				(unsigned long long)file_offset, (int)nwritten);
-		if (signal_pending(current))
-			return -EINTR;		/* Interrupted! */
+			/* Perform the write */
+			file_offset_tmp = file_offset;
+			nwritten = vfs_write(curlun->filp,
+					     (char __user *)bh->buf,
+					     amount, &file_offset_tmp);
+			VLDBG(curlun, "file write %u @ %llu -> %d\n", amount,
+			      (unsigned long long)file_offset, (int)nwritten);
+			if (signal_pending(current))
+				return -EINTR;		/* Interrupted! */
 
-		if (nwritten < 0) {
-			LDBG(curlun, "error in file write: %d\n",
-					(int) nwritten);
-			nwritten = 0;
-		} else if (nwritten < amount) {
-			LDBG(curlun, "partial file write: %d/%u\n",
-					(int) nwritten, amount);
-			nwritten = round_down(nwritten, curlun->blksize);
-		}
-		file_offset += nwritten;
-		amount_left_to_write -= nwritten;
-		common->residue -= nwritten;
+			if (nwritten < 0) {
+				LDBG(curlun, "error in file write: %d\n",
+				     (int)nwritten);
+				nwritten = 0;
+			} else if (nwritten < amount) {
+				LDBG(curlun, "partial file write: %d/%u\n",
+				     (int)nwritten, amount);
+				nwritten = round_down(nwritten, curlun->blksize);
+			}
+			file_offset += nwritten;
+			amount_left_to_write -= nwritten;
+			common->residue -= nwritten;
 
-		/* If an error occurred, report it and its position */
-		if (nwritten < amount) {
-			curlun->sense_data = SS_WRITE_ERROR;
-			curlun->sense_data_info =
+			/* If an error occurred, report it and its position */
+			if (nwritten < amount) {
+				curlun->sense_data = SS_WRITE_ERROR;
+				curlun->sense_data_info =
 					file_offset >> curlun->blkbits;
-			curlun->info_valid = 1;
-			break;
-		}
+				curlun->info_valid = 1;
+				break;
+			}
 
  empty_write:
-		/* Did the host decide to stop early? */
-		if (bh->outreq->actual < bh->bulk_out_intended_length) {
-			common->short_packet_received = 1;
-			break;
+			/* Did the host decide to stop early? */
+			if (bh->outreq->actual < bh->bulk_out_intended_length) {
+				common->short_packet_received = 1;
+				break;
+			}
+			continue;
 		}
+
+		/* Wait for something to happen */
+		rc = sleep_thread(common, false);
+		if (rc)
+			return rc;
 	}
 
 	return -EIO;		/* No default reply */
@@ -1025,8 +1059,9 @@ static int do_verify(struct fsg_common *common)
 
 		/* Perform the read */
 		file_offset_tmp = file_offset;
-		nread = kernel_read(curlun->filp, bh->buf, amount,
-				&file_offset_tmp);
+		nread = vfs_read(curlun->filp,
+				(char __user *) bh->buf,
+				amount, &file_offset_tmp);
 		VLDBG(curlun, "file read %u @ %llu -> %d\n", amount,
 				(unsigned long long) file_offset,
 				(int) nread);
@@ -1445,7 +1480,7 @@ static int wedge_bulk_in_endpoint(struct fsg_dev *fsg)
 
 static int throw_away_data(struct fsg_common *common)
 {
-	struct fsg_buffhd	*bh, *bh2;
+	struct fsg_buffhd	*bh;
 	u32			amount;
 	int			rc;
 
@@ -1453,10 +1488,26 @@ static int throw_away_data(struct fsg_common *common)
 	     bh->state != BUF_STATE_EMPTY || common->usb_amount_left > 0;
 	     bh = common->next_buffhd_to_drain) {
 
+		/* Throw away the data in a filled buffer */
+		if (bh->state == BUF_STATE_FULL) {
+			smp_rmb();
+			bh->state = BUF_STATE_EMPTY;
+			common->next_buffhd_to_drain = bh->next;
+
+			/* A short packet or an error ends everything */
+			if (bh->outreq->actual < bh->bulk_out_intended_length ||
+			    bh->outreq->status != 0) {
+				raise_exception(common,
+						FSG_STATE_ABORT_BULK_OUT);
+				return -EINTR;
+			}
+			continue;
+		}
+
 		/* Try to submit another request if we need one */
-		bh2 = common->next_buffhd_to_fill;
-		if (bh2->state == BUF_STATE_EMPTY &&
-				common->usb_amount_left > 0) {
+		bh = common->next_buffhd_to_fill;
+		if (bh->state == BUF_STATE_EMPTY
+		 && common->usb_amount_left > 0) {
 			amount = min(common->usb_amount_left, FSG_BUFLEN);
 
 			/*
@@ -1464,30 +1515,19 @@ static int throw_away_data(struct fsg_common *common)
 			 * equal to the buffer size, which is divisible by
 			 * the bulk-out maxpacket size.
 			 */
-			set_bulk_out_req_length(common, bh2, amount);
-			if (!start_out_transfer(common, bh2))
+			set_bulk_out_req_length(common, bh, amount);
+			if (!start_out_transfer(common, bh))
 				/* Dunno what to do if common->fsg is NULL */
 				return -EIO;
-			common->next_buffhd_to_fill = bh2->next;
+			common->next_buffhd_to_fill = bh->next;
 			common->usb_amount_left -= amount;
 			continue;
 		}
 
-		/* Wait for the data to be received */
-		rc = sleep_thread(common, false, bh);
+		/* Otherwise wait for something to happen */
+		rc = sleep_thread(common, true);
 		if (rc)
 			return rc;
-
-		/* Throw away the data in a filled buffer */
-		bh->state = BUF_STATE_EMPTY;
-		common->next_buffhd_to_drain = bh->next;
-
-		/* A short packet or an error ends everything */
-		if (bh->outreq->actual < bh->bulk_out_intended_length ||
-				bh->outreq->status != 0) {
-			raise_exception(common, FSG_STATE_ABORT_BULK_OUT);
-			return -EINTR;
-		}
 	}
 	return 0;
 }
@@ -1594,7 +1634,7 @@ static int finish_reply(struct fsg_common *common)
 	return rc;
 }
 
-static void send_status(struct fsg_common *common)
+static int send_status(struct fsg_common *common)
 {
 	struct fsg_lun		*curlun = common->curlun;
 	struct fsg_buffhd	*bh;
@@ -1605,9 +1645,11 @@ static void send_status(struct fsg_common *common)
 
 	/* Wait for the next buffer to become available */
 	bh = common->next_buffhd_to_fill;
-	rc = sleep_thread(common, false, bh);
-	if (rc)
-		return;
+	while (bh->state != BUF_STATE_EMPTY) {
+		rc = sleep_thread(common, true);
+		if (rc)
+			return rc;
+	}
 
 	if (curlun) {
 		sd = curlun->sense_data;
@@ -1641,10 +1683,10 @@ static void send_status(struct fsg_common *common)
 	bh->inreq->zero = 0;
 	if (!start_in_transfer(common, bh))
 		/* Don't know what to do if common->fsg is NULL */
-		return;
+		return -EIO;
 
 	common->next_buffhd_to_fill = bh->next;
-	return;
+	return 0;
 }
 
 
@@ -1806,10 +1848,11 @@ static int do_scsi_command(struct fsg_common *common)
 	/* Wait for the next buffer to become available for data or status */
 	bh = common->next_buffhd_to_fill;
 	common->next_buffhd_to_drain = bh;
-	rc = sleep_thread(common, false, bh);
-	if (rc)
-		return rc;
-
+	while (bh->state != BUF_STATE_EMPTY) {
+		rc = sleep_thread(common, true);
+		if (rc)
+			return rc;
+	}
 	common->phase_error = 0;
 	common->short_packet_received = 0;
 
@@ -2152,9 +2195,11 @@ static int get_next_command(struct fsg_common *common)
 
 	/* Wait for the next buffer to become available */
 	bh = common->next_buffhd_to_fill;
-	rc = sleep_thread(common, true, bh);
-	if (rc)
-		return rc;
+	while (bh->state != BUF_STATE_EMPTY) {
+		rc = sleep_thread(common, true);
+		if (rc)
+			return rc;
+	}
 
 	/* Queue a request to read a Bulk-only CBW */
 	set_bulk_out_req_length(common, bh, US_BULK_CB_WRAP_LEN);
@@ -2169,10 +2214,12 @@ static int get_next_command(struct fsg_common *common)
 	 */
 
 	/* Wait for the CBW to arrive */
-	rc = sleep_thread(common, true, bh);
-	if (rc)
-		return rc;
-
+	while (bh->state != BUF_STATE_FULL) {
+		rc = sleep_thread(common, true);
+		if (rc)
+			return rc;
+	}
+	smp_rmb();
 	rc = fsg_is_set(common) ? received_cbw(common->fsg, bh) : -EIO;
 	bh->state = BUF_STATE_EMPTY;
 
@@ -2292,16 +2339,16 @@ reset:
 static int fsg_set_alt(struct usb_function *f, unsigned intf, unsigned alt)
 {
 	struct fsg_dev *fsg = fsg_from_func(f);
-
-	__raise_exception(fsg->common, FSG_STATE_CONFIG_CHANGE, fsg);
+	fsg->common->new_fsg = fsg;
+	raise_exception(fsg->common, FSG_STATE_CONFIG_CHANGE);
 	return USB_GADGET_DELAYED_STATUS;
 }
 
 static void fsg_disable(struct usb_function *f)
 {
 	struct fsg_dev *fsg = fsg_from_func(f);
-
-	__raise_exception(fsg->common, FSG_STATE_CONFIG_CHANGE, NULL);
+	fsg->common->new_fsg = NULL;
+	raise_exception(fsg->common, FSG_STATE_DISCONNECT);
 }
 
 
@@ -2314,22 +2361,20 @@ static void handle_exception(struct fsg_common *common)
 	enum fsg_state		old_state;
 	struct fsg_lun		*curlun;
 	unsigned int		exception_req_tag;
-	struct fsg_dev		*new_fsg;
+	struct fsg_dev		*fsg;
 
 	/*
 	 * Clear the existing signals.  Anything but SIGUSR1 is converted
 	 * into a high-priority EXIT exception.
 	 */
 	for (;;) {
-		int sig = kernel_dequeue_signal();
+		int sig = kernel_dequeue_signal(NULL);
 		if (!sig)
 			break;
 		if (sig != SIGUSR1) {
-			spin_lock_irq(&common->lock);
 			if (common->state < FSG_STATE_EXIT)
 				DBG(common, "Main thread exiting on signal\n");
-			common->state = FSG_STATE_EXIT;
-			spin_unlock_irq(&common->lock);
+			raise_exception(common, FSG_STATE_EXIT);
 		}
 	}
 
@@ -2337,14 +2382,23 @@ static void handle_exception(struct fsg_common *common)
 	if (likely(common->fsg)) {
 		for (i = 0; i < common->fsg_num_buffers; ++i) {
 			bh = &common->buffhds[i];
-			if (bh->state == BUF_STATE_SENDING)
+			if (bh->inreq_busy)
 				usb_ep_dequeue(common->fsg->bulk_in, bh->inreq);
-			if (bh->state == BUF_STATE_RECEIVING)
+			if (bh->outreq_busy)
 				usb_ep_dequeue(common->fsg->bulk_out,
 					       bh->outreq);
+		}
 
-			/* Wait for a transfer to become idle */
-			if (sleep_thread(common, false, bh))
+		/* Wait until everything is idle */
+		for (;;) {
+			int num_active = 0;
+			for (i = 0; i < common->fsg_num_buffers; ++i) {
+				bh = &common->buffhds[i];
+				num_active += bh->inreq_busy + bh->outreq_busy;
+			}
+			if (num_active == 0)
+				break;
+			if (sleep_thread(common, true))
 				return;
 		}
 
@@ -2368,11 +2422,11 @@ static void handle_exception(struct fsg_common *common)
 	common->next_buffhd_to_fill = &common->buffhds[0];
 	common->next_buffhd_to_drain = &common->buffhds[0];
 	exception_req_tag = common->exception_req_tag;
-	new_fsg = common->exception_arg;
 	old_state = common->state;
-	common->state = FSG_STATE_NORMAL;
 
-	if (old_state != FSG_STATE_ABORT_BULK_OUT) {
+	if (old_state == FSG_STATE_ABORT_BULK_OUT)
+		common->state = FSG_STATE_STATUS_PHASE;
+	else {
 		for (i = 0; i < ARRAY_SIZE(common->luns); ++i) {
 			curlun = common->luns[i];
 			if (!curlun)
@@ -2383,19 +2437,21 @@ static void handle_exception(struct fsg_common *common)
 			curlun->sense_data_info = 0;
 			curlun->info_valid = 0;
 		}
+		common->state = FSG_STATE_IDLE;
 	}
 	spin_unlock_irq(&common->lock);
 
 	/* Carry out any extra actions required for the exception */
 	switch (old_state) {
-	case FSG_STATE_NORMAL:
-		break;
-
 	case FSG_STATE_ABORT_BULK_OUT:
 		send_status(common);
+		spin_lock_irq(&common->lock);
+		if (common->state == FSG_STATE_STATUS_PHASE)
+			common->state = FSG_STATE_IDLE;
+		spin_unlock_irq(&common->lock);
 		break;
 
-	case FSG_STATE_PROTOCOL_RESET:
+	case FSG_STATE_RESET:
 		/*
 		 * In case we were forced against our will to halt a
 		 * bulk endpoint, clear the halt now.  (The SuperH UDC
@@ -2422,19 +2478,34 @@ static void handle_exception(struct fsg_common *common)
 		break;
 
 	case FSG_STATE_CONFIG_CHANGE:
-		do_set_interface(common, new_fsg);
-		if (new_fsg)
+		fsg = common->new_fsg;
+		/*
+		 * Add a check here to double confirm if a disconnect event
+		 * occurs and common->new_fsg has been cleared.
+		 */
+		if (fsg) {
+			do_set_interface(common, fsg);
 			usb_composite_setup_continue(common->cdev);
+		}
+		break;
+
+	case FSG_STATE_DISCONNECT:
+		do_set_interface(common, NULL);
 		break;
 
 	case FSG_STATE_EXIT:
+	case FSG_STATE_TERMINATED:
 		do_set_interface(common, NULL);		/* Free resources */
 		spin_lock_irq(&common->lock);
 		common->state = FSG_STATE_TERMINATED;	/* Stop the thread */
 		spin_unlock_irq(&common->lock);
 		break;
 
-	case FSG_STATE_TERMINATED:
+	case FSG_STATE_INTERFACE_CHANGE:
+	case FSG_STATE_COMMAND_PHASE:
+	case FSG_STATE_DATA_PHASE:
+	case FSG_STATE_STATUS_PHASE:
+	case FSG_STATE_IDLE:
 		break;
 	}
 }
@@ -2459,6 +2530,13 @@ static int fsg_main_thread(void *common_)
 	/* Allow the thread to be frozen */
 	set_freezable();
 
+	/*
+	 * Arrange for userspace references to be interpreted as kernel
+	 * pointers.  That way we can pass a kernel pointer to a routine
+	 * that expects a __user pointer and it will work okay.
+	 */
+	set_fs(get_ds());
+
 	/* The main loop */
 	while (common->state != FSG_STATE_TERMINATED) {
 		if (exception_in_progress(common) || signal_pending(current)) {
@@ -2467,17 +2545,33 @@ static int fsg_main_thread(void *common_)
 		}
 
 		if (!common->running) {
-			sleep_thread(common, true, NULL);
+			sleep_thread(common, true);
 			continue;
 		}
 
-		if (get_next_command(common) || exception_in_progress(common))
+		if (get_next_command(common))
 			continue;
-		if (do_scsi_command(common) || exception_in_progress(common))
+
+		spin_lock_irq(&common->lock);
+		if (!exception_in_progress(common))
+			common->state = FSG_STATE_DATA_PHASE;
+		spin_unlock_irq(&common->lock);
+
+		if (do_scsi_command(common) || finish_reply(common))
 			continue;
-		if (finish_reply(common) || exception_in_progress(common))
+
+		spin_lock_irq(&common->lock);
+		if (!exception_in_progress(common))
+			common->state = FSG_STATE_STATUS_PHASE;
+		spin_unlock_irq(&common->lock);
+
+		if (send_status(common))
 			continue;
-		send_status(common);
+
+		spin_lock_irq(&common->lock);
+		if (!exception_in_progress(common))
+			common->state = FSG_STATE_IDLE;
+		spin_unlock_irq(&common->lock);
 	}
 
 	spin_lock_irq(&common->lock);
@@ -2559,10 +2653,24 @@ static DEVICE_ATTR(file, 0, file_show, file_store);
 
 /****************************** FSG COMMON ******************************/
 
+static void fsg_common_release(struct kref *ref);
+
 static void fsg_lun_release(struct device *dev)
 {
 	/* Nothing needs to be done */
 }
+
+void fsg_common_get(struct fsg_common *common)
+{
+	kref_get(&common->ref);
+}
+EXPORT_SYMBOL_GPL(fsg_common_get);
+
+void fsg_common_put(struct fsg_common *common)
+{
+	kref_put(&common->ref, fsg_common_release);
+}
+EXPORT_SYMBOL_GPL(fsg_common_put);
 
 static struct fsg_common *fsg_common_setup(struct fsg_common *common)
 {
@@ -2576,8 +2684,8 @@ static struct fsg_common *fsg_common_setup(struct fsg_common *common)
 	}
 	init_rwsem(&common->filesem);
 	spin_lock_init(&common->lock);
+	kref_init(&common->ref);
 	init_completion(&common->thread_notifier);
-	init_waitqueue_head(&common->io_wait);
 	init_waitqueue_head(&common->fsg_wait);
 	common->state = FSG_STATE_TERMINATED;
 	memset(common->luns, 0, sizeof(common->luns));
@@ -2863,14 +2971,16 @@ void fsg_common_set_inquiry_string(struct fsg_common *common, const char *vn,
 }
 EXPORT_SYMBOL_GPL(fsg_common_set_inquiry_string);
 
-static void fsg_common_release(struct fsg_common *common)
+static void fsg_common_release(struct kref *ref)
 {
+	struct fsg_common *common = container_of(ref, struct fsg_common, ref);
 	int i;
 
 	/* If the thread isn't already dead, tell it to exit now */
 	if (common->state != FSG_STATE_TERMINATED) {
 		raise_exception(common, FSG_STATE_EXIT);
 		wait_for_completion(&common->thread_notifier);
+		common->thread_task = NULL;
 	}
 
 	for (i = 0; i < ARRAY_SIZE(common->luns); ++i) {
@@ -2919,11 +3029,11 @@ static int fsg_bind(struct usb_configuration *c, struct usb_function *f)
 	}
 
 	if (!common->thread_task) {
-		common->state = FSG_STATE_NORMAL;
+		common->state = FSG_STATE_IDLE;
 		common->thread_task =
 			kthread_create(fsg_main_thread, common, "file-storage");
 		if (IS_ERR(common->thread_task)) {
-			ret = PTR_ERR(common->thread_task);
+			int ret = PTR_ERR(common->thread_task);
 			common->thread_task = NULL;
 			common->state = FSG_STATE_TERMINATED;
 			return ret;
@@ -2998,7 +3108,8 @@ static void fsg_unbind(struct usb_configuration *c, struct usb_function *f)
 
 	DBG(fsg, "unbind\n");
 	if (fsg->common->fsg == fsg) {
-		__raise_exception(fsg->common, FSG_STATE_CONFIG_CHANGE, NULL);
+		fsg->common->new_fsg = NULL;
+		raise_exception(fsg->common, FSG_STATE_CONFIG_CHANGE);
 		/* FIXME: make interruptible or killable somehow? */
 		wait_event(common->fsg_wait, common->fsg != fsg);
 	}
@@ -3132,7 +3243,7 @@ static struct configfs_attribute *fsg_lun_attrs[] = {
 	NULL,
 };
 
-static const struct config_item_type fsg_lun_type = {
+static struct config_item_type fsg_lun_type = {
 	.ct_item_ops	= &fsg_lun_item_ops,
 	.ct_attrs	= fsg_lun_attrs,
 	.ct_owner	= THIS_MODULE,
@@ -3300,9 +3411,7 @@ static ssize_t fsg_opts_num_buffers_store(struct config_item *item,
 	if (ret)
 		goto end;
 
-	ret = fsg_common_set_num_buffers(opts->common, num);
-	if (ret)
-		goto end;
+	fsg_common_set_num_buffers(opts->common, num);
 	ret = len;
 
 end:
@@ -3326,7 +3435,7 @@ static struct configfs_group_operations fsg_group_ops = {
 	.drop_item	= fsg_lun_drop,
 };
 
-static const struct config_item_type fsg_func_type = {
+static struct config_item_type fsg_func_type = {
 	.ct_item_ops	= &fsg_item_ops,
 	.ct_group_ops	= &fsg_group_ops,
 	.ct_attrs	= fsg_attrs,
@@ -3338,7 +3447,7 @@ static void fsg_free_inst(struct usb_function_instance *fi)
 	struct fsg_opts *opts;
 
 	opts = fsg_opts_from_func_inst(fi);
-	fsg_common_release(opts->common);
+	fsg_common_put(opts->common);
 	kfree(opts);
 }
 
@@ -3362,7 +3471,7 @@ static struct usb_function_instance *fsg_alloc_inst(void)
 	rc = fsg_common_set_num_buffers(opts->common,
 					CONFIG_USB_GADGET_STORAGE_NUM_BUFFERS);
 	if (rc)
-		goto release_common;
+		goto release_opts;
 
 	pr_info(FSG_DRIVER_DESC ", version: " FSG_DRIVER_VERSION "\n");
 
@@ -3385,8 +3494,6 @@ static struct usb_function_instance *fsg_alloc_inst(void)
 
 release_buffers:
 	fsg_common_free_buffers(opts->common);
-release_common:
-	kfree(opts->common);
 release_opts:
 	kfree(opts);
 	return ERR_PTR(rc);

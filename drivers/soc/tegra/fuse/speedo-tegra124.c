@@ -1,6 +1,17 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2013-2014, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2013-2016, NVIDIA CORPORATION.  All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms and conditions of the GNU General Public License,
+ * version 2, as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 #include <linux/device.h>
@@ -102,7 +113,6 @@ static void __init rev_sku_to_speedo_ids(struct tegra_sku_info *sku_info,
 void __init tegra124_init_speedo_data(struct tegra_sku_info *sku_info)
 {
 	int i, threshold, cpu_speedo_0_value, soc_speedo_0_value;
-	int cpu_iddq_value, gpu_iddq_value, soc_iddq_value;
 
 	BUILD_BUG_ON(ARRAY_SIZE(cpu_process_speedos) !=
 			THRESHOLD_INDEX_COUNT);
@@ -118,9 +128,9 @@ void __init tegra124_init_speedo_data(struct tegra_sku_info *sku_info)
 
 	soc_speedo_0_value = tegra_fuse_read_early(FUSE_SOC_SPEEDO_0);
 
-	cpu_iddq_value = tegra_fuse_read_early(FUSE_CPU_IDDQ);
-	soc_iddq_value = tegra_fuse_read_early(FUSE_SOC_IDDQ);
-	gpu_iddq_value = tegra_fuse_read_early(FUSE_GPU_IDDQ);
+	sku_info->cpu_iddq_value = tegra_fuse_read_early(FUSE_CPU_IDDQ);
+	sku_info->soc_iddq_value = tegra_fuse_read_early(FUSE_SOC_IDDQ);
+	sku_info->gpu_iddq_value = tegra_fuse_read_early(FUSE_GPU_IDDQ);
 
 	sku_info->cpu_speedo_value = cpu_speedo_0_value;
 
@@ -131,8 +141,6 @@ void __init tegra124_init_speedo_data(struct tegra_sku_info *sku_info)
 	}
 
 	rev_sku_to_speedo_ids(sku_info, &threshold);
-
-	sku_info->cpu_iddq_value = tegra_fuse_read_early(FUSE_CPU_IDDQ);
 
 	for (i = 0; i < GPU_PROCESS_CORNERS; i++)
 		if (sku_info->gpu_speedo_value <

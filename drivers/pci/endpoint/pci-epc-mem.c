@@ -1,9 +1,20 @@
-// SPDX-License-Identifier: GPL-2.0
 /**
  * PCI Endpoint *Controller* Address Space Management
  *
  * Copyright (C) 2017 Texas Instruments
  * Author: Kishon Vijay Abraham I <kishon@ti.com>
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 of
+ * the License as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 #include <linux/io.h>
@@ -144,13 +155,49 @@ void __iomem *pci_epc_mem_alloc_addr(struct pci_epc *epc,
 EXPORT_SYMBOL_GPL(pci_epc_mem_alloc_addr);
 
 /**
+ * pci_epc_wc_mem_alloc_addr() - allocate wc memory address from EPC addr space
+ * @epc: the EPC device on which memory has to be allocated
+ * @phys_addr: populate the allocated physical address here
+ * @size: the size of the address space that has to be allocated
+ *
+ * Invoke to allocate wc memory address from the EPC address space. This
+ * is usually done to map the remote RC address backed by RAM into the
+ * local system.
+ */
+void __iomem *pci_epc_wc_mem_alloc_addr(struct pci_epc *epc,
+					phys_addr_t *phys_addr, size_t size)
+{
+	int pageno;
+	void __iomem *virt_addr;
+	struct pci_epc_mem *mem = epc->mem;
+	unsigned int page_shift = ilog2(mem->page_size);
+	int order;
+
+	size = ALIGN(size, mem->page_size);
+	order = pci_epc_mem_get_order(mem, size);
+
+	pageno = bitmap_find_free_region(mem->bitmap, mem->pages, order);
+	if (pageno < 0)
+		return NULL;
+
+	*phys_addr = mem->phys_base + (pageno << page_shift);
+	virt_addr = ioremap_wc(*phys_addr, size);
+	if (!virt_addr)
+		bitmap_release_region(mem->bitmap, pageno, order);
+
+	return virt_addr;
+}
+EXPORT_SYMBOL_GPL(pci_epc_wc_mem_alloc_addr);
+
+/**
  * pci_epc_mem_free_addr() - free the allocated memory address
  * @epc: the EPC device on which memory was allocated
  * @phys_addr: the allocated physical address
  * @virt_addr: virtual address of the allocated mem space
  * @size: the size of the allocated address space
  *
- * Invoke to free the memory allocated using pci_epc_mem_alloc_addr.
+ * Invoke to free the memory allocated using pci_epc_mem_alloc_addr or
+ * pci_epc_wc_mem_alloc_addr.
  */
 void pci_epc_mem_free_addr(struct pci_epc *epc, phys_addr_t phys_addr,
 			   void __iomem *virt_addr, size_t size)

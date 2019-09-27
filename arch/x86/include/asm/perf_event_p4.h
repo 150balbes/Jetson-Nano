@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * Netburst Performance Events (P4, old Xeon)
  */

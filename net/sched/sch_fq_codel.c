@@ -1,6 +1,10 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Fair Queue CoDel discipline
+ *
+ *	This program is free software; you can redistribute it and/or
+ *	modify it under the terms of the GNU General Public License
+ *	as published by the Free Software Foundation; either version
+ *	2 of the License, or (at your option) any later version.
  *
  *  Copyright (C) 2012,2015 Eric Dumazet <edumazet@google.com>
  */
@@ -19,7 +23,6 @@
 #include <linux/vmalloc.h>
 #include <net/netlink.h>
 #include <net/pkt_sched.h>
-#include <net/pkt_cls.h>
 #include <net/codel.h>
 #include <net/codel_impl.h>
 #include <net/codel_qdisc.h>
@@ -51,10 +54,10 @@ struct fq_codel_flow {
 
 struct fq_codel_sched_data {
 	struct tcf_proto __rcu *filter_list; /* optional external classifier */
-	struct tcf_block *block;
 	struct fq_codel_flow *flows;	/* Flows table [flows_cnt] */
 	u32		*backlogs;	/* backlog table [flows_cnt] */
 	u32		flows_cnt;	/* number of flows */
+	u32		perturbation;	/* hash perturbation */
 	u32		quantum;	/* psched_mtu(qdisc_dev(sch)); */
 	u32		drop_batch_size;
 	u32		memory_limit;
@@ -72,7 +75,9 @@ struct fq_codel_sched_data {
 static unsigned int fq_codel_hash(const struct fq_codel_sched_data *q,
 				  struct sk_buff *skb)
 {
-	return reciprocal_scale(skb_get_hash(skb), q->flows_cnt);
+	u32 hash = skb_get_hash_perturb(skb, q->perturbation);
+
+	return reciprocal_scale(hash, q->flows_cnt);
 }
 
 static unsigned int fq_codel_classify(struct sk_buff *skb, struct Qdisc *sch,
@@ -93,15 +98,13 @@ static unsigned int fq_codel_classify(struct sk_buff *skb, struct Qdisc *sch,
 		return fq_codel_hash(q, skb) + 1;
 
 	*qerr = NET_XMIT_SUCCESS | __NET_XMIT_BYPASS;
-	result = tcf_classify(skb, filter, &res, false);
+	result = tc_classify(skb, filter, &res, false);
 	if (result >= 0) {
 #ifdef CONFIG_NET_CLS_ACT
 		switch (result) {
 		case TC_ACT_STOLEN:
 		case TC_ACT_QUEUED:
-		case TC_ACT_TRAP:
 			*qerr = NET_XMIT_SUCCESS | __NET_XMIT_STOLEN;
-			/* fall through */
 		case TC_ACT_SHOT:
 			return 0;
 		}
@@ -120,7 +123,7 @@ static inline struct sk_buff *dequeue_head(struct fq_codel_flow *flow)
 	struct sk_buff *skb = flow->head;
 
 	flow->head = skb->next;
-	skb_mark_not_on_list(skb);
+	skb->next = NULL;
 	return skb;
 }
 
@@ -287,6 +290,7 @@ static struct sk_buff *fq_codel_dequeue(struct Qdisc *sch)
 	struct fq_codel_flow *flow;
 	struct list_head *head;
 	u32 prev_drop_count, prev_ecn_mark;
+	unsigned int prev_backlog;
 
 begin:
 	head = &q->new_flows;
@@ -305,6 +309,7 @@ begin:
 
 	prev_drop_count = q->cstats.drop_count;
 	prev_ecn_mark = q->cstats.ecn_mark;
+	prev_backlog = sch->qstats.backlog;
 
 	skb = codel_dequeue(sch, &sch->qstats.backlog, &q->cparams,
 			    &flow->cvars, &q->cstats, qdisc_pkt_len,
@@ -373,8 +378,7 @@ static const struct nla_policy fq_codel_policy[TCA_FQ_CODEL_MAX + 1] = {
 	[TCA_FQ_CODEL_MEMORY_LIMIT] = { .type = NLA_U32 },
 };
 
-static int fq_codel_change(struct Qdisc *sch, struct nlattr *opt,
-			   struct netlink_ext_ack *extack)
+static int fq_codel_change(struct Qdisc *sch, struct nlattr *opt)
 {
 	struct fq_codel_sched_data *q = qdisc_priv(sch);
 	struct nlattr *tb[TCA_FQ_CODEL_MAX + 1];
@@ -383,8 +387,7 @@ static int fq_codel_change(struct Qdisc *sch, struct nlattr *opt,
 	if (!opt)
 		return -EINVAL;
 
-	err = nla_parse_nested_deprecated(tb, TCA_FQ_CODEL_MAX, opt,
-					  fq_codel_policy, NULL);
+	err = nla_parse_nested(tb, TCA_FQ_CODEL_MAX, opt, fq_codel_policy);
 	if (err < 0)
 		return err;
 	if (tb[TCA_FQ_CODEL_FLOWS]) {
@@ -446,27 +449,40 @@ static int fq_codel_change(struct Qdisc *sch, struct nlattr *opt,
 	return 0;
 }
 
+static void *fq_codel_zalloc(size_t sz)
+{
+	void *ptr = kzalloc(sz, GFP_KERNEL | __GFP_NOWARN);
+
+	if (!ptr)
+		ptr = vzalloc(sz);
+	return ptr;
+}
+
+static void fq_codel_free(void *addr)
+{
+	kvfree(addr);
+}
+
 static void fq_codel_destroy(struct Qdisc *sch)
 {
 	struct fq_codel_sched_data *q = qdisc_priv(sch);
 
-	tcf_block_put(q->block);
-	kvfree(q->backlogs);
-	kvfree(q->flows);
+	tcf_destroy_chain(&q->filter_list);
+	fq_codel_free(q->backlogs);
+	fq_codel_free(q->flows);
 }
 
-static int fq_codel_init(struct Qdisc *sch, struct nlattr *opt,
-			 struct netlink_ext_ack *extack)
+static int fq_codel_init(struct Qdisc *sch, struct nlattr *opt)
 {
 	struct fq_codel_sched_data *q = qdisc_priv(sch);
 	int i;
-	int err;
 
 	sch->limit = 10*1024;
 	q->flows_cnt = 1024;
 	q->memory_limit = 32 << 20; /* 32 MBytes */
 	q->drop_batch_size = 64;
 	q->quantum = psched_mtu(qdisc_dev(sch));
+	q->perturbation = prandom_u32();
 	INIT_LIST_HEAD(&q->new_flows);
 	INIT_LIST_HEAD(&q->old_flows);
 	codel_params_init(&q->cparams);
@@ -475,27 +491,20 @@ static int fq_codel_init(struct Qdisc *sch, struct nlattr *opt,
 	q->cparams.mtu = psched_mtu(qdisc_dev(sch));
 
 	if (opt) {
-		err = fq_codel_change(sch, opt, extack);
+		int err = fq_codel_change(sch, opt);
 		if (err)
-			goto init_failure;
+			return err;
 	}
 
-	err = tcf_block_get(&q->block, &q->filter_list, sch, extack);
-	if (err)
-		goto init_failure;
-
 	if (!q->flows) {
-		q->flows = kvcalloc(q->flows_cnt,
-				    sizeof(struct fq_codel_flow),
-				    GFP_KERNEL);
-		if (!q->flows) {
-			err = -ENOMEM;
-			goto init_failure;
-		}
-		q->backlogs = kvcalloc(q->flows_cnt, sizeof(u32), GFP_KERNEL);
+		q->flows = fq_codel_zalloc(q->flows_cnt *
+					   sizeof(struct fq_codel_flow));
+		if (!q->flows)
+			return -ENOMEM;
+		q->backlogs = fq_codel_zalloc(q->flows_cnt * sizeof(u32));
 		if (!q->backlogs) {
-			err = -ENOMEM;
-			goto alloc_failure;
+			fq_codel_free(q->flows);
+			return -ENOMEM;
 		}
 		for (i = 0; i < q->flows_cnt; i++) {
 			struct fq_codel_flow *flow = q->flows + i;
@@ -509,13 +518,6 @@ static int fq_codel_init(struct Qdisc *sch, struct nlattr *opt,
 	else
 		sch->flags &= ~TCQ_F_CAN_BYPASS;
 	return 0;
-
-alloc_failure:
-	kvfree(q->flows);
-	q->flows = NULL;
-init_failure:
-	q->flows_cnt = 0;
-	return err;
 }
 
 static int fq_codel_dump(struct Qdisc *sch, struct sk_buff *skb)
@@ -523,7 +525,7 @@ static int fq_codel_dump(struct Qdisc *sch, struct sk_buff *skb)
 	struct fq_codel_sched_data *q = qdisc_priv(sch);
 	struct nlattr *opts;
 
-	opts = nla_nest_start_noflag(skb, TCA_OPTIONS);
+	opts = nla_nest_start(skb, TCA_OPTIONS);
 	if (opts == NULL)
 		goto nla_put_failure;
 
@@ -588,7 +590,7 @@ static struct Qdisc *fq_codel_leaf(struct Qdisc *sch, unsigned long arg)
 	return NULL;
 }
 
-static unsigned long fq_codel_find(struct Qdisc *sch, u32 classid)
+static unsigned long fq_codel_get(struct Qdisc *sch, u32 classid)
 {
 	return 0;
 }
@@ -596,21 +598,23 @@ static unsigned long fq_codel_find(struct Qdisc *sch, u32 classid)
 static unsigned long fq_codel_bind(struct Qdisc *sch, unsigned long parent,
 			      u32 classid)
 {
+	/* we cannot bypass queue discipline anymore */
+	sch->flags &= ~TCQ_F_CAN_BYPASS;
 	return 0;
 }
 
-static void fq_codel_unbind(struct Qdisc *q, unsigned long cl)
+static void fq_codel_put(struct Qdisc *q, unsigned long cl)
 {
 }
 
-static struct tcf_block *fq_codel_tcf_block(struct Qdisc *sch, unsigned long cl,
-					    struct netlink_ext_ack *extack)
+static struct tcf_proto __rcu **fq_codel_find_tcf(struct Qdisc *sch,
+						  unsigned long cl)
 {
 	struct fq_codel_sched_data *q = qdisc_priv(sch);
 
 	if (cl)
 		return NULL;
-	return q->block;
+	return &q->filter_list;
 }
 
 static int fq_codel_dump_class(struct Qdisc *sch, unsigned long cl,
@@ -691,10 +695,11 @@ static void fq_codel_walk(struct Qdisc *sch, struct qdisc_walker *arg)
 
 static const struct Qdisc_class_ops fq_codel_class_ops = {
 	.leaf		=	fq_codel_leaf,
-	.find		=	fq_codel_find,
-	.tcf_block	=	fq_codel_tcf_block,
+	.get		=	fq_codel_get,
+	.put		=	fq_codel_put,
+	.tcf_chain	=	fq_codel_find_tcf,
 	.bind_tcf	=	fq_codel_bind,
-	.unbind_tcf	=	fq_codel_unbind,
+	.unbind_tcf	=	fq_codel_put,
 	.dump		=	fq_codel_dump_class,
 	.dump_stats	=	fq_codel_dump_class_stats,
 	.walk		=	fq_codel_walk,

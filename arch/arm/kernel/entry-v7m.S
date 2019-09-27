@@ -1,8 +1,11 @@
-/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * linux/arch/arm/kernel/entry-v7m.S
  *
  * Copyright (C) 2008 ARM Ltd.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  *
  * Low-level vector interface routines for the ARMv7-M architecture
  */
@@ -143,7 +146,3 @@ ENTRY(vector_table)
 	.rept	CONFIG_CPU_V7M_NUM_IRQ
 	.long	__irq_entry		@ External Interrupts
 	.endr
-	.align	2
-	.globl	exc_ret
-exc_ret:
-	.space	4

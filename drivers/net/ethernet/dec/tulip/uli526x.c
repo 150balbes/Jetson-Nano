@@ -1,5 +1,13 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
+    This program is free software; you can redistribute it and/or
+    modify it under the terms of the GNU General Public License
+    as published by the Free Software Foundation; either version 2
+    of the License, or (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
 
 
 */
@@ -32,7 +40,7 @@
 #include <asm/processor.h>
 #include <asm/io.h>
 #include <asm/dma.h>
-#include <linux/uaccess.h>
+#include <asm/uaccess.h>
 
 #define uw32(reg, val)	iowrite32(val, ioaddr + (reg))
 #define ur32(reg)	ioread32(ioaddr + (reg))
@@ -233,7 +241,7 @@ static void phy_write_1bit(struct uli526x_board_info *db, u32);
 static u16 phy_read_1bit(struct uli526x_board_info *db);
 static u8 uli526x_sense_speed(struct uli526x_board_info *);
 static void uli526x_process_mode(struct uli526x_board_info *);
-static void uli526x_timer(struct timer_list *t);
+static void uli526x_timer(unsigned long);
 static void uli526x_rx_packet(struct net_device *, struct uli526x_board_info *);
 static void uli526x_free_tx_pkt(struct net_device *, struct uli526x_board_info *);
 static void uli526x_reuse_skb(struct uli526x_board_info *, struct sk_buff *);
@@ -261,6 +269,7 @@ static const struct net_device_ops netdev_ops = {
 	.ndo_stop		= uli526x_stop,
 	.ndo_start_xmit		= uli526x_start_xmit,
 	.ndo_set_rx_mode	= uli526x_set_filter_mode,
+	.ndo_change_mtu		= eth_change_mtu,
 	.ndo_set_mac_address	= eth_mac_addr,
 	.ndo_validate_addr	= eth_validate_addr,
 #ifdef CONFIG_NET_POLL_CONTROLLER
@@ -483,8 +492,10 @@ static int uli526x_open(struct net_device *dev)
 	netif_wake_queue(dev);
 
 	/* set and active a timer process */
-	timer_setup(&db->timer, uli526x_timer, 0);
+	init_timer(&db->timer);
 	db->timer.expires = ULI526X_TIMER_WUT + HZ * 2;
+	db->timer.data = (unsigned long)dev;
+	db->timer.function = uli526x_timer;
 	add_timer(&db->timer);
 
 	return 0;
@@ -854,9 +865,9 @@ static void uli526x_rx_packet(struct net_device *dev, struct uli526x_board_info 
 					skb = new_skb;
 					/* size less than COPY_SIZE, allocate a rxlen SKB */
 					skb_reserve(skb, 2); /* 16byte align */
-					skb_put_data(skb,
-						     skb_tail_pointer(rxptr->rx_skb_ptr),
-						     rxlen);
+					memcpy(skb_put(skb, rxlen),
+					       skb_tail_pointer(rxptr->rx_skb_ptr),
+					       rxlen);
 					uli526x_reuse_skb(db, rxptr->rx_skb_ptr);
 				} else
 					skb_put(skb, rxlen);
@@ -916,53 +927,48 @@ static void uli526x_set_filter_mode(struct net_device * dev)
 }
 
 static void
-ULi_ethtool_get_link_ksettings(struct uli526x_board_info *db,
-			       struct ethtool_link_ksettings *cmd)
+ULi_ethtool_gset(struct uli526x_board_info *db, struct ethtool_cmd *ecmd)
 {
-	u32 supported, advertising;
-
-	supported = (SUPPORTED_10baseT_Half |
+	ecmd->supported = (SUPPORTED_10baseT_Half |
 	                   SUPPORTED_10baseT_Full |
 	                   SUPPORTED_100baseT_Half |
 	                   SUPPORTED_100baseT_Full |
 	                   SUPPORTED_Autoneg |
 	                   SUPPORTED_MII);
 
-	advertising = (ADVERTISED_10baseT_Half |
+	ecmd->advertising = (ADVERTISED_10baseT_Half |
 	                   ADVERTISED_10baseT_Full |
 	                   ADVERTISED_100baseT_Half |
 	                   ADVERTISED_100baseT_Full |
 	                   ADVERTISED_Autoneg |
 	                   ADVERTISED_MII);
 
-	ethtool_convert_legacy_u32_to_link_mode(cmd->link_modes.supported,
-						supported);
-	ethtool_convert_legacy_u32_to_link_mode(cmd->link_modes.advertising,
-						advertising);
 
-	cmd->base.port = PORT_MII;
-	cmd->base.phy_address = db->phy_addr;
+	ecmd->port = PORT_MII;
+	ecmd->phy_address = db->phy_addr;
 
-	cmd->base.speed = SPEED_10;
-	cmd->base.duplex = DUPLEX_HALF;
+	ecmd->transceiver = XCVR_EXTERNAL;
+
+	ethtool_cmd_speed_set(ecmd, SPEED_10);
+	ecmd->duplex = DUPLEX_HALF;
 
 	if(db->op_mode==ULI526X_100MHF || db->op_mode==ULI526X_100MFD)
 	{
-		cmd->base.speed = SPEED_100;
+		ethtool_cmd_speed_set(ecmd, SPEED_100);
 	}
 	if(db->op_mode==ULI526X_10MFD || db->op_mode==ULI526X_100MFD)
 	{
-		cmd->base.duplex = DUPLEX_FULL;
+		ecmd->duplex = DUPLEX_FULL;
 	}
 	if(db->link_failed)
 	{
-		cmd->base.speed = SPEED_UNKNOWN;
-		cmd->base.duplex = DUPLEX_UNKNOWN;
+		ethtool_cmd_speed_set(ecmd, SPEED_UNKNOWN);
+		ecmd->duplex = DUPLEX_UNKNOWN;
 	}
 
 	if (db->media_mode & ULI526X_AUTO)
 	{
-		cmd->base.autoneg = AUTONEG_ENABLE;
+		ecmd->autoneg = AUTONEG_ENABLE;
 	}
 }
 
@@ -976,12 +982,10 @@ static void netdev_get_drvinfo(struct net_device *dev,
 	strlcpy(info->bus_info, pci_name(np->pdev), sizeof(info->bus_info));
 }
 
-static int netdev_get_link_ksettings(struct net_device *dev,
-				     struct ethtool_link_ksettings *cmd)
-{
+static int netdev_get_settings(struct net_device *dev, struct ethtool_cmd *cmd) {
 	struct uli526x_board_info *np = netdev_priv(dev);
 
-	ULi_ethtool_get_link_ksettings(np, cmd);
+	ULi_ethtool_gset(np, cmd);
 
 	return 0;
 }
@@ -1003,9 +1007,9 @@ static void uli526x_get_wol(struct net_device *dev, struct ethtool_wolinfo *wol)
 
 static const struct ethtool_ops netdev_ethtool_ops = {
 	.get_drvinfo		= netdev_get_drvinfo,
+	.get_settings		= netdev_get_settings,
 	.get_link		= netdev_get_link,
 	.get_wol		= uli526x_get_wol,
-	.get_link_ksettings	= netdev_get_link_ksettings,
 };
 
 /*
@@ -1013,10 +1017,10 @@ static const struct ethtool_ops netdev_ethtool_ops = {
  *	Dynamic media sense, allocate Rx buffer...
  */
 
-static void uli526x_timer(struct timer_list *t)
+static void uli526x_timer(unsigned long data)
 {
-	struct uli526x_board_info *db = from_timer(db, t, timer);
-	struct net_device *dev = pci_get_drvdata(db->pdev);
+	struct net_device *dev = (struct net_device *) data;
+	struct uli526x_board_info *db = netdev_priv(dev);
 	struct uli_phy_ops *phy = &db->phy;
 	void __iomem *ioaddr = db->ioaddr;
  	unsigned long flags;

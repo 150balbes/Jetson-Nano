@@ -1,0 +1,134 @@
+/*
+ * arch/arm/boot/dts/panel-b-1440-1600-3-5.dtsi
+ *
+ * Copyright (c) 2017, NVIDIA CORPORATION.  All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with this program; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+ */
+#include <dt-bindings/display/tegra-dc.h>
+#include <dt-bindings/display/tegra-panel.h>
+
+/ {
+	i2c@31c0000 {
+		tc358870@0f {
+			panel-b-1440-1600-3-5 {
+				status = "okay";
+				compatible = "b,1440-1600-3-5";
+				nvidia,panel-id = <0>;
+				nvidia,dsi-n-data-lanes = <8>;
+				nvidia,dsi-init-cmd =
+							/* Long  Packet: <PACKETTYPE[u8] COMMANDID[u8] PAYLOADCOUNT[u16] ECC[u8] PAYLOAD[..] CHECKSUM[u16]> */
+							/* Short Packet: <PACKETTYPE[u8] COMMANDID[u8] DATA0[u8] DATA1[u8] ECC[u8]> */
+							/* For DSI packets each DT cell is interpreted as u8 not u32 */
+							<TEGRA_DSI_PACKET_CMD DSI_DCS_WRITE_1_PARAM 0xFF 0xE0 0x0>,
+							<TEGRA_DSI_PACKET_CMD DSI_DCS_WRITE_1_PARAM 0xFB 0x01 0x0>,
+							<TEGRA_DSI_PACKET_CMD DSI_DCS_WRITE_1_PARAM 0X53 0x22 0x0>,
+							<TEGRA_DSI_PACKET_CMD DSI_DCS_WRITE_1_PARAM 0XFF 0x25 0x0>,
+							<TEGRA_DSI_PACKET_CMD DSI_DCS_WRITE_1_PARAM 0xFB 0x01 0x0>,
+							<TEGRA_DSI_PACKET_CMD DSI_DCS_WRITE_1_PARAM 0xC4 0x10 0x0>,
+							<TEGRA_DSI_PACKET_CMD DSI_DCS_WRITE_1_PARAM 0x62 0x60 0x0>,
+							<TEGRA_DSI_PACKET_CMD DSI_DCS_WRITE_1_PARAM 0x66 0x40 0x0>,
+							<TEGRA_DSI_PACKET_CMD DSI_DCS_WRITE_1_PARAM 0x67 0x3C 0x0>,
+							<TEGRA_DSI_PACKET_CMD DSI_DCS_WRITE_1_PARAM 0xFF 0x10 0x0>,
+							<TEGRA_DSI_PACKET_CMD DSI_DCS_WRITE_1_PARAM 0xFB 0x01 0x0>,
+							<TEGRA_DSI_PACKET_CMD DSI_DCS_WRITE_1_PARAM 0xC0 0x80 0x0>,
+							<TEGRA_DSI_PACKET_CMD DSI_DCS_LONG_WRITE 0x08 0x0 0x0 0x05 0x00 0xBE 0x01 0xC6 0x00 0x32 0x00 0x0 0x0>,
+							/* Set display mode to Video mode  */
+							<TEGRA_DSI_PACKET_CMD DSI_DCS_WRITE_1_PARAM 0xBB 0x03 0x0>,
+							<TEGRA_DSI_PACKET_CMD DSI_DCS_WRITE_1_PARAM 0x35 0x00 0x0>,
+							/* Scan direction */
+							<TEGRA_DSI_PACKET_CMD DSI_DCS_WRITE_1_PARAM 0x36 0x00 0x0>;
+				nvidia,dsi-n-init-cmd = <16>;
+				nvidia,dsi-postvideo-cmd =
+							/* MCAP */
+							<TEGRA_DSI_PACKET_CMD DSI_GENERIC_SHORT_WRITE_2_PARAMS 0xB0 0x00 0x0>,
+							<TEGRA_DSI_DELAY_US 200>,
+							/* Interface Setting */
+							<TEGRA_DSI_PACKET_CMD DSI_GENERIC_SHORT_WRITE_2_PARAMS 0xB3 0x14 0x0>,
+							<TEGRA_DSI_DELAY_US 200>,
+							/* MCAP */
+							<TEGRA_DSI_PACKET_CMD DSI_GENERIC_SHORT_WRITE_2_PARAMS 0xB0 0x03 0x0>,
+							<TEGRA_DSI_DELAY_US 200>,
+							<TEGRA_DSI_DELAY_US 200>,
+							<TEGRA_DSI_PACKET_CMD DSI_DCS_WRITE_0_PARAM DSI_DCS_EXIT_SLEEP_MODE 0x0 0x0>,
+							<TEGRA_DSI_DELAY_MS 200>,
+							<TEGRA_DSI_PACKET_CMD DSI_DCS_WRITE_0_PARAM DSI_DCS_SET_DISPLAY_ON 0x0 0x0>,
+							<TEGRA_DSI_DELAY_US 200>;
+				nvidia,dsi-n-postvideo-cmd = <11>;
+				nvidia,dsi-suspend-cmd =
+							<TEGRA_DSI_PACKET_CMD DSI_DCS_WRITE_0_PARAM DSI_DCS_SET_DISPLAY_OFF 0x0 0x0>,
+							<TEGRA_DSI_DELAY_MS 20>,
+							<TEGRA_DSI_PACKET_CMD DSI_DCS_WRITE_0_PARAM DSI_DCS_ENTER_SLEEP_MODE 0x0 0x0>,
+							<TEGRA_DSI_DELAY_MS 20>;
+				nvidia,dsi-n-suspend-cmd = <4>;
+			};
+		};
+	};
+	i2c@31e0000 {
+		tc358870@0f {
+			panel-b-1440-1600-3-5 {
+				status = "okay";
+				compatible = "b,1440-1600-3-5";
+				nvidia,panel-id = <1>;
+				nvidia,dsi-n-data-lanes = <8>;
+				nvidia,dsi-init-cmd =
+							/* Long  Packet: <PACKETTYPE[u8] COMMANDID[u8] PAYLOADCOUNT[u16] ECC[u8] PAYLOAD[..] CHECKSUM[u16]> */
+							/* Short Packet: <PACKETTYPE[u8] COMMANDID[u8] DATA0[u8] DATA1[u8] ECC[u8]> */
+							/* For DSI packets each DT cell is interpreted as u8 not u32 */
+							<TEGRA_DSI_PACKET_CMD DSI_DCS_WRITE_1_PARAM 0xFF 0xE0 0x0>,
+							<TEGRA_DSI_PACKET_CMD DSI_DCS_WRITE_1_PARAM 0xFB 0x01 0x0>,
+							<TEGRA_DSI_PACKET_CMD DSI_DCS_WRITE_1_PARAM 0X53 0x22 0x0>,
+							<TEGRA_DSI_PACKET_CMD DSI_DCS_WRITE_1_PARAM 0XFF 0x25 0x0>,
+							<TEGRA_DSI_PACKET_CMD DSI_DCS_WRITE_1_PARAM 0xFB 0x01 0x0>,
+							<TEGRA_DSI_PACKET_CMD DSI_DCS_WRITE_1_PARAM 0xC4 0x10 0x0>,
+							<TEGRA_DSI_PACKET_CMD DSI_DCS_WRITE_1_PARAM 0x62 0x60 0x0>,
+							<TEGRA_DSI_PACKET_CMD DSI_DCS_WRITE_1_PARAM 0x66 0x40 0x0>,
+							<TEGRA_DSI_PACKET_CMD DSI_DCS_WRITE_1_PARAM 0x67 0x3C 0x0>,
+							<TEGRA_DSI_PACKET_CMD DSI_DCS_WRITE_1_PARAM 0xFF 0x10 0x0>,
+							<TEGRA_DSI_PACKET_CMD DSI_DCS_WRITE_1_PARAM 0xFB 0x01 0x0>,
+							<TEGRA_DSI_PACKET_CMD DSI_DCS_WRITE_1_PARAM 0xC0 0x80 0x0>,
+							<TEGRA_DSI_PACKET_CMD DSI_DCS_LONG_WRITE 0x08 0x0 0x0 0x05 0x00 0xBE 0x01 0xC6 0x00 0x32 0x00 0x0 0x0>,
+							/* Set display mode to Video mode  */
+							<TEGRA_DSI_PACKET_CMD DSI_DCS_WRITE_1_PARAM 0xBB 0x03 0x0>,
+							<TEGRA_DSI_PACKET_CMD DSI_DCS_WRITE_1_PARAM 0x35 0x00 0x0>,
+							/* Reverse scan direction for 2nd panel */
+							<TEGRA_DSI_PACKET_CMD DSI_DCS_WRITE_1_PARAM 0x36 0x03 0x0>;
+				nvidia,dsi-n-init-cmd = <16>;
+				nvidia,dsi-postvideo-cmd =
+							/* MCAP */
+							<TEGRA_DSI_PACKET_CMD DSI_GENERIC_SHORT_WRITE_2_PARAMS 0xB0 0x00 0x0>,
+							<TEGRA_DSI_DELAY_US 200>,
+							/* Interface Setting */
+							<TEGRA_DSI_PACKET_CMD DSI_GENERIC_SHORT_WRITE_2_PARAMS 0xB3 0x14 0x0>,
+							<TEGRA_DSI_DELAY_US 200>,
+							/* MCAP */
+							<TEGRA_DSI_PACKET_CMD DSI_GENERIC_SHORT_WRITE_2_PARAMS 0xB0 0x03 0x0>,
+							<TEGRA_DSI_DELAY_US 200>,
+							<TEGRA_DSI_DELAY_US 200>,
+							<TEGRA_DSI_PACKET_CMD DSI_DCS_WRITE_0_PARAM DSI_DCS_EXIT_SLEEP_MODE 0x0 0x0>,
+							<TEGRA_DSI_DELAY_MS 200>,
+							<TEGRA_DSI_PACKET_CMD DSI_DCS_WRITE_0_PARAM DSI_DCS_SET_DISPLAY_ON 0x0 0x0>,
+							<TEGRA_DSI_DELAY_US 200>;
+				nvidia,dsi-n-postvideo-cmd = <11>;
+				nvidia,dsi-suspend-cmd =
+							<TEGRA_DSI_PACKET_CMD DSI_DCS_WRITE_0_PARAM DSI_DCS_SET_DISPLAY_OFF 0x0 0x0>,
+							<TEGRA_DSI_DELAY_MS 20>,
+							<TEGRA_DSI_PACKET_CMD DSI_DCS_WRITE_0_PARAM DSI_DCS_ENTER_SLEEP_MODE 0x0 0x0>,
+							<TEGRA_DSI_DELAY_MS 20>;
+				nvidia,dsi-n-suspend-cmd = <4>;
+			};
+		};
+	};
+};

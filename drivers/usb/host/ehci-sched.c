@@ -1,7 +1,20 @@
-// SPDX-License-Identifier: GPL-2.0+
 /*
  * Copyright (c) 2001-2004 by David Brownell
  * Copyright (c) 2003 Michal Sojka, for high-speed iso transfers
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License as published by the
+ * Free Software Foundation; either version 2 of the License, or (at your
+ * option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
+ * or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+ * for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software Foundation,
+ * Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  */
 
 /* this file is part of ehci-hcd.c */
@@ -117,9 +130,8 @@ static struct ehci_tt *find_tt(struct usb_device *udev)
 	if (utt->multi) {
 		tt_index = utt->hcpriv;
 		if (!tt_index) {		/* Create the index array */
-			tt_index = kcalloc(utt->hub->maxchild,
-					   sizeof(*tt_index),
-					   GFP_ATOMIC);
+			tt_index = kzalloc(utt->hub->maxchild *
+					sizeof(*tt_index), GFP_ATOMIC);
 			if (!tt_index)
 				return ERR_PTR(-ENOMEM);
 			utt->hcpriv = tt_index;
@@ -236,7 +248,8 @@ static void reserve_release_intr_bandwidth(struct ehci_hcd *ehci,
 		for (i = start_uf; i < EHCI_BANDWIDTH_SIZE;
 				i += qh->ps.bw_uperiod) {
 			for ((j = 2, m = 1 << (j+8)); j < 8; (++j, m <<= 1)) {
-				if (qh->ps.cs_mask & m)
+				if ((qh->ps.cs_mask & m) &&
+					((i+j) < EHCI_BANDWIDTH_SIZE))
 					ehci->bandwidth[i+j] += c_usecs;
 			}
 		}
@@ -278,7 +291,10 @@ static void compute_tt_budget(u8 budget_table[EHCI_BANDWIDTH_SIZE],
 
 			/* propagate the time forward */
 			for (uf = ps->phase_uf; uf < 8; ++uf) {
-				x += budget_line[uf];
+				if (uframe + uf < EHCI_BANDWIDTH_SIZE)
+					x += budget_line[uf];
+				else
+					break;
 
 				/* Each microframe lasts 125 us */
 				if (x <= 125) {
@@ -565,7 +581,7 @@ static void qh_link_periodic(struct ehci_hcd *ehci, struct ehci_qh *qh)
 		/* sorting each branch by period (slow-->fast)
 		 * enables sharing interior tree nodes
 		 */
-		while (here.ptr && qh != here.qh) {
+		while (here.qh && here.ptr && qh != here.qh) {
 			if (qh->ps.period > here.qh->ps.period)
 				break;
 			prev = &here.qh->qh_next;
@@ -1052,10 +1068,11 @@ iso_stream_init(
 
 	/* knows about ITD vs SITD */
 	if (dev->speed == USB_SPEED_HIGH) {
-		unsigned multi = usb_endpoint_maxp_mult(&urb->ep->desc);
+		unsigned multi = hb_mult(maxp);
 
 		stream->highspeed = 1;
 
+		maxp = max_packet(maxp);
 		buf1 |= maxp;
 		maxp *= multi;
 
@@ -1093,7 +1110,7 @@ iso_stream_init(
 		addr |= epnum << 8;
 		addr |= dev->devnum;
 		stream->ps.usecs = HS_USECS_ISO(maxp);
-		think_time = dev->tt->think_time;
+		think_time = dev->tt ? dev->tt->think_time : 0;
 		stream->ps.tt_usecs = NS_TO_US(think_time + usb_calc_bus_time(
 				dev->speed, is_input, 1, maxp));
 		hs_transfers = max(1u, (maxp + 187) / 188);
@@ -1348,7 +1365,8 @@ static void reserve_release_iso_bandwidth(struct ehci_hcd *ehci,
 		/* NOTE: adjustment needed for frame overflow */
 		for (i = uframe; i < EHCI_BANDWIDTH_SIZE;
 				i += stream->ps.bw_uperiod) {
-			for ((j = stream->ps.phase_uf, m = 1 << j); j < 8;
+			for ((j = stream->ps.phase_uf, m = 1 << j); j < 8 &&
+					(i+j) < EHCI_BANDWIDTH_SIZE;
 					(++j, m <<= 1)) {
 				if (s_mask & m)
 					ehci->bandwidth[i+j] += usecs;
@@ -1835,6 +1853,7 @@ static bool itd_complete(struct ehci_hcd *ehci, struct ehci_itd *itd)
 	unsigned				uframe;
 	int					urb_index = -1;
 	struct ehci_iso_stream			*stream = itd->stream;
+	struct usb_device			*dev;
 	bool					retval = false;
 
 	/* for each uframe with a packet */
@@ -1885,6 +1904,7 @@ static bool itd_complete(struct ehci_hcd *ehci, struct ehci_itd *itd)
 	 */
 
 	/* give urb back to the driver; completion often (re)submits */
+	dev = urb->dev;
 	ehci_urb_done(ehci, urb, 0);
 	retval = true;
 	urb = NULL;
@@ -2228,6 +2248,7 @@ static bool sitd_complete(struct ehci_hcd *ehci, struct ehci_sitd *sitd)
 	u32					t;
 	int					urb_index;
 	struct ehci_iso_stream			*stream = sitd->stream;
+	struct usb_device			*dev;
 	bool					retval = false;
 
 	urb_index = sitd->index;
@@ -2265,6 +2286,7 @@ static bool sitd_complete(struct ehci_hcd *ehci, struct ehci_sitd *sitd)
 	 */
 
 	/* give urb back to the driver; completion often (re)submits */
+	dev = urb->dev;
 	ehci_urb_done(ehci, urb, 0);
 	retval = true;
 	urb = NULL;

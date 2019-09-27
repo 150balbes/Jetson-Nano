@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 #include <linux/kernel.h>
 #include <linux/clk-provider.h>
 #include <linux/of_address.h>
@@ -54,13 +53,13 @@ static void __init tango4_clkgen_setup(struct device_node *np)
 	const char *parent = of_clk_get_parent_name(np, 0);
 
 	if (!base)
-		panic("%pOFn: invalid address\n", np);
+		panic("%s: invalid address\n", np->name);
 
 	if (readl(base + CPUCLK_DIV) & DIV_BYPASS)
-		panic("%pOFn: unsupported cpuclk setup\n", np);
+		panic("%s: unsupported cpuclk setup\n", np->name);
 
 	if (readl(base + SYSCLK_DIV) & DIV_BYPASS)
-		panic("%pOFn: unsupported sysclk setup\n", np);
+		panic("%s: unsupported sysclk setup\n", np->name);
 
 	writel(0x100, base + CPUCLK_DIV); /* disable frequency ramping */
 
@@ -77,9 +76,9 @@ static void __init tango4_clkgen_setup(struct device_node *np)
 	pp[3] = clk_register_fixed_factor(NULL, "sdio_clk", "cd6", 0, 1, 2);
 
 	if (IS_ERR(pp[0]) || IS_ERR(pp[1]) || IS_ERR(pp[2]) || IS_ERR(pp[3]))
-		panic("%pOFn: clk registration failed\n", np);
+		panic("%s: clk registration failed\n", np->name);
 
 	if (of_clk_add_provider(np, of_clk_src_onecell_get, &clk_data))
-		panic("%pOFn: clk provider registration failed\n", np);
+		panic("%s: clk provider registration failed\n", np->name);
 }
 CLK_OF_DECLARE(tango4_clkgen, "sigma,tango4-clkgen", tango4_clkgen_setup);

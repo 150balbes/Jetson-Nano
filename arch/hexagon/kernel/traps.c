@@ -1,14 +1,25 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Kernel traps/events for Hexagon processor
  *
  * Copyright (c) 2010-2014, The Linux Foundation. All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 and
+ * only version 2 as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
+ * 02110-1301, USA.
  */
 
 #include <linux/init.h>
-#include <linux/sched/signal.h>
-#include <linux/sched/debug.h>
-#include <linux/sched/task_stack.h>
+#include <linux/sched.h>
 #include <linux/module.h>
 #include <linux/kallsyms.h>
 #include <linux/kdebug.h>
@@ -239,7 +250,7 @@ int die_if_kernel(char *str, struct pt_regs *regs, long err)
 static void misaligned_instruction(struct pt_regs *regs)
 {
 	die_if_kernel("Misaligned Instruction", regs, 0);
-	force_sig(SIGBUS);
+	force_sig(SIGBUS, current);
 }
 
 /*
@@ -250,19 +261,19 @@ static void misaligned_instruction(struct pt_regs *regs)
 static void misaligned_data_load(struct pt_regs *regs)
 {
 	die_if_kernel("Misaligned Data Load", regs, 0);
-	force_sig(SIGBUS);
+	force_sig(SIGBUS, current);
 }
 
 static void misaligned_data_store(struct pt_regs *regs)
 {
 	die_if_kernel("Misaligned Data Store", regs, 0);
-	force_sig(SIGBUS);
+	force_sig(SIGBUS, current);
 }
 
 static void illegal_instruction(struct pt_regs *regs)
 {
 	die_if_kernel("Illegal Instruction", regs, 0);
-	force_sig(SIGILL);
+	force_sig(SIGILL, current);
 }
 
 /*
@@ -272,7 +283,7 @@ static void illegal_instruction(struct pt_regs *regs)
 static void precise_bus_error(struct pt_regs *regs)
 {
 	die_if_kernel("Precise Bus Error", regs, 0);
-	force_sig(SIGBUS);
+	force_sig(SIGBUS, current);
 }
 
 /*
@@ -399,6 +410,10 @@ void do_trap0(struct pt_regs *regs)
 	case TRAP_DEBUG:
 		/* Trap0 0xdb is debug breakpoint */
 		if (user_mode(regs)) {
+			struct siginfo info;
+
+			info.si_signo = SIGTRAP;
+			info.si_errno = 0;
 			/*
 			 * Some architecures add some per-thread state
 			 * to distinguish between breakpoint traps and
@@ -406,8 +421,9 @@ void do_trap0(struct pt_regs *regs)
 			 * set the si_code value appropriately, or we
 			 * may want to use a different trap0 flavor.
 			 */
-			force_sig_fault(SIGTRAP, TRAP_BRKPT,
-					(void __user *) pt_elr(regs));
+			info.si_code = TRAP_BRKPT;
+			info.si_addr = (void __user *) pt_elr(regs);
+			force_sig_info(SIGTRAP, &info, current);
 		} else {
 #ifdef CONFIG_KGDB
 			kgdb_handle_exception(pt_cause(regs), SIGTRAP,

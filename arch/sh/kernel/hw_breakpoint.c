@@ -1,14 +1,16 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * arch/sh/kernel/hw_breakpoint.c
  *
  * Unified kernel/user-space hardware breakpoint facility for the on-chip UBC.
  *
  * Copyright (C) 2009 - 2010  Paul Mundt
+ *
+ * This file is subject to the terms and conditions of the GNU General Public
+ * License.  See the file "COPYING" in the main directory of this archive
+ * for more details.
  */
 #include <linux/init.h>
 #include <linux/perf_event.h>
-#include <linux/sched/signal.h>
 #include <linux/hw_breakpoint.h>
 #include <linux/percpu.h>
 #include <linux/kallsyms.h>
@@ -121,13 +123,14 @@ static int get_hbp_len(u16 hbp_len)
 /*
  * Check for virtual address in kernel space.
  */
-int arch_check_bp_in_kernelspace(struct arch_hw_breakpoint *hw)
+int arch_check_bp_in_kernelspace(struct perf_event *bp)
 {
 	unsigned int len;
 	unsigned long va;
+	struct arch_hw_breakpoint *info = counter_arch_bp(bp);
 
-	va = hw->address;
-	len = get_hbp_len(hw->len);
+	va = info->address;
+	len = get_hbp_len(info->len);
 
 	return (va >= TASK_SIZE) && ((va + len - 1) >= TASK_SIZE);
 }
@@ -157,7 +160,6 @@ int arch_bp_generic_fields(int sh_len, int sh_type,
 	switch (sh_type) {
 	case SH_BREAKPOINT_READ:
 		*gen_type = HW_BREAKPOINT_R;
-		break;
 	case SH_BREAKPOINT_WRITE:
 		*gen_type = HW_BREAKPOINT_W;
 		break;
@@ -171,40 +173,40 @@ int arch_bp_generic_fields(int sh_len, int sh_type,
 	return 0;
 }
 
-static int arch_build_bp_info(struct perf_event *bp,
-			      const struct perf_event_attr *attr,
-			      struct arch_hw_breakpoint *hw)
+static int arch_build_bp_info(struct perf_event *bp)
 {
-	hw->address = attr->bp_addr;
+	struct arch_hw_breakpoint *info = counter_arch_bp(bp);
+
+	info->address = bp->attr.bp_addr;
 
 	/* Len */
-	switch (attr->bp_len) {
+	switch (bp->attr.bp_len) {
 	case HW_BREAKPOINT_LEN_1:
-		hw->len = SH_BREAKPOINT_LEN_1;
+		info->len = SH_BREAKPOINT_LEN_1;
 		break;
 	case HW_BREAKPOINT_LEN_2:
-		hw->len = SH_BREAKPOINT_LEN_2;
+		info->len = SH_BREAKPOINT_LEN_2;
 		break;
 	case HW_BREAKPOINT_LEN_4:
-		hw->len = SH_BREAKPOINT_LEN_4;
+		info->len = SH_BREAKPOINT_LEN_4;
 		break;
 	case HW_BREAKPOINT_LEN_8:
-		hw->len = SH_BREAKPOINT_LEN_8;
+		info->len = SH_BREAKPOINT_LEN_8;
 		break;
 	default:
 		return -EINVAL;
 	}
 
 	/* Type */
-	switch (attr->bp_type) {
+	switch (bp->attr.bp_type) {
 	case HW_BREAKPOINT_R:
-		hw->type = SH_BREAKPOINT_READ;
+		info->type = SH_BREAKPOINT_READ;
 		break;
 	case HW_BREAKPOINT_W:
-		hw->type = SH_BREAKPOINT_WRITE;
+		info->type = SH_BREAKPOINT_WRITE;
 		break;
 	case HW_BREAKPOINT_W | HW_BREAKPOINT_R:
-		hw->type = SH_BREAKPOINT_RW;
+		info->type = SH_BREAKPOINT_RW;
 		break;
 	default:
 		return -EINVAL;
@@ -216,20 +218,19 @@ static int arch_build_bp_info(struct perf_event *bp,
 /*
  * Validate the arch-specific HW Breakpoint register settings
  */
-int hw_breakpoint_arch_parse(struct perf_event *bp,
-			     const struct perf_event_attr *attr,
-			     struct arch_hw_breakpoint *hw)
+int arch_validate_hwbkpt_settings(struct perf_event *bp)
 {
+	struct arch_hw_breakpoint *info = counter_arch_bp(bp);
 	unsigned int align;
 	int ret;
 
-	ret = arch_build_bp_info(bp, attr, hw);
+	ret = arch_build_bp_info(bp);
 	if (ret)
 		return ret;
 
 	ret = -EINVAL;
 
-	switch (hw->len) {
+	switch (info->len) {
 	case SH_BREAKPOINT_LEN_1:
 		align = 0;
 		break;
@@ -247,10 +248,17 @@ int hw_breakpoint_arch_parse(struct perf_event *bp,
 	}
 
 	/*
+	 * For kernel-addresses, either the address or symbol name can be
+	 * specified.
+	 */
+	if (info->name)
+		info->address = (unsigned long)kallsyms_lookup_name(info->name);
+
+	/*
 	 * Check that the low-order bits of the address are appropriate
 	 * for the alignment implied by len.
 	 */
-	if (hw->address & align)
+	if (info->address & align)
 		return -EINVAL;
 
 	return 0;
@@ -337,9 +345,14 @@ static int __kprobes hw_breakpoint_handler(struct die_args *args)
 		perf_bp_event(bp, args->regs);
 
 		/* Deliver the signal to userspace */
-		if (!arch_check_bp_in_kernelspace(&bp->hw.info)) {
-			force_sig_fault(SIGTRAP, TRAP_HWBKPT,
-					(void __user *)NULL);
+		if (!arch_check_bp_in_kernelspace(bp)) {
+			siginfo_t info;
+
+			info.si_signo = args->signr;
+			info.si_errno = notifier_to_errno(rc);
+			info.si_code = TRAP_HWBKPT;
+
+			force_sig_info(args->signr, &info, current);
 		}
 
 		rcu_read_unlock();

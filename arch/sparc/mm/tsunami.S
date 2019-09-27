@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * tsunami.S: High speed MicroSparc-I mmu/cache operations.
  *

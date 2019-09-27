@@ -814,7 +814,7 @@ static int octeon_irq_ciu_set_affinity(struct irq_data *data,
 			pen = &per_cpu(octeon_irq_ciu1_en_mirror, cpu);
 
 		if (cpumask_test_cpu(cpu, dest) && enable_one) {
-			enable_one = false;
+			enable_one = 0;
 			__set_bit(cd->bit, pen);
 		} else {
 			__clear_bit(cd->bit, pen);
@@ -1180,8 +1180,8 @@ static int octeon_irq_gpio_xlat(struct irq_domain *d,
 		type = IRQ_TYPE_LEVEL_LOW;
 		break;
 	default:
-		pr_err("Error: (%pOFn) Invalid irq trigger specification: %x\n",
-		       node,
+		pr_err("Error: (%s) Invalid irq trigger specification: %x\n",
+		       node->name,
 		       trigger);
 		type = IRQ_TYPE_LEVEL_LOW;
 		break;
@@ -2271,8 +2271,8 @@ static int __init octeon_irq_init_cib(struct device_node *ciu_node,
 
 	parent_irq = irq_of_parse_and_map(ciu_node, 0);
 	if (!parent_irq) {
-		pr_err("ERROR: Couldn't acquire parent_irq for %pOFn\n",
-			ciu_node);
+		pr_err("ERROR: Couldn't acquire parent_irq for %s\n",
+			ciu_node->name);
 		return -EINVAL;
 	}
 
@@ -2283,7 +2283,7 @@ static int __init octeon_irq_init_cib(struct device_node *ciu_node,
 
 	addr = of_get_address(ciu_node, 0, NULL, NULL);
 	if (!addr) {
-		pr_err("ERROR: Couldn't acquire reg(0) %pOFn\n", ciu_node);
+		pr_err("ERROR: Couldn't acquire reg(0) %s\n", ciu_node->name);
 		return -EINVAL;
 	}
 	host_data->raw_reg = (u64)phys_to_virt(
@@ -2291,7 +2291,7 @@ static int __init octeon_irq_init_cib(struct device_node *ciu_node,
 
 	addr = of_get_address(ciu_node, 1, NULL, NULL);
 	if (!addr) {
-		pr_err("ERROR: Couldn't acquire reg(1) %pOFn\n", ciu_node);
+		pr_err("ERROR: Couldn't acquire reg(1) %s\n", ciu_node->name);
 		return -EINVAL;
 	}
 	host_data->en_reg = (u64)phys_to_virt(
@@ -2299,8 +2299,8 @@ static int __init octeon_irq_init_cib(struct device_node *ciu_node,
 
 	r = of_property_read_u32(ciu_node, "cavium,max-bits", &val);
 	if (r) {
-		pr_err("ERROR: Couldn't read cavium,max-bits from %pOFn\n",
-			ciu_node);
+		pr_err("ERROR: Couldn't read cavium,max-bits from %s\n",
+			ciu_node->name);
 		return r;
 	}
 	host_data->max_bits = val;
@@ -2483,8 +2483,8 @@ void octeon_irq_ciu3_mask_ack(struct irq_data *data)
 }
 
 #ifdef CONFIG_SMP
-static int octeon_irq_ciu3_set_affinity(struct irq_data *data,
-					const struct cpumask *dest, bool force)
+int octeon_irq_ciu3_set_affinity(struct irq_data *data,
+				 const struct cpumask *dest, bool force)
 {
 	union cvmx_ciu3_iscx_ctl isc_ctl;
 	union cvmx_ciu3_iscx_w1c isc_w1c;
@@ -2965,12 +2965,3 @@ void octeon_fixup_irqs(void)
 }
 
 #endif /* CONFIG_HOTPLUG_CPU */
-
-struct irq_domain *octeon_irq_get_block_domain(int node, uint8_t block)
-{
-	struct octeon_ciu3_info *ciu3_info;
-
-	ciu3_info = octeon_ciu3_info_per_node[node & CVMX_NODE_MASK];
-	return ciu3_info->domain[block];
-}
-EXPORT_SYMBOL(octeon_irq_get_block_domain);

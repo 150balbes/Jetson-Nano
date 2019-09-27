@@ -1,8 +1,11 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * GPIO controller in LSI ZEVIO SoCs.
  *
  * Author: Fabian Vogt <fabian@ritter-vogt.de>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  */
 
 #include <linux/spinlock.h>
@@ -13,7 +16,7 @@
 #include <linux/of_device.h>
 #include <linux/of_gpio.h>
 #include <linux/slab.h>
-#include <linux/gpio/driver.h>
+#include <linux/gpio.h>
 
 /*
  * Memory layout:
@@ -153,7 +156,7 @@ static int zevio_gpio_to_irq(struct gpio_chip *chip, unsigned pin)
 	return -ENXIO;
 }
 
-static const struct gpio_chip zevio_gpio_chip = {
+static struct gpio_chip zevio_gpio_chip = {
 	.direction_input	= zevio_gpio_direction_input,
 	.direction_output	= zevio_gpio_direction_output,
 	.set			= zevio_gpio_set,

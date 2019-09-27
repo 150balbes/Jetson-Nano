@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __UM_CHECKSUM_H
 #define __UM_CHECKSUM_H
 

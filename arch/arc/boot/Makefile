@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0
 targets := vmlinux.bin vmlinux.bin.gz uImage
 
 # uImage build relies on mkimage being availble on your host for ARC target

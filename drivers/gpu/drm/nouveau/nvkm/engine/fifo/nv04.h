@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: MIT */
 #ifndef __NV04_FIFO_H__
 #define __NV04_FIFO_H__
 #define nv04_fifo(p) container_of((p), struct nv04_fifo, base)

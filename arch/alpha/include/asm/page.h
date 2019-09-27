@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _ALPHA_PAGE_H
 #define _ALPHA_PAGE_H
 

@@ -8,8 +8,6 @@
  * Licensed under the GNU/GPL. See COPYING for details.
  */
 
-#include "ssb_private.h"
-
 #include <linux/ssb/ssb.h>
 #include <linux/delay.h>
 #include <linux/io.h>
@@ -19,6 +17,8 @@
 #include <pcmcia/ciscode.h>
 #include <pcmcia/ds.h>
 #include <pcmcia/cisreg.h>
+
+#include "ssb_private.h"
 
 
 /* Define the following to 1 to enable a printk on each coreswitch. */
@@ -143,7 +143,7 @@ int ssb_pcmcia_switch_coreidx(struct ssb_bus *bus,
 
 	return 0;
 error:
-	pr_err("Failed to switch to core %u\n", coreidx);
+	ssb_err("Failed to switch to core %u\n", coreidx);
 	return err;
 }
 
@@ -152,8 +152,9 @@ static int ssb_pcmcia_switch_core(struct ssb_bus *bus, struct ssb_device *dev)
 	int err;
 
 #if SSB_VERBOSE_PCMCIACORESWITCH_DEBUG
-	pr_info("Switching to %s core, index %d\n",
-		ssb_core_name(dev->id.coreid), dev->core_index);
+	ssb_info("Switching to %s core, index %d\n",
+		 ssb_core_name(dev->id.coreid),
+		 dev->core_index);
 #endif
 
 	err = ssb_pcmcia_switch_coreidx(bus, dev->core_index);
@@ -169,7 +170,7 @@ int ssb_pcmcia_switch_segment(struct ssb_bus *bus, u8 seg)
 	int err;
 	u8 val;
 
-	WARN_ON((seg != 0) && (seg != 1));
+	SSB_WARN_ON((seg != 0) && (seg != 1));
 	while (1) {
 		err = ssb_pcmcia_cfg_write(bus, SSB_PCMCIA_MEMSEG, seg);
 		if (err)
@@ -189,7 +190,7 @@ int ssb_pcmcia_switch_segment(struct ssb_bus *bus, u8 seg)
 
 	return 0;
 error:
-	pr_err("Failed to switch pcmcia segment\n");
+	ssb_err("Failed to switch pcmcia segment\n");
 	return err;
 }
 
@@ -299,7 +300,7 @@ static void ssb_pcmcia_block_read(struct ssb_device *dev, void *buffer,
 	case sizeof(u16): {
 		__le16 *buf = buffer;
 
-		WARN_ON(count & 1);
+		SSB_WARN_ON(count & 1);
 		while (count) {
 			*buf = (__force __le16)__raw_readw(addr);
 			buf++;
@@ -310,7 +311,7 @@ static void ssb_pcmcia_block_read(struct ssb_device *dev, void *buffer,
 	case sizeof(u32): {
 		__le16 *buf = buffer;
 
-		WARN_ON(count & 3);
+		SSB_WARN_ON(count & 3);
 		while (count) {
 			*buf = (__force __le16)__raw_readw(addr);
 			buf++;
@@ -321,7 +322,7 @@ static void ssb_pcmcia_block_read(struct ssb_device *dev, void *buffer,
 		break;
 	}
 	default:
-		WARN_ON(1);
+		SSB_WARN_ON(1);
 	}
 unlock:
 	spin_unlock_irqrestore(&bus->bar_lock, flags);
@@ -338,6 +339,7 @@ static void ssb_pcmcia_write8(struct ssb_device *dev, u16 offset, u8 value)
 	err = select_core_and_segment(dev, &offset);
 	if (likely(!err))
 		writeb(value, bus->mmio + offset);
+	mmiowb();
 	spin_unlock_irqrestore(&bus->bar_lock, flags);
 }
 
@@ -351,6 +353,7 @@ static void ssb_pcmcia_write16(struct ssb_device *dev, u16 offset, u16 value)
 	err = select_core_and_segment(dev, &offset);
 	if (likely(!err))
 		writew(value, bus->mmio + offset);
+	mmiowb();
 	spin_unlock_irqrestore(&bus->bar_lock, flags);
 }
 
@@ -366,6 +369,7 @@ static void ssb_pcmcia_write32(struct ssb_device *dev, u16 offset, u32 value)
 		writew((value & 0x0000FFFF), bus->mmio + offset);
 		writew(((value & 0xFFFF0000) >> 16), bus->mmio + offset + 2);
 	}
+	mmiowb();
 	spin_unlock_irqrestore(&bus->bar_lock, flags);
 }
 
@@ -396,7 +400,7 @@ static void ssb_pcmcia_block_write(struct ssb_device *dev, const void *buffer,
 	case sizeof(u16): {
 		const __le16 *buf = buffer;
 
-		WARN_ON(count & 1);
+		SSB_WARN_ON(count & 1);
 		while (count) {
 			__raw_writew((__force u16)(*buf), addr);
 			buf++;
@@ -407,7 +411,7 @@ static void ssb_pcmcia_block_write(struct ssb_device *dev, const void *buffer,
 	case sizeof(u32): {
 		const __le16 *buf = buffer;
 
-		WARN_ON(count & 3);
+		SSB_WARN_ON(count & 3);
 		while (count) {
 			__raw_writew((__force u16)(*buf), addr);
 			buf++;
@@ -418,9 +422,10 @@ static void ssb_pcmcia_block_write(struct ssb_device *dev, const void *buffer,
 		break;
 	}
 	default:
-		WARN_ON(1);
+		SSB_WARN_ON(1);
 	}
 unlock:
+	mmiowb();
 	spin_unlock_irqrestore(&bus->bar_lock, flags);
 }
 #endif /* CONFIG_SSB_BLOCKIO */
@@ -542,39 +547,39 @@ static int ssb_pcmcia_sprom_write_all(struct ssb_bus *bus, const u16 *sprom)
 	bool failed = 0;
 	size_t size = SSB_PCMCIA_SPROM_SIZE;
 
-	pr_notice("Writing SPROM. Do NOT turn off the power! Please stand by...\n");
+	ssb_notice("Writing SPROM. Do NOT turn off the power! Please stand by...\n");
 	err = ssb_pcmcia_sprom_command(bus, SSB_PCMCIA_SPROMCTL_WRITEEN);
 	if (err) {
-		pr_notice("Could not enable SPROM write access\n");
+		ssb_notice("Could not enable SPROM write access\n");
 		return -EBUSY;
 	}
-	pr_notice("[ 0%%");
+	ssb_notice("[ 0%%");
 	msleep(500);
 	for (i = 0; i < size; i++) {
 		if (i == size / 4)
-			pr_cont("25%%");
+			ssb_cont("25%%");
 		else if (i == size / 2)
-			pr_cont("50%%");
+			ssb_cont("50%%");
 		else if (i == (size * 3) / 4)
-			pr_cont("75%%");
+			ssb_cont("75%%");
 		else if (i % 2)
-			pr_cont(".");
+			ssb_cont(".");
 		err = ssb_pcmcia_sprom_write(bus, i, sprom[i]);
 		if (err) {
-			pr_notice("Failed to write to SPROM\n");
+			ssb_notice("Failed to write to SPROM\n");
 			failed = 1;
 			break;
 		}
 	}
 	err = ssb_pcmcia_sprom_command(bus, SSB_PCMCIA_SPROMCTL_WRITEDIS);
 	if (err) {
-		pr_notice("Could not disable SPROM write access\n");
+		ssb_notice("Could not disable SPROM write access\n");
 		failed = 1;
 	}
 	msleep(500);
 	if (!failed) {
-		pr_cont("100%% ]\n");
-		pr_notice("SPROM written\n");
+		ssb_cont("100%% ]\n");
+		ssb_notice("SPROM written\n");
 	}
 
 	return failed ? -EBUSY : 0;
@@ -688,8 +693,9 @@ static int ssb_pcmcia_do_get_invariants(struct pcmcia_device *p_dev,
 	return -ENOSPC; /* continue with next entry */
 
 error:
-	pr_err("PCMCIA: Failed to fetch device invariants: %s\n",
-	       error_description);
+	ssb_err(
+		   "PCMCIA: Failed to fetch device invariants: %s\n",
+		   error_description);
 	return -ENODEV;
 }
 
@@ -709,7 +715,8 @@ int ssb_pcmcia_get_invariants(struct ssb_bus *bus,
 	res = pcmcia_loop_tuple(bus->host_pcmcia, CISTPL_FUNCE,
 				ssb_pcmcia_get_mac, sprom);
 	if (res != 0) {
-		pr_err("PCMCIA: Failed to fetch MAC address\n");
+		ssb_err(
+			"PCMCIA: Failed to fetch MAC address\n");
 		return -ENODEV;
 	}
 
@@ -719,7 +726,8 @@ int ssb_pcmcia_get_invariants(struct ssb_bus *bus,
 	if ((res == 0) || (res == -ENOSPC))
 		return 0;
 
-	pr_err("PCMCIA: Failed to fetch device invariants\n");
+	ssb_err(
+			"PCMCIA: Failed to fetch device invariants\n");
 	return -ENODEV;
 }
 
@@ -828,6 +836,6 @@ int ssb_pcmcia_init(struct ssb_bus *bus)
 
 	return 0;
 error:
-	pr_err("Failed to initialize PCMCIA host device\n");
+	ssb_err("Failed to initialize PCMCIA host device\n");
 	return err;
 }

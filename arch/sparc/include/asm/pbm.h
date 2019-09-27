@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  *
  * pbm.h: PCI bus module pseudo driver software state

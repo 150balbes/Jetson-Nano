@@ -1,6 +1,9 @@
-/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 1999-2002 Vojtech Pavlik
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License version 2 as published by
+ * the Free Software Foundation.
  */
 #ifndef _INPUT_H
 #define _INPUT_H
@@ -119,6 +122,7 @@ struct input_dev {
 	const char *name;
 	const char *phys;
 	const char *uniq;
+	bool enabled;
 	struct input_id id;
 
 	unsigned long propbit[BITS_TO_LONGS(INPUT_PROP_CNT)];
@@ -165,6 +169,8 @@ struct input_dev {
 	void (*close)(struct input_dev *dev);
 	int (*flush)(struct input_dev *dev, struct file *file);
 	int (*event)(struct input_dev *dev, unsigned int type, unsigned int code, int value);
+	int (*enable)(struct input_dev *dev);
+	int (*disable)(struct input_dev *dev);
 
 	struct input_handle __rcu *grab;
 
@@ -229,10 +235,6 @@ struct input_dev {
 
 #if SW_MAX != INPUT_DEVICE_ID_SW_MAX
 #error "SW_MAX and INPUT_DEVICE_ID_SW_MAX do not match"
-#endif
-
-#if INPUT_PROP_MAX != INPUT_DEVICE_ID_PROP_MAX
-#error "INPUT_PROP_MAX and INPUT_DEVICE_ID_PROP_MAX do not match"
 #endif
 
 #define INPUT_DEVICE_ID_MATCH_DEVICE \
@@ -470,9 +472,6 @@ int input_get_keycode(struct input_dev *dev, struct input_keymap_entry *ke);
 int input_set_keycode(struct input_dev *dev,
 		      const struct input_keymap_entry *ke);
 
-bool input_match_device_id(const struct input_dev *dev,
-			   const struct input_device_id *id);
-
 void input_enable_softrepeat(struct input_dev *dev, int delay, int period);
 
 extern struct class input_class;
@@ -533,7 +532,6 @@ int input_ff_event(struct input_dev *dev, unsigned int type, unsigned int code, 
 
 int input_ff_upload(struct input_dev *dev, struct ff_effect *effect, struct file *file);
 int input_ff_erase(struct input_dev *dev, int effect_id, struct file *file);
-int input_ff_flush(struct input_dev *dev, struct file *file);
 
 int input_ff_create_memless(struct input_dev *dev, void *data,
 		int (*play_effect)(struct input_dev *, void *, struct ff_effect *));

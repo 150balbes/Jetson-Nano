@@ -1,8 +1,12 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /******************************************************************************
  *
  * Copyright FUJITSU LIMITED 2010
  * Copyright KOSAKI Motohiro <kosaki.motohiro@jp.fujitsu.com>
+ *
+ *   This program is free software;  you can redistribute it and/or modify
+ *   it under the terms of the GNU General Public License as published by
+ *   the Free Software Foundation; either version 2 of the License, or
+ *   (at your option) any later version.
  *
  * DESCRIPTION
  *      Wait on uninitialized heap. It shold be zero and FUTEX_WAIT should
@@ -32,7 +36,6 @@
 #include "logging.h"
 #include "futextest.h"
 
-#define TEST_NAME "futex-wait-uninitialized-heap"
 #define WAIT_US 5000000
 
 static int child_blocked = 1;
@@ -95,9 +98,7 @@ int main(int argc, char **argv)
 		exit(1);
 	}
 
-	ksft_print_header();
-	ksft_set_plan(1);
-	ksft_print_msg("%s: Test the uninitialized futex value in FUTEX_WAIT\n",
+	printf("%s: Test the uninitialized futex value in FUTEX_WAIT\n",
 	       basename(argv[0]));
 
 
@@ -118,6 +119,6 @@ int main(int argc, char **argv)
 	}
 
  out:
-	print_result(TEST_NAME, ret);
+	print_result(ret);
 	return ret;
 }

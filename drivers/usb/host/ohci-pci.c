@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-1.0+
 /*
  * OHCI HCD (Host Controller Driver) for USB.
  *
@@ -152,7 +151,7 @@ static int ohci_quirk_amd700(struct usb_hcd *hcd)
 {
 	struct ohci_hcd *ohci = hcd_to_ohci(hcd);
 
-	if (usb_amd_quirk_pll_check())
+	if (usb_amd_find_chipset_info())
 		ohci->flags |= OHCI_QUIRK_AMD_PLL;
 
 	/* SB800 needs pre-fetch fix */
@@ -274,7 +273,7 @@ static const struct ohci_driver_overrides pci_overrides __initconst = {
 	.reset =		ohci_pci_reset,
 };
 
-static const struct pci_device_id pci_ids[] = { {
+static const struct pci_device_id pci_ids [] = { {
 	/* handle any USB OHCI controller */
 	PCI_DEVICE_CLASS(PCI_CLASS_SERIAL_USB_OHCI, ~0),
 	.driver_data =	(unsigned long) &ohci_pci_hc_driver,

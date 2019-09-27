@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0
 mantis_core-objs :=	mantis_ioc.o	\
 			mantis_uart.o	\
 			mantis_dma.o	\
@@ -26,4 +25,4 @@ obj-$(CONFIG_MANTIS_CORE)	+= mantis_core.o
 obj-$(CONFIG_DVB_MANTIS)	+= mantis.o
 obj-$(CONFIG_DVB_HOPPER)	+= hopper.o
 
-ccflags-y += -I $(srctree)/drivers/media/dvb-frontends/
+ccflags-y += -Idrivers/media/dvb-core/ -Idrivers/media/dvb-frontends/

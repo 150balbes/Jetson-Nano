@@ -1,5 +1,5 @@
 /*
- * Copyright(c) 2015 - 2018 Intel Corporation.
+ * Copyright(c) 2015, 2016 Intel Corporation.
  *
  * This file is provided under a dual BSD/GPLv2 license.  When using or
  * redistributing this file, you may do so under either license.
@@ -49,12 +49,10 @@
 #include <linux/netdevice.h>
 #include <linux/vmalloc.h>
 #include <linux/delay.h>
-#include <linux/xarray.h>
+#include <linux/idr.h>
 #include <linux/module.h>
 #include <linux/printk.h>
 #include <linux/hrtimer.h>
-#include <linux/bitmap.h>
-#include <linux/numa.h>
 #include <rdma/rdma_vt.h>
 
 #include "hfi.h"
@@ -67,8 +65,6 @@
 #include "verbs.h"
 #include "aspm.h"
 #include "affinity.h"
-#include "vnic.h"
-#include "exp_rcv.h"
 
 #undef pr_fmt
 #define pr_fmt(fmt) DRIVER_NAME ": " fmt
@@ -83,16 +79,14 @@
 #define HFI1_MIN_EAGER_BUFFER_SIZE (4 * 1024) /* 4KB */
 #define HFI1_MAX_EAGER_BUFFER_SIZE (256 * 1024) /* 256KB */
 
-#define NUM_IB_PORTS 1
-
 /*
  * Number of user receive contexts we are configured to use (to allow for more
  * pio buffers per ctxt, etc.)  Zero means use one user context per CPU.
  */
 int num_user_contexts = -1;
-module_param_named(num_user_contexts, num_user_contexts, int, 0444);
+module_param_named(num_user_contexts, num_user_contexts, uint, S_IRUGO);
 MODULE_PARM_DESC(
-	num_user_contexts, "Set max number of user contexts to use (default: -1 will use the real (non-HT) CPU count)");
+	num_user_contexts, "Set max number of user contexts to use");
 
 uint krcvqs[RXE_NUM_DATA_VL];
 int krcvqsset;
@@ -106,243 +100,113 @@ static unsigned hfi1_rcvarr_split = 25;
 module_param_named(rcvarr_split, hfi1_rcvarr_split, uint, S_IRUGO);
 MODULE_PARM_DESC(rcvarr_split, "Percent of context's RcvArray entries used for Eager buffers");
 
-static uint eager_buffer_size = (8 << 20); /* 8MB */
+static uint eager_buffer_size = (2 << 20); /* 2MB */
 module_param(eager_buffer_size, uint, S_IRUGO);
-MODULE_PARM_DESC(eager_buffer_size, "Size of the eager buffers, default: 8MB");
+MODULE_PARM_DESC(eager_buffer_size, "Size of the eager buffers, default: 2MB");
 
 static uint rcvhdrcnt = 2048; /* 2x the max eager buffer count */
 module_param_named(rcvhdrcnt, rcvhdrcnt, uint, S_IRUGO);
 MODULE_PARM_DESC(rcvhdrcnt, "Receive header queue count (default 2048)");
 
 static uint hfi1_hdrq_entsize = 32;
-module_param_named(hdrq_entsize, hfi1_hdrq_entsize, uint, 0444);
-MODULE_PARM_DESC(hdrq_entsize, "Size of header queue entries: 2 - 8B, 16 - 64B, 32 - 128B (default)");
+module_param_named(hdrq_entsize, hfi1_hdrq_entsize, uint, S_IRUGO);
+MODULE_PARM_DESC(hdrq_entsize, "Size of header queue entries: 2 - 8B, 16 - 64B (default), 32 - 128B");
 
 unsigned int user_credit_return_threshold = 33;	/* default is 33% */
 module_param(user_credit_return_threshold, uint, S_IRUGO);
 MODULE_PARM_DESC(user_credit_return_threshold, "Credit return threshold for user send contexts, return when unreturned credits passes this many blocks (in percent of allocated blocks, 0 is off)");
 
-static inline u64 encode_rcv_header_entry_size(u16 size);
+static inline u64 encode_rcv_header_entry_size(u16);
 
-DEFINE_XARRAY_FLAGS(hfi1_dev_table, XA_FLAGS_ALLOC | XA_FLAGS_LOCK_IRQ);
+static struct idr hfi1_unit_table;
+u32 hfi1_cpulist_count;
+unsigned long *hfi1_cpulist;
 
-static int hfi1_create_kctxt(struct hfi1_devdata *dd,
-			     struct hfi1_pportdata *ppd)
+/*
+ * Common code for creating the receive context array.
+ */
+int hfi1_create_ctxts(struct hfi1_devdata *dd)
 {
-	struct hfi1_ctxtdata *rcd;
+	unsigned i;
 	int ret;
 
 	/* Control context has to be always 0 */
 	BUILD_BUG_ON(HFI1_CTRL_CTXT != 0);
 
-	ret = hfi1_create_ctxtdata(ppd, dd->node, &rcd);
-	if (ret < 0) {
-		dd_dev_err(dd, "Kernel receive context allocation failed\n");
-		return ret;
+	dd->rcd = kzalloc_node(dd->num_rcv_contexts * sizeof(*dd->rcd),
+			       GFP_KERNEL, dd->node);
+	if (!dd->rcd)
+		goto nomem;
+
+	/* create one or more kernel contexts */
+	for (i = 0; i < dd->first_user_ctxt; ++i) {
+		struct hfi1_pportdata *ppd;
+		struct hfi1_ctxtdata *rcd;
+
+		ppd = dd->pport + (i % dd->num_pports);
+
+		/* dd->rcd[i] gets assigned inside the callee */
+		rcd = hfi1_create_ctxtdata(ppd, i, dd->node);
+		if (!rcd) {
+			dd_dev_err(dd,
+				   "Unable to allocate kernel receive context, failing\n");
+			goto nomem;
+		}
+		/*
+		 * Set up the kernel context flags here and now because they
+		 * use default values for all receive side memories.  User
+		 * contexts will be handled as they are created.
+		 */
+		rcd->flags = HFI1_CAP_KGET(MULTI_PKT_EGR) |
+			HFI1_CAP_KGET(NODROP_RHQ_FULL) |
+			HFI1_CAP_KGET(NODROP_EGR_FULL) |
+			HFI1_CAP_KGET(DMA_RTAIL);
+
+		/* Control context must use DMA_RTAIL */
+		if (rcd->ctxt == HFI1_CTRL_CTXT)
+			rcd->flags |= HFI1_CAP_DMA_RTAIL;
+		rcd->seq_cnt = 1;
+
+		rcd->sc = sc_alloc(dd, SC_ACK, rcd->rcvhdrqentsize, dd->node);
+		if (!rcd->sc) {
+			dd_dev_err(dd,
+				   "Unable to allocate kernel send context, failing\n");
+			goto nomem;
+		}
+
+		ret = hfi1_init_ctxt(rcd->sc);
+		if (ret < 0) {
+			dd_dev_err(dd,
+				   "Failed to setup kernel receive context, failing\n");
+			ret = -EFAULT;
+			goto bail;
+		}
 	}
 
 	/*
-	 * Set up the kernel context flags here and now because they use
-	 * default values for all receive side memories.  User contexts will
-	 * be handled as they are created.
+	 * Initialize aspm, to be done after gen3 transition and setting up
+	 * contexts and before enabling interrupts
 	 */
-	rcd->flags = HFI1_CAP_KGET(MULTI_PKT_EGR) |
-		HFI1_CAP_KGET(NODROP_RHQ_FULL) |
-		HFI1_CAP_KGET(NODROP_EGR_FULL) |
-		HFI1_CAP_KGET(DMA_RTAIL);
-
-	/* Control context must use DMA_RTAIL */
-	if (rcd->ctxt == HFI1_CTRL_CTXT)
-		rcd->flags |= HFI1_CAP_DMA_RTAIL;
-	rcd->seq_cnt = 1;
-
-	rcd->sc = sc_alloc(dd, SC_ACK, rcd->rcvhdrqentsize, dd->node);
-	if (!rcd->sc) {
-		dd_dev_err(dd, "Kernel send context allocation failed\n");
-		return -ENOMEM;
-	}
-	hfi1_init_ctxt(rcd->sc);
+	aspm_init(dd);
 
 	return 0;
-}
-
-/*
- * Create the receive context array and one or more kernel contexts
- */
-int hfi1_create_kctxts(struct hfi1_devdata *dd)
-{
-	u16 i;
-	int ret;
-
-	dd->rcd = kcalloc_node(dd->num_rcv_contexts, sizeof(*dd->rcd),
-			       GFP_KERNEL, dd->node);
-	if (!dd->rcd)
-		return -ENOMEM;
-
-	for (i = 0; i < dd->first_dyn_alloc_ctxt; ++i) {
-		ret = hfi1_create_kctxt(dd, dd->pport);
-		if (ret)
-			goto bail;
-	}
-
-	return 0;
+nomem:
+	ret = -ENOMEM;
 bail:
-	for (i = 0; dd->rcd && i < dd->first_dyn_alloc_ctxt; ++i)
-		hfi1_free_ctxt(dd->rcd[i]);
-
-	/* All the contexts should be freed, free the array */
+	if (dd->rcd) {
+		for (i = 0; i < dd->num_rcv_contexts; ++i)
+			hfi1_free_ctxtdata(dd, dd->rcd[i]);
+	}
 	kfree(dd->rcd);
 	dd->rcd = NULL;
 	return ret;
 }
 
 /*
- * Helper routines for the receive context reference count (rcd and uctxt).
+ * Common code for user and kernel context setup.
  */
-static void hfi1_rcd_init(struct hfi1_ctxtdata *rcd)
-{
-	kref_init(&rcd->kref);
-}
-
-/**
- * hfi1_rcd_free - When reference is zero clean up.
- * @kref: pointer to an initialized rcd data structure
- *
- */
-static void hfi1_rcd_free(struct kref *kref)
-{
-	unsigned long flags;
-	struct hfi1_ctxtdata *rcd =
-		container_of(kref, struct hfi1_ctxtdata, kref);
-
-	spin_lock_irqsave(&rcd->dd->uctxt_lock, flags);
-	rcd->dd->rcd[rcd->ctxt] = NULL;
-	spin_unlock_irqrestore(&rcd->dd->uctxt_lock, flags);
-
-	hfi1_free_ctxtdata(rcd->dd, rcd);
-
-	kfree(rcd);
-}
-
-/**
- * hfi1_rcd_put - decrement reference for rcd
- * @rcd: pointer to an initialized rcd data structure
- *
- * Use this to put a reference after the init.
- */
-int hfi1_rcd_put(struct hfi1_ctxtdata *rcd)
-{
-	if (rcd)
-		return kref_put(&rcd->kref, hfi1_rcd_free);
-
-	return 0;
-}
-
-/**
- * hfi1_rcd_get - increment reference for rcd
- * @rcd: pointer to an initialized rcd data structure
- *
- * Use this to get a reference after the init.
- *
- * Return : reflect kref_get_unless_zero(), which returns non-zero on
- * increment, otherwise 0.
- */
-int hfi1_rcd_get(struct hfi1_ctxtdata *rcd)
-{
-	return kref_get_unless_zero(&rcd->kref);
-}
-
-/**
- * allocate_rcd_index - allocate an rcd index from the rcd array
- * @dd: pointer to a valid devdata structure
- * @rcd: rcd data structure to assign
- * @index: pointer to index that is allocated
- *
- * Find an empty index in the rcd array, and assign the given rcd to it.
- * If the array is full, we are EBUSY.
- *
- */
-static int allocate_rcd_index(struct hfi1_devdata *dd,
-			      struct hfi1_ctxtdata *rcd, u16 *index)
-{
-	unsigned long flags;
-	u16 ctxt;
-
-	spin_lock_irqsave(&dd->uctxt_lock, flags);
-	for (ctxt = 0; ctxt < dd->num_rcv_contexts; ctxt++)
-		if (!dd->rcd[ctxt])
-			break;
-
-	if (ctxt < dd->num_rcv_contexts) {
-		rcd->ctxt = ctxt;
-		dd->rcd[ctxt] = rcd;
-		hfi1_rcd_init(rcd);
-	}
-	spin_unlock_irqrestore(&dd->uctxt_lock, flags);
-
-	if (ctxt >= dd->num_rcv_contexts)
-		return -EBUSY;
-
-	*index = ctxt;
-
-	return 0;
-}
-
-/**
- * hfi1_rcd_get_by_index_safe - validate the ctxt index before accessing the
- * array
- * @dd: pointer to a valid devdata structure
- * @ctxt: the index of an possilbe rcd
- *
- * This is a wrapper for hfi1_rcd_get_by_index() to validate that the given
- * ctxt index is valid.
- *
- * The caller is responsible for making the _put().
- *
- */
-struct hfi1_ctxtdata *hfi1_rcd_get_by_index_safe(struct hfi1_devdata *dd,
-						 u16 ctxt)
-{
-	if (ctxt < dd->num_rcv_contexts)
-		return hfi1_rcd_get_by_index(dd, ctxt);
-
-	return NULL;
-}
-
-/**
- * hfi1_rcd_get_by_index
- * @dd: pointer to a valid devdata structure
- * @ctxt: the index of an possilbe rcd
- *
- * We need to protect access to the rcd array.  If access is needed to
- * one or more index, get the protecting spinlock and then increment the
- * kref.
- *
- * The caller is responsible for making the _put().
- *
- */
-struct hfi1_ctxtdata *hfi1_rcd_get_by_index(struct hfi1_devdata *dd, u16 ctxt)
-{
-	unsigned long flags;
-	struct hfi1_ctxtdata *rcd = NULL;
-
-	spin_lock_irqsave(&dd->uctxt_lock, flags);
-	if (dd->rcd[ctxt]) {
-		rcd = dd->rcd[ctxt];
-		if (!hfi1_rcd_get(rcd))
-			rcd = NULL;
-	}
-	spin_unlock_irqrestore(&dd->uctxt_lock, flags);
-
-	return rcd;
-}
-
-/*
- * Common code for user and kernel context create and setup.
- * NOTE: the initial kref is done here (hf1_rcd_init()).
- */
-int hfi1_create_ctxtdata(struct hfi1_pportdata *ppd, int numa,
-			 struct hfi1_ctxtdata **context)
+struct hfi1_ctxtdata *hfi1_create_ctxtdata(struct hfi1_pportdata *ppd, u32 ctxt,
+					   int numa)
 {
 	struct hfi1_devdata *dd = ppd->dd;
 	struct hfi1_ctxtdata *rcd;
@@ -350,71 +214,56 @@ int hfi1_create_ctxtdata(struct hfi1_pportdata *ppd, int numa,
 	u32 base;
 
 	if (dd->rcv_entries.nctxt_extra >
-	    dd->num_rcv_contexts - dd->first_dyn_alloc_ctxt)
+	    dd->num_rcv_contexts - dd->first_user_ctxt)
 		kctxt_ngroups = (dd->rcv_entries.nctxt_extra -
-			 (dd->num_rcv_contexts - dd->first_dyn_alloc_ctxt));
+				 (dd->num_rcv_contexts - dd->first_user_ctxt));
 	rcd = kzalloc_node(sizeof(*rcd), GFP_KERNEL, numa);
 	if (rcd) {
 		u32 rcvtids, max_entries;
-		u16 ctxt;
-		int ret;
 
-		ret = allocate_rcd_index(dd, rcd, &ctxt);
-		if (ret) {
-			*context = NULL;
-			kfree(rcd);
-			return ret;
-		}
+		hfi1_cdbg(PROC, "setting up context %u\n", ctxt);
 
 		INIT_LIST_HEAD(&rcd->qp_wait_list);
-		hfi1_exp_tid_group_init(rcd);
 		rcd->ppd = ppd;
 		rcd->dd = dd;
+		rcd->cnt = 1;
+		rcd->ctxt = ctxt;
+		dd->rcd[ctxt] = rcd;
 		rcd->numa_id = numa;
 		rcd->rcv_array_groups = dd->rcv_entries.ngroups;
-		rcd->rhf_rcv_function_map = normal_rhf_rcv_functions;
 
-		mutex_init(&rcd->exp_mutex);
-		spin_lock_init(&rcd->exp_lock);
-		INIT_LIST_HEAD(&rcd->flow_queue.queue_head);
-		INIT_LIST_HEAD(&rcd->rarr_queue.queue_head);
-
-		hfi1_cdbg(PROC, "setting up context %u\n", rcd->ctxt);
+		mutex_init(&rcd->exp_lock);
 
 		/*
 		 * Calculate the context's RcvArray entry starting point.
 		 * We do this here because we have to take into account all
 		 * the RcvArray entries that previous context would have
-		 * taken and we have to account for any extra groups assigned
-		 * to the static (kernel) or dynamic (vnic/user) contexts.
+		 * taken and we have to account for any extra groups
+		 * assigned to the kernel or user contexts.
 		 */
-		if (ctxt < dd->first_dyn_alloc_ctxt) {
+		if (ctxt < dd->first_user_ctxt) {
 			if (ctxt < kctxt_ngroups) {
 				base = ctxt * (dd->rcv_entries.ngroups + 1);
 				rcd->rcv_array_groups++;
-			} else {
+			} else
 				base = kctxt_ngroups +
 					(ctxt * dd->rcv_entries.ngroups);
-			}
 		} else {
-			u16 ct = ctxt - dd->first_dyn_alloc_ctxt;
+			u16 ct = ctxt - dd->first_user_ctxt;
 
 			base = ((dd->n_krcv_queues * dd->rcv_entries.ngroups) +
 				kctxt_ngroups);
 			if (ct < dd->rcv_entries.nctxt_extra) {
 				base += ct * (dd->rcv_entries.ngroups + 1);
 				rcd->rcv_array_groups++;
-			} else {
+			} else
 				base += dd->rcv_entries.nctxt_extra +
 					(ct * dd->rcv_entries.ngroups);
-			}
 		}
 		rcd->eager_base = base * dd->rcv_entries.group_size;
 
 		rcd->rcvhdrq_cnt = rcvhdrcnt;
 		rcd->rcvhdrqentsize = hfi1_hdrq_entsize;
-		rcd->rhf_offset =
-			rcd->rcvhdrqentsize - sizeof(u64) / sizeof(u32);
 		/*
 		 * Simple Eager buffer allocation: we have already pre-allocated
 		 * the number of RcvArray entry groups. Each ctxtdata structure
@@ -448,16 +297,15 @@ int hfi1_create_ctxtdata(struct hfi1_pportdata *ppd, int numa,
 		 * The resulting value will be rounded down to the closest
 		 * multiple of dd->rcv_entries.group_size.
 		 */
-		rcd->egrbufs.buffers =
-			kcalloc_node(rcd->egrbufs.count,
-				     sizeof(*rcd->egrbufs.buffers),
-				     GFP_KERNEL, numa);
+		rcd->egrbufs.buffers = kzalloc_node(
+			rcd->egrbufs.count * sizeof(*rcd->egrbufs.buffers),
+			GFP_KERNEL, numa);
 		if (!rcd->egrbufs.buffers)
 			goto bail;
-		rcd->egrbufs.rcvtids =
-			kcalloc_node(rcd->egrbufs.count,
-				     sizeof(*rcd->egrbufs.rcvtids),
-				     GFP_KERNEL, numa);
+		rcd->egrbufs.rcvtids = kzalloc_node(
+				rcd->egrbufs.count *
+				sizeof(*rcd->egrbufs.rcvtids),
+				GFP_KERNEL, numa);
 		if (!rcd->egrbufs.rcvtids)
 			goto bail;
 		rcd->egrbufs.size = eager_buffer_size;
@@ -469,45 +317,25 @@ int hfi1_create_ctxtdata(struct hfi1_pportdata *ppd, int numa,
 		if (rcd->egrbufs.size < hfi1_max_mtu) {
 			rcd->egrbufs.size = __roundup_pow_of_two(hfi1_max_mtu);
 			hfi1_cdbg(PROC,
-				  "ctxt%u: eager bufs size too small. Adjusting to %u\n",
+				  "ctxt%u: eager bufs size too small. Adjusting to %zu\n",
 				    rcd->ctxt, rcd->egrbufs.size);
 		}
 		rcd->egrbufs.rcvtid_size = HFI1_MAX_EAGER_BUFFER_SIZE;
 
-		/* Applicable only for statically created kernel contexts */
-		if (ctxt < dd->first_dyn_alloc_ctxt) {
+		if (ctxt < dd->first_user_ctxt) { /* N/A for PSM contexts */
 			rcd->opstats = kzalloc_node(sizeof(*rcd->opstats),
 						    GFP_KERNEL, numa);
 			if (!rcd->opstats)
 				goto bail;
-
-			/* Initialize TID flow generations for the context */
-			hfi1_kern_init_ctxt_generations(rcd);
 		}
-
-		*context = rcd;
-		return 0;
 	}
-
+	return rcd;
 bail:
-	*context = NULL;
-	hfi1_free_ctxt(rcd);
-	return -ENOMEM;
-}
-
-/**
- * hfi1_free_ctxt
- * @rcd: pointer to an initialized rcd data structure
- *
- * This wrapper is the free function that matches hfi1_create_ctxtdata().
- * When a context is done being used (kernel or user), this function is called
- * for the "final" put to match the kref init from hf1i_create_ctxtdata().
- * Other users of the context do a get/put sequence to make sure that the
- * structure isn't removed while in use.
- */
-void hfi1_free_ctxt(struct hfi1_ctxtdata *rcd)
-{
-	hfi1_rcd_put(rcd);
+	dd->rcd[ctxt] = NULL;
+	kfree(rcd->egrbufs.rcvtids);
+	kfree(rcd->egrbufs.buffers);
+	kfree(rcd);
+	return NULL;
 }
 
 /*
@@ -650,24 +478,14 @@ void hfi1_init_pportdata(struct pci_dev *pdev, struct hfi1_pportdata *ppd,
 	ppd->dd = dd;
 	ppd->hw_pidx = hw_pidx;
 	ppd->port = port; /* IB port number, not index */
-	ppd->prev_link_width = LINK_WIDTH_DEFAULT;
-	/*
-	 * There are C_VL_COUNT number of PortVLXmitWait counters.
-	 * Adding 1 to C_VL_COUNT to include the PortXmitWait counter.
-	 */
-	for (i = 0; i < C_VL_COUNT + 1; i++) {
-		ppd->port_vl_xmit_wait_last[i] = 0;
-		ppd->vl_xmit_flit_cnt[i] = 0;
-	}
 
 	default_pkey_idx = 1;
 
 	ppd->pkeys[default_pkey_idx] = DEFAULT_P_KEY;
-	ppd->part_enforce |= HFI1_PART_ENFORCE_IN;
-
 	if (loopback) {
-		dd_dev_err(dd, "Faking data partition 0x8001 in idx %u\n",
-			   !default_pkey_idx);
+		hfi1_early_err(&pdev->dev,
+			       "Faking data partition 0x8001 in idx %u\n",
+			       !default_pkey_idx);
 		ppd->pkeys[!default_pkey_idx] = 0x8001;
 	}
 
@@ -713,7 +531,9 @@ void hfi1_init_pportdata(struct pci_dev *pdev, struct hfi1_pportdata *ppd,
 	return;
 
 bail:
-	dd_dev_err(dd, "Congestion Control Agent disabled for port %d\n", port);
+
+	hfi1_early_err(&pdev->dev,
+		       "Congestion Control Agent disabled for port %d\n", port);
 }
 
 /*
@@ -736,19 +556,16 @@ static int loadtime_init(struct hfi1_devdata *dd)
 static int init_after_reset(struct hfi1_devdata *dd)
 {
 	int i;
-	struct hfi1_ctxtdata *rcd;
+
 	/*
 	 * Ensure chip does no sends or receives, tail updates, or
 	 * pioavail updates while we re-initialize.  This is mostly
 	 * for the driver data structures, not chip registers.
 	 */
-	for (i = 0; i < dd->num_rcv_contexts; i++) {
-		rcd = hfi1_rcd_get_by_index(dd, i);
+	for (i = 0; i < dd->num_rcv_contexts; i++)
 		hfi1_rcvctrl(dd, HFI1_RCVCTRL_CTXT_DIS |
-			     HFI1_RCVCTRL_INTRAVAIL_DIS |
-			     HFI1_RCVCTRL_TAILUPD_DIS, rcd);
-		hfi1_rcd_put(rcd);
-	}
+				  HFI1_RCVCTRL_INTRAVAIL_DIS |
+				  HFI1_RCVCTRL_TAILUPD_DIS, i);
 	pio_send_control(dd, PSC_GLOBAL_DISABLE);
 	for (i = 0; i < dd->num_send_contexts; i++)
 		sc_disable(dd->send_contexts[i].sc);
@@ -758,9 +575,8 @@ static int init_after_reset(struct hfi1_devdata *dd)
 
 static void enable_chip(struct hfi1_devdata *dd)
 {
-	struct hfi1_ctxtdata *rcd;
 	u32 rcvmask;
-	u16 i;
+	u32 i;
 
 	/* enable PIO send */
 	pio_send_control(dd, PSC_GLOBAL_ENABLE);
@@ -769,24 +585,18 @@ static void enable_chip(struct hfi1_devdata *dd)
 	 * Enable kernel ctxts' receive and receive interrupt.
 	 * Other ctxts done as user opens and initializes them.
 	 */
-	for (i = 0; i < dd->first_dyn_alloc_ctxt; ++i) {
-		rcd = hfi1_rcd_get_by_index(dd, i);
-		if (!rcd)
-			continue;
+	for (i = 0; i < dd->first_user_ctxt; ++i) {
 		rcvmask = HFI1_RCVCTRL_CTXT_ENB | HFI1_RCVCTRL_INTRAVAIL_ENB;
-		rcvmask |= HFI1_CAP_KGET_MASK(rcd->flags, DMA_RTAIL) ?
+		rcvmask |= HFI1_CAP_KGET_MASK(dd->rcd[i]->flags, DMA_RTAIL) ?
 			HFI1_RCVCTRL_TAILUPD_ENB : HFI1_RCVCTRL_TAILUPD_DIS;
-		if (!HFI1_CAP_KGET_MASK(rcd->flags, MULTI_PKT_EGR))
+		if (!HFI1_CAP_KGET_MASK(dd->rcd[i]->flags, MULTI_PKT_EGR))
 			rcvmask |= HFI1_RCVCTRL_ONE_PKT_EGR_ENB;
-		if (HFI1_CAP_KGET_MASK(rcd->flags, NODROP_RHQ_FULL))
+		if (HFI1_CAP_KGET_MASK(dd->rcd[i]->flags, NODROP_RHQ_FULL))
 			rcvmask |= HFI1_RCVCTRL_NO_RHQ_DROP_ENB;
-		if (HFI1_CAP_KGET_MASK(rcd->flags, NODROP_EGR_FULL))
+		if (HFI1_CAP_KGET_MASK(dd->rcd[i]->flags, NODROP_EGR_FULL))
 			rcvmask |= HFI1_RCVCTRL_NO_EGR_DROP_ENB;
-		if (HFI1_CAP_IS_KSET(TID_RDMA))
-			rcvmask |= HFI1_RCVCTRL_TIDFLOW_ENB;
-		hfi1_rcvctrl(dd, rcvmask, rcd);
-		sc_enable(rcd->sc);
-		hfi1_rcd_put(rcd);
+		hfi1_rcvctrl(dd, rcvmask, i);
+		sc_enable(dd->rcd[i]->sc);
 	}
 }
 
@@ -805,25 +615,10 @@ static int create_workqueues(struct hfi1_devdata *dd)
 			ppd->hfi1_wq =
 				alloc_workqueue(
 				    "hfi%d_%d",
-				    WQ_SYSFS | WQ_HIGHPRI | WQ_CPU_INTENSIVE |
-				    WQ_MEM_RECLAIM,
-				    HFI1_MAX_ACTIVE_WORKQUEUE_ENTRIES,
+				    WQ_SYSFS | WQ_HIGHPRI | WQ_CPU_INTENSIVE,
+				    dd->num_sdma,
 				    dd->unit, pidx);
 			if (!ppd->hfi1_wq)
-				goto wq_error;
-		}
-		if (!ppd->link_wq) {
-			/*
-			 * Make the link workqueue single-threaded to enforce
-			 * serialization.
-			 */
-			ppd->link_wq =
-				alloc_workqueue(
-				    "hfi_link_%d_%d",
-				    WQ_SYSFS | WQ_MEM_RECLAIM | WQ_UNBOUND,
-				    1, /* max_active */
-				    dd->unit, pidx);
-			if (!ppd->link_wq)
 				goto wq_error;
 		}
 	}
@@ -836,29 +631,8 @@ wq_error:
 			destroy_workqueue(ppd->hfi1_wq);
 			ppd->hfi1_wq = NULL;
 		}
-		if (ppd->link_wq) {
-			destroy_workqueue(ppd->link_wq);
-			ppd->link_wq = NULL;
-		}
 	}
 	return -ENOMEM;
-}
-
-/**
- * enable_general_intr() - Enable the IRQs that will be handled by the
- * general interrupt handler.
- * @dd: valid devdata
- *
- */
-static void enable_general_intr(struct hfi1_devdata *dd)
-{
-	set_intr_bits(dd, CCE_ERR_INT, MISC_ERR_INT, true);
-	set_intr_bits(dd, PIO_ERR_INT, TXE_ERR_INT, true);
-	set_intr_bits(dd, IS_SENDCTXT_ERR_START, IS_SENDCTXT_ERR_END, true);
-	set_intr_bits(dd, PBC_INT, GPIO_ASSERT_INT, true);
-	set_intr_bits(dd, TCRIT_INT, TCRIT_INT, true);
-	set_intr_bits(dd, IS_DC_START, IS_DC_END, true);
-	set_intr_bits(dd, IS_SENDCREDIT_START, IS_SENDCREDIT_END, true);
 }
 
 /**
@@ -879,16 +653,32 @@ static void enable_general_intr(struct hfi1_devdata *dd)
 int hfi1_init(struct hfi1_devdata *dd, int reinit)
 {
 	int ret = 0, pidx, lastfail = 0;
-	unsigned long len;
-	u16 i;
+	unsigned i, len;
 	struct hfi1_ctxtdata *rcd;
 	struct hfi1_pportdata *ppd;
+
+	/* Set up recv low level handlers */
+	dd->normal_rhf_rcv_functions[RHF_RCV_TYPE_EXPECTED] =
+						kdeth_process_expected;
+	dd->normal_rhf_rcv_functions[RHF_RCV_TYPE_EAGER] =
+						kdeth_process_eager;
+	dd->normal_rhf_rcv_functions[RHF_RCV_TYPE_IB] = process_receive_ib;
+	dd->normal_rhf_rcv_functions[RHF_RCV_TYPE_ERROR] =
+						process_receive_error;
+	dd->normal_rhf_rcv_functions[RHF_RCV_TYPE_BYPASS] =
+						process_receive_bypass;
+	dd->normal_rhf_rcv_functions[RHF_RCV_TYPE_INVALID5] =
+						process_receive_invalid;
+	dd->normal_rhf_rcv_functions[RHF_RCV_TYPE_INVALID6] =
+						process_receive_invalid;
+	dd->normal_rhf_rcv_functions[RHF_RCV_TYPE_INVALID7] =
+						process_receive_invalid;
+	dd->rhf_rcv_function_map = dd->normal_rhf_rcv_functions;
 
 	/* Set up send low level handlers */
 	dd->process_pio_send = hfi1_verbs_send_pio;
 	dd->process_dma_send = hfi1_verbs_send_dma;
 	dd->pio_inline_send = pio_copy;
-	dd->process_vnic_dma_send = hfi1_vnic_send_dma;
 
 	if (is_ax(dd)) {
 		atomic_set(&dd->drop_packet, DROP_PACKET_ON);
@@ -912,10 +702,10 @@ int hfi1_init(struct hfi1_devdata *dd, int reinit)
 		goto done;
 
 	/* allocate dummy tail memory for all receive contexts */
-	dd->rcvhdrtail_dummy_kvaddr = dma_alloc_coherent(&dd->pcidev->dev,
-							 sizeof(u64),
-							 &dd->rcvhdrtail_dummy_dma,
-							 GFP_KERNEL);
+	dd->rcvhdrtail_dummy_kvaddr = dma_zalloc_coherent(
+		&dd->pcidev->dev, sizeof(u64),
+		&dd->rcvhdrtail_dummy_dma,
+		GFP_KERNEL);
 
 	if (!dd->rcvhdrtail_dummy_kvaddr) {
 		dd_dev_err(dd, "cannot allocate dummy tail memory\n");
@@ -924,14 +714,14 @@ int hfi1_init(struct hfi1_devdata *dd, int reinit)
 	}
 
 	/* dd->rcd can be NULL if early initialization failed */
-	for (i = 0; dd->rcd && i < dd->first_dyn_alloc_ctxt; ++i) {
+	for (i = 0; dd->rcd && i < dd->first_user_ctxt; ++i) {
 		/*
 		 * Set up the (kernel) rcvhdr queue and egr TIDs.  If doing
 		 * re-init, the simplest way to handle this is to free
 		 * existing, and re-allocate.
 		 * Need to re-create rest of ctxt 0 ctxtdata as well.
 		 */
-		rcd = hfi1_rcd_get_by_index(dd, i);
+		rcd = dd->rcd[i];
 		if (!rcd)
 			continue;
 
@@ -940,19 +730,15 @@ int hfi1_init(struct hfi1_devdata *dd, int reinit)
 		lastfail = hfi1_create_rcvhdrq(dd, rcd);
 		if (!lastfail)
 			lastfail = hfi1_setup_eagerbufs(rcd);
-		if (!lastfail)
-			lastfail = hfi1_kern_exp_rcv_init(rcd, reinit);
 		if (lastfail) {
 			dd_dev_err(dd,
 				   "failed to allocate kernel ctxt's rcvhdrq and/or egr bufs\n");
 			ret = lastfail;
 		}
-		/* enable IRQ */
-		hfi1_rcd_put(rcd);
 	}
 
 	/* Allocate enough memory for user event notification. */
-	len = PAGE_ALIGN(chip_rcv_contexts(dd) * HFI1_MAX_SHARED_CTXTS *
+	len = PAGE_ALIGN(dd->chip_rcv_contexts * HFI1_MAX_SHARED_CTXTS *
 			 sizeof(*dd->events));
 	dd->events = vmalloc_user(len);
 	if (!dd->events)
@@ -964,6 +750,9 @@ int hfi1_init(struct hfi1_devdata *dd, int reinit)
 	dd->status = vmalloc_user(PAGE_SIZE);
 	if (!dd->status)
 		dd_dev_err(dd, "Failed to allocate dev status page\n");
+	else
+		dd->freezelen = PAGE_SIZE - (sizeof(*dd->status) -
+					     sizeof(dd->status->freezemsg));
 	for (pidx = 0; pidx < dd->num_pports; ++pidx) {
 		ppd = dd->pport + pidx;
 		if (dd->status)
@@ -986,8 +775,7 @@ done:
 			HFI1_STATUS_INITTED;
 	if (!ret) {
 		/* enable all interrupts from the chip */
-		enable_general_intr(dd);
-		init_qsfp_int(dd);
+		set_intr_state(dd, 1);
 
 		/* chip is OK for user apps; mark it as initialized */
 		for (pidx = 0; pidx < dd->num_pports; ++pidx) {
@@ -1019,9 +807,21 @@ done:
 	return ret;
 }
 
+static inline struct hfi1_devdata *__hfi1_lookup(int unit)
+{
+	return idr_find(&hfi1_unit_table, unit);
+}
+
 struct hfi1_devdata *hfi1_lookup(int unit)
 {
-	return xa_load(&hfi1_dev_table, unit);
+	struct hfi1_devdata *dd;
+	unsigned long flags;
+
+	spin_lock_irqsave(&hfi1_devs_lock, flags);
+	dd = __hfi1_lookup(unit);
+	spin_unlock_irqrestore(&hfi1_devs_lock, flags);
+
+	return dd;
 }
 
 /*
@@ -1035,7 +835,7 @@ static void stop_timers(struct hfi1_devdata *dd)
 
 	for (pidx = 0; pidx < dd->num_pports; ++pidx) {
 		ppd = dd->pport + pidx;
-		if (ppd->led_override_timer.function) {
+		if (ppd->led_override_timer.data) {
 			del_timer_sync(&ppd->led_override_timer);
 			atomic_set(&ppd->led_override_timer_active, 0);
 		}
@@ -1054,7 +854,6 @@ static void stop_timers(struct hfi1_devdata *dd)
 static void shutdown_device(struct hfi1_devdata *dd)
 {
 	struct hfi1_pportdata *ppd;
-	struct hfi1_ctxtdata *rcd;
 	unsigned pidx;
 	int i;
 
@@ -1072,21 +871,17 @@ static void shutdown_device(struct hfi1_devdata *dd)
 	}
 	dd->flags &= ~HFI1_INITTED;
 
-	/* mask and clean up interrupts */
-	set_intr_bits(dd, IS_FIRST_SOURCE, IS_LAST_SOURCE, false);
-	msix_clean_up_interrupts(dd);
+	/* mask interrupts, but not errors */
+	set_intr_state(dd, 0);
 
 	for (pidx = 0; pidx < dd->num_pports; ++pidx) {
 		ppd = dd->pport + pidx;
-		for (i = 0; i < dd->num_rcv_contexts; i++) {
-			rcd = hfi1_rcd_get_by_index(dd, i);
+		for (i = 0; i < dd->num_rcv_contexts; i++)
 			hfi1_rcvctrl(dd, HFI1_RCVCTRL_TAILUPD_DIS |
-				     HFI1_RCVCTRL_CTXT_DIS |
-				     HFI1_RCVCTRL_INTRAVAIL_DIS |
-				     HFI1_RCVCTRL_PKEY_DIS |
-				     HFI1_RCVCTRL_ONE_PKT_EGR_DIS, rcd);
-			hfi1_rcd_put(rcd);
-		}
+					  HFI1_RCVCTRL_CTXT_DIS |
+					  HFI1_RCVCTRL_INTRAVAIL_DIS |
+					  HFI1_RCVCTRL_PKEY_DIS |
+					  HFI1_RCVCTRL_ONE_PKT_EGR_DIS, i);
 		/*
 		 * Gracefully stop all sends allowing any in progress to
 		 * trickle out first.
@@ -1122,10 +917,6 @@ static void shutdown_device(struct hfi1_devdata *dd)
 			destroy_workqueue(ppd->hfi1_wq);
 			ppd->hfi1_wq = NULL;
 		}
-		if (ppd->link_wq) {
-			destroy_workqueue(ppd->link_wq);
-			ppd->link_wq = NULL;
-		}
 	}
 	sdma_exit(dd);
 }
@@ -1136,17 +927,20 @@ static void shutdown_device(struct hfi1_devdata *dd)
  * @rcd: the ctxtdata structure
  *
  * free up any allocated data for a context
+ * This should not touch anything that would affect a simultaneous
+ * re-allocation of context data, because it is called after hfi1_mutex
+ * is released (and can be called from reinit as well).
  * It should never change any chip state, or global driver state.
  */
 void hfi1_free_ctxtdata(struct hfi1_devdata *dd, struct hfi1_ctxtdata *rcd)
 {
-	u32 e;
+	unsigned e;
 
 	if (!rcd)
 		return;
 
 	if (rcd->rcvhdrq) {
-		dma_free_coherent(&dd->pcidev->dev, rcvhdrq_size(rcd),
+		dma_free_coherent(&dd->pcidev->dev, rcd->rcvhdrq_size,
 				  rcd->rcvhdrq, rcd->rcvhdrq_dma);
 		rcd->rcvhdrq = NULL;
 		if (rcd->rcvhdrtail_kvaddr) {
@@ -1159,7 +953,6 @@ void hfi1_free_ctxtdata(struct hfi1_devdata *dd, struct hfi1_ctxtdata *rcd)
 
 	/* all the RcvArray entries should have been cleared by now */
 	kfree(rcd->egrbufs.rcvtids);
-	rcd->egrbufs.rcvtids = NULL;
 
 	for (e = 0; e < rcd->egrbufs.alloced; e++) {
 		if (rcd->egrbufs.buffers[e].dma)
@@ -1169,27 +962,20 @@ void hfi1_free_ctxtdata(struct hfi1_devdata *dd, struct hfi1_ctxtdata *rcd)
 					  rcd->egrbufs.buffers[e].dma);
 	}
 	kfree(rcd->egrbufs.buffers);
-	rcd->egrbufs.alloced = 0;
-	rcd->egrbufs.buffers = NULL;
 
 	sc_free(rcd->sc);
-	rcd->sc = NULL;
-
+	vfree(rcd->user_event_mask);
 	vfree(rcd->subctxt_uregbase);
 	vfree(rcd->subctxt_rcvegrbuf);
 	vfree(rcd->subctxt_rcvhdr_base);
 	kfree(rcd->opstats);
-
-	rcd->subctxt_uregbase = NULL;
-	rcd->subctxt_rcvegrbuf = NULL;
-	rcd->subctxt_rcvhdr_base = NULL;
-	rcd->opstats = NULL;
+	kfree(rcd);
 }
 
 /*
  * Release our hold on the shared asic data.  If we are the last one,
  * return the structure to be finalized outside the lock.  Must be
- * holding hfi1_dev_table lock.
+ * holding hfi1_devs_lock.
  */
 static struct hfi1_asic_data *release_asic_data(struct hfi1_devdata *dd)
 {
@@ -1213,46 +999,26 @@ static void finalize_asic_data(struct hfi1_devdata *dd,
 	kfree(ad);
 }
 
-/**
- * hfi1_clean_devdata - cleans up per-unit data structure
- * @dd: pointer to a valid devdata structure
- *
- * It cleans up all data structures set up by
- * by hfi1_alloc_devdata().
- */
-static void hfi1_clean_devdata(struct hfi1_devdata *dd)
+static void __hfi1_free_devdata(struct kobject *kobj)
 {
+	struct hfi1_devdata *dd =
+		container_of(kobj, struct hfi1_devdata, kobj);
 	struct hfi1_asic_data *ad;
 	unsigned long flags;
 
-	xa_lock_irqsave(&hfi1_dev_table, flags);
-	__xa_erase(&hfi1_dev_table, dd->unit);
+	spin_lock_irqsave(&hfi1_devs_lock, flags);
+	idr_remove(&hfi1_unit_table, dd->unit);
+	list_del(&dd->list);
 	ad = release_asic_data(dd);
-	xa_unlock_irqrestore(&hfi1_dev_table, flags);
-
-	finalize_asic_data(dd, ad);
+	spin_unlock_irqrestore(&hfi1_devs_lock, flags);
+	if (ad)
+		finalize_asic_data(dd, ad);
 	free_platform_config(dd);
 	rcu_barrier(); /* wait for rcu callbacks to complete */
 	free_percpu(dd->int_counter);
 	free_percpu(dd->rcv_limit);
 	free_percpu(dd->send_schedule);
-	free_percpu(dd->tx_opstats);
-	dd->int_counter   = NULL;
-	dd->rcv_limit     = NULL;
-	dd->send_schedule = NULL;
-	dd->tx_opstats    = NULL;
-	kfree(dd->comp_vect);
-	dd->comp_vect = NULL;
-	sdma_clean(dd, dd->num_sdma);
 	rvt_dealloc_device(&dd->verbs_dev.rdi);
-}
-
-static void __hfi1_free_devdata(struct kobject *kobj)
-{
-	struct hfi1_devdata *dd =
-		container_of(kobj, struct hfi1_devdata, kobj);
-
-	hfi1_clean_devdata(dd);
 }
 
 static struct kobj_type hfi1_devdata_type = {
@@ -1264,18 +1030,17 @@ void hfi1_free_devdata(struct hfi1_devdata *dd)
 	kobject_put(&dd->kobj);
 }
 
-/**
- * hfi1_alloc_devdata - Allocate our primary per-unit data structure.
- * @pdev: Valid PCI device
- * @extra: How many bytes to alloc past the default
- *
- * Must be done via verbs allocator, because the verbs cleanup process
- * both does cleanup and free of the data structure.
+/*
+ * Allocate our primary per-unit data structure.  Must be done via verbs
+ * allocator, because the verbs cleanup process both does cleanup and
+ * free of the data structure.
  * "extra" is for chip-specific data.
+ *
+ * Use the idr mechanism to get a unit number for this unit.
  */
-static struct hfi1_devdata *hfi1_alloc_devdata(struct pci_dev *pdev,
-					       size_t extra)
+struct hfi1_devdata *hfi1_alloc_devdata(struct pci_dev *pdev, size_t extra)
 {
+	unsigned long flags;
 	struct hfi1_devdata *dd;
 	int ret, nports;
 
@@ -1290,17 +1055,25 @@ static struct hfi1_devdata *hfi1_alloc_devdata(struct pci_dev *pdev,
 	dd->pport = (struct hfi1_pportdata *)(dd + 1);
 	dd->pcidev = pdev;
 	pci_set_drvdata(pdev, dd);
-	dd->node = NUMA_NO_NODE;
 
-	ret = xa_alloc_irq(&hfi1_dev_table, &dd->unit, dd, xa_limit_32b,
-			GFP_KERNEL);
+	INIT_LIST_HEAD(&dd->list);
+	idr_preload(GFP_KERNEL);
+	spin_lock_irqsave(&hfi1_devs_lock, flags);
+
+	ret = idr_alloc(&hfi1_unit_table, dd, 0, 0, GFP_NOWAIT);
+	if (ret >= 0) {
+		dd->unit = ret;
+		list_add(&dd->list, &hfi1_dev_list);
+	}
+
+	spin_unlock_irqrestore(&hfi1_devs_lock, flags);
+	idr_preload_end();
+
 	if (ret < 0) {
-		dev_err(&pdev->dev,
-			"Could not allocate unit ID: error %d\n", -ret);
+		hfi1_early_err(&pdev->dev,
+			       "Could not allocate unit ID: error %d\n", -ret);
 		goto bail;
 	}
-	rvt_set_ibdev_name(&dd->verbs_dev.rdi, "%s_%d", class_name(), dd->unit);
-
 	/*
 	 * Initialize all locks for the device. This needs to be as early as
 	 * possible so locks are usable.
@@ -1317,43 +1090,50 @@ static struct hfi1_devdata *hfi1_alloc_devdata(struct pci_dev *pdev,
 	spin_lock_init(&dd->pio_map_lock);
 	mutex_init(&dd->dc8051_lock);
 	init_waitqueue_head(&dd->event_queue);
-	spin_lock_init(&dd->irq_src_lock);
 
 	dd->int_counter = alloc_percpu(u64);
 	if (!dd->int_counter) {
 		ret = -ENOMEM;
+		hfi1_early_err(&pdev->dev,
+			       "Could not allocate per-cpu int_counter\n");
 		goto bail;
 	}
 
 	dd->rcv_limit = alloc_percpu(u64);
 	if (!dd->rcv_limit) {
 		ret = -ENOMEM;
+		hfi1_early_err(&pdev->dev,
+			       "Could not allocate per-cpu rcv_limit\n");
 		goto bail;
 	}
 
 	dd->send_schedule = alloc_percpu(u64);
 	if (!dd->send_schedule) {
 		ret = -ENOMEM;
+		hfi1_early_err(&pdev->dev,
+			       "Could not allocate per-cpu int_counter\n");
 		goto bail;
 	}
 
-	dd->tx_opstats = alloc_percpu(struct hfi1_opcode_stats_perctx);
-	if (!dd->tx_opstats) {
-		ret = -ENOMEM;
-		goto bail;
-	}
+	if (!hfi1_cpulist_count) {
+		u32 count = num_online_cpus();
 
-	dd->comp_vect = kzalloc(sizeof(*dd->comp_vect), GFP_KERNEL);
-	if (!dd->comp_vect) {
-		ret = -ENOMEM;
-		goto bail;
+		hfi1_cpulist = kcalloc(BITS_TO_LONGS(count), sizeof(long),
+				       GFP_KERNEL);
+		if (hfi1_cpulist)
+			hfi1_cpulist_count = count;
+		else
+			hfi1_early_err(
+			&pdev->dev,
+			"Could not alloc cpulist info, cpu affinity might be wrong\n");
 	}
-
 	kobject_init(&dd->kobj, &hfi1_devdata_type);
 	return dd;
 
 bail:
-	hfi1_clean_devdata(dd);
+	if (!list_empty(&dd->list))
+		list_del_init(&dd->list);
+	rvt_dealloc_device(&dd->verbs_dev.rdi);
 	return ERR_PTR(ret);
 }
 
@@ -1483,18 +1263,16 @@ static int __init hfi1_mod_init(void)
 	/* sanitize link CRC options */
 	link_crc_mask &= SUPPORTED_CRCS;
 
-	ret = opfn_init();
-	if (ret < 0) {
-		pr_err("Failed to allocate opfn_wq");
-		goto bail_dev;
-	}
-
-	hfi1_compute_tid_rdma_flow_wt();
 	/*
 	 * These must be called before the driver is registered with
 	 * the PCI subsystem.
 	 */
+	idr_init(&hfi1_unit_table);
+
 	hfi1_dbg_init();
+	ret = hfi1_wss_init();
+	if (ret < 0)
+		goto bail_wss;
 	ret = pci_register_driver(&hfi1_pci_driver);
 	if (ret < 0) {
 		pr_err("Unable to register driver: error %d\n", -ret);
@@ -1503,7 +1281,10 @@ static int __init hfi1_mod_init(void)
 	goto bail; /* all OK */
 
 bail_dev:
+	hfi1_wss_exit();
+bail_wss:
 	hfi1_dbg_exit();
+	idr_destroy(&hfi1_unit_table);
 	dev_cleanup();
 bail:
 	return ret;
@@ -1517,11 +1298,13 @@ module_init(hfi1_mod_init);
 static void __exit hfi1_mod_cleanup(void)
 {
 	pci_unregister_driver(&hfi1_pci_driver);
-	opfn_exit();
-	node_affinity_destroy_all();
+	node_affinity_destroy();
+	hfi1_wss_exit();
 	hfi1_dbg_exit();
+	hfi1_cpulist_count = 0;
+	kfree(hfi1_cpulist);
 
-	WARN_ON(!xa_empty(&hfi1_dev_table));
+	idr_destroy(&hfi1_unit_table);
 	dispose_firmware();	/* asymmetric with obtain_firmware() */
 	dev_cleanup();
 }
@@ -1533,6 +1316,8 @@ static void cleanup_device_data(struct hfi1_devdata *dd)
 {
 	int ctxt;
 	int pidx;
+	struct hfi1_ctxtdata **tmp;
+	unsigned long flags;
 
 	/* users can't do anything more with chip */
 	for (pidx = 0; pidx < dd->num_pports; ++pidx) {
@@ -1557,6 +1342,18 @@ static void cleanup_device_data(struct hfi1_devdata *dd)
 
 	free_credit_return(dd);
 
+	/*
+	 * Free any resources still in use (usually just kernel contexts)
+	 * at unload; we do for ctxtcnt, because that's what we allocate.
+	 * We acquire lock to be really paranoid that rcd isn't being
+	 * accessed from some interrupt-related code (that should not happen,
+	 * but best to be sure).
+	 */
+	spin_lock_irqsave(&dd->uctxt_lock, flags);
+	tmp = dd->rcd;
+	dd->rcd = NULL;
+	spin_unlock_irqrestore(&dd->uctxt_lock, flags);
+
 	if (dd->rcvhdrtail_dummy_kvaddr) {
 		dma_free_coherent(&dd->pcidev->dev, sizeof(u64),
 				  (void *)dd->rcvhdrtail_dummy_kvaddr,
@@ -1564,22 +1361,16 @@ static void cleanup_device_data(struct hfi1_devdata *dd)
 		dd->rcvhdrtail_dummy_kvaddr = NULL;
 	}
 
-	/*
-	 * Free any resources still in use (usually just kernel contexts)
-	 * at unload; we do for ctxtcnt, because that's what we allocate.
-	 */
-	for (ctxt = 0; dd->rcd && ctxt < dd->num_rcv_contexts; ctxt++) {
-		struct hfi1_ctxtdata *rcd = dd->rcd[ctxt];
+	for (ctxt = 0; tmp && ctxt < dd->num_rcv_contexts; ctxt++) {
+		struct hfi1_ctxtdata *rcd = tmp[ctxt];
 
+		tmp[ctxt] = NULL; /* debugging paranoia */
 		if (rcd) {
-			hfi1_free_ctxt_rcv_groups(rcd);
-			hfi1_free_ctxt(rcd);
+			hfi1_clear_tids(rcd);
+			hfi1_free_ctxtdata(dd, rcd);
 		}
 	}
-
-	kfree(dd->rcd);
-	dd->rcd = NULL;
-
+	kfree(tmp);
 	free_pio_map(dd);
 	/* must follow rcv context free - need to remove rcv's hooks */
 	for (ctxt = 0; ctxt < dd->num_send_contexts; ctxt++)
@@ -1601,8 +1392,6 @@ static void cleanup_device_data(struct hfi1_devdata *dd)
 static void postinit_cleanup(struct hfi1_devdata *dd)
 {
 	hfi1_start_cleanup(dd);
-	hfi1_comp_vectors_clean_up(dd);
-	hfi1_dev_affinity_clean_up(dd);
 
 	hfi1_pcie_ddcleanup(dd);
 	hfi1_pcie_cleanup(dd->pcidev);
@@ -1612,23 +1401,23 @@ static void postinit_cleanup(struct hfi1_devdata *dd)
 	hfi1_free_devdata(dd);
 }
 
-static int init_validate_rcvhdrcnt(struct hfi1_devdata *dd, uint thecnt)
+static int init_validate_rcvhdrcnt(struct device *dev, uint thecnt)
 {
 	if (thecnt <= HFI1_MIN_HDRQ_EGRBUF_CNT) {
-		dd_dev_err(dd, "Receive header queue count too small\n");
+		hfi1_early_err(dev, "Receive header queue count too small\n");
 		return -EINVAL;
 	}
 
 	if (thecnt > HFI1_MAX_HDRQ_EGRBUF_CNT) {
-		dd_dev_err(dd,
-			   "Receive header queue count cannot be greater than %u\n",
-			   HFI1_MAX_HDRQ_EGRBUF_CNT);
+		hfi1_early_err(dev,
+			       "Receive header queue count cannot be greater than %u\n",
+			       HFI1_MAX_HDRQ_EGRBUF_CNT);
 		return -EINVAL;
 	}
 
 	if (thecnt % HDRQ_INCREMENT) {
-		dd_dev_err(dd, "Receive header queue count %d must be divisible by %lu\n",
-			   thecnt, HDRQ_INCREMENT);
+		hfi1_early_err(dev, "Receive header queue count %d must be divisible by %lu\n",
+			       thecnt, HDRQ_INCREMENT);
 		return -EINVAL;
 	}
 
@@ -1644,32 +1433,15 @@ static int init_one(struct pci_dev *pdev, const struct pci_device_id *ent)
 	/* First, lock the non-writable module parameters */
 	HFI1_CAP_LOCK();
 
-	/* Validate dev ids */
-	if (!(ent->device == PCI_DEVICE_ID_INTEL0 ||
-	      ent->device == PCI_DEVICE_ID_INTEL1)) {
-		dev_err(&pdev->dev, "Failing on unknown Intel deviceid 0x%x\n",
-			ent->device);
-		ret = -ENODEV;
-		goto bail;
-	}
-
-	/* Allocate the dd so we can get to work */
-	dd = hfi1_alloc_devdata(pdev, NUM_IB_PORTS *
-				sizeof(struct hfi1_pportdata));
-	if (IS_ERR(dd)) {
-		ret = PTR_ERR(dd);
-		goto bail;
-	}
-
 	/* Validate some global module parameters */
-	ret = init_validate_rcvhdrcnt(dd, rcvhdrcnt);
+	ret = init_validate_rcvhdrcnt(&pdev->dev, rcvhdrcnt);
 	if (ret)
 		goto bail;
 
 	/* use the encoding function as a sanitization check */
 	if (!encode_rcv_header_entry_size(hfi1_hdrq_entsize)) {
-		dd_dev_err(dd, "Invalid HdrQ Entry size %u\n",
-			   hfi1_hdrq_entsize);
+		hfi1_early_err(&pdev->dev, "Invalid HdrQ Entry size %u\n",
+			       hfi1_hdrq_entsize);
 		ret = -EINVAL;
 		goto bail;
 	}
@@ -1691,10 +1463,10 @@ static int init_one(struct pci_dev *pdev, const struct pci_device_id *ent)
 			clamp_val(eager_buffer_size,
 				  MIN_EAGER_BUFFER * 8,
 				  MAX_EAGER_BUFFER_TOTAL);
-		dd_dev_info(dd, "Eager buffer size %u\n",
-			    eager_buffer_size);
+		hfi1_early_info(&pdev->dev, "Eager buffer size %u\n",
+				eager_buffer_size);
 	} else {
-		dd_dev_err(dd, "Invalid Eager buffer size of 0\n");
+		hfi1_early_err(&pdev->dev, "Invalid Eager buffer size of 0\n");
 		ret = -EINVAL;
 		goto bail;
 	}
@@ -1702,17 +1474,29 @@ static int init_one(struct pci_dev *pdev, const struct pci_device_id *ent)
 	/* restrict value of hfi1_rcvarr_split */
 	hfi1_rcvarr_split = clamp_val(hfi1_rcvarr_split, 0, 100);
 
-	ret = hfi1_pcie_init(dd);
+	ret = hfi1_pcie_init(pdev, ent);
 	if (ret)
 		goto bail;
+
+	if (!(ent->device == PCI_DEVICE_ID_INTEL0 ||
+	      ent->device == PCI_DEVICE_ID_INTEL1)) {
+		hfi1_early_err(&pdev->dev,
+			       "Failing on unknown Intel deviceid 0x%x\n",
+			       ent->device);
+		ret = -ENODEV;
+		goto clean_bail;
+	}
 
 	/*
 	 * Do device-specific initialization, function table setup, dd
 	 * allocation, etc.
 	 */
-	ret = hfi1_init_dd(dd);
-	if (ret)
+	dd = hfi1_init_dd(pdev, ent);
+
+	if (IS_ERR(dd)) {
+		ret = PTR_ERR(dd);
 		goto clean_bail; /* error already printed */
+	}
 
 	ret = create_workqueues(dd);
 	if (ret)
@@ -1720,9 +1504,6 @@ static int init_one(struct pci_dev *pdev, const struct pci_device_id *ent)
 
 	/* do the generic initialization */
 	initfail = hfi1_init(dd, 0);
-
-	/* setup vnic */
-	hfi1_vnic_setup(dd);
 
 	ret = hfi1_register_ib_device(dd);
 
@@ -1743,7 +1524,6 @@ static int init_one(struct pci_dev *pdev, const struct pci_device_id *ent)
 		dd_dev_err(dd, "Failed to create /dev devices: %d\n", -j);
 
 	if (initfail || ret) {
-		msix_clean_up_interrupts(dd);
 		stop_timers(dd);
 		flush_workqueue(ib_wq);
 		for (pidx = 0; pidx < dd->num_pports; ++pidx) {
@@ -1753,16 +1533,11 @@ static int init_one(struct pci_dev *pdev, const struct pci_device_id *ent)
 				destroy_workqueue(ppd->hfi1_wq);
 				ppd->hfi1_wq = NULL;
 			}
-			if (ppd->link_wq) {
-				destroy_workqueue(ppd->link_wq);
-				ppd->link_wq = NULL;
-			}
 		}
 		if (!j)
 			hfi1_device_remove(dd);
 		if (!ret)
 			hfi1_unregister_ib_device(dd);
-		hfi1_vnic_cleanup(dd);
 		postinit_cleanup(dd);
 		if (initfail)
 			ret = initfail;
@@ -1807,9 +1582,6 @@ static void remove_one(struct pci_dev *pdev)
 	/* unregister from IB core */
 	hfi1_unregister_ib_device(dd);
 
-	/* cleanup vnic */
-	hfi1_vnic_cleanup(dd);
-
 	/*
 	 * Disable the IB link, disable interrupts on the device,
 	 * clear dma engines, etc.
@@ -1848,15 +1620,18 @@ int hfi1_create_rcvhdrq(struct hfi1_devdata *dd, struct hfi1_ctxtdata *rcd)
 	if (!rcd->rcvhdrq) {
 		gfp_t gfp_flags;
 
-		amt = rcvhdrq_size(rcd);
+		/*
+		 * rcvhdrqentsize is in DWs, so we have to convert to bytes
+		 * (* sizeof(u32)).
+		 */
+		amt = PAGE_ALIGN(rcd->rcvhdrq_cnt * rcd->rcvhdrqentsize *
+				 sizeof(u32));
 
-		if (rcd->ctxt < dd->first_dyn_alloc_ctxt || rcd->is_vnic)
-			gfp_flags = GFP_KERNEL;
-		else
-			gfp_flags = GFP_USER;
-		rcd->rcvhdrq = dma_alloc_coherent(&dd->pcidev->dev, amt,
-						  &rcd->rcvhdrq_dma,
-						  gfp_flags | __GFP_COMP);
+		gfp_flags = (rcd->ctxt >= dd->first_user_ctxt) ?
+			GFP_USER : GFP_KERNEL;
+		rcd->rcvhdrq = dma_zalloc_coherent(
+			&dd->pcidev->dev, amt, &rcd->rcvhdrq_dma,
+			gfp_flags | __GFP_COMP);
 
 		if (!rcd->rcvhdrq) {
 			dd_dev_err(dd,
@@ -1867,13 +1642,14 @@ int hfi1_create_rcvhdrq(struct hfi1_devdata *dd, struct hfi1_ctxtdata *rcd)
 
 		if (HFI1_CAP_KGET_MASK(rcd->flags, DMA_RTAIL) ||
 		    HFI1_CAP_UGET_MASK(rcd->flags, DMA_RTAIL)) {
-			rcd->rcvhdrtail_kvaddr = dma_alloc_coherent(&dd->pcidev->dev,
-								    PAGE_SIZE,
-								    &rcd->rcvhdrqtailaddr_dma,
-								    gfp_flags);
+			rcd->rcvhdrtail_kvaddr = dma_zalloc_coherent(
+				&dd->pcidev->dev, PAGE_SIZE,
+				&rcd->rcvhdrqtailaddr_dma, gfp_flags);
 			if (!rcd->rcvhdrtail_kvaddr)
 				goto bail_free;
 		}
+
+		rcd->rcvhdrq_size = amt;
 	}
 	/*
 	 * These values are per-context:
@@ -1889,7 +1665,7 @@ int hfi1_create_rcvhdrq(struct hfi1_devdata *dd, struct hfi1_ctxtdata *rcd)
 			& RCV_HDR_ENT_SIZE_ENT_SIZE_MASK)
 		<< RCV_HDR_ENT_SIZE_ENT_SIZE_SHIFT;
 	write_kctxt_csr(dd, rcd->ctxt, RCV_HDR_ENT_SIZE, reg);
-	reg = ((u64)DEFAULT_RCVHDRSIZE & RCV_HDR_SIZE_HDR_SIZE_MASK)
+	reg = (dd->rcvhdrsize & RCV_HDR_SIZE_HDR_SIZE_MASK)
 		<< RCV_HDR_SIZE_HDR_SIZE_SHIFT;
 	write_kctxt_csr(dd, rcd->ctxt, RCV_HDR_SIZE, reg);
 
@@ -1906,6 +1682,8 @@ bail_free:
 	dd_dev_err(dd,
 		   "attempt to allocate 1 page for ctxt %u rcvhdrqtailaddr failed\n",
 		   rcd->ctxt);
+	vfree(rcd->user_event_mask);
+	rcd->user_event_mask = NULL;
 	dma_free_coherent(&dd->pcidev->dev, amt, rcd->rcvhdrq,
 			  rcd->rcvhdrq_dma);
 	rcd->rcvhdrq = NULL;
@@ -1925,9 +1703,9 @@ bail:
 int hfi1_setup_eagerbufs(struct hfi1_ctxtdata *rcd)
 {
 	struct hfi1_devdata *dd = rcd->dd;
-	u32 max_entries, egrtop, alloced_bytes = 0;
+	u32 max_entries, egrtop, alloced_bytes = 0, idx = 0;
 	gfp_t gfp_flags;
-	u16 order, idx = 0;
+	u16 order;
 	int ret = 0;
 	u16 round_mtu = roundup_pow_of_two(hfi1_max_mtu);
 
@@ -1966,10 +1744,10 @@ int hfi1_setup_eagerbufs(struct hfi1_ctxtdata *rcd)
 	while (alloced_bytes < rcd->egrbufs.size &&
 	       rcd->egrbufs.alloced < rcd->egrbufs.count) {
 		rcd->egrbufs.buffers[idx].addr =
-			dma_alloc_coherent(&dd->pcidev->dev,
-					   rcd->egrbufs.rcvtid_size,
-					   &rcd->egrbufs.buffers[idx].dma,
-					   gfp_flags);
+			dma_zalloc_coherent(&dd->pcidev->dev,
+					    rcd->egrbufs.rcvtid_size,
+					    &rcd->egrbufs.buffers[idx].dma,
+					    gfp_flags);
 		if (rcd->egrbufs.buffers[idx].addr) {
 			rcd->egrbufs.buffers[idx].len =
 				rcd->egrbufs.rcvtid_size;
@@ -2040,7 +1818,7 @@ int hfi1_setup_eagerbufs(struct hfi1_ctxtdata *rcd)
 	rcd->egrbufs.size = alloced_bytes;
 
 	hfi1_cdbg(PROC,
-		  "ctxt%u: Alloced %u rcv tid entries @ %uKB, total %uKB\n",
+		  "ctxt%u: Alloced %u rcv tid entries @ %uKB, total %zuKB\n",
 		  rcd->ctxt, rcd->egrbufs.alloced,
 		  rcd->egrbufs.rcvtid_size / 1024, rcd->egrbufs.size / 1024);
 
@@ -2072,7 +1850,7 @@ int hfi1_setup_eagerbufs(struct hfi1_ctxtdata *rcd)
 			  "ctxt%u: current Eager buffer size is invalid %u\n",
 			  rcd->ctxt, rcd->egrbufs.rcvtid_size);
 		ret = -EINVAL;
-		goto bail_rcvegrbuf_phys;
+		goto bail;
 	}
 
 	for (idx = 0; idx < rcd->egrbufs.alloced; idx++) {
@@ -2080,8 +1858,7 @@ int hfi1_setup_eagerbufs(struct hfi1_ctxtdata *rcd)
 			     rcd->egrbufs.rcvtids[idx].dma, order);
 		cond_resched();
 	}
-
-	return 0;
+	goto bail;
 
 bail_rcvegrbuf_phys:
 	for (idx = 0; idx < rcd->egrbufs.alloced &&
@@ -2095,6 +1872,6 @@ bail_rcvegrbuf_phys:
 		rcd->egrbufs.buffers[idx].dma = 0;
 		rcd->egrbufs.buffers[idx].len = 0;
 	}
-
+bail:
 	return ret;
 }

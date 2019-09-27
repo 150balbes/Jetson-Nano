@@ -1,11 +1,7 @@
-// SPDX-License-Identifier: GPL-2.0
 #include <linux/types.h>
 #include <linux/mm.h>
 #include <linux/blkdev.h>
 #include <linux/interrupt.h>
-#include <linux/init.h>
-#include <linux/kernel.h>
-#include <linux/module.h>
 
 #include <asm/page.h>
 #include <asm/pgtable.h>
@@ -16,6 +12,9 @@
 #include <scsi/scsi_host.h>
 #include "wd33c93.h"
 #include "mvme147.h"
+
+#include <linux/stat.h>
+
 
 static irqreturn_t mvme147_intr(int irq, void *data)
 {
@@ -65,56 +64,40 @@ static void dma_stop(struct Scsi_Host *instance, struct scsi_cmnd *SCpnt,
 	m147_pcc->dma_cntrl = 0;
 }
 
-static struct scsi_host_template mvme147_host_template = {
-	.module			= THIS_MODULE,
-	.proc_name		= "MVME147",
-	.name			= "MVME147 built-in SCSI",
-	.queuecommand		= wd33c93_queuecommand,
-	.eh_abort_handler	= wd33c93_abort,
-	.eh_host_reset_handler	= wd33c93_host_reset,
-	.show_info		= wd33c93_show_info,
-	.write_info		= wd33c93_write_info,
-	.can_queue		= CAN_QUEUE,
-	.this_id		= 7,
-	.sg_tablesize		= SG_ALL,
-	.cmd_per_lun		= CMD_PER_LUN,
-};
-
-static struct Scsi_Host *mvme147_shost;
-
-static int __init mvme147_init(void)
+int mvme147_detect(struct scsi_host_template *tpnt)
 {
+	static unsigned char called = 0;
+	struct Scsi_Host *instance;
 	wd33c93_regs regs;
 	struct WD33C93_hostdata *hdata;
-	int error = -ENOMEM;
 
-	if (!MACH_IS_MVME147)
+	if (!MACH_IS_MVME147 || called)
 		return 0;
+	called++;
 
-	mvme147_shost = scsi_host_alloc(&mvme147_host_template,
-			sizeof(struct WD33C93_hostdata));
-	if (!mvme147_shost)
+	tpnt->proc_name = "MVME147";
+	tpnt->show_info = wd33c93_show_info,
+	tpnt->write_info = wd33c93_write_info,
+
+	instance = scsi_register(tpnt, sizeof(struct WD33C93_hostdata));
+	if (!instance)
 		goto err_out;
-	mvme147_shost->base = 0xfffe4000;
-	mvme147_shost->irq = MVME147_IRQ_SCSI_PORT;
 
+	instance->base = 0xfffe4000;
+	instance->irq = MVME147_IRQ_SCSI_PORT;
 	regs.SASR = (volatile unsigned char *)0xfffe4000;
 	regs.SCMD = (volatile unsigned char *)0xfffe4001;
-
-	hdata = shost_priv(mvme147_shost);
+	hdata = shost_priv(instance);
 	hdata->no_sync = 0xff;
 	hdata->fast = 0;
 	hdata->dma_mode = CTRL_DMA;
+	wd33c93_init(instance, regs, dma_setup, dma_stop, WD33C93_FS_8_10);
 
-	wd33c93_init(mvme147_shost, regs, dma_setup, dma_stop, WD33C93_FS_8_10);
-
-	error = request_irq(MVME147_IRQ_SCSI_PORT, mvme147_intr, 0,
-			"MVME147 SCSI PORT", mvme147_shost);
-	if (error)
+	if (request_irq(MVME147_IRQ_SCSI_PORT, mvme147_intr, 0,
+			"MVME147 SCSI PORT", instance))
 		goto err_unregister;
-	error = request_irq(MVME147_IRQ_SCSI_DMA, mvme147_intr, 0,
-			"MVME147 SCSI DMA", mvme147_shost);
-	if (error)
+	if (request_irq(MVME147_IRQ_SCSI_DMA, mvme147_intr, 0,
+			"MVME147 SCSI DMA", instance))
 		goto err_free_irq;
 #if 0	/* Disabled; causes problems booting */
 	m147_pcc->scsi_interrupt = 0x10;	/* Assert SCSI bus reset */
@@ -128,30 +111,56 @@ static int __init mvme147_init(void)
 	m147_pcc->dma_cntrl = 0x00;	/* ensure DMA is stopped */
 	m147_pcc->dma_intr = 0x89;	/* Ack and enable ints */
 
-	error = scsi_add_host(mvme147_shost, NULL);
-	if (error)
-		goto err_free_irq;
-	scsi_scan_host(mvme147_shost);
-	return 0;
+	return 1;
 
 err_free_irq:
-	free_irq(MVME147_IRQ_SCSI_PORT, mvme147_shost);
+	free_irq(MVME147_IRQ_SCSI_PORT, mvme147_intr);
 err_unregister:
-	scsi_host_put(mvme147_shost);
+	scsi_unregister(instance);
 err_out:
-	return error;
+	return 0;
 }
 
-static void __exit mvme147_exit(void)
+static int mvme147_bus_reset(struct scsi_cmnd *cmd)
 {
-	scsi_remove_host(mvme147_shost);
+	/* FIXME perform bus-specific reset */
 
-	/* XXX Make sure DMA is stopped! */
-	free_irq(MVME147_IRQ_SCSI_PORT, mvme147_shost);
-	free_irq(MVME147_IRQ_SCSI_DMA, mvme147_shost);
+	/* FIXME 2: kill this function, and let midlayer fallback to
+	   the same result, calling wd33c93_host_reset() */
 
-	scsi_host_put(mvme147_shost);
+	spin_lock_irq(cmd->device->host->host_lock);
+	wd33c93_host_reset(cmd);
+	spin_unlock_irq(cmd->device->host->host_lock);
+
+	return SUCCESS;
 }
 
-module_init(mvme147_init);
-module_exit(mvme147_exit);
+
+static struct scsi_host_template driver_template = {
+	.proc_name		= "MVME147",
+	.name			= "MVME147 built-in SCSI",
+	.detect			= mvme147_detect,
+	.release		= mvme147_release,
+	.queuecommand		= wd33c93_queuecommand,
+	.eh_abort_handler	= wd33c93_abort,
+	.eh_bus_reset_handler	= mvme147_bus_reset,
+	.eh_host_reset_handler	= wd33c93_host_reset,
+	.can_queue		= CAN_QUEUE,
+	.this_id		= 7,
+	.sg_tablesize		= SG_ALL,
+	.cmd_per_lun		= CMD_PER_LUN,
+	.use_clustering		= ENABLE_CLUSTERING
+};
+
+
+#include "scsi_module.c"
+
+int mvme147_release(struct Scsi_Host *instance)
+{
+#ifdef MODULE
+	/* XXX Make sure DMA is stopped! */
+	free_irq(MVME147_IRQ_SCSI_PORT, mvme147_intr);
+	free_irq(MVME147_IRQ_SCSI_DMA, mvme147_intr);
+#endif
+	return 1;
+}

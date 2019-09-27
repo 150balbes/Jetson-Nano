@@ -304,7 +304,7 @@ int do_mkdir(const char *file, int mode)
 	return 0;
 }
 
-int hostfs_do_rmdir(const char *file)
+int do_rmdir(const char *file)
 {
 	int err;
 

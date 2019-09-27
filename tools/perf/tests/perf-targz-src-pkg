@@ -1,5 +1,4 @@
 #!/bin/sh
-# SPDX-License-Identifier: GPL-2.0
 # Test one of the main kernel Makefile targets to generate a perf sources tarball
 # suitable for build outside the full kernel sources.
 #

@@ -39,7 +39,7 @@
 #include <linux/kernel.h>
 #include <linux/notifier.h>
 #include <linux/reboot.h>
-#include <linux/sched/signal.h>
+#include <linux/sched.h>
 #include <linux/kthread.h>
 #include <linux/pm.h>
 
@@ -95,7 +95,8 @@ static void process_shutdown(void)
 		/* send kill signal */
 		if (kill_cad_pid(SIGINT, 1)) {
 			/* just in case killing init process failed */
-			machine_power_off();
+			if (pm_power_off)
+				pm_power_off();
 		}
 	}
 }

@@ -1,0 +1,32 @@
+append_menu "NVIDIA Tegra thermal drivers"
+
+config TEGRA_AOTAG
+	bool "Tegra Always-On-Thermal-Alert-Generator"
+	help
+	  Support for Tegra Always-On thermal Alert Generator
+
+config TEGRA_TJ_THERMAL
+	bool "Tegra Tj temperature"
+	default y
+	help
+	  Enable this option to read the temperature of hottest spot on Tegra
+	  SoC. The driver can be configured (via device-tree) to account for
+	  multiple thermal zones and the corresponding configurable hotspot
+	  offsets, and, report the maximum temperature from the same, hence,
+	  representing the hottest point on the chip.
+
+config TEGRA_CORE_CAPS
+	tristate "Tegra core DVFS thermal limits"
+	depends on TEGRA_DVFS
+	help
+	  This config enables a cooling device that enforces VF limits on the
+	  core voltage rail.
+
+config TEGRA_DFLL_CAPS
+	tristate "Tegra DFLL DVFS thermal limits"
+	depends on TEGRA_DVFS
+	help
+	  This config enables a cooling device that enforces VF limits on the
+	  cpu DFLL clock.
+
+endmenu

@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 #include <math.h>
 #include <unistd.h>
 #include <stdio.h>
@@ -9,15 +8,13 @@
 #include <sys/timeb.h>
 #include <sched.h>
 #include <errno.h>
-#include <string.h>
-#include "../kselftest.h"
 
 void usage(char *name) {
 	printf ("Usage: %s cpunum\n", name);
 }
 
 int main(int argc, char **argv) {
-	unsigned int i, cpu, fd;
+	int i, cpu, fd;
 	char msr_file_name[64];
 	long long tsc, old_tsc, new_tsc;
 	long long aperf, old_aperf, new_aperf;
@@ -43,8 +40,8 @@ int main(int argc, char **argv) {
 	fd = open(msr_file_name, O_RDONLY);
 
 	if (fd == -1) {
-		printf("/dev/cpu/%d/msr: %s\n", cpu, strerror(errno));
-		return KSFT_SKIP;
+		perror("Failed to open");
+		return 1;
 	}
 
 	CPU_ZERO(&cpuset);

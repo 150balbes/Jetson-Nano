@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0
 config CPU_H8300H
 	bool
 

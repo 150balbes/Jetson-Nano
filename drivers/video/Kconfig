@@ -1,13 +1,14 @@
-# SPDX-License-Identifier: GPL-2.0-only
 #
 # Video configuration
 #
 
 menu "Graphics support"
-
-if HAS_IOMEM
+	depends on HAS_IOMEM
 
 config HAVE_FB_ATMEL
+	bool
+
+config SH_LCD_MIPI_DSI
 	bool
 
 source "drivers/char/agp/Kconfig"
@@ -25,6 +26,8 @@ endmenu
 
 source "drivers/video/backlight/Kconfig"
 
+source "drivers/video/tegra/Kconfig"
+
 config VGASTATE
        tristate
        default n
@@ -34,8 +37,6 @@ config VIDEOMODE_HELPERS
 
 config HDMI
 	bool
-
-endif # HAS_IOMEM
 
 if VT
 	source "drivers/video/console/Kconfig"

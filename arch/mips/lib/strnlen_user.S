@@ -8,7 +8,6 @@
  */
 #include <asm/asm.h>
 #include <asm/asm-offsets.h>
-#include <asm/export.h>
 #include <asm/regdef.h>
 
 #define EX(insn,reg,addr,handler)			\
@@ -32,6 +31,7 @@ LEAF(__strnlen_\func\()_asm)
 	and		v0, a0
 	bnez		v0, .Lfault\@
 
+FEXPORT(__strnlen_\func\()_nocheck_asm)
 	move		v0, a0
 	PTR_ADDU	a1, a0			# stop pointer
 1:
@@ -67,12 +67,12 @@ LEAF(__strnlen_\func\()_asm)
 #ifndef CONFIG_EVA
 	/* Set aliases */
 	.global __strnlen_user_asm
+	.global __strnlen_user_nocheck_asm
 	.set __strnlen_user_asm, __strnlen_kernel_asm
-EXPORT_SYMBOL(__strnlen_user_asm)
+	.set __strnlen_user_nocheck_asm, __strnlen_kernel_nocheck_asm
 #endif
 
 __BUILD_STRNLEN_ASM kernel
-EXPORT_SYMBOL(__strnlen_kernel_asm)
 
 #ifdef CONFIG_EVA
 
@@ -80,5 +80,4 @@ EXPORT_SYMBOL(__strnlen_kernel_asm)
 	.set eva
 __BUILD_STRNLEN_ASM user
 	.set pop
-EXPORT_SYMBOL(__strnlen_user_asm)
 #endif

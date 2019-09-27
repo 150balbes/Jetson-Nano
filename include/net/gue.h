@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __NET_GUE_H
 #define __NET_GUE_H
 
@@ -44,10 +43,10 @@ struct guehdr {
 #else
 #error  "Please fix <asm/byteorder.h>"
 #endif
-			__u8	proto_ctype;
-			__be16	flags;
+			__u8    proto_ctype;
+			__u16   flags;
 		};
-		__be32	word;
+		__u32 word;
 	};
 };
 
@@ -60,7 +59,7 @@ struct guehdr {
 
 /* Private flags in the private option extension */
 
-#define GUE_PFLAG_REMCSUM	htonl(1U << 31)
+#define GUE_PFLAG_REMCSUM	htonl(1 << 31)
 #define GUE_PLEN_REMCSUM	4
 
 #define GUE_PFLAGS_ALL	(GUE_PFLAG_REMCSUM)
@@ -84,10 +83,11 @@ static inline size_t guehdr_priv_flags_len(__be32 flags)
  * if there is an unknown standard or private flags, or the options length for
  * the flags exceeds the options length specific in hlen of the GUE header.
  */
-static inline int validate_gue_flags(struct guehdr *guehdr, size_t optlen)
+static inline int validate_gue_flags(struct guehdr *guehdr,
+				     size_t optlen)
 {
-	__be16 flags = guehdr->flags;
 	size_t len;
+	__be32 flags = guehdr->flags;
 
 	if (flags & ~GUE_FLAGS_ALL)
 		return 1;
@@ -100,13 +100,12 @@ static inline int validate_gue_flags(struct guehdr *guehdr, size_t optlen)
 		/* Private flags are last four bytes accounted in
 		 * guehdr_flags_len
 		 */
-		__be32 pflags = *(__be32 *)((void *)&guehdr[1] +
-					    len - GUE_LEN_PRIV);
+		flags = *(__be32 *)((void *)&guehdr[1] + len - GUE_LEN_PRIV);
 
-		if (pflags & ~GUE_PFLAGS_ALL)
+		if (flags & ~GUE_PFLAGS_ALL)
 			return 1;
 
-		len += guehdr_priv_flags_len(pflags);
+		len += guehdr_priv_flags_len(flags);
 		if (len > optlen)
 			return 1;
 	}

@@ -1,8 +1,11 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * max98371.c -- ALSA SoC Stereo MAX98371 driver
  *
  * Copyright 2015-16 Maxim Integrated Products
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  */
 
 #include <linux/i2c.h>
@@ -184,15 +187,15 @@ static const struct snd_kcontrol_new max98371_snd_controls[] = {
 static int max98371_dai_set_fmt(struct snd_soc_dai *codec_dai,
 		unsigned int fmt)
 {
-	struct snd_soc_component *component = codec_dai->component;
-	struct max98371_priv *max98371 = snd_soc_component_get_drvdata(component);
+	struct snd_soc_codec *codec = codec_dai->codec;
+	struct max98371_priv *max98371 = snd_soc_codec_get_drvdata(codec);
 	unsigned int val = 0;
 
 	switch (fmt & SND_SOC_DAIFMT_MASTER_MASK) {
 	case SND_SOC_DAIFMT_CBS_CFS:
 		break;
 	default:
-		dev_err(component->dev, "DAI clock mode unsupported");
+		dev_err(codec->dev, "DAI clock mode unsupported");
 		return -EINVAL;
 	}
 
@@ -207,7 +210,7 @@ static int max98371_dai_set_fmt(struct snd_soc_dai *codec_dai,
 		val |= MAX98371_DAI_LEFT;
 		break;
 	default:
-		dev_err(component->dev, "DAI wrong mode unsupported");
+		dev_err(codec->dev, "DAI wrong mode unsupported");
 		return -EINVAL;
 	}
 	regmap_update_bits(max98371->regmap, MAX98371_FMT,
@@ -219,8 +222,8 @@ static int max98371_dai_hw_params(struct snd_pcm_substream *substream,
 		struct snd_pcm_hw_params *params,
 		struct snd_soc_dai *dai)
 {
-	struct snd_soc_component *component = dai->component;
-	struct max98371_priv *max98371 = snd_soc_component_get_drvdata(component);
+	struct snd_soc_codec *codec = dai->codec;
+	struct max98371_priv *max98371 = snd_soc_codec_get_drvdata(codec);
 	int blr_clk_ratio, ch_size, channels = params_channels(params);
 	int rate = params_rate(params);
 
@@ -345,17 +348,13 @@ static struct snd_soc_dai_driver max98371_dai[] = {
 	}
 };
 
-static const struct snd_soc_component_driver max98371_component = {
-	.controls		= max98371_snd_controls,
-	.num_controls		= ARRAY_SIZE(max98371_snd_controls),
-	.dapm_routes		= max98371_audio_map,
-	.num_dapm_routes	= ARRAY_SIZE(max98371_audio_map),
-	.dapm_widgets		= max98371_dapm_widgets,
-	.num_dapm_widgets	= ARRAY_SIZE(max98371_dapm_widgets),
-	.idle_bias_on		= 1,
-	.use_pmdown_time	= 1,
-	.endianness		= 1,
-	.non_legacy_dai_naming	= 1,
+static const struct snd_soc_codec_driver max98371_codec = {
+	.controls = max98371_snd_controls,
+	.num_controls = ARRAY_SIZE(max98371_snd_controls),
+	.dapm_routes = max98371_audio_map,
+	.num_dapm_routes = ARRAY_SIZE(max98371_audio_map),
+	.dapm_widgets = max98371_dapm_widgets,
+	.num_dapm_widgets = ARRAY_SIZE(max98371_dapm_widgets),
 };
 
 static const struct regmap_config max98371_regmap = {
@@ -396,13 +395,19 @@ static int max98371_i2c_probe(struct i2c_client *i2c,
 	}
 	dev_info(&i2c->dev, "device version %x\n", reg);
 
-	ret = devm_snd_soc_register_component(&i2c->dev, &max98371_component,
+	ret = snd_soc_register_codec(&i2c->dev, &max98371_codec,
 			max98371_dai, ARRAY_SIZE(max98371_dai));
 	if (ret < 0) {
-		dev_err(&i2c->dev, "Failed to register component: %d\n", ret);
+		dev_err(&i2c->dev, "Failed to register codec: %d\n", ret);
 		return ret;
 	}
 	return ret;
+}
+
+static int max98371_i2c_remove(struct i2c_client *client)
+{
+	snd_soc_unregister_codec(&client->dev);
+	return 0;
 }
 
 static const struct i2c_device_id max98371_i2c_id[] = {
@@ -425,6 +430,7 @@ static struct i2c_driver max98371_i2c_driver = {
 		.of_match_table = of_match_ptr(max98371_of_match),
 	},
 	.probe  = max98371_i2c_probe,
+	.remove = max98371_i2c_remove,
 	.id_table = max98371_i2c_id,
 };
 

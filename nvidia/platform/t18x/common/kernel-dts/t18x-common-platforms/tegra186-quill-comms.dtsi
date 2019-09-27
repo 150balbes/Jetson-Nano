@@ -1,0 +1,78 @@
+/*
+ * Copyright (c) 2015, NVIDIA CORPORATION.  All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; version 2 of the License.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with this program; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+ *
+ */
+#include <dt-bindings/gpio/tegra186-gpio.h>
+
+/ {
+	/* Need to enable wifi_en pin during boot for PCIe enumeration */
+	gpio@2200000 {
+		wifi-enable {
+			gpio-hog;
+			gpios = <TEGRA_MAIN_GPIO(N, 0) 0>;
+			output-high;
+			line-name = "wifi-enable";
+		};
+
+		wifi-wake-ap {
+			gpio-hog;
+			input;
+			label = "wifi-wake-ap";
+			status = "disabled";
+		};
+	};
+
+	gpio@c2f0000 {
+		wifi-wake-ap {
+			gpio-hog;
+			gpios = <TEGRA_AON_GPIO(FF, 3) 0>;
+			input;
+			label = "wifi-wake-ap";
+		};
+	};
+
+	bluedroid_pm {
+		compatible = "nvidia,tegra-bluedroid_pm";
+		id = <0>;
+		bluedroid_pm,reset-gpio = <&tegra_main_gpio TEGRA_MAIN_GPIO(L, 7) 0>;
+		bluedroid_pm,host-wake-gpio = <&tegra_aon_gpio TEGRA_AON_GPIO(FF, 4) 0>;
+		bluedroid_pm,ext-wake-gpio = <&tegra_main_gpio TEGRA_MAIN_GPIO(Y, 4) 0>;
+		interrupt-parent = <&tegra_aon_gpio>;
+		interrupts = <TEGRA_AON_GPIO(FF, 4) 0x01>;
+	};
+
+	bcm4359: bcmdhd_pcie_wlan {
+		compatible = "android,bcmdhd_pcie_wlan";
+		interrupt-parent = <&tegra_aon_gpio>;
+		interrupts = <TEGRA_AON_GPIO(FF, 3) 0x14>;
+		wlan-pwr-gpio = <&tegra_main_gpio TEGRA_MAIN_GPIO(N, 0) 0>;
+		fw_path = "/vendor/firmware/fw_bcmdhd.bin";
+		nv_path = "/vendor/firmware/nvram_4359_b1.txt";
+		status = "disabled";
+	};
+
+	bcm4354: bcmdhd_wlan {
+		compatible = "android,bcmdhd_wlan";
+		interrupt-parent = <&tegra_aon_gpio>;
+		interrupts = <TEGRA_AON_GPIO(FF, 3) 0x14>;
+		wlan-pwr-gpio = <&tegra_main_gpio TEGRA_MAIN_GPIO(N, 0) 0>;
+		fw_path = "/vendor/firmware/fw_bcmdhd_4354.bin";
+		nv_path = "/vendor/firmware/nvram_quill_4354.txt";
+		sdhci-host = <&sdmmc3>;
+		pwr-retry-cnt = <5>;
+		status = "okay";
+	};
+};

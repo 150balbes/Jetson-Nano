@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Linux driver for TerraTec DMX 6Fire USB
  *
@@ -7,6 +6,11 @@
  * Author:	Torsten Schenk <torsten.schenk@zoho.com>
  * Created:	Jan 01, 2011
  * Copyright:	(C) Torsten Schenk
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
  */
 
 #include "chip.h"
@@ -139,40 +143,47 @@ static int usb6fire_chip_probe(struct usb_interface *intf,
 	chip->card = card;
 
 	ret = usb6fire_comm_init(chip);
-	if (ret < 0)
-		goto destroy_chip;
+	if (ret < 0) {
+		usb6fire_chip_destroy(chip);
+		return ret;
+	}
 
 	ret = usb6fire_midi_init(chip);
-	if (ret < 0)
-		goto destroy_chip;
+	if (ret < 0) {
+		usb6fire_chip_destroy(chip);
+		return ret;
+	}
 
 	ret = usb6fire_pcm_init(chip);
-	if (ret < 0)
-		goto destroy_chip;
+	if (ret < 0) {
+		usb6fire_chip_destroy(chip);
+		return ret;
+	}
 
 	ret = usb6fire_control_init(chip);
-	if (ret < 0)
-		goto destroy_chip;
+	if (ret < 0) {
+		usb6fire_chip_destroy(chip);
+		return ret;
+	}
 
 	ret = snd_card_register(card);
 	if (ret < 0) {
 		dev_err(&intf->dev, "cannot register card.");
-		goto destroy_chip;
+		usb6fire_chip_destroy(chip);
+		return ret;
 	}
 	usb_set_intfdata(intf, chip);
 	return 0;
-
-destroy_chip:
-	usb6fire_chip_destroy(chip);
-	return ret;
 }
 
 static void usb6fire_chip_disconnect(struct usb_interface *intf)
 {
 	struct sfire_chip *chip;
+	struct snd_card *card;
 
 	chip = usb_get_intfdata(intf);
 	if (chip) { /* if !chip, fw upload has been performed */
+		card = chip->card;
 		chip->intf_count--;
 		if (!chip->intf_count) {
 			mutex_lock(&register_mutex);
@@ -187,7 +198,7 @@ static void usb6fire_chip_disconnect(struct usb_interface *intf)
 	}
 }
 
-static const struct usb_device_id device_table[] = {
+static struct usb_device_id device_table[] = {
 	{
 		.match_flags = USB_DEVICE_ID_MATCH_DEVICE,
 		.idVendor = 0x0ccd,

@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  *  arch/um/kernel/elf_aux.c
  *

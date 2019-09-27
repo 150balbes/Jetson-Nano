@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * drivers/net/ethernet/ibm/emac/tah.c
  *
@@ -13,6 +12,11 @@
  * Matt Porter <mporter@kernel.crashing.org>
  *
  * Copyright (c) 2005 Eugene Surovegin <ebs@ebshome.net>
+ *
+ * This program is free software; you can redistribute  it and/or modify it
+ * under  the terms of  the GNU General  Public License as published by the
+ * Free Software Foundation;  either version 2 of the  License, or (at your
+ * option) any later version.
  */
 #include <linux/of_address.h>
 #include <asm/io.h>
@@ -54,7 +58,8 @@ void tah_reset(struct platform_device *ofdev)
 		--n;
 
 	if (unlikely(!n))
-		printk(KERN_ERR "%pOF: reset timeout\n", ofdev->dev.of_node);
+		printk(KERN_ERR "%s: reset timeout\n",
+			ofdev->dev.of_node->full_name);
 
 	/* 10KB TAH TX FIFO accommodates the max MTU of 9000 */
 	out_be32(&p->mr,
@@ -100,7 +105,8 @@ static int tah_probe(struct platform_device *ofdev)
 
 	rc = -ENXIO;
 	if (of_address_to_resource(np, 0, &regs)) {
-		printk(KERN_ERR "%pOF: Can't get registers address\n", np);
+		printk(KERN_ERR "%s: Can't get registers address\n",
+		       np->full_name);
 		goto err_free;
 	}
 
@@ -108,7 +114,8 @@ static int tah_probe(struct platform_device *ofdev)
 	dev->base = (struct tah_regs __iomem *)ioremap(regs.start,
 					       sizeof(struct tah_regs));
 	if (dev->base == NULL) {
-		printk(KERN_ERR "%pOF: Can't map device registers!\n", np);
+		printk(KERN_ERR "%s: Can't map device registers!\n",
+		       np->full_name);
 		goto err_free;
 	}
 
@@ -117,7 +124,8 @@ static int tah_probe(struct platform_device *ofdev)
 	/* Initialize TAH and enable IPv4 checksum verification, no TSO yet */
 	tah_reset(ofdev);
 
-	printk(KERN_INFO "TAH %pOF initialized\n", ofdev->dev.of_node);
+	printk(KERN_INFO
+	       "TAH %s initialized\n", ofdev->dev.of_node->full_name);
 	wmb();
 
 	return 0;

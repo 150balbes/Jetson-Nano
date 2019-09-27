@@ -1,0 +1,96 @@
+/*
+ * arch/arm64/boot/dts/tegra186-sim-hdmi.dtsi
+ *
+ * Copyright (c) 2015-2017, NVIDIA CORPORATION.  All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with this program; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+ */
+
+#include <dt-bindings/display/tegra-dc.h>
+
+/ {
+	host1x {
+		sor1 {
+			status = "okay";
+			/*nvidia,ddc-i2c-bus = <&hdmi_ddc>;*/
+			/*nvidia,hpd-gpio = <&tegra_main_gpio 0xFFFFFFFF 1>;*/ /* hotplug less */
+			nvidia,active-panel = <&sor1_hdmi_display>;
+			hdmi-display {
+				status = "okay";
+				compatible = "hdmi,display";
+				disp-default-out {
+					nvidia,out-type = <TEGRA_DC_OUT_HDMI>;
+					nvidia,out-flags = <TEGRA_DC_OUT_HOTPLUG_LOW>;
+					nvidia,out-parent-clk = "plld2";
+					nvidia,out-align = <TEGRA_DC_ALIGN_MSB>;
+					nvidia,out-order = <TEGRA_DC_ORDER_RED_BLUE>;
+					nvidia,out-xres = <720>;
+					nvidia,out-yres = <480>;
+				};
+				display-timings {
+					720x480-32 {
+						clock-frequency = <27000000>;
+						hactive = <720>;
+						vactive = <480>;
+						hfront-porch = <26>;
+						hback-porch = <80>;
+						hsync-len = <32>;
+						vfront-porch = <9>;
+						vback-porch = <26>;
+						vsync-len = <10>;
+						nvidia,h-ref-to-sync = <1>;
+						nvidia,v-ref-to-sync = <1>;
+					};
+				};
+			};
+		};
+
+		sor {
+			status = "okay";
+			nvidia,active-panel = <&sor0_hdmi_display>;
+			hdmi-display {
+				status = "okay";
+				compatible = "hdmi,display";
+				disp-default-out {
+					nvidia,out-type = <TEGRA_DC_OUT_HDMI>;
+					nvidia,out-flags = <TEGRA_DC_OUT_HOTPLUG_LOW>;
+					nvidia,out-parent-clk = "plld2";
+					nvidia,out-align = <TEGRA_DC_ALIGN_MSB>;
+					nvidia,out-order = <TEGRA_DC_ORDER_RED_BLUE>;
+					nvidia,out-xres = <720>;
+					nvidia,out-yres = <480>;
+				};
+				display-timings {
+					720x480-32 {
+						clock-frequency = <27000000>;
+						hactive = <720>;
+						vactive = <480>;
+						hfront-porch = <26>;
+						hback-porch = <80>;
+						hsync-len = <32>;
+						vfront-porch = <9>;
+						vback-porch = <26>;
+						vsync-len = <10>;
+						nvidia,h-ref-to-sync = <1>;
+						nvidia,v-ref-to-sync = <1>;
+					};
+				};
+			};
+		};
+	};
+	/*hdmi_ddc: i2c@7000c700 {
+		clock-frequency = <100000>;
+	};*/
+};

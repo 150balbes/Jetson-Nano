@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 
 /*
  *   pata-isapnp.c - ISA PnP PATA controller driver.

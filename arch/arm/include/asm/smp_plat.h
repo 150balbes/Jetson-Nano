@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * ARM specific SMP header, this contains our implementation
  * details.

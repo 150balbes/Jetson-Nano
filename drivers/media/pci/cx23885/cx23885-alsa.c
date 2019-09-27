@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  *
  *  Support for CX23885 analog audio capture
@@ -6,10 +5,17 @@
  *    (c) 2008 Mijhail Moreyra <mijhail.moreyra@gmail.com>
  *    Adapted from cx88-alsa.c
  *    (c) 2009 Steven Toth <stoth@kernellabs.com>
+ *
+ *  This program is free software; you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License as published by
+ *  the Free Software Foundation; either version 2 of the License, or
+ *  (at your option) any later version.
+ *
+ *  This program is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *  GNU General Public License for more details.
  */
-
-#include "cx23885.h"
-#include "cx23885-reg.h"
 
 #include <linux/module.h>
 #include <linux/init.h>
@@ -29,13 +35,19 @@
 
 #include <sound/tlv.h>
 
+
+#include "cx23885.h"
+#include "cx23885-reg.h"
+
 #define AUDIO_SRAM_CHANNEL	SRAM_CH07
 
 #define dprintk(level, fmt, arg...) do {				\
 	if (audio_debug + 1 > level)					\
-		printk(KERN_DEBUG pr_fmt("%s: alsa: " fmt), \
-			chip->dev->name, ##arg); \
+		printk(KERN_INFO "%s: " fmt, chip->dev->name , ## arg);	\
 } while(0)
+
+#define dprintk_core(level, fmt, arg...)	if (audio_debug >= level) \
+	printk(KERN_DEBUG "%s: " fmt, chip->dev->name , ## arg)
 
 /****************************************************************************
 			Module global static vars
@@ -50,7 +62,7 @@ module_param(audio_debug, int, 0644);
 MODULE_PARM_DESC(audio_debug, "enable debug messages [analog audio]");
 
 /****************************************************************************
-			Board specific functions
+			Board specific funtions
  ****************************************************************************/
 
 /* Constants taken from cx88-reg.h */
@@ -80,13 +92,14 @@ static int cx23885_alsa_dma_init(struct cx23885_audio_dev *chip, int nr_pages)
 		return -ENOMEM;
 	}
 
-	dprintk(1, "vmalloc is at addr %p, size=%d\n",
-		buf->vaddr, nr_pages << PAGE_SHIFT);
+	dprintk(1, "vmalloc is at addr 0x%08lx, size=%d\n",
+				(unsigned long)buf->vaddr,
+				nr_pages << PAGE_SHIFT);
 
 	memset(buf->vaddr, 0, nr_pages << PAGE_SHIFT);
 	buf->nr_pages = nr_pages;
 
-	buf->sglist = vzalloc(array_size(sizeof(*buf->sglist), buf->nr_pages));
+	buf->sglist = vzalloc(buf->nr_pages * sizeof(*buf->sglist));
 	if (NULL == buf->sglist)
 		goto vzalloc_err;
 
@@ -173,8 +186,8 @@ static int cx23885_start_audio_dma(struct cx23885_audio_dev *chip)
 	cx_write(AUD_INT_A_GPCNT_CTL, GP_COUNT_CONTROL_RESET);
 	atomic_set(&chip->count, 0);
 
-	dprintk(1, "Start audio DMA, %d B/line, %d lines/FIFO, %d periods, %d byte buffer\n",
-		buf->bpl, cx_read(audio_ch->cmds_start+12)>>1,
+	dprintk(1, "Start audio DMA, %d B/line, %d lines/FIFO, %d periods, %d "
+		"byte buffer\n", buf->bpl, cx_read(audio_ch->cmds_start+12)>>1,
 		chip->num_periods, buf->bpl * chip->num_periods);
 
 	/* Enables corresponding bits at AUD_INT_STAT */
@@ -234,7 +247,7 @@ int cx23885_audio_irq(struct cx23885_dev *dev, u32 status, u32 mask)
 
 	/* risc op code error */
 	if (status & AUD_INT_OPC_ERR) {
-		pr_warn("%s/1: Audio risc op code error\n",
+		printk(KERN_WARNING "%s/1: Audio risc op code error\n",
 			dev->name);
 		cx_clear(AUD_INT_DMA_CTL, 0x11);
 		cx23885_sram_channel_dump(dev,
@@ -283,7 +296,7 @@ static int dsp_buffer_free(struct cx23885_audio_dev *chip)
  */
 #define DEFAULT_FIFO_SIZE	4096
 
-static const struct snd_pcm_hardware snd_cx23885_digital_hw = {
+static struct snd_pcm_hardware snd_cx23885_digital_hw = {
 	.info = SNDRV_PCM_INFO_MMAP |
 		SNDRV_PCM_INFO_INTERLEAVED |
 		SNDRV_PCM_INFO_BLOCK_TRANSFER |
@@ -314,7 +327,8 @@ static int snd_cx23885_pcm_open(struct snd_pcm_substream *substream)
 	int err;
 
 	if (!chip) {
-		pr_err("BUG: cx23885 can't find device struct. Can't proceed with open\n");
+		printk(KERN_ERR "BUG: cx23885 can't find device struct."
+				" Can't proceed with open\n");
 		return -ENODEV;
 	}
 
@@ -517,7 +531,7 @@ static int snd_cx23885_pcm(struct cx23885_audio_dev *chip, int device,
 	if (err < 0)
 		return err;
 	pcm->private_data = chip;
-	strscpy(pcm->name, name, sizeof(pcm->name));
+	strcpy(pcm->name, name);
 	snd_pcm_set_ops(pcm, SNDRV_PCM_STREAM_CAPTURE, &snd_cx23885_pcm_ops);
 
 	return 0;
@@ -541,8 +555,8 @@ struct cx23885_audio_dev *cx23885_audio_register(struct cx23885_dev *dev)
 		return NULL;
 
 	if (dev->sram_channels[AUDIO_SRAM_CHANNEL].cmds_start == 0) {
-		pr_warn("%s(): Missing SRAM channel configuration for analog TV Audio\n",
-		       __func__);
+		printk(KERN_WARNING "%s(): Missing SRAM channel configuration "
+			"for analog TV Audio\n", __func__);
 		return NULL;
 	}
 
@@ -562,7 +576,7 @@ struct cx23885_audio_dev *cx23885_audio_register(struct cx23885_dev *dev)
 	if (err < 0)
 		goto error;
 
-	strscpy(card->driver, "CX23885", sizeof(card->driver));
+	strcpy(card->driver, "CX23885");
 	sprintf(card->shortname, "Conexant CX23885");
 	sprintf(card->longname, "%s at %s", card->shortname, dev->name);
 
@@ -576,8 +590,8 @@ struct cx23885_audio_dev *cx23885_audio_register(struct cx23885_dev *dev)
 
 error:
 	snd_card_free(card);
-	pr_err("%s(): Failed to register analog audio adapter\n",
-	       __func__);
+	printk(KERN_ERR "%s(): Failed to register analog "
+			"audio adapter\n", __func__);
 
 	return NULL;
 }

@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  *	linux/arch/alpha/kernel/smp.c
  *
@@ -15,7 +14,7 @@
 #include <linux/kernel.h>
 #include <linux/kernel_stat.h>
 #include <linux/module.h>
-#include <linux/sched/mm.h>
+#include <linux/sched.h>
 #include <linux/mm.h>
 #include <linux/err.h>
 #include <linux/threads.h>
@@ -116,7 +115,7 @@ wait_boot_cpu_to_stop(int cpuid)
 /*
  * Where secondaries begin a life of C.
  */
-void __init
+void
 smp_callin(void)
 {
 	int cpuid = hard_smp_processor_id();
@@ -145,7 +144,7 @@ smp_callin(void)
 		alpha_mv.smp_callin();
 
 	/* All kernel threads share the same mm context.  */
-	mmgrab(&init_mm);
+	atomic_inc(&init_mm.mm_count);
 	current->active_mm = &init_mm;
 
 	/* inform the notifiers about the new cpu */
@@ -614,7 +613,8 @@ void
 smp_imb(void)
 {
 	/* Must wait other processors to flush their icache before continue. */
-	on_each_cpu(ipi_imb, NULL, 1);
+	if (on_each_cpu(ipi_imb, NULL, 1))
+		printk(KERN_CRIT "smp_imb: timed out\n");
 }
 EXPORT_SYMBOL(smp_imb);
 
@@ -629,7 +629,9 @@ flush_tlb_all(void)
 {
 	/* Although we don't have any data to pass, we do want to
 	   synchronize with the other processors.  */
-	on_each_cpu(ipi_flush_tlb_all, NULL, 1);
+	if (on_each_cpu(ipi_flush_tlb_all, NULL, 1)) {
+		printk(KERN_CRIT "flush_tlb_all: timed out\n");
+	}
 }
 
 #define asn_locked() (cpu_data[smp_processor_id()].asn_lock)
@@ -664,7 +666,9 @@ flush_tlb_mm(struct mm_struct *mm)
 		}
 	}
 
-	smp_call_function(ipi_flush_tlb_mm, mm, 1);
+	if (smp_call_function(ipi_flush_tlb_mm, mm, 1)) {
+		printk(KERN_CRIT "flush_tlb_mm: timed out\n");
+	}
 
 	preempt_enable();
 }
@@ -715,7 +719,9 @@ flush_tlb_page(struct vm_area_struct *vma, unsigned long addr)
 	data.mm = mm;
 	data.addr = addr;
 
-	smp_call_function(ipi_flush_tlb_page, &data, 1);
+	if (smp_call_function(ipi_flush_tlb_page, &data, 1)) {
+		printk(KERN_CRIT "flush_tlb_page: timed out\n");
+	}
 
 	preempt_enable();
 }
@@ -765,7 +771,9 @@ flush_icache_user_range(struct vm_area_struct *vma, struct page *page,
 		}
 	}
 
-	smp_call_function(ipi_flush_icache_page, mm, 1);
+	if (smp_call_function(ipi_flush_icache_page, mm, 1)) {
+		printk(KERN_CRIT "flush_icache_page: timed out\n");
+	}
 
 	preempt_enable();
 }

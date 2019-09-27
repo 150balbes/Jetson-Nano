@@ -1,9 +1,12 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * SPI testing utility (using spidev driver)
  *
  * Copyright (c) 2007  MontaVista Software, Inc.
  * Copyright (c) 2007  Anton Vorontsov <avorontsov@ru.mvista.com>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License.
  *
  * Cross-compile with cross-gcc -I/path/to/cross-kernel/include
  */
@@ -15,7 +18,6 @@
 #include <string.h>
 #include <getopt.h>
 #include <fcntl.h>
-#include <time.h>
 #include <sys/ioctl.h>
 #include <linux/ioctl.h>
 #include <sys/stat.h>
@@ -38,9 +40,6 @@ static char *output_file;
 static uint32_t speed = 500000;
 static uint16_t delay;
 static int verbose;
-static int transfer_size;
-static int iterations;
-static int interval = 5; /* interval in seconds for showing transfer rate */
 
 uint8_t default_tx[] = {
 	0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
@@ -70,12 +69,12 @@ static void hex_dump(const void *src, size_t length, size_t line_size,
 				while (i++ % line_size)
 					printf("__ ");
 			}
-			printf(" |");
+			printf(" | ");  /* right close */
 			while (line < address) {
 				c = *line++;
-				printf("%c", (c < 32 || c > 126) ? '.' : c);
+				printf("%c", (c < 33 || c == 255) ? 0x2E : c);
 			}
-			printf("|\n");
+			printf("\n");
 			if (length > 0)
 				printf("%s | ", prefix);
 		}
@@ -157,13 +156,13 @@ static void transfer(int fd, uint8_t const *tx, uint8_t const *rx, size_t len)
 		close(out_fd);
 	}
 
-	if (verbose)
+	if (verbose || !output_file)
 		hex_dump(rx, len, 32, "RX");
 }
 
 static void print_usage(const char *prog)
 {
-	printf("Usage: %s [-DsbdlHOLC3vpNR24SI]\n", prog);
+	printf("Usage: %s [-DsbdlHOLC3]\n", prog);
 	puts("  -D --device   device to use (default /dev/spidev1.1)\n"
 	     "  -s --speed    max speed (Hz)\n"
 	     "  -d --delay    delay (usec)\n"
@@ -181,9 +180,7 @@ static void print_usage(const char *prog)
 	     "  -N --no-cs    no chip select\n"
 	     "  -R --ready    slave pulls low to pause\n"
 	     "  -2 --dual     dual transfer\n"
-	     "  -4 --quad     quad transfer\n"
-	     "  -S --size     transfer size\n"
-	     "  -I --iter     iterations\n");
+	     "  -4 --quad     quad transfer\n");
 	exit(1);
 }
 
@@ -208,13 +205,11 @@ static void parse_opts(int argc, char *argv[])
 			{ "dual",    0, 0, '2' },
 			{ "verbose", 0, 0, 'v' },
 			{ "quad",    0, 0, '4' },
-			{ "size",    1, 0, 'S' },
-			{ "iter",    1, 0, 'I' },
 			{ NULL, 0, 0, 0 },
 		};
 		int c;
 
-		c = getopt_long(argc, argv, "D:s:d:b:i:o:lHOLC3NR24p:vS:I:",
+		c = getopt_long(argc, argv, "D:s:d:b:i:o:lHOLC3NR24p:v",
 				lopts, NULL);
 
 		if (c == -1)
@@ -275,12 +270,6 @@ static void parse_opts(int argc, char *argv[])
 		case '4':
 			mode |= SPI_TX_QUAD;
 			break;
-		case 'S':
-			transfer_size = atoi(optarg);
-			break;
-		case 'I':
-			iterations = atoi(optarg);
-			break;
 		default:
 			print_usage(argv[0]);
 			break;
@@ -326,7 +315,7 @@ static void transfer_file(int fd, char *filename)
 		pabort("can't stat input file");
 
 	tx_fd = open(filename, O_RDONLY);
-	if (tx_fd < 0)
+	if (fd < 0)
 		pabort("can't open input file");
 
 	tx = malloc(sb.st_size);
@@ -345,57 +334,6 @@ static void transfer_file(int fd, char *filename)
 	free(rx);
 	free(tx);
 	close(tx_fd);
-}
-
-static uint64_t _read_count;
-static uint64_t _write_count;
-
-static void show_transfer_rate(void)
-{
-	static uint64_t prev_read_count, prev_write_count;
-	double rx_rate, tx_rate;
-
-	rx_rate = ((_read_count - prev_read_count) * 8) / (interval*1000.0);
-	tx_rate = ((_write_count - prev_write_count) * 8) / (interval*1000.0);
-
-	printf("rate: tx %.1fkbps, rx %.1fkbps\n", rx_rate, tx_rate);
-
-	prev_read_count = _read_count;
-	prev_write_count = _write_count;
-}
-
-static void transfer_buf(int fd, int len)
-{
-	uint8_t *tx;
-	uint8_t *rx;
-	int i;
-
-	tx = malloc(len);
-	if (!tx)
-		pabort("can't allocate tx buffer");
-	for (i = 0; i < len; i++)
-		tx[i] = random();
-
-	rx = malloc(len);
-	if (!rx)
-		pabort("can't allocate rx buffer");
-
-	transfer(fd, tx, rx, len);
-
-	_write_count += len;
-	_read_count += len;
-
-	if (mode & SPI_LOOP) {
-		if (memcmp(tx, rx, len)) {
-			fprintf(stderr, "transfer error !\n");
-			hex_dump(tx, len, 32, "TX");
-			hex_dump(rx, len, 32, "RX");
-			exit(1);
-		}
-	}
-
-	free(rx);
-	free(tx);
 }
 
 int main(int argc, char *argv[])
@@ -453,25 +391,7 @@ int main(int argc, char *argv[])
 		transfer_escaped_string(fd, input_tx);
 	else if (input_file)
 		transfer_file(fd, input_file);
-	else if (transfer_size) {
-		struct timespec last_stat;
-
-		clock_gettime(CLOCK_MONOTONIC, &last_stat);
-
-		while (iterations-- > 0) {
-			struct timespec current;
-
-			transfer_buf(fd, transfer_size);
-
-			clock_gettime(CLOCK_MONOTONIC, &current);
-			if (current.tv_sec - last_stat.tv_sec > interval) {
-				show_transfer_rate();
-				last_stat = current;
-			}
-		}
-		printf("total: tx %.1fKB, rx %.1fKB\n",
-		       _write_count/1024.0, _read_count/1024.0);
-	} else
+	else
 		transfer(fd, default_tx, default_rx, sizeof(default_tx));
 
 	close(fd);

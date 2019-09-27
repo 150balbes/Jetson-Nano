@@ -111,8 +111,8 @@ snic_queue_report_tgt_req(struct snic *snic)
 
 	SNIC_BUG_ON((((unsigned long)buf) % SNIC_SG_DESC_ALIGN) != 0);
 
-	pa = dma_map_single(&snic->pdev->dev, buf, buf_len, DMA_FROM_DEVICE);
-	if (dma_mapping_error(&snic->pdev->dev, pa)) {
+	pa = pci_map_single(snic->pdev, buf, buf_len, PCI_DMA_FROMDEVICE);
+	if (pci_dma_mapping_error(snic->pdev, pa)) {
 		SNIC_HOST_ERR(snic->shost,
 			      "Rpt-tgt rspbuf %p: PCI DMA Mapping Failed\n",
 			      buf);
@@ -138,8 +138,7 @@ snic_queue_report_tgt_req(struct snic *snic)
 
 	ret = snic_queue_wq_desc(snic, rqi->req, rqi->req_len);
 	if (ret) {
-		dma_unmap_single(&snic->pdev->dev, pa, buf_len,
-				 DMA_FROM_DEVICE);
+		pci_unmap_single(snic->pdev, pa, buf_len, PCI_DMA_FROMDEVICE);
 		kfree(buf);
 		rqi->sge_va = 0;
 		snic_release_untagged_req(snic, rqi);

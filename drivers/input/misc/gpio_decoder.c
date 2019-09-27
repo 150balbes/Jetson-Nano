@@ -110,6 +110,7 @@ static int gpio_decoder_probe(struct platform_device *pdev)
 		dev_err(dev, "failed to register polled  device\n");
 		return err;
 	}
+	platform_set_drvdata(pdev, decoder);
 
 	return 0;
 }

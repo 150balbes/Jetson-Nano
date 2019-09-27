@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Libata driver for the highpoint 37x and 30x UDMA66 ATA controllers.
  *
@@ -225,14 +224,17 @@ static int hpt_dma_blacklisted(const struct ata_device *dev, char *modestr,
 			       const char * const list[])
 {
 	unsigned char model_num[ATA_ID_PROD_LEN + 1];
-	int i;
+	int i = 0;
 
 	ata_id_c_string(dev->id, model_num, ATA_ID_PROD, sizeof(model_num));
 
-	i = match_string(list, -1, model_num);
-	if (i >= 0) {
-		pr_warn("%s is not supported for %s\n", modestr, list[i]);
-		return 1;
+	while (list[i] != NULL) {
+		if (!strcmp(list[i], model_num)) {
+			pr_warn("%s is not supported for %s\n",
+				modestr, list[i]);
+			return 1;
+		}
+		i++;
 	}
 	return 0;
 }

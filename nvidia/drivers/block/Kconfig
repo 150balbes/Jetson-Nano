@@ -1,0 +1,8 @@
+if BLK_DEV
+
+config TEGRA_HV_BLKDEV
+	bool "Tegra Virtual Block I/O Device"
+	depends on BLK_DEV && TEGRA_HV_MANAGER
+	default n
+
+endif # BLK_DEV

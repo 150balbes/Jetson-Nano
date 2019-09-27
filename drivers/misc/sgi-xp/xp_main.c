@@ -69,9 +69,23 @@ struct xpc_registration xpc_registrations[XPC_MAX_NCHANNELS];
 EXPORT_SYMBOL_GPL(xpc_registrations);
 
 /*
- * Initialize the XPC interface to NULL to indicate that XPC isn't loaded.
+ * Initialize the XPC interface to indicate that XPC isn't loaded.
  */
-struct xpc_interface xpc_interface = { };
+static enum xp_retval
+xpc_notloaded(void)
+{
+	return xpNotLoaded;
+}
+
+struct xpc_interface xpc_interface = {
+	(void (*)(int))xpc_notloaded,
+	(void (*)(int))xpc_notloaded,
+	(enum xp_retval(*)(short, int, u32, void *, u16))xpc_notloaded,
+	(enum xp_retval(*)(short, int, u32, void *, u16, xpc_notify_func,
+			   void *))xpc_notloaded,
+	(void (*)(short, int, void *))xpc_notloaded,
+	(enum xp_retval(*)(short, void *))xpc_notloaded
+};
 EXPORT_SYMBOL_GPL(xpc_interface);
 
 /*
@@ -101,7 +115,17 @@ EXPORT_SYMBOL_GPL(xpc_set_interface);
 void
 xpc_clear_interface(void)
 {
-	memset(&xpc_interface, 0, sizeof(xpc_interface));
+	xpc_interface.connect = (void (*)(int))xpc_notloaded;
+	xpc_interface.disconnect = (void (*)(int))xpc_notloaded;
+	xpc_interface.send = (enum xp_retval(*)(short, int, u32, void *, u16))
+	    xpc_notloaded;
+	xpc_interface.send_notify = (enum xp_retval(*)(short, int, u32, void *,
+						       u16, xpc_notify_func,
+						       void *))xpc_notloaded;
+	xpc_interface.received = (void (*)(short, int, void *))
+	    xpc_notloaded;
+	xpc_interface.partid_to_nasids = (enum xp_retval(*)(short, void *))
+	    xpc_notloaded;
 }
 EXPORT_SYMBOL_GPL(xpc_clear_interface);
 
@@ -164,8 +188,7 @@ xpc_connect(int ch_number, xpc_channel_func func, void *key, u16 payload_size,
 
 	mutex_unlock(&registration->mutex);
 
-	if (xpc_interface.connect)
-		xpc_interface.connect(ch_number);
+	xpc_interface.connect(ch_number);
 
 	return xpSuccess;
 }
@@ -214,8 +237,7 @@ xpc_disconnect(int ch_number)
 	registration->assigned_limit = 0;
 	registration->idle_limit = 0;
 
-	if (xpc_interface.disconnect)
-		xpc_interface.disconnect(ch_number);
+	xpc_interface.disconnect(ch_number);
 
 	mutex_unlock(&registration->mutex);
 

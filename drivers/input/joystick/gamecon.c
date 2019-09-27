@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * NES, SNES, N64, MultiSystem, PSX gamepad driver for Linux
  *
@@ -12,6 +11,23 @@
  */
 
 /*
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
+ *
+ * Should you need to contact me, the author, you can do so either by
+ * e-mail - mail your message to <vojtech@ucw.cz>, or by paper mail:
+ * Vojtech Pavlik, Simunkova 1594, Prague 8, 182 00 Czech Republic
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
@@ -638,7 +654,6 @@ static void gc_psx_report_one(struct gc_pad *pad, unsigned char psx_type,
 
 		input_report_key(dev, BTN_THUMBL, ~data[0] & 0x04);
 		input_report_key(dev, BTN_THUMBR, ~data[0] & 0x02);
-		/* fall through */
 
 	case GC_PSX_NEGCON:
 	case GC_PSX_ANALOG:
@@ -727,9 +742,9 @@ static void gc_psx_process_packet(struct gc *gc)
  * gc_timer() initiates reads of console pads data.
  */
 
-static void gc_timer(struct timer_list *t)
+static void gc_timer(unsigned long private)
 {
-	struct gc *gc = from_timer(gc, t, timer);
+	struct gc *gc = (void *) private;
 
 /*
  * N64 pads - must be read first, any read confuses them for 200 us
@@ -846,7 +861,7 @@ static int gc_setup_pad(struct gc *gc, int idx, int pad_type)
 
 	case GC_N64:
 		for (i = 0; i < 10; i++)
-			input_set_capability(input_dev, EV_KEY, gc_n64_btn[i]);
+			__set_bit(gc_n64_btn[i], input_dev->keybit);
 
 		for (i = 0; i < 2; i++) {
 			input_set_abs_params(input_dev, ABS_X + i, -127, 126, 0, 2);
@@ -855,35 +870,31 @@ static int gc_setup_pad(struct gc *gc, int idx, int pad_type)
 
 		err = gc_n64_init_ff(input_dev, idx);
 		if (err) {
-			pr_warn("Failed to initiate rumble for N64 device %d\n",
-				idx);
+			pr_warning("Failed to initiate rumble for N64 device %d\n", idx);
 			goto err_free_dev;
 		}
 
 		break;
 
 	case GC_SNESMOUSE:
-		input_set_capability(input_dev, EV_KEY, BTN_LEFT);
-		input_set_capability(input_dev, EV_KEY, BTN_RIGHT);
-		input_set_capability(input_dev, EV_REL, REL_X);
-		input_set_capability(input_dev, EV_REL, REL_Y);
+		__set_bit(BTN_LEFT, input_dev->keybit);
+		__set_bit(BTN_RIGHT, input_dev->keybit);
+		__set_bit(REL_X, input_dev->relbit);
+		__set_bit(REL_Y, input_dev->relbit);
 		break;
 
 	case GC_SNES:
 		for (i = 4; i < 8; i++)
-			input_set_capability(input_dev, EV_KEY, gc_snes_btn[i]);
-		/* fall through */
+			__set_bit(gc_snes_btn[i], input_dev->keybit);
 	case GC_NES:
 		for (i = 0; i < 4; i++)
-			input_set_capability(input_dev, EV_KEY, gc_snes_btn[i]);
+			__set_bit(gc_snes_btn[i], input_dev->keybit);
 		break;
 
 	case GC_MULTI2:
-		input_set_capability(input_dev, EV_KEY, BTN_THUMB);
-		/* fall through */
+		__set_bit(BTN_THUMB, input_dev->keybit);
 	case GC_MULTI:
-		input_set_capability(input_dev, EV_KEY, BTN_TRIGGER);
-		/* fall through */
+		__set_bit(BTN_TRIGGER, input_dev->keybit);
 		break;
 
 	case GC_PSX:
@@ -891,17 +902,15 @@ static int gc_setup_pad(struct gc *gc, int idx, int pad_type)
 			input_set_abs_params(input_dev,
 					     gc_psx_abs[i], 4, 252, 0, 2);
 		for (i = 0; i < 12; i++)
-			input_set_capability(input_dev, EV_KEY, gc_psx_btn[i]);
-		break;
+			__set_bit(gc_psx_btn[i], input_dev->keybit);
 
 		break;
 
 	case GC_DDR:
 		for (i = 0; i < 4; i++)
-			input_set_capability(input_dev, EV_KEY,
-					     gc_psx_ddr_btn[i]);
+			__set_bit(gc_psx_ddr_btn[i], input_dev->keybit);
 		for (i = 0; i < 12; i++)
-			input_set_capability(input_dev, EV_KEY, gc_psx_btn[i]);
+			__set_bit(gc_psx_btn[i], input_dev->keybit);
 
 		break;
 	}
@@ -961,7 +970,7 @@ static void gc_attach(struct parport *pp)
 	mutex_init(&gc->mutex);
 	gc->pd = pd;
 	gc->parportno = pp->number;
-	timer_setup(&gc->timer, gc_timer, 0);
+	setup_timer(&gc->timer, gc_timer, (long) gc);
 
 	for (i = 0; i < n_pads && i < GC_MAX_DEVICES; i++) {
 		if (!pads[i])

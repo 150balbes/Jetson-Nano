@@ -1,15 +1,19 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * SAMSUNG SMDK5250 board device tree source
  *
  * Copyright (c) 2012 Samsung Electronics Co., Ltd.
  *		http://www.samsung.com
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  */
 
 /dts-v1/;
 #include <dt-bindings/gpio/gpio.h>
 #include <dt-bindings/interrupt-controller/irq.h>
 #include "exynos5250.dtsi"
+#include "exynos-mfc-reserved-memory.dtsi"
 
 / {
 	model = "SAMSUNG SMDK5250 board based on EXYNOS5250";
@@ -24,8 +28,7 @@
 	};
 
 	chosen {
-		bootargs = "root=/dev/ram0 rw ramdisk=8192 initrd=0x41000000,8M init=/linuxrc";
-		stdout-path = "serial2:115200n8";
+		bootargs = "root=/dev/ram0 rw ramdisk=8192 initrd=0x41000000,8M console=ttySAC2,115200 init=/linuxrc";
 	};
 
 	vdd: fixed-regulator-vdd {
@@ -114,8 +117,6 @@
 };
 
 &hdmi {
-	status = "okay";
-	ddc = <&i2c_2>;
 	hpd-gpios = <&gpx3 7 GPIO_ACTIVE_HIGH>;
 };
 
@@ -129,7 +130,7 @@
 		reg = <0x50>;
 	};
 
-	max77686@9 {
+	max77686@09 {
 		compatible = "maxim,max77686";
 		reg = <0x09>;
 		interrupt-parent = <&gpx3>;
@@ -308,16 +309,24 @@
 
 &i2c_2 {
 	status = "okay";
-	/* used by HDMI DDC */
 	samsung,i2c-sda-delay = <100>;
 	samsung,i2c-max-bus-freq = <66000>;
+
+	hdmiddc@50 {
+		compatible = "samsung,exynos4210-hdmiddc";
+		reg = <0x50>;
+	};
 };
 
 &i2c_8 {
 	status = "okay";
-	/* used by HDMI PHY */
 	samsung,i2c-sda-delay = <100>;
 	samsung,i2c-max-bus-freq = <66000>;
+
+	hdmiphy@38 {
+		compatible = "samsung,exynos4212-hdmiphy";
+		reg = <0x38>;
+	};
 };
 
 &i2c_9 {
@@ -336,12 +345,9 @@
 	status = "okay";
 };
 
-&mixer {
-	status = "okay";
-};
-
 &mmc_0 {
 	status = "okay";
+	num-slots = <1>;
 	broken-cd;
 	card-detect-delay = <200>;
 	samsung,dw-mshc-ciu-div = <3>;
@@ -355,6 +361,7 @@
 
 &mmc_2 {
 	status = "okay";
+	num-slots = <1>;
 	card-detect-delay = <200>;
 	samsung,dw-mshc-ciu-div = <3>;
 	samsung,dw-mshc-sdr-timing = <2 3>;

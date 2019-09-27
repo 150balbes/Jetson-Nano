@@ -1,0 +1,21 @@
+l3 cache bindings for t19x
+-----------------------------
+This document defines l3 cache nodes and its properties for t19x soc.
+
+Required properties:
+- compatible: "nvidia,t19x-cache".
+- l3-gpu-cpu-ways: Gpu CPU common ways
+- l3-gpu-only-ways: Gpu only ways
+- l3-total-ways: L3 total ways. Read only property.
+- l3-size: Total L3 size in bytes. Read only property.
+
+
+Example:
+--------
+	tegra-cache {
+		compatible = "nvidia,t19x-cache";
+		l3-gpu-cpu-ways = <8>;
+		l3-gpu-only-ways = <4>;
+		l3-total-ways = <16>;
+		l3-size = <0x400000>; /* 4MB */
+	};

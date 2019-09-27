@@ -1,9 +1,8 @@
-// SPDX-License-Identifier: GPL-2.0-only
 ///
 /// Remove unneeded semicolon.
 ///
 // Confidence: Moderate
-// Copyright: (C) 2012 Peter Senna Tschudin, INRIA/LIP6.
+// Copyright: (C) 2012 Peter Senna Tschudin, INRIA/LIP6.  GPLv2.
 // URL: http://coccinelle.lip6.fr/
 // Comments: Some false positives on empty default cases in switch statements.
 // Options: --no-includes --include-headers

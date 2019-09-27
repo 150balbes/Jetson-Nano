@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * SHA-1 implementation for PowerPC.
  *
@@ -7,7 +6,6 @@
 
 #include <asm/ppc_asm.h>
 #include <asm/asm-offsets.h>
-#include <asm/asm-compat.h>
 
 #ifdef __BIG_ENDIAN__
 #define LWZ(rt, d, ra)	\

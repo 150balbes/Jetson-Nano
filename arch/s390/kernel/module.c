@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0+
 /*
  *  Kernel module help for s390.
  *
@@ -9,6 +8,20 @@
  *
  *  based on i386 version
  *    Copyright (C) 2001 Rusty Russell.
+ *
+ *  This program is free software; you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License as published by
+ *  the Free Software Foundation; either version 2 of the License, or
+ *  (at your option) any later version.
+ *
+ *  This program is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *  GNU General Public License for more details.
+ *
+ *  You should have received a copy of the GNU General Public License
+ *  along with this program; if not, write to the Free Software
+ *  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
 #include <linux/module.h>
 #include <linux/elf.h>
@@ -16,7 +29,6 @@
 #include <linux/fs.h>
 #include <linux/string.h>
 #include <linux/kernel.h>
-#include <linux/kasan.h>
 #include <linux/moduleloader.h>
 #include <linux/bug.h>
 #include <asm/alternative.h>
@@ -33,18 +45,11 @@
 
 void *module_alloc(unsigned long size)
 {
-	void *p;
-
 	if (PAGE_ALIGN(size) > MODULES_LEN)
 		return NULL;
-	p = __vmalloc_node_range(size, MODULE_ALIGN, MODULES_VADDR, MODULES_END,
-				 GFP_KERNEL, PAGE_KERNEL_EXEC, 0, NUMA_NO_NODE,
-				 __builtin_return_address(0));
-	if (p && (kasan_module_alloc(p, size) < 0)) {
-		vfree(p);
-		return NULL;
-	}
-	return p;
+	return __vmalloc_node_range(size, 1, MODULES_VADDR, MODULES_END,
+				    GFP_KERNEL, PAGE_KERNEL, 0, NUMA_NO_NODE,
+				    __builtin_return_address(0));
 }
 
 void module_arch_freeing_init(struct module *mod)
@@ -130,8 +135,8 @@ int module_frob_arch_sections(Elf_Ehdr *hdr, Elf_Shdr *sechdrs,
 
 	/* Allocate one syminfo structure per symbol. */
 	me->arch.nsyms = symtab->sh_size / sizeof(Elf_Sym);
-	me->arch.syminfo = vmalloc(array_size(sizeof(struct mod_arch_syminfo),
-					      me->arch.nsyms));
+	me->arch.syminfo = vmalloc(me->arch.nsyms *
+				   sizeof(struct mod_arch_syminfo));
 	if (!me->arch.syminfo)
 		return -ENOMEM;
 	symbols = (void *) hdr + symtab->sh_offset;

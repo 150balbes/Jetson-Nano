@@ -1,5 +1,4 @@
 #!/bin/bash
-# SPDX-License-Identifier: GPL-2.0
  i=0
 file=/dev/media$1
  while :; do

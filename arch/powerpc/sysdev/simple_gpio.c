@@ -1,10 +1,14 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Simple Memory-Mapped GPIOs
  *
  * Copyright (c) MontaVista Software, Inc. 2008.
  *
  * Author: Anton Vorontsov <avorontsov@ru.mvista.com>
+ *
+ * This program is free software; you can redistribute  it and/or modify it
+ * under  the terms of  the GNU General  Public License as published by the
+ * Free Software Foundation;  either version 2 of the  License, or (at your
+ * option) any later version.
  */
 
 #include <linux/init.h>
@@ -138,6 +142,7 @@ void __init simple_gpiochip_init(const char *compatible)
 		}
 		continue;
 err:
-		pr_err("%pOF: registration failed, status %d\n", np, ret);
+		pr_err("%s: registration failed, status %d\n",
+		       np->full_name, ret);
 	}
 }

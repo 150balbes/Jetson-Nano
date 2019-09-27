@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /* -*- mode: c; c-basic-offset: 8; -*-
  * vim: noexpandtab sw=8 ts=8 sts=0:
  *
@@ -20,6 +19,21 @@
  *   linux/fs/minix/dir.c
  *
  *   Copyright (C) 1991, 1992 Linus Torvalds
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public
+ * License as published by the Free Software Foundation; either
+ * version 2 of the License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public
+ * License along with this program; if not, write to the
+ * Free Software Foundation, Inc., 59 Temple Place - Suite 330,
+ * Boston, MA 021110-1307, USA.
  */
 
 #include <linux/fs.h>
@@ -28,7 +42,6 @@
 #include <linux/highmem.h>
 #include <linux/quotaops.h>
 #include <linux/sort.h>
-#include <linux/iversion.h>
 
 #include <cluster/masklog.h>
 
@@ -54,6 +67,10 @@
 #define NAMEI_RA_CHUNKS  2
 #define NAMEI_RA_BLOCKS  4
 #define NAMEI_RA_SIZE        (NAMEI_RA_CHUNKS * NAMEI_RA_BLOCKS)
+
+static unsigned char ocfs2_filetype_table[] = {
+	DT_UNKNOWN, DT_REG, DT_DIR, DT_CHR, DT_BLK, DT_FIFO, DT_SOCK, DT_LNK
+};
 
 static int ocfs2_do_extend_dir(struct super_block *sb,
 			       handle_t *handle,
@@ -1157,7 +1174,7 @@ static int __ocfs2_delete_entry(handle_t *handle, struct inode *dir,
 				le16_add_cpu(&pde->rec_len,
 						le16_to_cpu(de->rec_len));
 			de->inode = 0;
-			inode_inc_iversion(dir);
+			dir->i_version++;
 			ocfs2_journal_dirty(handle, bh);
 			goto bail;
 		}
@@ -1700,7 +1717,7 @@ int __ocfs2_add_entry(handle_t *handle,
 				de->rec_len = cpu_to_le16(OCFS2_DIR_REC_LEN(de->name_len));
 				de = de1;
 			}
-			de->file_type = FT_UNKNOWN;
+			de->file_type = OCFS2_FT_UNKNOWN;
 			if (blkno) {
 				de->inode = cpu_to_le64(blkno);
 				ocfs2_set_de_type(de, inode->i_mode);
@@ -1712,7 +1729,7 @@ int __ocfs2_add_entry(handle_t *handle,
 			if (ocfs2_dir_indexed(dir))
 				ocfs2_recalc_free_list(dir, handle, lookup);
 
-			inode_inc_iversion(dir);
+			dir->i_version++;
 			ocfs2_journal_dirty(handle, insert_bh);
 			retval = 0;
 			goto bail;
@@ -1758,7 +1775,7 @@ static int ocfs2_dir_foreach_blk_id(struct inode *inode,
 		 * readdir(2), then we might be pointing to an invalid
 		 * dirent right now.  Scan from the start of the block
 		 * to make sure. */
-		if (!inode_eq_iversion(inode, *f_version)) {
+		if (*f_version != inode->i_version) {
 			for (i = 0; i < i_size_read(inode) && i < offset; ) {
 				de = (struct ocfs2_dir_entry *)
 					(data->id_data + i);
@@ -1774,7 +1791,7 @@ static int ocfs2_dir_foreach_blk_id(struct inode *inode,
 				i += le16_to_cpu(de->rec_len);
 			}
 			ctx->pos = offset = i;
-			*f_version = inode_query_iversion(inode);
+			*f_version = inode->i_version;
 		}
 
 		de = (struct ocfs2_dir_entry *) (data->id_data + ctx->pos);
@@ -1785,9 +1802,13 @@ static int ocfs2_dir_foreach_blk_id(struct inode *inode,
 		}
 		offset += le16_to_cpu(de->rec_len);
 		if (le64_to_cpu(de->inode)) {
+			unsigned char d_type = DT_UNKNOWN;
+
+			if (de->file_type < OCFS2_FT_MAX)
+				d_type = ocfs2_filetype_table[de->file_type];
+
 			if (!dir_emit(ctx, de->name, de->name_len,
-				      le64_to_cpu(de->inode),
-				      fs_ftype_to_dtype(de->file_type)))
+				      le64_to_cpu(de->inode), d_type))
 				goto out;
 		}
 		ctx->pos += le16_to_cpu(de->rec_len);
@@ -1848,7 +1869,7 @@ static int ocfs2_dir_foreach_blk_el(struct inode *inode,
 		 * readdir(2), then we might be pointing to an invalid
 		 * dirent right now.  Scan from the start of the block
 		 * to make sure. */
-		if (!inode_eq_iversion(inode, *f_version)) {
+		if (*f_version != inode->i_version) {
 			for (i = 0; i < sb->s_blocksize && i < offset; ) {
 				de = (struct ocfs2_dir_entry *) (bh->b_data + i);
 				/* It's too expensive to do a full
@@ -1865,7 +1886,7 @@ static int ocfs2_dir_foreach_blk_el(struct inode *inode,
 			offset = i;
 			ctx->pos = (ctx->pos & ~(sb->s_blocksize - 1))
 				| offset;
-			*f_version = inode_query_iversion(inode);
+			*f_version = inode->i_version;
 		}
 
 		while (ctx->pos < i_size_read(inode)
@@ -1878,10 +1899,14 @@ static int ocfs2_dir_foreach_blk_el(struct inode *inode,
 				break;
 			}
 			if (le64_to_cpu(de->inode)) {
+				unsigned char d_type = DT_UNKNOWN;
+
+				if (de->file_type < OCFS2_FT_MAX)
+					d_type = ocfs2_filetype_table[de->file_type];
 				if (!dir_emit(ctx, de->name,
 						de->name_len,
 						le64_to_cpu(de->inode),
-					fs_ftype_to_dtype(de->file_type))) {
+						d_type)) {
 					brelse(bh);
 					return 0;
 				}
@@ -1914,7 +1939,7 @@ static int ocfs2_dir_foreach_blk(struct inode *inode, u64 *f_version,
  */
 int ocfs2_dir_foreach(struct inode *inode, struct dir_context *ctx)
 {
-	u64 version = inode_query_iversion(inode);
+	u64 version = inode->i_version;
 	ocfs2_dir_foreach_blk(inode, &version, ctx, true);
 	return 0;
 }
@@ -1931,7 +1956,7 @@ int ocfs2_readdir(struct file *file, struct dir_context *ctx)
 
 	trace_ocfs2_readdir((unsigned long long)OCFS2_I(inode)->ip_blkno);
 
-	error = ocfs2_inode_lock_atime(inode, file->f_path.mnt, &lock_level, 1);
+	error = ocfs2_inode_lock_atime(inode, file->f_path.mnt, &lock_level);
 	if (lock_level && error >= 0) {
 		/* We release EX lock which used to update atime
 		 * and get PR lock again to reduce contention
@@ -3045,7 +3070,7 @@ static int ocfs2_expand_inline_dir(struct inode *dir, struct buffer_head *di_bh,
 			 * We need to return the correct block within the
 			 * cluster which should hold our entry.
 			 */
-			off = ocfs2_dx_dir_hash_idx(osb,
+			off = ocfs2_dx_dir_hash_idx(OCFS2_SB(dir->i_sb),
 						    &lookup->dl_hinfo);
 			get_bh(dx_leaves[off]);
 			lookup->dl_dx_leaf_bh = dx_leaves[off];
@@ -3223,7 +3248,7 @@ static int ocfs2_extend_dir(struct ocfs2_super *osb,
 		spin_unlock(&OCFS2_I(dir)->ip_lock);
 		ocfs2_init_dinode_extent_tree(&et, INODE_CACHE(dir),
 					      parent_fe_bh);
-		num_free_extents = ocfs2_num_free_extents(&et);
+		num_free_extents = ocfs2_num_free_extents(osb, &et);
 		if (num_free_extents < 0) {
 			status = num_free_extents;
 			mlog_errno(status);

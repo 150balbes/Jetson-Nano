@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * PCI Backend - Handle special overlays for broken devices.
  *
@@ -95,7 +94,7 @@ int xen_pcibk_config_quirks_init(struct pci_dev *dev)
 	struct xen_pcibk_config_quirk *quirk;
 	int ret = 0;
 
-	quirk = kzalloc(sizeof(*quirk), GFP_KERNEL);
+	quirk = kzalloc(sizeof(*quirk), GFP_ATOMIC);
 	if (!quirk) {
 		ret = -ENOMEM;
 		goto out;

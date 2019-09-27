@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: MIT */
 #ifndef __NVKM_SW_PRIV_H__
 #define __NVKM_SW_PRIV_H__
 #define nvkm_sw(p) container_of((p), struct nvkm_sw, engine)

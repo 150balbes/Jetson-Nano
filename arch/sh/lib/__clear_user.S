@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * __clear_user_page, __clear_user, clear_page implementation of SuperH
  *

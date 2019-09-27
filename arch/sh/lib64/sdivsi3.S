@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 	.global	__sdivsi3
 	.global	__sdivsi3_1
 	.global	__sdivsi3_2

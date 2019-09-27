@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: LGPL-2.1 WITH Linux-syscall-note */
 /* cgroupstats.h - exporting per-cgroup statistics
  *
  * Copyright IBM Corporation, 2007

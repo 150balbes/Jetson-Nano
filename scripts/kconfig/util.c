@@ -1,7 +1,8 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * Copyright (C) 2002-2005 Roman Zippel <zippel@linux-m68k.org>
  * Copyright (C) 2002-2005 Sam Ravnborg <sam@ravnborg.org>
+ *
+ * Released under the terms of the GNU GPL v2.0.
  */
 
 #include <stdarg.h>
@@ -10,23 +11,73 @@
 #include "lkc.h"
 
 /* file already present in list? If not add it */
-struct file *file_lookup(const char *name)
+struct file *file_lookup(const char *name, int overlay_id, const char *logical_name)
 {
 	struct file *file;
 
 	for (file = file_list; file; file = file->next) {
-		if (!strcmp(name, file->name)) {
+		if (!strcmp(name, file->name) && overlay_id == file->overlay_id) {
+			free((void *)name);
+			free((void *)logical_name);
 			return file;
 		}
 	}
 
 	file = xmalloc(sizeof(*file));
 	memset(file, 0, sizeof(*file));
-	file->name = xstrdup(name);
+	file->name = name;
+	file->overlay_id = overlay_id;
+	file->logical_name = logical_name;
 	file->next = file_list;
 	file_list = file;
 	return file;
 }
+
+/* write a dependency file as used by kbuild to track dependencies */
+int file_write_dep(const char *name)
+{
+	struct symbol *sym, *env_sym;
+	struct expr *e;
+	struct file *file;
+	FILE *out;
+
+	if (!name)
+		name = ".kconfig.d";
+	out = fopen("..config.tmp", "w");
+	if (!out)
+		return 1;
+	fprintf(out, "deps_config := \\\n");
+	for (file = file_list; file; file = file->next) {
+		if (file->next)
+			fprintf(out, "\t%s \\\n", file->name);
+		else
+			fprintf(out, "\t%s\n", file->name);
+	}
+	fprintf(out, "\n%s: \\\n"
+		     "\t$(deps_config)\n\n", conf_get_autoconfig_name());
+
+	expr_list_for_each_sym(sym_env_list, e, sym) {
+		struct property *prop;
+		const char *value;
+
+		prop = sym_get_env_prop(sym);
+		env_sym = prop_get_symbol(prop);
+		if (!env_sym)
+			continue;
+		value = getenv(env_sym->name);
+		if (!value)
+			value = "";
+		fprintf(out, "ifneq \"$(%s)\" \"%s\"\n", env_sym->name, value);
+		fprintf(out, "%s: FORCE\n", conf_get_autoconfig_name());
+		fprintf(out, "endif\n");
+	}
+
+	fprintf(out, "\n$(deps_config): ;\n");
+	fclose(out);
+	rename("..config.tmp", name);
+	return 0;
+}
+
 
 /* Allocate initial growable string */
 struct gstr str_new(void)
@@ -55,7 +106,7 @@ void str_append(struct gstr *gs, const char *s)
 	if (s) {
 		l = strlen(gs->s) + strlen(s) + 1;
 		if (l > gs->len) {
-			gs->s = xrealloc(gs->s, l);
+			gs->s   = realloc(gs->s, l);
 			gs->len = l;
 		}
 		strcat(gs->s, s);
@@ -97,9 +148,9 @@ void *xcalloc(size_t nmemb, size_t size)
 	exit(1);
 }
 
-void *xrealloc(void *p, size_t size)
+void *xrealloc(void *ptr, size_t size)
 {
-	p = realloc(p, size);
+	void *p = realloc(ptr, size);
 	if (p)
 		return p;
 	fprintf(stderr, "Out of memory.\n");
@@ -108,20 +159,7 @@ void *xrealloc(void *p, size_t size)
 
 char *xstrdup(const char *s)
 {
-	char *p;
-
-	p = strdup(s);
-	if (p)
-		return p;
-	fprintf(stderr, "Out of memory.\n");
-	exit(1);
-}
-
-char *xstrndup(const char *s, size_t n)
-{
-	char *p;
-
-	p = strndup(s, n);
+	char *p = strdup(s);
 	if (p)
 		return p;
 	fprintf(stderr, "Out of memory.\n");

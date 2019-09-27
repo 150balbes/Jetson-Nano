@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 #include <linux/module.h>
 #include <linux/smp.h>
 #include <linux/time.h>
@@ -22,9 +21,9 @@ void __init cyclone_setup(void)
 
 static void __iomem *cyclone_mc;
 
-static u64 read_cyclone(struct clocksource *cs)
+static cycle_t read_cyclone(struct clocksource *cs)
 {
-	return (u64)readq((void __iomem *)cyclone_mc);
+	return (cycle_t)readq((void __iomem *)cyclone_mc);
 }
 
 static struct clocksource clocksource_cyclone = {

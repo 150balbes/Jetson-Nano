@@ -54,17 +54,26 @@
 #include <linux/nvram.h>
 #include <linux/adb.h>
 #include <linux/cuda.h>
+#include <asm/io.h>
 #ifdef CONFIG_MAC
 #include <asm/macintosh.h>
 #else
 #include <asm/prom.h>
 #endif
+#include <asm/pgtable.h>
 
 #include "macmodes.h"
 #include "valkyriefb.h"
 
+#ifdef CONFIG_MAC
+/* We don't yet have functions to read the PRAM... perhaps we can
+   adapt them from the PPC code? */
+static int default_vmode = VMODE_CHOOSE;
+static int default_cmode = CMODE_8;
+#else
 static int default_vmode = VMODE_NVRAM;
 static int default_cmode = CMODE_NVRAM;
+#endif
 
 struct fb_par_valkyrie {
 	int	vmode, cmode;
@@ -276,21 +285,24 @@ static void __init valkyrie_choose_mode(struct fb_info_valkyrie *p)
 	printk(KERN_INFO "Monitor sense value = 0x%x\n", p->sense);
 
 	/* Try to pick a video mode out of NVRAM if we have one. */
-#ifdef CONFIG_PPC_PMAC
-	if (IS_REACHABLE(CONFIG_NVRAM) && default_vmode == VMODE_NVRAM)
+#if !defined(CONFIG_MAC) && defined(CONFIG_NVRAM)
+	if (default_vmode == VMODE_NVRAM) {
 		default_vmode = nvram_read_byte(NV_VMODE);
-#endif
-	if (default_vmode <= 0 || default_vmode > VMODE_MAX ||
-	    !valkyrie_reg_init[default_vmode - 1]) {
-		default_vmode = mac_map_monitor_sense(p->sense);
-		if (!valkyrie_reg_init[default_vmode - 1])
-			default_vmode = VMODE_640_480_67;
+		if (default_vmode <= 0
+		 || default_vmode > VMODE_MAX
+		 || !valkyrie_reg_init[default_vmode - 1])
+			default_vmode = VMODE_CHOOSE;
 	}
-
-#ifdef CONFIG_PPC_PMAC
-	if (IS_REACHABLE(CONFIG_NVRAM) && default_cmode == CMODE_NVRAM)
+#endif
+	if (default_vmode == VMODE_CHOOSE)
+		default_vmode = mac_map_monitor_sense(p->sense);
+	if (!valkyrie_reg_init[default_vmode - 1])
+		default_vmode = VMODE_640_480_67;
+#if !defined(CONFIG_MAC) && defined(CONFIG_NVRAM)
+	if (default_cmode == CMODE_NVRAM)
 		default_cmode = nvram_read_byte(NV_CMODE);
 #endif
+
 	/*
 	 * Reduce the pixel size if we don't have enough VRAM or bandwidth.
 	 */
@@ -306,7 +318,7 @@ static void __init valkyrie_choose_mode(struct fb_info_valkyrie *p)
 int __init valkyriefb_init(void)
 {
 	struct fb_info_valkyrie	*p;
-	unsigned long frame_buffer_phys, cmap_regs_phys;
+	unsigned long frame_buffer_phys, cmap_regs_phys, flags;
 	int err;
 	char *option = NULL;
 
@@ -325,6 +337,7 @@ int __init valkyriefb_init(void)
 	/* Hardcoded addresses... welcome to 68k Macintosh country :-) */
 	frame_buffer_phys = 0xf9000000;
 	cmap_regs_phys = 0x50f24000;
+	flags = IOMAP_NOCACHE_SER; /* IOMAP_WRITETHROUGH?? */
 #else /* ppc (!CONFIG_MAC) */
 	{
 		struct device_node *dp;
@@ -341,6 +354,7 @@ int __init valkyriefb_init(void)
 
 		frame_buffer_phys = r.start;
 		cmap_regs_phys = r.start + 0x304000;
+		flags = _PAGE_WRITETHRU;
 	}
 #endif /* ppc (!CONFIG_MAC) */
 
@@ -355,11 +369,7 @@ int __init valkyriefb_init(void)
 	}
 	p->total_vram = 0x100000;
 	p->frame_buffer_phys = frame_buffer_phys;
-#ifdef CONFIG_MAC
-	p->frame_buffer = ioremap_nocache(frame_buffer_phys, p->total_vram);
-#else
-	p->frame_buffer = ioremap_wt(frame_buffer_phys, p->total_vram);
-#endif
+	p->frame_buffer = __ioremap(frame_buffer_phys, p->total_vram, flags);
 	p->cmap_regs_phys = cmap_regs_phys;
 	p->cmap_regs = ioremap(p->cmap_regs_phys, 0x1000);
 	p->valkyrie_regs_phys = cmap_regs_phys+0x6000;

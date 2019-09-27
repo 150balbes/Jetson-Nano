@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note */
 #ifndef _SPARC_IOCTL_H
 #define _SPARC_IOCTL_H
 

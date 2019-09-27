@@ -1,10 +1,20 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * usb port device code
  *
+ * Copyright (c) 2015-2017, NVIDIA CORPORATION.  All rights reserved.
  * Copyright (C) 2012 Intel Corp
  *
  * Author: Lan Tianyu <tianyu.lan@intel.com>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
+ * or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+ * for more details.
+ *
  */
 
 #include <linux/slab.h>
@@ -15,15 +25,6 @@
 static int usb_port_block_power_off;
 
 static const struct attribute_group *port_dev_group[];
-
-static ssize_t location_show(struct device *dev,
-			     struct device_attribute *attr, char *buf)
-{
-	struct usb_port *port_dev = to_usb_port(dev);
-
-	return sprintf(buf, "0x%08x\n", port_dev->location);
-}
-static DEVICE_ATTR_RO(location);
 
 static ssize_t connect_type_show(struct device *dev,
 				 struct device_attribute *attr, char *buf)
@@ -49,37 +50,6 @@ static ssize_t connect_type_show(struct device *dev,
 	return sprintf(buf, "%s\n", result);
 }
 static DEVICE_ATTR_RO(connect_type);
-
-static ssize_t over_current_count_show(struct device *dev,
-				       struct device_attribute *attr, char *buf)
-{
-	struct usb_port *port_dev = to_usb_port(dev);
-
-	return sprintf(buf, "%u\n", port_dev->over_current_count);
-}
-static DEVICE_ATTR_RO(over_current_count);
-
-static ssize_t quirks_show(struct device *dev,
-			   struct device_attribute *attr, char *buf)
-{
-	struct usb_port *port_dev = to_usb_port(dev);
-
-	return sprintf(buf, "%08x\n", port_dev->quirks);
-}
-
-static ssize_t quirks_store(struct device *dev, struct device_attribute *attr,
-			    const char *buf, size_t count)
-{
-	struct usb_port *port_dev = to_usb_port(dev);
-	u32 value;
-
-	if (kstrtou32(buf, 16, &value))
-		return -EINVAL;
-
-	port_dev->quirks = value;
-	return count;
-}
-static DEVICE_ATTR_RW(quirks);
 
 static ssize_t usb3_lpm_permit_show(struct device *dev,
 			      struct device_attribute *attr, char *buf)
@@ -149,9 +119,6 @@ static DEVICE_ATTR_RW(usb3_lpm_permit);
 
 static struct attribute *port_dev_attrs[] = {
 	&dev_attr_connect_type.attr,
-	&dev_attr_location.attr,
-	&dev_attr_quirks.attr,
-	&dev_attr_over_current_count.attr,
 	NULL,
 };
 
@@ -600,6 +567,9 @@ void usb_hub_remove_port_device(struct usb_hub *hub, int port1)
 {
 	struct usb_port *port_dev = hub->ports[port1 - 1];
 	struct usb_port *peer;
+
+	if (port_dev == NULL)
+		return;
 
 	peer = port_dev->peer;
 	if (peer)

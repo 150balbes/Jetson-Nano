@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * linux/fs/ext2/namei.c
  *
@@ -45,7 +44,8 @@ static inline int ext2_add_nondir(struct dentry *dentry, struct inode *inode)
 		return 0;
 	}
 	inode_dec_link_count(inode);
-	discard_new_inode(inode);
+	unlock_new_inode(inode);
+	iput(inode);
 	return err;
 }
 
@@ -105,7 +105,14 @@ static int ext2_create (struct inode * dir, struct dentry * dentry, umode_t mode
 	if (IS_ERR(inode))
 		return PTR_ERR(inode);
 
-	ext2_set_file_ops(inode);
+	inode->i_op = &ext2_file_inode_operations;
+	if (test_opt(inode->i_sb, NOBH)) {
+		inode->i_mapping->a_ops = &ext2_nobh_aops;
+		inode->i_fop = &ext2_file_operations;
+	} else {
+		inode->i_mapping->a_ops = &ext2_aops;
+		inode->i_fop = &ext2_file_operations;
+	}
 	mark_inode_dirty(inode);
 	return ext2_add_nondir(dentry, inode);
 }
@@ -116,7 +123,14 @@ static int ext2_tmpfile(struct inode *dir, struct dentry *dentry, umode_t mode)
 	if (IS_ERR(inode))
 		return PTR_ERR(inode);
 
-	ext2_set_file_ops(inode);
+	inode->i_op = &ext2_file_inode_operations;
+	if (test_opt(inode->i_sb, NOBH)) {
+		inode->i_mapping->a_ops = &ext2_nobh_aops;
+		inode->i_fop = &ext2_file_operations;
+	} else {
+		inode->i_mapping->a_ops = &ext2_aops;
+		inode->i_fop = &ext2_file_operations;
+	}
 	mark_inode_dirty(inode);
 	d_tmpfile(dentry, inode);
 	unlock_new_inode(inode);
@@ -191,7 +205,8 @@ out:
 
 out_fail:
 	inode_dec_link_count(inode);
-	discard_new_inode(inode);
+	unlock_new_inode(inode);
+	iput (inode);
 	goto out;
 }
 
@@ -259,7 +274,8 @@ out:
 out_fail:
 	inode_dec_link_count(inode);
 	inode_dec_link_count(inode);
-	discard_new_inode(inode);
+	unlock_new_inode(inode);
+	iput(inode);
 out_dir:
 	inode_dec_link_count(dir);
 	goto out;
@@ -416,7 +432,6 @@ const struct inode_operations ext2_dir_inode_operations = {
 #ifdef CONFIG_EXT2_FS_XATTR
 	.listxattr	= ext2_listxattr,
 #endif
-	.getattr	= ext2_getattr,
 	.setattr	= ext2_setattr,
 	.get_acl	= ext2_get_acl,
 	.set_acl	= ext2_set_acl,
@@ -427,7 +442,6 @@ const struct inode_operations ext2_special_inode_operations = {
 #ifdef CONFIG_EXT2_FS_XATTR
 	.listxattr	= ext2_listxattr,
 #endif
-	.getattr	= ext2_getattr,
 	.setattr	= ext2_setattr,
 	.get_acl	= ext2_get_acl,
 	.set_acl	= ext2_set_acl,

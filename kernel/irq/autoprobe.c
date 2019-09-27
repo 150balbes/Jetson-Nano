@@ -1,5 +1,6 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
+ * linux/kernel/irq/autoprobe.c
+ *
  * Copyright (C) 1992, 1998-2004 Linus Torvalds, Ingo Molnar
  *
  * This file contains the interrupt probing code and driver APIs.
@@ -52,7 +53,7 @@ unsigned long probe_irq_on(void)
 			if (desc->irq_data.chip->irq_set_type)
 				desc->irq_data.chip->irq_set_type(&desc->irq_data,
 							 IRQ_TYPE_PROBE);
-			irq_activate_and_startup(desc, IRQ_NORESEND);
+			irq_startup(desc, false);
 		}
 		raw_spin_unlock_irq(&desc->lock);
 	}
@@ -69,7 +70,7 @@ unsigned long probe_irq_on(void)
 		raw_spin_lock_irq(&desc->lock);
 		if (!desc->action && irq_settings_can_probe(desc)) {
 			desc->istate |= IRQS_AUTODETECT | IRQS_WAITING;
-			if (irq_activate_and_startup(desc, IRQ_NORESEND))
+			if (irq_startup(desc, false))
 				desc->istate |= IRQS_PENDING;
 		}
 		raw_spin_unlock_irq(&desc->lock);
@@ -90,7 +91,7 @@ unsigned long probe_irq_on(void)
 			/* It triggered already - consider it spurious. */
 			if (!(desc->istate & IRQS_WAITING)) {
 				desc->istate &= ~IRQS_AUTODETECT;
-				irq_shutdown_and_deactivate(desc);
+				irq_shutdown(desc);
 			} else
 				if (i < 32)
 					mask |= 1 << i;
@@ -127,7 +128,7 @@ unsigned int probe_irq_mask(unsigned long val)
 				mask |= 1 << i;
 
 			desc->istate &= ~IRQS_AUTODETECT;
-			irq_shutdown_and_deactivate(desc);
+			irq_shutdown(desc);
 		}
 		raw_spin_unlock_irq(&desc->lock);
 	}
@@ -169,7 +170,7 @@ int probe_irq_off(unsigned long val)
 				nr_of_irqs++;
 			}
 			desc->istate &= ~IRQS_AUTODETECT;
-			irq_shutdown_and_deactivate(desc);
+			irq_shutdown(desc);
 		}
 		raw_spin_unlock_irq(&desc->lock);
 	}

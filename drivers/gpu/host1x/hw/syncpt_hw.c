@@ -1,8 +1,19 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Tegra host1x Syncpoints
  *
  * Copyright (c) 2010-2013, NVIDIA Corporation.
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms and conditions of the GNU General Public License,
+ * version 2, as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 #include <linux/io.h>
@@ -26,12 +37,10 @@ static void syncpt_restore(struct host1x_syncpt *sp)
  */
 static void syncpt_restore_wait_base(struct host1x_syncpt *sp)
 {
-#if HOST1X_HW < 7
 	struct host1x *host = sp->host;
 
 	host1x_sync_writel(host, sp->base_val,
 			   HOST1X_SYNC_SYNCPT_BASE(sp->id));
-#endif
 }
 
 /*
@@ -39,12 +48,10 @@ static void syncpt_restore_wait_base(struct host1x_syncpt *sp)
  */
 static void syncpt_read_wait_base(struct host1x_syncpt *sp)
 {
-#if HOST1X_HW < 7
 	struct host1x *host = sp->host;
 
 	sp->base_val =
 		host1x_sync_readl(host, HOST1X_SYNC_SYNCPT_BASE(sp->id));
-#endif
 }
 
 /*
@@ -82,55 +89,21 @@ static int syncpt_cpu_incr(struct host1x_syncpt *sp)
 	    host1x_syncpt_idle(sp))
 		return -EINVAL;
 
-	host1x_sync_writel(host, BIT(sp->id % 32),
+	host1x_sync_writel(host, BIT_MASK(sp->id),
 			   HOST1X_SYNC_SYNCPT_CPU_INCR(reg_offset));
 	wmb();
 
 	return 0;
 }
 
-/**
- * syncpt_assign_to_channel() - Assign syncpoint to channel
- * @sp: syncpoint
- * @ch: channel
- *
- * On chips with the syncpoint protection feature (Tegra186+), assign @sp to
- * @ch, preventing other channels from incrementing the syncpoints. If @ch is
- * NULL, unassigns the syncpoint.
- *
- * On older chips, do nothing.
- */
-static void syncpt_assign_to_channel(struct host1x_syncpt *sp,
-				  struct host1x_channel *ch)
+/* remove a wait pointed to by patch_addr */
+static int syncpt_patch_wait(struct host1x_syncpt *sp, void *patch_addr)
 {
-#if HOST1X_HW >= 6
-	struct host1x *host = sp->host;
+	u32 override = host1x_class_host_wait_syncpt(HOST1X_SYNCPT_RESERVED, 0);
 
-	if (!host->hv_regs)
-		return;
+	*((u32 *)patch_addr) = override;
 
-	host1x_sync_writel(host,
-			   HOST1X_SYNC_SYNCPT_CH_APP_CH(ch ? ch->id : 0xff),
-			   HOST1X_SYNC_SYNCPT_CH_APP(sp->id));
-#endif
-}
-
-/**
- * syncpt_enable_protection() - Enable syncpoint protection
- * @host: host1x instance
- *
- * On chips with the syncpoint protection feature (Tegra186+), enable this
- * feature. On older chips, do nothing.
- */
-static void syncpt_enable_protection(struct host1x *host)
-{
-#if HOST1X_HW >= 6
-	if (!host->hv_regs)
-		return;
-
-	host1x_hypervisor_writel(host, HOST1X_HV_SYNCPT_PROT_EN_CH_EN,
-				 HOST1X_HV_SYNCPT_PROT_EN);
-#endif
+	return 0;
 }
 
 static const struct host1x_syncpt_ops host1x_syncpt_ops = {
@@ -139,6 +112,5 @@ static const struct host1x_syncpt_ops host1x_syncpt_ops = {
 	.load_wait_base = syncpt_read_wait_base,
 	.load = syncpt_load,
 	.cpu_incr = syncpt_cpu_incr,
-	.assign_to_channel = syncpt_assign_to_channel,
-	.enable_protection = syncpt_enable_protection,
+	.patch_wait = syncpt_patch_wait,
 };

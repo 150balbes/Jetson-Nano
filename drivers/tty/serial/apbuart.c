@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  *  Driver for GRLIB serial ports (APBUART)
  *
@@ -326,7 +325,7 @@ static int apbuart_verify_port(struct uart_port *port,
 	return ret;
 }
 
-static const struct uart_ops grlib_apbuart_ops = {
+static struct uart_ops grlib_apbuart_ops = {
 	.tx_empty = apbuart_tx_empty,
 	.set_mctrl = apbuart_set_mctrl,
 	.get_mctrl = apbuart_get_mctrl,

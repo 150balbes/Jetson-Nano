@@ -14,7 +14,7 @@
 
 #include <asm/stacktrace.h>
 #include <asm/traps.h>
-#include <linux/uaccess.h>
+#include <asm/uaccess.h>
 
 #if IS_ENABLED(CONFIG_OPROFILE) || IS_ENABLED(CONFIG_PERF_EVENTS)
 
@@ -22,6 +22,14 @@
  * transition from kernel to user space.
  */
 extern int common_exception_return;
+
+/* A struct that maps to the part of the frame containing the a0 and
+ * a1 registers.
+ */
+struct frame_start {
+	unsigned long a0;
+	unsigned long a1;
+};
 
 void xtensa_backtrace_user(struct pt_regs *regs, unsigned int depth,
 			   int (*ufn)(struct stackframe *frame, void *data),
@@ -88,15 +96,25 @@ void xtensa_backtrace_user(struct pt_regs *regs, unsigned int depth,
 	/* Start from the a1 register. */
 	/* a1 = regs->areg[1]; */
 	while (a0 != 0 && depth--) {
-		pc = MAKE_PC_FROM_RA(a0, pc);
+		struct frame_start frame_start;
+		/* Get the location for a1, a0 for the
+		 * previous frame from the current a1.
+		 */
+		unsigned long *psp = (unsigned long *)a1;
+
+		psp -= 4;
 
 		/* Check if the region is OK to access. */
-		if (!access_ok(&SPILL_SLOT(a1, 0), 8))
+		if (!access_ok(VERIFY_READ, psp, sizeof(frame_start)))
 			return;
 		/* Copy a1, a0 from user space stack frame. */
-		if (__get_user(a0, &SPILL_SLOT(a1, 0)) ||
-		    __get_user(a1, &SPILL_SLOT(a1, 1)))
+		if (__copy_from_user_inatomic(&frame_start, psp,
+					      sizeof(frame_start)))
 			return;
+
+		pc = MAKE_PC_FROM_RA(a0, pc);
+		a0 = frame_start.a0;
+		a1 = frame_start.a1;
 
 		frame.pc = pc;
 		frame.sp = a1;
@@ -129,6 +147,7 @@ void xtensa_backtrace_kernel(struct pt_regs *regs, unsigned int depth,
 	 */
 	while (a1 > sp_start && a1 < sp_end && depth--) {
 		struct stackframe frame;
+		unsigned long *psp = (unsigned long *)a1;
 
 		frame.pc = pc;
 		frame.sp = a1;
@@ -152,8 +171,8 @@ void xtensa_backtrace_kernel(struct pt_regs *regs, unsigned int depth,
 		sp_start = a1;
 
 		pc = MAKE_PC_FROM_RA(a0, pc);
-		a0 = SPILL_SLOT(a1, 0);
-		a1 = SPILL_SLOT(a1, 1);
+		a0 = *(psp - 4);
+		a1 = *(psp - 3);
 	}
 }
 EXPORT_SYMBOL(xtensa_backtrace_kernel);
@@ -177,8 +196,8 @@ void walk_stackframe(unsigned long *sp,
 
 		sp = (unsigned long *)a1;
 
-		a0 = SPILL_SLOT(a1, 0);
-		a1 = SPILL_SLOT(a1, 1);
+		a0 = *(sp - 4);
+		a1 = *(sp - 3);
 
 		if (a1 <= (unsigned long)sp)
 			break;
@@ -253,14 +272,10 @@ static int return_address_cb(struct stackframe *frame, void *data)
 	return 1;
 }
 
-/*
- * level == 0 is for the return address from the caller of this function,
- * not from this function itself.
- */
 unsigned long return_address(unsigned level)
 {
 	struct return_addr_data r = {
-		.skip = level,
+		.skip = level + 1,
 	};
 	walk_stackframe(stack_pointer(NULL), return_address_cb, &r);
 	return r.addr;

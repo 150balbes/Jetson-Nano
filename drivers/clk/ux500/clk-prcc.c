@@ -1,9 +1,10 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * PRCC clock implementation for ux500 platform.
  *
  * Copyright (C) 2012 ST-Ericsson SA
  * Author: Ulf Hansson <ulf.hansson@linaro.org>
+ *
+ * License terms: GNU General Public License (GPL) version 2
  */
 
 #include <linux/clk-provider.h>
@@ -78,13 +79,13 @@ static int clk_prcc_is_enabled(struct clk_hw *hw)
 	return clk->is_enabled;
 }
 
-static const struct clk_ops clk_prcc_pclk_ops = {
+static struct clk_ops clk_prcc_pclk_ops = {
 	.enable = clk_prcc_pclk_enable,
 	.disable = clk_prcc_pclk_disable,
 	.is_enabled = clk_prcc_is_enabled,
 };
 
-static const struct clk_ops clk_prcc_kclk_ops = {
+static struct clk_ops clk_prcc_kclk_ops = {
 	.enable = clk_prcc_kclk_enable,
 	.disable = clk_prcc_kclk_disable,
 	.is_enabled = clk_prcc_is_enabled,
@@ -95,7 +96,7 @@ static struct clk *clk_reg_prcc(const char *name,
 				resource_size_t phy_base,
 				u32 cg_sel,
 				unsigned long flags,
-				const struct clk_ops *clk_prcc_ops)
+				struct clk_ops *clk_prcc_ops)
 {
 	struct clk_prcc *clk;
 	struct clk_init_data clk_prcc_init;
@@ -106,9 +107,11 @@ static struct clk *clk_reg_prcc(const char *name,
 		return ERR_PTR(-EINVAL);
 	}
 
-	clk = kzalloc(sizeof(*clk), GFP_KERNEL);
-	if (!clk)
+	clk = kzalloc(sizeof(struct clk_prcc), GFP_KERNEL);
+	if (!clk) {
+		pr_err("clk_prcc: %s could not allocate clk\n", __func__);
 		return ERR_PTR(-ENOMEM);
+	}
 
 	clk->base = ioremap(phy_base, SZ_4K);
 	if (!clk->base)

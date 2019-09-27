@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /* Renesas Ethernet AVB device driver
  *
  * Copyright (C) 2014-2015 Renesas Electronics Corporation
@@ -6,6 +5,10 @@
  * Copyright (C) 2015-2016 Cogent Embedded, Inc. <source@cogentembedded.com>
  *
  * Based on the SuperH Ethernet driver
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms and conditions of the GNU General Public License version 2,
+ * as published by the Free Software Foundation.
  */
 
 #ifndef __RAVB_H__
@@ -73,7 +76,6 @@ enum ravb_reg {
 	CDAR20	= 0x0060,
 	CDAR21	= 0x0064,
 	ESR	= 0x0088,
-	APSR	= 0x008C,	/* R-Car Gen3 only */
 	RCR	= 0x0090,
 	RQC0	= 0x0094,
 	RQC1	= 0x0098,
@@ -244,15 +246,6 @@ enum ESR_BIT {
 	ESR_EQN		= 0x0000001F,
 	ESR_ET		= 0x00000F00,
 	ESR_EIL		= 0x00001000,
-};
-
-/* APSR */
-enum APSR_BIT {
-	APSR_MEMS		= 0x00000002,
-	APSR_CMSW		= 0x00000010,
-	APSR_DM			= 0x00006000,	/* Undocumented? */
-	APSR_DM_RDM		= 0x00002000,
-	APSR_DM_TDM		= 0x00004000,
 };
 
 /* RCR */
@@ -959,10 +952,7 @@ enum RAVB_QUEUE {
 #define RX_QUEUE_OFFSET	4
 #define NUM_RX_QUEUE	2
 #define NUM_TX_QUEUE	2
-
-/* TX descriptors per packet */
-#define NUM_TX_DESC_GEN2	2
-#define NUM_TX_DESC_GEN3	1
+#define NUM_TX_DESC	2	/* TX descriptors per packet */
 
 struct ravb_tstamp_skb {
 	struct list_head list;
@@ -996,7 +986,6 @@ struct ravb_private {
 	struct net_device *ndev;
 	struct platform_device *pdev;
 	void __iomem *addr;
-	struct clk *clk;
 	struct mdiobb_ctrl mdiobb;
 	u32 num_rx_ring[NUM_RX_QUEUE];
 	u32 num_tx_ring[NUM_TX_QUEUE];
@@ -1023,7 +1012,6 @@ struct ravb_private {
 	u32 dirty_rx[NUM_RX_QUEUE];	/* Producer ring indices */
 	u32 cur_tx[NUM_TX_QUEUE];
 	u32 dirty_tx[NUM_TX_QUEUE];
-	u32 rx_buf_sz;			/* Based on MTU+slack. */
 	struct napi_struct napi[NUM_RX_QUEUE];
 	struct work_struct work;
 	/* MII transceiver section. */
@@ -1032,6 +1020,7 @@ struct ravb_private {
 	phy_interface_t phy_interface;
 	int msg_enable;
 	int speed;
+	int duplex;
 	int emac_irq;
 	enum ravb_chip_id chip_id;
 	int rx_irqs[NUM_RX_QUEUE];
@@ -1039,8 +1028,6 @@ struct ravb_private {
 
 	unsigned no_avb_link:1;
 	unsigned avb_link_active_low:1;
-	unsigned wol_enabled:1;
-	int num_tx_desc;	/* TX descriptors per packet */
 };
 
 static inline u32 ravb_read(struct net_device *ndev, enum ravb_reg reg)

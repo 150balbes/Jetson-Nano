@@ -1,8 +1,8 @@
 /*
    3w-9xxx.h -- 3ware 9000 Storage Controller device driver for Linux.
 
-   Written By: Adam Radford <aradford@gmail.com>
-   Modifications By: Tom Couch
+   Written By: Adam Radford <linuxraid@lsi.com>
+   Modifications By: Tom Couch <linuxraid@lsi.com>
 
    Copyright (C) 2004-2009 Applied Micro Circuits Corporation.
    Copyright (C) 2010 LSI Corporation.
@@ -41,7 +41,10 @@
    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 
    Bugs/Comments/Suggestions should be mailed to:
-   aradford@gmail.com
+   linuxraid@lsi.com
+
+   For more information, goto:
+   http://www.lsi.com
 */
 
 #ifndef _3W_9XXX_H
@@ -666,7 +669,7 @@ typedef struct TAG_TW_Device_Extension {
 	unsigned char		event_queue_wrapped;
 	unsigned int            error_sequence_id;
 	int                     ioctl_sem_lock;
-	ktime_t                 ioctl_time;
+	u32                     ioctl_msec;
 	int			chrdev_request_id;
 	wait_queue_head_t	ioctl_wqueue;
 	struct mutex		ioctl_lock;

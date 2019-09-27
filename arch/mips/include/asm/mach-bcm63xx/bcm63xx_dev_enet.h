@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef BCM63XX_DEV_ENET_H_
 #define BCM63XX_DEV_ENET_H_
 
@@ -55,10 +54,6 @@ struct bcm63xx_enet_platform_data {
 
 	/* DMA descriptor shift */
 	unsigned int dma_desc_shift;
-
-	/* dma channel ids */
-	int rx_chan;
-	int tx_chan;
 };
 
 /*

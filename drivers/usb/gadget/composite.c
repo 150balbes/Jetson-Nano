@@ -1,8 +1,13 @@
-// SPDX-License-Identifier: GPL-2.0+
 /*
  * composite.c - infrastructure for Composite USB Gadgets
  *
  * Copyright (C) 2006-2008 David Brownell
+ * Copyright (c) 2016-2017, NVIDIA CORPORATION. All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
  */
 
 /* #define VERBOSE_DEBUG */
@@ -165,20 +170,20 @@ int config_ep_by_speed(struct usb_gadget *g,
 			want_comp_desc = 1;
 			break;
 		}
-		/* fall through */
+		/* else: Fall trough */
 	case USB_SPEED_SUPER:
 		if (gadget_is_superspeed(g)) {
 			speed_desc = f->ss_descriptors;
 			want_comp_desc = 1;
 			break;
 		}
-		/* fall through */
+		/* else: Fall trough */
 	case USB_SPEED_HIGH:
 		if (gadget_is_dualspeed(g)) {
 			speed_desc = f->hs_descriptors;
 			break;
 		}
-		/* fall through */
+		/* else: fall through */
 	default:
 		speed_desc = f->fs_descriptors;
 	}
@@ -192,7 +197,7 @@ int config_ep_by_speed(struct usb_gadget *g,
 
 ep_found:
 	/* commit results */
-	_ep->maxpacket = usb_endpoint_maxp(chosen_desc);
+	_ep->maxpacket = usb_endpoint_maxp(chosen_desc) & 0x7ff;
 	_ep->desc = chosen_desc;
 	_ep->comp_desc = NULL;
 	_ep->maxburst = 0;
@@ -200,7 +205,7 @@ ep_found:
 
 	if (g->speed == USB_SPEED_HIGH && (usb_endpoint_xfer_isoc(_ep->desc) ||
 				usb_endpoint_xfer_int(_ep->desc)))
-		_ep->mult = usb_endpoint_maxp_mult(_ep->desc);
+		_ep->mult = ((usb_endpoint_maxp(_ep->desc) & 0x1800) >> 11) + 1;
 
 	if (!want_comp_desc)
 		return 0;
@@ -219,7 +224,6 @@ ep_found:
 		case USB_ENDPOINT_XFER_ISOC:
 			/* mult: bits 1:0 of bmAttributes */
 			_ep->mult = (comp_desc->bmAttributes & 0x3) + 1;
-			/* fall through */
 		case USB_ENDPOINT_XFER_BULK:
 		case USB_ENDPOINT_XFER_INT:
 			_ep->maxburst = comp_desc->bMaxBurst + 1;
@@ -315,9 +319,6 @@ void usb_remove_function(struct usb_configuration *c, struct usb_function *f)
 	list_del(&f->list);
 	if (f->unbind)
 		f->unbind(c, f);
-
-	if (f->bind_deactivated)
-		usb_function_activate(f);
 }
 EXPORT_SYMBOL_GPL(usb_remove_function);
 
@@ -430,6 +431,7 @@ static u8 encode_bMaxPower(enum usb_device_speed speed,
 		struct usb_configuration *c)
 {
 	unsigned val;
+	u8 bMaxPower;
 
 	if (c->MaxPower)
 		val = c->MaxPower;
@@ -439,10 +441,15 @@ static u8 encode_bMaxPower(enum usb_device_speed speed,
 		return 0;
 	switch (speed) {
 	case USB_SPEED_SUPER:
-		return DIV_ROUND_UP(val, 8);
+		/* USB 3.0 max power <= 900 mA: 0x70 * 8 mA = 896 mA */
+		bMaxPower = min(DIV_ROUND_UP(val, 8), (u32)0x70);
+		break;
 	default:
-		return DIV_ROUND_UP(val, 2);
+		/* USB 2.0 max power <= 500 mA: 0xfa * 2 mA = 500 mA */
+		bMaxPower = min(DIV_ROUND_UP(val, 2), (u32)0xfa);
 	}
+
+	return bMaxPower;
 }
 
 static int config_buf(struct usb_configuration *config,
@@ -610,6 +617,7 @@ static int count_configs(struct usb_composite_dev *cdev, unsigned type)
 static int bos_desc(struct usb_composite_dev *cdev)
 {
 	struct usb_ext_cap_descriptor	*usb_ext;
+	struct usb_ss_cap_descriptor	*ss_cap;
 	struct usb_dcd_config_params	dcd_config_params;
 	struct usb_bos_descriptor	*bos = cdev->req->buf;
 
@@ -635,35 +643,29 @@ static int bos_desc(struct usb_composite_dev *cdev)
 	 * The Superspeed USB Capability descriptor shall be implemented by all
 	 * SuperSpeed devices.
 	 */
-	if (gadget_is_superspeed(cdev->gadget)) {
-		struct usb_ss_cap_descriptor *ss_cap;
+	ss_cap = cdev->req->buf + le16_to_cpu(bos->wTotalLength);
+	bos->bNumDeviceCaps++;
+	le16_add_cpu(&bos->wTotalLength, USB_DT_USB_SS_CAP_SIZE);
+	ss_cap->bLength = USB_DT_USB_SS_CAP_SIZE;
+	ss_cap->bDescriptorType = USB_DT_DEVICE_CAPABILITY;
+	ss_cap->bDevCapabilityType = USB_SS_CAP_TYPE;
+	ss_cap->bmAttributes = 0; /* LTM is not supported yet */
+	ss_cap->wSpeedSupported = cpu_to_le16(USB_LOW_SPEED_OPERATION |
+				USB_FULL_SPEED_OPERATION |
+				USB_HIGH_SPEED_OPERATION |
+				USB_5GBPS_OPERATION);
+	ss_cap->bFunctionalitySupport = USB_LOW_SPEED_OPERATION;
 
-		ss_cap = cdev->req->buf + le16_to_cpu(bos->wTotalLength);
-		bos->bNumDeviceCaps++;
-		le16_add_cpu(&bos->wTotalLength, USB_DT_USB_SS_CAP_SIZE);
-		ss_cap->bLength = USB_DT_USB_SS_CAP_SIZE;
-		ss_cap->bDescriptorType = USB_DT_DEVICE_CAPABILITY;
-		ss_cap->bDevCapabilityType = USB_SS_CAP_TYPE;
-		ss_cap->bmAttributes = 0; /* LTM is not supported yet */
-		ss_cap->wSpeedSupported = cpu_to_le16(USB_LOW_SPEED_OPERATION |
-						      USB_FULL_SPEED_OPERATION |
-						      USB_HIGH_SPEED_OPERATION |
-						      USB_5GBPS_OPERATION);
-		ss_cap->bFunctionalitySupport = USB_LOW_SPEED_OPERATION;
-
-		/* Get Controller configuration */
-		if (cdev->gadget->ops->get_config_params) {
-			cdev->gadget->ops->get_config_params(cdev->gadget,
-				&dcd_config_params);
-		} else {
-			dcd_config_params.bU1devExitLat =
-				USB_DEFAULT_U1_DEV_EXIT_LAT;
-			dcd_config_params.bU2DevExitLat =
-				cpu_to_le16(USB_DEFAULT_U2_DEV_EXIT_LAT);
-		}
-		ss_cap->bU1devExitLat = dcd_config_params.bU1devExitLat;
-		ss_cap->bU2DevExitLat = dcd_config_params.bU2DevExitLat;
+	/* Get Controller configuration */
+	if (cdev->gadget->ops->get_config_params)
+		cdev->gadget->ops->get_config_params(&dcd_config_params);
+	else {
+		dcd_config_params.bU1devExitLat = USB_DEFAULT_U1_DEV_EXIT_LAT;
+		dcd_config_params.bU2DevExitLat =
+			cpu_to_le16(USB_DEFAULT_U2_DEV_EXIT_LAT);
 	}
+	ss_cap->bU1devExitLat = dcd_config_params.bU1devExitLat;
+	ss_cap->bU2DevExitLat = dcd_config_params.bU2DevExitLat;
 
 	/* The SuperSpeedPlus USB Device Capability descriptor */
 	if (gadget_is_superspeed_plus(cdev->gadget)) {
@@ -840,6 +842,15 @@ static int set_config(struct usb_composite_dev *cdev,
 
 	/* when we return, be sure our power usage is valid */
 	power = c->MaxPower ? c->MaxPower : CONFIG_USB_GADGET_VBUS_DRAW;
+	if (gadget->speed <= USB_SPEED_HIGH && power > USB_HS_VBUS_MAX_DRAW)
+		power = USB_HS_VBUS_MAX_DRAW;
+
+	/* set as self-powered if peripheral draws less than 100 mA */
+	if (power <= USB_SELF_POWER_VBUS_MAX_DRAW)
+		usb_gadget_set_selfpowered(gadget);
+	else
+		usb_gadget_clear_selfpowered(gadget);
+
 done:
 	usb_gadget_vbus_draw(gadget, power);
 	if (result >= 0 && cdev->delayed_status)
@@ -964,8 +975,12 @@ static void remove_config(struct usb_composite_dev *cdev,
 
 		f = list_first_entry(&config->functions,
 				struct usb_function, list);
-
-		usb_remove_function(config, f);
+		list_del(&f->list);
+		if (f->unbind) {
+			DBG(cdev, "unbind function '%s'/%p\n", f->name, f);
+			f->unbind(config, f);
+			/* may free memory for "f" */
+		}
 	}
 	list_del(&config->list);
 	if (config->unbind) {
@@ -1427,7 +1442,6 @@ static int fill_ext_compat(struct usb_configuration *c, u8 *buf)
 	int i, count;
 
 	count = 16;
-	buf += 16;
 	for (i = 0; i < c->next_interface_id; ++i) {
 		struct usb_function *f;
 		int j;
@@ -1503,7 +1517,6 @@ static int fill_ext_prop(struct usb_configuration *c, int interface, u8 *buf)
 
 	f = c->interface[interface];
 	count = 10; /* header length */
-	buf += 10;
 	for (j = 0; j < f->os_desc_n; ++j) {
 		if (interface != f->os_desc_table[j].if_id)
 			continue;
@@ -1607,10 +1620,7 @@ composite_setup(struct usb_gadget *gadget, const struct usb_ctrlrequest *ctrl)
 					cdev->desc.bcdUSB = cpu_to_le16(0x0210);
 				}
 			} else {
-				if (gadget->lpm_capable)
-					cdev->desc.bcdUSB = cpu_to_le16(0x0201);
-				else
-					cdev->desc.bcdUSB = cpu_to_le16(0x0200);
+				cdev->desc.bcdUSB = cpu_to_le16(0x0200);
 			}
 
 			value = min(w_length, (u16) sizeof cdev->desc);
@@ -1641,8 +1651,7 @@ composite_setup(struct usb_gadget *gadget, const struct usb_ctrlrequest *ctrl)
 				value = min(w_length, (u16) value);
 			break;
 		case USB_DT_BOS:
-			if (gadget_is_superspeed(gadget) ||
-			    gadget->lpm_capable) {
+			if (gadget_is_superspeed(gadget)) {
 				value = bos_desc(cdev);
 				value = min(w_length, (u16) value);
 			}
@@ -1819,6 +1828,7 @@ unknown:
 		if (cdev->use_os_string && cdev->os_desc_config &&
 		    (ctrl->bRequestType & USB_TYPE_VENDOR) &&
 		    ctrl->bRequest == cdev->b_vendor_code) {
+			struct usb_request		*req;
 			struct usb_configuration	*os_desc_cfg;
 			u8				*buf;
 			int				interface;
@@ -1835,42 +1845,73 @@ unknown:
 			switch (ctrl->bRequestType & USB_RECIP_MASK) {
 			case USB_RECIP_DEVICE:
 				if (w_index != 0x4 || (w_value >> 8))
-					break;
+					goto done;
 				buf[6] = w_index;
-				/* Number of ext compat interfaces */
-				count = count_ext_compat(os_desc_cfg);
-				buf[8] = count;
-				count *= 24; /* 24 B/ext compat desc */
-				count += 16; /* header */
-				put_unaligned_le32(count, buf);
-				value = w_length;
-				if (w_length > 0x10) {
+				if (w_length == 0x10) {
+					/* Number of ext compat interfaces */
+					count = count_ext_compat(os_desc_cfg);
+					buf[8] = count;
+					count *= 24; /* 24 B/ext compat desc */
+					count += 16; /* header */
+					put_unaligned_le32(count, buf);
+					value = w_length;
+				} else {
+					/* "extended compatibility ID"s */
+					count = count_ext_compat(os_desc_cfg);
+					buf[8] = count;
+					count *= 24; /* 24 B/ext compat desc */
+					count += 16; /* header */
+					put_unaligned_le32(count, buf);
+					buf += 16;
 					value = fill_ext_compat(os_desc_cfg, buf);
 					value = min_t(u16, w_length, value);
 				}
 				break;
 			case USB_RECIP_INTERFACE:
 				if (w_index != 0x5 || (w_value >> 8))
-					break;
+					goto done;
 				interface = w_value & 0xFF;
 				buf[6] = w_index;
-				count = count_ext_prop(os_desc_cfg,
-					interface);
-				put_unaligned_le16(count, buf + 8);
-				count = len_ext_prop(os_desc_cfg,
-					interface);
-				put_unaligned_le32(count, buf);
-				value = w_length;
-				if (w_length > 0x0A) {
+				if (w_length == 0x0A) {
+					count = count_ext_prop(os_desc_cfg,
+						interface);
+					put_unaligned_le16(count, buf + 8);
+					count = len_ext_prop(os_desc_cfg,
+						interface);
+					put_unaligned_le32(count, buf);
+
+					value = w_length;
+				} else {
+					count = count_ext_prop(os_desc_cfg,
+						interface);
+					put_unaligned_le16(count, buf + 8);
+					count = len_ext_prop(os_desc_cfg,
+						interface);
+					put_unaligned_le32(count, buf);
+					buf += 10;
 					value = fill_ext_prop(os_desc_cfg,
 							      interface, buf);
-					if (value >= 0)
-						value = min_t(u16, w_length, value);
+					if (value < 0)
+						return value;
+					value = min_t(u16, w_length, value);
 				}
 				break;
 			}
 
-			goto check_value;
+			if (value >= 0) {
+				req->length = value;
+				req->context = cdev;
+				req->zero = value < w_length;
+				value = composite_ep0_queue(cdev, req,
+							    GFP_ATOMIC);
+				if (value < 0) {
+					DBG(cdev, "ep_queue --> %d\n", value);
+					req->status = 0;
+					composite_setup_complete(gadget->ep0,
+								 req);
+				}
+			}
+			return value;
 		}
 
 		VDBG(cdev,
@@ -1944,7 +1985,6 @@ try_fun_setup:
 		goto done;
 	}
 
-check_value:
 	/* respond with data transfer before status phase? */
 	if (value >= 0 && value != USB_GADGET_DELAYED_STATUS) {
 		req->length = value;
@@ -1972,11 +2012,16 @@ void composite_disconnect(struct usb_gadget *gadget)
 	struct usb_composite_dev	*cdev = get_gadget_data(gadget);
 	unsigned long			flags;
 
+	if (cdev == NULL) {
+		WARN(1, "%s: Calling disconnect on a Gadget that is \
+			 not connected\n", __func__);
+		return;
+	}
+
 	/* REVISIT:  should we have config and device level
 	 * disconnect callbacks?
 	 */
 	spin_lock_irqsave(&cdev->lock, flags);
-	cdev->suspended = 0;
 	if (cdev->config)
 		reset_config(cdev);
 	if (cdev->driver->disconnect)
@@ -2145,7 +2190,6 @@ end:
 void composite_dev_cleanup(struct usb_composite_dev *cdev)
 {
 	struct usb_gadget_string_container *uc, *tmp;
-	struct usb_ep			   *ep, *tmp_ep;
 
 	list_for_each_entry_safe(uc, tmp, &cdev->gstrings, list) {
 		list_del(&uc->list);
@@ -2157,6 +2201,7 @@ void composite_dev_cleanup(struct usb_composite_dev *cdev)
 
 		kfree(cdev->os_desc_req->buf);
 		usb_ep_free_request(cdev->gadget->ep0, cdev->os_desc_req);
+		cdev->os_desc_req = NULL;
 	}
 	if (cdev->req) {
 		if (cdev->setup_pending)
@@ -2164,24 +2209,10 @@ void composite_dev_cleanup(struct usb_composite_dev *cdev)
 
 		kfree(cdev->req->buf);
 		usb_ep_free_request(cdev->gadget->ep0, cdev->req);
+		cdev->req = NULL;
 	}
 	cdev->next_string_id = 0;
 	device_remove_file(&cdev->gadget->dev, &dev_attr_suspended);
-
-	/*
-	 * Some UDC backends have a dynamic EP allocation scheme.
-	 *
-	 * In that case, the dispose() callback is used to notify the
-	 * backend that the EPs are no longer in use.
-	 *
-	 * Note: The UDC backend can remove the EP from the ep_list as
-	 *	 a result, so we need to use the _safe list iterator.
-	 */
-	list_for_each_entry_safe(ep, tmp_ep,
-				 &cdev->gadget->ep_list, ep_list) {
-		if (ep->ops->dispose)
-			ep->ops->dispose(ep);
-	}
 }
 
 static int composite_bind(struct usb_gadget *gadget,
@@ -2277,6 +2308,9 @@ void composite_resume(struct usb_gadget *gadget)
 		}
 
 		maxpower = cdev->config->MaxPower;
+		if (gadget->speed <= USB_SPEED_HIGH &&
+			maxpower > USB_HS_VBUS_MAX_DRAW)
+			maxpower = USB_HS_VBUS_MAX_DRAW;
 
 		usb_gadget_vbus_draw(gadget, maxpower ?
 			maxpower : CONFIG_USB_GADGET_VBUS_DRAW);
@@ -2393,8 +2427,18 @@ EXPORT_SYMBOL_GPL(usb_composite_setup_continue);
 
 static char *composite_default_mfr(struct usb_gadget *gadget)
 {
-	return kasprintf(GFP_KERNEL, "%s %s with %s", init_utsname()->sysname,
-			 init_utsname()->release, gadget->name);
+	char *mfr;
+	int len;
+
+	len = snprintf(NULL, 0, "%s %s with %s", init_utsname()->sysname,
+			init_utsname()->release, gadget->name);
+	len++;
+	mfr = kmalloc(len, GFP_KERNEL);
+	if (!mfr)
+		return NULL;
+	snprintf(mfr, len, "%s %s with %s", init_utsname()->sysname,
+			init_utsname()->release, gadget->name);
+	return mfr;
 }
 
 void usb_composite_overwrite_options(struct usb_composite_dev *cdev,

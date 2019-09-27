@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _LINUX_FAULT_INJECT_H
 #define _LINUX_FAULT_INJECT_H
 
@@ -11,7 +10,7 @@
 
 /*
  * For explanation of the elements of this struct, see
- * Documentation/fault-injection/fault-injection.rst
+ * Documentation/fault-injection/fault-injection.txt
  */
 struct fault_attr {
 	unsigned long probability;
@@ -62,13 +61,10 @@ static inline struct dentry *fault_create_debugfs_attr(const char *name,
 
 #endif /* CONFIG_FAULT_INJECTION */
 
-struct kmem_cache;
-
-int should_failslab(struct kmem_cache *s, gfp_t gfpflags);
 #ifdef CONFIG_FAILSLAB
-extern bool __should_failslab(struct kmem_cache *s, gfp_t gfpflags);
+extern bool should_failslab(struct kmem_cache *s, gfp_t gfpflags);
 #else
-static inline bool __should_failslab(struct kmem_cache *s, gfp_t gfpflags)
+static inline bool should_failslab(struct kmem_cache *s, gfp_t gfpflags)
 {
 	return false;
 }

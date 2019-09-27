@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * cbe_regs.c
  *
@@ -54,7 +53,7 @@ static struct cbe_regs_map *cbe_find_map(struct device_node *np)
 	int i;
 	struct device_node *tmp_np;
 
-	if (!of_node_is_type(np, "spe")) {
+	if (strcasecmp(np->type, "spe")) {
 		for (i = 0; i < cbe_regs_map_count; i++)
 			if (cbe_regs_maps[i].cpu_node == np ||
 			    cbe_regs_maps[i].be_node == np)
@@ -71,8 +70,8 @@ static struct cbe_regs_map *cbe_find_map(struct device_node *np)
 		tmp_np = tmp_np->parent;
 		/* on a correct devicetree we wont get up to root */
 		BUG_ON(!tmp_np);
-	} while (!of_node_is_type(tmp_np, "cpu") ||
-		 !of_node_is_type(tmp_np, "be"));
+	} while (strcasecmp(tmp_np->type, "cpu") &&
+		 strcasecmp(tmp_np->type, "be"));
 
 	np->data = cbe_find_map(tmp_np);
 

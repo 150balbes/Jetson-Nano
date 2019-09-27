@@ -21,6 +21,8 @@
 #include <asm/octeon/cvmx-pci-defs.h>
 #include <asm/octeon/pci-octeon.h>
 
+#include <dma-coherence.h>
+
 #define USE_OCTEON_INTERNAL_ARBITER
 
 /*
@@ -57,7 +59,8 @@ union octeon_pci_address {
 	} s;
 };
 
-int (*octeon_pcibios_map_irq)(const struct pci_dev *dev, u8 slot, u8 pin);
+int __initconst (*octeon_pcibios_map_irq)(const struct pci_dev *dev,
+					 u8 slot, u8 pin);
 enum octeon_dma_bar_type octeon_dma_bar_type = OCTEON_DMA_BAR_TYPE_INVALID;
 
 /**
@@ -71,7 +74,7 @@ enum octeon_dma_bar_type octeon_dma_bar_type = OCTEON_DMA_BAR_TYPE_INVALID;
  *		 as it goes through each bridge.
  * Returns Interrupt number for the device
  */
-int pcibios_map_irq(const struct pci_dev *dev, u8 slot, u8 pin)
+int __init pcibios_map_irq(const struct pci_dev *dev, u8 slot, u8 pin)
 {
 	if (octeon_pcibios_map_irq)
 		return octeon_pcibios_map_irq(dev, slot, pin);
@@ -163,6 +166,8 @@ int pcibios_plat_dev_init(struct pci_dev *dev)
 		pci_read_config_dword(dev, pos + PCI_ERR_ROOT_STATUS, &dconfig);
 		pci_write_config_dword(dev, pos + PCI_ERR_ROOT_STATUS, dconfig);
 	}
+
+	dev->dev.archdata.dma_ops = octeon_pci_dma_map_ops;
 
 	return 0;
 }
@@ -568,11 +573,6 @@ static int __init octeon_pci_setup(void)
 	if (octeon_has_feature(OCTEON_FEATURE_PCIE))
 		return 0;
 
-	if (!octeon_is_pci_host()) {
-		pr_notice("Not in host mode, PCI Controller not initialized\n");
-		return 0;
-	}
-
 	/* Point pcibios_map_irq() to the PCI version of it */
 	octeon_pcibios_map_irq = octeon_pci_pcibios_map_irq;
 
@@ -583,6 +583,11 @@ static int __init octeon_pci_setup(void)
 		octeon_dma_bar_type = OCTEON_DMA_BAR_TYPE_SMALL;
 	else
 		octeon_dma_bar_type = OCTEON_DMA_BAR_TYPE_BIG;
+
+	if (!octeon_is_pci_host()) {
+		pr_notice("Not in host mode, PCI Controller not initialized\n");
+		return 0;
+	}
 
 	/* PCI I/O and PCI MEM values */
 	set_io_port_base(OCTEON_PCI_IOSPACE_BASE);

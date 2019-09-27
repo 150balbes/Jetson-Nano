@@ -1,9 +1,18 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  *
  * Author	Karsten Keil <kkeil@novell.com>
  *
  * Copyright 2008  by Karsten Keil <kkeil@novell.com>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
  */
 #include "layer2.h"
 #include <linux/random.h>
@@ -303,7 +312,7 @@ teiup_create(struct manager *mgr, u_int prim, int len, void *arg)
 	hh->prim = prim;
 	hh->id = (mgr->ch.nr << 16) | mgr->ch.addr;
 	if (len)
-		skb_put_data(skb, arg, len);
+		memcpy(skb_put(skb, len), arg, len);
 	err = mgr->up->send(mgr->up, skb);
 	if (err) {
 		printk(KERN_WARNING "%s: err=%d\n", __func__, err);
@@ -1171,7 +1180,8 @@ static int
 ctrl_teimanager(struct manager *mgr, void *arg)
 {
 	/* currently we only have one option */
-	unsigned int *val = (unsigned int *)arg;
+	int	*val = (int *)arg;
+	int	ret = 0;
 
 	switch (val[0]) {
 	case IMCLEAR_L2:
@@ -1187,9 +1197,9 @@ ctrl_teimanager(struct manager *mgr, void *arg)
 			test_and_clear_bit(OPTION_L1_HOLD, &mgr->options);
 		break;
 	default:
-		return -EINVAL;
+		ret = -EINVAL;
 	}
-	return 0;
+	return ret;
 }
 
 /* This function does create a L2 for fixed TEI in NT Mode */
@@ -1377,37 +1387,23 @@ create_teimanager(struct mISDNdevice *dev)
 
 int TEIInit(u_int *deb)
 {
-	int res;
 	debug = deb;
 	teifsmu.state_count = TEI_STATE_COUNT;
 	teifsmu.event_count = TEI_EVENT_COUNT;
 	teifsmu.strEvent = strTeiEvent;
 	teifsmu.strState = strTeiState;
-	res = mISDN_FsmNew(&teifsmu, TeiFnListUser, ARRAY_SIZE(TeiFnListUser));
-	if (res)
-		goto error;
+	mISDN_FsmNew(&teifsmu, TeiFnListUser, ARRAY_SIZE(TeiFnListUser));
 	teifsmn.state_count = TEI_STATE_COUNT;
 	teifsmn.event_count = TEI_EVENT_COUNT;
 	teifsmn.strEvent = strTeiEvent;
 	teifsmn.strState = strTeiState;
-	res = mISDN_FsmNew(&teifsmn, TeiFnListNet, ARRAY_SIZE(TeiFnListNet));
-	if (res)
-		goto error_smn;
+	mISDN_FsmNew(&teifsmn, TeiFnListNet, ARRAY_SIZE(TeiFnListNet));
 	deactfsm.state_count =  DEACT_STATE_COUNT;
 	deactfsm.event_count = DEACT_EVENT_COUNT;
 	deactfsm.strEvent = strDeactEvent;
 	deactfsm.strState = strDeactState;
-	res = mISDN_FsmNew(&deactfsm, DeactFnList, ARRAY_SIZE(DeactFnList));
-	if (res)
-		goto error_deact;
+	mISDN_FsmNew(&deactfsm, DeactFnList, ARRAY_SIZE(DeactFnList));
 	return 0;
-
-error_deact:
-	mISDN_FsmFree(&teifsmn);
-error_smn:
-	mISDN_FsmFree(&teifsmu);
-error:
-	return res;
 }
 
 void TEIFree(void)

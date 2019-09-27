@@ -102,7 +102,10 @@ static int airo_cs_config_check(struct pcmcia_device *p_dev, void *priv_data)
 
 static int airo_config(struct pcmcia_device *link)
 {
+	struct local_info *dev;
 	int ret;
+
+	dev = link->priv;
 
 	dev_dbg(&link->dev, "airo_config\n");
 

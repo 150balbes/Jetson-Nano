@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _ASM_X86_XEN_PAGE_H
 #define _ASM_X86_XEN_PAGE_H
 
@@ -7,9 +6,8 @@
 #include <linux/spinlock.h>
 #include <linux/pfn.h>
 #include <linux/mm.h>
-#include <linux/device.h>
 
-#include <asm/extable.h>
+#include <asm/uaccess.h>
 #include <asm/page.h>
 #include <asm/pgtable.h>
 
@@ -26,15 +24,6 @@ typedef struct xmaddr {
 typedef struct xpaddr {
 	phys_addr_t paddr;
 } xpaddr_t;
-
-#ifdef CONFIG_X86_64
-#define XEN_PHYSICAL_MASK	__sme_clr((1UL << 52) - 1)
-#else
-#define XEN_PHYSICAL_MASK	__PHYSICAL_MASK
-#endif
-
-#define XEN_PTE_MFN_MASK	((pteval_t)(((signed long)PAGE_MASK) & \
-					    XEN_PHYSICAL_MASK))
 
 #define XMADDR(x)	((xmaddr_t) { .maddr = (x) })
 #define XPADDR(x)	((xpaddr_t) { .paddr = (x) })
@@ -62,30 +51,12 @@ extern bool __set_phys_to_machine(unsigned long pfn, unsigned long mfn);
 extern unsigned long __init set_phys_range_identity(unsigned long pfn_s,
 						    unsigned long pfn_e);
 
-#ifdef CONFIG_XEN_PV
 extern int set_foreign_p2m_mapping(struct gnttab_map_grant_ref *map_ops,
 				   struct gnttab_map_grant_ref *kmap_ops,
 				   struct page **pages, unsigned int count);
 extern int clear_foreign_p2m_mapping(struct gnttab_unmap_grant_ref *unmap_ops,
 				     struct gnttab_unmap_grant_ref *kunmap_ops,
 				     struct page **pages, unsigned int count);
-#else
-static inline int
-set_foreign_p2m_mapping(struct gnttab_map_grant_ref *map_ops,
-			struct gnttab_map_grant_ref *kmap_ops,
-			struct page **pages, unsigned int count)
-{
-	return 0;
-}
-
-static inline int
-clear_foreign_p2m_mapping(struct gnttab_unmap_grant_ref *unmap_ops,
-			  struct gnttab_unmap_grant_ref *kunmap_ops,
-			  struct page **pages, unsigned int count)
-{
-	return 0;
-}
-#endif
 
 /*
  * Helper functions to write or read unsigned long values to/from
@@ -93,42 +64,14 @@ clear_foreign_p2m_mapping(struct gnttab_unmap_grant_ref *unmap_ops,
  */
 static inline int xen_safe_write_ulong(unsigned long *addr, unsigned long val)
 {
-	int ret = 0;
-
-	asm volatile("1: mov %[val], %[ptr]\n"
-		     "2:\n"
-		     ".section .fixup, \"ax\"\n"
-		     "3: sub $1, %[ret]\n"
-		     "   jmp 2b\n"
-		     ".previous\n"
-		     _ASM_EXTABLE(1b, 3b)
-		     : [ret] "+r" (ret), [ptr] "=m" (*addr)
-		     : [val] "r" (val));
-
-	return ret;
+	return __put_user(val, (unsigned long __user *)addr);
 }
 
-static inline int xen_safe_read_ulong(const unsigned long *addr,
-				      unsigned long *val)
+static inline int xen_safe_read_ulong(unsigned long *addr, unsigned long *val)
 {
-	int ret = 0;
-	unsigned long rval = ~0ul;
-
-	asm volatile("1: mov %[ptr], %[rval]\n"
-		     "2:\n"
-		     ".section .fixup, \"ax\"\n"
-		     "3: sub $1, %[ret]\n"
-		     "   jmp 2b\n"
-		     ".previous\n"
-		     _ASM_EXTABLE(1b, 3b)
-		     : [ret] "+r" (ret), [rval] "+r" (rval)
-		     : [ptr] "m" (*addr));
-	*val = rval;
-
-	return ret;
+	return __get_user(*val, (unsigned long __user *)addr);
 }
 
-#ifdef CONFIG_XEN_PV
 /*
  * When to use pfn_to_mfn(), __pfn_to_mfn() or get_phys_to_machine():
  * - pfn_to_mfn() returns either INVALID_P2M_ENTRY or the mfn. No indicator
@@ -155,12 +98,6 @@ static inline unsigned long __pfn_to_mfn(unsigned long pfn)
 
 	return mfn;
 }
-#else
-static inline unsigned long __pfn_to_mfn(unsigned long pfn)
-{
-	return pfn;
-}
-#endif
 
 static inline unsigned long pfn_to_mfn(unsigned long pfn)
 {
@@ -194,6 +131,9 @@ static inline unsigned long mfn_to_pfn_no_overrides(unsigned long mfn)
 {
 	unsigned long pfn;
 	int ret;
+
+	if (xen_feature(XENFEAT_auto_translated_physmap))
+		return mfn;
 
 	if (unlikely(mfn >= machine_to_phys_nr))
 		return ~0;
@@ -314,7 +254,7 @@ static inline unsigned long bfn_to_local_pfn(unsigned long mfn)
 
 static inline unsigned long pte_mfn(pte_t pte)
 {
-	return (pte.pte & XEN_PTE_MFN_MASK) >> PAGE_SHIFT;
+	return (pte.pte & PTE_PFN_MASK) >> PAGE_SHIFT;
 }
 
 static inline pte_t mfn_pte(unsigned long page_nr, pgprot_t pgprot)
@@ -339,17 +279,15 @@ static inline pte_t __pte_ma(pteval_t x)
 
 #define pmd_val_ma(v) ((v).pmd)
 #ifdef __PAGETABLE_PUD_FOLDED
-#define pud_val_ma(v) ((v).p4d.pgd.pgd)
+#define pud_val_ma(v) ((v).pgd.pgd)
 #else
 #define pud_val_ma(v) ((v).pud)
 #endif
 #define __pmd_ma(x)	((pmd_t) { (x) } )
 
-#ifdef __PAGETABLE_P4D_FOLDED
-#define p4d_val_ma(x)	((x).pgd.pgd)
-#else
-#define p4d_val_ma(x)	((x).p4d)
-#endif
+#define pgd_val_ma(x)	((x).pgd)
+
+void xen_set_domain_pte(pte_t *ptep, pte_t pteval, unsigned domid);
 
 xmaddr_t arbitrary_virt_to_machine(void *address);
 unsigned long arbitrary_virt_to_mfn(void *vaddr);

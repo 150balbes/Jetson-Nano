@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /* 
  *    PDC Console support - ie use firmware to dump text via boot console
  *
@@ -14,6 +13,21 @@
  *    Copyright (C) 2001 Thomas Bogendoerfer <tsbogend at parisc-linux.org>
  *    Copyright (C) 2002 Randolph Chung <tausq with parisc-linux.org>
  *    Copyright (C) 2010 Guy Martin <gmsoft at tuxicoman.be>
+ *
+ *
+ *    This program is free software; you can redistribute it and/or modify
+ *    it under the terms of the GNU General Public License as published by
+ *    the Free Software Foundation; either version 2 of the License, or
+ *    (at your option) any later version.
+ *
+ *    This program is distributed in the hope that it will be useful,
+ *    but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *    GNU General Public License for more details.
+ *
+ *    You should have received a copy of the GNU General Public License
+ *    along with this program; if not, write to the Free Software
+ *    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
 
 /*
@@ -77,8 +91,8 @@ static int pdc_console_setup(struct console *co, char *options)
 
 #define PDC_CONS_POLL_DELAY (30 * HZ / 1000)
 
-static void pdc_console_poll(struct timer_list *unused);
-static DEFINE_TIMER(pdc_console_timer, pdc_console_poll);
+static void pdc_console_poll(unsigned long unused);
+static DEFINE_TIMER(pdc_console_timer, pdc_console_poll, 0, 0);
 static struct tty_port tty_port;
 
 static int pdc_console_tty_open(struct tty_struct *tty, struct file *filp)
@@ -121,7 +135,7 @@ static const struct tty_operations pdc_console_tty_ops = {
 	.chars_in_buffer = pdc_console_tty_chars_in_buffer,
 };
 
-static void pdc_console_poll(struct timer_list *unused)
+static void pdc_console_poll(unsigned long unused)
 {
 	int data, count = 0;
 

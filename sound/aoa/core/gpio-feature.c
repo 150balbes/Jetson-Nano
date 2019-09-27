@@ -1,8 +1,9 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Apple Onboard Audio feature call GPIO control
  *
  * Copyright 2006 Johannes Berg <johannes@sipsolutions.net>
+ *
+ * GPL v2, can be found in COPYING.
  *
  * This file contains the GPIO control routines for
  * direct (through feature calls) access to the GPIO
@@ -81,7 +82,6 @@ static struct device_node *get_gpio(char *name,
 			if (altname && (strcmp(audio_gpio, altname) == 0))
 				break;
 		}
-		of_node_put(gpio);
 		/* still not found, assume not there */
 		if (!np)
 			return NULL;

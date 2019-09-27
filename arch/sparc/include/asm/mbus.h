@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * mbus.h:  Various defines for MBUS modules.
  *

@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * linux/arch/ia64/sn/kernel/sn2/timer.c
  *
@@ -23,9 +22,9 @@
 
 extern unsigned long sn_rtc_cycles_per_second;
 
-static u64 read_sn2(struct clocksource *cs)
+static cycle_t read_sn2(struct clocksource *cs)
 {
-	return (u64)readq(RTC_COUNTER_ADDR);
+	return (cycle_t)readq(RTC_COUNTER_ADDR);
 }
 
 static struct clocksource clocksource_sn2 = {

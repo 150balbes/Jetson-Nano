@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * Helper function for splitting a string into an argv-like array.
  */
@@ -69,7 +68,7 @@ char **argv_split(gfp_t gfp, const char *str, int *argcp)
 		return NULL;
 
 	argc = count_argc(argv_str);
-	argv = kmalloc_array(argc + 2, sizeof(*argv), gfp);
+	argv = kmalloc(sizeof(*argv) * (argc + 2), gfp);
 	if (!argv) {
 		kfree(argv_str);
 		return NULL;

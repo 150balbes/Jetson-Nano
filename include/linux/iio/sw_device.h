@@ -1,8 +1,11 @@
-/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Industrial I/O software device interface
  *
  * Copyright (c) 2016 Intel Corporation
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License version 2 as published by
+ * the Free Software Foundation.
  */
 
 #ifndef __IIO_SW_DEVICE
@@ -57,7 +60,7 @@ void iio_sw_device_type_configfs_unregister(struct iio_sw_device_type *dt);
 static inline
 void iio_swd_group_init_type_name(struct iio_sw_device *d,
 				  const char *name,
-				  const struct config_item_type *type)
+				  struct config_item_type *type)
 {
 #if IS_ENABLED(CONFIG_CONFIGFS_FS)
 	config_group_init_type_name(&d->group, name, type);

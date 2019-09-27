@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 #define VERSION "0.23"
 /* ns83820.c by Benjamin LaHaise with contributions.
  *
@@ -10,6 +9,21 @@
  * Copyright 2001, 2002 Red Hat.
  *
  * Mmmm, chocolate vanilla mocha...
+ *
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, see <http://www.gnu.org/licenses/>.
+ *
  *
  * ChangeLog
  * =========
@@ -105,7 +119,7 @@
 #include <linux/slab.h>
 
 #include <asm/io.h>
-#include <linux/uaccess.h>
+#include <asm/uaccess.h>
 
 #define DRV_NAME "ns83820"
 
@@ -905,7 +919,7 @@ netdev_mangle_me_harder_failed:
 				ndev->stats.rx_dropped++;
 			}
 		} else {
-			dev_kfree_skb_irq(skb);
+			kfree_skb(skb);
 		}
 
 		nr++;
@@ -989,7 +1003,7 @@ static void do_tx_done(struct net_device *ndev)
 					addr,
 					len,
 					PCI_DMA_TODEVICE);
-			dev_consume_skb_irq(skb);
+			dev_kfree_skb_irq(skb);
 			atomic_dec(&dev->nr_tx_skbs);
 		} else
 			pci_unmap_page(dev->pci_dev,
@@ -1203,13 +1217,12 @@ static struct net_device_stats *ns83820_get_stats(struct net_device *ndev)
 }
 
 /* Let ethtool retrieve info */
-static int ns83820_get_link_ksettings(struct net_device *ndev,
-				      struct ethtool_link_ksettings *cmd)
+static int ns83820_get_settings(struct net_device *ndev,
+				struct ethtool_cmd *cmd)
 {
 	struct ns83820 *dev = PRIV(ndev);
 	u32 cfg, tanar, tbicr;
 	int fullduplex   = 0;
-	u32 supported;
 
 	/*
 	 * Here's the list of available ethtool commands from other drivers:
@@ -1231,47 +1244,44 @@ static int ns83820_get_link_ksettings(struct net_device *ndev,
 
 	fullduplex = (cfg & CFG_DUPSTS) ? 1 : 0;
 
-	supported = SUPPORTED_Autoneg;
+	cmd->supported = SUPPORTED_Autoneg;
 
 	if (dev->CFG_cache & CFG_TBI_EN) {
 		/* we have optical interface */
-		supported |= SUPPORTED_1000baseT_Half |
+		cmd->supported |= SUPPORTED_1000baseT_Half |
 					SUPPORTED_1000baseT_Full |
 					SUPPORTED_FIBRE;
-		cmd->base.port       = PORT_FIBRE;
+		cmd->port       = PORT_FIBRE;
 	} else {
 		/* we have copper */
-		supported |= SUPPORTED_10baseT_Half |
+		cmd->supported |= SUPPORTED_10baseT_Half |
 			SUPPORTED_10baseT_Full | SUPPORTED_100baseT_Half |
 			SUPPORTED_100baseT_Full | SUPPORTED_1000baseT_Half |
 			SUPPORTED_1000baseT_Full |
 			SUPPORTED_MII;
-		cmd->base.port = PORT_MII;
+		cmd->port = PORT_MII;
 	}
 
-	ethtool_convert_legacy_u32_to_link_mode(cmd->link_modes.supported,
-						supported);
-
-	cmd->base.duplex = fullduplex ? DUPLEX_FULL : DUPLEX_HALF;
+	cmd->duplex = fullduplex ? DUPLEX_FULL : DUPLEX_HALF;
 	switch (cfg / CFG_SPDSTS0 & 3) {
 	case 2:
-		cmd->base.speed = SPEED_1000;
+		ethtool_cmd_speed_set(cmd, SPEED_1000);
 		break;
 	case 1:
-		cmd->base.speed = SPEED_100;
+		ethtool_cmd_speed_set(cmd, SPEED_100);
 		break;
 	default:
-		cmd->base.speed = SPEED_10;
+		ethtool_cmd_speed_set(cmd, SPEED_10);
 		break;
 	}
-	cmd->base.autoneg = (tbicr & TBICR_MR_AN_ENABLE)
+	cmd->autoneg = (tbicr & TBICR_MR_AN_ENABLE)
 		? AUTONEG_ENABLE : AUTONEG_DISABLE;
 	return 0;
 }
 
 /* Let ethool change settings*/
-static int ns83820_set_link_ksettings(struct net_device *ndev,
-				      const struct ethtool_link_ksettings *cmd)
+static int ns83820_set_settings(struct net_device *ndev,
+				struct ethtool_cmd *cmd)
 {
 	struct ns83820 *dev = PRIV(ndev);
 	u32 cfg, tanar;
@@ -1296,10 +1306,10 @@ static int ns83820_set_link_ksettings(struct net_device *ndev,
 	spin_lock(&dev->tx_lock);
 
 	/* Set duplex */
-	if (cmd->base.duplex != fullduplex) {
+	if (cmd->duplex != fullduplex) {
 		if (have_optical) {
 			/*set full duplex*/
-			if (cmd->base.duplex == DUPLEX_FULL) {
+			if (cmd->duplex == DUPLEX_FULL) {
 				/* force full duplex */
 				writel(readl(dev->base + TXCFG)
 					| TXCFG_CSI | TXCFG_HBI | TXCFG_ATP,
@@ -1323,7 +1333,7 @@ static int ns83820_set_link_ksettings(struct net_device *ndev,
 
 	/* Set autonegotiation */
 	if (1) {
-		if (cmd->base.autoneg == AUTONEG_ENABLE) {
+		if (cmd->autoneg == AUTONEG_ENABLE) {
 			/* restart auto negotiation */
 			writel(TBICR_MR_AN_ENABLE | TBICR_MR_RESTART_AN,
 				dev->base + TBICR);
@@ -1338,7 +1348,7 @@ static int ns83820_set_link_ksettings(struct net_device *ndev,
 		}
 
 		printk(KERN_INFO "%s: autoneg %s via ethtool\n", ndev->name,
-				cmd->base.autoneg ? "ENABLED" : "DISABLED");
+				cmd->autoneg ? "ENABLED" : "DISABLED");
 	}
 
 	phy_intr(ndev);
@@ -1365,10 +1375,10 @@ static u32 ns83820_get_link(struct net_device *ndev)
 }
 
 static const struct ethtool_ops ops = {
+	.get_settings    = ns83820_get_settings,
+	.set_settings    = ns83820_set_settings,
 	.get_drvinfo     = ns83820_get_drvinfo,
-	.get_link        = ns83820_get_link,
-	.get_link_ksettings = ns83820_get_link_ksettings,
-	.set_link_ksettings = ns83820_set_link_ksettings,
+	.get_link        = ns83820_get_link
 };
 
 static inline void ns83820_disable_interrupts(struct ns83820 *dev)
@@ -1586,10 +1596,10 @@ static void ns83820_tx_timeout(struct net_device *ndev)
 	spin_unlock_irqrestore(&dev->tx_lock, flags);
 }
 
-static void ns83820_tx_watch(struct timer_list *t)
+static void ns83820_tx_watch(unsigned long data)
 {
-	struct ns83820 *dev = from_timer(dev, t, tx_watchdog);
-	struct net_device *ndev = dev->ndev;
+	struct net_device *ndev = (void *)data;
+	struct ns83820 *dev = PRIV(ndev);
 
 #if defined(DEBUG)
 	printk("ns83820_tx_watch: %u %u %d\n",
@@ -1638,7 +1648,9 @@ static int ns83820_open(struct net_device *ndev)
 	writel(0, dev->base + TXDP_HI);
 	writel(desc, dev->base + TXDP);
 
-	timer_setup(&dev->tx_watchdog, ns83820_tx_watch, 0);
+	init_timer(&dev->tx_watchdog);
+	dev->tx_watchdog.data = (unsigned long)ndev;
+	dev->tx_watchdog.function = ns83820_tx_watch;
 	mod_timer(&dev->tx_watchdog, jiffies + 2*HZ);
 
 	netif_start_queue(ndev);	/* FIXME: wait for phy to come up */
@@ -1665,6 +1677,14 @@ static void ns83820_getmac(struct ns83820 *dev, u8 *mac)
 		*mac++ = data;
 		*mac++ = data >> 8;
 	}
+}
+
+static int ns83820_change_mtu(struct net_device *ndev, int new_mtu)
+{
+	if (new_mtu > RX_BUF_SIZE)
+		return -EINVAL;
+	ndev->mtu = new_mtu;
+	return 0;
 }
 
 static void ns83820_set_multicast(struct net_device *ndev)
@@ -1855,28 +1875,56 @@ static unsigned ns83820_mii_write_reg(struct ns83820 *dev, unsigned phy, unsigne
 static void ns83820_probe_phy(struct net_device *ndev)
 {
 	struct ns83820 *dev = PRIV(ndev);
-	int j;
-	unsigned a, b;
+	static int first;
+	int i;
+#define MII_PHYIDR1	0x02
+#define MII_PHYIDR2	0x03
 
-	for (j = 0; j < 0x16; j += 4) {
-		dprintk("%s: [0x%02x] %04x %04x %04x %04x\n",
-			ndev->name, j,
-			ns83820_mii_read_reg(dev, 1, 0 + j),
-			ns83820_mii_read_reg(dev, 1, 1 + j),
-			ns83820_mii_read_reg(dev, 1, 2 + j),
-			ns83820_mii_read_reg(dev, 1, 3 + j)
-			);
+#if 0
+	if (!first) {
+		unsigned tmp;
+		ns83820_mii_read_reg(dev, 1, 0x09);
+		ns83820_mii_write_reg(dev, 1, 0x10, 0x0d3e);
+
+		tmp = ns83820_mii_read_reg(dev, 1, 0x00);
+		ns83820_mii_write_reg(dev, 1, 0x00, tmp | 0x8000);
+		udelay(1300);
+		ns83820_mii_read_reg(dev, 1, 0x09);
 	}
+#endif
+	first = 1;
 
-	/* read firmware version: memory addr is 0x8402 and 0x8403 */
-	ns83820_mii_write_reg(dev, 1, 0x16, 0x000d);
-	ns83820_mii_write_reg(dev, 1, 0x1e, 0x810e);
-	a = ns83820_mii_read_reg(dev, 1, 0x1d);
+	for (i=1; i<2; i++) {
+		int j;
+		unsigned a, b;
+		a = ns83820_mii_read_reg(dev, i, MII_PHYIDR1);
+		b = ns83820_mii_read_reg(dev, i, MII_PHYIDR2);
 
-	ns83820_mii_write_reg(dev, 1, 0x16, 0x000d);
-	ns83820_mii_write_reg(dev, 1, 0x1e, 0x810e);
-	b = ns83820_mii_read_reg(dev, 1, 0x1d);
-	dprintk("version: 0x%04x 0x%04x\n", a, b);
+		//printk("%s: phy %d: 0x%04x 0x%04x\n",
+		//	ndev->name, i, a, b);
+
+		for (j=0; j<0x16; j+=4) {
+			dprintk("%s: [0x%02x] %04x %04x %04x %04x\n",
+				ndev->name, j,
+				ns83820_mii_read_reg(dev, i, 0 + j),
+				ns83820_mii_read_reg(dev, i, 1 + j),
+				ns83820_mii_read_reg(dev, i, 2 + j),
+				ns83820_mii_read_reg(dev, i, 3 + j)
+				);
+		}
+	}
+	{
+		unsigned a, b;
+		/* read firmware version: memory addr is 0x8402 and 0x8403 */
+		ns83820_mii_write_reg(dev, 1, 0x16, 0x000d);
+		ns83820_mii_write_reg(dev, 1, 0x1e, 0x810e);
+		a = ns83820_mii_read_reg(dev, 1, 0x1d);
+
+		ns83820_mii_write_reg(dev, 1, 0x16, 0x000d);
+		ns83820_mii_write_reg(dev, 1, 0x1e, 0x810e);
+		b = ns83820_mii_read_reg(dev, 1, 0x1d);
+		dprintk("version: 0x%04x 0x%04x\n", a, b);
+	}
 }
 #endif
 
@@ -1885,6 +1933,7 @@ static const struct net_device_ops netdev_ops = {
 	.ndo_stop		= ns83820_stop,
 	.ndo_start_xmit		= ns83820_hard_start_xmit,
 	.ndo_get_stats		= ns83820_get_stats,
+	.ndo_change_mtu		= ns83820_change_mtu,
 	.ndo_set_rx_mode	= ns83820_set_multicast,
 	.ndo_validate_addr	= eth_validate_addr,
 	.ndo_set_mac_address	= eth_mac_addr,
@@ -2140,8 +2189,6 @@ static int ns83820_init_one(struct pci_dev *pci_dev,
 	/* Yes, we support dumb IP checksum on transmit */
 	ndev->features |= NETIF_F_SG;
 	ndev->features |= NETIF_F_IP_CSUM;
-
-	ndev->min_mtu = 0;
 
 #ifdef NS83820_VLAN_ACCEL_SUPPORT
 	/* We also support hardware vlan acceleration */

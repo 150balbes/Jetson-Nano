@@ -1,9 +1,12 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  *  linux/arch/arm/kernel/swp_emulate.c
  *
  *  Copyright (C) 2009 ARM Limited
  *  __user_* functions adapted from include/asm/uaccess.h
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  *
  *  Implements emulation of the SWP/SWPB instructions using load-exclusive and
  *  store-exclusive for processors that have them disabled (or future ones that
@@ -20,14 +23,13 @@
 #include <linux/proc_fs.h>
 #include <linux/seq_file.h>
 #include <linux/sched.h>
-#include <linux/sched/mm.h>
 #include <linux/syscalls.h>
 #include <linux/perf_event.h>
 
 #include <asm/opcodes.h>
 #include <asm/system_info.h>
 #include <asm/traps.h>
-#include <linux/uaccess.h>
+#include <asm/uaccess.h>
 
 /*
  * Error-checking SWP macros implemented using ldrex{b}/strex{b}
@@ -88,6 +90,18 @@ static int proc_status_show(struct seq_file *m, void *v)
 		seq_printf(m, "Last process:\t\t%d\n", previous_pid);
 	return 0;
 }
+
+static int proc_status_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, proc_status_show, PDE_DATA(inode));
+}
+
+static const struct file_operations proc_status_fops = {
+	.open		= proc_status_open,
+	.read		= seq_read,
+	.llseek		= seq_lseek,
+	.release	= single_release,
+};
 #endif
 
 /*
@@ -95,20 +109,21 @@ static int proc_status_show(struct seq_file *m, void *v)
  */
 static void set_segfault(struct pt_regs *regs, unsigned long addr)
 {
-	int si_code;
+	siginfo_t info;
 
 	down_read(&current->mm->mmap_sem);
 	if (find_vma(current->mm, addr) == NULL)
-		si_code = SEGV_MAPERR;
+		info.si_code = SEGV_MAPERR;
 	else
-		si_code = SEGV_ACCERR;
+		info.si_code = SEGV_ACCERR;
 	up_read(&current->mm->mmap_sem);
 
+	info.si_signo = SIGSEGV;
+	info.si_errno = 0;
+	info.si_addr  = (void *) instruction_pointer(regs);
+
 	pr_debug("SWP{B} emulation: access caused memory abort!\n");
-	arm_notify_die("Illegal memory access", regs,
-		       SIGSEGV, si_code,
-		       (void __user *)instruction_pointer(regs),
-		       0, 0);
+	arm_notify_die("Illegal memory access", regs, &info, 0, 0);
 
 	abtcounter++;
 }
@@ -195,7 +210,7 @@ static int swp_handler(struct pt_regs *regs, unsigned int instr)
 		 destreg, EXTRACT_REG_NUM(instr, RT2_OFFSET), data);
 
 	/* Check access in reasonable access range for both SWP and SWPB */
-	if (!access_ok((address & ~3), 4)) {
+	if (!access_ok(VERIFY_WRITE, (address & ~3), 4)) {
 		pr_debug("SWP{B} emulation: access to %p not allowed!\n",
 			 (void *)address);
 		res = -EFAULT;
@@ -244,8 +259,7 @@ static int __init swp_emulation_init(void)
 		return 0;
 
 #ifdef CONFIG_PROC_FS
-	if (!proc_create_single("cpu/swp_emulation", S_IRUGO, NULL,
-			proc_status_show))
+	if (!proc_create("cpu/swp_emulation", S_IRUGO, NULL, &proc_status_fops))
 		return -ENOMEM;
 #endif /* CONFIG_PROC_FS */
 

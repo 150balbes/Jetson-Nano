@@ -1,10 +1,13 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright 2009-2010 Pengutronix
  * Uwe Kleine-Koenig <u.kleine-koenig@pengutronix.de>
  *
  * loosely based on an earlier driver that has
  * Copyright 2009 Pengutronix, Sascha Hauer <s.hauer@pengutronix.de>
+ *
+ * This program is free software; you can redistribute it and/or modify it under
+ * the terms of the GNU General Public License version 2 as published by the
+ * Free Software Foundation.
  */
 
 #include <linux/module.h>
@@ -271,29 +274,13 @@ int mc13xxx_adc_do_conversion(struct mc13xxx *mc13xxx, unsigned int mode,
 
 	mc13xxx->adcflags |= MC13XXX_ADC_WORKING;
 
-	ret = mc13xxx_reg_read(mc13xxx, MC13XXX_ADC0, &old_adc0);
-	if (ret)
-		goto out;
+	mc13xxx_reg_read(mc13xxx, MC13XXX_ADC0, &old_adc0);
 
-	adc0 = MC13XXX_ADC0_ADINC1 | MC13XXX_ADC0_ADINC2 |
-	       MC13XXX_ADC0_CHRGRAWDIV;
+	adc0 = MC13XXX_ADC0_ADINC1 | MC13XXX_ADC0_ADINC2;
 	adc1 = MC13XXX_ADC1_ADEN | MC13XXX_ADC1_ADTRIGIGN | MC13XXX_ADC1_ASC;
 
-	/*
-	 * Channels mapped through ADIN7:
-	 * 7  - General purpose ADIN7
-	 * 16 - UID
-	 * 17 - Die temperature
-	 */
-	if (channel > 7 && channel < 16) {
+	if (channel > 7)
 		adc1 |= MC13XXX_ADC1_ADSEL;
-	} else if (channel == 16) {
-		adc0 |= MC13XXX_ADC0_ADIN7SEL_UID;
-		channel = 7;
-	} else if (channel == 17) {
-		adc0 |= MC13XXX_ADC0_ADIN7SEL_DIE;
-		channel = 7;
-	}
 
 	switch (mode) {
 	case MC13XXX_ADC_MODE_TS:

@@ -191,16 +191,12 @@ static int soc_pcmcia_hw_init(struct soc_pcmcia_socket *skt)
 {
 	int ret = 0, i;
 
-	ret = clk_prepare_enable(skt->clk);
-	if (ret)
-		return ret;
+	clk_prepare_enable(skt->clk);
 
 	if (skt->ops->hw_init) {
 		ret = skt->ops->hw_init(skt);
-		if (ret) {
-			clk_disable_unprepare(skt->clk);
+		if (ret)
 			return ret;
-		}
 	}
 
 	for (i = 0; i < ARRAY_SIZE(skt->stat); i++) {
@@ -351,20 +347,19 @@ static int soc_common_pcmcia_config_skt(
 
 	if (ret == 0) {
 		struct gpio_desc *descs[2];
-		DECLARE_BITMAP(values, 2);
-		int n = 0;
+		int values[2], n = 0;
 
 		if (skt->gpio_reset) {
 			descs[n] = skt->gpio_reset;
-			__assign_bit(n++, values, state->flags & SS_RESET);
+			values[n++] = !!(state->flags & SS_RESET);
 		}
 		if (skt->gpio_bus_enable) {
 			descs[n] = skt->gpio_bus_enable;
-			__assign_bit(n++, values, state->flags & SS_OUTPUT_ENA);
+			values[n++] = !!(state->flags & SS_OUTPUT_ENA);
 		}
 
 		if (n)
-			gpiod_set_array_value_cansleep(n, descs, NULL, values);
+			gpiod_set_array_value_cansleep(n, descs, values);
 
 		/*
 		 * This really needs a better solution.  The IRQ
@@ -461,9 +456,9 @@ static void soc_common_check_status(struct soc_pcmcia_socket *skt)
 }
 
 /* Let's poll for events in addition to IRQs since IRQ only is unreliable... */
-static void soc_common_pcmcia_poll_event(struct timer_list *t)
+static void soc_common_pcmcia_poll_event(unsigned long dummy)
 {
-	struct soc_pcmcia_socket *skt = from_timer(skt, t, poll_timer);
+	struct soc_pcmcia_socket *skt = (struct soc_pcmcia_socket *)dummy;
 	debug(skt, 4, "polling for events\n");
 
 	mod_timer(&skt->poll_timer, jiffies + SOC_PCMCIA_POLL_PERIOD);
@@ -799,7 +794,8 @@ int soc_pcmcia_add_one(struct soc_pcmcia_socket *skt)
 
 	skt->cs_state = dead_socket;
 
-	timer_setup(&skt->poll_timer, soc_common_pcmcia_poll_event, 0);
+	setup_timer(&skt->poll_timer, soc_common_pcmcia_poll_event,
+		    (unsigned long)skt);
 	skt->poll_timer.expires = jiffies + SOC_PCMCIA_POLL_PERIOD;
 
 	ret = request_resource(&iomem_resource, &skt->res_skt);

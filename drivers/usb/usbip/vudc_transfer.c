@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0+
 /*
  * Copyright (C) 2015 Karol Kosik <karo9@interia.eu>
  * Copyright (C) 2015-2016 Samsung Electronics
@@ -7,6 +6,19 @@
  * Based on dummy_hcd.c, which is:
  * Copyright (C) 2003 David Brownell
  * Copyright (C) 2003-2005 Alan Stern
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
 #include <linux/usb.h>
@@ -61,8 +73,8 @@ static int handle_control_request(struct vudc *udc, struct urb *urb,
 {
 	struct vep	*ep2;
 	int		ret_val = 1;
-	unsigned int	w_index;
-	unsigned int	w_value;
+	unsigned	w_index;
+	unsigned	w_value;
 
 	w_index = le16_to_cpu(setup->wIndex);
 	w_value = le16_to_cpu(setup->wValue);
@@ -188,7 +200,7 @@ static int transfer(struct vudc *udc,
 top:
 	/* if there's no request queued, the device is NAKing; return */
 	list_for_each_entry(req, &ep->req_queue, req_entry) {
-		unsigned int	host_len, dev_len, len;
+		unsigned	host_len, dev_len, len;
 		void		*ubuf_pos, *rbuf_pos;
 		int		is_short, to_host;
 		int		rescan = 0;
@@ -299,9 +311,9 @@ top:
 	return sent;
 }
 
-static void v_timer(struct timer_list *t)
+static void v_timer(unsigned long _vudc)
 {
-	struct vudc *udc = from_timer(udc, t, tr_timer.timer);
+	struct vudc *udc = (struct vudc *) _vudc;
 	struct transfer_timer *timer = &udc->tr_timer;
 	struct urbp *urb_p, *tmp;
 	unsigned long flags;
@@ -447,7 +459,7 @@ void v_init_timer(struct vudc *udc)
 {
 	struct transfer_timer *t = &udc->tr_timer;
 
-	timer_setup(&t->timer, v_timer, 0);
+	setup_timer(&t->timer, v_timer, (unsigned long) udc);
 	t->state = VUDC_TR_STOPPED;
 }
 

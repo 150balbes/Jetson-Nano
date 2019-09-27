@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /* -*- mode: c; c-basic-offset: 8; -*-
  * vim: noexpandtab sw=8 ts=8 sts=0:
  *
@@ -8,6 +7,15 @@
  * cluster stacks.
  *
  * Copyright (C) 2007, 2009 Oracle.  All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public
+ * License as published by the Free Software Foundation, version 2.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
  */
 
 #include <linux/list.h>
@@ -39,6 +47,12 @@ static char ocfs2_hb_ctl_path[OCFS2_MAX_HB_CTL_PATH] = "/sbin/ocfs2_hb_ctl";
  * the module is pinned, and the locking protocol cannot be changed.
  */
 static struct ocfs2_stack_plugin *active_stack;
+
+inline int ocfs2_is_o2cb_active(void)
+{
+	return !strcmp(active_stack->sp_name, OCFS2_STACK_PLUGIN_O2CB);
+}
+EXPORT_SYMBOL_GPL(ocfs2_is_o2cb_active);
 
 static struct ocfs2_stack_plugin *ocfs2_stack_lookup(const char *name)
 {
@@ -617,7 +631,7 @@ static struct attribute *ocfs2_attrs[] = {
 	NULL,
 };
 
-static const struct attribute_group ocfs2_attr_group = {
+static struct attribute_group ocfs2_attr_group = {
 	.attrs = ocfs2_attrs,
 };
 

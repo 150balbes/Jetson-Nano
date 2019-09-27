@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 	/* These get patched into the trap table at boot time
 	 * once we know we have a cheetah processor.
 	 */

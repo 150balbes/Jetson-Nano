@@ -43,7 +43,7 @@ struct pmagbafb_par {
 };
 
 
-static const struct fb_var_screeninfo pmagbafb_defined = {
+static struct fb_var_screeninfo pmagbafb_defined = {
 	.xres		= 1024,
 	.yres		= 864,
 	.xres_virtual	= 1024,
@@ -67,7 +67,7 @@ static const struct fb_var_screeninfo pmagbafb_defined = {
 	.vmode		= FB_VMODE_NONINTERLACED,
 };
 
-static const struct fb_fix_screeninfo pmagbafb_fix = {
+static struct fb_fix_screeninfo pmagbafb_fix = {
 	.id		= "PMAG-BA",
 	.smem_len	= (1024 * 1024),
 	.type		= FB_TYPE_PACKED_PIXELS,
@@ -150,8 +150,10 @@ static int pmagbafb_probe(struct device *dev)
 	int err;
 
 	info = framebuffer_alloc(sizeof(struct pmagbafb_par), dev);
-	if (!info)
+	if (!info) {
+		printk(KERN_ERR "%s: Cannot allocate memory\n", dev_name(dev));
 		return -ENOMEM;
+	}
 
 	par = info->par;
 	dev_set_drvdata(dev, info);
@@ -233,7 +235,7 @@ err_alloc:
 	return err;
 }
 
-static int pmagbafb_remove(struct device *dev)
+static int __exit pmagbafb_remove(struct device *dev)
 {
 	struct tc_dev *tdev = to_tc_dev(dev);
 	struct fb_info *info = dev_get_drvdata(dev);
@@ -268,7 +270,7 @@ static struct tc_driver pmagbafb_driver = {
 		.name	= "pmagbafb",
 		.bus	= &tc_bus_type,
 		.probe	= pmagbafb_probe,
-		.remove	= pmagbafb_remove,
+		.remove	= __exit_p(pmagbafb_remove),
 	},
 };
 

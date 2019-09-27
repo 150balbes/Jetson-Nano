@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _FALLOC_H_
 #define _FALLOC_H_
 

@@ -1,0 +1,62 @@
+/*
+ * Copyright (c) 2018, NVIDIA CORPORATION.  All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; version 2 of the License.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with this program; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+ *
+ */
+
+#include <dt-bindings/thermal/nvidia,tegra-thermal-throttle.h>
+/{
+	bthrot_cdev {
+		compatible = "nvidia,tegra-thermal-throttle";
+		clocks = <&bpmp_clks TEGRA194_CLK_NAFLL_CLUSTER0>,
+				<&bpmp_clks TEGRA194_CLK_NAFLL_CLUSTER1>,
+				<&bpmp_clks TEGRA194_CLK_NAFLL_CLUSTER2>,
+				<&bpmp_clks TEGRA194_CLK_NAFLL_CLUSTER3>,
+				<&bpmp_clks TEGRA194_CLK_NAFLL_GPU>;
+		clock-names = "cpu0", "cpu1", "cpu2", "cpu3", "gpu";
+		skin_balanced {
+			cdev-type = "skin-balanced";
+			#cooling-cells = <2>;
+			nvidia,throttle-clocks = <TEGRA_THROTTLE_CPU 200 0
+						TEGRA_THROTTLE_GPU 400 0>;
+		};
+		gpu_balanced {
+			cdev-type = "gpu-balanced";
+			#cooling-cells = <2>;
+			nvidia,cutoff = <1>;
+			nvidia,throttle-clocks = <TEGRA_THROTTLE_CPU 400 0
+						TEGRA_THROTTLE_GPU 400 0>;
+		};
+		cpu_balanced {
+			cdev-type = "cpu-balanced";
+			#cooling-cells = <2>;
+			nvidia,throttle-clocks = <TEGRA_THROTTLE_CPU 200 0
+						TEGRA_THROTTLE_GPU 300 365500000>;
+		};
+		emergency_balanced {
+			cdev-type = "emergency-balanced";
+			#cooling-cells = <2>;
+			nvidia,throttle-clocks = <TEGRA_THROTTLE_CPU 10 38400000
+						TEGRA_THROTTLE_GPU 10 25500000>;
+		};
+		aux_balanced {
+			cdev-type = "aux-balanced";
+			#cooling-cells = <2>;
+			nvidia,cutoff = <1>;
+			nvidia,throttle-clocks = <TEGRA_THROTTLE_CPU 400 0
+						TEGRA_THROTTLE_GPU 400 0>;
+		};
+	};
+};

@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * Micrel KS8695 (Centaur) Ethernet.
  *

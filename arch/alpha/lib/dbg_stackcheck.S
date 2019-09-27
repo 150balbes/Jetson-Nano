@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * arch/alpha/lib/dbg_stackcheck.S
  * Contributed by Richard Henderson (rth@tamu.edu)

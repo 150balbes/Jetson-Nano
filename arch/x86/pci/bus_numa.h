@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __BUS_NUMA_H
 #define __BUS_NUMA_H
 /*

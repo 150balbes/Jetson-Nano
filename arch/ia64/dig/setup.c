@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * Platform dependent support for DIG64 platforms.
  *

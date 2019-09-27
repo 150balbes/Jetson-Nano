@@ -1,6 +1,7 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (C) ST-Ericsson SA 2010
+ *
+ * License Terms: GNU General Public License v2
  *
  * Authors: Bengt Jonsson <bengt.g.jonsson@stericsson.com>
  *
@@ -478,6 +479,7 @@ static struct ab8500_regulator_platform_data ab8500_regulator_plat_data = {
  * struct ab8500_ext_regulator_info - ab8500 regulator information
  * @dev: device pointer
  * @desc: regulator description
+ * @rdev: regulator device
  * @cfg: regulator configuration (extension of regulator FW configuration)
  * @update_bank: bank to control on/off
  * @update_reg: register to control on/off
@@ -493,6 +495,7 @@ static struct ab8500_regulator_platform_data ab8500_regulator_plat_data = {
 struct ab8500_ext_regulator_info {
 	struct device *dev;
 	struct regulator_desc desc;
+	struct regulator_dev *rdev;
 	struct ab8500_ext_regulator_cfg *cfg;
 	u8 update_bank;
 	u8 update_reg;
@@ -527,7 +530,7 @@ static int ab8500_ext_regulator_enable(struct regulator_dev *rdev)
 		info->update_bank, info->update_reg,
 		info->update_mask, regval);
 	if (ret < 0) {
-		dev_err(rdev_get_dev(rdev),
+		dev_err(rdev_get_dev(info->rdev),
 			"couldn't set enable bits for regulator\n");
 		return ret;
 	}
@@ -563,7 +566,7 @@ static int ab8500_ext_regulator_disable(struct regulator_dev *rdev)
 		info->update_bank, info->update_reg,
 		info->update_mask, regval);
 	if (ret < 0) {
-		dev_err(rdev_get_dev(rdev),
+		dev_err(rdev_get_dev(info->rdev),
 			"couldn't set disable bits for regulator\n");
 		return ret;
 	}
@@ -717,7 +720,7 @@ static int ab8500_ext_list_voltage(struct regulator_dev *rdev,
 	return -EINVAL;
 }
 
-static const struct regulator_ops ab8500_ext_regulator_ops = {
+static struct regulator_ops ab8500_ext_regulator_ops = {
 	.enable			= ab8500_ext_regulator_enable,
 	.disable		= ab8500_ext_regulator_disable,
 	.is_enabled		= ab8500_ext_regulator_is_enabled,
@@ -732,7 +735,6 @@ static struct ab8500_ext_regulator_info
 	[AB8500_EXT_SUPPLY1] = {
 		.desc = {
 			.name		= "VEXTSUPPLY1",
-			.of_match	= of_match_ptr("ab8500_ext1"),
 			.ops		= &ab8500_ext_regulator_ops,
 			.type		= REGULATOR_VOLTAGE,
 			.id		= AB8500_EXT_SUPPLY1,
@@ -750,7 +752,6 @@ static struct ab8500_ext_regulator_info
 	[AB8500_EXT_SUPPLY2] = {
 		.desc = {
 			.name		= "VEXTSUPPLY2",
-			.of_match	= of_match_ptr("ab8500_ext2"),
 			.ops		= &ab8500_ext_regulator_ops,
 			.type		= REGULATOR_VOLTAGE,
 			.id		= AB8500_EXT_SUPPLY2,
@@ -768,7 +769,6 @@ static struct ab8500_ext_regulator_info
 	[AB8500_EXT_SUPPLY3] = {
 		.desc = {
 			.name		= "VEXTSUPPLY3",
-			.of_match	= of_match_ptr("ab8500_ext3"),
 			.ops		= &ab8500_ext_regulator_ops,
 			.type		= REGULATOR_VOLTAGE,
 			.id		= AB8500_EXT_SUPPLY3,
@@ -785,13 +785,30 @@ static struct ab8500_ext_regulator_info
 	},
 };
 
+static struct of_regulator_match ab8500_ext_regulator_match[] = {
+	{ .name = "ab8500_ext1", .driver_data = (void *) AB8500_EXT_SUPPLY1, },
+	{ .name = "ab8500_ext2", .driver_data = (void *) AB8500_EXT_SUPPLY2, },
+	{ .name = "ab8500_ext3", .driver_data = (void *) AB8500_EXT_SUPPLY3, },
+};
+
 static int ab8500_ext_regulator_probe(struct platform_device *pdev)
 {
 	struct ab8500 *ab8500 = dev_get_drvdata(pdev->dev.parent);
 	struct ab8500_regulator_platform_data *pdata = &ab8500_regulator_plat_data;
+	struct device_node *np = pdev->dev.of_node;
 	struct regulator_config config = { };
-	struct regulator_dev *rdev;
-	int i;
+	int i, err;
+
+	if (np) {
+		err = of_regulator_match(&pdev->dev, np,
+					 ab8500_ext_regulator_match,
+					 ARRAY_SIZE(ab8500_ext_regulator_match));
+		if (err < 0) {
+			dev_err(&pdev->dev,
+				"Error parsing regulator init data: %d\n", err);
+			return err;
+		}
+	}
 
 	if (!ab8500) {
 		dev_err(&pdev->dev, "null mfd parent\n");
@@ -827,18 +844,23 @@ static int ab8500_ext_regulator_probe(struct platform_device *pdev)
 
 		config.dev = &pdev->dev;
 		config.driver_data = info;
-		config.init_data = &pdata->ext_regulator[i];
+		config.of_node = ab8500_ext_regulator_match[i].of_node;
+		config.init_data = (np) ?
+			ab8500_ext_regulator_match[i].init_data :
+			&pdata->ext_regulator[i];
 
 		/* register regulator with framework */
-		rdev = devm_regulator_register(&pdev->dev, &info->desc,
-					       &config);
-		if (IS_ERR(rdev)) {
+		info->rdev = devm_regulator_register(&pdev->dev, &info->desc,
+						     &config);
+		if (IS_ERR(info->rdev)) {
+			err = PTR_ERR(info->rdev);
 			dev_err(&pdev->dev, "failed to register regulator %s\n",
 					info->desc.name);
-			return PTR_ERR(rdev);
+			return err;
 		}
 
-		dev_dbg(&pdev->dev, "%s-probed\n", info->desc.name);
+		dev_dbg(rdev_get_dev(info->rdev),
+			"%s-probed\n", info->desc.name);
 	}
 
 	return 0;

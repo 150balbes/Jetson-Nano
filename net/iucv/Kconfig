@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0-only
 config IUCV
 	depends on S390
 	def_tristate y if S390

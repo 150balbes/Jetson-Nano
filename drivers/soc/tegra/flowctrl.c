@@ -1,10 +1,19 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
- * drivers/soc/tegra/flowctrl.c
+ * functions and macros to control the flowcontroller
  *
- * Functions and macros to control the flowcontroller
+ * Copyright (c) 2010-2017, NVIDIA CORPORATION. All rights reserved.
  *
- * Copyright (c) 2010-2012, NVIDIA Corporation. All rights reserved.
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms and conditions of the GNU General Public License,
+ * version 2, as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 #include <linux/cpumask.h>
@@ -13,7 +22,6 @@
 #include <linux/kernel.h>
 #include <linux/of.h>
 #include <linux/of_address.h>
-#include <linux/platform_device.h>
 
 #include <soc/tegra/common.h>
 #include <soc/tegra/flowctrl.h>
@@ -33,14 +41,17 @@ static u8 flowctrl_offset_cpu_csr[] = {
 	FLOW_CTRL_CPU1_CSR + 16,
 };
 
+static u8 flowctrl_offset_cc4_ctrl[] = {
+	FLOW_CTRL_CC4_CORE0_CTRL,
+	FLOW_CTRL_CC4_CORE0_CTRL + 4,
+	FLOW_CTRL_CC4_CORE0_CTRL + 8,
+	FLOW_CTRL_CC4_CORE0_CTRL + 12,
+};
+
 static void __iomem *tegra_flowctrl_base;
 
-static void flowctrl_update(u8 offset, u32 value)
+void flowctrl_update(u8 offset, u32 value)
 {
-	if (WARN_ONCE(IS_ERR_OR_NULL(tegra_flowctrl_base),
-		      "Tegra flowctrl not initialised!\n"))
-		return;
-
 	writel(value, tegra_flowctrl_base + offset);
 
 	/* ensure the update has reached the flow controller */
@@ -52,11 +63,12 @@ u32 flowctrl_read_cpu_csr(unsigned int cpuid)
 {
 	u8 offset = flowctrl_offset_cpu_csr[cpuid];
 
-	if (WARN_ONCE(IS_ERR_OR_NULL(tegra_flowctrl_base),
-		      "Tegra flowctrl not initialised!\n"))
-		return 0;
-
 	return readl(tegra_flowctrl_base + offset);
+}
+
+void flowctrl_write_cc4_ctrl(unsigned int cpuid, u32 value)
+{
+	return flowctrl_update(flowctrl_offset_cc4_ctrl[cpuid], value);
 }
 
 void flowctrl_write_cpu_csr(unsigned int cpuid, u32 value)
@@ -138,23 +150,9 @@ void flowctrl_cpu_suspend_exit(unsigned int cpuid)
 	flowctrl_write_cpu_csr(cpuid, reg);
 }
 
-static int tegra_flowctrl_probe(struct platform_device *pdev)
-{
-	void __iomem *base = tegra_flowctrl_base;
-	struct resource *res;
-
-	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
-	tegra_flowctrl_base = devm_ioremap_resource(&pdev->dev, res);
-	if (IS_ERR(tegra_flowctrl_base))
-		return PTR_ERR(tegra_flowctrl_base);
-
-	iounmap(base);
-
-	return 0;
-}
-
-static const struct of_device_id tegra_flowctrl_match[] = {
+static const struct of_device_id matches[] __initconst = {
 	{ .compatible = "nvidia,tegra210-flowctrl" },
+	{ .compatible = "nvidia,tegra132-flowctrl" },
 	{ .compatible = "nvidia,tegra124-flowctrl" },
 	{ .compatible = "nvidia,tegra114-flowctrl" },
 	{ .compatible = "nvidia,tegra30-flowctrl" },
@@ -162,52 +160,30 @@ static const struct of_device_id tegra_flowctrl_match[] = {
 	{ }
 };
 
-static struct platform_driver tegra_flowctrl_driver = {
-	.driver = {
-		.name = "tegra-flowctrl",
-		.suppress_bind_attrs = true,
-		.of_match_table = tegra_flowctrl_match,
-	},
-	.probe = tegra_flowctrl_probe,
-};
-builtin_platform_driver(tegra_flowctrl_driver);
-
 static int __init tegra_flowctrl_init(void)
 {
-	struct resource res;
+	unsigned long base = 0;
+	unsigned long size = 0;
 	struct device_node *np;
 
-	if (!soc_is_tegra())
-		return 0;
+	if (!soc_is_tegra210_n_before())
+		goto out;
 
-	np = of_find_matching_node(NULL, tegra_flowctrl_match);
+	np = of_find_matching_node(NULL, matches);
 	if (np) {
-		if (of_address_to_resource(np, 0, &res) < 0) {
-			pr_err("failed to get flowctrl register\n");
-			return -ENXIO;
+		struct resource res;
+
+		if (of_address_to_resource(np, 0, &res) == 0) {
+			size = resource_size(&res);
+			base = res.start;
 		}
+
 		of_node_put(np);
-	} else if (IS_ENABLED(CONFIG_ARM)) {
-		/*
-		 * Hardcoded fallback for 32-bit Tegra
-		 * devices if device tree node is missing.
-		 */
-		res.start = 0x60007000;
-		res.end = 0x60007fff;
-		res.flags = IORESOURCE_MEM;
-	} else {
-		/*
-		 * At this point we're running on a Tegra,
-		 * that doesn't support the flow controller
-		 * (eg. Tegra186), so just return.
-		 */
-		return 0;
-	}
+	} else
+		goto out;
 
-	tegra_flowctrl_base = ioremap_nocache(res.start, resource_size(&res));
-	if (!tegra_flowctrl_base)
-		return -ENXIO;
-
+	tegra_flowctrl_base = ioremap_nocache(base, size);
+out:
 	return 0;
 }
-early_initcall(tegra_flowctrl_init);
+arch_initcall(tegra_flowctrl_init);

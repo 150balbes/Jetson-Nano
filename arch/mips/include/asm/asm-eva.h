@@ -15,7 +15,6 @@
 /* Kernel variants */
 
 #define kernel_cache(op, base)		"cache " op ", " base "\n"
-#define kernel_pref(hint, base)		"pref " hint ", " base "\n"
 #define kernel_ll(reg, addr)		"ll " reg ", " addr "\n"
 #define kernel_sc(reg, addr)		"sc " reg ", " addr "\n"
 #define kernel_lw(reg, addr)		"lw " reg ", " addr "\n"
@@ -52,7 +51,6 @@
 				"	.set	pop\n"
 
 #define user_cache(op, base)		__BUILD_EVA_INSN("cachee", op, base)
-#define user_pref(hint, base)		__BUILD_EVA_INSN("prefe", hint, base)
 #define user_ll(reg, addr)		__BUILD_EVA_INSN("lle", reg, addr)
 #define user_sc(reg, addr)		__BUILD_EVA_INSN("sce", reg, addr)
 #define user_lw(reg, addr)		__BUILD_EVA_INSN("lwe", reg, addr)
@@ -74,7 +72,6 @@
 #else
 
 #define user_cache(op, base)		kernel_cache(op, base)
-#define user_pref(hint, base)		kernel_pref(hint, base)
 #define user_ll(reg, addr)		kernel_ll(reg, addr)
 #define user_sc(reg, addr)		kernel_sc(reg, addr)
 #define user_lw(reg, addr)		kernel_lw(reg, addr)
@@ -102,7 +99,6 @@
 #else /* __ASSEMBLY__ */
 
 #define kernel_cache(op, base)		cache op, base
-#define kernel_pref(hint, base)		pref hint, base
 #define kernel_ll(reg, addr)		ll reg, addr
 #define kernel_sc(reg, addr)		sc reg, addr
 #define kernel_lw(reg, addr)		lw reg, addr
@@ -139,7 +135,6 @@
 				.set	pop;
 
 #define user_cache(op, base)		__BUILD_EVA_INSN(cachee, op, base)
-#define user_pref(hint, base)		__BUILD_EVA_INSN(prefe, hint, base)
 #define user_ll(reg, addr)		__BUILD_EVA_INSN(lle, reg, addr)
 #define user_sc(reg, addr)		__BUILD_EVA_INSN(sce, reg, addr)
 #define user_lw(reg, addr)		__BUILD_EVA_INSN(lwe, reg, addr)
@@ -160,7 +155,6 @@
 #else
 
 #define user_cache(op, base)		kernel_cache(op, base)
-#define user_pref(hint, base)		kernel_pref(hint, base)
 #define user_ll(reg, addr)		kernel_ll(reg, addr)
 #define user_sc(reg, addr)		kernel_sc(reg, addr)
 #define user_lw(reg, addr)		kernel_lw(reg, addr)

@@ -18,7 +18,7 @@
 #include <linux/interrupt.h>
 #include <linux/ioport.h>
 #include <linux/proc_fs.h>
-#include <linux/sched/signal.h>
+#include <linux/sched.h>
 #include <linux/seq_file.h>
 #include <linux/skbuff.h>
 #include <linux/workqueue.h>
@@ -28,7 +28,7 @@
 #include <linux/moduleparam.h>
 #include <linux/delay.h>
 #include <linux/slab.h>
-#include <linux/uaccess.h>
+#include <asm/uaccess.h>
 #include <linux/isdn/capicmd.h>
 #include <linux/isdn/capiutil.h>
 #ifdef AVMB1_COMPAT
@@ -55,7 +55,7 @@ struct capictr_event {
 
 /* ------------------------------------------------------------- */
 
-static const struct capi_version driver_version = {2, 0, 1, 1 << 4};
+static struct capi_version driver_version = {2, 0, 1, 1 << 4};
 static char driver_serial[CAPI_SERIAL_LEN] = "0004711";
 static char capi_manufakturer[64] = "AVM Berlin";
 
@@ -534,8 +534,7 @@ int attach_capi_ctr(struct capi_ctr *ctr)
 	init_waitqueue_head(&ctr->state_wait_queue);
 
 	sprintf(ctr->procfn, "capi/controllers/%d", ctr->cnr);
-	ctr->procent = proc_create_single_data(ctr->procfn, 0, NULL,
-			ctr->proc_show, ctr);
+	ctr->procent = proc_create_data(ctr->procfn, 0, NULL, ctr->proc_fops, ctr);
 
 	ncontrollers++;
 
@@ -852,7 +851,7 @@ u16 capi20_get_manufacturer(u32 contr, u8 *buf)
 	u16 ret;
 
 	if (contr == 0) {
-		strncpy(buf, capi_manufakturer, CAPI_MANUFACTURER_LEN);
+		strlcpy(buf, capi_manufakturer, CAPI_MANUFACTURER_LEN);
 		return CAPI_NOERROR;
 	}
 
@@ -860,7 +859,7 @@ u16 capi20_get_manufacturer(u32 contr, u8 *buf)
 
 	ctr = get_capi_ctr_by_nr(contr);
 	if (ctr && ctr->state == CAPI_CTR_RUNNING) {
-		strncpy(buf, ctr->manu, CAPI_MANUFACTURER_LEN);
+		strlcpy(buf, ctr->manu, CAPI_MANUFACTURER_LEN);
 		ret = CAPI_NOERROR;
 	} else
 		ret = CAPI_REGNOTINSTALLED;

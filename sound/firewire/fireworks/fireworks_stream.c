@@ -1,8 +1,9 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * fireworks_stream.c - a part of driver for Fireworks based devices
  *
  * Copyright (c) 2013-2014 Takashi Sakamoto
+ *
+ * Licensed under the terms of the GNU General Public License, version 2.
  */
 #include "./fireworks.h"
 
@@ -42,6 +43,7 @@ end:
 static void
 stop_stream(struct snd_efw *efw, struct amdtp_stream *stream)
 {
+	amdtp_stream_pcm_abort(stream);
 	amdtp_stream_stop(stream);
 
 	if (stream == &efw->tx_stream)
@@ -50,37 +52,54 @@ stop_stream(struct snd_efw *efw, struct amdtp_stream *stream)
 		cmp_connection_break(&efw->in_conn);
 }
 
-static int start_stream(struct snd_efw *efw, struct amdtp_stream *stream,
-			unsigned int rate)
+static int
+start_stream(struct snd_efw *efw, struct amdtp_stream *stream,
+	     unsigned int sampling_rate)
 {
 	struct cmp_connection *conn;
+	unsigned int mode, pcm_channels, midi_ports;
 	int err;
 
-	if (stream == &efw->tx_stream)
-		conn = &efw->out_conn;
-	else
-		conn = &efw->in_conn;
-
-	// Establish connection via CMP.
-	err = cmp_connection_establish(conn);
+	err = snd_efw_get_multiplier_mode(sampling_rate, &mode);
 	if (err < 0)
-		return err;
+		goto end;
+	if (stream == &efw->tx_stream) {
+		conn = &efw->out_conn;
+		pcm_channels = efw->pcm_capture_channels[mode];
+		midi_ports = efw->midi_out_ports;
+	} else {
+		conn = &efw->in_conn;
+		pcm_channels = efw->pcm_playback_channels[mode];
+		midi_ports = efw->midi_in_ports;
+	}
 
-	// Start amdtp stream.
-	err = amdtp_stream_start(stream, conn->resources.channel, conn->speed);
+	err = amdtp_am824_set_parameters(stream, sampling_rate,
+					 pcm_channels, midi_ports, false);
+	if (err < 0)
+		goto end;
+
+	/*  establish connection via CMP */
+	err = cmp_connection_establish(conn,
+				amdtp_stream_get_max_payload(stream));
+	if (err < 0)
+		goto end;
+
+	/* start amdtp stream */
+	err = amdtp_stream_start(stream,
+				 conn->resources.channel,
+				 conn->speed);
 	if (err < 0) {
-		cmp_connection_break(conn);
-		return err;
+		stop_stream(efw, stream);
+		goto end;
 	}
 
-	// Wait first callback.
+	/* wait first callback */
 	if (!amdtp_stream_wait_callback(stream, CALLBACK_TIMEOUT)) {
-		amdtp_stream_stop(stream);
-		cmp_connection_break(conn);
-		return -ETIMEDOUT;
+		stop_stream(efw, stream);
+		err = -ETIMEDOUT;
 	}
-
-	return 0;
+end:
+	return err;
 }
 
 /*
@@ -98,7 +117,7 @@ destroy_stream(struct snd_efw *efw, struct amdtp_stream *stream)
 		conn = &efw->in_conn;
 
 	amdtp_stream_destroy(stream);
-	cmp_connection_destroy(conn);
+	cmp_connection_destroy(&efw->out_conn);
 }
 
 static int
@@ -146,13 +165,13 @@ int snd_efw_stream_init_duplex(struct snd_efw *efw)
 	    (efw->firmware_version == 0x5070000 ||
 	     efw->firmware_version == 0x5070300 ||
 	     efw->firmware_version == 0x5080000))
-		efw->tx_stream.ctx_data.tx.first_dbc = 0x02;
+		efw->tx_stream.tx_first_dbc = 0x02;
 	/* AudioFire9 always reports wrong dbs. */
 	if (efw->is_af9)
 		efw->tx_stream.flags |= CIP_WRONG_DBS;
 	/* Firmware version 5.5 reports fixed interval for dbc. */
 	if (efw->firmware_version == 0x5050000)
-		efw->tx_stream.ctx_data.tx.dbc_interval = 8;
+		efw->tx_stream.tx_dbc_interval = 8;
 
 	err = init_stream(efw, &efw->rx_stream);
 	if (err < 0) {
@@ -170,135 +189,75 @@ end:
 	return err;
 }
 
-static int keep_resources(struct snd_efw *efw, struct amdtp_stream *stream,
-			  unsigned int rate, unsigned int mode)
-{
-	unsigned int pcm_channels;
-	unsigned int midi_ports;
-	struct cmp_connection *conn;
-	int err;
-
-	if (stream == &efw->tx_stream) {
-		pcm_channels = efw->pcm_capture_channels[mode];
-		midi_ports = efw->midi_out_ports;
-		conn = &efw->out_conn;
-	} else {
-		pcm_channels = efw->pcm_playback_channels[mode];
-		midi_ports = efw->midi_in_ports;
-		conn = &efw->in_conn;
-	}
-
-	err = amdtp_am824_set_parameters(stream, rate, pcm_channels,
-					 midi_ports, false);
-	if (err < 0)
-		return err;
-
-	return cmp_connection_reserve(conn, amdtp_stream_get_max_payload(stream));
-}
-
-int snd_efw_stream_reserve_duplex(struct snd_efw *efw, unsigned int rate)
+int snd_efw_stream_start_duplex(struct snd_efw *efw, unsigned int rate)
 {
 	unsigned int curr_rate;
-	int err;
+	int err = 0;
 
-	// Considering JACK/FFADO streaming:
-	// TODO: This can be removed hwdep functionality becomes popular.
+	/* Need no substreams */
+	if (efw->playback_substreams == 0 && efw->capture_substreams  == 0)
+		goto end;
+
+	/*
+	 * Considering JACK/FFADO streaming:
+	 * TODO: This can be removed hwdep functionality becomes popular.
+	 */
 	err = check_connection_used_by_others(efw, &efw->rx_stream);
 	if (err < 0)
-		return err;
+		goto end;
 
-	// stop streams if rate is different.
+	/* packet queueing error */
+	if (amdtp_streaming_error(&efw->tx_stream))
+		stop_stream(efw, &efw->tx_stream);
+	if (amdtp_streaming_error(&efw->rx_stream))
+		stop_stream(efw, &efw->rx_stream);
+
+	/* stop streams if rate is different */
 	err = snd_efw_command_get_sampling_rate(efw, &curr_rate);
 	if (err < 0)
-		return err;
+		goto end;
 	if (rate == 0)
 		rate = curr_rate;
 	if (rate != curr_rate) {
 		stop_stream(efw, &efw->tx_stream);
 		stop_stream(efw, &efw->rx_stream);
-
-		cmp_connection_release(&efw->out_conn);
-		cmp_connection_release(&efw->in_conn);
-	}
-
-	if (efw->substreams_counter == 0 || rate != curr_rate) {
-		unsigned int mode;
-
-		err = snd_efw_command_set_sampling_rate(efw, rate);
-		if (err < 0)
-			return err;
-
-		err = snd_efw_get_multiplier_mode(rate, &mode);
-		if (err < 0)
-			return err;
-
-		err = keep_resources(efw, &efw->tx_stream, rate, mode);
-		if (err < 0)
-			return err;
-
-		err = keep_resources(efw, &efw->rx_stream, rate, mode);
-		if (err < 0) {
-			cmp_connection_release(&efw->in_conn);
-			return err;
-		}
-	}
-
-	return 0;
-}
-
-int snd_efw_stream_start_duplex(struct snd_efw *efw)
-{
-	unsigned int rate;
-	int err = 0;
-
-	// Need no substreams.
-	if (efw->substreams_counter == 0)
-		return -EIO;
-
-	err = snd_efw_command_get_sampling_rate(efw, &rate);
-	if (err < 0)
-		return err;
-
-	if (amdtp_streaming_error(&efw->rx_stream) ||
-	    amdtp_streaming_error(&efw->tx_stream)) {
-		stop_stream(efw, &efw->rx_stream);
-		stop_stream(efw, &efw->tx_stream);
 	}
 
 	/* master should be always running */
 	if (!amdtp_stream_running(&efw->rx_stream)) {
+		err = snd_efw_command_set_sampling_rate(efw, rate);
+		if (err < 0)
+			goto end;
+
 		err = start_stream(efw, &efw->rx_stream, rate);
 		if (err < 0) {
 			dev_err(&efw->unit->device,
 				"fail to start AMDTP master stream:%d\n", err);
-			goto error;
+			goto end;
 		}
 	}
 
-	if (!amdtp_stream_running(&efw->tx_stream)) {
+	/* start slave if needed */
+	if (efw->capture_substreams > 0 &&
+	    !amdtp_stream_running(&efw->tx_stream)) {
 		err = start_stream(efw, &efw->tx_stream, rate);
 		if (err < 0) {
 			dev_err(&efw->unit->device,
 				"fail to start AMDTP slave stream:%d\n", err);
-			goto error;
+			stop_stream(efw, &efw->rx_stream);
 		}
 	}
-
-	return 0;
-error:
-	stop_stream(efw, &efw->rx_stream);
-	stop_stream(efw, &efw->tx_stream);
+end:
 	return err;
 }
 
 void snd_efw_stream_stop_duplex(struct snd_efw *efw)
 {
-	if (efw->substreams_counter == 0) {
+	if (efw->capture_substreams == 0) {
 		stop_stream(efw, &efw->tx_stream);
-		stop_stream(efw, &efw->rx_stream);
 
-		cmp_connection_release(&efw->out_conn);
-		cmp_connection_release(&efw->in_conn);
+		if (efw->playback_substreams == 0)
+			stop_stream(efw, &efw->rx_stream);
 	}
 }
 

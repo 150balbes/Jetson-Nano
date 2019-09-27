@@ -1,10 +1,24 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * RDC321x watchdog driver
  *
  * Copyright (C) 2007-2010 Florian Fainelli <florian@openwrt.org>
  *
  * This driver is highly inspired from the cpu5_wdt driver
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ *
  */
 
 #include <linux/module.h>
@@ -53,7 +67,7 @@ static struct {
 
 /* generic helper functions */
 
-static void rdc321x_wdt_trigger(struct timer_list *unused)
+static void rdc321x_wdt_trigger(unsigned long unused)
 {
 	unsigned long flags;
 	u32 val;
@@ -128,7 +142,7 @@ static int rdc321x_wdt_open(struct inode *inode, struct file *file)
 	if (test_and_set_bit(0, &rdc321x_wdt_device.inuse))
 		return -EBUSY;
 
-	return stream_open(inode, file);
+	return nonseekable_open(inode, file);
 }
 
 static int rdc321x_wdt_release(struct inode *inode, struct file *file)
@@ -248,7 +262,7 @@ static int rdc321x_wdt_probe(struct platform_device *pdev)
 
 	clear_bit(0, &rdc321x_wdt_device.inuse);
 
-	timer_setup(&rdc321x_wdt_device.timer, rdc321x_wdt_trigger, 0);
+	setup_timer(&rdc321x_wdt_device.timer, rdc321x_wdt_trigger, 0);
 
 	rdc321x_wdt_device.default_ticks = ticks;
 

@@ -1,7 +1,6 @@
-# SPDX-License-Identifier: GPL-2.0-only
 #
 # Makefile for arch/parisc/mm
 #
 
-obj-y	 := init.o fault.o ioremap.o fixmap.o
+obj-y	 := init.o fault.o ioremap.o
 obj-$(CONFIG_HUGETLB_PAGE) += hugetlbpage.o

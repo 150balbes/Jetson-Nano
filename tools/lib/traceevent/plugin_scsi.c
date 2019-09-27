@@ -1,9 +1,7 @@
-// SPDX-License-Identifier: GPL-2.0
 #include <stdio.h>
 #include <string.h>
 #include <inttypes.h>
 #include "event-parse.h"
-#include "trace-seq.h"
 
 typedef unsigned long sector_t;
 typedef uint64_t u64;
@@ -414,21 +412,21 @@ unsigned long long process_scsi_trace_parse_cdb(struct trace_seq *s,
 	return 0;
 }
 
-int TEP_PLUGIN_LOADER(struct tep_handle *tep)
+int PEVENT_PLUGIN_LOADER(struct pevent *pevent)
 {
-	tep_register_print_function(tep,
-				    process_scsi_trace_parse_cdb,
-				    TEP_FUNC_ARG_STRING,
-				    "scsi_trace_parse_cdb",
-				    TEP_FUNC_ARG_PTR,
-				    TEP_FUNC_ARG_PTR,
-				    TEP_FUNC_ARG_INT,
-				    TEP_FUNC_ARG_VOID);
+	pevent_register_print_function(pevent,
+				       process_scsi_trace_parse_cdb,
+				       PEVENT_FUNC_ARG_STRING,
+				       "scsi_trace_parse_cdb",
+				       PEVENT_FUNC_ARG_PTR,
+				       PEVENT_FUNC_ARG_PTR,
+				       PEVENT_FUNC_ARG_INT,
+				       PEVENT_FUNC_ARG_VOID);
 	return 0;
 }
 
-void TEP_PLUGIN_UNLOADER(struct tep_handle *tep)
+void PEVENT_PLUGIN_UNLOADER(struct pevent *pevent)
 {
-	tep_unregister_print_function(tep, process_scsi_trace_parse_cdb,
-				      "scsi_trace_parse_cdb");
+	pevent_unregister_print_function(pevent, process_scsi_trace_parse_cdb,
+					 "scsi_trace_parse_cdb");
 }

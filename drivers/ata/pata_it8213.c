@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  *    pata_it8213.c - iTE Tech. Inc.  IT8213 PATA driver
  *

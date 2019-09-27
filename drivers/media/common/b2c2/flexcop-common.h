@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * Linux driver for digital TV devices equipped with B2C2 FlexcopII(b)/III
  * flexcop-common.h - common header file for device-specific source files
@@ -13,10 +12,11 @@
 
 #include "flexcop-reg.h"
 
-#include <media/dmxdev.h>
-#include <media/dvb_demux.h>
-#include <media/dvb_net.h>
-#include <media/dvb_frontend.h>
+#include "dmxdev.h"
+#include "dvb_demux.h"
+#include "dvb_filter.h"
+#include "dvb_net.h"
+#include "dvb_frontend.h"
 
 #define FC_MAX_FEED 256
 

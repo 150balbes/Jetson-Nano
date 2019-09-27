@@ -1,0 +1,216 @@
+/*
+ * Copyright (c) 2017, NVIDIA CORPORATION.  All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with this program; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+ */
+
+/ {
+	host1x {
+		disp_imp_table: disp_imp_table {
+			status = "okay";
+			num_settings = <6>;
+
+			/*
+			 * The ISO bw, EMC floor, and hubclk values were
+			 * calculated with these fixed input configs:
+			 *
+			 * 3 active heads
+			 * N active windows (N is the scale factor)
+			 *
+			 * HEAD:
+			 * - 4096x2160@60p
+			 * - HW cursor enabled
+			 *   - 4BPP packed
+			 *   - Pitch
+			 *   - 256x256
+			 * - Output LUT disabled
+			 *
+			 * WINDOW:
+			 * - Fullscreen
+			 * - 4BPP packed
+			 * - BLx4
+			 * - Input LUT disabled
+			 * - Horizontal and vertical downscaling disabled
+			 * - Compression disabled
+			 * - Rotation disabled
+			 *
+			 * The rest of the IHUB values default to their reset
+			 * values. This will be fixed later.
+			 */
+
+			disp_imp_settings_0 {
+				/* Calculated with 6 active windows */
+
+				/* Global settings */
+				nvidia,total_disp_bw_with_catchup = <0 16727000>;
+				nvidia,total_disp_bw_without_catchup = <0 15206400>;
+				nvidia,disp_emc_floor = <0 665600000>;
+				nvidia,disp_min_hubclk = <0 357620000>;
+				nvidia,total_win_fetch_slots = /bits/ 16 <1>;
+				nvidia,total_cursor_fetch_slots = /bits/ 16 <1>;
+
+				/* Window settings */
+				nvidia,imp_win_mapping = /bits/ 8 <0 1 2 3 4 5>;
+				nvidia,win_fetch_meter_slots = /bits/ 16 <1 1 1 1 1 1>;
+				nvidia,win_dvfs_watermark_values = <0 0 0 0 0 0 0 0 0 0 0 0>;
+				nvidia,win_pipe_meter_values = <0 0 0 0 0 0>;
+				nvidia,win_mempool_buffer_entries = <0 817 0 817 0 817 0 817 0 817 0 817>;
+				nvidia,win_thread_groups = /bits/ 8 <0 1 2 3 4 5>;
+
+				/* Cursor settings */
+				nvidia,imp_head_mapping = /bits/ 8 <0 1 2>;
+				nvidia,cursor_fetch_meter_slots = /bits/ 16 <1 1 1>;
+				nvidia,cursor_dvfs_watermark_values = <0 0 0 0 0 0>;
+				nvidia,cursor_pipe_meter_values = <0 0 0>;
+				nvidia,cursor_mempool_buffer_entries = <0 16 0 16 0 16>;
+			};
+
+			disp_imp_settings_1 {
+				/* Calculated with 5 active windows */
+
+				/* Global settings */
+				nvidia,total_disp_bw_with_catchup = <0 13939200>;
+				nvidia,total_disp_bw_without_catchup = <0 12672000>;
+				nvidia,disp_emc_floor = <0 531200000>;
+				nvidia,disp_min_hubclk = <0 320060000>;
+				nvidia,total_win_fetch_slots = /bits/ 16 <1>;
+				nvidia,total_cursor_fetch_slots = /bits/ 16 <1>;
+
+				/* Window settings */
+				nvidia,imp_win_mapping = /bits/ 8 <0 1 2 3 4 5>;
+				nvidia,win_fetch_meter_slots = /bits/ 16 <1 1 1 1 1 1>;
+				nvidia,win_dvfs_watermark_values = <0 0 0 0 0 0 0 0 0 0 0 0>;
+				nvidia,win_pipe_meter_values = <0 0 0 0 0 0>;
+				nvidia,win_mempool_buffer_entries = <0 817 0 817 0 817 0 817 0 817 0 817>;
+				nvidia,win_thread_groups = /bits/ 8 <0 1 2 3 4 5>;
+
+				/* Cursor settings */
+				nvidia,imp_head_mapping = /bits/ 8 <0 1 2>;
+				nvidia,cursor_fetch_meter_slots = /bits/ 16 <1 1 1>;
+				nvidia,cursor_dvfs_watermark_values = <0 0 0 0 0 0>;
+				nvidia,cursor_pipe_meter_values = <0 0 0>;
+				nvidia,cursor_mempool_buffer_entries = <0 16 0 16 0 16>;
+			};
+
+			disp_imp_settings_2 {
+				/* Calculated with 4 active windows */
+
+				/* Global settings */
+				nvidia,total_disp_bw_with_catchup = <0 11151400>;
+				nvidia,total_disp_bw_without_catchup = <0 10137600>;
+				nvidia,disp_emc_floor = <0 332800000>;
+				nvidia,disp_min_hubclk = <0 282500000>;
+				nvidia,total_win_fetch_slots = /bits/ 16 <1>;
+				nvidia,total_cursor_fetch_slots = /bits/ 16 <1>;
+
+				/* Window settings */
+				nvidia,imp_win_mapping = /bits/ 8 <0 1 2 3 4 5>;
+				nvidia,win_fetch_meter_slots = /bits/ 16 <1 1 1 1 1 1>;
+				nvidia,win_dvfs_watermark_values = <0 0 0 0 0 0 0 0 0 0 0 0>;
+				nvidia,win_pipe_meter_values = <0 0 0 0 0 0>;
+				nvidia,win_mempool_buffer_entries = <0 817 0 817 0 817 0 817 0 817 0 817>;
+				nvidia,win_thread_groups = /bits/ 8 <0 1 2 3 4 5>;
+
+				/* Cursor settings */
+				nvidia,imp_head_mapping = /bits/ 8 <0 1 2>;
+				nvidia,cursor_fetch_meter_slots = /bits/ 16 <1 1 1>;
+				nvidia,cursor_dvfs_watermark_values = <0 0 0 0 0 0>;
+				nvidia,cursor_pipe_meter_values = <0 0 0>;
+				nvidia,cursor_mempool_buffer_entries = <0 16 0 16 0 16>;
+			};
+
+			disp_imp_settings_3 {
+				/* Calculated with 3 active windows */
+
+				/* Global settings */
+				nvidia,total_disp_bw_with_catchup = <0 8363500>;
+				nvidia,total_disp_bw_without_catchup = <0 7603200>;
+				nvidia,disp_emc_floor = <0 332800000>;
+				nvidia,disp_min_hubclk = <0 244940000>;
+				nvidia,total_win_fetch_slots = /bits/ 16 <1>;
+				nvidia,total_cursor_fetch_slots = /bits/ 16 <1>;
+
+				/* Window settings */
+				nvidia,imp_win_mapping = /bits/ 8 <0 1 2 3 4 5>;
+				nvidia,win_fetch_meter_slots = /bits/ 16 <1 1 1 1 1 1>;
+				nvidia,win_dvfs_watermark_values = <0 0 0 0 0 0 0 0 0 0 0 0>;
+				nvidia,win_pipe_meter_values = <0 0 0 0 0 0>;
+				nvidia,win_mempool_buffer_entries = <0 817 0 817 0 817 0 817 0 817 0 817>;
+				nvidia,win_thread_groups = /bits/ 8 <0 1 2 3 4 5>;
+
+				/* Cursor settings */
+				nvidia,imp_head_mapping = /bits/ 8 <0 1 2>;
+				nvidia,cursor_fetch_meter_slots = /bits/ 16 <1 1 1>;
+				nvidia,cursor_dvfs_watermark_values = <0 0 0 0 0 0>;
+				nvidia,cursor_pipe_meter_values = <0 0 0>;
+				nvidia,cursor_mempool_buffer_entries = <0 16 0 16 0 16>;
+			};
+
+			disp_imp_settings_4 {
+				/* Calculated with 2 active windows */
+
+				/* Global settings */
+				nvidia,total_disp_bw_with_catchup = <0 5924200>;
+				nvidia,total_disp_bw_without_catchup = <0 5385600>;
+				nvidia,disp_emc_floor = <0 204000000>;
+				nvidia,disp_min_hubclk = <0 207380000>;
+				nvidia,total_win_fetch_slots = /bits/ 16 <1>;
+				nvidia,total_cursor_fetch_slots = /bits/ 16 <1>;
+
+				/* Window settings */
+				nvidia,imp_win_mapping = /bits/ 8 <0 1 2 3 4 5>;
+				nvidia,win_fetch_meter_slots = /bits/ 16 <1 1 1 1 1 1>;
+				nvidia,win_dvfs_watermark_values = <0 0 0 0 0 0 0 0 0 0 0 0>;
+				nvidia,win_pipe_meter_values = <0 0 0 0 0 0>;
+				nvidia,win_mempool_buffer_entries = <0 817 0 817 0 817 0 817 0 817 0 817>;
+				nvidia,win_thread_groups = /bits/ 8 <0 1 2 3 4 5>;
+
+				/* Cursor settings */
+				nvidia,imp_head_mapping = /bits/ 8 <0 1 2>;
+				nvidia,cursor_fetch_meter_slots = /bits/ 16 <1 1 1>;
+				nvidia,cursor_dvfs_watermark_values = <0 0 0 0 0 0>;
+				nvidia,cursor_pipe_meter_values = <0 0 0>;
+				nvidia,cursor_mempool_buffer_entries = <0 16 0 16 0 16>;
+			};
+
+			disp_imp_settings_5 {
+				/* Calculated with 1 active window */
+
+				/* Global settings */
+				nvidia,total_disp_bw_with_catchup = <0 3136300>;
+				nvidia,total_disp_bw_without_catchup = <0 2851200>;
+				nvidia,disp_emc_floor = <0 102000000>;
+				nvidia,disp_min_hubclk = <0 169820000>;
+				nvidia,total_win_fetch_slots = /bits/ 16 <1>;
+				nvidia,total_cursor_fetch_slots = /bits/ 16 <1>;
+
+				/* Window settings */
+				nvidia,imp_win_mapping = /bits/ 8 <0 1 2 3 4 5>;
+				nvidia,win_fetch_meter_slots = /bits/ 16 <1 1 1 1 1 1>;
+				nvidia,win_dvfs_watermark_values = <0 0 0 0 0 0 0 0 0 0 0 0>;
+				nvidia,win_pipe_meter_values = <0 0 0 0 0 0>;
+				nvidia,win_mempool_buffer_entries = <0 817 0 817 0 817 0 817 0 817 0 817>;
+				nvidia,win_thread_groups = /bits/ 8 <0 1 2 3 4 5>;
+
+				/* Cursor settings */
+				nvidia,imp_head_mapping = /bits/ 8 <0 1 2>;
+				nvidia,cursor_fetch_meter_slots = /bits/ 16 <1 1 1>;
+				nvidia,cursor_dvfs_watermark_values = <0 0 0 0 0 0>;
+				nvidia,cursor_pipe_meter_values = <0 0 0>;
+				nvidia,cursor_mempool_buffer_entries = <0 16 0 16 0 16>;
+			};
+		};
+	};
+};

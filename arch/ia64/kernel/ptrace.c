@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * Kernel support for the ptrace() and syscall tracing interfaces.
  *
@@ -12,8 +11,6 @@
  */
 #include <linux/kernel.h>
 #include <linux/sched.h>
-#include <linux/sched/task.h>
-#include <linux/sched/task_stack.h>
 #include <linux/mm.h>
 #include <linux/errno.h>
 #include <linux/ptrace.h>
@@ -29,7 +26,7 @@
 #include <asm/processor.h>
 #include <asm/ptrace_offsets.h>
 #include <asm/rse.h>
-#include <linux/uaccess.h>
+#include <asm/uaccess.h>
 #include <asm/unwind.h>
 #ifdef CONFIG_PERFMON
 #include <asm/perfmon.h>
@@ -836,7 +833,7 @@ ptrace_getregs (struct task_struct *child, struct pt_all_user_regs __user *ppr)
 	char nat = 0;
 	int i;
 
-	if (!access_ok(ppr, sizeof(struct pt_all_user_regs)))
+	if (!access_ok(VERIFY_WRITE, ppr, sizeof(struct pt_all_user_regs)))
 		return -EIO;
 
 	pt = task_pt_regs(child);
@@ -981,7 +978,7 @@ ptrace_setregs (struct task_struct *child, struct pt_all_user_regs __user *ppr)
 
 	memset(&fpval, 0, sizeof(fpval));
 
-	if (!access_ok(ppr, sizeof(struct pt_all_user_regs)))
+	if (!access_ok(VERIFY_READ, ppr, sizeof(struct pt_all_user_regs)))
 		return -EIO;
 
 	pt = task_pt_regs(child);
@@ -2179,11 +2176,12 @@ static void syscall_get_set_args_cb(struct unw_frame_info *info, void *data)
 }
 
 void ia64_syscall_get_set_arguments(struct task_struct *task,
-	struct pt_regs *regs, unsigned long *args, int rw)
+	struct pt_regs *regs, unsigned int i, unsigned int n,
+	unsigned long *args, int rw)
 {
 	struct syscall_get_set_args data = {
-		.i = 0,
-		.n = 6,
+		.i = i,
+		.n = n,
 		.args = args,
 		.regs = regs,
 		.rw = rw,

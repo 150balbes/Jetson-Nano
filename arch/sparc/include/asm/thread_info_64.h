@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /* thread_info.h: sparc64 low-level thread information
  *
  * Copyright (C) 2002  David S. Miller (davem@redhat.com)
@@ -120,13 +119,12 @@ struct thread_info {
 	.preempt_count	=	INIT_PREEMPT_COUNT,	\
 }
 
+#define init_thread_info	(init_thread_union.thread_info)
+#define init_stack		(init_thread_union.stack)
+
 /* how to get the thread information struct from C */
-#ifndef BUILD_VDSO
 register struct thread_info *current_thread_info_reg asm("g6");
 #define current_thread_info()	(current_thread_info_reg)
-#else
-extern struct thread_info *current_thread_info(void);
-#endif
 
 /* thread information allocation */
 #if PAGE_SHIFT == 13
@@ -182,7 +180,7 @@ extern struct thread_info *current_thread_info(void);
 #define TIF_NEED_RESCHED	3	/* rescheduling necessary */
 /* flag bit 4 is available */
 #define TIF_UNALIGNED		5	/* allowed to do unaligned accesses */
-#define TIF_UPROBE		6	/* breakpointed or singlestepped */
+/* flag bit 6 is available */
 #define TIF_32BIT		7	/* 32-bit binary */
 #define TIF_NOHZ		8	/* in adaptive nohz mode */
 #define TIF_SECCOMP		9	/* secure computing */
@@ -192,7 +190,7 @@ extern struct thread_info *current_thread_info(void);
  *       in using in assembly, else we can't use the mask as
  *       an immediate value in instructions such as andcc.
  */
-#define TIF_MCDPER		12	/* Precise MCD exception */
+/* flag bit 12 is available */
 #define TIF_MEMDIE		13	/* is terminating due to OOM killer */
 #define TIF_POLLING_NRFLAG	14
 
@@ -201,7 +199,6 @@ extern struct thread_info *current_thread_info(void);
 #define _TIF_SIGPENDING		(1<<TIF_SIGPENDING)
 #define _TIF_NEED_RESCHED	(1<<TIF_NEED_RESCHED)
 #define _TIF_UNALIGNED		(1<<TIF_UNALIGNED)
-#define _TIF_UPROBE		(1<<TIF_UPROBE)
 #define _TIF_32BIT		(1<<TIF_32BIT)
 #define _TIF_NOHZ		(1<<TIF_NOHZ)
 #define _TIF_SECCOMP		(1<<TIF_SECCOMP)
@@ -212,8 +209,7 @@ extern struct thread_info *current_thread_info(void);
 #define _TIF_USER_WORK_MASK	((0xff << TI_FLAG_WSAVED_SHIFT) | \
 				 _TIF_DO_NOTIFY_RESUME_MASK | \
 				 _TIF_NEED_RESCHED)
-#define _TIF_DO_NOTIFY_RESUME_MASK	(_TIF_NOTIFY_RESUME | \
-					 _TIF_SIGPENDING | _TIF_UPROBE)
+#define _TIF_DO_NOTIFY_RESUME_MASK	(_TIF_NOTIFY_RESUME | _TIF_SIGPENDING)
 
 #define is_32bit_task()	(test_thread_flag(TIF_32BIT))
 

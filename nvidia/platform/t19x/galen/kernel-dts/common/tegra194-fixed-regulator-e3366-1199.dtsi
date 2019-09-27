@@ -1,0 +1,180 @@
+/*
+ * Copyright (c) 2017, NVIDIA CORPORATION.  All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ */
+
+#include <dt-bindings/gpio/tegra194-gpio.h>
+#include <t19x-common-platforms/tegra194-platforms-simple-bus.dtsi>
+
+/ {
+	fixed-regulators {
+		e3366_prereg_cvb_5v: regulator@100 {
+			compatible = "regulator-fixed";
+			reg = <100>;
+			regulator-name = "vdd-prereg-cvb-5v";
+			regulator-min-microvolt = <5000000>;
+			regulator-max-microvolt = <5000000>;
+			regulator-always-on;
+		};
+
+		e3366_prereg_cvm_5v: regulator@101 {
+			compatible = "regulator-fixed";
+			reg = <101>;
+			regulator-name = "vdd-prereg-cvm-5v";
+			regulator-min-microvolt = <5000000>;
+			regulator-max-microvolt = <5000000>;
+			regulator-always-on;
+		};
+
+		e3366_vdd_3v3_cvb: regulator@102 {
+			compatible = "regulator-fixed";
+			reg = <102>;
+			regulator-name = "vdd-3v3-cvb";
+			regulator-min-microvolt = <3300000>;
+			regulator-max-microvolt = <3300000>;
+			regulator-always-on;
+		};
+
+		e3366_vdd_1v8_cvb: regulator@103 {
+			compatible = "regulator-fixed";
+			reg = <103>;
+			regulator-name = "vdd-1v8-cvb";
+			regulator-min-microvolt = <1800000>;
+			regulator-max-microvolt = <1800000>;
+			regulator-always-on;
+		};
+
+		e3366_vdd_3v3_slt: regulator@104 {
+			compatible = "regulator-fixed";
+			reg = <104>;
+			regulator-name = "vdd-3v3-slt";
+			regulator-min-microvolt = <3300000>;
+			regulator-max-microvolt = <3300000>;
+			regulator-always-on;
+			vin-supply = <&e3366_vdd_3v3_cvb>;
+		};
+
+		e3366_vdd_1v8_slt: regulator@105 {
+			compatible = "regulator-fixed";
+			reg = <105>;
+			regulator-name = "vdd-1v8-slt";
+			regulator-min-microvolt = <1800000>;
+			regulator-max-microvolt = <1800000>;
+			regulator-always-on;
+			vin-supply = <&e3366_vdd_1v8_cvb>;
+		};
+
+		e3366_vatx_3v3_aux: regulator@106 {
+			compatible = "regulator-fixed";
+			reg = <106>;
+			regulator-name = "vatx-3v3-aux";
+			regulator-min-microvolt = <3300000>;
+			regulator-max-microvolt = <3300000>;
+			regulator-always-on;
+			vin-supply = <&e3366_vdd_1v8_slt>;
+		};
+
+		e3366_vdd_1v8_3v3_slt: regulator@107 {
+			compatible = "regulator-gpio";
+			reg = <107>;
+			regulator-name = "vdd_1v8-3v3-slt";
+			regulator-min-microvolt = <1800000>;
+			regulator-max-microvolt = <3300000>;
+			regulator-always-on;
+			gpios = <&e3366_gpio_u1405 5 0>;
+			states = <1800000 0x0
+				  3300000 0x1>;
+			vin-supply = <&e3366_vdd_3v3_slt>;
+		};
+
+		e3366_vdd_usb32_5v0: regulator@108 {
+			compatible = "regulator-fixed";
+			reg = <108>;
+			regulator-name = "vdd-usb32-5v0";
+			regulator-min-microvolt = <5000000>;
+			regulator-max-microvolt = <5000000>;
+			gpio-open-drain;
+			enable-active-high;
+			gpio = <&tegra_main_gpio TEGRA194_MAIN_GPIO(Z, 1) 0>;
+		};
+
+		e3366_vdd_usb33_5v0: regulator@109 {
+			compatible = "regulator-fixed";
+			reg = <109>;
+			regulator-name = "vdd-usb33-5v0";
+			regulator-min-microvolt = <5000000>;
+			regulator-max-microvolt = <5000000>;
+			gpio-open-drain;
+			enable-active-high;
+			gpio = <&tegra_main_gpio TEGRA194_MAIN_GPIO(Z, 2) 0>;
+		};
+
+		e3366_vdd_usb30_5v0: regulator@110 {
+			compatible = "regulator-fixed-sync";
+			reg = <110>;
+			regulator-name = "vdd-usb30-5v0";
+			regulator-min-microvolt = <5000000>;
+			regulator-max-microvolt = <5000000>;
+			gpio-open-drain;
+			enable-active-high;
+			gpio = <&e3366_gpio_u1402 11 1>;
+		};
+
+		e3366_vdd_usb31_5v0: regulator@111 {
+			compatible = "regulator-fixed-sync";
+			reg = <111>;
+			regulator-name = "vdd-usb31-5v0";
+			regulator-min-microvolt = <5000000>;
+			regulator-max-microvolt = <5000000>;
+			gpio-open-drain;
+			enable-active-high;
+			gpio = <&e3366_gpio_u1402 12 1>;
+		};
+
+		e3366_epb_1v0: regulator@112 {
+			compatible = "regulator-fixed";
+			reg = <112>;
+			regulator-name = "vdd-epb-1v0";
+			regulator-min-microvolt = <1000000>;
+			regulator-max-microvolt = <1000000>;
+		};
+
+		e3366_vdd_sdmmc1_sw: regulator@113 {
+			compatible = "regulator-fixed-sync";
+			reg = <113>;
+			regulator-name = "vdd-sdmmc1-sw";
+			regulator-min-microvolt = <3300000>;
+			regulator-max-microvolt = <3300000>;
+			enable-active-high;
+			gpio = <&e3366_gpio_u1409 8 1>;
+		};
+
+		e3366_avdd_cam_2v8: regulator@114 {
+			compatible = "regulator-fixed-sync";
+			reg = <114>;
+			regulator-name = "avdd-cam_2v8";
+			regulator-min-microvolt = <2800000>;
+			regulator-max-microvolt = <2800000>;
+			enable-active-high;
+			gpio = <&e3366_gpio_u1405 15 1>;
+		};
+
+		e3366_vdd_1v5_sata: regulator@115 {
+			compatible = "regulator-fixed";
+			reg = <115>;
+			regulator-name = "vdd-1v5-sata";
+			regulator-min-microvolt = <1500000>;
+			regulator-max-microvolt = <1500000>;
+			vin-supply = <&e3366_vdd_3v3_slt>;
+		};
+	};
+};

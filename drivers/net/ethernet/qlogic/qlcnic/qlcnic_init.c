@@ -592,9 +592,13 @@ qlcnic_receive_peg_ready(struct qlcnic_adapter *adapter)
 
 	} while (--retries);
 
-	dev_err(&adapter->pdev->dev, "Receive Peg initialization not complete, state: 0x%x.\n",
-		val);
-	return -EIO;
+	if (!retries) {
+		dev_err(&adapter->pdev->dev, "Receive Peg initialization not "
+			      "complete, state: 0x%x.\n", val);
+		return -EIO;
+	}
+
+	return 0;
 }
 
 int

@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0-only
 #
 # DECnet configuration
 #
@@ -41,3 +40,4 @@ config DECNET_ROUTER
 	  to work.
 
 	  See <file:Documentation/networking/decnet.txt> for more information.
+

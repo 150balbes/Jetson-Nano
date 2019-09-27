@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /* Generic part */
 
 typedef struct {
@@ -143,7 +142,7 @@ changed:
 	return -EAGAIN;
 }
 
-static int get_block(struct inode * inode, sector_t block,
+static inline int get_block(struct inode * inode, sector_t block,
 			struct buffer_head *bh, int create)
 {
 	int err = -EIO;

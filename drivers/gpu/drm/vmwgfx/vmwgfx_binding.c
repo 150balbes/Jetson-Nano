@@ -1,7 +1,7 @@
-// SPDX-License-Identifier: GPL-2.0 OR MIT
 /**************************************************************************
  *
- * Copyright 2015 VMware, Inc., Palo Alto, CA., USA
+ * Copyright © 2015 VMware, Inc., Palo Alto, CA., USA
+ * All Rights Reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the
@@ -499,9 +499,12 @@ static int vmw_binding_scrub_shader(struct vmw_ctx_bindinfo *bi, bool rebind)
 		SVGA3dCmdSetShader body;
 	} *cmd;
 
-	cmd = VMW_FIFO_RESERVE(dev_priv, sizeof(*cmd));
-	if (unlikely(cmd == NULL))
+	cmd = vmw_fifo_reserve(dev_priv, sizeof(*cmd));
+	if (unlikely(cmd == NULL)) {
+		DRM_ERROR("Failed reserving FIFO space for shader "
+			  "unbinding.\n");
 		return -ENOMEM;
+	}
 
 	cmd->header.id = SVGA_3D_CMD_SET_SHADER;
 	cmd->header.size = sizeof(cmd->body);
@@ -531,9 +534,12 @@ static int vmw_binding_scrub_render_target(struct vmw_ctx_bindinfo *bi,
 		SVGA3dCmdSetRenderTarget body;
 	} *cmd;
 
-	cmd = VMW_FIFO_RESERVE(dev_priv, sizeof(*cmd));
-	if (unlikely(cmd == NULL))
+	cmd = vmw_fifo_reserve(dev_priv, sizeof(*cmd));
+	if (unlikely(cmd == NULL)) {
+		DRM_ERROR("Failed reserving FIFO space for render target "
+			  "unbinding.\n");
 		return -ENOMEM;
+	}
 
 	cmd->header.id = SVGA_3D_CMD_SETRENDERTARGET;
 	cmd->header.size = sizeof(cmd->body);
@@ -570,9 +576,12 @@ static int vmw_binding_scrub_texture(struct vmw_ctx_bindinfo *bi,
 		} body;
 	} *cmd;
 
-	cmd = VMW_FIFO_RESERVE(dev_priv, sizeof(*cmd));
-	if (unlikely(cmd == NULL))
+	cmd = vmw_fifo_reserve(dev_priv, sizeof(*cmd));
+	if (unlikely(cmd == NULL)) {
+		DRM_ERROR("Failed reserving FIFO space for texture "
+			  "unbinding.\n");
 		return -ENOMEM;
+	}
 
 	cmd->header.id = SVGA_3D_CMD_SETTEXTURESTATE;
 	cmd->header.size = sizeof(cmd->body);
@@ -601,10 +610,12 @@ static int vmw_binding_scrub_dx_shader(struct vmw_ctx_bindinfo *bi, bool rebind)
 		SVGA3dCmdDXSetShader body;
 	} *cmd;
 
-	cmd = VMW_FIFO_RESERVE_DX(dev_priv, sizeof(*cmd), bi->ctx->id);
-	if (unlikely(cmd == NULL))
+	cmd = vmw_fifo_reserve_dx(dev_priv, sizeof(*cmd), bi->ctx->id);
+	if (unlikely(cmd == NULL)) {
+		DRM_ERROR("Failed reserving FIFO space for DX shader "
+			  "unbinding.\n");
 		return -ENOMEM;
-
+	}
 	cmd->header.id = SVGA_3D_CMD_DX_SET_SHADER;
 	cmd->header.size = sizeof(cmd->body);
 	cmd->body.type = binding->shader_slot + SVGA3D_SHADERTYPE_MIN;
@@ -630,9 +641,12 @@ static int vmw_binding_scrub_cb(struct vmw_ctx_bindinfo *bi, bool rebind)
 		SVGA3dCmdDXSetSingleConstantBuffer body;
 	} *cmd;
 
-	cmd = VMW_FIFO_RESERVE_DX(dev_priv, sizeof(*cmd), bi->ctx->id);
-	if (unlikely(cmd == NULL))
+	cmd = vmw_fifo_reserve_dx(dev_priv, sizeof(*cmd), bi->ctx->id);
+	if (unlikely(cmd == NULL)) {
+		DRM_ERROR("Failed reserving FIFO space for DX shader "
+			  "unbinding.\n");
 		return -ENOMEM;
+	}
 
 	cmd->header.id = SVGA_3D_CMD_DX_SET_SINGLE_CONSTANT_BUFFER;
 	cmd->header.size = sizeof(cmd->body);
@@ -754,9 +768,12 @@ static int vmw_emit_set_sr(struct vmw_ctx_binding_state *cbs,
 
 	view_id_size = cbs->bind_cmd_count*sizeof(uint32);
 	cmd_size = sizeof(*cmd) + view_id_size;
-	cmd = VMW_FIFO_RESERVE_DX(ctx->dev_priv, cmd_size, ctx->id);
-	if (unlikely(cmd == NULL))
+	cmd = vmw_fifo_reserve_dx(ctx->dev_priv, cmd_size, ctx->id);
+	if (unlikely(cmd == NULL)) {
+		DRM_ERROR("Failed reserving FIFO space for DX shader"
+			  " resource binding.\n");
 		return -ENOMEM;
+	}
 
 	cmd->header.id = SVGA_3D_CMD_DX_SET_SHADER_RESOURCES;
 	cmd->header.size = sizeof(cmd->body) + view_id_size;
@@ -790,9 +807,12 @@ static int vmw_emit_set_rt(struct vmw_ctx_binding_state *cbs)
 	vmw_collect_view_ids(cbs, loc, SVGA3D_MAX_SIMULTANEOUS_RENDER_TARGETS);
 	view_id_size = cbs->bind_cmd_count*sizeof(uint32);
 	cmd_size = sizeof(*cmd) + view_id_size;
-	cmd = VMW_FIFO_RESERVE_DX(ctx->dev_priv, cmd_size, ctx->id);
-	if (unlikely(cmd == NULL))
+	cmd = vmw_fifo_reserve_dx(ctx->dev_priv, cmd_size, ctx->id);
+	if (unlikely(cmd == NULL)) {
+		DRM_ERROR("Failed reserving FIFO space for DX render-target"
+			  " binding.\n");
 		return -ENOMEM;
+	}
 
 	cmd->header.id = SVGA_3D_CMD_DX_SET_RENDERTARGETS;
 	cmd->header.size = sizeof(cmd->body) + view_id_size;
@@ -874,9 +894,12 @@ static int vmw_emit_set_so(struct vmw_ctx_binding_state *cbs)
 
 	so_target_size = cbs->bind_cmd_count*sizeof(SVGA3dSoTarget);
 	cmd_size = sizeof(*cmd) + so_target_size;
-	cmd = VMW_FIFO_RESERVE_DX(ctx->dev_priv, cmd_size, ctx->id);
-	if (unlikely(cmd == NULL))
+	cmd = vmw_fifo_reserve_dx(ctx->dev_priv, cmd_size, ctx->id);
+	if (unlikely(cmd == NULL)) {
+		DRM_ERROR("Failed reserving FIFO space for DX SO target"
+			  " binding.\n");
 		return -ENOMEM;
+	}
 
 	cmd->header.id = SVGA_3D_CMD_DX_SET_SOTARGETS;
 	cmd->header.size = sizeof(cmd->body) + so_target_size;
@@ -988,9 +1011,12 @@ static int vmw_emit_set_vb(struct vmw_ctx_binding_state *cbs)
 
 	set_vb_size = cbs->bind_cmd_count*sizeof(SVGA3dVertexBuffer);
 	cmd_size = sizeof(*cmd) + set_vb_size;
-	cmd = VMW_FIFO_RESERVE_DX(ctx->dev_priv, cmd_size, ctx->id);
-	if (unlikely(cmd == NULL))
+	cmd = vmw_fifo_reserve_dx(ctx->dev_priv, cmd_size, ctx->id);
+	if (unlikely(cmd == NULL)) {
+		DRM_ERROR("Failed reserving FIFO space for DX vertex buffer"
+			  " binding.\n");
 		return -ENOMEM;
+	}
 
 	cmd->header.id = SVGA_3D_CMD_DX_SET_VERTEX_BUFFERS;
 	cmd->header.size = sizeof(cmd->body) + set_vb_size;
@@ -1141,10 +1167,12 @@ static int vmw_binding_scrub_ib(struct vmw_ctx_bindinfo *bi, bool rebind)
 		SVGA3dCmdDXSetIndexBuffer body;
 	} *cmd;
 
-	cmd = VMW_FIFO_RESERVE_DX(dev_priv, sizeof(*cmd), bi->ctx->id);
-	if (unlikely(cmd == NULL))
+	cmd = vmw_fifo_reserve_dx(dev_priv, sizeof(*cmd), bi->ctx->id);
+	if (unlikely(cmd == NULL)) {
+		DRM_ERROR("Failed reserving FIFO space for DX index buffer "
+			  "binding.\n");
 		return -ENOMEM;
-
+	}
 	cmd->header.id = SVGA_3D_CMD_DX_SET_INDEX_BUFFER;
 	cmd->header.size = sizeof(cmd->body);
 	if (rebind) {
@@ -1174,14 +1202,10 @@ struct vmw_ctx_binding_state *
 vmw_binding_state_alloc(struct vmw_private *dev_priv)
 {
 	struct vmw_ctx_binding_state *cbs;
-	struct ttm_operation_ctx ctx = {
-		.interruptible = false,
-		.no_wait_gpu = false
-	};
 	int ret;
 
 	ret = ttm_mem_global_alloc(vmw_mem_glob(dev_priv), sizeof(*cbs),
-				&ctx);
+				   false, false);
 	if (ret)
 		return ERR_PTR(ret);
 
@@ -1239,32 +1263,6 @@ void vmw_binding_state_reset(struct vmw_ctx_binding_state *cbs)
 
 	list_for_each_entry_safe(entry, next, &cbs->list, ctx_list)
 		vmw_binding_drop(entry);
-}
-
-/**
- * vmw_binding_dirtying - Return whether a binding type is dirtying its resource
- * @binding_type: The binding type
- *
- * Each time a resource is put on the validation list as the result of a
- * context binding referencing it, we need to determine whether that resource
- * will be dirtied (written to by the GPU) as a result of the corresponding
- * GPU operation. Currently rendertarget-, depth-stencil-, and
- * stream-output-target bindings are capable of dirtying its resource.
- *
- * Return: Whether the binding type dirties the resource its binding points to.
- */
-u32 vmw_binding_dirtying(enum vmw_ctx_binding_type binding_type)
-{
-	static u32 is_binding_dirtying[vmw_ctx_binding_max] = {
-		[vmw_ctx_binding_rt] = VMW_RES_DIRTY_SET,
-		[vmw_ctx_binding_dx_rt] = VMW_RES_DIRTY_SET,
-		[vmw_ctx_binding_ds] = VMW_RES_DIRTY_SET,
-		[vmw_ctx_binding_so] = VMW_RES_DIRTY_SET,
-	};
-
-	/* Review this function as new bindings are added. */
-	BUILD_BUG_ON(vmw_ctx_binding_max != 11);
-	return is_binding_dirtying[binding_type];
 }
 
 /*

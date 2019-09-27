@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * arch/alpha/lib/dbg_current.S
  * Contributed by Richard Henderson (rth@cygnus.com)

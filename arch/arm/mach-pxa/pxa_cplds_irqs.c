@@ -1,8 +1,12 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Intel Reference Systems cplds
  *
  * Copyright (C) 2014 Robert Jarzmik
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
  *
  * Cplds motherboard driver, supporting lubbock and mainstone SoC board.
  */
@@ -116,9 +120,13 @@ static int cplds_probe(struct platform_device *pdev)
 	if (!fpga)
 		return -ENOMEM;
 
-	fpga->irq = platform_get_irq(pdev, 0);
-	if (fpga->irq <= 0)
-		return fpga->irq;
+	res = platform_get_resource(pdev, IORESOURCE_IRQ, 0);
+	if (res) {
+		fpga->irq = (unsigned int)res->start;
+		irqflags = res->flags;
+	}
+	if (!fpga->irq)
+		return -ENODEV;
 
 	base_irq = platform_get_irq(pdev, 1);
 	if (base_irq < 0)
@@ -134,7 +142,6 @@ static int cplds_probe(struct platform_device *pdev)
 	writel(fpga->irq_mask, fpga->base + FPGA_IRQ_MASK_EN);
 	writel(0, fpga->base + FPGA_IRQ_SET_CLR);
 
-	irqflags = irq_get_trigger_type(fpga->irq);
 	ret = devm_request_irq(&pdev->dev, fpga->irq, cplds_irq_handler,
 			       irqflags, dev_name(&pdev->dev), fpga);
 	if (ret == -ENOSYS)

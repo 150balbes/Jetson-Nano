@@ -24,10 +24,8 @@
 #ifndef __DRM_PANEL_H__
 #define __DRM_PANEL_H__
 
-#include <linux/errno.h>
 #include <linux/list.h>
 
-struct device_node;
 struct drm_connector;
 struct drm_device;
 struct drm_panel;
@@ -82,7 +80,6 @@ struct drm_panel_funcs {
  * @drm: DRM device owning the panel
  * @connector: DRM connector that the panel is attached to
  * @dev: parent device of the panel
- * @link: link from panel device (supplier) to DRM device (consumer)
  * @funcs: operations that can be performed on the panel
  * @list: panel entry in registry
  */
@@ -195,12 +192,12 @@ void drm_panel_remove(struct drm_panel *panel);
 int drm_panel_attach(struct drm_panel *panel, struct drm_connector *connector);
 int drm_panel_detach(struct drm_panel *panel);
 
-#if defined(CONFIG_OF) && defined(CONFIG_DRM_PANEL)
-struct drm_panel *of_drm_find_panel(const struct device_node *np);
+#ifdef CONFIG_OF
+struct drm_panel *of_drm_find_panel(struct device_node *np);
 #else
-static inline struct drm_panel *of_drm_find_panel(const struct device_node *np)
+static inline struct drm_panel *of_drm_find_panel(struct device_node *np)
 {
-	return ERR_PTR(-ENODEV);
+	return NULL;
 }
 #endif
 

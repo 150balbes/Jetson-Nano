@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (C) 1995-2003 Russell King
  *               2001-2002 Keith Owens
@@ -6,6 +5,10 @@
  * Generate definitions needed by assembly language modules.
  * This code generates raw asm output which is post-processed to extract
  * and format the required data.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  */
 #include <linux/sched.h>
 #include <linux/mm.h>
@@ -19,13 +22,11 @@
 #include <asm/mach/arch.h>
 #include <asm/thread_info.h>
 #include <asm/memory.h>
-#include <asm/mpu.h>
 #include <asm/procinfo.h>
 #include <asm/suspend.h>
 #include <asm/vdso_datapage.h>
 #include <asm/hardware/cache-l2x0.h>
 #include <linux/kbuild.h>
-#include "signal.h"
 
 /*
  * Make sure that the compiler and target are compatible.
@@ -34,19 +35,21 @@
 #error Sorry, your compiler targets APCS-26 but this kernel requires APCS-32
 #endif
 /*
- * GCC 4.8.0-4.8.2: https://gcc.gnu.org/bugzilla/show_bug.cgi?id=58854
- *	      miscompiles find_get_entry(), and can result in EXT3 and EXT4
- *	      filesystem corruption (possibly other FS too).
+ * GCC 3.0, 3.1: general bad code generation.
+ * GCC 3.2.0: incorrect function argument offset calculation.
+ * GCC 3.2.x: miscompiles NEW_AUX_ENT in fs/binfmt_elf.c
+ *            (http://gcc.gnu.org/PR8896) and incorrect structure
+ *	      initialisation in fs/jffs2/erase.c
  */
-#if defined(GCC_VERSION) && GCC_VERSION >= 40800 && GCC_VERSION < 40803
-#error Your compiler is too buggy; it is known to miscompile kernels
-#error and result in filesystem corruption and oopses.
+#if (__GNUC__ == 3 && __GNUC_MINOR__ < 3)
+#error Your compiler is too buggy; it is known to miscompile kernels.
+#error    Known good compilers: 3.3
 #endif
 
 int main(void)
 {
   DEFINE(TSK_ACTIVE_MM,		offsetof(struct task_struct, active_mm));
-#ifdef CONFIG_STACKPROTECTOR
+#ifdef CONFIG_CC_STACKPROTECTOR
   DEFINE(TSK_STACK_CANARY,	offsetof(struct task_struct, stack_canary));
 #endif
   BLANK();
@@ -75,10 +78,6 @@ int main(void)
 #ifdef CONFIG_CRUNCH
   DEFINE(TI_CRUNCH_STATE,	offsetof(struct thread_info, crunchstate));
 #endif
-#ifdef CONFIG_STACKPROTECTOR_PER_TASK
-  DEFINE(TI_STACK_CANARY,	offsetof(struct thread_info, stack_canary));
-#endif
-  DEFINE(THREAD_SZ_ORDER,	THREAD_SIZE_ORDER);
   BLANK();
   DEFINE(S_R0,			offsetof(struct pt_regs, ARM_r0));
   DEFINE(S_R1,			offsetof(struct pt_regs, ARM_r1));
@@ -102,9 +101,6 @@ int main(void)
   DEFINE(SVC_DACR,		offsetof(struct svc_pt_regs, dacr));
   DEFINE(SVC_ADDR_LIMIT,	offsetof(struct svc_pt_regs, addr_limit));
   DEFINE(SVC_REGS_SIZE,		sizeof(struct svc_pt_regs));
-  BLANK();
-  DEFINE(SIGFRAME_RC3_OFFSET,	offsetof(struct sigframe, retcode[3]));
-  DEFINE(RT_SIGFRAME_RC3_OFFSET, offsetof(struct rt_sigframe, sig.retcode[3]));
   BLANK();
 #ifdef CONFIG_CACHE_L2X0
   DEFINE(L2X0_R_PHY_BASE,	offsetof(struct l2x0_regs, phy_base));
@@ -176,18 +172,6 @@ int main(void)
   BLANK();
 #ifdef CONFIG_VDSO
   DEFINE(VDSO_DATA_SIZE,	sizeof(union vdso_data_store));
-#endif
-  BLANK();
-#ifdef CONFIG_ARM_MPU
-  DEFINE(MPU_RNG_INFO_RNGS,	offsetof(struct mpu_rgn_info, rgns));
-  DEFINE(MPU_RNG_INFO_USED,	offsetof(struct mpu_rgn_info, used));
-
-  DEFINE(MPU_RNG_SIZE,		sizeof(struct mpu_rgn));
-  DEFINE(MPU_RGN_DRBAR,	offsetof(struct mpu_rgn, drbar));
-  DEFINE(MPU_RGN_DRSR,	offsetof(struct mpu_rgn, drsr));
-  DEFINE(MPU_RGN_DRACR,	offsetof(struct mpu_rgn, dracr));
-  DEFINE(MPU_RGN_PRBAR,	offsetof(struct mpu_rgn, prbar));
-  DEFINE(MPU_RGN_PRLAR,	offsetof(struct mpu_rgn, prlar));
 #endif
   return 0; 
 }

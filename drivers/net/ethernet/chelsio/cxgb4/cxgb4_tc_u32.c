@@ -93,13 +93,14 @@ static int fill_action_fields(struct adapter *adap,
 	unsigned int num_actions = 0;
 	const struct tc_action *a;
 	struct tcf_exts *exts;
-	int i;
+	LIST_HEAD(actions);
 
 	exts = cls->knode.exts;
-	if (!tcf_exts_has_actions(exts))
+	if (tc_no_actions(exts))
 		return -EINVAL;
 
-	tcf_exts_for_each_action(i, a, exts) {
+	tcf_exts_to_list(exts, &actions);
+	list_for_each_entry(a, &actions, list) {
 		/* Don't allow more than one action per rule. */
 		if (num_actions)
 			return -EINVAL;
@@ -112,15 +113,15 @@ static int fill_action_fields(struct adapter *adap,
 		}
 
 		/* Re-direct to specified port in hardware. */
-		if (is_tcf_mirred_egress_redirect(a)) {
-			struct net_device *n_dev, *target_dev;
+		if (is_tcf_mirred_redirect(a)) {
+			struct net_device *n_dev;
+			unsigned int i, index;
 			bool found = false;
-			unsigned int i;
 
-			target_dev = tcf_mirred_dev(a);
+			index = tcf_mirred_ifindex(a);
 			for_each_port(adap, i) {
 				n_dev = adap->port[i];
-				if (target_dev == n_dev) {
+				if (index == n_dev->ifindex) {
 					fs->action = FILTER_SWITCH;
 					fs->eport = i;
 					found = true;
@@ -145,11 +146,11 @@ static int fill_action_fields(struct adapter *adap,
 	return 0;
 }
 
-int cxgb4_config_knode(struct net_device *dev, struct tc_cls_u32_offload *cls)
+int cxgb4_config_knode(struct net_device *dev, __be16 protocol,
+		       struct tc_cls_u32_offload *cls)
 {
 	const struct cxgb4_match_field *start, *link_start = NULL;
 	struct adapter *adapter = netdev2adap(dev);
-	__be16 protocol = cls->common.protocol;
 	struct ch_filter_specification fs;
 	struct cxgb4_tc_u32_table *t;
 	struct cxgb4_link *link;
@@ -337,7 +338,8 @@ out:
 	return ret;
 }
 
-int cxgb4_delete_knode(struct net_device *dev, struct tc_cls_u32_offload *cls)
+int cxgb4_delete_knode(struct net_device *dev, __be16 protocol,
+		       struct tc_cls_u32_offload *cls)
 {
 	struct adapter *adapter = netdev2adap(dev);
 	unsigned int filter_id, max_tids, i, j;
@@ -379,7 +381,7 @@ int cxgb4_delete_knode(struct net_device *dev, struct tc_cls_u32_offload *cls)
 			return -EINVAL;
 	}
 
-	ret = cxgb4_del_filter(dev, filter_id, NULL);
+	ret = cxgb4_del_filter(dev, filter_id);
 	if (ret)
 		goto out;
 
@@ -398,7 +400,7 @@ int cxgb4_delete_knode(struct net_device *dev, struct tc_cls_u32_offload *cls)
 				if (!test_bit(j, link->tid_map))
 					continue;
 
-				ret = __cxgb4_del_filter(dev, j, NULL, NULL);
+				ret = __cxgb4_del_filter(dev, j, NULL);
 				if (ret)
 					goto out;
 
@@ -430,33 +432,35 @@ void cxgb4_cleanup_tc_u32(struct adapter *adap)
 	for (i = 0; i < t->size; i++) {
 		struct cxgb4_link *link = &t->table[i];
 
-		kvfree(link->tid_map);
+		t4_free_mem(link->tid_map);
 	}
-	kvfree(adap->tc_u32);
+	t4_free_mem(adap->tc_u32);
 }
 
-struct cxgb4_tc_u32_table *cxgb4_init_tc_u32(struct adapter *adap)
+struct cxgb4_tc_u32_table *cxgb4_init_tc_u32(struct adapter *adap,
+					     unsigned int size)
 {
-	unsigned int max_tids = adap->tids.nftids;
 	struct cxgb4_tc_u32_table *t;
 	unsigned int i;
 
-	if (!max_tids)
+	if (!size)
 		return NULL;
 
-	t = kvzalloc(struct_size(t, table, max_tids), GFP_KERNEL);
+	t = t4_alloc_mem(sizeof(*t) +
+			 (size * sizeof(struct cxgb4_link)));
 	if (!t)
 		return NULL;
 
-	t->size = max_tids;
+	t->size = size;
 
 	for (i = 0; i < t->size; i++) {
 		struct cxgb4_link *link = &t->table[i];
 		unsigned int bmap_size;
+		unsigned int max_tids;
 
+		max_tids = adap->tids.nftids;
 		bmap_size = BITS_TO_LONGS(max_tids);
-		link->tid_map = kvcalloc(bmap_size, sizeof(unsigned long),
-					 GFP_KERNEL);
+		link->tid_map = t4_alloc_mem(sizeof(unsigned long) * bmap_size);
 		if (!link->tid_map)
 			goto out_no_mem;
 		bitmap_zero(link->tid_map, max_tids);
@@ -469,11 +473,11 @@ out_no_mem:
 		struct cxgb4_link *link = &t->table[i];
 
 		if (link->tid_map)
-			kvfree(link->tid_map);
+			t4_free_mem(link->tid_map);
 	}
 
 	if (t)
-		kvfree(t);
+		t4_free_mem(t);
 
 	return NULL;
 }

@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * Wrap-around code for a console using the
  * ARC io-routines.
@@ -12,7 +11,6 @@
 #include <linux/init.h>
 #include <linux/console.h>
 #include <linux/fs.h>
-#include <asm/setup.h>
 #include <asm/sgialib.h>
 
 static void prom_console_write(struct console *co, const char *s,

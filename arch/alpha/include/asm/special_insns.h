@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __ALPHA_SPECIAL_INSNS_H
 #define __ALPHA_SPECIAL_INSNS_H
 

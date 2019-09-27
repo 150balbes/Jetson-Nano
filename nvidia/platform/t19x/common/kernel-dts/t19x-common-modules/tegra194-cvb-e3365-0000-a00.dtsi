@@ -1,0 +1,154 @@
+/*
+ * Copyright (c) 2017, NVIDIA CORPORATION.  All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; version 2 of the License.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ */
+
+/ {
+	soft_wdt:soft_watchdog {
+		compatible = "softdog-platform";
+		status = "okay";
+	};
+
+	plugin-manager {
+		fragement-tegra-wdt-en {
+			odm-data = "enable-denver-wdt";
+			override@0 {
+				target = <&tegra_wdt>;
+				_overlay_ {
+					status = "okay";
+				};
+			};
+		};
+
+		fragemen-tegra-wdt-dis {
+			odm-data = "disable-denver-wdt";
+			override@0 {
+				target = <&tegra_pmc>;
+				_overlay_ {
+					nvidia,enable-halt-in-fiq;
+				};
+			};
+		};
+
+		fragement-soft-wdt {
+			odm-data = "enable-pmic-wdt",
+				   "enable-denver-wdt";
+			override@0 {
+				target = <&soft_wdt>;
+				_overlay_ {
+					status = "disabled";
+				};
+			};
+		};
+
+		fragment-e3365-a01-xusb {
+			ids = "3365-1099-100", "3365-1098-100";
+			override@0 {
+				target = <&vbus_id_extcon>;
+				_overlay_ {
+					gpios = <&e3365_gpio_u1409 6 0
+						&tegra_main_gpio TEGRA194_MAIN_GPIO(Q, 0) 0>;
+				};
+			};
+			override@1 {
+				target = <&e3365_gpio_u1405>;
+				_overlay_ {
+					i2c_lb_ab0 {
+						gpio-hog;
+						output-low;
+						gpios = <6 0>;
+						label = "i2c_lb_ab0";
+						status = "okay";
+					};
+				};
+			};
+			override@2 {
+				target = <&e3365_gpio_u1409>;
+				_overlay_ {
+					interrupt-parent = <&tegra_main_gpio>;
+					interrupts = <TEGRA194_MAIN_GPIO(P, 4) GPIO_ACTIVE_LOW>;
+					#interrupt-cells = <2>;
+					interrupt-controller;
+				};
+			};
+#if TEGRA_XUSB_PADCONTROL_VERSION >= DT_VERSION_2
+			override@3 {
+				target = <&xusb_padctl>;
+				_overlay_ {
+					pads {
+						usb2 {
+							lanes {
+								usb2-2 {
+									nvidia,function = "xusb";
+									status = "okay";
+								};
+								usb2-3 {
+									nvidia,function = "xusb";
+									status = "okay";
+								};
+							};
+						};
+						usb3 {
+							lanes {
+								usb3-0 {
+									nvidia,function = "xusb";
+									status = "okay";
+								};
+								usb3-1 {
+									nvidia,function = "xusb";
+									status = "okay";
+								};
+							};
+						};
+					};
+
+					ports {
+						usb2-2 {
+							mode = "host";
+							vbus-supply = <&e3365_vdd_usb30_5v0>;
+							status = "okay";
+						};
+						usb2-3 {
+							mode = "host";
+							vbus-supply = <&e3365_vdd_usb31_5v0>;
+							status = "okay";
+						};
+						usb3-0 {
+							nvidia,usb2-companion = <2>;
+							status = "okay";
+						};
+						usb3-1 {
+							nvidia,usb2-companion = <3>;
+							status = "okay";
+						};
+					};
+				};
+			};
+			override@4 {
+				target = <&tegra_xhci>;
+				_overlay_ {
+					phys = <&{/xusb_padctl@3520000/pads/usb2/lanes/usb2-0}>,
+					     <&{/xusb_padctl@3520000/pads/usb2/lanes/usb2-1}>,
+					     <&{/xusb_padctl@3520000/pads/usb2/lanes/usb2-2}>,
+					     <&{/xusb_padctl@3520000/pads/usb2/lanes/usb2-3}>,
+					     <&{/xusb_padctl@3520000/pads/usb3/lanes/usb3-2}>,
+					     <&{/xusb_padctl@3520000/pads/usb3/lanes/usb3-3}>,
+					     <&{/xusb_padctl@3520000/pads/usb3/lanes/usb3-0}>,
+					     <&{/xusb_padctl@3520000/pads/usb3/lanes/usb3-1}>;
+					phy-names = "usb2-0", "usb2-1", "usb2-2", "usb2-3",
+						"usb3-2", "usb3-3", "usb3-0", "usb3-1";
+				};
+			};
+#endif
+		};
+
+	};
+};

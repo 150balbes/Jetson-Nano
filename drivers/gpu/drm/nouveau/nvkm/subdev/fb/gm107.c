@@ -32,7 +32,7 @@ gm107_fb = {
 	.init_page = gf100_fb_init_page,
 	.intr = gf100_fb_intr,
 	.ram_new = gm107_ram_new,
-	.default_bigpage = 17,
+	.memtype_valid = gf100_fb_memtype_valid,
 };
 
 int

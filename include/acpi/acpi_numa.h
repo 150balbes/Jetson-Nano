@@ -1,10 +1,8 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __ACPI_NUMA_H
 #define __ACPI_NUMA_H
 
 #ifdef CONFIG_ACPI_NUMA
 #include <linux/kernel.h>
-#include <linux/numa.h>
 
 /* Proximity bitmap length */
 #if MAX_NUMNODES > 256

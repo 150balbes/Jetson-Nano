@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0
 #
 # create a compressed vmlinux image from the original vmlinux
 #

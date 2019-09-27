@@ -35,33 +35,31 @@
 
 #include <rdma/ib_verbs.h>
 #include <linux/mlx5/driver.h>
-#include <linux/refcount.h>
+
 
 struct mlx5_core_cq {
 	u32			cqn;
 	int			cqe_sz;
 	__be32		       *set_ci_db;
 	__be32		       *arm_db;
-	struct mlx5_uars_page  *uar;
-	refcount_t		refcount;
+	atomic_t		refcount;
 	struct completion	free;
 	unsigned		vector;
 	unsigned int		irqn;
-	void (*comp)(struct mlx5_core_cq *cq, struct mlx5_eqe *eqe);
+	void (*comp)		(struct mlx5_core_cq *);
 	void (*event)		(struct mlx5_core_cq *, enum mlx5_event);
+	struct mlx5_uar	       *uar;
 	u32			cons_index;
 	unsigned		arm_sn;
 	struct mlx5_rsc_debug	*dbg;
 	int			pid;
 	struct {
 		struct list_head list;
-		void (*comp)(struct mlx5_core_cq *cq, struct mlx5_eqe *eqe);
+		void (*comp)(struct mlx5_core_cq *);
 		void		*priv;
 	} tasklet_ctx;
 	int			reset_notify_added;
 	struct list_head	reset_notify;
-	struct mlx5_eq_comp	*eq;
-	u16 uid;
 };
 
 
@@ -125,18 +123,13 @@ struct mlx5_cq_modify_params {
 };
 
 enum {
-	CQE_STRIDE_64 = 0,
-	CQE_STRIDE_128 = 1,
-	CQE_STRIDE_128_PAD = 2,
+	CQE_SIZE_64 = 0,
+	CQE_SIZE_128 = 1,
 };
 
-#define MLX5_MAX_CQ_PERIOD (BIT(__mlx5_bit_sz(cqc, cq_period)) - 1)
-#define MLX5_MAX_CQ_COUNT (BIT(__mlx5_bit_sz(cqc, cq_max_count)) - 1)
-
-static inline int cqe_sz_to_mlx_sz(u8 size, int padding_128_en)
+static inline int cqe_sz_to_mlx_sz(u8 size)
 {
-	return padding_128_en ? CQE_STRIDE_128_PAD :
-				size == 64 ? CQE_STRIDE_64 : CQE_STRIDE_128;
+	return size == 64 ? CQE_SIZE_64 : CQE_SIZE_128;
 }
 
 static inline void mlx5_cq_set_ci(struct mlx5_core_cq *cq)
@@ -151,6 +144,7 @@ enum {
 
 static inline void mlx5_cq_arm(struct mlx5_core_cq *cq, u32 cmd,
 			       void __iomem *uar_page,
+			       spinlock_t *doorbell_lock,
 			       u32 cons_index)
 {
 	__be32 doorbell[2];
@@ -170,22 +164,13 @@ static inline void mlx5_cq_arm(struct mlx5_core_cq *cq, u32 cmd,
 	doorbell[0] = cpu_to_be32(sn << 28 | cmd | ci);
 	doorbell[1] = cpu_to_be32(cq->cqn);
 
-	mlx5_write64(doorbell, uar_page + MLX5_CQ_DOORBELL);
+	mlx5_write64(doorbell, uar_page + MLX5_CQ_DOORBELL, doorbell_lock);
 }
 
-static inline void mlx5_cq_hold(struct mlx5_core_cq *cq)
-{
-	refcount_inc(&cq->refcount);
-}
-
-static inline void mlx5_cq_put(struct mlx5_core_cq *cq)
-{
-	if (refcount_dec_and_test(&cq->refcount))
-		complete(&cq->free);
-}
-
+int mlx5_init_cq_table(struct mlx5_core_dev *dev);
+void mlx5_cleanup_cq_table(struct mlx5_core_dev *dev);
 int mlx5_core_create_cq(struct mlx5_core_dev *dev, struct mlx5_core_cq *cq,
-			u32 *in, int inlen, u32 *out, int outlen);
+			u32 *in, int inlen);
 int mlx5_core_destroy_cq(struct mlx5_core_dev *dev, struct mlx5_core_cq *cq);
 int mlx5_core_query_cq(struct mlx5_core_dev *dev, struct mlx5_core_cq *cq,
 		       u32 *out, int outlen);
@@ -194,12 +179,6 @@ int mlx5_core_modify_cq(struct mlx5_core_dev *dev, struct mlx5_core_cq *cq,
 int mlx5_core_modify_cq_moderation(struct mlx5_core_dev *dev,
 				   struct mlx5_core_cq *cq, u16 cq_period,
 				   u16 cq_max_count);
-static inline void mlx5_dump_err_cqe(struct mlx5_core_dev *dev,
-				     struct mlx5_err_cqe *err_cqe)
-{
-	print_hex_dump(KERN_WARNING, "", DUMP_PREFIX_OFFSET, 16, 1, err_cqe,
-		       sizeof(*err_cqe), false);
-}
 int mlx5_debug_cq_add(struct mlx5_core_dev *dev, struct mlx5_core_cq *cq);
 void mlx5_debug_cq_remove(struct mlx5_core_dev *dev, struct mlx5_core_cq *cq);
 

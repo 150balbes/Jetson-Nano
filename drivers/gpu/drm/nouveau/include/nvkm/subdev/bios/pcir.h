@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: MIT */
 #ifndef __NVBIOS_PCIR_H__
 #define __NVBIOS_PCIR_H__
 struct nvbios_pcirT {

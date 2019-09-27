@@ -1,7 +1,20 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * Copyright (C) 2007 Oracle.  All rights reserved.
  * Copyright (C) 2014 Fujitsu.  All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public
+ * License v2 as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public
+ * License along with this program; if not, write to the
+ * Free Software Foundation, Inc., 59 Temple Place - Suite 330,
+ * Boston, MA 021110-1307, USA.
  */
 
 #include <linux/kthread.h>
@@ -54,7 +67,7 @@ struct btrfs_workqueue {
 static void normal_work_helper(struct btrfs_work *work);
 
 #define BTRFS_WORK_HELPER(name)					\
-noinline_for_stack void btrfs_##name(struct work_struct *arg)		\
+void btrfs_##name(struct work_struct *arg)				\
 {									\
 	struct btrfs_work *work = container_of(arg, struct btrfs_work,	\
 					       normal_work);		\
@@ -62,18 +75,18 @@ noinline_for_stack void btrfs_##name(struct work_struct *arg)		\
 }
 
 struct btrfs_fs_info *
-btrfs_workqueue_owner(const struct __btrfs_workqueue *wq)
+btrfs_workqueue_owner(struct __btrfs_workqueue *wq)
 {
 	return wq->fs_info;
 }
 
 struct btrfs_fs_info *
-btrfs_work_owner(const struct btrfs_work *work)
+btrfs_work_owner(struct btrfs_work *work)
 {
 	return work->wq->fs_info;
 }
 
-bool btrfs_workqueue_normal_congested(const struct btrfs_workqueue *wq)
+bool btrfs_workqueue_normal_congested(struct btrfs_workqueue *wq)
 {
 	/*
 	 * We could compare wq->normal->pending with num_online_cpus()
@@ -139,11 +152,13 @@ __btrfs_alloc_workqueue(struct btrfs_fs_info *fs_info, const char *name,
 	}
 
 	if (flags & WQ_HIGHPRI)
-		ret->normal_wq = alloc_workqueue("btrfs-%s-high", flags,
-						 ret->current_active, name);
+		ret->normal_wq = alloc_workqueue("%s-%s-high", flags,
+						 ret->current_active, "btrfs",
+						 name);
 	else
-		ret->normal_wq = alloc_workqueue("btrfs-%s", flags,
-						 ret->current_active, name);
+		ret->normal_wq = alloc_workqueue("%s-%s", flags,
+						 ret->current_active, "btrfs",
+						 name);
 	if (!ret->normal_wq) {
 		kfree(ret);
 		return NULL;

@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0
 #
 #  Makefile for the Renesas R-Car CAN & CAN FD controller drivers
 #

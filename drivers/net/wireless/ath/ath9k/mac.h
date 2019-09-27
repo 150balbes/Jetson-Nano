@@ -16,7 +16,6 @@
 
 #ifndef MAC_H
 #define MAC_H
-#include <net/cfg80211.h>
 
 #define set11nTries(_series, _index) \
 	(SM((_series)[_index].Tries, AR_XmitDataTries##_index))
@@ -144,8 +143,7 @@ struct ath_rx_status {
 	u32 evm2;
 	u32 evm3;
 	u32 evm4;
-	u16 enc_flags;
-	enum rate_info_bw bw;
+	u32 flag; /* see enum mac80211_rx_flags */
 };
 
 struct ath_htc_rx_status {

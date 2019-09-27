@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 #include <linux/init.h>
 #include <linux/pci.h>
 #include <asm/mips-boards/piix4.h>
@@ -13,7 +12,7 @@
 static char pci_irq[5] = {
 };
 
-static char irq_tab[][5] = {
+static char irq_tab[][5] __initdata = {
 	/*	INTA	INTB	INTC	INTD */
 	{0,	0,	0,	0,	0 },	/*  0: GT64120 PCI bridge */
 	{0,	0,	0,	0,	0 },	/*  1: Unused */
@@ -39,7 +38,7 @@ static char irq_tab[][5] = {
 	{0,	PCID,	PCIA,	PCIB,	PCIC }	/* 21: PCI Slot 4 */
 };
 
-int pcibios_map_irq(const struct pci_dev *dev, u8 slot, u8 pin)
+int __init pcibios_map_irq(const struct pci_dev *dev, u8 slot, u8 pin)
 {
 	int virq;
 	virq = irq_tab[slot][pin];

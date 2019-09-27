@@ -9,7 +9,6 @@
  * Copyright (C) 2012  Ralf Baechle <ralf@linux-mips.org>
  */
 #include <asm/asm.h>
-#include <asm/export.h>
 #include <asm/regdef.h>
 
 #ifdef CONFIG_SIBYTE_DMA_PAGEOPS
@@ -30,7 +29,6 @@
  */
 EXPORT(__clear_page_start)
 LEAF(cpu_clear_page_function_name)
-EXPORT_SYMBOL(cpu_clear_page_function_name)
 1:	j	1b		/* Dummy, will be replaced. */
 	.space 288
 END(cpu_clear_page_function_name)
@@ -46,7 +44,6 @@ EXPORT(__clear_page_end)
  */
 EXPORT(__copy_page_start)
 LEAF(cpu_copy_page_function_name)
-EXPORT_SYMBOL(cpu_copy_page_function_name)
 1:	j	1b		/* Dummy, will be replaced. */
 	.space 1344
 END(cpu_copy_page_function_name)

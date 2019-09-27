@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * omap_udc.h -- for omap 3.2 udc, with OTG support
  *
@@ -188,7 +187,7 @@ struct omap_udc {
 #endif
 
 #define ERR(stuff...)		pr_err("udc: " stuff)
-#define WARNING(stuff...)	pr_warn("udc: " stuff)
+#define WARNING(stuff...)	pr_warning("udc: " stuff)
 #define INFO(stuff...)		pr_info("udc: " stuff)
 #define DBG(stuff...)		pr_debug("udc: " stuff)
 

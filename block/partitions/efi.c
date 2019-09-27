@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /************************************************************
  * EFI GUID Partition Table handling
  *
@@ -7,6 +6,21 @@
  *
  * efi.[ch] by Matt Domsch <Matt_Domsch@dell.com>
  *   Copyright 2000,2001,2002,2004 Dell Inc.
+ *
+ *  This program is free software; you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License as published by
+ *  the Free Software Foundation; either version 2 of the License, or
+ *  (at your option) any later version.
+ *
+ *  This program is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *  GNU General Public License for more details.
+ *
+ *  You should have received a copy of the GNU General Public License
+ *  along with this program; if not, write to the Free Software
+ *  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ *
  *
  * TODO:
  *
@@ -95,6 +109,7 @@
  * the partition tables happens after init too.
  */
 static int force_gpt;
+static u64 force_gpt_sector;
 static int __init
 force_gpt_fn(char *str)
 {
@@ -102,6 +117,13 @@ force_gpt_fn(char *str)
 	return 1;
 }
 __setup("gpt", force_gpt_fn);
+
+static int __init force_gpt_sector_fn(char *str)
+{
+	force_gpt_sector = simple_strtoull(str, NULL, 0);
+	return 1;
+}
+__setup("gpt_sector=", force_gpt_sector_fn);
 
 
 /**
@@ -620,6 +642,9 @@ static int find_valid_gpt(struct parsed_partitions *state, gpt_header **gpt,
 					 &agpt, &aptes);
         if (!good_agpt && force_gpt)
                 good_agpt = is_gpt_valid(state, lastlba, &agpt, &aptes);
+
+	if (!good_agpt && force_gpt && force_gpt_sector)
+		good_agpt = is_gpt_valid(state, force_gpt_sector, &agpt, &aptes);
 
         /* The obviously unsuccessful case */
         if (!good_pgpt && !good_agpt)

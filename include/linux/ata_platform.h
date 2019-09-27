@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __LINUX_ATA_PLATFORM_H
 #define __LINUX_ATA_PLATFORM_H
 
@@ -19,8 +18,7 @@ extern int __pata_platform_probe(struct device *dev,
 				 struct resource *irq_res,
 				 unsigned int ioport_shift,
 				 int __pio_mask,
-				 struct scsi_host_template *sht,
-				 bool use16bit);
+				 struct scsi_host_template *sht);
 
 /*
  * Marvell SATA private data

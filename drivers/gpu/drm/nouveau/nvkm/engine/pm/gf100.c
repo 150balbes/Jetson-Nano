@@ -102,7 +102,7 @@ gf100_pm_gpc[] = {
 	{}
 };
 
-static const struct nvkm_specdom
+const struct nvkm_specdom
 gf100_pm_part[] = {
 	{ 0xe0, (const struct nvkm_specsig[]) {
 			{ 0x0f, "part00_pbfb_00", gf100_pbfb_sources },

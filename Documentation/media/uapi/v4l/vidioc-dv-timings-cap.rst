@@ -1,11 +1,4 @@
-.. Permission is granted to copy, distribute and/or modify this
-.. document under the terms of the GNU Free Documentation License,
-.. Version 1.1 or any later version published by the Free Software
-.. Foundation, with no Invariant Sections, no Front-Cover Texts
-.. and no Back-Cover Texts. A copy of the license is included at
-.. Documentation/media/uapi/fdl-appendix.rst.
-..
-.. TODO: replace it to GFDL-1.1-or-later WITH no-invariant-sections
+.. -*- coding: utf-8; mode: rst -*-
 
 .. _VIDIOC_DV_TIMINGS_CAP:
 
@@ -36,7 +29,6 @@ Arguments
     File descriptor returned by :ref:`open() <func-open>`.
 
 ``argp``
-    Pointer to struct :c:type:`v4l2_dv_timings_cap`.
 
 
 Description
@@ -105,7 +97,7 @@ that doesn't support them will return an ``EINVAL`` error code.
 
 
 
-.. tabularcolumns:: |p{1.0cm}|p{4.0cm}|p{3.5cm}|p{9.2cm}|
+.. tabularcolumns:: |p{1.0cm}|p{3.5cm}|p{3.5cm}|p{9.5cm}|
 
 .. c:type:: v4l2_dv_timings_cap
 

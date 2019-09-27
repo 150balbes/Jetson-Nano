@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  *  linux/fs/sysv/ialloc.c
  *
@@ -221,7 +220,7 @@ Einval:
 	printk("sysv_count_free_inodes: "
 		"free inode count was %d, correcting to %d\n",
 		sb_count, count);
-	if (!sb_rdonly(sb)) {
+	if (!(sb->s_flags & MS_RDONLY)) {
 		*sbi->s_sb_total_free_inodes = cpu_to_fs16(SYSV_SB(sb), count);
 		dirty_sb(sb);
 	}

@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * STK1160 driver
  *
@@ -8,6 +7,17 @@
  * Based on Easycap driver by R.M. Thomas
  *	Copyright (C) 2010 R.M. Thomas
  *	<rmthomas--a.t--sciolus.org>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
  */
 
 #include <linux/i2c.h>
@@ -39,8 +49,6 @@
 
 #define STK1160_MAX_INPUT 4
 #define STK1160_SVIDEO_INPUT 4
-
-#define STK1160_AC97_TIMEOUT 50
 
 #define STK1160_I2C_TIMEOUT 100
 
@@ -189,4 +197,11 @@ int stk1160_read_reg_req_len(struct stk1160 *dev, u8 req, u16 reg,
 void stk1160_select_input(struct stk1160 *dev);
 
 /* Provided by stk1160-ac97.c */
-void stk1160_ac97_setup(struct stk1160 *dev);
+#ifdef CONFIG_VIDEO_STK1160_AC97
+int stk1160_ac97_register(struct stk1160 *dev);
+int stk1160_ac97_unregister(struct stk1160 *dev);
+#else
+static inline int stk1160_ac97_register(struct stk1160 *dev) { return 0; }
+static inline int stk1160_ac97_unregister(struct stk1160 *dev) { return 0; }
+#endif
+

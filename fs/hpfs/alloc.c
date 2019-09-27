@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  *  linux/fs/hpfs/alloc.c
  *
@@ -539,7 +538,7 @@ int hpfs_trim_fs(struct super_block *s, u64 start, u64 end, u64 minlen, unsigned
 		return 0;
 	if (start < sbi->sb_dirband_start + sbi->sb_dirband_size && end > sbi->sb_dirband_start) {
 		hpfs_lock(s);
-		if (sb_rdonly(s)) {
+		if (s->s_flags & MS_RDONLY) {
 			err = -EROFS;
 			goto unlock_1;
 		}
@@ -560,7 +559,7 @@ unlock_1:
 	end_bmp = (end + 0x3fff) >> 14;
 	while (start_bmp < end_bmp && !err) {
 		hpfs_lock(s);
-		if (sb_rdonly(s)) {
+		if (s->s_flags & MS_RDONLY) {
 			err = -EROFS;
 			goto unlock_2;
 		}

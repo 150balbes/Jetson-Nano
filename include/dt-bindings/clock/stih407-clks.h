@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * This header provides constants clk index STMicroelectronics
  * STiH407 SoC.

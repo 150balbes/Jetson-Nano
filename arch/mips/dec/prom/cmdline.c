@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * cmdline.c: read the command line passed to us by the PROM.
  *

@@ -1,8 +1,9 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * System timer for CSR SiRFprimaII
  *
  * Copyright (c) 2011 Cambridge Silicon Radio Limited, a CSR plc group company.
+ *
+ * Licensed under GPLv2 or later.
  */
 
 #include <linux/kernel.h>
@@ -84,7 +85,7 @@ static irqreturn_t sirfsoc_timer_interrupt(int irq, void *dev_id)
 }
 
 /* read 64-bit timer counter */
-static u64 sirfsoc_timer_read(struct clocksource *cs)
+static cycle_t sirfsoc_timer_read(struct clocksource *cs)
 {
 	u64 cycles;
 
@@ -191,9 +192,7 @@ static int sirfsoc_local_timer_starting_cpu(unsigned int cpu)
 	ce->set_next_event = sirfsoc_timer_set_next_event;
 	clockevents_calc_mult_shift(ce, atlas7_timer_rate, 60);
 	ce->max_delta_ns = clockevent_delta2ns(-2, ce);
-	ce->max_delta_ticks = (unsigned long)-2;
 	ce->min_delta_ns = clockevent_delta2ns(2, ce);
-	ce->min_delta_ticks = 2;
 	ce->cpumask = cpumask_of(cpu);
 
 	action->dev_id = ce;
@@ -222,7 +221,7 @@ static int __init sirfsoc_clockevent_init(void)
 
 	/* Install and invoke hotplug callbacks */
 	return cpuhp_setup_state(CPUHP_AP_MARCO_TIMER_STARTING,
-				 "clockevents/marco:starting",
+				 "AP_MARCO_TIMER_STARTING",
 				 sirfsoc_local_timer_starting_cpu,
 				 sirfsoc_local_timer_dying_cpu);
 }
@@ -282,4 +281,4 @@ static int __init sirfsoc_of_timer_init(struct device_node *np)
 
 	return sirfsoc_atlas7_timer_init(np);
 }
-TIMER_OF_DECLARE(sirfsoc_atlas7_timer, "sirf,atlas7-tick", sirfsoc_of_timer_init);
+CLOCKSOURCE_OF_DECLARE(sirfsoc_atlas7_timer, "sirf,atlas7-tick", sirfsoc_of_timer_init);

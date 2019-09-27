@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note */
 /* atmdev.h - ATM device driver declarations and various related items */
  
 /* Written 1995-2000 by Werner Almesberger, EPFL LRC/ICA */

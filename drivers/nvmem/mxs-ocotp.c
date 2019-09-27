@@ -1,10 +1,20 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Freescale MXS On-Chip OTP driver
  *
  * Copyright (C) 2015 Stefan Wahren <stefan.wahren@i2se.com>
  *
  * Based on the driver from Huang Shijie and Christoph G. Baumann
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
  */
 #include <linux/clk.h>
 #include <linux/delay.h>
@@ -108,6 +118,7 @@ static struct nvmem_config ocotp_config = {
 	.name = "mxs-ocotp",
 	.stride = 16,
 	.word_size = 4,
+	.owner = THIS_MODULE,
 	.reg_read = mxs_ocotp_read,
 };
 
@@ -135,6 +146,7 @@ static int mxs_ocotp_probe(struct platform_device *pdev)
 	struct device *dev = &pdev->dev;
 	const struct mxs_data *data;
 	struct mxs_ocotp *otp;
+	struct resource *res;
 	const struct of_device_id *match;
 	int ret;
 
@@ -146,7 +158,8 @@ static int mxs_ocotp_probe(struct platform_device *pdev)
 	if (!otp)
 		return -ENOMEM;
 
-	otp->base = devm_platform_ioremap_resource(pdev, 0);
+	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
+	otp->base = devm_ioremap_resource(dev, res);
 	if (IS_ERR(otp->base))
 		return PTR_ERR(otp->base);
 
@@ -165,7 +178,7 @@ static int mxs_ocotp_probe(struct platform_device *pdev)
 	ocotp_config.size = data->size;
 	ocotp_config.priv = otp;
 	ocotp_config.dev = dev;
-	otp->nvmem = devm_nvmem_register(dev, &ocotp_config);
+	otp->nvmem = nvmem_register(&ocotp_config);
 	if (IS_ERR(otp->nvmem)) {
 		ret = PTR_ERR(otp->nvmem);
 		goto err_clk;
@@ -187,7 +200,7 @@ static int mxs_ocotp_remove(struct platform_device *pdev)
 
 	clk_unprepare(otp->clk);
 
-	return 0;
+	return nvmem_unregister(otp->nvmem);
 }
 
 static struct platform_driver mxs_ocotp_driver = {

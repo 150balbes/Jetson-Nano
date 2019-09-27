@@ -1,7 +1,16 @@
-// SPDX-License-Identifier: GPL-2.0+
 /*
  * usbdux.c
  * Copyright (C) 2003-2014 Bernd Porr, mail@berndporr.me.uk
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
  */
 
 /*
@@ -800,6 +809,7 @@ static int usbdux_ao_insn_write(struct comedi_device *dev,
 {
 	struct usbdux_private *devpriv = dev->private;
 	unsigned int chan = CR_CHAN(insn->chanspec);
+	unsigned int val = s->readback[chan];
 	__le16 *p = (__le16 *)&devpriv->dux_commands[2];
 	int ret = -EBUSY;
 	int i;
@@ -815,7 +825,7 @@ static int usbdux_ao_insn_write(struct comedi_device *dev,
 	devpriv->dux_commands[4] = chan << 6;
 
 	for (i = 0; i < insn->n; i++) {
-		unsigned int val = data[i];
+		val = data[i];
 
 		/* one 16 bit value */
 		*p = cpu_to_le16(val);
@@ -1226,7 +1236,7 @@ static int usbdux_pwm_period(struct comedi_device *dev,
 			     unsigned int period)
 {
 	struct usbdux_private *devpriv = dev->private;
-	int fx2delay;
+	int fx2delay = 255;
 
 	if (period < MIN_PWM_PERIOD)
 		return -EAGAIN;
@@ -1691,8 +1701,6 @@ static void usbdux_detach(struct comedi_device *dev)
 	usbdux_free_usb_buffers(dev);
 
 	mutex_unlock(&devpriv->mut);
-
-	mutex_destroy(&devpriv->mut);
 }
 
 static struct comedi_driver usbdux_driver = {

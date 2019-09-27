@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /***************************************************************************/
 
 /*
@@ -35,7 +34,6 @@ DEFINE_CLK(mcfuart1, "mcfuart.1", MCF_BUSCLK);
 DEFINE_CLK(mcfuart2, "mcfuart.2", MCF_BUSCLK);
 DEFINE_CLK(mcfqspi0, "mcfqspi.0", MCF_BUSCLK);
 DEFINE_CLK(fec0, "fec.0", MCF_BUSCLK);
-DEFINE_CLK(mcfi2c0, "imx1-i2c.0", MCF_BUSCLK);
 
 struct clk *mcf_clks[] = {
 	&clk_pll,
@@ -49,7 +47,6 @@ struct clk *mcf_clks[] = {
 	&clk_mcfuart2,
 	&clk_mcfqspi0,
 	&clk_fec0,
-	&clk_mcfi2c0,
 	NULL
 };
 
@@ -71,21 +68,6 @@ static void __init m523x_qspi_init(void)
 
 /***************************************************************************/
 
-static void __init m523x_i2c_init(void)
-{
-#if IS_ENABLED(CONFIG_I2C_IMX)
-	u8 par;
-
-	/* setup Port AS Pin Assignment Register for I2C */
-	/*  set PASPA0 to SCL and PASPA1 to SDA */
-	par = readb(MCFGPIO_PAR_FECI2C);
-	par |= 0x0f;
-	writeb(par, MCFGPIO_PAR_FECI2C);
-#endif /* IS_ENABLED(CONFIG_I2C_IMX) */
-}
-
-/***************************************************************************/
-
 static void __init m523x_fec_init(void)
 {
 	/* Set multi-function pins to ethernet use */
@@ -99,7 +81,6 @@ void __init config_BSP(char *commandp, int size)
 	mach_sched_init = hw_timer_init;
 	m523x_fec_init();
 	m523x_qspi_init();
-	m523x_i2c_init();
 }
 
 /***************************************************************************/

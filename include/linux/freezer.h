@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /* Freezer declarations */
 
 #ifndef FREEZER_H_INCLUDED
@@ -182,7 +181,7 @@ static inline void freezable_schedule_unsafe(void)
 }
 
 /*
- * Like schedule_timeout(), but should not block the freezer.  Do not
+ * Like freezable_schedule_timeout(), but should not block the freezer.  Do not
  * call this with locks held.
  */
 static inline long freezable_schedule_timeout(long timeout)

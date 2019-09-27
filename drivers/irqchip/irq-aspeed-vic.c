@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  *  Copyright (C) 2015 - Ben Herrenschmidt, IBM Corp.
  *
@@ -8,6 +7,17 @@
  *
  *  Copyright (C) 1999 - 2003 ARM Limited
  *  Copyright (C) 2000 Deep Blue Solutions Ltd
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
  */
 
 #include <linux/export.h>
@@ -176,7 +186,7 @@ static int avic_map(struct irq_domain *d, unsigned int irq,
 	return 0;
 }
 
-static const struct irq_domain_ops avic_dom_ops = {
+static struct irq_domain_ops avic_dom_ops = {
 	.map = avic_map,
 	.xlate = irq_domain_xlate_onetwocell,
 };
@@ -217,5 +227,4 @@ static int __init avic_of_init(struct device_node *node,
 	return 0;
 }
 
-IRQCHIP_DECLARE(ast2400_vic, "aspeed,ast2400-vic", avic_of_init);
-IRQCHIP_DECLARE(ast2500_vic, "aspeed,ast2500-vic", avic_of_init);
+IRQCHIP_DECLARE(aspeed_new_vic, "aspeed,ast2400-vic", avic_of_init);

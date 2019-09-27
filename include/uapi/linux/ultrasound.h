@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note */
 #ifndef _ULTRASOUND_H_
 #define _ULTRASOUND_H_
 /*

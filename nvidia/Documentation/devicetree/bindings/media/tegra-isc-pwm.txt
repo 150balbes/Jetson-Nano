@@ -1,0 +1,19 @@
+NVIDIA tegra isc pwm driver
+
+This file documents the properties used by the isc-mgr driver in tegra platform
+
+Required properties:
+- compatible : Should be "nvidia, isc-pwm"
+- pwms : PWM property to point to the PWM chip, chip-relative PWM number and to
+         specify the period time to be used
+- pwm-cells : Specify the number of cells used for the PWM chip
+- npwm : number of PWMs controlled by this chip
+
+Example:
+isc_pwm: isc_pwm_gen {
+    compatible = "nvidia, isc-pwm";
+    pwms = <&tegra_pwm2 0 0>; /* by default the number of cells is 2 */
+    #pwm-cells = <2>;
+    npwm = <3>; /* number of PWMs controlled by this chip */
+    status = "okay";
+};

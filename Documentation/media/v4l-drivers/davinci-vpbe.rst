@@ -1,5 +1,3 @@
-.. SPDX-License-Identifier: GPL-2.0
-
 The VPBE V4L2 driver design
 ===========================
 

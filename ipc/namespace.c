@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * linux/ipc/namespace.c
  * Copyright (C) 2006 Pavel Emelyanov <xemul@openvz.org> OpenVZ, SWsoft Inc.
@@ -10,12 +9,10 @@
 #include <linux/rcupdate.h>
 #include <linux/nsproxy.h>
 #include <linux/slab.h>
-#include <linux/cred.h>
 #include <linux/fs.h>
 #include <linux/mount.h>
 #include <linux/user_namespace.h>
 #include <linux/proc_ns.h>
-#include <linux/sched/task.h>
 
 #include "util.h"
 
@@ -42,7 +39,7 @@ static struct ipc_namespace *create_ipc_ns(struct user_namespace *user_ns,
 		goto fail;
 
 	err = -ENOMEM;
-	ns = kzalloc(sizeof(struct ipc_namespace), GFP_KERNEL);
+	ns = kmalloc(sizeof(struct ipc_namespace), GFP_KERNEL);
 	if (ns == NULL)
 		goto fail_dec;
 
@@ -51,7 +48,7 @@ static struct ipc_namespace *create_ipc_ns(struct user_namespace *user_ns,
 		goto fail_free;
 	ns->ns.ops = &ipcns_operations;
 
-	refcount_set(&ns->count, 1);
+	atomic_set(&ns->count, 1);
 	ns->user_ns = get_user_ns(user_ns);
 	ns->ucounts = ucounts;
 
@@ -145,7 +142,7 @@ static void free_ipc_ns(struct ipc_namespace *ns)
  */
 void put_ipc_ns(struct ipc_namespace *ns)
 {
-	if (refcount_dec_and_lock(&ns->count, &mq_lock)) {
+	if (atomic_dec_and_lock(&ns->count, &mq_lock)) {
 		mq_clear_sbinfo(ns);
 		spin_unlock(&mq_lock);
 		mq_put_mnt(ns);

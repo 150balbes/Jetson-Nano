@@ -1,10 +1,13 @@
-// SPDX-License-Identifier: GPL-2.0+
 /*
  * linux/fs/jbd2/checkpoint.c
  *
  * Written by Stephen C. Tweedie <sct@redhat.com>, 1999
  *
  * Copyright 1999 Red Hat Software --- All Rights Reserved
+ *
+ * This file is part of the Linux kernel and is made available under
+ * the terms of the GNU General Public License, version 2, or at your
+ * option, any later version, incorporated herein by reference.
  *
  * Checkpoint routines for the generic filesystem journaling code.
  * Part of the ext2fs journaling system.
@@ -113,7 +116,7 @@ void __jbd2_log_wait_for_space(journal_t *journal)
 	nblocks = jbd2_space_needed(journal);
 	while (jbd2_log_space_left(journal) < nblocks) {
 		write_unlock(&journal->j_state_lock);
-		mutex_lock_io(&journal->j_checkpoint_mutex);
+		mutex_lock(&journal->j_checkpoint_mutex);
 
 		/*
 		 * Test again, another process may have checkpointed while we
@@ -132,6 +135,7 @@ void __jbd2_log_wait_for_space(journal_t *journal)
 			return;
 		}
 		spin_lock(&journal->j_list_lock);
+		nblocks = jbd2_space_needed(journal);
 		space_left = jbd2_log_space_left(journal);
 		if (space_left < nblocks) {
 			int chkpt = journal->j_checkpoint_transactions != NULL;
@@ -182,7 +186,7 @@ __flush_batch(journal_t *journal, int *batch_count)
 
 	blk_start_plug(&plug);
 	for (i = 0; i < *batch_count; i++)
-		write_dirty_buffer(journal->j_chkpt_bhs[i], REQ_SYNC);
+		write_dirty_buffer(journal->j_chkpt_bhs[i], WRITE_SYNC);
 	blk_finish_plug(&plug);
 
 	for (i = 0; i < *batch_count; i++) {
@@ -275,22 +279,9 @@ restart:
 		"JBD2: %s: Waiting for Godot: block %llu\n",
 		journal->j_devname, (unsigned long long) bh->b_blocknr);
 
-			if (batch_count)
-				__flush_batch(journal, &batch_count);
 			jbd2_log_start_commit(journal, tid);
-			/*
-			 * jbd2_journal_commit_transaction() may want
-			 * to take the checkpoint_mutex if JBD2_FLUSHED
-			 * is set, jbd2_update_log_tail() called by
-			 * jbd2_journal_commit_transaction() may also take
-			 * checkpoint_mutex.  So we need to temporarily
-			 * drop it.
-			 */
-			mutex_unlock(&journal->j_checkpoint_mutex);
 			jbd2_log_wait_commit(journal, tid);
-			mutex_lock_io(&journal->j_checkpoint_mutex);
-			spin_lock(&journal->j_list_lock);
-			goto restart;
+			goto retry;
 		}
 		if (!buffer_dirty(bh)) {
 			if (unlikely(buffer_write_io_error(bh)) && !result)

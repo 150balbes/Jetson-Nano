@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * NFS server file handle treatment.
  *
@@ -87,23 +86,13 @@ nfsd_mode_check(struct svc_rqst *rqstp, struct dentry *dentry,
 	return nfserr_inval;
 }
 
-static bool nfsd_originating_port_ok(struct svc_rqst *rqstp, int flags)
-{
-	if (flags & NFSEXP_INSECURE_PORT)
-		return true;
-	/* We don't require gss requests to use low ports: */
-	if (rqstp->rq_cred.cr_flavor >= RPC_AUTH_GSS)
-		return true;
-	return test_bit(RQ_SECURE, &rqstp->rq_flags);
-}
-
 static __be32 nfsd_setuser_and_check_port(struct svc_rqst *rqstp,
 					  struct svc_export *exp)
 {
 	int flags = nfsexp_flags(rqstp, exp);
 
 	/* Check if the request originated from a secure port. */
-	if (!nfsd_originating_port_ok(rqstp, flags)) {
+	if (!test_bit(RQ_SECURE, &rqstp->rq_flags) && !(flags & NFSEXP_INSECURE_PORT)) {
 		RPC_IFDEBUG(char buf[RPC_MAX_ADDRBUFLEN]);
 		dprintk("nfsd: request from insecure port %s!\n",
 		        svc_print_addr(rqstp, buf, sizeof(buf)));
@@ -451,7 +440,7 @@ static bool fsid_type_ok_for_exp(u8 fsid_type, struct svc_export *exp)
 	switch (fsid_type) {
 	case FSID_DEV:
 		if (!old_valid_dev(exp_sb(exp)->s_dev))
-			return false;
+			return 0;
 		/* FALL THROUGH */
 	case FSID_MAJOR_MINOR:
 	case FSID_ENCODE_DEV:
@@ -461,13 +450,13 @@ static bool fsid_type_ok_for_exp(u8 fsid_type, struct svc_export *exp)
 	case FSID_UUID8:
 	case FSID_UUID16:
 		if (!is_root_export(exp))
-			return false;
+			return 0;
 		/* fall through */
 	case FSID_UUID4_INUM:
 	case FSID_UUID16_INUM:
 		return exp->ex_uuid != NULL;
 	}
-	return true;
+	return 1;
 }
 
 

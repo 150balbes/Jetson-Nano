@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /* bbc_i2c.c: I2C low-level driver for BBC device on UltraSPARC-III
  *            platforms.
  *

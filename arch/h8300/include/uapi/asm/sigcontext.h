@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note */
 #ifndef _ASM_H8300_SIGCONTEXT_H
 #define _ASM_H8300_SIGCONTEXT_H
 

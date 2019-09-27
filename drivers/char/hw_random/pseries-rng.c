@@ -1,8 +1,20 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (C) 2010 Michael Neuling IBM Corporation
  *
  * Driver for the pseries hardware RNG for POWER7+ and above
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
@@ -16,6 +28,7 @@
 static int pseries_rng_read(struct hwrng *rng, void *data, size_t max, bool wait)
 {
 	u64 buffer[PLPAR_HCALL_BUFSIZE];
+	size_t size = max < 8 ? max : 8;
 	int rc;
 
 	rc = plpar_hcall(H_RANDOM, (unsigned long *)buffer);
@@ -23,10 +36,10 @@ static int pseries_rng_read(struct hwrng *rng, void *data, size_t max, bool wait
 		pr_err_ratelimited("H_RANDOM call failed %d\n", rc);
 		return -EIO;
 	}
-	memcpy(data, buffer, 8);
+	memcpy(data, buffer, size);
 
 	/* The hypervisor interface returns 64 bits */
-	return 8;
+	return size;
 }
 
 /**
@@ -60,7 +73,7 @@ static int pseries_rng_remove(struct vio_dev *dev)
 	return 0;
 }
 
-static const struct vio_device_id pseries_rng_driver_ids[] = {
+static struct vio_device_id pseries_rng_driver_ids[] = {
 	{ "ibm,random-v1", "ibm,random"},
 	{ "", "" }
 };

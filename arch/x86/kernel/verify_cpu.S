@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  *
  *	verify_cpu.S - Code for cpu long mode and SSE verification. This
@@ -9,6 +8,9 @@
  *	Copyright (c) 2007  Eric Biederman (ebiederm@xmission.com)
  *	Copyright (c) 2007  Vivek Goyal (vgoyal@in.ibm.com)
  *	Copyright (c) 2010  Kees Cook (kees.cook@canonical.com)
+ *
+ * 	This source code is licensed under the GNU General Public License,
+ * 	Version 2.  See the file COPYING for more details.
  *
  *	This is a common code for verification whether CPU supports
  * 	long mode and SSE or not. It is not called directly instead this
@@ -31,7 +33,7 @@
 #include <asm/cpufeatures.h>
 #include <asm/msr-index.h>
 
-ENTRY(verify_cpu)
+verify_cpu:
 	pushf				# Save caller passed flags
 	push	$0			# Kill any dangerous flags
 	popf
@@ -137,4 +139,3 @@ ENTRY(verify_cpu)
 	popf				# Restore caller passed flags
 	xorl %eax, %eax
 	ret
-ENDPROC(verify_cpu)

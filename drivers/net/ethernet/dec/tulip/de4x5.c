@@ -472,7 +472,7 @@
 #include <asm/dma.h>
 #include <asm/byteorder.h>
 #include <asm/unaligned.h>
-#include <linux/uaccess.h>
+#include <asm/uaccess.h>
 #ifdef CONFIG_PPC_PMAC
 #include <asm/machdep.h>
 #endif /* CONFIG_PPC_PMAC */
@@ -912,7 +912,7 @@ static int     de4x5_init(struct net_device *dev);
 static int     de4x5_sw_reset(struct net_device *dev);
 static int     de4x5_rx(struct net_device *dev);
 static int     de4x5_tx(struct net_device *dev);
-static void    de4x5_ast(struct timer_list *t);
+static void    de4x5_ast(struct net_device *dev);
 static int     de4x5_txur(struct net_device *dev);
 static int     de4x5_rx_ovfc(struct net_device *dev);
 
@@ -1015,7 +1015,7 @@ static int     compact_infoblock(struct net_device *dev, u_char count, u_char *p
 
 static int io=0x0;/* EDIT THIS LINE FOR YOUR CONFIGURATION IF NEEDED        */
 
-module_param_hw(io, int, ioport, 0);
+module_param(io, int, 0);
 module_param(de4x5_debug, int, 0);
 module_param(dec_only, int, 0);
 module_param(args, charp, 0);
@@ -1085,6 +1085,7 @@ static const struct net_device_ops de4x5_netdev_ops = {
     .ndo_get_stats	= de4x5_get_stats,
     .ndo_set_rx_mode	= set_multicast_list,
     .ndo_do_ioctl	= de4x5_ioctl,
+    .ndo_change_mtu	= eth_change_mtu,
     .ndo_set_mac_address= eth_mac_addr,
     .ndo_validate_addr	= eth_validate_addr,
 };
@@ -1147,7 +1148,9 @@ de4x5_hw_init(struct net_device *dev, u_long iobase, struct device *gendev)
 	lp->timeout = -1;
 	lp->gendev = gendev;
 	spin_lock_init(&lp->lock);
-	timer_setup(&lp->timer, de4x5_ast, 0);
+	init_timer(&lp->timer);
+	lp->timer.function = (void (*)(unsigned long))de4x5_ast;
+	lp->timer.data = (unsigned long)dev;
 	de4x5_parse_params(dev);
 
 	/*
@@ -1740,10 +1743,9 @@ de4x5_tx(struct net_device *dev)
 }
 
 static void
-de4x5_ast(struct timer_list *t)
+de4x5_ast(struct net_device *dev)
 {
-	struct de4x5_private *lp = from_timer(lp, t, timer);
-	struct net_device *dev = dev_get_drvdata(lp->gendev);
+	struct de4x5_private *lp = netdev_priv(dev);
 	int next_tick = DE4X5_AUTOSENSE_MS;
 	int dt;
 
@@ -2093,7 +2095,7 @@ static int de4x5_eisa_remove(struct device *device)
 	return 0;
 }
 
-static const struct eisa_device_id de4x5_eisa_ids[] = {
+static struct eisa_device_id de4x5_eisa_ids[] = {
         { "DEC4250", 0 },	/* 0 is the board name index... */
         { "" }
 };
@@ -2107,6 +2109,7 @@ static struct eisa_driver de4x5_eisa_driver = {
 		.remove  = de4x5_eisa_remove,
         }
 };
+MODULE_DEVICE_TABLE(eisa, de4x5_eisa_ids);
 #endif
 
 #ifdef CONFIG_PCI
@@ -2368,7 +2371,7 @@ autoconf_media(struct net_device *dev)
 	lp->media = INIT;
 	lp->tcount = 0;
 
-	de4x5_ast(&lp->timer);
+	de4x5_ast(dev);
 
 	return lp->media;
 }
@@ -3203,8 +3206,6 @@ srom_map_media(struct net_device *dev)
       case SROM_10BASETF:
 	if (!lp->params.fdx) return -1;
 	lp->fdx = true;
-	/* fall through */
-
       case SROM_10BASET:
 	if (lp->params.fdx && !lp->fdx) return -1;
 	if ((lp->chipset == DC21140) || ((lp->chipset & ~0x00ff) == DC2114x)) {
@@ -3225,8 +3226,6 @@ srom_map_media(struct net_device *dev)
       case SROM_100BASETF:
         if (!lp->params.fdx) return -1;
 	lp->fdx = true;
-	/* fall through */
-
       case SROM_100BASET:
 	if (lp->params.fdx && !lp->fdx) return -1;
 	lp->media = _100Mb;
@@ -3239,8 +3238,6 @@ srom_map_media(struct net_device *dev)
       case SROM_100BASEFF:
 	if (!lp->params.fdx) return -1;
 	lp->fdx = true;
-	/* fall through */
-
       case SROM_100BASEF:
 	if (lp->params.fdx && !lp->fdx) return -1;
 	lp->media = _100Mb;
@@ -3628,10 +3625,10 @@ de4x5_alloc_rx_buff(struct net_device *dev, int index, int len)
     skb_reserve(p, 2);	                               /* Align */
     if (index < lp->rx_old) {                          /* Wrapped buffer */
 	short tlen = (lp->rxRingSize - lp->rx_old) * RX_BUFF_SZ;
-	skb_put_data(p, lp->rx_bufs + lp->rx_old * RX_BUFF_SZ, tlen);
-	skb_put_data(p, lp->rx_bufs, len - tlen);
+	memcpy(skb_put(p,tlen),lp->rx_bufs + lp->rx_old * RX_BUFF_SZ,tlen);
+	memcpy(skb_put(p,len-tlen),lp->rx_bufs,len-tlen);
     } else {                                           /* Linear buffer */
-	skb_put_data(p, lp->rx_bufs + lp->rx_old * RX_BUFF_SZ, len);
+	memcpy(skb_put(p,len),lp->rx_bufs + lp->rx_old * RX_BUFF_SZ,len);
     }
 
     return p;

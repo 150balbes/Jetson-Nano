@@ -1,0 +1,387 @@
+#!/usr/bin/python
+#
+# Simple script for formatting RFR messages for nvgpu changes.
+#
+
+import os
+import re
+import json
+import argparse
+import tempfile
+import subprocess
+import smtplib
+
+from email.mime.text import MIMEText
+
+VERSION = '1.0.1'
+
+# Gerrit commit URL formats. These are regular expressions to match the
+# incoming URLs against.
+gr_fmts = [ r'http://git-master/r/(\d+)',
+            r'http://git-master/r/#/c/(\d+)/',
+            r'http://git-master.nvidia.com/r/(\d+)',
+            r'http://git-master.nvidia.com/r/#/c/(\d+)/',
+            r'https://git-master/r/(\d+)',
+            r'https://git-master/r/#/c/(\d+)/',
+            r'https://git-master.nvidia.com/r/(\d+)',
+            r'https://git-master.nvidia.com/r/#/c/(\d+)',
+            r'https://git-master.nvidia.com/r/#/c/(\d+)/' ]
+
+# The user to use. May be overridden but the default comes from the environment.
+user = os.environ['USER']
+
+# Gerrit query command to obtain the patch URL. The substitution will be the
+# gerrit Change-ID parsed from the git commit message.
+gr_query_cmd = 'ssh %s@git-master -p 29418 gerrit query --format json %s'
+
+def parse_args():
+    """
+    Parse arguments to rfr.
+    """
+
+    ep="""This program will format commit messages into something that can be
+sent to the nvgpu mailing list for review
+"""
+    help_msg="""Git or gerrit commits to describe. Can be either a git or gerrit
+commit ID. If the ID starts with a 'I' then it will be treated as a gerrit ID.
+If the commit ID looks like a gerrit URL then it is treated as a gerrit URL.
+Otherwise it's treated as a git commit ID.
+"""
+    parser = argparse.ArgumentParser(description='RFR formatting tool',
+                                     epilog=ep)
+
+    parser.add_argument('-V', '--version', action='store_true', default=False,
+                        help='print the program version')
+    parser.add_argument('-m', '--msg', action='store', default=None,
+                        help='Custom message to add to the RFR email')
+    parser.add_argument('-N', '--no-msg', action='store_true', default=False,
+                        help='Force no message in output.')
+    parser.add_argument('-e', '--email', action='store_true', default=False,
+                        help='Use direct email to post the RFR.')
+    parser.add_argument('-s', '--subject', action='store', default=None,
+                        help='Specify the email\'s subject.')
+    parser.add_argument('-R', '--sender', action='store', default=None,
+                        help='Specify a special from: email address.')
+    parser.add_argument('-t', '--to', action='append', default=[],
+                        help='Specify an additional To: email address. '
+                        'Can be repeated (-t a -t b).')
+    parser.add_argument('-F', '--file', action='store', default=None,
+                        help='File with commits, one per line')
+
+    # Positionals: the gerrit URLs.
+    parser.add_argument('commits', metavar='Commit-IDs',
+                        nargs='*',
+                        help=help_msg)
+
+    arg_parser = parser.parse_args()
+
+    return arg_parser
+
+def get_gerrit_url_id(cmt):
+    """
+    Determines if the passed cmt is a gerrit commit URL. If it is then this
+    returns the URL ID; otherwise it returns None.
+    """
+
+    for fmt in gr_fmts:
+        p = re.compile(fmt)
+        m = p.search(cmt)
+        if m:
+            return m.group(1)
+
+    return None
+
+def read_commit_file(filp):
+    """
+    Read a file full of commits and return a list of those commits.
+    """
+
+    commits = [ ]
+
+    for line in filp:
+
+        line = line.strip()
+
+        # Skip empty lines and lines that start with a '#'.
+        if line.find('#') == 0 or line == '':
+            continue
+
+        # Otherwise append the line to the list of commits. This will append
+        # all the text, so in cases like:
+        #
+        #   http://git-master/r/1540705 - my commit
+        #
+        # Anything after the first space in the line is ignored. This lets you
+        # add some descriptive text after the commit.
+        commits.append(line.split()[0])
+
+    return commits
+
+def gerrit_query(change):
+    """
+    Query gerrit for the JSON change information. Return a python object
+    describing the JSON data.
+
+    change can either be a Change-Id or the numeric change number from a URL.
+
+    Note there is an interesting limitation with this: gerrit can have multiple
+    changes with the same Change-Id (./sigh). So if you query a change ID that
+    points to multiple changes you get back all of them.
+
+    This script just uses the first. Ideally one could filter by branch or by
+    some other distinguishing factor.
+    """
+
+    query_cmd = gr_query_cmd % (user, change)
+
+    prog = subprocess.Popen(query_cmd, shell=True,
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+    stdout_data, stderr_data = prog.communicate()
+    if prog.returncode != 0:
+        print('`%s\' failed!' % query_cmd)
+        return False
+
+    commit = json.loads(stdout_data.decode('utf-8').splitlines()[0])
+    if 'id' not in commit:
+        print('%s is not a gerrit commit!?' % change)
+        print('Most likely you need to push the change.')
+        return None
+
+    return commit
+
+def commit_info_from_gerrit_change_id(change_id):
+    """
+    Return a dict with all the gerrit info from a gerrit change ID.
+    """
+
+    return gerrit_query(change_id)
+
+def commit_info_from_git_sha1(rev):
+    """
+    Return a dict with all the gerrit info from a git sha1 rev.
+    """
+
+    return gerrit_query(rev)
+
+def commit_info_from_gerrit_cl(cmt):
+    """
+    Return a dict with all the gerrit info from a Gerrit URL.
+    """
+
+    cl = get_gerrit_url_id(cmt)
+    if not cl:
+        return None
+
+    return gerrit_query(cl)
+
+def git_sha1_from_commit(commit_ish):
+    """
+    Return sha1 revision from a commit-ish string, or None if this doesn't
+    appear to be a commit.
+    """
+
+    prog = subprocess.Popen('git rev-parse %s' % commit_ish, shell=True,
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+    stdout_data, stderr_data = prog.communicate()
+    if prog.returncode != 0:
+        print('`git rev-parse %s\' failed?!' % commit_ish)
+        return None
+
+    return stdout_data.decode('utf-8')
+
+def get_user_message(start_msg):
+    """
+    Get a user message from the user. This is done with the default text
+    editor.
+    """
+
+    editor = os.environ.get('EDITOR', 'vim')
+
+    with tempfile.NamedTemporaryFile(suffix=".tmp") as filp:
+        filp.write(start_msg)
+        filp.flush()
+
+        edit_cmd = editor + ' ' + filp.name
+
+        try:
+            subprocess.call(edit_cmd.split())
+        except:
+            print('Failed to run editor: `%s\'' % edit_cmd)
+            return None
+
+        filp.seek(0)
+        return filp.read()
+
+def indent_lines(text, ind):
+    """
+    Prepend each new line in the passed text with ind.
+    """
+    return ''.join(ind + l + '\n' for l in text.splitlines())
+
+def format_commits(commits_info, extra_message):
+    """
+    Takes a list of the commit info objects and returns a string with the
+    text to print. This can either be directly printed or emailed.
+    """
+
+    whole_template = """
+Hi All,
+
+I would like you to review the following changes.
+{extra_message}
+{cmt_descriptions}
+Thanks!
+{cmt_verbose}"""
+
+    cmt_template = """
++----------------------------------------
+| {url}
+| Author: {author}
+
+{cmtmsg}"""
+
+    cmt_descriptions = ''
+    for c in commits_info:
+        cmt_descriptions += "  %s - %s\n" % (c['url'], c['subject'])
+
+    # Add new lines around the extra_message, if applicable. Otherwise we don't
+    # want anything to show up for extra_message.
+    if extra_message:
+        extra_message = '\n%s\n' % extra_message
+    else:
+        extra_message = ''
+
+    cmt_verbose = ''
+    for c in commits_info:
+        cmt_verbose += cmt_template.format(url=c['url'],
+                                           author=c['owner']['name'],
+                                           cmtmsg=indent_lines(
+                                               c['commitMessage'], '  '))
+
+    return whole_template.format(cmt_descriptions=cmt_descriptions,
+                                 extra_message=extra_message,
+                                 cmt_verbose=cmt_verbose)
+
+def display_commits(commits_info, extra_message):
+    """
+    Print the list of commits to the directly to the terminal.
+    """
+
+    print(format_commits(commits_info, extra_message))
+
+def email_commits(commits_info, sender, subject, args):
+    """
+    Directly email commits to the nvgpu-core mailing list for review!
+    """
+
+    to_addr = 'SW-Mobile-nvgpu-core <SW-Mobile-nvgpu-core@exchange.nvidia.com>'
+
+    if args.no_msg:
+        args.msg = None
+
+    body = format_commits(commits_info, args.msg)
+
+    # Most people like to write a little description of their patch series
+    # in the email body. This aims to take care of that.
+    #
+    # If arg_parser.msg is set then we can just use that. If there's no
+    # args.msg field then we will try to fire up a text editor and let the
+    # user write something we will copy into the email the same way as
+    # args.msg. This makes it easier to a write paragraph - passing that much
+    # text on the CLI is annoying!
+    #
+    # However, if the user decides no message is a must then they can use
+    # the '--no-msg' argument to supress this message. This arg will also
+    # supress a message supplied with '--msg'.
+
+    if not args.msg and not args.no_msg:
+        text = get_user_message(body)
+
+        if not text or text.strip() == '':
+            print 'Empty user message: aborting!'
+            return
+
+        msg = MIMEText(text)
+    else:
+        msg = MIMEText(body)
+
+    to_addrs = [to_addr] + args.to
+
+    msg['To'] = ", ".join(to_addrs)
+    msg['From'] = sender
+    msg['Subject'] = subject
+
+    s = smtplib.SMTP('mail.nvidia.com')
+    s.sendmail(sender,
+               to_addrs,
+               msg.as_string())
+    s.quit()
+
+def main():
+    """
+    The magic happens here.
+    """
+
+    arg_parser = parse_args()
+    commits_info = [ ]
+
+    if arg_parser.version:
+        print('Version: %s' % VERSION)
+        exit(0)
+
+    if arg_parser.file:
+        filp = open(arg_parser.file, 'r')
+
+        if arg_parser.commits:
+            arg_parser.commits.extend(read_commit_file(filp))
+        else:
+            arg_parser.commits = read_commit_file(filp)
+
+    # Oops: no commits?
+    if not arg_parser.commits or len(arg_parser.commits) == 0:
+        print 'No commits!'
+        exit(-1)
+
+    # Builds a dictionary of Gerrit Change-Ids. From the Change-Ids we can then
+    # get the commit message and URL.
+    #
+    # This also builds an array of those same commit IDs to track the ordering
+    # of the commits so that the user can choose the order of the patches based
+    # on the order in which they pass the commits.
+    for cmt in arg_parser.commits:
+
+        if cmt[0] == 'I':
+            info = commit_info_from_gerrit_change_id(cmt)
+        elif get_gerrit_url_id(cmt):
+            info = commit_info_from_gerrit_cl(cmt)
+        else:
+            info = commit_info_from_git_sha1(git_sha1_from_commit(cmt))
+
+        if info:
+            commits_info.append(info)
+        else:
+            print('Warning: \'%s\' doesn\'t appear to be a commit!' % cmt)
+
+    if arg_parser.email:
+        # If no subject was specified then use the first commit subject as
+        # the subject.
+        subject = arg_parser.subject
+        if not subject:
+            subject = '[RFR] %s' % commits_info[0]['subject']
+
+        # If no specified sender then use the name from the environment as
+        # the sender (plus @nvidia.com). This arg is primarily useful for
+        # people who do not have a username for the Linux machine that matches
+        # their SSO ID.
+        sender = arg_parser.sender
+        if not sender:
+            sender = '%s@nvidia.com' % user
+
+        email_commits(commits_info, sender, subject, arg_parser)
+    else:
+        display_commits(commits_info, arg_parser.msg)
+
+if __name__ == '__main__':
+    main()

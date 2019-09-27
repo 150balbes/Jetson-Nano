@@ -1,9 +1,14 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  *      Low-level parallel-support for PC-style hardware integrated in the 
  *	LASI-Controller (on GSC-Bus) for HP-PARISC Workstations
  *
+ *	This program is free software; you can redistribute it and/or modify
+ *	it under the terms of the GNU General Public License as published by
+ *      the Free Software Foundation; either version 2 of the License, or
+ *      (at your option) any later version.
+ *
  *	(C) 1999-2001 by Helge Deller <deller@gmx.de>
+ *
  * 
  * based on parport_pc.c by 
  * 	    Grant Guenther <grant@torque.net>
@@ -29,7 +34,7 @@
 
 #include <asm/io.h>
 #include <asm/dma.h>
-#include <linux/uaccess.h>
+#include <asm/uaccess.h>
 #include <asm/superio.h>
 
 #include <linux/parport.h>
@@ -251,7 +256,7 @@ struct parport *parport_gsc_probe_port(unsigned long base,
 	}
 	priv->ctr = 0xc;
 	priv->ctr_writable = 0xff;
-	priv->dma_buf = NULL;
+	priv->dma_buf = 0;
 	priv->dma_handle = 0;
 	p->base = base;
 	p->base_hi = base_hi;
@@ -341,7 +346,7 @@ struct parport *parport_gsc_probe_port(unsigned long base,
 
 static int parport_count;
 
-static int __init parport_init_chip(struct parisc_device *dev)
+static int parport_init_chip(struct parisc_device *dev)
 {
 	struct parport *p;
 	unsigned long port;
@@ -376,7 +381,7 @@ static int __init parport_init_chip(struct parisc_device *dev)
 	return 0;
 }
 
-static int __exit parport_remove_chip(struct parisc_device *dev)
+static int parport_remove_chip(struct parisc_device *dev)
 {
 	struct parport *p = dev_get_drvdata(&dev->dev);
 	if (p) {
@@ -398,18 +403,18 @@ static int __exit parport_remove_chip(struct parisc_device *dev)
 	return 0;
 }
 
-static const struct parisc_device_id parport_tbl[] __initconst = {
+static struct parisc_device_id parport_tbl[] = {
 	{ HPHW_FIO, HVERSION_REV_ANY_ID, HVERSION_ANY_ID, 0x74 },
 	{ 0, }
 };
 
 MODULE_DEVICE_TABLE(parisc, parport_tbl);
 
-static struct parisc_driver parport_driver __refdata = {
+static struct parisc_driver parport_driver = {
 	.name		= "Parallel",
 	.id_table	= parport_tbl,
 	.probe		= parport_init_chip,
-	.remove		= __exit_p(parport_remove_chip),
+	.remove		= parport_remove_chip,
 };
 
 int parport_gsc_init(void)

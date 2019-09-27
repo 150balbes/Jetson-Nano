@@ -29,7 +29,9 @@
 
 
 #include <linux/edac.h>
-#include "edac_module.h"
+#include "edac_core.h"
+
+#define I82443_REVISION	"0.1"
 
 #define EDAC_MOD_STR    "i82443bxgx_edac"
 
@@ -318,6 +320,7 @@ static int i82443bxgx_edacmc_probe1(struct pci_dev *pdev, int dev_idx)
 				I82443BXGX_EAP_OFFSET_MBE));
 
 	mci->mod_name = EDAC_MOD_STR;
+	mci->mod_ver = I82443_REVISION;
 	mci->ctl_name = "I82443BXGX";
 	mci->dev_name = pci_name(pdev);
 	mci->edac_check = i82443bxgx_edacmc_check;

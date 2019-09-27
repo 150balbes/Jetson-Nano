@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /***************************************************************************/
 
 /*
@@ -37,7 +36,6 @@ DEFINE_CLK(mcfuart1, "mcfuart.1", MCF_BUSCLK);
 DEFINE_CLK(mcfuart2, "mcfuart.2", MCF_BUSCLK);
 DEFINE_CLK(mcfqspi0, "mcfqspi.0", MCF_BUSCLK);
 DEFINE_CLK(fec0, "fec.0", MCF_BUSCLK);
-DEFINE_CLK(mcfi2c0, "imx1-i2c.0", MCF_BUSCLK);
 
 struct clk *mcf_clks[] = {
 	&clk_pll,
@@ -51,7 +49,6 @@ struct clk *mcf_clks[] = {
 	&clk_mcfuart2,
 	&clk_mcfqspi0,
 	&clk_fec0,
-	&clk_mcfi2c0,
 	NULL
 };
 
@@ -63,21 +60,6 @@ static void __init m528x_qspi_init(void)
 	/* setup Port QS for QSPI with gpio CS control */
 	__raw_writeb(0x07, MCFGPIO_PQSPAR);
 #endif /* IS_ENABLED(CONFIG_SPI_COLDFIRE_QSPI) */
-}
-
-/***************************************************************************/
-
-static void __init m528x_i2c_init(void)
-{
-#if IS_ENABLED(CONFIG_I2C_IMX)
-	u16 paspar;
-
-	/* setup Port AS Pin Assignment Register for I2C */
-	/*  set PASPA0 to SCL and PASPA1 to SDA */
-	paspar = readw(MCFGPIO_PASPAR);
-	paspar |= 0xF;
-	writew(paspar, MCFGPIO_PASPAR);
-#endif /* IS_ENABLED(CONFIG_I2C_IMX) */
 }
 
 /***************************************************************************/
@@ -145,7 +127,6 @@ void __init config_BSP(char *commandp, int size)
 	m528x_uarts_init();
 	m528x_fec_init();
 	m528x_qspi_init();
-	m528x_i2c_init();
 }
 
 /***************************************************************************/

@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * Memory mapped I/O tracing
  *
@@ -283,7 +282,6 @@ static struct tracer mmio_tracer __read_mostly =
 	.close		= mmio_close,
 	.read		= mmio_read,
 	.print_line	= mmio_print_line,
-	.noboot		= true,
 };
 
 __init static int init_mmio_trace(void)

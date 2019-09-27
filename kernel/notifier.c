@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 #include <linux/kdebug.h>
 #include <linux/kprobes.h>
 #include <linux/export.h>
@@ -23,7 +22,6 @@ static int notifier_chain_register(struct notifier_block **nl,
 		struct notifier_block *n)
 {
 	while ((*nl) != NULL) {
-		WARN_ONCE(((*nl) == n), "double register detected");
 		if (n->priority > (*nl)->priority)
 			break;
 		nl = &((*nl)->next);
@@ -97,7 +95,7 @@ static int notifier_call_chain(struct notifier_block **nl,
 		if (nr_calls)
 			(*nr_calls)++;
 
-		if (ret & NOTIFY_STOP_MASK)
+		if ((ret & NOTIFY_STOP_MASK) == NOTIFY_STOP_MASK)
 			break;
 		nb = next_nb;
 		nr_to_call--;
@@ -222,7 +220,7 @@ int blocking_notifier_chain_register(struct blocking_notifier_head *nh,
 	 * not yet working and interrupts must remain disabled.  At
 	 * such times we must not call down_write().
 	 */
-	if (unlikely(system_state == SYSTEM_BOOTING))
+	if (unlikely(system_state <= SYSTEM_BOOTING))
 		return notifier_chain_register(&nh->head, n);
 
 	down_write(&nh->rwsem);

@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /* sun4v_tlb_miss.S: Sun4v TLB miss handlers.
  *
  * Copyright (C) 2006 <davem@davemloft.net>
@@ -353,7 +352,6 @@ sun4v_mna:
 	call	sun4v_do_mna
 	 add	%sp, PTREGS_OFF, %o0
 	ba,a,pt	%xcc, rtrap
-	 nop
 
 	/* Privileged Action.  */
 sun4v_privact:

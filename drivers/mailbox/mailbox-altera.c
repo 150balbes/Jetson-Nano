@@ -1,6 +1,17 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright Altera Corporation (C) 2013-2014. All rights reserved
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms and conditions of the GNU General Public License,
+ * version 2, as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License along with
+ * this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 #include <linux/device.h>
@@ -46,7 +57,6 @@ struct altera_mbox {
 
 	/* If the controller supports only RX polling mode */
 	struct timer_list rxpoll_timer;
-	struct mbox_chan *chan;
 };
 
 static struct altera_mbox *mbox_chan_to_altera_mbox(struct mbox_chan *chan)
@@ -128,11 +138,12 @@ static void altera_mbox_rx_data(struct mbox_chan *chan)
 	}
 }
 
-static void altera_mbox_poll_rx(struct timer_list *t)
+static void altera_mbox_poll_rx(unsigned long data)
 {
-	struct altera_mbox *mbox = from_timer(mbox, t, rxpoll_timer);
+	struct mbox_chan *chan = (struct mbox_chan *)data;
+	struct altera_mbox *mbox = mbox_chan_to_altera_mbox(chan);
 
-	altera_mbox_rx_data(mbox->chan);
+	altera_mbox_rx_data(chan);
 
 	mod_timer(&mbox->rxpoll_timer,
 		  jiffies + msecs_to_jiffies(MBOX_POLLING_MS));
@@ -195,8 +206,8 @@ static int altera_mbox_startup_receiver(struct mbox_chan *chan)
 
 polling:
 	/* Setup polling timer */
-	mbox->chan = chan;
-	timer_setup(&mbox->rxpoll_timer, altera_mbox_poll_rx, 0);
+	setup_timer(&mbox->rxpoll_timer, altera_mbox_poll_rx,
+		    (unsigned long)chan);
 	mod_timer(&mbox->rxpoll_timer,
 		  jiffies + msecs_to_jiffies(MBOX_POLLING_MS));
 
@@ -330,7 +341,7 @@ static int altera_mbox_probe(struct platform_device *pdev)
 		}
 	}
 
-	ret = devm_mbox_controller_register(&pdev->dev, &mbox->controller);
+	ret = mbox_controller_register(&mbox->controller);
 	if (ret) {
 		dev_err(&pdev->dev, "Register mailbox failed\n");
 		goto err;
@@ -339,6 +350,18 @@ static int altera_mbox_probe(struct platform_device *pdev)
 	platform_set_drvdata(pdev, mbox);
 err:
 	return ret;
+}
+
+static int altera_mbox_remove(struct platform_device *pdev)
+{
+	struct altera_mbox *mbox = platform_get_drvdata(pdev);
+
+	if (!mbox)
+		return -EINVAL;
+
+	mbox_controller_unregister(&mbox->controller);
+
+	return 0;
 }
 
 static const struct of_device_id altera_mbox_match[] = {
@@ -350,6 +373,7 @@ MODULE_DEVICE_TABLE(of, altera_mbox_match);
 
 static struct platform_driver altera_mbox_driver = {
 	.probe	= altera_mbox_probe,
+	.remove	= altera_mbox_remove,
 	.driver	= {
 		.name	= DRIVER_NAME,
 		.of_match_table	= altera_mbox_match,

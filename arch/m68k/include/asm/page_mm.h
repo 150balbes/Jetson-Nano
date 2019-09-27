@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _M68K_PAGE_MM_H
 #define _M68K_PAGE_MM_H
 

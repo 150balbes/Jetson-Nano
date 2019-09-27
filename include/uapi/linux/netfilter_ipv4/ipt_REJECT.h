@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note */
 #ifndef _IPT_REJECT_H
 #define _IPT_REJECT_H
 

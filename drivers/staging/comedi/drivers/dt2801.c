@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * comedi/drivers/dt2801.c
  * Device Driver for DataTranslation DT2801
@@ -344,7 +343,7 @@ static int dt2801_reset(struct comedi_device *dev)
 	outb_p(DT_C_STOP, dev->iobase + DT2801_CMD);
 
 	/* dt2801_wait_for_ready(dev); */
-	usleep_range(100, 200);
+	udelay(100);
 	timeout = 10000;
 	do {
 		stat = inb_p(dev->iobase + DT2801_STATUS);
@@ -359,7 +358,7 @@ static int dt2801_reset(struct comedi_device *dev)
 	outb_p(DT_C_RESET, dev->iobase + DT2801_CMD);
 	/* dt2801_writecmd(dev,DT_C_RESET); */
 
-	usleep_range(100, 200);
+	udelay(100);
 	timeout = 10000;
 	do {
 		stat = inb_p(dev->iobase + DT2801_STATUS);

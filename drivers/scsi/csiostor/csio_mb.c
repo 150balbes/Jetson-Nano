@@ -326,6 +326,10 @@ csio_mb_caps_config(struct csio_hw *hw, struct csio_mb *mbp, uint32_t tmo,
 		cmdp->fcoecaps |= htons(FW_CAPS_CONFIG_FCOE_TARGET);
 }
 
+#define CSIO_ADVERT_MASK     (FW_PORT_CAP_SPEED_100M | FW_PORT_CAP_SPEED_1G |\
+			      FW_PORT_CAP_SPEED_10G | FW_PORT_CAP_SPEED_40G |\
+			      FW_PORT_CAP_ANEG)
+
 /*
  * csio_mb_port- FW PORT command helper
  * @hw: The HW structure
@@ -340,10 +344,11 @@ csio_mb_caps_config(struct csio_hw *hw, struct csio_mb *mbp, uint32_t tmo,
  */
 void
 csio_mb_port(struct csio_hw *hw, struct csio_mb *mbp, uint32_t tmo,
-	     u8 portid, bool wr, uint32_t fc, uint16_t fw_caps,
+	     uint8_t portid, bool wr, uint32_t fc, uint16_t caps,
 	     void (*cbfn) (struct csio_hw *, struct csio_mb *))
 {
 	struct fw_port_cmd *cmdp = (struct fw_port_cmd *)(mbp->mb);
+	unsigned int lfc = 0, mdi = FW_PORT_CAP_MDI_V(FW_PORT_CAP_MDI_AUTO);
 
 	CSIO_INIT_MBP(mbp, cmdp, tmo, hw, cbfn,  1);
 
@@ -353,24 +358,26 @@ csio_mb_port(struct csio_hw *hw, struct csio_mb *mbp, uint32_t tmo,
 				   FW_PORT_CMD_PORTID_V(portid));
 	if (!wr) {
 		cmdp->action_to_len16 = htonl(
-			FW_PORT_CMD_ACTION_V(fw_caps == FW_CAPS16
-			? FW_PORT_ACTION_GET_PORT_INFO
-			: FW_PORT_ACTION_GET_PORT_INFO32) |
+			FW_PORT_CMD_ACTION_V(FW_PORT_ACTION_GET_PORT_INFO) |
 			FW_CMD_LEN16_V(sizeof(*cmdp) / 16));
 		return;
 	}
 
 	/* Set port */
 	cmdp->action_to_len16 = htonl(
-			FW_PORT_CMD_ACTION_V(fw_caps == FW_CAPS16
-			? FW_PORT_ACTION_L1_CFG
-			: FW_PORT_ACTION_L1_CFG32) |
+			FW_PORT_CMD_ACTION_V(FW_PORT_ACTION_L1_CFG) |
 			FW_CMD_LEN16_V(sizeof(*cmdp) / 16));
 
-	if (fw_caps == FW_CAPS16)
-		cmdp->u.l1cfg.rcap = cpu_to_be32(fwcaps32_to_caps16(fc));
+	if (fc & PAUSE_RX)
+		lfc |= FW_PORT_CAP_FC_RX;
+	if (fc & PAUSE_TX)
+		lfc |= FW_PORT_CAP_FC_TX;
+
+	if (!(caps & FW_PORT_CAP_ANEG))
+		cmdp->u.l1cfg.rcap = htonl((caps & CSIO_ADVERT_MASK) | lfc);
 	else
-		cmdp->u.l1cfg32.rcap32 = cpu_to_be32(fc);
+		cmdp->u.l1cfg.rcap = htonl((caps & CSIO_ADVERT_MASK) |
+								lfc | mdi);
 }
 
 /*
@@ -383,22 +390,14 @@ csio_mb_port(struct csio_hw *hw, struct csio_mb *mbp, uint32_t tmo,
  */
 void
 csio_mb_process_read_port_rsp(struct csio_hw *hw, struct csio_mb *mbp,
-			 enum fw_retval *retval, uint16_t fw_caps,
-			 u32 *pcaps, u32 *acaps)
+			 enum fw_retval *retval, uint16_t *caps)
 {
 	struct fw_port_cmd *rsp = (struct fw_port_cmd *)(mbp->mb);
 
 	*retval = FW_CMD_RETVAL_G(ntohl(rsp->action_to_len16));
 
-	if (*retval == FW_SUCCESS) {
-		if (fw_caps == FW_CAPS16) {
-			*pcaps = fwcaps16_to_caps32(ntohs(rsp->u.info.pcap));
-			*acaps = fwcaps16_to_caps32(ntohs(rsp->u.info.acap));
-		} else {
-			*pcaps = be32_to_cpu(rsp->u.info32.pcaps32);
-			*acaps = be32_to_cpu(rsp->u.info32.acaps32);
-		}
-	}
+	if (*retval == FW_SUCCESS)
+		*caps = ntohs(rsp->u.info.pcap);
 }
 
 /*
@@ -492,7 +491,6 @@ csio_mb_iq_write(struct csio_hw *hw, struct csio_mb *mbp, void *priv,
 	uint32_t iq_start_stop = (iq_params->iq_start)	?
 					FW_IQ_CMD_IQSTART_F :
 					FW_IQ_CMD_IQSTOP_F;
-	int relaxed = !(hw->flags & CSIO_HWF_ROOT_NO_RELAXED_ORDERING);
 
 	/*
 	 * If this IQ write is cascaded with IQ alloc request, do not
@@ -539,8 +537,6 @@ csio_mb_iq_write(struct csio_hw *hw, struct csio_mb *mbp, void *priv,
 		cmdp->iqns_to_fl0congen |= htonl(
 			FW_IQ_CMD_FL0HOSTFCMODE_V(iq_params->fl0hostfcmode)|
 			FW_IQ_CMD_FL0CPRIO_V(iq_params->fl0cprio)	|
-			FW_IQ_CMD_FL0FETCHRO_V(relaxed)			|
-			FW_IQ_CMD_FL0DATARO_V(relaxed)			|
 			FW_IQ_CMD_FL0PADEN_V(iq_params->fl0paden)	|
 			FW_IQ_CMD_FL0PACKEN_V(iq_params->fl0packen));
 		cmdp->fl0dcaen_to_fl0cidxfthresh |= htons(
@@ -1217,7 +1213,7 @@ csio_mb_issue(struct csio_hw *hw, struct csio_mb *mbp)
 		/* Queue mbox cmd, if another mbox cmd is active */
 		if (mbp->mb_cbfn == NULL) {
 			rv = -EBUSY;
-			csio_dbg(hw, "Couldn't own Mailbox %x op:0x%x\n",
+			csio_dbg(hw, "Couldnt own Mailbox %x op:0x%x\n",
 				    hw->pfn, *((uint8_t *)mbp->mb));
 
 			goto error_out;
@@ -1245,14 +1241,14 @@ csio_mb_issue(struct csio_hw *hw, struct csio_mb *mbp)
 				rv = owner ? -EBUSY : -ETIMEDOUT;
 
 				csio_dbg(hw,
-					 "Couldn't own Mailbox %x op:0x%x "
+					 "Couldnt own Mailbox %x op:0x%x "
 					 "owner:%x\n",
 					 hw->pfn, *((uint8_t *)mbp->mb), owner);
 				goto error_out;
 			} else {
 				if (mbm->mcurrent == NULL) {
 					csio_err(hw,
-						 "Couldn't own Mailbox %x "
+						 "Couldnt own Mailbox %x "
 						 "op:0x%x owner:%x\n",
 						 hw->pfn, *((uint8_t *)mbp->mb),
 						 owner);
@@ -1410,7 +1406,6 @@ csio_mb_fwevt_handler(struct csio_hw *hw, __be64 *cmd)
 	uint32_t link_status;
 	uint16_t action;
 	uint8_t mod_type;
-	fw_port_cap32_t linkattr;
 
 	if (opcode == FW_PORT_CMD) {
 		pcmd = (struct fw_port_cmd *)cmd;
@@ -1418,34 +1413,22 @@ csio_mb_fwevt_handler(struct csio_hw *hw, __be64 *cmd)
 				ntohl(pcmd->op_to_portid));
 		action = FW_PORT_CMD_ACTION_G(
 				ntohl(pcmd->action_to_len16));
-		if (action != FW_PORT_ACTION_GET_PORT_INFO &&
-		    action != FW_PORT_ACTION_GET_PORT_INFO32) {
+		if (action != FW_PORT_ACTION_GET_PORT_INFO) {
 			csio_err(hw, "Unhandled FW_PORT_CMD action: %u\n",
 				action);
 			return -EINVAL;
 		}
 
-		if (action == FW_PORT_ACTION_GET_PORT_INFO) {
-			link_status = ntohl(pcmd->u.info.lstatus_to_modtype);
-			mod_type = FW_PORT_CMD_MODTYPE_G(link_status);
-			linkattr = lstatus_to_fwcap(link_status);
+		link_status = ntohl(pcmd->u.info.lstatus_to_modtype);
+		mod_type = FW_PORT_CMD_MODTYPE_G(link_status);
 
-			hw->pport[port_id].link_status =
-				FW_PORT_CMD_LSTATUS_G(link_status);
-		} else {
-			link_status =
-				ntohl(pcmd->u.info32.lstatus32_to_cbllen32);
-			mod_type = FW_PORT_CMD_MODTYPE32_G(link_status);
-			linkattr = ntohl(pcmd->u.info32.linkattr32);
-
-			hw->pport[port_id].link_status =
-				FW_PORT_CMD_LSTATUS32_G(link_status);
-		}
-
-		hw->pport[port_id].link_speed = fwcap_to_fwspeed(linkattr);
+		hw->pport[port_id].link_status =
+			FW_PORT_CMD_LSTATUS_G(link_status);
+		hw->pport[port_id].link_speed =
+			FW_PORT_CMD_LSPEED_G(link_status);
 
 		csio_info(hw, "Port:%x - LINK %s\n", port_id,
-			hw->pport[port_id].link_status ? "UP" : "DOWN");
+			FW_PORT_CMD_LSTATUS_G(link_status) ? "UP" : "DOWN");
 
 		if (mod_type != hw->pport[port_id].mod_type) {
 			hw->pport[port_id].mod_type = mod_type;
@@ -1661,10 +1644,13 @@ csio_mb_cancel_all(struct csio_hw *hw, struct list_head *cbfn_q)
  */
 int
 csio_mbm_init(struct csio_mbm *mbm, struct csio_hw *hw,
-	      void (*timer_fn)(struct timer_list *))
+	      void (*timer_fn)(uintptr_t))
 {
-	mbm->hw = hw;
-	timer_setup(&mbm->timer, timer_fn, 0);
+	struct timer_list *timer = &mbm->timer;
+
+	init_timer(timer);
+	timer->function = timer_fn;
+	timer->data = (unsigned long)hw;
 
 	INIT_LIST_HEAD(&mbm->req_q);
 	INIT_LIST_HEAD(&mbm->cbfn_q);

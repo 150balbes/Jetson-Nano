@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef ASM_PARISC_MCKINLEY_H
 #define ASM_PARISC_MCKINLEY_H
 #ifdef __KERNEL__

@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * The USB Monitor, inspired by Dave Harding's USBMon.
  *
@@ -410,7 +409,7 @@ static void __exit mon_exit(void)
 			printk(KERN_ERR TAG
 			    ": Outstanding opens (%d) on usb%d, leaking...\n",
 			    mbus->nreaders, mbus->u_bus->busnum);
-			kref_get(&mbus->ref); /* Force leak */
+			atomic_set(&mbus->ref.refcount, 2);	/* Force leak */
 		}
 
 		mon_dissolve(mbus, mbus->u_bus);

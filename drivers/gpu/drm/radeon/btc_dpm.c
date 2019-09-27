@@ -22,17 +22,15 @@
  * Authors: Alex Deucher
  */
 
-#include <linux/seq_file.h>
-
-#include <drm/drm_pci.h>
-
-#include "atom.h"
-#include "btc_dpm.h"
-#include "btcd.h"
-#include "cypress_dpm.h"
-#include "r600_dpm.h"
+#include "drmP.h"
 #include "radeon.h"
 #include "radeon_asic.h"
+#include "btcd.h"
+#include "r600_dpm.h"
+#include "cypress_dpm.h"
+#include "btc_dpm.h"
+#include "atom.h"
+#include <linux/seq_file.h>
 
 #define MC_CG_ARB_FREQ_F0           0x0a
 #define MC_CG_ARB_FREQ_F1           0x0b
@@ -2583,9 +2581,7 @@ int btc_dpm_init(struct radeon_device *rdev)
 		return ret;
 
 	rdev->pm.dpm.dyn_state.vddc_dependency_on_dispclk.entries =
-		kcalloc(4,
-			sizeof(struct radeon_clock_voltage_dependency_entry),
-			GFP_KERNEL);
+		kzalloc(4 * sizeof(struct radeon_clock_voltage_dependency_entry), GFP_KERNEL);
 	if (!rdev->pm.dpm.dyn_state.vddc_dependency_on_dispclk.entries) {
 		r600_free_extended_power_table(rdev);
 		return -ENOMEM;

@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  *  linux/fs/affs/file.c
  *
@@ -500,7 +499,7 @@ affs_getemptyblk_ino(struct inode *inode, int block)
 }
 
 static int
-affs_do_readpage_ofs(struct page *page, unsigned to, int create)
+affs_do_readpage_ofs(struct page *page, unsigned to)
 {
 	struct inode *inode = page->mapping->host;
 	struct super_block *sb = inode->i_sb;
@@ -519,7 +518,7 @@ affs_do_readpage_ofs(struct page *page, unsigned to, int create)
 	boff = tmp % bsize;
 
 	while (pos < to) {
-		bh = affs_bread_ino(inode, bidx, create);
+		bh = affs_bread_ino(inode, bidx, 0);
 		if (IS_ERR(bh))
 			return PTR_ERR(bh);
 		tmp = min(bsize - boff, to - pos);
@@ -621,7 +620,7 @@ affs_readpage_ofs(struct file *file, struct page *page)
 		memset(page_address(page) + to, 0, PAGE_SIZE - to);
 	}
 
-	err = affs_do_readpage_ofs(page, to, 0);
+	err = affs_do_readpage_ofs(page, to);
 	if (!err)
 		SetPageUptodate(page);
 	unlock_page(page);
@@ -658,7 +657,7 @@ static int affs_write_begin_ofs(struct file *file, struct address_space *mapping
 		return 0;
 
 	/* XXX: inefficient but safe in the face of short writes */
-	err = affs_do_readpage_ofs(page, PAGE_SIZE, 1);
+	err = affs_do_readpage_ofs(page, PAGE_SIZE);
 	if (err) {
 		unlock_page(page);
 		put_page(page);
@@ -680,7 +679,7 @@ static int affs_write_end_ofs(struct file *file, struct address_space *mapping,
 	int written;
 
 	from = pos & (PAGE_SIZE - 1);
-	to = from + len;
+	to = pos + len;
 	/*
 	 * XXX: not sure if this can handle short copies (len < copied), but
 	 * we don't have to, because the page should always be uptodate here,
@@ -955,7 +954,7 @@ int affs_file_fsync(struct file *filp, loff_t start, loff_t end, int datasync)
 	struct inode *inode = filp->f_mapping->host;
 	int ret, err;
 
-	err = file_write_and_wait_range(filp, start, end);
+	err = filemap_write_and_wait_range(inode->i_mapping, start, end);
 	if (err)
 		return err;
 

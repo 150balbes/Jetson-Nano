@@ -1,6 +1,17 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright 2016 Broadcom
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License, version 2, as
+ * published by the Free Software Foundation (the "GPL").
+ *
+ * This program is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License version 2 (GPLv2) for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * version 2 (GPLv2) along with this source code.
  */
 
 #include <linux/module.h>
@@ -481,6 +492,7 @@ static int iproc_adc_read_raw(struct iio_dev *indio_dev,
 
 static const struct iio_info iproc_adc_iio_info = {
 	.read_raw = &iproc_adc_read_raw,
+	.driver_module = THIS_MODULE,
 };
 
 #define IPROC_ADC_CHANNEL(_index, _id) {                \

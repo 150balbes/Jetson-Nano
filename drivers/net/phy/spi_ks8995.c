@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * SPI driver for Micrel/Kendin KS8995M and KSZ8864RMN ethernet switches
  *
@@ -6,6 +5,10 @@
  *
  * This file was based on: drivers/spi/at25.c
  *     Copyright (C) 2006 David Brownell
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License version 2 as published
+ * by the Free Software Foundation.
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
@@ -158,14 +161,6 @@ static const struct spi_device_id ks8995_id[] = {
 	{ }
 };
 MODULE_DEVICE_TABLE(spi, ks8995_id);
-
-static const struct of_device_id ks8895_spi_of_match[] = {
-        { .compatible = "micrel,ks8995" },
-        { .compatible = "micrel,ksz8864" },
-        { .compatible = "micrel,ksz8795" },
-        { },
- };
-MODULE_DEVICE_TABLE(of, ks8895_spi_of_match);
 
 static inline u8 get_chip_id(u8 val)
 {
@@ -422,7 +417,7 @@ static void ks8995_parse_dt(struct ks8995_switch *ks)
 static const struct bin_attribute ks8995_registers_attr = {
 	.attr = {
 		.name   = "registers",
-		.mode   = 0600,
+		.mode   = S_IRUSR | S_IWUSR,
 	},
 	.size   = KS8995_REGS_SIZE,
 	.read   = ks8995_registers_read,
@@ -534,7 +529,6 @@ static int ks8995_remove(struct spi_device *spi)
 static struct spi_driver ks8995_driver = {
 	.driver = {
 		.name	    = "spi-ks8995",
-		.of_match_table = of_match_ptr(ks8895_spi_of_match),
 	},
 	.probe	  = ks8995_probe,
 	.remove	  = ks8995_remove,

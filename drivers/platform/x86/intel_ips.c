@@ -1,6 +1,21 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * Copyright (c) 2009-2010 Intel Corporation
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms and conditions of the GNU General Public License,
+ * version 2, as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License along with
+ * this program; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin St - Fifth Floor, Boston, MA 02110-1301 USA.
+ *
+ * The full GNU General Public License is included in this distribution in
+ * the file called "COPYING".
  *
  * Authors:
  *	Jesse Barnes <jbarnes@virtuousgeek.org>
@@ -53,7 +68,6 @@
 #include <linux/module.h>
 #include <linux/pci.h>
 #include <linux/sched.h>
-#include <linux/sched/loadavg.h>
 #include <linux/seq_file.h>
 #include <linux/string.h>
 #include <linux/tick.h>
@@ -244,6 +258,8 @@ static const int IPS_SAMPLE_WINDOW = 5000; /* 5s moving window of samples */
 
 /* Per-SKU limits */
 struct ips_mcp_limits {
+	int cpu_family;
+	int cpu_model; /* includes extended model... */
 	int mcp_power_limit; /* mW units */
 	int core_power_limit;
 	int mch_power_limit;
@@ -278,14 +294,11 @@ static struct ips_mcp_limits ips_ulv_limits = {
 };
 
 struct ips_driver {
-	struct device *dev;
-	void __iomem *regmap;
-	int irq;
-
+	struct pci_dev *dev;
+	void *regmap;
 	struct task_struct *monitor;
 	struct task_struct *adjust;
 	struct dentry *debug_root;
-	struct timer_list timer;
 
 	/* Average CPU core temps (all averages in .01 degrees C for precision) */
 	u16 ctv1_avg_temp;
@@ -580,7 +593,7 @@ static void ips_disable_gpu_turbo(struct ips_driver *ips)
 		return;
 
 	if (!ips->gpu_turbo_disable())
-		dev_err(ips->dev, "failed to disable graphics turbo\n");
+		dev_err(&ips->dev->dev, "failed to disable graphics turbo\n");
 	else
 		ips->__gpu_turbo_on = false;
 }
@@ -635,7 +648,8 @@ static bool cpu_exceeded(struct ips_driver *ips, int cpu)
 	spin_unlock_irqrestore(&ips->turbo_status_lock, flags);
 
 	if (ret)
-		dev_info(ips->dev, "CPU power or thermal limit exceeded\n");
+		dev_info(&ips->dev->dev,
+			 "CPU power or thermal limit exceeded\n");
 
 	return ret;
 }
@@ -754,7 +768,7 @@ static int ips_adjust(void *data)
 	struct ips_driver *ips = data;
 	unsigned long flags;
 
-	dev_dbg(ips->dev, "starting ips-adjust thread\n");
+	dev_dbg(&ips->dev->dev, "starting ips-adjust thread\n");
 
 	/*
 	 * Adjust CPU and GPU clamps every 5s if needed.  Doing it more
@@ -801,7 +815,7 @@ sleep:
 		schedule_timeout_interruptible(msecs_to_jiffies(IPS_ADJUST_PERIOD));
 	} while (!kthread_should_stop());
 
-	dev_dbg(ips->dev, "ips-adjust thread stopped\n");
+	dev_dbg(&ips->dev->dev, "ips-adjust thread stopped\n");
 
 	return 0;
 }
@@ -847,7 +861,10 @@ static u16 read_mgtv(struct ips_driver *ips)
 
 static u16 read_ptv(struct ips_driver *ips)
 {
-	u16 val;
+	u16 val, slope, offset;
+
+	slope = (ips->pta_val & PTA_SLOPE_MASK) >> PTA_SLOPE_SHIFT;
+	offset = ips->pta_val & PTA_OFFSET_MASK;
 
 	val = thm_readw(THM_PTV) & PTV_MASK;
 
@@ -924,10 +941,9 @@ static u32 calc_avg_power(struct ips_driver *ips, u32 *array)
 	return avg;
 }
 
-static void monitor_timeout(struct timer_list *t)
+static void monitor_timeout(unsigned long arg)
 {
-	struct ips_driver *ips = from_timer(ips, t, timer);
-	wake_up_process(ips->monitor);
+	wake_up_process((struct task_struct *)arg);
 }
 
 /**
@@ -944,21 +960,22 @@ static void monitor_timeout(struct timer_list *t)
 static int ips_monitor(void *data)
 {
 	struct ips_driver *ips = data;
+	struct timer_list timer;
 	unsigned long seqno_timestamp, expire, last_msecs, last_sample_period;
 	int i;
 	u32 *cpu_samples, *mchp_samples, old_cpu_power;
 	u16 *mcp_samples, *ctv1_samples, *ctv2_samples, *mch_samples;
 	u8 cur_seqno, last_seqno;
 
-	mcp_samples = kcalloc(IPS_SAMPLE_COUNT, sizeof(u16), GFP_KERNEL);
-	ctv1_samples = kcalloc(IPS_SAMPLE_COUNT, sizeof(u16), GFP_KERNEL);
-	ctv2_samples = kcalloc(IPS_SAMPLE_COUNT, sizeof(u16), GFP_KERNEL);
-	mch_samples = kcalloc(IPS_SAMPLE_COUNT, sizeof(u16), GFP_KERNEL);
-	cpu_samples = kcalloc(IPS_SAMPLE_COUNT, sizeof(u32), GFP_KERNEL);
-	mchp_samples = kcalloc(IPS_SAMPLE_COUNT, sizeof(u32), GFP_KERNEL);
+	mcp_samples = kzalloc(sizeof(u16) * IPS_SAMPLE_COUNT, GFP_KERNEL);
+	ctv1_samples = kzalloc(sizeof(u16) * IPS_SAMPLE_COUNT, GFP_KERNEL);
+	ctv2_samples = kzalloc(sizeof(u16) * IPS_SAMPLE_COUNT, GFP_KERNEL);
+	mch_samples = kzalloc(sizeof(u16) * IPS_SAMPLE_COUNT, GFP_KERNEL);
+	cpu_samples = kzalloc(sizeof(u32) * IPS_SAMPLE_COUNT, GFP_KERNEL);
+	mchp_samples = kzalloc(sizeof(u32) * IPS_SAMPLE_COUNT, GFP_KERNEL);
 	if (!mcp_samples || !ctv1_samples || !ctv2_samples || !mch_samples ||
 			!cpu_samples || !mchp_samples) {
-		dev_err(ips->dev,
+		dev_err(&ips->dev->dev,
 			"failed to allocate sample array, ips disabled\n");
 		kfree(mcp_samples);
 		kfree(ctv1_samples);
@@ -1031,7 +1048,8 @@ static int ips_monitor(void *data)
 	schedule_timeout_interruptible(msecs_to_jiffies(IPS_SAMPLE_PERIOD));
 	last_sample_period = IPS_SAMPLE_PERIOD;
 
-	timer_setup(&ips->timer, monitor_timeout, TIMER_DEFERRABLE);
+	setup_deferrable_timer_on_stack(&timer, monitor_timeout,
+					(unsigned long)current);
 	do {
 		u32 cpu_val, mch_val;
 		u16 val;
@@ -1078,8 +1096,7 @@ static int ips_monitor(void *data)
 			ITV_ME_SEQNO_SHIFT;
 		if (cur_seqno == last_seqno &&
 		    time_after(jiffies, seqno_timestamp + HZ)) {
-			dev_warn(ips->dev,
-				 "ME failed to update for more than 1s, likely hung\n");
+			dev_warn(&ips->dev->dev, "ME failed to update for more than 1s, likely hung\n");
 		} else {
 			seqno_timestamp = get_jiffies_64();
 			last_seqno = cur_seqno;
@@ -1089,7 +1106,7 @@ static int ips_monitor(void *data)
 		expire = jiffies + msecs_to_jiffies(IPS_SAMPLE_PERIOD);
 
 		__set_current_state(TASK_INTERRUPTIBLE);
-		mod_timer(&ips->timer, expire);
+		mod_timer(&timer, expire);
 		schedule();
 
 		/* Calculate actual sample period for power averaging */
@@ -1098,9 +1115,10 @@ static int ips_monitor(void *data)
 			last_sample_period = 1;
 	} while (!kthread_should_stop());
 
-	del_timer_sync(&ips->timer);
+	del_timer_sync(&timer);
+	destroy_timer_on_stack(&timer);
 
-	dev_dbg(ips->dev, "ips-monitor thread stopped\n");
+	dev_dbg(&ips->dev->dev, "ips-monitor thread stopped\n");
 
 	return 0;
 }
@@ -1109,17 +1127,17 @@ static int ips_monitor(void *data)
 #define THM_DUMPW(reg) \
 	{ \
 	u16 val = thm_readw(reg); \
-	dev_dbg(ips->dev, #reg ": 0x%04x\n", val); \
+	dev_dbg(&ips->dev->dev, #reg ": 0x%04x\n", val); \
 	}
 #define THM_DUMPL(reg) \
 	{ \
 	u32 val = thm_readl(reg); \
-	dev_dbg(ips->dev, #reg ": 0x%08x\n", val); \
+	dev_dbg(&ips->dev->dev, #reg ": 0x%08x\n", val); \
 	}
 #define THM_DUMPQ(reg) \
 	{ \
 	u64 val = thm_readq(reg); \
-	dev_dbg(ips->dev, #reg ": 0x%016x\n", val); \
+	dev_dbg(&ips->dev->dev, #reg ": 0x%016x\n", val); \
 	}
 
 static void dump_thermal_info(struct ips_driver *ips)
@@ -1127,7 +1145,7 @@ static void dump_thermal_info(struct ips_driver *ips)
 	u16 ptl;
 
 	ptl = thm_readw(THM_PTL);
-	dev_dbg(ips->dev, "Processor temp limit: %d\n", ptl);
+	dev_dbg(&ips->dev->dev, "Processor temp limit: %d\n", ptl);
 
 	THM_DUMPW(THM_CTA);
 	THM_DUMPW(THM_TRC);
@@ -1156,8 +1174,8 @@ static irqreturn_t ips_irq_handler(int irq, void *arg)
 	if (!tses && !tes)
 		return IRQ_NONE;
 
-	dev_info(ips->dev, "TSES: 0x%02x\n", tses);
-	dev_info(ips->dev, "TES: 0x%02x\n", tes);
+	dev_info(&ips->dev->dev, "TSES: 0x%02x\n", tses);
+	dev_info(&ips->dev->dev, "TES: 0x%02x\n", tes);
 
 	/* STS update from EC? */
 	if (tes & 1) {
@@ -1195,8 +1213,8 @@ static irqreturn_t ips_irq_handler(int irq, void *arg)
 
 	/* Thermal trip */
 	if (tses) {
-		dev_warn(ips->dev, "thermal trip occurred, tses: 0x%04x\n",
-			 tses);
+		dev_warn(&ips->dev->dev,
+			 "thermal trip occurred, tses: 0x%04x\n", tses);
 		thm_writeb(THM_TSES, tses);
 	}
 
@@ -1210,7 +1228,13 @@ static void ips_debugfs_cleanup(struct ips_driver *ips) { return; }
 
 /* Expose current state and limits in debugfs if possible */
 
-static int cpu_temp_show(struct seq_file *m, void *data)
+struct ips_debugfs_node {
+	struct ips_driver *ips;
+	char *name;
+	int (*show)(struct seq_file *m, void *data);
+};
+
+static int show_cpu_temp(struct seq_file *m, void *data)
 {
 	struct ips_driver *ips = m->private;
 
@@ -1219,9 +1243,8 @@ static int cpu_temp_show(struct seq_file *m, void *data)
 
 	return 0;
 }
-DEFINE_SHOW_ATTRIBUTE(cpu_temp);
 
-static int cpu_power_show(struct seq_file *m, void *data)
+static int show_cpu_power(struct seq_file *m, void *data)
 {
 	struct ips_driver *ips = m->private;
 
@@ -1229,9 +1252,8 @@ static int cpu_power_show(struct seq_file *m, void *data)
 
 	return 0;
 }
-DEFINE_SHOW_ATTRIBUTE(cpu_power);
 
-static int cpu_clamp_show(struct seq_file *m, void *data)
+static int show_cpu_clamp(struct seq_file *m, void *data)
 {
 	u64 turbo_override;
 	int tdp, tdc;
@@ -1251,9 +1273,8 @@ static int cpu_clamp_show(struct seq_file *m, void *data)
 
 	return 0;
 }
-DEFINE_SHOW_ATTRIBUTE(cpu_clamp);
 
-static int mch_temp_show(struct seq_file *m, void *data)
+static int show_mch_temp(struct seq_file *m, void *data)
 {
 	struct ips_driver *ips = m->private;
 
@@ -1262,9 +1283,8 @@ static int mch_temp_show(struct seq_file *m, void *data)
 
 	return 0;
 }
-DEFINE_SHOW_ATTRIBUTE(mch_temp);
 
-static int mch_power_show(struct seq_file *m, void *data)
+static int show_mch_power(struct seq_file *m, void *data)
 {
 	struct ips_driver *ips = m->private;
 
@@ -1272,22 +1292,70 @@ static int mch_power_show(struct seq_file *m, void *data)
 
 	return 0;
 }
-DEFINE_SHOW_ATTRIBUTE(mch_power);
+
+static struct ips_debugfs_node ips_debug_files[] = {
+	{ NULL, "cpu_temp", show_cpu_temp },
+	{ NULL, "cpu_power", show_cpu_power },
+	{ NULL, "cpu_clamp", show_cpu_clamp },
+	{ NULL, "mch_temp", show_mch_temp },
+	{ NULL, "mch_power", show_mch_power },
+};
+
+static int ips_debugfs_open(struct inode *inode, struct file *file)
+{
+	struct ips_debugfs_node *node = inode->i_private;
+
+	return single_open(file, node->show, node->ips);
+}
+
+static const struct file_operations ips_debugfs_ops = {
+	.owner = THIS_MODULE,
+	.open = ips_debugfs_open,
+	.read = seq_read,
+	.llseek = seq_lseek,
+	.release = single_release,
+};
 
 static void ips_debugfs_cleanup(struct ips_driver *ips)
 {
-	debugfs_remove_recursive(ips->debug_root);
+	if (ips->debug_root)
+		debugfs_remove_recursive(ips->debug_root);
+	return;
 }
 
 static void ips_debugfs_init(struct ips_driver *ips)
 {
-	ips->debug_root = debugfs_create_dir("ips", NULL);
+	int i;
 
-	debugfs_create_file("cpu_temp", 0444, ips->debug_root, ips, &cpu_temp_fops);
-	debugfs_create_file("cpu_power", 0444, ips->debug_root, ips, &cpu_power_fops);
-	debugfs_create_file("cpu_clamp", 0444, ips->debug_root, ips, &cpu_clamp_fops);
-	debugfs_create_file("mch_temp", 0444, ips->debug_root, ips, &mch_temp_fops);
-	debugfs_create_file("mch_power", 0444, ips->debug_root, ips, &mch_power_fops);
+	ips->debug_root = debugfs_create_dir("ips", NULL);
+	if (!ips->debug_root) {
+		dev_err(&ips->dev->dev,
+			"failed to create debugfs entries: %ld\n",
+			PTR_ERR(ips->debug_root));
+		return;
+	}
+
+	for (i = 0; i < ARRAY_SIZE(ips_debug_files); i++) {
+		struct dentry *ent;
+		struct ips_debugfs_node *node = &ips_debug_files[i];
+
+		node->ips = ips;
+		ent = debugfs_create_file(node->name, S_IFREG | S_IRUGO,
+					  ips->debug_root, node,
+					  &ips_debugfs_ops);
+		if (!ent) {
+			dev_err(&ips->dev->dev,
+				"failed to create debug file: %ld\n",
+				PTR_ERR(ent));
+			goto err_cleanup;
+		}
+	}
+
+	return;
+
+err_cleanup:
+	ips_debugfs_cleanup(ips);
+	return;
 }
 #endif /* CONFIG_DEBUG_FS */
 
@@ -1304,8 +1372,8 @@ static struct ips_mcp_limits *ips_detect_cpu(struct ips_driver *ips)
 	u16 tdp;
 
 	if (!(boot_cpu_data.x86 == 6 && boot_cpu_data.x86_model == 37)) {
-		dev_info(ips->dev, "Non-IPS CPU detected.\n");
-		return NULL;
+		dev_info(&ips->dev->dev, "Non-IPS CPU detected.\n");
+		goto out;
 	}
 
 	rdmsrl(IA32_MISC_ENABLE, misc_en);
@@ -1326,8 +1394,8 @@ static struct ips_mcp_limits *ips_detect_cpu(struct ips_driver *ips)
 	else if (strstr(boot_cpu_data.x86_model_id, "CPU       U"))
 		limits = &ips_ulv_limits;
 	else {
-		dev_info(ips->dev, "No CPUID match found.\n");
-		return NULL;
+		dev_info(&ips->dev->dev, "No CPUID match found.\n");
+		goto out;
 	}
 
 	rdmsrl(TURBO_POWER_CURRENT_LIMIT, turbo_power);
@@ -1335,12 +1403,12 @@ static struct ips_mcp_limits *ips_detect_cpu(struct ips_driver *ips)
 
 	/* Sanity check TDP against CPU */
 	if (limits->core_power_limit != (tdp / 8) * 1000) {
-		dev_info(ips->dev,
-			 "CPU TDP doesn't match expected value (found %d, expected %d)\n",
+		dev_info(&ips->dev->dev, "CPU TDP doesn't match expected value (found %d, expected %d)\n",
 			 tdp / 8, limits->core_power_limit / 1000);
 		limits->core_power_limit = (tdp / 8) * 1000;
 	}
 
+out:
 	return limits;
 }
 
@@ -1390,7 +1458,7 @@ ips_gpu_turbo_enabled(struct ips_driver *ips)
 {
 	if (!ips->gpu_busy && late_i915_load) {
 		if (ips_get_i915_syms(ips)) {
-			dev_info(ips->dev,
+			dev_info(&ips->dev->dev,
 				 "i915 driver attached, reenabling gpu turbo\n");
 			ips->gpu_turbo_enabled = !(thm_readl(THM_HTS) & HTS_GTD_DIS);
 		}
@@ -1411,7 +1479,8 @@ ips_link_to_i915_driver(void)
 EXPORT_SYMBOL_GPL(ips_link_to_i915_driver);
 
 static const struct pci_device_id ips_id_table[] = {
-	{ PCI_VDEVICE(INTEL, PCI_DEVICE_ID_INTEL_THERMAL_SENSOR), },
+	{ PCI_DEVICE(PCI_VENDOR_ID_INTEL,
+		     PCI_DEVICE_ID_INTEL_THERMAL_SENSOR), },
 	{ 0, }
 };
 
@@ -1447,45 +1516,62 @@ static int ips_probe(struct pci_dev *dev, const struct pci_device_id *id)
 	if (dmi_check_system(ips_blacklist))
 		return -ENODEV;
 
-	ips = devm_kzalloc(&dev->dev, sizeof(*ips), GFP_KERNEL);
+	ips = kzalloc(sizeof(struct ips_driver), GFP_KERNEL);
 	if (!ips)
 		return -ENOMEM;
 
-	spin_lock_init(&ips->turbo_status_lock);
-	ips->dev = &dev->dev;
+	pci_set_drvdata(dev, ips);
+	ips->dev = dev;
 
 	ips->limits = ips_detect_cpu(ips);
 	if (!ips->limits) {
 		dev_info(&dev->dev, "IPS not supported on this CPU\n");
-		return -ENXIO;
+		ret = -ENXIO;
+		goto error_free;
 	}
 
-	ret = pcim_enable_device(dev);
+	spin_lock_init(&ips->turbo_status_lock);
+
+	ret = pci_enable_device(dev);
 	if (ret) {
 		dev_err(&dev->dev, "can't enable PCI device, aborting\n");
-		return ret;
+		goto error_free;
 	}
 
-	ret = pcim_iomap_regions(dev, 1 << 0, pci_name(dev));
+	if (!pci_resource_start(dev, 0)) {
+		dev_err(&dev->dev, "TBAR not assigned, aborting\n");
+		ret = -ENXIO;
+		goto error_free;
+	}
+
+	ret = pci_request_regions(dev, "ips thermal sensor");
 	if (ret) {
-		dev_err(&dev->dev, "failed to map thermal regs, aborting\n");
-		return ret;
+		dev_err(&dev->dev, "thermal resource busy, aborting\n");
+		goto error_free;
 	}
-	ips->regmap = pcim_iomap_table(dev)[0];
 
-	pci_set_drvdata(dev, ips);
+
+	ips->regmap = ioremap(pci_resource_start(dev, 0),
+			      pci_resource_len(dev, 0));
+	if (!ips->regmap) {
+		dev_err(&dev->dev, "failed to map thermal regs, aborting\n");
+		ret = -EBUSY;
+		goto error_release;
+	}
 
 	tse = thm_readb(THM_TSE);
 	if (tse != TSE_EN) {
 		dev_err(&dev->dev, "thermal device not enabled (0x%02x), aborting\n", tse);
-		return -ENXIO;
+		ret = -ENXIO;
+		goto error_unmap;
 	}
 
 	trc = thm_readw(THM_TRC);
 	trc_required_mask = TRC_CORE1_EN | TRC_CORE_PWR | TRC_MCH_EN;
 	if ((trc & trc_required_mask) != trc_required_mask) {
 		dev_err(&dev->dev, "thermal reporting for required devices not enabled, aborting\n");
-		return -ENXIO;
+		ret = -ENXIO;
+		goto error_unmap;
 	}
 
 	if (trc & TRC_CORE2_EN)
@@ -1515,23 +1601,20 @@ static int ips_probe(struct pci_dev *dev, const struct pci_device_id *id)
 	rdmsrl(PLATFORM_INFO, platform_info);
 	if (!(platform_info & PLATFORM_TDP)) {
 		dev_err(&dev->dev, "platform indicates TDP override unavailable, aborting\n");
-		return -ENODEV;
+		ret = -ENODEV;
+		goto error_unmap;
 	}
 
 	/*
 	 * IRQ handler for ME interaction
 	 * Note: don't use MSI here as the PCH has bugs.
 	 */
-	ret = pci_alloc_irq_vectors(dev, 1, 1, PCI_IRQ_LEGACY);
-	if (ret < 0)
-		return ret;
-
-	ips->irq = pci_irq_vector(dev, 0);
-
-	ret = request_irq(ips->irq, ips_irq_handler, IRQF_SHARED, "ips", ips);
+	pci_disable_msi(dev);
+	ret = request_irq(dev->irq, ips_irq_handler, IRQF_SHARED, "ips",
+			  ips);
 	if (ret) {
 		dev_err(&dev->dev, "request irq failed, aborting\n");
-		return ret;
+		goto error_unmap;
 	}
 
 	/* Enable aux, hot & critical interrupts */
@@ -1588,8 +1671,13 @@ static int ips_probe(struct pci_dev *dev, const struct pci_device_id *id)
 error_thread_cleanup:
 	kthread_stop(ips->adjust);
 error_free_irq:
-	free_irq(ips->irq, ips);
-	pci_free_irq_vectors(dev);
+	free_irq(ips->dev->irq, ips);
+error_unmap:
+	iounmap(ips->regmap);
+error_release:
+	pci_release_regions(dev);
+error_free:
+	kfree(ips);
 	return ret;
 }
 
@@ -1597,6 +1685,9 @@ static void ips_remove(struct pci_dev *dev)
 {
 	struct ips_driver *ips = pci_get_drvdata(dev);
 	u64 turbo_override;
+
+	if (!ips)
+		return;
 
 	ips_debugfs_cleanup(ips);
 
@@ -1617,13 +1708,19 @@ static void ips_remove(struct pci_dev *dev)
 	wrmsrl(TURBO_POWER_CURRENT_LIMIT, turbo_override);
 	wrmsrl(TURBO_POWER_CURRENT_LIMIT, ips->orig_turbo_limit);
 
-	free_irq(ips->irq, ips);
-	pci_free_irq_vectors(dev);
+	free_irq(ips->dev->irq, ips);
 	if (ips->adjust)
 		kthread_stop(ips->adjust);
 	if (ips->monitor)
 		kthread_stop(ips->monitor);
+	iounmap(ips->regmap);
+	pci_release_regions(dev);
+	kfree(ips);
 	dev_dbg(&dev->dev, "IPS driver removed\n");
+}
+
+static void ips_shutdown(struct pci_dev *dev)
+{
 }
 
 static struct pci_driver ips_pci_driver = {
@@ -1631,10 +1728,11 @@ static struct pci_driver ips_pci_driver = {
 	.id_table = ips_id_table,
 	.probe = ips_probe,
 	.remove = ips_remove,
+	.shutdown = ips_shutdown,
 };
 
 module_pci_driver(ips_pci_driver);
 
-MODULE_LICENSE("GPL v2");
+MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Jesse Barnes <jbarnes@virtuousgeek.org>");
 MODULE_DESCRIPTION("Intelligent Power Sharing Driver");

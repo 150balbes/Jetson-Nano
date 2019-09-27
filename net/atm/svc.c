@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /* net/atm/svc.c - ATM SVC sockets */
 
 /* Written 1995-2000 by Werner Almesberger, EPFL LRC/ICA */
@@ -11,7 +10,7 @@
 #include <linux/kernel.h>	/* printk */
 #include <linux/skbuff.h>
 #include <linux/wait.h>
-#include <linux/sched/signal.h>
+#include <linux/sched.h>	/* jiffies and HZ */
 #include <linux/fcntl.h>	/* O_NONBLOCK */
 #include <linux/init.h>
 #include <linux/atm.h>		/* ATM stuff */
@@ -319,8 +318,7 @@ out:
 	return error;
 }
 
-static int svc_accept(struct socket *sock, struct socket *newsock, int flags,
-		      bool kern)
+static int svc_accept(struct socket *sock, struct socket *newsock, int flags)
 {
 	struct sock *sk = sock->sk;
 	struct sk_buff *skb;
@@ -331,7 +329,7 @@ static int svc_accept(struct socket *sock, struct socket *newsock, int flags,
 
 	lock_sock(sk);
 
-	error = svc_create(sock_net(sk), newsock, 0, kern);
+	error = svc_create(sock_net(sk), newsock, 0, 0);
 	if (error)
 		goto out;
 
@@ -419,14 +417,15 @@ out:
 }
 
 static int svc_getname(struct socket *sock, struct sockaddr *sockaddr,
-		       int peer)
+		       int *sockaddr_len, int peer)
 {
 	struct sockaddr_atmsvc *addr;
 
+	*sockaddr_len = sizeof(struct sockaddr_atmsvc);
 	addr = (struct sockaddr_atmsvc *) sockaddr;
 	memcpy(addr, peer ? &ATM_SD(sock)->remote : &ATM_SD(sock)->local,
 	       sizeof(struct sockaddr_atmsvc));
-	return sizeof(struct sockaddr_atmsvc);
+	return 0;
 }
 
 int svc_change_qos(struct atm_vcc *vcc, struct atm_qos *qos)
@@ -641,7 +640,6 @@ static const struct proto_ops svc_proto_ops = {
 #ifdef CONFIG_COMPAT
 	.compat_ioctl =	svc_compat_ioctl,
 #endif
-	.gettstamp =	sock_gettstamp,
 	.listen =	svc_listen,
 	.shutdown =	svc_shutdown,
 	.setsockopt =	svc_setsockopt,

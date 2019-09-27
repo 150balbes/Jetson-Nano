@@ -1,10 +1,7 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _FS_CEPH_DEBUG_H
 #define _FS_CEPH_DEBUG_H
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
-
-#include <linux/string.h>
 
 #ifdef CONFIG_CEPH_LIB_PRETTYDEBUG
 
@@ -15,10 +12,12 @@
  */
 
 # if defined(DEBUG) || defined(CONFIG_DYNAMIC_DEBUG)
+extern const char *ceph_file_part(const char *s, int len);
 #  define dout(fmt, ...)						\
 	pr_debug("%.*s %12.12s:%-4d : " fmt,				\
 		 8 - (int)sizeof(KBUILD_MODNAME), "    ",		\
-		 kbasename(__FILE__), __LINE__, ##__VA_ARGS__)
+		 ceph_file_part(__FILE__, sizeof(__FILE__)),		\
+		 __LINE__, ##__VA_ARGS__)
 # else
 /* faux printk call just to see any compiler warnings. */
 #  define dout(fmt, ...)	do {				\

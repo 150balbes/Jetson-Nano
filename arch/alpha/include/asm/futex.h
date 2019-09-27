@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _ASM_ALPHA_FUTEX_H
 #define _ASM_ALPHA_FUTEX_H
 
@@ -20,8 +19,12 @@
 	"3:	.subsection 2\n"				\
 	"4:	br	1b\n"					\
 	"	.previous\n"					\
-	EXC(1b,3b,$31,%1)					\
-	EXC(2b,3b,$31,%1)					\
+	"	.section __ex_table,\"a\"\n"			\
+	"	.long	1b-.\n"					\
+	"	lda	$31,3b-1b(%1)\n"			\
+	"	.long	2b-.\n"					\
+	"	lda	$31,3b-2b(%1)\n"			\
+	"	.previous\n"					\
 	:	"=&r" (oldval), "=&r"(ret)			\
 	:	"r" (uaddr), "r"(oparg)				\
 	:	"memory")
@@ -68,7 +71,7 @@ futex_atomic_cmpxchg_inatomic(u32 *uval, u32 __user *uaddr,
 	int ret = 0, cmp;
 	u32 prev;
 
-	if (!access_ok(uaddr, sizeof(u32)))
+	if (!access_ok(VERIFY_WRITE, uaddr, sizeof(u32)))
 		return -EFAULT;
 
 	__asm__ __volatile__ (
@@ -82,8 +85,12 @@ futex_atomic_cmpxchg_inatomic(u32 *uval, u32 __user *uaddr,
 	"3:	.subsection 2\n"
 	"4:	br	1b\n"
 	"	.previous\n"
-	EXC(1b,3b,$31,%0)
-	EXC(2b,3b,$31,%0)
+	"	.section __ex_table,\"a\"\n"
+	"	.long	1b-.\n"
+	"	lda	$31,3b-1b(%0)\n"
+	"	.long	2b-.\n"
+	"	lda	$31,3b-2b(%0)\n"
+	"	.previous\n"
 	:	"+r"(ret), "=&r"(prev), "=&r"(cmp)
 	:	"r"(uaddr), "r"((long)(int)oldval), "r"(newval)
 	:	"memory");

@@ -1,6 +1,9 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (C) 2004-2013 Synopsys, Inc. (www.synopsys.com)
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  *
  * Driver for the ARC EMAC 10100 (hardware revision 5)
  *
@@ -22,8 +25,6 @@
 #include <linux/of_platform.h>
 
 #include "emac.h"
-
-static void arc_emac_restart(struct net_device *ndev);
 
 /**
  * arc_emac_tx_avail - Return the number of available slots in the tx ring.
@@ -145,7 +146,7 @@ static void arc_emac_tx_clean(struct net_device *ndev)
 				 dma_unmap_len(tx_buff, len), DMA_TO_DEVICE);
 
 		/* return the sk_buff to system */
-		dev_consume_skb_irq(skb);
+		dev_kfree_skb_irq(skb);
 
 		txbd->data = 0;
 		txbd->info = 0;
@@ -267,53 +268,6 @@ static int arc_emac_rx(struct net_device *ndev, int budget)
 }
 
 /**
- * arc_emac_rx_miss_handle - handle R_MISS register
- * @ndev:	Pointer to the net_device structure.
- */
-static void arc_emac_rx_miss_handle(struct net_device *ndev)
-{
-	struct arc_emac_priv *priv = netdev_priv(ndev);
-	struct net_device_stats *stats = &ndev->stats;
-	unsigned int miss;
-
-	miss = arc_reg_get(priv, R_MISS);
-	if (miss) {
-		stats->rx_errors += miss;
-		stats->rx_missed_errors += miss;
-		priv->rx_missed_errors += miss;
-	}
-}
-
-/**
- * arc_emac_rx_stall_check - check RX stall
- * @ndev:	Pointer to the net_device structure.
- * @budget:	How many BDs requested to process on 1 call.
- * @work_done:	How many BDs processed
- *
- * Under certain conditions EMAC stop reception of incoming packets and
- * continuously increment R_MISS register instead of saving data into
- * provided buffer. This function detect that condition and restart
- * EMAC.
- */
-static void arc_emac_rx_stall_check(struct net_device *ndev,
-				    int budget, unsigned int work_done)
-{
-	struct arc_emac_priv *priv = netdev_priv(ndev);
-	struct arc_emac_bd *rxbd;
-
-	if (work_done)
-		priv->rx_missed_errors = 0;
-
-	if (priv->rx_missed_errors && budget) {
-		rxbd = &priv->rxbd[priv->last_rx_bd];
-		if (le32_to_cpu(rxbd->info) & FOR_EMAC) {
-			arc_emac_restart(ndev);
-			priv->rx_missed_errors = 0;
-		}
-	}
-}
-
-/**
  * arc_emac_poll - NAPI poll handler.
  * @napi:	Pointer to napi_struct structure.
  * @budget:	How many BDs to process on 1 call.
@@ -327,15 +281,12 @@ static int arc_emac_poll(struct napi_struct *napi, int budget)
 	unsigned int work_done;
 
 	arc_emac_tx_clean(ndev);
-	arc_emac_rx_miss_handle(ndev);
 
 	work_done = arc_emac_rx(ndev, budget);
 	if (work_done < budget) {
-		napi_complete_done(napi, work_done);
+		napi_complete(napi);
 		arc_reg_or(priv, R_ENABLE, RXINT_MASK | TXINT_MASK);
 	}
-
-	arc_emac_rx_stall_check(ndev, budget, work_done);
 
 	return work_done;
 }
@@ -378,8 +329,6 @@ static irqreturn_t arc_emac_intr(int irq, void *dev_instance)
 		if (status & MSER_MASK) {
 			stats->rx_missed_errors += 0x100;
 			stats->rx_errors += 0x100;
-			priv->rx_missed_errors += 0x100;
-			napi_schedule(&priv->napi);
 		}
 
 		if (status & RXCR_MASK) {
@@ -429,8 +378,7 @@ static int arc_emac_open(struct net_device *ndev)
 	phy_dev->autoneg = AUTONEG_ENABLE;
 	phy_dev->speed = 0;
 	phy_dev->duplex = 0;
-	linkmode_and(phy_dev->advertising, phy_dev->advertising,
-		     phy_dev->supported);
+	phy_dev->advertising &= phy_dev->supported;
 
 	priv->last_rx_bd = 0;
 
@@ -495,7 +443,7 @@ static int arc_emac_open(struct net_device *ndev)
 	/* Enable EMAC */
 	arc_reg_or(priv, R_CTRL, EN_MASK);
 
-	phy_start(ndev->phydev);
+	phy_start_aneg(ndev->phydev);
 
 	netif_start_queue(ndev);
 
@@ -617,8 +565,6 @@ static int arc_emac_stop(struct net_device *ndev)
 	napi_disable(&priv->napi);
 	netif_stop_queue(ndev);
 
-	phy_stop(ndev->phydev);
-
 	/* Disable interrupts */
 	arc_reg_clr(priv, R_ENABLE, RXINT_MASK | TXINT_MASK | ERR_MASK);
 
@@ -699,7 +645,7 @@ static int arc_emac_tx(struct sk_buff *skb, struct net_device *ndev)
 	if (unlikely(dma_mapping_error(&ndev->dev, addr))) {
 		stats->tx_dropped++;
 		stats->tx_errors++;
-		dev_kfree_skb_any(skb);
+		dev_kfree_skb(skb);
 		return NETDEV_TX_OK;
 	}
 	dma_unmap_addr_set(&priv->tx_buff[*txbd_curr], addr, addr);
@@ -781,75 +727,6 @@ static int arc_emac_set_address(struct net_device *ndev, void *p)
 	return 0;
 }
 
-static int arc_emac_ioctl(struct net_device *dev, struct ifreq *rq, int cmd)
-{
-	if (!netif_running(dev))
-		return -EINVAL;
-
-	if (!dev->phydev)
-		return -ENODEV;
-
-	return phy_mii_ioctl(dev->phydev, rq, cmd);
-}
-
-
-/**
- * arc_emac_restart - Restart EMAC
- * @ndev:	Pointer to net_device structure.
- *
- * This function do hardware reset of EMAC in order to restore
- * network packets reception.
- */
-static void arc_emac_restart(struct net_device *ndev)
-{
-	struct arc_emac_priv *priv = netdev_priv(ndev);
-	struct net_device_stats *stats = &ndev->stats;
-	int i;
-
-	if (net_ratelimit())
-		netdev_warn(ndev, "restarting stalled EMAC\n");
-
-	netif_stop_queue(ndev);
-
-	/* Disable interrupts */
-	arc_reg_clr(priv, R_ENABLE, RXINT_MASK | TXINT_MASK | ERR_MASK);
-
-	/* Disable EMAC */
-	arc_reg_clr(priv, R_CTRL, EN_MASK);
-
-	/* Return the sk_buff to system */
-	arc_free_tx_queue(ndev);
-
-	/* Clean Tx BD's */
-	priv->txbd_curr = 0;
-	priv->txbd_dirty = 0;
-	memset(priv->txbd, 0, TX_RING_SZ);
-
-	for (i = 0; i < RX_BD_NUM; i++) {
-		struct arc_emac_bd *rxbd = &priv->rxbd[i];
-		unsigned int info = le32_to_cpu(rxbd->info);
-
-		if (!(info & FOR_EMAC)) {
-			stats->rx_errors++;
-			stats->rx_dropped++;
-		}
-		/* Return ownership to EMAC */
-		rxbd->info = cpu_to_le32(FOR_EMAC | EMAC_BUFFER_SIZE);
-	}
-	priv->last_rx_bd = 0;
-
-	/* Make sure info is visible to EMAC before enable */
-	wmb();
-
-	/* Enable interrupts */
-	arc_reg_set(priv, R_ENABLE, RXINT_MASK | TXINT_MASK | ERR_MASK);
-
-	/* Enable EMAC */
-	arc_reg_or(priv, R_CTRL, EN_MASK);
-
-	netif_start_queue(ndev);
-}
-
 static const struct net_device_ops arc_emac_netdev_ops = {
 	.ndo_open		= arc_emac_open,
 	.ndo_stop		= arc_emac_stop,
@@ -857,7 +734,6 @@ static const struct net_device_ops arc_emac_netdev_ops = {
 	.ndo_set_mac_address	= arc_emac_set_address,
 	.ndo_get_stats		= arc_emac_stats,
 	.ndo_set_rx_mode	= arc_emac_set_rx_mode,
-	.ndo_do_ioctl		= arc_emac_ioctl,
 #ifdef CONFIG_NET_POLL_CONTROLLER
 	.ndo_poll_controller	= arc_emac_poll_controller,
 #endif
@@ -957,8 +833,8 @@ int arc_emac_probe(struct net_device *ndev, int interface)
 	/* Get MAC address from device tree */
 	mac_addr = of_get_mac_address(dev->of_node);
 
-	if (!IS_ERR(mac_addr))
-		ether_addr_copy(ndev->dev_addr, mac_addr);
+	if (mac_addr)
+		memcpy(ndev->dev_addr, mac_addr, ETH_ALEN);
 	else
 		eth_hw_addr_random(ndev);
 

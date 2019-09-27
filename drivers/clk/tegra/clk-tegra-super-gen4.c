@@ -1,6 +1,17 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2012, 2013, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2012-2017, NVIDIA CORPORATION.  All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms and conditions of the GNU General Public License,
+ * version 2, as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 #include <linux/io.h>
@@ -22,8 +33,9 @@
 #define CCLKG_BURST_POLICY 0x368
 #define CCLKLP_BURST_POLICY 0x370
 #define SCLK_BURST_POLICY 0x028
+#define SCLK_SKIPPER 0x02c
 #define SYSTEM_CLK_RATE 0x030
-#define SCLK_DIVIDER 0x2c
+#define SCLK_DIVIDER 0x400
 
 static DEFINE_SPINLOCK(sysrate_lock);
 
@@ -97,28 +109,38 @@ static void __init tegra_sclk_init(void __iomem *clk_base,
 				const struct tegra_super_gen_info *gen_info)
 {
 	struct clk *clk;
-	struct clk **dt_clk;
+	struct clk **dt_clk_mux, **dt_clk_skipper, **dt_clk;
+	char *hclk_parent = NULL;
 
 	/* SCLK_MUX */
-	dt_clk = tegra_lookup_dt_id(tegra_clk_sclk_mux, tegra_clks);
-	if (dt_clk) {
+	dt_clk_mux = tegra_lookup_dt_id(tegra_clk_sclk_mux, tegra_clks);
+	dt_clk_skipper = tegra_lookup_dt_id(tegra_clk_sclk_skipper, tegra_clks);
+	if (dt_clk_mux) {
 		clk = tegra_clk_register_super_mux("sclk_mux",
 						gen_info->sclk_parents,
 						gen_info->num_sclk_parents,
 						CLK_SET_RATE_PARENT,
 						clk_base + SCLK_BURST_POLICY,
 						0, 4, 0, 0, NULL);
-		*dt_clk = clk;
-
+		*dt_clk_mux = clk;
+		hclk_parent = "sclk_mux";
 
 		/* SCLK */
 		dt_clk = tegra_lookup_dt_id(tegra_clk_sclk, tegra_clks);
 		if (dt_clk) {
-			clk = clk_register_divider(NULL, "sclk", "sclk_mux",
-						CLK_IS_CRITICAL,
-						clk_base + SCLK_DIVIDER, 0, 8,
-						0, &sysrate_lock);
+			clk = tegra_clk_register_divider("sclk", "sclk_mux",
+						clk_base + SCLK_DIVIDER, 0,
+						TEGRA_DIVIDER_ROUND_UP,
+						0, 8, 1, &sysrate_lock);
 			*dt_clk = clk;
+			hclk_parent = "sclk";
+		}
+
+		if (dt_clk_skipper) {
+			clk = tegra_clk_register_skipper("sclk_skipper",
+				"sclk", clk_base + SCLK_SKIPPER, 0, NULL);
+			*dt_clk_skipper = clk;
+			hclk_parent = "sclk_skipper";
 		}
 	} else {
 		/* SCLK */
@@ -127,22 +149,25 @@ static void __init tegra_sclk_init(void __iomem *clk_base,
 			clk = tegra_clk_register_super_mux("sclk",
 						gen_info->sclk_parents,
 						gen_info->num_sclk_parents,
-						CLK_SET_RATE_PARENT |
-						CLK_IS_CRITICAL,
+						CLK_SET_RATE_PARENT,
 						clk_base + SCLK_BURST_POLICY,
 						0, 4, 0, 0, NULL);
 			*dt_clk = clk;
+			hclk_parent = "sclk";
 		}
 	}
+
+	if (!hclk_parent)
+		return;		/* The entire sclk complex is not present */
 
 	/* HCLK */
 	dt_clk = tegra_lookup_dt_id(tegra_clk_hclk, tegra_clks);
 	if (dt_clk) {
-		clk = clk_register_divider(NULL, "hclk_div", "sclk", 0,
-				   clk_base + SYSTEM_CLK_RATE, 4, 2, 0,
+		clk = tegra_clk_register_divider("hclk_div", hclk_parent,
+				   clk_base + SYSTEM_CLK_RATE, 0, 0, 4, 2, 0,
 				   &sysrate_lock);
 		clk = clk_register_gate(NULL, "hclk", "hclk_div",
-				CLK_SET_RATE_PARENT | CLK_IS_CRITICAL,
+				CLK_SET_RATE_PARENT | CLK_IGNORE_UNUSED,
 				clk_base + SYSTEM_CLK_RATE,
 				7, CLK_GATE_SET_TO_DISABLE, &sysrate_lock);
 		*dt_clk = clk;
@@ -153,11 +178,11 @@ static void __init tegra_sclk_init(void __iomem *clk_base,
 	if (!dt_clk)
 		return;
 
-	clk = clk_register_divider(NULL, "pclk_div", "hclk", 0,
-				   clk_base + SYSTEM_CLK_RATE, 0, 2, 0,
+	clk = tegra_clk_register_divider("pclk_div", "hclk",
+				   clk_base + SYSTEM_CLK_RATE, 0, 0, 0, 2, 0,
 				   &sysrate_lock);
 	clk = clk_register_gate(NULL, "pclk", "pclk_div", CLK_SET_RATE_PARENT |
-				CLK_IS_CRITICAL, clk_base + SYSTEM_CLK_RATE,
+				CLK_IGNORE_UNUSED, clk_base + SYSTEM_CLK_RATE,
 				3, CLK_GATE_SET_TO_DISABLE, &sysrate_lock);
 	*dt_clk = clk;
 }

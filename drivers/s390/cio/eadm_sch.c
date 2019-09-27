@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * Driver for s390 eadm subchannels
  *
@@ -44,7 +43,13 @@ static debug_info_t *eadm_debug;
 
 static void EADM_LOG_HEX(int level, void *data, int length)
 {
-	debug_event(eadm_debug, level, data, length);
+	if (!debug_level_enabled(eadm_debug, level))
+		return;
+	while (length > 0) {
+		debug_event(eadm_debug, level, data, length);
+		length -= eadm_debug->buf_size;
+		data += eadm_debug->buf_size;
+	}
 }
 
 static void orb_init(union orb *orb)
@@ -95,10 +100,9 @@ static int eadm_subchannel_clear(struct subchannel *sch)
 	return 0;
 }
 
-static void eadm_subchannel_timeout(struct timer_list *t)
+static void eadm_subchannel_timeout(unsigned long data)
 {
-	struct eadm_private *private = from_timer(private, t, timer);
-	struct subchannel *sch = private->sch;
+	struct subchannel *sch = (struct subchannel *) data;
 
 	spin_lock_irq(sch->lock);
 	EADM_LOG(1, "timeout");
@@ -120,6 +124,8 @@ static void eadm_subchannel_set_timeout(struct subchannel *sch, int expires)
 		if (mod_timer(&private->timer, jiffies + expires))
 			return;
 	}
+	private->timer.function = eadm_subchannel_timeout;
+	private->timer.data = (unsigned long) sch;
 	private->timer.expires = jiffies + expires;
 	add_timer(&private->timer);
 }
@@ -129,7 +135,7 @@ static void eadm_subchannel_irq(struct subchannel *sch)
 	struct eadm_private *private = get_eadm_private(sch);
 	struct eadm_scsw *scsw = &sch->schib.scsw.eadm;
 	struct irb *irb = this_cpu_ptr(&cio_irb);
-	blk_status_t error = BLK_STS_OK;
+	int error = 0;
 
 	EADM_LOG(6, "irq");
 	EADM_LOG_HEX(6, irb, sizeof(*irb));
@@ -138,10 +144,10 @@ static void eadm_subchannel_irq(struct subchannel *sch)
 
 	if ((scsw->stctl & (SCSW_STCTL_ALERT_STATUS | SCSW_STCTL_STATUS_PEND))
 	    && scsw->eswf == 1 && irb->esw.eadm.erw.r)
-		error = BLK_STS_IOERR;
+		error = -EIO;
 
 	if (scsw->fctl & SCSW_FCTL_CLEAR_FUNC)
-		error = BLK_STS_TIMEOUT;
+		error = -ETIMEDOUT;
 
 	eadm_subchannel_set_timeout(sch, 0);
 
@@ -224,7 +230,7 @@ static int eadm_subchannel_probe(struct subchannel *sch)
 		return -ENOMEM;
 
 	INIT_LIST_HEAD(&private->head);
-	timer_setup(&private->timer, eadm_subchannel_timeout, 0);
+	init_timer(&private->timer);
 
 	spin_lock_irq(sch->lock);
 	set_eadm_private(sch, private);

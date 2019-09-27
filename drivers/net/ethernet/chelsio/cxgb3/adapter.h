@@ -72,6 +72,7 @@ struct port_info {
 	struct cphy phy;
 	struct cmac mac;
 	struct link_config link_config;
+	struct net_device_stats netstats;
 	int activity;
 	__be32 iscsi_ipv4addr;
 	struct iscsi_config iscsic;

@@ -26,26 +26,19 @@
  */
 
 #include "i915_drv.h"
-#include "i915_gem_render_state.h"
 #include "intel_renderstate.h"
 
-struct intel_render_state {
+struct render_state {
 	const struct intel_renderstate_rodata *rodata;
-	struct drm_i915_gem_object *obj;
 	struct i915_vma *vma;
-	u32 batch_offset;
-	u32 batch_size;
-	u32 aux_offset;
-	u32 aux_size;
+	u32 aux_batch_size;
+	u32 aux_batch_offset;
 };
 
 static const struct intel_renderstate_rodata *
-render_state_get_rodata(const struct intel_engine_cs *engine)
+render_state_get_rodata(const struct drm_i915_gem_request *req)
 {
-	if (engine->id != RCS0)
-		return NULL;
-
-	switch (INTEL_GEN(engine->i915)) {
+	switch (INTEL_GEN(req->i915)) {
 	case 6:
 		return &gen6_null_state;
 	case 7:
@@ -65,30 +58,34 @@ render_state_get_rodata(const struct intel_engine_cs *engine)
  * this is sufficient as the null state generator makes the final batch
  * with two passes to build command and state separately. At this point
  * the size of both are known and it compacts them by relocating the state
- * right after the commands taking care of alignment so we should sufficient
+ * right after the commands taking care of aligment so we should sufficient
  * space below them for adding new commands.
  */
 #define OUT_BATCH(batch, i, val)				\
 	do {							\
-		if ((i) >= PAGE_SIZE / sizeof(u32))		\
-			goto err;				\
+		if (WARN_ON((i) >= PAGE_SIZE / sizeof(u32))) {	\
+			ret = -ENOSPC;				\
+			goto err_out;				\
+		}						\
 		(batch)[(i)++] = (val);				\
 	} while(0)
 
-static int render_state_setup(struct intel_render_state *so,
-			      struct drm_i915_private *i915)
+static int render_state_setup(struct render_state *so)
 {
+	struct drm_device *dev = so->vma->vm->dev;
 	const struct intel_renderstate_rodata *rodata = so->rodata;
+	const bool has_64bit_reloc = INTEL_GEN(dev) >= 8;
 	unsigned int i = 0, reloc_index = 0;
-	unsigned int needs_clflush;
+	struct page *page;
 	u32 *d;
 	int ret;
 
-	ret = i915_gem_object_prepare_write(so->obj, &needs_clflush);
+	ret = i915_gem_object_set_to_cpu_domain(so->vma->obj, true);
 	if (ret)
 		return ret;
 
-	d = kmap_atomic(i915_gem_object_get_dirty_page(so->obj, 0));
+	page = i915_gem_object_get_dirty_page(so->vma->obj, 0);
+	d = kmap(page);
 
 	while (i < rodata->batch_items) {
 		u32 s = rodata->batch[i];
@@ -96,10 +93,12 @@ static int render_state_setup(struct intel_render_state *so,
 		if (i * 4  == rodata->reloc[reloc_index]) {
 			u64 r = s + so->vma->node.start;
 			s = lower_32_bits(r);
-			if (HAS_64BIT_RELOC(i915)) {
+			if (has_64bit_reloc) {
 				if (i + 1 >= rodata->batch_items ||
-				    rodata->batch[i + 1] != 0)
-					goto err;
+				    rodata->batch[i + 1] != 0) {
+					ret = -EINVAL;
+					goto err_out;
+				}
 
 				d[i++] = s;
 				s = upper_32_bits(r);
@@ -111,20 +110,12 @@ static int render_state_setup(struct intel_render_state *so,
 		d[i++] = s;
 	}
 
-	if (rodata->reloc[reloc_index] != -1) {
-		DRM_ERROR("only %d relocs resolved\n", reloc_index);
-		goto err;
-	}
-
-	so->batch_offset = i915_ggtt_offset(so->vma);
-	so->batch_size = rodata->batch_items * sizeof(u32);
-
 	while (i % CACHELINE_DWORDS)
 		OUT_BATCH(d, i, MI_NOOP);
 
-	so->aux_offset = i * sizeof(u32);
+	so->aux_batch_offset = i * sizeof(u32);
 
-	if (HAS_POOLED_EU(i915)) {
+	if (HAS_POOLED_EU(dev)) {
 		/*
 		 * We always program 3x6 pool config but depending upon which
 		 * subslice is disabled HW drops down to appropriate config
@@ -152,84 +143,88 @@ static int render_state_setup(struct intel_render_state *so,
 	}
 
 	OUT_BATCH(d, i, MI_BATCH_BUFFER_END);
-	so->aux_size = i * sizeof(u32) - so->aux_offset;
-	so->aux_offset += so->batch_offset;
+	so->aux_batch_size = (i * sizeof(u32)) - so->aux_batch_offset;
+
 	/*
 	 * Since we are sending length, we need to strictly conform to
 	 * all requirements. For Gen2 this must be a multiple of 8.
 	 */
-	so->aux_size = ALIGN(so->aux_size, 8);
+	so->aux_batch_size = ALIGN(so->aux_batch_size, 8);
 
-	if (needs_clflush)
-		drm_clflush_virt_range(d, i * sizeof(u32));
-	kunmap_atomic(d);
+	kunmap(page);
 
-	ret = 0;
-out:
-	i915_gem_object_finish_access(so->obj);
+	ret = i915_gem_object_set_to_gtt_domain(so->vma->obj, false);
+	if (ret)
+		return ret;
+
+	if (rodata->reloc[reloc_index] != -1) {
+		DRM_ERROR("only %d relocs resolved\n", reloc_index);
+		return -EINVAL;
+	}
+
+	return 0;
+
+err_out:
+	kunmap(page);
 	return ret;
-
-err:
-	kunmap_atomic(d);
-	ret = -EINVAL;
-	goto out;
 }
 
 #undef OUT_BATCH
 
-int i915_gem_render_state_emit(struct i915_request *rq)
+int i915_gem_render_state_init(struct drm_i915_gem_request *req)
 {
-	struct intel_engine_cs *engine = rq->engine;
-	struct intel_render_state so = {}; /* keep the compiler happy */
-	int err;
+	struct render_state so;
+	struct drm_i915_gem_object *obj;
+	int ret;
 
-	so.rodata = render_state_get_rodata(engine);
+	if (WARN_ON(req->engine->id != RCS))
+		return -ENOENT;
+
+	so.rodata = render_state_get_rodata(req);
 	if (!so.rodata)
 		return 0;
 
-	if (so.rodata->batch_items * 4 > PAGE_SIZE)
+	if (so.rodata->batch_items * 4 > 4096)
 		return -EINVAL;
 
-	so.obj = i915_gem_object_create_internal(engine->i915, PAGE_SIZE);
-	if (IS_ERR(so.obj))
-		return PTR_ERR(so.obj);
+	obj = i915_gem_object_create(&req->i915->drm, 4096);
+	if (IS_ERR(obj))
+		return PTR_ERR(obj);
 
-	so.vma = i915_vma_instance(so.obj, &engine->i915->ggtt.vm, NULL);
+	so.vma = i915_vma_create(obj, &req->i915->ggtt.base, NULL);
 	if (IS_ERR(so.vma)) {
-		err = PTR_ERR(so.vma);
+		ret = PTR_ERR(so.vma);
 		goto err_obj;
 	}
 
-	err = i915_vma_pin(so.vma, 0, 0, PIN_GLOBAL | PIN_HIGH);
-	if (err)
-		goto err_vma;
+	ret = i915_vma_pin(so.vma, 0, 0, PIN_GLOBAL);
+	if (ret)
+		goto err_obj;
 
-	err = render_state_setup(&so, rq->i915);
-	if (err)
+	ret = render_state_setup(&so);
+	if (ret)
 		goto err_unpin;
 
-	err = engine->emit_bb_start(rq,
-				    so.batch_offset, so.batch_size,
-				    I915_DISPATCH_SECURE);
-	if (err)
+	ret = req->engine->emit_bb_start(req, so.vma->node.start,
+					 so.rodata->batch_items * 4,
+					 I915_DISPATCH_SECURE);
+	if (ret)
 		goto err_unpin;
 
-	if (so.aux_size > 8) {
-		err = engine->emit_bb_start(rq,
-					    so.aux_offset, so.aux_size,
-					    I915_DISPATCH_SECURE);
-		if (err)
+	if (so.aux_batch_size > 8) {
+		ret = req->engine->emit_bb_start(req,
+						 (so.vma->node.start +
+						  so.aux_batch_offset),
+						 so.aux_batch_size,
+						 I915_DISPATCH_SECURE);
+		if (ret)
 			goto err_unpin;
 	}
 
-	i915_vma_lock(so.vma);
-	err = i915_vma_move_to_active(so.vma, rq, 0);
-	i915_vma_unlock(so.vma);
+	i915_vma_move_to_active(so.vma, req, 0);
 err_unpin:
 	i915_vma_unpin(so.vma);
-err_vma:
-	i915_vma_close(so.vma);
 err_obj:
-	i915_gem_object_put(so.obj);
-	return err;
+	i915_gem_object_put(obj);
+	return ret;
 }

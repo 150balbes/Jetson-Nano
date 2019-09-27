@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * ranges.c: Handle ranges in newer proms for obio/sbus.
  *

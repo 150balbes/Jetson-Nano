@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: MIT */
 #ifndef __NVIF_CL9097_H__
 #define __NVIF_CL9097_H__
 

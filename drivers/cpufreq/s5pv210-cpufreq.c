@@ -1,9 +1,12 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2010 Samsung Electronics Co., Ltd.
  *		http://www.samsung.com
  *
  * CPU frequency scaling for S5PC110/S5PV210
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
 */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
@@ -478,7 +481,7 @@ static int s5pv210_target(struct cpufreq_policy *policy, unsigned int index)
 				arm_volt, arm_volt_max);
 	}
 
-	pr_debug("Perf changed[L%d]\n", index);
+	printk(KERN_DEBUG "Perf changed[L%d]\n", index);
 
 exit:
 	mutex_unlock(&set_freq_lock);
@@ -541,8 +544,7 @@ static int s5pv210_cpu_init(struct cpufreq_policy *policy)
 	s5pv210_dram_conf[1].freq = clk_get_rate(dmc1_clk);
 
 	policy->suspend_freq = SLEEP_FREQ;
-	cpufreq_generic_init(policy, s5pv210_freq_table, 40000);
-	return 0;
+	return cpufreq_generic_init(policy, s5pv210_freq_table, 40000);
 
 out_dmc1:
 	clk_put(dmc0_clk);
@@ -582,7 +584,7 @@ static struct notifier_block s5pv210_cpufreq_reboot_notifier = {
 static int s5pv210_cpufreq_probe(struct platform_device *pdev)
 {
 	struct device_node *np;
-	int id, result = 0;
+	int id;
 
 	/*
 	 * HACK: This is a temporary workaround to get access to clock
@@ -592,90 +594,58 @@ static int s5pv210_cpufreq_probe(struct platform_device *pdev)
 	 * this whole driver as soon as S5PV210 gets migrated to use
 	 * cpufreq-dt driver.
 	 */
-	arm_regulator = regulator_get(NULL, "vddarm");
-	if (IS_ERR(arm_regulator)) {
-		if (PTR_ERR(arm_regulator) == -EPROBE_DEFER)
-			pr_debug("vddarm regulator not ready, defer\n");
-		else
-			pr_err("failed to get regulator vddarm\n");
-		return PTR_ERR(arm_regulator);
-	}
-
-	int_regulator = regulator_get(NULL, "vddint");
-	if (IS_ERR(int_regulator)) {
-		if (PTR_ERR(int_regulator) == -EPROBE_DEFER)
-			pr_debug("vddint regulator not ready, defer\n");
-		else
-			pr_err("failed to get regulator vddint\n");
-		result = PTR_ERR(int_regulator);
-		goto err_int_regulator;
-	}
-
 	np = of_find_compatible_node(NULL, NULL, "samsung,s5pv210-clock");
 	if (!np) {
 		pr_err("%s: failed to find clock controller DT node\n",
 			__func__);
-		result = -ENODEV;
-		goto err_clock;
+		return -ENODEV;
 	}
 
 	clk_base = of_iomap(np, 0);
-	of_node_put(np);
 	if (!clk_base) {
 		pr_err("%s: failed to map clock registers\n", __func__);
-		result = -EFAULT;
-		goto err_clock;
+		return -EFAULT;
 	}
 
 	for_each_compatible_node(np, NULL, "samsung,s5pv210-dmc") {
 		id = of_alias_get_id(np, "dmc");
 		if (id < 0 || id >= ARRAY_SIZE(dmc_base)) {
-			pr_err("%s: failed to get alias of dmc node '%pOFn'\n",
-				__func__, np);
-			of_node_put(np);
-			result = id;
-			goto err_clk_base;
+			pr_err("%s: failed to get alias of dmc node '%s'\n",
+				__func__, np->name);
+			return id;
 		}
 
 		dmc_base[id] = of_iomap(np, 0);
 		if (!dmc_base[id]) {
 			pr_err("%s: failed to map dmc%d registers\n",
 				__func__, id);
-			of_node_put(np);
-			result = -EFAULT;
-			goto err_dmc;
+			return -EFAULT;
 		}
 	}
 
 	for (id = 0; id < ARRAY_SIZE(dmc_base); ++id) {
 		if (!dmc_base[id]) {
 			pr_err("%s: failed to find dmc%d node\n", __func__, id);
-			result = -ENODEV;
-			goto err_dmc;
+			return -ENODEV;
 		}
+	}
+
+	arm_regulator = regulator_get(NULL, "vddarm");
+	if (IS_ERR(arm_regulator)) {
+		pr_err("failed to get regulator vddarm\n");
+		return PTR_ERR(arm_regulator);
+	}
+
+	int_regulator = regulator_get(NULL, "vddint");
+	if (IS_ERR(int_regulator)) {
+		pr_err("failed to get regulator vddint\n");
+		regulator_put(arm_regulator);
+		return PTR_ERR(int_regulator);
 	}
 
 	register_reboot_notifier(&s5pv210_cpufreq_reboot_notifier);
 
 	return cpufreq_register_driver(&s5pv210_driver);
-
-err_dmc:
-	for (id = 0; id < ARRAY_SIZE(dmc_base); ++id)
-		if (dmc_base[id]) {
-			iounmap(dmc_base[id]);
-			dmc_base[id] = NULL;
-		}
-
-err_clk_base:
-	iounmap(clk_base);
-
-err_clock:
-	regulator_put(int_regulator);
-
-err_int_regulator:
-	regulator_put(arm_regulator);
-
-	return result;
 }
 
 static struct platform_driver s5pv210_cpufreq_platdrv = {

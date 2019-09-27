@@ -1,11 +1,4 @@
-.. Permission is granted to copy, distribute and/or modify this
-.. document under the terms of the GNU Free Documentation License,
-.. Version 1.1 or any later version published by the Free Software
-.. Foundation, with no Invariant Sections, no Front-Cover Texts
-.. and no Back-Cover Texts. A copy of the license is included at
-.. Documentation/media/uapi/fdl-appendix.rst.
-..
-.. TODO: replace it to GFDL-1.1-or-later WITH no-invariant-sections
+.. -*- coding: utf-8; mode: rst -*-
 
 .. _remote_controllers_sysfs_nodes:
 
@@ -41,9 +34,9 @@ receiver device where N is the number of the receiver.
 /sys/class/rc/rcN/protocols
 ===========================
 
-Reading this file returns a list of available protocols, something like::
+Reading this file returns a list of available protocols, something like:
 
-	rc5 [rc6] nec jvc [sony]
+``rc5 [rc6] nec jvc [sony]``
 
 Enabled protocols are shown in [] brackets.
 
@@ -97,18 +90,17 @@ This value may be reset to 0 if the current protocol is altered.
 ==================================
 
 Reading this file returns a list of available protocols to use for the
-wakeup filter, something like::
+wakeup filter, something like:
 
-	rc-5 nec nec-x rc-6-0 rc-6-6a-24 [rc-6-6a-32] rc-6-mce
-
-Note that protocol variants are listed, so ``nec``, ``sony``, ``rc-5``, ``rc-6``
-have their different bit length encodings listed if available.
-
-Note that all protocol variants are listed.
+``rc5 rc6 nec jvc [sony]``
 
 The enabled wakeup protocol is shown in [] brackets.
 
-Only one protocol can be selected at a time.
+Writing "+proto" will add a protocol to the list of enabled wakeup
+protocols.
+
+Writing "-proto" will remove a protocol from the list of enabled wakeup
+protocols.
 
 Writing "proto" will use "proto" for wakeup events.
 

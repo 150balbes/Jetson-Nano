@@ -84,18 +84,6 @@ MODULE_PARM_DESC(max_persistent_grants,
                  "Maximum number of grants to map persistently");
 
 /*
- * How long a persistent grant is allowed to remain allocated without being in
- * use. The time is in seconds, 0 means indefinitely long.
- */
-
-static unsigned int xen_blkif_pgrant_timeout = 60;
-module_param_named(persistent_grant_unused_seconds, xen_blkif_pgrant_timeout,
-		   uint, 0644);
-MODULE_PARM_DESC(persistent_grant_unused_seconds,
-		 "Time in seconds an unused persistent grant is allowed to "
-		 "remain allocated. Default is 60, 0 means unlimited.");
-
-/*
  * Maximum number of rings/queues blkback supports, allow as many queues as there
  * are CPUs if user has not specified a value.
  */
@@ -110,7 +98,7 @@ MODULE_PARM_DESC(max_queues,
  * backend, 4KB page granularity is used.
  */
 unsigned int xen_blkif_max_ring_order = XENBUS_MAX_RING_GRANT_ORDER;
-module_param_named(max_ring_page_order, xen_blkif_max_ring_order, int, 0444);
+module_param_named(max_ring_page_order, xen_blkif_max_ring_order, int, S_IRUGO);
 MODULE_PARM_DESC(max_ring_page_order, "Maximum order of pages to be used for the shared ring");
 /*
  * The LRU mechanism to clean the lists of persistent grants needs to
@@ -134,13 +122,6 @@ module_param(log_stats, int, 0644);
 
 /* Number of free pages to remove on each call to gnttab_free_pages */
 #define NUM_BATCH_FREE_PAGES 10
-
-static inline bool persistent_gnt_timeout(struct persistent_gnt *persistent_gnt)
-{
-	return xen_blkif_pgrant_timeout &&
-	       (jiffies - persistent_gnt->last_used >=
-		HZ * xen_blkif_pgrant_timeout);
-}
 
 static inline int get_free_page(struct xen_blkif_ring *ring, struct page **page)
 {
@@ -255,7 +236,8 @@ static int add_persistent_gnt(struct xen_blkif_ring *ring,
 		}
 	}
 
-	persistent_gnt->active = true;
+	bitmap_zero(persistent_gnt->flags, PERSISTENT_GNT_FLAGS_SIZE);
+	set_bit(PERSISTENT_GNT_ACTIVE, persistent_gnt->flags);
 	/* Add new node and rebalance tree. */
 	rb_link_node(&(persistent_gnt->node), parent, new);
 	rb_insert_color(&(persistent_gnt->node), &ring->persistent_gnts);
@@ -279,11 +261,11 @@ static struct persistent_gnt *get_persistent_gnt(struct xen_blkif_ring *ring,
 		else if (gref > data->gnt)
 			node = node->rb_right;
 		else {
-			if (data->active) {
+			if(test_bit(PERSISTENT_GNT_ACTIVE, data->flags)) {
 				pr_alert_ratelimited("requesting a grant already in use\n");
 				return NULL;
 			}
-			data->active = true;
+			set_bit(PERSISTENT_GNT_ACTIVE, data->flags);
 			atomic_inc(&ring->persistent_gnt_in_use);
 			return data;
 		}
@@ -294,10 +276,10 @@ static struct persistent_gnt *get_persistent_gnt(struct xen_blkif_ring *ring,
 static void put_persistent_gnt(struct xen_blkif_ring *ring,
                                struct persistent_gnt *persistent_gnt)
 {
-	if (!persistent_gnt->active)
+	if(!test_bit(PERSISTENT_GNT_ACTIVE, persistent_gnt->flags))
 		pr_alert_ratelimited("freeing a grant already unused\n");
-	persistent_gnt->last_used = jiffies;
-	persistent_gnt->active = false;
+	set_bit(PERSISTENT_GNT_WAS_ACTIVE, persistent_gnt->flags);
+	clear_bit(PERSISTENT_GNT_ACTIVE, persistent_gnt->flags);
 	atomic_dec(&ring->persistent_gnt_in_use);
 }
 
@@ -389,26 +371,26 @@ static void purge_persistent_gnt(struct xen_blkif_ring *ring)
 	struct persistent_gnt *persistent_gnt;
 	struct rb_node *n;
 	unsigned int num_clean, total;
-	bool scan_used = false;
+	bool scan_used = false, clean_used = false;
 	struct rb_root *root;
+
+	if (ring->persistent_gnt_c < xen_blkif_max_pgrants ||
+	    (ring->persistent_gnt_c == xen_blkif_max_pgrants &&
+	    !ring->blkif->vbd.overflow_max_grants)) {
+		goto out;
+	}
 
 	if (work_busy(&ring->persistent_purge_work)) {
 		pr_alert_ratelimited("Scheduled work from previous purge is still busy, cannot purge list\n");
 		goto out;
 	}
 
-	if (ring->persistent_gnt_c < xen_blkif_max_pgrants ||
-	    (ring->persistent_gnt_c == xen_blkif_max_pgrants &&
-	    !ring->blkif->vbd.overflow_max_grants)) {
-		num_clean = 0;
-	} else {
-		num_clean = (xen_blkif_max_pgrants / 100) * LRU_PERCENT_CLEAN;
-		num_clean = ring->persistent_gnt_c - xen_blkif_max_pgrants +
-			    num_clean;
-		num_clean = min(ring->persistent_gnt_c, num_clean);
-		pr_debug("Going to purge at least %u persistent grants\n",
-			 num_clean);
-	}
+	num_clean = (xen_blkif_max_pgrants / 100) * LRU_PERCENT_CLEAN;
+	num_clean = ring->persistent_gnt_c - xen_blkif_max_pgrants + num_clean;
+	num_clean = min(ring->persistent_gnt_c, num_clean);
+	if ((num_clean == 0) ||
+	    (num_clean > (ring->persistent_gnt_c - atomic_read(&ring->persistent_gnt_in_use))))
+		goto out;
 
 	/*
 	 * At this point, we can assure that there will be no calls
@@ -419,7 +401,9 @@ static void purge_persistent_gnt(struct xen_blkif_ring *ring)
          * number of grants.
 	 */
 
-	total = 0;
+	total = num_clean;
+
+	pr_debug("Going to purge %u persistent grants\n", num_clean);
 
 	BUG_ON(!list_empty(&ring->persistent_purge_list));
 	root = &ring->persistent_gnts;
@@ -428,37 +412,46 @@ purge_list:
 		BUG_ON(persistent_gnt->handle ==
 			BLKBACK_INVALID_HANDLE);
 
-		if (persistent_gnt->active)
+		if (clean_used) {
+			clear_bit(PERSISTENT_GNT_WAS_ACTIVE, persistent_gnt->flags);
 			continue;
-		if (!scan_used && !persistent_gnt_timeout(persistent_gnt))
+		}
+
+		if (test_bit(PERSISTENT_GNT_ACTIVE, persistent_gnt->flags))
 			continue;
-		if (scan_used && total >= num_clean)
+		if (!scan_used &&
+		    (test_bit(PERSISTENT_GNT_WAS_ACTIVE, persistent_gnt->flags)))
 			continue;
 
 		rb_erase(&persistent_gnt->node, root);
 		list_add(&persistent_gnt->remove_node,
 			 &ring->persistent_purge_list);
-		total++;
+		if (--num_clean == 0)
+			goto finished;
 	}
 	/*
-	 * Check whether we also need to start cleaning
+	 * If we get here it means we also need to start cleaning
 	 * grants that were used since last purge in order to cope
 	 * with the requested num
 	 */
-	if (!scan_used && total < num_clean) {
-		pr_debug("Still missing %u purged frames\n", num_clean - total);
+	if (!scan_used && !clean_used) {
+		pr_debug("Still missing %u purged frames\n", num_clean);
 		scan_used = true;
 		goto purge_list;
 	}
-
-	if (total) {
-		ring->persistent_gnt_c -= total;
-		ring->blkif->vbd.overflow_max_grants = 0;
-
-		/* We can defer this work */
-		schedule_work(&ring->persistent_purge_work);
-		pr_debug("Purged %u/%u\n", num_clean, total);
+finished:
+	if (!clean_used) {
+		pr_debug("Finished scanning for grants to clean, removing used flag\n");
+		clean_used = true;
+		goto purge_list;
 	}
+
+	ring->persistent_gnt_c -= (total - num_clean);
+	ring->blkif->vbd.overflow_max_grants = 0;
+
+	/* We can defer this work */
+	schedule_work(&ring->persistent_purge_work);
+	pr_debug("Purged %u/%u\n", (total - num_clean), total);
 
 out:
 	return;
@@ -712,9 +705,9 @@ static unsigned int xen_blkbk_unmap_prepare(
 				    GNTMAP_host_map, pages[i]->handle);
 		pages[i]->handle = BLKBACK_INVALID_HANDLE;
 		invcount++;
-	}
+       }
 
-	return invcount;
+       return invcount;
 }
 
 static void xen_blkbk_unmap_and_respond_callback(int result, struct gntab_unmap_queue_data *data)
@@ -1073,17 +1066,20 @@ static void xen_blk_drain_io(struct xen_blkif_ring *ring)
 	atomic_set(&blkif->drain, 0);
 }
 
-static void __end_block_io_op(struct pending_req *pending_req,
-		blk_status_t error)
+/*
+ * Completion callback on the bio's. Called as bh->b_end_io()
+ */
+
+static void __end_block_io_op(struct pending_req *pending_req, int error)
 {
 	/* An error fails the entire request. */
-	if (pending_req->operation == BLKIF_OP_FLUSH_DISKCACHE &&
-	    error == BLK_STS_NOTSUPP) {
+	if ((pending_req->operation == BLKIF_OP_FLUSH_DISKCACHE) &&
+	    (error == -EOPNOTSUPP)) {
 		pr_debug("flush diskcache op failed, not supported\n");
 		xen_blkbk_flush_diskcache(XBT_NIL, pending_req->ring->blkif->be, 0);
 		pending_req->status = BLKIF_RSP_EOPNOTSUPP;
-	} else if (pending_req->operation == BLKIF_OP_WRITE_BARRIER &&
-		   error == BLK_STS_NOTSUPP) {
+	} else if ((pending_req->operation == BLKIF_OP_WRITE_BARRIER) &&
+		    (error == -EOPNOTSUPP)) {
 		pr_debug("write barrier op failed, not supported\n");
 		xen_blkbk_barrier(XBT_NIL, pending_req->ring->blkif->be, 0);
 		pending_req->status = BLKIF_RSP_EOPNOTSUPP;
@@ -1107,7 +1103,7 @@ static void __end_block_io_op(struct pending_req *pending_req,
  */
 static void end_block_io_op(struct bio *bio)
 {
-	__end_block_io_op(bio->bi_private, bio->bi_status);
+	__end_block_io_op(bio->bi_private, bio->bi_error);
 	bio_put(bio);
 }
 
@@ -1254,15 +1250,14 @@ static int dispatch_rw_block_io(struct xen_blkif_ring *ring,
 	case BLKIF_OP_WRITE:
 		ring->st_wr_req++;
 		operation = REQ_OP_WRITE;
-		operation_flags = REQ_SYNC | REQ_IDLE;
+		operation_flags = WRITE_ODIRECT;
 		break;
 	case BLKIF_OP_WRITE_BARRIER:
 		drain = true;
-		/* fall through */
 	case BLKIF_OP_FLUSH_DISKCACHE:
 		ring->st_f_req++;
 		operation = REQ_OP_WRITE;
-		operation_flags = REQ_PREFLUSH;
+		operation_flags = WRITE_FLUSH;
 		break;
 	default:
 		operation = 0; /* make gcc happy */
@@ -1274,7 +1269,7 @@ static int dispatch_rw_block_io(struct xen_blkif_ring *ring,
 	nseg = req->operation == BLKIF_OP_INDIRECT ?
 	       req->u.indirect.nr_segments : req->u.rw.nr_segments;
 
-	if (unlikely(nseg == 0 && operation_flags != REQ_PREFLUSH) ||
+	if (unlikely(nseg == 0 && operation_flags != WRITE_FLUSH) ||
 	    unlikely((req->operation != BLKIF_OP_INDIRECT) &&
 		     (nseg > BLKIF_MAX_SEGMENTS_PER_REQUEST)) ||
 	    unlikely((req->operation == BLKIF_OP_INDIRECT) &&
@@ -1336,7 +1331,7 @@ static int dispatch_rw_block_io(struct xen_blkif_ring *ring,
 	}
 
 	/* Wait on all outstanding I/O's and once that has been completed
-	 * issue the flush.
+	 * issue the WRITE_FLUSH.
 	 */
 	if (drain)
 		xen_blk_drain_io(pending_req->ring);
@@ -1370,7 +1365,7 @@ static int dispatch_rw_block_io(struct xen_blkif_ring *ring,
 				goto fail_put_bio;
 
 			biolist[nbio++] = bio;
-			bio_set_dev(bio, preq.bdev);
+			bio->bi_bdev    = preq.bdev;
 			bio->bi_private = pending_req;
 			bio->bi_end_io  = end_block_io_op;
 			bio->bi_iter.bi_sector  = preq.sector_number;
@@ -1382,14 +1377,14 @@ static int dispatch_rw_block_io(struct xen_blkif_ring *ring,
 
 	/* This will be hit if the operation was a flush or discard. */
 	if (!bio) {
-		BUG_ON(operation_flags != REQ_PREFLUSH);
+		BUG_ON(operation_flags != WRITE_FLUSH);
 
 		bio = bio_alloc(GFP_KERNEL, 0);
 		if (unlikely(bio == NULL))
 			goto fail_put_bio;
 
 		biolist[nbio++] = bio;
-		bio_set_dev(bio, preq.bdev);
+		bio->bi_bdev    = preq.bdev;
 		bio->bi_private = pending_req;
 		bio->bi_end_io  = end_block_io_op;
 		bio_set_op_attrs(bio, operation, operation_flags);
@@ -1425,7 +1420,7 @@ static int dispatch_rw_block_io(struct xen_blkif_ring *ring,
 	for (i = 0; i < nbio; i++)
 		bio_put(biolist[i]);
 	atomic_set(&pending_req->pendcnt, 1);
-	__end_block_io_op(pending_req, BLK_STS_RESOURCE);
+	__end_block_io_op(pending_req, -EINVAL);
 	msleep(1); /* back off a bit */
 	return -EIO;
 }

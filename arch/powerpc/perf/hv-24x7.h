@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef LINUX_POWERPC_PERF_HV_24X7_H_
 #define LINUX_POWERPC_PERF_HV_24X7_H_
 
@@ -10,8 +9,6 @@ enum hv_perf_domains {
 #undef DOMAIN
 	HV_PERF_DOMAIN_MAX,
 };
-
-#define H24x7_REQUEST_SIZE(iface_version)	(iface_version == 1 ? 16 : 32)
 
 struct hv_24x7_request {
 	/* PHYSICAL domains require enabling via phyp/hmc. */
@@ -45,27 +42,19 @@ struct hv_24x7_request {
 	/* chip, core, or virtual processor based on @performance_domain */
 	__be16 starting_ix;
 	__be16 max_ix;
-
-	/* The following fields were added in v2 of the 24x7 interface. */
-
-	__u8 starting_thread_group_ix;
-
-	/* -1 means all thread groups starting at @starting_thread_group_ix */
-	__u8 max_num_thread_groups;
-
-	__u8 reserved2[0xE];
 } __packed;
 
 struct hv_24x7_request_buffer {
 	/* 0 - ? */
 	/* 1 - ? */
+#define HV_24X7_IF_VERSION_CURRENT 0x01
 	__u8 interface_version;
 	__u8 num_requests;
 	__u8 reserved[0xE];
-	struct hv_24x7_request requests[];
+	struct hv_24x7_request requests[1];
 } __packed;
 
-struct hv_24x7_result_element_v1 {
+struct hv_24x7_result_element {
 	__be16 lpar_ix;
 
 	/*
@@ -78,38 +67,10 @@ struct hv_24x7_result_element_v1 {
 	__be32 lpar_cfg_instance_id;
 
 	/* size = @result_element_data_size of containing result. */
-	__u64 element_data[];
-} __packed;
-
-/*
- * We need a separate struct for v2 because the offset of @element_data changed
- * between versions.
- */
-struct hv_24x7_result_element_v2 {
-	__be16 lpar_ix;
-
-	/*
-	 * represents the core, chip, or virtual processor based on the
-	 * request's @performance_domain
-	 */
-	__be16 domain_ix;
-
-	/* -1 if @performance_domain does not refer to a virtual processor */
-	__be32 lpar_cfg_instance_id;
-
-	__u8 thread_group_ix;
-
-	__u8 reserved[7];
-
-	/* size = @result_element_data_size of containing result. */
-	__u64 element_data[];
+	__u64 element_data[1];
 } __packed;
 
 struct hv_24x7_result {
-	/*
-	 * The index of the 24x7 Request Structure in the 24x7 Request Buffer
-	 * used to request this result.
-	 */
 	__u8 result_ix;
 
 	/*
@@ -120,25 +81,14 @@ struct hv_24x7_result {
 	__u8 results_complete;
 	__be16 num_elements_returned;
 
-	/*
-	 * This is a copy of @data_size from the corresponding hv_24x7_request
-	 *
-	 * Warning: to obtain the size of each element in @elements you have
-	 * to add the size of the other members of the result_element struct.
-	 */
+	/* This is a copy of @data_size from the corresponding hv_24x7_request */
 	__be16 result_element_data_size;
 	__u8 reserved[0x2];
 
-	/*
-	 * Either
-	 *	struct hv_24x7_result_element_v1[@num_elements_returned]
-	 * or
-	 *	struct hv_24x7_result_element_v2[@num_elements_returned]
-	 *
-	 * depending on the interface_version field of the
-	 * struct hv_24x7_data_result_buffer containing this result.
-	 */
-	char elements[];
+	/* WARNING: only valid for first result element due to variable sizes
+	 *          of result elements */
+	/* struct hv_24x7_result_element[@num_elements_returned] */
+	struct hv_24x7_result_element elements[1];
 } __packed;
 
 struct hv_24x7_data_result_buffer {
@@ -154,7 +104,7 @@ struct hv_24x7_data_result_buffer {
 	__u8 reserved2[0x8];
 	/* WARNING: only valid for the first result due to variable sizes of
 	 *	    results */
-	struct hv_24x7_result results[]; /* [@num_results] */
+	struct hv_24x7_result results[1]; /* [@num_results] */
 } __packed;
 
 #endif

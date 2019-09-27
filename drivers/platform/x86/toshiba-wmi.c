@@ -1,8 +1,18 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * toshiba_wmi.c - Toshiba WMI Hotkey Driver
  *
  * Copyright (C) 2015 Azael Avalos <coproscefalo@gmail.com>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
@@ -54,7 +64,7 @@ static void toshiba_wmi_notify(u32 value, void *context)
 	kfree(response.pointer);
 }
 
-static const struct dmi_system_id toshiba_wmi_dmi_table[] __initconst = {
+static struct dmi_system_id toshiba_wmi_dmi_table[] __initdata = {
 	{
 		.ident = "Toshiba laptop",
 		.matches = {
@@ -86,7 +96,7 @@ static int __init toshiba_wmi_input_setup(void)
 					    toshiba_wmi_notify, NULL);
 	if (ACPI_FAILURE(status)) {
 		err = -EIO;
-		goto err_free_dev;
+		goto err_free_keymap;
 	}
 
 	err = input_register_device(toshiba_wmi_input_dev);
@@ -97,6 +107,8 @@ static int __init toshiba_wmi_input_setup(void)
 
  err_remove_notifier:
 	wmi_remove_notify_handler(WMI_EVENT_GUID);
+ err_free_keymap:
+	sparse_keymap_free(toshiba_wmi_input_dev);
  err_free_dev:
 	input_free_device(toshiba_wmi_input_dev);
 	return err;
@@ -105,6 +117,7 @@ static int __init toshiba_wmi_input_setup(void)
 static void toshiba_wmi_input_destroy(void)
 {
 	wmi_remove_notify_handler(WMI_EVENT_GUID);
+	sparse_keymap_free(toshiba_wmi_input_dev);
 	input_unregister_device(toshiba_wmi_input_dev);
 }
 

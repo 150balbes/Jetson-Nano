@@ -102,8 +102,7 @@ snic_free_wq_buf(struct vnic_wq *wq, struct vnic_wq_buf *buf)
 	struct snic_req_info *rqi = NULL;
 	unsigned long flags;
 
-	dma_unmap_single(&snic->pdev->dev, buf->dma_addr, buf->len,
-			 DMA_TO_DEVICE);
+	pci_unmap_single(snic->pdev, buf->dma_addr, buf->len, PCI_DMA_TODEVICE);
 
 	rqi = req_to_rqi(req);
 	spin_lock_irqsave(&snic->spl_cmd_lock, flags);
@@ -173,8 +172,8 @@ snic_queue_wq_desc(struct snic *snic, void *os_buf, u16 len)
 	snic_print_desc(__func__, os_buf, len);
 
 	/* Map request buffer */
-	pa = dma_map_single(&snic->pdev->dev, os_buf, len, DMA_TO_DEVICE);
-	if (dma_mapping_error(&snic->pdev->dev, pa)) {
+	pa = pci_map_single(snic->pdev, os_buf, len, PCI_DMA_TODEVICE);
+	if (pci_dma_mapping_error(snic->pdev, pa)) {
 		SNIC_HOST_ERR(snic->shost, "qdesc: PCI DMA Mapping Fail.\n");
 
 		return -ENOMEM;
@@ -187,7 +186,7 @@ snic_queue_wq_desc(struct snic *snic, void *os_buf, u16 len)
 	spin_lock_irqsave(&snic->wq_lock[q_num], flags);
 	desc_avail = snic_wqdesc_avail(snic, q_num, req->hdr.type);
 	if (desc_avail <= 0) {
-		dma_unmap_single(&snic->pdev->dev, pa, len, DMA_TO_DEVICE);
+		pci_unmap_single(snic->pdev, pa, len, PCI_DMA_TODEVICE);
 		req->req_pa = 0;
 		spin_unlock_irqrestore(&snic->wq_lock[q_num], flags);
 		atomic64_inc(&snic->s_stats.misc.wq_alloc_fail);
@@ -351,29 +350,29 @@ snic_req_free(struct snic *snic, struct snic_req_info *rqi)
 
 	if (rqi->abort_req) {
 		if (rqi->abort_req->req_pa)
-			dma_unmap_single(&snic->pdev->dev,
+			pci_unmap_single(snic->pdev,
 					 rqi->abort_req->req_pa,
 					 sizeof(struct snic_host_req),
-					 DMA_TO_DEVICE);
+					 PCI_DMA_TODEVICE);
 
 		mempool_free(rqi->abort_req, snic->req_pool[SNIC_REQ_TM_CACHE]);
 	}
 
 	if (rqi->dr_req) {
 		if (rqi->dr_req->req_pa)
-			dma_unmap_single(&snic->pdev->dev,
+			pci_unmap_single(snic->pdev,
 					 rqi->dr_req->req_pa,
 					 sizeof(struct snic_host_req),
-					 DMA_TO_DEVICE);
+					 PCI_DMA_TODEVICE);
 
 		mempool_free(rqi->dr_req, snic->req_pool[SNIC_REQ_TM_CACHE]);
 	}
 
 	if (rqi->req->req_pa)
-		dma_unmap_single(&snic->pdev->dev,
+		pci_unmap_single(snic->pdev,
 				 rqi->req->req_pa,
 				 rqi->req_len,
-				 DMA_TO_DEVICE);
+				 PCI_DMA_TODEVICE);
 
 	mempool_free(rqi, snic->req_pool[rqi->rq_pool_type]);
 }
@@ -385,10 +384,10 @@ snic_pci_unmap_rsp_buf(struct snic *snic, struct snic_req_info *rqi)
 
 	sgd = req_to_sgl(rqi_to_req(rqi));
 	SNIC_BUG_ON(sgd[0].addr == 0);
-	dma_unmap_single(&snic->pdev->dev,
+	pci_unmap_single(snic->pdev,
 			 le64_to_cpu(sgd[0].addr),
 			 le32_to_cpu(sgd[0].len),
-			 DMA_FROM_DEVICE);
+			 PCI_DMA_FROMDEVICE);
 }
 
 /*

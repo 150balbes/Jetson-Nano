@@ -1,11 +1,4 @@
-.. Permission is granted to copy, distribute and/or modify this
-.. document under the terms of the GNU Free Documentation License,
-.. Version 1.1 or any later version published by the Free Software
-.. Foundation, with no Invariant Sections, no Front-Cover Texts
-.. and no Back-Cover Texts. A copy of the license is included at
-.. Documentation/media/uapi/fdl-appendix.rst.
-..
-.. TODO: replace it to GFDL-1.1-or-later WITH no-invariant-sections
+.. -*- coding: utf-8; mode: rst -*-
 
 .. _Remote_controllers_tables:
 
@@ -54,7 +47,7 @@ the remote via /dev/input/event devices.
 
     -  .. row 3
 
-       -  ``KEY_NUMERIC_0``
+       -  ``KEY_0``
 
        -  Keyboard digit 0
 
@@ -62,7 +55,7 @@ the remote via /dev/input/event devices.
 
     -  .. row 4
 
-       -  ``KEY_NUMERIC_1``
+       -  ``KEY_1``
 
        -  Keyboard digit 1
 
@@ -70,7 +63,7 @@ the remote via /dev/input/event devices.
 
     -  .. row 5
 
-       -  ``KEY_NUMERIC_2``
+       -  ``KEY_2``
 
        -  Keyboard digit 2
 
@@ -78,7 +71,7 @@ the remote via /dev/input/event devices.
 
     -  .. row 6
 
-       -  ``KEY_NUMERIC_3``
+       -  ``KEY_3``
 
        -  Keyboard digit 3
 
@@ -86,7 +79,7 @@ the remote via /dev/input/event devices.
 
     -  .. row 7
 
-       -  ``KEY_NUMERIC_4``
+       -  ``KEY_4``
 
        -  Keyboard digit 4
 
@@ -94,7 +87,7 @@ the remote via /dev/input/event devices.
 
     -  .. row 8
 
-       -  ``KEY_NUMERIC_5``
+       -  ``KEY_5``
 
        -  Keyboard digit 5
 
@@ -102,7 +95,7 @@ the remote via /dev/input/event devices.
 
     -  .. row 9
 
-       -  ``KEY_NUMERIC_6``
+       -  ``KEY_6``
 
        -  Keyboard digit 6
 
@@ -110,7 +103,7 @@ the remote via /dev/input/event devices.
 
     -  .. row 10
 
-       -  ``KEY_NUMERIC_7``
+       -  ``KEY_7``
 
        -  Keyboard digit 7
 
@@ -118,7 +111,7 @@ the remote via /dev/input/event devices.
 
     -  .. row 11
 
-       -  ``KEY_NUMERIC_8``
+       -  ``KEY_8``
 
        -  Keyboard digit 8
 
@@ -126,7 +119,7 @@ the remote via /dev/input/event devices.
 
     -  .. row 12
 
-       -  ``KEY_NUMERIC_9``
+       -  ``KEY_9``
 
        -  Keyboard digit 9
 
@@ -196,7 +189,7 @@ the remote via /dev/input/event devices.
 
        -  ``KEY_PAUSE``
 
-       -  Pause stream
+       -  Pause sroweam
 
        -  PAUSE / FREEZE
 
@@ -220,7 +213,7 @@ the remote via /dev/input/event devices.
 
        -  ``KEY_STOP``
 
-       -  Stop stream
+       -  Stop sroweam
 
        -  STOP
 
@@ -228,7 +221,7 @@ the remote via /dev/input/event devices.
 
        -  ``KEY_RECORD``
 
-       -  Start/stop recording stream
+       -  Start/stop recording sroweam
 
        -  CAPTURE / REC / RECORD/PAUSE
 
@@ -385,7 +378,7 @@ the remote via /dev/input/event devices.
 
        -  ``KEY_CHANNELDOWN``
 
-       -  Decrease channel sequentially
+       -  Decrease channel sequencially
 
        -  CHANNEL - / CHANNEL DOWN / DOWN
 
@@ -393,7 +386,7 @@ the remote via /dev/input/event devices.
 
        -  ``KEY_CHANNELUP``
 
-       -  Increase channel sequentially
+       -  Increase channel sequencially
 
        -  CHANNEL + / CHANNEL UP / UP
 
@@ -577,7 +570,7 @@ the remote via /dev/input/event devices.
 
        -  ``KEY_CLEAR``
 
-       -  Stop stream and return to default input video/audio
+       -  Stop sroweam and return to default input video/audio
 
        -  CLEAR / RESET / BOSS KEY
 
@@ -593,7 +586,7 @@ the remote via /dev/input/event devices.
 
        -  ``KEY_FAVORITES``
 
-       -  Open the favorites stream window
+       -  Open the favorites sroweam window
 
        -  TV WALL / Favorites
 
@@ -623,7 +616,7 @@ the remote via /dev/input/event devices.
 
     -  .. row 78
 
-       -  ``KEY_ASPECT_RATIO``
+       -  ``KEY_SCREEN``
 
        -  Select screen aspect ratio
 
@@ -631,7 +624,7 @@ the remote via /dev/input/event devices.
 
     -  .. row 79
 
-       -  ``KEY_FULL_SCREEN``
+       -  ``KEY_ZOOM``
 
        -  Put device into zoom/full screen mode
 

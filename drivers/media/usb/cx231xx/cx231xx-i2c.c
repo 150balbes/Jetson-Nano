@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
    cx231xx-i2c.c - driver for Conexant Cx23100/101/102 USB video capture devices
 
@@ -6,6 +5,19 @@
 		Based on em28xx driver
 		Based on Cx23885 driver
 
+   This program is free software; you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation; either version 2 of the License, or
+   (at your option) any later version.
+
+   This program is distributed in the hope that it will be useful,
+   but WITHOUT ANY WARRANTY; without even the implied warranty of
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License for more details.
+
+   You should have received a copy of the GNU General Public License
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  */
 
 #include "cx231xx.h"
@@ -39,7 +51,7 @@ do {							\
 	if (i2c_debug >= lvl) {				\
 		printk(KERN_DEBUG "%s at %s: " fmt,	\
 		       dev->name, __func__ , ##args);	\
-      }							\
+      } 						\
 } while (0)
 
 static inline int get_real_i2c_port(struct cx231xx *dev, int bus_nr)
@@ -364,6 +376,8 @@ static int cx231xx_i2c_xfer(struct i2c_adapter *i2c_adap,
 	struct cx231xx *dev = bus->dev;
 	int addr, rc, i, byte;
 
+	if (num <= 0)
+		return 0;
 	mutex_lock(&dev->i2c_lock);
 	for (i = 0; i < num; i++) {
 
@@ -445,7 +459,7 @@ static const struct i2c_algorithm cx231xx_algo = {
 	.functionality = functionality,
 };
 
-static const struct i2c_adapter cx231xx_adap_template = {
+static struct i2c_adapter cx231xx_adap_template = {
 	.owner = THIS_MODULE,
 	.name = "cx231xx",
 	.algo = &cx231xx_algo,
@@ -477,24 +491,20 @@ void cx231xx_do_i2c_scan(struct cx231xx *dev, int i2c_port)
 {
 	unsigned char buf;
 	int i, rc;
-	struct i2c_adapter *adap;
-	struct i2c_msg msg = {
-		.flags = I2C_M_RD,
-		.len = 1,
-		.buf = &buf,
-	};
+	struct i2c_client client;
 
 	if (!i2c_scan)
 		return;
 
 	/* Don't generate I2C errors during scan */
 	dev->i2c_scan_running = true;
-	adap = cx231xx_get_i2c_adap(dev, i2c_port);
+
+	memset(&client, 0, sizeof(client));
+	client.adapter = cx231xx_get_i2c_adap(dev, i2c_port);
 
 	for (i = 0; i < 128; i++) {
-		msg.addr = i;
-		rc = i2c_transfer(adap, &msg, 1);
-
+		client.addr = i;
+		rc = i2c_master_recv(&client, &buf, 0);
 		if (rc < 0)
 			continue;
 		dev_info(dev->dev,
@@ -524,7 +534,7 @@ int cx231xx_i2c_register(struct cx231xx_i2c *bus)
 
 	bus->i2c_adap.algo_data = bus;
 	i2c_set_adapdata(&bus->i2c_adap, &dev->v4l2_dev);
-	bus->i2c_rc = i2c_add_adapter(&bus->i2c_adap);
+	i2c_add_adapter(&bus->i2c_adap);
 
 	if (0 != bus->i2c_rc)
 		dev_warn(dev->dev,
@@ -537,10 +547,10 @@ int cx231xx_i2c_register(struct cx231xx_i2c *bus)
  * cx231xx_i2c_unregister()
  * unregister i2c_bus
  */
-void cx231xx_i2c_unregister(struct cx231xx_i2c *bus)
+int cx231xx_i2c_unregister(struct cx231xx_i2c *bus)
 {
-	if (!bus->i2c_rc)
-		i2c_del_adapter(&bus->i2c_adap);
+	i2c_del_adapter(&bus->i2c_adap);
+	return 0;
 }
 
 /*
@@ -566,10 +576,17 @@ int cx231xx_i2c_mux_create(struct cx231xx *dev)
 
 int cx231xx_i2c_mux_register(struct cx231xx *dev, int mux_no)
 {
-	return i2c_mux_add_adapter(dev->muxc,
-				   0,
-				   mux_no /* chan_id */,
-				   0 /* class */);
+	int rc;
+
+	rc = i2c_mux_add_adapter(dev->muxc,
+				 0,
+				 mux_no /* chan_id */,
+				 0 /* class */);
+	if (rc)
+		dev_warn(dev->dev,
+			 "i2c mux %d register FAILED\n", mux_no);
+
+	return rc;
 }
 
 void cx231xx_i2c_mux_unregister(struct cx231xx *dev)

@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0+
 /*
  * drivers/net/phy/smsc.c
  *
@@ -8,6 +7,11 @@
  *
  * Copyright (c) 2006 Herbert Valerio Riedel <hvr@gnu.org>
  *
+ * This program is free software; you can redistribute  it and/or modify it
+ * under  the terms of  the GNU General  Public License as published by the
+ * Free Software Foundation;  either version 2 of the  License, or (at your
+ * option) any later version.
+ *
  * Support added for SMSC LAN8187 and LAN8700 by steve.glendinning@shawell.net
  *
  */
@@ -16,20 +20,9 @@
 #include <linux/module.h>
 #include <linux/mii.h>
 #include <linux/ethtool.h>
-#include <linux/of.h>
 #include <linux/phy.h>
 #include <linux/netdevice.h>
 #include <linux/smscphy.h>
-
-struct smsc_hw_stat {
-	const char *string;
-	u8 reg;
-	u8 bits;
-};
-
-static struct smsc_hw_stat smsc_hw_stats[] = {
-	{ "phy_symbol_errors", 26, 16},
-};
 
 struct smsc_phy_priv {
 	bool energy_enable;
@@ -149,45 +142,6 @@ static int lan87xx_read_status(struct phy_device *phydev)
 	return err;
 }
 
-static int smsc_get_sset_count(struct phy_device *phydev)
-{
-	return ARRAY_SIZE(smsc_hw_stats);
-}
-
-static void smsc_get_strings(struct phy_device *phydev, u8 *data)
-{
-	int i;
-
-	for (i = 0; i < ARRAY_SIZE(smsc_hw_stats); i++) {
-		strncpy(data + i * ETH_GSTRING_LEN,
-		       smsc_hw_stats[i].string, ETH_GSTRING_LEN);
-	}
-}
-
-static u64 smsc_get_stat(struct phy_device *phydev, int i)
-{
-	struct smsc_hw_stat stat = smsc_hw_stats[i];
-	int val;
-	u64 ret;
-
-	val = phy_read(phydev, stat.reg);
-	if (val < 0)
-		ret = U64_MAX;
-	else
-		ret = val;
-
-	return ret;
-}
-
-static void smsc_get_stats(struct phy_device *phydev,
-			   struct ethtool_stats *stats, u64 *data)
-{
-	int i;
-
-	for (i = 0; i < ARRAY_SIZE(smsc_hw_stats); i++)
-		data[i] = smsc_get_stat(phydev, i);
-}
-
 static int smsc_phy_probe(struct phy_device *phydev)
 {
 	struct device *dev = &phydev->mdio.dev;
@@ -214,11 +168,15 @@ static struct phy_driver smsc_phy_driver[] = {
 	.phy_id_mask	= 0xfffffff0,
 	.name		= "SMSC LAN83C185",
 
-	/* PHY_BASIC_FEATURES */
+	.features	= (PHY_BASIC_FEATURES | SUPPORTED_Pause
+				| SUPPORTED_Asym_Pause),
+	.flags		= PHY_HAS_INTERRUPT | PHY_HAS_MAGICANEG,
 
 	.probe		= smsc_phy_probe,
 
 	/* basic functions */
+	.config_aneg	= genphy_config_aneg,
+	.read_status	= genphy_read_status,
 	.config_init	= smsc_phy_config_init,
 	.soft_reset	= smsc_phy_reset,
 
@@ -233,22 +191,21 @@ static struct phy_driver smsc_phy_driver[] = {
 	.phy_id_mask	= 0xfffffff0,
 	.name		= "SMSC LAN8187",
 
-	/* PHY_BASIC_FEATURES */
+	.features	= (PHY_BASIC_FEATURES | SUPPORTED_Pause
+				| SUPPORTED_Asym_Pause),
+	.flags		= PHY_HAS_INTERRUPT | PHY_HAS_MAGICANEG,
 
 	.probe		= smsc_phy_probe,
 
 	/* basic functions */
+	.config_aneg	= genphy_config_aneg,
+	.read_status	= genphy_read_status,
 	.config_init	= smsc_phy_config_init,
 	.soft_reset	= smsc_phy_reset,
 
 	/* IRQ related */
 	.ack_interrupt	= smsc_phy_ack_interrupt,
 	.config_intr	= smsc_phy_config_intr,
-
-	/* Statistics */
-	.get_sset_count = smsc_get_sset_count,
-	.get_strings	= smsc_get_strings,
-	.get_stats	= smsc_get_stats,
 
 	.suspend	= genphy_suspend,
 	.resume		= genphy_resume,
@@ -257,11 +214,14 @@ static struct phy_driver smsc_phy_driver[] = {
 	.phy_id_mask	= 0xfffffff0,
 	.name		= "SMSC LAN8700",
 
-	/* PHY_BASIC_FEATURES */
+	.features	= (PHY_BASIC_FEATURES | SUPPORTED_Pause
+				| SUPPORTED_Asym_Pause),
+	.flags		= PHY_HAS_INTERRUPT | PHY_HAS_MAGICANEG,
 
 	.probe		= smsc_phy_probe,
 
 	/* basic functions */
+	.config_aneg	= genphy_config_aneg,
 	.read_status	= lan87xx_read_status,
 	.config_init	= smsc_phy_config_init,
 	.soft_reset	= smsc_phy_reset,
@@ -270,11 +230,6 @@ static struct phy_driver smsc_phy_driver[] = {
 	.ack_interrupt	= smsc_phy_ack_interrupt,
 	.config_intr	= smsc_phy_config_intr,
 
-	/* Statistics */
-	.get_sset_count = smsc_get_sset_count,
-	.get_strings	= smsc_get_strings,
-	.get_stats	= smsc_get_stats,
-
 	.suspend	= genphy_suspend,
 	.resume		= genphy_resume,
 }, {
@@ -282,11 +237,15 @@ static struct phy_driver smsc_phy_driver[] = {
 	.phy_id_mask	= 0xfffffff0,
 	.name		= "SMSC LAN911x Internal PHY",
 
-	/* PHY_BASIC_FEATURES */
+	.features	= (PHY_BASIC_FEATURES | SUPPORTED_Pause
+				| SUPPORTED_Asym_Pause),
+	.flags		= PHY_HAS_INTERRUPT | PHY_HAS_MAGICANEG,
 
 	.probe		= smsc_phy_probe,
 
 	/* basic functions */
+	.config_aneg	= genphy_config_aneg,
+	.read_status	= genphy_read_status,
 	.config_init	= lan911x_config_init,
 
 	/* IRQ related */
@@ -300,12 +259,14 @@ static struct phy_driver smsc_phy_driver[] = {
 	.phy_id_mask	= 0xfffffff0,
 	.name		= "SMSC LAN8710/LAN8720",
 
-	/* PHY_BASIC_FEATURES */
-	.flags		= PHY_RST_AFTER_CLK_EN,
+	.features	= (PHY_BASIC_FEATURES | SUPPORTED_Pause
+				| SUPPORTED_Asym_Pause),
+	.flags		= PHY_HAS_INTERRUPT | PHY_HAS_MAGICANEG,
 
 	.probe		= smsc_phy_probe,
 
 	/* basic functions */
+	.config_aneg	= genphy_config_aneg,
 	.read_status	= lan87xx_read_status,
 	.config_init	= smsc_phy_config_init,
 	.soft_reset	= smsc_phy_reset,
@@ -313,11 +274,6 @@ static struct phy_driver smsc_phy_driver[] = {
 	/* IRQ related */
 	.ack_interrupt	= smsc_phy_ack_interrupt,
 	.config_intr	= smsc_phy_config_intr,
-
-	/* Statistics */
-	.get_sset_count = smsc_get_sset_count,
-	.get_strings	= smsc_get_strings,
-	.get_stats	= smsc_get_stats,
 
 	.suspend	= genphy_suspend,
 	.resume		= genphy_resume,
@@ -326,11 +282,14 @@ static struct phy_driver smsc_phy_driver[] = {
 	.phy_id_mask	= 0xfffffff0,
 	.name		= "SMSC LAN8740",
 
-	/* PHY_BASIC_FEATURES */
+	.features	= (PHY_BASIC_FEATURES | SUPPORTED_Pause
+				| SUPPORTED_Asym_Pause),
+	.flags		= PHY_HAS_INTERRUPT | PHY_HAS_MAGICANEG,
 
 	.probe		= smsc_phy_probe,
 
 	/* basic functions */
+	.config_aneg	= genphy_config_aneg,
 	.read_status	= lan87xx_read_status,
 	.config_init	= smsc_phy_config_init,
 	.soft_reset	= smsc_phy_reset,
@@ -338,11 +297,6 @@ static struct phy_driver smsc_phy_driver[] = {
 	/* IRQ related */
 	.ack_interrupt	= smsc_phy_ack_interrupt,
 	.config_intr	= smsc_phy_config_intr,
-
-	/* Statistics */
-	.get_sset_count = smsc_get_sset_count,
-	.get_strings	= smsc_get_strings,
-	.get_stats	= smsc_get_stats,
 
 	.suspend	= genphy_suspend,
 	.resume		= genphy_resume,

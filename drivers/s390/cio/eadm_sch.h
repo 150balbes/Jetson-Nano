@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef EADM_SCH_H
 #define EADM_SCH_H
 

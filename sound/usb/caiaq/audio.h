@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef CAIAQ_AUDIO_H
 #define CAIAQ_AUDIO_H
 

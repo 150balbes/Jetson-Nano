@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * ALSA driver for the Aureal Vortex family of soundprocessors.
  * Author: Manuel Jander (mjander@embedded.cl)

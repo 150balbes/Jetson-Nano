@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * drivers/base/power/trace.c
  *
@@ -7,12 +6,10 @@
  * Trace facility for suspend/resume problems, when none of the
  * devices may be working.
  */
-#define pr_fmt(fmt) "PM: " fmt
 
 #include <linux/pm-trace.h>
 #include <linux/export.h>
 #include <linux/rtc.h>
-#include <linux/suspend.h>
 
 #include <linux/mc146818rtc.h>
 
@@ -77,9 +74,6 @@
 
 #define DEVSEED (7919)
 
-bool pm_trace_rtc_abused __read_mostly;
-EXPORT_SYMBOL_GPL(pm_trace_rtc_abused);
-
 static unsigned int dev_hash_value;
 
 static int set_magic_time(unsigned int user, unsigned int file, unsigned int device)
@@ -110,7 +104,6 @@ static int set_magic_time(unsigned int user, unsigned int file, unsigned int dev
 	time.tm_min = (n % 20) * 3;
 	n /= 20;
 	mc146818_set_time(&time);
-	pm_trace_rtc_abused = true;
 	return n ? -1 : 0;
 }
 
@@ -120,7 +113,9 @@ static unsigned int read_magic_time(void)
 	unsigned int val;
 
 	mc146818_get_time(&time);
-	pr_info("RTC time: %ptRt, date: %ptRd\n", &time, &time);
+	pr_info("RTC time: %2d:%02d:%02d, date: %02d/%02d/%02d\n",
+		time.tm_hour, time.tm_min, time.tm_sec,
+		time.tm_mon + 1, time.tm_mday, time.tm_year % 100);
 	val = time.tm_year;				/* 100 years */
 	if (val > 100)
 		val -= 100;
@@ -244,31 +239,9 @@ int show_trace_dev_match(char *buf, size_t size)
 	return ret;
 }
 
-static int
-pm_trace_notify(struct notifier_block *nb, unsigned long mode, void *_unused)
-{
-	switch (mode) {
-	case PM_POST_HIBERNATION:
-	case PM_POST_SUSPEND:
-		if (pm_trace_rtc_abused) {
-			pm_trace_rtc_abused = false;
-			pr_warn("Possible incorrect RTC due to pm_trace, please use 'ntpdate' or 'rdate' to reset it.\n");
-		}
-		break;
-	default:
-		break;
-	}
-	return 0;
-}
-
-static struct notifier_block pm_trace_nb = {
-	.notifier_call = pm_trace_notify,
-};
-
 static int early_resume_init(void)
 {
 	hash_value_early_read = read_magic_time();
-	register_pm_notifier(&pm_trace_nb);
 	return 0;
 }
 

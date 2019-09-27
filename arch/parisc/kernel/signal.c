@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  *  linux/arch/parisc/kernel/signal.c: Architecture-specific signal
  *  handling support.
@@ -14,7 +13,6 @@
  */
 
 #include <linux/sched.h>
-#include <linux/sched/debug.h>
 #include <linux/mm.h>
 #include <linux/smp.h>
 #include <linux/kernel.h>
@@ -29,7 +27,7 @@
 #include <linux/elf.h>
 #include <asm/ucontext.h>
 #include <asm/rt_sigframe.h>
-#include <linux/uaccess.h>
+#include <asm/uaccess.h>
 #include <asm/pgalloc.h>
 #include <asm/cacheflush.h>
 #include <asm/asm-offsets.h>
@@ -65,6 +63,7 @@
 #define INSN_LDI_R25_1	 0x34190002 /* ldi  1,%r25 (in_syscall=1) */
 #define INSN_LDI_R20	 0x3414015a /* ldi  __NR_rt_sigreturn,%r20 */
 #define INSN_BLE_SR2_R0  0xe4008200 /* be,l 0x100(%sr2,%r0),%sr0,%r31 */
+#define INSN_NOP	 0x08000240 /* nop */
 /* For debugging */
 #define INSN_DIE_HORRIBLY 0x68000ccc /* stw %r0,0x666(%sr0,%r0) */
 
@@ -92,6 +91,7 @@ sys_rt_sigreturn(struct pt_regs *regs, int in_syscall)
 	unsigned long usp = (regs->gr[30] & ~(0x01UL));
 	unsigned long sigframe_size = PARISC_RT_SIGFRAME_SIZE;
 #ifdef CONFIG_64BIT
+	compat_sigset_t compat_set;
 	struct compat_rt_sigframe __user * compat_frame;
 	
 	if (is_compat_task())
@@ -112,8 +112,9 @@ sys_rt_sigreturn(struct pt_regs *regs, int in_syscall)
 	
 	if (is_compat_task()) {
 		DBG(2,"sys_rt_sigreturn: ELF32 process.\n");
-		if (get_compat_sigset(&set, &compat_frame->uc.uc_sigmask))
+		if (__copy_from_user(&compat_set, &compat_frame->uc.uc_sigmask, sizeof(compat_set)))
 			goto give_sigsegv;
+		sigset_32to64(&set,&compat_set);
 	} else
 #endif
 	{
@@ -164,7 +165,7 @@ sys_rt_sigreturn(struct pt_regs *regs, int in_syscall)
 
 give_sigsegv:
 	DBG(1,"sys_rt_sigreturn: Sending SIGSEGV\n");
-	force_sig(SIGSEGV);
+	force_sig(SIGSEGV, current);
 	return;
 }
 
@@ -231,10 +232,10 @@ setup_rt_frame(struct ksignal *ksig, sigset_t *set, struct pt_regs *regs,
 	struct rt_sigframe __user *frame;
 	unsigned long rp, usp;
 	unsigned long haddr, sigframe_size;
-	unsigned long start, end;
 	int err = 0;
 #ifdef CONFIG_64BIT
 	struct compat_rt_sigframe __user * compat_frame;
+	compat_sigset_t compat_set;
 #endif
 	
 	usp = (regs->gr[30] & ~(0x01UL));
@@ -257,8 +258,8 @@ setup_rt_frame(struct ksignal *ksig, sigset_t *set, struct pt_regs *regs,
 		DBG(1,"setup_rt_frame: frame->uc.uc_mcontext = 0x%p\n", &compat_frame->uc.uc_mcontext);
 		err |= setup_sigcontext32(&compat_frame->uc.uc_mcontext, 
 					&compat_frame->regs, regs, in_syscall);
-		err |= put_compat_sigset(&compat_frame->uc.uc_sigmask, set,
-					 sizeof(compat_sigset_t));
+		sigset_64to32(&compat_set,set);
+		err |= __copy_to_user(&compat_frame->uc.uc_sigmask, &compat_set, sizeof(compat_set));
 	} else
 #endif
 	{	
@@ -298,10 +299,10 @@ setup_rt_frame(struct ksignal *ksig, sigset_t *set, struct pt_regs *regs,
 	}
 #endif
 
-	start = (unsigned long) &frame->tramp[0];
-	end = (unsigned long) &frame->tramp[TRAMP_SIZE];
-	flush_user_dcache_range_asm(start, end);
-	flush_user_icache_range_asm(start, end);
+	flush_user_dcache_range((unsigned long) &frame->tramp[0],
+			   (unsigned long) &frame->tramp[TRAMP_SIZE]);
+	flush_user_icache_range((unsigned long) &frame->tramp[0],
+			   (unsigned long) &frame->tramp[TRAMP_SIZE]);
 
 	/* TRAMP Words 0-4, Length 5 = SIGRESTARTBLOCK_TRAMP
 	 * TRAMP Words 5-9, Length 4 = SIGRETURN_TRAMP
@@ -547,8 +548,8 @@ insert_restart_trampoline(struct pt_regs *regs)
 		WARN_ON(err);
 
 		/* flush data/instruction cache for new insns */
-		flush_user_dcache_range_asm(start, end);
-		flush_user_icache_range_asm(start, end);
+		flush_user_dcache_range(start, end);
+		flush_user_icache_range(start, end);
 
 		regs->gr[31] = regs->gr[30] + 8;
 		return;

@@ -35,6 +35,7 @@
 #include <linux/platform_device.h>
 #include <drm/drm_legacy.h>
 
+#include <drm/ati_pcigart.h>
 #include "radeon_family.h"
 
 /* General customization:

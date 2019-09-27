@@ -84,8 +84,7 @@ int
 nvkm_event_init(const struct nvkm_event_func *func, int types_nr, int index_nr,
 		struct nvkm_event *event)
 {
-	event->refs = kzalloc(array3_size(index_nr, types_nr,
-					  sizeof(*event->refs)),
+	event->refs = kzalloc(sizeof(*event->refs) * index_nr * types_nr,
 			      GFP_KERNEL);
 	if (!event->refs)
 		return -ENOMEM;

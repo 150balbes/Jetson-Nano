@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _CAN_PLATFORM_CC770_H
 #define _CAN_PLATFORM_CC770_H
 

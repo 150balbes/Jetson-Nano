@@ -25,17 +25,15 @@
  * Jackie Li<yaodong.li@intel.com>
  */
 
-#include <linux/delay.h>
-#include <linux/moduleparam.h>
-#include <linux/pm_runtime.h>
+#include <linux/module.h>
 
-#include <asm/intel_scu_ipc.h>
-
-#include "mdfld_dsi_dpi.h"
 #include "mdfld_dsi_output.h"
-#include "mdfld_dsi_pkg_sender.h"
+#include "mdfld_dsi_dpi.h"
 #include "mdfld_output.h"
+#include "mdfld_dsi_pkg_sender.h"
 #include "tc35876x-dsi-lvds.h"
+#include <linux/pm_runtime.h>
+#include <asm/intel_scu_ipc.h>
 
 /* get the LABC from command line. */
 static int LABC_control = 1;
@@ -348,7 +346,7 @@ static int mdfld_dsi_connector_get_modes(struct drm_connector *connector)
 	return 0;
 }
 
-static enum drm_mode_status mdfld_dsi_connector_mode_valid(struct drm_connector *connector,
+static int mdfld_dsi_connector_mode_valid(struct drm_connector *connector,
 						struct drm_display_mode *mode)
 {
 	struct mdfld_dsi_connector *dsi_connector =

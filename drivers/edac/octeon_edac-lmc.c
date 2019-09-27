@@ -19,6 +19,7 @@
 #include <asm/octeon/octeon.h>
 #include <asm/octeon/cvmx-lmcx-defs.h>
 
+#include "edac_core.h"
 #include "edac_module.h"
 
 #define OCTEON_MAX_MC 4

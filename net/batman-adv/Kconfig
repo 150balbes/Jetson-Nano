@@ -1,8 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0
-# Copyright (C) 2007-2019  B.A.T.M.A.N. contributors:
-#
-# Marek Lindner, Simon Wunderlich
-
 #
 # B.A.T.M.A.N meshing protocol
 #
@@ -10,7 +5,9 @@
 config BATMAN_ADV
 	tristate "B.A.T.M.A.N. Advanced Meshing Protocol"
 	depends on NET
+	select CRC16
 	select LIBCRC32C
+        default n
 	help
           B.A.T.M.A.N. (better approach to mobile ad-hoc networking) is
           a routing protocol for multi-hop ad-hoc mesh networks. The
@@ -19,9 +16,9 @@ config BATMAN_ADV
           tools.
 
 config BATMAN_ADV_BATMAN_V
-	bool "B.A.T.M.A.N. V protocol"
-	depends on BATMAN_ADV && !(CFG80211=m && BATMAN_ADV=y)
-	default y
+	bool "B.A.T.M.A.N. V protocol (experimental)"
+	depends on BATMAN_ADV && CFG80211=y || (CFG80211=m && BATMAN_ADV=m)
+	default n
 	help
 	  This option enables the B.A.T.M.A.N. V protocol, the successor
 	  of the currently used B.A.T.M.A.N. IV protocol. The main
@@ -35,7 +32,6 @@ config BATMAN_ADV_BATMAN_V
 config BATMAN_ADV_BLA
 	bool "Bridge Loop Avoidance"
 	depends on BATMAN_ADV && INET
-	select CRC16
 	default y
 	help
 	  This option enables BLA (Bridge Loop Avoidance), a mechanism
@@ -47,7 +43,7 @@ config BATMAN_ADV_BLA
 config BATMAN_ADV_DAT
 	bool "Distributed ARP Table"
 	depends on BATMAN_ADV && INET
-	default y
+	default n
 	help
 	  This option enables DAT (Distributed ARP Table), a DHT based
 	  mechanism that increases ARP reliability on sparse wireless
@@ -57,6 +53,7 @@ config BATMAN_ADV_DAT
 config BATMAN_ADV_NC
 	bool "Network Coding"
 	depends on BATMAN_ADV
+	default n
 	help
 	  This option enables network coding, a mechanism that aims to
 	  increase the overall network throughput by fusing multiple
@@ -70,7 +67,7 @@ config BATMAN_ADV_NC
 config BATMAN_ADV_MCAST
 	bool "Multicast optimisation"
 	depends on BATMAN_ADV && INET && !(BRIDGE=m && BATMAN_ADV=y)
-	default y
+	default n
 	help
 	  This option enables the multicast optimisation which aims to
 	  reduce the air overhead while improving the reliability of
@@ -80,42 +77,19 @@ config BATMAN_ADV_DEBUGFS
 	bool "batman-adv debugfs entries"
 	depends on BATMAN_ADV
 	depends on DEBUG_FS
+	default y
 	help
 	  Enable this to export routing related debug tables via debugfs.
 	  The information for each soft-interface and used hard-interface can be
 	  found under batman_adv/
 
-	  If unsure, say N.
+	  If unsure, say Y.
 
 config BATMAN_ADV_DEBUG
 	bool "B.A.T.M.A.N. debugging"
-	depends on BATMAN_ADV
+	depends on BATMAN_ADV_DEBUGFS
 	help
 	  This is an option for use by developers; most people should
 	  say N here. This enables compilation of support for
-	  outputting debugging information to the debugfs log or tracing
-	  buffer. The output is controlled via the batadv netdev specific
-	  log_level setting.
-
-config BATMAN_ADV_SYSFS
-	bool "batman-adv sysfs entries"
-	depends on BATMAN_ADV
-	default y
-	help
-	  Say Y here if you want to enable batman-adv device configuration and
-	  status interface through sysfs attributes. It is replaced by the
-	  batadv generic netlink family but still used by various userspace
-	  tools and scripts.
-
-	  If unsure, say Y.
-
-config BATMAN_ADV_TRACING
-	bool "B.A.T.M.A.N. tracing support"
-	depends on BATMAN_ADV
-	depends on EVENT_TRACING
-	help
-	  This is an option for use by developers; most people should
-	  say N here. Select this option to gather traces like the debug
-	  messages using the generic tracing infrastructure of the kernel.
-	  BATMAN_ADV_DEBUG must also be selected to get trace events for
-	  batadv_dbg.
+	  outputting debugging information to the kernel log. The
+	  output is controlled via the module parameter debug.

@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __LINUX_CPUMASK_H
 #define __LINUX_CPUMASK_H
 
@@ -33,9 +32,9 @@ typedef struct cpumask { DECLARE_BITMAP(bits, NR_CPUS); } cpumask_t;
 #define cpumask_pr_args(maskp)		nr_cpu_ids, cpumask_bits(maskp)
 
 #if NR_CPUS == 1
-#define nr_cpu_ids		1U
+#define nr_cpu_ids		1
 #else
-extern unsigned int nr_cpu_ids;
+extern int nr_cpu_ids;
 #endif
 
 #ifdef CONFIG_CPUMASK_OFFSTACK
@@ -43,7 +42,7 @@ extern unsigned int nr_cpu_ids;
  * not all bits may be allocated. */
 #define nr_cpumask_bits	nr_cpu_ids
 #else
-#define nr_cpumask_bits	((unsigned int)NR_CPUS)
+#define nr_cpumask_bits	NR_CPUS
 #endif
 
 /*
@@ -115,28 +114,18 @@ extern struct cpumask __cpu_active_mask;
 #define cpu_active(cpu)		((cpu) == 0)
 #endif
 
-static inline void cpu_max_bits_warn(unsigned int cpu, unsigned int bits)
-{
-#ifdef CONFIG_DEBUG_PER_CPU_MAPS
-	WARN_ON_ONCE(cpu >= bits);
-#endif /* CONFIG_DEBUG_PER_CPU_MAPS */
-}
-
 /* verify cpu argument to cpumask_* operators */
 static inline unsigned int cpumask_check(unsigned int cpu)
 {
-	cpu_max_bits_warn(cpu, nr_cpumask_bits);
+#ifdef CONFIG_DEBUG_PER_CPU_MAPS
+	WARN_ON_ONCE(cpu >= nr_cpumask_bits);
+#endif /* CONFIG_DEBUG_PER_CPU_MAPS */
 	return cpu;
 }
 
 #if NR_CPUS == 1
 /* Uniprocessor.  Assume all masks are "1". */
 static inline unsigned int cpumask_first(const struct cpumask *srcp)
-{
-	return 0;
-}
-
-static inline unsigned int cpumask_last(const struct cpumask *srcp)
 {
 	return 0;
 }
@@ -157,13 +146,6 @@ static inline unsigned int cpumask_next_and(int n,
 					    const struct cpumask *andp)
 {
 	return n+1;
-}
-
-static inline unsigned int cpumask_next_wrap(int n, const struct cpumask *mask,
-					     int start, bool wrap)
-{
-	/* cpu0 unless stop condition, wrap and at cpu0, then nr_cpumask_bits */
-	return (wrap && n == 0);
 }
 
 /* cpu must be a valid cpu, ie 0, so there's no other choice. */
@@ -199,17 +181,19 @@ static inline unsigned int cpumask_first(const struct cpumask *srcp)
 }
 
 /**
- * cpumask_last - get the last CPU in a cpumask
- * @srcp:	- the cpumask pointer
+ * cpumask_next - get the next cpu in a cpumask
+ * @n: the cpu prior to the place to search (ie. return will be > @n)
+ * @srcp: the cpumask pointer
  *
- * Returns	>= nr_cpumask_bits if no CPUs set.
+ * Returns >= nr_cpu_ids if no further cpus set.
  */
-static inline unsigned int cpumask_last(const struct cpumask *srcp)
+static inline unsigned int cpumask_next(int n, const struct cpumask *srcp)
 {
-	return find_last_bit(cpumask_bits(srcp), nr_cpumask_bits);
+	/* -1 is a legal arg here. */
+	if (n != -1)
+		cpumask_check(n);
+	return find_next_bit(cpumask_bits(srcp), nr_cpumask_bits, n+1);
 }
-
-unsigned int cpumask_next(int n, const struct cpumask *srcp);
 
 /**
  * cpumask_next_zero - get the next unset cpu in a cpumask
@@ -311,12 +295,6 @@ static inline void cpumask_set_cpu(unsigned int cpu, struct cpumask *dstp)
 	set_bit(cpumask_check(cpu), cpumask_bits(dstp));
 }
 
-static inline void __cpumask_set_cpu(unsigned int cpu, struct cpumask *dstp)
-{
-	__set_bit(cpumask_check(cpu), cpumask_bits(dstp));
-}
-
-
 /**
  * cpumask_clear_cpu - clear a cpu in a cpumask
  * @cpu: cpu number (< nr_cpu_ids)
@@ -325,11 +303,6 @@ static inline void __cpumask_set_cpu(unsigned int cpu, struct cpumask *dstp)
 static inline void cpumask_clear_cpu(int cpu, struct cpumask *dstp)
 {
 	clear_bit(cpumask_check(cpu), cpumask_bits(dstp));
-}
-
-static inline void __cpumask_clear_cpu(int cpu, struct cpumask *dstp)
-{
-	__clear_bit(cpumask_check(cpu), cpumask_bits(dstp));
 }
 
 /**
@@ -633,7 +606,8 @@ static inline int cpumask_parselist_user(const char __user *buf, int len,
  */
 static inline int cpumask_parse(const char *buf, struct cpumask *dstp)
 {
-	unsigned int len = strchrnul(buf, '\n') - buf;
+	char *nl = strchr(buf, '\n');
+	unsigned int len = nl ? (unsigned int)(nl - buf) : strlen(buf);
 
 	return bitmap_parse(buf, len, cpumask_bits(dstp), nr_cpumask_bits);
 }
@@ -653,7 +627,7 @@ static inline int cpulist_parse(const char *buf, struct cpumask *dstp)
 /**
  * cpumask_size - size to allocate for a 'struct cpumask' in bytes
  */
-static inline unsigned int cpumask_size(void)
+static inline size_t cpumask_size(void)
 {
 	return BITS_TO_LONGS(nr_cpumask_bits) * sizeof(long);
 }
@@ -694,15 +668,11 @@ static inline unsigned int cpumask_size(void)
  * used. Please use this_cpu_cpumask_var_t in those cases. The direct use
  * of this_cpu_ptr() or this_cpu_read() will lead to failures when the
  * other type of cpumask_var_t implementation is configured.
- *
- * Please also note that __cpumask_var_read_mostly can be used to declare
- * a cpumask_var_t variable itself (not its content) as read mostly.
  */
 #ifdef CONFIG_CPUMASK_OFFSTACK
 typedef struct cpumask *cpumask_var_t;
 
-#define this_cpu_cpumask_var_ptr(x)	this_cpu_read(x)
-#define __cpumask_var_read_mostly	__read_mostly
+#define this_cpu_cpumask_var_ptr(x) this_cpu_read(x)
 
 bool alloc_cpumask_var_node(cpumask_var_t *mask, gfp_t flags, int node);
 bool alloc_cpumask_var(cpumask_var_t *mask, gfp_t flags);
@@ -721,7 +691,6 @@ static inline bool cpumask_available(cpumask_var_t mask)
 typedef struct cpumask cpumask_var_t[1];
 
 #define this_cpu_cpumask_var_ptr(x) this_cpu_ptr(x)
-#define __cpumask_var_read_mostly
 
 static inline bool alloc_cpumask_var(cpumask_var_t *mask, gfp_t flags)
 {
@@ -781,11 +750,6 @@ extern const DECLARE_BITMAP(cpu_all_bits, NR_CPUS);
 void init_cpu_present(const struct cpumask *src);
 void init_cpu_possible(const struct cpumask *src);
 void init_cpu_online(const struct cpumask *src);
-
-static inline void reset_cpu_possible_mask(void)
-{
-	bitmap_zero(cpumask_bits(&__cpu_possible_mask), NR_CPUS);
-}
 
 static inline void
 set_cpu_possible(unsigned int cpu, bool possible)

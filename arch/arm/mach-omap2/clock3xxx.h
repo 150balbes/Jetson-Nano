@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * OMAP3-common clock function prototypes and macros
  *

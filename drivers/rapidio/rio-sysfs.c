@@ -1,9 +1,13 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * RapidIO sysfs attributes and support
  *
  * Copyright 2005 MontaVista Software, Inc.
  * Matt Porter <mporter@kernel.crashing.org>
+ *
+ * This program is free software; you can redistribute  it and/or modify it
+ * under  the terms of  the GNU General  Public License as published by the
+ * Free Software Foundation;  either version 2 of the  License, or (at your
+ * option) any later version.
  */
 
 #include <linux/kernel.h>
@@ -104,11 +108,15 @@ static struct attribute *rio_dev_attrs[] = {
 	&dev_attr_lprev.attr,
 	&dev_attr_destid.attr,
 	&dev_attr_modalias.attr,
+	NULL,
+};
 
-	/* Switch-only attributes */
-	&dev_attr_routes.attr,
-	&dev_attr_lnext.attr,
-	&dev_attr_hopcount.attr,
+static const struct attribute_group rio_dev_group = {
+	.attrs = rio_dev_attrs,
+};
+
+const struct attribute_group *rio_dev_groups[] = {
+	&rio_dev_group,
 	NULL,
 };
 
@@ -251,42 +259,49 @@ static struct bin_attribute rio_config_attr = {
 	.write = rio_write_config,
 };
 
-static struct bin_attribute *rio_dev_bin_attrs[] = {
-	&rio_config_attr,
-	NULL,
-};
-
-static umode_t rio_dev_is_attr_visible(struct kobject *kobj,
-				       struct attribute *attr, int n)
+/**
+ * rio_create_sysfs_dev_files - create RIO specific sysfs files
+ * @rdev: device whose entries should be created
+ *
+ * Create files when @rdev is added to sysfs.
+ */
+int rio_create_sysfs_dev_files(struct rio_dev *rdev)
 {
-	struct rio_dev *rdev = to_rio_dev(kobj_to_dev(kobj));
-	umode_t mode = attr->mode;
+	int err = 0;
 
-	if (!(rdev->pef & RIO_PEF_SWITCH) &&
-	    (attr == &dev_attr_routes.attr ||
-	     attr == &dev_attr_lnext.attr ||
-	     attr == &dev_attr_hopcount.attr)) {
-		/*
-		 * Hide switch-specific attributes for a non-switch device.
-		 */
-		mode = 0;
+	err = device_create_bin_file(&rdev->dev, &rio_config_attr);
+
+	if (!err && (rdev->pef & RIO_PEF_SWITCH)) {
+		err |= device_create_file(&rdev->dev, &dev_attr_routes);
+		err |= device_create_file(&rdev->dev, &dev_attr_lnext);
+		err |= device_create_file(&rdev->dev, &dev_attr_hopcount);
 	}
 
-	return mode;
+	if (err)
+		pr_warning("RIO: Failed to create attribute file(s) for %s\n",
+			   rio_name(rdev));
+
+	return err;
 }
 
-static const struct attribute_group rio_dev_group = {
-	.attrs		= rio_dev_attrs,
-	.is_visible	= rio_dev_is_attr_visible,
-	.bin_attrs	= rio_dev_bin_attrs,
-};
+/**
+ * rio_remove_sysfs_dev_files - cleanup RIO specific sysfs files
+ * @rdev: device whose entries we should free
+ *
+ * Cleanup when @rdev is removed from sysfs.
+ */
+void rio_remove_sysfs_dev_files(struct rio_dev *rdev)
+{
+	device_remove_bin_file(&rdev->dev, &rio_config_attr);
+	if (rdev->pef & RIO_PEF_SWITCH) {
+		device_remove_file(&rdev->dev, &dev_attr_routes);
+		device_remove_file(&rdev->dev, &dev_attr_lnext);
+		device_remove_file(&rdev->dev, &dev_attr_hopcount);
+	}
+}
 
-const struct attribute_group *rio_dev_groups[] = {
-	&rio_dev_group,
-	NULL,
-};
-
-static ssize_t scan_store(struct bus_type *bus, const char *buf, size_t count)
+static ssize_t bus_scan_store(struct bus_type *bus, const char *buf,
+				size_t count)
 {
 	long val;
 	int rc;
@@ -309,7 +324,7 @@ exit:
 
 	return rc;
 }
-static BUS_ATTR_WO(scan);
+static BUS_ATTR(scan, (S_IWUSR|S_IWGRP), NULL, bus_scan_store);
 
 static struct attribute *rio_bus_attrs[] = {
 	&bus_attr_scan.attr,

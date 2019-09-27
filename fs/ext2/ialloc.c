@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  *  linux/fs/ext2/ialloc.c
  *
@@ -145,7 +144,7 @@ void ext2_free_inode (struct inode * inode)
 	else
 		ext2_release_inode(sb, block_group, is_directory);
 	mark_buffer_dirty(bitmap_bh);
-	if (sb->s_flags & SB_SYNCHRONOUS)
+	if (sb->s_flags & MS_SYNCHRONOUS)
 		sync_dirty_buffer(bitmap_bh);
 
 	brelse(bitmap_bh);
@@ -172,7 +171,9 @@ static void ext2_preread_inode(struct inode *inode)
 	struct backing_dev_info *bdi;
 
 	bdi = inode_to_bdi(inode);
-	if (bdi_rw_congested(bdi))
+	if (bdi_read_congested(bdi))
+		return;
+	if (bdi_write_congested(bdi))
 		return;
 
 	block_group = (inode->i_ino - 1) / EXT2_INODES_PER_GROUP(inode->i_sb);
@@ -220,6 +221,8 @@ static int find_group_dir(struct super_block *sb, struct inode *parent)
 			best_desc = desc;
 		}
 	}
+	if (!best_desc)
+		return -1;
 
 	return best_group;
 }
@@ -509,12 +512,11 @@ repeat_in_this_group:
 	/*
 	 * Scanned all blockgroups.
 	 */
-	brelse(bitmap_bh);
 	err = -ENOSPC;
 	goto fail;
 got:
 	mark_buffer_dirty(bitmap_bh);
-	if (sb->s_flags & SB_SYNCHRONOUS)
+	if (sb->s_flags & MS_SYNCHRONOUS)
 		sync_dirty_buffer(bitmap_bh);
 	brelse(bitmap_bh);
 
@@ -608,7 +610,8 @@ fail_drop:
 	dquot_drop(inode);
 	inode->i_flags |= S_NOQUOTA;
 	clear_nlink(inode);
-	discard_new_inode(inode);
+	unlock_new_inode(inode);
+	iput(inode);
 	return ERR_PTR(err);
 
 fail:

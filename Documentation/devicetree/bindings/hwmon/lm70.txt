@@ -4,7 +4,6 @@ Required properties:
 - compatible: one of
 		"ti,lm70"
 		"ti,tmp121"
-		"ti,tmp122"
 		"ti,lm71"
 		"ti,lm74"
 

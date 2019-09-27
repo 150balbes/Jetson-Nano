@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 	.file	"div_Xsig.S"
 /*---------------------------------------------------------------------------+
  |  div_Xsig.S                                                               |
@@ -364,4 +363,3 @@ L_bugged_2:
 	pop	%ebx
 	jmp	L_exit
 #endif /* PARANOID */ 
-ENDPROC(div_Xsig)

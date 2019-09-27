@@ -1,25 +1,34 @@
-// SPDX-License-Identifier: GPL-2.0
-/* Copyright (C) 2011-2019  B.A.T.M.A.N. contributors:
+/* Copyright (C) 2011-2016 B.A.T.M.A.N. contributors:
  *
  * Linus Lüssing, Marek Lindner
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of version 2 of the GNU General Public
+ * License as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+ * General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, see <http://www.gnu.org/licenses/>.
  */
 
 #include "bat_v_elp.h"
 #include "main.h"
 
 #include <linux/atomic.h>
-#include <linux/bitops.h>
 #include <linux/byteorder/generic.h>
 #include <linux/errno.h>
 #include <linux/etherdevice.h>
 #include <linux/ethtool.h>
-#include <linux/gfp.h>
+#include <linux/fs.h>
 #include <linux/if_ether.h>
 #include <linux/jiffies.h>
 #include <linux/kernel.h>
 #include <linux/kref.h>
 #include <linux/netdevice.h>
-#include <linux/nl80211.h>
 #include <linux/random.h>
 #include <linux/rculist.h>
 #include <linux/rcupdate.h>
@@ -30,18 +39,18 @@
 #include <linux/types.h>
 #include <linux/workqueue.h>
 #include <net/cfg80211.h>
-#include <uapi/linux/batadv_packet.h>
 
 #include "bat_algo.h"
 #include "bat_v_ogm.h"
 #include "hard-interface.h"
 #include "log.h"
 #include "originator.h"
+#include "packet.h"
 #include "routing.h"
 #include "send.h"
 
 /**
- * batadv_v_elp_start_timer() - restart timer for ELP periodic work
+ * batadv_v_elp_start_timer - restart timer for ELP periodic work
  * @hard_iface: the interface for which the timer has to be reset
  */
 static void batadv_v_elp_start_timer(struct batadv_hard_iface *hard_iface)
@@ -56,7 +65,7 @@ static void batadv_v_elp_start_timer(struct batadv_hard_iface *hard_iface)
 }
 
 /**
- * batadv_v_elp_get_throughput() - get the throughput towards a neighbour
+ * batadv_v_elp_get_throughput - get the throughput towards a neighbour
  * @neigh: the neighbour for which the throughput has to be obtained
  *
  * Return: The throughput towards the given neighbour in multiples of 100kpbs
@@ -66,7 +75,6 @@ static u32 batadv_v_elp_get_throughput(struct batadv_hardif_neigh_node *neigh)
 {
 	struct batadv_hard_iface *hard_iface = neigh->if_incoming;
 	struct ethtool_link_ksettings link_settings;
-	struct net_device *real_netdev;
 	struct station_info sinfo;
 	u32 throughput;
 	int ret;
@@ -81,36 +89,23 @@ static u32 batadv_v_elp_get_throughput(struct batadv_hardif_neigh_node *neigh)
 	/* if this is a wireless device, then ask its throughput through
 	 * cfg80211 API
 	 */
-	if (batadv_is_wifi_hardif(hard_iface)) {
-		if (!batadv_is_cfg80211_hardif(hard_iface))
-			/* unsupported WiFi driver version */
-			goto default_throughput;
-
-		real_netdev = batadv_get_real_netdev(hard_iface->net_dev);
-		if (!real_netdev)
-			goto default_throughput;
-
-		ret = cfg80211_get_station(real_netdev, neigh->addr, &sinfo);
-
-		if (!ret) {
-			/* free the TID stats immediately */
-			cfg80211_sinfo_release_content(&sinfo);
+	if (batadv_is_wifi_netdev(hard_iface->net_dev)) {
+		if (hard_iface->net_dev->ieee80211_ptr) {
+			ret = cfg80211_get_station(hard_iface->net_dev,
+						   neigh->addr, &sinfo);
+			if (ret == -ENOENT) {
+				/* Node is not associated anymore! It would be
+				 * possible to delete this neighbor. For now set
+				 * the throughput metric to 0.
+				 */
+				return 0;
+			}
+			if (!ret)
+				return sinfo.expected_throughput / 100;
 		}
 
-		dev_put(real_netdev);
-		if (ret == -ENOENT) {
-			/* Node is not associated anymore! It would be
-			 * possible to delete this neighbor. For now set
-			 * the throughput metric to 0.
-			 */
-			return 0;
-		}
-		if (ret)
-			goto default_throughput;
-		if (!(sinfo.filled & BIT(NL80211_STA_INFO_EXPECTED_THROUGHPUT)))
-			goto default_throughput;
-
-		return sinfo.expected_throughput / 100;
+		/* unsupported WiFi driver version */
+		goto default_throughput;
 	}
 
 	/* if not a wifi interface, check if this device provides data via
@@ -120,20 +115,7 @@ static u32 batadv_v_elp_get_throughput(struct batadv_hardif_neigh_node *neigh)
 	rtnl_lock();
 	ret = __ethtool_get_link_ksettings(hard_iface->net_dev, &link_settings);
 	rtnl_unlock();
-
-	/* Virtual interface drivers such as tun / tap interfaces, VLAN, etc
-	 * tend to initialize the interface throughput with some value for the
-	 * sake of having a throughput number to export via ethtool. This
-	 * exported throughput leaves batman-adv to conclude the interface
-	 * throughput is genuine (reflecting reality), thus no measurements
-	 * are necessary.
-	 *
-	 * Based on the observation that those interface types also tend to set
-	 * the link auto-negotiation to 'off', batman-adv shall check this
-	 * setting to differentiate between genuine link throughput information
-	 * and placeholders installed by virtual interfaces.
-	 */
-	if (ret == 0 && link_settings.base.autoneg == AUTONEG_ENABLE) {
+	if (ret == 0) {
 		/* link characteristics might change over time */
 		if (link_settings.base.duplex == DUPLEX_FULL)
 			hard_iface->bat_v.flags |= BATADV_FULL_DUPLEX;
@@ -141,7 +123,7 @@ static u32 batadv_v_elp_get_throughput(struct batadv_hardif_neigh_node *neigh)
 			hard_iface->bat_v.flags &= ~BATADV_FULL_DUPLEX;
 
 		throughput = link_settings.base.speed;
-		if (throughput && throughput != SPEED_UNKNOWN)
+		if (throughput && (throughput != SPEED_UNKNOWN))
 			return throughput * 10;
 	}
 
@@ -160,8 +142,8 @@ default_throughput:
 }
 
 /**
- * batadv_v_elp_throughput_metric_update() - worker updating the throughput
- *  metric of a single hop neighbour
+ * batadv_v_elp_throughput_metric_update - worker updating the throughput metric
+ *  of a single hop neighbour
  * @work: the work queue item
  */
 void batadv_v_elp_throughput_metric_update(struct work_struct *work)
@@ -184,7 +166,7 @@ void batadv_v_elp_throughput_metric_update(struct work_struct *work)
 }
 
 /**
- * batadv_v_elp_wifi_neigh_probe() - send link probing packets to a neighbour
+ * batadv_v_elp_wifi_neigh_probe - send link probing packets to a neighbour
  * @neigh: the neighbour to probe
  *
  * Sends a predefined number of unicast wifi packets to a given neighbour in
@@ -205,7 +187,7 @@ batadv_v_elp_wifi_neigh_probe(struct batadv_hardif_neigh_node *neigh)
 	int elp_skb_len;
 
 	/* this probing routine is for Wifi neighbours only */
-	if (!batadv_is_wifi_hardif(hard_iface))
+	if (!batadv_is_wifi_netdev(hard_iface->net_dev))
 		return true;
 
 	/* probe the neighbor only if no unicast packets have been sent
@@ -234,7 +216,7 @@ batadv_v_elp_wifi_neigh_probe(struct batadv_hardif_neigh_node *neigh)
 		 * the packet to be exactly of that size to make the link
 		 * throughput estimation effective.
 		 */
-		skb_put_zero(skb, probe_len - hard_iface->bat_v.elp_skb->len);
+		skb_put(skb, probe_len - hard_iface->bat_v.elp_skb->len);
 
 		batadv_dbg(BATADV_DBG_BATMAN, bat_priv,
 			   "Sending unicast (probe) ELP packet on interface %s to %pM\n",
@@ -247,7 +229,7 @@ batadv_v_elp_wifi_neigh_probe(struct batadv_hardif_neigh_node *neigh)
 }
 
 /**
- * batadv_v_elp_periodic_work() - ELP periodic task per interface
+ * batadv_v_elp_periodic_work - ELP periodic task per interface
  * @work: work queue item
  *
  * Emits broadcast ELP message in regular intervals.
@@ -271,8 +253,8 @@ static void batadv_v_elp_periodic_work(struct work_struct *work)
 		goto out;
 
 	/* we are in the process of shutting this interface down */
-	if (hard_iface->if_status == BATADV_IF_NOT_IN_USE ||
-	    hard_iface->if_status == BATADV_IF_TO_BE_REMOVED)
+	if ((hard_iface->if_status == BATADV_IF_NOT_IN_USE) ||
+	    (hard_iface->if_status == BATADV_IF_TO_BE_REMOVED))
 		goto out;
 
 	/* the interface was enabled but may not be ready yet */
@@ -338,29 +320,28 @@ out:
 }
 
 /**
- * batadv_v_elp_iface_enable() - setup the ELP interface private resources
+ * batadv_v_elp_iface_enable - setup the ELP interface private resources
  * @hard_iface: interface for which the data has to be prepared
  *
  * Return: 0 on success or a -ENOMEM in case of failure.
  */
 int batadv_v_elp_iface_enable(struct batadv_hard_iface *hard_iface)
 {
-	static const size_t tvlv_padding = sizeof(__be32);
 	struct batadv_elp_packet *elp_packet;
 	unsigned char *elp_buff;
 	u32 random_seqno;
 	size_t size;
 	int res = -ENOMEM;
 
-	size = ETH_HLEN + NET_IP_ALIGN + BATADV_ELP_HLEN + tvlv_padding;
+	size = ETH_HLEN + NET_IP_ALIGN + BATADV_ELP_HLEN;
 	hard_iface->bat_v.elp_skb = dev_alloc_skb(size);
 	if (!hard_iface->bat_v.elp_skb)
 		goto out;
 
 	skb_reserve(hard_iface->bat_v.elp_skb, ETH_HLEN + NET_IP_ALIGN);
-	elp_buff = skb_put_zero(hard_iface->bat_v.elp_skb,
-				BATADV_ELP_HLEN + tvlv_padding);
+	elp_buff = skb_put(hard_iface->bat_v.elp_skb, BATADV_ELP_HLEN);
 	elp_packet = (struct batadv_elp_packet *)elp_buff;
+	memset(elp_packet, 0, BATADV_ELP_HLEN);
 
 	elp_packet->packet_type = BATADV_ELP;
 	elp_packet->version = BATADV_COMPAT_VERSION;
@@ -375,7 +356,7 @@ int batadv_v_elp_iface_enable(struct batadv_hard_iface *hard_iface)
 	/* warn the user (again) if there is no throughput data is available */
 	hard_iface->bat_v.flags &= ~BATADV_WARNING_DEFAULT;
 
-	if (batadv_is_wifi_hardif(hard_iface))
+	if (batadv_is_wifi_netdev(hard_iface->net_dev))
 		hard_iface->bat_v.flags &= ~BATADV_FULL_DUPLEX;
 
 	INIT_DELAYED_WORK(&hard_iface->bat_v.elp_wq,
@@ -388,7 +369,7 @@ out:
 }
 
 /**
- * batadv_v_elp_iface_disable() - release ELP interface private resources
+ * batadv_v_elp_iface_disable - release ELP interface private resources
  * @hard_iface: interface for which the resources have to be released
  */
 void batadv_v_elp_iface_disable(struct batadv_hard_iface *hard_iface)
@@ -400,7 +381,7 @@ void batadv_v_elp_iface_disable(struct batadv_hard_iface *hard_iface)
 }
 
 /**
- * batadv_v_elp_iface_activate() - update the ELP buffer belonging to the given
+ * batadv_v_elp_iface_activate - update the ELP buffer belonging to the given
  *  hard-interface
  * @primary_iface: the new primary interface
  * @hard_iface: interface holding the to-be-updated buffer
@@ -421,7 +402,7 @@ void batadv_v_elp_iface_activate(struct batadv_hard_iface *primary_iface,
 }
 
 /**
- * batadv_v_elp_primary_iface_set() - change internal data to reflect the new
+ * batadv_v_elp_primary_iface_set - change internal data to reflect the new
  *  primary interface
  * @primary_iface: the new primary interface
  */
@@ -441,7 +422,7 @@ void batadv_v_elp_primary_iface_set(struct batadv_hard_iface *primary_iface)
 }
 
 /**
- * batadv_v_elp_neigh_update() - update an ELP neighbour node
+ * batadv_v_elp_neigh_update - update an ELP neighbour node
  * @bat_priv: the bat priv with all the soft interface information
  * @neigh_addr: the neighbour interface address
  * @if_incoming: the interface the packet was received through
@@ -501,7 +482,7 @@ orig_free:
 }
 
 /**
- * batadv_v_elp_packet_recv() - main ELP packet handler
+ * batadv_v_elp_packet_recv - main ELP packet handler
  * @skb: the received packet
  * @if_incoming: the interface this packet was received through
  *
@@ -515,21 +496,20 @@ int batadv_v_elp_packet_recv(struct sk_buff *skb,
 	struct batadv_elp_packet *elp_packet;
 	struct batadv_hard_iface *primary_if;
 	struct ethhdr *ethhdr = (struct ethhdr *)skb_mac_header(skb);
-	bool res;
-	int ret = NET_RX_DROP;
+	bool ret;
 
-	res = batadv_check_management_packet(skb, if_incoming, BATADV_ELP_HLEN);
-	if (!res)
-		goto free_skb;
+	ret = batadv_check_management_packet(skb, if_incoming, BATADV_ELP_HLEN);
+	if (!ret)
+		return NET_RX_DROP;
 
 	if (batadv_is_my_mac(bat_priv, ethhdr->h_source))
-		goto free_skb;
+		return NET_RX_DROP;
 
 	/* did we receive a B.A.T.M.A.N. V ELP packet on an interface
 	 * that does not have B.A.T.M.A.N. V ELP enabled ?
 	 */
 	if (strcmp(bat_priv->algo_ops->name, "BATMAN_V") != 0)
-		goto free_skb;
+		return NET_RX_DROP;
 
 	elp_packet = (struct batadv_elp_packet *)skb->data;
 
@@ -540,19 +520,14 @@ int batadv_v_elp_packet_recv(struct sk_buff *skb,
 
 	primary_if = batadv_primary_if_get_selected(bat_priv);
 	if (!primary_if)
-		goto free_skb;
+		goto out;
 
 	batadv_v_elp_neigh_update(bat_priv, ethhdr->h_source, if_incoming,
 				  elp_packet);
 
-	ret = NET_RX_SUCCESS;
-	batadv_hardif_put(primary_if);
-
-free_skb:
-	if (ret == NET_RX_SUCCESS)
-		consume_skb(skb);
-	else
-		kfree_skb(skb);
-
-	return ret;
+out:
+	if (primary_if)
+		batadv_hardif_put(primary_if);
+	consume_skb(skb);
+	return NET_RX_SUCCESS;
 }

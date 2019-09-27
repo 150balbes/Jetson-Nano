@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _ASM_IA64_MMU_CONTEXT_H
 #define _ASM_IA64_MMU_CONTEXT_H
 
@@ -27,7 +26,6 @@
 #include <linux/compiler.h>
 #include <linux/percpu.h>
 #include <linux/sched.h>
-#include <linux/mm_types.h>
 #include <linux/spinlock.h>
 
 #include <asm/processor.h>

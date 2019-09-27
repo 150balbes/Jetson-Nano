@@ -1,6 +1,10 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (C) 2014 STMicroelectronics R&D Ltd
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
  */
 
 /*
@@ -400,7 +404,7 @@ static struct clk * __init st_clk_register_quadfs_pll(
 
 	init.name = name;
 	init.ops = quadfs->pll_ops;
-	init.flags = CLK_GET_RATE_NOCACHE;
+	init.flags = CLK_IS_BASIC | CLK_GET_RATE_NOCACHE;
 	init.parent_names = &parent_name;
 	init.num_parents = 1;
 
@@ -839,7 +843,7 @@ static struct clk * __init st_clk_register_quadfs_fsynth(
 
 	init.name = name;
 	init.ops = &st_quadfs_ops;
-	init.flags = flags | CLK_GET_RATE_NOCACHE;
+	init.flags = flags | CLK_GET_RATE_NOCACHE | CLK_IS_BASIC;
 	init.parent_names = &parent_name;
 	init.num_parents = 1;
 
@@ -870,7 +874,7 @@ static void __init st_of_create_quadfs_fsynths(
 		return;
 
 	clk_data->clk_num = QUADFS_MAX_CHAN;
-	clk_data->clks = kcalloc(QUADFS_MAX_CHAN, sizeof(struct clk *),
+	clk_data->clks = kzalloc(QUADFS_MAX_CHAN * sizeof(struct clk *),
 				 GFP_KERNEL);
 
 	if (!clk_data->clks) {
@@ -932,7 +936,7 @@ static void __init st_of_quadfs_setup(struct device_node *np,
 	if (!clk_parent_name)
 		return;
 
-	pll_name = kasprintf(GFP_KERNEL, "%pOFn.pll", np);
+	pll_name = kasprintf(GFP_KERNEL, "%s.pll", np->name);
 	if (!pll_name)
 		return;
 

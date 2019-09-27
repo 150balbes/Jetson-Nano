@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * Lockless hierarchical page accounting & limiting
  *
@@ -13,40 +12,6 @@
 #include <linux/bug.h>
 #include <asm/page.h>
 
-static void propagate_protected_usage(struct page_counter *c,
-				      unsigned long usage)
-{
-	unsigned long protected, old_protected;
-	long delta;
-
-	if (!c->parent)
-		return;
-
-	if (c->min || atomic_long_read(&c->min_usage)) {
-		if (usage <= c->min)
-			protected = usage;
-		else
-			protected = 0;
-
-		old_protected = atomic_long_xchg(&c->min_usage, protected);
-		delta = protected - old_protected;
-		if (delta)
-			atomic_long_add(delta, &c->parent->children_min_usage);
-	}
-
-	if (c->low || atomic_long_read(&c->low_usage)) {
-		if (usage <= c->low)
-			protected = usage;
-		else
-			protected = 0;
-
-		old_protected = atomic_long_xchg(&c->low_usage, protected);
-		delta = protected - old_protected;
-		if (delta)
-			atomic_long_add(delta, &c->parent->children_low_usage);
-	}
-}
-
 /**
  * page_counter_cancel - take pages out of the local counter
  * @counter: counter
@@ -56,8 +21,7 @@ void page_counter_cancel(struct page_counter *counter, unsigned long nr_pages)
 {
 	long new;
 
-	new = atomic_long_sub_return(nr_pages, &counter->usage);
-	propagate_protected_usage(counter, new);
+	new = atomic_long_sub_return(nr_pages, &counter->count);
 	/* More uncharges than charges? */
 	WARN_ON_ONCE(new < 0);
 }
@@ -76,8 +40,7 @@ void page_counter_charge(struct page_counter *counter, unsigned long nr_pages)
 	for (c = counter; c; c = c->parent) {
 		long new;
 
-		new = atomic_long_add_return(nr_pages, &c->usage);
-		propagate_protected_usage(counter, new);
+		new = atomic_long_add_return(nr_pages, &c->count);
 		/*
 		 * This is indeed racy, but we can live with some
 		 * inaccuracy in the watermark.
@@ -118,10 +81,9 @@ bool page_counter_try_charge(struct page_counter *counter,
 		 * we either see the new limit or the setter sees the
 		 * counter has changed and retries.
 		 */
-		new = atomic_long_add_return(nr_pages, &c->usage);
-		if (new > c->max) {
-			atomic_long_sub(nr_pages, &c->usage);
-			propagate_protected_usage(counter, new);
+		new = atomic_long_add_return(nr_pages, &c->count);
+		if (new > c->limit) {
+			atomic_long_sub(nr_pages, &c->count);
 			/*
 			 * This is racy, but we can live with some
 			 * inaccuracy in the failcnt.
@@ -130,7 +92,6 @@ bool page_counter_try_charge(struct page_counter *counter,
 			*fail = c;
 			goto failed;
 		}
-		propagate_protected_usage(counter, new);
 		/*
 		 * Just like with failcnt, we can live with some
 		 * inaccuracy in the watermark.
@@ -161,20 +122,20 @@ void page_counter_uncharge(struct page_counter *counter, unsigned long nr_pages)
 }
 
 /**
- * page_counter_set_max - set the maximum number of pages allowed
+ * page_counter_limit - limit the number of pages allowed
  * @counter: counter
- * @nr_pages: limit to set
+ * @limit: limit to set
  *
  * Returns 0 on success, -EBUSY if the current number of pages on the
  * counter already exceeds the specified limit.
  *
  * The caller must serialize invocations on the same counter.
  */
-int page_counter_set_max(struct page_counter *counter, unsigned long nr_pages)
+int page_counter_limit(struct page_counter *counter, unsigned long limit)
 {
 	for (;;) {
 		unsigned long old;
-		long usage;
+		long count;
 
 		/*
 		 * Update the limit while making sure that it's not
@@ -187,53 +148,19 @@ int page_counter_set_max(struct page_counter *counter, unsigned long nr_pages)
 		 * the limit, so if it sees the old limit, we see the
 		 * modified counter and retry.
 		 */
-		usage = atomic_long_read(&counter->usage);
+		count = atomic_long_read(&counter->count);
 
-		if (usage > nr_pages)
+		if (count > limit)
 			return -EBUSY;
 
-		old = xchg(&counter->max, nr_pages);
+		old = xchg(&counter->limit, limit);
 
-		if (atomic_long_read(&counter->usage) <= usage)
+		if (atomic_long_read(&counter->count) <= count)
 			return 0;
 
-		counter->max = old;
+		counter->limit = old;
 		cond_resched();
 	}
-}
-
-/**
- * page_counter_set_min - set the amount of protected memory
- * @counter: counter
- * @nr_pages: value to set
- *
- * The caller must serialize invocations on the same counter.
- */
-void page_counter_set_min(struct page_counter *counter, unsigned long nr_pages)
-{
-	struct page_counter *c;
-
-	counter->min = nr_pages;
-
-	for (c = counter; c; c = c->parent)
-		propagate_protected_usage(c, atomic_long_read(&c->usage));
-}
-
-/**
- * page_counter_set_low - set the amount of protected memory
- * @counter: counter
- * @nr_pages: value to set
- *
- * The caller must serialize invocations on the same counter.
- */
-void page_counter_set_low(struct page_counter *counter, unsigned long nr_pages)
-{
-	struct page_counter *c;
-
-	counter->low = nr_pages;
-
-	for (c = counter; c; c = c->parent)
-		propagate_protected_usage(c, atomic_long_read(&c->usage));
 }
 
 /**

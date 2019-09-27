@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0-only
 # CSR SiRFsoc pinmux support
 
 obj-y	+= pinctrl-sirf.o

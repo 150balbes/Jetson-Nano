@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * arch/sh/boards/superh/microdev/setup.c
  *
@@ -7,6 +6,9 @@
  * Copyright (C) 2004, 2005 Paul Mundt
  *
  * SuperH SH4-202 MicroDev board support.
+ *
+ * May be copied or modified under the terms of the GNU General Public
+ * License.  See linux/COPYING for more information.
  */
 #include <linux/init.h>
 #include <linux/platform_device.h>
@@ -15,7 +17,7 @@
 #include <mach/microdev.h>
 #include <asm/io.h>
 #include <asm/machvec.h>
-#include <linux/sizes.h>
+#include <asm/sizes.h>
 
 static struct resource smc91x_resources[] = {
 	[0] = {

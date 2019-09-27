@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 	.text
 	.globl __kernel_vsyscall
 	.type __kernel_vsyscall,@function

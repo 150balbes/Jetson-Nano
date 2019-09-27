@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __UM_CACHE_H
 #define __UM_CACHE_H
 

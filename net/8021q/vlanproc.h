@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __BEN_VLAN_PROC_INC__
 #define __BEN_VLAN_PROC_INC__
 

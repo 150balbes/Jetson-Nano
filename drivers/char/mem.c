@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  *  linux/drivers/char/mem.c
  *
@@ -107,8 +106,6 @@ static ssize_t read_mem(struct file *file, char __user *buf,
 	phys_addr_t p = *ppos;
 	ssize_t read, sz;
 	void *ptr;
-	char *bounce;
-	int err;
 
 	if (p != *ppos)
 		return 0;
@@ -131,22 +128,15 @@ static ssize_t read_mem(struct file *file, char __user *buf,
 	}
 #endif
 
-	bounce = kmalloc(PAGE_SIZE, GFP_KERNEL);
-	if (!bounce)
-		return -ENOMEM;
-
 	while (count > 0) {
 		unsigned long remaining;
-		int allowed, probe;
+		int allowed;
 
 		sz = size_inside_page(p, count);
 
-		err = -EPERM;
 		allowed = page_is_allowed(p >> PAGE_SHIFT);
 		if (!allowed)
-			goto failed;
-
-		err = -EFAULT;
+			return -EPERM;
 		if (allowed == 2) {
 			/* Show zeros for restricted memory. */
 			remaining = clear_user(buf, sz);
@@ -158,32 +148,24 @@ static ssize_t read_mem(struct file *file, char __user *buf,
 			 */
 			ptr = xlate_dev_mem_ptr(p);
 			if (!ptr)
-				goto failed;
+				return -EFAULT;
 
-			probe = probe_kernel_read(bounce, ptr, sz);
+			remaining = copy_to_user(buf, ptr, sz);
+
 			unxlate_dev_mem_ptr(p, ptr);
-			if (probe)
-				goto failed;
-
-			remaining = copy_to_user(buf, bounce, sz);
 		}
 
 		if (remaining)
-			goto failed;
+			return -EFAULT;
 
 		buf += sz;
 		p += sz;
 		count -= sz;
 		read += sz;
 	}
-	kfree(bounce);
 
 	*ppos += read;
 	return read;
-
-failed:
-	kfree(bounce);
-	return err;
 }
 
 static ssize_t write_mem(struct file *file, const char __user *buf,
@@ -359,10 +341,6 @@ static int mmap_mem(struct file *file, struct vm_area_struct *vma)
 {
 	size_t size = vma->vm_end - vma->vm_start;
 	phys_addr_t offset = (phys_addr_t)vma->vm_pgoff << PAGE_SHIFT;
-
-	/* Does it even fit in phys_addr_t? */
-	if (offset >> PAGE_SHIFT != vma->vm_pgoff)
-		return -EINVAL;
 
 	/* It's illegal to wrap around the end of the physical address space. */
 	if (offset + (phys_addr_t)size - 1 < offset)
@@ -609,7 +587,7 @@ static ssize_t read_port(struct file *file, char __user *buf,
 	unsigned long i = *ppos;
 	char __user *tmp = buf;
 
-	if (!access_ok(buf, count))
+	if (!access_ok(VERIFY_WRITE, buf, count))
 		return -EFAULT;
 	while (count-- > 0 && i < 65536) {
 		if (__put_user(inb(i), tmp) < 0)
@@ -627,7 +605,7 @@ static ssize_t write_port(struct file *file, const char __user *buf,
 	unsigned long i = *ppos;
 	const char __user *tmp = buf;
 
-	if (!access_ok(buf, count))
+	if (!access_ok(VERIFY_READ, buf, count))
 		return -EFAULT;
 	while (count-- > 0 && i < 65536) {
 		char c;
@@ -708,7 +686,6 @@ static int mmap_zero(struct file *file, struct vm_area_struct *vma)
 #endif
 	if (vma->vm_flags & VM_SHARED)
 		return shmem_zero_setup(vma);
-	vma_set_anonymous(vma);
 	return 0;
 }
 
@@ -766,7 +743,6 @@ static loff_t memory_lseek(struct file *file, loff_t offset, int orig)
 	switch (orig) {
 	case SEEK_CUR:
 		offset += file->f_pos;
-		/* fall through */
 	case SEEK_SET:
 		/* to avoid userland mistaking f_pos=-9 as -EBADF=-9 */
 		if ((unsigned long long)offset >= -MAX_ERRNO) {

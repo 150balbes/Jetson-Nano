@@ -1,6 +1,16 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  *  Copyright (C) 2014, Samsung Electronics Co. Ltd. All Rights Reserved.
+ *
+ *  This program is free software; you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License as published by
+ *  the Free Software Foundation; either version 2 of the License, or
+ *  (at your option) any later version.
+ *
+ *  This program is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *  GNU General Public License for more details.
+ *
  */
 
 #include <linux/iio/iio.h>
@@ -165,9 +175,9 @@ static void ssp_wdt_work_func(struct work_struct *work)
 	data->timeout_cnt = 0;
 }
 
-static void ssp_wdt_timer_func(struct timer_list *t)
+static void ssp_wdt_timer_func(unsigned long ptr)
 {
-	struct ssp_data *data = from_timer(data, t, wdt_timer);
+	struct ssp_data *data = (struct ssp_data *)ptr;
 
 	switch (data->fw_dl_state) {
 	case SSP_FW_DL_STATE_FAIL:
@@ -452,35 +462,43 @@ static struct ssp_data *ssp_parse_dt(struct device *dev)
 
 	data->mcu_ap_gpio = of_get_named_gpio(node, "mcu-ap-gpios", 0);
 	if (data->mcu_ap_gpio < 0)
-		return NULL;
+		goto err_free_pd;
 
 	data->ap_mcu_gpio = of_get_named_gpio(node, "ap-mcu-gpios", 0);
 	if (data->ap_mcu_gpio < 0)
-		return NULL;
+		goto err_free_pd;
 
 	data->mcu_reset_gpio = of_get_named_gpio(node, "mcu-reset-gpios", 0);
 	if (data->mcu_reset_gpio < 0)
-		return NULL;
+		goto err_free_pd;
 
 	ret = devm_gpio_request_one(dev, data->ap_mcu_gpio, GPIOF_OUT_INIT_HIGH,
 				    "ap-mcu-gpios");
 	if (ret)
-		return NULL;
+		goto err_free_pd;
 
 	ret = devm_gpio_request_one(dev, data->mcu_reset_gpio,
 				    GPIOF_OUT_INIT_HIGH, "mcu-reset-gpios");
 	if (ret)
-		return NULL;
+		goto err_ap_mcu;
 
 	match = of_match_node(ssp_of_match, node);
 	if (!match)
-		return NULL;
+		goto err_mcu_reset_gpio;
 
-	data->sensorhub_info = match->data;
+	data->sensorhub_info = (struct ssp_sensorhub_info *)match->data;
 
 	dev_set_drvdata(dev, data);
 
 	return data;
+
+err_mcu_reset_gpio:
+	devm_gpio_free(dev, data->mcu_reset_gpio);
+err_ap_mcu:
+	devm_gpio_free(dev, data->ap_mcu_gpio);
+err_free_pd:
+	devm_kfree(dev, data);
+	return NULL;
 }
 #else
 static struct ssp_data *ssp_parse_dt(struct device *pdev)
@@ -553,7 +571,7 @@ static int ssp_probe(struct spi_device *spi)
 	INIT_WORK(&data->work_wdt, ssp_wdt_work_func);
 	INIT_DELAYED_WORK(&data->work_refresh, ssp_refresh_task);
 
-	timer_setup(&data->wdt_timer, ssp_wdt_timer_func, 0);
+	setup_timer(&data->wdt_timer, ssp_wdt_timer_func, (unsigned long)data);
 
 	ret = request_threaded_irq(data->spi->irq, NULL,
 				   ssp_irq_thread_fn,

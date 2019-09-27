@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * ip28-berr.c: Bus error handling.
  *
@@ -9,8 +8,6 @@
 #include <linux/init.h>
 #include <linux/kernel.h>
 #include <linux/sched.h>
-#include <linux/sched/debug.h>
-#include <linux/sched/signal.h>
 #include <linux/seq_file.h>
 
 #include <asm/addrspace.h>
@@ -22,7 +19,7 @@
 #include <asm/sgi/ioc.h>
 #include <asm/sgi/ip22.h>
 #include <asm/r4kcache.h>
-#include <linux/uaccess.h>
+#include <asm/uaccess.h>
 #include <asm/bootinfo.h>
 
 static unsigned int count_be_is_fixup;
@@ -462,9 +459,9 @@ void ip22_be_interrupt(int irq)
 	if (ip28_be_interrupt(regs) != MIPS_BE_DISCARD) {
 		/* Assume it would be too dangerous to continue ... */
 		die_if_kernel("Oops", regs);
-		force_sig(SIGBUS);
+		force_sig(SIGBUS, current);
 	} else if (debug_be_interrupt)
-		show_regs(regs);
+		show_regs((struct pt_regs *)regs);
 }
 
 static int ip28_be_handler(struct pt_regs *regs, int is_fixup)

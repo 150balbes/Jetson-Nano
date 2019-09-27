@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0+
 /*
  * Freescale STMP37XX/STMP378X Real Time Clock driver
  *
@@ -8,6 +7,15 @@
  * Copyright 2008 Freescale Semiconductor, Inc. All Rights Reserved.
  * Copyright 2008 Embedded Alley Solutions, Inc All Rights Reserved.
  * Copyright 2011 Wolfram Sang, Pengutronix e.K.
+ */
+
+/*
+ * The code contained herein is licensed under the GNU General Public
+ * License. You may obtain a copy of the GNU General Public License
+ * Version 2 or later at the following locations:
+ *
+ * http://www.opensource.org/licenses/gpl-license.html
+ * http://www.gnu.org/copyleft/gpl.html
  */
 #include <linux/kernel.h>
 #include <linux/module.h>
@@ -152,15 +160,15 @@ static int stmp3xxx_rtc_gettime(struct device *dev, struct rtc_time *rtc_tm)
 	if (ret)
 		return ret;
 
-	rtc_time64_to_tm(readl(rtc_data->io + STMP3XXX_RTC_SECONDS), rtc_tm);
+	rtc_time_to_tm(readl(rtc_data->io + STMP3XXX_RTC_SECONDS), rtc_tm);
 	return 0;
 }
 
-static int stmp3xxx_rtc_settime(struct device *dev, struct rtc_time *rtc_tm)
+static int stmp3xxx_rtc_set_mmss(struct device *dev, unsigned long t)
 {
 	struct stmp3xxx_rtc_data *rtc_data = dev_get_drvdata(dev);
 
-	writel(rtc_tm_to_time64(rtc_tm), rtc_data->io + STMP3XXX_RTC_SECONDS);
+	writel(t, rtc_data->io + STMP3XXX_RTC_SECONDS);
 	return stmp3xxx_wait_time(rtc_data);
 }
 
@@ -206,15 +214,17 @@ static int stmp3xxx_rtc_read_alarm(struct device *dev, struct rtc_wkalrm *alm)
 {
 	struct stmp3xxx_rtc_data *rtc_data = dev_get_drvdata(dev);
 
-	rtc_time64_to_tm(readl(rtc_data->io + STMP3XXX_RTC_ALARM), &alm->time);
+	rtc_time_to_tm(readl(rtc_data->io + STMP3XXX_RTC_ALARM), &alm->time);
 	return 0;
 }
 
 static int stmp3xxx_rtc_set_alarm(struct device *dev, struct rtc_wkalrm *alm)
 {
+	unsigned long t;
 	struct stmp3xxx_rtc_data *rtc_data = dev_get_drvdata(dev);
 
-	writel(rtc_tm_to_time64(&alm->time), rtc_data->io + STMP3XXX_RTC_ALARM);
+	rtc_tm_to_time(&alm->time, &t);
+	writel(t, rtc_data->io + STMP3XXX_RTC_ALARM);
 
 	stmp3xxx_alarm_irq_enable(dev, alm->enabled);
 
@@ -225,7 +235,7 @@ static const struct rtc_class_ops stmp3xxx_rtc_ops = {
 	.alarm_irq_enable =
 			  stmp3xxx_alarm_irq_enable,
 	.read_time	= stmp3xxx_rtc_gettime,
-	.set_time	= stmp3xxx_rtc_settime,
+	.set_mmss	= stmp3xxx_rtc_set_mmss,
 	.read_alarm	= stmp3xxx_rtc_read_alarm,
 	.set_alarm	= stmp3xxx_rtc_set_alarm,
 };
@@ -278,22 +288,10 @@ static int stmp3xxx_rtc_probe(struct platform_device *pdev)
 
 	platform_set_drvdata(pdev, rtc_data);
 
-	/*
-	 * Resetting the rtc stops the watchdog timer that is potentially
-	 * running. So (assuming it is running on purpose) don't reset if the
-	 * watchdog is enabled.
-	 */
-	if (readl(rtc_data->io + STMP3XXX_RTC_CTRL) &
-	    STMP3XXX_RTC_CTRL_WATCHDOGEN) {
-		dev_info(&pdev->dev,
-			 "Watchdog is running, skip resetting rtc\n");
-	} else {
-		err = stmp_reset_block(rtc_data->io);
-		if (err) {
-			dev_err(&pdev->dev, "stmp_reset_block failed: %d\n",
-				err);
-			return err;
-		}
+	err = stmp_reset_block(rtc_data->io);
+	if (err) {
+		dev_err(&pdev->dev, "stmp_reset_block failed: %d\n", err);
+		return err;
 	}
 
 	/*
@@ -351,7 +349,8 @@ static int stmp3xxx_rtc_probe(struct platform_device *pdev)
 			STMP3XXX_RTC_CTRL_ALARM_IRQ_EN,
 		rtc_data->io + STMP3XXX_RTC_CTRL + STMP_OFFSET_REG_CLR);
 
-	rtc_data->rtc = devm_rtc_allocate_device(&pdev->dev);
+	rtc_data->rtc = devm_rtc_device_register(&pdev->dev, pdev->name,
+				&stmp3xxx_rtc_ops, THIS_MODULE);
 	if (IS_ERR(rtc_data->rtc))
 		return PTR_ERR(rtc_data->rtc);
 
@@ -362,13 +361,6 @@ static int stmp3xxx_rtc_probe(struct platform_device *pdev)
 			rtc_data->irq_alarm);
 		return err;
 	}
-
-	rtc_data->rtc->ops = &stmp3xxx_rtc_ops;
-	rtc_data->rtc->range_max = U32_MAX;
-
-	err = rtc_register_device(rtc_data->rtc);
-	if (err)
-		return err;
 
 	stmp3xxx_wdt_register(pdev);
 	return 0;

@@ -32,12 +32,9 @@
  */
 
 #include <linux/export.h>
+#include <drm/drmP.h>
 
 #include <drm/ati_pcigart.h>
-#include <drm/drm_device.h>
-#include <drm/drm_os_linux.h>
-#include <drm/drm_pci.h>
-#include <drm/drm_print.h>
 
 # define ATI_PCIGART_PAGE_SIZE		4096	/**< PCI GART page size */
 
@@ -106,7 +103,7 @@ int drm_ati_pcigart_init(struct drm_device *dev, struct drm_ati_pcigart_info *ga
 	unsigned long pages;
 	u32 *pci_gart = NULL, page_base, gart_idx;
 	dma_addr_t bus_address = 0;
-	int i, j, ret = -ENOMEM;
+	int i, j, ret = 0;
 	int max_ati_pages, max_real_pages;
 
 	if (!entry) {
@@ -120,7 +117,7 @@ int drm_ati_pcigart_init(struct drm_device *dev, struct drm_ati_pcigart_info *ga
 		if (pci_set_dma_mask(dev->pdev, gart_info->table_mask)) {
 			DRM_ERROR("fail to set dma mask to 0x%Lx\n",
 				  (unsigned long long)gart_info->table_mask);
-			ret = -EFAULT;
+			ret = 1;
 			goto done;
 		}
 
@@ -163,7 +160,6 @@ int drm_ati_pcigart_init(struct drm_device *dev, struct drm_ati_pcigart_info *ga
 			drm_ati_pcigart_cleanup(dev, gart_info);
 			address = NULL;
 			bus_address = 0;
-			ret = -ENOMEM;
 			goto done;
 		}
 		page_base = (u32) entry->busaddr[i];
@@ -192,7 +188,7 @@ int drm_ati_pcigart_init(struct drm_device *dev, struct drm_ati_pcigart_info *ga
 			page_base += ATI_PCIGART_PAGE_SIZE;
 		}
 	}
-	ret = 0;
+	ret = 1;
 
 #if defined(__i386__) || defined(__x86_64__)
 	wbinvd();

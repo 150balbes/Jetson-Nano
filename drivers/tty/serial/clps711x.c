@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0+
 /*
  *  Driver for CLPS711x serial ports
  *
@@ -6,6 +5,11 @@
  *
  *  Copyright 1999 ARM Limited
  *  Copyright (C) 2000 Deep Blue Solutions Ltd.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
  */
 
 #if defined(CONFIG_SERIAL_CLPS711X_CONSOLE) && defined(CONFIG_MAGIC_SYSRQ)
@@ -442,10 +446,14 @@ static struct console clps711x_console = {
 static int uart_clps711x_probe(struct platform_device *pdev)
 {
 	struct device_node *np = pdev->dev.of_node;
+	int ret, index = np ? of_alias_get_id(np, "serial") : pdev->id;
 	struct clps711x_port *s;
 	struct resource *res;
 	struct clk *uart_clk;
-	int irq, ret;
+	int irq;
+
+	if (index < 0 || index >= UART_CLPS711X_NR)
+		return -EINVAL;
 
 	s = devm_kzalloc(&pdev->dev, sizeof(*s), GFP_KERNEL);
 	if (!s)
@@ -469,11 +477,20 @@ static int uart_clps711x_probe(struct platform_device *pdev)
 	if (s->rx_irq < 0)
 		return s->rx_irq;
 
-	s->syscon = syscon_regmap_lookup_by_phandle(np, "syscon");
-	if (IS_ERR(s->syscon))
-		return PTR_ERR(s->syscon);
+	if (!np) {
+		char syscon_name[9];
 
-	s->port.line		= of_alias_get_id(np, "serial");
+		sprintf(syscon_name, "syscon.%i", index + 1);
+		s->syscon = syscon_regmap_lookup_by_pdevname(syscon_name);
+		if (IS_ERR(s->syscon))
+			return PTR_ERR(s->syscon);
+	} else {
+		s->syscon = syscon_regmap_lookup_by_phandle(np, "syscon");
+		if (IS_ERR(s->syscon))
+			return PTR_ERR(s->syscon);
+	}
+
+	s->port.line		= index;
 	s->port.dev		= &pdev->dev;
 	s->port.iotype		= UPIO_MEM32;
 	s->port.mapbase		= res->start;

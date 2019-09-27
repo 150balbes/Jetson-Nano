@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __ASM_ADC_H
 #define __ASM_ADC_H
 #ifdef __KERNEL__

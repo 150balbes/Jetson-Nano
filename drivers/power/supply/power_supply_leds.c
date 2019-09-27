@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  *  LEDs triggers for power supply class
  *
@@ -7,6 +6,8 @@
  *  Copyright © 2003  Ian Molton <spyro@f2s.com>
  *
  *  Modified: 2004, Oct     Szabolcs Gyurko
+ *
+ *  You may use this code as per GPL version 2
  */
 
 #include <linux/kernel.h>

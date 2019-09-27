@@ -37,43 +37,17 @@
 
 #include <rdma/ib_user_verbs.h>
 #include <rdma/ib_addr.h>
-#include <rdma/uverbs_ioctl.h>
 
 #include "usnic_abi.h"
 #include "usnic_ib.h"
 #include "usnic_common_util.h"
 #include "usnic_ib_qp_grp.h"
-#include "usnic_ib_verbs.h"
 #include "usnic_fwd.h"
 #include "usnic_log.h"
 #include "usnic_uiom.h"
 #include "usnic_transport.h"
 
 #define USNIC_DEFAULT_TRANSPORT USNIC_TRANSPORT_ROCE_CUSTOM
-
-const struct usnic_vnic_res_spec min_transport_spec[USNIC_TRANSPORT_MAX] = {
-	{ /*USNIC_TRANSPORT_UNKNOWN*/
-		.resources = {
-			{.type = USNIC_VNIC_RES_TYPE_EOL,	.cnt = 0,},
-		},
-	},
-	{ /*USNIC_TRANSPORT_ROCE_CUSTOM*/
-		.resources = {
-			{.type = USNIC_VNIC_RES_TYPE_WQ,	.cnt = 1,},
-			{.type = USNIC_VNIC_RES_TYPE_RQ,	.cnt = 1,},
-			{.type = USNIC_VNIC_RES_TYPE_CQ,	.cnt = 1,},
-			{.type = USNIC_VNIC_RES_TYPE_EOL,	.cnt = 0,},
-		},
-	},
-	{ /*USNIC_TRANSPORT_IPV4_UDP*/
-		.resources = {
-			{.type = USNIC_VNIC_RES_TYPE_WQ,	.cnt = 1,},
-			{.type = USNIC_VNIC_RES_TYPE_RQ,	.cnt = 1,},
-			{.type = USNIC_VNIC_RES_TYPE_CQ,	.cnt = 1,},
-			{.type = USNIC_VNIC_RES_TYPE_EOL,	.cnt = 0,},
-		},
-	},
-};
 
 static void usnic_ib_fw_string_to_u64(char *fw_ver_str, u64 *fw_ver)
 {
@@ -113,12 +87,12 @@ static int usnic_ib_fill_create_qp_resp(struct usnic_ib_qp_grp *qp_grp,
 	resp.bar_len = bar->len;
 
 	chunk = usnic_ib_qp_grp_get_chunk(qp_grp, USNIC_VNIC_RES_TYPE_RQ);
-	if (IS_ERR(chunk)) {
+	if (IS_ERR_OR_NULL(chunk)) {
 		usnic_err("Failed to get chunk %s for qp_grp %d with err %ld\n",
 			usnic_vnic_res_type_to_str(USNIC_VNIC_RES_TYPE_RQ),
 			qp_grp->grp_id,
 			PTR_ERR(chunk));
-		return PTR_ERR(chunk);
+		return chunk ? PTR_ERR(chunk) : -ENOMEM;
 	}
 
 	WARN_ON(chunk->type != USNIC_VNIC_RES_TYPE_RQ);
@@ -127,12 +101,12 @@ static int usnic_ib_fill_create_qp_resp(struct usnic_ib_qp_grp *qp_grp,
 		resp.rq_idx[i] = chunk->res[i]->vnic_idx;
 
 	chunk = usnic_ib_qp_grp_get_chunk(qp_grp, USNIC_VNIC_RES_TYPE_WQ);
-	if (IS_ERR(chunk)) {
+	if (IS_ERR_OR_NULL(chunk)) {
 		usnic_err("Failed to get chunk %s for qp_grp %d with err %ld\n",
 			usnic_vnic_res_type_to_str(USNIC_VNIC_RES_TYPE_WQ),
 			qp_grp->grp_id,
 			PTR_ERR(chunk));
-		return PTR_ERR(chunk);
+		return chunk ? PTR_ERR(chunk) : -ENOMEM;
 	}
 
 	WARN_ON(chunk->type != USNIC_VNIC_RES_TYPE_WQ);
@@ -141,12 +115,12 @@ static int usnic_ib_fill_create_qp_resp(struct usnic_ib_qp_grp *qp_grp,
 		resp.wq_idx[i] = chunk->res[i]->vnic_idx;
 
 	chunk = usnic_ib_qp_grp_get_chunk(qp_grp, USNIC_VNIC_RES_TYPE_CQ);
-	if (IS_ERR(chunk)) {
+	if (IS_ERR_OR_NULL(chunk)) {
 		usnic_err("Failed to get chunk %s for qp_grp %d with err %ld\n",
 			usnic_vnic_res_type_to_str(USNIC_VNIC_RES_TYPE_CQ),
 			qp_grp->grp_id,
 			PTR_ERR(chunk));
-		return PTR_ERR(chunk);
+		return chunk ? PTR_ERR(chunk) : -ENOMEM;
 	}
 
 	WARN_ON(chunk->type != USNIC_VNIC_RES_TYPE_CQ);
@@ -160,8 +134,7 @@ static int usnic_ib_fill_create_qp_resp(struct usnic_ib_qp_grp *qp_grp,
 
 	err = ib_copy_to_udata(udata, &resp, sizeof(resp));
 	if (err) {
-		usnic_err("Failed to copy udata for %s",
-			  dev_name(&us_ibdev->ib_dev.dev));
+		usnic_err("Failed to copy udata for %s", us_ibdev->ib_dev.name);
 		return err;
 	}
 
@@ -178,7 +151,7 @@ find_free_vf_and_create_qp_grp(struct usnic_ib_dev *us_ibdev,
 	struct usnic_vnic *vnic;
 	struct usnic_ib_qp_grp *qp_grp;
 	struct device *dev, **dev_list;
-	int i;
+	int i, found = 0;
 
 	BUG_ON(!mutex_is_locked(&us_ibdev->usdev_lock));
 
@@ -190,8 +163,6 @@ find_free_vf_and_create_qp_grp(struct usnic_ib_dev *us_ibdev,
 	if (usnic_ib_share_vf) {
 		/* Try to find resouces on a used vf which is in pd */
 		dev_list = usnic_uiom_get_dev_list(pd->umem_pd);
-		if (IS_ERR(dev_list))
-			return ERR_CAST(dev_list);
 		for (i = 0; dev_list[i]; i++) {
 			dev = dev_list[i];
 			vf = pci_get_drvdata(to_pci_dev(dev));
@@ -199,16 +170,11 @@ find_free_vf_and_create_qp_grp(struct usnic_ib_dev *us_ibdev,
 			vnic = vf->vnic;
 			if (!usnic_vnic_check_room(vnic, res_spec)) {
 				usnic_dbg("Found used vnic %s from %s\n",
-						dev_name(&us_ibdev->ib_dev.dev),
+						us_ibdev->ib_dev.name,
 						pci_name(usnic_vnic_get_pdev(
 									vnic)));
-				qp_grp = usnic_ib_qp_grp_create(us_ibdev->ufdev,
-								vf, pd,
-								res_spec,
-								trans_spec);
-
-				spin_unlock(&vf->lock);
-				goto qp_grp_check;
+				found = 1;
+				break;
 			}
 			spin_unlock(&vf->lock);
 
@@ -216,31 +182,34 @@ find_free_vf_and_create_qp_grp(struct usnic_ib_dev *us_ibdev,
 		usnic_uiom_free_dev_list(dev_list);
 	}
 
-	/* Try to find resources on an unused vf */
-	list_for_each_entry(vf, &us_ibdev->vf_dev_list, link) {
-		spin_lock(&vf->lock);
-		vnic = vf->vnic;
-		if (vf->qp_grp_ref_cnt == 0 &&
-		    usnic_vnic_check_room(vnic, res_spec) == 0) {
-			qp_grp = usnic_ib_qp_grp_create(us_ibdev->ufdev, vf,
-							pd, res_spec,
-							trans_spec);
-
+	if (!found) {
+		/* Try to find resources on an unused vf */
+		list_for_each_entry(vf, &us_ibdev->vf_dev_list, link) {
+			spin_lock(&vf->lock);
+			vnic = vf->vnic;
+			if (vf->qp_grp_ref_cnt == 0 &&
+				usnic_vnic_check_room(vnic, res_spec) == 0) {
+				found = 1;
+				break;
+			}
 			spin_unlock(&vf->lock);
-			goto qp_grp_check;
 		}
-		spin_unlock(&vf->lock);
 	}
 
-	usnic_info("No free qp grp found on %s\n",
-		   dev_name(&us_ibdev->ib_dev.dev));
-	return ERR_PTR(-ENOMEM);
+	if (!found) {
+		usnic_info("No free qp grp found on %s\n",
+				us_ibdev->ib_dev.name);
+		return ERR_PTR(-ENOMEM);
+	}
 
-qp_grp_check:
+	qp_grp = usnic_ib_qp_grp_create(us_ibdev->ufdev, vf, pd, res_spec,
+						trans_spec);
+	spin_unlock(&vf->lock);
 	if (IS_ERR_OR_NULL(qp_grp)) {
 		usnic_err("Failed to allocate qp_grp\n");
 		return ERR_PTR(qp_grp ? PTR_ERR(qp_grp) : -ENOMEM);
 	}
+
 	return qp_grp;
 }
 
@@ -253,6 +222,27 @@ static void qp_grp_destroy(struct usnic_ib_qp_grp *qp_grp)
 	spin_lock(&vf->lock);
 	usnic_ib_qp_grp_destroy(qp_grp);
 	spin_unlock(&vf->lock);
+}
+
+static void eth_speed_to_ib_speed(int speed, u8 *active_speed,
+					u8 *active_width)
+{
+	if (speed <= 10000) {
+		*active_width = IB_WIDTH_1X;
+		*active_speed = IB_SPEED_FDR10;
+	} else if (speed <= 20000) {
+		*active_width = IB_WIDTH_4X;
+		*active_speed = IB_SPEED_DDR;
+	} else if (speed <= 30000) {
+		*active_width = IB_WIDTH_4X;
+		*active_speed = IB_SPEED_QDR;
+	} else if (speed <= 40000) {
+		*active_width = IB_WIDTH_4X;
+		*active_speed = IB_SPEED_FDR10;
+	} else {
+		*active_width = IB_WIDTH_4X;
+		*active_speed = IB_SPEED_EDR;
+	}
 }
 
 static int create_qp_validate_user_data(struct usnic_ib_create_qp_cmd cmd)
@@ -301,11 +291,11 @@ int usnic_ib_query_device(struct ib_device *ibdev,
 	qp_per_vf = max(us_ibdev->vf_res_cnt[USNIC_VNIC_RES_TYPE_WQ],
 			us_ibdev->vf_res_cnt[USNIC_VNIC_RES_TYPE_RQ]);
 	props->max_qp = qp_per_vf *
-		kref_read(&us_ibdev->vf_cnt);
+		atomic_read(&us_ibdev->vf_cnt.refcount);
 	props->device_cap_flags = IB_DEVICE_PORT_ACTIVE_EVENT |
 		IB_DEVICE_SYS_IMAGE_GUID | IB_DEVICE_BLOCK_MULTICAST_LOOPBACK;
 	props->max_cq = us_ibdev->vf_res_cnt[USNIC_VNIC_RES_TYPE_CQ] *
-		kref_read(&us_ibdev->vf_cnt);
+		atomic_read(&us_ibdev->vf_cnt.refcount);
 	props->max_pd = USNIC_UIOM_MAX_PD_CNT;
 	props->max_mr = USNIC_UIOM_MAX_MR_CNT;
 	props->local_ca_ack_delay = 0;
@@ -334,20 +324,13 @@ int usnic_ib_query_port(struct ib_device *ibdev, u8 port,
 				struct ib_port_attr *props)
 {
 	struct usnic_ib_dev *us_ibdev = to_usdev(ibdev);
+	struct ethtool_link_ksettings cmd;
 
 	usnic_dbg("\n");
 
-	if (ib_get_eth_speed(ibdev, port, &props->active_speed,
-			     &props->active_width))
-		return -EINVAL;
-
-	/*
-	 * usdev_lock is acquired after (and not before) ib_get_eth_speed call
-	 * because acquiring rtnl_lock in ib_get_eth_speed, while holding
-	 * usdev_lock could lead to a deadlock.
-	 */
 	mutex_lock(&us_ibdev->usdev_lock);
-	/* props being zeroed by the caller, avoid zeroing it here */
+	__ethtool_get_link_ksettings(us_ibdev->netdev, &cmd);
+	memset(props, 0, sizeof(*props));
 
 	props->lid = 0;
 	props->lmc = 1;
@@ -370,6 +353,8 @@ int usnic_ib_query_port(struct ib_device *ibdev, u8 port,
 	props->pkey_tbl_len = 1;
 	props->bad_pkey_cntr = 0;
 	props->qkey_viol_cntr = 0;
+	eth_speed_to_ib_speed(cmd.base.speed, &props->active_speed,
+			      &props->active_width);
 	props->max_mtu = IB_MTU_4096;
 	props->active_mtu = iboe_get_mtu(us_ibdev->ufdev->mtu);
 	/* Userspace will adjust for hdrs */
@@ -440,29 +425,44 @@ int usnic_ib_query_gid(struct ib_device *ibdev, u8 port, int index,
 int usnic_ib_query_pkey(struct ib_device *ibdev, u8 port, u16 index,
 				u16 *pkey)
 {
-	if (index > 0)
+	if (index > 1)
 		return -EINVAL;
 
 	*pkey = 0xffff;
 	return 0;
 }
 
-int usnic_ib_alloc_pd(struct ib_pd *ibpd, struct ib_udata *udata)
+struct ib_pd *usnic_ib_alloc_pd(struct ib_device *ibdev,
+					struct ib_ucontext *context,
+					struct ib_udata *udata)
 {
-	struct usnic_ib_pd *pd = to_upd(ibpd);
+	struct usnic_ib_pd *pd;
 	void *umem_pd;
+
+	usnic_dbg("\n");
+
+	pd = kzalloc(sizeof(*pd), GFP_KERNEL);
+	if (!pd)
+		return ERR_PTR(-ENOMEM);
 
 	umem_pd = pd->umem_pd = usnic_uiom_alloc_pd();
 	if (IS_ERR_OR_NULL(umem_pd)) {
-		return umem_pd ? PTR_ERR(umem_pd) : -ENOMEM;
+		kfree(pd);
+		return ERR_PTR(umem_pd ? PTR_ERR(umem_pd) : -ENOMEM);
 	}
 
-	return 0;
+	usnic_info("domain 0x%p allocated for context 0x%p and device %s\n",
+			pd, context, ibdev->name);
+	return &pd->ibpd;
 }
 
-void usnic_ib_dealloc_pd(struct ib_pd *pd, struct ib_udata *udata)
+int usnic_ib_dealloc_pd(struct ib_pd *pd)
 {
+	usnic_info("freeing domain 0x%p\n", pd);
+
 	usnic_uiom_dealloc_pd((to_upd(pd))->umem_pd);
+	kfree(pd);
+	return 0;
 }
 
 struct ib_qp *usnic_ib_create_qp(struct ib_pd *pd,
@@ -472,8 +472,7 @@ struct ib_qp *usnic_ib_create_qp(struct ib_pd *pd,
 	int err;
 	struct usnic_ib_dev *us_ibdev;
 	struct usnic_ib_qp_grp *qp_grp;
-	struct usnic_ib_ucontext *ucontext = rdma_udata_to_drv_context(
-		udata, struct usnic_ib_ucontext, ibucontext);
+	struct usnic_ib_ucontext *ucontext;
 	int cq_cnt;
 	struct usnic_vnic_res_spec res_spec;
 	struct usnic_ib_create_qp_cmd cmd;
@@ -481,6 +480,7 @@ struct ib_qp *usnic_ib_create_qp(struct ib_pd *pd,
 
 	usnic_dbg("\n");
 
+	ucontext = to_uucontext(pd->uobject->context);
 	us_ibdev = to_usdev(pd->device);
 
 	if (init_attr->create_flags)
@@ -489,20 +489,20 @@ struct ib_qp *usnic_ib_create_qp(struct ib_pd *pd,
 	err = ib_copy_from_udata(&cmd, udata, sizeof(cmd));
 	if (err) {
 		usnic_err("%s: cannot copy udata for create_qp\n",
-			  dev_name(&us_ibdev->ib_dev.dev));
+				us_ibdev->ib_dev.name);
 		return ERR_PTR(-EINVAL);
 	}
 
 	err = create_qp_validate_user_data(cmd);
 	if (err) {
 		usnic_err("%s: Failed to validate user data\n",
-			  dev_name(&us_ibdev->ib_dev.dev));
+				us_ibdev->ib_dev.name);
 		return ERR_PTR(-EINVAL);
 	}
 
 	if (init_attr->qp_type != IB_QPT_UD) {
 		usnic_err("%s asked to make a non-UD QP: %d\n",
-			  dev_name(&us_ibdev->ib_dev.dev), init_attr->qp_type);
+				us_ibdev->ib_dev.name, init_attr->qp_type);
 		return ERR_PTR(-EINVAL);
 	}
 
@@ -538,7 +538,7 @@ out_release_mutex:
 	return ERR_PTR(err);
 }
 
-int usnic_ib_destroy_qp(struct ib_qp *qp, struct ib_udata *udata)
+int usnic_ib_destroy_qp(struct ib_qp *qp)
 {
 	struct usnic_ib_qp_grp *qp_grp;
 	struct usnic_ib_vf *vf;
@@ -587,18 +587,29 @@ out_unlock:
 	return status;
 }
 
-int usnic_ib_create_cq(struct ib_cq *ibcq, const struct ib_cq_init_attr *attr,
-		       struct ib_udata *udata)
+struct ib_cq *usnic_ib_create_cq(struct ib_device *ibdev,
+				 const struct ib_cq_init_attr *attr,
+				 struct ib_ucontext *context,
+				 struct ib_udata *udata)
 {
-	if (attr->flags)
-		return -EINVAL;
+	struct ib_cq *cq;
 
-	return 0;
+	usnic_dbg("\n");
+	if (attr->flags)
+		return ERR_PTR(-EINVAL);
+
+	cq = kzalloc(sizeof(*cq), GFP_KERNEL);
+	if (!cq)
+		return ERR_PTR(-EBUSY);
+
+	return cq;
 }
 
-void usnic_ib_destroy_cq(struct ib_cq *cq, struct ib_udata *udata)
+int usnic_ib_destroy_cq(struct ib_cq *cq)
 {
-	return;
+	usnic_dbg("\n");
+	kfree(cq);
+	return 0;
 }
 
 struct ib_mr *usnic_ib_reg_mr(struct ib_pd *pd, u64 start, u64 length,
@@ -630,42 +641,48 @@ err_free:
 	return ERR_PTR(err);
 }
 
-int usnic_ib_dereg_mr(struct ib_mr *ibmr, struct ib_udata *udata)
+int usnic_ib_dereg_mr(struct ib_mr *ibmr)
 {
 	struct usnic_ib_mr *mr = to_umr(ibmr);
 
 	usnic_dbg("va 0x%lx length 0x%zx\n", mr->umem->va, mr->umem->length);
 
-	usnic_uiom_reg_release(mr->umem);
+	usnic_uiom_reg_release(mr->umem, ibmr->pd->uobject->context->closing);
 	kfree(mr);
 	return 0;
 }
 
-int usnic_ib_alloc_ucontext(struct ib_ucontext *uctx, struct ib_udata *udata)
+struct ib_ucontext *usnic_ib_alloc_ucontext(struct ib_device *ibdev,
+							struct ib_udata *udata)
 {
-	struct ib_device *ibdev = uctx->device;
-	struct usnic_ib_ucontext *context = to_ucontext(uctx);
+	struct usnic_ib_ucontext *context;
 	struct usnic_ib_dev *us_ibdev = to_usdev(ibdev);
 	usnic_dbg("\n");
+
+	context = kmalloc(sizeof(*context), GFP_KERNEL);
+	if (!context)
+		return ERR_PTR(-ENOMEM);
 
 	INIT_LIST_HEAD(&context->qp_grp_list);
 	mutex_lock(&us_ibdev->usdev_lock);
 	list_add_tail(&context->link, &us_ibdev->ctx_list);
 	mutex_unlock(&us_ibdev->usdev_lock);
 
-	return 0;
+	return &context->ibucontext;
 }
 
-void usnic_ib_dealloc_ucontext(struct ib_ucontext *ibcontext)
+int usnic_ib_dealloc_ucontext(struct ib_ucontext *ibcontext)
 {
 	struct usnic_ib_ucontext *context = to_uucontext(ibcontext);
 	struct usnic_ib_dev *us_ibdev = to_usdev(ibcontext->device);
 	usnic_dbg("\n");
 
 	mutex_lock(&us_ibdev->usdev_lock);
-	WARN_ON_ONCE(!list_empty(&context->qp_grp_list));
+	BUG_ON(!list_empty(&context->qp_grp_list));
 	list_del(&context->link);
 	mutex_unlock(&us_ibdev->usdev_lock);
+	kfree(context);
+	return 0;
 }
 
 int usnic_ib_mmap(struct ib_ucontext *context,
@@ -719,3 +736,54 @@ int usnic_ib_mmap(struct ib_ucontext *context,
 	return -EINVAL;
 }
 
+/* In ib callbacks section -  Start of stub funcs */
+struct ib_ah *usnic_ib_create_ah(struct ib_pd *pd,
+					struct ib_ah_attr *ah_attr)
+{
+	usnic_dbg("\n");
+	return ERR_PTR(-EPERM);
+}
+
+int usnic_ib_destroy_ah(struct ib_ah *ah)
+{
+	usnic_dbg("\n");
+	return -EINVAL;
+}
+
+int usnic_ib_post_send(struct ib_qp *ibqp, struct ib_send_wr *wr,
+				struct ib_send_wr **bad_wr)
+{
+	usnic_dbg("\n");
+	return -EINVAL;
+}
+
+int usnic_ib_post_recv(struct ib_qp *ibqp, struct ib_recv_wr *wr,
+				struct ib_recv_wr **bad_wr)
+{
+	usnic_dbg("\n");
+	return -EINVAL;
+}
+
+int usnic_ib_poll_cq(struct ib_cq *ibcq, int num_entries,
+				struct ib_wc *wc)
+{
+	usnic_dbg("\n");
+	return -EINVAL;
+}
+
+int usnic_ib_req_notify_cq(struct ib_cq *cq,
+					enum ib_cq_notify_flags flags)
+{
+	usnic_dbg("\n");
+	return -EINVAL;
+}
+
+struct ib_mr *usnic_ib_get_dma_mr(struct ib_pd *pd, int acc)
+{
+	usnic_dbg("\n");
+	return ERR_PTR(-ENOMEM);
+}
+
+
+/* In ib callbacks section - End of stub funcs */
+/* End of ib callbacks section */

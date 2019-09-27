@@ -1,8 +1,16 @@
-/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * VMware vSockets Driver
  *
  * Copyright (C) 2007-2013 VMware, Inc. All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License as published by the Free
+ * Software Foundation version 2 and no later version.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
  */
 
 #ifndef __AF_VSOCK_H__
@@ -14,12 +22,10 @@
 
 #include "vsock_addr.h"
 
-#define LAST_RESERVED_PORT 1023
+/* vsock-specific sock->sk_state constants */
+#define VSOCK_SS_LISTEN 255
 
-#define VSOCK_HASH_SIZE         251
-extern struct list_head vsock_bind_table[VSOCK_HASH_SIZE + 1];
-extern struct list_head vsock_connected_table[VSOCK_HASH_SIZE];
-extern spinlock_t vsock_table_lock;
+#define LAST_RESERVED_PORT 1023
 
 #define vsock_sk(__sk)    ((struct vsock_sock *)__sk)
 #define sk_vsock(__vsk)   (&(__vsk)->sk)
@@ -169,18 +175,6 @@ const struct vsock_transport *vsock_core_get_transport(void);
 
 /**** UTILS ****/
 
-/* vsock_table_lock must be held */
-static inline bool __vsock_in_bound_table(struct vsock_sock *vsk)
-{
-	return !list_empty(&vsk->bound_table);
-}
-
-/* vsock_table_lock must be held */
-static inline bool __vsock_in_connected_table(struct vsock_sock *vsk)
-{
-	return !list_empty(&vsk->connected_table);
-}
-
 void vsock_release_pending(struct sock *pending);
 void vsock_add_pending(struct sock *listener, struct sock *pending);
 void vsock_remove_pending(struct sock *listener, struct sock *pending);
@@ -193,18 +187,5 @@ struct sock *vsock_find_connected_socket(struct sockaddr_vm *src,
 					 struct sockaddr_vm *dst);
 void vsock_remove_sock(struct vsock_sock *vsk);
 void vsock_for_each_connected_socket(void (*fn)(struct sock *sk));
-
-/**** TAP ****/
-
-struct vsock_tap {
-	struct net_device *dev;
-	struct module *module;
-	struct list_head list;
-};
-
-int vsock_init_tap(void);
-int vsock_add_tap(struct vsock_tap *vt);
-int vsock_remove_tap(struct vsock_tap *vt);
-void vsock_deliver_tap(struct sk_buff *build_skb(void *opaque), void *opaque);
 
 #endif /* __AF_VSOCK_H__ */

@@ -23,15 +23,12 @@
  * TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE
  * OF THIS SOFTWARE.
  */
-
+#include <drm/drmP.h>
+#include <drm/drm_atomic.h>
+#include <drm/drm_blend.h>
 #include <linux/export.h>
 #include <linux/slab.h>
 #include <linux/sort.h>
-
-#include <drm/drm_atomic.h>
-#include <drm/drm_blend.h>
-#include <drm/drm_device.h>
-#include <drm/drm_print.h>
 
 #include "drm_crtc_internal.h"
 
@@ -43,8 +40,9 @@
  * sub-pixel accuracy, which is scaled up to a pixel-aligned destination
  * rectangle in the visible area of a &drm_crtc. The visible area of a CRTC is
  * defined by the horizontal and vertical visible pixels (stored in @hdisplay
- * and @vdisplay) of the requested mode (stored in &drm_crtc_state.mode). These
- * two rectangles are both stored in the &drm_plane_state.
+ * and @vdisplay) of the requested mode (stored in @mode in the
+ * &drm_crtc_state). These two rectangles are both stored in the
+ * &drm_plane_state.
  *
  * For the atomic ioctl the following standard (atomic) properties on the plane object
  * encode the basic plane composition model:
@@ -91,92 +89,15 @@
  * On top of this basic transformation additional properties can be exposed by
  * the driver:
  *
- * alpha:
- * 	Alpha is setup with drm_plane_create_alpha_property(). It controls the
- * 	plane-wide opacity, from transparent (0) to opaque (0xffff). It can be
- * 	combined with pixel alpha.
- *	The pixel values in the framebuffers are expected to not be
- *	pre-multiplied by the global alpha associated to the plane.
+ * - Rotation is set up with drm_mode_create_rotation_property(). It adds a
+ *   rotation and reflection step between the source and destination rectangles.
+ *   Without this property the rectangle is only scaled, but not rotated or
+ *   reflected.
  *
- * rotation:
- *	Rotation is set up with drm_plane_create_rotation_property(). It adds a
- *	rotation and reflection step between the source and destination rectangles.
- *	Without this property the rectangle is only scaled, but not rotated or
- *	reflected.
- *
- *	Possbile values:
- *
- *	"rotate-<degrees>":
- *		Signals that a drm plane is rotated <degrees> degrees in counter
- *		clockwise direction.
- *
- *	"reflect-<axis>":
- *		Signals that the contents of a drm plane is reflected along the
- *		<axis> axis, in the same way as mirroring.
- *
- *	reflect-x::
- *
- *			|o |    | o|
- *			|  | -> |  |
- *			| v|    |v |
- *
- *	reflect-y::
- *
- *			|o |    | ^|
- *			|  | -> |  |
- *			| v|    |o |
- *
- * zpos:
- *	Z position is set up with drm_plane_create_zpos_immutable_property() and
- *	drm_plane_create_zpos_property(). It controls the visibility of overlapping
- *	planes. Without this property the primary plane is always below the cursor
- *	plane, and ordering between all other planes is undefined.
- *
- * pixel blend mode:
- *	Pixel blend mode is set up with drm_plane_create_blend_mode_property().
- *	It adds a blend mode for alpha blending equation selection, describing
- *	how the pixels from the current plane are composited with the
- *	background.
- *
- *	 Three alpha blending equations are defined:
- *
- *	 "None":
- *		 Blend formula that ignores the pixel alpha::
- *
- *			 out.rgb = plane_alpha * fg.rgb +
- *				 (1 - plane_alpha) * bg.rgb
- *
- *	 "Pre-multiplied":
- *		 Blend formula that assumes the pixel color values
- *		 have been already pre-multiplied with the alpha
- *		 channel values::
- *
- *			 out.rgb = plane_alpha * fg.rgb +
- *				 (1 - (plane_alpha * fg.alpha)) * bg.rgb
- *
- *	 "Coverage":
- *		 Blend formula that assumes the pixel color values have not
- *		 been pre-multiplied and will do so when blending them to the
- *		 background color values::
- *
- *			 out.rgb = plane_alpha * fg.alpha * fg.rgb +
- *				 (1 - (plane_alpha * fg.alpha)) * bg.rgb
- *
- *	 Using the following symbols:
- *
- *	 "fg.rgb":
- *		 Each of the RGB component values from the plane's pixel
- *	 "fg.alpha":
- *		 Alpha component value from the plane's pixel. If the plane's
- *		 pixel format has no alpha component, then this is assumed to be
- *		 1.0. In these cases, this property has no effect, as all three
- *		 equations become equivalent.
- *	 "bg.rgb":
- *		 Each of the RGB component values from the background
- *	 "plane_alpha":
- *		 Plane alpha value set by the plane "alpha" property. If the
- *		 plane does not expose the "alpha" property, then this is
- *		 assumed to be 1.0
+ * - Z position is set up with drm_plane_create_zpos_immutable_property() and
+ *   drm_plane_create_zpos_property(). It controls the visibility of overlapping
+ *   planes. Without this property the primary plane is always below the cursor
+ *   plane, and ordering between all other planes is undefined.
  *
  * Note that all the property extensions described here apply either to the
  * plane or the CRTC (e.g. for the background color, which currently is not
@@ -184,44 +105,18 @@
  */
 
 /**
- * drm_plane_create_alpha_property - create a new alpha property
- * @plane: drm plane
- *
- * This function creates a generic, mutable, alpha property and enables support
- * for it in the DRM core. It is attached to @plane.
- *
- * The alpha property will be allowed to be within the bounds of 0
- * (transparent) to 0xffff (opaque).
- *
- * Returns:
- * 0 on success, negative error code on failure.
- */
-int drm_plane_create_alpha_property(struct drm_plane *plane)
-{
-	struct drm_property *prop;
-
-	prop = drm_property_create_range(plane->dev, 0, "alpha",
-					 0, DRM_BLEND_ALPHA_OPAQUE);
-	if (!prop)
-		return -ENOMEM;
-
-	drm_object_attach_property(&plane->base, prop, DRM_BLEND_ALPHA_OPAQUE);
-	plane->alpha_property = prop;
-
-	if (plane->state)
-		plane->state->alpha = DRM_BLEND_ALPHA_OPAQUE;
-
-	return 0;
-}
-EXPORT_SYMBOL(drm_plane_create_alpha_property);
-
-/**
- * drm_plane_create_rotation_property - create a new rotation property
- * @plane: drm plane
- * @rotation: initial value of the rotation property
+ * drm_mode_create_rotation_property - create a new rotation property
+ * @dev: DRM device
  * @supported_rotations: bitmask of supported rotations and reflections
  *
  * This creates a new property with the selected support for transformations.
+ * The resulting property should be stored in @rotation_property in
+ * &drm_mode_config. It then must be attached to each plane which supports
+ * rotations using drm_object_attach_property().
+ *
+ * FIXME: Probably better if the rotation property is created on each plane,
+ * like the zpos property. Otherwise it's not possible to allow different
+ * rotation modes on different planes.
  *
  * Since a rotation by 180° degress is the same as reflecting both along the x
  * and the y axis the rotation property is somewhat redundant. Drivers can use
@@ -231,17 +126,17 @@ EXPORT_SYMBOL(drm_plane_create_alpha_property);
  * drm_property_create_bitmask()) called "rotation" and has the following
  * bitmask enumaration values:
  *
- * DRM_MODE_ROTATE_0:
+ * DRM_ROTATE_0:
  * 	"rotate-0"
- * DRM_MODE_ROTATE_90:
+ * DRM_ROTATE_90:
  * 	"rotate-90"
- * DRM_MODE_ROTATE_180:
+ * DRM_ROTATE_180:
  * 	"rotate-180"
- * DRM_MODE_ROTATE_270:
+ * DRM_ROTATE_270:
  * 	"rotate-270"
- * DRM_MODE_REFLECT_X:
+ * DRM_REFLECT_X:
  * 	"reflect-x"
- * DRM_MODE_REFLECT_Y:
+ * DRM_REFELCT_Y:
  * 	"reflect-y"
  *
  * Rotation is the specified amount in degrees in counter clockwise direction,
@@ -249,40 +144,23 @@ EXPORT_SYMBOL(drm_plane_create_alpha_property);
  * rotation. After reflection, the rotation is applied to the image sampled from
  * the source rectangle, before scaling it to fit the destination rectangle.
  */
-int drm_plane_create_rotation_property(struct drm_plane *plane,
-				       unsigned int rotation,
-				       unsigned int supported_rotations)
+struct drm_property *drm_mode_create_rotation_property(struct drm_device *dev,
+						       unsigned int supported_rotations)
 {
 	static const struct drm_prop_enum_list props[] = {
-		{ __builtin_ffs(DRM_MODE_ROTATE_0) - 1,   "rotate-0" },
-		{ __builtin_ffs(DRM_MODE_ROTATE_90) - 1,  "rotate-90" },
-		{ __builtin_ffs(DRM_MODE_ROTATE_180) - 1, "rotate-180" },
-		{ __builtin_ffs(DRM_MODE_ROTATE_270) - 1, "rotate-270" },
-		{ __builtin_ffs(DRM_MODE_REFLECT_X) - 1,  "reflect-x" },
-		{ __builtin_ffs(DRM_MODE_REFLECT_Y) - 1,  "reflect-y" },
+		{ __builtin_ffs(DRM_ROTATE_0) - 1,   "rotate-0" },
+		{ __builtin_ffs(DRM_ROTATE_90) - 1,  "rotate-90" },
+		{ __builtin_ffs(DRM_ROTATE_180) - 1, "rotate-180" },
+		{ __builtin_ffs(DRM_ROTATE_270) - 1, "rotate-270" },
+		{ __builtin_ffs(DRM_REFLECT_X) - 1,  "reflect-x" },
+		{ __builtin_ffs(DRM_REFLECT_Y) - 1,  "reflect-y" },
 	};
-	struct drm_property *prop;
 
-	WARN_ON((supported_rotations & DRM_MODE_ROTATE_MASK) == 0);
-	WARN_ON(!is_power_of_2(rotation & DRM_MODE_ROTATE_MASK));
-	WARN_ON(rotation & ~supported_rotations);
-
-	prop = drm_property_create_bitmask(plane->dev, 0, "rotation",
+	return drm_property_create_bitmask(dev, 0, "rotation",
 					   props, ARRAY_SIZE(props),
 					   supported_rotations);
-	if (!prop)
-		return -ENOMEM;
-
-	drm_object_attach_property(&plane->base, prop, rotation);
-
-	if (plane->state)
-		plane->state->rotation = rotation;
-
-	plane->rotation_property = prop;
-
-	return 0;
 }
-EXPORT_SYMBOL(drm_plane_create_rotation_property);
+EXPORT_SYMBOL(drm_mode_create_rotation_property);
 
 /**
  * drm_rotation_simplify() - Try to simplify the rotation
@@ -290,14 +168,14 @@ EXPORT_SYMBOL(drm_plane_create_rotation_property);
  * @supported_rotations: Supported rotations
  *
  * Attempt to simplify the rotation to a form that is supported.
- * Eg. if the hardware supports everything except DRM_MODE_REFLECT_X
+ * Eg. if the hardware supports everything except DRM_REFLECT_X
  * one could call this function like this:
  *
- * drm_rotation_simplify(rotation, DRM_MODE_ROTATE_0 |
- *                       DRM_MODE_ROTATE_90 | DRM_MODE_ROTATE_180 |
- *                       DRM_MODE_ROTATE_270 | DRM_MODE_REFLECT_Y);
+ * drm_rotation_simplify(rotation, DRM_ROTATE_0 |
+ *                       DRM_ROTATE_90 | DRM_ROTATE_180 |
+ *                       DRM_ROTATE_270 | DRM_REFLECT_Y);
  *
- * to eliminate the DRM_MODE_ROTATE_X flag. Depending on what kind of
+ * to eliminate the DRM_ROTATE_X flag. Depending on what kind of
  * transforms the hardware supports, this function may not
  * be able to produce a supported transform, so the caller should
  * check the result afterwards.
@@ -306,10 +184,9 @@ unsigned int drm_rotation_simplify(unsigned int rotation,
 				   unsigned int supported_rotations)
 {
 	if (rotation & ~supported_rotations) {
-		rotation ^= DRM_MODE_REFLECT_X | DRM_MODE_REFLECT_Y;
-		rotation = (rotation & DRM_MODE_REFLECT_MASK) |
-		           BIT((ffs(rotation & DRM_MODE_ROTATE_MASK) + 1)
-		           % 4);
+		rotation ^= DRM_REFLECT_X | DRM_REFLECT_Y;
+		rotation = (rotation & DRM_REFLECT_MASK) |
+		           BIT((ffs(rotation & DRM_ROTATE_MASK) + 1) % 4);
 	}
 
 	return rotation;
@@ -326,11 +203,9 @@ EXPORT_SYMBOL(drm_rotation_simplify);
  * This function initializes generic mutable zpos property and enables support
  * for it in drm core. Drivers can then attach this property to planes to enable
  * support for configurable planes arrangement during blending operation.
- * Drivers that attach a mutable zpos property to any plane should call the
- * drm_atomic_normalize_zpos() helper during their implementation of
- * &drm_mode_config_funcs.atomic_check(), which will update the normalized zpos
- * values and store them in &drm_plane_state.normalized_zpos. Usually min
- * should be set to 0 and max to maximal number of planes for given crtc - 1.
+ * Once mutable zpos property has been enabled, the DRM core will automatically
+ * calculate drm_plane_state->normalized_zpos values. Usually min should be set
+ * to 0 and max to maximal number of planes for given crtc - 1.
  *
  * If zpos of some planes cannot be changed (like fixed background or
  * cursor/topmost planes), driver should adjust min/max values and assign those
@@ -433,7 +308,7 @@ static int drm_atomic_helper_crtc_normalize_zpos(struct drm_crtc *crtc,
 	DRM_DEBUG_ATOMIC("[CRTC:%d:%s] calculating normalized zpos values\n",
 			 crtc->base.id, crtc->name);
 
-	states = kmalloc_array(total_planes, sizeof(*states), GFP_KERNEL);
+	states = kmalloc_array(total_planes, sizeof(*states), GFP_TEMPORARY);
 	if (!states)
 		return -ENOMEM;
 
@@ -481,8 +356,8 @@ done:
  * For every CRTC this function checks new states of all planes assigned to
  * it and calculates normalized zpos value for these planes. Planes are compared
  * first by their zpos values, then by plane id (if zpos is equal). The plane
- * with lowest zpos value is at the bottom. The &drm_plane_state.normalized_zpos
- * is then filled with unique values from 0 to number of active planes in crtc
+ * with lowest zpos value is at the bottom. The plane_state->normalized_zpos is
+ * then filled with unique values from 0 to number of active planes in crtc
  * minus one.
  *
  * RETURNS
@@ -492,26 +367,27 @@ int drm_atomic_normalize_zpos(struct drm_device *dev,
 			      struct drm_atomic_state *state)
 {
 	struct drm_crtc *crtc;
-	struct drm_crtc_state *old_crtc_state, *new_crtc_state;
+	struct drm_crtc_state *crtc_state;
 	struct drm_plane *plane;
-	struct drm_plane_state *old_plane_state, *new_plane_state;
+	struct drm_plane_state *plane_state;
 	int i, ret = 0;
 
-	for_each_oldnew_plane_in_state(state, plane, old_plane_state, new_plane_state, i) {
-		crtc = new_plane_state->crtc;
+	for_each_plane_in_state(state, plane, plane_state, i) {
+		crtc = plane_state->crtc;
 		if (!crtc)
 			continue;
-		if (old_plane_state->zpos != new_plane_state->zpos) {
-			new_crtc_state = drm_atomic_get_new_crtc_state(state, crtc);
-			new_crtc_state->zpos_changed = true;
+		if (plane->state->zpos != plane_state->zpos) {
+			crtc_state =
+				drm_atomic_get_existing_crtc_state(state, crtc);
+			crtc_state->zpos_changed = true;
 		}
 	}
 
-	for_each_oldnew_crtc_in_state(state, crtc, old_crtc_state, new_crtc_state, i) {
-		if (old_crtc_state->plane_mask != new_crtc_state->plane_mask ||
-		    new_crtc_state->zpos_changed) {
+	for_each_crtc_in_state(state, crtc, crtc_state, i) {
+		if (crtc_state->plane_mask != crtc->state->plane_mask ||
+		    crtc_state->zpos_changed) {
 			ret = drm_atomic_helper_crtc_normalize_zpos(crtc,
-								    new_crtc_state);
+								    crtc_state);
 			if (ret)
 				return ret;
 		}
@@ -519,80 +395,3 @@ int drm_atomic_normalize_zpos(struct drm_device *dev,
 	return 0;
 }
 EXPORT_SYMBOL(drm_atomic_normalize_zpos);
-
-/**
- * drm_plane_create_blend_mode_property - create a new blend mode property
- * @plane: drm plane
- * @supported_modes: bitmask of supported modes, must include
- *		     BIT(DRM_MODE_BLEND_PREMULTI). Current DRM assumption is
- *		     that alpha is premultiplied, and old userspace can break if
- *		     the property defaults to anything else.
- *
- * This creates a new property describing the blend mode.
- *
- * The property exposed to userspace is an enumeration property (see
- * drm_property_create_enum()) called "pixel blend mode" and has the
- * following enumeration values:
- *
- * "None":
- *	Blend formula that ignores the pixel alpha.
- *
- * "Pre-multiplied":
- *	Blend formula that assumes the pixel color values have been already
- *	pre-multiplied with the alpha channel values.
- *
- * "Coverage":
- *	Blend formula that assumes the pixel color values have not been
- *	pre-multiplied and will do so when blending them to the background color
- *	values.
- *
- * RETURNS:
- * Zero for success or -errno
- */
-int drm_plane_create_blend_mode_property(struct drm_plane *plane,
-					 unsigned int supported_modes)
-{
-	struct drm_device *dev = plane->dev;
-	struct drm_property *prop;
-	static const struct drm_prop_enum_list props[] = {
-		{ DRM_MODE_BLEND_PIXEL_NONE, "None" },
-		{ DRM_MODE_BLEND_PREMULTI, "Pre-multiplied" },
-		{ DRM_MODE_BLEND_COVERAGE, "Coverage" },
-	};
-	unsigned int valid_mode_mask = BIT(DRM_MODE_BLEND_PIXEL_NONE) |
-				       BIT(DRM_MODE_BLEND_PREMULTI)   |
-				       BIT(DRM_MODE_BLEND_COVERAGE);
-	int i;
-
-	if (WARN_ON((supported_modes & ~valid_mode_mask) ||
-		    ((supported_modes & BIT(DRM_MODE_BLEND_PREMULTI)) == 0)))
-		return -EINVAL;
-
-	prop = drm_property_create(dev, DRM_MODE_PROP_ENUM,
-				   "pixel blend mode",
-				   hweight32(supported_modes));
-	if (!prop)
-		return -ENOMEM;
-
-	for (i = 0; i < ARRAY_SIZE(props); i++) {
-		int ret;
-
-		if (!(BIT(props[i].type) & supported_modes))
-			continue;
-
-		ret = drm_property_add_enum(prop, props[i].type,
-					    props[i].name);
-
-		if (ret) {
-			drm_property_destroy(dev, prop);
-
-			return ret;
-		}
-	}
-
-	drm_object_attach_property(&plane->base, prop, DRM_MODE_BLEND_PREMULTI);
-	plane->blend_mode_property = prop;
-
-	return 0;
-}
-EXPORT_SYMBOL(drm_plane_create_blend_mode_property);

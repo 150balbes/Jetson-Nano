@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  *  linux/arch/sh/boot/romimage/head.S
  *

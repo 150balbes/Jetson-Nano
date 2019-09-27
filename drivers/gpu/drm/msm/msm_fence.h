@@ -1,7 +1,18 @@
-/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (C) 2013-2016 Red Hat
  * Author: Rob Clark <robdclark@gmail.com>
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License version 2 as published by
+ * the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License along with
+ * this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 #ifndef __MSM_FENCE_H__
@@ -11,7 +22,7 @@
 
 struct msm_fence_context {
 	struct drm_device *dev;
-	char name[32];
+	const char *name;
 	unsigned context;
 	/* last_fence == completed_fence --> no pending work */
 	uint32_t last_fence;          /* last assigned fence */
@@ -26,8 +37,10 @@ void msm_fence_context_free(struct msm_fence_context *fctx);
 
 int msm_wait_fence(struct msm_fence_context *fctx, uint32_t fence,
 		ktime_t *timeout, bool interruptible);
+int msm_queue_fence_cb(struct msm_fence_context *fctx,
+		struct msm_fence_cb *cb, uint32_t fence);
 void msm_update_fence(struct msm_fence_context *fctx, uint32_t fence);
 
-struct dma_fence * msm_fence_alloc(struct msm_fence_context *fctx);
+struct fence * msm_fence_alloc(struct msm_fence_context *fctx);
 
 #endif

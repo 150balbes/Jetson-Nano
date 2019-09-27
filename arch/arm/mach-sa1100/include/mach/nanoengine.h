@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * arch/arm/mach-sa1100/include/mach/nanoengine.h
  *
@@ -6,6 +5,11 @@
  * Only include this file from SA1100-specific files.
  *
  * Copyright (C) 2010 Marcelo Roberto Jimenez <mroberto@cpti.cetuc.puc-rio.br>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
  */
 #ifndef __ASM_ARCH_NANOENGINE_H
 #define __ASM_ARCH_NANOENGINE_H

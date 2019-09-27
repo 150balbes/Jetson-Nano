@@ -1,0 +1,11 @@
+if REGULATOR
+
+config REGULATOR_PMIC_OTP
+	bool "Provide a regulator with PMIC OTP without PMIC registration"
+	help
+	  This driver able to provide all regulator interface to client
+	  without any actual implementation. This should be used if it
+	  is required to use the PMCI OTP configuration and do not want
+	  to register PMIC.
+
+endif

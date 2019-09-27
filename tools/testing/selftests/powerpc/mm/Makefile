@@ -1,21 +1,19 @@
-# SPDX-License-Identifier: GPL-2.0
 noarg:
 	$(MAKE) -C ../
 
-TEST_GEN_PROGS := hugetlb_vs_thp_test subpage_prot prot_sao segv_errors wild_bctr \
-		  large_vm_fork_separation
-TEST_GEN_FILES := tempfile
+TEST_PROGS := hugetlb_vs_thp_test subpage_prot prot_sao
+TEST_FILES := tempfile
 
-top_srcdir = ../../../../..
+all: $(TEST_PROGS) $(TEST_FILES)
+
+$(TEST_PROGS): ../harness.c
+
+prot_sao: ../utils.c
+
 include ../../lib.mk
 
-$(TEST_GEN_PROGS): ../harness.c
+tempfile:
+	dd if=/dev/zero of=tempfile bs=64k count=1
 
-$(OUTPUT)/prot_sao: ../utils.c
-
-$(OUTPUT)/wild_bctr: CFLAGS += -m64
-$(OUTPUT)/large_vm_fork_separation: CFLAGS += -m64
-
-$(OUTPUT)/tempfile:
-	dd if=/dev/zero of=$@ bs=64k count=1
-
+clean:
+	rm -f $(TEST_PROGS) tempfile

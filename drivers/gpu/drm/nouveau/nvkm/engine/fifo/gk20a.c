@@ -22,18 +22,16 @@
 #include "gk104.h"
 #include "changk104.h"
 
-#include <nvif/class.h>
-
 static const struct gk104_fifo_func
 gk20a_fifo = {
-	.pbdma = &gk208_fifo_pbdma,
-	.fault.access = gk104_fifo_fault_access,
 	.fault.engine = gk104_fifo_fault_engine,
 	.fault.reason = gk104_fifo_fault_reason,
 	.fault.hubclient = gk104_fifo_fault_hubclient,
 	.fault.gpcclient = gk104_fifo_fault_gpcclient,
-	.runlist = &gk110_fifo_runlist,
-	.chan = {{0,0,KEPLER_CHANNEL_GPFIFO_A}, gk104_fifo_gpfifo_new },
+	.chan = {
+		&gk104_fifo_gpfifo_oclass,
+		NULL
+	},
 };
 
 int

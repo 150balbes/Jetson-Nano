@@ -536,7 +536,6 @@ extern int CalcStateExt
 (
     RIVA_HW_INST  *chip,
     RIVA_HW_STATE *state,
-    struct pci_dev *pdev,
     int            bpp,
     int            width,
     int            hDisplaySize,
@@ -547,7 +546,7 @@ extern int CalcStateExt
 /*
  * External routines.
  */
-int RivaGetConfig(RIVA_HW_INST *chip, struct pci_dev *pdev, unsigned int c);
+int RivaGetConfig(RIVA_HW_INST *, unsigned int);
 /*
  * FIFO Free Count. Should attempt to yield processor if RIVA is busy.
  */

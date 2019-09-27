@@ -1,6 +1,18 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright(c) 2007 - 2008 Intel Corporation. All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms and conditions of the GNU General Public License,
+ * version 2, as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License along with
+ * this program; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin St - Fifth Floor, Boston, MA 02110-1301 USA.
  *
  * Maintained at www.Open-FCoE.org
  */
@@ -24,8 +36,6 @@
 #include <linux/slab.h>
 #include <linux/err.h>
 #include <linux/export.h>
-#include <linux/rculist.h>
-
 #include <asm/unaligned.h>
 
 #include <scsi/fc/fc_gs.h>
@@ -47,25 +57,30 @@ static void fc_disc_restart(struct fc_disc *);
 /**
  * fc_disc_stop_rports() - Delete all the remote ports associated with the lport
  * @disc: The discovery job to stop remote ports on
+ *
+ * Locking Note: This function expects that the lport mutex is locked before
+ * calling it.
  */
 static void fc_disc_stop_rports(struct fc_disc *disc)
 {
+	struct fc_lport *lport;
 	struct fc_rport_priv *rdata;
 
-	lockdep_assert_held(&disc->disc_mutex);
+	lport = fc_disc_lport(disc);
 
-	list_for_each_entry(rdata, &disc->rports, peers) {
-		if (kref_get_unless_zero(&rdata->kref)) {
-			fc_rport_logoff(rdata);
-			kref_put(&rdata->kref, fc_rport_destroy);
-		}
-	}
+	mutex_lock(&disc->disc_mutex);
+	list_for_each_entry_rcu(rdata, &disc->rports, peers)
+		lport->tt.rport_logoff(rdata);
+	mutex_unlock(&disc->disc_mutex);
 }
 
 /**
  * fc_disc_recv_rscn_req() - Handle Registered State Change Notification (RSCN)
  * @disc:  The discovery object to which the RSCN applies
  * @fp:	   The RSCN frame
+ *
+ * Locking Note: This function expects that the disc_mutex is locked
+ *		 before it is called.
  */
 static void fc_disc_recv_rscn_req(struct fc_disc *disc, struct fc_frame *fp)
 {
@@ -79,8 +94,6 @@ static void fc_disc_recv_rscn_req(struct fc_disc *disc, struct fc_frame *fp)
 	enum fc_els_rscn_addr_fmt fmt;
 	LIST_HEAD(disc_ports);
 	struct fc_disc_port *dp, *next;
-
-	lockdep_assert_held(&disc->disc_mutex);
 
 	lport = fc_disc_lport(disc);
 
@@ -137,7 +150,7 @@ static void fc_disc_recv_rscn_req(struct fc_disc *disc, struct fc_frame *fp)
 			break;
 		}
 	}
-	fc_seq_els_rsp_send(fp, ELS_LS_ACC, NULL);
+	lport->tt.seq_els_rsp_send(fp, ELS_LS_ACC, NULL);
 
 	/*
 	 * If not doing a complete rediscovery, do GPN_ID on
@@ -165,7 +178,7 @@ reject:
 	FC_DISC_DBG(disc, "Received a bad RSCN frame\n");
 	rjt_data.reason = ELS_RJT_LOGIC;
 	rjt_data.explan = ELS_EXPL_NONE;
-	fc_seq_els_rsp_send(fp, ELS_LS_RJT, &rjt_data);
+	lport->tt.seq_els_rsp_send(fp, ELS_LS_RJT, &rjt_data);
 	fc_frame_free(fp);
 }
 
@@ -201,11 +214,12 @@ static void fc_disc_recv_req(struct fc_lport *lport, struct fc_frame *fp)
 /**
  * fc_disc_restart() - Restart discovery
  * @disc: The discovery object to be restarted
+ *
+ * Locking Note: This function expects that the disc mutex
+ *		 is already locked.
  */
 static void fc_disc_restart(struct fc_disc *disc)
 {
-	lockdep_assert_held(&disc->disc_mutex);
-
 	if (!disc->disc_callback)
 		return;
 
@@ -251,13 +265,16 @@ static void fc_disc_start(void (*disc_callback)(struct fc_lport *,
  * fc_disc_done() - Discovery has been completed
  * @disc:  The discovery context
  * @event: The discovery completion status
+ *
+ * Locking Note: This function expects that the disc mutex is locked before
+ * it is called. The discovery callback is then made with the lock released,
+ * and the lock is re-taken before returning from this function
  */
 static void fc_disc_done(struct fc_disc *disc, enum fc_disc_event event)
 {
 	struct fc_lport *lport = fc_disc_lport(disc);
 	struct fc_rport_priv *rdata;
 
-	lockdep_assert_held(&disc->disc_mutex);
 	FC_DISC_DBG(disc, "Discovery complete\n");
 
 	disc->pending = 0;
@@ -271,21 +288,16 @@ static void fc_disc_done(struct fc_disc *disc, enum fc_disc_event event)
 	 * discovery, reverify or log them in.	Otherwise, log them out.
 	 * Skip ports which were never discovered.  These are the dNS port
 	 * and ports which were created by PLOGI.
-	 *
-	 * We don't need to use the _rcu variant here as the rport list
-	 * is protected by the disc mutex which is already held on entry.
 	 */
-	list_for_each_entry(rdata, &disc->rports, peers) {
-		if (!kref_get_unless_zero(&rdata->kref))
+	list_for_each_entry_rcu(rdata, &disc->rports, peers) {
+		if (!rdata->disc_id)
 			continue;
-		if (rdata->disc_id) {
-			if (rdata->disc_id == disc->disc_id)
-				fc_rport_login(rdata);
-			else
-				fc_rport_logoff(rdata);
-		}
-		kref_put(&rdata->kref, fc_rport_destroy);
+		if (rdata->disc_id == disc->disc_id)
+			lport->tt.rport_login(rdata);
+		else
+			lport->tt.rport_logoff(rdata);
 	}
+
 	mutex_unlock(&disc->disc_mutex);
 	disc->disc_callback(lport, event);
 	mutex_lock(&disc->disc_mutex);
@@ -338,13 +350,14 @@ static void fc_disc_error(struct fc_disc *disc, struct fc_frame *fp)
 /**
  * fc_disc_gpn_ft_req() - Send Get Port Names by FC-4 type (GPN_FT) request
  * @lport: The discovery context
+ *
+ * Locking Note: This function expects that the disc_mutex is locked
+ *		 before it is called.
  */
 static void fc_disc_gpn_ft_req(struct fc_disc *disc)
 {
 	struct fc_frame *fp;
 	struct fc_lport *lport = fc_disc_lport(disc);
-
-	lockdep_assert_held(&disc->disc_mutex);
 
 	WARN_ON(!fc_lport_test_ready(lport));
 
@@ -433,7 +446,7 @@ static int fc_disc_gpn_ft_parse(struct fc_disc *disc, void *buf, size_t len)
 
 		if (ids.port_id != lport->port_id &&
 		    ids.port_name != lport->wwpn) {
-			rdata = fc_rport_create(lport, ids.port_id);
+			rdata = lport->tt.rport_create(lport, ids.port_id);
 			if (rdata) {
 				rdata->ids.port_name = ids.port_name;
 				rdata->disc_id = disc->disc_id;
@@ -550,7 +563,7 @@ static void fc_disc_gpn_ft_resp(struct fc_seq *sp, struct fc_frame *fp,
 		event = DISC_EV_FAILED;
 	}
 	if (error)
-		fc_disc_error(disc, ERR_PTR(error));
+		fc_disc_error(disc, fp);
 	else if (event != DISC_EV_NONE)
 		fc_disc_done(disc, event);
 	fc_frame_free(fp);
@@ -579,6 +592,7 @@ static void fc_disc_gpn_id_resp(struct fc_seq *sp, struct fc_frame *fp,
 	lport = rdata->local_port;
 	disc = &lport->disc;
 
+	mutex_lock(&disc->disc_mutex);
 	if (PTR_ERR(fp) == -FC_EX_CLOSED)
 		goto out;
 	if (IS_ERR(fp))
@@ -593,41 +607,37 @@ static void fc_disc_gpn_id_resp(struct fc_seq *sp, struct fc_frame *fp,
 			goto redisc;
 		pn = (struct fc_ns_gid_pn *)(cp + 1);
 		port_name = get_unaligned_be64(&pn->fn_wwpn);
-		mutex_lock(&rdata->rp_mutex);
 		if (rdata->ids.port_name == -1)
 			rdata->ids.port_name = port_name;
 		else if (rdata->ids.port_name != port_name) {
 			FC_DISC_DBG(disc, "GPN_ID accepted.  WWPN changed. "
 				    "Port-id %6.6x wwpn %16.16llx\n",
 				    rdata->ids.port_id, port_name);
-			mutex_unlock(&rdata->rp_mutex);
-			fc_rport_logoff(rdata);
-			mutex_lock(&lport->disc.disc_mutex);
-			new_rdata = fc_rport_create(lport, rdata->ids.port_id);
-			mutex_unlock(&lport->disc.disc_mutex);
+			lport->tt.rport_logoff(rdata);
+
+			new_rdata = lport->tt.rport_create(lport,
+							   rdata->ids.port_id);
 			if (new_rdata) {
 				new_rdata->disc_id = disc->disc_id;
-				fc_rport_login(new_rdata);
+				lport->tt.rport_login(new_rdata);
 			}
 			goto out;
 		}
 		rdata->disc_id = disc->disc_id;
-		mutex_unlock(&rdata->rp_mutex);
-		fc_rport_login(rdata);
+		lport->tt.rport_login(rdata);
 	} else if (ntohs(cp->ct_cmd) == FC_FS_RJT) {
 		FC_DISC_DBG(disc, "GPN_ID rejected reason %x exp %x\n",
 			    cp->ct_reason, cp->ct_explan);
-		fc_rport_logoff(rdata);
+		lport->tt.rport_logoff(rdata);
 	} else {
 		FC_DISC_DBG(disc, "GPN_ID unexpected response code %x\n",
 			    ntohs(cp->ct_cmd));
 redisc:
-		mutex_lock(&disc->disc_mutex);
 		fc_disc_restart(disc);
-		mutex_unlock(&disc->disc_mutex);
 	}
 out:
-	kref_put(&rdata->kref, fc_rport_destroy);
+	mutex_unlock(&disc->disc_mutex);
+	kref_put(&rdata->kref, lport->tt.rport_destroy);
 }
 
 /**
@@ -635,6 +645,8 @@ out:
  * @lport: The local port to initiate discovery on
  * @rdata: remote port private data
  *
+ * Locking Note: This function expects that the disc_mutex is locked
+ *		 before it is called.
  * On failure, an error code is returned.
  */
 static int fc_disc_gpn_id_req(struct fc_lport *lport,
@@ -642,7 +654,6 @@ static int fc_disc_gpn_id_req(struct fc_lport *lport,
 {
 	struct fc_frame *fp;
 
-	lockdep_assert_held(&lport->disc.disc_mutex);
 	fp = fc_frame_alloc(lport, sizeof(struct fc_ct_hdr) +
 			    sizeof(struct fc_ns_fid));
 	if (!fp)
@@ -659,14 +670,15 @@ static int fc_disc_gpn_id_req(struct fc_lport *lport,
  * fc_disc_single() - Discover the directory information for a single target
  * @lport: The local port the remote port is associated with
  * @dp:	   The port to rediscover
+ *
+ * Locking Note: This function expects that the disc_mutex is locked
+ *		 before it is called.
  */
 static int fc_disc_single(struct fc_lport *lport, struct fc_disc_port *dp)
 {
 	struct fc_rport_priv *rdata;
 
-	lockdep_assert_held(&lport->disc.disc_mutex);
-
-	rdata = fc_rport_create(lport, dp->port_id);
+	rdata = lport->tt.rport_create(lport, dp->port_id);
 	if (!rdata)
 		return -ENOMEM;
 	rdata->disc_id = 0;
@@ -683,9 +695,7 @@ static void fc_disc_stop(struct fc_lport *lport)
 
 	if (disc->pending)
 		cancel_delayed_work_sync(&disc->disc_work);
-	mutex_lock(&disc->disc_mutex);
 	fc_disc_stop_rports(disc);
-	mutex_unlock(&disc->disc_mutex);
 }
 
 /**
@@ -698,7 +708,7 @@ static void fc_disc_stop(struct fc_lport *lport)
 static void fc_disc_stop_final(struct fc_lport *lport)
 {
 	fc_disc_stop(lport);
-	fc_rport_flush_queue();
+	lport->tt.rport_flush_queue();
 }
 
 /**
@@ -708,7 +718,7 @@ static void fc_disc_stop_final(struct fc_lport *lport)
  */
 void fc_disc_config(struct fc_lport *lport, void *priv)
 {
-	struct fc_disc *disc;
+	struct fc_disc *disc = &lport->disc;
 
 	if (!lport->tt.disc_start)
 		lport->tt.disc_start = fc_disc_start;

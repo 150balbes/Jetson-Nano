@@ -1,8 +1,20 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * vivid-kthread-out.h - video/vbi output thread support functions.
  *
  * Copyright 2014 Cisco Systems, Inc. and/or its affiliates. All rights reserved.
+ *
+ * This program is free software; you may redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; version 2 of the License.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+ * EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+ * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+ * NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS
+ * BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN
+ * ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+ * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
  */
 
 #include <linux/module.h>
@@ -39,7 +51,7 @@
 #include "vivid-ctrls.h"
 #include "vivid-kthread-out.h"
 
-static void vivid_thread_vid_out_tick(struct vivid_dev *dev)
+void vivid_thread_vid_out_tick(struct vivid_dev *dev)
 {
 	struct vivid_buffer *vid_out_buf = NULL;
 	struct vivid_buffer *vbi_out_buf = NULL;
@@ -75,10 +87,6 @@ static void vivid_thread_vid_out_tick(struct vivid_dev *dev)
 		return;
 
 	if (vid_out_buf) {
-		v4l2_ctrl_request_setup(vid_out_buf->vb.vb2_buf.req_obj.req,
-					&dev->ctrl_hdl_vid_out);
-		v4l2_ctrl_request_complete(vid_out_buf->vb.vb2_buf.req_obj.req,
-					   &dev->ctrl_hdl_vid_out);
 		vid_out_buf->vb.sequence = dev->vid_out_seq_count;
 		if (dev->field_out == V4L2_FIELD_ALTERNATE) {
 			/*
@@ -93,13 +101,11 @@ static void vivid_thread_vid_out_tick(struct vivid_dev *dev)
 				VB2_BUF_STATE_ERROR : VB2_BUF_STATE_DONE);
 		dprintk(dev, 2, "vid_out buffer %d done\n",
 			vid_out_buf->vb.vb2_buf.index);
+		vivid_trace_single_msg(dev->v4l2_dev.name, "buf_dequeue_output",
+			vid_out_buf->vb.vb2_buf.index);
 	}
 
 	if (vbi_out_buf) {
-		v4l2_ctrl_request_setup(vbi_out_buf->vb.vb2_buf.req_obj.req,
-					&dev->ctrl_hdl_vbi_out);
-		v4l2_ctrl_request_complete(vbi_out_buf->vb.vb2_buf.req_obj.req,
-					   &dev->ctrl_hdl_vbi_out);
 		if (dev->stream_sliced_vbi_out)
 			vivid_sliced_vbi_out_process(dev, vbi_out_buf);
 
@@ -125,18 +131,28 @@ static int vivid_thread_vid_out(void *data)
 	unsigned wait_jiffies;
 	unsigned numerator;
 	unsigned denominator;
+	bool is_loop = false;
 
 	dprintk(dev, 1, "Video Output Thread Start\n");
 
 	set_freezable();
 
+	mutex_lock(&dev->mutex);
 	/* Resets frame counters */
-	dev->out_seq_offset = 0;
 	if (dev->seq_wrap)
 		dev->out_seq_count = 0xffffff80U;
-	dev->jiffies_vid_out = jiffies;
+	if (dev->cap_thread_active) {
+		dev->out_seq_offset = dev->cap_seq_count;
+		dev->jiffies_vid_out = dev->next_jiffies_vid_cap;
+	} else {
+		dev->out_seq_offset = 0;
+		dev->jiffies_vid_out = jiffies;
+	}
 	dev->vid_out_seq_start = dev->vbi_out_seq_start = 0;
 	dev->out_seq_resync = false;
+	dev->next_jiffies_vid_out = dev->jiffies_vid_out;
+	dev->out_thread_active = true;
+	mutex_unlock(&dev->mutex);
 
 	for (;;) {
 		try_to_freeze();
@@ -151,8 +167,14 @@ static int vivid_thread_vid_out(void *data)
 			dev->out_seq_count = 0;
 			dev->out_seq_resync = false;
 		}
+		mutex_lock(&dev->mutex_framerate);
 		numerator = dev->timeperframe_vid_out.numerator;
 		denominator = dev->timeperframe_vid_out.denominator;
+		mutex_unlock(&dev->mutex_framerate);
+
+		if (dev->loop_video && dev->can_loop_video &&
+			(vivid_is_svid_cap(dev) || vivid_is_hdmi_cap(dev)))
+			is_loop = true;
 
 		if (dev->field_out == V4L2_FIELD_ALTERNATE)
 			denominator *= 2;
@@ -179,8 +201,12 @@ static int vivid_thread_vid_out(void *data)
 		dev->vid_out_seq_count = dev->out_seq_count - dev->vid_out_seq_start;
 		dev->vbi_out_seq_count = dev->out_seq_count - dev->vbi_out_seq_start;
 
-		vivid_thread_vid_out_tick(dev);
-		mutex_unlock(&dev->mutex);
+		/*
+		 * Do not release buffers in loopback mode and capture device
+		 * is active, instead rely on capture device for release.
+		 */
+		if (!(is_loop && dev->cap_thread_active))
+			vivid_thread_vid_out_tick(dev);
 
 		/*
 		 * Calculate the number of 'numerators' streamed since we started,
@@ -204,8 +230,13 @@ static int vivid_thread_vid_out(void *data)
 		if (next_jiffies_since_start < jiffies_since_start)
 			next_jiffies_since_start = jiffies_since_start;
 
+		dev->next_jiffies_vid_out = next_jiffies_since_start;
+		mutex_unlock(&dev->mutex);
+
 		wait_jiffies = next_jiffies_since_start - jiffies_since_start;
 		schedule_timeout_interruptible(wait_jiffies ? wait_jiffies : 1);
+		vivid_trace_double_index(dev->v4l2_dev.name, "output",
+			wait_jiffies, next_jiffies_since_start);
 	}
 	dprintk(dev, 1, "Video Output Thread End\n");
 	return 0;
@@ -244,11 +275,8 @@ int vivid_start_generating_vid_out(struct vivid_dev *dev, bool *pstreaming)
 			"%s-vid-out", dev->v4l2_dev.name);
 
 	if (IS_ERR(dev->kthread_vid_out)) {
-		int err = PTR_ERR(dev->kthread_vid_out);
-
-		dev->kthread_vid_out = NULL;
 		v4l2_err(&dev->v4l2_dev, "kernel_thread() failed\n");
-		return err;
+		return PTR_ERR(dev->kthread_vid_out);
 	}
 	*pstreaming = true;
 	vivid_grab_controls(dev, true);
@@ -273,8 +301,6 @@ void vivid_stop_generating_vid_out(struct vivid_dev *dev, bool *pstreaming)
 			buf = list_entry(dev->vid_out_active.next,
 					 struct vivid_buffer, list);
 			list_del(&buf->list);
-			v4l2_ctrl_request_complete(buf->vb.vb2_buf.req_obj.req,
-						   &dev->ctrl_hdl_vid_out);
 			vb2_buffer_done(&buf->vb.vb2_buf, VB2_BUF_STATE_ERROR);
 			dprintk(dev, 2, "vid_out buffer %d done\n",
 				buf->vb.vb2_buf.index);
@@ -288,8 +314,6 @@ void vivid_stop_generating_vid_out(struct vivid_dev *dev, bool *pstreaming)
 			buf = list_entry(dev->vbi_out_active.next,
 					 struct vivid_buffer, list);
 			list_del(&buf->list);
-			v4l2_ctrl_request_complete(buf->vb.vb2_buf.req_obj.req,
-						   &dev->ctrl_hdl_vbi_out);
 			vb2_buffer_done(&buf->vb.vb2_buf, VB2_BUF_STATE_ERROR);
 			dprintk(dev, 2, "vbi_out buffer %d done\n",
 				buf->vb.vb2_buf.index);
@@ -304,5 +328,6 @@ void vivid_stop_generating_vid_out(struct vivid_dev *dev, bool *pstreaming)
 	mutex_unlock(&dev->mutex);
 	kthread_stop(dev->kthread_vid_out);
 	dev->kthread_vid_out = NULL;
+	dev->out_thread_active = false;
 	mutex_lock(&dev->mutex);
 }

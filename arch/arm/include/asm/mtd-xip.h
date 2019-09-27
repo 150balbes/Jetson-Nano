@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * MTD primitives for XIP support. Architecture specific functions
  *
@@ -7,6 +6,10 @@
  * Author:	Nicolas Pitre
  * Created:	Nov 2, 2004
  * Copyright:	(C) 2004 MontaVista Software, Inc.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  */
 
 #ifndef __ARM_MTD_XIP_H__

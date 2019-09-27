@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * This header provides macros for MAXIM MAX77620 device bindings.
  *

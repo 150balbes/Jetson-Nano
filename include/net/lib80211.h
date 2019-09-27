@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * lib80211.h -- common bits for IEEE802.11 wireless drivers
  *

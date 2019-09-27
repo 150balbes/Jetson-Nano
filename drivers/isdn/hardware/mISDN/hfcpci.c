@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  *
  * hfcpci.c     low level driver for CCD's hfc-pci based cards
@@ -9,6 +8,20 @@
  *
  * Copyright 1999  by Werner Cornelius (werner@isdn-development.de)
  * Copyright 2008  by Karsten Keil <kkeil@novell.com>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2, or (at your option)
+ * any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  *
  * Module options:
  *
@@ -28,6 +41,7 @@
  *	If kernel uses a frequency of 1000 Hz, steps of 8 samples are possible.
  *	If the kernel uses 100 Hz, steps of 80 samples are possible.
  *	If the kernel uses 300 Hz, steps of about 26 samples are possible.
+ *
  */
 
 #include <linux/interrupt.h>
@@ -287,9 +301,8 @@ reset_hfcpci(struct hfc_pci *hc)
  * Timer function called when kernel timer expires
  */
 static void
-hfcpci_Timer(struct timer_list *t)
+hfcpci_Timer(struct hfc_pci *hc)
 {
-	struct hfc_pci *hc = from_timer(hc, t, hw.timer);
 	hc->hw.timer.expires = jiffies + 75;
 	/* WD RESET */
 /*
@@ -1228,7 +1241,7 @@ hfcpci_int(int intno, void *dev_id)
  * timer callback for D-chan busy resolution. Currently no function
  */
 static void
-hfcpci_dbusy_timer(struct timer_list *t)
+hfcpci_dbusy_timer(struct hfc_pci *hc)
 {
 }
 
@@ -1282,7 +1295,6 @@ mode_hfcpci(struct bchannel *bch, int bc, int protocol)
 	case (-1): /* used for init */
 		bch->state = -1;
 		bch->nr = bc;
-		/* fall through */
 	case (ISDN_P_NONE):
 		if (bch->state == ISDN_P_NONE)
 			return 0;
@@ -1705,7 +1717,9 @@ static void
 inithfcpci(struct hfc_pci *hc)
 {
 	printk(KERN_DEBUG "inithfcpci: entered\n");
-	timer_setup(&hc->dch.timer, hfcpci_dbusy_timer, 0);
+	hc->dch.timer.function = (void *) hfcpci_dbusy_timer;
+	hc->dch.timer.data = (long) &hc->dch;
+	init_timer(&hc->dch.timer);
 	hc->chanlimit = 2;
 	mode_hfcpci(&hc->bch[0], 1, -1);
 	mode_hfcpci(&hc->bch[1], 2, -1);
@@ -2018,19 +2032,10 @@ setup_hw(struct hfc_pci *hc)
 	hc->hw.fifos = buffer;
 	pci_write_config_dword(hc->pdev, 0x80, hc->hw.dmahandle);
 	hc->hw.pci_io = ioremap((ulong) hc->hw.pci_io, 256);
-	if (unlikely(!hc->hw.pci_io)) {
-		printk(KERN_WARNING
-		       "HFC-PCI: Error in ioremap for PCI!\n");
-		pci_free_consistent(hc->pdev, 0x8000, hc->hw.fifos,
-				    hc->hw.dmahandle);
-		return 1;
-	}
-
 	printk(KERN_INFO
-	       "HFC-PCI: defined at mem %#lx fifo %p(%pad) IRQ %d HZ %d\n",
-	       (u_long) hc->hw.pci_io, hc->hw.fifos,
-	       &hc->hw.dmahandle, hc->irq, HZ);
-
+	       "HFC-PCI: defined at mem %#lx fifo %#lx(%#lx) IRQ %d HZ %d\n",
+	       (u_long) hc->hw.pci_io, (u_long) hc->hw.fifos,
+	       (u_long) hc->hw.dmahandle, hc->irq, HZ);
 	/* enable memory mapped ports, disable busmaster */
 	pci_write_config_word(hc->pdev, PCI_COMMAND, PCI_ENA_MEMIO);
 	hc->hw.int_m2 = 0;
@@ -2039,7 +2044,9 @@ setup_hw(struct hfc_pci *hc)
 	Write_hfc(hc, HFCPCI_INT_M1, hc->hw.int_m1);
 	/* At this point the needed PCI config is done */
 	/* fifos are still not enabled */
-	timer_setup(&hc->hw.timer, hfcpci_Timer, 0);
+	hc->hw.timer.function = (void *) hfcpci_Timer;
+	hc->hw.timer.data = (long) hc;
+	init_timer(&hc->hw.timer);
 	/* default PCM master */
 	test_and_set_bit(HFC_CFG_MASTER, &hc->cfg);
 	return 0;
@@ -2157,7 +2164,7 @@ static const struct _hfc_map hfc_map[] =
 	{},
 };
 
-static const struct pci_device_id hfc_ids[] =
+static struct pci_device_id hfc_ids[] =
 {
 	{ PCI_VDEVICE(CCD, PCI_DEVICE_ID_CCD_2BD0),
 	  (unsigned long) &hfc_map[0] },
@@ -2215,7 +2222,7 @@ hfc_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	struct hfc_pci	*card;
 	struct _hfc_map	*m = (struct _hfc_map *)ent->driver_data;
 
-	card = kzalloc(sizeof(struct hfc_pci), GFP_KERNEL);
+	card = kzalloc(sizeof(struct hfc_pci), GFP_ATOMIC);
 	if (!card) {
 		printk(KERN_ERR "No kmem for HFC card\n");
 		return err;
@@ -2261,7 +2268,7 @@ static struct pci_driver hfc_driver = {
 };
 
 static int
-_hfcpci_softirq(struct device *dev, void *unused)
+_hfcpci_softirq(struct device *dev, void *arg)
 {
 	struct hfc_pci  *hc = dev_get_drvdata(dev);
 	struct bchannel *bch;
@@ -2286,9 +2293,9 @@ _hfcpci_softirq(struct device *dev, void *unused)
 }
 
 static void
-hfcpci_softirq(struct timer_list *unused)
+hfcpci_softirq(void *arg)
 {
-	WARN_ON_ONCE(driver_for_each_device(&hfc_driver.driver, NULL, NULL,
+	WARN_ON_ONCE(driver_for_each_device(&hfc_driver.driver, NULL, arg,
 				      _hfcpci_softirq) != 0);
 
 	/* if next event would be in the past ... */
@@ -2323,7 +2330,9 @@ HFC_init(void)
 	if (poll != HFCPCI_BTRANS_THRESHOLD) {
 		printk(KERN_INFO "%s: Using alternative poll value of %d\n",
 		       __func__, poll);
-		timer_setup(&hfc_tl, hfcpci_softirq, 0);
+		hfc_tl.function = (void *)hfcpci_softirq;
+		hfc_tl.data = 0;
+		init_timer(&hfc_tl);
 		hfc_tl.expires = jiffies + tics;
 		hfc_jiffies = hfc_tl.expires;
 		add_timer(&hfc_tl);

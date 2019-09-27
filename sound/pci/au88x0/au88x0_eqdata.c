@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /* Data structs */
 
 static u16 asEqCoefsZeros[50] = {

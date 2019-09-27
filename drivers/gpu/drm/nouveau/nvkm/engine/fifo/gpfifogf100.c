@@ -32,23 +32,6 @@
 #include <nvif/cl906f.h>
 #include <nvif/unpack.h>
 
-int
-gf100_fifo_chan_ntfy(struct nvkm_fifo_chan *chan, u32 type,
-		     struct nvkm_event **pevent)
-{
-	switch (type) {
-	case NV906F_V0_NTFY_NON_STALL_INTERRUPT:
-		*pevent = &chan->fifo->uevent;
-		return 0;
-	case NV906F_V0_NTFY_KILLED:
-		*pevent = &chan->fifo->kevent;
-		return 0;
-	default:
-		break;
-	}
-	return -EINVAL;
-}
-
 static u32
 gf100_fifo_gpfifo_engine_addr(struct nvkm_engine *engine)
 {
@@ -111,7 +94,7 @@ gf100_fifo_gpfifo_engine_init(struct nvkm_fifo_chan *base,
 	struct nvkm_gpuobj *inst = chan->base.inst;
 
 	if (offset) {
-		u64 addr = chan->engn[engine->subdev.index].vma->addr;
+		u64 addr = chan->engn[engine->subdev.index].vma.offset;
 		nvkm_kmap(inst);
 		nvkm_wo32(inst, offset + 0x00, lower_32_bits(addr) | 4);
 		nvkm_wo32(inst, offset + 0x04, upper_32_bits(addr));
@@ -126,7 +109,7 @@ gf100_fifo_gpfifo_engine_dtor(struct nvkm_fifo_chan *base,
 			      struct nvkm_engine *engine)
 {
 	struct gf100_fifo_chan *chan = gf100_fifo_chan(base);
-	nvkm_vmm_put(chan->base.vmm, &chan->engn[engine->subdev.index].vma);
+	nvkm_gpuobj_unmap(&chan->engn[engine->subdev.index].vma);
 	nvkm_gpuobj_del(&chan->engn[engine->subdev.index].inst);
 }
 
@@ -146,13 +129,8 @@ gf100_fifo_gpfifo_engine_ctor(struct nvkm_fifo_chan *base,
 	if (ret)
 		return ret;
 
-	ret = nvkm_vmm_get(chan->base.vmm, 12, chan->engn[engn].inst->size,
-			   &chan->engn[engn].vma);
-	if (ret)
-		return ret;
-
-	return nvkm_memory_map(chan->engn[engn].inst, 0, chan->base.vmm,
-			       chan->engn[engn].vma, NULL, 0);
+	return nvkm_gpuobj_map(chan->engn[engn].inst, chan->vm,
+			       NV_MEM_ACCESS_RW, &chan->engn[engn].vma);
 }
 
 static void
@@ -195,7 +173,10 @@ gf100_fifo_gpfifo_init(struct nvkm_fifo_chan *base)
 static void *
 gf100_fifo_gpfifo_dtor(struct nvkm_fifo_chan *base)
 {
-	return gf100_fifo_chan(base);
+	struct gf100_fifo_chan *chan = gf100_fifo_chan(base);
+	nvkm_vm_ref(NULL, &chan->vm, chan->pgd);
+	nvkm_gpuobj_del(&chan->pgd);
+	return chan;
 }
 
 static const struct nvkm_fifo_chan_func
@@ -203,7 +184,7 @@ gf100_fifo_gpfifo_func = {
 	.dtor = gf100_fifo_gpfifo_dtor,
 	.init = gf100_fifo_gpfifo_init,
 	.fini = gf100_fifo_gpfifo_fini,
-	.ntfy = gf100_fifo_chan_ntfy,
+	.ntfy = g84_fifo_chan_ntfy,
 	.engine_ctor = gf100_fifo_gpfifo_engine_ctor,
 	.engine_dtor = gf100_fifo_gpfifo_engine_dtor,
 	.engine_init = gf100_fifo_gpfifo_engine_init,
@@ -218,6 +199,7 @@ gf100_fifo_gpfifo_new(struct nvkm_fifo *base, const struct nvkm_oclass *oclass,
 		struct fermi_channel_gpfifo_v0 v0;
 	} *args = data;
 	struct gf100_fifo *fifo = gf100_fifo(base);
+	struct nvkm_device *device = fifo->base.engine.subdev.device;
 	struct nvkm_object *parent = oclass->parent;
 	struct gf100_fifo_chan *chan;
 	u64 usermem, ioffset, ilength;
@@ -225,12 +207,10 @@ gf100_fifo_gpfifo_new(struct nvkm_fifo *base, const struct nvkm_oclass *oclass,
 
 	nvif_ioctl(parent, "create channel gpfifo size %d\n", size);
 	if (!(ret = nvif_unpack(ret, &data, &size, args->v0, 0, 0, false))) {
-		nvif_ioctl(parent, "create channel gpfifo vers %d vmm %llx "
+		nvif_ioctl(parent, "create channel gpfifo vers %d vm %llx "
 				   "ioffset %016llx ilength %08x\n",
-			   args->v0.version, args->v0.vmm, args->v0.ioffset,
+			   args->v0.version, args->v0.vm, args->v0.ioffset,
 			   args->v0.ilength);
-		if (!args->v0.vmm)
-			return -EINVAL;
 	} else
 		return ret;
 
@@ -242,7 +222,7 @@ gf100_fifo_gpfifo_new(struct nvkm_fifo *base, const struct nvkm_oclass *oclass,
 	INIT_LIST_HEAD(&chan->head);
 
 	ret = nvkm_fifo_chan_ctor(&gf100_fifo_gpfifo_func, &fifo->base,
-				  0x1000, 0x1000, true, args->v0.vmm, 0,
+				  0x1000, 0x1000, true, args->v0.vm, 0,
 				  (1ULL << NVKM_ENGINE_CE0) |
 				  (1ULL << NVKM_ENGINE_CE1) |
 				  (1ULL << NVKM_ENGINE_GR) |
@@ -250,12 +230,28 @@ gf100_fifo_gpfifo_new(struct nvkm_fifo *base, const struct nvkm_oclass *oclass,
 				  (1ULL << NVKM_ENGINE_MSPPP) |
 				  (1ULL << NVKM_ENGINE_MSVLD) |
 				  (1ULL << NVKM_ENGINE_SW),
-				  1, fifo->user.bar->addr, 0x1000,
+				  1, fifo->user.bar.offset, 0x1000,
 				  oclass, &chan->base);
 	if (ret)
 		return ret;
 
 	args->v0.chid = chan->base.chid;
+
+	/* page directory */
+	ret = nvkm_gpuobj_new(device, 0x10000, 0x1000, false, NULL, &chan->pgd);
+	if (ret)
+		return ret;
+
+	nvkm_kmap(chan->base.inst);
+	nvkm_wo32(chan->base.inst, 0x0200, lower_32_bits(chan->pgd->addr));
+	nvkm_wo32(chan->base.inst, 0x0204, upper_32_bits(chan->pgd->addr));
+	nvkm_wo32(chan->base.inst, 0x0208, 0xffffffff);
+	nvkm_wo32(chan->base.inst, 0x020c, 0x000000ff);
+	nvkm_done(chan->base.inst);
+
+	ret = nvkm_vm_ref(chan->base.vm, &chan->vm, chan->pgd);
+	if (ret)
+		return ret;
 
 	/* clear channel control registers */
 

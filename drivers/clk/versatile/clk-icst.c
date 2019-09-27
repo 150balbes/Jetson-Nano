@@ -1,10 +1,13 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Driver for the ICST307 VCO clock found in the ARM Reference designs.
  * We wrap the custom interface from <asm/hardware/icst.h> into the generic
  * clock framework.
  *
  * Copyright (C) 2012-2015 Linus Walleij
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  *
  * TODO: when all ARM reference designs are migrated to generic clocks, the
  * ICST clock code from the ARM tree should probably be merged into this
@@ -19,7 +22,6 @@
 #include <linux/regmap.h>
 #include <linux/mfd/syscon.h>
 
-#include "icst.h"
 #include "clk-icst.h"
 
 /* Magic unlocking token used on all Versatile boards */
@@ -356,13 +358,16 @@ static struct clk *icst_clk_setup(struct device *dev,
 	struct clk_init_data init;
 	struct icst_params *pclone;
 
-	icst = kzalloc(sizeof(*icst), GFP_KERNEL);
-	if (!icst)
+	icst = kzalloc(sizeof(struct clk_icst), GFP_KERNEL);
+	if (!icst) {
+		pr_err("could not allocate ICST clock!\n");
 		return ERR_PTR(-ENOMEM);
+	}
 
 	pclone = kmemdup(desc->params, sizeof(*pclone), GFP_KERNEL);
 	if (!pclone) {
 		kfree(icst);
+		pr_err("could not clone ICST params\n");
 		return ERR_PTR(-ENOMEM);
 	}
 

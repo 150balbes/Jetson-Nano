@@ -1,11 +1,15 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * pca9532.c - 16-bit Led dimmer
  *
  * Copyright (C) 2011 Jan Weitzel
  * Copyright (C) 2008 Riku Voipio
  *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; version 2 of the License.
+ *
  * Datasheet: http://www.nxp.com/documents/data_sheet/PCA9532.pdf
+ *
  */
 
 #include <linux/module.h>
@@ -250,21 +254,6 @@ static void pca9532_input_work(struct work_struct *work)
 	mutex_unlock(&data->update_lock);
 }
 
-static enum pca9532_state pca9532_getled(struct pca9532_led *led)
-{
-	struct i2c_client *client = led->client;
-	struct pca9532_data *data = i2c_get_clientdata(client);
-	u8 maxleds = data->chip_info->num_leds;
-	char reg;
-	enum pca9532_state ret;
-
-	mutex_lock(&data->update_lock);
-	reg = i2c_smbus_read_byte_data(client, LED_REG(maxleds, led->id));
-	ret = reg >> LED_NUM(led->id)/2;
-	mutex_unlock(&data->update_lock);
-	return ret;
-}
-
 #ifdef CONFIG_LEDS_PCA9532_GPIO
 static int pca9532_gpio_request_pin(struct gpio_chip *gc, unsigned offset)
 {
@@ -377,13 +366,10 @@ static int pca9532_configure(struct i2c_client *client,
 			gpios++;
 			break;
 		case PCA9532_TYPE_LED:
-			if (pled->state == PCA9532_KEEP)
-				led->state = pca9532_getled(led);
-			else
-				led->state = pled->state;
+			led->state = pled->state;
 			led->name = pled->name;
 			led->ldev.name = led->name;
-			led->ldev.default_trigger = pled->default_trigger;
+			led->ldev.default_trigger = led->default_trigger;
 			led->ldev.brightness = LED_OFF;
 			led->ldev.brightness_set_blocking =
 						pca9532_set_brightness;
@@ -470,7 +456,6 @@ pca9532_of_populate_pdata(struct device *dev, struct device_node *np)
 	const struct of_device_id *match;
 	int devid, maxleds;
 	int i = 0;
-	const char *state;
 
 	match = of_match_device(of_pca9532_leds_match, dev);
 	if (!match)
@@ -490,12 +475,6 @@ pca9532_of_populate_pdata(struct device *dev, struct device_node *np)
 		of_property_read_u32(child, "type", &pdata->leds[i].type);
 		of_property_read_string(child, "linux,default-trigger",
 					&pdata->leds[i].default_trigger);
-		if (!of_property_read_string(child, "default-state", &state)) {
-			if (!strcmp(state, "on"))
-				pdata->leds[i].state = PCA9532_ON;
-			else if (!strcmp(state, "keep"))
-				pdata->leds[i].state = PCA9532_KEEP;
-		}
 		if (++i >= maxleds) {
 			of_node_put(child);
 			break;
@@ -509,7 +488,6 @@ static int pca9532_probe(struct i2c_client *client,
 	const struct i2c_device_id *id)
 {
 	int devid;
-	const struct of_device_id *of_id;
 	struct pca9532_data *data = i2c_get_clientdata(client);
 	struct pca9532_platform_data *pca9532_pdata =
 			dev_get_platdata(&client->dev);
@@ -525,11 +503,8 @@ static int pca9532_probe(struct i2c_client *client,
 			dev_err(&client->dev, "no platform data\n");
 			return -EINVAL;
 		}
-		of_id = of_match_device(of_pca9532_leds_match,
-				&client->dev);
-		if (unlikely(!of_id))
-			return -EINVAL;
-		devid = (int)(uintptr_t) of_id->data;
+		devid = (int)(uintptr_t)of_match_device(
+			of_pca9532_leds_match, &client->dev)->data;
 	} else {
 		devid = id->driver_data;
 	}

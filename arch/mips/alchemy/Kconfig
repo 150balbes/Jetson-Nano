@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0
 # au1000-style gpio and interrupt controllers
 config ALCHEMY_GPIOINT_AU1000
 	bool
@@ -14,7 +13,7 @@ choice
 
 config MIPS_MTX1
 	bool "4G Systems MTX-1 board"
-	select HAVE_PCI
+	select HW_HAS_PCI
 	select ALCHEMY_GPIOINT_AU1000
 	select SYS_SUPPORTS_LITTLE_ENDIAN
 	select SYS_HAS_EARLY_PRINTK
@@ -22,7 +21,7 @@ config MIPS_MTX1
 config MIPS_DB1XXX
 	bool "Alchemy DB1XXX / PB1XXX boards"
 	select GPIOLIB
-	select HAVE_PCI
+	select HW_HAS_PCI
 	select SYS_SUPPORTS_LITTLE_ENDIAN
 	select SYS_HAS_EARLY_PRINTK
 	help
@@ -40,7 +39,7 @@ config MIPS_XXS1500
 config MIPS_GPR
 	bool "Trapeze ITS GPR board"
 	select ALCHEMY_GPIOINT_AU1000
-	select HAVE_PCI
+	select HW_HAS_PCI
 	select SYS_SUPPORTS_LITTLE_ENDIAN
 	select SYS_HAS_EARLY_PRINTK
 

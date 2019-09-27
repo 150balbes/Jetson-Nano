@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * arch/arm/mach-ixp4xx/coyote-setup.c
  *
@@ -24,8 +23,6 @@
 #include <asm/mach-types.h>
 #include <asm/mach/arch.h>
 #include <asm/mach/flash.h>
-
-#include "irqs.h"
 
 #define COYOTE_IDE_BASE_PHYS	IXP4XX_EXP_BUS_BASE(3)
 #define COYOTE_IDE_BASE_VIRT	0xFFFE1000
