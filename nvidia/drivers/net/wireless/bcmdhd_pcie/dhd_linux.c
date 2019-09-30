@@ -5440,8 +5440,8 @@ dhd_ethtool(dhd_info_t *dhd, void *uaddr)
 		/* Copy out any request driver name */
 		if (copy_from_user(&info, uaddr, sizeof(info)))
 			return -EFAULT;
-		strncpy(drvname, info.driver, sizeof(drvname)-1);
-		drvname[sizeof(drvname)-1] = '\0';
+		strncpy(drvname, info.driver, sizeof(info.driver));
+		drvname[sizeof(info.driver)-1] = '\0';
 
 		/* clear struct for return */
 		memset(&info, 0, sizeof(info));

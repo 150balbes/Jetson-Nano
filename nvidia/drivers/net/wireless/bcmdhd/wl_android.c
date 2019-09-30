@@ -615,10 +615,9 @@ static int wl_android_set_csa(struct net_device *dev, char *command, int total_l
 	csa_arg.reg = 0;
 	csa_arg.chspec = 0;
 	command += 2;
-	if (sizeof(buf) > strlen(command)) {
-		bcm_strncpy_s(buf, sizeof(buf), command, sizeof(buf)-1);
-		buf[sizeof(buf)-1] = '\0';
-	} else {
+	if (sizeof(buf) > strlen(command))
+		bcm_strncpy_s(buf, sizeof(buf), command, strlen(command));
+	else {
 		DHD_ERROR(("%s:command is not valid\n", __FUNCTION__));
 		return -1;
 	}

@@ -12,4 +12,4 @@ mods-$(CONFIG_DEBUG_FS)            += mods_debugfs.o
 mods-$(CONFIG_TEGRA_DC)            += mods_tegradc.o
 mods-$(CONFIG_TEGRA_NVADSP)        += mods_adsp.o
 mods-$(CONFIG_NET)                 += mods_netdevice.o
-#mods-objs                          := mods.dtb.o
+mods-objs                          := mods.dtb.o
