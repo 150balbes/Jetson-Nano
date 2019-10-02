@@ -1,7 +1,7 @@
 /*
  * sor.h: tegra dc sor structue and function declarations.
  *
- * Copyright (c) 2011-2019, NVIDIA CORPORATION, All rights reserved.
+ * Copyright (c) 2011-2018, NVIDIA CORPORATION, All rights reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -23,7 +23,7 @@
 #include <soc/tegra/tegra_bpmp.h>
 #include <linux/rwsem.h>
 #include <linux/delay.h>
-#include <uapi/video/tegra_dc_ext.h>
+#include <video/tegra_dc_ext.h>
 #include "dc_priv.h"
 #include "sor_regs.h"
 
@@ -213,6 +213,7 @@ struct tegra_dc_sor_data {
 #define TEGRA_SOR_TIMEOUT_MS		1000
 #define TEGRA_SOR_ATTACH_TIMEOUT_MS	50
 #define TEGRA_SOR_SEQ_BUSY_TIMEOUT_MS	10000
+#define TEGRA_DC_POLL_TIMEOUT_MS       50
 
 struct tegra_dc_sor_data *tegra_dc_sor_init(struct tegra_dc *dc,
 	const struct tegra_dc_dp_link_config *cfg);

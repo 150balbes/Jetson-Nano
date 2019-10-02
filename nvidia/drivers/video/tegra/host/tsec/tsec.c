@@ -369,24 +369,25 @@ void tsec_send_method(struct hdcp_context_t *hdcp_context,
 	struct nvhost_master *host = nvhost_get_private_data(host_dev);
 	u32 opcode_len = 0;
 	u32 *cpuvaddr = NULL;
-	static u32 id = 0;
+	u32 id = 0;
 	dma_addr_t dma_handle = 0;
 	DEFINE_DMA_ATTRS(attrs);
 	u32 increment_opcode;
 	struct nvhost_device_data *pdata = platform_get_drvdata(tsec);
-	static struct nvhost_channel *channel = NULL;
+	struct nvhost_channel *channel = NULL;
 	int err;
-	static bool mapped = false;
 
 	mutex_lock(&tegra_tsec_lock);
-	if (!mapped) {
-		err = nvhost_channel_map(pdata, &channel, pdata);
-		if (err) {
-			nvhost_err(&tsec->dev, "Channel map failed\n");
-			mutex_unlock(&tegra_tsec_lock);
-			return;
-		}
+	err = nvhost_channel_map(pdata, &channel, pdata);
+	if (err) {
+		nvhost_err(&tsec->dev, "Channel map failed\n");
+		mutex_unlock(&tegra_tsec_lock);
+		return;
+	}
 
+	/* check if syncpt is already mapped to channel */
+	id = channel->syncpts[0];
+	if (!id) {
 		id = nvhost_get_syncpt_host_managed(tsec, 0, "tsec_hdcp");
 		if (!id) {
 			nvhost_err(&tsec->dev, "failed to get sync point\n");
@@ -394,8 +395,9 @@ void tsec_send_method(struct hdcp_context_t *hdcp_context,
 			mutex_unlock(&tegra_tsec_lock);
 			return;
 		}
-
-		mapped = true;
+		channel->syncpts[0] = id;
+	} else {
+		nvhost_syncpt_get_ref_ext(tsec, id);
 	}
 
 	cpuvaddr = dma_alloc_attrs(tsec->dev.parent, HDCP_MTHD_BUF_SIZE,
@@ -403,10 +405,11 @@ void tsec_send_method(struct hdcp_context_t *hdcp_context,
 			__DMA_ATTR(attrs));
 	if (!cpuvaddr) {
 		nvhost_err(&tsec->dev, "Failed to allocate memory\n");
+		nvhost_syncpt_put_ref_ext(tsec, id);
+		nvhost_putchannel(channel, 1);
 		mutex_unlock(&tegra_tsec_lock);
 		return;
 	}
-
 	memset(cpuvaddr, 0x0, HDCP_MTHD_BUF_SIZE);
 
 	tsec_write_mthd(&cpuvaddr[opcode_len],
@@ -471,6 +474,10 @@ void tsec_send_method(struct hdcp_context_t *hdcp_context,
 		   increment_opcode, &opcode_len);
 
 	tsec_execute_method(dma_handle, channel, cpuvaddr, opcode_len, id, 1);
+
+	nvhost_syncpt_put_ref_ext(tsec, id);
+
+	nvhost_putchannel(channel, 1);
 
 	dma_free_attrs(tsec->dev.parent,
 		HDCP_MTHD_BUF_SIZE, cpuvaddr,

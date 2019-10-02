@@ -151,7 +151,7 @@ int tegra_edid_i2c_adap_change_rate(struct i2c_adapter *i2c_adap, int rate)
 		if (err)
 			pr_warn("Could not change i2c_ddc sclk rate\n");
 		else
-			pr_info("Switching i2c_ddc sclk rate: from %d, "
+			pr_warn("Switching i2c_ddc sclk rate: from %d, "
 "to %d\n", cur_rate, rate);
 	} else {
 		pr_warn("ddc i2c adapter NULL\n");
@@ -160,7 +160,7 @@ int tegra_edid_i2c_adap_change_rate(struct i2c_adapter *i2c_adap, int rate)
 	return err;
 }
 
-int tegra_edid_i2c_divide_rate(struct tegra_edid *edid)
+static int tegra_edid_i2c_divide_rate(struct tegra_edid *edid)
 {
 	struct i2c_adapter *i2c_adap = i2c_get_adapter(edid->dc->out->ddc_bus);
 	int new_rate = 0, old_rate = 0, err = 0;
@@ -610,17 +610,11 @@ int tegra_edid_get_ex_hdr_cap_info(struct tegra_edid *edid,
 
 inline bool tegra_edid_is_rgb_quantization_selectable(struct tegra_edid *edid)
 {
-	if (!edid || !edid->data) {
-		return false;
-	}
 	return edid->data->rgb_quant_selectable;
 }
 
 inline bool tegra_edid_is_yuv_quantization_selectable(struct tegra_edid *edid)
 {
-	if (!edid || !edid->data) {
-		return false;
-	}
 	return edid->data->yuv_quant_selectable;
 }
 

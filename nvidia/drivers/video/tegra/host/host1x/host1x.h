@@ -3,7 +3,7 @@
  *
  * Tegra Graphics Host Driver Entrypoint
  *
- * Copyright (c) 2010-2019, NVIDIA Corporation. All rights reserved.
+ * Copyright (c) 2010-2018, NVIDIA Corporation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -23,7 +23,7 @@
 
 #include <linux/cdev.h>
 #include <linux/nvhost.h>
-#include <uapi/linux/nvhost_ioctl.h>
+#include <linux/nvhost_ioctl.h>
 
 #include "nvhost_syncpt.h"
 #include "nvhost_channel.h"

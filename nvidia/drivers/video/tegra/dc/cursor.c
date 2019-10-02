@@ -1,7 +1,7 @@
 /*
  * cursor.c: Function required to implement cursor interface.
  *
- * Copyright (c) 2011-2019, NVIDIA CORPORATION, All rights reserved.
+ * Copyright (c) 2011-2018, NVIDIA CORPORATION, All rights reserved.
  *
  * Author:
  *  Robert Morell <rmorell@nvidia.com>
@@ -173,6 +173,8 @@ static unsigned int set_cursor_start_addr(struct tegra_dc *dc,
 	if (tegra_dc_is_nvdisplay())
 		WARN_ON((phys_addr & 0x3FF) != 0);
 
+	tegra_dc_writel(dc, CURSOR_UPDATE, DC_CMD_STATE_CONTROL);
+	tegra_dc_writel(dc, CURSOR_ACT_REQ, DC_CMD_STATE_CONTROL);
 	return 0;
 }
 
@@ -185,6 +187,8 @@ static int set_cursor_position(struct tegra_dc *dc, s16 x, s16 y)
 				H_CURSOR_POSITION_SIZE),
 				DC_DISP_CURSOR_POSITION);
 
+	tegra_dc_writel(dc, CURSOR_UPDATE, DC_CMD_STATE_CONTROL);
+	tegra_dc_writel(dc, CURSOR_ACT_REQ, DC_CMD_STATE_CONTROL);
 	return 0;
 }
 
@@ -282,8 +286,7 @@ static void tegra_dc_cursor_do_update(struct tegra_dc *dc,
 	}
 }
 
-static int tegra_dc_cursor_program(struct tegra_dc *dc, bool enable,
-				   bool wait_for_activation)
+static int tegra_dc_cursor_program(struct tegra_dc *dc, bool enable)
 {
 	bool need_general_update = false;
 
@@ -319,13 +322,6 @@ static int tegra_dc_cursor_program(struct tegra_dc *dc, bool enable,
 
 	tegra_dc_cursor_do_update(dc, need_general_update);
 
-	if (wait_for_activation)
-		if (tegra_dc_poll_register(dc, DC_CMD_STATE_CONTROL,
-			CURSOR_ACT_REQ, 0, 1,
-			TEGRA_DC_POLL_TIMEOUT_MS))
-			dev_err(&dc->ndev->dev,
-				"dc timeout waiting for cursor act_req\n");
-
 	tegra_dc_put(dc);
 	dc->cursor.dirty = false;
 	mutex_unlock(&dc->lock);
@@ -337,8 +333,7 @@ int tegra_dc_cursor_image(struct tegra_dc *dc,
 	enum tegra_dc_cursor_blend_format blendfmt,
 	enum tegra_dc_cursor_size size,
 	u32 fg, u32 bg, dma_addr_t phys_addr,
-	enum tegra_dc_cursor_color_format colorfmt, u32 alpha, u32 flags,
-	bool wait_for_activation)
+	enum tegra_dc_cursor_color_format colorfmt, u32 alpha, u32 flags)
 {
 	if (cursor_size_value(size, NULL))
 		return -EINVAL;
@@ -367,8 +362,7 @@ int tegra_dc_cursor_image(struct tegra_dc *dc,
 	dc->cursor.alpha = alpha;
 	mutex_unlock(&dc->lock);
 
-	return tegra_dc_cursor_program(dc, dc->cursor.enabled,
-				       wait_for_activation);
+	return tegra_dc_cursor_program(dc, dc->cursor.enabled);
 }
 
 int tegra_dc_cursor_set(struct tegra_dc *dc, bool enable, int x, int y)
@@ -379,7 +373,7 @@ int tegra_dc_cursor_set(struct tegra_dc *dc, bool enable, int x, int y)
 	dc->cursor.dirty = true;
 	mutex_unlock(&dc->lock);
 
-	return tegra_dc_cursor_program(dc, enable, false);
+	return tegra_dc_cursor_program(dc, enable);
 }
 
 /* clip:
@@ -395,7 +389,7 @@ int tegra_dc_cursor_clip(struct tegra_dc *dc, unsigned clip)
 	dc->cursor.dirty = true;
 	mutex_unlock(&dc->lock);
 
-	return tegra_dc_cursor_program(dc, dc->cursor.enabled, false);
+	return tegra_dc_cursor_program(dc, dc->cursor.enabled);
 }
 
 /* disable the cursor on suspend. but leave the state unmodified */
@@ -416,5 +410,5 @@ int tegra_dc_cursor_suspend(struct tegra_dc *dc)
 /* restore the state */
 int tegra_dc_cursor_resume(struct tegra_dc *dc)
 {
-	return tegra_dc_cursor_program(dc, dc->cursor.enabled, false);
+	return tegra_dc_cursor_program(dc, dc->cursor.enabled);
 }

@@ -34,7 +34,7 @@
 #include <linux/types.h>
 #include <uapi/linux/sched/types.h>
 #endif
-#include <uapi/video/tegra_dc_ext.h>
+#include <video/tegra_dc_ext.h>
 #include <trace/events/display.h>
 
 /* XXX ew */
@@ -42,7 +42,7 @@
 #include "../dc_priv.h"
 #include "../dc_priv_defs.h"
 #include "../dc_config.h"
-#include <uapi/video/tegra_dc_ext.h>
+#include <video/tegra_dc_ext.h>
 /* XXX ew 3 */
 #include "tegra_dc_ext_priv.h"
 /* XXX ew 4 */

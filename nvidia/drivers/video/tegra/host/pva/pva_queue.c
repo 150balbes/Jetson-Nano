@@ -1,7 +1,7 @@
 /*
  * PVA Task Management
  *
- * Copyright (c) 2016-2019, NVIDIA Corporation.  All rights reserved.
+ * Copyright (c) 2016-2018, NVIDIA Corporation.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -511,11 +511,15 @@ static int pva_task_write_preactions(struct pva_submit_task *task,
 				     struct pva_hw_task *hw_task)
 {
 	u8 *hw_preactions = hw_task->preactions;
+	u64 timestamp = arch_counter_get_cntvct();
 	int i = 0, j = 0, ptr = 0;
 
 	/* Add waits to preactions list */
 	for (i = 0; i < task->num_prefences; i++) {
 		struct nvdev_fence *fence = task->prefences + i;
+
+		nvhost_eventlib_log_fence(task->pva->pdev,
+			NVDEV_FENCE_KIND_PRE, fence, timestamp);
 
 		switch (fence->type) {
 		case NVDEV_FENCE_TYPE_SYNCPT: {
@@ -1174,14 +1178,6 @@ static void pva_task_update(struct pva_submit_task *task)
 			task->syncpt_thresh,
 			stats, task->operation);
 
-	/* Record task postfences */
-	nvhost_eventlib_log_fences(pdev,
-			queue->syncpt_id,
-			task->syncpt_thresh,
-			task->postfences,
-			task->num_postfences,
-			NVDEV_FENCE_KIND_POST,
-			stats->complete_time);
 
 	if (task->pva->vpu_perf_counters_enable) {
 		for (idx = 0; idx < PVA_TASK_VPU_NUM_PERF_COUNTERS; idx++) {
@@ -1212,19 +1208,11 @@ static void pva_task_update(struct pva_submit_task *task)
 	/* remove the task from the queue */
 	list_del(&task->node);
 
-	/* Not linked anymore so drop the reference */
-	kref_put(&task->ref, pva_task_free);
+	/* Release memory that was allocated for the task */
+	nvhost_queue_free_task_memory(task->queue, task->pool_index);
 
 	/* Drop queue reference to allow reusing it */
 	nvhost_queue_put(queue);
-}
-
-void pva_task_free(struct kref *ref)
-{
-	struct pva_submit_task *task =
-		container_of(ref, struct pva_submit_task, ref);
-	/* Release memory that was allocated for the task */
-	nvhost_queue_free_task_memory(task->queue, task->pool_index);
 }
 
 static void pva_queue_update(void *priv, int nr_completed)
@@ -1461,15 +1449,6 @@ static int pva_task_submit(struct pva_submit_task *task,
 	if (err < 0)
 		goto err_submit;
 
-	/* Record task prefences */
-	nvhost_eventlib_log_fences(task->pva->pdev,
-				   queue->syncpt_id,
-				   thresh,
-				   task->prefences,
-				   task->num_prefences,
-				   NVDEV_FENCE_KIND_PRE,
-				   timestamp);
-
 	nvhost_eventlib_log_submit(task->pva->pdev,
 				   queue->syncpt_id,
 				   thresh,
@@ -1481,10 +1460,6 @@ static int pva_task_submit(struct pva_submit_task *task,
 			queue->syncpt_id, thresh);
 
 	*task_thresh = thresh;
-
-	/* Going to be linked so obtain the reference */
-	kref_get(&task->ref);
-
 	/*
 	 * Tasks in the queue list can be modified by the interrupt handler.
 	 * Adding the task into the list must be the last step before

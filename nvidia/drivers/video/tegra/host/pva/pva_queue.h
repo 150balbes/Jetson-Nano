@@ -1,7 +1,7 @@
 /*
  * PVA Task Management
  *
- * Copyright (c) 2016-2019, NVIDIA Corporation.  All rights reserved.
+ * Copyright (c) 2016-2018, NVIDIA Corporation.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -47,8 +47,6 @@ struct pva_parameter_ext {
  * pva				Pointer to struct pva
  * buffers			Pointer to struct nvhost_buffers
  * queue			Pointer to struct nvhost_queue
- * node				Used to build queue task list
- * kref				Used to manage allocation and freeing
  * dma_addr			task dma_addr_t
  * va				task virtual address
  * pool_index			task pool index
@@ -78,7 +76,6 @@ struct pva_submit_task {
 	struct nvhost_queue *queue;
 
 	struct list_head node;
-	struct kref ref;
 
 	dma_addr_t dma_addr;
 	void *va;
@@ -146,6 +143,4 @@ struct pva_queue_set_attribute {
 };
 
 void pva_task_remove(struct pva_submit_task *task);
-void pva_task_free(struct kref *ref);
-
 #endif

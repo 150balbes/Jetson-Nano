@@ -1,7 +1,7 @@
 /*
  * drivers/video/tegra/dc/nvdisplay/nvdis_win.c
  *
- * Copyright (c) 2014-2019, NVIDIA CORPORATION, All rights reserved.
+ * Copyright (c) 2014-2018, NVIDIA CORPORATION, All rights reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -16,7 +16,7 @@
 
 
 #include <linux/delay.h>
-#include <uapi/video/tegra_dc_ext.h>
+#include <video/tegra_dc_ext.h>
 
 #include "dc.h"
 #include "nvdisp.h"
@@ -1200,6 +1200,8 @@ int tegra_nvdisp_detach_win(struct tegra_dc *dc, unsigned idx)
 int tegra_nvdisp_assign_win(struct tegra_dc *dc, unsigned idx)
 {
 	struct tegra_dc_win *win = tegra_dc_get_window(dc, idx);
+	/* Pulls configuration in from TEGRA_DC_FEATURE_INVERT_TYPE field */
+	bool enable_blx4 = tegra_dc_feature_has_scan_column(dc, idx);
 
 	if (win == NULL)
 		return -EINVAL;
@@ -1236,12 +1238,15 @@ int tegra_nvdisp_assign_win(struct tegra_dc *dc, unsigned idx)
 		win->precomp_caps_read = true;
 	}
 
-	/* Configure some IHUB related settings.
-	 * Set linebuf config to BLx4 (4-line buffering) by default always.
-	 */
-	nvdisp_win_write(win,
-			win_ihub_linebuf_config_mode_four_lines_f(),
-			win_ihub_linebuf_config_r());
+	/* configure some IHUB related settings  */
+	if (enable_blx4)
+		nvdisp_win_write(win,
+				win_ihub_linebuf_config_mode_four_lines_f(),
+				win_ihub_linebuf_config_r());
+	else
+		nvdisp_win_write(win,
+				win_ihub_linebuf_config_mode_two_lines_f(),
+				win_ihub_linebuf_config_r());
 
 	/* set the windows scaler coeff value */
 	if (!win->is_scaler_coeff_set) {

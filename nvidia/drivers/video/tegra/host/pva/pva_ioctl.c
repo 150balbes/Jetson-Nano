@@ -1,7 +1,7 @@
 /*
  * PVA Ioctl Handling for T194
  *
- * Copyright (c) 2016-2019, NVIDIA Corporation.  All rights reserved.
+ * Copyright (c) 2016-2018, NVIDIA Corporation.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -256,10 +256,6 @@ static int pva_submit(struct pva_private *priv, void *arg)
 		if (err < 0)
 			goto err_copy_tasks;
 
-		INIT_LIST_HEAD(&task->node);
-		/* Obtain an initial reference */
-		kref_init(&task->ref);
-
 		task->pva = priv->pva;
 		task->queue = priv->queue;
 		task->buffers = priv->buffers;
@@ -287,8 +283,7 @@ static int pva_submit(struct pva_private *priv, void *arg)
 		struct nvdev_fence __user *postfences =
 				(struct nvdev_fence __user *)
 				ioctl_tasks[i].postfences;
-
-		task = tasks_header.tasks[i];
+		u64 timestamp = arch_counter_get_cntvct();
 
 		for (j = 0; j < ioctl_tasks[i].num_postfences; j++) {
 			err = copy_from_user(&fence,
@@ -309,9 +304,6 @@ static int pva_submit(struct pva_private *priv, void *arg)
 				break;
 			}
 
-			/* Needed for further recording in pva_task_update */
-			memcpy(task->postfences + j, &fence, sizeof(fence));
-
 			err = copy_to_user(postfences + j,
 					   &fence,
 					   sizeof(struct nvdev_fence));
@@ -320,10 +312,10 @@ static int pva_submit(struct pva_private *priv, void *arg)
 						"Failed to copy fences to userspace");
 				break;
 			}
-		}
 
-		/* Drop the reference */
-		kref_put(&task->ref, pva_task_free);
+			nvhost_eventlib_log_fence(priv->pva->pdev, NVDEV_FENCE_KIND_POST,
+						  &fence, timestamp);
+		}
 	}
 
 	kfree(ioctl_tasks);
@@ -334,8 +326,8 @@ err_get_task_buffer:
 err_copy_tasks:
 	for (i = 0; i < tasks_header.num_tasks; i++) {
 		task = tasks_header.tasks[i];
-		/* Drop the reference */
-		kref_put(&task->ref, pva_task_free);
+		/* Release memory that was allocated for the task */
+		nvhost_queue_free_task_memory(task->queue, task->pool_index);
 	}
 err_alloc_task_mem:
 	kfree(ioctl_tasks);

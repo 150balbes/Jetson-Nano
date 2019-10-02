@@ -3,7 +3,7 @@
  *
  * Tegra Graphics Host Automatic Clock Management
  *
- * Copyright (c) 2010-2019, NVIDIA Corporation. All rights reserved.
+ * Copyright (c) 2010-2018, NVIDIA Corporation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -33,7 +33,7 @@
 #include <soc/tegra/chip-id.h>
 #include <trace/events/nvhost.h>
 #include <linux/tegra_pm_domains.h>
-#include <uapi/linux/nvhost_ioctl.h>
+#include <linux/nvhost_ioctl.h>
 #include <linux/version.h>
 #include <linux/clk/tegra.h>
 #include <linux/clk-provider.h>

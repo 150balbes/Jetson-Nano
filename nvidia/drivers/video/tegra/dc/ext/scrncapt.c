@@ -1,7 +1,7 @@
 /*
  * scrncapt.c: Screen capture functionality for tegradc ext interface.
  *
- * Copyright (c) 2016-2019, NVIDIA CORPORATION, All rights reserved.
+ * Copyright (c) 2016-2017, NVIDIA CORPORATION, All rights reserved.
  *
  * Author: Sungwook Kim <sungwookk@nvidia.com>
  *
@@ -26,7 +26,7 @@
 #include <linux/timer.h>
 #include <linux/memblock.h>
 #include <linux/fb.h>
-#include <uapi/video/tegra_dc_ext.h>
+#include <video/tegra_dc_ext.h>
 #include <trace/events/display.h>
 
 #include "../dc.h"

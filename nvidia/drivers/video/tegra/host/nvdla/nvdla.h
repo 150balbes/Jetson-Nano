@@ -3,7 +3,7 @@
  *
  * Tegra Graphics Host NVDLA
  *
- * Copyright (c) 2016-2019 NVIDIA Corporation.  All rights reserved.
+ * Copyright (c) 2016-2018 NVIDIA Corporation.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -24,7 +24,7 @@
 #include <linux/completion.h>
 #include <linux/mutex.h>
 #include <uapi/linux/nvdev_fence.h>
-#include <uapi/linux/nvhost_nvdla_ioctl.h>
+#include <linux/nvhost_nvdla_ioctl.h>
 #include "nvhost_buffer.h"
 
 #include "dla_os_interface.h"
@@ -260,10 +260,10 @@ struct nvdla_task {
 	struct nvdla_status_notify in_task_status[MAX_NUM_NVDLA_IN_TASK_STATUS];
 	struct nvdla_status_notify out_task_status[MAX_NUM_NVDLA_OUT_TASK_STATUS];
 	struct nvdla_mem_handle memory_handles[NVDLA_MAX_BUFFERS_PER_TASK];
-	u8 num_prefences;
-	u8 num_postfences;
-	u8 num_in_task_status;
-	u8 num_out_task_status;
+	u32 num_prefences;
+	u32 num_postfences;
+	u32 num_in_task_status;
+	u32 num_out_task_status;
 	u32 num_addresses;
 	u32 fence;
 	u32 fence_counter;

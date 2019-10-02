@@ -1,7 +1,7 @@
 /*
  * drivers/video/tegra/dc/nvdisplay/nvdisp.c
  *
- * Copyright (c) 2014-2019, NVIDIA CORPORATION, All rights reserved.
+ * Copyright (c) 2014-2018, NVIDIA CORPORATION, All rights reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -719,13 +719,6 @@ static void tegra_nvdisp_mode_set_background_color(struct tegra_dc *dc)
 	}
 	tegra_nvdisp_set_background_color(dc, reg_val);
 }
-
-static inline void tegra_nvdisp_program_curs_dvfs_watermark(struct tegra_dc *dc,
-							u32 dvfs_watermark);
-
-static inline void tegra_nvdisp_program_win_dvfs_watermark(
-						struct tegra_dc_win *win,
-						u32 dvfs_watermark);
 
 static inline void tegra_nvdisp_program_common_fetch_meter(struct tegra_dc *dc,
 							u32 curs_slots,
@@ -1573,17 +1566,6 @@ int tegra_nvdisp_init(struct tegra_dc *dc)
 	/* Set the valid windows as per mask */
 	dc->valid_windows = dc->pdata->win_mask;
 
-	/* Assign first valid window as fb window */
-	if (dc->pdata->fb->win == TEGRA_FB_WIN_INVALID) {
-		int i;
-
-		for_each_set_bit(i, &dc->valid_windows,
-				tegra_dc_get_numof_dispwindows()) {
-			dc->pdata->fb->win = i;
-			break;
-		}
-	}
-
 	/* Allocate a syncpoint for vblank on each head */
 	snprintf(syncpt_name, sizeof(syncpt_name), "vblank%u", dc->ctrl_num);
 	dc->vblank_syncpt = nvhost_get_syncpt_client_managed(dc->ndev,
@@ -2039,36 +2021,6 @@ int tegra_nvdisp_head_disable(struct tegra_dc *dc)
 {
 	int idx, ret = 0;
 	struct tegra_dc *dc_other = NULL;
-
-	/*
-	 * Disable the DVFS watermarks for the cursor and windows owned by this
-	 * head.
-	 *
-	 * The relevant cursor and windows should have already been disabled
-	 * prior to tegra_nvdisp_head_disable() being called, so it should be
-	 * safe to disable their watermarks, even though the watermark registers
-	 * aren't buffered at all.
-	 */
-	tegra_nvdisp_program_curs_dvfs_watermark(dc, 0x0);
-	for_each_set_bit(idx, &dc->pdata->win_mask,
-		tegra_dc_get_numof_dispwindows()) {
-		struct tegra_dc_win *win = tegra_dc_get_window(dc, idx);
-
-		if (!win || win->dc != dc)
-			continue;
-
-		/*
-		 * The window owner might have already been set to NONE, so
-		 * program the assembly state accordingly so that we can
-		 * actually write the register.
-		 *
-		 * The window owner will be categorically set to NONE during the
-		 * tegra_nvdisp_detach_win() call right below.
-		 */
-		nvdisp_win_write(win, dc->ctrl_num, win_set_control_r());
-		tegra_nvdisp_program_win_dvfs_watermark(win, 0x0);
-	}
-
 	/* Detach windows from the head */
 	for_each_set_bit(idx, &dc->pdata->win_mask,
 			tegra_dc_get_numof_dispwindows()) {
@@ -2726,46 +2678,6 @@ static inline void tegra_nvdisp_disable_ihub_latency_events(struct tegra_dc *dc)
 		tegra_dc_readl(dc, nvdisp_ihub_misc_ctl_r()) &
 		~nvdisp_ihub_misc_ctl_latency_event_enable_f(),
 		nvdisp_ihub_misc_ctl_r());
-}
-
-static inline void tegra_nvdisp_program_curs_dvfs_watermark(struct tegra_dc *dc,
-							u32 dvfs_watermark)
-{
-	if (dvfs_watermark) {
-		tegra_dc_writel(dc,
-			nvdisp_ihub_cursor_latency_ctla_ctl_mode_enable_f() |
-			nvdisp_ihub_cursor_latency_ctla_submode_watermark_f(),
-			nvdisp_ihub_cursor_latency_ctla_r());
-		tegra_dc_writel(dc,
-		nvdisp_ihub_cursor_latency_ctlb_watermark_f(dvfs_watermark),
-		nvdisp_ihub_cursor_latency_ctlb_r());
-	} else { /* disable watermark */
-		tegra_dc_writel(dc, 0x0, nvdisp_ihub_cursor_latency_ctla_r());
-		tegra_dc_writel(dc,
-			nvdisp_ihub_cursor_latency_ctlb_watermark_f(0x1fffffff),
-			nvdisp_ihub_cursor_latency_ctlb_r());
-	}
-}
-
-static inline void tegra_nvdisp_program_win_dvfs_watermark(
-						struct tegra_dc_win *win,
-						u32 dvfs_watermark)
-{
-	if (dvfs_watermark) {
-		nvdisp_win_write(win,
-			win_ihub_latency_ctla_ctl_mode_enable_f() |
-			win_ihub_latency_ctla_submode_watermark_f(),
-			win_ihub_latency_ctla_r());
-		nvdisp_win_write(win,
-			win_ihub_latency_ctlb_watermark_f(dvfs_watermark),
-			win_ihub_latency_ctlb_r());
-	} else { /* disable watermark */
-		nvdisp_win_write(win, 0x0, win_ihub_latency_ctla_r());
-		nvdisp_win_write(win,
-			win_ihub_latency_ctlb_watermark_f(0x1fffffff),
-			win_ihub_latency_ctlb_r());
-	}
-
 }
 
 static inline void tegra_nvdisp_program_common_fetch_meter(struct tegra_dc *dc,
@@ -4058,7 +3970,20 @@ static void tegra_nvdisp_program_imp_curs_entries(struct tegra_dc *dc,
 		nvdisp_ihub_cursor_fetch_meter_slots_f(fetch_slots),
 		nvdisp_ihub_cursor_fetch_meter_r());
 
-	tegra_nvdisp_program_curs_dvfs_watermark(dc, dvfs_watermark);
+	if (dvfs_watermark) {
+		tegra_dc_writel(dc,
+			nvdisp_ihub_cursor_latency_ctla_ctl_mode_enable_f() |
+			nvdisp_ihub_cursor_latency_ctla_submode_watermark_f(),
+			nvdisp_ihub_cursor_latency_ctla_r());
+		tegra_dc_writel(dc,
+		nvdisp_ihub_cursor_latency_ctlb_watermark_f(dvfs_watermark),
+		nvdisp_ihub_cursor_latency_ctlb_r());
+	} else { /* disable watermark */
+		tegra_dc_writel(dc, 0x0, nvdisp_ihub_cursor_latency_ctla_r());
+		tegra_dc_writel(dc,
+			nvdisp_ihub_cursor_latency_ctlb_watermark_f(0x1fffffff),
+			nvdisp_ihub_cursor_latency_ctlb_r());
+	}
 
 	tegra_dc_writel(dc,
 		nvdisp_cursor_pipe_meter_val_f(pipe_meter),
@@ -4100,7 +4025,20 @@ static void tegra_nvdisp_program_imp_win_entries(struct tegra_dc *dc,
 		win_ihub_fetch_meter_slots_f(fetch_meter),
 		win_ihub_fetch_meter_r());
 
-	tegra_nvdisp_program_win_dvfs_watermark(win, dvfs_watermark);
+	if (dvfs_watermark) {
+		nvdisp_win_write(win,
+			win_ihub_latency_ctla_ctl_mode_enable_f() |
+			win_ihub_latency_ctla_submode_watermark_f(),
+			win_ihub_latency_ctla_r());
+		nvdisp_win_write(win,
+			win_ihub_latency_ctlb_watermark_f(dvfs_watermark),
+			win_ihub_latency_ctlb_r());
+	} else { /* disable watermark */
+		nvdisp_win_write(win, 0x0, win_ihub_latency_ctla_r());
+		nvdisp_win_write(win,
+			win_ihub_latency_ctlb_watermark_f(0x1fffffff),
+			win_ihub_latency_ctlb_r());
+	}
 
 	nvdisp_win_write(win,
 		win_precomp_pipe_meter_val_f(pipe_meter),

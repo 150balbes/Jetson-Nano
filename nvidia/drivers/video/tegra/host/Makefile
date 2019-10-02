@@ -63,8 +63,7 @@ ifdef CONFIG_EVENTLIB
 $(obj)/bus_client.o: $(obj)/nvhost_events_json.h
 
 $(obj)/nvhost_events_json.h: $(src)/nvhost_events.json
-	xxd -i $< $@
-	sed -i 's/\(.*\) \(.*\)nvhost_events_json\(.*\)/\1 nvhost_events_json\3/g' $@
+	od -tx1 -v $< | sed -r -e's,^[0-9a-f]+, ,' -e's! ([0-9a-f][0-9a-f])! 0x\1,!g' | head -c -4 > $@
 
 clean-files := nvhost_events_json.h
 

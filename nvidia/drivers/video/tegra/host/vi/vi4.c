@@ -1,7 +1,7 @@
 /*
  * VI driver for T186
  *
- * Copyright (c) 2015-2019 NVIDIA Corporation.  All rights reserved.
+ * Copyright (c) 2015-2018 NVIDIA Corporation.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -33,7 +33,7 @@
 #include "vi_notify.h"
 #include <video/vi4.h>
 #include "t186/t186.h"
-#include <uapi/linux/nvhost_vi_ioctl.h>
+#include <linux/nvhost_vi_ioctl.h>
 #include <media/mc_common.h>
 #include <media/tegra_camera_platform.h>
 #include "camera/vi/vi4_fops.h"

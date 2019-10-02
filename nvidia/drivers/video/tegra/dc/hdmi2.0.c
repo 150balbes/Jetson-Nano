@@ -35,7 +35,7 @@
 #include <linux/of_address.h>
 #include <linux/of_gpio.h>
 #include <soc/tegra/tegra_powergate.h>
-#include <uapi/video/tegra_dc_ext.h>
+#include <video/tegra_dc_ext.h>
 
 #include "dc.h"
 #include "dc_reg.h"
@@ -155,9 +155,7 @@ static inline void _tegra_hdmi_ddc_enable(struct tegra_hdmi *hdmi)
 	if (hdmi->ddc_refcount++)
 		goto fail;
 	tegra_hdmi_get(hdmi->dc);
-	mutex_lock(&hdmi->dpaux->lock);
 	tegra_dpaux_get(hdmi->dpaux);
-	mutex_unlock(&hdmi->dpaux->lock);
 	/*
 	 * hdmi uses i2c lane muxed on dpaux1 pad.
 	 * Enable dpaux1 pads and configure the mux.
@@ -182,9 +180,7 @@ static inline void _tegra_hdmi_ddc_disable(struct tegra_hdmi *hdmi)
 	 * Disable dpaux1 pads.
 	 */
 	tegra_dpaux_pad_power(hdmi->dpaux, false);
-	mutex_lock(&hdmi->dpaux->lock);
 	tegra_dpaux_put(hdmi->dpaux);
-	mutex_unlock(&hdmi->dpaux->lock);
 	tegra_hdmi_put(hdmi->dc);
 
 fail:
@@ -409,7 +405,7 @@ static bool tegra_hdmi_fb_mode_filter(const struct tegra_dc *dc,
 
 static int tegra_hdmi_get_mon_spec(struct tegra_hdmi *hdmi)
 {
-#define MAX_RETRY 10
+#define MAX_RETRY 100
 #define MIN_RETRY_DELAY_US 200
 #define MAX_RETRY_DELAY_US (MIN_RETRY_DELAY_US + 200)
 
@@ -2173,7 +2169,7 @@ static void tegra_hdmi_avi_infoframe_update(struct tegra_hdmi *hdmi)
 		avi->ext_colorimetry = HDMI_AVI_EXT_COLORIMETRY_BT2020_YCC_RGB;
 		break;
 	case TEGRA_DC_EXT_AVI_COLORIMETRY_xvYCC709:
-		avi->colorimetry = HDMI_AVI_COLORIMETRY_EXTENDED_VALID;
+		avi->colorimetry = HDMI_AVI_COLORIMETRY_DEFAULT;
 		avi->ext_colorimetry = HDMI_AVI_EXT_COLORIMETRY_xvYCC709;
 		break;
 	default:
@@ -2493,8 +2489,6 @@ static int tegra_hdmi_scdc_read(struct tegra_hdmi *hdmi,
 					u8 offset_data[][2], u32 n_entries)
 {
 	u32 i;
-	int ret = 0;
-	struct i2c_adapter *i2c_adap = i2c_get_adapter(hdmi->dc->out->ddc_bus);
 	struct i2c_msg msg[] = {
 		{
 			.addr = 0x54,
@@ -2514,18 +2508,8 @@ static int tegra_hdmi_scdc_read(struct tegra_hdmi *hdmi,
 	for (i = 0; i < n_entries; i++) {
 		msg[0].buf = offset_data[i];
 		msg[1].buf = &offset_data[i][1];
-		do {
-			ret = tegra_hdmi_scdc_i2c_xfer(hdmi->dc, msg,
-							ARRAY_SIZE(msg));
-		} while ((ret < 0)  && !tegra_edid_i2c_divide_rate(hdmi->edid));
+		tegra_hdmi_scdc_i2c_xfer(hdmi->dc, msg, ARRAY_SIZE(msg));
 	}
-
-	/* Reset ddc i2c clock rate to original rate */
-	ret = tegra_edid_i2c_adap_change_rate(i2c_adap,
-				hdmi->ddc_i2c_original_rate);
-	if (ret < 0)
-		dev_info(&hdmi->dc->ndev->dev,
-			"Failed to reset DDC i2c clock rate for scdc read\n");
 
 	_tegra_hdmi_ddc_disable(hdmi);
 
@@ -2863,16 +2847,12 @@ static int tegra_hdmi_controller_enable(struct tegra_hdmi *hdmi)
 	else
 		tegra_dc_enable_disp_ctrl_mode(dc);
 
-	/* enable hdcp only if valid edid */
-	if (hdmi->edid_src == EDID_SRC_PANEL && !hdmi->dc->vedid &&
-		(tegra_edid_get_monspecs(hdmi->edid, &hdmi->mon_spec) == 0))
+	/* enable hdcp */
+	if (hdmi->edid_src == EDID_SRC_PANEL && !hdmi->dc->vedid)
 		tegra_nvhdcp_set_plug(hdmi->nvhdcp, true);
 
-	if (hdmi->dpaux) {
-		mutex_lock(&hdmi->dpaux->lock);
+	if (hdmi->dpaux)
 		tegra_dpaux_prod_set(hdmi->dpaux);
-		mutex_unlock(&hdmi->dpaux->lock);
-	}
 
 	if (tegra_dc_is_t21x()) {
 		tegra_dc_setup_clk(dc, dc->clk);

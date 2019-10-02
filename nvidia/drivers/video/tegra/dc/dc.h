@@ -32,7 +32,7 @@
 #include <linux/nvhost.h>
 #include <linux/extcon.h>
 #include <video/tegra_dc_ext_kernel.h>
-#include <uapi/video/tegra_dc_ext.h>
+#include <video/tegra_dc_ext.h>
 #include "dc_extras.h"
 
 #define DEFAULT_FPGA_FREQ_KHZ	160000
@@ -780,7 +780,6 @@ struct tegra_fb_data {
 };
 
 #define TEGRA_FB_FLIP_ON_PROBE		(1 << 0)
-#define TEGRA_FB_WIN_INVALID		-1
 
 struct tegra_dc_platform_data {
 	unsigned long		flags;

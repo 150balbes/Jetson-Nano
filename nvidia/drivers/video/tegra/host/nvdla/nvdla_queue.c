@@ -1,7 +1,7 @@
 /*
  * NVDLA queue and task management for T194
  *
- * Copyright (c) 2016-2019, NVIDIA Corporation.  All rights reserved.
+ * Copyright (c) 2016-2018, NVIDIA Corporation.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -293,7 +293,7 @@ static inline size_t nvdla_profile_status_offset(struct nvdla_task *task)
 
 static void nvdla_queue_update(void *priv, int nr_completed)
 {
-	int task_complete;
+	int i, task_complete;
 	struct nvdla_task *task, *safe;
 	struct nvhost_queue *queue = priv;
 	struct platform_device *pdev = queue->pool->pdev;
@@ -330,14 +330,10 @@ static void nvdla_queue_update(void *priv, int nr_completed)
 				timestamp_start,
 				timestamp_end);
 
-			/* Record task postfences */
-			nvhost_eventlib_log_fences(pdev,
-				queue->syncpt_id,
-				task->fence,
-				task->postfences,
-				task->num_postfences,
-				NVDEV_FENCE_KIND_POST,
-				timestamp_end);
+			for (i = 0; i < task->num_postfences; i++)
+				nvhost_eventlib_log_fence(pdev,
+					NVDEV_FENCE_KIND_POST,
+					task->postfences + i, timestamp_end);
 
 			nvdla_task_free_locked(task);
 		}
@@ -503,7 +499,8 @@ fail_to_pin_mem:
 	return err;
 }
 
-static int nvdla_update_gos(struct platform_device *pdev)
+static int nvdla_get_gos(struct platform_device *pdev, u32 syncpt_id,
+			u32 *gos_id, u32 *gos_offset)
 {
 	struct nvhost_device_data *pdata = platform_get_drvdata(pdev);
 	struct nvdla_device *nvdla_dev = pdata->private_data;
@@ -537,20 +534,8 @@ static int nvdla_update_gos(struct platform_device *pdev)
 		nvhost_module_idle(pdev);
 	}
 
-fail_to_send_gos:
-fail_to_poweron:
-	return err;
-}
-
-static int nvdla_get_gos(struct platform_device *pdev, u32 syncpt_id,
-			u32 *gos_id, u32 *gos_offset)
-{
-	struct nvhost_device_data *pdata = platform_get_drvdata(pdev);
-	struct nvdla_device *nvdla_dev = pdata->private_data;
-	int err = 0;
-
 	if (!nvdla_dev->is_gos_enabled) {
-		nvdla_dbg_info(pdev, "GoS is not enabled\n");
+		nvdla_dbg_err(pdev, "GoS is not enabled\n");
 		err = -EINVAL;
 		goto gos_disabled;
 	}
@@ -562,6 +547,8 @@ static int nvdla_get_gos(struct platform_device *pdev, u32 syncpt_id,
 	}
 
 gos_disabled:
+fail_to_send_gos:
+fail_to_poweron:
 	return err;
 }
 
@@ -749,6 +736,7 @@ static int nvdla_fill_preactions(struct nvdla_task *task)
 	struct platform_device *pdev = queue->pool->pdev;
 	struct nvhost_master *host = nvhost_get_host(pdev);
 	struct nvhost_syncpt *sp = &host->syncpt;
+	u64 timestamp = arch_counter_get_cntvct();
 	struct dla_action_list *preactionl;
 	uint16_t preactionlist_of;
 	u8 *next, *start;
@@ -763,6 +751,9 @@ static int nvdla_fill_preactions(struct nvdla_task *task)
 
 	/* fill all preactions */
 	for (i = 0; i < task->num_prefences; i++) {
+
+		nvhost_eventlib_log_fence(pdev, NVDEV_FENCE_KIND_PRE,
+			task->prefences + i, timestamp);
 
 		switch (task->prefences[i].type) {
 		case NVDEV_FENCE_TYPE_SYNC_FD: {
@@ -979,8 +970,6 @@ int nvdla_fill_task_desc(struct nvdla_task *task)
 	task_desc->preactions = sizeof(struct dla_task_descriptor);
 	task_desc->postactions = task_desc->preactions +
 					sizeof(struct dla_action_list);
-
-	nvdla_update_gos(pdev);
 
 	/* fill pre actions */
 	nvdla_fill_preactions(task);
@@ -1252,6 +1241,11 @@ static int nvdla_queue_submit(struct nvhost_queue *queue, void *in_task)
 	if (err)
 		goto fail_to_register;
 
+	nvhost_eventlib_log_submit(queue->pool->pdev,
+			   queue->syncpt_id,
+			   task->fence,
+			   timestamp);
+
 	/* prepare command for MMIO submit */
 	if (nvdla_dev->submit_mode == NVDLA_SUBMIT_MODE_MMIO) {
 		cmd_data.method_id = method_id;
@@ -1266,23 +1260,6 @@ static int nvdla_queue_submit(struct nvhost_queue *queue, void *in_task)
 					task->fence);
 		}
 	}
-
-	if (!err) {
-		/* If submitted, record task submit and prefences */
-		nvhost_eventlib_log_submit(pdev,
-					   queue->syncpt_id,
-					   task->fence,
-					   timestamp);
-
-		nvhost_eventlib_log_fences(pdev,
-					   queue->syncpt_id,
-					   task->fence,
-					   task->prefences,
-					   task->num_prefences,
-					   NVDEV_FENCE_KIND_PRE,
-					   timestamp);
-	}
-
 	mutex_unlock(&queue->list_lock);
 	return err;
 

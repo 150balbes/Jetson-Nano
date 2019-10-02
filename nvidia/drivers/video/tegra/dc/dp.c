@@ -872,7 +872,7 @@ static void tegra_dc_dp_debugfs_create(struct tegra_dc_dp_data *dp)
 	char debug_dirname[CHAR_BUF_SIZE_MAX];
 
 	snprintf(debug_dirname, sizeof(debug_dirname),
-		"tegra_dp%d", dp->dc->ndev->id);
+		"tegra_dp%d", dp->dc->ctrl_num);
 
 	dp->debugdir = debugfs_create_dir(debug_dirname, NULL);
 	if (!dp->debugdir) {
@@ -1578,12 +1578,8 @@ static void tegra_dp_link_cal(struct tegra_dc_dp_data *dp)
 	prop = dp->sor->link_speeds[key].prod_prop;
 
 	err = tegra_prod_set_by_name(&dp->sor->base, prop, dp->prod_list);
-	if (err == -ENODEV) {
-		dev_info(&dp->dc->ndev->dev,
-			"DP: no %s prod settings node in device tree\n", prop);
-	} else if (err) {
+	if (err)
 		dev_warn(&dp->dc->ndev->dev, "DP : Prod set failed\n");
-	}
 }
 
 static void tegra_dp_irq_evt_worker(struct work_struct *work)

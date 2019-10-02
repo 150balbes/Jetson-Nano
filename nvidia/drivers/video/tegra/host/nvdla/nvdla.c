@@ -1,7 +1,7 @@
 /*
  * NVDLA driver for T194
  *
- * Copyright (c) 2016-2019, NVIDIA Corporation.  All rights reserved.
+ * Copyright (c) 2016-2018, NVIDIA Corporation.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -41,7 +41,7 @@
 
 #include "nvdla/nvdla.h"
 #include "nvdla/nvdla_debug.h"
-#include <uapi/linux/nvhost_nvdla_ioctl.h>
+#include <linux/nvhost_nvdla_ioctl.h>
 #include "dla_fw_version.h"
 #include "dla_os_interface.h"
 
@@ -649,9 +649,13 @@ int nvhost_nvdla_finalize_poweron(struct platform_device *pdev)
 		goto fail_to_alloc_trace;
 	}
 
-	/* Disable GOS until it is fixed in Kernel 4.14 */
-	nvdla_dev->is_gos_enabled = false;
-	nvdla_dev->is_gos_fetched = true;
+	nvdla_dev->is_gos_enabled = true;
+	ret = nvdla_send_gos_region(pdev);
+	if (ret) {
+		nvdla_dbg_err(pdev, "set gos region is failed\n");
+		nvdla_dev->is_gos_enabled = false;
+		/* ignore send gos region failure */
+	}
 
 	if (nvdla_dev->quirks & NVDLA_QUIRK_T194_A01_WAR) {
 		host1x_writel(pdev,

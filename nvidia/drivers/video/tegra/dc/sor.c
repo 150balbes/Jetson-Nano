@@ -28,7 +28,7 @@
 #include <linux/uaccess.h>
 #include <linux/version.h>
 #include <linux/tegra_pm_domains.h>
-#include <uapi/video/tegra_dc_ext.h>
+#include <video/tegra_dc_ext.h>
 
 #include "dc.h"
 #include "sor.h"

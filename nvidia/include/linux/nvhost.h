@@ -655,14 +655,10 @@ static inline void nvhost_eventlib_log_submit(struct platform_device *pdev,
 					      u64 timestamp)
 {
 }
-
-static inline void nvhost_eventlib_log_fences(struct platform_device *pdev,
-                                              u32 task_syncpt_id,
-                                              u32 task_syncpt_thresh,
-                                              struct nvdev_fence *fences,
-                                              u8 num_fences,
-                                              enum nvdev_fence_kind kind,
-                                              u64 timestamp)
+static inline void nvhost_eventlib_log_fence(struct platform_device *pdev,
+					     u32 kind,
+					     struct nvdev_fence *fence,
+					     u64 timestamp)
 {
 }
 #else
@@ -777,13 +773,10 @@ void nvhost_eventlib_log_submit(struct platform_device *pdev,
 				u32 syncpt_thresh,
 				u64 timestamp);
 
-void nvhost_eventlib_log_fences(struct platform_device *pdev,
-				u32 task_syncpt_id,
-				u32 task_syncpt_thresh,
-				struct nvdev_fence *fences,
-				u8 num_fences,
-				enum nvdev_fence_kind kind,
-				u64 timestamp);
+void nvhost_eventlib_log_fence(struct platform_device *pdev,
+			       u32 kind,
+			       struct nvdev_fence *fence,
+			       u64 timestamp);
 
 /* public host1x interrupt management APIs */
 int nvhost_intr_register_notifier(struct platform_device *pdev,

@@ -4,7 +4,7 @@
  * Copyright (C) 2010 Google, Inc.
  * Author: Erik Gilling <konkers@android.com>
  *
- * Copyright (c) 2010-2019, NVIDIA CORPORATION, All rights reserved.
+ * Copyright (c) 2010-2018, NVIDIA CORPORATION, All rights reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -20,14 +20,14 @@
 #ifndef __DRIVERS_VIDEO_TEGRA_DC_DC_PRIV_H
 #define __DRIVERS_VIDEO_TEGRA_DC_DC_PRIV_H
 
-#include <uapi/video/tegra_dc_ext.h>
+#include <video/tegra_dc_ext.h>
 #include "dc_priv_defs.h"
 #ifndef CREATE_TRACE_POINTS
 #include <trace/events/display.h>
 #define WIN_IS_BLOCKLINEAR(win)	((win)->flags & TEGRA_WIN_FLAG_BLOCKLINEAR)
 #endif
 #include <soc/tegra/tegra_powergate.h>
-#include <uapi/video/tegra_dc_ext.h>
+#include <video/tegra_dc_ext.h>
 #include <video/tegra_dc_ext_kernel.h>
 #include <soc/tegra/tegra_bpmp.h>
 
@@ -57,8 +57,6 @@
 #define YUV_MASK (FB_VMODE_Y420 | FB_VMODE_Y420_ONLY | \
 				FB_VMODE_Y422 | FB_VMODE_Y444)
 #define IS_RGB(yuv_flag) (!(yuv_flag & YUV_MASK))
-
-#define TEGRA_DC_POLL_TIMEOUT_MS       50
 
 extern struct tegra_dc_out_ops tegra_dc_rgb_ops;
 extern struct tegra_dc_out_ops tegra_dc_dsi_ops;
@@ -245,8 +243,7 @@ int tegra_dc_cursor_image(struct tegra_dc *dc,
 	enum tegra_dc_cursor_blend_format blendfmt,
 	enum tegra_dc_cursor_size size,
 	u32 fg, u32 bg, dma_addr_t phys_addr,
-	enum tegra_dc_cursor_color_format colorfmt, u32 alpha, u32 flags,
-	bool wait_for_activation);
+	enum tegra_dc_cursor_color_format colorfmt, u32 alpha, u32 flags);
 int tegra_dc_cursor_set(struct tegra_dc *dc, bool enable, int x, int y);
 int tegra_dc_cursor_clip(struct tegra_dc *dc, unsigned clip);
 int tegra_dc_cursor_suspend(struct tegra_dc *dc);

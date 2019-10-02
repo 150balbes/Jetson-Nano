@@ -1,7 +1,7 @@
 /*
  * Tegra NVDEC Module Support
  *
- * Copyright (c) 2013-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2013-2018, NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -34,7 +34,7 @@
 #include <linux/version.h>
 
 #include <linux/tegra_pm_domains.h>
-#include <uapi/linux/nvhost_nvdec_ioctl.h>
+#include <linux/nvhost_nvdec_ioctl.h>
 
 #include <linux/platform/tegra/mc.h>
 

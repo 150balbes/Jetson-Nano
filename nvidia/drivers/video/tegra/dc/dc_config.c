@@ -1,7 +1,7 @@
 /*
  * dc_config.c: Functions required for dc configuration.
  *
- * Copyright (c) 2012-2019, NVIDIA CORPORATION, All rights reserved.
+ * Copyright (c) 2012-2017, NVIDIA CORPORATION, All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -155,7 +155,7 @@ static struct tegra_dc_feature t210_feature_table_b = {
 	ARRAY_SIZE(t210_feature_entries_b), t210_feature_entries_b,
 };
 
-int tegra_dc_get_feature(struct tegra_dc_feature *feature, int win_idx,
+static int tegra_dc_get_feature(struct tegra_dc_feature *feature, int win_idx,
 					enum tegra_dc_feature_option option)
 {
 	int i;
@@ -309,7 +309,7 @@ int tegra_dc_feature_has_scan_column(struct tegra_dc *dc, int win_idx)
 		return 0;
 
 	entry = &dc->feature->entries[idx];
-	return entry->arg[SCAN_COLUMN]; /* 1 = supported, 0 = not supported */
+	return entry->arg[2]; /* 1=SCAN_COLUMN supported, 0=not supported */
 }
 
 void tegra_dc_feature_register(struct tegra_dc *dc)

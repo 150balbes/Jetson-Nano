@@ -1,7 +1,7 @@
 /*
  * dc_config.h: Declarations for tegra dc config settings.
  *
- * Copyright (c) 2010-2019, NVIDIA CORPORATION, All rights reserved.
+ * Copyright (c) 2010-2017, NVIDIA CORPORATION, All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -22,7 +22,7 @@
 #define __DRIVERS_VIDEO_TEGRA_DC_DC_CONFIG_H
 
 #include <linux/errno.h>
-#include <uapi/video/tegra_dc_ext.h>
+#include <video/tegra_dc_ext.h>
 #include "dc.h"
 #include "dc_priv.h"
 
@@ -209,8 +209,6 @@ struct tegra_dc_feature {
 	struct tegra_dc_feature_entry *entries;
 };
 
-int tegra_dc_get_feature(struct tegra_dc_feature *feature, int win_idx,
-			 enum tegra_dc_feature_option option);
 int tegra_dc_feature_has_scaling(struct tegra_dc *dc, int win_idx);
 int tegra_dc_feature_has_tiling(struct tegra_dc *dc, int win_idx);
 int tegra_dc_feature_has_blocklinear(struct tegra_dc *dc, int win_idx);

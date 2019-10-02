@@ -1,7 +1,7 @@
 /*
  * bandwidth.c: Functions required for dc bandwidth calculations.
  *
- * Copyright (c) 2010-2019, NVIDIA CORPORATION, All rights reserved.
+ * Copyright (c) 2010-2018, NVIDIA CORPORATION, All rights reserved.
  *
  * Author: Jon Mayo <jmayo@nvidia.com>
  *
@@ -30,7 +30,7 @@
 #include <linux/platform/tegra/tegra_emc.h>
 #include <linux/platform/tegra/mc.h>
 
-#include <uapi/video/tegra_dc_ext.h>
+#include <video/tegra_dc_ext.h>
 #include "dc.h"
 #include "dc_reg.h"
 #include "dc_config.h"

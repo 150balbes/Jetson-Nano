@@ -1,7 +1,7 @@
 /*
  * hdmihdcp.c: hdmi hdcp functions.
  *
- * Copyright (c) 2014-2019, NVIDIA CORPORATION, All rights reserved.
+ * Copyright (c) 2014-2018, NVIDIA CORPORATION, All rights reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -34,7 +34,7 @@
 #include <linux/trusty/trusty_ipc.h>
 #include <linux/ote_protocol.h>
 
-#include <uapi/video/nvhdcp.h>
+#include <video/nvhdcp.h>
 
 #include "dc.h"
 #include "dc_reg.h"
@@ -151,7 +151,7 @@ static int nvhdcp_i2c_read(struct tegra_nvhdcp *nvhdcp, u8 reg,
 					size_t len, void *data)
 {
 	int status;
-	int retries = 10;
+	int retries = 11;
 	struct i2c_msg msg[] = {
 		{
 			.addr = 0x74 >> 1, /* primary link */
@@ -2130,11 +2130,11 @@ failure:
 	nvhdcp->fail_count++;
 	if (nvhdcp->max_retries <= HDCP_INFINITE_RETRIES ||
 		nvhdcp->fail_count < nvhdcp->max_retries) {
-		nvhdcp_err("nvhdcp failure - renegotiating in 750ms\n");
+		nvhdcp_err("nvhdcp failure - renegotiating in 1 second\n");
 		if (!nvhdcp_is_plugged(nvhdcp))
 			goto lost_hdmi;
 		queue_delayed_work(nvhdcp->downstream_wq, &nvhdcp->work,
-						msecs_to_jiffies(750));
+						msecs_to_jiffies(1000));
 	} else
 		nvhdcp_err("nvhdcp failure - too many failures, giving up!\n");
 
