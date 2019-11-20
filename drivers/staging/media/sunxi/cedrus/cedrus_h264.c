@@ -118,7 +118,7 @@ static void cedrus_write_frame_list(struct cedrus_ctx *ctx,
 		if (buf_idx < 0)
 			continue;
 
-		cedrus_buf = vb2_to_cedrus_buffer(ctx->dst_bufs[buf_idx]);
+		cedrus_buf = vb2_to_cedrus_buffer(cap_q->bufs[buf_idx]);
 		position = cedrus_buf->codec.h264.position;
 		used_dpbs |= BIT(position);
 
@@ -193,7 +193,7 @@ static void _cedrus_write_ref_list(struct cedrus_ctx *ctx,
 		if (buf_idx < 0)
 			continue;
 
-		ref_buf = to_vb2_v4l2_buffer(ctx->dst_bufs[buf_idx]);
+		ref_buf = to_vb2_v4l2_buffer(cap_q->bufs[buf_idx]);
 		cedrus_buf = vb2_v4l2_to_cedrus_buffer(ref_buf);
 		position = cedrus_buf->codec.h264.position;
 
@@ -240,8 +240,8 @@ static void cedrus_write_scaling_lists(struct cedrus_ctx *ctx,
 			       sizeof(scaling->scaling_list_8x8[0]));
 
 	cedrus_h264_write_sram(dev, CEDRUS_SRAM_H264_SCALING_LIST_8x8_1,
-			       scaling->scaling_list_8x8[3],
-			       sizeof(scaling->scaling_list_8x8[3]));
+			       scaling->scaling_list_8x8[1],
+			       sizeof(scaling->scaling_list_8x8[1]));
 
 	cedrus_h264_write_sram(dev, CEDRUS_SRAM_H264_SCALING_LIST_4x4,
 			       scaling->scaling_list_4x4,

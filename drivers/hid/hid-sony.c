@@ -837,6 +837,25 @@ static int ds4_mapping(struct hid_device *hdev, struct hid_input *hi,
 	return 0;
 }
 
+static int ps3remote_setup_repeat(struct hid_device *hdev)
+{
+	struct hid_input *hidinput = list_first_entry(&hdev->inputs,
+						 struct hid_input, list);
+	struct input_dev *input = hidinput->input;
+
+	/*
+	 * Set up autorepeat defaults per the remote control subsystem;
+	 * this must be done after hid_hw_start(), as having these non-zero
+	 * at the time of input_register_device() tells the input system that
+	 * the hardware does the autorepeat, and the PS3 remote does not.
+	*/
+	set_bit(EV_REP, input->evbit);
+	input->rep[REP_DELAY]  = 500;
+	input->rep[REP_PERIOD] = 125;
+
+	return 0;
+}
+
 static u8 *sony_report_fixup(struct hid_device *hdev, u8 *rdesc,
 		unsigned int *rsize)
 {
@@ -2765,6 +2784,8 @@ static int sony_input_configured(struct hid_device *hdev,
 
 	} else if (sc->quirks & MOTION_CONTROLLER) {
 		sony_init_output_report(sc, motion_send_output_report);
+	} else if (sc->quirks & PS3REMOTE) {
+		ret = ps3remote_setup_repeat(hdev);
 	} else {
 		ret = 0;
 	}

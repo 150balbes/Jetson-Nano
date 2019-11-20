@@ -23,7 +23,7 @@
 
 	vcc_sd: sdmmc-regulator {
 		compatible = "regulator-fixed";
-		gpio = <&gpio0 RK_PD6 GPIO_ACTIVE_LOW>;
+		gpio = <&gpio0 RK_PD6 GPIO_ACTIVE_HIGH>;
 		pinctrl-names = "default";
 		pinctrl-0 = <&sdmmc0m1_gpio>;
 		regulator-name = "vcc_sd";
@@ -34,10 +34,9 @@
 
 	vcc_host_5v: vcc-host-5v-regulator {
 		compatible = "regulator-fixed";
-		enable-active-high;
-		gpio = <&gpio0 RK_PA0 GPIO_ACTIVE_HIGH>;
+		gpio = <&gpio0 RK_PA2 GPIO_ACTIVE_LOW>;
 		pinctrl-names = "default";
-		pinctrl-0 = <&usb30_host_drv>;
+		pinctrl-0 = <&usb20_host_drv>;
 		regulator-name = "vcc_host_5v";
 		regulator-always-on;
 		regulator-boot-on;
@@ -85,11 +84,22 @@
 		};
 	};
 
+	hdmi-sound {
+		compatible = "audio-graph-card";
+		label = "HDMI";
+		dais = <&i2s0_p0>;
+	};
+
 	sound {
 		compatible = "audio-graph-card";
-		label = "rockchip,rk3328";
-		dais = <&i2s1_p0
-			&spdif_p0>;
+		label = "I2S";
+		dais = <&i2s1_p0>;
+	};
+
+	spdif-sound {
+		compatible = "audio-graph-card";
+		label = "SPDIF";
+		dais = <&spdif_p0>;
 	};
 
 	spdif-dit {
@@ -161,6 +171,12 @@
 
 &hdmi {
 	status = "okay";
+
+	port@0 {
+		hdmi_p0_0: endpoint {
+			remote-endpoint = <&i2s0_p0_0>;
+		};
+	};
 };
 
 &hdmiphy {
@@ -194,8 +210,8 @@
 		regulators {
 			vdd_logic: DCDC_REG1 {
 				regulator-name = "vdd_logic";
-				regulator-min-microvolt = <712500>;
-				regulator-max-microvolt = <1450000>;
+				regulator-min-microvolt = <900000>;
+				regulator-max-microvolt = <1150000>;
 				regulator-ramp-delay = <12500>;
 				regulator-always-on;
 				regulator-boot-on;
@@ -207,8 +223,8 @@
 
 			vdd_arm: DCDC_REG2 {
 				regulator-name = "vdd_arm";
-				regulator-min-microvolt = <712500>;
-				regulator-max-microvolt = <1450000>;
+				regulator-min-microvolt = <950000>;
+				regulator-max-microvolt = <1350000>;
 				regulator-ramp-delay = <12500>;
 				regulator-always-on;
 				regulator-boot-on;
@@ -278,6 +294,18 @@
 	};
 };
 
+&i2s0 {
+	status = "okay";
+
+	i2s0_p0: port {
+		i2s0_p0_0: endpoint {
+			dai-format = "i2s";
+			mclk-fs = <256>;
+			remote-endpoint = <&hdmi_p0_0>;
+		};
+	};
+};
+
 &i2s1 {
 	status = "okay";
 
@@ -296,7 +324,7 @@
 	vccio1-supply = <&vcc_io>;
 	vccio2-supply = <&vcc18_emmc>;
 	vccio3-supply = <&vcc_io>;
-	vccio4-supply = <&vcc_18>;
+	vccio4-supply = <&vcc_io>;
 	vccio5-supply = <&vcc_io>;
 	vccio6-supply = <&vcc_io>;
 	pmuio-supply = <&vcc_io>;
@@ -318,12 +346,6 @@
 	usb2 {
 		usb20_host_drv: usb20-host-drv {
 			rockchip,pins = <0 RK_PA2 RK_FUNC_GPIO &pcfg_pull_none>;
-		};
-	};
-
-	usb3 {
-		usb30_host_drv: usb30-host-drv {
-			rockchip,pins = <0 RK_PA0 RK_FUNC_GPIO &pcfg_pull_none>;
 		};
 	};
 };
@@ -395,6 +417,15 @@
 };
 
 &usb_host0_ohci {
+	status = "okay";
+};
+
+&usbdrd3 {
+	status = "okay";
+};
+
+&usbdrd_dwc3 {
+	dr_mode = "host";
 	status = "okay";
 };
 

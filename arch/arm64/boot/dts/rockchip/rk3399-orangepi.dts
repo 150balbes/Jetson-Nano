@@ -517,6 +517,10 @@
 	};
 };
 
+&i2s2 {
+        status = "okay";
+};
+
 &io_domains {
 	status = "okay";
 	bt656-supply = <&vcc_3v0>;
@@ -778,13 +782,5 @@
 };
 
 &vopb_mmu {
-	status = "okay";
-};
-
-&vopl {
-	status = "okay";
-};
-
-&vopl_mmu {
 	status = "okay";
 };

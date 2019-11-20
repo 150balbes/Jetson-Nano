@@ -184,6 +184,15 @@
 	status = "okay";
 };
 
+&hdmi_sound {
+	status = "okay";
+};
+
+&gpu {
+	mali-supply = <&vdd_gpu>;
+	status = "okay";
+};
+
 &i2c0 {
 	clock-frequency = <400000>;
 	i2c-scl-rising-time-ns = <168>;
@@ -668,13 +677,5 @@
 };
 
 &vopb_mmu {
-	status = "okay";
-};
-
-&vopl {
-	status = "okay";
-};
-
-&vopl_mmu {
 	status = "okay";
 };

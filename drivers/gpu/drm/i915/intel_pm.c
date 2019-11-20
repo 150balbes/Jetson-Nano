@@ -6615,8 +6615,11 @@ static void rps_set_power(struct drm_i915_private *dev_priv, int new_power)
 	/* When byt can survive without system hang with dynamic
 	 * sw freq adjustments, this restriction can be lifted.
 	 */
-	if (IS_VALLEYVIEW(dev_priv))
+	if (IS_VALLEYVIEW(dev_priv)) {
+		threshold_up = VLV_RP_UP_EI_THRESHOLD;
+		threshold_down = VLV_RP_DOWN_EI_THRESHOLD;
 		goto skip_hw_write;
+	}
 
 	I915_WRITE(GEN6_RP_UP_EI,
 		   GT_INTERVAL_FROM_US(dev_priv, ei_up));

@@ -21,18 +21,9 @@
 		#clock-cells = <0>;
 	};
 
-	dc_12v: dc-12v {
-		compatible = "regulator-fixed";
-		regulator-name = "dc_12v";
-		regulator-always-on;
-		regulator-boot-on;
-		regulator-min-microvolt = <12000000>;
-		regulator-max-microvolt = <12000000>;
-	};
-
 	vcc_sd: sdmmc-regulator {
 		compatible = "regulator-fixed";
-		gpio = <&gpio0 RK_PD6 GPIO_ACTIVE_LOW>;
+		gpio = <&gpio0 RK_PD6 GPIO_ACTIVE_HIGH>;
 		pinctrl-names = "default";
 		pinctrl-0 = <&sdmmc0m1_gpio>;
 		regulator-name = "vcc_sd";
@@ -41,12 +32,12 @@
 		vin-supply = <&vcc_io>;
 	};
 
-	vcc_sdio: sdmmcio-regulator {
+	vccio_sd: sdmmcio-regulator {
 		compatible = "regulator-gpio";
 		gpios = <&grf_gpio 0 GPIO_ACTIVE_HIGH>;
 		states = <1800000 0x1
 			  3300000 0x0>;
-		regulator-name = "vcc_sdio";
+		regulator-name = "vccio_sd";
 		regulator-type = "voltage";
 		regulator-min-microvolt = <1800000>;
 		regulator-max-microvolt = <3300000>;
@@ -72,7 +63,6 @@
 		regulator-boot-on;
 		regulator-min-microvolt = <5000000>;
 		regulator-max-microvolt = <5000000>;
-		vin-supply = <&dc_12v>;
 	};
 
 	vcc_phy: vcc-phy-regulator {
@@ -80,6 +70,13 @@
 		regulator-name = "vcc_phy";
 		regulator-always-on;
 		regulator-boot-on;
+	};
+
+	ir-receiver {
+		compatible = "gpio-ir-receiver";
+		gpios = <&gpio2 RK_PA2 GPIO_ACTIVE_LOW>;
+		pinctrl-0 = <&ir_int>;
+		pinctrl-names = "default";
 	};
 
 	leds {
@@ -95,10 +92,49 @@
 
 		user {
 			label = "firefly:yellow:user";
-			linux,default-trigger = "mmc1";
+			linux,default-trigger = "mmc0";
 			gpios = <&rk805 0 GPIO_ACTIVE_LOW>;
 			default-state = "off";
 			mode = <0x05>;
+		};
+	};
+
+	hdmi-sound {
+		compatible = "audio-graph-card";
+		label = "HDMI";
+		dais = <&i2s0_p0>;
+	};
+
+	sound {
+		compatible = "audio-graph-card";
+		label = "I2S";
+		dais = <&i2s1_p0>;
+	};
+
+	spdif-sound {
+		compatible = "audio-graph-card";
+		label = "SPDIF";
+		dais = <&spdif_p0>;
+	};
+
+	spdif-dit {
+		compatible = "linux,spdif-dit";
+		#sound-dai-cells = <0>;
+
+		port {
+			dit_p0_0: endpoint {
+				remote-endpoint = <&spdif_p0_0>;
+			};
+		};
+	};
+};
+
+&codec {
+	status = "okay";
+
+	port@0 {
+		codec_p0_0: endpoint {
+			remote-endpoint = <&i2s1_p0_0>;
 		};
 	};
 };
@@ -154,6 +190,12 @@
 
 &hdmi {
 	status = "okay";
+
+	port@0 {
+		hdmi_p0_0: endpoint {
+			remote-endpoint = <&i2s0_p0_0>;
+		};
+	};
 };
 
 &hdmiphy {
@@ -187,8 +229,9 @@
 		regulators {
 			vdd_logic: DCDC_REG1 {
 				regulator-name = "vdd_logic";
-				regulator-min-microvolt = <712500>;
-				regulator-max-microvolt = <1450000>;
+				regulator-min-microvolt = <900000>;
+				regulator-max-microvolt = <1150000>;
+				regulator-ramp-delay = <12500>;
 				regulator-always-on;
 				regulator-boot-on;
 				regulator-state-mem {
@@ -199,8 +242,9 @@
 
 			vdd_arm: DCDC_REG2 {
 				regulator-name = "vdd_arm";
-				regulator-min-microvolt = <712500>;
-				regulator-max-microvolt = <1450000>;
+				regulator-min-microvolt = <950000>;
+				regulator-max-microvolt = <1350000>;
+				regulator-ramp-delay = <12500>;
 				regulator-always-on;
 				regulator-boot-on;
 				regulator-state-mem {
@@ -269,19 +313,49 @@
 	};
 };
 
+&i2s0 {
+	status = "okay";
+
+	i2s0_p0: port {
+		i2s0_p0_0: endpoint {
+			dai-format = "i2s";
+			mclk-fs = <256>;
+			remote-endpoint = <&hdmi_p0_0>;
+		};
+	};
+};
+
+&i2s1 {
+	status = "okay";
+
+	i2s1_p0: port {
+		i2s1_p0_0: endpoint {
+			dai-format = "i2s";
+			mclk-fs = <256>;
+			remote-endpoint = <&codec_p0_0>;
+		};
+	};
+};
+
 &io_domains {
 	status = "okay";
 
 	vccio1-supply = <&vcc_io>;
 	vccio2-supply = <&vcc18_emmc>;
-	vccio3-supply = <&vcc_sdio>;
-	vccio4-supply = <&vcc_18>;
+	vccio3-supply = <&vccio_sd>;
+	vccio4-supply = <&vcc_io>;
 	vccio5-supply = <&vcc_io>;
 	vccio6-supply = <&vcc_io>;
 	pmuio-supply = <&vcc_io>;
 };
 
 &pinctrl {
+	ir {
+		ir_int: ir-int {
+			rockchip,pins = <2 RK_PA2 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+	};
+
 	pmic {
 		pmic_int_l: pmic-int-l {
 			rockchip,pins = <1 RK_PD0 RK_FUNC_GPIO &pcfg_pull_up>;
@@ -303,16 +377,24 @@
 	max-frequency = <150000000>;
 	pinctrl-names = "default";
 	pinctrl-0 = <&sdmmc0_clk &sdmmc0_cmd &sdmmc0_dectn &sdmmc0_bus4>;
-	sd-uhs-sdr12;
-	sd-uhs-sdr25;
-	sd-uhs-sdr50;
-	sd-uhs-sdr104;
 	vmmc-supply = <&vcc_sd>;
-	vqmmc-supply = <&vcc_sdio>;
 	status = "okay";
 };
 
+&spdif {
+	pinctrl-0 = <&spdifm0_tx>;
+	status = "okay";
+
+	spdif_p0: port {
+		spdif_p0_0: endpoint {
+			remote-endpoint = <&dit_p0_0>;
+		};
+	};
+};
+
 &tsadc {
+	rockchip,hw-tshut-mode = <0>;
+	rockchip,hw-tshut-polarity = <0>;
 	status = "okay";
 };
 
@@ -341,6 +423,15 @@
 };
 
 &usb_host0_ohci {
+	status = "okay";
+};
+
+&usbdrd3 {
+	status = "okay";
+};
+
+&usbdrd_dwc3 {
+	dr_mode = "host";
 	status = "okay";
 };
 

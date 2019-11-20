@@ -1254,6 +1254,9 @@ enum i915_power_well_id {
 #define   VLV_BIAS_CPU_125_SOC_875	(6 << 2)
 #define   CHV_BIAS_CPU_50_SOC_50	(3 << 2)
 
+#define VLV_RP_UP_EI_THRESHOLD			90
+#define VLV_RP_DOWN_EI_THRESHOLD		70
+
 /* vlv2 north clock has */
 #define CCK_FUSE_REG				0x8
 #define  CCK_FUSE_HPLL_FREQ_MASK		0x3

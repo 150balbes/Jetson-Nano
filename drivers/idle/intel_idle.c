@@ -209,6 +209,7 @@ static struct cpuidle_state byt_cstates[] = {
 		.flags = MWAIT2flg(0x58) | CPUIDLE_FLAG_TLB_FLUSHED,
 		.exit_latency = 300,
 		.target_residency = 275,
+		.disabled = true,
 		.enter = &intel_idle,
 		.enter_s2idle = intel_idle_s2idle, },
 	{
@@ -217,6 +218,7 @@ static struct cpuidle_state byt_cstates[] = {
 		.flags = MWAIT2flg(0x52) | CPUIDLE_FLAG_TLB_FLUSHED,
 		.exit_latency = 500,
 		.target_residency = 560,
+		.disabled = true,
 		.enter = &intel_idle,
 		.enter_s2idle = intel_idle_s2idle, },
 	{
