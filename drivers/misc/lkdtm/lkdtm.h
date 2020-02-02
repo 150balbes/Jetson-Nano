@@ -11,6 +11,7 @@ void __init lkdtm_bugs_init(int *recur_param);
 void lkdtm_PANIC(void);
 void lkdtm_BUG(void);
 void lkdtm_WARNING(void);
+void lkdtm_WARNING_MESSAGE(void);
 void lkdtm_EXCEPTION(void);
 void lkdtm_LOOP(void);
 void lkdtm_EXHAUST_STACK(void);
@@ -27,6 +28,9 @@ void lkdtm_CORRUPT_USER_DS(void);
 void lkdtm_STACK_GUARD_PAGE_LEADING(void);
 void lkdtm_STACK_GUARD_PAGE_TRAILING(void);
 void lkdtm_UNSET_SMEP(void);
+#ifdef CONFIG_X86_32
+void lkdtm_DOUBLE_FAULT(void);
+#endif
 
 /* lkdtm_heap.c */
 void __init lkdtm_heap_init(void);
@@ -94,5 +98,8 @@ void lkdtm_USERCOPY_KERNEL_DS(void);
 
 /* lkdtm_stackleak.c */
 void lkdtm_STACKLEAK_ERASING(void);
+
+/* cfi.c */
+void lkdtm_CFI_FORWARD_PROTO(void);
 
 #endif

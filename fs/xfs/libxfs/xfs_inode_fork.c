@@ -75,11 +75,15 @@ xfs_iformat_fork(
 			error = xfs_iformat_btree(ip, dip, XFS_DATA_FORK);
 			break;
 		default:
+			xfs_inode_verifier_error(ip, -EFSCORRUPTED, __func__,
+					dip, sizeof(*dip), __this_address);
 			return -EFSCORRUPTED;
 		}
 		break;
 
 	default:
+		xfs_inode_verifier_error(ip, -EFSCORRUPTED, __func__, dip,
+				sizeof(*dip), __this_address);
 		return -EFSCORRUPTED;
 	}
 	if (error)
@@ -94,7 +98,7 @@ xfs_iformat_fork(
 		return 0;
 
 	ASSERT(ip->i_afp == NULL);
-	ip->i_afp = kmem_zone_zalloc(xfs_ifork_zone, KM_SLEEP | KM_NOFS);
+	ip->i_afp = kmem_zone_zalloc(xfs_ifork_zone, KM_NOFS);
 
 	switch (dip->di_aformat) {
 	case XFS_DINODE_FMT_LOCAL:
@@ -110,14 +114,16 @@ xfs_iformat_fork(
 		error = xfs_iformat_btree(ip, dip, XFS_ATTR_FORK);
 		break;
 	default:
+		xfs_inode_verifier_error(ip, error, __func__, dip,
+				sizeof(*dip), __this_address);
 		error = -EFSCORRUPTED;
 		break;
 	}
 	if (error) {
-		kmem_zone_free(xfs_ifork_zone, ip->i_afp);
+		kmem_cache_free(xfs_ifork_zone, ip->i_afp);
 		ip->i_afp = NULL;
 		if (ip->i_cowfp)
-			kmem_zone_free(xfs_ifork_zone, ip->i_cowfp);
+			kmem_cache_free(xfs_ifork_zone, ip->i_cowfp);
 		ip->i_cowfp = NULL;
 		xfs_idestroy_fork(ip, XFS_DATA_FORK);
 	}
@@ -129,7 +135,7 @@ xfs_init_local_fork(
 	struct xfs_inode	*ip,
 	int			whichfork,
 	const void		*data,
-	int			size)
+	int64_t			size)
 {
 	struct xfs_ifork	*ifp = XFS_IFORK_PTR(ip, whichfork);
 	int			mem_size = size, real_size = 0;
@@ -147,7 +153,7 @@ xfs_init_local_fork(
 
 	if (size) {
 		real_size = roundup(mem_size, 4);
-		ifp->if_u1.if_data = kmem_alloc(real_size, KM_SLEEP | KM_NOFS);
+		ifp->if_u1.if_data = kmem_alloc(real_size, KM_NOFS);
 		memcpy(ifp->if_u1.if_data, data, size);
 		if (zero_terminate)
 			ifp->if_u1.if_data[size] = '\0';
@@ -302,7 +308,7 @@ xfs_iformat_btree(
 	}
 
 	ifp->if_broot_bytes = size;
-	ifp->if_broot = kmem_alloc(size, KM_SLEEP | KM_NOFS);
+	ifp->if_broot = kmem_alloc(size, KM_NOFS);
 	ASSERT(ifp->if_broot != NULL);
 	/*
 	 * Copy and convert from the on-disk structure
@@ -367,7 +373,7 @@ xfs_iroot_realloc(
 		 */
 		if (ifp->if_broot_bytes == 0) {
 			new_size = XFS_BMAP_BROOT_SPACE_CALC(mp, rec_diff);
-			ifp->if_broot = kmem_alloc(new_size, KM_SLEEP | KM_NOFS);
+			ifp->if_broot = kmem_alloc(new_size, KM_NOFS);
 			ifp->if_broot_bytes = (int)new_size;
 			return;
 		}
@@ -382,7 +388,7 @@ xfs_iroot_realloc(
 		new_max = cur_max + rec_diff;
 		new_size = XFS_BMAP_BROOT_SPACE_CALC(mp, new_max);
 		ifp->if_broot = kmem_realloc(ifp->if_broot, new_size,
-				KM_SLEEP | KM_NOFS);
+				KM_NOFS);
 		op = (char *)XFS_BMAP_BROOT_PTR_ADDR(mp, ifp->if_broot, 1,
 						     ifp->if_broot_bytes);
 		np = (char *)XFS_BMAP_BROOT_PTR_ADDR(mp, ifp->if_broot, 1,
@@ -408,7 +414,7 @@ xfs_iroot_realloc(
 	else
 		new_size = 0;
 	if (new_size > 0) {
-		new_broot = kmem_alloc(new_size, KM_SLEEP | KM_NOFS);
+		new_broot = kmem_alloc(new_size, KM_NOFS);
 		/*
 		 * First copy over the btree block header.
 		 */
@@ -467,11 +473,11 @@ xfs_iroot_realloc(
 void
 xfs_idata_realloc(
 	struct xfs_inode	*ip,
-	int			byte_diff,
+	int64_t			byte_diff,
 	int			whichfork)
 {
 	struct xfs_ifork	*ifp = XFS_IFORK_PTR(ip, whichfork);
-	int			new_size = (int)ifp->if_bytes + byte_diff;
+	int64_t			new_size = ifp->if_bytes + byte_diff;
 
 	ASSERT(new_size >= 0);
 	ASSERT(new_size <= XFS_IFORK_SIZE(ip, whichfork));
@@ -492,7 +498,7 @@ xfs_idata_realloc(
 	 * We enforce that here.
 	 */
 	ifp->if_u1.if_data = kmem_realloc(ifp->if_u1.if_data,
-			roundup(new_size, 4), KM_SLEEP | KM_NOFS);
+			roundup(new_size, 4), KM_NOFS);
 	ifp->if_bytes = new_size;
 }
 
@@ -525,10 +531,10 @@ xfs_idestroy_fork(
 	}
 
 	if (whichfork == XFS_ATTR_FORK) {
-		kmem_zone_free(xfs_ifork_zone, ip->i_afp);
+		kmem_cache_free(xfs_ifork_zone, ip->i_afp);
 		ip->i_afp = NULL;
 	} else if (whichfork == XFS_COW_FORK) {
-		kmem_zone_free(xfs_ifork_zone, ip->i_cowfp);
+		kmem_cache_free(xfs_ifork_zone, ip->i_cowfp);
 		ip->i_cowfp = NULL;
 	}
 }
@@ -552,7 +558,7 @@ xfs_iextents_copy(
 	struct xfs_ifork	*ifp = XFS_IFORK_PTR(ip, whichfork);
 	struct xfs_iext_cursor	icur;
 	struct xfs_bmbt_irec	rec;
-	int			copied = 0;
+	int64_t			copied = 0;
 
 	ASSERT(xfs_isilocked(ip, XFS_ILOCK_EXCL | XFS_ILOCK_SHARED));
 	ASSERT(ifp->if_bytes > 0);
@@ -683,7 +689,7 @@ xfs_ifork_init_cow(
 		return;
 
 	ip->i_cowfp = kmem_zone_zalloc(xfs_ifork_zone,
-				       KM_SLEEP | KM_NOFS);
+				       KM_NOFS);
 	ip->i_cowfp->if_flags = XFS_IFEXTENTS;
 	ip->i_cformat = XFS_DINODE_FMT_EXTENTS;
 	ip->i_cnextents = 0;

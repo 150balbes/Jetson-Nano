@@ -7,6 +7,7 @@
  * This code generates raw asm output which is post-processed to extract
  * and format the required data.
  */
+#include <linux/compiler.h>
 #include <linux/sched.h>
 #include <linux/mm.h>
 #include <linux/dma-mapping.h>

@@ -70,11 +70,6 @@ fail:
 	fib_free_table(main_table);
 	return -ENOMEM;
 }
-
-static bool fib4_has_custom_rules(struct net *net)
-{
-	return false;
-}
 #else
 
 struct fib_table *fib_new_table(struct net *net, u32 id)
@@ -124,16 +119,12 @@ struct fib_table *fib_get_table(struct net *net, u32 id)
 	h = id & (FIB_TABLE_HASHSZ - 1);
 
 	head = &net->ipv4.fib_table_hash[h];
-	hlist_for_each_entry_rcu(tb, head, tb_hlist) {
+	hlist_for_each_entry_rcu(tb, head, tb_hlist,
+				 lockdep_rtnl_is_held()) {
 		if (tb->tb_id == id)
 			return tb;
 	}
 	return NULL;
-}
-
-static bool fib4_has_custom_rules(struct net *net)
-{
-	return net->ipv4.fib_has_custom_rules;
 }
 #endif /* CONFIG_IP_MULTIPLE_TABLES */
 
@@ -1147,7 +1138,7 @@ void fib_modify_prefix_metric(struct in_ifaddr *ifa, u32 new_metric)
 	if (!(dev->flags & IFF_UP) ||
 	    ifa->ifa_flags & (IFA_F_SECONDARY | IFA_F_NOPREFIXROUTE) ||
 	    ipv4_is_zeronet(prefix) ||
-	    prefix == ifa->ifa_local || ifa->ifa_prefixlen == 32)
+	    (prefix == ifa->ifa_local && ifa->ifa_prefixlen == 32))
 		return;
 
 	/* add the new */

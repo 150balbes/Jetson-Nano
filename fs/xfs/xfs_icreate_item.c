@@ -55,7 +55,7 @@ STATIC void
 xfs_icreate_item_release(
 	struct xfs_log_item	*lip)
 {
-	kmem_zone_free(xfs_icreate_zone, ICR_ITEM(lip));
+	kmem_cache_free(xfs_icreate_zone, ICR_ITEM(lip));
 }
 
 static const struct xfs_item_ops xfs_icreate_item_ops = {
@@ -89,7 +89,7 @@ xfs_icreate_log(
 {
 	struct xfs_icreate_item	*icp;
 
-	icp = kmem_zone_zalloc(xfs_icreate_zone, KM_SLEEP);
+	icp = kmem_zone_zalloc(xfs_icreate_zone, 0);
 
 	xfs_log_item_init(tp->t_mountp, &icp->ic_item, XFS_LI_ICREATE,
 			  &xfs_icreate_item_ops);

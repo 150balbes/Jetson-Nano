@@ -5,6 +5,7 @@
 #define pr_fmt(fmt)	"[drm:%s:%d] " fmt, __func__, __LINE__
 
 #include <linux/debugfs.h>
+#include <linux/delay.h>
 
 #include "dpu_vbif.h"
 #include "dpu_hw_vbif.h"
@@ -153,10 +154,6 @@ void dpu_vbif_set_ot_limit(struct dpu_kms *dpu_kms,
 	u32 ot_lim;
 	int ret, i;
 
-	if (!dpu_kms) {
-		DPU_ERROR("invalid arguments\n");
-		return;
-	}
 	mdp = dpu_kms->hw_mdp;
 
 	for (i = 0; i < ARRAY_SIZE(dpu_kms->hw_vbif); i++) {
@@ -213,7 +210,7 @@ void dpu_vbif_set_qos_remap(struct dpu_kms *dpu_kms,
 	const struct dpu_vbif_qos_tbl *qos_tbl;
 	int i;
 
-	if (!dpu_kms || !params || !dpu_kms->hw_mdp) {
+	if (!params || !dpu_kms->hw_mdp) {
 		DPU_ERROR("invalid arguments\n");
 		return;
 	}
@@ -264,11 +261,6 @@ void dpu_vbif_clear_errors(struct dpu_kms *dpu_kms)
 	struct dpu_hw_vbif *vbif;
 	u32 i, pnd, src;
 
-	if (!dpu_kms) {
-		DPU_ERROR("invalid argument\n");
-		return;
-	}
-
 	for (i = 0; i < ARRAY_SIZE(dpu_kms->hw_vbif); i++) {
 		vbif = dpu_kms->hw_vbif[i];
 		if (vbif && vbif->ops.clear_errors) {
@@ -285,11 +277,6 @@ void dpu_vbif_init_memtypes(struct dpu_kms *dpu_kms)
 {
 	struct dpu_hw_vbif *vbif;
 	int i, j;
-
-	if (!dpu_kms) {
-		DPU_ERROR("invalid argument\n");
-		return;
-	}
 
 	for (i = 0; i < ARRAY_SIZE(dpu_kms->hw_vbif); i++) {
 		vbif = dpu_kms->hw_vbif[i];

@@ -18,9 +18,6 @@
 #include "hantro_hw.h"
 #include "hantro_v4l2.h"
 
-#define MV_OFFSET_420	384
-#define MV_OFFSET_400	256
-
 #define G1_SWREG(nr)			((nr) * 4)
 
 #define G1_REG_RLC_VLC_BASE		G1_SWREG(12)
@@ -208,14 +205,14 @@ void hantro_g1_h264_dec_run(struct hantro_ctx *ctx)
 	struct hantro_dev *vpu = ctx->dev;
 	struct vb2_v4l2_buffer *src_buf, *dst_buf;
 	const struct hantro_h264_dec_ctrls *ctrls;
-	const struct v4l2_ctrl_h264_decode_params *dec_param;
+	const struct v4l2_ctrl_h264_decode_params *decode;
 	const struct v4l2_ctrl_h264_slice_params *slices;
 	const struct v4l2_ctrl_h264_sps *sps;
 	const struct v4l2_ctrl_h264_pps *pps;
 	const u8 *b0_reflist, *b1_reflist, *p_reflist;
 	dma_addr_t addr;
+	size_t offset = 0;
 	u32 reg;
-	unsigned int offset = MV_OFFSET_420;
 
 	/* Prepare the H264 decoder context. */
 	if (hantro_h264_dec_prepare_run(ctx))
@@ -225,7 +222,7 @@ void hantro_g1_h264_dec_run(struct hantro_ctx *ctx)
 	dst_buf = hantro_get_dst_buf(ctx);
 
 	ctrls = &ctx->h264_dec.ctrls;
-	dec_param = ctrls->decode;
+	decode = ctrls->decode;
 	slices = ctrls->slices;
 	sps = ctrls->sps;
 	pps = ctrls->pps;
@@ -257,14 +254,14 @@ void hantro_g1_h264_dec_run(struct hantro_ctx *ctx)
 	      G1_REG_PIC_TOPFIELD_E(!(slices[0].flags & V4L2_H264_SLICE_FLAG_BOTTOM_FIELD)) |
 	      G1_REG_FILTERING_DIS(0) |
 	      G1_REG_PIC_FIXED_QUANT(0) |
-	      G1_REG_WRITE_MVS_E(dec_param->nal_ref_idc) |
+	      G1_REG_WRITE_MVS_E(sps->profile_idc > 66 && decode->nal_ref_idc) |
 	      G1_REG_SEQ_MBAFF_E(sps->flags & V4L2_H264_SPS_FLAG_MB_ADAPTIVE_FRAME_FIELD) |
-	      G1_REG_PICORD_COUNT_E(1) |
+	      G1_REG_PICORD_COUNT_E(sps->profile_idc > 66) |
 	      G1_REG_DEC_AXI_WR_ID(0);
 	vdpu_write_relaxed(vpu, reg, G1_SWREG(3));
 
-	reg = G1_REG_PIC_MB_WIDTH(H264_MB_WIDTH(ctx->dst_fmt.width)) |
-	      G1_REG_PIC_MB_HEIGHT_P(H264_MB_HEIGHT(ctx->dst_fmt.height)) |
+	reg = G1_REG_PIC_MB_WIDTH(MB_WIDTH(ctx->src_fmt.width)) |
+	      G1_REG_PIC_MB_HEIGHT_P(MB_HEIGHT(ctx->src_fmt.height)) |
 	      G1_REG_REF_FRAMES(sps->max_num_ref_frames);
 	vdpu_write_relaxed(vpu, reg, G1_SWREG(4));
 
@@ -295,7 +292,7 @@ void hantro_g1_h264_dec_run(struct hantro_ctx *ctx)
 	      G1_REG_RDPIC_CNT_PRES(pps->flags & V4L2_H264_PPS_FLAG_REDUNDANT_PIC_CNT_PRESENT) |
 	      G1_REG_8X8TRANS_FLAG_E(pps->flags & V4L2_H264_PPS_FLAG_TRANSFORM_8X8_MODE) |
 	      G1_REG_REFPIC_MK_LEN(slices[0].dec_ref_pic_marking_bit_size) |
-	      G1_REG_IDR_PIC_E(dec_param->flags & V4L2_H264_DECODE_PARAM_FLAG_IDR_PIC) |
+	      G1_REG_IDR_PIC_E(decode->flags & V4L2_H264_DECODE_PARAM_FLAG_IDR_PIC) |
 	      G1_REG_IDR_PIC_ID(slices[0].idr_pic_id);
 	vdpu_write_relaxed(vpu, reg, G1_SWREG(8));
 
@@ -422,7 +419,7 @@ void hantro_g1_h264_dec_run(struct hantro_ctx *ctx)
 	reg = G1_REG_APF_THRESHOLD(8);
 	vdpu_write_relaxed(vpu, reg, G1_SWREG(55));
 
-	/* Auxiliary buffer prepared in hantro_h264_dec_prepare_run(). */
+	/* Auxiliary buffer prepared in hantro_g1_h264_dec_prepare_table(). */
 	vdpu_write_relaxed(vpu, ctx->h264_dec.priv.dma, G1_REG_QTABLE_BASE);
 
 	/* Source (stream) buffer. */
@@ -431,37 +428,47 @@ void hantro_g1_h264_dec_run(struct hantro_ctx *ctx)
 
 	/* Destination (decoded frame) buffer. */
 	addr = vb2_dma_contig_plane_dma_addr(&dst_buf->vb2_buf, 0);
-	if (ctrls->slices[0].flags & V4L2_H264_SLICE_FLAG_BOTTOM_FIELD)
-		addr += ALIGN(ctx->dst_fmt.width, H264_MB_DIM);
-	vdpu_write_relaxed(vpu, addr, G1_REG_DEC_OUT_BASE);
+	/* Adjust dma addr to start at second line for bottom field */
+	if (slices[0].flags & V4L2_H264_SLICE_FLAG_BOTTOM_FIELD)
+		offset = ALIGN(ctx->src_fmt.width, MB_DIM);
+	vdpu_write_relaxed(vpu, addr + offset, G1_REG_DEC_OUT_BASE);
 
-	/* Motion vector buffer is located after the decoded frame. */
-	addr = vb2_dma_contig_plane_dma_addr(&dst_buf->vb2_buf, 0);
-	if (sps->profile_idc >= 100 && sps->chroma_format_idc == 0)
-		offset = MV_OFFSET_400;
-	addr += offset * H264_MB_WIDTH(ctx->dst_fmt.width) *
-		H264_MB_HEIGHT(ctx->dst_fmt.height);
-	if (ctrls->slices[0].flags & V4L2_H264_SLICE_FLAG_BOTTOM_FIELD)
-		addr += 32 * H264_MB_WIDTH(ctx->dst_fmt.width) *
-			H264_MB_HEIGHT(ctx->dst_fmt.height);
-	vdpu_write_relaxed(vpu, addr, G1_REG_DIR_MV_BASE);
+	/* Higher profiles require DMV buffer appended to reference frames. */
+	if (sps->profile_idc > 66 && decode->nal_ref_idc) {
+		unsigned int bytes_per_mb = 384;
 
-	vdpu_write_relaxed(vpu, hantro_h264_get_ref_dma_addr(ctx, 0), G1_REG_REFER0_BASE);
-	vdpu_write_relaxed(vpu, hantro_h264_get_ref_dma_addr(ctx, 1), G1_REG_REFER1_BASE);
-	vdpu_write_relaxed(vpu, hantro_h264_get_ref_dma_addr(ctx, 2), G1_REG_REFER2_BASE);
-	vdpu_write_relaxed(vpu, hantro_h264_get_ref_dma_addr(ctx, 3), G1_REG_REFER3_BASE);
-	vdpu_write_relaxed(vpu, hantro_h264_get_ref_dma_addr(ctx, 4), G1_REG_REFER4_BASE);
-	vdpu_write_relaxed(vpu, hantro_h264_get_ref_dma_addr(ctx, 5), G1_REG_REFER5_BASE);
-	vdpu_write_relaxed(vpu, hantro_h264_get_ref_dma_addr(ctx, 6), G1_REG_REFER6_BASE);
-	vdpu_write_relaxed(vpu, hantro_h264_get_ref_dma_addr(ctx, 7), G1_REG_REFER7_BASE);
-	vdpu_write_relaxed(vpu, hantro_h264_get_ref_dma_addr(ctx, 8), G1_REG_REFER8_BASE);
-	vdpu_write_relaxed(vpu, hantro_h264_get_ref_dma_addr(ctx, 9), G1_REG_REFER9_BASE);
-	vdpu_write_relaxed(vpu, hantro_h264_get_ref_dma_addr(ctx, 10), G1_REG_REFER10_BASE);
-	vdpu_write_relaxed(vpu, hantro_h264_get_ref_dma_addr(ctx, 11), G1_REG_REFER11_BASE);
-	vdpu_write_relaxed(vpu, hantro_h264_get_ref_dma_addr(ctx, 12), G1_REG_REFER12_BASE);
-	vdpu_write_relaxed(vpu, hantro_h264_get_ref_dma_addr(ctx, 13), G1_REG_REFER13_BASE);
-	vdpu_write_relaxed(vpu, hantro_h264_get_ref_dma_addr(ctx, 14), G1_REG_REFER14_BASE);
-	vdpu_write_relaxed(vpu, hantro_h264_get_ref_dma_addr(ctx, 15), G1_REG_REFER15_BASE);
+		/* DMV buffer for monochrome start directly after Y-plane */
+		if (sps->profile_idc >= 100 && sps->chroma_format_idc == 0)
+			bytes_per_mb = 256;
+		offset = bytes_per_mb * MB_WIDTH(ctx->src_fmt.width) *
+			 MB_HEIGHT(ctx->src_fmt.height);
+
+		/*
+		 * DMV buffer is split in two for field encoded frames,
+		 * adjust offset for bottom field
+		 */
+		if (slices[0].flags & V4L2_H264_SLICE_FLAG_BOTTOM_FIELD)
+			offset += 32 * MB_WIDTH(ctx->src_fmt.width) *
+				  MB_HEIGHT(ctx->src_fmt.height);
+		vdpu_write_relaxed(vpu, addr + offset, G1_REG_DIR_MV_BASE);
+	}
+
+	vdpu_write_relaxed(vpu, hantro_h264_get_ref_buf(ctx, 0), G1_REG_REFER0_BASE);
+	vdpu_write_relaxed(vpu, hantro_h264_get_ref_buf(ctx, 1), G1_REG_REFER1_BASE);
+	vdpu_write_relaxed(vpu, hantro_h264_get_ref_buf(ctx, 2), G1_REG_REFER2_BASE);
+	vdpu_write_relaxed(vpu, hantro_h264_get_ref_buf(ctx, 3), G1_REG_REFER3_BASE);
+	vdpu_write_relaxed(vpu, hantro_h264_get_ref_buf(ctx, 4), G1_REG_REFER4_BASE);
+	vdpu_write_relaxed(vpu, hantro_h264_get_ref_buf(ctx, 5), G1_REG_REFER5_BASE);
+	vdpu_write_relaxed(vpu, hantro_h264_get_ref_buf(ctx, 6), G1_REG_REFER6_BASE);
+	vdpu_write_relaxed(vpu, hantro_h264_get_ref_buf(ctx, 7), G1_REG_REFER7_BASE);
+	vdpu_write_relaxed(vpu, hantro_h264_get_ref_buf(ctx, 8), G1_REG_REFER8_BASE);
+	vdpu_write_relaxed(vpu, hantro_h264_get_ref_buf(ctx, 9), G1_REG_REFER9_BASE);
+	vdpu_write_relaxed(vpu, hantro_h264_get_ref_buf(ctx, 10), G1_REG_REFER10_BASE);
+	vdpu_write_relaxed(vpu, hantro_h264_get_ref_buf(ctx, 11), G1_REG_REFER11_BASE);
+	vdpu_write_relaxed(vpu, hantro_h264_get_ref_buf(ctx, 12), G1_REG_REFER12_BASE);
+	vdpu_write_relaxed(vpu, hantro_h264_get_ref_buf(ctx, 13), G1_REG_REFER13_BASE);
+	vdpu_write_relaxed(vpu, hantro_h264_get_ref_buf(ctx, 14), G1_REG_REFER14_BASE);
+	vdpu_write_relaxed(vpu, hantro_h264_get_ref_buf(ctx, 15), G1_REG_REFER15_BASE);
 
 	hantro_finish_run(ctx);
 

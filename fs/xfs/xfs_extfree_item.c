@@ -21,7 +21,7 @@
 #include "xfs_alloc.h"
 #include "xfs_bmap.h"
 #include "xfs_trace.h"
-
+#include "xfs_error.h"
 
 kmem_zone_t	*xfs_efi_zone;
 kmem_zone_t	*xfs_efd_zone;
@@ -39,7 +39,7 @@ xfs_efi_item_free(
 	if (efip->efi_format.efi_nextents > XFS_EFI_MAX_FAST_EXTENTS)
 		kmem_free(efip);
 	else
-		kmem_zone_free(xfs_efi_zone, efip);
+		kmem_cache_free(xfs_efi_zone, efip);
 }
 
 /*
@@ -163,9 +163,9 @@ xfs_efi_init(
 	if (nextents > XFS_EFI_MAX_FAST_EXTENTS) {
 		size = (uint)(sizeof(xfs_efi_log_item_t) +
 			((nextents - 1) * sizeof(xfs_extent_t)));
-		efip = kmem_zalloc(size, KM_SLEEP);
+		efip = kmem_zalloc(size, 0);
 	} else {
-		efip = kmem_zone_zalloc(xfs_efi_zone, KM_SLEEP);
+		efip = kmem_zone_zalloc(xfs_efi_zone, 0);
 	}
 
 	xfs_log_item_init(mp, &efip->efi_item, XFS_LI_EFI, &xfs_efi_item_ops);
@@ -228,6 +228,7 @@ xfs_efi_copy_format(xfs_log_iovec_t *buf, xfs_efi_log_format_t *dst_efi_fmt)
 		}
 		return 0;
 	}
+	XFS_ERROR_REPORT(__func__, XFS_ERRLEVEL_LOW, NULL);
 	return -EFSCORRUPTED;
 }
 
@@ -243,7 +244,7 @@ xfs_efd_item_free(struct xfs_efd_log_item *efdp)
 	if (efdp->efd_format.efd_nextents > XFS_EFD_MAX_FAST_EXTENTS)
 		kmem_free(efdp);
 	else
-		kmem_zone_free(xfs_efd_zone, efdp);
+		kmem_cache_free(xfs_efd_zone, efdp);
 }
 
 /*
@@ -333,9 +334,9 @@ xfs_trans_get_efd(
 	if (nextents > XFS_EFD_MAX_FAST_EXTENTS) {
 		efdp = kmem_zalloc(sizeof(struct xfs_efd_log_item) +
 				(nextents - 1) * sizeof(struct xfs_extent),
-				KM_SLEEP);
+				0);
 	} else {
-		efdp = kmem_zone_zalloc(xfs_efd_zone, KM_SLEEP);
+		efdp = kmem_zone_zalloc(xfs_efd_zone, 0);
 	}
 
 	xfs_log_item_init(tp->t_mountp, &efdp->efd_item, XFS_LI_EFD,
@@ -624,7 +625,7 @@ xfs_efi_recover(
 			 */
 			set_bit(XFS_EFI_RECOVERED, &efip->efi_flags);
 			xfs_efi_release(efip);
-			return -EIO;
+			return -EFSCORRUPTED;
 		}
 	}
 

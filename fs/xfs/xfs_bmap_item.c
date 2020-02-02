@@ -21,7 +21,7 @@
 #include "xfs_icache.h"
 #include "xfs_bmap_btree.h"
 #include "xfs_trans_space.h"
-
+#include "xfs_error.h"
 
 kmem_zone_t	*xfs_bui_zone;
 kmem_zone_t	*xfs_bud_zone;
@@ -35,7 +35,7 @@ void
 xfs_bui_item_free(
 	struct xfs_bui_log_item	*buip)
 {
-	kmem_zone_free(xfs_bui_zone, buip);
+	kmem_cache_free(xfs_bui_zone, buip);
 }
 
 /*
@@ -141,7 +141,7 @@ xfs_bui_init(
 {
 	struct xfs_bui_log_item		*buip;
 
-	buip = kmem_zone_zalloc(xfs_bui_zone, KM_SLEEP);
+	buip = kmem_zone_zalloc(xfs_bui_zone, 0);
 
 	xfs_log_item_init(mp, &buip->bui_item, XFS_LI_BUI, &xfs_bui_item_ops);
 	buip->bui_format.bui_nextents = XFS_BUI_MAX_FAST_EXTENTS;
@@ -201,7 +201,7 @@ xfs_bud_item_release(
 	struct xfs_bud_log_item	*budp = BUD_ITEM(lip);
 
 	xfs_bui_release(budp->bud_buip);
-	kmem_zone_free(xfs_bud_zone, budp);
+	kmem_cache_free(xfs_bud_zone, budp);
 }
 
 static const struct xfs_item_ops xfs_bud_item_ops = {
@@ -218,7 +218,7 @@ xfs_trans_get_bud(
 {
 	struct xfs_bud_log_item		*budp;
 
-	budp = kmem_zone_zalloc(xfs_bud_zone, KM_SLEEP);
+	budp = kmem_zone_zalloc(xfs_bud_zone, 0);
 	xfs_log_item_init(tp->t_mountp, &budp->bud_item, XFS_LI_BUD,
 			  &xfs_bud_item_ops);
 	budp->bud_buip = buip;
@@ -456,7 +456,7 @@ xfs_bui_recover(
 	if (buip->bui_format.bui_nextents != XFS_BUI_MAX_FAST_EXTENTS) {
 		set_bit(XFS_BUI_RECOVERED, &buip->bui_flags);
 		xfs_bui_release(buip);
-		return -EIO;
+		return -EFSCORRUPTED;
 	}
 
 	/*
@@ -490,7 +490,7 @@ xfs_bui_recover(
 		 */
 		set_bit(XFS_BUI_RECOVERED, &buip->bui_flags);
 		xfs_bui_release(buip);
-		return -EIO;
+		return -EFSCORRUPTED;
 	}
 
 	error = xfs_trans_alloc(mp, &M_RES(mp)->tr_itruncate,
@@ -525,6 +525,7 @@ xfs_bui_recover(
 		type = bui_type;
 		break;
 	default:
+		XFS_ERROR_REPORT(__func__, XFS_ERRLEVEL_LOW, mp);
 		error = -EFSCORRUPTED;
 		goto err_inode;
 	}
@@ -542,9 +543,7 @@ xfs_bui_recover(
 		irec.br_blockcount = count;
 		irec.br_startoff = bmap->me_startoff;
 		irec.br_state = state;
-		error = xfs_bmap_unmap_extent(tp, ip, &irec);
-		if (error)
-			goto err_inode;
+		xfs_bmap_unmap_extent(tp, ip, &irec);
 	}
 
 	set_bit(XFS_BUI_RECOVERED, &buip->bui_flags);

@@ -80,7 +80,7 @@ struct amlogic_thermal_soc_calib_data {
 /**
  * struct amlogic_thermal_data
  * @u_efuse_off: register offset to read fused calibration value
- * @soc: calibration parameters structure pointer
+ * @calibration_parameters: calibration parameters structure pointer
  * @regmap_config: regmap config for the device
  * This structure is required for configuration of amlogic thermal driver.
  */
@@ -98,7 +98,6 @@ struct amlogic_thermal {
 	struct clk *clk;
 	struct thermal_zone_device *tzd;
 	u32 trim_info;
-	void __iomem *base;
 };
 
 /*
@@ -159,6 +158,7 @@ static int amlogic_thermal_enable(struct amlogic_thermal *data)
 	ret = clk_prepare_enable(data->clk);
 	if (ret)
 		return ret;
+
 	regmap_update_bits(data->regmap, TSENSOR_CFG_REG1,
 			   TSENSOR_CFG_REG1_ENABLE, TSENSOR_CFG_REG1_ENABLE);
 
@@ -194,40 +194,40 @@ static const struct thermal_zone_of_device_ops amlogic_thermal_ops = {
 	.get_temp	= amlogic_thermal_get_temp,
 };
 
-static const struct regmap_config amlogic_thermal_regmap_config_g12 = {
+static const struct regmap_config amlogic_thermal_regmap_config_g12a = {
 	.reg_bits = 8,
 	.val_bits = 32,
 	.reg_stride = 4,
 	.max_register = TSENSOR_STAT9,
 };
 
-static const struct amlogic_thermal_soc_calib_data amlogic_thermal_g12 = {
+static const struct amlogic_thermal_soc_calib_data amlogic_thermal_g12a = {
 	.A = 9411,
 	.B = 3159,
 	.m = 424,
 	.n = 324,
 };
 
-static const struct amlogic_thermal_data amlogic_thermal_g12_cpu_param = {
+static const struct amlogic_thermal_data amlogic_thermal_g12a_cpu_param = {
 	.u_efuse_off = 0x128,
-	.calibration_parameters = &amlogic_thermal_g12,
-	.regmap_config = &amlogic_thermal_regmap_config_g12,
+	.calibration_parameters = &amlogic_thermal_g12a,
+	.regmap_config = &amlogic_thermal_regmap_config_g12a,
 };
 
-static const struct amlogic_thermal_data amlogic_thermal_g12_ddr_param = {
+static const struct amlogic_thermal_data amlogic_thermal_g12a_ddr_param = {
 	.u_efuse_off = 0xf0,
-	.calibration_parameters = &amlogic_thermal_g12,
-	.regmap_config = &amlogic_thermal_regmap_config_g12,
+	.calibration_parameters = &amlogic_thermal_g12a,
+	.regmap_config = &amlogic_thermal_regmap_config_g12a,
 };
 
 static const struct of_device_id of_amlogic_thermal_match[] = {
 	{
-		.compatible = "amlogic,g12-ddr-thermal",
-		.data = &amlogic_thermal_g12_ddr_param,
+		.compatible = "amlogic,g12a-ddr-thermal",
+		.data = &amlogic_thermal_g12a_ddr_param,
 	},
 	{
-		.compatible = "amlogic,g12-cpu-thermal",
-		.data = &amlogic_thermal_g12_cpu_param,
+		.compatible = "amlogic,g12a-cpu-thermal",
+		.data = &amlogic_thermal_g12a_cpu_param,
 	},
 	{ /* sentinel */ }
 };
@@ -237,7 +237,7 @@ static int amlogic_thermal_probe(struct platform_device *pdev)
 {
 	struct amlogic_thermal *pdata;
 	struct device *dev = &pdev->dev;
-	struct resource *res;
+	void __iomem *base;
 	int ret;
 
 	pdata = devm_kzalloc(dev, sizeof(*pdata), GFP_KERNEL);
@@ -248,14 +248,13 @@ static int amlogic_thermal_probe(struct platform_device *pdev)
 	pdata->pdev = pdev;
 	platform_set_drvdata(pdev, pdata);
 
-	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
-	pdata->base = devm_ioremap_resource(dev, res);
-	if (IS_ERR(pdata->base)) {
+	base = devm_platform_ioremap_resource(pdev, 0);
+	if (IS_ERR(base)) {
 		dev_err(dev, "failed to get io address\n");
-		return PTR_ERR(pdata->base);
+		return PTR_ERR(base);
 	}
 
-	pdata->regmap = devm_regmap_init_mmio(dev, pdata->base,
+	pdata->regmap = devm_regmap_init_mmio(dev, base,
 					      pdata->data->regmap_config);
 	if (IS_ERR(pdata->regmap))
 		return PTR_ERR(pdata->regmap);
@@ -281,7 +280,7 @@ static int amlogic_thermal_probe(struct platform_device *pdev)
 	if (IS_ERR(pdata->tzd)) {
 		ret = PTR_ERR(pdata->tzd);
 		dev_err(dev, "Failed to register tsensor: %d\n", ret);
-		return PTR_ERR(pdata->tzd);
+		return ret;
 	}
 
 	ret = amlogic_thermal_initialize(pdata);
@@ -289,8 +288,6 @@ static int amlogic_thermal_probe(struct platform_device *pdev)
 		return ret;
 
 	ret = amlogic_thermal_enable(pdata);
-	if (ret)
-		clk_disable_unprepare(pdata->clk);
 
 	return ret;
 }

@@ -69,10 +69,12 @@ struct brcmf_buscore_ops {
 	void (*activate)(void *ctx, struct brcmf_chip *chip, u32 rstvec);
 };
 
+int brcmf_chip_get_raminfo(struct brcmf_chip *pub);
 struct brcmf_chip *brcmf_chip_attach(void *ctx,
 				     const struct brcmf_buscore_ops *ops);
 void brcmf_chip_detach(struct brcmf_chip *chip);
 struct brcmf_core *brcmf_chip_get_core(struct brcmf_chip *chip, u16 coreid);
+struct brcmf_core *brcmf_chip_get_d11core(struct brcmf_chip *pub, u8 unit);
 struct brcmf_core *brcmf_chip_get_chipcommon(struct brcmf_chip *chip);
 struct brcmf_core *brcmf_chip_get_pmu(struct brcmf_chip *pub);
 bool brcmf_chip_iscoreup(struct brcmf_core *core);

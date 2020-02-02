@@ -712,7 +712,6 @@ static int vega10_sort_lookup_table(struct pp_hwmgr *hwmgr,
 		struct phm_ppt_v1_voltage_lookup_table *lookup_table)
 {
 	uint32_t table_size, i, j;
-	struct phm_ppt_v1_voltage_lookup_record tmp_voltage_lookup_record;
 
 	PP_ASSERT_WITH_CODE(lookup_table && lookup_table->count,
 		"Lookup table is empty", return -EINVAL);
@@ -724,9 +723,8 @@ static int vega10_sort_lookup_table(struct pp_hwmgr *hwmgr,
 		for (j = i + 1; j > 0; j--) {
 			if (lookup_table->entries[j].us_vdd <
 					lookup_table->entries[j - 1].us_vdd) {
-				tmp_voltage_lookup_record = lookup_table->entries[j - 1];
-				lookup_table->entries[j - 1] = lookup_table->entries[j];
-				lookup_table->entries[j] = tmp_voltage_lookup_record;
+				swap(lookup_table->entries[j - 1],
+				     lookup_table->entries[j]);
 			}
 		}
 	}
@@ -3220,7 +3218,8 @@ static int vega10_apply_state_adjust_rules(struct pp_hwmgr *hwmgr,
 	if (hwmgr->display_config->num_display == 0)
 		disable_mclk_switching = false;
 	else
-		disable_mclk_switching = (hwmgr->display_config->num_display > 1) ||
+		disable_mclk_switching = ((1 < hwmgr->display_config->num_display) &&
+					  !hwmgr->display_config->multi_monitor_in_sync) ||
 			disable_mclk_switching_for_frame_lock ||
 			disable_mclk_switching_for_vr ||
 			force_mclk_high;
@@ -3689,6 +3688,13 @@ static int vega10_set_power_state_tasks(struct pp_hwmgr *hwmgr,
 	result = smum_smc_table_manager(hwmgr, (uint8_t *)pp_table, PPTABLE, false);
 	PP_ASSERT_WITH_CODE(!result,
 			"Failed to upload PPtable!", return result);
+
+	/*
+	 * If a custom pp table is loaded, set DPMTABLE_OD_UPDATE_VDDC flag.
+	 * That effectively disables AVFS feature.
+	 */
+	if(hwmgr->hardcode_pp_table != NULL)
+		data->need_update_dpm_table |= DPMTABLE_OD_UPDATE_VDDC;
 
 	vega10_update_avfs(hwmgr);
 
@@ -5097,9 +5103,7 @@ static void vega10_odn_update_soc_table(struct pp_hwmgr *hwmgr,
 
 	if (type == PP_OD_EDIT_SCLK_VDDC_TABLE) {
 		podn_vdd_dep = &data->odn_dpm_table.vdd_dep_on_sclk;
-		for (i = 0; i < podn_vdd_dep->count - 1; i++)
-			od_vddc_lookup_table->entries[i].us_vdd = podn_vdd_dep->entries[i].vddc;
-		if (od_vddc_lookup_table->entries[i].us_vdd < podn_vdd_dep->entries[i].vddc)
+		for (i = 0; i < podn_vdd_dep->count; i++)
 			od_vddc_lookup_table->entries[i].us_vdd = podn_vdd_dep->entries[i].vddc;
 	} else if (type == PP_OD_EDIT_MCLK_VDDC_TABLE) {
 		podn_vdd_dep = &data->odn_dpm_table.vdd_dep_on_mclk;
@@ -5219,6 +5223,30 @@ static int vega10_odn_edit_dpm_table(struct pp_hwmgr *hwmgr,
 	return 0;
 }
 
+static int vega10_set_mp1_state(struct pp_hwmgr *hwmgr,
+				enum pp_mp1_state mp1_state)
+{
+	uint16_t msg;
+	int ret;
+
+	switch (mp1_state) {
+	case PP_MP1_STATE_UNLOAD:
+		msg = PPSMC_MSG_PrepareMp1ForUnload;
+		break;
+	case PP_MP1_STATE_SHUTDOWN:
+	case PP_MP1_STATE_RESET:
+	case PP_MP1_STATE_NONE:
+	default:
+		return 0;
+	}
+
+	PP_ASSERT_WITH_CODE((ret = smum_send_msg_to_smc(hwmgr, msg)) == 0,
+			    "[PrepareMp1] Failed!",
+			    return ret);
+
+	return 0;
+}
+
 static int vega10_get_performance_level(struct pp_hwmgr *hwmgr, const struct pp_hw_power_state *state,
 				PHM_PerformanceLevelDesignation designation, uint32_t index,
 				PHM_PerformanceLevel *level)
@@ -5240,6 +5268,59 @@ static int vega10_get_performance_level(struct pp_hwmgr *hwmgr, const struct pp_
 	level->memory_clock = ps->performance_levels[i].mem_clock;
 
 	return 0;
+}
+
+static int vega10_disable_power_features_for_compute_performance(struct pp_hwmgr *hwmgr, bool disable)
+{
+	struct vega10_hwmgr *data = hwmgr->backend;
+	uint32_t feature_mask = 0;
+
+	if (disable) {
+		feature_mask |= data->smu_features[GNLD_ULV].enabled ?
+			data->smu_features[GNLD_ULV].smu_feature_bitmap : 0;
+		feature_mask |= data->smu_features[GNLD_DS_GFXCLK].enabled ?
+			data->smu_features[GNLD_DS_GFXCLK].smu_feature_bitmap : 0;
+		feature_mask |= data->smu_features[GNLD_DS_SOCCLK].enabled ?
+			data->smu_features[GNLD_DS_SOCCLK].smu_feature_bitmap : 0;
+		feature_mask |= data->smu_features[GNLD_DS_LCLK].enabled ?
+			data->smu_features[GNLD_DS_LCLK].smu_feature_bitmap : 0;
+		feature_mask |= data->smu_features[GNLD_DS_DCEFCLK].enabled ?
+			data->smu_features[GNLD_DS_DCEFCLK].smu_feature_bitmap : 0;
+	} else {
+		feature_mask |= (!data->smu_features[GNLD_ULV].enabled) ?
+			data->smu_features[GNLD_ULV].smu_feature_bitmap : 0;
+		feature_mask |= (!data->smu_features[GNLD_DS_GFXCLK].enabled) ?
+			data->smu_features[GNLD_DS_GFXCLK].smu_feature_bitmap : 0;
+		feature_mask |= (!data->smu_features[GNLD_DS_SOCCLK].enabled) ?
+			data->smu_features[GNLD_DS_SOCCLK].smu_feature_bitmap : 0;
+		feature_mask |= (!data->smu_features[GNLD_DS_LCLK].enabled) ?
+			data->smu_features[GNLD_DS_LCLK].smu_feature_bitmap : 0;
+		feature_mask |= (!data->smu_features[GNLD_DS_DCEFCLK].enabled) ?
+			data->smu_features[GNLD_DS_DCEFCLK].smu_feature_bitmap : 0;
+	}
+
+	if (feature_mask)
+		PP_ASSERT_WITH_CODE(!vega10_enable_smc_features(hwmgr,
+				!disable, feature_mask),
+				"enable/disable power features for compute performance Failed!",
+				return -EINVAL);
+
+	if (disable) {
+		data->smu_features[GNLD_ULV].enabled = false;
+		data->smu_features[GNLD_DS_GFXCLK].enabled = false;
+		data->smu_features[GNLD_DS_SOCCLK].enabled = false;
+		data->smu_features[GNLD_DS_LCLK].enabled = false;
+		data->smu_features[GNLD_DS_DCEFCLK].enabled = false;
+	} else {
+		data->smu_features[GNLD_ULV].enabled = true;
+		data->smu_features[GNLD_DS_GFXCLK].enabled = true;
+		data->smu_features[GNLD_DS_SOCCLK].enabled = true;
+		data->smu_features[GNLD_DS_LCLK].enabled = true;
+		data->smu_features[GNLD_DS_DCEFCLK].enabled = true;
+	}
+
+	return 0;
+
 }
 
 static const struct pp_hwmgr_func vega10_hwmgr_funcs = {
@@ -5308,6 +5389,9 @@ static const struct pp_hwmgr_func vega10_hwmgr_funcs = {
 	.enable_mgpu_fan_boost = vega10_enable_mgpu_fan_boost,
 	.get_ppfeature_status = vega10_get_ppfeature_status,
 	.set_ppfeature_status = vega10_set_ppfeature_status,
+	.set_mp1_state = vega10_set_mp1_state,
+	.disable_power_features_for_compute_performance =
+			vega10_disable_power_features_for_compute_performance,
 };
 
 int vega10_hwmgr_init(struct pp_hwmgr *hwmgr)

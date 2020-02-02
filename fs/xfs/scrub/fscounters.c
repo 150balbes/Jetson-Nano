@@ -104,7 +104,7 @@ next_loop_perag:
 		pag = NULL;
 		error = 0;
 
-		if (fatal_signal_pending(current))
+		if (xchk_should_terminate(sc, &error))
 			break;
 	}
 
@@ -125,7 +125,7 @@ xchk_setup_fscounters(
 	struct xchk_fscounters	*fsc;
 	int			error;
 
-	sc->buf = kmem_zalloc(sizeof(struct xchk_fscounters), KM_SLEEP);
+	sc->buf = kmem_zalloc(sizeof(struct xchk_fscounters), 0);
 	if (!sc->buf)
 		return -ENOMEM;
 	fsc = sc->buf;
@@ -163,6 +163,7 @@ xchk_fscount_aggregate_agcounts(
 	uint64_t		delayed;
 	xfs_agnumber_t		agno;
 	int			tries = 8;
+	int			error = 0;
 
 retry:
 	fsc->icount = 0;
@@ -196,9 +197,12 @@ retry:
 
 		xfs_perag_put(pag);
 
-		if (fatal_signal_pending(current))
+		if (xchk_should_terminate(sc, &error))
 			break;
 	}
+
+	if (error)
+		return error;
 
 	/*
 	 * The global incore space reservation is taken from the incore

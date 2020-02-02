@@ -190,8 +190,14 @@ struct clk_duty {
  *
  * @init:	Perform platform-specific initialization magic.
  *		This is not not used by any of the basic clock types.
- *		Please consider other ways of solving initialization problems
- *		before using this callback, as its use is discouraged.
+ *		This callback exist for HW which needs to perform some
+ *		initialisation magic for CCF to get an accurate view of the
+ *		clock. It may also be used dynamic resource allocation is
+ *		required. It shall not used to deal with clock parameters,
+ *		such as rate or parents.
+ *		Returns 0 on success, -EERROR otherwise.
+ *
+ * @terminate:  Free any resource allocated by init.
  *
  * @debug_init:	Set up type-specific debugfs entries for this clock.  This
  *		is called once, after the debugfs directory entry for this
@@ -243,7 +249,8 @@ struct clk_ops {
 					  struct clk_duty *duty);
 	int		(*set_duty_cycle)(struct clk_hw *hw,
 					  struct clk_duty *duty);
-	void		(*init)(struct clk_hw *hw);
+	int		(*init)(struct clk_hw *hw);
+	void		(*terminate)(struct clk_hw *hw);
 	void		(*debug_init)(struct clk_hw *hw, struct dentry *dentry);
 };
 
@@ -299,7 +306,8 @@ struct clk_init_data {
  * into the clk API
  *
  * @init: pointer to struct clk_init_data that contains the init data shared
- * with the common clock framework.
+ * with the common clock framework. This pointer will be set to NULL once
+ * a clk_register() variant is called on this clk_hw pointer.
  */
 struct clk_hw {
 	struct clk_core *core;
@@ -817,6 +825,7 @@ unsigned int clk_hw_get_num_parents(const struct clk_hw *hw);
 struct clk_hw *clk_hw_get_parent(const struct clk_hw *hw);
 struct clk_hw *clk_hw_get_parent_by_index(const struct clk_hw *hw,
 					  unsigned int index);
+int clk_hw_get_parent_index(struct clk_hw *hw);
 int clk_hw_set_parent(struct clk_hw *hw, struct clk_hw *new_parent);
 unsigned int __clk_get_enable_count(struct clk *clk);
 unsigned long clk_hw_get_rate(const struct clk_hw *hw);

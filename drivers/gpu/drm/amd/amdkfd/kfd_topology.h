@@ -27,7 +27,7 @@
 #include <linux/list.h>
 #include "kfd_crat.h"
 
-#define KFD_TOPOLOGY_PUBLIC_NAME_SIZE 128
+#define KFD_TOPOLOGY_PUBLIC_NAME_SIZE 32
 
 #define HSA_CAP_HOT_PLUGGABLE			0x00000001
 #define HSA_CAP_ATS_PRESENT			0x00000002
@@ -81,7 +81,7 @@ struct kfd_node_properties {
 	int32_t  drm_render_minor;
 	uint32_t num_sdma_engines;
 	uint32_t num_sdma_xgmi_engines;
-	uint16_t marketing_name[KFD_TOPOLOGY_PUBLIC_NAME_SIZE];
+	char name[KFD_TOPOLOGY_PUBLIC_NAME_SIZE];
 };
 
 #define HSA_MEM_HEAP_TYPE_SYSTEM	0
@@ -102,6 +102,7 @@ struct kfd_mem_properties {
 	uint32_t		flags;
 	uint32_t		width;
 	uint32_t		mem_clk_max;
+	struct kfd_dev		*gpu;
 	struct kobject		*kobj;
 	struct attribute	attr;
 };
@@ -123,6 +124,7 @@ struct kfd_cache_properties {
 	uint32_t		cache_latency;
 	uint32_t		cache_type;
 	uint8_t			sibling_map[CRAT_SIBLINGMAP_SIZE];
+	struct kfd_dev		*gpu;
 	struct kobject		*kobj;
 	struct attribute	attr;
 };
@@ -141,6 +143,7 @@ struct kfd_iolink_properties {
 	uint32_t		max_bandwidth;
 	uint32_t		rec_transfer_size;
 	uint32_t		flags;
+	struct kfd_dev		*gpu;
 	struct kobject		*kobj;
 	struct attribute	attr;
 };

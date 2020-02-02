@@ -1,18 +1,7 @@
+// SPDX-License-Identifier: ISC
 /*
  * Copyright (c) 2012-2017 Qualcomm Atheros, Inc.
  * Copyright (c) 2018-2019, The Linux Foundation. All rights reserved.
- *
- * Permission to use, copy, modify, and/or distribute this software for any
- * purpose with or without fee is hereby granted, provided that the above
- * copyright notice and this permission notice appear in all copies.
- *
- * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
- * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
- * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
- * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
- * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
 #include <linux/module.h>
@@ -393,7 +382,8 @@ static int wil_debugfs_iomem_x32_set(void *data, u64 val)
 	if (ret < 0)
 		return ret;
 
-	writel(val, (void __iomem *)d->offset);
+	writel_relaxed(val, (void __iomem *)d->offset);
+
 	wmb(); /* make sure write propagated to HW */
 
 	wil_pm_runtime_put(wil);
@@ -959,6 +949,18 @@ static const struct file_operations fops_pmcdata = {
 	.llseek		= wil_pmc_llseek,
 };
 
+static int wil_pmcring_seq_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, wil_pmcring_read, inode->i_private);
+}
+
+static const struct file_operations fops_pmcring = {
+	.open		= wil_pmcring_seq_open,
+	.release	= single_release,
+	.read		= seq_read,
+	.llseek		= seq_lseek,
+};
+
 /*---tx_mgmt---*/
 /* Write mgmt frame to this file to send it */
 static ssize_t wil_write_file_txmgmt(struct file *file, const char __user *buf,
@@ -1052,8 +1054,7 @@ static void wil_seq_print_skb(struct seq_file *s, struct sk_buff *skb)
 	if (nr_frags) {
 		seq_printf(s, "    nr_frags = %d\n", nr_frags);
 		for (i = 0; i < nr_frags; i++) {
-			const struct skb_frag_struct *frag =
-					&skb_shinfo(skb)->frags[i];
+			const skb_frag_t *frag = &skb_shinfo(skb)->frags[i];
 
 			len = skb_frag_size(frag);
 			p = skb_frag_address_safe(frag);
@@ -2372,6 +2373,7 @@ static const struct {
 	{"back",	0644,		&fops_back},
 	{"pmccfg",	0644,		&fops_pmccfg},
 	{"pmcdata",	0444,		&fops_pmcdata},
+	{"pmcring",	0444,		&fops_pmcring},
 	{"temp",	0444,		&temp_fops},
 	{"freq",	0444,		&freq_fops},
 	{"link",	0444,		&link_fops},

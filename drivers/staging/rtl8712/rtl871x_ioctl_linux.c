@@ -142,9 +142,9 @@ static noinline_for_stack char *translate_scan_wpa(struct iw_request_info *info,
 		memset(buf, 0, MAX_WPA_IE_LEN);
 		n = sprintf(buf, "wpa_ie=");
 		for (i = 0; i < wpa_len; i++) {
-			n += snprintf(buf + n, MAX_WPA_IE_LEN - n,
+			n += scnprintf(buf + n, MAX_WPA_IE_LEN - n,
 						"%02x", wpa_ie[i]);
-			if (n >= MAX_WPA_IE_LEN)
+			if (n == MAX_WPA_IE_LEN-1)
 				break;
 		}
 		memset(iwe, 0, sizeof(*iwe));
@@ -162,9 +162,9 @@ static noinline_for_stack char *translate_scan_wpa(struct iw_request_info *info,
 		memset(buf, 0, MAX_WPA_IE_LEN);
 		n = sprintf(buf, "rsn_ie=");
 		for (i = 0; i < rsn_len; i++) {
-			n += snprintf(buf + n, MAX_WPA_IE_LEN - n,
+			n += scnprintf(buf + n, MAX_WPA_IE_LEN - n,
 						"%02x", rsn_ie[i]);
-			if (n >= MAX_WPA_IE_LEN)
+			if (n == MAX_WPA_IE_LEN-1)
 				break;
 		}
 		memset(iwe, 0, sizeof(*iwe));
@@ -419,8 +419,7 @@ static int wpa_set_encryption(struct net_device *dev, struct ieee_param *param,
 		pwep->KeyIndex |= 0x80000000;
 		memcpy(pwep->KeyMaterial, param->u.crypt.key, pwep->KeyLength);
 		if (param->u.crypt.set_tx) {
-			if (r8712_set_802_11_add_wep(padapter, pwep) ==
-			    (u8)_FAIL)
+			if (r8712_set_802_11_add_wep(padapter, pwep))
 				ret = -EOPNOTSUPP;
 		} else {
 			/* don't update "psecuritypriv->PrivacyAlgrthm" and
@@ -1585,7 +1584,7 @@ static int r8711_wx_set_enc(struct net_device *dev,
 	}
 	wep.KeyIndex |= 0x80000000;	/* transmit key */
 	memcpy(wep.KeyMaterial, keybuf, wep.KeyLength);
-	if (r8712_set_802_11_add_wep(padapter, &wep) == _FAIL)
+	if (r8712_set_802_11_add_wep(padapter, &wep))
 		return -EOPNOTSUPP;
 	return 0;
 }

@@ -43,9 +43,8 @@ komeda_wb_encoder_atomic_check(struct drm_encoder *encoder,
 	struct komeda_data_flow_cfg dflow;
 	int err;
 
-	if (!writeback_job || !writeback_job->fb) {
+	if (!writeback_job)
 		return 0;
-	}
 
 	if (!crtc_st->active) {
 		DRM_DEBUG_ATOMIC("Cannot write the composition result out on a inactive CRTC.\n");
@@ -142,6 +141,7 @@ static int komeda_wb_connector_add(struct komeda_kms_dev *kms,
 	struct komeda_dev *mdev = kms->base.dev_private;
 	struct komeda_wb_connector *kwb_conn;
 	struct drm_writeback_connector *wb_conn;
+	struct drm_display_info *info;
 	u32 *formats, n_formats = 0;
 	int err;
 
@@ -166,10 +166,16 @@ static int komeda_wb_connector_add(struct komeda_kms_dev *kms,
 					   &komeda_wb_encoder_helper_funcs,
 					   formats, n_formats);
 	komeda_put_fourcc_list(formats);
-	if (err)
+	if (err) {
+		kfree(kwb_conn);
 		return err;
+	}
 
 	drm_connector_helper_add(&wb_conn->base, &komeda_wb_conn_helper_funcs);
+
+	info = &kwb_conn->base.base.display_info;
+	info->bpc = __fls(kcrtc->master->improc->supported_color_depths);
+	info->color_formats = kcrtc->master->improc->supported_color_formats;
 
 	kcrtc->wb_conn = kwb_conn;
 

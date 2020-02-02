@@ -162,8 +162,7 @@ static void ext2_put_super (struct super_block * sb)
 	}
 	db_count = sbi->s_gdb_count;
 	for (i = 0; i < db_count; i++)
-		if (sbi->s_group_desc[i])
-			brelse (sbi->s_group_desc[i]);
+		brelse(sbi->s_group_desc[i]);
 	kfree(sbi->s_group_desc);
 	kfree(sbi->s_debts);
 	percpu_counter_destroy(&sbi->s_freeblocks_counter);
@@ -703,13 +702,7 @@ static int ext2_check_descriptors(struct super_block *sb)
 	for (i = 0; i < sbi->s_groups_count; i++) {
 		struct ext2_group_desc *gdp = ext2_get_group_desc(sb, i, NULL);
 		ext2_fsblk_t first_block = ext2_group_first_block_no(sb, i);
-		ext2_fsblk_t last_block;
-
-		if (i == sbi->s_groups_count - 1)
-			last_block = le32_to_cpu(sbi->s_es->s_blocks_count) - 1;
-		else
-			last_block = first_block +
-				(EXT2_BLOCKS_PER_GROUP(sb) - 1);
+		ext2_fsblk_t last_block = ext2_group_last_block_no(sb, i);
 
 		if (le32_to_cpu(gdp->bg_block_bitmap) < first_block ||
 		    le32_to_cpu(gdp->bg_block_bitmap) > last_block)
@@ -807,7 +800,6 @@ static unsigned long descriptor_loc(struct super_block *sb,
 {
 	struct ext2_sb_info *sbi = EXT2_SB(sb);
 	unsigned long bg, first_meta_bg;
-	int has_super = 0;
 	
 	first_meta_bg = le32_to_cpu(sbi->s_es->s_first_meta_bg);
 
@@ -815,10 +807,8 @@ static unsigned long descriptor_loc(struct super_block *sb,
 	    nr < first_meta_bg)
 		return (logic_sb_block + nr + 1);
 	bg = sbi->s_desc_per_block * nr;
-	if (ext2_bg_has_super(sb, bg))
-		has_super = 1;
 
-	return ext2_group_first_block_no(sb, bg) + has_super;
+	return ext2_group_first_block_no(sb, bg) + ext2_bg_has_super(sb, bg);
 }
 
 static int ext2_fill_super(struct super_block *sb, void *data, int silent)
@@ -1002,6 +992,8 @@ static int ext2_fill_super(struct super_block *sb, void *data, int silent)
 
 	sb->s_maxbytes = ext2_max_size(sb->s_blocksize_bits);
 	sb->s_max_links = EXT2_LINK_MAX;
+	sb->s_time_min = S32_MIN;
+	sb->s_time_max = S32_MAX;
 
 	if (le32_to_cpu(es->s_rev_level) == EXT2_GOOD_OLD_REV) {
 		sbi->s_inode_size = EXT2_GOOD_OLD_INODE_SIZE;

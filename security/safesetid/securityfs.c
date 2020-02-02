@@ -179,15 +179,16 @@ out_free_rule:
 	 * doesn't currently exist, just use a spinlock for now.
 	 */
 	mutex_lock(&policy_update_lock);
-	rcu_swap_protected(safesetid_setuid_rules, pol,
-			   lockdep_is_held(&policy_update_lock));
+	pol = rcu_replace_pointer(safesetid_setuid_rules, pol,
+				  lockdep_is_held(&policy_update_lock));
 	mutex_unlock(&policy_update_lock);
 	err = len;
 
 out_free_buf:
 	kfree(buf);
 out_free_pol:
-	release_ruleset(pol);
+	if (pol)
+                release_ruleset(pol);
 	return err;
 }
 

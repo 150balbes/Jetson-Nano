@@ -1128,7 +1128,8 @@ static u32 get_fcx_max_data(struct dasd_device *device)
 {
 	struct dasd_eckd_private *private = device->private;
 	int fcx_in_css, fcx_in_gneq, fcx_in_features;
-	int tpm, mdc;
+	unsigned int mdc;
+	int tpm;
 
 	if (dasd_nofcx)
 		return 0;
@@ -1142,7 +1143,7 @@ static u32 get_fcx_max_data(struct dasd_device *device)
 		return 0;
 
 	mdc = ccw_device_get_mdc(device->cdev, 0);
-	if (mdc < 0) {
+	if (mdc == 0) {
 		dev_warn(&device->cdev->dev, "Detecting the maximum supported data size for zHPF requests failed\n");
 		return 0;
 	} else {
@@ -1153,12 +1154,12 @@ static u32 get_fcx_max_data(struct dasd_device *device)
 static int verify_fcx_max_data(struct dasd_device *device, __u8 lpm)
 {
 	struct dasd_eckd_private *private = device->private;
-	int mdc;
+	unsigned int mdc;
 	u32 fcx_max_data;
 
 	if (private->fcx_max_data) {
 		mdc = ccw_device_get_mdc(device->cdev, lpm);
-		if ((mdc < 0)) {
+		if (mdc == 0) {
 			dev_warn(&device->cdev->dev,
 				 "Detecting the maximum data size for zHPF "
 				 "requests failed (rc=%d) for a new path %x\n",
@@ -1553,8 +1554,8 @@ static int dasd_eckd_read_vol_info(struct dasd_device *device)
 	if (rc == 0) {
 		memcpy(&private->vsq, vsq, sizeof(*vsq));
 	} else {
-		dev_warn(&device->cdev->dev,
-			 "Reading the volume storage information failed with rc=%d\n", rc);
+		DBF_EVENT_DEVID(DBF_WARNING, device->cdev,
+				"Reading the volume storage information failed with rc=%d", rc);
 	}
 
 	if (useglobal)
@@ -1737,8 +1738,8 @@ static int dasd_eckd_read_ext_pool_info(struct dasd_device *device)
 	if (rc == 0) {
 		dasd_eckd_cpy_ext_pool_data(device, lcq);
 	} else {
-		dev_warn(&device->cdev->dev,
-			 "Reading the logical configuration failed with rc=%d\n", rc);
+		DBF_EVENT_DEVID(DBF_WARNING, device->cdev,
+				"Reading the logical configuration failed with rc=%d", rc);
 	}
 
 	dasd_sfree_request(cqr, cqr->memdev);
@@ -2020,14 +2021,10 @@ dasd_eckd_check_characteristics(struct dasd_device *device)
 	dasd_eckd_read_features(device);
 
 	/* Read Volume Information */
-	rc = dasd_eckd_read_vol_info(device);
-	if (rc)
-		goto out_err3;
+	dasd_eckd_read_vol_info(device);
 
 	/* Read Extent Pool Information */
-	rc = dasd_eckd_read_ext_pool_info(device);
-	if (rc)
-		goto out_err3;
+	dasd_eckd_read_ext_pool_info(device);
 
 	/* Read Device Characteristics */
 	rc = dasd_generic_read_dev_chars(device, DASD_ECKD_MAGIC,
@@ -2059,9 +2056,6 @@ dasd_eckd_check_characteristics(struct dasd_device *device)
 	if (readonly)
 		set_bit(DASD_FLAG_DEVICE_RO, &device->flags);
 
-	if (dasd_eckd_is_ese(device))
-		dasd_set_feature(device->cdev, DASD_FEATURE_DISCARD, 1);
-
 	dev_info(&device->cdev->dev, "New DASD %04X/%02X (CU %04X/%02X) "
 		 "with %d cylinders, %d heads, %d sectors%s\n",
 		 private->rdc_data.dev_type,
@@ -2080,7 +2074,7 @@ out_err2:
 	dasd_free_block(device->block);
 	device->block = NULL;
 out_err1:
-	kfree(private->conf_data);
+	dasd_eckd_clear_conf_data(device);
 	kfree(device->private);
 	device->private = NULL;
 	return rc;
@@ -2089,7 +2083,6 @@ out_err1:
 static void dasd_eckd_uncheck_device(struct dasd_device *device)
 {
 	struct dasd_eckd_private *private = device->private;
-	int i;
 
 	if (!private)
 		return;
@@ -2099,21 +2092,7 @@ static void dasd_eckd_uncheck_device(struct dasd_device *device)
 	private->sneq = NULL;
 	private->vdsneq = NULL;
 	private->gneq = NULL;
-	private->conf_len = 0;
-	for (i = 0; i < 8; i++) {
-		kfree(device->path[i].conf_data);
-		if ((__u8 *)device->path[i].conf_data ==
-		    private->conf_data) {
-			private->conf_data = NULL;
-			private->conf_len = 0;
-		}
-		device->path[i].conf_data = NULL;
-		device->path[i].cssid = 0;
-		device->path[i].ssid = 0;
-		device->path[i].chpid = 0;
-	}
-	kfree(private->conf_data);
-	private->conf_data = NULL;
+	dasd_eckd_clear_conf_data(device);
 }
 
 static struct dasd_ccw_req *
@@ -3695,14 +3674,6 @@ static int dasd_eckd_release_space(struct dasd_device *device,
 		return -EINVAL;
 }
 
-static struct dasd_ccw_req *
-dasd_eckd_build_cp_discard(struct dasd_device *device, struct dasd_block *block,
-			   struct request *req, sector_t first_trk,
-			   sector_t last_trk)
-{
-	return dasd_eckd_dso_ras(device, block, req, first_trk, last_trk, 1);
-}
-
 static struct dasd_ccw_req *dasd_eckd_build_cp_cmd_single(
 					       struct dasd_device *startdev,
 					       struct dasd_block *block,
@@ -4447,10 +4418,6 @@ static struct dasd_ccw_req *dasd_eckd_build_cp(struct dasd_device *startdev,
 	cmdwtd = private->features.feature[12] & 0x40;
 	use_prefix = private->features.feature[8] & 0x01;
 
-	if (req_op(req) == REQ_OP_DISCARD)
-		return dasd_eckd_build_cp_discard(startdev, block, req,
-						  first_trk, last_trk);
-
 	cqr = NULL;
 	if (cdlspecial || dasd_page_cache) {
 		/* do nothing, just fall through to the cmd mode single case */
@@ -4729,14 +4696,12 @@ static struct dasd_ccw_req *dasd_eckd_build_alias_cp(struct dasd_device *base,
 						     struct dasd_block *block,
 						     struct request *req)
 {
-	struct dasd_device *startdev = NULL;
 	struct dasd_eckd_private *private;
-	struct dasd_ccw_req *cqr;
+	struct dasd_device *startdev;
 	unsigned long flags;
+	struct dasd_ccw_req *cqr;
 
-	/* Discard requests can only be processed on base devices */
-	if (req_op(req) != REQ_OP_DISCARD)
-		startdev = dasd_alias_get_start_dev(base);
+	startdev = dasd_alias_get_start_dev(base);
 	if (!startdev)
 		startdev = base;
 	private = startdev->private;
@@ -5663,14 +5628,10 @@ static int dasd_eckd_restore_device(struct dasd_device *device)
 	dasd_eckd_read_features(device);
 
 	/* Read Volume Information */
-	rc = dasd_eckd_read_vol_info(device);
-	if (rc)
-		goto out_err2;
+	dasd_eckd_read_vol_info(device);
 
 	/* Read Extent Pool Information */
-	rc = dasd_eckd_read_ext_pool_info(device);
-	if (rc)
-		goto out_err2;
+	dasd_eckd_read_ext_pool_info(device);
 
 	/* Read Device Characteristics */
 	rc = dasd_generic_read_dev_chars(device, DASD_ECKD_MAGIC,
@@ -6521,19 +6482,7 @@ static void dasd_eckd_setup_blk_queue(struct dasd_block *block)
 	unsigned int logical_block_size = block->bp_block;
 	struct request_queue *q = block->request_queue;
 	struct dasd_device *device = block->base;
-	struct dasd_eckd_private *private;
-	unsigned int max_discard_sectors;
-	unsigned int max_bytes;
-	unsigned int ext_bytes; /* Extent Size in Bytes */
-	int recs_per_trk;
-	int trks_per_cyl;
-	int ext_limit;
-	int ext_size; /* Extent Size in Cylinders */
 	int max;
-
-	private = device->private;
-	trks_per_cyl = private->rdc_data.trk_per_cyl;
-	recs_per_trk = recs_per_track(&private->rdc_data, 0, logical_block_size);
 
 	if (device->features & DASD_FEATURE_USERAW) {
 		/*
@@ -6555,28 +6504,6 @@ static void dasd_eckd_setup_blk_queue(struct dasd_block *block)
 	/* With page sized segments each segment can be translated into one idaw/tidaw */
 	blk_queue_max_segment_size(q, PAGE_SIZE);
 	blk_queue_segment_boundary(q, PAGE_SIZE - 1);
-
-	if (dasd_eckd_is_ese(device)) {
-		/*
-		 * Depending on the extent size, up to UINT_MAX bytes can be
-		 * accepted. However, neither DASD_ECKD_RAS_EXTS_MAX nor the
-		 * device limits should be exceeded.
-		 */
-		ext_size = dasd_eckd_ext_size(device);
-		ext_limit = min(private->real_cyl / ext_size, DASD_ECKD_RAS_EXTS_MAX);
-		ext_bytes = ext_size * trks_per_cyl * recs_per_trk *
-			logical_block_size;
-		max_bytes = UINT_MAX - (UINT_MAX % ext_bytes);
-		if (max_bytes / ext_bytes > ext_limit)
-			max_bytes = ext_bytes * ext_limit;
-
-		max_discard_sectors = max_bytes / 512;
-
-		blk_queue_max_discard_sectors(q, max_discard_sectors);
-		blk_queue_flag_set(QUEUE_FLAG_DISCARD, q);
-		q->limits.discard_granularity = ext_bytes;
-		q->limits.discard_alignment = ext_bytes;
-	}
 }
 
 static struct ccw_driver dasd_eckd_driver = {

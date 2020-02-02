@@ -6,13 +6,11 @@
  * Copyright (C) 2014 Endless Mobile
  */
 
-#include <linux/kernel.h>
-#include <linux/module.h>
-#include <drm/drmP.h>
+#include <linux/export.h>
+#include <linux/bitfield.h>
+
 #include "meson_drv.h"
 #include "meson_viu.h"
-#include "meson_vpp.h"
-#include "meson_venc.h"
 #include "meson_registers.h"
 
 /**
@@ -78,32 +76,32 @@ static int eotf_bypass_coeff[EOTF_COEFF_SIZE] = {
 	EOTF_COEFF_RIGHTSHIFT /* right shift */
 };
 
-static void meson_viu_set_g12a_osd2_matrix(struct meson_drm *priv,
+static void meson_viu_set_g12a_osd1_matrix(struct meson_drm *priv,
 					   int *m, bool csc_on)
 {
-	/* VPP WRAP OSD2 matrix */
+	/* VPP WRAP OSD1 matrix */
 	writel(((m[0] & 0xfff) << 16) | (m[1] & 0xfff),
-		priv->io_base + _REG(VPP_WRAP_OSD2_MATRIX_PRE_OFFSET0_1));
+		priv->io_base + _REG(VPP_WRAP_OSD1_MATRIX_PRE_OFFSET0_1));
 	writel(m[2] & 0xfff,
-		priv->io_base + _REG(VPP_WRAP_OSD2_MATRIX_PRE_OFFSET2));
+		priv->io_base + _REG(VPP_WRAP_OSD1_MATRIX_PRE_OFFSET2));
 	writel(((m[3] & 0x1fff) << 16) | (m[4] & 0x1fff),
-		priv->io_base + _REG(VPP_WRAP_OSD2_MATRIX_COEF00_01));
+		priv->io_base + _REG(VPP_WRAP_OSD1_MATRIX_COEF00_01));
 	writel(((m[5] & 0x1fff) << 16) | (m[6] & 0x1fff),
-		priv->io_base + _REG(VPP_WRAP_OSD2_MATRIX_COEF02_10));
+		priv->io_base + _REG(VPP_WRAP_OSD1_MATRIX_COEF02_10));
 	writel(((m[7] & 0x1fff) << 16) | (m[8] & 0x1fff),
-		priv->io_base + _REG(VPP_WRAP_OSD2_MATRIX_COEF11_12));
+		priv->io_base + _REG(VPP_WRAP_OSD1_MATRIX_COEF11_12));
 	writel(((m[9] & 0x1fff) << 16) | (m[10] & 0x1fff),
-		priv->io_base + _REG(VPP_WRAP_OSD2_MATRIX_COEF20_21));
+		priv->io_base + _REG(VPP_WRAP_OSD1_MATRIX_COEF20_21));
 	writel((m[11] & 0x1fff) << 16,
-		priv->io_base +	_REG(VPP_WRAP_OSD2_MATRIX_COEF22));
+		priv->io_base +	_REG(VPP_WRAP_OSD1_MATRIX_COEF22));
 
 	writel(((m[18] & 0xfff) << 16) | (m[19] & 0xfff),
-		priv->io_base + _REG(VPP_WRAP_OSD2_MATRIX_OFFSET0_1));
+		priv->io_base + _REG(VPP_WRAP_OSD1_MATRIX_OFFSET0_1));
 	writel(m[20] & 0xfff,
-		priv->io_base + _REG(VPP_WRAP_OSD2_MATRIX_OFFSET2));
+		priv->io_base + _REG(VPP_WRAP_OSD1_MATRIX_OFFSET2));
 
 	writel_bits_relaxed(BIT(0), csc_on ? BIT(0) : 0,
-		priv->io_base + _REG(VPP_WRAP_OSD2_MATRIX_EN_CTRL));
+		priv->io_base + _REG(VPP_WRAP_OSD1_MATRIX_EN_CTRL));
 }
 
 static void meson_viu_set_osd_matrix(struct meson_drm *priv,
@@ -338,6 +336,57 @@ void meson_viu_osd1_reset(struct meson_drm *priv)
 	meson_viu_load_matrix(priv);
 }
 
+void meson_viu_g12a_enable_osd1_afbc(struct meson_drm *priv)
+{
+	/* Enable Mali AFBC Unpack */
+	writel_bits_relaxed(VIU_OSD1_MALI_UNPACK_EN,
+			    VIU_OSD1_MALI_UNPACK_EN,
+			    priv->io_base + _REG(VIU_OSD1_MALI_UNPACK_CTRL));
+
+	/* Setup RGBA Reordering */
+	writel_bits_relaxed(VIU_OSD1_MALI_AFBCD_A_REORDER |
+			    VIU_OSD1_MALI_AFBCD_B_REORDER |
+			    VIU_OSD1_MALI_AFBCD_G_REORDER |
+			    VIU_OSD1_MALI_AFBCD_R_REORDER,
+			    FIELD_PREP(VIU_OSD1_MALI_AFBCD_A_REORDER,
+				       VIU_OSD1_MALI_REORDER_A) |
+			    FIELD_PREP(VIU_OSD1_MALI_AFBCD_B_REORDER,
+				       VIU_OSD1_MALI_REORDER_B) |
+			    FIELD_PREP(VIU_OSD1_MALI_AFBCD_G_REORDER,
+				       VIU_OSD1_MALI_REORDER_G) |
+			    FIELD_PREP(VIU_OSD1_MALI_AFBCD_R_REORDER,
+				       VIU_OSD1_MALI_REORDER_R),
+			    priv->io_base + _REG(VIU_OSD1_MALI_UNPACK_CTRL));
+
+	/* Select AFBCD path for OSD1 */
+	writel_bits_relaxed(OSD_PATH_OSD_AXI_SEL_OSD1_AFBCD,
+			    OSD_PATH_OSD_AXI_SEL_OSD1_AFBCD,
+			    priv->io_base + _REG(OSD_PATH_MISC_CTRL));
+}
+
+void meson_viu_g12a_disable_osd1_afbc(struct meson_drm *priv)
+{
+	/* Disable AFBCD path for OSD1 */
+	writel_bits_relaxed(OSD_PATH_OSD_AXI_SEL_OSD1_AFBCD, 0,
+			    priv->io_base + _REG(OSD_PATH_MISC_CTRL));
+
+	/* Disable AFBCD unpack */
+	writel_bits_relaxed(VIU_OSD1_MALI_UNPACK_EN, 0,
+			    priv->io_base + _REG(VIU_OSD1_MALI_UNPACK_CTRL));
+}
+
+void meson_viu_gxm_enable_osd1_afbc(struct meson_drm *priv)
+{
+	writel_bits_relaxed(MALI_AFBC_MISC, FIELD_PREP(MALI_AFBC_MISC, 0x90),
+			    priv->io_base + _REG(VIU_MISC_CTRL1));
+}
+
+void meson_viu_gxm_disable_osd1_afbc(struct meson_drm *priv)
+{
+	writel_bits_relaxed(MALI_AFBC_MISC, FIELD_PREP(MALI_AFBC_MISC, 0x00),
+			    priv->io_base + _REG(VIU_MISC_CTRL1));
+}
+
 static inline uint32_t meson_viu_osd_burst_length_reg(uint32_t length)
 {
 	uint32_t val = (((length & 0x80) % 24) / 12);
@@ -356,21 +405,21 @@ void meson_viu_init(struct meson_drm *priv)
 			    priv->io_base + _REG(VIU_OSD2_CTRL_STAT));
 
 	/* On GXL/GXM, Use the 10bit HDR conversion matrix */
-	if (meson_vpu_is_compatible(priv, "amlogic,meson-gxm-vpu") ||
-	    meson_vpu_is_compatible(priv, "amlogic,meson-gxl-vpu"))
+	if (meson_vpu_is_compatible(priv, VPU_COMPATIBLE_GXM) ||
+	    meson_vpu_is_compatible(priv, VPU_COMPATIBLE_GXL))
 		meson_viu_load_matrix(priv);
-	else if (meson_vpu_is_compatible(priv, "amlogic,meson-g12a-vpu"))
-		meson_viu_set_g12a_osd2_matrix(priv, RGB709_to_YUV709l_coeff,
+	else if (meson_vpu_is_compatible(priv, VPU_COMPATIBLE_G12A))
+		meson_viu_set_g12a_osd1_matrix(priv, RGB709_to_YUV709l_coeff,
 					       true);
 
 	/* Initialize OSD1 fifo control register */
 	reg = VIU_OSD_DDR_PRIORITY_URGENT |
-		VIU_OSD_HOLD_FIFO_LINES(4) |
+		VIU_OSD_HOLD_FIFO_LINES(31) |
 		VIU_OSD_FIFO_DEPTH_VAL(32) | /* fifo_depth_val: 32*8=256 */
 		VIU_OSD_WORDS_PER_BURST(4) | /* 4 words in 1 burst */
 		VIU_OSD_FIFO_LIMITS(2);      /* fifo_lim: 2*16=32 */
 
-	if (meson_vpu_is_compatible(priv, "amlogic,meson-g12a-vpu"))
+	if (meson_vpu_is_compatible(priv, VPU_COMPATIBLE_G12A))
 		reg |= meson_viu_osd_burst_length_reg(32);
 	else
 		reg |= meson_viu_osd_burst_length_reg(64);
@@ -397,7 +446,7 @@ void meson_viu_init(struct meson_drm *priv)
 	writel_relaxed(0x00FF00C0,
 			priv->io_base + _REG(VD2_IF0_LUMA_FIFO_SIZE));
 
-	if (meson_vpu_is_compatible(priv, "amlogic,meson-g12a-vpu")) {
+	if (meson_vpu_is_compatible(priv, VPU_COMPATIBLE_G12A)) {
 		writel_relaxed(VIU_OSD_BLEND_REORDER(0, 1) |
 			       VIU_OSD_BLEND_REORDER(1, 0) |
 			       VIU_OSD_BLEND_REORDER(2, 0) |

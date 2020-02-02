@@ -142,6 +142,7 @@ enum PP_SMC_POWER_PROFILE {
 	PP_SMC_POWER_PROFILE_VR           = 0x4,
 	PP_SMC_POWER_PROFILE_COMPUTE      = 0x5,
 	PP_SMC_POWER_PROFILE_CUSTOM       = 0x6,
+	PP_SMC_POWER_PROFILE_COUNT,
 };
 
 enum {
@@ -169,6 +170,18 @@ enum PP_HWMON_TEMP {
 	PP_TEMP_JUNCTION,
 	PP_TEMP_MEM,
 	PP_TEMP_MAX
+};
+
+enum pp_mp1_state {
+	PP_MP1_STATE_NONE,
+	PP_MP1_STATE_SHUTDOWN,
+	PP_MP1_STATE_UNLOAD,
+	PP_MP1_STATE_RESET,
+};
+
+enum pp_df_cstate {
+	DF_CSTATE_DISALLOW = 0,
+	DF_CSTATE_ALLOW,
 };
 
 #define PP_GROUP_MASK        0xF0000000
@@ -206,6 +219,9 @@ enum PP_HWMON_TEMP {
 #define PP_CG_MSG_ID(group, block, support, state) \
 		((group) << PP_GROUP_SHIFT | (block) << PP_BLOCK_SHIFT | \
 		(support) << PP_STATE_SUPPORT_SHIFT | (state) << PP_STATE_SHIFT)
+
+#define XGMI_MODE_PSTATE_D3 0
+#define XGMI_MODE_PSTATE_D0 1
 
 struct seq_file;
 enum amd_pp_clock_type;
@@ -266,6 +282,8 @@ struct amd_pm_funcs {
 	int (*get_power_profile_mode)(void *handle, char *buf);
 	int (*set_power_profile_mode)(void *handle, long *input, uint32_t size);
 	int (*odn_edit_dpm_table)(void *handle, uint32_t type, long *input, uint32_t size);
+	int (*set_mp1_state)(void *handle, enum pp_mp1_state mp1_state);
+	int (*smu_i2c_bus_access)(void *handle, bool acquire);
 /* export to DC */
 	u32 (*get_sclk)(void *handle, bool low);
 	u32 (*get_mclk)(void *handle, bool low);
@@ -301,6 +319,9 @@ struct amd_pm_funcs {
 	int (*set_asic_baco_state)(void *handle, int state);
 	int (*get_ppfeature_status)(void *handle, char *buf);
 	int (*set_ppfeature_status)(void *handle, uint64_t ppfeature_masks);
+	int (*asic_reset_mode_2)(void *handle);
+	int (*set_df_cstate)(void *handle, enum pp_df_cstate state);
+	int (*set_xgmi_pstate)(void *handle, uint32_t pstate);
 };
 
 #endif

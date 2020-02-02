@@ -149,7 +149,7 @@ __list_set_del_rcu(struct rcu_head * rcu)
 	kfree(e);
 }
 
-static inline void
+static void
 list_set_del(struct ip_set *set, struct set_elem *e)
 {
 	struct list_set *map = set->data;
@@ -160,7 +160,7 @@ list_set_del(struct ip_set *set, struct set_elem *e)
 	call_rcu(&e->rcu, __list_set_del_rcu);
 }
 
-static inline void
+static void
 list_set_replace(struct ip_set *set, struct set_elem *e, struct set_elem *old)
 {
 	struct list_set *map = set->data;
@@ -288,7 +288,7 @@ list_set_uadd(struct ip_set *set, void *value, const struct ip_set_ext *ext,
 	if (n &&
 	    !(SET_WITH_TIMEOUT(set) &&
 	      ip_set_timeout_expired(ext_timeout(n, set))))
-		n =  NULL;
+		n = NULL;
 
 	e = kzalloc(set->dsize, GFP_ATOMIC);
 	if (!e)

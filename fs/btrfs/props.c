@@ -362,7 +362,7 @@ static int inherit_props(struct btrfs_trans_handle *trans,
 		 * reservations if we do add more properties in the future.
 		 */
 		if (need_reserve) {
-			num_bytes = btrfs_calc_trans_metadata_size(fs_info, 1);
+			num_bytes = btrfs_calc_insert_metadata_size(fs_info, 1);
 			ret = btrfs_block_rsv_add(root, trans->block_rsv,
 					num_bytes, BTRFS_RESERVE_NO_FLUSH);
 			if (ret)
@@ -416,11 +416,11 @@ int btrfs_subvol_inherit_props(struct btrfs_trans_handle *trans,
 	key.type = BTRFS_INODE_ITEM_KEY;
 	key.offset = 0;
 
-	parent_inode = btrfs_iget(sb, &key, parent_root, NULL);
+	parent_inode = btrfs_iget(sb, &key, parent_root);
 	if (IS_ERR(parent_inode))
 		return PTR_ERR(parent_inode);
 
-	child_inode = btrfs_iget(sb, &key, root, NULL);
+	child_inode = btrfs_iget(sb, &key, root);
 	if (IS_ERR(child_inode)) {
 		iput(parent_inode);
 		return PTR_ERR(child_inode);
@@ -436,8 +436,6 @@ int btrfs_subvol_inherit_props(struct btrfs_trans_handle *trans,
 void __init btrfs_props_init(void)
 {
 	int i;
-
-	hash_init(prop_handlers_ht);
 
 	for (i = 0; i < ARRAY_SIZE(prop_handlers); i++) {
 		struct prop_handler *p = &prop_handlers[i];

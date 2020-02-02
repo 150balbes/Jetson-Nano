@@ -475,7 +475,6 @@ static int mtk_uart_apdma_probe(struct platform_device *pdev)
 	struct device_node *np = pdev->dev.of_node;
 	struct mtk_uart_apdmadev *mtkd;
 	int bit_mask = 32, rc;
-	struct resource *res;
 	struct mtk_chan *c;
 	unsigned int i;
 
@@ -532,13 +531,7 @@ static int mtk_uart_apdma_probe(struct platform_device *pdev)
 			goto err_no_dma;
 		}
 
-		res = platform_get_resource(pdev, IORESOURCE_MEM, i);
-		if (!res) {
-			rc = -ENODEV;
-			goto err_no_dma;
-		}
-
-		c->base = devm_ioremap_resource(&pdev->dev, res);
+		c->base = devm_platform_ioremap_resource(pdev, i);
 		if (IS_ERR(c->base)) {
 			rc = PTR_ERR(c->base);
 			goto err_no_dma;
@@ -547,10 +540,8 @@ static int mtk_uart_apdma_probe(struct platform_device *pdev)
 		vchan_init(&c->vc, &mtkd->ddev);
 
 		rc = platform_get_irq(pdev, i);
-		if (rc < 0) {
-			dev_err(&pdev->dev, "failed to get IRQ[%d]\n", i);
+		if (rc < 0)
 			goto err_no_dma;
-		}
 		c->irq = rc;
 	}
 

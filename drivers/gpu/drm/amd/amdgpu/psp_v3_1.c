@@ -411,7 +411,6 @@ static int psp_v3_1_ring_destroy(struct psp_context *psp,
 }
 
 static int psp_v3_1_cmd_submit(struct psp_context *psp,
-			       struct amdgpu_firmware_info *ucode,
 			       uint64_t cmd_buf_mc_addr, uint64_t fence_mc_addr,
 			       int index)
 {
@@ -455,6 +454,7 @@ static int psp_v3_1_cmd_submit(struct psp_context *psp,
 	write_frame->fence_addr_hi = upper_32_bits(fence_mc_addr);
 	write_frame->fence_addr_lo = lower_32_bits(fence_mc_addr);
 	write_frame->fence_value = index;
+	amdgpu_asic_flush_hdp(adev, NULL);
 
 	/* Update the write Pointer in DWORDs */
 	psp_write_ptr_reg = (psp_write_ptr_reg + rb_frame_size_dw) % ring_size_dw;
@@ -636,7 +636,7 @@ static int psp_v3_1_mode1_reset(struct psp_context *psp)
 
 static bool psp_v3_1_support_vmr_ring(struct psp_context *psp)
 {
-	if (amdgpu_sriov_vf(psp->adev) && psp->sos_fw_version >= 0x80455)
+	if (amdgpu_sriov_vf(psp->adev))
 		return true;
 
 	return false;

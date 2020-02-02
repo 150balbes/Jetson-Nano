@@ -208,7 +208,7 @@ int inet_listen(struct socket *sock, int backlog)
 	if (!((1 << old_state) & (TCPF_CLOSE | TCPF_LISTEN)))
 		goto out;
 
-	sk->sk_max_ack_backlog = backlog;
+	WRITE_ONCE(sk->sk_max_ack_backlog, backlog);
 	/* Really, if the socket is already in listen state
 	 * we can only allow the backlog to be adjusted.
 	 */
@@ -495,7 +495,7 @@ int __inet_bind(struct sock *sk, struct sockaddr *uaddr, int addr_len,
 
 	snum = ntohs(addr->sin_port);
 	err = -EACCES;
-	if (snum && snum < inet_prot_sock(net) &&
+	if (snum && inet_port_requires_bind_service(net, snum) &&
 	    !ns_capable(net->user_ns, CAP_NET_BIND_SERVICE))
 		goto out;
 
@@ -1845,13 +1845,8 @@ static __net_init int inet_init_net(struct net *net)
 	return 0;
 }
 
-static __net_exit void inet_exit_net(struct net *net)
-{
-}
-
 static __net_initdata struct pernet_operations af_inet_ops = {
 	.init = inet_init_net,
-	.exit = inet_exit_net,
 };
 
 static int __init init_inet_pernet_ops(void)

@@ -6,11 +6,10 @@
 #include <linux/module.h>
 
 //
-// Keytable for the Amediatecch X96-max remote control
+// Keytable for the X96-max STB remote control
 //
 
 static struct rc_map_table x96max[] = {
-
 	{ 0x140, KEY_POWER },
 
 	// ** TV CONTROL **
@@ -23,9 +22,9 @@ static struct rc_map_table x96max[] = {
 	{ 0x118, KEY_VOLUMEUP },
 	{ 0x110, KEY_VOLUMEDOWN },
 
-	{ 0x143, KEY_MUTE }, // CONFIG
+	{ 0x143, KEY_MUTE }, // config
 
-	{ 0x100, KEY_EPG }, // MOUSE
+	{ 0x100, KEY_EPG }, // mouse
 	{ 0x119, KEY_BACK },
 
 	{ 0x116, KEY_UP },
@@ -41,7 +40,7 @@ static struct rc_map_table x96max[] = {
 	{ 0x15a, KEY_PLAYPAUSE },
 	{ 0x158, KEY_NEXT },
 
-	{ 0x147, KEY_MENU }, // @ KEY
+	{ 0x147, KEY_MENU }, // @ key
 	{ 0x101, KEY_NUMERIC_0 },
 	{ 0x142, KEY_BACKSPACE },
 
@@ -56,7 +55,6 @@ static struct rc_map_table x96max[] = {
 	{ 0x146, KEY_NUMERIC_7 },
 	{ 0x105, KEY_NUMERIC_8 },
 	{ 0x104, KEY_NUMERIC_9 },
-
 };
 
 static struct rc_map_list x96max_map = {

@@ -10,64 +10,14 @@
 #include <dt-bindings/input/input.h>
 #include <dt-bindings/gpio/meson-g12a-gpio.h>
 #include <dt-bindings/sound/meson-g12a-tohdmitx.h>
-#include <dt-bindings/thermal/thermal.h>
 
 / {
-	compatible = "hardkernel,odroid-n2", "amlogic,g12b";
+	compatible = "hardkernel,odroid-n2", "amlogic,s922x", "amlogic,g12b";
 	model = "Hardkernel ODROID-N2";
 
 	aliases {
 		serial0 = &uart_AO;
 		ethernet0 = &ethmac;
-	};
-
-	thermal-zones {
-		cpu-thermal {
-			polling-delay = <1000>;
-			polling-delay-passive = <100>;
-			thermal-sensors = <&cpu_temp>;
-
-			trips {
-				cpu_critical: cpu-critical {
-					temperature = <110000>; /* millicelsius */
-					hysteresis = <2000>; /* millicelsius */
-					type = "critical";
-				};
-			};
-
-			cooling-maps {
-				map {
-					trip = <&cpu_critical>;
-					cooling-device = <&cpu0 THERMAL_NO_LIMIT THERMAL_NO_LIMIT>,
-							 <&cpu1 THERMAL_NO_LIMIT THERMAL_NO_LIMIT>,
-							 <&cpu100 THERMAL_NO_LIMIT THERMAL_NO_LIMIT>,
-							 <&cpu101 THERMAL_NO_LIMIT THERMAL_NO_LIMIT>,
-							 <&cpu102 THERMAL_NO_LIMIT THERMAL_NO_LIMIT>,
-							 <&cpu103 THERMAL_NO_LIMIT THERMAL_NO_LIMIT>;
-				};
-			};
-		};
-
-		ddr-thermal {
-			polling-delay = <1000>;
-			polling-delay-passive = <100>;
-			thermal-sensors = <&ddr_temp>;
-
-			trips {
-				ddr_critical: ddr-critical {
-					temperature = <110000>; /* millicelsius */
-					hysteresis = <2000>; /* millicelsius */
-					type = "critical";
-				};
-			};
-
-			cooling-maps {
-				map {
-					trip = <&ddr_critical>;
-					cooling-device = <&mali THERMAL_NO_LIMIT THERMAL_NO_LIMIT>;
-				};
-			};
-		};
 	};
 
 	chosen {
@@ -115,8 +65,8 @@
 		gpios = <&gpio_ao GPIOAO_9 GPIO_ACTIVE_HIGH>;
 		gpios-states = <0>;
 
-		states = <3300000 0
-			  1800000 1>;
+		states = <3300000 0>,
+			 <1800000 1>;
 	};
 
 	flash_1v8: regulator-flash_1v8 {
@@ -243,6 +193,16 @@
 		vin-supply = <&main_12v>;
 		regulator-always-on;
 	};
+	
+	cvbs-connector {
+		compatible = "composite-video-connector";
+
+		port {
+			cvbs_connector_in: endpoint {
+				remote-endpoint = <&cvbs_vdac_out>;
+			};
+		};
+	};
 
 	hdmi-connector {
 		compatible = "hdmi-connector";
@@ -338,7 +298,6 @@
 	operating-points-v2 = <&cpu_opp_table_0>;
 	clocks = <&clkc CLKID_CPU_CLK>;
 	clock-latency = <50000>;
-	#cooling-cells = <2>;
 };
 
 &cpu1 {
@@ -346,7 +305,6 @@
 	operating-points-v2 = <&cpu_opp_table_0>;
 	clocks = <&clkc CLKID_CPU_CLK>;
 	clock-latency = <50000>;
-	#cooling-cells = <2>;
 };
 
 &cpu100 {
@@ -354,7 +312,6 @@
 	operating-points-v2 = <&cpub_opp_table_1>;
 	clocks = <&clkc CLKID_CPUB_CLK>;
 	clock-latency = <50000>;
-	#cooling-cells = <2>;
 };
 
 &cpu101 {
@@ -362,7 +319,6 @@
 	operating-points-v2 = <&cpub_opp_table_1>;
 	clocks = <&clkc CLKID_CPUB_CLK>;
 	clock-latency = <50000>;
-	#cooling-cells = <2>;
 };
 
 &cpu102 {
@@ -370,7 +326,6 @@
 	operating-points-v2 = <&cpub_opp_table_1>;
 	clocks = <&clkc CLKID_CPUB_CLK>;
 	clock-latency = <50000>;
-	#cooling-cells = <2>;
 };
 
 &cpu103 {
@@ -378,7 +333,12 @@
 	operating-points-v2 = <&cpub_opp_table_1>;
 	clocks = <&clkc CLKID_CPUB_CLK>;
 	clock-latency = <50000>;
-	#cooling-cells = <2>;
+};
+
+&cvbs_vdac_port {
+	cvbs_vdac_out: endpoint {
+		remote-endpoint = <&cvbs_connector_in>;
+	};
 };
 
 &ext_mdio {
@@ -433,10 +393,6 @@
 	};
 };
 
-&mali {
-	#cooling-cells = <2>;
-};
-
 &hdmi_tx {
 	status = "okay";
 	pinctrl-0 = <&hdmitx_hpd_pins>, <&hdmitx_ddc_pins>;
@@ -455,47 +411,6 @@
 	pinctrl-0 = <&remote_input_ao_pins>;
 	pinctrl-names = "default";
 	linux,rc-map-name = "rc-odroid";
-};
-
-&i2c3_sda_a_pins {
-	mux {
-		groups = "i2c3_sda_a";
-		function = "i2c3";
-		bias-pull-up;
-		drive-strength-microamp = <3000>;
-	};
-};
-
-&i2c3_sck_a_pins {
-	mux {
-		groups = "i2c3_sck_a";
-		function = "i2c3";
-		bias-pull-up;
-		drive-strength-microamp = <3000>;
-	};
-};
-
-&i2c3 {
-	status = "okay";
-	pinctrl-names = "default","gpio_periphs";
-	pinctrl-0 = <&i2c3_sck_a_pins &i2c3_sda_a_pins>;
-	pinctrl-1 = <&i2c3_to_gpioa>;
-	clock-frequency = <100000>; /* default 100k */
-
-	pcf8563: rtc@51 { /*I2C-bus slave address: read A3h and write A2h*/
-		compatible = "nxp,pcf8563";
-		reg = <0x51>;
-	};
-};
-
-&periphs_pinctrl {
-	i2c3_to_gpioa:i2c3_gpioa {
-		mux {
-			groups = "GPIOA_14", "GPIOA_15";
-			function = "gpio_periphs";
-			drive-strength-microamp = <3000>;
-		};
-	};
 };
 
 &pwm_ab {

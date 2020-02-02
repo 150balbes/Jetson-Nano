@@ -1,5 +1,5 @@
 /*
- * Copyright © 2016 Intel Corporation
+ * Copyright © 2016-2019 Intel Corporation
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -35,6 +35,7 @@
 #include <drm/i915_drm.h>
 
 struct drm_i915_private;
+enum port;
 
 enum intel_backlight_type {
 	INTEL_BACKLIGHT_PMIC,
@@ -42,6 +43,7 @@ enum intel_backlight_type {
 	INTEL_BACKLIGHT_DISPLAY_DDI,
 	INTEL_BACKLIGHT_DSI_DCS,
 	INTEL_BACKLIGHT_PANEL_DRIVER_INTERFACE,
+	INTEL_BACKLIGHT_VESA_EDP_AUX_INTERFACE,
 };
 
 struct edp_power_seq {
@@ -227,7 +229,7 @@ struct mipi_pps_data {
 } __packed;
 
 void intel_bios_init(struct drm_i915_private *dev_priv);
-void intel_bios_cleanup(struct drm_i915_private *dev_priv);
+void intel_bios_driver_remove(struct drm_i915_private *dev_priv);
 bool intel_bios_is_valid_vbt(const void *buf, size_t size);
 bool intel_bios_is_tv_present(struct drm_i915_private *dev_priv);
 bool intel_bios_is_lvds_present(struct drm_i915_private *dev_priv, u8 *i2c_pin);

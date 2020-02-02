@@ -49,8 +49,8 @@ void _r8712_init_sta_xmit_priv(struct sta_xmit_priv *psta_xmitpriv)
 	INIT_LIST_HEAD(&psta_xmitpriv->apsd);
 }
 
-sint _r8712_init_xmit_priv(struct xmit_priv *pxmitpriv,
-			   struct _adapter *padapter)
+int _r8712_init_xmit_priv(struct xmit_priv *pxmitpriv,
+			  struct _adapter *padapter)
 {
 	sint i;
 	struct xmit_buf *pxmitbuf;
@@ -79,7 +79,7 @@ sint _r8712_init_xmit_priv(struct xmit_priv *pxmitpriv,
 		kmalloc(NR_XMITFRAME * sizeof(struct xmit_frame) + 4, GFP_ATOMIC);
 	if (!pxmitpriv->pallocated_frame_buf) {
 		pxmitpriv->pxmit_frame_buf = NULL;
-		return _FAIL;
+		return -ENOMEM;
 	}
 	pxmitpriv->pxmit_frame_buf = pxmitpriv->pallocated_frame_buf + 4 -
 			((addr_t) (pxmitpriv->pallocated_frame_buf) & 3);
@@ -119,7 +119,7 @@ sint _r8712_init_xmit_priv(struct xmit_priv *pxmitpriv,
 	if (!pxmitpriv->pallocated_xmitbuf) {
 		kfree(pxmitpriv->pallocated_frame_buf);
 		pxmitpriv->pallocated_frame_buf = NULL;
-		return _FAIL;
+		return -ENOMEM;
 	}
 	pxmitpriv->pxmitbuf = pxmitpriv->pallocated_xmitbuf + 4 -
 			      ((addr_t)(pxmitpriv->pallocated_xmitbuf) & 3);
@@ -129,12 +129,12 @@ sint _r8712_init_xmit_priv(struct xmit_priv *pxmitpriv,
 		pxmitbuf->pallocated_buf = kmalloc(MAX_XMITBUF_SZ + XMITBUF_ALIGN_SZ,
 						   GFP_ATOMIC);
 		if (!pxmitbuf->pallocated_buf)
-			return _FAIL;
+			return -ENOMEM;
 		pxmitbuf->pbuf = pxmitbuf->pallocated_buf + XMITBUF_ALIGN_SZ -
 				 ((addr_t) (pxmitbuf->pallocated_buf) &
 				 (XMITBUF_ALIGN_SZ - 1));
 		if (r8712_xmit_resource_alloc(padapter, pxmitbuf))
-			return _FAIL;
+			return -ENOMEM;
 		list_add_tail(&pxmitbuf->list,
 				 &(pxmitpriv->free_xmitbuf_queue.queue));
 		pxmitbuf++;
@@ -143,10 +143,9 @@ sint _r8712_init_xmit_priv(struct xmit_priv *pxmitpriv,
 	INIT_WORK(&padapter->wk_filter_rx_ff0, r8712_SetFilter);
 	alloc_hwxmits(padapter);
 	init_hwxmits(pxmitpriv->hwxmits, pxmitpriv->hwxmit_entry);
-	tasklet_init(&pxmitpriv->xmit_tasklet,
-		(void(*)(unsigned long))r8712_xmit_bh,
-		(unsigned long)padapter);
-	return _SUCCESS;
+	tasklet_init(&pxmitpriv->xmit_tasklet, r8712_xmit_bh,
+		     (unsigned long)padapter);
+	return 0;
 }
 
 void _free_xmit_priv(struct xmit_priv *pxmitpriv)
@@ -173,8 +172,8 @@ void _free_xmit_priv(struct xmit_priv *pxmitpriv)
 	free_hwxmits(padapter);
 }
 
-sint r8712_update_attrib(struct _adapter *padapter, _pkt *pkt,
-		   struct pkt_attrib *pattrib)
+int r8712_update_attrib(struct _adapter *padapter, _pkt *pkt,
+			struct pkt_attrib *pattrib)
 {
 	struct pkt_file pktfile;
 	struct sta_info *psta = NULL;
@@ -224,7 +223,7 @@ sint r8712_update_attrib(struct _adapter *padapter, _pkt *pkt,
 	} else if (check_fwstate(pmlmepriv, WIFI_MP_STATE)) {
 		/*firstly, filter packet not belongs to mp*/
 		if (pattrib->ether_type != 0x8712)
-			return _FAIL;
+			return -EINVAL;
 		/* for mp storing the txcmd per packet,
 		 * according to the info of txcmd to update pattrib
 		 */
@@ -271,7 +270,7 @@ sint r8712_update_attrib(struct _adapter *padapter, _pkt *pkt,
 		} else {
 			psta = r8712_get_stainfo(pstapriv, pattrib->ra);
 			if (psta == NULL)  /* drop the pkt */
-				return _FAIL;
+				return -ENOMEM;
 			if (check_fwstate(pmlmepriv, WIFI_STATION_STATE))
 				pattrib->mac_id = 5;
 			else
@@ -283,7 +282,7 @@ sint r8712_update_attrib(struct _adapter *padapter, _pkt *pkt,
 		pattrib->psta = psta;
 	} else {
 		/* if we cannot get psta => drrp the pkt */
-		return _FAIL;
+		return -ENOMEM;
 	}
 
 	pattrib->ack_policy = 0;
@@ -301,7 +300,7 @@ sint r8712_update_attrib(struct _adapter *padapter, _pkt *pkt,
 		pattrib->encrypt = 0;
 		if ((pattrib->ether_type != 0x888e) &&
 		    !check_fwstate(pmlmepriv, WIFI_MP_STATE))
-			return _FAIL;
+			return -EINVAL;
 	} else {
 		GET_ENCRY_ALGO(psecuritypriv, psta, pattrib->encrypt, bmcast);
 	}
@@ -315,7 +314,7 @@ sint r8712_update_attrib(struct _adapter *padapter, _pkt *pkt,
 		pattrib->iv_len = 8;
 		pattrib->icv_len = 4;
 		if (padapter->securitypriv.busetkipkey == _FAIL)
-			return _FAIL;
+			return -EINVAL;
 		break;
 	case _AES_:
 		pattrib->iv_len = 8;
@@ -339,11 +338,11 @@ sint r8712_update_attrib(struct _adapter *padapter, _pkt *pkt,
 	if (check_fwstate(pmlmepriv, WIFI_MP_STATE))
 		pattrib->priority =
 		    (le32_to_cpu(txdesc.txdw1) >> QSEL_SHT) & 0x1f;
-	return _SUCCESS;
+	return 0;
 }
 
-static sint xmitframe_addmic(struct _adapter *padapter,
-			     struct xmit_frame *pxmitframe)
+static int xmitframe_addmic(struct _adapter *padapter,
+			    struct xmit_frame *pxmitframe)
 {
 	u32	curfragnum, length;
 	u8	*pframe, *payload, mic[8];
@@ -372,7 +371,7 @@ static sint xmitframe_addmic(struct _adapter *padapter,
 				if (!memcmp(psecuritypriv->XGrptxmickey
 				   [psecuritypriv->XGrpKeyid].skey,
 				   null_key, 16))
-					return _FAIL;
+					return -ENOMEM;
 				/*start to calculate the mic code*/
 				r8712_secmicsetkey(&micdata,
 					 psecuritypriv->
@@ -381,7 +380,7 @@ static sint xmitframe_addmic(struct _adapter *padapter,
 			} else {
 				if (!memcmp(&stainfo->tkiptxmickey.skey[0],
 					    null_key, 16))
-					return _FAIL;
+					return -ENOMEM;
 				/* start to calculate the mic code */
 				r8712_secmicsetkey(&micdata,
 					     &stainfo->tkiptxmickey.skey[0]);
@@ -442,7 +441,7 @@ static sint xmitframe_addmic(struct _adapter *padapter,
 			payload = payload - pattrib->last_txcmdsz + 8;
 		}
 	}
-	return _SUCCESS;
+	return 0;
 }
 
 static sint xmitframe_swencrypt(struct _adapter *padapter,
@@ -469,8 +468,8 @@ static sint xmitframe_swencrypt(struct _adapter *padapter,
 	return _SUCCESS;
 }
 
-static sint make_wlanhdr(struct _adapter *padapter, u8 *hdr,
-			 struct pkt_attrib *pattrib)
+static int make_wlanhdr(struct _adapter *padapter, u8 *hdr,
+			struct pkt_attrib *pattrib)
 {
 	u16 *qc;
 
@@ -509,7 +508,7 @@ static sint make_wlanhdr(struct _adapter *padapter, u8 *hdr,
 			memcpy(pwlanhdr->addr3, get_bssid(pmlmepriv),
 				ETH_ALEN);
 		} else {
-			return _FAIL;
+			return -EINVAL;
 		}
 
 		if (pattrib->encrypt)
@@ -547,7 +546,7 @@ static sint make_wlanhdr(struct _adapter *padapter, u8 *hdr,
 			}
 		}
 	}
-	return _SUCCESS;
+	return 0;
 }
 
 static sint r8712_put_snap(u8 *data, u16 h_proto)
@@ -605,7 +604,7 @@ sint r8712_xmitframe_coalesce(struct _adapter *padapter, _pkt *pkt,
 	pbuf_start = pxmitframe->buf_addr;
 	ptxdesc = pbuf_start;
 	mem_start = pbuf_start + TXDESC_OFFSET;
-	if (make_wlanhdr(padapter, mem_start, pattrib) == _FAIL)
+	if (make_wlanhdr(padapter, mem_start, pattrib))
 		return _FAIL;
 	_r8712_open_pktfile(pkt, &pktfile);
 	_r8712_pktfile_read(&pktfile, NULL, (uint) pattrib->pkt_hdrlen);
@@ -696,7 +695,7 @@ sint r8712_xmitframe_coalesce(struct _adapter *padapter, _pkt *pkt,
 		memcpy(mem_start, pbuf_start + TXDESC_OFFSET, pattrib->hdrlen);
 	}
 
-	if (xmitframe_addmic(padapter, pxmitframe) == _FAIL)
+	if (xmitframe_addmic(padapter, pxmitframe))
 		return _FAIL;
 	xmitframe_swencrypt(padapter, pxmitframe);
 	return _SUCCESS;
@@ -753,19 +752,18 @@ struct xmit_buf *r8712_alloc_xmitbuf(struct xmit_priv *pxmitpriv)
 	return pxmitbuf;
 }
 
-int r8712_free_xmitbuf(struct xmit_priv *pxmitpriv, struct xmit_buf *pxmitbuf)
+void r8712_free_xmitbuf(struct xmit_priv *pxmitpriv, struct xmit_buf *pxmitbuf)
 {
 	unsigned long irqL;
 	struct  __queue *pfree_xmitbuf_queue = &pxmitpriv->free_xmitbuf_queue;
 
 	if (pxmitbuf == NULL)
-		return _FAIL;
+		return;
 	spin_lock_irqsave(&pfree_xmitbuf_queue->lock, irqL);
 	list_del_init(&pxmitbuf->list);
 	list_add_tail(&(pxmitbuf->list), &pfree_xmitbuf_queue->queue);
 	pxmitpriv->free_xmitbuf_cnt++;
 	spin_unlock_irqrestore(&pfree_xmitbuf_queue->lock, irqL);
-	return _SUCCESS;
 }
 
 /*
@@ -894,8 +892,8 @@ static inline struct tx_servq *get_sta_pending(struct _adapter *padapter,
  * Will enqueue pxmitframe to the proper queue, and indicate it
  * to xx_pending list.....
  */
-sint r8712_xmit_classifier(struct _adapter *padapter,
-			   struct xmit_frame *pxmitframe)
+int r8712_xmit_classifier(struct _adapter *padapter,
+			  struct xmit_frame *pxmitframe)
 {
 	unsigned long irqL0;
 	struct  __queue *pstapending;
@@ -920,7 +918,7 @@ sint r8712_xmit_classifier(struct _adapter *padapter,
 		}
 	}
 	if (psta == NULL)
-		return _FAIL;
+		return -EINVAL;
 	ptxservq = get_sta_pending(padapter, &pstapending,
 		   psta, pattrib->priority);
 	spin_lock_irqsave(&pstapending->lock, irqL0);
@@ -929,7 +927,7 @@ sint r8712_xmit_classifier(struct _adapter *padapter,
 	list_add_tail(&pxmitframe->list, &ptxservq->sta_pending.queue);
 	ptxservq->qcnt++;
 	spin_unlock_irqrestore(&pstapending->lock, irqL0);
-	return _SUCCESS;
+	return 0;
 }
 
 static void alloc_hwxmits(struct _adapter *padapter)

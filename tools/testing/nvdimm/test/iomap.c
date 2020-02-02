@@ -132,7 +132,6 @@ void *__wrap_devm_memremap_pages(struct device *dev, struct dev_pagemap *pgmap)
 	if (!nfit_res)
 		return devm_memremap_pages(dev, pgmap);
 
-	pgmap->dev = dev;
 	if (!pgmap->ref) {
 		if (pgmap->ops && (pgmap->ops->kill || pgmap->ops->cleanup))
 			return ERR_PTR(-EINVAL);
@@ -193,6 +192,12 @@ void __iomem *__wrap_ioremap_nocache(resource_size_t offset, unsigned long size)
 	return __nfit_test_ioremap(offset, size, ioremap_nocache);
 }
 EXPORT_SYMBOL(__wrap_ioremap_nocache);
+
+void __iomem *__wrap_ioremap(resource_size_t offset, unsigned long size)
+{
+	return __nfit_test_ioremap(offset, size, ioremap);
+}
+EXPORT_SYMBOL(__wrap_ioremap);
 
 void __iomem *__wrap_ioremap_wc(resource_size_t offset, unsigned long size)
 {

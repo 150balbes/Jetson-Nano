@@ -28,7 +28,11 @@
 
 #include "dc_dsc.h"
 #include "dc_hw_types.h"
-#include "dc_dp_types.h"
+#include "dc_types.h"
+/* do not include any other headers
+ * or else it might break Edid Utility functionality.
+ */
+
 
 /* Input parameters for configuring DSC from the outside of DSC */
 struct dsc_config {
@@ -81,18 +85,14 @@ struct dsc_enc_caps {
 	uint32_t bpp_increment_div; /* bpp increment divisor, e.g. if 16, it's 1/16th of a bit */
 };
 
-struct display_stream_compressor {
-	const struct dsc_funcs *funcs;
-	struct dc_context *ctx;
-	int inst;
-};
-
 struct dsc_funcs {
 	void (*dsc_get_enc_caps)(struct dsc_enc_caps *dsc_enc_caps, int pixel_clock_100Hz);
 	void (*dsc_read_state)(struct display_stream_compressor *dsc, struct dcn_dsc_state *s);
 	bool (*dsc_validate_stream)(struct display_stream_compressor *dsc, const struct dsc_config *dsc_cfg);
 	void (*dsc_set_config)(struct display_stream_compressor *dsc, const struct dsc_config *dsc_cfg,
-			struct dsc_optc_config *dsc_optc_cfg, uint8_t *dsc_packed_pps);
+			struct dsc_optc_config *dsc_optc_cfg);
+	bool (*dsc_get_packed_pps)(struct display_stream_compressor *dsc, const struct dsc_config *dsc_cfg,
+			uint8_t *dsc_packed_pps);
 	void (*dsc_enable)(struct display_stream_compressor *dsc, int opp_pipe);
 	void (*dsc_disable)(struct display_stream_compressor *dsc);
 };

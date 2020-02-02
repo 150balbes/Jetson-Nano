@@ -6,6 +6,16 @@
  * Author: Boris BREZILLON <boris.brezillon@free-electrons.com>
  */
 
+#include <linux/dmapool.h>
+#include <linux/mfd/atmel-hlcdc.h>
+
+#include <drm/drm_atomic.h>
+#include <drm/drm_atomic_helper.h>
+#include <drm/drm_fb_cma_helper.h>
+#include <drm/drm_fourcc.h>
+#include <drm/drm_gem_cma_helper.h>
+#include <drm/drm_plane_helper.h>
+
 #include "atmel_hlcdc_dc.h"
 
 /**
@@ -361,7 +371,7 @@ atmel_hlcdc_plane_update_general_settings(struct atmel_hlcdc_plane *plane,
 	atmel_hlcdc_layer_write_cfg(&plane->layer, ATMEL_HLCDC_LAYER_DMA_CFG,
 				    cfg);
 
-	cfg = ATMEL_HLCDC_LAYER_DMA;
+	cfg = ATMEL_HLCDC_LAYER_DMA | ATMEL_HLCDC_LAYER_REP;
 
 	if (plane->base.type != DRM_PLANE_TYPE_PRIMARY) {
 		cfg |= ATMEL_HLCDC_LAYER_OVR | ATMEL_HLCDC_LAYER_ITER2BL |
@@ -591,7 +601,6 @@ static int atmel_hlcdc_plane_atomic_check(struct drm_plane *p,
 	struct drm_framebuffer *fb = state->base.fb;
 	const struct drm_display_mode *mode;
 	struct drm_crtc_state *crtc_state;
-	unsigned int tmp;
 	int ret;
 	int i;
 
@@ -684,9 +693,7 @@ static int atmel_hlcdc_plane_atomic_check(struct drm_plane *p,
 	 * Swap width and size in case of 90 or 270 degrees rotation
 	 */
 	if (drm_rotation_90_or_270(state->base.rotation)) {
-		tmp = state->src_w;
-		state->src_w = state->src_h;
-		state->src_h = tmp;
+		swap(state->src_w, state->src_h);
 	}
 
 	if (!desc->layout.size &&

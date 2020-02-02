@@ -56,6 +56,7 @@ static void codec_hevc_setup_buffers_gxbb(struct amvdec_session *sess,
 
 	v4l2_m2m_for_each_dst_buf(sess->m2m_ctx, buf) {
 		struct vb2_buffer *vb = &buf->vb.vb2_buf;
+
 		idx = vb->index;
 
 		if (codec_hevc_use_downsample(sess->pixfmt_cap, is_10bit))

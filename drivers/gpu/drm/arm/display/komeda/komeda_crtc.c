@@ -5,7 +5,6 @@
  *
  */
 #include <linux/clk.h>
-#include <linux/pm_runtime.h>
 #include <linux/spinlock.h>
 
 #include <drm/drm_atomic.h>
@@ -18,6 +17,33 @@
 #include "komeda_dev.h"
 #include "komeda_kms.h"
 
+void komeda_crtc_get_color_config(struct drm_crtc_state *crtc_st,
+				  u32 *color_depths, u32 *color_formats)
+{
+	struct drm_connector *conn;
+	struct drm_connector_state *conn_st;
+	u32 conn_color_formats = ~0u;
+	int i, min_bpc = 31, conn_bpc = 0;
+
+	for_each_new_connector_in_state(crtc_st->state, conn, conn_st, i) {
+		if (conn_st->crtc != crtc_st->crtc)
+			continue;
+
+		conn_bpc = conn->display_info.bpc ? conn->display_info.bpc : 8;
+		conn_color_formats &= conn->display_info.color_formats;
+
+		if (conn_bpc < min_bpc)
+			min_bpc = conn_bpc;
+	}
+
+	/* connector doesn't config any color_format, use RGB444 as default */
+	if (!conn_color_formats)
+		conn_color_formats = DRM_COLOR_FORMAT_RGB444;
+
+	*color_depths = GENMASK(min_bpc, 0);
+	*color_formats = conn_color_formats;
+}
+
 static void komeda_crtc_update_clock_ratio(struct komeda_crtc_state *kcrtc_st)
 {
 	u64 pxlclk, aclk;
@@ -27,8 +53,8 @@ static void komeda_crtc_update_clock_ratio(struct komeda_crtc_state *kcrtc_st)
 		return;
 	}
 
-	pxlclk = kcrtc_st->base.adjusted_mode.clock * 1000;
-	aclk = komeda_calc_aclk(kcrtc_st);
+	pxlclk = kcrtc_st->base.adjusted_mode.crtc_clock * 1000ULL;
+	aclk = komeda_crtc_get_aclk(kcrtc_st);
 
 	kcrtc_st->clock_ratio = div64_u64(aclk << 32, pxlclk);
 }
@@ -74,14 +100,6 @@ komeda_crtc_atomic_check(struct drm_crtc *crtc,
 	return 0;
 }
 
-unsigned long komeda_calc_aclk(struct komeda_crtc_state *kcrtc_st)
-{
-	struct komeda_dev *mdev = kcrtc_st->base.crtc->dev->dev_private;
-	unsigned long pxlclk = kcrtc_st->base.adjusted_mode.clock;
-
-	return clk_round_rate(mdev->aclk, pxlclk * 1000);
-}
-
 /* For active a crtc, mainly need two parts of preparation
  * 1. adjust display operation mode.
  * 2. enable needed clk
@@ -92,7 +110,7 @@ komeda_crtc_prepare(struct komeda_crtc *kcrtc)
 	struct komeda_dev *mdev = kcrtc->base.dev->dev_private;
 	struct komeda_pipeline *master = kcrtc->master;
 	struct komeda_crtc_state *kcrtc_st = to_kcrtc_st(kcrtc->base.state);
-	unsigned long pxlclk_rate = kcrtc_st->base.adjusted_mode.clock * 1000;
+	struct drm_display_mode *mode = &kcrtc_st->base.adjusted_mode;
 	u32 new_mode;
 	int err;
 
@@ -118,7 +136,7 @@ komeda_crtc_prepare(struct komeda_crtc *kcrtc)
 	 * to enable it again.
 	 */
 	if (new_mode != KOMEDA_MODE_DUAL_DISP) {
-		err = clk_set_rate(mdev->aclk, komeda_calc_aclk(kcrtc_st));
+		err = clk_set_rate(mdev->aclk, komeda_crtc_get_aclk(kcrtc_st));
 		if (err)
 			DRM_ERROR("failed to set aclk.\n");
 		err = clk_prepare_enable(mdev->aclk);
@@ -126,7 +144,7 @@ komeda_crtc_prepare(struct komeda_crtc *kcrtc)
 			DRM_ERROR("failed to enable aclk.\n");
 	}
 
-	err = clk_set_rate(master->pxlclk, pxlclk_rate);
+	err = clk_set_rate(master->pxlclk, mode->crtc_clock * 1000);
 	if (err)
 		DRM_ERROR("failed to set pxlclk for pipe%d\n", master->id);
 	err = clk_prepare_enable(master->pxlclk);
@@ -258,7 +276,43 @@ komeda_crtc_atomic_enable(struct drm_crtc *crtc,
 {
 	komeda_crtc_prepare(to_kcrtc(crtc));
 	drm_crtc_vblank_on(crtc);
+	WARN_ON(drm_crtc_vblank_get(crtc));
 	komeda_crtc_do_flush(crtc, old);
+}
+
+static void
+komeda_crtc_flush_and_wait_for_flip_done(struct komeda_crtc *kcrtc,
+					 struct completion *input_flip_done)
+{
+	struct drm_device *drm = kcrtc->base.dev;
+	struct komeda_dev *mdev = kcrtc->master->mdev;
+	struct completion *flip_done;
+	struct completion temp;
+	int timeout;
+
+	/* if caller doesn't send a flip_done, use a private flip_done */
+	if (input_flip_done) {
+		flip_done = input_flip_done;
+	} else {
+		init_completion(&temp);
+		kcrtc->disable_done = &temp;
+		flip_done = &temp;
+	}
+
+	mdev->funcs->flush(mdev, kcrtc->master->id, 0);
+
+	/* wait the flip take affect.*/
+	timeout = wait_for_completion_timeout(flip_done, HZ);
+	if (timeout == 0) {
+		DRM_ERROR("wait pipe%d flip done timeout\n", kcrtc->master->id);
+		if (!input_flip_done) {
+			unsigned long flags;
+
+			spin_lock_irqsave(&drm->event_lock, flags);
+			kcrtc->disable_done = NULL;
+			spin_unlock_irqrestore(&drm->event_lock, flags);
+		}
+	}
 }
 
 static void
@@ -267,14 +321,12 @@ komeda_crtc_atomic_disable(struct drm_crtc *crtc,
 {
 	struct komeda_crtc *kcrtc = to_kcrtc(crtc);
 	struct komeda_crtc_state *old_st = to_kcrtc_st(old);
-	struct komeda_dev *mdev = crtc->dev->dev_private;
 	struct komeda_pipeline *master = kcrtc->master;
 	struct komeda_pipeline *slave  = kcrtc->slave;
-	struct completion *disable_done = &crtc->state->commit->flip_done;
-	struct completion temp;
-	int timeout;
+	struct completion *disable_done;
+	bool needs_phase2 = false;
 
-	DRM_DEBUG_ATOMIC("CRTC%d_DISABLE: active_pipes: 0x%x, affected: 0x%x.\n",
+	DRM_DEBUG_ATOMIC("CRTC%d_DISABLE: active_pipes: 0x%x, affected: 0x%x\n",
 			 drm_crtc_index(crtc),
 			 old_st->active_pipes, old_st->affected_pipes);
 
@@ -282,7 +334,7 @@ komeda_crtc_atomic_disable(struct drm_crtc *crtc,
 		komeda_pipeline_disable(slave, old->state);
 
 	if (has_bit(master->id, old_st->active_pipes))
-		komeda_pipeline_disable(master, old->state);
+		needs_phase2 = komeda_pipeline_disable(master, old->state);
 
 	/* crtc_disable has two scenarios according to the state->active switch.
 	 * 1. active -> inactive
@@ -301,32 +353,23 @@ komeda_crtc_atomic_disable(struct drm_crtc *crtc,
 	 *    That's also the reason why skip modeset commit in
 	 *    komeda_crtc_atomic_flush()
 	 */
-	if (crtc->state->active) {
-		struct komeda_pipeline_state *pipe_st;
-		/* clear the old active_comps to zero */
-		pipe_st = komeda_pipeline_get_old_state(master, old->state);
-		pipe_st->active_comps = 0;
+	disable_done = (needs_phase2 || crtc->state->active) ?
+		       NULL : &crtc->state->commit->flip_done;
 
-		init_completion(&temp);
-		kcrtc->disable_done = &temp;
-		disable_done = &temp;
+	/* wait phase 1 disable done */
+	komeda_crtc_flush_and_wait_for_flip_done(kcrtc, disable_done);
+
+	/* phase 2 */
+	if (needs_phase2) {
+		komeda_pipeline_disable(kcrtc->master, old->state);
+
+		disable_done = crtc->state->active ?
+			       NULL : &crtc->state->commit->flip_done;
+
+		komeda_crtc_flush_and_wait_for_flip_done(kcrtc, disable_done);
 	}
 
-	mdev->funcs->flush(mdev, master->id, 0);
-
-	/* wait the disable take affect.*/
-	timeout = wait_for_completion_timeout(disable_done, HZ);
-	if (timeout == 0) {
-		DRM_ERROR("disable pipeline%d timeout.\n", kcrtc->master->id);
-		if (crtc->state->active) {
-			unsigned long flags;
-
-			spin_lock_irqsave(&crtc->dev->event_lock, flags);
-			kcrtc->disable_done = NULL;
-			spin_unlock_irqrestore(&crtc->dev->event_lock, flags);
-		}
-	}
-
+	drm_crtc_vblank_put(crtc);
 	drm_crtc_vblank_off(crtc);
 	komeda_crtc_unprepare(kcrtc);
 }
@@ -342,29 +385,58 @@ komeda_crtc_atomic_flush(struct drm_crtc *crtc,
 	komeda_crtc_do_flush(crtc, old);
 }
 
+/* Returns the minimum frequency of the aclk rate (main engine clock) in Hz */
+static unsigned long
+komeda_calc_min_aclk_rate(struct komeda_crtc *kcrtc,
+			  unsigned long pxlclk)
+{
+	/* Once dual-link one display pipeline drives two display outputs,
+	 * the aclk needs run on the double rate of pxlclk
+	 */
+	if (kcrtc->master->dual_link)
+		return pxlclk * 2;
+	else
+		return pxlclk;
+}
+
+/* Get current aclk rate that specified by state */
+unsigned long komeda_crtc_get_aclk(struct komeda_crtc_state *kcrtc_st)
+{
+	struct drm_crtc *crtc = kcrtc_st->base.crtc;
+	struct komeda_dev *mdev = crtc->dev->dev_private;
+	unsigned long pxlclk = kcrtc_st->base.adjusted_mode.crtc_clock * 1000;
+	unsigned long min_aclk;
+
+	min_aclk = komeda_calc_min_aclk_rate(to_kcrtc(crtc), pxlclk);
+
+	return clk_round_rate(mdev->aclk, min_aclk);
+}
+
 static enum drm_mode_status
 komeda_crtc_mode_valid(struct drm_crtc *crtc, const struct drm_display_mode *m)
 {
 	struct komeda_dev *mdev = crtc->dev->dev_private;
 	struct komeda_crtc *kcrtc = to_kcrtc(crtc);
 	struct komeda_pipeline *master = kcrtc->master;
-	long mode_clk, pxlclk;
+	unsigned long min_pxlclk, min_aclk;
 
 	if (m->flags & DRM_MODE_FLAG_INTERLACE)
 		return MODE_NO_INTERLACE;
 
-	mode_clk = m->clock * 1000;
-	pxlclk = clk_round_rate(master->pxlclk, mode_clk);
-	if (pxlclk != mode_clk) {
-		DRM_DEBUG_ATOMIC("pxlclk doesn't support %ld Hz\n", mode_clk);
+	min_pxlclk = m->clock * 1000;
+	if (master->dual_link)
+		min_pxlclk /= 2;
+
+	if (min_pxlclk != clk_round_rate(master->pxlclk, min_pxlclk)) {
+		DRM_DEBUG_ATOMIC("pxlclk doesn't support %lu Hz\n", min_pxlclk);
 
 		return MODE_NOCLOCK;
 	}
 
-	/* main engine clock must be faster than pxlclk*/
-	if (clk_round_rate(mdev->aclk, mode_clk) < pxlclk) {
-		DRM_DEBUG_ATOMIC("engine clk can't satisfy the requirement of %s-clk: %ld.\n",
-				 m->name, pxlclk);
+	min_aclk = komeda_calc_min_aclk_rate(to_kcrtc(crtc), min_pxlclk);
+	if (clk_round_rate(mdev->aclk, min_aclk) < min_aclk) {
+		DRM_DEBUG_ATOMIC("engine clk can't satisfy the requirement of %s-clk: %lu.\n",
+				 m->name, min_pxlclk);
 
 		return MODE_CLOCK_HIGH;
 	}
@@ -377,10 +449,22 @@ static bool komeda_crtc_mode_fixup(struct drm_crtc *crtc,
 				   struct drm_display_mode *adjusted_mode)
 {
 	struct komeda_crtc *kcrtc = to_kcrtc(crtc);
-	struct komeda_pipeline *master = kcrtc->master;
-	long mode_clk = m->clock * 1000;
+	unsigned long clk_rate;
 
-	adjusted_mode->clock = clk_round_rate(master->pxlclk, mode_clk) / 1000;
+	drm_mode_set_crtcinfo(adjusted_mode, 0);
+	/* In dual link half the horizontal settings */
+	if (kcrtc->master->dual_link) {
+		adjusted_mode->crtc_clock /= 2;
+		adjusted_mode->crtc_hdisplay /= 2;
+		adjusted_mode->crtc_hsync_start /= 2;
+		adjusted_mode->crtc_hsync_end /= 2;
+		adjusted_mode->crtc_htotal /= 2;
+	}
+
+	clk_rate = adjusted_mode->crtc_clock * 1000;
+	/* crtc_clock will be used as the komeda output pixel clock */
+	adjusted_mode->crtc_clock = clk_round_rate(kcrtc->master->pxlclk,
+						   clk_rate) / 1000;
 
 	return true;
 }
@@ -488,10 +572,8 @@ int komeda_kms_setup_crtcs(struct komeda_kms_dev *kms,
 		else
 			sprintf(str, "None");
 
-		DRM_INFO("crtc%d: master(pipe-%d) slave(%s) output: %s.\n",
-			 kms->n_crtcs, master->id, str,
-			 master->of_output_dev ?
-			 master->of_output_dev->full_name : "None");
+		DRM_INFO("CRTC-%d: master(pipe-%d) slave(%s).\n",
+			 kms->n_crtcs, master->id, str);
 
 		kms->n_crtcs++;
 	}

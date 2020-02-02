@@ -77,7 +77,7 @@
 		gpio = <&gpio0 RK_PA1 GPIO_ACTIVE_HIGH>;
 		pinctrl-names = "default";
 		pinctrl-0 = <&sdmmc0_pwr_h>;
-		regulator-always-on;
+		regulator-boot-on;
 		regulator-max-microvolt = <3000000>;
 		regulator-min-microvolt = <3000000>;
 		regulator-name = "vcc3v0_sd";
@@ -540,6 +540,7 @@
 	max-frequency = <150000000>;
 	pinctrl-names = "default";
 	pinctrl-0 = <&sdmmc_clk &sdmmc_cmd &sdmmc_cd &sdmmc_bus4>;
+	sd-uhs-sdr104;
 	vmmc-supply = <&vcc3v0_sd>;
 	vqmmc-supply = <&vcc_sdio>;
 	status = "okay";

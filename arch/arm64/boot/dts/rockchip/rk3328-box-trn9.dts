@@ -55,8 +55,6 @@
 	vcc_sys: vcc-sys {
 		compatible = "regulator-fixed";
 		regulator-name = "vcc_sys";
-		regulator-always-on;
-		regulator-boot-on;
 		regulator-min-microvolt = <5000000>;
 		regulator-max-microvolt = <5000000>;
 	};
@@ -78,44 +76,20 @@
 		};
 	};
 
-	hdmi-sound {
-		compatible = "audio-graph-card";
-		label = "HDMI";
-		dais = <&i2s0_p0>;
+	sdio_pwrseq: sdio-pwrseq {
+		compatible = "mmc-pwrseq-simple";
+		pinctrl-names = "default";
+		pinctrl-0 = <&wifi_enable_h>;
+		reset-gpios = <&gpio3 RK_PB0 GPIO_ACTIVE_LOW>;
 	};
+};
 
-	sound {
-		compatible = "audio-graph-card";
-		label = "I2S";
-		dais = <&i2s1_p0>;
-	};
-
-	spdif-sound {
-		compatible = "audio-graph-card";
-		label = "SPDIF";
-		dais = <&spdif_p0>;
-	};
-
-	spdif-dit {
-		compatible = "linux,spdif-dit";
-		#sound-dai-cells = <0>;
-
-		port {
-			dit_p0_0: endpoint {
-				remote-endpoint = <&spdif_p0_0>;
-			};
-		};
-	};
+&analog_sound {
+	status = "okay";
 };
 
 &codec {
 	status = "okay";
-
-	port@0 {
-		codec_p0_0: endpoint {
-			remote-endpoint = <&i2s1_p0_0>;
-		};
-	};
 };
 
 &cpu0 {
@@ -137,6 +111,7 @@
 &emmc {
 	bus-width = <8>;
 	cap-mmc-highspeed;
+	mmc-ddr-1_8v;
 	mmc-hs200-1_8v;
 	non-removable;
 	pinctrl-names = "default";
@@ -150,12 +125,13 @@
 	assigned-clocks = <&cru SCLK_MAC2IO>, <&cru SCLK_MAC2IO_EXT>;
 	assigned-clock-parents = <&gmac_clkin>, <&gmac_clkin>;
 	clock_in_out = "input";
-	phy-supply = <&vcc_io>;
 	phy-mode = "rgmii";
+	phy-supply = <&vcc_io>;
 	pinctrl-names = "default";
 	pinctrl-0 = <&rgmiim1_pins>;
-	snps,force_thresh_dma_mode;
-	snps,reset-gpio = <&gpio1 RK_PC2 GPIO_ACTIVE_LOW>;
+	snps,aal;
+	snps,pbl = <0x4>;
+	snps,reset-gpio = <&gpio2 RK_PC1 GPIO_ACTIVE_LOW>;
 	snps,reset-active-low;
 	snps,reset-delays-us = <0 10000 50000>;
 	tx_delay = <0x26>;
@@ -163,17 +139,19 @@
 	status = "okay";
 };
 
+&gpu {
+	mali-supply = <&vdd_logic>;
+};
+
 &hdmi {
 	status = "okay";
-
-	port@0 {
-		hdmi_p0_0: endpoint {
-			remote-endpoint = <&i2s0_p0_0>;
-		};
-	};
 };
 
 &hdmiphy {
+	status = "okay";
+};
+
+&hdmi_sound {
 	status = "okay";
 };
 
@@ -199,7 +177,7 @@
 		vcc3-supply = <&vcc_sys>;
 		vcc4-supply = <&vcc_sys>;
 		vcc5-supply = <&vcc_io>;
-		vcc6-supply = <&vcc_sys>;
+		vcc6-supply = <&vcc_io>;
 
 		regulators {
 			vdd_logic: DCDC_REG1 {
@@ -290,31 +268,13 @@
 
 &i2s0 {
 	status = "okay";
-
-	i2s0_p0: port {
-		i2s0_p0_0: endpoint {
-			dai-format = "i2s";
-			mclk-fs = <256>;
-			remote-endpoint = <&hdmi_p0_0>;
-		};
-	};
 };
 
 &i2s1 {
 	status = "okay";
-
-	i2s1_p0: port {
-		i2s1_p0_0: endpoint {
-			dai-format = "i2s";
-			mclk-fs = <256>;
-			remote-endpoint = <&codec_p0_0>;
-		};
-	};
 };
 
 &io_domains {
-	status = "okay";
-
 	vccio1-supply = <&vcc_io>;
 	vccio2-supply = <&vcc18_emmc>;
 	vccio3-supply = <&vcc_io>;
@@ -322,6 +282,7 @@
 	vccio5-supply = <&vcc_io>;
 	vccio6-supply = <&vcc_18>;
 	pmuio-supply = <&vcc_io>;
+	status = "okay";
 };
 
 &pinctrl {
@@ -346,6 +307,15 @@
 		};
 	};
 
+	sdio-pwrseq {
+		wifi_enable_h: wifi-enable-h {
+			rockchip,pins = <3 RK_PB0 RK_FUNC_GPIO &pcfg_pull_none>,
+				<3 RK_PA1 RK_FUNC_GPIO &pcfg_pull_none_4ma>,
+				<1 RK_PD0 RK_FUNC_GPIO &pcfg_pull_none>,
+				<1 RK_PD2 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+	};
+
 	usb2 {
 		usb20_host_drv: usb20-host-drv {
 			rockchip,pins = <0 RK_PA2 RK_FUNC_GPIO &pcfg_pull_none>;
@@ -359,12 +329,25 @@
 	};
 };
 
+&sdmmc_ext {
+	bus-width = <4>;
+	cap-sd-highspeed;
+	cap-sdio-irq;
+	keep-power-in-suspend;
+	mmc-pwrseq = <&sdio_pwrseq>;
+	non-removable;
+	num-slots = <1>;
+	pinctrl-names = "default";
+	pinctrl-0 = <&sdmmc0ext_bus4 &sdmmc0ext_cmd &sdmmc0ext_clk>;
+	sd-uhs-sdr104;
+	status = "okay";
+};
+
 &sdmmc {
 	bus-width = <4>;
 	cap-mmc-highspeed;
 	cap-sd-highspeed;
 	disable-wp;
-	max-frequency = <150000000>;
 	pinctrl-names = "default";
 	pinctrl-0 = <&sdmmc0_clk &sdmmc0_cmd &sdmmc0_dectn &sdmmc0_bus4>;
 	vmmc-supply = <&vcc_sd>;
@@ -374,12 +357,14 @@
 &spdif {
 	pinctrl-0 = <&spdifm0_tx>;
 	status = "okay";
+};
 
-	spdif_p0: port {
-		spdif_p0_0: endpoint {
-			remote-endpoint = <&dit_p0_0>;
-		};
-	};
+&spdif_out {
+	status = "okay";
+};
+
+&spdif_sound {
+	status = "okay";
 };
 
 &tsadc {

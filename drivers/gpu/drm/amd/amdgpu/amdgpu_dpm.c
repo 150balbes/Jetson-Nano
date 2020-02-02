@@ -911,7 +911,8 @@ int amdgpu_dpm_get_sclk(struct amdgpu_device *adev, bool low)
 	if (is_support_sw_smu(adev)) {
 		ret = smu_get_dpm_freq_range(&adev->smu, SMU_GFXCLK,
 					     low ? &clk_freq : NULL,
-					     !low ? &clk_freq : NULL);
+					     !low ? &clk_freq : NULL,
+					     true);
 		if (ret)
 			return 0;
 		return clk_freq * 100;
@@ -928,7 +929,8 @@ int amdgpu_dpm_get_mclk(struct amdgpu_device *adev, bool low)
 	if (is_support_sw_smu(adev)) {
 		ret = smu_get_dpm_freq_range(&adev->smu, SMU_UCLK,
 					     low ? &clk_freq : NULL,
-					     !low ? &clk_freq : NULL);
+					     !low ? &clk_freq : NULL,
+					     true);
 		if (ret)
 			return 0;
 		return clk_freq * 100;
@@ -948,6 +950,7 @@ int amdgpu_dpm_set_powergating_by_smu(struct amdgpu_device *adev, uint32_t block
 	case AMD_IP_BLOCK_TYPE_UVD:
 	case AMD_IP_BLOCK_TYPE_VCN:
 	case AMD_IP_BLOCK_TYPE_VCE:
+	case AMD_IP_BLOCK_TYPE_SDMA:
 		if (swsmu)
 			ret = smu_dpm_set_power_gate(&adev->smu, block_type, gate);
 		else
@@ -956,7 +959,6 @@ int amdgpu_dpm_set_powergating_by_smu(struct amdgpu_device *adev, uint32_t block
 		break;
 	case AMD_IP_BLOCK_TYPE_GMC:
 	case AMD_IP_BLOCK_TYPE_ACP:
-	case AMD_IP_BLOCK_TYPE_SDMA:
 		ret = ((adev)->powerplay.pp_funcs->set_powergating_by_smu(
 				(adev)->powerplay.pp_handle, block_type, gate));
 		break;

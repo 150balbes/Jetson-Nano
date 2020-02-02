@@ -5,17 +5,19 @@
  * Author: Rob Clark <robdclark@gmail.com>
  */
 
+#include <linux/delay.h>
 #include <linux/interconnect.h>
 #include <linux/of_irq.h>
+
+#include <drm/drm_debugfs.h>
+#include <drm/drm_drv.h>
+#include <drm/drm_file.h>
+#include <drm/drm_vblank.h>
 
 #include "msm_drv.h"
 #include "msm_gem.h"
 #include "msm_mmu.h"
 #include "mdp5_kms.h"
-
-static const char *iommu_ports[] = {
-		"mdp_0",
-};
 
 static int mdp5_hw_init(struct msm_kms *kms)
 {
@@ -140,40 +142,52 @@ static int mdp5_global_obj_init(struct mdp5_kms *mdp5_kms)
 	return 0;
 }
 
+static void mdp5_enable_commit(struct msm_kms *kms)
+{
+	struct mdp5_kms *mdp5_kms = to_mdp5_kms(to_mdp_kms(kms));
+	pm_runtime_get_sync(&mdp5_kms->pdev->dev);
+}
+
+static void mdp5_disable_commit(struct msm_kms *kms)
+{
+	struct mdp5_kms *mdp5_kms = to_mdp5_kms(to_mdp_kms(kms));
+	pm_runtime_put_sync(&mdp5_kms->pdev->dev);
+}
+
 static void mdp5_prepare_commit(struct msm_kms *kms, struct drm_atomic_state *state)
 {
 	struct mdp5_kms *mdp5_kms = to_mdp5_kms(to_mdp_kms(kms));
-	struct device *dev = &mdp5_kms->pdev->dev;
 	struct mdp5_global_state *global_state;
 
 	global_state = mdp5_get_existing_global_state(mdp5_kms);
-
-	pm_runtime_get_sync(dev);
 
 	if (mdp5_kms->smp)
 		mdp5_smp_prepare_commit(mdp5_kms->smp, &global_state->smp);
 }
 
-static void mdp5_complete_commit(struct msm_kms *kms, struct drm_atomic_state *state)
+static void mdp5_flush_commit(struct msm_kms *kms, unsigned crtc_mask)
+{
+	/* TODO */
+}
+
+static void mdp5_wait_flush(struct msm_kms *kms, unsigned crtc_mask)
 {
 	struct mdp5_kms *mdp5_kms = to_mdp5_kms(to_mdp_kms(kms));
-	struct device *dev = &mdp5_kms->pdev->dev;
-	struct mdp5_global_state *global_state;
+	struct drm_crtc *crtc;
 
-	drm_atomic_helper_wait_for_vblanks(mdp5_kms->dev, state);
+	for_each_crtc_mask(mdp5_kms->dev, crtc, crtc_mask)
+		mdp5_crtc_wait_for_commit_done(crtc);
+}
+
+static void mdp5_complete_commit(struct msm_kms *kms, unsigned crtc_mask)
+{
+	struct mdp5_kms *mdp5_kms = to_mdp5_kms(to_mdp_kms(kms));
+	struct mdp5_global_state *global_state;
 
 	global_state = mdp5_get_existing_global_state(mdp5_kms);
 
 	if (mdp5_kms->smp)
 		mdp5_smp_complete_commit(mdp5_kms->smp, &global_state->smp);
-
-	pm_runtime_put_sync(dev);
-}
-
-static void mdp5_wait_for_crtc_commit_done(struct msm_kms *kms,
-						struct drm_crtc *crtc)
-{
-	mdp5_crtc_wait_for_commit_done(crtc);
 }
 
 static long mdp5_round_pixclk(struct msm_kms *kms, unsigned long rate,
@@ -215,8 +229,7 @@ static void mdp5_kms_destroy(struct msm_kms *kms)
 		mdp5_pipe_destroy(mdp5_kms->hwpipes[i]);
 
 	if (aspace) {
-		aspace->mmu->funcs->detach(aspace->mmu,
-				iommu_ports, ARRAY_SIZE(iommu_ports));
+		aspace->mmu->funcs->detach(aspace->mmu);
 		msm_gem_address_space_put(aspace);
 	}
 }
@@ -271,9 +284,12 @@ static const struct mdp_kms_funcs kms_funcs = {
 		.irq             = mdp5_irq,
 		.enable_vblank   = mdp5_enable_vblank,
 		.disable_vblank  = mdp5_disable_vblank,
+		.flush_commit    = mdp5_flush_commit,
+		.enable_commit   = mdp5_enable_commit,
+		.disable_commit  = mdp5_disable_commit,
 		.prepare_commit  = mdp5_prepare_commit,
+		.wait_flush      = mdp5_wait_flush,
 		.complete_commit = mdp5_complete_commit,
-		.wait_for_crtc_commit_done = mdp5_wait_for_crtc_commit_done,
 		.get_format      = mdp_get_format,
 		.round_pixclk    = mdp5_round_pixclk,
 		.set_split_display = mdp5_set_split_display,
@@ -293,6 +309,10 @@ int mdp5_disable(struct mdp5_kms *mdp5_kms)
 	mdp5_kms->enable_count--;
 	WARN_ON(mdp5_kms->enable_count < 0);
 
+	if (mdp5_kms->tbu_rt_clk)
+		clk_disable_unprepare(mdp5_kms->tbu_rt_clk);
+	if (mdp5_kms->tbu_clk)
+		clk_disable_unprepare(mdp5_kms->tbu_clk);
 	clk_disable_unprepare(mdp5_kms->ahb_clk);
 	clk_disable_unprepare(mdp5_kms->axi_clk);
 	clk_disable_unprepare(mdp5_kms->core_clk);
@@ -313,6 +333,10 @@ int mdp5_enable(struct mdp5_kms *mdp5_kms)
 	clk_prepare_enable(mdp5_kms->core_clk);
 	if (mdp5_kms->lut_clk)
 		clk_prepare_enable(mdp5_kms->lut_clk);
+	if (mdp5_kms->tbu_clk)
+		clk_prepare_enable(mdp5_kms->tbu_clk);
+	if (mdp5_kms->tbu_rt_clk)
+		clk_prepare_enable(mdp5_kms->tbu_rt_clk);
 
 	return 0;
 }
@@ -445,13 +469,10 @@ static int modeset_init(struct mdp5_kms *mdp5_kms)
 {
 	struct drm_device *dev = mdp5_kms->dev;
 	struct msm_drm_private *priv = dev->dev_private;
-	const struct mdp5_cfg_hw *hw_cfg;
 	unsigned int num_crtcs;
 	int i, ret, pi = 0, ci = 0;
 	struct drm_plane *primary[MAX_BASES] = { NULL };
 	struct drm_plane *cursor[MAX_BASES] = { NULL };
-
-	hw_cfg = mdp5_cfg_get_hw_config(mdp5_kms->cfg);
 
 	/*
 	 * Construct encoders and modeset initialize connector devices
@@ -663,6 +684,7 @@ struct msm_kms *mdp5_kms_init(struct drm_device *dev)
 	struct msm_kms *kms;
 	struct msm_gem_address_space *aspace;
 	int irq, i, ret;
+	struct device *iommu_dev;
 
 	/* priv->kms would have been populated by the MDP5 driver */
 	kms = priv->kms;
@@ -702,7 +724,11 @@ struct msm_kms *mdp5_kms_init(struct drm_device *dev)
 	mdelay(16);
 
 	if (config->platform.iommu) {
-		aspace = msm_gem_address_space_create(&pdev->dev,
+		iommu_dev = &pdev->dev;
+		if (!iommu_dev->iommu_fwspec)
+			iommu_dev = iommu_dev->parent;
+
+		aspace = msm_gem_address_space_create(iommu_dev,
 				config->platform.iommu, "mdp5");
 		if (IS_ERR(aspace)) {
 			ret = PTR_ERR(aspace);
@@ -711,8 +737,7 @@ struct msm_kms *mdp5_kms_init(struct drm_device *dev)
 
 		kms->aspace = aspace;
 
-		ret = aspace->mmu->funcs->attach(aspace->mmu, iommu_ports,
-				ARRAY_SIZE(iommu_ports));
+		ret = aspace->mmu->funcs->attach(aspace->mmu);
 		if (ret) {
 			DRM_DEV_ERROR(&pdev->dev, "failed to attach iommu: %d\n",
 				ret);
@@ -948,6 +973,8 @@ static int mdp5_init(struct platform_device *pdev, struct drm_device *dev)
 
 	/* optional clocks: */
 	get_clk(pdev, &mdp5_kms->lut_clk, "lut", false);
+	get_clk(pdev, &mdp5_kms->tbu_clk, "tbu", false);
+	get_clk(pdev, &mdp5_kms->tbu_rt_clk, "tbu_rt", false);
 
 	/* we need to set a default rate before enabling.  Set a safe
 	 * rate first, then figure out hw revision, and then set a

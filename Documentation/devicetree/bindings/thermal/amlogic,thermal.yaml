@@ -9,15 +9,15 @@ title: Amlogic Thermal
 maintainers:
   - Guillaume La Roque <glaroque@baylibre.com>
 
-description: Binding for Amlogic Thermal Driver
+description: Binding for Amlogic Thermal
 
 properties:
   compatible:
       items:
         - enum:
-            - amlogic,g12-cpu-thermal
-            - amlogic,g12-ddr-thermal
-        - const: amlogic,g12-thermal
+            - amlogic,g12a-cpu-thermal
+            - amlogic,g12a-ddr-thermal
+        - const: amlogic,g12a-thermal
 
   reg:
     maxItems: 1
@@ -43,8 +43,8 @@ required:
 examples:
   - |
         cpu_temp: temperature-sensor@ff634800 {
-                compatible = "amlogic,g12-cpu-thermal",
-                             "amlogic,g12-thermal";
+                compatible = "amlogic,g12a-cpu-thermal",
+                             "amlogic,g12a-thermal";
                 reg = <0xff634800 0x50>;
                 interrupts = <0x0 0x24 0x0>;
                 clocks = <&clk 164>;

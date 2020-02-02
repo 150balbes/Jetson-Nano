@@ -639,7 +639,8 @@ static int
 qca8k_setup(struct dsa_switch *ds)
 {
 	struct qca8k_priv *priv = (struct qca8k_priv *)ds->priv;
-	int ret, i, phy_mode = -1;
+	phy_interface_t phy_mode = PHY_INTERFACE_MODE_NA;
+	int ret, i;
 	u32 mask;
 
 	/* Make sure that port 0 is the cpu port */
@@ -661,10 +662,10 @@ qca8k_setup(struct dsa_switch *ds)
 		return ret;
 
 	/* Initialize CPU port pad mode (xMII type, delays...) */
-	phy_mode = of_get_phy_mode(ds->ports[QCA8K_CPU_PORT].dn);
-	if (phy_mode < 0) {
+	ret = of_get_phy_mode(dsa_to_port(ds, QCA8K_CPU_PORT)->dn, &phy_mode);
+	if (ret) {
 		pr_err("Can't find phy-mode for master device\n");
-		return phy_mode;
+		return ret;
 	}
 	ret = qca8k_set_pad_ctrl(priv, QCA8K_CPU_PORT, phy_mode);
 	if (ret < 0)
@@ -705,7 +706,7 @@ qca8k_setup(struct dsa_switch *ds)
 		    BIT(0) << QCA8K_GLOBAL_FW_CTRL1_UC_DP_S);
 
 	/* Setup connection between CPU port & user ports */
-	for (i = 0; i < DSA_MAX_PORTS; i++) {
+	for (i = 0; i < QCA8K_NUM_PORTS; i++) {
 		/* CPU port gets connected to all user ports of the switch */
 		if (dsa_is_cpu_port(ds, i)) {
 			qca8k_rmw(priv, QCA8K_PORT_LOOKUP_CTRL(QCA8K_CPU_PORT),
@@ -936,6 +937,9 @@ qca8k_port_enable(struct dsa_switch *ds, int port,
 {
 	struct qca8k_priv *priv = (struct qca8k_priv *)ds->priv;
 
+	if (!dsa_is_user_port(ds, port))
+		return 0;
+
 	qca8k_port_set_status(priv, port, 1);
 	priv->port_sts[port].enabled = 1;
 
@@ -1074,10 +1078,13 @@ qca8k_sw_probe(struct mdio_device *mdiodev)
 	if (id != QCA8K_ID_QCA8337)
 		return -ENODEV;
 
-	priv->ds = dsa_switch_alloc(&mdiodev->dev, DSA_MAX_PORTS);
+	priv->ds = devm_kzalloc(&mdiodev->dev, sizeof(*priv->ds),
+				QCA8K_NUM_PORTS);
 	if (!priv->ds)
 		return -ENOMEM;
 
+	priv->ds->dev = &mdiodev->dev;
+	priv->ds->num_ports = QCA8K_NUM_PORTS;
 	priv->ds->priv = priv;
 	priv->ops = qca8k_switch_ops;
 	priv->ds->ops = &priv->ops;

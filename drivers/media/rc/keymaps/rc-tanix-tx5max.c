@@ -5,12 +5,10 @@
 #include <linux/module.h>
 
 /*
- * This keymap is used with the Oranth Tanix TX5 max
- * and other Android STB devices.
+ * Keymap for the Tanix TX5 max STB remote control
  */
 
 static struct rc_map_table tanix_tx5max[] = {
-
 	{ 0x40404d, KEY_POWER },
 	{ 0x404043, KEY_MUTE },
 
@@ -39,17 +37,16 @@ static struct rc_map_table tanix_tx5max[] = {
 	{ 0x404008, KEY_8 },
 	{ 0x404009, KEY_9 },
 
-	{ 0x404047, KEY_MUTE }, // mouse
+	{ 0x404047, KEY_SUBTITLE }, // mouse
 	{ 0x404000, KEY_0 },
 	{ 0x40400c, KEY_DELETE },
-
 };
 
 static struct rc_map_list tanix_tx5max_map = {
 	.map = {
 		.scan     = tanix_tx5max,
 		.size     = ARRAY_SIZE(tanix_tx5max),
-		.rc_proto = RC_PROTO_NEC,
+		.rc_proto = RC_PROTO_NECX,
 		.name     = RC_MAP_TANIX_TX5MAX,
 	}
 };

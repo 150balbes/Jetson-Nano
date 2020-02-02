@@ -351,10 +351,7 @@ static struct attribute *gpio_keys_attrs[] = {
 	&dev_attr_disabled_switches.attr,
 	NULL,
 };
-
-static const struct attribute_group gpio_keys_attr_group = {
-	.attrs = gpio_keys_attrs,
-};
+ATTRIBUTE_GROUPS(gpio_keys);
 
 static void gpio_keys_gpio_report_event(struct gpio_button_data *bdata)
 {
@@ -497,10 +494,8 @@ static int gpio_keys_setup_key(struct platform_device *pdev,
 	spin_lock_init(&bdata->lock);
 
 	if (child) {
-		bdata->gpiod = devm_fwnode_get_gpiod_from_child(dev, NULL,
-								child,
-								GPIOD_IN,
-								desc);
+		bdata->gpiod = devm_fwnode_gpiod_get(dev, child,
+						     NULL, GPIOD_IN, desc);
 		if (IS_ERR(bdata->gpiod)) {
 			error = PTR_ERR(bdata->gpiod);
 			if (error == -ENOENT) {
@@ -851,13 +846,6 @@ static int gpio_keys_probe(struct platform_device *pdev)
 
 	fwnode_handle_put(child);
 
-	error = devm_device_add_group(dev, &gpio_keys_attr_group);
-	if (error) {
-		dev_err(dev, "Unable to export keys/switches, error: %d\n",
-			error);
-		return error;
-	}
-
 	error = input_register_device(input);
 	if (error) {
 		dev_err(dev, "Unable to register input device, error: %d\n",
@@ -1026,6 +1014,7 @@ static struct platform_driver gpio_keys_device_driver = {
 		.name	= "gpio-keys",
 		.pm	= &gpio_keys_pm_ops,
 		.of_match_table = gpio_keys_of_match,
+		.dev_groups	= gpio_keys_groups,
 	}
 };
 

@@ -31,7 +31,7 @@
  * inode it finds, it calls a walk function with the relevant inode number and
  * a pointer to caller-provided data.  The walk function can return the usual
  * negative error code to stop the iteration; 0 to continue the iteration; or
- * XFS_IWALK_ABORT to stop the iteration.  This return value is returned to the
+ * -ECANCELED to stop the iteration.  This return value is returned to the
  * caller.
  *
  * Internally, we allow the walk function to do anything, which means that we
@@ -298,7 +298,8 @@ xfs_iwalk_ag_start(
 	error = xfs_inobt_get_rec(*curpp, irec, has_more);
 	if (error)
 		return error;
-	XFS_WANT_CORRUPTED_RETURN(mp, *has_more == 1);
+	if (XFS_IS_CORRUPT(mp, *has_more != 1))
+		return -EFSCORRUPTED;
 
 	/*
 	 * If the LE lookup yielded an inobt record before the cursor position,
@@ -616,7 +617,7 @@ xfs_iwalk_threaded(
 		if (xfs_pwork_ctl_want_abort(&pctl))
 			break;
 
-		iwag = kmem_zalloc(sizeof(struct xfs_iwalk_ag), KM_SLEEP);
+		iwag = kmem_zalloc(sizeof(struct xfs_iwalk_ag), 0);
 		iwag->mp = mp;
 		iwag->iwalk_fn = iwalk_fn;
 		iwag->data = data;

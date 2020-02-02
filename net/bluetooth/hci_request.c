@@ -904,9 +904,9 @@ static u8 get_adv_instance_scan_rsp_len(struct hci_dev *hdev, u8 instance)
 {
 	struct adv_info *adv_instance;
 
-	/* Ignore instance 0 */
+	/* Instance 0x00 always set local name */
 	if (instance == 0x00)
-		return 0;
+		return 1;
 
 	adv_instance = hci_find_adv_instance(hdev, instance);
 	if (!adv_instance)
@@ -923,9 +923,9 @@ static u8 get_cur_adv_instance_scan_rsp_len(struct hci_dev *hdev)
 	u8 instance = hdev->cur_adv_instance;
 	struct adv_info *adv_instance;
 
-	/* Ignore instance 0 */
+	/* Instance 0x00 always set local name */
 	if (instance == 0x00)
-		return 0;
+		return 1;
 
 	adv_instance = hci_find_adv_instance(hdev, instance);
 	if (!adv_instance)
@@ -1054,6 +1054,7 @@ void __hci_req_enable_advertising(struct hci_request *req)
 	struct hci_cp_le_set_adv_param cp;
 	u8 own_addr_type, enable = 0x01;
 	bool connectable;
+	u16 adv_min_interval, adv_max_interval;
 	u32 flags;
 
 	flags = get_adv_instance_flags(hdev, hdev->cur_adv_instance);
@@ -1087,16 +1088,30 @@ void __hci_req_enable_advertising(struct hci_request *req)
 		return;
 
 	memset(&cp, 0, sizeof(cp));
-	cp.min_interval = cpu_to_le16(hdev->le_adv_min_interval);
-	cp.max_interval = cpu_to_le16(hdev->le_adv_max_interval);
 
-	if (connectable)
+	if (connectable) {
 		cp.type = LE_ADV_IND;
-	else if (get_cur_adv_instance_scan_rsp_len(hdev))
-		cp.type = LE_ADV_SCAN_IND;
-	else
-		cp.type = LE_ADV_NONCONN_IND;
 
+		adv_min_interval = hdev->le_adv_min_interval;
+		adv_max_interval = hdev->le_adv_max_interval;
+	} else {
+		if (get_cur_adv_instance_scan_rsp_len(hdev))
+			cp.type = LE_ADV_SCAN_IND;
+		else
+			cp.type = LE_ADV_NONCONN_IND;
+
+		if (!hci_dev_test_flag(hdev, HCI_DISCOVERABLE) ||
+		    hci_dev_test_flag(hdev, HCI_LIMITED_DISCOVERABLE)) {
+			adv_min_interval = DISCOV_LE_FAST_ADV_INT_MIN;
+			adv_max_interval = DISCOV_LE_FAST_ADV_INT_MAX;
+		} else {
+			adv_min_interval = hdev->le_adv_min_interval;
+			adv_max_interval = hdev->le_adv_max_interval;
+		}
+	}
+
+	cp.min_interval = cpu_to_le16(adv_min_interval);
+	cp.max_interval = cpu_to_le16(adv_max_interval);
 	cp.own_address_type = own_addr_type;
 	cp.channel_map = hdev->le_adv_channel_map;
 
@@ -1258,6 +1273,14 @@ static u8 create_instance_adv_data(struct hci_dev *hdev, u8 instance, u8 *ptr)
 
 	instance_flags = get_adv_instance_flags(hdev, instance);
 
+	/* If instance already has the flags set skip adding it once
+	 * again.
+	 */
+	if (adv_instance && eir_get_data(adv_instance->adv_data,
+					 adv_instance->adv_data_len, EIR_FLAGS,
+					 NULL))
+		goto skip_flags;
+
 	/* The Add Advertising command allows userspace to set both the general
 	 * and limited discoverable flags.
 	 */
@@ -1290,6 +1313,7 @@ static u8 create_instance_adv_data(struct hci_dev *hdev, u8 instance, u8 *ptr)
 		}
 	}
 
+skip_flags:
 	if (adv_instance) {
 		memcpy(ptr, adv_instance->adv_data,
 		       adv_instance->adv_data_len);
@@ -1675,7 +1699,7 @@ int __hci_req_enable_ext_advertising(struct hci_request *req, u8 instance)
 	 * scheduling it.
 	 */
 	if (adv_instance && adv_instance->duration) {
-		u16 duration = adv_instance->duration * MSEC_PER_SEC;
+		u16 duration = adv_instance->timeout * MSEC_PER_SEC;
 
 		/* Time = N * 10 ms */
 		adv_set->duration = cpu_to_le16(duration / 10);

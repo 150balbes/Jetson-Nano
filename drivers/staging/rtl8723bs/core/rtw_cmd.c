@@ -372,13 +372,13 @@ void rtw_free_cmd_obj(struct cmd_obj *pcmd)
 	if ((pcmd->cmdcode != _JoinBss_CMD_) &&
 	    (pcmd->cmdcode != _CreateBss_CMD_)) {
 		/* free parmbuf in cmd_obj */
-		kfree((unsigned char *)pcmd->parmbuf);
+		kfree(pcmd->parmbuf);
 	}
 
 	if (pcmd->rsp != NULL) {
 		if (pcmd->rspsz != 0) {
 			/* free rsp in cmd_obj */
-			kfree((unsigned char *)pcmd->rsp);
+			kfree(pcmd->rsp);
 		}
 	}
 
@@ -402,7 +402,7 @@ int rtw_cmd_thread(void *context)
 {
 	u8 ret;
 	struct cmd_obj *pcmd;
-	u8 *pcmdbuf, *prspbuf;
+	u8 *pcmdbuf;
 	unsigned long cmd_start_time;
 	unsigned long cmd_process_time;
 	u8 (*cmd_hdl)(struct adapter *padapter, u8 *pbuf);
@@ -414,7 +414,6 @@ int rtw_cmd_thread(void *context)
 	thread_enter("RTW_CMD_THREAD");
 
 	pcmdbuf = pcmdpriv->cmd_buf;
-	prspbuf = pcmdpriv->rsp_buf;
 
 	pcmdpriv->stop_req = 0;
 	atomic_set(&(pcmdpriv->cmdthd_running), true);
@@ -508,19 +507,9 @@ post_process:
 
 		cmd_process_time = jiffies_to_msecs(jiffies - cmd_start_time);
 		if (cmd_process_time > 1000) {
-			if (pcmd->cmdcode == GEN_CMD_CODE(_Set_Drv_Extra)) {
-				DBG_871X(ADPT_FMT" cmd =%d process_time =%lu > 1 sec\n",
-					ADPT_ARG(pcmd->padapter), pcmd->cmdcode, cmd_process_time);
-				/* rtw_warn_on(1); */
-			} else if (pcmd->cmdcode == GEN_CMD_CODE(_Set_MLME_EVT)) {
-				DBG_871X(ADPT_FMT" cmd =%d, process_time =%lu > 1 sec\n",
-					ADPT_ARG(pcmd->padapter), pcmd->cmdcode, cmd_process_time);
-				/* rtw_warn_on(1); */
-			} else {
-				DBG_871X(ADPT_FMT" cmd =%d, process_time =%lu > 1 sec\n",
-					ADPT_ARG(pcmd->padapter), pcmd->cmdcode, cmd_process_time);
-				/* rtw_warn_on(1); */
-			}
+			DBG_871X(ADPT_FMT "cmd= %d process_time= %lu > 1 sec\n",
+				 ADPT_ARG(pcmd->padapter), pcmd->cmdcode,
+				 cmd_process_time);
 		}
 
 		/* call callback function for post-processed */
@@ -768,7 +757,7 @@ exit:
 
 u8 rtw_joinbss_cmd(struct adapter  *padapter, struct wlan_network *pnetwork)
 {
-	u8 *auth, res = _SUCCESS;
+	u8 res = _SUCCESS;
 	uint	t_len = 0;
 	struct wlan_bssid_ex		*psecnetwork;
 	struct cmd_obj		*pcmd;
@@ -825,7 +814,6 @@ u8 rtw_joinbss_cmd(struct adapter  *padapter, struct wlan_network *pnetwork)
 
 	memcpy(psecnetwork, &pnetwork->network, get_wlan_bssid_ex_sz(&pnetwork->network));
 
-	auth = &psecuritypriv->authenticator_ie[0];
 	psecuritypriv->authenticator_ie[0] = (unsigned char)psecnetwork->IELength;
 
 	if ((psecnetwork->IELength-12) < (256-1)) {
@@ -1818,11 +1806,6 @@ static void rtw_btinfo_hdl(struct adapter *adapter, u8 *buf, u16 buf_len)
 	} else {
 		len = info->len;
 	}
-
-/* define DBG_PROC_SET_BTINFO_EVT */
-#ifdef DBG_PROC_SET_BTINFO_EVT
-	btinfo_evt_dump(RTW_DBGDUMP, info);
-#endif
 
 	/* transform BT-FW btinfo to WiFI-FW C2H format and notify */
 	if (cmd_idx == BTINFO_WIFI_FETCH)

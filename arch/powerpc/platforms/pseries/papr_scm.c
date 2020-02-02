@@ -65,29 +65,21 @@ static int drc_pmem_bind(struct papr_scm_priv *p)
 		cond_resched();
 	} while (rc == H_BUSY);
 
-	if (rc) {
-		/* H_OVERLAP needs a separate error path */
-		if (rc == H_OVERLAP)
-			return -EBUSY;
-
-		dev_err(&p->pdev->dev, "bind err: %lld\n", rc);
-		return -ENXIO;
-	}
+	if (rc)
+		return rc;
 
 	p->bound_addr = saved;
-
-	dev_dbg(&p->pdev->dev, "bound drc %x to %pR\n", p->drc_index, &p->res);
-
-	return 0;
+	dev_dbg(&p->pdev->dev, "bound drc 0x%x to %pR\n", p->drc_index, &p->res);
+	return rc;
 }
 
-static int drc_pmem_unbind(struct papr_scm_priv *p)
+static void drc_pmem_unbind(struct papr_scm_priv *p)
 {
 	unsigned long ret[PLPAR_HCALL_BUFSIZE];
 	uint64_t token = 0;
 	int64_t rc;
 
-	dev_dbg(&p->pdev->dev, "unbind drc %x\n", p->drc_index);
+	dev_dbg(&p->pdev->dev, "unbind drc 0x%x\n", p->drc_index);
 
 	/* NB: unbind has the same retry requirements as drc_pmem_bind() */
 	do {
@@ -110,11 +102,47 @@ static int drc_pmem_unbind(struct papr_scm_priv *p)
 	if (rc)
 		dev_err(&p->pdev->dev, "unbind error: %lld\n", rc);
 	else
-		dev_dbg(&p->pdev->dev, "unbind drc %x complete\n",
+		dev_dbg(&p->pdev->dev, "unbind drc 0x%x complete\n",
 			p->drc_index);
 
-	return rc == H_SUCCESS ? 0 : -ENXIO;
+	return;
 }
+
+static int drc_pmem_query_n_bind(struct papr_scm_priv *p)
+{
+	unsigned long start_addr;
+	unsigned long end_addr;
+	unsigned long ret[PLPAR_HCALL_BUFSIZE];
+	int64_t rc;
+
+
+	rc = plpar_hcall(H_SCM_QUERY_BLOCK_MEM_BINDING, ret,
+			 p->drc_index, 0);
+	if (rc)
+		goto err_out;
+	start_addr = ret[0];
+
+	/* Make sure the full region is bound. */
+	rc = plpar_hcall(H_SCM_QUERY_BLOCK_MEM_BINDING, ret,
+			 p->drc_index, p->blocks - 1);
+	if (rc)
+		goto err_out;
+	end_addr = ret[0];
+
+	if ((end_addr - start_addr) != ((p->blocks - 1) * p->block_size))
+		goto err_out;
+
+	p->bound_addr = start_addr;
+	dev_dbg(&p->pdev->dev, "bound drc 0x%x to %pR\n", p->drc_index, &p->res);
+	return rc;
+
+err_out:
+	dev_info(&p->pdev->dev,
+		 "Failed to query, trying an unbind followed by bind");
+	drc_pmem_unbind(p);
+	return drc_pmem_bind(p);
+}
+
 
 static int papr_scm_meta_get(struct papr_scm_priv *p,
 			     struct nd_cmd_get_config_data_hdr *hdr)
@@ -124,7 +152,7 @@ static int papr_scm_meta_get(struct papr_scm_priv *p,
 	int len, read;
 	int64_t ret;
 
-	if ((hdr->in_offset + hdr->in_length) >= p->metadata_size)
+	if ((hdr->in_offset + hdr->in_length) > p->metadata_size)
 		return -EINVAL;
 
 	for (len = hdr->in_length; len; len -= read) {
@@ -178,7 +206,7 @@ static int papr_scm_meta_set(struct papr_scm_priv *p,
 	__be64 data_be;
 	int64_t ret;
 
-	if ((hdr->in_offset + hdr->in_length) >= p->metadata_size)
+	if ((hdr->in_offset + hdr->in_length) > p->metadata_size)
 		return -EINVAL;
 
 	for (len = hdr->in_length; len; len -= wrote) {
@@ -256,25 +284,6 @@ int papr_scm_ndctl(struct nvdimm_bus_descriptor *nd_desc, struct nvdimm *nvdimm,
 	return 0;
 }
 
-static const struct attribute_group *region_attr_groups[] = {
-	&nd_region_attribute_group,
-	&nd_device_attribute_group,
-	&nd_mapping_attribute_group,
-	&nd_numa_attribute_group,
-	NULL,
-};
-
-static const struct attribute_group *bus_attr_groups[] = {
-	&nvdimm_bus_attribute_group,
-	NULL,
-};
-
-static const struct attribute_group *papr_scm_dimm_groups[] = {
-	&nvdimm_attribute_group,
-	&nd_device_attribute_group,
-	NULL,
-};
-
 static inline int papr_scm_node(int node)
 {
 	int min_dist = INT_MAX, dist;
@@ -305,7 +314,6 @@ static int papr_scm_nvdimm_init(struct papr_scm_priv *p)
 	p->bus_desc.ndctl = papr_scm_ndctl;
 	p->bus_desc.module = THIS_MODULE;
 	p->bus_desc.of_node = p->pdev->dev.of_node;
-	p->bus_desc.attr_groups = bus_attr_groups;
 	p->bus_desc.provider_name = kstrdup(p->pdev->name, GFP_KERNEL);
 
 	if (!p->bus_desc.provider_name)
@@ -320,8 +328,8 @@ static int papr_scm_nvdimm_init(struct papr_scm_priv *p)
 	dimm_flags = 0;
 	set_bit(NDD_ALIASING, &dimm_flags);
 
-	p->nvdimm = nvdimm_create(p->bus, p, papr_scm_dimm_groups,
-				dimm_flags, PAPR_SCM_DIMM_CMD_MASK, 0, NULL);
+	p->nvdimm = nvdimm_create(p->bus, p, NULL, dimm_flags,
+				  PAPR_SCM_DIMM_CMD_MASK, 0, NULL);
 	if (!p->nvdimm) {
 		dev_err(dev, "Error creating DIMM object for %pOF\n", p->dn);
 		goto err;
@@ -338,7 +346,6 @@ static int papr_scm_nvdimm_init(struct papr_scm_priv *p)
 	mapping.size = p->blocks * p->block_size; // XXX: potential overflow?
 
 	memset(&ndr_desc, 0, sizeof(ndr_desc));
-	ndr_desc.attr_groups = region_attr_groups;
 	target_nid = dev_to_node(&p->pdev->dev);
 	online_nid = papr_scm_node(target_nid);
 	ndr_desc.numa_node = online_nid;
@@ -436,14 +443,14 @@ static int papr_scm_probe(struct platform_device *pdev)
 	rc = drc_pmem_bind(p);
 
 	/* If phyp says drc memory still bound then force unbound and retry */
-	if (rc == -EBUSY) {
-		dev_warn(&pdev->dev, "Retrying bind after unbinding\n");
-		drc_pmem_unbind(p);
-		rc = drc_pmem_bind(p);
-	}
+	if (rc == H_OVERLAP)
+		rc = drc_pmem_query_n_bind(p);
 
-	if (rc)
+	if (rc != H_SUCCESS) {
+		dev_err(&p->pdev->dev, "bind err: %d\n", rc);
+		rc = -ENXIO;
 		goto err;
+	}
 
 	/* setup the resource for the newly bound range */
 	p->res.start = p->bound_addr;
@@ -485,7 +492,6 @@ static struct platform_driver papr_scm_driver = {
 	.remove = papr_scm_remove,
 	.driver = {
 		.name = "papr_scm",
-		.owner = THIS_MODULE,
 		.of_match_table = papr_scm_match,
 	},
 };

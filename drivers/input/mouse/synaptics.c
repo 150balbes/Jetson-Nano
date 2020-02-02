@@ -172,6 +172,7 @@ static const char * const smbus_pnp_ids[] = {
 	"LEN0071", /* T480 */
 	"LEN0072", /* X1 Carbon Gen 5 (2017) - Elan/ALPS trackpoint */
 	"LEN0073", /* X1 Carbon G5 (Elantech) */
+	"LEN0091", /* X1 Carbon 6 */
 	"LEN0092", /* X1 Carbon 6 */
 	"LEN0093", /* T480 */
 	"LEN0096", /* X280 */
@@ -193,7 +194,7 @@ static const char * const forcepad_pnp_ids[] = {
 };
 
 /*
- * Send a command to the synpatics touchpad by special commands
+ * Send a command to the synaptics touchpad by special commands
  */
 static int synaptics_send_cmd(struct psmouse *psmouse, u8 cmd, u8 *param)
 {

@@ -11,7 +11,12 @@
  *	Jianhua Li <lijianhua@huawei.com>
  */
 
+#include <linux/pci.h>
+
 #include <drm/drm_atomic_helper.h>
+#include <drm/drm_gem.h>
+#include <drm/drm_gem_vram_helper.h>
+#include <drm/drm_print.h>
 
 #include "hibmc_drm_drv.h"
 
@@ -23,7 +28,7 @@ int hibmc_mm_init(struct hibmc_drm_private *hibmc)
 
 	vmm = drm_vram_helper_alloc_mm(dev,
 				       pci_resource_start(dev->pdev, 0),
-				       hibmc->fb_size, &drm_gem_vram_mm_funcs);
+				       hibmc->fb_size);
 	if (IS_ERR(vmm)) {
 		ret = PTR_ERR(vmm);
 		DRM_ERROR("Error initializing VRAM MM; %d\n", ret);
@@ -60,7 +65,7 @@ int hibmc_gem_create(struct drm_device *dev, u32 size, bool iskernel,
 			DRM_ERROR("failed to allocate GEM object: %d\n", ret);
 		return ret;
 	}
-	*obj = &gbo->gem;
+	*obj = &gbo->bo.base;
 	return 0;
 }
 

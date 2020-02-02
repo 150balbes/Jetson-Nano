@@ -23,7 +23,6 @@ static void remove_nexthop(struct net *net, struct nexthop *nh,
 #define NH_DEV_HASHSIZE (1U << NH_DEV_HASHBITS)
 
 static const struct nla_policy rtm_nh_policy[NHA_MAX + 1] = {
-	[NHA_UNSPEC]		= { .strict_start_type = NHA_UNSPEC + 1 },
 	[NHA_ID]		= { .type = NLA_U32 },
 	[NHA_GROUP]		= { .type = NLA_BINARY },
 	[NHA_GROUP_TYPE]	= { .type = NLA_U16 },
@@ -1151,7 +1150,7 @@ static int nh_create_ipv4(struct net *net, struct nexthop *nh,
 		.fc_encap_type = cfg->nh_encap_type,
 	};
 	u32 tb_id = l3mdev_fib_table(cfg->dev);
-	int err = -EINVAL;
+	int err;
 
 	err = fib_nh_init(net, fib_nh, &fib_cfg, 1, extack);
 	if (err) {

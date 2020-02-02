@@ -139,18 +139,6 @@ static inline void __write_cr4(unsigned long x)
 	PVOP_VCALL1(cpu.write_cr4, x);
 }
 
-#ifdef CONFIG_X86_64
-static inline unsigned long read_cr8(void)
-{
-	return PVOP_CALL0(unsigned long, cpu.read_cr8);
-}
-
-static inline void write_cr8(unsigned long x)
-{
-	PVOP_VCALL1(cpu.write_cr8, x);
-}
-#endif
-
 static inline void arch_safe_halt(void)
 {
 	PVOP_VCALL0(irq.safe_halt);
@@ -305,10 +293,6 @@ static inline void write_gdt_entry(struct desc_struct *dt, int entry,
 static inline void write_idt_entry(gate_desc *dt, int entry, const gate_desc *g)
 {
 	PVOP_VCALL3(cpu.write_idt_entry, dt, entry, g);
-}
-static inline void set_iopl_mask(unsigned mask)
-{
-	PVOP_VCALL1(cpu.set_iopl_mask, mask);
 }
 
 static inline void paravirt_activate_mm(struct mm_struct *prev,

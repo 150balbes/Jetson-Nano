@@ -22,6 +22,12 @@
 			#clock-cells = <0>;
 			clock-frequency = <19200000>;
 		};
+
+		sleep_clk: sleep-clk {
+			compatible = "fixed-clock";
+			#clock-cells = <0>;
+			clock-frequency = <32768>;
+		};
 	};
 
 	cpus {
@@ -111,8 +117,13 @@
 		#size-cells = <2>;
 		ranges;
 
-		memory@85600000 {
-			reg = <0 0x85600000 0 0x90000>;
+		tz_apps_mem: memory@85900000 {
+			reg = <0 0x85900000 0 0x500000>;
+			no-map;
+		};
+
+		xbl_mem: memory@85e00000 {
+			reg = <0 0x85e00000 0 0x100000>;
 			no-map;
 		};
 
@@ -121,28 +132,33 @@
 			no-map;
 		};
 
-		memory@86100000 {
+		tz_mem: memory@86100000 {
 			reg = <0 0x86100000 0 0x300000>;
 			no-map;
 		};
 
 		wlan_fw_mem: memory@86400000 {
-			reg = <0 0x86400000 0 0x1c00000>;
+			reg = <0 0x86400000 0 0x1100000>;
 			no-map;
 		};
 
-		adsp_fw_mem: memory@88000000 {
-			reg = <0 0x88000000 0 0x1a00000>;
+		adsp_fw_mem: memory@87500000 {
+			reg = <0 0x87500000 0 0x1a00000>;
 			no-map;
 		};
 
-		cdsp_fw_mem: memory@89a00000 {
-			reg = <0 0x89a00000 0 0x600000>;
+		cdsp_fw_mem: memory@88f00000 {
+			reg = <0 0x88f00000 0 0x600000>;
 			no-map;
 		};
 
-		wlan_msa_mem: memory@8a000000 {
-			reg = <0 0x8a000000 0 0x100000>;
+		wlan_msa_mem: memory@89500000 {
+			reg = <0 0x89500000 0 0x100000>;
+			no-map;
+		};
+
+		uefi_mem: memory@9f800000 {
+			reg = <0 0x9f800000 0 0x800000>;
 			no-map;
 		};
 	};
@@ -273,6 +289,15 @@
 			clock-names = "core";
 		};
 
+		bimc: interconnect@400000 {
+			reg = <0x00400000 0x80000>;
+			compatible = "qcom,qcs404-bimc";
+			#interconnect-cells = <1>;
+			clock-names = "bus", "bus_a";
+			clocks = <&rpmcc RPM_SMD_BIMC_CLK>,
+				<&rpmcc RPM_SMD_BIMC_A_CLK>;
+		};
+
 		tsens: thermal-sensor@4a9000 {
 			compatible = "qcom,qcs404-tsens", "qcom,tsens-v1";
 			reg = <0x004a9000 0x1000>, /* TM */
@@ -280,7 +305,27 @@
 			nvmem-cells = <&tsens_caldata>;
 			nvmem-cell-names = "calib";
 			#qcom,sensors = <10>;
+			interrupts = <GIC_SPI 184 IRQ_TYPE_LEVEL_HIGH>;
+			interrupt-names = "uplow";
 			#thermal-sensor-cells = <1>;
+		};
+
+		pcnoc: interconnect@500000 {
+			reg = <0x00500000 0x15080>;
+			compatible = "qcom,qcs404-pcnoc";
+			#interconnect-cells = <1>;
+			clock-names = "bus", "bus_a";
+			clocks = <&rpmcc RPM_SMD_PNOC_CLK>,
+				<&rpmcc RPM_SMD_PNOC_A_CLK>;
+		};
+
+		snoc: interconnect@580000 {
+			reg = <0x00580000 0x23080>;
+			compatible = "qcom,qcs404-snoc";
+			#interconnect-cells = <1>;
+			clock-names = "bus", "bus_a";
+			clocks = <&rpmcc RPM_SMD_SNOC_CLK>,
+				<&rpmcc RPM_SMD_SNOC_A_CLK>;
 		};
 
 		remoteproc_cdsp: remoteproc@b00000 {
@@ -859,6 +904,12 @@
 			#mbox-cells = <1>;
 		};
 
+		watchdog@b017000 {
+			compatible = "qcom,kpss-wdt";
+			reg = <0x0b017000 0x1000>;
+			clocks = <&sleep_clk>;
+		};
+
 		timer@b120000 {
 			#address-cells = <1>;
 			#size-cells = <1>;
@@ -1077,7 +1128,7 @@
 			thermal-sensors = <&tsens 0>;
 
 			trips {
-				aoss_alert0: trip-point@0 {
+				aoss_alert0: trip-point0 {
 					temperature = <105000>;
 					hysteresis = <2000>;
 					type = "hot";
@@ -1092,7 +1143,7 @@
 			thermal-sensors = <&tsens 1>;
 
 			trips {
-				q6_hvx_alert0: trip-point@0 {
+				q6_hvx_alert0: trip-point0 {
 					temperature = <105000>;
 					hysteresis = <2000>;
 					type = "hot";
@@ -1107,7 +1158,7 @@
 			thermal-sensors = <&tsens 2>;
 
 			trips {
-				lpass_alert0: trip-point@0 {
+				lpass_alert0: trip-point0 {
 					temperature = <105000>;
 					hysteresis = <2000>;
 					type = "hot";
@@ -1122,7 +1173,7 @@
 			thermal-sensors = <&tsens 3>;
 
 			trips {
-				wlan_alert0: trip-point@0 {
+				wlan_alert0: trip-point0 {
 					temperature = <105000>;
 					hysteresis = <2000>;
 					type = "hot";
@@ -1137,12 +1188,12 @@
 			thermal-sensors = <&tsens 4>;
 
 			trips {
-				cluster_alert0: trip-point@0 {
+				cluster_alert0: trip-point0 {
 					temperature = <95000>;
 					hysteresis = <2000>;
 					type = "hot";
 				};
-				cluster_alert1: trip-point@1 {
+				cluster_alert1: trip-point1 {
 					temperature = <105000>;
 					hysteresis = <2000>;
 					type = "passive";
@@ -1171,12 +1222,12 @@
 			thermal-sensors = <&tsens 5>;
 
 			trips {
-				cpu0_alert0: trip-point@0 {
+				cpu0_alert0: trip-point0 {
 					temperature = <95000>;
 					hysteresis = <2000>;
 					type = "hot";
 				};
-				cpu0_alert1: trip-point@1 {
+				cpu0_alert1: trip-point1 {
 					temperature = <105000>;
 					hysteresis = <2000>;
 					type = "passive";
@@ -1205,12 +1256,12 @@
 			thermal-sensors = <&tsens 6>;
 
 			trips {
-				cpu1_alert0: trip-point@0 {
+				cpu1_alert0: trip-point0 {
 					temperature = <95000>;
 					hysteresis = <2000>;
 					type = "hot";
 				};
-				cpu1_alert1: trip-point@1 {
+				cpu1_alert1: trip-point1 {
 					temperature = <105000>;
 					hysteresis = <2000>;
 					type = "passive";
@@ -1239,12 +1290,12 @@
 			thermal-sensors = <&tsens 7>;
 
 			trips {
-				cpu2_alert0: trip-point@0 {
+				cpu2_alert0: trip-point0 {
 					temperature = <95000>;
 					hysteresis = <2000>;
 					type = "hot";
 				};
-				cpu2_alert1: trip-point@1 {
+				cpu2_alert1: trip-point1 {
 					temperature = <105000>;
 					hysteresis = <2000>;
 					type = "passive";
@@ -1273,12 +1324,12 @@
 			thermal-sensors = <&tsens 8>;
 
 			trips {
-				cpu3_alert0: trip-point@0 {
+				cpu3_alert0: trip-point0 {
 					temperature = <95000>;
 					hysteresis = <2000>;
 					type = "hot";
 				};
-				cpu3_alert1: trip-point@1 {
+				cpu3_alert1: trip-point1 {
 					temperature = <105000>;
 					hysteresis = <2000>;
 					type = "passive";
@@ -1307,7 +1358,7 @@
 			thermal-sensors = <&tsens 9>;
 
 			trips {
-				gpu_alert0: trip-point@0 {
+				gpu_alert0: trip-point0 {
 					temperature = <95000>;
 					hysteresis = <2000>;
 					type = "hot";

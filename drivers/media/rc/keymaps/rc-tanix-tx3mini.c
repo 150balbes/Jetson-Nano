@@ -5,12 +5,10 @@
 #include <linux/module.h>
 
 /*
- * This keymap is used with the Oranth Tanix TX3 mini
- * and other Android STB devices.
+ * Keymap for the Tanix TX3 mini STB remote control
  */
 
 static struct rc_map_table tanix_tx3mini[] = {
-
 	{ 0x8051, KEY_POWER },
 	{ 0x804d, KEY_MUTE },
 

@@ -26,8 +26,6 @@
 #include "dccg.h"
 #include "clk_mgr_internal.h"
 
-
-#include "dcn20/dcn20_clk_mgr.h"
 #include "dce100/dce_clk_mgr.h"
 #include "reg_helper.h"
 #include "core_types.h"
@@ -110,11 +108,12 @@ void dcn20_update_clocks_update_dpp_dto(struct clk_mgr_internal *clk_mgr,
 	for (i = 0; i < clk_mgr->base.ctx->dc->res_pool->pipe_count; i++) {
 		int dpp_inst, dppclk_khz;
 
-		if (!context->res_ctx.pipe_ctx[i].plane_state)
-			continue;
-
-		dpp_inst = context->res_ctx.pipe_ctx[i].plane_res.dpp->inst;
+		/* Loop index will match dpp->inst if resource exists,
+		 * and we want to avoid dependency on dpp object
+		 */
+		dpp_inst = i;
 		dppclk_khz = context->res_ctx.pipe_ctx[i].plane_res.bw.dppclk_khz;
+
 		clk_mgr->dccg->funcs->update_dpp_dto(
 				clk_mgr->dccg, dpp_inst, dppclk_khz);
 	}
@@ -123,9 +122,9 @@ void dcn20_update_clocks_update_dpp_dto(struct clk_mgr_internal *clk_mgr,
 void dcn20_update_clocks_update_dentist(struct clk_mgr_internal *clk_mgr)
 {
 	int dpp_divider = DENTIST_DIVIDER_RANGE_SCALE_FACTOR
-			* clk_mgr->dentist_vco_freq_khz / clk_mgr->base.clks.dppclk_khz;
+			* clk_mgr->base.dentist_vco_freq_khz / clk_mgr->base.clks.dppclk_khz;
 	int disp_divider = DENTIST_DIVIDER_RANGE_SCALE_FACTOR
-			* clk_mgr->dentist_vco_freq_khz / clk_mgr->base.clks.dispclk_khz;
+			* clk_mgr->base.dentist_vco_freq_khz / clk_mgr->base.clks.dispclk_khz;
 
 	uint32_t dppclk_wdivider = dentist_get_did_from_divider(dpp_divider);
 	uint32_t dispclk_wdivider = dentist_get_did_from_divider(disp_divider);
@@ -153,7 +152,17 @@ void dcn2_update_clocks(struct clk_mgr *clk_mgr_base,
 	bool enter_display_off = false;
 	bool dpp_clock_lowered = false;
 	struct dmcu *dmcu = clk_mgr_base->ctx->dc->res_pool->dmcu;
+	bool force_reset = false;
 
+	if (dc->work_arounds.skip_clock_update)
+		return;
+
+	if (clk_mgr_base->clks.dispclk_khz == 0 ||
+		dc->debug.force_clock_mode & 0x1) {
+		//this is from resume or boot up, if forced_clock cfg option used, we bypass program dispclk and DPPCLK, but need set them for S3.
+		force_reset = true;
+		//force_clock_mode 0x1:  force reset the clock even it is the same clock as long as it is in Passive level.
+	}
 	display_count = clk_mgr_helper_get_active_display_cnt(dc, context);
 	if (dc->res_pool->pp_smu)
 		pp_smu = &dc->res_pool->pp_smu->nv_funcs;
@@ -171,6 +180,7 @@ void dcn2_update_clocks(struct clk_mgr *clk_mgr_base,
 		if (pp_smu && pp_smu->set_voltage_by_freq)
 			pp_smu->set_voltage_by_freq(&pp_smu->pp_smu, PP_SMU_NV_PHYCLK, clk_mgr_base->clks.phyclk_khz / 1000);
 	}
+
 
 	if (dc->debug.force_min_dcfclk_mhz > 0)
 		new_clocks->dcfclk_khz = (new_clocks->dcfclk_khz > (dc->debug.force_min_dcfclk_mhz * 1000)) ?
@@ -196,6 +206,7 @@ void dcn2_update_clocks(struct clk_mgr *clk_mgr_base,
 	}
 
 	if (should_update_pstate_support(safe_to_lower, new_clocks->p_state_change_support, clk_mgr_base->clks.p_state_change_support)) {
+		clk_mgr_base->clks.prev_p_state_change_support = clk_mgr_base->clks.p_state_change_support;
 		clk_mgr_base->clks.p_state_change_support = new_clocks->p_state_change_support;
 		if (pp_smu && pp_smu->set_pstate_handshake_support)
 			pp_smu->set_pstate_handshake_support(&pp_smu->pp_smu, clk_mgr_base->clks.p_state_change_support);
@@ -225,7 +236,8 @@ void dcn2_update_clocks(struct clk_mgr *clk_mgr_base,
 
 		update_dispclk = true;
 	}
-	if (dc->config.forced_clocks == false) {
+
+	if (dc->config.forced_clocks == false || (force_reset && safe_to_lower)) {
 		if (dpp_clock_lowered) {
 			// if clock is being lowered, increase DTO before lowering refclk
 			dcn20_update_clocks_update_dpp_dto(clk_mgr, context);
@@ -234,10 +246,12 @@ void dcn2_update_clocks(struct clk_mgr *clk_mgr_base,
 			// if clock is being raised, increase refclk before lowering DTO
 			if (update_dppclk || update_dispclk)
 				dcn20_update_clocks_update_dentist(clk_mgr);
-			if (update_dppclk)
+			// always update dtos unless clock is lowered and not safe to lower
+			if (new_clocks->dppclk_khz >= dc->current_state->bw_ctx.bw.dcn.clk.dppclk_khz)
 				dcn20_update_clocks_update_dpp_dto(clk_mgr, context);
 		}
 	}
+
 	if (update_dispclk &&
 			dmcu && dmcu->funcs->is_dmcu_initialized(dmcu)) {
 		/*update dmcu for wait_loop count*/
@@ -250,6 +264,8 @@ void dcn2_update_clocks_fpga(struct clk_mgr *clk_mgr,
 		struct dc_state *context,
 		bool safe_to_lower)
 {
+	struct clk_mgr_internal *clk_mgr_int = TO_CLK_MGR_INTERNAL(clk_mgr);
+
 	struct dc_clocks *new_clocks = &context->bw_ctx.bw.dcn.clk;
 	/* Min fclk = 1.2GHz since all the extra scemi logic seems to run off of it */
 	int fclk_adj = new_clocks->fclk_khz > 1200000 ? new_clocks->fclk_khz : 1200000;
@@ -287,13 +303,17 @@ void dcn2_update_clocks_fpga(struct clk_mgr *clk_mgr,
 		clk_mgr->clks.dispclk_khz = new_clocks->dispclk_khz;
 	}
 
-	/* Both fclk and dppclk ref are run on the same scemi clock so we
-	 * need to keep the same value for both
+	/* Both fclk and ref_dppclk run on the same scemi clock.
+	 * So take the higher value since the DPP DTO is typically programmed
+	 * such that max dppclk is 1:1 with ref_dppclk.
 	 */
 	if (clk_mgr->clks.fclk_khz > clk_mgr->clks.dppclk_khz)
 		clk_mgr->clks.dppclk_khz = clk_mgr->clks.fclk_khz;
 	if (clk_mgr->clks.dppclk_khz > clk_mgr->clks.fclk_khz)
 		clk_mgr->clks.fclk_khz = clk_mgr->clks.dppclk_khz;
+
+	// Both fclk and ref_dppclk run on the same scemi clock.
+	clk_mgr_int->dccg->ref_dppclk = clk_mgr->clks.fclk_khz;
 
 	dm_set_dcn_clocks(clk_mgr->ctx, &clk_mgr->clks);
 }
@@ -303,6 +323,7 @@ void dcn2_init_clocks(struct clk_mgr *clk_mgr)
 	memset(&(clk_mgr->clks), 0, sizeof(struct dc_clocks));
 	// Assumption is that boot state always supports pstate
 	clk_mgr->clks.p_state_change_support = true;
+	clk_mgr->clks.prev_p_state_change_support = true;
 }
 
 void dcn2_enable_pme_wa(struct clk_mgr *clk_mgr_base)
@@ -318,11 +339,56 @@ void dcn2_enable_pme_wa(struct clk_mgr *clk_mgr_base)
 	}
 }
 
+void dcn2_get_clock(struct clk_mgr *clk_mgr,
+		struct dc_state *context,
+			enum dc_clock_type clock_type,
+			struct dc_clock_config *clock_cfg)
+{
+
+	if (clock_type == DC_CLOCK_TYPE_DISPCLK) {
+		clock_cfg->max_clock_khz = context->bw_ctx.bw.dcn.clk.max_supported_dispclk_khz;
+		clock_cfg->min_clock_khz = DCN_MINIMUM_DISPCLK_Khz;
+		clock_cfg->current_clock_khz = clk_mgr->clks.dispclk_khz;
+		clock_cfg->bw_requirequired_clock_khz = context->bw_ctx.bw.dcn.clk.bw_dispclk_khz;
+	}
+	if (clock_type == DC_CLOCK_TYPE_DPPCLK) {
+		clock_cfg->max_clock_khz = context->bw_ctx.bw.dcn.clk.max_supported_dppclk_khz;
+		clock_cfg->min_clock_khz = DCN_MINIMUM_DPPCLK_Khz;
+		clock_cfg->current_clock_khz = clk_mgr->clks.dppclk_khz;
+		clock_cfg->bw_requirequired_clock_khz = context->bw_ctx.bw.dcn.clk.bw_dppclk_khz;
+	}
+}
+
+static bool dcn2_are_clock_states_equal(struct dc_clocks *a,
+		struct dc_clocks *b)
+{
+	if (a->dispclk_khz != b->dispclk_khz)
+		return false;
+	else if (a->dppclk_khz != b->dppclk_khz)
+		return false;
+	else if (a->dcfclk_khz != b->dcfclk_khz)
+		return false;
+	else if (a->socclk_khz != b->socclk_khz)
+		return false;
+	else if (a->dcfclk_deep_sleep_khz != b->dcfclk_deep_sleep_khz)
+		return false;
+	else if (a->phyclk_khz != b->phyclk_khz)
+		return false;
+	else if (a->dramclk_khz != b->dramclk_khz)
+		return false;
+	else if (a->p_state_change_support != b->p_state_change_support)
+		return false;
+
+	return true;
+}
+
 static struct clk_mgr_funcs dcn2_funcs = {
 	.get_dp_ref_clk_frequency = dce12_get_dp_ref_freq_khz,
 	.update_clocks = dcn2_update_clocks,
 	.init_clocks = dcn2_init_clocks,
-	.enable_pme_wa = dcn2_enable_pme_wa
+	.enable_pme_wa = dcn2_enable_pme_wa,
+	.get_clock = dcn2_get_clock,
+	.are_clock_states_equal = dcn2_are_clock_states_equal,
 };
 
 
@@ -350,7 +416,7 @@ void dcn20_clk_mgr_construct(
 
 	if (IS_FPGA_MAXIMUS_DC(ctx->dce_environment)) {
 		dcn2_funcs.update_clocks = dcn2_update_clocks_fpga;
-		clk_mgr->dentist_vco_freq_khz = 3850000;
+		clk_mgr->base.dentist_vco_freq_khz = 3850000;
 
 	} else {
 		/* DFS Slice 2 should be used for DPREFCLK */
@@ -374,15 +440,15 @@ void dcn20_clk_mgr_construct(
 		pll_req = dc_fixpt_mul_int(pll_req, 100000);
 
 		/* integer part is now VCO frequency in kHz */
-		clk_mgr->dentist_vco_freq_khz = dc_fixpt_floor(pll_req);
+		clk_mgr->base.dentist_vco_freq_khz = dc_fixpt_floor(pll_req);
 
 		/* in case we don't get a value from the register, use default */
-		if (clk_mgr->dentist_vco_freq_khz == 0)
-			clk_mgr->dentist_vco_freq_khz = 3850000;
+		if (clk_mgr->base.dentist_vco_freq_khz == 0)
+			clk_mgr->base.dentist_vco_freq_khz = 3850000;
 
 		/* Calculate the DPREFCLK in kHz.*/
 		clk_mgr->base.dprefclk_khz = (DENTIST_DIVIDER_RANGE_SCALE_FACTOR
-			* clk_mgr->dentist_vco_freq_khz) / target_div;
+			* clk_mgr->base.dentist_vco_freq_khz) / target_div;
 	}
 	//Integrated_info table does not exist on dGPU projects so should not be referenced
 	//anywhere in code for dGPUs.

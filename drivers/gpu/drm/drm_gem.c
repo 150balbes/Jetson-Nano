@@ -39,6 +39,7 @@
 #include <linux/mem_encrypt.h>
 #include <linux/pagevec.h>
 
+#include <drm/drm.h>
 #include <drm/drm_device.h>
 #include <drm/drm_drv.h>
 #include <drm/drm_file.h>
@@ -158,7 +159,7 @@ void drm_gem_private_object_init(struct drm_device *dev,
 	kref_init(&obj->refcount);
 	obj->handle_count = 0;
 	obj->size = size;
-	reservation_object_init(&obj->_resv);
+	dma_resv_init(&obj->_resv);
 	if (!obj->resv)
 		obj->resv = &obj->_resv;
 
@@ -254,8 +255,7 @@ drm_gem_object_release_handle(int id, void *ptr, void *data)
 	else if (dev->driver->gem_close_object)
 		dev->driver->gem_close_object(obj, file_priv);
 
-	if (drm_core_check_feature(dev, DRIVER_PRIME))
-		drm_gem_remove_prime_handles(obj, file_priv);
+	drm_gem_remove_prime_handles(obj, file_priv);
 	drm_vma_node_revoke(&obj->vma_node, file_priv);
 
 	drm_gem_object_handle_put_unlocked(obj);
@@ -633,6 +633,9 @@ void drm_gem_put_pages(struct drm_gem_object *obj, struct page **pages,
 
 	pagevec_init(&pvec);
 	for (i = 0; i < npages; i++) {
+		if (!pages[i])
+			continue;
+
 		if (dirty)
 			set_page_dirty(pages[i]);
 
@@ -752,7 +755,7 @@ drm_gem_object_lookup(struct drm_file *filp, u32 handle)
 EXPORT_SYMBOL(drm_gem_object_lookup);
 
 /**
- * drm_gem_reservation_object_wait - Wait on GEM object's reservation's objects
+ * drm_gem_dma_resv_wait - Wait on GEM object's reservation's objects
  * shared and/or exclusive fences.
  * @filep: DRM file private date
  * @handle: userspace handle
@@ -764,7 +767,7 @@ EXPORT_SYMBOL(drm_gem_object_lookup);
  * Returns -ERESTARTSYS if interrupted, 0 if the wait timed out, or
  * greater than 0 on success.
  */
-long drm_gem_reservation_object_wait(struct drm_file *filep, u32 handle,
+long drm_gem_dma_resv_wait(struct drm_file *filep, u32 handle,
 				    bool wait_all, unsigned long timeout)
 {
 	long ret;
@@ -776,7 +779,7 @@ long drm_gem_reservation_object_wait(struct drm_file *filep, u32 handle,
 		return -EINVAL;
 	}
 
-	ret = reservation_object_wait_timeout_rcu(obj->resv, wait_all,
+	ret = dma_resv_wait_timeout_rcu(obj->resv, wait_all,
 						  true, timeout);
 	if (ret == 0)
 		ret = -ETIME;
@@ -787,7 +790,7 @@ long drm_gem_reservation_object_wait(struct drm_file *filep, u32 handle,
 
 	return ret;
 }
-EXPORT_SYMBOL(drm_gem_reservation_object_wait);
+EXPORT_SYMBOL(drm_gem_dma_resv_wait);
 
 /**
  * drm_gem_close_ioctl - implementation of the GEM_CLOSE ioctl
@@ -953,7 +956,7 @@ drm_gem_object_release(struct drm_gem_object *obj)
 	if (obj->filp)
 		fput(obj->filp);
 
-	reservation_object_fini(&obj->_resv);
+	dma_resv_fini(&obj->_resv);
 	drm_gem_free_mmap_offset(obj);
 }
 EXPORT_SYMBOL(drm_gem_object_release);
@@ -1096,22 +1099,11 @@ int drm_gem_mmap_obj(struct drm_gem_object *obj, unsigned long obj_size,
 		     struct vm_area_struct *vma)
 {
 	struct drm_device *dev = obj->dev;
+	int ret;
 
 	/* Check for valid size. */
 	if (obj_size < vma->vm_end - vma->vm_start)
 		return -EINVAL;
-
-	if (obj->funcs && obj->funcs->vm_ops)
-		vma->vm_ops = obj->funcs->vm_ops;
-	else if (dev->driver->gem_vm_ops)
-		vma->vm_ops = dev->driver->gem_vm_ops;
-	else
-		return -EINVAL;
-
-	vma->vm_flags |= VM_IO | VM_PFNMAP | VM_DONTEXPAND | VM_DONTDUMP;
-	vma->vm_private_data = obj;
-	vma->vm_page_prot = pgprot_writecombine(vm_get_page_prot(vma->vm_flags));
-	vma->vm_page_prot = pgprot_decrypted(vma->vm_page_prot);
 
 	/* Take a ref for this mapping of the object, so that the fault
 	 * handler can dereference the mmap offset's pointer to the object.
@@ -1120,6 +1112,33 @@ int drm_gem_mmap_obj(struct drm_gem_object *obj, unsigned long obj_size,
 	 * by a vm_open due to mremap or partial unmap or whatever).
 	 */
 	drm_gem_object_get(obj);
+
+	if (obj->funcs && obj->funcs->mmap) {
+		/* Remove the fake offset */
+		vma->vm_pgoff -= drm_vma_node_start(&obj->vma_node);
+
+		ret = obj->funcs->mmap(obj, vma);
+		if (ret) {
+			drm_gem_object_put_unlocked(obj);
+			return ret;
+		}
+		WARN_ON(!(vma->vm_flags & VM_DONTEXPAND));
+	} else {
+		if (obj->funcs && obj->funcs->vm_ops)
+			vma->vm_ops = obj->funcs->vm_ops;
+		else if (dev->driver->gem_vm_ops)
+			vma->vm_ops = dev->driver->gem_vm_ops;
+		else {
+			drm_gem_object_put_unlocked(obj);
+			return -EINVAL;
+		}
+
+		vma->vm_flags |= VM_IO | VM_PFNMAP | VM_DONTEXPAND | VM_DONTDUMP;
+		vma->vm_page_prot = pgprot_writecombine(vm_get_page_prot(vma->vm_flags));
+		vma->vm_page_prot = pgprot_decrypted(vma->vm_page_prot);
+	}
+
+	vma->vm_private_data = obj;
 
 	return 0;
 }
@@ -1288,8 +1307,8 @@ retry:
 	if (contended != -1) {
 		struct drm_gem_object *obj = objs[contended];
 
-		ret = ww_mutex_lock_slow_interruptible(&obj->resv->lock,
-						       acquire_ctx);
+		ret = dma_resv_lock_slow_interruptible(obj->resv,
+								 acquire_ctx);
 		if (ret) {
 			ww_acquire_done(acquire_ctx);
 			return ret;
@@ -1300,16 +1319,16 @@ retry:
 		if (i == contended)
 			continue;
 
-		ret = ww_mutex_lock_interruptible(&objs[i]->resv->lock,
-						  acquire_ctx);
+		ret = dma_resv_lock_interruptible(objs[i]->resv,
+							    acquire_ctx);
 		if (ret) {
 			int j;
 
 			for (j = 0; j < i; j++)
-				ww_mutex_unlock(&objs[j]->resv->lock);
+				dma_resv_unlock(objs[j]->resv);
 
 			if (contended != -1 && contended >= i)
-				ww_mutex_unlock(&objs[contended]->resv->lock);
+				dma_resv_unlock(objs[contended]->resv);
 
 			if (ret == -EDEADLK) {
 				contended = i;
@@ -1334,7 +1353,7 @@ drm_gem_unlock_reservations(struct drm_gem_object **objs, int count,
 	int i;
 
 	for (i = 0; i < count; i++)
-		ww_mutex_unlock(&objs[i]->resv->lock);
+		dma_resv_unlock(objs[i]->resv);
 
 	ww_acquire_fini(acquire_ctx);
 }
@@ -1410,12 +1429,12 @@ int drm_gem_fence_array_add_implicit(struct xarray *fence_array,
 
 	if (!write) {
 		struct dma_fence *fence =
-			reservation_object_get_excl_rcu(obj->resv);
+			dma_resv_get_excl_rcu(obj->resv);
 
 		return drm_gem_fence_array_add(fence_array, fence);
 	}
 
-	ret = reservation_object_get_fences_rcu(obj->resv, NULL,
+	ret = dma_resv_get_fences_rcu(obj->resv, NULL,
 						&fence_count, &fences);
 	if (ret || !fence_count)
 		return ret;

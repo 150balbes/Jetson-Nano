@@ -792,8 +792,7 @@ xfs_growfs_rt_alloc(
 		 */
 		nmap = 1;
 		error = xfs_bmapi_write(tp, ip, oblocks, nblocks - oblocks,
-					XFS_BMAPI_METADATA, resblks, &map,
-					&nmap);
+					XFS_BMAPI_METADATA, 0, &map, &nmap);
 		if (!error && nmap < 1)
 			error = -ENOSPC;
 		if (error)
@@ -865,7 +864,7 @@ xfs_alloc_rsum_cache(
 	 * lower bound on the minimum level with any free extents. We can
 	 * continue without the cache if it couldn't be allocated.
 	 */
-	mp->m_rsum_cache = kmem_zalloc_large(rbmblocks, KM_SLEEP);
+	mp->m_rsum_cache = kmem_zalloc_large(rbmblocks, 0);
 	if (!mp->m_rsum_cache)
 		xfs_warn(mp, "could not allocate realtime summary cache");
 }
@@ -963,7 +962,7 @@ xfs_growfs_rt(
 	/*
 	 * Allocate a new (fake) mount/sb.
 	 */
-	nmp = kmem_alloc(sizeof(*nmp), KM_SLEEP);
+	nmp = kmem_alloc(sizeof(*nmp), 0);
 	/*
 	 * Loop over the bitmap blocks.
 	 * We will do everything one bitmap block at a time.

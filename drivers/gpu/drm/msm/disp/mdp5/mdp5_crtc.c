@@ -6,10 +6,13 @@
  */
 
 #include <linux/sort.h>
+
 #include <drm/drm_mode.h>
 #include <drm/drm_crtc.h>
 #include <drm/drm_flip_work.h>
+#include <drm/drm_fourcc.h>
 #include <drm/drm_probe_helper.h>
+#include <drm/drm_vblank.h>
 
 #include "mdp5_kms.h"
 
@@ -211,7 +214,6 @@ static void blend_setup(struct drm_crtc *crtc)
 	struct mdp5_pipeline *pipeline = &mdp5_cstate->pipeline;
 	struct mdp5_kms *mdp5_kms = get_kms(crtc);
 	struct drm_plane *plane;
-	const struct mdp5_cfg_hw *hw_cfg;
 	struct mdp5_plane_state *pstate, *pstates[STAGE_MAX + 1] = {NULL};
 	const struct mdp_format *format;
 	struct mdp5_hw_mixer *mixer = pipeline->mixer;
@@ -228,8 +230,6 @@ static void blend_setup(struct drm_crtc *crtc)
 	u32 mixer_op_mode = 0;
 	u32 val;
 #define blender(stage)	((stage) - STAGE0)
-
-	hw_cfg = mdp5_cfg_get_hw_config(mdp5_kms->cfg);
 
 	spin_lock_irqsave(&mdp5_crtc->lm_lock, flags);
 

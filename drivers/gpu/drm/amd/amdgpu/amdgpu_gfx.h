@@ -165,6 +165,7 @@ struct amdgpu_gfx_config {
 	uint32_t num_sc_per_sh;
 	uint32_t num_packer_per_sc;
 	uint32_t pa_sc_tile_steering_override;
+	uint64_t tcc_disabled_mask;
 };
 
 struct amdgpu_cu_info {
@@ -196,28 +197,8 @@ struct amdgpu_gfx_funcs {
 				uint32_t *dst);
 	void (*select_me_pipe_q)(struct amdgpu_device *adev, u32 me, u32 pipe,
 				 u32 queue, u32 vmid);
-};
-
-struct amdgpu_ngg_buf {
-	struct amdgpu_bo	*bo;
-	uint64_t		gpu_addr;
-	uint32_t		size;
-	uint32_t		bo_size;
-};
-
-enum {
-	NGG_PRIM = 0,
-	NGG_POS,
-	NGG_CNTL,
-	NGG_PARAM,
-	NGG_BUF_MAX
-};
-
-struct amdgpu_ngg {
-	struct amdgpu_ngg_buf	buf[NGG_BUF_MAX];
-	uint32_t		gds_reserve_addr;
-	uint32_t		gds_reserve_size;
-	bool			init;
+	int (*ras_error_inject)(struct amdgpu_device *adev, void *inject_if);
+	int (*query_ras_error_count) (struct amdgpu_device *adev, void *ras_error_status);
 };
 
 struct sq_work {
@@ -244,7 +225,7 @@ struct amdgpu_me {
 	uint32_t			num_me;
 	uint32_t			num_pipe_per_me;
 	uint32_t			num_queue_per_pipe;
-	void				*mqd_backup[AMDGPU_MAX_GFX_RINGS + 1];
+	void				*mqd_backup[AMDGPU_MAX_GFX_RINGS];
 
 	/* These are the resources for which amdgpu takes ownership */
 	DECLARE_BITMAP(queue_bitmap, AMDGPU_MAX_GFX_QUEUES);
@@ -286,6 +267,7 @@ struct amdgpu_gfx {
 	uint32_t			mec2_feature_version;
 	bool				mec_fw_write_wait;
 	bool				me_fw_write_wait;
+	bool				cp_fw_write_wait;
 	struct amdgpu_ring		gfx_ring[AMDGPU_MAX_GFX_RINGS];
 	unsigned			num_gfx_rings;
 	struct amdgpu_ring		compute_ring[AMDGPU_MAX_COMPUTE_RINGS];
@@ -307,9 +289,6 @@ struct amdgpu_gfx {
 	/* reset mask */
 	uint32_t                        grbm_soft_reset;
 	uint32_t                        srbm_soft_reset;
-
-	/* NGG */
-	struct amdgpu_ngg		ngg;
 
 	/* gfx off */
 	bool                            gfx_off_state; /* true: enabled, false: disabled */
@@ -352,8 +331,7 @@ int amdgpu_gfx_kiq_init_ring(struct amdgpu_device *adev,
 			     struct amdgpu_ring *ring,
 			     struct amdgpu_irq_src *irq);
 
-void amdgpu_gfx_kiq_free_ring(struct amdgpu_ring *ring,
-			      struct amdgpu_irq_src *irq);
+void amdgpu_gfx_kiq_free_ring(struct amdgpu_ring *ring);
 
 void amdgpu_gfx_kiq_fini(struct amdgpu_device *adev);
 int amdgpu_gfx_kiq_init(struct amdgpu_device *adev,
@@ -381,5 +359,12 @@ void amdgpu_gfx_bit_to_me_queue(struct amdgpu_device *adev, int bit,
 bool amdgpu_gfx_is_me_queue_enabled(struct amdgpu_device *adev, int me,
 				    int pipe, int queue);
 void amdgpu_gfx_off_ctrl(struct amdgpu_device *adev, bool enable);
-
+int amdgpu_gfx_ras_late_init(struct amdgpu_device *adev);
+void amdgpu_gfx_ras_fini(struct amdgpu_device *adev);
+int amdgpu_gfx_process_ras_data_cb(struct amdgpu_device *adev,
+		void *err_data,
+		struct amdgpu_iv_entry *entry);
+int amdgpu_gfx_cp_ecc_error_irq(struct amdgpu_device *adev,
+				  struct amdgpu_irq_src *source,
+				  struct amdgpu_iv_entry *entry);
 #endif

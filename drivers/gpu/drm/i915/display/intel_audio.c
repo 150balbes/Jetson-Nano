@@ -28,8 +28,9 @@
 #include <drm/i915_component.h>
 
 #include "i915_drv.h"
+#include "intel_atomic.h"
 #include "intel_audio.h"
-#include "intel_drv.h"
+#include "intel_display_types.h"
 #include "intel_lpe_audio.h"
 
 /**
@@ -70,6 +71,13 @@ struct dp_aud_n_m {
 	int clock;
 	u16 m;
 	u16 n;
+};
+
+struct hdmi_aud_ncts {
+	int sample_rate;
+	int clock;
+	int n;
+	int cts;
 };
 
 /* Values according to DP 1.4 Table 2-104 */
@@ -148,12 +156,7 @@ static const struct {
 #define TMDS_594M 594000
 #define TMDS_593M 593407
 
-static const struct {
-	int sample_rate;
-	int clock;
-	int n;
-	int cts;
-} hdmi_aud_ncts[] = {
+static const struct hdmi_aud_ncts hdmi_aud_ncts_24bpp[] = {
 	{ 32000, TMDS_296M, 5824, 421875 },
 	{ 32000, TMDS_297M, 3072, 222750 },
 	{ 32000, TMDS_593M, 5824, 843750 },
@@ -184,6 +187,49 @@ static const struct {
 	{ 192000, TMDS_594M, 24576, 594000 },
 };
 
+/* Appendix C - N & CTS values for deep color from HDMI 2.0 spec*/
+/* HDMI N/CTS table for 10 bit deep color(30 bpp)*/
+#define TMDS_371M 371250
+#define TMDS_370M 370878
+
+static const struct hdmi_aud_ncts hdmi_aud_ncts_30bpp[] = {
+	{ 32000, TMDS_370M, 5824, 527344 },
+	{ 32000, TMDS_371M, 6144, 556875 },
+	{ 44100, TMDS_370M, 8918, 585938 },
+	{ 44100, TMDS_371M, 4704, 309375 },
+	{ 88200, TMDS_370M, 17836, 585938 },
+	{ 88200, TMDS_371M, 9408, 309375 },
+	{ 176400, TMDS_370M, 35672, 585938 },
+	{ 176400, TMDS_371M, 18816, 309375 },
+	{ 48000, TMDS_370M, 11648, 703125 },
+	{ 48000, TMDS_371M, 5120, 309375 },
+	{ 96000, TMDS_370M, 23296, 703125 },
+	{ 96000, TMDS_371M, 10240, 309375 },
+	{ 192000, TMDS_370M, 46592, 703125 },
+	{ 192000, TMDS_371M, 20480, 309375 },
+};
+
+/* HDMI N/CTS table for 12 bit deep color(36 bpp)*/
+#define TMDS_445_5M 445500
+#define TMDS_445M 445054
+
+static const struct hdmi_aud_ncts hdmi_aud_ncts_36bpp[] = {
+	{ 32000, TMDS_445M, 5824, 632813 },
+	{ 32000, TMDS_445_5M, 4096, 445500 },
+	{ 44100, TMDS_445M, 8918, 703125 },
+	{ 44100, TMDS_445_5M, 4704, 371250 },
+	{ 88200, TMDS_445M, 17836, 703125 },
+	{ 88200, TMDS_445_5M, 9408, 371250 },
+	{ 176400, TMDS_445M, 35672, 703125 },
+	{ 176400, TMDS_445_5M, 18816, 371250 },
+	{ 48000, TMDS_445M, 5824, 421875 },
+	{ 48000, TMDS_445_5M, 5120, 371250 },
+	{ 96000, TMDS_445M, 11648, 421875 },
+	{ 96000, TMDS_445_5M, 10240, 371250 },
+	{ 192000, TMDS_445M, 23296, 421875 },
+	{ 192000, TMDS_445_5M, 20480, 371250 },
+};
+
 /* get AUD_CONFIG_PIXEL_CLOCK_HDMI_* value for mode */
 static u32 audio_config_hdmi_pixel_clock(const struct intel_crtc_state *crtc_state)
 {
@@ -212,14 +258,24 @@ static u32 audio_config_hdmi_pixel_clock(const struct intel_crtc_state *crtc_sta
 static int audio_config_hdmi_get_n(const struct intel_crtc_state *crtc_state,
 				   int rate)
 {
-	const struct drm_display_mode *adjusted_mode =
-		&crtc_state->base.adjusted_mode;
-	int i;
+	const struct hdmi_aud_ncts *hdmi_ncts_table;
+	int i, size;
 
-	for (i = 0; i < ARRAY_SIZE(hdmi_aud_ncts); i++) {
-		if (rate == hdmi_aud_ncts[i].sample_rate &&
-		    adjusted_mode->crtc_clock == hdmi_aud_ncts[i].clock) {
-			return hdmi_aud_ncts[i].n;
+	if (crtc_state->pipe_bpp == 36) {
+		hdmi_ncts_table = hdmi_aud_ncts_36bpp;
+		size = ARRAY_SIZE(hdmi_aud_ncts_36bpp);
+	} else if (crtc_state->pipe_bpp == 30) {
+		hdmi_ncts_table = hdmi_aud_ncts_30bpp;
+		size = ARRAY_SIZE(hdmi_aud_ncts_30bpp);
+	} else {
+		hdmi_ncts_table = hdmi_aud_ncts_24bpp;
+		size = ARRAY_SIZE(hdmi_aud_ncts_24bpp);
+	}
+
+	for (i = 0; i < size; i++) {
+		if (rate == hdmi_ncts_table[i].sample_rate &&
+		    crtc_state->port_clock == hdmi_ncts_table[i].clock) {
+			return hdmi_ncts_table[i].n;
 		}
 	}
 	return 0;
@@ -505,8 +561,9 @@ static void ilk_audio_codec_disable(struct intel_encoder *encoder,
 	u32 tmp, eldv;
 	i915_reg_t aud_config, aud_cntrl_st2;
 
-	DRM_DEBUG_KMS("Disable audio codec on port %c, pipe %c\n",
-		      port_name(port), pipe_name(pipe));
+	DRM_DEBUG_KMS("Disable audio codec on [ENCODER:%d:%s], pipe %c\n",
+		      encoder->base.base.id, encoder->base.name,
+		      pipe_name(pipe));
 
 	if (WARN_ON(port == PORT_A))
 		return;
@@ -554,8 +611,9 @@ static void ilk_audio_codec_enable(struct intel_encoder *encoder,
 	int len, i;
 	i915_reg_t hdmiw_hdmiedid, aud_config, aud_cntl_st, aud_cntrl_st2;
 
-	DRM_DEBUG_KMS("Enable audio codec on port %c, pipe %c, %u bytes ELD\n",
-		      port_name(port), pipe_name(pipe), drm_eld_size(eld));
+	DRM_DEBUG_KMS("Enable audio codec on [ENCODER:%d:%s], pipe %c, %u bytes ELD\n",
+		      encoder->base.base.id, encoder->base.name,
+		      pipe_name(pipe), drm_eld_size(eld));
 
 	if (WARN_ON(port == PORT_A))
 		return;
@@ -761,13 +819,8 @@ retry:
 	to_intel_atomic_state(state)->cdclk.force_min_cdclk =
 		enable ? 2 * 96000 : 0;
 
-	/*
-	 * Protects dev_priv->cdclk.force_min_cdclk
-	 * Need to lock this here in case we have no active pipes
-	 * and thus wouldn't lock it during the commit otherwise.
-	 */
-	ret = drm_modeset_lock(&dev_priv->drm.mode_config.connection_mutex,
-			       &ctx);
+	/* Protects dev_priv->cdclk.force_min_cdclk */
+	ret = intel_atomic_lock_global_state(to_intel_atomic_state(state));
 	if (!ret)
 		ret = drm_atomic_commit(state);
 
@@ -795,10 +848,22 @@ static unsigned long i915_audio_component_get_power(struct device *kdev)
 
 	ret = intel_display_power_get(dev_priv, POWER_DOMAIN_AUDIO);
 
-	/* Force CDCLK to 2*BCLK as long as we need audio to be powered. */
-	if (dev_priv->audio_power_refcount++ == 0)
-		if (IS_CANNONLAKE(dev_priv) || IS_GEMINILAKE(dev_priv))
+	if (dev_priv->audio_power_refcount++ == 0) {
+		if (IS_TIGERLAKE(dev_priv) || IS_ICELAKE(dev_priv)) {
+			I915_WRITE(AUD_FREQ_CNTRL, dev_priv->audio_freq_cntrl);
+			DRM_DEBUG_KMS("restored AUD_FREQ_CNTRL to 0x%x\n",
+				      dev_priv->audio_freq_cntrl);
+		}
+
+		/* Force CDCLK to 2*BCLK as long as we need audio powered. */
+		if (IS_GEMINILAKE(dev_priv))
 			glk_force_audio_cdclk(dev_priv, true);
+
+		if (INTEL_GEN(dev_priv) >= 10 || IS_GEMINILAKE(dev_priv))
+			I915_WRITE(AUD_PIN_BUF_CTL,
+				   (I915_READ(AUD_PIN_BUF_CTL) |
+				    AUD_PIN_BUF_ENABLE));
+	}
 
 	return ret;
 }
@@ -810,7 +875,7 @@ static void i915_audio_component_put_power(struct device *kdev,
 
 	/* Stop forcing CDCLK to 2*BCLK if no need for audio to be powered. */
 	if (--dev_priv->audio_power_refcount == 0)
-		if (IS_CANNONLAKE(dev_priv) || IS_GEMINILAKE(dev_priv))
+		if (IS_GEMINILAKE(dev_priv))
 			glk_force_audio_cdclk(dev_priv, false);
 
 	intel_display_power_put(dev_priv, POWER_DOMAIN_AUDIO, cookie);
@@ -1057,6 +1122,12 @@ static void i915_audio_component_init(struct drm_i915_private *dev_priv)
 		DRM_ERROR("failed to add audio component (%d)\n", ret);
 		/* continue with reduced functionality */
 		return;
+	}
+
+	if (IS_TIGERLAKE(dev_priv) || IS_ICELAKE(dev_priv)) {
+		dev_priv->audio_freq_cntrl = I915_READ(AUD_FREQ_CNTRL);
+		DRM_DEBUG_KMS("init value of AUD_FREQ_CNTRL of 0x%x\n",
+			      dev_priv->audio_freq_cntrl);
 	}
 
 	dev_priv->audio_component_registered = true;

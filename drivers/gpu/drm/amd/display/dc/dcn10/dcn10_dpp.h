@@ -1368,7 +1368,7 @@ enum dcn10_input_csc_select {
 
 void dpp1_set_cursor_attributes(
 		struct dpp *dpp_base,
-		enum dc_cursor_color_format color_format);
+		struct dc_cursor_attributes *cursor_attributes);
 
 void dpp1_set_cursor_position(
 		struct dpp *dpp_base,
@@ -1503,6 +1503,11 @@ void dpp1_dppclk_control(
 void dpp1_set_hdr_multiplier(
 		struct dpp *dpp_base,
 		uint32_t multiplier);
+
+bool dpp1_get_optimal_number_of_taps(
+		struct dpp *dpp,
+		struct scaler_data *scl_data,
+		const struct scaling_taps *in_taps);
 
 void dpp1_construct(struct dcn10_dpp *dpp1,
 	struct dc_context *ctx,

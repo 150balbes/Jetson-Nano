@@ -7,18 +7,22 @@
 #include <unistd.h>
 #include <inttypes.h>
 
+#include "dso.h"
 #include "map.h"
-#include "map_groups.h"
+#include "maps.h"
 #include "symbol.h"
+#include "symsrc.h"
 #include "demangle-java.h"
 #include "demangle-rust.h"
 #include "machine.h"
 #include "vdso.h"
 #include "debug.h"
-#include "util.h"
+#include "util/copyfile.h"
 #include <linux/ctype.h>
+#include <linux/kernel.h>
 #include <linux/zalloc.h>
 #include <symbol/kallsyms.h>
+#include <internal/lib.h>
 
 #ifndef EM_AARCH64
 #define EM_AARCH64	183  /* ARM 64 bit */
@@ -39,6 +43,12 @@
 #endif
 
 typedef Elf64_Nhdr GElf_Nhdr;
+
+#ifndef DMGL_PARAMS
+#define DMGL_NO_OPTS     0              /* For readability... */
+#define DMGL_PARAMS      (1 << 0)       /* Include function args */
+#define DMGL_ANSI        (1 << 1)       /* Include const, volatile, etc */
+#endif
 
 #ifdef HAVE_CPLUS_DEMANGLE_SUPPORT
 extern char *cplus_demangle(const char *, int);
@@ -834,7 +844,7 @@ void __weak arch__sym_update(struct symbol *s __maybe_unused,
 
 static int dso__process_kernel_symbol(struct dso *dso, struct map *map,
 				      GElf_Sym *sym, GElf_Shdr *shdr,
-				      struct map_groups *kmaps, struct kmap *kmap,
+				      struct maps *kmaps, struct kmap *kmap,
 				      struct dso **curr_dsop, struct map **curr_mapp,
 				      const char *section_name,
 				      bool adjust_kernel_syms, bool kmodule, bool *remap_kernel)
@@ -866,8 +876,8 @@ static int dso__process_kernel_symbol(struct dso *dso, struct map *map,
 			/* Ensure maps are correctly ordered */
 			if (kmaps) {
 				map__get(map);
-				map_groups__remove(kmaps, map);
-				map_groups__insert(kmaps, map);
+				maps__remove(kmaps, map);
+				maps__insert(kmaps, map);
 				map__put(map);
 			}
 		}
@@ -892,7 +902,7 @@ static int dso__process_kernel_symbol(struct dso *dso, struct map *map,
 
 	snprintf(dso_name, sizeof(dso_name), "%s%s", dso->short_name, section_name);
 
-	curr_map = map_groups__find_by_name(kmaps, dso_name);
+	curr_map = maps__find_by_name(kmaps, dso_name);
 	if (curr_map == NULL) {
 		u64 start = sym->st_value;
 
@@ -918,13 +928,13 @@ static int dso__process_kernel_symbol(struct dso *dso, struct map *map,
 			curr_map->map_ip = curr_map->unmap_ip = identity__map_ip;
 		}
 		curr_dso->symtab_type = dso->symtab_type;
-		map_groups__insert(kmaps, curr_map);
+		maps__insert(kmaps, curr_map);
 		/*
 		 * Add it before we drop the referece to curr_map, i.e. while
 		 * we still are sure to have a reference to this DSO via
 		 * *curr_map->dso.
 		 */
-		dsos__add(&map->groups->machine->dsos, curr_dso);
+		dsos__add(&kmaps->machine->dsos, curr_dso);
 		/* kmaps already got it */
 		map__put(curr_map);
 		dso__set_loaded(curr_dso);
@@ -940,7 +950,7 @@ int dso__load_sym(struct dso *dso, struct map *map, struct symsrc *syms_ss,
 		  struct symsrc *runtime_ss, int kmodule)
 {
 	struct kmap *kmap = dso->kernel ? map__kmap(map) : NULL;
-	struct map_groups *kmaps = kmap ? map__kmaps(map) : NULL;
+	struct maps *kmaps = kmap ? map__kmaps(map) : NULL;
 	struct map *curr_map = map;
 	struct dso *curr_dso = dso;
 	Elf_Data *symstrs, *secstrs;
@@ -1152,7 +1162,7 @@ int dso__load_sym(struct dso *dso, struct map *map, struct symsrc *syms_ss,
 			 * We need to fixup this here too because we create new
 			 * maps here, for things like vsyscall sections.
 			 */
-			map_groups__fixup_end(kmaps);
+			maps__fixup_end(kmaps);
 		}
 	}
 	err = nr;

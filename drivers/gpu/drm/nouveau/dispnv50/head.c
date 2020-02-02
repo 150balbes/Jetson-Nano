@@ -81,18 +81,17 @@ nv50_head_atomic_check_dither(struct nv50_head_atom *armh,
 			      struct nv50_head_atom *asyh,
 			      struct nouveau_conn_atom *asyc)
 {
-	struct drm_connector *connector = asyc->state.connector;
 	u32 mode = 0x00;
 
 	if (asyc->dither.mode == DITHERING_MODE_AUTO) {
-		if (asyh->base.depth > connector->display_info.bpc * 3)
+		if (asyh->base.depth > asyh->or.bpc * 3)
 			mode = DITHERING_MODE_DYNAMIC2X2;
 	} else {
 		mode = asyc->dither.mode;
 	}
 
 	if (asyc->dither.depth == DITHERING_DEPTH_AUTO) {
-		if (connector->display_info.bpc >= 8)
+		if (asyh->or.bpc >= 8)
 			mode |= DITHERING_DEPTH_8BPC;
 	} else {
 		mode |= asyc->dither.depth;
@@ -480,7 +479,7 @@ nv50_head_create(struct drm_device *dev, int index)
 	struct nouveau_drm *drm = nouveau_drm(dev);
 	struct nv50_disp *disp = nv50_disp(dev);
 	struct nv50_head *head;
-	struct nv50_wndw *curs, *wndw;
+	struct nv50_wndw *base, *ovly, *curs;
 	struct drm_crtc *crtc;
 	int ret;
 
@@ -492,13 +491,13 @@ nv50_head_create(struct drm_device *dev, int index)
 	head->base.index = index;
 
 	if (disp->disp->object.oclass < GV100_DISP) {
-		ret = nv50_ovly_new(drm, head->base.index, &wndw);
-		ret = nv50_base_new(drm, head->base.index, &wndw);
+		ret = nv50_base_new(drm, head->base.index, &base);
+		ret = nv50_ovly_new(drm, head->base.index, &ovly);
 	} else {
-		ret = nv50_wndw_new(drm, DRM_PLANE_TYPE_OVERLAY,
-				    head->base.index * 2 + 1, &wndw);
 		ret = nv50_wndw_new(drm, DRM_PLANE_TYPE_PRIMARY,
-				    head->base.index * 2 + 0, &wndw);
+				    head->base.index * 2 + 0, &base);
+		ret = nv50_wndw_new(drm, DRM_PLANE_TYPE_OVERLAY,
+				    head->base.index * 2 + 1, &ovly);
 	}
 	if (ret == 0)
 		ret = nv50_curs_new(drm, head->base.index, &curs);
@@ -508,10 +507,14 @@ nv50_head_create(struct drm_device *dev, int index)
 	}
 
 	crtc = &head->base.base;
-	drm_crtc_init_with_planes(dev, crtc, &wndw->plane, &curs->plane,
+	drm_crtc_init_with_planes(dev, crtc, &base->plane, &curs->plane,
 				  &nv50_head_func, "head-%d", head->base.index);
 	drm_crtc_helper_add(crtc, &nv50_head_help);
 	drm_mode_crtc_set_gamma_size(crtc, 256);
+	if (disp->disp->object.oclass >= GF110_DISP)
+		drm_crtc_enable_color_mgmt(crtc, 256, true, 256);
+	else
+		drm_crtc_enable_color_mgmt(crtc, 0, false, 256);
 
 	if (head->func->olut_set) {
 		ret = nv50_lut_init(disp, &drm->client.mmu, &head->olut);

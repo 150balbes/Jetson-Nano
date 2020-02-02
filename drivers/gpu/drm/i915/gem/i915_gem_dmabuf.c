@@ -6,7 +6,7 @@
 
 #include <linux/dma-buf.h>
 #include <linux/highmem.h>
-#include <linux/reservation.h>
+#include <linux/dma-resv.h>
 
 #include "i915_drv.h"
 #include "i915_gem_object.h"
@@ -204,8 +204,7 @@ static const struct dma_buf_ops i915_dmabuf_ops =  {
 	.end_cpu_access = i915_gem_end_cpu_access,
 };
 
-struct dma_buf *i915_gem_prime_export(struct drm_device *dev,
-				      struct drm_gem_object *gem_obj, int flags)
+struct dma_buf *i915_gem_prime_export(struct drm_gem_object *gem_obj, int flags)
 {
 	struct drm_i915_gem_object *obj = to_intel_bo(gem_obj);
 	DEFINE_DMA_BUF_EXPORT_INFO(exp_info);
@@ -222,7 +221,7 @@ struct dma_buf *i915_gem_prime_export(struct drm_device *dev,
 			return ERR_PTR(ret);
 	}
 
-	return drm_gem_dmabuf_export(dev, &exp_info);
+	return drm_gem_dmabuf_export(gem_obj->dev, &exp_info);
 }
 
 static int i915_gem_object_get_pages_dmabuf(struct drm_i915_gem_object *obj)
@@ -257,6 +256,7 @@ static const struct drm_i915_gem_object_ops i915_gem_object_dmabuf_ops = {
 struct drm_gem_object *i915_gem_prime_import(struct drm_device *dev,
 					     struct dma_buf *dma_buf)
 {
+	static struct lock_class_key lock_class;
 	struct dma_buf_attachment *attach;
 	struct drm_i915_gem_object *obj;
 	int ret;
@@ -288,7 +288,7 @@ struct drm_gem_object *i915_gem_prime_import(struct drm_device *dev,
 	}
 
 	drm_gem_private_object_init(dev, &obj->base, dma_buf->size);
-	i915_gem_object_init(obj, &i915_gem_object_dmabuf_ops);
+	i915_gem_object_init(obj, &i915_gem_object_dmabuf_ops, &lock_class);
 	obj->base.import_attach = attach;
 	obj->base.resv = dma_buf->resv;
 

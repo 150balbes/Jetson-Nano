@@ -147,60 +147,26 @@ Address space mirroring implementation and API
 Address space mirroring's main objective is to allow duplication of a range of
 CPU page table into a device page table; HMM helps keep both synchronized. A
 device driver that wants to mirror a process address space must start with the
-registration of an hmm_mirror struct::
+registration of a mmu_interval_notifier::
 
- int hmm_mirror_register(struct hmm_mirror *mirror,
-                         struct mm_struct *mm);
+ mni->ops = &driver_ops;
+ int mmu_interval_notifier_insert(struct mmu_interval_notifier *mni,
+			          unsigned long start, unsigned long length,
+			          struct mm_struct *mm);
 
-The mirror struct has a set of callbacks that are used
-to propagate CPU page tables::
-
- struct hmm_mirror_ops {
-     /* release() - release hmm_mirror
-      *
-      * @mirror: pointer to struct hmm_mirror
-      *
-      * This is called when the mm_struct is being released.  The callback
-      * must ensure that all access to any pages obtained from this mirror
-      * is halted before the callback returns. All future access should
-      * fault.
-      */
-     void (*release)(struct hmm_mirror *mirror);
-
-     /* sync_cpu_device_pagetables() - synchronize page tables
-      *
-      * @mirror: pointer to struct hmm_mirror
-      * @update: update information (see struct mmu_notifier_range)
-      * Return: -EAGAIN if update.blockable false and callback need to
-      *         block, 0 otherwise.
-      *
-      * This callback ultimately originates from mmu_notifiers when the CPU
-      * page table is updated. The device driver must update its page table
-      * in response to this callback. The update argument tells what action
-      * to perform.
-      *
-      * The device driver must not return from this callback until the device
-      * page tables are completely updated (TLBs flushed, etc); this is a
-      * synchronous call.
-      */
-     int (*sync_cpu_device_pagetables)(struct hmm_mirror *mirror,
-                                       const struct hmm_update *update);
- };
-
-The device driver must perform the update action to the range (mark range
-read only, or fully unmap, etc.). The device must complete the update before
-the driver callback returns.
+During the driver_ops->invalidate() callback the device driver must perform
+the update action to the range (mark range read only, or fully unmap,
+etc.). The device must complete the update before the driver callback returns.
 
 When the device driver wants to populate a range of virtual addresses, it can
-use either::
+use::
 
-  long hmm_range_snapshot(struct hmm_range *range);
-  long hmm_range_fault(struct hmm_range *range, bool block);
+  long hmm_range_fault(struct hmm_range *range, unsigned int flags);
 
-The first one (hmm_range_snapshot()) will only fetch present CPU page table
+With the HMM_RANGE_SNAPSHOT flag, it will only fetch present CPU page table
 entries and will not trigger a page fault on missing or non-present entries.
-The second one does trigger a page fault on missing or read-only entries if
-write access is requested (see below). Page faults use the generic mm page
+Without that flag, it does trigger a page fault on missing or read-only entries
+if write access is requested (see below). Page faults use the generic mm page
 fault code path just like a CPU page fault.
 
 Both functions copy CPU page table entries into their pfns array argument. Each
@@ -217,70 +183,46 @@ The usage pattern is::
       struct hmm_range range;
       ...
 
+      range.notifier = &mni;
       range.start = ...;
       range.end = ...;
       range.pfns = ...;
       range.flags = ...;
       range.values = ...;
       range.pfn_shift = ...;
-      hmm_range_register(&range);
 
-      /*
-       * Just wait for range to be valid, safe to ignore return value as we
-       * will use the return value of hmm_range_snapshot() below under the
-       * mmap_sem to ascertain the validity of the range.
-       */
-      hmm_range_wait_until_valid(&range, TIMEOUT_IN_MSEC);
+      if (!mmget_not_zero(mni->notifier.mm))
+          return -EFAULT;
 
  again:
+      range.notifier_seq = mmu_interval_read_begin(&mni);
       down_read(&mm->mmap_sem);
-      ret = hmm_range_snapshot(&range);
+      ret = hmm_range_fault(&range, HMM_RANGE_SNAPSHOT);
       if (ret) {
           up_read(&mm->mmap_sem);
-          if (ret == -EBUSY) {
-            /*
-             * No need to check hmm_range_wait_until_valid() return value
-             * on retry we will get proper error with hmm_range_snapshot()
-             */
-            hmm_range_wait_until_valid(&range, TIMEOUT_IN_MSEC);
-            goto again;
-          }
-          hmm_range_unregister(&range);
+          if (ret == -EBUSY)
+                 goto again;
           return ret;
       }
+      up_read(&mm->mmap_sem);
+
       take_lock(driver->update);
-      if (!hmm_range_valid(&range)) {
+      if (mmu_interval_read_retry(&ni, range.notifier_seq) {
           release_lock(driver->update);
-          up_read(&mm->mmap_sem);
           goto again;
       }
 
-      // Use pfns array content to update device page table
+      /* Use pfns array content to update device page table,
+       * under the update lock */
 
-      hmm_range_unregister(&range);
       release_lock(driver->update);
-      up_read(&mm->mmap_sem);
       return 0;
  }
 
 The driver->update lock is the same lock that the driver takes inside its
-sync_cpu_device_pagetables() callback. That lock must be held before calling
-hmm_range_valid() to avoid any race with a concurrent CPU page table update.
-
-HMM implements all this on top of the mmu_notifier API because we wanted a
-simpler API and also to be able to perform optimizations latter on like doing
-concurrent device updates in multi-devices scenario.
-
-HMM also serves as an impedance mismatch between how CPU page table updates
-are done (by CPU write to the page table and TLB flushes) and how devices
-update their own page table. Device updates are a multi-step process. First,
-appropriate commands are written to a buffer, then this buffer is scheduled for
-execution on the device. It is only once the device has executed commands in
-the buffer that the update is done. Creating and scheduling the update command
-buffer can happen concurrently for multiple devices. Waiting for each device to
-report commands as executed is serialized (there is no point in doing this
-concurrently).
-
+invalidate() callback. That lock must be held before calling
+mmu_interval_read_retry() to avoid any race with a concurrent CPU page table
+update.
 
 Leverage default_flags and pfn_flags_mask
 =========================================
@@ -340,58 +282,8 @@ Migration to and from device memory
 ===================================
 
 Because the CPU cannot access device memory, migration must use the device DMA
-engine to perform copy from and to device memory. For this we need a new
-migration helper::
-
- int migrate_vma(const struct migrate_vma_ops *ops,
-                 struct vm_area_struct *vma,
-                 unsigned long mentries,
-                 unsigned long start,
-                 unsigned long end,
-                 unsigned long *src,
-                 unsigned long *dst,
-                 void *private);
-
-Unlike other migration functions it works on a range of virtual address, there
-are two reasons for that. First, device DMA copy has a high setup overhead cost
-and thus batching multiple pages is needed as otherwise the migration overhead
-makes the whole exercise pointless. The second reason is because the
-migration might be for a range of addresses the device is actively accessing.
-
-The migrate_vma_ops struct defines two callbacks. First one (alloc_and_copy())
-controls destination memory allocation and copy operation. Second one is there
-to allow the device driver to perform cleanup operations after migration::
-
- struct migrate_vma_ops {
-     void (*alloc_and_copy)(struct vm_area_struct *vma,
-                            const unsigned long *src,
-                            unsigned long *dst,
-                            unsigned long start,
-                            unsigned long end,
-                            void *private);
-     void (*finalize_and_map)(struct vm_area_struct *vma,
-                              const unsigned long *src,
-                              const unsigned long *dst,
-                              unsigned long start,
-                              unsigned long end,
-                              void *private);
- };
-
-It is important to stress that these migration helpers allow for holes in the
-virtual address range. Some pages in the range might not be migrated for all
-the usual reasons (page is pinned, page is locked, ...). This helper does not
-fail but just skips over those pages.
-
-The alloc_and_copy() might decide to not migrate all pages in the
-range (for reasons under the callback control). For those, the callback just
-has to leave the corresponding dst entry empty.
-
-Finally, the migration of the struct page might fail (for file backed page) for
-various reasons (failure to freeze reference, or update page cache, ...). If
-that happens, then the finalize_and_map() can catch any pages that were not
-migrated. Note those pages were still copied to a new page and thus we wasted
-bandwidth but this is considered as a rare event and a price that we are
-willing to pay to keep all the code simpler.
+engine to perform copy from and to device memory. For this we need to use
+migrate_vma_setup(), migrate_vma_pages(), and migrate_vma_finalize() helpers.
 
 
 Memory cgroup (memcg) and rss accounting

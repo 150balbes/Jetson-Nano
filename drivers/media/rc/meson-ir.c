@@ -91,8 +91,7 @@ static irqreturn_t meson_ir_irq(int irqno, void *dev_id)
 	status = readl_relaxed(ir->reg + IR_DEC_STATUS);
 	rawir.pulse = !!(status & STATUS_IR_DEC_IN);
 
-	if (ir_raw_event_store_with_filter(ir->rc, &rawir))
-		ir_raw_event_handle(ir->rc);
+	ir_raw_event_store_with_timeout(ir->rc, &rawir);
 
 	spin_unlock(&ir->lock);
 
@@ -118,10 +117,8 @@ static int meson_ir_probe(struct platform_device *pdev)
 		return PTR_ERR(ir->reg);
 
 	irq = platform_get_irq(pdev, 0);
-	if (irq < 0) {
-		dev_err(dev, "no irq resource\n");
+	if (irq < 0)
 		return irq;
-	}
 
 	ir->rc = devm_rc_allocate_device(dev, RC_DRIVER_IR_RAW);
 	if (!ir->rc) {

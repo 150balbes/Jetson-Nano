@@ -1836,8 +1836,7 @@ static void cvmx_usb_start_channel(struct octeon_hcd *usb, int channel,
  *
  * Returns: Pipe or NULL if none are ready
  */
-static struct cvmx_usb_pipe *cvmx_usb_find_ready_pipe(
-		struct octeon_hcd *usb,
+static struct cvmx_usb_pipe *cvmx_usb_find_ready_pipe(struct octeon_hcd *usb,
 		enum cvmx_usb_transfer xfer_type)
 {
 	struct list_head *list = usb->active_pipes + xfer_type;
@@ -3512,7 +3511,7 @@ static const struct hc_driver octeon_hc_driver = {
 	.product_desc		= "Octeon Host Controller",
 	.hcd_priv_size		= sizeof(struct octeon_hcd),
 	.irq			= octeon_usb_irq,
-	.flags			= HCD_MEMORY | HCD_USB2,
+	.flags			= HCD_MEMORY | HCD_DMA | HCD_USB2,
 	.start			= octeon_usb_start,
 	.stop			= octeon_usb_stop,
 	.urb_enqueue		= octeon_usb_urb_enqueue,

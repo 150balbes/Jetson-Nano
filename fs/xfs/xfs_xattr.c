@@ -11,6 +11,7 @@
 #include "xfs_da_format.h"
 #include "xfs_inode.h"
 #include "xfs_attr.h"
+#include "xfs_acl.h"
 
 #include <linux/posix_acl_xattr.h>
 #include <linux/xattr.h>
@@ -30,7 +31,7 @@ xfs_xattr_get(const struct xattr_handler *handler, struct dentry *unused,
 		value = NULL;
 	}
 
-	error = xfs_attr_get(ip, (unsigned char *)name, value, &asize, xflags);
+	error = xfs_attr_get(ip, name, (unsigned char **)&value, &asize, xflags);
 	if (error)
 		return error;
 	return asize;

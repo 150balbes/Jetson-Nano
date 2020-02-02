@@ -9,10 +9,9 @@
 #include <dt-bindings/gpio/gpio.h>
 #include <dt-bindings/gpio/meson-g12a-gpio.h>
 #include <dt-bindings/sound/meson-g12a-tohdmitx.h>
-#include <dt-bindings/thermal/thermal.h>
 
 / {
-	compatible = "amediatech,x96-max", "amlogic,u200", "amlogic,g12a";
+	compatible = "amediatech,x96-max", "amlogic,g12a";
 	model = "Shenzhen Amediatech Technology Co., Ltd X96 Max";
 
 	aliases {
@@ -25,53 +24,6 @@
 		compatible = "linux,spdif-dit";
 		status = "okay";
 		sound-name-prefix = "DIT";
-	};
-
-	thermal-zones {
-		cpu-thermal {
-			polling-delay = <1000>;
-			polling-delay-passive = <100>;
-			thermal-sensors = <&cpu_temp>;
-
-			trips {
-				cpu_critical: cpu-critical {
-					temperature = <110000>; /* millicelsius */
-					hysteresis = <2000>; /* millicelsius */
-					type = "critical";
-				};
-			};
-
-			cooling-maps {
-				map {
-					trip = <&cpu_critical>;
-					cooling-device = <&cpu0 THERMAL_NO_LIMIT THERMAL_NO_LIMIT>,
-							 <&cpu1 THERMAL_NO_LIMIT THERMAL_NO_LIMIT>,
-							 <&cpu2 THERMAL_NO_LIMIT THERMAL_NO_LIMIT>,
-							 <&cpu3 THERMAL_NO_LIMIT THERMAL_NO_LIMIT>;
-				};
-			};
-		};
-
-		ddr-thermal {
-			polling-delay = <1000>;
-			polling-delay-passive = <100>;
-			thermal-sensors = <&ddr_temp>;
-
-			trips {
-				ddr_critical: ddr-critical {
-					temperature = <110000>; /* millicelsius */
-					hysteresis = <2000>; /* millicelsius */
-					type = "critical";
-				};
-			};
-
-			cooling-maps {
-				map {
-					trip = <&ddr_critical>;
-					cooling-device = <&mali THERMAL_NO_LIMIT THERMAL_NO_LIMIT>;
-				};
-			};
-		};
 	};
 
 	chosen {
@@ -311,7 +263,6 @@
 	operating-points-v2 = <&cpu_opp_table>;
 	clocks = <&clkc CLKID_CPU_CLK>;
 	clock-latency = <50000>;
-	#cooling-cells = <2>;
 };
 
 &cpu1 {
@@ -319,7 +270,6 @@
 	operating-points-v2 = <&cpu_opp_table>;
 	clocks = <&clkc CLKID_CPU_CLK>;
 	clock-latency = <50000>;
-	#cooling-cells = <2>;
 };
 
 &cpu2 {
@@ -327,7 +277,6 @@
 	operating-points-v2 = <&cpu_opp_table>;
 	clocks = <&clkc CLKID_CPU_CLK>;
 	clock-latency = <50000>;
-	#cooling-cells = <2>;
 };
 
 &cpu3 {
@@ -335,7 +284,6 @@
 	operating-points-v2 = <&cpu_opp_table>;
 	clocks = <&clkc CLKID_CPU_CLK>;
 	clock-latency = <50000>;
-	#cooling-cells = <2>;
 };
 
 &cvbs_vdac_port {
@@ -374,10 +322,6 @@
 	pinctrl-0 = <&remote_input_ao_pins>;
 	pinctrl-names = "default";
 	linux,rc-map-name = "rc-x96max";
-};
-
-&mali {
-	#cooling-cells = <2>;
 };
 
 &pwm_AO_cd {
@@ -464,6 +408,9 @@
 
 	non-removable;
 	disable-wp;
+
+	/* WiFi firmware requires power to be kept while in suspend */
+	keep-power-in-suspend;
 
 	mmc-pwrseq = <&sdio_pwrseq>;
 

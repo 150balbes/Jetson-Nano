@@ -43,6 +43,13 @@ MODULE_FIRMWARE("amdgpu/vega20_asd.bin");
 MODULE_FIRMWARE("amdgpu/vega20_ta.bin");
 MODULE_FIRMWARE("amdgpu/navi10_sos.bin");
 MODULE_FIRMWARE("amdgpu/navi10_asd.bin");
+MODULE_FIRMWARE("amdgpu/navi14_sos.bin");
+MODULE_FIRMWARE("amdgpu/navi14_asd.bin");
+MODULE_FIRMWARE("amdgpu/navi12_sos.bin");
+MODULE_FIRMWARE("amdgpu/navi12_asd.bin");
+MODULE_FIRMWARE("amdgpu/arcturus_sos.bin");
+MODULE_FIRMWARE("amdgpu/arcturus_asd.bin");
+MODULE_FIRMWARE("amdgpu/arcturus_ta.bin");
 
 /* address block */
 #define smnMP1_FIRMWARE_FLAGS		0x3010024
@@ -51,6 +58,8 @@ MODULE_FIRMWARE("amdgpu/navi10_asd.bin");
 #define mmRLC_GPM_UCODE_DATA_NV10	0x5b62
 #define mmSDMA0_UCODE_ADDR_NV10		0x5880
 #define mmSDMA0_UCODE_DATA_NV10		0x5881
+/* memory training timeout define */
+#define MEM_TRAIN_SEND_MSG_TIMEOUT_US	3000000
 
 static int psp_v11_0_init_microcode(struct psp_context *psp)
 {
@@ -60,6 +69,7 @@ static int psp_v11_0_init_microcode(struct psp_context *psp)
 	int err = 0;
 	const struct psp_firmware_header_v1_0 *sos_hdr;
 	const struct psp_firmware_header_v1_1 *sos_hdr_v1_1;
+	const struct psp_firmware_header_v1_2 *sos_hdr_v1_2;
 	const struct psp_firmware_header_v1_0 *asd_hdr;
 	const struct ta_firmware_header_v1_0 *ta_hdr;
 
@@ -71,6 +81,15 @@ static int psp_v11_0_init_microcode(struct psp_context *psp)
 		break;
 	case CHIP_NAVI10:
 		chip_name = "navi10";
+		break;
+	case CHIP_NAVI14:
+		chip_name = "navi14";
+		break;
+	case CHIP_NAVI12:
+		chip_name = "navi12";
+		break;
+	case CHIP_ARCTURUS:
+		chip_name = "arcturus";
 		break;
 	default:
 		BUG();
@@ -107,6 +126,12 @@ static int psp_v11_0_init_microcode(struct psp_context *psp)
 			adev->psp.kdb_start_addr = (uint8_t *)adev->psp.sys_start_addr +
 					le32_to_cpu(sos_hdr_v1_1->kdb_offset_bytes);
 		}
+		if (sos_hdr->header.header_version_minor == 2) {
+			sos_hdr_v1_2 = (const struct psp_firmware_header_v1_2 *)adev->psp.sos_fw->data;
+			adev->psp.kdb_bin_size = le32_to_cpu(sos_hdr_v1_2->kdb_size_bytes);
+			adev->psp.kdb_start_addr = (uint8_t *)adev->psp.sys_start_addr +
+						    le32_to_cpu(sos_hdr_v1_2->kdb_offset_bytes);
+		}
 		break;
 	default:
 		dev_err(adev->dev,
@@ -133,6 +158,7 @@ static int psp_v11_0_init_microcode(struct psp_context *psp)
 
 	switch (adev->asic_type) {
 	case CHIP_VEGA20:
+	case CHIP_ARCTURUS:
 		snprintf(fw_name, sizeof(fw_name), "amdgpu/%s_ta.bin", chip_name);
 		err = request_firmware(&adev->psp.ta_fw, fw_name, adev->dev);
 		if (err) {
@@ -158,6 +184,8 @@ static int psp_v11_0_init_microcode(struct psp_context *psp)
 		}
 		break;
 	case CHIP_NAVI10:
+	case CHIP_NAVI14:
+	case CHIP_NAVI12:
 		break;
 	default:
 		BUG();
@@ -180,18 +208,26 @@ out:
 	return err;
 }
 
+static bool psp_v11_0_is_sos_alive(struct psp_context *psp)
+{
+	struct amdgpu_device *adev = psp->adev;
+	uint32_t sol_reg;
+
+	sol_reg = RREG32_SOC15(MP0, 0, mmMP0_SMN_C2PMSG_81);
+
+	return sol_reg != 0x0;
+}
+
 static int psp_v11_0_bootloader_load_kdb(struct psp_context *psp)
 {
 	int ret;
 	uint32_t psp_gfxdrv_command_reg = 0;
 	struct amdgpu_device *adev = psp->adev;
-	uint32_t sol_reg;
 
 	/* Check tOS sign of life register to confirm sys driver and sOS
 	 * are already been loaded.
 	 */
-	sol_reg = RREG32_SOC15(MP0, 0, mmMP0_SMN_C2PMSG_81);
-	if (sol_reg) {
+	if (psp_v11_0_is_sos_alive(psp)) {
 		psp->sos_fw_version = RREG32_SOC15(MP0, 0, mmMP0_SMN_C2PMSG_58);
 		dev_info(adev->dev, "sos fw version = 0x%x.\n", psp->sos_fw_version);
 		return 0;
@@ -208,7 +244,7 @@ static int psp_v11_0_bootloader_load_kdb(struct psp_context *psp)
 	/* Copy PSP KDB binary to memory */
 	memcpy(psp->fw_pri_buf, psp->kdb_start_addr, psp->kdb_bin_size);
 
-	/* Provide the sys driver to bootloader */
+	/* Provide the PSP KDB to bootloader */
 	WREG32_SOC15(MP0, 0, mmMP0_SMN_C2PMSG_36,
 	       (uint32_t)(psp->fw_pri_mc_addr >> 20));
 	psp_gfxdrv_command_reg = PSP_BL__LOAD_KEY_DATABASE;
@@ -227,13 +263,11 @@ static int psp_v11_0_bootloader_load_sysdrv(struct psp_context *psp)
 	int ret;
 	uint32_t psp_gfxdrv_command_reg = 0;
 	struct amdgpu_device *adev = psp->adev;
-	uint32_t sol_reg;
 
 	/* Check sOS sign of life register to confirm sys driver and sOS
 	 * are already been loaded.
 	 */
-	sol_reg = RREG32_SOC15(MP0, 0, mmMP0_SMN_C2PMSG_81);
-	if (sol_reg) {
+	if (psp_v11_0_is_sos_alive(psp)) {
 		psp->sos_fw_version = RREG32_SOC15(MP0, 0, mmMP0_SMN_C2PMSG_58);
 		dev_info(adev->dev, "sos fw version = 0x%x.\n", psp->sos_fw_version);
 		return 0;
@@ -271,13 +305,11 @@ static int psp_v11_0_bootloader_load_sos(struct psp_context *psp)
 	int ret;
 	unsigned int psp_gfxdrv_command_reg = 0;
 	struct amdgpu_device *adev = psp->adev;
-	uint32_t sol_reg;
 
 	/* Check sOS sign of life register to confirm sys driver and sOS
 	 * are already been loaded.
 	 */
-	sol_reg = RREG32_SOC15(MP0, 0, mmMP0_SMN_C2PMSG_81);
-	if (sol_reg)
+	if (psp_v11_0_is_sos_alive(psp))
 		return 0;
 
 	/* Wait for bootloader to signify that is ready having bit 31 of C2PMSG_35 set to 1 */
@@ -373,59 +405,6 @@ static bool psp_v11_0_support_vmr_ring(struct psp_context *psp)
 	return false;
 }
 
-static int psp_v11_0_ring_create(struct psp_context *psp,
-				enum psp_ring_type ring_type)
-{
-	int ret = 0;
-	unsigned int psp_ring_reg = 0;
-	struct psp_ring *ring = &psp->km_ring;
-	struct amdgpu_device *adev = psp->adev;
-
-	if (psp_v11_0_support_vmr_ring(psp)) {
-		/* Write low address of the ring to C2PMSG_102 */
-		psp_ring_reg = lower_32_bits(ring->ring_mem_mc_addr);
-		WREG32_SOC15(MP0, 0, mmMP0_SMN_C2PMSG_102, psp_ring_reg);
-		/* Write high address of the ring to C2PMSG_103 */
-		psp_ring_reg = upper_32_bits(ring->ring_mem_mc_addr);
-		WREG32_SOC15(MP0, 0, mmMP0_SMN_C2PMSG_103, psp_ring_reg);
-
-		/* Write the ring initialization command to C2PMSG_101 */
-		WREG32_SOC15(MP0, 0, mmMP0_SMN_C2PMSG_101,
-					     GFX_CTRL_CMD_ID_INIT_GPCOM_RING);
-
-		/* there might be handshake issue with hardware which needs delay */
-		mdelay(20);
-
-		/* Wait for response flag (bit 31) in C2PMSG_101 */
-		ret = psp_wait_for(psp, SOC15_REG_OFFSET(MP0, 0, mmMP0_SMN_C2PMSG_101),
-				   0x80000000, 0x8000FFFF, false);
-
-	} else {
-		/* Write low address of the ring to C2PMSG_69 */
-		psp_ring_reg = lower_32_bits(ring->ring_mem_mc_addr);
-		WREG32_SOC15(MP0, 0, mmMP0_SMN_C2PMSG_69, psp_ring_reg);
-		/* Write high address of the ring to C2PMSG_70 */
-		psp_ring_reg = upper_32_bits(ring->ring_mem_mc_addr);
-		WREG32_SOC15(MP0, 0, mmMP0_SMN_C2PMSG_70, psp_ring_reg);
-		/* Write size of ring to C2PMSG_71 */
-		psp_ring_reg = ring->ring_size;
-		WREG32_SOC15(MP0, 0, mmMP0_SMN_C2PMSG_71, psp_ring_reg);
-		/* Write the ring initialization command to C2PMSG_64 */
-		psp_ring_reg = ring_type;
-		psp_ring_reg = psp_ring_reg << 16;
-		WREG32_SOC15(MP0, 0, mmMP0_SMN_C2PMSG_64, psp_ring_reg);
-
-		/* there might be handshake issue with hardware which needs delay */
-		mdelay(20);
-
-		/* Wait for response flag (bit 31) in C2PMSG_64 */
-		ret = psp_wait_for(psp, SOC15_REG_OFFSET(MP0, 0, mmMP0_SMN_C2PMSG_64),
-				   0x80000000, 0x8000FFFF, false);
-	}
-
-	return ret;
-}
-
 static int psp_v11_0_ring_stop(struct psp_context *psp,
 			      enum psp_ring_type ring_type)
 {
@@ -454,6 +433,74 @@ static int psp_v11_0_ring_stop(struct psp_context *psp,
 	return ret;
 }
 
+static int psp_v11_0_ring_create(struct psp_context *psp,
+				enum psp_ring_type ring_type)
+{
+	int ret = 0;
+	unsigned int psp_ring_reg = 0;
+	struct psp_ring *ring = &psp->km_ring;
+	struct amdgpu_device *adev = psp->adev;
+
+	if (psp_v11_0_support_vmr_ring(psp)) {
+		ret = psp_v11_0_ring_stop(psp, ring_type);
+		if (ret) {
+			DRM_ERROR("psp_v11_0_ring_stop_sriov failed!\n");
+			return ret;
+		}
+
+		/* Write low address of the ring to C2PMSG_102 */
+		psp_ring_reg = lower_32_bits(ring->ring_mem_mc_addr);
+		WREG32_SOC15(MP0, 0, mmMP0_SMN_C2PMSG_102, psp_ring_reg);
+		/* Write high address of the ring to C2PMSG_103 */
+		psp_ring_reg = upper_32_bits(ring->ring_mem_mc_addr);
+		WREG32_SOC15(MP0, 0, mmMP0_SMN_C2PMSG_103, psp_ring_reg);
+
+		/* Write the ring initialization command to C2PMSG_101 */
+		WREG32_SOC15(MP0, 0, mmMP0_SMN_C2PMSG_101,
+					     GFX_CTRL_CMD_ID_INIT_GPCOM_RING);
+
+		/* there might be handshake issue with hardware which needs delay */
+		mdelay(20);
+
+		/* Wait for response flag (bit 31) in C2PMSG_101 */
+		ret = psp_wait_for(psp, SOC15_REG_OFFSET(MP0, 0, mmMP0_SMN_C2PMSG_101),
+				   0x80000000, 0x8000FFFF, false);
+
+	} else {
+		/* Wait for sOS ready for ring creation */
+		ret = psp_wait_for(psp, SOC15_REG_OFFSET(MP0, 0, mmMP0_SMN_C2PMSG_64),
+				   0x80000000, 0x80000000, false);
+		if (ret) {
+			DRM_ERROR("Failed to wait for sOS ready for ring creation\n");
+			return ret;
+		}
+
+		/* Write low address of the ring to C2PMSG_69 */
+		psp_ring_reg = lower_32_bits(ring->ring_mem_mc_addr);
+		WREG32_SOC15(MP0, 0, mmMP0_SMN_C2PMSG_69, psp_ring_reg);
+		/* Write high address of the ring to C2PMSG_70 */
+		psp_ring_reg = upper_32_bits(ring->ring_mem_mc_addr);
+		WREG32_SOC15(MP0, 0, mmMP0_SMN_C2PMSG_70, psp_ring_reg);
+		/* Write size of ring to C2PMSG_71 */
+		psp_ring_reg = ring->ring_size;
+		WREG32_SOC15(MP0, 0, mmMP0_SMN_C2PMSG_71, psp_ring_reg);
+		/* Write the ring initialization command to C2PMSG_64 */
+		psp_ring_reg = ring_type;
+		psp_ring_reg = psp_ring_reg << 16;
+		WREG32_SOC15(MP0, 0, mmMP0_SMN_C2PMSG_64, psp_ring_reg);
+
+		/* there might be handshake issue with hardware which needs delay */
+		mdelay(20);
+
+		/* Wait for response flag (bit 31) in C2PMSG_64 */
+		ret = psp_wait_for(psp, SOC15_REG_OFFSET(MP0, 0, mmMP0_SMN_C2PMSG_64),
+				   0x80000000, 0x8000FFFF, false);
+	}
+
+	return ret;
+}
+
+
 static int psp_v11_0_ring_destroy(struct psp_context *psp,
 				 enum psp_ring_type ring_type)
 {
@@ -473,7 +520,6 @@ static int psp_v11_0_ring_destroy(struct psp_context *psp,
 }
 
 static int psp_v11_0_cmd_submit(struct psp_context *psp,
-			       struct amdgpu_firmware_info *ucode,
 			       uint64_t cmd_buf_mc_addr, uint64_t fence_mc_addr,
 			       int index)
 {
@@ -517,6 +563,7 @@ static int psp_v11_0_cmd_submit(struct psp_context *psp,
 	write_frame->fence_addr_hi = upper_32_bits(fence_mc_addr);
 	write_frame->fence_addr_lo = lower_32_bits(fence_mc_addr);
 	write_frame->fence_value = index;
+	amdgpu_asic_flush_hdp(adev, NULL);
 
 	/* Update the write Pointer in DWORDs */
 	psp_write_ptr_reg = (psp_write_ptr_reg + rb_frame_size_dw) % ring_size_dw;
@@ -865,6 +912,162 @@ static int psp_v11_0_rlc_autoload_start(struct psp_context *psp)
 	return psp_rlc_autoload_start(psp);
 }
 
+static int psp_v11_0_memory_training_send_msg(struct psp_context *psp, int msg)
+{
+	int ret;
+	int i;
+	uint32_t data_32;
+	int max_wait;
+	struct amdgpu_device *adev = psp->adev;
+
+	data_32 = (psp->mem_train_ctx.c2p_train_data_offset >> 20);
+	WREG32_SOC15(MP0, 0, mmMP0_SMN_C2PMSG_36, data_32);
+	WREG32_SOC15(MP0, 0, mmMP0_SMN_C2PMSG_35, msg);
+
+	max_wait = MEM_TRAIN_SEND_MSG_TIMEOUT_US / adev->usec_timeout;
+	for (i = 0; i < max_wait; i++) {
+		ret = psp_wait_for(psp, SOC15_REG_OFFSET(MP0, 0, mmMP0_SMN_C2PMSG_35),
+				   0x80000000, 0x80000000, false);
+		if (ret == 0)
+			break;
+	}
+	if (i < max_wait)
+		ret = 0;
+	else
+		ret = -ETIME;
+
+	DRM_DEBUG("training %s %s, cost %d @ %d ms\n",
+		  (msg == PSP_BL__DRAM_SHORT_TRAIN) ? "short" : "long",
+		  (ret == 0) ? "succeed" : "failed",
+		  i, adev->usec_timeout/1000);
+	return ret;
+}
+
+static void psp_v11_0_memory_training_fini(struct psp_context *psp)
+{
+	struct psp_memory_training_context *ctx = &psp->mem_train_ctx;
+
+	ctx->init = PSP_MEM_TRAIN_NOT_SUPPORT;
+	kfree(ctx->sys_cache);
+	ctx->sys_cache = NULL;
+}
+
+static int psp_v11_0_memory_training_init(struct psp_context *psp)
+{
+	int ret;
+	struct psp_memory_training_context *ctx = &psp->mem_train_ctx;
+
+	if (ctx->init != PSP_MEM_TRAIN_RESERVE_SUCCESS) {
+		DRM_DEBUG("memory training is not supported!\n");
+		return 0;
+	}
+
+	ctx->sys_cache = kzalloc(ctx->train_data_size, GFP_KERNEL);
+	if (ctx->sys_cache == NULL) {
+		DRM_ERROR("alloc mem_train_ctx.sys_cache failed!\n");
+		ret = -ENOMEM;
+		goto Err_out;
+	}
+
+	DRM_DEBUG("train_data_size:%llx,p2c_train_data_offset:%llx,c2p_train_data_offset:%llx.\n",
+		  ctx->train_data_size,
+		  ctx->p2c_train_data_offset,
+		  ctx->c2p_train_data_offset);
+	ctx->init = PSP_MEM_TRAIN_INIT_SUCCESS;
+	return 0;
+
+Err_out:
+	psp_v11_0_memory_training_fini(psp);
+	return ret;
+}
+
+/*
+ * save and restore proces
+ */
+static int psp_v11_0_memory_training(struct psp_context *psp, uint32_t ops)
+{
+	int ret;
+	uint32_t p2c_header[4];
+	struct psp_memory_training_context *ctx = &psp->mem_train_ctx;
+	uint32_t *pcache = (uint32_t*)ctx->sys_cache;
+
+	if (ctx->init == PSP_MEM_TRAIN_NOT_SUPPORT) {
+		DRM_DEBUG("Memory training is not supported.\n");
+		return 0;
+	} else if (ctx->init != PSP_MEM_TRAIN_INIT_SUCCESS) {
+		DRM_ERROR("Memory training initialization failure.\n");
+		return -EINVAL;
+	}
+
+	if (psp_v11_0_is_sos_alive(psp)) {
+		DRM_DEBUG("SOS is alive, skip memory training.\n");
+		return 0;
+	}
+
+	amdgpu_device_vram_access(psp->adev, ctx->p2c_train_data_offset, p2c_header, sizeof(p2c_header), false);
+	DRM_DEBUG("sys_cache[%08x,%08x,%08x,%08x] p2c_header[%08x,%08x,%08x,%08x]\n",
+		  pcache[0], pcache[1], pcache[2], pcache[3],
+		  p2c_header[0], p2c_header[1], p2c_header[2], p2c_header[3]);
+
+	if (ops & PSP_MEM_TRAIN_SEND_SHORT_MSG) {
+		DRM_DEBUG("Short training depends on restore.\n");
+		ops |= PSP_MEM_TRAIN_RESTORE;
+	}
+
+	if ((ops & PSP_MEM_TRAIN_RESTORE) &&
+	    pcache[0] != MEM_TRAIN_SYSTEM_SIGNATURE) {
+		DRM_DEBUG("sys_cache[0] is invalid, restore depends on save.\n");
+		ops |= PSP_MEM_TRAIN_SAVE;
+	}
+
+	if (p2c_header[0] == MEM_TRAIN_SYSTEM_SIGNATURE &&
+	    !(pcache[0] == MEM_TRAIN_SYSTEM_SIGNATURE &&
+	      pcache[3] == p2c_header[3])) {
+		DRM_DEBUG("sys_cache is invalid or out-of-date, need save training data to sys_cache.\n");
+		ops |= PSP_MEM_TRAIN_SAVE;
+	}
+
+	if ((ops & PSP_MEM_TRAIN_SAVE) &&
+	    p2c_header[0] != MEM_TRAIN_SYSTEM_SIGNATURE) {
+		DRM_DEBUG("p2c_header[0] is invalid, save depends on long training.\n");
+		ops |= PSP_MEM_TRAIN_SEND_LONG_MSG;
+	}
+
+	if (ops & PSP_MEM_TRAIN_SEND_LONG_MSG) {
+		ops &= ~PSP_MEM_TRAIN_SEND_SHORT_MSG;
+		ops |= PSP_MEM_TRAIN_SAVE;
+	}
+
+	DRM_DEBUG("Memory training ops:%x.\n", ops);
+
+	if (ops & PSP_MEM_TRAIN_SEND_LONG_MSG) {
+		ret = psp_v11_0_memory_training_send_msg(psp, PSP_BL__DRAM_LONG_TRAIN);
+		if (ret) {
+			DRM_ERROR("Send long training msg failed.\n");
+			return ret;
+		}
+	}
+
+	if (ops & PSP_MEM_TRAIN_SAVE) {
+		amdgpu_device_vram_access(psp->adev, ctx->p2c_train_data_offset, ctx->sys_cache, ctx->train_data_size, false);
+	}
+
+	if (ops & PSP_MEM_TRAIN_RESTORE) {
+		amdgpu_device_vram_access(psp->adev, ctx->c2p_train_data_offset, ctx->sys_cache, ctx->train_data_size, true);
+	}
+
+	if (ops & PSP_MEM_TRAIN_SEND_SHORT_MSG) {
+		ret = psp_v11_0_memory_training_send_msg(psp, (amdgpu_force_long_training > 0) ?
+							 PSP_BL__DRAM_LONG_TRAIN : PSP_BL__DRAM_SHORT_TRAIN);
+		if (ret) {
+			DRM_ERROR("send training msg failed.\n");
+			return ret;
+		}
+	}
+	ctx->training_cnt++;
+	return 0;
+}
+
 static const struct psp_funcs psp_v11_0_funcs = {
 	.init_microcode = psp_v11_0_init_microcode,
 	.bootloader_load_kdb = psp_v11_0_bootloader_load_kdb,
@@ -885,6 +1088,9 @@ static const struct psp_funcs psp_v11_0_funcs = {
 	.ras_trigger_error = psp_v11_0_ras_trigger_error,
 	.ras_cure_posion = psp_v11_0_ras_cure_posion,
 	.rlc_autoload_start = psp_v11_0_rlc_autoload_start,
+	.mem_training_init = psp_v11_0_memory_training_init,
+	.mem_training_fini = psp_v11_0_memory_training_fini,
+	.mem_training = psp_v11_0_memory_training,
 };
 
 void psp_v11_0_set_psp_funcs(struct psp_context *psp)

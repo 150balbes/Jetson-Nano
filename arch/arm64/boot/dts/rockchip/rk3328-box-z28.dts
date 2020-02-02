@@ -52,8 +52,6 @@
 	vcc_sys: vcc-sys {
 		compatible = "regulator-fixed";
 		regulator-name = "vcc_sys";
-		regulator-always-on;
-		regulator-boot-on;
 		regulator-min-microvolt = <5000000>;
 		regulator-max-microvolt = <5000000>;
 	};
@@ -72,29 +70,6 @@
 			gpios = <&rk805 0 GPIO_ACTIVE_HIGH>;
 			linux,default-trigger = "default-on";
 			default-state = "on";
-		};
-	};
-
-	hdmi-sound {
-		compatible = "audio-graph-card";
-		label = "HDMI";
-		dais = <&i2s0_p0>;
-	};
-
-	spdif-sound {
-		compatible = "audio-graph-card";
-		label = "SPDIF";
-		dais = <&spdif_p0>;
-	};
-
-	spdif-dit {
-		compatible = "linux,spdif-dit";
-		#sound-dai-cells = <0>;
-
-		port {
-			dit_p0_0: endpoint {
-				remote-endpoint = <&spdif_p0_0>;
-			};
 		};
 	};
 };
@@ -118,6 +93,7 @@
 &emmc {
 	bus-width = <8>;
 	cap-mmc-highspeed;
+	mmc-ddr-1_8v;
 	mmc-hs200-1_8v;
 	non-removable;
 	pinctrl-names = "default";
@@ -137,17 +113,19 @@
 	status = "okay";
 };
 
+&gpu {
+	mali-supply = <&vdd_logic>;
+};
+
 &hdmi {
 	status = "okay";
-
-	port@0 {
-		hdmi_p0_0: endpoint {
-			remote-endpoint = <&i2s0_p0_0>;
-		};
-	};
 };
 
 &hdmiphy {
+	status = "okay";
+};
+
+&hdmi_sound {
 	status = "okay";
 };
 
@@ -173,7 +151,7 @@
 		vcc3-supply = <&vcc_sys>;
 		vcc4-supply = <&vcc_sys>;
 		vcc5-supply = <&vcc_io>;
-		vcc6-supply = <&vcc_sys>;
+		vcc6-supply = <&vcc_io>;
 
 		regulators {
 			vdd_logic: DCDC_REG1 {
@@ -264,19 +242,9 @@
 
 &i2s0 {
 	status = "okay";
-
-	i2s0_p0: port {
-		i2s0_p0_0: endpoint {
-			dai-format = "i2s";
-			mclk-fs = <256>;
-			remote-endpoint = <&hdmi_p0_0>;
-		};
-	};
 };
 
 &io_domains {
-	status = "okay";
-
 	vccio1-supply = <&vcc_io>;
 	vccio2-supply = <&vcc18_emmc>;
 	vccio3-supply = <&vcc_io>;
@@ -284,6 +252,7 @@
 	vccio5-supply = <&vcc_io>;
 	vccio6-supply = <&vcc_io>;
 	pmuio-supply = <&vcc_io>;
+	status = "okay";
 };
 
 &pinctrl {
@@ -326,7 +295,6 @@
 	cap-mmc-highspeed;
 	cap-sd-highspeed;
 	disable-wp;
-	max-frequency = <150000000>;
 	pinctrl-names = "default";
 	pinctrl-0 = <&sdmmc0_clk &sdmmc0_cmd &sdmmc0_dectn &sdmmc0_bus4>;
 	vmmc-supply = <&vcc_sd>;
@@ -336,12 +304,14 @@
 &spdif {
 	pinctrl-0 = <&spdifm0_tx>;
 	status = "okay";
+};
 
-	spdif_p0: port {
-		spdif_p0_0: endpoint {
-			remote-endpoint = <&dit_p0_0>;
-		};
-	};
+&spdif_out {
+	status = "okay";
+};
+
+&spdif_sound {
+	status = "okay";
 };
 
 &tsadc {

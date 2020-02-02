@@ -65,13 +65,6 @@ enum {
 	DPA_RESOURCE_ADJUSTED = 1 << 0,
 };
 
-extern struct attribute_group nvdimm_bus_attribute_group;
-extern struct attribute_group nvdimm_attribute_group;
-extern struct attribute_group nd_device_attribute_group;
-extern struct attribute_group nd_numa_attribute_group;
-extern struct attribute_group nd_region_attribute_group;
-extern struct attribute_group nd_mapping_attribute_group;
-
 struct nvdimm;
 struct nvdimm_bus_descriptor;
 typedef int (*ndctl_fn)(struct nvdimm_bus_descriptor *nd_desc,
@@ -160,8 +153,11 @@ static inline struct nd_blk_region_desc *to_blk_region_desc(
 
 }
 
-enum nvdimm_security_state {
-	NVDIMM_SECURITY_ERROR = -1,
+/*
+ * Note that separate bits for locked + unlocked are defined so that
+ * 'flags == 0' corresponds to an error / not-supported state.
+ */
+enum nvdimm_security_bits {
 	NVDIMM_SECURITY_DISABLED,
 	NVDIMM_SECURITY_UNLOCKED,
 	NVDIMM_SECURITY_LOCKED,
@@ -182,7 +178,7 @@ enum nvdimm_passphrase_type {
 };
 
 struct nvdimm_security_ops {
-	enum nvdimm_security_state (*state)(struct nvdimm *nvdimm,
+	unsigned long (*get_flags)(struct nvdimm *nvdimm,
 			enum nvdimm_passphrase_type pass_type);
 	int (*freeze)(struct nvdimm *nvdimm);
 	int (*change_key)(struct nvdimm *nvdimm,

@@ -46,11 +46,11 @@ config FPGA_MGR_ALTERA_PS_SPI
 	  using the passive serial interface over SPI.
 
 config FPGA_MGR_ALTERA_CVP
-	tristate "Altera Arria-V/Cyclone-V/Stratix-V CvP FPGA Manager"
+	tristate "Altera CvP FPGA Manager"
 	depends on PCI
 	help
-	  FPGA manager driver support for Arria-V, Cyclone-V, Stratix-V
-	  and Arria 10 Altera FPGAs using the CvP interface over PCIe.
+	  FPGA manager driver support for Arria-V, Cyclone-V, Stratix-V,
+	  Arria 10 and Stratix10 Altera FPGAs using the CvP interface over PCIe.
 
 config FPGA_MGR_ZYNQ_FPGA
 	tristate "Xilinx Zynq FPGA"
@@ -156,7 +156,7 @@ config FPGA_DFL
 
 config FPGA_DFL_FME
 	tristate "FPGA DFL FME Driver"
-	depends on FPGA_DFL
+	depends on FPGA_DFL && HWMON
 	help
 	  The FPGA Management Engine (FME) is a feature device implemented
 	  under Device Feature List (DFL) framework. Select this option to

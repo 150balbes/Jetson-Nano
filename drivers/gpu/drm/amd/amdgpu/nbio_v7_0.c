@@ -91,6 +91,26 @@ static void nbio_v7_0_sdma_doorbell_range(struct amdgpu_device *adev, int instan
 	WREG32(reg, doorbell_range);
 }
 
+static void nbio_v7_0_vcn_doorbell_range(struct amdgpu_device *adev, bool use_doorbell,
+					 int doorbell_index, int instance)
+{
+	u32 reg = SOC15_REG_OFFSET(NBIO, 0, mmBIF_MMSCH0_DOORBELL_RANGE);
+
+	u32 doorbell_range = RREG32(reg);
+
+	if (use_doorbell) {
+		doorbell_range = REG_SET_FIELD(doorbell_range,
+					       BIF_MMSCH0_DOORBELL_RANGE, OFFSET,
+					       doorbell_index);
+		doorbell_range = REG_SET_FIELD(doorbell_range,
+					       BIF_MMSCH0_DOORBELL_RANGE, SIZE, 8);
+	} else
+		doorbell_range = REG_SET_FIELD(doorbell_range,
+					       BIF_MMSCH0_DOORBELL_RANGE, SIZE, 0);
+
+	WREG32(reg, doorbell_range);
+}
+
 static void nbio_v7_0_enable_doorbell_aperture(struct amdgpu_device *adev,
 					       bool enable)
 {
@@ -272,7 +292,6 @@ static void nbio_v7_0_init_registers(struct amdgpu_device *adev)
 }
 
 const struct amdgpu_nbio_funcs nbio_v7_0_funcs = {
-	.hdp_flush_reg = &nbio_v7_0_hdp_flush_reg,
 	.get_hdp_flush_req_offset = nbio_v7_0_get_hdp_flush_req_offset,
 	.get_hdp_flush_done_offset = nbio_v7_0_get_hdp_flush_done_offset,
 	.get_pcie_index_offset = nbio_v7_0_get_pcie_index_offset,
@@ -282,6 +301,7 @@ const struct amdgpu_nbio_funcs nbio_v7_0_funcs = {
 	.hdp_flush = nbio_v7_0_hdp_flush,
 	.get_memsize = nbio_v7_0_get_memsize,
 	.sdma_doorbell_range = nbio_v7_0_sdma_doorbell_range,
+	.vcn_doorbell_range = nbio_v7_0_vcn_doorbell_range,
 	.enable_doorbell_aperture = nbio_v7_0_enable_doorbell_aperture,
 	.enable_doorbell_selfring_aperture = nbio_v7_0_enable_doorbell_selfring_aperture,
 	.ih_doorbell_range = nbio_v7_0_ih_doorbell_range,

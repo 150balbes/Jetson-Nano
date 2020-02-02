@@ -80,7 +80,7 @@ xchk_setup_xattr(
 	 * without the inode lock held, which means we can sleep.
 	 */
 	if (sc->flags & XCHK_TRY_HARDER) {
-		error = xchk_setup_xattr_buf(sc, XATTR_SIZE_MAX, KM_SLEEP);
+		error = xchk_setup_xattr_buf(sc, XATTR_SIZE_MAX, 0);
 		if (error)
 			return error;
 	}
@@ -163,8 +163,6 @@ xchk_xattr_listent(
 	args.valuelen = valuelen;
 
 	error = xfs_attr_get_ilocked(context->dp, &args);
-	if (error == -EEXIST)
-		error = 0;
 	if (!xchk_fblock_process_error(sx->sc, XFS_ATTR_FORK, args.blkno,
 			&error))
 		goto fail_xref;
@@ -173,7 +171,7 @@ xchk_xattr_listent(
 					     args.blkno);
 fail_xref:
 	if (sx->sc->sm->sm_flags & XFS_SCRUB_OFLAG_CORRUPT)
-		context->seen_enough = XFS_ITER_ABORT;
+		context->seen_enough = 1;
 	return;
 }
 
@@ -400,15 +398,14 @@ out:
 STATIC int
 xchk_xattr_rec(
 	struct xchk_da_btree		*ds,
-	int				level,
-	void				*rec)
+	int				level)
 {
 	struct xfs_mount		*mp = ds->state->mp;
-	struct xfs_attr_leaf_entry	*ent = rec;
-	struct xfs_da_state_blk		*blk;
+	struct xfs_da_state_blk		*blk = &ds->state->path.blk[level];
 	struct xfs_attr_leaf_name_local	*lentry;
 	struct xfs_attr_leaf_name_remote	*rentry;
 	struct xfs_buf			*bp;
+	struct xfs_attr_leaf_entry	*ent;
 	xfs_dahash_t			calc_hash;
 	xfs_dahash_t			hash;
 	int				nameidx;
@@ -416,7 +413,9 @@ xchk_xattr_rec(
 	unsigned int			badflags;
 	int				error;
 
-	blk = &ds->state->path.blk[level];
+	ASSERT(blk->magic == XFS_ATTR_LEAF_MAGIC);
+
+	ent = xfs_attr3_leaf_entryp(blk->bp->b_addr) + blk->index;
 
 	/* Check the whole block, if necessary. */
 	error = xchk_xattr_block(ds, level);

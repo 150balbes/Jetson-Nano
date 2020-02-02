@@ -151,7 +151,7 @@ struct dentry_operations {
 
 /*
  * Locking rules for dentry_operations callbacks are to be found in
- * Documentation/filesystems/Locking. Keep it updated!
+ * Documentation/filesystems/locking.rst. Keep it updated!
  *
  * FUrther descriptions are found in Documentation/filesystems/vfs.rst.
  * Keep it updated too!
@@ -438,6 +438,11 @@ static inline bool d_is_negative(const struct dentry *dentry)
 {
 	// TODO: check d_is_whiteout(dentry) also.
 	return d_is_miss(dentry);
+}
+
+static inline bool d_flags_negative(unsigned flags)
+{
+	return (flags & DCACHE_ENTRY_TYPE) == DCACHE_MISS_TYPE;
 }
 
 static inline bool d_is_positive(const struct dentry *dentry)

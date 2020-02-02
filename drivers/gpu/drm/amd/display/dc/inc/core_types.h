@@ -52,7 +52,9 @@ void enable_surface_flip_reporting(struct dc_plane_state *plane_state,
 #include "clock_source.h"
 #include "audio.h"
 #include "dm_pp_smu.h"
-
+#ifdef CONFIG_DRM_AMD_DC_HDCP
+#include "dm_cp_psp.h"
+#endif
 
 /************ link *****************/
 struct link_init_data {
@@ -61,11 +63,6 @@ struct link_init_data {
 	uint32_t connector_index; /* this will be mapped to the HPD pins */
 	uint32_t link_index; /* this is mapped to DAL display_index
 				TODO: remove it when DC is complete. */
-};
-
-enum {
-	FREE_ACQUIRED_RESOURCE = 0,
-	KEEP_ACQUIRED_RESOURCE = 1,
 };
 
 struct dc_link *link_create(const struct link_init_data *init_params);
@@ -82,7 +79,7 @@ void core_link_enable_stream(
 		struct dc_state *state,
 		struct pipe_ctx *pipe_ctx);
 
-void core_link_disable_stream(struct pipe_ctx *pipe_ctx, int option);
+void core_link_disable_stream(struct pipe_ctx *pipe_ctx);
 
 void core_link_set_avmute(struct pipe_ctx *pipe_ctx, bool enable);
 /********** DAL Core*********************/
@@ -92,6 +89,9 @@ void core_link_set_avmute(struct pipe_ctx *pipe_ctx, bool enable);
 struct resource_pool;
 struct dc_state;
 struct resource_context;
+#if defined(CONFIG_DRM_AMD_DC_DCN2_1)
+struct clk_bw_params;
+#endif
 
 struct resource_funcs {
 	void (*destroy)(struct resource_pool **pool);
@@ -146,6 +146,11 @@ struct resource_funcs {
 			struct dc_state *context,
 			display_e2e_pipe_params_st *pipes,
 			int pipe_cnt);
+#endif
+#if defined(CONFIG_DRM_AMD_DC_DCN2_1)
+	void (*update_bw_bounding_box)(
+			struct dc *dc,
+			struct clk_bw_params *bw_params);
 #endif
 
 };
@@ -235,7 +240,6 @@ struct stream_resource {
 	struct output_pixel_processor *opp;
 #ifdef CONFIG_DRM_AMD_DC_DSC_SUPPORT
 	struct display_stream_compressor *dsc;
-	int dscclk_khz;
 #endif
 	struct timing_generator *tg;
 	struct stream_encoder *stream_enc;
@@ -299,6 +303,8 @@ struct pipe_ctx {
 
 	struct pipe_ctx *top_pipe;
 	struct pipe_ctx *bottom_pipe;
+	struct pipe_ctx *next_odm_pipe;
+	struct pipe_ctx *prev_odm_pipe;
 
 #ifdef CONFIG_DRM_AMD_DC_DCN1_0
 	struct _vcs_dpi_display_dlg_regs_st dlg_regs;
@@ -391,10 +397,6 @@ struct dc_state {
 #endif
 
 	struct clk_mgr *clk_mgr;
-
-	struct {
-		bool full_update_needed : 1;
-	} commit_hints;
 
 	struct kref refcount;
 };

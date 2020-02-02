@@ -38,7 +38,7 @@
 #include "intel_connector.h"
 #include "intel_crt.h"
 #include "intel_ddi.h"
-#include "intel_drv.h"
+#include "intel_display_types.h"
 #include "intel_fifo_underrun.h"
 #include "intel_gmbus.h"
 #include "intel_hotplug.h"
@@ -443,9 +443,9 @@ static bool intel_ironlake_crt_detect_hotplug(struct drm_connector *connector)
 
 		I915_WRITE(crt->adpa_reg, adpa);
 
-		if (intel_wait_for_register(&dev_priv->uncore,
+		if (intel_de_wait_for_clear(dev_priv,
 					    crt->adpa_reg,
-					    ADPA_CRT_HOTPLUG_FORCE_TRIGGER, 0,
+					    ADPA_CRT_HOTPLUG_FORCE_TRIGGER,
 					    1000))
 			DRM_DEBUG_KMS("timed out waiting for FORCE_TRIGGER");
 
@@ -497,10 +497,8 @@ static bool valleyview_crt_detect_hotplug(struct drm_connector *connector)
 
 	I915_WRITE(crt->adpa_reg, adpa);
 
-	if (intel_wait_for_register(&dev_priv->uncore,
-				    crt->adpa_reg,
-				    ADPA_CRT_HOTPLUG_FORCE_TRIGGER, 0,
-				    1000)) {
+	if (intel_de_wait_for_clear(dev_priv, crt->adpa_reg,
+				    ADPA_CRT_HOTPLUG_FORCE_TRIGGER, 1000)) {
 		DRM_DEBUG_KMS("timed out waiting for FORCE_TRIGGER");
 		I915_WRITE(crt->adpa_reg, save_adpa);
 	}
@@ -550,9 +548,8 @@ static bool intel_crt_detect_hotplug(struct drm_connector *connector)
 					      CRT_HOTPLUG_FORCE_DETECT,
 					      CRT_HOTPLUG_FORCE_DETECT);
 		/* wait for FORCE_DETECT to go off */
-		if (intel_wait_for_register(&dev_priv->uncore, PORT_HOTPLUG_EN,
-					    CRT_HOTPLUG_FORCE_DETECT, 0,
-					    1000))
+		if (intel_de_wait_for_clear(dev_priv, PORT_HOTPLUG_EN,
+					    CRT_HOTPLUG_FORCE_DETECT, 1000))
 			DRM_DEBUG_KMS("timed out waiting for FORCE_DETECT to go off");
 	}
 
@@ -847,7 +844,7 @@ load_detect:
 	}
 
 	/* for pre-945g platforms use load detect */
-	ret = intel_get_load_detect_pipe(connector, NULL, &tmp, ctx);
+	ret = intel_get_load_detect_pipe(connector, &tmp, ctx);
 	if (ret > 0) {
 		if (intel_crt_detect_ddc(connector))
 			status = connector_status_connected;
@@ -867,6 +864,13 @@ load_detect:
 
 out:
 	intel_display_power_put(dev_priv, intel_encoder->power_domain, wakeref);
+
+	/*
+	 * Make sure the refs for power wells enabled during detect are
+	 * dropped to avoid a new detect cycle triggered by HPD polling.
+	 */
+	intel_display_power_flush_work(dev_priv);
+
 	return status;
 }
 
@@ -997,9 +1001,9 @@ void intel_crt_init(struct drm_i915_private *dev_priv)
 	crt->base.type = INTEL_OUTPUT_ANALOG;
 	crt->base.cloneable = (1 << INTEL_OUTPUT_DVO) | (1 << INTEL_OUTPUT_HDMI);
 	if (IS_I830(dev_priv))
-		crt->base.crtc_mask = (1 << 0);
+		crt->base.pipe_mask = BIT(PIPE_A);
 	else
-		crt->base.crtc_mask = (1 << 0) | (1 << 1) | (1 << 2);
+		crt->base.pipe_mask = ~0;
 
 	if (IS_GEN(dev_priv, 2))
 		connector->interlace_allowed = 0;

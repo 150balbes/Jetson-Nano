@@ -12,10 +12,6 @@
 
 #define SR6_FLAG_ALERT (1 << 4)
 
-#define htonll(x) ((bpf_htonl(1)) == 1 ? (x) : ((uint64_t)bpf_htonl((x) & \
-				0xFFFFFFFF) << 32) | bpf_htonl((x) >> 32))
-#define ntohll(x) ((bpf_ntohl(1)) == 1 ? (x) : ((uint64_t)bpf_ntohl((x) & \
-				0xFFFFFFFF) << 32) | bpf_ntohl((x) >> 32))
 #define BPF_PACKET_HEADER __attribute__((packed))
 
 struct ip6_t {
@@ -136,8 +132,10 @@ static __always_inline int is_valid_tlv_boundary(struct __sk_buff *skb,
 	*pad_off = 0;
 
 	// we can only go as far as ~10 TLVs due to the BPF max stack size
+	// workaround: define induction variable "i" as "long" instead
+	// of "int" to prevent alu32 sub-register spilling.
 	#pragma clang loop unroll(disable)
-	for (int i = 0; i < 100; i++) {
+	for (long i = 0; i < 100; i++) {
 		struct sr6_tlv_t tlv;
 
 		if (cur_off == *tlv_off)
@@ -251,8 +249,8 @@ int __add_egr_x(struct __sk_buff *skb)
 	if (err)
 		return BPF_DROP;
 
-	addr.lo = htonll(lo);
-	addr.hi = htonll(hi);
+	addr.lo = bpf_cpu_to_be64(lo);
+	addr.hi = bpf_cpu_to_be64(hi);
 	err = bpf_lwt_seg6_action(skb, SEG6_LOCAL_ACTION_END_X,
 				  (void *)&addr, sizeof(addr));
 	if (err)

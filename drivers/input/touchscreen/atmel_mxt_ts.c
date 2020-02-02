@@ -2990,8 +2990,7 @@ static int mxt_parse_device_properties(struct mxt_data *data)
 	int error;
 
 	if (device_property_present(dev, keymap_property)) {
-		n_keys = device_property_read_u32_array(dev, keymap_property,
-							NULL, 0);
+		n_keys = device_property_count_u32(dev, keymap_property);
 		if (n_keys <= 0) {
 			error = n_keys < 0 ? n_keys : -EINVAL;
 			dev_err(dev, "invalid/malformed '%s' property: %d\n",
@@ -3157,6 +3156,8 @@ static int __maybe_unused mxt_suspend(struct device *dev)
 
 	mutex_unlock(&input_dev->mutex);
 
+	disable_irq(data->irq);
+
 	return 0;
 }
 
@@ -3168,6 +3169,8 @@ static int __maybe_unused mxt_resume(struct device *dev)
 
 	if (!input_dev)
 		return 0;
+
+	enable_irq(data->irq);
 
 	mutex_lock(&input_dev->mutex);
 

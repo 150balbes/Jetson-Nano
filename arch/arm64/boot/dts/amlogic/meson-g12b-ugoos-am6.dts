@@ -12,7 +12,6 @@
 #include <dt-bindings/input/input.h>
 #include <dt-bindings/gpio/meson-g12a-gpio.h>
 #include <dt-bindings/sound/meson-g12a-tohdmitx.h>
-#include <dt-bindings/thermal/thermal.h>
 
 / {
 	compatible = "ugoos,am6", "amlogic,g12b";
@@ -21,62 +20,6 @@
 	aliases {
 		serial0 = &uart_AO;
 		ethernet0 = &ethmac;
-	};
-
-	spdif_dit: audio-codec-1 {
-		#sound-dai-cells = <0>;
-		compatible = "linux,spdif-dit";
-		status = "okay";
-		sound-name-prefix = "DIT";
-	};
-
-	thermal-zones {
-		cpu-thermal {
-			polling-delay = <1000>;
-			polling-delay-passive = <100>;
-			thermal-sensors = <&cpu_temp>;
-
-			trips {
-				cpu_critical: cpu-critical {
-					temperature = <110000>; /* millicelsius */
-					hysteresis = <2000>; /* millicelsius */
-					type = "critical";
-				};
-			};
-
-			cooling-maps {
-				map {
-					trip = <&cpu_critical>;
-					cooling-device = <&cpu0 THERMAL_NO_LIMIT THERMAL_NO_LIMIT>,
-							 <&cpu1 THERMAL_NO_LIMIT THERMAL_NO_LIMIT>,
-							 <&cpu100 THERMAL_NO_LIMIT THERMAL_NO_LIMIT>,
-							 <&cpu101 THERMAL_NO_LIMIT THERMAL_NO_LIMIT>,
-							 <&cpu102 THERMAL_NO_LIMIT THERMAL_NO_LIMIT>,
-							 <&cpu103 THERMAL_NO_LIMIT THERMAL_NO_LIMIT>;
-				};
-			};
-		};
-
-		ddr-thermal {
-			polling-delay = <1000>;
-			polling-delay-passive = <100>;
-			thermal-sensors = <&ddr_temp>;
-
-			trips {
-				ddr_critical: ddr-critical {
-					temperature = <110000>; /* millicelsius */
-					hysteresis = <2000>; /* millicelsius */
-					type = "critical";
-				};
-			};
-
-			cooling-maps {
-				map {
-					trip = <&ddr_critical>;
-					cooling-device = <&mali THERMAL_NO_LIMIT THERMAL_NO_LIMIT>;
-				};
-			};
-		};
 	};
 
 	chosen {
@@ -98,6 +41,13 @@
 		reset-gpios = <&gpio GPIOX_6 GPIO_ACTIVE_LOW>;
 		clocks = <&wifi32k>;
 		clock-names = "ext_clock";
+	};
+
+	spdif_dit: audio-codec-1 {
+		#sound-dai-cells = <0>;
+		compatible = "linux,spdif-dit";
+		status = "okay";
+		sound-name-prefix = "DIT";
 	};
 
 	flash_1v8: regulator-flash_1v8 {
@@ -149,7 +99,7 @@
 
 	vddcpu_a: regulator-vddcpu-a {
 		/*
-		 * MP8756GD Regulator.
+		 * MP1653 Regulator.
 		 */
 		compatible = "pwm-regulator";
 
@@ -168,7 +118,7 @@
 
 	vddcpu_b: regulator-vddcpu-b {
 		/*
-		 * Silergy SY8120B1ABC Regulator.
+		 * MP1652 Regulator.
 		 */
 		compatible = "pwm-regulator";
 
@@ -185,29 +135,31 @@
 		regulator-always-on;
 	};
 
-	usb1_pow: regulator-usb1_pow {
+	usb1_pow: regulator-usb1-pow {
 		compatible = "regulator-fixed";
 		regulator-name = "USB1_POW";
 		regulator-min-microvolt = <5000000>;
 		regulator-max-microvolt = <5000000>;
 		vin-supply = <&vcc_5v>;
 
-		gpio = <&gpio GPIOH_5 GPIO_ACTIVE_HIGH>;
+		/* connected to SY6280A Power Switch */
+		gpio = <&gpio GPIOA_8 GPIO_ACTIVE_HIGH>;
 		enable-active-high;
 	};
 
-	usb_pwr_en: regulator-usb_pwr_en {
+	usb_pwr_en: regulator-usb-pwr-en {
 		compatible = "regulator-fixed";
 		regulator-name = "USB_PWR_EN";
 		regulator-min-microvolt = <5000000>;
 		regulator-max-microvolt = <5000000>;
 		vin-supply = <&vcc_5v>;
 
-		gpio = <&gpio GPIOH_6 GPIO_ACTIVE_HIGH>;
+		/* Connected to USB3 Type-A Port power enable */
+		gpio = <&gpio GPIOAO_7 GPIO_ACTIVE_HIGH>;
 		enable-active-high;
 	};
 
-	vddao_1v8: regulator-vddao_1v8 {
+	vddao_1v8: regulator-vddao-1v8 {
 		compatible = "regulator-fixed";
 		regulator-name = "VDDAO_1V8";
 		regulator-min-microvolt = <1800000>;
@@ -216,7 +168,7 @@
 		regulator-always-on;
 	};
 
-	vddao_3v3: regulator-vddao_3v3 {
+	vddao_3v3: regulator-vddao-3v3 {
 		compatible = "regulator-fixed";
 		regulator-name = "VDDAO_3V3";
 		regulator-min-microvolt = <3300000>;
@@ -331,7 +283,7 @@
 		#clock-cells = <0>;
 		clock-frequency = <32768>;
 		pwms = <&pwm_ef 0 30518 0>; /* PWM_E at 32.768KHz */
-        };
+	};
 };
 
 &arb {
@@ -361,7 +313,6 @@
 	operating-points-v2 = <&cpu_opp_table_0>;
 	clocks = <&clkc CLKID_CPU_CLK>;
 	clock-latency = <50000>;
-	#cooling-cells = <2>;
 };
 
 &cpu1 {
@@ -369,7 +320,6 @@
 	operating-points-v2 = <&cpu_opp_table_0>;
 	clocks = <&clkc CLKID_CPU_CLK>;
 	clock-latency = <50000>;
-	#cooling-cells = <2>;
 };
 
 &cpu100 {
@@ -377,7 +327,6 @@
 	operating-points-v2 = <&cpub_opp_table_1>;
 	clocks = <&clkc CLKID_CPUB_CLK>;
 	clock-latency = <50000>;
-	#cooling-cells = <2>;
 };
 
 &cpu101 {
@@ -385,7 +334,6 @@
 	operating-points-v2 = <&cpub_opp_table_1>;
 	clocks = <&clkc CLKID_CPUB_CLK>;
 	clock-latency = <50000>;
-	#cooling-cells = <2>;
 };
 
 &cpu102 {
@@ -393,7 +341,6 @@
 	operating-points-v2 = <&cpub_opp_table_1>;
 	clocks = <&clkc CLKID_CPUB_CLK>;
 	clock-latency = <50000>;
-	#cooling-cells = <2>;
 };
 
 &cpu103 {
@@ -401,7 +348,6 @@
 	operating-points-v2 = <&cpub_opp_table_1>;
 	clocks = <&clkc CLKID_CPUB_CLK>;
 	clock-latency = <50000>;
-	#cooling-cells = <2>;
 };
 
 &cvbs_vdac_port {
@@ -467,10 +413,6 @@
 	linux,rc-map-name = "rc-khadas";
 };
 
-&mali {
-	#cooling-cells = <2>;
-};
-
 &pwm_ab {
 	pinctrl-0 = <&pwm_a_e_pins>;
 	pinctrl-names = "default";
@@ -492,42 +434,7 @@
 	pinctrl-names = "default";
 	clocks = <&xtal>;
 	clock-names = "clkin0";
-        status = "okay";
-};
-
-&uart_A {
 	status = "okay";
-	pinctrl-0 = <&uart_a_pins>, <&uart_a_cts_rts_pins>;
-	pinctrl-names = "default";
-	uart-has-rtscts;
-
-	bluetooth {
-		compatible = "brcm,bcm43438-bt";
-		shutdown-gpios = <&gpio GPIOX_17 GPIO_ACTIVE_HIGH>;
-		max-speed = <2000000>;
-		clocks = <&wifi32k>;
-		clock-names = "lpo";
-	};
-};
-
-&uart_AO {
-	status = "okay";
-	pinctrl-0 = <&uart_ao_a_pins>;
-	pinctrl-names = "default";
-};
-
-&usb {
-	status = "okay";
-	dr_mode = "host";
-	vbus-regulator = <&usb_pwr_en>;
-};
-
-&usb2_phy0 {
-	phy-supply = <&usb1_pow>;
-};
-
-&usb2_phy1 {
-	phy-supply = <&usb1_pow>;
 };
 
 /* SDIO */
@@ -584,9 +491,7 @@
 
 	bus-width = <8>;
 	cap-mmc-highspeed;
-	mmc-ddr-1_8v;
-	mmc-hs200-1_8v;
-	max-frequency = <200000000>;
+	max-frequency = <100000000>;
 	disable-wp;
 
 	mmc-pwrseq = <&emmc_pwrseq>;
@@ -614,4 +519,39 @@
 
 &tohdmitx {
 	status = "okay";
+};
+
+&uart_A {
+	status = "okay";
+	pinctrl-0 = <&uart_a_pins>, <&uart_a_cts_rts_pins>;
+	pinctrl-names = "default";
+	uart-has-rtscts;
+
+	bluetooth {
+		compatible = "brcm,bcm43438-bt";
+		shutdown-gpios = <&gpio GPIOX_17 GPIO_ACTIVE_HIGH>;
+		max-speed = <2000000>;
+		clocks = <&wifi32k>;
+	clock-names = "lpo";
+	};
+};
+
+&uart_AO {
+	status = "okay";
+	pinctrl-0 = <&uart_ao_a_pins>;
+	pinctrl-names = "default";
+};
+
+&usb {
+	status = "okay";
+	dr_mode = "host";
+	vbus-regulator = <&usb_pwr_en>;
+};
+
+&usb2_phy0 {
+	phy-supply = <&usb1_pow>;
+};
+
+&usb2_phy1 {
+	phy-supply = <&usb1_pow>;
 };

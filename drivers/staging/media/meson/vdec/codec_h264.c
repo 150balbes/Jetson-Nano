@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0+
 /*
- * Copyright (C) 2018 Maxime Jourdan <maxi.jourdan@wanadoo.fr>
+ * Copyright (C) 2019 BayLibre, SAS
+ * Author: Maxime Jourdan <mjourdan@baylibre.com>
  */
 
 #include <media/v4l2-mem2mem.h>
@@ -13,7 +14,8 @@
 #define SIZE_WORKSPACE	0x1ee000
 #define SIZE_SEI	(8 * SZ_1K)
 
-/* Offset added by the firmware which must be substracted
+/*
+ * Offset added by the firmware which must be substracted
  * from the workspace phyaddr
  */
 #define WORKSPACE_BUF_OFFSET	0x1000000
@@ -54,11 +56,12 @@
 #define AR_PRESENT_FLAG	BIT(0)
 #define AR_EXTEND	0xff
 
-/* Buffer to send to the ESPARSER to signal End Of Stream for H.264.
+/*
+ * Buffer to send to the ESPARSER to signal End Of Stream for H.264.
  * This is a 16x16 encoded picture that will trigger drain firmware-side.
  * There is no known alternative.
  */
-static const u8 eos_sequence[SZ_1K] = {
+static const u8 eos_sequence[SZ_4K] = {
 	0x00, 0x00, 0x00, 0x01, 0x06, 0x05, 0xff, 0xe4, 0xdc, 0x45, 0xe9, 0xbd,
 	0xe6, 0xd9, 0x48, 0xb7,	0x96, 0x2c, 0xd8, 0x20, 0xd9, 0x23, 0xee, 0xef,
 	0x78, 0x32, 0x36, 0x34, 0x20, 0x2d, 0x20, 0x63,	0x6f, 0x72, 0x65, 0x20,
@@ -108,7 +111,8 @@ static const u8 eos_sequence[SZ_1K] = {
 	0xe1, 0xfc, 0x62, 0xda, 0xf1, 0xfb, 0xa2, 0xdb,	0xd6, 0xbe, 0x5c, 0xd7,
 	0x24, 0xa3, 0xf5, 0xb9, 0x2f, 0x57, 0x16, 0x49, 0x75, 0x47, 0x77, 0x09,
 	0x5c, 0xa1, 0xb4, 0xc3, 0x4f, 0x60, 0x2b, 0xb0, 0x0c, 0xc8, 0xd6, 0x66,
-	0xba, 0x9b, 0x82, 0x29,	0x33, 0x92, 0x26, 0x99, 0x31, 0x1c, 0x7f, 0x9b
+	0xba, 0x9b, 0x82, 0x29,	0x33, 0x92, 0x26, 0x99, 0x31, 0x1c, 0x7f, 0x9b,
+	0x00, 0x00, 0x01, 0x0ff,
 };
 
 static const u8 *codec_h264_eos_sequence(u32 *len)
@@ -148,7 +152,8 @@ static int codec_h264_can_recycle(struct amvdec_core *core)
 
 static void codec_h264_recycle(struct amvdec_core *core, u32 buf_idx)
 {
-	/* Tell the decoder he can recycle this buffer.
+	/*
+	 * Tell the firmware it can recycle this buffer.
 	 * AV_SCRATCH_8 serves the same purpose.
 	 */
 	if (!amvdec_read_dos(core, AV_SCRATCH_7))
@@ -157,33 +162,32 @@ static void codec_h264_recycle(struct amvdec_core *core, u32 buf_idx)
 		amvdec_write_dos(core, AV_SCRATCH_8, buf_idx + 1);
 }
 
-static int codec_h264_start(struct amvdec_session *sess) {
+static int codec_h264_start(struct amvdec_session *sess)
+{
 	u32 workspace_offset;
 	struct amvdec_core *core = sess->core;
 	struct codec_h264 *h264 = sess->priv;
 
 	/* Allocate some memory for the H.264 decoder's state */
-	h264->workspace_vaddr = dma_alloc_coherent(core->dev, SIZE_WORKSPACE,
-					   &h264->workspace_paddr, GFP_KERNEL);
-	if (!h264->workspace_vaddr) {
-		dev_err(core->dev, "Failed to alloc H.264 Workspace\n");
+	h264->workspace_vaddr =
+		dma_alloc_coherent(core->dev, SIZE_WORKSPACE,
+				   &h264->workspace_paddr, GFP_KERNEL);
+	if (!h264->workspace_vaddr)
 		return -ENOMEM;
-	}
 
 	/* Allocate some memory for the H.264 SEI dump */
 	h264->sei_vaddr = dma_alloc_coherent(core->dev, SIZE_SEI,
 					     &h264->sei_paddr, GFP_KERNEL);
-	if (!h264->sei_vaddr) {
-		dev_err(core->dev, "Failed to alloc H.264 SEI\n");
+	if (!h264->sei_vaddr)
 		return -ENOMEM;
-	}
 
 	amvdec_write_dos_bits(core, POWER_CTL_VLD, BIT(9) | BIT(6));
 
 	workspace_offset = h264->workspace_paddr - WORKSPACE_BUF_OFFSET;
 	amvdec_write_dos(core, AV_SCRATCH_1, workspace_offset);
 	amvdec_write_dos(core, AV_SCRATCH_G, h264->ext_fw_paddr);
-	amvdec_write_dos(core, AV_SCRATCH_I, h264->sei_paddr - workspace_offset);
+	amvdec_write_dos(core, AV_SCRATCH_I, h264->sei_paddr -
+					     workspace_offset);
 
 	/* Enable "error correction" */
 	amvdec_write_dos(core, AV_SCRATCH_F,
@@ -235,7 +239,6 @@ static int codec_h264_load_extended_firmware(struct amvdec_session *sess,
 	h264->ext_fw_vaddr = dma_alloc_coherent(core->dev, SIZE_EXT_FW,
 					      &h264->ext_fw_paddr, GFP_KERNEL);
 	if (!h264->ext_fw_vaddr) {
-		dev_err(core->dev, "Failed to alloc H.264 extended fw\n");
 		kfree(h264);
 		return -ENOMEM;
 	}
@@ -265,6 +268,7 @@ static void codec_h264_set_par(struct amvdec_session *sess)
 
 	if (ar_idc == AR_EXTEND) {
 		u32 ar_info = amvdec_read_dos(core, AV_SCRATCH_3);
+
 		sess->pixelaspect.numerator = ar_info & 0xffff;
 		sess->pixelaspect.denominator = (ar_info >> 16) & 0xffff;
 		return;
@@ -285,8 +289,7 @@ static void codec_h264_resume(struct amvdec_session *sess)
 	amvdec_set_canvases(sess, (u32[]){ ANC0_CANVAS_ADDR, 0 },
 				  (u32[]){ 24, 0 });
 
-	dev_dbg(core->dev,
-		"max_refs = %u; actual_dpb_size = %u\n",
+	dev_dbg(core->dev, "max_refs = %u; actual_dpb_size = %u\n",
 		h264->max_refs, sess->num_dst_bufs);
 
 	/* Align to a multiple of 4 macroblocks */
@@ -298,8 +301,6 @@ static void codec_h264_resume(struct amvdec_session *sess)
 	h264->ref_vaddr = dma_alloc_coherent(core->dev, h264->ref_size,
 					     &h264->ref_paddr, GFP_KERNEL);
 	if (!h264->ref_vaddr) {
-		dev_err(core->dev, "Failed to alloc refs (%u)\n",
-			h264->ref_size);
 		amvdec_abort(sess);
 		return;
 	}
@@ -314,7 +315,8 @@ static void codec_h264_resume(struct amvdec_session *sess)
 					     ((h264->max_refs - 1) << 8));
 }
 
-/* Configure the H.264 decoder when the parser detected a parameter set change
+/**
+ * Configure the H.264 decoder when the parser detected a parameter set change
  */
 static void codec_h264_src_change(struct amvdec_session *sess)
 {
@@ -344,15 +346,16 @@ static void codec_h264_src_change(struct amvdec_session *sess)
 	frame_width = h264->mb_width * 16 - crop_right;
 	frame_height = h264->mb_height * 16 - crop_bottom;
 
-	dev_info(core->dev, "frame: %ux%u; crop: %u %u\n",
-		 frame_width, frame_height, crop_right, crop_bottom);
+	dev_dbg(core->dev, "frame: %ux%u; crop: %u %u\n",
+		frame_width, frame_height, crop_right, crop_bottom);
 
 	codec_h264_set_par(sess);
 	amvdec_src_change(sess, frame_width, frame_height, h264->max_refs + 5);
 }
 
 /**
- * The offset is split in half in 2 different registers
+ * The bitstream offset is split in half in 2 different registers.
+ * Fetch its MSB here, which location depends on the frame number.
  */
 static u32 get_offset_msb(struct amvdec_core *core, int frame_num)
 {
@@ -377,7 +380,7 @@ static void codec_h264_frames_ready(struct amvdec_session *sess, u32 status)
 	num_frames = (status >> 8) & 0xff;
 	if (error_count) {
 		dev_warn(core->dev,
-			"decoder error(s) happened, count %d\n", error_count);
+			 "decoder error(s) happened, count %d\n", error_count);
 		amvdec_write_dos(core, AV_SCRATCH_D, 0);
 	}
 
@@ -389,7 +392,8 @@ static void codec_h264_frames_ready(struct amvdec_session *sess, u32 status)
 		u32 offset = (frame_status >> OFFSET_BIT) & OFFSET_MASK;
 		u32 field = V4L2_FIELD_NONE;
 
-		/* A buffer decode error means it was decoded,
+		/*
+		 * A buffer decode error means it was decoded,
 		 * but part of the picture will have artifacts.
 		 * Typical reason is a temporarily corrupted bitstream
 		 */
@@ -475,4 +479,5 @@ struct amvdec_codec_ops codec_h264_ops = {
 	.recycle = codec_h264_recycle,
 	.eos_sequence = codec_h264_eos_sequence,
 	.resume = codec_h264_resume,
+	.get_output_size = amvdec_get_output_size,
 };

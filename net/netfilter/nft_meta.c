@@ -26,7 +26,35 @@
 
 #include <uapi/linux/netfilter_bridge.h> /* NF_BR_PRE_ROUTING */
 
+#define NFT_META_SECS_PER_MINUTE	60
+#define NFT_META_SECS_PER_HOUR		3600
+#define NFT_META_SECS_PER_DAY		86400
+#define NFT_META_DAYS_PER_WEEK		7
+
 static DEFINE_PER_CPU(struct rnd_state, nft_prandom_state);
+
+static u8 nft_meta_weekday(time64_t secs)
+{
+	unsigned int dse;
+	u8 wday;
+
+	secs -= NFT_META_SECS_PER_MINUTE * sys_tz.tz_minuteswest;
+	dse = div_u64(secs, NFT_META_SECS_PER_DAY);
+	wday = (4 + dse) % NFT_META_DAYS_PER_WEEK;
+
+	return wday;
+}
+
+static u32 nft_meta_hour(time64_t secs)
+{
+	struct tm tm;
+
+	time64_to_tm(secs, 0, &tm);
+
+	return tm.tm_hour * NFT_META_SECS_PER_HOUR
+		+ tm.tm_min * NFT_META_SECS_PER_MINUTE
+		+ tm.tm_sec;
+}
 
 void nft_meta_get_eval(const struct nft_expr *expr,
 		       struct nft_regs *regs,
@@ -218,6 +246,15 @@ void nft_meta_get_eval(const struct nft_expr *expr,
 			goto err;
 		strncpy((char *)dest, out->rtnl_link_ops->kind, IFNAMSIZ);
 		break;
+	case NFT_META_TIME_NS:
+		nft_reg_store64(dest, ktime_get_real_ns());
+		break;
+	case NFT_META_TIME_DAY:
+		nft_reg_store8(dest, nft_meta_weekday(ktime_get_real_seconds()));
+		break;
+	case NFT_META_TIME_HOUR:
+		*dest = nft_meta_hour(ktime_get_real_seconds());
+		break;
 	default:
 		WARN_ON(1);
 		goto err;
@@ -330,6 +367,15 @@ int nft_meta_get_init(const struct nft_ctx *ctx,
 		len = sizeof(u8);
 		break;
 #endif
+	case NFT_META_TIME_NS:
+		len = sizeof(u64);
+		break;
+	case NFT_META_TIME_DAY:
+		len = sizeof(u8);
+		break;
+	case NFT_META_TIME_HOUR:
+		len = sizeof(u32);
+		break;
 	default:
 		return -EOPNOTSUPP;
 	}
@@ -500,6 +546,14 @@ static int nft_meta_get_offload(struct nft_offload_ctx *ctx,
 		NFT_OFFLOAD_MATCH(FLOW_DISSECTOR_KEY_BASIC, basic, ip_proto,
 				  sizeof(__u8), reg);
 		nft_offload_set_dependency(ctx, NFT_OFFLOAD_DEP_TRANSPORT);
+		break;
+	case NFT_META_IIF:
+		NFT_OFFLOAD_MATCH(FLOW_DISSECTOR_KEY_META, meta,
+				  ingress_ifindex, sizeof(__u32), reg);
+		break;
+	case NFT_META_IIFTYPE:
+		NFT_OFFLOAD_MATCH(FLOW_DISSECTOR_KEY_META, meta,
+				  ingress_iftype, sizeof(__u16), reg);
 		break;
 	default:
 		return -EOPNOTSUPP;

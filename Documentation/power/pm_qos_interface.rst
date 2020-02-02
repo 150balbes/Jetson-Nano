@@ -7,10 +7,9 @@ performance expectations by drivers, subsystems and user space applications on
 one of the parameters.
 
 Two different PM QoS frameworks are available:
-1. PM QoS classes for cpu_dma_latency, network_latency, network_throughput,
-memory_bandwidth.
-2. the per-device PM QoS framework provides the API to manage the per-device latency
-constraints and PM QoS flags.
+1. PM QoS classes for cpu_dma_latency
+2. The per-device PM QoS framework provides the API to manage the
+   per-device latency constraints and PM QoS flags.
 
 Each parameters have defined units:
 
@@ -48,14 +47,14 @@ void pm_qos_add_request(handle, param_class, target_value):
   pm_qos API functions.
 
 void pm_qos_update_request(handle, new_target_value):
-  Will update the list element pointed to by the handle with the new target value
-  and recompute the new aggregated target, calling the notification tree if the
-  target is changed.
+  Will update the list element pointed to by the handle with the new target
+  value and recompute the new aggregated target, calling the notification tree
+  if the target is changed.
 
 void pm_qos_remove_request(handle):
-  Will remove the element.  After removal it will update the aggregate target and
-  call the notification tree if the target was changed as a result of removing
-  the request.
+  Will remove the element.  After removal it will update the aggregate target
+  and call the notification tree if the target was changed as a result of
+  removing the request.
 
 int pm_qos_request(param_class):
   Returns the aggregated value for a given PM QoS class.
@@ -79,7 +78,7 @@ cleanup of a process, the interface requires the process to register its
 parameter requests in the following way:
 
 To register the default pm_qos target for the specific parameter, the process
-must open one of /dev/[cpu_dma_latency, network_latency, network_throughput]
+must open /dev/cpu_dma_latency
 
 As long as the device node is held open that process has a registered
 request on the parameter.
@@ -168,9 +167,9 @@ int dev_pm_qos_expose_flags(device, value)
   change the value of the PM_QOS_FLAG_NO_POWER_OFF flag.
 
 void dev_pm_qos_hide_flags(device)
-  Drop the request added by dev_pm_qos_expose_flags() from the device's PM QoS list
-  of flags and remove sysfs attribute pm_qos_no_power_off from the device's power
-  directory.
+  Drop the request added by dev_pm_qos_expose_flags() from the device's PM QoS
+  list of flags and remove sysfs attribute pm_qos_no_power_off from the device's
+  power directory.
 
 Notification mechanisms:
 
@@ -180,8 +179,8 @@ int dev_pm_qos_add_notifier(device, notifier, type):
   Adds a notification callback function for the device for a particular request
   type.
 
-  The callback is called when the aggregated value of the device constraints list
-  is changed.
+  The callback is called when the aggregated value of the device constraints
+  list is changed.
 
 int dev_pm_qos_remove_notifier(device, notifier, type):
   Removes the notification callback function for the device.

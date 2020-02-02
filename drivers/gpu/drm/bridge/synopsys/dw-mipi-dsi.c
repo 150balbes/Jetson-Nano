@@ -10,6 +10,7 @@
 
 #include <linux/clk.h>
 #include <linux/component.h>
+#include <linux/debugfs.h>
 #include <linux/iopoll.h>
 #include <linux/module.h>
 #include <linux/of_device.h>
@@ -89,6 +90,8 @@
 #define VID_MODE_TYPE_NON_BURST_SYNC_EVENTS	0x1
 #define VID_MODE_TYPE_BURST			0x2
 #define VID_MODE_TYPE_MASK			0x3
+#define VID_MODE_VPG_ENABLE		BIT(16)
+#define VID_MODE_VPG_HORIZONTAL		BIT(24)
 
 #define DSI_VID_PKT_SIZE		0x3c
 #define VID_PKT_SIZE(p)			((p) & 0x3fff)
@@ -233,6 +236,13 @@ struct dw_mipi_dsi {
 	u32 format;
 	unsigned long mode_flags;
 
+#ifdef CONFIG_DEBUG_FS
+	struct dentry *debugfs;
+
+	bool vpg;
+	bool vpg_horizontal;
+#endif /* CONFIG_DEBUG_FS */
+
 	struct dw_mipi_dsi *master; /* dual-dsi master ptr */
 	struct dw_mipi_dsi *slave; /* dual-dsi slave ptr */
 
@@ -306,7 +316,8 @@ static int dw_mipi_dsi_host_attach(struct mipi_dsi_host *host,
 		return ret;
 
 	if (panel) {
-		bridge = drm_panel_bridge_add(panel, DRM_MODE_CONNECTOR_DSI);
+		bridge = drm_panel_bridge_add_typed(panel,
+						    DRM_MODE_CONNECTOR_DSI);
 		if (IS_ERR(bridge))
 			return PTR_ERR(bridge);
 	}
@@ -517,6 +528,13 @@ static void dw_mipi_dsi_video_mode_config(struct dw_mipi_dsi *dsi)
 		val |= VID_MODE_TYPE_NON_BURST_SYNC_PULSES;
 	else
 		val |= VID_MODE_TYPE_NON_BURST_SYNC_EVENTS;
+
+#ifdef CONFIG_DEBUG_FS
+	if (dsi->vpg) {
+		val |= VID_MODE_VPG_ENABLE;
+		val |= dsi->vpg_horizontal ? VID_MODE_VPG_HORIZONTAL : 0;
+	}
+#endif /* CONFIG_DEBUG_FS */
 
 	dsi_write(dsi, DSI_VID_MODE_CFG, val);
 }
@@ -930,6 +948,33 @@ static const struct drm_bridge_funcs dw_mipi_dsi_bridge_funcs = {
 	.attach	      = dw_mipi_dsi_bridge_attach,
 };
 
+#ifdef CONFIG_DEBUG_FS
+
+static void dw_mipi_dsi_debugfs_init(struct dw_mipi_dsi *dsi)
+{
+	dsi->debugfs = debugfs_create_dir(dev_name(dsi->dev), NULL);
+	if (IS_ERR(dsi->debugfs)) {
+		dev_err(dsi->dev, "failed to create debugfs root\n");
+		return;
+	}
+
+	debugfs_create_bool("vpg", 0660, dsi->debugfs, &dsi->vpg);
+	debugfs_create_bool("vpg_horizontal", 0660, dsi->debugfs,
+			    &dsi->vpg_horizontal);
+}
+
+static void dw_mipi_dsi_debugfs_remove(struct dw_mipi_dsi *dsi)
+{
+	debugfs_remove_recursive(dsi->debugfs);
+}
+
+#else
+
+static void dw_mipi_dsi_debugfs_init(struct dw_mipi_dsi *dsi) { }
+static void dw_mipi_dsi_debugfs_remove(struct dw_mipi_dsi *dsi) { }
+
+#endif /* CONFIG_DEBUG_FS */
+
 static struct dw_mipi_dsi *
 __dw_mipi_dsi_probe(struct platform_device *pdev,
 		    const struct dw_mipi_dsi_plat_data *plat_data)
@@ -937,7 +982,6 @@ __dw_mipi_dsi_probe(struct platform_device *pdev,
 	struct device *dev = &pdev->dev;
 	struct reset_control *apb_rst;
 	struct dw_mipi_dsi *dsi;
-	struct resource *res;
 	int ret;
 
 	dsi = devm_kzalloc(dev, sizeof(*dsi), GFP_KERNEL);
@@ -953,11 +997,7 @@ __dw_mipi_dsi_probe(struct platform_device *pdev,
 	}
 
 	if (!plat_data->base) {
-		res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
-		if (!res)
-			return ERR_PTR(-ENODEV);
-
-		dsi->base = devm_ioremap_resource(dev, res);
+		dsi->base = devm_platform_ioremap_resource(pdev, 0);
 		if (IS_ERR(dsi->base))
 			return ERR_PTR(-ENODEV);
 
@@ -1000,6 +1040,7 @@ __dw_mipi_dsi_probe(struct platform_device *pdev,
 		clk_disable_unprepare(dsi->pclk);
 	}
 
+	dw_mipi_dsi_debugfs_init(dsi);
 	pm_runtime_enable(dev);
 
 	dsi->dsi_host.ops = &dw_mipi_dsi_host_ops;
@@ -1007,6 +1048,7 @@ __dw_mipi_dsi_probe(struct platform_device *pdev,
 	ret = mipi_dsi_host_register(&dsi->dsi_host);
 	if (ret) {
 		dev_err(dev, "Failed to register MIPI host: %d\n", ret);
+		dw_mipi_dsi_debugfs_remove(dsi);
 		return ERR_PTR(ret);
 	}
 
@@ -1024,6 +1066,7 @@ static void __dw_mipi_dsi_remove(struct dw_mipi_dsi *dsi)
 	mipi_dsi_host_unregister(&dsi->dsi_host);
 
 	pm_runtime_disable(dsi->dev);
+	dw_mipi_dsi_debugfs_remove(dsi);
 }
 
 void dw_mipi_dsi_set_slave(struct dw_mipi_dsi *dsi, struct dw_mipi_dsi *slave)

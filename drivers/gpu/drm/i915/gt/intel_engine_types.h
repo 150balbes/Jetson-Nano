@@ -12,17 +12,40 @@
 #include <linux/kref.h>
 #include <linux/list.h>
 #include <linux/llist.h>
+#include <linux/rbtree.h>
+#include <linux/timer.h>
 #include <linux/types.h>
+#include <linux/workqueue.h>
 
 #include "i915_gem.h"
-#include "i915_gem_batch_pool.h"
 #include "i915_pmu.h"
 #include "i915_priolist_types.h"
 #include "i915_selftest.h"
-#include "i915_timeline_types.h"
+#include "intel_engine_pool_types.h"
 #include "intel_sseu.h"
+#include "intel_timeline_types.h"
 #include "intel_wakeref.h"
 #include "intel_workarounds_types.h"
+
+/* Legacy HW Engine ID */
+
+#define RCS0_HW		0
+#define VCS0_HW		1
+#define BCS0_HW		2
+#define VECS0_HW	3
+#define VCS1_HW		4
+#define VCS2_HW		6
+#define VCS3_HW		7
+#define VECS1_HW	12
+
+/* Gen11+ HW Engine class + instance */
+#define RENDER_CLASS		0
+#define VIDEO_DECODE_CLASS	1
+#define VIDEO_ENHANCEMENT_CLASS	2
+#define COPY_ENGINE_CLASS	3
+#define OTHER_CLASS		4
+#define MAX_ENGINE_CLASS	4
+#define MAX_ENGINE_INSTANCE	3
 
 #define I915_MAX_SLICES	3
 #define I915_MAX_SUBSLICES 8
@@ -35,6 +58,8 @@ struct drm_i915_reg_table;
 struct i915_gem_context;
 struct i915_request;
 struct i915_sched_attr;
+struct intel_gt;
+struct intel_ring;
 struct intel_uncore;
 
 typedef u8 intel_engine_mask_t;
@@ -51,44 +76,6 @@ struct intel_instdone {
 	u32 slice_common;
 	u32 sampler[I915_MAX_SLICES][I915_MAX_SUBSLICES];
 	u32 row[I915_MAX_SLICES][I915_MAX_SUBSLICES];
-};
-
-struct intel_engine_hangcheck {
-	u64 acthd;
-	u32 last_ring;
-	u32 last_head;
-	unsigned long action_timestamp;
-	struct intel_instdone instdone;
-};
-
-struct intel_ring {
-	struct kref ref;
-	struct i915_vma *vma;
-	void *vaddr;
-
-	struct i915_timeline *timeline;
-	struct list_head request_list;
-	struct list_head active_link;
-
-	/*
-	 * As we have two types of rings, one global to the engine used
-	 * by ringbuffer submission and those that are exclusive to a
-	 * context used by execlists, we have to play safe and allow
-	 * atomic updates to the pin_count. However, the actual pinning
-	 * of the context is either done during initialisation for
-	 * ringbuffer submission or serialised as part of the context
-	 * pinning for execlists, and so we do not need a mutex ourselves
-	 * to serialise intel_ring_pin/intel_ring_unpin.
-	 */
-	atomic_t pin_count;
-
-	u32 head;
-	u32 tail;
-	u32 emit;
-
-	u32 space;
-	u32 size;
-	u32 effective_size;
 };
 
 /*
@@ -129,6 +116,7 @@ enum intel_engine_id {
 	VECS1,
 #define _VECS(n) (VECS0 + (n))
 	I915_NUM_ENGINES
+#define INVALID_ENGINE ((enum intel_engine_id)-1)
 };
 
 struct st_preempt_hang {
@@ -148,6 +136,16 @@ struct intel_engine_execlists {
 	 * @tasklet: softirq tasklet for bottom handler
 	 */
 	struct tasklet_struct tasklet;
+
+	/**
+	 * @timer: kick the current context if its timeslice expires
+	 */
+	struct timer_list timer;
+
+	/**
+	 * @preempt: reset the current context if it fails to give way
+	 */
+	struct timer_list preempt;
 
 	/**
 	 * @default_priolist: priority list for I915_PRIORITY_NORMAL
@@ -172,56 +170,43 @@ struct intel_engine_execlists {
 	 */
 	u32 __iomem *ctrl_reg;
 
-	/**
-	 * @port: execlist port states
-	 *
-	 * For each hardware ELSP (ExecList Submission Port) we keep
-	 * track of the last request and the number of times we submitted
-	 * that port to hw. We then count the number of times the hw reports
-	 * a context completion or preemption. As only one context can
-	 * be active on hw, we limit resubmission of context to port[0]. This
-	 * is called Lite Restore, of the context.
-	 */
-	struct execlist_port {
-		/**
-		 * @request_count: combined request and submission count
-		 */
-		struct i915_request *request_count;
-#define EXECLIST_COUNT_BITS 2
-#define port_request(p) ptr_mask_bits((p)->request_count, EXECLIST_COUNT_BITS)
-#define port_count(p) ptr_unmask_bits((p)->request_count, EXECLIST_COUNT_BITS)
-#define port_pack(rq, count) ptr_pack_bits(rq, count, EXECLIST_COUNT_BITS)
-#define port_unpack(p, count) ptr_unpack_bits((p)->request_count, count, EXECLIST_COUNT_BITS)
-#define port_set(p, packed) ((p)->request_count = (packed))
-#define port_isset(p) ((p)->request_count)
-#define port_index(p, execlists) ((p) - (execlists)->port)
-
-		/**
-		 * @context_id: context ID for port
-		 */
-		GEM_DEBUG_DECL(u32 context_id);
-
 #define EXECLIST_MAX_PORTS 2
-	} port[EXECLIST_MAX_PORTS];
-
 	/**
-	 * @active: is the HW active? We consider the HW as active after
-	 * submitting any context for execution and until we have seen the
-	 * last context completion event. After that, we do not expect any
-	 * more events until we submit, and so can park the HW.
-	 *
-	 * As we have a small number of different sources from which we feed
-	 * the HW, we track the state of each inside a single bitfield.
+	 * @active: the currently known context executing on HW
 	 */
-	unsigned int active;
-#define EXECLISTS_ACTIVE_USER 0
-#define EXECLISTS_ACTIVE_PREEMPT 1
-#define EXECLISTS_ACTIVE_HWACK 2
+	struct i915_request * const *active;
+	/**
+	 * @inflight: the set of contexts submitted and acknowleged by HW
+	 *
+	 * The set of inflight contexts is managed by reading CS events
+	 * from the HW. On a context-switch event (not preemption), we
+	 * know the HW has transitioned from port0 to port1, and we
+	 * advance our inflight/active tracking accordingly.
+	 */
+	struct i915_request *inflight[EXECLIST_MAX_PORTS + 1 /* sentinel */];
+	/**
+	 * @pending: the next set of contexts submitted to ELSP
+	 *
+	 * We store the array of contexts that we submit to HW (via ELSP) and
+	 * promote them to the inflight array once HW has signaled the
+	 * preemption or idle-to-active event.
+	 */
+	struct i915_request *pending[EXECLIST_MAX_PORTS + 1];
 
 	/**
 	 * @port_mask: number of execlist ports - 1
 	 */
 	unsigned int port_mask;
+
+	/**
+	 * @switch_priority_hint: Second context priority.
+	 *
+	 * We submit multiple contexts to the HW simultaneously and would
+	 * like to occasionally switch between them to emulate timeslicing.
+	 * To know when timeslicing is suitable, we track the priority of
+	 * the context submitted second.
+	 */
+	int switch_priority_hint;
 
 	/**
 	 * @queue_priority_hint: Highest pending priority.
@@ -258,11 +243,6 @@ struct intel_engine_execlists {
 	u32 *csb_status;
 
 	/**
-	 * @preempt_complete_status: expected CSB upon completing preemption
-	 */
-	u32 preempt_complete_status;
-
-	/**
 	 * @csb_size: context status buffer FIFO size
 	 */
 	u8 csb_size;
@@ -279,26 +259,34 @@ struct intel_engine_execlists {
 
 struct intel_engine_cs {
 	struct drm_i915_private *i915;
+	struct intel_gt *gt;
 	struct intel_uncore *uncore;
 	char name[INTEL_ENGINE_CS_MAX_NAME];
 
 	enum intel_engine_id id;
+	enum intel_engine_id legacy_idx;
+
 	unsigned int hw_id;
 	unsigned int guc_id;
-	intel_engine_mask_t mask;
 
-	u8 uabi_class;
+	intel_engine_mask_t mask;
 
 	u8 class;
 	u8 instance;
+
+	u8 uabi_class;
+	u8 uabi_instance;
+
+	u32 uabi_capabilities;
 	u32 context_size;
 	u32 mmio_base;
 
-	u32 uabi_capabilities;
+	unsigned int context_tag;
+#define NUM_CONTEXT_TAG roundup_pow_of_two(2 * EXECLIST_MAX_PORTS)
+
+	struct rb_node uabi_node;
 
 	struct intel_sseu sseu;
-
-	struct intel_ring *buffer;
 
 	struct {
 		spinlock_t lock;
@@ -308,9 +296,13 @@ struct intel_engine_cs {
 	struct llist_head barrier_tasks;
 
 	struct intel_context *kernel_context; /* pinned */
-	struct intel_context *preempt_context; /* pinned; optional */
 
 	intel_engine_mask_t saturated; /* submitting semaphores too late? */
+
+	struct {
+		struct delayed_work work;
+		struct i915_request *systole;
+	} heartbeat;
 
 	unsigned long serial;
 
@@ -318,6 +310,11 @@ struct intel_engine_cs {
 	struct intel_wakeref wakeref;
 	struct drm_i915_gem_object *default_state;
 	void *pinned_default_state;
+
+	struct {
+		struct intel_ring *ring;
+		struct intel_timeline *timeline;
+	} legacy;
 
 	/* Rather than have every client wait upon all user interrupts,
 	 * with the herd waking after every interrupt and each doing the
@@ -375,7 +372,7 @@ struct intel_engine_cs {
 	 * when the command parser is enabled. Prevents the client from
 	 * modifying the batch contents after software parsing.
 	 */
-	struct i915_gem_batch_pool batch_pool;
+	struct intel_engine_pool pool;
 
 	struct intel_hw_status_page status_page;
 	struct i915_ctx_workarounds wa_ctx;
@@ -404,7 +401,6 @@ struct intel_engine_cs {
 	const struct intel_context_ops *cops;
 
 	int		(*request_alloc)(struct i915_request *rq);
-	int		(*init_context)(struct i915_request *rq);
 
 	int		(*emit_flush)(struct i915_request *request, u32 mode);
 #define EMIT_INVALIDATE	BIT(0)
@@ -455,17 +451,25 @@ struct intel_engine_cs {
 
 	struct intel_engine_execlists execlists;
 
+	/*
+	 * Keep track of completed timelines on this engine for early
+	 * retirement with the goal of quickly enabling powersaving as
+	 * soon as the engine is idle.
+	 */
+	struct intel_timeline *retire;
+	struct work_struct retire_work;
+
 	/* status_notifier: list of callbacks for context-switch changes */
 	struct atomic_notifier_head context_status_notifier;
 
-	struct intel_engine_hangcheck hangcheck;
-
-#define I915_ENGINE_NEEDS_CMD_PARSER BIT(0)
+#define I915_ENGINE_USING_CMD_PARSER BIT(0)
 #define I915_ENGINE_SUPPORTS_STATS   BIT(1)
 #define I915_ENGINE_HAS_PREEMPTION   BIT(2)
 #define I915_ENGINE_HAS_SEMAPHORES   BIT(3)
 #define I915_ENGINE_NEEDS_BREADCRUMB_TASKLET BIT(4)
 #define I915_ENGINE_IS_VIRTUAL       BIT(5)
+#define I915_ENGINE_HAS_RELATIVE_MMIO BIT(6)
+#define I915_ENGINE_REQUIRES_CMD_PARSER BIT(7)
 	unsigned int flags;
 
 	/*
@@ -523,12 +527,25 @@ struct intel_engine_cs {
 		 */
 		ktime_t total;
 	} stats;
+
+	struct {
+		unsigned long heartbeat_interval_ms;
+		unsigned long preempt_timeout_ms;
+		unsigned long stop_timeout_ms;
+		unsigned long timeslice_duration_ms;
+	} props;
 };
 
 static inline bool
-intel_engine_needs_cmd_parser(const struct intel_engine_cs *engine)
+intel_engine_using_cmd_parser(const struct intel_engine_cs *engine)
 {
-	return engine->flags & I915_ENGINE_NEEDS_CMD_PARSER;
+	return engine->flags & I915_ENGINE_USING_CMD_PARSER;
+}
+
+static inline bool
+intel_engine_requires_cmd_parser(const struct intel_engine_cs *engine)
+{
+	return engine->flags & I915_ENGINE_REQUIRES_CMD_PARSER;
 }
 
 static inline bool
@@ -561,20 +578,24 @@ intel_engine_is_virtual(const struct intel_engine_cs *engine)
 	return engine->flags & I915_ENGINE_IS_VIRTUAL;
 }
 
-#define instdone_slice_mask(dev_priv__) \
-	(IS_GEN(dev_priv__, 7) ? \
-	 1 : RUNTIME_INFO(dev_priv__)->sseu.slice_mask)
+static inline bool
+intel_engine_has_relative_mmio(const struct intel_engine_cs * const engine)
+{
+	return engine->flags & I915_ENGINE_HAS_RELATIVE_MMIO;
+}
 
-#define instdone_subslice_mask(dev_priv__) \
-	(IS_GEN(dev_priv__, 7) ? \
-	 1 : RUNTIME_INFO(dev_priv__)->sseu.subslice_mask[0])
+#define instdone_has_slice(dev_priv___, sseu___, slice___) \
+	((IS_GEN(dev_priv___, 7) ? 1 : ((sseu___)->slice_mask)) & BIT(slice___))
 
-#define for_each_instdone_slice_subslice(dev_priv__, slice__, subslice__) \
-	for ((slice__) = 0, (subslice__) = 0; \
-	     (slice__) < I915_MAX_SLICES; \
-	     (subslice__) = ((subslice__) + 1) < I915_MAX_SUBSLICES ? (subslice__) + 1 : 0, \
-	       (slice__) += ((subslice__) == 0)) \
-		for_each_if((BIT(slice__) & instdone_slice_mask(dev_priv__)) && \
-			    (BIT(subslice__) & instdone_subslice_mask(dev_priv__)))
+#define instdone_has_subslice(dev_priv__, sseu__, slice__, subslice__) \
+	(IS_GEN(dev_priv__, 7) ? (1 & BIT(subslice__)) : \
+	 intel_sseu_has_subslice(sseu__, 0, subslice__))
 
+#define for_each_instdone_slice_subslice(dev_priv_, sseu_, slice_, subslice_) \
+	for ((slice_) = 0, (subslice_) = 0; (slice_) < I915_MAX_SLICES; \
+	     (subslice_) = ((subslice_) + 1) % I915_MAX_SUBSLICES, \
+	     (slice_) += ((subslice_) == 0)) \
+		for_each_if((instdone_has_slice(dev_priv_, sseu_, slice_)) && \
+			    (instdone_has_subslice(dev_priv_, sseu_, slice_, \
+						    subslice_)))
 #endif /* __INTEL_ENGINE_TYPES_H__ */

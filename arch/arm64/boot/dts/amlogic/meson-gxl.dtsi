@@ -36,7 +36,24 @@
 				phys = <&usb3_phy>, <&usb2_phy0>, <&usb2_phy1>;
 			};
 		};
+
+		crypto: crypto@c883e000 {
+			compatible = "amlogic,gxl-crypto";
+			reg = <0x0 0xc883e000 0x0 0x36>;
+			interrupts = <GIC_SPI 188 IRQ_TYPE_EDGE_RISING>,
+				     <GIC_SPI 189 IRQ_TYPE_EDGE_RISING>;
+			clocks = <&clkc CLKID_BLKMV>;
+			clock-names = "blkmv";
+			status = "okay";
+		};
 	};
+};
+
+&aiu {
+	clocks = <&clkc CLKID_AIU>,
+     	       	 <&clkc CLKID_AIU_GLUE>;
+	clock-names = "top", "glue";
+	resets = <&reset RESET_AIU>;
 };
 
 &apb {
@@ -80,9 +97,6 @@
 };
 
 &ethmac {
-	reg = <0x0 0xc9410000 0x0 0x10000
-	       0x0 0xc8834540 0x0 0x4>;
-
 	clocks = <&clkc CLKID_ETH>,
 		 <&clkc CLKID_FCLK_DIV2>,
 		 <&clkc CLKID_MPLL2>;
@@ -280,7 +294,6 @@
 		 <&clkc CLKID_CLK81>,
 		 <&clkc CLKID_GCLK_VENCI_INT0>;
 	clock-names = "isfr", "iahb", "venci";
-	#sound-dai-cells = <0>;
 };
 
 &sysctrl {
@@ -306,6 +319,17 @@
 
 &i2c_C {
 	clocks = <&clkc CLKID_I2C>;
+};
+
+&i2s_fifo {
+	clocks = <&clkc CLKID_I2S_OUT>;
+};
+
+&i2s_encoder {
+	clocks = <&clkc CLKID_MIXER_IFACE>,
+	       	 <&clkc CLKID_AOCLK_GATE>,
+		 <&clkc CLKID_CTS_AMCLK>;
+	clock-names = "pclk", "aoclk", "mclk";
 };
 
 &periphs {
@@ -527,6 +551,15 @@
 			};
 		};
 
+		i2c_c_dv18_pins: i2c_c_dv18 {
+			mux {
+				groups = "i2c_sck_c_dv19",
+				      "i2c_sda_c_dv18";
+				function = "i2c_c";
+				bias-disable;
+			};
+		};
+
 		eth_pins: eth_c {
 			mux {
 				groups = "eth_mdio",
@@ -713,7 +746,7 @@
 			#size-cells = <0>;
 
 			internal_phy: ethernet-phy@8 {
-				compatible = "ethernet-phy-id0181.4400", "ethernet-phy-ieee802.3-c22";
+				compatible = "ethernet-phy-id0181.4400";
 				interrupts = <GIC_SPI 9 IRQ_TYPE_LEVEL_HIGH>;
 				reg = <8>;
 				max-speed = <100>;
@@ -726,24 +759,6 @@
 			#size-cells = <0>;
 		};
 	};
-};
-
-&audio {
-	clocks = <&clkc CLKID_AIU>,
-		 <&clkc CLKID_AIU_GLUE>,
-		 <&clkc CLKID_I2S_SPDIF>;
-	clock-names = "aiu_top", "aiu_glue", "audin";
-	resets = <&reset RESET_AIU>,
-		 <&reset RESET_AUDIN>;
-	reset-names = "aiu", "audin";
-};
-
-&aiu_i2s {
-	clocks = <&clkc CLKID_I2S_OUT>,
-		 <&clkc CLKID_MIXER_IFACE>,
-		 <&clkc CLKID_AOCLK_GATE>,
-		 <&clkc CLKID_CTS_AMCLK>;
-	clock-names = "fast", "iface", "bclks", "mclk";
 };
 
 &pwrc_vpu {
@@ -827,20 +842,23 @@
 		 <&clkc CLKID_GCLK_VENCI_INT0>;
 };
 
+&spdif_fifo {
+	clocks = <&clkc CLKID_IEC958>;
+};
+
+&spdif_encoder {
+	clocks = <&clkc CLKID_IEC958_GATE>,
+	       	 <&clkc CLKID_CTS_MCLK_I958>,
+		 <&clkc CLKID_CTS_AMCLK>,
+		 <&clkc CLKID_CTS_I958>;
+	clock-names = "pclk", "mclk_i958", "mclk_i2s", "mclk";
+};
+
 &spicc {
 	clocks = <&clkc CLKID_SPICC>;
 	clock-names = "core";
 	resets = <&reset RESET_PERIPHS_SPICC>;
 	num-cs = <1>;
-};
-
-&aiu_spdif {
-	clocks = <&clkc CLKID_IEC958>,
-		 <&clkc CLKID_IEC958_GATE>,
-		 <&clkc CLKID_CTS_MCLK_I958>,
-		 <&clkc CLKID_CTS_AMCLK>,
-		 <&clkc CLKID_CTS_I958>;
-	clock-names = "fast", "iface", "mclk_i958", "mclk_i2s", "mclk";
 };
 
 &spifc {
@@ -878,7 +896,7 @@
 };
 
 &vdec {
-	compatible = "amlogic,gxl-vdec";
+	compatible = "amlogic,gxl-vdec", "amlogic,gx-vdec";
 	clocks = <&clkc CLKID_DOS_PARSER>,
 		 <&clkc CLKID_DOS>,
 		 <&clkc CLKID_VDEC_1>,

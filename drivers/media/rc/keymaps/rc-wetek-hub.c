@@ -9,7 +9,6 @@
  */
 
 static struct rc_map_table wetek_hub[] = {
-
 	{ 0x77f1, KEY_POWER },
 
 	{ 0x77f2, KEY_HOME },
@@ -26,7 +25,6 @@ static struct rc_map_table wetek_hub[] = {
 
 	{ 0x77fb, KEY_VOLUMEUP },
 	{ 0x77fc, KEY_VOLUMEDOWN },
-
 };
 
 static struct rc_map_list wetek_hub_map = {

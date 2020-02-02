@@ -1643,13 +1643,18 @@ static inline bool may_mount(void)
 	return ns_capable(current->nsproxy->mnt_ns->user_ns, CAP_SYS_ADMIN);
 }
 
+#ifdef	CONFIG_MANDATORY_FILE_LOCKING
 static inline bool may_mandlock(void)
 {
-#ifndef	CONFIG_MANDATORY_FILE_LOCKING
-	return false;
-#endif
 	return capable(CAP_SYS_ADMIN);
 }
+#else
+static inline bool may_mandlock(void)
+{
+	pr_warn("VFS: \"mand\" mount option not supported");
+	return false;
+}
+#endif
 
 /*
  * Now umount can handle mount points as well as block devices.
@@ -1674,8 +1679,6 @@ int ksys_umount(char __user *name, int flags)
 
 	if (!(flags & UMOUNT_NOFOLLOW))
 		lookup_flags |= LOOKUP_FOLLOW;
-
-	lookup_flags |= LOOKUP_NO_EVAL;
 
 	retval = user_path_mountpoint_at(AT_FDCWD, name, lookup_flags, &path);
 	if (retval)
@@ -1725,7 +1728,7 @@ static bool is_mnt_ns_file(struct dentry *dentry)
 	       dentry->d_fsdata == &mntns_operations;
 }
 
-struct mnt_namespace *to_mnt_ns(struct ns_common *ns)
+static struct mnt_namespace *to_mnt_ns(struct ns_common *ns)
 {
 	return container_of(ns, struct mnt_namespace, ns);
 }
@@ -2353,7 +2356,7 @@ static struct file *open_detached_copy(struct path *path, bool recursive)
 	return file;
 }
 
-SYSCALL_DEFINE3(open_tree, int, dfd, const char *, filename, unsigned, flags)
+SYSCALL_DEFINE3(open_tree, int, dfd, const char __user *, filename, unsigned, flags)
 {
 	struct file *file;
 	struct path path;
@@ -2463,6 +2466,28 @@ static void set_mount_attributes(struct mount *mnt, unsigned int mnt_flags)
 	unlock_mount_hash();
 }
 
+static void mnt_warn_timestamp_expiry(struct path *mountpoint, struct vfsmount *mnt)
+{
+	struct super_block *sb = mnt->mnt_sb;
+
+	if (!__mnt_is_readonly(mnt) &&
+	   (ktime_get_real_seconds() + TIME_UPTIME_SEC_MAX > sb->s_time_max)) {
+		char *buf = (char *)__get_free_page(GFP_KERNEL);
+		char *mntpath = buf ? d_path(mountpoint, buf, PAGE_SIZE) : ERR_PTR(-ENOMEM);
+		struct tm tm;
+
+		time64_to_tm(sb->s_time_max, 0, &tm);
+
+		pr_warn("%s filesystem being %s at %s supports timestamps until %04ld (0x%llx)\n",
+			sb->s_type->name,
+			is_mounted(mnt) ? "remounted" : "mounted",
+			mntpath,
+			tm.tm_year+1900, (unsigned long long)sb->s_time_max);
+
+		free_page((unsigned long)buf);
+	}
+}
+
 /*
  * Handle reconfiguration of the mountpoint only without alteration of the
  * superblock it refers to.  This is triggered by specifying MS_REMOUNT|MS_BIND
@@ -2488,6 +2513,9 @@ static int do_reconfigure_mnt(struct path *path, unsigned int mnt_flags)
 	if (ret == 0)
 		set_mount_attributes(mnt, mnt_flags);
 	up_write(&sb->s_umount);
+
+	mnt_warn_timestamp_expiry(path, &mnt->mnt);
+
 	return ret;
 }
 
@@ -2528,6 +2556,9 @@ static int do_remount(struct path *path, int ms_flags, int sb_flags,
 		}
 		up_write(&sb->s_umount);
 	}
+
+	mnt_warn_timestamp_expiry(path, &mnt->mnt);
+
 	put_fs_context(fc);
 	return err;
 }
@@ -2735,6 +2766,8 @@ static int do_new_mount_fc(struct fs_context *fc, struct path *mountpoint,
 	if (IS_ERR(mnt))
 		return PTR_ERR(mnt);
 
+	mnt_warn_timestamp_expiry(mountpoint, mnt);
+
 	error = do_add_mount(real_mount(mnt), mountpoint, mnt_flags);
 	if (error < 0)
 		mntput(mnt);
@@ -2768,8 +2801,6 @@ static int do_new_mount(struct path *path, const char *fstype, int sb_flags,
 				put_filesystem(type);
 				return -EINVAL;
 			}
-		} else {
-			subtype = "";
 		}
 	}
 
@@ -2994,7 +3025,7 @@ void *copy_mount_options(const void __user * data)
 	 * the remainder of the page.
 	 */
 	/* copy_from_user cannot cross TASK_SIZE ! */
-	size = TASK_SIZE - (unsigned long)data;
+	size = TASK_SIZE - (unsigned long)untagged_addr(data);
 	if (size > PAGE_SIZE)
 		size = PAGE_SIZE;
 
@@ -3046,7 +3077,7 @@ long do_mount(const char *dev_name, const char __user *dir_name,
 		return -EINVAL;
 
 	/* ... and get the mountpoint */
-	retval = user_path(dir_name, &path);
+	retval = user_path_at(AT_FDCWD, dir_name, LOOKUP_FOLLOW, &path);
 	if (retval)
 		return retval;
 
@@ -3294,8 +3325,8 @@ struct dentry *mount_subtree(struct vfsmount *m, const char *name)
 }
 EXPORT_SYMBOL(mount_subtree);
 
-int ksys_mount(const char __user *dev_name, const char __user *dir_name,
-	       const char __user *type, unsigned long flags, void __user *data)
+SYSCALL_DEFINE5(mount, char __user *, dev_name, char __user *, dir_name,
+		char __user *, type, unsigned long, flags, void __user *, data)
 {
 	int ret;
 	char *kernel_type;
@@ -3326,12 +3357,6 @@ out_dev:
 	kfree(kernel_type);
 out_type:
 	return ret;
-}
-
-SYSCALL_DEFINE5(mount, char __user *, dev_name, char __user *, dir_name,
-		char __user *, type, unsigned long, flags, void __user *, data)
-{
-	return ksys_mount(dev_name, dir_name, type, flags, data);
 }
 
 /*
@@ -3483,8 +3508,8 @@ err_fsfd:
  * Note the flags value is a combination of MOVE_MOUNT_* flags.
  */
 SYSCALL_DEFINE5(move_mount,
-		int, from_dfd, const char *, from_pathname,
-		int, to_dfd, const char *, to_pathname,
+		int, from_dfd, const char __user *, from_pathname,
+		int, to_dfd, const char __user *, to_pathname,
 		unsigned int, flags)
 {
 	struct path from_path, to_path;
@@ -3593,11 +3618,13 @@ SYSCALL_DEFINE2(pivot_root, const char __user *, new_root,
 	if (!may_mount())
 		return -EPERM;
 
-	error = user_path_dir(new_root, &new);
+	error = user_path_at(AT_FDCWD, new_root,
+			     LOOKUP_FOLLOW | LOOKUP_DIRECTORY, &new);
 	if (error)
 		goto out0;
 
-	error = user_path_dir(put_old, &old);
+	error = user_path_at(AT_FDCWD, put_old,
+			     LOOKUP_FOLLOW | LOOKUP_DIRECTORY, &old);
 	if (error)
 		goto out1;
 

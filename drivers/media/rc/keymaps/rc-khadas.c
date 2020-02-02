@@ -3,14 +3,13 @@
 // Copyright (C) 2019 Christian Hewitt <christianshewitt@gmail.com>
 
 /*
- * Keytable for the Khadas (VIM/EDGE) remote controller
+ * Keytable for the Khadas VIM/EDGE SBC remote control
  */
 
 #include <media/rc-map.h>
 #include <linux/module.h>
 
 static struct rc_map_table khadas[] = {
-
 	{ 0x14, KEY_POWER },
 
 	{ 0x03, KEY_UP },
@@ -27,7 +26,6 @@ static struct rc_map_table khadas[] = {
 	{ 0x0b, KEY_VOLUMEUP },
 
 	{ 0x48, KEY_HOME },
-
 };
 
 static struct rc_map_list khadas_map = {

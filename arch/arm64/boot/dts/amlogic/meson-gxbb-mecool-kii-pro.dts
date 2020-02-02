@@ -1,0 +1,34 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+
+/*
+ * Author: Christian Hewitt <christianshewitt@gmail.com>
+ */
+
+#include "meson-gxbb-p201.dts"
+
+/ {
+        compatible = "mecool,gxbb-kii-pro", "amlogic,meson-gxbb";
+	model = "MeCool KII Pro";
+
+	clock: meson_clock {
+		compatible = "amlogic, gxbb-clock";
+		reg = <0x0 0xc883c000 0x0 0x1000>,
+			<0x0 0xc8100000 0x0 0x1000>;
+		#clock-cells = <1>;
+		#reset-cells = <1>;
+		sys_max = <1536000000>;
+	};
+
+	memory@0 {
+		device_type = "memory";
+		reg = <0x0 0x0 0x0 0x40000000>;
+	};
+};
+
+&ir {
+        linux,rc-map-name = "rc-mecool-kii-pro";
+};
+
+&usb_pwr {
+	gpio = <>;
+};

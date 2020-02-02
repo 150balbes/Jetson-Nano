@@ -108,7 +108,7 @@ config THERMAL_DEFAULT_GOV_USER_SPACE
 
 config THERMAL_DEFAULT_GOV_POWER_ALLOCATOR
 	bool "power_allocator"
-	select THERMAL_GOV_POWER_ALLOCATOR
+	depends on THERMAL_GOV_POWER_ALLOCATOR
 	help
 	  Select this if you want to control temperature based on
 	  system and device power allocation. This governor can only
@@ -144,6 +144,7 @@ config THERMAL_GOV_USER_SPACE
 
 config THERMAL_GOV_POWER_ALLOCATOR
 	bool "Power allocator thermal governor"
+	depends on ENERGY_MODEL
 	help
 	  Enable this to manage platform thermals by dynamically
 	  allocating and limiting power to devices.
@@ -310,7 +311,7 @@ config DOVE_THERMAL
 
 config DB8500_THERMAL
 	tristate "DB8500 thermal management"
-	depends on MFD_DB8500_PRCMU
+	depends on MFD_DB8500_PRCMU && OF
 	default y
 	help
 	  Adds DB8500 thermal management implementation according to the thermal

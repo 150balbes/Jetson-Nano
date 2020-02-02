@@ -38,7 +38,7 @@ xlog_cil_ticket_alloc(
 	struct xlog_ticket *tic;
 
 	tic = xlog_ticket_alloc(log, 0, 1, XFS_TRANSACTION, 0,
-				KM_SLEEP|KM_NOFS);
+				KM_NOFS);
 
 	/*
 	 * set the current reservation to zero so we know to steal the basic
@@ -179,14 +179,14 @@ xlog_cil_alloc_shadow_bufs(
 
 			/*
 			 * We free and allocate here as a realloc would copy
-			 * unecessary data. We don't use kmem_zalloc() for the
+			 * unnecessary data. We don't use kmem_zalloc() for the
 			 * same reason - we don't need to zero the data area in
 			 * the buffer, only the log vector header and the iovec
 			 * storage.
 			 */
 			kmem_free(lip->li_lv_shadow);
 
-			lv = kmem_alloc_large(buf_size, KM_SLEEP | KM_NOFS);
+			lv = kmem_alloc_large(buf_size, KM_NOFS);
 			memset(lv, 0, xlog_cil_iovec_space(niovecs));
 
 			lv->lv_item = lip;
@@ -660,7 +660,7 @@ xlog_cil_push(
 	if (!cil)
 		return 0;
 
-	new_ctx = kmem_zalloc(sizeof(*new_ctx), KM_SLEEP|KM_NOFS);
+	new_ctx = kmem_zalloc(sizeof(*new_ctx), KM_NOFS);
 	new_ctx->ticket = xlog_cil_ticket_alloc(log);
 
 	down_write(&cil->xc_ctx_lock);
@@ -682,7 +682,7 @@ xlog_cil_push(
 	}
 
 
-	/* check for a previously pushed seqeunce */
+	/* check for a previously pushed sequence */
 	if (push_seq < cil->xc_ctx->sequence) {
 		spin_unlock(&cil->xc_push_lock);
 		goto out_skip;
@@ -847,7 +847,7 @@ restart:
 		goto out_abort;
 
 	spin_lock(&commit_iclog->ic_callback_lock);
-	if (commit_iclog->ic_state & XLOG_STATE_IOERROR) {
+	if (commit_iclog->ic_state == XLOG_STATE_IOERROR) {
 		spin_unlock(&commit_iclog->ic_callback_lock);
 		goto out_abort;
 	}
@@ -1179,11 +1179,11 @@ xlog_cil_init(
 	struct xfs_cil	*cil;
 	struct xfs_cil_ctx *ctx;
 
-	cil = kmem_zalloc(sizeof(*cil), KM_SLEEP|KM_MAYFAIL);
+	cil = kmem_zalloc(sizeof(*cil), KM_MAYFAIL);
 	if (!cil)
 		return -ENOMEM;
 
-	ctx = kmem_zalloc(sizeof(*ctx), KM_SLEEP|KM_MAYFAIL);
+	ctx = kmem_zalloc(sizeof(*ctx), KM_MAYFAIL);
 	if (!ctx) {
 		kmem_free(cil);
 		return -ENOMEM;

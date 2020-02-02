@@ -18,18 +18,13 @@
 static const struct sdio_device_id sdio_ids[] =
 {
 	{ SDIO_DEVICE(0x024c, 0x0523), },
+	{ SDIO_DEVICE(0x024c, 0x0525), },
 	{ SDIO_DEVICE(0x024c, 0x0623), },
 	{ SDIO_DEVICE(0x024c, 0x0626), },
 	{ SDIO_DEVICE(0x024c, 0xb723), },
 	{ /* end: all zeroes */				},
 };
-static const struct acpi_device_id acpi_ids[] = {
-	{"OBDA8723", 0x0000},
-	{}
-};
-
 MODULE_DEVICE_TABLE(sdio, sdio_ids);
-MODULE_DEVICE_TABLE(acpi, acpi_ids);
 
 static int rtw_drv_init(struct sdio_func *func, const struct sdio_device_id *id);
 static void rtw_dev_remove(struct sdio_func *func);
@@ -281,7 +276,6 @@ static void sdio_dvobj_deinit(struct sdio_func *func)
 		sdio_deinit(dvobj);
 		devobj_deinit(dvobj);
 	}
-	return;
 }
 
 void rtw_set_hal_ops(struct adapter *padapter)
@@ -371,7 +365,7 @@ static struct adapter *rtw_sdio_if1_init(struct dvobj_priv *dvobj, const struct 
 
 	rtw_hal_chip_configure(padapter);
 
-	hal_btcoex_Initialize(padapter);
+	hal_btcoex_Initialize((void *) padapter);
 
 	/* 3 6. read efuse/eeprom data */
 	rtw_hal_read_chip_info(padapter);
@@ -620,12 +614,10 @@ static int __init rtw_drv_entry(void)
 #endif /*  BTCOEXVERSION */
 
 	sdio_drvpriv.drv_registered = true;
-	rtw_drv_proc_init();
 
 	ret = sdio_register_driver(&sdio_drvpriv.r871xs_drv);
 	if (ret != 0) {
 		sdio_drvpriv.drv_registered = false;
-		rtw_drv_proc_deinit();
 		rtw_ndev_notifier_unregister();
 		DBG_871X("%s: register driver failed!!(%d)\n", __func__, ret);
 		goto exit;
@@ -646,7 +638,6 @@ static void __exit rtw_drv_halt(void)
 
 	sdio_unregister_driver(&sdio_drvpriv.r871xs_drv);
 
-	rtw_drv_proc_deinit();
 	rtw_ndev_notifier_unregister();
 
 	DBG_871X_LEVEL(_drv_always_, "module exit success\n");

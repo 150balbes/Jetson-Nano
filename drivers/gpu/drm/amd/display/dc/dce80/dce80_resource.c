@@ -288,6 +288,14 @@ static const struct dce_opp_mask opp_mask = {
 	OPP_COMMON_MASK_SH_LIST_DCE_80(_MASK)
 };
 
+static const struct dce110_aux_registers_shift aux_shift = {
+	DCE10_AUX_MASK_SH_LIST(__SHIFT)
+};
+
+static const struct dce110_aux_registers_mask aux_mask = {
+	DCE10_AUX_MASK_SH_LIST(_MASK)
+};
+
 #define aux_engine_regs(id)\
 [id] = {\
 	AUX_COMMON_REG_LIST(id), \
@@ -322,7 +330,7 @@ static const struct dce_audio_shift audio_shift = {
 		AUD_COMMON_MASK_SH_LIST(__SHIFT)
 };
 
-static const struct dce_aduio_mask audio_mask = {
+static const struct dce_audio_mask audio_mask = {
 		AUD_COMMON_MASK_SH_LIST(_MASK)
 };
 
@@ -431,6 +439,37 @@ static const struct dce_abm_mask abm_mask = {
 #define CC_DC_HDMI_STRAPS__AUDIO_STREAM_NUMBER__SHIFT 0x8
 #endif
 
+static int map_transmitter_id_to_phy_instance(
+	enum transmitter transmitter)
+{
+	switch (transmitter) {
+	case TRANSMITTER_UNIPHY_A:
+		return 0;
+	break;
+	case TRANSMITTER_UNIPHY_B:
+		return 1;
+	break;
+	case TRANSMITTER_UNIPHY_C:
+		return 2;
+	break;
+	case TRANSMITTER_UNIPHY_D:
+		return 3;
+	break;
+	case TRANSMITTER_UNIPHY_E:
+		return 4;
+	break;
+	case TRANSMITTER_UNIPHY_F:
+		return 5;
+	break;
+	case TRANSMITTER_UNIPHY_G:
+		return 6;
+	break;
+	default:
+		ASSERT(0);
+		return 0;
+	}
+}
+
 static void read_dce_straps(
 	struct dc_context *ctx,
 	struct resource_straps *straps)
@@ -491,7 +530,10 @@ struct dce_aux *dce80_aux_engine_create(
 
 	dce110_aux_engine_construct(aux_engine, ctx, inst,
 				    SW_AUX_TIMEOUT_PERIOD_MULTIPLIER * AUX_TIMEOUT_PERIOD,
-				    &aux_engine_regs[inst]);
+				    &aux_engine_regs[inst],
+					&aux_mask,
+					&aux_shift,
+					ctx->dc->caps.extended_aux_timeout_support);
 
 	return &aux_engine->base;
 }
@@ -669,14 +711,18 @@ struct link_encoder *dce80_link_encoder_create(
 {
 	struct dce110_link_encoder *enc110 =
 		kzalloc(sizeof(struct dce110_link_encoder), GFP_KERNEL);
+	int link_regs_id;
 
 	if (!enc110)
 		return NULL;
 
+	link_regs_id =
+		map_transmitter_id_to_phy_instance(enc_init_data->transmitter);
+
 	dce110_link_encoder_construct(enc110,
 				      enc_init_data,
 				      &link_enc_feature,
-				      &link_enc_regs[enc_init_data->transmitter],
+				      &link_enc_regs[link_regs_id],
 				      &link_enc_aux_regs[enc_init_data->channel - 1],
 				      &link_enc_hpd_regs[enc_init_data->hpd_source]);
 	return &enc110->base;
@@ -701,6 +747,7 @@ struct clock_source *dce80_clock_source_create(
 		return &clk_src->base;
 	}
 
+	kfree(clk_src);
 	BREAK_TO_DEBUGGER();
 	return NULL;
 }
@@ -876,7 +923,6 @@ static bool dce80_construct(
 {
 	unsigned int i;
 	struct dc_context *ctx = dc->ctx;
-	struct dc_firmware_info info;
 	struct dc_bios *bp;
 
 	ctx->dc_bios->regs = &bios_regs;
@@ -895,6 +941,7 @@ static bool dce80_construct(
 	dc->caps.i2c_speed_in_khz = 40;
 	dc->caps.max_cursor_size = 128;
 	dc->caps.dual_link_dvi = true;
+	dc->caps.extended_aux_timeout_support = false;
 
 	/*************************************************
 	 *  Create resources                             *
@@ -902,8 +949,7 @@ static bool dce80_construct(
 
 	bp = ctx->dc_bios;
 
-	if ((bp->funcs->get_firmware_info(bp, &info) == BP_RESULT_OK) &&
-		info.external_clock_source_frequency_for_dp != 0) {
+	if (bp->fw_info_valid && bp->fw_info.external_clock_source_frequency_for_dp != 0) {
 		pool->base.dp_clock_source =
 				dce80_clock_source_create(ctx, bp, CLOCK_SOURCE_ID_EXTERNAL, NULL, true);
 
@@ -1075,7 +1121,6 @@ static bool dce81_construct(
 {
 	unsigned int i;
 	struct dc_context *ctx = dc->ctx;
-	struct dc_firmware_info info;
 	struct dc_bios *bp;
 
 	ctx->dc_bios->regs = &bios_regs;
@@ -1101,8 +1146,7 @@ static bool dce81_construct(
 
 	bp = ctx->dc_bios;
 
-	if ((bp->funcs->get_firmware_info(bp, &info) == BP_RESULT_OK) &&
-		info.external_clock_source_frequency_for_dp != 0) {
+	if (bp->fw_info_valid && bp->fw_info.external_clock_source_frequency_for_dp != 0) {
 		pool->base.dp_clock_source =
 				dce80_clock_source_create(ctx, bp, CLOCK_SOURCE_ID_EXTERNAL, NULL, true);
 
@@ -1274,7 +1318,6 @@ static bool dce83_construct(
 {
 	unsigned int i;
 	struct dc_context *ctx = dc->ctx;
-	struct dc_firmware_info info;
 	struct dc_bios *bp;
 
 	ctx->dc_bios->regs = &bios_regs;
@@ -1300,8 +1343,7 @@ static bool dce83_construct(
 
 	bp = ctx->dc_bios;
 
-	if ((bp->funcs->get_firmware_info(bp, &info) == BP_RESULT_OK) &&
-		info.external_clock_source_frequency_for_dp != 0) {
+	if (bp->fw_info_valid && bp->fw_info.external_clock_source_frequency_for_dp != 0) {
 		pool->base.dp_clock_source =
 				dce80_clock_source_create(ctx, bp, CLOCK_SOURCE_ID_EXTERNAL, NULL, true);
 

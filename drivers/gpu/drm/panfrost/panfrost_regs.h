@@ -69,10 +69,6 @@
 #define GPU_PRFCNT_TILER_EN		0x74
 #define GPU_PRFCNT_MMU_L2_EN		0x7c
 
-#define GPU_PWR_KEY			0x050	/* (WO) Power manager key register */
-#define GPU_PWR_OVERRIDE0		0x054	/* (RW) Power manager override settings */
-#define GPU_PWR_OVERRIDE1		0x058	/* (RW) Power manager override settings */
-
 #define GPU_THREAD_MAX_THREADS		0x0A0	/* (RO) Maximum number of threads per core */
 #define GPU_THREAD_MAX_WORKGROUP_SIZE	0x0A4	/* (RO) Maximum workgroup size */
 #define GPU_THREAD_MAX_BARRIER_SIZE	0x0A8	/* (RO) Maximum threads waiting at a barrier */

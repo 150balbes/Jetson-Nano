@@ -18,10 +18,12 @@
 #define AO_RTI_GEN_PWR_SLEEP0	0xe8
 #define AO_RTI_GEN_PWR_ISO0	0xec
 	#define GEN_PWR_VDEC_HEVC (BIT(7) | BIT(6))
+	#define GEN_PWR_VDEC_HEVC_SM1 (BIT(2))
 
 #define MC_SIZE	(4096 * 4)
 
-static int vdec_hevc_load_firmware(struct amvdec_session *sess, const char* fwname)
+static int vdec_hevc_load_firmware(struct amvdec_session *sess,
+				   const char *fwname)
 {
 	struct amvdec_core *core = sess->core;
 	struct device *dev = core->dev_dec;
@@ -44,12 +46,13 @@ static int vdec_hevc_load_firmware(struct amvdec_session *sess, const char* fwna
 		goto release_firmware;
 	}
 
-	mc_addr = dma_alloc_coherent(core->dev, MC_SIZE, &mc_addr_map, GFP_KERNEL);
+	mc_addr = dma_alloc_coherent(core->dev, MC_SIZE, &mc_addr_map,
+				     GFP_KERNEL);
 	if (!mc_addr) {
 		dev_err(dev, "Failed allocating memory for firmware loading\n");
 		ret = -ENOMEM;
 		goto release_firmware;
-	 }
+	}
 
 	memcpy(mc_addr, fw->data, MC_SIZE);
 
@@ -60,7 +63,8 @@ static int vdec_hevc_load_firmware(struct amvdec_session *sess, const char* fwna
 	amvdec_write_dos(core, HEVC_IMEM_DMA_COUNT, MC_SIZE / 4);
 	amvdec_write_dos(core, HEVC_IMEM_DMA_CTRL, (0x8000 | (7 << 16)));
 
-	while (--i && readl(core->dos_base + HEVC_IMEM_DMA_CTRL) & 0x8000) { }
+	while (i && (readl(core->dos_base + HEVC_IMEM_DMA_CTRL) & 0x8000))
+		i--;
 
 	if (i == 0) {
 		dev_err(dev, "Firmware load fail (DMA hang?)\n");
@@ -77,9 +81,11 @@ static void vdec_hevc_stbuf_init(struct amvdec_session *sess)
 {
 	struct amvdec_core *core = sess->core;
 
-	amvdec_write_dos(core, HEVC_STREAM_CONTROL, amvdec_read_dos(core, HEVC_STREAM_CONTROL) & ~1);
+	amvdec_write_dos(core, HEVC_STREAM_CONTROL,
+			 amvdec_read_dos(core, HEVC_STREAM_CONTROL) & ~1);
 	amvdec_write_dos(core, HEVC_STREAM_START_ADDR, sess->vififo_paddr);
-	amvdec_write_dos(core, HEVC_STREAM_END_ADDR, sess->vififo_paddr + sess->vififo_size);
+	amvdec_write_dos(core, HEVC_STREAM_END_ADDR,
+			 sess->vififo_paddr + sess->vififo_size);
 	amvdec_write_dos(core, HEVC_STREAM_RD_PTR, sess->vififo_paddr);
 	amvdec_write_dos(core, HEVC_STREAM_WR_PTR, sess->vififo_paddr);
 }
@@ -91,9 +97,12 @@ static void vdec_hevc_conf_esparser(struct amvdec_session *sess)
 
 	/* set vififo_vbuf_rp_sel=>vdec_hevc */
 	amvdec_write_dos(core, DOS_GEN_CTRL0, 3 << 1);
-	amvdec_write_dos(core, HEVC_STREAM_CONTROL, amvdec_read_dos(core, HEVC_STREAM_CONTROL) | BIT(3));
-	amvdec_write_dos(core, HEVC_STREAM_CONTROL, amvdec_read_dos(core, HEVC_STREAM_CONTROL) | 1);
-	amvdec_write_dos(core, HEVC_STREAM_FIFO_CTL, amvdec_read_dos(core, HEVC_STREAM_FIFO_CTL) | BIT(29));
+	amvdec_write_dos(core, HEVC_STREAM_CONTROL,
+			 amvdec_read_dos(core, HEVC_STREAM_CONTROL) | BIT(3));
+	amvdec_write_dos(core, HEVC_STREAM_CONTROL,
+			 amvdec_read_dos(core, HEVC_STREAM_CONTROL) | 1);
+	amvdec_write_dos(core, HEVC_STREAM_FIFO_CTL,
+			 amvdec_read_dos(core, HEVC_STREAM_FIFO_CTL) | BIT(29));
 }
 
 static u32 vdec_hevc_vififo_level(struct amvdec_session *sess)
@@ -115,16 +124,28 @@ static int vdec_hevc_stop(struct amvdec_session *sess)
 		codec_ops->stop(sess);
 
 	/* Enable VDEC_HEVC Isolation */
-	regmap_update_bits(core->regmap_ao, AO_RTI_GEN_PWR_ISO0, 0xc00, 0xc00);
+	if (core->platform->revision == VDEC_REVISION_SM1)
+		regmap_update_bits(core->regmap_ao, AO_RTI_GEN_PWR_ISO0,
+				   GEN_PWR_VDEC_HEVC_SM1,
+				   GEN_PWR_VDEC_HEVC_SM1);
+	else
+		regmap_update_bits(core->regmap_ao, AO_RTI_GEN_PWR_ISO0,
+				   0xc00, 0xc00);
 
 	/* VDEC_HEVC Memories */
 	amvdec_write_dos(core, DOS_MEM_PD_HEVC, 0xffffffffUL);
 
-	regmap_update_bits(core->regmap_ao, AO_RTI_GEN_PWR_SLEEP0,
-		GEN_PWR_VDEC_HEVC, GEN_PWR_VDEC_HEVC);
+	if (core->platform->revision == VDEC_REVISION_SM1)
+		regmap_update_bits(core->regmap_ao, AO_RTI_GEN_PWR_SLEEP0,
+				   GEN_PWR_VDEC_HEVC_SM1,
+				   GEN_PWR_VDEC_HEVC_SM1);
+	else
+		regmap_update_bits(core->regmap_ao, AO_RTI_GEN_PWR_SLEEP0,
+				   GEN_PWR_VDEC_HEVC, GEN_PWR_VDEC_HEVC);
 
 	clk_disable_unprepare(core->vdec_hevc_clk);
-	if (core->platform->revision == VDEC_REVISION_G12A)
+	if (core->platform->revision == VDEC_REVISION_G12A ||
+	    core->platform->revision == VDEC_REVISION_SM1)
 		clk_disable_unprepare(core->vdec_hevcf_clk);
 
 	return 0;
@@ -136,7 +157,8 @@ static int vdec_hevc_start(struct amvdec_session *sess)
 	struct amvdec_core *core = sess->core;
 	struct amvdec_codec_ops *codec_ops = sess->fmt_out->codec_ops;
 
-	if (core->platform->revision == VDEC_REVISION_G12A) {
+	if (core->platform->revision == VDEC_REVISION_G12A ||
+	    core->platform->revision == VDEC_REVISION_SM1) {
 		clk_set_rate(core->vdec_hevcf_clk, 666666666);
 		ret = clk_prepare_enable(core->vdec_hevcf_clk);
 		if (ret)
@@ -148,8 +170,12 @@ static int vdec_hevc_start(struct amvdec_session *sess)
 	if (ret)
 		return ret;
 
-	regmap_update_bits(core->regmap_ao, AO_RTI_GEN_PWR_SLEEP0,
-		GEN_PWR_VDEC_HEVC, 0);
+	if (core->platform->revision == VDEC_REVISION_SM1)
+		regmap_update_bits(core->regmap_ao, AO_RTI_GEN_PWR_SLEEP0,
+				   GEN_PWR_VDEC_HEVC_SM1, 0);
+	else
+		regmap_update_bits(core->regmap_ao, AO_RTI_GEN_PWR_SLEEP0,
+				   GEN_PWR_VDEC_HEVC, 0);
 	udelay(10);
 
 	/* Reset VDEC_HEVC*/
@@ -162,7 +188,12 @@ static int vdec_hevc_start(struct amvdec_session *sess)
 	amvdec_write_dos(core, DOS_MEM_PD_HEVC, 0x00000000);
 
 	/* Remove VDEC_HEVC Isolation */
-	regmap_update_bits(core->regmap_ao, AO_RTI_GEN_PWR_ISO0, 0xc00, 0);
+	if (core->platform->revision == VDEC_REVISION_SM1)
+		regmap_update_bits(core->regmap_ao, AO_RTI_GEN_PWR_ISO0,
+				   GEN_PWR_VDEC_HEVC_SM1, 0);
+	else
+		regmap_update_bits(core->regmap_ao, AO_RTI_GEN_PWR_ISO0,
+				   0xc00, 0);
 
 	amvdec_write_dos(core, DOS_SW_RESET3, 0xffffffff);
 	amvdec_write_dos(core, DOS_SW_RESET3, 0x00000000);

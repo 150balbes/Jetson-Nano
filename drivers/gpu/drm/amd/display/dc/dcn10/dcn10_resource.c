@@ -270,7 +270,7 @@ static const struct dce_audio_shift audio_shift = {
 		DCE120_AUD_COMMON_MASK_SH_LIST(__SHIFT)
 };
 
-static const struct dce_aduio_mask audio_mask = {
+static const struct dce_audio_mask audio_mask = {
 		DCE120_AUD_COMMON_MASK_SH_LIST(_MASK)
 };
 
@@ -317,6 +317,14 @@ static const struct dcn10_link_enc_shift le_shift = {
 
 static const struct dcn10_link_enc_mask le_mask = {
 		LINK_ENCODER_MASK_SH_LIST_DCN10(_MASK)
+};
+
+static const struct dce110_aux_registers_shift aux_shift = {
+	DCN10_AUX_MASK_SH_LIST(__SHIFT)
+};
+
+static const struct dce110_aux_registers_mask aux_mask = {
+	DCN10_AUX_MASK_SH_LIST(_MASK)
 };
 
 #define ipp_regs(id)\
@@ -470,6 +478,28 @@ static const struct dcn_hubbub_shift hubbub_shift = {
 static const struct dcn_hubbub_mask hubbub_mask = {
 		HUBBUB_MASK_SH_LIST_DCN10(_MASK)
 };
+
+static int map_transmitter_id_to_phy_instance(
+	enum transmitter transmitter)
+{
+	switch (transmitter) {
+	case TRANSMITTER_UNIPHY_A:
+		return 0;
+	break;
+	case TRANSMITTER_UNIPHY_B:
+		return 1;
+	break;
+	case TRANSMITTER_UNIPHY_C:
+		return 2;
+	break;
+	case TRANSMITTER_UNIPHY_D:
+		return 3;
+	break;
+	default:
+		ASSERT(0);
+		return 0;
+	}
+}
 
 #define clk_src_regs(index, pllid)\
 [index] = {\
@@ -642,7 +672,10 @@ struct dce_aux *dcn10_aux_engine_create(
 
 	dce110_aux_engine_construct(aux_engine, ctx, inst,
 				    SW_AUX_TIMEOUT_PERIOD_MULTIPLIER * AUX_TIMEOUT_PERIOD,
-				    &aux_engine_regs[inst]);
+				    &aux_engine_regs[inst],
+					&aux_mask,
+					&aux_shift,
+					ctx->dc->caps.extended_aux_timeout_support);
 
 	return &aux_engine->base;
 }
@@ -751,14 +784,18 @@ struct link_encoder *dcn10_link_encoder_create(
 {
 	struct dcn10_link_encoder *enc10 =
 		kzalloc(sizeof(struct dcn10_link_encoder), GFP_KERNEL);
+	int link_regs_id;
 
 	if (!enc10)
 		return NULL;
 
+	link_regs_id =
+		map_transmitter_id_to_phy_instance(enc_init_data->transmitter);
+
 	dcn10_link_encoder_construct(enc10,
 				      enc_init_data,
 				      &link_enc_feature,
-				      &link_enc_regs[enc_init_data->transmitter],
+				      &link_enc_regs[link_regs_id],
 				      &link_enc_aux_regs[enc_init_data->channel - 1],
 				      &link_enc_hpd_regs[enc_init_data->hpd_source],
 				      &le_shift,
@@ -786,6 +823,7 @@ struct clock_source *dcn10_clock_source_create(
 		return &clk_src->base;
 	}
 
+	kfree(clk_src);
 	BREAK_TO_DEBUGGER();
 	return NULL;
 }
@@ -1307,6 +1345,8 @@ static bool construct(
 	dc->caps.max_slave_planes = 1;
 	dc->caps.is_apu = true;
 	dc->caps.post_blend_color_processing = false;
+	dc->caps.extended_aux_timeout_support = false;
+
 	/* Raven DP PHY HBR2 eye diagram pattern is not stable. Use TP4 */
 	dc->caps.force_dp_tps4_for_cp2520 = true;
 
@@ -1415,6 +1455,14 @@ static bool construct(
 	}
 
 	pool->base.pp_smu = dcn10_pp_smu_create(ctx);
+
+	/*
+	 * Right now SMU/PPLIB and DAL all have the AZ D3 force PME notification *
+	 * implemented. So AZ D3 should work.For issue 197007.                   *
+	 */
+	if (pool->base.pp_smu != NULL
+			&& pool->base.pp_smu->rv_funcs.set_pme_wa_enable != NULL)
+		dc->debug.az_endpoint_mute_only = false;
 
 	if (!dc->debug.disable_pplib_clock_request)
 		dcn_bw_update_from_pplib(dc);
@@ -1562,6 +1610,7 @@ struct resource_pool *dcn10_create_resource_pool(
 	if (construct(init_data->num_virtual_links, dc, pool))
 		return &pool->base;
 
+	kfree(pool);
 	BREAK_TO_DEBUGGER();
 	return NULL;
 }

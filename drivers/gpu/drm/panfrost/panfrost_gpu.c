@@ -7,9 +7,7 @@
 #include <linux/delay.h>
 #include <linux/dma-mapping.h>
 #include <linux/interrupt.h>
-#include <linux/reset.h>
 #include <linux/io.h>
-#include <linux/of.h>
 #include <linux/iopoll.h>
 #include <linux/platform_device.h>
 
@@ -61,16 +59,7 @@ int panfrost_gpu_soft_reset(struct panfrost_device *pfdev)
 
 	gpu_write(pfdev, GPU_INT_MASK, 0);
 	gpu_write(pfdev, GPU_INT_CLEAR, GPU_IRQ_RESET_COMPLETED);
-
-	if (of_device_is_compatible(pfdev->dev->of_node, "amlogic,meson-gxm-mali")) {
-		reset_control_assert(pfdev->rstc);
-		udelay(10);
-		reset_control_deassert(pfdev->rstc);
-
-		gpu_write(pfdev, GPU_PWR_KEY, 0x2968A819);
-		gpu_write(pfdev, GPU_PWR_OVERRIDE1, 0xfff | (0x20 << 16));
-	} else
-		gpu_write(pfdev, GPU_CMD, GPU_CMD_SOFT_RESET);
+	gpu_write(pfdev, GPU_CMD, GPU_CMD_SOFT_RESET);
 
 	ret = readl_relaxed_poll_timeout(pfdev->iomem + GPU_INT_RAWSTAT,
 		val, val & GPU_IRQ_RESET_COMPLETED, 100, 10000);
@@ -219,6 +208,9 @@ static void panfrost_gpu_init_features(struct panfrost_device *pfdev)
 	pfdev->features.mem_features = gpu_read(pfdev, GPU_MEM_FEATURES);
 	pfdev->features.mmu_features = gpu_read(pfdev, GPU_MMU_FEATURES);
 	pfdev->features.thread_features = gpu_read(pfdev, GPU_THREAD_FEATURES);
+	pfdev->features.max_threads = gpu_read(pfdev, GPU_THREAD_MAX_THREADS);
+	pfdev->features.thread_max_workgroup_sz = gpu_read(pfdev, GPU_THREAD_MAX_WORKGROUP_SIZE);
+	pfdev->features.thread_max_barrier_sz = gpu_read(pfdev, GPU_THREAD_MAX_BARRIER_SIZE);
 	pfdev->features.coherency_features = gpu_read(pfdev, GPU_COHERENCY_FEATURES);
 	for (i = 0; i < 4; i++)
 		pfdev->features.texture_features[i] = gpu_read(pfdev, GPU_TEXTURE_FEATURES(i));
@@ -242,6 +234,8 @@ static void panfrost_gpu_init_features(struct panfrost_device *pfdev)
 
 	pfdev->features.stack_present = gpu_read(pfdev, GPU_STACK_PRESENT_LO);
 	pfdev->features.stack_present |= (u64)gpu_read(pfdev, GPU_STACK_PRESENT_HI) << 32;
+
+	pfdev->features.thread_tls_alloc = gpu_read(pfdev, GPU_THREAD_TLS_ALLOC);
 
 	gpu_id = gpu_read(pfdev, GPU_ID);
 	pfdev->features.revision = gpu_id & 0xffff;

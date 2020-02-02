@@ -13,10 +13,12 @@
 struct drm_i915_private;
 struct intel_connector;
 struct intel_encoder;
+enum port;
 
 void intel_hpd_poll_init(struct drm_i915_private *dev_priv);
-bool intel_encoder_hotplug(struct intel_encoder *encoder,
-			   struct intel_connector *connector);
+enum intel_hotplug_state intel_encoder_hotplug(struct intel_encoder *encoder,
+					       struct intel_connector *connector,
+					       bool irq_received);
 void intel_hpd_irq_handler(struct drm_i915_private *dev_priv,
 			   u32 pin_mask, u32 long_mask);
 void intel_hpd_init(struct drm_i915_private *dev_priv);

@@ -100,6 +100,7 @@ struct _vcs_dpi_soc_bounding_box_st {
 	unsigned int vmm_page_size_bytes;
 	unsigned int hostvm_min_page_size_bytes;
 	double dram_clock_change_latency_us;
+	double dummy_pstate_latency_us;
 	double writeback_dram_clock_change_latency_us;
 	unsigned int return_bus_width_bytes;
 	unsigned int voltage_override;
@@ -108,6 +109,9 @@ struct _vcs_dpi_soc_bounding_box_st {
 	int use_urgent_burst_bw;
 	unsigned int num_states;
 	struct _vcs_dpi_voltage_scaling_st clock_limits[MAX_CLOCK_LIMIT_STATES];
+	bool do_urgent_latency_adjustment;
+	double urgent_latency_adjustment_fabric_clock_component_us;
+	double urgent_latency_adjustment_fabric_clock_reference_mhz;
 };
 
 struct _vcs_dpi_ip_params_st {
@@ -265,7 +269,7 @@ struct writeback_st {
 
 struct _vcs_dpi_display_output_params_st {
 	int dp_lanes;
-	int output_bpp;
+	double output_bpp;
 	int dsc_enable;
 	int wb_enable;
 	int num_active_wb;
@@ -314,6 +318,7 @@ struct _vcs_dpi_display_pipe_dest_params_st {
 	unsigned int vupdate_width;
 	unsigned int vready_offset;
 	unsigned char interlaced;
+	unsigned char embedded;
 	double pixel_rate_mhz;
 	unsigned char synchronized_vblank_all_planes;
 	unsigned char otg_inst;

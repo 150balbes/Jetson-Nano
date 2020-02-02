@@ -25,6 +25,11 @@
 #ifndef DC_TYPES_H_
 #define DC_TYPES_H_
 
+#ifndef AMD_EDID_UTILITY
+/* AND EdidUtility only needs a portion
+ * of this file, including the rest only
+ * causes additional issues.
+ */
 #include "os_types.h"
 #include "fixed31_32.h"
 #include "irq_types.h"
@@ -32,6 +37,10 @@
 #include "dc_hw_types.h"
 #include "dal_types.h"
 #include "grph_object_defs.h"
+
+#ifdef CONFIG_DRM_AMD_DC_HDCP
+#include "dm_cp_psp.h"
+#endif
 
 /* forward declarations */
 struct dc_plane_state;
@@ -100,6 +109,9 @@ struct dc_context {
 	uint32_t dc_sink_id_count;
 	uint32_t dc_stream_id_count;
 	uint64_t fbc_gpu_addr;
+#ifdef CONFIG_DRM_AMD_DC_HDCP
+	struct cp_psp cp_psp;
+#endif
 };
 
 
@@ -159,6 +171,12 @@ enum dc_edid_status {
 	EDID_THE_SAME,
 };
 
+enum act_return_status {
+	ACT_SUCCESS,
+	ACT_LINK_LOST,
+	ACT_FAILED
+};
+
 /* audio capability from EDID*/
 struct dc_cea_audio_mode {
 	uint8_t format_code; /* ucData[0] [6:3]*/
@@ -202,6 +220,7 @@ struct dc_panel_patch {
 	unsigned int dppowerup_delay;
 	unsigned int extra_t12_ms;
 	unsigned int extra_delay_backlight_off;
+	unsigned int extra_t7_ms;
 };
 
 struct dc_edid_caps {
@@ -725,6 +744,22 @@ struct AsicStateEx {
 	unsigned int phyClock;
 };
 
+
+enum dc_clock_type {
+	DC_CLOCK_TYPE_DISPCLK = 0,
+	DC_CLOCK_TYPE_DPPCLK        = 1,
+};
+
+struct dc_clock_config {
+	uint32_t max_clock_khz;
+	uint32_t min_clock_khz;
+	uint32_t bw_requirequired_clock_khz;
+	uint32_t current_clock_khz;/*current clock in use*/
+};
+
+#endif /*AMD_EDID_UTILITY*/
+//AMD EDID UTILITY does not need any of the above structures
+
 #ifdef CONFIG_DRM_AMD_DC_DSC_SUPPORT
 /* DSC DPCD capabilities */
 union dsc_slice_caps1 {
@@ -796,4 +831,5 @@ struct dsc_dec_dpcd_caps {
 	uint32_t branch_max_line_width;
 };
 #endif
+
 #endif /* DC_TYPES_H_ */

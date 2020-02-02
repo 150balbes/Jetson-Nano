@@ -12,7 +12,7 @@
 #include "meson-gxl-s905x.dtsi"
 
 / {
-	compatible = "libretech,lafrite", "amlogic,s805x",
+	compatible = "libretech,aml-s805x-ac", "amlogic,s805x",
 		     "amlogic,meson-gxl";
 	model = "Libre Computer AML-S805X-AC";
 
@@ -107,8 +107,9 @@
 	};
 
 	sound {
-		compatible = "simple-audio-card";
-		simple-audio-card,name = "AMLGX";
+		compatible = "amlogic,gx-sound-card";
+		model = "AMLGX";
+		audio-routing = "I2S ENCODER Playback", "I2S FIFO Playback";
 
 		assigned-clocks = <&clkc CLKID_MPLL2>,
 				  <&clkc CLKID_MPLL0>,
@@ -117,31 +118,22 @@
 		assigned-clock-rates = <294912000>,
 				       <270950400>,
 				       <393216000>;
+		status = "okay";
 
-		simple-audio-card,dai-link@0 {
-			/* HDMI Output */
-			format = "i2s";
+		dai-link-0 {
+			sound-dai = <&i2s_fifo>;
+		};
+
+		dai-link-1 {
+			sound-dai = <&i2s_encoder>;
+			dai-format = "i2s";
 			mclk-fs = <256>;
-			bitclock-master = <&aiu_i2s>;
-			frame-master = <&aiu_i2s>;
 
-			cpu {
-				sound-dai = <&aiu_i2s>;
-			};
-
-			codec {
+			codec-0 {
 				sound-dai = <&hdmi_tx>;
 			};
 		};
 	};
-};
-
-&audio {
-	status = "okay";
-};
-
-&aiu_i2s {
-	status = "okay";
 };
 
 &cec_AO {
@@ -170,6 +162,14 @@
 	status = "okay";
 	pinctrl-0 = <&remote_input_ao_pins>;
 	pinctrl-names = "default";
+};
+
+&i2s_fifo {
+	status = "okay";
+};
+
+&i2s_encoder {
+	status = "okay";
 };
 
 &hdmi_tx {

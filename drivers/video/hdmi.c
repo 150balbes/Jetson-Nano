@@ -1419,6 +1419,27 @@ static void hdmi_audio_infoframe_log(const char *level,
 			frame->downmix_inhibit ? "Yes" : "No");
 }
 
+static const char *
+hdmi_eotf_get_name(enum hdmi_eotf eotf)
+{
+	if (eotf < 0 || eotf > 7)
+		return "Invalid";
+
+	switch (eotf) {
+	case HDMI_EOTF_TRADITIONAL_GAMMA_SDR:
+		return "Traditional Gamma - SDR";
+	case HDMI_EOTF_TRADITIONAL_GAMMA_HDR:
+		return "Traditional Gamma - HDR";
+	case HDMI_EOTF_SMPTE_ST2084:
+		return "SMPTE ST 2084";
+	case HDMI_EOTF_BT_2100_HLG:
+		return "Hybrid Log-Gamma (HLG)";
+	default:
+		break;
+	}
+	return "Reserved";
+}
+
 static void hdmi_drm_infoframe_log(const char *level,
 				   struct device *dev,
 				   const struct hdmi_drm_infoframe *frame)
@@ -1427,24 +1448,25 @@ static void hdmi_drm_infoframe_log(const char *level,
 
 	hdmi_infoframe_log_header(level, dev,
 				  (struct hdmi_any_infoframe *)frame);
-	hdmi_log("length: %d\n", frame->length);
-	hdmi_log("metadata type: %d\n", frame->metadata_type);
-	hdmi_log("eotf: %d\n", frame->eotf);
+	hdmi_log("    metadata type: %d\n", frame->metadata_type);
+	hdmi_log("    eotf: %s\n", hdmi_eotf_get_name(frame->eotf));
+
+	hdmi_log("    display primaries:\n");
 	for (i = 0; i < 3; i++) {
-		hdmi_log("x[%d]: %d\n", i, frame->display_primaries[i].x);
-		hdmi_log("y[%d]: %d\n", i, frame->display_primaries[i].y);
+		hdmi_log("      x[%d]: %d\n", i, frame->display_primaries[i].x);
+		hdmi_log("      y[%d]: %d\n", i, frame->display_primaries[i].y);
 	}
 
-	hdmi_log("white point x: %d\n", frame->white_point.x);
-	hdmi_log("white point y: %d\n", frame->white_point.y);
+	hdmi_log("    white point x: %d\n", frame->white_point.x);
+	hdmi_log("    white point y: %d\n", frame->white_point.y);
 
-	hdmi_log("max_display_mastering_luminance: %d\n",
+	hdmi_log("    max display mastering luminance: %d\n",
 		 frame->max_display_mastering_luminance);
-	hdmi_log("min_display_mastering_luminance: %d\n",
+	hdmi_log("    min display mastering luminance: %d\n",
 		 frame->min_display_mastering_luminance);
 
-	hdmi_log("max_cll: %d\n", frame->max_cll);
-	hdmi_log("max_fall: %d\n", frame->max_fall);
+	hdmi_log("    max cll: %d\n", frame->max_cll);
+	hdmi_log("    max fall: %d\n", frame->max_fall);
 }
 
 static const char *
@@ -1576,12 +1598,12 @@ static int hdmi_avi_infoframe_unpack(struct hdmi_avi_infoframe *frame,
 	if (ptr[0] & 0x10)
 		frame->active_aspect = ptr[1] & 0xf;
 	if (ptr[0] & 0x8) {
-		frame->top_bar = (ptr[5] << 8) + ptr[6];
-		frame->bottom_bar = (ptr[7] << 8) + ptr[8];
+		frame->top_bar = (ptr[6] << 8) | ptr[5];
+		frame->bottom_bar = (ptr[8] << 8) | ptr[7];
 	}
 	if (ptr[0] & 0x4) {
-		frame->left_bar = (ptr[9] << 8) + ptr[10];
-		frame->right_bar = (ptr[11] << 8) + ptr[12];
+		frame->left_bar = (ptr[10] << 8) | ptr[9];
+		frame->right_bar = (ptr[12] << 8) | ptr[11];
 	}
 	frame->scan_mode = ptr[0] & 0x3;
 

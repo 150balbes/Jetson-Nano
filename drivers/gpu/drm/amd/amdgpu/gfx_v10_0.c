@@ -20,8 +20,12 @@
  * OTHER DEALINGS IN THE SOFTWARE.
  *
  */
+
+#include <linux/delay.h>
+#include <linux/kernel.h>
 #include <linux/firmware.h>
-#include <drm/drmP.h>
+#include <linux/module.h>
+#include <linux/pci.h>
 #include "amdgpu.h"
 #include "amdgpu_gfx.h"
 #include "amdgpu_psp.h"
@@ -56,6 +60,9 @@
 #define F32_CE_PROGRAM_RAM_SIZE		65536
 #define RLCG_UCODE_LOADING_START_ADDRESS	0x00002000L
 
+#define mmCGTT_GS_NGG_CLK_CTRL	0x5087
+#define mmCGTT_GS_NGG_CLK_CTRL_BASE_IDX	1
+
 MODULE_FIRMWARE("amdgpu/navi10_ce.bin");
 MODULE_FIRMWARE("amdgpu/navi10_pfp.bin");
 MODULE_FIRMWARE("amdgpu/navi10_me.bin");
@@ -63,11 +70,30 @@ MODULE_FIRMWARE("amdgpu/navi10_mec.bin");
 MODULE_FIRMWARE("amdgpu/navi10_mec2.bin");
 MODULE_FIRMWARE("amdgpu/navi10_rlc.bin");
 
+MODULE_FIRMWARE("amdgpu/navi14_ce_wks.bin");
+MODULE_FIRMWARE("amdgpu/navi14_pfp_wks.bin");
+MODULE_FIRMWARE("amdgpu/navi14_me_wks.bin");
+MODULE_FIRMWARE("amdgpu/navi14_mec_wks.bin");
+MODULE_FIRMWARE("amdgpu/navi14_mec2_wks.bin");
+MODULE_FIRMWARE("amdgpu/navi14_ce.bin");
+MODULE_FIRMWARE("amdgpu/navi14_pfp.bin");
+MODULE_FIRMWARE("amdgpu/navi14_me.bin");
+MODULE_FIRMWARE("amdgpu/navi14_mec.bin");
+MODULE_FIRMWARE("amdgpu/navi14_mec2.bin");
+MODULE_FIRMWARE("amdgpu/navi14_rlc.bin");
+
+MODULE_FIRMWARE("amdgpu/navi12_ce.bin");
+MODULE_FIRMWARE("amdgpu/navi12_pfp.bin");
+MODULE_FIRMWARE("amdgpu/navi12_me.bin");
+MODULE_FIRMWARE("amdgpu/navi12_mec.bin");
+MODULE_FIRMWARE("amdgpu/navi12_mec2.bin");
+MODULE_FIRMWARE("amdgpu/navi12_rlc.bin");
+
 static const struct soc15_reg_golden golden_settings_gc_10_1[] =
 {
 	SOC15_REG_GOLDEN_VALUE(GC, 0, mmCB_HW_CONTROL_4, 0xffffffff, 0x00400014),
 	SOC15_REG_GOLDEN_VALUE(GC, 0, mmCGTT_CPF_CLK_CTRL, 0xfcff8fff, 0xf8000100),
-	SOC15_REG_GOLDEN_VALUE(GC, 0, mmCGTT_SPI_CLK_CTRL, 0xc0000000, 0xc0000100),
+	SOC15_REG_GOLDEN_VALUE(GC, 0, mmCGTT_SPI_CLK_CTRL, 0xcd000000, 0x0d000100),
 	SOC15_REG_GOLDEN_VALUE(GC, 0, mmCGTT_SQ_CLK_CTRL, 0x60000ff0, 0x60000100),
 	SOC15_REG_GOLDEN_VALUE(GC, 0, mmCGTT_SQG_CLK_CTRL, 0x40000000, 0x40000100),
 	SOC15_REG_GOLDEN_VALUE(GC, 0, mmCGTT_VGT_CLK_CTRL, 0xffff8fff, 0xffff8100),
@@ -91,20 +117,119 @@ static const struct soc15_reg_golden golden_settings_gc_10_1[] =
 	SOC15_REG_GOLDEN_VALUE(GC, 0, mmGL2C_CGTT_SCLK_CTRL, 0x10000000, 0x10000100),
 	SOC15_REG_GOLDEN_VALUE(GC, 0, mmGL2C_CTRL2, 0xffffffff, 0x1402002f),
 	SOC15_REG_GOLDEN_VALUE(GC, 0, mmGL2C_CTRL3, 0xffff9fff, 0x00001188),
+	SOC15_REG_GOLDEN_VALUE(GC, 0, mmPA_SC_BINNER_TIMEOUT_COUNTER, 0xffffffff, 0x00000800),
 	SOC15_REG_GOLDEN_VALUE(GC, 0, mmPA_SC_ENHANCE, 0x3fffffff, 0x08000009),
 	SOC15_REG_GOLDEN_VALUE(GC, 0, mmPA_SC_ENHANCE_1, 0x00400000, 0x04440000),
+	SOC15_REG_GOLDEN_VALUE(GC, 0, mmPA_SC_ENHANCE_2, 0x00000800, 0x00000820),
 	SOC15_REG_GOLDEN_VALUE(GC, 0, mmPA_SC_LINE_STIPPLE_STATE, 0x0000ff0f, 0x00000000),
 	SOC15_REG_GOLDEN_VALUE(GC, 0, mmRMI_SPARE, 0xffffffff, 0xffff3101),
+	SOC15_REG_GOLDEN_VALUE(GC, 0, mmSPI_CONFIG_CNTL, 0x001f0000, 0x00070104),
 	SOC15_REG_GOLDEN_VALUE(GC, 0, mmSQ_ALU_CLK_CTRL, 0xffffffff, 0xffffffff),
 	SOC15_REG_GOLDEN_VALUE(GC, 0, mmSQ_ARB_CONFIG, 0x00000100, 0x00000130),
 	SOC15_REG_GOLDEN_VALUE(GC, 0, mmSQ_LDS_CLK_CTRL, 0xffffffff, 0xffffffff),
 	SOC15_REG_GOLDEN_VALUE(GC, 0, mmTA_CNTL_AUX, 0xfff7ffff, 0x01030000),
 	SOC15_REG_GOLDEN_VALUE(GC, 0, mmTCP_CNTL, 0x60000010, 0x479c0010),
 	SOC15_REG_GOLDEN_VALUE(GC, 0, mmUTCL1_CGTT_CLK_CTRL, 0xfeff0fff, 0x40000100),
-	SOC15_REG_GOLDEN_VALUE(GC, 0, mmUTCL1_CTRL, 0x00800000, 0x00800000)
+	SOC15_REG_GOLDEN_VALUE(GC, 0, mmUTCL1_CTRL, 0x00c00000, 0x00c00000)
 };
 
 static const struct soc15_reg_golden golden_settings_gc_10_0_nv10[] =
+{
+	/* Pending on emulation bring up */
+};
+
+static const struct soc15_reg_golden golden_settings_gc_10_1_1[] =
+{
+	SOC15_REG_GOLDEN_VALUE(GC, 0, mmCB_HW_CONTROL_4, 0xffffffff, 0x003c0014),
+	SOC15_REG_GOLDEN_VALUE(GC, 0, mmCGTT_GS_NGG_CLK_CTRL, 0xffff8fff, 0xffff8100),
+	SOC15_REG_GOLDEN_VALUE(GC, 0, mmCGTT_IA_CLK_CTRL, 0xffff0fff, 0xffff0100),
+	SOC15_REG_GOLDEN_VALUE(GC, 0, mmCGTT_SPI_CLK_CTRL, 0xcd000000, 0x0d000100),
+	SOC15_REG_GOLDEN_VALUE(GC, 0, mmCGTT_SQ_CLK_CTRL, 0xf8ff0fff, 0x60000100),
+	SOC15_REG_GOLDEN_VALUE(GC, 0, mmCGTT_SQG_CLK_CTRL, 0x40000ff0, 0x40000100),
+	SOC15_REG_GOLDEN_VALUE(GC, 0, mmCGTT_VGT_CLK_CTRL, 0xffff8fff, 0xffff8100),
+	SOC15_REG_GOLDEN_VALUE(GC, 0, mmCGTT_WD_CLK_CTRL, 0xffff8fff, 0xffff8100),
+	SOC15_REG_GOLDEN_VALUE(GC, 0, mmCH_PIPE_STEER, 0xffffffff, 0xe4e4e4e4),
+	SOC15_REG_GOLDEN_VALUE(GC, 0, mmCH_VC5_ENABLE, 0x00000002, 0x00000000),
+	SOC15_REG_GOLDEN_VALUE(GC, 0, mmCP_SD_CNTL, 0x800007ff, 0x000005ff),
+	SOC15_REG_GOLDEN_VALUE(GC, 0, mmDB_DEBUG, 0xffffffff, 0x20000000),
+	SOC15_REG_GOLDEN_VALUE(GC, 0, mmDB_DEBUG2, 0xffffffff, 0x00000420),
+	SOC15_REG_GOLDEN_VALUE(GC, 0, mmDB_DEBUG3, 0x00000200, 0x00000200),
+	SOC15_REG_GOLDEN_VALUE(GC, 0, mmDB_DEBUG4, 0xffffffff, 0x04900000),
+	SOC15_REG_GOLDEN_VALUE(GC, 0, mmDB_DFSM_TILES_IN_FLIGHT, 0x0000ffff, 0x0000003f),
+	SOC15_REG_GOLDEN_VALUE(GC, 0, mmDB_LAST_OF_BURST_CONFIG, 0xffffffff, 0x03860204),
+	SOC15_REG_GOLDEN_VALUE(GC, 0, mmGCR_GENERAL_CNTL, 0x1ff0ffff, 0x00000500),
+	SOC15_REG_GOLDEN_VALUE(GC, 0, mmGE_PRIV_CONTROL, 0x000007ff, 0x000001fe),
+	SOC15_REG_GOLDEN_VALUE(GC, 0, mmGL1_PIPE_STEER, 0xffffffff, 0xe4e4e4e4),
+	SOC15_REG_GOLDEN_VALUE(GC, 0, mmGL2A_ADDR_MATCH_MASK, 0xffffffff, 0xffffffe7),
+	SOC15_REG_GOLDEN_VALUE(GC, 0, mmGL2C_ADDR_MATCH_MASK, 0xffffffff, 0xffffffe7),
+	SOC15_REG_GOLDEN_VALUE(GC, 0, mmGL2C_CGTT_SCLK_CTRL, 0xffff0fff, 0x10000100),
+	SOC15_REG_GOLDEN_VALUE(GC, 0, mmGL2C_CTRL2, 0xffffffff, 0x1402002f),
+	SOC15_REG_GOLDEN_VALUE(GC, 0, mmGL2C_CTRL3, 0xffffbfff, 0x00000188),
+	SOC15_REG_GOLDEN_VALUE(GC, 0, mmPA_SC_BINNER_TIMEOUT_COUNTER, 0xffffffff, 0x00000800),
+	SOC15_REG_GOLDEN_VALUE(GC, 0, mmPA_SC_ENHANCE, 0x3fffffff, 0x08000009),
+	SOC15_REG_GOLDEN_VALUE(GC, 0, mmPA_SC_ENHANCE_1, 0x00400000, 0x04440000),
+	SOC15_REG_GOLDEN_VALUE(GC, 0, mmPA_SC_ENHANCE_2, 0x00000800, 0x00000820),
+	SOC15_REG_GOLDEN_VALUE(GC, 0, mmPA_SC_LINE_STIPPLE_STATE, 0x0000ff0f, 0x00000000),
+	SOC15_REG_GOLDEN_VALUE(GC, 0, mmRMI_SPARE, 0xffffffff, 0xffff3101),
+	SOC15_REG_GOLDEN_VALUE(GC, 0, mmSPI_CONFIG_CNTL, 0x001f0000, 0x00070105),
+	SOC15_REG_GOLDEN_VALUE(GC, 0, mmSQ_ALU_CLK_CTRL, 0xffffffff, 0xffffffff),
+	SOC15_REG_GOLDEN_VALUE(GC, 0, mmSQ_ARB_CONFIG, 0x00000133, 0x00000130),
+	SOC15_REG_GOLDEN_VALUE(GC, 0, mmSQ_LDS_CLK_CTRL, 0xffffffff, 0xffffffff),
+	SOC15_REG_GOLDEN_VALUE(GC, 0, mmTA_CNTL_AUX, 0xfff7ffff, 0x01030000),
+	SOC15_REG_GOLDEN_VALUE(GC, 0, mmTCP_CNTL, 0x60000010, 0x479c0010),
+	SOC15_REG_GOLDEN_VALUE(GC, 0, mmUTCL1_CTRL, 0x00c00000, 0x00c00000),
+};
+
+static const struct soc15_reg_golden golden_settings_gc_10_1_2[] =
+{
+	SOC15_REG_GOLDEN_VALUE(GC, 0, mmCB_HW_CONTROL_4, 0x003e001f, 0x003c0014),
+	SOC15_REG_GOLDEN_VALUE(GC, 0, mmCGTT_GS_NGG_CLK_CTRL, 0xffff8fff, 0xffff8100),
+	SOC15_REG_GOLDEN_VALUE(GC, 0, mmCGTT_IA_CLK_CTRL, 0xffff0fff, 0xffff0100),
+	SOC15_REG_GOLDEN_VALUE(GC, 0, mmCGTT_SPI_CLK_CTRL, 0xff7f0fff, 0x0d000100),
+	SOC15_REG_GOLDEN_VALUE(GC, 0, mmCGTT_SQ_CLK_CTRL, 0xffffcfff, 0x60000100),
+	SOC15_REG_GOLDEN_VALUE(GC, 0, mmCGTT_SQG_CLK_CTRL, 0xffff0fff, 0x40000100),
+	SOC15_REG_GOLDEN_VALUE(GC, 0, mmCGTT_VGT_CLK_CTRL, 0xffff8fff, 0xffff8100),
+	SOC15_REG_GOLDEN_VALUE(GC, 0, mmCGTT_WD_CLK_CTRL, 0xffff8fff, 0xffff8100),
+	SOC15_REG_GOLDEN_VALUE(GC, 0, mmCH_PIPE_STEER, 0xffffffff, 0xe4e4e4e4),
+	SOC15_REG_GOLDEN_VALUE(GC, 0, mmCH_VC5_ENABLE, 0x00000003, 0x00000000),
+	SOC15_REG_GOLDEN_VALUE(GC, 0, mmCP_SD_CNTL, 0x800007ff, 0x000005ff),
+	SOC15_REG_GOLDEN_VALUE(GC, 0, mmDB_DEBUG, 0xffffffff, 0x20000000),
+	SOC15_REG_GOLDEN_VALUE(GC, 0, mmDB_DEBUG2, 0xffffffff, 0x00000420),
+	SOC15_REG_GOLDEN_VALUE(GC, 0, mmDB_DEBUG3, 0xffffffff, 0x00000200),
+	SOC15_REG_GOLDEN_VALUE(GC, 0, mmDB_DEBUG4, 0xffffffff, 0x04800000),
+	SOC15_REG_GOLDEN_VALUE(GC, 0, mmDB_DFSM_TILES_IN_FLIGHT, 0x0000ffff, 0x0000003f),
+	SOC15_REG_GOLDEN_VALUE(GC, 0, mmDB_LAST_OF_BURST_CONFIG, 0xffffffff, 0x03860204),
+	SOC15_REG_GOLDEN_VALUE(GC, 0, mmGCR_GENERAL_CNTL, 0x1ff0ffff, 0x00000500),
+	SOC15_REG_GOLDEN_VALUE(GC, 0, mmGE_PRIV_CONTROL, 0x00007fff, 0x000001fe),
+	SOC15_REG_GOLDEN_VALUE(GC, 0, mmGL1_PIPE_STEER, 0xffffffff, 0xe4e4e4e4),
+	SOC15_REG_GOLDEN_VALUE(GC, 0, mmGL2_PIPE_STEER_0, 0x77777777, 0x10321032),
+	SOC15_REG_GOLDEN_VALUE(GC, 0, mmGL2_PIPE_STEER_1, 0x77777777, 0x02310231),
+	SOC15_REG_GOLDEN_VALUE(GC, 0, mmGL2A_ADDR_MATCH_MASK, 0xffffffff, 0xffffffcf),
+	SOC15_REG_GOLDEN_VALUE(GC, 0, mmGL2C_ADDR_MATCH_MASK, 0xffffffff, 0xffffffcf),
+	SOC15_REG_GOLDEN_VALUE(GC, 0, mmGL2C_CGTT_SCLK_CTRL, 0xffff0fff, 0x10000100),
+	SOC15_REG_GOLDEN_VALUE(GC, 0, mmGL2C_CTRL2, 0xffffffff, 0x1402002f),
+	SOC15_REG_GOLDEN_VALUE(GC, 0, mmGL2C_CTRL3, 0xffffbfff, 0x00000188),
+	SOC15_REG_GOLDEN_VALUE(GC, 0, mmPA_SC_BINNER_EVENT_CNTL_0, 0xffffffff, 0x842a4c02),
+	SOC15_REG_GOLDEN_VALUE(GC, 0, mmPA_SC_BINNER_TIMEOUT_COUNTER, 0xffffffff, 0x00000800),
+	SOC15_REG_GOLDEN_VALUE(GC, 0, mmPA_SC_ENHANCE, 0x3fffffff, 0x08000009),
+	SOC15_REG_GOLDEN_VALUE(GC, 0, mmPA_SC_ENHANCE_1, 0xffffffff, 0x04440000),
+	SOC15_REG_GOLDEN_VALUE(GC, 0, mmPA_SC_ENHANCE_2, 0x00000820, 0x00000820),
+	SOC15_REG_GOLDEN_VALUE(GC, 0, mmPA_SC_LINE_STIPPLE_STATE, 0x0000ff0f, 0x00000000),
+	SOC15_REG_GOLDEN_VALUE(GC, 0, mmRMI_SPARE, 0xffffffff, 0xffff3101),
+	SOC15_REG_GOLDEN_VALUE(GC, 0, mmSQ_ALU_CLK_CTRL, 0xffffffff, 0xffffffff),
+	SOC15_REG_GOLDEN_VALUE(GC, 0, mmSQ_ARB_CONFIG, 0x00000133, 0x00000130),
+	SOC15_REG_GOLDEN_VALUE(GC, 0, mmSQ_LDS_CLK_CTRL, 0xffffffff, 0xffffffff),
+	SOC15_REG_GOLDEN_VALUE(GC, 0, mmTA_CNTL_AUX, 0xfff7ffff, 0x01030000),
+	SOC15_REG_GOLDEN_VALUE(GC, 0, mmTCP_CNTL, 0xffdf80ff, 0x479c0010),
+	SOC15_REG_GOLDEN_VALUE(GC, 0, mmUTCL1_CTRL, 0xffffffff, 0x00800000)
+};
+
+static const struct soc15_reg_golden golden_settings_gc_10_1_nv14[] =
+{
+	/* Pending on emulation bring up */
+};
+
+static const struct soc15_reg_golden golden_settings_gc_10_1_2_nv12[] =
 {
 	/* Pending on emulation bring up */
 };
@@ -250,6 +375,22 @@ static void gfx_v10_0_init_golden_registers(struct amdgpu_device *adev)
 						golden_settings_gc_10_0_nv10,
 						(const u32)ARRAY_SIZE(golden_settings_gc_10_0_nv10));
 		break;
+	case CHIP_NAVI14:
+		soc15_program_register_sequence(adev,
+						golden_settings_gc_10_1_1,
+						(const u32)ARRAY_SIZE(golden_settings_gc_10_1_1));
+		soc15_program_register_sequence(adev,
+						golden_settings_gc_10_1_nv14,
+						(const u32)ARRAY_SIZE(golden_settings_gc_10_1_nv14));
+		break;
+	case CHIP_NAVI12:
+		soc15_program_register_sequence(adev,
+						golden_settings_gc_10_1_2,
+						(const u32)ARRAY_SIZE(golden_settings_gc_10_1_2));
+		soc15_program_register_sequence(adev,
+						golden_settings_gc_10_1_2_nv12,
+						(const u32)ARRAY_SIZE(golden_settings_gc_10_1_2_nv12));
+		break;
 	default:
 		break;
 	}
@@ -331,7 +472,7 @@ static int gfx_v10_0_ring_test_ring(struct amdgpu_ring *ring)
 		if (amdgpu_emu_mode == 1)
 			msleep(1);
 		else
-			DRM_UDELAY(1);
+			udelay(1);
 	}
 	if (i < adev->usec_timeout) {
 		if (amdgpu_emu_mode == 1)
@@ -429,6 +570,32 @@ static void gfx_v10_0_free_microcode(struct amdgpu_device *adev)
 	kfree(adev->gfx.rlc.register_list_format);
 }
 
+static void gfx_v10_0_check_fw_write_wait(struct amdgpu_device *adev)
+{
+	adev->gfx.cp_fw_write_wait = false;
+
+	switch (adev->asic_type) {
+	case CHIP_NAVI10:
+	case CHIP_NAVI12:
+	case CHIP_NAVI14:
+		if ((adev->gfx.me_fw_version >= 0x00000046) &&
+		    (adev->gfx.me_feature_version >= 27) &&
+		    (adev->gfx.pfp_fw_version >= 0x00000068) &&
+		    (adev->gfx.pfp_feature_version >= 27) &&
+		    (adev->gfx.mec_fw_version >= 0x0000005b) &&
+		    (adev->gfx.mec_feature_version >= 27))
+			adev->gfx.cp_fw_write_wait = true;
+		break;
+	default:
+		break;
+	}
+
+	if (adev->gfx.cp_fw_write_wait == false)
+		DRM_WARN_ONCE("Warning: check cp_fw_version and update it to realize \
+			      GRBM requires 1-cycle delay in cp firmware\n");
+}
+
+
 static void gfx_v10_0_init_rlc_ext_microcode(struct amdgpu_device *adev)
 {
 	const struct rlc_firmware_header_v2_1 *rlc_hdr;
@@ -464,7 +631,8 @@ static void gfx_v10_0_check_gfxoff_flag(struct amdgpu_device *adev)
 static int gfx_v10_0_init_microcode(struct amdgpu_device *adev)
 {
 	const char *chip_name;
-	char fw_name[30];
+	char fw_name[40];
+	char wks[10];
 	int err;
 	struct amdgpu_firmware_info *info = NULL;
 	const struct common_firmware_header *header = NULL;
@@ -477,15 +645,25 @@ static int gfx_v10_0_init_microcode(struct amdgpu_device *adev)
 
 	DRM_DEBUG("\n");
 
+	memset(wks, 0, sizeof(wks));
 	switch (adev->asic_type) {
 	case CHIP_NAVI10:
 		chip_name = "navi10";
+		break;
+	case CHIP_NAVI14:
+		chip_name = "navi14";
+		if (!(adev->pdev->device == 0x7340 &&
+		      adev->pdev->revision != 0x00))
+			snprintf(wks, sizeof(wks), "_wks");
+		break;
+	case CHIP_NAVI12:
+		chip_name = "navi12";
 		break;
 	default:
 		BUG();
 	}
 
-	snprintf(fw_name, sizeof(fw_name), "amdgpu/%s_pfp.bin", chip_name);
+	snprintf(fw_name, sizeof(fw_name), "amdgpu/%s_pfp%s.bin", chip_name, wks);
 	err = request_firmware(&adev->gfx.pfp_fw, fw_name, adev->dev);
 	if (err)
 		goto out;
@@ -496,7 +674,7 @@ static int gfx_v10_0_init_microcode(struct amdgpu_device *adev)
 	adev->gfx.pfp_fw_version = le32_to_cpu(cp_hdr->header.ucode_version);
 	adev->gfx.pfp_feature_version = le32_to_cpu(cp_hdr->ucode_feature_version);
 
-	snprintf(fw_name, sizeof(fw_name), "amdgpu/%s_me.bin", chip_name);
+	snprintf(fw_name, sizeof(fw_name), "amdgpu/%s_me%s.bin", chip_name, wks);
 	err = request_firmware(&adev->gfx.me_fw, fw_name, adev->dev);
 	if (err)
 		goto out;
@@ -507,7 +685,7 @@ static int gfx_v10_0_init_microcode(struct amdgpu_device *adev)
 	adev->gfx.me_fw_version = le32_to_cpu(cp_hdr->header.ucode_version);
 	adev->gfx.me_feature_version = le32_to_cpu(cp_hdr->ucode_feature_version);
 
-	snprintf(fw_name, sizeof(fw_name), "amdgpu/%s_ce.bin", chip_name);
+	snprintf(fw_name, sizeof(fw_name), "amdgpu/%s_ce%s.bin", chip_name, wks);
 	err = request_firmware(&adev->gfx.ce_fw, fw_name, adev->dev);
 	if (err)
 		goto out;
@@ -518,61 +696,63 @@ static int gfx_v10_0_init_microcode(struct amdgpu_device *adev)
 	adev->gfx.ce_fw_version = le32_to_cpu(cp_hdr->header.ucode_version);
 	adev->gfx.ce_feature_version = le32_to_cpu(cp_hdr->ucode_feature_version);
 
-	snprintf(fw_name, sizeof(fw_name), "amdgpu/%s_rlc.bin", chip_name);
-	err = request_firmware(&adev->gfx.rlc_fw, fw_name, adev->dev);
-	if (err)
-		goto out;
-	err = amdgpu_ucode_validate(adev->gfx.rlc_fw);
-	rlc_hdr = (const struct rlc_firmware_header_v2_0 *)adev->gfx.rlc_fw->data;
-	version_major = le16_to_cpu(rlc_hdr->header.header_version_major);
-	version_minor = le16_to_cpu(rlc_hdr->header.header_version_minor);
-	if (version_major == 2 && version_minor == 1)
-		adev->gfx.rlc.is_rlc_v2_1 = true;
+	if (!amdgpu_sriov_vf(adev)) {
+		snprintf(fw_name, sizeof(fw_name), "amdgpu/%s_rlc.bin", chip_name);
+		err = request_firmware(&adev->gfx.rlc_fw, fw_name, adev->dev);
+		if (err)
+			goto out;
+		err = amdgpu_ucode_validate(adev->gfx.rlc_fw);
+		rlc_hdr = (const struct rlc_firmware_header_v2_0 *)adev->gfx.rlc_fw->data;
+		version_major = le16_to_cpu(rlc_hdr->header.header_version_major);
+		version_minor = le16_to_cpu(rlc_hdr->header.header_version_minor);
+		if (version_major == 2 && version_minor == 1)
+			adev->gfx.rlc.is_rlc_v2_1 = true;
 
-	adev->gfx.rlc_fw_version = le32_to_cpu(rlc_hdr->header.ucode_version);
-	adev->gfx.rlc_feature_version = le32_to_cpu(rlc_hdr->ucode_feature_version);
-	adev->gfx.rlc.save_and_restore_offset =
+		adev->gfx.rlc_fw_version = le32_to_cpu(rlc_hdr->header.ucode_version);
+		adev->gfx.rlc_feature_version = le32_to_cpu(rlc_hdr->ucode_feature_version);
+		adev->gfx.rlc.save_and_restore_offset =
 			le32_to_cpu(rlc_hdr->save_and_restore_offset);
-	adev->gfx.rlc.clear_state_descriptor_offset =
+		adev->gfx.rlc.clear_state_descriptor_offset =
 			le32_to_cpu(rlc_hdr->clear_state_descriptor_offset);
-	adev->gfx.rlc.avail_scratch_ram_locations =
+		adev->gfx.rlc.avail_scratch_ram_locations =
 			le32_to_cpu(rlc_hdr->avail_scratch_ram_locations);
-	adev->gfx.rlc.reg_restore_list_size =
+		adev->gfx.rlc.reg_restore_list_size =
 			le32_to_cpu(rlc_hdr->reg_restore_list_size);
-	adev->gfx.rlc.reg_list_format_start =
+		adev->gfx.rlc.reg_list_format_start =
 			le32_to_cpu(rlc_hdr->reg_list_format_start);
-	adev->gfx.rlc.reg_list_format_separate_start =
+		adev->gfx.rlc.reg_list_format_separate_start =
 			le32_to_cpu(rlc_hdr->reg_list_format_separate_start);
-	adev->gfx.rlc.starting_offsets_start =
+		adev->gfx.rlc.starting_offsets_start =
 			le32_to_cpu(rlc_hdr->starting_offsets_start);
-	adev->gfx.rlc.reg_list_format_size_bytes =
+		adev->gfx.rlc.reg_list_format_size_bytes =
 			le32_to_cpu(rlc_hdr->reg_list_format_size_bytes);
-	adev->gfx.rlc.reg_list_size_bytes =
+		adev->gfx.rlc.reg_list_size_bytes =
 			le32_to_cpu(rlc_hdr->reg_list_size_bytes);
-	adev->gfx.rlc.register_list_format =
+		adev->gfx.rlc.register_list_format =
 			kmalloc(adev->gfx.rlc.reg_list_format_size_bytes +
-				adev->gfx.rlc.reg_list_size_bytes, GFP_KERNEL);
-	if (!adev->gfx.rlc.register_list_format) {
-		err = -ENOMEM;
-		goto out;
+					adev->gfx.rlc.reg_list_size_bytes, GFP_KERNEL);
+		if (!adev->gfx.rlc.register_list_format) {
+			err = -ENOMEM;
+			goto out;
+		}
+
+		tmp = (unsigned int *)((uintptr_t)rlc_hdr +
+							   le32_to_cpu(rlc_hdr->reg_list_format_array_offset_bytes));
+		for (i = 0 ; i < (rlc_hdr->reg_list_format_size_bytes >> 2); i++)
+			adev->gfx.rlc.register_list_format[i] =	le32_to_cpu(tmp[i]);
+
+		adev->gfx.rlc.register_restore = adev->gfx.rlc.register_list_format + i;
+
+		tmp = (unsigned int *)((uintptr_t)rlc_hdr +
+							   le32_to_cpu(rlc_hdr->reg_list_array_offset_bytes));
+		for (i = 0 ; i < (rlc_hdr->reg_list_size_bytes >> 2); i++)
+			adev->gfx.rlc.register_restore[i] = le32_to_cpu(tmp[i]);
+
+		if (adev->gfx.rlc.is_rlc_v2_1)
+			gfx_v10_0_init_rlc_ext_microcode(adev);
 	}
 
-	tmp = (unsigned int *)((uintptr_t)rlc_hdr +
-			le32_to_cpu(rlc_hdr->reg_list_format_array_offset_bytes));
-	for (i = 0 ; i < (rlc_hdr->reg_list_format_size_bytes >> 2); i++)
-		adev->gfx.rlc.register_list_format[i] =	le32_to_cpu(tmp[i]);
-
-	adev->gfx.rlc.register_restore = adev->gfx.rlc.register_list_format + i;
-
-	tmp = (unsigned int *)((uintptr_t)rlc_hdr +
-			le32_to_cpu(rlc_hdr->reg_list_array_offset_bytes));
-	for (i = 0 ; i < (rlc_hdr->reg_list_size_bytes >> 2); i++)
-		adev->gfx.rlc.register_restore[i] = le32_to_cpu(tmp[i]);
-
-	if (adev->gfx.rlc.is_rlc_v2_1)
-		gfx_v10_0_init_rlc_ext_microcode(adev);
-
-	snprintf(fw_name, sizeof(fw_name), "amdgpu/%s_mec.bin", chip_name);
+	snprintf(fw_name, sizeof(fw_name), "amdgpu/%s_mec%s.bin", chip_name, wks);
 	err = request_firmware(&adev->gfx.mec_fw, fw_name, adev->dev);
 	if (err)
 		goto out;
@@ -583,7 +763,7 @@ static int gfx_v10_0_init_microcode(struct amdgpu_device *adev)
 	adev->gfx.mec_fw_version = le32_to_cpu(cp_hdr->header.ucode_version);
 	adev->gfx.mec_feature_version = le32_to_cpu(cp_hdr->ucode_feature_version);
 
-	snprintf(fw_name, sizeof(fw_name), "amdgpu/%s_mec2.bin", chip_name);
+	snprintf(fw_name, sizeof(fw_name), "amdgpu/%s_mec2%s.bin", chip_name, wks);
 	err = request_firmware(&adev->gfx.mec2_fw, fw_name, adev->dev);
 	if (!err) {
 		err = amdgpu_ucode_validate(adev->gfx.mec2_fw);
@@ -686,6 +866,7 @@ static int gfx_v10_0_init_microcode(struct amdgpu_device *adev)
 		}
 	}
 
+	gfx_v10_0_check_fw_write_wait(adev);
 out:
 	if (err) {
 		dev_err(adev->dev,
@@ -818,39 +999,6 @@ static int gfx_v10_0_rlc_init(struct amdgpu_device *adev)
 	}
 
 	return 0;
-}
-
-static int gfx_v10_0_csb_vram_pin(struct amdgpu_device *adev)
-{
-	int r;
-
-	r = amdgpu_bo_reserve(adev->gfx.rlc.clear_state_obj, false);
-	if (unlikely(r != 0))
-		return r;
-
-	r = amdgpu_bo_pin(adev->gfx.rlc.clear_state_obj,
-			AMDGPU_GEM_DOMAIN_VRAM);
-	if (!r)
-		adev->gfx.rlc.clear_state_gpu_addr =
-			amdgpu_bo_gpu_offset(adev->gfx.rlc.clear_state_obj);
-
-	amdgpu_bo_unreserve(adev->gfx.rlc.clear_state_obj);
-
-	return r;
-}
-
-static void gfx_v10_0_csb_vram_unpin(struct amdgpu_device *adev)
-{
-	int r;
-
-	if (!adev->gfx.rlc.clear_state_obj)
-		return;
-
-	r = amdgpu_bo_reserve(adev->gfx.rlc.clear_state_obj, true);
-	if (likely(r == 0)) {
-		amdgpu_bo_unpin(adev->gfx.rlc.clear_state_obj);
-		amdgpu_bo_unreserve(adev->gfx.rlc.clear_state_obj);
-	}
 }
 
 static void gfx_v10_0_mec_fini(struct amdgpu_device *adev)
@@ -1026,6 +1174,8 @@ static void gfx_v10_0_gpu_early_init(struct amdgpu_device *adev)
 
 	switch (adev->asic_type) {
 	case CHIP_NAVI10:
+	case CHIP_NAVI14:
+	case CHIP_NAVI12:
 		adev->gfx.config.max_hw_contexts = 8;
 		adev->gfx.config.sc_prim_fifo_size_frontend = 0x20;
 		adev->gfx.config.sc_prim_fifo_size_backend = 0x100;
@@ -1133,6 +1283,8 @@ static int gfx_v10_0_sw_init(void *handle)
 
 	switch (adev->asic_type) {
 	case CHIP_NAVI10:
+	case CHIP_NAVI14:
+	case CHIP_NAVI12:
 		adev->gfx.me.num_me = 1;
 		adev->gfx.me.num_pipe_per_me = 2;
 		adev->gfx.me.num_queue_per_pipe = 1;
@@ -1292,7 +1444,7 @@ static int gfx_v10_0_sw_fini(void *handle)
 		amdgpu_ring_fini(&adev->gfx.compute_ring[i]);
 
 	amdgpu_gfx_mqd_sw_fini(adev);
-	amdgpu_gfx_kiq_free_ring(&adev->gfx.kiq.ring, &adev->gfx.kiq.irq);
+	amdgpu_gfx_kiq_free_ring(&adev->gfx.kiq.ring);
 	amdgpu_gfx_kiq_fini(adev);
 
 	gfx_v10_0_pfp_fini(adev);
@@ -1452,6 +1604,25 @@ static void gfx_v10_0_init_compute_vmid(struct amdgpu_device *adev)
 	}
 }
 
+static void gfx_v10_0_init_gds_vmid(struct amdgpu_device *adev)
+{
+	int vmid;
+
+	/*
+	 * Initialize all compute and user-gfx VMIDs to have no GDS, GWS, or OA
+	 * access. Compute VMIDs should be enabled by FW for target VMIDs,
+	 * the driver can enable them for graphics. VMID0 should maintain
+	 * access so that HWS firmware can save/restore entries.
+	 */
+	for (vmid = 1; vmid < 16; vmid++) {
+		WREG32_SOC15_OFFSET(GC, 0, mmGDS_VMID0_BASE, 2 * vmid, 0);
+		WREG32_SOC15_OFFSET(GC, 0, mmGDS_VMID0_SIZE, 2 * vmid, 0);
+		WREG32_SOC15_OFFSET(GC, 0, mmGDS_GWS_VMID0, vmid, 0);
+		WREG32_SOC15_OFFSET(GC, 0, mmGDS_OA_VMID0, vmid, 0);
+	}
+}
+
+
 static void gfx_v10_0_tcp_harvest(struct amdgpu_device *adev)
 {
 	int i, j, k;
@@ -1461,7 +1632,8 @@ static void gfx_v10_0_tcp_harvest(struct amdgpu_device *adev)
 	u32 utcl_invreq_disable = 0;
 	/*
 	 * GCRD_TARGETS_DISABLE field contains
-	 * for Navi10: GL1C=[18:15], SQC=[14:10], TCP=[9:0]
+	 * for Navi10/Navi12: GL1C=[18:15], SQC=[14:10], TCP=[9:0]
+	 * for Navi14: GL1C=[21:18], SQC=[17:12], TCP=[11:0]
 	 */
 	u32 gcrd_targets_disable_mask = amdgpu_gfx_create_bitmask(
 		2 * max_wgp_per_sh + /* TCP */
@@ -1469,7 +1641,8 @@ static void gfx_v10_0_tcp_harvest(struct amdgpu_device *adev)
 		4); /* GL1C */
 	/*
 	 * UTCL1_UTCL0_INVREQ_DISABLE field contains
-	 * for Navi10: SQG=[24], RMI=[23:20], SQC=[19:10], TCP=[9:0]
+	 * for Navi10Navi12: SQG=[24], RMI=[23:20], SQC=[19:10], TCP=[9:0]
+	 * for Navi14: SQG=[28], RMI=[27:24], SQC=[23:12], TCP=[11:0]
 	 */
 	u32 utcl_invreq_disable_mask = amdgpu_gfx_create_bitmask(
 		2 * max_wgp_per_sh + /* TCP */
@@ -1477,7 +1650,9 @@ static void gfx_v10_0_tcp_harvest(struct amdgpu_device *adev)
 		4 + /* RMI */
 		1); /* SQG */
 
-	if (adev->asic_type == CHIP_NAVI10) {
+	if (adev->asic_type == CHIP_NAVI10 ||
+	    adev->asic_type == CHIP_NAVI14 ||
+	    adev->asic_type == CHIP_NAVI12) {
 		mutex_lock(&adev->grbm_idx_mutex);
 		for (i = 0; i < adev->gfx.config.max_shader_engines; i++) {
 			for (j = 0; j < adev->gfx.config.max_sh_per_se; j++) {
@@ -1518,6 +1693,17 @@ static void gfx_v10_0_tcp_harvest(struct amdgpu_device *adev)
 	}
 }
 
+static void gfx_v10_0_get_tcc_info(struct amdgpu_device *adev)
+{
+	/* TCCs are global (not instanced). */
+	uint32_t tcc_disable = RREG32_SOC15(GC, 0, mmCGTS_TCC_DISABLE) |
+			       RREG32_SOC15(GC, 0, mmCGTS_USER_TCC_DISABLE);
+
+	adev->gfx.config.tcc_disabled_mask =
+		REG_GET_FIELD(tcc_disable, CGTS_TCC_DISABLE, TCC_DISABLE) |
+		(REG_GET_FIELD(tcc_disable, CGTS_TCC_DISABLE, HI_TCC_DISABLE) << 16);
+}
+
 static void gfx_v10_0_constants_init(struct amdgpu_device *adev)
 {
 	u32 tmp;
@@ -1529,13 +1715,14 @@ static void gfx_v10_0_constants_init(struct amdgpu_device *adev)
 
 	gfx_v10_0_setup_rb(adev);
 	gfx_v10_0_get_cu_info(adev, &adev->gfx.cu_info);
+	gfx_v10_0_get_tcc_info(adev);
 	adev->gfx.config.pa_sc_tile_steering_override =
 		gfx_v10_0_init_pa_sc_tile_steering_override(adev);
 
 	/* XXX SH_MEM regs */
 	/* where to put LDS, scratch, GPUVM in FSA64 space */
 	mutex_lock(&adev->srbm_mutex);
-	for (i = 0; i < adev->vm_manager.id_mgr[AMDGPU_GFXHUB].num_ids; i++) {
+	for (i = 0; i < adev->vm_manager.id_mgr[AMDGPU_GFXHUB_0].num_ids; i++) {
 		nv_grbm_select(adev, 0, 0, 0, i);
 		/* CP and shaders */
 		WREG32_SOC15(GC, 0, mmSH_MEM_CONFIG, DEFAULT_SH_MEM_CONFIG);
@@ -1552,6 +1739,7 @@ static void gfx_v10_0_constants_init(struct amdgpu_device *adev)
 	mutex_unlock(&adev->srbm_mutex);
 
 	gfx_v10_0_init_compute_vmid(adev);
+	gfx_v10_0_init_gds_vmid(adev);
 
 }
 
@@ -1572,24 +1760,18 @@ static void gfx_v10_0_enable_gui_idle_interrupt(struct amdgpu_device *adev,
 	WREG32_SOC15(GC, 0, mmCP_INT_CNTL_RING0, tmp);
 }
 
-static void gfx_v10_0_init_csb(struct amdgpu_device *adev)
+static int gfx_v10_0_init_csb(struct amdgpu_device *adev)
 {
+	adev->gfx.rlc.funcs->get_csb_buffer(adev, adev->gfx.rlc.cs_ptr);
+
 	/* csib */
 	WREG32_SOC15(GC, 0, mmRLC_CSIB_ADDR_HI,
 		     adev->gfx.rlc.clear_state_gpu_addr >> 32);
 	WREG32_SOC15(GC, 0, mmRLC_CSIB_ADDR_LO,
 		     adev->gfx.rlc.clear_state_gpu_addr & 0xfffffffc);
 	WREG32_SOC15(GC, 0, mmRLC_CSIB_LENGTH, adev->gfx.rlc.clear_state_size);
-}
 
-static void gfx_v10_0_init_pg(struct amdgpu_device *adev)
-{
-	gfx_v10_0_init_csb(adev);
-
-	amdgpu_gmc_flush_gpu_tlb(adev, 0, 0);
-
-	/* TODO: init power gating */
-	return;
+	return 0;
 }
 
 void gfx_v10_0_rlc_stop(struct amdgpu_device *adev)
@@ -1624,9 +1806,9 @@ static void gfx_v10_0_rlc_smu_handshake_cntl(struct amdgpu_device *adev,
 		 * hence no handshake between SMU & RLC
 		 * GFXOFF will be disabled
 		 */
-		rlc_pg_cntl |= 0x80000;
+		rlc_pg_cntl |= 0x800000;
 	} else
-		rlc_pg_cntl &= ~0x80000;
+		rlc_pg_cntl &= ~0x800000;
 	WREG32_SOC15(GC, 0, mmRLC_PG_CNTL, rlc_pg_cntl);
 }
 
@@ -1684,18 +1866,16 @@ static int gfx_v10_0_rlc_resume(struct amdgpu_device *adev)
 {
 	int r;
 
-	if (amdgpu_sriov_vf(adev))
-		return 0;
-
 	if (adev->firmware.load_type == AMDGPU_FW_LOAD_PSP) {
+
 		r = gfx_v10_0_wait_for_rlc_autoload_complete(adev);
 		if (r)
 			return r;
-		gfx_v10_0_init_pg(adev);
 
-		/* enable RLC SRM */
-		gfx_v10_0_rlc_enable_srm(adev);
+		gfx_v10_0_init_csb(adev);
 
+		if (!amdgpu_sriov_vf(adev)) /* enable RLC SRM */
+			gfx_v10_0_rlc_enable_srm(adev);
 	} else {
 		adev->gfx.rlc.funcs->stop(adev);
 
@@ -1717,7 +1897,8 @@ static int gfx_v10_0_rlc_resume(struct amdgpu_device *adev)
 				return r;
 		}
 
-		gfx_v10_0_init_pg(adev);
+		gfx_v10_0_init_csb(adev);
+
 		adev->gfx.rlc.funcs->start(adev);
 
 		if (adev->firmware.load_type == AMDGPU_FW_LOAD_RLC_BACKDOOR_AUTO) {
@@ -2184,7 +2365,7 @@ static int gfx_v10_0_wait_for_rlc_autoload_complete(struct amdgpu_device *adev)
 	return 0;
 }
 
-static void gfx_v10_0_cp_gfx_enable(struct amdgpu_device *adev, bool enable)
+static int gfx_v10_0_cp_gfx_enable(struct amdgpu_device *adev, bool enable)
 {
 	int i;
 	u32 tmp = RREG32_SOC15(GC, 0, mmCP_ME_CNTL);
@@ -2197,7 +2378,17 @@ static void gfx_v10_0_cp_gfx_enable(struct amdgpu_device *adev, bool enable)
 			adev->gfx.gfx_ring[i].sched.ready = false;
 	}
 	WREG32_SOC15(GC, 0, mmCP_ME_CNTL, tmp);
-	udelay(50);
+
+	for (i = 0; i < adev->usec_timeout; i++) {
+		if (RREG32_SOC15(GC, 0, mmCP_STAT) == 0)
+			break;
+		udelay(1);
+	}
+
+	if (i >= adev->usec_timeout)
+		DRM_ERROR("failed to %s cp gfx\n", enable ? "unhalt" : "halt");
+
+	return 0;
 }
 
 static int gfx_v10_0_cp_gfx_load_pfp_microcode(struct amdgpu_device *adev)
@@ -2254,7 +2445,7 @@ static int gfx_v10_0_cp_gfx_load_pfp_microcode(struct amdgpu_device *adev)
 	}
 
 	if (amdgpu_emu_mode == 1)
-		adev->nbio_funcs->hdp_flush(adev, NULL);
+		adev->nbio.funcs->hdp_flush(adev, NULL);
 
 	tmp = RREG32_SOC15(GC, 0, mmCP_PFP_IC_BASE_CNTL);
 	tmp = REG_SET_FIELD(tmp, CP_PFP_IC_BASE_CNTL, VMID, 0);
@@ -2324,7 +2515,7 @@ static int gfx_v10_0_cp_gfx_load_ce_microcode(struct amdgpu_device *adev)
 	}
 
 	if (amdgpu_emu_mode == 1)
-		adev->nbio_funcs->hdp_flush(adev, NULL);
+		adev->nbio.funcs->hdp_flush(adev, NULL);
 
 	tmp = RREG32_SOC15(GC, 0, mmCP_CE_IC_BASE_CNTL);
 	tmp = REG_SET_FIELD(tmp, CP_CE_IC_BASE_CNTL, VMID, 0);
@@ -2393,7 +2584,7 @@ static int gfx_v10_0_cp_gfx_load_me_microcode(struct amdgpu_device *adev)
 	}
 
 	if (amdgpu_emu_mode == 1)
-		adev->nbio_funcs->hdp_flush(adev, NULL);
+		adev->nbio.funcs->hdp_flush(adev, NULL);
 
 	tmp = RREG32_SOC15(GC, 0, mmCP_ME_IC_BASE_CNTL);
 	tmp = REG_SET_FIELD(tmp, CP_ME_IC_BASE_CNTL, VMID, 0);
@@ -2568,7 +2759,7 @@ static int gfx_v10_0_cp_gfx_resume(struct amdgpu_device *adev)
 	/* Init gfx ring 0 for pipe 0 */
 	mutex_lock(&adev->srbm_mutex);
 	gfx_v10_0_cp_gfx_switch_pipe(adev, PIPE_ID0);
-	mutex_unlock(&adev->srbm_mutex);
+
 	/* Set ring buffer size */
 	ring = &adev->gfx.gfx_ring[0];
 	rb_bufsz = order_base_2(ring->ring_size / 8);
@@ -2606,11 +2797,11 @@ static int gfx_v10_0_cp_gfx_resume(struct amdgpu_device *adev)
 	WREG32_SOC15(GC, 0, mmCP_RB_ACTIVE, 1);
 
 	gfx_v10_0_cp_gfx_set_doorbell(adev, ring);
+	mutex_unlock(&adev->srbm_mutex);
 
 	/* Init gfx ring 1 for pipe 1 */
 	mutex_lock(&adev->srbm_mutex);
 	gfx_v10_0_cp_gfx_switch_pipe(adev, PIPE_ID1);
-	mutex_unlock(&adev->srbm_mutex);
 	ring = &adev->gfx.gfx_ring[1];
 	rb_bufsz = order_base_2(ring->ring_size / 8);
 	tmp = REG_SET_FIELD(0, CP_RB1_CNTL, RB_BUFSZ, rb_bufsz);
@@ -2640,6 +2831,7 @@ static int gfx_v10_0_cp_gfx_resume(struct amdgpu_device *adev)
 	WREG32_SOC15(GC, 0, mmCP_RB1_ACTIVE, 1);
 
 	gfx_v10_0_cp_gfx_set_doorbell(adev, ring);
+	mutex_unlock(&adev->srbm_mutex);
 
 	/* Switch to pipe 0 */
 	mutex_lock(&adev->srbm_mutex);
@@ -2714,7 +2906,7 @@ static int gfx_v10_0_cp_compute_load_microcode(struct amdgpu_device *adev)
 	}
 
 	if (amdgpu_emu_mode == 1)
-		adev->nbio_funcs->hdp_flush(adev, NULL);
+		adev->nbio.funcs->hdp_flush(adev, NULL);
 
 	tmp = RREG32_SOC15(GC, 0, mmCP_CPC_IC_BASE_CNTL);
 	tmp = REG_SET_FIELD(tmp, CP_CPC_IC_BASE_CNTL, CACHE_POLICY, 0);
@@ -2898,6 +3090,7 @@ static int gfx_v10_0_gfx_init_queue(struct amdgpu_ring *ring)
 {
 	struct amdgpu_device *adev = ring->adev;
 	struct v10_gfx_mqd *mqd = ring->mqd_ptr;
+	int mqd_idx = ring - &adev->gfx.gfx_ring[0];
 
 	if (!adev->in_gpu_reset && !adev->in_suspend) {
 		memset((void *)mqd, 0, sizeof(*mqd));
@@ -2909,14 +3102,15 @@ static int gfx_v10_0_gfx_init_queue(struct amdgpu_ring *ring)
 #endif
 		nv_grbm_select(adev, 0, 0, 0, 0);
 		mutex_unlock(&adev->srbm_mutex);
-		if (adev->gfx.me.mqd_backup[AMDGPU_MAX_GFX_RINGS])
-			memcpy(adev->gfx.me.mqd_backup[AMDGPU_MAX_GFX_RINGS], mqd, sizeof(*mqd));
+		if (adev->gfx.me.mqd_backup[mqd_idx])
+			memcpy(adev->gfx.me.mqd_backup[mqd_idx], mqd, sizeof(*mqd));
 	} else if (adev->in_gpu_reset) {
 		/* reset mqd with the backup copy */
-		if (adev->gfx.me.mqd_backup[AMDGPU_MAX_GFX_RINGS])
-			memcpy(mqd, adev->gfx.me.mqd_backup[AMDGPU_MAX_GFX_RINGS], sizeof(*mqd));
+		if (adev->gfx.me.mqd_backup[mqd_idx])
+			memcpy(mqd, adev->gfx.me.mqd_backup[mqd_idx], sizeof(*mqd));
 		/* reset the ring */
 		ring->wptr = 0;
+		adev->wb.wb[ring->wptr_offs] = 0;
 		amdgpu_ring_clear_ring(ring);
 #ifdef BRING_UP_DEBUG
 		mutex_lock(&adev->srbm_mutex);
@@ -3516,10 +3710,6 @@ static int gfx_v10_0_hw_init(void *handle)
 	int r;
 	struct amdgpu_device *adev = (struct amdgpu_device *)handle;
 
-	r = gfx_v10_0_csb_vram_pin(adev);
-	if (r)
-		return r;
-
 	if (!amdgpu_emu_mode)
 		gfx_v10_0_init_golden_registers(adev);
 
@@ -3602,32 +3792,23 @@ static int gfx_v10_0_hw_fini(void *handle)
 	if (amdgpu_gfx_disable_kcq(adev))
 		DRM_ERROR("KCQ disable failed\n");
 	if (amdgpu_sriov_vf(adev)) {
-		pr_debug("For SRIOV client, shouldn't do anything.\n");
+		gfx_v10_0_cp_gfx_enable(adev, false);
 		return 0;
 	}
 	gfx_v10_0_cp_enable(adev, false);
 	gfx_v10_0_enable_gui_idle_interrupt(adev, false);
-	gfx_v10_0_csb_vram_unpin(adev);
 
 	return 0;
 }
 
 static int gfx_v10_0_suspend(void *handle)
 {
-	struct amdgpu_device *adev = (struct amdgpu_device *)handle;
-
-	adev->in_suspend = true;
-	return gfx_v10_0_hw_fini(adev);
+	return gfx_v10_0_hw_fini(handle);
 }
 
 static int gfx_v10_0_resume(void *handle)
 {
-	struct amdgpu_device *adev = (struct amdgpu_device *)handle;
-	int r;
-
-	r = gfx_v10_0_hw_init(adev);
-	adev->in_suspend = false;
-	return r;
+	return gfx_v10_0_hw_init(handle);
 }
 
 static bool gfx_v10_0_is_idle(void *handle)
@@ -4037,6 +4218,7 @@ static int gfx_v10_0_set_powergating_state(void *handle,
 	bool enable = (state == AMD_PG_STATE_GATE) ? true : false;
 	switch (adev->asic_type) {
 	case CHIP_NAVI10:
+	case CHIP_NAVI14:
 		if (!enable) {
 			amdgpu_gfx_off_ctrl(adev, false);
 			cancel_delayed_work_sync(&adev->gfx.gfx_off_delay_work);
@@ -4056,6 +4238,8 @@ static int gfx_v10_0_set_clockgating_state(void *handle,
 
 	switch (adev->asic_type) {
 	case CHIP_NAVI10:
+	case CHIP_NAVI14:
+	case CHIP_NAVI12:
 		gfx_v10_0_update_gfx_clock_gating(adev,
 						 state == AMD_CG_STATE_GATE ? true : false);
 		break;
@@ -4173,7 +4357,7 @@ static void gfx_v10_0_ring_emit_hdp_flush(struct amdgpu_ring *ring)
 {
 	struct amdgpu_device *adev = ring->adev;
 	u32 ref_and_mask, reg_mem_engine;
-	const struct nbio_hdp_flush_reg *nbio_hf_reg = adev->nbio_funcs->hdp_flush_reg;
+	const struct nbio_hdp_flush_reg *nbio_hf_reg = adev->nbio.hdp_flush_reg;
 
 	if (ring->funcs->type == AMDGPU_RING_TYPE_COMPUTE) {
 		switch (ring->me) {
@@ -4193,8 +4377,8 @@ static void gfx_v10_0_ring_emit_hdp_flush(struct amdgpu_ring *ring)
 	}
 
 	gfx_v10_0_wait_reg_mem(ring, reg_mem_engine, 0, 1,
-			       adev->nbio_funcs->get_hdp_flush_req_offset(adev),
-			       adev->nbio_funcs->get_hdp_flush_done_offset(adev),
+			       adev->nbio.funcs->get_hdp_flush_req_offset(adev),
+			       adev->nbio.funcs->get_hdp_flush_done_offset(adev),
 			       ref_and_mask, ref_and_mask, 0x20);
 }
 
@@ -4453,7 +4637,7 @@ static int gfx_v10_0_ring_preempt_ib(struct amdgpu_ring *ring)
 		if (ring->trail_seq ==
 		    le32_to_cpu(*(ring->trail_fence_cpu_addr)))
 			break;
-		DRM_UDELAY(1);
+		udelay(1);
 	}
 
 	if (i >= adev->usec_timeout) {
@@ -4579,6 +4763,24 @@ static void gfx_v10_0_ring_emit_reg_wait(struct amdgpu_ring *ring, uint32_t reg,
 					uint32_t val, uint32_t mask)
 {
 	gfx_v10_0_wait_reg_mem(ring, 0, 0, 0, reg, 0, val, mask, 0x20);
+}
+
+static void gfx_v10_0_ring_emit_reg_write_reg_wait(struct amdgpu_ring *ring,
+						   uint32_t reg0, uint32_t reg1,
+						   uint32_t ref, uint32_t mask)
+{
+	int usepfp = (ring->funcs->type == AMDGPU_RING_TYPE_GFX);
+	struct amdgpu_device *adev = ring->adev;
+	bool fw_version_ok = false;
+
+	fw_version_ok = adev->gfx.cp_fw_write_wait;
+
+	if (fw_version_ok)
+		gfx_v10_0_wait_reg_mem(ring, usepfp, 0, 1, reg0, reg1,
+				       ref, mask, 0x20);
+	else
+		amdgpu_ring_emit_reg_write_reg_wait_helper(ring, reg0, reg1,
+							   ref, mask);
 }
 
 static void
@@ -4927,7 +5129,7 @@ static const struct amdgpu_ring_funcs gfx_v10_0_ring_funcs_gfx = {
 	.align_mask = 0xff,
 	.nop = PACKET3(PACKET3_NOP, 0x3FFF),
 	.support_64bit_ptrs = true,
-	.vmhub = AMDGPU_GFXHUB,
+	.vmhub = AMDGPU_GFXHUB_0,
 	.get_rptr = gfx_v10_0_ring_get_rptr_gfx,
 	.get_wptr = gfx_v10_0_ring_get_wptr_gfx,
 	.set_wptr = gfx_v10_0_ring_set_wptr_gfx,
@@ -4971,6 +5173,7 @@ static const struct amdgpu_ring_funcs gfx_v10_0_ring_funcs_gfx = {
 	.emit_tmz = gfx_v10_0_ring_emit_tmz,
 	.emit_wreg = gfx_v10_0_ring_emit_wreg,
 	.emit_reg_wait = gfx_v10_0_ring_emit_reg_wait,
+	.emit_reg_write_reg_wait = gfx_v10_0_ring_emit_reg_write_reg_wait,
 };
 
 static const struct amdgpu_ring_funcs gfx_v10_0_ring_funcs_compute = {
@@ -4978,7 +5181,7 @@ static const struct amdgpu_ring_funcs gfx_v10_0_ring_funcs_compute = {
 	.align_mask = 0xff,
 	.nop = PACKET3(PACKET3_NOP, 0x3FFF),
 	.support_64bit_ptrs = true,
-	.vmhub = AMDGPU_GFXHUB,
+	.vmhub = AMDGPU_GFXHUB_0,
 	.get_rptr = gfx_v10_0_ring_get_rptr_compute,
 	.get_wptr = gfx_v10_0_ring_get_wptr_compute,
 	.set_wptr = gfx_v10_0_ring_set_wptr_compute,
@@ -5004,6 +5207,7 @@ static const struct amdgpu_ring_funcs gfx_v10_0_ring_funcs_compute = {
 	.pad_ib = amdgpu_ring_generic_pad_ib,
 	.emit_wreg = gfx_v10_0_ring_emit_wreg,
 	.emit_reg_wait = gfx_v10_0_ring_emit_reg_wait,
+	.emit_reg_write_reg_wait = gfx_v10_0_ring_emit_reg_write_reg_wait,
 };
 
 static const struct amdgpu_ring_funcs gfx_v10_0_ring_funcs_kiq = {
@@ -5011,7 +5215,7 @@ static const struct amdgpu_ring_funcs gfx_v10_0_ring_funcs_kiq = {
 	.align_mask = 0xff,
 	.nop = PACKET3(PACKET3_NOP, 0x3FFF),
 	.support_64bit_ptrs = true,
-	.vmhub = AMDGPU_GFXHUB,
+	.vmhub = AMDGPU_GFXHUB_0,
 	.get_rptr = gfx_v10_0_ring_get_rptr_compute,
 	.get_wptr = gfx_v10_0_ring_get_wptr_compute,
 	.set_wptr = gfx_v10_0_ring_set_wptr_compute,
@@ -5034,6 +5238,7 @@ static const struct amdgpu_ring_funcs gfx_v10_0_ring_funcs_kiq = {
 	.emit_rreg = gfx_v10_0_ring_emit_rreg,
 	.emit_wreg = gfx_v10_0_ring_emit_wreg,
 	.emit_reg_wait = gfx_v10_0_ring_emit_reg_wait,
+	.emit_reg_write_reg_wait = gfx_v10_0_ring_emit_reg_write_reg_wait,
 };
 
 static void gfx_v10_0_set_ring_funcs(struct amdgpu_device *adev)
@@ -5088,6 +5293,8 @@ static void gfx_v10_0_set_rlc_funcs(struct amdgpu_device *adev)
 {
 	switch (adev->asic_type) {
 	case CHIP_NAVI10:
+	case CHIP_NAVI14:
+	case CHIP_NAVI12:
 		adev->gfx.rlc.funcs = &gfx_v10_0_rlc_funcs;
 		break;
 	default:
@@ -5097,15 +5304,12 @@ static void gfx_v10_0_set_rlc_funcs(struct amdgpu_device *adev)
 
 static void gfx_v10_0_set_gds_init(struct amdgpu_device *adev)
 {
-	/* init asic gds info */
-	switch (adev->asic_type) {
-	case CHIP_NAVI10:
-	default:
-		adev->gds.gds_size = 0x10000;
-		adev->gds.gds_compute_max_wave_id = 0x4ff;
-		break;
-	}
+	unsigned total_cu = adev->gfx.config.max_cu_per_sh *
+			    adev->gfx.config.max_sh_per_se *
+			    adev->gfx.config.max_shader_engines;
 
+	adev->gds.gds_size = 0x10000;
+	adev->gds.gds_compute_max_wave_id = total_cu * 32 - 1;
 	adev->gds.gws_size = 64;
 	adev->gds.oa_size = 16;
 }

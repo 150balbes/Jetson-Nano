@@ -31,15 +31,14 @@
  *	Must be transmitted as zero and ignored on receive.
  *
  * SWITCH_ID - VID[8:6]:
- *	Index of switch within DSA tree. Must be between 0 and
- *	DSA_MAX_SWITCHES - 1.
+ *	Index of switch within DSA tree. Must be between 0 and 7.
  *
  * RSV - VID[5:4]:
  *	To be used for further expansion of PORT or for other purposes.
  *	Must be transmitted as zero and ignored on receive.
  *
  * PORT - VID[3:0]:
- *	Index of switch port. Must be between 0 and DSA_MAX_PORTS - 1.
+ *	Index of switch port. Must be between 0 and 15.
  */
 
 #define DSA_8021Q_DIR_SHIFT		10
@@ -92,6 +91,79 @@ int dsa_8021q_rx_source_port(u16 vid)
 	return (vid & DSA_8021Q_PORT_MASK) >> DSA_8021Q_PORT_SHIFT;
 }
 EXPORT_SYMBOL_GPL(dsa_8021q_rx_source_port);
+
+static int dsa_8021q_restore_pvid(struct dsa_switch *ds, int port)
+{
+	struct bridge_vlan_info vinfo;
+	struct net_device *slave;
+	u16 pvid;
+	int err;
+
+	if (!dsa_is_user_port(ds, port))
+		return 0;
+
+	slave = dsa_to_port(ds, port)->slave;
+
+	err = br_vlan_get_pvid(slave, &pvid);
+	if (!pvid || err < 0)
+		/* There is no pvid on the bridge for this port, which is
+		 * perfectly valid. Nothing to restore, bye-bye!
+		 */
+		return 0;
+
+	err = br_vlan_get_info(slave, pvid, &vinfo);
+	if (err < 0) {
+		dev_err(ds->dev, "Couldn't determine PVID attributes\n");
+		return err;
+	}
+
+	return dsa_port_vid_add(dsa_to_port(ds, port), pvid, vinfo.flags);
+}
+
+/* If @enabled is true, installs @vid with @flags into the switch port's HW
+ * filter.
+ * If @enabled is false, deletes @vid (ignores @flags) from the port. Had the
+ * user explicitly configured this @vid through the bridge core, then the @vid
+ * is installed again, but this time with the flags from the bridge layer.
+ */
+static int dsa_8021q_vid_apply(struct dsa_switch *ds, int port, u16 vid,
+			       u16 flags, bool enabled)
+{
+	struct dsa_port *dp = dsa_to_port(ds, port);
+	struct bridge_vlan_info vinfo;
+	int err;
+
+	if (enabled)
+		return dsa_port_vid_add(dp, vid, flags);
+
+	err = dsa_port_vid_del(dp, vid);
+	if (err < 0)
+		return err;
+
+	/* Nothing to restore from the bridge for a non-user port.
+	 * The CPU port VLANs are restored implicitly with the user ports,
+	 * similar to how the bridge does in dsa_slave_vlan_add and
+	 * dsa_slave_vlan_del.
+	 */
+	if (!dsa_is_user_port(ds, port))
+		return 0;
+
+	err = br_vlan_get_info(dp->slave, vid, &vinfo);
+	/* Couldn't determine bridge attributes for this vid,
+	 * it means the bridge had not configured it.
+	 */
+	if (err < 0)
+		return 0;
+
+	/* Restore the VID from the bridge */
+	err = dsa_port_vid_add(dp, vid, vinfo.flags);
+	if (err < 0)
+		return err;
+
+	vinfo.flags &= ~BRIDGE_VLAN_INFO_PVID;
+
+	return dsa_port_vid_add(dp->cpu_dp, vid, vinfo.flags);
+}
 
 /* RX VLAN tagging (left) and TX VLAN tagging (right) setup shown for a single
  * front-panel switch port (here swp0).
@@ -148,8 +220,6 @@ EXPORT_SYMBOL_GPL(dsa_8021q_rx_source_port);
 int dsa_port_setup_8021q_tagging(struct dsa_switch *ds, int port, bool enabled)
 {
 	int upstream = dsa_upstream_port(ds, port);
-	struct dsa_port *dp = &ds->ports[port];
-	struct dsa_port *upstream_dp = &ds->ports[upstream];
 	u16 rx_vid = dsa_8021q_rx_vid(ds, port);
 	u16 tx_vid = dsa_8021q_tx_vid(ds, port);
 	int i, err;
@@ -166,7 +236,6 @@ int dsa_port_setup_8021q_tagging(struct dsa_switch *ds, int port, bool enabled)
 	 * restrictions, so there are no concerns about leaking traffic.
 	 */
 	for (i = 0; i < ds->num_ports; i++) {
-		struct dsa_port *other_dp = &ds->ports[i];
 		u16 flags;
 
 		if (i == upstream)
@@ -179,10 +248,7 @@ int dsa_port_setup_8021q_tagging(struct dsa_switch *ds, int port, bool enabled)
 			/* The RX VID is a regular VLAN on all others */
 			flags = BRIDGE_VLAN_INFO_UNTAGGED;
 
-		if (enabled)
-			err = dsa_port_vid_add(other_dp, rx_vid, flags);
-		else
-			err = dsa_port_vid_del(other_dp, rx_vid);
+		err = dsa_8021q_vid_apply(ds, i, rx_vid, flags, enabled);
 		if (err) {
 			dev_err(ds->dev, "Failed to apply RX VID %d to port %d: %d\n",
 				rx_vid, port, err);
@@ -193,10 +259,7 @@ int dsa_port_setup_8021q_tagging(struct dsa_switch *ds, int port, bool enabled)
 	/* CPU port needs to see this port's RX VID
 	 * as tagged egress.
 	 */
-	if (enabled)
-		err = dsa_port_vid_add(upstream_dp, rx_vid, 0);
-	else
-		err = dsa_port_vid_del(upstream_dp, rx_vid);
+	err = dsa_8021q_vid_apply(ds, upstream, rx_vid, 0, enabled);
 	if (err) {
 		dev_err(ds->dev, "Failed to apply RX VID %d to port %d: %d\n",
 			rx_vid, port, err);
@@ -204,26 +267,24 @@ int dsa_port_setup_8021q_tagging(struct dsa_switch *ds, int port, bool enabled)
 	}
 
 	/* Finally apply the TX VID on this port and on the CPU port */
-	if (enabled)
-		err = dsa_port_vid_add(dp, tx_vid, BRIDGE_VLAN_INFO_UNTAGGED);
-	else
-		err = dsa_port_vid_del(dp, tx_vid);
+	err = dsa_8021q_vid_apply(ds, port, tx_vid, BRIDGE_VLAN_INFO_UNTAGGED,
+				  enabled);
 	if (err) {
 		dev_err(ds->dev, "Failed to apply TX VID %d on port %d: %d\n",
 			tx_vid, port, err);
 		return err;
 	}
-	if (enabled)
-		err = dsa_port_vid_add(upstream_dp, tx_vid, 0);
-	else
-		err = dsa_port_vid_del(upstream_dp, tx_vid);
+	err = dsa_8021q_vid_apply(ds, upstream, tx_vid, 0, enabled);
 	if (err) {
 		dev_err(ds->dev, "Failed to apply TX VID %d on port %d: %d\n",
 			tx_vid, upstream, err);
 		return err;
 	}
 
-	return 0;
+	if (!enabled)
+		err = dsa_8021q_restore_pvid(ds, port);
+
+	return err;
 }
 EXPORT_SYMBOL_GPL(dsa_port_setup_8021q_tagging);
 
@@ -280,13 +341,4 @@ struct sk_buff *dsa_8021q_remove_header(struct sk_buff *skb)
 }
 EXPORT_SYMBOL_GPL(dsa_8021q_remove_header);
 
-static const struct dsa_device_ops dsa_8021q_netdev_ops = {
-	.name		= "8021q",
-	.proto		= DSA_TAG_PROTO_8021Q,
-	.overhead	= VLAN_HLEN,
-};
-
 MODULE_LICENSE("GPL v2");
-MODULE_ALIAS_DSA_TAG_DRIVER(DSA_TAG_PROTO_8021Q);
-
-module_dsa_tag_driver(dsa_8021q_netdev_ops);

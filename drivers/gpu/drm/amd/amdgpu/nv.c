@@ -23,7 +23,8 @@
 #include <linux/firmware.h>
 #include <linux/slab.h>
 #include <linux/module.h>
-#include <drm/drmP.h>
+#include <linux/pci.h>
+
 #include "amdgpu.h"
 #include "amdgpu_atombios.h"
 #include "amdgpu_ih.h"
@@ -39,12 +40,14 @@
 #include "gc/gc_10_1_0_sh_mask.h"
 #include "hdp/hdp_5_0_0_offset.h"
 #include "hdp/hdp_5_0_0_sh_mask.h"
+#include "smuio/smuio_11_0_0_offset.h"
 
 #include "soc15.h"
 #include "soc15_common.h"
 #include "gmc_v10_0.h"
 #include "gfxhub_v2_0.h"
 #include "mmhub_v2_0.h"
+#include "nbio_v2_3.h"
 #include "nv.h"
 #include "navi10_ih.h"
 #include "gfx_v10_0.h"
@@ -52,6 +55,7 @@
 #include "vcn_v2_0.h"
 #include "dce_virtual.h"
 #include "mes_v10_1.h"
+#include "mxgpu_nv.h"
 
 static const struct amd_ip_funcs nv_common_ip_funcs;
 
@@ -62,8 +66,8 @@ static u32 nv_pcie_rreg(struct amdgpu_device *adev, u32 reg)
 {
 	unsigned long flags, address, data;
 	u32 r;
-	address = adev->nbio_funcs->get_pcie_index_offset(adev);
-	data = adev->nbio_funcs->get_pcie_data_offset(adev);
+	address = adev->nbio.funcs->get_pcie_index_offset(adev);
+	data = adev->nbio.funcs->get_pcie_data_offset(adev);
 
 	spin_lock_irqsave(&adev->pcie_idx_lock, flags);
 	WREG32(address, reg);
@@ -77,8 +81,8 @@ static void nv_pcie_wreg(struct amdgpu_device *adev, u32 reg, u32 v)
 {
 	unsigned long flags, address, data;
 
-	address = adev->nbio_funcs->get_pcie_index_offset(adev);
-	data = adev->nbio_funcs->get_pcie_data_offset(adev);
+	address = adev->nbio.funcs->get_pcie_index_offset(adev);
+	data = adev->nbio.funcs->get_pcie_data_offset(adev);
 
 	spin_lock_irqsave(&adev->pcie_idx_lock, flags);
 	WREG32(address, reg);
@@ -118,7 +122,7 @@ static void nv_didt_wreg(struct amdgpu_device *adev, u32 reg, u32 v)
 
 static u32 nv_get_config_memsize(struct amdgpu_device *adev)
 {
-	return adev->nbio_funcs->get_memsize(adev);
+	return adev->nbio.funcs->get_memsize(adev);
 }
 
 static u32 nv_get_xclk(struct amdgpu_device *adev)
@@ -153,8 +157,27 @@ static bool nv_read_disabled_bios(struct amdgpu_device *adev)
 static bool nv_read_bios_from_rom(struct amdgpu_device *adev,
 				  u8 *bios, u32 length_bytes)
 {
-	/* TODO: will implement it when SMU header is available */
-	return false;
+	u32 *dw_ptr;
+	u32 i, length_dw;
+
+	if (bios == NULL)
+		return false;
+	if (length_bytes == 0)
+		return false;
+	/* APU vbios image is part of sbios image */
+	if (adev->flags & AMD_IS_APU)
+		return false;
+
+	dw_ptr = (u32 *)bios;
+	length_dw = ALIGN(length_bytes, 4) / 4;
+
+	/* set rom index to 0 */
+	WREG32(SOC15_REG_OFFSET(SMUIO, 0, mmROM_INDEX), 0);
+	/* read out the rom data */
+	for (i = 0; i < length_dw; i++)
+		dw_ptr[i] = RREG32(SOC15_REG_OFFSET(SMUIO, 0, mmROM_DATA));
+
+	return true;
 }
 
 static struct soc15_allowed_register_entry nv_allowed_read_registers[] = {
@@ -175,6 +198,7 @@ static struct soc15_allowed_register_entry nv_allowed_read_registers[] = {
 	{ SOC15_REG_ENTRY(GC, 0, mmCP_CPF_BUSY_STAT)},
 	{ SOC15_REG_ENTRY(GC, 0, mmCP_CPF_STALLED_STAT1)},
 	{ SOC15_REG_ENTRY(GC, 0, mmCP_CPF_STATUS)},
+	{ SOC15_REG_ENTRY(GC, 0, mmCP_CPC_BUSY_STAT)},
 	{ SOC15_REG_ENTRY(GC, 0, mmCP_CPC_STALLED_STAT1)},
 	{ SOC15_REG_ENTRY(GC, 0, mmCP_CPC_STATUS)},
 	{ SOC15_REG_ENTRY(GC, 0, mmGB_ADDR_CONFIG)},
@@ -278,7 +302,7 @@ static int nv_asic_mode1_reset(struct amdgpu_device *adev)
 
 	/* wait for asic to come out of reset */
 	for (i = 0; i < adev->usec_timeout; i++) {
-		u32 memsize = adev->nbio_funcs->get_memsize(adev);
+		u32 memsize = adev->nbio.funcs->get_memsize(adev);
 
 		if (memsize != 0xffffffff)
 			break;
@@ -289,6 +313,18 @@ static int nv_asic_mode1_reset(struct amdgpu_device *adev)
 
 	return ret;
 }
+
+static enum amd_reset_method
+nv_asic_reset_method(struct amdgpu_device *adev)
+{
+	struct smu_context *smu = &adev->smu;
+
+	if (!amdgpu_sriov_vf(adev) && smu_baco_is_support(smu))
+		return AMD_RESET_METHOD_BACO;
+	else
+		return AMD_RESET_METHOD_MODE1;
+}
+
 static int nv_asic_reset(struct amdgpu_device *adev)
 {
 
@@ -303,10 +339,15 @@ static int nv_asic_reset(struct amdgpu_device *adev)
 	int ret = 0;
 	struct smu_context *smu = &adev->smu;
 
-	if (smu_baco_is_support(smu))
+	if (nv_asic_reset_method(adev) == AMD_RESET_METHOD_BACO) {
+		if (!adev->in_suspend)
+			amdgpu_inc_vram_lost(adev);
 		ret = smu_baco_reset(smu);
-	else
+	} else {
+		if (!adev->in_suspend)
+			amdgpu_inc_vram_lost(adev);
 		ret = nv_asic_mode1_reset(adev);
+	}
 
 	return ret;
 }
@@ -350,8 +391,8 @@ static void nv_program_aspm(struct amdgpu_device *adev)
 static void nv_enable_doorbell_aperture(struct amdgpu_device *adev,
 					bool enable)
 {
-	adev->nbio_funcs->enable_doorbell_aperture(adev, enable);
-	adev->nbio_funcs->enable_doorbell_selfring_aperture(adev, enable);
+	adev->nbio.funcs->enable_doorbell_aperture(adev, enable);
+	adev->nbio.funcs->enable_doorbell_selfring_aperture(adev, enable);
 }
 
 static const struct amdgpu_ip_block_version nv_common_ip_block =
@@ -363,29 +404,65 @@ static const struct amdgpu_ip_block_version nv_common_ip_block =
 	.funcs = &nv_common_ip_funcs,
 };
 
-int nv_set_ip_blocks(struct amdgpu_device *adev)
+static int nv_reg_base_init(struct amdgpu_device *adev)
 {
-	/* Set IP register base before any HW register access */
+	int r;
+
+	if (amdgpu_discovery) {
+		r = amdgpu_discovery_reg_base_init(adev);
+		if (r) {
+			DRM_WARN("failed to init reg base from ip discovery table, "
+					"fallback to legacy init method\n");
+			goto legacy_init;
+		}
+
+		return 0;
+	}
+
+legacy_init:
 	switch (adev->asic_type) {
 	case CHIP_NAVI10:
 		navi10_reg_base_init(adev);
+		break;
+	case CHIP_NAVI14:
+		navi14_reg_base_init(adev);
+		break;
+	case CHIP_NAVI12:
+		navi12_reg_base_init(adev);
 		break;
 	default:
 		return -EINVAL;
 	}
 
-	adev->nbio_funcs = &nbio_v2_3_funcs;
+	return 0;
+}
 
-	adev->nbio_funcs->detect_hw_virt(adev);
+int nv_set_ip_blocks(struct amdgpu_device *adev)
+{
+	int r;
+
+	/* Set IP register base before any HW register access */
+	r = nv_reg_base_init(adev);
+	if (r)
+		return r;
+
+	adev->nbio.funcs = &nbio_v2_3_funcs;
+	adev->nbio.hdp_flush_reg = &nbio_v2_3_hdp_flush_reg;
+
+	adev->nbio.funcs->detect_hw_virt(adev);
+
+	if (amdgpu_sriov_vf(adev))
+		adev->virt.ops = &xgpu_nv_virt_ops;
 
 	switch (adev->asic_type) {
 	case CHIP_NAVI10:
+	case CHIP_NAVI14:
 		amdgpu_device_ip_block_add(adev, &nv_common_ip_block);
 		amdgpu_device_ip_block_add(adev, &gmc_v10_0_ip_block);
 		amdgpu_device_ip_block_add(adev, &navi10_ih_ip_block);
 		amdgpu_device_ip_block_add(adev, &psp_v11_0_ip_block);
 		if (adev->firmware.load_type == AMDGPU_FW_LOAD_PSP &&
-		    is_support_sw_smu(adev))
+		    is_support_sw_smu(adev) && !amdgpu_sriov_vf(adev))
 			amdgpu_device_ip_block_add(adev, &smu_v11_0_ip_block);
 		if (adev->enable_virtual_display || amdgpu_sriov_vf(adev))
 			amdgpu_device_ip_block_add(adev, &dce_virtual_ip_block);
@@ -396,11 +473,32 @@ int nv_set_ip_blocks(struct amdgpu_device *adev)
 		amdgpu_device_ip_block_add(adev, &gfx_v10_0_ip_block);
 		amdgpu_device_ip_block_add(adev, &sdma_v5_0_ip_block);
 		if (adev->firmware.load_type == AMDGPU_FW_LOAD_DIRECT &&
-		    is_support_sw_smu(adev))
+		    is_support_sw_smu(adev) && !amdgpu_sriov_vf(adev))
 			amdgpu_device_ip_block_add(adev, &smu_v11_0_ip_block);
 		amdgpu_device_ip_block_add(adev, &vcn_v2_0_ip_block);
 		if (adev->enable_mes)
 			amdgpu_device_ip_block_add(adev, &mes_v10_1_ip_block);
+		break;
+	case CHIP_NAVI12:
+		amdgpu_device_ip_block_add(adev, &nv_common_ip_block);
+		amdgpu_device_ip_block_add(adev, &gmc_v10_0_ip_block);
+		amdgpu_device_ip_block_add(adev, &navi10_ih_ip_block);
+		amdgpu_device_ip_block_add(adev, &psp_v11_0_ip_block);
+		if (adev->firmware.load_type == AMDGPU_FW_LOAD_PSP &&
+		    is_support_sw_smu(adev) && !amdgpu_sriov_vf(adev))
+			amdgpu_device_ip_block_add(adev, &smu_v11_0_ip_block);
+		if (adev->enable_virtual_display || amdgpu_sriov_vf(adev))
+			amdgpu_device_ip_block_add(adev, &dce_virtual_ip_block);
+#if defined(CONFIG_DRM_AMD_DC)
+		else if (amdgpu_device_has_dc_support(adev))
+			amdgpu_device_ip_block_add(adev, &dm_ip_block);
+#endif
+		amdgpu_device_ip_block_add(adev, &gfx_v10_0_ip_block);
+		amdgpu_device_ip_block_add(adev, &sdma_v5_0_ip_block);
+		if (adev->firmware.load_type == AMDGPU_FW_LOAD_DIRECT &&
+		    is_support_sw_smu(adev) && !amdgpu_sriov_vf(adev))
+			amdgpu_device_ip_block_add(adev, &smu_v11_0_ip_block);
+		amdgpu_device_ip_block_add(adev, &vcn_v2_0_ip_block);
 		break;
 	default:
 		return -EINVAL;
@@ -411,12 +509,12 @@ int nv_set_ip_blocks(struct amdgpu_device *adev)
 
 static uint32_t nv_get_rev_id(struct amdgpu_device *adev)
 {
-	return adev->nbio_funcs->get_rev_id(adev);
+	return adev->nbio.funcs->get_rev_id(adev);
 }
 
 static void nv_flush_hdp(struct amdgpu_device *adev, struct amdgpu_ring *ring)
 {
-	adev->nbio_funcs->hdp_flush(adev, ring);
+	adev->nbio.funcs->hdp_flush(adev, ring);
 }
 
 static void nv_invalidate_hdp(struct amdgpu_device *adev,
@@ -461,6 +559,16 @@ static bool nv_need_reset_on_init(struct amdgpu_device *adev)
 	return false;
 }
 
+static uint64_t nv_get_pcie_replay_count(struct amdgpu_device *adev)
+{
+
+	/* TODO
+	 * dummy implement for pcie_replay_count sysfs interface
+	 * */
+
+	return 0;
+}
+
 static void nv_init_doorbell_index(struct amdgpu_device *adev)
 {
 	adev->doorbell_index.kiq = AMDGPU_NAVI10_DOORBELL_KIQ;
@@ -496,6 +604,7 @@ static const struct amdgpu_asic_funcs nv_asic_funcs =
 	.read_bios_from_rom = &nv_read_bios_from_rom,
 	.read_register = &nv_read_register,
 	.reset = &nv_asic_reset,
+	.reset_method = &nv_asic_reset_method,
 	.set_vga_state = &nv_vga_set_state,
 	.get_xclk = &nv_get_xclk,
 	.set_uvd_clocks = &nv_set_uvd_clocks,
@@ -507,13 +616,16 @@ static const struct amdgpu_asic_funcs nv_asic_funcs =
 	.need_full_reset = &nv_need_full_reset,
 	.get_pcie_usage = &nv_get_pcie_usage,
 	.need_reset_on_init = &nv_need_reset_on_init,
+	.get_pcie_replay_count = &nv_get_pcie_replay_count,
 };
 
 static int nv_common_early_init(void *handle)
 {
-	bool psp_enabled = false;
+#define MMIO_REG_HOLE_OFFSET (0x80000 - PAGE_SIZE)
 	struct amdgpu_device *adev = (struct amdgpu_device *)handle;
 
+	adev->rmmio_remap.reg_offset = MMIO_REG_HOLE_OFFSET;
+	adev->rmmio_remap.bus_addr = adev->rmmio_base + MMIO_REG_HOLE_OFFSET;
 	adev->smc_rreg = NULL;
 	adev->smc_wreg = NULL;
 	adev->pcie_rreg = &nv_pcie_rreg;
@@ -527,10 +639,6 @@ static int nv_common_early_init(void *handle)
 	adev->didt_wreg = &nv_didt_wreg;
 
 	adev->asic_funcs = &nv_asic_funcs;
-
-	if (amdgpu_device_ip_get_ip_block(adev, AMD_IP_BLOCK_TYPE_PSP) &&
-	    (amdgpu_ip_block_mask & (1 << AMD_IP_BLOCK_TYPE_PSP)))
-		psp_enabled = true;
 
 	adev->rev_id = nv_get_rev_id(adev);
 	adev->external_rev_id = 0xff;
@@ -555,9 +663,54 @@ static int nv_common_early_init(void *handle)
 			AMD_PG_SUPPORT_ATHUB;
 		adev->external_rev_id = adev->rev_id + 0x1;
 		break;
+	case CHIP_NAVI14:
+		adev->cg_flags = AMD_CG_SUPPORT_GFX_MGCG |
+			AMD_CG_SUPPORT_GFX_CGCG |
+			AMD_CG_SUPPORT_IH_CG |
+			AMD_CG_SUPPORT_HDP_MGCG |
+			AMD_CG_SUPPORT_HDP_LS |
+			AMD_CG_SUPPORT_SDMA_MGCG |
+			AMD_CG_SUPPORT_SDMA_LS |
+			AMD_CG_SUPPORT_MC_MGCG |
+			AMD_CG_SUPPORT_MC_LS |
+			AMD_CG_SUPPORT_ATHUB_MGCG |
+			AMD_CG_SUPPORT_ATHUB_LS |
+			AMD_CG_SUPPORT_VCN_MGCG |
+			AMD_CG_SUPPORT_BIF_MGCG |
+			AMD_CG_SUPPORT_BIF_LS;
+		adev->pg_flags = AMD_PG_SUPPORT_VCN |
+			AMD_PG_SUPPORT_VCN_DPG;
+		adev->external_rev_id = adev->rev_id + 20;
+		break;
+	case CHIP_NAVI12:
+		adev->cg_flags = AMD_CG_SUPPORT_GFX_MGCG |
+			AMD_CG_SUPPORT_GFX_MGLS |
+			AMD_CG_SUPPORT_GFX_CGCG |
+			AMD_CG_SUPPORT_GFX_CP_LS |
+			AMD_CG_SUPPORT_GFX_RLC_LS |
+			AMD_CG_SUPPORT_IH_CG |
+			AMD_CG_SUPPORT_HDP_MGCG |
+			AMD_CG_SUPPORT_HDP_LS |
+			AMD_CG_SUPPORT_SDMA_MGCG |
+			AMD_CG_SUPPORT_SDMA_LS |
+			AMD_CG_SUPPORT_MC_MGCG |
+			AMD_CG_SUPPORT_MC_LS |
+			AMD_CG_SUPPORT_ATHUB_MGCG |
+			AMD_CG_SUPPORT_ATHUB_LS |
+			AMD_CG_SUPPORT_VCN_MGCG;
+		adev->pg_flags = AMD_PG_SUPPORT_VCN |
+			AMD_PG_SUPPORT_VCN_DPG |
+			AMD_PG_SUPPORT_ATHUB;
+		adev->external_rev_id = adev->rev_id + 0xa;
+		break;
 	default:
 		/* FIXME: not supported yet */
 		return -EINVAL;
+	}
+
+	if (amdgpu_sriov_vf(adev)) {
+		amdgpu_virt_init_setting(adev);
+		xgpu_nv_mailbox_set_irq_funcs(adev);
 	}
 
 	return 0;
@@ -565,11 +718,21 @@ static int nv_common_early_init(void *handle)
 
 static int nv_common_late_init(void *handle)
 {
+	struct amdgpu_device *adev = (struct amdgpu_device *)handle;
+
+	if (amdgpu_sriov_vf(adev))
+		xgpu_nv_mailbox_get_irq(adev);
+
 	return 0;
 }
 
 static int nv_common_sw_init(void *handle)
 {
+	struct amdgpu_device *adev = (struct amdgpu_device *)handle;
+
+	if (amdgpu_sriov_vf(adev))
+		xgpu_nv_mailbox_add_irq_id(adev);
+
 	return 0;
 }
 
@@ -587,7 +750,13 @@ static int nv_common_hw_init(void *handle)
 	/* enable aspm */
 	nv_program_aspm(adev);
 	/* setup nbio registers */
-	adev->nbio_funcs->init_registers(adev);
+	adev->nbio.funcs->init_registers(adev);
+	/* remap HDP registers to a hole in mmio space,
+	 * for the purpose of expose those registers
+	 * to process space
+	 */
+	if (adev->nbio.funcs->remap_hdp_registers)
+		adev->nbio.funcs->remap_hdp_registers(adev);
 	/* enable the doorbell aperture */
 	nv_enable_doorbell_aperture(adev, true);
 
@@ -747,9 +916,11 @@ static int nv_common_set_clockgating_state(void *handle,
 
 	switch (adev->asic_type) {
 	case CHIP_NAVI10:
-		adev->nbio_funcs->update_medium_grain_clock_gating(adev,
+	case CHIP_NAVI14:
+	case CHIP_NAVI12:
+		adev->nbio.funcs->update_medium_grain_clock_gating(adev,
 				state == AMD_CG_STATE_GATE ? true : false);
-		adev->nbio_funcs->update_medium_grain_light_sleep(adev,
+		adev->nbio.funcs->update_medium_grain_light_sleep(adev,
 				state == AMD_CG_STATE_GATE ? true : false);
 		nv_update_hdp_mem_power_gating(adev,
 				   state == AMD_CG_STATE_GATE ? true : false);
@@ -777,7 +948,7 @@ static void nv_common_get_clockgating_state(void *handle, u32 *flags)
 	if (amdgpu_sriov_vf(adev))
 		*flags = 0;
 
-	adev->nbio_funcs->get_clockgating_state(adev, flags);
+	adev->nbio.funcs->get_clockgating_state(adev, flags);
 
 	/* AMD_CG_SUPPORT_HDP_MGCG */
 	tmp = RREG32_SOC15(HDP, 0, mmHDP_CLK_CNTL);

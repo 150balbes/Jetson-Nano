@@ -8,6 +8,13 @@
 #define _INTEL_GPU_COMMANDS_H_
 
 /*
+ * Target address alignments required for GPU access e.g.
+ * MI_STORE_DWORD_IMM.
+ */
+#define alignof_dword 4
+#define alignof_qword 8
+
+/*
  * Instruction field definitions used by the command parser
  */
 #define INSTR_CLIENT_SHIFT      29
@@ -105,6 +112,7 @@
 #define MI_SEMAPHORE_SIGNAL	MI_INSTR(0x1b, 0) /* GEN8+ */
 #define   MI_SEMAPHORE_TARGET(engine)	((engine)<<15)
 #define MI_SEMAPHORE_WAIT	MI_INSTR(0x1c, 2) /* GEN8+ */
+#define MI_SEMAPHORE_WAIT_TOKEN	MI_INSTR(0x1c, 3) /* GEN12+ */
 #define   MI_SEMAPHORE_POLL		(1 << 15)
 #define   MI_SEMAPHORE_SAD_GT_SDD	(0 << 12)
 #define   MI_SEMAPHORE_SAD_GTE_SDD	(1 << 12)
@@ -112,6 +120,8 @@
 #define   MI_SEMAPHORE_SAD_LTE_SDD	(3 << 12)
 #define   MI_SEMAPHORE_SAD_EQ_SDD	(4 << 12)
 #define   MI_SEMAPHORE_SAD_NEQ_SDD	(5 << 12)
+#define   MI_SEMAPHORE_TOKEN_MASK	REG_GENMASK(9, 5)
+#define   MI_SEMAPHORE_TOKEN_SHIFT	5
 #define MI_STORE_DWORD_IMM	MI_INSTR(0x20, 1)
 #define MI_STORE_DWORD_IMM_GEN4	MI_INSTR(0x20, 2)
 #define   MI_MEM_VIRTUAL	(1 << 22) /* 945,g33,965 */
@@ -125,7 +135,10 @@
  *   address/value pairs. Don't overdue it, though, x <= 2^4 must hold!
  */
 #define MI_LOAD_REGISTER_IMM(x)	MI_INSTR(0x22, 2*(x)-1)
+/* Gen11+. addr = base + (ctx_restore ? offset & GENMASK(12,2) : offset) */
+#define   MI_LRI_CS_MMIO		(1<<19)
 #define   MI_LRI_FORCE_POSTED		(1<<12)
+#define MI_LOAD_REGISTER_IMM_MAX_REGS (126)
 #define MI_STORE_REGISTER_MEM        MI_INSTR(0x24, 1)
 #define MI_STORE_REGISTER_MEM_GEN8   MI_INSTR(0x24, 2)
 #define   MI_SRM_LRM_GLOBAL_GTT		(1<<22)
@@ -140,6 +153,7 @@
 #define   MI_FLUSH_DW_USE_PPGTT		(0<<2)
 #define MI_LOAD_REGISTER_MEM	   MI_INSTR(0x29, 1)
 #define MI_LOAD_REGISTER_MEM_GEN8  MI_INSTR(0x29, 2)
+#define MI_LOAD_REGISTER_REG    MI_INSTR(0x2A, 1)
 #define MI_BATCH_BUFFER		MI_INSTR(0x30, 1)
 #define   MI_BATCH_NON_SECURE		(1)
 /* for snb/ivb/vlv this also means "batch in ppgtt" when ppgtt is enabled. */
@@ -149,7 +163,8 @@
 #define MI_BATCH_BUFFER_START	MI_INSTR(0x31, 0)
 #define   MI_BATCH_GTT		    (2<<6) /* aliased with (1<<7) on gen4 */
 #define MI_BATCH_BUFFER_START_GEN8	MI_INSTR(0x31, 1)
-#define   MI_BATCH_RESOURCE_STREAMER (1<<10)
+#define   MI_BATCH_RESOURCE_STREAMER REG_BIT(10)
+#define   MI_BATCH_PREDICATE         REG_BIT(15) /* HSW+ on RCS only*/
 
 /*
  * 3D instructions used by the kernel
@@ -179,11 +194,12 @@
 #define GFX_OP_DRAWRECT_INFO     ((0x3<<29)|(0x1d<<24)|(0x80<<16)|(0x3))
 #define GFX_OP_DRAWRECT_INFO_I965  ((0x7900<<16)|0x2)
 
-#define COLOR_BLT_CMD			(2<<29 | 0x40<<22 | (5-2))
+#define COLOR_BLT_CMD			(2 << 29 | 0x40 << 22 | (5 - 2))
 #define XY_COLOR_BLT_CMD		(2 << 29 | 0x50 << 22)
-#define SRC_COPY_BLT_CMD		((2<<29)|(0x43<<22)|4)
-#define XY_SRC_COPY_BLT_CMD		((2<<29)|(0x53<<22)|6)
-#define XY_MONO_SRC_COPY_IMM_BLT	((2<<29)|(0x71<<22)|5)
+#define SRC_COPY_BLT_CMD		(2 << 29 | 0x43 << 22)
+#define GEN9_XY_FAST_COPY_BLT_CMD	(2 << 29 | 0x42 << 22)
+#define XY_SRC_COPY_BLT_CMD		(2 << 29 | 0x53 << 22)
+#define XY_MONO_SRC_COPY_IMM_BLT	(2 << 29 | 0x71 << 22 | 5)
 #define   BLT_WRITE_A			(2<<20)
 #define   BLT_WRITE_RGB			(1<<20)
 #define   BLT_WRITE_RGBA		(BLT_WRITE_RGB | BLT_WRITE_A)
@@ -200,6 +216,8 @@
 #define   DISPLAY_PLANE_A           (0<<20)
 #define   DISPLAY_PLANE_B           (1<<20)
 #define GFX_OP_PIPE_CONTROL(len)	((0x3<<29)|(0x3<<27)|(0x2<<24)|((len)-2))
+#define   PIPE_CONTROL_COMMAND_CACHE_INVALIDATE		(1<<29) /* gen11+ */
+#define   PIPE_CONTROL_TILE_CACHE_FLUSH			(1<<28) /* gen11+ */
 #define   PIPE_CONTROL_FLUSH_L3				(1<<27)
 #define   PIPE_CONTROL_GLOBAL_GTT_IVB			(1<<24) /* gen7+ */
 #define   PIPE_CONTROL_MMIO_WRITE			(1<<23)
@@ -207,6 +225,7 @@
 #define   PIPE_CONTROL_CS_STALL				(1<<20)
 #define   PIPE_CONTROL_TLB_INVALIDATE			(1<<18)
 #define   PIPE_CONTROL_MEDIA_STATE_CLEAR		(1<<16)
+#define   PIPE_CONTROL_WRITE_TIMESTAMP			(3<<14)
 #define   PIPE_CONTROL_QW_WRITE				(1<<14)
 #define   PIPE_CONTROL_POST_SYNC_OP_MASK                (3<<14)
 #define   PIPE_CONTROL_DEPTH_STALL			(1<<13)
@@ -214,7 +233,9 @@
 #define   PIPE_CONTROL_RENDER_TARGET_CACHE_FLUSH	(1<<12) /* gen6+ */
 #define   PIPE_CONTROL_INSTRUCTION_CACHE_INVALIDATE	(1<<11) /* MBZ on ILK */
 #define   PIPE_CONTROL_TEXTURE_CACHE_INVALIDATE		(1<<10) /* GM45+ only */
+#define   PIPE_CONTROL_L3_RO_CACHE_INVALIDATE		REG_BIT(10) /* gen12 */
 #define   PIPE_CONTROL_INDIRECT_STATE_DISABLE		(1<<9)
+#define   PIPE_CONTROL_HDC_PIPELINE_FLUSH		REG_BIT(9)  /* gen12 */
 #define   PIPE_CONTROL_NOTIFY				(1<<8)
 #define   PIPE_CONTROL_FLUSH_ENABLE			(1<<7) /* gen7+ */
 #define   PIPE_CONTROL_DC_FLUSH_ENABLE			(1<<5)
@@ -224,6 +245,29 @@
 #define   PIPE_CONTROL_STALL_AT_SCOREBOARD		(1<<1)
 #define   PIPE_CONTROL_DEPTH_CACHE_FLUSH		(1<<0)
 #define   PIPE_CONTROL_GLOBAL_GTT (1<<2) /* in addr dword */
+
+#define MI_MATH(x)			MI_INSTR(0x1a, (x) - 1)
+#define MI_MATH_INSTR(opcode, op1, op2) ((opcode) << 20 | (op1) << 10 | (op2))
+/* Opcodes for MI_MATH_INSTR */
+#define   MI_MATH_NOOP			MI_MATH_INSTR(0x000, 0x0, 0x0)
+#define   MI_MATH_LOAD(op1, op2)	MI_MATH_INSTR(0x080, op1, op2)
+#define   MI_MATH_LOADINV(op1, op2)	MI_MATH_INSTR(0x480, op1, op2)
+#define   MI_MATH_LOAD0(op1)		MI_MATH_INSTR(0x081, op1)
+#define   MI_MATH_LOAD1(op1)		MI_MATH_INSTR(0x481, op1)
+#define   MI_MATH_ADD			MI_MATH_INSTR(0x100, 0x0, 0x0)
+#define   MI_MATH_SUB			MI_MATH_INSTR(0x101, 0x0, 0x0)
+#define   MI_MATH_AND			MI_MATH_INSTR(0x102, 0x0, 0x0)
+#define   MI_MATH_OR			MI_MATH_INSTR(0x103, 0x0, 0x0)
+#define   MI_MATH_XOR			MI_MATH_INSTR(0x104, 0x0, 0x0)
+#define   MI_MATH_STORE(op1, op2)	MI_MATH_INSTR(0x180, op1, op2)
+#define   MI_MATH_STOREINV(op1, op2)	MI_MATH_INSTR(0x580, op1, op2)
+/* Registers used as operands in MI_MATH_INSTR */
+#define   MI_MATH_REG(x)		(x)
+#define   MI_MATH_REG_SRCA		0x20
+#define   MI_MATH_REG_SRCB		0x21
+#define   MI_MATH_REG_ACCU		0x31
+#define   MI_MATH_REG_ZF		0x32
+#define   MI_MATH_REG_CF		0x33
 
 /*
  * Commands used only by the command parser
@@ -241,7 +285,6 @@
 #define MI_CLFLUSH              MI_INSTR(0x27, 0)
 #define MI_REPORT_PERF_COUNT    MI_INSTR(0x28, 0)
 #define   MI_REPORT_PERF_COUNT_GGTT (1<<0)
-#define MI_LOAD_REGISTER_REG    MI_INSTR(0x2A, 0)
 #define MI_RS_STORE_DATA_IMM    MI_INSTR(0x2B, 0)
 #define MI_LOAD_URB_MEM         MI_INSTR(0x2C, 0)
 #define MI_STORE_URB_MEM        MI_INSTR(0x2D, 0)

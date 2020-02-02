@@ -5,6 +5,7 @@
 #include <inttypes.h>
 #include <errno.h>
 #include "debug.h"
+#include "dso.h"
 #include "unwind.h"
 #include "unwind-libdw.h"
 #include "machine.h"
@@ -16,7 +17,6 @@
 #include "event.h"
 #include "perf_regs.h"
 #include "callchain.h"
-#include "util.h"
 
 static char *debuginfo_path;
 
@@ -80,9 +80,10 @@ static int entry(u64 ip, struct unwind_info *ui)
 	if (__report_module(&al, ip, ui))
 		return -1;
 
-	e->ip  = ip;
-	e->map = al.map;
-	e->sym = al.sym;
+	e->ip	  = ip;
+	e->ms.maps = al.maps;
+	e->ms.map = al.map;
+	e->ms.sym = al.sym;
 
 	pr_debug("unwind: %s:ip = 0x%" PRIx64 " (0x%" PRIx64 ")\n",
 		 al.sym ? al.sym->name : "''",
@@ -199,7 +200,7 @@ int unwind__get_entries(unwind_entry_cb_t cb, void *arg,
 	struct unwind_info *ui, ui_buf = {
 		.sample		= data,
 		.thread		= thread,
-		.machine	= thread->mg->machine,
+		.machine	= thread->maps->machine,
 		.cb		= cb,
 		.arg		= arg,
 		.max_stack	= max_stack,

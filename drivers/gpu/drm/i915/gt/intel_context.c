@@ -13,6 +13,7 @@
 #include "intel_context.h"
 #include "intel_engine.h"
 #include "intel_engine_pm.h"
+#include "intel_ring.h"
 
 static struct i915_global_context {
 	struct i915_global base;
@@ -53,11 +54,23 @@ int __intel_context_do_pin(struct intel_context *ce)
 	if (likely(!atomic_read(&ce->pin_count))) {
 		intel_wakeref_t wakeref;
 
+		if (unlikely(!test_bit(CONTEXT_ALLOC_BIT, &ce->flags))) {
+			err = ce->ops->alloc(ce);
+			if (unlikely(err))
+				goto err;
+
+			__set_bit(CONTEXT_ALLOC_BIT, &ce->flags);
+		}
+
 		err = 0;
-		with_intel_runtime_pm(&ce->engine->i915->runtime_pm, wakeref)
+		with_intel_runtime_pm(ce->engine->uncore->rpm, wakeref)
 			err = ce->ops->pin(ce);
 		if (err)
 			goto err;
+
+		GEM_TRACE("%s context:%llx pin ring:{head:%04x, tail:%04x}\n",
+			  ce->engine->name, ce->timeline->fence_context,
+			  ce->ring->head, ce->ring->tail);
 
 		i915_gem_context_get(ce->gem_context); /* for ctx->ppgtt */
 
@@ -85,6 +98,9 @@ void intel_context_unpin(struct intel_context *ce)
 	mutex_lock_nested(&ce->pin_mutex, SINGLE_DEPTH_NESTING);
 
 	if (likely(atomic_dec_and_test(&ce->pin_count))) {
+		GEM_TRACE("%s context:%llx retire\n",
+			  ce->engine->name, ce->timeline->fence_context);
+
 		ce->ops->unpin(ce);
 
 		i915_gem_context_put(ce->gem_context);
@@ -95,11 +111,15 @@ void intel_context_unpin(struct intel_context *ce)
 	intel_context_put(ce);
 }
 
-static int __context_pin_state(struct i915_vma *vma, unsigned long flags)
+static int __context_pin_state(struct i915_vma *vma)
 {
+	u64 flags;
 	int err;
 
-	err = i915_vma_pin(vma, 0, 0, flags | PIN_GLOBAL);
+	flags = i915_ggtt_pin_bias(vma) | PIN_OFFSET_BIAS;
+	flags |= PIN_HIGH | PIN_GLOBAL;
+
+	err = i915_vma_pin(vma, 0, 0, flags);
 	if (err)
 		return err;
 
@@ -107,7 +127,7 @@ static int __context_pin_state(struct i915_vma *vma, unsigned long flags)
 	 * And mark it as a globally pinned object to let the shrinker know
 	 * it cannot reclaim the object until we release it.
 	 */
-	vma->obj->pin_global++;
+	i915_vma_make_unshrinkable(vma);
 	vma->obj->mm.dirty = true;
 
 	return 0;
@@ -115,49 +135,31 @@ static int __context_pin_state(struct i915_vma *vma, unsigned long flags)
 
 static void __context_unpin_state(struct i915_vma *vma)
 {
-	vma->obj->pin_global--;
+	i915_vma_make_shrinkable(vma);
 	__i915_vma_unpin(vma);
 }
 
-static void intel_context_retire(struct i915_active *active)
+__i915_active_call
+static void __intel_context_retire(struct i915_active *active)
 {
 	struct intel_context *ce = container_of(active, typeof(*ce), active);
+
+	GEM_TRACE("%s context:%llx retire\n",
+		  ce->engine->name, ce->timeline->fence_context);
 
 	if (ce->state)
 		__context_unpin_state(ce->state);
 
+	intel_timeline_unpin(ce->timeline);
 	intel_ring_unpin(ce->ring);
+
 	intel_context_put(ce);
 }
 
-void
-intel_context_init(struct intel_context *ce,
-		   struct i915_gem_context *ctx,
-		   struct intel_engine_cs *engine)
+static int __intel_context_active(struct i915_active *active)
 {
-	GEM_BUG_ON(!engine->cops);
-
-	kref_init(&ce->ref);
-
-	ce->gem_context = ctx;
-	ce->engine = engine;
-	ce->ops = engine->cops;
-	ce->sseu = engine->sseu;
-
-	INIT_LIST_HEAD(&ce->signal_link);
-	INIT_LIST_HEAD(&ce->signals);
-
-	mutex_init(&ce->pin_mutex);
-
-	i915_active_init(ctx->i915, &ce->active, intel_context_retire);
-}
-
-int intel_context_active_acquire(struct intel_context *ce, unsigned long flags)
-{
+	struct intel_context *ce = container_of(active, typeof(*ce), active);
 	int err;
-
-	if (!i915_active_acquire(&ce->active))
-		return 0;
 
 	intel_context_get(ce);
 
@@ -165,31 +167,47 @@ int intel_context_active_acquire(struct intel_context *ce, unsigned long flags)
 	if (err)
 		goto err_put;
 
+	err = intel_timeline_pin(ce->timeline);
+	if (err)
+		goto err_ring;
+
 	if (!ce->state)
 		return 0;
 
-	err = __context_pin_state(ce->state, flags);
+	err = __context_pin_state(ce->state);
 	if (err)
-		goto err_ring;
+		goto err_timeline;
+
+	return 0;
+
+err_timeline:
+	intel_timeline_unpin(ce->timeline);
+err_ring:
+	intel_ring_unpin(ce->ring);
+err_put:
+	intel_context_put(ce);
+	return err;
+}
+
+int intel_context_active_acquire(struct intel_context *ce)
+{
+	int err;
+
+	err = i915_active_acquire(&ce->active);
+	if (err)
+		return err;
 
 	/* Preallocate tracking nodes */
 	if (!i915_gem_context_is_kernel(ce->gem_context)) {
 		err = i915_active_acquire_preallocate_barrier(&ce->active,
 							      ce->engine);
-		if (err)
-			goto err_state;
+		if (err) {
+			i915_active_release(&ce->active);
+			return err;
+		}
 	}
 
 	return 0;
-
-err_state:
-	__context_unpin_state(ce->state);
-err_ring:
-	intel_ring_unpin(ce->ring);
-err_put:
-	intel_context_put(ce);
-	i915_active_cancel(&ce->active);
-	return err;
 }
 
 void intel_context_active_release(struct intel_context *ce)
@@ -197,6 +215,52 @@ void intel_context_active_release(struct intel_context *ce)
 	/* Nodes preallocated in intel_context_active() */
 	i915_active_acquire_barrier(&ce->active);
 	i915_active_release(&ce->active);
+}
+
+void
+intel_context_init(struct intel_context *ce,
+		   struct i915_gem_context *ctx,
+		   struct intel_engine_cs *engine)
+{
+	struct i915_address_space *vm;
+
+	GEM_BUG_ON(!engine->cops);
+
+	kref_init(&ce->ref);
+
+	ce->gem_context = ctx;
+	rcu_read_lock();
+	vm = rcu_dereference(ctx->vm);
+	if (vm)
+		ce->vm = i915_vm_get(vm);
+	else
+		ce->vm = i915_vm_get(&engine->gt->ggtt->vm);
+	rcu_read_unlock();
+	if (ctx->timeline)
+		ce->timeline = intel_timeline_get(ctx->timeline);
+
+	ce->engine = engine;
+	ce->ops = engine->cops;
+	ce->sseu = engine->sseu;
+	ce->ring = __intel_context_ring_size(SZ_16K);
+
+	INIT_LIST_HEAD(&ce->signal_link);
+	INIT_LIST_HEAD(&ce->signals);
+
+	mutex_init(&ce->pin_mutex);
+
+	i915_active_init(&ce->active,
+			 __intel_context_active, __intel_context_retire);
+}
+
+void intel_context_fini(struct intel_context *ce)
+{
+	if (ce->timeline)
+		intel_timeline_put(ce->timeline);
+	i915_vm_put(ce->vm);
+
+	mutex_destroy(&ce->pin_mutex);
+	i915_active_fini(&ce->active);
 }
 
 static void i915_global_context_shrink(void)
@@ -227,11 +291,59 @@ int __init i915_global_context_init(void)
 void intel_context_enter_engine(struct intel_context *ce)
 {
 	intel_engine_pm_get(ce->engine);
+	intel_timeline_enter(ce->timeline);
 }
 
 void intel_context_exit_engine(struct intel_context *ce)
 {
+	intel_timeline_exit(ce->timeline);
 	intel_engine_pm_put(ce->engine);
+}
+
+int intel_context_prepare_remote_request(struct intel_context *ce,
+					 struct i915_request *rq)
+{
+	struct intel_timeline *tl = ce->timeline;
+	int err;
+
+	/* Only suitable for use in remotely modifying this context */
+	GEM_BUG_ON(rq->hw_context == ce);
+
+	if (rcu_access_pointer(rq->timeline) != tl) { /* timeline sharing! */
+		/*
+		 * Ideally, we just want to insert our foreign fence as
+		 * a barrier into the remove context, such that this operation
+		 * occurs after all current operations in that context, and
+		 * all future operations must occur after this.
+		 *
+		 * Currently, the timeline->last_request tracking is guarded
+		 * by its mutex and so we must obtain that to atomically
+		 * insert our barrier. However, since we already hold our
+		 * timeline->mutex, we must be careful against potential
+		 * inversion if we are the kernel_context as the remote context
+		 * will itself poke at the kernel_context when it needs to
+		 * unpin. Ergo, if already locked, we drop both locks and
+		 * try again (through the magic of userspace repeating EAGAIN).
+		 */
+		if (!mutex_trylock(&tl->mutex))
+			return -EAGAIN;
+
+		/* Queue this switch after current activity by this context. */
+		err = i915_active_fence_set(&tl->last_request, rq);
+		mutex_unlock(&tl->mutex);
+		if (err)
+			return err;
+	}
+
+	/*
+	 * Guarantee context image and the timeline remains pinned until the
+	 * modifying request is retired by setting the ce activity tracker.
+	 *
+	 * But we only need to take one pin on the account of it. Or in other
+	 * words transfer the pinned ce object to tracked active request.
+	 */
+	GEM_BUG_ON(i915_active_is_idle(&ce->active));
+	return i915_active_add_request(&ce->active, rq);
 }
 
 struct i915_request *intel_context_create_request(struct intel_context *ce)
@@ -248,3 +360,7 @@ struct i915_request *intel_context_create_request(struct intel_context *ce)
 
 	return rq;
 }
+
+#if IS_ENABLED(CONFIG_DRM_I915_SELFTEST)
+#include "selftest_context.c"
+#endif

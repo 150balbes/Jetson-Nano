@@ -6,11 +6,10 @@
 #include <linux/module.h>
 
 //
-// Keytable for the WeTek Play 2 remote controller
+// Keytable for the WeTek Play 2 STB remote control
 //
 
 static struct rc_map_table wetek_play2[] = {
-
 	{ 0x5e5f02, KEY_POWER },
 	{ 0x5e5f46, KEY_SLEEP }, // tv
 	{ 0x5e5f10, KEY_MUTE },
@@ -66,14 +65,13 @@ static struct rc_map_table wetek_play2[] = {
 	{ 0x5e5f04, KEY_RECORD },
 	{ 0x5e5f2c, KEY_PLAYPAUSE },
 	{ 0x5e5f2b, KEY_STOP },
-
 };
 
 static struct rc_map_list wetek_play2_map = {
 	.map = {
 		.scan     = wetek_play2,
 		.size     = ARRAY_SIZE(wetek_play2),
-		.rc_proto = RC_PROTO_NEC,
+		.rc_proto = RC_PROTO_NECX,
 		.name     = RC_MAP_WETEK_PLAY2,
 	}
 };

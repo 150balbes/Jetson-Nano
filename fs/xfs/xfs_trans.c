@@ -71,7 +71,7 @@ xfs_trans_free(
 	if (!(tp->t_flags & XFS_TRANS_NO_WRITECOUNT))
 		sb_end_intwrite(tp->t_mountp->m_super);
 	xfs_trans_free_dqinfo(tp);
-	kmem_zone_free(xfs_trans_zone, tp);
+	kmem_cache_free(xfs_trans_zone, tp);
 }
 
 /*
@@ -90,7 +90,7 @@ xfs_trans_dup(
 
 	trace_xfs_trans_dup(tp, _RET_IP_);
 
-	ntp = kmem_zone_zalloc(xfs_trans_zone, KM_SLEEP);
+	ntp = kmem_zone_zalloc(xfs_trans_zone, 0);
 
 	/*
 	 * Initialize the new transaction structure.
@@ -263,7 +263,7 @@ xfs_trans_alloc(
 	 * GFP_NOFS allocation context so that we avoid lockdep false positives
 	 * by doing GFP_KERNEL allocations inside sb_start_intwrite().
 	 */
-	tp = kmem_zone_zalloc(xfs_trans_zone, KM_SLEEP);
+	tp = kmem_zone_zalloc(xfs_trans_zone, 0);
 	if (!(flags & XFS_TRANS_NO_WRITECOUNT))
 		sb_start_intwrite(mp->m_super);
 

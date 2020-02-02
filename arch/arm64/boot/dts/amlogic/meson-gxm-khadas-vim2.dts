@@ -18,7 +18,7 @@
 
 	aliases {
 		serial0 = &uart_AO;
-		serial1 = &uart_AO_B;
+		serial2 = &uart_AO_B;
 	};
 
 	chosen {
@@ -78,35 +78,6 @@
 		port {
 			hdmi_connector_in: endpoint {
 				remote-endpoint = <&hdmi_tx_tmds_out>;
-			};
-		};
-	};
-
-	sound {
-		compatible = "simple-audio-card";
-		simple-audio-card,name = "AMLGX";
-
-		assigned-clocks = <&clkc CLKID_MPLL2>,
-				  <&clkc CLKID_MPLL0>,
-				  <&clkc CLKID_MPLL1>;
-		assigned-clock-parents = <0>, <0>, <0>;
-		assigned-clock-rates = <294912000>,
-				       <270950400>,
-				       <393216000>;
-
-		simple-audio-card,dai-link@0 {
-			/* HDMI Output */
-			format = "i2s";
-			mclk-fs = <256>;
-			bitclock-master = <&aiu_i2s>;
-			frame-master = <&aiu_i2s>;
-
-			cpu {
-				sound-dai = <&aiu_i2s>;
-			};
-
-			codec {
-				sound-dai = <&hdmi_tx>;
 			};
 		};
 	};
@@ -184,6 +155,35 @@
 		regulator-always-on;
 	};
 
+	sound {
+		compatible = "amlogic,gx-sound-card";
+		model = "AMLGX";
+		audio-routing = "I2S ENCODER Playback", "I2S FIFO Playback";
+
+		assigned-clocks = <&clkc CLKID_MPLL2>,
+				  <&clkc CLKID_MPLL0>,
+				  <&clkc CLKID_MPLL1>;
+		assigned-clock-parents = <0>, <0>, <0>;
+		assigned-clock-rates = <294912000>,
+				       <270950400>,
+				       <393216000>;
+		status = "okay";
+
+		dai-link-0 {
+			sound-dai = <&i2s_fifo>;
+		};
+
+		dai-link-1 {
+			sound-dai = <&i2s_encoder>;
+			dai-format = "i2s";
+			mclk-fs = <256>;
+
+			codec-0 {
+				sound-dai = <&hdmi_tx>;
+			};
+		};
+	};
+
 	vcc_3v3: regulator-vcc_3v3 {
 		compatible = "regulator-fixed";
 		regulator-name = "VCC_3V3";
@@ -218,58 +218,10 @@
 		clock-frequency = <32768>;
 		pwms = <&pwm_ef 0 30518 0>; /* PWM_E at 32.768KHz */
 	};
-	dvb {
-		compatible = "amlogic,dvb";
-		reg = <0x0 0xc1108c40 0x0 0x20>,
-		      <0x0 0xc1105800 0x0 0x3c0>;
-		reg-names = "afifo", "stbtop";
-		dev_name = "avl6862";
-		status = "okay";
-		fec_reset_gpio-gpios = <&gpio GPIODV_12 GPIO_ACTIVE_HIGH>;
-		power_ctrl_gpio-gpios = <&gpio GPIODV_20 GPIO_ACTIVE_LOW>;
-		lock_led_gpio-gpios = <&gpio GPIODV_11 GPIO_ACTIVE_HIGH>;
-		//"parallel","serial","disable"
-		ts0 = "serial";
-		ts0_control = <0>;
-		ts0_invert = <0>;
-		dtv_demod0_i2c_adap_id = <1>;
-		pinctrl-0 = <&dvb_s_ts0_pins>;
-		pinctrl-1 = <&dvb_s_ts1_pins>;
-		pinctrl-names = "s_ts0", "s_ts1";
-		clocks = <&clkc CLKID_DEMUX>,
-			 <&clkc CLKID_ASYNC_FIFO>,
-			 <&clkc CLKID_AHB_ARB0>,
-			 <&clkc CLKID_DOS_PARSER>;
-		clock-names = "demux", "asyncfifo", "ahbarb0", "uparsertop";
-		resets = <&reset RESET_PERIPHS_ASYNC_0>,
-			<&reset RESET_PERIPHS_ASYNC_1>,
-			 <&reset RESET_DEMUX>,
-			 <&reset RESET_DEMUX_RESET_0>,
-			 <&reset RESET_DEMUX_RESET_1>;
-		reset-names = "async0", "async1", "demux", "demuxreset0", "demuxreset1";
-		interrupts = <GIC_SPI 23 IRQ_TYPE_EDGE_RISING>,
-			     <GIC_SPI 53 IRQ_TYPE_EDGE_RISING>,
-			     <GIC_SPI 19 IRQ_TYPE_EDGE_RISING>,
-			     <GIC_SPI 25 IRQ_TYPE_EDGE_RISING>;
-		interrupt-names = "demux0", "demux1", "asyncfifo0", "asyncfifo1";
-	};
 };
 
-&periphs {
-	pinctrl_periphs:pinctrl@4b0 {
-		dvb_s_ts0_pins: dvb_s_ts0 {
-			mux {
-				groups = "tsin_a_d_valid", "tsin_a_sop", "tsin_a_clk", "tsin_a_d0";
-				function = "tsin_a";
-			};
-		};
-		dvb_s_ts1_pins: dvb_s_ts1 {
-			mux {
-				groups = "tsin_b_d_valid", "tsin_b_sop", "tsin_b_clk", "tsin_b_d0";
-				function = "tsin_b";
-			};
-		};
-	};
+&aiu {
+        status = "okay";
 };
 
 &cec_AO {
@@ -277,14 +229,6 @@
 	pinctrl-0 = <&ao_cec_pins>;
 	pinctrl-names = "default";
 	hdmi-phandle = <&hdmi_tx>;
-};
-
-&audio {
-	status = "okay";
-};
-
-&aiu_i2s {
-	status = "okay";
 };
 
 &cpu0 {
@@ -372,7 +316,6 @@
 	status = "okay";
 	pinctrl-0 = <&i2c_b_pins>;
 	pinctrl-names = "default";
-	clock-frequency = <300000>;
 
 	rtc: rtc@51 {
 		/* has to be enabled manually when a battery is connected: */
@@ -383,6 +326,14 @@
 		clock-frequency = <32768>;
 		clock-output-names = "xin32k";
 	};
+};
+
+&i2s_fifo {
+	status = "okay";
+};
+
+&i2s_encoder {
+	status = "okay";
 };
 
 &ir {
@@ -417,10 +368,13 @@
 	#size-cells = <0>;
 
 	bus-width = <4>;
-	max-frequency = <100000000>;
+	max-frequency = <50000000>;
 
 	non-removable;
 	disable-wp;
+
+	/* WiFi firmware requires power to be kept while in suspend */
+	keep-power-in-suspend;
 
 	mmc-pwrseq = <&sdio_pwrseq>;
 

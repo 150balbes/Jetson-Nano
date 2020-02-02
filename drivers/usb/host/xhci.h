@@ -2050,6 +2050,7 @@ int xhci_start(struct xhci_hcd *xhci);
 int xhci_reset(struct xhci_hcd *xhci);
 int xhci_run(struct usb_hcd *hcd);
 int xhci_gen_setup(struct usb_hcd *hcd, xhci_get_quirks_t get_quirks);
+void xhci_shutdown(struct usb_hcd *hcd);
 void xhci_init_driver(struct hc_driver *drv,
 		      const struct xhci_driver_overrides *over);
 int xhci_disable_slot(struct xhci_hcd *xhci, u32 slot_id);
@@ -2337,12 +2338,13 @@ static inline const char *xhci_decode_trb(u32 field0, u32 field1, u32 field2,
 		break;
 	case TRB_RESET_EP:
 		sprintf(str,
-			"%s: ctx %08x%08x slot %d ep %d flags %c",
+			"%s: ctx %08x%08x slot %d ep %d flags %c:%c",
 			xhci_trb_type_string(type),
 			field1, field0,
 			TRB_TO_SLOT_ID(field3),
 			/* Macro decrements 1, maybe it shouldn't?!? */
 			TRB_TO_EP_INDEX(field3) + 1,
+			field3 & TRB_TSP ? 'T' : 't',
 			field3 & TRB_CYCLE ? 'C' : 'c');
 		break;
 	case TRB_STOP_RING:
@@ -2575,6 +2577,35 @@ static inline const char *xhci_decode_portsc(u32 portsc)
 		ret += sprintf(str + ret, "WDE ");
 	if (portsc & PORT_WKOC_E)
 		ret += sprintf(str + ret, "WOE ");
+
+	return str;
+}
+
+static inline const char *xhci_decode_doorbell(u32 slot, u32 doorbell)
+{
+	static char str[256];
+	u8 ep;
+	u16 stream;
+	int ret;
+
+	ep = (doorbell & 0xff);
+	stream = doorbell >> 16;
+
+	if (slot == 0) {
+		sprintf(str, "Command Ring %d", doorbell);
+		return str;
+	}
+	ret = sprintf(str, "Slot %d ", slot);
+	if (ep > 0 && ep < 32)
+		ret = sprintf(str + ret, "ep%d%s",
+			      ep / 2,
+			      ep % 2 ? "in" : "out");
+	else if (ep == 0 || ep < 248)
+		ret = sprintf(str + ret, "Reserved %d", ep);
+	else
+		ret = sprintf(str + ret, "Vendor Defined %d", ep);
+	if (stream)
+		ret = sprintf(str + ret, " Stream %d", stream);
 
 	return str;
 }

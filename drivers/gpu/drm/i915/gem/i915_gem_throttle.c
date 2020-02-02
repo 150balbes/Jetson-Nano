@@ -41,7 +41,7 @@ i915_gem_throttle_ioctl(struct drm_device *dev, void *data,
 	long ret;
 
 	/* ABI: return -EIO if already wedged */
-	ret = i915_terminally_wedged(to_i915(dev));
+	ret = intel_gt_terminally_wedged(&to_i915(dev)->gt);
 	if (ret)
 		return ret;
 
@@ -50,10 +50,8 @@ i915_gem_throttle_ioctl(struct drm_device *dev, void *data,
 		if (time_after_eq(request->emitted_jiffies, recent_enough))
 			break;
 
-		if (target) {
+		if (target && xchg(&target->file_priv, NULL))
 			list_del(&target->client_link);
-			target->file_priv = NULL;
-		}
 
 		target = request;
 	}

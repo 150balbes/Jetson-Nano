@@ -1,0 +1,21 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+
+/*
+ * Author: Christian Hewitt <christianshewitt@gmail.com>
+ */
+
+#include "meson-gxl-s905d-p231.dts"
+
+/ {
+        compatible = "mecool,ki-plus", "amlogic,s905d", "amlogic,meson-gxl";
+	model = "MeCool KI Plus";
+
+	memory@0 {
+		device_type = "memory";
+		reg = <0x0 0x0 0x0 0x40000000>;
+	};
+};
+
+&ir {
+        linux,rc-map-name = "rc-mecool-ki-plus";
+};

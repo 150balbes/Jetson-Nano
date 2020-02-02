@@ -247,7 +247,7 @@ static uint r8712_usb_dvobj_init(struct _adapter *padapter)
 
 	pdvobjpriv->padapter = padapter;
 	padapter->eeprom_address_size = 6;
-	phost_iface = &pintf->altsetting[0];
+	phost_iface = pintf->cur_altsetting;
 	piface_desc = &phost_iface->desc;
 	pdvobjpriv->nr_endpoint = piface_desc->bNumEndpoints;
 	if (pusbd->speed == USB_SPEED_HIGH) {
@@ -389,7 +389,7 @@ static int r871xu_drv_init(struct usb_interface *pusb_intf,
 	}
 	/* step 4. */
 	status = r8712_init_drv_sw(padapter);
-	if (status == _FAIL)
+	if (status)
 		goto error;
 	/* step 5. read efuse/eeprom data and get mac_addr */
 	{

@@ -54,7 +54,7 @@ struct comp_fh {
 };
 
 static struct list_head video_devices = LIST_HEAD_INIT(video_devices);
-static struct spinlock list_lock;
+static DEFINE_SPINLOCK(list_lock);
 
 static inline bool data_ready(struct most_video_dev *mdev)
 {
@@ -528,6 +528,7 @@ static int comp_disconnect_channel(struct most_interface *iface,
 }
 
 static struct core_component comp = {
+	.mod = THIS_MODULE,
 	.name = "video",
 	.probe_channel = comp_probe_channel,
 	.disconnect_channel = comp_disconnect_channel,
@@ -538,7 +539,6 @@ static int __init comp_init(void)
 {
 	int err;
 
-	spin_lock_init(&list_lock);
 	err = most_register_component(&comp);
 	if (err)
 		return err;

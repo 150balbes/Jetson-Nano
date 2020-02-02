@@ -24,6 +24,32 @@ struct dw_mci_rockchip_priv_data {
 	int			num_phases;
 };
 
+static void dw_mci_rk3288_power_off(struct dw_mci *host)
+{
+	struct mmc_host	*mmc = host->slot->mmc;
+	struct mmc_ios *ios = &mmc->ios;
+	int old_signal_voltage;
+
+	if (IS_ERR(mmc->supply.vqmmc))
+		return;
+
+	if (mmc_host_is_spi(mmc))
+		return;
+
+	if (ios->vdd != 0 || ios->signal_voltage == MMC_SIGNAL_VOLTAGE_330)
+		return;
+
+	old_signal_voltage = ios->signal_voltage;
+
+	ios->signal_voltage = MMC_SIGNAL_VOLTAGE_330;
+	ios->vdd = fls(mmc->ocr_avail) - 1;
+
+	if (mmc_regulator_set_vqmmc(mmc, ios))
+		ios->signal_voltage = old_signal_voltage;
+
+	ios->vdd = 0;
+}
+
 static void dw_mci_rk3288_set_ios(struct dw_mci *host, struct mmc_ios *ios)
 {
 	struct dw_mci_rockchip_priv_data *priv = host->priv;
@@ -319,6 +345,7 @@ static const struct dw_mci_drv_data rk3288_drv_data = {
 	.execute_tuning		= dw_mci_rk3288_execute_tuning,
 	.parse_dt		= dw_mci_rk3288_parse_dt,
 	.init			= dw_mci_rockchip_init,
+	.power_off		= dw_mci_rk3288_power_off,
 };
 
 static const struct of_device_id dw_mci_rockchip_match[] = {

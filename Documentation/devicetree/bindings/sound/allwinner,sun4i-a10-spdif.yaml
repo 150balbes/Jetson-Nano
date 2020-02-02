@@ -10,7 +10,7 @@ maintainers:
   - Chen-Yu Tsai <wens@csie.org>
   - Liam Girdwood <lgirdwood@gmail.com>
   - Mark Brown <broonie@kernel.org>
-  - Maxime Ripard <maxime.ripard@bootlin.com>
+  - Maxime Ripard <mripard@kernel.org>
 
 properties:
   "#sound-dai-cells":
@@ -70,7 +70,9 @@ allOf:
       properties:
         compatible:
           contains:
-            const: allwinner,sun8i-h3-spdif
+            enum:
+              - allwinner,sun8i-h3-spdif
+              - allwinner,sun50i-h6-spdif
 
     then:
       properties:

@@ -242,41 +242,6 @@
 			resets = <&cpg 407>;
 		};
 
-		hscif0: serial@e6540000 {
-			compatible = "renesas,hscif-r8a77995",
-				     "renesas,rcar-gen3-hscif",
-				     "renesas,hscif";
-			reg = <0 0xe6540000 0 0x60>;
-			interrupts = <GIC_SPI 154 IRQ_TYPE_LEVEL_HIGH>;
-			clocks = <&cpg CPG_MOD 520>,
-				 <&cpg CPG_CORE R8A77995_CLK_S3D1C>,
-				 <&scif_clk>;
-			clock-names = "fck", "brg_int", "scif_clk";
-			dmas = <&dmac1 0x31>, <&dmac1 0x30>,
-			       <&dmac2 0x31>, <&dmac2 0x30>;
-			dma-names = "tx", "rx", "tx", "rx";
-			power-domains = <&sysc R8A77995_PD_ALWAYS_ON>;
-			resets = <&cpg 520>;
-			status = "disabled";
-		};
-
-		hscif3: serial@e66a0000 {
-			compatible = "renesas,hscif-r8a77995",
-				     "renesas,rcar-gen3-hscif",
-				     "renesas,hscif";
-			reg = <0 0xe66a0000 0 0x60>;
-			interrupts = <GIC_SPI 145 IRQ_TYPE_LEVEL_HIGH>;
-			clocks = <&cpg CPG_MOD 517>,
-				 <&cpg CPG_CORE R8A77995_CLK_S3D1C>,
-				 <&scif_clk>;
-			clock-names = "fck", "brg_int", "scif_clk";
-			dmas = <&dmac0 0x37>, <&dmac0 0x36>;
-			dma-names = "tx", "rx";
-			power-domains = <&sysc R8A77995_PD_ALWAYS_ON>;
-			resets = <&cpg 517>;
-			status = "disabled";
-		};
-
 		i2c0: i2c@e6500000 {
 			#address-cells = <1>;
 			#size-cells = <0>;
@@ -341,6 +306,41 @@
 			dmas = <&dmac0 0x97>, <&dmac0 0x96>;
 			dma-names = "tx", "rx";
 			i2c-scl-internal-delay-ns = <6>;
+			status = "disabled";
+		};
+
+		hscif0: serial@e6540000 {
+			compatible = "renesas,hscif-r8a77995",
+				     "renesas,rcar-gen3-hscif",
+				     "renesas,hscif";
+			reg = <0 0xe6540000 0 0x60>;
+			interrupts = <GIC_SPI 154 IRQ_TYPE_LEVEL_HIGH>;
+			clocks = <&cpg CPG_MOD 520>,
+				 <&cpg CPG_CORE R8A77995_CLK_S3D1C>,
+				 <&scif_clk>;
+			clock-names = "fck", "brg_int", "scif_clk";
+			dmas = <&dmac1 0x31>, <&dmac1 0x30>,
+			       <&dmac2 0x31>, <&dmac2 0x30>;
+			dma-names = "tx", "rx", "tx", "rx";
+			power-domains = <&sysc R8A77995_PD_ALWAYS_ON>;
+			resets = <&cpg 520>;
+			status = "disabled";
+		};
+
+		hscif3: serial@e66a0000 {
+			compatible = "renesas,hscif-r8a77995",
+				     "renesas,rcar-gen3-hscif",
+				     "renesas,hscif";
+			reg = <0 0xe66a0000 0 0x60>;
+			interrupts = <GIC_SPI 145 IRQ_TYPE_LEVEL_HIGH>;
+			clocks = <&cpg CPG_MOD 517>,
+				 <&cpg CPG_CORE R8A77995_CLK_S3D1C>,
+				 <&scif_clk>;
+			clock-names = "fck", "brg_int", "scif_clk";
+			dmas = <&dmac0 0x37>, <&dmac0 0x36>;
+			dma-names = "tx", "rx";
+			power-domains = <&sysc R8A77995_PD_ALWAYS_ON>;
+			resets = <&cpg 517>;
 			status = "disabled";
 		};
 
@@ -916,6 +916,7 @@
 			max-frequency = <200000000>;
 			power-domains = <&sysc R8A77995_PD_ALWAYS_ON>;
 			resets = <&cpg 312>;
+			iommus = <&ipmmu_ds1 34>;
 			status = "disabled";
 		};
 
@@ -993,15 +994,38 @@
 			iommus = <&ipmmu_vi0 9>;
 		};
 
+		cmm0: cmm@fea40000 {
+			compatible = "renesas,r8a77995-cmm",
+				     "renesas,rcar-gen3-cmm";
+			reg = <0 0xfea40000 0 0x1000>;
+			power-domains = <&sysc R8A77995_PD_ALWAYS_ON>;
+			clocks = <&cpg CPG_MOD 711>;
+			resets = <&cpg 711>;
+		};
+
+		cmm1: cmm@fea50000 {
+			compatible = "renesas,r8a77995-cmm",
+				     "renesas,rcar-gen3-cmm";
+			reg = <0 0xfea50000 0 0x1000>;
+			power-domains = <&sysc R8A77995_PD_ALWAYS_ON>;
+			clocks = <&cpg CPG_MOD 710>;
+			resets = <&cpg 710>;
+		};
+
 		du: display@feb00000 {
 			compatible = "renesas,du-r8a77995";
-			reg = <0 0xfeb00000 0 0x80000>;
+			reg = <0 0xfeb00000 0 0x40000>;
 			interrupts = <GIC_SPI 256 IRQ_TYPE_LEVEL_HIGH>,
 				     <GIC_SPI 268 IRQ_TYPE_LEVEL_HIGH>;
 			clocks = <&cpg CPG_MOD 724>,
 				 <&cpg CPG_MOD 723>;
 			clock-names = "du.0", "du.1";
-			vsps = <&vspd0 0 &vspd1 0>;
+			resets = <&cpg 724>;
+			reset-names = "du.0";
+
+			renesas,cmms = <&cmm0>, <&cmm1>;
+			vsps = <&vspd0 0>, <&vspd1 0>;
+
 			status = "disabled";
 
 			ports {
@@ -1098,15 +1122,15 @@
 			polling-delay = <1000>;
 			thermal-sensors = <&thermal>;
 
+			cooling-maps {
+			};
+
 			trips {
 				cpu-crit {
 					temperature = <120000>;
 					hysteresis = <2000>;
 					type = "critical";
 				};
-			};
-
-			cooling-maps {
 			};
 		};
 	};

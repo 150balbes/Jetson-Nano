@@ -563,5 +563,6 @@ struct dw_mci_drv_data {
 						struct mmc_ios *ios);
 	int		(*switch_voltage)(struct mmc_host *mmc,
 					  struct mmc_ios *ios);
+	void		(*power_off)(struct dw_mci *host);
 };
 #endif /* _DW_MMC_H_ */

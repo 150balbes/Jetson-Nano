@@ -88,8 +88,14 @@ typedef struct page *pgtable_t;
 #define PTE_FMT "%08lx"
 #endif
 
+#ifdef CONFIG_MMU
 extern unsigned long va_pa_offset;
 extern unsigned long pfn_base;
+#define ARCH_PFN_OFFSET		(pfn_base)
+#else
+#define va_pa_offset		0
+#define ARCH_PFN_OFFSET		(PAGE_OFFSET >> PAGE_SHIFT)
+#endif /* CONFIG_MMU */
 
 extern unsigned long max_low_pfn;
 extern unsigned long min_low_pfn;
@@ -110,10 +116,10 @@ extern unsigned long min_low_pfn;
 #define page_to_bus(page)	(page_to_phys(page))
 #define phys_to_page(paddr)	(pfn_to_page(phys_to_pfn(paddr)))
 
+#ifdef CONFIG_FLATMEM
 #define pfn_valid(pfn) \
-	(((pfn) >= pfn_base) && (((pfn)-pfn_base) < max_mapnr))
-
-#define ARCH_PFN_OFFSET		(pfn_base)
+	(((pfn) >= ARCH_PFN_OFFSET) && (((pfn) - ARCH_PFN_OFFSET) < max_mapnr))
+#endif
 
 #endif /* __ASSEMBLY__ */
 

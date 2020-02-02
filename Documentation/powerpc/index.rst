@@ -15,9 +15,11 @@ powerpc
     dawr-power9
     dscr
     eeh-pci-error-recovery
+    elfnote
     firmware-assisted-dump
     hvcs
     isa-versions
+    kaslr-booke32
     mpc52xx
     pci_iov_resource_on_powernv
     pmu-ebb
@@ -25,6 +27,7 @@ powerpc
     qe_firmware
     syscall64-abi
     transactional_memory
+    ultravisor
 
 .. only::  subproject and html
 

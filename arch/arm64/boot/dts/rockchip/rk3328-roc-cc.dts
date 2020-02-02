@@ -53,23 +53,15 @@
 		pinctrl-0 = <&usb20_host_drv>;
 		regulator-name = "vcc_host1_5v";
 		regulator-always-on;
+		regulator-boot-on;
 		vin-supply = <&vcc_sys>;
 	};
 
 	vcc_sys: vcc-sys {
 		compatible = "regulator-fixed";
 		regulator-name = "vcc_sys";
-		regulator-always-on;
-		regulator-boot-on;
 		regulator-min-microvolt = <5000000>;
 		regulator-max-microvolt = <5000000>;
-	};
-
-	vcc_phy: vcc-phy-regulator {
-		compatible = "regulator-fixed";
-		regulator-name = "vcc_phy";
-		regulator-always-on;
-		regulator-boot-on;
 	};
 
 	ir-receiver {
@@ -92,51 +84,20 @@
 
 		user {
 			label = "firefly:yellow:user";
-			linux,default-trigger = "mmc0";
+			linux,default-trigger = "mmc1";
 			gpios = <&rk805 0 GPIO_ACTIVE_LOW>;
 			default-state = "off";
 			mode = <0x05>;
 		};
 	};
+};
 
-	hdmi-sound {
-		compatible = "audio-graph-card";
-		label = "HDMI";
-		dais = <&i2s0_p0>;
-	};
-
-	sound {
-		compatible = "audio-graph-card";
-		label = "I2S";
-		dais = <&i2s1_p0>;
-	};
-
-	spdif-sound {
-		compatible = "audio-graph-card";
-		label = "SPDIF";
-		dais = <&spdif_p0>;
-	};
-
-	spdif-dit {
-		compatible = "linux,spdif-dit";
-		#sound-dai-cells = <0>;
-
-		port {
-			dit_p0_0: endpoint {
-				remote-endpoint = <&spdif_p0_0>;
-			};
-		};
-	};
+&analog_sound {
+	status = "okay";
 };
 
 &codec {
 	status = "okay";
-
-	port@0 {
-		codec_p0_0: endpoint {
-			remote-endpoint = <&i2s1_p0_0>;
-		};
-	};
 };
 
 &cpu0 {
@@ -158,7 +119,6 @@
 &emmc {
 	bus-width = <8>;
 	cap-mmc-highspeed;
-	max-frequency = <150000000>;
 	mmc-ddr-1_8v;
 	mmc-hs200-1_8v;
 	non-removable;
@@ -173,32 +133,33 @@
 	assigned-clocks = <&cru SCLK_MAC2IO>, <&cru SCLK_MAC2IO_EXT>;
 	assigned-clock-parents = <&gmac_clkin>, <&gmac_clkin>;
 	clock_in_out = "input";
-	phy-supply = <&vcc_phy>;
 	phy-mode = "rgmii";
+	phy-supply = <&vcc_io>;
 	pinctrl-names = "default";
 	pinctrl-0 = <&rgmiim1_pins>;
 	snps,aal;
+	snps,pbl = <0x4>;
 	snps,reset-gpio = <&gpio1 RK_PC2 GPIO_ACTIVE_LOW>;
 	snps,reset-active-low;
 	snps,reset-delays-us = <0 10000 50000>;
-	snps,rxpbl = <0x4>;
-	snps,txpbl = <0x4>;
 	tx_delay = <0x24>;
 	rx_delay = <0x18>;
 	status = "okay";
 };
 
+&gpu {
+	mali-supply = <&vdd_logic>;
+};
+
 &hdmi {
 	status = "okay";
-
-	port@0 {
-		hdmi_p0_0: endpoint {
-			remote-endpoint = <&i2s0_p0_0>;
-		};
-	};
 };
 
 &hdmiphy {
+	status = "okay";
+};
+
+&hdmi_sound {
 	status = "okay";
 };
 
@@ -315,31 +276,13 @@
 
 &i2s0 {
 	status = "okay";
-
-	i2s0_p0: port {
-		i2s0_p0_0: endpoint {
-			dai-format = "i2s";
-			mclk-fs = <256>;
-			remote-endpoint = <&hdmi_p0_0>;
-		};
-	};
 };
 
 &i2s1 {
 	status = "okay";
-
-	i2s1_p0: port {
-		i2s1_p0_0: endpoint {
-			dai-format = "i2s";
-			mclk-fs = <256>;
-			remote-endpoint = <&codec_p0_0>;
-		};
-	};
 };
 
 &io_domains {
-	status = "okay";
-
 	vccio1-supply = <&vcc_io>;
 	vccio2-supply = <&vcc18_emmc>;
 	vccio3-supply = <&vccio_sd>;
@@ -347,6 +290,7 @@
 	vccio5-supply = <&vcc_io>;
 	vccio6-supply = <&vcc_io>;
 	pmuio-supply = <&vcc_io>;
+	status = "okay";
 };
 
 &pinctrl {
@@ -374,27 +318,33 @@
 	cap-mmc-highspeed;
 	cap-sd-highspeed;
 	disable-wp;
-	max-frequency = <150000000>;
 	pinctrl-names = "default";
 	pinctrl-0 = <&sdmmc0_clk &sdmmc0_cmd &sdmmc0_dectn &sdmmc0_bus4>;
 	vmmc-supply = <&vcc_sd>;
+	vqmmc-supply = <&vccio_sd>;
 	status = "okay";
 };
 
 &spdif {
 	pinctrl-0 = <&spdifm0_tx>;
 	status = "okay";
+};
 
-	spdif_p0: port {
-		spdif_p0_0: endpoint {
-			remote-endpoint = <&dit_p0_0>;
-		};
-	};
+&spdif_out {
+	status = "okay";
+};
+
+&spdif_sound {
+	status = "okay";
 };
 
 &tsadc {
 	rockchip,hw-tshut-mode = <0>;
 	rockchip,hw-tshut-polarity = <0>;
+	status = "okay";
+};
+
+&uart2 {
 	status = "okay";
 };
 
@@ -410,11 +360,8 @@
 	status = "okay";
 };
 
-&uart2 {
-	status = "okay";
-};
-
 &usb20_otg {
+	dr_mode = "host";
 	status = "okay";
 };
 

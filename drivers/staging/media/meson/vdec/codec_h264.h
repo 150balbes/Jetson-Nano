@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0+ */
 /*
- * Copyright (C) 2018 Maxime Jourdan <maxi.jourdan@wanadoo.fr>
+ * Copyright (C) 2019 BayLibre, SAS
+ * Author: Maxime Jourdan <mjourdan@baylibre.com>
  */
 
 #ifndef __MESON_VDEC_CODEC_H264_H_

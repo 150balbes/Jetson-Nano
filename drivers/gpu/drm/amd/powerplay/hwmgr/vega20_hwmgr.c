@@ -183,6 +183,9 @@ static int vega20_set_features_platform_caps(struct pp_hwmgr *hwmgr)
 			PHM_PlatformCaps_TablelessHardwareInterface);
 
 	phm_cap_set(hwmgr->platform_descriptor.platformCaps,
+			PHM_PlatformCaps_BACO);
+
+	phm_cap_set(hwmgr->platform_descriptor.platformCaps,
 			PHM_PlatformCaps_EnableSMU7ThermalManagement);
 
 	if (adev->pg_flags & AMD_PG_SUPPORT_UVD)
@@ -490,8 +493,8 @@ static int vega20_setup_asic_task(struct pp_hwmgr *hwmgr)
 			"Failed to init sclk threshold!",
 			return ret);
 
-	if (adev->in_baco_reset) {
-		adev->in_baco_reset = 0;
+	if (adev->in_gpu_reset &&
+	    (amdgpu_asic_reset_method(adev) == AMD_RESET_METHOD_BACO)) {
 
 		ret = vega20_baco_apply_vdci_flush_workaround(hwmgr);
 		if (ret)
@@ -3115,6 +3118,34 @@ static int vega20_odn_edit_dpm_table(struct pp_hwmgr *hwmgr,
 	return 0;
 }
 
+static int vega20_set_mp1_state(struct pp_hwmgr *hwmgr,
+				enum pp_mp1_state mp1_state)
+{
+	uint16_t msg;
+	int ret;
+
+	switch (mp1_state) {
+	case PP_MP1_STATE_SHUTDOWN:
+		msg = PPSMC_MSG_PrepareMp1ForShutdown;
+		break;
+	case PP_MP1_STATE_UNLOAD:
+		msg = PPSMC_MSG_PrepareMp1ForUnload;
+		break;
+	case PP_MP1_STATE_RESET:
+		msg = PPSMC_MSG_PrepareMp1ForReset;
+		break;
+	case PP_MP1_STATE_NONE:
+	default:
+		return 0;
+	}
+
+	PP_ASSERT_WITH_CODE((ret = smum_send_msg_to_smc(hwmgr, msg)) == 0,
+			    "[PrepareMp1] Failed!",
+			    return ret);
+
+	return 0;
+}
+
 static int vega20_get_ppfeature_status(struct pp_hwmgr *hwmgr, char *buf)
 {
 	static const char *ppfeature_name[] = {
@@ -4109,6 +4140,56 @@ static int vega20_get_thermal_temperature_range(struct pp_hwmgr *hwmgr,
 	return 0;
 }
 
+static int vega20_smu_i2c_bus_access(struct pp_hwmgr *hwmgr, bool acquire)
+{
+	int res;
+
+	/* I2C bus access can happen very early, when SMU not loaded yet */
+	if (!vega20_is_smc_ram_running(hwmgr))
+		return 0;
+
+	res = smum_send_msg_to_smc_with_parameter(hwmgr,
+						  (acquire ?
+						  PPSMC_MSG_RequestI2CBus :
+						  PPSMC_MSG_ReleaseI2CBus),
+						  0);
+
+	PP_ASSERT_WITH_CODE(!res, "[SmuI2CAccessBus] Failed to access bus!", return res);
+	return res;
+}
+
+static int vega20_set_df_cstate(struct pp_hwmgr *hwmgr,
+				enum pp_df_cstate state)
+{
+	int ret;
+
+	/* PPSMC_MSG_DFCstateControl is supported with 40.50 and later fws */
+	if (hwmgr->smu_version < 0x283200) {
+		pr_err("Df cstate control is supported with 40.50 and later SMC fw!\n");
+		return -EINVAL;
+	}
+
+	ret = smum_send_msg_to_smc_with_parameter(hwmgr, PPSMC_MSG_DFCstateControl, state);
+	if (ret)
+		pr_err("SetDfCstate failed!\n");
+
+	return ret;
+}
+
+static int vega20_set_xgmi_pstate(struct pp_hwmgr *hwmgr,
+				  uint32_t pstate)
+{
+	int ret;
+
+	ret = smum_send_msg_to_smc_with_parameter(hwmgr,
+						  PPSMC_MSG_SetXgmiMode,
+						  pstate ? XGMI_MODE_PSTATE_D0 : XGMI_MODE_PSTATE_D3);
+	if (ret)
+		pr_err("SetXgmiPstate failed!\n");
+
+	return ret;
+}
+
 static const struct pp_hwmgr_func vega20_hwmgr_funcs = {
 	/* init/fini related */
 	.backend_init = vega20_hwmgr_backend_init,
@@ -4175,6 +4256,10 @@ static const struct pp_hwmgr_func vega20_hwmgr_funcs = {
 	.get_asic_baco_capability = vega20_baco_get_capability,
 	.get_asic_baco_state = vega20_baco_get_state,
 	.set_asic_baco_state = vega20_baco_set_state,
+	.set_mp1_state = vega20_set_mp1_state,
+	.smu_i2c_bus_access = vega20_smu_i2c_bus_access,
+	.set_df_cstate = vega20_set_df_cstate,
+	.set_xgmi_pstate = vega20_set_xgmi_pstate,
 };
 
 int vega20_hwmgr_init(struct pp_hwmgr *hwmgr)

@@ -1,4 +1,4 @@
-/**
+/*
  * \file drm_memory.c
  * Memory management wrappers for DRM
  *
@@ -40,6 +40,7 @@
 #include <xen/xen.h>
 
 #include <drm/drm_agpsupport.h>
+#include <drm/drm_cache.h>
 #include <drm/drm_device.h>
 
 #include "drm_legacy.h"

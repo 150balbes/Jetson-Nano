@@ -9,17 +9,17 @@
 #include <linux/random.h>
 #include <linux/seqlock.h>
 
-#include "i915_gem_batch_pool.h"
 #include "i915_pmu.h"
 #include "i915_reg.h"
 #include "i915_request.h"
 #include "i915_selftest.h"
-#include "i915_timeline.h"
+#include "gt/intel_timeline.h"
 #include "intel_engine_types.h"
 #include "intel_gpu_commands.h"
 #include "intel_workarounds.h"
 
 struct drm_printer;
+struct intel_gt;
 
 /* Early gen2 devices have a cacheline of just 32 bytes, using 64 is overkill,
  * but keeps the logic simple. Indeed, the whole purpose of this macro is just
@@ -51,7 +51,7 @@ struct drm_printer;
 #define ENGINE_READ16(...)	__ENGINE_READ_OP(read16, __VA_ARGS__)
 #define ENGINE_READ(...)	__ENGINE_READ_OP(read, __VA_ARGS__)
 #define ENGINE_READ_FW(...)	__ENGINE_READ_OP(read_fw, __VA_ARGS__)
-#define ENGINE_POSTING_READ(...) __ENGINE_READ_OP(posting_read, __VA_ARGS__)
+#define ENGINE_POSTING_READ(...) __ENGINE_READ_OP(posting_read_fw, __VA_ARGS__)
 #define ENGINE_POSTING_READ16(...) __ENGINE_READ_OP(posting_read16, __VA_ARGS__)
 
 #define ENGINE_READ64(engine__, lower_reg__, upper_reg__) \
@@ -90,84 +90,6 @@ struct drm_printer;
 /* seqno size is actually only a uint32, but since we plan to use MI_FLUSH_DW to
  * do the writes, and that must have qw aligned offsets, simply pretend it's 8b.
  */
-enum intel_engine_hangcheck_action {
-	ENGINE_IDLE = 0,
-	ENGINE_WAIT,
-	ENGINE_ACTIVE_SEQNO,
-	ENGINE_ACTIVE_HEAD,
-	ENGINE_ACTIVE_SUBUNITS,
-	ENGINE_WAIT_KICK,
-	ENGINE_DEAD,
-};
-
-static inline const char *
-hangcheck_action_to_str(const enum intel_engine_hangcheck_action a)
-{
-	switch (a) {
-	case ENGINE_IDLE:
-		return "idle";
-	case ENGINE_WAIT:
-		return "wait";
-	case ENGINE_ACTIVE_SEQNO:
-		return "active seqno";
-	case ENGINE_ACTIVE_HEAD:
-		return "active head";
-	case ENGINE_ACTIVE_SUBUNITS:
-		return "active subunits";
-	case ENGINE_WAIT_KICK:
-		return "wait kick";
-	case ENGINE_DEAD:
-		return "dead";
-	}
-
-	return "unknown";
-}
-
-void intel_engines_set_scheduler_caps(struct drm_i915_private *i915);
-
-static inline void
-execlists_set_active(struct intel_engine_execlists *execlists,
-		     unsigned int bit)
-{
-	__set_bit(bit, (unsigned long *)&execlists->active);
-}
-
-static inline bool
-execlists_set_active_once(struct intel_engine_execlists *execlists,
-			  unsigned int bit)
-{
-	return !__test_and_set_bit(bit, (unsigned long *)&execlists->active);
-}
-
-static inline void
-execlists_clear_active(struct intel_engine_execlists *execlists,
-		       unsigned int bit)
-{
-	__clear_bit(bit, (unsigned long *)&execlists->active);
-}
-
-static inline void
-execlists_clear_all_active(struct intel_engine_execlists *execlists)
-{
-	execlists->active = 0;
-}
-
-static inline bool
-execlists_is_active(const struct intel_engine_execlists *execlists,
-		    unsigned int bit)
-{
-	return test_bit(bit, (unsigned long *)&execlists->active);
-}
-
-void execlists_user_begin(struct intel_engine_execlists *execlists,
-			  const struct execlist_port *port);
-void execlists_user_end(struct intel_engine_execlists *execlists);
-
-void
-execlists_cancel_port_requests(struct intel_engine_execlists * const execlists);
-
-struct i915_request *
-execlists_unwind_incomplete_requests(struct intel_engine_execlists *execlists);
 
 static inline unsigned int
 execlists_num_ports(const struct intel_engine_execlists * const execlists)
@@ -175,20 +97,28 @@ execlists_num_ports(const struct intel_engine_execlists * const execlists)
 	return execlists->port_mask + 1;
 }
 
-static inline struct execlist_port *
-execlists_port_complete(struct intel_engine_execlists * const execlists,
-			struct execlist_port * const port)
+static inline struct i915_request *
+execlists_active(const struct intel_engine_execlists *execlists)
 {
-	const unsigned int m = execlists->port_mask;
-
-	GEM_BUG_ON(port_index(port, execlists) != 0);
-	GEM_BUG_ON(!execlists_is_active(execlists, EXECLISTS_ACTIVE_USER));
-
-	memmove(port, port + 1, m * sizeof(struct execlist_port));
-	memset(port + m, 0, sizeof(struct execlist_port));
-
-	return port;
+	return *READ_ONCE(execlists->active);
 }
+
+static inline void
+execlists_active_lock_bh(struct intel_engine_execlists *execlists)
+{
+	local_bh_disable(); /* prevent local softirq and lock recursion */
+	tasklet_lock(&execlists->tasklet);
+}
+
+static inline void
+execlists_active_unlock_bh(struct intel_engine_execlists *execlists)
+{
+	tasklet_unlock(&execlists->tasklet);
+	local_bh_enable(); /* restore softirq, and kick ksoftirqd! */
+}
+
+struct i915_request *
+execlists_unwind_incomplete_requests(struct intel_engine_execlists *execlists);
 
 static inline u32
 intel_read_status_page(const struct intel_engine_cs *engine, int reg)
@@ -243,128 +173,13 @@ intel_write_status_page(struct intel_engine_cs *engine, int reg, u32 value)
 #define I915_HWS_CSB_WRITE_INDEX	0x1f
 #define CNL_HWS_CSB_WRITE_INDEX		0x2f
 
-struct intel_ring *
-intel_engine_create_ring(struct intel_engine_cs *engine,
-			 struct i915_timeline *timeline,
-			 int size);
-int intel_ring_pin(struct intel_ring *ring);
-void intel_ring_reset(struct intel_ring *ring, u32 tail);
-unsigned int intel_ring_update_space(struct intel_ring *ring);
-void intel_ring_unpin(struct intel_ring *ring);
-void intel_ring_free(struct kref *ref);
-
-static inline struct intel_ring *intel_ring_get(struct intel_ring *ring)
-{
-	kref_get(&ring->ref);
-	return ring;
-}
-
-static inline void intel_ring_put(struct intel_ring *ring)
-{
-	kref_put(&ring->ref, intel_ring_free);
-}
-
 void intel_engine_stop(struct intel_engine_cs *engine);
 void intel_engine_cleanup(struct intel_engine_cs *engine);
 
-int __must_check intel_ring_cacheline_align(struct i915_request *rq);
-
-u32 __must_check *intel_ring_begin(struct i915_request *rq, unsigned int n);
-
-static inline void intel_ring_advance(struct i915_request *rq, u32 *cs)
-{
-	/* Dummy function.
-	 *
-	 * This serves as a placeholder in the code so that the reader
-	 * can compare against the preceding intel_ring_begin() and
-	 * check that the number of dwords emitted matches the space
-	 * reserved for the command packet (i.e. the value passed to
-	 * intel_ring_begin()).
-	 */
-	GEM_BUG_ON((rq->ring->vaddr + rq->ring->emit) != cs);
-}
-
-static inline u32 intel_ring_wrap(const struct intel_ring *ring, u32 pos)
-{
-	return pos & (ring->size - 1);
-}
-
-static inline bool
-intel_ring_offset_valid(const struct intel_ring *ring,
-			unsigned int pos)
-{
-	if (pos & -ring->size) /* must be strictly within the ring */
-		return false;
-
-	if (!IS_ALIGNED(pos, 8)) /* must be qword aligned */
-		return false;
-
-	return true;
-}
-
-static inline u32 intel_ring_offset(const struct i915_request *rq, void *addr)
-{
-	/* Don't write ring->size (equivalent to 0) as that hangs some GPUs. */
-	u32 offset = addr - rq->ring->vaddr;
-	GEM_BUG_ON(offset > rq->ring->size);
-	return intel_ring_wrap(rq->ring, offset);
-}
-
-static inline void
-assert_ring_tail_valid(const struct intel_ring *ring, unsigned int tail)
-{
-	GEM_BUG_ON(!intel_ring_offset_valid(ring, tail));
-
-	/*
-	 * "Ring Buffer Use"
-	 *	Gen2 BSpec "1. Programming Environment" / 1.4.4.6
-	 *	Gen3 BSpec "1c Memory Interface Functions" / 2.3.4.5
-	 *	Gen4+ BSpec "1c Memory Interface and Command Stream" / 5.3.4.5
-	 * "If the Ring Buffer Head Pointer and the Tail Pointer are on the
-	 * same cacheline, the Head Pointer must not be greater than the Tail
-	 * Pointer."
-	 *
-	 * We use ring->head as the last known location of the actual RING_HEAD,
-	 * it may have advanced but in the worst case it is equally the same
-	 * as ring->head and so we should never program RING_TAIL to advance
-	 * into the same cacheline as ring->head.
-	 */
-#define cacheline(a) round_down(a, CACHELINE_BYTES)
-	GEM_BUG_ON(cacheline(tail) == cacheline(ring->head) &&
-		   tail < ring->head);
-#undef cacheline
-}
-
-static inline unsigned int
-intel_ring_set_tail(struct intel_ring *ring, unsigned int tail)
-{
-	/* Whilst writes to the tail are strictly order, there is no
-	 * serialisation between readers and the writers. The tail may be
-	 * read by i915_request_retire() just as it is being updated
-	 * by execlists, as although the breadcrumb is complete, the context
-	 * switch hasn't been seen.
-	 */
-	assert_ring_tail_valid(ring, tail);
-	ring->tail = tail;
-	return tail;
-}
-
-static inline unsigned int
-__intel_ring_space(unsigned int head, unsigned int tail, unsigned int size)
-{
-	/*
-	 * "If the Ring Buffer Head Pointer and the Tail Pointer are on the
-	 * same cacheline, the Head Pointer must not be greater than the Tail
-	 * Pointer."
-	 */
-	GEM_BUG_ON(!is_power_of_2(size));
-	return (head - tail - CACHELINE_BYTES) & (size - 1);
-}
-
-int intel_engines_init_mmio(struct drm_i915_private *i915);
-int intel_engines_setup(struct drm_i915_private *i915);
-int intel_engines_init(struct drm_i915_private *i915);
-void intel_engines_cleanup(struct drm_i915_private *i915);
+int intel_engines_init_mmio(struct intel_gt *gt);
+int intel_engines_setup(struct intel_gt *gt);
+int intel_engines_init(struct intel_gt *gt);
+void intel_engines_cleanup(struct intel_gt *gt);
 
 int intel_engine_init_common(struct intel_engine_cs *engine);
 void intel_engine_cleanup_common(struct intel_engine_cs *engine);
@@ -388,10 +203,6 @@ void intel_engine_init_execlists(struct intel_engine_cs *engine);
 void intel_engine_init_breadcrumbs(struct intel_engine_cs *engine);
 void intel_engine_fini_breadcrumbs(struct intel_engine_cs *engine);
 
-void intel_engine_pin_breadcrumbs_irq(struct intel_engine_cs *engine);
-void intel_engine_unpin_breadcrumbs_irq(struct intel_engine_cs *engine);
-
-void intel_engine_signal_breadcrumbs(struct intel_engine_cs *engine);
 void intel_engine_disarm_breadcrumbs(struct intel_engine_cs *engine);
 
 static inline void
@@ -456,19 +267,19 @@ gen8_emit_ggtt_write(u32 *cs, u32 value, u32 gtt_offset, u32 flags)
 	return cs;
 }
 
-static inline void intel_engine_reset(struct intel_engine_cs *engine,
-				      bool stalled)
+static inline void __intel_engine_reset(struct intel_engine_cs *engine,
+					bool stalled)
 {
 	if (engine->reset.reset)
 		engine->reset.reset(engine, stalled);
 	engine->serial++; /* contexts lost */
 }
 
+bool intel_engines_are_idle(struct intel_gt *gt);
 bool intel_engine_is_idle(struct intel_engine_cs *engine);
-bool intel_engines_are_idle(struct drm_i915_private *dev_priv);
+void intel_engine_flush_submission(struct intel_engine_cs *engine);
 
-void intel_engines_reset_default_submission(struct drm_i915_private *i915);
-unsigned int intel_engines_has_context_isolation(struct drm_i915_private *i915);
+void intel_engines_reset_default_submission(struct intel_gt *gt);
 
 bool intel_engine_can_store_dword(struct intel_engine_cs *engine);
 
@@ -476,64 +287,6 @@ __printf(3, 4)
 void intel_engine_dump(struct intel_engine_cs *engine,
 		       struct drm_printer *m,
 		       const char *header, ...);
-
-struct intel_engine_cs *
-intel_engine_lookup_user(struct drm_i915_private *i915, u8 class, u8 instance);
-
-static inline void intel_engine_context_in(struct intel_engine_cs *engine)
-{
-	unsigned long flags;
-
-	if (READ_ONCE(engine->stats.enabled) == 0)
-		return;
-
-	write_seqlock_irqsave(&engine->stats.lock, flags);
-
-	if (engine->stats.enabled > 0) {
-		if (engine->stats.active++ == 0)
-			engine->stats.start = ktime_get();
-		GEM_BUG_ON(engine->stats.active == 0);
-	}
-
-	write_sequnlock_irqrestore(&engine->stats.lock, flags);
-}
-
-static inline void intel_engine_context_out(struct intel_engine_cs *engine)
-{
-	unsigned long flags;
-
-	if (READ_ONCE(engine->stats.enabled) == 0)
-		return;
-
-	write_seqlock_irqsave(&engine->stats.lock, flags);
-
-	if (engine->stats.enabled > 0) {
-		ktime_t last;
-
-		if (engine->stats.active && --engine->stats.active == 0) {
-			/*
-			 * Decrement the active context count and in case GPU
-			 * is now idle add up to the running total.
-			 */
-			last = ktime_sub(ktime_get(), engine->stats.start);
-
-			engine->stats.total = ktime_add(engine->stats.total,
-							last);
-		} else if (engine->stats.active == 0) {
-			/*
-			 * After turning on engine stats, context out might be
-			 * the first event in which case we account from the
-			 * time stats gathering was turned on.
-			 */
-			last = ktime_sub(ktime_get(), engine->stats.enabled_at);
-
-			engine->stats.total = ktime_add(engine->stats.total,
-							last);
-		}
-	}
-
-	write_sequnlock_irqrestore(&engine->stats.lock, flags);
-}
 
 int intel_enable_engine_stats(struct intel_engine_cs *engine);
 void intel_disable_engine_stats(struct intel_engine_cs *engine);
@@ -570,5 +323,23 @@ void intel_engine_init_active(struct intel_engine_cs *engine,
 #define ENGINE_PHYSICAL	0
 #define ENGINE_MOCK	1
 #define ENGINE_VIRTUAL	2
+
+static inline bool
+intel_engine_has_preempt_reset(const struct intel_engine_cs *engine)
+{
+	if (!IS_ACTIVE(CONFIG_DRM_I915_PREEMPT_TIMEOUT))
+		return false;
+
+	return intel_engine_has_preemption(engine);
+}
+
+static inline bool
+intel_engine_has_timeslices(const struct intel_engine_cs *engine)
+{
+	if (!IS_ACTIVE(CONFIG_DRM_I915_TIMESLICE_DURATION))
+		return false;
+
+	return intel_engine_has_semaphores(engine);
+}
 
 #endif /* _INTEL_RINGBUFFER_H_ */
