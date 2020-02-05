@@ -48,8 +48,8 @@
 #include <dt-bindings/pinctrl/sun4i-a10.h>
 
 / {
-	model = "Xunlong Orange Pi PC 2";
-	compatible = "xunlong,orangepi-pc2", "allwinner,sun50i-h5";
+	model = "FriendlyElec NanoPi K1 Plus";
+	compatible = "friendlyelec,nanopi-k1-plus", "allwinner,sun50i-h5";
 
 	reg_vcc3v3: vcc3v3 {
 		compatible = "regulator-fixed";
@@ -81,16 +81,17 @@
 	leds {
 		compatible = "gpio-leds";
 
+		status {
+			label = "nanopi:green:status";
+			gpios = <&pio 0 10 GPIO_ACTIVE_HIGH>;
+			linux,default-trigger = "heartbeat";
+			};
 		pwr {
-			label = "orangepi:green:pwr";
+			label = "nanopi:red:pwr";
 			gpios = <&r_pio 0 10 GPIO_ACTIVE_HIGH>;
 			default-state = "on";
 		};
 
-		status {
-			label = "orangepi:red:status";
-			gpios = <&pio 0 20 GPIO_ACTIVE_HIGH>;
-		};
 	};
 
 	r-gpio-keys {
@@ -98,13 +99,15 @@
 
 		sw4 {
 			label = "sw4";
-			linux,code = <KEY_POWER>;
+			linux,code = <BTN_0>;
 			gpios = <&r_pio 0 3 GPIO_ACTIVE_LOW>;
 		};
 	};
 
 	reg_gmac_3v3: gmac-3v3 {
 		compatible = "regulator-fixed";
+		pinctrl-names = "default";
+		pinctrl-0 = <&gmac_power_pin_nanopi>;
 		regulator-name = "gmac-3v3";
 		regulator-min-microvolt = <3300000>;
 		regulator-max-microvolt = <3300000>;
@@ -122,6 +125,31 @@
 		gpio = <&r_pio 0 2 GPIO_ACTIVE_HIGH>; /* PL2 */
 		status = "okay";
 	};
+
+	wifi_pwrseq: wifi_pwrseq {
+        compatible = "mmc-pwrseq-simple";
+        pinctrl-names = "default";
+        pinctrl-0 = <&wifi_en_npi>;
+        reset-gpios = <&r_pio 0 7 GPIO_ACTIVE_LOW>; /* PL7 */
+        post-power-on-delay-ms = <200>;
+    };
+
+	rfkill_bt {
+		compatible = "rfkill-gpio";
+		pinctrl-names = "default";
+		pinctrl-0 = <&bt_pwr_pin>;
+		reset-gpios = <&pio 6 13 GPIO_ACTIVE_HIGH>; /* PG13 */
+		clocks = <&osc32k>;
+		clock-frequency = <32768>;
+		rfkill-name = "sunxi-bt";
+		rfkill-type = "bluetooth";
+	};
+
+	pcm5102a: pcm5102a-codec {
+        #sound-dai-cells = <0>;
+        compatible = "ti,pcm5102a";
+        status = "disabled";
+    };
 };
 
 &cpu0 {
@@ -156,30 +184,22 @@
 	status = "okay";
 };
 
+&external_mdio {
+	ext_rgmii_phy: ethernet-phy@1 {
+		compatible = "ethernet-phy-ieee802.3-c22";
+		reg = <0>;
+	};
+};
+
 &emac {
 	pinctrl-names = "default";
 	pinctrl-0 = <&emac_rgmii_pins>;
 	phy-supply = <&reg_gmac_3v3>;
 	phy-handle = <&ext_rgmii_phy>;
 	phy-mode = "rgmii";
+	local-mac-address = [ 00 00 00 00 00 00 ];
+	allwinner,leds-active-low;
 	status = "okay";
-};
-
-&external_mdio {
-	ext_rgmii_phy: ethernet-phy@1 {
-		compatible = "ethernet-phy-ieee802.3-c22";
-		reg = <1>;
-	};
-};
-
-&hdmi {
-	status = "okay";
-};
-
-&hdmi_out {
-	hdmi_out_con: endpoint {
-		remote-endpoint = <&hdmi_con_in>;
-	};
 };
 
 &ir {
@@ -195,6 +215,80 @@
 	status = "okay";
 };
 
+&mmc1 {
+    vmmc-supply = <&reg_vcc3v3>;
+    vqmmc-supply = <&reg_vcc3v3>;
+    mmc-pwrseq = <&wifi_pwrseq>;
+    bus-width = <4>;
+    non-removable;
+    status = "okay";
+    brcmf: bcrmf@1 {
+        reg = <1>;
+        compatible = "brcm,bcm4329-fmac";
+    };
+};
+
+&mmc2 {
+    vmmc-supply = <&reg_vcc3v3>;
+    bus-width = <8>;
+    non-removable;
+    cap-mmc-hw-reset;
+    boot_device = <0>;
+    status = "okay";
+};
+
+&mmc2_8bit_pins {
+    /* Increase drive strength for DDR modes */
+    drive-strength = <40>;
+    /* eMMC is missing pull-ups */
+    bias-pull-up;
+};
+
+&hdmi {
+	status = "okay";
+};
+
+&hdmi_out {
+	hdmi_out_con: endpoint {
+		remote-endpoint = <&hdmi_con_in>;
+	};
+};
+
+
+&pio {
+	leds_npi: led_pins@0 {
+		pins = "PA10";
+		function = "gpio_out";
+	};
+	gmac_power_pin_nanopi: gmac_power_pin@0 {
+		pins = "PD6";
+		function = "gpio_out";
+	};
+	bt_pwr_pin: bt_pwr_pin@0 {
+		pins = "PG13";
+		function = "gpio_out";
+	};
+	spi0_cs_pins: spi0_cs_pins {
+        pins = "PC3", "PA6";
+        function = "gpio_out";
+    };
+};
+&r_pio {
+	leds_r_npi: led_pins@0 {
+		pins = "PL10";
+		function = "gpio_out";
+	};
+	vdd_cpux_r_npi: regulator_pins@0 {
+		allwinner,pins = "PL6";
+		allwinner,function = "gpio_out";
+		allwinner,drive = <SUN4I_PINCTRL_10_MA>;
+		allwinner,pull = <SUN4I_PINCTRL_NO_PULL>;
+	};
+	wifi_en_npi: wifi_en_pin {
+        pins = "PL7";
+        function = "gpio_out";
+    };
+};
 &ohci0 {
 	status = "okay";
 };
@@ -211,21 +305,9 @@
 	status = "okay";
 };
 
-&spi0  {
-	status = "okay";
-
-	flash@0 {
-		#address-cells = <1>;
-		#size-cells = <1>;
-		compatible = "jedec,spi-nor";
-		reg = <0>;
-		spi-max-frequency = <40000000>;
-	};
-};
 
 &r_i2c {
 	status = "okay";
-
 	reg_vdd_cpux: regulator@65 {
 		compatible = "silergy,sy8106a";
 		reg = <0x65>;
@@ -291,6 +373,11 @@
 	status = "disabled";
 };
 
+&uart3 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&uart3_pins>, <&uart3_rts_cts_pins>;
+	status = "okay";
+};
 &usb_otg {
 	dr_mode = "otg";
 	status = "okay";
@@ -301,4 +388,9 @@
 	usb0_id_det-gpios = <&pio 6 12 GPIO_ACTIVE_HIGH>; /* PG12 */
 	usb0_vbus-supply = <&reg_usb0_vbus>;
 	status = "okay";
+};
+
+&i2s0 {
+	sound-dai = <&pcm5102a>;
+	status = "disabled";
 };

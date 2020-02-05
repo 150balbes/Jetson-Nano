@@ -1,4 +1,5 @@
 /*
+ * Copyright (C) 2017 Antony Antony <antony@phenome.org>
  * Copyright (C) 2016 ARM Ltd.
  *
  * This file is dual-licensed: you can use it either under the terms
@@ -48,15 +49,8 @@
 #include <dt-bindings/pinctrl/sun4i-a10.h>
 
 / {
-	model = "Xunlong Orange Pi PC 2";
-	compatible = "xunlong,orangepi-pc2", "allwinner,sun50i-h5";
-
-	reg_vcc3v3: vcc3v3 {
-		compatible = "regulator-fixed";
-		regulator-name = "vcc3v3";
-		regulator-min-microvolt = <3300000>;
-		regulator-max-microvolt = <3300000>;
-	};
+	model = "FriendlyARM NanoPi NEO Core2";
+	compatible = "friendlyarm,nanopi-neo-core2", "allwinner,sun50i-h5";
 
 	aliases {
 		ethernet0 = &emac;
@@ -67,44 +61,25 @@
 		stdout-path = "serial0:115200n8";
 	};
 
-	connector {
-		compatible = "hdmi-connector";
-		type = "a";
-
-		port {
-			hdmi_con_in: endpoint {
-				remote-endpoint = <&hdmi_out_con>;
-			};
-		};
-	};
-
 	leds {
 		compatible = "gpio-leds";
 
 		pwr {
-			label = "orangepi:green:pwr";
-			gpios = <&r_pio 0 10 GPIO_ACTIVE_HIGH>;
-			default-state = "on";
+			label = "nanopi:red:pwr";
+			gpios = <&r_pio 0 10 GPIO_ACTIVE_HIGH>; /* PL10 */
+			linux,default-trigger = "default-on";
 		};
 
 		status {
-			label = "orangepi:red:status";
-			gpios = <&pio 0 20 GPIO_ACTIVE_HIGH>;
-		};
-	};
-
-	r-gpio-keys {
-		compatible = "gpio-keys";
-
-		sw4 {
-			label = "sw4";
-			linux,code = <KEY_POWER>;
-			gpios = <&r_pio 0 3 GPIO_ACTIVE_LOW>;
+			label = "nanopi:green:status";
+			gpios = <&pio 0 10 GPIO_ACTIVE_HIGH>; /* PA10 */
+			linux,default-trigger = "heartbeat";
 		};
 	};
 
 	reg_gmac_3v3: gmac-3v3 {
 		compatible = "regulator-fixed";
+		pinctrl-names = "default";
 		regulator-name = "gmac-3v3";
 		regulator-min-microvolt = <3300000>;
 		regulator-max-microvolt = <3300000>;
@@ -113,19 +88,23 @@
 		gpio = <&pio 3 6 GPIO_ACTIVE_HIGH>;
 	};
 
-	reg_usb0_vbus: usb0-vbus {
+	reg_vcc3v3: vcc3v3 {
 		compatible = "regulator-fixed";
-		regulator-name = "usb0-vbus";
-		regulator-min-microvolt = <5000000>;
-		regulator-max-microvolt = <5000000>;
-		enable-active-high;
-		gpio = <&r_pio 0 2 GPIO_ACTIVE_HIGH>; /* PL2 */
-		status = "okay";
+		regulator-name = "vcc3v3";
+		regulator-min-microvolt = <3300000>;
+		regulator-max-microvolt = <3300000>;
+	};
+
+	wifi_pwrseq: wifi_pwrseq {
+		compatible = "mmc-pwrseq-simple";
+		pinctrl-names = "default";
+		reset-gpios = <&r_pio 0 7 GPIO_ACTIVE_LOW>; /* PL7 */
+		post-power-on-delay-ms = <200>;
 	};
 };
 
 &cpu0 {
-	cpu-supply = <&reg_vdd_cpux>;
+	cpu-supply = <&vdd_cpux>;
 };
 
 &codec {
@@ -136,19 +115,7 @@
 	status = "okay";
 };
 
-&de {
-	status = "okay";
-};
-
 &ehci0 {
-	status = "okay";
-};
-
-&ehci1 {
-	status = "okay";
-};
-
-&ehci2 {
 	status = "okay";
 };
 
@@ -166,26 +133,10 @@
 };
 
 &external_mdio {
-	ext_rgmii_phy: ethernet-phy@1 {
+	ext_rgmii_phy: ethernet-phy@7 {
 		compatible = "ethernet-phy-ieee802.3-c22";
-		reg = <1>;
+		reg = <7>;
 	};
-};
-
-&hdmi {
-	status = "okay";
-};
-
-&hdmi_out {
-	hdmi_out_con: endpoint {
-		remote-endpoint = <&hdmi_con_in>;
-	};
-};
-
-&ir {
-	pinctrl-names = "default";
-	pinctrl-0 = <&r_ir_rx_pin>;
-	status = "okay";
 };
 
 &mmc0 {
@@ -195,15 +146,31 @@
 	status = "okay";
 };
 
+&mmc1 {
+	vmmc-supply = <&reg_vcc3v3>;
+	vqmmc-supply = <&reg_vcc3v3>;
+	mmc-pwrseq = <&wifi_pwrseq>;
+	bus-width = <4>;
+	non-removable;
+	status = "okay";
+
+	brcmf: wifi@1 {
+		reg = <1>;
+		compatible = "brcm,bcm4329-fmac";
+	};
+};
+
+&mmc2 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&mmc2_8bit_pins>;
+	vmmc-supply = <&reg_vcc3v3>;
+	bus-width = <8>;
+	non-removable;
+	cap-mmc-hw-reset;
+	status = "okay";
+};
+
 &ohci0 {
-	status = "okay";
-};
-
-&ohci1 {
-	status = "okay";
-};
-
-&ohci2 {
 	status = "okay";
 };
 
@@ -211,35 +178,13 @@
 	status = "okay";
 };
 
-&spi0  {
-	status = "okay";
-
-	flash@0 {
-		#address-cells = <1>;
-		#size-cells = <1>;
-		compatible = "jedec,spi-nor";
-		reg = <0>;
-		spi-max-frequency = <40000000>;
-	};
-};
-
 &r_i2c {
 	status = "okay";
 
-	reg_vdd_cpux: regulator@65 {
+	vdd_cpux: regulator@65 {
 		compatible = "silergy,sy8106a";
 		reg = <0x65>;
-		regulator-name = "vdd-cpux";
-		silergy,fixed-microvolt = <1200000>;
-		/*
-		 * The datasheet uses 1.1V as the minimum value of VDD-CPUX,
-		 * however both the Armbian DVFS table and the official one
-		 * have operating points with voltage under 1.1V, and both
-		 * DVFS table are known to work properly at the lowest
-		 * operating point.
-		 *
-		 * Use 1.0V as the minimum voltage instead.
-		 */
+		silergy,fixed-microvolt = <1000000>;
 		regulator-min-microvolt = <1000000>;
 		regulator-max-microvolt = <1400000>;
 		regulator-ramp-delay = <200>;
@@ -248,57 +193,18 @@
 	};
 };
 
-&spi0 {
-	status = "okay";
-        spi-flash@0 {
-                #address-cells = <1>;
-                #size-cells = <0>;
-                compatible = "jedec,spi-nor";
-                reg = <0>; /* Chip select 0 */
-                spi-max-frequency = <10000000>;
-                status = "okay";
-                partitions {
-                        compatible = "fixed-partitions";
-                        #address-cells = <1>;
-                        #size-cells = <1>;
-                        partition@0 {
-                                label = "uboot";
-                                reg = <0x0 0x100000>;
-                        };
-                        partition@100000 {
-                                label = "env";
-                                reg = <0x100000 0x100000>;
-                        };
-                };
-        };
-};
-
 &uart0 {
 	pinctrl-names = "default";
 	pinctrl-0 = <&uart0_pa_pins>;
 	status = "okay";
 };
 
-&uart1 {
-	pinctrl-names = "default";
-	pinctrl-0 = <&uart1_pins>;
-	status = "disabled";
-};
-
-&uart2 {
-	pinctrl-names = "default";
-	pinctrl-0 = <&uart2_pins>;
-	status = "disabled";
-};
-
 &usb_otg {
-	dr_mode = "otg";
+	dr_mode = "host";
 	status = "okay";
 };
 
 &usbphy {
 	/* USB Type-A ports' VBUS is always on */
-	usb0_id_det-gpios = <&pio 6 12 GPIO_ACTIVE_HIGH>; /* PG12 */
-	usb0_vbus-supply = <&reg_usb0_vbus>;
 	status = "okay";
 };
