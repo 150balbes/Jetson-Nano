@@ -113,6 +113,73 @@
 		pinctrl-0 = <&wifi_reg_on_h>;
 		reset-gpios = <&gpio0 RK_PB2 GPIO_ACTIVE_LOW>;
 	};
+
+	rt5651-sound {
+		compatible = "simple-audio-card";
+		simple-audio-card,name = "realtek,rt5651-codec";
+		simple-audio-card,format = "i2s";
+		simple-audio-card,mclk-fs = <256>;
+		simple-audio-card,widgets =
+			"Microphone", "Mic Jack",
+			"Headphone", "Headphone Jack";
+		simple-audio-card,routing =
+			"Headphone Jack", "HPOL",
+			"Headphone Jack", "HPOR",
+			"Mic Jack", "MIC1";
+		simple-audio-card,cpu {
+			sound-dai = <&i2s0>;
+		};
+		simple-audio-card,codec {
+			sound-dai = <&rt5651>;
+		};
+	};
+
+/* fredly 4
+	rt5651_card: rt5651-sound {
+		status = "okay";
+		compatible = "simple-audio-card";
+		pinctrl-names = "default";
+		pinctrl-0 = <&hp_det>;
+
+		simple-audio-card,name = "realtek,rt5651-codec";
+		simple-audio-card,format = "i2s";
+		simple-audio-card,mclk-fs = <256>;
+		simple-audio-card,hp-det-gpio = <&gpio4 28 GPIO_ACTIVE_HIGH>;
+
+		simple-audio-card,widgets =
+			"Microphone", "Mic Jack",
+			"Headphone", "Headphone Jack";
+		simple-audio-card,routing =
+			"Mic Jack", "MICBIAS1",
+			"IN1P", "Mic Jack",
+			"Headphone Jack", "HPOL",
+			"Headphone Jack", "HPOR";
+
+		simple-audio-card,cpu {
+			sound-dai = <&i2s1>;
+		};
+		simple-audio-card,codec {
+			sound-dai = <&rt5651>;
+		};
+};
+*/
+	spdif-sound {
+		status = "okay";
+		compatible = "simple-audio-card";
+		simple-audio-card,name = "ROCKCHIP,SPDIF";
+		simple-audio-card,cpu {
+			sound-dai = <&spdif>;
+		};
+		simple-audio-card,codec {
+			sound-dai = <&spdif_out>;
+		};
+	};
+
+	spdif_out: spdif-out {
+		compatible = "linux,spdif-dit";
+		#sound-dai-cells = <0>;
+		status = "okay";
+	};
 };
 
 &cpu_b0 {
@@ -436,7 +503,38 @@
 	i2c-scl-rising-time-ns = <150>;
 	i2c-scl-falling-time-ns = <30>;
 	status = "okay";
+
+	rt5651: rt5651@1a {
+		#sound-dai-cells = <0>;
+		compatible = "rockchip,rt5651";
+		reg = <0x1a>;
+		clocks = <&cru SCLK_I2S_8CH_OUT>;
+		clock-names = "mclk";
+		pinctrl-names = "default";
+		pinctrl-0 = <&i2s0_8ch_bus>;
+		status = "okay";
+	};
 };
+
+/* frend 4
+&i2c1 {
+	status = "okay";
+	i2c-scl-rising-time-ns = <150>;
+	i2c-scl-falling-time-ns = <30>;
+	clock-frequency = <200000>;
+
+	rt5651: rt5651@1a {
+		#sound-dai-cells = <0>;
+		compatible = "rockchip,rt5651";
+		reg = <0x1a>;
+		clocks = <&cru SCLK_I2S_8CH_OUT>;
+		clock-names = "mclk";
+		pinctrl-names = "default";
+		pinctrl-0 = <&i2s_8ch_mclk>;
+		status = "okay";
+	};
+};
+*/
 
 &i2c2 {
 	status = "okay";
@@ -462,6 +560,44 @@
 &i2c7 {
 	status = "okay";
 };
+
+&i2s0 {
+	rockchip,playback-channels = <8>;
+	rockchip,capture-channels = <8>;
+	status = "okay";
+};
+
+/* frendly 4
+&i2s0 {
+	status = "okay";
+	rockchip,i2s-broken-burst-len;
+	rockchip,playback-channels = <8>;
+	rockchip,capture-channels = <8>;
+	#sound-dai-cells = <0>;
+};
+*/
+
+&i2s1 {
+	assigned-clocks = <&cru SCLK_I2SOUT_SRC>;
+	assigned-clock-parents = <&cru SCLK_I2S1_8CH>;
+	rockchip,playback-channels = <2>;
+	rockchip,capture-channels = <2>;
+	status = "okay";
+};
+
+/* frend 4
+&i2s1 {
+	assigned-clocks = <&cru SCLK_I2SOUT_SRC>;
+	assigned-clock-parents = <&cru SCLK_I2S1_8CH>;
+};
+&i2s1 {
+	status = "okay";
+	rockchip,i2s-broken-burst-len;
+	rockchip,playback-channels = <2>;
+	rockchip,capture-channels = <2>;
+	#sound-dai-cells = <0>;
+};
+*/
 
 &i2s2 {
 	status = "okay";
