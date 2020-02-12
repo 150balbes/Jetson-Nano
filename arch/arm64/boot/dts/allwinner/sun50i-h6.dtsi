@@ -202,7 +202,8 @@
 		compatible = "simple-audio-card";
 		simple-audio-card,format = "i2s";
 		simple-audio-card,name = "allwinner-hdmi";
-		simple-audio-card,mclk-fs = <256>;
+		simple-audio-card,mclk-fs = <128>;
+		simple-audio-card,frame-inversion;
 
 		simple-audio-card,codec {
 			sound-dai = <&hdmi>;
@@ -430,6 +431,10 @@
 			#address-cells = <1>;
 			#size-cells = <1>;
 
+			ths_calibration: thermal-sensor-calibration@14 {
+				reg = <0x14 0x8>;
+			};
+
 			ephy_calib: ephy_calib@2c {
 				reg = <0x2c 0x2>;
 			};
@@ -437,9 +442,6 @@
 				reg = <0x1c 0x4>;
 			};
 
-			ths_calibration: thermal-sensor-calibration@14 {
-				reg = <0x14 0x6>;
-			};
 		};
 
 		watchdog: watchdog@30090a0 {
@@ -456,7 +458,7 @@
 			compatible = "allwinner,sun50i-h6-pwm";
 			reg = <0x0300a000 0x400>;
 			clocks = <&osc24M>, <&ccu CLK_BUS_PWM>;
-			clock-names = "pwm", "bus";
+			clock-names = "mod", "bus";
 			resets = <&ccu RST_BUS_PWM>;
 			#pwm-cells = <3>;
 			status = "disabled";
@@ -784,6 +786,7 @@
 			resets = <&ccu RST_BUS_I2C3>;
 			pinctrl-names = "default";
 			pinctrl-0 = <&i2c3_pins>;
+			status = "disabled";
 			#address-cells = <1>;
 			#size-cells = <0>;
 
@@ -1210,7 +1213,7 @@
 			#size-cells = <0>;
 		};
 
-		ths: ths@5070400 {
+		ths: thermal-sensor@5070400 {
 			compatible = "allwinner,sun50i-h6-ths";
 			reg = <0x05070400 0x100>;
 			interrupts = <GIC_SPI 15 IRQ_TYPE_LEVEL_HIGH>;

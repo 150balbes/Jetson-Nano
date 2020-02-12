@@ -64,13 +64,12 @@
 		pwr {
 			label = "nanopi:green:pwr";
 			gpios = <&r_pio 0 10 GPIO_ACTIVE_HIGH>;
-			linux,default-trigger = "default-on";
+			default-state = "on";
 		};
 
 		status {
 			label = "nanopi:blue:status";
 			gpios = <&pio 0 10 GPIO_ACTIVE_HIGH>;
-			linux,default-trigger = "heartbeat";						   
 		};
 	};
 

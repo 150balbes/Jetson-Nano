@@ -340,6 +340,10 @@
 	};
 };
 
+&r_ir {
+	status = "okay";
+};
+
 /delete-node/ &spi0;
 
 &uart0 {
