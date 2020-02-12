@@ -1025,7 +1025,8 @@ config SND_SOC_RT5645
 	tristate
 
 config SND_SOC_RT5651
-	tristate
+	tristate "Realtek ALC5651 CODEC"
+	depends on I2C
 
 config SND_SOC_RT5659
 	tristate
