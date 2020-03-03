@@ -20,6 +20,8 @@
 #include <linux/slab.h>
 #include <linux/thermal.h>
 
+#include "thermal_hwmon.h"
+
 #define MAX_SENSOR_NUM	4
 
 #define FT_TEMP_MASK				GENMASK(11, 0)
@@ -54,9 +56,6 @@
 #define SUN50I_H6_THS_DATA_IRQ_STS(x)		BIT(x)
 
 /* millidegree celsius */
-#define THS_EFUSE_CP_FT_MASK			0x3000
-#define THS_EFUSE_CP_FT_BIT			12
-#define THS_CALIBRATION_IN_FT			1
 
 struct tsensor {
 	struct ths_device		*tmdev;
@@ -88,7 +87,6 @@ struct ths_device {
 	struct clk				*bus_clk;
 	struct clk                              *mod_clk;
 	struct tsensor				sensor[MAX_SENSOR_NUM];
-	u32					cp_ft_flag;
 };
 
 /* Temp Unit: millidegree Celsius */
@@ -244,8 +242,6 @@ static int sun50i_h6_ths_calibrate(struct ths_device *tmdev,
 	 * register values and this will become a calibration offset.
 	 */
 	ft_temp = (caldata[0] & FT_TEMP_MASK) * 100;
-	tmdev->cp_ft_flag = (caldata[0] & THS_EFUSE_CP_FT_MASK)
-		>> THS_EFUSE_CP_FT_BIT;
 
 	for (i = 0; i < tmdev->chip->sensor_num; i++) {
 		int sensor_reg = caldata[i + 1];
@@ -338,7 +334,7 @@ static int sun8i_ths_resource_init(struct ths_device *tmdev)
 		return PTR_ERR(tmdev->regmap);
 
 	if (tmdev->chip->has_bus_clk_reset) {
-		tmdev->reset = devm_reset_control_get(dev, 0);
+		tmdev->reset = devm_reset_control_get(dev, NULL);
 		if (IS_ERR(tmdev->reset))
 			return PTR_ERR(tmdev->reset);
 
@@ -477,6 +473,10 @@ static int sun8i_ths_register(struct ths_device *tmdev)
 							     &ths_ops);
 		if (IS_ERR(tmdev->sensor[i].tzd))
 			return PTR_ERR(tmdev->sensor[i].tzd);
+
+		if (devm_thermal_add_hwmon_sysfs(tmdev->sensor[i].tzd))
+			dev_warn(tmdev->dev,
+				 "Failed to add hwmon sysfs attributes\n");
 	}
 
 	return 0;
@@ -565,7 +565,7 @@ static const struct ths_thermal_chip sun8i_h3_ths = {
 };
 
 static const struct ths_thermal_chip sun8i_r40_ths = {
-	.sensor_num = 3,
+	.sensor_num = 2,
 	.offset = 251086,
 	.scale = 1130,
 	.has_mod_clk = true,

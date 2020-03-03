@@ -32,13 +32,8 @@ static int drm_sun4i_gem_dumb_create(struct drm_file *file_priv,
 				     struct drm_device *drm,
 				     struct drm_mode_create_dumb *args)
 {
-	int min_pitch = DIV_ROUND_UP(args->width * args->bpp, 8);
-
-	/*
-	 * align to 64 bytes since Mali requires it.
-	 */
-	args->pitch = ALIGN(min_pitch, 64);
-	args->size = args->pitch * args->height;
+	/* The hardware only allows even pitches for YUV buffers. */
+	args->pitch = ALIGN(DIV_ROUND_UP(args->width * args->bpp, 8), 2);
 
 	return drm_gem_cma_dumb_create_internal(file_priv, drm, args);
 }

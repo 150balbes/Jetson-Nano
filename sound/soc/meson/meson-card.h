@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 /*
- * Copyright (c) 2019 BayLibre, SAS.
+ * Copyright (c) 2020 BayLibre, SAS.
  * Author: Jerome Brunet <jbrunet@baylibre.com>
  */
 
@@ -17,7 +17,9 @@ struct snd_pcm_hw_params;
 #define DT_PREFIX "amlogic,"
 
 struct meson_card_match_data {
-	int (*add_link)(struct snd_soc_card *, struct device_node *, int *);
+	int (*add_link)(struct snd_soc_card *card,
+			struct device_node *node,
+			int *index);
 };
 
 struct meson_card {

@@ -10,7 +10,7 @@
 
 #include "meson-codec-glue.h"
 
-struct snd_soc_dapm_widget *
+static struct snd_soc_dapm_widget *
 meson_codec_glue_get_input(struct snd_soc_dapm_widget *w)
 {
 	struct snd_soc_dapm_path *p = NULL;
@@ -35,14 +35,12 @@ meson_codec_glue_get_input(struct snd_soc_dapm_widget *w)
 
 	return NULL;
 }
-EXPORT_SYMBOL_GPL(meson_codec_glue_get_input);
 
-void meson_codec_glue_input_set_data(struct snd_soc_dai *dai,
-				     struct meson_codec_glue_input *data)
+static void meson_codec_glue_input_set_data(struct snd_soc_dai *dai,
+					    struct meson_codec_glue_input *data)
 {
 	dai->playback_dma_data = data;
 }
-EXPORT_SYMBOL_GPL(meson_codec_glue_input_set_data);
 
 struct meson_codec_glue_input *
 meson_codec_glue_input_get_data(struct snd_soc_dai *dai)
@@ -51,7 +49,7 @@ meson_codec_glue_input_get_data(struct snd_soc_dai *dai)
 }
 EXPORT_SYMBOL_GPL(meson_codec_glue_input_get_data);
 
-struct meson_codec_glue_input *
+static struct meson_codec_glue_input *
 meson_codec_glue_output_get_input_data(struct snd_soc_dapm_widget *w)
 {
 	struct snd_soc_dapm_widget *in =
@@ -65,7 +63,6 @@ meson_codec_glue_output_get_input_data(struct snd_soc_dapm_widget *w)
 
 	return meson_codec_glue_input_get_data(dai);
 }
-EXPORT_SYMBOL_GPL(meson_codec_glue_output_get_input_data);
 
 int meson_codec_glue_input_hw_params(struct snd_pcm_substream *substream,
 				     struct snd_pcm_hw_params *params,
@@ -77,7 +74,7 @@ int meson_codec_glue_input_hw_params(struct snd_pcm_substream *substream,
 	data->params.rates = snd_pcm_rate_to_rate_bit(params_rate(params));
 	data->params.rate_min = params_rate(params);
 	data->params.rate_max = params_rate(params);
-	data->params.formats = 1 << params_format(params);
+	data->params.formats = 1ULL << (__force int) params_format(params);
 	data->params.channels_min = params_channels(params);
 	data->params.channels_max = params_channels(params);
 	data->params.sig_bits = dai->driver->playback.sig_bits;
@@ -122,6 +119,29 @@ int meson_codec_glue_output_startup(struct snd_pcm_substream *substream,
 	return snd_soc_runtime_set_dai_fmt(rtd, in_data->fmt);
 }
 EXPORT_SYMBOL_GPL(meson_codec_glue_output_startup);
+
+int meson_codec_glue_input_dai_probe(struct snd_soc_dai *dai)
+{
+	struct meson_codec_glue_input *data;
+
+	data = kzalloc(sizeof(*data), GFP_KERNEL);
+	if (!data)
+		return -ENOMEM;
+
+	meson_codec_glue_input_set_data(dai, data);
+	return 0;
+}
+EXPORT_SYMBOL_GPL(meson_codec_glue_input_dai_probe);
+
+int meson_codec_glue_input_dai_remove(struct snd_soc_dai *dai)
+{
+	struct meson_codec_glue_input *data =
+		meson_codec_glue_input_get_data(dai);
+
+	kfree(data);
+	return 0;
+}
+EXPORT_SYMBOL_GPL(meson_codec_glue_input_dai_remove);
 
 MODULE_AUTHOR("Jerome Brunet <jbrunet@baylibre.com>");
 MODULE_DESCRIPTION("Amlogic Codec Glue Helpers");

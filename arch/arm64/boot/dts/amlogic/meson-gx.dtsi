@@ -232,38 +232,15 @@
 				#reset-cells = <1>;
 			};
 
-			aiu: bus@5400 {
-				compatible = "amlogic,aiu-bus", "syscon";
+			aiu: audio-controller@5400 {
+				compatible = "amlogic,aiu";
+				#sound-dai-cells = <2>;
+				sound-name-prefix = "AIU";
 				reg = <0x0 0x5400 0x0 0x2ac>;
+				interrupts = <GIC_SPI 48 IRQ_TYPE_EDGE_RISING>,
+					     <GIC_SPI 50 IRQ_TYPE_EDGE_RISING>;
+				interrupt-names = "i2s", "spdif";
 				status = "disabled";
-
-				i2s_fifo: audio-controller-0 {
-					compatible = "amlogic,aiu-i2s-fifo",
-						     "amlogic,aiu-fifo";
-					sound-name-prefix = "I2S FIFO";
-					interrupts = <GIC_SPI 48 IRQ_TYPE_EDGE_RISING>;
-					#sound-dai-cells = <0>;
-				};
-
-				spdif_fifo: audio-controller-1 {
-					compatible = "amlogic,aiu-spdif-fifo",
-						     "amlogic,aiu-fifo";
-					sound-name-prefix = "SPDIF FIFO";
-					interrupts = <GIC_SPI 50 IRQ_TYPE_EDGE_RISING>;
-					#sound-dai-cells = <0>;
-				};
-
-				i2s_encoder: audio-controller-2 {
-					compatible = "amlogic,aiu-i2s-encode";
-					sound-name-prefix = "I2S ENCODER";
-					#sound-dai-cells = <0>;
-				};
-
-				spdif_encoder: audio-controller-3 {
-					compatible = "amlogic,aiu-spdif-encode";
-					sound-name-prefix = "SPDIF ENCODER";
-					#sound-dai-cells = <0>;
-				};
 			};
 
 			uart_A: serial@84c0 {
@@ -615,6 +592,7 @@
 			#address-cells = <1>;
 			#size-cells = <0>;
 			#sound-dai-cells = <0>;
+			sound-name-prefix = "HDMITX";
 			status = "disabled";
 
 			/* VPU VENC Input */

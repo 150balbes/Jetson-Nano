@@ -225,6 +225,14 @@ v4l2_m2m_buf_done(struct vb2_v4l2_buffer *buf, enum vb2_buffer_state state)
 }
 
 static inline void
+v4l2_m2m_clear_state(struct v4l2_m2m_ctx *m2m_ctx)
+{
+	m2m_ctx->next_buf_last = false;
+	m2m_ctx->is_draining = false;
+	m2m_ctx->has_stopped = false;
+}
+
+static inline void
 v4l2_m2m_mark_stopped(struct v4l2_m2m_ctx *m2m_ctx)
 {
 	m2m_ctx->next_buf_last = false;
@@ -255,7 +263,7 @@ v4l2_m2m_is_last_draining_src_buf(struct v4l2_m2m_ctx *m2m_ctx,
  * v4l2_m2m_last_buffer_done() - marks the buffer with LAST flag and DONE
  *
  * @m2m_ctx: m2m context assigned to the instance given by struct &v4l2_m2m_ctx
- * @buf: pointer to struct &v4l2_buffer
+ * @vbuf: pointer to struct &v4l2_buffer
  */
 void v4l2_m2m_last_buffer_done(struct v4l2_m2m_ctx *m2m_ctx,
 			       struct vb2_v4l2_buffer *vbuf);
@@ -380,7 +388,7 @@ void v4l2_m2m_stop_streaming(struct v4l2_m2m_ctx *m2m_ctx,
  *
  * @file: pointer to struct &file
  * @m2m_ctx: m2m context assigned to the instance given by struct &v4l2_m2m_ctx
- * @dc: pointer to the encoder command
+ * @ec: pointer to the encoder command
  */
 int v4l2_m2m_encoder_cmd(struct file *file, struct v4l2_m2m_ctx *m2m_ctx,
 			 struct v4l2_encoder_cmd *ec);

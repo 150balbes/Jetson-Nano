@@ -10,7 +10,6 @@
 //
 
 static struct rc_map_table vega_s9x[] = {
-
 	{ 0x18, KEY_POWER },
 	{ 0x17, KEY_MUTE }, // mouse
 
@@ -27,7 +26,6 @@ static struct rc_map_table vega_s9x[] = {
 	{ 0x14, KEY_VOLUMEDOWN },
 	{ 0x04, KEY_MENU },
 	{ 0x10, KEY_VOLUMEUP },
-
 };
 
 static struct rc_map_list vega_s9x_map = {

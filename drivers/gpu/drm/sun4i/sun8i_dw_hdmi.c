@@ -227,6 +227,7 @@ static int sun8i_dw_hdmi_bind(struct device *dev, struct device *master,
 
 	plat_data->mode_valid = hdmi->quirks->mode_valid;
 	plat_data->use_drm_infoframe = hdmi->quirks->use_drm_infoframe;
+	plat_data->input_bus_format = MEDIA_BUS_FMT_RGB888_1X24;
 	sun8i_hdmi_phy_set_ops(hdmi->phy, plat_data);
 
 	platform_set_drvdata(pdev, hdmi);

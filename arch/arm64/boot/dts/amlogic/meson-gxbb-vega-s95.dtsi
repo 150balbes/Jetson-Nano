@@ -6,6 +6,7 @@
 #include "meson-gxbb.dtsi"
 #include <dt-bindings/gpio/gpio.h>
 #include <dt-bindings/input/input.h>
+#include <dt-bindings/sound/meson-aiu.h>
 
 / {
 	compatible = "tronsmart,vega-s95", "amlogic,meson-gxbb";
@@ -14,6 +15,20 @@
 		serial0 = &uart_AO;
 		ethernet0 = &ethmac;
 	};
+
+//	dio2133: analog-amplifier {
+//		compatible = "simple-audio-amplifier";
+//		sound-name-prefix = "AU2";
+//		VCC-supply = <&hdmi_5v>;
+//		enable-gpios = <&gpio GPIOH_5 GPIO_ACTIVE_HIGH>;
+//	};
+
+//	spdif_dit: audio-codec-0 {
+//		#sound-dai-cells = <0>;
+//		compatible = "linux,spdif-dit";
+//		status = "okay";
+//		sound-name-prefix = "DIT";
+//	};
 
 	chosen {
 		stdout-path = "serial0:115200n8";
@@ -30,23 +45,51 @@
 		};
 	};
 
-	spdif_dit: audio-codec-0 {
-		#sound-dai-cells = <0>;
-		compatible = "linux,spdif-dit";
-		status = "okay";
-		sound-name-prefix = "DIT";
-	};
-
 	usb_pwr: regulator-usb-pwrs {
 		compatible = "regulator-fixed";
-
 		regulator-name = "USB_PWR";
-
 		regulator-min-microvolt = <5000000>;
 		regulator-max-microvolt = <5000000>;
 
 		gpio = <&gpio GPIODV_24 GPIO_ACTIVE_HIGH>;
 		enable-active-high;
+	};
+
+//	hdmi_5v: regulator-hdmi-5v {
+//		compatible = "regulator-fixed";
+//
+//		regulator-name = "HDMI_5V";
+//		regulator-min-microvolt = <5000000>;
+//		regulator-max-microvolt = <5000000>;
+//
+//		gpio = <&gpio GPIOH_3 GPIO_ACTIVE_HIGH>;
+//		enable-active-high;
+//		regulator-always-on;
+//	};
+
+	p5v0: regulator-p5v0 {
+		compatible = "regulator-fixed";
+
+		regulator-name = "P5V0";
+		regulator-min-microvolt = <5000000>;
+		regulator-max-microvolt = <5000000>;
+		regulator-always-on;
+	};
+
+	hdmi_p5v0: regulator-hdmi_p5v0 {
+		compatible = "regulator-fixed";
+		regulator-name = "HDMI_P5V0";
+		regulator-min-microvolt = <5000000>;
+		regulator-max-microvolt = <5000000>;
+		/* AP2331SA-7 */
+		vin-supply = <&p5v0>;
+	};
+
+	vddio_ao18: regulator-vddio_ao18 {
+		compatible = "regulator-fixed";
+		regulator-name = "VDDIO_AO18";
+		regulator-min-microvolt = <1800000>;
+		regulator-max-microvolt = <1800000>;
 	};
 
 	vddio_boot: regulator-vddio_boot {
@@ -61,13 +104,6 @@
 		regulator-name = "VDDAO_3V3";
 		regulator-min-microvolt = <3300000>;
 		regulator-max-microvolt = <3300000>;
-	};
-
-	vddio_ao18: regulator-vddio_ao18 {
-		compatible = "regulator-fixed";
-		regulator-name = "VDDIO_AO18";
-		regulator-min-microvolt = <1800000>;
-		regulator-max-microvolt = <1800000>;
 	};
 
 	vcc_3v3: regulator-vcc_3v3 {
@@ -89,6 +125,13 @@
 		pwms = <&pwm_ef 0 30518 0>; /* PWM_E at 32.768KHz */
 	};
 
+	sdio_pwrseq: sdio-pwrseq {
+		compatible = "mmc-pwrseq-simple";
+		reset-gpios = <&gpio GPIOX_6 GPIO_ACTIVE_LOW>;
+		clocks = <&wifi32k>;
+		clock-names = "ext_clock";
+	};
+
 	hdmi-connector {
 		compatible = "hdmi-connector";
 		type = "a";
@@ -100,20 +143,17 @@
 		};
 	};
 
-	sdio_pwrseq: sdio-pwrseq {
-		compatible = "mmc-pwrseq-simple";
-		reset-gpios = <&gpio GPIOX_6 GPIO_ACTIVE_LOW>;
-		clocks = <&wifi32k>;
-		clock-names = "ext_clock";
-	};
-
 	sound {
 		compatible = "amlogic,gx-sound-card";
 		model = "AMLGX";
-		audio-routing = "I2S ENCODER Playback", "I2S FIFO Playback",
-				"SPDIF ENCODER I2S IN", "I2S FIFO Playback",
-				"SPDIF ENCODER SPDIF IN", "SPDIF FIFO Playback";
-
+//		audio-aux-devs = <&dio2133>;
+//		audio-widgets = "Line", "Lineout";
+//		audio-routing = "AU2 INL", "ACODEC LOLP",
+//				"AU2 INR", "ACODEC LORP",
+//				"AU2 INL", "ACODEC LOLN",
+//				"AU2 INR", "ACODEC LORN",
+//				"Lineout", "AU2 OUTL",
+//				"Lineout", "AU2 OUTR";
 		assigned-clocks = <&clkc CLKID_MPLL2>,
 				  <&clkc CLKID_MPLL0>,
 				  <&clkc CLKID_MPLL1>;
@@ -124,35 +164,63 @@
 		status = "okay";
 
 		dai-link-0 {
-			sound-dai = <&i2s_fifo>;
+			sound-dai = <&aiu AIU_CPU CPU_I2S_FIFO>;
 		};
 
-		dai-link-1 {
-			sound-dai = <&spdif_fifo>;
-		};
+//		dai-link-1 {
+//			sound-dai = <&aiu AIU_CPU CPU_SPDIF_FIFO>;
+//		};
 
 		dai-link-2 {
-			sound-dai = <&i2s_encoder>;
+			sound-dai = <&aiu AIU_CPU CPU_I2S_ENCODER>;
 			dai-format = "i2s";
-			mclk-fs = <256>;
+			mclk-fs = <512>;
+
+			codec-0 {
+				sound-dai = <&aiu AIU_HDMI CTRL_I2S>;
+			};
+
+//			codec-1 {
+//				sound-dai = <&aiu AIU_ACODEC CTRL_I2S>;
+//			};
+		};
+
+//		dai-link-3 {
+//			sound-dai = <&aiu AIU_CPU CPU_SPDIF_ENCODER>;
+
+//			codec-0 {
+//				sound-dai = <&spdif_dit>;
+//			};
+//		};
+
+		dai-link-4 {
+			sound-dai = <&aiu AIU_HDMI CTRL_OUT>;
 
 			codec-0 {
 				sound-dai = <&hdmi_tx>;
 			};
 		};
 
-		dai-link-3 {
-			sound-dai = <&spdif_encoder>;
+//		dai-link-5 {
+//			sound-dai = <&aiu AIU_ACODEC CTRL_OUT>;
 
-			codec-0 {
-				sound-dai = <&spdif_dit>;
-			};
-		};
+//			codec-0 {
+//				sound-dai = <&acodec>;
+//			};
+//		};
 	};
 };
 
+//&acodec {
+//	AVDD-supply = <&vddio_ao18>;
+//	status = "okay";
+//};
+
 &aiu {
 	status = "okay";
+//	pinctrl-0 = <&spdif_out_h_pins>;
+//	pinctrl-names = "default";
+
 };
 
 &cec_AO {
@@ -166,7 +234,6 @@
 	status = "okay";
 	pinctrl-0 = <&eth_rgmii_pins>;
 	pinctrl-names = "default";
-
 	phy-handle = <&eth_phy0>;
 	phy-mode = "rgmii";
 
@@ -180,6 +247,7 @@
 		eth_phy0: ethernet-phy@0 {
 			/* Realtek RTL8211F (0x001cc916) */
 			reg = <0>;
+
 			reset-assert-us = <10000>;
 			reset-deassert-us = <30000>;
 			reset-gpios = <&gpio GPIOZ_14 GPIO_ACTIVE_LOW>;
@@ -195,20 +263,13 @@
 	status = "okay";
 	pinctrl-0 = <&hdmi_hpd_pins>, <&hdmi_i2c_pins>;
 	pinctrl-names = "default";
+	hdmi-supply = <&hdmi_p5v0>;
 };
 
 &hdmi_tx_tmds_port {
 	hdmi_tx_tmds_out: endpoint {
 	remote-endpoint = <&hdmi_connector_in>;
 	};
-};
-
-&i2s_fifo {
-	status = "okay";
-};
-
-&i2s_encoder {
-	status = "okay";
 };
 
 &ir {
@@ -299,17 +360,7 @@
 	vqmmc-supply = <&vddio_boot>;
 };
 
-&spdif_fifo {
-	status = "okay";
-};
-
-&spdif_encoder {
-	status = "okay";
-	pinctrl-0 = <&spdif_out_y_pins>;
-	pinctrl-names = "default";
-};
-
-/* This is connected to the Bluetooth module: */
+/* This UART is connected to the Bluetooth module */
 &uart_A {
 	status = "okay";
 	pinctrl-0 = <&uart_a_pins>, <&uart_a_cts_rts_pins>;

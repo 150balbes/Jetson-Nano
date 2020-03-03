@@ -28,9 +28,9 @@
 
 &pinctrl_periphs {
 	/*
-	* Make sure the irq pin of the TYPE C controller is not driven
-	* by the SoC.
-	*/
+	 * Make sure the irq pin of the TYPE C controller is not driven
+	 * by the SoC.
+	 */
 	fusb302_irq_pins: fusb302_irq {
 		mux {
 			groups = "GPIODV_0";
@@ -48,7 +48,6 @@
 
 		pinctrl-0 = <&fusb302_irq_pins>;
 		pinctrl-names = "default";
-
 		interrupt-parent = <&gpio_intc>;
 		interrupts = <59 IRQ_TYPE_LEVEL_LOW>;
 

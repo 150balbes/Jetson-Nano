@@ -172,7 +172,7 @@ static int sun4i_pwm_calculate(struct sun4i_pwm_chip *sun4i_pwm,
 			       bool *bypass)
 {
 	u64 clk_rate, div = 0;
-	unsigned int pval, prescaler = 0;
+	unsigned int prescaler = 0;
 
 	clk_rate = clk_get_rate(sun4i_pwm->clk);
 
@@ -203,9 +203,11 @@ static int sun4i_pwm_calculate(struct sun4i_pwm_chip *sun4i_pwm,
 	if (prescaler == 0) {
 		/* Go up from the first divider */
 		for (prescaler = 0; prescaler < PWM_PRESCAL_MASK; prescaler++) {
-			if (!prescaler_table[prescaler])
+			unsigned int pval = prescaler_table[prescaler];
+
+			if (!pval)
 				continue;
-			pval = prescaler_table[prescaler];
+
 			div = clk_rate;
 			do_div(div, pval);
 			div = div * state->period;
@@ -232,9 +234,9 @@ static int sun4i_pwm_apply(struct pwm_chip *chip, struct pwm_device *pwm,
 {
 	struct sun4i_pwm_chip *sun4i_pwm = to_sun4i_pwm_chip(chip);
 	struct pwm_state cstate;
-	u32 ctrl, duty, period, val;
+	u32 ctrl, duty = 0, period = 0, val;
 	int ret;
-	unsigned int delay_us, prescaler;
+	unsigned int delay_us, prescaler = 0;
 	unsigned long now;
 	bool bypass;
 
@@ -248,18 +250,17 @@ static int sun4i_pwm_apply(struct pwm_chip *chip, struct pwm_device *pwm,
 		}
 	}
 
-	spin_lock(&sun4i_pwm->ctrl_lock);
-	ctrl = sun4i_pwm_readl(sun4i_pwm, PWM_CTRL_REG);
-
 	ret = sun4i_pwm_calculate(sun4i_pwm, state, &duty, &period, &prescaler,
 				  &bypass);
 	if (ret) {
 		dev_err(chip->dev, "period exceeds the maximum value\n");
-		spin_unlock(&sun4i_pwm->ctrl_lock);
 		if (!cstate.enabled)
 			clk_disable_unprepare(sun4i_pwm->clk);
 		return ret;
 	}
+
+	spin_lock(&sun4i_pwm->ctrl_lock);
+	ctrl = sun4i_pwm_readl(sun4i_pwm, PWM_CTRL_REG);
 
 	if (sun4i_pwm->data->has_direct_mod_clk_output) {
 		if (bypass) {
@@ -423,7 +424,7 @@ static int sun4i_pwm_probe(struct platform_device *pdev)
 	 */
 	pwm->clk = devm_clk_get_optional(&pdev->dev, "mod");
 	if (IS_ERR(pwm->clk)) {
-		if (PTR_ERR(pwm->rst) != -EPROBE_DEFER)
+		if (PTR_ERR(pwm->clk) != -EPROBE_DEFER)
 			dev_err(&pdev->dev, "get mod clock failed %pe\n",
 				pwm->clk);
 		return PTR_ERR(pwm->clk);
@@ -432,7 +433,7 @@ static int sun4i_pwm_probe(struct platform_device *pdev)
 	if (!pwm->clk) {
 		pwm->clk = devm_clk_get(&pdev->dev, NULL);
 		if (IS_ERR(pwm->clk)) {
-			if (PTR_ERR(pwm->rst) != -EPROBE_DEFER)
+			if (PTR_ERR(pwm->clk) != -EPROBE_DEFER)
 				dev_err(&pdev->dev, "get unnamed clock failed %pe\n",
 					pwm->clk);
 			return PTR_ERR(pwm->clk);
@@ -441,7 +442,7 @@ static int sun4i_pwm_probe(struct platform_device *pdev)
 
 	pwm->bus_clk = devm_clk_get_optional(&pdev->dev, "bus");
 	if (IS_ERR(pwm->bus_clk)) {
-		if (PTR_ERR(pwm->rst) != -EPROBE_DEFER)
+		if (PTR_ERR(pwm->bus_clk) != -EPROBE_DEFER)
 			dev_err(&pdev->dev, "get bus clock failed %pe\n",
 				pwm->bus_clk);
 		return PTR_ERR(pwm->bus_clk);

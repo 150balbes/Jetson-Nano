@@ -32,7 +32,8 @@ void codec_hevc_setup_decode_head(struct amvdec_session *sess, int is_10bit)
 	else
 		amvdec_write_dos(core, HEVCD_MPP_DECOMP_CTL1, 0);
 
-	amvdec_write_dos(core, HEVCD_MPP_DECOMP_CTL2, body_size / 32);
+	if (core->platform->revision < VDEC_REVISION_SM1)
+		amvdec_write_dos(core, HEVCD_MPP_DECOMP_CTL2, body_size / 32);
 	amvdec_write_dos(core, HEVC_CM_BODY_LENGTH, body_size);
 	amvdec_write_dos(core, HEVC_CM_HEADER_OFFSET, body_size);
 	amvdec_write_dos(core, HEVC_CM_HEADER_LENGTH, head_size);

@@ -23,12 +23,15 @@
 
 int meson_rdma_init(struct meson_drm *priv)
 {
-	/* Allocate a 4k buffer */
-	priv->rdma.addr = dma_alloc_coherent(priv->dev, SZ_4K,
-					     &priv->rdma.addr_dma,
-					     GFP_KERNEL);
-	if (!priv->rdma.addr)
-		return -ENOMEM;
+	if (!priv->rdma.addr) {
+		/* Allocate a PAGE buffer */
+		priv->rdma.addr =
+			dma_alloc_coherent(priv->dev, SZ_4K,
+					   &priv->rdma.addr_dma,
+					   GFP_KERNEL);
+		if (!priv->rdma.addr)
+			return -ENOMEM;
+	}
 
 	priv->rdma.offset = 0;
 
@@ -53,7 +56,7 @@ void meson_rdma_free(struct meson_drm *priv)
 			  priv->rdma.addr, priv->rdma.addr_dma);
 
 	priv->rdma.addr = NULL;
-	priv->rdma.addr_dma = (dma_addr_t)NULL;
+	priv->rdma.addr_dma = (dma_addr_t)0;
 }
 
 void meson_rdma_setup(struct meson_drm *priv)

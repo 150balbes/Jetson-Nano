@@ -135,7 +135,6 @@ struct amvdec_codec_ops {
 	void (*recycle)(struct amvdec_core *core, u32 buf_idx);
 	void (*drain)(struct amvdec_session *sess);
 	void (*resume)(struct amvdec_session *sess);
-	u32  (*get_output_size)(struct amvdec_session *sess);
 	const u8 * (*eos_sequence)(u32 *len);
 	irqreturn_t (*isr)(struct amvdec_session *sess);
 	irqreturn_t (*threaded_isr)(struct amvdec_session *sess);

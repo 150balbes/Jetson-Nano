@@ -1,7 +1,5 @@
-// SPDX-License-Identifier: (GPL-2.0+ or MIT)
-/*
- * Copyright (C) 2017 Icenowy Zheng <icenowy@aosc.io>
- */
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+// Copyright (C) 2017 Icenowy Zheng <icenowy@aosc.io>
 
 #include <dt-bindings/interrupt-controller/arm-gic.h>
 #include <dt-bindings/clock/sun50i-h6-ccu.h>
@@ -179,6 +177,16 @@
 		compatible = "fixed-clock";
 		clock-frequency = <32768>;
 		clock-output-names = "ext_osc32k";
+	};
+
+	pmu {
+		compatible = "arm,cortex-a53-pmu",
+			     "arm,armv8-pmuv3";
+		interrupts = <GIC_SPI 140 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 141 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 142 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 143 IRQ_TYPE_LEVEL_HIGH>;
+		interrupt-affinity = <&cpu0>, <&cpu1>, <&cpu2>, <&cpu3>;
 	};
 
 	psci {

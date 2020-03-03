@@ -512,6 +512,7 @@ static int dw_hdmi_rockchip_bind(struct device *dev, struct device *master,
 	hdmi->dev = &pdev->dev;
 	hdmi->chip_data = plat_data->phy_data;
 	plat_data->phy_data = hdmi;
+	plat_data->input_bus_format = MEDIA_BUS_FMT_RGB888_1X24;
 	encoder = &hdmi->encoder;
 
 	encoder->possible_crtcs = drm_of_find_possible_crtcs(drm, dev->of_node);

@@ -425,7 +425,8 @@ struct vp9_frame {
 	int show;
 	int type;
 	int done;
-	int refcount;
+	unsigned int width;
+	unsigned int height;
 };
 
 struct codec_vp9 {
@@ -483,12 +484,7 @@ static int div_r32(s64 m, int n)
 
 static int clip_prob(int p)
 {
-	return (p > 255) ? 255 : (p < 1) ? 1 : p;
-}
-
-static int vp9_clamp(int value, int low, int high)
-{
-	return value < low ? low : (value > high ? high : value);
+	return clamp_val(p, 1, 255);
 }
 
 static int segfeature_active(struct segmentation *seg, int segment_id,
@@ -502,26 +498,6 @@ static int get_segdata(struct segmentation *seg, int segment_id,
 		       enum SEG_LVL_FEATURES feature_id)
 {
 	return seg->feature_data[segment_id][feature_id];
-}
-
-static u32 codec_vp9_get_lcu(int width, int height)
-{
-	int pic_width_64 = ALIGN(width, 64);
-	int pic_height_32 = ALIGN(height, 32);
-	int pic_width_lcu  = (pic_width_64 % LCU_SIZE) ?
-				pic_width_64 / LCU_SIZE  + 1
-				: pic_width_64 / LCU_SIZE;
-	int pic_height_lcu = (pic_height_32 % LCU_SIZE) ?
-				pic_height_32 / LCU_SIZE + 1
-				: pic_height_32 / LCU_SIZE;
-
-	return pic_width_lcu * pic_height_lcu;
-}
-
-static u32 codec_vp9_get_output_size(struct amvdec_session *sess)
-{
-	return ALIGN(codec_vp9_get_lcu(sess->width, sess->height) * 64 * 32,
-		     SZ_64K) << 1;
 }
 
 static void vp9_update_sharpness(struct loop_filter_info_n *lfi,
@@ -576,15 +552,15 @@ vp9_loop_filter_init(struct amvdec_core *core, struct codec_vp9 *vp9)
 		amvdec_write_dos(core, HEVC_DBLK_CFG9, thr);
 	}
 
-	if (core->platform->revision >= VDEC_REVISION_G12A)
-		/* VP9 video format */
-		amvdec_write_dos(core, HEVC_DBLK_CFGB, (0x54 << 8) | BIT(0));
-	else if (core->platform->revision >= VDEC_REVISION_SM1)
+	if (core->platform->revision >= VDEC_REVISION_SM1)
 		amvdec_write_dos(core, HEVC_DBLK_CFGB,
 				 (0x3 << 14) | /* dw fifo thres r and b */
 				 (0x3 << 12) | /* dw fifo thres r or b */
 				 (0x3 << 10) | /* dw fifo thres not r/b */
 				 BIT(0)); /* VP9 video format */
+	else if (core->platform->revision >= VDEC_REVISION_G12A)
+		/* VP9 video format */
+		amvdec_write_dos(core, HEVC_DBLK_CFGB, (0x54 << 8) | BIT(0));
 	else
 		amvdec_write_dos(core, HEVC_DBLK_CFGB, 0x40400001);
 }
@@ -630,9 +606,10 @@ vp9_loop_filter_frame_init(struct amvdec_core *core, struct segmentation *seg,
 		if (segfeature_active(seg, seg_id, SEG_LVL_ALT_LF)) {
 			const int data = get_segdata(seg, seg_id,
 						SEG_LVL_ALT_LF);
-			lvl_seg = vp9_clamp(seg->abs_delta == SEGMENT_ABSDATA ?
-				data : default_filt_lvl + data,
-				0, MAX_LOOP_FILTER);
+			lvl_seg = clamp_t(int,
+					  seg->abs_delta == SEGMENT_ABSDATA ?
+						data : default_filt_lvl + data,
+					  0, MAX_LOOP_FILTER);
 		}
 
 		if (!lf->mode_ref_delta_enabled) {
@@ -648,7 +625,7 @@ vp9_loop_filter_frame_init(struct amvdec_core *core, struct segmentation *seg,
 			const int intra_lvl =
 				lvl_seg + lf->ref_deltas[INTRA_FRAME] * scale;
 			lfi->lvl[seg_id][INTRA_FRAME][0] =
-				vp9_clamp(intra_lvl, 0, MAX_LOOP_FILTER);
+				clamp_val(intra_lvl, 0, MAX_LOOP_FILTER);
 
 			for (ref = LAST_FRAME; ref < MAX_REF_FRAMES; ++ref) {
 				for (mode = 0; mode < MAX_MODE_LF_DELTAS;
@@ -658,7 +635,7 @@ vp9_loop_filter_frame_init(struct amvdec_core *core, struct segmentation *seg,
 						lf->ref_deltas[ref] * scale +
 						lf->mode_deltas[mode] * scale;
 					lfi->lvl[seg_id][ref][mode] =
-						vp9_clamp(inter_lvl, 0,
+						clamp_val(inter_lvl, 0,
 							  MAX_LOOP_FILTER);
 				}
 			}
@@ -684,6 +661,7 @@ static void codec_vp9_flush_output(struct amvdec_session *sess)
 	struct codec_vp9 *vp9 = sess->priv;
 	struct vp9_frame *tmp, *n;
 
+	mutex_lock(&vp9->lock);
 	list_for_each_entry_safe(tmp, n, &vp9->ref_frames_list, list) {
 		if (!tmp->done) {
 			if (tmp->show)
@@ -698,6 +676,7 @@ static void codec_vp9_flush_output(struct amvdec_session *sess)
 		list_del(&tmp->list);
 		kfree(tmp);
 	}
+	mutex_unlock(&vp9->lock);
 }
 
 static u32 codec_vp9_num_pending_bufs(struct amvdec_session *sess)
@@ -844,6 +823,8 @@ static int codec_vp9_start(struct amvdec_session *sess)
 	mutex_init(&vp9->lock);
 	memset(&vp9->ref_frame_map, -1, sizeof(vp9->ref_frame_map));
 	memset(&vp9->next_ref_frame_map, -1, sizeof(vp9->next_ref_frame_map));
+	for (i = 0; i < REFS_PER_FRAME; ++i)
+		vp9->frame_refs[i] = NULL;
 	sess->priv = vp9;
 
 	return 0;
@@ -913,9 +894,9 @@ static void codec_vp9_set_sao(struct amvdec_session *sess,
 	}
 
 	amvdec_write_dos(core, HEVC_SAO_Y_LENGTH,
-			 codec_vp9_get_output_size(sess));
+			 amvdec_get_output_size(sess));
 	amvdec_write_dos(core, HEVC_SAO_C_LENGTH,
-			 (codec_vp9_get_output_size(sess) / 2));
+			 (amvdec_get_output_size(sess) / 2));
 
 	if (core->platform->revision >= VDEC_REVISION_G12A) {
 		amvdec_clear_dos_bits(core, HEVC_DBLK_CFGB,
@@ -969,7 +950,11 @@ static void codec_vp9_set_mpred_mv(struct amvdec_core *core,
 				   struct codec_vp9 *vp9)
 {
 	int mpred_mv_rd_end_addr;
-	int use_prev_frame_mvs = !vp9->prev_frame->intra_only &&
+	int use_prev_frame_mvs = vp9->prev_frame->width ==
+					vp9->cur_frame->width &&
+				 vp9->prev_frame->height ==
+					vp9->cur_frame->height &&
+				 !vp9->prev_frame->intra_only &&
 				 vp9->prev_frame->show &&
 				 vp9->prev_frame->type != KEY_FRAME;
 
@@ -997,54 +982,6 @@ static void codec_vp9_set_mpred_mv(struct amvdec_core *core,
 	amvdec_write_dos(core, HEVC_MPRED_MV_RD_END_ADDR, mpred_mv_rd_end_addr);
 }
 
-static struct vp9_frame *codec_vp9_get_frame_by_idx(struct codec_vp9 *vp9,
-						    int idx)
-{
-	struct vp9_frame *frame;
-
-	list_for_each_entry(frame, &vp9->ref_frames_list, list) {
-		if (frame->index == idx)
-			return frame;
-	}
-
-	return NULL;
-}
-
-static void codec_vp9_inc_ref_count(struct codec_vp9 *vp9, int idx)
-{
-	struct vp9_frame *frame;
-
-	if (idx >= 0)
-		frame = codec_vp9_get_frame_by_idx(vp9, idx);
-	else
-		return;
-
-	if (frame) {
-		frame->refcount++;
-		pr_debug("%d refcount++ = %d\n", idx, frame->refcount);
-	} else {
-		pr_err("%s: Couldn't find VP9 ref %d\n", __func__, idx);
-	}
-}
-
-static void codec_vp9_dec_ref_count(struct codec_vp9 *vp9, int idx)
-{
-	struct vp9_frame *frame;
-
-	if (idx >= 0)
-		frame = codec_vp9_get_frame_by_idx(vp9, idx);
-	else
-		return;
-
-	if (frame) {
-		if (frame->refcount)
-			frame->refcount--;
-		pr_debug("%d refcount-- = %d\n", idx, frame->refcount);
-	} else {
-		pr_err("%s: Couldn't find VP9 ref %d\n", __func__, idx);
-	}
-}
-
 static void codec_vp9_update_next_ref(struct codec_vp9 *vp9)
 {
 	union rpm_param *param = &vp9->rpm_param;
@@ -1058,28 +995,34 @@ static void codec_vp9_update_next_ref(struct codec_vp9 *vp9)
 
 	for (mask = refresh_frame_flags; mask; mask >>= 1) {
 		pr_debug("mask=%08X; ref_index=%d\n", mask, ref_index);
-		if (mask & 1) {
+		if (mask & 1)
 			vp9->next_ref_frame_map[ref_index] = buf_idx;
-			codec_vp9_inc_ref_count(vp9, buf_idx);
-		} else {
+		else
 			vp9->next_ref_frame_map[ref_index] =
 				vp9->ref_frame_map[ref_index];
-		}
-
-		if (vp9->ref_frame_map[ref_index] >= 0)
-			codec_vp9_inc_ref_count(vp9,
-						vp9->ref_frame_map[ref_index]);
 
 		++ref_index;
 	}
 
-	for (; ref_index < REF_FRAMES; ++ref_index) {
+	for (; ref_index < REF_FRAMES; ++ref_index)
 		vp9->next_ref_frame_map[ref_index] =
 			vp9->ref_frame_map[ref_index];
+}
 
-		if (vp9->ref_frame_map[ref_index] >= 0)
-			codec_vp9_inc_ref_count(vp9,
-						vp9->ref_frame_map[ref_index]);
+static void codec_vp9_save_refs(struct codec_vp9 *vp9)
+{
+	union rpm_param *param = &vp9->rpm_param;
+	int i;
+
+	for (i = 0; i < REFS_PER_FRAME; ++i) {
+		const int ref = (param->p.ref_info >>
+				 (((REFS_PER_FRAME - i - 1) * 4) + 1)) & 0x7;
+
+		if (vp9->ref_frame_map[ref] < 0)
+			continue;
+
+		pr_warn("%s: FIXME, would need to save ref %d\n",
+			__func__, vp9->ref_frame_map[ref]);
 	}
 }
 
@@ -1097,12 +1040,6 @@ static void codec_vp9_update_ref(struct codec_vp9 *vp9)
 				0xff : param->p.refresh_frame_flags;
 
 	for (mask = refresh_frame_flags; mask; mask >>= 1) {
-		codec_vp9_dec_ref_count(vp9, vp9->ref_frame_map[ref_index]);
-
-		if ((mask & 1) && vp9->ref_frame_map[ref_index] >= 0)
-			codec_vp9_dec_ref_count(vp9,
-						vp9->ref_frame_map[ref_index]);
-
 		vp9->ref_frame_map[ref_index] =
 			vp9->next_ref_frame_map[ref_index];
 		++ref_index;
@@ -1111,11 +1048,22 @@ static void codec_vp9_update_ref(struct codec_vp9 *vp9)
 	if (param->p.show_existing_frame)
 		return;
 
-	for (; ref_index < REF_FRAMES; ++ref_index) {
-		codec_vp9_dec_ref_count(vp9, vp9->ref_frame_map[ref_index]);
+	for (; ref_index < REF_FRAMES; ++ref_index)
 		vp9->ref_frame_map[ref_index] =
 			vp9->next_ref_frame_map[ref_index];
+}
+
+static struct vp9_frame *codec_vp9_get_frame_by_idx(struct codec_vp9 *vp9,
+						    int idx)
+{
+	struct vp9_frame *frame;
+
+	list_for_each_entry(frame, &vp9->ref_frames_list, list) {
+		if (frame->index == idx)
+			return frame;
 	}
+
+	return NULL;
 }
 
 static void codec_vp9_sync_ref(struct codec_vp9 *vp9)
@@ -1124,14 +1072,14 @@ static void codec_vp9_sync_ref(struct codec_vp9 *vp9)
 	int i;
 
 	for (i = 0; i < REFS_PER_FRAME; ++i) {
-		const int ref =
-			(param->p.ref_info >>
-			 (((REFS_PER_FRAME - i - 1) * 4) + 1)) & 0x7;
+		const int ref = (param->p.ref_info >>
+				 (((REFS_PER_FRAME - i - 1) * 4) + 1)) & 0x7;
 		const int idx = vp9->ref_frame_map[ref];
 
 		vp9->frame_refs[i] = codec_vp9_get_frame_by_idx(vp9, idx);
 		if (!vp9->frame_refs[i])
-			pr_err("%s: Couldn't find VP9 ref %d\n", __func__, idx);
+			pr_warn("%s: couldn't find VP9 ref %d\n", __func__,
+				idx);
 	}
 }
 
@@ -1166,6 +1114,8 @@ static void codec_vp9_set_mc(struct amvdec_session *sess,
 			     struct codec_vp9 *vp9)
 {
 	struct amvdec_core *core = sess->core;
+	u32 scale = 0;
+	u32 sz;
 	int i;
 
 	amvdec_write_dos(core, HEVCD_MPP_ANC_CANVAS_ACCCONFIG_ADDR, 1);
@@ -1179,24 +1129,27 @@ static void codec_vp9_set_mc(struct amvdec_session *sess,
 		if (!vp9->frame_refs[i])
 			continue;
 
-		amvdec_write_dos(core, VP9D_MPP_REFINFO_DATA, vp9->width);
-		amvdec_write_dos(core, VP9D_MPP_REFINFO_DATA, vp9->height);
+		if (vp9->frame_refs[i]->width != vp9->width ||
+		    vp9->frame_refs[i]->height != vp9->height)
+			scale = 1;
+
+		sz = amvdec_am21c_body_size(vp9->frame_refs[i]->width,
+					    vp9->frame_refs[i]->height);
+
 		amvdec_write_dos(core, VP9D_MPP_REFINFO_DATA,
-				 (vp9->width << 14) / vp9->width);
+				 vp9->frame_refs[i]->width);
 		amvdec_write_dos(core, VP9D_MPP_REFINFO_DATA,
-				 (vp9->height << 14) / vp9->height);
-		if (codec_hevc_use_mmu(core->platform->revision,
-				       sess->pixfmt_cap,
-				       vp9->is_10bit))
-			amvdec_write_dos(core, VP9D_MPP_REFINFO_DATA, 0);
-		else
-			amvdec_write_dos(core, VP9D_MPP_REFINFO_DATA,
-					 amvdec_am21c_body_size(vp9->width,
-								vp9->height)
-					 >> 5);
+				 vp9->frame_refs[i]->height);
+		amvdec_write_dos(core, VP9D_MPP_REFINFO_DATA,
+				 (vp9->frame_refs[i]->width << 14) /
+				 vp9->width);
+		amvdec_write_dos(core, VP9D_MPP_REFINFO_DATA,
+				 (vp9->frame_refs[i]->height << 14) /
+				 vp9->height);
+		amvdec_write_dos(core, VP9D_MPP_REFINFO_DATA, sz >> 5);
 	}
 
-	amvdec_write_dos(core, VP9D_MPP_REF_SCALE_ENBL, 0);
+	amvdec_write_dos(core, VP9D_MPP_REF_SCALE_ENBL, scale);
 }
 
 static struct vp9_frame *codec_vp9_get_new_frame(struct amvdec_session *sess)
@@ -1234,7 +1187,8 @@ static struct vp9_frame *codec_vp9_get_new_frame(struct amvdec_session *sess)
 	new_frame->intra_only = param->p.intra_only;
 	new_frame->show = param->p.show_frame;
 	new_frame->type = param->p.frame_type;
-	new_frame->refcount = 0;
+	new_frame->width = vp9->width;
+	new_frame->height = vp9->height;
 	list_add_tail(&new_frame->list, &vp9->ref_frames_list);
 	vp9->frames_num++;
 
@@ -1257,7 +1211,7 @@ static void codec_vp9_rm_noshow_frame(struct amvdec_session *sess)
 	struct vp9_frame *tmp;
 
 	list_for_each_entry(tmp, &vp9->ref_frames_list, list) {
-		if (tmp->show || tmp->refcount)
+		if (tmp->show)
 			continue;
 
 		pr_debug("rm noshow: %u\n", tmp->index);
@@ -1353,7 +1307,9 @@ static void codec_vp9_resume(struct amvdec_session *sess)
 {
 	struct codec_vp9 *vp9 = sess->priv;
 
+	mutex_lock(&vp9->lock);
 	if (codec_hevc_setup_buffers(sess, &vp9->common, vp9->is_10bit)) {
+		mutex_unlock(&vp9->lock);
 		amvdec_abort(sess);
 		return;
 	}
@@ -1362,6 +1318,8 @@ static void codec_vp9_resume(struct amvdec_session *sess)
 	codec_hevc_setup_decode_head(sess, vp9->is_10bit);
 	codec_vp9_process_lf(vp9);
 	codec_vp9_process_frame(sess);
+
+	mutex_unlock(&vp9->lock);
 }
 
 /**
@@ -1377,46 +1335,6 @@ static void codec_vp9_fetch_rpm(struct amvdec_session *sess)
 	for (i = 0; i < RPM_BUF_SIZE; i += 4)
 		for (j = 0; j < 4; j++)
 			vp9->rpm_param.l.data[i + j] = rpm_vaddr[i + 3 - j];
-
-	pr_debug("RPM:\n");
-	pr_debug(" - raw = 0x%64phN\n", vp9->rpm_param.l.data);
-	pr_debug(" - profile = 0x%x\n", vp9->rpm_param.p.profile);
-	pr_debug(" - show_existing_frame = 0x%x\n",
-		 vp9->rpm_param.p.show_existing_frame);
-	pr_debug(" - frame_to_show_idx = 0x%x\n",
-		 vp9->rpm_param.p.frame_to_show_idx);
-	pr_debug(" - frame_type = 0x%x\n", vp9->rpm_param.p.frame_type);
-	pr_debug(" - show_frame = 0x%x\n", vp9->rpm_param.p.show_frame);
-	pr_debug(" - error_resilient_mode = 0x%x\n",
-		 vp9->rpm_param.p.error_resilient_mode);
-	pr_debug(" - intra_only = 0x%x\n", vp9->rpm_param.p.intra_only);
-	pr_debug(" - display_size_present = 0x%x\n",
-		 vp9->rpm_param.p.display_size_present);
-	pr_debug(" - reset_frame_context = 0x%x\n",
-		 vp9->rpm_param.p.reset_frame_context);
-	pr_debug(" - refresh_frame_flags = 0x%x\n",
-		 vp9->rpm_param.p.refresh_frame_flags);
-	pr_debug(" - width = 0x%x\n", vp9->rpm_param.p.width);
-	pr_debug(" - height = 0x%x\n", vp9->rpm_param.p.height);
-	pr_debug(" - display_width = 0x%x\n", vp9->rpm_param.p.display_width);
-	pr_debug(" - display_height = 0x%x\n",
-		 vp9->rpm_param.p.display_height);
-	pr_debug(" - ref_info = 0x%x\n", vp9->rpm_param.p.ref_info);
-	pr_debug(" - same_frame_size = 0x%x\n",
-		 vp9->rpm_param.p.same_frame_size);
-	pr_debug(" - mode_ref_delta_enabled = 0x%x\n",
-		 vp9->rpm_param.p.mode_ref_delta_enabled);
-	pr_debug(" - ref_deltas = 0x%4phD\n", vp9->rpm_param.p.ref_deltas);
-	pr_debug(" - mode_deltas = 0x%2phD\n", vp9->rpm_param.p.mode_deltas);
-	pr_debug(" - filter_level = 0x%x\n", vp9->rpm_param.p.filter_level);
-	pr_debug(" - sharpness_level = 0x%x\n",
-		 vp9->rpm_param.p.sharpness_level);
-	pr_debug(" - bit_depth = 0x%x\n", vp9->rpm_param.p.bit_depth);
-	pr_debug(" - seg_quant_info = 0x%8phD\n",
-		 vp9->rpm_param.p.seg_quant_info);
-	pr_debug(" - seg_enabled = 0x%x\n", vp9->rpm_param.p.seg_enabled);
-	pr_debug(" - seg_abs_delta = 0x%x\n", vp9->rpm_param.p.seg_abs_delta);
-	pr_debug(" - seg_lf_info = 0x%8phD\n", vp9->rpm_param.p.seg_lf_info);
 }
 
 static int codec_vp9_process_rpm(struct codec_vp9 *vp9)
@@ -1424,8 +1342,15 @@ static int codec_vp9_process_rpm(struct codec_vp9 *vp9)
 	union rpm_param *param = &vp9->rpm_param;
 	int src_changed = 0;
 	int is_10bit = 0;
-
-	vp9->lcu_total = codec_vp9_get_lcu(param->p.width, param->p.height);
+	int pic_width_64 = ALIGN(param->p.width, 64);
+	int pic_height_32 = ALIGN(param->p.height, 32);
+	int pic_width_lcu  = (pic_width_64 % LCU_SIZE) ?
+				pic_width_64 / LCU_SIZE  + 1
+				: pic_width_64 / LCU_SIZE;
+	int pic_height_lcu = (pic_height_32 % LCU_SIZE) ?
+				pic_height_32 / LCU_SIZE + 1
+				: pic_height_32 / LCU_SIZE;
+	vp9->lcu_total = pic_width_lcu * pic_height_lcu;
 
 	if (param->p.bit_depth == 10)
 		is_10bit = 1;
@@ -1448,8 +1373,8 @@ static bool codec_vp9_is_ref(struct codec_vp9 *vp9, struct vp9_frame *frame)
 {
 	int i;
 
-	for (i = 0; i < REFS_PER_FRAME; ++i)
-		if (vp9->frame_refs[i] == frame)
+	for (i = 0; i < REF_FRAMES; ++i)
+		if (vp9->ref_frame_map[i] == frame->index)
 			return true;
 
 	return false;
@@ -1469,12 +1394,9 @@ static void codec_vp9_show_frame(struct amvdec_session *sess)
 			amvdec_dst_buf_done(sess, tmp->vbuf, V4L2_FIELD_NONE);
 			tmp->done = 1;
 			vp9->frames_num--;
-			codec_vp9_dec_ref_count(vp9, tmp->index);
 		}
 
-		if (codec_vp9_is_ref(vp9, tmp) ||
-		    tmp == vp9->prev_frame ||
-		    tmp->refcount)
+		if (codec_vp9_is_ref(vp9, tmp) || tmp == vp9->prev_frame)
 			continue;
 
 		pr_debug("deleting %d\n", tmp->index);
@@ -2129,7 +2051,7 @@ static irqreturn_t codec_vp9_threaded_isr(struct amvdec_session *sess)
 	u32 prob_status = amvdec_read_dos(core, VP9_ADAPT_PROB_REG);
 	int i;
 
-	if (!vp9 || sess->should_stop)
+	if (!vp9)
 		return IRQ_HANDLED;
 
 	mutex_lock(&vp9->lock);
@@ -2168,7 +2090,7 @@ static irqreturn_t codec_vp9_threaded_isr(struct amvdec_session *sess)
 	}
 
 	/* Invalidate first 3 refs */
-	for (i = 0; i < 3; ++i)
+	for (i = 0; i < REFS_PER_FRAME ; ++i)
 		vp9->frame_refs[i] = NULL;
 
 	vp9->prev_frame = vp9->cur_frame;
@@ -2177,6 +2099,17 @@ static irqreturn_t codec_vp9_threaded_isr(struct amvdec_session *sess)
 	codec_vp9_fetch_rpm(sess);
 	if (codec_vp9_process_rpm(vp9)) {
 		amvdec_src_change(sess, vp9->width, vp9->height, 16);
+
+		/* No frame is actually processed */
+		vp9->cur_frame = NULL;
+
+		/* Show the remaining frame */
+		codec_vp9_show_frame(sess);
+
+		/* FIXME: Save refs for resized frame */
+		if (vp9->frames_num)
+			codec_vp9_save_refs(vp9);
+
 		goto unlock;
 	}
 
@@ -2202,5 +2135,4 @@ struct amvdec_codec_ops codec_vp9_ops = {
 	.num_pending_bufs = codec_vp9_num_pending_bufs,
 	.drain = codec_vp9_flush_output,
 	.resume = codec_vp9_resume,
-	.get_output_size = codec_vp9_get_output_size,
 };

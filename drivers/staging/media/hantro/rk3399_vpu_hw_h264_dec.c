@@ -485,7 +485,7 @@ void rk3399_vpu_h264_dec_run(struct hantro_ctx *ctx)
 	vdpu_write_relaxed(vpu, hantro_h264_get_ref_buf(ctx, 14), VDPU_REG_REFER14_BASE);
 	vdpu_write_relaxed(vpu, hantro_h264_get_ref_buf(ctx, 15), VDPU_REG_REFER15_BASE);
 
-	hantro_finish_run(ctx);
+	hantro_end_prepare_run(ctx);
 
 	/* Start decoding! */
 	reg = vdpu_read(vpu, VDPU_SWREG(57)) | VDPU_REG_DEC_E(1);

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0
 //
-// Copyright (c) 2019 BayLibre, SAS.
+// Copyright (c) 2020 BayLibre, SAS.
 // Author: Jerome Brunet <jbrunet@baylibre.com>
 
 #include <linux/clk.h>
@@ -73,10 +73,9 @@ static int t9015_dai_set_fmt(struct snd_soc_dai *dai, unsigned int fmt)
 
 	snd_soc_component_update_bits(component, BLOCK_EN, I2S_MODE, val);
 
-	/* Be pretty specific about what is expected */
-	if (((fmt & SND_SOC_DAIFMT_FORMAT_MASK) != SND_SOC_DAIFMT_I2S) ||
-	    ((fmt & SND_SOC_DAIFMT_INV_MASK) != SND_SOC_DAIFMT_NB_NF))
-		return -EINVAL;
+	if (((fmt & SND_SOC_DAIFMT_FORMAT_MASK) != SND_SOC_DAIFMT_I2S) &&
+	    ((fmt & SND_SOC_DAIFMT_FORMAT_MASK) != SND_SOC_DAIFMT_LEFT_J))
+	 	return -EINVAL;
 
 	return 0;
 }
@@ -106,10 +105,10 @@ static const char * const ramp_rate_txt[] = { "Fast", "Slow" };
 static SOC_ENUM_SINGLE_DECL(ramp_rate_enum, VOL_CTRL1, RAMP_RATE,
 			    ramp_rate_txt);
 
-static const char * const dacr_in_txt[] = { "Left", "Right" };
+static const char * const dacr_in_txt[] = { "Right", "Left" };
 static SOC_ENUM_SINGLE_DECL(dacr_in_enum, BLOCK_EN, DACR_SRC, dacr_in_txt);
 
-static const char * const dacl_in_txt[] = { "Right", "Left" };
+static const char * const dacl_in_txt[] = { "Left", "Right" };
 static SOC_ENUM_SINGLE_DECL(dacl_in_enum, BLOCK_EN, DACL_SRC, dacl_in_txt);
 
 static const char * const mono_txt[] = { "Stereo", "Mono"};

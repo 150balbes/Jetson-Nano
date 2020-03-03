@@ -9,6 +9,8 @@
 #include <linux/export.h>
 #include <linux/bitfield.h>
 
+#include <drm/drm_fourcc.h>
+
 #include "meson_drv.h"
 #include "meson_viu.h"
 #include "meson_registers.h"
@@ -336,26 +338,48 @@ void meson_viu_osd1_reset(struct meson_drm *priv)
 	meson_viu_load_matrix(priv);
 }
 
+#define OSD1_MALI_ORDER_ABGR				\
+	(FIELD_PREP(VIU_OSD1_MALI_AFBCD_A_REORDER,	\
+		    VIU_OSD1_MALI_REORDER_A) |		\
+	 FIELD_PREP(VIU_OSD1_MALI_AFBCD_B_REORDER,	\
+		    VIU_OSD1_MALI_REORDER_B) |		\
+	 FIELD_PREP(VIU_OSD1_MALI_AFBCD_G_REORDER,	\
+		    VIU_OSD1_MALI_REORDER_G) |		\
+	 FIELD_PREP(VIU_OSD1_MALI_AFBCD_R_REORDER,	\
+		    VIU_OSD1_MALI_REORDER_R))
+
+#define OSD1_MALI_ORDER_ARGB				\
+	(FIELD_PREP(VIU_OSD1_MALI_AFBCD_A_REORDER,	\
+		    VIU_OSD1_MALI_REORDER_A) |		\
+	 FIELD_PREP(VIU_OSD1_MALI_AFBCD_B_REORDER,	\
+		    VIU_OSD1_MALI_REORDER_R) |		\
+	 FIELD_PREP(VIU_OSD1_MALI_AFBCD_G_REORDER,	\
+		    VIU_OSD1_MALI_REORDER_G) |		\
+	 FIELD_PREP(VIU_OSD1_MALI_AFBCD_R_REORDER,	\
+		    VIU_OSD1_MALI_REORDER_B))
+
 void meson_viu_g12a_enable_osd1_afbc(struct meson_drm *priv)
 {
+	u32 afbc_order = OSD1_MALI_ORDER_ARGB;
+
 	/* Enable Mali AFBC Unpack */
 	writel_bits_relaxed(VIU_OSD1_MALI_UNPACK_EN,
 			    VIU_OSD1_MALI_UNPACK_EN,
 			    priv->io_base + _REG(VIU_OSD1_MALI_UNPACK_CTRL));
+
+	switch (priv->afbcd.format) {
+	case DRM_FORMAT_XBGR8888:
+	case DRM_FORMAT_ABGR8888:
+		afbc_order = OSD1_MALI_ORDER_ABGR;
+		break;
+	}
 
 	/* Setup RGBA Reordering */
 	writel_bits_relaxed(VIU_OSD1_MALI_AFBCD_A_REORDER |
 			    VIU_OSD1_MALI_AFBCD_B_REORDER |
 			    VIU_OSD1_MALI_AFBCD_G_REORDER |
 			    VIU_OSD1_MALI_AFBCD_R_REORDER,
-			    FIELD_PREP(VIU_OSD1_MALI_AFBCD_A_REORDER,
-				       VIU_OSD1_MALI_REORDER_A) |
-			    FIELD_PREP(VIU_OSD1_MALI_AFBCD_B_REORDER,
-				       VIU_OSD1_MALI_REORDER_B) |
-			    FIELD_PREP(VIU_OSD1_MALI_AFBCD_G_REORDER,
-				       VIU_OSD1_MALI_REORDER_G) |
-			    FIELD_PREP(VIU_OSD1_MALI_AFBCD_R_REORDER,
-				       VIU_OSD1_MALI_REORDER_R),
+			    afbc_order,
 			    priv->io_base + _REG(VIU_OSD1_MALI_UNPACK_CTRL));
 
 	/* Select AFBCD path for OSD1 */
@@ -472,7 +496,12 @@ void meson_viu_init(struct meson_drm *priv)
 
 		writel_bits_relaxed(DOLBY_BYPASS_EN(0xc), DOLBY_BYPASS_EN(0xc),
 				    priv->io_base + _REG(DOLBY_PATH_CTRL));
+
+		meson_viu_g12a_disable_osd1_afbc(priv);
 	}
+
+	if (meson_vpu_is_compatible(priv, VPU_COMPATIBLE_GXM))
+		meson_viu_gxm_disable_osd1_afbc(priv);
 
 	priv->viu.osd1_enabled = false;
 	priv->viu.osd1_commit = false;

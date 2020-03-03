@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: (GPL-2.0 OR MIT)
 //
-// Copyright (c) 2019 BayLibre, SAS.
+// Copyright (c) 2020 BayLibre, SAS.
 // Author: Jerome Brunet <jbrunet@baylibre.com>
 
 #include <linux/module.h>
@@ -27,7 +27,7 @@ static const struct snd_soc_pcm_stream codec_params = {
 };
 
 static int gx_card_i2s_be_hw_params(struct snd_pcm_substream *substream,
-				     struct snd_pcm_hw_params *params)
+				    struct snd_pcm_hw_params *params)
 {
 	struct snd_soc_pcm_runtime *rtd = substream->private_data;
 	struct meson_card *priv = snd_soc_card_get_drvdata(rtd->card);
@@ -42,8 +42,8 @@ static const struct snd_soc_ops gx_card_i2s_be_ops = {
 };
 
 static int gx_card_parse_i2s(struct snd_soc_card *card,
-			      struct device_node *node,
-			      int *index)
+			     struct device_node *node,
+			     int *index)
 {
 	struct meson_card *priv = snd_soc_card_get_drvdata(card);
 	struct snd_soc_dai_link *link = &card->dai_link[*index];
@@ -64,24 +64,20 @@ static int gx_card_parse_i2s(struct snd_soc_card *card,
 	return 0;
 }
 
-static int gx_card_cpu_is_playback_fe(struct device_node *np)
+static int gx_card_cpu_identify(struct snd_soc_dai_link_component *c,
+				char *match)
 {
-	return of_device_is_compatible(np, DT_PREFIX "aiu-fifo");
-}
+	if (of_device_is_compatible(c->of_node, DT_PREFIX "aiu")) {
+		if (strstr(c->dai_name, match))
+			return 1;
+	}
 
-static int gx_card_cpu_is_i2s_encoder(struct device_node *np)
-{
-	return of_device_is_compatible(np, DT_PREFIX "aiu-i2s-encode");
-}
-
-static int gx_card_cpu_is_codec(struct device_node *np)
-{
-	return of_device_is_compatible(np, DT_PREFIX "gx-tohdmitx") ||
-		of_device_is_compatible(np, DT_PREFIX "gxl-toacodec");
+	/* dai not matched */
+	return 0;
 }
 
 static int gx_card_add_link(struct snd_soc_card *card, struct device_node *np,
-			     int *index)
+			    int *index)
 {
 	struct snd_soc_dai_link *dai_link = &card->dai_link[*index];
 	struct snd_soc_dai_link_component *cpu;
@@ -95,11 +91,11 @@ static int gx_card_add_link(struct snd_soc_card *card, struct device_node *np,
 	dai_link->num_cpus = 1;
 
 	ret = meson_card_parse_dai(card, np, &dai_link->cpus->of_node,
-				 &dai_link->cpus->dai_name);
+				   &dai_link->cpus->dai_name);
 	if (ret)
 		return ret;
 
-	if (gx_card_cpu_is_playback_fe(dai_link->cpus->of_node))
+	if (gx_card_cpu_identify(dai_link->cpus, "FIFO"))
 		ret = meson_card_set_fe_link(card, dai_link, np, true);
 	else
 		ret = meson_card_set_be_link(card, dai_link, np);
@@ -107,9 +103,12 @@ static int gx_card_add_link(struct snd_soc_card *card, struct device_node *np,
 	if (ret)
 		return ret;
 
-	if (gx_card_cpu_is_i2s_encoder(dai_link->cpus->of_node))
+	/* Check if the cpu is the i2s encoder and parse i2s data */
+	if (gx_card_cpu_identify(dai_link->cpus, "I2S Encoder"))
 		ret = gx_card_parse_i2s(card, np, index);
-	else if (gx_card_cpu_is_codec(dai_link->cpus->of_node))
+
+	/* Or apply codec to codec params if necessary */
+	else if (gx_card_cpu_identify(dai_link->cpus, "CODEC CTRL"))
 		dai_link->params = &codec_params;
 
 	return ret;

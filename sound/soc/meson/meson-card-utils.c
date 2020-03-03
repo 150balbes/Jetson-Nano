@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0
 //
-// Copyright (c) 2019 BayLibre, SAS.
+// Copyright (c) 2020 BayLibre, SAS.
 // Author: Jerome Brunet <jbrunet@baylibre.com>
 
 #include <linux/module.h>
@@ -90,9 +90,9 @@ int meson_card_parse_dai(struct snd_soc_card *card,
 EXPORT_SYMBOL_GPL(meson_card_parse_dai);
 
 static int meson_card_set_link_name(struct snd_soc_card *card,
-				  struct snd_soc_dai_link *link,
-				  struct device_node *node,
-				  const char *prefix)
+				    struct snd_soc_dai_link *link,
+				    struct device_node *node,
+				    const char *prefix)
 {
 	char *name = devm_kasprintf(card->dev, GFP_KERNEL, "%s.%s",
 				    prefix, node->full_name);
@@ -104,7 +104,6 @@ static int meson_card_set_link_name(struct snd_soc_card *card,
 
 	return 0;
 }
-
 
 unsigned int meson_card_parse_daifmt(struct device_node *node,
 				     struct device_node *cpu_node)
@@ -161,7 +160,7 @@ int meson_card_set_be_link(struct snd_soc_card *card,
 
 	for_each_child_of_node(node, np) {
 		ret = meson_card_parse_dai(card, np, &codec->of_node,
-					 &codec->dai_name);
+					   &codec->dai_name);
 		if (ret) {
 			of_node_put(np);
 			return ret;
@@ -240,9 +239,9 @@ static int meson_card_add_links(struct snd_soc_card *card)
 }
 
 static int meson_card_parse_of_optional(struct snd_soc_card *card,
-				      const char *propname,
-				      int (*func)(struct snd_soc_card *c,
-						  const char *p))
+					const char *propname,
+					int (*func)(struct snd_soc_card *c,
+						    const char *p))
 {
 	/* If property is not provided, don't fail ... */
 	if (!of_property_read_bool(card->dev->of_node, propname))

@@ -207,5 +207,4 @@ struct amvdec_codec_ops codec_mpeg12_ops = {
 	.can_recycle = codec_mpeg12_can_recycle,
 	.recycle = codec_mpeg12_recycle,
 	.eos_sequence = codec_mpeg12_eos_sequence,
-	.get_output_size = amvdec_get_output_size,
 };

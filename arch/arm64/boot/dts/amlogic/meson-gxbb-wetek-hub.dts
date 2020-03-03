@@ -7,16 +7,16 @@
 /dts-v1/;
 
 #include "meson-gxbb-wetek.dtsi"
+#include <dt-bindings/sound/meson-aiu.h>
 
 / {
 	compatible = "wetek,hub", "amlogic,meson-gxbb";
 	model = "WeTek Hub";
 
+
 	sound {
 		compatible = "amlogic,gx-sound-card";
 		model = "AMLGX";
-		audio-routing = "I2S ENCODER Playback", "I2S FIFO Playback";
-
 		assigned-clocks = <&clkc CLKID_MPLL2>,
 				  <&clkc CLKID_MPLL0>,
 				  <&clkc CLKID_MPLL1>;
@@ -27,19 +27,31 @@
 		status = "okay";
 
 		dai-link-0 {
-			sound-dai = <&i2s_fifo>;
+			sound-dai = <&aiu AIU_CPU CPU_I2S_FIFO>;
 		};
 
 		dai-link-1 {
-			sound-dai = <&i2s_encoder>;
+			sound-dai = <&aiu AIU_CPU CPU_I2S_ENCODER>;
 			dai-format = "i2s";
-			mclk-fs = <256>;
+			mclk-fs = <512>;
+
+			codec-0 {
+				sound-dai = <&aiu AIU_HDMI CTRL_I2S>;
+			};
+		};
+
+		dai-link-2 {
+			sound-dai = <&aiu AIU_HDMI CTRL_OUT>;
 
 			codec-0 {
 				sound-dai = <&hdmi_tx>;
 			};
 		};
 	};
+};
+
+&aiu {
+	status = "okay";
 };
 
 &ir {

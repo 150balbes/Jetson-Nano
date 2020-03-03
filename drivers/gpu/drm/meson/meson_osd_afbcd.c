@@ -58,8 +58,6 @@
 static int meson_gxm_afbcd_pixel_fmt(u64 modifier, uint32_t format)
 {
 	switch (format) {
-	case DRM_FORMAT_XRGB8888:
-	case DRM_FORMAT_ARGB8888:
 	case DRM_FORMAT_XBGR8888:
 	case DRM_FORMAT_ABGR8888:
 		return OSD1_AFBCD_RGB32;
@@ -204,12 +202,22 @@ static int meson_g12a_afbcd_pixel_fmt(u64 modifier, uint32_t format)
 	switch (format) {
 	case DRM_FORMAT_XRGB8888:
 	case DRM_FORMAT_ARGB8888:
+		/* YTR is forbidden for non XBGR formats */
+		if (modifier & AFBC_FORMAT_MOD_YTR)
+			return -EINVAL;
+	/* fall through */
 	case DRM_FORMAT_XBGR8888:
 	case DRM_FORMAT_ABGR8888:
 		return MAFBC_FMT_RGBA8888;
 	case DRM_FORMAT_RGB888:
+		/* YTR is forbidden for non XBGR formats */
+		if (modifier & AFBC_FORMAT_MOD_YTR)
+			return -EINVAL;
 		return MAFBC_FMT_RGB888;
 	case DRM_FORMAT_RGB565:
+		/* YTR is forbidden for non XBGR formats */
+		if (modifier & AFBC_FORMAT_MOD_YTR)
+			return -EINVAL;
 		return MAFBC_FMT_RGB565;
 	/* TOFIX support mode formats */
 	default:
@@ -258,9 +266,6 @@ static int meson_g12a_afbcd_fmt_to_blk_mode(u64 modifier, uint32_t format)
 
 static bool meson_g12a_afbcd_supported_fmt(u64 modifier, uint32_t format)
 {
-	if (!(modifier & AFBC_FORMAT_MOD_YTR))
-		return false;
-
 	return meson_g12a_afbcd_pixel_fmt(modifier, format) >= 0;
 }
 

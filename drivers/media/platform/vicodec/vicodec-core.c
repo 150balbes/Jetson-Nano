@@ -1232,6 +1232,10 @@ static int vicodec_encoder_cmd(struct file *file, void *fh,
 	if (ret < 0)
 		return ret;
 
+	if (ec->cmd == V4L2_ENC_CMD_STOP &&
+	    v4l2_m2m_has_stopped(ctx->fh.m2m_ctx))
+		v4l2_event_queue_fh(&ctx->fh, &vicodec_eos_event);
+
 	if (ec->cmd == V4L2_ENC_CMD_START &&
 	    v4l2_m2m_has_stopped(ctx->fh.m2m_ctx))
 		vb2_clear_last_buffer_dequeued(&ctx->fh.m2m_ctx->cap_q_ctx.q);
@@ -1256,6 +1260,10 @@ static int vicodec_decoder_cmd(struct file *file, void *fh,
 	ret = v4l2_m2m_ioctl_decoder_cmd(file, fh, dc);
 	if (ret < 0)
 		return ret;
+
+	if (dc->cmd == V4L2_DEC_CMD_STOP &&
+	    v4l2_m2m_has_stopped(ctx->fh.m2m_ctx))
+		v4l2_event_queue_fh(&ctx->fh, &vicodec_eos_event);
 
 	if (dc->cmd == V4L2_DEC_CMD_START &&
 	    v4l2_m2m_has_stopped(ctx->fh.m2m_ctx))

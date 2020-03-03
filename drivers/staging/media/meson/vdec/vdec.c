@@ -191,8 +191,7 @@ static int vdec_queue_setup(struct vb2_queue *q, unsigned int *num_buffers,
 			    struct device *alloc_devs[])
 {
 	struct amvdec_session *sess = vb2_get_drv_priv(q);
-	struct amvdec_codec_ops *codec_ops = sess->fmt_out->codec_ops;
-	u32 output_size = codec_ops->get_output_size(sess);
+	u32 output_size = amvdec_get_output_size(sess);
 
 	if (*num_planes) {
 		switch (q->type) {
@@ -396,6 +395,7 @@ static void vdec_reset_bufs_recycle(struct amvdec_session *sess)
 static void vdec_stop_streaming(struct vb2_queue *q)
 {
 	struct amvdec_session *sess = vb2_get_drv_priv(q);
+	struct amvdec_codec_ops *codec_ops = sess->fmt_out->codec_ops;
 	struct amvdec_core *core = sess->core;
 	struct vb2_v4l2_buffer *buf;
 
@@ -424,6 +424,10 @@ static void vdec_stop_streaming(struct vb2_queue *q)
 
 		sess->streamon_out = 0;
 	} else {
+		/* Drain remaining refs if was still running */
+		if (sess->status >= STATUS_RUNNING && codec_ops->drain)
+			codec_ops->drain(sess);
+
 		while ((buf = v4l2_m2m_dst_buf_remove(sess->m2m_ctx)))
 			v4l2_m2m_buf_done(buf, VB2_BUF_STATE_ERROR);
 
@@ -720,14 +724,11 @@ vdec_decoder_cmd(struct file *file, void *fh, struct v4l2_decoder_cmd *cmd)
 	if (ret)
 		return ret;
 
-	ret = v4l2_m2m_ioctl_decoder_cmd(file, fh, cmd);
-	if (ret)
-		return ret;
-
 	if (!(sess->streamon_out & sess->streamon_cap))
 		return 0;
 
 	if (cmd->cmd == V4L2_DEC_CMD_START) {
+		v4l2_m2m_clear_state(sess->m2m_ctx);
 		sess->should_stop = 0;
 		return 0;
 	}
@@ -739,6 +740,8 @@ vdec_decoder_cmd(struct file *file, void *fh, struct v4l2_decoder_cmd *cmd)
 	dev_dbg(dev, "Received V4L2_DEC_CMD_STOP\n");
 
 	sess->should_stop = 1;
+
+	v4l2_m2m_mark_stopped(sess->m2m_ctx);
 
 	if (codec_ops->drain) {
 		vdec_wait_inactive(sess);

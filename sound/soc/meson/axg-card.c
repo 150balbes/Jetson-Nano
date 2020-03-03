@@ -322,7 +322,7 @@ static int axg_card_add_link(struct snd_soc_card *card, struct device_node *np,
 	dai_link->num_cpus = 1;
 
 	ret = meson_card_parse_dai(card, np, &dai_link->cpus->of_node,
-				 &dai_link->cpus->dai_name);
+				   &dai_link->cpus->dai_name);
 	if (ret)
 		return ret;
 

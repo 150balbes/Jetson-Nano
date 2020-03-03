@@ -180,6 +180,7 @@ static void meson_plane_atomic_update(struct drm_plane *plane,
 			priv->viu.osd1_blk1_cfg4 = MESON_G12A_AFBCD_OUT_ADDR;
 			priv->viu.osd1_blk0_cfg[0] |= OSD_ENDIANNESS_BE;
 			priv->viu.osd1_ctrl_stat2 |= OSD_PENDING_STAT_CLEAN;
+			priv->viu.osd1_ctrl_stat |= VIU_OSD1_CFG_SYN_EN;
 		}
 
 		if (meson_vpu_is_compatible(priv, VPU_COMPATIBLE_GXM)) {
@@ -236,7 +237,7 @@ static void meson_plane_atomic_update(struct drm_plane *plane,
 		/* For ARGB, use the pixel's alpha */
 		priv->viu.osd1_ctrl_stat2 &= ~OSD_REPLACE_EN;
 		break;
-	};
+	}
 
 	/* Default scaler parameters */
 	vsc_bot_rcv_num = 0;
@@ -395,6 +396,11 @@ static void meson_plane_atomic_disable(struct drm_plane *plane,
 	struct meson_plane *meson_plane = to_meson_plane(plane);
 	struct meson_drm *priv = meson_plane->priv;
 
+	if (priv->afbcd.ops) {
+		priv->afbcd.ops->reset(priv);
+		priv->afbcd.ops->disable(priv);
+	}
+
 	/* Disable OSD1 */
 	if (meson_vpu_is_compatible(priv, VPU_COMPATIBLE_G12A))
 		writel_bits_relaxed(VIU_OSD1_POSTBLD_SRC_OSD1, 0,
@@ -485,19 +491,26 @@ static const uint64_t format_modifiers_afbc_gxm[] = {
 static const uint64_t format_modifiers_afbc_g12a[] = {
 	/*
 	 * - TOFIX Support AFBC modifiers for YUV formats (16x16 + TILED)
-	 * - AFBC_FORMAT_MOD_YTR is mandatory since we only support RGB
 	 * - SPLIT is mandatory for performances reasons when in 16x16
 	 *   block size
 	 * - 32x8 block size + SPLIT is mandatory with 4K frame size
 	 *   for performances reasons
 	 */
 	DRM_FORMAT_MOD_ARM_AFBC(AFBC_FORMAT_MOD_BLOCK_SIZE_16x16 |
+				AFBC_FORMAT_MOD_SPARSE |
+				AFBC_FORMAT_MOD_SPLIT),
+	DRM_FORMAT_MOD_ARM_AFBC(AFBC_FORMAT_MOD_BLOCK_SIZE_16x16 |
 				AFBC_FORMAT_MOD_YTR |
 				AFBC_FORMAT_MOD_SPARSE |
 				AFBC_FORMAT_MOD_SPLIT),
 	DRM_FORMAT_MOD_ARM_AFBC(AFBC_FORMAT_MOD_BLOCK_SIZE_32x8 |
+				AFBC_FORMAT_MOD_SPARSE),
+	DRM_FORMAT_MOD_ARM_AFBC(AFBC_FORMAT_MOD_BLOCK_SIZE_32x8 |
 				AFBC_FORMAT_MOD_YTR |
 				AFBC_FORMAT_MOD_SPARSE),
+	DRM_FORMAT_MOD_ARM_AFBC(AFBC_FORMAT_MOD_BLOCK_SIZE_32x8 |
+				AFBC_FORMAT_MOD_SPARSE |
+				AFBC_FORMAT_MOD_SPLIT),
 	DRM_FORMAT_MOD_ARM_AFBC(AFBC_FORMAT_MOD_BLOCK_SIZE_32x8 |
 				AFBC_FORMAT_MOD_YTR |
 				AFBC_FORMAT_MOD_SPARSE |

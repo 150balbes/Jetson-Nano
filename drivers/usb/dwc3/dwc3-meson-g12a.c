@@ -458,7 +458,7 @@ static int dwc3_meson_g12a_probe(struct platform_device *pdev)
 						dwc3_meson_g12a_irq_thread,
 						IRQF_ONESHOT, pdev->name, priv);
 		if (ret)
-			goto err_regulator_disable;
+			return ret;
 	}
 
 	dwc3_meson_g12a_usb_init(priv);
@@ -467,7 +467,7 @@ static int dwc3_meson_g12a_probe(struct platform_device *pdev)
 	for (i = 0 ; i < PHY_COUNT ; ++i) {
 		ret = phy_init(priv->phys[i]);
 		if (ret)
-			goto err_regulator_disable;
+			return ret;
 	}
 
 	/* Set PHY Power */
@@ -517,9 +517,7 @@ err_phys_power:
 err_phys_exit:
 	for (i = 0 ; i < PHY_COUNT ; ++i)
 		phy_exit(priv->phys[i]);
-err_regulator_disable:
-	if (priv->vbus)
-		regulator_disable(priv->vbus);
+
 	return ret;
 }
 
@@ -537,9 +535,6 @@ static int dwc3_meson_g12a_remove(struct platform_device *pdev)
 		phy_power_off(priv->phys[i]);
 		phy_exit(priv->phys[i]);
 	}
-
-	if (priv->vbus)
-		regulator_disable(priv->vbus);
 
 	pm_runtime_disable(dev);
 	pm_runtime_put_noidle(dev);

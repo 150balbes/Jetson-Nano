@@ -409,6 +409,8 @@ static int __maybe_unused meson_drv_pm_resume(struct device *dev)
 	meson_venc_init(priv);
 	meson_vpp_init(priv);
 	meson_viu_init(priv);
+	if (priv->afbcd.ops)
+		priv->afbcd.ops->init(priv);
 
 	drm_mode_config_helper_resume(priv->drm);
 

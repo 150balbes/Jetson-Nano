@@ -9,6 +9,7 @@
 #include <dt-bindings/clock/gxbb-clkc.h>
 #include <dt-bindings/clock/gxbb-aoclkc.h>
 #include <dt-bindings/reset/gxbb-aoclkc.h>
+#include <dt-bindings/sound/meson-aiu.h>
 
 / {
 	compatible = "amlogic,meson-gxbb";
@@ -242,9 +243,25 @@
 };
 
 &aiu {
-	clocks = <&clkc CLKID_AIU>,
-		 <&clkc CLKID_AIU_GLUE>;
-	clock-names = "top", "glue";
+	compatible = "amlogic,aiu-gxbb", "amlogic,aiu";
+	clocks = <&clkc CLKID_AIU_GLUE>,
+		 <&clkc CLKID_I2S_OUT>,
+		 <&clkc CLKID_AOCLK_GATE>,
+		 <&clkc CLKID_CTS_AMCLK>,
+		 <&clkc CLKID_MIXER_IFACE>,
+		 <&clkc CLKID_IEC958>,
+		 <&clkc CLKID_IEC958_GATE>,
+		 <&clkc CLKID_CTS_MCLK_I958>,
+		 <&clkc CLKID_CTS_I958>;
+	clock-names = "pclk",
+		      "i2s_pclk",
+		      "i2s_aoclk",
+		      "i2s_mclk",
+		      "i2s_mixer",
+		      "spdif_pclk",
+		      "spdif_aoclk",
+		      "spdif_mclk",
+		      "spdif_mclk_sel";
 	resets = <&reset RESET_AIU>;
 };
 
@@ -367,17 +384,6 @@
 
 &i2c_C {
 	clocks = <&clkc CLKID_I2C>;
-};
-
-&i2s_fifo {
-	clocks = <&clkc CLKID_I2S_OUT>;
-};
-
-&i2s_encoder {
-	clocks = <&clkc CLKID_MIXER_IFACE>,
-		 <&clkc CLKID_AOCLK_GATE>,
-		 <&clkc CLKID_CTS_AMCLK>;
-	clock-names = "pclk", "aoclk", "mclk";
 };
 
 &periphs {
@@ -821,18 +827,6 @@
 	clocks = <&clkc CLKID_HDMI_PCLK>,
 		 <&clkc CLKID_CLK81>,
 		 <&clkc CLKID_GCLK_VENCI_INT0>;
-};
-
-&spdif_fifo {
-	clocks = <&clkc CLKID_IEC958>;
-};
-
-&spdif_encoder {
-	clocks = <&clkc CLKID_IEC958_GATE>,
-		 <&clkc CLKID_CTS_MCLK_I958>,
-		 <&clkc CLKID_CTS_AMCLK>,
-		 <&clkc CLKID_CTS_I958>;
-	clock-names = "pclk", "mclk_i958", "mclk_i2s", "mclk";
 };
 
 &spicc {

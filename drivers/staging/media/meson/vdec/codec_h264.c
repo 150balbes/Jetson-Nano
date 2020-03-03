@@ -479,5 +479,4 @@ struct amvdec_codec_ops codec_h264_ops = {
 	.recycle = codec_h264_recycle,
 	.eos_sequence = codec_h264_eos_sequence,
 	.resume = codec_h264_resume,
-	.get_output_size = amvdec_get_output_size,
 };
