@@ -9,7 +9,6 @@
 #include <dt-bindings/clock/gxbb-clkc.h>
 #include <dt-bindings/clock/gxbb-aoclkc.h>
 #include <dt-bindings/reset/gxbb-aoclkc.h>
-#include <dt-bindings/sound/meson-aiu.h>
 
 / {
 	compatible = "amlogic,meson-gxbb";

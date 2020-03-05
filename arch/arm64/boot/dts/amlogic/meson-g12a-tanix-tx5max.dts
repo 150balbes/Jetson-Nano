@@ -1,4 +1,3 @@
-
 // SPDX-License-Identifier: (GPL-2.0+ OR MIT)
 /*
  * Copyright (c) 2018 BayLibre SAS. All rights reserved.
@@ -12,7 +11,7 @@
 #include <dt-bindings/sound/meson-g12a-tohdmitx.h>
 
 / {
-	compatible = "oranth,tx5max", "amlogic,g12a";
+	compatible = "oranth,tx5-max", "amlogic,g12a";
 	model = "Tanix TX5 Max";
 
 	aliases {
