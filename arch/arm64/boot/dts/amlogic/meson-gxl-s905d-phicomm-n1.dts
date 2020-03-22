@@ -29,3 +29,8 @@
 &cvbs_vdac_port {
 	status = "disabled";
 };
+
+&external_phy {
+        /delete-property/ reset-gpios;
+        interrupts = <25 IRQ_TYPE_LEVEL_LOW>;
+};
