@@ -1,0 +1,24 @@
+Device tree bindings for fan tach output connected to PWM controller with
+PWM capture capability.
+
+Required properties:
+- compatible	: "generic-pwm-tachometer"
+- pwms		: PWM handle. Please refer pwm.txt DT binding for more details.
+
+Example:
+
+	tegra_tachometer: tachometer@39c0000 {
+		compatible = "nvidia,pwm-tegra194-tachometer";
+		reg = <0x0 0x039c0000 0x0 0x10>;
+		clocks = <&bpmp_clks TEGRA194_CLK_TACH>;
+		clock-names = "tach";
+		resets = <&bpmp_resets TEGRA194_RESET_TACH>;
+		reset-names = "tach";
+		pulse-per-rev = <2>;
+		sampling-window = <2>;
+	};
+
+	generic_pwm_tachometer {
+		compatible = "generic-pwm-tachometer";
+		pwms = <&tegra_tachometer 0 1000000>;
+	};

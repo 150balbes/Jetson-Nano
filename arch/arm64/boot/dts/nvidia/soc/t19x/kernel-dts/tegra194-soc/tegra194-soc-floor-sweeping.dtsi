@@ -1,0 +1,89 @@
+/*
+ * tegra194-soc-floor-sweeping.dtsi: Plugin manager file for floorsweeping devices
+ *
+ * Copyright (c) 2018, NVIDIA CORPORATION.  All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; version 2 of the License.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ */
+
+/ {
+	plugin-manager {
+		fragment-fs-disable-isp {
+			fuse-info = "fuse-disable-isp";
+			override@0 {
+				target = <&isp>;
+				_overlay_ {
+					status = "disabled";
+				};
+			};
+		};
+
+		fragment-fs-disable-nvenc {
+			fuse-info = "fuse-disable-nvenc";
+			override@0 {
+				target = <&{/host1x/nvenc@154c0000}>;
+				_overlay_ {
+					status = "disabled";
+				};
+			};
+
+			override@1 {
+				target = <&{/host1x/nvenc1@15a80000}>;
+				_overlay_ {
+					status = "disabled";
+				};
+			};
+		};
+
+		fragment-fs-disable-pva {
+			fuse-info = "fuse-disable-pva";
+			override@0 {
+				target = <&pva0>;
+				_overlay_ {
+					status = "disabled";
+				};
+			};
+
+			override@1 {
+				target = <&pva1>;
+				_overlay_ {
+					status = "disabled";
+				};
+			};
+		};
+
+		fragment-fs-disable-dla {
+			fuse-info = "fuse-disable-dla";
+			override@0 {
+				target = <&nvdla0>;
+				_overlay_ {
+					status = "disabled";
+				};
+			};
+
+			override@1 {
+				target = <&nvdla1>;
+				_overlay_ {
+					status = "disabled";
+				};
+			};
+		};
+
+		fragment-fs-disable-cv {
+			fuse-info = "fuse-disable-cv";
+			override@0 {
+				target = <&{/tegra-cvnas}>;
+				_overlay_ {
+					status = "disabled";
+				};
+			};
+		};
+	};
+};

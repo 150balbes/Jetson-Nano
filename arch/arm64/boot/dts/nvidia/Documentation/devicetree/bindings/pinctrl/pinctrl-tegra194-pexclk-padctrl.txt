@@ -1,0 +1,116 @@
+Binding document for T194 PCIE PEXCLK Single/differential end selection
+======================================================================
+
+This document defines the device-specific binding for the T194 PCIE
+PEXCLK pad control for single or differential ends.
+
+Required properties:
+--------------------
+- compatible: Must be "nvidia,tegra194-pexclk-padctl"
+- reg: Should contain a list of base address and size pairs for:
+  - first entry: The base address and size of PCIE_PEXCLK_PADCTRL0
+  - second entry: The base address and size of PCIE_PEXCLK_PADCTRL0
+
+Please refer to pinctrl-bindings.txt @Documentation/devicetree/bindings/pinctrl
+for details of the common pinctrl bindings used by client devices, including
+the meaning of the phrase "pin configuration node".
+
+Optional Pinmux properties:
+--------------------------
+Following properties are required if default setting of pins are required
+at boot.
+- pinctrl-names: A pinctrl state named per <pinctrl-binding.txt>.
+- pinctrl[0...n]: Properties to contain the phandle for pinctrl states per
+		<pinctrl-binding.txt>.
+
+The pin configurations are defined as child of the pinctrl states node. Each
+sub-node have following properties:
+
+Required properties:
+------------------
+- pins: List of pins. Valid values of pins properties are:
+		pexclk.
+
+Child nodes contain the pinmux configurations following the conventions from
+the pinctrl-bindings.txt document. Typically a single, static configuration is
+given and applied at boot time.
+
+Optional properties:
+-------------------
+nvidia,pexclk-single-end: Integer, Enable/disable single end on PCIE pexclk
+			  pads. The valid values are 0 or 1.
+			  0: Disable single end, means differential.
+			  1: Enable single end, means single end clocks.
+
+Optional prod nodes:
+-------------------
+Prod configuration can be provided per the prod DT binding for
+prod initialisation. Default prod name is "prod";
+
+Example:
+========
+	pinctrl@3790000 {
+		compatible = "nvidia,tegra194-pexclk-padctl";
+		reg = <0x0 0x03790000 0x0 0x1000>,
+		      <0x0 0x037a0000 0x0 0x1000>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&pexclk_pads_default>;
+
+		pexclk_pads_default: pexclk_pads_default {
+			pexclk {
+				pins = "pexclk";
+				nvidia,pexclk-single-end = <1>;
+			};
+		};
+	};
+
+The above DT configuration will configure pexclk in single ended.
+
+For dynamic switching, the client node need to pass the required
+phandle. Following are changes needed in the pinctrl and client
+DT node.
+	pinctrl@3790000 {
+		compatible = "nvidia,tegra194-pexclk-padctl";
+		reg = <0x0 0x03790000 0x0 0x1000>,
+		      <0x0 0x037a0000 0x0 0x1000>;
+
+		pexclk_pads_single: pexclk_pads_single {
+			pexclk {
+				pins = "pexclk";
+				nvidia,pexclk-single-end = <1>;
+			};
+		};
+
+		pexclk_pads_diff: pexclk_pads_diff {
+			pexclk {
+				pins = "pexclk";
+				nvidia,pexclk-single-end = <0>;
+			};
+		};
+	};
+
+
+	client-node {
+		/* Other properties of client node */
+
+		pinctrl-names = "single". "differential";
+		pinctrl-0 = <&pexclk_pads_single>;
+		pinctrl-1 = <&pexclk_pads_diff>;
+	};
+
+
+Example with prod:
+=================
+	pinctrl@3790000 {
+		compatible = "nvidia,tegra194-pexclk-padctl";
+		reg = <0x0 0x03790000 0x0 0x1000>,
+		      <0x0 0x037a0000 0x0 0x1000>;
+
+		prod-settings {
+			prod {
+				prod = <
+					/* Prod entries */
+					>;
+			};
+		};
+	};

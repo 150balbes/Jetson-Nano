@@ -1,0 +1,80 @@
+/*
+ * tegra186-quill-camera-ape.dtsi: Quill APE for camera dtsi.
+ *
+ * Copyright (c) 2016-2017, NVIDIA CORPORATION.  All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; version 2 of the License.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ */
+
+/ {
+	aliases {
+		tegra-camera-rtcpu = &tegra_ape;
+	};
+
+	tegra-hsp@b150000 {
+		status = "disabled";
+	};
+
+	rtcpu@b000000 {	/* Do not use SCE as camera-rtcpu */
+		status = "disabled";
+	};
+
+#if TEGRA_AUDIO_BUS_DT_VERSION >= DT_VERSION_2
+	aconnect@2a41000 {
+#endif
+
+	tegra-hsp@29a0000 {
+		status = "okay";
+	};
+
+	rtcpu@2993000 {	/* use APE as camera-rtcpu */
+		status = "okay";
+	};
+
+	agic-controller@2a41000 {
+		status = "okay";
+	};
+
+	adsp@2993000 {	/* Do not use APE as adsp */
+		status = "disabled";
+	};
+
+	ahub {
+		status = "okay";
+	};
+
+	spdif_dit {
+		status = "disabled";
+	};
+
+	adma@2930000 {
+		status = "okay";
+	};
+
+        adsp_audio {
+		status = "disabled";
+	};
+
+#if TEGRA_AUDIO_BUS_DT_VERSION >= DT_VERSION_2
+	};
+#endif
+
+	sound {
+		adsp_disabled;
+	};
+
+	sound_ref {
+		adsp_disabled;
+	};
+
+	i2c@3180000 {
+ 		compatible = "nvidia,tegra186-i2c";
+        };
+};

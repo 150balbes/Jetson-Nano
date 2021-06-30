@@ -1,0 +1,126 @@
+/*
+ * Copyright (c) 2014-2017 NVIDIA CORPORATION. All rights reserved.
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ */
+
+#include <dt-bindings/gpio/tegra-gpio.h>
+
+/ {
+	dfll-max77621@70110000 {
+		i2c_dfll: dfll-max77621-integration {
+			pmic-i2c-address = <0x36>;
+			pmic-i2c-voltage-register = <0x01>;
+			i2c-fs-rate = <400000>;
+			sel-conversion-slope = <1>;
+		};
+
+		dfll_max77621_parms: dfll-max77621-board-params {
+			sample-rate = <12500>;
+			fixed-output-forcing;
+			cf = <10>;
+			ci = <0>;
+			cg = <2>;
+			droop-cut-value = <0xf>;
+			droop-restore-ramp = <0x0>;
+			scale-out-ramp = <0x0>;
+		};
+	};
+
+	cpu_edp {
+		status = "okay";
+		nvidia,edp_limit = <25000>;
+	};
+
+	gpu_edp {
+		status = "okay";
+		nvidia,edp_limit = <20000>;
+	};
+
+};
+
+#include <tegra210-soc/tegra210-power-dvfs.dtsi>
+
+/ {
+	dvfs_rails {
+		vdd-cpu-vmin-cdev@5 {
+			status = "okay";
+		};
+
+		vdd-core-vmin-cdev@6 {
+			status = "okay";
+		};
+
+		vdd-gpu-scaling-cdev@7 {
+			status = "okay";
+		};
+
+		vdd-cpu-vmax-cdev@8 {
+			status = "okay";
+		};
+
+		vdd-gpu-vmax-cdev@9 {
+			status = "okay";
+		};
+
+		vdd-core-vmax-cdev@10 {
+			status = "okay";
+		};
+	};
+};
+
+/ {
+	pwm_regulators {
+		compatible = "simple-bus";
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		cpu_ovr_reg: pwm-regulator@0 {
+			status = "okay";
+			reg = <0>;
+			compatible = "pwm-regulator";
+			pwms = <&tegra_pwm_dfll 0 2500>;
+			regulator-name = "vdd-cpu";
+			regulator-min-microvolt = <708000>;
+			regulator-max-microvolt = <1322400>;
+			regulator-always-on;
+			regulator-boot-on;
+			voltage-table =
+				<708000 0>, <727200 1>, <746400 2>,
+				<765600 3>, <784800 4>, <804000 5>,
+				<823200 6>, <842400 7>, <861600 8>,
+				<880800 9>, <900000 10>, <919200 11>,
+				<938400 12>, <957600 13>, <976800 14>,
+				<996000 15>, <1015200 16>, <1034400 17>,
+				<1053600 18>, <1072800 19>, <1092000 20>,
+				<1111200 21>, <1130400 22>, <1149600 23>,
+				<1168800 24>, <1188000 25>, <1207200 26>,
+				<1226400 27>, <1245600 28>, <1264800 29>,
+				<1284000 30>, <1303200 31>, <1322400 32>;
+		};
+
+		gpu_ovr_reg: pwm-regulator@1 {
+			status = "okay";
+			reg = <1>;
+			compatible = "pwm-regulator";
+			pwms = <&tegra_pwm 1 8000>;
+			regulator-name = "vdd-gpu";
+			regulator-min-microvolt = <710000>;
+			regulator-max-microvolt = <1320000>;
+			regulator-init-microvolt = <1000000>;
+			regulator-n-voltages = <62>;
+			regulator-enable-ramp-delay = <2000>;
+			enable-gpio = <&max77620 6 0>;
+			regulator-settling-time-us = <160>;
+                };
+
+	};
+};

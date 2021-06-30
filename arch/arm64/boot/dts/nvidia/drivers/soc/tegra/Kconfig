@@ -1,0 +1,16 @@
+config TEGRA_KFUSE
+	bool "Tegra kfuse support"
+	default n
+	depends on ARCH_TEGRA
+	help
+	  Enable Tegra kfuse support. The kfuse block stores downstream and
+	  upstream HDCP keys for use by the HDMI module.
+
+config TEGRA_PROC_POWER_MODEL
+	bool "Tegra process power model support"
+	depends on ARCH_TEGRA
+	help
+	  Used to create a simple processor power model (PPM) by
+	  collating various chip specific data including voltage,
+	  frequency, and number of cores. This driver is used by
+	  various other drivers including EDP.

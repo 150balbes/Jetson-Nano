@@ -1,0 +1,40 @@
+if CRYPTO_HW
+
+config TEGRA_CRYPTO_DEV
+	tristate "Device node to access tegra aes hardware"
+	depends on CRYPTO_DEV_TEGRA_ELLIPTIC_SE || CRYPTO_DEV_TEGRA_SE_USE_HOST1X_INTERFACE
+	help
+	  Dev node /dev/tegra-crypto in order to get access to tegra aes
+	  hardware from user space
+
+config CRYPTO_DEV_TEGRA_SE
+	tristate "Tegra SE driver for crypto algorithms"
+	select CRYPTO_AES
+	help
+	  This option allows you to have support of Security Engine for crypto acceleration.
+
+config CRYPTO_DEV_TEGRA_ELLIPTIC_SE
+	tristate "Tegra SE for Elliptic crypto algorithms"
+	select CRYPTO_ECDH
+	select CRYPTO_ECDSA
+	help
+	  This option allows you to have support of Security Engine
+	  for Elliptic PKA1 and RNG1 Crypto Algorithms. PKA1 supports
+	  Public Key Algorithms, RSA (upto 4K bits) and ECC (Elliptic
+	  Curve Cryptography, upto 521 bits) features internally. RNG1
+	  supports random number generation.
+
+config CRYPTO_DEV_TEGRA_SE_USE_HOST1X_INTERFACE
+	tristate "Use Host1x Interface for Tegra SE crypto algorithms"
+	depends on ARCH_TEGRA_18x_SOC
+	help
+	  This allows you to use Host1x Memory Interface for Tegra SE Driver
+	  Crypto algorithms.
+
+config CRYPTO_DEV_TEGRA_VIRTUAL_SE_INTERFACE
+        tristate "Virtual SE interface for Tegra SE crypto algorithms"
+        depends on ARCH_TEGRA_18x_SOC && CRYPTO_DEV_TEGRA_SE
+        help
+          This allows you to use Virtual SE interface for Tegra Crypto algorithms.
+
+endif

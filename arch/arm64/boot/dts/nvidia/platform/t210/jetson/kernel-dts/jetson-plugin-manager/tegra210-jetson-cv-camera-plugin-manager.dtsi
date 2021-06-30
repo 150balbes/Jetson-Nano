@@ -1,0 +1,1189 @@
+/*
+ * Copyright (c) 2016-2017, NVIDIA CORPORATION.  All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; version 2 of the License.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ *
+ */
+
+/ {
+	/* camera plugin-manager */
+	plugin-manager {
+		/* E3326 camera board */
+		fragment-e3326@0 {
+			ids = "3326-*";
+			override@0 {
+				target = <&e3326_cam0>;
+				_overlay_ {
+					status = "okay";
+				};
+			};
+			override@1 {
+				target = <&cam_module0>;
+				_overlay_ {
+					status = "okay";
+					badge = "e3326_front_P5V27C";
+					position = "rear";
+					orientation = "1";
+				};
+			};
+			override@2 {
+				target = <&cam_module0_drivernode0>;
+				_overlay_ {
+					status = "okay";
+					pcl_id = "v4l2_sensor";
+					devname = "ov5693 6-0036";
+					proc-device-tree = "/proc/device-tree/host1x/i2c@546c0000/ov5693_c@36";
+				};
+			};
+			override@3 {
+				target = <&cam_module0_drivernode1>;
+				_overlay_ {
+					status = "okay";
+					pcl_id = "v4l2_lens";
+					proc-device-tree = "/proc/device-tree/e3326_lens_ov5693@P5V27C/";
+				};
+			};
+			/* Enable VI ports */
+			override@4 {
+				target = <&vi_base>;
+				_overlay_ {
+					num-channels=<1>;
+				};
+			};
+			override@5 {
+				target = <&vi_port0>;
+				_overlay_ {
+					status = "okay";
+				};
+			};
+			override@6 {
+				target = <&e3326_vi_in0>;
+				_overlay_ {
+					status = "okay";
+					port-index = <2>;
+					bus-width = <2>;
+					remote-endpoint = <&e3326_csi_out0>;
+				};
+			};
+			/* Enable CSI ports */
+			override@7 {
+				target = <&csi_base>;
+				_overlay_ {
+					num-channels=<1>;
+				};
+			};
+			override@8 {
+				target = <&csi_chan0>;
+				_overlay_ {
+					status = "okay";
+				};
+			};
+			override@9 {
+				target = <&csi_chan0_port0>;
+				_overlay_ {
+					status = "okay";
+				};
+			};
+			override@10 {
+				target = <&e3326_csi_in0>;
+				_overlay_ {
+					status = "okay";
+					port-index = <2>;
+					bus-width = <2>;
+					remote-endpoint = <&e3326_ov5693_out0>;
+				};
+			};
+			override@11 {
+				target = <&csi_chan0_port1>;
+				_overlay_ {
+					status = "okay";
+				};
+			};
+			override@12 {
+				target = <&e3326_csi_out0>;
+				_overlay_ {
+					status = "okay";
+					remote-endpoint = <&e3326_vi_in0>;
+				};
+			};
+			/* tegra-camera-platform settings */
+			override@13 {
+				target = <&tcp>;
+				_overlay_ {
+					num_csi_lanes = <4>;
+					max_lane_speed = <1500000>;
+					min_bits_per_pixel = <10>;
+					vi_peak_byte_per_pixel = <2>;
+					vi_bw_margin_pct = <25>;
+					isp_peak_byte_per_pixel = <5>;
+					isp_bw_margin_pct = <25>;
+				};
+			};
+		};
+
+		/* E3323 camera board */
+		fragment-e3323@0 {
+			ids = "3323-1000-*";
+			/* enable E3323 camera 0 */
+			override@0 {
+				target = <&e3323_cam0>;
+				_overlay_ {
+					status = "okay";
+				};
+			};
+			override@1 {
+				target = <&cam_module0>;
+				_overlay_ {
+					status = "okay";
+					badge = "e3323_bottom_CH06P1";
+					position = "bottom";
+					orientation = "3";
+				};
+			};
+			override@2 {
+				target = <&cam_module0_drivernode0>;
+				_overlay_ {
+					status = "okay";
+					pcl_id = "v4l2_sensor";
+					devname = "ov23850 6-0010";
+					proc-device-tree = "/proc/device-tree/host1x/i2c@546c0000/ov23850_a@10";
+				};
+			};
+			/* enable E3323 camera 1 */
+			override@3 {
+				target = <&e3323_cam1>;
+				_overlay_ {
+					status = "okay";
+				};
+			};
+			override@4 {
+				target = <&cam_module1>;
+				_overlay_ {
+					status = "okay";
+					badge = "e3323_top_CH06P1";
+					position = "top";
+					orientation = "3";
+				};
+			};
+			override@5 {
+				target = <&cam_module1_drivernode0>;
+				_overlay_ {
+					status = "okay";
+					pcl_id = "v4l2_sensor";
+					devname = "ov23850 0-0036";
+					proc-device-tree = "/proc/device-tree/i2c@7000c000/ov23850_c@36";
+				};
+			};
+			/* enable E3323 focuser 0 */
+			override@6 {
+				target = <&e3323_vcm0>;
+				_overlay_ {
+					status = "okay";
+				};
+			};
+			override@7 {
+				target = <&cam_module0_drivernode1>;
+				_overlay_ {
+					status = "okay";
+					pcl_id = "v4l2_focuser";
+					devname = "lc898212 6-0072";
+					proc-device-tree = "/proc/device-tree/host1x/i2c@546c0000/lc898212@72";
+				};
+			};
+			/* enable E3323 focuser 1 */
+			override@8 {
+				target = <&e3323_vcm1>;
+				_overlay_ {
+					status = "okay";
+				};
+			};
+			override@9 {
+				target = <&cam_module1_drivernode1>;
+				_overlay_ {
+					status = "okay";
+					pcl_id = "v4l2_focuser";
+					devname = "lc898212 0-0072";
+					proc-device-tree = "/proc/device-tree/i2c@7000c000/lc898212@72";
+				};
+			};
+			/* enable VI ports */
+			override@10 {
+				target = <&vi_base>;
+				_overlay_ {
+					num-channels=<4>;
+				};
+			};
+			override@11 {
+				target = <&vi_port0>;
+				_overlay_ {
+					status = "okay";
+				};
+			};
+			override@12 {
+				target = <&e3323_vi_in0>;
+				_overlay_ {
+					status = "okay";
+					port-index = <0>;
+					bus-width = <4>;
+					remote-endpoint = <&e3323_csi_out0>;
+				};
+			};
+			override@13 {
+				target = <&vi_port1>;
+				_overlay_ {
+					status = "okay";
+				};
+			};
+			override@14 {
+				target = <&e3323_vi_in1>;
+				_overlay_ {
+					status = "okay";
+					port-index = <2>;
+					bus-width = <4>;
+					remote-endpoint = <&e3323_csi_out1>;
+				};
+			};
+			override@15 {
+				target = <&vi_port2>;
+				_overlay_ {
+					status = "okay";
+				};
+			};
+			override@16 {
+				target = <&e3323_vi_in2>;
+				_overlay_ {
+					status = "okay";
+					port-index = <0>;
+					bus-width = <4>;
+					remote-endpoint = <&e3323_lc898212_out0>;
+				};
+			};
+			override@17 {
+				target = <&vi_port3>;
+				_overlay_ {
+					status = "okay";
+				};
+			};
+			override@18 {
+				target = <&e3323_vi_in3>;
+				_overlay_ {
+					status = "okay";
+					port-index = <2>;
+					bus-width = <4>;
+					remote-endpoint = <&e3323_lc898212_out1>;
+				};
+			};
+			/* Enable CSI ports */
+			override@19 {
+				target = <&csi_base>;
+				_overlay_ {
+					num-channels=<2>;
+				};
+			};
+			override@20 {
+				target = <&csi_chan0>;
+				_overlay_ {
+					status = "okay";
+				};
+			};
+			override@21 {
+				target = <&csi_chan0_port0>;
+				_overlay_ {
+					status = "okay";
+				};
+			};
+			override@22 {
+				target = <&e3323_csi_in0>;
+				_overlay_ {
+					status = "okay";
+					port-index = <0>;
+					bus-width = <4>;
+					remote-endpoint = <&e3323_ov23850_out0>;
+				};
+			};
+			override@23 {
+				target = <&csi_chan0_port1>;
+				_overlay_ {
+					status = "okay";
+				};
+			};
+			override@24 {
+				target = <&e3323_csi_out0>;
+				_overlay_ {
+					status = "okay";
+					remote-endpoint = <&e3323_vi_in0>;
+				};
+			};
+			override@25 {
+				target = <&csi_chan1>;
+				_overlay_ {
+					status = "okay";
+				};
+			};
+			override@26 {
+				target = <&csi_chan1_port0>;
+				_overlay_ {
+					status = "okay";
+				};
+			};
+			override@27 {
+				target = <&e3323_csi_in1>;
+				_overlay_ {
+					status = "okay";
+					port-index = <2>;
+					bus-width = <4>;
+					remote-endpoint = <&e3323_ov23850_out1>;
+				};
+			};
+			override@28 {
+				target = <&csi_chan1_port1>;
+				_overlay_ {
+					status = "okay";
+				};
+			};
+			override@29 {
+				target = <&e3323_csi_out1>;
+				_overlay_ {
+					status = "okay";
+					remote-endpoint = <&e3323_vi_in1>;
+				};
+			};
+			/* tegra-camera-platform settings */
+			override@30 {
+				target = <&tcp>;
+				_overlay_ {
+					num_csi_lanes = <8>;
+					max_lane_speed = <1500000>;
+					min_bits_per_pixel = <10>;
+					vi_peak_byte_per_pixel = <2>;
+					vi_bw_margin_pct = <25>;
+					max_pixel_rate = <750000>;
+					isp_peak_byte_per_pixel = <5>;
+					isp_bw_margin_pct = <25>;
+				};
+			};
+		};
+
+		/* E3333 camera board */
+		fragment-e3333@0 {
+			ids = "3333-*";
+			/* VI number of channels */
+			override@0 {
+				target = <&vi_base>;
+				_overlay_ {
+					num-channels=<6>;
+				};
+			};
+			/* CSI number of channels */
+			override@1 {
+				target = <&csi_base>;
+				_overlay_ {
+					num-channels=<6>;
+				};
+			};
+			/* tegra-camera-platform settings */
+			override@2 {
+				target = <&tcp>;
+				_overlay_ {
+					num_csi_lanes = <12>;
+					max_lane_speed = <1500000>;
+					min_bits_per_pixel = <10>;
+					vi_peak_byte_per_pixel = <2>;
+					vi_bw_margin_pct = <25>;
+					max_pixel_rate = <200000>;
+					isp_peak_byte_per_pixel = <5>;
+					isp_bw_margin_pct = <25>;
+				};
+			};
+			/* TCA6408 */
+			override@3 {
+				target = <&tca6408_21>;
+				_overlay_ {
+					status = "okay";
+				};
+			};
+			/* TCA9548 */
+			override@4 {
+				target = <&tca9548_77>;
+				_overlay_ {
+					status = "okay";
+				};
+			};
+			/* Camera 0: Module */
+			override@5 {
+				target = <&e3333_cam0>;
+				_overlay_ {
+					status = "okay";
+				};
+			};
+			override@6 {
+				target = <&cam_module0>;
+				_overlay_ {
+					status = "okay";
+					badge = "e3333_bottomleft_P5V27C";
+					position = "bottomleft";
+					orientation = "1";
+				};
+			};
+			override@7 {
+				target = <&cam_module0_drivernode0>;
+				_overlay_ {
+					status = "okay";
+					pcl_id = "v4l2_sensor";
+					devname = "ov5693 30-0036";
+					proc-device-tree = "/proc/device-tree/host1x/i2c@546c0000/tca9548@77/i2c@0/ov5693_a@36";
+				};
+			};
+			override@8 {
+				target = <&cam_module0_drivernode1>;
+				_overlay_ {
+					status = "okay";
+					pcl_id = "v4l2_lens";
+					proc-device-tree = "/proc/device-tree/e3333_lens_ov5693@P5V27C/";
+				};
+			};
+			/* Camera 0: VI */
+			override@9 {
+				target = <&vi_port0>;
+				_overlay_ {
+					status = "okay";
+				};
+			};
+			override@10 {
+				target = <&e3333_vi_in0>;
+				_overlay_ {
+					status = "okay";
+					port-index = <0>;
+					bus-width = <2>;
+					remote-endpoint = <&e3333_csi_out0>;
+				};
+			};
+			/* Camera 0: CSI */
+			override@11 {
+				target = <&csi_chan0>;
+				_overlay_ {
+					status = "okay";
+				};
+			};
+			override@12 {
+				target = <&csi_chan0_port0>;
+				_overlay_ {
+					status = "okay";
+				};
+			};
+			override@13 {
+				target = <&e3333_csi_in0>;
+				_overlay_ {
+					status = "okay";
+					port-index = <0>;
+					bus-width = <2>;
+					remote-endpoint = <&e3333_ov5693_out0>;
+				};
+			};
+			override@14 {
+				target = <&csi_chan0_port1>;
+				_overlay_ {
+					status = "okay";
+				};
+			};
+			override@15 {
+				target = <&e3333_csi_out0>;
+				_overlay_ {
+					status = "okay";
+					remote-endpoint = <&e3333_vi_in0>;
+				};
+			};
+			/* Camera 1: Module */
+			override@16 {
+				target = <&e3333_cam1>;
+				_overlay_ {
+					status = "okay";
+				};
+			};
+			override@17 {
+				target = <&cam_module1>;
+				_overlay_ {
+					status = "okay";
+					badge = "e3333_centerleft_P5V27C";
+					position = "centerleft";
+					orientation = "1";
+				};
+			};
+			override@18 {
+				target = <&cam_module1_drivernode0>;
+				_overlay_ {
+					status = "okay";
+					pcl_id = "v4l2_sensor";
+					devname = "ov5693 31-0036";
+					proc-device-tree = "/proc/device-tree/host1x/i2c@546c0000/tca9548@77/i2c@1/ov5693_b@36";
+				};
+			};
+			override@19 {
+				target = <&cam_module1_drivernode1>;
+				_overlay_ {
+					status = "okay";
+					pcl_id = "v4l2_lens";
+					proc-device-tree = "/proc/device-tree/e3333_lens_ov5693@P5V27C/";
+				};
+			};
+			/* Camera 1: VI */
+			override@20 {
+				target = <&vi_port1>;
+				_overlay_ {
+					status = "okay";
+				};
+			};
+			override@21 {
+				target = <&e3333_vi_in1>;
+				_overlay_ {
+					status = "okay";
+					port-index = <1>;
+					bus-width = <2>;
+					remote-endpoint = <&e3333_csi_out1>;
+				};
+			};
+			/* Camera 1: CSI */
+			override@22 {
+				target = <&csi_chan1>;
+				_overlay_ {
+					status = "okay";
+				};
+			};
+			override@23 {
+				target = <&csi_chan1_port0>;
+				_overlay_ {
+					status = "okay";
+				};
+			};
+			override@24 {
+				target = <&e3333_csi_in1>;
+				_overlay_ {
+					status = "okay";
+					port-index = <1>;
+					bus-width = <2>;
+					remote-endpoint = <&e3333_ov5693_out1>;
+				};
+			};
+			override@25 {
+				target = <&csi_chan1_port1>;
+				_overlay_ {
+					status = "okay";
+				};
+			};
+			override@26 {
+				target = <&e3333_csi_out1>;
+				_overlay_ {
+					status = "okay";
+					remote-endpoint = <&e3333_vi_in1>;
+				};
+			};
+			/* Camera 2: Module */
+			override@27 {
+				target = <&e3333_cam2>;
+				_overlay_ {
+					status = "okay";
+				};
+			};
+			override@28 {
+				target = <&cam_module2>;
+				_overlay_ {
+					status = "okay";
+					badge = "e3333_centerright_P5V27C";
+					position = "centerright";
+					orientation = "1";
+				};
+			};
+			override@29 {
+				target = <&cam_module2_drivernode0>;
+				_overlay_ {
+					status = "okay";
+					pcl_id = "v4l2_sensor";
+					devname = "ov5693 32-0036";
+					proc-device-tree = "/proc/device-tree/host1x/i2c@546c0000/tca9548@77/i2c@2/ov5693_c@36";
+				};
+			};
+			override@30 {
+				target = <&cam_module2_drivernode1>;
+				_overlay_ {
+					status = "okay";
+					pcl_id = "v4l2_lens";
+					proc-device-tree = "/proc/device-tree/e3333_lens_ov5693@P5V27C/";
+				};
+			};
+			/* Camera 2: VI */
+			override@31 {
+				target = <&vi_port2>;
+				_overlay_ {
+					status = "okay";
+				};
+			};
+			override@32 {
+				target = <&e3333_vi_in2>;
+				_overlay_ {
+					status = "okay";
+					port-index = <2>;
+					bus-width = <2>;
+					remote-endpoint = <&e3333_csi_out2>;
+				};
+			};
+			/* Camera 2: CSI */
+			override@33 {
+				target = <&csi_chan2>;
+				_overlay_ {
+					status = "okay";
+				};
+			};
+			override@34 {
+				target = <&csi_chan2_port0>;
+				_overlay_ {
+					status = "okay";
+				};
+			};
+			override@35 {
+				target = <&e3333_csi_in2>;
+				_overlay_ {
+					status = "okay";
+					port-index = <2>;
+					bus-width = <2>;
+					remote-endpoint = <&e3333_ov5693_out2>;
+				};
+			};
+			override@36 {
+				target = <&csi_chan2_port1>;
+				_overlay_ {
+					status = "okay";
+				};
+			};
+			override@37 {
+				target = <&e3333_csi_out2>;
+				_overlay_ {
+					status = "okay";
+					remote-endpoint = <&e3333_vi_in2>;
+				};
+			};
+			/* Camera 3: Module */
+			override@38 {
+				target = <&e3333_cam3>;
+				_overlay_ {
+					status = "okay";
+				};
+			};
+			override@39 {
+				target = <&cam_module3>;
+				_overlay_ {
+					status = "okay";
+					badge = "e3333_topleft_P5V27C";
+					position = "topleft";
+					orientation = "1";
+				};
+			};
+			override@40 {
+				target = <&cam_module3_drivernode0>;
+				_overlay_ {
+					status = "okay";
+					pcl_id = "v4l2_sensor";
+					devname = "ov5693 33-0036";
+					proc-device-tree = "/proc/device-tree/host1x/i2c@546c0000/tca9548@77/i2c@3/ov5693_d@36";
+				};
+			};
+			override@41 {
+				target = <&cam_module3_drivernode1>;
+				_overlay_ {
+					status = "okay";
+					pcl_id = "v4l2_lens";
+					proc-device-tree = "/proc/device-tree/e3333_lens_ov5693@P5V27C/";
+				};
+			};
+			/* Camera 3: VI */
+			override@42 {
+				target = <&vi_port3>;
+				_overlay_ {
+					status = "okay";
+				};
+			};
+			override@43 {
+				target = <&e3333_vi_in3>;
+				_overlay_ {
+					status = "okay";
+					port-index = <3>;
+					bus-width = <2>;
+					remote-endpoint = <&e3333_csi_out3>;
+				};
+			};
+			/* Camera 3: CSI */
+			override@44 {
+				target = <&csi_chan3>;
+				_overlay_ {
+					status = "okay";
+				};
+			};
+			override@45 {
+				target = <&csi_chan3_port0>;
+				_overlay_ {
+					status = "okay";
+				};
+			};
+			override@46 {
+				target = <&e3333_csi_in3>;
+				_overlay_ {
+					status = "okay";
+					port-index = <3>;
+					bus-width = <2>;
+					remote-endpoint = <&e3333_ov5693_out3>;
+				};
+			};
+			override@47 {
+				target = <&csi_chan3_port1>;
+				_overlay_ {
+					status = "okay";
+				};
+			};
+			override@48 {
+				target = <&e3333_csi_out3>;
+				_overlay_ {
+					status = "okay";
+					remote-endpoint = <&e3333_vi_in3>;
+				};
+			};
+			/* Camera 4: Module */
+			override@49 {
+				target = <&e3333_cam4>;
+				_overlay_ {
+					status = "okay";
+				};
+			};
+			override@50 {
+				target = <&cam_module4>;
+				_overlay_ {
+					status = "okay";
+					badge = "e3333_bottomright_P5V27C";
+					position = "bottomright";
+					orientation = "1";
+				};
+			};
+			override@51 {
+				target = <&cam_module4_drivernode0>;
+				_overlay_ {
+					status = "okay";
+					pcl_id = "v4l2_sensor";
+					devname = "ov5693 34-0036";
+					proc-device-tree = "/proc/device-tree/host1x/i2c@546c0000/tca9548@77/i2c@4/ov5693_e@36";
+				};
+			};
+			override@52 {
+				target = <&cam_module4_drivernode1>;
+				_overlay_ {
+					status = "okay";
+					pcl_id = "v4l2_lens";
+					proc-device-tree = "/proc/device-tree/e3333_lens_ov5693@P5V27C/";
+				};
+			};
+			/* Camera 4: VI */
+			override@53 {
+				target = <&vi_port4>;
+				_overlay_ {
+					status = "okay";
+				};
+			};
+			override@54 {
+				target = <&e3333_vi_in4>;
+				_overlay_ {
+					status = "okay";
+					port-index = <4>;
+					bus-width = <2>;
+					remote-endpoint = <&e3333_csi_out4>;
+				};
+			};
+			/* Camera 4: CSI */
+			override@55 {
+				target = <&csi_chan4>;
+				_overlay_ {
+					status = "okay";
+				};
+			};
+			override@56 {
+				target = <&csi_chan4_port0>;
+				_overlay_ {
+					status = "okay";
+				};
+			};
+			override@57 {
+				target = <&e3333_csi_in4>;
+				_overlay_ {
+					status = "okay";
+					port-index = <4>;
+					bus-width = <2>;
+					remote-endpoint = <&e3333_ov5693_out4>;
+				};
+			};
+			override@58 {
+				target = <&csi_chan4_port1>;
+				_overlay_ {
+					status = "okay";
+				};
+			};
+			override@59 {
+				target = <&e3333_csi_out4>;
+				_overlay_ {
+					status = "okay";
+					remote-endpoint = <&e3333_vi_in4>;
+				};
+			};
+			/* Camera 5: Module */
+			override@60 {
+				target = <&e3333_cam5>;
+				_overlay_ {
+					status = "okay";
+				};
+			};
+			override@61 {
+				target = <&cam_module5>;
+				_overlay_ {
+					status = "okay";
+					badge = "e3333_topright_P5V27C";
+					position = "topright";
+					orientation = "1";
+				};
+			};
+			override@62 {
+				target = <&cam_module5_drivernode0>;
+				_overlay_ {
+					status = "okay";
+					pcl_id = "v4l2_sensor";
+					devname = "ov5693 35-0036";
+					proc-device-tree = "/proc/device-tree/host1x/i2c@546c0000/tca9548@77/i2c@5/ov5693_f@36";
+				};
+			};
+			override@63 {
+				target = <&cam_module5_drivernode1>;
+				_overlay_ {
+					status = "okay";
+					pcl_id = "v4l2_lens";
+					proc-device-tree = "/proc/device-tree/e3333_lens_ov5693@P5V27C/";
+				};
+			};
+			/* Camera 5: VI */
+			override@64 {
+				target = <&vi_port5>;
+				_overlay_ {
+					status = "okay";
+				};
+			};
+			override@65 {
+				target = <&e3333_vi_in5>;
+				_overlay_ {
+					status = "okay";
+					port-index = <5>;
+					bus-width = <2>;
+					remote-endpoint = <&e3333_csi_out5>;
+				};
+			};
+			/* Camera 5: CSI */
+			override@66 {
+				target = <&csi_chan5>;
+				_overlay_ {
+					status = "okay";
+				};
+			};
+			override@67 {
+				target = <&csi_chan5_port0>;
+				_overlay_ {
+					status = "okay";
+				};
+			};
+			override@68 {
+				target = <&e3333_csi_in5>;
+				_overlay_ {
+					status = "okay";
+					port-index = <5>;
+					bus-width = <2>;
+					remote-endpoint = <&e3333_ov5693_out5>;
+				};
+			};
+			override@69 {
+				target = <&csi_chan5_port1>;
+				_overlay_ {
+					status = "okay";
+				};
+			};
+			override@70 {
+				target = <&e3333_csi_out5>;
+				_overlay_ {
+					status = "okay";
+					remote-endpoint = <&e3333_vi_in5>;
+				};
+			};
+			/* TCA6408 default */
+			override@72 {
+				target = <&tca6408_21>;
+				_overlay_ {
+					tca6408_21_input {
+						status = "disabled";
+					};
+					tca6408_21_outlow {
+						gpio-hog;
+						gpios = <0 0 1 0 2 0 3 0 4 0
+							 5 0 6 0 7 0>;
+						output-low;
+						label = "tca6408_21_outlow_0",
+							"tca6408_21_outlow_1",
+							"tca6408_21_outlow_2",
+							"tca6408_21_outlow_3",
+							"tca6408_21_outlow_4",
+							"tca6408_21_outlow_5",
+							"tca6408_21_outlow_6",
+							"tca6408_21_outlow_7";
+						status = "okay";
+					};
+					tca6408_21_outhigh {
+						status = "disabled";
+					};
+				};
+			};
+		};
+
+		fragment-imx185@0 {
+			ids = "LPRD-002001";
+			override@0 {
+				target = <&imx185_cam0>;
+				_overlay_ {
+					status = "okay";
+				};
+			};
+			override@1 {
+				target = <&cam_module0>;
+				_overlay_ {
+					status = "okay";
+					badge = "imx185_bottom_liimx185";
+					position = "bottom";
+					orientation = "0";
+				};
+			};
+			override@2 {
+				target = <&cam_module0_drivernode0>;
+				_overlay_ {
+					status = "okay";
+					pcl_id = "v4l2_sensor";
+					devname = "imx185 30-001a";
+					proc-device-tree = "/proc/device-tree/host1x/i2c@546c0000/tca9546@70/i2c@0/imx185_a@1a";
+				};
+			};
+			override@3 {
+				target = <&cam_module0_drivernode1>;
+				_overlay_ {
+					status = "okay";
+					pcl_id = "v4l2_lens";
+				};
+			};
+			/* Enable VI ports */
+			override@4 {
+				target = <&vi_base>;
+				_overlay_ {
+					num-channels=<1>;
+				};
+			};
+			override@5 {
+				target = <&vi_port0>;
+				_overlay_ {
+					status = "okay";
+				};
+			};
+			override@6 {
+				target = <&liimx185_vi_in0>;
+				_overlay_ {
+					status = "okay";
+					port-index = <0>;
+					bus-width = <4>;
+					remote-endpoint = <&liimx185_csi_out0>;
+				};
+			};
+			/* Enable CSI ports */
+			override@7 {
+				target = <&csi_base>;
+				_overlay_ {
+					num-channels=<1>;
+				};
+			};
+			override@8 {
+				target = <&csi_chan0>;
+				_overlay_ {
+					status = "okay";
+				};
+			};
+			override@9 {
+				target = <&csi_chan0_port0>;
+				_overlay_ {
+					status = "okay";
+				};
+			};
+			override@10 {
+				target = <&liimx185_csi_in0>;
+				_overlay_ {
+					status = "okay";
+					port-index = <0>;
+					bus-width = <4>;
+					remote-endpoint = <&liimx185_imx185_out0>;
+				};
+			};
+			override@11 {
+				target = <&csi_chan0_port1>;
+				_overlay_ {
+					status = "okay";
+				};
+			};
+			override@12 {
+				target = <&liimx185_csi_out0>;
+				_overlay_ {
+					status = "okay";
+					remote-endpoint = <&liimx185_vi_in0>;
+				};
+			};
+			/* tegra-camera-platform settings */
+			override@13 {
+				target = <&tcp>;
+				_overlay_ {
+					num_csi_lanes = <4>;
+					max_lane_speed = <1500000>;
+					min_bits_per_pixel = <10>;
+					vi_peak_byte_per_pixel = <2>;
+					vi_bw_margin_pct = <25>;
+					isp_peak_byte_per_pixel = <5>;
+					isp_bw_margin_pct = <25>;
+				};
+			};
+			/* pca9646 i2c mux */
+			override@14 {
+				target = <&tca9546_70>;
+				_overlay_ {
+					status = "okay";
+				};
+			};
+		};
+
+		fragment-imx274@0 {
+			ids = "LPRD-002002";
+			override@0 {
+				target = <&imx274_cam0>;
+				_overlay_ {
+					status = "okay";
+				};
+			};
+			override@1 {
+				target = <&cam_module0>;
+				_overlay_ {
+					status = "okay";
+					badge = "imx274_bottom_A6V26";
+					position = "bottom";
+					orientation = "0";
+				};
+			};
+			override@2 {
+				target = <&cam_module0_drivernode0>;
+				_overlay_ {
+					status = "okay";
+					pcl_id = "v4l2_sensor";
+					devname = "imx274 30-001a";
+					proc-device-tree = "/proc/device-tree/host1x/i2c@546c0000/tca9546@70/i2c@0/imx274_a@1a";
+				};
+			};
+			override@3 {
+				target = <&cam_module0_drivernode1>;
+				_overlay_ {
+					status = "okay";
+					pcl_id = "v4l2_lens";
+					proc-device-tree = "/proc/device-tree/lens_imx274@A6V26/";
+				};
+			};
+			/* Enable VI ports */
+			override@4 {
+				target = <&vi_base>;
+				_overlay_ {
+					num-channels=<1>;
+				};
+			};
+			override@5 {
+				target = <&vi_port0>;
+				_overlay_ {
+					status = "okay";
+				};
+			};
+			override@6 {
+				target = <&liimx274_vi_in0>;
+				_overlay_ {
+					status = "okay";
+					port-index = <0>;
+					bus-width = <4>;
+					remote-endpoint = <&liimx274_csi_out0>;
+				};
+			};
+			/* Enable CSI ports */
+			override@7 {
+				target = <&csi_base>;
+				_overlay_ {
+					num-channels=<1>;
+				};
+			};
+			override@8 {
+				target = <&csi_chan0>;
+				_overlay_ {
+					status = "okay";
+				};
+			};
+			override@9 {
+				target = <&csi_chan0_port0>;
+				_overlay_ {
+					status = "okay";
+				};
+			};
+			override@10 {
+				target = <&liimx274_csi_in0>;
+				_overlay_ {
+					status = "okay";
+					port-index = <0>;
+					bus-width = <4>;
+					remote-endpoint = <&liimx274_imx274_out0>;
+				};
+			};
+			override@11 {
+				target = <&csi_chan0_port1>;
+				_overlay_ {
+					status = "okay";
+				};
+			};
+			override@12 {
+				target = <&liimx274_csi_out0>;
+				_overlay_ {
+					status = "okay";
+					remote-endpoint = <&liimx274_vi_in0>;
+				};
+			};
+			/* tegra-camera-platform settings */
+			override@13 {
+				target = <&tcp>;
+				_overlay_ {
+					num_csi_lanes = <4>;
+					max_lane_speed = <1500000>;
+					min_bits_per_pixel = <10>;
+					vi_peak_byte_per_pixel = <2>;
+					vi_bw_margin_pct = <25>;
+					isp_peak_byte_per_pixel = <5>;
+					isp_bw_margin_pct = <25>;
+				};
+			};
+			/* pca9646 i2c mux */
+			override@14 {
+				target = <&tca9546_70>;
+				_overlay_ {
+					status = "okay";
+				};
+			};
+		};
+	};
+};

@@ -1,0 +1,11 @@
+#
+# PHY
+#
+
+config TEGRA_P2U
+	tristate "Nvidia Tegra P2U PHY Driver"
+	depends on ARCH_TEGRA
+	select GENERIC_PHY
+	help
+	  Enable this to support the P2U (PIPE to UPHY) that is part of Tegra 19x SOCs.
+

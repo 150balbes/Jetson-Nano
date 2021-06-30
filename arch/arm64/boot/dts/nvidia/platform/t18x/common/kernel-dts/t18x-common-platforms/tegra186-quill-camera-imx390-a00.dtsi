@@ -1,0 +1,93 @@
+/*
+ * Copyright (c) 2018-2019, NVIDIA CORPORATION.  All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+#include <t18x-common-modules/tegra186-camera-imx390-a00.dtsi>
+#include "dt-bindings/clock/tegra186-clock.h"
+
+#define CAM0_RST_L	TEGRA_MAIN_GPIO(R, 5)
+#define CAM0_PWDN	TEGRA_MAIN_GPIO(R, 0)
+
+#define CAMERA_I2C_MUX_BUS(x) (0x1E + x)
+
+/* camera control gpio definitions */
+
+/ {
+	i2c@3180000 {
+		tca9546@70 {
+			compatible = "nxp,pca9546";
+			reg = <0x70>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+			skip_mux_detect = "yes";
+			vif-supply = <&en_vdd_cam>;
+			vcc-supply = <&en_vdd_cam>;
+			vcc_lp = "vcc";
+			force_bus_start = <CAMERA_I2C_MUX_BUS(0)>;
+
+			i2c@0 {
+				reg = <0>;
+				i2c-mux,deselect-on-exit;
+				#address-cells = <1>;
+				#size-cells = <0>;
+				dser: max9296@48 {
+					compatible = "nvidia,max9296";
+					reg = <0x48>;
+					csi-mode = "2x4";
+					max-src = <2>;
+					reset-gpios = <&tegra_main_gpio CAM0_RST_L GPIO_ACTIVE_HIGH>;
+					vdd_cam_1v2-supply = <&en_vdd_cam_1v2>;
+				};
+				ser_prim: max9295_prim@62 {
+					compatible = "nvidia,max9295";
+					reg = <0x62>;
+					is-prim-ser;
+				};
+				ser_a: max9295_a@40 {
+					compatible = "nvidia,max9295";
+					reg = <0x40>;
+					nvidia,gmsl-dser-device = <&dser>;
+				};
+				ser_b: max9295_b@60 {
+					compatible = "nvidia,max9295";
+					reg = <0x60>;
+					nvidia,gmsl-dser-device = <&dser>;
+				};
+				imx390_a@1b {
+					def-addr = <0x1a>;
+					/* Define any required hw resources needed by driver */
+					/* ie. clocks, io pins, power sources */
+					clocks = <&tegra_car TEGRA186_CLK_EXTPERIPH1>,
+							 <&tegra_car TEGRA186_CLK_PLLP_OUT0>;
+					clock-names = "extperiph1", "pllp_grtba";
+					mclk = "extperiph1";
+					nvidia,gmsl-ser-device = <&ser_a>;
+					nvidia,gmsl-dser-device = <&dser>;
+				};
+				imx390_b@1c {
+					def-addr = <0x1a>;
+					/* Define any required hw resources needed by driver */
+					/* ie. clocks, io pins, power sources */
+					clocks = <&tegra_car TEGRA186_CLK_EXTPERIPH1>,
+							 <&tegra_car TEGRA186_CLK_PLLP_OUT0>;
+					clock-names = "extperiph1", "pllp_grtba";
+					mclk = "extperiph1";
+					nvidia,gmsl-ser-device = <&ser_b>;
+					nvidia,gmsl-dser-device = <&dser>;
+				};
+			};
+		};
+	};
+};

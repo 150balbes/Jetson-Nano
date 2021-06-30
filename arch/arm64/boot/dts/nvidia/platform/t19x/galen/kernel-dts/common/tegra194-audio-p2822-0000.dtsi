@@ -1,0 +1,128 @@
+/*
+ * T194 p2822-0000 audio common DTSI file.
+ *
+ * Copyright (c) 2017, NVIDIA CORPORATION.  All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; version 2 of the License.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ */
+
+#include <audio/tegra-platforms-audio-dai-links.dtsi>
+#include <t19x-common-platforms/tegra194-platforms-audio-pinmux.dtsi>
+#include <dt-bindings/gpio/tegra194-gpio.h>
+#include <dt-bindings/sound/rt5659.h>
+
+/ {
+
+	aconnect@2a41000 {
+		status = "okay";
+
+		agic-controller@2a41000 {
+			status = "okay";
+		};
+
+		adsp@2993000 {
+			status = "okay";
+		};
+	};
+
+	i2c@c250000 {
+		rt5658: rt5659.7-001a@1a {
+			compatible = "realtek,rt5658";
+			reg = <0x1a>;
+
+			realtek,jd-src = <RT5659_JD_NULL>;
+			realtek,dmic1-data-pin = <RT5659_DMIC1_NULL>;
+			realtek,dmic2-data-pin = <RT5659_DMIC2_NULL>;
+
+			gpios = <&tegra_main_gpio TEGRA194_MAIN_GPIO(S, 5) 0>;
+
+			status = "okay";
+		};
+	};
+
+	/* Default for all I2S is long fsync width(31) */
+	aconnect@2a41000 {
+		ahub {
+			/* I2S4 in Short frame sync for BT SCO */
+			i2s@2901300 {
+				fsync-width = <0>;
+			};
+		};
+	};
+
+	hda@3510000 {
+		status = "okay";
+	};
+
+	tegra_sound: sound {
+		status = "okay";
+		compatible = "nvidia,tegra-audio-t186ref-mobile-rt565x";
+		nvidia,model = "tegra-snd-t19x-mobile-rt565x";
+		clocks = <&bpmp_clks TEGRA194_CLK_PLLP_OUT0>,
+			<&bpmp_clks TEGRA194_CLK_PLLA>,
+			<&bpmp_clks TEGRA194_CLK_PLLA_OUT0>,
+			<&bpmp_clks TEGRA194_CLK_AHUB>,
+			<&bpmp_clks TEGRA194_CLK_CLK_M>,
+			<&bpmp_clks TEGRA194_CLK_AUD_MCLK>;
+		clock-names = "pll_p_out1", "pll_a", "pll_a_out0", "ahub",
+			"clk_m", "extern1";
+
+		nvidia,audio-routing =
+			"x Headphone Jack",     "x HPO L Playback",
+			"x Headphone Jack",     "x HPO R Playback",
+			"x IN1P",               "x Mic Jack",
+			"x IN2P",               "x Mic Jack",
+			"x Int Spk",            "x SPO Playback",
+			"x DMIC L1",            "x Int Mic",
+			"x DMIC L2",            "x Int Mic",
+			"x DMIC R1",            "x Int Mic",
+			"x DMIC R2",            "x Int Mic",
+			"y Headphone",          "y OUT",
+			"y IN",                 "y Mic",
+			"z Headphone",          "z OUT",
+			"z IN",                 "z Mic",
+			"m Headphone",          "m OUT",
+			"m IN",                 "m Mic",
+			"n Headphone",          "n OUT",
+			"n IN",                 "n Mic",
+			"o Headphone",          "o OUT",
+			"o IN",                 "o Mic",
+			"a IN",                 "a Mic",
+			"b IN",                 "b Mic",
+			"c IN",                 "c Mic",
+			"d IN",                 "d Mic",
+			"d1 Headphone",         "d1 OUT",
+			"d2 Headphone",         "d2 OUT";
+
+			/* Default config for all I2S dai links are
+			format = "i2s", bitclock-slave, frame-slave,
+			bitclock-noninversion, frame-noninversion,
+			bclk_ratio = 1 , Any change from default needs
+			override on platform specific files. */
+
+			/* Override with Codec entries */
+			nvidia,dai-link-1 {
+				link-name = "rt565x-playback";
+				codec-dai = <&rt5658>;
+				codec-dai-name = "rt5659-aif1";
+			};
+
+			/* Override with BT SCO entries */
+			nvidia,dai-link-4 {
+				format = "dsp_a";
+				tx-mask = <0xFF>;
+				rx-mask = <0xFF>;
+				bitclock-inversion;
+				bclk_ratio = <4>;
+				srate = <8000>;
+				num-channel = <1>;
+			};
+	};
+};

@@ -1,0 +1,18 @@
+#
+# nvs-led-test driver for Testing/Measurements
+#
+
+config NVS_LED_TEST
+	tristate "LED test sensor device"
+	depends on SYSFS && IIO && IIO_KFIFO_BUF && IIO_TRIGGER
+	select NVS_IIO
+	default n
+	help
+	  This driver adds a LED test NVS_IIO sensor that can be triggered via sysfs
+	  This driver can be built as a module. The module will be called
+	  nvs_led_test. It will trigger a specified gpio when triggered which should
+	  be attached to an LED which will light up for a period of time.
+
+config NVS_LED_TRACE_PRINTK
+	bool "Enable trace_printk debugging"
+	depends on FTRACE_PRINTK

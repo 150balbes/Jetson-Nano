@@ -1,0 +1,111 @@
+Tegra Thermal Throttle Driver
+-----------------------------
+
+This file documents the DT bindings of the Tegra Thermal Throttle driver. The
+throttling driver registers one or more cooling devices for throttling clocks
+in the system and provides passive cooling. The type of clock throttling
+supported by the driver are specified in the file:
+dt-bindings/nvidia,tegra-thermal-throttle.h.
+
+The throttling driver calculates a throttling frequency by doing a linear
+interpolation between the maximum and minimum frequencies of the clock. The
+throttled frequency can then be calculated using the equation:
+    throt_freq = max_freq - (cur_state * freq_step_size)
+
+The throttle driver queries the max\min frequencies using CCF and assumes a
+fixed frequency step size for each clock it throttles. It then uses mechanisms
+such as cpufreq and pmqos to set throttled frequency.
+
+The goal of passive cooling is to reduce power consumption for each cooling
+device cur state. The minimum frequency step size of clock depends on several
+factors and is different for each clock. Making throttling steps that are
+smaller than this step size will not result in the requested frequency and can
+result in bad thermal performance. The throttling driver must therefore at each
+step select a different throttling frequency from the clock's list of available
+frequencies. To address this the throttling driver assumes a fixed frequency
+step size for each clock and provides DT properties that can scale the step
+size. The resultant throttling equation therefore becomes:
+    throt_freq = max_freq - (((cur_state * freq_step_size) / slope_adj) + offset)
+
+Required properties:
+- clocks : This property provides a list of clocks that can be throttled. Must
+  provide at least one valid clock. Must contain one entry for each entry in
+  clock-names. See ../clocks/clock-bindings.txt for details.
+- clock-names: Must include either:
+  - Clock names for all CPUs "cpu0, cpu1, cpu2, cpu3", to throttle all CPUs. Or
+  - Clock name for GPU "gpu" to throttle the GPU.
+
+Required subnodes: The throttle node must provide at least one cooling device
+node with at least one clock to throttle.
+
+Required cooling device properties:
+- cdev-type: See ../thermal/thermal.txt for details.
+- cooling-cells: See ../thermal/thermal.txt for details.
+- nvidia,throttle-clocks: This property contains the list of clocks that need to
+  be throttled by the cooling device and their throttle rate tuning parameters.
+  The property is an array of triplets where each triplet contains the clock
+  throttling type, the slope adjustment factor and an offset. A valid throttle
+  clock entry must contain all three properties and at least one valid triplet
+  must be defined for the cooling device to be valid.
+  - throttling type: The first property in the triplet specifies the clock
+    throttling type and must be one of the values specified in
+    nvidia,tegra-thermal-throttle.h.
+  - slope-adj: The second property in the triplet is used to increase or
+    decrease the rate of frequency change by adjusting the freq_step_size for
+    the clock. A slope adjust of 100 scales the step size by 1 and should be
+    used as a default value if slope adjustment is not needed. The slope
+    adjusted freq_step_size is calculated as: freq_step_size * 100 / slope-adj.
+    A value of 50 therefore doubles the step size and decreases the max cooling
+    states. Whereas, slope-adj of 200 increases the step size and increases the
+    max cooling states. The slope adjust must be a positive non zero value.
+    Care must be taken while specifying the slope-adj as making the step size
+    smaller than the frequency step size of the clock will not affect the final
+    clock frequency as explained above.
+  - offset: Specifies the offset that will be added to the clock throttling
+    frequency. Since each cooling device can throttle more than one clock there
+    is often a need to delay the throttling on one of the clocks. Specifying
+    this property adds max frequency entries at the start of the throttling
+    table for that clock which effectively delays the throttling for the clock.
+    The number of steps added depends on the freq_step_size and slope_adj and
+    can be determined as shown in [1] below. Offset is specified in units of Hz
+    default offset of 0Hz must be specified if no offset is required.
+
+Optional cooling device properties:
+- nvidia,cutoff: To ensure a cooling device can throttle all clocks to their
+  minimum frequencies the max_state of the cooling device is decided by the
+  clock with the maximum max_state i.e.
+      max_state_clk1 = (max_freq - min_freq) / freq_step_size
+      max_state = max(max_state_clk1, max_state_clk2 ...)
+  Specifying the cutoff property ensures that the throttling stops as soon as
+  one of the clocks in the cooling device reache its minimum frequency, causing
+  the equation above to change to:
+      max_state = min(max_state_clk1, max_state_clk2 ...)
+  A missing property or a value of 0 disables cutoff. Allowed values are 0,1.
+
+Notes:
+The properties cutoff, offset and slope-adj tune the throttling response and
+change the max_state of the cooling device. The max_state of the cooling device
+can be calculated as follows:
+    max_state_clk_1 = (((offset / freq_step_size) + ((max_freq - min_freq) /
+			freq_step_size)) * slope_adj) / 100 ..... [1]
+if cutoff not specified:
+    max_state = max(max_state_clk1, max_state_clk2 ...)
+
+Example:
+tegra_thermal_throttle {
+	compatible = "nvidia,tegra-thermal-throttle";
+	clocks = <&bpmp_clks TEGRA194_CLK_NAFLL_CLUSTER0>,
+			<&bpmp_clks TEGRA194_CLK_NAFLL_CLUSTER1>,
+			<&bpmp_clks TEGRA194_CLK_NAFLL_CLUSTER2>,
+			<&bpmp_clks TEGRA194_CLK_NAFLL_CLUSTER3>,
+			<&bpmp_clks TEGRA194_CLK_NAFLL_GPU>;
+	clock-names = "cpu0", "cpu1", "cpu2", "cpu3", "gpu";
+	cpu_balanced {
+		cdev-type = "cpu-balanced";
+		#cooling-cells = <2>;
+		nvidia,cutoff = <1>;
+		nvidia,throttle_clocks = <TEGRA_THROTTLE_CPU 100 0,
+					 TEGRA_THROTTLE_GPU 100 0>;
+	};
+};
+

@@ -1,0 +1,9 @@
+if EXTCON
+
+config EXTCON_DISP_STATE
+	tristate "DISPLAY STATE EXTCON support"
+	depends on TEGRA_DC
+	default y
+	help
+	   Say Y here to enable display state cable detection with extcon support.
+endif

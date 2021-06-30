@@ -1,0 +1,10 @@
+config INPUT_CFBOOST
+	tristate "Input event CPU frequency booster"
+	depends on INPUT && CPU_FREQ
+	help
+	  Say Y here if you want to temporarily boost CPU frequency upon input
+	  events.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called input-cfboost.
+

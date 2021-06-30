@@ -1,0 +1,6 @@
+if SND_SOC
+
+source "sound/soc/tegra-alt/Kconfig"
+source "sound/soc/tegra-virt-alt/Kconfig"
+
+endif

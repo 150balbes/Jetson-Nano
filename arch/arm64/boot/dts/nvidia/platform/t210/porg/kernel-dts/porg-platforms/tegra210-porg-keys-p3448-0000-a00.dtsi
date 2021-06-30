@@ -1,0 +1,63 @@
+/*
+ * Copyright (c) 2018, NVIDIA CORPORATION.  All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with this program; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+ */
+
+#include <dt-bindings/gpio/tegra-gpio.h>
+#include <dt-bindings/input/input.h>
+
+/ {
+	gpio-keys {
+		compatible = "gpio-keys";
+		gpio-keys,name = "gpio-keys";
+		status = "okay";
+		disable-on-recovery-kernel;
+
+		power {
+			label = "Power";
+			gpios = <&gpio TEGRA_GPIO(X, 5) GPIO_ACTIVE_LOW>;
+			linux,code = <KEY_POWER>;
+			gpio-key,wakeup;
+			debounce-interval = <30>;
+			nvidia,pmc-wakeup = <&tegra_pmc
+				PMC_WAKE_TYPE_GPIO 24 PMC_TRIGGER_TYPE_NONE>;
+		};
+
+		forcerecovery {
+			label = "Forcerecovery";
+			gpios = <&gpio TEGRA_GPIO(X, 6) GPIO_ACTIVE_LOW>;
+			linux,code = <KEY_POWER>;
+			gpio-key,wakeup;
+			debounce-interval = <30>;
+		};
+	};
+
+	gpio-timed-keys {
+		compatible = "gpio-timed-keys";
+		gpio-keys,name = "gpio-timed-keys";
+		status = "disabled";
+		disable-on-recovery-kernel;
+
+		power {
+			label = "Power";
+			gpios = <&gpio TEGRA_GPIO(X, 5) GPIO_ACTIVE_LOW>;
+			linux,num_codes = <3>;
+			linux,press-time-secs = <1 3 5>;
+			linux,key-codes = <KEY_DOWN KEY_DISPLAYTOGGLE KEY_ENTER>;
+			gpio-key,wakeup;
+		};
+	};
+};

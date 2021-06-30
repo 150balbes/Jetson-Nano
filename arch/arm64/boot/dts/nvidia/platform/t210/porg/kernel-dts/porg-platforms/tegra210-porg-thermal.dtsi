@@ -1,0 +1,260 @@
+/*
+ * Copyright (c) 2019, NVIDIA CORPORATION.  All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms and conditions of the GNU General Public License,
+ * version 2, as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ */
+
+#include <dt-bindings/thermal/tegra210-trips.h>
+/ {
+	thermal-zones {
+		CPU-therm {
+			thermal-zone-params {
+				governor-name = "step_wise";
+				max_err_temp = <9000>;
+				max_err_gain = <1000>;
+				gain_p = <1000>;
+				gain_d = <0>;
+				up_compensation = <20>;
+				down_compensation = <20>;
+			};
+			trips {
+				dfll_cap_trip0: dfll-cap-trip0 {
+					temperature = <TEGRA210_DFLL_THERMAL_CAP_0>; /* millicelsius */
+					hysteresis = <1000>; /* millicelsius */
+					type = "active";
+				};
+				dfll_cap_trip1: dfll-cap-trip1 {
+					temperature = <TEGRA210_DFLL_THERMAL_CAP_1>; /* millicelsius */
+					hysteresis = <1000>; /* millicelsius */
+					type = "active";
+				};
+				cpu_critical {
+					temperature = <102000>;
+					hysteresis = <0>;
+					type = "critical";
+					writable;
+				};
+				cpu_heavy {
+					temperature = <100500>;
+					hysteresis = <0>;
+					type = "hot";
+					writable;
+				};
+				cpu_throttle {
+					temperature = <97000>;
+					hysteresis = <0>;
+					type = "passive";
+					writable;
+				};
+			};
+			cooling-maps {
+				/delete-node/ map0;
+				map1 {
+					trip = <&{/thermal-zones/CPU-therm/trips/cpu_heavy}>;
+					cdev-type = "tegra_heavy";
+					cooling-device = <&throttle_heavy 1 1>;
+				};
+				map2 {
+					trip = <&{/thermal-zones/CPU-therm/trips/cpu_throttle}>;
+					cdev-type = "cpu-balanced";
+					cooling-device = <&{/bthrot_cdev/cpu_balanced}
+						THERMAL_NO_LIMIT THERMAL_NO_LIMIT>;
+				};
+				dfll-cap-map0 {
+					trip = <&dfll_cap_trip0>;
+					cooling-device = <&dfll_cap 1 1>;
+				};
+				dfll-cap-map1 {
+					trip = <&dfll_cap_trip1>;
+					cooling-device = <&dfll_cap 2 2>;
+				};
+			};
+		};
+		/delete-node/ LCPU-therm;
+		/delete-node/ Tdiode_tegra;
+		/delete-node/ Tboard_tegra;
+		GPU-therm {
+			thermal-zone-params {
+				governor-name = "step_wise";
+				max_err_temp = <9000>;
+				max_err_gain = <1000>;
+				gain_p = <1000>;
+				gain_d = <0>;
+				up_compensation = <20>;
+				down_compensation = <20>;
+			};
+			trips {
+				gpu_critical {
+					temperature = <102500>;
+					hysteresis = <0>;
+					type = "critical";
+					writable;
+				};
+				gpu_heavy {
+					temperature = <101000>;
+					hysteresis = <0>;
+					type = "hot";
+					writable;
+				};
+				gpu_throttle {
+					temperature = <97500>;
+					hysteresis = <0>;
+					type = "passive";
+					writable;
+				};
+			};
+			cooling-maps {
+				/delete-node/ map0;
+				map1 {
+					trip = <&{/thermal-zones/GPU-therm/trips/gpu_heavy}>;
+					cdev-type = "tegra_heavy";
+					cooling-device = <&throttle_heavy 1 1>;
+				};
+				map2 {
+					trip = <&{/thermal-zones/GPU-therm/trips/gpu_throttle}>;
+					cdev-type = "gpu-balanced";
+					cooling-device = <&{/bthrot_cdev/gpu_balanced}
+						THERMAL_NO_LIMIT THERMAL_NO_LIMIT>;
+				};
+			};
+		};
+		PLL-therm {
+			thermal-zone-params {
+				governor-name = "pid_thermal_gov";
+				max_err_temp = <9000>;
+				max_err_gain = <1000>;
+				gain_p = <1000>;
+				gain_d = <0>;
+				up_compensation = <20>;
+				down_compensation = <20>;
+			};
+			trips {
+				pll_dram_throttle: dram-throttle {
+					temperature = <70000>;
+					hysteresis = <1000>;
+					type = "passive";
+					writable;
+				};
+			};
+			cooling-maps {
+				map-tegra-dram {
+					trip = <&pll_dram_throttle>;
+					cooling-device = <&tegra210_emc_dram_cdev 1 1>;
+					cdev-type = "tegra-dram";
+				};
+			};
+
+		};
+		AO-therm {
+			status = "okay";
+			polling-delay = <1000>;
+			thermal-zone-params {
+				governor-name = "pid_thermal_gov";
+			};
+			trips {
+				/* Reference only trip, not mapped */
+				gpu_scaling0: gpu-scaling0 {
+					temperature = <(-25000)>;
+					hysteresis = <0>;
+					type = "active";
+				};
+				gpu_scaling1: gpu-scaling1 {
+					temperature = <15000>; /* millicelsius */
+					hysteresis = <1000>; /* millicelsius */
+					type = "active";
+				};
+				gpu_scaling2: gpu-scaling2 {
+					temperature = <30000>; /* millicelsius */
+					hysteresis = <1000>; /* millicelsius */
+					type = "active";
+				};
+				gpu_scaling3: gpu-scaling3 {
+					temperature = <50000>; /* millicelsius */
+					hysteresis = <1000>; /* millicelsius */
+					type = "active";
+				};
+				gpu_scaling4: gpu-scaling4 {
+					temperature = <70000>; /* millicelsius */
+					hysteresis = <1000>; /* millicelsius */
+					type = "active";
+				};
+				gpu_scaling5: gpu-scaling5 {
+					temperature = <105000>; /* millicelsius */
+					hysteresis = <1000>; /* millicelsius */
+					type = "active";
+				};
+				gpu_vmax1: gpu-vmax1 {
+					temperature = <83000>; /* millicelsius */
+					hysteresis = <1000>; /* millicelsius */
+					type = "active";
+				};
+				core_dvfs_floor_trip0: core_dvfs_floor_trip0 {
+					temperature = <15000>;
+					hysteresis = <1000>;
+					type = "active";
+				};
+				core_dvfs_cap_trip0: core_dvfs_cap_trip0 {
+					temperature = <85000>;
+					hysteresis = <1000>;
+					type = "active";
+				};
+				dfll_floor_trip0: dfll-floor-trip0 {
+					temperature = <TEGRA210_DFLL_THERMAL_FLOOR_0>; /* millicelsius */
+					hysteresis = <1000>; /* millicelsius */
+					type = "active";
+				};
+			};
+
+			cooling-maps {
+				gpu-scaling-map1 {
+					trip = <&gpu_scaling1>;
+					cooling-device = <&gpu_scaling_cdev 1 1>;
+				};
+				gpu-scaling-map2 {
+					trip = <&gpu_scaling2>;
+					cooling-device = <&gpu_scaling_cdev 2 2>;
+				};
+				gpu_scaling_map3 {
+					trip = <&gpu_scaling3>;
+					cooling-device = <&gpu_scaling_cdev 3 3>;
+				};
+				gpu-scaling-map4 {
+					trip = <&gpu_scaling4>;
+					cooling-device = <&gpu_scaling_cdev 4 4>;
+				};
+				gpu-scaling-map5 {
+					trip = <&gpu_scaling5>;
+					cooling-device = <&gpu_scaling_cdev 5 5>;
+				};
+				gpu-vmax-map1 {
+					trip = <&gpu_vmax1>;
+					cooling-device = <&gpu_vmax_cdev 1 1>;
+				};
+				core_dvfs_floor_map0 {
+					trip = <&core_dvfs_floor_trip0>;
+					cooling-device = <&core_dvfs_floor 1 1>;
+				};
+				core_dvfs_cap_map0 {
+					trip = <&core_dvfs_cap_trip0>;
+					cooling-device = <&core_dvfs_cap 1 1>;
+				};
+				dfll-floor-map0 {
+					trip = <&dfll_floor_trip0>;
+					cooling-device = <&dfll_floor 1 1>;
+				};
+			};
+
+		};
+	};
+
+	tegra-aotag {
+		status = "okay";
+	};
+};

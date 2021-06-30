@@ -1,0 +1,287 @@
+/*
+ * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; version 2 of the License.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ */
+
+
+/ {
+	/* IVC and mempool driver */
+	tegra_hv: hyp {
+		compatible = "nvidia,tegra-hv";
+		status = "okay";
+	};
+	/* Property to be used by VM to determine if it is
+	 * running as VM under Hypervisor */
+	chosen {
+		nvidia,tegra-hypervisor-mode;
+	};
+
+	/* Use 64-bit GICC alias region which is mapped
+	 * to GICV interface underneath by Hypervisor */
+	interrupt-controller@3881000 {
+		reg = <0x0 0x03881000 0x0 0x00001000
+		       0x0 0x03892000 0x0 0x00002000>;
+	};
+
+	/* Paravirtualized BPMP driver */
+	bpmp {
+		compatible = "nvidia,tegra186-bpmp-hv";
+	};
+	/* Paravirtualized PM driver */
+	tegra_hv_pm_ctl {
+		compatible = "nvidia,tegra-hv-pm-ctl";
+	};
+
+	/* Paravirtualized watchdog driver */
+	tegra_hv_wdt {
+		compatible = "nvidia,tegra-hv-wdt";
+	};
+
+	/* Disable physical watchdog driver */
+	watchdog@30c0000 {
+		status = "disabled";
+	};
+
+	generic-system-config {
+		status = "disabled";
+	};
+
+	mipical {
+		status = "disabled";
+	};
+
+	combined-uart {
+		status = "disabled";
+	};
+
+	/* ISO-clients cannot have stage-1 translation and hence
+	 * iommus node are deleted for ISO-Clients which are
+	 * nvdisplay, vi and vi-thi */
+	host1x {
+		nvdisplay@15200000 {
+			/delete-property/ iommus;
+			/delete-property/ iso-smmu;
+		};
+
+		nvdisplay@15210000 {
+			/delete-property/ iommus;
+			/delete-property/ iso-smmu;
+		};
+
+		nvdisplay@15220000 {
+			/delete-property/ iommus;
+			/delete-property/ iso-smmu;
+		};
+
+		nvdisplay@15230000 {
+			/delete-property/ iommus;
+			/delete-property/ iso-smmu;
+		};
+
+		vi: vi@15c10000 {
+                        /delete-property/ iommus;
+                        /delete-property/ iso-smmu;
+		};
+
+		vi_thi: vi-thi@15f00000 {
+                        /delete-property/ iommus;
+                        /delete-property/ iso-smmu;
+		};
+	};
+
+	mc {
+		/delete-property/ ranges;
+		/delete-node/ mssnvlink@1f20000;
+	};
+
+	/* ISO-SMMU is not available for a VM and hence
+	 * all the properties related to ISO-SMMU are deleted. */
+	iommu@12000000 {
+#if LINUX_VERSION >= 414
+		reg = <0 0x12000000 0 0x800000>,
+		      <0 0x11000000 0 0x800000>;
+#else
+		reg = <0x0 0x12000000 0x0 0x01000000>, /* SMMU0 16MB */
+		      <0x0 0x11000000 0x0 0x01000000>; /* SMMU1 16MB */
+#endif
+		/delete-property/ iso-smmu-id;
+	};
+
+	xhci@3610000 {
+		vfs_num = <4>;
+		/* Index 0 : XUSB PF base address and size
+		 * Index 1 : XUSB PF CFG (FPCI) base address and size
+		 * Index 2 : XUSB VF0 base address and size
+		 * Index 3 : XUSB PADCTL base address and size
+		 * Index 4 : XUSB AO base address and size
+		 */
+		reg = <0x0 0x3610000 0x0 0x50000>,
+			<0x0 0x3600000 0x0 0x10000>,
+			<0x0 0x3660000 0x0 0x50000>,
+			<0x0 0x3520000 0x0 0x10000>,
+			<0x0 0x3540000 0x0 0x10000>;
+		pf {
+			ss_start = <1>;
+			ss_num = <4>;
+			hs_start = <5>;
+			hs_num = <4>;
+		};
+
+		vfs {
+			/*
+			 * portmap : Add all the ports(Host/Device Mode) that
+			 * are owned by a Guest. Even if there is a micro-B port
+			 * which is device only, add it to portmap so that
+			 * XHCI_SERVER can validate when VF accesses PAD/AO
+			 * Registers for the device only port
+			 */
+
+			vf@1 {
+				slots = <36>;
+			};
+			vf@2 {
+				slots = <36>;
+			};
+			vf@3 {
+				slots = <36>;
+			};
+			vf@4 {
+				slots = <36>;
+			};
+		};
+	};
+
+	vse@15810000 {
+		compatible = "nvidia,tegra186-hv-vse";
+		se-engine-id = <0>;
+		status = "disabled";
+	};
+
+	vse@15820000 {
+		compatible = "nvidia,tegra186-hv-vse";
+		se-engine-id = <1>;
+		status = "disabled";
+	};
+
+	vse@15830000 {
+		compatible = "nvidia,tegra186-hv-vse";
+		se-engine-id = <2>;
+		status = "disabled";
+	};
+
+	vse@15840000 {
+		compatible = "nvidia,tegra186-hv-vse";
+		se-engine-id = <3>;
+		status = "disabled";
+	};
+
+	vse@3ae0000 {
+		compatible = "nvidia,tegra186-hv-vse";
+		se-engine-id = <4>;
+		status = "disabled";
+	};
+
+	vse@3ad0000 {
+		compatible = "nvidia,tegra186-hv-vse";
+		se-engine-id = <5>;
+		status = "disabled";
+	};
+
+	cbb-noc@2300000 {
+		status = "disabled";
+	};
+
+	aon-noc@C600000 {
+		status = "disabled";
+	};
+
+	bpmp-noc@D600000 {
+		status = "disabled";
+	};
+
+	rce-noc@BE00000 {
+		status = "disabled";
+	};
+
+	sce-noc@B600000 {
+		status = "disabled";
+	};
+
+	cv-noc@14040000 {
+		status = "disabled";
+	};
+
+	axi2apb@2390000 {
+		status = "disabled";
+	};
+
+	/* Disable cpufreq, so that server partitions accidently don't invoke
+	  cpufreq driver(in case if present in server code). In bpmp-server(which
+	  owns cpufreq)DT, cpufreq DT node will be enabled explicitly.
+	*/
+	cpufreq {
+		status = "disabled";
+	};
+
+	se_elp@3ad0000 {
+		status = "disabled";
+	};
+
+	host1x {
+		se@15810000 {
+			status="disabled";
+		};
+
+		se@15820000 {
+			status="disabled";
+		};
+
+		se@15830000 {
+			status="disabled";
+		};
+
+		se@15840000 {
+			status="disabled";
+		};
+	};
+
+	vgpu {
+		compatible = "nvidia,gv11b-vgpu";
+		reg = <0x0 0x17810000 0x0 0x10000>;
+		reg-names = "usermode";
+		nvidia,host1x = <&host1x>;
+		dma-noncontig;
+		status = "disabled";
+	};
+
+	aconnect@2a41000 {
+		/* Remove APE and APB2APE clocks from adsp node to
+		 * prevent guest owning ADSP peripheral from
+		 * toggling APE clocks. These clocks are owned and
+		 * controlled only by Audio Server
+		 */
+		adsp@2993000 {
+			clocks = <&bpmp_clks TEGRA194_CLK_ADSPNEON>,
+				<&bpmp_clks TEGRA194_CLK_ADSP>,
+				<&bpmp_clks TEGRA194_CLK_ACLK>;
+			clock-names = "adspneon", "adsp", "aclk";
+		};
+
+		/* Add ADSP reset information to AHUB node to allow
+		 * Audio Server ownership of ADSP reset. Required for
+		 * ADSP reset handling during guest reset.
+		 */
+		ahub {
+			resets = <&bpmp_resets TEGRA194_RESET_ADSP_ALL>;
+			reset-names = "adspall";
+		};
+	};
+};

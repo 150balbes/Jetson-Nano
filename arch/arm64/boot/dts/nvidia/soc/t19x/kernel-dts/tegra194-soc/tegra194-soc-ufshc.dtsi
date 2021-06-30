@@ -1,0 +1,89 @@
+/*
+ * tegra194-soc-ufshc.dtsi: Tegra186 soc dtsi file for UFS host controller
+ *
+ * Copyright (c) 2017-2018, NVIDIA CORPORATION.  All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; version 2 of the License.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ */
+
+/ {
+
+	pmc@c360000 {
+		ufs_dpd_enable: dpd-enable {
+			ufs {
+				pins = "ufs";
+				low-power-enable;
+			};
+		};
+		ufs_dpd_disable: dpd-disable {
+			ufs {
+				pins = "ufs";
+				low-power-disable;
+			};
+		};
+	};
+
+	tegra_ufs: ufshci@2450000 {
+		compatible = "tegra,ufs_variant";
+		reg = <0x0 0x02450000 0x0 0x4000>;
+		interrupts = < 0 44 0x04 >;
+		iommus = <&smmu TEGRA_SID_UFSHC>;
+		dma-coherent;
+		clocks = <&bpmp_clks TEGRA194_CLK_MPHY_CORE_PLL_FIXED>,
+				<&bpmp_clks TEGRA194_CLK_MPHY_L0_TX_SYMB>,
+				<&bpmp_clks TEGRA194_CLK_MPHY_TX_1MHZ_REF> ,
+				<&bpmp_clks TEGRA194_CLK_MPHY_L0_RX_ANA>,
+				<&bpmp_clks TEGRA194_CLK_MPHY_L0_RX_SYMB>,
+				<&bpmp_clks TEGRA194_CLK_MPHY_L0_TX_LS_3XBIT>,
+				<&bpmp_clks TEGRA194_CLK_MPHY_L0_RX_LS_BIT>,
+				<&bpmp_clks TEGRA194_CLK_MPHY_L1_RX_ANA>,
+				<&bpmp_clks TEGRA194_CLK_UFSHC>,
+				<&bpmp_clks TEGRA194_CLK_UFSDEV_REF>,
+				<&bpmp_clks TEGRA194_CLK_PLLP_OUT0>,
+				<&bpmp_clks TEGRA194_CLK_CLK_M>,
+				<&bpmp_clks TEGRA194_CLK_MPHY_FORCE_LS_MODE>,
+				<&bpmp_clks TEGRA194_CLK_UPHY_PLL3>;
+		clock-names = "mphy_core_pll_fixed", "mphy_l0_tx_symb",
+				"mphy_tx_1mhz_ref", "mphy_l0_rx_ana",
+				"mphy_l0_rx_symb", "mphy_l0_tx_ls_3xbit",
+				"mphy_l0_rx_ls_bit", "mphy_l1_rx_ana",
+				"ufshc", "ufsdev_ref", "pll_p", "clk_m",
+				"mphy_force_ls_mode", "uphy_pll3";
+		resets = <&bpmp_resets TEGRA194_RESET_MPHY_L0_RX>,
+				<&bpmp_resets TEGRA194_RESET_MPHY_L0_TX>,
+				<&bpmp_resets TEGRA194_RESET_MPHY_L1_RX>,
+				<&bpmp_resets TEGRA194_RESET_MPHY_L1_TX>,
+				<&bpmp_resets TEGRA194_RESET_MPHY_CLK_CTL>,
+				<&bpmp_resets TEGRA194_RESET_UFSHC>,
+				<&bpmp_resets TEGRA194_RESET_UFSHC_AXI_M>,
+				<&bpmp_resets TEGRA194_RESET_UFSHC_LP_SEQ>;
+		reset-names = "mphy-l0-rx-rst", "mphy-l0-tx-rst", "mphy-l1-rx-rst",
+				"mphy-l1-tx-rst", "mphy-clk-ctl-rst", "ufs-rst",
+				"ufs-axi-m-rst", "ufshc-lp-rst";
+		nvidia,enable-x2-config;
+		nvidia,enable-scramble;
+		nvidia,mask-fast-auto-mode;
+		nvidia,max-hs-gear = <3>;
+		nvidia,max-pwm-gear = <4>;
+		vcc-max-microamp = <0>;
+		vccq-max-microamp = <0>;
+		vccq2-max-microamp = <0>;
+		nvidia,configure-uphy-pll3;
+		pinctrl-names = "ufs_dpd_enable", "ufs_dpd_disable";
+		pinctrl-0 = <&ufs_dpd_enable>;
+		pinctrl-1 = <&ufs_dpd_disable>;
+		status = "disabled";
+
+		ufs_variant {
+			compatible = "tegra,ufs_variant";
+		};
+	};
+};
+

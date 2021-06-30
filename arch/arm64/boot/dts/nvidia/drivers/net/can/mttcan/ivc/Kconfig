@@ -1,0 +1,11 @@
+config MTTCAN_IVC
+	tristate "Bosch M_TTCAN IVC Devices"
+	depends on ARCH_TEGRA_18x_SOC && CAN
+	select STAGING
+	help
+	  Support for the Bosch M_TTCAN driver over IVC. The driver
+	  is implemented in sensor processor running RTOS. CAN services
+	  are made available to Linux though IVC. The Bosch MTTCAN
+	  CAN controller has two independent CAN interfaces. These
+	  intefaces supports CAN-FD and TT-CAN. This driver requires
+	  SocketCAN support enabled in kernel.

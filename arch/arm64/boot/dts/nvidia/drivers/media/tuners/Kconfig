@@ -1,0 +1,10 @@
+menu "Nvidia overlay Customize TV tuners"
+        visible if !MEDIA_SUBDRV_AUTOSELECT || COMPILE_TEST
+        depends on MEDIA_ANALOG_TV_SUPPORT || MEDIA_DIGITAL_TV_SUPPORT || MEDIA_RADIO_SUPPORT || MEDIA_SDR_SUPPORT
+config MEDIA_TUNER_TDA18272
+	tristate "NXP TDA18272 silicon tuner"
+	depends on MEDIA_SUPPORT && I2C
+	default m if !MEDIA_SUBDRV_AUTOSELECT
+	help
+	  A silicon tuner module. Say Y when you want to support this tuner.
+endmenu

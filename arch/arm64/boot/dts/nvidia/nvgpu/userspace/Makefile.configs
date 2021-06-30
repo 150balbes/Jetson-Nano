@@ -1,0 +1,15 @@
+#
+# Define various configs such as VIDMEM, etc. This is a bit annoying since
+# this really should be specific to Linux, but many header files need to
+# be aware of the CONFIG_* defines. As such we replicate some of the configs
+# that we potientially will want enabled in testing.
+#
+
+configs :=
+
+# Enabled configs.
+# None right now!
+
+# Uncomment these to enable the config.
+# configs += -DCONFIG_NVGPU_TRACK_MEM_USAGE=y
+# configs += -DCONFIG_GK20A_VIDMEM

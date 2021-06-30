@@ -1,0 +1,179 @@
+/*
+ * tegra210b01-soc-i2c-prods.dtsi: I2C SoC specific DTSI file with required prod values.
+ *
+ * Copyright (c) 2017, NVIDIA CORPORATION.  All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; version 2 of the License.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ */
+
+/ {
+	pinmux@700008d4 {
+		prod-settings {
+			i2c0_prod {
+				nvidia,prod-boot-init;
+				prod = <0 0xD4 0x01F1F000 0x0001F000
+					0 0xD8 0x01F1F000 0x0001F000
+					1 0xBC 0x00001100 0x00001000
+					1 0xC0 0x00001100 0x00001000>;
+			};
+			i2c1_prod {
+				nvidia,prod-boot-init;
+				prod = <0 0xDC 0x01F1F000 0x0001F000
+					0 0xE0 0x01F1F000 0x0001F000
+					1 0xC4 0x00001100 0x00001000
+					1 0xC8 0x00001100 0x00001000>;
+			};
+			i2c2_prod {
+				nvidia,prod-boot-init;
+				prod = <0 0xE4 0x01F1F000 0x0001F000
+					0 0xE8 0x01F1F000 0x0001F000
+					1 0xCC 0x00001100 0x00001000
+					1 0xD0 0x00001100 0x00001000
+					0 0x60 0x01F1F000 0x0001F000
+					0 0x64 0x01F1F000 0x0001F000
+					1 0xD4 0x00001100 0x00001000
+					1 0xD8 0x00001100 0x00001000>;
+			};
+			i2c4_prod {
+				nvidia,prod-boot-init;
+				prod = <0 0x198 0x01F1F000 0x0001F000
+					0 0x19C 0x01F1F000 0x0001F000
+					1 0xDC 0x00001100 0x00001000
+					1 0xE0 0x00001100 0x00001000>;
+			};
+		};
+	};
+
+	i2c@7000c000 {
+		prod-settings {
+			prod_c_sm {
+				prod = <
+					0x00 0x00007000 0x00002000
+					0x6c 0xffff0000 0x00160000
+					0x94 0x00003f1f 0x00000304>;
+			};
+			prod_c_fm {
+				prod = <
+					0x00 0x00007000 0x00002000
+					0x94 0x00003f1f 0x00000204>;
+			};
+			prod_c_fmplus {
+				prod = <
+					0x00 0x00007000 0x00000000
+					0x94 0x00003f1f 0x00000204>;
+			};
+		};
+	};
+
+	i2c@7000c400 {
+		prod-settings {
+			prod_c_sm {
+				prod = <
+					0x00 0x00007000 0x00002000
+					0x6c 0xffff0000 0x00160000
+					0x94 0x00003f00 0x00000304>;
+			};
+			prod_c_fm {
+				prod = <
+					0x00 0x00007000 0x00002000
+					0x94 0x00003f1f 0x00000204>;
+			};
+			prod_c_fmplus {
+				prod = <
+					0x00 0x00007000 0x00000000
+					0x94 0x00003f1f 0x00000204>;
+			};
+		};
+	};
+
+	i2c@7000c500 {
+		prod-settings {
+			prod_c_sm {
+				prod = <
+					0x00 0x00007000 0x00002000
+					0x6c 0xffff0000 0x00160000
+					0x94 0x00003f1f 0x00000304>;
+			};
+			prod_c_fm {
+				prod = <
+					0x00 0x00007000 0x00002000
+					0x94 0x00003f1f 0x00000204>;
+			};
+			prod_c_fmplus {
+				prod = <
+					0x00 0x00007000 0x00000000
+					0x94 0x00003f1f 0x00000204>;
+			};
+		};
+	};
+
+	i2c@7000c700 {
+		prod-settings {
+			prod_c_sm {
+				prod = <
+					0x00 0x00007000 0x00002000
+					0x6c 0xffff0000 0x00160000
+					0x94 0x00003f1f 0x00000304>;
+			};
+			prod_c_fm {
+				prod = <
+					0x00 0x00007000 0x00002000
+					0x94 0x00003f1f 0x00000204>;
+			};
+			prod_c_fmplus {
+				prod = <
+					0x00 0x00007000 0x00000000
+					0x94 0x00003f1f 0x00000204>;
+			};
+		};
+	};
+
+	i2c@7000d000 {
+		prod-settings {
+			prod_c_sm {
+				prod = <
+					0x00 0x00007000 0x00002000
+					0x6c 0xffff0000 0x00160000
+					0x94 0x00003f1f 0x00000304>;
+			};
+			prod_c_fm {
+				prod = <
+					0x00 0x00007000 0x00002000
+					0x94 0x00003f1f 0x00000204>;
+			};
+			prod_c_fmplus {
+				prod = <
+					0x00 0x00007000 0x00000000
+					0x94 0x00003f1f 0x00000204>;
+			};
+		};
+	};
+
+	i2c@7000d100 {
+		prod-settings {
+			prod_c_sm {
+				prod = <
+					0x00 0x00007000 0x00002000
+					0x6c 0xffff0000 0x00160000
+					0x94 0x00003f1f 0x00000304>;
+			};
+			prod_c_fm {
+				prod = <
+					0x00 0x00007000 0x00002000
+					0x94 0x00003f1f 0x00000204>;
+			};
+			prod_c_fmplus {
+				prod = <
+					0x00 0x00007000 0x00000000
+					0x94 0x00003f1f 0x00000204>;
+			};
+		};
+	};
+};

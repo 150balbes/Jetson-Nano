@@ -1,0 +1,44 @@
+#include <dt-bindings/gpio/tegra-gpio.h>
+#include <dt-bindings/soc/tegra-pmc.h>
+
+/ {
+	gpio@6000d000 {
+		wlan-default-input {
+			gpio-hog;
+			input;
+			gpios = <TEGRA_GPIO(H, 2) 0>;
+			label = "wlan-default-input-h2";
+		};
+
+		wlan-default-output-high {
+			gpio-hog;
+			output-high;
+			gpios = <TEGRA_GPIO(H, 0) 0
+				 TEGRA_GPIO(H, 1) 1>;
+			label = "wlan-out-high-h0", "wlan-out-high-h1";
+		};
+	};
+
+	bluedroid_pm {
+		compatible = "nvidia,tegra-bluedroid_pm";
+		id = <0>;
+		bluedroid_pm,reset-gpio = <&gpio TEGRA_GPIO(H, 4) 0>;
+		bluedroid_pm,host-wake-gpio = <&gpio TEGRA_GPIO(H, 5) 0>;
+		bluedroid_pm,ext-wake-gpio = <&gpio TEGRA_GPIO(H, 3) 0>;
+		interrupt-parent = <&gpio>;
+		interrupts = <TEGRA_GPIO(H, 5) 0x01>;
+		nvidia,pmc-wakeup = <&tegra_pmc
+			PMC_WAKE_TYPE_EVENT 52 PMC_TRIGGER_TYPE_HIGH>;
+	};
+
+	bcmdhd_wlan {
+		compatible = "android,bcmdhd_wlan";
+		interrupt-parent = <&gpio>;
+		interrupts = <TEGRA_GPIO(H, 2) 0x14>;
+		wlan-pwr-gpio = <&gpio TEGRA_GPIO(H, 0) 0>;
+		wlan-rst-gpio = <&gpio TEGRA_GPIO(H, 1) 0>;
+		fw_path = "/vendor/firmware/bcm4354/fw_bcmdhd.bin";
+		nv_path = "/vendor/firmware/nvram_4354.txt";
+		status = "okay";
+	};
+};

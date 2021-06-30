@@ -1,0 +1,112 @@
+/*
+ * arch/arm/boot/dts/panel-o-720p-6-0-01.dsti
+ *
+ * Copyright (c) 2015-2017, NVIDIA CORPORATION.  All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with this program; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+ */
+#include <dt-bindings/display/tegra-dc.h>
+#include <dt-bindings/display/tegra-panel.h>
+
+/ {
+	host1x {
+		dsi {
+			panel_o_720p_6_0_01: panel-o-720p-6-0-01 {
+				status = "disabled";
+				compatible = "o,720-1280-6-0-01";
+				nvidia,dsi-instance = <DSI_INSTANCE_0>;
+				nvidia,dsi-n-data-lanes = <4>;
+				nvidia,dsi-lp-cmd-mode-freq = <100000>;
+				nvidia,dsi-lp-read-cmd-mode-freq = <100000>;
+				nvidia,dsi-no-pkt-seq-eot;
+				nvidia,dsi-pixel-format = <TEGRA_DSI_PIXEL_FORMAT_24BIT_P>;
+				nvidia,dsi-refresh-rate = <60>;
+				nvidia,dsi-video-data-type = <TEGRA_DSI_VIDEO_TYPE_VIDEO_MODE>;
+				nvidia,dsi-video-clock-mode = <TEGRA_DSI_VIDEO_CLOCK_TX_ONLY>;
+				nvidia,dsi-video-burst-mode = <TEGRA_DSI_VIDEO_NONE_BURST_MODE>;
+				nvidia,dsi-virtual-channel = <TEGRA_DSI_VIRTUAL_CHANNEL_0>;
+				nvidia,dsi-panel-reset = <TEGRA_DSI_ENABLE>;
+				nvidia,dsi-power-saving-suspend = <TEGRA_DSI_ENABLE>;
+				nvidia,dsi-ulpm-not-support = <TEGRA_DSI_ENABLE>;
+				nvidia,dsi-phy-tlpx = <100>;
+				nvidia,dsi-init-cmd = <TEGRA_DSI_PACKET_CMD DSI_DCS_LONG_WRITE 0x4 0x0 0x0 0xb9 0xff 0x83 0x94 0x0 0x0>,
+					<0x0 DSI_DCS_WRITE_1_PARAM 0xBD 0x00 0x0>,
+					<TEGRA_DSI_PACKET_CMD DSI_DCS_LONG_WRITE 0x19 0x0 0x0 0xD8 0xAA 0xAA 0xAA 0xEB 0xAA 0xAA 0xAA 0xAA 0xAA
+											      0xEB 0xAA 0xAA 0xAA 0xAA 0xAA 0xEB 0xAA 0xAA 0xAA
+											      0xAA 0xAA 0xEB 0xAA 0xAA 0x0 0x0>,
+					<0x0 DSI_DCS_WRITE_1_PARAM 0xBD 0x01 0x0>,
+					<TEGRA_DSI_PACKET_CMD DSI_DCS_LONG_WRITE 0x27 0x0 0x0 0xD8 0xFF 0xFF 0xFF 0xFF 0xFF 0xFF 0xFF 0xFF 0xFF
+											      0xFF 0xFF 0xFF 0xFF 0xFF 0xFF 0xFF 0xFF 0xFF 0xFF
+											      0xFF 0xFF 0xFF 0xFF 0xFF 0xFF 0xFF 0xFF 0xFF 0xFF
+											      0xFF 0xFF 0xFF 0xFF 0xFF 0xFF 0xFF 0xFF 0xFF 0x0 0x0>,
+					<0x0 DSI_DCS_WRITE_1_PARAM 0xBD 0x02 0x0>,
+					<TEGRA_DSI_PACKET_CMD DSI_DCS_LONG_WRITE 0xf 0x0 0x0 0xD8 0xFF 0xFF 0xFF 0xFF 0xFF 0xFF 0xFF 0xFF 0xFF
+											     0xFF 0xFF 0xFF 0xFF 0xFF 0x0 0x0>,
+					<0x0 DSI_DCS_WRITE_1_PARAM 0xBD 0x0 0x0>,
+					<TEGRA_DSI_PACKET_CMD DSI_DCS_LONG_WRITE 0x4 0x0 0x0 0xB9 0x0 0x0 0x0 0x0 0x0>,
+					<0x0 DSI_DCS_WRITE_0_PARAM 0x11 0x0 0x0>,
+					<TEGRA_DSI_DELAY_MS 200>, //180ms + 20ms
+					/* TODO, Do we need to find a way to set set_display_on after "operate DSI_A in video mode"? */
+					<0x0 DSI_DCS_WRITE_0_PARAM DSI_DCS_SET_DISPLAY_ON 0x0 0x0>;
+				nvidia,dsi-n-init-cmd = <12>;
+				nvidia,dsi-suspend-cmd = <0x0 DSI_DCS_WRITE_0_PARAM DSI_DCS_SET_DISPLAY_OFF 0x0 0x0>,
+					<TEGRA_DSI_DELAY_MS 50>,
+					<0x0 DSI_DCS_WRITE_0_PARAM DSI_DCS_ENTER_SLEEP_MODE 0x0 0x0>,
+					<TEGRA_DSI_DELAY_MS 10>;
+				nvidia,dsi-n-suspend-cmd = <4>;
+				disp-default-out {
+					nvidia,out-type = <TEGRA_DC_OUT_DSI>;
+					/* TODO check real physical width and height in mm unit */
+					nvidia,out-width = <80>;
+					nvidia,out-height = <142>;
+					nvidia,out-flags = <TEGRA_DC_OUT_CONTINUOUS_MODE>;
+					nvidia,out-xres = <720>;
+					nvidia,out-yres = <1280>;
+				};
+				display-timings {
+					720x1280-24 {
+						clock-frequency = <77903880>; /* (720+134+144) x (1280+11+10) x 60 */
+						hactive = <720>;
+						vactive = <1280>;
+						hfront-porch = <136>;
+						/* TODO, doc mentioned HS+HBP to 108 Byte clk (144)
+						 * Once hsync_width and HBP are clear, need to set these again */
+						hback-porch = <72>;
+						hsync-len = <72>;
+						vfront-porch = <10>;
+						/* TODO, doc mentioned VBP only to 9.
+						 * Once vsync_width is clear, need to set VBP and vsync_width again */
+						vback-porch = <9>;
+						vsync-len = <1>;
+						nvidia,h-ref-to-sync = <1>;
+						nvidia,v-ref-to-sync = <1>;
+					};
+				};
+				smartdimmer {
+					status = "disabled";
+				};
+			};
+		};
+	};
+	backlight {
+		panel_o_720p_6_0_01_bl: panel-o-720p-6-0-01-bl {
+			status = "disabled";
+			compatible = "o,720-1280-6-0-01-bl";
+			pwms = <&tegra_pwm 1 50000>;
+			max-brightness = <255>;
+			default-brightness = <224>;
+		};
+	};
+};

@@ -1,0 +1,214 @@
+/*
+ * Copyright (c) 2017, NVIDIA CORPORATION.  All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; version 2 of the License.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ */
+
+#include "dt-bindings/gpio/tegra194-gpio.h"
+#include "dt-bindings/extcon-ids.h"
+#include <t19x-common-modules/tegra194-cvb-e3366-0000-a00.dtsi>
+#include "tegra194-e3366-disp.dtsi"
+/ {
+	i2c@3160000 {
+		e3366_gpio_u1401: gpio@20 {
+			compatible = "ti,tca9539";
+			reg = <0x20>;
+			gpio-controller;
+			#gpio-cells = <2>;
+			vcc-supply = <&e3366_vdd_1v8_slt>;
+		};
+
+		e3366_gpio_u1402: gpio@21 {
+			compatible = "ti,tca9539";
+			reg = <0x21>;
+			gpio-controller;
+			#gpio-cells = <2>;
+			vcc-supply = <&e3366_vdd_1v8_slt>;
+		};
+
+		e3366_gpio_u1403: gpio@22 {
+			compatible = "ti,tca9539";
+			reg = <0x22>;
+			gpio-controller;
+			#gpio-cells = <2>;
+			vcc-supply = <&e3366_vdd_1v8_slt>;
+		};
+
+		e3366_gpio_u1404: gpio@23 {
+			compatible = "ti,tca9539";
+			reg = <0x23>;
+			gpio-controller;
+			#gpio-cells = <2>;
+			vcc-supply = <&e3366_vdd_1v8_slt>;
+		};
+
+		e3366_gpio_u1405: gpio@24 {
+			compatible = "ti,tca9539";
+			reg = <0x24>;
+			gpio-controller;
+			#gpio-cells = <2>;
+			vcc-supply = <&e3366_vdd_1v8_slt>;
+
+			/* DP_PWR_GD_EXP to DPIIM */
+			dp_pwr_gd_exp {
+				gpio-hog;
+				output-high;
+				gpios = <3 0>;
+				label = "dp_pwr_gd_exp";
+				status = "okay";
+			};
+		};
+
+		e3366_gpio_u1406: gpio@25 {
+			compatible = "ti,tca9539";
+			reg = <0x25>;
+			gpio-controller;
+			#gpio-cells = <2>;
+			vcc-supply = <&battery_reg>;
+		};
+
+		e3366_gpio_u1407: gpio@26 {
+			compatible = "ti,tca9539";
+			reg = <0x26>;
+			gpio-controller;
+			#gpio-cells = <2>;
+			vcc-supply = <&battery_reg>;
+
+			/* DAP2 to codec */
+			dap_lb_cb {
+				gpio-hog;
+				output-low;
+				gpios = <3 0>;
+				label = "dap_lb_cb";
+				status = "okay";
+			};
+		};
+
+		e3366_gpio_u1408: gpio@27 {
+			compatible = "ti,tca9539";
+			reg = <0x27>;
+			gpio-controller;
+			#gpio-cells = <2>;
+			vcc-supply = <&battery_reg>;
+		};
+	};
+
+	i2c@c240000 {
+		e3366_gpio_u1409: gpio@25 {
+			compatible = "ti,tca9539";
+			reg = <0x25>;
+			gpio-controller;
+			#gpio-cells = <2>;
+			vcc-supply = <&e3366_vdd_1v8_slt>;
+		};
+	};
+
+	external-connection {
+		vbus_id_extcon: extcon@1 {
+			compatible = "extcon-gpio-states";
+			reg = <0x1>;
+			extcon-gpio,name = "VBUS_ID";
+			extcon-gpio,wait-for-gpio-scan = <0>;
+			extcon-gpio,cable-states = <0x3 0x0
+						    0x0 0x2
+						    0x1 0x2
+						    0x2 0x1>;
+			gpios = <&tegra_main_gpio TEGRA194_MAIN_GPIO(M, 3) 0
+				&tegra_main_gpio TEGRA194_MAIN_GPIO(Q, 0) 0>;
+			extcon-gpio,out-cable-names = <EXTCON_USB EXTCON_USB_HOST EXTCON_NONE>;
+			#extcon-cells = <1>;
+		};
+	};
+
+#if TEGRA_XUSB_PADCONTROL_VERSION >= DT_VERSION_2
+
+	xusb_padctl: xusb_padctl@3520000 {
+		status = "okay";
+
+		pads {
+			usb2 {
+				lanes {
+					usb2-0 {
+						nvidia,function = "xusb";
+						status = "okay";
+					};
+					usb2-1 {
+						nvidia,function = "xusb";
+						status = "okay";
+					};
+					usb2-2 {
+						nvidia,function = "xusb";
+						status = "okay";
+					};
+					usb2-3 {
+						nvidia,function = "xusb";
+						status = "okay";
+					};
+				};
+			};
+			usb3 {
+				lanes {
+					usb3-0 {
+						nvidia,function = "xusb";
+						status = "okay";
+					};
+					usb3-1 {
+						nvidia,function = "xusb";
+						status = "okay";
+					};
+					usb3-2 {
+						nvidia,function = "xusb";
+						status = "okay";
+					};
+					usb3-3 {
+						nvidia,function = "xusb";
+						status = "okay";
+					};
+				};
+			};
+		};
+
+		ports {
+			usb2-0 {
+				mode = "otg";
+				status = "okay";
+			};
+			usb2-1 {
+				mode = "host";
+				status = "okay";
+			};
+			usb2-2 {
+				mode = "host";
+				status = "okay";
+			};
+			usb2-3 {
+				mode = "host";
+				status = "okay";
+			};
+			usb3-0 {
+				nvidia,usb2-companion = <2>;
+				status = "okay";
+			};
+			usb3-2 {
+				nvidia,usb2-companion = <0>;
+				status = "okay";
+			};
+			usb3-1 {
+				nvidia,usb2-companion = <3>;
+				status = "okay";
+			};
+			usb3-3 {
+				nvidia,usb2-companion = <1>;
+				status = "okay";
+			};
+		};
+	};
+#endif
+};

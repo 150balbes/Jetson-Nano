@@ -1,0 +1,50 @@
+/*
+ * tegra194-linux-4.14-core.dtsi
+ *
+ * Copyright (c) 2018, NVIDIA CORPORATION.  All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; version 2 of the License.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ */
+
+/ {
+
+	psci {
+		status = "okay";
+	};
+
+	cpus {
+		CPU_CORE_POWER_STATES: cpu_core_power_states {
+			C1: c1 {
+				idle-state-name = "Clock gated";
+			};
+
+			C6: c6 {
+				idle-state-name = "Virtual core powergate";
+			};
+
+			C7: c7 {
+				idle-state-name = "Core powergate";
+			};
+		};
+
+		cpu_cluster_power_states {
+			cc6 {
+				idle-state-name = "Cluster powergate";
+			};
+		};
+
+		cpu_cluster_group_power_states {
+			cg7 {
+				idle-state-name = "Cluster group railgate";
+			};
+		};
+	};
+
+};

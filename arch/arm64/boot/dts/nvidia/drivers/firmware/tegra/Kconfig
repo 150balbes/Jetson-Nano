@@ -1,0 +1,25 @@
+menu "Tegra BPMP Driver"
+
+config NV_TEGRA_BPMP
+	bool "Tegra BPMP driver (Downstream version)"
+	default n
+	select NV_TEGRA_IVC
+	select TEGRA_HSP
+	help
+	  Manages firmware running on Tegra BPMP
+
+	  This driver is a downstream version and there is a newer variant
+	  available in modern kernels.
+
+config BPMP_DEBUGFS_MOUNT_ON_BOOT
+	bool "Mount the BPMP debug fs on boot"
+	default y
+	depends on DEBUG_FS && NV_TEGRA_BPMP
+	help
+	  Disable this if you don't want to mount the BPMP debug fs by default
+	  on boot.
+
+	  Note disabling this will save some boot time. BPMP debugfs still can
+	  be mounted after the boot.
+
+endmenu

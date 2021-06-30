@@ -1,0 +1,1324 @@
+/*
+ * Copyright (c) 2015-2019, NVIDIA CORPORATION.  All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
+#include <dt-bindings/media/camera.h>
+#include <dt-bindings/platform/t210/t210.h>
+
+/ {
+	host1x {
+		vi {
+			num-channels = <6>;
+			ports {
+				#address-cells = <1>;
+				#size-cells = <0>;
+				port@0 {
+					reg = <0>;
+					e3333_vi_in0: endpoint {
+						port-index = <0>;
+						bus-width = <2>;
+						remote-endpoint = <&e3333_csi_out0>;
+					};
+				};
+				port@1 {
+					reg = <1>;
+					e3333_vi_in1: endpoint {
+						port-index = <1>;
+						bus-width = <2>;
+						remote-endpoint = <&e3333_csi_out1>;
+					};
+				};
+				port@2 {
+					reg = <2>;
+					e3333_vi_in2: endpoint {
+						port-index = <2>;
+						bus-width = <2>;
+						remote-endpoint = <&e3333_csi_out2>;
+					};
+				};
+				port@3 {
+					reg = <3>;
+					e3333_vi_in3: endpoint {
+						port-index = <3>;
+						bus-width = <2>;
+						remote-endpoint = <&e3333_csi_out3>;
+					};
+				};
+				port@4 {
+					reg = <4>;
+					e3333_vi_in4: endpoint {
+						port-index = <4>;
+						bus-width = <2>;
+						remote-endpoint = <&e3333_csi_out4>;
+					};
+				};
+				port@5 {
+					reg = <5>;
+					e3333_vi_in5: endpoint {
+						port-index = <5>;
+						bus-width = <2>;
+						remote-endpoint = <&e3333_csi_out5>;
+					};
+				};
+			};
+		};
+
+		nvcsi {
+			num-channels = <6>;
+			channel@0 {
+				reg = <0>;
+				ports {
+					#address-cells = <1>;
+					#size-cells = <0>;
+					port@0 {
+						reg = <0>;
+						e3333_csi_in0: endpoint@0 {
+							port-index = <0>;
+							bus-width = <2>;
+							remote-endpoint = <&e3333_ov5693_out0>;
+						};
+					};
+					port@1 {
+						reg = <1>;
+						e3333_csi_out0: endpoint@1 {
+							remote-endpoint = <&e3333_vi_in0>;
+						};
+					};
+				};
+			};
+			channel@1 {
+				reg = <1>;
+				ports {
+					#address-cells = <1>;
+					#size-cells = <0>;
+					port@0 {
+						reg = <0>;
+						e3333_csi_in1: endpoint@2 {
+							port-index = <1>;
+							bus-width = <2>;
+							remote-endpoint = <&e3333_ov5693_out1>;
+						};
+					};
+					port@1 {
+						reg = <1>;
+						e3333_csi_out1: endpoint@3 {
+							remote-endpoint = <&e3333_vi_in1>;
+						};
+					};
+				};
+			};
+			channel@2 {
+				reg = <2>;
+				ports {
+					#address-cells = <1>;
+					#size-cells = <0>;
+					port@0 {
+						reg = <0>;
+						e3333_csi_in2: endpoint@4 {
+							port-index = <2>;
+							bus-width = <2>;
+							remote-endpoint = <&e3333_ov5693_out2>;
+						};
+					};
+					port@1 {
+						reg = <1>;
+						e3333_csi_out2: endpoint@5 {
+							remote-endpoint = <&e3333_vi_in2>;
+						};
+					};
+				};
+			};
+			channel@3 {
+				reg = <3>;
+				ports {
+					#address-cells = <1>;
+					#size-cells = <0>;
+					port@0 {
+						reg = <0>;
+						e3333_csi_in3: endpoint@6 {
+							port-index = <3>;
+							bus-width = <2>;
+							remote-endpoint = <&e3333_ov5693_out3>;
+						};
+					};
+					port@1 {
+						reg = <1>;
+						e3333_csi_out3: endpoint@7 {
+							remote-endpoint = <&e3333_vi_in3>;
+						};
+					};
+				};
+			};
+			channel@4 {
+				reg = <4>;
+				ports {
+					#address-cells = <1>;
+					#size-cells = <0>;
+					port@0 {
+						reg = <0>;
+						e3333_csi_in4: endpoint@8 {
+							port-index = <4>;
+							bus-width = <2>;
+							remote-endpoint = <&e3333_ov5693_out4>;
+						};
+					};
+					port@1 {
+						reg = <1>;
+						e3333_csi_out4: endpoint@9 {
+							remote-endpoint = <&e3333_vi_in4>;
+						};
+					};
+				};
+			};
+			channel@5 {
+				reg = <5>;
+				ports {
+					#address-cells = <1>;
+					#size-cells = <0>;
+					port@0 {
+						reg = <0>;
+						e3333_csi_in5: endpoint@10 {
+							port-index = <5>;
+							bus-width = <2>;
+							remote-endpoint = <&e3333_ov5693_out5>;
+						};
+					};
+					port@1 {
+						reg = <1>;
+						e3333_csi_out5: endpoint@11 {
+							remote-endpoint = <&e3333_vi_in5>;
+						};
+					};
+				};
+			};
+		};
+
+		i2c@546c0000 {
+			tca9548@77 {
+				i2c@0 {
+					ov5693_a@36 {
+						compatible = "nvidia,ov5693";
+						reg = <0x36>;
+						devnode = "video0";
+
+						/* Physical dimensions of sensor */
+						physical_w = "3.674";
+						physical_h = "2.738";
+
+						/* Define any required hw resources needed by driver */
+						/* ie. clocks, io pins, power sources */
+						avdd-reg = "vana";
+						iovdd-reg = "vif";
+
+						/**
+						* A modeX node is required to support v4l2 driver
+						* implementation with NVIDIA camera software stack
+						*
+						* mclk_khz = "";
+						* Standard MIPI driving clock, typically 24MHz
+						*
+						* num_lanes = "";
+						* Number of lane channels sensor is programmed to output
+						*
+						* tegra_sinterface = "";
+						* The base tegra serial interface lanes are connected to
+						*
+						* discontinuous_clk = "";
+						* The sensor is programmed to use a discontinuous clock on MIPI lanes
+						*
+						* dpcm_enable = "true";
+						* The sensor is programmed to use a DPCM modes
+						*
+						* cil_settletime = "";
+						* MIPI lane settle time value.
+						* A "0" value attempts to autocalibrate based on mclk_multiplier
+						*
+						* active_w = "";
+						* Pixel active region width
+						*
+						* active_h = "";
+						* Pixel active region height
+						*
+						* pixel_t = "";
+						* The sensor readout pixel pattern
+						*
+						* readout_orientation = "0";
+						* Based on camera module orientation.
+						* Only change readout_orientation if you specifically
+						* Program a different readout order for this mode
+						*
+						* line_length = "";
+						* Pixel line length (width) for sensor mode.
+						* This is used to calibrate features in our camera stack.
+						*
+						* mclk_multiplier = "";
+						* Multiplier to MCLK to help time hardware capture sequence
+						* TODO: Assign to PLL_Multiplier as well until fixed in core
+						*
+						* pix_clk_hz = "";
+						* Sensor pixel clock used for calculations like exposure and framerate
+						*
+						* inherent_gain = "";
+						* Gain obtained inherently from mode (ie. pixel binning)
+						*
+						* min_gain_val = ""; (floor to 6 decimal places)
+						* max_gain_val = ""; (floor to 6 decimal places)
+						* Gain limits for mode
+						*
+						* min_exp_time = ""; (ceil to integer)
+						* max_exp_time = ""; (ceil to integer)
+						* Exposure Time limits for mode (us)
+						*
+						* min_hdr_ratio = "";
+						* max_hdr_ratio = "";
+						* HDR Ratio limits for mode
+						*
+						* min_framerate = "";
+						* max_framerate = "";
+						* Framerate limits for mode (fps)
+						*/
+						mode0 { // OV5693_MODE_2592X1944
+							mclk_khz = "24000";
+							num_lanes = "2";
+							tegra_sinterface = "serial_a";
+							phy_mode = "DPHY";
+							discontinuous_clk = "yes";
+							dpcm_enable = "false";
+							cil_settletime = "0";
+
+							active_w = "2592";
+							active_h = "1944";
+							mode_type = "bayer";
+							pixel_phase = "bggr";
+							csi_pixel_bit_depth = "10";
+							readout_orientation = "90";
+							line_length = "2688";
+							inherent_gain = "1";
+							mclk_multiplier = "6.67";
+							pix_clk_hz = "160000000";
+
+							gain_factor = "10";
+							min_gain_val = "10";/* 1DB*/
+							max_gain_val = "160";/* 16DB*/
+							step_gain_val = "1";
+							default_gain = "10";
+							min_hdr_ratio = "1";
+							max_hdr_ratio = "1";
+							framerate_factor = "1000000";
+							min_framerate = "1816577";/*1.816577 */
+							max_framerate = "30000000";/*30*/
+							step_framerate = "1";
+							default_framerate = "30000000";
+							exposure_factor = "1000000";
+							min_exp_time = "34";/* us */
+							max_exp_time = "550385";/* us */
+							step_exp_time = "1";
+							default_exp_time = "33334";/* us */
+							embedded_metadata_height = "0";
+						};
+
+						mode1 { //OV5693_MODE_2592X1458
+							mclk_khz = "24000";
+							num_lanes = "2";
+							tegra_sinterface = "serial_a";
+							phy_mode = "DPHY";
+							discontinuous_clk = "yes";
+							dpcm_enable = "false";
+							cil_settletime = "0";
+
+							active_w = "2592";
+							active_h = "1458";
+							mode_type = "bayer";
+							pixel_phase = "bggr";
+							csi_pixel_bit_depth = "10";
+							readout_orientation = "90";
+							line_length = "2688";
+							inherent_gain = "1";
+							mclk_multiplier = "6.67";
+							pix_clk_hz = "160000000";
+
+							gain_factor = "10";
+							min_gain_val = "10";/* 1DB*/
+							max_gain_val = "160";/* 16DB*/
+							step_gain_val = "1";
+							default_gain = "10";
+							min_hdr_ratio = "1";
+							max_hdr_ratio = "1";
+							framerate_factor = "1000000";
+							min_framerate = "1816577";/*1.816577 */
+							max_framerate = "30000000";/*30*/
+							step_framerate = "1";
+							default_framerate = "30000000";
+							exposure_factor = "1000000";
+							min_exp_time = "34";/* us */
+							max_exp_time = "550385";/* us */
+							step_exp_time = "1";
+							default_exp_time = "33334";/* us */
+							embedded_metadata_height = "0";
+						};
+
+						mode2 { //OV5693_MODE_1280X720
+							mclk_khz = "24000";
+							num_lanes = "2";
+							tegra_sinterface = "serial_a";
+							phy_mode = "DPHY";
+							discontinuous_clk = "yes";
+							dpcm_enable = "false";
+							cil_settletime = "0";
+
+							active_w = "1280";
+							active_h = "720";
+							mode_type = "bayer";
+							pixel_phase = "bggr";
+							csi_pixel_bit_depth = "10";
+							readout_orientation = "90";
+							line_length = "1752";
+							inherent_gain = "1";
+							mclk_multiplier = "6.67";
+							pix_clk_hz = "160000000";
+
+							gain_factor = "10";
+							min_gain_val = "10";/* 1DB*/
+							max_gain_val = "160";/* 16DB*/
+							step_gain_val = "1";
+							default_gain = "10";
+							min_hdr_ratio = "1";
+							max_hdr_ratio = "1";
+							framerate_factor = "1000000";
+							min_framerate = "2787078";/* 2.787078 */
+							max_framerate = "120000000";/* 120*/
+							step_framerate = "1";
+							default_framerate = "120000000";
+							exposure_factor = "1000000";
+							min_exp_time = "22";/* us */
+							max_exp_time = "358733";/* us */
+							step_exp_time = "1";
+							default_exp_time = "8334";/* us */
+							embedded_metadata_height = "0";
+						};
+
+						ports {
+							#address-cells = <1>;
+							#size-cells = <0>;
+
+							port@0 {
+								reg = <0>;
+								e3333_ov5693_out0: endpoint {
+									port-index = <0>;
+									bus-width = <2>;
+									remote-endpoint = <&e3333_csi_in0>;
+								};
+							};
+						};
+					};
+				};
+				i2c@1 {
+					ov5693_b@36 {
+						compatible = "nvidia,ov5693";
+						reg = <0x36>;
+						devnode = "video1";
+
+						/* Physical dimensions of sensor */
+						physical_w = "3.674";
+						physical_h = "2.738";
+
+						/* Define any required hw resources needed by driver */
+						/* ie. clocks, io pins, power sources */
+						avdd-reg = "vana";
+						iovdd-reg = "vif";
+
+						mode0 { // OV5693_MODE_2592X1944
+							mclk_khz = "24000";
+							num_lanes = "2";
+							tegra_sinterface = "serial_b";
+							phy_mode = "DPHY";
+							discontinuous_clk = "yes";
+							dpcm_enable = "false";
+							cil_settletime = "0";
+
+							active_w = "2592";
+							active_h = "1944";
+							mode_type = "bayer";
+							pixel_phase = "bggr";
+							csi_pixel_bit_depth = "10";
+							readout_orientation = "90";
+							line_length = "2688";
+							inherent_gain = "1";
+							mclk_multiplier = "6.67";
+							pix_clk_hz = "160000000";
+
+							gain_factor = "10";
+							min_gain_val = "10";/* 1DB*/
+							max_gain_val = "160";/* 16DB*/
+							step_gain_val = "1";
+							default_gain = "10";
+							min_hdr_ratio = "1";
+							max_hdr_ratio = "1";
+							framerate_factor = "1000000";
+							min_framerate = "1816577";/*1.816577 */
+							max_framerate = "30000000";/*30*/
+							step_framerate = "1";
+							default_framerate = "30000000";
+							exposure_factor = "1000000";
+							min_exp_time = "34";/* us */
+							max_exp_time = "550385";/* us */
+							step_exp_time = "1";
+							default_exp_time = "33334";/* us */
+							embedded_metadata_height = "0";
+						};
+
+						mode1 { //OV5693_MODE_2592X1458
+							mclk_khz = "24000";
+							num_lanes = "2";
+							tegra_sinterface = "serial_b";
+							phy_mode = "DPHY";
+							discontinuous_clk = "yes";
+							dpcm_enable = "false";
+							cil_settletime = "0";
+
+							active_w = "2592";
+							active_h = "1458";
+							mode_type = "bayer";
+							pixel_phase = "bggr";
+							csi_pixel_bit_depth = "10";
+							readout_orientation = "90";
+							line_length = "2688";
+							inherent_gain = "1";
+							mclk_multiplier = "6.67";
+							pix_clk_hz = "160000000";
+
+							gain_factor = "10";
+							min_gain_val = "10";/* 1DB*/
+							max_gain_val = "160";/* 16DB*/
+							step_gain_val = "1";
+							default_gain = "10";
+							min_hdr_ratio = "1";
+							max_hdr_ratio = "1";
+							framerate_factor = "1000000";
+							min_framerate = "1816577";/*1.816577 */
+							max_framerate = "30000000";/*30*/
+							step_framerate = "1";
+							default_framerate = "30000000";
+							exposure_factor = "1000000";
+							min_exp_time = "34";/* us */
+							max_exp_time = "550385";/* us */
+							step_exp_time = "1";
+							default_exp_time = "33334";/* us */
+							embedded_metadata_height = "0";
+						};
+
+						mode2 { //OV5693_MODE_1280X720
+							mclk_khz = "24000";
+							num_lanes = "2";
+							tegra_sinterface = "serial_b";
+							phy_mode = "DPHY";
+							discontinuous_clk = "yes";
+							dpcm_enable = "false";
+							cil_settletime = "0";
+
+							active_w = "1280";
+							active_h = "720";
+							mode_type = "bayer";
+							pixel_phase = "bggr";
+							csi_pixel_bit_depth = "10";
+							readout_orientation = "90";
+							line_length = "1752";
+							inherent_gain = "1";
+							mclk_multiplier = "6.67";
+							pix_clk_hz = "160000000";
+
+							gain_factor = "10";
+							min_gain_val = "10";/* 1DB*/
+							max_gain_val = "160";/* 16DB*/
+							step_gain_val = "1";
+							default_gain = "10";
+							min_hdr_ratio = "1";
+							max_hdr_ratio = "1";
+							framerate_factor = "1000000";
+							min_framerate = "2787078";/* 2.787078 */
+							max_framerate = "120000000";/* 120*/
+							step_framerate = "1";
+							default_framerate = "120000000";
+							exposure_factor = "1000000";
+							min_exp_time = "22";/* us */
+							max_exp_time = "358733";/* us */
+							step_exp_time = "1";
+							default_exp_time = "8334";/* us */
+							embedded_metadata_height = "0";
+						};
+
+						ports {
+							#address-cells = <1>;
+							#size-cells = <0>;
+
+							port@0 {
+								reg = <0>;
+								e3333_ov5693_out1: endpoint {
+									port-index = <1>;
+									bus-width = <2>;
+									remote-endpoint = <&e3333_csi_in1>;
+								};
+							};
+						};
+					};
+				};
+				i2c@2 {
+					ov5693_c@36 {
+						compatible = "nvidia,ov5693";
+						reg = <0x36>;
+						devnode = "video2";
+
+						/* Physical dimensions of sensor */
+						physical_w = "3.674";
+						physical_h = "2.738";
+
+						/* Define any required hw resources needed by driver */
+						/* ie. clocks, io pins, power sources */
+						avdd-reg = "vana";
+
+						iovdd-reg = "vif";
+						mode0 { // OV5693_MODE_2592X1944
+							mclk_khz = "24000";
+							num_lanes = "2";
+							tegra_sinterface = "serial_c";
+							phy_mode = "DPHY";
+							discontinuous_clk = "yes";
+							dpcm_enable = "false";
+							cil_settletime = "0";
+
+							active_w = "2592";
+							active_h = "1944";
+							mode_type = "bayer";
+							pixel_phase = "bggr";
+							csi_pixel_bit_depth = "10";
+							readout_orientation = "90";
+							line_length = "2688";
+							inherent_gain = "1";
+							mclk_multiplier = "6.67";
+							pix_clk_hz = "160000000";
+
+							gain_factor = "10";
+							min_gain_val = "10";/* 1DB*/
+							max_gain_val = "160";/* 16DB*/
+							step_gain_val = "1";
+							default_gain = "10";
+							min_hdr_ratio = "1";
+							max_hdr_ratio = "1";
+							framerate_factor = "1000000";
+							min_framerate = "1816577";/*1.816577 */
+							max_framerate = "30000000";/*30*/
+							step_framerate = "1";
+							default_framerate = "30000000";
+							exposure_factor = "1000000";
+							min_exp_time = "34";/* us */
+							max_exp_time = "550385";/* us */
+							step_exp_time = "1";
+							default_exp_time = "33334";/* us */
+							embedded_metadata_height = "0";
+						};
+
+						mode1 { //OV5693_MODE_2592X1458
+							mclk_khz = "24000";
+							num_lanes = "2";
+							tegra_sinterface = "serial_c";
+							phy_mode = "DPHY";
+							discontinuous_clk = "yes";
+							dpcm_enable = "false";
+							cil_settletime = "0";
+
+							active_w = "2592";
+							active_h = "1458";
+							mode_type = "bayer";
+							pixel_phase = "bggr";
+							csi_pixel_bit_depth = "10";
+							readout_orientation = "90";
+							line_length = "2688";
+							inherent_gain = "1";
+							mclk_multiplier = "6.67";
+							pix_clk_hz = "160000000";
+
+							gain_factor = "10";
+							min_gain_val = "10";/* 1DB*/
+							max_gain_val = "160";/* 16DB*/
+							step_gain_val = "1";
+							default_gain = "10";
+							min_hdr_ratio = "1";
+							max_hdr_ratio = "1";
+							framerate_factor = "1000000";
+							min_framerate = "1816577";/*1.816577 */
+							max_framerate = "30000000";/*30*/
+							step_framerate = "1";
+							default_framerate = "30000000";
+							exposure_factor = "1000000";
+							min_exp_time = "34";/* us */
+							max_exp_time = "550385";/* us */
+							step_exp_time = "1";
+							default_exp_time = "33334";/* us */
+							embedded_metadata_height = "0";
+						};
+
+						mode2 { //OV5693_MODE_1280X720
+							mclk_khz = "24000";
+							num_lanes = "2";
+							tegra_sinterface = "serial_c";
+							phy_mode = "DPHY";
+							discontinuous_clk = "yes";
+							dpcm_enable = "false";
+							cil_settletime = "0";
+
+							active_w = "1280";
+							active_h = "720";
+							mode_type = "bayer";
+							pixel_phase = "bggr";
+							csi_pixel_bit_depth = "10";
+							readout_orientation = "90";
+							line_length = "1752";
+							inherent_gain = "1";
+							mclk_multiplier = "6.67";
+							pix_clk_hz = "160000000";
+
+							gain_factor = "10";
+							min_gain_val = "10";/* 1DB*/
+							max_gain_val = "160";/* 16DB*/
+							step_gain_val = "1";
+							default_gain = "10";
+							min_hdr_ratio = "1";
+							max_hdr_ratio = "1";
+							framerate_factor = "1000000";
+							min_framerate = "2787078";/* 2.787078 */
+							max_framerate = "120000000";/* 120*/
+							step_framerate = "1";
+							default_framerate = "120000000";
+							exposure_factor = "1000000";
+							min_exp_time = "22";/* us */
+							max_exp_time = "358733";/* us */
+							step_exp_time = "1";
+							default_exp_time = "8334";/* us */
+							embedded_metadata_height = "0";
+						};
+
+						ports {
+							#address-cells = <1>;
+							#size-cells = <0>;
+
+							port@0 {
+								reg = <0>;
+								e3333_ov5693_out2: endpoint {
+									port-index = <2>;
+									bus-width = <2>;
+									remote-endpoint = <&e3333_csi_in2>;
+								};
+							};
+						};
+					};
+				};
+				i2c@3 {
+					ov5693_d@36 {
+						compatible = "nvidia,ov5693";
+						reg = <0x36>;
+						devnode = "video3";
+
+						/* Physical dimensions of sensor */
+						physical_w = "3.674";
+						physical_h = "2.738";
+
+						/* Define any required hw resources needed by driver */
+						/* ie. clocks, io pins, power sources */
+						avdd-reg = "vana";
+						iovdd-reg = "vif";
+
+						mode0 { // OV5693_MODE_2592X1944
+							mclk_khz = "24000";
+							num_lanes = "2";
+							tegra_sinterface = "serial_d";
+							phy_mode = "DPHY";
+							discontinuous_clk = "yes";
+							dpcm_enable = "false";
+							cil_settletime = "0";
+
+							active_w = "2592";
+							active_h = "1944";
+							mode_type = "bayer";
+							pixel_phase = "bggr";
+							csi_pixel_bit_depth = "10";
+							readout_orientation = "90";
+							line_length = "2688";
+							inherent_gain = "1";
+							mclk_multiplier = "6.67";
+							pix_clk_hz = "160000000";
+
+							gain_factor = "10";
+							min_gain_val = "10";/* 1DB*/
+							max_gain_val = "160";/* 16DB*/
+							step_gain_val = "1";
+							default_gain = "10";
+							min_hdr_ratio = "1";
+							max_hdr_ratio = "1";
+							framerate_factor = "1000000";
+							min_framerate = "1816577";/*1.816577 */
+							max_framerate = "30000000";/*30*/
+							step_framerate = "1";
+							default_framerate = "30000000";
+							exposure_factor = "1000000";
+							min_exp_time = "34";/* us */
+							max_exp_time = "550385";/* us */
+							step_exp_time = "1";
+							default_exp_time = "33334";/* us */
+							embedded_metadata_height = "0";
+						};
+
+						mode1 { //OV5693_MODE_2592X1458
+							mclk_khz = "24000";
+							num_lanes = "2";
+							tegra_sinterface = "serial_d";
+							phy_mode = "DPHY";
+							discontinuous_clk = "yes";
+							dpcm_enable = "false";
+							cil_settletime = "0";
+
+							active_w = "2592";
+							active_h = "1458";
+							mode_type = "bayer";
+							pixel_phase = "bggr";
+							csi_pixel_bit_depth = "10";
+							readout_orientation = "90";
+							line_length = "2688";
+							inherent_gain = "1";
+							mclk_multiplier = "6.67";
+							pix_clk_hz = "160000000";
+
+							gain_factor = "10";
+							min_gain_val = "10";/* 1DB*/
+							max_gain_val = "160";/* 16DB*/
+							step_gain_val = "1";
+							default_gain = "10";
+							min_hdr_ratio = "1";
+							max_hdr_ratio = "1";
+							framerate_factor = "1000000";
+							min_framerate = "1816577";/*1.816577 */
+							max_framerate = "30000000";/*30*/
+							step_framerate = "1";
+							default_framerate = "30000000";
+							exposure_factor = "1000000";
+							min_exp_time = "34";/* us */
+							max_exp_time = "550385";/* us */
+							step_exp_time = "1";
+							default_exp_time = "33334";/* us */
+							embedded_metadata_height = "0";
+						};
+
+						mode2 { //OV5693_MODE_1280X720
+							mclk_khz = "24000";
+							num_lanes = "2";
+							tegra_sinterface = "serial_d";
+							phy_mode = "DPHY";
+							discontinuous_clk = "yes";
+							dpcm_enable = "false";
+							cil_settletime = "0";
+
+							active_w = "1280";
+							active_h = "720";
+							mode_type = "bayer";
+							pixel_phase = "bggr";
+							csi_pixel_bit_depth = "10";
+							readout_orientation = "90";
+							line_length = "1752";
+							inherent_gain = "1";
+							mclk_multiplier = "6.67";
+							pix_clk_hz = "160000000";
+
+							gain_factor = "10";
+							min_gain_val = "10";/* 1DB*/
+							max_gain_val = "160";/* 16DB*/
+							step_gain_val = "1";
+							default_gain = "10";
+							min_hdr_ratio = "1";
+							max_hdr_ratio = "1";
+							framerate_factor = "1000000";
+							min_framerate = "2787078";/* 2.787078 */
+							max_framerate = "120000000";/* 120*/
+							step_framerate = "1";
+							default_framerate = "120000000";
+							exposure_factor = "1000000";
+							min_exp_time = "22";/* us */
+							max_exp_time = "358733";/* us */
+							step_exp_time = "1";
+							default_exp_time = "8334";/* us */
+							embedded_metadata_height = "0";
+						};
+
+						ports {
+							#address-cells = <1>;
+							#size-cells = <0>;
+
+							port@0 {
+								reg = <0>;
+								e3333_ov5693_out3: endpoint {
+									port-index = <3>;
+									bus-width = <2>;
+									remote-endpoint = <&e3333_csi_in3>;
+								};
+							};
+						};
+					};
+				};
+				i2c@4 {
+					ov5693_e@36 {
+						compatible = "nvidia,ov5693";
+						reg = <0x36>;
+						devnode = "video4";
+
+						/* Physical dimensions of sensor */
+						physical_w = "3.674";
+						physical_h = "2.738";
+
+						/* Define any required hw resources needed by driver */
+						/* ie. clocks, io pins, power sources */
+						avdd-reg = "vana";
+						iovdd-reg = "vif";
+
+						mode0 { // OV5693_MODE_2592X1944
+							mclk_khz = "24000";
+							num_lanes = "2";
+							tegra_sinterface = "serial_e";
+							phy_mode = "DPHY";
+							discontinuous_clk = "yes";
+							dpcm_enable = "false";
+							cil_settletime = "0";
+
+							active_w = "2592";
+							active_h = "1944";
+							mode_type = "bayer";
+							pixel_phase = "bggr";
+							csi_pixel_bit_depth = "10";
+							readout_orientation = "90";
+							line_length = "2688";
+							inherent_gain = "1";
+							mclk_multiplier = "6.67";
+							pix_clk_hz = "160000000";
+
+							gain_factor = "10";
+							min_gain_val = "10";/* 1DB*/
+							max_gain_val = "160";/* 16DB*/
+							step_gain_val = "1";
+							default_gain = "10";
+							min_hdr_ratio = "1";
+							max_hdr_ratio = "1";
+							framerate_factor = "1000000";
+							min_framerate = "1816577";/*1.816577 */
+							max_framerate = "30000000";/*30*/
+							step_framerate = "1";
+							default_framerate = "30000000";
+							exposure_factor = "1000000";
+							min_exp_time = "34";/* us */
+							max_exp_time = "550385";/* us */
+							step_exp_time = "1";
+							default_exp_time = "33334";/* us */
+							embedded_metadata_height = "0";
+						};
+
+						mode1 { //OV5693_MODE_2592X1458
+							mclk_khz = "24000";
+							num_lanes = "2";
+							tegra_sinterface = "serial_e";
+							phy_mode = "DPHY";
+							discontinuous_clk = "yes";
+							dpcm_enable = "false";
+							cil_settletime = "0";
+
+							active_w = "2592";
+							active_h = "1458";
+							mode_type = "bayer";
+							pixel_phase = "bggr";
+							csi_pixel_bit_depth = "10";
+							readout_orientation = "90";
+							line_length = "2688";
+							inherent_gain = "1";
+							mclk_multiplier = "6.67";
+							pix_clk_hz = "160000000";
+
+							gain_factor = "10";
+							min_gain_val = "10";/* 1DB*/
+							max_gain_val = "160";/* 16DB*/
+							step_gain_val = "1";
+							default_gain = "10";
+							min_hdr_ratio = "1";
+							max_hdr_ratio = "1";
+							framerate_factor = "1000000";
+							min_framerate = "1816577";/*1.816577 */
+							max_framerate = "30000000";/*30*/
+							step_framerate = "1";
+							default_framerate = "30000000";
+							exposure_factor = "1000000";
+							min_exp_time = "34";/* us */
+							max_exp_time = "550385";/* us */
+							step_exp_time = "1";
+							default_exp_time = "33334";/* us */
+							embedded_metadata_height = "0";
+						};
+
+						mode2 { //OV5693_MODE_1280X720
+							mclk_khz = "24000";
+							num_lanes = "2";
+							tegra_sinterface = "serial_e";
+							phy_mode = "DPHY";
+							discontinuous_clk = "yes";
+							dpcm_enable = "false";
+							cil_settletime = "0";
+
+							active_w = "1280";
+							active_h = "720";
+							mode_type = "bayer";
+							pixel_phase = "bggr";
+							csi_pixel_bit_depth = "10";
+							readout_orientation = "90";
+							line_length = "1752";
+							inherent_gain = "1";
+							mclk_multiplier = "6.67";
+							pix_clk_hz = "160000000";
+
+							gain_factor = "10";
+							min_gain_val = "10";/* 1DB*/
+							max_gain_val = "160";/* 16DB*/
+							step_gain_val = "1";
+							default_gain = "10";
+							min_hdr_ratio = "1";
+							max_hdr_ratio = "1";
+							framerate_factor = "1000000";
+							min_framerate = "2787078";/* 2.787078 */
+							max_framerate = "120000000";/* 120*/
+							step_framerate = "1";
+							default_framerate = "120000000";
+							exposure_factor = "1000000";
+							min_exp_time = "22";/* us */
+							max_exp_time = "358733";/* us */
+							step_exp_time = "1";
+							default_exp_time = "8334";/* us */
+							embedded_metadata_height = "0";
+						};
+
+						ports {
+							#address-cells = <1>;
+							#size-cells = <0>;
+
+							port@0 {
+								reg = <0>;
+								e3333_ov5693_out4: endpoint {
+									port-index = <4>;
+									bus-width = <2>;
+									remote-endpoint = <&e3333_csi_in4>;
+								};
+							};
+						};
+					};
+				};
+				i2c@5 {
+					ov5693_f@36 {
+						compatible = "nvidia,ov5693";
+						reg = <0x36>;
+						devnode = "video5";
+
+						/* Physical dimensions of sensor */
+						physical_w = "3.674";
+						physical_h = "2.738";
+
+						/* Define any required hw resources needed by driver */
+						/* ie. clocks, io pins, power sources */
+						avdd-reg = "vana";
+						iovdd-reg = "vif";
+
+						mode0 { // OV5693_MODE_2592X1944
+							mclk_khz = "24000";
+							num_lanes = "2";
+							tegra_sinterface = "serial_f";
+							phy_mode = "DPHY";
+							discontinuous_clk = "yes";
+							dpcm_enable = "false";
+							cil_settletime = "0";
+
+							active_w = "2592";
+							active_h = "1944";
+							mode_type = "bayer";
+							pixel_phase = "bggr";
+							csi_pixel_bit_depth = "10";
+							readout_orientation = "90";
+							line_length = "2688";
+							inherent_gain = "1";
+							mclk_multiplier = "6.67";
+							pix_clk_hz = "160000000";
+
+							gain_factor = "10";
+							min_gain_val = "10";/* 1DB*/
+							max_gain_val = "160";/* 16DB*/
+							step_gain_val = "1";
+							default_gain = "10";
+							min_hdr_ratio = "1";
+							max_hdr_ratio = "1";
+							framerate_factor = "1000000";
+							min_framerate = "1816577";/*1.816577 */
+							max_framerate = "30000000";/*30*/
+							step_framerate = "1";
+							default_framerate = "30000000";
+							exposure_factor = "1000000";
+							min_exp_time = "34";/* us */
+							max_exp_time = "550385";/* us */
+							step_exp_time = "1";
+							default_exp_time = "33334";/* us */
+							embedded_metadata_height = "0";
+						};
+
+						mode1 { //OV5693_MODE_2592X1458
+							mclk_khz = "24000";
+							num_lanes = "2";
+							tegra_sinterface = "serial_f";
+							phy_mode = "DPHY";
+							discontinuous_clk = "yes";
+							dpcm_enable = "false";
+							cil_settletime = "0";
+
+							active_w = "2592";
+							active_h = "1458";
+							mode_type = "bayer";
+							pixel_phase = "bggr";
+							csi_pixel_bit_depth = "10";
+							readout_orientation = "90";
+							line_length = "2688";
+							inherent_gain = "1";
+							mclk_multiplier = "6.67";
+							pix_clk_hz = "160000000";
+
+							gain_factor = "10";
+							min_gain_val = "10";/* 1DB*/
+							max_gain_val = "160";/* 16DB*/
+							step_gain_val = "1";
+							default_gain = "10";
+							min_hdr_ratio = "1";
+							max_hdr_ratio = "1";
+							framerate_factor = "1000000";
+							min_framerate = "1816577";/*1.816577 */
+							max_framerate = "30000000";/*30*/
+							step_framerate = "1";
+							default_framerate = "30000000";
+							exposure_factor = "1000000";
+							min_exp_time = "34";/* us */
+							max_exp_time = "550385";/* us */
+							step_exp_time = "1";
+							default_exp_time = "33334";/* us */
+							embedded_metadata_height = "0";
+						};
+
+						mode2 { //OV5693_MODE_1280X720
+							mclk_khz = "24000";
+							num_lanes = "2";
+							tegra_sinterface = "serial_f";
+							phy_mode = "DPHY";
+							discontinuous_clk = "yes";
+							dpcm_enable = "false";
+							cil_settletime = "0";
+
+							active_w = "1280";
+							active_h = "720";
+							mode_type = "bayer";
+							pixel_phase = "bggr";
+							csi_pixel_bit_depth = "10";
+							readout_orientation = "90";
+							line_length = "1752";
+							inherent_gain = "1";
+							mclk_multiplier = "6.67";
+							pix_clk_hz = "160000000";
+
+							gain_factor = "10";
+							min_gain_val = "10";/* 1DB*/
+							max_gain_val = "160";/* 16DB*/
+							step_gain_val = "1";
+							default_gain = "10";
+							min_hdr_ratio = "1";
+							max_hdr_ratio = "1";
+							framerate_factor = "1000000";
+							min_framerate = "2787078";/* 2.787078 */
+							max_framerate = "120000000";/* 120*/
+							step_framerate = "1";
+							default_framerate = "120000000";
+							exposure_factor = "1000000";
+							min_exp_time = "22";/* us */
+							max_exp_time = "358733";/* us */
+							step_exp_time = "1";
+							default_exp_time = "8334";/* us */
+							embedded_metadata_height = "0";
+						};
+
+						ports {
+							#address-cells = <1>;
+							#size-cells = <0>;
+
+							port@0 {
+								reg = <0>;
+								e3333_ov5693_out5: endpoint {
+									port-index = <5>;
+									bus-width = <2>;
+									remote-endpoint = <&e3333_csi_in5>;
+								};
+							};
+						};
+					};
+				};
+			};
+		};
+	};
+
+	e3333_lens_ov5693@P5V27C {
+		min_focus_distance = "0.0";
+		hyper_focal = "0.0";
+		focal_length = "2.67";
+		f_number = "2.0";
+		aperture = "2.0";
+	};
+
+	tegra-camera-platform {
+		compatible = "nvidia, tegra-camera-platform";
+		/**
+		* Physical settings to calculate max ISO BW
+		*
+		* num_csi_lanes = <>;
+		* Total number of CSI lanes when all cameras are active
+		*
+		* max_lane_speed = <>;
+		* Max lane speed in Kbit/s
+		*
+		* min_bits_per_pixel = <>;
+		* Min bits per pixel
+		*
+		* vi_peak_byte_per_pixel = <>;
+		* Max byte per pixel for the VI ISO case
+		*
+		* vi_bw_margin_pct = <>;
+		* Vi bandwidth margin in percentage
+		*
+		* max_pixel_rate = <>;
+		* Max pixel rate in Kpixel/s for the ISP ISO case
+		* Set this to the highest pix_clk_hz out of all available modes.
+		*
+		* isp_peak_byte_per_pixel = <>;
+		* Max byte per pixel for the ISP ISO case
+		*
+		* isp_bw_margin_pct = <>;
+		* Isp bandwidth margin in percentage
+		*/
+		num_csi_lanes = <12>;
+		max_lane_speed = <1500000>;
+		min_bits_per_pixel = <10>;
+		vi_peak_byte_per_pixel = <2>;
+		vi_bw_margin_pct = <25>;
+		max_pixel_rate = <200000>;
+		isp_peak_byte_per_pixel = <5>;
+		isp_bw_margin_pct = <25>;
+
+		/**
+		* The general guideline for naming badge_info contains 3 parts, and is as follows,
+		* The first part is the camera_board_id for the module; if the module is in a FFD
+		* platform, then use the platform name for this part.
+		* The second part contains the position of the module, ex. “rear” or “front”.
+		* The third part contains the last 6 characters of a part number which is found
+		* in the module's specsheet from the vender.
+		*/
+		modules {
+			module0 {
+				badge = "e3333_bottomleft_P5V27C";
+				position = "bottomleft";
+				orientation = "1";
+				drivernode0 {
+					pcl_id = "v4l2_sensor";
+					devname = "ov5693 30-0036";
+					proc-device-tree = "/proc/device-tree/host1x/i2c@546c0000/tca9548@77/i2c@0/ov5693_a@36";
+				};
+				drivernode1 {
+					pcl_id = "v4l2_lens";
+					proc-device-tree = "/proc/device-tree/e3333_lens_ov5693@P5V27C/";
+				};
+			};
+			module1 {
+				badge = "e3333_centerleft_P5V27C";
+				position = "centerleft";
+				orientation = "1";
+				drivernode0 {
+					pcl_id = "v4l2_sensor";
+					devname = "ov5693 31-0036";
+					proc-device-tree = "/proc/device-tree/host1x/i2c@546c0000/tca9548@77/i2c@1/ov5693_b@36";
+				};
+				drivernode1 {
+					pcl_id = "v4l2_lens";
+					proc-device-tree = "/proc/device-tree/e3333_lens_ov5693@P5V27C/";
+				};
+			};
+			module2 {
+				badge = "e3333_centerright_P5V27C";
+				position = "centerright";
+				orientation = "1";
+				drivernode0 {
+					pcl_id = "v4l2_sensor";
+					devname = "ov5693 32-0036";
+					proc-device-tree = "/proc/device-tree/host1x/i2c@546c0000/tca9548@77/i2c@2/ov5693_c@36";
+				};
+				drivernode1 {
+					pcl_id = "v4l2_lens";
+					proc-device-tree = "/proc/device-tree/e3333_lens_ov5693@P5V27C/";
+				};
+			};
+			module3 {
+				badge = "e3333_topleft_P5V27C";
+				position = "topleft";
+				orientation = "1";
+				drivernode0 {
+					pcl_id = "v4l2_sensor";
+					devname = "ov5693 33-0036";
+					proc-device-tree = "/proc/device-tree/host1x/i2c@546c0000/tca9548@77/i2c@3/ov5693_d@36";
+				};
+				drivernode1 {
+					pcl_id = "v4l2_lens";
+					proc-device-tree = "/proc/device-tree/e3333_lens_ov5693@P5V27C/";
+				};
+			};
+			module4 {
+				badge = "e3333_bottomright_P5V27C";
+				position = "bottomright";
+				orientation = "1";
+				drivernode0 {
+					pcl_id = "v4l2_sensor";
+					devname = "ov5693 34-0036";
+					proc-device-tree = "/proc/device-tree/host1x/i2c@546c0000/tca9548@77/i2c@4/ov5693_d@36";
+				};
+				drivernode1 {
+					pcl_id = "v4l2_lens";
+					proc-device-tree = "/proc/device-tree/e3333_lens_ov5693@P5V27C/";
+				};
+			};
+			module5 {
+				badge = "e3333_topright_P5V27C";
+				position = "topright";
+				orientation = "1";
+				drivernode0 {
+					pcl_id = "v4l2_sensor";
+					devname = "ov5693 35-0036";
+					proc-device-tree = "/proc/device-tree/host1x/i2c@546c0000/tca9548@77/i2c@5/ov5693_e@36";
+				};
+				drivernode1 {
+					pcl_id = "v4l2_lens";
+					proc-device-tree = "/proc/device-tree/e3333_lens_ov5693@P5V27C/";
+				};
+			};
+		};
+	};
+};

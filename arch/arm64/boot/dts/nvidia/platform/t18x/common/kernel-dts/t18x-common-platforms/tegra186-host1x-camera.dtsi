@@ -1,0 +1,33 @@
+/*
+ * tegra186-host1x-camera.dtsi: Configure Host1X for Camera
+ *
+ * Copyright (c) 2016, NVIDIA CORPORATION.  All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; version 2 of the License.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ */
+
+/ {
+	host1x {
+		nvidia,ch-base = <0>;
+		nvidia,nb-channels = <60>;
+
+		nvidia,nb-hw-pts = <576>;
+		nvidia,pts-base = <0>;
+		nvidia,nb-pts = <572>;
+       };
+
+       rtcpu@b000000 {
+		nvidia,ch-base = <60>;
+		nvidia,nb-channels = <2>;
+
+		nvidia,pts-base = <572>;
+		nvidia,nb-pts = <4>;
+       };
+};

@@ -1,0 +1,14 @@
+#
+# PCI Endpoint Support
+#
+
+menu "PCI Endpoint"
+
+config PCIE_TEGRA_DW_EP
+	tristate "NVIDIA Tegra DW based PCIe End-Point controller"
+	depends on ARCH_TEGRA
+	help
+	 Say Y here if you want support for the next gen PCIe End-Point controller
+	 which is based on Synopsys DesignWare IP suite found on next gen NVIDIA Tegra SoCs.
+
+endmenu

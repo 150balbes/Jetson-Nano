@@ -1,0 +1,135 @@
+/*
+ * Copyright (c) 2015, NVIDIA CORPORATION.  All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; version 2 of the License.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with this program; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+ *
+ */
+
+/ {
+	aliases {
+		spi0 = &spi0;
+		spi1 = &spi1;
+		spi2 = &spi2;
+		spi3 = &spi3;
+		spi4 = &aon_spi;
+		spi6 = &qspi6;
+	};
+
+	spi0: spi@3210000 {
+		compatible = "nvidia,tegra186-spi";
+		reg = <0x0 0x03210000 0x0 0x10000>;
+		interrupts = <0 36 0x04>;
+		#address-cells = <1>;
+		#size-cells = <0>;
+		iommus = <&smmu TEGRA_SID_GPCDMA_0>;
+		dmas = <&gpcdma 15>, <&gpcdma 15>;
+		dma-names = "rx", "tx";
+		nvidia,clk-parents = "pll_p", "clk_m";
+		clocks = <&tegra_car TEGRA186_CLK_SPI1>,
+			<&tegra_car TEGRA186_CLK_PLLP_OUT0>,
+			<&tegra_car TEGRA186_CLK_CLK_M>;
+		clock-names = "spi", "pll_p", "clk_m";
+		resets = <&tegra_car TEGRA186_RESET_SPI1>;
+		reset-names = "spi";
+		status = "disabled";
+	};
+
+	spi1: spi@c260000 {
+		compatible = "nvidia,tegra186-spi";
+		reg = <0x0 0x0c260000 0x0 0x10000>;
+		interrupts = <0 37 0x04>;
+		#address-cells = <1>;
+		#size-cells = <0>;
+		iommus = <&smmu TEGRA_SID_GPCDMA_0>;
+		dmas = <&gpcdma 16>, <&gpcdma 16>;
+		dma-names = "rx", "tx";
+		nvidia,clk-parents = "pll_p", "osc";
+		spi-max-frequency = <25000000>;
+		clocks = <&tegra_car TEGRA186_CLK_SPI2>,
+			<&tegra_car TEGRA186_CLK_PLLP_OUT0>,
+			<&tegra_car TEGRA186_CLK_OSC>;
+		clock-names = "spi", "pll_p", "osc";
+		resets = <&tegra_car TEGRA186_RESET_SPI2>;
+		reset-names = "spi";
+		status = "disabled";
+	};
+
+	spi2: spi@3230000 {
+		compatible = "nvidia,tegra186-spi";
+		reg = <0x0 0x03230000 0x0 0x10000>;
+		interrupts = <0 38 0x04>;
+		#address-cells = <1>;
+		#size-cells = <0>;
+		iommus = <&smmu TEGRA_SID_GPCDMA_0>;
+		dmas = <&gpcdma 17>, <&gpcdma 17>;
+		dma-names = "rx", "tx";
+		nvidia,clk-parents = "pll_p", "clk_m";
+		clocks = <&tegra_car TEGRA186_CLK_SPI3>,
+			<&tegra_car TEGRA186_CLK_PLLP_OUT0>,
+			<&tegra_car TEGRA186_CLK_CLK_M>;
+		clock-names = "spi", "pll_p", "clk_m";
+		resets = <&tegra_car TEGRA186_RESET_SPI3>;
+		reset-names = "spi";
+		status = "disabled";
+	};
+
+	spi3: spi@3240000 {
+		compatible = "nvidia,tegra186-spi";
+		reg = <0x0 0x03240000 0x0 0x10000>;
+		interrupts = <0 39 0x04>;
+		#address-cells = <1>;
+		#size-cells = <0>;
+		iommus = <&smmu TEGRA_SID_GPCDMA_0>;
+		dmas = <&gpcdma 18>, <&gpcdma 18>;
+		dma-names = "rx", "tx";
+		nvidia,clk-parents = "pll_p", "clk_m";
+		clocks = <&tegra_car TEGRA186_CLK_SPI4>,
+			<&tegra_car TEGRA186_CLK_PLLP_OUT0>,
+			<&tegra_car TEGRA186_CLK_CLK_M>;
+		clock-names = "spi", "pll_p", "clk_m";
+		resets = <&tegra_car TEGRA186_RESET_SPI4>;
+		reset-names = "spi";
+		status = "disabled";
+	};
+
+	qspi6: spi@3270000 {
+		compatible = "nvidia,tegra186-qspi";
+		reg = <0x0 0x3270000 0x0 0x10000>;
+		interrupts = < 0 35 0x04 >;
+		#address-cells = <1>;
+		#size-cells = <0>;
+		iommus = <&smmu TEGRA_SID_GPCDMA_0>;
+		dmas = <&gpcdma 5>, <&gpcdma 5>;
+		dma-names = "rx", "tx";
+		nvidia,clk-parents = "pll_p";
+		clocks = <&tegra_car TEGRA186_CLK_QSPI>,
+			<&tegra_car TEGRA186_CLK_QSPI_OUT>,
+			<&tegra_car TEGRA186_CLK_PLLP_OUT0>,
+			<&tegra_car TEGRA186_CLK_CLK_M>;
+		clock-names = "qspi","qspi_out","pll_p","clk_m";
+		resets = <&tegra_car TEGRA186_RESET_QSPI>;
+		reset-names = "qspi";
+		status = "disabled";
+	};
+
+	aon_spi: aon_spi@c260000 {
+		status = "disabled";
+		compatible = "nvidia,tegra186-aon-spi";
+		bus-number = <1>;
+		#address-cells = <1>;
+		#size-cells = <0>;
+		spi-max-frequency = <12000000>;
+		mboxes = <&aon 2>;
+	};
+};

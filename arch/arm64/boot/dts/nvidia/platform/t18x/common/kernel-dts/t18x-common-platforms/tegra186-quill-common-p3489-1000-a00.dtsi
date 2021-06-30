@@ -1,0 +1,152 @@
+/*
+ * tegra186-quill-common-p3489-1000-a00.dtsi: Quill common dtsi.
+ *
+ * Copyright (c) 2015-2017, NVIDIA CORPORATION.  All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; version 2 of the License.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ */
+
+#include "tegra186-quill-common.dtsi"
+#include "tegra186-quill-p3489-1000-a00-powermon.dtsi"
+#include "tegra186-storm-thermal.dtsi"
+
+#define EXTCON_NONE		0
+#define EXTCON_USB             1
+#define EXTCON_USB_Host        2
+
+/ {
+        model = "quill-3489";
+        compatible = "nvidia,quill-3489", "nvidia,tegra186";
+
+        #address-cells = <2>;
+        #size-cells = <2>;
+
+	pmc@c360000 {
+		nvidia,restrict-voltage-switch;
+		pinctrl-names = "default";
+		pinctrl-0 = <&iopad_default>;
+
+		iopad_default: iopad-defaults {
+			sdmmc-io-pads {
+				pins = "sdmmc1-hv", "sdmmc2-hv", "sdmmc3-hv";
+				nvidia,enable-voltage-switching;
+			};
+		};
+	};
+
+	spi@3210000 {
+		status = "okay";
+	};
+
+	spi@3240000 {
+		status = "okay";
+	};
+
+	gpio@2200000 {
+		wifi_over_pcie {
+			gpio-hog;
+			gpios = <TEGRA_MAIN_GPIO(R, 4) 0>;
+			output-low;
+			label = "wifi-over-pcie";
+			status = "disabled";
+		};
+		pcie0_lane2_mux {
+			gpio-hog;
+			gpios = <TEGRA_MAIN_GPIO(R, 3) 0>;
+			output-low;
+			label = "pcie-lane2-mux";
+			status = "disabled";
+		};
+		e3325_sdio_rst {
+			gpio-hog;
+			gpios = <TEGRA_MAIN_GPIO(B, 6) 0>;
+			output-high;
+			label = "e3325-sdio-rst";
+			status = "disabled";
+		};
+		e3325_lane0_mux {
+			gpio-hog;
+			gpios = <TEGRA_MAIN_GPIO(B, 4) 0>;
+			output-low;
+			label = "e3325-lane0-mux";
+			status = "disabled";
+		};
+	};
+
+	ahci-sata@3507000 {
+		status = "okay";
+	};
+
+	external-connection {
+		vbus_id_extcon: extcon@1 {
+			compatible = "extcon-gpio-states";
+			reg = <0x1>;
+			extcon-gpio,name = "VBUS";
+			extcon-gpio,wait-for-gpio-scan = <0>;
+			extcon-gpio,cable-states = <0x3 0x0
+						    0x0 0x2
+						    0x1 0x2
+						    0x2 0x1>;
+			gpios = <&tegra_main_gpio TEGRA_MAIN_GPIO(X, 7) 0 &spmic 0 0>;
+			extcon-gpio,out-cable-names = <EXTCON_USB EXTCON_USB_Host EXTCON_NONE>;
+			wakeup-source;
+			#extcon-cells = <1>;
+		};
+	};
+
+	sdhci@3440000 {
+		status = "okay";
+	};
+
+	nvdumper {
+		status = "disabled";
+	};
+        pinmux@2430000 {
+                pinctrl-names = "default";
+                pinctrl-0 = <&pinmux_default>;
+
+                pinmux_default: common {
+                        gpio_edp2_pp5 {
+                                nvidia,pins = "gpio_edp2_pp5";
+                                nvidia,pull = <TEGRA_PIN_PULL_UP>;
+                                nvidia,tristate = <TEGRA_PIN_ENABLE>;
+                                nvidia,enable-input = <TEGRA_PIN_ENABLE>;
+                                status = "okay";
+                        };
+
+                        gpio_edp3_pp6 {
+                                nvidia,pins = "gpio_edp3_pp6";
+                                nvidia,pull = <TEGRA_PIN_PULL_NONE>;
+                                nvidia,tristate = <TEGRA_PIN_DISABLE>;
+                                nvidia,enable-input = <TEGRA_PIN_DISABLE>;
+                                status = "okay";
+                        };
+                };
+        };
+        gpio@2200000 {
+                sdmmc-wake-support-input {
+                        gpio-hog;
+                        gpios = <TEGRA_MAIN_GPIO(P, 5) 0>;
+                        input;
+                        label = "sdmmc-wake-input";
+                        status = "disabled";
+                };
+
+                sdmmc-wake-support-output {
+                        gpio-hog;
+                        gpios = <TEGRA_MAIN_GPIO(P, 6) 0>;
+                        output-low;
+                        label = "sdmmc-wake-output";
+                        status = "disabled";
+                };
+        };
+
+};
+

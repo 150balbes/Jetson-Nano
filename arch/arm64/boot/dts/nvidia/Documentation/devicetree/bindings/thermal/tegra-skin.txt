@@ -1,0 +1,130 @@
+Tegra-skin driver binding
+-------------------------
+NVIDIA tegra skin driver estimates skin temperature of tegra devices. This
+virtual sensor(s) is registered to Generic Thermal Framework and has the option
+to expose estimated skin temperature value(s) at multiple points (hotspots) on
+the device.
+
+/tegra_skin_thermal
+ Required properties:
+	- compatible:
+		- should be "nvidia,tegra-skin-thermal"
+	- #thermal-sensor-cells: should be 1. See ./thermal.txt for details.
+ Optional properties:
+	- io-channels: iio channels that the driver is expected to poll
+	- io-channel-names: channel names in the order of io-channels that the
+		driver is expected to poll
+	- skin-sensor@<N>:
+		- See below for details
+	- power_feature@<N>:
+		- See below for details
+	- hotspot@<N>:
+		- See below for details
+
+
+/tegra_skin_thermal/skin-sensor@<N>
+ Required properties:
+	- thermal-sensor
+		- should match the thermal sensor id used in the thermal-sensors
+		attribute in the thermal-zone definition.
+		For Example, in thermal zone definition if
+		thermal-sensors = <&{/tegra_skin_thermal} 2>;
+		then thermal-sensor should be 2.
+	- hotspot-list
+		- comma separated phandle list to hotspot definition. The sensor
+		would return the max temperature reported by each hotspot.
+		See below for hotspot configuration.
+
+/tegra_skin_thermal/hotspot@<N>
+ Define the attributes of each hotspot
+ Required properties
+	- power-features-list: comma separated phandle, arguments list to
+		 power feature definition. The number of arguments is defined by
+		 #power-feature-cells of the respective power feature.
+	- offset: offset of hotspot
+	- rc_k: damping coefficient of hotspot
+	- reference-sensor: reference sensor used by the hotspot estimator
+
+/tegra_skin_thermal/power_feature@<N>
+ Required properties
+	- type: could be IIO_SUBSYSTEM, BACKLIGHT_BRIGHTNESS
+	- rc_k: damping coefficient for the power_feature
+	- resistance: thermal resitance of the power feature
+	- #power-feature-cells: number of arguments for the power-feature in
+				power-features-list
+
+/tegra_skin_thermal/skin-sensor@<N> is registered as a Thermal Zone using the
+thermal framework. See ./thermal.txt for more details.
+
+
+
+Example:-
+
+#include <dt-bindings/thermal/thermal.h>
+#include <dt-bindings/thermal/tegra186-skin-thermal.h>
+#include <dt-bindings/iio/meter/ina3221x.h>
+
+/ {
+	tegra_skin_thermal {
+		compatible = "nvidia,tegra-skin-thermal";
+		#thermal-sensor-cells = <1>;
+
+		io-channels = <&ina3221x_40 INA3221_CHAN_INDEX(0, VOLTAGE, NORMAL)>,
+				<&ina3221x_40 INA3221_CHAN_INDEX(0, CURRENT, NORMAL)>,
+				<&ina3221x_41 INA3221_CHAN_INDEX(0, POWER, NORMAL)>;
+		io-channel-names = "gpu-voltage", "gpu-current", "vddin-power";
+
+		pf_backlight: power_feature@0 {
+			#power-feature-cells = <1>;
+			type = <BACKLIGHT_BRIGHTNESS>;
+			rc_k = <1>;
+			resistance = <1>;
+		};
+
+		pf_iio_ina3221: power_feature@1 {
+			#power-feature-cells = <1>;
+			type = <IIO_SUBSYSTEM>;
+			rc_k = <1>;
+			resistance = <1>;
+		};
+
+		hs0: hotspot@0 {
+			power-features-list = <&pf_backlight &lp8557_backlight
+								&pf_iio_ina3221 0
+								&pf_iio_ina3221 1>;
+			offset = <3>;
+			rc_k = <1>;
+			reference-sensor = <&Tboard_tegra>;
+		};
+
+		hs1: hotspot@1 {
+			power-features-list = <&pf_backlight &lp8557_backlight>;
+			offset = <3>;
+			rc_k = <1>;
+			reference-sensor = <&Tboard_tegra>;
+		};
+
+		hs2: hotspot@2 {
+			power-features-list = <&pf_backlight &lp8557_backlight
+								&pf_iio_ina3221 2>;
+			offset = <3>;
+			rc_k = <1>;
+			reference-sensor = <&Tboard_tegra>;
+		};
+
+		skin-sensor@0 {
+			thermal-sensor = <0>;
+			hotspot-list = <&hs0 &hs1>;
+		};
+
+		skin-sensor@1 {
+			thermal-sensor = <1>;
+			hotspot-list = <&hs1>;
+		};
+
+		skin-sensor@2 {
+			thermal-sensor = <2>;
+			hotspot-list = <&hs2>;
+		};
+	};
+};

@@ -1,0 +1,70 @@
+/*
+ * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+#include <t19x-common-modules/tegra194-camera-imx185_v1-a00.dtsi>
+#include "dt-bindings/clock/tegra194-clock.h"
+
+#define CAM0_RST_L	TEGRA194_MAIN_GPIO(H, 3)
+#define CAMERA_I2C_MUX_BUS(x) (0x1E + x)
+
+/* camera control gpio definitions */
+
+/ {
+	gpio@2200000 {
+		camera-control-output-low {
+			gpio-hog;
+			output-low;
+			gpios = <CAM0_RST_L 0>;
+			label = "cam0-rst";
+		};
+	};
+
+	i2c@3180000 {
+		tca9546@70 {
+			compatible = "nxp,pca9546";
+			reg = <0x70>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+			skip_mux_detect = "yes";
+			vcc-supply = <&p2822_vdd_1v8_cvb>;
+			vcc_lp = "vcc";
+			force_bus_start = <CAMERA_I2C_MUX_BUS(0)>;
+
+			i2c@0 {
+				reg = <0>;
+				i2c-mux,deselect-on-exit;
+				#address-cells = <1>;
+				#size-cells = <0>;
+				pca9570_a@24 {
+					compatible = "nvidia,pca9570";
+					reg = <0x24>;
+					channel = "a";
+					drive_ic = "DRV8838";
+				};
+
+				imx185_a@1a {
+					/* Define any required hw resources needed by driver */
+					/* ie. clocks, io pins, power sources */
+					clocks = <&bpmp_clks TEGRA194_CLK_EXTPERIPH1>,
+							 <&bpmp_clks TEGRA194_CLK_EXTPERIPH1>;
+					clock-names = "extperiph1", "pllp_grtba";
+					mclk = "extperiph1";
+					reset-gpios = <&tegra_main_gpio CAM0_RST_L GPIO_ACTIVE_HIGH>;
+				};
+			};
+		};
+	};
+};

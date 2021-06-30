@@ -1,0 +1,133 @@
+NVIDIA Tegra PCIe controller-End Point mode (Synopsys DesignWare Core based)
+
+This PCIe controller working in end point mode is based on the Synopsis
+Designware PCIe IP
+
+Required properties:
+- compatible: For Tegra19x, must contain "nvidia,tegra194-pcie-ep".
+- reg: A list of physical base address and length for each set of controller
+  registers. Must contain an entry for each entry in the reg-names property.
+- reg-names: Must include the following entries:
+  "appl": Controller's application logic registers
+  "window1": First address space aperture window available for PCIe controller
+  "config": configuration space region (either window1 or window2 can be used
+            for mapping. But in this case, window1 is used)
+  "atu_dma": iATU and DMA register (either window1 or window2 can be used
+             for mapping. But in this case, window1 is used)
+  "window2": Second address space aperture window available for PCIe controller
+- interrupts: A list of interrupt outputs of the controller. Must contain an
+  entry for each entry in the interrupt-names property.
+- interrupt-names: Must include the following entries:
+  "intr": The Tegra interrupt that is asserted for controller interrupts
+- clocks: Must contain an entry for each entry in clock-names.
+  See ../clocks/clock-bindings.txt for details.
+- clock-names: Must include the following entries:
+  - core_clk
+- resets: Must contain an entry for each entry in reset-names.
+  See ../reset/reset.txt for details.
+- reset-names: Must include the following entries:
+  - core_apb_rst
+  - core_rst
+- phys: Must contain a phandle to P2U PHY for each entry in phy-names.
+- phy-names: Must include an entry for each active lane. Note that the number
+  of entries does not have to (though usually will) be equal to the specified
+  number of lanes in XBAR configuration. Entries are of the form
+  "pcie-p2u-N": where N ranges from 0 to the value specified in xbar config
+- nvidia,pex-rst-gpio: Specify GPIO for PCIe reset signal, see gpio binding
+- vddio-pex-ctl-supply: Regulator supply for PCIe side band signals
+- Controller dependent register offsets
+  - nvidia,margin-port-cap: MARGIN_PORT_CAP_STATUS reg offset
+      0x190 - C4
+      0x194 - C0 and C5
+  - nvidia,cfg-link-cap-l1sub: L1SUB_CAP_L1SUB reg offset
+      0x1b0 - C4
+      0x1c4 - C0 and C5
+  - nvidia,event-cntr-ctrl: EVENT_COUNTER_CONTROL reg offset
+      0x1c4 - C4
+      0x1d8 - C0 and C5
+  - nvidia,event-cntr-data: EVENT_COUNTER_DATA reg offset
+      0x1c8 - C4
+      0x1dc - C0 and C5
+  - nvidia,margin-lane-cntrl: MARGIN_LANE_CNTRL_STATUS reg offset
+      0x184 - C1, C2 and C3
+      0x194 - C4
+      0x198 - C0 and C5
+- nvidia,device-id: Controller specific PCIe Device-ID
+      0x1AD4 - C0
+      0x1AD5 - C4
+      0x1AD4 - C5
+- nvidia,controller-id : Controller specific ID
+      0x0 - C0
+      0x4 - C4
+      0x5 - C5
+- num-lanes: Must contain an entry to represent number of lanes
+  controller is given to get the link up
+
+Optional properties:
+- iommus: A reference to the IOMMU. See ../iommu/iommu.txt for details.
+- dma-coherent: Indicates that the hardware IP block can ensure the coherency
+  of the data transferred from/to the IP block. This can avoid the software
+  cache flush/invalid actions, and improve the performance significantly.
+- nvidia,max-speed: limits controllers max speed to this value.
+    1 - Gen-1
+    2 - Gen-2
+    3 - Gen-3
+    4 - Gen-4
+- nvidia,disable-aspm-states : controls advertisement of ASPM states
+    bit-0 to '1' : disables advertisement of ASPM-L0s
+    bit-1 to '1' : disables advertisement of ASPM-L1. This also disables
+                 advertisement of ASPM-L1.1 and ASPM-L1.2
+    bit-2 to '1' : disables advertisement of ASPM-L1.1
+    bit-3 to '1' : disables advertisement of ASPM-L1.2
+- nvidia,update_fc_fixup : needs it to improve perf when a platform is designed
+    in such a way that it satisfies at least one of the following conditions
+    1. If C0/C4/C5 run at x1/x2 link widths (irrespective of speed and MPS)
+    2. If C0/C4/C5 operate at their respective max link widths and
+       a) speed is Gen-2 and MPS is 256B
+       b) speed is >= Gen-3 with any MPS
+- nvidia,bar0-size: Size of BAR-0 through which memory gets exposed to host
+- "nvidia,tsa-config" : Add TSA configuration register address to configure MC
+    with production settings for PCIe. Note:- this is applicable only for C5
+- "nvidia,mods" : Add to indicate NVidia specific MODs configuration
+
+Power supplies for Tegra194:
+//TODO
+
+
+Examples:
+=========
+
+Tegra194:
+--------
+
+SoC DTSI:
+
+	pcie_c1_ep {
+		compatible = "nvidia,tegra194-pcie-ep";
+		reg = <0x00 0x14100000 0x0 0x00020000   /* appl registers (128K)      */
+		       0x00 0x30000000 0x0 0x00040000   /* configuration space (256K) */
+		       0x00 0x30040000 0x0 0x00040000>; /* iATU_DMA reg space (256K)  */
+		reg-names = "appl", "config", "atu_dma";
+
+		#address-cells = <3>;
+		#size-cells = <2>;
+
+		status = "disabled";
+
+		clocks = <&bpmp_clks TEGRA194_CLK_PEX0_CORE_1>;
+		clock-names = "core_clk";
+
+		resets = <&bpmp_resets TEGRA194_RESET_PEX0_CORE_1_APB>,
+			 <&bpmp_resets TEGRA194_RESET_PEX0_CORE_1>;
+		reset-names = "core_apb_rst", "core_rst";
+
+		interrupts = <0 45 0x04>;	/* controller interrupt */
+		interrupt-names = "intr";
+
+		iommus = <&smmu TEGRA_SID_PCIE1>;
+		dma-coherent;
+	};
+
+Board DTS:
+
+//TODO

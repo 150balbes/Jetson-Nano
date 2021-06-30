@@ -1,0 +1,10 @@
+#
+# Security configuration
+#
+
+append_menu "Security options"
+
+source security/tlk_driver/Kconfig
+
+endmenu
+

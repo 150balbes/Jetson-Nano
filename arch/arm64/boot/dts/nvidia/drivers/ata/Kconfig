@@ -1,0 +1,35 @@
+if ATA
+config AHCI_TEGRA_DOWNSTREAM
+	tristate "TEGRA AHCI SATA support"
+	select ARCH_TEGRA_HAS_SATA
+	help
+	  This option enables support for TEGRA AHCI Serial ATA.
+
+	  If unsure, say N.
+
+config SATA_AHCI_TEGRA_SHIELD
+    tristate "TEGRA (Shield) AHCI SATA support"
+    select ARCH_TEGRA_HAS_SATA
+    help
+      This option enables support for TEGRA (Shield) AHCI Serial ATA.
+
+      If unsure, say N.
+
+config TEGRA_SATA_IDLE_POWERGATE
+    bool "TEGRA (Shield) SATA idle power-gating"
+    depends on SATA_AHCI_TEGRA_SHIELD && PM
+    help
+      This option enables power-gating during SATA idling.
+      This option should not be enabled if sata clocks are in dvfs_table.
+
+      If unsure, say N.
+
+config TEGRA_AHCI_CONTEXT_RESTORE
+       bool "TEGRA (Shield) Context save and Restore"
+       depends on TEGRA_SATA_IDLE_POWERGATE
+       default n
+       help
+         This option enables saving context and restoring it back during
+         ELPG Entry and ELPG exit.
+
+endif # ATA

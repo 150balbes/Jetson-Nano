@@ -1,0 +1,66 @@
+/*
+ * Copyright (c) 2018, NVIDIA CORPORATION.  All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+#include <t19x-common-modules/tegra194-camera-e3377-a00.dtsi>
+#include "dt-bindings/clock/tegra194-clock.h"
+
+#define SLVS_CAM0_RST_L	TEGRA194_MAIN_GPIO(Y, 1)
+/* camera control gpio definitions */
+
+/ {
+	host1x {
+		slvs-ec@15ac0000 {
+			streams {
+				stream@0 {
+					/* nvidia,disable-header-crc; */
+					/* nvidia,disable-payload-crc; */
+					watchdog-period = <0>;
+					nvidia,symbols = <0x0360AA>;
+					/* nvidia,uphy-aux-idle-force; */
+					nvidia,uphy-cal-skip;
+					nvidia,uphy-rate-gen2;
+					nvidia,uphy-term-other;
+					/* nvidia,uphy-term-data; */
+					nvidia,uphy-aux-term-other;
+					/* nvidia,uphy-aux-term-data; */
+					/* nvidia,uphy-aux-term-10kohm; */
+					nvidia,uphy-skip-sleep;
+					nvidia,uphy-dedicated-calibration;
+					nvidia,uphy-aux-idle-mode = <3>;
+					nvidia,uphy-aux-idle-detect;
+					nvidia,syncgen = <0>;
+					nvidia,syncgen-xhs-vgp = <1>;
+					nvidia,syncgen-xvs-vgp = <4>;
+				};
+			};
+		};
+	};
+
+	spi@c260000 {
+		imx204@0 {
+			reset-gpios = <&tegra_main_gpio SLVS_CAM0_RST_L GPIO_ACTIVE_HIGH>;
+		};
+	};
+
+	gpio@2200000 {
+		camera-control-output-low {
+			gpio-hog;
+			output-low;
+			gpios = <SLVS_CAM0_RST_L 0>;
+			label = "slvs-cam0-rst";
+		};
+	};
+};

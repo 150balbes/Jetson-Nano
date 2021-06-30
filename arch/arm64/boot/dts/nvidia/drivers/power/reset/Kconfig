@@ -1,0 +1,12 @@
+if POWER_RESET
+
+config POWER_OFF_TMPM32X_I2C
+	tristate "Toshiba MCU TMPM32x I2C power off driver"
+	depends on I2C
+	depends on OF
+	select MFD_TMPM32X_I2C
+	help
+	  This driver supports an external power off trigger via
+	  Toshiba MCU TMPM32x I2C.
+
+endif

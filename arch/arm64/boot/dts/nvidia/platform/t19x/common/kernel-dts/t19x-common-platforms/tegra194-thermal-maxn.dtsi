@@ -1,0 +1,77 @@
+/*
+ * Copyright (c) 2018, NVIDIA CORPORATION. All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms and conditions of the GNU General Public License,
+ * version 2, as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
+#define PROFILE_ID(_id) (0xc20000 + (_id))
+/ {
+	bpmp {
+		bpmpthermal {
+			nvidia,therm-profile = <PROFILE_ID(1)>;
+		};
+	};
+
+	thermal-zones {
+		CPU-therm {
+			trips {
+				trip_critical {
+					temperature = <91500>;
+					type = "critical";
+					hysteresis = <0>;
+					writable;
+				};
+				trip_bthrot {
+					temperature = <86000>;
+					type = "passive";
+					hysteresis = <0>;
+					writable;
+				};
+			};
+		};
+
+		AUX-therm {
+			trips {
+				trip_critical {
+					temperature = <87500>;
+					type = "critical";
+					hysteresis = <0>;
+					writable;
+				};
+				trip_bthrot {
+					temperature = <82000>;
+					type = "passive";
+					hysteresis = <0>;
+					writable;
+				};
+			};
+		};
+
+		GPU-therm {
+			trips {
+				trip_critical {
+					temperature = <93500>;
+					type = "critical";
+					hysteresis = <0>;
+					writable;
+				};
+				trip_bthrot {
+					temperature = <88000>;
+					type = "passive";
+					hysteresis = <0>;
+					writable;
+				};
+			};
+		};
+	};
+};

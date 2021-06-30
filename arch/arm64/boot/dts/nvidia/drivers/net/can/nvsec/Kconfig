@@ -1,0 +1,9 @@
+config TEGRA_HV_SECCAN
+	tristate "Tegra Hypervisor Security path CAN"
+	depends on ARCH_TEGRA_18x_SOC && CAN
+	select STAGING
+	help
+	 Add support for emulating a socketCAN device on tegra hypervisor systems.
+	 To compile this driver as a module, choose M here: the
+	 module will be called nvsec_hv_can.
+

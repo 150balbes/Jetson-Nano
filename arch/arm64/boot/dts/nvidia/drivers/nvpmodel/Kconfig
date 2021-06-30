@@ -1,0 +1,14 @@
+#
+# Nvpmodel EMC CAP Configuration
+#
+
+menuconfig NVPMODEL_EMC
+	tristate "NVPMODEL_EMC_CAP driver"
+	default n
+	help
+	    This driver add an EMC bwmgr client and expose related cap Sysfs to
+	    user space, this make the Nvpmodel to cap EMC BW through Sysfs
+	    possible. The cap value is based on different Nvpmodel usecase.
+	    The BW cap will effect on not only bwmgr client and also iso client.
+
+	    If in doubt, say N.

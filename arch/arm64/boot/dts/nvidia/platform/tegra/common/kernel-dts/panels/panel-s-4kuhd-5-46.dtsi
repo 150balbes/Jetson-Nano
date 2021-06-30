@@ -1,0 +1,122 @@
+/*
+ * arch/arm/boot/dts/panel-s-4kuhd-5-46.dtsi
+ *
+ * Copyright (c) 2016-2017, NVIDIA CORPORATION.  All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with this program; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+ */
+
+#include <dt-bindings/display/tegra-dc.h>
+#include <dt-bindings/display/tegra-panel.h>
+
+/ {
+	host1x {
+		dsi {
+			panel_s_4kuhd_5_46: panel-s-4kuhd-5-46 {
+				compatible = "s,4kuhd-5-46";
+				nvidia,dsi-instance = <DSI_INSTANCE_0>;
+				nvidia,dsi-n-data-lanes = <8>;
+				nvidia,dsi-pixel-format = <TEGRA_DSI_PIXEL_FORMAT_8BIT_DSC>;
+				nvidia,dsi-refresh-rate = <60>;
+				nvidia,dsi-refresh-rate-adj = <1>;
+				nvidia,dsi-video-data-type = <TEGRA_DSI_VIDEO_TYPE_COMMAND_MODE>;
+				nvidia,dsi-video-clock-mode = <TEGRA_DSI_VIDEO_CLOCK_TX_ONLY>;
+				nvidia,dsi-ganged-type = <TEGRA_DSI_GANGED_SYMMETRIC_LEFT_RIGHT>;
+				nvidia,dsi-ganged-write-to-all-links = <1>;
+				nvidia,enable-link-compression;
+				nvidia,enable-dual-dsc;
+				nvidia,enable-block-pred;
+				nvidia,slice-height = <32>;
+				nvidia,num-of-slices = <2>;
+				nvidia,comp-rate = <8>;
+				nvidia,dsi-controller-vs = <DSI_VS_1>;
+				nvidia,dsi-virtual-channel = <TEGRA_DSI_VIRTUAL_CHANNEL_0>;
+				nvidia,dsi-panel-reset = <TEGRA_DSI_ENABLE>;
+				nvidia,dsi-ulpm-not-support = <TEGRA_DSI_ENABLE>;
+				nvidia,dsi-suspend-stop-stream-late = <TEGRA_DSI_ENABLE>;
+				nvidia,dsi-power-saving-suspend = <TEGRA_DSI_ENABLE>;
+				nvidia,default_color_space = <1>;	/*default color profile:adobeRGB*/
+				nvidia,dsi-init-cmd =
+							/* Long  Packet: <PACKETTYPE[u8] COMMANDID[u8] PAYLOADCOUNT[u16] ECC[u8] PAYLOAD[..] CHECKSUM[u16]> */
+							/* Short Packet: <PACKETTYPE[u8] COMMANDID[u8] DATA0[u8] DATA1[u8] ECC[u8]> */
+							/* For DSI packets each DT cell is interpreted as u8 not u32 */
+							<TEGRA_DSI_PACKET_CMD DSI_DCS_LONG_WRITE 0x05 0x0 0x0 0xFF 0xAA 0x55 0xA5 0x80 0x0 0x0>,
+							<TEGRA_DSI_DELAY_MS 10>,
+							<TEGRA_DSI_PACKET_CMD DSI_DCS_WRITE_1_PARAM 0x6F 0x5D 0x0>,
+							<TEGRA_DSI_DELAY_MS 10>,
+							<TEGRA_DSI_PACKET_CMD DSI_DCS_WRITE_1_PARAM 0xF2 0x01 0x0>,
+							<TEGRA_DSI_DELAY_MS 10>,
+							<TEGRA_DSI_PACKET_CMD DSI_DCS_LONG_WRITE 0x06 0x0 0x0 0xF0 0x55 0xAA 0x52 0x08 0x04 0x0 0x0>,
+							<TEGRA_DSI_DELAY_MS 10>,
+							<TEGRA_DSI_PACKET_CMD DSI_DCS_WRITE_1_PARAM 0xC0 0x03 0x0>,
+							<TEGRA_DSI_DELAY_MS 10>,
+							<TEGRA_DSI_PACKET_CMD DSI_DCS_WRITE_1_PARAM 0x90 0x03 0x0>,
+							<TEGRA_DSI_DELAY_MS 10>,
+							<TEGRA_DSI_PACKET_CMD DSI_DCS_WRITE_1_PARAM 0x03 0x01 0x0>,
+							<TEGRA_DSI_DELAY_MS 10>,
+							<TEGRA_DSI_PACKET_CMD DSI_DCS_WRITE_1_PARAM 0x35 0x00 0x0>,
+							<TEGRA_DSI_DELAY_MS 10>,
+							<TEGRA_DSI_PACKET_CMD DSI_DCS_LONG_WRITE 0x03 0x0 0x0 0x44 0x0A 0x00 0x0 0x0>,
+							<TEGRA_DSI_DELAY_MS 10>,
+							<TEGRA_DSI_PACKET_CMD DSI_DCS_WRITE_0_PARAM DSI_DCS_EXIT_SLEEP_MODE 0x0 0x0>,
+							/* Followed from 8 inch sharp. */
+							<TEGRA_DSI_SEND_FRAME 10>,
+							<TEGRA_DSI_PACKET_CMD DSI_DCS_WRITE_0_PARAM DSI_DCS_SET_DISPLAY_ON 0x0 0x0>;
+				nvidia,dsi-n-init-cmd = <21>;
+				nvidia,dsi-early-suspend-cmd =
+							<TEGRA_DSI_PACKET_CMD DSI_DCS_WRITE_0_PARAM DSI_DCS_SET_DISPLAY_OFF 0x0 0x0>,
+							<TEGRA_DSI_DELAY_MS 10>,
+							<TEGRA_DSI_PACKET_CMD DSI_DCS_WRITE_0_PARAM DSI_DCS_ENTER_SLEEP_MODE 0x0 0x0>,
+							<TEGRA_DSI_DELAY_MS 1000>;
+				nvidia,dsi-n-early-suspend-cmd = <4>;
+				nvidia,dsi-pkt-seq =
+					<LINE_STOP>,
+					<LINE_STOP>,
+					<LINE_STOP>,
+					<CMD_LONGW LEN_HACTIVE3 CMD_BLNK 2 LINE_STOP>,
+					<CMD_EOT 7 PKT_LP LINE_STOP>,
+					<CMD_LONGW LEN_HACTIVE3 CMD_BLNK 2 LINE_STOP>;
+				disp-default-out {
+					nvidia,out-type = <TEGRA_DC_OUT_DSI>;
+					nvidia,out-width = <68>; /* Fix me: Correct out-width and out-height parameters */
+					nvidia,out-height = <121>;
+					nvidia,out-flags = <TEGRA_DC_OUT_ONE_SHOT_MODE>;
+					nvidia,out-parent-clk = "pll_d_out0";
+					nvidia,out-xres = <2160>;
+					nvidia,out-yres = <3840>;
+				};
+				display-timings {
+					2160x3840-32-60Hz {
+						clock-frequency = <600156480>;
+						hactive = <2160>;
+						vactive = <3840>;
+						hfront-porch = <400>;
+						hback-porch = <8>;
+						hsync-len = <8>;
+						vfront-porch = <40>;
+						vback-porch = <2>;
+						vsync-len = <1>;
+						nvidia,h-ref-to-sync = <4>;
+						nvidia,v-ref-to-sync = <1>;
+					};
+				};
+				vrr-settings {
+					nvidia,vrr_min_fps = <30>;
+				};
+			};
+		};
+	};
+};
+

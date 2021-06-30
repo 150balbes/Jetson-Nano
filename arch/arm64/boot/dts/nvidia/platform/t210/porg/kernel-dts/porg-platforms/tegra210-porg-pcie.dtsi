@@ -1,0 +1,62 @@
+/*
+ * arch/arm64/boot/dts/tegra210-platforms/tegra210-porg-pcie.dtsi
+ *
+ * Copyright (c) 2018, NVIDIA CORPORATION.  All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; version 2 of the License.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with this program; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+ *
+ */
+/ {
+	pcie@1003000 {
+		/delete-property/ iommus;
+		/delete-property/ iommu-map;
+		/delete-property/ iommu-map-mask;
+		nvidia,wake-gpio = <&gpio TEGRA_GPIO(A, 2) 0>;
+		nvidia,pmc-wakeup = <&tegra_pmc
+				PMC_WAKE_TYPE_EVENT 0 PMC_TRIGGER_TYPE_LOW>;
+		avdd-pll-uerefe-supply = <&max77620_ldo7>;
+		hvddio-pex-supply = <&max77620_sd3>;
+		dvddio-pex-supply = <&max77620_ldo1>;
+		dvdd-pex-pll-supply = <&max77620_ldo1>;
+		hvdd-pex-pll-e-supply = <&max77620_sd3>;
+		vddio-pex-ctl-supply = <&max77620_sd3>;
+		status = "okay";
+
+		pci@1,0 {
+#if TEGRA_XUSB_PADCONTROL_VERSION >= DT_VERSION_2
+			phys = <&{/xusb_padctl@7009f000/pads/pcie/lanes/pcie-1}>,
+				<&{/xusb_padctl@7009f000/pads/pcie/lanes/pcie-2}>,
+				<&{/xusb_padctl@7009f000/pads/pcie/lanes/pcie-3}>,
+				<&{/xusb_padctl@7009f000/pads/pcie/lanes/pcie-4}>;
+			phy-names = "pcie-0", "pcie-1", "pcie-2", "pcie-3";
+#endif
+			nvidia,num-lanes = <4>;
+			status = "okay";
+		};
+
+		pci@2,0 {
+#if TEGRA_XUSB_PADCONTROL_VERSION >= DT_VERSION_2
+			phys = <&{/xusb_padctl@7009f000/pads/pcie/lanes/pcie-0}>;
+			phy-names = "pcie-0";
+#endif
+			nvidia,num-lanes = <1>;
+			nvidia,plat-gpios = <&gpio TEGRA_GPIO(X, 3) GPIO_ACTIVE_HIGH>;
+			status = "okay";
+
+			ethernet@0,0 {
+				reg = <0x000000 0 0 0 0>;
+			};
+		};
+	};
+};

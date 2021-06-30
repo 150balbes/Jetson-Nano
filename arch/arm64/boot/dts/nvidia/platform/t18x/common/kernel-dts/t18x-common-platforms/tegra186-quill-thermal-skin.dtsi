@@ -1,0 +1,100 @@
+/*
+ * Copyright (c) 2017, NVIDIA CORPORATION. All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms and conditions of the GNU General Public License,
+ * version 2, as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
+#include <dt-bindings/thermal/thermal.h>
+#include <dt-bindings/thermal/tegra186-skin-thermal.h>
+
+/ {
+	tegra_skin_thermal {
+		compatible = "nvidia,tegra-skin-thermal";
+		#thermal-sensor-cells = <1>;
+		status = "ok";
+	};
+
+	thermal-zones {
+		Tskin0 {
+			thermal-sensors = <&{/tegra_skin_thermal} 0>;
+			polling-delay-passive = <500>;
+			polling-delay = <1000>;
+
+			thermal-zone-params {
+				governor-name = "pid_thermal_gov";
+				up_compensation = <70>;
+			};
+
+			trips {
+				skin_trip0 {
+					temperature = <100000>;
+					hysteresis = <1000>;
+					type = "passive";
+					writable;
+				};
+			};
+
+			cooling-maps {
+				map0 {
+					trip = <&{/thermal-zones/Tskin0/trips/skin_trip0}>;
+					cooling-device = <&{/bthrot_cdev/gpu_balanced} THERMAL_NO_LIMIT THERMAL_NO_LIMIT>;
+					cdev-type = "gpu-balanced";
+				};
+			};
+		};
+		Tskin1 {
+			thermal-sensors = <&{/tegra_skin_thermal} 1>;
+			polling-delay-passive = <6000>;
+			polling-delay = <1000>;
+
+			trips {
+				skin_trip1 {
+					temperature = <100000>;
+					hysteresis = <1000>;
+					type = "passive";
+					writable;
+				};
+			};
+
+			cooling-maps {
+				map0 {
+					trip = <&{/thermal-zones/Tskin1/trips/skin_trip1}>;
+					cooling-device = <&dummy_cool_dev 1 1>;
+					cdev-type = "dummy_cool";
+				};
+			};
+		};
+		Tskin_max {
+			thermal-sensors = <&{/tegra_skin_thermal} 2>;
+			polling-delay = <1000>;
+			polling-delay-passive = <6000>;
+
+			trips {
+				skin_trip2 {
+					temperature = <100000>;
+					hysteresis = <1000>;
+					type = "passive";
+					writable;
+				};
+			};
+
+			cooling-maps {
+				map0 {
+					trip = <&{/thermal-zones/Tskin_max/trips/skin_trip2}>;
+					cooling-device = <&dummy_cool_dev 1 1>;
+					cdev-type = "dummy_cool";
+				};
+			};
+		};
+	};
+};

@@ -1,0 +1,317 @@
+/*
+ * tegra194-soc-automotive.dtsi: Automotive based platform common SoC specific
+ *				 DTSI file with required node enabled.
+ *
+ * Copyright (c) 2017-2018, NVIDIA CORPORATION.  All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; version 2 of the License.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ */
+
+#include <tegra194-soc/tegra194-soc-base.dtsi>
+#include <tegra194-soc/tegra194-cpus.dtsi>
+#include <tegra194-soc/mods-simple-bus.dtsi>
+#include <tegra194-soc/tegra194-soc-prod.dtsi>
+
+/ {
+	tegra-carveouts {
+		status = "okay";
+	};
+
+	timer {
+		status = "okay";
+	};
+
+	mc {
+		status = "okay";
+	};
+
+	interrupt-controller {
+		status = "okay";
+	};
+
+	interrupt-controller@3881000 {
+		status = "okay";
+	};
+
+	power-domain {
+		status = "okay";
+	};
+
+	clock@0 {
+	        status = "okay";
+	};
+
+	bpmp_reset@0 {
+	        status = "okay";
+	};
+
+	bpmp {
+	        status = "okay";
+		bpmpthermal {
+			status = "okay";
+		};
+	};
+
+	gv11b {
+	        status = "okay";
+	};
+
+	pinmux@2430000 {
+		status = "okay";
+	};
+
+	/* Tegra main GPIO */
+	gpio@2200000 {
+		status = "okay";
+	};
+
+	/* Tegra AON GPIO */
+	gpio@c2f0000 {
+		status = "okay";
+	};
+
+	/* BPMP I2c for PMIC acess */
+	bpmp_i2c {
+		status = "okay";
+	};
+
+	efuse@3820000 {
+		status = "okay";
+		efuse-burn {
+			status = "okay";
+		};
+	};
+
+	kfuse@3830000 {
+		status = "okay";
+	};
+
+	/* Wake irq support */
+	tegra194-pm-irq {
+		status = "okay";
+	};
+
+	i2c@3160000 { /* GEN1_I2C */
+		status = "okay";
+	};
+
+	i2c@c240000 { /* GEN2_I2C */
+		status = "okay";
+	};
+
+	i2c@3180000 { /* CAM_I2C */
+		status = "okay";
+	};
+
+	i2c@3190000 { /* DP_AUX_CH1_I2C */
+		status = "okay";
+	};
+
+	i2c@31b0000 { /* DP_AUX_CH0_I2C */
+		status = "okay";
+	};
+
+	i2c@31c0000 { /* DP_AUX_CH2_I2C */
+		status = "okay";
+	};
+
+	i2c@c250000 { /* GEN8_I2C */
+		status = "okay";
+	};
+
+	i2c@31e0000 { /* DP_AUX_CH3_I2C */
+		status = "okay";
+	};
+
+	spi@3270000 { /* QSPI0 */
+		status = "okay";
+		spiflash@0 {
+			#address-cells = <1>;
+			#size-cells = <1>;
+			compatible = "s25fs512s";
+			reg = <0>;
+			spi-max-frequency = <204000000>;
+			partition@0 {
+				label = "Whole_flash0";
+				reg = <0x00000000 0x4000000>;
+			};
+			controller-data {
+				nvidia,x1-len-limit = <16>;
+				nvidia,x1-bus-speed = <102000000>; /* In MHz */
+				nvidia,x1-dymmy-cycle = <8>;
+				nvidia,x4-bus-speed = <102000000>;
+				nvidia,x4-dymmy-cycle = <8>;
+				nvidia,x4-is-ddr=<1>;
+				nvidia,ctrl-bus-clk-ratio = <2>;
+			};
+		};
+	};
+
+	spi@3300000 { /* QSPI1 */
+		status = "okay";
+		spiflash@0 {
+			#address-cells = <1>;
+			#size-cells = <1>;
+			compatible = "s25fs512s";
+			reg = <0>;
+			spi-max-frequency = <204000000>;
+			partition@0 {
+				label = "Whole_flash1";
+				reg = <0x00000000 0x4000000>;
+			};
+			controller-data {
+				nvidia,x1-len-limit = <16>;
+				nvidia,x1-bus-speed = <102000000>; /* In MHz */
+				nvidia,x1-dymmy-cycle = <8>;
+				nvidia,x4-bus-speed = <102000000>;
+				nvidia,x4-dymmy-cycle = <8>;
+				nvidia,x4-is-ddr=<1>;
+				nvidia,ctrl-bus-clk-ratio = <2>;
+			};
+		};
+	};
+
+	/* SDMMC4 */
+	sdhci@3460000 {
+		nvidia,disable-rtpm;
+	};
+
+	/* SDMMC3 */
+	sdhci@3440000 {
+		nvidia,disable-rtpm;
+	};
+
+	/* SDMMC1 */
+	sdhci@3400000 {
+		nvidia,disable-rtpm;
+	};
+
+	/* L3 cache */
+	tegra-cache {
+		status = "okay";
+	};
+
+	reserved-memory {
+		grid-of-semaphores {
+			status = "okay";
+		};
+	};
+
+	tegra-cvnas {
+		status = "okay";
+	};
+
+	mc_sid@2c00000 {
+		status = "okay";
+	};
+
+	iommu@12000000 {
+		status = "okay";
+	};
+
+	tegra-hsp@c150000 {
+		status = "okay";
+	};
+
+	tegra-hsp@3c00000 {
+		status = "okay";
+	};
+
+	tegra-hsp@b950000 {
+		status = "okay";
+	};
+
+	host1x {
+		ctx0 {
+			status = "okay";
+		};
+
+		ctx1 {
+			status = "okay";
+		};
+
+		ctx2 {
+			status = "okay";
+		};
+
+		ctx3 {
+			status = "okay";
+		};
+
+		ctx4 {
+			status = "okay";
+		};
+
+		ctx5 {
+			status = "okay";
+		};
+
+		ctx6 {
+			status = "okay";
+		};
+
+		ctx7 {
+			status = "okay";
+		};
+
+		nvcsi@15a00000 {
+			status = "okay";
+		};
+
+		tsec@15500000 {
+			status = "disabled";
+		};
+
+		tsecb@15100000 {
+			status = "disabled";
+		};
+	};
+
+	psci {
+		status = "okay";
+	};
+
+	cpufreq {
+		status = "okay";
+	};
+
+	ufshci@2450000 {
+		nvidia,enable-wlu-scsi-device-add;
+	};
+
+	pmc@c360000 {
+		status = "okay";
+		/*export: SCRATCH_99*/
+		export-pmc-scratch-reg-offset = <0x568>;
+		export-pmc-scratch-reg-name = "boot-chain-type";
+	};
+
+	se_elp@3ad0000 {
+		status = "okay";
+	};
+
+	host1x {
+		se@15810000 {
+			status="okay";
+		};
+
+		se@15820000 {
+			status="okay";
+		};
+
+		se@15830000 {
+			status="okay";
+		};
+
+		se@15840000 {
+			status="okay";
+		};
+	};
+};

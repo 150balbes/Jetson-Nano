@@ -1,0 +1,190 @@
+/*
+ * Copyright (c) 2014-2017, NVIDIA CORPORATION.  All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; version 2 of the License.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with this program; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+ *
+ */
+
+/ {
+	pinmux@700008d4 {
+		prod-settings {
+			#prod-cells = <4>;
+			mask-one-style;
+			touch_prod {
+				status = "okay";
+				nvidia,prod-boot-init;
+				prod = <
+					0 0x23C 0x01F1F000 0x01F1F000	//TOUCH_CLK DRVUP-DN
+				       >;
+			};
+
+			aux_clk_prod{
+				status = "okay";
+				nvidia,prod-boot-init;
+				prod = <1 0x160 0x00001000 0x00001000>;
+			};
+
+			sdmmc_prod {
+				status = "okay";
+				nvidia,prod-boot-init;
+				prod = <0 0x1C4 0xF7F7F000 0x51212000
+					0 0x1C8 0xF0003FFD 0x00001040
+					0 0x1DC 0xF7F7F000 0x51212000
+					0 0x1E0 0xF0003FFD 0x00001040
+					1 0x00 0x00007200 0x00002000
+					1 0x04 0x00007200 0x00002000
+					1 0x08 0x00007200 0x00002000
+					1 0x0C 0x00007200 0x00002000
+					1 0x10 0x00007200 0x00002000
+					1 0x14 0x00007200 0x00002000
+					1 0x1C 0x00007200 0x00002000
+					1 0x20 0x00007200 0x00002000
+					1 0x24 0x00007200 0x00002000
+					1 0x28 0x00007200 0x00002000
+					1 0x2C 0x00007200 0x00002000
+					1 0x30 0x00007200 0x00002000>;
+			};
+
+			spi1_prod {
+				nvidia,prod-boot-init;
+				prod = <0 0x200 0xF0000000 0x50000000
+					0 0x204 0xF0000000 0x50000000
+					0 0x208 0xF0000000 0x50000000
+					0 0x20c 0xF0000000 0x50000000
+					0 0x210 0xF0000000 0x50000000
+					1 0x50 0x00006000 0x00006040
+					1 0x54 0x00006000 0x00006040
+					1 0x58 0x00006000 0x00006040
+					1 0x5c 0x00006000 0x00006040
+					1 0x60 0x00006000 0x00006040>;
+			};
+			spi2_prod {
+				nvidia,prod-boot-init;
+				prod = <0 0x214 0xF0000000 0xd0000000
+					0 0x218 0xF0000000 0xd0000000
+					0 0x21c 0xF0000000 0xd0000000
+					0 0x220 0xF0000000 0xd0000000
+					0 0x224 0xF0000000 0xd0000000
+					1 0x64 0x00006000 0x00006040
+					1 0x68 0x00006000 0x00006040
+					1 0x6c 0x00006000 0x00006040
+					1 0x70 0x00006000 0x00006040
+					1 0x74 0x00006000 0x00006040>;
+			};
+			spi3_prod {
+				nvidia,prod-boot-init;
+				prod = <0 0xcc 0x01404000 0x01414000
+					0 0xd0 0x01404000 0x01414000
+					0 0x140 0x01404000 0x01414000
+					0 0x144 0x01404000 0x01414000>;
+			};
+			spi4_prod {
+				nvidia,prod-boot-init;
+				prod = <0 0x268 0x01404000 0x01414000
+					0 0x26c 0x01404000 0x01414000
+					0 0x270 0x01404000 0x01414000
+					0 0x274 0x01404000 0x01414000>;
+			};
+		};
+	};
+
+	spi@7000d400 {
+		prod-settings {
+			#prod-cells = <3>;
+			mask-one-style;
+			prod {
+			    prod = <0x04 0x00000fff 0x0>;
+			};
+			prod_c_flash {
+			    status = "disabled";
+			    /* enabled for spi flash rom */
+			    prod = <0x04 0x0000003f 0x00000007>;
+			};
+			prod_c_loop {
+			    status = "disabled";
+			    /* enabled for spi loopback mode */
+			    prod = <0x04 0x00000fff 0x0000044b>;
+			};
+		};
+	};
+	spi@7000d600 {
+		prod-settings {
+			#prod-cells = <3>;
+			mask-one-style;
+			prod {
+			    prod = <0x04 0x00000fff 0x0>;
+			};
+			prod_c_flash {
+			    status = "disabled";
+			    /* enabled for spi flash rom */
+			    prod = <0x04 0x0000003f 0x00000006>;
+			};
+			prod_c_loop {
+			    status = "disabled";
+			    /* enabled for spi loopback mode */
+			    prod = <0x04 0x00000fff 0x0000044b>;
+			};
+		};
+	};
+	spi@7000d800 {
+		prod-settings {
+			#prod-cells = <3>;
+			mask-one-style;
+			prod {
+			    prod = <0x04 0x00000fff 0x0>;
+			};
+			prod_c_flash {
+			    status = "disabled";
+			    /* enabled for spi flash rom */
+			    prod = <0x04 0x0000003f 0x00000008>;
+			};
+			prod_c_loop {
+			    status = "disabled";
+			    /* enabled for spi loopback mode */
+			    prod = <0x04 0x00000fff 0x0000044b>;
+			};
+		};
+	};
+	spi@7000da00 {
+		prod-settings {
+			#prod-cells = <3>;
+			mask-one-style;
+			prod {
+			    prod = <0x04 0x00000fff 0x0>;
+			};
+			prod_c_flash {
+			    status = "disabled";
+			    /* enabled for spi loopback mode */
+			    prod = <0x04 0x00000fff 0x0000044b>;
+			};
+		};
+	};
+
+	sata@70020000 {
+		prod-settings {
+			#prod-cells = <4>;
+			mask-one-style;
+			prod {
+				prod = <
+					0 0x00000680 0x00000001 0x00000001	// SATA_CHX_INDEX_0		0
+					0 0x00000690 0x00000FFF 0x00000715	// SATA_CHX_PHY_CTRL1_GEN1_0	31:0
+					0 0x00000694 0x000FF0FF 0x0000E01B	// SATA_CHX_PHY_CTRL1_GEN2_0	31:0
+					0 0x000006d0 0xFFFFFFFF 0x00AB000F	// SATA_CHX_PHY_CTRL11_0	31:0
+					0 0x00000170 0x0000F000 0x00007000	// NV_PROJ_SATA_FIFO_0		15:12
+					2 0x00000960 0x03000000 0x01000000	// XUSB_PADCTL_UPHY_MISC_PAD_S0_CTL_1_0	25:24
+				>;
+			};
+		};
+	};
+};

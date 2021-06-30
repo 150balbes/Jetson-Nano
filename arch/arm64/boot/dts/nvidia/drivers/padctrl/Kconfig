@@ -1,0 +1,12 @@
+if PADCTRL
+
+config PADCTRL_GENERIC_TEGRA_IO_PAD
+	bool "Generic Tegra IO Pad control driver"
+	depends on ARCH_TEGRA
+	help
+	  This option enables Genric Tegra IO PAD padctrl driver
+
+	  Tegra IO Pad padctrl driver which controls the IO pad
+	  configuration for 1.2V, 1.8V and 3.3V.
+
+endif

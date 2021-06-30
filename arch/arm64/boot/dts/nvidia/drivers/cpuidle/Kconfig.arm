@@ -1,0 +1,25 @@
+#
+# ARM CPU Idle drivers
+#
+config CPU_IDLE_TEGRA18X
+	bool "CPU Idle Driver for NVIDIA Tegra18x SoCs"
+	depends on ARCH_TEGRA_18x_SOC
+	default y
+	select CPU_IDLE_MULTIPLE_DRIVERS
+	select DT_IDLE_STATES
+	help
+	  Support for entering different power states on NVIDIA Tegra18x
+	  SoCs when CPUs become idle.
+
+	  Select this to enable cpuidle on NVIDIA Tegra18x SoCs.
+
+config CPU_IDLE_TEGRA19X
+	tristate "CPU Idle Driver for NVIDIA Tegra19x SoCs"
+	depends on ARCH_TEGRA_19x_SOC
+	default y
+	select CPU_IDLE_MULTIPLE_DRIVERS
+	select DT_IDLE_STATES
+	help
+	  Support for entering different power states on NVIDIA Tegra19x
+	  SoCs when CPUs become idle.
+	  Select this to enable cpuidle on NVIDIA Tegra19x SoCs.

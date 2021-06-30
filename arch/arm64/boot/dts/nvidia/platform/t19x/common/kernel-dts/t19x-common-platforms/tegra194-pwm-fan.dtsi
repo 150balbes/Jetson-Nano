@@ -1,0 +1,55 @@
+/*
+ * Copyright (c) 2018, NVIDIA CORPORATION.  All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms and conditions of the GNU General Public License,
+ * version 2, as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ */
+#include <dt-bindings/gpio/tegra194-gpio.h>
+#include <dt-bindings/pwm/pwm.h>
+
+/ {
+	pwm_fan_shared_data: pfsd {
+		num_resources = <0>;
+		secret = <47>;
+		active_steps = <10>;
+		active_rpm = <0 1000 2000 3000 4000 5000 6000 7000 10000 11000>;
+		rpm_diff_tolerance = <2>;
+		active_rru = <40 2 1 1 1 1 1 1 1 1>;
+		active_rrd = <40 2 1 1 1 1 1 1 1 1>;
+		state_cap_lookup = <2 2 2 2 3 3 3 4 4 4>;
+		pwm_period = <45334>;
+		pwm_id = <4>;
+		pwm_polarity = <PWM_POLARITY_INVERTED>;
+		suspend_state = <1>;
+		step_time = <100>; /* mesecs */
+		state_cap = <7>;
+		active_pwm_max = <256>;
+		tach_period = <1000>;
+		pwm_gpio = <&tegra_aon_gpio TEGRA194_AON_GPIO(CC, 4) GPIO_ACTIVE_LOW>;
+	};
+
+	pwm-fan {
+		compatible = "pwm-fan";
+		status = "okay";
+		#pwm-cells = <1>;
+		pwms = <&tegra_pwm4 0 45334>;
+		shared_data = <&pwm_fan_shared_data>;
+		profiles {
+			default = "quiet";
+			quiet {
+				state_cap = <4>;
+				active_pwm = <0 77 120 160 255 255 255 255 255 255>;
+			};
+			cool {
+				state_cap = <4>;
+				active_pwm = <0 77 120 160 255 255 255 255 255 255>;
+			};
+		};
+	};
+};

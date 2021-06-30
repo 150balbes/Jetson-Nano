@@ -1,0 +1,88 @@
+/*
+ * tegra186-soc-ufshc.dtsi: Tegra186 soc dtsi file for UFS host controller
+ *
+ * Copyright (c) 2015-2019, NVIDIA CORPORATION.  All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; version 2 of the License.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ */
+
+/ {
+	pmc@c360000 {
+		ufs_dpd_enable: dpd-enable {
+			ufs {
+				pins = "ufs";
+				low-power-enable;
+			};
+		};
+		ufs_dpd_disable: dpd-disable {
+			ufs {
+				pins = "ufs";
+				low-power-disable;
+			};
+		};
+	};
+
+	tegra_ufs: ufshci@2450000 {
+		compatible = "tegra,ufs_variant";
+		reg = <0x0 0x02450000 0x0 0x4000>;
+		interrupts = < 0 TEGRA186_IRQ_UFSHC 0x04 >;
+		iommus = <&smmu TEGRA_SID_UFSHC>;
+		clocks = <&tegra_car TEGRA186_CLK_MPHY_CORE_PLL_FIXED>,
+				<&tegra_car TEGRA186_CLK_MPHY_L0_TX_SYMB>,
+				<&tegra_car TEGRA186_CLK_MPHY_TX_1MHZ_REF> ,
+				<&tegra_car TEGRA186_CLK_MPHY_L0_RX_ANA>,
+				<&tegra_car TEGRA186_CLK_MPHY_L0_RX_SYMB>,
+				<&tegra_car TEGRA186_CLK_MPHY_L0_TX_LS_3XBIT>,
+				<&tegra_car TEGRA186_CLK_MPHY_L0_RX_LS_BIT>,
+				<&tegra_car TEGRA186_CLK_MPHY_L1_RX_ANA>,
+				<&tegra_car TEGRA186_CLK_MPHY_FORCE_LS_MODE>,
+				<&tegra_car TEGRA186_CLK_UFSHC>,
+				<&tegra_car TEGRA186_CLK_UFSDEV_REF>,
+				<&tegra_car TEGRA186_CLK_PLLP_OUT0>,
+				<&tegra_car TEGRA186_CLK_CLK_M>;
+		clock-names = "mphy_core_pll_fixed", "mphy_l0_tx_symb",
+				"mphy_tx_1mhz_ref", "mphy_l0_rx_ana",
+				"mphy_l0_rx_symb", "mphy_l0_tx_ls_3xbit",
+				"mphy_l0_rx_ls_bit", "mphy_l1_rx_ana",
+				"mphy_force_ls_mode", "ufshc", "ufsdev_ref",
+				"pll_p", "clk_m";
+		resets = <&tegra_car TEGRA186_RESET_MPHY_L0_RX>,
+				<&tegra_car TEGRA186_RESET_MPHY_L0_TX>,
+				<&tegra_car TEGRA186_RESET_MPHY_L1_RX>,
+				<&tegra_car TEGRA186_RESET_MPHY_L1_TX>,
+				<&tegra_car TEGRA186_RESET_MPHY_CLK_CTL>,
+				<&tegra_car TEGRA186_RESET_UFSHC>,
+				<&tegra_car TEGRA186_RESET_UFSHC_AXI_M>,
+				<&tegra_car TEGRA186_RESET_UFSHC_LP_SEQ>;
+		reset-names = "mphy-l0-rx-rst", "mphy-l0-tx-rst", "mphy-l1-rx-rst",
+				"mphy-l1-tx-rst", "mphy-clk-ctl-rst", "ufs-rst",
+				"ufs-axi-m-rst", "ufshc-lp-rst";
+		nvidia,enable-x2-config;
+		nvidia,enable-rx-calib;
+		nvidia,enable-hs-mode;
+		nvidia,enable-wlu-scsi-device-add;
+		nvidia,mask-fast-auto-mode;
+		nvidia,enable-hibern8-war;
+		nvidia,max-hs-gear = <3>;
+		nvidia,max-pwm-gear = <4>;
+		vcc-max-microamp = <0>;
+		vccq-max-microamp = <0>;
+		vccq2-max-microamp = <0>;
+		pinctrl-names = "ufs_dpd_enable", "ufs_dpd_disable";
+		pinctrl-0 = <&ufs_dpd_enable>;
+		pinctrl-1 = <&ufs_dpd_disable>;
+		status = "disabled";
+
+		ufs_variant {
+			compatible = "tegra,ufs_variant";
+		};
+	};
+};
+

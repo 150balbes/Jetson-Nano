@@ -1,0 +1,44 @@
+/*
+ * Copyright (c) 2015-2017, NVIDIA CORPORATION.  All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms and conditions of the GNU General Public License,
+ * version 2, as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
+#include <dt-bindings/pinctrl/pinctrl-tegra.h>
+#include <dt-bindings/reset/tegra194-reset.h>
+#include <dt-bindings/soc/tegra194-powergate.h>
+
+/ {
+	tegra_sata: ahci-sata@3507000 {
+		compatible = "nvidia,tegra194-ahci-sata";
+		reg = <0x0 0x03507000 0x0 0x00002000>, /* SATA AHCI */
+			<0x0 0x03501000 0x0 0x00006000>, /* SATA Config */
+			<0x0 0x03500000 0x0 0x00001000>, /* SATA IPFS */
+			<0x0 0x03A90000 0x0 0x00010000>; /* SATA AUX */
+		reg-names = "sata-ahci", "sata-config", "sata-ipfs", "sata-aux";
+		interrupts = <0 197 0x04>;
+		dma-coherent;
+		iommus = <&smmu TEGRA_SID_SATA2>;
+		power-domains = <&bpmp TEGRA194_POWER_DOMAIN_SAX>;
+		clocks = <&bpmp_clks TEGRA194_CLK_SATA>,
+			<&bpmp_clks TEGRA194_CLK_SATA_OOB>,
+			<&bpmp_clks TEGRA194_CLK_PLLP_OUT0>;
+		clock-names = "sata", "sata-oob", "pllp";
+		resets = <&bpmp_resets TEGRA194_RESET_SATA>,
+			<&bpmp_resets TEGRA194_RESET_SATACOLD>;
+		reset-names = "sata", "sata-cold";
+		nvidia,disable-features = "devslp", "dipm";
+		nvidia,link-flags = "max_power";
+		status = "disabled";
+	};
+};

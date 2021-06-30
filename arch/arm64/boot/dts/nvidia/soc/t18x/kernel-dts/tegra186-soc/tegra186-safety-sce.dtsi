@@ -1,0 +1,62 @@
+/*
+ * tegra186-safety-sce.dtsi: Safety SCE DTSI file.
+ *
+ * Copyright (c) 2016-2017, NVIDIA Corporation, All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; version 2 of the License.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with this program; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+ *
+ */
+
+/ {
+	tegra_safety_ivc: tegra_safety_ivc {
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		cmdresp@0 {
+			compatible = "nvidia,tegra186-safety-cmd-resp";
+			reg = <0x0000>, <0x8000>;
+			reg-names = "rx", "tx";
+			nvidia,frame-count = <16>;
+			nvidia,frame-size = <64>;
+		};
+
+                hb@0 {
+                        compatible = "nvidia,tegra186-safety-hb";
+                        reg = <0x0500>, <0x8500>;
+                        reg-names = "rx", "tx";
+                        nvidia,frame-count = <1>;
+                        nvidia,frame-size = <64>;
+                };
+	};
+
+	tegra_safety: sce@b000000 {
+		compatible = "nvidia,tegra186-safety-ivc";
+		status = "disabled";
+
+		reg =	<0 0xb040000 0 0x10000>,
+			<0 0xb050000 0 0x10000>;
+		reg-names = "ast-cpu", "ast-dma";
+
+		iommus = <&smmu TEGRA_SID_SCE>;
+
+		/* This property contains ast-region-id, IOVA, ast-region-size */
+		nvidia,ivc-channels = <&tegra_safety_ivc 2 0x90000000 0x10000>;
+
+		hsp {
+			compatible = "nvidia,tegra186-hsp-mailbox";
+			nvidia,hsp-shared-mailbox = <&sce_hsp 1 &sce_hsp 6>;
+			nvidia,hsp-shared-mailbox-names = "ivc-pair", "cmd-pair";
+		};
+	};
+};

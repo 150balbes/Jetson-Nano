@@ -1,0 +1,46 @@
+################################### tell Emacs this is a -*- makefile-gmake -*-
+#
+# Copyright (c) 2014-2016 NVIDIA CORPORATION.  All Rights Reserved.
+#
+# NVIDIA CORPORATION and its licensors retain all intellectual property
+# and proprietary rights in and to this software, related documentation
+# and any modifications thereto.  Any use, reproduction, disclosure or
+# distribution of this software and related documentation without an express
+# license agreement from NVIDIA CORPORATION is strictly prohibited.
+#
+# tmake for SW Mobile component makefile
+#
+# Component makefile for compiling host submit tests as a part of an umbrella.
+#
+###############################################################################
+
+ifdef NV_COMPONENT_FLAG_NVTEST_EXECUTABLE_SECTION
+include $(NV_BUILD_START_COMPONENT)
+
+NV_COMPONENT_NAME		:= nvgpu_unit
+
+NV_COMPONENT_SOURCES		:= unit_main.c	\
+				   nvgpu.c	\
+				   args.c	\
+				   io.c		\
+				   module.c	\
+				   results.c	\
+				   exec.c
+
+# The actual userspace nvgpu library.
+NV_COMPONENT_NEEDED_INTERFACE_DIRS := ../../drivers/gpu/nvgpu
+
+NV_COMPONENT_INCLUDES		:= ../include			\
+				   ../../drivers/gpu/nvgpu	\
+				   ../../drivers/gpu/nvgpu/include
+
+
+
+include $(NV_BUILD_NVTEST_EXECUTABLE)
+endif
+
+# Local Variables:
+# indent-tabs-mode: t
+# tab-width: 8
+# End:
+# vi: set tabstop=8 noexpandtab:

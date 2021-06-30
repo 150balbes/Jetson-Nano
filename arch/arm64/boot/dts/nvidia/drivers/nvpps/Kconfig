@@ -1,0 +1,6 @@
+config NVPPS
+	tristate "Tegra NVPPS Support"
+	depends on ARCH_TEGRA_19x_SOC
+	help
+	  This config enables the Tegra NVPPS driver. NVPPS is the PPS
+	  source driver for the Tegra SOC.

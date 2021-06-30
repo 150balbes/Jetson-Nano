@@ -1,0 +1,1 @@
+source "drivers/gpu/drm/tegra_udrm/Kconfig"

@@ -1,0 +1,206 @@
+/*
+ * Copyright (c) 2014-2018 NVIDIA CORPORATION. All rights reserved.
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ */
+
+#include <dt-bindings/clock/tegra210-car.h>
+#include <dt-bindings/thermal/tegra210-trips.h>
+
+#define SET_MAP_TRIP(tdomain, cdomain, vtype, num, temp)		\
+	trips {								\
+		tdomain##_##vtype##num: tdomain-vtype##num {		\
+			temperature = <temp>;				\
+			hysteresis = <1000>;				\
+			type = "active";				\
+		};							\
+	};								\
+	cooling-maps {							\
+		tdomain-vtype-map##num {				\
+			trip = <&tdomain##_##vtype##num>;		\
+			cooling-device = <&cdomain##_##vtype##_cdev num num>; \
+		};							\
+	}
+
+/ {
+	dvfs_rails {
+		compatible = "simple-bus";
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		gpu_scaling_cdev: vdd-gpu-scaling-cdev@7 {
+			status = "disabled";
+			reg = <7>;
+			cooling-min-state = <0>;
+			cooling-max-state = <5>;
+			#cooling-cells = <2>;
+			compatible = "nvidia,tegra210-rail-scaling-cdev";
+			cdev-type = "gpu_scaling";
+			nvidia,constraint;
+			nvidia,trips = <&gpu_scaling0 950 &gpu_scaling1 0
+					&gpu_scaling2 0 &gpu_scaling3 0
+					&gpu_scaling4 0 &gpu_scaling5 0>;
+		};
+
+		gpu_vmax_cdev: vdd-gpu-vmax-cdev@9 {
+			status = "disabled";
+			reg = <9>;
+			cooling-min-state = <0>;
+			cooling-max-state = <1>;
+			#cooling-cells = <2>;
+			compatible = "nvidia,tegra210-rail-vmax-cdev";
+			cdev-type = "GPU-cap";
+			nvidia,constraint-ucm2;
+			nvidia,trips = <&gpu_vmax1 1132 1090>;
+			clocks = <&tegra_car TEGRA210_CLK_CAP_VGPU_GBUS>;
+			clock-names = "cap-clk";
+		};
+	};
+
+	dfll_cap: dfll-cdev-cap {
+		compatible = "nvidia,tegra-dfll-cdev-action";
+		act-dev = <&tegra_clk_dfll>;
+		cdev-type = "DFLL-cap";
+		#cooling-cells = <2>; /* min followed by max */
+	};
+
+	dfll_floor: dfll-cdev-floor {
+		compatible = "nvidia,tegra-dfll-cdev-action";
+		act-dev = <&tegra_clk_dfll>;
+		cdev-type = "DFLL-floor";
+		#cooling-cells = <2>; /* min followed by max */
+	};
+
+	thermal-zones {
+		Tdiode_tegra {
+			trips {
+				/* Reference only trip, not mapped */
+				gpu_scaling0: gpu-scaling0 {
+					temperature = <(-25000)>;
+					hysteresis = <0>;
+					type = "active";
+				};
+				gpu_scaling1: gpu-scaling1 {
+					temperature = <15000>; /* millicelsius */
+					hysteresis = <1000>; /* millicelsius */
+					type = "active";
+				};
+				gpu_scaling2: gpu-scaling2 {
+					temperature = <30000>; /* millicelsius */
+					hysteresis = <1000>; /* millicelsius */
+					type = "active";
+				};
+				gpu_scaling3: gpu-scaling3 {
+					temperature = <50000>; /* millicelsius */
+					hysteresis = <1000>; /* millicelsius */
+					type = "active";
+				};
+				gpu_scaling4: gpu-scaling4 {
+					temperature = <70000>; /* millicelsius */
+					hysteresis = <1000>; /* millicelsius */
+					type = "active";
+				};
+				gpu_scaling5: gpu-scaling5 {
+					temperature = <105000>; /* millicelsius */
+					hysteresis = <1000>; /* millicelsius */
+					type = "active";
+				};
+
+				gpu_vmax1: gpu-vmax1 {
+					temperature = <83000>; /* millicelsius */
+					hysteresis = <1000>; /* millicelsius */
+					type = "active";
+				};
+			};
+
+			cooling-maps {
+				gpu-scaling-map1 {
+					trip = <&gpu_scaling1>;
+					cooling-device = <&gpu_scaling_cdev 1 1>;
+				};
+				gpu-scaling-map2 {
+					trip = <&gpu_scaling2>;
+					cooling-device = <&gpu_scaling_cdev 2 2>;
+				};
+				gpu_scaling_map3 {
+					trip = <&gpu_scaling3>;
+					cooling-device = <&gpu_scaling_cdev 3 3>;
+				};
+				gpu-scaling-map4 {
+					trip = <&gpu_scaling4>;
+					cooling-device = <&gpu_scaling_cdev 4 4>;
+				};
+				gpu-scaling-map5 {
+					trip = <&gpu_scaling5>;
+					cooling-device = <&gpu_scaling_cdev 5 5>;
+				};
+
+				gpu-vmax-map1 {
+					trip = <&gpu_vmax1>;
+					cooling-device = <&gpu_vmax_cdev 1 1>;
+				};
+			};
+		};
+
+		CPU-therm {
+			trips {
+				dfll_cap_trip0: dfll-cap-trip0 {
+					temperature = <TEGRA210_DFLL_THERMAL_CAP_0>; /* millicelsius */
+					hysteresis = <1000>; /* millicelsius */
+					type = "active";
+				};
+				dfll_cap_trip1: dfll-cap-trip1 {
+					temperature = <TEGRA210_DFLL_THERMAL_CAP_1>; /* millicelsius */
+					hysteresis = <1000>; /* millicelsius */
+					type = "active";
+				};
+			};
+
+			cooling-maps {
+				dfll-cap-map0 {
+					trip = <&dfll_cap_trip0>;
+					cooling-device = <&dfll_cap 1 1>;
+				};
+				dfll-cap-map1 {
+					trip = <&dfll_cap_trip1>;
+					cooling-device = <&dfll_cap 2 2>;
+				};
+			};
+		};
+		LCPU-therm {
+			trips {
+				lcpu_dfll_cap_trip0: lcpu-dfll-cap-trip0 {
+					temperature = <TEGRA210_DFLL_THERMAL_CAP_0>; /* millicelsius */
+					hysteresis = <1000>; /* millicelsius */
+					type = "active";
+				};
+				lcpu_dfll_cap_trip1: lcpu-dfll-cap-trip1 {
+					temperature = <TEGRA210_DFLL_THERMAL_CAP_1>; /* millicelsius */
+					hysteresis = <1000>; /* millicelsius */
+					type = "active";
+				};
+			};
+
+			cooling-maps {
+				lcpu_dfll-cap-map0 {
+					trip = <&lcpu_dfll_cap_trip0>;
+					cooling-device = <&dfll_cap 1 1>;
+				};
+				lcpu_dfll-cap-map1 {
+					trip = <&lcpu_dfll_cap_trip1>;
+					cooling-device = <&dfll_cap 2 2>;
+				};
+			};
+
+		};
+	};
+};
+

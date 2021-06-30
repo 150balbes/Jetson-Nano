@@ -1,0 +1,84 @@
+/*
+ * Copyright (c) 2017, NVIDIA CORPORATION. All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms and conditions of the GNU General Public License,
+ * version 2, as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
+#include <dt-bindings/thermal/thermal.h>
+#include <dt-bindings/thermal/tegra186-skin-thermal.h>
+#include <dt-bindings/iio/meter/ina3221x.h>
+
+/ {
+	tegra_skin_thermal {
+		compatible = "nvidia,tegra-skin-thermal";
+		#thermal-sensor-cells = <1>;
+
+		io-channels = <&ina3221x_40 INA3221_CHAN_INDEX(0, VOLTAGE, NORMAL)>,
+				<&ina3221x_40 INA3221_CHAN_INDEX(0, CURRENT, NORMAL)>,
+				<&ina3221x_41 INA3221_CHAN_INDEX(0, POWER, NORMAL)>;
+		io-channel-names = "gpu-voltage", "gpu-current", "vddin-power";
+
+		pf_backlight: power_feature@0 {
+			#power-feature-cells = <1>;
+			type = <BACKLIGHT_BRIGHTNESS>;
+			rc_k = <1>;
+			resistance = <1>;
+		};
+
+		pf_iio_ina3221: power_feature@1 {
+			#power-feature-cells = <1>;
+			type = <IIO_SUBSYSTEM>;
+			rc_k = <1>;
+			resistance = <1>;
+		};
+
+		hs0: hotspot@0 {
+			power-features-list = <&pf_backlight &lp8557_backlight
+								&pf_iio_ina3221 0
+								&pf_iio_ina3221 1>;
+			offset = <3>;
+			rc_k = <1>;
+			reference-sensor = <&Tboard_tegra>;
+		};
+
+		hs1: hotspot@1 {
+			power-features-list = <&pf_backlight &lp8557_backlight>;
+			offset = <3>;
+			rc_k = <1>;
+			reference-sensor = <&Tboard_tegra>;
+		};
+
+		hs2: hotspot@2 {
+			power-features-list = <&pf_backlight &lp8557_backlight
+								&pf_iio_ina3221 2>;
+			offset = <3>;
+			rc_k = <1>;
+			reference-sensor = <&Tboard_tegra>;
+		};
+
+		skin-sensor@0 {
+			thermal-sensor = <0>;
+			hotspot-list = <&hs0 &hs1>;
+		};
+
+		skin-sensor@1 {
+			thermal-sensor = <1>;
+			hotspot-list = <&hs1>;
+		};
+
+		skin-sensor@2 {
+			thermal-sensor = <2>;
+			hotspot-list = <&hs2>;
+		};
+	};
+};

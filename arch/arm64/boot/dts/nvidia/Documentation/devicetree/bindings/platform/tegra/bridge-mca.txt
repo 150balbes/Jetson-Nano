@@ -1,0 +1,26 @@
+NVIDIA Tegra18x Bridge MCA driver
+==================================
+
+This document defines the device-specific binding for the Tegra18x bridge MCA driver.
+The Bridge MCA driver adds support for AXI/APB bridge machine check hardware in T18x.
+The driver reports relevant information like CPU, bus address, error status, type of bridge, etc in case of a Bridge MCA.
+
+Required properties:
+
+- compatible: Should be "nvidia,tegra186-AXI2APB-bridgei"
+- reg: Physical base address and length of registers
+- clocks: Specifies the needed clocks
+- clock-names: Specifies the names of the needed clocks
+- timeout: specify the bridge timeout in micro seconds (us)
+
+Below is a sample bridge DT entry for configuring bridge timeout=500 usec
+for axi2apb@2390000 bridge.
+
+axi2apb@2390000 {
+		compatible = "nvidia,tegra186-AXI2APB-bridge";
+		reg = <0x0 0x02390000 0x0 0x1000>;
+		clocks = <&tegra_car TEGRA186_CLK_AXI_CBB>;
+		clock-names = "axi_cbb";
+		timeout = <500>;
+		status = "disabled";
+};

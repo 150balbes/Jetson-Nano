@@ -1,0 +1,16 @@
+menu "Proximity sensors"
+
+#
+# Proximity sensors
+#
+
+config NVS_IQS2X3
+	tristate "Azoteq IQS253/IQS263 SAR proximity"
+	depends on I2C && IIO_BUFFER && IIO_TRIGGERED_BUFFER && NVS_IIO && NVS_PROXIMITY
+	help
+	  Say Y here for Azoteq IQS253 and IQS263 SAR proximity support.
+
+	  The driver uses the NVS (NVidia Sensor) IIO and proximity
+	  framework.
+
+endmenu

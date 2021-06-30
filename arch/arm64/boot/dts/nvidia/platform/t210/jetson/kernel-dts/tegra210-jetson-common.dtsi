@@ -1,0 +1,445 @@
+/*
+ * Copyright (c) 2014-2017, NVIDIA CORPORATION.  All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with this program; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+ */
+
+#include <tegra210-soc/tegra210-soc-shield.dtsi>
+#include <dt-bindings/interrupt-controller/arm-gic.h>
+#include <dt-bindings/gpio/tegra-gpio.h>
+#include <dt-bindings/clock/tegra210-car.h>
+#include <dt-bindings/reset/tegra210-car.h>
+#include <dt-bindings/soc/tegra-pmc.h>
+#include <dt-bindings/thermal/tegra124-soctherm.h>
+#include <dt-bindings/thermal/tegra210-trips.h>
+#include <tegra210-soc/tegra210-prods.dtsi>
+#include <t210-common-platforms/tegra210-platform-common-padvoltage-default.dtsi>
+#include <t210-common-platforms/tegra210-ers-touch-e1937-1000-a00.dtsi>
+#include <tegra210-soc/tegra210-modem-common.dtsi>
+#include <tegra210-soc/tegra210-trusty.dtsi>
+#include <tegra210-soc/tegra210-soc-sata.dtsi>
+
+/ {
+	nvidia,dtbbuildtime = __DATE__, __TIME__;
+
+	serial@70006000 {
+		compatible = "nvidia,tegra210-uart", "nvidia,tegra114-hsuart", "nvidia,tegra20-uart";
+		console-port;
+		sqa-automation-port;
+		enable-rx-poll-timer;
+		/delete-property/ resets;
+		/delete-property/ reset-names;
+		status = "okay";
+	};
+
+	serial@70006040 {
+		status = "okay";
+	};
+
+	serial@70006200 {
+		status = "okay";
+	};
+
+	serial@70006300 {
+		status = "okay";
+	};
+
+	rtc {
+		nvidia,pmc-wakeup = <&tegra_pmc PMC_WAKE_TYPE_EVENT 16
+				     PMC_TRIGGER_TYPE_HIGH>;
+	};
+
+	nvpmodel {
+		status = "okay";
+	};
+
+	pmc@7000e400 {
+		nvidia,suspend-mode = <0>;
+		nvidia,cpu-pwr-good-time = <0>;
+		nvidia,cpu-pwr-off-time = <0>;
+		nvidia,core-pwr-good-time = <4587 3876>;
+		nvidia,core-pwr-off-time = <39065>;
+		nvidia,core-pwr-req-active-high;
+		nvidia,sys-clock-req-active-high;
+		#nvidia,wake-cells = <3>;
+		nvidia,restrict-voltage-switch;
+
+		iopad-defaults {
+			pex-io-pads {
+				pins = "pex-bias", "pex-clk1", "pex-clk2";
+				low-power-enable;
+			};
+		};
+
+		bootrom-commands {
+			nvidia,command-retries-count = <2>;
+			nvidia,delay-between-commands-us = <10>;
+			nvidia,wait-start-bus-clear-us = <10>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+		};
+	};
+
+	extcon {
+		id_gpio_extcon: extcon@0 {
+			compatible = "extcon-gpio";
+			reg = <0x0>;
+			extcon-gpio,name = "ID";
+			gpio = <&max77620 0 0>;
+			extcon-gpio,connection-state-low;
+			extcon-gpio,cable-name = "USB-Host";
+			#extcon-cells = <1>;
+		};
+	};
+
+	usb_cd: usb_cd@7009f000 {
+		compatible = "nvidia,tegra210-usb-cd";
+		reg = <0x0 0x7009f000 0x0 0x1000>;
+		#extcon-cells = <1>;
+		status = "disabled";
+		dt-override-status-odm-data = <0x1000000 0x1000000>;
+	};
+
+	psy_extcon_xudc {
+		compatible = "power-supply-extcon";
+		extcon-cables = <&usb_cd 1 &usb_cd 2 &usb_cd 3
+				&usb_cd 4 &usb_cd 5 &usb_cd 6
+				&usb_cd 7 &usb_cd 8 &usb_cd 9>;
+		extcon-cable-names = "usb-charger", "ta-charger", "maxim-charger",
+				"qc2-charger", "downstream-charger", "slow-charger",
+				"apple-500ma", "apple-1a", "apple-2a";
+		status = "disabled";
+		dt-override-status-odm-data = <0x1000000 0x1000000>;
+	};
+
+	tegra_wdt: watchdog@60005100 {
+		dt-override-status-odm-data = <0x00010000 0x00010000>;
+		nvidia,enable-on-init;
+		timeout-sec = <120>;
+	};
+
+	soft_wdt: soft_watchdog {
+		compatible = "softdog-platform";
+		status = "okay";
+		dt-override-status-odm-data = <0x00030000 0x00000000>;
+	};
+
+
+	tegra-supply-tests {
+		compatible = "nvidia,tegra-supply-tests";
+		vdd-core-supply=<&max77620_sd0>;
+	};
+
+	camera-pcl {
+		dpd {
+			compatible = "nvidia,csi-dpd";
+			#address-cells = <1>;
+			#size-cells = <0>;
+			num = <6>;
+			csia {
+				reg = <0x0 0x0 0x0 0x0>;
+			};
+			csib {
+				reg = <0x0 0x1 0x0 0x0>;
+			};
+			csic {
+				reg = <0x1 0x0a 0x0 0x0>;
+			};
+			csid {
+				reg = <0x1 0x0b 0x0 0x0>;
+			};
+			csie {
+				reg = <0x1 0x0c 0x0 0x0>;
+			};
+			csif {
+				reg = <0x1 0x0d 0x0 0x0>;
+			};
+		};
+	};
+
+	rollback-protection {
+		device-name = "sdmmc";
+		device-method = <0x1 0x00000002>;  /* type (0x1 = ioctl), argument */
+		status = "disabled";
+	};
+
+        apbmisc@70000800 {
+                compatible = "nvidia,tegra210-apbmisc", "nvidia,tegra20-apbmisc";
+                reg = <0x0 0x70000800 0x0 0x64>,   /* Chip revision */
+                      <0x0 0x70000008 0x0 0x04>;   /* Strapping options */
+        };
+
+	pwm@7000a000 {
+		nvidia,no-clk-sleeping-in-ops;
+	};
+
+	pwm@70110000 {
+		pwm-regulator = <&cpu_ovr_reg>;
+		status = "disabled";
+	};
+
+	pwm_regulators {
+		compatible = "simple-bus";
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		cpu_ovr_reg: pwm-regulator@0 {
+			status = "okay";
+			reg = <0>;
+			compatible = "pwm-regulator";
+			pwms = <&tegra_pwm_dfll 0 2500>;
+			regulator-name = "vdd-cpu";
+			regulator-min-microvolt = <708000>;
+			regulator-max-microvolt = <1322400>;
+			regulator-always-on;
+			regulator-boot-on;
+			voltage-table =
+				<708000 0>, <727200 1>, <746400 2>,
+				<765600 3>, <784800 4>, <804000 5>,
+				<823200 6>, <842400 7>, <861600 8>,
+				<880800 9>, <900000 10>, <919200 11>,
+				<938400 12>, <957600 13>, <976800 14>,
+				<996000 15>, <1015200 16>, <1034400 17>,
+				<1053600 18>, <1072800 19>, <1092000 20>,
+				<1111200 21>, <1130400 22>, <1149600 23>,
+				<1168800 24>, <1188000 25>, <1207200 26>,
+				<1226400 27>, <1245600 28>, <1264800 29>,
+				<1284000 30>, <1303200 31>, <1322400 32>;
+		};
+
+		gpu_ovr_reg: pwm-regulator@1 {
+			status = "okay";
+			reg = <1>;
+			compatible = "pwm-regulator";
+			pwms = <&tegra_pwm 1 8000>;
+			regulator-name = "vdd-gpu";
+			regulator-min-microvolt = <710000>;
+			regulator-max-microvolt = <1320000>;
+			regulator-init-microvolt = <1000000>;
+			regulator-n-voltages = <62>;
+			regulator-enable-ramp-delay = <2000>;
+			enable-gpio = <&max77620 6 0>;
+			regulator-settling-time-us = <160>;
+                };
+
+	};
+
+	cpus {
+		cpu@0 {
+			clocks = <&tegra_car TEGRA210_CLK_CCLK_G>,
+				 <&tegra_car TEGRA210_CLK_CCLK_LP>,
+				 <&tegra_car TEGRA210_CLK_PLL_X>,
+				 <&tegra_car TEGRA210_CLK_PLL_P_OUT4>,
+				 <&tegra_clk_dfll>;
+			clock-names = "cpu_g", "cpu_lp", "pll_x", "pll_p", "dfll";
+			clock-latency = <300000>;
+		};
+	};
+
+	memory-controller@70019000 {
+		status = "okay";
+        };
+
+	dfll_cap: dfll-cdev-cap {
+		compatible = "nvidia,tegra-dfll-cdev-action";
+		act-dev = <&tegra_clk_dfll>;
+		cdev-type = "DFLL-cap";
+		#cooling-cells = <2>; /* min followed by max */
+	};
+
+	dfll_floor: dfll-cdev-floor {
+		compatible = "nvidia,tegra-dfll-cdev-action";
+		act-dev = <&tegra_clk_dfll>;
+		cdev-type = "DFLL-floor";
+		#cooling-cells = <2>; /* min followed by max */
+	};
+
+	gpu_scaling_cdev: gpu-scaling-cdev {
+		cooling-min-state = <0>;
+		cooling-max-state = <5>;
+		#cooling-cells = <2>;
+		compatible = "nvidia,tegra210-rail-scaling-cdev";
+		cdev-type = "gpu_scaling";
+		nvidia,constraint;
+		nvidia,trips = <&gpu_scaling_trip0 950 &gpu_scaling_trip1 0
+				&gpu_scaling_trip2 0 &gpu_scaling_trip3 0
+				&gpu_scaling_trip4 0 &gpu_scaling_trip5 0>;
+	};
+
+	gpu_vmax_cdev: gpu-vmax-cdev {
+		cooling-min-state = <0>;
+		cooling-max-state = <1>;
+		#cooling-cells = <2>;
+		compatible = "nvidia,tegra210-rail-vmax-cdev";
+		cdev-type = "GPU-cap";
+		nvidia,constraint-ucm2;
+		nvidia,trips = <&gpu_vmax_trip1 1132 1090>;
+		clocks = <&tegra_car TEGRA210_CLK_CAP_VGPU_GBUS>;
+		clock-names = "cap-clk";
+	};
+
+	thermal-zones {
+		CPU-therm {
+			trips {
+				dfll_cap_trip0: dfll-cap-trip0 {
+					temperature = <TEGRA210_DFLL_THERMAL_CAP_0>; /* millicelsius */
+					hysteresis = <1000>; /* millicelsius */
+					type = "active";
+				};
+				dfll_cap_trip1: dfll-cap-trip1 {
+					temperature = <TEGRA210_DFLL_THERMAL_CAP_1>; /* millicelsius */
+					hysteresis = <1000>; /* millicelsius */
+					type = "active";
+				};
+
+				cpu_vmax1: cpu-vmax1 {
+					temperature = <66000>;
+					hysteresis = <1000>;
+					type = "active";
+				};
+
+				cpu_vmax2: cpu-vmax2 {
+					temperature = <86000>;
+					hysteresis = <1000>;
+					type = "active";
+				};
+
+				gpu_vmax1: gpu-vmax1 {
+					temperature = <83000>;
+					hysteresis = <1000>;
+					type = "active";
+				};
+
+				core_vmax1: core-vmax1 {
+					temperature = <86000>;
+					hysteresis = <1000>;
+					type = "active";
+				};
+			};
+
+			cooling-maps {
+				dfll-cap-map0 {
+					trip = <&dfll_cap_trip0>;
+					cooling-device = <&dfll_cap 1 1>;
+				};
+				dfll-cap-map1 {
+					trip = <&dfll_cap_trip1>;
+					cooling-device = <&dfll_cap 2 2>;
+				};
+			};
+		};
+
+		Tdiode_tegra {
+			trips {
+				gpu_scaling_trip0: gpu-scaling-trip0 {
+					temperature = <(-25000)>; /* millicelsius */
+					hysteresis = <0>; /* millicelsius */
+					type = "active";
+				};
+				gpu_scaling_trip1: gpu-scaling-trip1 {
+					temperature = <15000>; /* millicelsius */
+					hysteresis = <1000>; /* millicelsius */
+					type = "active";
+				};
+				gpu_scaling_trip2: gpu-scaling-trip2 {
+					temperature = <30000>; /* millicelsius */
+					hysteresis = <1000>; /* millicelsius */
+					type = "active";
+				};
+				gpu_scaling_trip3: gpu-scaling-trip3 {
+					temperature = <50000>; /* millicelsius */
+					hysteresis = <1000>; /* millicelsius */
+					type = "active";
+				};
+				gpu_scaling_trip4: gpu-scaling-trip4 {
+					temperature = <70000>; /* millicelsius */
+					hysteresis = <1000>; /* millicelsius */
+					type = "active";
+				};
+				gpu_scaling_trip5: gpu-scaling-trip5 {
+					temperature = <105000>; /* millicelsius */
+					hysteresis = <1000>; /* millicelsius */
+					type = "active";
+				};
+
+				gpu_vmax_trip1: gpu-vmax-trip1 {
+					temperature = <83000>; /* millicelsius */
+					hysteresis = <1000>; /* millicelsius */
+					type = "active";
+				};
+
+				core_dvfs_floor_trip0: core_dvfs_floor_trip0 {
+					temperature = <15000>;
+					hysteresis = <1000>;
+					type = "active";
+				};
+
+				core_dvfs_cap_trip0: core_dvfs_cap_trip0 {
+					temperature = <86000>;
+					hysteresis = <1000>;
+					type = "active";
+				};
+
+				dfll_floor_trip0: dfll-floor-trip0 {
+					temperature = <TEGRA210_DFLL_THERMAL_FLOOR_0>; /* millicelsius */
+					hysteresis = <1000>; /* millicelsius */
+					type = "active";
+				};
+			};
+
+			cooling-maps {
+				gpu-scaling-map1 {
+					trip = <&gpu_scaling_trip1>;
+					cooling-device = <&gpu_scaling_cdev 1 1>;
+				};
+				gpu-scaling-map2 {
+					trip = <&gpu_scaling_trip2>;
+					cooling-device = <&gpu_scaling_cdev 2 2>;
+				};
+				gpu_scaling_map3 {
+					trip = <&gpu_scaling_trip3>;
+					cooling-device = <&gpu_scaling_cdev 3 3>;
+				};
+				gpu-scaling-map4 {
+					trip = <&gpu_scaling_trip4>;
+					cooling-device = <&gpu_scaling_cdev 4 4>;
+				};
+				gpu-scaling-map5 {
+					trip = <&gpu_scaling_trip5>;
+					cooling-device = <&gpu_scaling_cdev 5 5>;
+				};
+
+				gpu-vmax-map1 {
+					trip = <&gpu_vmax_trip1>;
+					cooling-device = <&gpu_vmax_cdev 1 1>;
+				};
+
+				core_dvfs_floor_map0 {
+					trip = <&core_dvfs_floor_trip0>;
+					cooling-device = <&core_dvfs_floor 1 1>;
+				};
+				core_dvfs_cap_map0 {
+					trip = <&core_dvfs_cap_trip0>;
+					cooling-device = <&core_dvfs_cap 1 1>;
+				};
+
+				dfll-floor-map0 {
+					trip = <&dfll_floor_trip0>;
+					cooling-device = <&dfll_floor 1 1>;
+				};
+			};
+		};
+	};
+};

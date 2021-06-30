@@ -1,0 +1,57 @@
+/*
+ * Copyright (c) 2013-2017, NVIDIA CORPORATION.  All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; version 2 of the License.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ */
+#include <dt-bindings/pinctrl/pinctrl-tegra-io-pad.h>
+
+/ {
+	pmc@7000e400 {
+		clear-all-io-pads-dpd;
+		pinctrl-names = "default";
+		pinctrl-0 = <&pinctrl_iopad_default>;
+		pinctrl_iopad_default: iopad-defaults {
+			audio-pads {
+				pins = "audio";
+				nvidia,power-source-voltage = <TEGRA_IO_PAD_VOLTAGE_1800000UV>;
+			};
+
+			cam-pads {
+				pins = "cam";
+				nvidia,power-source-voltage = <TEGRA_IO_PAD_VOLTAGE_1800000UV>;
+			};
+
+			dbg-pads {
+				pins = "dbg";
+				nvidia,power-source-voltage = <TEGRA_IO_PAD_VOLTAGE_1800000UV>;
+			};
+
+			dmic-pads {
+				pins = "dmic";
+				nvidia,power-source-voltage = <TEGRA_IO_PAD_VOLTAGE_1800000UV>;
+			};
+
+			pex-ctrl-pads {
+				pins = "pex-ctrl";
+				nvidia,power-source-voltage = <TEGRA_IO_PAD_VOLTAGE_1800000UV>;
+			};
+
+			spi-pads {
+				pins = "spi";
+				nvidia,power-source-voltage = <TEGRA_IO_PAD_VOLTAGE_1800000UV>;
+			};
+
+			uart-pads {
+				pins = "uart";
+				nvidia,power-source-voltage = <TEGRA_IO_PAD_VOLTAGE_1800000UV>;
+			};
+		};
+	};
+};

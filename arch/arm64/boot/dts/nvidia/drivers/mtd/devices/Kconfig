@@ -1,0 +1,9 @@
+config MTD_TEGRA_VIRT
+	tristate "Support Tegra Virtual MTD devices"
+	depends on MTD_OF_PARTS
+	help
+	  Adds support for Virtual MTD devices based on Tegra virtualization
+	  framework.
+
+	  This will cause virtual MTD device driver to be built to work with
+	  physical MTD devices in the backend.

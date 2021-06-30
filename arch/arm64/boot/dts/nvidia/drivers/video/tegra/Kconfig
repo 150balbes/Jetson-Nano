@@ -1,0 +1,352 @@
+if ARCH_TEGRA
+
+config TEGRA_GRHOST
+        tristate "Tegra graphics host driver"
+        help
+          Driver for the Tegra graphics host hardware.
+
+config TEGRA_GRHOST_ISP
+        depends on TEGRA_GRHOST
+        tristate "Tegra image processing pipeline support"
+        default y
+        help
+          Driver for the Tegra image processing pipeline (ISP)
+          To compile this driver as a module, choose M here:
+          the  module will be called nvhost-isp.
+
+config TEGRA_GRHOST_VIC
+        depends on TEGRA_GRHOST
+        tristate "Tegra VIC support"
+        default y
+        help
+          Driver for the Tegra Video Image Compositor is an falcon
+          based engine used image composition.
+
+config TEGRA_GRHOST_NVDEC
+        depends on TEGRA_GRHOST
+        tristate "Tegra NVDEC support"
+        default y
+        help
+          Driver for the Tegra NVDEC is an engine which
+          can be used for decoding various multimedia formats.
+
+config TEGRA_GRHOST_NVENC
+        depends on TEGRA_GRHOST
+        tristate "Tegra NVENC support"
+        default y
+        help
+          Driver for the Tegra NVENC is an engine which
+          can be used for encoding various multimedia formats.
+
+config TEGRA_GRHOST_NVJPG
+        depends on TEGRA_GRHOST
+        tristate "Tegra NVJPG support"
+        default y
+        help
+          Driver for the Tegra NVJPG is an engine which
+          can be used for JPEG encoding and decoding.
+
+config TEGRA_GRHOST_TSEC
+        depends on TEGRA_GRHOST
+        tristate "Tegra TSEC support"
+        default y
+        help
+          Driver for the Tegra TSEC is falcon based engine which
+          provides security.
+
+config TEGRA_GRHOST_NVCSI
+	bool "Tegra NVCSI support"
+	depends on TEGRA_GRHOST && ARCH_TEGRA_18x_SOC
+	default y
+	help
+	  Enables support for camera CSI support under nvhost
+	  Say N here if not sure.
+
+config TEGRA_GRHOST_SCALE
+       depends on TEGRA_GRHOST && PM_DEVFREQ
+       bool "Tegra host load based clock scaling support"
+       default y
+       help
+         Enables load based clock scaling for nvhost engines
+	 Say Y here if not sure.
+
+config TEGRA_GRHOST_DEFAULT_TIMEOUT
+        depends on TEGRA_GRHOST
+        int "Default timeout for submits"
+        default 10000
+        help
+          Default timeout for jobs in milliseconds. Set to zero for no timeout.
+
+config TEGRA_GRHOST_SYNC
+        depends on TEGRA_GRHOST || TEGRA_HOST1X
+        bool "Tegra host synchronization objects"
+        default y
+        select SYNC
+        help
+          Add tegra host backend for the cross driver synchronization framework.
+          Allows creating sync fence file descriptors from Tegra host syncpoints.
+
+config TEGRA_GRHOST_VHOST
+	depends on TEGRA_GRHOST
+	bool "Tegra virtualized host support"
+	default y
+	help
+	  Allows the nvhost driver to function as a client for a virtualized
+	  Host1x server.
+
+config TEGRA_GR_VIRTUALIZATION
+	bool "Tegra graphics virtualization support"
+	default n
+	depends on TEGRA_HV_MANAGER
+	help
+	  Adds Tegra graphics virtualization (host and gpu) support to client
+	  drivers.
+
+config NVDEC_BOOTLOADER
+	depends on TEGRA_GRHOST_NVDEC
+	bool "Enable use of nvdec bootloader"
+	help
+	  Say Y here if you want to enable nvdec bootloader
+	  If unsure, say N
+
+config TEGRA_CAMERA_PLATFORM
+        bool "Enable tegra camera platform driver"
+        depends on ARCH_TEGRA
+        depends on VIDEO_TEGRA_VI
+        default y
+        help
+          Enables tegra camera platform driver.
+          If unsure, say Y
+
+comment "NVIDIA Tegra Display Driver options"
+
+config TEGRA_NVDISPLAY
+        bool "Tegra NvDisplay Architecture Support"
+	depends on TEGRA_DC
+	help
+	    Enable the support for NvDisplay Architecture
+	    If unsure, say N
+
+config TEGRA_DC_64BIT_SUPPORT
+	bool "64-bit addressing in DC"
+	depends on TEGRA_DC && ARCH_TEGRA_210_SOC
+	default y
+	help
+	  T12x/T21x LPAE support in dc driver.
+	  This is needed to support buffers whose physical address does
+	  not fit into 32-bits.
+	  Default is to enable it on 64-bit platforms.
+
+config TEGRA_DC_TEMPORAL_DITHER
+	bool
+	depends on TEGRA_DC
+	default y
+
+config FB_TEGRA
+	tristate "Tegra Framebuffer driver"
+	depends on TEGRA_DC && FB = y
+	select FB_CFB_FILLRECT
+	select FB_CFB_COPYAREA
+	select FB_CFB_IMAGEBLIT
+	default FB && !ADF
+	help
+	  Framebuffer device support for the Tegra display controller.
+
+config TEGRA_DC_SCREEN_CAPTURE
+	bool "Tegra Display Screen Capture"
+	depends on TEGRA_DC
+	default n
+	help
+	  Say Y here to enable the Tegra Screen Capture support.
+	  Provides additional IOCTLs to pause display and capture display control
+	  information and framebuffers.
+	  Disabled by default since this may disrupt display. Recommend to enable
+	  only for development.
+
+config TEGRA_DSI
+	bool "Enable DSI panel."
+	depends on TEGRA_DC && TEGRA_MIPI_CAL
+	help
+	  Say Y here to enable the DSI panel.
+
+config TEGRA_DSI2EDP_TC358767
+	bool "Enable DSI2EDP TC358767 bridge."
+	help
+	  Say Y here to enable the DSI2EDP TOSHIBA 358767 adapter.
+
+config TEGRA_DSI2EDP_SN65DSI86
+	bool "Enable DSI2EDP SN65DSI86 bridge."
+	help
+	  Say Y here to enable the DSI2EDP TI SN65DSI86 adapter.
+
+config TEGRA_DSI2LVDS_SN65DSI85
+	bool "Enable DSI2LVDS SN65DSI85 bridge."
+	help
+	  Say Y here to enable the DSI2LVDS TI SN65DSI85 adapter.
+
+config TEGRA_LVDS2FPDL_DS90UB947
+	bool "DS90UB947-Q1 1080p OpenLDS to FPD-Link III Serializer driver"
+	default n
+	help
+		Enable support for TI DS90UB947-Q1 LVDS-to-FPD-Link Serializer driver.
+
+config TEGRA_DS90UH948Q_DESER
+	bool "DS90UH948Q FPDLink Deserializer"
+	depends on I2C
+	help
+	  Say Y here to enable FPDLink to LVDS TI DS90UH948 adapter
+	  Disabled by default. DS90UH948Q is a deserializer chip which converts
+	  FPDLink signal to OpenLDI. This config enables deserializer driver for
+	  DS90UH948 chip.
+
+config TEGRA_EDP2LVDS_PS8625
+	bool "Enable EDP2LVDS PS8625 bridge."
+	default n
+	help
+	  Say Y here to enable the EDP2LVDS PS8625 bridge.
+	  Disabled by default. PS8625 is i2c slave chip which has EDP to LVDS
+	  support. For L4T, the display head will be treated as EDP, this
+	  chip takes care of converting edp to lvds signals.
+
+config TEGRA_DP
+	bool "Enable eDP panel."
+	default  y
+	help
+	  Say Y here to enable eDP panel.
+
+config TEGRA_HDMI2_0
+	bool "Enable hdmi2.0"
+	depends on TEGRA_DC
+	default n
+	help
+	  Say Y here to enable HDMI 2.0.
+	  Supported by sor-hdmi only.
+	  Suported on T21x and later chips only.
+	  Disabled by default since most chips are using older controller at present.
+
+config TEGRA_HDMI2GMSL_MAX929x
+	bool "Enable HDMI-to-GMSL MAX929x bridge."
+	help
+	  Say Y here to enable the Maxim Integrated MAX929x driver.
+	  This bridge chip converts SOR->HDMI output to GMSL.
+	  Driver supports MAX9291 and MAX9293 chips, ignoring HDCP on the latter.
+
+config TEGRA_HDMI2DSI_TC358870
+	bool "Enable HDMI-to-DSI TC358870 bridge."
+	depends on TEGRA_HDMI2_0 && I2C
+	default n
+	help
+	  Say Y here to enable the Toshiba TC358870 bridge.
+	  The bridge chip converts HDMI output to DSI.
+
+config TEGRA_HDA_DC
+	bool "Enable HDA DC driver"
+	depends on TEGRA_HDMI2_0 || TEGRA_DP
+	default y
+	help
+	  Say Y here to enable separate HDA driver in DC space.
+	  Separate HDA driver is written to support both DP/HDMI from same code.
+	  Removes redundancy of HDA code, so it doesn't get duplicated for each client.
+	  Supported for T21x and later chips only which have HDMI2_0 or DP enabled.
+
+config TEGRA_HDMI2FPD
+	bool
+
+config TEGRA_HDMI2FPD_DS90UH949
+	bool "DS90UH949 FPDLink Serializer"
+	depends on I2C
+	select TEGRA_HDMI2FPD
+	help
+	  Say Y here to enable HDMI2FPD serializer bridge
+	  This is a driver for FPDLink Serializer DS90UH949.
+	  This option is required when HDMI output is converted to FPD output
+	  using DS90UH949 serializer chip.
+
+config TEGRA_NVSR
+	bool "Enable NVSR support."
+	default  n
+	help
+	   Say Y here to enable NVSR support.
+
+config TEGRA_VRR
+	bool "Enable VRR Support"
+	default  n
+	help
+	  Say Y here to support VRR.
+
+config TEGRA_HDMIVRR
+	bool "Enable HDMIVRR Support."
+	default  n
+	help
+	  Say Y here to support HDMIVRR. HDMIVRR monitor supports variable
+	  refresh rate so that the display scanout matches graphics rendering
+	  speed. It is enabled to improve user experience for games and videos.
+
+config TEGRA_HDMIHDCP
+	bool "Support HDCP content protection on HDMI2_0"
+	depends on TEGRA_HDMI2_0
+	help
+	  Say Y here to support HDCP upstream and downstream protocols for HDMI2_0,
+	  this requires a correctly fused chip to negotiate keys.
+	  It is only needed if you have an application that cares about checking
+	  for HDCP security while playing protected content. You do not need this
+	  option to simply display a GUI on an HDMI TV. An HDMI TV will display
+	  unprotected content just fine.
+
+config TEGRA_DEBUG_HDCP
+	bool "Support Debug mode for HDCP on HDMI2_0"
+	depends on TEGRA_HDMIHDCP
+	default n
+	help
+	  Say Y here to expose debugfs nodes for HDCP content protection on HDMI2_0.
+	  It is only required if you need to modify the number of retries for HDCP
+	  authentication.
+
+config TEGRA_DPHDCP
+	bool "Support HDCP content protection on DP"
+	depends on TEGRA_DP
+	help
+	  Say Y here to support HDCP upstream and downstream protocols for DP,
+	  This requires a correctly fused chip to negotiate keys.
+	  It is needed if you have an application that cares about checking
+	  for HDCP security while playing protected content.
+
+config TEGRA_DEBUG_DP_HDCP
+	bool "Support Debug mode for HDCP on DP"
+	depends on TEGRA_DPHDCP
+	default n
+	help
+	  Say Y here to expose debugfs nodes for HDCP content protection on DP.
+	  It is needed to modify the number of retries for HDCP authentication.
+
+config TEGRA_YUV_BYPASS_MODE_FILTER
+	bool "Filter-out YUV bypass modes"
+	default n
+	help
+	  Display driver parses all the YUV modes specified in EDID of a given sink.
+	  But T210 does not have hardware support for any of the YUV modes and T186 hardware
+	  supports only YUV422 and YUV444 modes. Say Y here to filter out all YUV modes on
+	  T210 platforms and to filter out YUV420 modes on T186 platforms. These modes will
+	  not be exposed to upper layers, including userspace.
+
+config TEGRA_DC_FAKE_PANEL_SUPPORT
+	bool "Enables fake panel and NULL OR support"
+	depends on TEGRA_DC
+	default y
+	help
+	  Select Y to enable support for the
+	  Display Controller to output to
+	  fake panel or NULL Output Resource.
+	  Used for silicon characterization and
+	  automated testing. should not be enabled
+	  for production.
+
+config TEGRA_DC_TRACE_PRINTK
+	bool "Enable trace_printk debugging"
+	depends on FTRACE_PRINTK
+
+source "drivers/misc/tegra-cec/Kconfig"
+source "drivers/video/tegra/host/Kconfig"
+source "drivers/video/tegra/nvmap/Kconfig"
+
+endif

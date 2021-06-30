@@ -1,0 +1,9 @@
+if HAS_IOMEM
+
+config MFD_TMPM32X_I2C
+	tristate
+	depends on I2C
+	depends on OF
+	select MFD_CORE
+
+endif

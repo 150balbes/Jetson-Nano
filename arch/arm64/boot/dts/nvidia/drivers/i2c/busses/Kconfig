@@ -1,0 +1,58 @@
+append_menu "I2C Hardware Bus support"
+
+config I2C_TEGRA_VI
+        tristate "NVIDIA Tegra internal VII2C controller"
+        depends on ARCH_TEGRA
+        default y
+        select I2C_ALGOBIT
+        help
+          If you say yes to this option, support will be included for the
+          I2C controller embedded in NVIDIA Tegra SOCs
+
+config I2C_BPMP_TEGRA
+        tristate "NVIDIA Tegra internal BPMP I2C controller (Downstream version)"
+        depends on NV_TEGRA_BPMP
+        default y
+        select I2C_ALGO_BUSCLEAR
+        select I2C_ALGOBIT
+        help
+          If you say yes to this option, support will be included for the
+          I2C controller embedded in NVIDIA Tegra SOCs accessed via BPMP.
+          This I2C driver is a 'virtual' I2C driver. The real driver is
+          embedded in the BPMP firmware, and this driver merely communicates
+          with that real driver.
+
+	  This driver is a downstream version and there is a newer variant
+	  available in modern kernels.
+
+config I2C_TEGRA_CAMRTC
+        bool "Tegra I2C Camera RTCPU driver"
+        depends on TEGRA_CAMERA_RTCPU
+        help
+          If you say yes to this option, support will be included for the
+          I2C controller embedded in NVIDIA Tegra SOCs accessed via Camera
+          RTCPU processor. This I2C driver is a 'virtual' I2C driver
+          compatible with I2C bus driver. The real driver is embedded in the
+          Camera RTCPU firmware, and this driver merely communicates with
+          that real driver.
+
+config I2C_TEGRA_HV
+        bool "Tegra I2C virtualization Support"
+        depends on TEGRA_HV_MANAGER
+        default y
+        help
+          Enables support for para-virtualized I2C client driver.
+          Client driver is written to communicate with I2C server
+          partition by using IVC (Inter VM Commuication) framework.
+          IVC support is a prerequisite for this driver.
+
+config I2C_TEGRA194_SLAVE
+	tristate "NVIDIA Tegra194 internal I2C slave controller"
+	select I2C_SLAVE
+	help
+	If you say yes to this option, support will be included for the
+	I2C slave controller embedded in NVIDIA Tegra194 SOC.
+
+	This driver supports FIFO mode for read/write transfers.
+
+endmenu

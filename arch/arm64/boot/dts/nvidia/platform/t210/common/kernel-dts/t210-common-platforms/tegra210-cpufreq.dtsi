@@ -1,0 +1,56 @@
+/*
+ * Copyright (c) 2016 NVIDIA CORPORATION. All rights reserved.
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ */
+
+/ {
+	cpufreq {
+		compatible = "nvidia,tegra210-cpufreq";
+		cpu-scaling-data {
+			freq-table = <
+				102000
+				204000
+				306000
+				408000
+				510000
+				612000
+				714000
+				816000
+				918000
+				1020000
+				1122000
+				1224000
+				1326000
+				1428000
+				1555000
+				1632000
+				1734000
+			>;
+			preserve-across-suspend;
+		};
+
+		emc-scaling-data {
+			emc-cpu-limit-table = <
+				/* CPU    EMC */
+				102000	68000
+				204800	102000
+				307200	204000
+				403000	408000
+				800000	665600
+				1122000	800000
+				1224000	1056000
+				1428000	1331200
+				1632000	1600000
+			>;
+		};
+	};
+};

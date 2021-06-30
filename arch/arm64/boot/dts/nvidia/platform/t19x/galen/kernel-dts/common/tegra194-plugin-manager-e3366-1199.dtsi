@@ -1,0 +1,107 @@
+/*
+ * Copyright (c) 2018, NVIDIA CORPORATION.  All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ */
+
+/ {
+	plugin-manager {
+		fragement-pcie-j2202-j2101-loopback-en {
+			odm-anded-override;
+			odm-data = "pcie-xbar-8-1-1-0-1", "enable-pcie-c0-endpoint",
+				   "enable-pcie-c4-endpoint", "disable-ufs-uphy",
+				   "disable-sata", "enable-nvhs-uphy-pcie-c5",
+				   "disable-pcie-c5-endpoint";
+			override@0 {
+				target = <&{/pcie@14180000}>;
+				_overlay_ {
+					status = "disabled";
+				};
+			};
+			override@1 {
+				target = <&{/pcie@14100000}>;
+				_overlay_ {
+					vddio-pex-ctl-supply = <&p2888_spmic_sd3>;
+					phys = <&p2u_0>;
+					phy-names = "pcie-p2u-0";
+					status = "okay";
+				};
+			};
+			override@2 {
+				target = <&{/pcie@14120000}>;
+				_overlay_ {
+					vddio-pex-ctl-supply = <&p2888_spmic_sd3>;
+					phys = <&p2u_10>;
+					phy-names = "pcie-p2u-0";
+					status = "okay";
+				};
+			};
+			override@3 {
+				target = <&{/pcie@14140000}>;
+				_overlay_ {
+					status = "disabled";
+				};
+			};
+			override@4 {
+				target = <&{/pcie@14160000}>;
+				_overlay_ {
+					status = "disabled";
+				};
+			};
+			override@5 {
+				target = <&{/pcie@141a0000}>;
+				_overlay_ {
+					vddio-pex-ctl-supply = <&p2888_spmic_sd3>;
+					status = "okay";
+				};
+			};
+			override@6 {
+				target = <&{/pcie_ep@14180000}>;
+				_overlay_ {
+					nvidia,pex-rst-gpio = <&tegra_main_gpio
+								TEGRA194_MAIN_GPIO(K, 1)
+								GPIO_ACTIVE_LOW>;
+					vddio-pex-ctl-supply = <&p2888_spmic_sd3>;
+					num-lanes = <8>;
+					phys = <&p2u_2>, <&p2u_3>, <&p2u_4>,
+					       <&p2u_5>, <&p2u_6>, <&p2u_7>,
+					       <&p2u_8>, <&p2u_9>;
+					phy-names = "pcie-p2u-0", "pcie-p2u-1",
+						    "pcie-p2u-2", "pcie-p2u-3",
+						    "pcie-p2u-4", "pcie-p2u-5",
+						    "pcie-p2u-6", "pcie-p2u-7";
+					nvidia,mods;
+					status = "okay";
+				};
+			};
+			override@7 {
+				target = <&{/pcie_ep@14160000}>;
+				_overlay_ {
+					nvidia,pex-rst-gpio = <&tegra_main_gpio
+								TEGRA194_MAIN_GPIO(L, 1)
+								GPIO_ACTIVE_LOW>;
+					vddio-pex-ctl-supply = <&p2888_spmic_sd3>;
+					num-lanes = <1>;
+					phys = <&p2u_11>;
+					phy-names = "pcie-p2u-0";
+					nvidia,mods;
+					status = "okay";
+				};
+			};
+			override@8 {
+				target = <&{/pcie_ep@141a0000}>;
+				_overlay_ {
+					status = "disabled";
+				};
+			};
+		};
+	};
+};

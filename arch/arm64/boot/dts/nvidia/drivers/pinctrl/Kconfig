@@ -1,0 +1,41 @@
+append_menu "Pin controllers"
+
+config PINCTRL_TEGRA186
+	bool "NVIDIA Tegra186 Pinmux support"
+	select PINCTRL_TEGRA
+	default y if ARCH_TEGRA_18x_SOC
+	help
+	Support for the NVIDIA Tegra186 PINCTRL controller driver.
+
+config PINCTRL_TEGRA186_PADCTL
+	bool "NVIDIA Tegra186 XUSB PADCTL Driver"
+	depends on ARCH_TEGRA_18x_SOC
+	depends on MAILBOX
+	select GENERIC_PHY
+	select PINCONF
+	select PINMUX
+
+config PINCTRL_TEGRA186_DPAUX
+	bool "NVIDIA Tegra186 DP AUX Pinctrl Driver"
+        depends on ARCH_TEGRA_18x_SOC
+        select PINCONF
+        select PINMUX
+
+config PINCTRL_TEGRA194
+	bool "NVIDIA Tegra194 Pinmux support"
+	select PINCTRL_TEGRA
+	default y if ARCH_TEGRA_19x_SOC
+	help
+	Support for the NVIDIA Tegra194 PINCTRL controller driver.
+
+config PINCTRL_TEGRA194_PEXCLK_PADCTL
+	bool "NVIDIA Tegra194 PCIE PEXCLK PADCTL Driver"
+	depends on ARCH_TEGRA_19x_SOC
+	select PINCONF
+	select PINMUX
+	help
+	  Support for the NVIDIA Tegra194 PCIE PEXCLK Padcontrol
+	  configurations. This will provide the mechanism to dynamically
+	  select the functionality between camera and PCIE.
+
+endmenu

@@ -1,0 +1,54 @@
+/*
+ * Copyright (c) 2018, NVIDIA CORPORATION.  All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ */
+#include <dt-bindings/pwm/pwm.h>
+
+/ {
+	plugin-manager {
+		pwm-fan-polarity {
+			ids = "<2822-0000-400";
+			override@0 {
+				target = <&pwm_fan_shared_data>;
+				_overlay_ {
+					pwm_polarity = <PWM_POLARITY_INVERTED>;
+				};
+			};
+			override@1 {
+				target = <&pwm_fan_shared_data>;
+				_overlay_ {
+					suspend_state = <1>;
+				};
+			};
+		};
+
+		ufs-cd {
+			ids = "<2822-0000-400";
+			override@0 {
+				target = <&{/ufshci@2450000}>;
+				_overlay_ {
+				    status = "disabled";
+				};
+			};
+		};
+
+		usb-vbus-en0-gpio-value {
+			ids = "<2822-0000-400";
+			override@0 {
+				target = <&p2822_vdd_5v_sata>;
+				_overlay_ {
+					delete-target-property = "enable-active-high";
+				};
+			};
+		};
+	};
+};

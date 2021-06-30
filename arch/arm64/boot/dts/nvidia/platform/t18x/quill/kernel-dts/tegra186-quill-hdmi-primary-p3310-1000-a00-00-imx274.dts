@@ -1,0 +1,78 @@
+/*
+ * tegra186-quill-hdmi-primary-p3310-1000-a00-00-imx274.dts: DTS file for Quill
+ * to enable imx274 image sensor.
+ *
+ * Copyright (c) 2017, NVIDIA CORPORATION.  All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; version 2 of the License.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ *
+ */
+
+#include "tegra186-quill-hdmi-primary-p3310-1000-a00-00.dts"
+#include "quill-platforms/tegra186-quill-camera-imx274.dtsi"
+
+/ {
+	nvidia,dtsfilename = __FILE__;
+
+	host1x {
+		vi_base: vi@15700000 {
+			ports {
+				imx274_vi_port0: port@0 {
+					status = "okay";
+					imx274_vi_in0: endpoint {
+						status = "okay";
+					};
+				};
+				itc358840_vi_port1: port@1 {
+					status = "okay";
+					tc358840_vi_in0: endpoint {
+						status = "okay";
+					};
+				};
+			};
+		};
+		csi_base: nvcsi@150c0000 {
+			csi_chan0: channel@0 {
+				status = "okay";
+				ports {
+					csi_chan0_port0: port@0 {
+						status = "okay";
+						imx274_csi_in0: endpoint@0 {
+							status = "okay";
+						};
+					};
+					csi_chan0_port1: port@1 {
+						status = "okay";
+						imx274_csi_out0: endpoint@1 {
+							status = "okay";
+						};
+					};
+				};
+			};
+			csi_chan1: channel@1 {
+				status = "okay";
+				ports {
+					csi_chan1_port0: port@0 {
+						status = "okay";
+						tc358840_csi_in0: endpoint@2 {
+							status = "okay";
+						};
+					};
+					csi_chan1_port1: port@1 {
+						status = "okay";
+						tc358840_csi_out0: endpoint@3 {
+							status = "okay";
+						};
+					};
+				};
+			};
+		};
+	};
+};

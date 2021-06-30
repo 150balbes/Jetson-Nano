@@ -1,0 +1,180 @@
+/*
+ * tegra194-soc-uart.dtsi: Tegra194 soc dtsi file for UART instances
+ *
+ * Copyright (c) 2016-2017, NVIDIA CORPORATION.  All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; version 2 of the License.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ */
+
+/ {
+	aliases {
+		serial0 = &uarta;
+		serial1 = &uartb;
+		serial2 = &uartc;
+		serial3 = &uartd;
+		serial4 = &uarte;
+		serial5 = &uartf;
+		serial6 = &uartg;
+		serial7 = &uarth;
+	};
+
+	uarta: serial@3100000 {
+		compatible = "nvidia,tegra186-hsuart";
+		iommus = <&smmu TEGRA_SID_GPCDMA_0>;
+		dma-coherent;
+		reg = <0x0 0x03100000 0x0 0x10000>;
+		reg-shift = <2>;
+		interrupts = <0 TEGRA194_IRQ_UARTA 0x04>;
+		nvidia,memory-clients = <14>;
+		dmas = <&gpcdma 8>, <&gpcdma 8>;
+		dma-names = "rx", "tx";
+		clocks = <&bpmp_clks TEGRA194_CLK_UARTA>,
+			<&bpmp_clks TEGRA194_CLK_PLLP_OUT0>;
+		clock-names = "serial", "parent";
+		resets = <&bpmp_resets TEGRA194_RESET_UARTA>;
+		reset-names = "serial";
+		status = "disabled";
+	};
+
+	uartb: serial@3110000 {
+		compatible = "nvidia,tegra186-hsuart";
+		iommus = <&smmu TEGRA_SID_GPCDMA_0>;
+		dma-coherent;
+		reg = <0x0 0x03110000 0x0 0x10000>;
+		reg-shift = <2>;
+		interrupts = <0 TEGRA194_IRQ_UARTB 0x04>;
+		nvidia,memory-clients = <14>;
+		dmas = <&gpcdma 9>, <&gpcdma 9>;
+		dma-names = "rx", "tx";
+		clocks = <&bpmp_clks TEGRA194_CLK_UARTB>,
+			<&bpmp_clks TEGRA194_CLK_PLLP_OUT0>;
+		clock-names = "serial", "parent";
+		resets = <&bpmp_resets TEGRA194_RESET_UARTB>;
+		reset-names = "serial";
+		status = "disabled";
+	};
+
+	uartc: serial@c280000 {
+		compatible = "nvidia,tegra186-hsuart";
+		iommus = <&smmu TEGRA_SID_GPCDMA_0>;
+		dma-coherent;
+		reg = <0x0 0xc280000 0x0 0x10000>;
+		reg-shift = <2>;
+		interrupts = <0 TEGRA194_IRQ_UARTC 0x04>;
+		nvidia,memory-clients = <14>;
+		dmas = <&gpcdma 3>, <&gpcdma 3>;
+		dma-names = "rx", "tx";
+		clocks = <&bpmp_clks TEGRA194_CLK_UARTC>,
+			<&bpmp_clks TEGRA194_CLK_PLLP_OUT0>;
+		clock-names = "serial", "parent";
+		resets = <&bpmp_resets TEGRA194_RESET_UARTC>;
+		reset-names = "serial";
+		status = "disabled";
+	};
+
+	uartd: serial@3130000 {
+		compatible = "nvidia,tegra186-hsuart";
+		iommus = <&smmu TEGRA_SID_GPCDMA_0>;
+		dma-coherent;
+		reg = <0x0 0x03130000 0x0 0x10000>;
+		reg-shift = <2>;
+		interrupts = <0 TEGRA194_IRQ_UARTD 0x04>;
+		nvidia,memory-clients = <14>;
+		dmas = <&gpcdma 19>, <&gpcdma 19>;
+		dma-names = "rx", "tx";
+		clocks = <&bpmp_clks TEGRA194_CLK_UARTD>,
+			<&bpmp_clks TEGRA194_CLK_PLLP_OUT0>;
+		clock-names = "serial", "parent";
+		resets = <&bpmp_resets TEGRA194_RESET_UARTD>;
+		reset-names = "serial";
+		status = "disabled";
+	};
+
+	uarte: serial@3140000 {
+		compatible = "nvidia,tegra186-hsuart";
+		iommus = <&smmu TEGRA_SID_GPCDMA_0>;
+		dma-coherent;
+		reg = <0x0 0x03140000 0x0 0x10000>;
+		reg-shift = <2>;
+		interrupts = <0 TEGRA194_IRQ_UARTE 0x04>;
+		nvidia,memory-clients = <14>;
+		dmas = <&gpcdma 20>, <&gpcdma 20>;
+		dma-names = "rx", "tx";
+		clocks = <&bpmp_clks TEGRA194_CLK_UARTE>,
+			<&bpmp_clks TEGRA194_CLK_PLLP_OUT0>;
+		clock-names = "serial", "parent";
+		resets = <&bpmp_resets TEGRA194_RESET_UARTE>;
+		reset-names = "serial";
+		status = "disabled";
+	};
+
+	uartf: serial@3150000 {
+		compatible = "nvidia,tegra186-hsuart";
+		iommus = <&smmu TEGRA_SID_GPCDMA_0>;
+		dma-coherent;
+		reg = <0x0 0x03150000 0x0 0x10000>;
+		reg-shift = <2>;
+		interrupts = <0 TEGRA194_IRQ_UARTF 0x04>;
+		nvidia,memory-clients = <14>;
+		dmas = <&gpcdma 12>, <&gpcdma 12>;
+		dma-names = "rx", "tx";
+		clocks = <&bpmp_clks TEGRA194_CLK_UARTF>,
+			<&bpmp_clks TEGRA194_CLK_PLLP_OUT0>;
+		clock-names = "serial", "parent";
+		resets = <&bpmp_resets TEGRA194_RESET_UARTF>;
+		reset-names = "serial";
+		status = "disabled";
+	};
+
+	uartg: serial@c290000 {
+		compatible = "nvidia,tegra186-hsuart";
+		iommus = <&smmu TEGRA_SID_GPCDMA_0>;
+		dma-coherent;
+		reg = <0x0 0xc290000 0x0 0x10000>;
+		reg-shift = <2>;
+		interrupts = <0 TEGRA194_IRQ_UARTG 0x04>;
+		nvidia,memory-clients = <14>;
+		dmas = <&gpcdma 2>, <&gpcdma 2>;
+		dma-names = "rx", "tx";
+		clocks = <&bpmp_clks TEGRA194_CLK_UARTG>,
+			<&bpmp_clks TEGRA194_CLK_PLLP_OUT0>;
+		clock-names = "serial", "parent";
+		resets = <&bpmp_resets TEGRA194_RESET_UARTG>;
+		reset-names = "serial";
+		status = "disabled";
+	};
+
+	uarth: serial@3170000 {
+		compatible = "nvidia,tegra186-hsuart";
+		iommus = <&smmu TEGRA_SID_GPCDMA_0>;
+		dma-coherent;
+		reg = <0x0 0x3170000 0x0 0x10000>;
+		reg-shift = <2>;
+		interrupts = <0 TEGRA194_IRQ_UARTH 0x04>;
+		nvidia,memory-clients = <14>;
+		dmas = <&gpcdma 13>, <&gpcdma 13>;
+		dma-names = "rx", "tx";
+		clocks = <&bpmp_clks TEGRA194_CLK_UARTH>,
+			<&bpmp_clks TEGRA194_CLK_PLLP_OUT0>;
+		clock-names = "serial", "parent";
+		resets = <&bpmp_resets TEGRA194_RESET_UARTH>;
+		reset-names = "serial";
+		status = "disabled";
+	};
+
+	combined-uart {
+		compatible = "nvidia,tegra186-combined-uart";
+		reg = <0x0 0x3c10000 0x0 0x4   /* TOP0_HSP_SM_0_1_BASE */
+		       0x0 0xc168000 0x0 0x4       /* AON_HSP_SM_1_BASE */
+		       0x0 0x3c00000 0x0 0x1000>; /* TOP0_HSP_COMMON_BASE */
+		interrupts = <0 TEGRA194_IRQ_TOP0_HSP_SHARED_0 0x04>;
+		status = "disabled";
+	};
+};

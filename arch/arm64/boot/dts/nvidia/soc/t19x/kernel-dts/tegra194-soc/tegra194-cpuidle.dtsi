@@ -1,0 +1,88 @@
+/*
+ *
+ * Copyright (c) 2017, NVIDIA CORPORATION.  All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; version 2 of the License.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
+/ {
+	cpus {
+		CPU_CORE_POWER_STATES: cpu_core_power_states {
+			compatible = "nvidia,tegra194-cpuidle-core";
+
+			C1: c1 {
+				compatible = "nvidia,tegra194-cpuidle-core";
+				state-name = "Clock gated";
+				wakeup-latency-us = <1>;
+				min-residency-us = <1>;
+				power = <70>;
+				pmstate = <0x1>;
+				status = "okay";
+			};
+			C6: c6 {
+				compatible = "nvidia,tegra194-cpuidle-core";
+				state-name = "Virtual core powergate";
+				wakeup-latency-us = <2000>;
+				min-residency-us = <0xffffffff>;
+				power = <60>;
+				pmstate = <0x6>;
+				arm,psci-suspend-param= <0x6>;
+				status = "okay";
+			};
+			C7: c7 {
+				compatible = "nvidia,tegra194-cpuidle-core";
+				state-name = "Core powergate";
+				wakeup-latency-us = <560>;
+				min-residency-us = <0xffffffff>;
+				power = <60>;
+				pmstate = <0x7>;
+				arm,psci-suspend-param= <0x40000007>;
+				status = "disabled";
+			};
+		};
+
+		cpu_cluster_power_states {
+			compatible = "nvidia,tegra194-cpuidle-cluster";
+			cc6 {
+				state-name = "Cluster powergate";
+				wakeup-latency-us = <5000>;
+				min-residency-us = <0xffffffff>;
+				power = <19>;
+				pmstate = <0x6>;
+				status = "okay";
+			};
+		};
+
+		cpu_cluster_group_power_states {
+			compatible = "nvidia,tegra194-cpuidle-cluster_group";
+			cg7 {
+				state-name = "Cluster group railgate";
+				wakeup-latency-us = <500>;
+				min-residency-us = <80000>;
+				power = <5>;
+				pmstate = <0x1>;
+				status = "disabled";
+			};
+		};
+
+		cpu_crossover_thresholds {
+			compatible = "nvidia,tegra194-cpuidle-thresholds";
+
+			thresholds {
+				crossover_c1_c6         = <30000>;
+				crossover_cc1_cc6       = <80000>;
+				crossover_cc1_cg7       = <0>;
+			};
+		};
+	};
+};

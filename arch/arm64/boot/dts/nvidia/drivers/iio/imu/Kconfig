@@ -1,0 +1,5 @@
+append_menu "Inertial measurement units"
+source "drivers/iio/imu/nvi_mpu/Kconfig"
+source "drivers/iio/imu/nvs_bmi/Kconfig"
+source "drivers/iio/imu/tsfw_icm20628/Kconfig"
+endmenu

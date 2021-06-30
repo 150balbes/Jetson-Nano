@@ -1,0 +1,90 @@
+NVIDIA Tegra19x CBB NOC driver
+==================================
+
+This document defines the device-specific binding for Tegra19x CBB NOC driver.
+
+Control Backbone(CBB) comprises of the physical path from a master(or initiator)
+to a slave’s(or target) register configuration space(Target’s Control Space).
+CBB has multiple hierarchical sub-NOC's(Network-on-Chip) and stretches to
+various master and slave partitions using different bridges like AXIP2P,AXI2APB.
+
+This driver handles errors from master clusters with NOC(AON, SCE, RCE, BPMP,
+CV) and CBB central NOC in case of failed transaction in a bridge within CBB.
+Access issuing master is informed about error using SError or interrupts.
+For access from CCPLEX master, SError is delivered to all cores in master.
+For access by other masters, issuing master gets abort and CCPLEX receives
+secure or nonsecure interrupt depending on error type.
+ - secure_intr: SEC(firewall) & SLV errors.
+ - nonsecure_intr: TMO & DEC errors.
+
+The driver prints relevant debug information like Error Code, Error Description,
+Master, Address, AXI ID, Cache, Protection, Security Group etc using NOC Error
+Logger registers on receiving SError or interrupt. For APB slaves, it prints
+additional information about exact error cause and AXI2APB bridge giving error.
+
+
+Required properties for NOC's:
+- compatible: Should be per NOC "nvidia,tegra194-CBB-NOC"
+- reg: Physical base address and length of registers
+- interrupts: irq numbers of secure and nonsecure interrupts for the NOC error
+
+Example:
+========
+	cbb-noc@2300000 {
+		compatible = "nvidia,tegra194-CBB-NOC";
+		reg = <0x0 0x02300000 0x0 0x1000>;
+		interrupts = <0 230 4>, <0 231 4>;
+		status = "okay";
+	};
+
+	aon-noc@C600000 {
+		compatible = "nvidia,tegra194-AON-NOC";
+		reg = <0x0 0xC600000 0x0 0x1000>;
+		interrupts = <0 260 4>, <0 172 4>;
+		status = "okay";
+	};
+
+	bpmp-noc@D600000 {
+		compatible = "nvidia,tegra194-BPMP-NOC";
+		reg = <0x0 0xD600000 0x0 0x1000>;
+		interrupts = <0 262 4>, <0 174 4>;
+		status = "okay";
+	};
+
+	rce-noc@BE00000 {
+		compatible = "nvidia,tegra194-RCE-NOC";
+		reg = <0x0 0xBE00000 0x0 0x1000>;
+		interrupts = <0 259 4>, <0 175 4>;
+		status = "okay";
+	};
+
+	sce-noc@B600000 {
+		compatible = "nvidia,tegra194-SCE-NOC";
+		reg = <0x0 0xB600000 0x0 0x1000>;
+		interrupts = <0 261 4>, <0 173 4>;
+		status = "okay";
+	};
+
+	cv-noc@14040000 {
+		compatible = "nvidia,tegra194-CV-NOC";
+		reg = <0x0 0 0x14040000 0x0 0x1000>;
+		interrupts = <0 238 4>, <0 239 4>;
+		status = "okay";
+	};
+
+Required properties for AXI2APB bridge:
+- compatible: Should be "nvidia,tegra194-AXI2APB-bridge"
+- reg: Physical base address and length of registers for all bridges
+
+Example:
+========
+	axi2apb@2390000 {
+		compatible = "nvidia,tegra194-AXI2APB-bridge";
+		reg = <0x0 0x02390000 0x0 0x1000>,
+		    <0x0 0x023A0000 0x0 0x1000>,
+		    <0x0 0x023B0000 0x0 0x1000>,
+		    <0x0 0x023C0000 0x0 0x1000>,
+		    <0x0 0x023D0000 0x0 0x1000>,
+		    <0x0 0x023E0000 0x0 0x1000>;
+		status = "disabled";
+	};

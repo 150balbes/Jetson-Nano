@@ -1,0 +1,9 @@
+config DRM_TEGRA_UDRM
+	tristate "DRM support for user mode DRM driver on NVIDIA Tegra Soc"
+	depends on DRM && ARCH_TEGRA
+	help
+		This driver provides kernel support for user mode drm driver
+		on NVIDIA Tegra SoC.
+
+		To compile this driver as a module, choose M here: the module
+		will be called tegra-udrm.

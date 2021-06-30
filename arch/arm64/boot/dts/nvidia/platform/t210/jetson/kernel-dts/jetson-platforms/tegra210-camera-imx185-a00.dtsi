@@ -1,0 +1,469 @@
+/*
+ * Copyright (c) 2016-2019, NVIDIA CORPORATION.  All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
+#include <dt-bindings/media/camera.h>
+#include <dt-bindings/platform/t210/t210.h>
+
+/ {
+	host1x {
+		vi {
+			num-channels = <1>;
+			ports {
+				#address-cells = <1>;
+				#size-cells = <0>;
+				port@0 {
+					reg = <0>;
+					liimx185_vi_in0: endpoint {
+						port-index = <0>;
+						bus-width = <4>;
+						remote-endpoint = <&liimx185_csi_out0>;
+					};
+				};
+			};
+		};
+
+		nvcsi {
+			num-channels = <1>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+			channel@0 {
+				reg = <0>;
+				ports {
+					#address-cells = <1>;
+					#size-cells = <0>;
+					port@0 {
+						reg = <0>;
+						liimx185_csi_in0: endpoint@0 {
+							port-index = <0>;
+							bus-width = <4>;
+							remote-endpoint = <&liimx185_imx185_out0>;
+						};
+					};
+					port@1 {
+						reg = <1>;
+						liimx185_csi_out0: endpoint@1 {
+							remote-endpoint = <&liimx185_vi_in0>;
+						};
+					};
+				};
+			};
+		};
+
+		i2c@546c0000 {
+			tca9546@70 {
+				i2c@0 {
+				imx185_a@1a {
+					compatible = "nvidia,imx185";
+					reg = <0x1a>;
+
+					/* Physical dimensions of sensor */
+					physical_w = "15.0";
+					physical_h = "12.5";
+
+					sensor_model ="imx185";
+					/* Define any required hw resources needed by driver */
+					/* ie. clocks, io pins, power sources */
+
+					/* Defines number of frames to be dropped by driver internally after applying */
+					/* sensor crop settings. Some sensors send corrupt frames after applying */
+					/* crop co-ordinates */
+					post_crop_frame_drop = "0";
+
+					/* Convert Gain to unit of dB (decibel) befor passing to kernel driver */
+					use_decibel_gain = "true";
+
+					/* if true, delay gain setting by one frame to be in sync with exposure */
+					delayed_gain = "true";
+
+					/* enable CID_SENSOR_MODE_ID for sensor modes selection */
+					use_sensor_mode_id = "true";
+
+					/**
+					* ==== Modes ====
+					* A modeX node is required to support v4l2 driver
+					* implementation with NVIDIA camera software stack
+					*
+					* == Signal properties ==
+					*
+					* phy_mode = "";
+					* PHY mode used by the MIPI lanes for this device
+					*
+					* tegra_sinterface = "";
+					* CSI Serial interface connected to tegra
+					* Incase of virtual HW devices, use virtual
+					* For SW emulated devices, use host
+					*
+					* pix_clk_hz = "";
+					* Sensor pixel clock used for calculations like exposure and framerate
+					*
+					* readout_orientation = "0";
+					* Based on camera module orientation.
+					* Only change readout_orientation if you specifically
+					* Program a different readout order for this mode
+					*
+					* == Image format Properties ==
+					*
+					* active_w = "";
+					* Pixel active region width
+					*
+					* active_h = "";
+					* Pixel active region height
+					*
+					* pixel_t = "";
+					* The sensor readout pixel pattern
+					*
+					* line_length = "";
+					* Pixel line length (width) for sensor mode.
+					*
+					* == Source Control Settings ==
+					*
+					* Gain factor used to convert fixed point integer to float
+					* Gain range [min_gain/gain_factor, max_gain/gain_factor]
+					* Gain step [step_gain/gain_factor is the smallest step that can be configured]
+					* Default gain [Default gain to be initialized for the control.
+					*     use min_gain_val as default for optimal results]
+					* Framerate factor used to convert fixed point integer to float
+					* Framerate range [min_framerate/framerate_factor, max_framerate/framerate_factor]
+					* Framerate step [step_framerate/framerate_factor is the smallest step that can befor configured]
+					* Default Framerate [Default framerate to be initialized for the control.
+					*     use max_framerate to get required performance]
+					* Exposure factor used to convert fixed point integer to float
+					* For convenience use 1 sec = 1000000us as conversion factor
+					* Exposure range [min_exp_time/exposure_factor, max_exp_time/exposure_factor]
+					* Exposure step [step_exp_time/exposure_factor is the smallest step that can befor configured]
+					* Default Exposure Time [Default exposure to be initialized for the control.
+					*     Set default exposure based on the default_framerate for optimal exposure settings]
+					*
+					* gain_factor = ""; (integer factor used for floating to fixed point conversion)
+					* min_gain_val = ""; (ceil to integer)
+					* max_gain_val = ""; (ceil to integer)
+					* step_gain_val = ""; (ceil to integer)
+					* default_gain = ""; (ceil to integer)
+					* Gain limits for mode
+					*
+					* exposure_factor = ""; (integer factor used for floating to fixed point conversion)
+					* min_exp_time = ""; (ceil to integer)
+					* max_exp_time = ""; (ceil to integer)
+					* step_exp_time = ""; (ceil to integer)
+					* default_exp_time = ""; (ceil to integer)
+					* Exposure Time limits for mode (sec)
+					*
+					* framerate_factor = ""; (integer factor used for floating to fixed point conversion)
+					* min_framerate = ""; (ceil to integer)
+					* max_framerate = ""; (ceil to integer)
+					* step_framerate = ""; (ceil to integer)
+					* default_framerate = ""; (ceil to integer)
+					* Framerate limits for mode (fps)
+					*
+					* embedded_metadata_height = "";
+					* Sensor embedded metadata height in units of rows.
+					* If sensor does not support embedded metadata value should be 0.
+					*/
+					mode0 {/*mode IMX185_MODE_1920X1080_CROP_30FPS*/
+						mclk_khz = "37125";
+						num_lanes = "4";
+						tegra_sinterface = "serial_a";
+						phy_mode = "DPHY";
+						discontinuous_clk = "no";
+						dpcm_enable = "false";
+						cil_settletime = "0";
+						dynamic_pixel_bit_depth = "12";
+						csi_pixel_bit_depth = "12";
+						mode_type = "bayer";
+						pixel_phase = "rggb";
+
+						active_w = "1920";
+						active_h = "1080";
+						readout_orientation = "0";
+						line_length = "2200";
+						inherent_gain = "1";
+						mclk_multiplier = "2";
+						pix_clk_hz = "74250000";
+
+						gain_factor = "10";
+						min_gain_val = "0"; /* 0dB */
+						max_gain_val = "480"; /* 48dB */
+						step_gain_val = "3"; /* 0.3 */
+						default_gain = "0";
+						min_hdr_ratio = "1";
+						max_hdr_ratio = "1";
+						framerate_factor = "1000000";
+						min_framerate = "1500000"; /* 1.5 */
+						max_framerate = "30000000"; /* 30 */
+						step_framerate = "1";
+						default_framerate= "30000000";
+						exposure_factor = "1000000";
+						min_exp_time = "30"; /* us */
+						max_exp_time = "660000"; /* us */
+						step_exp_time = "1";
+						default_exp_time = "33334";/* us */
+						embedded_metadata_height = "0";
+					};
+					mode1 {/*mode IMX185_MODE_1920X1080_CROP_10BIT_30FPS*/
+						mclk_khz = "37125";
+						num_lanes = "4";
+						tegra_sinterface = "serial_a";
+						phy_mode = "DPHY";
+						discontinuous_clk = "no";
+						dpcm_enable = "false";
+						cil_settletime = "0";
+						dynamic_pixel_bit_depth = "10";
+						csi_pixel_bit_depth = "10";
+						mode_type = "bayer";
+						pixel_phase = "rggb";
+
+						active_w = "1920";
+						active_h = "1080";
+						readout_orientation = "0";
+						line_length = "2640";
+						inherent_gain = "1";
+						mclk_multiplier = "2.4";
+						pix_clk_hz = "89100000";
+
+						gain_factor = "10";
+						min_gain_val = "0"; /* 0dB */
+						max_gain_val = "480"; /* 48dB */
+						step_gain_val = "3"; /* 0.3 */
+						default_gain = "0";
+						min_hdr_ratio = "1";
+						max_hdr_ratio = "1";
+						framerate_factor = "1000000";
+						min_framerate = "1500000"; /* 1.5 */
+						max_framerate = "30000000"; /* 30 */
+						step_framerate = "1";
+						default_framerate= "30000000";
+						exposure_factor = "1000000";
+						min_exp_time = "30"; /* us */
+						max_exp_time = "660000"; /* us */
+						step_exp_time = "1";
+						default_exp_time = "33334";/* us */
+						embedded_metadata_height = "0";
+					};
+					mode2 {/*mode IMX185_MODE_1920X1080_CROP_60FPS*/
+						mclk_khz = "37125";
+						num_lanes = "4";
+						tegra_sinterface = "serial_a";
+						phy_mode = "DPHY";
+						discontinuous_clk = "no";
+						dpcm_enable = "false";
+						cil_settletime = "0";
+						dynamic_pixel_bit_depth = "12";
+						csi_pixel_bit_depth = "12";
+						mode_type = "bayer";
+						pixel_phase = "rggb";
+
+						active_w = "1920";
+						active_h = "1080";
+						readout_orientation = "0";
+						line_length = "2200";
+						inherent_gain = "1";
+						mclk_multiplier = "4";
+						pix_clk_hz = "148500000";
+
+						gain_factor = "10";
+						min_gain_val = "0"; /* 0dB */
+						max_gain_val = "480"; /* 48dB */
+						step_gain_val = "3"; /* 0.3 */
+						default_gain = "0";
+						min_hdr_ratio = "1";
+						max_hdr_ratio = "1";
+						framerate_factor = "1000000";
+						min_framerate = "1500000"; /* 1.5 */
+						max_framerate = "60000000"; /* 60 */
+						step_framerate = "1";
+						default_framerate= "60000000";
+						exposure_factor = "1000000";
+						min_exp_time = "30"; /* us */
+						max_exp_time = "660000"; /* us */
+						step_exp_time = "1";
+						default_exp_time = "16667";/* us */
+						embedded_metadata_height = "0";
+					};
+					mode3 {/*mode IMX185_MODE_1920X1080_CROP_10BIT_60FPS*/
+						mclk_khz = "37125";
+						num_lanes = "4";
+						tegra_sinterface = "serial_a";
+						phy_mode = "DPHY";
+						discontinuous_clk = "no";
+						dpcm_enable = "false";
+						cil_settletime = "0";
+						dynamic_pixel_bit_depth = "10";
+						csi_pixel_bit_depth = "10";
+						mode_type = "bayer";
+						pixel_phase = "rggb";
+
+						active_w = "1920";
+						active_h = "1080";
+						readout_orientation = "0";
+						line_length = "2640";
+						inherent_gain = "1";
+						mclk_multiplier = "4.8";
+						pix_clk_hz = "178200000";
+
+						gain_factor = "10";
+						min_gain_val = "0"; /* 0dB */
+						max_gain_val = "480"; /* 48dB */
+						step_gain_val = "3"; /* 0.3 */
+						default_gain = "0";
+						min_hdr_ratio = "1";
+						max_hdr_ratio = "1";
+						framerate_factor = "1000000";
+						min_framerate = "1500000"; /* 1.5 */
+						max_framerate = "60000000"; /* 60 */
+						step_framerate = "1";
+						default_framerate= "60000000";
+						exposure_factor = "1000000";
+						min_exp_time = "30"; /* us */
+						max_exp_time = "660000"; /* us */
+						step_exp_time = "1";
+						default_exp_time = "16667";/* us */
+						embedded_metadata_height = "0";
+					};
+					mode4 {/*mode IMX185_MODE_1920X1080_CROP_HDR_30FPS*/
+						mclk_khz = "37125";
+						num_lanes = "4";
+						tegra_sinterface = "serial_a";
+						phy_mode = "DPHY";
+						discontinuous_clk = "no";
+						dpcm_enable = "false";
+						cil_settletime = "0";
+						dynamic_pixel_bit_depth = "16";
+						csi_pixel_bit_depth = "12";
+						mode_type = "bayer_wdr_pwl";
+						pixel_phase = "rggb";
+
+						active_w = "1920";
+						active_h = "1080";
+						readout_orientation = "0";
+						line_length = "2200";
+						inherent_gain = "1";
+						mclk_multiplier = "2";
+						pix_clk_hz = "74250000";
+
+						gain_factor = "10";
+						min_gain_val = "0"; /* 0dB */
+						max_gain_val = "120"; /* 12dB */
+						step_gain_val = "3"; /* 0.3 */
+						default_gain = "0";
+						min_hdr_ratio = "16";
+						max_hdr_ratio = "16";
+						framerate_factor = "1000000";
+						min_framerate = "1500000"; /* 1.5 */
+						max_framerate = "30000000"; /* 30 */
+						step_framerate = "1";
+						default_framerate= "30000000";
+						exposure_factor = "1000000";
+						min_exp_time = "2433"; /* us */
+						max_exp_time = "660000"; /* us */
+						step_exp_time = "1";
+						default_exp_time = "33334";/* us */
+						embedded_metadata_height = "0";
+
+						/* WDR related settings */
+						num_control_point = "4";
+						control_point_x_0 = "0";
+						control_point_x_1 = "2048";
+						control_point_x_2 = "16384";
+						control_point_x_3 = "65536";
+						control_point_y_0 = "0";
+						control_point_y_1 = "2048";
+						control_point_y_2 = "2944";
+						control_point_y_3 = "3712";
+					};
+					ports {
+						#address-cells = <1>;
+						#size-cells = <0>;
+						port@0 {
+							reg = <0>;
+							liimx185_imx185_out0: endpoint {
+								port-index = <0>;
+								bus-width = <4>;
+								remote-endpoint = <&liimx185_csi_in0>;
+								};
+							};
+						};
+					};
+				};
+			};
+		};
+	};
+};
+
+/ {
+
+	tegra-camera-platform {
+		compatible = "nvidia, tegra-camera-platform";
+		/**
+		* Physical settings to calculate max ISO BW
+		*
+		* num_csi_lanes = <>;
+		* Total number of CSI lanes when all cameras are active
+		*
+		* max_lane_speed = <>;
+		* Max lane speed in Kbit/s
+		*
+		* min_bits_per_pixel = <>;
+		* Min bits per pixel
+		*
+		* vi_peak_byte_per_pixel = <>;
+		* Max byte per pixel for the VI ISO case
+		*
+		* vi_bw_margin_pct = <>;
+		* Vi bandwidth margin in percentage
+		*
+		* max_pixel_rate = <>;
+		* Max pixel rate in Kpixel/s for the ISP ISO case
+		*
+		* isp_peak_byte_per_pixel = <>;
+		* Max byte per pixel for the ISP ISO case
+		*
+		* isp_bw_margin_pct = <>;
+		* Isp bandwidth margin in percentage
+		*/
+		num_csi_lanes = <4>;
+		max_lane_speed = <1500000>;
+		min_bits_per_pixel = <10>;
+		vi_peak_byte_per_pixel = <2>;
+		vi_bw_margin_pct = <25>;
+		isp_peak_byte_per_pixel = <5>;
+		isp_bw_margin_pct = <25>;
+
+		/**
+		 * The general guideline for naming badge_info contains 3 parts, and is as follows,
+		 * The first part is the camera_board_id for the module; if the module is in a FFD
+		 * platform, then use the platform name for this part.
+		 * The second part contains the position of the module, ex. "rear" or "front".
+		 * The third part contains the last 6 characters of a part number which is found
+		 * in the module's specsheet from the vender.
+		 */
+		modules {
+			module0 {
+				badge = "imx185_bottom_liimx185";
+				position = "bottom";
+				orientation = "0";
+				drivernode0 {
+					/* Declare PCL support driver (classically known as guid)  */
+					pcl_id = "v4l2_sensor";
+					/* Driver v4l2 device name */
+					devname = "imx185 30-001a";
+					/* Declare the device-tree hierarchy to driver instance */
+					proc-device-tree = "/proc/device-tree/host1x/i2c@546c0000/tca9546@70/i2c@0/imx185_a@1a";
+				};
+			};
+		};
+	};
+};

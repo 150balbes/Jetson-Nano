@@ -1,0 +1,53 @@
+/*
+ * T194 P2888-1000 common DTSI file.
+ *
+ * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; version 2 of the License.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ */
+
+#include <dt-bindings/types.h>
+/dts-v1/;
+
+/memreserve/ 0x80000000 0x00010000;
+
+#include <tegra194-soc/tegra194-soc-cvm.dtsi>
+
+/ {
+	model = "Jetson-AGX";
+	compatible = "nvidia,tegra194";
+
+	#address-cells = <2>;
+	#size-cells = <2>;
+
+	pmc@c360000 {
+		iopad-defaults {
+			sdmmc-io-pads {
+				pins = "sdmmc1-hv", "sdmmc3-hv";
+				nvidia,enable-voltage-switching;
+			};
+		};
+	};
+
+	pmc@c370000 {
+		nvidia,invert-interrupt;
+	};
+	plugin-manager {
+		fragment-p2888-mods {
+			odm-data = "mods-build";
+			override@0 {
+				target = <&gpcdma>;
+				_overlay_ {
+					nvidia,bypass-smmu;
+				};
+			};
+		};
+	};
+};

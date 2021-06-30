@@ -1,0 +1,383 @@
+/*
+ * Copyright (c) 2016-2019, NVIDIA CORPORATION.  All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; version 2 of the License.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ *
+ */
+
+#include "t18x-common-platforms/tegra186-quill-camera-e3326-a00.dtsi"
+#include "t18x-common-platforms/tegra186-quill-camera-e3323-a00.dtsi"
+#include "t18x-common-platforms/tegra186-quill-camera-e3331-a00.dtsi"
+#include "t18x-common-platforms/tegra186-quill-camera-e3333-a00.dtsi"
+#include "t18x-common-platforms/tegra186-quill-camera-e3322-a00.dtsi"
+#include "t18x-common-platforms/tegra186-quill-camera-imx185-a00.dtsi"
+#include "t18x-common-platforms/tegra186-quill-camera-imx274-a00.dtsi"
+#include "t18x-common-platforms/tegra186-quill-camera-imx274-dual.dtsi"
+#include "t18x-common-platforms/tegra186-quill-camera-imx390-a00.dtsi"
+#include "t18x-common-platforms/tegra186-quill-camera-vivid.dtsi"
+
+#define CAM0_RST_L	TEGRA_MAIN_GPIO(R, 5)
+#define CAM0_PWDN	TEGRA_MAIN_GPIO(R, 0)
+#define CAM1_RST_L	TEGRA_MAIN_GPIO(R, 1)
+#define CAM1_PWDN	TEGRA_MAIN_GPIO(L, 6)
+
+/ {
+	tegra-camera-platform {
+		/**
+		* tpg_max_iso = <>;
+		* Max iso bw for 6 streams of tpg
+		* streams * nvcsi_freq * PG_bitrate / RG10 * BPP
+		* 6 * 102Mhz * 32 bits/ 10 bits * 2 Bps
+		* = 3916.8 MBps
+		*/
+		tpg_max_iso = <3916800>;
+	};
+
+	/* set camera gpio direction to output */
+	gpio@2200000 {
+		camera-control-output-low {
+			gpio-hog;
+			output-low;
+			gpios = <CAM0_RST_L 0 CAM0_PWDN 0
+				 CAM1_RST_L 0 CAM1_PWDN 0>;
+			label = "cam0-rst", "cam0-pwdn",
+				"cam1-rst", "cam1-pwdn";
+		};
+	};
+
+	/* all cameras are disabled by default */
+	host1x {
+		vi_base: vi@15700000 {
+			ports {
+				vi_port0: port@0 {
+					status = "disabled";
+					vi_in0: endpoint {
+						vc-id = <0>;
+						status = "disabled";
+					};
+				};
+				vi_port1: port@1 {
+					status = "disabled";
+					vi_in1: endpoint {
+						vc-id = <0>;
+						status = "disabled";
+					};
+				};
+				vi_port2: port@2 {
+					status = "disabled";
+					vi_in2: endpoint {
+						vc-id = <0>;
+						status = "disabled";
+					};
+				};
+				vi_port3: port@3 {
+					status = "disabled";
+					vi_in3: endpoint {
+						vc-id = <0>;
+						status = "disabled";
+					};
+				};
+				vi_port4: port@4 {
+					status = "disabled";
+					vi_in4: endpoint {
+						vc-id = <0>;
+						status = "disabled";
+					};
+				};
+				vi_port5: port@5 {
+					status = "disabled";
+					vi_in5: endpoint {
+						vc-id = <0>;
+						status = "disabled";
+					};
+				};
+			};
+		};
+		csi_base: nvcsi@150c0000 {
+			csi_chan0: channel@0 {
+				status = "disabled";
+				ports {
+					csi_chan0_port0: port@0 {
+						status = "disabled";
+						csi_in0: endpoint@0 {
+							status = "disabled";
+						};
+					};
+					csi_chan0_port1: port@1 {
+						status = "disabled";
+						csi_out0: endpoint@1 {
+							status = "disabled";
+						};
+					};
+				};
+			};
+			csi_chan1: channel@1 {
+				status = "disabled";
+				ports {
+					csi_chan1_port0: port@0 {
+						status = "disabled";
+						csi_in1: endpoint@2 {
+							status = "disabled";
+						};
+					};
+					csi_chan1_port1: port@1 {
+						status = "disabled";
+						csi_out1: endpoint@3 {
+							status = "disabled";
+						};
+					};
+				};
+			};
+			csi_chan2: channel@2 {
+				status = "disabled";
+				ports {
+					csi_chan2_port0: port@0 {
+						status = "disabled";
+						csi_in2: endpoint@4 {
+							status = "disabled";
+						};
+					};
+					csi_chan2_port1: port@1 {
+						status = "disabled";
+						csi_out2: endpoint@5 {
+							status = "disabled";
+						};
+					};
+				};
+			};
+			csi_chan3: channel@3 {
+				status = "disabled";
+				ports {
+					csi_chan3_port0: port@0 {
+						status = "disabled";
+						csi_in3: endpoint@6 {
+							status = "disabled";
+						};
+					};
+					csi_chan3_port1: port@1 {
+						status = "disabled";
+						csi_out3: endpoint@7 {
+							status = "disabled";
+						};
+					};
+				};
+			};
+			csi_chan4: channel@4 {
+				status = "disabled";
+				ports {
+					csi_chan4_port0: port@0 {
+						status = "disabled";
+						csi_in4: endpoint@8 {
+							status = "disabled";
+						};
+					};
+					csi_chan4_port1: port@1 {
+						status = "disabled";
+						csi_out4: endpoint@9 {
+							status = "disabled";
+						};
+					};
+				};
+			};
+			csi_chan5: channel@5 {
+				status = "disabled";
+				ports {
+					csi_chan5_port0: port@0 {
+						status = "disabled";
+						csi_in5: endpoint@10 {
+							status = "disabled";
+						};
+					};
+					csi_chan5_port1: port@1 {
+						status = "disabled";
+						csi_out5: endpoint@11 {
+							status = "disabled";
+						};
+					};
+				};
+			};
+		};
+	};
+
+	i2c@3180000 {
+		e3326_cam0: ov5693_c@36 {
+			status = "disabled";
+		};
+		e3323_cam0: ov23850_a@10 {
+			status = "disabled";
+		};
+		tca6408@21 {
+			status = "disabled";
+		};
+		tca9548@77 {
+			status = "disabled";
+			i2c@0 {
+				e3333_cam0: ov5693_a@36 {
+					status = "disabled";
+				};
+				e3322_cam0: imx219_a@10 {
+					status = "disabled";
+				};
+			};
+			i2c@1 {
+				e3333_cam1: ov5693_b@36 {
+					status = "disabled";
+				};
+				e3322_cam1: imx219_b@10 {
+					status = "disabled";
+				};
+			};
+			i2c@2 {
+				e3333_cam2: ov5693_c@36 {
+					status = "disabled";
+				};
+				e3322_cam2: imx219_c@10 {
+					status = "disabled";
+				};
+			};
+			i2c@3 {
+				e3333_cam3: ov5693_d@36 {
+					status = "disabled";
+				};
+				e3322_cam3: imx219_d@10 {
+					status = "disabled";
+				};
+			};
+			i2c@4 {
+				e3333_cam4: ov5693_e@36 {
+					status = "disabled";
+				};
+				e3322_cam4: imx219_e@10 {
+					status = "disabled";
+				};
+			};
+			i2c@5 {
+				e3333_cam5: ov5693_f@36 {
+					status = "disabled";
+				};
+				e3322_cam5: imx219_f@10 {
+					status = "disabled";
+				};
+			};
+		};
+		tca9546_70: tca9546@70 {
+			status = "disabled";
+			i2c@0 {
+				pca9570_a_24: pca9570_a@24 {
+					status = "disabled";
+				};
+				imx185_cam0: imx185_a@1a {
+					status = "disabled";
+				};
+				imx274_cam0: imx274_a@1a {
+					status = "disabled";
+				};
+				e3331_cam0: imx318_a@10 {
+					status = "disabled";
+				};
+				max9296_dser: max9296@48 {
+					status = "disabled";
+				};
+				max9295_prim: max9295_prim@62 {
+					status = "disabled";
+				};
+				max9295_ser0: max9295_a@40 {
+					status = "disabled";
+				};
+				max9295_ser1: max9295_b@60 {
+					status = "disabled";
+				};
+				imx390_cam0: imx390_a@1b {
+					status = "disabled";
+				};
+				imx390_cam1: imx390_b@1c {
+					status = "disabled";
+				};
+			};
+			i2c@1 {
+				imx274_cam1: imx274_c@1a {
+					status = "disabled";
+				};
+			};
+		};
+	};
+
+	i2c@c240000 {
+		e3323_cam1: ov23850_c@36 {
+			status = "disabled";
+		};
+	};
+
+	tcp: tegra-camera-platform {
+		compatible = "nvidia, tegra-camera-platform";
+		modules {
+			cam_module0: module0 {
+				status = "disabled";
+				cam_module0_drivernode0: drivernode0 {
+					status = "disabled";
+				};
+				cam_module0_drivernode1: drivernode1 {
+					status = "disabled";
+					pcl_id = "v4l2_lens";
+				};
+			};
+			cam_module1: module1 {
+				status = "disabled";
+				cam_module1_drivernode0: drivernode0 {
+					status = "disabled";
+				};
+				cam_module1_drivernode1: drivernode1 {
+					status = "disabled";
+					pcl_id = "v4l2_lens";
+				};
+			};
+			cam_module2: module2 {
+				status = "disabled";
+				cam_module2_drivernode0: drivernode0 {
+					status = "disabled";
+				};
+				cam_module2_drivernode1: drivernode1 {
+					status = "disabled";
+					pcl_id = "v4l2_lens";
+				};
+			};
+			cam_module3: module3 {
+				status = "disabled";
+				cam_module3_drivernode0: drivernode0 {
+					status = "disabled";
+				};
+				cam_module3_drivernode1: drivernode1 {
+					status = "disabled";
+					pcl_id = "v4l2_lens";
+				};
+			};
+			cam_module4: module4 {
+				status = "disabled";
+				cam_module4_drivernode0: drivernode0 {
+					status = "disabled";
+				};
+				cam_module4_drivernode1: drivernode1 {
+					status = "disabled";
+					pcl_id = "v4l2_lens";
+				};
+			};
+			cam_module5: module5 {
+				status = "disabled";
+				cam_module5_drivernode0: drivernode0 {
+					status = "disabled";
+				};
+				cam_module5_drivernode1: drivernode1 {
+					status = "disabled";
+					pcl_id = "v4l2_lens";
+				};
+			};
+		};
+	};
+};

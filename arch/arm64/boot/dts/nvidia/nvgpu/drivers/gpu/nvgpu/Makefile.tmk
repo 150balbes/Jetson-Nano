@@ -1,0 +1,66 @@
+################################### tell Emacs this is a -*- makefile-gmake -*-
+#
+# Copyright (c) 2018 NVIDIA CORPORATION.  All Rights Reserved.
+#
+# NVIDIA CORPORATION and its licensors retain all intellectual property
+# and proprietary rights in and to this software, related documentation
+# and any modifications thereto.  Any use, reproduction, disclosure or
+# distribution of this software and related documentation without an express
+# license agreement from NVIDIA CORPORATION is strictly prohibited.
+#
+# tmake for SW Mobile component makefile
+#
+###############################################################################
+
+ifdef NV_COMPONENT_FLAG_SHARED_LIBRARY_SECTION
+include $(NV_BUILD_START_COMPONENT)
+
+include $(NV_COMPONENT_DIR)/Makefile.sources
+
+#
+# Include the nvgpu-next repo, if it's present. It's expected to be
+# located in the same directory as nvgpu, like so:
+#
+#   kernel/nvgpu
+#   kernel/nvgpu-next
+#
+# If it exists, this defines two variables: srcs_next which contains the
+# necessary sources to build and HEADERS_NEXT which has any headers in
+# nvgpu-next.
+#
+# NVGPU_NEXT_SOURCE needs to be set for the Makefile.sources file to
+# properly handle include paths.
+NVGPU_NEXT_SOURCE := \
+		$(NV_COMPONENT_DIR)/../../../../nvgpu-next/drivers/gpu/nvgpu
+-include $(NVGPU_NEXT_SOURCE)/Makefile.sources
+
+NV_COMPONENT_NAME		:= nvgpu-drv
+NV_COMPONENT_OWN_INTERFACE_DIR	:= .
+NV_COMPONENT_SOURCES		:=				\
+		$(srcs)			   			\
+		$(addprefix $(NVGPU_NEXT_SOURCE)/,$(srcs_next))
+NV_COMPONENT_INCLUDES		:=				\
+		.						\
+		include						\
+		../../../include				\
+		$(NVGPU_NEXT_SOURCE)				\
+		$(NVGPU_NEXT_SOURCE)/include			\
+		$(NVGPU_NEXT_SOURCE)/../../../include
+ifneq ($(NV_BUILD_CONFIGURATION_OS_IS_QNX),1)
+NV_COMPONENT_SYSTEM_SHARED_LIBRARIES += pthread
+endif
+NV_COMPONENT_CFLAGS		+= -D__NVGPU_POSIX__
+
+NV_COMPONENT_SYSTEMIMAGE_DIR    := $(NV_SYSTEMIMAGE_TEST_EXECUTABLE_DIR)/nvgpu_unit
+systemimage:: $(NV_COMPONENT_SYSTEMIMAGE_DIR)
+$(NV_COMPONENT_SYSTEMIMAGE_DIR) : $(NV_SYSTEMIMAGE_TEST_EXECUTABLE_DIR)
+	$(MKDIR_P) $@
+NV_COMPONENT_SYSTEMIMAGE_NAME	:= libnvgpu-drv.so
+include $(NV_BUILD_SHARED_LIBRARY)
+endif
+
+# Local Variables:
+# indent-tabs-mode: t
+# tab-width: 8
+# End:
+# vi: set tabstop=8 noexpandtab:

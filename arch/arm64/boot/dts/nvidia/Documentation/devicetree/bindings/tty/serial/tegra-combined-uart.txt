@@ -1,0 +1,28 @@
+Combined uart is a tegra-specific mechanism used to multiplex a single physical
+UART between multiple pieces of software. Instead of having Linux access the
+UART registers directly, this mechanism involves Linux writing debug output to
+an HSP mailbox register. Debug input is similarly received from a different HSP
+mailbox register.
+
+The debug data is received by a different processor, which then collects the
+debug outputs from multiple processors and multiplexes them over the actual
+physical UART. Input data is also received by the same processor, which
+forwards it to the correct destination.
+
+The combined uart device tree node contains the necessary data for the driver
+to operate correctly.
+
+Required properties:
+- compatible: Should be "nvidia,tegra186-combined-uart".
+- reg: Must contain the base address of mailbox registers.
+-- Reg0: Must contain the RX mailbox base address
+-- Reg1: Must contain the TX mailbox base address
+-- Reg2: Must contain the HSP base address that has the RX interrupt control
+	register.
+- interrupts: Must contain the RX interrupt number
+
+Optional properties:
+- console-port: Should be present if the Tegra FIQ debugger needs to use this
+	combined uart node for debug I/O.
+- combined-uart: Should be present if the Tegra FIQ debugger needs to use this
+	combined uart node for debug I/O.

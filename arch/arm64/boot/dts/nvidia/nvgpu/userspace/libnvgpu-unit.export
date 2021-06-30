@@ -1,0 +1,5 @@
+# Copyright (c) 2018, NVIDIA CORPORATION.  All rights reserved.
+
+__core_print_stdout
+__core_print_stderr
+__unit_info_color

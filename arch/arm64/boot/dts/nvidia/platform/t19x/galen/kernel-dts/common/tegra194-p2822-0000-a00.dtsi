@@ -1,0 +1,45 @@
+/*
+ * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; version 2 of the License.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ */
+
+#include <t19x-common-modules/tegra194-cvb-p2822-0000-a00.dtsi>
+#include <dt-bindings/gpio/tegra194-gpio.h>
+#include "dt-bindings/input/input.h"
+#include "tegra194-audio-p2822-0000.dtsi"
+#include "tegra194-p2822-disp.dtsi"
+
+/ {
+	sdhci@3400000 {
+		mmc-ocr-mask = <0x0>;
+		cd-gpios = <&tegra_main_gpio TEGRA194_MAIN_GPIO(G, 7) 0>;
+		nvidia,cd-wakeup-capable;
+		status = "okay";
+	};
+
+	gpio-keys {
+		compatible = "gpio-keys";
+		gpio-keys,name = "gpio-keys";
+
+		forcerecovery {
+			label = "force-recovery";
+			gpios = <&tegra_main_gpio TEGRA194_MAIN_GPIO(G, 0) GPIO_ACTIVE_LOW>;
+			linux,code = <BTN_1>;
+		};
+
+		power_key {
+			label = "power-key";
+			gpios = <&tegra_aon_gpio TEGRA194_AON_GPIO(EE, 4) GPIO_ACTIVE_LOW>;
+			linux,code = <KEY_POWER>;
+			gpio-key,wakeup;
+		};
+	};
+};

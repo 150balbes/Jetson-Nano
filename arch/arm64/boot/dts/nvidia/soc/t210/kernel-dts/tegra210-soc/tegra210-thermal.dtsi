@@ -1,0 +1,83 @@
+/*
+ * arch/arm64/boot/dts/tegra210-platforms/tegra210-thermal.dtsi
+ *
+ * Copyright (c) 2014 - 2015, NVIDIA CORPORATION. All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms and conditions of the GNU General Public License,
+ * version 2, as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
+#include <dt-bindings/thermal/tegra124-soctherm.h>
+#include <dt-bindings/thermal/thermal.h>
+/ {
+	thermal-zones {
+		AO-therm {
+			status = "disabled";
+			polling-delay = <0>;
+			polling-delay-passive = <1000>;
+			thermal-sensors = <&{/tegra-aotag}>;
+			/* in case of multiple sensors -
+			 * <&{/tegra-aotag/sensor} [0|1|..]>
+			 */
+			trips {
+				trip_shutdown {
+					temperature = <110000>;
+					hysteresis = <0>;
+					type = "critical";
+					writable;
+				};
+			};
+		};
+		CPU-therm {
+			polling-delay		= <0>;
+			polling-delay-passive	= <500>;
+			thermal-sensors		= <&{/soctherm@0x700E2000} TEGRA124_SOCTHERM_SENSOR_CPU>;
+			status = "disabled";
+		};
+		GPU-therm {
+			polling-delay		= <0>;
+			polling-delay-passive	= <500>;
+			thermal-sensors		= <&{/soctherm@0x700E2000} TEGRA124_SOCTHERM_SENSOR_GPU>;
+			status = "disabled";
+		};
+		LCPU-therm {
+			polling-delay		= <0>;
+			polling-delay-passive	= <1000>;
+			thermal-sensors		= <&{/soctherm@0x700E2000} TEGRA124_SOCTHERM_SENSOR_MEM>;
+			status = "disabled";
+		};
+		PLL-therm {
+			polling-delay		= <0>;
+			polling-delay-passive	= <1000>;
+			thermal-sensors		= <&{/soctherm@0x700E2000} TEGRA124_SOCTHERM_SENSOR_PLLX>;
+			status = "disabled";
+		};
+	};
+	core_dvfs_floor: core_dvfs_cdev_floor {
+		compatible = "nvidia,tegra-core-cdev-action";
+		cdev-type = "CORE-floor";
+		#cooling-cells = <2>; /* min followed by max */
+	};
+
+	core_dvfs_cap: core_dvfs_cdev_cap {
+		compatible = "nvidia,tegra-core-cdev-action";
+		cdev-type = "CORE-cap";
+		#cooling-cells = <2>; /* min followed by max */
+		clocks = <&tegra_car TEGRA210_CLK_CAP_VCORE_C2BUS>,
+			 <&tegra_car TEGRA210_CLK_CAP_VCORE_C3BUS>,
+			 <&tegra_car TEGRA210_CLK_CAP_VCORE_SCLK>,
+			 <&tegra_car TEGRA210_CLK_CAP_VCORE_HOST1X>,
+			 <&tegra_car TEGRA210_CLK_CAP_VCORE_ABUS>;
+		clock-names = "c2bus_cap", "c3bus_cap", "sclk_cap",
+				"host1x_cap", "adsp_cap";
+	};
+};

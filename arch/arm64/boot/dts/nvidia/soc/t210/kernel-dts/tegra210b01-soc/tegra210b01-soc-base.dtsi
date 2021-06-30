@@ -1,0 +1,308 @@
+/*
+ * tegra210b01-soc-base.dtsi: SOC specific DTSI file with all node disabled.
+ *
+ * Copyright (c) 2017, NVIDIA CORPORATION.  All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; version 2 of the License.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ */
+#include <tegra210-soc/tegra210-soc-base.dtsi>
+#include <dt-bindings/soc/tegra-ahb.h>
+
+/ {
+	compatible = "nvidia,tegra210b01", "nvidia,tegra210";
+
+	smmu: iommu {
+		domains = <&ppcs_as TEGRA_SWGROUP_CELLS9(PPCS, PPCS1, PPCS2, SE, SE1, ISP2B, ISP2B1, ISP2B, ISP2B1)
+			   &gpu_as TEGRA_SWGROUP_CELLS(GPUB)
+			   &ape_as TEGRA_SWGROUP_CELLS(APE)
+			   &dc_as TEGRA_SWGROUP_CELLS2(DC, DC12)
+			   &dc_as TEGRA_SWGROUP_CELLS(DCB)
+			   &common_as TEGRA_SWGROUP_CELLS(AFI)
+			   &common_as TEGRA_SWGROUP_CELLS(SDMMC1A)
+			   &common_as TEGRA_SWGROUP_CELLS(SDMMC2A)
+			   &common_as TEGRA_SWGROUP_CELLS(SDMMC3A)
+			   &common_as TEGRA_SWGROUP_CELLS(SDMMC4A)
+			   &common_as TEGRA_SWGROUP_CELLS(AVPC)
+			   &common_as TEGRA_SWGROUP_CELLS(SMMU_TEST)
+			   &common_as 0xFFFFFFFF 0xFFFFFFFF>;
+	};
+
+	se_elp: se_elp@70420000 {
+		compatible = "nvidia,tegra210b01-se-elp";
+		reg = <0x0 0x70420000 0x0 0x10000>;
+		interrupts = <0 191 0x04>;
+		clocks = <&tegra_car TEGRA210_CLK_SE_CBUS>;
+		clock-names = "se";
+		pka1-rsa-priority = <300>;
+		status = "disabled";
+	};
+
+	tegra_se: se@70012000 {
+		compatible = "nvidia,tegra210b01-se";
+		nvidia,ahb-master-id = <TEGRA_AHB_MASTER_ID_SE>;
+	};
+
+	tegra_se2: se@70412000 {
+		compatible = "nvidia,tegra210b01-se";
+		reg = <0x0 0x70412000 0x0 0x1FFF>; /* SE base */
+		iommus = <&smmu TEGRA_SWGROUP_ISP2B>,
+					<&smmu TEGRA_SWGROUP_ISP2B1>;
+		interrupts = <0 190 0x04>;
+		clocks = <&tegra_car TEGRA210_CLK_SE_CBUS>,
+					<&tegra_car TEGRA210_CLK_ENTROPY>;
+		clock-names = "se", "entropy";
+		nvidia,ahb-master-id = <TEGRA_AHB_MASTER_ID_SE2>;
+		status = "disabled";
+	};
+
+	efuse@7000f800 {
+		efuse-burn {
+			compatible = "nvidia,tegra210b01-efuse-burn";
+		};
+	};
+
+	pinmux@700008d4 {
+		compatible = "nvidia,tegra210b01-pinmux", "nvidia,tegra210-pinmux";
+	};
+
+
+	bpmp_car: bpmp-clocks {
+		compatible = "nvidia,tegra-bpmp-staged-clks";
+		#clock-cells = <1>;
+	};
+
+	bpmp-emc {
+		compatible = "nvidia,tegra-bpmp-emc-clk";
+		clocks = <&bpmp_car 0>;
+	};
+
+#if defined(LINUX_VERSION) && LINUX_VERSION >= 414
+	bwmgr {
+		clocks = <&bpmp_car 0>;
+	};
+#endif
+
+	clock {
+		compatible = "nvidia,tegra210b01-car", "nvidia,tegra210-car";
+	};
+
+	clock@70110000 {
+		compatible = "nvidia,tegra210b01-dfll", "nvidia,tegra210-dfll";
+	};
+
+	external-memory-controller@7001b000 {
+		compatible = "nvidia,tegra210b01-emc";
+#if defined(LINUX_VERSION) && LINUX_VERSION >= 414
+		clocks = <&bpmp_car 0>;
+		clock-names = "emc";
+#else
+		clocks = <&tegra_car TEGRA210_CLK_OVERRIDE_EMC>;
+		clock-names = "emc_override";
+#endif
+	};
+
+	pmc@7000e400 {
+		compatible = "nvidia,tegra210b01-pmc", "nvidia,tegra210-pmc";
+		/delete-property/ nvidia,secure-pmc;
+	};
+
+#if TEGRA_XUSB_PADCONTROL_VERSION >= DT_VERSION_2
+	xusb_padctl: xusb_padctl@7009f000 {
+		compatible = "nvidia,tegra210b01-xusb-padctl";
+		reg =   <0x0 0x7009f000 0x0 0x1000>;
+		reg-names = "padctl";
+		resets = <&tegra_car 142>;
+		reset-names = "padctl";
+		status = "disabled";
+
+		pads {
+			usb2 {
+				clocks = <&tegra_car TEGRA210_CLK_USB2_TRK>;
+				clock-names = "trk";
+				status = "disabled";
+
+				lanes {
+					usb2-0 {
+						status = "disabled";
+						#phy-cells = <0>;
+					};
+					usb2-1 {
+						status = "disabled";
+						#phy-cells = <0>;
+					};
+					usb2-2 {
+						status = "disabled";
+						#phy-cells = <0>;
+					};
+					usb2-3 {
+						status = "disabled";
+						#phy-cells = <0>;
+					};
+				};
+			};
+
+			pcie {
+				clocks = <&tegra_car TEGRA210_CLK_PLL_E>,
+				<&tegra_car TEGRA210_CLK_PLL_P_UPHY_OUT>;
+				clock-names = "pll", "uphy_mgmt";
+				resets = <&tegra_car 205>;
+				reset-names = "phy";
+				status = "disabled";
+
+				lanes {
+					pcie-0 {
+						status = "disabled";
+						#phy-cells = <0>;
+					};
+					pcie-1 {
+						status = "disabled";
+						#phy-cells = <0>;
+					};
+					pcie-2 {
+						status = "disabled";
+						#phy-cells = <0>;
+					};
+					pcie-3 {
+						status = "disabled";
+						#phy-cells = <0>;
+					};
+					pcie-4 {
+						status = "disabled";
+						#phy-cells = <0>;
+					};
+					pcie-5 {
+						status = "disabled";
+						#phy-cells = <0>;
+					};
+					pcie-6 {
+						status = "disabled";
+						#phy-cells = <0>;
+					};
+				};
+			};
+		};
+
+		ports {
+			usb2-0 {
+				status = "disabled";
+			};
+			usb2-1 {
+				status = "disabled";
+			};
+			usb2-2 {
+				status = "disabled";
+			};
+			usb2-3 {
+				status = "disabled";
+			};
+			usb3-0 {
+				status = "disabled";
+			};
+			usb3-1 {
+				status = "disabled";
+			};
+			usb3-2 {
+				status = "disabled";
+			};
+			usb3-3 {
+				status = "disabled";
+			};
+		};
+	};
+#endif
+
+	pinctrl@7009f000 {
+		clocks = <&tegra_car TEGRA210_CLK_HSIC_TRK>,
+			 <&tegra_car TEGRA210_CLK_USB2_TRK>,
+			 <&tegra_car TEGRA210_CLK_PLL_E>,
+			 <&tegra_car TEGRA210_CLK_PLL_P_UPHY_OUT>;
+		clock-names = "hsic_trk", "usb2_trk", "pll_e", "mgmt_clk";
+	};
+
+	cpus {
+		idle-states {
+			C7: c7 {
+				status = "disabled";
+			};
+			CC6: cc6 {
+				status = "okay";
+			};
+			CC7: cc7 {
+				status = "disabled";
+			};
+		};
+	};
+
+        cpuidle {
+		cc4-no-retention;
+        };
+
+	tegra-aotag {
+		compatible = "nvidia,tegra210b01-aotag";
+		status = "okay";
+	};
+
+	pwm-fan {
+		status = "disabled";
+	};
+
+	thermal-fan-est {
+		status = "disabled";
+	};
+
+	soctherm: soctherm@0x700E2000 {
+		status = "okay";
+		compatible = "nvidia,tegra210b01-soctherm";
+		hw-pllx-offsets = <TEGRA124_SOCTHERM_SENSOR_CPU 0 0
+				TEGRA124_SOCTHERM_SENSOR_GPU 0 0>;
+		nvidia,thermtrips = <TEGRA124_SOCTHERM_SENSOR_PLLX 96000>;
+
+		throttle-cfgs {
+			throttle_heavy: heavy {
+				nvidia,priority = <100>;
+				nvidia,cpu-throt-percent = <0>;
+				nvidia,gpu-throt-level = <TEGRA_SOCTHERM_THROT_LEVEL_NONE>;
+				#cooling-cells = <2>;
+			};
+		};
+	};
+
+	/delete-node/ dtv@7000c300;
+
+	tegra-pmc-led-soft-blink-pwm {
+		compatible = "nvidia,tegra210b01-pwm-led-soft-blink";
+		pwm,led-breathing-ramp-time-ns = <960000000>;
+		pwm,led-breathing-short-period-ns = <480000000>;
+		#pwm-cells = <2>;
+		status = "disabled";
+	};
+};
+
+/* Display */
+
+&head0 {
+	compatible = "nvidia,tegra210b01-dc", "nvidia,tegra210-dc";
+};
+
+&head1 {
+	compatible = "nvidia,tegra210b01-dc", "nvidia,tegra210-dc";
+};
+
+/delete-node/ &sor0;
+
+/delete-node/ &dpaux0;
+
+&sor1 {
+	compatible = "nvidia,tegra210b01-sor", "nvidia,tegra210-sor";
+};
+
+&dsi {
+	compatible = "nvidia,tegra210b01-dsi", "nvidia,tegra210-dsi";
+};

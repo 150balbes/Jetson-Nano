@@ -1,0 +1,25 @@
+/*
+ * Top level DTS file for CVM:P2888-0005 and CVB:P2822-0000.
+ *
+ * Copyright (c) 2019, NVIDIA CORPORATION.  All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; version 2 of the License.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ */
+
+/ {
+	cpufreq {
+		compatible = "nvidia,tegra194-cpufreq";
+		status = "okay";
+		cpu_emc_map = <2035200 1331200>,
+				<1881600 800000>,
+				<1574400 665000>,
+				<1267200 408000>;
+		};
+};

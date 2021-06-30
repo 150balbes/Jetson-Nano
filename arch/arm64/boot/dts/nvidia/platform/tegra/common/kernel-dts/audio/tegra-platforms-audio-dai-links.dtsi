@@ -1,0 +1,249 @@
+/*
+ * Copyright (c) 2017-2018, NVIDIA CORPORATION.  All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with this program; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+ */
+
+#include "tegra-platforms-audio-simple-bus.dtsi"
+#include "tegra-platforms-audio-enable.dtsi"
+/ {
+	aconnect@2a41000 {
+		adsp_audio {
+			compr-ops = <1>;
+			num-plugin = <6>;
+			plugin-info-1 {
+				plugin-name = "mp3-dec1";
+				firmware-name = "nvmp3dec.elf";
+				widget-name = "MP3-DEC1";
+			};
+			plugin-info-2 {
+				plugin-name = "spkprot";
+				firmware-name = "nvspkprot.elf";
+				widget-name = "SPKPROT-SW";
+			};
+			plugin-info-3 {
+				plugin-name = "src";
+				firmware-name = "nvsrc.elf";
+				widget-name = "SRC";
+			};
+			plugin-info-4 {
+				plugin-name = "aac-dec1";
+				firmware-name = "nvaacdec.elf";
+				widget-name = "AAC-DEC1";
+			};
+			plugin-info-5 {
+				plugin-name = "aec";
+				firmware-name = "nvoice.elf";
+				widget-name = "AEC";
+			};
+			plugin-info-6 {
+				plugin-name = "wire";
+				firmware-name = "libnvwirefx.elf";
+				widget-name = "WIRE";
+			};
+		};
+	};
+
+	tegra_sound: sound {
+		status = "disabled";
+		nvidia,num-codec-link = <12>;
+		nvidia,num-clk = <8>;
+		nvidia,clk-rates = < 270950400	/* PLLA_x11025_RATE */
+				     11289600	/* AUD_MCLK_x11025_RATE */
+				     45158400	/* PLLA_OUT0_x11025_RATE */
+				     45158400	/* AHUB_x11025_RATE */
+				     245760000  /* PLLA_x8000_RATE */
+				     12288000	/* AUD_MCLK_x8000_RATE */
+				     49152000	/* PLLA_OUT0_x8000_RATE */
+				     49152000 >;/* AHUB_x8000_RATE */
+
+		nvidia,xbar = <&tegra_axbar>;
+
+		nvidia,dai-link-1 {
+			link-name = "spdif-dit-0";
+			cpu-dai = <&tegra_i2s1>;
+			codec-dai = <&spdif_dit0>;
+			cpu-dai-name = "I2S1";
+			codec-dai-name = "dit-hifi";
+			format = "i2s";
+			bit-format = "s16_le";
+			bclk_ratio = <1>;
+			srate = <48000>;
+			num-channel = <2>;
+			ignore_suspend;
+			name-prefix = "x";
+			status = "okay";
+		};
+		nvidia,dai-link-2 {
+			link-name = "spdif-dit-1";
+			cpu-dai = <&tegra_i2s2>;
+			codec-dai = <&spdif_dit1>;
+			cpu-dai-name = "I2S2";
+			codec-dai-name = "dit-hifi";
+			format = "i2s";
+			bit-format = "s16_le";
+			bclk_ratio = <1>;
+			srate = <48000>;
+			num-channel = <2>;
+			ignore_suspend;
+			name-prefix = "y";
+			status = "okay";
+		};
+		nvidia,dai-link-3 {
+			link-name = "spdif-dit-2";
+			cpu-dai = <&tegra_i2s3>;
+			codec-dai = <&spdif_dit2>;
+			cpu-dai-name = "I2S3";
+			codec-dai-name = "dit-hifi";
+			format = "i2s";
+			bit-format = "s16_le";
+			bclk_ratio = <1>;
+			srate = <48000>;
+			num-channel = <2>;
+			ignore_suspend;
+			name-prefix = "z";
+			status = "okay";
+		};
+		nvidia,dai-link-4 {
+			link-name = "spdif-dit-3";
+			cpu-dai = <&tegra_i2s4>;
+			codec-dai = <&spdif_dit3>;
+			cpu-dai-name = "I2S4";
+			codec-dai-name = "dit-hifi";
+			format = "i2s";
+			bit-format = "s16_le";
+			bclk_ratio = <1>;
+			srate = <48000>;
+			num-channel = <2>;
+			ignore_suspend;
+			name-prefix = "m";
+			status = "okay";
+		};
+		nvidia,dai-link-5 {
+			link-name = "spdif-dit-4";
+			cpu-dai = <&tegra_i2s5>;
+			codec-dai = <&spdif_dit4>;
+			cpu-dai-name = "I2S5";
+			codec-dai-name = "dit-hifi";
+			format = "i2s";
+			bit-format = "s16_le";
+			bclk_ratio = <1>;
+			srate = <48000>;
+			num-channel = <2>;
+			ignore_suspend;
+			name-prefix = "n";
+			status = "okay";
+		};
+		nvidia,dai-link-6 {
+			link-name = "spdif-dit-6";
+			cpu-dai = <&tegra_i2s6>;
+			codec-dai = <&spdif_dit6>;
+			cpu-dai-name = "I2S6";
+			codec-dai-name = "dit-hifi";
+			format = "i2s";
+			bit-format = "s16_le";
+			bclk_ratio = <1>;
+			srate = <8000>;
+			num-channel = <1>;
+			ignore_suspend;
+			name-prefix = "o";
+			status = "okay";
+		};
+		nvidia,dai-link-7 {
+			link-name = "spdif-dit-7";
+			cpu-dai = <&tegra_dmic1>;
+			codec-dai = <&spdif_dit7>;
+			cpu-dai-name = "DMIC1";
+			codec-dai-name = "dit-hifi";
+			format = "i2s";
+			bit-format = "s16_le";
+			srate = <48000>;
+			ignore_suspend;
+			num-channel = <2>;
+			name-prefix = "a";
+			status = "okay";
+		};
+		nvidia,dai-link-8 {
+			link-name = "spdif-dit-8";
+			cpu-dai = <&tegra_dmic2>;
+			codec-dai = <&spdif_dit8>;
+			cpu-dai-name = "DMIC2";
+			codec-dai-name = "dit-hifi";
+			format = "i2s";
+			bit-format = "s16_le";
+			srate = <48000>;
+			ignore_suspend;
+			num-channel = <2>;
+			name-prefix = "b";
+			status = "okay";
+		};
+		nvidia,dai-link-9 {
+			link-name = "spdif-dit-9";
+			cpu-dai = <&tegra_dmic3>;
+			codec-dai = <&spdif_dit9>;
+			cpu-dai-name = "DMIC3";
+			codec-dai-name = "dit-hifi";
+			format = "i2s";
+			bit-format = "s16_le";
+			srate = <48000>;
+			ignore_suspend;
+			num-channel = <2>;
+			name-prefix = "c";
+			status = "okay";
+		};
+		nvidia,dai-link-10 {
+			link-name = "spdif-dit-10";
+			cpu-dai = <&tegra_dmic4>;
+			codec-dai = <&spdif_dit10>;
+			cpu-dai-name = "DMIC4";
+			codec-dai-name = "dit-hifi";
+			format = "i2s";
+			bit-format = "s16_le";
+			srate = <48000>;
+			ignore_suspend;
+			num-channel = <2>;
+			name-prefix = "d";
+			status = "okay";
+		};
+		dspk_1_dai_link: nvidia,dai-link-11 {
+			link-name = "dspk-playback-r";
+			cpu-dai = <&tegra_dspk1>;
+			codec-dai = <&spdif_dit11>;
+			cpu-dai-name = "DSPK1";
+			codec-dai-name = "dit-hifi";
+			format = "i2s";
+			bit-format = "s16_le";
+			srate = <48000>;
+			num-channel = <2>;
+			ignore_suspend;
+			name-prefix = "d1";
+			status = "okay";
+		};
+		dspk_2_dai_link: nvidia,dai-link-12 {
+			link-name = "dspk-playback-l";
+			cpu-dai = <&tegra_dspk2>;
+			codec-dai = <&spdif_dit12>;
+			cpu-dai-name = "DSPK2";
+			codec-dai-name = "dit-hifi";
+			format = "i2s";
+			bit-format = "s16_le";
+			srate = <48000>;
+			num-channel = <2>;
+			ignore_suspend;
+			name-prefix = "d2";
+			status = "okay";
+		};
+	};
+};

@@ -1,0 +1,12 @@
+append_menu "Device Drivers"
+
+if ARCH_TEGRA
+source "drivers/misc/tegra186-ahc/Kconfig"
+source "drivers/nvpmodel/Kconfig"
+source "drivers/nvlink/Kconfig"
+source "drivers/nvpps/Kconfig"
+source "drivers/trusty/Kconfig"
+source "drivers/virt/tegra/Kconfig"
+endif
+
+endmenu

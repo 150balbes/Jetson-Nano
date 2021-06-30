@@ -1,0 +1,5 @@
+append_menu "Device Drivers"
+
+source "drivers/gpu/nvgpu/Kconfig"
+
+endmenu

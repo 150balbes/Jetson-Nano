@@ -1,0 +1,47 @@
+* NVIDIA Tegra Watchdog controller
+
+Required properties:
+
+- compatible: Should be "nvidia,tegra-wdt"
+- reg: Should contain WDT and corresponding timer source
+  registers location and length.
+
+Optional properties:
+
+- interrupts: interrupt number to the cpu
+- nvidia,expiry-count: total expiry count of WDT (1 if not specified)
+- nvidia,enable-on-init: Toggle switch for enable during init
+- nvidia,heartbeat-init: default timeout in secs (120 secs if not specified)
+- nvidia,timer-index: timer source index for WDT
+
+Timer source index:
+
+      There are three ways by which WDT timer source index can be specified
+and timer source selection happens with below given priorty order (decending)
+(a) Bootloader programs WDT and timer source
+(b) "nvidia,timer-index" property in DT
+(c) Timer source base address in DT (old method)
+
+Method (a) is of highest priority, because bootloader can program the WDT timer
+source and lock to prevent any further modification of timer source by kernel.
+In order to calculate the timer source address in runtime in this case timer
+base address is required and hence Timer base address should be provided in
+timer resource property in DT.
+
+Either timer base address or timer source address is expected in timer resource
+property in DT for case (b).
+
+Note: If method (c) is used it should correspond to the timer source index provided
+in method (a) or (b) or make sure that method (a) or (b) is not in use.
+
+Examples:
+
+watchdog@60005100 {
+	compatible = "nvidia,tegra-wdt";
+	reg = <0x0 0x60005100 0x0 0x20		/* WDT0 registers */
+		0x0 0x60005088 0x0 0x8>;	/* TMR0 registers */
+	interrupts = <0 123 0x04>;
+	nvidia,expiry-count = <4>;
+	nvidia,timer-index = <7>;
+	status = "disabled";
+};
