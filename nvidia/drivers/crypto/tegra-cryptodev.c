@@ -327,12 +327,19 @@ static int process_crypt_req(struct file *filp, struct tegra_crypto_ctx *ctx,
 		sg_init_one(&in_sg, xbuf[0], size);
 		sg_init_one(&out_sg, xbuf[1], size);
 
-		if (!crypt_req->skip_iv)
+		if (!crypt_req->skip_iv) {
 			skcipher_request_set_crypt(req, &in_sg,
 				&out_sg, size, crypt_req->iv);
-		else
+			/*
+			 * Setting IV for the first block only. AES CBC
+			 * should use updated IV generated from the last block.
+			 * Which is already being maintained by SE.
+			 */
+			crypt_req->skip_iv = true;
+		} else {
 			skcipher_request_set_crypt(req, &in_sg,
 				&out_sg, size, NULL);
+		}
 
 		reinit_completion(&tcrypt_complete.restart);
 

@@ -1,7 +1,7 @@
 /*
  * Tegra Graphics Host Command DMA
  *
- * Copyright (c) 2014-2017, NVIDIA Corporation. All rights reserved.
+ * Copyright (c) 2014-2020, NVIDIA Corporation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -462,7 +462,6 @@ static void cdma_timeout_release_mlock(struct nvhost_cdma *cdma)
 		goto err_job_alloc;
 	}
 
-	ch->syncpts[0] = syncpt_id;
 	job->sp->id = syncpt_id;
 	job->sp->incrs = 1;
 	job->num_syncpts = 1;

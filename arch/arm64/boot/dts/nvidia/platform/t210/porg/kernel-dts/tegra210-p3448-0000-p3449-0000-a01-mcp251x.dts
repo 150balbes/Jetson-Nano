@@ -1,0 +1,79 @@
+// SPDX-License-Identifier: GPL-2.0-only
+/*
+ * Device-tree overlay for MCP251x CAN Controller
+ *
+ * Copyright (c) 2020 NVIDIA CORPORATION. All rights reserved.
+ *
+ */
+
+/dts-v1/;
+/plugin/;
+
+#include <dt-common/jetson/tegra210-p3448-0000-p3449-0000-a01.h>
+#include <overlays/jetson-mcp251x.dts>
+
+/ {
+	fragment@2 {
+		target = <&pinmux>;
+		__overlay__ {
+			hdr40_pinmux: header-40pin-pinmux {
+				pin37 {
+					nvidia,pins = HDR40_PIN37;
+					nvidia,function = "spi2";
+					nvidia,pull = <TEGRA_PIN_PULL_DOWN>;
+					nvidia,tristate = <TEGRA_PIN_DISABLE>;
+					nvidia,enable-input = <TEGRA_PIN_DISABLE>;
+				};
+				pin22 {
+					nvidia,pins = HDR40_PIN22;
+					nvidia,function = "spi2";
+					nvidia,pull = <TEGRA_PIN_PULL_DOWN>;
+					nvidia,tristate = <TEGRA_PIN_DISABLE>;
+					nvidia,enable-input = <TEGRA_PIN_ENABLE>;
+				};
+				pin13 {
+					nvidia,pins = HDR40_PIN13;
+					nvidia,function = "spi2";
+					nvidia,pull = <TEGRA_PIN_PULL_DOWN>;
+					nvidia,tristate = <TEGRA_PIN_DISABLE>;
+					nvidia,enable-input = <TEGRA_PIN_ENABLE>;
+				};
+				pin18 {
+					nvidia,pins = HDR40_PIN18;
+					nvidia,function = "spi2";
+					nvidia,pull = <TEGRA_PIN_PULL_UP>;
+					nvidia,tristate = <TEGRA_PIN_DISABLE>;
+					nvidia,enable-input = <TEGRA_PIN_DISABLE>;
+				};
+				pin16 {
+					nvidia,pins = HDR40_PIN16;
+					nvidia,function = "spi2";
+					nvidia,pull = <TEGRA_PIN_PULL_UP>;
+					nvidia,tristate = <TEGRA_PIN_DISABLE>;
+					nvidia,enable-input = <TEGRA_PIN_DISABLE>;
+				};
+			};
+		};
+	};
+
+	fragment@3 {
+		target = <&hdr40_spi2>;
+		__overlay__ {
+			spi@0 {
+				compatible = "microchip,mcp2515";
+				reg = <0x0>;
+				spi-max-frequency = <10000000>;
+				nvidia,enable-hw-based-cs;
+				nvidia,rx-clk-tap-delay = <0x7>;
+				clocks = <&can_clock>;
+				interrupts = <&gpio HDR40_PIN32_GPIO 0x1>;
+				controller-data {
+					nvidia,cs-setup-clk-count = <0x1e>;
+					nvidia,cs-hold-clk-count = <0x1e>;
+					nvidia,rx-clk-tap-delay = <0x1f>;
+					nvidia,tx-clk-tap-delay = <0x0>;
+				};
+			};
+		};
+	};
+};

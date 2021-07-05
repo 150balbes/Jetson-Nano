@@ -1,7 +1,7 @@
 /*
- * max9296.c - max9296 IO Expander driver
+ * max9296.c - max9296 GMSL Deserializer driver
  *
- * Copyright (c) 2018-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2018-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -69,7 +69,9 @@
 
 #define MAX9296_RESET_ALL 0x80
 
+/* Dual GMSL MAX9296A/B */
 #define MAX9296_MAX_SOURCES 2
+
 #define MAX9296_MAX_PIPES 4
 
 #define MAX9296_PIPE_X 0
@@ -107,10 +109,12 @@ struct max9296 {
 	struct regmap *regmap;
 	u32 num_src;
 	u32 max_src;
+	u32 num_src_found;
+	u32 src_link;
+	bool splitter_enabled;
 	struct max9296_source_ctx sources[MAX9296_MAX_SOURCES];
 	struct mutex lock;
 	u32 sdev_ref;
-	bool ctrl_setup_done;
 	bool lane_setup;
 	bool link_setup;
 	struct pipe_ctx pipe[MAX9296_MAX_PIPES];
@@ -150,11 +154,11 @@ static int max9296_get_sdev_idx(struct device *dev,
 	int err = 0;
 
 	mutex_lock(&priv->lock);
-	for (i = 0; i < priv->num_src; i++) {
+	for (i = 0; i < priv->max_src; i++) {
 		if (priv->sources[i].g_ctx->s_dev == s_dev)
 			break;
 	}
-	if (i == priv->num_src) {
+	if (i == priv->max_src) {
 		dev_err(dev, "no sdev found\n");
 		err = -EINVAL;
 		goto ret;
@@ -197,9 +201,11 @@ static void max9296_reset_ctx(struct max9296 *priv)
 {
 	int i;
 
-	priv->ctrl_setup_done = false;
 	priv->link_setup = false;
 	priv->lane_setup = false;
+	priv->num_src_found = 0;
+	priv->src_link = 0;
+	priv->splitter_enabled = false;
 	max9296_pipes_reset(priv);
 	for (i = 0; i < priv->num_src; i++)
 		priv->sources[i].st_enabled = false;
@@ -245,6 +251,7 @@ ret:
 
 	return err;
 }
+EXPORT_SYMBOL(max9296_power_on);
 
 void max9296_power_off(struct device *dev)
 {
@@ -265,11 +272,30 @@ void max9296_power_off(struct device *dev)
 
 	mutex_unlock(&priv->lock);
 }
+EXPORT_SYMBOL(max9296_power_off);
+
+static int max9296_write_link(struct device *dev, u32 link)
+{
+	if (link == GMSL_SERDES_CSI_LINK_A) {
+		max9296_write_reg(dev, MAX9296_CTRL0_ADDR, 0x01);
+		max9296_write_reg(dev, MAX9296_CTRL0_ADDR, 0x21);
+	} else if (link == GMSL_SERDES_CSI_LINK_B) {
+		max9296_write_reg(dev, MAX9296_CTRL0_ADDR, 0x02);
+		max9296_write_reg(dev, MAX9296_CTRL0_ADDR, 0x22);
+	} else {
+		dev_err(dev, "%s: invalid gmsl link\n", __func__);
+		return -EINVAL;
+	}
+
+	/* delay to settle link */
+	msleep(100);
+
+	return 0;
+}
 
 int max9296_setup_link(struct device *dev, struct device *s_dev)
 {
 	struct max9296 *priv = dev_get_drvdata(dev);
-	u32 link;
 	int err = 0;
 	int i;
 
@@ -279,23 +305,11 @@ int max9296_setup_link(struct device *dev, struct device *s_dev)
 
 	mutex_lock(&priv->lock);
 
-	link = priv->sources[i].g_ctx->serdes_csi_link;
-
-	if (!priv->ctrl_setup_done) {
-		if (link == GMSL_SERDES_CSI_LINK_A) {
-			max9296_write_reg(dev, MAX9296_CTRL0_ADDR, 0x01);
-			max9296_write_reg(dev, MAX9296_CTRL0_ADDR, 0x21);
-		} else if (link == GMSL_SERDES_CSI_LINK_B) {
-			max9296_write_reg(dev, MAX9296_CTRL0_ADDR, 0x02);
-			max9296_write_reg(dev, MAX9296_CTRL0_ADDR, 0x22);
-		} else { /* Extend for DES having more than two GMSL links */
-			dev_err(dev, "%s: invalid gmsl link\n", __func__);
-			err = -EINVAL;
+	if (!priv->splitter_enabled) {
+		err = max9296_write_link(dev,
+				priv->sources[i].g_ctx->serdes_csi_link);
+		if (err)
 			goto ret;
-		}
-
-		/* delay to settle link */
-		msleep(100);
 
 		priv->link_setup = true;
 	}
@@ -307,37 +321,61 @@ ret:
 }
 EXPORT_SYMBOL(max9296_setup_link);
 
-int max9296_setup_control(struct device *dev)
+int max9296_setup_control(struct device *dev, struct device *s_dev)
 {
 	struct max9296 *priv = dev_get_drvdata(dev);
 	int err = 0;
+	int i;
+
+	err = max9296_get_sdev_idx(dev, s_dev, &i);
+	if (err)
+		return err;
 
 	mutex_lock(&priv->lock);
+
 	if (!priv->link_setup) {
 		dev_err(dev, "%s: invalid state\n", __func__);
 		err = -EINVAL;
 		goto error;
 	}
 
-	if (!priv->ctrl_setup_done) {
-		/* Enable splitter mode */
+	if (priv->sources[i].g_ctx->serdev_found) {
+		priv->num_src_found++;
+		priv->src_link = priv->sources[i].g_ctx->serdes_csi_link;
+	}
+
+	/* Enable splitter mode */
+	if ((priv->max_src > 1U) &&
+		(priv->num_src_found > 0U) &&
+		(priv->splitter_enabled == false)) {
 		max9296_write_reg(dev, MAX9296_CTRL0_ADDR, 0x03);
 		max9296_write_reg(dev, MAX9296_CTRL0_ADDR, 0x23);
 
+		priv->splitter_enabled = true;
+
 		/* delay to settle link */
-		msleep(50);
-
-		max9296_write_reg(dev,
-			MAX9296_PWDN_PHYS_ADDR, MAX9296_ALLPHYS_NOSTDBY);
-
-		priv->ctrl_setup_done = true;
+		msleep(100);
 	}
+
+	max9296_write_reg(dev,
+			MAX9296_PWDN_PHYS_ADDR, MAX9296_ALLPHYS_NOSTDBY);
 
 	priv->sdev_ref++;
 
+	/* Reset splitter mode if all devices are not found */
+	if ((priv->sdev_ref == priv->max_src) &&
+		(priv->splitter_enabled == true) &&
+		(priv->num_src_found > 0U) &&
+		(priv->num_src_found < priv->max_src)) {
+		err = max9296_write_link(dev, priv->src_link);
+		if (err)
+			goto error;
+
+		priv->splitter_enabled = false;
+	}
+
 error:
 	mutex_unlock(&priv->lock);
-
 	return err;
 }
 EXPORT_SYMBOL(max9296_setup_control);
@@ -348,8 +386,8 @@ int max9296_reset_control(struct device *dev, struct device *s_dev)
 	int err = 0;
 
 	mutex_lock(&priv->lock);
-	if (!priv->ctrl_setup_done) {
-		dev_dbg(dev, "%s: device is powered off\n", __func__);
+	if (!priv->sdev_ref) {
+		dev_info(dev, "%s: dev is already in reset state\n", __func__);
 		goto ret;
 	}
 
@@ -359,7 +397,7 @@ int max9296_reset_control(struct device *dev, struct device *s_dev)
 		max9296_write_reg(dev, MAX9296_CTRL0_ADDR, MAX9296_RESET_ALL);
 
 		/* delay to settle reset */
-		msleep(50);
+		msleep(100);
 	}
 
 ret:
@@ -461,7 +499,6 @@ int max9296_sdev_unregister(struct device *dev, struct device *s_dev)
 	for (i = 0; i < priv->num_src; i++) {
 		if (s_dev == priv->sources[i].g_ctx->s_dev) {
 			priv->sources[i].g_ctx = NULL;
-			priv->num_src--;
 			break;
 		}
 	}
@@ -472,6 +509,7 @@ int max9296_sdev_unregister(struct device *dev, struct device *s_dev)
 		err = -EINVAL;
 		goto error;
 	}
+	priv->num_src--;
 
 error:
 	mutex_unlock(&priv->lock);
@@ -638,6 +676,7 @@ int max9296_start_streaming(struct device *dev, struct device *s_dev)
 
 	return 0;
 }
+EXPORT_SYMBOL(max9296_start_streaming);
 
 int max9296_stop_streaming(struct device *dev, struct device *s_dev)
 {
@@ -666,6 +705,7 @@ int max9296_stop_streaming(struct device *dev, struct device *s_dev)
 
 	return 0;
 }
+EXPORT_SYMBOL(max9296_stop_streaming);
 
 int max9296_setup_streaming(struct device *dev, struct device *s_dev)
 {
@@ -825,7 +865,7 @@ static int max9296_probe(struct i2c_client *client,
 	struct max9296 *priv;
 	int err = 0;
 
-	dev_info(&client->dev, "[MAX9296]: probing GMSL IO expander\n");
+	dev_info(&client->dev, "[MAX9296]: probing GMSL Deserializer\n");
 
 	priv = devm_kzalloc(&client->dev, sizeof(*priv), GFP_KERNEL);
 	priv->i2c_client = client;
@@ -836,10 +876,6 @@ static int max9296_probe(struct i2c_client *client,
 			"regmap init failed: %ld\n", PTR_ERR(priv->regmap));
 		return -ENODEV;
 	}
-
-	priv->ctrl_setup_done = false;
-	priv->lane_setup = false;
-	priv->link_setup = false;
 
 	err = max9296_parse_dt(priv, client);
 	if (err) {
@@ -859,6 +895,7 @@ static int max9296_probe(struct i2c_client *client,
 
 	dev_set_drvdata(&client->dev, priv);
 
+	/* dev communication gets validated when GMSL link setup is done */
 	dev_info(&client->dev, "%s:  success\n", __func__);
 
 	return err;
@@ -910,6 +947,6 @@ static void __exit max9296_exit(void)
 module_init(max9296_init);
 module_exit(max9296_exit);
 
-MODULE_DESCRIPTION("IO Expander driver max9296");
+MODULE_DESCRIPTION("Dual GMSL Deserializer driver max9296");
 MODULE_AUTHOR("Sudhir Vyas <svyas@nvidia.com");
 MODULE_LICENSE("GPL v2");

@@ -1,7 +1,7 @@
 /*
  * sensor_dt_test_nodes - sensor device tree test node definitions
  *
- * Copyright (c) 2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2019-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -31,7 +31,7 @@ int sv_dt_make_root_node_props(struct sv_dt_node *node)
 
 	MAKE_LINK_ALL(node, attrs, NULL, "compatible", LTYPE_REQUIRED);
 	MAKE_LINK_ALL(node, attrs, NULL, "reg", LTYPE_REQUIRED);
-	MAKE_LINK_ALL(node, attrs, NULL, "mclk", LTYPE_REQUIRED);
+	MAKE_LINK_ALL(node, attrs, NULL, "mclk", LTYPE_OPTIONAL);
 
 	MAKE_LINK_ALL(node, attrs, NULL, "*-gpio", LTYPE_OPTIONAL);
 	MAKE_LINK_ALL(node, attrs, NULL, "*-supply", LTYPE_OPTIONAL);

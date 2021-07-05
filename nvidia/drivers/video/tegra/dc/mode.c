@@ -917,7 +917,7 @@ int tegra_dc_set_fbcon_boot_mode(struct tegra_dc *dc, struct tegra_edid *edid)
 		case TEGRA_DC_OUT_HDMI:
 			break;
 		case TEGRA_DC_OUT_DP:
-			if (!tegra_dc_is_ext_dp_panel(dc))
+			if (!tegra_dc_is_ext_panel(dc))
 				return 0;
 			break;
 		default:

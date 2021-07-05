@@ -1,7 +1,7 @@
 /*
  * tegra186_arad_alt.h - Definitions for Tegra186 ARAD driver
  *
- * Copyright (c) 2015-2017, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2015-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -100,15 +100,8 @@
 #define TEGRA186_ARAD_LANE_RATIO_INTEGER_PART_MASK		0xFFFFFFFF
 #define TEGRA186_ARAD_LANE_RATIO_FRAC_PART_MASK			0xFFFFFFFF
 
-struct tegra186_arad_soc_data {
-	void (*set_audio_cif)(struct regmap *map,
-			unsigned int reg,
-			struct tegra210_xbar_cif_conf *conf);
-};
-
 struct tegra186_arad {
 	struct regmap *regmap;
-	const struct tegra186_arad_soc_data *soc_data;
 #if defined CONFIG_SND_SOC_TEGRA186_ARAD_WAR
 	unsigned int int_status;
 	spinlock_t status_lock;

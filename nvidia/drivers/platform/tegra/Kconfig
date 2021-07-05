@@ -251,4 +251,11 @@ config TEGRA_CPU_TOPOLOGY_SYSFS
 	  When enabled, make symbolic links to cpux (sysfs nodes) inside directories
 	  in sysfs, build as per cpu type available for classifiying the cpus.
 
+config TEGRA_CLOCKS_CONFIGURE
+	bool "Configure initial state of clocks"
+	default y if ARCH_TEGRA_18x_SOC || ARCH_TEGRA_19x_SOC
+	help
+	  Enable or disable clocks during kernel initialization.
+	  This helps in optimizing power by disabling some always on clocks.
+
 source "drivers/platform/tegra/nvadsp/Kconfig"

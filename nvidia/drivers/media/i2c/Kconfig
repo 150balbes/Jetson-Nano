@@ -13,6 +13,15 @@ config VIDEO_IMX185
 	To compile this driver as a module, choose M here: the module
 	will be called imx185.
 
+config VIDEO_IMX477
+        tristate "IMX477 camera sensor support"
+	depends on I2C && VIDEO_V4L2 && VIDEO_V4L2_SUBDEV_API
+	---help---
+	  This driver supports IMX477 camera sensor from Sony
+
+	  To compile this driver as a module, choose M here: the module
+	  will be called imx477.
+
 config VIDEO_IMX219
         tristate "IMX219 camera sensor support"
 	depends on I2C && VIDEO_V4L2 && VIDEO_V4L2_SUBDEV_API
@@ -118,6 +127,15 @@ config VIDEO_TC358840
 
 	  To compile this driver as a module, choose M here: the
 	  module will be called tc358840.
+
+config VIDEO_LT6911UXC
+        tristate "Lontium LTX6911UXC HDMI to CSI bridge"
+	depends on VIDEO_V4L2 && VIDEO_V4L2_SUBDEV_API
+	---help---
+	  This driver supports LT6911UXC bridge from Lontium
+
+	  To compile this driver as a module, choose M here: the module
+	  will be called lt6911uxc.
 
 config I2C_IOEXPANDER_SER_MAX9295
 	tristate "MAX9295 Serializer I2C IO Expander"

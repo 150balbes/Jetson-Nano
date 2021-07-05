@@ -1,0 +1,7 @@
+config TEGRA_GTE_TEST
+	tristate "Tegra Generic Timestamping Engine Test"
+	depends on TEGRA_HTS_GTE
+	help
+	  Enable this option for integrated generic timestamping support on
+	  NVIDIA Tegra systems-on-chip. The driver supports LIC IRQs and AON
+	  GPIO monitoring for hardware timestamping.

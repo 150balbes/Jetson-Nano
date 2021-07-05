@@ -3,7 +3,7 @@
  *
  * Author: Mike Lavender, mike@steroidmicros.com
  * Copyright (c) 2005, Intec Automation Inc.
- * Copyright (c) 2013-2019, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2013-2021, NVIDIA CORPORATION. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -81,9 +81,11 @@
 #define RDCR_DUMMY_CYCLE			(3<<6)
 
 #define JEDEC_ID_S25FX512S	0x010220
+#define JEDEC_ID_S25FS256S	0x010219
 #define JEDEC_ID_MX25U51279G	0xC2953A
 #define JEDEC_ID_MX25U3235F	0xC22536
 
+static uint8_t macronix_device_id;
 static int qspi_write_en(struct qspi *flash,
 		uint8_t is_enable, uint8_t is_sleep);
 static int wait_till_ready(struct qspi *flash, uint8_t is_sleep);
@@ -758,6 +760,79 @@ static int qspi_read_any_reg(struct qspi *flash,
 	return 0;
 }
 
+static uint8_t qspi_flash_get_sfdp_id_macronix(struct qspi *flash)
+{
+	struct spi_transfer t[3];
+	struct spi_message m;
+	int ret;
+	/* 3-byte address for getting SFDP-Value at address 0x0b from
+	 * SFDP table. MSB first
+	 */
+	uint8_t cmd_addr_buf[4] = {0, 0, 0, SFDP_ADDR};
+	uint8_t rx_buff[2];
+
+	spi_message_init(&m);
+	memset(t, 0, sizeof(t));
+
+	/* take lock here to protect race condition
+	 * in case of concurrent read and write with
+	 * different cmd_mode selection.
+	 */
+	mutex_lock(&flash->lock);
+
+	/* Set Controller data Parameters
+	 * Set DDR/SDR, X1/X4 and Dummy Cycles from DT
+	 */
+
+	copy_cmd_default(&flash->cmd_table,
+		&flash->cmd_info_table[READ_SFDP]);
+
+	cmd_addr_buf[0] = flash->cmd_table.qcmd.op_code;
+
+	t[0].len = 1;
+	t[0].bits_per_word = BITS8_PER_WORD;
+	t[0].tx_buf = &cmd_addr_buf[0];
+
+	set_mode(&t[0],
+		flash->cmd_table.qcmd.is_ddr,
+		flash->cmd_table.qcmd.bus_width,
+		flash->cmd_table.qcmd.op_code);
+
+	spi_message_add_tail(&t[0], &m);
+
+	t[1].len = ((flash->cmd_table.qaddr.len +
+		(flash->cmd_table.qaddr.dummy_cycles/8)));
+	t[1].bits_per_word = BITS8_PER_WORD;
+	t[1].tx_buf = &cmd_addr_buf[1];
+
+	set_mode(&t[1],
+		flash->cmd_table.qaddr.is_ddr,
+		flash->cmd_table.qaddr.bus_width,
+		flash->cmd_table.qcmd.op_code);
+
+	spi_message_add_tail(&t[1], &m);
+
+	t[2].len = 2;
+	t[2].bits_per_word = BITS8_PER_WORD;
+	t[2].rx_buf = rx_buff;
+	set_mode(&t[2],
+		flash->cmd_table.qdata.is_ddr,
+		flash->cmd_table.qdata.bus_width,
+		flash->cmd_table.qcmd.op_code);
+
+	/* in-activate the cs at the end */
+	t[2].cs_change = TRUE;
+	spi_message_add_tail(&t[2], &m);
+
+	ret = spi_sync(flash->spi, &m);
+	mutex_unlock(&flash->lock);
+
+	/* since rx_buff[0] has the SPDF value for address 0x0b, so return
+	 * rx_buff[0]
+	 */
+	return rx_buff[0];
+}
+
 static int max_dummy_cyle_set(struct qspi *flash, uint8_t cmd_code, int dummy)
 {
 	int status = PASS;
@@ -832,8 +907,20 @@ static int max_dummy_cyle_set(struct qspi *flash, uint8_t cmd_code, int dummy)
 	read_max_cfg_reg(flash, &my_cfg);
 	dev_dbg(&flash->spi->dev, "status:%02x, cfg:%02x\n", my_status, my_cfg);
 
-	my_cfg &= ~RDCR_DUMMY_CYCLE;
-	my_cfg |= dummy_code << 6;
+	if (macronix_device_id == SFDP_ID_MX25U3235F) {
+		my_cfg &= ~RDCR_DUMMY_CYCLE;
+		my_cfg |= dummy_code << 6;
+	} else if (macronix_device_id == SFDP_ID_MX25U3232F) {
+		/* If DC[1:0]=0b11 for MX25U3232F sets, dummy-cycle increased
+		 * from 6-cycle to 10-cycle
+		 */
+		my_cfg &= ~(3<<10);
+		my_cfg |= dummy_code << 10;
+	} else {
+		dev_err(&flash->spi->dev, "Invalid macronix_device_id:%x\n",
+			macronix_device_id);
+		return -EINVAL;
+	}
 	qspi_write_status_reg(flash, my_status, my_cfg);
 
 	read_sr1_reg(flash, &my_status);
@@ -1267,6 +1354,11 @@ static int qspi_read(struct mtd_info *mtd, loff_t from, size_t len,
 
 	dev_dbg(&flash->spi->dev, "%s from 0x%08x, len %zd\n", __func__,
 		(u32)from, len);
+
+	if (!macronix_device_id &&
+		(flash->flash_info->jedec_id == JEDEC_ID_MX25U3235F)) {
+		macronix_device_id = qspi_flash_get_sfdp_id_macronix(flash);
+	}
 
 	spi_message_init(&m);
 	memset(t, 0, sizeof(t));
@@ -1889,7 +1981,8 @@ static int qspi_probe(struct spi_device *spi)
 
 	if (info->jedec_id == JEDEC_ID_MX25U51279G)
 		flash->cmd_info_table = macronix_cmd_info_table;
-	else if (info->jedec_id == JEDEC_ID_S25FX512S)
+	else if (info->jedec_id == JEDEC_ID_S25FX512S ||
+					info->jedec_id == JEDEC_ID_S25FS256S)
 		flash->cmd_info_table = spansion_cmd_info_table;
 	else if (info->jedec_id == JEDEC_ID_MX25U3235F)
 		flash->cmd_info_table = macronix_porg_cmd_info_table;

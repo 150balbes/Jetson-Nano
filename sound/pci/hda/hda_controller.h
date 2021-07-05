@@ -197,13 +197,6 @@ struct azx {
 #define azx_has_pm_runtime(chip) \
 	((chip)->driver_caps & AZX_DCAPS_PM_RUNTIME)
 
-#define azx_fpci_writel(chip, reg, value) \
-	snd_fpci_chip_writel(azx_bus(chip), reg, value)
-#define azx_fpci_readl(chip, reg) \
-	snd_fpci_chip_readl(azx_bus(chip), reg)
-#define azx_fpci_updatel(chip, reg, mask, val) \
-	snd_fpci_chip_updatel(azx_bus(chip), reg, mask, val)
-
 /* PCM setup */
 static inline struct azx_dev *get_azx_dev(struct snd_pcm_substream *substream)
 {

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -48,6 +48,7 @@ struct channel_gk20a;
 	((p)->tag_bits[(n) / 64] &   (1 << ((n) & 63)))
 
 #define NVGPU_GPU_CTXSW_FILTER_SIZE (NVGPU_GPU_CTXSW_TAG_LAST + 1)
+#define NVGPU_FECS_TRACE_FEATURE_CONTROL_BIT 31
 
 struct nvgpu_gpu_ctxsw_trace_filter {
 	u64 tag_bits[(NVGPU_GPU_CTXSW_FILTER_SIZE + 63) / 64];

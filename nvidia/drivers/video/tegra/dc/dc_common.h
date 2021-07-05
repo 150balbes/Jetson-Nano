@@ -1,7 +1,7 @@
 /*
  * drivers/video/tegra/dc/dc_common.h
  *
- * Copyright (c) 2017-2018, NVIDIA CORPORATION, All rights reserved.
+ * Copyright (c) 2017-2019, NVIDIA CORPORATION, All rights reserved.
  * Author: Arun Swain <arswain@nvidia.com>
  *
  * This software is licensed under the terms of the GNU General Public
@@ -18,7 +18,7 @@
 #ifndef __DRIVERS_VIDEO_TEGRA_DC_DC_COMMON_H__
 #define __DRIVERS_VIDEO_TEGRA_DC_DC_COMMON_H__
 
-#include <video/tegra_dc_ext.h>
+#include <uapi/video/tegra_dc_ext.h>
 
 /* Flags for tegra_dc_common */
 

@@ -16,6 +16,7 @@
 #include "nvcsi/nvcsi.h"
 #include "csi5_fops.h"
 #include <linux/tegra-capture-ivc.h>
+#include <linux/nospec.h>
 #include "soc/tegra/camrtc-capture-messages.h"
 
 #include "mipical/mipi_cal.h"
@@ -424,6 +425,7 @@ static int csi5_mipi_cal(struct tegra_csi_channel *chan)
 		}
 		num_ports++;
 	}
+	speculation_barrier(); /* break_spec_p#6_1 */
 	if (!lanes) {
 		dev_err(csi->dev,
 			"Selected no CSI lane, cannot do calibration");

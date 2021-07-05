@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2017, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2014-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -115,6 +115,10 @@ static inline u32 ctxsw_prog_main_image_pm_o(void)
 static inline u32 ctxsw_prog_main_image_pm_mode_m(void)
 {
 	return 0x7U << 0U;
+}
+static inline u32 ctxsw_prog_main_image_pm_mode_ctxsw_f(void)
+{
+	return 0x1U;
 }
 static inline u32 ctxsw_prog_main_image_pm_mode_no_ctxsw_f(void)
 {

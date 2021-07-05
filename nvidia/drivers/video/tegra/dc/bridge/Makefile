@@ -1,8 +1,8 @@
 GCOV_PROFILE := y
 subdir-ccflags-y := -Werror
-ccflags-y += -I$(srctree.nvidia)/drivers/video/tegra/host
-ccflags-y += -I$(srctree.nvidia)/drivers/video/tegra/dc
-ccflags-y += -I$(srctree.nvidia)/drivers/platform/tegra
+ccflags-y += -I$(srctree)/nvidia/drivers/video/tegra/host
+ccflags-y += -I$(srctree)/nvidia/drivers/video/tegra/dc
+ccflags-y += -I$(srctree)/nvidia/drivers/platform/tegra
 ccflags-y += -I$(srctree)/arch/arm/mach-tegra
 
 obj-$(CONFIG_TEGRA_HDMI2FPD_DS90UH949) += hdmi2fpd_ds90uh949.o

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2015-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -41,6 +41,7 @@
 #include "vgpu/dbg_vgpu.h"
 #include "vgpu/fecs_trace_vgpu.h"
 #include "vgpu/css_vgpu.h"
+#include "vgpu/fb_vgpu.h"
 #include "gp10b/gp10b.h"
 #include "gp10b/hal_gp10b.h"
 #include "vgpu/gm20b/vgpu_gr_gm20b.h"
@@ -234,6 +235,7 @@ static const struct gpu_ops vgpu_gp10b_ops = {
 		.get_offset_in_gpccs_segment =
 			gr_gk20a_get_offset_in_gpccs_segment,
 		.set_debug_mode = gm20b_gr_set_debug_mode,
+		.set_mmu_debug_mode = NULL,
 	},
 	.fb = {
 		.init_hw = NULL,
@@ -249,6 +251,7 @@ static const struct gpu_ops vgpu_gp10b_ops = {
 		.read_wpr_info = NULL,
 		.is_debug_mode_enabled = NULL,
 		.set_debug_mode = vgpu_mm_mmu_set_debug_mode,
+		.set_mmu_debug_mode = vgpu_fb_set_mmu_debug_mode,
 		.tlb_invalidate = vgpu_mm_tlb_invalidate,
 	},
 	.clock_gating = {
@@ -311,6 +314,7 @@ static const struct gpu_ops vgpu_gp10b_ops = {
 		.set_runlist_interleave = vgpu_fifo_set_runlist_interleave,
 		.tsg_set_timeslice = vgpu_tsg_set_timeslice,
 		.tsg_open = vgpu_tsg_open,
+		.tsg_release = vgpu_tsg_release,
 		.force_reset_ch = vgpu_fifo_force_reset_ch,
 		.engine_enum_from_type = gp10b_fifo_engine_enum_from_type,
 		.device_info_data_parse = gp10b_device_info_data_parse,

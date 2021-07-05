@@ -19,7 +19,7 @@
 
 / {
 	model = "Jetson-TX1";
-	compatible = "nvidia,jetson-cv", "nvidia,tegra210";
+	compatible = "nvidia,p2597-0000+p2180-1000", "nvidia,jetson-cv", "nvidia,tegra210";
 	nvidia,dtsfilename = __FILE__;
 
 	#address-cells = <2>;
@@ -75,10 +75,6 @@
 		panel-s-edp-uhdtv-15-6-bl {
 			status = "disabled";
 		};
-	};
-
-	watchdog@60005100 {
-		status = "okay";
 	};
 
 	gpu {

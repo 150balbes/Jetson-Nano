@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -263,9 +263,10 @@ int nvgpu_pmu_busy_cycles_norm(struct gk20a *g, u32 *norm)
 	g->ops.pmu.pmu_reset_idle_counter(g, 0);
 
 	if (intr_status != 0UL) {
-		*norm = PMU_BUSY_CYCLES_NORM_MAX;
 		g->ops.pmu.pmu_clear_idle_intr_status(g);
-	} else if (total_cycles == 0ULL || busy_cycles > total_cycles) {
+	}
+
+	if (total_cycles == 0ULL || busy_cycles > total_cycles) {
 		*norm = PMU_BUSY_CYCLES_NORM_MAX;
 	} else {
 		*norm = (u32)(busy_cycles * PMU_BUSY_CYCLES_NORM_MAX

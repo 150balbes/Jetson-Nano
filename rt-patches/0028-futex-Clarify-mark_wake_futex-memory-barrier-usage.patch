@@ -1,0 +1,44 @@
+From e8aab4cfdf500064f7b3ac58ee18c09a98422578 Mon Sep 17 00:00:00 2001
+From: "Darren Hart (VMware)" <dvhart@infradead.org>
+Date: Fri, 14 Apr 2017 15:31:38 -0700
+Subject: [PATCH 028/371] futex: Clarify mark_wake_futex memory barrier usage
+X-NVConfidentiality: public
+
+Upstream commit 38fcd06e9b7f6855db1f3ebac5e18b8fdb467ffd
+
+Clarify the scenario described in mark_wake_futex requiring the
+smp_store_release(). Update the comment to explicitly refer to the
+plist_del now under __unqueue_futex() (previously plist_del was in the
+same function as the comment).
+
+Signed-off-by: Darren Hart (VMware) <dvhart@infradead.org>
+Cc: Peter Zijlstra <peterz@infradead.org>
+Link: http://lkml.kernel.org/r/20170414223138.GA4222@fury
+Signed-off-by: Thomas Gleixner <tglx@linutronix.de>
+---
+ kernel/futex.c | 9 +++++----
+ 1 file changed, 5 insertions(+), 4 deletions(-)
+
+diff --git a/kernel/futex.c b/kernel/futex.c
+index f381007..cedff76 100644
+--- a/kernel/futex.c
++++ b/kernel/futex.c
+@@ -1379,10 +1379,11 @@ static void mark_wake_futex(struct wake_q_head *wake_q, struct futex_q *q)
+ 	wake_q_add(wake_q, p);
+ 	__unqueue_futex(q);
+ 	/*
+-	 * The waiting task can free the futex_q as soon as
+-	 * q->lock_ptr = NULL is written, without taking any locks. A
+-	 * memory barrier is required here to prevent the following
+-	 * store to lock_ptr from getting ahead of the plist_del.
++	 * The waiting task can free the futex_q as soon as q->lock_ptr = NULL
++	 * is written, without taking any locks. This is possible in the event
++	 * of a spurious wakeup, for example. A memory barrier is required here
++	 * to prevent the following store to lock_ptr from getting ahead of the
++	 * plist_del in __unqueue_futex().
+ 	 */
+ 	smp_store_release(&q->lock_ptr, NULL);
+ }
+-- 
+2.7.4
+

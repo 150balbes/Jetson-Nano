@@ -1,7 +1,7 @@
 /*
  * drivers/video/tegra/nvmap/nvmap_cache.c
  *
- * Copyright (c) 2011-2018, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2011-2020, NVIDIA CORPORATION. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -35,6 +35,8 @@ size_t cache_maint_inner_threshold = 8 * SZ_2M;
 #endif
 
 static struct static_key nvmap_disable_vaddr_for_cache_maint;
+void (*nvmap_get_cacheability)(struct nvmap_handle *h,
+		bool *inner, bool *outer);
 
 inline static void nvmap_flush_dcache_all(void *dummy)
 {
@@ -73,10 +75,19 @@ static void nvmap_inner_clean_cache_all(void)
 }
 void (*inner_clean_cache_all)(void) = nvmap_inner_clean_cache_all;
 
+static void nvmap_handle_get_cacheability(struct nvmap_handle *h,
+		bool *inner, bool *outer)
+{
+	*inner = h->flags == NVMAP_HANDLE_CACHEABLE ||
+		 h->flags == NVMAP_HANDLE_INNER_CACHEABLE;
+	*outer = h->flags == NVMAP_HANDLE_CACHEABLE;
+}
+
 static void nvmap_cache_of_setup(struct nvmap_chip_cache_op *op)
 {
 	op->inner_clean_cache_all = nvmap_inner_clean_cache_all;
 	op->inner_flush_cache_all = nvmap_inner_flush_cache_all;
+	op->nvmap_get_cacheability = nvmap_handle_get_cacheability;
 	op->name = kstrdup("set/ways", GFP_KERNEL);
 	BUG_ON(!op->name);
 }
@@ -106,6 +117,7 @@ void nvmap_select_cache_ops(struct device *dev)
 	}
 	inner_flush_cache_all = op.inner_flush_cache_all;
 	inner_clean_cache_all = op.inner_clean_cache_all;
+	nvmap_get_cacheability = op.nvmap_get_cacheability;
 	pr_info("nvmap cache ops set to %s\n", op.name);
 	kfree(op.name);
 
@@ -362,14 +374,6 @@ out:
 	return 0;
 }
 
-__weak void nvmap_handle_get_cacheability(struct nvmap_handle *h,
-		bool *inner, bool *outer)
-{
-	*inner = h->flags == NVMAP_HANDLE_CACHEABLE ||
-		 h->flags == NVMAP_HANDLE_INNER_CACHEABLE;
-	*outer = h->flags == NVMAP_HANDLE_CACHEABLE;
-}
-
 int __nvmap_do_cache_maint(struct nvmap_client *client,
 			struct nvmap_handle *h,
 			unsigned long start, unsigned long end,
@@ -408,7 +412,7 @@ int __nvmap_do_cache_maint(struct nvmap_client *client,
 	cache_op.start = start ? start : 0;
 	cache_op.end = end ? end : h->size;
 	cache_op.op = op;
-	nvmap_handle_get_cacheability(h, &cache_op.inner, &cache_op.outer);
+	nvmap_get_cacheability(h, &cache_op.inner, &cache_op.outer);
 	cache_op.clean_only_dirty = clean_only_dirty;
 
 	nvmap_stats_inc(NS_CFLUSH_RQ, end - start);
@@ -499,7 +503,7 @@ static int __nvmap_do_cache_maint_list(struct nvmap_handle **handles,
 		u32 *sizes_32 = (u32 *)sizes;
 		u64 size = is_32 ? sizes_32[i] : sizes[i];
 
-		nvmap_handle_get_cacheability(handles[i], &inner, &outer);
+		nvmap_get_cacheability(handles[i], &inner, &outer);
 
 		if (!inner && !outer)
 			continue;

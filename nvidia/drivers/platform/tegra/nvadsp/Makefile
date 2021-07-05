@@ -1,7 +1,7 @@
 GCOV_PROFILE := y
 ccflags-y += -Werror
 
-obj-y := nvadsp.o
+obj-$(CONFIG_TEGRA_NVADSP) := nvadsp.o
 nvadsp-objs += dev.o os.o app.o app_loader_linker.o\
 	 amc.o nvadsp_shared_sema.o \
 	 hwmailbox.o mailbox.o msgq.o \

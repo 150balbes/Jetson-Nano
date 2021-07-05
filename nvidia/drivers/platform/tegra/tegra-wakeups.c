@@ -1,7 +1,7 @@
 /*
  * Tegra Wakeups for NVIDIA SoCs Tegra
  *
- * Copyright (c) 2013-2016, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2013-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * Author: Laxman Dewangan <ldewangan@nvidia.com>
  *
@@ -108,7 +108,8 @@ int get_wakeup_reason_irq(void)
 	len = tegra_read_wake_status(wake_status);
 
 	for (i = 0; i < len; i++) {
-		for_each_set_bit(j, (ulong *)&wake_status[i], 32) {
+		unsigned long temp = wake_status[i];
+		for_each_set_bit(j, &temp, 32) {
 			irq = tegra_wake_to_irq(j + (i * 32));
 			if (!irq)
 				continue;

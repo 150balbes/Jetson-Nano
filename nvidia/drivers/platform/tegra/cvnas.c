@@ -1,7 +1,7 @@
 /*
  * drivers/platform/tegra/cvnas.c
  *
- * Copyright (C) 2017-2018, NVIDIA Corporation.  All rights reserved.
+ * Copyright (C) 2017-2020, NVIDIA Corporation.  All rights reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -87,6 +87,7 @@ struct cvnas_device {
 	size_t cvsram_size;
 
 	struct clk *clk;
+	struct device_attribute *attr;
 
 	struct reset_control *rst;
 	struct reset_control *rst_fcm;
@@ -427,6 +428,37 @@ int is_nvcvnas_clk_enabled(void)
 }
 EXPORT_SYMBOL(is_nvcvnas_clk_enabled);
 
+static ssize_t clk_cap_store(struct device *dev,
+	struct device_attribute *attr, const char *buf, size_t count)
+{
+	struct cvnas_device *cvnas = dev_get_drvdata(dev);
+	unsigned long max_rate;
+	int ret;
+
+	ret = kstrtoul(buf, 0, &max_rate);
+	if (ret)
+		return -EINVAL;
+
+	ret = clk_set_max_rate(cvnas->clk, max_rate);
+	if (ret < 0)
+		return ret;
+
+	return count;
+}
+
+static ssize_t clk_cap_show(struct device *dev,
+	struct device_attribute *attr, char *buf)
+{
+	struct cvnas_device *cvnas = dev_get_drvdata(dev);
+	long max_rate;
+
+	max_rate = clk_round_rate(cvnas->clk, UINT_MAX);
+	if (max_rate < 0)
+		return max_rate;
+
+	return snprintf(buf, PAGE_SIZE, "%ld\n", max_rate);
+}
+
 static const struct of_device_id nvcvnas_of_ids[] = {
 	{ .compatible = "nvidia,tegra-cvnas", .data = (void *)false, },
 	{ .compatible = "nvidia,tegra-cvnas-hv", .data = (void *)true, },
@@ -440,6 +472,7 @@ static int nvcvnas_probe(struct platform_device *pdev)
 	u32 cvsram_slice_data[2];
 	u32 cvsram_reg_data[4];
 	const struct of_device_id *match;
+	struct clk *clk;
 
 	if (tegra_get_chipid() == TEGRA_CHIPID_TEGRA19 &&
 		tegra_get_sku_id() == 0x9E) {
@@ -453,6 +486,25 @@ static int nvcvnas_probe(struct platform_device *pdev)
 			sizeof(*cvnas_dev), GFP_KERNEL);
 	if (!cvnas_dev)
 		return -ENOMEM;
+
+	cvnas_dev->attr =
+		devm_kmalloc(&pdev->dev, sizeof(*cvnas_dev->attr), GFP_KERNEL);
+	if (!cvnas_dev->attr) {
+		kfree(cvnas_dev);
+		return -ENOMEM;
+	}
+
+	sysfs_attr_init(&cvnas_dev->attr->attr);
+	cvnas_dev->attr->attr.name = "clk_cap";
+	cvnas_dev->attr->attr.mode = 0644;
+	cvnas_dev->attr->show = clk_cap_show;
+	cvnas_dev->attr->store = clk_cap_store;
+
+	ret = device_create_file(&pdev->dev, cvnas_dev->attr);
+	if (ret) {
+		dev_err(&pdev->dev, "sysfs_create_file failed: %d\n", ret);
+		goto err_device_create_file;
+	}
 
 	match = of_match_device(nvcvnas_of_ids, &pdev->dev);
 	if (match)
@@ -508,6 +560,30 @@ static int nvcvnas_probe(struct platform_device *pdev)
 		goto err_get_clk;
 	}
 
+	/**
+	 * Change parent to clk_m then back to nafll_cvnas to avoid cvnas
+	 * clock rate not being able to change.
+	 */
+	clk = devm_clk_get(&pdev->dev, "clk_m");
+	if (IS_ERR(clk)) {
+		ret = PTR_ERR(clk);
+		goto err_get_clk;
+	}
+
+	ret = clk_set_parent(cvnas_dev->clk, clk);
+	if (ret)
+		goto err_get_clk;
+
+	clk = devm_clk_get(&pdev->dev, "nafll_cvnas");
+	if (IS_ERR(clk)) {
+		ret = PTR_ERR(clk);
+		goto err_get_clk;
+	}
+
+	ret = clk_set_parent(cvnas_dev->clk, clk);
+	if (ret)
+		goto err_get_clk;
+
 	cvnas_dev->rst = devm_reset_control_get(&pdev->dev, "rst");
 	if (IS_ERR(cvnas_dev->rst)) {
 		ret = PTR_ERR(cvnas_dev->rst);
@@ -559,6 +635,8 @@ err_hsm_of_iomap:
 err_cvsram_of_iomap:
 	iounmap(cvnas_dev->cvreg_iobase);
 err_of_iomap:
+	device_remove_file(&pdev->dev, cvnas_dev->attr);
+err_device_create_file:
 	kfree(cvnas_dev);
 	return ret;
 }
@@ -571,6 +649,7 @@ static int nvcvnas_remove(struct platform_device *pdev)
 	if (!cvnas_dev)
 		return -ENODEV;
 
+	device_remove_file(&pdev->dev, cvnas_dev->attr);
 	debugfs_remove(cvnas_dev->debugfs_root);
 	of_reserved_mem_device_release(&pdev->dev);
 	iounmap(cvnas_dev->cvsram_iobase);

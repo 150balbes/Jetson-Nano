@@ -1,7 +1,7 @@
 /*
  * cursor.c: Cursor functions for tegradc ext interface.
  *
- * Copyright (c) 2011-2018, NVIDIA CORPORATION, All rights reserved.
+ * Copyright (c) 2011-2019, NVIDIA CORPORATION, All rights reserved.
  *
  * Author: Robert Morell <rmorell@nvidia.com>
  *
@@ -16,7 +16,7 @@
  * more details.
  */
 
-#include <video/tegra_dc_ext.h>
+#include <uapi/video/tegra_dc_ext.h>
 #include "tegra_dc_ext_priv.h"
 
 /* ugh */
@@ -151,7 +151,8 @@ int tegra_dc_ext_set_cursor_image(struct tegra_dc_ext_user *user,
 
 	ext->cursor.cur_handle = handle;
 	ret = tegra_dc_cursor_image(dc, blendfmt, size, fg, bg, phys_addr,
-				colorfmt, args->alpha, args->flags);
+				colorfmt, args->alpha, args->flags,
+				!!old_handle);
 
 	tegra_dc_scrncapt_disp_pause_unlock(dc);
 	mutex_unlock(&ext->cursor.lock);

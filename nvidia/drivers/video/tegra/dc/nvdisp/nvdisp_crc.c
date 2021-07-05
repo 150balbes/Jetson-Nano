@@ -1,7 +1,7 @@
 /*
  * drivers/video/tegra/dc/nvdisp/nvdisp_crc.c
  *
- * Copyright (c) 2017-2018, NVIDIA CORPORATION, All rights reserved.
+ * Copyright (c) 2017-2019, NVIDIA CORPORATION, All rights reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -17,7 +17,7 @@
 #include <linux/errno.h>
 #include <linux/delay.h>
 
-#include "video/tegra_dc_ext.h"
+#include <uapi/video/tegra_dc_ext.h>
 #include "dc_priv.h"
 #include "dc_priv_defs.h"
 #include "hw_nvdisp_nvdisp.h"

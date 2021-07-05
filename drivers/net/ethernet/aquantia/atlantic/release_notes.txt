@@ -1,3 +1,35 @@
+Release: 2.0.19
+Date: 15/09/2018
+tag: v2.0.19
+================================
+* ATLDRV-625 Bad RSS behaviour on Large fragmented UDP packets
+* ATLDRV-622 Need to disable flow control in MAC when it is disabled by the driver
+
+Release: 2.0.18
+Date: 06/09/2018
+tag: v2.0.18
+================================
+* ATLDRV-546 Linux: Fix old kernel builds
+* ATLDRV-575 SMMU fault after device unbind
+
+Release: 2.0.17
+Date: 03/08/2018
+tag: v2.0.17
+================================
+* ATLDRV-314 Multicast packets never get filtered on linux
+* ATLDRV-536 Fix bugs that found smatch
+* ATLDRV-540 upstream: syncup 08/2018
+
+Release: 2.0.16
+Date: 27/07/2018
+tag: v2.0.16
+================================
+* ATLDRV-384 Reduce link-up time to 1sec for SE FW
+  - Link interrupt handling now allows faster link event detection
+  - Special mode for fast init sequence.
+    Disabled by default, enable with AQ_CFG_FAST_START in aq_cfg.h
+* Minor codestyle fixes
+
 Release: 2.0.15
 Date: 29/06/2018
 tag: v2.0.15

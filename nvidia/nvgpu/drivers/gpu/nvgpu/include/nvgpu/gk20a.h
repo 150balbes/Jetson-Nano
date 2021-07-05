@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2011-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * GK20A Graphics
  *
@@ -47,7 +47,7 @@ struct nvgpu_clk_arb;
 struct nvgpu_gpu_ctxsw_trace_filter;
 #endif
 struct priv_cmd_entry;
-struct nvgpu_gpfifo_args;
+struct nvgpu_setup_bind_args;
 
 #ifdef __KERNEL__
 #include <linux/notifier.h>
@@ -71,6 +71,7 @@ struct nvgpu_gpfifo_args;
 #include <nvgpu/ecc.h>
 #include <nvgpu/tsg.h>
 #include <nvgpu/sec2.h>
+#include <nvgpu/sched.h>
 
 #include "gk20a/clk_gk20a.h"
 #include "gk20a/ce2_gk20a.h"
@@ -225,6 +226,7 @@ struct gpu_ops {
 		void (*isr_stall)(struct gk20a *g, u32 inst_id, u32 pri_base);
 		u32 (*isr_nonstall)(struct gk20a *g, u32 inst_id, u32 pri_base);
 		u32 (*get_num_pce)(struct gk20a *g);
+		void (*init_prod_values)(struct gk20a *g);
 	} ce2;
 	struct {
 		u32 (*get_patch_slots)(struct gk20a *g);
@@ -527,6 +529,9 @@ struct gpu_ops {
 			u32 num_ppcs, u32 reg_list_ppc_count,
 			u32 *__offset_in_segment);
 		void (*set_debug_mode)(struct gk20a *g, bool enable);
+		int (*set_mmu_debug_mode)(struct gk20a *g,
+			struct channel_gk20a *ch, bool enable);
+		int (*set_fecs_watchdog_timeout)(struct gk20a *g);
 	} gr;
 	struct {
 		void (*init_hw)(struct gk20a *g);
@@ -566,6 +571,7 @@ struct gpu_ops {
 				struct wpr_carveout_info *inf);
 		bool (*is_debug_mode_enabled)(struct gk20a *g);
 		void (*set_debug_mode)(struct gk20a *g, bool enable);
+		void (*set_mmu_debug_mode)(struct gk20a *g, bool enable);
 		int (*tlb_invalidate)(struct gk20a *g, struct nvgpu_mem *pdb);
 		void (*hub_isr)(struct gk20a *g);
 		void (*handle_replayable_fault)(struct gk20a *g);
@@ -616,6 +622,8 @@ struct gpu_ops {
 		void (*slcg_pmu_load_gating_prod)(struct gk20a *g, bool prod);
 		void (*slcg_therm_load_gating_prod)(struct gk20a *g, bool prod);
 		void (*slcg_xbar_load_gating_prod)(struct gk20a *g, bool prod);
+		void (*slcg_hshub_load_gating_prod)(struct gk20a *g, bool prod);
+		void (*slcg_acb_load_gating_prod)(struct gk20a *g, bool prod);
 		void (*blcg_bus_load_gating_prod)(struct gk20a *g, bool prod);
 		void (*blcg_ce_load_gating_prod)(struct gk20a *g, bool prod);
 		void (*blcg_ctxsw_firmware_load_gating_prod)(struct gk20a *g, bool prod);
@@ -626,6 +634,7 @@ struct gpu_ops {
 		void (*blcg_pwr_csb_load_gating_prod)(struct gk20a *g, bool prod);
 		void (*blcg_pmu_load_gating_prod)(struct gk20a *g, bool prod);
 		void (*blcg_xbar_load_gating_prod)(struct gk20a *g, bool prod);
+		void (*blcg_hshub_load_gating_prod)(struct gk20a *g, bool prod);
 		void (*pg_gr_load_gating_prod)(struct gk20a *g, bool prod);
 	} clock_gating;
 	struct {
@@ -763,6 +772,7 @@ struct gpu_ops {
 			u32 count, u32 buffer_index);
 		int (*runlist_wait_pending)(struct gk20a *g, u32 runlist_id);
 		void (*ring_channel_doorbell)(struct channel_gk20a *c);
+		u64 (*usermode_base)(struct gk20a *g);
 		u32 (*get_sema_wait_cmd_size)(void);
 		u32 (*get_sema_incr_cmd_size)(void);
 		void (*add_sema_cmd)(struct gk20a *g,
@@ -1474,6 +1484,7 @@ struct gk20a {
 	struct pmgr_pmupstate pmgr_pmu;
 	struct therm_pmupstate therm_pmu;
 	struct nvgpu_sec2 sec2;
+	struct nvgpu_sched_ctrl sched_ctrl;
 
 #ifdef CONFIG_DEBUG_FS
 	struct railgate_stats pstats;
@@ -1604,7 +1615,8 @@ struct gk20a {
 				struct nvgpu_gpfifo_userdata userdata,
 				u32 start, u32 length);
 		int (*alloc_usermode_buffers)(struct channel_gk20a *c,
-			struct nvgpu_gpfifo_args *gpfifo_args);
+			struct nvgpu_setup_bind_args *args);
+		void (*free_usermode_buffers)(struct channel_gk20a *c);
 	} os_channel;
 
 	struct gk20a_scale_profile *scale_profile;
@@ -1614,6 +1626,7 @@ struct gk20a {
 	struct gk20a_fecs_trace *fecs_trace;
 
 	bool mmu_debug_ctrl;
+	u32 mmu_debug_mode_refcnt;
 
 	u32 tpc_fs_mask_user;
 
@@ -1776,6 +1789,7 @@ int gk20a_wait_for_idle(struct gk20a *g);
 
 int gk20a_init_gpu_characteristics(struct gk20a *g);
 
+bool gk20a_check_poweron(struct gk20a *g);
 int gk20a_prepare_poweroff(struct gk20a *g);
 int gk20a_finalize_poweron(struct gk20a *g);
 

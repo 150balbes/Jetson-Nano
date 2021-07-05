@@ -1,5 +1,8 @@
 if STAGING
 
 source "drivers/staging/ozwpan/Kconfig"
+source "drivers/staging/platform/tegra/gte/Kconfig"
+source "drivers/staging/platform/tegra/gte_test/Kconfig"
+source "drivers/staging/platform/tegra/dummy_carveout/Kconfig"
 
 endif # STAGING

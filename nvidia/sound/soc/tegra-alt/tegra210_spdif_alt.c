@@ -24,14 +24,12 @@
 #include <linux/platform_device.h>
 #include <linux/pm_runtime.h>
 #include <linux/regmap.h>
-#include <linux/slab.h>
 #include <soc/tegra/chip-id.h>
 #include <sound/core.h>
 #include <sound/pcm.h>
 #include <sound/pcm_params.h>
 #include <sound/soc.h>
 #include <linux/of_device.h>
-#include <linux/pinctrl/consumer.h>
 #include <linux/pinctrl/pinconf-tegra.h>
 
 #include "tegra210_xbar_alt.h"
@@ -65,14 +63,6 @@ static int tegra210_spdif_runtime_suspend(struct device *dev)
 	regcache_cache_only(spdif->regmap, true);
 	regcache_mark_dirty(spdif->regmap);
 	if (!(tegra_platform_is_unit_fpga() || tegra_platform_is_fpga())) {
-		if (!IS_ERR(spdif->pin_idle_state) && spdif->is_pinctrl) {
-			ret = pinctrl_select_state(
-				spdif->pinctrl, spdif->pin_idle_state);
-			if (ret < 0)
-				dev_err(dev,
-				"setting dap pinctrl idle state failed\n");
-		}
-
 		clk_disable_unprepare(spdif->clk_spdif_out);
 		clk_disable_unprepare(spdif->clk_spdif_in);
 	}
@@ -86,14 +76,6 @@ static int tegra210_spdif_runtime_resume(struct device *dev)
 	int ret;
 
 	if (!(tegra_platform_is_unit_fpga() || tegra_platform_is_fpga())) {
-		if (!IS_ERR(spdif->pin_active_state) && spdif->is_pinctrl) {
-			ret = pinctrl_select_state(spdif->pinctrl,
-						spdif->pin_active_state);
-			if (ret < 0)
-				dev_err(dev,
-				"setting dap pinctrl active state failed\n");
-		}
-
 		ret = clk_prepare_enable(spdif->clk_spdif_out);
 		if (ret) {
 			dev_err(dev, "spdif_out_clk_enable failed: %d\n", ret);
@@ -108,9 +90,7 @@ static int tegra210_spdif_runtime_resume(struct device *dev)
 	}
 
 	regcache_cache_only(spdif->regmap, false);
-
-	if (!spdif->is_shutdown)
-		regcache_sync(spdif->regmap);
+	regcache_sync(spdif->regmap);
 
 	return 0;
 }
@@ -158,32 +138,20 @@ static int tegra210_spdif_set_dai_sysclk(struct snd_soc_dai *dai,
 
 	if (!(tegra_platform_is_unit_fpga() || tegra_platform_is_fpga())) {
 		if (dir == SND_SOC_CLOCK_OUT) {
-			ret = clk_set_parent(spdif->clk_spdif_out,
-						spdif->clk_pll_a_out0);
+			ret = clk_set_rate(spdif->clk_spdif_out,
+					   spdif_out_clock_rate);
 			if (ret) {
-				dev_err(dev, "Can't set parent of SPDIF OUT clock\n");
-				return ret;
-			}
-
-			ret = clk_set_rate(
-				spdif->clk_spdif_out, spdif_out_clock_rate);
-			if (ret) {
-				dev_err(dev, "Can't set SPDIF Out clock rate: %d\n",
+				dev_err(dev,
+					"Can't set SPDIF Out clock rate: %d\n",
 					ret);
 				return ret;
 			}
 		} else {
-			ret = clk_set_parent(spdif->clk_spdif_in,
-						spdif->clk_pll_p_out0);
+			ret = clk_set_rate(spdif->clk_spdif_in,
+					   spdif_in_clock_rate);
 			if (ret) {
-				dev_err(dev, "Can't set parent of SPDIF IN clock\n");
-				return ret;
-			}
-
-			ret = clk_set_rate(
-				spdif->clk_spdif_in, spdif_in_clock_rate);
-			if (ret) {
-				dev_err(dev, "Can't set SPDIF In clock rate: %d\n",
+				dev_err(dev,
+					"Can't set SPDIF In clock rate: %d\n",
 					ret);
 				return ret;
 			}
@@ -235,29 +203,14 @@ static int tegra210_spdif_hw_params(struct snd_pcm_substream *substream,
 
 	/* As a CODEC DAI, CAPTURE is transmit */
 	if (substream->stream == SNDRV_PCM_STREAM_CAPTURE) {
-		spdif->soc_data->set_audio_cif(spdif->regmap,
-					TEGRA210_SPDIF_CIF_TXD_CTRL,
-					&cif_conf);
+		tegra210_xbar_set_cif(spdif->regmap,
+				      TEGRA210_SPDIF_CIF_TXD_CTRL,
+				      &cif_conf);
 	} else {
-		spdif->soc_data->set_audio_cif(spdif->regmap,
-					TEGRA210_SPDIF_CIF_RXD_CTRL,
-					&cif_conf);
+		tegra210_xbar_set_cif(spdif->regmap,
+				      TEGRA210_SPDIF_CIF_RXD_CTRL,
+				      &cif_conf);
 	}
-
-	return 0;
-}
-
-static int tegra210_spdif_set_dai_bclk_ratio(struct snd_soc_dai *dai,
-		unsigned int ratio)
-{
-	return 0;
-}
-
-static int tegra210_spdif_codec_probe(struct snd_soc_codec *codec)
-{
-	struct tegra210_spdif *spdif = snd_soc_codec_get_drvdata(codec);
-
-	codec->control_data = spdif->regmap;
 
 	return 0;
 }
@@ -265,7 +218,6 @@ static int tegra210_spdif_codec_probe(struct snd_soc_codec *codec)
 static struct snd_soc_dai_ops tegra210_spdif_dai_ops = {
 	.hw_params	= tegra210_spdif_hw_params,
 	.set_sysclk	= tegra210_spdif_set_dai_sysclk,
-	.set_bclk_ratio	= tegra210_spdif_set_dai_bclk_ratio,
 };
 
 static struct snd_soc_dai_driver tegra210_spdif_dais[] = {
@@ -357,7 +309,6 @@ static const struct snd_soc_dapm_route tegra210_spdif_routes[] = {
 };
 
 static struct snd_soc_codec_driver tegra210_spdif_codec = {
-	.probe = tegra210_spdif_codec_probe,
 	.idle_bias_off = 1,
 	.component_driver = {
 		.dapm_widgets = tegra210_spdif_widgets,
@@ -423,12 +374,8 @@ static const struct regmap_config tegra210_spdif_regmap_config = {
 	.cache_type = REGCACHE_FLAT,
 };
 
-static const struct tegra210_spdif_soc_data soc_data_tegra210 = {
-	.set_audio_cif = tegra210_xbar_set_cif,
-};
-
 static const struct of_device_id tegra210_spdif_of_match[] = {
-	{ .compatible = "nvidia,tegra210-spdif", .data = &soc_data_tegra210 },
+	{ .compatible = "nvidia,tegra210-spdif" },
 	{},
 };
 
@@ -436,174 +383,75 @@ static int tegra210_spdif_platform_probe(struct platform_device *pdev)
 {
 	struct tegra210_spdif *spdif;
 	struct device_node *np = pdev->dev.of_node;
-	struct resource *mem, *memregion;
+	struct resource *mem;
 	void __iomem *regs;
 	const struct of_device_id *match;
-	struct tegra210_spdif_soc_data *soc_data;
 	const char *prod_name;
 	int ret;
 
 	match = of_match_device(tegra210_spdif_of_match, &pdev->dev);
 	if (!match) {
 		dev_err(&pdev->dev, "Error: No device match found\n");
-		ret = -ENODEV;
-		goto err;
-	}
-	soc_data = (struct tegra210_spdif_soc_data *)match->data;
-
-	spdif = devm_kzalloc(&pdev->dev, sizeof(struct tegra210_spdif),
-				GFP_KERNEL);
-	if (!spdif) {
-		dev_err(&pdev->dev, "Can't allocate tegra210_spdif\n");
-		ret = -ENOMEM;
-		goto err;
+		return -ENODEV;
 	}
 
-	spdif->soc_data = soc_data;
-	spdif->is_shutdown = false;
+	spdif = devm_kzalloc(&pdev->dev, sizeof(*spdif), GFP_KERNEL);
+	if (!spdif)
+		return -ENOMEM;
+
 	dev_set_drvdata(&pdev->dev, spdif);
 
 	if (!(tegra_platform_is_unit_fpga() || tegra_platform_is_fpga())) {
-		spdif->clk_pll_a_out0 = devm_clk_get(&pdev->dev, "pll_a_out0");
-		if (IS_ERR(spdif->clk_pll_a_out0)) {
-			dev_err(&pdev->dev, "Can't retrieve pll_a_out0 clock\n");
-			ret = PTR_ERR(spdif->clk_pll_a_out0);
-			goto err;
-		}
-
-		spdif->clk_pll_p_out0 = devm_clk_get(&pdev->dev, "pll_p_out0");
-		if (IS_ERR(spdif->clk_pll_p_out0)) {
-			dev_err(&pdev->dev, "Can't retrieve pll_p_out0 clock\n");
-			ret = PTR_ERR(spdif->clk_pll_p_out0);
-			goto err;
-		}
-
 		spdif->clk_spdif_out = devm_clk_get(&pdev->dev, "spdif_out");
 		if (IS_ERR(spdif->clk_spdif_out)) {
 			dev_err(&pdev->dev, "Can't retrieve spdif clock\n");
-			ret = PTR_ERR(spdif->clk_spdif_out);
-			goto err;
+			return PTR_ERR(spdif->clk_spdif_out);
 		}
 
 		spdif->clk_spdif_in = devm_clk_get(&pdev->dev, "spdif_in");
 		if (IS_ERR(spdif->clk_spdif_in)) {
 			dev_err(&pdev->dev, "Can't retrieve spdif clock\n");
-			ret = PTR_ERR(spdif->clk_spdif_in);
-			goto err;
+			return PTR_ERR(spdif->clk_spdif_in);
 		}
 	}
 
 	mem = platform_get_resource(pdev, IORESOURCE_MEM, 0);
-	if (!mem) {
-		dev_err(&pdev->dev, "No memory resource\n");
-		ret = -ENODEV;
-		goto err;
-	}
-
-	memregion = devm_request_mem_region(&pdev->dev, mem->start,
-					    resource_size(mem), DRV_NAME);
-	if (!memregion) {
-		dev_err(&pdev->dev, "Memory region already claimed\n");
-		ret = -EBUSY;
-		goto err;
-	}
-
-	regs = devm_ioremap(&pdev->dev, mem->start, resource_size(mem));
-	if (!regs) {
-		dev_err(&pdev->dev, "ioremap failed\n");
-		ret = -ENOMEM;
-		goto err;
-	}
-
+	regs = devm_ioremap_resource(&pdev->dev, mem);
+	if (IS_ERR(regs))
+		return PTR_ERR(regs);
 	spdif->regmap = devm_regmap_init_mmio(&pdev->dev, regs,
-					    &tegra210_spdif_regmap_config);
+					      &tegra210_spdif_regmap_config);
 	if (IS_ERR(spdif->regmap)) {
 		dev_err(&pdev->dev, "regmap init failed\n");
-		ret = PTR_ERR(spdif->regmap);
-		goto err;
+		return PTR_ERR(spdif->regmap);
 	}
 	regcache_cache_only(spdif->regmap, true);
 
-	if (of_property_read_u32(np, "nvidia,ahub-spdif-id",
-				&pdev->dev.id) < 0) {
-		dev_err(&pdev->dev,
-			"Missing property nvidia,ahub-spdif-id\n");
-		ret = -ENODEV;
-		goto err;
+	ret = of_property_read_u32(np, "nvidia,ahub-spdif-id",
+				   &pdev->dev.id);
+	if (ret < 0) {
+		dev_err(&pdev->dev, "Missing property nvidia,ahub-spdif-id\n");
+		return ret;
 	}
 
 	pm_runtime_enable(&pdev->dev);
-	if (!pm_runtime_enabled(&pdev->dev)) {
-		ret = tegra210_spdif_runtime_resume(&pdev->dev);
-		if (ret)
-			goto err_pm_disable;
-	}
-
 	ret = snd_soc_register_codec(&pdev->dev, &tegra210_spdif_codec,
 				     tegra210_spdif_dais,
 				     ARRAY_SIZE(tegra210_spdif_dais));
 	if (ret != 0) {
 		dev_err(&pdev->dev, "Could not register CODEC: %d\n", ret);
-		goto err_suspend;
+		pm_runtime_disable(&pdev->dev);
+		return ret;
 	}
 
 	if (of_property_read_string(np, "prod-name", &prod_name) == 0) {
 		ret = tegra_pinctrl_config_prod(&pdev->dev, prod_name);
 		if (ret < 0)
 			dev_warn(&pdev->dev, "Failed to set %s setting\n",
-					prod_name);
+				 prod_name);
 	}
 
-	if (of_property_read_u32(np, "nvidia,is-pinctrl",
-				&spdif->is_pinctrl) < 0)
-		spdif->is_pinctrl = 0;
-
-	if (spdif->is_pinctrl) {
-		spdif->pinctrl = devm_pinctrl_get(&pdev->dev);
-		if (IS_ERR(spdif->pinctrl)) {
-			dev_warn(&pdev->dev, "Missing pinctrl device\n");
-			goto err_dap;
-		}
-
-		spdif->pin_active_state = pinctrl_lookup_state(spdif->pinctrl,
-									"dap_active");
-		if (IS_ERR(spdif->pin_active_state)) {
-			dev_dbg(&pdev->dev, "Missing dap-active state\n");
-			goto err_dap;
-		}
-
-		spdif->pin_idle_state = pinctrl_lookup_state(spdif->pinctrl,
-								"dap_inactive");
-		if (IS_ERR(spdif->pin_idle_state)) {
-			dev_dbg(&pdev->dev, "Missing dap-inactive state\n");
-			goto err_dap;
-		}
-
-		ret = pinctrl_select_state(spdif->pinctrl,
-						spdif->pin_idle_state);
-		if (ret < 0) {
-			dev_err(&pdev->dev, "setting state failed\n");
-			goto err_dap;
-		}
-	}
-
-err_dap:
 	return 0;
-
-err_suspend:
-	if (!pm_runtime_status_suspended(&pdev->dev))
-		tegra210_spdif_runtime_suspend(&pdev->dev);
-err_pm_disable:
-	pm_runtime_disable(&pdev->dev);
-err:
-	return ret;
-}
-
-static void tegra210_spdif_platform_shutdown(struct platform_device *pdev)
-{
-	struct tegra210_spdif *spdif = dev_get_drvdata(&pdev->dev);
-
-	spdif->is_shutdown = true;
 }
 
 static int tegra210_spdif_platform_remove(struct platform_device *pdev)
@@ -633,7 +481,6 @@ static struct platform_driver tegra210_spdif_driver = {
 	},
 	.probe = tegra210_spdif_platform_probe,
 	.remove = tegra210_spdif_platform_remove,
-	.shutdown = tegra210_spdif_platform_shutdown,
 };
 module_platform_driver(tegra210_spdif_driver);
 

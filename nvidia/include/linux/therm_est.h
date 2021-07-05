@@ -1,7 +1,7 @@
 /*
  * include/linux/therm_est.h
  *
- * Copyright (c) 2010-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2010-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -177,7 +177,25 @@ struct fan_dev_data {
 	u64 last_irq;
 	u64 old_irq;
 
+	struct device_node *of_node_tach;
+	bool use_tach_feedback;
+	int rpm_diff_tolerance;
+	int fan_rpm_target_hit_count;
+	int fan_rpm_ramp_index;
+	int next_target_rpm;
+	int fan_ramp_time_ms;
+	struct delayed_work fan_ramp_pwm_work;
+	struct delayed_work fan_ramp_rpm_work;
+	struct device *pwm_tach_dev;
+	struct mutex pwm_set;
+	bool fan_rpm_in_limits;
+	int rpm_valid_retry_delay;
+	int rpm_invalid_retry_delay;
+	int rpm_valid_retry_count;
+
 	bool   continuous_gov;
+	bool is_tmargin;
+	bool is_always_on;
 };
 
 #define DEBUG 0
@@ -219,7 +237,36 @@ struct therm_fan_estimator {
 	/* allow cooling device to turn off at higher temperature if sleep */
 	bool sleep_mode;
 	int nonsleep_hyst;
+	bool use_tmargin;
+	long crit_temp[MAX_SUBDEVICE_GROUP];
 
 	bool is_continuous_gov;
 };
+
+#if IS_ENABLED(CONFIG_GENERIC_PWM_TACHOMETER)
+int pwm_tach_capture_rpm(struct device *dev);
+struct device *pwm_get_tach_dev(void);
+#else
+static inline int pwm_tach_capture_rpm(struct device *dev)
+{
+	return 0;
+}
+
+static inline struct device *pwm_get_tach_dev(void)
+{
+	return NULL;
+}
+#endif
+
+#if IS_ENABLED(CONFIG_THERMAL_GOV_CONTINUOUS)
+int continuous_thermal_gov_update_params(struct thermal_zone_params *tzp,
+		struct device_node *np);
+#else
+static inline int continuous_thermal_gov_update_params(
+		struct thermal_zone_params *tzp, struct device_node *np)
+{
+	return 0;
+}
+#endif
+
 #endif /* _LINUX_THERM_EST_H */

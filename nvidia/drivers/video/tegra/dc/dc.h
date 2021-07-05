@@ -32,7 +32,7 @@
 #include <linux/nvhost.h>
 #include <linux/extcon.h>
 #include <video/tegra_dc_ext_kernel.h>
-#include <video/tegra_dc_ext.h>
+#include <uapi/video/tegra_dc_ext.h>
 #include "dc_extras.h"
 
 #define DEFAULT_FPGA_FREQ_KHZ	160000
@@ -678,7 +678,7 @@ struct tegra_dc_out {
 	int			user_needs_vblank;
 	struct completion	user_vblank_comp;
 
-	bool				is_ext_dp_panel;
+	bool				is_ext_panel;
 	/* Default mode for fbconsole */
 	struct fb_videomode	*fbcon_default_mode;
 
@@ -780,6 +780,7 @@ struct tegra_fb_data {
 };
 
 #define TEGRA_FB_FLIP_ON_PROBE		(1 << 0)
+#define TEGRA_FB_WIN_INVALID		-1
 
 struct tegra_dc_platform_data {
 	unsigned long		flags;
@@ -999,6 +1000,8 @@ int tegra_dc_set_fb_mode(struct tegra_dc *dc, const struct fb_videomode *fbmode,
 unsigned tegra_dc_get_out_height(const struct tegra_dc *dc);
 unsigned tegra_dc_get_out_width(const struct tegra_dc *dc);
 unsigned tegra_dc_get_out_max_pixclock(const struct tegra_dc *dc);
+bool tegra_dc_valid_pixclock(const struct tegra_dc *dc,
+					const struct fb_videomode *mode);
 
 #if defined(CONFIG_TEGRA_HDMIVRR) && (defined(CONFIG_TRUSTED_LITTLE_KERNEL) || defined(CONFIG_TRUSTY))
 void tegra_hdmivrr_te_vrr_sec(struct tegra_vrr *vrr);
@@ -1068,7 +1071,7 @@ void tegra_get_fb_resource(struct resource *fb_res, int instance);
 
 unsigned tegra_dc_out_flags_from_dev(struct device *dev);
 bool tegra_dc_initialized(struct device *dev);
-bool tegra_dc_is_ext_dp_panel(const struct tegra_dc *dc);
+bool tegra_dc_is_ext_panel(const struct tegra_dc *dc);
 
 struct spd_infoframe {
 	u8 vendor_name[8];

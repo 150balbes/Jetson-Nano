@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2014-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -39,6 +39,7 @@ struct vm_gk20a;
 struct nvgpu_gr_ctx;
 struct nvgpu_cpu_time_correlation_sample;
 struct vgpu_ecc_stat;
+struct channel_gk20a;
 
 struct vgpu_priv_data {
 	u64 virt_handle;
@@ -104,4 +105,6 @@ int vgpu_gv11b_init_hal(struct gk20a *g);
 
 bool vgpu_is_reduced_bar1(struct gk20a *g);
 
+int vgpu_gr_set_mmu_debug_mode(struct gk20a *g,
+			struct channel_gk20a *ch, bool enable);
 #endif

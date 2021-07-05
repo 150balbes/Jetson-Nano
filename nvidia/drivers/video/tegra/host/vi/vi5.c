@@ -1,7 +1,7 @@
 /*
  * VI5 driver for T194
  *
- * Copyright (c) 2017-2018, NVIDIA Corporation.  All rights reserved.
+ * Copyright (c) 2017-2020, NVIDIA Corporation.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -49,7 +49,7 @@
 #include <media/mc_common.h>
 #include <media/tegra_camera_platform.h>
 #include "camera/vi/vi5_fops.h"
-#include <linux/nvhost_vi_ioctl.h>
+#include <uapi/linux/nvhost_vi_ioctl.h>
 #include <linux/platform/tegra/latency_allowance.h>
 
 /* HW capability, pixels per clock */
@@ -148,6 +148,7 @@ int vi5_priv_early_probe(struct platform_device *pdev)
 	struct platform_device *thi = NULL;
 	struct host_vi5 *vi5;
 	int err = 0;
+	unsigned int num_channels = 0;
 
 	info = (void *)of_device_get_match_data(dev);
 	if (unlikely(info == NULL)) {
@@ -171,6 +172,20 @@ int vi5_priv_early_probe(struct platform_device *pdev)
 		err = -EPROBE_DEFER;
 		goto put_vi;
 	}
+
+	if (of_property_read_u32(dev->of_node, "nvidia,num-vi-channels",
+				&num_channels)) {
+		dev_warn(dev, "using default number of vi channels, %d\n",
+			info->num_channels);
+	} else {
+		if (num_channels < info->num_channels) {
+			info->num_channels = num_channels;
+		} else {
+			dev_WARN(dev,
+				"num of channels are out of range, use default num");
+		}
+	}
+	dev_dbg(dev, "num vi channels : %d\n", info->num_channels);
 
 	vi5 = (struct host_vi5*) devm_kzalloc(dev, sizeof(*vi5), GFP_KERNEL);
 	if (!vi5) {

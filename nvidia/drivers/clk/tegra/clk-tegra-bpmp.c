@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2014-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -27,6 +27,7 @@
 #include <linux/of_device.h>
 #include <soc/tegra/chip-id.h>
 
+#include <linux/tegra-aon-clk.h>
 #include "clk.h"
 #include "clk-tegra-bpmp.h"
 
@@ -80,6 +81,11 @@ static const struct of_device_id tegra_clock_ids[] __initconst = {
 		.data = tegra_bpmp_clock_init },
 	{ .compatible = "nvidia,tegra-bpmp-staged-clks",
 		.data = tegra_bpmp_staged_clock_init },
+#ifdef CONFIG_TEGRA_AON
+	{ .compatible = "nvidia,tegra-aon-clks",
+		.data = tegra_aon_clk_init
+	},
+#endif
 	{}
 };
 

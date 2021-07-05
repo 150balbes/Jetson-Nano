@@ -174,7 +174,6 @@ static int tipc_udp_xmit(struct net *net, struct sk_buff *skb,
 			goto tx_error;
 		}
 
-		skb->dev = rt->dst.dev;
 		ttl = ip4_dst_hoplimit(&rt->dst);
 		udp_tunnel_xmit_skb(rt, ub->ubsock->sk, skb, src->ipv4.s_addr,
 				    dst->ipv4.s_addr, 0, ttl, 0, src->port,
@@ -193,10 +192,9 @@ static int tipc_udp_xmit(struct net *net, struct sk_buff *skb,
 		if (err)
 			goto tx_error;
 		ttl = ip6_dst_hoplimit(ndst);
-		err = udp_tunnel6_xmit_skb(ndst, ub->ubsock->sk, skb,
-					   ndst->dev, &src->ipv6,
-					   &dst->ipv6, 0, ttl, 0, src->port,
-					   dst->port, false);
+		err = udp_tunnel6_xmit_skb(ndst, ub->ubsock->sk, skb, NULL,
+					   &src->ipv6, &dst->ipv6, 0, ttl, 0,
+					   src->port, dst->port, false);
 #endif
 	}
 	return err;
@@ -243,10 +241,8 @@ static int tipc_udp_send_msg(struct net *net, struct sk_buff *skb,
 		}
 
 		err = tipc_udp_xmit(net, _skb, ub, src, &rcast->addr);
-		if (err) {
-			kfree_skb(_skb);
+		if (err)
 			goto out;
-		}
 	}
 	err = 0;
 out:
@@ -675,6 +671,11 @@ static int tipc_udp_enable(struct net *net, struct tipc_bearer *b,
 	err = tipc_parse_udp_addr(opts[TIPC_NLA_UDP_REMOTE], &remote, NULL);
 	if (err)
 		goto err;
+
+	if (remote.proto != local.proto) {
+		err = -EINVAL;
+		goto err;
+	}
 
 	b->bcast_addr.media_id = TIPC_MEDIA_TYPE_UDP;
 	b->bcast_addr.broadcast = 1;

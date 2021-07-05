@@ -34,7 +34,7 @@
 			regulator-always-on;
 		};
 
-		p3449_vdd_5v0_sys: regulator@1 { /* DC 5V INPUT */
+		hdr40_vdd_5v0: p3449_vdd_5v0_sys: regulator@1 { /* DC 5V INPUT */
 			compatible = "regulator-fixed";
 			reg = <1>;
 			regulator-name = "vdd-5v0-sys";
@@ -44,7 +44,7 @@
 			regulator-disable-ramp-delay = <10000>;
 		};
 
-		p3448_vdd_3v3_sys: regulator@2 {
+		hdr40_vdd_3v3: p3448_vdd_3v3_sys: regulator@2 {
 			compatible = "regulator-fixed-sync";
 			reg = <2>;
 			regulator-name = "vdd-3v3-sys";

@@ -421,8 +421,10 @@ int __devinit pgdrv_prob(struct pci_dev *pdev, const struct pci_device_id *id)
 	int		pg_minor, result, i;
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,26)
-        pci_disable_link_state(pdev, PCIE_LINK_STATE_L0S | PCIE_LINK_STATE_L1 |
-                               PCIE_LINK_STATE_CLKPM);
+	if (!of_property_read_bool(pci_device_to_OF_node(pdev), "enable-aspm"))
+		pci_disable_link_state(pdev, PCIE_LINK_STATE_L0S |
+				       PCIE_LINK_STATE_L1 |
+				       PCIE_LINK_STATE_CLKPM);
 #endif
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,11)

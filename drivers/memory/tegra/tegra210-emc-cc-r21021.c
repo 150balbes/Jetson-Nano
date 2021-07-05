@@ -938,14 +938,14 @@ void emc_set_clock_r21021(struct emc_table *next_timing,
 	}
 
 	/* Check if we need to turn on VREF generator. */
-	if ((((last_timing->burst_regs[EMC_PMACRO_DATA_PAD_TX_CTRL_INDEX] &
-	       EMC_PMACRO_DATA_PAD_TX_CTRL_DATA_DQ_E_IVREF) == 0) &&
-	     ((next_timing->burst_regs[EMC_PMACRO_DATA_PAD_TX_CTRL_INDEX] &
-	       EMC_PMACRO_DATA_PAD_TX_CTRL_DATA_DQ_E_IVREF) != 0)) ||
-	    (((last_timing->burst_regs[EMC_PMACRO_DATA_PAD_TX_CTRL_INDEX] &
-	       EMC_PMACRO_DATA_PAD_TX_CTRL_DATA_DQS_E_IVREF) == 0) &&
-	     ((next_timing->burst_regs[EMC_PMACRO_DATA_PAD_TX_CTRL_INDEX] &
-	       EMC_PMACRO_DATA_PAD_TX_CTRL_DATA_DQS_E_IVREF) != 0))) {
+	if ((!(last_timing->burst_regs[EMC_PMACRO_DATA_PAD_TX_CTRL_INDEX] &
+	       EMC_PMACRO_DATA_PAD_TX_CTRL_DATA_DQ_E_IVREF) &&
+	     (next_timing->burst_regs[EMC_PMACRO_DATA_PAD_TX_CTRL_INDEX] &
+	       EMC_PMACRO_DATA_PAD_TX_CTRL_DATA_DQ_E_IVREF)) ||
+	    (!(last_timing->burst_regs[EMC_PMACRO_DATA_PAD_TX_CTRL_INDEX] &
+	       EMC_PMACRO_DATA_PAD_TX_CTRL_DATA_DQS_E_IVREF) &&
+	     (next_timing->burst_regs[EMC_PMACRO_DATA_PAD_TX_CTRL_INDEX] &
+	       EMC_PMACRO_DATA_PAD_TX_CTRL_DATA_DQS_E_IVREF))) {
 		u32 pad_tx_ctrl =
 		    next_timing->burst_regs[EMC_PMACRO_DATA_PAD_TX_CTRL_INDEX];
 		u32 last_pad_tx_ctrl =

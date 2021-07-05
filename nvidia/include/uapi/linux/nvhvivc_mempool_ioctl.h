@@ -1,9 +1,9 @@
 /*
- * nvhvivc_mempool_ioctl.h
+ * include/uapi/linux/nvhvivc_mempool_ioctl.h
  *
  * Declarations for Tegra Hypervisor ivc mempool driver ioctls
  *
- * Copyright (c) 2016-2019 NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2016-2020 NVIDIA CORPORATION.  All rights reserved.
  *
  * This file is licensed under the terms of the GNU General Public License
  * version 2.  This program is licensed "as is" without any warranty of any
@@ -13,7 +13,7 @@
 #ifndef __UAPI_NVHVIVC_MEMPOOL_IOCTL_H__
 #define __UAPI_NVHVIVC_MEMPOOL_IOCTL_H__
 
-#include <uapi/linux/ioctl.h>
+#include <linux/ioctl.h>
 
 /* ivc mempool IOCTL magic number */
 #define TEGRA_MPLUSERSPACE_IOCTL_MAGIC 0xA6

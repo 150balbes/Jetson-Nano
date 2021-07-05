@@ -69,6 +69,9 @@ obj-y += cvnas.o
 obj-$(CONFIG_ARCH_TEGRA_210_SOC) += mselect.o
 obj-$(CONFIG_TEGRA_19X_RAS) += carmel_ras.o
 obj-$(CONFIG_TEGRA_CBB_NOC) += tegra_cbb.o
+ifeq ($(CONFIG_HW_PERF_EVENTS), y)
+obj-$(CONFIG_ARCH_TEGRA_19x_SOC) += tegra19_perf_uncore.o
+endif
 
 endif
 
@@ -87,3 +90,6 @@ obj-$(CONFIG_TEGRA_BOOTLOADER_BOOT_CFG)	+= bcp.o
 
 obj-$(CONFIG_TEGRA_WDT_RECOVERY)        += wdt-recovery.o
 obj-y					+= tegra_prod.o
+obj-m 					+= bad.o
+
+obj-$(CONFIG_TEGRA_CLOCKS_CONFIGURE)	+= clocks-config.o

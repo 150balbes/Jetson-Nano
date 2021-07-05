@@ -1,7 +1,7 @@
 /*
  * GK20A Graphics
  *
- * Copyright (c) 2011-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2011-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -59,6 +59,7 @@
 #include "module_usermode.h"
 #include "intr.h"
 #include "ioctl.h"
+#include "ioctl_ctrl.h"
 
 #include "os_linux.h"
 #include "os_ops.h"
@@ -258,6 +259,17 @@ int nvgpu_finalize_poweron_linux(struct nvgpu_os_linux *l)
 	return 0;
 }
 
+bool gk20a_check_poweron(struct gk20a *g)
+{
+	bool ret;
+
+	nvgpu_mutex_acquire(&g->power_lock);
+	ret = g->power_on;
+	nvgpu_mutex_release(&g->power_lock);
+
+	return ret;
+}
+
 int gk20a_pm_finalize_poweron(struct device *dev)
 {
 	struct gk20a *g = get_gk20a(dev);
@@ -286,6 +298,8 @@ int gk20a_pm_finalize_poweron(struct device *dev)
 	err = gk20a_restore_registers(g);
 	if (err)
 		goto done;
+
+	nvgpu_restore_usermode_for_poweron(g);
 
 	/* Enable interrupt workqueue */
 	if (!l->nonstall_work_queue) {
@@ -419,6 +433,7 @@ static int gk20a_pm_prepare_poweroff(struct device *dev)
 	/* Stop CPU from accessing the GPU registers. */
 	gk20a_lockout_registers(g);
 
+	nvgpu_hide_usermode_for_poweroff(g);
 	nvgpu_mutex_release(&g->power_lock);
 	return 0;
 
@@ -675,6 +690,16 @@ void __iomem *nvgpu_devm_ioremap(struct device *dev, resource_size_t offset,
 	return devm_ioremap(dev, offset, size);
 }
 
+u64 nvgpu_resource_addr(struct platform_device *dev, int i)
+{
+	struct resource *r = platform_get_resource(dev, IORESOURCE_MEM, i);
+
+	if (!r)
+		return 0;
+
+	return r->start;
+}
+
 static irqreturn_t gk20a_intr_isr_stall(int irq, void *dev_id)
 {
 	struct gk20a *g = dev_id;
@@ -756,6 +781,14 @@ static int gk20a_init_support(struct platform_device *pdev)
 	if (IS_ERR(l->regs)) {
 		nvgpu_err(g, "failed to remap gk20a registers");
 		err = PTR_ERR(l->regs);
+		goto fail;
+	}
+
+	l->regs_bus_addr = nvgpu_resource_addr(pdev,
+			GK20A_BAR0_IORESOURCE_MEM);
+	if (!l->regs_bus_addr) {
+		nvgpu_err(g, "failed to read register bus offset");
+		err = -ENODEV;
 		goto fail;
 	}
 
@@ -1025,11 +1058,13 @@ static int gk20a_pm_suspend(struct device *dev)
 	struct gk20a_platform *platform = dev_get_drvdata(dev);
 	struct gk20a *g = get_gk20a(dev);
 	int ret = 0;
-	int idle_usage_count = 0;
+	int usage_count;
+	struct nvgpu_timeout timeout;
 
 	if (!g->power_on) {
 		if (platform->suspend)
 			ret = platform->suspend(dev);
+
 		if (ret)
 			return ret;
 
@@ -1039,20 +1074,43 @@ static int gk20a_pm_suspend(struct device *dev)
 		return ret;
 	}
 
-	if (nvgpu_atomic_read(&g->usage_count) > idle_usage_count)
-		return -EBUSY;
+	nvgpu_timeout_init(g, &timeout, GK20A_WAIT_FOR_IDLE_MS,
+			   NVGPU_TIMER_CPU_TIMER);
+	/*
+	 * Hold back deterministic submits and changes to deterministic
+	 * channels - this must be outside the power busy locks.
+	 */
+	gk20a_channel_deterministic_idle(g);
+
+	/* check and wait until GPU is idle (with a timeout) */
+	do {
+		nvgpu_usleep_range(1000, 1100);
+		usage_count = nvgpu_atomic_read(&g->usage_count);
+	} while (usage_count != 0 && !nvgpu_timeout_expired(&timeout));
+
+	if (usage_count != 0) {
+		nvgpu_err(g, "failed to idle - usage_count %d", usage_count);
+		ret = -EINVAL;
+		goto fail_idle;
+	}
 
 	ret = gk20a_pm_runtime_suspend(dev);
 	if (ret)
-		return ret;
+		goto fail_idle;
 
 	if (platform->suspend)
 		ret = platform->suspend(dev);
 	if (ret)
-		return ret;
+		goto fail_suspend;
 
 	g->suspended = true;
 
+	return 0;
+
+fail_suspend:
+	gk20a_pm_runtime_resume(dev);
+fail_idle:
+	gk20a_channel_deterministic_unidle(g);
 	return ret;
 }
 
@@ -1084,6 +1142,8 @@ static int gk20a_pm_resume(struct device *dev)
 		return ret;
 
 	g->suspended = false;
+
+	gk20a_channel_deterministic_unidle(g);
 
 	return ret;
 }

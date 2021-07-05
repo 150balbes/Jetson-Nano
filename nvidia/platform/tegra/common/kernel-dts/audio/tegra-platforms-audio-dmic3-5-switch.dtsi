@@ -1,0 +1,56 @@
+/*
+ * tegra-platforms-audio-dmic3-5-switch.dtsi: DMIC3<->DMIC5 switching.
+ *
+ * Copyright (c) 2020, NVIDIA CORPORATION.  All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; version 2 of the License.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ */
+
+&tegra_pinctrl {
+	/* Dynamic pinmux config for DMIC3/DMIC5 */
+	dmic3_dap_active_state: dmic3_dap_active {
+		dmic3_dat {
+			nvidia,pins = TEGRA_DMIC3_5_DAT_PIN;
+			nvidia,function = "dmic3";
+			nvidia,tristate = <TEGRA_PIN_ENABLE>;
+			nvidia,enable-input = <TEGRA_PIN_ENABLE>;
+			nvidia,pull = <TEGRA_PIN_PULL_DOWN>;
+		};
+		dmic3_clk {
+			nvidia,pins = TEGRA_DMIC3_5_CLK_PIN;
+			nvidia,function = "dmic3";
+			nvidia,tristate = <TEGRA_PIN_DISABLE>;
+			nvidia,enable-input = <TEGRA_PIN_DISABLE>;
+			nvidia,pull = <TEGRA_PIN_PULL_NONE>;
+		};
+	};
+	dmic3_dap_inactive_state: dmic3_dap_inactive {
+		dmic5_dat {
+			nvidia,pins = TEGRA_DMIC3_5_DAT_PIN;
+			nvidia,function = "dmic5";
+			nvidia,tristate = <TEGRA_PIN_ENABLE>;
+			nvidia,enable-input = <TEGRA_PIN_ENABLE>;
+			nvidia,pull = <TEGRA_PIN_PULL_DOWN>;
+		};
+		dmic5_clk {
+			nvidia,pins = TEGRA_DMIC3_5_CLK_PIN;
+			nvidia,function = "dmic5";
+			nvidia,tristate = <TEGRA_PIN_DISABLE>;
+			nvidia,enable-input = <TEGRA_PIN_DISABLE>;
+			nvidia,pull = <TEGRA_PIN_PULL_NONE>;
+		};
+	};
+};
+
+&tegra_dmic3 {
+	pinctrl-names = "dap_active", "dap_inactive";
+	pinctrl-0 = <&dmic3_dap_active_state>;
+	pinctrl-1 = <&dmic3_dap_inactive_state>;
+};

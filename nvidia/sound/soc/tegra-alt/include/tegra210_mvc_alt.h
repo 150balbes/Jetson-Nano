@@ -1,7 +1,7 @@
 /*
  * tegra210_mvc_alt.h - Definitions for Tegra210 MVC driver
  *
- * Copyright (c) 2014-2017 NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2014-2019 NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -130,12 +130,6 @@ enum {
 	CURVE_LINEAR,
 };
 
-struct tegra210_mvc_soc_data {
-	void (*set_audio_cif)(struct regmap *map,
-			unsigned int reg,
-			struct tegra210_xbar_cif_conf *conf);
-};
-
 struct tegra210_mvc {
 	struct regmap *regmap;
 	int poly_coeff[9];
@@ -145,8 +139,6 @@ struct tegra210_mvc {
 	unsigned int cif_channels;
 	unsigned int audio_bits;
 	unsigned int format_in;
-	const struct tegra210_mvc_soc_data *soc_data;
-	bool is_shutdown;
 };
 
 #endif

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2016-2018, NVIDIA Corporation. All rights reserved.
+ * Copyright (C) 2016-2020, NVIDIA Corporation. All rights reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -69,10 +69,14 @@ end:
 	return ret;
 }
 
+/* actmon_dev_avg_freq_get should be invoked in spinlock */
 static unsigned long actmon_dev_avg_freq_get(
 	struct actmon_dev *dev)
 {
 	u64 val;
+
+	if (dev->ops.get_avg_cnt)
+		dev->avg_count = dev->ops.get_avg_cnt(offs(dev->reg_offs));
 
 	if (dev->type == ACTMON_FREQ_SAMPLER)
 		return dev->avg_count / actmon->sample_period;
@@ -197,7 +201,12 @@ static ssize_t avgactv_show(struct kobject *kobj,
 {
 	struct actmon_dev *dev = container_of(attr, struct actmon_dev,
 		avgact_attr);
-	unsigned long val = actmon_dev_avg_freq_get(dev);
+	unsigned long val = 0;
+	unsigned long flags;
+
+	spin_lock_irqsave(&dev->lock, flags);
+	val = actmon_dev_avg_freq_get(dev);
+	spin_unlock_irqrestore(&dev->lock, flags);
 
 	return scnprintf(buf, PAGE_SIZE, "%lu\n", val);
 }

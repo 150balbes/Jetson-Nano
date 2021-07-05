@@ -1,7 +1,7 @@
 /*
  * include/uapi/linux/tegra_profiler.h
  *
- * Copyright (c) 2013-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2013-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -20,8 +20,8 @@
 #include <linux/ioctl.h>
 #include <linux/types.h>
 
-#define QUADD_SAMPLES_VERSION	47
-#define QUADD_IO_VERSION	26
+#define QUADD_SAMPLES_VERSION	48
+#define QUADD_IO_VERSION	28
 
 #define QUADD_IO_VERSION_DYNAMIC_RB		5
 #define QUADD_IO_VERSION_RB_MAX_FILL_COUNT	6
@@ -45,6 +45,8 @@
 #define QUADD_IO_VERSION_FORCE_ARCH_TIMER	24
 #define QUADD_IO_VERSION_SAMPLE_ALL_TASKS	25
 #define QUADD_IO_VERSION_EXTABLES_PID		26
+#define QUADD_IO_VERSION_SAMPLING_CNTRL		27
+#define QUADD_IO_VERSION_UNCORE_EVENTS		28
 
 #define QUADD_SAMPLE_VERSION_THUMB_MODE_FLAG	17
 #define QUADD_SAMPLE_VERSION_GROUP_SAMPLES	18
@@ -75,6 +77,7 @@
 #define QUADD_SAMPLE_VERSION_MMAP_CPUID		45
 #define QUADD_SAMPLE_VERSION_PCLK_SEND_CHANGES	46
 #define QUADD_SAMPLE_VERSION_COMM_SAMPLES	47
+#define QUADD_SAMPLE_VERSION_UNCORE_EVENTS	48
 
 #define QUADD_MMAP_HEADER_VERSION	1
 
@@ -184,9 +187,10 @@ enum quadd_record_type {
 	QUADD_RECORD_TYPE_HOTPLUG,
 };
 
-enum quadd_event_source {
+enum quadd_event_source_type {
 	QUADD_EVENT_SOURCE_PMU = 1,
 	QUADD_EVENT_SOURCE_PL310,
+	QUADD_EVENT_SOURCE_CARMEL_UNCORE_PMU,
 };
 
 enum quadd_cpu_mode {
@@ -247,6 +251,7 @@ enum {
 #define QUADD_SAMPLE_FLAG_PF_KTHREAD	(1 << 6)
 #define QUADD_SAMPLE_FLAG_URCS		(1 << 7)
 #define QUADD_SAMPLE_FLAG_IP64		(1 << 8)
+#define QUADD_SAMPLE_FLAG_UNCORE	(1 << 9)
 
 struct quadd_sample_data {
 	__u64 ip;
@@ -393,6 +398,8 @@ struct quadd_debug_data {
 #define QUADD_HDR_FLAG_MODE_TRACE_ALL	(1ULL << 15)
 #define QUADD_HDR_FLAG_MODE_SAMPLE_TREE	(1ULL << 16)
 #define QUADD_HDR_FLAG_MODE_TRACE_TREE	(1ULL << 17)
+#define QUADD_HDR_FLAG_CPUFREQ		(1ULL << 18)
+#define QUADD_HDR_FLAG_UNCORE		(1ULL << 19)
 
 struct quadd_header_data {
 	__u16 magic;
@@ -439,6 +446,7 @@ enum {
 	QUADD_PARAM_IDX_SIZE_OF_RB	= 0,
 	QUADD_PARAM_IDX_EXTRA		= 1,
 	QUADD_PARAM_IDX_BT_LOWER_BOUND	= 2,
+	QUADD_PARAM_IDX_UNCORE_FREQ	= 4,
 };
 
 #define QUADD_PARAM_EXTRA_GET_MMAP		(1 << 0)
@@ -456,10 +464,13 @@ enum {
 #define QUADD_PARAM_EXTRA_SAMPLE_TREE		(1 << 12)
 #define QUADD_PARAM_EXTRA_TRACING		(1 << 13)
 #define QUADD_PARAM_EXTRA_TRACE_TREE		(1 << 14)
+#define QUADD_PARAM_EXTRA_SAMPLING_TIMER	(1 << 15)
+#define QUADD_PARAM_EXTRA_SAMPLING_SCHED_OUT	(1 << 16)
 
 enum {
-	QUADD_EVENT_TYPE_RAW		= 0,
-	QUADD_EVENT_TYPE_HARDWARE	= 1,
+	QUADD_EVENT_TYPE_RAW			= 0,
+	QUADD_EVENT_TYPE_HARDWARE		= 1,
+	QUADD_EVENT_TYPE_RAW_CARMEL_UNCORE	= 2,
 
 	QUADD_EVENT_TYPE_MAX,
 };
@@ -535,6 +546,7 @@ enum {
 #define QUADD_COMM_CAP_EXTRA_RB_MMAP_OP		(1 << 9)
 #define QUADD_COMM_CAP_EXTRA_CPU_MASK		(1 << 10)
 #define QUADD_COMM_CAP_EXTRA_ARCH_TIMER_USR	(1 << 11)
+#define QUADD_COMM_CAP_EXTRA_CPUFREQ		(1 << 12)
 
 struct quadd_comm_cap {
 	__u32	pmu:1,

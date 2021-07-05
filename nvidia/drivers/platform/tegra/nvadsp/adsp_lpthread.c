@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2017, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2016-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -128,7 +128,7 @@ int adsp_lpthread_pause(void)
 	return ret;
 }
 
-int adsp_lpthread_exit(void)
+int adsp_lpthread_uninit(void)
 {
 	int ret;
 
@@ -147,7 +147,7 @@ int adsp_lpthread_exit(void)
 	return ret;
 }
 
-static int adsp_usage_set(void *data, u64 val)
+int adsp_usage_set(unsigned int  val)
 {
 	int ret = 0;
 
@@ -157,24 +157,10 @@ static int adsp_usage_set(void *data, u64 val)
 		if (lpthread->lpthread_initialized &&
 				lpthread->lpthread_resumed) {
 			pr_info("ADSP Usage App already running\n");
-			pr_info("echo %d > adsp_usage to pause\n",
-				ADSP_LPTHREAD_PAUSE);
-			pr_info("echo %d > adsp_usage to stop\n",
-				ADSP_LPTHREAD_STOP);
 			break;
 		}
-		if (lpthread->adsp_os_suspended &&
-				!lpthread->lpthread_initialized) {
-			pr_info("Starting ADSP OS\n");
-			if (nvadsp_os_start()) {
-				pr_err("Unable to start OS\n");
-				break;
-			}
-			lpthread->adsp_os_suspended = false;
-			ret = adsp_lpthread_init(lpthread->adsp_os_suspended);
-			pr_info("Initializing lpthread\n");
-			lpthread->lpthread_initialized = true;
-		} else if (!lpthread->lpthread_initialized) {
+
+		if (!lpthread->lpthread_initialized) {
 			ret = adsp_lpthread_init(lpthread->adsp_os_suspended);
 			pr_info("Initializing lpthread\n");
 			lpthread->lpthread_initialized = true;
@@ -190,8 +176,6 @@ static int adsp_usage_set(void *data, u64 val)
 	case ADSP_LPTHREAD_PAUSE:
 		if (!lpthread->lpthread_initialized) {
 			pr_info("ADSP Usage App not initialized\n");
-			pr_info("echo %d > adsp_usage to init\n",
-				ADSP_LPTHREAD_START);
 			break;
 		}
 		pr_info("Pausing lpthread\n");
@@ -204,12 +188,10 @@ static int adsp_usage_set(void *data, u64 val)
 	case ADSP_LPTHREAD_STOP:
 		if (!lpthread->lpthread_initialized) {
 			pr_info("ADSP Usage App not initialized\n");
-			pr_info("echo %d > adsp_usage to init\n",
-				ADSP_LPTHREAD_START);
 			break;
 		}
 		pr_info("Exiting lpthread\n");
-		ret = adsp_lpthread_exit();
+		ret = adsp_lpthread_uninit();
 		lpthread->lpthread_resumed = false;
 		lpthread->lpthread_paused = false;
 		lpthread->lpthread_closed = true;
@@ -218,18 +200,12 @@ static int adsp_usage_set(void *data, u64 val)
 
 	default:
 		pr_err("ADSP Usage App: Invalid input\n");
-		pr_err("echo %d > adsp_usage to init/resume\n",
-			ADSP_LPTHREAD_START);
-		pr_err("echo %d > adsp_usage to pause\n",
-			ADSP_LPTHREAD_PAUSE);
-		pr_err("echo %d > adsp_usage to stop\n",
-			ADSP_LPTHREAD_STOP);
 		ret = 0;
 	}
 	return ret;
 }
-
-static int adsp_usage_get(void *data, u64 *val)
+EXPORT_SYMBOL(adsp_usage_set);
+unsigned int adsp_usage_get(void)
 {
 	if (lpthread->lpthread_initialized && lpthread->lpthread_resumed)
 		return ADSP_LPTHREAD_START;
@@ -239,46 +215,13 @@ static int adsp_usage_get(void *data, u64 *val)
 
 	return ADSP_LPTHREAD_STOP;
 }
+EXPORT_SYMBOL(adsp_usage_get);
 
-DEFINE_SIMPLE_ATTRIBUTE(adsp_usage_fops,
-	adsp_usage_get, adsp_usage_set, "%llu\n");
-
-static int lpthread_debugfs_init(struct nvadsp_drv_data *drv)
-{
-	int ret = -ENOMEM;
-	struct dentry *d, *dir;
-
-	if (!drv->adsp_debugfs_root)
-		return ret;
-
-	dir = debugfs_create_dir("adsp_lpthread",
-		drv->adsp_debugfs_root);
-	if (!dir)
-		return ret;
-
-	d = debugfs_create_file(
-			"adsp_usage", RW_MODE, dir, NULL, &adsp_usage_fops);
-	if (!d)
-		goto err;
-
-	return 0;
-
-err:
-	debugfs_remove_recursive(dir);
-	pr_err("unable to create adsp lpthread debug file\n");
-	return -ENOMEM;
-}
-
-int adsp_lpthread_debugfs_init(struct platform_device *pdev)
+int adsp_lpthread_entry(struct platform_device *pdev)
 {
 	struct nvadsp_drv_data *drv = platform_get_drvdata(pdev);
-	int ret = -EINVAL;
 
 	lpthread = &lpthread_obj;
-
-	ret = lpthread_debugfs_init(drv);
-	if (ret)
-		pr_err("lpthread_debugfs_init() ret = %d\n", ret);
 
 	drv->lpthread_initialized = true;
 	lpthread->adsp_os_suspended = false;
@@ -286,7 +229,7 @@ int adsp_lpthread_debugfs_init(struct platform_device *pdev)
 	return 0;
 }
 
-int adsp_lpthread_debugfs_exit(struct platform_device *pdev)
+int adsp_lpthread_exit(struct platform_device *pdev)
 {
 	status_t ret = 0;
 	struct nvadsp_drv_data *drv = platform_get_drvdata(pdev);
@@ -298,7 +241,7 @@ int adsp_lpthread_debugfs_exit(struct platform_device *pdev)
 	return ret;
 }
 
-int adsp_lpthread_debugfs_set_suspend(bool is_suspended)
+int adsp_lpthread_set_suspend(bool is_suspended)
 {
 	lpthread->adsp_os_suspended = is_suspended;
 	return 0;

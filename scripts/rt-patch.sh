@@ -25,9 +25,11 @@ apply_rt_patches()
 		cp ../arch/arm64/configs/tegra_gnu_linux_defconfig\
 			../arch/arm64/configs/.tmp.tegra_gnu_linux_defconfig
 		./config --file ../arch/arm64/configs/tegra_gnu_linux_defconfig\
-			--enable PREEMPT_RT_FULL\
-			--disable CPU_IDLE_TEGRA18X\
-			--disable CPU_IDLE_TEGRA19X\
+			--enable PREEMPT_RT_FULL \
+			--disable DEBUG_PREEMPT \
+			--disable CPU_IDLE_TEGRA18X \
+			--disable CPU_FREQ_TIMES \
+			--disable CPU_FREQ_GOV_SCHEDUTIL \
 			--disable CPU_FREQ_GOV_INTERACTIVE || any_failure=1
 		echo "PREEMPT RT patches successfully applied for Auto!"
 
@@ -35,9 +37,11 @@ apply_rt_patches()
 		cp ../arch/arm64/configs/tegra_defconfig\
 			../arch/arm64/configs/.tmp.tegra_defconfig
 		 ./config --file ../arch/arm64/configs/tegra_defconfig\
-			--enable PREEMPT_RT_FULL\
-			--disable CPU_IDLE_TEGRA18X\
-			--disable CPU_IDLE_TEGRA19X\
+			--enable PREEMPT_RT_FULL \
+			--disable DEBUG_PREEMPT \
+			--disable CPU_IDLE_TEGRA18X \
+			--disable CPU_FREQ_TIMES \
+			--disable CPU_FREQ_GOV_SCHEDUTIL \
 			--disable CPU_FREQ_GOV_INTERACTIVE || any_failure=1
 		echo "PREEMPT RT patches successfully applied for L4T!"
 	fi

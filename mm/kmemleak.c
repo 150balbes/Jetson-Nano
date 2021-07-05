@@ -568,8 +568,8 @@ static struct kmemleak_object *create_object(unsigned long ptr, size_t size,
 	/* task information */
 	if (in_irq()) {
 		object->pid = 0;
-		strlcpy(object->comm, "hardirq", sizeof(object->comm));
-	} else if (in_softirq()) {
+		strncpy(object->comm, "hardirq", sizeof(object->comm));
+	} else if (in_serving_softirq()) {
 		object->pid = 0;
 		strlcpy(object->comm, "softirq", sizeof(object->comm));
 	} else {

@@ -1,2 +1,8 @@
 source "drivers/net/wireless/bcmdhd/Kconfig"
 source "drivers/net/wireless/bcmdhd_pcie/Kconfig"
+source "drivers/net/wireless/realtek/rtl8812au/Kconfig"
+source "drivers/net/wireless/realtek/rtl8814au/Kconfig"
+source "drivers/net/wireless/realtek/rtl8821au/Kconfig"
+source "drivers/net/wireless/realtek/rtl8821cu/Kconfig"
+source "drivers/net/wireless/realtek/rtl8822bu/Kconfig"
+source "drivers/net/wireless/realtek/rtl8822ce/Kconfig"

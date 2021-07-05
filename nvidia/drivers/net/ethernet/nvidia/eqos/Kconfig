@@ -23,6 +23,16 @@ config EQOS
 	  the questions about NVIDIA cards. If you say Y, you will be asked for
 	  your specific card in the following questions.
 
+config EQOS_DISABLE_EEE
+	bool "Disable EEE support in MAC and disable EEE advertisement in PHY"
+	depends on EQOS
+	default n
+
+	---help---
+	  Say y in this config to disable EEE completely i.e, disable the
+	  support for EEE in the MAC and disable the advertisement of EEE
+	  support from the PHY as well.
+
 config DISABLE_VLAN_FWD_TO_REAL_IF
 	bool "Disable VLAN RX Packet forwarding to Real ethernet Interface"
 	depends on EQOS

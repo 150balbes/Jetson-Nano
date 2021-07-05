@@ -1,5 +1,5 @@
 /* Copyright (c) 2014, The Linux Foundation. All rights reserved.
- * Copyright (C) 2015-2017, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (C) 2015-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -662,7 +662,9 @@ irqreturn_t cmdq_irq(struct mmc_host *mmc, u32 intmask)
 	if (status & CQIS_HAC) {
 		/* halt is completed, wakeup waiting thread */
 		complete(&cq_host->halt_comp);
-	} else if (status & CQIS_TCC) {
+	}
+
+	if (status & CQIS_TCC) {
 		/* read QCTCN and complete the request */
 		comp_status = cqtcn & ~cqtdbr;
 		if (!comp_status)
@@ -674,12 +676,16 @@ irqreturn_t cmdq_irq(struct mmc_host *mmc, u32 intmask)
 			/* complete DCMD on tag 31 */
 		}
 		cmdq_reg_writel(cq_host, comp_status, CQTCN);
-	} else if (status & CQIS_RED) {
+	}
+
+	if (status & CQIS_RED) {
 		/* task response has an error */
 		pr_err("%s: RED error %d !!!\n", mmc_hostname(mmc), status);
 		cmdq_dumpregs(cq_host);
 		BUG_ON(1);
-	} else if (status & CQIS_TCL) {
+	}
+
+	if (status & CQIS_TCL) {
 		/* task is cleared, wakeup waiting thread */
 		;
 	}
@@ -766,19 +772,15 @@ cqe_resume:
 static int cmdq_halt(struct mmc_host *mmc, bool halt)
 {
 	struct cmdq_host *cq_host = (struct cmdq_host *)mmc_cmdq_private(mmc);
-	unsigned timeout = HALT_TIMEOUT_MS;
 	int err = 0;
 
 	if (halt) {
+		int timeout;
 		cmdq_reg_writel(cq_host, cmdq_reg_readl(cq_host, CQCTL) | HALT,
 			    CQCTL);
-		/* Poll for 1000ms until the Halt is set in CQCTL */
-		do {
-			if (cmdq_reg_readl(cq_host, CQCTL) & HALT)
-				break;
-			mdelay(1);
-			timeout--;
-		} while (timeout);
+
+		timeout = wait_for_completion_timeout(&cq_host->halt_comp,
+				msecs_to_jiffies(HALT_TIMEOUT_MS));
 
 		if (!timeout) {
 			pr_err("%s: Setting HALT is failed\n",

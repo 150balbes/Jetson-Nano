@@ -390,40 +390,7 @@ static struct gk20a_platform nvgpu_pci_device[] = {
 	.hardcode_sw_threshold = false,
 	.unified_memory = false,
 	},
-	{ /* 0x1eba, 0x1efa */
-	/* ptimer src frequency in hz */
-	.ptimer_src_freq	= 31250000,
 
-	.probe = nvgpu_pci_tegra_probe,
-	.remove = nvgpu_pci_tegra_remove,
-
-	/* power management configuration */
-	.railgate_delay_init	= 500,
-	.can_railgate_init	= false,
-	.can_elpg_init = false,
-	.enable_elpg = false,
-	.enable_elcg = false,
-	.enable_slcg = false,
-	.enable_blcg = false,
-	.enable_mscg = false,
-	.can_slcg    = false,
-	.can_blcg    = false,
-	.can_elcg    = false,
-
-	.disable_aspm = true,
-
-	/* power management callbacks */
-	.is_railgated = nvgpu_pci_tegra_is_railgated,
-	.clk_round_rate = nvgpu_pci_clk_round_rate,
-
-	.ch_wdt_timeout_ms = 7000,
-
-	.honors_aperture = true,
-	.dma_mask = DMA_BIT_MASK(40),
-	.vbios_min_version = 0x90040109,
-	.hardcode_sw_threshold = false,
-	.has_syncpoints = true,
-	},
 };
 
 static struct pci_device_id nvgpu_pci_table[] = {
@@ -481,18 +448,6 @@ static struct pci_device_id nvgpu_pci_table[] = {
 		.class_mask = 0xff << 16,
 		.driver_data = 8,
 	},
-	{
-		PCI_DEVICE(PCI_VENDOR_ID_NVIDIA, 0x1eba),
-		.class = PCI_BASE_CLASS_DISPLAY << 16,
-		.class_mask = 0xff << 16,
-		.driver_data = 9,
-	},
-	{
-		PCI_DEVICE(PCI_VENDOR_ID_NVIDIA, 0x1efa),
-		.class = PCI_BASE_CLASS_DISPLAY << 16,
-		.class_mask = 0xff << 16,
-		.driver_data = 9,
-	},
 	{}
 };
 
@@ -533,6 +488,13 @@ static int nvgpu_pci_init_support(struct pci_dev *pdev)
 	if (IS_ERR(l->regs)) {
 		nvgpu_err(g, "failed to remap gk20a registers");
 		err = PTR_ERR(l->regs);
+		goto fail;
+	}
+
+	l->regs_bus_addr = pci_resource_start(pdev, 0);
+	if (!l->regs_bus_addr) {
+		nvgpu_err(g, "failed to read register bus offset");
+		err = -ENODEV;
 		goto fail;
 	}
 

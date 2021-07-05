@@ -1,0 +1,160 @@
+/*
+ * arch/arm64/boot/dts/tegra210-jetson-tx1-p2597-2180-dp-hdmi.dts
+ *
+ * Copyright (c) 2016-2019, NVIDIA CORPORATION. All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; version 2 of the License.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ *
+ */
+
+#include "tegra210-jetson-cv-base-p2597-2180-a00.dts"
+#include <t210-common-platforms/tegra210-dp.dtsi>
+#include "jetson-platforms/tegra210-jetson-cv-camera-imx274-hdmi.dtsi"
+
+/ {
+	model = "Jetson-TX1";
+	compatible = "nvidia,jetson-cv", "nvidia,tegra210";
+	nvidia,dtsfilename = __FILE__;
+
+	#address-cells = <2>;
+	#size-cells = <2>;
+
+	chosen {
+	};
+
+	host1x {
+		dsi {
+			status = "disabled";
+			panel-a-wuxga-8-0 {
+				status = "disabled";
+			};
+			panel-s-wqxga-10-1 {
+				status = "disabled";
+			};
+		};
+		dc@54200000 {
+			status = "okay";
+			nvidia,dc-flags = <TEGRA_DC_FLAG_ENABLED>;
+			nvidia,emc-clk-rate = <300000000>;
+			nvidia,cmu-enable = <1>;
+			nvidia,fb-bpp = <32>; /* bits per pixel */
+			nvidia,fb-flags = <TEGRA_FB_FLIP_ON_PROBE>;
+			nvidia,dc-or-node = "/host1x/sor";
+			nvidia,dc-connector = <&sor0>;
+			vdd-dp-pwr-supply = <&max77620_gpio7>;
+		};
+		sor {
+			status = "okay";
+			nvidia,xbar-ctrl = <2 1 0 3 4>;
+			nvidia,active-panel = <&sor0_dp_display>;
+			/delete-property/ nvidia,hpd-gpio;
+			dp-display {
+				status = "okay";
+			};
+		};
+		sor1 {
+			nvidia,xbar-ctrl = <2 1 0 3 4>;
+			status = "okay";
+			hdmi-display {
+				status = "okay";
+			};
+		};
+		dpaux {
+			status = "okay";
+		};
+		dpaux1 {
+			status = "okay";
+		};
+
+		vi_base: vi {
+			ports {
+				imx274_vi_port0: port@0 {
+					status = "okay";
+					imx274_vi_in0: endpoint {
+						status = "okay";
+					};
+				};
+				itc358840_vi_port1: port@1 {
+					status = "okay";
+					tc358840_vi_in0: endpoint {
+						status = "okay";
+					};
+				};
+			};
+		};
+		csi_base: nvcsi {
+			csi_chan0: channel@0 {
+				status = "okay";
+				ports {
+					csi_chan0_port0: port@0 {
+						status = "okay";
+						imx274_csi_in0: endpoint@0 {
+							status = "okay";
+						};
+					};
+					csi_chan0_port1: port@1 {
+						status = "okay";
+						imx274_csi_out0: endpoint@1 {
+							status = "okay";
+						};
+					};
+				};
+			};
+			csi_chan1: channel@1 {
+				status = "okay";
+				ports {
+					csi_chan1_port0: port@0 {
+						status = "okay";
+						tc358840_csi_in0: endpoint@2 {
+							status = "okay";
+						};
+					};
+					csi_chan1_port1: port@1 {
+						status = "okay";
+						tc358840_csi_out0: endpoint@3 {
+							status = "okay";
+						};
+					};
+				};
+			};
+		};
+	};
+
+	i2c@7000c400 {
+		lp8557-backlight-a-wuxga-8-0@2c {
+			status = "disabled";
+		};
+	};
+
+	backlight {
+		status = "disabled";
+		panel-a-wuxga-8-0-bl {
+			status = "disabled";
+		};
+		panel-s-edp-uhdtv-15-6-bl {
+			status = "disabled";
+		};
+	};
+
+	reserved-memory {
+		vpr-carveout {
+			     status = "okay";
+		     };
+	};
+
+	nvdumper {
+		status = "disabled";
+	};
+
+	plugin-manager {
+		/delete-node/ fragment@8;
+	};
+};
+

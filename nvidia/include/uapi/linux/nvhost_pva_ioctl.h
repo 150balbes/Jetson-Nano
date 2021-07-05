@@ -21,6 +21,7 @@
 
 #include <linux/ioctl.h>
 #include <linux/types.h>
+#include "nvdev_fence.h"
 
 #if !defined(__KERNEL__)
 #define __user
@@ -180,10 +181,30 @@ struct pva_fence {
 	__u32 semaphore_offset;
 	__u32 semaphore_value;
 };
+/**
+ * PVA extended fence
+ *
+ * @param type		fence type
+ * @param fence		nvdev_fence
+ * @param ts_buf_handle	Handle of timestamp buffer
+ */
+struct nvpva_fence {
+	 __u32 type;
+#define PVA_FENCE_PRE   1U
+#define PVA_FENCE_SOT_V 2U
+#define PVA_FENCE_SOT_R 3U
+#define PVA_FENCE_EOT_V 4U
+#define PVA_FENCE_EOT_R 5U
+#define PVA_FENCE_POST  6U
+	 struct pva_memory_handle ts_buf_ptr;
+	 struct nvdev_fence fence;
+};
 
 #define PVA_MAX_TASKS			1
 #define PVA_MAX_PREFENCES		8
 #define PVA_MAX_POSTFENCES		8
+#define PVA_MAX_FENCE_TYPES		7
+#define PVA_MAX_FENCES_PER_TYPE		8
 #define PVA_MAX_INPUT_STATUS		8
 #define PVA_MAX_OUTPUT_STATUS		8
 #define PVA_MAX_INPUT_SURFACES		8
@@ -217,7 +238,7 @@ struct pva_fence {
  */
 struct pva_ioctl_submit_task {
 	__u8 num_prefences;
-	__u8 num_postfences;
+	__u8 redserved1;
 	__u8 num_input_surfaces;
 	__u8 num_output_surfaces;
 	__u8 num_input_task_status;
@@ -228,18 +249,19 @@ struct pva_ioctl_submit_task {
 	__u32 operation;
 	__u64 timeout;
 	__u64 prefences;
-	__u64 postfences;
+	__u8 reserved2[8];
 	__u64 input_surfaces;
 	struct pva_task_parameter input_scalars;
 	__u64 primary_payload;
-	__u8 reserved0[8];
+	__u8 reserved3[8];
 	__u64 output_surfaces;
 	struct pva_task_parameter output_scalars;
-	__u8 reserved1[16];
+	__u64 num_pva_ts_buffers;
+	__u64 num_pvafences;
+	__u64 pvafences;
 	__u64 input_task_status;
 	__u64 output_task_status;
 };
-
 /**
  * struct pva_submit_args - submit tasks to PVA
  *

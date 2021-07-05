@@ -1,7 +1,7 @@
 /*
  * drivers/misc/tegra-profiler/armv8_pmu.c
  *
- * Copyright (c) 2014-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2014-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -36,7 +36,7 @@
 
 struct quadd_pmu_info {
 	DECLARE_BITMAP(used_cntrs, QUADD_MAX_PMU_COUNTERS);
-	u32 prev_vals[QUADD_MAX_PMU_COUNTERS];
+	u64 prev_vals[QUADD_MAX_PMU_COUNTERS];
 	int is_already_active;
 };
 
@@ -317,9 +317,9 @@ static int is_pmu_enabled(void)
 	return 0;
 }
 
-static u32 read_counter(int idx)
+static u64 read_counter(int idx)
 {
-	u32 val;
+	u64 val;
 
 	if (idx == QUADD_ARMV8_CCNT_BIT) {
 		val = armv8_pmu_pmccntr_read();
@@ -331,13 +331,13 @@ static u32 read_counter(int idx)
 	return val;
 }
 
-static void write_counter(int idx, u32 value)
+static void write_counter(int idx, u64 value)
 {
 	if (idx == QUADD_ARMV8_CCNT_BIT) {
 		armv8_pmu_pmccntr_write(value);
 	} else {
 		select_counter(idx);
-		armv8_pmu_pmxevcntr_write(value);
+		armv8_pmu_pmxevcntr_write((u32)value);
 	}
 }
 
@@ -502,7 +502,7 @@ static void pmu_start(void)
 	struct quadd_pmu_ctx *local_pmu_ctx;
 	DECLARE_BITMAP(free_bitmap, QUADD_MAX_PMU_COUNTERS);
 	struct quadd_pmu_info *pi = this_cpu_ptr(&cpu_pmu_info);
-	u32 *prevp = pi->prev_vals;
+	u64 *prevp = pi->prev_vals;
 	struct quadd_pmu_event_info *ei;
 
 	bitmap_zero(pi->used_cntrs, QUADD_MAX_PMU_COUNTERS);
@@ -579,14 +579,14 @@ static void pmu_stop(void)
 	qm_debug_stop_source(QUADD_EVENT_SOURCE_PMU);
 }
 
-static int __maybe_unused
-pmu_read(struct event_data *events, int max_events)
+static int
+pmu_read(struct quadd_event_data *events, int max_events)
 {
-	u32 val;
+	u64 val, prev_val, delta;
 	int idx = 0, i = 0;
 	struct quadd_pmu_info *pi = this_cpu_ptr(&cpu_pmu_info);
 	struct quadd_pmu_ctx *local_pmu_ctx = this_cpu_ptr(&pmu_ctx);
-	u32 *prevp = pi->prev_vals;
+	u64 *prevp = pi->prev_vals;
 	struct quadd_pmu_event_info *ei;
 
 	if (bitmap_empty(pi->used_cntrs, QUADD_MAX_PMU_COUNTERS)) {
@@ -603,6 +603,7 @@ pmu_read(struct event_data *events, int max_events)
 				return 0;
 			}
 			index = QUADD_ARMV8_CCNT_BIT;
+			events->max_count = U64_MAX;
 		} else {
 			index = find_next_bit(pi->used_cntrs,
 					      QUADD_MAX_PMU_COUNTERS, idx);
@@ -612,6 +613,7 @@ pmu_read(struct event_data *events, int max_events)
 				pr_err_once("Error: perf counter is not used\n");
 				return 0;
 			}
+			events->max_count = U32_MAX;
 		}
 
 		val = read_counter(index);
@@ -619,44 +621,21 @@ pmu_read(struct event_data *events, int max_events)
 		events->event_source = QUADD_EVENT_SOURCE_PMU;
 		events->event = ei->event;
 
+		prev_val = *prevp;
+
+		if (prev_val <= val)
+			delta = val - prev_val;
+		else
+			delta = events->max_count - prev_val + val;
+
 		events->val = val;
-		events->prev_val = *prevp;
+		events->prev_val = prev_val;
+		events->delta = delta;
 
 		*prevp = val;
 
 		qm_debug_read_counter(&events->event, events->prev_val,
 				      events->val);
-
-		if (++i >= max_events)
-			break;
-
-		events++;
-		prevp++;
-	}
-
-	return i;
-}
-
-static int __maybe_unused
-pmu_read_emulate(struct event_data *events, int max_events)
-{
-	int i = 0;
-	static u32 val = 100;
-	struct quadd_pmu_info *pi = this_cpu_ptr(&cpu_pmu_info);
-	u32 *prevp = pi->prev_vals;
-	struct quadd_pmu_event_info *ei;
-
-	struct quadd_pmu_ctx *local_pmu_ctx = this_cpu_ptr(&pmu_ctx);
-
-	list_for_each_entry(ei, &local_pmu_ctx->used_events, list) {
-		if (val > 200)
-			val = 100;
-
-		events->event.id = *prevp;
-		events->val = val;
-
-		*prevp = val;
-		val += 5;
 
 		if (++i >= max_events)
 			break;
@@ -780,8 +759,8 @@ out_free:
 }
 
 static int
-get_supported_events(int cpuid, struct quadd_event *events,
-		     int max_events, unsigned int *raw_event_mask)
+supported_events(int cpuid, struct quadd_event *events,
+		 int max_events, unsigned int *raw_event_mask)
 {
 	int i, nr_events = 0;
 
@@ -809,7 +788,7 @@ get_supported_events(int cpuid, struct quadd_event *events,
 }
 
 static int
-get_current_events(int cpuid, struct quadd_event *events, int max_events)
+current_events(int cpuid, struct quadd_event *events, int max_events)
 {
 	int i = 0;
 	struct quadd_pmu_event_info *ei;
@@ -825,28 +804,23 @@ get_current_events(int cpuid, struct quadd_event *events, int max_events)
 	return i;
 }
 
-static struct quadd_arch_info *get_arch(int cpuid)
+static const struct quadd_arch_info *get_arch(int cpuid)
 {
 	struct quadd_pmu_ctx *local_pmu_ctx = &per_cpu(pmu_ctx, cpuid);
 
 	return local_pmu_ctx->current_map ? &local_pmu_ctx->arch : NULL;
 }
 
-static struct quadd_event_source_interface pmu_armv8_int = {
+static struct quadd_event_source pmu_armv8_int = {
+	.name			= "armv8_pmuv3",
 	.enable			= pmu_enable,
 	.disable		= pmu_disable,
-
 	.start			= pmu_start,
 	.stop			= pmu_stop,
-
-#ifndef QUADD_USE_EMULATE_COUNTERS
 	.read			= pmu_read,
-#else
-	.read			= pmu_read_emulate,
-#endif
 	.set_events		= set_events,
-	.get_supported_events	= get_supported_events,
-	.get_current_events	= get_current_events,
+	.supported_events	= supported_events,
+	.current_events		= current_events,
 	.get_arch		= get_arch,
 };
 
@@ -949,7 +923,7 @@ static int quadd_armv8_pmu_init_for_cpu(int cpuid)
 	return err;
 }
 
-struct quadd_event_source_interface *quadd_armv8_pmu_init(void)
+struct quadd_event_source *quadd_armv8_pmu_init(void)
 {
 	int cpuid, err;
 

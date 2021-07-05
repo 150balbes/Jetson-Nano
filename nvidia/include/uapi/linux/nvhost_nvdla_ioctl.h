@@ -1,9 +1,9 @@
 /*
- * include/linux/nvhost_nvdla_ioctl.h
+ * include/uapi/linux/nvhost_nvdla_ioctl.h
  *
  * Tegra NvDLA Driver
  *
- * Copyright (c) 2016-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2016-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -22,7 +22,7 @@
 #define __UAPI_LINUX_NVHOST_NVDLA_IOCTL_H
 
 #include <linux/ioctl.h>
-#include <uapi/linux/types.h>
+#include <linux/types.h>
 
 #if !defined(__KERNEL__)
 #define __user
@@ -79,7 +79,7 @@ struct nvdla_pin_unpin_args {
 struct nvdla_submit_args {
 	__u64 tasks;
 	__u16 num_tasks;
-#define MAX_TASKS_PER_SUBMIT		24
+#define MAX_TASKS_PER_SUBMIT		16
 #define NVDLA_SUBMIT_FLAGS_ATOMIC	(1 << 0)
 	__u16 flags;
 	__u32 version;
@@ -125,13 +125,19 @@ struct nvdla_mem_handle {
  * @num_prefences		number of pre-fences in task
  * @num_postfences		number of post-fences in task
  * @num_input_task_status	number of input task status
- * @num_output_task_status	number of output task status
+ * @num_sof_task_status  	number of sof task status
+ * @num_eof_task_status  	number of eof task status
+ * @num_sof_timestamps   	number of sof timestamp
+ * @num_eof_timestamps   	number of eof timestamp
  * @flags			flags for bitwise task info embeddeing
  * @reserved			reserved for future use
  * @prefences			pointer to pre-fence struct table
  * @postfences			pointer to post-fence struct table
  * @input_task_status		pointer to input task status struct table
- * @output_task_status		pointer to output task status struct table
+ * @sof_task_status  		pointer to sof task status struct table
+ * @eof_task_status  		pointer to eof task status struct table
+ * @sof_timestamps   		pointer to sof timestamp handle list
+ * @eof_timestamps   		pointer to eof timestamp handle list
  * @num_addresses		total number of addressed passed in structure
  * @address_list		pointer to address list
  * @timeout			task timeout
@@ -141,17 +147,24 @@ struct nvdla_ioctl_submit_task {
 	__u8 num_prefences;
 	__u8 num_postfences;
 	__u8 num_input_task_status;
-	__u8 num_output_task_status;
+	__u8 num_sof_task_status;
+	__u8 num_eof_task_status;
+	__u8 num_sof_timestamps;
+	__u8 num_eof_timestamps;
+	__u8 reserved0[1];
 #define NVDLA_MAX_BUFFERS_PER_TASK (6144)
 	__u32 num_addresses;
 	__u16 flags;
-	__u16 reserved;
+	__u16 reserved1;
 
 	__u64 prefences;
 	__u64 postfences;
 
 	__u64 input_task_status;
-	__u64 output_task_status;
+	__u64 sof_task_status;
+	__u64 eof_task_status;
+	__u64 sof_timestamps;
+	__u64 eof_timestamps;
 	__u64 address_list;
 	__u64 timeout;
 };
@@ -160,15 +173,17 @@ struct nvdla_ioctl_submit_task {
  * struct nvdla_ioctl_emu_submit_task structure for single emulator task
  * information
  *
+ * @num_prefences 		number of pre-fences in task
  * @num_postfences		number of post-fences in task
- * @reserved			reserved for padding and future use
- * @postfences			pointer to post-fence struct table
+ * @prefences     		pointer to pre-fence struct table
+ * @postfences    		pointer to post-fence struct table
  *
  */
 struct nvdla_ioctl_emu_submit_task {
+	__u32 num_prefences;
 	__u32 num_postfences;
-	__u32 reserved;
 
+	__u64 prefences;
 	__u64 postfences;
 };
 

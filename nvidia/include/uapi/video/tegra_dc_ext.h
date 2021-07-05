@@ -1,7 +1,9 @@
 /*
+ * include/uapi/video/tegra_dc_ext.h
+ *
  * tegra_dc_ext.h: tegra dc ext interface.
  *
- * Copyright (C) 2011-2019, NVIDIA Corporation. All rights reserved.
+ * Copyright (C) 2016-2020, NVIDIA CORPORATION. All rights reserved.
  *
  * Author: Robert Morell <rmorell@nvidia.com>
  * Some code based on fbdev extensions written by:
@@ -21,7 +23,7 @@
 #ifndef __UAPI_TEGRA_DC_EXT_H
 #define __UAPI_TEGRA_DC_EXT_H
 
-#include <uapi/linux/types.h>
+#include <linux/types.h>
 #include <linux/ioctl.h>
 #if defined(__KERNEL__)
 # include <linux/time.h>
@@ -1387,6 +1389,7 @@ enum tegra_dc_ext_control_output_type {
 	TEGRA_DC_EXT_DP,
 	TEGRA_DC_EXT_EDP,
 	TEGRA_DC_EXT_NULL,
+	TEGRA_DC_EXT_HDSI, /*support DSI as external display*/
 };
 
 /*

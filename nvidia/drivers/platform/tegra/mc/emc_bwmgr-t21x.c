@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2016-2018, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2016-2019, NVIDIA CORPORATION. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -135,7 +135,7 @@ struct bwmgr_ops *bwmgr_eff_init_t21x(void)
 	u32 dram;
 	void __iomem *emc_base;
 
-	emc_base = ioremap(TEGRA_EMC0_BASE, TEGRA_EMC0_SIZE);
+	emc_base = ioremap(TEGRA_T210_EMC_BASE, TEGRA_T210_EMC_SIZE);
 
 	dram = readl(emc_base + EMC_FBIO_CFG5_0) & DRAM_MASK;
 

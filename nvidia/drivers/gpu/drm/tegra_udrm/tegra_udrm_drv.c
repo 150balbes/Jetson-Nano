@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2018-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -17,6 +17,7 @@
 #include <drm/drmP.h>
 #include <linux/dma-buf.h>
 #include <linux/shmem_fs.h>
+#include <linux/extcon.h>
 
 #include <uapi/drm/tegra_udrm.h>
 
@@ -39,8 +40,11 @@ MODULE_PARM_DESC(
 static bool tegra_udrm_modeset_module_param;
 module_param_named(modeset, tegra_udrm_modeset_module_param, bool, 0400);
 
+static const unsigned int cable_ids[] = {
+	EXTCON_DISP_HDMI, EXTCON_DISP_DP, EXTCON_DISP_DSIHPD, EXTCON_DISP_HDMI2};
 struct tegra_udrm_private {
 	struct drm_device *drm;
+	struct notifier_block hpd_nb[ARRAY_SIZE(cable_ids)];
 };
 
 struct tegra_udrm_device {
@@ -181,8 +185,8 @@ static void tegra_udrm_preclose(struct drm_device *drm, struct drm_file *file)
 	idr_destroy(&fpriv->idr);
 
 	if (fpriv->efd_ctx_drop_master) {
-		eventfd_ctx_put(fpriv->efd_ctx_drop_master);
 		eventfd_signal(fpriv->efd_ctx_drop_master, 1);
+		eventfd_ctx_put(fpriv->efd_ctx_drop_master);
 		fpriv->efd_ctx_drop_master = NULL;
 	}
 
@@ -330,6 +334,25 @@ static int tegra_udrm_send_vblank_event_ioctl(struct drm_device *drm,
 	return 0;
 }
 
+static int tegra_udrm_send_connector_status_event_ioctl(struct drm_device *drm,
+		void *data, struct drm_file *file)
+{
+	struct drm_tegra_udrm_connector_status_event *args =
+		(struct drm_tegra_udrm_connector_status_event *)data;
+	char hotplug_str[] = "HOTPLUG=1", conn_id[30], prop_id[30];
+	char *envp[4] = { hotplug_str, conn_id, prop_id, NULL };
+	int ret = 0;
+
+	snprintf(conn_id, ARRAY_SIZE(conn_id), "CONNECTOR=%u", args->conn_id);
+	snprintf(prop_id, ARRAY_SIZE(prop_id), "PROPERTY=%u", args->prop_id);
+
+	ret = kobject_uevent_env(&drm->primary->kdev->kobj, KOBJ_CHANGE, envp);
+	if (ret < 0)
+		pr_err("%s: kobj_uevent error!\n", __func__);
+
+	return ret;
+}
+
 static const struct file_operations tegra_udrm_fops = {
 	.owner = THIS_MODULE,
 	.open = drm_open,
@@ -372,6 +395,8 @@ static const struct drm_ioctl_desc tegra_udrm_ioctls[] = {
 		tegra_udrm_drop_master_notify_ioctl, 0),
 	DRM_IOCTL_DEF_DRV(TEGRA_UDRM_SET_MASTER_NOTIFY,
 		tegra_udrm_set_master_notify_ioctl, 0),
+	DRM_IOCTL_DEF_DRV(TEGRA_UDRM_SEND_CONNECTOR_STATUS_EVENT,
+		tegra_udrm_send_connector_status_event_ioctl, 0),
 };
 
 static int tegra_udrm_open(struct drm_device *drm, struct drm_file *filp)
@@ -449,6 +474,7 @@ static int tegra_udrm_load(struct drm_device *drm)
 	if (private == NULL)
 		return -ENOMEM;
 
+	private->drm = drm;
 	drm->dev_private = private;
 
 	platform_set_drvdata(pdev, drm);
@@ -463,11 +489,57 @@ static int tegra_udrm_unload(struct drm_device *drm)
 	return 0;
 }
 
+static int tegra_udrm_hdmi_notifier(struct notifier_block *nb,
+		unsigned long event, void *unused)
+{
+	struct tegra_udrm_private *priv = container_of(nb,
+			struct tegra_udrm_private, hpd_nb[0]);
+
+	drm_sysfs_hotplug_event(priv->drm);
+
+	return NOTIFY_DONE;
+}
+
+static int tegra_udrm_dp_notifier(struct notifier_block *nb,
+		unsigned long event, void *unused)
+{
+	struct tegra_udrm_private *priv = container_of(nb,
+			struct tegra_udrm_private, hpd_nb[1]);
+
+	drm_sysfs_hotplug_event(priv->drm);
+
+	return NOTIFY_DONE;
+}
+
+static int tegra_udrm_dsi_notifier(struct notifier_block *nb,
+		unsigned long event, void *unused)
+{
+	struct tegra_udrm_private *priv = container_of(nb,
+			struct tegra_udrm_private, hpd_nb[2]);
+
+	drm_sysfs_hotplug_event(priv->drm);
+
+	return NOTIFY_DONE;
+}
+
+static int tegra_udrm_hdmi2_notifier(struct notifier_block *nb,
+		unsigned long event, void *unused)
+{
+	struct tegra_udrm_private *priv = container_of(nb,
+			struct tegra_udrm_private, hpd_nb[3]);
+
+	drm_sysfs_hotplug_event(priv->drm);
+
+	return NOTIFY_DONE;
+}
+
 static int tegra_udrm_probe(struct platform_device *pdev)
 {
 	struct drm_driver *driver = &tegra_udrm_driver;
 	struct drm_device *drm;
-	int ret;
+	struct tegra_udrm_private *priv;
+	struct extcon_dev *edev;
+	int ret, i;
 
 	drm = drm_dev_alloc(driver, &pdev->dev);
 	if (IS_ERR(drm))
@@ -484,6 +556,31 @@ static int tegra_udrm_probe(struct platform_device *pdev)
 	DRM_INFO("Initialized %s %d.%d.%d %s on minor %d\n", driver->name,
 		driver->major, driver->minor, driver->patchlevel,
 		driver->date, drm->primary->index);
+
+	/* Register hotplug notifiers */
+	priv = drm->dev_private;
+	edev = extcon_get_extcon_dev("external-connection:disp-state");
+	if (IS_ERR_OR_NULL(edev)) {
+		// disp-state device name on older platforms is
+		// "extcon:disp-state", so try that.
+		edev = extcon_get_extcon_dev("extcon:disp-state");
+	}
+	if (!IS_ERR_OR_NULL(edev)) {
+		priv->hpd_nb[0].notifier_call = tegra_udrm_hdmi_notifier;
+		priv->hpd_nb[1].notifier_call = tegra_udrm_dp_notifier;
+		priv->hpd_nb[2].notifier_call = tegra_udrm_dsi_notifier;
+		priv->hpd_nb[3].notifier_call = tegra_udrm_hdmi2_notifier;
+		for (i = 0; i < ARRAY_SIZE(cable_ids); i++) {
+			ret = devm_extcon_register_notifier(drm->dev, edev,
+				cable_ids[i], &priv->hpd_nb[i]);
+			if (ret < 0)
+				dev_warn(drm->dev,
+					"HOTPLUG is not supported for id %u\n",
+					cable_ids[i]);
+		}
+	} else {
+		dev_warn(drm->dev, "DISP HOTPLUG event is not supported\n");
+	}
 
 	return 0;
 

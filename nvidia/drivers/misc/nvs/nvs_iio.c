@@ -1,4 +1,4 @@
-/* Copyright (c) 2014-2018, NVIDIA CORPORATION.  All rights reserved.
+/* Copyright (c) 2014-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -86,7 +86,7 @@
 #include <linux/iio/buffer_impl.h>
 #endif
 
-#define NVS_IIO_DRIVER_VERSION		(223)
+#define NVS_IIO_DRIVER_VERSION		(224)
 
 enum NVS_ATTR {
 	NVS_ATTR_ENABLE,
@@ -1957,7 +1957,11 @@ static int nvs_probe(void **handle, void *dev_client, struct device *dev,
 		return -ENODEV;
 	}
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0)
 	indio_dev = nvs_device_alloc(sizeof(*st), true);
+#else
+	indio_dev = iio_device_alloc(sizeof(*st));
+#endif
 	if (indio_dev == NULL) {
 		dev_err(dev, "%s iio_device_alloc ERR\n", __func__);
 		return -ENOMEM;

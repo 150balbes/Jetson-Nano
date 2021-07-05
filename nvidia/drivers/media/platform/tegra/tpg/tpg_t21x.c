@@ -3,7 +3,7 @@
  *
  * Tegra VI test pattern generator driver
  *
- * Copyright (c) 2016-2017, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2016-2019, NVIDIA CORPORATION. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -141,7 +141,7 @@ static int tpg_create_debugfs(struct tegra_csi_device *csi)
 		const struct tegra_channel *vi_chan =
 				v4l2_get_subdev_hostdata(&chan->subdev);
 		if (vi_chan->pg_mode) {
-			const char *name = vi_chan->video.name;
+			const char *name = vi_chan->video->name;
 
 			dev_dbg(csi->dev, "debugfs node installed %s\n", name);
 			dir = debugfs_create_dir(name, csi->debugdir);

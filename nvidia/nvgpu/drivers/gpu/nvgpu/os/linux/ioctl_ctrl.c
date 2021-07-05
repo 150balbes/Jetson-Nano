@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-2019, NVIDIA Corporation.  All rights reserved.
+ * Copyright (c) 2011-2020, NVIDIA Corporation.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -19,6 +19,7 @@
 #include <linux/file.h>
 #include <linux/anon_inodes.h>
 #include <linux/fs.h>
+#include <linux/pm_runtime.h>
 #include <uapi/linux/nvgpu.h>
 
 #include <nvgpu/bitops.h>
@@ -55,7 +56,21 @@ struct gk20a_ctrl_priv {
 	struct device *dev;
 	struct gk20a *g;
 	struct nvgpu_clk_session *clk_session;
+
+	struct nvgpu_list_node list;
+	struct {
+		struct vm_area_struct *vma;
+		unsigned long flags;
+		bool vma_mapped;
+	} usermode_vma;
 };
+
+static inline struct gk20a_ctrl_priv *
+gk20a_ctrl_priv_from_list(struct nvgpu_list_node *node)
+{
+	return (struct gk20a_ctrl_priv *)
+		((uintptr_t)node - offsetof(struct gk20a_ctrl_priv, list));
+}
 
 static u32 gk20a_as_translate_as_alloc_flags(struct gk20a *g, u32 flags)
 {
@@ -105,19 +120,29 @@ int gk20a_ctrl_dev_open(struct inode *inode, struct file *filp)
 
 	err = nvgpu_clk_arb_init_session(g, &priv->clk_session);
 free_ref:
-	if (err) {
+	if (err != 0) {
 		gk20a_put(g);
 		if (priv)
 			nvgpu_kfree(g, priv);
+	} else {
+		nvgpu_mutex_acquire(&l->ctrl.privs_lock);
+		nvgpu_list_add(&priv->list, &l->ctrl.privs);
+		nvgpu_mutex_release(&l->ctrl.privs_lock);
 	}
+
 	return err;
 }
 int gk20a_ctrl_dev_release(struct inode *inode, struct file *filp)
 {
 	struct gk20a_ctrl_priv *priv = filp->private_data;
 	struct gk20a *g = priv->g;
+	struct nvgpu_os_linux *l = nvgpu_os_linux_from_gk20a(g);
 
 	nvgpu_log_fn(g, " ");
+
+	nvgpu_mutex_acquire(&l->ctrl.privs_lock);
+	nvgpu_list_del(&priv->list);
+	nvgpu_mutex_release(&l->ctrl.privs_lock);
 
 	if (priv->clk_session)
 		nvgpu_clk_arb_release_session(g, priv->clk_session);
@@ -178,6 +203,8 @@ static struct nvgpu_flags_mapping flags_mapping[] = {
 		NVGPU_SUPPORT_SYNCPOINT_ADDRESS},
 	{NVGPU_GPU_FLAGS_SUPPORT_USER_SYNCPOINT,
 		NVGPU_SUPPORT_USER_SYNCPOINT},
+	{NVGPU_GPU_FLAGS_SUPPORT_USERMODE_SUBMIT,
+		NVGPU_SUPPORT_USERMODE_SUBMIT},
 	{NVGPU_GPU_FLAGS_SUPPORT_IO_COHERENCE,
 		NVGPU_SUPPORT_IO_COHERENCE},
 	{NVGPU_GPU_FLAGS_SUPPORT_RESCHEDULE_RUNLIST,
@@ -198,6 +225,8 @@ static struct nvgpu_flags_mapping flags_mapping[] = {
 		NVGPU_SUPPORT_SCG},
 	{NVGPU_GPU_FLAGS_SUPPORT_VPR,
 		NVGPU_SUPPORT_VPR},
+	{NVGPU_GPU_FLAGS_SUPPORT_SET_CTX_MMU_DEBUG_MODE,
+		NVGPU_SUPPORT_SET_CTX_MMU_DEBUG_MODE},
 };
 
 static u64 nvgpu_ctrl_ioctl_gpu_characteristics_flags(struct gk20a *g)
@@ -208,6 +237,10 @@ static u64 nvgpu_ctrl_ioctl_gpu_characteristics_flags(struct gk20a *g)
 	for (i = 0; i < sizeof(flags_mapping)/sizeof(*flags_mapping); i++) {
 		if (nvgpu_is_enabled(g, flags_mapping[i].enabled_flag))
 			ioctl_flags |= flags_mapping[i].ioctl_flag;
+	}
+
+	if (!capable(CAP_SYS_NICE)) {
+		ioctl_flags &= ~NVGPU_GPU_FLAGS_SUPPORT_RESCHEDULE_RUNLIST;
 	}
 
 	return ioctl_flags;
@@ -337,6 +370,7 @@ gk20a_ctrl_ioctl_gpu_characteristics(
 	if (request->gpu_characteristics_buf_size > 0) {
 		size_t write_size = sizeof(gpu);
 
+		nvgpu_speculation_barrier();
 		if (write_size > request->gpu_characteristics_buf_size)
 			write_size = request->gpu_characteristics_buf_size;
 
@@ -527,6 +561,7 @@ static int gk20a_ctrl_get_tpc_masks(struct gk20a *g,
 	if (args->mask_buf_size > 0) {
 		size_t write_size = gpc_tpc_mask_size;
 
+		nvgpu_speculation_barrier();
 		if (write_size > args->mask_buf_size)
 			write_size = args->mask_buf_size;
 
@@ -551,6 +586,7 @@ static int gk20a_ctrl_get_fbp_l2_masks(
 	if (args->mask_buf_size > 0) {
 		size_t write_size = fbp_l2_mask_size;
 
+		nvgpu_speculation_barrier();
 		if (write_size > args->mask_buf_size)
 			write_size = args->mask_buf_size;
 
@@ -568,21 +604,46 @@ static int gk20a_ctrl_get_fbp_l2_masks(
 static int nvgpu_gpu_ioctl_l2_fb_ops(struct gk20a *g,
 		struct nvgpu_gpu_l2_fb_args *args)
 {
-	int err = 0;
+	int ret;
+	bool always_poweron;
 
 	if ((!args->l2_flush && !args->fb_flush) ||
 	    (!args->l2_flush && args->l2_invalidate))
 		return -EINVAL;
 
-	nvgpu_mutex_acquire(&g->power_lock);
+	/* Handle this case for joint rails or DGPU */
+	always_poweron = (!nvgpu_is_enabled(g, NVGPU_CAN_RAILGATE) ||
+				!pm_runtime_enabled(dev_from_gk20a(g)));
+
+	/* In case of not always power_on, exit if g->power_on is false */
+	if (!always_poweron && !gk20a_check_poweron(g)) {
+		return 0;
+	}
+
+	/* There is a small window between a call to gk20a_idle() has occured
+	 * and railgate being actually triggered(setting g->power_on = false),
+	 * when l2_flush can race with railgate. Its better to take a busy_lock
+	 * to prevent the gk20a_idle() from proceeding. There is a very small
+	 * chance that gk20a_idle() might begin before gk20a_busy(). Having
+	 * a locked access to g->power_on further reduces the probability of
+	 * gk20a_idle() being triggered before gk20a_busy()
+	 */
+	ret = gk20a_busy(g);
+
+	if (ret != 0) {
+		nvgpu_err(g, "failed to take power ref");
+		return ret;
+	}
+
 	if (args->l2_flush)
 		g->ops.mm.l2_flush(g, args->l2_invalidate ? true : false);
 
 	if (args->fb_flush)
 		g->ops.mm.fb_flush(g);
-	nvgpu_mutex_release(&g->power_lock);
 
-	return err;
+	gk20a_idle(g);
+
+	return 0;
 }
 
 static int nvgpu_gpu_ioctl_set_mmu_debug_mode(
@@ -634,7 +695,8 @@ static int nvgpu_gpu_ioctl_trigger_suspend(struct gk20a *g)
 	    return err;
 
 	nvgpu_mutex_acquire(&g->dbg_sessions_lock);
-	err = g->ops.gr.trigger_suspend(g);
+	err = gr_gk20a_elpg_protected_call(g,
+			g->ops.gr.trigger_suspend(g));
 	nvgpu_mutex_release(&g->dbg_sessions_lock);
 
 	gk20a_idle(g);
@@ -669,7 +731,8 @@ static int nvgpu_gpu_ioctl_wait_for_pause(struct gk20a *g,
 		goto out_free;
 
 	nvgpu_mutex_acquire(&g->dbg_sessions_lock);
-	g->ops.gr.wait_for_pause(g, w_state);
+	(void)gr_gk20a_elpg_protected_call(g,
+			g->ops.gr.wait_for_pause(g, w_state));
 
 	for (sm_id = 0; sm_id < g->gr.no_of_sm; sm_id++) {
 		ioctl_w_state[sm_id].valid_warps[0] =
@@ -712,7 +775,8 @@ static int nvgpu_gpu_ioctl_resume_from_pause(struct gk20a *g)
 	    return err;
 
 	nvgpu_mutex_acquire(&g->dbg_sessions_lock);
-	err = g->ops.gr.resume_from_pause(g);
+	err = gr_gk20a_elpg_protected_call(g,
+			g->ops.gr.resume_from_pause(g));
 	nvgpu_mutex_release(&g->dbg_sessions_lock);
 
 	gk20a_idle(g);
@@ -728,7 +792,8 @@ static int nvgpu_gpu_ioctl_clear_sm_errors(struct gk20a *g)
 	if (err)
 		return err;
 
-	err = g->ops.gr.clear_sm_errors(g);
+	err = gr_gk20a_elpg_protected_call(g,
+			g->ops.gr.clear_sm_errors(g));
 
 	gk20a_idle(g);
 
@@ -1187,6 +1252,7 @@ static int nvgpu_gpu_clk_set_info(struct gk20a *g,
 					nvgpu_gpu_convert_clk_domain(clk_info.clk_domain)))
 			return -EINVAL;
 	}
+	nvgpu_speculation_barrier();
 
 	entry = (struct nvgpu_gpu_clk_info __user *)
 			(uintptr_t)args->clk_info_entries;
@@ -1206,6 +1272,7 @@ static int nvgpu_gpu_clk_set_info(struct gk20a *g,
 				nvgpu_gpu_convert_clk_domain(clk_info.clk_domain), freq_mhz);
 	}
 
+	nvgpu_speculation_barrier();
 	ret = nvgpu_clk_arb_commit_request_fd(g, session, fd);
 	if (ret < 0)
 		return ret;
@@ -1275,6 +1342,7 @@ static int nvgpu_gpu_clk_get_info(struct gk20a *g,
 			clk_info.clk_type = args->clk_type;
 		}
 
+		nvgpu_speculation_barrier();
 		switch (clk_info.clk_type) {
 		case NVGPU_GPU_CLK_TYPE_TARGET:
 			err = nvgpu_clk_arb_get_session_target_mhz(session,
@@ -1308,6 +1376,7 @@ static int nvgpu_gpu_clk_get_info(struct gk20a *g,
 			return -EFAULT;
 	}
 
+	nvgpu_speculation_barrier();
 	args->num_entries = num_entries;
 
 	return 0;
@@ -1345,6 +1414,7 @@ static int nvgpu_gpu_get_voltage(struct gk20a *g,
 	if (err)
 	    return err;
 
+	nvgpu_speculation_barrier();
 	switch (args->which) {
 	case NVGPU_GPU_VOLTAGE_CORE:
 		err = volt_get_voltage(g, CTRL_VOLT_DOMAIN_LOGIC, &args->voltage);
@@ -1567,6 +1637,7 @@ static int nvgpu_gpu_set_deterministic_opts(struct gk20a *g,
 			break;
 	}
 
+	nvgpu_speculation_barrier();
 	nvgpu_rwsem_up_read(&g->deterministic_busy);
 
 out:
@@ -1610,6 +1681,7 @@ long gk20a_ctrl_dev_ioctl(struct file *filp, unsigned int cmd, unsigned long arg
 		gk20a_idle(g);
 	}
 
+	nvgpu_speculation_barrier();
 	switch (cmd) {
 	case NVGPU_GPU_IOCTL_ZCULL_GET_CTX_SIZE:
 		get_ctx_size_args = (struct nvgpu_gpu_zcull_get_ctx_size_args *)buf;
@@ -1655,6 +1727,7 @@ long gk20a_ctrl_dev_ioctl(struct file *filp, unsigned int cmd, unsigned long arg
 		zbc_val->format = set_table_args->format;
 		zbc_val->type = set_table_args->type;
 
+		nvgpu_speculation_barrier();
 		switch (zbc_val->type) {
 		case GK20A_ZBC_TYPE_COLOR:
 			for (i = 0; i < GK20A_ZBC_COLOR_VALUE_SIZE; i++) {
@@ -1892,4 +1965,142 @@ long gk20a_ctrl_dev_ioctl(struct file *filp, unsigned int cmd, unsigned long arg
 		err = copy_to_user((void __user *)arg, buf, _IOC_SIZE(cmd));
 
 	return err;
+}
+
+static void usermode_vma_close(struct vm_area_struct *vma)
+{
+	struct gk20a_ctrl_priv *priv = vma->vm_private_data;
+	struct gk20a *g = priv->g;
+	struct nvgpu_os_linux *l = nvgpu_os_linux_from_gk20a(g);
+
+	nvgpu_mutex_acquire(&l->ctrl.privs_lock);
+	priv->usermode_vma.vma = NULL;
+	priv->usermode_vma.vma_mapped = false;
+	nvgpu_mutex_release(&l->ctrl.privs_lock);
+}
+
+struct vm_operations_struct usermode_vma_ops = {
+	/* no .open - we use VM_DONTCOPY and don't support fork */
+	.close = usermode_vma_close,
+};
+
+int gk20a_ctrl_dev_mmap(struct file *filp, struct vm_area_struct *vma)
+{
+	struct gk20a_ctrl_priv *priv = filp->private_data;
+	struct gk20a *g = priv->g;
+	struct nvgpu_os_linux *l = nvgpu_os_linux_from_gk20a(g);
+	u64 addr;
+	int err;
+
+	if (g->ops.fifo.usermode_base == NULL)
+		return -ENOSYS;
+
+	if (priv->usermode_vma.vma != NULL)
+		return -EBUSY;
+
+	if (vma->vm_end - vma->vm_start != SZ_4K)
+		return -EINVAL;
+
+	if (vma->vm_pgoff != 0UL)
+		return -EINVAL;
+
+	addr = l->regs_bus_addr + g->ops.fifo.usermode_base(g);
+
+	/* Sync with poweron/poweroff, and require valid regs */
+	err = gk20a_busy(g);
+	if (err) {
+		return err;
+	}
+
+	nvgpu_mutex_acquire(&l->ctrl.privs_lock);
+
+	vma->vm_flags |= VM_IO | VM_DONTCOPY | VM_DONTEXPAND | VM_NORESERVE |
+		VM_DONTDUMP | VM_PFNMAP;
+	vma->vm_ops = &usermode_vma_ops;
+	vma->vm_page_prot = pgprot_noncached(vma->vm_page_prot);
+
+	err = io_remap_pfn_range(vma, vma->vm_start, addr >> PAGE_SHIFT,
+			vma->vm_end - vma->vm_start, vma->vm_page_prot);
+	if (!err) {
+		priv->usermode_vma.vma = vma;
+		priv->usermode_vma.flags = vma->vm_flags;
+		vma->vm_private_data = priv;
+		priv->usermode_vma.vma_mapped = true;
+	}
+	nvgpu_mutex_release(&l->ctrl.privs_lock);
+
+	gk20a_idle(g);
+
+	return err;
+}
+
+static void alter_usermode_mapping(struct gk20a *g,
+		struct gk20a_ctrl_priv *priv,
+		bool poweroff)
+{
+	struct nvgpu_os_linux *l = nvgpu_os_linux_from_gk20a(g);
+	struct vm_area_struct *vma = priv->usermode_vma.vma;
+	bool vma_mapped = priv->usermode_vma.vma_mapped;
+	u64 addr;
+	int err;
+
+	if (!vma) {
+		/* Nothing to do - no mmap called */
+		return;
+	}
+
+	addr = l->regs_bus_addr + g->ops.fifo.usermode_base(g);
+
+	down_write(&vma->vm_mm->mmap_sem);
+
+	/*
+	 * This is a no-op for the below cases
+	 * a) poweroff and !vma_mapped - > do nothing as no map exists
+	 * b) !poweroff and vmap_mapped -> do nothing as already mapped
+	 */
+	if (poweroff && vma_mapped) {
+		err = zap_vma_ptes(vma, vma->vm_start, SZ_4K);
+		if (err == 0) {
+			vma->vm_flags = VM_NONE;
+			priv->usermode_vma.vma_mapped = false;
+		} else {
+			nvgpu_err(g, "can't remove usermode mapping");
+		}
+	} else if (!poweroff && !vma_mapped) {
+		vma->vm_flags = priv->usermode_vma.flags;
+		err = io_remap_pfn_range(vma, vma->vm_start,
+				addr >> PAGE_SHIFT,
+				SZ_4K, vma->vm_page_prot);
+		if (err != 0) {
+			nvgpu_err(g, "can't restore usermode mapping");
+			vma->vm_flags = VM_NONE;
+		} else {
+			priv->usermode_vma.vma_mapped = true;
+		}
+	}
+
+	up_write(&vma->vm_mm->mmap_sem);
+}
+
+static void alter_usermode_mappings(struct gk20a *g, bool poweroff)
+{
+	struct gk20a_ctrl_priv *priv;
+	struct nvgpu_os_linux *l = nvgpu_os_linux_from_gk20a(g);
+
+	nvgpu_mutex_acquire(&l->ctrl.privs_lock);
+	nvgpu_list_for_each_entry(priv, &l->ctrl.privs,
+			gk20a_ctrl_priv, list) {
+		alter_usermode_mapping(g, priv, poweroff);
+	}
+	nvgpu_mutex_release(&l->ctrl.privs_lock);
+}
+
+void nvgpu_hide_usermode_for_poweroff(struct gk20a *g)
+{
+	alter_usermode_mappings(g, true);
+}
+
+void nvgpu_restore_usermode_for_poweron(struct gk20a *g)
+{
+	alter_usermode_mappings(g, false);
 }

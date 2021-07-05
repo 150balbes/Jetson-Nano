@@ -36,7 +36,7 @@
  * that to account for client reboots that may not be communicated to the
  * monitor service. Note that should all client reboots be communicated to
  * the monitor service, then the refresh interval can be safely doubled. */
-#define REFRESH_INTERVAL_SECS (28)
+#define REFRESH_INTERVAL_MS (28000)
 
 #define IVC_MESSAGE_DATA "x"
 #define IVC_SUCCESS_CODE sizeof(IVC_MESSAGE_DATA)
@@ -51,6 +51,7 @@ struct tegra_hv_wdt {
 	bool interrupt;
 	bool do_ping;
 	int saved;
+	unsigned int refresh_interval_in_ms;
 };
 
 static int tegra_hv_wdt_start(struct watchdog_device *wdt)
@@ -155,7 +156,7 @@ static int tegra_hv_wdt_loop(void *arg)
 	while (!kthread_should_stop()) {
 		if (hv->do_ping)
 			tegra_hv_wdt_ping(&hv->wdt);
-		ssleep(REFRESH_INTERVAL_SECS);
+		msleep(hv->refresh_interval_in_ms);
 	}
 
 	return 0;
@@ -169,7 +170,7 @@ static irqreturn_t tegra_hv_wdt_interrupt(int irq, void *data)
 }
 
 static int tegra_hv_wdt_parse(struct platform_device *pdev,
-	struct device_node **qn, u32 *id)
+	struct device_node **qn, u32 *id, u32 *refresh_interval)
 {
 	struct device_node *dn;
 
@@ -182,6 +183,13 @@ static int tegra_hv_wdt_parse(struct platform_device *pdev,
 	if (of_property_read_u32_index(dn, "ivc", 1, id) != 0) {
 		dev_err(&pdev->dev, "failed to find ivc property\n");
 		return -EINVAL;
+	}
+
+	if (of_property_read_u32(dn, "refresh_interval_in_ms",
+						refresh_interval) != 0) {
+		dev_info(&pdev->dev, "Refresh interval  not set in DT, using %d milli-second as default\n",
+						REFRESH_INTERVAL_MS);
+		*refresh_interval = REFRESH_INTERVAL_MS;
 	}
 
 	*qn = of_parse_phandle(dn, "ivc", 0);
@@ -207,7 +215,8 @@ static const struct watchdog_ops tegra_hv_wdt_ops = {
 };
 
 static int tegra_hv_wdt_setup_no_cleanup(struct tegra_hv_wdt *hv,
-	struct platform_device *pdev, struct device_node *qn, unsigned int id)
+	struct platform_device *pdev, struct device_node *qn, unsigned int id,
+	unsigned int refresh_interval)
 {
 	int errcode;
 
@@ -217,6 +226,7 @@ static int tegra_hv_wdt_setup_no_cleanup(struct tegra_hv_wdt *hv,
 	hv->do_ping = true;
 	hv->saved = IVC_SUCCESS_CODE;
 	hv->pdev = pdev;
+	hv->refresh_interval_in_ms = refresh_interval;
 
 	hv->ivc = tegra_hv_ivc_reserve(qn, id, NULL);
 	if (IS_ERR_OR_NULL(hv->ivc)) {
@@ -242,7 +252,7 @@ static int tegra_hv_wdt_setup_no_cleanup(struct tegra_hv_wdt *hv,
 
 	hv->wdt.info = &tegra_hv_wdt_info;
 	hv->wdt.ops = &tegra_hv_wdt_ops;
-	hv->wdt.timeout = REFRESH_INTERVAL_SECS;
+	hv->wdt.timeout = refresh_interval;
 
 	errcode = watchdog_register_device(&hv->wdt);
 	if (errcode < 0) {
@@ -282,13 +292,14 @@ static int tegra_hv_wdt_probe(struct platform_device *pdev)
 	struct device_node *qn;
 	int errcode;
 	u32 id;
+	unsigned int refresh_interval;
 
 	if (!is_tegra_hypervisor_mode()) {
 		dev_info(&pdev->dev, "hypervisor is not present\n");
 		return -ENODEV;
 	}
 
-	errcode = tegra_hv_wdt_parse(pdev, &qn, &id);
+	errcode = tegra_hv_wdt_parse(pdev, &qn, &id, &refresh_interval);
 	if (errcode < 0) {
 		dev_err(&pdev->dev, "failed to parse device tree\n");
 		return -ENODEV;
@@ -306,7 +317,8 @@ static int tegra_hv_wdt_probe(struct platform_device *pdev)
 	 * dangling resources. So, we must clean up after failure.
 	 */
 
-	errcode = tegra_hv_wdt_setup_no_cleanup(hv, pdev, qn, id);
+	errcode = tegra_hv_wdt_setup_no_cleanup(hv, pdev, qn, id,
+							refresh_interval);
 	of_node_put(qn);
 
 	if (errcode < 0) {

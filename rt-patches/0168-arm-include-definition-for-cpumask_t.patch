@@ -1,0 +1,31 @@
+From 71880cc11228d76c12afc60ac8c0b2246df20802 Mon Sep 17 00:00:00 2001
+From: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+Date: Thu, 22 Dec 2016 17:28:33 +0100
+Subject: [PATCH 168/371] arm: include definition for cpumask_t
+X-NVConfidentiality: public
+
+This definition gets pulled in by other files. With the (later) split of
+RCU and spinlock.h it won't compile anymore.
+The split is done in ("rbtree: don't include the rcu header").
+
+Signed-off-by: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+---
+ arch/arm/include/asm/irq.h | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/arch/arm/include/asm/irq.h b/arch/arm/include/asm/irq.h
+index 61e1d08..0893b01 100644
+--- a/arch/arm/include/asm/irq.h
++++ b/arch/arm/include/asm/irq.h
+@@ -22,6 +22,8 @@
+ #endif
+ 
+ #ifndef __ASSEMBLY__
++#include <linux/cpumask.h>
++
+ struct irqaction;
+ struct pt_regs;
+ 
+-- 
+2.7.4
+

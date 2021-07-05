@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2018 NVIDIA Corporation.  All rights reserved.
+ * Copyright (c) 2016-2019 NVIDIA Corporation.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -98,6 +98,15 @@ enum pva_task_action_ids_e {
 	TASK_ACT_GOS_BLK_GTREQL_SFRAME	= 0xB3U,
 	TASK_ACT_READ_STATUS		= 0xC0U,
 	TASK_ACT_WRITE_STATUS		= 0xC1U,
+	TASK_ACT_PTR_WRITE_SOT_V_TS	= 0xC2U,
+	TASK_ACT_PTR_WRITE_SOT_R_TS	= 0xC3U,
+	TASK_ACT_PTR_WRITE_EOT_V_TS	= 0xC4U,
+	TASK_ACT_PTR_WRITE_EOT_R_TS	= 0xC5U,
+	TASK_ACT_PTR_WRITE_TS		= 0xC6U,
+	TASK_ACT_PTR_WRITE_VAL_SOT_V	= 0xC7U,
+	TASK_ACT_PTR_WRITE_VAL_SOT_R	= 0xC8U,
+	TASK_ACT_PTR_WRITE_VAL_EOT_V	= 0xC9U,
+	TASK_ACT_PTR_WRITE_VAL_EOT_R	= 0xCAU
 };
 
 struct pva_gen_task_status {

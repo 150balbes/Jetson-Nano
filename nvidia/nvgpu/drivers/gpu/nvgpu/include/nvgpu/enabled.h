@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -37,6 +37,7 @@ struct gk20a;
 #define NVGPU_FECS_TRACE_VA			4
 #define NVGPU_CAN_RAILGATE			5
 #define NVGPU_KERNEL_IS_DYING			6
+#define NVGPU_FECS_TRACE_FEATURE_CONTROL	7
 
 /*
  * ECC flags
@@ -91,9 +92,9 @@ struct gk20a;
 #define NVGPU_HAS_SYNCPOINTS			30
 /* sync fence FDs are available in, e.g., submit_gpfifo */
 #define NVGPU_SUPPORT_SYNC_FENCE_FDS		31
-/* NVGPU_IOCTL_CHANNEL_CYCLE_STATS is available */
+/* NVGPU_DBG_GPU_IOCTL_CYCLE_STATS is available */
 #define NVGPU_SUPPORT_CYCLE_STATS		32
-/* NVGPU_IOCTL_CHANNEL_CYCLE_STATS_SNAPSHOT is available */
+/* NVGPU_DBG_GPU_IOCTL_CYCLE_STATS_SNAPSHOT is available */
 #define NVGPU_SUPPORT_CYCLE_STATS_SNAPSHOT	33
 /* Both gpu driver and device support TSG */
 #define NVGPU_SUPPORT_TSG			34
@@ -177,10 +178,16 @@ struct gk20a;
 /* NVGPU_GPU_IOCTL_GET_GPU_LOAD is available */
 #define NVGPU_SUPPORT_GET_GPU_LOAD	70
 
+/* PLATFORM_ATOMIC support */
+#define NVGPU_SUPPORT_PLATFORM_ATOMIC		71
+
+/* NVGPU_GPU_IOCTL_SET_MMU_DEBUG_MODE is available */
+#define NVGPU_SUPPORT_SET_CTX_MMU_DEBUG_MODE	72
+
 /*
  * Must be greater than the largest bit offset in the above list.
  */
-#define NVGPU_MAX_ENABLED_BITS			71
+#define NVGPU_MAX_ENABLED_BITS			73U
 
 /**
  * nvgpu_is_enabled - Check if the passed flag is enabled.

@@ -34,7 +34,7 @@
 #include <linux/types.h>
 #include <uapi/linux/sched/types.h>
 #endif
-#include <video/tegra_dc_ext.h>
+#include <uapi/video/tegra_dc_ext.h>
 #include <trace/events/display.h>
 
 /* XXX ew */
@@ -42,7 +42,7 @@
 #include "../dc_priv.h"
 #include "../dc_priv_defs.h"
 #include "../dc_config.h"
-#include <video/tegra_dc_ext.h>
+#include <uapi/video/tegra_dc_ext.h>
 /* XXX ew 3 */
 #include "tegra_dc_ext_priv.h"
 /* XXX ew 4 */
@@ -1589,14 +1589,17 @@ static void tegra_dc_ext_unpin_window(struct tegra_dc_ext_win *win)
 	struct tegra_dc_dmabuf *unpin_handles[TEGRA_DC_NUM_PLANES];
 	int nr_unpin = 0;
 
+	mutex_lock(&win->lock);
 	if (win->cur_handle[TEGRA_DC_Y]) {
 		int j;
+
 		for (j = 0; j < TEGRA_DC_NUM_PLANES; j++) {
 			if (win->cur_handle[j])
 				unpin_handles[nr_unpin++] = win->cur_handle[j];
 		}
 		memset(win->cur_handle, 0, sizeof(win->cur_handle));
 	}
+	mutex_unlock(&win->lock);
 
 	tegra_dc_ext_unpin_handles(unpin_handles, nr_unpin);
 }

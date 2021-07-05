@@ -145,7 +145,14 @@ static struct aon_dbg_response *aon_create_ivc_dbg_req(u32 request,
 	uint16_t pstate = 0;
 	unsigned int timeout = 0;
 
+	if (aondev == NULL)
+		return (void *)-EPROBE_DEFER;
 	aondbg = dev_get_drvdata(aondev);
+	if (aondbg == NULL) {
+		dev_err(aondev, "Control data for IPC with SPE is NULL\n");
+		return (void *)-EINVAL;
+	}
+
 	pstate = (request > AON_REQUEST_TYPE_MAX) ?
 			__builtin_ctz(AON_STATE(request)) : 0;
 	req.req_type = request & AON_REQUEST_MASK;
@@ -212,6 +219,44 @@ static struct aon_dbg_response *aon_create_ivc_dbg_req(u32 request,
 	return resp;
 }
 
+int tegra_aon_get_pllaon_state(void)
+{
+	int ret = -EINVAL;
+	u64 val;
+	struct aon_dbg_response *resp = NULL;
+
+	mutex_lock(&aon_mutex);
+	resp = aon_create_ivc_dbg_req(AON_PM_DISABLE_PLLAON, READ, 0);
+	if (IS_ERR(resp)) {
+		ret = PTR_ERR(resp);
+		mutex_unlock(&aon_mutex);
+		return ret;
+	}
+	if (resp->resp_type == AON_PM_DISABLE_PLLAON) {
+		val = resp->data.pm_xfer.type.disable_pllaon.disable;
+		ret = (val == 1) ? 1 : 0;
+	}
+	mutex_unlock(&aon_mutex);
+
+	return ret;
+}
+EXPORT_SYMBOL(tegra_aon_get_pllaon_state);
+
+int tegra_aon_set_pllaon_state(bool enable)
+{
+	int ret = 0;
+	u64 val = enable ? 0 : 1;
+	struct aon_dbg_response *resp = NULL;
+
+	mutex_lock(&aon_mutex);
+	resp = aon_create_ivc_dbg_req(AON_PM_DISABLE_PLLAON, WRITE, val);
+	if (IS_ERR(resp))
+		ret = PTR_ERR(resp);
+	mutex_unlock(&aon_mutex);
+
+	return ret;
+}
+EXPORT_SYMBOL(tegra_aon_set_pllaon_state);
 
 static ssize_t aon_pm_target_power_state_write(struct file *file,
 		const char __user *user_buf, size_t count, loff_t *ppos)

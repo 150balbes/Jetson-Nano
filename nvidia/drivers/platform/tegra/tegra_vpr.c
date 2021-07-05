@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2018 NVIDIA Corporation. All rights reserved.
+ * Copyright (c) 2016-2019 NVIDIA Corporation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -107,6 +107,12 @@ struct dma_resize_notifier_ops vpr_dev_ops = {
 	.resize = tegra_update_resize_cfg
 };
 EXPORT_SYMBOL(vpr_dev_ops);
+
+bool tegra_is_vpr_resize_supported(void)
+{
+	return tegra_vpr_resize;
+}
+EXPORT_SYMBOL(tegra_is_vpr_resize_supported);
 
 /* SMC Definitions*/
 #define TE_SMC_PROGRAM_VPR 0x82000003

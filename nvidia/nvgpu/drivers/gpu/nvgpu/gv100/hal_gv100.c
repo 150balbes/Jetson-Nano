@@ -1,7 +1,7 @@
 /*
  * GV100 Tegra HAL interface
  *
- * Copyright (c) 2017-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -288,6 +288,8 @@ int gv100_init_gpu_characteristics(struct gk20a *g)
 		__nvgpu_set_enabled(g, NVGPU_SUPPORT_USER_SYNCPOINT, true);
 	}
 
+	__nvgpu_set_enabled(g, NVGPU_SUPPORT_USERMODE_SUBMIT, true);
+
 	return 0;
 }
 
@@ -402,6 +404,7 @@ static const struct gpu_ops gv100_ops = {
 		.get_num_hwpm_perfmon = gr_gv100_get_num_hwpm_perfmon,
 		.set_pmm_register = gr_gv100_set_pmm_register,
 		.update_hwpm_ctxsw_mode = gr_gk20a_update_hwpm_ctxsw_mode,
+		.set_mmu_debug_mode = NULL,
 		.init_hwpm_pmm_register = gr_gv100_init_hwpm_pmm_register,
 		.record_sm_error_state = gv11b_gr_record_sm_error_state,
 		.clear_sm_error_state = gv11b_gr_clear_sm_error_state,
@@ -487,6 +490,7 @@ static const struct gpu_ops gv100_ops = {
 		.get_offset_in_gpccs_segment =
 			gr_gk20a_get_offset_in_gpccs_segment,
 		.set_debug_mode = gm20b_gr_set_debug_mode,
+		.set_fecs_watchdog_timeout = gr_gv11b_set_fecs_watchdog_timeout,
 	},
 	.fb = {
 		.init_hw = gv11b_fb_init_hw,
@@ -648,7 +652,7 @@ static const struct gpu_ops gv100_ops = {
 		.deinit_eng_method_buffers =
 			gv11b_fifo_deinit_eng_method_buffers,
 		.tsg_bind_channel = gk20a_tsg_bind_channel,
-		.tsg_unbind_channel = gk20a_fifo_tsg_unbind_channel,
+		.tsg_unbind_channel = NULL,
 		.post_event_id = gk20a_tsg_event_id_post_event,
 		.ch_abort_clean_up = gk20a_channel_abort_clean_up,
 		.check_tsg_ctxsw_timeout = gk20a_fifo_check_tsg_ctxsw_timeout,
@@ -677,6 +681,7 @@ static const struct gpu_ops gv100_ops = {
 		.get_sema_wait_cmd_size = gv11b_fifo_get_sema_wait_cmd_size,
 		.get_sema_incr_cmd_size = gv11b_fifo_get_sema_incr_cmd_size,
 		.add_sema_cmd = gv11b_fifo_add_sema_cmd,
+		.usermode_base = gv11b_fifo_usermode_base,
 	},
 	.gr_ctx = {
 		.get_netlist_name = gr_gv100_get_netlist_name,
@@ -1036,6 +1041,8 @@ int gv100_init_hal(struct gk20a *g)
 	__nvgpu_set_enabled(g, NVGPU_PMU_FECS_BOOTSTRAP_DONE, false);
 	__nvgpu_set_enabled(g, NVGPU_SUPPORT_MULTIPLE_WPR, false);
 	__nvgpu_set_enabled(g, NVGPU_FECS_TRACE_VA, true);
+	__nvgpu_set_enabled(g, NVGPU_FECS_TRACE_FEATURE_CONTROL, false);
+	__nvgpu_set_enabled(g, NVGPU_SUPPORT_SET_CTX_MMU_DEBUG_MODE, false);
 
 	/* for now */
 	__nvgpu_set_enabled(g, NVGPU_PMU_PSTATE, true);

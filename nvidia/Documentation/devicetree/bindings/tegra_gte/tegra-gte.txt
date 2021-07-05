@@ -1,0 +1,53 @@
+NVIDIA Tegra T194 GTE (Generic hardware Timestamping Engine) driver bindings
+
+GTE is a hardware block which monitors various events for the state change and
+timestamps them using TSC counter. Tegra implements LIC GTE and AON GTE
+instances. LIC GTE is used only to monitor LIC IRQ lines and AON GTE is used
+to monitor GPIO lines.
+
+Required properties:
+
+- compatible:
+	Array of strings.
+	One of:
+	- "nvidia,tegra194-gte-lic"
+		For CCPLEX LIC IRQ GTE monitoring
+	- "nvidia,tegra194-gte-aon"
+		For AON GPIO GTE monitoring
+- reg:
+	physical base address
+- interrupts:
+	interrupt number
+- nvidia,num-slices:
+	u32 property indicating number of slices of the given GTE instance
+- nvidia,gpio-controller:
+	phandle to the gpio controller for which GTE is monitoring its GPIO,
+	mandatory for the tegra194-gte-aon, not needed for tegra194-gte-lic
+
+Optional:
+
+- nvidia,int-threshold:
+	u32 property to indicate GTE hardware FIFO watermark. It defaults to 1
+	if not defined
+
+Example:
+/ {
+	tegra_gte_lic: gte@3aa0000 {
+		compatible = "nvidia,tegra194-gte-lic";
+		reg = <0x0 0x3aa0000 0x0 0x10000>;
+		interrupts = <0 11 0x4>;
+		nvidia,int-threshold = <1>;
+		nvidia,num-slices = <11>;
+		status = "disabled";
+	};
+
+	tegra_gte_aon: gte@c1e0000 {
+		compatible = "nvidia,tegra194-gte-aon";
+		reg = <0x0 0xc1e0000 0x0 0x10000>;
+		interrupts = <0 13 0x4>;
+		nvidia,int-threshold = <1>;
+		nvidia,num-slices = <3>;
+		nvidia,gpio-controller = <&tegra_aon_gpio>;
+		status = "disabled";
+	};
+};

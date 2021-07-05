@@ -2033,6 +2033,40 @@ DEFINE_SIMPLE_ATTRIBUTE(mr4_force_poll_fops,
 			get_mr4_force_poll,
 			set_mr4_force_poll, "%llu\n");
 
+static int dram_info_show(struct seq_file *s, void *data)
+{
+	uint32_t mr5, mr6, mr7, mr8, strap;
+	unsigned long flags;
+
+	strap = tegra_read_ram_code();
+	spin_lock_irqsave(&emc_access_lock, flags);
+	mr5 = emc_read_mrr(0, 5) & 0xffU;
+	mr6 = emc_read_mrr(0, 6) & 0xffU;
+	mr7 = emc_read_mrr(0, 7) & 0xffU;
+	mr8 = emc_read_mrr(0, 8) & 0xffU;
+	spin_unlock_irqrestore(&emc_access_lock, flags);
+	seq_printf(s, "DRAM strap: %u\n"
+		      "Manufacturer ID (MR5): %u\n"
+		      "Revision ID-1 (MR6): %u\n"
+		      "Revision ID-2 (MR7): %u\n"
+		      "IO Width/Density/Type (MR8): 0x%02x\n",
+		      strap, mr5, mr6, mr7, mr8);
+
+	return 0;
+}
+
+static int dram_info_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, dram_info_show, inode->i_private);
+}
+
+static const struct file_operations dram_info_fops = {
+	.open		= dram_info_open,
+	.read		= seq_read,
+	.llseek		= seq_lseek,
+	.release	= single_release,
+};
+
 static int tegra_emc_debug_init(void)
 {
 	struct dentry *emc_debugfs_root;
@@ -2106,6 +2140,9 @@ static int tegra_emc_debug_init(void)
 
 	if (!debugfs_create_file("tables_info", S_IRUGO, emc_debugfs_root,
 				 NULL, &emc_dvfs_table_fops))
+		goto err_out;
+	if (!debugfs_create_file("dram_info", 0444, emc_debugfs_root,
+				 NULL, &dram_info_fops))
 		goto err_out;
 
 	return 0;

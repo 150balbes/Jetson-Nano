@@ -23,9 +23,7 @@
 #include <linux/of_platform.h>
 #include <linux/platform_device.h>
 #include <linux/pm_runtime.h>
-#include <linux/tegra_pm_domains.h>
 #include <linux/regmap.h>
-#include <linux/slab.h>
 #include <soc/tegra/chip-id.h>
 #include <sound/soc.h>
 #include <linux/clk/tegra.h>
@@ -1247,7 +1245,6 @@ static struct of_dev_auxdata tegra186_xbar_auxdata[] = {
 };
 
 static struct snd_soc_codec_driver tegra210_xbar_codec = {
-	.probe = tegra_xbar_codec_probe,
 	.idle_bias_off = 1,
 	.component_driver = {
 		.dapm_widgets = tegra210_xbar_widgets,
@@ -1258,7 +1255,6 @@ static struct snd_soc_codec_driver tegra210_xbar_codec = {
 };
 
 static struct snd_soc_codec_driver tegra186_xbar_codec = {
-	.probe = tegra_xbar_codec_probe,
 	.idle_bias_off = 1,
 	.component_driver = {
 		.dapm_widgets = tegra186_xbar_widgets,
@@ -1340,20 +1336,8 @@ static int tegra186_xbar_registration(struct platform_device *pdev)
 		return -EBUSY;
 	}
 
-	ret = pm_runtime_get_sync(&pdev->dev);
-	if (ret < 0) {
-		dev_err(&pdev->dev, "pm_runtime_get failed. ret: %d\n", ret);
-		return ret;
-	}
-
 	of_platform_populate(pdev->dev.of_node, NULL, tegra186_xbar_auxdata,
 			     &pdev->dev);
-
-	ret = pm_runtime_put_sync(&pdev->dev);
-	if (ret < 0) {
-		dev_err(&pdev->dev, "pm_runtime_put failed. ret: %d\n", ret);
-		return ret;
-	}
 
 	return 0;
 }
@@ -1390,26 +1374,21 @@ static int tegra_dev_xbar_probe(struct platform_device *pdev)
 {
 	const struct of_device_id *match;
 	struct tegra_xbar_soc_data *soc_data;
-	int ret;
 
 	/* required to register the xbar codec with generic name */
 	if (dev_set_name(&pdev->dev, "%s", DRV_NAME) < 0) {
 		dev_err(&pdev->dev, "error in setting xbar device name\n");
-		ret = -ENODEV;
-		goto err;
+		return -ENODEV;
 	}
 
 	match = of_match_device(tegra_xbar_of_match, &pdev->dev);
 	if (!match) {
 		dev_err(&pdev->dev, "Error: No device match found\n");
-		ret = -ENODEV;
-		goto err;
+		return -ENODEV;
 	}
 	soc_data = (struct tegra_xbar_soc_data *)match->data;
 
-	ret = tegra_xbar_probe(pdev, soc_data);
-err:
-	return ret;
+	return tegra_xbar_probe(pdev, soc_data);
 }
 
 static const struct dev_pm_ops tegra_xbar_pm_ops = {
@@ -1422,7 +1401,6 @@ static const struct dev_pm_ops tegra_xbar_pm_ops = {
 static struct platform_driver tegra_xbar_driver = {
 	.probe = tegra_dev_xbar_probe,
 	.remove = tegra_xbar_remove,
-	.shutdown = tegra_xbar_shutdown,
 	.driver = {
 		.name = DRV_NAME,
 		.owner = THIS_MODULE,

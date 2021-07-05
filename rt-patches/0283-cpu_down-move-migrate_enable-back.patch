@@ -1,0 +1,58 @@
+From 89cf9cd919ff82be22227799b943871bff4a5654 Mon Sep 17 00:00:00 2001
+From: Tiejun Chen <tiejun.chen@windriver.com>
+Date: Thu, 7 Nov 2013 10:06:07 +0800
+Subject: [PATCH 283/371] cpu_down: move migrate_enable() back
+X-NVConfidentiality: public
+
+Commit 08c1ab68, "hotplug-use-migrate-disable.patch", intends to
+use migrate_enable()/migrate_disable() to replace that combination
+of preempt_enable() and preempt_disable(), but actually in
+!CONFIG_PREEMPT_RT_FULL case, migrate_enable()/migrate_disable()
+are still equal to preempt_enable()/preempt_disable(). So that
+followed cpu_hotplug_begin()/cpu_unplug_begin(cpu) would go schedule()
+to trigger schedule_debug() like this:
+
+_cpu_down()
+	|
+	+ migrate_disable() = preempt_disable()
+	|
+	+ cpu_hotplug_begin() or cpu_unplug_begin()
+		|
+		+ schedule()
+			|
+			+ __schedule()
+				|
+				+ preempt_disable();
+				|
+				+ __schedule_bug() is true!
+
+So we should move migrate_enable() as the original scheme.
+
+Signed-off-by: Tiejun Chen <tiejun.chen@windriver.com>
+---
+ kernel/cpu.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/kernel/cpu.c b/kernel/cpu.c
+index e2b7185..f977c13 100644
+--- a/kernel/cpu.c
++++ b/kernel/cpu.c
+@@ -1333,6 +1333,7 @@ static int __ref _cpu_down(unsigned int cpu, int tasks_frozen,
+ 		goto restore_cpus;
+ 	}
+ 
++	migrate_enable();
+ 	cpu_hotplug_begin();
+ 	ret = cpu_unplug_begin(cpu);
+ 	if (ret) {
+@@ -1380,7 +1381,6 @@ static int __ref _cpu_down(unsigned int cpu, int tasks_frozen,
+ 	cpu_unplug_done(cpu);
+ out_cancel:
+ 	cpu_hotplug_done();
+-	migrate_enable();
+ 	/* This post dead nonsense must die */
+ 	if (!ret && hasdied)
+ 		cpu_notify_nofail(CPU_POST_DEAD, cpu);
+-- 
+2.7.4
+

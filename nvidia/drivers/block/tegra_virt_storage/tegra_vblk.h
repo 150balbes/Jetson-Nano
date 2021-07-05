@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2015-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -108,6 +108,9 @@ int vblk_prep_sg_io(struct vblk_dev *vblkdev,
 int vblk_complete_sg_io(struct vblk_dev *vblkdev,
 		struct vblk_ioctl_req *ioctl_req,
 		void __user *user);
+
+int vblk_submit_combo_query_io(struct vblk_dev *vblkdev,
+		unsigned int cmd, void __user *user);
 
 int vblk_prep_mmc_multi_ioc(struct vblk_dev *vblkdev,
 		struct vblk_ioctl_req *ioctl_req,

@@ -1,0 +1,14 @@
+// SPDX-License-Identifier: GPL-2.0-only
+/*
+ * Device-tree overlay for Adafruit I2S MEMS Microphone Breakout
+ * (SPH0645LM4H) with board tegra210-p3448-0000-p3449-0000-a01.
+ *
+ * Copyright (c) 2019 NVIDIA CORPORATION. All rights reserved.
+ *
+ */
+
+/dts-v1/;
+/plugin/;
+
+#include <dt-common/jetson/tegra210-p3448-0000-p3449-0000-a01.h>
+#include <overlays/jetson-adafruit-sph0645lm4h.dts>

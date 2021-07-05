@@ -206,20 +206,6 @@ static int tegra186_init_refcount(void)
 	tegra186_pg_force_powergate(TEGRA186_POWER_DOMAIN_SAX);
 	tegra186_pg_force_powergate(TEGRA186_POWER_DOMAIN_PCX);
 
-	/*
-	 * WAR: tegra_ape_power_on() avoid calling unpowergate on the AUD
-	 * partition the first time it is called as it expects it to already be
-	 * on during boot (and the  reason for that is that AGIC need to be
-	 * powered on early in boot).
-	 * Thus there would be a mismatch in the refcount the first
-	 * time tegra_ape_power_off() is called, so fix it up here.
-	 * (and this can't easily be fixed in tegra_ape_power_on(), since
-	 * that will break t210).
-	 *
-	 * This WAR can be removed when GIC has proper runtime pm support.
-	 */
-	t186_partition_info[TEGRA186_POWER_DOMAIN_AUD].refcount = 1;
-
 	return 0;
 }
 

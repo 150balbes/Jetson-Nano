@@ -3,7 +3,7 @@
  *
  * Tegra Graphics Host Driver Entrypoint
  *
- * Copyright (c) 2010-2018, NVIDIA Corporation. All rights reserved.
+ * Copyright (c) 2010-2020, NVIDIA Corporation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -39,12 +39,13 @@
 #include <linux/anon_inodes.h>
 #include <linux/kref.h>
 #include <linux/nospec.h>
+#include <linux/dma-mapping.h>
 
 #include "dev.h"
 #include <trace/events/nvhost.h>
 
 #include <linux/nvhost.h>
-#include <linux/nvhost_ioctl.h>
+#include <uapi/linux/nvhost_ioctl.h>
 
 #include "debug.h"
 #include "bus_client.h"
@@ -484,14 +485,6 @@ static int nvhost_ioctl_ctrl_poll_fd_create (
 
 	snprintf(name, sizeof(name), "nvhost-event-poll-fd");
 
-	file = anon_inode_getfile(name, &nvhost_event_poll_fd_ops,
-				  NULL, O_RDWR);
-	if (IS_ERR(file)) {
-		nvhost_err(&ctx->dev->dev->dev, "failed to get file");
-		err = PTR_ERR(file);
-		goto fail_file;
-	}
-
 	private_data = kzalloc(sizeof(*private_data), GFP_KERNEL);
 	if (!private_data) {
 		nvhost_err(&ctx->dev->dev->dev,
@@ -505,15 +498,21 @@ static int nvhost_ioctl_ctrl_poll_fd_create (
 	private_data->event_posted = false;
 	kref_init(&private_data->ref);
 
+	file = anon_inode_getfile(name, &nvhost_event_poll_fd_ops,
+				  private_data, O_RDWR);
+	if (IS_ERR(file)) {
+		nvhost_err(&ctx->dev->dev->dev, "failed to get file");
+		err = PTR_ERR(file);
+		goto fail_file;
+	}
 	fd_install(fd, file);
-	file->private_data = private_data;
 
 	args->fd = fd;
 	return 0;
 
-fail_alloc:
-	fput(file);
 fail_file:
+	kfree(private_data);
+fail_alloc:
 	put_unused_fd(fd);
 	return err;
 }
@@ -1104,6 +1103,38 @@ fail:
 	return -ENXIO;
 }
 
+/* Verify that we can access syncpts at either end of range. If we fail,
+ * most likely PCT and DT have conflicting information.
+ */
+static int check_syncpt_range(struct platform_device *dev,
+		struct nvhost_syncpt *sp)
+{
+	struct nvhost_master *host = syncpt_to_dev(sp);
+	int err = 0;
+	u32 val;
+
+	nvhost_syncpt_set_minval(dev, host->info.pts_base, 0xdeadbeef);
+	val = nvhost_syncpt_update_min(sp, host->info.pts_base);
+	if (val != 0xdeadbeef) {
+		nvhost_err(&dev->dev, "syncpt %u: read 0x%x", host->info.pts_base, val);
+		err = -EINVAL;
+		goto fail;
+	}
+	nvhost_syncpt_set_minval(dev, host->info.pts_base, 0);
+
+	nvhost_syncpt_set_minval(dev, host->info.pts_limit - 1, 0xbeefdead);
+	val = nvhost_syncpt_update_min(sp, host->info.pts_limit - 1);
+	if (val != 0xbeefdead) {
+		nvhost_err(&dev->dev, "syncpt %u: read 0x%x", host->info.pts_limit - 1, val);
+		err = -EINVAL;
+		goto fail;
+	}
+	nvhost_syncpt_set_minval(dev, host->info.pts_limit - 1, 0);
+fail:
+	WARN_ON(err != 0);
+	return err;
+}
+
 static int nvhost_probe(struct platform_device *dev)
 {
 	struct nvhost_master *host;
@@ -1168,6 +1199,8 @@ static int nvhost_probe(struct platform_device *dev)
 			sizeof(struct host1x_device_info));
 
 	pdata->pdev = dev;
+
+	dma_set_mask_and_coherent(&dev->dev, host->info.dma_mask);
 
 	/* set common host1x device data */
 	platform_set_drvdata(dev, pdata);
@@ -1235,6 +1268,10 @@ static int nvhost_probe(struct platform_device *dev)
 		nvhost_module_idle(dev);
 		goto fail;
 	}
+
+	err = check_syncpt_range(dev, &host->syncpt);
+	if (err)
+		goto fail;
 
 	err = nvhost_intr_init(&host->intr, generic_irq, syncpt_irq);
 	if (err)

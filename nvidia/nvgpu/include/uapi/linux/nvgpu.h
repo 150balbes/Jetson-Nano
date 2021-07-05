@@ -1,7 +1,7 @@
 /*
  * NVGPU Public Interface Header
  *
- * Copyright (c) 2011-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2011-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -114,9 +114,9 @@ struct nvgpu_gpu_zbc_query_table_args {
 #define NVGPU_GPU_FLAGS_SUPPORT_SPARSE_ALLOCS		(1ULL << 2)
 /* sync fence FDs are available in, e.g., submit_gpfifo */
 #define NVGPU_GPU_FLAGS_SUPPORT_SYNC_FENCE_FDS		(1ULL << 3)
-/* NVGPU_IOCTL_CHANNEL_CYCLE_STATS is available */
+/* NVGPU_DBG_GPU_IOCTL_CYCLE_STATS is available */
 #define NVGPU_GPU_FLAGS_SUPPORT_CYCLE_STATS		(1ULL << 4)
-/* NVGPU_IOCTL_CHANNEL_CYCLE_STATS_SNAPSHOT is available */
+/* NVGPU_DBG_GPU_IOCTL_CYCLE_STATS_SNAPSHOT is available */
 #define NVGPU_GPU_FLAGS_SUPPORT_CYCLE_STATS_SNAPSHOT	(1ULL << 6)
 /* User-space managed address spaces support */
 #define NVGPU_GPU_FLAGS_SUPPORT_USERSPACE_MANAGED_AS	(1ULL << 7)
@@ -164,6 +164,10 @@ struct nvgpu_gpu_zbc_query_table_args {
 #define NVGPU_GPU_FLAGS_SUPPORT_USER_SYNCPOINT		(1ULL << 28)
 /* Railgating (powering the GPU off completely) is supported and enabled */
 #define NVGPU_GPU_FLAGS_CAN_RAILGATE			(1ULL << 29)
+/* Usermode submit is available */
+#define NVGPU_GPU_FLAGS_SUPPORT_USERMODE_SUBMIT		(1ULL << 30)
+/* Set MMU debug mode is available */
+#define NVGPU_GPU_FLAGS_SUPPORT_SET_CTX_MMU_DEBUG_MODE	(1ULL << 32)
 /* SM LRF ECC is enabled */
 #define NVGPU_GPU_FLAGS_ECC_ENABLED_SM_LRF	(1ULL << 60)
 /* SM SHM ECC is enabled */
@@ -1081,7 +1085,7 @@ struct nvgpu_tsg_read_single_sm_error_state_args {
 #define NVGPU_TSG_IOCTL_BIND_CHANNEL_EX \
 	_IOWR(NVGPU_TSG_IOCTL_MAGIC, 11, struct nvgpu_tsg_bind_channel_ex_args)
 #define NVGPU_TSG_IOCTL_READ_SINGLE_SM_ERROR_STATE \
-	_IOR(NVGPU_TSG_IOCTL_MAGIC, 12, \
+	_IOWR(NVGPU_TSG_IOCTL_MAGIC, 12, \
 			struct nvgpu_tsg_read_single_sm_error_state_args)
 #define NVGPU_TSG_IOCTL_MAX_ARG_SIZE	\
 		sizeof(struct nvgpu_tsg_bind_channel_ex_args)
@@ -1412,8 +1416,45 @@ struct nvgpu_dbg_gpu_set_sm_exception_type_mask_args {
 	_IOW(NVGPU_DBG_GPU_IOCTL_MAGIC, 23, \
 			struct nvgpu_dbg_gpu_set_sm_exception_type_mask_args)
 
+struct nvgpu_dbg_gpu_cycle_stats_args {
+	__u32 dmabuf_fd;
+	__u32 reserved;
+};
+
+#define NVGPU_DBG_GPU_IOCTL_CYCLE_STATS	\
+	_IOWR(NVGPU_DBG_GPU_IOCTL_MAGIC, 24, struct nvgpu_dbg_gpu_cycle_stats_args)
+
+/* cycle stats snapshot buffer support for mode E */
+struct nvgpu_dbg_gpu_cycle_stats_snapshot_args {
+	__u32 cmd;		/* in: command to handle     */
+	__u32 dmabuf_fd;	/* in: dma buffer handler    */
+	__u32 extra;		/* in/out: extra payload e.g.*/
+				/*    counter/start perfmon  */
+	__u32 reserved;
+};
+
+/* valid commands to control cycle stats shared buffer */
+#define NVGPU_DBG_GPU_IOCTL_CYCLE_STATS_SNAPSHOT_CMD_FLUSH   0
+#define NVGPU_DBG_GPU_IOCTL_CYCLE_STATS_SNAPSHOT_CMD_ATTACH  1
+#define NVGPU_DBG_GPU_IOCTL_CYCLE_STATS_SNAPSHOT_CMD_DETACH  2
+
+#define NVGPU_DBG_GPU_IOCTL_CYCLE_STATS_SNAPSHOT	\
+	_IOWR(NVGPU_DBG_GPU_IOCTL_MAGIC, 25, struct nvgpu_dbg_gpu_cycle_stats_snapshot_args)
+
+/* MMU Debug Mode */
+#define NVGPU_DBG_GPU_CTX_MMU_DEBUG_MODE_DISABLED	0
+#define NVGPU_DBG_GPU_CTX_MMU_DEBUG_MODE_ENABLED	1
+
+struct nvgpu_dbg_gpu_set_ctx_mmu_debug_mode_args {
+	__u32 mode;
+	__u32 reserved;
+};
+#define NVGPU_DBG_GPU_IOCTL_SET_CTX_MMU_DEBUG_MODE	\
+	_IOW(NVGPU_DBG_GPU_IOCTL_MAGIC, 26, \
+	struct nvgpu_dbg_gpu_set_ctx_mmu_debug_mode_args)
+
 #define NVGPU_DBG_GPU_IOCTL_LAST		\
-	_IOC_NR(NVGPU_DBG_GPU_IOCTL_SET_SM_EXCEPTION_TYPE_MASK)
+	_IOC_NR(NVGPU_DBG_GPU_IOCTL_SET_CTX_MMU_DEBUG_MODE)
 
 #define NVGPU_DBG_GPU_IOCTL_MAX_ARG_SIZE		\
 	sizeof(struct nvgpu_dbg_gpu_access_fb_memory_args)
@@ -1468,22 +1509,32 @@ struct nvgpu_alloc_obj_ctx_args {
 	__u64 obj_id;    /* output, used to free later       */
 };
 
+/* Deprecated. Use the SETUP_BIND IOCTL instead. */
 struct nvgpu_alloc_gpfifo_args {
 	__u32 num_entries;
-#define NVGPU_ALLOC_GPFIFO_FLAGS_VPR_ENABLED	(1 << 0) /* set owner channel of this gpfifo as a vpr channel */
-/*
- * this flag is used in struct nvgpu_alloc_gpfifo_args
- * to enable re-playable faults for that channel
- */
+#define NVGPU_ALLOC_GPFIFO_FLAGS_VPR_ENABLED	(1 << 0)
 #define NVGPU_ALLOC_GPFIFO_FLAGS_REPLAYABLE_FAULTS_ENABLE   (1 << 2)
 	__u32 flags;
 };
 
+/* Deprecated. Use the SETUP_BIND IOCTL instead. */
 struct nvgpu_alloc_gpfifo_ex_args {
 	__u32 num_entries;
 	__u32 num_inflight_jobs;
-/* Set owner channel of this gpfifo as a vpr channel. */
 #define NVGPU_ALLOC_GPFIFO_EX_FLAGS_VPR_ENABLED		(1 << 0)
+#define NVGPU_ALLOC_GPFIFO_EX_FLAGS_DETERMINISTIC	(1 << 1)
+	__u32 flags;
+	__u32 reserved[5];
+};
+
+/*
+ * Setup the channel and bind it (enable).
+ */
+struct nvgpu_channel_setup_bind_args {
+	__u32 num_gpfifo_entries;
+	__u32 num_inflight_jobs;
+/* Set owner channel of this gpfifo as a vpr channel. */
+#define NVGPU_CHANNEL_SETUP_BIND_FLAGS_VPR_ENABLED		(1 << 0)
 /*
  * Channel shall exhibit deterministic behavior in the submit path.
  *
@@ -1501,11 +1552,28 @@ struct nvgpu_alloc_gpfifo_ex_args {
  * NVGPU_GPU_FLAGS_SUPPORT_DETERMINISTIC_SUBMIT_NO_JOBTRACKING; this flag or
  * num_inflight_jobs are not necessary in that case.
  */
-#define NVGPU_ALLOC_GPFIFO_EX_FLAGS_DETERMINISTIC	(1 << 1)
+#define NVGPU_CHANNEL_SETUP_BIND_FLAGS_DETERMINISTIC	(1 << 1)
+/* enable replayable gmmu faults for this channel */
+#define NVGPU_CHANNEL_SETUP_BIND_FLAGS_REPLAYABLE_FAULTS_ENABLE   (1 << 2)
+/*
+ * Enable usermode submits on this channel.
+ *
+ * Submits in usermode are supported in some environments. If supported and
+ * this flag is set + USERD and GPFIFO buffers are provided here, a submit
+ * token is passed back to be written in the doorbell register in the usermode
+ * region to notify the GPU for new work on this channel. Usermode and
+ * kernelmode submit modes are mutually exclusive; by passing this flag, the
+ * SUBMIT_GPFIFO IOCTL cannot be used.
+ */
+#define NVGPU_CHANNEL_SETUP_BIND_FLAGS_USERMODE_SUPPORT	(1 << 3)
 	__u32 flags;
-	__u32 reserved[5];
+	__s32 userd_dmabuf_fd;	/* in */
+	__s32 gpfifo_dmabuf_fd;	/* in */
+	__u32 work_submit_token; /* out */
+	__u64 userd_dmabuf_offset; /* in */
+	__u64 gpfifo_dmabuf_offset; /* in */
+	__u32 reserved[9];
 };
-
 struct nvgpu_fence {
 	__u32 id;        /* syncpoint id or sync fence fd */
 	__u32 value;     /* syncpoint value (discarded when using sync fence) */
@@ -1556,11 +1624,6 @@ struct nvgpu_wait_args {
 	} condition; /* determined by type field */
 };
 
-/* cycle stats support */
-struct nvgpu_cycle_stats_args {
-	__u32 dmabuf_fd;
-} __packed;
-
 struct nvgpu_set_timeout_args {
 	__u32 timeout;
 } __packed;
@@ -1608,20 +1671,6 @@ struct nvgpu_notification {
 	__u16 status;	/* user sets bit 15, NV sets status 000e-000f */
 #define	NVGPU_CHANNEL_SUBMIT_TIMEOUT		1
 };
-
-/* cycle stats snapshot buffer support for mode E */
-struct nvgpu_cycle_stats_snapshot_args {
-	__u32 cmd;		/* in: command to handle     */
-	__u32 dmabuf_fd;	/* in: dma buffer handler    */
-	__u32 extra;		/* in/out: extra payload e.g.*/
-				/*    counter/start perfmon  */
-	__u32 pad0[1];
-};
-
-/* valid commands to control cycle stats shared buffer */
-#define NVGPU_IOCTL_CHANNEL_CYCLE_STATS_SNAPSHOT_CMD_FLUSH   0
-#define NVGPU_IOCTL_CHANNEL_CYCLE_STATS_SNAPSHOT_CMD_ATTACH  1
-#define NVGPU_IOCTL_CHANNEL_CYCLE_STATS_SNAPSHOT_CMD_DETACH  2
 
 /* configure watchdog per-channel */
 struct nvgpu_channel_wdt_args {
@@ -1721,8 +1770,6 @@ struct nvgpu_reschedule_runlist_args {
 	_IOW(NVGPU_IOCTL_MAGIC,  100, struct nvgpu_alloc_gpfifo_args)
 #define NVGPU_IOCTL_CHANNEL_WAIT		\
 	_IOWR(NVGPU_IOCTL_MAGIC, 102, struct nvgpu_wait_args)
-#define NVGPU_IOCTL_CHANNEL_CYCLE_STATS	\
-	_IOWR(NVGPU_IOCTL_MAGIC, 106, struct nvgpu_cycle_stats_args)
 #define NVGPU_IOCTL_CHANNEL_SUBMIT_GPFIFO	\
 	_IOWR(NVGPU_IOCTL_MAGIC, 107, struct nvgpu_submit_gpfifo_args)
 #define NVGPU_IOCTL_CHANNEL_ALLOC_OBJ_CTX	\
@@ -1743,8 +1790,6 @@ struct nvgpu_reschedule_runlist_args {
 	_IO(NVGPU_IOCTL_MAGIC,  116)
 #define NVGPU_IOCTL_CHANNEL_EVENT_ID_CTRL \
 	_IOWR(NVGPU_IOCTL_MAGIC, 117, struct nvgpu_event_id_ctrl_args)
-#define NVGPU_IOCTL_CHANNEL_CYCLE_STATS_SNAPSHOT	\
-	_IOWR(NVGPU_IOCTL_MAGIC, 118, struct nvgpu_cycle_stats_snapshot_args)
 #define NVGPU_IOCTL_CHANNEL_WDT \
 	_IOW(NVGPU_IOCTL_MAGIC, 119, struct nvgpu_channel_wdt_args)
 #define NVGPU_IOCTL_CHANNEL_SET_RUNLIST_INTERLEAVE \
@@ -1763,10 +1808,13 @@ struct nvgpu_reschedule_runlist_args {
 	_IOR(NVGPU_IOCTL_MAGIC, 126, struct nvgpu_get_user_syncpoint_args)
 #define NVGPU_IOCTL_CHANNEL_RESCHEDULE_RUNLIST	\
 	_IOW(NVGPU_IOCTL_MAGIC, 127, struct nvgpu_reschedule_runlist_args)
+#define NVGPU_IOCTL_CHANNEL_SETUP_BIND	\
+	_IOWR(NVGPU_IOCTL_MAGIC, 128, struct nvgpu_channel_setup_bind_args)
 
 #define NVGPU_IOCTL_CHANNEL_LAST	\
-	_IOC_NR(NVGPU_IOCTL_CHANNEL_RESCHEDULE_RUNLIST)
-#define NVGPU_IOCTL_CHANNEL_MAX_ARG_SIZE sizeof(struct nvgpu_alloc_gpfifo_ex_args)
+	_IOC_NR(NVGPU_IOCTL_CHANNEL_SETUP_BIND)
+#define NVGPU_IOCTL_CHANNEL_MAX_ARG_SIZE \
+	sizeof(struct nvgpu_channel_setup_bind_args)
 
 /*
  * /dev/nvhost-as-gpu device
@@ -1862,6 +1910,7 @@ struct nvgpu_as_bind_channel_args {
 #define NVGPU_AS_MAP_BUFFER_FLAGS_MAPPABLE_COMPBITS (1 << 6)
 #define NVGPU_AS_MAP_BUFFER_FLAGS_L3_ALLOC          (1 << 7)
 #define NVGPU_AS_MAP_BUFFER_FLAGS_DIRECT_KIND_CTRL  (1 << 8)
+#define NVGPU_AS_MAP_BUFFER_FLAGS_PLATFORM_ATOMIC   (1 << 9)
 
 /*
  * VM map buffer IOCTL
@@ -1907,6 +1956,10 @@ struct nvgpu_as_bind_channel_args {
  *
  *     Set when userspace plans to pass in @compr_kind and @incompr_kind
  *     instead of letting the kernel work out kind fields.
+ *
+ *   %NVGPU_AS_MAP_BUFFER_FLAGS_PLATFORM_ATOMIC
+ *
+ *     Specify that a mapping should use platform atomics.
  *
  * @kind  [IN]
  *

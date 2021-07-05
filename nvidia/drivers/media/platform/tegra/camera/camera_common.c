@@ -62,6 +62,11 @@ static const struct camera_common_colorfmt camera_common_color_fmts[] = {
 		V4L2_PIX_FMT_SGRBG10,
 	},
 	{
+		MEDIA_BUS_FMT_SGBRG10_1X10,
+		V4L2_COLORSPACE_SRGB,
+		V4L2_PIX_FMT_SGBRG10,
+	},
+	{
 		MEDIA_BUS_FMT_SBGGR10_1X10,
 		V4L2_COLORSPACE_SRGB,
 		V4L2_PIX_FMT_SBGGR10,
@@ -90,6 +95,11 @@ static const struct camera_common_colorfmt camera_common_color_fmts[] = {
 		MEDIA_BUS_FMT_VYUY8_1X16,
 		V4L2_COLORSPACE_SRGB,
 		V4L2_PIX_FMT_VYUY,
+	},
+	{
+		MEDIA_BUS_FMT_RGB888_1X24,
+		V4L2_COLORSPACE_SRGB,
+		V4L2_PIX_FMT_RGB24,
 	},
 	{
 		MEDIA_BUS_FMT_YUYV8_2X8,
@@ -170,6 +180,7 @@ int camera_common_g_ctrl(struct camera_common_data *s_data,
 			return 0;
 		}
 	}
+	speculation_barrier(); /* break_spec_p#5_1 */
 
 	return -EFAULT;
 }
@@ -506,6 +517,7 @@ static const struct camera_common_colorfmt *find_matching_color_fmt(
 break_loops:
 	if (match_num < index)
 		return NULL;
+	index = array_index_nospec(index, match_num); /* break_spec_p#1 */
 	return &camera_common_color_fmts[match_index];
 }
 
@@ -568,6 +580,7 @@ static void select_mode(struct camera_common_data *s_data,
 			break;
 		}
 	}
+	speculation_barrier(); /* break_spec_p#5_1 */
 }
 
 int camera_common_try_fmt(struct v4l2_subdev *sd, struct v4l2_mbus_framefmt *mf)
@@ -600,11 +613,23 @@ int camera_common_try_fmt(struct v4l2_subdev *sd, struct v4l2_mbus_framefmt *mf)
 		s_data->sensor_mode_id >= 0 &&
 		s_data->sensor_mode_id < s_data->numfmts) {
 		dev_dbg(sd->dev, "%s: use_sensor_mode_id %d\n",
-				__func__, s_data->sensor_mode_id);
+				__func__, s_data->use_sensor_mode_id);
 		s_data->mode = frmfmt[s_data->sensor_mode_id].mode;
 		s_data->mode_prop_idx = s_data->sensor_mode_id;
-		s_data->fmt_width = mf->width;
-		s_data->fmt_height = mf->height;
+		if (mf->width == frmfmt[s_data->sensor_mode_id].size.width &&
+		    mf->height == frmfmt[s_data->sensor_mode_id].size.height) {
+			s_data->fmt_width = mf->width;
+			s_data->fmt_height = mf->height;
+		}
+		else
+		{
+			mf->width = s_data->fmt_width;
+			mf->height = s_data->fmt_height;
+			dev_dbg(sd->dev,
+				"%s: invalid resolution %d x %d\n",
+				__func__, mf->width, mf->height);
+			goto verify_code;
+		}
 	} else {
 		/* select mode based on format match first */
 		for (i = 0; i < s_data->numfmts; i++) {
@@ -617,6 +642,7 @@ int camera_common_try_fmt(struct v4l2_subdev *sd, struct v4l2_mbus_framefmt *mf)
 				break;
 			}
 		}
+		speculation_barrier(); /* break_spec_p#5_1 */
 
 		if (i == s_data->numfmts) {
 			mf->width = s_data->fmt_width;
@@ -720,6 +746,7 @@ static int camera_common_evaluate_color_format(struct v4l2_subdev *sd,
 		if (cur_props->pixel_format == pixelformat)
 			return 0;
 	}
+	speculation_barrier(); /* break_spec_p#5_1 */
 
 	if (i == sensor_num_modes) {
 		dev_dbg(s_data->dev,
@@ -781,7 +808,9 @@ int camera_common_enum_frameintervals(struct v4l2_subdev *sd,
 	if (i >= s_data->numfmts)
 		return -EINVAL;
 
-	/* Check index is in the rage of framerates array index */
+	i = array_index_nospec(i, s_data->numfmts); /* break_spec_p#1 */
+
+	/* Check index is in the range of framerates array index */
 	if (fie->index >= s_data->frmfmt[i].num_framerates)
 		return -EINVAL;
 	fie->index = array_index_nospec(fie->index,
@@ -850,6 +879,7 @@ void camera_common_dpd_disable(struct camera_common_data *s_data)
 		dev_dbg(s_data->dev,
 			 "%s: csi %d\n", __func__, io_idx);
 	}
+	speculation_barrier(); /* break_spec_p#5_1 */
 }
 
 void camera_common_dpd_enable(struct camera_common_data *s_data)
@@ -869,6 +899,7 @@ void camera_common_dpd_enable(struct camera_common_data *s_data)
 		dev_dbg(s_data->dev,
 			 "%s: csi %d\n", __func__, io_idx);
 	}
+	speculation_barrier(); /* break_spec_p#5_1 */
 }
 
 int camera_common_s_power(struct v4l2_subdev *sd, int on)

@@ -162,8 +162,8 @@ Example:
 		phy-mode = "rgmii";
 		status = "disabled";
 		pinctrl-names = "idle", "default";
-                pinctrl-0 = <&eqos_tx_tri_state_idle>;
-                pinctrl-1 = <&eqos_tx_tri_state_default>;
+                pinctrl-0 = <&eqos_txrx_tri_state_idle>;
+                pinctrl-1 = <&eqos_txrx_tri_state_default>;
 		nvidia,queue_prio = <0 1 2 3>;
 		nvidia,use_tagged_ptp;
 		nvidia,chan_napi_quota = <64 64 64 64>;
@@ -172,5 +172,51 @@ Example:
 		nvidia,ptp_ref_clock_speed = <125>;
 		nvidia,use_multi_queues
 		nvidia,brcm_phy_apd_mode;
+
+	}
+
+
+Pinctrl Description (pinctrl-0/1 property)
+====================================================/
+
+The pinctrl property of the eqos node above manages the EQOS pin mux'ing and
+its configuration. In this case, enabling and disabling the pins drive state
+for the eqos function group.
+
+Proprties:
+- nvidia, pins		Represent name of the pin or its mux group name.
+- nvidia, tristate	pins are set to TEGRA_PIN_ENABLE in eqos idle state
+			(eqos_idle) OR set to TEGRA_PIN_DISABLE in
+			eqos active state (eqos_default)
+
+For more details on tegra pinmux controller and pins, please refer to
+the document nvidia,tegra186-pinmux.txt.
+
+Example:
+
+	pinmux@2430000 {
+		eqos_txrx_tri_state_idle: eqos_idle {
+			eqos {
+				nvidia,pins = "eqos_td3_pe4","eqos_td2_pe3",
+						"eqos_td1_pe2","eqos_td0_pe1",
+						"eqos_txc_pe0","eqos_tx_ctl_pe5",
+						"eqos_rd3_pf1","eqos_rd2_pf0",
+						"eqos_rd1_pe7","eqos_rd0_pe6",
+						"eqos_rxc_pf3","eqos_rx_ctl_pf2";
+				nvidia,tristate = <TEGRA_PIN_ENABLE>;
+			};
+		};
+
+		eqos_txrx_tri_state_default: eqos_default {
+			eqos {
+				nvidia,pins = "eqos_td3_pe4","eqos_td2_pe3",
+						"eqos_td1_pe2","eqos_td0_pe1",
+						"eqos_txc_pe0","eqos_tx_ctl_pe5",
+						"eqos_rd3_pf1","eqos_rd2_pf0",
+						"eqos_rd1_pe7","eqos_rd0_pe6",
+						"eqos_rxc_pf3","eqos_rx_ctl_pf2";
+				nvidia,tristate = <TEGRA_PIN_DISABLE>;
+			};
+		};
 
 	}

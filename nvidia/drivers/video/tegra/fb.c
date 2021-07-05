@@ -39,8 +39,8 @@
 #include <linux/iommu.h>
 
 #include <asm/atomic.h>
-#include <video/tegrafb.h>
-#include <video/tegra_dc_ext.h>
+#include <uapi/video/tegrafb.h>
+#include <uapi/video/tegra_dc_ext.h>
 
 #include "dc/dc.h"
 #include "dc/dc_priv.h"
@@ -56,8 +56,13 @@
 #define user_ptr(p) (p)
 #endif
 
+#ifdef CONFIG_ANDROID
+#define FB_BUFFERING_FACTOR 2
+#else /* L4T and other OSes */
+#define FB_BUFFERING_FACTOR 1
+#endif
 /* support up to 4K (3840x2150) with double buffering */
-#define DEFAULT_FBMEM_SIZE	(SZ_64M + SZ_8M)
+#define DEFAULT_FBMEM_SIZE	(SZ_32M * FB_BUFFERING_FACTOR) + SZ_8M
 
 struct tegra_fb_info {
 	struct tegra_dc_win	win;
@@ -165,10 +170,10 @@ static int tegra_fb_check_var(struct fb_var_screeninfo *var,
 	struct fb_videomode mode;
 
 	if (tegra_fb->valid &&
-		(var->yres * var->xres * var->bits_per_pixel / 8 * 2) >
-		info->screen_size) {
+		(var->yres * var->xres * var->bits_per_pixel /
+		 8 * FB_BUFFERING_FACTOR) > info->screen_size) {
 		dev_err(&tegra_fb->ndev->dev,
-			"FB %lu is NOT enough for %dx%d %dbpp!\n",
+			"FB %lu is NOT enough for %ux%u %ubpp!\n",
 			info->screen_size, var->xres, var->yres,
 			var->bits_per_pixel);
 		return -EINVAL;
@@ -192,8 +197,7 @@ static int tegra_fb_check_var(struct fb_var_screeninfo *var,
 		var->yoffset = yoffset;
 	}
 
-	/* Double yres_virtual to allow double buffering through pan_display */
-	var->yres_virtual = var->yres * 2;
+	var->yres_virtual = var->yres * FB_BUFFERING_FACTOR;
 
 	return 0;
 }
@@ -884,7 +888,6 @@ void tegra_fb_update_monspecs(struct tegra_fb_info *fb_info,
 	struct fb_event event;
 	int i, b_locked_fb_info = 0;
 	struct tegra_dc *dc = fb_info->win.dc;
-	struct fb_videomode fb_mode;
 
 	if (fb_info == NULL) {
 		pr_err("%s(): invalid operation\n", __func__);
@@ -967,19 +970,26 @@ void tegra_fb_update_monspecs(struct tegra_fb_info *fb_info,
 		dc->out_ops->vrr_update_monspecs(dc,
 			&fb_info->info->modelist);
 
-	if (dc->use_cached_mode) {
-		tegra_dc_to_fb_videomode(&fb_mode, &dc->cached_mode);
-		dc->use_cached_mode = false;
-	} else {
-		if (!dc->out->fbcon_default_mode)
-			memcpy(&fb_mode, &specs->modedb[0],
-				sizeof(struct fb_videomode));
-		else
+	if (tegra_fb_is_console_enabled(dc->pdata)) {
+		struct fb_videomode fb_mode;
+
+		if (dc->use_cached_mode) {
+			tegra_dc_to_fb_videomode(&fb_mode, &dc->cached_mode);
+			dc->use_cached_mode = false;
+		} else if (dc->out->fbcon_default_mode) {
 			memcpy(&fb_mode, dc->out->fbcon_default_mode,
 				sizeof(struct fb_videomode));
-	}
+		} else if (!list_empty(&fb_info->info->modelist)) {
+			struct fb_modelist *modelist;
 
-	if (tegra_fb_is_console_enabled(dc->pdata)) {
+			modelist = list_first_entry(&fb_info->info->modelist,
+						struct fb_modelist, list);
+			fb_mode = modelist->mode;
+		} else {
+			memcpy(&fb_mode, &tegra_dc_vga_mode,
+				sizeof(struct fb_videomode));
+		}
+
 		fb_info->info->state = FBINFO_STATE_RUNNING;
 		tegra_fbcon_set_fb_mode(fb_info, &fb_mode);
 	} else {
@@ -1247,8 +1257,7 @@ struct tegra_fb_info *tegra_fb_register(struct platform_device *ndev,
 	tegra_fb->win.idx = fb_data->win;
 	tegra_fb->win.dc = dc;
 
-	if (tegra_fb_is_console_enabled(dc->pdata) ||
-				(fb_mem && fb_mem->start)) {
+	if (fb_mem && fb_mem->start) {
 		fb_base = tegra_fb_check_and_alloc_framebuffer(info);
 		if (!fb_base) {
 			ret = -EBUSY;
@@ -1306,7 +1315,7 @@ struct tegra_fb_info *tegra_fb_register(struct platform_device *ndev,
 	tegra_dc_to_fb_videomode(&m, &dc->mode);
 	fb_videomode_to_var(&info->var, &m);
 	info->var.xres_virtual		= fb_data->xres;
-	info->var.yres_virtual		= fb_data->yres * 2;
+	info->var.yres_virtual		= fb_data->yres * FB_BUFFERING_FACTOR;
 	info->var.bits_per_pixel	= fb_data->bits_per_pixel;
 	info->var.activate		= FB_ACTIVATE_VBL;
 	info->var.height		= tegra_dc_get_out_height(dc);

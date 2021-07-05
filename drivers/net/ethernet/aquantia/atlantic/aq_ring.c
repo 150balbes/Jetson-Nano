@@ -29,7 +29,7 @@ static inline void aq_free_rxpage(struct aq_rxpage *rxpage, struct device *dev)
 }
 
 static int aq_get_rxpage(struct aq_rxpage *rxpage, unsigned order,
-	struct device *dev)
+			 struct device *dev)
 {
 	struct page *page;
 	dma_addr_t daddr;
@@ -39,7 +39,8 @@ static int aq_get_rxpage(struct aq_rxpage *rxpage, unsigned order,
 	if (unlikely(!page))
 		goto err_exit;
 
-	daddr = dma_map_page(dev, page, 0, PAGE_SIZE << order, DMA_FROM_DEVICE);
+	daddr = dma_map_page(dev, page, 0, PAGE_SIZE << order, 
+			     DMA_FROM_DEVICE);
 
 	if (unlikely(dma_mapping_error(dev, daddr)))
 		goto free_page;
@@ -58,7 +59,8 @@ err_exit:
 	return ret;
 }
 
-static int aq_get_rxpages(struct aq_ring_s *self, struct aq_ring_buff_s *rxbuf, int order)
+static int aq_get_rxpages(struct aq_ring_s *self, struct aq_ring_buff_s *rxbuf,
+			  int order)
 {
 	int ret;
 
@@ -106,8 +108,8 @@ static struct aq_ring_s *aq_ring_alloc(struct aq_ring_s *self,
 		goto err_exit;
 	}
 	self->dx_ring = dma_alloc_coherent(aq_nic_get_dev(aq_nic),
-						self->size * self->dx_size,
-						&self->dx_ring_pa, GFP_KERNEL);
+					   self->size * self->dx_size,
+					   &self->dx_ring_pa, GFP_KERNEL);
 	if (!self->dx_ring) {
 		err = -ENOMEM;
 		goto err_exit;
@@ -159,7 +161,7 @@ struct aq_ring_s *aq_ring_rx_alloc(struct aq_ring_s *self,
 	self->size = aq_nic_cfg->rxds;
 	self->dx_size = aq_nic_cfg->aq_hw_caps->rxd_size;
 	self->page_order = fls(AQ_CFG_RX_FRAME_MAX / PAGE_SIZE +
-			(AQ_CFG_RX_FRAME_MAX % PAGE_SIZE ? 1 : 0)) - 1;
+			       (AQ_CFG_RX_FRAME_MAX % PAGE_SIZE ? 1 : 0)) - 1;
 	if (aq_nic_cfg->rxpageorder > self->page_order)
 		self->page_order = aq_nic_cfg->rxpageorder;
 
@@ -231,8 +233,8 @@ bool aq_ring_tx_clean(struct aq_ring_s *self)
 				if (!buff->is_eop &&
 				    buff->eop_index != 0xffffU &&
 				    (!aq_ring_dx_in_range(self->sw_head,
-						buff->eop_index,
-						self->hw_head)))
+							  buff->eop_index,
+							  self->hw_head)))
 					break;
 
 				dma_unmap_single(dev, buff->pa, buff->len,
@@ -400,7 +402,8 @@ int aq_ring_rx_fill(struct aq_ring_s *self)
 	int err = 0;
 	int i = 0;
 
-	if (aq_ring_avail_dx(self) < min_t(unsigned, aq_rx_refill_thres, self->size/2))
+	if (aq_ring_avail_dx(self) < min_t(unsigned, aq_rx_refill_thres, 
+					   self->size/2))
 		return err;
 
 	for (i = aq_ring_avail_dx(self); i--;

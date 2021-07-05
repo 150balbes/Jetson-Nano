@@ -1,7 +1,7 @@
 /*
  * tegra210_afc_alt.h - Definitions for Tegra210 AFC driver
  *
- * Copyright (c) 2014-2017 NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2014-2019 NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -84,9 +84,6 @@
 #define AFC_CLK_PPM_DIFF 50
 
 struct tegra210_afc_soc_data {
-	void (*set_audio_cif)(struct regmap *map,
-			unsigned int reg,
-			struct tegra210_xbar_cif_conf *conf);
 	unsigned int num_i2s;
 	bool flag_module_select;
 	const struct snd_soc_codec_driver *afc_codec;
@@ -103,7 +100,6 @@ enum tegra210_afc_threshold_type {
 struct tegra210_afc {
 	struct regmap *regmap;
 	const struct tegra210_afc_soc_data *soc_data;
-	bool is_shutdown;
 
 	/* mandatory control to be set */
 	unsigned int dest_module_num;

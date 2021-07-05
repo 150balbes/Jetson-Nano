@@ -29,6 +29,7 @@ extern "C" {
 #define DRM_TEGRA_UDRM_SEND_VBLANK_EVENT        0x03
 #define DRM_TEGRA_UDRM_DROP_MASTER_NOTIFY       0x04
 #define DRM_TEGRA_UDRM_SET_MASTER_NOTIFY        0x05
+#define DRM_TEGRA_UDRM_SEND_CONNECTOR_STATUS_EVENT 0x06
 
 struct drm_tegra_udrm_dmabuf_mmap {
 	int fd;
@@ -56,6 +57,11 @@ struct drm_tegra_udrm_drop_master_notify {
 struct drm_tegra_udrm_set_master_notify {
 	int eventfd;
 	int clear;
+};
+
+struct drm_tegra_udrm_connector_status_event {
+	uint32_t conn_id;
+	uint32_t prop_id;
 };
 
 #define TEGRA_UDRM_IOCTL(dir, name, str) \
@@ -120,6 +126,17 @@ struct drm_tegra_udrm_set_master_notify {
 
 #define DRM_IOCTL_TEGRA_UDRM_SET_MASTER_NOTIFY \
 	TEGRA_UDRM_IOCTL(IOW, SET_MASTER_NOTIFY, set_master_notify)
+
+/* UMD issues this ioctl to generate a uevent for connector status
+ * property change.
+ *
+ * In parameters -
+ *    conn_id: connector id related to the status change.
+ *    prop_id: property id related to the status change.
+ */
+#define DRM_IOCTL_TEGRA_UDRM_SEND_CONNECTOR_STATUS_EVENT \
+	TEGRA_UDRM_IOCTL(IOW, SEND_CONNECTOR_STATUS_EVENT, \
+		connector_status_event)
 
 #if defined(__cplusplus)
 }

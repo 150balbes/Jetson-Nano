@@ -2390,6 +2390,9 @@ static int sdhci_tegra_probe(struct platform_device *pdev)
 	if (tegra_host->en_periodic_cflush)
 		host->mmc->caps2 |= MMC_CAP2_PERIODIC_CACHE_FLUSH;
 
+	if (tegra_host->vmmc_always_on)
+		host->mmc->caps2 |= MMC_CAP2_SLOT_REG_ALWAYS_ON;
+
 	host->mmc->caps2 |= MMC_CAP2_EN_CLK_TO_ACCESS_REG;
 	host->mmc->caps |= MMC_CAP_WAIT_WHILE_BUSY;
 

@@ -3498,6 +3498,16 @@ rtl8168_check_link_status(struct net_device *dev)
 			else
 				tp->first_link_up = false;
 
+                        /*
+                         * FIFO overrun errors are observed when ASPM is enabled
+                         * and flow control is disabled. This is causing perf
+                         * drop. So disable ASPM if flow control is disabled.
+                         */
+                        if (aspm && ((RTL_R8(PHYstatus) & (TxFlowCtrl | RxFlowCtrl)) !=
+                            (TxFlowCtrl | RxFlowCtrl)))
+                                pci_disable_link_state(tp->pci_dev, PCIE_LINK_STATE_L0S |
+                                                       PCIE_LINK_STATE_L1 | PCIE_LINK_STATE_CLKPM);
+
                         if (tp->mcfg == CFG_METHOD_18 || tp->mcfg == CFG_METHOD_19 || tp->mcfg == CFG_METHOD_20) {
                                 if (RTL_R8(PHYstatus) & _1000bpsF) {
                                         rtl8168_eri_write(ioaddr, 0x1bc, 4, 0x00000011, ERIAR_ExGMAC);
@@ -3621,6 +3631,9 @@ rtl8168_check_link_status(struct net_device *dev)
                                 NICChkTypeEnableDashInterrupt(tp);
                         }
 #endif
+                        /* Enable ASPM during eth link down. */
+                        if (aspm)
+                                pci_enable_link_state(tp->pci_dev, PCIE_LINK_STATE_L1);
                 }
         }
 
@@ -4061,11 +4074,13 @@ rtl8168_hw_d3_para(struct net_device *dev)
         case CFG_METHOD_30:
         case CFG_METHOD_31:
         case CFG_METHOD_32:
-                RTL_W8(0xF1, RTL_R8(0xF1) & ~BIT_7);
-                rtl8168_enable_cfg9346_write(tp);
-                RTL_W8(Config2, RTL_R8(Config2) & ~BIT_7);
-                RTL_W8(Config5, RTL_R8(Config5) & ~BIT_0);
-                rtl8168_disable_cfg9346_write(tp);
+                if (!aspm) {
+                        RTL_W8(0xF1, RTL_R8(0xF1) & ~BIT_7);
+                        rtl8168_enable_cfg9346_write(tp);
+                        RTL_W8(Config2, RTL_R8(Config2) & ~BIT_7);
+                        RTL_W8(Config5, RTL_R8(Config5) & ~BIT_0);
+                        rtl8168_disable_cfg9346_write(tp);
+                }
                 break;
         }
 
@@ -24750,6 +24765,10 @@ rtl8168_init_board(struct pci_dev *pdev,
         if (!aspm || tp->mcfg == CFG_METHOD_9)
                 pci_disable_link_state(pdev, PCIE_LINK_STATE_L0S | PCIE_LINK_STATE_L1 |
                                        PCIE_LINK_STATE_CLKPM);
+        else if (aspm)
+                /* RTL8111HS doesn't goto L1 if L0s is enabled, disable L0s. */
+                pci_disable_link_state(pdev, PCIE_LINK_STATE_L0S | PCIE_LINK_STATE_CLKPM |
+				       PCIE_LINK_STATE_L1SS);
 #endif
 
         rc = pci_set_mwi(pdev);
@@ -28070,6 +28089,14 @@ static int rtl8168_close(struct net_device *dev)
         struct rtl8168_private *tp = netdev_priv(dev);
         struct pci_dev *pdev = tp->pci_dev;
 
+         /*
+          * ASPM is disabled after eth link up if flow control is disabled.
+          * If the interface is brought down when eth link is up, link down
+          * event is not expected. So enable ASPM in interface down sequence.
+          */
+        if (aspm)
+                pci_enable_link_state(tp->pci_dev, PCIE_LINK_STATE_L1);
+
         if (tp->TxDescArray!=NULL && tp->RxDescArray!=NULL) {
                 rtl8168_cancel_schedule_work(dev);
 
@@ -28262,6 +28289,11 @@ rtl8168_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	struct net_device *dev;
 	PPGDEV	mydev;
 	int ret;
+
+	if (of_property_read_bool(pci_device_to_OF_node(pdev), "enable-aspm"))
+		aspm = 1;
+	else
+		aspm = 0;
 
 	ret = pgdrv_prob(pdev, id);
 	if (ret) {

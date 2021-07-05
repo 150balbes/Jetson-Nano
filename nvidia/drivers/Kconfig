@@ -1,6 +1,7 @@
 append_menu "Device Drivers"
 
 if ARCH_TEGRA
+source "drivers/bluetooth/realtek/Kconfig"
 source "drivers/misc/tegra186-ahc/Kconfig"
 source "drivers/nvpmodel/Kconfig"
 source "drivers/nvlink/Kconfig"

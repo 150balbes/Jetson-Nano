@@ -1,7 +1,9 @@
- /*
+/*
+ * include/uapi/misc/eqos_ape_ioctl.h
+ *
  * eqos_ape_ioctl.h  --  EQOS and APE Clock synchronization driver IO control
  *
- * Copyright (c) 2015-2019 NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2016-2020 NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -19,7 +21,7 @@
 #ifndef __UAPI_EQOS_APE_IOCTL_H__
 #define __UAPI_EQOS_APE_IOCTL_H__
 
-#include <uapi/linux/ioctl.h>
+#include <linux/ioctl.h>
 
 struct eqos_ape_cmd {
 	int ppm;

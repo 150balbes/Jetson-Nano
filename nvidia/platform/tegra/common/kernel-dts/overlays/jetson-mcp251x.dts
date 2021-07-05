@@ -1,0 +1,96 @@
+// SPDX-License-Identifier: GPL-2.0-only
+/*
+ * Jetson Device-tree overlay for MCP251x CAN Controller.
+ *
+ * Copyright (c) 2020 NVIDIA CORPORATION. All rights reserved.
+ *
+ */
+
+#include <dt-bindings/pinctrl/pinctrl-tegra.h>
+
+/ {
+	overlay-name = "MCP251x CAN Controller";
+	compatible = JETSON_COMPATIBLE;
+
+	fragment@0 {
+		target-path = "/";
+		__overlay__ {
+			clocks {
+				can_clock: can_clock {
+					compatible = "fixed-clock";
+					#clock-cells = <0>;
+					clock-frequency = <20000000>;
+					clock-accuracy = <100>;
+				};
+			};
+		};
+	};
+
+	fragment@1 {
+		target = <&hdr40_spi1>;
+		__overlay__ {
+			spi@0 {
+				compatible = "microchip,mcp2515";
+				reg = <0x0>;
+				spi-max-frequency = <10000000>;
+				nvidia,enable-hw-based-cs;
+				nvidia,rx-clk-tap-delay = <0x7>;
+				clocks = <&can_clock>;
+				interrupt-parent = <&gpio>;
+				interrupts = <HDR40_PIN31_GPIO 0x1>;
+				controller-data {
+					nvidia,cs-setup-clk-count = <0x1e>;
+					nvidia,cs-hold-clk-count = <0x1e>;
+					nvidia,rx-clk-tap-delay = <0x1f>;
+					nvidia,tx-clk-tap-delay = <0x0>;
+				};
+			};
+		};
+	};
+
+	fragment@2 {
+		target = <&pinmux>;
+		__overlay__ {
+			pinctrl-names = "default";
+			pinctrl-0 = <&hdr40_pinmux>;
+
+			hdr40_pinmux: header-40pin-pinmux {
+				pin19 {
+					nvidia,pins = HDR40_PIN19;
+					nvidia,function = HDR40_SPI;
+					nvidia,pull = <TEGRA_PIN_PULL_DOWN>;
+					nvidia,tristate = <TEGRA_PIN_DISABLE>;
+					nvidia,enable-input = <TEGRA_PIN_DISABLE>;
+				};
+				pin21 {
+					nvidia,pins = HDR40_PIN21;
+					nvidia,function = HDR40_SPI;
+					nvidia,pull = <TEGRA_PIN_PULL_DOWN>;
+					nvidia,tristate = <TEGRA_PIN_DISABLE>;
+					nvidia,enable-input = <TEGRA_PIN_ENABLE>;
+				};
+				pin23 {
+					nvidia,pins = HDR40_PIN23;
+					nvidia,function = HDR40_SPI;
+					nvidia,pull = <TEGRA_PIN_PULL_DOWN>;
+					nvidia,tristate = <TEGRA_PIN_DISABLE>;
+					nvidia,enable-input = <TEGRA_PIN_ENABLE>;
+				};
+				pin24 {
+					nvidia,pins = HDR40_PIN24;
+					nvidia,function = HDR40_SPI;
+					nvidia,pull = <TEGRA_PIN_PULL_UP>;
+					nvidia,tristate = <TEGRA_PIN_DISABLE>;
+					nvidia,enable-input = <TEGRA_PIN_DISABLE>;
+				};
+				pin26 {
+					nvidia,pins = HDR40_PIN26;
+					nvidia,function = HDR40_SPI;
+					nvidia,pull = <TEGRA_PIN_PULL_UP>;
+					nvidia,tristate = <TEGRA_PIN_DISABLE>;
+					nvidia,enable-input = <TEGRA_PIN_DISABLE>;
+				};
+			};
+		};
+	};
+};

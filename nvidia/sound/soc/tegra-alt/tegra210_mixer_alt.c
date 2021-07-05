@@ -24,7 +24,6 @@
 #include <linux/platform_device.h>
 #include <linux/pm_runtime.h>
 #include <linux/regmap.h>
-#include <linux/slab.h>
 #include <sound/core.h>
 #include <sound/pcm.h>
 #include <sound/pcm_params.h>
@@ -90,9 +89,7 @@ static int tegra210_mixer_runtime_resume(struct device *dev)
 	struct tegra210_mixer *mixer = dev_get_drvdata(dev);
 
 	regcache_cache_only(mixer->regmap, false);
-
-	if (!mixer->is_shutdown)
-		regcache_sync(mixer->regmap);
+	regcache_sync(mixer->regmap);
 
 	return 0;
 }
@@ -248,7 +245,7 @@ static int tegra210_mixer_set_audio_cif(struct tegra210_mixer *mixer,
 	cif_conf.audio_bits = audio_bits;
 	cif_conf.client_bits = audio_bits;
 
-	mixer->soc_data->set_audio_cif(mixer->regmap, reg, &cif_conf);
+	tegra210_xbar_set_cif(mixer->regmap, reg, &cif_conf);
 	return 0;
 }
 
@@ -298,15 +295,6 @@ static int tegra210_mixer_out_hw_params(struct snd_pcm_substream *substream,
 				dai->id);
 
 	return ret;
-}
-
-static int tegra210_mixer_codec_probe(struct snd_soc_codec *codec)
-{
-	struct tegra210_mixer *mixer = snd_soc_codec_get_drvdata(codec);
-
-	codec->control_data = mixer->regmap;
-
-	return 0;
 }
 
 static struct snd_soc_dai_ops tegra210_mixer_out_dai_ops = {
@@ -532,7 +520,6 @@ static const struct snd_soc_dapm_route tegra210_mixer_routes[] = {
 };
 
 static struct snd_soc_codec_driver tegra210_mixer_codec = {
-	.probe = tegra210_mixer_codec_probe,
 	.idle_bias_off = 1,
 	.component_driver = {
 		.dapm_widgets = tegra210_mixer_widgets,
@@ -682,42 +669,29 @@ static const struct regmap_config tegra210_mixer_regmap_config = {
 	.cache_type = REGCACHE_FLAT,
 };
 
-static const struct tegra210_mixer_soc_data soc_data_tegra210 = {
-	.set_audio_cif = tegra210_xbar_set_cif
-};
-
 static const struct of_device_id tegra210_mixer_of_match[] = {
-	{ .compatible = "nvidia,tegra210-amixer", .data = &soc_data_tegra210 },
+	{ .compatible = "nvidia,tegra210-amixer" },
 	{},
 };
 
 static int tegra210_mixer_platform_probe(struct platform_device *pdev)
 {
 	struct tegra210_mixer *mixer;
-	struct resource *mem, *memregion;
+	struct resource *mem;
 	void __iomem *regs;
 	int ret, i;
 	const struct of_device_id *match;
-	struct tegra210_mixer_soc_data *soc_data;
 
 	match = of_match_device(tegra210_mixer_of_match, &pdev->dev);
 	if (!match) {
 		dev_err(&pdev->dev, "Error: No device match found\n");
-		ret = -ENODEV;
-		goto err;
-	}
-	soc_data = (struct tegra210_mixer_soc_data *)match->data;
-
-	mixer = devm_kzalloc(&pdev->dev,
-		sizeof(struct tegra210_mixer), GFP_KERNEL);
-	if (!mixer) {
-		dev_err(&pdev->dev, "Can't allocate tegra210_mixer\n");
-		ret = -ENOMEM;
-		goto err;
+		return -ENODEV;
 	}
 
-	mixer->soc_data = soc_data;
-	mixer->is_shutdown = false;
+	mixer = devm_kzalloc(&pdev->dev, sizeof(*mixer), GFP_KERNEL);
+	if (!mixer)
+		return -ENOMEM;
+
 	mixer->gain_coeff[0] = 0;
 	mixer->gain_coeff[1] = 0;
 	mixer->gain_coeff[2] = 0;
@@ -738,76 +712,36 @@ static int tegra210_mixer_platform_probe(struct platform_device *pdev)
 		mixer->gain_value[i] = 0x10000;
 
 	mem = platform_get_resource(pdev, IORESOURCE_MEM, 0);
-	if (!mem) {
-		dev_err(&pdev->dev, "No memory resource\n");
-		ret = -ENODEV;
-		goto err;
-	}
-
-	memregion = devm_request_mem_region(&pdev->dev, mem->start,
-					    resource_size(mem), DRV_NAME);
-	if (!memregion) {
-		dev_err(&pdev->dev, "Memory region already claimed\n");
-		ret = -EBUSY;
-		goto err;
-	}
-
-	regs = devm_ioremap(&pdev->dev, mem->start, resource_size(mem));
-	if (!regs) {
-		dev_err(&pdev->dev, "ioremap failed\n");
-		ret = -ENOMEM;
-		goto err;
-	}
-
+	regs = devm_ioremap_resource(&pdev->dev, mem);
+	if (IS_ERR(regs))
+		return PTR_ERR(regs);
 	mixer->regmap = devm_regmap_init_mmio(&pdev->dev, regs,
-					    &tegra210_mixer_regmap_config);
+					      &tegra210_mixer_regmap_config);
 	if (IS_ERR(mixer->regmap)) {
 		dev_err(&pdev->dev, "regmap init failed\n");
-		ret = PTR_ERR(mixer->regmap);
-		goto err;
+		return PTR_ERR(mixer->regmap);
 	}
 	regcache_cache_only(mixer->regmap, true);
 
-	if (of_property_read_u32(pdev->dev.of_node,
-				"nvidia,ahub-amixer-id",
-				&pdev->dev.id) < 0) {
-		dev_err(&pdev->dev,
-			"Missing property nvidia,ahub-amixer-id\n");
-		ret = -ENODEV;
-		goto err;
+	ret = of_property_read_u32(pdev->dev.of_node,
+				   "nvidia,ahub-amixer-id",
+				   &pdev->dev.id);
+	if (ret < 0) {
+		dev_err(&pdev->dev, "Missing property nvidia,ahub-amixer-id\n");
+		return ret;
 	}
 
 	pm_runtime_enable(&pdev->dev);
-	if (!pm_runtime_enabled(&pdev->dev)) {
-		ret = tegra210_mixer_runtime_resume(&pdev->dev);
-		if (ret)
-			goto err_pm_disable;
-	}
-
 	ret = snd_soc_register_codec(&pdev->dev, &tegra210_mixer_codec,
 				     tegra210_mixer_dais,
 				     ARRAY_SIZE(tegra210_mixer_dais));
 	if (ret != 0) {
 		dev_err(&pdev->dev, "Could not register CODEC: %d\n", ret);
-		goto err_suspend;
+		pm_runtime_disable(&pdev->dev);
+		return ret;
 	}
 
 	return 0;
-
-err_suspend:
-	if (!pm_runtime_status_suspended(&pdev->dev))
-		tegra210_mixer_runtime_suspend(&pdev->dev);
-err_pm_disable:
-	pm_runtime_disable(&pdev->dev);
-err:
-	return ret;
-}
-
-static void tegra210_mixer_platform_shutdown(struct platform_device *pdev)
-{
-	struct tegra210_mixer *mixer = dev_get_drvdata(&pdev->dev);
-
-	mixer->is_shutdown = true;
 }
 
 static int tegra210_mixer_platform_remove(struct platform_device *pdev)
@@ -837,7 +771,6 @@ static struct platform_driver tegra210_mixer_driver = {
 	},
 	.probe = tegra210_mixer_platform_probe,
 	.remove = tegra210_mixer_platform_remove,
-	.shutdown = tegra210_mixer_platform_shutdown,
 };
 module_platform_driver(tegra210_mixer_driver);
 

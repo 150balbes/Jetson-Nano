@@ -1,0 +1,14 @@
+// SPDX-License-Identifier: GPL-2.0-only
+/*
+ * Device-tree overlay for ReSpeaker 4 Mic Array with board
+ * tegra210-p3448-0003-p3542-0000.
+ *
+ * Copyright (c) 2020 NVIDIA CORPORATION. All rights reserved.
+ *
+ */
+
+/dts-v1/;
+/plugin/;
+
+#include <dt-common/jetson/tegra210-p3448-0003-p3542-0000.h>
+#include <overlays/jetson-respeaker-4-mic-array.dts>

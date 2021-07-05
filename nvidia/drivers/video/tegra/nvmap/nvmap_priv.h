@@ -3,7 +3,7 @@
  *
  * GPU memory management driver for Tegra
  *
- * Copyright (c) 2009-2018, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2009-2020, NVIDIA CORPORATION. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -396,8 +396,6 @@ struct nvmap_handle_ref *nvmap_try_duplicate_by_ivmid(
 struct nvmap_handle_ref *nvmap_create_handle_from_fd(
 			struct nvmap_client *client, int fd);
 
-void nvmap_handle_get_cacheability(struct nvmap_handle *h,
-		bool *inner, bool *outer);
 void inner_cache_maint(unsigned int op, void *vaddr, size_t size);
 void outer_cache_maint(unsigned int op, phys_addr_t paddr, size_t size);
 
@@ -722,6 +720,8 @@ static inline int nvmap_get_user_pages(ulong vaddr,
 struct nvmap_chip_cache_op {
 	void (*inner_clean_cache_all)(void);
 	void (*inner_flush_cache_all)(void);
+	void (*nvmap_get_cacheability)(struct nvmap_handle *h,
+		bool *inner, bool *outer);
 	const char *name;
 	int flags;
 };

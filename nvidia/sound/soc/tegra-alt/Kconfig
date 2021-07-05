@@ -6,29 +6,16 @@ config SND_SOC_TEGRA_ALT_186
 	depends on ARCH_TEGRA_18x_SOC
 
 config SND_SOC_TEGRA186_DSPK_ALT
-	tristate "Tegra186 DSPK driver"
+	tristate
 	depends on SND_SOC_TEGRA_ALT && SND_SOC_TEGRA_ALT_186
-	help
-	  Say Y or M if you want to add support for Tegra186 DSPK module.
 
 config SND_SOC_TEGRA186_ASRC_ALT
-	tristate "Tegra186 ASRC driver"
+	tristate
 	depends on SND_SOC_TEGRA_ALT && SND_SOC_TEGRA_ALT_186
-	help
-	  Say Y or M if you want to add support for Tegra186 ASRC module.
 
 config SND_SOC_TEGRA186_ARAD_ALT
-	tristate "Tegra186 ARAD driver"
+	tristate
 	depends on SND_SOC_TEGRA_ALT && SND_SOC_TEGRA_ALT_186
-	help
-	  Say Y or M if you want to add support for Tegra186 ARAD module.
-
-config SND_SOC_TEGRA_ALT_FORCE_CARD_REG
-	tristate "Enable sound card even if audio codec is missing on board"
-	depends on SND_SOC_TEGRA_ALT
-	help
-	  Say Y or M if you want to register the sound card even if audio codec
-	  is not connected/present on board.
 
 config SND_SOC_TEGRA_T186REF_P4573_ALT
 	tristate "SoC Audio support for P4573 with CS53L30 and RT5658"
@@ -74,69 +61,49 @@ config SND_SOC_TEGRA_ALT_210
 	depends on SND_SOC_TEGRA_ALT
 
 config SND_SOC_TEGRA210_XBAR_ALT
-	tristate "Tegra210 XBAR driver"
+	tristate
 	depends on SND_SOC_TEGRA_ALT && SND_SOC_TEGRA_ALT_210
-	help
-	  Say Y or M if you want to add support for Tegra210 XBAR module.
 
 config SND_SOC_TEGRA210_ADMAIF_ALT
-	tristate "Tegra210 ADMIF driver"
+	tristate
 	depends on SND_SOC_TEGRA_ALT && SND_SOC_TEGRA_ALT_210
-	help
-	  Say Y or M if you want to add support for Tegra210 APBIF module.
 
 config SND_SOC_TEGRA210_I2S_ALT
-	tristate "Tegra210 I2S driver"
+	tristate
 	depends on SND_SOC_TEGRA_ALT && SND_SOC_TEGRA_ALT_210
-	help
-	  Say Y or M if you want to add support for Tegra210 I2S module.
 
 config SND_SOC_TEGRA210_DMIC_ALT
-	tristate "Tegra210 DMIC driver"
+	tristate
 	def_tristate SND_SOC_TEGRA_ALT && SND_SOC_TEGRA_ALT_210
 	depends on SND_SOC_TEGRA_ALT && SND_SOC_TEGRA_ALT_210
-	help
-	  Say Y or M if you want to add support for Tegra210 DMIC module.
 
 config SND_SOC_TEGRA210_AMX_ALT
-	tristate "Tegra210 AMX driver"
+	tristate
 	def_tristate SND_SOC_TEGRA_ALT && SND_SOC_TEGRA_ALT_210
 	depends on SND_SOC_TEGRA_ALT && SND_SOC_TEGRA_ALT_210
-	help
-	  Say Y or M if you want to add support for Tegra210 AMX module.
 
 config SND_SOC_TEGRA210_ADX_ALT
-	tristate "Tegra210 ADX driver"
+	tristate
 	def_tristate SND_SOC_TEGRA_ALT && SND_SOC_TEGRA_ALT_210
 	depends on SND_SOC_TEGRA_ALT && SND_SOC_TEGRA_ALT_210
-	help
-	  Say Y or M if you want to add support for Tegra210 ADX module.
 
 config SND_SOC_TEGRA210_MIXER_ALT
-	tristate "Tegra210 MIXER driver"
+	tristate
 	depends on SND_SOC_TEGRA_ALT && SND_SOC_TEGRA_ALT_210
-	help
-	  Say Y or M if you want to add support for Tegra210 MIXER module.
 
 config SND_SOC_TEGRA210_SFC_ALT
-	tristate "Tegra210 SFC driver"
+	tristate
 	depends on SND_SOC_TEGRA_ALT && SND_SOC_TEGRA_ALT_210
-	help
-	  Say Y or M if you want to add support for Tegra210 SFC module.
 
 config SND_SOC_TEGRA210_AFC_ALT
-	tristate "Tegra210 AFC driver"
+	tristate
 	def_tristate SND_SOC_TEGRA_ALT && SND_SOC_TEGRA_ALT_210
 	depends on SND_SOC_TEGRA_ALT && SND_SOC_TEGRA_ALT_210
-	help
-	  Say Y or M if you want to add support for Tegra210 AFC module.
 
 config SND_SOC_TEGRA210_MVC_ALT
-	tristate "Tegra210 MVC driver"
+	tristate
 	def_tristate SND_SOC_TEGRA_ALT && SND_SOC_TEGRA_ALT_210
 	depends on SND_SOC_TEGRA_ALT && SND_SOC_TEGRA_ALT_210
-	help
-	  Say Y or M if you want to add support for Tegra210 MVC module.
 
 config SND_SOC_TEGRA210_IQC_ALT
 	tristate "Tegra210 IQC driver"
@@ -145,44 +112,21 @@ config SND_SOC_TEGRA210_IQC_ALT
 	  Say Y or M if you want to add support for Tegra210 IQC module.
 
 config SND_SOC_TEGRA210_OPE_ALT
-	tristate "Tegra210 OPE driver"
+	tristate
 	def_tristate SND_SOC_TEGRA_ALT && SND_SOC_TEGRA_ALT_210
 	depends on SND_SOC_TEGRA_ALT && SND_SOC_TEGRA_ALT_210
-	help
-	  Say Y or M if you want to add support for Tegra210 OPE module.
 
 config SND_SOC_TEGRA210_ADSP_ALT
-	tristate "Tegra210 ADSP driver"
-	def_tristate SND_SOC_TEGRA_ALT && SND_SOC_TEGRA_ALT_210 && TEGRA_NVADSP
+	tristate
 	depends on SND_SOC_TEGRA_ALT && SND_SOC_TEGRA_ALT_210 && TEGRA_NVADSP
 	select SND_SOC_COMPRESS
-	help
-	  Say Y or M if you want to add support for Tegra210 ADSP module.
 
-config SND_SOC_TEGRA_ASOC_MACHINE_ALT
-	tristate "Tegra ASoC machine driver"
-	depends on SND_SOC_TEGRA_ALT
+config DISABLE_ADSP_AUDIO
+	bool "Disable ADSP Audio Driver"
+	def_bool n
+	depends on SND_SOC_TEGRA_ALT && SND_SOC_TEGRA_ALT_210 && TEGRA_NVADSP
 	help
-	  Say Y or M if you want to add support for Tegra ASoC machine driver
-
-config SND_SOC_TEGRA_T210REF_MOBILE_ALT
-	tristate "SoC Audio support for T210Ref mobile"
-	depends on SND_SOC_TEGRA_ALT && I2C
-	depends on ARCH_TEGRA_210_SOC
-	select SND_SOC_TEGRA210_XBAR_ALT
-	select SND_SOC_TEGRA210_PCM_ALT
-	select SND_SOC_TEGRA210_ADMA_ALT
-	select SND_SOC_TEGRA210_ADMAIF_ALT
-	select SND_SOC_TEGRA210_I2S_ALT
-	select SND_SOC_TEGRA210_MIXER_ALT
-	select SND_SOC_TEGRA210_SFC_ALT
-	select SND_SOC_SPDIF
-	select SND_SOC_RT5640
-	select SND_SOC_RT5659
-	select SND_SOC_SGTL5000
-	select SND_SOC_TEGRA_ASOC_MACHINE_ALT
-	help
-	  Say Y or M here.
+	 Say Y if you want to disable support for Tegra210 ADSP module
 
 config SND_SOC_TEGRA_T210REF_ALT
 	tristate "SoC Audio support for T210Ref"
@@ -201,11 +145,10 @@ config SND_SOC_TEGRA_T210REF_ALT
 	select SND_SOC_TEGRA210_AFC_ALT
 	select SND_SOC_TEGRA210_MVC_ALT
 	select SND_SOC_TEGRA210_OPE_ALT
-	select SND_SOC_TEGRA210_ADSP_ALT if TEGRA_NVADSP
+	select SND_SOC_TEGRA210_ADSP_ALT if TEGRA_NVADSP && !DISABLE_ADSP_AUDIO
 	select SND_SOC_TEGRA_ASOC_HWDEP_ALT
 	select SND_SOC_SPDIF
 	select SND_SOC_AD193X_I2C
-	select SND_SOC_TEGRA_ASOC_MACHINE_ALT
 	help
 	  Say Y or M here.
 
@@ -226,24 +169,45 @@ config SND_SOC_TEGRA_T186REF_ALT
 	select SND_SOC_TEGRA210_AFC_ALT
 	select SND_SOC_TEGRA210_MVC_ALT
 	select SND_SOC_TEGRA210_OPE_ALT
-	select SND_SOC_TEGRA210_ADSP_ALT if TEGRA_NVADSP
+	select SND_SOC_TEGRA210_ADSP_ALT if TEGRA_NVADSP && !DISABLE_ADSP_AUDIO
 	select SND_SOC_TEGRA186_ASRC_ALT
 	select SND_SOC_TEGRA186_ARAD_ALT
 	select SND_SOC_TEGRA186_DSPK_ALT
 	select SND_SOC_TEGRA_ASOC_HWDEP_ALT
 	select SND_SOC_SPDIF
-	select SND_SOC_TEGRA_ASOC_MACHINE_ALT
 	select SND_SOC_COMPRESS
 	help
 	  Say Y or M here.
 
-config SND_SOC_TEGRA_T186REF_MOBILE_ALT
-	tristate "SoC Audio support for T186Ref Mobile"
-	depends on SND_SOC_TEGRA_T186REF_ALT
+config SND_SOC_TEGRA210_AUDIO_ALT
+	tristate "SoC Audio support for Tegra210"
+	depends on I2C
+	depends on ARCH_TEGRA_210_SOC || ARCH_TEGRA_18x_SOC
+	select SND_SOC_TEGRA210_XBAR_ALT
+	select SND_SOC_TEGRA210_PCM_ALT
+	select SND_SOC_TEGRA210_ADMA_ALT
+	select SND_SOC_TEGRA210_ADMAIF_ALT
+	select SND_SOC_TEGRA210_I2S_ALT
+	select SND_SOC_TEGRA210_DMIC_ALT
+	select SND_SOC_TEGRA210_AMX_ALT
+	select SND_SOC_TEGRA210_ADX_ALT
+	select SND_SOC_TEGRA210_MIXER_ALT
+	select SND_SOC_TEGRA210_SFC_ALT
+	select SND_SOC_TEGRA210_AFC_ALT
+	select SND_SOC_TEGRA210_MVC_ALT
+	select SND_SOC_TEGRA210_OPE_ALT
+	select SND_SOC_TEGRA210_ADSP_ALT if TEGRA_NVADSP && !DISABLE_ADSP_AUDIO
+	select SND_SOC_TEGRA186_ASRC_ALT if ARCH_TEGRA_18x_SOC
+	select SND_SOC_TEGRA186_ARAD_ALT if ARCH_TEGRA_18x_SOC
+	select SND_SOC_TEGRA186_DSPK_ALT if ARCH_TEGRA_18x_SOC
+	select SND_SOC_SPDIF
+	select SND_SOC_COMPRESS
+	select SND_SOC_RT5640
 	select SND_SOC_RT5659
 	select SND_SOC_SGTL5000
 	help
-	  Say Y or M here.
+	  Say Y or M here if you want to enable support for ASoC machine driver on
+	  Tegra210 and successor platforms like Tegra186, Tegra194.
 
 config SND_SOC_TEGRA_T210REF_P2382_ALT
 	tristate "SoC Audio support for P2382Ref T210"
@@ -261,10 +225,9 @@ config SND_SOC_TEGRA_T210REF_P2382_ALT
 	select SND_SOC_TEGRA210_AFC_ALT
 	select SND_SOC_TEGRA210_MVC_ALT
 	select SND_SOC_TEGRA210_OPE_ALT
-	select SND_SOC_TEGRA210_ADSP_ALT if TEGRA_NVADSP
+	select SND_SOC_TEGRA210_ADSP_ALT if TEGRA_NVADSP && !DISABLE_ADSP_AUDIO
 	select SND_SOC_TEGRA_ASOC_HWDEP_ALT
 	select SND_SOC_SPDIF
-	select SND_SOC_TEGRA_ASOC_MACHINE_ALT
 	help
 	  Say Y or M here
 

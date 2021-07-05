@@ -63,6 +63,19 @@ struct nvgpu_os_fence_framework {
 	struct sync_timeline *timeline;
 };
 
+struct nvgpu_usermode_bufs_linux {
+	/*
+	 * Common low level info of these is stored in nvgpu_mems in
+	 * channel_gk20a; these hold lifetimes for the actual dmabuf and its
+	 * dma mapping.
+	 */
+	struct nvgpu_usermode_buf_linux {
+		struct dma_buf *dmabuf;
+		struct dma_buf_attachment *attachment;
+		struct sg_table *sgt;
+	} gpfifo, userd;
+};
+
 struct nvgpu_channel_linux {
 	struct channel_gk20a *ch;
 
@@ -72,6 +85,8 @@ struct nvgpu_channel_linux {
 	struct nvgpu_error_notifier error_notifier;
 
 	struct dma_buf *cyclestate_buffer_handler;
+
+	struct nvgpu_usermode_bufs_linux usermode;
 };
 
 u32 nvgpu_submit_gpfifo_user_flags_to_common_flags(u32 user_flags);

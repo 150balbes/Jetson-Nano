@@ -77,6 +77,8 @@ struct aq_stats_s {
 #define AQ_HW_IRQ_MSI     2U
 #define AQ_HW_IRQ_MSIX    3U
 
+#define AQ_HW_SERVICE_IRQS   1U
+
 #define AQ_HW_POWER_STATE_D0   0U
 #define AQ_HW_POWER_STATE_D3   3U
 
@@ -122,6 +124,7 @@ enum {
 struct aq_hw_s {
 	atomic_t flags;
 	u8 rbl_enabled:1;
+	u8 fast_start_enabled:1;
 	struct aq_nic_cfg_s *aq_nic_cfg;
 	const struct aq_fw_ops *aq_fw_ops;
 	void __iomem *mmio;
@@ -220,6 +223,8 @@ struct aq_hw_ops {
 
 	int (*hw_set_loopback)(struct aq_hw_s *self, u32 mode, bool enable);
 
+	int (*hw_set_fc)(struct aq_hw_s *self, u32 fc, u32 tc);
+
 };
 
 struct aq_fw_ops {
@@ -255,6 +260,8 @@ struct aq_fw_ops {
 			u32 *supported_rates);
 
 	int (*set_flow_control)(struct aq_hw_s *self);
+
+	u32 (*get_flow_control)(struct aq_hw_s *self, u32 *fcmode);
 
 	int (*set_phyloopback)(struct aq_hw_s *self, u32 mode, bool enable);
 };

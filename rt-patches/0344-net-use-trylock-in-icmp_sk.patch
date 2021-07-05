@@ -1,0 +1,36 @@
+From 7989282d71181fb2346819c160f552bc9ae58ed2 Mon Sep 17 00:00:00 2001
+From: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+Date: Thu, 21 Sep 2017 14:42:04 +0200
+Subject: [PATCH 344/371] net: use trylock in icmp_sk
+X-NVConfidentiality: public
+
+The locking path can be recursive (same as for sk->sk_lock.slock) and
+therefore we need a trylock version for the locallock, too.
+
+Cc: stable-rt@vger.kernel.org
+Signed-off-by: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+Signed-off-by: Steven Rostedt (VMware) <rostedt@goodmis.org>
+---
+ net/ipv4/icmp.c | 6 +++++-
+ 1 file changed, 5 insertions(+), 1 deletion(-)
+
+diff --git a/net/ipv4/icmp.c b/net/ipv4/icmp.c
+index 9dd9047..b46b284 100644
+--- a/net/ipv4/icmp.c
++++ b/net/ipv4/icmp.c
+@@ -219,7 +219,11 @@ static inline struct sock *icmp_xmit_lock(struct net *net)
+ 
+ 	local_bh_disable();
+ 
+-	local_lock(icmp_sk_lock);
++	if (!local_trylock(icmp_sk_lock)) {
++		local_bh_enable();
++		return NULL;
++	}
++
+ 	sk = icmp_sk(net);
+ 
+ 	if (unlikely(!spin_trylock(&sk->sk_lock.slock))) {
+-- 
+2.7.4
+

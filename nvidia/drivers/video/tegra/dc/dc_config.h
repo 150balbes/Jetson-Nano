@@ -1,7 +1,7 @@
 /*
  * dc_config.h: Declarations for tegra dc config settings.
  *
- * Copyright (c) 2010-2017, NVIDIA CORPORATION, All rights reserved.
+ * Copyright (c) 2010-2019, NVIDIA CORPORATION, All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -22,7 +22,7 @@
 #define __DRIVERS_VIDEO_TEGRA_DC_DC_CONFIG_H
 
 #include <linux/errno.h>
-#include <video/tegra_dc_ext.h>
+#include <uapi/video/tegra_dc_ext.h>
 #include "dc.h"
 #include "dc_priv.h"
 
@@ -80,7 +80,9 @@
 	HIGHBIT(TEGRA_DC_EXT_FMT_T_Y8___V8U8_N444_TRUE))
 
 #define TEGRA_WIN_FMT_T210_LOW TEGRA_WIN_FMT_BASE
-#define TEGRA_WIN_FMT_T210_HIGH TEGRA_WIN_FMT_T124_HIGH
+#define TEGRA_WIN_FMT_T210_HIGH (TEGRA_WIN_FMT_T124_HIGH | \
+				HIGHBIT(TEGRA_DC_EXT_FMT_T_Y8___U8V8_N444) | \
+				HIGHBIT(TEGRA_DC_EXT_FMT_T_Y8___V8U8_N444))
 
 /* for windows that support compression */
 #define TEGRA_WIN_FMT_COMPRESSION_T210_LOW \
@@ -209,6 +211,8 @@ struct tegra_dc_feature {
 	struct tegra_dc_feature_entry *entries;
 };
 
+int tegra_dc_get_feature(struct tegra_dc_feature *feature, int win_idx,
+			 enum tegra_dc_feature_option option);
 int tegra_dc_feature_has_scaling(struct tegra_dc *dc, int win_idx);
 int tegra_dc_feature_has_tiling(struct tegra_dc *dc, int win_idx);
 int tegra_dc_feature_has_blocklinear(struct tegra_dc *dc, int win_idx);

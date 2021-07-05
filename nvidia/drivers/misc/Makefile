@@ -8,6 +8,7 @@ obj-$(CONFIG_SAF775x_HWDEP) += saf775x/
 obj-$(CONFIG_SAF36XX_HWDEP) += saf775x/
 obj-$(CONFIG_BLUEDROID_PM)      += bluedroid_pm.o
 obj-$(CONFIG_SENSORS_NCT1008)	+= nct1008.o
+obj-$(CONFIG_SENSORS_PEX9749)	+= pex9749.o
 obj-$(CONFIG_TEGRA_CPC)		+= tegra_cpc.o
 obj-$(CONFIG_THERM_EST)		+= therm_est.o
 obj-$(CONFIG_FAN_THERM_EST)	+= therm_fan_est.o

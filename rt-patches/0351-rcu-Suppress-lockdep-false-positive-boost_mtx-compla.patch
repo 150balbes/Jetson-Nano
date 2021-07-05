@@ -1,0 +1,45 @@
+From 3290401550843903882add82b7c308a696ba2951 Mon Sep 17 00:00:00 2001
+From: "Paul E. McKenney" <paulmck@linux.vnet.ibm.com>
+Date: Wed, 6 Jun 2018 15:31:31 +0200
+Subject: [PATCH 351/371] rcu: Suppress lockdep false-positive ->boost_mtx
+ complaints
+X-NVConfidentiality: public
+
+[ Upstream commit 02a7c234e54052101164368ff981bd72f7acdd65 ]
+
+RCU priority boosting uses rt_mutex_init_proxy_locked() to initialize an
+rt_mutex structure in locked state held by some other task.  When that
+other task releases it, lockdep complains (quite accurately, but a bit
+uselessly) that the other task never acquired it.  This complaint can
+suppress other, more helpful, lockdep complaints, and in any case it is
+a false positive.
+
+This commit therefore switches from rt_mutex_unlock() to
+rt_mutex_futex_unlock(), thereby avoiding the lockdep annotations.
+Of course, if lockdep ever learns about rt_mutex_init_proxy_locked(),
+addtional adjustments will be required.
+
+Suggested-by: Peter Zijlstra <peterz@infradead.org>
+Signed-off-by: Paul E. McKenney <paulmck@linux.vnet.ibm.com>
+Signed-off-by: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+Signed-off-by: Julia Cartwright <julia@ni.com>
+---
+ kernel/rcu/tree_plugin.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/kernel/rcu/tree_plugin.h b/kernel/rcu/tree_plugin.h
+index 3d18d08..510de72 100644
+--- a/kernel/rcu/tree_plugin.h
++++ b/kernel/rcu/tree_plugin.h
+@@ -486,7 +486,7 @@ void rcu_read_unlock_special(struct task_struct *t)
+ 
+ 		/* Unboost if we were boosted. */
+ 		if (IS_ENABLED(CONFIG_RCU_BOOST) && drop_boost_mutex)
+-			rt_mutex_unlock(&rnp->boost_mtx);
++			rt_mutex_futex_unlock(&rnp->boost_mtx);
+ 
+ 		/*
+ 		 * If this was the last task on the expedited lists,
+-- 
+2.7.4
+

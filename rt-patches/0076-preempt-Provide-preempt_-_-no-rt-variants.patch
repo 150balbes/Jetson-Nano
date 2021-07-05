@@ -1,0 +1,53 @@
+From 6744f89c4120f97c3424f3f05fe4091bfdd7290e Mon Sep 17 00:00:00 2001
+From: Thomas Gleixner <tglx@linutronix.de>
+Date: Fri, 24 Jul 2009 12:38:56 +0200
+Subject: [PATCH 076/371] preempt: Provide preempt_*_(no)rt variants
+X-NVConfidentiality: public
+
+RT needs a few preempt_disable/enable points which are not necessary
+otherwise. Implement variants to avoid #ifdeffery.
+
+Signed-off-by: Thomas Gleixner <tglx@linutronix.de>
+---
+ include/linux/preempt.h | 18 +++++++++++++++++-
+ 1 file changed, 17 insertions(+), 1 deletion(-)
+
+diff --git a/include/linux/preempt.h b/include/linux/preempt.h
+index 7eeceac..26e0eaa 100644
+--- a/include/linux/preempt.h
++++ b/include/linux/preempt.h
+@@ -159,7 +159,11 @@ do { \
+ 	preempt_count_dec(); \
+ } while (0)
+ 
+-#define preempt_enable_no_resched() sched_preempt_enable_no_resched()
++#ifdef CONFIG_PREEMPT_RT_BASE
++# define preempt_enable_no_resched() sched_preempt_enable_no_resched()
++#else
++# define preempt_enable_no_resched() preempt_enable()
++#endif
+ 
+ #define preemptible()	(preempt_count() == 0 && !irqs_disabled())
+ 
+@@ -253,6 +257,18 @@ do { \
+ 		set_preempt_need_resched(); \
+ } while (0)
+ 
++#ifdef CONFIG_PREEMPT_RT_FULL
++# define preempt_disable_rt()		preempt_disable()
++# define preempt_enable_rt()		preempt_enable()
++# define preempt_disable_nort()		barrier()
++# define preempt_enable_nort()		barrier()
++#else
++# define preempt_disable_rt()		barrier()
++# define preempt_enable_rt()		barrier()
++# define preempt_disable_nort()		preempt_disable()
++# define preempt_enable_nort()		preempt_enable()
++#endif
++
+ #ifdef CONFIG_PREEMPT_NOTIFIERS
+ 
+ struct preempt_notifier;
+-- 
+2.7.4
+

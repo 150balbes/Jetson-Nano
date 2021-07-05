@@ -640,8 +640,15 @@ void snd_hdac_stream_sync(struct hdac_stream *azx_dev, bool start,
 				} else {
 					/* check RUN bit is cleared */
 					if (snd_hdac_stream_readb(s, SD_CTL) &
-					    SD_CTL_DMA_START)
+					    SD_CTL_DMA_START) {
 						nwait++;
+						/* Do stream reset, if DMA RUN
+						 * bit not cleared with given
+						 * timeout
+						 */
+						if (timeout == 1)
+							snd_hdac_stream_reset(s);
+					}
 				}
 			}
 			i++;

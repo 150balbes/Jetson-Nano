@@ -26,7 +26,8 @@ struct aq_nic_cfg_s {
 	u64 hw_features;
 	u32 rxds;		/* rx ring size, descriptors # */
 	u32 txds;		/* tx ring size, descriptors # */
-	u32 vecs;		/* vecs==allocated irqs */
+	u32 vecs;		/* allocated rx/tx vectors */
+	u32 link_irq_vec;
 	u32 irq_type;
 	u32 itr;
 	u16 rx_itr;
@@ -47,7 +48,7 @@ struct aq_nic_cfg_s {
 	u32 test_loopback;
 	u8  tcs;
 	struct aq_rss_parameters aq_rss;
-	u32 eee_enabled;
+	u32 eee_speeds;
 };
 
 #define AQ_NIC_FLAG_STARTED     0x00000004U
@@ -94,7 +95,7 @@ struct aq_nic_s {
 	unsigned int irq_type;
 	struct msix_entry msix_entry[AQ_CFG_PCI_FUNC_MSIX_IRQS];
 #endif
-	spinlock_t aq_spinlock;
+	struct work_struct link_update_task;
 };
 
 static inline struct device *aq_nic_get_dev(struct aq_nic_s *self)

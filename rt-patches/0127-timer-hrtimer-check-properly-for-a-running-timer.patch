@@ -1,0 +1,40 @@
+From 9802442df04a18ec6b55f0390bdcc1ee8a021ca5 Mon Sep 17 00:00:00 2001
+From: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+Date: Wed, 1 Mar 2017 16:30:49 +0100
+Subject: [PATCH 127/371] timer/hrtimer: check properly for a running timer
+X-NVConfidentiality: public
+
+hrtimer_callback_running() checks only whether a timmer is running on a
+CPU in hardirq-context. This is okay for !RT. For RT environment we move
+most timers to the timer-softirq and therefore we therefore need to
+check if the timer is running in the softirq context.
+
+Cc: stable-rt@vger.kernel.org
+Reported-by: Alexander Gerasiov <gq@cs.msu.su>
+Signed-off-by: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+---
+ include/linux/hrtimer.h | 8 +++++++-
+ 1 file changed, 7 insertions(+), 1 deletion(-)
+
+diff --git a/include/linux/hrtimer.h b/include/linux/hrtimer.h
+index 65d0671..a34e10b 100644
+--- a/include/linux/hrtimer.h
++++ b/include/linux/hrtimer.h
+@@ -455,7 +455,13 @@ static inline int hrtimer_is_queued(struct hrtimer *timer)
+  */
+ static inline int hrtimer_callback_running(const struct hrtimer *timer)
+ {
+-	return timer->base->cpu_base->running == timer;
++	if (timer->base->cpu_base->running == timer)
++		return 1;
++#ifdef CONFIG_PREEMPT_RT_BASE
++	if (timer->base->cpu_base->running_soft == timer)
++		return 1;
++#endif
++	return 0;
+ }
+ 
+ /* Forward a hrtimer so it expires after now: */
+-- 
+2.7.4
+

@@ -25,7 +25,6 @@
 #include <linux/platform_device.h>
 #include <linux/pm_runtime.h>
 #include <linux/regmap.h>
-#include <linux/slab.h>
 #include <soc/tegra/chip-id.h>
 #include <sound/core.h>
 #include <sound/pcm.h>
@@ -246,8 +245,8 @@ static int tegra210_amx_runtime_suspend(struct device *dev)
 	return 0;
 }
 
-#ifdef TEGRA210_AMX_MAP_READ
-static unsigned int tegra210_amx_read_map_ram(struct tegra210_amx *amx,
+static unsigned int __maybe_unused tegra210_amx_read_map_ram(
+						struct tegra210_amx *amx,
 						unsigned int addr)
 {
 	unsigned int val, wait;
@@ -275,23 +274,17 @@ static unsigned int tegra210_amx_read_map_ram(struct tegra210_amx *amx,
 
 	return val;
 }
-#endif
 
 static int tegra210_amx_runtime_resume(struct device *dev)
 {
 	struct tegra210_amx *amx = dev_get_drvdata(dev);
 
 	regcache_cache_only(amx->regmap, false);
-
-	if (!amx->is_shutdown) {
-		regcache_sync(amx->regmap);
-
-		/* update map ram */
-		tegra210_amx_set_master_stream(amx, 0,
-				TEGRA210_AMX_WAIT_ON_ANY);
-		tegra210_amx_update_map_ram(amx);
-		tegra210_amx_set_out_byte_mask(amx);
-	}
+	regcache_sync(amx->regmap);
+	/* update map ram */
+	tegra210_amx_set_master_stream(amx, 0, TEGRA210_AMX_WAIT_ON_ANY);
+	tegra210_amx_update_map_ram(amx);
+	tegra210_amx_set_out_byte_mask(amx);
 
 	return 0;
 }
@@ -341,7 +334,7 @@ static int tegra210_amx_set_audio_cif(struct snd_soc_dai *dai,
 	cif_conf.audio_bits = audio_bits;
 	cif_conf.client_bits = audio_bits;
 
-	amx->soc_data->set_audio_cif(amx->regmap, reg, &cif_conf);
+	tegra210_xbar_set_cif(amx->regmap, reg, &cif_conf);
 
 	return 0;
 }
@@ -569,15 +562,6 @@ static int tegra210_amx_put_channels(struct snd_kcontrol *kcontrol,
 	return 0;
 }
 
-static int tegra210_amx_codec_probe(struct snd_soc_codec *codec)
-{
-	struct tegra210_amx *amx = snd_soc_codec_get_drvdata(codec);
-
-	codec->control_data = amx->regmap;
-
-	return 0;
-}
-
 static struct snd_soc_dai_ops tegra210_amx_out_dai_ops = {
 	.hw_params	= tegra210_amx_out_hw_params,
 	.set_channel_map = tegra210_amx_set_channel_map,
@@ -732,7 +716,6 @@ static struct snd_kcontrol_new tegra210_amx_controls[] = {
 };
 
 static struct snd_soc_codec_driver tegra210_amx_codec = {
-	.probe = tegra210_amx_codec_probe,
 	.idle_bias_off = 1,
 	.component_driver = {
 		.dapm_widgets = tegra210_amx_widgets,
@@ -869,13 +852,11 @@ static const struct regmap_config tegra194_amx_regmap_config = {
 };
 
 static const struct tegra210_amx_soc_data soc_data_tegra210 = {
-	.set_audio_cif = tegra210_xbar_set_cif,
 	.regmap_conf = &tegra210_amx_regmap_config,
 	.is_auto_disable_supported = false,
 };
 
 static const struct tegra210_amx_soc_data soc_data_tegra194 = {
-	.set_audio_cif = tegra210_xbar_set_cif,
 	.regmap_conf = &tegra194_amx_regmap_config,
 	.is_auto_disable_supported = true,
 };
@@ -889,7 +870,7 @@ static const struct of_device_id tegra210_amx_of_match[] = {
 static int tegra210_amx_platform_probe(struct platform_device *pdev)
 {
 	struct tegra210_amx *amx;
-	struct resource *mem, *memregion;
+	struct resource *mem;
 	void __iomem *regs;
 	int ret;
 	const struct of_device_id *match;
@@ -898,102 +879,56 @@ static int tegra210_amx_platform_probe(struct platform_device *pdev)
 	match = of_match_device(tegra210_amx_of_match, &pdev->dev);
 	if (!match) {
 		dev_err(&pdev->dev, "Error: No device match found\n");
-		ret = -ENODEV;
-		goto err;
+		return -ENODEV;
 	}
 	soc_data = (struct tegra210_amx_soc_data *)match->data;
 
-	amx = devm_kzalloc(&pdev->dev, sizeof(struct tegra210_amx), GFP_KERNEL);
-	if (!amx) {
-		dev_err(&pdev->dev, "Can't allocate tegra210_amx\n");
-		ret = -ENOMEM;
-		goto err;
-	}
+	amx = devm_kzalloc(&pdev->dev, sizeof(*amx), GFP_KERNEL);
+	if (!amx)
+		return -ENOMEM;
 
 	amx->soc_data = soc_data;
-	amx->is_shutdown = false;
 	memset(amx->map, 0, sizeof(amx->map));
 	memset(amx->byte_mask, 0, sizeof(amx->byte_mask));
 	dev_set_drvdata(&pdev->dev, amx);
 
 	mem = platform_get_resource(pdev, IORESOURCE_MEM, 0);
-	if (!mem) {
-		dev_err(&pdev->dev, "No memory resource\n");
-		ret = -ENODEV;
-		goto err;
-	}
-
-	memregion = devm_request_mem_region(&pdev->dev, mem->start,
-					    resource_size(mem), DRV_NAME);
-	if (!memregion) {
-		dev_err(&pdev->dev, "Memory region already claimed\n");
-		ret = -EBUSY;
-		goto err;
-	}
-
-	regs = devm_ioremap(&pdev->dev, mem->start, resource_size(mem));
-	if (!regs) {
-		dev_err(&pdev->dev, "ioremap failed\n");
-		ret = -ENOMEM;
-		goto err;
-	}
-
+	regs = devm_ioremap_resource(&pdev->dev, mem);
+	if (IS_ERR(regs))
+		return PTR_ERR(regs);
 	amx->regmap = devm_regmap_init_mmio(&pdev->dev, regs,
 					    soc_data->regmap_conf);
 	if (IS_ERR(amx->regmap)) {
 		dev_err(&pdev->dev, "regmap init failed\n");
-		ret = PTR_ERR(amx->regmap);
-		goto err;
+		return PTR_ERR(amx->regmap);
 	}
 	regcache_cache_only(amx->regmap, true);
 
-	if (of_property_read_u32(pdev->dev.of_node,
-				"nvidia,ahub-amx-id",
-				&pdev->dev.id) < 0) {
-		dev_err(&pdev->dev,
-			"Missing property nvidia,ahub-amx-id\n");
-		ret = -ENODEV;
-		goto err;
+	ret = of_property_read_u32(pdev->dev.of_node,
+				   "nvidia,ahub-amx-id",
+				   &pdev->dev.id);
+	if (ret < 0) {
+		dev_err(&pdev->dev, "Missing property nvidia,ahub-amx-id\n");
+		return ret;
 	}
 
 	/* following is necessary to have the required codec-dai-name */
 	if (dev_set_name(&pdev->dev, "%s.%d", DRV_NAME, pdev->dev.id)) {
 		dev_err(&pdev->dev, "error in setting AMX dev name\n");
-		ret = -ENODEV;
-		goto err;
+		return -ENODEV;
 	}
 
 	pm_runtime_enable(&pdev->dev);
-	if (!pm_runtime_enabled(&pdev->dev)) {
-		ret = tegra210_amx_runtime_resume(&pdev->dev);
-		if (ret)
-			goto err_pm_disable;
-	}
-
 	ret = snd_soc_register_codec(&pdev->dev, &tegra210_amx_codec,
 				     tegra210_amx_dais,
 				     ARRAY_SIZE(tegra210_amx_dais));
 	if (ret != 0) {
 		dev_err(&pdev->dev, "Could not register CODEC: %d\n", ret);
-		goto err_suspend;
+		pm_runtime_disable(&pdev->dev);
+		return ret;
 	}
 
 	return 0;
-
-err_suspend:
-	if (!pm_runtime_status_suspended(&pdev->dev))
-		tegra210_amx_runtime_suspend(&pdev->dev);
-err_pm_disable:
-	pm_runtime_disable(&pdev->dev);
-err:
-	return ret;
-}
-
-static void tegra210_amx_platform_shutdown(struct platform_device *pdev)
-{
-	struct tegra210_amx *amx = dev_get_drvdata(&pdev->dev);
-
-	amx->is_shutdown = true;
 }
 
 static int tegra210_amx_platform_remove(struct platform_device *pdev)
@@ -1023,7 +958,6 @@ static struct platform_driver tegra210_amx_driver = {
 	},
 	.probe = tegra210_amx_platform_probe,
 	.remove = tegra210_amx_platform_remove,
-	.shutdown = tegra210_amx_platform_shutdown,
 };
 module_platform_driver(tegra210_amx_driver);
 

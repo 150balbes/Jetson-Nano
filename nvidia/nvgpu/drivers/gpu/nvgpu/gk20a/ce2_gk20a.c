@@ -1,7 +1,7 @@
 /*
  * GK20A Graphics Copy Engine  (gr host)
  *
- * Copyright (c) 2011-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2011-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -366,6 +366,11 @@ int gk20a_init_ce_support(struct gk20a *g)
 	ce_app->app_state = NVGPU_CE_ACTIVE;
 
 	nvgpu_mutex_release(&ce_app->app_mutex);
+
+	if (g->ops.ce2.init_prod_values != NULL) {
+		g->ops.ce2.init_prod_values(g);
+	}
+
 	nvgpu_log(g, gpu_dbg_cde_ctx, "ce: init finished");
 
 	return 0;
@@ -420,7 +425,7 @@ u32 gk20a_ce_create_context(struct gk20a *g,
 {
 	struct gk20a_gpu_ctx *ce_ctx;
 	struct gk20a_ce_app *ce_app = &g->ce_app;
-	struct nvgpu_gpfifo_args gpfifo_args;
+	struct nvgpu_setup_bind_args setup_bind_args;
 	u32 ctx_id = ~0;
 	int err = 0;
 
@@ -476,13 +481,13 @@ u32 gk20a_ce_create_context(struct gk20a *g,
 		goto end;
 	}
 
-	gpfifo_args.num_entries = 1024;
-	gpfifo_args.num_inflight_jobs = 0;
-	gpfifo_args.flags = 0;
+	setup_bind_args.num_gpfifo_entries = 1024;
+	setup_bind_args.num_inflight_jobs = 0;
+	setup_bind_args.flags = 0;
 	/* allocate gpfifo (1024 should be more than enough) */
-	err = gk20a_channel_alloc_gpfifo(ce_ctx->ch, &gpfifo_args);
+	err = nvgpu_channel_setup_bind(ce_ctx->ch, &setup_bind_args);
 	if (err) {
-		nvgpu_err(g, "ce: unable to allocate gpfifo");
+		nvgpu_err(g, "ce: unable to setup and bind channel");
 		goto end;
 	}
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017 NVIDIA Corporation.  All rights reserved.
+ * Copyright (C) 2017-2019 NVIDIA Corporation.  All rights reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -452,28 +452,31 @@ int gk20a_pmu_debugfs_init(struct gk20a *g)
 		goto err_out;
 
 	d = debugfs_create_file(
-		"falc_trace", S_IRUGO, l->debugfs, g,
-						&falc_trace_fops);
-	if (!d)
-		goto err_out;
-
-	d = debugfs_create_file(
-		"perfmon_events_enable", S_IRUGO, l->debugfs, g,
-						&perfmon_events_enable_fops);
-	if (!d)
-		goto err_out;
-
-	d = debugfs_create_file(
-		"perfmon_events_count", S_IRUGO, l->debugfs, g,
-						&perfmon_events_count_fops);
-	if (!d)
-		goto err_out;
-
-	d = debugfs_create_file(
 		"pmu_security", S_IRUGO, l->debugfs, g,
 						&security_fops);
 	if (!d)
 		goto err_out;
+
+	/* No access to PMU if virtual */
+	if (!g->is_virtual) {
+		d = debugfs_create_file(
+			"falc_trace", S_IRUGO, l->debugfs, g,
+						&falc_trace_fops);
+		if (!d)
+			goto err_out;
+
+		d = debugfs_create_file(
+			"perfmon_events_enable", S_IRUGO, l->debugfs, g,
+						&perfmon_events_enable_fops);
+		if (!d)
+			goto err_out;
+
+		d = debugfs_create_file(
+			"perfmon_events_count", S_IRUGO, l->debugfs, g,
+						&perfmon_events_count_fops);
+		if (!d)
+			goto err_out;
+	}
 	return 0;
 err_out:
 	pr_err("%s: Failed to make debugfs node\n", __func__);

@@ -1,7 +1,7 @@
 /*
  * GK20A Graphics
  *
- * Copyright (c) 2011-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2011-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -541,16 +541,11 @@ int gr_gk20a_ctx_wait_ucode(struct gk20a *g, u32 mailbox_id,
 	return 0;
 }
 
-/* The following is a less brittle way to call gr_gk20a_submit_fecs_method(...)
- * We should replace most, if not all, fecs method calls to this instead. */
-int gr_gk20a_submit_fecs_method_op(struct gk20a *g,
+int gr_gk20a_submit_fecs_method_op_locked(struct gk20a *g,
 				   struct fecs_method_op_gk20a op,
 				   bool sleepduringwait)
 {
-	struct gr_gk20a *gr = &g->gr;
 	int ret;
-
-	nvgpu_mutex_acquire(&gr->fecs_mutex);
 
 	if (op.mailbox.id != 0) {
 		gk20a_writel(g, gr_fecs_ctxsw_mailbox_r(op.mailbox.id),
@@ -578,6 +573,22 @@ int gr_gk20a_submit_fecs_method_op(struct gk20a *g,
 		nvgpu_err(g,"fecs method: data=0x%08x push adr=0x%08x",
 			op.method.data, op.method.addr);
 	}
+
+	return ret;
+}
+
+/* The following is a less brittle way to call gr_gk20a_submit_fecs_method(...)
+ * We should replace most, if not all, fecs method calls to this instead. */
+int gr_gk20a_submit_fecs_method_op(struct gk20a *g,
+				   struct fecs_method_op_gk20a op,
+				   bool sleepduringwait)
+{
+	struct gr_gk20a *gr = &g->gr;
+	int ret;
+
+	nvgpu_mutex_acquire(&gr->fecs_mutex);
+
+	ret = gr_gk20a_submit_fecs_method_op_locked(g, op, sleepduringwait);
 
 	nvgpu_mutex_release(&gr->fecs_mutex);
 
@@ -2486,6 +2497,16 @@ int gr_gk20a_load_ctxsw_ucode(struct gk20a *g)
 	return 0;
 }
 
+int gr_gk20a_set_fecs_watchdog_timeout(struct gk20a *g)
+{
+	gk20a_writel(g, gr_fecs_ctxsw_mailbox_clear_r(0), 0xffffffff);
+	gk20a_writel(g, gr_fecs_method_data_r(), 0x7fffffff);
+	gk20a_writel(g, gr_fecs_method_push_r(),
+		gr_fecs_method_push_adr_set_watchdog_timeout_f());
+
+	return 0;
+}
+
 static int gr_gk20a_wait_ctxsw_ready(struct gk20a *g)
 {
 	u32 ret;
@@ -2507,10 +2528,11 @@ static int gr_gk20a_wait_ctxsw_ready(struct gk20a *g)
 			gr_fecs_current_ctx_valid_false_f());
 	}
 
-	gk20a_writel(g, gr_fecs_ctxsw_mailbox_clear_r(0), 0xffffffff);
-	gk20a_writel(g, gr_fecs_method_data_r(), 0x7fffffff);
-	gk20a_writel(g, gr_fecs_method_push_r(),
-		     gr_fecs_method_push_adr_set_watchdog_timeout_f());
+	ret = g->ops.gr.set_fecs_watchdog_timeout(g);
+	if (ret) {
+		nvgpu_err(g, "fail to set watchdog timeout");
+		return ret;
+	}
 
 	nvgpu_log_fn(g, "done");
 	return 0;
@@ -3128,11 +3150,22 @@ int gk20a_alloc_obj_ctx(struct channel_gk20a  *c, u32 class_num, u32 flags)
 			goto out;
 		}
 
-		/* init golden image, ELPG enabled after this is done */
+		/* init golden image */
 		err = gr_gk20a_init_golden_ctx_image(g, c);
 		if (err != 0) {
 			nvgpu_err(g,
 				"fail to init golden ctx image");
+			goto out;
+		}
+
+		/* Re-enable ELPG now that golden image has been initialized.
+		 * The PMU PG init code may already have tried to enable elpg, but
+		 * would not have been able to complete this action since the golden
+		 * image hadn't been initialized yet, so do this now.
+		 */
+		err = nvgpu_pmu_reenable_elpg(g);
+		if (err != 0) {
+			nvgpu_err(g, "fail to re-enable elpg");
 			goto out;
 		}
 
@@ -3462,6 +3495,8 @@ static int gr_gk20a_init_gr_config(struct gk20a *g, struct gr_gk20a *gr)
 		gr->sm_to_cluster = nvgpu_kzalloc(g, gr->gpc_count *
 					gr->max_tpc_per_gpc_count *
 					sm_per_tpc * sizeof(struct sm_info));
+		if (!gr->sm_to_cluster)
+			goto clean_up;
 	} else {
 		memset(gr->sm_to_cluster, 0, gr->gpc_count *
 					gr->max_tpc_per_gpc_count *
@@ -3930,6 +3965,7 @@ int gr_gk20a_add_zbc(struct gk20a *g, struct gr_gk20a *gr,
 	/* no endian swap ? */
 
 	nvgpu_mutex_acquire(&gr->zbc_lock);
+	nvgpu_speculation_barrier();
 	switch (zbc_val->type) {
 	case GK20A_ZBC_TYPE_COLOR:
 		/* search existing tables */
@@ -4034,6 +4070,7 @@ int gr_gk20a_query_zbc(struct gk20a *g, struct gr_gk20a *gr,
 	u32 index = query_params->index_size;
 	u32 i;
 
+	nvgpu_speculation_barrier();
 	switch (query_params->type) {
 	case GK20A_ZBC_TYPE_INVALID:
 		query_params->index_size = GK20A_ZBC_TABLE_SIZE;
@@ -5001,7 +5038,6 @@ int gk20a_init_gr_support(struct gk20a *g)
 		}
 	}
 
-	nvgpu_cg_elcg_enable_no_wait(g);
 	/* GR is inialized, signal possible waiters */
 	g->gr.initialized = true;
 	nvgpu_cond_signal(&g->gr.init_wq);

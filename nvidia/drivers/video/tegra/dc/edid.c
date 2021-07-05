@@ -4,7 +4,7 @@
  * Copyright (C) 2010 Google, Inc.
  * Author: Erik Gilling <konkers@android.com>
  *
- * Copyright (c) 2010-2019, NVIDIA CORPORATION, All rights reserved.
+ * Copyright (c) 2010-2020, NVIDIA CORPORATION, All rights reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -151,7 +151,7 @@ int tegra_edid_i2c_adap_change_rate(struct i2c_adapter *i2c_adap, int rate)
 		if (err)
 			pr_warn("Could not change i2c_ddc sclk rate\n");
 		else
-			pr_warn("Switching i2c_ddc sclk rate: from %d, "
+			pr_info("Switching i2c_ddc sclk rate: from %d, "
 "to %d\n", cur_rate, rate);
 	} else {
 		pr_warn("ddc i2c adapter NULL\n");
@@ -160,7 +160,7 @@ int tegra_edid_i2c_adap_change_rate(struct i2c_adapter *i2c_adap, int rate)
 	return err;
 }
 
-static int tegra_edid_i2c_divide_rate(struct tegra_edid *edid)
+int tegra_edid_i2c_divide_rate(struct tegra_edid *edid)
 {
 	struct i2c_adapter *i2c_adap = i2c_get_adapter(edid->dc->out->ddc_bus);
 	int new_rate = 0, old_rate = 0, err = 0;
@@ -610,11 +610,17 @@ int tegra_edid_get_ex_hdr_cap_info(struct tegra_edid *edid,
 
 inline bool tegra_edid_is_rgb_quantization_selectable(struct tegra_edid *edid)
 {
+	if (!edid || !edid->data) {
+		return false;
+	}
 	return edid->data->rgb_quant_selectable;
 }
 
 inline bool tegra_edid_is_yuv_quantization_selectable(struct tegra_edid *edid)
 {
+	if (!edid || !edid->data) {
+		return false;
+	}
 	return edid->data->yuv_quant_selectable;
 }
 
@@ -779,10 +785,9 @@ int tegra_edid_get_monspecs(struct tegra_edid *edid, struct fb_monspecs *specs)
 	memset(specs, 0x0, sizeof(struct fb_monspecs));
 	memset(&new_data->eld, 0x0, sizeof(new_data->eld));
 	fb_edid_to_monspecs(data, specs);
-	if (specs->modedb == NULL) {
-		ret = -EINVAL;
-		goto fail;
-	}
+	if (specs->modedb == NULL)
+		pr_info("%s: no modes in EDID base block\n", __func__);
+
 	memcpy(new_data->eld.monitor_name, specs->monitor, sizeof(specs->monitor));
 	new_data->eld.mnl = strlen(new_data->eld.monitor_name) + 1;
 	new_data->eld.product_id[0] = data[0x8];
@@ -847,6 +852,12 @@ int tegra_edid_get_monspecs(struct tegra_edid *edid, struct fb_monspecs *specs)
 				data + i * EDID_BYTES_PER_BLOCK, specs,
 				new_data);
 		}
+	}
+
+	if (specs->modedb == NULL) {
+		pr_err("%s: EDID has no valid modes\n", __func__);
+		ret = -EINVAL;
+		goto fail;
 	}
 
 	/* T210 and T186 supports fractional divider and hence can support the * 1000 / 1001 modes.
@@ -914,8 +925,15 @@ int tegra_edid_get_monspecs(struct tegra_edid *edid, struct fb_monspecs *specs)
 	for (j = 0; j < specs->modedb_len; j++) {
 		if (!new_data->rgb_quant_selectable &&
 		    !(specs->modedb[j].vmode & FB_VMODE_SET_YUV_MASK))
-			specs->modedb[j].vmode |= FB_VMODE_LIMITED_RANGE;
-
+			/*
+			 * Follow HDMI 2.0 specification (section 7.3) to
+			 * select color range.
+			 */
+			if (specs->modedb[j].vmode & FB_VMODE_IS_CEA &&
+				!(specs->modedb[j].xres == 640 &&
+				specs->modedb[j].yres == 480))
+				specs->modedb[j].vmode |= FB_VMODE_LIMITED_RANGE;
+		/* TODO: add color range selection for YUV mode. */
 		if (!new_data->yuv_quant_selectable &&
 		    (specs->modedb[j].vmode & FB_VMODE_SET_YUV_MASK))
 			specs->modedb[j].vmode |= FB_VMODE_LIMITED_RANGE;

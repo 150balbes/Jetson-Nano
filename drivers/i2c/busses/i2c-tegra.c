@@ -2205,7 +2205,7 @@ static void tegra_i2c_parse_dt(struct tegra_i2c_dev *i2c_dev)
 		i2c_dev->hs_master_code = prop;
 
 	if (!i2c_dev->do_polled_io)
-		i2c_dev->disable_dma_mode = of_property_read_bool(np,
+		i2c_dev->disable_dma_mode = !of_property_read_bool(np,
 			"dmas");
 	else
 		i2c_dev->disable_dma_mode = true;
@@ -2238,6 +2238,12 @@ static bool tegra_i2c_clk_rate_supported(void *data, unsigned long bus_clk_rate)
 static const struct i2c_algorithm tegra_i2c_algo = {
 	.master_xfer	= tegra_i2c_xfer,
 	.functionality	= tegra_i2c_func,
+};
+
+/* payload size is only 12 bit */
+static struct i2c_adapter_quirks tegra_i2c_quirks = {
+	.max_read_len = 4096,
+	.max_write_len = 4096 - 12,
 };
 
 static const struct tegra_i2c_hw_feature tegra20_i2c_hw = {
@@ -2466,6 +2472,7 @@ static int tegra_i2c_probe(struct platform_device *pdev)
 	i2c_dev->phys_addr = phys_addr;
 	i2c_dev->div_clk = div_clk;
 	i2c_dev->adapter.algo = &tegra_i2c_algo;
+	i2c_dev->adapter.quirks = &tegra_i2c_quirks;
 	i2c_dev->irq = irq;
 	i2c_dev->dev = &pdev->dev;
 

@@ -1,0 +1,64 @@
+From 83eb24b3c70e096705f407027960b35a74200f07 Mon Sep 17 00:00:00 2001
+From: Peter Zijlstra <peterz@infradead.org>
+Date: Fri, 7 Apr 2017 09:04:07 +0200
+Subject: [PATCH 027/371] futex: Fix small (and harmless looking)
+ inconsistencies
+X-NVConfidentiality: public
+
+Upstream commit 94ffac5d847cfd790bb37b7cef1cad803743985e
+
+During (post-commit) review Darren spotted a few minor things. One
+(harmless AFAICT) type inconsistency and a comment that wasn't as
+clear as hoped.
+
+Reported-by: Darren Hart (VMWare) <dvhart@infradead.org>
+Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Reviewed-by: Darren Hart (VMware) <dvhart@infradead.org>
+Cc: Linus Torvalds <torvalds@linux-foundation.org>
+Cc: Peter Zijlstra <peterz@infradead.org>
+Cc: Thomas Gleixner <tglx@linutronix.de>
+Cc: linux-kernel@vger.kernel.org
+Signed-off-by: Ingo Molnar <mingo@kernel.org>
+---
+ kernel/futex.c | 11 +++++++----
+ 1 file changed, 7 insertions(+), 4 deletions(-)
+
+diff --git a/kernel/futex.c b/kernel/futex.c
+index 9f1148f..f381007 100644
+--- a/kernel/futex.c
++++ b/kernel/futex.c
+@@ -1024,7 +1024,8 @@ static int attach_to_pi_state(u32 __user *uaddr, u32 uval,
+ 			      struct futex_pi_state **ps)
+ {
+ 	pid_t pid = uval & FUTEX_TID_MASK;
+-	int ret, uval2;
++	u32 uval2;
++	int ret;
+ 
+ 	/*
+ 	 * Userspace might have messed up non-PI and PI futexes [3]
+@@ -1440,6 +1441,11 @@ static int wake_futex_pi(u32 __user *uaddr, u32 uval, struct futex_pi_state *pi_
+ 	if (ret)
+ 		goto out_unlock;
+ 
++	/*
++	 * This is a point of no return; once we modify the uval there is no
++	 * going back and subsequent operations must not fail.
++	 */
++
+ 	raw_spin_lock(&pi_state->owner->pi_lock);
+ 	WARN_ON(list_empty(&pi_state->list));
+ 	list_del_init(&pi_state->list);
+@@ -1451,9 +1457,6 @@ static int wake_futex_pi(u32 __user *uaddr, u32 uval, struct futex_pi_state *pi_
+ 	pi_state->owner = new_owner;
+ 	raw_spin_unlock(&new_owner->pi_lock);
+ 
+-	/*
+-	 * We've updated the uservalue, this unlock cannot fail.
+-	 */
+ 	postunlock = __rt_mutex_futex_unlock(&pi_state->pi_mutex, &wake_q);
+ 
+ out_unlock:
+-- 
+2.7.4
+

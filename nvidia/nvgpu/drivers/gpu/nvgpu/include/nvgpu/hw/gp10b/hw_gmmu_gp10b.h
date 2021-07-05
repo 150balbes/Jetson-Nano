@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2014-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -86,7 +86,7 @@ static inline u32 gmmu_new_pde_aperture_sys_mem_ncoh_f(void)
 }
 static inline u32 gmmu_new_pde_address_sys_f(u32 v)
 {
-	return (v & 0xfffffffU) << 8U;
+	return (v & 0xffffffU) << 8U;
 }
 static inline u32 gmmu_new_pde_address_sys_w(void)
 {
@@ -194,7 +194,7 @@ static inline u32 gmmu_new_dual_pde_vol_big_false_f(void)
 }
 static inline u32 gmmu_new_dual_pde_address_small_sys_f(u32 v)
 {
-	return (v & 0xfffffffU) << 8U;
+	return (v & 0xffffffU) << 8U;
 }
 static inline u32 gmmu_new_dual_pde_address_small_sys_w(void)
 {
@@ -242,7 +242,7 @@ static inline u32 gmmu_new_pte_privilege_false_f(void)
 }
 static inline u32 gmmu_new_pte_address_sys_f(u32 v)
 {
-	return (v & 0xfffffffU) << 8U;
+	return (v & 0xffffffU) << 8U;
 }
 static inline u32 gmmu_new_pte_address_sys_w(void)
 {

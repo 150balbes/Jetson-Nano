@@ -2,7 +2,7 @@
  * drivers/soc/tegra/pmc.c
  *
  * Copyright (c) 2010 Google, Inc
- * Copyright (c) 2012-2019, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2012-2020, NVIDIA CORPORATION. All rights reserved.
  *
  * Author:
  *	Colin Cross <ccross@google.com>
@@ -386,30 +386,53 @@
 #define PMC_WRITE		0xbb
 #define TEGRA_SIP_PMC_COMMAND_FID 0xC2FFFE00
 
+/* PMIC watchdog reset bit */
+#define PMIC_WATCHDOG_RESET		0x02
+
+#ifdef CONFIG_ARM64
+#define SMC_ARG0		"x0"
+#define SMC_ARG1		"x1"
+#define SMC_ARG2		"x2"
+#define SMC_ARG3		"x3"
+#define SMC_ARCH_EXTENSION	""
+#define SMC_REGISTERS_TRASHED	"x4","x5","x6","x7","x8","x9","x10","x11", \
+				"x12","x13","x14","x15","x16","x17"
+#else
+#define SMC_ARG0		"r0"
+#define SMC_ARG1		"r1"
+#define SMC_ARG2		"r2"
+#define SMC_ARG3		"r3"
+#define SMC_ARCH_EXTENSION	".arch_extension sec\n"
+#define SMC_REGISTERS_TRASHED	"ip"
+#endif
+
 struct pmc_smc_regs {
 	u64 args[NR_SMC_REGS];
 };
 
-static void send_smc(u32 func, struct pmc_smc_regs *regs)
+static inline ulong send_smc(u32 func, struct pmc_smc_regs *regs)
 {
-	u32 ret = func;
+	register ulong _r0 asm(SMC_ARG0) = func;
+	register ulong _r1 asm(SMC_ARG1) = (*regs).args[0];
+	register ulong _r2 asm(SMC_ARG2) = (*regs).args[1];
+	register ulong _r3 asm(SMC_ARG3) = (*regs).args[2];
 
 	asm volatile(
-		"mov x0, %0\n"
-		"ldp x1, x2, [%1, #16 * 0]\n"
-		"ldp x3, x4, [%1, #16 * 1]\n"
-		"ldp x5, x6, [%1, #16 * 2]\n"
-		"smc #0\n"
-		"mov %0, x0\n"
-		"stp x1, x2, [%1, #16 * 0]\n"
-		: "+r" (ret)
-		: "r" (regs)
-		: "x0", "x1", "x2", "x3", "x4", "x5", "x6", "x7", "x8",
-		  "x9", "x10", "x11", "x12", "x13", "x14", "x15", "x16", "x17");
-	if (ret) {
-			pr_err("%s: failed (ret=%d)\n", __func__, ret);
-			WARN_ON(1);
-	}
+		__asmeq("%0", SMC_ARG0)
+		__asmeq("%1", SMC_ARG1)
+		__asmeq("%2", SMC_ARG2)
+		__asmeq("%3", SMC_ARG3)
+		__asmeq("%4", SMC_ARG0)
+		__asmeq("%5", SMC_ARG1)
+		__asmeq("%6", SMC_ARG2)
+		__asmeq("%7", SMC_ARG3)
+		SMC_ARCH_EXTENSION
+		"smc	#0"	/* switch to secure world */
+		: "=r" (_r0), "=r" (_r1), "=r" (_r2), "=r" (_r3)
+		: "r" (_r0), "r" (_r1), "r" (_r2), "r" (_r3)
+		: SMC_REGISTERS_TRASHED);
+	(*regs).args[0] = _r1;
+	return _r0;
 }
 
 struct io_dpd_reg_info {
@@ -463,6 +486,7 @@ enum pmc_regs {
 	TEGRA_PMC_SCRATCH43,
 	TEGRA_PMC_SCRATCH54,
 	TEGRA_PMC_SCRATCH55,
+	TEGRA_PMC_SCRATCH203,
 	TEGRA_PMC_RST_STATUS,
 	TEGRA_PMC_IMPL_RAMDUMP_CTL_STATUS,
 	TEGRA_PMC_SATA_PWRGT_0,
@@ -931,7 +955,15 @@ enum tegra_system_reset_reason tegra_pmc_get_system_reset_reason(void)
 		rst_src = reset_reg & T210_PMC_RST_LEVEL_MASK;
 		switch (rst_src) {
 		case 0:
-			tegra_rst_rsn_sts = TEGRA_POWER_ON_RESET;
+			/* In case of PMIC watchdog, Reset is Power On Reset.
+			 * PMIC status register is saved in SRATCH203 register.
+			 * PMC driver checks watchdog status bit to identify
+			 * POR is because of watchdog timer reset */
+			if (tegra_pmc_reg_readl(TEGRA_PMC_SCRATCH203) &
+			    PMIC_WATCHDOG_RESET)
+				tegra_rst_rsn_sts = PMIC_WATCHDOG_POR;
+			else
+				tegra_rst_rsn_sts = TEGRA_POWER_ON_RESET;
 			break;
 
 		case 1:
@@ -1670,10 +1702,13 @@ bool tegra_pmc_fuse_is_redirection_enabled(void)
 {
 	u32 val;
 
-	val = tegra_pmc_reg_readl(TEGRA_PMC_FUSE_CTRL);
+	if (pmc->soc->has_misc_base_address)
+		val = tegra_pmc_misc_readl(TEGRA_PMC_FUSE_CTRL);
+	else
+		val = tegra_pmc_reg_readl(TEGRA_PMC_FUSE_CTRL);
+
 	if (val & PMC_FUSE_CTRL_ENABLE_REDIRECTION_STICKY)
 		return true;
-
 	return false;
 }
 EXPORT_SYMBOL(tegra_pmc_fuse_is_redirection_enabled);
@@ -3667,7 +3702,8 @@ char *pmc_reset_reason_string[] = {
 	"TEGRA_CSITE",
 	"TEGRA_WATCHDOG",
 	"TEGRA_LP0",
-	"TEGRA_RESET_REASON_MAX"
+	"PMIC_WATCHDOG_POR",
+	"TEGRA_RESET_REASON_MAX",
 };
 
 static char *pmc_reset_level_string[] = {
@@ -4138,6 +4174,7 @@ static const unsigned long tegra210_register_map[TEGRA_PMC_MAX_REG] = {
 	[TEGRA_PMC_SCRATCH43]		=  0x22c,
 	[TEGRA_PMC_SCRATCH54]		=  0x258,
 	[TEGRA_PMC_SCRATCH55]		=  0x25c,
+	[TEGRA_PMC_SCRATCH203]		=  0x84c,
 	[TEGRA_PMC_LED_BREATHING_CTRL]	= 0xb48,
 	[TEGRA_PMC_LED_BREATHING_COUNTER0]	= 0xb4c,
 	[TEGRA_PMC_LED_BREATHING_COUNTER1]	= 0xb50,

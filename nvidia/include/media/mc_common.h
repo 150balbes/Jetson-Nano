@@ -33,6 +33,7 @@
 #include <media/csi.h>
 #include <linux/workqueue.h>
 #include <linux/semaphore.h>
+#include <linux/rwsem.h>
 
 #define MAX_FORMAT_NUM	64
 #define	MAX_SUBDEVICES	4
@@ -58,6 +59,11 @@ enum tegra_vi_pg_mode {
 	TEGRA_VI_PG_DISABLED = 0,
 	TEGRA_VI_PG_DIRECT,
 	TEGRA_VI_PG_PATCH,
+};
+
+enum interlaced_type {
+	Top_Bottom = 0,
+	Interleaved,
 };
 
 /**
@@ -147,7 +153,7 @@ struct tegra_vi_graph_entity {
 struct tegra_channel {
 	int id;
 	struct list_head list;
-	struct video_device video;
+	struct video_device *video;
 	struct media_pad pad;
 	struct media_pipeline pipe;
 	struct mutex video_lock;
@@ -203,6 +209,7 @@ struct tegra_channel {
 
 	void __iomem *csibase[TEGRA_CSI_BLOCKS];
 	unsigned int stride_align;
+	unsigned int preferred_stride;
 	unsigned int width_align;
 	unsigned int height_align;
 	unsigned int size_align;
@@ -251,6 +258,12 @@ struct tegra_channel {
 	struct tegra_vi_channel *tegra_vi_channel;
 	struct capture_descriptor *request;
 	bool is_slvsec;
+	int is_interlaced;
+	enum interlaced_type interlace_type;
+	int interlace_bplfactor;
+
+	atomic_t syncpt_depth;
+	struct rw_semaphore reset_lock;
 };
 
 #define to_tegra_channel(vdev) \
@@ -330,6 +343,7 @@ int tegra_vi_channels_init(struct tegra_mc_vi *vi);
 int tegra_channel_cleanup(struct tegra_channel *chan);
 int tegra_vi_channels_cleanup(struct tegra_mc_vi *vi);
 int tegra_channel_init_subdevices(struct tegra_channel *chan);
+void tegra_channel_remove_subdevices(struct tegra_channel *chan);
 struct v4l2_subdev *tegra_channel_find_linked_csi_subdev(
 	struct tegra_channel *chan);
 int tegra_vi2_power_on(struct tegra_mc_vi *vi);
@@ -386,6 +400,9 @@ void enqueue_inflight(struct tegra_channel *chan,
 			struct tegra_channel_buffer *buf);
 struct tegra_channel_buffer *dequeue_inflight(struct tegra_channel *chan);
 int tegra_channel_set_power(struct tegra_channel *chan, bool on);
+
+int tegra_channel_init_video(struct tegra_channel *chan);
+int tegra_channel_cleanup_video(struct tegra_channel *chan);
 
 struct tegra_vi_fops {
 	int (*vi_power_on)(struct tegra_channel *chan);

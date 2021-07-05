@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -47,6 +47,7 @@
 #define T19X_INT_VFMON			(280 + INT_OFFSET)
 #define T19X_INT_AOPM2LIC		(216 + INT_OFFSET)
 #define T19X_INT_SPE_WAKEON_IPC		(133 + INT_OFFSET)
+#define T19X_INT_SW_WAKE_TRIGGER	(179 + INT_OFFSET)
 
 static int tegra_gpio_wakes[MAX_WAKE_ENTRIES];
 
@@ -134,7 +135,7 @@ static int tegra19_wake_event_irq[] = {
 	T19X_INT_XUSB,			/* wake80 */
 	T19X_INT_XUSB,			/* wake81 */
 	T19X_INT_XUSB,			/* wake82 */
-	-EAGAIN,			/* wake83 */
+	T19X_INT_SW_WAKE_TRIGGER,	/* wake83 */
 	INT_SPE_WDT_EXPIRY,		/* wake84 */
 	-EAGAIN,			/* wake85 */
 	-EAGAIN,			/* wake86 */

@@ -1,7 +1,7 @@
 /*
  * sensor_kernel_tests_core - sensor kernel tests module core
  *
- * Copyright (c) 2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2019-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -233,11 +233,13 @@ int skt_core_vlog_msg(const u32 portid, const char *fmt, va_list args)
 		user_acked = false;
 
 		if (ret == 0) {
+			kfree(msg);
 			pr_warn("skt ACK timed out\n");
 			return -ETIMEDOUT;
 		}
 	}
 
+	kfree(msg);
 	return err;
 }
 
@@ -322,7 +324,7 @@ static int skt_query_tests(struct sk_buff *skb, struct genl_info *info)
 	err = skt_core_send_msg(msg, genl_info_net(info), info->snd_portid);
 	if (err != 0)
 		pr_err("Could not send skt msg (%d)\n", err);
-
+	kfree(msg);
 	return err;
 
 genl_fail:
@@ -366,6 +368,7 @@ static void skt_core_test_work(struct work_struct *work)
 	err = skt_core_send_msg(msg, &init_net, worker->ctx.dest_portid);
 	if (err != 0)
 		pr_err("Could not send skt msg (%d)\n", err);
+	kfree(msg);
 }
 
 static int skt_run_tests(struct sk_buff *skb, struct genl_info *info)
@@ -431,6 +434,7 @@ run_tests_fail:
 	if (err != 0)
 		pr_err("Could not send skt msg (%d)\n", err);
 
+	kfree(msg);
 	return err;
 
 genl_fail:

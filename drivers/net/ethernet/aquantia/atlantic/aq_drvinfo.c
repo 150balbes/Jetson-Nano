@@ -20,6 +20,7 @@
 
 #include "aq_drvinfo.h"
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 13, 0)
 static ssize_t temperature_show(struct device *ndev,
 				struct device_attribute *attr, char *buf)
 {
@@ -86,21 +87,26 @@ static struct attribute *aq_dev_attrs[] = {
 };
 
 ATTRIBUTE_GROUPS(aq_dev);
+#endif
 
 int aq_drvinfo_init(struct net_device *ndev)
 {
 	int err = 0;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 13, 0)
 	struct device *dev;
 
 	struct aq_nic_s *aq_nic = netdev_priv(ndev);
+	struct pci_dev *pdev = aq_nic->pdev;
 
-	dev = devm_hwmon_device_register_with_groups(&aq_nic->pdev->dev,
-			 ndev->name, dev_get_drvdata(&aq_nic->pdev->dev),
-			 aq_dev_groups);
+	dev = 
+	devm_hwmon_device_register_with_groups(&pdev->dev,
+					       ndev->name, 
+					       dev_get_drvdata(&pdev->dev),
+					       aq_dev_groups);
 
 	if (IS_ERR(dev))
 		err = PTR_ERR(dev);
-
+#endif
 	return err;
 }
 

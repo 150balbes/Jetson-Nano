@@ -20,6 +20,7 @@
 #include <linux/regulator/consumer.h>
 
 #include "../dc.h"
+#include "../dc_priv.h"
 #include "board.h"
 #include "board-panel.h"
 #include <linux/gpio.h>
@@ -31,6 +32,7 @@ static struct regulator *vdd_lcd_bl_en;
 static struct regulator *avdd_lcd;
 static struct regulator *vdd_ds_1v8;
 static struct regulator *avdd_3v3_dp;
+static struct regulator *avdd_io_edp;
 static u16 en_panel_rst;
 
 static int auo_edp_regulator_get(struct device *dev)
@@ -87,6 +89,18 @@ static int auo_edp_regulator_get(struct device *dev)
 		}
 	} else {
 		en_panel_rst = panel_of.panel_gpio[TEGRA_GPIO_RESET];
+	}
+
+	if (tegra_dc_is_nvdisplay()) {
+	    avdd_io_edp = NULL;
+	} else {
+	    avdd_io_edp = regulator_get(dev, "avdd_io_edp");
+	    if (IS_ERR(avdd_io_edp)) {
+		    pr_err("avdd_io_edp regulator get failed\n");
+		    err = PTR_ERR(avdd_io_edp);
+		    avdd_io_edp = NULL;
+		    goto fail;
+	    }
 	}
 
 	reg_requested = true;
@@ -190,7 +204,8 @@ static int edp_a_1080p_14_0_enable(struct device *dev)
 {
 	int err = 0;
 
-	if (of_machine_is_compatible("nvidia,quill"))
+	if (of_machine_is_compatible("nvidia,quill") ||
+			of_machine_is_compatible("nvidia,jetson-cv"))
 		err = auo_edp_regulator_get(dev);
 	else if (of_machine_is_compatible("nvidia,ardbeg"))
 		err = ardbeg_edp_regulator_get(dev);
@@ -254,6 +269,13 @@ static int edp_a_1080p_14_0_enable(struct device *dev)
 		}
 	}
 	msleep(180);
+	if (avdd_io_edp) {
+		err = regulator_enable(avdd_io_edp);
+		if (err < 0) {
+			pr_err("avdd_io_edp regulator enable failed\n");
+			goto fail;
+		}
+	}
 
 	return 0;
 fail:
@@ -262,6 +284,11 @@ fail:
 
 static int edp_a_1080p_14_0_disable(struct device *dev)
 {
+	if (avdd_io_edp)
+	    regulator_disable(avdd_io_edp);
+
+	msleep(10);
+
 	if (vdd_lcd_bl_en)
 		regulator_disable(vdd_lcd_bl_en);
 

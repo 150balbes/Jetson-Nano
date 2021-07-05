@@ -3,7 +3,7 @@
  * (C) Copyright 2014-2018
  * Fortemedia, Inc. <www.fortemedia.com>
  *
- * Copyright (c) 2018, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2019, NVIDIA CORPORATION. All rights reserved.
  *
  * Author: HenryZhang <henryhzhang@fortemedia.com>;
  * 			LiFu <fuli@fortemedia.com>
@@ -87,10 +87,6 @@ struct rtc_time rt;
 //fuli 20170629 for new protocol of oneshot
 #define SM501
 //
-
-extern int tegra210_dmic_enable(int dmic_inst);
-extern int tegra210_dmic_disable(int dmic_inst);
-extern int tegra210_dmic_set_start_callback(int id, void (*callback)(void));
 
 void enable_pdm_clock(void);
 void disable_pdm_clock(void);
@@ -1285,31 +1281,19 @@ void im501_write_check_spi_reg(u8 reg, u8 val)
 
 void enable_pdm_clock(void)
 {
-	int retry_count = 100;
 	if (atomic_read(&dmic_clk_cnt) > 0) {
 		dev_info(&im501_spi->dev, "PDM clock already enabled\n");
 		return;
 	}
-	while (retry_count > 0) {
-		if (tegra210_dmic_enable(0))
-			dev_info(&im501_spi->dev, "DMIC not yet registered\n");
-		else {
-			atomic_set(&dmic_clk_cnt, 1);
-			break;
-		}
-		msleep(20);
-		retry_count--;
-	};
+	atomic_set(&dmic_clk_cnt, 1);
 }
 
 void disable_pdm_clock(void)
 {
-	if (atomic_read(&dmic_clk_cnt) > 0) {
-		tegra210_dmic_disable(0);
+	if (atomic_read(&dmic_clk_cnt) > 0)
 		atomic_set(&dmic_clk_cnt, 0);
-	} else {
+	else
 		dev_info(&im501_spi->dev, "PDM clock already disabled\n");
-	}
 }
 
 void im501_start_capture_cb(void)
@@ -1368,8 +1352,6 @@ static void im501_fw_load(struct work_struct *work)
 
 	//after firmware download, keep DSP in NORMAL mode
 	codec2im501_pdm_clki_set(POWER_SAVING_MODE, 0);
-
-	tegra210_dmic_set_start_callback(0, im501_start_capture_cb);
 
 	return;
 }

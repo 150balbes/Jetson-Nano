@@ -1,7 +1,7 @@
 /*
  * VI channel driver for T186/T194
  *
- * Copyright (c) 2017-2018 NVIDIA Corporation.  All rights reserved.
+ * Copyright (c) 2017-2020 NVIDIA Corporation.  All rights reserved.
  *
  * Author: Sudhir Vyas <svyas@nvidia.com>
  *
@@ -32,9 +32,6 @@
 #include <media/capture_vi_channel.h>
 
 #include "nvhost_acm.h"
-
-/** TODO: Get it from  DT */
-#define MAX_VI_CHANNELS 64
 
 #define VI_CAPTURE_SETUP	_IOW('I', 1, struct vi_capture_setup)
 #define VI_CAPTURE_RELEASE	_IOW('I', 2, __u32)
@@ -156,7 +153,7 @@ static long vi_channel_ioctl(struct file *file, unsigned int cmd,
 	}
 
 	case _IOC_NR(VI_CAPTURE_GET_INFO): {
-		struct vi_capture_info info;
+		struct vi_capture_info info = { {0} };
 
 		err = vi_capture_get_info(chan, &info);
 		if (err < 0)
@@ -419,9 +416,11 @@ int vi_channel_drv_register(struct platform_device *ndev,
 	struct vi_channel_drv *chan_drv;
 	int err = 0;
 	unsigned i;
+	struct nvhost_device_data *pdata = platform_get_drvdata(ndev);
 
 	chan_drv = devm_kzalloc(&ndev->dev, sizeof(*chan_drv) +
-			MAX_VI_CHANNELS * sizeof(struct tegra_vi_channel *),
+			(pdata->num_channels) *
+			sizeof(struct tegra_vi_channel *),
 			GFP_KERNEL);
 	if (unlikely(chan_drv == NULL))
 		return -ENOMEM;
@@ -429,7 +428,7 @@ int vi_channel_drv_register(struct platform_device *ndev,
 	chan_drv->dev = &ndev->dev;
 	chan_drv->ndev = ndev;
 	chan_drv->ops = ops;
-	chan_drv->num_channels = MAX_VI_CHANNELS;
+	chan_drv->num_channels = pdata->num_channels;
 	mutex_init(&chan_drv->lock);
 
 	mutex_lock(&chdrv_lock);

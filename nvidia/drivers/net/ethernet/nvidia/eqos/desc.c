@@ -29,7 +29,7 @@
  * DAMAGE.
  * ========================================================================= */
 /*
- * Copyright (c) 2015-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2015-2017, NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -366,14 +366,16 @@ static void eqos_wrapper_tx_descriptor_init_single_q(
 
 	ptx_ring->cur_tx = 0;
 	ptx_ring->dirty_tx = 0;
+
 	hw_if->tx_desc_init(pdata, qinx);
-	ptx_ring->tx_full = false;
+	ptx_ring->cur_tx = 0;
 
 	pr_debug("<--eqos_wrapper_tx_descriptor_init_single_q\n");
 }
 
 static int desc_alloc_skb(struct eqos_prv_data *pdata,
-			  struct rx_swcx_desc *prx_swcx_desc, gfp_t gfp)
+			  struct rx_swcx_desc *prx_swcx_desc, gfp_t gfp,
+			  unsigned int qinx)
 {
 	struct sk_buff *skb = prx_swcx_desc->skb;
 	dma_addr_t dma = prx_swcx_desc->dma;
@@ -393,8 +395,11 @@ static int desc_alloc_skb(struct eqos_prv_data *pdata,
 	skb = __netdev_alloc_skb_ip_align(pdata->dev, pdata->rx_buffer_len,
 					  gfp);
 	if (unlikely(!skb)) {
-		netdev_err(pdata->dev, "RX skb allocation failed\n");
-		return -ENOMEM;
+		netdev_err(pdata->dev, "RX skb allocation failed, using reserved buffer\n");
+		prx_swcx_desc->skb = pdata->resv_skb;
+		prx_swcx_desc->dma = pdata->resv_dma;
+		pdata->xstats.q_re_alloc_rx_buf_failed[qinx]++;
+		return 0;
 	}
 
 dma_map:
@@ -450,7 +455,7 @@ static void eqos_wrapper_rx_descriptor_init_single_q(
 		GET_RX_BUF_PTR(qinx, i) = &prx_swcx_desc[i];
 
 		ret = desc_alloc_skb(pdata, GET_RX_BUF_PTR(qinx, i),
-				     GFP_KERNEL);
+				     GFP_KERNEL, qinx);
 		if (ret < 0)
 			break;
 	}
@@ -484,6 +489,22 @@ static void eqos_wrapper_rx_descriptor_init(struct eqos_prv_data *pdata)
 	unsigned int qinx;
 
 	pr_debug("-->eqos_wrapper_rx_descriptor_init\n");
+	pdata->resv_skb = __netdev_alloc_skb_ip_align(pdata->dev,
+						      pdata->rx_buffer_len,
+						      GFP_KERNEL);
+	if (unlikely(!pdata->resv_skb))
+		netdev_err(pdata->dev, "Reserved RX skb allocation failed\n");
+
+	pdata->resv_dma = dma_map_single(&pdata->pdev->dev,
+					 pdata->resv_skb->data,
+					 pdata->rx_buffer_len,
+					 DMA_FROM_DEVICE);
+	if (unlikely(dma_mapping_error(&pdata->pdev->dev, pdata->resv_dma))) {
+		netdev_err(pdata->dev, "Reserved RX skb dma map failed\n");
+		dev_kfree_skb_any(pdata->resv_skb);
+		pdata->resv_skb = NULL;
+		pdata->resv_dma = 0;
+	}
 
 	for (qinx = 0; qinx < EQOS_RX_QUEUE_CNT; qinx++)
 		eqos_wrapper_rx_descriptor_init_single_q(pdata, qinx);
@@ -632,6 +653,19 @@ static void eqos_rx_skb_free_mem(struct eqos_prv_data *pdata,
 
 	for (qinx = 0; qinx < rx_qcnt; qinx++)
 		eqos_rx_skb_free_mem_single_q(pdata, qinx);
+
+	/* unmap reserved DMA*/
+	if (pdata->resv_dma) {
+		dma_unmap_single(&pdata->pdev->dev, pdata->resv_dma,
+				 pdata->rx_buffer_len,
+				 DMA_FROM_DEVICE);
+		pdata->resv_dma = 0;
+	}
+
+	if (pdata->resv_skb) {
+		dev_kfree_skb_any(pdata->resv_skb);
+		pdata->resv_skb = NULL;
+	}
 
 	pr_debug("<--eqos_rx_skb_free_mem\n");
 }
@@ -1043,14 +1077,18 @@ static void eqos_unmap_rx_skb(struct eqos_prv_data *pdata,
 
 	/* unmap the first buffer */
 	if (prx_swcx_desc->dma) {
-		dma_unmap_single(&pdata->pdev->dev, prx_swcx_desc->dma,
-				 pdata->rx_buffer_len,
-				 DMA_FROM_DEVICE);
+		if (pdata->resv_dma != prx_swcx_desc->dma) {
+			dma_unmap_single(&pdata->pdev->dev, prx_swcx_desc->dma,
+					 pdata->rx_buffer_len,
+					 DMA_FROM_DEVICE);
+		}
 		prx_swcx_desc->dma = 0;
 	}
 
 	if (prx_swcx_desc->skb) {
-		dev_kfree_skb_any(prx_swcx_desc->skb);
+		if (pdata->resv_skb != prx_swcx_desc->skb) {
+			dev_kfree_skb_any(prx_swcx_desc->skb);
+		}
 		prx_swcx_desc->skb = NULL;
 	}
 
@@ -1081,9 +1119,8 @@ static void eqos_re_alloc_skb(struct eqos_prv_data *pdata,
 	while (prx_ring->dirty_rx != prx_ring->cur_rx) {
 		prx_swcx_desc = GET_RX_BUF_PTR(qinx, prx_ring->dirty_rx);
 
-		ret = desc_alloc_skb(pdata, prx_swcx_desc, GFP_ATOMIC);
+		ret = desc_alloc_skb(pdata, prx_swcx_desc, GFP_ATOMIC, qinx);
 		if (ret < 0) {
-			pdata->xstats.q_re_alloc_rx_buf_failed[qinx]++;
 			break;
 		}
 

@@ -1,7 +1,7 @@
 /*
  * arch/arm64/boot/dts/tegra210-jetson-cv-base-p2597-2180-a00.dts
  *
- * Copyright (c) 2015-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2015-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -22,6 +22,7 @@
 #include <tegra210-soc/tegra210-audio.dtsi>
 #include "jetson-platforms/tegra210-jetson-cv-power-tree-p2597-2180-a00.dtsi"
 #include "jetson-platforms/tegra210-jetson-cv-pinmux-p2597-2180-a00.dtsi"
+#include "jetson-platforms/tegra210-jetson-cv-gpio-p2597-2180-a00.dtsi"
 #include "jetson-platforms/tegra210-jetson-cv-prods.dtsi"
 #include "jetson-platforms/tegra210-comms-p2530-0930.dtsi"
 #include "jetson-platforms/tegra210-jetson-cv-camera-modules.dtsi"
@@ -40,6 +41,7 @@
 #include <tegra210-soc/tegra210-edp.dtsi>
 #include <t210-common-platforms/tegra210-sysedp.dtsi>
 #include <t210-common-platforms/tegra210-thermal-nct72-p2530.dtsi>
+#include <t210-common-platforms/tegra210-thermal-userspace-alert.dtsi>
 #include <tegra210-soc/tegra210-thermal-Tboard-Tdiode.dtsi>
 #include "jetson-platforms/tegra210-jetson-cv-powermon-p2180-1000-a00.dtsi"
 #include "jetson-platforms/tegra210-jetson-cv-powermon-p2597.dtsi"
@@ -51,7 +53,7 @@
 
 / {
 	model = "jetson_cv";
-	compatible = "nvidia,jetson-cv", "nvidia,tegra210";
+	compatible = "nvidia,p2597-0000+p2180-1000", "nvidia,jetson-cv", "nvidia,tegra210";
 	nvidia,dtsfilename = __FILE__;
 
 	#address-cells = <2>;
@@ -59,6 +61,7 @@
 
 	chosen {
 		board-has-eeprom;
+		firmware-blob-partition = "RP4";
 		stdout-path = &uarta;
 		verified-boot {
 			poweroff-on-red-state;
@@ -124,7 +127,6 @@
 	aconnect@702c0000 {
 #endif
 	adma@702e2000  {
-		dma-channels = <10>;
 		status = "okay";
 	};
 
@@ -161,6 +163,7 @@
 			vdd-1v8-spi-hv-supply = <&max77620_sd3>;
 			vdd-1v8-spi-hv-bias-supply = <&max77620_sd3>;
 			fsync-width = <0>;
+			bclk-ratio = <4>;
 		};
 
 		i2s@702d1400 {
@@ -350,28 +353,39 @@
 
 	spi@7000d400 {
 		status = "okay";
+		spi@0 {
+			compatible = "spidev";
+			reg = <0x0>;
+			spi-max-frequency = <33000000>;
+			controller-data {
+				nvidia,enable-hw-based-cs;
+				nvidia,rx-clk-tap-delay = <7>;
+			};
+		};
+		spi@1 {
+			compatible = "spidev";
+			reg = <0x1>;
+			spi-max-frequency = <33000000>;
+			controller-data {
+				nvidia,enable-hw-based-cs;
+				nvidia,rx-clk-tap-delay = <7>;
+			};
+		};
 	};
 
-	sound_card: sound {
+	tegra_sound: sound {
 		compatible = "nvidia,tegra-audio-t210ref-mobile-rt565x";
 		nvidia,model = "tegra-snd-t210ref-mobile-rt565x";
 
-		clocks = <&tegra_car TEGRA210_CLK_PLL_P_OUT1>,
-                        <&tegra_car TEGRA210_CLK_PLL_A>,
-                        <&tegra_car TEGRA210_CLK_PLL_A_OUT0>,
-                        <&tegra_car TEGRA210_CLK_D_AUDIO>,
-                        <&tegra_car TEGRA210_CLK_CLK_M>,
-                        <&tegra_car TEGRA210_CLK_EXTERN1>;
-		clock-names = "pll_p_out1", "pll_a", "pll_a_out0", "ahub",
-			"clk_m", "extern1";
-
-
-		assigned-clocks = <&tegra_car TEGRA210_CLK_PLL_A>,
-			<&tegra_car TEGRA210_CLK_PLL_A_OUT0>,
-			<&tegra_car TEGRA210_CLK_D_AUDIO>,
-			<&tegra_car TEGRA210_CLK_EXTERN1>;
-		assigned-clock-rates = <368640000>, <36864000>,
-			<36864000>, <12288000>;
+		clocks = <&tegra_car TEGRA210_CLK_PLL_A>,
+			 <&tegra_car TEGRA210_CLK_PLL_A_OUT0>,
+			 <&tegra_car TEGRA210_CLK_EXTERN1>;
+		clock-names = "pll_a", "pll_a_out0", "extern1";
+		assigned-clocks = <&tegra_car TEGRA210_CLK_EXTERN1>,
+				  <&tegra_car TEGRA210_CLK_PLL_A_OUT0>,
+				  <&tegra_car TEGRA210_CLK_PLL_A>;
+		assigned-clock-parents = <&tegra_car TEGRA210_CLK_PLL_A_OUT0>;
+		assigned-clock-rates = <12288000>, <49152000>, <368640000>;
 
 		nvidia,num-codec-link = <8>;
 
@@ -391,18 +405,16 @@
 			"n IN",			"n Mic";
 
 		nvidia,xbar = <&tegra_axbar>;
+		mclk-fs = <256>;
 
-		/* The codec-dai here is initialized to dummy and will be   */
-		/* replaced with rt565x codec-dai on detecting super-module */
-		nvidia,dai-link-1 {
-			link-name = "rt565x-playback";
+		hdr40_snd_link_i2s: nvidia,dai-link-1 {
+			link-name = "spdif-dit-0";
 			cpu-dai = <&tegra_i2s1>;
 			codec-dai = <&spdif_dit4>;
 			cpu-dai-name = "I2S1";
 			codec-dai-name = "dit-hifi";
 			format = "i2s";
 			bit-format = "s16_le";
-			bclk_ratio = <0>;
 			srate = <48000>;
 			num-channel = <2>;
 			name-prefix = "x";
@@ -417,7 +429,6 @@
 			format = "dsp_a";
 			bitclock-inversion;
 			bit-format = "s16_le";
-			bclk_ratio = <4>;
 			srate = <8000>;
 			num-channel = <1>;
 			name-prefix = "y";
@@ -444,21 +455,19 @@
 			codec-dai-name = "dit-hifi";
 			format = "i2s";
 			bit-format = "s16_le";
-			bclk_ratio = <0>;
 			srate = <48000>;
 			num-channel = <2>;
 			name-prefix = "l";
 		};
 
 		nvidia,dai-link-5 {
-			link-name = "spdif-dit-0";
+			link-name = "spdif-dit-4";
 			cpu-dai = <&tegra_i2s4>;
 			codec-dai = <&spdif_dit0>;
 			cpu-dai-name = "I2S4";
 			codec-dai-name = "dit-hifi";
 			format = "i2s";
 			bit-format = "s16_le";
-			bclk_ratio = <0>;
 			srate = <48000>;
 			num-channel = <2>;
 			name-prefix = "s";
@@ -472,7 +481,6 @@
 			codec-dai-name = "dit-hifi";
 			format = "i2s";
 			bit-format = "s16_le";
-			bclk_ratio = <0>;
 			srate = <48000>;
 			num-channel = <2>;
 			name-prefix = "w";
@@ -763,6 +771,7 @@
 				PMC_WAKE_TYPE_EVENT 41 PMC_TRIGGER_TYPE_HIGH>,
 			<&tegra_pmc
 				PMC_WAKE_TYPE_EVENT 44 PMC_TRIGGER_TYPE_HIGH>;
+		nvidia,boost_cpu_freq = <1200>;
 	};
 
 	xudc@700d0000 {
@@ -804,7 +813,7 @@
 		tach_gpio =  <&gpio TEGRA_GPIO(K, 7) GPIO_ACTIVE_LOW>; /* TEGRA_GPIO_PK7 */
 	};
 
-	i2c@7000c400 {
+	hdr40_i2c0: i2c@7000c400 {
 		nvidia,clock-always-on;
 
 		lp8557-backlight-a-wuxga-8-0@2c {
@@ -1162,7 +1171,7 @@
 		dma-names = "tx";
 	};
 
-	i2c@7000c400 {
+	hdr40_i2c1: i2c@7000c000 {
 		clock-frequency = <400000>;
 	};
 
@@ -1207,5 +1216,13 @@
 		pinctrl-names = "dvfs_pwm_enable", "dvfs_pwm_disable";
 		pinctrl-0 = <&dvfs_pwm_active_state>;
 		pinctrl-1 = <&dvfs_pwm_inactive_state>;
+	};
+
+	cpu_alert: cpu-throttle-alert {
+		status = "okay";
+	};
+
+	gpu_alert: gpu-throttle-alert {
+		status = "okay";
 	};
 };

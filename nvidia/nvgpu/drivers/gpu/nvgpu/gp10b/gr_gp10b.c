@@ -52,6 +52,7 @@ bool gr_gp10b_is_valid_class(struct gk20a *g, u32 class_num)
 {
 	bool valid = false;
 
+	nvgpu_speculation_barrier();
 	switch (class_num) {
 	case PASCAL_COMPUTE_A:
 	case PASCAL_A:

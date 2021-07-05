@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2017, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2014-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -676,6 +676,10 @@ static inline u32 pwr_pmu_idle_mask_ce_2_enabled_f(void)
 {
 	return 0x200000U;
 }
+static inline u32 pwr_pmu_idle_mask_1_r(u32 i)
+{
+	return 0x0010aa34U + i*8U;
+}
 static inline u32 pwr_pmu_idle_count_r(u32 i)
 {
 	return 0x0010a508U + i*16U;
@@ -750,7 +754,7 @@ static inline u32 pwr_pmu_idle_intr_status_intr_f(u32 v)
 }
 static inline u32 pwr_pmu_idle_intr_status_intr_m(void)
 {
-	return U32(0x1U) << 0U;
+	return 0x1U << 0U;
 }
 static inline u32 pwr_pmu_idle_intr_status_intr_v(u32 r)
 {

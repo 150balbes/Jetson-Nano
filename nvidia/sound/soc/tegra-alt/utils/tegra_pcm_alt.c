@@ -2,7 +2,7 @@
  * tegra_alt_pcm.c - Tegra PCM driver
  *
  * Author: Stephen Warren <swarren@nvidia.com>
- * Copyright (c) 2011-2019 NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2011-2020 NVIDIA CORPORATION.  All rights reserved.
  *
  * Based on code copyright/by:
  *
@@ -184,9 +184,8 @@ static snd_pcm_uframes_t tegra_alt_pcm_pointer
 				(struct snd_pcm_substream *substream)
 {
 
-	unsigned int pos = 0;
+	snd_pcm_uframes_t appl_offset, pos = 0;
 	struct snd_pcm_runtime *runtime = substream->runtime;
-	snd_pcm_sframes_t appl_offset, hw_offset;
 	char *appl_ptr;
 
 	pos = snd_dmaengine_pcm_pointer(substream);
@@ -197,19 +196,18 @@ static snd_pcm_uframes_t tegra_alt_pcm_pointer
 	 */
 	if ((runtime->status->state == SNDRV_PCM_STATE_DRAINING) &&
 		(substream->stream == SNDRV_PCM_STREAM_PLAYBACK)) {
-		appl_offset = (snd_pcm_sframes_t)(runtime->control->appl_ptr %
-					runtime->buffer_size);
-		hw_offset = bytes_to_frames(runtime, pos);
+		appl_offset = runtime->control->appl_ptr %
+					runtime->buffer_size;
 		appl_ptr = runtime->dma_area + frames_to_bytes(runtime,
 					appl_offset);
-		if (hw_offset < appl_offset) {
+		if (pos < appl_offset) {
 			memset(appl_ptr, 0, frames_to_bytes(runtime,
 					runtime->buffer_size - appl_offset));
 			memset(runtime->dma_area, 0, frames_to_bytes(runtime,
-					hw_offset));
+					pos));
 		} else
 			memset(appl_ptr, 0, frames_to_bytes(runtime,
-					hw_offset - appl_offset));
+					pos - appl_offset));
 	}
 
 	return pos;
@@ -261,12 +259,6 @@ static void tegra_alt_pcm_deallocate_dma_buffer(struct snd_pcm *pcm, int stream)
 	buf->area = NULL;
 }
 
-#if defined(CONFIG_ARCH_TEGRA_APE)
-static u64 tegra_dma_mask = DMA_BIT_MASK(64);
-#else
-static u64 tegra_dma_mask = DMA_BIT_MASK(32);
-#endif
-
 static int tegra_alt_pcm_dma_allocate(struct snd_soc_pcm_runtime *rtd,
 	size_t size)
 {
@@ -274,12 +266,11 @@ static int tegra_alt_pcm_dma_allocate(struct snd_soc_pcm_runtime *rtd,
 	struct snd_pcm *pcm = rtd->pcm;
 	struct tegra_alt_pcm_dma_params *dmap;
 	size_t buffer_size = size;
-	int ret = 0;
+	int ret;
 
-	if (!card->dev->dma_mask)
-		card->dev->dma_mask = &tegra_dma_mask;
-	if (!card->dev->coherent_dma_mask)
-		card->dev->coherent_dma_mask = tegra_dma_mask;
+	ret = dma_set_mask_and_coherent(card->dev, DMA_BIT_MASK(32));
+	if (ret)
+		return ret;
 
 	dmap = snd_soc_dai_get_dma_data(rtd->cpu_dai,
 			pcm->streams[SNDRV_PCM_STREAM_PLAYBACK].substream);

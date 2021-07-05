@@ -21,7 +21,7 @@
 		#address-cells = <1>;
 		#size-cells = <0>;
 
-		battery_reg: regulator@0 {
+		hdr40_vdd_5v0: battery_reg: regulator@0 {
 			compatible = "regulator-fixed";
 			reg = <0>;
 			regulator-name = "vdd-ac-bat";
@@ -30,7 +30,7 @@
 			regulator-always-on;
 		};
 
-		vdd_3v3: regulator@1 {
+		hdr40_vdd_3v3: vdd_3v3: regulator@1 {
 			compatible = "regulator-fixed-sync";
 			reg = <1>;
 			regulator-name = "vdd-3v3";

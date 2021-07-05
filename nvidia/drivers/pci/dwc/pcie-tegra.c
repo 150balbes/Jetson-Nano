@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017 - 2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017 - 2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -58,8 +58,6 @@
 #define APPL_PINMUX_CLKREQ_OVERRIDE		BIT(3)
 #define APPL_PINMUX_CLK_OUTPUT_IN_OVERRIDE_EN	BIT(4)
 #define APPL_PINMUX_CLK_OUTPUT_IN_OVERRIDE	BIT(5)
-#define APPL_PINMUX_CLKREQ_OUT_OVRD_EN		BIT(9)
-#define APPL_PINMUX_CLKREQ_OUT_OVRD		BIT(10)
 #define APPL_PINMUX_PEX_RST_IN_OVERRIDE_EN	BIT(11)
 
 #define APPL_CTRL				(0X4)
@@ -2689,7 +2687,7 @@ static int tegra_pcie_dw_host_init(struct pcie_port *pp)
 	}
 
 	dw_pcie_read(pci->dbi_base + PCI_IO_BASE, 4, &tmp);
-	tmp &= ~(IO_BASE_IO_DECODE | IO_BASE_IO_DECODE);
+	tmp &= ~(IO_BASE_IO_DECODE | IO_BASE_IO_DECODE_BIT8);
 	dw_pcie_write(pci->dbi_base + PCI_IO_BASE, 4, tmp);
 
 	dw_pcie_read(pci->dbi_base + CFG_PREF_MEM_LIMIT_BASE, 4, &tmp);
@@ -2952,9 +2950,9 @@ static void tegra_pcie_dw_scan_bus(struct pcie_port *pp)
 	struct tegra_pcie_dw *pcie = dw_pcie_to_tegra_pcie(pci);
 	struct resource_entry *win;
 	struct pci_dev *pdev = NULL, *ppdev = NULL;
-	u32 width = 0, speed = 0, data = 0, pos = 0;
+	u32 speed = 0, data = 0, pos = 0;
 	struct pci_bus *child;
-	unsigned long freq;
+	unsigned long freq, width = 0;
 
 	if (!tegra_pcie_dw_link_up(pci))
 		return;
@@ -2962,8 +2960,7 @@ static void tegra_pcie_dw_scan_bus(struct pcie_port *pp)
 	/* Make EMC FLOOR freq request based on link width and speed */
 	data = readl(pci->dbi_base + CFG_LINK_STATUS_CONTROL);
 	width = ((data >> 16) & PCI_EXP_LNKSTA_NLW) >> 4;
-	width = find_first_bit((const unsigned long *)&width,
-			       sizeof(width));
+	width = find_first_bit(&width, sizeof(width));
 	speed = ((data >> 16) & PCI_EXP_LNKSTA_CLS);
 	freq = pcie->dvfs_tbl[width][speed - 1];
 	dev_dbg(pcie->dev, "EMC Freq requested = %lu\n", freq);
@@ -3764,8 +3761,22 @@ static void pex_ep_event_hot_rst_done(struct tegra_pcie_dw *pcie)
 static void pex_ep_event_bme_change(struct tegra_pcie_dw *pcie)
 {
 	struct dw_pcie *pci = &pcie->pci;
-	u32 val = 0, width = 0, speed = 0;
-	unsigned long freq;
+	u32 val = 0, speed = 0;
+	unsigned long freq, width = 0;
+
+	/* Make EMC FLOOR freq request based on link width and speed */
+	val = readl(pci->dbi_base + CFG_LINK_STATUS_CONTROL);
+	width = ((val >> 16) & PCI_EXP_LNKSTA_NLW) >> 4;
+	width = find_first_bit(&width, sizeof(width));
+	speed = ((val >> 16) & PCI_EXP_LNKSTA_CLS);
+	freq = pcie->dvfs_tbl[width][speed - 1];
+	dev_dbg(pcie->dev, "EMC Freq requested = %lu\n", freq);
+
+	if (tegra_bwmgr_set_emc(pcie->emc_bw, freq, TEGRA_BWMGR_SET_EMC_FLOOR))
+		dev_err(pcie->dev, "can't set emc clock[%lu]\n", freq);
+
+	speed = ((val >> 16) & PCI_EXP_LNKSTA_CLS);
+	clk_set_rate(pcie->core_clk, pcie_gen_freq[speed - 1]);
 
 	/* If EP doesn't advertise L1SS, just return */
 	val = readl(pci->dbi_base + pcie->cfg_link_cap_l1sub);
@@ -3798,21 +3809,6 @@ static void pex_ep_event_bme_change(struct tegra_pcie_dw *pcie)
 		if (val & APPL_LTR_MSG_2_LTR_MSG_REQ_STATE)
 			dev_err(pcie->dev, "LTR_MSG sending failed\n");
 	}
-
-	/* Make EMC FLOOR freq request based on link width and speed */
-	val = readl(pci->dbi_base + CFG_LINK_STATUS_CONTROL);
-	width = ((val >> 16) & PCI_EXP_LNKSTA_NLW) >> 4;
-	width = find_first_bit((const unsigned long *)&width,
-			       sizeof(width));
-	speed = ((val >> 16) & PCI_EXP_LNKSTA_CLS);
-	freq = pcie->dvfs_tbl[width][speed - 1];
-	dev_dbg(pcie->dev, "EMC Freq requested = %lu\n", freq);
-
-	if (tegra_bwmgr_set_emc(pcie->emc_bw, freq, TEGRA_BWMGR_SET_EMC_FLOOR))
-		dev_err(pcie->dev, "can't set emc clock[%lu]\n", freq);
-
-	speed = ((val >> 16) & PCI_EXP_LNKSTA_CLS);
-	clk_set_rate(pcie->core_clk, pcie_gen_freq[speed - 1]);
 }
 
 static int pcie_ep_work_thread(void *p)
@@ -4528,22 +4524,21 @@ static int tegra_pcie_dw_runtime_resume(struct device *dev)
 	/* configure this core for RP mode operation */
 	writel(APPL_DM_TYPE_RP, pcie->appl_base + APPL_DM_TYPE);
 
+	writel(0x0, pcie->appl_base + APPL_CFG_SLCG_OVERRIDE);
+
 	val = readl(pcie->appl_base + APPL_CTRL);
 	writel(val | APPL_CTRL_SYS_PRE_DET_STATE, pcie->appl_base + APPL_CTRL);
 
 	val = readl(pcie->appl_base + APPL_CFG_MISC);
+	val |= APPL_CFG_MISC_SLV_EP_MODE;
 	val |= (APPL_CFG_MISC_ARCACHE_VAL << APPL_CFG_MISC_ARCACHE_SHIFT);
 	writel(val, pcie->appl_base + APPL_CFG_MISC);
 
 	if (pcie->disable_clock_request) {
 		val = readl(pcie->appl_base + APPL_PINMUX);
-		val |= APPL_PINMUX_CLKREQ_OUT_OVRD_EN;
-		val |= APPL_PINMUX_CLKREQ_OUT_OVRD;
+		val |= APPL_PINMUX_CLKREQ_OVERRIDE_EN;
+		val &= ~APPL_PINMUX_CLKREQ_OVERRIDE;
 		writel(val, pcie->appl_base + APPL_PINMUX);
-
-		/* Disable ASPM-L1SS adv as there is no CLKREQ routing */
-		disable_aspm_l11(pcie); /* Disable L1.1 */
-		disable_aspm_l12(pcie); /* Disable L1.2 */
 	}
 
 	/* update iATU_DMA base address */
@@ -4551,6 +4546,12 @@ static int tegra_pcie_dw_runtime_resume(struct device *dev)
 	       pcie->appl_base + APPL_CFG_IATU_DMA_BASE_ADDR);
 
 	reset_control_deassert(pcie->core_rst);
+
+	if (pcie->disable_clock_request) {
+		/* Disable ASPM-L1SS adv as there is no CLKREQ routing */
+		disable_aspm_l11(pcie); /* Disable L1.1 */
+		disable_aspm_l12(pcie); /* Disable L1.2 */
+	}
 
 	/* program to use MPS of 256 whereever possible */
 	pcie_bus_config = PCIE_BUS_SAFE;
@@ -4715,18 +4716,15 @@ static int tegra_pcie_dw_resume_noirq(struct device *dev)
 	writel(val | APPL_CTRL_SYS_PRE_DET_STATE, pcie->appl_base + APPL_CTRL);
 
 	val = readl(pcie->appl_base + APPL_CFG_MISC);
+	val |= APPL_CFG_MISC_SLV_EP_MODE;
 	val |= (APPL_CFG_MISC_ARCACHE_VAL << APPL_CFG_MISC_ARCACHE_SHIFT);
 	writel(val, pcie->appl_base + APPL_CFG_MISC);
 
 	if (pcie->disable_clock_request) {
 		val = readl(pcie->appl_base + APPL_PINMUX);
-		val |= APPL_PINMUX_CLKREQ_OUT_OVRD_EN;
-		val |= APPL_PINMUX_CLKREQ_OUT_OVRD;
+		val |= APPL_PINMUX_CLKREQ_OVERRIDE_EN;
+		val &= ~APPL_PINMUX_CLKREQ_OVERRIDE;
 		writel(val, pcie->appl_base + APPL_PINMUX);
-
-		/* Disable ASPM-L1SS adv as there is no CLKREQ routing */
-		disable_aspm_l11(pcie); /* Disable L1.1 */
-		disable_aspm_l12(pcie); /* Disable L1.2 */
 	}
 
 	/* update iATU_DMA base address */
@@ -4734,6 +4732,12 @@ static int tegra_pcie_dw_resume_noirq(struct device *dev)
 	       pcie->appl_base + APPL_CFG_IATU_DMA_BASE_ADDR);
 
 	reset_control_deassert(pcie->core_rst);
+
+	if (pcie->disable_clock_request) {
+		/* Disable ASPM-L1SS adv as there is no CLKREQ routing */
+		disable_aspm_l11(pcie); /* Disable L1.1 */
+		disable_aspm_l12(pcie); /* Disable L1.2 */
+	}
 
 	tegra_pcie_dw_host_init(&pcie->pci.pp);
 

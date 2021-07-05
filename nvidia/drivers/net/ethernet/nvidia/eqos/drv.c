@@ -29,7 +29,7 @@
  * DAMAGE.
  * ========================================================================= */
 /*
- * Copyright (c) 2015-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2015-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -47,6 +47,7 @@
 #include <linux/gpio.h>
 #include <linux/time.h>
 #include <linux/platform/tegra/ptp-notifier.h>
+#include <linux/reset.h>
 #include "yheader.h"
 #include "yapphdr.h"
 #include "drv.h"
@@ -165,7 +166,9 @@ static void eqos_all_ch_napi_disable(struct eqos_prv_data *pdata)
 	pr_debug("-->eqos_napi_disable\n");
 
 	for (qinx = 0; qinx < EQOS_RX_QUEUE_CNT; qinx++) {
+		napi_synchronize(&pdata->rx_queue[qinx].napi);
 		napi_disable(&pdata->rx_queue[qinx].napi);
+		napi_synchronize(&pdata->tx_queue[qinx].napi);
 		napi_disable(&pdata->tx_queue[qinx].napi);
 	}
 
@@ -916,6 +919,7 @@ static void eqos_default_common_confs(struct eqos_prv_data *pdata)
 	pdata->use_lpi_tx_automate = true;
 	pdata->eee_active = 0;
 	pdata->one_nsec_accuracy = 1;
+	pdata->mac_addr_idx = 0;
 
 	pr_debug("<--eqos_default_common_confs\n");
 }
@@ -1105,6 +1109,7 @@ static int eqos_open(struct net_device *dev)
 	struct eqos_prv_data *pdata = netdev_priv(dev);
 	int ret = Y_SUCCESS;
 	struct desc_if_struct *desc_if = &pdata->desc_if;
+	struct hw_if_struct *hw_if = &pdata->hw_if;
 
 	pr_debug("-->eqos_open\n");
 
@@ -1114,13 +1119,22 @@ static int eqos_open(struct net_device *dev)
 	/* Reset the PHY */
 	if (gpio_is_valid(pdata->phy_reset_gpio)) {
 		gpio_set_value(pdata->phy_reset_gpio, 0);
-		usleep_range(10, 11);
+		usleep_range(pdata->phy_reset_duration,
+			     pdata->phy_reset_duration + 1);
 		gpio_set_value(pdata->phy_reset_gpio, 1);
+		msleep(pdata->phy_reset_post_delay);
 	}
 
 	ret = eqos_clock_enable(pdata);
 	if (ret)
 		return ret;
+
+	/* issue CAR reset to device */
+	ret = hw_if->car_reset(pdata);
+	if (ret < 0) {
+		dev_err(&dev->dev, "Failed to reset MAC\n");
+		return -ENODEV;
+	}
 
 	/* PHY initialisation */
 	ret = eqos_init_phy(dev);
@@ -1142,18 +1156,34 @@ static int eqos_open(struct net_device *dev)
 		goto err_out_desc_buf_alloc_failed;
 	}
 
+#ifdef EQOS_CONFIG_PTP
+	ret = eqos_ptp_init(pdata);
+	if (ret < 0) {
+		dev_err(&dev->dev, "failed to init PTP\n");
+		goto err_ptp;
+	}
+#endif
+
 	mutex_lock(&pdata->hw_change_lock);
 	eqos_start_dev(pdata);
 
 	pdata->hw_stopped = false;
 	mutex_unlock(&pdata->hw_change_lock);
 
+	if (!pdata->resv_skb || pdata->resv_dma == 0) {
+		dev_err(&dev->dev, "failed to reserve SKB\n");
+		ret = -ENOMEM;
+		goto err_ptp;
+	}
 	phy_start(pdata->phydev);
 
 	netif_tx_start_all_queues(pdata->dev);
 
 	pr_debug("<--%s()\n", __func__);
 	return Y_SUCCESS;
+
+ err_ptp:
+	desc_if->free_buff_and_desc(pdata);
 
  err_out_desc_buf_alloc_failed:
 	free_txrx_irqs(pdata);
@@ -1178,6 +1208,7 @@ static int eqos_open(struct net_device *dev)
 
 static int eqos_close(struct net_device *dev)
 {
+	int i;
 	struct eqos_prv_data *pdata = netdev_priv(dev);
 	struct desc_if_struct *desc_if = &pdata->desc_if;
 
@@ -1187,21 +1218,35 @@ static int eqos_close(struct net_device *dev)
 	if (pdata->phydev) {
 		phy_stop(pdata->phydev);
 		phy_disconnect(pdata->phydev);
-
-		if (gpio_is_valid(pdata->phy_reset_gpio))
+		if (gpio_is_valid(pdata->phy_reset_gpio) &&
+				 (pdata->mac_ver > EQOS_MAC_CORE_4_10))
 			gpio_set_value(pdata->phy_reset_gpio, 0);
-
 		pdata->phydev = NULL;
 	}
 
+#ifdef EQOS_CONFIG_PTP
+	eqos_ptp_remove(pdata);
+#endif
 	mutex_lock(&pdata->hw_change_lock);
 	eqos_stop_dev(pdata);
 
 	desc_if->free_buff_and_desc(pdata);
 	free_txrx_irqs(pdata);
 
+	/* Cancel hrtimer */
+	for (i = 0; i < pdata->num_chans; i++) {
+		if (atomic_read(&pdata->tx_queue[i].tx_usecs_timer_armed)
+				== EQOS_HRTIMER_ENABLE) {
+			hrtimer_cancel(&pdata->tx_queue[i].tx_usecs_timer);
+		}
+	}
+
 	pdata->hw_stopped = true;
 	mutex_unlock(&pdata->hw_change_lock);
+
+	/* Assert MAC RST gpio */
+	if (pdata->eqos_rst)
+		reset_control_assert(pdata->eqos_rst);
 
 	eqos_clock_disable(pdata);
 
@@ -1225,7 +1270,8 @@ static int eqos_close(struct net_device *dev)
 * \retval 0 if perfect filtering is seleted & 1 if hash
 * filtering is seleted.
 */
-static int eqos_prepare_mc_list(struct net_device *dev)
+static int eqos_prepare_mc_list(struct net_device *dev,
+				unsigned int *mac_addr_idx)
 {
 	struct eqos_prv_data *pdata = netdev_priv(dev);
 	struct hw_if_struct *hw_if = &(pdata->hw_if);
@@ -1334,12 +1380,15 @@ static int eqos_prepare_mc_list(struct net_device *dev)
 									  addr);
 
 			if ((pdata->ptp_cfg.use_tagged_ptp) &&
-			    (is_ptp_addr(ha->addr)))
+			    (is_ptp_addr(ha->addr)) &&
+			    pdata->dt_cfg.use_multi_q)
 				hw_if->config_ptp_channel(pdata->ptp_cfg.
 							  ptp_dma_ch_id, i);
 
 			i++;
 		}
+
+		*mac_addr_idx = i;
 	}
 
 	DBGPR_FILTER("<--eqos_prepare_mc_list\n");
@@ -1358,7 +1407,8 @@ static int eqos_prepare_mc_list(struct net_device *dev)
 * \retval 0 if perfect filtering is seleted  & 1 if hash
 * filtering is seleted.
 */
-static int eqos_prepare_uc_list(struct net_device *dev)
+static int eqos_prepare_uc_list(struct net_device *dev,
+				unsigned int *mac_addr_idx)
 {
 	struct eqos_prv_data *pdata = netdev_priv(dev);
 	struct hw_if_struct *hw_if = &(pdata->hw_if);
@@ -1457,6 +1507,8 @@ static int eqos_prepare_uc_list(struct net_device *dev)
 									  addr);
 			i++;
 		}
+
+		*mac_addr_idx = i;
 	}
 
 	DBGPR_FILTER("<--eqos_prepare_uc_list\n");
@@ -1483,6 +1535,7 @@ static void eqos_set_rx_mode(struct net_device *dev)
 	unsigned char hmc_mode = 0;
 	unsigned char pm_mode = 0;
 	unsigned char hpf_mode = 0;
+	unsigned int mac_addr_idx = 1;
 	int mode, i;
 
 	DBGPR_FILTER("-->eqos_set_rx_mode\n");
@@ -1512,7 +1565,7 @@ static void eqos_set_rx_mode(struct net_device *dev)
 			/* switch to PROMISCUOUS mode */
 			pr_mode = 1;
 		} else {
-			mode = eqos_prepare_mc_list(dev);
+			mode = eqos_prepare_mc_list(dev, &mac_addr_idx);
 			if (mode) {
 				/* Hash filtering for multicast */
 				hmc_mode = 1;
@@ -1530,7 +1583,7 @@ static void eqos_set_rx_mode(struct net_device *dev)
 		/* switch to PROMISCUOUS mode */
 		pr_mode = 1;
 	} else if (!netdev_uc_empty(dev)) {
-		mode = eqos_prepare_uc_list(dev);
+		mode = eqos_prepare_uc_list(dev, &mac_addr_idx);
 		if (mode) {
 			/* Hash filtering for unicast */
 			huc_mode = 1;
@@ -1540,6 +1593,20 @@ static void eqos_set_rx_mode(struct net_device *dev)
 			hpf_mode = 1;
 		}
 	}
+
+	/* reset filter MAC addresses which are deleted */
+	if (pdata->mac_addr_idx > mac_addr_idx) {
+		for (i = mac_addr_idx; i <= pdata->mac_addr_idx; i++) {
+			if (i < 32)
+				hw_if->update_mac_addr1_31_low_high_reg(i,
+						NULL);
+			else
+				hw_if->update_mac_addr32_127_low_high_reg(i,
+						NULL);
+		}
+	}
+
+	pdata->mac_addr_idx = mac_addr_idx;
 
 	hw_if->config_mac_pkt_filter_reg(pr_mode, huc_mode,
 					 hmc_mode, pm_mode, hpf_mode);
@@ -1583,6 +1650,7 @@ static int eqos_start_xmit(struct sk_buff *skb, struct net_device *dev)
 	INT retval = NETDEV_TX_OK;
 	int cnt = 0;
 	int tso;
+	unsigned long timer_val;
 
 	pr_debug("-->eqos_start_xmit: skb->len = %d, qinx = %u\n", skb->len, qinx);
 
@@ -1681,18 +1749,22 @@ static int eqos_start_xmit(struct sk_buff *skb, struct net_device *dev)
 	/* configure required descriptor fields for transmission */
 	hw_if->pre_xmit(pdata, qinx);
 
-	if (ptx_ring->dirty_tx == ptx_ring->cur_tx) {
-		ptx_ring->tx_full = true;
-		napi_schedule(&pdata->tx_queue[qinx].napi);
-		netif_stop_subqueue(dev, qinx);
-	}
-
 	/* Stop the queue if there might not be enough descriptors for another
-	 * packet (1 context desc + 1 header desc + fragment descs).
+	 * packet.
 	 */
-	if (eqos_tx_avail(ptx_ring) < MAX_SKB_FRAGS + 2) {
+	if (eqos_tx_avail(ptx_ring) <= EQOS_TX_DESC_THRESHOLD) {
 		netif_stop_subqueue(dev, qinx);
 		netdev_dbg(dev, "%s(): Stopping TX ring %d\n", __func__, qinx);
+	}
+
+	if (ptx_ring->use_tx_usecs == EQOS_COAELSCING_ENABLE &&
+	    atomic_read(&pdata->tx_queue[qinx].tx_usecs_timer_armed) ==
+	    EQOS_HRTIMER_DISABLE) {
+		atomic_set(&pdata->tx_queue[qinx].tx_usecs_timer_armed,
+			   EQOS_COAELSCING_ENABLE);
+		timer_val = ptx_ring->tx_usecs * NSEC_PER_USEC;
+		hrtimer_start(&pdata->tx_queue[qinx].tx_usecs_timer,
+			      (ktime_set(0, timer_val)), HRTIMER_MODE_REL);
 	}
 
 tx_netdev_return:
@@ -1957,7 +2029,6 @@ static int process_tx_completions(struct eqos_tx_queue *tx_queue, int budget)
 
 	pdata->xstats.tx_clean_n[qinx]++;
 	while (entry != ptx_ring->cur_tx && processed < budget) {
-cleanup:
 		ptx_desc = GET_TX_DESC_PTR(qinx, entry);
 		ptx_swcx_desc = GET_TX_BUF_PTR(qinx, entry);
 		tstamp_taken = 0;
@@ -2037,6 +2108,7 @@ cleanup:
 			pdata->xstats.q_tx_pkt_n[qinx]++;
 			pdata->xstats.tx_pkt_n++;
 			dev->stats.tx_packets++;
+			processed++;
 		}
 
 		/* CTXT descriptors set their len to -1, which is an unsigned
@@ -2064,16 +2136,8 @@ cleanup:
 	__netif_tx_lock(txq, smp_processor_id());
 	/* Update the dirty pointer and wake up the TX queue, if necessary. */
 	ptx_ring->dirty_tx = entry;
-
-	if ((ptx_ring->dirty_tx == ptx_ring->cur_tx) &&
-	    ptx_ring->tx_full) {
-		ptx_ring->tx_full = false;
-		__netif_tx_unlock(txq);
-		goto cleanup;
-	}
-
 	if (netif_tx_queue_stopped(txq) &&
-	    eqos_tx_avail(ptx_ring) >= MAX_SKB_FRAGS + 2) {
+	    eqos_tx_avail(ptx_ring) > EQOS_TX_DESC_THRESHOLD) {
 		netif_tx_wake_queue(txq);
 	}
 
@@ -2213,11 +2277,13 @@ static int process_rx_completions(struct eqos_rx_queue *rx_queue, int quota)
 	struct desc_if_struct *desc_if = &pdata->desc_if;
 	struct net_device *dev = pdata->dev;
 	int received = 0;
+	int received_resv = 0;
 	int ret;
 
 	pr_debug("-->%s(): qinx = %u, quota = %d\n", __func__, qinx, quota);
 
-	while (received < quota && received < RX_DESC_CNT) {
+	while (received < quota && received < RX_DESC_CNT &&
+	       received_resv < quota) {
 		struct rx_swcx_desc *prx_swcx_desc;
 		struct s_rx_desc *prx_desc, *context_desc;
 		struct sk_buff *skb;
@@ -2233,9 +2299,18 @@ static int process_rx_completions(struct eqos_rx_queue *rx_queue, int quota)
 
 		INCR_RX_DESC_INDEX(prx_ring->cur_rx, 1);
 
-		if (WARN_ON_ONCE(!prx_swcx_desc->skb))
-			/* RX ring is in an inconsistent state */
-			break;
+		if (unlikely(prx_swcx_desc->skb == pdata->resv_skb)) {
+			pr_debug("%s(): Reserved SKB used\n", __func__);
+			prx_swcx_desc->skb = NULL;
+			prx_swcx_desc->dma = 0;
+			/* Reservered skb used */
+			received_resv++;
+			/* This is unlikely case so try to
+			 *  get memory whenever we hit this loop
+			 */
+			desc_if->realloc_skb(pdata, qinx);
+			continue;
+		}
 
 #ifdef EQOS_ENABLE_RX_DESC_DUMP
 		dump_rx_desc(qinx, prx_desc, entry);
@@ -2277,6 +2352,7 @@ static int process_rx_completions(struct eqos_rx_queue *rx_queue, int quota)
 			eqos_receive_skb(pdata, dev, skb, qinx);
 		} else {
 			eqos_update_rx_errors(dev, status);
+			dev_kfree_skb_any(prx_swcx_desc->skb);
 		}
 
 		received++;
@@ -2330,15 +2406,34 @@ int eqos_napi_poll_rx(struct napi_struct *napi, int budget)
 	return received;
 }
 
+static inline int eqos_txring_empty(struct tx_ring *ptx_ring)
+{
+	return (ptx_ring->dirty_tx == ptx_ring->cur_tx);
+}
+
 int eqos_napi_poll_tx(struct napi_struct *napi, int budget)
 {
 	struct eqos_tx_queue *tx_queue =
 	    container_of(napi, struct eqos_tx_queue, napi);
 	struct eqos_prv_data *pdata = tx_queue->pdata;
 	int qinx = tx_queue->chan_num;
+	struct tx_ring *ptx_ring = GET_TX_WRAPPER_DESC(qinx);
 	int processed;
+	unsigned long timer_val;
 
 	processed = process_tx_completions(tx_queue, budget);
+	/* re-arm the timer if tx ring is not empty */
+	if ((!eqos_txring_empty(ptx_ring)) &&
+	    (ptx_ring->use_tx_usecs == EQOS_COAELSCING_ENABLE) &&
+	     (atomic_read(&tx_queue->tx_usecs_timer_armed) ==
+	     EQOS_HRTIMER_DISABLE)) {
+		timer_val = ptx_ring->tx_usecs * NSEC_PER_USEC;
+		atomic_set(&tx_queue->tx_usecs_timer_armed,
+			   EQOS_HRTIMER_ENABLE);
+		hrtimer_start(&pdata->tx_queue[qinx].tx_usecs_timer,
+			      (ktime_set(0, timer_val)), HRTIMER_MODE_REL);
+	}
+
 	if (processed < budget) {
 		napi_complete(napi);
 		eqos_enable_chan_tx_interrupt(pdata, qinx);
@@ -5041,13 +5136,16 @@ void eqos_init_rx_coalesce(struct eqos_prv_data *pdata)
 
 	pr_debug("-->eqos_init_rx_coalesce\n");
 
+	/* If RX coalescing parameters are not set in DT, set to default */
 	for (i = 0; i < EQOS_RX_QUEUE_CNT; i++) {
 		prx_ring = GET_RX_WRAPPER_DESC(i);
-
-		prx_ring->use_riwt = 1;
-		prx_ring->rx_coal_frames = EQOS_RX_MAX_FRAMES;
-		prx_ring->rx_riwt =
-		    eqos_usec2riwt(EQOS_OPTIMAL_DMA_RIWT_USEC, pdata);
+		if (prx_ring->use_riwt == EQOS_COAELSCING_DISABLE) {
+			prx_ring->use_riwt = EQOS_COAELSCING_DISABLE;
+			prx_ring->rx_riwt =
+				eqos_usec2riwt(EQOS_OPTIMAL_DMA_RIWT_USEC,
+					       pdata);
+			prx_ring->rx_coal_frames = EQOS_RX_MAX_FRAMES;
+		}
 	}
 
 	pr_debug("<--eqos_init_rx_coalesce\n");
@@ -5145,7 +5243,7 @@ void eqos_mmc_read(struct eqos_mmc_counters *mmc)
 	    eqos_reg_read(MMC_RXBROADCASTPACKETS_G_OFFSET);
 	mmc->mmc_rx_multicastframe_g +=
 	    eqos_reg_read(MMC_RXMULTICASTPACKETS_G_OFFSET);
-	mmc->mmc_rx_crc_errror += eqos_reg_read(MMC_RXCRCERROR_OFFSET);
+	mmc->mmc_rx_crc_error += eqos_reg_read(MMC_RXCRCERROR_OFFSET);
 	mmc->mmc_rx_align_error += eqos_reg_read(MMC_RXALIGNMENTERROR_OFFSET);
 	mmc->mmc_rx_run_error += eqos_reg_read(MMC_RXRUNTERROR_OFFSET);
 	mmc->mmc_rx_jabber_error += eqos_reg_read(MMC_RXJABBERERROR_OFFSET);
@@ -5328,8 +5426,6 @@ void eqos_start_dev(struct eqos_prv_data *pdata)
 
 	pr_debug("-->%s()\n", __func__);
 
-	/* issue CAR reset to device */
-	hw_if->car_reset(pdata);
 	hw_if->pad_calibrate(pdata);
 
 	/* default configuration */

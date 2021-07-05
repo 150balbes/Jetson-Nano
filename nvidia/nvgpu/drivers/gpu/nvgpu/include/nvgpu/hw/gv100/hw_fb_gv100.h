@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -243,6 +243,26 @@ static inline u32 fb_hsmmu_pri_mmu_ctrl_atomic_capability_mode_power_v(void)
 static inline u32 fb_hsmmu_pri_mmu_ctrl_atomic_capability_mode_power_f(void)
 {
 	return 0x3000000U;
+}
+static inline u32 fb_hsmmu_pri_mmu_debug_ctrl_r(void)
+{
+	return 0x001facc4U;
+}
+static inline u32 fb_hsmmu_pri_mmu_debug_ctrl_debug_v(u32 r)
+{
+	return (r >> 16U) & 0x1U;
+}
+static inline u32 fb_hsmmu_pri_mmu_debug_ctrl_debug_m(void)
+{
+	return 0x1U << 16U;
+}
+static inline u32 fb_hsmmu_pri_mmu_debug_ctrl_debug_enabled_f(void)
+{
+	return 0x10000U;
+}
+static inline u32 fb_hsmmu_pri_mmu_debug_ctrl_debug_disabled_f(void)
+{
+	return 0x0U;
 }
 static inline u32 fb_hshub_num_active_ltcs_r(void)
 {
@@ -676,9 +696,17 @@ static inline u32 fb_mmu_debug_ctrl_debug_enabled_v(void)
 {
 	return 0x00000001U;
 }
+static inline u32 fb_mmu_debug_ctrl_debug_enabled_f(void)
+{
+	return 0x10000U;
+}
 static inline u32 fb_mmu_debug_ctrl_debug_disabled_v(void)
 {
 	return 0x00000000U;
+}
+static inline u32 fb_mmu_debug_ctrl_debug_disabled_f(void)
+{
+	return 0x0U;
 }
 static inline u32 fb_niso_cfg1_r(void)
 {

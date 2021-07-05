@@ -1,7 +1,7 @@
 /*
  * crc.c: CRC functions for tegradc EXT device
  *
- * Copyright (c) 2017, NVIDIA CORPORATION, All rights reserved.
+ * Copyright (c) 2017-2019, NVIDIA CORPORATION, All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -25,7 +25,7 @@
 #include "dc_priv_defs.h"
 #include "dc_priv.h"
 #include "dc_reg.h"
-#include <video/tegra_dc_ext.h>
+#include <uapi/video/tegra_dc_ext.h>
 
 #define TEGRA_DC_FLIP_BUF_CAPACITY 1024 /* in units of number of elements */
 #define TEGRA_DC_CRC_BUF_CAPACITY 1024 /* in units of number of elements */

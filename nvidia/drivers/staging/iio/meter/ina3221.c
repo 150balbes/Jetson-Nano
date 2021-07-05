@@ -1240,74 +1240,74 @@ static ssize_t ina3221_set_channel(struct device *dev,
 	return -EINVAL;
 }
 
-static IIO_DEVICE_ATTR(rail_name_0, S_IRUGO | S_IWUSR,
+static IIO_DEVICE_ATTR(rail_name_0, S_IRUSR | S_IWUSR,
 		ina3221_show_channel, ina3221_set_channel,
 		PACK_MODE_CHAN(CHANNEL_NAME, 0));
-static IIO_DEVICE_ATTR(rail_name_1, S_IRUGO | S_IWUSR,
+static IIO_DEVICE_ATTR(rail_name_1, S_IRUSR | S_IWUSR,
 		ina3221_show_channel, ina3221_set_channel,
 		PACK_MODE_CHAN(CHANNEL_NAME, 1));
-static IIO_DEVICE_ATTR(rail_name_2, S_IRUGO | S_IWUSR,
+static IIO_DEVICE_ATTR(rail_name_2, S_IRUSR | S_IWUSR,
 		ina3221_show_channel, ina3221_set_channel,
 		PACK_MODE_CHAN(CHANNEL_NAME, 2));
 
-static IIO_DEVICE_ATTR(crit_power_limit_0, S_IRUGO | S_IWUSR,
+static IIO_DEVICE_ATTR(crit_power_limit_0, S_IRUSR | S_IWUSR,
 		ina3221_show_channel, ina3221_set_channel,
 		PACK_MODE_CHAN(CRIT_POWER_LIMIT, 0));
-static IIO_DEVICE_ATTR(crit_power_limit_1, S_IRUGO | S_IWUSR,
+static IIO_DEVICE_ATTR(crit_power_limit_1, S_IRUSR | S_IWUSR,
 		ina3221_show_channel, ina3221_set_channel,
 		PACK_MODE_CHAN(CRIT_POWER_LIMIT, 1));
-static IIO_DEVICE_ATTR(crit_power_limit_2, S_IRUGO | S_IWUSR,
+static IIO_DEVICE_ATTR(crit_power_limit_2, S_IRUSR | S_IWUSR,
 		ina3221_show_channel, ina3221_set_channel,
 		PACK_MODE_CHAN(CRIT_POWER_LIMIT, 2));
 
-static IIO_DEVICE_ATTR(crit_current_limit_0, S_IRUGO | S_IWUSR,
+static IIO_DEVICE_ATTR(crit_current_limit_0, S_IRUSR | S_IWUSR,
 		ina3221_show_channel, ina3221_set_channel,
 		PACK_MODE_CHAN(CRIT_CURRENT_LIMIT, 0));
-static IIO_DEVICE_ATTR(crit_current_limit_1, S_IRUGO | S_IWUSR,
+static IIO_DEVICE_ATTR(crit_current_limit_1, S_IRUSR | S_IWUSR,
 		ina3221_show_channel, ina3221_set_channel,
 		PACK_MODE_CHAN(CRIT_CURRENT_LIMIT, 1));
-static IIO_DEVICE_ATTR(crit_current_limit_2, S_IRUGO | S_IWUSR,
+static IIO_DEVICE_ATTR(crit_current_limit_2, S_IRUSR | S_IWUSR,
 		ina3221_show_channel, ina3221_set_channel,
 		PACK_MODE_CHAN(CRIT_CURRENT_LIMIT, 2));
 
-static IIO_DEVICE_ATTR(warn_current_limit_0, S_IRUGO | S_IWUSR,
+static IIO_DEVICE_ATTR(warn_current_limit_0, S_IRUSR | S_IWUSR,
 		ina3221_show_channel, ina3221_set_channel,
 		PACK_MODE_CHAN(WARN_CURRENT_LIMIT, 0));
-static IIO_DEVICE_ATTR(warn_current_limit_1, S_IRUGO | S_IWUSR,
+static IIO_DEVICE_ATTR(warn_current_limit_1, S_IRUSR | S_IWUSR,
 		ina3221_show_channel, ina3221_set_channel,
 		PACK_MODE_CHAN(WARN_CURRENT_LIMIT, 1));
-static IIO_DEVICE_ATTR(warn_current_limit_2, S_IRUGO | S_IWUSR,
+static IIO_DEVICE_ATTR(warn_current_limit_2, S_IRUSR | S_IWUSR,
 		ina3221_show_channel, ina3221_set_channel,
 		PACK_MODE_CHAN(WARN_CURRENT_LIMIT, 2));
 
-static IIO_DEVICE_ATTR(ui_input_0, S_IRUGO | S_IWUSR,
+static IIO_DEVICE_ATTR(ui_input_0, S_IRUSR | S_IWUSR,
 		ina3221_show_channel, ina3221_set_channel,
 		PACK_MODE_CHAN(VBUS_VOLTAGE_CURRENT, 0));
-static IIO_DEVICE_ATTR(ui_input_1, S_IRUGO | S_IWUSR,
+static IIO_DEVICE_ATTR(ui_input_1, S_IRUSR | S_IWUSR,
 		ina3221_show_channel, ina3221_set_channel,
 		PACK_MODE_CHAN(VBUS_VOLTAGE_CURRENT, 1));
-static IIO_DEVICE_ATTR(ui_input_2, S_IRUGO | S_IWUSR,
+static IIO_DEVICE_ATTR(ui_input_2, S_IRUSR | S_IWUSR,
 		ina3221_show_channel, ina3221_set_channel,
 		PACK_MODE_CHAN(VBUS_VOLTAGE_CURRENT, 2));
 
-static IIO_DEVICE_ATTR(running_mode, S_IRUGO | S_IWUSR,
+static IIO_DEVICE_ATTR(running_mode, S_IRUSR | S_IWUSR,
 		ina3221_show_channel, ina3221_set_channel,
 		PACK_MODE_CHAN(RUNNING_MODE, 0));
 
-static IIO_DEVICE_ATTR(polling_delay_0, S_IRUGO | S_IWUSR,
+static IIO_DEVICE_ATTR(polling_delay_0, S_IRUSR | S_IWUSR,
 		ina3221_show_channel, ina3221_set_channel,
 		PACK_MODE_CHAN(POLL_DELAY, 0));
-static IIO_DEVICE_ATTR(polling_delay_1, S_IRUGO | S_IWUSR,
+static IIO_DEVICE_ATTR(polling_delay_1, S_IRUSR | S_IWUSR,
 		ina3221_show_channel, ina3221_set_channel,
 		PACK_MODE_CHAN(POLL_DELAY, 1));
-static IIO_DEVICE_ATTR(polling_delay_2, S_IRUGO | S_IWUSR,
+static IIO_DEVICE_ATTR(polling_delay_2, S_IRUSR | S_IWUSR,
 		ina3221_show_channel, ina3221_set_channel,
 		PACK_MODE_CHAN(POLL_DELAY, 2));
 
-static IIO_DEVICE_ATTR(in_current_sum_input, S_IRUGO | S_IWUSR,
+static IIO_DEVICE_ATTR(in_current_sum_input, S_IRUSR | S_IWUSR,
 		ina3221_show_channel, ina3221_set_channel,
 		PACK_MODE_CHAN(INPUT_CURRENT_SUM, 0));
-static IIO_DEVICE_ATTR(crit_current_limit_sum, S_IRUGO | S_IWUSR,
+static IIO_DEVICE_ATTR(crit_current_limit_sum, S_IRUSR | S_IWUSR,
 		ina3221_show_channel, ina3221_set_channel,
 		PACK_MODE_CHAN(CRIT_CURRENT_SUM_LIMIT, 0));
 

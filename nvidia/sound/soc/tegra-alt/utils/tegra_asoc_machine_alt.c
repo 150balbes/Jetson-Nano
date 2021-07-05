@@ -1,7 +1,7 @@
 /*
  * tegra_asoc_machine_alt.c - Tegra xbar dai link for machine drivers
  *
- * Copyright (c) 2014-2019 NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2014-2020 NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -30,7 +30,6 @@
 
 static struct snd_soc_dai_link *tegra_asoc_machine_links;
 static struct snd_soc_codec_conf *tegra_asoc_codec_conf;
-static unsigned int *bclk_ratio;
 static unsigned int *tx_mask;
 static unsigned int *rx_mask;
 static unsigned int num_dai_links;
@@ -81,8 +80,7 @@ static const char * const bit_format[] = {
 	"dsd_u8", "dsd_u16_le",
 };
 
-static struct snd_soc_dai_link
-	tegra210_xbar_dai_links[TEGRA210_XBAR_DAI_LINKS] = {
+struct snd_soc_dai_link tegra210_xbar_dai_links[TEGRA210_XBAR_DAI_LINKS] = {
 	[TEGRA210_DAI_LINK_ADMAIF1] = {
 		.name = "ADMAIF1 CIF",
 		.stream_name = "ADMAIF1 CIF",
@@ -1007,9 +1005,9 @@ static struct snd_soc_dai_link
 	},
 #endif
 };
+EXPORT_SYMBOL_GPL(tegra210_xbar_dai_links);
 
-static struct snd_soc_codec_conf
-	tegra210_xbar_codec_conf[TEGRA210_XBAR_CODEC_CONF] = {
+struct snd_soc_codec_conf tegra210_xbar_codec_conf[TEGRA210_XBAR_CODEC_CONF] = {
 	[TEGRA210_CODEC_AMX1_CONF] = {
 		.dev_name = "tegra210-amx.0",
 		.name_prefix = "AMX1",
@@ -1115,9 +1113,9 @@ static struct snd_soc_codec_conf
 		.name_prefix = "DMIC3",
 	},
 };
+EXPORT_SYMBOL_GPL(tegra210_xbar_codec_conf);
 
-static struct snd_soc_dai_link
-	tegra186_xbar_dai_links[TEGRA186_XBAR_DAI_LINKS] = {
+struct snd_soc_dai_link tegra186_xbar_dai_links[TEGRA186_XBAR_DAI_LINKS] = {
 	[TEGRA186_DAI_LINK_ADMAIF1] = {
 		.name = "ADMAIF1 CIF",
 		.stream_name = "ADMAIF1 CIF",
@@ -2022,7 +2020,7 @@ static struct snd_soc_dai_link
 		.name = "MIXER1 RX7",
 		.stream_name = "MIXER1 RX",
 		.cpu_dai_name = "MIXER1-7",
-		.codec_dai_name = "RX6",
+		.codec_dai_name = "RX7",
 		.cpu_name = "tegra210-axbar",
 		.codec_name = "tegra210-mixer",
 		.params = &default_link_params,
@@ -2756,9 +2754,9 @@ static struct snd_soc_dai_link
 		.ignore_suspend = 1,
 	},
 };
+EXPORT_SYMBOL_GPL(tegra186_xbar_dai_links);
 
-static struct snd_soc_codec_conf
-	tegra186_xbar_codec_conf[TEGRA186_XBAR_CODEC_CONF] = {
+struct snd_soc_codec_conf tegra186_xbar_codec_conf[TEGRA186_XBAR_CODEC_CONF] = {
 	[TEGRA186_CODEC_AMX1_CONF] = {
 		.dev_name = "tegra210-amx.0",
 		.name_prefix = "AMX1",
@@ -2896,46 +2894,23 @@ static struct snd_soc_codec_conf
 		.name_prefix = "ASRC1",
 	},
 };
-
-void tegra_machine_set_machine_links(
-	struct snd_soc_dai_link *links)
-{
-	tegra_asoc_machine_links = links;
-}
-EXPORT_SYMBOL_GPL(tegra_machine_set_machine_links);
-
-struct snd_soc_dai_link *tegra_machine_get_machine_links(void)
-{
-	return tegra_asoc_machine_links;
-}
-EXPORT_SYMBOL_GPL(tegra_machine_get_machine_links);
-
-void tegra_machine_set_machine_codec_conf(
-	struct snd_soc_codec_conf *codec_conf)
-{
-	tegra_asoc_codec_conf = codec_conf;
-}
-EXPORT_SYMBOL_GPL(tegra_machine_set_machine_codec_conf);
-
-struct snd_soc_codec_conf *tegra_machine_get_machine_codec_conf(void)
-{
-	return tegra_asoc_codec_conf;
-}
-EXPORT_SYMBOL_GPL(tegra_machine_get_machine_codec_conf);
+EXPORT_SYMBOL_GPL(tegra186_xbar_codec_conf);
 
 struct snd_soc_dai_link *tegra_machine_get_dai_link(void)
 {
-	struct snd_soc_dai_link *link;
+	struct snd_soc_dai_link *link = NULL;
 	unsigned int size = 0;
+
+	if (tegra_asoc_machine_links)
+		return tegra_asoc_machine_links;
 
 	if (of_machine_is_compatible("nvidia,tegra210")  ||
 		of_machine_is_compatible("nvidia,tegra210b01")) {
 		link = tegra210_xbar_dai_links;
 		size = TEGRA210_XBAR_DAI_LINKS;
+	} else {
+		return NULL;
 	}
-
-	if (tegra_asoc_machine_links)
-		return tegra_asoc_machine_links;
 
 	num_dai_links = size;
 
@@ -2953,7 +2928,6 @@ void tegra_machine_remove_dai_link(void)
 {
 	kfree(tegra_asoc_machine_links);
 	tegra_asoc_machine_links = NULL;
-	bclk_ratio = NULL;
 	tx_mask = NULL;
 	rx_mask = NULL;
 }
@@ -3037,17 +3011,19 @@ EXPORT_SYMBOL_GPL(tegra_machine_set_dai_fmt);
 
 struct snd_soc_codec_conf *tegra_machine_get_codec_conf(void)
 {
-	struct snd_soc_codec_conf *conf;
+	struct snd_soc_codec_conf *conf = NULL;
 	unsigned int size = 0;
+
+	if (tegra_asoc_codec_conf)
+		return tegra_asoc_codec_conf;
 
 	if (of_machine_is_compatible("nvidia,tegra210")  ||
 		of_machine_is_compatible("nvidia,tegra210b01")) {
 		conf = tegra210_xbar_codec_conf;
 		size = TEGRA210_XBAR_CODEC_CONF;
+	} else {
+		return NULL;
 	}
-
-	if (tegra_asoc_codec_conf)
-		return tegra_asoc_codec_conf;
 
 	tegra_asoc_codec_conf = kzalloc(size *
 		sizeof(struct snd_soc_codec_conf), GFP_KERNEL);
@@ -3149,15 +3125,6 @@ struct snd_soc_dai_link *tegra_machine_new_codec_links(
 		goto err;
 	}
 
-	if (bclk_ratio == NULL) {
-		bclk_ratio = devm_kzalloc(&pdev->dev, num_codec_links *
-			sizeof(unsigned int), GFP_KERNEL);
-		if (!bclk_ratio) {
-			dev_err(&pdev->dev, "Can't allocate bclk_ratio\n");
-			goto err;
-		}
-	}
-
 	if (rx_mask == NULL) {
 		rx_mask = devm_kzalloc(&pdev->dev, num_codec_links *
 			sizeof(unsigned int), GFP_KERNEL);
@@ -3221,9 +3188,7 @@ struct snd_soc_dai_link *tegra_machine_new_codec_links(
 			/* special case to handle specifically for dspk, connected to
 			two mono amplifiers */
 			if (!strcmp(tegra_codec_links[i].name, "dspk-playback-r"))
-				tegra_codec_links[i].cpu_dai_name = "DAP Right";
-			else if (!strcmp(tegra_codec_links[i].name, "dspk-playback-l"))
-				tegra_codec_links[i].cpu_dai_name = "DAP Left";
+				tegra_codec_links[i].cpu_dai_name = "DAP2";
 			else
 				tegra_codec_links[i].cpu_dai_name = "DAP";
 
@@ -3270,9 +3235,6 @@ struct snd_soc_dai_link *tegra_machine_new_codec_links(
 			tegra_codec_links[i].params = params;
 
 			of_property_read_u32(subnp,
-				"bclk_ratio", (u32 *)&bclk_ratio[i]);
-
-			of_property_read_u32(subnp,
 				"rx-mask", (u32 *)&rx_mask[i]);
 			of_property_read_u32(subnp,
 				"tx-mask", (u32 *)&tx_mask[i]);
@@ -3289,9 +3251,7 @@ struct snd_soc_dai_link *tegra_machine_new_codec_links(
 			}
 
 			if (!strcmp(tegra_codec_links[i].name, "dspk-playback-r"))
-				tegra_codec_links[j].codec_dai_name = "CIF Right";
-			else if (!strcmp(tegra_codec_links[i].name, "dspk-playback-l"))
-				tegra_codec_links[j].codec_dai_name = "CIF Left";
+				tegra_codec_links[j].codec_dai_name = "CIF2";
 			else
 				tegra_codec_links[j].codec_dai_name = "CIF";
 
@@ -3411,26 +3371,6 @@ err:
 }
 EXPORT_SYMBOL_GPL(tegra_machine_get_codec_dai_link_idx);
 
-int tegra_machine_get_bclk_ratio(struct snd_soc_pcm_runtime *rtd,
-				 unsigned int *ratio)
-{
-	struct snd_soc_dai_link *codec_dai_link = rtd->dai_link;
-	char *codec_name = (char *)codec_dai_link->name;
-	unsigned int idx = tegra_machine_get_codec_dai_link_idx(codec_name);
-
-	if (idx == -EINVAL || !ratio || !bclk_ratio)
-		return -EINVAL;
-
-	idx = idx - ((of_machine_is_compatible("nvidia,tegra210") ||
-			of_machine_is_compatible("nvidia,tegra210b01")) ?
-			TEGRA210_XBAR_DAI_LINKS : 0);
-
-	*ratio = bclk_ratio[idx];
-
-	return 0;
-}
-EXPORT_SYMBOL_GPL(tegra_machine_get_bclk_ratio);
-
 unsigned int tegra_machine_get_rx_mask(
 	struct snd_soc_pcm_runtime *rtd)
 {
@@ -3481,40 +3421,6 @@ err:
 }
 EXPORT_SYMBOL_GPL(tegra_machine_get_tx_mask);
 
-void tegra_machine_set_num_dai_links(unsigned int val)
-{
-	num_dai_links = val;
-}
-EXPORT_SYMBOL_GPL(tegra_machine_set_num_dai_links);
-
-unsigned int tegra_machine_get_num_dai_links(void)
-{
-	return num_dai_links;
-}
-EXPORT_SYMBOL_GPL(tegra_machine_get_num_dai_links);
-
-unsigned int *tegra_machine_get_bclk_ratio_array(void)
-{
-	return bclk_ratio;
-}
-EXPORT_SYMBOL_GPL(tegra_machine_get_bclk_ratio_array);
-
-unsigned int *tegra_machine_get_rx_mask_array(void)
-{
-	return rx_mask;
-}
-EXPORT_SYMBOL_GPL(tegra_machine_get_rx_mask_array);
-unsigned int *tegra_machine_get_tx_mask_array(void)
-{
-	return tx_mask;
-}
-EXPORT_SYMBOL_GPL(tegra_machine_get_tx_mask_array);
-
-static int tegra_machine_get_num_links_t18x(void)
-{
-	return num_links;
-}
-
 #if IS_ENABLED(CONFIG_SND_SOC_TEGRA210_ADSP_ALT)
 void tegra_machine_remove_adsp_links_t18x(void)
 {
@@ -3532,14 +3438,14 @@ EXPORT_SYMBOL_GPL(tegra_machine_remove_adsp_links_t18x);
 struct snd_soc_dai_link *tegra_machine_get_dai_link_t18x(void)
 {
 	struct snd_soc_dai_link *link = tegra186_xbar_dai_links;
-	unsigned int size = tegra_machine_get_num_links_t18x();
+	unsigned int size = num_links;
 	struct snd_soc_dai_link *tegra_asoc_machine_links_t18x =
-		tegra_machine_get_machine_links();
+		tegra_asoc_machine_links;
 
 	if (tegra_asoc_machine_links_t18x)
 		return tegra_asoc_machine_links_t18x;
 
-	tegra_machine_set_num_dai_links(size);
+	num_dai_links = size;
 
 	tegra_asoc_machine_links_t18x = kzalloc(size *
 		sizeof(struct snd_soc_dai_link), GFP_KERNEL);
@@ -3547,7 +3453,7 @@ struct snd_soc_dai_link *tegra_machine_get_dai_link_t18x(void)
 	memcpy(tegra_asoc_machine_links_t18x, link,
 		size * sizeof(struct snd_soc_dai_link));
 
-	tegra_machine_set_machine_links(tegra_asoc_machine_links_t18x);
+	tegra_asoc_machine_links = tegra_asoc_machine_links_t18x;
 
 	return tegra_asoc_machine_links_t18x;
 }
@@ -3556,15 +3462,15 @@ EXPORT_SYMBOL_GPL(tegra_machine_get_dai_link_t18x);
 int tegra_machine_append_dai_link_t18x(struct snd_soc_dai_link *link,
 		unsigned int link_size)
 {
-	unsigned int size1 = tegra_machine_get_num_dai_links();
+	unsigned int size1 = num_dai_links;
 	unsigned int size2 = link_size;
 	struct snd_soc_dai_link *tegra_asoc_machine_links_t18x =
-		tegra_machine_get_machine_links();
+		tegra_asoc_machine_links;
 
 	if (!tegra_asoc_machine_links_t18x) {
 		if (link) {
-			tegra_machine_set_machine_links(link);
-			tegra_machine_set_num_dai_links(size2);
+			tegra_asoc_machine_links = link;
+			num_dai_links = size2;
 			return size2;
 		} else {
 			return 0;
@@ -3575,14 +3481,14 @@ int tegra_machine_append_dai_link_t18x(struct snd_soc_dai_link *link,
 				(struct snd_soc_dai_link *) krealloc(
 				tegra_asoc_machine_links_t18x, (size1 + size2) *
 				sizeof(struct snd_soc_dai_link), GFP_KERNEL);
-			tegra_machine_set_machine_links(
-				tegra_asoc_machine_links_t18x);
+			tegra_asoc_machine_links =
+				tegra_asoc_machine_links_t18x;
 			memcpy(&tegra_asoc_machine_links_t18x[size1], link,
 				size2 * sizeof(struct snd_soc_dai_link));
-			tegra_machine_set_num_dai_links(size1+size2);
+			num_dai_links = size1 + size2;
 			return size1+size2;
 		} else {
-			tegra_machine_set_num_dai_links(size1);
+			num_dai_links = size1;
 			return size1;
 		}
 	}
@@ -3593,7 +3499,7 @@ struct snd_soc_codec_conf *tegra_machine_get_codec_conf_t18x(void)
 {
 	struct snd_soc_codec_conf *conf = tegra186_xbar_codec_conf;
 	struct snd_soc_codec_conf *tegra_asoc_codec_conf_t18x =
-		tegra_machine_get_machine_codec_conf();
+		tegra_asoc_codec_conf;
 	unsigned int size = TEGRA186_XBAR_CODEC_CONF;
 
 	if (tegra_asoc_codec_conf_t18x)
@@ -3605,7 +3511,7 @@ struct snd_soc_codec_conf *tegra_machine_get_codec_conf_t18x(void)
 	memcpy(tegra_asoc_codec_conf_t18x, conf,
 		size * sizeof(struct snd_soc_codec_conf));
 
-	tegra_machine_set_machine_codec_conf(tegra_asoc_codec_conf_t18x);
+	tegra_asoc_codec_conf = tegra_asoc_codec_conf_t18x;
 
 	return tegra_asoc_codec_conf_t18x;
 }
@@ -3617,11 +3523,11 @@ int tegra_machine_append_codec_conf_t18x(struct snd_soc_codec_conf *conf,
 	unsigned int size1 = TEGRA186_XBAR_CODEC_CONF;
 	unsigned int size2 = conf_size;
 	struct snd_soc_codec_conf *tegra_asoc_codec_conf_t18x =
-		tegra_machine_get_machine_codec_conf();
+		tegra_asoc_codec_conf;
 
 	if (!tegra_asoc_codec_conf_t18x) {
 		if (conf) {
-			tegra_machine_set_machine_codec_conf(conf);
+			tegra_asoc_codec_conf = conf;
 			return size2;
 		} else {
 			return 0;
@@ -3632,8 +3538,7 @@ int tegra_machine_append_codec_conf_t18x(struct snd_soc_codec_conf *conf,
 				(struct snd_soc_codec_conf *) krealloc(
 				tegra_asoc_codec_conf_t18x, (size1 + size2) *
 				sizeof(struct snd_soc_codec_conf), GFP_KERNEL);
-			tegra_machine_set_machine_codec_conf(
-				tegra_asoc_codec_conf_t18x);
+			tegra_asoc_codec_conf = tegra_asoc_codec_conf_t18x;
 			memcpy(&tegra_asoc_codec_conf_t18x[size1], conf,
 				size2 * sizeof(struct snd_soc_codec_conf));
 			return size1+size2;
@@ -3645,14 +3550,14 @@ EXPORT_SYMBOL_GPL(tegra_machine_append_codec_conf_t18x);
 
 unsigned int tegra_machine_get_codec_dai_link_idx_t18x(const char *codec_name)
 {
-	unsigned int idx = tegra_machine_get_num_links_t18x();
+	unsigned int idx = num_links;
 	struct snd_soc_dai_link *tegra_asoc_machine_links_t18x =
-		tegra_machine_get_machine_links();
+		tegra_asoc_machine_links;
 
-	if (tegra_machine_get_num_dai_links() <= idx)
+	if (num_dai_links <= idx)
 		goto err;
 
-	while (idx < tegra_machine_get_num_dai_links()) {
+	while (idx < num_dai_links) {
 		if (tegra_asoc_machine_links_t18x[idx].name)
 			if (!strcmp(tegra_asoc_machine_links_t18x[idx].name,
 				codec_name))
@@ -3665,27 +3570,6 @@ err:
 }
 EXPORT_SYMBOL_GPL(tegra_machine_get_codec_dai_link_idx_t18x);
 
-int tegra_machine_get_bclk_ratio_t18x(struct snd_soc_pcm_runtime *rtd,
-				      unsigned int *ratio)
-{
-	struct snd_soc_dai_link *codec_dai_link = rtd->dai_link;
-	char *codec_name = (char *)codec_dai_link->name;
-	unsigned int idx =
-		tegra_machine_get_codec_dai_link_idx_t18x(codec_name);
-	unsigned int *bclk_ratio_t18x =
-		tegra_machine_get_bclk_ratio_array();
-
-	if (idx == -EINVAL || !ratio || !bclk_ratio_t18x)
-		return -EINVAL;
-
-	idx = idx - tegra_machine_get_num_links_t18x();
-
-	*ratio = bclk_ratio_t18x[idx];
-
-	return 0;
-}
-EXPORT_SYMBOL_GPL(tegra_machine_get_bclk_ratio_t18x);
-
 unsigned int tegra_machine_get_rx_mask_t18x(
 	struct snd_soc_pcm_runtime *rtd)
 {
@@ -3693,15 +3577,15 @@ unsigned int tegra_machine_get_rx_mask_t18x(
 	char *codec_name = (char *)codec_dai_link->name;
 	unsigned int idx =
 		tegra_machine_get_codec_dai_link_idx_t18x(codec_name);
-	unsigned int *rx_mask_t18x =
-		tegra_machine_get_rx_mask_array();
+	unsigned int *rx_mask_t18x = rx_mask;
+
 	if (idx == -EINVAL)
 		goto err;
 
 	if (!rx_mask_t18x)
 		goto err;
 
-	idx = idx - tegra_machine_get_num_links_t18x();
+	idx = idx - num_links;
 
 	return rx_mask_t18x[idx];
 
@@ -3717,8 +3601,7 @@ unsigned int tegra_machine_get_tx_mask_t18x(
 	char *codec_name = (char *)codec_dai_link->name;
 	unsigned int idx =
 		tegra_machine_get_codec_dai_link_idx_t18x(codec_name);
-	unsigned int *tx_mask_t18x =
-		tegra_machine_get_tx_mask_array();
+	unsigned int *tx_mask_t18x = tx_mask;
 
 	if (idx == -EINVAL)
 		goto err;
@@ -3726,7 +3609,7 @@ unsigned int tegra_machine_get_tx_mask_t18x(
 	if (!tx_mask_t18x)
 		goto err;
 
-	idx = idx - tegra_machine_get_num_links_t18x();
+	idx = idx - num_links;
 
 	return tx_mask_t18x[idx];
 
@@ -3734,6 +3617,36 @@ err:
 	return -EINVAL;
 }
 EXPORT_SYMBOL_GPL(tegra_machine_get_tx_mask_t18x);
+
+struct tegra_machine_control_data {
+	struct snd_soc_pcm_runtime *rtd;
+	unsigned int frame_mode;
+	unsigned int master_mode;
+};
+
+static int tegra_machine_codec_set_dai_fmt(struct snd_soc_pcm_runtime *rtd,
+					   unsigned int frame_mode,
+					   unsigned int master_mode)
+{
+	unsigned int fmt = rtd->dai_link->dai_fmt;
+
+	if (frame_mode) {
+		fmt &= ~SND_SOC_DAIFMT_FORMAT_MASK;
+		fmt |= frame_mode;
+	}
+
+	if (master_mode) {
+		fmt &= ~SND_SOC_DAIFMT_MASTER_MASK;
+		master_mode <<= ffs(SND_SOC_DAIFMT_MASTER_MASK) - 1;
+
+		if (master_mode == SND_SOC_DAIFMT_CBM_CFM)
+			fmt |= SND_SOC_DAIFMT_CBM_CFM;
+		else
+			fmt |= SND_SOC_DAIFMT_CBS_CFS;
+	}
+
+	return snd_soc_runtime_set_dai_fmt(rtd, fmt);
+}
 
 /*
  * The order of the below must not be changed as this
@@ -3752,10 +3665,9 @@ static const char * const tegra_machine_frame_mode_text[] = {
 static int tegra_machine_codec_get_frame_mode(struct snd_kcontrol *kcontrol,
 	struct snd_ctl_elem_value *ucontrol)
 {
-	struct snd_soc_pcm_runtime *rtd = kcontrol->private_data;
-	unsigned int fmt = rtd->dai_link->dai_fmt;
+	struct tegra_machine_control_data *data = kcontrol->private_data;
 
-	ucontrol->value.integer.value[0] = fmt & SND_SOC_DAIFMT_FORMAT_MASK;
+	ucontrol->value.integer.value[0] = data->frame_mode;
 
 	return 0;
 }
@@ -3763,44 +3675,32 @@ static int tegra_machine_codec_get_frame_mode(struct snd_kcontrol *kcontrol,
 static int tegra_machine_codec_put_frame_mode(struct snd_kcontrol *kcontrol,
 	struct snd_ctl_elem_value *ucontrol)
 {
-	struct snd_soc_pcm_runtime *rtd = kcontrol->private_data;
-	unsigned int fmt = rtd->dai_link->dai_fmt;
+	struct tegra_machine_control_data *data = kcontrol->private_data;
 	int err;
 
-	fmt &= ~SND_SOC_DAIFMT_FORMAT_MASK;
-	fmt |= ucontrol->value.integer.value[0];
-
-	err = snd_soc_runtime_set_dai_fmt(rtd, fmt);
+	err = tegra_machine_codec_set_dai_fmt(data->rtd,
+					      ucontrol->value.integer.value[0],
+					      data->master_mode);
 	if (err)
 		return err;
 
-	rtd->dai_link->dai_fmt = fmt;
+	data->frame_mode = ucontrol->value.integer.value[0];
 
 	return 0;
 }
 
-/*
- * The order of the below must not be changed as this
- * aligns with the SND_SOC_DAIFMT_XXX definitions in
- * include/sound/soc-dai.h.
- */
 static const char * const tegra_machine_master_mode_text[] = {
 	"None",
 	"cbm-cfm",
-	"cbs-cfm",
-	"cbm-cfs",
 	"cbs-cfs",
 };
 
 static int tegra_machine_codec_get_master_mode(struct snd_kcontrol *kcontrol,
 	struct snd_ctl_elem_value *ucontrol)
 {
-	struct snd_soc_pcm_runtime *rtd = kcontrol->private_data;
-	unsigned int shift, fmt = rtd->dai_link->dai_fmt;
+	struct tegra_machine_control_data *data = kcontrol->private_data;
 
-	fmt &= SND_SOC_DAIFMT_MASTER_MASK;
-	shift = ffs(SND_SOC_DAIFMT_MASTER_MASK) - 1;
-	ucontrol->value.integer.value[0] = fmt >> shift;
+	ucontrol->value.integer.value[0] = data->master_mode;
 
 	return 0;
 }
@@ -3808,19 +3708,16 @@ static int tegra_machine_codec_get_master_mode(struct snd_kcontrol *kcontrol,
 static int tegra_machine_codec_put_master_mode(struct snd_kcontrol *kcontrol,
 	struct snd_ctl_elem_value *ucontrol)
 {
-	struct snd_soc_pcm_runtime *rtd = kcontrol->private_data;
-	unsigned int shift, fmt = rtd->dai_link->dai_fmt;
+	struct tegra_machine_control_data *data = kcontrol->private_data;
 	int err;
 
-	fmt &= ~SND_SOC_DAIFMT_MASTER_MASK;
-	shift = ffs(SND_SOC_DAIFMT_MASTER_MASK) - 1;
-	fmt |= ucontrol->value.integer.value[0] << shift;
-
-	err = snd_soc_runtime_set_dai_fmt(rtd, fmt);
+	err = tegra_machine_codec_set_dai_fmt(data->rtd,
+					      data->frame_mode,
+					      ucontrol->value.integer.value[0]);
 	if (err)
 		return err;
 
-	rtd->dai_link->dai_fmt = fmt;
+	data->master_mode = ucontrol->value.integer.value[0];
 
 	return 0;
 }
@@ -3853,8 +3750,8 @@ static int tegra_machine_add_ctl(struct snd_soc_card *card,
 }
 
 static int tegra_machine_add_frame_mode_ctl(struct snd_soc_card *card,
-					    struct snd_soc_pcm_runtime *rtd,
-					    const unsigned char *name)
+	struct snd_soc_pcm_runtime *rtd, const unsigned char *name,
+	struct tegra_machine_control_data *data)
 {
 	struct snd_kcontrol_new knew = {
 		.iface		= SNDRV_CTL_ELEM_IFACE_MIXER,
@@ -3867,12 +3764,12 @@ static int tegra_machine_add_frame_mode_ctl(struct snd_soc_card *card,
 				(unsigned long)&tegra_machine_codec_frame_mode,
 	};
 
-	return tegra_machine_add_ctl(card, &knew, rtd, name);
+	return tegra_machine_add_ctl(card, &knew, data, name);
 }
 
 static int tegra_machine_add_master_mode_ctl(struct snd_soc_card *card,
-					     struct snd_soc_pcm_runtime *rtd,
-					     const unsigned char *name)
+	struct snd_soc_pcm_runtime *rtd, const unsigned char *name,
+	struct tegra_machine_control_data *data)
 {
 	struct snd_kcontrol_new knew = {
 		.iface		= SNDRV_CTL_ELEM_IFACE_MIXER,
@@ -3885,12 +3782,13 @@ static int tegra_machine_add_master_mode_ctl(struct snd_soc_card *card,
 				(unsigned long)&tegra_machine_codec_master_mode,
 	};
 
-	return tegra_machine_add_ctl(card, &knew, rtd, name);
+	return tegra_machine_add_ctl(card, &knew, data, name);
 }
 
 int tegra_machine_add_i2s_codec_controls(struct snd_soc_card *card,
 					 unsigned int num_dai_links)
 {
+	struct tegra_machine_control_data *data;
 	struct snd_soc_pcm_runtime *rtd;
 	struct device_node *np;
 	char name[SNDRV_CTL_ELEM_ID_NAME_MAXLEN];
@@ -3909,19 +3807,27 @@ int tegra_machine_add_i2s_codec_controls(struct snd_soc_card *card,
 		if (!np)
 			continue;
 
+		data = devm_kzalloc(card->dev, sizeof(*data), GFP_KERNEL);
+		if (!data)
+			return -ENOMEM;
+
+		data->rtd = rtd;
+		data->frame_mode = 0;
+		data->master_mode = 0;
+
 		if (of_property_read_u32(np, "nvidia,ahub-i2s-id", &id) < 0)
 			continue;
 
 		snprintf(name, sizeof(name), "I2S%d codec frame mode", id+1);
 
-		ret = tegra_machine_add_frame_mode_ctl(card, rtd, name);
+		ret = tegra_machine_add_frame_mode_ctl(card, rtd, name, data);
 		if (ret)
 			dev_warn(card->dev, "Failed to add control: %s!\n",
 				 name);
 
 		snprintf(name, sizeof(name), "I2S%d codec master mode", id+1);
 
-		ret = tegra_machine_add_master_mode_ctl(card, rtd, name);
+		ret = tegra_machine_add_master_mode_ctl(card, rtd, name, data);
 		if (ret) {
 			dev_warn(card->dev, "Failed to add control: %s!\n",
 				 name);
@@ -4009,6 +3915,297 @@ void tegra_machine_dma_set_mask(struct platform_device *pdev)
 #endif
 }
 EXPORT_SYMBOL_GPL(tegra_machine_dma_set_mask);
+
+void release_asoc_phandles(struct tegra_machine *machine)
+{
+	unsigned int i;
+
+	if (machine->asoc->dai_links) {
+		for (i = 0; i < machine->asoc->num_links; i++) {
+			of_node_put(machine->asoc->dai_links[i].cpu_of_node);
+			of_node_put(machine->asoc->dai_links[i].codec_of_node);
+		}
+	}
+
+	if (machine->asoc->codec_confs) {
+		for (i = 0; i < machine->asoc->num_confs; i++)
+			of_node_put(machine->asoc->codec_confs[i].of_node);
+	}
+}
+EXPORT_SYMBOL_GPL(release_asoc_phandles);
+
+int tegra_asoc_populate_dai_links(struct platform_device *pdev)
+{
+	struct device_node *np = pdev->dev.of_node, *subnp = NULL;
+	struct snd_soc_card *card = platform_get_drvdata(pdev);
+	struct tegra_machine *machine = snd_soc_card_get_drvdata(card);
+	struct snd_soc_dai_link *dai_links, *ahub_links;
+	struct snd_soc_pcm_stream *params;
+	char dai_link_name[MAX_STR_SIZE], *str;
+	unsigned int num_codec_links, num_ahub_links, num_links,
+		link_count = 0, i, j, *rx_slot, *tx_slot;
+	int ret;
+
+	num_ahub_links = machine->soc_data->num_ahub_links;
+	ahub_links = machine->soc_data->ahub_links;
+
+	if (!np || !num_ahub_links || !ahub_links)
+		return -EINVAL;
+
+	/* read number of codec links exposed via DT */
+	ret = of_property_read_u32(np, "nvidia,num-codec-link",
+				   &machine->num_codec_links);
+	if (ret < 0) {
+		dev_err(&pdev->dev,
+			"Property 'nvidia,num-codec-link' missing\n");
+		return ret;
+	}
+	num_codec_links = machine->num_codec_links;
+
+	/*
+	 * each codec link specified in device tree will result into one DAP
+	 * and one CIF link. For example, i2s dai link will look like below.
+	 * ahub <----CIF----> i2s <----DAP----> codec
+	 */
+	num_links = num_ahub_links + (num_codec_links << 1);
+
+	machine->asoc->num_links = num_links;
+	machine->asoc->dai_links = devm_kzalloc(&pdev->dev,
+						sizeof(*dai_links) * num_links,
+						GFP_KERNEL);
+	dai_links = machine->asoc->dai_links;
+	if (!dai_links)
+		return -ENOMEM;
+
+	machine->asoc->rx_slot = devm_kzalloc(&pdev->dev,
+					      sizeof(*rx_slot) * num_links,
+					      GFP_KERNEL);
+	rx_slot = machine->asoc->rx_slot;
+	if (!rx_slot)
+		return -ENOMEM;
+
+	machine->asoc->tx_slot = devm_kzalloc(&pdev->dev,
+					      sizeof(*tx_slot) * num_links,
+					      GFP_KERNEL);
+	tx_slot = machine->asoc->tx_slot;
+	if (!tx_slot)
+		return -ENOMEM;
+
+	/* populate now ahub links */
+	memcpy(dai_links, ahub_links, num_ahub_links * sizeof(*dai_links));
+
+	/* populate now CIF and DAP links from device tree */
+	for (i = num_ahub_links, j = num_ahub_links + num_codec_links;
+	     i < num_ahub_links + num_codec_links; i++, j++) {
+		memset((void *)dai_link_name, '\0', MAX_STR_SIZE);
+		sprintf(dai_link_name, "nvidia,dai-link-%d", ++link_count);
+		subnp = of_get_child_by_name(np, dai_link_name);
+		if (!subnp)
+			return -ENOENT;
+
+		/* DAP DAI link configuration */
+		dai_links[i].stream_name = "Playback";
+		dai_links[i].codec_of_node = of_parse_phandle(subnp,
+							      "codec-dai", 0);
+		if (!dai_links[i].codec_of_node) {
+			dev_err(&pdev->dev,
+				"property 'codec-dai' is missing\n");
+			ret = -ENOENT;
+			break;
+		}
+
+		dai_links[i].cpu_of_node = of_parse_phandle(subnp, "cpu-dai",
+							    0);
+		if (!dai_links[i].cpu_of_node) {
+			dev_err(&pdev->dev, "property 'cpu-dai' is missing\n");
+			ret = -ENOENT;
+			break;
+		}
+
+		of_property_read_string(subnp, "link-name", &dai_links[i].name);
+
+		/*
+		 * special case for DSPK
+		 * Two mono codecs can be connected to the controller
+		 * DAP2 is required for DAPM path completion
+		 * TODO revisit this when ASoC has multi-codec support
+		 */
+		if (!strcmp(dai_links[i].name, "dspk-playback-r"))
+			dai_links[i].cpu_dai_name = "DAP2";
+		else
+			dai_links[i].cpu_dai_name = "DAP";
+		dai_links[i].dai_fmt = snd_soc_of_parse_daifmt(subnp, NULL,
+							       NULL, NULL);
+
+		params = devm_kzalloc(&pdev->dev, sizeof(*params), GFP_KERNEL);
+		if (!params) {
+			ret = -ENOMEM;
+			break;
+		}
+
+		ret = of_property_read_string(subnp, "bit-format",
+					      (const char **)&str);
+		if (ret < 0) {
+			dev_err(&pdev->dev, "Property 'bit-format' missing\n");
+			break;
+		}
+
+		ret = tegra_machine_get_format(&params->formats, str);
+		if (ret < 0) {
+			dev_err(&pdev->dev, "Wrong codec format\n");
+			break;
+		}
+
+		ret = of_property_read_u32(subnp, "srate", &params->rate_min);
+		if (ret < 0) {
+			dev_err(&pdev->dev, "Property 'srate' missing\n");
+			break;
+		}
+		params->rate_max = params->rate_min;
+
+		ret = of_property_read_u32(subnp, "num-channel",
+					   &params->channels_min);
+		if (ret < 0) {
+			dev_err(&pdev->dev, "Property 'num-channel' missing\n");
+			break;
+		}
+		params->channels_max = params->channels_min;
+
+		dai_links[i].params = params;
+		ret = of_property_read_string(subnp, "codec-dai-name",
+					      &dai_links[i].codec_dai_name);
+		if (ret < 0) {
+			dev_err(&pdev->dev,
+				"property 'codec-dai-name' is missing\n");
+			break;
+		}
+
+		of_property_read_u32(subnp, "rx-mask", (u32 *)&rx_slot[i]);
+		of_property_read_u32(subnp, "tx-mask", (u32 *)&tx_slot[i]);
+
+		/*
+		 * CIF DAI link configuration
+		 * CIF link is towards XBAR, hence xbar node is cpu_of_node
+		 * and codec_of_node is same as DAP's cpu_of_node.
+		 */
+		dai_links[j].codec_of_node = of_parse_phandle(subnp, "cpu-dai",
+							      0);
+		dai_links[j].cpu_of_node = of_parse_phandle(np, "nvidia,xbar",
+							    0);
+		if (!dai_links[j].cpu_of_node) {
+			dev_err(&pdev->dev,
+				"property 'nvidia,xbar' is missing\n");
+			ret = -ENOENT;
+			break;
+		}
+
+		/*
+		 * special case for DSPK
+		 * Two mono codecs can be connected to the controller
+		 * CIF2 is required for DAPM path completion
+		 * TODO revist this when ASoC has multi-codec support
+		 */
+		if (!strcmp(dai_links[i].name, "dspk-playback-r"))
+			dai_links[j].codec_dai_name = "CIF2";
+		else
+			dai_links[j].codec_dai_name = "CIF";
+
+		ret = of_property_read_string(subnp, "cpu-dai-name",
+					      &dai_links[j].cpu_dai_name);
+		if (ret < 0) {
+			dev_err(&pdev->dev,
+				"property 'cpu-dai-name' is missing\n");
+			break;
+		}
+
+		str = devm_kzalloc(&pdev->dev,
+			sizeof(dai_links[j].cpu_dai_name) +
+			1 + sizeof(dai_links[j].codec_dai_name),
+			GFP_KERNEL);
+		str = strcat(str, dai_links[j].cpu_dai_name);
+		str = strcat(str, " ");
+		str = strcat(str, dai_links[j].codec_dai_name);
+
+		dai_links[j].name = dai_links[j].stream_name = str;
+		dai_links[j].params = dai_links[i].params;
+
+		of_node_put(subnp);
+	}
+
+	/*
+	 * release subnp here. DAI links and codec conf release will be
+	 * taken care during error exit of machine driver probe()
+	 */
+	if (ret < 0 && subnp) {
+		of_node_put(subnp);
+		return ret;
+	}
+
+	card->num_links = num_links;
+	card->dai_link = dai_links;
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(tegra_asoc_populate_dai_links);
+
+int tegra_asoc_populate_codec_confs(struct platform_device *pdev)
+{
+	struct snd_soc_card *card = platform_get_drvdata(pdev);
+	struct tegra_machine *machine = snd_soc_card_get_drvdata(card);
+	unsigned int num_codec_confs, num_ahub_confs, num_confs, i;
+	struct snd_soc_codec_conf *codec_confs, *ahub_confs;
+	char dai_link_name[MAX_STR_SIZE];
+	struct device_node *of_node;
+	struct device_node *np = pdev->dev.of_node, *subnp;
+
+	ahub_confs = machine->soc_data->ahub_confs;
+	num_ahub_confs = machine->soc_data->num_ahub_confs;
+	num_codec_confs = machine->num_codec_links;
+	if (!ahub_confs || !num_codec_confs || !num_ahub_confs)
+		return -EINVAL;
+	num_confs = num_codec_confs + num_ahub_confs;
+	machine->asoc->num_confs = num_confs;
+
+	machine->asoc->codec_confs =
+		devm_kzalloc(&pdev->dev, sizeof(*codec_confs) * num_confs,
+			     GFP_KERNEL);
+	codec_confs = machine->asoc->codec_confs;
+	if (!codec_confs)
+		return -ENOMEM;
+
+	/* add codec confs from ahub */
+	memcpy(codec_confs, ahub_confs, num_ahub_confs * sizeof(*codec_confs));
+
+	/* append codec confs from device tree */
+	for (i = 0; i < num_codec_confs; i++) {
+		memset((void *)dai_link_name, '\0', MAX_STR_SIZE);
+		sprintf(dai_link_name, "nvidia,dai-link-%d", i+1);
+		subnp = of_get_child_by_name(np, dai_link_name);
+		if (!subnp)
+			return -ENOENT;
+
+		of_node = of_parse_phandle(subnp, "codec-dai", 0);
+		if (!of_node) {
+			dev_err(&pdev->dev,
+				"property 'codec-dai' is missing\n");
+			of_node_put(subnp);
+			return -ENOENT;
+		}
+
+		codec_confs[i + num_ahub_confs].dev_name = NULL;
+		codec_confs[i + num_ahub_confs].of_node = of_node;
+		of_property_read_string(subnp, "name-prefix",
+			&codec_confs[i + num_ahub_confs].name_prefix);
+
+		of_node_put(subnp);
+	}
+
+	card->num_configs = num_confs;
+	card->codec_conf = codec_confs;
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(tegra_asoc_populate_codec_confs);
 
 MODULE_AUTHOR("Arun Shamanna Lakshmi <aruns@nvidia.com>");
 MODULE_AUTHOR("Junghyun Kim <juskim@nvidia.com>");

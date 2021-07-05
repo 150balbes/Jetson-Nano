@@ -1,7 +1,7 @@
 /*
  * NVDLA IOCTL for T194
  *
- * Copyright (c) 2016-2018, NVIDIA Corporation.  All rights reserved.
+ * Copyright (c) 2016-2019, NVIDIA Corporation.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -25,30 +25,33 @@
 #include "dev.h"
 #include "bus_client.h"
 #include "nvhost_acm.h"
-#include "nvhost_buffer.h"
+
 #include "flcn/flcn.h"
 #include "flcn/hw_flcn.h"
 
 #include "t194/t194.h"
-#include "nvhost_queue.h"
+
 
 #include "nvdla/nvdla.h"
+#include "nvdla/dla_queue.h"
+#include "nvdla/nvdla_buffer.h"
 #include "nvdla/nvdla_debug.h"
+
 #include <uapi/linux/nvdev_fence.h>
-#include <linux/nvhost_nvdla_ioctl.h>
+#include <uapi/linux/nvhost_nvdla_ioctl.h>
 #include "dla_os_interface.h"
 
 /**
  * struct nvdla_private per unique FD private data
  * @pdev		pointer to platform device
- * @queue		pointer to nvhost_queue
- * @buffers		pointer to nvhost_buffer
+ * @queue		pointer to nvdla_queue
+ * @buffers		pointer to nvdla_buffer
  */
 
 struct nvdla_private {
 	struct platform_device *pdev;
-	struct nvhost_queue *queue;
-	struct nvhost_buffers *buffers;
+	struct nvdla_queue *queue;
+	struct nvdla_buffers *buffers;
 };
 
 static int nvdla_get_fw_ver(struct nvdla_private *priv,
@@ -80,7 +83,7 @@ static int nvdla_set_queue(struct nvdla_private *priv, void *args)
 	struct nvdla_queue_status_args *queue_arg =
 			(struct nvdla_queue_status_args *)args;
 	struct platform_device *pdev = priv->pdev;
-	struct nvhost_queue *queue = priv->queue;
+	struct nvdla_queue *queue = priv->queue;
 	int status = queue_arg->status;
 	int err = 0;
 
@@ -130,7 +133,7 @@ static int nvdla_get_q_status(struct nvdla_private *priv, void *args)
 	struct nvdev_fence __user *usr_fence =
 		(struct nvdev_fence __user *)(uintptr_t)queue_arg->fence;
 	struct platform_device *pdev = priv->pdev;
-	struct nvhost_queue *queue = priv->queue;
+	struct nvdla_queue *queue = priv->queue;
 	struct nvdev_fence fence = {0};
 	int err = 0;
 
@@ -205,7 +208,7 @@ static int nvdla_pin(struct nvdla_private *priv, void *arg)
 		}
 	}
 
-	err = nvhost_buffer_pin(priv->buffers, dmabufs, count);
+	err = nvdla_buffer_pin(priv->buffers, dmabufs, count);
 
 fail_to_get_dma_buf:
 	count = i;
@@ -258,7 +261,7 @@ static int nvdla_unpin(struct nvdla_private *priv, void *arg)
 			continue;
 	}
 
-	nvhost_buffer_unpin(priv->buffers, dmabufs, count);
+	nvdla_buffer_unpin(priv->buffers, dmabufs, count);
 
 	count = i;
 	for (i = 0; i < count; i++)
@@ -373,13 +376,41 @@ static int nvdla_get_actions(struct nvdla_ioctl_submit_task *user_task,
 		goto fail;
 	}
 
-	/* get output task status */
-	if (copy_from_user(task->out_task_status,
-		(void __user *)user_task->output_task_status,
-		(task->num_out_task_status *
+	/* get sof task status */
+	if (copy_from_user(task->sof_task_status,
+		(void __user *)user_task->sof_task_status,
+		(task->num_sof_task_status *
 			sizeof(struct nvdla_status_notify)))) {
 		err = -EFAULT;
-		nvdla_dbg_err(pdev, "failed to copy output task status");
+		nvdla_dbg_err(pdev, "failed to copy sof task status");
+		goto fail;
+	}
+
+	/* get eof task status */
+	if (copy_from_user(task->eof_task_status,
+		(void __user *)user_task->eof_task_status,
+		(task->num_eof_task_status *
+			sizeof(struct nvdla_status_notify)))) {
+		err = -EFAULT;
+		nvdla_dbg_err(pdev, "failed to copy eof task status");
+		goto fail;
+	}
+
+	/* get sof timestamps */
+	if (copy_from_user(task->sof_timestamps,
+		(void __user*)user_task->sof_timestamps,
+		(task->num_sof_timestamps * sizeof(struct nvdla_mem_handle)))) {
+		err = -EFAULT;
+		nvdla_dbg_err(pdev, "failed to copy sof timestamps");
+		goto fail;
+	}
+
+	/* get eof timestamps */
+	if (copy_from_user(task->eof_timestamps,
+		(void __user*)user_task->eof_timestamps,
+		(task->num_eof_timestamps * sizeof(struct nvdla_mem_handle)))) {
+		err = -EFAULT;
+		nvdla_dbg_err(pdev, "failed to copy eof timestamps");
 		goto fail;
 	}
 
@@ -389,20 +420,66 @@ fail:
 	return err;
 }
 
-static int nvdla_send_emu_postfences(struct nvdla_emu_task *task,
+static int nvdla_send_emu_signal_fences(struct nvdla_emu_task *task,
 			struct nvdla_ioctl_emu_submit_task *user_task)
 {
 	int err = 0, i;
 	struct platform_device *dla_pdev = task->queue->pool->pdev;
 	struct platform_device *host_pdev =
 				to_platform_device(dla_pdev->dev.parent);
+	struct nvdev_fence __user *prefences =
+		(struct nvdev_fence __user *)(uintptr_t)user_task->prefences;
 	struct nvdev_fence __user *postfences =
 		(struct nvdev_fence __user *)(uintptr_t)user_task->postfences;
 	char fence_name[32];
 
-	nvdla_dbg_fn(dla_pdev, "sending post fences");
+	nvdla_dbg_fn(dla_pdev, "sending signal fences");
+
+	for (i = 0; i < task->num_prefences; i++) {
+		if (task->prefences[i].action != NVDEV_FENCE_SIGNAL)
+			continue;
+
+		if (task->prefences[i].type == NVDEV_FENCE_TYPE_SYNC_FD) {
+			struct nvhost_ctrl_sync_fence_info info;
+
+			info.id = task->prefences[i].syncpoint_index;
+			info.thresh = task->prefences[i].syncpoint_value;
+
+			nvdla_dbg_info(dla_pdev,
+					"creating pre sync fd [%d]:[%d]\n",
+					info.id, info.thresh);
+
+			/* create fence name format example: nvdla0_1_fence */
+			snprintf(fence_name, sizeof(fence_name),
+				"%s_%d_%d_prefence", dev_name(&dla_pdev->dev),
+				task->prefences[i].syncpoint_index, i);
+
+			err = nvhost_sync_create_fence_fd(host_pdev,
+				&info, 1, fence_name,
+				&task->prefences[i].sync_fd);
+
+			if (err) {
+				nvdla_dbg_err(dla_pdev,
+					"fail to create prefence syncfd\n");
+				goto fail;
+			}
+		}
+	}
+
+	nvdla_dbg_fn(dla_pdev, "copy prefences to user");
+	/* send pre fences */
+	if (copy_to_user(prefences, task->prefences,
+		(task->num_prefences * sizeof(struct nvdev_fence)))) {
+		err = -EFAULT;
+		nvdla_dbg_err(dla_pdev, "failed to send prefences");
+		goto fail;
+	}
+	nvdla_dbg_info(dla_pdev, "prefences sent");
 
 	for (i = 0; i < task->num_postfences; i++) {
+		if (task->postfences[i].action != NVDEV_FENCE_SIGNAL)
+			continue;
+
 		if (task->postfences[i].type == NVDEV_FENCE_TYPE_SYNC_FD) {
 			struct nvhost_ctrl_sync_fence_info info;
 
@@ -415,8 +492,8 @@ static int nvdla_send_emu_postfences(struct nvdla_emu_task *task,
 
 			/* create fence name format example: nvdla0_1_fence */
 			snprintf(fence_name, sizeof(fence_name),
-				"%s_%d_fence", dev_name(&dla_pdev->dev),
-				task->postfences[i].syncpoint_index);
+				"%s_%d_%d_postfence", dev_name(&dla_pdev->dev),
+				task->postfences[i].syncpoint_index, i);
 
 			err = nvhost_sync_create_fence_fd(host_pdev,
 				&info, 1, fence_name,
@@ -444,20 +521,67 @@ fail:
 	return err;
 }
 
-static int nvdla_update_postfences(struct nvdla_task *task,
+static int nvdla_update_signal_fences(struct nvdla_task *task,
 			struct nvdla_ioctl_submit_task *user_task)
 {
 	int err = 0, i;
 	struct platform_device *dla_pdev = task->queue->pool->pdev;
 	struct platform_device *host_pdev =
 				to_platform_device(dla_pdev->dev.parent);
+	struct nvdev_fence __user *prefences =
+		(struct nvdev_fence __user *)(uintptr_t)user_task->prefences;
 	struct nvdev_fence __user *postfences =
 		(struct nvdev_fence __user *)(uintptr_t)user_task->postfences;
 	char fence_name[32];
 
-	nvdla_dbg_fn(dla_pdev, "copy post fences for user");
+	nvdla_dbg_fn(dla_pdev, "copy fences for user");
 
+	/* update pre fence signals to users */
+	for (i = 0; i < task->num_prefences; i++) {
+		if (task->prefences[i].action != NVDEV_FENCE_SIGNAL)
+			continue;
+
+		if (task->prefences[i].type == NVDEV_FENCE_TYPE_SYNC_FD) {
+			struct nvhost_ctrl_sync_fence_info info;
+
+			info.id = task->prefences[i].syncpoint_index;
+			info.thresh = task->prefences[i].syncpoint_value;
+
+			nvdla_dbg_info(dla_pdev,
+					"creating pre sync fd [%d]:[%d]\n",
+					info.id, info.thresh);
+
+			/* create fence name format example: nvdla0_1_fence */
+			snprintf(fence_name, sizeof(fence_name),
+				"%s_%d_%d_prefence", dev_name(&dla_pdev->dev),
+				task->prefences[i].syncpoint_index, i);
+
+			err = nvhost_sync_create_fence_fd(host_pdev,
+				&info, 1, fence_name,
+				&task->prefences[i].sync_fd);
+
+			if (err) {
+				nvdla_dbg_err(dla_pdev,
+					"fail to create prefence syncfd\n");
+				goto fail;
+			}
+		}
+	}
+
+	nvdla_dbg_fn(dla_pdev, "copy prefences to user");
+	/* copy pre fences */
+	if (copy_to_user(prefences, task->prefences,
+				(task->num_prefences * sizeof(struct nvdev_fence)))) {
+		err = -EFAULT;
+		nvdla_dbg_err(dla_pdev, "failed to copy prefences");
+		goto fail;
+	}
+
+	/* update post fence signals to user */
 	for (i = 0; i < task->num_postfences; i++) {
+		if (task->postfences[i].action != NVDEV_FENCE_SIGNAL)
+			continue;
+
 		if (task->postfences[i].type == NVDEV_FENCE_TYPE_SYNC_FD) {
 			struct nvhost_ctrl_sync_fence_info info;
 
@@ -470,8 +594,8 @@ static int nvdla_update_postfences(struct nvdla_task *task,
 
 			/* create fence name format example: nvdla0_1_fence */
 			snprintf(fence_name, sizeof(fence_name),
-				"%s_%d_fence", dev_name(&dla_pdev->dev),
-				task->postfences[i].syncpoint_index);
+				"%s_%d_%d_postfence", dev_name(&dla_pdev->dev),
+				task->postfences[i].syncpoint_index, i);
 
 			err = nvhost_sync_create_fence_fd(host_pdev,
 				&info, 1, fence_name,
@@ -522,15 +646,33 @@ static int nvdla_val_task_submit_input(struct nvdla_ioctl_submit_task *in_task)
 			MAX_NUM_NVDLA_IN_TASK_STATUS);
 		return -EINVAL;
 	}
-	if (in_task->num_output_task_status > MAX_NUM_NVDLA_OUT_TASK_STATUS) {
-		pr_err("out task status[%u] crossing expected[%d]\n",
-			in_task->num_output_task_status,
+	if (in_task->num_sof_task_status > MAX_NUM_NVDLA_OUT_TASK_STATUS) {
+		pr_err("sof task status[%u] crossing expected[%d]\n",
+			in_task->num_sof_task_status,
 			MAX_NUM_NVDLA_OUT_TASK_STATUS);
 		return -EINVAL;
 	}
-        if (in_task->num_addresses < 1) {
+	if (in_task->num_eof_task_status > MAX_NUM_NVDLA_OUT_TASK_STATUS) {
+		pr_err("eof task status[%u] crossing expected[%d]\n",
+			in_task->num_eof_task_status,
+			MAX_NUM_NVDLA_OUT_TASK_STATUS);
+		return -EINVAL;
+	}
+	if (in_task->num_sof_timestamps > MAX_NUM_NVDLA_OUT_TIMESTAMP) {
+		pr_err("sof timestamps[%u] crossing expected[%d]\n",
+			in_task->num_sof_timestamps,
+			MAX_NUM_NVDLA_OUT_TIMESTAMP);
+		return -EINVAL;
+	}
+	if (in_task->num_eof_timestamps > MAX_NUM_NVDLA_OUT_TIMESTAMP) {
+		pr_err("eof timestamps[%u] crossing expected[%d]\n",
+			in_task->num_eof_timestamps,
+			MAX_NUM_NVDLA_OUT_TIMESTAMP);
+		return -EINVAL;
+	}
+	if (in_task->num_addresses < 1) {
 		pr_err("num addresses[%u] should be min one\n",
-			in_task->num_addresses);
+				in_task->num_addresses);
 		return -EINVAL;
 	}
 	if (in_task->num_addresses > NVDLA_MAX_BUFFERS_PER_TASK) {
@@ -543,8 +685,8 @@ static int nvdla_val_task_submit_input(struct nvdla_ioctl_submit_task *in_task)
 	return 0;
 }
 
-static int nvdla_fill_task(struct nvhost_queue *queue,
-				struct nvhost_buffers *buffers,
+static int nvdla_fill_task(struct nvdla_queue *queue,
+				struct nvdla_buffers *buffers,
 				struct nvdla_ioctl_submit_task *local_task,
 				struct nvdla_task *task)
 {
@@ -569,7 +711,10 @@ static int nvdla_fill_task(struct nvhost_queue *queue,
 	task->num_prefences = local_task->num_prefences;
 	task->num_postfences = local_task->num_postfences;
 	task->num_in_task_status = local_task->num_input_task_status;
-	task->num_out_task_status = local_task->num_output_task_status;
+	task->num_sof_task_status = local_task->num_sof_task_status;
+	task->num_eof_task_status = local_task->num_eof_task_status;
+	task->num_sof_timestamps = local_task->num_sof_timestamps;
+	task->num_eof_timestamps = local_task->num_eof_timestamps;
 	task->num_addresses = local_task->num_addresses;
 	task->timeout = local_task->timeout;
 
@@ -607,14 +752,20 @@ fail_to_get_val_args:
 static void nvdla_dump_task(struct nvdla_task *task)
 {
 	int i;
-	struct nvhost_queue *queue = task->queue;
+	struct nvdla_queue *queue = task->queue;
 	struct platform_device *pdev = queue->pool->pdev;
 
 	nvdla_dbg_info(pdev, "dumping input task [%p] parameters:", task);
 	nvdla_dbg_info(pdev, "num_prefences[%u] num_postfences[%u]",
 			task->num_prefences, task->num_postfences);
-	nvdla_dbg_info(pdev, "num_in_status[%u] num_out_task_status[%u]",
-			task->num_in_task_status, task->num_out_task_status);
+	nvdla_dbg_info(pdev, "num_in_status[%u] num_sof_task_status[%u] "
+			"num_eof_task_status[%u]",
+			task->num_in_task_status,
+			task->num_sof_task_status,
+			task->num_eof_task_status);
+	nvdla_dbg_info(pdev, "num_sof_timestamps[%u] num_eof_timestamps[%u]",
+			task->num_sof_timestamps,
+			task->num_eof_timestamps);
 	nvdla_dbg_info(pdev, "num_addresses[%u]", task->num_addresses);
 
 	for (i = 0; i < task->num_prefences; i++) {
@@ -651,12 +802,34 @@ static void nvdla_dump_task(struct nvdla_task *task)
 				task->in_task_status[i].status);
 	}
 
-	for (i = 0; i < task->num_out_task_status; i++) {
-		nvdla_dbg_info(pdev, "Output task status[%d]:"
+	for (i = 0; i < task->num_sof_task_status; i++) {
+		nvdla_dbg_info(pdev, "SOF task status[%d]:"
 				"handle[%u] offset[%u] status[%u]",
-				i, task->out_task_status[i].handle,
-				task->out_task_status[i].offset,
-				task->out_task_status[i].status);
+				i, task->sof_task_status[i].handle,
+				task->sof_task_status[i].offset,
+				task->sof_task_status[i].status);
+	}
+
+	for (i = 0; i < task->num_eof_task_status; i++) {
+		nvdla_dbg_info(pdev, "EOF task status[%d]:"
+				"handle[%u] offset[%u] status[%u]",
+				i, task->eof_task_status[i].handle,
+				task->eof_task_status[i].offset,
+				task->eof_task_status[i].status);
+	}
+
+	for (i = 0; i < task->num_sof_timestamps; i++) {
+		nvdla_dbg_info(pdev, "SOF timestamp[%d]:"
+				"handle[%u] offset[%u]",
+				i, task->sof_timestamps[i].handle,
+				task->sof_timestamps[i].offset);
+	}
+
+	for (i = 0; i < task->num_eof_timestamps; i++) {
+		nvdla_dbg_info(pdev, "EOF timestamp[%d]:"
+				"handle[%u] offset[%u]",
+				i, task->eof_timestamps[i].handle,
+				task->eof_timestamps[i].offset);
 	}
 
 	for (i = 0; i < task->num_addresses; i++) {
@@ -674,7 +847,7 @@ static int nvdla_emu_task_submit(struct nvdla_private *priv, void *arg)
 	struct nvdla_ioctl_emu_submit_task __user *user_tasks;
 	struct nvdla_ioctl_emu_submit_task local_tasks[MAX_TASKS_PER_SUBMIT];
 	struct platform_device *pdev;
-	struct nvhost_queue *queue;
+	struct nvdla_queue *queue;
 	struct nvdla_emu_task task;
 	int err = 0, i = 0;
 	u32 num_tasks;
@@ -715,7 +888,17 @@ static int nvdla_emu_task_submit(struct nvdla_private *priv, void *arg)
 
 		nvdla_dbg_info(pdev, "submit [%d]th task", i + 1);
 
+		task.num_prefences = local_tasks[i].num_prefences;
 		task.num_postfences = local_tasks[i].num_postfences;
+
+		/* get pre fences */
+		if (copy_from_user(task.prefences,
+			(void __user *)local_tasks[i].prefences,
+			(task.num_prefences * sizeof(struct nvdev_fence)))) {
+			err = -EFAULT;
+			nvdla_dbg_err(pdev, "failed to copy prefences");
+			goto exit;
+		}
 
 		/* get post fences */
 		if (copy_from_user(task.postfences,
@@ -733,13 +916,13 @@ static int nvdla_emu_task_submit(struct nvdla_private *priv, void *arg)
 		}
 		nvdla_dbg_info(pdev, "task[%d] submitted", i + 1);
 
-		/* send fences to user */
-		err = nvdla_send_emu_postfences(&task, local_tasks + i);
+		/* send signal fences to user */
+		err = nvdla_send_emu_signal_fences(&task, local_tasks + i);
 		if (err) {
-			nvdla_dbg_err(pdev, "fail to send postfence%d", i + 1);
+			nvdla_dbg_err(pdev, "fail to send sig fence%d", i + 1);
 			goto exit;
 		}
-		nvdla_dbg_info(pdev, "postfences of task[%d] sent", i + 1);
+		nvdla_dbg_info(pdev, "signal fences of task[%d] sent", i + 1);
 	}
 	nvdla_dbg_fn(pdev, "Emulator task submitted, done!");
 
@@ -754,8 +937,8 @@ static int nvdla_submit(struct nvdla_private *priv, void *arg)
 	struct nvdla_ioctl_submit_task __user *user_tasks;
 	struct nvdla_ioctl_submit_task local_tasks[MAX_TASKS_PER_SUBMIT];
 	struct platform_device *pdev;
-	struct nvhost_queue *queue;
-	struct nvhost_buffers *buffers;
+	struct nvdla_queue *queue;
+	struct nvdla_buffers *buffers;
 	u32 num_tasks;
 	struct nvdla_task *task;
 	int err = 0, i = 0;
@@ -822,8 +1005,8 @@ static int nvdla_submit(struct nvdla_private *priv, void *arg)
 		}
 		nvdla_dbg_info(pdev, "task[%d] desc filled", i + 1);
 
-		/* get expected postfences prior to submit */
-		err = nvdla_get_postfences(queue, task);
+		/* get expected signal fences prior to submit */
+		err = nvdla_get_signal_fences(queue, task);
 		if (err) {
 			nvdla_dbg_err(pdev, "fail to get fences%d", i + 1);
 			goto fail_to_get_fences;
@@ -831,7 +1014,7 @@ static int nvdla_submit(struct nvdla_private *priv, void *arg)
 		nvdla_dbg_info(pdev, "task[%d] got fences", i + 1);
 
 		/* update fences to user */
-		err = nvdla_update_postfences(task, local_tasks + i);
+		err = nvdla_update_signal_fences(task, local_tasks + i);
 		if (err) {
 			nvdla_dbg_err(pdev, "fail update postfence%d", i + 1);
 			goto fail_to_update_postfences;
@@ -839,7 +1022,7 @@ static int nvdla_submit(struct nvdla_private *priv, void *arg)
 		nvdla_dbg_info(pdev, "postfences of task[%d] update", i + 1);
 
 		/* send job to engine through queue framework */
-		err = nvhost_queue_submit(queue, task);
+		err = nvdla_queue_submit(queue, task);
 		if (err) {
 			nvdla_dbg_err(pdev, "fail to submit task: %d", i + 1);
 			goto fail_to_submit_task;
@@ -934,7 +1117,7 @@ static int nvdla_open(struct inode *inode, struct file *file)
 	struct platform_device *pdev = pdata->pdev;
 	struct nvdla_device *nvdla_dev = pdata->private_data;
 	struct nvdla_private *priv;
-	int err = 0;
+	int err = 0, index;
 
 	priv = kmalloc(sizeof(*priv), GFP_KERNEL);
 	if (unlikely(priv == NULL)) {
@@ -952,7 +1135,23 @@ static int nvdla_open(struct inode *inode, struct file *file)
 	if (err < 0)
 		goto err_add_client;
 
-	priv->queue = nvhost_queue_alloc(nvdla_dev->pool,
+	/* set rate for EMC to max
+         * on device release ACM sets to default rate
+         */
+	for (index = 0; index < NVHOST_MODULE_MAX_CLOCKS; index++) {
+		struct nvhost_clock *clock = &pdata->clocks[index];
+
+		if (clock->moduleid ==
+			NVHOST_MODULE_ID_EXTERNAL_MEMORY_CONTROLLER) {
+			err = nvhost_module_set_rate(pdev, priv, UINT_MAX,
+				index, clock->bwmgr_request_type);
+			if (err < 0)
+				goto err_alloc_queue;
+			break;
+		}
+	}
+
+	priv->queue = nvdla_queue_alloc(nvdla_dev->pool,
 		MAX_NVDLA_TASK_COUNT,
 		nvdla_dev->submit_mode == NVDLA_SUBMIT_MODE_CHANNEL);
 	if (IS_ERR(priv->queue)) {
@@ -960,7 +1159,7 @@ static int nvdla_open(struct inode *inode, struct file *file)
 		goto err_alloc_queue;
 	}
 
-	priv->buffers = nvhost_buffer_init(priv->queue->vm_pdev);
+	priv->buffers = nvdla_buffer_init(priv->queue->vm_pdev);
 	if (IS_ERR(priv->buffers)) {
 		err = PTR_ERR(priv->buffers);
 		goto err_alloc_buffer;
@@ -985,9 +1184,9 @@ static int nvdla_release(struct inode *inode, struct file *file)
 
 	nvdla_dbg_fn(pdev, "priv:%p", priv);
 
-	nvhost_queue_abort(priv->queue);
-	nvhost_queue_put(priv->queue);
-	nvhost_buffer_release(priv->buffers);
+	nvdla_queue_abort(priv->queue);
+	nvdla_queue_put(priv->queue);
+	nvdla_buffer_release(priv->buffers);
 	nvhost_module_remove_client(pdev, priv);
 
 	kfree(priv);

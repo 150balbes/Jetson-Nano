@@ -41,6 +41,13 @@ Optional SoC specific properties:
 			  clock gating i.e. enable clock only when transfer
 			  is started and disable clock once transfer is done.
 
+- qspi-autosuspend-delay: delay in milliseconds for runtime suspend after
+			  device is idle. Larger delay would prevent frequent
+			  clk toggles but might consume slightly more power.
+			  When this property is not set, default delay is 3000.
+			  Set this value to less than 500 for power saving and
+			  above 2000 for better perf.
+
 Recommended SoC properties:
 ----------------------
 - spi-max-frequency: Definition as per

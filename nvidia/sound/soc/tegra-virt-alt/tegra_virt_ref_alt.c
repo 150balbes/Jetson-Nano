@@ -316,3 +316,4 @@ MODULE_DESCRIPTION("Tegra virt machine driver");
 MODULE_LICENSE("GPL");
 MODULE_DEVICE_TABLE(of, tegra_virt_machine_of_match);
 MODULE_ALIAS("platform:" DRV_NAME);
+MODULE_SOFTDEP("pre: snd_soc_tegra210_virt_alt_adsp");

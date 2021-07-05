@@ -534,7 +534,8 @@ static irqreturn_t tps61280_irq(int irq, void *dev)
 	if (val & TPS61280_HOTDIE_MASK) {
 		dev_info(&client->dev, "TPS61280 in thermal regulation\n");
 		if (tps->tz_device)
-			thermal_zone_device_update(tps->tz_device);
+			thermal_zone_device_update(tps->tz_device,
+					THERMAL_EVENT_UNSPECIFIED);
 	}
 	if (val & TPS61280_THERMALSD_MASK)
 		dev_err(&client->dev, "Thermal shutdown tripped\n");

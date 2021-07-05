@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2019-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -428,6 +428,9 @@ void nvgpu_cg_init_gr_load_gating_prod(struct gk20a *g)
 	if (g->ops.clock_gating.slcg_xbar_load_gating_prod != NULL) {
 		g->ops.clock_gating.slcg_xbar_load_gating_prod(g, true);
 	}
+	if (g->ops.clock_gating.slcg_hshub_load_gating_prod != NULL) {
+		g->ops.clock_gating.slcg_hshub_load_gating_prod(g, true);
+	}
 
 check_can_blcg:
 	if (!nvgpu_is_enabled(g, NVGPU_GPU_CAN_BLCG)) {
@@ -448,6 +451,9 @@ check_can_blcg:
 	}
 	if (g->ops.clock_gating.blcg_xbar_load_gating_prod != NULL) {
 		g->ops.clock_gating.blcg_xbar_load_gating_prod(g, true);
+	}
+	if (g->ops.clock_gating.blcg_hshub_load_gating_prod != NULL) {
+		g->ops.clock_gating.blcg_hshub_load_gating_prod(g, true);
 	}
 pg_gr_load:
 	if (g->ops.clock_gating.pg_gr_load_gating_prod != NULL) {
@@ -538,6 +544,9 @@ void nvgpu_cg_blcg_set_blcg_enabled(struct gk20a *g, bool enable)
 	if (g->ops.clock_gating.blcg_xbar_load_gating_prod != NULL) {
 		g->ops.clock_gating.blcg_xbar_load_gating_prod(g, enable);
 	}
+	if (g->ops.clock_gating.blcg_hshub_load_gating_prod != NULL) {
+		g->ops.clock_gating.blcg_hshub_load_gating_prod(g, enable);
+	}
 
 done:
 	nvgpu_mutex_release(&g->cg_pg_lock);
@@ -609,6 +618,9 @@ void nvgpu_cg_slcg_set_slcg_enabled(struct gk20a *g, bool enable)
 	}
 	if (g->ops.clock_gating.slcg_xbar_load_gating_prod != NULL) {
 		g->ops.clock_gating.slcg_xbar_load_gating_prod(g, enable);
+	}
+	if (g->ops.clock_gating.slcg_hshub_load_gating_prod != NULL) {
+		g->ops.clock_gating.slcg_hshub_load_gating_prod(g, enable);
 	}
 
 done:

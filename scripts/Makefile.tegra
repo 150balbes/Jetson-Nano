@@ -11,7 +11,8 @@
 # more details.
 
 define include_overlay
-  ovl_file := $(if $(wildcard $(overlay)/$(src)/Kbuild),$(overlay)/$(src)/Kbuild,$(overlay)/$(src)/Makefile)
+  subdir := $(if $(src),$(src),$(obj))
+  ovl_file := $(if $(wildcard $(overlay)/$(subdir)/Kbuild),$(overlay)/$(subdir)/Kbuild,$(overlay)/$(subdir)/Makefile)
   -include $(ovl_file)
   EXTRA_CFLAGS += -I$(overlay)/include
 endef

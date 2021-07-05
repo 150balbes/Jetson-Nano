@@ -1,0 +1,56 @@
+From 6031a12983cae11b4e72aabb3a7976fd72e6d072 Mon Sep 17 00:00:00 2001
+From: Peter Zijlstra <peterz@infradead.org>
+Date: Wed, 22 Mar 2017 11:35:57 +0100
+Subject: [PATCH 014/371] futex,rt_mutex: Restructure
+ rt_mutex_finish_proxy_lock()
+X-NVConfidentiality: public
+
+Upstream commit 38d589f2fd08f1296aea3ce62bebd185125c6d81
+
+With the ultimate goal of keeping rt_mutex wait_list and futex_q waiters
+consistent it's necessary to split 'rt_mutex_futex_lock()' into finer
+parts, such that only the actual blocking can be done without hb->lock
+held.
+
+Split split_mutex_finish_proxy_lock() into two parts, one that does the
+blocking and one that does remove_waiter() when the lock acquire failed.
+
+When the rtmutex was acquired successfully the waiter can be removed in the
+acquisiton path safely, since there is no concurrency on the lock owner.
+
+This means that, except for futex_lock_pi(), all wait_list modifications
+are done with both hb->lock and wait_lock held.
+
+[bigeasy@linutronix.de: fix for futex_requeue_pi_signal_restart]
+
+Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Cc: juri.lelli@arm.com
+Cc: bigeasy@linutronix.de
+Cc: xlpang@redhat.com
+Cc: rostedt@goodmis.org
+Cc: mathieu.desnoyers@efficios.com
+Cc: jdesfossez@efficios.com
+Cc: dvhart@infradead.org
+Cc: bristot@redhat.com
+Link: http://lkml.kernel.org/r/20170322104152.001659630@infradead.org
+Signed-off-by: Thomas Gleixner <tglx@linutronix.de>
+Signed-off-by: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+---
+ kernel/locking/rtmutex_common.h | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/kernel/locking/rtmutex_common.h b/kernel/locking/rtmutex_common.h
+index b550e9d..8e81b17 100644
+--- a/kernel/locking/rtmutex_common.h
++++ b/kernel/locking/rtmutex_common.h
+@@ -113,6 +113,7 @@ extern int rt_mutex_wait_proxy_lock(struct rt_mutex *lock,
+ 			       struct rt_mutex_waiter *waiter);
+ extern bool rt_mutex_cleanup_proxy_lock(struct rt_mutex *lock,
+ 				 struct rt_mutex_waiter *waiter);
++
+ extern int rt_mutex_timed_futex_lock(struct rt_mutex *l, struct hrtimer_sleeper *to);
+ extern int rt_mutex_futex_trylock(struct rt_mutex *l);
+ 
+-- 
+2.7.4
+

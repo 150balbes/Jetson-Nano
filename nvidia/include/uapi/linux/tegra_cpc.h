@@ -1,7 +1,9 @@
 /*
- * tegra_cpc.c - Access CPC storage blocks through i2c bus
+ * include/uapi/linux/nvhvivc_mempool_ioctl.h 
  *
- * Copyright (c) 2014-2018, NVIDIA CORPORATION.  All rights reserved.
+ * nvhvivc_mempool_ioctl.h- Access CPC storage blocks through i2c bus
+ *
+ * Copyright (c) 2016-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -16,8 +18,8 @@
 #ifndef __UAPI_TEGRA_CPC_H
 #define __UAPI_TEGRA_CPC_H
 
-#include <uapi/linux/ioctl.h>
-#include <uapi/linux/types.h>
+#include <linux/ioctl.h>
+#include <linux/types.h>
 
 enum req_resp_t {
 	CPC_READ_M_COUNT = 0x2,

@@ -1,7 +1,7 @@
 /*
  * arch/arm/mach-tegra/latency_allowance.c
  *
- * Copyright (C) 2011-2018, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (C) 2011-2020, NVIDIA CORPORATION. All rights reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -500,7 +500,7 @@ static int display_bw_mbps_set(void *data, u64 val)
 
 static int display_set_la_ptsa_set(void *data, u64 val)
 {
-	struct dc_to_la_params disp_params;
+	struct dc_to_la_params disp_params = {0};
 
 	if (cs.set_disp_la(ID(NVDISPLAYR),
 				debugfs_display_emc_freq_hz,

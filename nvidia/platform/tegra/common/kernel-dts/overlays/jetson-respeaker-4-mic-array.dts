@@ -1,0 +1,90 @@
+// SPDX-License-Identifier: GPL-2.0-only
+/*
+ * Jetson Device-tree overlay for ReSpeaker 4 Mic Array.
+ *
+ * Copyright (c) 2020 NVIDIA CORPORATION. All rights reserved.
+ *
+ */
+
+#include <dt-bindings/pinctrl/pinctrl-tegra.h>
+
+/ {
+	overlay-name = "ReSpeaker 4 Mic Array";
+	compatible = JETSON_COMPATIBLE;
+
+	fragment@0 {
+		target = <&hdr40_i2c1>;
+		__overlay__ {
+			#address-cells = <1>;
+			#size-cells = <0>;
+			ac108_a: ac10x-codec.1-003b@3b{
+				compatible = "x-power,ac108_0";
+				reg = <0x3b>;
+				data-protocol = <0>;
+				status = "okay";
+			};
+		};
+	};
+
+	fragment@1 {
+		target = <&tegra_sound>;
+		__overlay__ {
+			nvidia,audio-routing =
+				"x MIC1N",              "x Mic",
+				"x MIC1P",              "x Mic",
+				"x MIC2N",              "x Mic",
+				"x MIC2P",              "x Mic",
+				"x MIC3N",              "x Mic",
+				"x MIC3P",              "x Mic",
+				"x MIC4N",              "x Mic",
+				"x MIC4P",              "x Mic",
+				"x Capture",            "x Mic";
+		};
+	};
+
+	fragment@2 {
+		target = <&hdr40_snd_link_i2s>;
+		__overlay__ {
+			link-name = "respeaker-4-mic-array";
+			codec-dai = <&ac108_a>;
+			codec-dai-name = "ac10x-codec0";
+			format = "dsp_a";
+			bitclock-master;
+			frame-master;
+		};
+	};
+
+	fragment@3 {
+		target = <&pinmux>;
+		__overlay__ {
+			pinctrl-names = "default";
+			pinctrl-0 = <&hdr40_pinmux>;
+
+			hdr40_pinmux: header-40pin-pinmux {
+				pin12 {
+					nvidia,pins = HDR40_PIN12;
+					nvidia,function = HDR40_I2S;
+					nvidia,pull = <TEGRA_PIN_PULL_DOWN>;
+					nvidia,tristate = <TEGRA_PIN_DISABLE>;
+					nvidia,enable-input = <TEGRA_PIN_ENABLE>;
+				};
+
+				pin35 {
+					nvidia,pins = HDR40_PIN35;
+					nvidia,function = HDR40_I2S;
+					nvidia,pull = <TEGRA_PIN_PULL_DOWN>;
+					nvidia,tristate = <TEGRA_PIN_DISABLE>;
+					nvidia,enable-input = <TEGRA_PIN_ENABLE>;
+				};
+
+				pin38 {
+					nvidia,pins = HDR40_PIN38;
+					nvidia,function = HDR40_I2S;
+					nvidia,pull = <TEGRA_PIN_PULL_DOWN>;
+					nvidia,tristate = <TEGRA_PIN_ENABLE>;
+					nvidia,enable-input = <TEGRA_PIN_ENABLE>;
+				};
+			};
+		};
+	};
+};

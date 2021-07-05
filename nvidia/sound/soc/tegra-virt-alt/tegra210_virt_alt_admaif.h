@@ -1,7 +1,7 @@
 /*
  * tegra210_virt_alt_admaif.h - Tegra210 ADMAIF registers
  *
- * Copyright (c) 2014-2019 NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2014-2020 NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -95,8 +95,6 @@ struct tegra210_virt_audio_cif {
 
 /*  apbif data */
 struct tegra210_virt_admaif_client_data {
-	unsigned int admaif_id;
-	struct tegra210_virt_audio_cif cif;
 	struct nvaudio_ivc_ctxt *hivc_client;
 };
 

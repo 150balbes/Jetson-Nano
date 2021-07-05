@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2019-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -31,7 +31,7 @@
 		};
 
 		fragment@1 {
-			ids = ">=3448-0000-101", ">=3448-0002-101";
+			ids = ">=3448-0000-101", ">=3448-0002-101", ">=3448-0003-400";
 			override@0 {
 				target = <&max77620_sd0>;
 				_overlay_ {
@@ -61,7 +61,7 @@
 			};
 
 			override@2 {
-				target = <&sound_card>;
+				target = <&tegra_sound>;
 				_overlay_ {
 					nvidia,dai-link-1 {
 						cpu-dai = <&tegra_i2s1>;
@@ -171,7 +171,7 @@
                 };
 
 		fragement@9 {
-			ids = "<3448-0000-300", "<3448-0002-300";
+			ids = "<3448-0000-300", "<3448-0002-300" , ">=3448-0003-000";
 			override@0 {
 				target = <&max77620_ldo6>;
 				_overlay_ {
@@ -295,47 +295,17 @@
 					isp_bw_margin_pct = <25>;
 				};
 			};
+			override@16 {
+				target = <&cam_module1>;
+				_overlay_ {
+					status = "disabled";
+				};
+			};
 		};
 
 		fragement@10 {
 			ids = ">=3448-0000-300", ">=3448-0002-300";
-			override@0 {
-				target = <&{/pcie@1003000/pci@2,0}>;
-				_overlay_ {
-					nvidia,plat-gpios = <&gpio TEGRA_GPIO(CC, 7) GPIO_ACTIVE_HIGH>;
-				};
-			};
-			override@1 {
-				target = <&sdhci2>;
-				_overlay_ {
-					vmmc-supply = <&max77620_ldo6>;
-					no-sdio;
-					no-mmc;
-					sd-uhs-sdr104;
-					sd-uhs-sdr50;
-					sd-uhs-sdr25;
-					sd-uhs-sdr12;
-				};
-			};
-			override@2 {
-				target = <&throttle_oc1>;
-				_overlay_ {
-					nvidia,priority = <50>;
-					nvidia,polarity-active-low = <1>;
-					nvidia,count-threshold = <1>;
-					nvidia,alarm-filter = <5100000>;
-					nvidia,alarm-period = <0>;
-					nvidia,cpu-throt-percent = <75>;
-					nvidia,gpu-throt-level =
-						<TEGRA_SOCTHERM_THROT_LEVEL_HIGH>;
-				};
-			};
-			override@3 {
-				target = <&{/leds}>;
-				_overlay_ {
-					status = "okay";
-				};
-			};
+
 			/* IMX219 dual sensor module */
 			override@4 {
 				target = <&imx219_cam0>;
@@ -540,6 +510,64 @@
 			};
 			override@31 {
 				target = <&i2c_1>;
+				_overlay_ {
+					status = "okay";
+				};
+			};
+		};
+
+		fragment@12 {
+			ids = ">=3448-0003-400";
+			override@0 {
+				target = <&sdhci3>;
+				_overlay_ {
+					status = "disabled";
+				};
+			};
+
+			override@1 {
+				target = <&sdhci0>;
+				_overlay_ {
+					status = "okay";
+				};
+			};
+		};
+
+		fragement@13 {
+			ids = ">=3448-0000-300", ">=3448-0002-300", ">=3448-0003-400";
+			override@0 {
+				target = <&{/pcie@1003000/pci@2,0}>;
+				_overlay_ {
+					nvidia,plat-gpios = <&gpio TEGRA_GPIO(CC, 7) GPIO_ACTIVE_HIGH>;
+				};
+			};
+			override@1 {
+				target = <&sdhci2>;
+				_overlay_ {
+					vqmmc-supply = <&max77620_ldo6>;
+					no-sdio;
+					no-mmc;
+					sd-uhs-sdr104;
+					sd-uhs-sdr50;
+					sd-uhs-sdr25;
+					sd-uhs-sdr12;
+				};
+			};
+			override@2 {
+				target = <&throttle_oc1>;
+				_overlay_ {
+					nvidia,priority = <50>;
+					nvidia,polarity-active-low = <1>;
+					nvidia,count-threshold = <1>;
+					nvidia,alarm-filter = <5100000>;
+					nvidia,alarm-period = <0>;
+					nvidia,cpu-throt-percent = <75>;
+					nvidia,gpu-throt-level =
+						<TEGRA_SOCTHERM_THROT_LEVEL_HIGH>;
+				};
+			};
+			override@3 {
+				target = <&{/leds}>;
 				_overlay_ {
 					status = "okay";
 				};

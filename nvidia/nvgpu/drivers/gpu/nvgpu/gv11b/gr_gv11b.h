@@ -257,4 +257,5 @@ void gr_gv11b_set_skedcheck(struct gk20a *g, u32 data);
 void gr_gv11b_set_go_idle_timeout(struct gk20a *g, u32 data);
 void gr_gv11b_set_coalesce_buffer_size(struct gk20a *g, u32 data);
 void gr_gv11b_set_tex_in_dbg(struct gk20a *g, u32 data);
+int gr_gv11b_set_fecs_watchdog_timeout(struct gk20a *g);
 #endif /* NVGPU_GR_GV11B_H */

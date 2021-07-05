@@ -1,7 +1,7 @@
 /*
  * dpaux.c: dpaux function definitions.
  *
- * Copyright (c) 2014-2018, NVIDIA CORPORATION, All rights reserved.
+ * Copyright (c) 2014-2019, NVIDIA CORPORATION, All rights reserved.
  * Author: Animesh Kishore <ankishore@nvidia.com>
  *
  * This software is licensed under the terms of the GNU General Public
@@ -70,12 +70,10 @@ static void tegra_dpaux_reset(struct tegra_dc_dpaux_data *dpaux)
 		return;
 
 	if (dpaux->rst) {
-		mutex_lock(&dpaux->lock);
 		reset_control_assert(dpaux->rst);
 		mdelay(2);
 		reset_control_deassert(dpaux->rst);
 		mdelay(1);
-		mutex_unlock(&dpaux->lock);
 	}
 }
 

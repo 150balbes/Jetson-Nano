@@ -1,7 +1,7 @@
 /*
  * tegra_t186ref_p4573_alt.c - Tegra t186 Machine driver for P4573 board
  *
- * Copyright (c) 2016-2017 NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2016-2019 NVIDIA CORPORATION. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -124,11 +124,11 @@ static int tegra186_hw_params(struct snd_pcm_substream *substream,
 		return ret;
 	}
 
-	clk_out_rate = machine->audio_clock.set_clk_out_rate;
+	clk_out_rate = machine->audio_clock.set_aud_mclk_rate;
 
 	dev_dbg(card->dev,
 		"pll_a_out0 = %d Hz, aud_mclk = %d Hz, codec rate = %d Hz\n",
-		machine->audio_clock.set_mclk, clk_out_rate, rate);
+		machine->audio_clock.set_pll_out_rate, clk_out_rate, rate);
 
 	/* Update dai link hw_params for non pcm links */
 	i = 0;
@@ -244,16 +244,6 @@ static int tegra186_init(struct snd_soc_pcm_runtime *rtd)
 	struct snd_soc_dai *codec_dai = rtd->codec_dai;
 	struct snd_soc_codec *codec = codec_dai->codec;
 	struct snd_soc_dapm_context *dapm = snd_soc_codec_get_dapm(codec);
-	struct tegra_t186 *machine = snd_soc_card_get_drvdata(rtd->card);
-	struct snd_soc_card *card = rtd->card;
-	int ret;
-
-	ret = tegra_alt_asoc_utils_set_extern_parent(&machine->audio_clock,
-						     "pll_a_out0");
-	if (ret < 0) {
-		dev_err(card->dev, "Failed to set extern clk parent\n");
-		return ret;
-	}
 
 	return snd_soc_dapm_sync(dapm);
 }

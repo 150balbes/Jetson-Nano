@@ -1,0 +1,99 @@
+From ee52e135f700c71bd3ffe33cb631ee4b8ff3b913 Mon Sep 17 00:00:00 2001
+From: Thomas Gleixner <tglx@linutronix.de>
+Date: Wed, 19 Sep 2012 14:50:37 +0200
+Subject: [PATCH 246/371] printk: Make rt aware
+X-NVConfidentiality: public
+
+Drop the lock before calling the console driver and do not disable
+interrupts while printing to a serial console.
+
+Change-Id: I1891abb1da8d30e1a1207206605258d56b0875da
+Signed-off-by: Thomas Gleixner <tglx@linutronix.de>
+---
+ kernel/printk/printk.c | 25 ++++++++++++++++++++++++-
+ 1 file changed, 24 insertions(+), 1 deletion(-)
+
+diff --git a/kernel/printk/printk.c b/kernel/printk/printk.c
+index 01175e7..918c381 100644
+--- a/kernel/printk/printk.c
++++ b/kernel/printk/printk.c
+@@ -1636,6 +1636,7 @@ static void call_console_drivers(int level,
+ 	if (!console_drivers)
+ 		return;
+ 
++	migrate_disable();
+ 	for_each_console(con) {
+ 		if (exclusive_console && con != exclusive_console)
+ 			continue;
+@@ -1651,6 +1652,7 @@ static void call_console_drivers(int level,
+ 		else
+ 			con->write(con, text, len);
+ 	}
++	migrate_enable();
+ }
+ 
+ int printk_delay_msec __read_mostly;
+@@ -1888,12 +1890,23 @@ asmlinkage int vprintk_emit(int facility, int level,
+ 
+ 	/* If called from the scheduler, we can not call up(). */
+ 	if (!in_sched) {
++		int may_trylock = 1;
++
++		lockdep_off();
++#ifdef CONFIG_PREEMPT_RT_FULL
++		/*
++		 * we can't take a sleeping lock with IRQs or preeption disabled
++		 * so we can't print in these contexts
++		 */
++		if (!(preempt_count() == 0 && !irqs_disabled()))
++			may_trylock = 0;
++#endif
+ 		/*
+ 		 * Try to acquire and then immediately release the console
+ 		 * semaphore.  The release will print out buffers and wake up
+ 		 * /dev/kmsg and syslog() users.
+ 		 */
+-		if (console_trylock())
++		if (may_trylock && console_trylock())
+ 			console_unlock();
+ 	}
+ 
+@@ -2279,11 +2292,16 @@ static void console_cont_flush(char *text, size_t size)
+ 		goto out;
+ 
+ 	len = cont_print_text(text, size);
++#ifdef CONFIG_PREEMPT_RT_FULL
++	raw_spin_unlock_irqrestore(&logbuf_lock, flags);
++	call_console_drivers(cont.level, NULL, 0, text, len);
++#else
+ 	raw_spin_unlock(&logbuf_lock);
+ 	stop_critical_timings();
+ 	call_console_drivers(cont.level, NULL, 0, text, len);
+ 	start_critical_timings();
+ 	local_irq_restore(flags);
++#endif
+ 	return;
+ out:
+ 	raw_spin_unlock_irqrestore(&logbuf_lock, flags);
+@@ -2408,6 +2426,10 @@ void console_unlock(void)
+ 		}
+ 		console_idx = log_next(console_idx);
+ 		console_seq++;
++#ifdef CONFIG_PREEMPT_RT_FULL
++		raw_spin_unlock_irqrestore(&logbuf_lock, flags);
++		call_console_drivers(level, ext_text, ext_len, text, len);
++#else
+ 		raw_spin_unlock(&logbuf_lock);
+ 
+ 		stop_critical_timings();	/* don't trace print latency */
+@@ -2415,6 +2437,7 @@ void console_unlock(void)
+ 		start_critical_timings();
+ 		printk_safe_exit_irqrestore(flags);
+ 
++#endif
+ 		if (do_cond_resched)
+ 			cond_resched();
+ 	}
+-- 
+2.7.4
+

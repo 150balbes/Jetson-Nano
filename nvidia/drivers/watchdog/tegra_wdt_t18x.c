@@ -1,7 +1,7 @@
 /*
  * tegra_wdt_t18x.c: watchdog driver for NVIDIA tegra internal watchdog
  *
- * Copyright (c) 2012-2016, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2012-2019, NVIDIA CORPORATION. All rights reserved.
  * Based on:
  *	drivers/watchdog/softdog.c and
  *	drivers/watchdog/omap_wdt.c
@@ -34,9 +34,27 @@
 #include <soc/tegra/chip-id.h>
 #include <soc/tegra/pmc.h>
 
-/* minimum and maximum watchdog trigger periods, in seconds */
-#define MIN_WDT_PERIOD		5
-#define MAX_WDT_PERIOD		256
+/* The total expiry count of Tegra WDTs supported by HW */
+#define EXPIRY_COUNT		5
+
+/*
+ * minimum and maximum Timer PTV in seconds
+ * MAX_TMR_PTV defines maximum value in seconds which can be fed into
+ * TOP_TKE_TMR_PTV which is of size 29 bits
+ * MAX_TMR_PTV = (1 << 29) / USEC_PER_SEC;
+ */
+#define MIN_TMR_PTV		1
+#define MAX_TMR_PTV		536
+
+/*
+ * To detect lockup condition, the heartbeat should be EXPIRY_COUNT*lockup.
+ * It may be taken over later by timeout value requested by application.
+ * Must be greater than MIN_TMR_PTV and lower than MAX_TMR_PTV*active_count.
+ */
+#define HEARTBEAT		120
+
+/* Watchdog configured to this time before reset during shutdown */
+#define SHUTDOWN_TIMEOUT	150
 
 /* Bit numbers for status flags */
 #define WDT_ENABLED		0
@@ -61,7 +79,6 @@ struct tegra_wdt_t18x {
 	int			hwirq;
 	unsigned long		status;
 	bool			enable_on_init;
-	int			expiry_count;
 	int			active_count;
 	int			shutdown_timeout;
 	int			wdt_index;
@@ -84,25 +101,7 @@ static bool default_disable;
 module_param(default_disable, bool, 0644);
 MODULE_PARM_DESC(default_disable, "Default state of watchdog");
 
-/*
- * The total expiry count of Tegra WDTs is limited to HW design and depends
- * on skip configuration if supported. To be safe, we set the default expiry
- * count to 1. It should be updated later with value specified in device tree.
- */
-#define EXPIRY_COUNT		1
-
-/*
- * To detect lockup condition, the heartbeat should be expiry_count*lockup.
- * It may be taken over later by timeout value requested by application.
- * Must be greater than expiry_count*MIN_WDT_PERIOD and lower than
- * expiry_count*MAX_WDT_PERIOD.
- */
-#define HEARTBEAT		120
-
 static struct syscore_ops tegra_wdt_t18x_syscore_ops;
-
-/* Watchdog configured to this time before reset during shutdown */
-#define SHUTDOWN_TIMEOUT	150
 
 static struct tegra_wdt_t18x *to_tegra_wdt_t18x(struct watchdog_device *wdt)
 {
@@ -218,8 +217,7 @@ static int __tegra_wdt_t18x_enable(struct tegra_wdt_t18x *twdt_t18x)
 		       twdt_t18x->wdt_tke + TOP_TKE_TKEIE(twdt_t18x->hwirq));
 
 	/* Update skip configuration and active expiry count */
-	twdt_t18x->active_count = twdt_t18x->expiry_count -
-					 tegra_wdt_t18x_skip(twdt_t18x);
+	twdt_t18x->active_count = EXPIRY_COUNT - tegra_wdt_t18x_skip(twdt_t18x);
 	if (twdt_t18x->active_count < 1)
 		twdt_t18x->active_count = 1;
 
@@ -411,15 +409,13 @@ static int tegra_wdt_t18x_probe(struct platform_device *pdev)
 	struct device_node *np = pdev->dev.of_node;
 	struct of_phandle_args oirq;
 	int timer_id, wdt_id;
+	int skip_count = 0;
 	u32 pval = 0;
 	int ret;
 
 	twdt_t18x = devm_kzalloc(&pdev->dev, sizeof(*twdt_t18x), GFP_KERNEL);
 	if (!twdt_t18x)
 		return -ENOMEM;
-
-	ret = of_property_read_u32(np, "nvidia,expiry-count", &pval);
-	twdt_t18x->expiry_count = (ret) ? EXPIRY_COUNT : pval;
 
 	ret = of_property_read_u32(np, "nvidia,shutdown-timeout", &pval);
 	twdt_t18x->shutdown_timeout = (ret) ? SHUTDOWN_TIMEOUT : pval;
@@ -428,11 +424,10 @@ static int tegra_wdt_t18x_probe(struct platform_device *pdev)
 	twdt_t18x->dev = &pdev->dev;
 	twdt_t18x->wdt.info = &tegra_wdt_t18x_info;
 	twdt_t18x->wdt.ops = &tegra_wdt_t18x_ops;
-	twdt_t18x->wdt.min_timeout = MIN_WDT_PERIOD * twdt_t18x->expiry_count;
-	twdt_t18x->wdt.max_timeout = MAX_WDT_PERIOD * twdt_t18x->expiry_count;
-	ret = watchdog_init_timeout(&twdt_t18x->wdt, 0, &pdev->dev);
-	if (ret < 0)
-		twdt_t18x->wdt.timeout = HEARTBEAT;
+
+	ret = of_property_read_u32(np, "nvidia,expiry-count", &pval);
+	if (!ret)
+		dev_info(twdt_t18x->dev, "Expiry count is deprecated\n");
 
 	watchdog_set_nowayout(&twdt_t18x->wdt, nowayout);
 
@@ -575,6 +570,8 @@ static int tegra_wdt_t18x_probe(struct platform_device *pdev)
 		if (!of_property_read_bool(np,
 					   "nvidia,disable-remote-interrupt"))
 			twdt_t18x->config |= WDT_CFG_REMOTE_INT_EN;
+		else
+			skip_count++;
 
 		/*
 		 * Debug and POR reset events should be enabled by default.
@@ -585,11 +582,20 @@ static int tegra_wdt_t18x_probe(struct platform_device *pdev)
 			if (!of_property_read_bool(
 				np, "nvidia,disable-debug-reset"))
 				twdt_t18x->config |= WDT_CFG_DBG_RST_EN;
+			else
+				skip_count++;
+
 			if (!of_property_read_bool(
 				np, "nvidia,disable-por-reset"))
 				twdt_t18x->config |= WDT_CFG_SYS_PORST_EN;
 		}
 	}
+
+	twdt_t18x->wdt.min_timeout = MIN_TMR_PTV;
+	twdt_t18x->wdt.max_timeout = MAX_TMR_PTV * (EXPIRY_COUNT - skip_count);
+	ret = watchdog_init_timeout(&twdt_t18x->wdt, 0, &pdev->dev);
+	if (ret < 0)
+		twdt_t18x->wdt.timeout = HEARTBEAT;
 
 	tegra_wdt_t18x_disable(&twdt_t18x->wdt);
 	writel(TOP_TKE_TMR_PCR_INTR, twdt_t18x->wdt_timer + TOP_TKE_TMR_PCR);

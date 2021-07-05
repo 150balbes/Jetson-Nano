@@ -1,7 +1,7 @@
 /*
  * GP106 HAL interface
  *
- * Copyright (c) 2016-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2016-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -527,7 +527,7 @@ static const struct gpu_ops gp106_ops = {
 		.handle_pbdma_intr_0 = gk20a_fifo_handle_pbdma_intr_0,
 		.handle_pbdma_intr_1 = gk20a_fifo_handle_pbdma_intr_1,
 		.tsg_bind_channel = gk20a_tsg_bind_channel,
-		.tsg_unbind_channel = gk20a_fifo_tsg_unbind_channel,
+		.tsg_unbind_channel = NULL,
 		.post_event_id = gk20a_tsg_event_id_post_event,
 		.ch_abort_clean_up = gk20a_channel_abort_clean_up,
 		.check_tsg_ctxsw_timeout = gk20a_fifo_check_tsg_ctxsw_timeout,

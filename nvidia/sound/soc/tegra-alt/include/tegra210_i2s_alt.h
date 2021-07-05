@@ -199,13 +199,8 @@ enum tegra210_i2s_path {
 
 struct tegra210_i2s {
 	struct clk *clk_i2s;
-	struct clk *clk_i2s_sync;
-	struct clk *clk_audio_sync;
-	struct clk *clk_i2s_source;
+	struct clk *clk_sync_input;
 	struct regmap *regmap;
-	struct pinctrl *pinctrl;
-	struct pinctrl_state *pin_default_state;
-	struct pinctrl_state *pin_idle_state;
 	const char *prod_name;
 	struct regulator_bulk_data *supplies;
 	int num_supplies;
@@ -223,7 +218,6 @@ struct tegra210_i2s {
 	unsigned int format;
 	bool enable_cya;
 	unsigned int rx_fifo_th; /* should be programmed interms of frames */
-	bool is_shutdown;
 };
 
 #endif

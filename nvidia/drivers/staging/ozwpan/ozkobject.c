@@ -1,7 +1,7 @@
 /* -----------------------------------------------------------------------------
  * Copyright (c) 2011 Ozmo Inc
  * Released under the GNU General Public License Version 2 (GPLv2).
- * Copyright (c) 2015, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2015-2020, NVIDIA CORPORATION. All rights reserved.
  * -----------------------------------------------------------------------------
  */
 #include <linux/init.h>
@@ -9,12 +9,12 @@
 #include <linux/netdevice.h>
 #include <linux/sysfs.h>
 #include <linux/version.h>
+#include <uapi/staging/ozappif.h>
 #include "ozpd.h"
 #include "ozcdev.h"
 #include "ozproto.h"
 #include "oztrace.h"
 #include "ozkobject.h"
-#include "ozappif.h"
 
 static ssize_t devices_show(struct kobject *kobj, struct kobj_attribute *attr,
 				char *buf)

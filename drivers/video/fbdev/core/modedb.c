@@ -6,7 +6,7 @@
  *	2001 - Documented with DocBook
  *	- Brad Douglas <brad@neruo.com>
  *
- * Copyright (c) 2018, NVIDIA CORPORATION, All rights reserved.
+ * Copyright (c) 2018-2020, NVIDIA CORPORATION, All rights reserved.
  *
  *  This file is subject to the terms and conditions of the GNU General Public
  *  License. See the file COPYING in the main directory of this archive for
@@ -2130,6 +2130,9 @@ void fb_var_to_videomode(struct fb_videomode *mode,
 	if (var->vmode & FB_VMODE_DOUBLE)
 		vtotal *= 2;
 
+	if (!htotal || !vtotal)
+		return;
+
 	hfreq = pixclock/htotal;
 	mode->refresh = hfreq/vtotal;
 }
@@ -2174,8 +2177,7 @@ int fb_mode_find_cea(struct fb_videomode *mode)
 
 	/* TODO: optimize search, for now start from top */
 	for (i = CEA_MODEDB_SIZE - 1; i > 0; i--)
-		if (fb_mode_is_equal_tolerance(cea_modes + i, mode,
-					FB_MODE_TOLERANCE_DEFAULT))
+		if (fb_mode_is_equal_timing(cea_modes + i, mode))
 			return i;
 
 	return 0;
@@ -2293,6 +2295,47 @@ int fb_mode_is_equal_tolerance(const struct fb_videomode *mode1,
 		return 0;
 }
 
+/**
+ * fb_mode_is_equal_timing - compare 2 videomodes with timing.
+ * Similar to fb_mode_is_equal
+ *
+ * RETURNS:
+ * 1 if equal, 0 if not
+ */
+int fb_mode_is_equal_timing(const struct fb_videomode *mode1,
+			       const struct fb_videomode *mode2)
+{
+	/*
+	 * Note: this function intentionally doesn't check refresh, flags and
+	 * sync. refresh is an optional field and always has +1/-1 rounding
+	 * errors
+	 */
+
+	if (mode2->pixclock *
+			(FB_MODE_TOLERANCE_DENOMINATOR-FB_MODE_TOLERANCE_DEFAULT)
+			/ FB_MODE_TOLERANCE_DENOMINATOR
+		> mode1->pixclock
+		||
+		mode2->pixclock *
+			(FB_MODE_TOLERANCE_DENOMINATOR+FB_MODE_TOLERANCE_DEFAULT)
+			/ FB_MODE_TOLERANCE_DENOMINATOR
+		< mode1->pixclock
+	)
+		return 0;
+
+
+	if (mode1->xres             == mode2->xres &&
+		mode1->yres         == mode2->yres &&
+		mode1->hsync_len    == mode2->hsync_len &&
+		mode1->vsync_len    == mode2->vsync_len &&
+		mode1->left_margin  == mode2->left_margin &&
+		mode1->right_margin == mode2->right_margin &&
+		mode1->upper_margin == mode2->upper_margin &&
+		mode1->lower_margin == mode2->lower_margin)
+		return 1;
+	else
+		return 0;
+}
 
 /**
  * fb_find_best_mode - find best matching videomode

@@ -317,6 +317,8 @@ alternative_insn eret, nop, ARM64_UNMAP_KERNEL_AT_EL0
 	.else
 	eret
 	.endif
+	dsb nsh
+	isb
 	.endm
 
 	.macro	irq_stack_entry
@@ -586,42 +588,37 @@ el1_preempt:
 el1_serr:
 	kernel_entry 1
 	enable_dbg
-	// re-enable interrupts if they were enabled in the aborted context
-	tbnz	x23, #7, 1f			// PSR_I_BIT
-	enable_irq
 1:
 	mrs	x0, daif
 	mrs	x1, spsr_el1
 	mov	x2, sp				// struct pt_regs
 	bl	handle_serr
-	// disable interrupts before pulling preserved data off the stack
-	disable_irq
 	kernel_exit 1
 ENDPROC(el1_serr)
 
 el0_serr:
 	kernel_entry 0
-	// enable interrupts before calling the main handler
-	enable_dbg_and_irq
 	ct_user_exit
+	enable_dbg
 	mrs	x0, daif
 	mrs	x1, spsr_el1
 	mov	x2, sp
 	bl	handle_serr
+	enable_da_f
 	b	ret_to_user
 ENDPROC(el0_serr)
 
 #ifdef CONFIG_COMPAT
 el0_serr_compat:
-        kernel_entry 0, 32
-        // enable interrupts before calling the main handler
-        enable_dbg_and_irq
-        ct_user_exit
-        mrs     x0, daif
-        mrs     x1, spsr_el1
-        mov     x2, sp
-        bl      handle_serr
-        b       ret_to_user
+	kernel_entry 0, 32
+	ct_user_exit
+	enable_dbg
+	mrs     x0, daif
+	mrs     x1, spsr_el1
+	mov     x2, sp
+	bl      handle_serr
+	enable_da_f
+	b       ret_to_user
 ENDPROC(el0_serr_compat)
 #endif
 
@@ -1058,6 +1055,8 @@ __ni_sys_trace:
 	mrs	x30, far_el1
 	.endif
 	eret
+	dsb nsh
+	isb
 	.endm
 
 	.align	11

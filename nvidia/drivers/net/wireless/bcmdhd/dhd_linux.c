@@ -5,7 +5,7 @@
  * Copyright (C) 1999-2015, Broadcom Corporation
  *
  * Portions contributed by Nvidia
- * Copyright (C) 2015-2019, NVIDIA Corporation. All rights reserved.
+ * Copyright (C) 2015-2020, NVIDIA Corporation. All rights reserved.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -4657,8 +4657,7 @@ dhd_allocate_if(dhd_pub_t *dhdpub, int ifidx, char *name,
 	dhd_dev_priv_save(ifp->net, dhdinfo, ifp, ifidx);
 
 	if (name && name[0]) {
-		strncpy(ifp->net->name, name, IFNAMSIZ);
-		ifp->net->name[IFNAMSIZ - 1] = '\0';
+		strlcpy(ifp->net->name, name, IFNAMSIZ);
 	}
 #ifdef WL_CFG80211
 	if (ifidx == 0)
@@ -10050,8 +10049,7 @@ dhd_dev_start_mkeep_alive(dhd_pub_t *dhd_pub, u8 mkeep_alive_id, u8 *ip_pkt, u16
 	memset(pbuf, 0, TEMP_BUF_SIZE);
 	str = "mkeep_alive";
 	str_len = strlen(str);
-	strncpy(pbuf, str, str_len);
-	pbuf[str_len] = '\0';
+	strlcpy(pbuf, str, TEMP_BUF_SIZE);
 
 	mkeep_alive_pktp = (wl_mkeep_alive_pkt_t *) (pbuf + str_len + 1);
 	mkeep_alive_pkt.period_msec = htod32(period_msec);
@@ -10170,8 +10168,7 @@ dhd_dev_stop_mkeep_alive(dhd_pub_t *dhd_pub, u8 mkeep_alive_id)
 		memset(pbuf, 0, TEMP_BUF_SIZE);
 		str = "mkeep_alive";
 		str_len = strlen(str);
-		strncpy(pbuf, str, str_len);
-		pbuf[str_len] = '\0';
+		strlcpy(pbuf, str, str_len + 1);
 
 		mkeep_alive_pktp = (wl_mkeep_alive_pkt_t *) (pbuf + str_len + 1);
 

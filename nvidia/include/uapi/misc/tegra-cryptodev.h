@@ -1,5 +1,7 @@
 /*
- * Copyright (c) 2010-2019, NVIDIA Corporation. All Rights Reserved.
+ * include/uapi/misc/tegra-cryptodev.h
+ *
+ * Copyright (c) 2016-2020, NVIDIA CORPORATION. All Rights Reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,7 +21,7 @@
 #ifndef __UAPI_TEGRA_CRYPTODEV_H
 #define __UAPI_TEGRA_CRYPTODEV_H
 
-#include <uapi/asm-generic/ioctl.h>
+#include <asm-generic/ioctl.h>
 
 /* ioctl arg = 1 if you want to use ssk. arg = 0 to use normal key */
 #define TEGRA_CRYPTO_IOCTL_NEED_SSK		_IOWR(0x98, 100, int)

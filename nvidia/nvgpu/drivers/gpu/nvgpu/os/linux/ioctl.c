@@ -54,6 +54,7 @@ static const struct file_operations gk20a_ctrl_ops = {
 #ifdef CONFIG_COMPAT
 	.compat_ioctl = gk20a_ctrl_dev_ioctl,
 #endif
+	.mmap = gk20a_ctrl_dev_mmap,
 };
 
 static const struct file_operations gk20a_dbg_ops = {

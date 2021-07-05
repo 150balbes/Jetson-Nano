@@ -181,7 +181,7 @@
 		};
 	};
 
-	sound_card: sound {
+	tegra_sound: sound {
 		ldoen-supply = <&vdd_sys_boost>;
 		spkvdd-supply = <&vdd_sys_boost>;
 		dbvdd-supply = <&vdd_sys_boost>;

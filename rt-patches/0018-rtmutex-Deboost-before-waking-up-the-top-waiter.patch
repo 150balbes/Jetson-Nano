@@ -1,0 +1,190 @@
+From abcb6bf6727f988368551d060467ee4319c5d9d7 Mon Sep 17 00:00:00 2001
+From: Xunlei Pang <xlpang@redhat.com>
+Date: Thu, 23 Mar 2017 15:56:07 +0100
+Subject: [PATCH 018/371] rtmutex: Deboost before waking up the top waiter
+X-NVConfidentiality: public
+
+Upstream commit 2a1c6029940675abb2217b590512dbf691867ec4
+
+We should deboost before waking the high-priority task, such that we
+don't run two tasks with the same "state" (priority, deadline,
+sched_class, etc).
+
+In order to make sure the boosting task doesn't start running between
+unlock and deboost (due to 'spurious' wakeup), we move the deboost
+under the wait_lock, that way its serialized against the wait loop in
+__rt_mutex_slowlock().
+
+Doing the deboost early can however lead to priority-inversion if
+current would get preempted after the deboost but before waking our
+high-prio task, hence we disable preemption before doing deboost, and
+enabling it after the wake up is over.
+
+This gets us the right semantic order, but most importantly however;
+this change ensures pointer stability for the next patch, where we
+have rt_mutex_setprio() cache a pointer to the top-most waiter task.
+If we, as before this change, do the wakeup first and then deboost,
+this pointer might point into thin air.
+
+[peterz: Changelog + patch munging]
+Suggested-by: Peter Zijlstra <peterz@infradead.org>
+Signed-off-by: Xunlei Pang <xlpang@redhat.com>
+Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Acked-by: Steven Rostedt <rostedt@goodmis.org>
+Cc: juri.lelli@arm.com
+Cc: bigeasy@linutronix.de
+Cc: mathieu.desnoyers@efficios.com
+Cc: jdesfossez@efficios.com
+Cc: bristot@redhat.com
+Link: http://lkml.kernel.org/r/20170323150216.110065320@infradead.org
+Signed-off-by: Thomas Gleixner <tglx@linutronix.de>
+---
+ kernel/futex.c                  |  5 +---
+ kernel/locking/rtmutex.c        | 59 ++++++++++++++++++++++-------------------
+ kernel/locking/rtmutex_common.h |  2 +-
+ 3 files changed, 34 insertions(+), 32 deletions(-)
+
+diff --git a/kernel/futex.c b/kernel/futex.c
+index 3b5ff61a..20e14bf 100644
+--- a/kernel/futex.c
++++ b/kernel/futex.c
+@@ -1459,10 +1459,7 @@ static int wake_futex_pi(u32 __user *uaddr, u32 uval, struct futex_pi_state *pi_
+ out_unlock:
+ 	raw_spin_unlock_irq(&pi_state->pi_mutex.wait_lock);
+ 
+-	if (deboost) {
+-		wake_up_q(&wake_q);
+-		rt_mutex_adjust_prio(current);
+-	}
++	rt_mutex_postunlock(&wake_q, deboost);
+ 
+ 	return ret;
+ }
+diff --git a/kernel/locking/rtmutex.c b/kernel/locking/rtmutex.c
+index 7f8ee5d..a77f7ca 100644
+--- a/kernel/locking/rtmutex.c
++++ b/kernel/locking/rtmutex.c
+@@ -370,24 +370,6 @@ static void __rt_mutex_adjust_prio(struct task_struct *task)
+ }
+ 
+ /*
+- * Adjust task priority (undo boosting). Called from the exit path of
+- * rt_mutex_slowunlock() and rt_mutex_slowlock().
+- *
+- * (Note: We do this outside of the protection of lock->wait_lock to
+- * allow the lock to be taken while or before we readjust the priority
+- * of task. We do not use the spin_xx_mutex() variants here as we are
+- * outside of the debug path.)
+- */
+-void rt_mutex_adjust_prio(struct task_struct *task)
+-{
+-	unsigned long flags;
+-
+-	raw_spin_lock_irqsave(&task->pi_lock, flags);
+-	__rt_mutex_adjust_prio(task);
+-	raw_spin_unlock_irqrestore(&task->pi_lock, flags);
+-}
+-
+-/*
+  * Deadlock detection is conditional:
+  *
+  * If CONFIG_DEBUG_RT_MUTEXES=n, deadlock detection is only conducted
+@@ -1072,6 +1054,7 @@ static void mark_wakeup_next_waiter(struct wake_q_head *wake_q,
+ 	 * lock->wait_lock.
+ 	 */
+ 	rt_mutex_dequeue_pi(current, waiter);
++	__rt_mutex_adjust_prio(current);
+ 
+ 	/*
+ 	 * As we are waking up the top waiter, and the waiter stays
+@@ -1416,6 +1399,16 @@ static bool __sched rt_mutex_slowunlock(struct rt_mutex *lock,
+ 	 */
+ 	mark_wakeup_next_waiter(wake_q, lock);
+ 
++	/*
++	 * We should deboost before waking the top waiter task such that
++	 * we don't run two tasks with the 'same' priority. This however
++	 * can lead to prio-inversion if we would get preempted after
++	 * the deboost but before waking our high-prio task, hence the
++	 * preempt_disable before unlock. Pairs with preempt_enable() in
++	 * rt_mutex_postunlock();
++	 */
++	preempt_disable();
++
+ 	raw_spin_unlock_irqrestore(&lock->wait_lock, flags);
+ 
+ 	/* check PI boosting */
+@@ -1465,6 +1458,18 @@ rt_mutex_fasttrylock(struct rt_mutex *lock,
+ 	return slowfn(lock);
+ }
+ 
++/*
++ * Undo pi boosting (if necessary) and wake top waiter.
++ */
++void rt_mutex_postunlock(struct wake_q_head *wake_q, bool deboost)
++{
++	wake_up_q(wake_q);
++
++	/* Pairs with preempt_disable() in rt_mutex_slowunlock() */
++	if (deboost)
++		preempt_enable();
++}
++
+ static inline void
+ rt_mutex_fastunlock(struct rt_mutex *lock,
+ 		    bool (*slowfn)(struct rt_mutex *lock,
+@@ -1478,11 +1483,7 @@ rt_mutex_fastunlock(struct rt_mutex *lock,
+ 
+ 	deboost = slowfn(lock, &wake_q);
+ 
+-	wake_up_q(&wake_q);
+-
+-	/* Undo pi boosting if necessary: */
+-	if (deboost)
+-		rt_mutex_adjust_prio(current);
++	rt_mutex_postunlock(&wake_q, deboost);
+ }
+ 
+ /**
+@@ -1595,6 +1596,13 @@ bool __sched __rt_mutex_futex_unlock(struct rt_mutex *lock,
+ 	}
+ 
+ 	mark_wakeup_next_waiter(wake_q, lock);
++	/*
++	 * We've already deboosted, retain preempt_disabled when dropping
++	 * the wait_lock to avoid inversion until the wakeup. Matched
++	 * by rt_mutex_postunlock();
++	 */
++	preempt_disable();
++
+ 	return true; /* deboost and wakeups */
+ }
+ 
+@@ -1607,10 +1615,7 @@ void __sched rt_mutex_futex_unlock(struct rt_mutex *lock)
+ 	deboost = __rt_mutex_futex_unlock(lock, &wake_q);
+ 	raw_spin_unlock_irq(&lock->wait_lock);
+ 
+-	if (deboost) {
+-		wake_up_q(&wake_q);
+-		rt_mutex_adjust_prio(current);
+-	}
++	rt_mutex_postunlock(&wake_q, deboost);
+ }
+ 
+ /**
+diff --git a/kernel/locking/rtmutex_common.h b/kernel/locking/rtmutex_common.h
+index f4c34c4..dad9229 100644
+--- a/kernel/locking/rtmutex_common.h
++++ b/kernel/locking/rtmutex_common.h
+@@ -123,7 +123,7 @@ extern void rt_mutex_futex_unlock(struct rt_mutex *lock);
+ extern bool __rt_mutex_futex_unlock(struct rt_mutex *lock,
+ 				 struct wake_q_head *wqh);
+ 
+-extern void rt_mutex_adjust_prio(struct task_struct *task);
++extern void rt_mutex_postunlock(struct wake_q_head *wake_q, bool deboost);
+ 
+ #ifdef CONFIG_DEBUG_RT_MUTEXES
+ # include "rtmutex-debug.h"
+-- 
+2.7.4
+

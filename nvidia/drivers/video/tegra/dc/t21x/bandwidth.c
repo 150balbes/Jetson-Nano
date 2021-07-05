@@ -1,7 +1,7 @@
 /*
  * bandwidth.c: Functions required for dc bandwidth calculations.
  *
- * Copyright (c) 2010-2018, NVIDIA CORPORATION, All rights reserved.
+ * Copyright (c) 2010-2019, NVIDIA CORPORATION, All rights reserved.
  *
  * Author: Jon Mayo <jmayo@nvidia.com>
  *
@@ -29,8 +29,9 @@
 #include <linux/platform/tegra/emc_bwmgr.h>
 #include <linux/platform/tegra/tegra_emc.h>
 #include <linux/platform/tegra/mc.h>
+#include <linux/platform/tegra/bwmgr_mc.h>
 
-#include <video/tegra_dc_ext.h>
+#include <uapi/video/tegra_dc_ext.h>
 #include "dc.h"
 #include "dc_reg.h"
 #include "dc_config.h"
@@ -121,8 +122,8 @@ static unsigned int num_active_external_wins(struct tegra_dc *dc)
  *    - la_params.la_fp_to_real(fp_val)
  */
 
-#define T12X_LA_BW_DISRUPTION_TIME_EMCCLKS_FP			2362000
-#define T12X_LA_STATIC_LA_SNAP_ARB_TO_ROW_SRT_EMCCLKS_FP	54000
+#define T12X_LA_BW_DISRUPTION_TIME_EMCCLK_FP			2362000
+#define T12X_LA_STATIC_LA_SNAP_ARB_TO_ROW_SRT_EMCCLK_FP	54000
 #define T12X_LA_CONS_MEM_EFFICIENCY_FP				500
 #define T12X_LA_ROW_SRT_SZ_BYTES	(64 * (T12X_LA_MC_EMEM_NUM_SLOTS + 1))
 #define T12X_LA_MC_EMEM_NUM_SLOTS				63
@@ -185,30 +186,33 @@ static void calc_disp_params(struct tegra_dc *dc,
 	unsigned long emc_freq_khz = emc_freq_hz / 1000;
 	unsigned long emc_freq_mhz = emc_freq_khz / 1000;
 	unsigned int bw_disruption_time_usec_fp =
-					T12X_LA_BW_DISRUPTION_TIME_EMCCLKS_FP /
+					T12X_LA_BW_DISRUPTION_TIME_EMCCLK_FP /
 					emc_freq_mhz;
 	unsigned int effective_row_srt_sz_bytes_fp =
 		min((unsigned long)la_params.la_real_to_fp(min(
-					(unsigned long)T12X_LA_ROW_SRT_SZ_BYTES,
-					16 * min(emc_freq_mhz + 50,
-						400ul))),
-			(T12X_LA_MAX_DRAIN_TIME_USEC *
-			emc_freq_mhz -
+			(unsigned long)T12X_LA_ROW_SRT_SZ_BYTES *
+			(la_params.dram_width_bits /
+			(T12X_LA_MC_EMEM_NUM_SLOTS + 1)),
+			(2 * la_params.dram_width_bits / 8) *
+			min(emc_freq_mhz + 50, 400ul))),
+			(T12X_LA_MAX_DRAIN_TIME_USEC * emc_freq_mhz -
 			la_params.la_fp_to_real(
-			T12X_LA_STATIC_LA_SNAP_ARB_TO_ROW_SRT_EMCCLKS_FP)) *
+			T12X_LA_STATIC_LA_SNAP_ARB_TO_ROW_SRT_EMCCLK_FP)) *
 			2 *
 			la_params.dram_width_bits /
 			8 *
 			T12X_LA_CONS_MEM_EFFICIENCY_FP);
+	unsigned long helper_1st =
+		(unsigned long)effective_row_srt_sz_bytes_fp *
+		la_params.fp_factor;
+	unsigned long helper_2nd =
+		(unsigned long)(emc_freq_mhz * la_params.dram_width_bits / 4 *
+		 T12X_LA_CONS_MEM_EFFICIENCY_FP);
+	unsigned long helper_3rd =
+		(unsigned long)T12X_LA_STATIC_LA_SNAP_ARB_TO_ROW_SRT_EMCCLK_FP /
+		emc_freq_mhz;
 	unsigned int drain_time_usec_fp =
-			effective_row_srt_sz_bytes_fp *
-			la_params.fp_factor /
-			(emc_freq_mhz *
-				la_params.dram_width_bits /
-				4 *
-				T12X_LA_CONS_MEM_EFFICIENCY_FP) +
-			T12X_LA_STATIC_LA_SNAP_ARB_TO_ROW_SRT_EMCCLKS_FP /
-			emc_freq_mhz;
+		(unsigned int) (helper_1st / helper_2nd + helper_3rd);
 	unsigned int total_latency_usec_fp =
 		drain_time_usec_fp +
 		la_params.static_la_minus_snap_arb_to_row_srt_emcclks_fp /
@@ -529,8 +533,9 @@ static int tegra_dc_handle_latency_allowance(struct tegra_dc *dc,
 	int ret = 0;
 	unsigned long bw;
 	struct dc_to_la_params disp_params;
-	struct clk *emc_clk = NULL;
+	struct clk *dram_clk = NULL;
 	unsigned long emc_freq_hz = 0;
+	unsigned long dram_freq_hz = 0;
 
 	BUG_ON(dc->ctrl_num >= ARRAY_SIZE(la_id_tab));
 	BUG_ON(w->idx >= ARRAY_SIZE(*la_id_tab));
@@ -543,15 +548,17 @@ static int tegra_dc_handle_latency_allowance(struct tegra_dc *dc,
 	if (bw != ULONG_MAX)
 		bw = bw / 1000 + 1;
 
-	/* use clk_round_rate on root emc clock instead to get correct rate */
-	emc_clk = clk_get_sys("tegra_emc", "emc");
-	emc_freq_hz = set_la ?
+	/* use clk_round_rate on root dram clock instead to get correct rate */
+	dram_clk = clk_get_sys("tegra_emc", "emc");
+	dram_freq_hz = set_la ?
 		tegra_emc_bw_to_freq_req(bw * 1000000) : UINT_MAX;
-	emc_freq_hz = clk_round_rate(emc_clk, emc_freq_hz);
+	/* clk_round_rate returns the next dram frequency */
+	dram_freq_hz = clk_round_rate(dram_clk, dram_freq_hz);
+	emc_freq_hz = dram_freq_hz / bwmgr_get_emc_to_dram_freq_factor();
 
 	while (1) {
 		int err;
-		unsigned long next_freq = 0;
+		unsigned long next_emc_freq_hz = 0;
 		calc_disp_params(dc, w,
 				la_id_tab[dc->ctrl_num][w->idx],
 				emc_freq_hz, bw, &disp_params);
@@ -569,22 +576,26 @@ static int tegra_dc_handle_latency_allowance(struct tegra_dc *dc,
 			emc_freq_hz, bw, disp_params);
 
 		if (!err) {
-			tegra_bwmgr_set_emc(dc->emc_la_handle, emc_freq_hz,
-						TEGRA_BWMGR_SET_EMC_FLOOR);
+			/* tegra_bwmgr_set_emc sets dram frequency */
+			tegra_bwmgr_set_emc(dc->emc_la_handle,
+				dram_freq_hz, TEGRA_BWMGR_SET_EMC_FLOOR);
 			break;
 		}
 
-		next_freq = clk_round_rate(emc_clk, emc_freq_hz + 1000000);
+		dram_freq_hz = clk_round_rate(dram_clk, dram_freq_hz + 1000000);
 
-		if (emc_freq_hz == next_freq) {
+		next_emc_freq_hz = dram_freq_hz /
+			bwmgr_get_emc_to_dram_freq_factor();
+
+		if (emc_freq_hz == next_emc_freq_hz) {
 			ret = err;
 			break;
 		}
+		emc_freq_hz = next_emc_freq_hz;
 
-		emc_freq_hz = next_freq;
 	}
 
-	clk_put(emc_clk);
+	clk_put(dram_clk);
 
 	return ret;
 }

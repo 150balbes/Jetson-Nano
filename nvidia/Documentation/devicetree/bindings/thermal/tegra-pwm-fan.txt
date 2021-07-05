@@ -1,0 +1,75 @@
+Bindings for a fan connected to the PWM lines
+
+Properties details:
+- compatible		: "pwm-fan"
+- pwms			: the PWM that is used to control the PWM fan
+
+- shared_data
+  - active_steps	: Entries for references in active_rpm[], active_pwm[], active_rru[], active_rrd[]
+  - active_rru		: This value is kept on added to cur_pwm till it reaches at
+			  next active step from the table. This is repeated until cur_pwm
+			  value reaches target_pwm
+  - active_rrd		: This value is kept on subtracted from cur_pwm till it reaches at
+			  previous active step from the table. This is repeated until cur_pwm
+			  value reaches target_pwm
+  - state_cap_lookup 	: Index to refer in active_pwm[]
+  - pwm_period		: To derive duty cycle
+  - pwm_id		: Assigned PWM controller id to tegra fan
+			  Same as mentioned id in pwms. In pwms, the id starts from 1
+			  pwm_id in pfsd, the id starts from 0
+  - step_time		: Time taken for each step during rru/rrd
+  - state_cap		: Capping state value out of available active_steps
+  - active_pwm_max	: Max pwm value (256)
+  - pwm_gpio		: GPIO pin used for pwm
+  - use_tach_feedback   : Enable the tachometer feedback logic. If a pwm set
+			  request is raised, two worker threads are scheduled.
+			  One for setting the pwm value and one for correcting
+			  the pwm based on desired rpm for the pwm requested.
+			  The tachometer readings are validated for 16 consecutive times
+			  before the feedbacklogic bails out successfully.
+			  If the rpm validation fails, the second worker thread
+			  keeps updating the pwm using the rru/rrd values.
+  - rpm_ramp_time_ms	: The rpm validation worker thread waits for the given
+			  value(milliseconds) after scheduling the pwm  set
+			  worker thread.
+  - rpm_diff_tolerance  : How much rpm diff is to be tolerated by the rpm
+			  validation logic.
+  - rpm_valid_retry_count : In case the fan rpm is in limit, how many times
+			    should the validation logic test for regression.
+  - rpm_valid_retry_delay : How much delay to be used during the validation
+			    retries after the rpm is brought to threshold values
+  - rpm_invalid_retry_delay : In case the rpm expected and tachometer reading
+			      values mismatch, how much delay should be used for
+			      next validation.
+  - use_tmargin		: If Tmargin algorithm is being used in therm_fan_est
+    			  driver. This node needs to be enabled for the pwm fan
+			  driver to work properly.
+  - is_always_on	: Enable if the fan is always on.
+
+Example:
+
+	pwm_fan_shared_data: pfsd {
+		status = "okay";
+		num_resources = <0>;
+		active_steps = <10>;
+		active_rpm = <0 1000 2000 3000 4000 5000 6000 7000 10000 11000>;
+		active_rru = <40 2 1 1 1 1 1 1 1 1>;
+		active_rrd = <40 2 1 1 1 1 1 1 1 1>;
+		state_cap_lookup = <2 2 2 2 3 3 3 4 4 4>;
+		pwm_period = <45334>;
+		pwm_id = <3>;
+		step_time = <100>; /* mesecs */
+		state_cap = <7>;
+		active_pwm_max = <256>;
+		pwm_gpio = <&tegra_aon_gpio TEGRA_AON_GPIO(V, 6) GPIO_ACTIVE_LOW>; /* TEGRA_MAIN_GPIO_PV6 */
+	};
+	pwm-fan {
+		status = "okay";
+		compatible = "pwm-fan";
+		#pwm-cells = <1>;
+		pwms = <&tegra_pwm4 0 45334>;
+		shared_data = <&pwm_fan_shared_data>;
+		active_pwm = <0 80 120 160 255 255 255 255 255 255>;
+	};
+};
+

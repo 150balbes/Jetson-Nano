@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2018-2020, NVIDIA CORPORATION. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -98,9 +98,6 @@ static int gk20a_ctxsw_debugfs_ring_open(struct inode *inode,
 	struct file *file)
 {
 	struct gk20a **p;
-
-	if (!capable(CAP_SYS_ADMIN))
-		return -EPERM;
 
 	p = __seq_open_private(file, &gk20a_fecs_trace_debugfs_ring_seq_ops,
 		sizeof(struct gk20a *));

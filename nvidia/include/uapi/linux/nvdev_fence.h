@@ -3,7 +3,7 @@
  *
  * Tegra PVA/DLA fence support
  *
- * Copyright (c) 2018, NVIDIA Corporation.  All rights reserved.
+ * Copyright (c) 2018-2019, NVIDIA Corporation.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -34,6 +34,7 @@ enum nvdev_fence_kind {
  * struct nvdev_fence structure for passing fence information
  *
  * @type: Type of the fence (syncpoint, sync fd or semaphore)
+ * @type: fence action (wait or signal)
  * @syncpoint_index: Syncpoint id
  * @syncpoint_value: Value of syncpoint id
  * @sync_fd: Linux sync FD handle
@@ -47,6 +48,9 @@ struct nvdev_fence {
 #define NVDEV_FENCE_TYPE_SYNC_FD      1
 #define NVDEV_FENCE_TYPE_SEMAPHORE    2
 #define NVDEV_FENCE_TYPE_SEMAPHORE_TS 3
+	__u32 action;
+#define NVDEV_FENCE_WAIT  	0
+#define NVDEV_FENCE_SIGNAL	1
 	__u32 syncpoint_index;
 	__u32 syncpoint_value;
 	__u32 sync_fd;

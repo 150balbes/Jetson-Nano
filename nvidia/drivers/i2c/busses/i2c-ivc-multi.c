@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017 NVIDIA Corporation.  All rights reserved.
+ * Copyright (C) 2017-2020 NVIDIA Corporation.  All rights reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -106,11 +106,11 @@ struct tegra_i2c_rtcpu_sensor *tegra_i2c_rtcpu_register_sensor(
 	struct device_node *np_mux, *np_i2c;
 	struct tegra_i2c_ivc_multi_dev *i2c_ivc_dev;
 
-	sensor = kzalloc(sizeof(*sensor), GFP_KERNEL);
-	if (sensor == NULL)
+	if (config->reg_bytes <= 0 || config->reg_bytes > 2)
 		return NULL;
 
-	if (config->reg_bytes <= 0 || config->reg_bytes > 2)
+	sensor = kzalloc(sizeof(*sensor), GFP_KERNEL);
+	if (sensor == NULL)
 		return NULL;
 
 	sensor->config = *config;

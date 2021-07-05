@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2018, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2015-2020, NVIDIA CORPORATION. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -333,6 +333,8 @@ int ttcan_set_bitrate(struct ttcan_controller *ttcan)
 	}
 
 	if (ttcan->bt_config.fd_flags & CAN_FD_FLAG) {
+		ttcan->bt_config.data.tdc = ttcan->tdc;
+
 		dbtp_reg = ((ttcan->bt_config.data.phase_seg2 - 1) <<
 			    MTT_DBTP_DTSEG2_SHIFT) & MTT_DBTP_DTSEG2_MASK;
 		dbtp_reg |= ((ttcan->bt_config.data.phase_seg1 +
@@ -347,6 +349,8 @@ int ttcan_set_bitrate(struct ttcan_controller *ttcan)
 
 		tdcr_reg = (ttcan->bt_config.data.tdc_offset <<
 			MTT_TDCR_TDCO_SHIFT) & MTT_TDCR_TDCO_MASK;
+
+		tdcr_reg |= ttcan->tdc_offset;
 
 		pr_debug("%s DBTP(0x%x) value (0x%x)\n", __func__,
 			ADR_MTTCAN_DBTP, dbtp_reg);

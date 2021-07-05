@@ -1,7 +1,7 @@
 /**
  * camera_common.h - utilities for tegra camera driver
  *
- * Copyright (c) 2015-2019, NVIDIA Corporation.  All rights reserved.
+ * Copyright (c) 2015-2020, NVIDIA Corporation.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -31,6 +31,7 @@
 #include <linux/v4l2-mediabus.h>
 #include <linux/version.h>
 #include <linux/videodev2.h>
+#include <linux/module.h>
 
 #include <media/camera_version_utils.h>
 #include <media/nvc_focus.h>
@@ -187,6 +188,7 @@ struct tegracam_sensor_data {
 struct tegracam_ctrl_ops {
 	u32 numctrls;
 	u32 string_ctrl_size[TEGRA_CAM_MAX_STRING_CONTROLS];
+	u32 compound_ctrl_size[TEGRA_CAM_MAX_COMPOUND_CONTROLS];
 	const u32 *ctrl_cid_list;
 	bool is_blob_supported;
 	int (*set_gain)(struct tegracam_device *tc_dev, s64 val);
@@ -195,6 +197,8 @@ struct tegracam_ctrl_ops {
 	int (*set_frame_rate)(struct tegracam_device *tc_dev, s64 val);
 	int (*set_group_hold)(struct tegracam_device *tc_dev, bool val);
 	int (*fill_string_ctrl)(struct tegracam_device *tc_dev,
+				struct v4l2_ctrl *ctrl);
+	int (*fill_compound_ctrl)(struct tegracam_device *tc_dev,
 				struct v4l2_ctrl *ctrl);
 	int (*set_gain_ex)(struct tegracam_device *tc_dev,
 			struct sensor_blob *blob, s64 val);
@@ -227,6 +231,7 @@ struct camera_common_data {
 
 	struct v4l2_subdev			subdev;
 	struct v4l2_ctrl			**ctrls;
+	struct module				*owner;
 
 	struct sensor_properties		sensor_props;
 	/* TODO: cleanup neeeded once all the sensors adapt new framework */

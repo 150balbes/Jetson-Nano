@@ -1,7 +1,7 @@
 /*
  * drivers/misc/tegra-profiler/main.c
  *
- * Copyright (c) 2013-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2013-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -35,15 +35,16 @@
 #include "version.h"
 #include "quadd_proc.h"
 #include "eh_unwind.h"
+#include "uncore_events.h"
+
+#ifdef CONFIG_ARCH_TEGRA_19x_SOC
+#include "carmel_pmu.h"
+#endif
 
 #ifdef CONFIG_ARM64
 #include "armv8_pmu.h"
 #else
 #include "armv7_pmu.h"
-#endif
-
-#ifdef CONFIG_CACHE_L2X0
-#include "pl310.h"
 #endif
 
 static struct quadd_ctx ctx;
@@ -87,15 +88,7 @@ static int start(void)
 				err = ctx.pmu->enable();
 				if (err) {
 					pr_err("error: pmu enable\n");
-					goto errout;
-				}
-			}
-
-			if (ctx.pl310) {
-				err = ctx.pl310->enable();
-				if (err) {
-					pr_err("error: pl310 enable\n");
-					goto errout;
+					goto out_err;
 				}
 			}
 		}
@@ -105,19 +98,29 @@ static int start(void)
 		err = quadd_hrt_start();
 		if (err) {
 			pr_err("error: hrt start\n");
-			goto errout;
+			goto out_err;
+		}
+
+		err = quadd_uncore_start();
+		if (err) {
+			pr_err("error: uncore start\n");
+			goto out_err_hrt;
 		}
 
 		err = quadd_power_clk_start();
 		if (err < 0) {
 			pr_err("error: power_clk start\n");
-			goto errout;
+			goto out_err_uncore;
 		}
 	}
 
 	return 0;
 
-errout:
+out_err_uncore:
+	quadd_uncore_stop();
+out_err_hrt:
+	quadd_hrt_stop();
+out_err:
 	atomic_set(&ctx.started, 0);
 	tegra_profiler_unlock();
 
@@ -126,17 +129,24 @@ errout:
 
 static void stop(void)
 {
+	int cpu;
+
 	if (atomic_cmpxchg(&ctx.started, 1, 0)) {
 		quadd_hrt_stop();
+		quadd_uncore_stop();
 		quadd_power_clk_stop();
+
 		ctx.comm->reset();
 		quadd_unwind_stop();
 
-		if (ctx.pmu)
+		if (ctx.pmu) {
 			ctx.pmu->disable();
+			for_each_possible_cpu(cpu)
+				per_cpu(ctx_pmu_info, cpu).active = 0;
+		}
 
-		if (ctx.pl310)
-			ctx.pl310->disable();
+		if (ctx.carmel_pmu)
+			ctx.carmel_pmu_info.active = 0;
 
 		tegra_profiler_unlock();
 	}
@@ -152,7 +162,8 @@ is_event_supported(struct source_info *si, const struct quadd_event *event)
 	type = event->type;
 	id = event->id;
 
-	if (type == QUADD_EVENT_TYPE_RAW)
+	if (type == QUADD_EVENT_TYPE_RAW ||
+	    type == QUADD_EVENT_TYPE_RAW_CARMEL_UNCORE)
 		return (id & ~si->raw_event_mask) == 0;
 
 	if (type == QUADD_EVENT_TYPE_HARDWARE) {
@@ -165,7 +176,7 @@ is_event_supported(struct source_info *si, const struct quadd_event *event)
 	return 0;
 }
 
-static int
+static inline bool
 validate_freq(unsigned int freq)
 {
 	return freq >= 100 && freq <= 100000;
@@ -212,6 +223,7 @@ set_parameters_for_cpu(struct quadd_pmu_setup_for_cpu *params)
 	err = ctx.pmu->set_events(cpuid, pmu_events, nr_pmu);
 	if (err) {
 		pr_err("PMU set parameters: error\n");
+		per_cpu(ctx_pmu_info, cpuid).active = 0;
 		return err;
 	}
 	per_cpu(ctx_pmu_info, cpuid).active = 1;
@@ -243,15 +255,29 @@ static int verify_app(struct quadd_parameters *p, uid_t task_uid)
 	return 0;
 }
 
+static inline bool
+is_carmel_events(const struct quadd_event *events, int nr)
+{
+	int i;
+
+	for (i = 0; i < nr; i++) {
+		if (events[i].type == QUADD_EVENT_TYPE_RAW_CARMEL_UNCORE)
+			return true;
+	}
+	return false;
+}
+
 static int
 set_parameters(struct quadd_parameters *p)
 {
-	int i, err = 0, nr_pl310 = 0;
+	int err = 0;
 	uid_t task_uid, current_uid;
-	struct quadd_event *pl310_events;
 	struct task_struct *task = NULL;
 	u64 *low_addr_p;
-	u32 extra;
+	u32 extra, uncore_freq;
+#ifdef CONFIG_ARCH_TEGRA_19x_SOC
+	int nr;
+#endif
 
 	extra = p->reserved[QUADD_PARAM_IDX_EXTRA];
 
@@ -267,24 +293,45 @@ set_parameters(struct quadd_parameters *p)
 	ctx.mode_is_trace_tree =
 		extra & QUADD_PARAM_EXTRA_TRACE_TREE ? 1 : 0;
 
+	ctx.mode_is_sampling_timer =
+		extra & QUADD_PARAM_EXTRA_SAMPLING_TIMER ? 1 : 0;
+	ctx.mode_is_sampling_sched =
+		extra & QUADD_PARAM_EXTRA_SAMPLING_SCHED_OUT ? 1 : 0;
+
+	if (!ctx.mode_is_sampling_timer && !ctx.mode_is_sampling_sched)
+		ctx.mode_is_sampling = 0;
+
 	if (ctx.mode_is_sample_all)
 		ctx.mode_is_sample_tree = 0;
 	if (ctx.mode_is_trace_all)
 		ctx.mode_is_trace_tree = 0;
 
-	pr_info("flags: s/t/sa/ta/st/tt: %u/%u/%u/%u/%u/%u\n",
+	pr_info("flags: s/t/sa/ta/st/tt: %u/%u/%u/%u/%u/%u, st/ss: %u/%u\n",
 		ctx.mode_is_sampling,
 		ctx.mode_is_tracing,
 		ctx.mode_is_sample_all,
 		ctx.mode_is_trace_all,
 		ctx.mode_is_sample_tree,
-		ctx.mode_is_trace_tree);
+		ctx.mode_is_trace_tree,
+		ctx.mode_is_sampling_timer,
+		ctx.mode_is_sampling_sched);
 
 	if ((ctx.mode_is_trace_all || ctx.mode_is_sample_all) &&
 	    !capable(CAP_SYS_ADMIN)) {
 		pr_err("error: \"all tasks\" modes are allowed only for root\n");
 		return -EACCES;
 	}
+
+	if ((ctx.mode_is_trace_all && !ctx.mode_is_tracing) ||
+	    (ctx.mode_is_sample_all && !ctx.mode_is_sampling))
+		return -EINVAL;
+
+	if (ctx.mode_is_sampling && !validate_freq(p->freq))
+		return -EINVAL;
+
+	uncore_freq = p->reserved[QUADD_PARAM_IDX_UNCORE_FREQ];
+	if (uncore_freq != 0 && !validate_freq(uncore_freq))
+		return -EINVAL;
 
 	p->package_name[sizeof(p->package_name) - 1] = '\0';
 	ctx.param = *p;
@@ -294,11 +341,6 @@ set_parameters(struct quadd_parameters *p)
 
 	if ((ctx.mode_is_tracing && !ctx.mode_is_trace_all) ||
 	    (ctx.mode_is_sampling && !ctx.mode_is_sample_all)) {
-		if (ctx.mode_is_sampling && !validate_freq(p->freq)) {
-			pr_err("error: incorrect frequency: %u\n", p->freq);
-			return -EINVAL;
-		}
-
 		/* Currently only first process */
 		if (p->nr_pids != 1 || p->pids[0] == 0)
 			return -EINVAL;
@@ -325,65 +367,44 @@ set_parameters(struct quadd_parameters *p)
 			ctx.collect_kernel_ips = 1;
 		}
 
-		for (i = 0; i < p->nr_events; i++) {
-			unsigned int type, id;
-			struct quadd_event *event = &p->events[i];
-
-			type = event->type;
-			id = event->id;
-
-			if (type != QUADD_EVENT_TYPE_HARDWARE) {
-				err = -EINVAL;
-				goto out_put_task;
-			}
-
-			if (ctx.pl310 &&
-			    ctx.pl310_info.nr_supp_events > 0 &&
-			    is_event_supported(&ctx.pl310_info, event)) {
-				pl310_events = event;
-
-				pr_debug("PL310 active event: %s\n",
-					 quadd_get_hw_event_str(id));
-
-				if (nr_pl310++ > 1) {
-					pr_err("error: multiply pl310 events\n");
-					err = -EINVAL;
-					goto out_put_task;
-				}
-			} else {
-				pr_err("Bad event: %s\n",
-				       quadd_get_hw_event_str(id));
-				err = -EINVAL;
-				goto out_put_task;
-			}
-		}
-
-		if (ctx.pl310) {
-			int cpuid = 0; /* We don't need cpuid for pl310.  */
-
-			if (nr_pl310 == 1) {
-				err = ctx.pl310->set_events(cpuid,
-							    pl310_events, 1);
-				if (err) {
-					pr_info("pl310 set_parameters: error\n");
-					goto out_put_task;
-				}
-				ctx.pl310_info.active = 1;
-			} else {
-				ctx.pl310_info.active = 0;
-				ctx.pl310->set_events(cpuid, NULL, 0);
-			}
-		}
-
 		low_addr_p =
 			(u64 *)&p->reserved[QUADD_PARAM_IDX_BT_LOWER_BOUND];
 		ctx.hrt->low_addr = (unsigned long)*low_addr_p;
-		pr_info("bt lower bound: %#lx\n", ctx.hrt->low_addr);
 
 		err = quadd_unwind_start(task);
 		if (err)
 			goto out_put_task;
 	}
+
+#ifdef CONFIG_ARCH_TEGRA_19x_SOC
+	nr = p->nr_events;
+
+	if (nr > QUADD_MAX_COUNTERS) {
+		err = -EINVAL;
+		goto out_put_task;
+	}
+
+	if (ctx.carmel_pmu && is_carmel_events(p->events, nr)) {
+		if (!capable(CAP_SYS_ADMIN)) {
+			pr_err("error: Carmel PMU: allowed only for root\n");
+			err = -EACCES;
+			goto out_put_task;
+		}
+
+		if (uncore_freq == 0) {
+			err = -EINVAL;
+			goto out_put_task;
+		}
+
+		err = ctx.carmel_pmu->set_events(-1, p->events, nr);
+		if (err) {
+			pr_err("Carmel Uncore PMU set parameters: error\n");
+			ctx.carmel_pmu_info.active = 0;
+			goto out_put_task;
+		}
+		ctx.carmel_pmu_info.active = 1;
+	}
+#endif
 
 	pr_info("New parameters have been applied\n");
 
@@ -507,17 +528,12 @@ static u32 get_possible_cpu(void)
 static void
 get_capabilities(struct quadd_comm_cap *cap)
 {
-	int i;
 	unsigned int extra = 0;
 	struct quadd_events_cap *events_cap = &cap->events_cap;
 
 	cap->pmu = ctx.pmu ? 1 : 0;
 
 	cap->l2_cache = 0;
-	if (ctx.pl310) {
-		cap->l2_cache = 1;
-		cap->l2_multiple_events = 0;
-	}
 
 	events_cap->cpu_cycles = 0;
 	events_cap->l1_dcache_read_misses = 0;
@@ -532,35 +548,6 @@ get_capabilities(struct quadd_comm_cap *cap)
 	events_cap->l2_dcache_read_misses = 0;
 	events_cap->l2_dcache_write_misses = 0;
 	events_cap->l2_icache_misses = 0;
-
-	if (ctx.pl310) {
-		unsigned int type, id;
-		struct source_info *s = &ctx.pl310_info;
-
-		for (i = 0; i < s->nr_supp_events; i++) {
-			struct quadd_event *event = &s->supp_events[i];
-
-			type = event->type;
-			id = event->id;
-
-			switch (id) {
-			case QUADD_EVENT_HW_L2_DCACHE_READ_MISSES:
-				events_cap->l2_dcache_read_misses = 1;
-				break;
-			case QUADD_EVENT_HW_L2_DCACHE_WRITE_MISSES:
-				events_cap->l2_dcache_write_misses = 1;
-				break;
-			case QUADD_EVENT_HW_L2_ICACHE_MISSES:
-				events_cap->l2_icache_misses = 1;
-				break;
-
-			default:
-				pr_err_once("%s: error: invalid event\n",
-					    __func__);
-				return;
-			}
-		}
-	}
 
 	cap->tegra_lp_cluster = quadd_is_cpu_with_lp_cluster();
 	cap->power_rate = 1;
@@ -582,6 +569,9 @@ get_capabilities(struct quadd_comm_cap *cap)
 		if (ctx.hrt->arch_timer_user_access)
 			extra |= QUADD_COMM_CAP_EXTRA_ARCH_TIMER_USR;
 	}
+
+	if (ctx.pclk_cpufreq)
+		extra |= QUADD_COMM_CAP_EXTRA_CPUFREQ;
 
 	cap->reserved[QUADD_COMM_CAP_IDX_EXTRA] = extra;
 	cap->reserved[QUADD_COMM_CAP_IDX_CPU_MASK] = get_possible_cpu();
@@ -637,7 +627,7 @@ static struct quadd_comm_control_interface control = {
 };
 
 static inline
-struct quadd_event_source_interface *pmu_init(void)
+struct quadd_event_source *pmu_init(void)
 {
 #ifdef CONFIG_ARM64
 	return quadd_armv8_pmu_init();
@@ -660,6 +650,7 @@ int quadd_late_init(void)
 	int i, nr_events, err;
 	unsigned int raw_event_mask;
 	struct quadd_event *events;
+	struct source_info *pmu_info;
 	int cpuid;
 
 	if (unlikely(!ctx.early_initialized))
@@ -676,8 +667,7 @@ int quadd_late_init(void)
 	}
 
 	for_each_possible_cpu(cpuid) {
-		struct quadd_arch_info *arch;
-		struct source_info *pmu_info;
+		const struct quadd_arch_info *arch;
 
 		arch = ctx.pmu->get_arch(cpuid);
 		if (!arch)
@@ -688,9 +678,9 @@ int quadd_late_init(void)
 
 		events = pmu_info->supp_events;
 		nr_events =
-		    ctx.pmu->get_supported_events(cpuid, events,
-						  QUADD_MAX_COUNTERS,
-						  &raw_event_mask);
+		    ctx.pmu->supported_events(cpuid, events,
+					      QUADD_MAX_COUNTERS,
+					      &raw_event_mask);
 
 		pmu_info->nr_supp_events = nr_events;
 		pmu_info->raw_event_mask = raw_event_mask;
@@ -703,39 +693,46 @@ int quadd_late_init(void)
 				 quadd_get_hw_event_str(events[i].id));
 	}
 
-#ifdef CONFIG_CACHE_L2X0
-	ctx.pl310 = quadd_l2x0_events_init();
-#else
-	ctx.pl310 = NULL;
-#endif
-	if (ctx.pl310) {
-		events = ctx.pl310_info.supp_events;
-		nr_events = ctx.pl310->get_supported_events(0, events,
-							    QUADD_MAX_COUNTERS,
-							    &raw_event_mask);
-		ctx.pl310_info.nr_supp_events = nr_events;
-
-		pr_info("pl310 success, amount of events: %d\n",
-			nr_events);
-
-		for (i = 0; i < nr_events; i++)
-			pr_info("pl310 event: %s\n",
-				quadd_get_hw_event_str(events[i].id));
-	} else {
-		pr_debug("PL310 not found\n");
+#ifdef CONFIG_ARCH_TEGRA_19x_SOC
+	ctx.carmel_pmu = quadd_carmel_uncore_pmu_init();
+	if (IS_ERR(ctx.carmel_pmu)) {
+		pr_err("Carmel Uncore PMU init failed\n");
+		err = PTR_ERR(ctx.carmel_pmu);
+		goto out_err_pmu;
 	}
+
+	if (ctx.carmel_pmu) {
+		pmu_info = &ctx.carmel_pmu_info;
+		events = pmu_info->supp_events;
+
+		nr_events =
+			ctx.carmel_pmu->supported_events(0, events,
+							 QUADD_MAX_COUNTERS,
+							 &raw_event_mask);
+
+		pmu_info->is_present = 1;
+		pmu_info->nr_supp_events = nr_events;
+		pmu_info->raw_event_mask = raw_event_mask;
+	}
+#endif
 
 	ctx.hrt = quadd_hrt_init(&ctx);
 	if (IS_ERR(ctx.hrt)) {
 		pr_err("error: HRT init failed\n");
 		err = PTR_ERR(ctx.hrt);
-		goto out_err_pmu;
+		goto out_err_carmel_pmu;
+	}
+
+	err = quadd_uncore_init(&ctx);
+	if (err < 0) {
+		pr_err("error: uncore events init failed\n");
+		goto out_err_hrt;
 	}
 
 	err = quadd_power_clk_init(&ctx);
 	if (err < 0) {
 		pr_err("error: POWER CLK init failed\n");
-		goto out_err_hrt;
+		goto out_err_uncore;
 	}
 
 	err = quadd_unwind_init(&ctx);
@@ -755,9 +752,15 @@ int quadd_late_init(void)
 
 out_err_power_clk:
 	quadd_power_clk_deinit();
+out_err_uncore:
+	quadd_uncore_deinit();
 out_err_hrt:
 	quadd_hrt_deinit();
+out_err_carmel_pmu:
+#ifdef CONFIG_ARCH_TEGRA_19x_SOC
+	quadd_carmel_uncore_pmu_deinit();
 out_err_pmu:
+#endif
 	pmu_deinit();
 
 out_err:
@@ -785,6 +788,7 @@ static int __init quadd_early_init(void)
 	ctx.get_capabilities_for_cpu = get_capabilities_for_cpu_int;
 	ctx.get_pmu_info = get_pmu_info_for_current_cpu;
 
+	ctx.pmu = NULL;
 	for_each_possible_cpu(cpuid) {
 		struct source_info *pmu_info = &per_cpu(ctx_pmu_info, cpuid);
 
@@ -792,7 +796,8 @@ static int __init quadd_early_init(void)
 		pmu_info->is_present = 0;
 	}
 
-	ctx.pl310_info.active = 0;
+	ctx.carmel_pmu = NULL;
+	ctx.carmel_pmu_info.active = 0;
 
 	ctx.comm = quadd_comm_init(&ctx, &control);
 	if (IS_ERR(ctx.comm)) {
@@ -821,7 +826,11 @@ static void deinit(void)
 	if (ctx.initialized) {
 		quadd_unwind_deinit();
 		quadd_power_clk_deinit();
+		quadd_uncore_deinit();
 		quadd_hrt_deinit();
+#ifdef CONFIG_ARCH_TEGRA_19x_SOC
+		quadd_carmel_uncore_pmu_deinit();
+#endif
 		pmu_deinit();
 
 		ctx.initialized = 0;

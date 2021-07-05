@@ -1,7 +1,7 @@
 /**
  * TEGRA_V4L2_CAMERA.h - utilities for tegra camera driver
  *
- * Copyright (c) 2017-2019, NVIDIA Corporation.  All rights reserved.
+ * Copyright (c) 2017-2020, NVIDIA Corporation.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -37,6 +37,7 @@
 #define TEGRA_CAMERA_CID_EXPOSURE		(TEGRA_CAMERA_CID_BASE+10)
 #define TEGRA_CAMERA_CID_FRAME_RATE		(TEGRA_CAMERA_CID_BASE+11)
 #define TEGRA_CAMERA_CID_EXPOSURE_SHORT		(TEGRA_CAMERA_CID_BASE+12)
+#define TEGRA_CAMERA_CID_STEREO_EEPROM		(TEGRA_CAMERA_CID_BASE+13)
 
 #define TEGRA_CAMERA_CID_SENSOR_CONFIG		(TEGRA_CAMERA_CID_BASE+50)
 #define TEGRA_CAMERA_CID_SENSOR_MODE_BLOB	(TEGRA_CAMERA_CID_BASE+51)
@@ -53,6 +54,7 @@
 #define TEGRA_CAMERA_CID_SENSOR_CONTROL_PROPERTIES (TEGRA_CAMERA_CID_BASE+107)
 #define TEGRA_CAMERA_CID_SENSOR_DV_TIMINGS         (TEGRA_CAMERA_CID_BASE+108)
 #define TEGRA_CAMERA_CID_LOW_LATENCY         (TEGRA_CAMERA_CID_BASE+109)
+#define TEGRA_CAMERA_CID_VI_PREFERRED_STRIDE (TEGRA_CAMERA_CID_BASE+110)
 
 /**
  * This is temporary with the current v4l2 infrastructure
@@ -77,6 +79,9 @@
 #define TEGRA_CAM_STRING_CTRL_EEPROM_INDEX 0
 #define TEGRA_CAM_STRING_CTRL_FUSEID_INDEX 1
 #define TEGRA_CAM_STRING_CTRL_OTP_INDEX 2
+
+#define TEGRA_CAM_MAX_COMPOUND_CONTROLS 4
+#define TEGRA_CAM_COMPOUND_CTRL_EEPROM_INDEX 0
 
 #define	CSI_PHY_MODE_DPHY	0
 #define	CSI_PHY_MODE_CPHY	1
@@ -146,6 +151,8 @@ struct sensor_control_properties {
 	__u32 default_gain;
 	__u32 default_framerate;
 	union __u64val default_exp_time;
+	__u32 is_interlaced;
+	__u32 interlace_type;
 	__u32 reserved[10];
 };
 

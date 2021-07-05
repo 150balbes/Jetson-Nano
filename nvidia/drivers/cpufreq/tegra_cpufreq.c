@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2017, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2015-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -40,6 +40,8 @@
 #include <linux/pm_qos.h>
 #include <linux/tegra-cpufreq.h>
 #include <soc/tegra/chip-id.h>
+
+#include "cpufreq_cpu_emc_table.h"
 
 #define MAX_NDIV		512 /* No of NDIV */
 #define MAX_VINDEX		80 /* No of voltage index */
@@ -137,7 +139,6 @@ struct tegra_cpufreq_data {
 	uint32_t freq_compute_delay; /* delay in reading clock counters */
 	uint32_t cpu_freq[CONFIG_NR_CPUS];
 	uint32_t last_hint[CONFIG_NR_CPUS];
-	unsigned long emc_max_rate; /* Hz */
 	void *__iomem *regs;
 };
 
@@ -245,17 +246,14 @@ err_out:
 	return (unsigned int) (rate_mhz * 1000); /* in KHz */
 }
 
-static unsigned long cpu_to_emc_freq(uint32_t cpu_rate)
-{
-	if (cpu_rate >= 1400000)
-		return tfreq_data.emc_max_rate;	/* cpu >= 1.4GHz, emc max */
-	else if (cpu_rate >= 800000)
-		return 660000000;	/* cpu >= 800 MHz, emc 660 MHz */
-	else if (cpu_rate >= 450000)
-		return  408000000;	/* cpu >= 450 MHz, emc 408 MHz */
-	else
-		return  0;		/* no freq request */
-}
+static struct cpu_emc_mapping dflt_t186_cpu_emc_mapping[] = {
+	{ 450000,   408000},
+	{ 800000,   660000},
+	{1400000, UINT_MAX},
+	{}, /* termination entry */
+};
+
+static struct cpu_emc_mapping *cpu_emc_mapping_dt;
 
 /**
  * get_cluster_freq - returns max freq among all the cpus in a cluster.
@@ -283,14 +281,19 @@ static uint32_t get_cluster_freq(struct cpufreq_policy *policy)
 /* Set emc clock by referring cpu_to_emc freq mapping */
 static void set_cpufreq_to_emcfreq(struct cpufreq_policy *policy)
 {
-	unsigned long emc_freq;
+	unsigned long emc_freq, freq_khz;
 	uint32_t cluster_freq;
 	int cl;
+	struct cpu_emc_mapping *mapping = cpu_emc_mapping_dt ?
+		cpu_emc_mapping_dt : dflt_t186_cpu_emc_mapping;
 
-	tfreq_data.emc_max_rate = tegra_bwmgr_get_max_emc_rate();
 	cluster_freq = get_cluster_freq(policy);
 
-	emc_freq = cpu_to_emc_freq(cluster_freq);
+	freq_khz = tegra_cpu_to_emc_freq(cluster_freq, mapping);
+	if (freq_khz == UINT_MAX)
+		emc_freq = tegra_bwmgr_get_max_emc_rate();
+	else
+		emc_freq = freq_khz * KHZ_TO_HZ;
 
 	cl = tegra18_logical_to_cluster(policy->cpu);
 	tegra_bwmgr_set_emc(tfreq_data.pcluster[cl].bwmgr, emc_freq,
@@ -837,6 +840,11 @@ static int __init tegra_cpufreq_debug_init(void)
 	if (cc3_debug_init())
 		goto err_out;
 
+	if (!tegra_debugfs_create_cpu_emc_map(tegra_cpufreq_debugfs_root,
+		cpu_emc_mapping_dt ? cpu_emc_mapping_dt :
+		dflt_t186_cpu_emc_mapping))
+		goto err_out;
+
 	for_each_possible_cpu(cpu) {
 		snprintf(buff, sizeof(buff), "cpu%llu", cpu);
 		dir = debugfs_create_dir(buff, tegra_cpufreq_debugfs_root);
@@ -1073,6 +1081,10 @@ static void free_resources(struct device *dev)
 		/* unregister from emc bw manager */
 		tegra_bwmgr_unregister(tfreq_data.pcluster[cl].bwmgr);
 	}
+
+	/* kfree handles NULL just well */
+	kfree(cpu_emc_mapping_dt);
+	cpu_emc_mapping_dt = NULL;
 }
 
 static int __init init_freqtbls(struct device_node *dn)
@@ -1312,6 +1324,9 @@ static int __init tegra186_cpufreq_probe(struct platform_device *pdev)
 	if (of_device_is_compatible(dn, "nvidia,tegra18x-cpufreq-hv")) {
 		tegra_cpufreq_hv_mode = true;
 		pr_info("tegra18x-cpufreq: Using hv path\n");
+		ret = parse_hv_dt_data(dn);
+		if (ret)
+			goto err_out;
 	} else {
 		res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 		regs = devm_ioremap_resource(&pdev->dev, res);
@@ -1332,11 +1347,6 @@ static int __init tegra186_cpufreq_probe(struct platform_device *pdev)
 		spin_lock_init(&per_cpu(pcpu_slock, cpu));
 	}
 
-	if (tegra_cpufreq_hv_mode) {
-		ret = parse_hv_dt_data(dn);
-		if (ret)
-			goto err_free_res;
-	}
 	tfreq_data.pcluster[B_CLUSTER].cluster_present = false;
 	tfreq_data.pcluster[M_CLUSTER].cluster_present = false;
 	for_each_possible_cpu(cpu) {
@@ -1345,6 +1355,10 @@ static int __init tegra186_cpufreq_probe(struct platform_device *pdev)
 		else if (tegra18_logical_to_cluster(cpu) == M_CLUSTER)
 			tfreq_data.pcluster[M_CLUSTER].cluster_present = true;
 	}
+
+	cpu_emc_mapping_dt = tegra_cpufreq_cpu_emc_map_dt_init(dn);
+	pr_info("CPU EMC frequency mapping table: %s\n",
+		cpu_emc_mapping_dt ?  "from device tree" : "default setting");
 
 #ifdef CONFIG_DEBUG_FS
 	tegra_cpufreq_debug_init();

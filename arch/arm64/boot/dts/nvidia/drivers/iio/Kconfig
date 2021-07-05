@@ -1,3 +1,0 @@
-if IIO
-source "drivers/iio/generic/Kconfig"
-endif

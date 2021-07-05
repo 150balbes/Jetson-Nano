@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -65,6 +65,10 @@ struct nvgpu_os_linux {
 	struct {
 		struct cdev cdev;
 		struct device *node;
+		/* see gk20a_ctrl_priv */
+		struct nvgpu_list_node privs;
+		/* guards modifications to the list and its contents */
+		struct nvgpu_mutex privs_lock;
 	} ctrl;
 
 	struct {
@@ -128,6 +132,8 @@ struct nvgpu_os_linux {
 	void __iomem *usermode_regs;
 	void __iomem *usermode_regs_saved;
 
+	u64 regs_bus_addr;
+
 	struct nvgpu_os_linux_ops ops;
 
 #ifdef CONFIG_DEBUG_FS
@@ -160,8 +166,6 @@ struct nvgpu_os_linux {
 	struct gk20a_cde_app cde_app;
 
 	struct rw_semaphore busy_lock;
-
-	struct gk20a_sched_ctrl sched_ctrl;
 
 	bool init_done;
 };

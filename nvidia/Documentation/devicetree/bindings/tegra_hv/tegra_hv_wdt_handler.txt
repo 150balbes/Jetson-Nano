@@ -1,0 +1,13 @@
+* Tegra Hypervisor watchdog handler
+
+Required properties:
+- compatible: Should be "nvidia,tegra-hv-wdt-handler".
+- ivc : IVC channel ID between Guest VM and WDT Monitor.
+
+Example:
+	tegra_hv_wdt_handler {
+		compatible = "nvidia,tegra-hv-wdt-handler";
+		status = "okay";
+		ivc = <&tegra_hv 204>;
+	};
+

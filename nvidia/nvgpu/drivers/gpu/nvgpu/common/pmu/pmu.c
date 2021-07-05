@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -167,6 +167,9 @@ void nvgpu_kill_task_pg_init(struct gk20a *g)
 			nvgpu_udelay(2);
 		} while (nvgpu_timeout_expired_msg(&timeout,
 			"timeout - waiting PMU state machine thread stop") == 0);
+
+		/* Reset the flag for next time */
+		pmu->pg_init.state_destroy = false;
 	} else {
 		nvgpu_thread_join(&pmu->pg_init.state_task);
 	}
@@ -468,9 +471,14 @@ void nvgpu_pmu_state_change(struct gk20a *g, u32 pmu_state,
 
 	pmu->pmu_state = pmu_state;
 
+	/* Set a sticky flag to indicate PMU state exit */
+	if (pmu_state == PMU_STATE_EXIT) {
+		pmu->pg_init.state_destroy = true;
+	}
+
 	if (post_change_event) {
 		pmu->pg_init.state_change = true;
-		nvgpu_cond_signal(&pmu->pg_init.wq);
+		nvgpu_cond_signal_interruptible(&pmu->pg_init.wq);
 	}
 
 	/* make status visible */
@@ -494,7 +502,7 @@ static int nvgpu_pg_init_task(void *arg)
 		pmu->pg_init.state_change = false;
 		pmu_state = NV_ACCESS_ONCE(pmu->pmu_state);
 
-		if (pmu_state == PMU_STATE_EXIT) {
+		if (pmu->pg_init.state_destroy) {
 			nvgpu_pmu_dbg(g, "pmu state exit");
 			break;
 		}
@@ -518,6 +526,11 @@ static int nvgpu_pg_init_task(void *arg)
 			nvgpu_pmu_dbg(g, "loaded zbc");
 			pmu_setup_hw_enable_elpg(g);
 			nvgpu_pmu_dbg(g, "PMU booted, thread exiting");
+
+			gk20a_gr_wait_initialized(g);
+
+			nvgpu_cg_elcg_enable_no_wait(g);
+
 			return 0;
 		default:
 			nvgpu_pmu_dbg(g, "invalid state");

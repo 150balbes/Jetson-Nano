@@ -1,0 +1,38 @@
+From fb7c6069432e7f04cd9124ab5ab9130d6d17a5dc Mon Sep 17 00:00:00 2001
+From: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+Date: Fri, 27 May 2016 15:11:51 +0200
+Subject: [PATCH 080/371] locallock: add local_lock_on()
+X-NVConfidentiality: public
+
+Signed-off-by: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+---
+ include/linux/locallock.h | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/include/linux/locallock.h b/include/linux/locallock.h
+index 218e5a4..96f22c5 100644
+--- a/include/linux/locallock.h
++++ b/include/linux/locallock.h
+@@ -60,6 +60,9 @@ static inline void __local_lock(struct local_irq_lock *lv)
+ #define local_lock(lvar)					\
+ 	do { __local_lock(&get_local_var(lvar)); } while (0)
+ 
++#define local_lock_on(lvar, cpu)				\
++	do { __local_lock(&per_cpu(lvar, cpu)); } while (0)
++
+ static inline int __local_trylock(struct local_irq_lock *lv)
+ {
+ 	if (lv->owner != current && spin_trylock_local(&lv->lock)) {
+@@ -98,6 +101,9 @@ static inline void __local_unlock(struct local_irq_lock *lv)
+ 		put_local_var(lvar);				\
+ 	} while (0)
+ 
++#define local_unlock_on(lvar, cpu)                       \
++	do { __local_unlock(&per_cpu(lvar, cpu)); } while (0)
++
+ static inline void __local_lock_irq(struct local_irq_lock *lv)
+ {
+ 	spin_lock_irqsave(&lv->lock, lv->flags);
+-- 
+2.7.4
+

@@ -17,7 +17,6 @@
  */
 
 #include <linux/delay.h>
-#include <linux/clk.h>
 #include <linux/device.h>
 #include <linux/io.h>
 #include <linux/module.h>
@@ -25,15 +24,12 @@
 #include <linux/platform_device.h>
 #include <linux/pm_runtime.h>
 #include <linux/regmap.h>
-#include <linux/slab.h>
-#include <linux/clk/tegra.h>
 #include <sound/soc.h>
 #include <sound/pcm_params.h>
 
 #include "tegra_pcm_alt.h"
 #include "tegra210_xbar_alt.h"
 #include "tegra_isomgr_bw_alt.h"
-
 #include "tegra210_admaif_alt.h"
 
 #define DRV_NAME "tegra210-ape-admaif"
@@ -294,8 +290,7 @@ static int tegra_admaif_runtime_resume(struct device *dev)
 	struct tegra_admaif *admaif = dev_get_drvdata(dev);
 
 	regcache_cache_only(admaif->regmap, false);
-	if (!admaif->is_shutdown)
-		regcache_sync(admaif->regmap);
+	regcache_sync(admaif->regmap);
 
 	return 0;
 }
@@ -342,17 +337,6 @@ static int tegra_admaif_prepare(struct snd_pcm_substream *substream,
 
 	if (admaif->soc_data->is_isomgr_client)
 		tegra_isomgr_adma_setbw(substream, true);
-
-	return 0;
-}
-
-static int tegra_admaif_startup(struct snd_pcm_substream *substream,
-				struct snd_soc_dai *dai)
-{
-	struct tegra_admaif *admaif = snd_soc_dai_get_drvdata(dai);
-
-	if (admaif->is_shutdown)
-		return -ENODEV;
 
 	return 0;
 }
@@ -445,7 +429,7 @@ static int tegra_admaif_hw_params(struct snd_pcm_substream *substream,
 	}
 
 	tegra_admaif_set_pack_mode(admaif->regmap, reg, valid_bit);
-	admaif->soc_data->set_audio_cif(admaif->regmap, reg, &cif_conf);
+	tegra210_xbar_set_cif(admaif->regmap, reg, &cif_conf);
 
 	return 0;
 }
@@ -554,7 +538,6 @@ static int tegra_admaif_trigger(struct snd_pcm_substream *substream, int cmd,
 static struct snd_soc_dai_ops tegra_admaif_dai_ops = {
 	.hw_params	= tegra_admaif_hw_params,
 	.trigger	= tegra_admaif_trigger,
-	.startup	= tegra_admaif_startup,
 	.shutdown	= tegra_admaif_shutdown,
 	.prepare	= tegra_admaif_prepare,
 };
@@ -1071,17 +1054,7 @@ static struct snd_kcontrol_new tegra186_admaif_controls[] = {
 		tegra210_ape_dump_reg_get, tegra210_ape_dump_reg_put),
 };
 
-static int tegra_admaif_codec_probe(struct snd_soc_codec *codec)
-{
-	struct tegra_admaif *admaif = snd_soc_codec_get_drvdata(codec);
-
-	codec->control_data = admaif->regmap;
-
-	return 0;
-}
-
 static struct snd_soc_codec_driver tegra210_admaif_codec = {
-	.probe = tegra_admaif_codec_probe,
 	.idle_bias_off = 1,
 	.component_driver = {
 		.dapm_widgets = tegra_admaif_widgets,
@@ -1094,7 +1067,6 @@ static struct snd_soc_codec_driver tegra210_admaif_codec = {
 };
 
 static struct snd_soc_codec_driver tegra186_admaif_codec = {
-	.probe = tegra_admaif_codec_probe,
 	.idle_bias_off = 1,
 	.component_driver = {
 		.dapm_widgets = tegra_admaif_widgets,
@@ -1115,7 +1087,6 @@ static struct tegra_admaif_soc_data soc_data_tegra210 = {
 	.admaif_codec = &tegra210_admaif_codec,
 	.codec_dais = tegra210_admaif_codec_dais,
 	.regmap_conf = &tegra210_admaif_regmap_config,
-	.set_audio_cif = tegra210_xbar_set_cif,
 	.global_base = TEGRA210_ADMAIF_GLOBAL_BASE,
 	.tx_base = TEGRA210_ADMAIF_XBAR_TX_BASE,
 	.rx_base = TEGRA210_ADMAIF_XBAR_RX_BASE,
@@ -1127,7 +1098,6 @@ static struct tegra_admaif_soc_data soc_data_tegra186 = {
 	.admaif_codec = &tegra186_admaif_codec,
 	.codec_dais = tegra186_admaif_codec_dais,
 	.regmap_conf = &tegra186_admaif_regmap_config,
-	.set_audio_cif = tegra210_xbar_set_cif,
 	.global_base = TEGRA186_ADMAIF_GLOBAL_BASE,
 	.tx_base = TEGRA186_ADMAIF_XBAR_TX_BASE,
 	.rx_base = TEGRA186_ADMAIF_XBAR_RX_BASE,
@@ -1143,9 +1113,7 @@ static const struct of_device_id tegra_admaif_of_match[] = {
 
 static int tegra_admaif_probe(struct platform_device *pdev)
 {
-	int i;
-
-	int ret;
+	int ret, i;
 	struct tegra_admaif *admaif;
 	void __iomem *regs;
 	struct resource *res;
@@ -1159,95 +1127,58 @@ static int tegra_admaif_probe(struct platform_device *pdev)
 	}
 
 	admaif = devm_kzalloc(&pdev->dev, sizeof(*admaif), GFP_KERNEL);
-	if (!admaif) {
-		dev_err(&pdev->dev, "Can't allocate tegra_admaif\n");
-		ret = -ENOMEM;
-		goto err;
-	}
+	if (!admaif)
+		return -ENOMEM;
 
 	admaif->refcnt = 0;
 	admaif->dev = &pdev->dev;
 	admaif->soc_data = (struct tegra_admaif_soc_data *)match->data;
-	admaif->is_shutdown = false;
 	dev_set_drvdata(&pdev->dev, admaif);
 
 	admaif->capture_dma_data = devm_kzalloc(&pdev->dev,
 			sizeof(struct tegra_alt_pcm_dma_params) *
 				admaif->soc_data->num_ch,
 			GFP_KERNEL);
-	if (!admaif->capture_dma_data) {
-		dev_err(&pdev->dev, "Can't allocate capture_dma_data\n");
-		ret = -ENOMEM;
-		goto err;
-	}
+	if (!admaif->capture_dma_data)
+		return -ENOMEM;
 
 	admaif->playback_dma_data = devm_kzalloc(&pdev->dev,
 			sizeof(struct tegra_alt_pcm_dma_params) *
 				admaif->soc_data->num_ch,
 			GFP_KERNEL);
-	if (!admaif->playback_dma_data) {
-		dev_err(&pdev->dev, "Can't allocate playback_dma_data\n");
-		ret = -ENOMEM;
-		goto err;
-	}
+	if (!admaif->playback_dma_data)
+		return -ENOMEM;
 
 	admaif->override_channels = devm_kzalloc(&pdev->dev,
 			sizeof(int) * admaif->soc_data->num_ch,
 			GFP_KERNEL);
-	if (!admaif->override_channels) {
-		dev_err(&pdev->dev, "Can't allocate override channel memory\n");
-		ret = -ENOMEM;
-		goto err;
-	}
+	if (!admaif->override_channels)
+		return -ENOMEM;
 
 	admaif->tx_mono_to_stereo = devm_kzalloc(&pdev->dev,
 			sizeof(int) * admaif->soc_data->num_ch,
 			GFP_KERNEL);
-	if (!admaif->tx_mono_to_stereo) {
-		dev_err(&pdev->dev, "Can't allocate override channel memory\n");
-		ret = -ENOMEM;
-		goto err;
-	}
+	if (!admaif->tx_mono_to_stereo)
+		return -ENOMEM;
 
 	admaif->rx_stereo_to_mono = devm_kzalloc(&pdev->dev,
 			sizeof(int) * admaif->soc_data->num_ch,
 			GFP_KERNEL);
-	if (!admaif->rx_stereo_to_mono) {
-		dev_err(&pdev->dev, "Can't allocate override channel memory\n");
-		ret = -ENOMEM;
-		goto err;
-	}
+	if (!admaif->rx_stereo_to_mono)
+		return -ENOMEM;
 
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
-	if (!res) {
-		dev_err(&pdev->dev, "No memory resource for admaif\n");
-		ret = -ENODEV;
-		goto err;
-	}
-
 	regs = devm_ioremap_resource(&pdev->dev, res);
-	if (!regs) {
-		dev_err(&pdev->dev, "request/iomap region failed\n");
-		ret = -ENODEV;
-		goto err;
-	}
-
+	if (IS_ERR(regs))
+		return PTR_ERR(regs);
 	admaif->base_addr = regs;
 	admaif->regmap = devm_regmap_init_mmio(&pdev->dev, regs,
-					admaif->soc_data->regmap_conf);
+					       admaif->soc_data->regmap_conf);
 	if (IS_ERR(admaif->regmap)) {
 		dev_err(&pdev->dev, "regmap init failed\n");
-		ret = PTR_ERR(admaif->regmap);
-		goto err;
+		return PTR_ERR(admaif->regmap);
 	}
 	regcache_cache_only(admaif->regmap, true);
-
-	pm_runtime_enable(&pdev->dev);
-	if (!pm_runtime_enabled(&pdev->dev)) {
-		ret = tegra_admaif_runtime_resume(&pdev->dev);
-		if (ret)
-			goto err_pm_disable;
-	}
 
 	if (admaif->soc_data->is_isomgr_client)
 		tegra_isomgr_adma_register();
@@ -1264,14 +1195,14 @@ static int tegra_admaif_probe(struct platform_device *pdev)
 
 		admaif->playback_dma_data[i].width = 32;
 		admaif->playback_dma_data[i].req_sel = i + 1;
-		if (of_property_read_string_index(pdev->dev.of_node,
+		ret = of_property_read_string_index(pdev->dev.of_node,
 				"dma-names",
 				(i * 2) + 1,
-				&admaif->playback_dma_data[i].chan_name) < 0) {
+				&admaif->playback_dma_data[i].chan_name);
+		if (ret < 0) {
 			dev_err(&pdev->dev,
 				"Missing property nvidia,dma-names\n");
-			ret = -ENODEV;
-			goto err_suspend;
+			return ret;
 		}
 		buffer_size = 0;
 		if (of_property_read_u32_index(pdev->dev.of_node,
@@ -1285,14 +1216,14 @@ static int tegra_admaif_probe(struct platform_device *pdev)
 
 		admaif->capture_dma_data[i].width = 32;
 		admaif->capture_dma_data[i].req_sel = i + 1;
-		if (of_property_read_string_index(pdev->dev.of_node,
+		ret = of_property_read_string_index(pdev->dev.of_node,
 				"dma-names",
 				(i * 2),
-				&admaif->capture_dma_data[i].chan_name) < 0) {
+				&admaif->capture_dma_data[i].chan_name);
+		if (ret < 0) {
 			dev_err(&pdev->dev,
 				"Missing property nvidia,dma-names\n");
-			ret = -ENODEV;
-			goto err_suspend;
+			return ret;
 		}
 		buffer_size = 0;
 		if (of_property_read_u32_index(pdev->dev.of_node,
@@ -1305,54 +1236,42 @@ static int tegra_admaif_probe(struct platform_device *pdev)
 		admaif->capture_dma_data[i].buffer_size = buffer_size;
 	}
 
-	ret = snd_soc_register_component(&pdev->dev,
-					&tegra_admaif_dai_driver,
-					tegra_admaif_dais,
-					admaif->soc_data->num_ch);
+	regmap_update_bits(admaif->regmap, admaif->soc_data->global_base +
+			   TEGRA_ADMAIF_GLOBAL_ENABLE, 1, 1);
+
+	ret = devm_snd_soc_register_component(&pdev->dev,
+					      &tegra_admaif_dai_driver,
+					      tegra_admaif_dais,
+					      admaif->soc_data->num_ch);
 	if (ret) {
 		dev_err(&pdev->dev, "Could not register DAIs %d: %d\n",
 			i, ret);
-		ret = -ENOMEM;
-		goto err_suspend;
+		return ret;
 	}
 
+	pm_runtime_enable(&pdev->dev);
 	ret = snd_soc_register_codec(&pdev->dev, admaif->soc_data->admaif_codec,
-				admaif->soc_data->codec_dais,
-				admaif->soc_data->num_ch * 2);
+				     admaif->soc_data->codec_dais,
+				     admaif->soc_data->num_ch * 2);
 	if (ret != 0) {
 		dev_err(&pdev->dev, "Could not register CODEC: %d\n", ret);
-		goto err_unregister_dais;
+		goto pm_disable;
 	}
 
 	ret = tegra_alt_pcm_platform_register(&pdev->dev);
 	if (ret) {
 		dev_err(&pdev->dev, "Could not register PCM: %d\n", ret);
-		goto err_unregister_codec;
+		goto unregister_codec;
 	}
-
-	regmap_update_bits(admaif->regmap, admaif->soc_data->global_base +
-					TEGRA_ADMAIF_GLOBAL_ENABLE, 1, 1);
 
 	return 0;
 
-err_unregister_codec:
+unregister_codec:
 	snd_soc_unregister_codec(&pdev->dev);
-err_unregister_dais:
-	snd_soc_unregister_component(&pdev->dev);
-err_suspend:
-	if (!pm_runtime_status_suspended(&pdev->dev))
-		tegra_admaif_runtime_suspend(&pdev->dev);
-err_pm_disable:
+pm_disable:
 	pm_runtime_disable(&pdev->dev);
-err:
+
 	return ret;
-}
-
-static void tegra_admaif_platform_shutdown(struct platform_device *pdev)
-{
-	struct tegra_admaif *admaif = dev_get_drvdata(&pdev->dev);
-
-	admaif->is_shutdown = true;
 }
 
 static int tegra_admaif_remove(struct platform_device *pdev)
@@ -1385,7 +1304,6 @@ static const struct dev_pm_ops tegra_admaif_pm_ops = {
 static struct platform_driver tegra_admaif_driver = {
 	.probe = tegra_admaif_probe,
 	.remove = tegra_admaif_remove,
-	.shutdown = tegra_admaif_platform_shutdown,
 	.driver = {
 		.name = DRV_NAME,
 		.owner = THIS_MODULE,

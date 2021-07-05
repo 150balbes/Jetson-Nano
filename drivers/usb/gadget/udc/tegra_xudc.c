@@ -1,7 +1,7 @@
 /*
 * NVIDIA XUSB device mode controller
 *
-* Copyright (c) 2013-2018, NVIDIA CORPORATION.  All rights reserved.
+* Copyright (c) 2013-2020, NVIDIA CORPORATION.  All rights reserved.
 * Copyright (c) 2015, Google Inc.
 *
 * This program is free software; you can redistribute it and/or modify it
@@ -319,8 +319,10 @@ BUILD_EP_CONTEXT_RW(deq_hi, deq_hi, 0, 0xffffffff)
 BUILD_EP_CONTEXT_RW(avg_trb_len, tx_info, 0, 0xffff)
 BUILD_EP_CONTEXT_RW(max_esit_payload, tx_info, 16, 0xffff)
 BUILD_EP_CONTEXT_RW(edtla, rsvd[0], 0, 0xffffff)
-BUILD_EP_CONTEXT_RW(seq_num, rsvd[0], 24, 0xff)
+BUILD_EP_CONTEXT_RW(rsvd, rsvd[0], 24, 0x1)
 BUILD_EP_CONTEXT_RW(partial_td, rsvd[0], 25, 0x1)
+BUILD_EP_CONTEXT_RW(splitxstate, rsvd[0], 26, 0x1)
+BUILD_EP_CONTEXT_RW(seq_num, rsvd[0], 27, 0x1f)
 BUILD_EP_CONTEXT_RW(cerrcnt, rsvd[1], 18, 0x3)
 BUILD_EP_CONTEXT_RW(data_offset, rsvd[2], 0, 0x1ffff)
 BUILD_EP_CONTEXT_RW(numtrbs, rsvd[2], 22, 0x1f)
@@ -594,6 +596,8 @@ struct tegra_xudc {
 
 	struct delayed_work port_reset_war_work;
 	bool wait_for_sec_prc;
+
+	struct work_struct pullup_work;
 };
 
 #define XUDC_TRB_MAX_BUFFER_SIZE 65536
@@ -1849,6 +1853,10 @@ static int __tegra_xudc_ep_set_halt(struct tegra_xudc_ep *ep, bool halt)
 		ep_reload(xudc, ep->index);
 
 		ep_ctx_write_state(ep->context, EP_STATE_RUNNING);
+
+		ep_ctx_write_rsvd(ep->context, 0);
+		ep_ctx_write_partial_td(ep->context, 0);
+		ep_ctx_write_splitxstate(ep->context, 0);
 		ep_ctx_write_seq_num(ep->context, 0);
 
 		ep_reload(xudc, ep->index);
@@ -2306,29 +2314,41 @@ unlock:
 	return ret;
 }
 
-static int tegra_xudc_gadget_pullup(struct usb_gadget *gadget, int is_on)
+static void tegra_xudc_gadget_pullup_work(struct work_struct *work)
 {
-	struct tegra_xudc *xudc = to_xudc(gadget);
+	struct tegra_xudc *xudc = container_of(work, struct tegra_xudc,
+						pullup_work);
 	unsigned long flags;
 	u32 val;
 
 	pm_runtime_get_sync(xudc->dev);
 	spin_lock_irqsave(&xudc->lock, flags);
-	if (is_on != xudc->pullup) {
-		val = xudc_readl(xudc, CTRL);
-		if (is_on)
-			val |= CTRL_ENABLE;
-		else
-			val &= ~CTRL_ENABLE;
-		xudc_writel(xudc, val, CTRL);
-	}
-	xudc->pullup = is_on;
+	val = xudc_readl(xudc, CTRL);
+	if (xudc->pullup)
+		val |= CTRL_ENABLE;
+	else
+		val &= ~CTRL_ENABLE;
+	xudc_writel(xudc, val, CTRL);
 	if (xudc->ucd && xudc->device_mode &&
-	    xudc->connect_type == EXTCON_USB && is_on)
+	    xudc->connect_type == EXTCON_USB && xudc->pullup)
 		schedule_delayed_work(&xudc->non_std_charger_work,
 			msecs_to_jiffies(NON_STD_CHARGER_DET_TIME_MS));
 	spin_unlock_irqrestore(&xudc->lock, flags);
 	pm_runtime_put(xudc->dev);
+
+}
+
+static int tegra_xudc_gadget_pullup(struct usb_gadget *gadget, int is_on)
+{
+	struct tegra_xudc *xudc = to_xudc(gadget);
+	unsigned long flags;
+
+	spin_lock_irqsave(&xudc->lock, flags);
+	if (is_on != xudc->pullup) {
+		xudc->pullup = is_on;
+		schedule_work(&xudc->pullup_work);
+	}
+	spin_unlock_irqrestore(&xudc->lock, flags);
 
 	return 0;
 }
@@ -2347,6 +2367,7 @@ static int tegra_xudc_gadget_start(struct usb_gadget *gadget,
 	dev_dbg(xudc->dev, "%s\n", __func__);
 
 	pm_runtime_get_sync(xudc->dev);
+	cancel_work_sync(&xudc->pullup_work);
 	spin_lock_irqsave(&xudc->lock, flags);
 	if (xudc->driver) {
 		ret = -EBUSY;
@@ -2390,6 +2411,7 @@ static int tegra_xudc_gadget_stop(struct usb_gadget *gadget)
 	u32 val;
 
 	pm_runtime_get_sync(xudc->dev);
+	cancel_work_sync(&xudc->pullup_work);
 	spin_lock_irqsave(&xudc->lock, flags);
 	val = xudc_readl(xudc, CTRL);
 	val &= ~(CTRL_IE | CTRL_ENABLE);
@@ -3067,7 +3089,10 @@ static void tegra_xudc_reset(struct tegra_xudc *xudc)
 	xudc->setup_seq_num = 0;
 	xudc->queued_setup_packet = false;
 
-	ep_ctx_write_seq_num(ep0->context, xudc->setup_seq_num);
+	ep_ctx_write_rsvd(ep0->context, 0);
+	ep_ctx_write_partial_td(ep0->context, 0);
+	ep_ctx_write_splitxstate(ep0->context, 0);
+	ep_ctx_write_seq_num(ep0->context, 0);
 
 	deq_ptr = trb_virt_to_phys(ep0, &ep0->transfer_ring[ep0->deq_ptr]);
 	ep_ctx_write_deq_ptr(ep0->context, deq_ptr);
@@ -3532,11 +3557,6 @@ static void tegra_xudc_init_event_ring(struct tegra_xudc *xudc)
 {
 	unsigned int i;
 	u32 val;
-
-	val = xudc_readl(xudc, SPARAM);
-	val &= ~(SPARAM_ERSTMAX_MASK << SPARAM_ERSTMAX_SHIFT);
-	val |= XUDC_NR_EVENT_RINGS << SPARAM_ERSTMAX_SHIFT;
-	xudc_writel(xudc, val, SPARAM);
 
 	for (i = 0; i < ARRAY_SIZE(xudc->event_ring); i++) {
 		memset(xudc->event_ring[i], 0, XUDC_EVENT_RING_SIZE *
@@ -4328,6 +4348,7 @@ static int tegra_xudc_probe(struct platform_device *pdev)
 	INIT_WORK(&xudc->boost_emc, tegra_xudc_boost_emc_work);
 	INIT_DELAYED_WORK(&xudc->port_reset_war_work,
 				tegra_xudc_port_reset_war_work);
+	INIT_WORK(&xudc->pullup_work, tegra_xudc_gadget_pullup_work);
 
 	tegra_pd_add_device(&pdev->dev);
 	pm_runtime_set_active(&pdev->dev);
@@ -4376,6 +4397,7 @@ static int tegra_xudc_remove(struct platform_device *pdev)
 	if (xudc->ucd) {
 		cancel_work_sync(&xudc->set_charging_current_work);
 		cancel_delayed_work_sync(&xudc->non_std_charger_work);
+		cancel_work_sync(&xudc->pullup_work);
 		tegra_usb_release_ucd(xudc->ucd);
 	}
 
@@ -4441,6 +4463,7 @@ static int tegra_xudc_powergate(struct tegra_xudc *xudc)
 		return 0;
 
 	dev_info(xudc->dev, "entering ELPG\n");
+	cancel_work_sync(&xudc->pullup_work);
 	spin_lock_irqsave(&xudc->lock, flags);
 	xudc->powergated = true;
 	xudc->saved_regs.ctrl = xudc_readl(xudc, CTRL);

@@ -1,7 +1,7 @@
 /*
  * tegra210_virt_alt_admaif.c - Tegra ADMAIF component driver
  *
- * Copyright (c) 2014-2019 NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2014-2020 NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -49,64 +49,63 @@ static int tegra210_admaif_hw_params(struct snd_pcm_substream *substream,
 	struct device *dev = dai->dev;
 	struct tegra210_virt_admaif_client_data *data =
 				&admaif->client_data;
-	struct tegra210_virt_audio_cif *cif_conf = &data->cif;
+	struct tegra210_virt_audio_cif cif_conf;
 	struct nvaudio_ivc_msg	msg;
 	unsigned int value;
 	int err;
 
-	data->admaif_id = dai->id;
-	memset(cif_conf, 0, sizeof(struct tegra210_virt_audio_cif));
-	cif_conf->audio_channels = params_channels(params);
-	cif_conf->client_channels = params_channels(params);
+	memset(&cif_conf, 0, sizeof(struct tegra210_virt_audio_cif));
+	cif_conf.audio_channels = params_channels(params);
+	cif_conf.client_channels = params_channels(params);
 
 	switch (params_format(params)) {
 	case SNDRV_PCM_FORMAT_S8:
-		cif_conf->client_bits = TEGRA210_AUDIOCIF_BITS_8;
-		cif_conf->audio_bits = TEGRA210_AUDIOCIF_BITS_8;
+		cif_conf.client_bits = TEGRA210_AUDIOCIF_BITS_8;
+		cif_conf.audio_bits = TEGRA210_AUDIOCIF_BITS_8;
 		break;
 	case SNDRV_PCM_FORMAT_S16_LE:
-		cif_conf->client_bits = TEGRA210_AUDIOCIF_BITS_16;
-		cif_conf->audio_bits = TEGRA210_AUDIOCIF_BITS_16;
+		cif_conf.client_bits = TEGRA210_AUDIOCIF_BITS_16;
+		cif_conf.audio_bits = TEGRA210_AUDIOCIF_BITS_16;
 		break;
 	case SNDRV_PCM_FORMAT_S24_LE:
-		cif_conf->client_bits = TEGRA210_AUDIOCIF_BITS_24;
-		cif_conf->audio_bits = TEGRA210_AUDIOCIF_BITS_24;
+		cif_conf.client_bits = TEGRA210_AUDIOCIF_BITS_24;
+		cif_conf.audio_bits = TEGRA210_AUDIOCIF_BITS_24;
 		break;
 	case SNDRV_PCM_FORMAT_S32_LE:
-		cif_conf->client_bits = TEGRA210_AUDIOCIF_BITS_32;
-		cif_conf->audio_bits = TEGRA210_AUDIOCIF_BITS_32;
+		cif_conf.client_bits = TEGRA210_AUDIOCIF_BITS_32;
+		cif_conf.audio_bits = TEGRA210_AUDIOCIF_BITS_32;
 		break;
 	default:
 		dev_err(dev, "Wrong format!\n");
 		return -EINVAL;
 	}
-	cif_conf->direction = substream->stream;
+	cif_conf.direction = substream->stream;
 
-	value = (cif_conf->threshold <<
+	value = (cif_conf.threshold <<
 			TEGRA210_AUDIOCIF_CTRL_FIFO_THRESHOLD_SHIFT) |
-		((cif_conf->audio_channels - 1) <<
+		((cif_conf.audio_channels - 1) <<
 			TEGRA210_AUDIOCIF_CTRL_AUDIO_CHANNELS_SHIFT) |
-		((cif_conf->client_channels - 1) <<
+		((cif_conf.client_channels - 1) <<
 			TEGRA210_AUDIOCIF_CTRL_CLIENT_CHANNELS_SHIFT) |
-		(cif_conf->audio_bits <<
+		(cif_conf.audio_bits <<
 			TEGRA210_AUDIOCIF_CTRL_AUDIO_BITS_SHIFT) |
-		(cif_conf->client_bits <<
+		(cif_conf.client_bits <<
 			TEGRA210_AUDIOCIF_CTRL_CLIENT_BITS_SHIFT) |
-		(cif_conf->expand <<
+		(cif_conf.expand <<
 			TEGRA210_AUDIOCIF_CTRL_EXPAND_SHIFT) |
-		(cif_conf->stereo_conv <<
+		(cif_conf.stereo_conv <<
 			TEGRA210_AUDIOCIF_CTRL_STEREO_CONV_SHIFT) |
-		(cif_conf->replicate <<
+		(cif_conf.replicate <<
 			TEGRA210_AUDIOCIF_CTRL_REPLICATE_SHIFT) |
-		(cif_conf->truncate <<
+		(cif_conf.truncate <<
 			TEGRA210_AUDIOCIF_CTRL_TRUNCATE_SHIFT) |
-		(cif_conf->mono_conv <<
+		(cif_conf.mono_conv <<
 			TEGRA210_AUDIOCIF_CTRL_MONO_CONV_SHIFT);
 
 	memset(&msg, 0, sizeof(struct nvaudio_ivc_msg));
-	msg.params.dmaif_info.id        = data->admaif_id;
+	msg.params.dmaif_info.id        = dai->id;
 	msg.params.dmaif_info.value     = value;
-	if (!cif_conf->direction)
+	if (!cif_conf.direction)
 		msg.cmd = NVAUDIO_DMAIF_SET_TXCIF;
 	else
 		msg.cmd = NVAUDIO_DMAIF_SET_RXCIF;
@@ -128,10 +127,9 @@ static void tegra210_admaif_start_playback(struct snd_soc_dai *dai)
 	int err;
 	struct nvaudio_ivc_msg msg;
 
-	data->admaif_id = dai->id;
 	memset(&msg, 0, sizeof(struct nvaudio_ivc_msg));
 	msg.cmd = NVAUDIO_START_PLAYBACK;
-	msg.params.dmaif_info.id = data->admaif_id;
+	msg.params.dmaif_info.id = dai->id;
 	msg.ack_required = true;
 	err = nvaudio_ivc_send_receive(data->hivc_client,
 			&msg, sizeof(struct nvaudio_ivc_msg));
@@ -147,10 +145,9 @@ static void tegra210_admaif_stop_playback(struct snd_soc_dai *dai)
 	int err;
 	struct nvaudio_ivc_msg msg;
 
-	data->admaif_id = dai->id;
 	memset(&msg, 0, sizeof(struct nvaudio_ivc_msg));
 	msg.cmd = NVAUDIO_STOP_PLAYBACK;
-	msg.params.dmaif_info.id = data->admaif_id;
+	msg.params.dmaif_info.id = dai->id;
 
 	msg.ack_required = true;
 	err = nvaudio_ivc_send_receive(data->hivc_client,
@@ -167,10 +164,9 @@ static void tegra210_admaif_start_capture(struct snd_soc_dai *dai)
 	int err;
 	struct nvaudio_ivc_msg msg;
 
-	data->admaif_id = dai->id;
 	memset(&msg, 0, sizeof(struct nvaudio_ivc_msg));
 	msg.cmd = NVAUDIO_START_CAPTURE;
-	msg.params.dmaif_info.id = data->admaif_id;
+	msg.params.dmaif_info.id = dai->id;
 
 	msg.ack_required = true;
 	err = nvaudio_ivc_send_receive(data->hivc_client,
@@ -187,10 +183,9 @@ static void tegra210_admaif_stop_capture(struct snd_soc_dai *dai)
 	int err;
 	struct nvaudio_ivc_msg msg;
 
-	data->admaif_id = dai->id;
 	memset(&msg, 0, sizeof(struct nvaudio_ivc_msg));
 	msg.cmd = NVAUDIO_STOP_CAPTURE;
-	msg.params.dmaif_info.id = data->admaif_id;
+	msg.params.dmaif_info.id = dai->id;
 
 	msg.ack_required = true;
 	err = nvaudio_ivc_send_receive(data->hivc_client,
@@ -202,6 +197,7 @@ static void tegra210_admaif_stop_capture(struct snd_soc_dai *dai)
 static int tegra210_admaif_trigger(struct snd_pcm_substream *substream, int cmd,
 				 struct snd_soc_dai *dai)
 {
+	pr_info("Pcm trigger for admaif %d : cmd_id %d \n", dai->id +1 , cmd);
 	switch (cmd) {
 	case SNDRV_PCM_TRIGGER_START:
 	case SNDRV_PCM_TRIGGER_PAUSE_RELEASE:
@@ -442,6 +438,28 @@ REGDUMP_CTRL_DECL("SFC4 regdump", SFC4, 0, NVAUDIO_REGDUMP_RX_TX),
 
 REGDUMP_CTRL_DECL("MVC1 regdump", MVC1, 0, NVAUDIO_REGDUMP_RX_TX),
 REGDUMP_CTRL_DECL("MVC2 regdump", MVC2, 0, NVAUDIO_REGDUMP_RX_TX),
+
+ADMA_REGDUMP_CTRL_DECL("ADMA1 regdump", 1),
+ADMA_REGDUMP_CTRL_DECL("ADMA2 regdump", 2),
+ADMA_REGDUMP_CTRL_DECL("ADMA3 regdump", 3),
+ADMA_REGDUMP_CTRL_DECL("ADMA4 regdump", 4),
+ADMA_REGDUMP_CTRL_DECL("ADMA5 regdump", 5),
+ADMA_REGDUMP_CTRL_DECL("ADMA6 regdump", 6),
+ADMA_REGDUMP_CTRL_DECL("ADMA7 regdump", 7),
+ADMA_REGDUMP_CTRL_DECL("ADMA8 regdump", 8),
+ADMA_REGDUMP_CTRL_DECL("ADMA9 regdump", 9),
+ADMA_REGDUMP_CTRL_DECL("ADMA10 regdump", 10),
+ADMA_REGDUMP_CTRL_DECL("ADMA11 regdump", 11),
+ADMA_REGDUMP_CTRL_DECL("ADMA12 regdump", 12),
+ADMA_REGDUMP_CTRL_DECL("ADMA13 regdump", 13),
+ADMA_REGDUMP_CTRL_DECL("ADMA14 regdump", 14),
+ADMA_REGDUMP_CTRL_DECL("ADMA15 regdump", 15),
+ADMA_REGDUMP_CTRL_DECL("ADMA16 regdump", 16),
+ADMA_REGDUMP_CTRL_DECL("ADMA17 regdump", 17),
+ADMA_REGDUMP_CTRL_DECL("ADMA18 regdump", 18),
+ADMA_REGDUMP_CTRL_DECL("ADMA19 regdump", 19),
+ADMA_REGDUMP_CTRL_DECL("ADMA20 regdump", 20),
+
 };
 
 static const struct snd_kcontrol_new tegra_virt_t186ref_controls[] = {
@@ -502,20 +520,6 @@ MVC_TAR_VOL_CTRL_DECL("MVC2 Vol", 0x01),
 
 MVC_MUTE_CTRL_DECL("MVC1 Mute", 0x00),
 MVC_MUTE_CTRL_DECL("MVC2 Mute", 0x01),
-
-ASRC_RATIO_INT_CTRL_DECL("ASRC1 Ratio1 Int", 0x01),
-ASRC_RATIO_INT_CTRL_DECL("ASRC1 Ratio2 Int", 0x02),
-ASRC_RATIO_INT_CTRL_DECL("ASRC1 Ratio3 Int", 0x03),
-ASRC_RATIO_INT_CTRL_DECL("ASRC1 Ratio4 Int", 0x04),
-ASRC_RATIO_INT_CTRL_DECL("ASRC1 Ratio5 Int", 0x05),
-ASRC_RATIO_INT_CTRL_DECL("ASRC1 Ratio6 Int", 0x06),
-
-ASRC_RATIO_FRAC_CTRL_DECL("ASRC1 Ratio1 Frac", 0x01),
-ASRC_RATIO_FRAC_CTRL_DECL("ASRC1 Ratio2 Frac", 0x02),
-ASRC_RATIO_FRAC_CTRL_DECL("ASRC1 Ratio3 Frac", 0x03),
-ASRC_RATIO_FRAC_CTRL_DECL("ASRC1 Ratio4 Frac", 0x04),
-ASRC_RATIO_FRAC_CTRL_DECL("ASRC1 Ratio5 Frac", 0x05),
-ASRC_RATIO_FRAC_CTRL_DECL("ASRC1 Ratio6 Frac", 0x06),
 
 ASRC_RATIO_CTRL_DECL("ASRC1 Ratio1", 0x01),
 ASRC_RATIO_CTRL_DECL("ASRC1 Ratio2", 0x02),
@@ -729,6 +733,39 @@ REGDUMP_CTRL_DECL("ARAD1 Lane3 regdump", ARAD1, 2, NVAUDIO_REGDUMP_RX_TX),
 REGDUMP_CTRL_DECL("ARAD1 Lane4 regdump", ARAD1, 3, NVAUDIO_REGDUMP_RX_TX),
 REGDUMP_CTRL_DECL("ARAD1 Lane5 regdump", ARAD1, 4, NVAUDIO_REGDUMP_RX_TX),
 REGDUMP_CTRL_DECL("ARAD1 Lane6 regdump", ARAD1, 5, NVAUDIO_REGDUMP_RX_TX),
+
+ADMA_REGDUMP_CTRL_DECL("ADMA1 regdump", 1),
+ADMA_REGDUMP_CTRL_DECL("ADMA2 regdump", 2),
+ADMA_REGDUMP_CTRL_DECL("ADMA3 regdump", 3),
+ADMA_REGDUMP_CTRL_DECL("ADMA4 regdump", 4),
+ADMA_REGDUMP_CTRL_DECL("ADMA5 regdump", 5),
+ADMA_REGDUMP_CTRL_DECL("ADMA6 regdump", 6),
+ADMA_REGDUMP_CTRL_DECL("ADMA7 regdump", 7),
+ADMA_REGDUMP_CTRL_DECL("ADMA8 regdump", 8),
+ADMA_REGDUMP_CTRL_DECL("ADMA9 regdump", 9),
+ADMA_REGDUMP_CTRL_DECL("ADMA10 regdump", 10),
+ADMA_REGDUMP_CTRL_DECL("ADMA11 regdump", 11),
+ADMA_REGDUMP_CTRL_DECL("ADMA12 regdump", 12),
+ADMA_REGDUMP_CTRL_DECL("ADMA13 regdump", 13),
+ADMA_REGDUMP_CTRL_DECL("ADMA14 regdump", 14),
+ADMA_REGDUMP_CTRL_DECL("ADMA15 regdump", 15),
+ADMA_REGDUMP_CTRL_DECL("ADMA16 regdump", 16),
+ADMA_REGDUMP_CTRL_DECL("ADMA17 regdump", 17),
+ADMA_REGDUMP_CTRL_DECL("ADMA18 regdump", 18),
+ADMA_REGDUMP_CTRL_DECL("ADMA19 regdump", 19),
+ADMA_REGDUMP_CTRL_DECL("ADMA20 regdump", 20),
+ADMA_REGDUMP_CTRL_DECL("ADMA21 regdump", 21),
+ADMA_REGDUMP_CTRL_DECL("ADMA22 regdump", 22),
+ADMA_REGDUMP_CTRL_DECL("ADMA23 regdump", 23),
+ADMA_REGDUMP_CTRL_DECL("ADMA24 regdump", 24),
+ADMA_REGDUMP_CTRL_DECL("ADMA25 regdump", 25),
+ADMA_REGDUMP_CTRL_DECL("ADMA26 regdump", 26),
+ADMA_REGDUMP_CTRL_DECL("ADMA27 regdump", 27),
+ADMA_REGDUMP_CTRL_DECL("ADMA28 regdump", 28),
+ADMA_REGDUMP_CTRL_DECL("ADMA29 regdump", 29),
+ADMA_REGDUMP_CTRL_DECL("ADMA30 regdump", 30),
+ADMA_REGDUMP_CTRL_DECL("ADMA31 regdump", 31),
+ADMA_REGDUMP_CTRL_DECL("ADMA32 regdump", 32),
 
 /* Metadata controls should be always the last ones */
 SOC_SINGLE_BOOL_EXT("SAD Init", 0,

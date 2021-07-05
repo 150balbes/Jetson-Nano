@@ -1,7 +1,7 @@
 /*
  * drivers/video/tegra/nvdisp/nvdisp_config.c
  *
- * Copyright (c) 2014-2017, NVIDIA CORPORATION, All rights reserved.
+ * Copyright (c) 2014-2019, NVIDIA CORPORATION, All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -33,6 +33,7 @@
 
 #define TEGRA_WIN_FMT_T186_W1		( \
 	BITWORD1(TEGRA_DC_EXT_FMT_T_Y8___U8___V8_N444) | \
+	BITWORD1(TEGRA_DC_EXT_FMT_T_Y8___U8V8_N420) | \
 	BITWORD1(TEGRA_DC_EXT_FMT_T_Y8___V8U8_N420) | \
 	BITWORD1(TEGRA_DC_EXT_FMT_T_Y8___U8V8_N422) | \
 	BITWORD1(TEGRA_DC_EXT_FMT_T_Y8___V8U8_N422) | \
@@ -225,5 +226,25 @@ static struct tegra_dc_feature t186_feature_table_a = {
 
 void nvdisp_dc_feature_register(struct tegra_dc *dc)
 {
+	int win_idx;
+	int max_num_wins = tegra_dc_get_numof_dispwindows();
+	int idx;
+	struct tegra_dc_feature_entry *entry;
+
 	dc->feature = &t186_feature_table_a;
+
+	/* Display HW rotation (scan column) is not supported on T19x.
+	 * Set scan column to false in the feature table for T19x.
+	 */
+	if (tegra_dc_is_t19x()) {
+		for (win_idx = 0; win_idx < max_num_wins; win_idx++) {
+			idx = tegra_dc_get_feature(dc->feature, win_idx,
+					TEGRA_DC_FEATURE_INVERT_TYPE);
+			if (idx < 0)
+				return;
+
+			entry = &dc->feature->entries[idx];
+			entry->arg[SCAN_COLUMN] = 0;
+		}
+	}
 }

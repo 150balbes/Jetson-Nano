@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 NVIDIA Corporation.  All rights reserved.
+ * Copyright (C) 2017-2020 NVIDIA Corporation.  All rights reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -112,9 +112,6 @@ static int gk20a_fifo_sched_debugfs_open(struct inode *inode,
 {
 	struct gk20a *g = inode->i_private;
 	int err;
-
-	if (!capable(CAP_SYS_ADMIN))
-		return -EPERM;
 
 	err = seq_open(file, &gk20a_fifo_sched_debugfs_seq_ops);
 	if (err)

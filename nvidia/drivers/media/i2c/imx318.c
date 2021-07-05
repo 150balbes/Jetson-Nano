@@ -1,7 +1,7 @@
 /*
  * imx318.c - imx318 sensor driver
  *
- * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -353,10 +353,10 @@ static int imx318_power_put(struct tegracam_device *tc_dev)
 		return -EFAULT;
 
 	if (likely(pw->avdd))
-		regulator_put(pw->avdd);
+		devm_regulator_put(pw->avdd);
 
 	if (likely(pw->iovdd))
-		regulator_put(pw->iovdd);
+		devm_regulator_put(pw->iovdd);
 
 	pw->avdd = NULL;
 	pw->iovdd = NULL;
@@ -751,6 +751,7 @@ static int imx318_probe(struct i2c_client *client,
 
 	err = imx318_board_setup(priv);
 	if (err) {
+		tegracam_device_unregister(tc_dev);
 		dev_err(dev, "board setup failed\n");
 		return err;
 	}
@@ -773,6 +774,7 @@ static int imx318_remove(struct i2c_client *client)
 
 	tegracam_v4l2subdev_unregister(priv->tc_dev);
 	tegracam_device_unregister(priv->tc_dev);
+	imx318_eeprom_device_release(priv);
 
 	return 0;
 }

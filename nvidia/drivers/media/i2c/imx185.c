@@ -1,7 +1,7 @@
 /*
  * imx185.c - imx185 sensor driver
  *
- * Copyright (c) 2016-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2016-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -691,7 +691,7 @@ static struct camera_common_sensor_ops imx185_common_ops = {
 
 static int imx185_fuse_id_setup(struct imx185 *priv)
 {
-	int err;
+	int err = 0;
 	int i;
 	struct camera_common_data *s_data = priv->s_data;
 	struct device *dev = s_data->dev;
@@ -802,6 +802,7 @@ static int imx185_probe(struct i2c_client *client,
 
 	err = imx185_board_setup(priv);
 	if (err) {
+		tegracam_device_unregister(tc_dev);
 		dev_err(dev, "board setup failed\n");
 		return err;
 	}

@@ -1,7 +1,7 @@
 /*
  * GK20A Graphics FIFO (gr host)
  *
- * Copyright (c) 2011-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2011-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -2212,6 +2212,22 @@ int gk20a_fifo_tsg_unbind_channel_verify_status(struct channel_gk20a *ch)
 	return 0;
 }
 
+static bool gk20a_fifo_tsg_is_multi_channel(struct tsg_gk20a *tsg)
+{
+	bool ret = false;
+
+	nvgpu_rwsem_down_read(&tsg->ch_list_lock);
+	if (nvgpu_list_first_entry(&tsg->ch_list, channel_gk20a,
+				   ch_entry) !=
+	    nvgpu_list_last_entry(&tsg->ch_list, channel_gk20a,
+				   ch_entry)) {
+		ret = true;
+	}
+	nvgpu_rwsem_up_read(&tsg->ch_list_lock);
+
+	return ret;
+}
+
 int gk20a_fifo_tsg_unbind_channel(struct channel_gk20a *ch)
 {
 	struct gk20a *g = ch->g;
@@ -2237,7 +2253,12 @@ int gk20a_fifo_tsg_unbind_channel(struct channel_gk20a *ch)
 		goto fail_enable_tsg;
 	}
 
-	if (g->ops.fifo.tsg_verify_channel_status && !tsg_timedout) {
+	/*
+	 * State validation is only necessary if there are multiple channels in
+	 * the TSG.
+	 */
+	if (gk20a_fifo_tsg_is_multi_channel(tsg) &&
+	    g->ops.fifo.tsg_verify_channel_status && !tsg_timedout) {
 		err = g->ops.fifo.tsg_verify_channel_status(ch);
 		if (err) {
 			goto fail_enable_tsg;
@@ -2248,6 +2269,15 @@ int gk20a_fifo_tsg_unbind_channel(struct channel_gk20a *ch)
 	err = channel_gk20a_update_runlist(ch, false);
 	if (err) {
 		goto fail_enable_tsg;
+	}
+
+	while (ch->mmu_debug_mode_refcnt > 0U) {
+		err = nvgpu_tsg_set_mmu_debug_mode(ch, false);
+		if (err != 0) {
+			nvgpu_err(g, "disable mmu debug mode failed ch:%u",
+				ch->chid);
+			break;
+		}
 	}
 
 	/* Remove channel from TSG and re-enable rest of the channels */
@@ -2769,14 +2799,12 @@ unsigned int gk20a_fifo_handle_pbdma_intr_1(struct gk20a *g,
 
 static void gk20a_fifo_pbdma_fault_rc(struct gk20a *g,
 			struct fifo_gk20a *f, u32 pbdma_id,
-			u32 error_notifier)
+			u32 error_notifier, u32 status)
 {
-	u32 status;
 	u32 id;
 
 	nvgpu_log(g, gpu_dbg_info, "pbdma id %d error notifier %d",
 			pbdma_id, error_notifier);
-	status = gk20a_readl(g, fifo_pbdma_status_r(pbdma_id));
 	/* Remove channel from runlist */
 	id = fifo_pbdma_status_id_v(status);
 	if (fifo_pbdma_status_id_type_v(status)
@@ -2816,6 +2844,7 @@ u32 gk20a_fifo_handle_pbdma_intr(struct gk20a *g, struct fifo_gk20a *f,
 	u32 handled = 0;
 	u32 error_notifier = NVGPU_ERR_NOTIFIER_PBDMA_ERROR;
 	unsigned int rc_type = RC_TYPE_NO_RC;
+	u32 pbdma_status_info = 0;
 
 	if (pbdma_intr_0) {
 		nvgpu_log(g, gpu_dbg_info | gpu_dbg_intr,
@@ -2825,6 +2854,9 @@ u32 gk20a_fifo_handle_pbdma_intr(struct gk20a *g, struct fifo_gk20a *f,
 		if (g->ops.fifo.handle_pbdma_intr_0(g, pbdma_id, pbdma_intr_0,
 			&handled, &error_notifier) != RC_TYPE_NO_RC) {
 			rc_type = RC_TYPE_PBDMA_FAULT;
+
+			pbdma_status_info = gk20a_readl(g,
+				fifo_pbdma_status_r(pbdma_id));
 		}
 		gk20a_writel(g, pbdma_intr_0_r(pbdma_id), pbdma_intr_0);
 	}
@@ -2837,12 +2869,16 @@ u32 gk20a_fifo_handle_pbdma_intr(struct gk20a *g, struct fifo_gk20a *f,
 		if (g->ops.fifo.handle_pbdma_intr_1(g, pbdma_id, pbdma_intr_1,
 			&handled, &error_notifier) != RC_TYPE_NO_RC) {
 			rc_type = RC_TYPE_PBDMA_FAULT;
+
+			pbdma_status_info = gk20a_readl(g,
+				fifo_pbdma_status_r(pbdma_id));
 		}
 		gk20a_writel(g, pbdma_intr_1_r(pbdma_id), pbdma_intr_1);
 	}
 
 	if (rc == RC_YES && rc_type == RC_TYPE_PBDMA_FAULT) {
-		gk20a_fifo_pbdma_fault_rc(g, f, pbdma_id, error_notifier);
+		gk20a_fifo_pbdma_fault_rc(g, f, pbdma_id, error_notifier,
+				pbdma_status_info);
 	}
 
 	return handled;

@@ -15,7 +15,7 @@
  * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
  *
  * Copyright (C) 2013 ARM Limited
- * Copyright (c) 2015-2018, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2015-2020, NVIDIA CORPORATION. All rights reserved.
  *
  * Author: Will Deacon <will.deacon@arm.com>
  *
@@ -1131,6 +1131,7 @@ static void arm_smmu_free_pgtables(struct arm_smmu_domain *smmu_domain)
 	int i;
 	struct arm_smmu_cfg *cfg = &smmu_domain->cfg;
 	pgd_t *pgd, *pgd_base = cfg->pgd;
+	unsigned long order;
 
 	/*
 	 * Recursively free the page tables for this domain. We don't
@@ -1145,7 +1146,8 @@ static void arm_smmu_free_pgtables(struct arm_smmu_domain *smmu_domain)
 		pgd++;
 	}
 
-	kfree(pgd_base);
+	order = get_order(PTRS_PER_PGD * sizeof(pgd_t));
+	free_pages((unsigned long)pgd_base, order);
 }
 
 static void arm_smmu_domain_free(struct iommu_domain *domain)

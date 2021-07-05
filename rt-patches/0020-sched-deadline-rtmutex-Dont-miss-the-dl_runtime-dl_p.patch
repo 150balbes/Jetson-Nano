@@ -1,0 +1,60 @@
+From 717aa7ff054300f5c00a48147641eeaa3d04f1a9 Mon Sep 17 00:00:00 2001
+From: Xunlei Pang <xlpang@redhat.com>
+Date: Thu, 23 Mar 2017 15:56:09 +0100
+Subject: [PATCH 020/371] sched/deadline/rtmutex: Dont miss the
+ dl_runtime/dl_period update
+X-NVConfidentiality: public
+
+Upstream commit 85e2d4f992868ad78dc8bb2c077b652fcfb3661a
+
+Currently dl tasks will actually return at the very beginning
+of rt_mutex_adjust_prio_chain() in !detect_deadlock cases:
+
+    if (waiter->prio == task->prio) {
+        if (!detect_deadlock)
+            goto out_unlock_pi; // out here
+        else
+            requeue = false;
+    }
+
+As the deadline value of blocked deadline tasks(waiters) without
+changing their sched_class(thus prio doesn't change) never changes,
+this seems reasonable, but it actually misses the chance of updating
+rt_mutex_waiter's "dl_runtime(period)_copy" if a waiter updates its
+deadline parameters(dl_runtime, dl_period) or boosted waiter changes
+to !deadline class.
+
+Thus, force deadline task not out by adding the !dl_prio() condition.
+
+Signed-off-by: Xunlei Pang <xlpang@redhat.com>
+Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Acked-by: Steven Rostedt <rostedt@goodmis.org>
+Reviewed-by: Thomas Gleixner <tglx@linutronix.de>
+Cc: juri.lelli@arm.com
+Cc: bigeasy@linutronix.de
+Cc: mathieu.desnoyers@efficios.com
+Cc: jdesfossez@efficios.com
+Cc: bristot@redhat.com
+Link: http://lkml.kernel.org/r/1460633827-345-7-git-send-email-xlpang@redhat.com
+Link: http://lkml.kernel.org/r/20170323150216.206577901@infradead.org
+Signed-off-by: Thomas Gleixner <tglx@linutronix.de>
+---
+ kernel/locking/rtmutex.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/kernel/locking/rtmutex.c b/kernel/locking/rtmutex.c
+index 1996128..03a345d 100644
+--- a/kernel/locking/rtmutex.c
++++ b/kernel/locking/rtmutex.c
+@@ -602,7 +602,7 @@ static int rt_mutex_adjust_prio_chain(struct task_struct *task,
+ 	 * enabled we continue, but stop the requeueing in the chain
+ 	 * walk.
+ 	 */
+-	if (waiter->prio == task->prio) {
++	if (waiter->prio == task->prio && !dl_task(task)) {
+ 		if (!detect_deadlock)
+ 			goto out_unlock_pi;
+ 		else
+-- 
+2.7.4
+

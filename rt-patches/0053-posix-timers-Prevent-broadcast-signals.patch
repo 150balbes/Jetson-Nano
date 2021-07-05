@@ -1,0 +1,31 @@
+From d1f63527794a664d1d67381211c9beebc2ed7965 Mon Sep 17 00:00:00 2001
+From: Thomas Gleixner <tglx@linutronix.de>
+Date: Fri, 3 Jul 2009 08:29:20 -0500
+Subject: [PATCH 053/371] posix-timers: Prevent broadcast signals
+X-NVConfidentiality: public
+
+Posix timers should not send broadcast signals and kernel only
+signals. Prevent it.
+
+Signed-off-by: Thomas Gleixner <tglx@linutronix.de>
+---
+ kernel/time/posix-timers.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/kernel/time/posix-timers.c b/kernel/time/posix-timers.c
+index 0e6ed2e..06ef7e4 100644
+--- a/kernel/time/posix-timers.c
++++ b/kernel/time/posix-timers.c
+@@ -526,6 +526,9 @@ static struct pid *good_sigevent(sigevent_t * event)
+ 	case SIGEV_THREAD:
+ 		if (event->sigev_signo <= 0 || event->sigev_signo > SIGRTMAX)
+ 			return NULL;
++		if (sig_kernel_only(event->sigev_signo) ||
++		    sig_kernel_coredump(event->sigev_signo))
++			return NULL;
+ 		/* FALLTHRU */
+ 	case SIGEV_NONE:
+ 		return task_pid(rtn);
+-- 
+2.7.4
+

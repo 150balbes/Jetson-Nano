@@ -23,12 +23,10 @@
 #include <linux/platform_device.h>
 #include <linux/pm_runtime.h>
 #include <linux/regmap.h>
-#include <linux/slab.h>
 #include <sound/core.h>
 #include <sound/pcm.h>
 #include <sound/pcm_params.h>
 #include <sound/soc.h>
-#include <linux/pinctrl/consumer.h>
 #include <linux/of_device.h>
 #include <linux/delay.h>
 
@@ -69,14 +67,28 @@ static int tegra210_mvc_runtime_resume(struct device *dev)
 	struct tegra210_mvc *mvc = dev_get_drvdata(dev);
 
 	regcache_cache_only(mvc->regmap, false);
+	regcache_sync(mvc->regmap);
+	regmap_update_bits(mvc->regmap, TEGRA210_MVC_CTRL,
+			   TEGRA210_MVC_CURVE_TYPE_MASK,
+			   mvc->curve_type << TEGRA210_MVC_CURVE_TYPE_SHIFT);
 
-	if (!mvc->is_shutdown) {
-		regcache_sync(mvc->regmap);
+	return 0;
+}
 
-		regmap_update_bits(mvc->regmap, TEGRA210_MVC_CTRL,
-			TEGRA210_MVC_CURVE_TYPE_MASK,
-			mvc->curve_type << TEGRA210_MVC_CURVE_TYPE_SHIFT);
-	}
+static int tegra210_mvc_soft_reset(struct tegra210_mvc *mvc)
+{
+	int value;
+	int dcnt = 10;
+	/* issue soft reset */
+	regmap_write(mvc->regmap, TEGRA210_MVC_SOFT_RESET, 1);
+	/* wait for soft reset bit to clear */
+	do {
+		udelay(10);
+		regmap_read(mvc->regmap, TEGRA210_MVC_SOFT_RESET, &value);
+		dcnt--;
+		if (dcnt < 0)
+			return -EINVAL;
+	} while (value);
 
 	return 0;
 }
@@ -134,9 +146,7 @@ static int tegra210_mvc_get_vol(struct snd_kcontrol *kcontrol,
 	} else {
 		u32 val;
 
-		pm_runtime_get_sync(codec->dev);
 		regmap_read(mvc->regmap, reg, &val);
-		pm_runtime_put(codec->dev);
 		ucontrol->value.integer.value[0] =
 			((val & TEGRA210_MVC_MUTE_MASK) != 0);
 	}
@@ -195,6 +205,10 @@ static int tegra210_mvc_put_vol(struct snd_kcontrol *kcontrol,
 end:
 	pm_runtime_put(codec->dev);
 
+	if (reg == TEGRA210_MVC_TARGET_VOL)
+		ret |= regmap_update_bits(mvc->regmap, TEGRA210_MVC_CTRL,
+				TEGRA210_MVC_MUTE_MASK, 0);
+
 	return ret;
 }
 
@@ -214,52 +228,15 @@ static int tegra210_mvc_put_curve_type(struct snd_kcontrol *kcontrol,
 {
 	struct snd_soc_codec *codec = snd_soc_kcontrol_codec(kcontrol);
 	struct tegra210_mvc *mvc = snd_soc_codec_get_drvdata(codec);
-	unsigned int reg = TEGRA210_MVC_CTRL;
-	int dcnt = 10;
-	int ret = 0;
-	u32 value;
 
-	/* if no change in curve type, do nothing */
-	if (mvc->curve_type == ucontrol->value.integer.value[0])
-		return ret;
-
-	pm_runtime_get_sync(codec->dev);
-
-	/* change curve type */
-	ret |= regmap_update_bits(mvc->regmap, reg,
-			TEGRA210_MVC_CURVE_TYPE_MASK,
-			ucontrol->value.integer.value[0] <<
-			TEGRA210_MVC_CURVE_TYPE_SHIFT);
 	mvc->curve_type = ucontrol->value.integer.value[0];
-
-	/* issue soft reset */
-	regmap_write(mvc->regmap, TEGRA210_MVC_SOFT_RESET, 1);
-	/* wait for soft reset bit to clear */
-	do {
-		udelay(10);
-		ret = regmap_read(mvc->regmap, TEGRA210_MVC_SOFT_RESET, &value);
-		dcnt--;
-		if (dcnt < 0) {
-			ret = -EINVAL;
-			goto end;
-		}
-	} while (value);
-
 	/* change volume to default init for new curve type */
-	if (ucontrol->value.integer.value[0] == CURVE_POLY)
+	if (mvc->curve_type == CURVE_POLY)
 		mvc->volume = TEGRA210_MVC_INIT_VOL_DEFAULT_POLY;
 	else
 		mvc->volume = TEGRA210_MVC_INIT_VOL_DEFAULT_LINEAR;
 
-	regmap_write(mvc->regmap, TEGRA210_MVC_TARGET_VOL, mvc->volume);
-	ret |= regmap_update_bits(mvc->regmap, TEGRA210_MVC_SWITCH,
-			TEGRA210_MVC_VOLUME_SWITCH_MASK,
-			TEGRA210_MVC_VOLUME_SWITCH_TRIGGER);
-
-end:
-	pm_runtime_put(codec->dev);
-
-	return ret;
+	return 0;
 }
 
 static int tegra210_mvc_get_audio_bits(struct snd_kcontrol *kcontrol,
@@ -369,7 +346,7 @@ static int tegra210_mvc_set_audio_cif(struct tegra210_mvc *mvc,
 	if (mvc->format_in && (reg == TEGRA210_MVC_AXBAR_RX_CIF_CTRL))
 		cif_conf.audio_bits = tegra210_mvc_fmt_values[mvc->format_in];
 
-	mvc->soc_data->set_audio_cif(mvc->regmap, reg, &cif_conf);
+	tegra210_xbar_set_cif(mvc->regmap, reg, &cif_conf);
 
 	return 0;
 }
@@ -381,6 +358,12 @@ static int tegra210_mvc_hw_params(struct snd_pcm_substream *substream,
 	struct device *dev = dai->dev;
 	struct tegra210_mvc *mvc = snd_soc_dai_get_drvdata(dai);
 	int i, ret;
+
+	ret = tegra210_mvc_soft_reset(mvc);
+	if (ret < 0) {
+		dev_err(dev, "SOFT_RESET error: %d\n", ret);
+		return ret;
+	}
 
 	/* set RX cif and TX cif */
 	ret = tegra210_mvc_set_audio_cif(mvc, params,
@@ -401,23 +384,20 @@ static int tegra210_mvc_hw_params(struct snd_pcm_substream *substream,
 		TEGRA210_MVC_PER_CHAN_CTRL_EN_MASK,
 		~(TEGRA210_MVC_PER_CHAN_CTRL_EN_MASK));
 
+	/* change curve type */
+	ret = regmap_update_bits(mvc->regmap, TEGRA210_MVC_CTRL,
+			TEGRA210_MVC_CURVE_TYPE_MASK,
+			mvc->curve_type <<
+			TEGRA210_MVC_CURVE_TYPE_SHIFT);
+
 	/* init the default volume=1 for MVC */
-	regmap_write(mvc->regmap, TEGRA210_MVC_INIT_VOL,
-		(mvc->curve_type == CURVE_POLY) ?
-		TEGRA210_MVC_INIT_VOL_DEFAULT_POLY :
-		TEGRA210_MVC_INIT_VOL_DEFAULT_LINEAR);
+	regmap_write(mvc->regmap, TEGRA210_MVC_INIT_VOL, mvc->volume);
 
 	regmap_write(mvc->regmap, TEGRA210_MVC_TARGET_VOL, mvc->volume);
-	/* trigger volume switch */
-	ret |= regmap_update_bits(mvc->regmap, TEGRA210_MVC_SWITCH,
-			TEGRA210_MVC_VOLUME_SWITCH_MASK,
-			TEGRA210_MVC_VOLUME_SWITCH_TRIGGER);
-
 
 	/* program the poly coefficients */
 	for (i = 0; i < 9; i++)
 		tegra210_mvc_write_ram(mvc, i, mvc->poly_coeff[i]);
-
 
 	/* program poly_n1, poly_n2, duration */
 	regmap_write(mvc->regmap, TEGRA210_MVC_POLY_N1, mvc->poly_n1);
@@ -427,16 +407,11 @@ static int tegra210_mvc_hw_params(struct snd_pcm_substream *substream,
 	/* program duration_inv */
 	regmap_write(mvc->regmap, TEGRA210_MVC_DURATION_INV, mvc->duration_inv);
 
+	/* trigger volume switch */
+	ret |= regmap_update_bits(mvc->regmap, TEGRA210_MVC_SWITCH,
+			TEGRA210_MVC_VOLUME_SWITCH_MASK,
+			TEGRA210_MVC_VOLUME_SWITCH_TRIGGER);
 	return ret;
-}
-
-static int tegra210_mvc_codec_probe(struct snd_soc_codec *codec)
-{
-	struct tegra210_mvc *mvc = snd_soc_codec_get_drvdata(codec);
-
-	codec->control_data = mvc->regmap;
-
-	return 0;
 }
 
 static struct snd_soc_dai_ops tegra210_mvc_dai_ops = {
@@ -526,7 +501,6 @@ static const struct snd_soc_dapm_route tegra210_mvc_routes[] = {
 };
 
 static struct snd_soc_codec_driver tegra210_mvc_codec = {
-	.probe = tegra210_mvc_codec_probe,
 	.idle_bias_off = 1,
 	.component_driver = {
 		.dapm_widgets = tegra210_mvc_widgets,
@@ -601,7 +575,6 @@ static bool tegra210_mvc_volatile_reg(struct device *dev, unsigned int reg)
 	case TEGRA210_MVC_AHUBRAMCTL_CONFIG_RAM_CTRL:
 	case TEGRA210_MVC_AHUBRAMCTL_CONFIG_RAM_DATA:
 	case TEGRA210_MVC_PEAK_VALUE:
-	case TEGRA210_MVC_CTRL:
 		return true;
 	default:
 		return false;
@@ -621,41 +594,29 @@ static const struct regmap_config tegra210_mvc_regmap_config = {
 	.cache_type = REGCACHE_FLAT,
 };
 
-static const struct tegra210_mvc_soc_data soc_data_tegra210 = {
-	.set_audio_cif = tegra210_xbar_set_cif,
-};
-
 static const struct of_device_id tegra210_mvc_of_match[] = {
-	{ .compatible = "nvidia,tegra210-mvc", .data = &soc_data_tegra210 },
+	{ .compatible = "nvidia,tegra210-mvc" },
 	{},
 };
 
 static int tegra210_mvc_platform_probe(struct platform_device *pdev)
 {
 	struct tegra210_mvc *mvc;
-	struct resource *mem, *memregion;
+	struct resource *mem;
 	void __iomem *regs;
 	int ret = 0;
 	const struct of_device_id *match;
-	struct tegra210_mvc_soc_data *soc_data;
 
 	match = of_match_device(tegra210_mvc_of_match, &pdev->dev);
 	if (!match) {
 		dev_err(&pdev->dev, "Error: No device match found\n");
-		ret = -ENODEV;
-		goto err;
-	}
-	soc_data = (struct tegra210_mvc_soc_data *)match->data;
-
-	mvc = devm_kzalloc(&pdev->dev, sizeof(struct tegra210_mvc), GFP_KERNEL);
-	if (!mvc) {
-		dev_err(&pdev->dev, "Can't allocate mvc\n");
-		ret = -ENOMEM;
-		goto err;
+		return -ENODEV;
 	}
 
-	mvc->soc_data = soc_data;
-	mvc->is_shutdown = false;
+	mvc = devm_kzalloc(&pdev->dev, sizeof(*mvc), GFP_KERNEL);
+	if (!mvc)
+		return -ENOMEM;
+
 	dev_set_drvdata(&pdev->dev, mvc);
 
 	mvc->poly_n1 = 16;
@@ -675,76 +636,36 @@ static int tegra210_mvc_platform_probe(struct platform_device *pdev)
 	mvc->volume = TEGRA210_MVC_INIT_VOL_DEFAULT_LINEAR;
 
 	mem = platform_get_resource(pdev, IORESOURCE_MEM, 0);
-	if (!mem) {
-		dev_err(&pdev->dev, "No memory resource\n");
-		ret = -ENODEV;
-		goto err;
-	}
-
-	memregion = devm_request_mem_region(&pdev->dev, mem->start,
-					    resource_size(mem), pdev->name);
-	if (!memregion) {
-		dev_err(&pdev->dev, "Memory region already claimed\n");
-		ret = -EBUSY;
-		goto err;
-	}
-
-	regs = devm_ioremap(&pdev->dev, mem->start, resource_size(mem));
-	if (!regs) {
-		dev_err(&pdev->dev, "ioremap failed\n");
-		ret = -ENOMEM;
-		goto err;
-	}
-
+	regs = devm_ioremap_resource(&pdev->dev, mem);
+	if (IS_ERR(regs))
+		return PTR_ERR(regs);
 	mvc->regmap = devm_regmap_init_mmio(&pdev->dev, regs,
 					    &tegra210_mvc_regmap_config);
 	if (IS_ERR(mvc->regmap)) {
 		dev_err(&pdev->dev, "regmap init failed\n");
-		ret = PTR_ERR(mvc->regmap);
-		goto err;
+		return PTR_ERR(mvc->regmap);
 	}
 	regcache_cache_only(mvc->regmap, true);
 
-	if (of_property_read_u32(pdev->dev.of_node,
-				"nvidia,ahub-mvc-id",
-				&pdev->dev.id) < 0) {
-		dev_err(&pdev->dev,
-			"Missing property nvidia,ahub-mvc-id\n");
-		ret = -ENODEV;
-		goto err;
+	ret = of_property_read_u32(pdev->dev.of_node,
+				   "nvidia,ahub-mvc-id",
+				   &pdev->dev.id);
+	if (ret < 0) {
+		dev_err(&pdev->dev, "Missing property nvidia,ahub-mvc-id\n");
+		return ret;
 	}
 
 	pm_runtime_enable(&pdev->dev);
-	if (!pm_runtime_enabled(&pdev->dev)) {
-		ret = tegra210_mvc_runtime_resume(&pdev->dev);
-		if (ret)
-			goto err_pm_disable;
-	}
-
 	ret = snd_soc_register_codec(&pdev->dev, &tegra210_mvc_codec,
 				     tegra210_mvc_dais,
 				     ARRAY_SIZE(tegra210_mvc_dais));
 	if (ret != 0) {
 		dev_err(&pdev->dev, "Could not register CODEC: %d\n", ret);
-		goto err_suspend;
+		pm_runtime_disable(&pdev->dev);
+		return ret;
 	}
 
 	return 0;
-
-err_suspend:
-	if (!pm_runtime_status_suspended(&pdev->dev))
-		tegra210_mvc_runtime_suspend(&pdev->dev);
-err_pm_disable:
-	pm_runtime_disable(&pdev->dev);
-err:
-	return ret;
-}
-
-static void tegra210_mvc_platform_shutdown(struct platform_device *pdev)
-{
-	struct tegra210_mvc *mvc = dev_get_drvdata(&pdev->dev);
-
-	mvc->is_shutdown = true;
 }
 
 static int tegra210_mvc_platform_remove(struct platform_device *pdev)
@@ -774,7 +695,6 @@ static struct platform_driver tegra210_mvc_driver = {
 	},
 	.probe = tegra210_mvc_platform_probe,
 	.remove = tegra210_mvc_platform_remove,
-	.shutdown = tegra210_mvc_platform_shutdown,
 };
 module_platform_driver(tegra210_mvc_driver)
 

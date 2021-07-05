@@ -1,7 +1,7 @@
 /*
  * GK20A Graphics
  *
- * Copyright (c) 2011-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2011-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -143,6 +143,10 @@ int gk20a_finalize_poweron(struct gk20a *g)
 	if (g->ops.xve.reset_gpu && !g->gpu_reset_done) {
 		g->ops.xve.reset_gpu(g);
 		g->gpu_reset_done = true;
+	}
+
+	if (g->ops.clock_gating.slcg_acb_load_gating_prod != NULL) {
+		g->ops.clock_gating.slcg_acb_load_gating_prod(g, true);
 	}
 
 	/*

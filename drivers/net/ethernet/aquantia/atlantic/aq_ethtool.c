@@ -134,8 +134,8 @@ static void aq_ethtool_stats(struct net_device *ndev,
 	struct aq_nic_cfg_s *cfg = aq_nic_get_cfg(aq_nic);
 
 	memset(data, 0, (ARRAY_SIZE(aq_ethtool_stat_names) +
-				ARRAY_SIZE(aq_ethtool_queue_stat_names) *
-				cfg->vecs) * sizeof(u64));
+			 ARRAY_SIZE(aq_ethtool_queue_stat_names) *
+			 cfg->vecs) * sizeof(u64));
 	aq_nic_get_stats(aq_nic, data);
 }
 
@@ -158,7 +158,7 @@ static void aq_ethtool_get_drvinfo(struct net_device *ndev,
 	strlcpy(drvinfo->bus_info, pdev ? pci_name(pdev) : "",
 		sizeof(drvinfo->bus_info));
 	drvinfo->n_stats = ARRAY_SIZE(aq_ethtool_stat_names) +
-		cfg->vecs * ARRAY_SIZE(aq_ethtool_queue_stat_names);
+			   cfg->vecs * ARRAY_SIZE(aq_ethtool_queue_stat_names);
 	drvinfo->testinfo_len = 0;
 	drvinfo->regdump_len = regs_count;
 	drvinfo->eedump_len = 0;
@@ -174,7 +174,7 @@ static void aq_ethtool_get_strings(struct net_device *ndev,
 
 	switch (stringset) {
 	case  ETH_SS_STATS:
-		memcpy(p, *aq_ethtool_stat_names,
+		memcpy(p, aq_ethtool_stat_names,
 		       sizeof(aq_ethtool_stat_names));
 		p = p + sizeof(aq_ethtool_stat_names);
 		for (i = 0; i < cfg->vecs; i++) {
@@ -203,7 +203,7 @@ static int aq_ethtool_get_sset_count(struct net_device *ndev, int stringset)
 	switch (stringset) {
 	case ETH_SS_STATS:
 		ret = ARRAY_SIZE(aq_ethtool_stat_names) +
-			cfg->vecs * ARRAY_SIZE(aq_ethtool_queue_stat_names);
+		      cfg->vecs * ARRAY_SIZE(aq_ethtool_queue_stat_names);
 		break;
 	case  ETH_SS_PRIV_FLAGS:
 		ret = ARRAY_SIZE(aq_ethtool_priv_flag_names);
@@ -415,13 +415,13 @@ static int aq_ethtool_get_eee(struct net_device *ndev, struct ethtool_eee *eee)
 		return -EOPNOTSUPP;
 
 	err = aq_nic->aq_fw_ops->get_eee_rate(aq_nic->aq_hw, &rate,
-						&supported_rates);
+					      &supported_rates);
 	if (err < 0)
 		return err;
 
 	eee->supported = eee_mask_to_ethtool_mask(supported_rates);
 
-	if (aq_nic->aq_nic_cfg.eee_enabled)
+	if (aq_nic->aq_nic_cfg.eee_speeds)
 		eee->advertised = eee->supported;
 
 	eee->lp_advertised = eee_mask_to_ethtool_mask(rate);
@@ -442,26 +442,24 @@ static int aq_ethtool_set_eee(struct net_device *ndev, struct ethtool_eee *eee)
 	u32 rate, supported_rates;
 	int err = 0;
 
-	if (!aq_nic->aq_fw_ops->get_eee_rate)
+	if (unlikely(!aq_nic->aq_fw_ops->get_eee_rate ||
+		     !aq_nic->aq_fw_ops->set_eee_rate))
 		return -EOPNOTSUPP;
 
 	err = aq_nic->aq_fw_ops->get_eee_rate(aq_nic->aq_hw, &rate,
-							&supported_rates);
+					      &supported_rates);
 	if (err < 0)
 		return err;
 
 	if (eee->eee_enabled) {
 		rate = supported_rates;
-		cfg->eee_enabled = rate;
+		cfg->eee_speeds = rate;
 	} else {
 		rate = 0;
-		cfg->eee_enabled = 0;
+		cfg->eee_speeds = 0;
 	}
 
-	if (aq_nic->aq_fw_ops->set_eee_rate)
-		return aq_nic->aq_fw_ops->set_eee_rate(aq_nic->aq_hw, rate);
-
-	return -EOPNOTSUPP;
+	return aq_nic->aq_fw_ops->set_eee_rate(aq_nic->aq_hw, rate);
 }
 
 static int aq_ethtool_nway_reset(struct net_device *ndev)
@@ -481,13 +479,12 @@ static void aq_ethtool_get_pauseparam(struct net_device *ndev,
 				      struct ethtool_pauseparam *pause)
 {
 	struct aq_nic_s *aq_nic = netdev_priv(ndev);
+	int fc = aq_nic->aq_nic_cfg.flow_control;
 
 	pause->autoneg = 0;
 
-	if (aq_nic->aq_hw->aq_nic_cfg->flow_control & AQ_NIC_FC_RX)
-		pause->rx_pause = 1;
-	if (aq_nic->aq_hw->aq_nic_cfg->flow_control & AQ_NIC_FC_TX)
-		pause->tx_pause = 1;
+	pause->rx_pause = !!(fc & AQ_NIC_FC_RX);
+	pause->tx_pause = !!(fc & AQ_NIC_FC_TX);
 }
 
 static int aq_ethtool_set_pauseparam(struct net_device *ndev,
@@ -543,8 +540,6 @@ static int aq_set_ringparam(struct net_device *ndev,
 		goto err_exit;
 	}
 
-	spin_lock(&aq_nic->aq_spinlock);
-
 	if (netif_running(ndev))
 		dev_close(ndev);
 
@@ -564,14 +559,12 @@ static int aq_set_ringparam(struct net_device *ndev,
 		    aq_vec_alloc(aq_nic, aq_nic->aq_vecs, aq_nic_cfg);
 		if (unlikely(!aq_nic->aq_vec[aq_nic->aq_vecs])) {
 			err = -ENOMEM;
-			goto err_unlock;
+			goto err_exit;
 		}
 	}
 	if (!netif_running(ndev))
 		err = dev_open(ndev);
 
-err_unlock:
-	spin_unlock(&aq_nic->aq_spinlock);
 err_exit:
 	return err;
 }

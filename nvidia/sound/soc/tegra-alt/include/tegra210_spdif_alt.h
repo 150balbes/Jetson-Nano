@@ -1,7 +1,7 @@
 /*
  * tegra210_spdif.h - Definitions for Tegra210 SPDIF driver
  *
- * Copyright (c) 2014-2017, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2014-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -245,25 +245,11 @@
 #define TEGRA210_SPDIF_LCOEF_2_4_2_COEF_SHIFT		0
 #define TEGRA210_SPDIF_LCOEF_2_4_2_COEF_MASK		(0xffff << TEGRA210_SPDIF_LCOEF_2_4_2_COEF_SHIFT)
 
-struct tegra210_spdif_soc_data {
-	void (*set_audio_cif)(struct regmap *map,
-			unsigned int reg,
-			struct tegra210_xbar_cif_conf *conf);
-};
-
 struct tegra210_spdif {
 	struct clk *clk_spdif_out;
 	struct clk *clk_spdif_in;
-	struct clk *clk_pll_a_out0;
-	struct clk *clk_pll_p_out0;
 	struct regmap *regmap;
 	unsigned int loopback;
-	const struct tegra210_spdif_soc_data *soc_data;
-	int is_pinctrl;
-	struct pinctrl *pinctrl;
-	struct pinctrl_state *pin_active_state;
-	struct pinctrl_state *pin_idle_state;
-	bool is_shutdown;
 };
 
 #endif

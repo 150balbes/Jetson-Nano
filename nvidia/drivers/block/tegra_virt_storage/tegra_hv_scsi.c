@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2015-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -139,11 +139,16 @@ int vblk_prep_sg_io(struct vblk_dev *vblkdev,
 
 	vblk_hp->cmd_len = hp->cmd_len;
 	vblk_hp->mx_sb_len = hp->mx_sb_len;
+	/* This is actual data len on which storage server needs to act */
 	vblk_hp->dxfer_len = hp->dxfer_len;
+	/* This is the data buffer len, data length is strictly dependent on the
+	 * IOCTL being executed. data_buffer length is atleast cache aligned to
+	 * make sure that cache operations can be done successfully without
+	 * corruption */
+	vblk_hp->dxfer_buf_len = data_buf_size_aligned;
 	vblk_hp->xfer_arg_offset = data_buf_offset_aligned;
 	vblk_hp->cmdp_arg_offset = cmnd_offset;
 	vblk_hp->sbp_arg_offset = sbp_offset;
-
 	ioctl_req->ioctl_id = VBLK_SG_IO_ID;
 	ioctl_req->ioctl_buf = ioctl_buf;
 	ioctl_req->ioctl_len = ioctl_len;

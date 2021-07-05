@@ -1,7 +1,7 @@
 /*
  * drivers/misc/tegra-profiler/quadd_proc.c
  *
- * Copyright (c) 2014-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2014-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -56,10 +56,12 @@ static const struct file_operations version_proc_fops = {
 
 static int show_capabilities(struct seq_file *f, void *offset)
 {
-	int cpuid;
+	int cpuid, i;
+	const char *name;
 	struct quadd_comm_cap *cap = &ctx->cap;
 	unsigned int extra = cap->reserved[QUADD_COMM_CAP_IDX_EXTRA];
-	struct quadd_arch_info *arch = NULL;
+	const struct quadd_arch_info *arch = NULL;
+	struct quadd_event_source *pmu, *carmel_pmu;
 
 	seq_printf(f, "pmu:                     %s\n",
 		   YES_NO(cap->pmu));
@@ -67,17 +69,21 @@ static int show_capabilities(struct seq_file *f, void *offset)
 		   YES_NO(cap->tegra_lp_cluster));
 	seq_printf(f, "power rate samples:      %s\n",
 		   YES_NO(cap->power_rate));
+	seq_printf(f, "collect cpufreq:         %s\n",
+		   YES_NO(extra & QUADD_COMM_CAP_EXTRA_CPUFREQ));
 	seq_printf(f, "arch timer is available: %s\n",
 		   YES_NO(extra & QUADD_COMM_CAP_EXTRA_ARCH_TIMER));
 	seq_printf(f, "arch timer user access:  %s\n",
 		   YES_NO(extra & QUADD_COMM_CAP_EXTRA_ARCH_TIMER_USR));
 
-	if (ctx->pmu) {
+	pmu = ctx->pmu;
+	if (pmu) {
 		for_each_possible_cpu(cpuid) {
 			struct quadd_comm_cap_for_cpu *cpu_cap;
 			struct quadd_events_cap *event;
+			const char *format;
 
-			arch = ctx->pmu->get_arch(cpuid);
+			arch = pmu->get_arch(cpuid);
 			if (!arch)
 				continue;
 
@@ -87,7 +93,7 @@ static int show_capabilities(struct seq_file *f, void *offset)
 			seq_printf(f, "\nCPU %d\n", cpuid);
 
 			seq_printf(f, "pmu arch:                  %s\n",
-					   arch->name);
+				   arch->name);
 			if (arch->pmuver_is_set)
 				seq_printf(f, "pmu arch version:          %u\n",
 					   arch->pmuver);
@@ -99,33 +105,52 @@ static int show_capabilities(struct seq_file *f, void *offset)
 					   YES_NO(cpu_cap->l2_multiple_events));
 			}
 
+			name = "hardware";
+			format = "  %s/%-22s %s\n";
+
 			seq_puts(f, "Supported events:\n");
-			seq_printf(f, "  cpu_cycles:                     %s\n",
+			seq_printf(f, format, name, "cpu_cycles",
 				   YES_NO(event->cpu_cycles));
-			seq_printf(f, "  instructions:                   %s\n",
+			seq_printf(f, format, name, "instructions",
 				   YES_NO(event->instructions));
-			seq_printf(f, "  branch_instructions:            %s\n",
+			seq_printf(f, format, name, "branch_instructions",
 				   YES_NO(event->branch_instructions));
-			seq_printf(f, "  branch_misses:                  %s\n",
+			seq_printf(f, format, name, "branch_misses",
 				   YES_NO(event->branch_misses));
-			seq_printf(f, "  bus_cycles:                     %s\n",
+			seq_printf(f, format, name, "bus_cycles",
 				   YES_NO(event->bus_cycles));
-			seq_printf(f, "  l1_dcache_read_misses:          %s\n",
+			seq_printf(f, format, name, "l1_dcache_read_misses",
 				   YES_NO(event->l1_dcache_read_misses));
-			seq_printf(f, "  l1_dcache_write_misses:         %s\n",
+			seq_printf(f, format, name, "l1_dcache_write_misses",
 				   YES_NO(event->l1_dcache_write_misses));
-			seq_printf(f, "  l1_icache_misses:               %s\n",
+			seq_printf(f, format, name, "l1_icache_misses",
 				   YES_NO(event->l1_icache_misses));
-			seq_printf(f, "  l2_dcache_read_misses:          %s\n",
+			seq_printf(f, format, name, "l2_dcache_read_misses",
 				   YES_NO(event->l2_dcache_read_misses));
-			seq_printf(f, "  l2_dcache_write_misses:         %s\n",
+			seq_printf(f, format, name, "l2_dcache_write_misses",
 				   YES_NO(event->l2_dcache_write_misses));
-			seq_printf(f, "  l2_icache_misses:               %s\n",
+			seq_printf(f, format, name, "l2_icache_misses",
 				   YES_NO(event->l2_icache_misses));
 
 			seq_printf(f, "raw_event_mask:                   %#x\n",
 				   event->raw_event_mask);
 		}
+	}
+
+	carmel_pmu = ctx->carmel_pmu;
+	if (carmel_pmu) {
+		const char *name = carmel_pmu->name;
+		const struct quadd_pmu_cntr_info **cntrs, *e;
+
+		seq_puts(f, "\n");
+		seq_puts(f, "Carmel Uncore PMU\n");
+		seq_puts(f, "Supported events:\n");
+
+		cntrs = carmel_pmu->pmu_cntrs;
+
+		i = 0;
+		while ((e = cntrs[i++]))
+			seq_printf(f, "  %s/%-20s %#x\n", name, e->name, e->id);
 	}
 
 	return 0;

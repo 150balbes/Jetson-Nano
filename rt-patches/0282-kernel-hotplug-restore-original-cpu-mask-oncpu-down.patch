@@ -1,0 +1,64 @@
+From 820870a8908df4911e2914119dc01a580f71256d Mon Sep 17 00:00:00 2001
+From: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+Date: Fri, 14 Jun 2013 17:16:35 +0200
+Subject: [PATCH 282/371] kernel/hotplug: restore original cpu mask oncpu/down
+X-NVConfidentiality: public
+
+If a task which is allowed to run only on CPU X puts CPU Y down then it
+will be allowed on all CPUs but the on CPU Y after it comes back from
+kernel. This patch ensures that we don't lose the initial setting unless
+the CPU the task is running is going down.
+
+Signed-off-by: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+---
+ kernel/cpu.c | 13 ++++++++++++-
+ 1 file changed, 12 insertions(+), 1 deletion(-)
+
+diff --git a/kernel/cpu.c b/kernel/cpu.c
+index 5791ad8..e2b7185 100644
+--- a/kernel/cpu.c
++++ b/kernel/cpu.c
+@@ -1304,6 +1304,7 @@ static int __ref _cpu_down(unsigned int cpu, int tasks_frozen,
+ 	bool hasdied = false;
+ 	int mycpu;
+ 	cpumask_var_t cpumask;
++	cpumask_var_t cpumask_org;
+ 
+ 	if (num_online_cpus() == 1)
+ 		return -EBUSY;
+@@ -1314,6 +1315,12 @@ static int __ref _cpu_down(unsigned int cpu, int tasks_frozen,
+ 	/* Move the downtaker off the unplug cpu */
+ 	if (!alloc_cpumask_var(&cpumask, GFP_KERNEL))
+ 		return -ENOMEM;
++	if (!alloc_cpumask_var(&cpumask_org, GFP_KERNEL))  {
++		free_cpumask_var(cpumask);
++		return -ENOMEM;
++	}
++
++	cpumask_copy(cpumask_org, tsk_cpus_allowed(current));
+ 	cpumask_andnot(cpumask, cpu_online_mask, cpumask_of(cpu));
+ 	set_cpus_allowed_ptr(current, cpumask);
+ 	free_cpumask_var(cpumask);
+@@ -1322,7 +1329,8 @@ static int __ref _cpu_down(unsigned int cpu, int tasks_frozen,
+ 	if (mycpu == cpu) {
+ 		printk(KERN_ERR "Yuck! Still on unplug CPU\n!");
+ 		migrate_enable();
+-		return -EBUSY;
++		ret = -EBUSY;
++		goto restore_cpus;
+ 	}
+ 
+ 	cpu_hotplug_begin();
+@@ -1376,6 +1384,9 @@ static int __ref _cpu_down(unsigned int cpu, int tasks_frozen,
+ 	/* This post dead nonsense must die */
+ 	if (!ret && hasdied)
+ 		cpu_notify_nofail(CPU_POST_DEAD, cpu);
++restore_cpus:
++	set_cpus_allowed_ptr(current, cpumask_org);
++	free_cpumask_var(cpumask_org);
+ 	arch_smt_update();
+ 	return ret;
+ }
+-- 
+2.7.4
+

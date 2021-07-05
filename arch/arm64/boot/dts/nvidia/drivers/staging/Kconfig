@@ -1,5 +1,0 @@
-if STAGING
-
-source "drivers/staging/ozwpan/Kconfig"
-
-endif # STAGING

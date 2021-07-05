@@ -20,6 +20,7 @@
 #include <nvgpu/os_sched.h>
 #include <nvgpu/gk20a.h>
 #include <nvgpu/channel.h>
+#include <nvgpu/dma.h>
 
 /*
  * This is required for nvgpu_vm_find_buf() which is used in the tracing
@@ -31,6 +32,7 @@
 #include "channel.h"
 #include "ioctl_channel.h"
 #include "os_linux.h"
+#include "dmabuf.h"
 
 #include <nvgpu/hw/gk20a/hw_pbdma_gk20a.h>
 
@@ -383,6 +385,147 @@ static int nvgpu_channel_copy_user_gpfifo(struct nvgpu_gpfifo_entry *dest,
 	return n == 0 ? 0 : -EFAULT;
 }
 
+int nvgpu_usermode_buf_from_dmabuf(struct gk20a *g, int dmabuf_fd,
+		struct nvgpu_mem *mem, struct nvgpu_usermode_buf_linux *buf)
+{
+	struct device *dev = dev_from_gk20a(g);
+	struct dma_buf *dmabuf;
+	struct sg_table *sgt;
+	struct dma_buf_attachment *attachment;
+	int err;
+
+	dmabuf = dma_buf_get(dmabuf_fd);
+	if (IS_ERR(dmabuf)) {
+		return PTR_ERR(dmabuf);
+	}
+
+	if (gk20a_dmabuf_aperture(g, dmabuf) == APERTURE_INVALID) {
+		err = -EINVAL;
+		goto put_dmabuf;
+	}
+
+	err = gk20a_dmabuf_alloc_drvdata(dmabuf, dev);
+	if (err != 0) {
+		goto put_dmabuf;
+	}
+
+	sgt = gk20a_mm_pin(dev, dmabuf, &attachment);
+	if (IS_ERR(sgt)) {
+		nvgpu_warn(g, "Failed to pin dma_buf!");
+		err = PTR_ERR(sgt);
+		goto put_dmabuf;
+	}
+
+	buf->dmabuf = dmabuf;
+	buf->attachment = attachment;
+	buf->sgt = sgt;
+
+	/*
+	 * This mem is unmapped and freed in a common path; for Linux, we'll
+	 * also need to unref the dmabuf stuff (above) but the sgt here is only
+	 * borrowed, so it cannot be freed by nvgpu_mem_*.
+	 */
+	mem->mem_flags  = NVGPU_MEM_FLAG_FOREIGN_SGT;
+	mem->aperture   = APERTURE_SYSMEM;
+	mem->skip_wmb   = 0;
+	mem->size       = dmabuf->size;
+
+	mem->priv.flags = 0;
+	mem->priv.pages = NULL;
+	mem->priv.sgt   = sgt;
+
+	return 0;
+put_dmabuf:
+	dma_buf_put(dmabuf);
+	return err;
+}
+
+void nvgpu_channel_free_usermode_buffers(struct channel_gk20a *c)
+{
+	struct nvgpu_channel_linux *priv = c->os_priv;
+	struct gk20a *g = c->g;
+	struct device *dev = dev_from_gk20a(g);
+
+	if (priv->usermode.gpfifo.dmabuf != NULL) {
+		gk20a_mm_unpin(dev, priv->usermode.gpfifo.dmabuf,
+			       priv->usermode.gpfifo.attachment,
+			       priv->usermode.gpfifo.sgt);
+		dma_buf_put(priv->usermode.gpfifo.dmabuf);
+		priv->usermode.gpfifo.dmabuf = NULL;
+	}
+
+	if (priv->usermode.userd.dmabuf != NULL) {
+		gk20a_mm_unpin(dev, priv->usermode.userd.dmabuf,
+		       priv->usermode.userd.attachment,
+		       priv->usermode.userd.sgt);
+		dma_buf_put(priv->usermode.userd.dmabuf);
+		priv->usermode.userd.dmabuf = NULL;
+	}
+}
+
+static int nvgpu_channel_alloc_usermode_buffers(struct channel_gk20a *c,
+		struct nvgpu_setup_bind_args *args)
+{
+	struct nvgpu_channel_linux *priv = c->os_priv;
+	struct gk20a *g = c->g;
+	struct device *dev = dev_from_gk20a(g);
+	size_t gpfifo_size;
+	int err;
+
+	if (args->gpfifo_dmabuf_fd == 0 || args->userd_dmabuf_fd == 0) {
+		return -EINVAL;
+	}
+
+	if (args->gpfifo_dmabuf_offset != 0 ||
+			args->userd_dmabuf_offset != 0) {
+		/* TODO - not yet supported */
+		return -EINVAL;
+	}
+
+	err = nvgpu_usermode_buf_from_dmabuf(g, args->gpfifo_dmabuf_fd,
+			&c->usermode_gpfifo, &priv->usermode.gpfifo);
+	if (err < 0) {
+		return err;
+	}
+
+	gpfifo_size = max_t(u32, SZ_4K,
+			args->num_gpfifo_entries *
+			nvgpu_get_gpfifo_entry_size());
+
+	if (c->usermode_gpfifo.size < gpfifo_size) {
+		err = -EINVAL;
+		goto free_gpfifo;
+	}
+
+	c->usermode_gpfifo.gpu_va = nvgpu_gmmu_map(c->vm, &c->usermode_gpfifo,
+			c->usermode_gpfifo.size, 0, gk20a_mem_flag_none,
+			false, c->usermode_gpfifo.aperture);
+
+	if (c->usermode_gpfifo.gpu_va == 0) {
+		err = -ENOMEM;
+		goto unmap_free_gpfifo;
+	}
+
+	err = nvgpu_usermode_buf_from_dmabuf(g, args->userd_dmabuf_fd,
+			&c->usermode_userd, &priv->usermode.userd);
+	if (err < 0) {
+		goto unmap_free_gpfifo;
+	}
+
+	args->work_submit_token = g->fifo.channel_base + c->chid;
+
+	return 0;
+unmap_free_gpfifo:
+	nvgpu_dma_unmap_free(c->vm, &c->usermode_gpfifo);
+free_gpfifo:
+	gk20a_mm_unpin(dev, priv->usermode.gpfifo.dmabuf,
+		       priv->usermode.gpfifo.attachment,
+		       priv->usermode.gpfifo.sgt);
+	dma_buf_put(priv->usermode.gpfifo.dmabuf);
+	priv->usermode.gpfifo.dmabuf = NULL;
+	return err;
+}
+
 int nvgpu_init_channel_support_linux(struct nvgpu_os_linux *l)
 {
 	struct gk20a *g = &l->g;
@@ -416,6 +559,12 @@ int nvgpu_init_channel_support_linux(struct nvgpu_os_linux *l)
 
 	g->os_channel.copy_user_gpfifo =
 		nvgpu_channel_copy_user_gpfifo;
+
+	g->os_channel.alloc_usermode_buffers =
+		nvgpu_channel_alloc_usermode_buffers;
+
+	g->os_channel.free_usermode_buffers =
+		nvgpu_channel_free_usermode_buffers;
 
 	return 0;
 

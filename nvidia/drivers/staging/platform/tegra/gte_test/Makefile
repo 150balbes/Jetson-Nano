@@ -1,0 +1,1 @@
+obj-$(CONFIG_TEGRA_GTE_TEST)	+= tegra194_gte_test.o

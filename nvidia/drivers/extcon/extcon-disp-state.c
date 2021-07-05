@@ -2,7 +2,7 @@
  * extcon-disp-state - extcon driver for display accessory detection
  *		compatible with switch-mid
  *
- * Copyright (c) 2018, NVIDIA CORPORATION, All rights reserved.
+ * Copyright (c) 2018-2020, NVIDIA CORPORATION, All rights reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -44,6 +44,8 @@ static const unsigned int disp_state_extcon_cables[] = {
 	EXTCON_DISP_AUDIO_AUX1,
 	EXTCON_DISP_AUDIO_AUX2,
 	EXTCON_DISP_AUDIO_AUX3,
+	EXTCON_DISP_DSIHPD,
+	EXTCON_DISP_HDMI2,
 	EXTCON_NONE,
 };
 
@@ -135,8 +137,8 @@ static int disp_state_extcon_remove(struct platform_device *pdev)
 	struct disp_state_extcon_info *extcon_data = platform_get_drvdata(pdev);
 	struct device *dev = &pdev->dev;
 
-	class_compat_unregister(switch_class);
 	class_compat_remove_link(switch_class, dev, NULL);
+	class_compat_unregister(switch_class);
 	extcon_dev_unregister(extcon_data->edev);
 	disp_extcon_info = NULL;
 	return 0;

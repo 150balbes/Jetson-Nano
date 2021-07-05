@@ -1,14 +1,14 @@
 /* -----------------------------------------------------------------------------
  * Copyright (c) 2011 Ozmo Inc
  * Released under the GNU General Public License Version 2 (GPLv2).
- * Copyright (c) 2015, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2015-2020, NVIDIA CORPORATION. All rights reserved.
  * -----------------------------------------------------------------------------
  */
 #ifndef _OZPROTO_H
 #define _OZPROTO_H
 
 #include <asm/byteorder.h>
-#include "ozappif.h"
+#include <uapi/staging/ozappif.h>
 
 #define OZ_ALLOCATED_SPACE(__x)	(LL_RESERVED_SPACE(__x)+(__x)->needed_tailroom)
 

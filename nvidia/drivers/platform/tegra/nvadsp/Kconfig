@@ -1,5 +1,5 @@
 config TEGRA_NVADSP
-	bool "Enable Host ADSP driver"
+	tristate "Enable Host ADSP driver"
 	default n
 	select ARM_GIC_PM
 	select FIQ
@@ -47,6 +47,7 @@ config TEGRA_ADSP_CPUSTAT
 
 config TEGRA_ADSP_FILEIO
 	bool "Enable ADSP file io"
+	depends on TEGRA_NVADSP
 	default n
 	help
 	  Enable dumping to and reading from file on host from ADSP
@@ -55,7 +56,7 @@ config TEGRA_ADSP_FILEIO
 
 config TEGRA_ADSP_LPTHREAD
 	bool "Enable ADSP usage calc by lpthread"
-	depends on DEBUG_FS
+	depends on DEBUG_FS && TEGRA_NVADSP
 	default n
 	help
 	  Enable calculation of ADSP usage by running a low priority
@@ -66,6 +67,7 @@ config TEGRA_ADSP_LPTHREAD
 
 config TEGRA_EMC_APE_DFS
 	bool "Enable emc dfs due to APE"
+	depends on TEGRA_NVADSP
 	default n
 	help
 	  Enable emc dfs due to APE DRAM access

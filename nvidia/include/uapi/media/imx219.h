@@ -1,5 +1,7 @@
 /**
- * Copyright (c) 2014-2019, NVIDIA Corporation.  All rights reserved.
+ * include/uapi/linux/nvhvivc_mempool_ioctl.h
+ *
+ * Copyright (c) 2016-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property
  * and proprietary rights in and to this software and related documentation
@@ -12,7 +14,7 @@
 #define __UAPI_IMX219_H__
 
 #include <linux/ioctl.h>
-#include <uapi/media/nvc.h>
+#include <media/nvc.h>
 
 #define IMX219_IOCTL_SET_MODE		_IOW('o', 1, struct imx219_mode)
 #define IMX219_IOCTL_GET_STATUS		_IOR('o', 2, __u8)

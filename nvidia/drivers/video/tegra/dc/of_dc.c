@@ -192,6 +192,8 @@ struct tegra_panel_ops *tegra_dc_get_panel_ops(struct device_node *panel_np)
 		p_ops = &dsi_b_1440_1600_3_5_ops;
 	else if (of_device_is_compatible(panel_np, "p-edp,3000-2000-13-5"))
 		p_ops = &edp_p_3000_2000_13_5_ops;
+	else if (of_device_is_compatible(panel_np, "null,dsi-hotplug"))
+		p_ops = &dsi_null_panel_ops;
 	else
 		pr_err("%s: unknown panel: %s\n", __func__,
 			of_node_full_name(panel_np));
@@ -651,7 +653,11 @@ static int parse_disp_default_out(struct platform_device *ndev,
 		OF_DC_LOG("hdcp_policy = %u\n", default_out->hdcp_policy);
 	} else {
 		pdata->default_out->hdcp_policy =
+#if defined(CONFIG_ANDROID)
 			TEGRA_DC_HDCP_POLICY_ALWAYS_ON;
+#else
+			TEGRA_DC_HDCP_POLICY_ALWAYS_OFF;
+#endif
 	}
 
 	if (tegra_platform_is_sim())
@@ -754,7 +760,7 @@ static int parse_disp_default_out(struct platform_device *ndev,
 	/*
 	 * construct fb
 	 */
-	fb->win = 0; /* set fb->win to 0 in default */
+	fb->win = TEGRA_FB_WIN_INVALID; /* set fb->win default */
 
 	if (!of_property_read_u32(out_np, "nvidia,out-xres", &temp)) {
 		fb->xres = (int)temp;
@@ -3114,9 +3120,27 @@ struct tegra_dc_platform_data *of_dc_parse_platform_data(
 		goto fail_parse;
 	}
 
+	if (pdata->default_out->type == TEGRA_DC_OUT_DSI) {
+		if (!of_property_read_u32(np_target_disp,
+			"nvidia,dsi-hdmi-bridge", &temp)) {
+			pdata->default_out->is_ext_panel = (int)temp;
+			OF_DC_LOG("is_ext_dp_panel %d\n", temp);
+		}
+	}
+
+	if ((pdata->default_out->type == TEGRA_DC_OUT_DP) ||
+		(pdata->default_out->type == TEGRA_DC_OUT_FAKE_DP)) {
+		if (!of_property_read_u32(np_target_disp,
+			"nvidia,is_ext_dp_panel", &temp)) {
+			pdata->default_out->is_ext_panel = (int)temp;
+			OF_DC_LOG("is_ext_dp_panel %d\n", temp);
+		}
+	}
+
 	timings_np = of_get_child_by_name(np_target_disp, "display-timings");
 	if (!timings_np) {
-		if (def_out->type == TEGRA_DC_OUT_DSI) {
+		if (def_out->type == TEGRA_DC_OUT_DSI &&
+			!pdata->default_out->is_ext_panel) {
 			pr_err("%s: could not find display-timings node\n",
 				__func__);
 			goto fail_parse;
@@ -3326,21 +3350,6 @@ struct tegra_dc_platform_data *of_dc_parse_platform_data(
 		OF_DC_LOG("cmu enable %d\n", pdata->cmu_enable);
 	} else {
 		pdata->cmu_enable = false;
-	}
-
-	if (tegra_dc_is_nvdisplay()) {
-		/* no valid window set for device */
-		if (pdata->win_mask == 0)
-			pdata->fb->win = -1;
-	}
-
-	if ((def_out->type == TEGRA_DC_OUT_DP) ||
-	    (def_out->type == TEGRA_DC_OUT_FAKE_DP)) {
-		if (!of_property_read_u32(np_target_disp,
-			"nvidia,is_ext_dp_panel", &temp)) {
-			def_out->is_ext_dp_panel = (int)temp;
-			OF_DC_LOG("is_ext_dp_panel %d\n", temp);
-		}
 	}
 
 	dev_info(&ndev->dev, "DT parsed successfully\n");

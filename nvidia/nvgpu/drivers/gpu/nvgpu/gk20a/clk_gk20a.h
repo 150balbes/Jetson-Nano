@@ -95,6 +95,7 @@ struct clk_gk20a {
 	struct gk20a *g;
 #if defined(CONFIG_COMMON_CLK)
 	struct clk *tegra_clk;
+	struct clk *tegra_clk_parent;
 	struct clk_hw hw;
 #endif
 	struct pll gpc_pll;

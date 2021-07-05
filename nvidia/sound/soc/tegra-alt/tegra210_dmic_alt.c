@@ -1,7 +1,7 @@
 /*
  * tegra210_dmic_alt.c - Tegra210 DMIC driver
  *
- * Copyright (c) 2014-2019 NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2014-2020 NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -23,24 +23,20 @@
 #include <linux/platform_device.h>
 #include <linux/pm_runtime.h>
 #include <linux/regmap.h>
-#include <linux/slab.h>
 #include <soc/tegra/chip-id.h>
 #include <sound/core.h>
 #include <sound/pcm.h>
 #include <sound/pcm_params.h>
 #include <sound/soc.h>
 #include <linux/of_device.h>
-#include <linux/debugfs.h>
-#include <linux/pinctrl/consumer.h>
 #include <linux/pinctrl/pinconf-tegra.h>
+#include <linux/pinctrl/consumer.h>
 
 #include "tegra210_xbar_alt.h"
 #include "tegra210_dmic_alt.h"
 #include "ahub_unit_fpga_clock.h"
 
 #define DRV_NAME "tegra210-dmic"
-
-static struct platform_device *pdev_bkp[5];
 
 static const struct reg_default tegra210_dmic_reg_defaults[] = {
 	{ TEGRA210_DMIC_TX_INT_MASK, 0x00000001},
@@ -99,16 +95,8 @@ static int tegra210_dmic_runtime_resume(struct device *dev)
 	}
 
 	regcache_cache_only(dmic->regmap, false);
+	regcache_sync(dmic->regmap);
 
-	if (!dmic->is_shutdown)
-		regcache_sync(dmic->regmap);
-
-	return 0;
-}
-
-static int tegra210_dmic_set_dai_bclk_ratio(struct snd_soc_dai *dai,
-		unsigned int ratio)
-{
 	return 0;
 }
 
@@ -117,95 +105,6 @@ static const int tegra210_dmic_fmt_values[] = {
 	TEGRA210_AUDIOCIF_BITS_16,
 	TEGRA210_AUDIOCIF_BITS_32,
 };
-
-int tegra210_dmic_enable(int id)
-{
-	struct tegra210_dmic *dmic;
-	struct platform_device *pdev = pdev_bkp[id];
-	int ret = 0;
-	int dmic_clk;
-
-	if (!pdev) {
-		pr_err("No dmic registered for id %d\n", id);
-		return -EINVAL;
-	}
-
-	dmic = dev_get_drvdata(&pdev->dev);
-	if (!dmic)
-		return -EINVAL;
-
-	dmic_clk = (1 << (6 + dmic->osr_val)) * 48000;
-
-	if (dmic->set_parent_rate) {
-		ret = clk_set_rate(dmic->clk_pll_a_out0, dmic_clk);
-		if (ret) {
-			dev_err(&pdev->dev,
-			"Can't set dmic parent clock rate: %d\n", ret);
-			return ret;
-		}
-	}
-
-	ret = clk_set_rate(dmic->clk_dmic, dmic_clk);
-	if (ret) {
-		dev_err(&pdev->dev, "Can't set dmic clock rate: %d\n", ret);
-		return ret;
-	}
-
-	pm_runtime_get_sync(&pdev->dev);
-
-	ret = clk_prepare_enable(dmic->clk_dmic);
-	if (ret) {
-		dev_err(&pdev->dev, "clk_enable failed: %d\n", ret);
-		return ret;
-	}
-
-	regmap_write(dmic->regmap, TEGRA210_DMIC_ENABLE, 1);
-	return ret;
-}
-EXPORT_SYMBOL_GPL(tegra210_dmic_enable);
-
-int tegra210_dmic_disable(int id)
-{
-	struct tegra210_dmic *dmic;
-	struct platform_device *pdev = pdev_bkp[id];
-	int ret = 0;
-
-	if (!pdev) {
-		pr_err("No dmic registered for id %d\n", id);
-		return -EINVAL;
-	}
-
-	dmic = dev_get_drvdata(&pdev->dev);
-	if (!dmic)
-		return -EINVAL;
-
-	clk_disable_unprepare(dmic->clk_dmic);
-
-	regmap_write(dmic->regmap, TEGRA210_DMIC_ENABLE, 0);
-
-	pm_runtime_put(&pdev->dev);
-	return ret;
-}
-EXPORT_SYMBOL_GPL(tegra210_dmic_disable);
-
-int tegra210_dmic_set_start_callback(int id, void (*callback)(void))
-{
-	struct tegra210_dmic *dmic;
-	struct platform_device *pdev = pdev_bkp[id];
-
-	if (!pdev) {
-		pr_err("No dmic registered for id %d\n", id);
-		return -EINVAL;
-	}
-
-	if (!callback)
-		return -EINVAL;
-
-	dmic = dev_get_drvdata(&pdev->dev);
-	dmic->start_capture_cb = callback;
-	return 0;
-}
-EXPORT_SYMBOL_GPL(tegra210_dmic_set_start_callback);
 
 static int tegra210_dmic_startup(struct snd_pcm_substream *substream,
 				 struct snd_soc_dai *dai)
@@ -218,7 +117,7 @@ static int tegra210_dmic_startup(struct snd_pcm_substream *substream,
 		ret = tegra_pinctrl_config_prod(dev, dmic->prod_name);
 		if (ret < 0) {
 			dev_warn(dev, "Failed to set %s setting\n",
-					dmic->prod_name);
+				 dmic->prod_name);
 		}
 	}
 
@@ -228,11 +127,12 @@ static int tegra210_dmic_startup(struct snd_pcm_substream *substream,
 						dmic->pin_active_state);
 			if (ret < 0) {
 				dev_err(dev,
-				"setting dmic pinctrl active state failed\n");
+				"Setting dmic pinctrl active state failed\n");
 				return -EINVAL;
 			}
 		}
 	}
+
 	return 0;
 }
 
@@ -249,7 +149,7 @@ static void tegra210_dmic_shutdown(struct snd_pcm_substream *substream,
 				dmic->pinctrl, dmic->pin_idle_state);
 			if (ret < 0)
 				dev_err(dev,
-				"setting dap pinctrl idle state failed\n");
+				"Setting dmic pinctrl idle state failed\n");
 		}
 	}
 }
@@ -260,54 +160,40 @@ static int tegra210_dmic_hw_params(struct snd_pcm_substream *substream,
 {
 	struct device *dev = dai->dev;
 	struct tegra210_dmic *dmic = snd_soc_dai_get_drvdata(dai);
-	int channels, srate, dmic_clk, osr = dmic->osr_val, ret;
+	int srate, dmic_clk, osr = dmic->osr_val, ret;
 	struct tegra210_xbar_cif_conf cif_conf;
 	unsigned long long boost_gain;
-	int channel_select;
+	unsigned int channels;
 
 	memset(&cif_conf, 0, sizeof(struct tegra210_xbar_cif_conf));
-
-	if (dmic->start_capture_cb && !strcmp(dai->name, "DAP"))
-		dmic->start_capture_cb();
 
 	srate = params_rate(params);
 	if (dmic->sample_rate_via_control)
 		srate = dmic->sample_rate_via_control;
-
 	dmic_clk = (1 << (6+osr)) * srate;
 
-	if (dmic->ch_select == DMIC_CH_SELECT_NONE) {
-		channels = 2;
-		channel_select = DMIC_CH_SELECT_STEREO;
-	} else {
-		channels = 1;
-		channel_select = dmic->ch_select;
-	}
-
-	cif_conf.client_channels = channels;
+	channels = params_channels(params);
+	if (dmic->channels_via_control)
+		channels = dmic->channels_via_control;
 	cif_conf.audio_channels = channels;
 
-	/* For capture path, the mono input from client channel
-	 * can be converted to stereo with cif controls.
-	*/
-	if (dmic->tx_mono_to_stereo > 0) {
-		cif_conf.mono_conv = dmic->tx_mono_to_stereo - 1;
-		cif_conf.audio_channels = 2;
+	switch (dmic->ch_select) {
+	case DMIC_CH_SELECT_LEFT:
+	case DMIC_CH_SELECT_RIGHT:
+		cif_conf.client_channels = 1;
+		break;
+	case DMIC_CH_SELECT_STEREO:
+		cif_conf.client_channels = 2;
+		break;
+	default:
+		dev_err(dev, "unsupported ch_select value\n");
+		return -EINVAL;
 	}
 
 	if ((tegra_platform_is_unit_fpga() || tegra_platform_is_fpga())) {
 		program_dmic_gpio();
 		program_dmic_clk(dmic_clk);
 	} else {
-		if (dmic->set_parent_rate) {
-			ret = clk_set_rate(dmic->clk_pll_a_out0, dmic_clk);
-			if (ret) {
-				dev_err(dev,
-				"Can't set dmic parent clock rate: %d\n", ret);
-				return ret;
-			}
-		}
-
 		ret = clk_set_rate(dmic->clk_dmic, dmic_clk);
 		if (ret) {
 			dev_err(dev, "Can't set dmic clock rate: %d\n", ret);
@@ -315,31 +201,20 @@ static int tegra210_dmic_hw_params(struct snd_pcm_substream *substream,
 		}
 	}
 
-	regmap_update_bits(dmic->regmap,
-				TEGRA210_DMIC_CTRL,
-				TEGRA210_DMIC_CTRL_LRSEL_POLARITY_MASK,
-				dmic->lrsel << TEGRA210_DMIC_CTRL_LRSEL_POLARITY_SHIFT);
-
-	regmap_update_bits(dmic->regmap,
-				TEGRA210_DMIC_CTRL,
-				TEGRA210_DMIC_CTRL_OSR_MASK,
-				osr << TEGRA210_DMIC_CTRL_OSR_SHIFT);
-
-	regmap_update_bits(dmic->regmap,
-				TEGRA210_DMIC_DBG_CTRL,
-				TEGRA210_DMIC_DBG_CTRL_SC_ENABLE,
-				TEGRA210_DMIC_DBG_CTRL_SC_ENABLE);
-
-	regmap_update_bits(dmic->regmap,
-				TEGRA210_DMIC_DBG_CTRL,
-				TEGRA210_DMIC_DBG_CTRL_DCR_ENABLE,
-				TEGRA210_DMIC_DBG_CTRL_DCR_ENABLE);
-
-	regmap_update_bits(dmic->regmap,
-				TEGRA210_DMIC_CTRL,
-				TEGRA210_DMIC_CTRL_CHANNEL_SELECT_MASK,
-				channel_select <<
-				   TEGRA210_DMIC_CTRL_CHANNEL_SELECT_SHIFT);
+	regmap_update_bits(dmic->regmap, TEGRA210_DMIC_CTRL,
+			   TEGRA210_DMIC_CTRL_LRSEL_POLARITY_MASK,
+			   dmic->lrsel << LRSEL_POL_SHIFT);
+	regmap_update_bits(dmic->regmap, TEGRA210_DMIC_CTRL,
+			   TEGRA210_DMIC_CTRL_OSR_MASK, osr << OSR_SHIFT);
+	regmap_update_bits(dmic->regmap, TEGRA210_DMIC_DBG_CTRL,
+			   TEGRA210_DMIC_DBG_CTRL_SC_ENABLE,
+			   TEGRA210_DMIC_DBG_CTRL_SC_ENABLE);
+	regmap_update_bits(dmic->regmap, TEGRA210_DMIC_DBG_CTRL,
+			   TEGRA210_DMIC_DBG_CTRL_DCR_ENABLE,
+			   TEGRA210_DMIC_DBG_CTRL_DCR_ENABLE);
+	regmap_update_bits(dmic->regmap, TEGRA210_DMIC_CTRL,
+			   TEGRA210_DMIC_CTRL_CHANNEL_SELECT_MASK,
+			   (dmic->ch_select + 1) << CH_SEL_SHIFT);
 
 	/* Configure LPF for passthrough and use */
 	/* its gain register for applying boost; */
@@ -352,37 +227,35 @@ static int tegra210_dmic_hw_params(struct snd_pcm_substream *substream,
 			boost_gain = 0x7FFFFFFF;
 		}
 	}
-	regmap_write(dmic->regmap,
-				TEGRA210_DMIC_LP_FILTER_GAIN,
-				(unsigned int)boost_gain);
+	regmap_write(dmic->regmap, TEGRA210_DMIC_LP_FILTER_GAIN,
+		     (unsigned int)boost_gain);
 
-	regmap_update_bits(dmic->regmap,
-				TEGRA210_DMIC_DBG_CTRL,
-				TEGRA210_DMIC_DBG_CTRL_LP_ENABLE,
-				TEGRA210_DMIC_DBG_CTRL_LP_ENABLE);
+	regmap_update_bits(dmic->regmap, TEGRA210_DMIC_DBG_CTRL,
+			   TEGRA210_DMIC_DBG_CTRL_LP_ENABLE,
+			   TEGRA210_DMIC_DBG_CTRL_LP_ENABLE);
 
 	/* Configure the two biquads for passthrough, */
 	/* i.e. b0=1, b1=0, b2=0, a1=0, a2=0          */
-	regmap_write(dmic->regmap,
-				TEGRA210_DMIC_LP_BIQUAD_0_COEF_0, 0x00800000);
-	regmap_write(dmic->regmap,
-				TEGRA210_DMIC_LP_BIQUAD_0_COEF_1, 0x00000000);
-	regmap_write(dmic->regmap,
-				TEGRA210_DMIC_LP_BIQUAD_0_COEF_2, 0x00000000);
-	regmap_write(dmic->regmap,
-				TEGRA210_DMIC_LP_BIQUAD_0_COEF_3, 0x00000000);
-	regmap_write(dmic->regmap,
-				TEGRA210_DMIC_LP_BIQUAD_0_COEF_4, 0x00000000);
-	regmap_write(dmic->regmap,
-				TEGRA210_DMIC_LP_BIQUAD_1_COEF_0, 0x00800000);
-	regmap_write(dmic->regmap,
-				TEGRA210_DMIC_LP_BIQUAD_1_COEF_1, 0x00000000);
-	regmap_write(dmic->regmap,
-				TEGRA210_DMIC_LP_BIQUAD_1_COEF_2, 0x00000000);
-	regmap_write(dmic->regmap,
-				TEGRA210_DMIC_LP_BIQUAD_1_COEF_3, 0x00000000);
-	regmap_write(dmic->regmap,
-				TEGRA210_DMIC_LP_BIQUAD_1_COEF_4, 0x00000000);
+	regmap_write(dmic->regmap, TEGRA210_DMIC_LP_BIQUAD_0_COEF_0,
+		     0x00800000);
+	regmap_write(dmic->regmap, TEGRA210_DMIC_LP_BIQUAD_0_COEF_1,
+		     0x00000000);
+	regmap_write(dmic->regmap, TEGRA210_DMIC_LP_BIQUAD_0_COEF_2,
+		     0x00000000);
+	regmap_write(dmic->regmap, TEGRA210_DMIC_LP_BIQUAD_0_COEF_3,
+		     0x00000000);
+	regmap_write(dmic->regmap, TEGRA210_DMIC_LP_BIQUAD_0_COEF_4,
+		     0x00000000);
+	regmap_write(dmic->regmap, TEGRA210_DMIC_LP_BIQUAD_1_COEF_0,
+		     0x00800000);
+	regmap_write(dmic->regmap, TEGRA210_DMIC_LP_BIQUAD_1_COEF_1,
+		     0x00000000);
+	regmap_write(dmic->regmap, TEGRA210_DMIC_LP_BIQUAD_1_COEF_2,
+		     0x00000000);
+	regmap_write(dmic->regmap, TEGRA210_DMIC_LP_BIQUAD_1_COEF_3,
+		     0x00000000);
+	regmap_write(dmic->regmap, TEGRA210_DMIC_LP_BIQUAD_1_COEF_4,
+		     0x00000000);
 
 	switch (params_format(params)) {
 	case SNDRV_PCM_FORMAT_S16_LE:
@@ -398,11 +271,12 @@ static int tegra210_dmic_hw_params(struct snd_pcm_substream *substream,
 
 	if (dmic->format_out)
 		cif_conf.audio_bits = tegra210_dmic_fmt_values[dmic->format_out];
-
 	cif_conf.client_bits = TEGRA210_AUDIOCIF_BITS_24;
+	cif_conf.mono_conv = dmic->mono_to_stereo;
+	cif_conf.stereo_conv = dmic->stereo_to_mono;
 
-	dmic->soc_data->set_audio_cif(dmic->regmap, TEGRA210_DMIC_TX_CIF_CTRL,
-		&cif_conf);
+	tegra210_xbar_set_cif(dmic->regmap, TEGRA210_DMIC_TX_CIF_CTRL,
+			      &cif_conf);
 
 	return 0;
 }
@@ -415,16 +289,20 @@ static int tegra210_dmic_get_control(struct snd_kcontrol *kcontrol,
 
 	if (strstr(kcontrol->id.name, "Boost"))
 		ucontrol->value.integer.value[0] = dmic->boost_gain;
-	else if (strstr(kcontrol->id.name, "Mono"))
+	else if (strstr(kcontrol->id.name, "Controller Channel Select"))
 		ucontrol->value.integer.value[0] = dmic->ch_select;
-	else if (strstr(kcontrol->id.name, "TX mono to stereo"))
-		ucontrol->value.integer.value[0] =
-					dmic->tx_mono_to_stereo;
+	else if (strstr(kcontrol->id.name, "Capture mono to stereo"))
+		ucontrol->value.integer.value[0] = dmic->mono_to_stereo;
+	else if (strstr(kcontrol->id.name, "Capture stereo to mono"))
+		ucontrol->value.integer.value[0] = dmic->stereo_to_mono;
 	else if (strstr(kcontrol->id.name, "output bit format"))
 		ucontrol->value.integer.value[0] = dmic->format_out;
 	else if (strstr(kcontrol->id.name, "Sample Rate"))
 		ucontrol->value.integer.value[0] =
 					dmic->sample_rate_via_control;
+	else if (strstr(kcontrol->id.name, "Channels"))
+		ucontrol->value.integer.value[0] =
+					dmic->channels_via_control;
 	else if (strstr(kcontrol->id.name, "OSR Value"))
 		ucontrol->value.integer.value[0] = dmic->osr_val;
 	else if (strstr(kcontrol->id.name, "LR Select"))
@@ -442,14 +320,18 @@ static int tegra210_dmic_put_control(struct snd_kcontrol *kcontrol,
 
 	if (strstr(kcontrol->id.name, "Boost"))
 		dmic->boost_gain = value;
-	else if (strstr(kcontrol->id.name, "Mono"))
+	else if (strstr(kcontrol->id.name, "Controller Channel Select"))
 		dmic->ch_select = ucontrol->value.integer.value[0];
-	else if (strstr(kcontrol->id.name, "TX mono to stereo"))
-		dmic->tx_mono_to_stereo = value;
+	else if (strstr(kcontrol->id.name, "Capture mono to stereo"))
+		dmic->mono_to_stereo = value;
+	else if (strstr(kcontrol->id.name, "Capture stereo to mono"))
+		dmic->stereo_to_mono = value;
 	else if (strstr(kcontrol->id.name, "output bit format"))
 		dmic->format_out = value;
 	else if (strstr(kcontrol->id.name, "Sample Rate"))
 		dmic->sample_rate_via_control = value;
+	else if (strstr(kcontrol->id.name, "Channels"))
+		dmic->channels_via_control = value;
 	else if (strstr(kcontrol->id.name, "OSR Value"))
 		dmic->osr_val = value;
 	else if (strstr(kcontrol->id.name, "LR Select"))
@@ -458,21 +340,10 @@ static int tegra210_dmic_put_control(struct snd_kcontrol *kcontrol,
 	return 0;
 }
 
-static int tegra210_dmic_codec_probe(struct snd_soc_codec *codec)
-{
-	struct tegra210_dmic *dmic = snd_soc_codec_get_drvdata(codec);
-
-	codec->control_data = dmic->regmap;
-	dmic->osr_val = TEGRA210_DMIC_OSR_64;
-
-	return 0;
-}
-
 static struct snd_soc_dai_ops tegra210_dmic_dai_ops = {
 	.hw_params	= tegra210_dmic_hw_params,
-	.set_bclk_ratio	= tegra210_dmic_set_dai_bclk_ratio,
 	.startup	= tegra210_dmic_startup,
-	.shutdown	= tegra210_dmic_shutdown,
+	.shutdown       = tegra210_dmic_shutdown,
 };
 
 static struct snd_soc_dai_driver tegra210_dmic_dais[] = {
@@ -504,9 +375,9 @@ static struct snd_soc_dai_driver tegra210_dmic_dais[] = {
 
 static const struct snd_soc_dapm_widget tegra210_dmic_widgets[] = {
 	SND_SOC_DAPM_AIF_OUT("DMIC TX", NULL, 0, SND_SOC_NOPM,
-				0, 0),
+			     0, 0),
 	SND_SOC_DAPM_AIF_IN("DMIC RX", NULL, 0, TEGRA210_DMIC_ENABLE,
-				TEGRA210_DMIC_ENABLE_EN_SHIFT, 0),
+			    0, 0),
 };
 
 static const struct snd_soc_dapm_route tegra210_dmic_routes[] = {
@@ -516,22 +387,30 @@ static const struct snd_soc_dapm_route tegra210_dmic_routes[] = {
 };
 
 static const char * const tegra210_dmic_ch_select[] = {
-	"None", "L", "R",
+	"L", "R", "Stereo",
 };
 
 static const struct soc_enum tegra210_dmic_ch_enum =
-	SOC_ENUM_SINGLE(SND_SOC_NOPM, 0,
-		ARRAY_SIZE(tegra210_dmic_ch_select),
-		tegra210_dmic_ch_select);
+	SOC_ENUM_SINGLE(SND_SOC_NOPM, 0, ARRAY_SIZE(tegra210_dmic_ch_select),
+			tegra210_dmic_ch_select);
 
 static const char * const tegra210_dmic_mono_conv_text[] = {
-	"None", "ZERO", "COPY",
+	"ZERO", "COPY",
+};
+
+static const char * const tegra210_dmic_stereo_conv_text[] = {
+	"CH0", "CH1", "AVG",
 };
 
 static const struct soc_enum tegra210_dmic_mono_conv_enum =
 	SOC_ENUM_SINGLE(SND_SOC_NOPM, 0,
-		ARRAY_SIZE(tegra210_dmic_mono_conv_text),
-		tegra210_dmic_mono_conv_text);
+			ARRAY_SIZE(tegra210_dmic_mono_conv_text),
+			tegra210_dmic_mono_conv_text);
+
+static const struct soc_enum tegra210_dmic_stereo_conv_enum =
+	SOC_ENUM_SINGLE(SND_SOC_NOPM, 0,
+			ARRAY_SIZE(tegra210_dmic_stereo_conv_text),
+			tegra210_dmic_stereo_conv_text);
 
 static const char * const tegra210_dmic_format_text[] = {
 	"None",
@@ -540,47 +419,49 @@ static const char * const tegra210_dmic_format_text[] = {
 };
 
 static const struct soc_enum tegra210_dmic_format_enum =
-	SOC_ENUM_SINGLE(SND_SOC_NOPM, 0,
-		ARRAY_SIZE(tegra210_dmic_format_text),
-		tegra210_dmic_format_text);
+	SOC_ENUM_SINGLE(SND_SOC_NOPM, 0, ARRAY_SIZE(tegra210_dmic_format_text),
+			tegra210_dmic_format_text);
 
 static const char * const tegra210_dmic_osr_text[] = {
 	"OSR_64", "OSR_128", "OSR_256",
 };
 
 static const struct soc_enum tegra210_dmic_osr_enum =
-	SOC_ENUM_SINGLE(SND_SOC_NOPM, 0,
-		ARRAY_SIZE(tegra210_dmic_osr_text),
-		tegra210_dmic_osr_text);
+	SOC_ENUM_SINGLE(SND_SOC_NOPM, 0, ARRAY_SIZE(tegra210_dmic_osr_text),
+			tegra210_dmic_osr_text);
 
 static const char * const tegra210_dmic_lrsel_text[] = {
 	"Left", "Right",
 };
 
 static const struct soc_enum tegra210_dmic_lrsel_enum =
-	SOC_ENUM_SINGLE(SND_SOC_NOPM, 0,
-		ARRAY_SIZE(tegra210_dmic_lrsel_text),
-		tegra210_dmic_lrsel_text);
+	SOC_ENUM_SINGLE(SND_SOC_NOPM, 0, ARRAY_SIZE(tegra210_dmic_lrsel_text),
+			tegra210_dmic_lrsel_text);
 
 static const struct snd_kcontrol_new tegra210_dmic_controls[] = {
-	SOC_SINGLE_EXT("Boost Gain", 0, 0, 25599, 0,
-		tegra210_dmic_get_control, tegra210_dmic_put_control),
-	SOC_ENUM_EXT("Mono Channel Select", tegra210_dmic_ch_enum,
-		tegra210_dmic_get_control, tegra210_dmic_put_control),
-	SOC_ENUM_EXT("TX mono to stereo conv", tegra210_dmic_mono_conv_enum,
-		tegra210_dmic_get_control, tegra210_dmic_put_control),
+	SOC_SINGLE_EXT("Boost Gain", 0, 0, 25599, 0, tegra210_dmic_get_control,
+		       tegra210_dmic_put_control),
+	SOC_ENUM_EXT("Controller Channel Select", tegra210_dmic_ch_enum,
+		     tegra210_dmic_get_control, tegra210_dmic_put_control),
+	SOC_ENUM_EXT("Capture mono to stereo conv",
+		     tegra210_dmic_mono_conv_enum, tegra210_dmic_get_control,
+		     tegra210_dmic_put_control),
+	SOC_ENUM_EXT("Capture stereo to mono conv",
+		     tegra210_dmic_stereo_conv_enum, tegra210_dmic_get_control,
+		     tegra210_dmic_put_control),
 	SOC_ENUM_EXT("output bit format", tegra210_dmic_format_enum,
-		tegra210_dmic_get_control, tegra210_dmic_put_control),
-	SOC_SINGLE_EXT("Sample Rate", 0, 0, 48000, 0,
-		tegra210_dmic_get_control, tegra210_dmic_put_control),
+		     tegra210_dmic_get_control, tegra210_dmic_put_control),
+	SOC_SINGLE_EXT("Sample Rate", 0, 0, 48000, 0, tegra210_dmic_get_control,
+		       tegra210_dmic_put_control),
+	SOC_SINGLE_EXT("Channels", 0, 0, 2, 0, tegra210_dmic_get_control,
+		       tegra210_dmic_put_control),
 	SOC_ENUM_EXT("OSR Value", tegra210_dmic_osr_enum,
-		tegra210_dmic_get_control, tegra210_dmic_put_control),
+		     tegra210_dmic_get_control, tegra210_dmic_put_control),
 	SOC_ENUM_EXT("LR Select", tegra210_dmic_lrsel_enum,
-		tegra210_dmic_get_control, tegra210_dmic_put_control),
-	};
+		     tegra210_dmic_get_control, tegra210_dmic_put_control),
+};
 
 static struct snd_soc_codec_driver tegra210_dmic_codec = {
-	.probe = tegra210_dmic_codec_probe,
 	.idle_bias_off = 1,
 	.component_driver = {
 		.dapm_widgets = tegra210_dmic_widgets,
@@ -600,7 +481,6 @@ static bool tegra210_dmic_wr_reg(struct device *dev, unsigned int reg)
 	case TEGRA210_DMIC_TX_INT_SET:
 	case TEGRA210_DMIC_TX_INT_CLEAR:
 	case TEGRA210_DMIC_TX_CIF_CTRL:
-
 	case TEGRA210_DMIC_ENABLE:
 	case TEGRA210_DMIC_SOFT_RESET:
 	case TEGRA210_DMIC_CG:
@@ -624,7 +504,6 @@ static bool tegra210_dmic_rd_reg(struct device *dev, unsigned int reg)
 	case TEGRA210_DMIC_TX_INT_SET:
 	case TEGRA210_DMIC_TX_INT_CLEAR:
 	case TEGRA210_DMIC_TX_CIF_CTRL:
-
 	case TEGRA210_DMIC_ENABLE:
 	case TEGRA210_DMIC_SOFT_RESET:
 	case TEGRA210_DMIC_CG:
@@ -647,7 +526,6 @@ static bool tegra210_dmic_volatile_reg(struct device *dev, unsigned int reg)
 	case TEGRA210_DMIC_TX_STATUS:
 	case TEGRA210_DMIC_TX_INT_STATUS:
 	case TEGRA210_DMIC_TX_INT_SET:
-
 	case TEGRA210_DMIC_SOFT_RESET:
 	case TEGRA210_DMIC_STATUS:
 	case TEGRA210_DMIC_INT_STATUS:
@@ -671,12 +549,8 @@ static const struct regmap_config tegra210_dmic_regmap_config = {
 	.cache_type = REGCACHE_FLAT,
 };
 
-static const struct tegra210_dmic_soc_data soc_data_tegra210 = {
-	.set_audio_cif = tegra210_xbar_set_cif,
-};
-
 static const struct of_device_id tegra210_dmic_of_match[] = {
-	{ .compatible = "nvidia,tegra210-dmic", .data = &soc_data_tegra210 },
+	{ .compatible = "nvidia,tegra210-dmic" },
 	{},
 };
 
@@ -684,160 +558,90 @@ static int tegra210_dmic_platform_probe(struct platform_device *pdev)
 {
 	struct tegra210_dmic *dmic;
 	struct device_node *np = pdev->dev.of_node;
-	struct resource *mem, *memregion;
+	struct resource *mem;
 	void __iomem *regs;
 	int ret = 0;
 	const struct of_device_id *match;
-	struct tegra210_dmic_soc_data *soc_data;
 
 	match = of_match_device(tegra210_dmic_of_match, &pdev->dev);
 	if (!match) {
 		dev_err(&pdev->dev, "Error: No device match found\n");
-		ret = -ENODEV;
-		goto err;
-	}
-	soc_data = (struct tegra210_dmic_soc_data *)match->data;
-
-	dmic = devm_kzalloc(&pdev->dev, sizeof(struct tegra210_dmic), GFP_KERNEL);
-	if (!dmic) {
-		dev_err(&pdev->dev, "Can't allocate dmic\n");
-		ret = -ENOMEM;
-		goto err;
+		return -ENODEV;
 	}
 
-	dmic->soc_data = soc_data;
-	dmic->is_shutdown = false;
+	dmic = devm_kzalloc(&pdev->dev, sizeof(*dmic), GFP_KERNEL);
+	if (!dmic)
+		return -ENOMEM;
+
 	dmic->prod_name = NULL;
+	dmic->osr_val = DMIC_OSR_64;
+	dmic->ch_select = DMIC_CH_SELECT_STEREO;
 	dev_set_drvdata(&pdev->dev, dmic);
 
 	if (!(tegra_platform_is_unit_fpga() || tegra_platform_is_fpga())) {
-		dmic->clk_dmic = devm_clk_get(&pdev->dev, NULL);
+		dmic->clk_dmic = devm_clk_get(&pdev->dev, "dmic");
 		if (IS_ERR(dmic->clk_dmic)) {
 			dev_err(&pdev->dev, "Can't retrieve dmic clock\n");
-			ret = PTR_ERR(dmic->clk_dmic);
-			goto err;
-		}
-
-		dmic->clk_pll_a_out0 = devm_clk_get(&pdev->dev, "pll_a_out0");
-		if (IS_ERR_OR_NULL(dmic->clk_pll_a_out0)) {
-			dev_err(&pdev->dev, "Can't retrieve pll_a_out0 clock\n");
-			ret = -ENOENT;
-			goto err;
-		}
-
-		ret = clk_set_parent(dmic->clk_dmic, dmic->clk_pll_a_out0);
-		if (ret) {
-			dev_err(&pdev->dev, "Can't set parent of dmic clock\n");
-			goto err;
+			return PTR_ERR(dmic->clk_dmic);
 		}
 	}
 
 	mem = platform_get_resource(pdev, IORESOURCE_MEM, 0);
-	if (!mem) {
-		dev_err(&pdev->dev, "No memory resource\n");
-		ret = -ENODEV;
-		goto err;
-	}
-
-	memregion = devm_request_mem_region(&pdev->dev, mem->start,
-					    resource_size(mem), pdev->name);
-	if (!memregion) {
-		dev_err(&pdev->dev, "Memory region already claimed\n");
-		ret = -EBUSY;
-		goto err;
-	}
-
-	regs = devm_ioremap(&pdev->dev, mem->start, resource_size(mem));
-	if (!regs) {
-		dev_err(&pdev->dev, "ioremap failed\n");
-		ret = -ENOMEM;
-		goto err;
-	}
-
+	regs = devm_ioremap_resource(&pdev->dev, mem);
+	if (IS_ERR(regs))
+		return PTR_ERR(regs);
 	dmic->regmap = devm_regmap_init_mmio(&pdev->dev, regs,
-					    &tegra210_dmic_regmap_config);
+					     &tegra210_dmic_regmap_config);
 	if (IS_ERR(dmic->regmap)) {
 		dev_err(&pdev->dev, "regmap init failed\n");
-		ret = PTR_ERR(dmic->regmap);
-		goto err;
+		return PTR_ERR(dmic->regmap);
 	}
 	regcache_cache_only(dmic->regmap, true);
 
 	/* Below patch is as per latest POR value */
-	regmap_write(dmic->regmap,
-			TEGRA210_DMIC_DCR_BIQUAD_0_COEF_4, 0x00000000);
+	regmap_write(dmic->regmap, TEGRA210_DMIC_DCR_BIQUAD_0_COEF_4,
+		     0x00000000);
 
-	dmic->set_parent_rate = of_property_read_bool(np, "set-parent-rate");
-
-	if (of_property_read_u32(np, "nvidia,ahub-dmic-id",
-				&pdev->dev.id) < 0) {
-		dev_err(&pdev->dev,
-			"Missing property nvidia,ahub-dmic-id\n");
-		ret = -ENODEV;
-		goto err;
+	ret = of_property_read_u32(np, "nvidia,ahub-dmic-id",
+				   &pdev->dev.id);
+	if (ret < 0) {
+		dev_err(&pdev->dev, "Missing property nvidia,ahub-dmic-id\n");
+		return ret;
 	}
 
 	pm_runtime_enable(&pdev->dev);
-	if (!pm_runtime_enabled(&pdev->dev)) {
-		ret = tegra210_dmic_runtime_resume(&pdev->dev);
-		if (ret)
-			goto err_pm_disable;
-	}
-
 	ret = snd_soc_register_codec(&pdev->dev, &tegra210_dmic_codec,
 				     tegra210_dmic_dais,
 				     ARRAY_SIZE(tegra210_dmic_dais));
 	if (ret != 0) {
 		dev_err(&pdev->dev, "Could not register CODEC: %d\n", ret);
-		goto err_suspend;
+		pm_runtime_disable(&pdev->dev);
+		return ret;
 	}
 
 	if (of_property_read_string(np, "prod-name", &dmic->prod_name) == 0) {
 		ret = tegra_pinctrl_config_prod(&pdev->dev, dmic->prod_name);
 		if (ret < 0)
 			dev_warn(&pdev->dev, "Failed to set %s setting\n",
-					dmic->prod_name);
+				 dmic->prod_name);
 	}
 
 	dmic->pinctrl = devm_pinctrl_get(&pdev->dev);
 	if (IS_ERR(dmic->pinctrl)) {
-		dev_warn(&pdev->dev, "Missing pinctrl device\n");
-		goto err_dap;
+		dev_dbg(&pdev->dev, "Missing pinctrl device\n");
+		return 0;
 	}
 
 	dmic->pin_active_state = pinctrl_lookup_state(dmic->pinctrl,
-								"dap_active");
-	if (IS_ERR(dmic->pin_active_state)) {
-		dev_dbg(&pdev->dev, "Missing dap-active state\n");
-		goto err_dap;
-	}
-
+							"dap_active");
 	dmic->pin_idle_state = pinctrl_lookup_state(dmic->pinctrl,
 							"dap_inactive");
-	if (IS_ERR(dmic->pin_idle_state)) {
-		dev_dbg(&pdev->dev, "Missing dap-inactive state\n");
-		goto err_dap;
+	if (IS_ERR(dmic->pin_active_state) && IS_ERR(dmic->pin_idle_state)) {
+		dev_dbg(&pdev->dev, "Pinctrl: No DAP states found\n");
+		devm_pinctrl_put(dmic->pinctrl);
 	}
 
-err_dap:
-	pdev_bkp[pdev->dev.id] = pdev;
-
 	return 0;
-
-err_suspend:
-	if (!pm_runtime_status_suspended(&pdev->dev))
-		tegra210_dmic_runtime_suspend(&pdev->dev);
-err_pm_disable:
-	pm_runtime_disable(&pdev->dev);
-err:
-	return ret;
-}
-
-static void tegra210_dmic_platform_shutdown(struct platform_device *pdev)
-{
-	struct tegra210_dmic *dmic = dev_get_drvdata(&pdev->dev);
-
-	dmic->is_shutdown = true;
 }
 
 static int tegra210_dmic_platform_remove(struct platform_device *pdev)
@@ -870,7 +674,6 @@ static struct platform_driver tegra210_dmic_driver = {
 	},
 	.probe = tegra210_dmic_platform_probe,
 	.remove = tegra210_dmic_platform_remove,
-	.shutdown = tegra210_dmic_platform_shutdown,
 };
 module_platform_driver(tegra210_dmic_driver)
 

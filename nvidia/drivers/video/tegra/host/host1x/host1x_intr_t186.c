@@ -1,7 +1,7 @@
 /*
  * Tegra Graphics Host Interrupt Management
  *
- * Copyright (c) 2014-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2014-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -39,10 +39,17 @@ static irqreturn_t syncpt_thresh_cascade_isr(int irq, void *dev_id)
 	struct nvhost_master *dev = dev_id;
 	struct nvhost_intr *intr = &dev->intr;
 	unsigned long reg;
-	int i, id;
+	int i, id, err;
 	struct nvhost_timespec isr_recv;
 
 	nvhost_ktime_get_ts(&isr_recv);
+
+	/* make sure host1x is powered */
+	err = nvhost_module_busy(dev->dev);
+	if (err) {
+		WARN(1, "failed to powerON host1x.");
+		return IRQ_HANDLED;
+	}
 
 	for (i = 0; i < DIV_ROUND_UP(nvhost_syncpt_nb_hw_pts(&dev->syncpt), 32);
 			i++) {
@@ -83,6 +90,7 @@ static irqreturn_t syncpt_thresh_cascade_isr(int irq, void *dev_id)
 	}
 
 out:
+	nvhost_module_idle(dev->dev);
 	return IRQ_HANDLED;
 }
 

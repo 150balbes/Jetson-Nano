@@ -1,7 +1,7 @@
 /*
  * Tegra Graphics Init for T194 Architecture Chips
  *
- * Copyright (c) 2016-2018, NVIDIA Corporation. All rights reserved.
+ * Copyright (c) 2016-2020, NVIDIA Corporation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -64,8 +64,11 @@
 
 #include "chip_support.h"
 
+#include "scale_emc.h"
+
 #include "streamid_regs.c"
 #include "cg_regs.c"
+#include "actmon_regs.c"
 
 /*
  * TODO: Move following functions to the corresponding files under
@@ -174,6 +177,7 @@ static struct host1x_device_info host1x04_info = {
 	},
 	.nb_resources	= 4,
 	.secure_cmdfifo = true,
+	.dma_mask	= DMA_BIT_MASK(40),
 };
 
 struct nvhost_device_data t19_host1x_info = {
@@ -258,6 +262,7 @@ struct nvhost_device_data t19_vi5_info = {
 	.can_powergate		= true,
 	.pre_virt_init		= vi5_priv_early_probe,
 	.post_virt_init		= vi5_priv_late_probe,
+	.num_channels           = 36,
 };
 #endif
 
@@ -343,6 +348,7 @@ struct nvhost_device_data t19_msenc_info = {
 	.can_powergate		= true,
 	.isolate_contexts	= true,
 	.enable_timestamps	= flcn_enable_timestamps,
+	.mlock_timeout_factor   = 4,
 };
 
 struct nvhost_device_data t19_nvenc1_info = {
@@ -376,6 +382,7 @@ struct nvhost_device_data t19_nvenc1_info = {
 	.can_powergate		= true,
 	.isolate_contexts	= true,
 	.enable_timestamps	= flcn_enable_timestamps,
+	.mlock_timeout_factor   = 4,
 };
 #endif
 
@@ -413,6 +420,7 @@ struct nvhost_device_data t19_nvdec_info = {
 	.engine_can_cg		= true,
 	.can_powergate		= true,
 	.isolate_contexts	= true,
+	.mlock_timeout_factor   = 4,
 };
 
 struct nvhost_device_data t19_nvdec1_info = {
@@ -448,6 +456,7 @@ struct nvhost_device_data t19_nvdec1_info = {
 	.engine_can_cg		= true,
 	.can_powergate		= true,
 	.isolate_contexts	= true,
+	.mlock_timeout_factor   = 4,
 };
 #endif
 
@@ -570,6 +579,9 @@ struct nvhost_device_data t19_vic_info = {
 	.transcfg_addr		= 0x2044,
 	.transcfg_val		= 0x20,
 	.bwmgr_client_id	= TEGRA_BWMGR_CLIENT_VIC,
+	.scaling_init		= nvhost_scale_emc_init,
+	.scaling_deinit		= nvhost_scale_emc_deinit,
+	.scaling_post_cb	= &nvhost_scale_emc_callback,
 	.get_reloc_phys_addr	= nvhost_t194_get_reloc_phys_addr,
 	.get_dma_direction	= nvhost_t194_get_dma_direction,
 	.module_irq		= 1,
@@ -577,6 +589,14 @@ struct nvhost_device_data t19_vic_info = {
 	.engine_can_cg		= true,
 	.can_powergate		= true,
 	.isolate_contexts	= true,
+	.actmon_regs		= HOST1X_THOST_ACTMON_VIC,
+	.actmon_enabled         = true,
+	.actmon_irq		= 3,
+	.actmon_weight_count	= 216,
+	.actmon_setting_regs	= t19x_vic_actmon_registers,
+	.devfreq_governor	= "userspace",
+	.freqs			= {100000000, 200000000, 300000000,
+					400000000, 500000000, 600000000},
 };
 #endif
 
@@ -642,7 +662,7 @@ struct nvhost_device_data t19_nvdla0_info = {
 	.clocks			= {
 		{"nvdla0", UINT_MAX},
 		{"nvdla0_flcn", UINT_MAX},
-		{"emc", UINT_MAX,
+		{"emc", 0,
 		 NVHOST_MODULE_ID_EXTERNAL_MEMORY_CONTROLLER,
 		 0, TEGRA_BWMGR_SET_EMC_FLOOR}
 	},
@@ -675,7 +695,7 @@ struct nvhost_device_data t19_nvdla1_info = {
 	.clocks			= {
 		{"nvdla1", UINT_MAX},
 		{"nvdla1_flcn", UINT_MAX},
-		{"emc", UINT_MAX,
+		{"emc", 0,
 		 NVHOST_MODULE_ID_EXTERNAL_MEMORY_CONTROLLER,
 		 0, TEGRA_BWMGR_SET_EMC_FLOOR}
 	},

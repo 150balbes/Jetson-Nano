@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -174,6 +174,15 @@ struct nvgpu_mem {
 	 * nvgpu_mem in a system specific way.
 	 */
 #define __NVGPU_MEM_FLAG_NO_DMA			 (1 << 3)
+	/*
+	 * Some nvgpu_mem objects act as facades to memory buffers owned by
+	 * someone else. This internal flag specifies that the sgt field is
+	 * "borrowed", and it must not be freed by us.
+	 *
+	 * Of course the caller will have to make sure that the sgt owner
+	 * outlives the nvgpu_mem.
+	 */
+#define NVGPU_MEM_FLAG_FOREIGN_SGT		 (1 << 4)
 	unsigned long				 mem_flags;
 
 	/*
@@ -340,7 +349,7 @@ void nvgpu_memset(struct gk20a *g, struct nvgpu_mem *mem, u32 offset,
 u64 nvgpu_mem_get_addr(struct gk20a *g, struct nvgpu_mem *mem);
 u64 nvgpu_mem_get_phys_addr(struct gk20a *g, struct nvgpu_mem *mem);
 
-u32 nvgpu_aperture_mask_coh(struct gk20a *g, enum nvgpu_aperture aperture,
+u32 nvgpu_aperture_mask_raw(struct gk20a *g, enum nvgpu_aperture aperture,
 		u32 sysmem_mask, u32 sysmem_coh_mask, u32 vidmem_mask);
 u32 nvgpu_aperture_mask(struct gk20a *g, struct nvgpu_mem *mem,
 		u32 sysmem_mask, u32 sysmem_coh_mask, u32 vidmem_mask);

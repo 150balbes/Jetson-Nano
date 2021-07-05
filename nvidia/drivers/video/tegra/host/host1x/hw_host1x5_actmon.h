@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2015-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -153,6 +153,10 @@ static inline u32 actmon_local_count_r(void)
 static inline u32 actmon_local_avg_count_r(void)
 {
 	return 0xa4;
+}
+static inline u32 actmon_local_count_weight_r(void)
+{
+	return 0xa8;
 }
 static inline u32 actmon_local_cumulative_r(void)
 {

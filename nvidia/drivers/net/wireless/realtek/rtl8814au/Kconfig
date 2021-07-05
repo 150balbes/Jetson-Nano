@@ -1,0 +1,10 @@
+config RTL8814AU
+	tristate "Realtek 8814A USB WiFi"
+	depends on USB
+	default n
+	---help---
+	  This module adds support for USB wifi dongles based on Realtek
+	  RTL8814AU wireless chipset
+
+	  This driver module will be called rtl8814au.
+	  Use m if unsure.

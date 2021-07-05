@@ -65,6 +65,10 @@
 		status = "okay";
 	};
 
+	tegra_udrm: tegra_udrm {
+		compatible = "nvidia,tegra-udrm";
+	};
+
 	pmc@7000e400 {
 		nvidia,suspend-mode = <0>;
 		nvidia,cpu-pwr-good-time = <0>;
@@ -128,6 +132,7 @@
 		dt-override-status-odm-data = <0x00010000 0x00010000>;
 		nvidia,enable-on-init;
 		timeout-sec = <120>;
+		status = "disabled";
 	};
 
 	soft_wdt: soft_watchdog {
@@ -441,5 +446,55 @@
 				};
 			};
 		};
+	};
+
+	pinmux@700008d4 {
+		dvfs_pwm_active_state: dvfs_pwm_active {
+			dvfs_pwm_pbb1 {
+				nvidia,pins = "dvfs_pwm_pbb1";
+				nvidia,tristate = <TEGRA_PIN_DISABLE>;
+			};
+		};
+
+		dvfs_pwm_inactive_state: dvfs_pwm_inactive {
+			dvfs_pwm_pbb1 {
+				nvidia,pins = "dvfs_pwm_pbb1";
+				nvidia,tristate = <TEGRA_PIN_ENABLE>;
+			};
+		};
+	};
+
+	pwm@70110000 {
+		status = "okay";
+		pinctrl-0 = <&dvfs_pwm_active_state>;
+		pinctrl-1 = <&dvfs_pwm_inactive_state>;
+	};
+
+	gpio@6000d000 {
+		/* gpio-name for 40-pin header, gpio-name given as COL(10) x ROW(20) */
+		gpio-line-names = "",   "",     "",     "",     "",     "",     "",     "",     "I2S0_LRCLK",     "I2S0_SDIN",
+		"I2S0_SDOUT",     "I2S0_CLK",     "",    "",    "",     "",     "SPI1_MOSI",    "SPI1_MISO",    "SPI1_CLK",     "SPI1_CS0",
+		"SPI1_CS1",     "",     "",     "",     "",     "",     "",     "",     "",     "",
+		"",     "",     "",     "",     "",     "",     "AO_DMIC_IN_CLK",     "AO_DMIC_IN_DAT",     "GPIO20_AUD_INT",      "",
+		"",     "",     "",     "",     "",     "",     "",     "",     "",     "",
+		"",    "",    "",     "",     "",     "",     "",     "",     "",     "GPIO11_AP_WAKE_BT",
+		"",     "",     "",     "",     "",     "",     "",     "",     "",     "",
+		"",     "",     "",     "",     "",     "",     "",    "",    "",   "",
+		"",     "",     "",     "",     "",     "",     "",     "",     "",     "",
+		"",     "",     "",     "",     "",     "",     "",     "",     "",     "",
+		"",     "",     "",     "",     "",     "",     "",     "",     "",     "",
+		"",     "",     "",     "",     "",     "",     "",     "",     "",     "",
+		"",     "",     "",     "",     "",     "",     "",     "",     "",     "",
+		"",     "",     "",     "",     "",     "",     "",     "",     "",     "",
+		"",     "",     "",     "",     "",     "",     "",     "",     "",     "",
+		"",     "",     "",     "",     "",     "",     "",     "",     "",     "",
+		"",     "",     "UART0_RTS",     "UART0_CTS",     "",     "",     "",     "",     "",   "",
+		"",     "",     "",     "",     "",     "",     "",     "",     "",     "",
+		"",     "",     "",     "",     "GPIO16_MDM_WAKE_AP",     "",     "GPIO9_MOTION_INT",     "GPIO8_ALS_PROX_INT",     "",     "",
+		"",     "",     "",     "",     "",       "",     "",     "",     "",     "",
+		"",     "",     "",     "",     "",     "",     "",     "",     "",     "",
+		"",     "",     "",     "",     "",     "",     "AUDIO_MCLK",     "",     "",     "GPIO19_AUD_RST",
+		"",     "",     "",     "",     "",     "",     "",     "",     "",     "",
+		"",     "",     "",     "",     "",     "",     "",     "",     "",     "";
 	};
 };

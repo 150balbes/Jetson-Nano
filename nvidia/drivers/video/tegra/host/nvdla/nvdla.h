@@ -3,7 +3,7 @@
  *
  * Tegra Graphics Host NVDLA
  *
- * Copyright (c) 2016-2018 NVIDIA Corporation.  All rights reserved.
+ * Copyright (c) 2016-2019 NVIDIA Corporation.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -24,9 +24,10 @@
 #include <linux/completion.h>
 #include <linux/mutex.h>
 #include <uapi/linux/nvdev_fence.h>
-#include <linux/nvhost_nvdla_ioctl.h>
-#include "nvhost_buffer.h"
+#include <uapi/linux/nvhost_nvdla_ioctl.h>
 
+
+#include "nvdla_buffer.h"
 #include "dla_os_interface.h"
 #include "dla_fw_version.h"
 
@@ -98,8 +99,11 @@
  */
 #define MAX_NUM_NVDLA_PREFENCES		32
 #define MAX_NUM_NVDLA_POSTFENCES	32
+#define MAX_NUM_NVDLA_EMU_PREFENCES	16
+#define MAX_NUM_NVDLA_EMU_POSTFENCES	16
 #define MAX_NUM_NVDLA_IN_TASK_STATUS	MAX_NUM_NVDLA_PREFENCES
 #define MAX_NUM_NVDLA_OUT_TASK_STATUS	MAX_NUM_NVDLA_POSTFENCES
+#define MAX_NUM_NVDLA_OUT_TIMESTAMP  	32
 #define NUM_PROFILING_POSTACTION	1
 
 #define MAX_COMMANDS_PER_DEVICE		1
@@ -188,7 +192,7 @@ enum nvdla_submit_mode {
  */
 struct nvdla_device {
 	struct platform_device *pdev;
-	struct nvhost_queue_pool *pool;
+	struct nvdla_queue_pool *pool;
 	struct completion cmd_completion;
 	struct mutex cmd_lock;
 	int cmd_status;
@@ -218,16 +222,20 @@ struct nvdla_device {
  *
  * @queue		Queue in which task submitted
  * @sp			pointer to syncpt
+ * @prefences		pointer to pre fences
  * @postfences		pointer to post fences
+ * @num_prefences	Number of prefences in task
  * @num_postfences	Number of postfences in task
  * @fence		Fence tracking for current task
  * @fence_counter	Counter used to track fence value
  *
  */
 struct nvdla_emu_task {
-	struct nvhost_queue *queue;
+	struct nvdla_queue *queue;
 	struct nvhost_syncpt *sp;
-	struct nvdev_fence postfences[MAX_NUM_NVDLA_POSTFENCES];
+	struct nvdev_fence prefences[MAX_NUM_NVDLA_EMU_PREFENCES];
+	struct nvdev_fence postfences[MAX_NUM_NVDLA_EMU_POSTFENCES];
+	u32 num_prefences;
 	u32 num_postfences;
 	u32 fence;
 	u32 fence_counter;
@@ -252,18 +260,24 @@ struct nvdla_emu_task {
  *
  */
 struct nvdla_task {
-	struct nvhost_queue *queue;
-	struct nvhost_buffers *buffers;
+	struct nvdla_queue *queue;
+	struct nvdla_buffers *buffers;
 	struct nvhost_syncpt *sp;
 	struct nvdev_fence prefences[MAX_NUM_NVDLA_PREFENCES];
 	struct nvdev_fence postfences[MAX_NUM_NVDLA_POSTFENCES];
 	struct nvdla_status_notify in_task_status[MAX_NUM_NVDLA_IN_TASK_STATUS];
-	struct nvdla_status_notify out_task_status[MAX_NUM_NVDLA_OUT_TASK_STATUS];
+	struct nvdla_status_notify sof_task_status[MAX_NUM_NVDLA_OUT_TASK_STATUS];
+	struct nvdla_status_notify eof_task_status[MAX_NUM_NVDLA_OUT_TASK_STATUS];
+	struct nvdla_mem_handle sof_timestamps[MAX_NUM_NVDLA_OUT_TIMESTAMP];
+	struct nvdla_mem_handle eof_timestamps[MAX_NUM_NVDLA_OUT_TIMESTAMP];
 	struct nvdla_mem_handle memory_handles[NVDLA_MAX_BUFFERS_PER_TASK];
-	u32 num_prefences;
-	u32 num_postfences;
-	u32 num_in_task_status;
-	u32 num_out_task_status;
+	u8 num_prefences;
+	u8 num_postfences;
+	u8 num_in_task_status;
+	u8 num_sof_task_status;
+	u8 num_eof_task_status;
+	u8 num_sof_timestamps;
+	u8 num_eof_timestamps;
 	u32 num_addresses;
 	u32 fence;
 	u32 fence_counter;
@@ -279,7 +293,10 @@ struct nvdla_task {
 	struct dma_buf *prefences_sem_dmabuf[MAX_NUM_NVDLA_PREFENCES];
 	struct dma_buf *in_task_status_dmabuf[MAX_NUM_NVDLA_IN_TASK_STATUS];
 	struct dma_buf *postfences_sem_dmabuf[MAX_NUM_NVDLA_POSTFENCES];
-	struct dma_buf *out_task_status_dmabuf[MAX_NUM_NVDLA_OUT_TASK_STATUS];
+	struct dma_buf *sof_task_status_dmabuf[MAX_NUM_NVDLA_OUT_TASK_STATUS];
+	struct dma_buf *eof_task_status_dmabuf[MAX_NUM_NVDLA_OUT_TASK_STATUS];
+	struct dma_buf *sof_timestamps_dmabuf[MAX_NUM_NVDLA_OUT_TIMESTAMP];
+	struct dma_buf *eof_timestamps_dmabuf[MAX_NUM_NVDLA_OUT_TIMESTAMP];
 };
 
 struct dla_mem_addr {
@@ -287,7 +304,7 @@ struct dla_mem_addr {
 };
 
 extern const struct file_operations tegra_nvdla_ctrl_ops;
-extern struct nvhost_queue_ops nvdla_queue_ops;
+extern struct nvdla_queue_ops nvdla_queue_ops;
 
 /**
  * nvhost_nvdla_finalize_poweron() finalize power on for DLA
@@ -390,18 +407,18 @@ int nvdla_send_postfences(struct nvdla_task *task,
 int nvdla_get_cmd_memory(struct platform_device *pdev,
 				struct nvdla_cmd_mem_info *cmd_mem_info);
 int nvdla_put_cmd_memory(struct platform_device *pdev, int index);
-int nvdla_set_queue_state(struct nvhost_queue *queue, int cmd);
-int nvdla_get_task_mem(struct nvhost_queue *queue,
+int nvdla_set_queue_state(struct nvdla_queue *queue, int cmd);
+int nvdla_get_task_mem(struct nvdla_queue *queue,
 				struct nvdla_task **task);
 void nvdla_put_task_mem(struct nvdla_task *task);
 size_t nvdla_get_max_task_size(void);
 int nvdla_alloc_gcov_region(struct platform_device *pdev);
 int nvdla_free_gcov_region(struct platform_device *pdev, bool update_region);
 
-int nvdla_emulator_submit(struct nvhost_queue *queue,
+int nvdla_emulator_submit(struct nvdla_queue *queue,
 				struct nvdla_emu_task *task);
 void task_free(struct kref *ref);
-int nvdla_get_postfences(struct nvhost_queue *queue, void *in_task);
+int nvdla_get_signal_fences(struct nvdla_queue *queue, void *in_task);
 int nvdla_send_gos_region(struct platform_device *pdev);
 
 #endif /* End of __NVHOST_NVDLA_H__ */

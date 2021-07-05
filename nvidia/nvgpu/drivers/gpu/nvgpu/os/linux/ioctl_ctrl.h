@@ -19,5 +19,9 @@
 int gk20a_ctrl_dev_open(struct inode *inode, struct file *filp);
 int gk20a_ctrl_dev_release(struct inode *inode, struct file *filp);
 long gk20a_ctrl_dev_ioctl(struct file *filp, unsigned int cmd, unsigned long arg);
+int gk20a_ctrl_dev_mmap(struct file *filp, struct vm_area_struct *vma);
+
+void nvgpu_hide_usermode_for_poweroff(struct gk20a *g);
+void nvgpu_restore_usermode_for_poweron(struct gk20a *g);
 
 #endif

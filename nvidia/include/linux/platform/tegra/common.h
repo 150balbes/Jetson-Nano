@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2011-2018, NVIDIA Corporation. All rights reserved.
+ * Copyright (C) 2011-2019, NVIDIA Corporation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -48,6 +48,7 @@ u32 tegra_get_fuse_opt_subrevision(void);
 enum tegra_revision tegra_chip_get_revision(void);
 void __init display_tegra_dt_info(void);
 
+bool tegra_is_vpr_resize_supported(void);
 void tegra_register_idle_unidle(int (*do_idle)(void *),
 				int (*do_unidle)(void *),
 				void *data);

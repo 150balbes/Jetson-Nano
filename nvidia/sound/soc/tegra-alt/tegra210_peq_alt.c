@@ -1,7 +1,7 @@
 /*
  * tegra210_peq_alt.c - Tegra210 PEQ driver
  *
- * Copyright (c) 2014-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2014-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -24,12 +24,10 @@
 #include <linux/platform_device.h>
 #include <linux/pm_runtime.h>
 #include <linux/regmap.h>
-#include <linux/slab.h>
 #include <sound/core.h>
 #include <sound/pcm.h>
 #include <sound/pcm_params.h>
 #include <sound/soc.h>
-#include <linux/pinctrl/consumer.h>
 #include <linux/of_device.h>
 
 #include "tegra210_xbar_alt.h"
@@ -370,43 +368,21 @@ EXPORT_SYMBOL_GPL(tegra210_peq_codec_init);
 int tegra210_peq_init(struct platform_device *pdev, int id)
 {
 	struct tegra210_ope *ope = dev_get_drvdata(&pdev->dev);
-	struct resource *mem, *memregion;
+	struct resource *mem;
 	void __iomem *regs;
-	int ret = 0;
 
 	mem = platform_get_resource(pdev, IORESOURCE_MEM, id);
-	if (!mem) {
-		dev_err(&pdev->dev, "No memory resource\n");
-		ret = -ENODEV;
-		goto err;
-	}
-
-	memregion = devm_request_mem_region(&pdev->dev, mem->start,
-					    resource_size(mem), pdev->name);
-	if (!memregion) {
-		dev_err(&pdev->dev, "Memory region already claimed\n");
-		ret = -EBUSY;
-		goto err;
-	}
-
-	regs = devm_ioremap(&pdev->dev, mem->start, resource_size(mem));
-	if (!regs) {
-		dev_err(&pdev->dev, "ioremap failed\n");
-		ret = -ENOMEM;
-		goto err;
-	}
-
+	regs = devm_ioremap_resource(&pdev->dev, mem);
+	if (IS_ERR(regs))
+		return PTR_ERR(regs);
 	ope->peq_regmap = devm_regmap_init_mmio(&pdev->dev, regs,
-					    &tegra210_peq_regmap_config);
+						&tegra210_peq_regmap_config);
 	if (IS_ERR(ope->peq_regmap)) {
 		dev_err(&pdev->dev, "regmap init failed\n");
-		ret = PTR_ERR(ope->peq_regmap);
-		goto err;
+		return PTR_ERR(ope->peq_regmap);
 	}
 
 	return 0;
-err:
-	return ret;
 }
 EXPORT_SYMBOL_GPL(tegra210_peq_init);
 

@@ -35,6 +35,16 @@ config SENSORS_NCT1008
 	 Say yes here if you wish to include the ON Semiconductor
 	 NCT1008 Temperature sensor.
 
+config SENSORS_PEX9749
+	tristate "Thermal sensor for PEX9749"
+	default n
+	depends on I2C
+	help
+	  Say yes to enable thermal sensor monitoring for PEX9749. PEX9749
+	  is an I2C slave which allows PEX9749 configuration registers to
+	  be read or written by an external I2C master independently of
+	  PCIe link state.
+
 config TEGRA_CPC
 	tristate "Tegra content protection controller"
 	depends on I2C

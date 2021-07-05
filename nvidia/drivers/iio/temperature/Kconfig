@@ -1,0 +1,31 @@
+append_menu "Temperature sensors"
+config NVS_TMP1X2_IIO
+	tristate "TI temperature sensor using IIO transport"
+	depends on I2C && SYSFS && IIO
+	select NVS
+	select NVS_ON_CHANGE
+	select NVS_IIO
+	default n
+	help
+	  Enable TI temperature sensor
+
+config NVS_TMP1X2_INPUT
+	tristate "TI temperature sensor using INPUT transport"
+	depends on I2C && SYSFS && INPUT
+	select NVS
+	select NVS_ON_CHANGE
+	select NVS_INPUT
+	default n
+	help
+	  Enable TI temperature sensor
+
+config NVS_TMP1X2_RELAY
+	tristate "TI temperature sensor using RELAYFS transport"
+	depends on I2C && SYSFS
+	select NVS
+	select NVS_ON_CHANGE
+	select NVS_RELAY
+	default n
+	help
+	  Enable TI temperature sensor
+endmenu

@@ -24,6 +24,7 @@
 #include <stdlib.h>
 #include <pthread.h>
 
+#include <nvgpu/gk20a.h>
 #include <nvgpu/bug.h>
 #include <nvgpu/types.h>
 #include <nvgpu/atomic.h>
@@ -90,6 +91,11 @@ void gk20a_busy_noresume(struct gk20a *g)
 
 void gk20a_idle_nosuspend(struct gk20a *g)
 {
+}
+
+bool gk20a_check_poweron(struct gk20a *g)
+{
+	return false;
 }
 
 int gk20a_busy(struct gk20a *g)

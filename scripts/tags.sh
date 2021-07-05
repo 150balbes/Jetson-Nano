@@ -25,8 +25,8 @@ if [ "${KBUILD_SRC}" = "" ]; then
 	tree_nvidia=
 else
 	tree=${srctree}/
-	tree_nvgpu=
-	tree_nvidia=
+	tree_nvgpu=${srctree}/../nvgpu/
+	tree_nvidia=${srctree}/../nvidia/
 fi
 
 # ignore userspace tools

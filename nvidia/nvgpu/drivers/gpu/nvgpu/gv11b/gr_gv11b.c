@@ -1,7 +1,7 @@
 /*
  * GV11b GPU GR
  *
- * Copyright (c) 2016-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2016-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -77,6 +77,7 @@ bool gr_gv11b_is_valid_class(struct gk20a *g, u32 class_num)
 {
 	bool valid = false;
 
+	nvgpu_speculation_barrier();
 	switch (class_num) {
 	case VOLTA_COMPUTE_A:
 	case VOLTA_A:
@@ -106,6 +107,7 @@ bool gr_gv11b_is_valid_gfx_class(struct gk20a *g, u32 class_num)
 {
 	bool valid = false;
 
+	nvgpu_speculation_barrier();
 	switch (class_num) {
 	case VOLTA_A:
 	case PASCAL_A:
@@ -140,6 +142,7 @@ bool gr_gv11b_is_valid_compute_class(struct gk20a *g, u32 class_num)
 {
 	bool valid = false;
 
+	nvgpu_speculation_barrier();
 	switch (class_num) {
 	case VOLTA_COMPUTE_A:
 	case PASCAL_COMPUTE_A:
@@ -4297,7 +4300,9 @@ void gr_gv11b_init_gpc_mmu(struct gk20a *g)
 		gr_gpcs_pri_mmu_ctrl_cache_mode_m() |
 		gr_gpcs_pri_mmu_ctrl_mmu_aperture_m() |
 		gr_gpcs_pri_mmu_ctrl_mmu_vol_m() |
-		gr_gpcs_pri_mmu_ctrl_mmu_disable_m();
+		gr_gpcs_pri_mmu_ctrl_mmu_disable_m()|
+		gr_gpcs_pri_mmu_ctrl_atomic_capability_mode_m()|
+		gr_gpcs_pri_mmu_ctrl_atomic_capability_sys_ncoh_mode_m();
 	gk20a_writel(g, gr_gpcs_pri_mmu_ctrl_r(), temp);
 	gk20a_writel(g, gr_gpcs_pri_mmu_pm_unit_mask_r(), 0);
 	gk20a_writel(g, gr_gpcs_pri_mmu_pm_req_mask_r(), 0);
@@ -5068,4 +5073,18 @@ int gv11b_gr_clear_sm_error_state(struct gk20a *g,
 fail:
 	nvgpu_mutex_release(&g->dbg_sessions_lock);
 	return err;
+}
+
+int gr_gv11b_set_fecs_watchdog_timeout(struct gk20a *g)
+{
+	return gr_gk20a_submit_fecs_method_op_locked(g,
+	      (struct fecs_method_op_gk20a) {
+		      .method.addr = gr_fecs_method_push_adr_set_watchdog_timeout_f(),
+		      .method.data = 0x7fffffff,
+		      .mailbox = { .id   = 0,
+				   .data = ~0, .clr = ~0, .ret = NULL,
+				   .ok = gr_fecs_ctxsw_mailbox_value_pass_v(),
+				   .fail = 0, },
+		      .cond.ok = GR_IS_UCODE_OP_EQUAL,
+		      .cond.fail = GR_IS_UCODE_OP_SKIP}, false);
 }

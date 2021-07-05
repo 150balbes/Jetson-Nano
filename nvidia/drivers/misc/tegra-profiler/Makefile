@@ -30,9 +30,9 @@ tegra-profiler-y := \
 	quadd_proc.o \
 	eh_unwind.o \
 	dwarf_unwind.o \
-	disassembler.o
-
-obj-$(CONFIG_CACHE_L2X0) += pl310.o
+	disassembler.o \
+	uncore_events.o
 
 obj-$(CONFIG_ARM) += armv7_pmu.o
 obj-$(CONFIG_ARM64) += armv8_pmu.o
+obj-$(CONFIG_ARCH_TEGRA_19x_SOC) += carmel_pmu.o

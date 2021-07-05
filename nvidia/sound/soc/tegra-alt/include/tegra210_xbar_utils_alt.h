@@ -1,7 +1,7 @@
 /*
  * tegra210_xbar_utils_alt.h - TEGRA XBAR Utils
  *
- * Copyright (c) 2017 NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2019 NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -95,12 +95,10 @@ int tegra_xbar_put_value_enum(struct snd_kcontrol *kcontrol,
 			struct snd_ctl_elem_value *ucontrol);
 bool tegra_xbar_volatile_reg(struct device *dev, unsigned int reg);
 int tegra_xbar_remove(struct platform_device *pdev);
-void tegra_xbar_shutdown(struct platform_device *pdev);
 int tegra_xbar_runtime_resume(struct device *dev);
 int tegra_xbar_runtime_suspend(struct device *dev);
 int tegra_xbar_resume(struct device *dev);
 int tegra_xbar_suspend(struct device *dev);
-int tegra_xbar_codec_probe(struct snd_soc_codec *codec);
 int tegra_xbar_probe(struct platform_device *pdev,
 					struct tegra_xbar_soc_data *soc_data);
 #endif

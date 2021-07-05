@@ -29,6 +29,7 @@ void __iomem *nvgpu_devm_ioremap_resource(struct platform_device *dev, int i,
 		struct resource **out);
 void __iomem *nvgpu_devm_ioremap(struct device *dev, resource_size_t offset,
 		resource_size_t size);
+u64 nvgpu_resource_addr(struct platform_device *dev, int i);
 extern struct class nvgpu_class;
 
 #endif

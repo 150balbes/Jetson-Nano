@@ -1,0 +1,35 @@
+From 7d0b8c6061f4ae20f15012804178b61b0d5c5e86 Mon Sep 17 00:00:00 2001
+From: Steven Rostedt <rostedt@goodmis.org>
+Date: Fri, 15 Nov 2019 09:28:29 -0500
+Subject: [PATCH 366/371] genirq: Do not call cancel_work on old_notify->work
+ on PREEMPT_RT
+X-NVConfidentiality: public
+
+When PREEMPT_RT is configured, old_notify->work does not exist, and
+instead swork is used. Unfortunately, there is no cancel_work() for
+swork. This is a known bug, and 4.4 will just need to deal with it
+as the real solution to this is to backport all the work queue code
+from RT mainline.
+
+Signed-off-by: Steven Rostedt <rostedt@goodmis.org>
+---
+ kernel/irq/manage.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/kernel/irq/manage.c b/kernel/irq/manage.c
+index 39c2bad..2fc96cb 100644
+--- a/kernel/irq/manage.c
++++ b/kernel/irq/manage.c
+@@ -372,7 +372,9 @@ irq_set_affinity_notifier(unsigned int irq, struct irq_affinity_notify *notify)
+ 	raw_spin_unlock_irqrestore(&desc->lock, flags);
+ 
+ 	if (old_notify) {
++#ifndef CONFIG_PREEMPT_RT_BASE
+ 		cancel_work_sync(&old_notify->work);
++#endif
+ 		kref_put(&old_notify->kref, old_notify->release);
+ 	}
+ 
+-- 
+2.7.4
+

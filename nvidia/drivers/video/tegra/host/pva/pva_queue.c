@@ -1,7 +1,7 @@
 /*
  * PVA Task Management
  *
- * Copyright (c) 2016-2018, NVIDIA Corporation.  All rights reserved.
+ * Copyright (c) 2016-2019, NVIDIA Corporation.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -64,7 +64,7 @@
  * - The action list is terminated by a null action (1 byte)
  */
 #define INPUT_ACTION_BUFFER_SIZE ( \
-	ALIGN(PVA_MAX_PREFENCES * ACTION_LIST_FENCE_SIZE + \
+	ALIGN((PVA_MAX_PREFENCES + 10) * ACTION_LIST_FENCE_SIZE + \
 	      PVA_MAX_INPUT_STATUS * ACTION_LIST_STATUS_OPERATION_SIZE  + \
 	      ACTION_LIST_TERMINATION_SIZE, 256))
 
@@ -77,7 +77,7 @@
  * - The action list is terminated by a null action (1 byte)
  */
 #define OUTPUT_ACTION_BUFFER_SIZE ( \
-	ALIGN(PVA_MAX_POSTFENCES * ACTION_LIST_FENCE_SIZE + \
+	ALIGN((PVA_MAX_POSTFENCES + 10) * ACTION_LIST_FENCE_SIZE + \
 	      PVA_MAX_OUTPUT_STATUS * ACTION_LIST_STATUS_OPERATION_SIZE  + \
 	      ACTION_LIST_STATS_SIZE * 2 + \
 	      ACTION_LIST_FENCE_SIZE  * 2 + \
@@ -131,18 +131,23 @@ static void pva_task_dump(struct pva_submit_task *task)
 				task->prefences[i].semaphore_offset,
 				task->prefences[i].semaphore_value);
 
-	for (i = 0; i < task->num_postfences; i++)
-		nvhost_dbg_info("postfence %d: type=%u, "
+	for (i = 0; i < PVA_MAX_FENCE_TYPES; i++) {
+		int j;
+
+		for (j = 0; j < task->num_pvafences[i]; j++) {
+			nvhost_dbg_info("pvafence %d: type=%u, "
 				"syncpoint_index=%u, syncpoint_value=%u, "
 				"sync_fd=%u, semaphore_handle=%u, "
 				"semaphore_offset=%u, semaphore_value=%u", i,
-				task->postfences[i].type,
-				task->postfences[i].syncpoint_index,
-				task->postfences[i].syncpoint_value,
-				task->postfences[i].sync_fd,
-				task->postfences[i].semaphore_handle,
-				task->postfences[i].semaphore_offset,
-				task->postfences[i].semaphore_value);
+				task->pvafences[i][j].fence.type,
+				task->pvafences[i][j].fence.syncpoint_index,
+				task->pvafences[i][j].fence.syncpoint_value,
+				task->pvafences[i][j].fence.sync_fd,
+				task->pvafences[i][j].fence.semaphore_handle,
+				task->pvafences[i][j].fence.semaphore_offset,
+				task->pvafences[i][j].fence.semaphore_value);
+		}
+	}
 
 	for (i = 0; i < task->num_input_surfaces; i++)
 		nvhost_dbg_info("input surface %d: format=%llu, "
@@ -206,6 +211,7 @@ static void pva_task_get_memsize(size_t *dma_size, size_t *kmem_size)
 static void pva_task_unpin_mem(struct pva_submit_task *task)
 {
 	int i;
+	int j;
 
 #define UNPIN_MEMORY(dst_name)						\
 	do {								\
@@ -234,10 +240,22 @@ static void pva_task_unpin_mem(struct pva_submit_task *task)
 			UNPIN_MEMORY(task->prefences_sema_ext[i]);
 	}
 
-	for (i = 0; i < task->num_postfences; i++) {
-		if ((task->postfences[i].type == NVDEV_FENCE_TYPE_SEMAPHORE)
-			&& task->postfences[i].semaphore_handle)
-			UNPIN_MEMORY(task->postfences_sema_ext[i]);
+	for (i = 0; i < PVA_MAX_FENCE_TYPES; i++) {
+		for (j = 0; j < task->num_pvafences[i]; j++) {
+			struct nvpva_fence *fence = &task->pvafences[i][j];
+
+			if ((fence->fence.type == NVDEV_FENCE_TYPE_SEMAPHORE)
+			    && fence->fence.semaphore_handle) {
+				UNPIN_MEMORY(task->pvafences_sema_ext[i][j]);
+			}
+		}
+		for (j = 0; j < task->num_pva_ts_buffers[i]; j++) {
+			struct nvpva_fence *fence = &task->pvafences[i][j];
+
+			if (fence->ts_buf_ptr.handle) {
+				UNPIN_MEMORY(task->pva_ts_buffers_ext[i][j]);
+			}
+		}
 	}
 
 	for (i = 0; i < task->num_input_task_status; i++) {
@@ -270,6 +288,7 @@ static int pva_task_pin_mem(struct pva_submit_task *task)
 	u32 cvsram_sz = nvcvnas_get_cvsram_size();
 	int err;
 	int i;
+	int j;
 
 #define PIN_MEMORY(dst_name, dmabuf_fd)					\
 	do {								\
@@ -356,11 +375,24 @@ static int pva_task_pin_mem(struct pva_submit_task *task)
 		}
 	}
 
-	for (i = 0; i < task->num_postfences; i++) {
-		if ((task->postfences[i].type == NVDEV_FENCE_TYPE_SEMAPHORE)
-			&& task->postfences[i].semaphore_handle) {
-			PIN_MEMORY(task->postfences_sema_ext[i],
-				task->postfences[i].semaphore_handle);
+	/* check the generalized fence structures */
+	for (i = 0; i < PVA_MAX_FENCE_TYPES; i++) {
+		for (j = 0; j < task->num_pvafences[i]; j++) {
+			struct nvpva_fence *fence = &task->pvafences[i][j];
+
+			if ((fence->fence.type == NVDEV_FENCE_TYPE_SEMAPHORE)
+			    && fence->fence.semaphore_handle) {
+				PIN_MEMORY(task->pvafences_sema_ext[i][j],
+					   fence->fence.semaphore_handle);
+			}
+		}
+		for (j = 0; j < task->num_pva_ts_buffers[i]; j++) {
+			struct nvpva_fence *fence = &task->pvafences[i][j];
+
+			if (fence->ts_buf_ptr.handle) {
+				PIN_MEMORY(task->pva_ts_buffers_ext[i][j],
+					   fence->ts_buf_ptr.handle);
+			}
 		}
 	}
 
@@ -510,16 +542,17 @@ static inline int pva_task_write_ptr_op(u8 *base, u8 action, u64 addr, u32 val)
 static int pva_task_write_preactions(struct pva_submit_task *task,
 				     struct pva_hw_task *hw_task)
 {
+	struct platform_device *host1x_pdev =
+		to_platform_device(task->pva->pdev->dev.parent);
 	u8 *hw_preactions = hw_task->preactions;
-	u64 timestamp = arch_counter_get_cntvct();
 	int i = 0, j = 0, ptr = 0;
+	u8 action_ts;
+	u8 action_f;
+	u32 increment;
 
 	/* Add waits to preactions list */
 	for (i = 0; i < task->num_prefences; i++) {
 		struct nvdev_fence *fence = task->prefences + i;
-
-		nvhost_eventlib_log_fence(task->pva->pdev,
-			NVDEV_FENCE_KIND_PRE, fence, timestamp);
 
 		switch (fence->type) {
 		case NVDEV_FENCE_TYPE_SYNCPT: {
@@ -600,6 +633,94 @@ static int pva_task_write_preactions(struct pva_submit_task *task,
 		}
 	}
 
+	for (i = 0; i < PVA_MAX_FENCE_TYPES; i++) {
+		increment = 0;
+		switch (i) {
+		case PVA_FENCE_SOT_V:
+			action_ts = TASK_ACT_PTR_WRITE_SOT_V_TS;
+			action_f = TASK_ACT_PTR_WRITE_VAL_SOT_V;
+			increment = 1;
+			break;
+		case PVA_FENCE_SOT_R:
+			action_ts = TASK_ACT_PTR_WRITE_SOT_R_TS;
+			action_f = TASK_ACT_PTR_WRITE_VAL_SOT_R;
+			increment = 1;
+			break;
+		default:
+			action_ts = 0;
+			action_f = 0;
+			break;
+		};
+		if ((action_ts == 0) || (task->num_pvafences[i] == 0))
+			continue;
+		for (j = 0; j < task->num_pva_ts_buffers[i]; j++) {
+			if (task->pvafences[i][j].ts_buf_ptr.handle) {
+				int dif;
+
+				dif = pva_task_write_ptr_op(
+				       &hw_preactions[ptr],
+				       action_ts,
+				       task->pva_ts_buffers_ext[i][j].dma_addr +
+				       task->pvafences[i][j].ts_buf_ptr.offset,
+				       1U);
+				ptr += dif;
+			}
+		}
+		for (j = 0; j < task->num_pvafences[i]; j++) {
+			struct nvdev_fence *fence =
+				&task->pvafences[i][j].fence;
+			u32 thresh;
+
+			switch (fence->type) {
+			case NVDEV_FENCE_TYPE_SYNCPT: {
+				dma_addr_t syncpt_gos_addr =
+					nvhost_syncpt_gos_address(
+						task->pva->pdev,
+						fence->syncpoint_index);
+				dma_addr_t syncpt_addr =
+					nvhost_syncpt_address(
+						task->queue->vm_pdev,
+						task->queue->syncpt_id);
+
+				ptr += pva_task_write_ptr_op(
+					&hw_preactions[ptr],
+					action_f,
+					syncpt_addr,
+					1U);
+				task->fence_num += increment;
+				/* Make a syncpoint increment */
+				if (syncpt_gos_addr) {
+					thresh = nvhost_syncpt_read_maxval(
+						host1x_pdev,
+						task->queue->syncpt_id) +
+						task->fence_num;
+					ptr += pva_task_write_ptr_op(
+						&hw_preactions[ptr],
+						TASK_ACT_PTR_WRITE_VAL,
+						syncpt_gos_addr, thresh);
+				}
+				break;
+			}
+			case NVDEV_FENCE_TYPE_SEMAPHORE:
+			case NVDEV_FENCE_TYPE_SEMAPHORE_TS: {
+				int dif;
+
+				dif = pva_task_write_ptr_op(&hw_preactions[ptr],
+				       action_f,
+				       task->pvafences_sema_ext[i][j].dma_addr +
+				       fence->semaphore_offset,
+				       fence->semaphore_value);
+				ptr += dif;
+				break;
+			}
+			case NVDEV_FENCE_TYPE_SYNC_FD:
+				/* TODO XXX*/
+			default:
+				return -ENOSYS;
+			}
+		}
+	}
+
 	/* Perform input status checks */
 	for (i = 0; i < task->num_input_task_status; i++) {
 		struct pva_status_handle *input_status =
@@ -639,6 +760,8 @@ static void pva_task_write_postactions(struct pva_submit_task *task,
 			to_platform_device(task->pva->pdev->dev.parent);
 	dma_addr_t output_status_addr;
 	u32 thresh;
+	u8 action_ts;
+	int j;
 
 	/* Write Output action status */
 	for (i = 0; i < task->num_output_task_status; i++) {
@@ -653,39 +776,81 @@ static void pva_task_write_postactions(struct pva_submit_task *task,
 					output_status_addr, 1);
 	}
 
+	for (i = 0; i < PVA_MAX_FENCE_TYPES; i++) {
+		switch (i) {
+		case PVA_FENCE_EOT_V:
+			action_ts = TASK_ACT_PTR_WRITE_EOT_V_TS;
+			break;
+		case PVA_FENCE_EOT_R:
+			action_ts = TASK_ACT_PTR_WRITE_EOT_R_TS;
+			break;
+		case PVA_FENCE_POST:
+			action_ts = TASK_ACT_PTR_WRITE_TS;
+			break;
+		default:
+			action_ts = 0;
+			break;
+		};
+		if (action_ts == 0)
+			continue;
+		for (j = 0; j < task->num_pva_ts_buffers[i]; j++) {
+			if (task->pvafences[i][j].ts_buf_ptr.handle) {
+				int dif;
+
+				dif = pva_task_write_ptr_op(
+				       &hw_postactions[ptr],
+				       action_ts,
+				       task->pva_ts_buffers_ext[i][j].dma_addr +
+				       task->pvafences[i][j].ts_buf_ptr.offset,
+				       1U);
+
+				ptr += dif;
+			}
+		}
+	}
+
 	/* Add postactions list for semaphore */
-	for (i = 0; i < task->num_postfences; i++) {
-		struct nvdev_fence *fence = task->postfences + i;
+	j = PVA_FENCE_POST;
+	for (i = 0; i < task->num_pvafences[j]; i++) {
+		struct nvdev_fence *fence = &task->pvafences[j][i].fence;
 
 		if (fence->type == NVDEV_FENCE_TYPE_SEMAPHORE) {
 			ptr += pva_task_write_ptr_op(&hw_postactions[ptr],
 				TASK_ACT_PTR_WRITE_VAL,
-				task->postfences_sema_ext[i].dma_addr  +
-					fence->semaphore_offset,
+				task->pvafences_sema_ext[j][i].dma_addr +
+				fence->semaphore_offset,
 				fence->semaphore_value);
 		} else if (fence->type == NVDEV_FENCE_TYPE_SEMAPHORE_TS) {
 			/*
-			 * Timestamp will be filled by ucode hence making the
-			 * place holder for timestamp size, sizeof(u64).
-			 */
-			ptr = ptr + sizeof(u64) +
-				pva_task_write_ptr_op(&hw_postactions[ptr],
+			* Timestamp will be filled by ucode hence making the
+			* place holder for timestamp size, sizeof(u64).
+			*/
+			ptr += sizeof(u64) +
+			       pva_task_write_ptr_op(
+				&hw_postactions[ptr],
 				TASK_ACT_PTR_WRITE_VAL_TS,
-				task->postfences_sema_ext[i].dma_addr  +
-					fence->semaphore_offset,
+				task->pvafences_sema_ext[j][i].dma_addr +
+				fence->semaphore_offset,
 				fence->semaphore_value);
 		}
 	}
 
+	task->fence_num += 1;
+
 	/* Make a syncpoint increment */
 	if (syncpt_gos_addr) {
-		thresh = nvhost_syncpt_read_maxval(host1x_pdev,
-				task->queue->syncpt_id) + 1;
-		ptr += pva_task_write_ptr_op(&hw_postactions[ptr],
-			TASK_ACT_PTR_WRITE_VAL, syncpt_gos_addr, thresh);
+		thresh = nvhost_syncpt_read_maxval(
+			host1x_pdev,
+			task->queue->syncpt_id) + task->fence_num;
+		ptr += pva_task_write_ptr_op(
+			&hw_postactions[ptr],
+			TASK_ACT_PTR_WRITE_VAL,
+			syncpt_gos_addr, thresh);
 	}
+
 	ptr += pva_task_write_ptr_op(&hw_postactions[ptr],
 		TASK_ACT_PTR_WRITE_VAL, syncpt_addr, 1);
+
 
 	output_status_addr = task->dma_addr +
 			     offsetof(struct pva_hw_task, statistics);
@@ -1178,6 +1343,14 @@ static void pva_task_update(struct pva_submit_task *task)
 			task->syncpt_thresh,
 			stats, task->operation);
 
+	/* Record task postfences */
+	nvhost_eventlib_log_fences(pdev,
+			queue->syncpt_id,
+			task->syncpt_thresh,
+			&(task->pvafences[PVA_FENCE_POST][0].fence),
+			1,
+			NVDEV_FENCE_KIND_POST,
+			stats->complete_time);
 
 	if (task->pva->vpu_perf_counters_enable) {
 		for (idx = 0; idx < PVA_TASK_VPU_NUM_PERF_COUNTERS; idx++) {
@@ -1208,11 +1381,19 @@ static void pva_task_update(struct pva_submit_task *task)
 	/* remove the task from the queue */
 	list_del(&task->node);
 
-	/* Release memory that was allocated for the task */
-	nvhost_queue_free_task_memory(task->queue, task->pool_index);
+	/* Not linked anymore so drop the reference */
+	kref_put(&task->ref, pva_task_free);
 
 	/* Drop queue reference to allow reusing it */
 	nvhost_queue_put(queue);
+}
+
+void pva_task_free(struct kref *ref)
+{
+	struct pva_submit_task *task =
+		container_of(ref, struct pva_submit_task, ref);
+	/* Release memory that was allocated for the task */
+	nvhost_queue_free_task_memory(task->queue, task->pool_index);
 }
 
 static void pva_queue_update(void *priv, int nr_completed)
@@ -1244,6 +1425,7 @@ static void pva_queue_dump(struct nvhost_queue *queue, struct seq_file *s)
 {
 	struct pva_submit_task *task;
 	int i = 0;
+	int k = PVA_FENCE_POST;
 
 	seq_printf(s, "Queue %u, Tasks\n", queue->id);
 
@@ -1261,12 +1443,12 @@ static void pva_queue_dump(struct nvhost_queue *queue, struct seq_file *s)
 				task->prefences[j].syncpoint_index,
 				task->prefences[j].syncpoint_value);
 
-		for (j = 0; j < task->num_postfences; j++)
+		for (j = 0; j < task->num_pvafences[k]; j++)
 			seq_printf(s, "    postfence %d: \n\t"
 				"syncpoint_index=%u, syncpoint_value=%u\n",
 				j,
-				task->postfences[j].syncpoint_index,
-				task->postfences[j].syncpoint_value);
+				task->pvafences[k][j].fence.syncpoint_index,
+				task->pvafences[k][j].fence.syncpoint_value);
 
 
 	}
@@ -1337,7 +1519,7 @@ static int pva_task_submit_mmio_ccq(struct pva_submit_task *task,
 	old_maxval = nvhost_syncpt_read_maxval(host1x_pdev, queue->syncpt_id);
 	new_maxval = nvhost_syncpt_incr_max_ext(host1x_pdev,
 						queue->syncpt_id,
-						1);
+						task->fence_num);
 
 	err = pva_ccq_send(task->pva, fifo_cmd);
 	if (err < 0)
@@ -1374,7 +1556,7 @@ static int pva_task_submit_mailbox(struct pva_submit_task *task,
 	old_maxval = nvhost_syncpt_read_maxval(host1x_pdev, queue->syncpt_id);
 	new_maxval = nvhost_syncpt_incr_max_ext(host1x_pdev,
 						queue->syncpt_id,
-						1);
+						task->fence_num);
 
 	/* Submit request to PVA and wait for response */
 	err = pva_mailbox_send_cmd_sync(task->pva, &cmd, nregs, &status);
@@ -1449,6 +1631,15 @@ static int pva_task_submit(struct pva_submit_task *task,
 	if (err < 0)
 		goto err_submit;
 
+	/* Record task prefences */
+	nvhost_eventlib_log_fences(task->pva->pdev,
+				   queue->syncpt_id,
+				   thresh,
+				   task->prefences,
+				   task->num_prefences,
+				   NVDEV_FENCE_KIND_PRE,
+				   timestamp);
+
 	nvhost_eventlib_log_submit(task->pva->pdev,
 				   queue->syncpt_id,
 				   thresh,
@@ -1460,6 +1651,10 @@ static int pva_task_submit(struct pva_submit_task *task,
 			queue->syncpt_id, thresh);
 
 	*task_thresh = thresh;
+
+	/* Going to be linked so obtain the reference */
+	kref_get(&task->ref);
+
 	/*
 	 * Tasks in the queue list can be modified by the interrupt handler.
 	 * Adding the task into the list must be the last step before
@@ -1496,6 +1691,8 @@ static int pva_queue_submit(struct nvhost_queue *queue, void *args)
 	for (i = 0; i < task_header->num_tasks; i++) {
 		struct pva_submit_task *task = task_header->tasks[i];
 		u32 *thresh = &task_header->task_thresh[i];
+
+		task->fence_num = 0;
 
 		/* First, dump the task that we are submitting */
 		pva_task_dump(task);
@@ -1610,6 +1807,7 @@ static void pva_queue_cleanup(struct nvhost_queue *queue,
 						queue->syncpt_id,
 						task->syncpt_thresh);
 	unsigned int i;
+	unsigned int j;
 
 	/*
 	 * Ensure that there won't be communication with PVA for
@@ -1627,9 +1825,12 @@ static void pva_queue_cleanup(struct nvhost_queue *queue,
 					 task->output_task_status_ext);
 
 	/* Finish up non-syncpoint fences */
-	for (i = 0; i < task->num_postfences; i++)
-		pva_queue_cleanup_fence(task->postfences + i,
-					task->postfences_sema_ext + i);
+	for (i = 0; i < PVA_MAX_FENCE_TYPES; i++) {
+		for (j = 0; j < task->num_pvafences[i]; j++) {
+			pva_queue_cleanup_fence(&task->pvafences[i][j].fence,
+					&task->pvafences_sema_ext[i][j]);
+		}
+	}
 
 	/* Finish syncpoint increments to release waiters */
 	nvhost_syncpt_cpu_incr_ext(pdev, queue->syncpt_id);

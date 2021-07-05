@@ -1,0 +1,156 @@
+From 48858672b36487350565dd74e30679990a7f8e5b Mon Sep 17 00:00:00 2001
+From: Thomas Gleixner <tglx@linutronix.de>
+Date: Tue, 21 Aug 2012 20:38:50 +0200
+Subject: [PATCH 276/371] random: Make it work on rt
+X-NVConfidentiality: public
+
+Delegate the random insertion to the forced threaded interrupt
+handler. Store the return IP of the hard interrupt handler in the irq
+descriptor and feed it into the random generator as a source of
+entropy.
+
+Signed-off-by: Thomas Gleixner <tglx@linutronix.de>
+---
+ drivers/char/random.c   | 11 +++++------
+ drivers/hv/vmbus_drv.c  |  5 ++++-
+ include/linux/irqdesc.h |  1 +
+ include/linux/random.h  |  2 +-
+ kernel/irq/handle.c     |  8 +++++++-
+ kernel/irq/manage.c     |  6 ++++++
+ 6 files changed, 24 insertions(+), 9 deletions(-)
+
+diff --git a/drivers/char/random.c b/drivers/char/random.c
+index 74300e8..002f686 100644
+--- a/drivers/char/random.c
++++ b/drivers/char/random.c
+@@ -1183,28 +1183,27 @@ static __u32 get_reg(struct fast_pool *f, struct pt_regs *regs)
+ 	return *ptr;
+ }
+ 
+-void add_interrupt_randomness(int irq, int irq_flags)
++void add_interrupt_randomness(int irq, int irq_flags, __u64 ip)
+ {
+ 	struct entropy_store	*r;
+ 	struct fast_pool	*fast_pool = this_cpu_ptr(&irq_randomness);
+-	struct pt_regs		*regs = get_irq_regs();
+ 	unsigned long		now = jiffies;
+ 	cycles_t		cycles = random_get_entropy();
+ 	__u32			c_high, j_high;
+-	__u64			ip;
+ 	unsigned long		seed;
+ 	int			credit = 0;
+ 
+ 	if (cycles == 0)
+-		cycles = get_reg(fast_pool, regs);
++		cycles = get_reg(fast_pool, NULL);
+ 	c_high = (sizeof(cycles) > 4) ? cycles >> 32 : 0;
+ 	j_high = (sizeof(now) > 4) ? now >> 32 : 0;
+ 	fast_pool->pool[0] ^= cycles ^ j_high ^ irq;
+ 	fast_pool->pool[1] ^= now ^ c_high;
+-	ip = regs ? instruction_pointer(regs) : _RET_IP_;
++	if (!ip)
++		ip = _RET_IP_;
+ 	fast_pool->pool[2] ^= ip;
+ 	fast_pool->pool[3] ^= (sizeof(ip) > 4) ? ip >> 32 :
+-		get_reg(fast_pool, regs);
++		get_reg(fast_pool, NULL);
+ 
+ 	fast_mix(fast_pool);
+ 	add_interrupt_bench(cycles);
+diff --git a/drivers/hv/vmbus_drv.c b/drivers/hv/vmbus_drv.c
+index 9a0d0d0..ca93cfa 100644
+--- a/drivers/hv/vmbus_drv.c
++++ b/drivers/hv/vmbus_drv.c
+@@ -43,6 +43,7 @@
+ #include <linux/kdebug.h>
+ #include <linux/efi.h>
+ #include <linux/random.h>
++#include <asm/irq_regs.h>
+ #include "hyperv_vmbus.h"
+ 
+ static struct acpi_device  *hv_acpi_dev;
+@@ -781,6 +782,8 @@ static void vmbus_isr(void)
+ 	void *page_addr;
+ 	struct hv_message *msg;
+ 	union hv_synic_event_flags *event;
++	struct pt_regs *regs = get_irq_regs();
++	u64 ip = regs ? instruction_pointer(regs) : 0;
+ 	bool handled = false;
+ 
+ 	page_addr = hv_context.synic_event_page[cpu];
+@@ -828,7 +831,7 @@ static void vmbus_isr(void)
+ 			tasklet_schedule(hv_context.msg_dpc[cpu]);
+ 	}
+ 
+-	add_interrupt_randomness(HYPERVISOR_CALLBACK_VECTOR, 0);
++	add_interrupt_randomness(HYPERVISOR_CALLBACK_VECTOR, 0, ip);
+ }
+ 
+ 
+diff --git a/include/linux/irqdesc.h b/include/linux/irqdesc.h
+index bb5547a8..529da7e 100644
+--- a/include/linux/irqdesc.h
++++ b/include/linux/irqdesc.h
+@@ -67,6 +67,7 @@ struct irq_desc {
+ 	unsigned int		irqs_unhandled;
+ 	atomic_t		threads_handled;
+ 	int			threads_handled_last;
++	u64			random_ip;
+ 	raw_spinlock_t		lock;
+ 	struct cpumask		*percpu_enabled;
+ 	const struct cpumask	*percpu_affinity;
+diff --git a/include/linux/random.h b/include/linux/random.h
+index 16ab429..9d0fecb 100644
+--- a/include/linux/random.h
++++ b/include/linux/random.h
+@@ -31,7 +31,7 @@ static inline void add_latent_entropy(void) {}
+ 
+ extern void add_input_randomness(unsigned int type, unsigned int code,
+ 				 unsigned int value) __latent_entropy;
+-extern void add_interrupt_randomness(int irq, int irq_flags) __latent_entropy;
++extern void add_interrupt_randomness(int irq, int irq_flags, __u64 ip) __latent_entropy;
+ 
+ extern void get_random_bytes(void *buf, int nbytes);
+ extern int add_random_ready_callback(struct random_ready_callback *rdy);
+diff --git a/kernel/irq/handle.c b/kernel/irq/handle.c
+index d3f2490..f87aa8f 100644
+--- a/kernel/irq/handle.c
++++ b/kernel/irq/handle.c
+@@ -181,10 +181,16 @@ irqreturn_t handle_irq_event_percpu(struct irq_desc *desc)
+ {
+ 	irqreturn_t retval;
+ 	unsigned int flags = 0;
++	struct pt_regs *regs = get_irq_regs();
++	u64 ip = regs ? instruction_pointer(regs) : 0;
+ 
+ 	retval = __handle_irq_event_percpu(desc, &flags);
+ 
+-	add_interrupt_randomness(desc->irq_data.irq, flags);
++#ifdef CONFIG_PREEMPT_RT_FULL
++	desc->random_ip = ip;
++#else
++	add_interrupt_randomness(desc->irq_data.irq, flags, ip);
++#endif
+ 
+ 	if (!noirqdebug)
+ 		note_interrupt(desc, retval);
+diff --git a/kernel/irq/manage.c b/kernel/irq/manage.c
+index 1737d99..39c2bad 100644
+--- a/kernel/irq/manage.c
++++ b/kernel/irq/manage.c
+@@ -1029,6 +1029,12 @@ static int irq_thread(void *data)
+ 		if (action_ret == IRQ_WAKE_THREAD)
+ 			irq_wake_secondary(desc, action);
+ 
++#ifdef CONFIG_PREEMPT_RT_FULL
++		migrate_disable();
++		add_interrupt_randomness(action->irq, 0,
++				 desc->random_ip ^ (unsigned long) action);
++		migrate_enable();
++#endif
+ 		wake_threads_waitq(desc);
+ 	}
+ 
+-- 
+2.7.4
+

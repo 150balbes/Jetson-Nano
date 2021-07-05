@@ -72,7 +72,6 @@ struct tegra_camera_info {
 	u32 ppc_divider;
 	u32 num_active_streams;
 	u32 num_device_lanes;
-	u32 total_sensor_lanes;
 	u32 sensor_type;
 	u32 memory_latency;
 	bool pg_mode;
@@ -622,7 +621,6 @@ static int tegra_camera_probe(struct platform_device *pdev)
 	info->ppc_divider = 1;
 	info->num_active_streams = 0;
 	info->num_device_lanes = 0;
-	info->total_sensor_lanes = 0;
 	info->sensor_type = 0;
 	info->memory_latency = 0;
 	info->pg_mode = false;
@@ -646,6 +644,8 @@ static void update_platform_data(struct tegra_camera_dev_info *cdev,
 	/* TPG: handled differently based on
 	 * throughput calculations.
 	 */
+	static u64 phy_pixel_rate_aggregated = 0;
+
 	if (cdev->sensor_type == SENSORTYPE_VIRTUAL)
 		info->pg_mode = dev_registered;
 
@@ -663,18 +663,22 @@ static void update_platform_data(struct tegra_camera_dev_info *cdev,
 		 */
 		if (cdev->bpp > 2)
 			info->ppc_divider = 2;
-		if (cdev->sensor_type != SENSORTYPE_NONE)
-			info->total_sensor_lanes += cdev->lane_num;
-		if (info->total_sensor_lanes <= info->num_device_lanes)
-			info->phy_pixel_rate += cdev->pixel_rate;
+		if (cdev->lane_num < info->num_device_lanes) {
+			// temp variable to store aggregated rate
+			phy_pixel_rate_aggregated += cdev->pixel_rate;
+		} else if (cdev->lane_num == info->num_device_lanes) {
+			if (info->phy_pixel_rate < cdev->pixel_rate) {
+				info->phy_pixel_rate = cdev->pixel_rate;
+			}
+		}
+
+		if (info->phy_pixel_rate < phy_pixel_rate_aggregated)
+			info->phy_pixel_rate = phy_pixel_rate_aggregated;
+
 		if (info->max_pixel_depth < cdev->pixel_bit_depth)
 			info->max_pixel_depth = cdev->pixel_bit_depth;
 		if (info->memory_latency < cdev->memory_latency)
 			info->memory_latency = cdev->memory_latency;
-	} else {
-		if (info->total_sensor_lanes <= info->num_device_lanes)
-			info->phy_pixel_rate -= cdev->pixel_rate;
-		info->total_sensor_lanes -= cdev->lane_num;
 	}
 }
 

@@ -1,7 +1,7 @@
 /*
  * Tegra GPU Virtualization Interfaces to Server
  *
- * Copyright (c) 2014-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2014-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -123,6 +123,8 @@ enum {
 	TEGRA_VGPU_CMD_RESUME = 83,
 	TEGRA_VGPU_CMD_GET_ECC_INFO = 84,
 	TEGRA_VGPU_CMD_GET_ECC_COUNTER_VALUE = 85,
+	TEGRA_VGPU_CMD_FB_SET_MMU_DEBUG_MODE = 88,
+	TEGRA_VGPU_CMD_GR_SET_MMU_DEBUG_MODE = 89,
 };
 
 struct tegra_vgpu_connect_params {
@@ -175,6 +177,7 @@ struct tegra_vgpu_as_map_params {
 #define TEGRA_VGPU_MAP_CACHEABLE	(1 << 0)
 #define TEGRA_VGPU_MAP_IO_COHERENT	(1 << 1)
 #define TEGRA_VGPU_MAP_L3_ALLOC		(1 << 2)
+#define TEGRA_VGPU_MAP_PLATFORM_ATOMIC	(1 << 3)
 
 struct tegra_vgpu_as_map_ex_params {
 	u64 handle;
@@ -616,6 +619,15 @@ struct tegra_vgpu_tsg_bind_channel_ex_params {
 	u32 runqueue_sel;
 };
 
+struct tegra_vgpu_fb_set_mmu_debug_mode_params {
+	u8 enable;
+};
+
+struct tegra_vgpu_gr_set_mmu_debug_mode_params {
+	u64 ch_handle;
+	u8 enable;
+};
+
 struct tegra_vgpu_cmd_msg {
 	u32 cmd;
 	int ret;
@@ -678,6 +690,8 @@ struct tegra_vgpu_cmd_msg {
 		struct tegra_vgpu_channel_update_pc_sampling update_pc_sampling;
 		struct tegra_vgpu_ecc_info_params ecc_info;
 		struct tegra_vgpu_ecc_counter_params ecc_counter;
+		struct tegra_vgpu_fb_set_mmu_debug_mode_params fb_set_mmu_debug_mode;
+		struct tegra_vgpu_gr_set_mmu_debug_mode_params gr_set_mmu_debug_mode;
 		char padding[192];
 	} params;
 };

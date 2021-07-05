@@ -1,7 +1,7 @@
 /*
  * tegra_dc_ext_priv.h: Declarations for tegradc ext interface.
  *
- * Copyright (c) 2011-2018, NVIDIA CORPORATION, All rights reserved.
+ * Copyright (c) 2011-2019, NVIDIA CORPORATION, All rights reserved.
  *
  * Author: Robert Morell <rmorell@nvidia.com>
  *
@@ -25,7 +25,7 @@
 #include <linux/list.h>
 #include <linux/mutex.h>
 #include <linux/poll.h>
-#include <video/tegra_dc_ext.h>
+#include <uapi/video/tegra_dc_ext.h>
 
 #include "../dc.h"
 

@@ -1,0 +1,93 @@
+From 7ddcd0efcfa32b96668ea5ac5e1a9112598904d5 Mon Sep 17 00:00:00 2001
+From: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+Date: Fri, 7 Jun 2013 22:37:06 +0200
+Subject: [PATCH 281/371] kernel/cpu: fix cpu down problem if kthread's cpu is
+ going down
+X-NVConfidentiality: public
+
+If kthread is pinned to CPUx and CPUx is going down then we get into
+trouble:
+- first the unplug thread is created
+- it will set itself to hp->unplug. As a result, every task that is
+  going to take a lock, has to leave the CPU.
+- the CPU_DOWN_PREPARE notifier are started. The worker thread will
+  start a new process for the "high priority worker".
+  Now kthread would like to take a lock but since it can't leave the CPU
+  it will never complete its task.
+
+We could fire the unplug thread after the notifier but then the cpu is
+no longer marked "online" and the unplug thread will run on CPU0 which
+was fixed before :)
+
+So instead the unplug thread is started and kept waiting until the
+notfier complete their work.
+
+Signed-off-by: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+---
+ kernel/cpu.c | 15 +++++++++++++--
+ 1 file changed, 13 insertions(+), 2 deletions(-)
+
+diff --git a/kernel/cpu.c b/kernel/cpu.c
+index bac49a7..5791ad8 100644
+--- a/kernel/cpu.c
++++ b/kernel/cpu.c
+@@ -267,6 +267,7 @@ struct hotplug_pcp {
+ 	int refcount;
+ 	int grab_lock;
+ 	struct completion synced;
++	struct completion unplug_wait;
+ #ifdef CONFIG_PREEMPT_RT_FULL
+ 	/*
+ 	 * Note, on PREEMPT_RT, the hotplug lock must save the state of
+@@ -370,6 +371,7 @@ static int sync_unplug_thread(void *data)
+ {
+ 	struct hotplug_pcp *hp = data;
+ 
++	wait_for_completion(&hp->unplug_wait);
+ 	preempt_disable();
+ 	hp->unplug = current;
+ 	wait_for_pinned_cpus(hp);
+@@ -435,6 +437,14 @@ static void __cpu_unplug_sync(struct hotplug_pcp *hp)
+ 	wait_for_completion(&hp->synced);
+ }
+ 
++static void __cpu_unplug_wait(unsigned int cpu)
++{
++	struct hotplug_pcp *hp = &per_cpu(hotplug_pcp, cpu);
++
++	complete(&hp->unplug_wait);
++	wait_for_completion(&hp->synced);
++}
++
+ /*
+  * Start the sync_unplug_thread on the target cpu and wait for it to
+  * complete.
+@@ -458,6 +468,7 @@ static int cpu_unplug_begin(unsigned int cpu)
+ 	tell_sched_cpu_down_begin(cpu);
+ 
+ 	init_completion(&hp->synced);
++	init_completion(&hp->unplug_wait);
+ 
+ 	hp->sync_tsk = kthread_create(sync_unplug_thread, hp, "sync_unplug/%d", cpu);
+ 	if (IS_ERR(hp->sync_tsk)) {
+@@ -473,8 +484,7 @@ static int cpu_unplug_begin(unsigned int cpu)
+ 	 * wait for tasks that are going to enter these sections and
+ 	 * we must not have them block.
+ 	 */
+-	__cpu_unplug_sync(hp);
+-
++	wake_up_process(hp->sync_tsk);
+ 	return 0;
+ }
+ 
+@@ -1201,6 +1211,7 @@ static int takedown_cpu(unsigned int cpu)
+ 	struct cpuhp_cpu_state *st = per_cpu_ptr(&cpuhp_state, cpu);
+ 	int err;
+ 
++	__cpu_unplug_wait(cpu);
+ 	/* Park the smpboot threads */
+ 	kthread_park(per_cpu_ptr(&cpuhp_state, cpu)->thread);
+ 
+-- 
+2.7.4
+

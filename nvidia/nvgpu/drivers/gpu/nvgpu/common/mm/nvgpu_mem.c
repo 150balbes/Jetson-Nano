@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -31,7 +31,7 @@
  * will not add any checks. If you want to simply use the default coherency then
  * use nvgpu_aperture_mask().
  */
-u32 nvgpu_aperture_mask_coh(struct gk20a *g, enum nvgpu_aperture aperture,
+u32 nvgpu_aperture_mask_raw(struct gk20a *g, enum nvgpu_aperture aperture,
 			    u32 sysmem_mask, u32 sysmem_coh_mask,
 			    u32 vidmem_mask)
 {
@@ -71,7 +71,7 @@ u32 nvgpu_aperture_mask(struct gk20a *g, struct nvgpu_mem *mem,
 		ap = APERTURE_SYSMEM_COH;
 	}
 
-	return nvgpu_aperture_mask_coh(g, ap,
+	return nvgpu_aperture_mask_raw(g, ap,
 				       sysmem_mask,
 				       sysmem_coh_mask,
 				       vidmem_mask);

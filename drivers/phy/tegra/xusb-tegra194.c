@@ -412,6 +412,9 @@ static void tegra194_utmi_bias_pad_power_on(struct tegra_xusb_padctl *padctl)
 	padctl_readl_poll(padctl, XUSB_PADCTL_USB2_BIAS_PAD_CTL1,
 		USB2_TRK_COMPLETED, USB2_TRK_COMPLETED, 100);
 
+	/* XUSB_PADCTL_USB2_OTG_PADX_CTL1[USB2_PD_TRK] acts as a trigger.
+	 * It would reset itself to 1 once the tracking completed.
+	 */
 	if (!padctl->is_xhci_iov)
 		clk_disable_unprepare(priv->usb2_trk_clk);
 
@@ -421,6 +424,7 @@ static void tegra194_utmi_bias_pad_power_on(struct tegra_xusb_padctl *padctl)
 static void tegra194_utmi_bias_pad_power_off(struct tegra_xusb_padctl *padctl)
 {
 	struct tegra194_xusb_padctl *priv = to_tegra194_xusb_padctl(padctl);
+	u32 reg;
 
 	mutex_lock(&padctl->lock);
 
@@ -434,9 +438,15 @@ static void tegra194_utmi_bias_pad_power_off(struct tegra_xusb_padctl *padctl)
 		return;
 	}
 
+	if (!padctl->cdp_used) {
+		/* only turn BIAS pad off when host CDP isn't enabled */
+		reg = padctl_readl(padctl, XUSB_PADCTL_USB2_BIAS_PAD_CTL0);
+		reg |= BIAS_PAD_PD;
+		padctl_writel(padctl, reg, XUSB_PADCTL_USB2_BIAS_PAD_CTL0);
+	}
+
 	mutex_unlock(&padctl->lock);
 }
-
 
 static inline bool is_utmi_phy(struct phy *phy);
 void tegra194_utmi_pad_power_on(struct phy *phy)

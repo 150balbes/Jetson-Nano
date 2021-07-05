@@ -36,4 +36,8 @@ struct pwm_fan_platform_data {
 	int tach_gpio;
 	int pwm_gpio;
 };
+
+#if IS_BUILTIN(CONFIG_PWM_FAN)
+bool is_fan_always_on(struct thermal_cooling_device *cdev);
+#endif
 #endif

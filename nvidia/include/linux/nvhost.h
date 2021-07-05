@@ -3,7 +3,7 @@
  *
  * Tegra graphics host driver
  *
- * Copyright (c) 2009-2019, NVIDIA Corporation. All rights reserved.
+ * Copyright (c) 2009-2020, NVIDIA Corporation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -106,6 +106,11 @@ struct nvhost_gating_register {
 	u64 addr;
 	u32 prod;
 	u32 disable;
+};
+
+struct nvhost_actmon_register {
+	u32 addr;
+	u32 val;
 };
 
 struct nvhost_clock {
@@ -230,6 +235,9 @@ struct nvhost_device_data {
 
 	struct kobject *power_kobj;	/* kobject to hold power sysfs entries */
 	struct nvhost_device_power_attr *power_attrib;	/* sysfs attributes */
+	/* kobject to hold clk_cap sysfs entries */
+	struct kobject clk_cap_kobj;
+	struct kobj_attribute *clk_cap_attrs;
 	struct dentry *debugfs;		/* debugfs directory */
 
 	u32 nvhost_timeout_default;
@@ -244,6 +252,9 @@ struct nvhost_device_data {
 	bool				linear_emc;
 	/* Offset to actmon registers */
 	u32				actmon_regs;
+	/* WEIGHT_COUNT of actmon */
+	u32				actmon_weight_count;
+	struct nvhost_actmon_register	*actmon_setting_regs;
 	/* Devfreq governor name */
 	const char			*devfreq_governor;
 	unsigned long freqs[NVHOST_MODULE_MAX_FREQS];
@@ -382,6 +393,9 @@ struct nvhost_device_data {
 	/* deliver task timestamps for falcon */
 	void (*enable_timestamps)(struct platform_device *pdev,
 			struct nvhost_cdma *cdma, dma_addr_t timestamp_addr);
+
+	/* don't apply platform dma mask */
+	bool no_platform_dma_mask;
 };
 
 
@@ -655,10 +669,14 @@ static inline void nvhost_eventlib_log_submit(struct platform_device *pdev,
 					      u64 timestamp)
 {
 }
-static inline void nvhost_eventlib_log_fence(struct platform_device *pdev,
-					     u32 kind,
-					     struct nvdev_fence *fence,
-					     u64 timestamp)
+
+static inline void nvhost_eventlib_log_fences(struct platform_device *pdev,
+                                              u32 task_syncpt_id,
+                                              u32 task_syncpt_thresh,
+                                              struct nvdev_fence *fences,
+                                              u8 num_fences,
+                                              enum nvdev_fence_kind kind,
+                                              u64 timestamp)
 {
 }
 #else
@@ -713,6 +731,9 @@ int nvhost_channel_map(struct nvhost_device_data *pdata,
 			struct nvhost_channel **ch,
 			void *identifier);
 void nvhost_putchannel(struct nvhost_channel *ch, int cnt);
+void nvhost_getchannel(struct nvhost_channel *ch);
+bool nvhost_channel_is_resource_policy_per_device(
+			struct nvhost_device_data *pdata);
 /* Allocate memory for a job. Just enough memory will be allocated to
  * accomodate the submit announced in submit header.
  */
@@ -773,10 +794,13 @@ void nvhost_eventlib_log_submit(struct platform_device *pdev,
 				u32 syncpt_thresh,
 				u64 timestamp);
 
-void nvhost_eventlib_log_fence(struct platform_device *pdev,
-			       u32 kind,
-			       struct nvdev_fence *fence,
-			       u64 timestamp);
+void nvhost_eventlib_log_fences(struct platform_device *pdev,
+				u32 task_syncpt_id,
+				u32 task_syncpt_thresh,
+				struct nvdev_fence *fences,
+				u8 num_fences,
+				enum nvdev_fence_kind kind,
+				u64 timestamp);
 
 /* public host1x interrupt management APIs */
 int nvhost_intr_register_notifier(struct platform_device *pdev,

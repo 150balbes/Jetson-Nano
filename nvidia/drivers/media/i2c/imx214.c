@@ -1,7 +1,7 @@
 /*
  * imx214.c - imx214 sensor driver
  *
- * Copyright (c) 2013-2017, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2013-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -1233,6 +1233,7 @@ imx214_remove(struct i2c_client *client)
 	v4l2_ctrl_handler_free(&priv->ctrl_handler);
 	camera_common_cleanup(s_data);
 
+	imx214_eeprom_device_release(priv);
 	return 0;
 }
 

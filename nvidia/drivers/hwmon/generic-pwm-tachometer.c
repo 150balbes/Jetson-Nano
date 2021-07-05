@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -18,6 +18,7 @@
 #include <linux/pwm.h>
 #include <linux/hwmon.h>
 #include <linux/hwmon-sysfs.h>
+#include <linux/therm_est.h>
 
 struct pwm_hwmon_tach {
 	struct device		*dev;
@@ -25,14 +26,15 @@ struct pwm_hwmon_tach {
 	struct device		*hwmon;
 };
 
-static ssize_t show_rpm(struct device *dev, struct device_attribute *attr,
-			char *buf)
+struct device *pwm_tach_dev;
+
+int pwm_tach_capture_rpm(struct device *dev)
 {
+	int ret;
 	struct pwm_hwmon_tach *ptt = dev_get_drvdata(dev);
 	struct pwm_device *pwm = ptt->pwm;
 	struct pwm_capture result;
 	unsigned int rpm = 0;
-	int ret;
 
 	ret = pwm_capture(pwm, &result, 0);
 	if (ret < 0) {
@@ -43,6 +45,19 @@ static ssize_t show_rpm(struct device *dev, struct device_attribute *attr,
 	if (result.period)
 		rpm = DIV_ROUND_CLOSEST_ULL(60ULL * NSEC_PER_SEC,
 					    result.period);
+
+	return rpm;
+}
+EXPORT_SYMBOL(pwm_tach_capture_rpm);
+
+static ssize_t show_rpm(struct device *dev, struct device_attribute *attr,
+			char *buf)
+{
+	int rpm;
+
+	rpm = pwm_tach_capture_rpm(dev);
+	if (rpm < 0)
+		rpm = 0;
 
 	return sprintf(buf, "%u\n", rpm);
 }
@@ -55,6 +70,12 @@ static struct attribute *pwm_tach_attrs[] = {
 };
 
 ATTRIBUTE_GROUPS(pwm_tach);
+
+struct device *pwm_get_tach_dev(void)
+{
+	return pwm_tach_dev;
+}
+EXPORT_SYMBOL(pwm_get_tach_dev);
 
 static int pwm_tach_probe(struct platform_device *pdev)
 {
@@ -84,6 +105,7 @@ static int pwm_tach_probe(struct platform_device *pdev)
 		return PTR_ERR_OR_ZERO(ptt->hwmon);
 	}
 
+	pwm_tach_dev = ptt->dev;
 	return 0;
 }
 

@@ -1,0 +1,136 @@
+From 74e3e3d598f9e5735615227c6eb03a17a6e1c50c Mon Sep 17 00:00:00 2001
+From: Peter Zijlstra <peterz@infradead.org>
+Date: Mon, 20 Mar 2017 12:26:55 +0100
+Subject: [PATCH 004/371] lockdep: Fix per-cpu static objects
+X-NVConfidentiality: public
+
+Since commit 383776fa7527 ("locking/lockdep: Handle statically initialized
+PER_CPU locks properly") we try to collapse per-cpu locks into a single
+class by giving them all the same key. For this key we choose the canonical
+address of the per-cpu object, which would be the offset into the per-cpu
+area.
+
+This has two problems:
+
+ - there is a case where we run !0 lock->key through static_obj() and
+   expect this to pass; it doesn't for canonical pointers.
+
+ - 0 is a valid canonical address.
+
+Cure both issues by redefining the canonical address as the address of the
+per-cpu variable on the boot CPU.
+
+Since I didn't want to rely on CPU0 being the boot-cpu, or even existing at
+all, track the boot CPU in a variable.
+
+Fixes: 383776fa7527 ("locking/lockdep: Handle statically initialized PER_CPU locks properly")
+Reported-by: kernel test robot <fengguang.wu@intel.com>
+Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Tested-by: Borislav Petkov <bp@suse.de>
+Cc: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+Cc: linux-mm@kvack.org
+Cc: wfg@linux.intel.com
+Cc: kernel test robot <fengguang.wu@intel.com>
+Cc: LKP <lkp@01.org>
+Link: http://lkml.kernel.org/r/20170320114108.kbvcsuepem45j5cr@hirez.programming.kicks-ass.net
+Signed-off-by: Thomas Gleixner <tglx@linutronix.de>
+Signed-off-by: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+---
+ include/linux/smp.h | 12 ++++++++++++
+ kernel/cpu.c        |  6 ++++++
+ kernel/module.c     |  6 +++++-
+ mm/percpu.c         |  5 ++++-
+ 4 files changed, 27 insertions(+), 2 deletions(-)
+
+diff --git a/include/linux/smp.h b/include/linux/smp.h
+index 8e0cb7a..68123c1 100644
+--- a/include/linux/smp.h
++++ b/include/linux/smp.h
+@@ -120,6 +120,13 @@ extern unsigned int setup_max_cpus;
+ extern void __init setup_nr_cpu_ids(void);
+ extern void __init smp_init(void);
+ 
++extern int __boot_cpu_id;
++
++static inline int get_boot_cpu_id(void)
++{
++	return __boot_cpu_id;
++}
++
+ #else /* !SMP */
+ 
+ static inline void smp_send_stop(void) { }
+@@ -158,6 +165,11 @@ static inline void smp_init(void) { up_late_init(); }
+ static inline void smp_init(void) { }
+ #endif
+ 
++static inline int get_boot_cpu_id(void)
++{
++	return 0;
++}
++
+ #endif /* !SMP */
+ 
+ /*
+diff --git a/kernel/cpu.c b/kernel/cpu.c
+index 1b07496..16caaf3 100644
+--- a/kernel/cpu.c
++++ b/kernel/cpu.c
+@@ -1386,6 +1386,8 @@ core_initcall(cpu_hotplug_pm_sync_init);
+ 
+ #endif /* CONFIG_PM_SLEEP_SMP */
+ 
++int __boot_cpu_id;
++
+ #endif /* CONFIG_SMP */
+ 
+ /* Boot processor state steps */
+@@ -2235,6 +2237,10 @@ void __init boot_cpu_init(void)
+ 	set_cpu_active(cpu, true);
+ 	set_cpu_present(cpu, true);
+ 	set_cpu_possible(cpu, true);
++
++#ifdef CONFIG_SMP
++	__boot_cpu_id = cpu;
++#endif
+ }
+ 
+ /*
+diff --git a/kernel/module.c b/kernel/module.c
+index e170b4e..958070e 100644
+--- a/kernel/module.c
++++ b/kernel/module.c
+@@ -677,8 +677,12 @@ bool __is_module_percpu_address(unsigned long addr, unsigned long *can_addr)
+ 			void *va = (void *)addr;
+ 
+ 			if (va >= start && va < start + mod->percpu_size) {
+-				if (can_addr)
++				if (can_addr) {
+ 					*can_addr = (unsigned long) (va - start);
++					*can_addr += (unsigned long)
++						per_cpu_ptr(mod->percpu,
++							    get_boot_cpu_id());
++				}
+ 				preempt_enable();
+ 				return true;
+ 			}
+diff --git a/mm/percpu.c b/mm/percpu.c
+index 16bb5f5..39b3298 100644
+--- a/mm/percpu.c
++++ b/mm/percpu.c
+@@ -1296,8 +1296,11 @@ bool __is_kernel_percpu_address(unsigned long addr, unsigned long *can_addr)
+ 		void *va = (void *)addr;
+ 
+ 		if (va >= start && va < start + static_size) {
+-			if (can_addr)
++			if (can_addr) {
+ 				*can_addr = (unsigned long) (va - start);
++				*can_addr += (unsigned long)
++					per_cpu_ptr(base, get_boot_cpu_id());
++			}
+ 			return true;
+ 		}
+ 	}
+-- 
+2.7.4
+

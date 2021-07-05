@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2018, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2017-2019, NVIDIA CORPORATION. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -34,6 +34,12 @@ int tegra19x_mce_enable_latic_set(void *data, u64 val);
 int tegra19x_mce_coresight_cg_set(void *data, u64 val);
 int tegra19x_mce_edbgreq_set(void *data, u64 val);
 int tegra19x_mce_dbg_cstats_show(struct seq_file *s, void *data);
+int tegra19x_mce_read_rt_safe_mask(u64 *rt_safe_mask);
+int tegra19x_mce_write_rt_safe_mask(u64 rt_safe_mask);
+int tegra19x_mce_read_rt_window_us(u64 *rt_window_us);
+int tegra19x_mce_write_rt_window_us(u64 rt_window_us);
+int tegra19x_mce_read_rt_fwd_progress_us(u64 *rt_fwd_progress_us);
+int tegra19x_mce_write_rt_fwd_progress_us(u64 rt_fwd_progress_us);
 #endif
 
 /* Tegra19x cache functions */

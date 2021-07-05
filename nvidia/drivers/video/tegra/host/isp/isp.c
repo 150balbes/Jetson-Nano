@@ -1,7 +1,7 @@
 /*
  * Tegra Graphics ISP
  *
- * Copyright (c) 2012-2018, NVIDIA Corporation.  All rights reserved.
+ * Copyright (c) 2012-2019, NVIDIA Corporation.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -42,7 +42,7 @@
 
 #include <linux/uaccess.h>
 #include <linux/fs.h>
-#include <linux/nvhost_isp_ioctl.h>
+#include <uapi/linux/nvhost_isp_ioctl.h>
 #include <linux/platform/tegra/latency_allowance.h>
 #include "isp.h"
 #include <media/tegra_camera_platform.h>

@@ -1,7 +1,7 @@
 /*
  * tegracam_utils - tegra camera framework utilities
  *
- * Copyright (c) 2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2019-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -232,7 +232,8 @@ int tegracam_write_blobs(struct tegracam_ctrl_handler *hdl)
 	const struct tegracam_ctrl_ops *ops = hdl->ctrl_ops;
 	int err = 0;
 
-	if (!ops->is_blob_supported)
+	/* no blob control available */
+	if (ops == NULL || !ops->is_blob_supported)
 		return 0;
 
 	/*

@@ -46,7 +46,6 @@ source "drivers/staging/android/ion/Kconfig"
 
 endif # if ANDROID
 
-source "drivers/staging/android/fiq_debugger/Kconfig"
 
 config SYNC
 	bool "Synchronization framework"

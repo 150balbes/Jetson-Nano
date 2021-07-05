@@ -1,7 +1,7 @@
 /*
  * Tegra Video Input 4 device common APIs
  *
- * Copyright (c) 2016-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2016-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * Author: Frank Chen <frank@nvidia.com>
  *
@@ -27,8 +27,16 @@
 #include <trace/events/camera_common.h>
 #define BPP_MEM		2
 #define MAX_VI_CHANNEL 12
+#define NUM_FIELDS_INTERLACED 2
+#define NUM_FIELDS_SINGLE 1
+#define TOP_FIELD 2
+#define BOTTOM_FIELD 1
 #define SOF_SYNCPT_IDX	0
 #define FE_SYNCPT_IDX	1
+/* 256 byte alignment in accordance to NvRmSurface Pitch alignment.
+ * It is the worst case scenario considering VIC engine requirements
+ */
+#define RM_SURFACE_ALIGNMENT 256
 
 static void tegra_channel_error_recovery(struct tegra_channel *chan);
 static void tegra_channel_stop_kthreads(struct tegra_channel *chan);
@@ -86,7 +94,7 @@ static int tegra_vi4_s_ctrl(struct v4l2_ctrl *ctrl)
 		chan->write_ispformat = ctrl->val;
 		break;
 	default:
-		dev_err(&chan->video.dev, "%s:Not valid ctrl\n", __func__);
+		dev_err(&chan->video->dev, "%s:Not valid ctrl\n", __func__);
 		return -EINVAL;
 	}
 
@@ -171,7 +179,7 @@ static bool vi_notify_wait(struct tegra_channel *chan,
 {
 	int i, err;
 	u32 thresh[TEGRA_CSI_BLOCKS];
-
+	struct vb2_v4l2_buffer *vb = &buf->buf;
 	/*
 	 * Increment syncpt for ATOMP_FE
 	 *
@@ -212,13 +220,17 @@ static bool vi_notify_wait(struct tegra_channel *chan,
 			err = vi_notify_get_capture_status(chan->vnc[i],
 					chan->vnc_id[i],
 					thresh[i], &status);
+			/* Update the buffer sequence received along with
+                         * CSI PXL_EOF Event
+                         */
+			vb->sequence = status.frame;
 			if (unlikely(err))
 				dev_err(chan->vi->dev,
 					"no capture status! err = %d\n", err);
 			else {
 				*ts = ns_to_timespec((s64)status.sof_ts);
 
-				dev_dbg(&chan->video.dev,
+				dev_dbg(&chan->video->dev,
 					"%s: vi4 got SOF syncpt buf[%p]\n",
 					__func__, buf);
 			}
@@ -234,28 +246,36 @@ static void tegra_channel_surface_setup(
 	int vnc_id = chan->vnc_id[index];
 	unsigned int offset = chan->buffer_offset[index];
 
-	if (chan->embedded_data_height > 0)
+	if (chan->embedded_data_height > 0) {
 		vi4_channel_write(chan, vnc_id, ATOMP_EMB_SURFACE_OFFSET0,
 						  chan->vi->emb_buf);
-	else
+		vi4_channel_write(chan, vnc_id, ATOMP_EMB_SURFACE_OFFSET0_H,
+					  (chan->vi->emb_buf) >> 32 & 0xFF);
+	} else {
 		vi4_channel_write(chan, vnc_id, ATOMP_EMB_SURFACE_OFFSET0, 0);
-	vi4_channel_write(chan, vnc_id, ATOMP_EMB_SURFACE_OFFSET0_H, 0x0);
+		vi4_channel_write(chan, vnc_id, ATOMP_EMB_SURFACE_OFFSET0_H, 0x0);
+	}
+
 	vi4_channel_write(chan, vnc_id, ATOMP_EMB_SURFACE_STRIDE0,
 					  chan->embedded_data_width * BPP_MEM);
 	vi4_channel_write(chan, vnc_id,
 		ATOMP_SURFACE_OFFSET0, buf->addr + offset);
 	vi4_channel_write(chan, vnc_id,
-		ATOMP_SURFACE_STRIDE0, chan->format.bytesperline);
-	vi4_channel_write(chan, vnc_id, ATOMP_SURFACE_OFFSET0_H, 0x0);
+		ATOMP_SURFACE_STRIDE0,
+		chan->format.bytesperline * chan->interlace_bplfactor);
+	vi4_channel_write(chan, vnc_id,
+		ATOMP_SURFACE_OFFSET0_H, (buf->addr >> 32) & 0xFF);
 
 	if (chan->fmtinfo->fourcc == V4L2_PIX_FMT_NV16) {
 		vi4_channel_write(chan, vnc_id,
 			ATOMP_SURFACE_OFFSET1, buf->addr + offset +
 			chan->format.sizeimage / 2);
 		vi4_channel_write(chan, vnc_id,
-			ATOMP_SURFACE_OFFSET1_H, 0x0);
+			ATOMP_SURFACE_OFFSET1_H, ((u64)buf->addr + offset +
+			chan->format.sizeimage / 2) >> 32);
 		vi4_channel_write(chan, vnc_id,
-			ATOMP_SURFACE_STRIDE1, chan->format.bytesperline);
+			ATOMP_SURFACE_STRIDE1,
+			chan->format.bytesperline * chan->interlace_bplfactor);
 
 	} else {
 		vi4_channel_write(chan, vnc_id, ATOMP_SURFACE_OFFSET1, 0x0);
@@ -525,49 +545,84 @@ static int tegra_channel_capture_frame_single_thread(
 	int state = VB2_BUF_STATE_DONE;
 	unsigned long flags;
 	int err = false;
+	int run_captures = 0;
 	int i;
+	int j;
 
-	spin_lock_irqsave(&chan->capture_state_lock, flags);
-	chan->capture_state = CAPTURE_IDLE;
-	spin_unlock_irqrestore(&chan->capture_state_lock, flags);
+	if (chan->is_interlaced)
+		run_captures = NUM_FIELDS_INTERLACED;
+	else
+		run_captures = NUM_FIELDS_SINGLE;
 
-	for (i = 0; i < chan->valid_ports; i++)
-		tegra_channel_surface_setup(chan, buf, i);
+	for (j = 0 ; j < run_captures; j++) {
+		state = VB2_BUF_STATE_DONE;
+		spin_lock_irqsave(&chan->capture_state_lock, flags);
+		chan->capture_state = CAPTURE_IDLE;
+		spin_unlock_irqrestore(&chan->capture_state_lock, flags);
 
-	if (!chan->bfirst_fstart) {
-		err = tegra_channel_set_stream(chan, true);
-		if (err < 0)
-			return err;
+		if (chan->is_interlaced) {
+			if (chan->interlace_type == Interleaved) {
+				chan->buffer_offset[0] =
+					j * chan->format.bytesperline;
+				chan->interlace_bplfactor =
+						NUM_FIELDS_INTERLACED;
+			} else {
+			/* Update the offset according to the field received.
+			 * Top field associated with buf sequence 1 should
+			 * be written first followed by the bottom field.
+			 * Unordered fields will be overwritten
+			 */
+				if ((j == BOTTOM_FIELD) &&
+					(vb->sequence != TOP_FIELD))
+					j--;
+				chan->buffer_offset[0] = j *
+				chan->format.bytesperline * chan->format.height;
 
-		err = tegra_channel_write_blobs(chan);
-		if (err < 0)
-			return err;
-	}
+				chan->interlace_bplfactor = NUM_FIELDS_SINGLE;
+			}
+		}
 
-	for (i = 0; i < chan->valid_ports; i++) {
-		vi4_channel_write(chan, chan->vnc_id[i], CHANNEL_COMMAND, LOAD);
-		vi4_channel_write(chan, chan->vnc_id[i],
-			CONTROL, SINGLESHOT | MATCH_STATE_EN);
-	}
+		for (i = 0; i < chan->valid_ports; i++)
+			tegra_channel_surface_setup(chan, buf, i);
 
-	/* wait for vi notifier events */
-	if (!vi_notify_wait(chan, buf, &ts)) {
-		tegra_channel_error_recovery(chan);
+		if (!chan->bfirst_fstart) {
+			err = tegra_channel_set_stream(chan, true);
+			if (err < 0)
+				return err;
 
-		state = VB2_BUF_STATE_REQUEUEING;
+			err = tegra_channel_write_blobs(chan);
+			if (err < 0)
+				return err;
+		}
+
+		for (i = 0; i < chan->valid_ports; i++) {
+			vi4_channel_write(chan, chan->vnc_id[i],
+						CHANNEL_COMMAND, LOAD);
+			vi4_channel_write(chan, chan->vnc_id[i],
+				CONTROL, SINGLESHOT | MATCH_STATE_EN);
+		}
+
+		/* wait for vi notifier events */
+		if (!vi_notify_wait(chan, buf, &ts)) {
+			tegra_channel_error_recovery(chan);
+
+			state = VB2_BUF_STATE_REQUEUEING;
+
+			spin_lock_irqsave(&chan->capture_state_lock, flags);
+			chan->capture_state = CAPTURE_TIMEOUT;
+			spin_unlock_irqrestore(&chan->capture_state_lock,
+									flags);
+		}
+
+		vi4_check_status(chan);
 
 		spin_lock_irqsave(&chan->capture_state_lock, flags);
-		chan->capture_state = CAPTURE_TIMEOUT;
+		if (chan->capture_state == CAPTURE_IDLE)
+			chan->capture_state = CAPTURE_GOOD;
 		spin_unlock_irqrestore(&chan->capture_state_lock, flags);
 	}
 
-	vi4_check_status(chan);
-
-	spin_lock_irqsave(&chan->capture_state_lock, flags);
-	if (chan->capture_state == CAPTURE_IDLE)
-		chan->capture_state = CAPTURE_GOOD;
-	spin_unlock_irqrestore(&chan->capture_state_lock, flags);
-
+	set_timestamp(buf, &ts);
 	tegra_channel_ring_buffer(chan, vb, &ts, state);
 	trace_tegra_channel_capture_frame("sof", ts);
 	return 0;
@@ -684,8 +739,8 @@ static void tegra_channel_release_frame(struct tegra_channel *chan,
 			dev_err(chan->vi->dev,
 				"ATOMP_FE syncpt timeout! err = %d\n", err);
 		else
-			dev_dbg(&chan->video.dev,
-				"%s: vi4 got EOF syncpt buf[%p]\n", __func__, buf);
+			dev_dbg(&chan->video->dev,
+			"%s: vi4 got EOF syncpt buf[%p]\n", __func__, buf);
 	}
 
 	if (err) {
@@ -806,15 +861,14 @@ static void tegra_channel_capture_done(struct tegra_channel *chan)
 		state = VB2_BUF_STATE_REQUEUEING;
 	}
 
+	set_timestamp(buf, &ts);
 	/* Mark capture state to IDLE as capture is finished */
 	chan->capture_state = CAPTURE_IDLE;
 
-	if (chan->low_latency) {
-		set_timestamp(buf, &ts);
+	if (chan->low_latency)
 		release_buffer(chan, buf);
-	} else
-		tegra_channel_ring_buffer(
-			chan, &buf->buf, &ts, state);
+	else
+		tegra_channel_ring_buffer(chan, &buf->buf, &ts, state);
 
 	trace_tegra_channel_capture_done("eof", ts);
 }
@@ -937,7 +991,7 @@ static int vi4_channel_start_streaming(struct vb2_queue *vq, u32 count)
 	/* WAR: With newer version pipe init has some race condition */
 	/* TODO: resolve this issue to block userspace not to cleanup media */
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0)
-	struct media_pipeline *pipe = chan->video.entity.pipe;
+	struct media_pipeline *pipe = chan->video->entity.pipe;
 #endif
 	int ret = 0, i;
 	unsigned long flags;
@@ -948,7 +1002,7 @@ static int vi4_channel_start_streaming(struct vb2_queue *vq, u32 count)
 	unsigned int emb_buf_size = 0;
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0)
-	ret = media_entity_pipeline_start(&chan->video.entity, pipe);
+	ret = media_entity_pipeline_start(&chan->video->entity, pipe);
 	if (ret < 0)
 		goto error_pipeline_start;
 #endif
@@ -1017,7 +1071,7 @@ static int vi4_channel_start_streaming(struct vb2_queue *vq, u32 count)
 					emb_buf_size,
 					&chan->vi->emb_buf, GFP_KERNEL);
 			if (!chan->vi->emb_buf_addr) {
-				dev_err(&chan->video.dev,
+				dev_err(&chan->video->dev,
 						"Can't allocate memory for embedded data\n");
 				goto error_capture_setup;
 			}
@@ -1042,9 +1096,9 @@ static int vi4_channel_start_streaming(struct vb2_queue *vq, u32 count)
 	/* Start kthread to capture data to buffer */
 	chan->kthread_capture_start = kthread_run(
 					tegra_channel_kthread_capture_start,
-					chan, chan->video.name);
+					chan, chan->video->name);
 	if (IS_ERR(chan->kthread_capture_start)) {
-		dev_err(&chan->video.dev,
+		dev_err(&chan->video->dev,
 			"failed to run kthread for capture start\n");
 		ret = PTR_ERR(chan->kthread_capture_start);
 		goto error_capture_setup;
@@ -1054,9 +1108,9 @@ static int vi4_channel_start_streaming(struct vb2_queue *vq, u32 count)
 		/* Start thread to release buffers */
 		chan->kthread_release = kthread_run(
 					tegra_channel_kthread_release,
-					chan, chan->video.name);
+					chan, chan->video->name);
 		if (IS_ERR(chan->kthread_release)) {
-			dev_err(&chan->video.dev,
+			dev_err(&chan->video->dev,
 				"failed to run kthread for release\n");
 			ret = PTR_ERR(chan->kthread_release);
 			goto error_capture_setup;
@@ -1072,7 +1126,7 @@ error_capture_setup:
 	}
 error_set_stream:
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0)
-	media_entity_pipeline_stop(&chan->video.entity);
+	media_entity_pipeline_stop(&chan->video->entity);
 error_pipeline_start:
 #endif
 	vq->start_streaming_called = 0;
@@ -1124,7 +1178,7 @@ static int vi4_channel_stop_streaming(struct vb2_queue *vq)
 		return err;
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0)
-	media_entity_pipeline_stop(&chan->video.entity);
+	media_entity_pipeline_stop(&chan->video->entity);
 #endif
 
 	return 0;
@@ -1193,7 +1247,7 @@ static int vi4_power_on(struct tegra_channel *chan)
 	/* Use chan->video as identifier of vi4 nvhost_module client
 	 * since they are unique per channel
 	 */
-	ret = nvhost_module_add_client(vi->ndev, &chan->video);
+	ret = nvhost_module_add_client(vi->ndev, chan->video);
 	if (ret < 0)
 		return ret;
 
@@ -1228,7 +1282,7 @@ static void vi4_power_off(struct tegra_channel *chan)
 	}
 
 	tegra_vi4_power_off(vi);
-	nvhost_module_remove_client(vi->ndev, &chan->video);
+	nvhost_module_remove_client(vi->ndev, chan->video);
 }
 
 static void tegra_channel_error_worker(struct work_struct *error_work)
@@ -1257,6 +1311,12 @@ static void tegra_channel_notify_error_callback(void *client_data)
 	schedule_work(&chan->error_work);
 }
 
+static void vi4_stride_align(unsigned int *bpl)
+{
+	*bpl = ((*bpl + (RM_SURFACE_ALIGNMENT) - 1) &
+			~((RM_SURFACE_ALIGNMENT) - 1));
+}
+
 struct tegra_vi_fops vi4_fops = {
 	.vi_power_on = vi4_power_on,
 	.vi_power_off = vi4_power_off,
@@ -1266,4 +1326,6 @@ struct tegra_vi_fops vi4_fops = {
 	.vi_add_ctrls = vi4_add_ctrls,
 	.vi_init_video_formats = vi4_init_video_formats,
 	.vi_mfi_work = vi4_mfi_work,
+	.vi_stride_align = vi4_stride_align,
+
 };

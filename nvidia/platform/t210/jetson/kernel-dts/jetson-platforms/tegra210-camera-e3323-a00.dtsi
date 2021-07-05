@@ -21,7 +21,7 @@
 / {
 	host1x {
 		vi {
-			num-channels = <4>;
+			num-channels = <2>;
 			ports {
 				#address-cells = <1>;
 				#size-cells = <0>;
@@ -39,22 +39,6 @@
 						port-index = <2>;
 						bus-width = <4>;
 						remote-endpoint = <&e3323_csi_out1>;
-					};
-				};
-				port@2 {
-					reg = <2>;
-					e3323_vi_in2: endpoint {
-						port-index = <0>;
-						bus-width = <4>;
-						remote-endpoint = <&e3323_lc898212_out0>;
-					};
-				};
-				port@3 {
-					reg = <3>;
-					e3323_vi_in3: endpoint {
-						port-index = <2>;
-						bus-width = <4>;
-						remote-endpoint = <&e3323_lc898212_out1>;
 					};
 				};
 			};
@@ -242,37 +226,6 @@
 					};
 				};
 			};
-			lc898212@72 {
-				compatible = "nvidia,lc898212";
-				reg = <0x72>;
-
-				/* physical camera layer interface tags */
-				devnode = "video2";
-
-				/**
-				* Type specifies the control features supported by
-				* the focuser driver.
-				* default type means only position control setting
-				* supported by the focuser
-				*/
-				type = "default";
-				min_focus_distance = "10.0"; /* 1.0f/0.1f */
-				hyper_focal = "0.2"; /* 1.0f/5.0f */
-				focal_length = "4.73";
-				f_number = "2.2";
-				aperture = "2.2";
-
-				ports {
-					#address-cells = <1>;
-					#size-cells = <0>;
-					port@0 {
-						reg = <0>;
-						e3323_lc898212_out0: endpoint {
-							remote-endpoint = <&e3323_vi_in2>;
-						};
-					};
-				};
-			};
 		};
 	};
 
@@ -337,31 +290,15 @@
 				};
 			};
 		};
-		lc898212@72 {
-			compatible = "nvidia,lc898212";
-			reg = <0x72>;
-
-			/* physical camera layer interface tags */
-			devnode = "video3";
-			type = "default";
-			min_focus_distance = "10.0"; /* 1.0f/0.1f */
-			hyper_focal = "0.2"; /* 1.0f/5.0f */
-			focal_length = "4.73";
-			f_number = "2.2";
-			aperture = "2.2";
-
-			ports {
-				#address-cells = <1>;
-				#size-cells = <0>;
-				port@0 {
-					reg = <0>;
-					e3323_lc898212_out1: endpoint {
-						remote-endpoint = <&e3323_vi_in3>;
-					};
-				};
-			};
-		};
 	};
+
+e3323_lens_ov23850@CH06P1 {
+	min_focus_distance = "10.0"; /* 1.0f/0.1f */
+	hyper_focal = "0.2"; /* 1.0f/5.0f */
+	focal_length = "4.73";
+	f_number = "2.2";
+	aperture = "2.2";
+};
 
 	tegra-camera-platform {
 		compatible = "nvidia, tegra-camera-platform";
@@ -424,11 +361,9 @@
 				};
 				drivernode1 {
 					/* Declare PCL support driver (classically known as guid)  */
-					pcl_id = "v4l2_focuser";
-					/* Driver v4l2 device name */
-					devname = "lc898212 6-0072";
+					pcl_id = "v4l2_lens";
 					/* Declare the device-tree hierarchy to driver instance */
-					proc-device-tree = "/proc/device-tree/host1x/i2c@546c0000/lc898212@72";
+					proc-device-tree = "/proc/device-tree/e3323_lens_ov23850@CH06P1/";
 				};
 			};
 			module1 {
@@ -445,11 +380,9 @@
 				};
 				drivernode1 {
 					/* Declare PCL support driver (classically known as guid)  */
-					pcl_id = "v4l2_focuser";
-					/* Driver v4l2 device name */
-					devname = "lc898212 0-0072";
+					pcl_id = "v4l2_lens";
 					/* Declare the device-tree hierarchy to driver instance */
-					proc-device-tree = "/proc/device-tree/i2c@7000c000/lc898212@72";
+					proc-device-tree = "/proc/device-tree/e3323_lens_ov23850@CH06P1/";
 				};
 			};
 		};

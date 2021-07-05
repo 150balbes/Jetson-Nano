@@ -3,7 +3,7 @@
  *
  * Tegra Graphics Host Channel
  *
- * Copyright (c) 2010-2018, NVIDIA Corporation.  All rights reserved.
+ * Copyright (c) 2010-2020, NVIDIA Corporation.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -27,9 +27,8 @@
 #include "vhost/vhost.h"
 
 #include <trace/events/nvhost.h>
-#include <linux/nvhost_ioctl.h>
+#include <uapi/linux/nvhost_ioctl.h>
 #include <linux/delay.h>
-#include <linux/nvhost.h>
 #include <linux/slab.h>
 #include <linux/version.h>
 #if LINUX_VERSION_CODE > KERNEL_VERSION(4, 13, 0)
@@ -67,7 +66,6 @@ int nvhost_alloc_channels(struct nvhost_master *host)
 		/* initialize data structures */
 		nvhost_set_chanops(ch);
 		mutex_init(&ch->submitlock);
-		mutex_init(&ch->syncpts_lock);
 		ch->chid = nvhost_channel_get_id_from_index(host, index);
 
 		/* initialize channel cdma */
@@ -174,7 +172,6 @@ static void nvhost_channel_unmap_locked(struct kref *ref)
 							refcount);
 	struct nvhost_device_data *pdata;
 	struct nvhost_master *host;
-	int i = 0;
 	int err;
 
 	if (!ch->dev) {
@@ -199,38 +196,8 @@ static void nvhost_channel_unmap_locked(struct kref *ref)
 	trace_nvhost_channel_unmap_locked(pdata->pdev->name, ch->chid,
 		pdata->num_mapped_chs);
 
-	/* Release channel syncpoints */
-	for (i = 0; i < NVHOST_MODULE_MAX_SYNCPTS; ++i) {
-		/* skip over unused syncpoints */
-		if (!ch->syncpts[i])
-			continue;
-
-		/* first, mark syncpoint as unused by hardware */
-		nvhost_syncpt_mark_unused(&host->syncpt, ch->syncpts[i]);
-
-		/* drop syncpoints reference if we allocate syncpoints
-		 * per channels
-		 */
-		if (pdata->resource_policy == RESOURCE_PER_DEVICE)
-			nvhost_syncpt_put_ref(&host->syncpt, ch->syncpts[i]);
-
-		/* finally, clear information from channel bookkeeping */
-		ch->syncpts[i] = 0;
-	}
-
-	if (ch->client_managed_syncpt) {
-		/* mark syncpoint as unused */
-		nvhost_syncpt_mark_unused(&host->syncpt,
-					  ch->client_managed_syncpt);
-
-		/* release it */
-		if (pdata->resource_policy == RESOURCE_PER_DEVICE)
-			nvhost_syncpt_put_ref(&host->syncpt,
-					ch->client_managed_syncpt);
-
-		/* ..and handle bookkeeping */
-		ch->client_managed_syncpt = 0;
-	}
+	/* first, mark syncpoint as unused by hardware */
+	nvhost_syncpt_mark_unused(&host->syncpt, ch->chid);
 
 	nvhost_module_idle(host->dev);
 
@@ -267,10 +234,10 @@ int nvhost_channel_map_with_vm(struct nvhost_device_data *pdata,
 	}
 
 	host = nvhost_get_host(pdata->pdev);
+	max_channels = nvhost_channel_nb_channels(host);
 
 	mutex_lock(&host->ch_alloc_mutex);
 	mutex_lock(&host->chlist_mutex);
-	max_channels = nvhost_channel_nb_channels(host);
 
 	/* check if the channel is still in use */
 	for (index = 0; index < max_channels; index++) {
@@ -283,8 +250,8 @@ int nvhost_channel_map_with_vm(struct nvhost_device_data *pdata,
 			mutex_unlock(&host->ch_alloc_mutex);
 
 			trace_nvhost_channel_remap(pdata->pdev->name, ch->chid,
-						 pdata->num_mapped_chs,
-						 identifier);
+						   pdata->num_mapped_chs,
+						   identifier);
 			return 0;
 		}
 	}
@@ -308,15 +275,16 @@ int nvhost_channel_map_with_vm(struct nvhost_device_data *pdata,
 	ch->dev = pdata->pdev;
 	ch->identifier = identifier;
 	kref_init(&ch->refcount);
-
 	/* channel is allocated, release mutex */
 	mutex_unlock(&host->chlist_mutex);
 
 	/* allocate vm */
 	ch->vm = nvhost_vm_allocate(pdata->pdev,
 				    vm_identifier);
-	if (!ch->vm)
+	if (!ch->vm) {
+		pr_err("%s: Couldn't allocate vm\n", __func__);
 		goto err_alloc_vm;
+	}
 
 	/* Handle logging */
 	trace_nvhost_channel_map(pdata->pdev->name, ch->chid,
@@ -333,11 +301,15 @@ int nvhost_channel_map_with_vm(struct nvhost_device_data *pdata,
 err_alloc_vm:
 	/* re-acquire chlist mutex for freeing the channel */
 	mutex_lock(&host->chlist_mutex);
+#if LINUX_VERSION_CODE > KERNEL_VERSION(4, 13, 0)
+	refcount_dec(&ch->refcount.refcount);
+#else
+	atomic_dec(&ch->refcount.refcount);
+#endif
 	ch->dev = NULL;
 	ch->identifier = NULL;
 	nvhost_channel_free(host, ch);
 	mutex_unlock(&host->chlist_mutex);
-
 	mutex_unlock(&host->ch_alloc_mutex);
 
 	return -ENOMEM;
@@ -445,6 +417,7 @@ EXPORT_SYMBOL(nvhost_channel_submit);
 void nvhost_getchannel(struct nvhost_channel *ch)
 {
 	struct nvhost_device_data *pdata = platform_get_drvdata(ch->dev);
+	struct nvhost_master *host = nvhost_get_host(pdata->pdev);
 #if LINUX_VERSION_CODE > KERNEL_VERSION(4, 13, 0)
 	trace_nvhost_getchannel(pdata->pdev->name,
 				refcount_read(&ch->refcount.refcount), ch->chid);
@@ -452,8 +425,11 @@ void nvhost_getchannel(struct nvhost_channel *ch)
 	trace_nvhost_getchannel(pdata->pdev->name,
 				atomic_read(&ch->refcount.refcount), ch->chid);
 #endif
+	mutex_lock(&host->chlist_mutex);
 	kref_get(&ch->refcount);
+	mutex_unlock(&host->chlist_mutex);
 }
+EXPORT_SYMBOL(nvhost_getchannel);
 
 void nvhost_putchannel(struct nvhost_channel *ch, int cnt)
 {
@@ -529,3 +505,9 @@ int nvhost_channel_get_index_from_id(struct nvhost_master *host, int chid)
 {
 	return chid - nvhost_channel_ch_base(host);
 }
+
+bool nvhost_channel_is_resource_policy_per_device(struct nvhost_device_data *pdata)
+{
+	return (pdata->resource_policy == RESOURCE_PER_DEVICE);
+}
+EXPORT_SYMBOL(nvhost_channel_is_resource_policy_per_device);

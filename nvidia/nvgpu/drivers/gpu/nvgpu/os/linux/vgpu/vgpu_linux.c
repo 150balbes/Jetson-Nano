@@ -73,6 +73,9 @@ static void vgpu_init_vars(struct gk20a *g, struct gk20a_platform *platform)
 
 	nvgpu_mutex_init(&priv->vgpu_clk_get_freq_lock);
 
+	nvgpu_mutex_init(&l->ctrl.privs_lock);
+	nvgpu_init_list_node(&l->ctrl.privs);
+
 	l->regs_saved = l->regs;
 	l->bar1_saved = l->bar1;
 

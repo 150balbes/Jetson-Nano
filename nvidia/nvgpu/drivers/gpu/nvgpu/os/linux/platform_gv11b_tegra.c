@@ -73,6 +73,8 @@ static int gv11b_tegra_probe(struct device *dev)
 {
 	struct gk20a_platform *platform = dev_get_drvdata(dev);
 	int err;
+	bool joint_xpu_rail = false;
+	struct gk20a *g = platform->g;
 
 	err = nvgpu_nvhost_syncpt_init(platform->g);
 	if (err) {
@@ -93,6 +95,17 @@ static int gv11b_tegra_probe(struct device *dev)
 
 	platform->g->gr.ctx_vars.force_preemption_gfxp = false;
 	platform->g->gr.ctx_vars.force_preemption_cilp = false;
+
+#ifdef CONFIG_OF
+	joint_xpu_rail = of_property_read_bool(of_chosen,
+				"nvidia,tegra-joint_xpu_rail");
+#endif
+
+	if (joint_xpu_rail) {
+		nvgpu_log_info(g, "XPU rails are joint\n");
+		platform->can_railgate_init = false;
+		__nvgpu_set_enabled(g, NVGPU_CAN_RAILGATE, false);
+	}
 
 	gp10b_tegra_get_clocks(dev);
 	nvgpu_linux_init_clk_support(platform->g);

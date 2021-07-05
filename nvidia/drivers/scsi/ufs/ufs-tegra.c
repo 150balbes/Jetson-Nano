@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2015-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * Authors:
  *      VenkataJagadish.p	<vjagadish@nvidia.com>
@@ -90,6 +90,12 @@ static int ufs_tegra_show_configuration(struct seq_file *s, void *data)
 		seq_printf(s,
 			"HS Mode RX_Gear:gear_%u TX_Gear:gear_%u %s series\n",
 				rx_gear, tx_gear, freq_series);
+		seq_printf(s,
+			"LANE_RX:%u LANE_TX:%u PWR_RX:%u PWR_TX:%u\n",
+				configured_params->lane_rx,
+				configured_params->lane_tx,
+				configured_params->pwr_rx,
+				configured_params->pwr_tx);
 	} else {
 		seq_printf(s,
 			"PWM Mode RX_Gear:gear_%u TX_Gear:gear_%u\n",
@@ -146,6 +152,7 @@ static irqreturn_t ufs_cd_gpio_isr(int irq, void *dev_id)
 {
 	struct ufs_tegra_host *ufs_tegra = dev_id;
 
+	cancel_delayed_work(&ufs_tegra->detect);
 	ufs_schedule_delayed_work(&ufs_tegra->detect, msecs_to_jiffies(200));
 
 	return IRQ_HANDLED;

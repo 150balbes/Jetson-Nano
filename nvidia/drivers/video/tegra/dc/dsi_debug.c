@@ -1,7 +1,7 @@
 /*
  * dsi_debug.c: dsi debug interface.
  *
- * Copyright (c) 2013-2018, NVIDIA CORPORATION, All rights reserved.
+ * Copyright (c) 2013-2019, NVIDIA CORPORATION, All rights reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -827,6 +827,82 @@ static int set_dsc_num_comp_pkts(void *data, u64 value)
 DEFINE_SIMPLE_ATTRIBUTE(dsi_dsc_num_comp_pkts_override_fops,
 	show_dsc_num_comp_pkts, set_dsc_num_comp_pkts, "%llu\n");
 
+static int dbg_hotplug_show(struct seq_file *m, void *unused)
+{
+	struct tegra_dc_dsi_data *dsi = m->private;
+	struct tegra_dc *dc = dsi->dc;
+
+	if (WARN_ON(!dsi || !dc || !dc->out))
+		return -EINVAL;
+
+	seq_printf(m, "dsi hpd state: %d\n", dc->out->hotplug_state);
+	return 0;
+}
+
+static int dbg_hotplug_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, dbg_hotplug_show, inode->i_private);
+}
+
+/*
+ * sw control for hpd.
+ * 0 is normal state, hw drives hpd.
+ * -1 is force deassert, sw drives hpd.
+ * 1 is force assert, sw drives hpd.
+ * before releasing to hw, sw must ensure hpd state is normal i.e. 0
+ */
+static ssize_t dbg_hotplug_write(struct file *file, const char __user *addr,
+	size_t len, loff_t *pos)
+{
+	struct seq_file *m = file->private_data; /* single_open() initialized */
+	struct tegra_dc_dsi_data *dsi = m->private;
+	struct tegra_dc *dc = dsi->dc;
+	int ret;
+	int hotplug_state;
+	long new_state;
+
+	if (WARN_ON(!dsi || !dc || !dc->out))
+		return -EINVAL;
+
+	ret = kstrtol_from_user(addr, len, 10, &new_state);
+	if (ret < 0)
+		return ret;
+
+	mutex_lock(&dc->lock);
+	rmb();
+	hotplug_state = dc->out->hotplug_state;
+
+	if (tegra_platform_is_sim())
+		goto success;
+
+	if (hotplug_state == TEGRA_HPD_STATE_NORMAL &&
+		new_state != TEGRA_HPD_STATE_NORMAL &&
+		dc->hotplug_supported) {
+		/* to be done later once GPIO handling is added */
+	} else if (hotplug_state != TEGRA_HPD_STATE_NORMAL &&
+		new_state == TEGRA_HPD_STATE_NORMAL &&
+		dc->hotplug_supported) {
+		/* to be done later once GPIO handling is added */
+	}
+
+success:
+	dc->out->hotplug_state = new_state;
+	wmb();
+	mutex_unlock(&dc->lock);
+	tegra_dsi_pending_hpd(dsi);
+
+	return len;
+
+}
+
+static const struct file_operations dbg_hotplug_fops = {
+	.open = dbg_hotplug_open,
+	.read = seq_read,
+	.write = dbg_hotplug_write,
+	.llseek = seq_lseek,
+	.release = single_release,
+};
+
 static struct dentry *dsidir;
 
 void tegra_dc_dsi_debug_create(struct tegra_dc_dsi_data *dsi)
@@ -873,6 +949,13 @@ void tegra_dc_dsi_debug_create(struct tegra_dc_dsi_data *dsi)
 	dscdir = debugfs_create_dir("link_compression", dsidir);
 	if (!dscdir)
 		goto free_out;
+
+	if (is_hotplug_supported(dsi)) {
+		retval = debugfs_create_file("hotplug", S_IRUGO, dsidir,
+			dsi, &dbg_hotplug_fops);
+		if (!retval)
+			goto free_out;
+	}
 
 	retval = debugfs_create_file("dsc_enable", 0644, dscdir,
 			(void *)dsi, &dsi_dsc_control_override_fops);

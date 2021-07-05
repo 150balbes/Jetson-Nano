@@ -20,7 +20,7 @@
 
 #include "chip_support.h"
 
-#define T124_NVHOST_NUMCHANNELS 12
+#define T210_NVHOST_NUMCHANNELS 14
 
 extern struct nvhost_device_data t21_host1x_info;
 extern struct nvhost_device_data t21_isp_info;

@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2010 Google, Inc
- * Copyright (c) 2014-2018, NVIDIA Corporation. All rights reserved.
+ * Copyright (c) 2014-2020, NVIDIA Corporation. All rights reserved.
  *
  * Author:
  *	Colin Cross <ccross@google.com>
@@ -175,6 +175,7 @@ enum tegra_system_reset_reason {
 	TEGRA_CSITE,		/* 14 */
 	TEGRA_WATCHDOG,		/* 15, T210 */
 	TEGRA_LP0,		/* 16, T210 */
+	PMIC_WATCHDOG_POR,	/* 17 */
 	TEGRA_RESET_REASON_MAX
 };
 

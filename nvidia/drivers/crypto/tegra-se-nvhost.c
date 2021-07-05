@@ -4,7 +4,7 @@
  *
  * Support for Tegra Security Engine hardware crypto algorithms.
  *
- * Copyright (c) 2015-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2015-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -882,7 +882,6 @@ static int tegra_se_channel_submit_gather(struct tegra_se_dev *se_dev,
 	syncpt_id = se_dev->syncpt_id;
 
 	/* initialize job data */
-	se_dev->channel->syncpts[0] = syncpt_id;
 	job->sp->id = syncpt_id;
 	job->sp->incrs = 1;
 	job->num_syncpts = 1;
@@ -4075,6 +4074,7 @@ static int tegra_se_nvhost_prepare_poweroff(struct platform_device *pdev)
 	struct tegra_se_dev *se_dev = pdata->private_data;
 
 	if (se_dev->channel) {
+		nvhost_syncpt_put_ref_ext(se_dev->pdev, se_dev->syncpt_id);
 		nvhost_putchannel(se_dev->channel, 1);
 		se_dev->channel = NULL;
 

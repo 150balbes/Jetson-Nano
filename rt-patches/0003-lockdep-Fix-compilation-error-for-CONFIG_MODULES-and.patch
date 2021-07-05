@@ -1,0 +1,64 @@
+From 29b4485b423e1d6df76421607723fb58bbec06ea Mon Sep 17 00:00:00 2001
+From: Dan Murphy <dmurphy@ti.com>
+Date: Fri, 24 Feb 2017 08:41:49 -0600
+Subject: [PATCH 003/371] lockdep: Fix compilation error for !CONFIG_MODULES
+ and !CONFIG_SMP
+X-NVConfidentiality: public
+
+When CONFIG_MODULES is not set then it fails to compile in lockdep:
+
+|kernel/locking/lockdep.c: In function 'look_up_lock_class':
+|kernel/locking/lockdep.c:684:12: error: implicit declaration of function
+| '__is_module_percpu_address' [-Werror=implicit-function-declaration]
+
+If CONFIG_MODULES is set but CONFIG_SMP is not, then it compiles but
+fails link at the end:
+
+|kernel/locking/lockdep.c:684: undefined reference to `__is_module_percpu_address'
+|kernel/built-in.o:(.debug_addr+0x1e674): undefined reference to `__is_module_percpu_address'
+
+This patch adds the function for both cases.
+
+Signed-off-by: Dan Murphy <dmurphy@ti.com>
+[bigeasy: merge the two patches from Dan into one, adapt changelog]
+Signed-off-by: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+---
+ include/linux/module.h | 5 +++++
+ kernel/module.c        | 5 +++++
+ 2 files changed, 10 insertions(+)
+
+diff --git a/include/linux/module.h b/include/linux/module.h
+index ee6f07f..fb10e0a 100644
+--- a/include/linux/module.h
++++ b/include/linux/module.h
+@@ -669,6 +669,11 @@ static inline bool is_module_percpu_address(unsigned long addr)
+ 	return false;
+ }
+ 
++static inline bool __is_module_percpu_address(unsigned long addr, unsigned long *can_addr)
++{
++	return false;
++}
++
+ static inline bool is_module_text_address(unsigned long addr)
+ {
+ 	return false;
+diff --git a/kernel/module.c b/kernel/module.c
+index 448cc92..e170b4e 100644
+--- a/kernel/module.c
++++ b/kernel/module.c
+@@ -734,6 +734,11 @@ bool is_module_percpu_address(unsigned long addr)
+ 	return false;
+ }
+ 
++bool __is_module_percpu_address(unsigned long addr, unsigned long *can_addr)
++{
++	return false;
++}
++
+ #endif /* CONFIG_SMP */
+ 
+ #define MODINFO_ATTR(field)	\
+-- 
+2.7.4
+

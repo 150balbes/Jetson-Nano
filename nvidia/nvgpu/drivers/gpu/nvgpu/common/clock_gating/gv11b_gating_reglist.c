@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2014-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -43,9 +43,7 @@ static const struct gating_desc gv11b_slcg_ce2[] = {
 
 /* slcg chiplet */
 static const struct gating_desc gv11b_slcg_chiplet[] = {
-	{.addr = 0x0010c07cU, .prod = 0x00000000U, .disable = 0x00000007U},
 	{.addr = 0x0010e07cU, .prod = 0x00000000U, .disable = 0x00000007U},
-	{.addr = 0x0010d07cU, .prod = 0x00000000U, .disable = 0x00000007U},
 	{.addr = 0x0010e17cU, .prod = 0x00000000U, .disable = 0x00000007U},
 };
 
@@ -70,22 +68,15 @@ static const struct gating_desc gv11b_slcg_gr[] = {
 	{.addr = 0x00405864U, .prod = 0x00000000U, .disable = 0x000001feU},
 	{.addr = 0x00405910U, .prod = 0xfffffff0U, .disable = 0xfffffffeU},
 	{.addr = 0x00408044U, .prod = 0x00000000U, .disable = 0x000007feU},
-	/* fix priv error */
-	/*{.addr = 0x00407004U, .prod = 0x00000000U, .disable = 0x000001feU},*/
-	/*{.addr = 0x00405bf4U, .prod = 0x00000000U, .disable = 0x00000002U},*/
 	{.addr = 0x0041a134U, .prod = 0x00020008U, .disable = 0x0003fffeU},
 	{.addr = 0x0041a894U, .prod = 0x00000000U, .disable = 0x0000fffeU},
 	{.addr = 0x00418504U, .prod = 0x00000000U, .disable = 0x0007fffeU},
-	/* fix priv error */
-	/*{.addr = 0x0041860cU, .prod = 0x00000000U, .disable = 0x000001feU},*/
 	{.addr = 0x0041868cU, .prod = 0x00000000U, .disable = 0x0000001eU},
 	{.addr = 0x0041871cU, .prod = 0x00000000U, .disable = 0x000003feU},
 	{.addr = 0x00418388U, .prod = 0x00000000U, .disable = 0x00000001U},
 	{.addr = 0x0041882cU, .prod = 0x00000000U, .disable = 0x0001fffeU},
 	{.addr = 0x00418bc0U, .prod = 0x00000000U, .disable = 0x000001feU},
 	{.addr = 0x00418974U, .prod = 0x00000000U, .disable = 0x0001fffeU},
-	/* fix priv error */
-	/*{.addr = 0x00418c74U, .prod = 0xffffff80U, .disable = 0xfffffffeU},*/
 	{.addr = 0x00418cf4U, .prod = 0xfffffff8U, .disable = 0xfffffffeU},
 	{.addr = 0x00418d74U, .prod = 0xffffffe0U, .disable = 0xfffffffeU},
 	{.addr = 0x00418f10U, .prod = 0xffffffe0U, .disable = 0xfffffffeU},
@@ -95,8 +86,6 @@ static const struct gating_desc gv11b_slcg_gr[] = {
 	{.addr = 0x00419d24U, .prod = 0x00000000U, .disable = 0x000000ffU},
 	{.addr = 0x0041986cU, .prod = 0x00000104U, .disable = 0x00fffffeU},
 	{.addr = 0x00419c74U, .prod = 0x0000001eU, .disable = 0x0000001eU},
-	/* fix priv error */
-	/*{.addr = 0x00419c84U, .prod = 0x0003fff8U, .disable = 0x0003fffeU},*/
 	{.addr = 0x00419c8cU, .prod = 0xffffff84U, .disable = 0xfffffffeU},
 	{.addr = 0x00419c94U, .prod = 0x00080040U, .disable = 0x000ffffeU},
 	{.addr = 0x00419ca4U, .prod = 0x00003ffeU, .disable = 0x00003ffeU},
@@ -110,8 +99,6 @@ static const struct gating_desc gv11b_slcg_gr[] = {
 	{.addr = 0x00419a84U, .prod = 0x0000000cU, .disable = 0x0000000eU},
 	{.addr = 0x0041be2cU, .prod = 0x04115fc0U, .disable = 0xfffffffeU},
 	{.addr = 0x0041bfecU, .prod = 0xfffffff0U, .disable = 0xfffffffeU},
-	/* fix priv error */
-	/*{.addr = 0x0041bed4U, .prod = 0xfffffff8U, .disable = 0xfffffffeU},*/
 	{.addr = 0x00408814U, .prod = 0x00000000U, .disable = 0x0001fffeU},
 	{.addr = 0x00408a84U, .prod = 0x00000000U, .disable = 0x0001fffeU},
 	{.addr = 0x004089acU, .prod = 0x00000000U, .disable = 0x0001fffeU},
@@ -130,8 +117,6 @@ static const struct gating_desc gv11b_slcg_perf[] = {
 	{.addr = 0x00248018U, .prod = 0xffffffffU, .disable = 0x00000000U},
 	{.addr = 0x00246018U, .prod = 0xffffffffU, .disable = 0x00000000U},
 	{.addr = 0x00246018U, .prod = 0xffffffffU, .disable = 0x00000000U},
-	{.addr = 0x00246018U, .prod = 0xffffffffU, .disable = 0x00000000U},
-	{.addr = 0x00244018U, .prod = 0xffffffffU, .disable = 0x00000000U},
 	{.addr = 0x00244018U, .prod = 0xffffffffU, .disable = 0x00000000U},
 	{.addr = 0x00244018U, .prod = 0xffffffffU, .disable = 0x00000000U},
 	{.addr = 0x0024a124U, .prod = 0x00000001U, .disable = 0x00000000U},
@@ -168,7 +153,18 @@ static const struct gating_desc gv11b_slcg_xbar[] = {
 	{.addr = 0x0013dc08U, .prod = 0x00000000U, .disable = 0xfffffffeU},
 	{.addr = 0x0013c924U, .prod = 0x00000000U, .disable = 0x7ffffffeU},
 	{.addr = 0x0013cbe4U, .prod = 0x00000000U, .disable = 0x1ffffffeU},
-	{.addr = 0x0013cc04U, .prod = 0x00000000U, .disable = 0x1ffffffeU},
+};
+
+/* slcg Hshub */
+static const struct gating_desc gv11b_slcg_hshub[] = {
+	{.addr = 0x001fb3f4U, .prod = 0x00000000U, .disable = 0xfffffffeU},
+	{.addr = 0x001fb7f4U, .prod = 0x00000000U, .disable = 0xfffffffeU},
+	{.addr = 0x001fbbf4U, .prod = 0x00000000U, .disable = 0xfffffffeU},
+};
+
+/* slcg Acb */
+static const struct gating_desc gv11b_slcg_acb[] = {
+	{.addr = 0x0010e48cU, .prod = 0x00000038U, .disable = 0x0000003eU},
 };
 
 /* blcg bus */
@@ -191,8 +187,6 @@ static const struct gating_desc gv11b_blcg_fb[] = {
 	{.addr = 0x00100d30U, .prod = 0x0000c242U, .disable = 0x00000000U},
 	{.addr = 0x00100d3cU, .prod = 0x00000242U, .disable = 0x00000000U},
 	{.addr = 0x00100d48U, .prod = 0x0000c242U, .disable = 0x00000000U},
-	/* fix priv error */
-	/*{.addr = 0x00100d1cU, .prod = 0x00000042U, .disable = 0x00000000U},*/
 	{.addr = 0x00100c98U, .prod = 0x00004242U, .disable = 0x00000000U},
 };
 
@@ -279,7 +273,13 @@ static const struct gating_desc gv11b_blcg_xbar[] = {
 	{.addr = 0x0013dc04U, .prod = 0x0001004aU, .disable = 0x00000000U},
 	{.addr = 0x0013c920U, .prod = 0x0000004aU, .disable = 0x00000000U},
 	{.addr = 0x0013cbe0U, .prod = 0x00000042U, .disable = 0x00000000U},
-	{.addr = 0x0013cc00U, .prod = 0x00000042U, .disable = 0x00000000U},
+};
+
+/* blcg Hshub */
+static const struct gating_desc gv11b_blcg_hshub[] = {
+	{.addr = 0x001fb3f0U, .prod = 0x0000c242U, .disable = 0x00000000U},
+	{.addr = 0x001fb7f0U, .prod = 0x0000c242U, .disable = 0x00000000U},
+	{.addr = 0x001fbbf0U, .prod = 0x0000c242U, .disable = 0x00000000U},
 };
 
 /* pg gr */
@@ -502,6 +502,38 @@ void gv11b_slcg_xbar_load_gating_prod(struct gk20a *g,
 	}
 }
 
+void gv11b_slcg_hshub_load_gating_prod(struct gk20a *g,
+	bool prod)
+{
+	u32 i;
+	u32 size = (u32)(sizeof(gv11b_slcg_hshub) / GATING_DESC_SIZE);
+
+	if (nvgpu_is_enabled(g, NVGPU_GPU_CAN_SLCG)) {
+		for (i = 0; i < size; i++) {
+			u32 reg = gv11b_slcg_hshub[i].addr;
+			u32 val = prod ? gv11b_slcg_hshub[i].prod :
+					 gv11b_slcg_hshub[i].disable;
+			gk20a_writel(g, reg, val);
+		}
+	}
+}
+
+void gv11b_slcg_acb_load_gating_prod(struct gk20a *g,
+	bool prod)
+{
+	u32 i;
+	u32 size = (u32)(sizeof(gv11b_slcg_acb) / GATING_DESC_SIZE);
+
+	if (nvgpu_is_enabled(g, NVGPU_GPU_CAN_SLCG)) {
+		for (i = 0; i < size; i++) {
+			u32 reg = gv11b_slcg_acb[i].addr;
+			u32 val = prod ? gv11b_slcg_acb[i].prod :
+					 gv11b_slcg_acb[i].disable;
+			gk20a_writel(g, reg, val);
+		}
+	}
+}
+
 void gv11b_blcg_bus_load_gating_prod(struct gk20a *g,
 	bool prod)
 {
@@ -657,6 +689,22 @@ void gv11b_blcg_xbar_load_gating_prod(struct gk20a *g,
 			u32 reg = gv11b_blcg_xbar[i].addr;
 			u32 val = prod ? gv11b_blcg_xbar[i].prod :
 					 gv11b_blcg_xbar[i].disable;
+			gk20a_writel(g, reg, val);
+		}
+	}
+}
+
+void gv11b_blcg_hshub_load_gating_prod(struct gk20a *g,
+	bool prod)
+{
+	u32 i;
+	u32 size = (u32)(sizeof(gv11b_blcg_hshub) / GATING_DESC_SIZE);
+
+	if (nvgpu_is_enabled(g, NVGPU_GPU_CAN_BLCG)) {
+		for (i = 0; i < size; i++) {
+			u32 reg = gv11b_blcg_hshub[i].addr;
+			u32 val = prod ? gv11b_blcg_hshub[i].prod :
+					 gv11b_blcg_hshub[i].disable;
 			gk20a_writel(g, reg, val);
 		}
 	}

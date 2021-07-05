@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2015-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -21,6 +21,7 @@
 #include <asm-generic/bug.h>
 #include <linux/slab.h>   /* kmalloc() */
 #include <scsi/scsi.h>
+#include <uapi/scsi/ufs/ioctl.h>
 #include <scsi/sg.h>
 #include <linux/mmc/ioctl.h>
 #include <linux/version.h>
@@ -175,6 +176,22 @@ free_ioctl_req:
 	return err;
 }
 
+static int vblk_sbumit_combo_ioctl_req(struct block_device *bdev,
+		unsigned int cmd, void __user *user)
+{
+	struct vblk_dev *vblkdev = bdev->bd_disk->private_data;
+
+	/*
+	 * The caller must have CAP_SYS_RAWIO, and must be calling this on the
+	 * whole block device, not on a partition.  This prevents overspray
+	 * between sibling partitions.
+	 */
+	if (!capable(CAP_SYS_RAWIO) || (bdev != bdev->bd_contains))
+		return -EPERM;
+
+	return vblk_submit_combo_query_io(vblkdev, cmd, user);
+}
+
 /* The ioctl() implementation */
 int vblk_ioctl(struct block_device *bdev, fmode_t mode,
 	unsigned int cmd, unsigned long arg)
@@ -188,6 +205,10 @@ int vblk_ioctl(struct block_device *bdev, fmode_t mode,
 	case MMC_IOC_CMD:
 	case SG_IO:
 		ret = vblk_submit_ioctl_req(bdev, cmd,
+			(void __user *)arg);
+		break;
+	case UFS_IOCTL_COMBO_QUERY:
+		ret = vblk_sbumit_combo_ioctl_req(bdev, cmd,
 			(void __user *)arg);
 		break;
 	default:  /* unknown command */

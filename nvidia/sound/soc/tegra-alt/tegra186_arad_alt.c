@@ -24,18 +24,14 @@
 #include <linux/platform_device.h>
 #include <linux/pm_runtime.h>
 #include <linux/regmap.h>
-#include <linux/slab.h>
 #include <sound/core.h>
 #include <sound/pcm.h>
 #include <sound/pcm_params.h>
 #include <sound/soc.h>
-#include <linux/pinctrl/consumer.h>
 #include <linux/of_device.h>
 #include <linux/tegra186_ahc.h>
-#include <linux/version.h>
 
 #include "tegra186_asrc_alt.h"
-#include "tegra210_xbar_alt.h"
 #include "tegra186_arad_alt.h"
 
 #define DRV_NAME "tegra186-arad"
@@ -102,15 +98,6 @@ static int tegra186_arad_runtime_resume(struct device *dev)
 	return 0;
 }
 #endif
-
-static int tegra186_arad_codec_probe(struct snd_soc_codec *codec)
-{
-	struct tegra186_arad *arad = snd_soc_codec_get_drvdata(codec);
-
-	codec->control_data = arad->regmap;
-
-	return 0;
-}
 
 static int tegra186_arad_get_lane_lock_status(
 	struct tegra186_arad *arad, unsigned int lane_id)
@@ -551,7 +538,6 @@ void tegra186_arad_send_ratio(void)
 EXPORT_SYMBOL(tegra186_arad_send_ratio);
 
 static struct snd_soc_codec_driver tegra186_arad_codec = {
-	.probe = tegra186_arad_codec_probe,
 	.idle_bias_off = 1,
 	.component_driver = {
 		.dapm_widgets = tegra186_arad_widgets,
@@ -676,12 +662,8 @@ static const struct regmap_config tegra186_arad_regmap_config = {
 	.cache_type = REGCACHE_FLAT,
 };
 
-static const struct tegra186_arad_soc_data soc_data_tegra186 = {
-	.set_audio_cif = tegra210_xbar_set_cif,
-};
-
 static const struct of_device_id tegra186_arad_of_match[] = {
-	{ .compatible = "nvidia,tegra186-arad", .data = &soc_data_tegra186 },
+	{ .compatible = "nvidia,tegra186-arad" },
 	{},
 };
 
@@ -760,70 +742,41 @@ void tegra186_arad_ahc_deferred_cb(void *data)
 static int tegra186_arad_platform_probe(struct platform_device *pdev)
 {
 	struct tegra186_arad *arad;
-	struct resource *mem, *memregion;
+	struct resource *mem;
 	void __iomem *regs;
 	int ret = 0;
 	const struct of_device_id *match;
-	struct tegra186_arad_soc_data *soc_data;
 
 	match = of_match_device(tegra186_arad_of_match, &pdev->dev);
 	if (!match) {
 		dev_err(&pdev->dev, "Error: No device match found\n");
-		ret = -ENODEV;
-		goto err;
+		return -ENODEV;
 	}
-	soc_data = (struct tegra186_arad_soc_data *)match->data;
 
-	arad = devm_kzalloc(&pdev->dev,
-		sizeof(struct tegra186_arad), GFP_KERNEL);
-	if (!arad) {
-		dev_err(&pdev->dev, "Can't allocate tegra210_arad\n");
-		ret = -ENOMEM;
-		goto err;
-	}
+	arad = devm_kzalloc(&pdev->dev, sizeof(*arad), GFP_KERNEL);
+	if (!arad)
+		return -ENOMEM;
 
 	arad_dev = &pdev->dev;
-	arad->soc_data = soc_data;
 	dev_set_drvdata(&pdev->dev, arad);
 
 	mem = platform_get_resource(pdev, IORESOURCE_MEM, 0);
-	if (!mem) {
-		dev_err(&pdev->dev, "No memory resource\n");
-		ret = -ENODEV;
-		goto err;
-	}
-
-	memregion = devm_request_mem_region(&pdev->dev, mem->start,
-					    resource_size(mem), DRV_NAME);
-	if (!memregion) {
-		dev_err(&pdev->dev, "Memory region already claimed\n");
-		ret = -EBUSY;
-		goto err;
-	}
-
-	regs = devm_ioremap(&pdev->dev, mem->start, resource_size(mem));
-	if (!regs) {
-		dev_err(&pdev->dev, "ioremap failed\n");
-		ret = -ENOMEM;
-		goto err;
-	}
-
+	regs = devm_ioremap_resource(&pdev->dev, mem);
+	if (IS_ERR(regs))
+		return PTR_ERR(regs);
 	arad->regmap = devm_regmap_init_mmio(&pdev->dev, regs,
-					    &tegra186_arad_regmap_config);
+					     &tegra186_arad_regmap_config);
 	if (IS_ERR(arad->regmap)) {
 		dev_err(&pdev->dev, "regmap init failed\n");
-		ret = PTR_ERR(arad->regmap);
-		goto err;
+		return PTR_ERR(arad->regmap);
 	}
 	regcache_cache_only(arad->regmap, true);
 
-	if (of_property_read_u32(pdev->dev.of_node,
-				"nvidia,ahub-arad-id",
-				&pdev->dev.id) < 0) {
-		dev_err(&pdev->dev,
-			"Missing property nvidia,ahub-arad-id\n");
-		ret = -ENODEV;
-		goto err;
+	ret = of_property_read_u32(pdev->dev.of_node, "nvidia,ahub-arad-id",
+				   &pdev->dev.id);
+	if (ret < 0) {
+		dev_err(&pdev->dev, "Missing property nvidia,ahub-arad-id\n");
+		return ret;
 	}
 
 	pm_runtime_enable(&pdev->dev);
@@ -833,7 +786,8 @@ static int tegra186_arad_platform_probe(struct platform_device *pdev)
 				     ARRAY_SIZE(tegra186_arad_dais));
 	if (ret != 0) {
 		dev_err(&pdev->dev, "Could not register CODEC: %d\n", ret);
-		goto err_suspend;
+		pm_runtime_disable(&pdev->dev);
+		return ret;
 	}
 
 #ifdef CONFIG_SND_SOC_TEGRA186_ARAD_WAR
@@ -845,14 +799,8 @@ static int tegra186_arad_platform_probe(struct platform_device *pdev)
 			TEGRA186_AHC_ARAD1_CB, &pdev->dev);
 #endif
 #endif
-	return 0;
 
-err_suspend:
-	if (!pm_runtime_status_suspended(&pdev->dev))
-		tegra186_arad_runtime_suspend(&pdev->dev);
-	pm_runtime_disable(&pdev->dev);
-err:
-	return ret;
+	return 0;
 }
 
 static int tegra186_arad_platform_remove(struct platform_device *pdev)

@@ -1,7 +1,7 @@
 /*
  * imx390.c - imx390 sensor driver
  *
- * Copyright (c) 2018-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2018-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -182,6 +182,7 @@ static struct mutex serdes_lock__;
 static int imx390_gmsl_serdes_setup(struct imx390 *priv)
 {
 	int err = 0;
+	int des_err = 0;
 	struct device *dev;
 
 	if (!priv || !priv->ser_dev || !priv->dser_dev || !priv->i2c_client)
@@ -198,22 +199,23 @@ static int imx390_gmsl_serdes_setup(struct imx390 *priv)
 	err = max9296_setup_link(priv->dser_dev, &priv->i2c_client->dev);
 	if (err) {
 		dev_err(dev, "gmsl deserializer link config failed\n");
-		goto ret;
+		goto error;
 	}
 
 	err = max9295_setup_control(priv->ser_dev);
-	if (err) {
+
+	/* proceed even if ser setup failed, to setup deser correctly */
+	if (err)
 		dev_err(dev, "gmsl serializer setup failed\n");
-		goto ret;
-	}
 
-	err = max9296_setup_control(priv->dser_dev);
-	if (err) {
+	des_err = max9296_setup_control(priv->dser_dev, &priv->i2c_client->dev);
+	if (des_err) {
 		dev_err(dev, "gmsl deserializer setup failed\n");
-		goto ret;
+		/* overwrite err only if deser setup also failed */
+		err = des_err;
 	}
 
-ret:
+error:
 	mutex_unlock(&serdes_lock__);
 	return err;
 }
@@ -790,13 +792,16 @@ static int imx390_probe(struct i2c_client *client,
 		dev_err(dev, "tegra camera driver registration failed\n");
 		return err;
 	}
+
 	priv->tc_dev = tc_dev;
 	priv->s_data = tc_dev->s_data;
 	priv->subdev = &tc_dev->s_data->subdev;
+
 	tegracam_set_privdata(tc_dev, (void *)priv);
 
 	err = imx390_board_setup(priv);
 	if (err) {
+		tegracam_device_unregister(tc_dev);
 		dev_err(dev, "board setup failed\n");
 		return err;
 	}

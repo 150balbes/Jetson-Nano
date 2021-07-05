@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -54,6 +54,8 @@ static u32 nvgpu_vm_translate_linux_flags(struct gk20a *g, u32 flags)
 		core_flags |= NVGPU_VM_MAP_L3_ALLOC;
 	if (flags & NVGPU_AS_MAP_BUFFER_FLAGS_DIRECT_KIND_CTRL)
 		core_flags |= NVGPU_VM_MAP_DIRECT_KIND_CTRL;
+	if (flags & NVGPU_AS_MAP_BUFFER_FLAGS_PLATFORM_ATOMIC)
+		core_flags |= NVGPU_VM_MAP_PLATFORM_ATOMIC;
 
 	if (flags & NVGPU_AS_MAP_BUFFER_FLAGS_MAPPABLE_COMPBITS)
 		nvgpu_warn(g, "Ignoring deprecated flag: "
@@ -281,6 +283,7 @@ int nvgpu_vm_map_buffer(struct vm_gk20a *vm,
 	    (buffer_offset || *map_addr)) {
 		nvgpu_err(g,
 			  "Regular map with addr/buf offset is not supported!");
+		dma_buf_put(dmabuf);
 		return -EINVAL;
 	}
 
@@ -290,6 +293,7 @@ int nvgpu_vm_map_buffer(struct vm_gk20a *vm,
 	 */
 	if (mapping_size && !(flags & NVGPU_AS_MAP_BUFFER_FLAGS_FIXED_OFFSET)) {
 		nvgpu_err(g, "map_size && non-fixed-mapping!");
+		dma_buf_put(dmabuf);
 		return -EINVAL;
 	}
 

@@ -35,6 +35,17 @@ config NVS_RELAY
 	  Say Y here for INPUT NVSensor framework support.
 	  This is a common module for NVS (NVidia Sensor)
 
+config NVS_ON_CHANGE
+	tristate "Common module for NVSensor on-change drivers"
+	depends on SYSFS && NVS
+	default n
+	help
+	  Say Y here for the NVSensor framework for on-change sensors.
+
+	  This is required for NVS (NVidia Sensor) drivers (nvs_<device>)
+	  that control an on-change sensor (as defined by Android) in
+	  their device. This is typically autoselected by these drivers.
+
 config NVS_LIGHT
 	tristate "Common module for NVSensor light drivers"
 	depends on SYSFS
@@ -65,4 +76,12 @@ config NVS_TRIGGERED_BUFFER
 	  Say Y here for the NVSensor framework for proximity sensors.
 	  This is required for NVS (NVidia Sensor) drivers (nvs_<device>)
 	  that control a proximity sensor in their device.
+
+config NVS_GTE
+	tristate "NVSensor Generic Timestamping Engine"
+	depends on TEGRA_HTS_GTE
+	help
+	  Enable this option for hardware timestamping support on NVS
+	  (NVidia Sensor) interrupts. The NVS framework will use the nVidia
+	  Tegra GTE hardware.
 

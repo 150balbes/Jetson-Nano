@@ -1,0 +1,30 @@
+From 5ace1deb6f2399fde7adbf8cf12ffecc7af36fac Mon Sep 17 00:00:00 2001
+From: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+Date: Wed, 14 Sep 2016 11:55:23 +0200
+Subject: [PATCH 034/371] fs/dcache: include wait.h
+X-NVConfidentiality: public
+
+Since commit d9171b934526 ("parallel lookups machinery, part 4 (and
+last)") dcache.h is using but does not include wait.h. It works as long
+as it is included somehow earlier and fails otherwise.
+
+Signed-off-by: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+---
+ include/linux/dcache.h | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/include/linux/dcache.h b/include/linux/dcache.h
+index 014d7f9..d3d3aca 100644
+--- a/include/linux/dcache.h
++++ b/include/linux/dcache.h
+@@ -11,6 +11,7 @@
+ #include <linux/rcupdate.h>
+ #include <linux/lockref.h>
+ #include <linux/stringhash.h>
++#include <linux/wait.h>
+ 
+ struct path;
+ struct vfsmount;
+-- 
+2.7.4
+

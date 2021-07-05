@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2019, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2018-2020, NVIDIA CORPORATION. All rights reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -36,11 +36,11 @@
 
 
 #define MAX_NVPPS_SOURCES	1
-#define NVPPS_DEF_MODE 		NVPPS_MODE_GPIO
+#define NVPPS_DEF_MODE	NVPPS_MODE_GPIO
 
 /* statics */
 static struct class	*s_nvpps_class;
-static dev_t 		s_nvpps_devt;
+static dev_t		s_nvpps_devt;
 static DEFINE_MUTEX(s_nvpps_lock);
 static DEFINE_IDR(s_nvpps_idr);
 
@@ -49,29 +49,29 @@ static DEFINE_IDR(s_nvpps_idr);
 /* platform device instance data */
 struct nvpps_device_data {
 	struct platform_device	*pdev;
-	struct cdev 		cdev;
-	struct device 		*dev;
-	unsigned int 		id;
-	unsigned int 		gpio_pin;
-	int 			irq;
+	struct cdev		cdev;
+	struct device		*dev;
+	unsigned int		id;
+	unsigned int		gpio_pin;
+	int			irq;
 	bool			irq_registered;
 
 	bool			pps_event_id_valid;
 	unsigned int		pps_event_id;
-	u64 			tsc;
+	u64			tsc;
 	u64			phc;
 	u64			irq_latency;
-	u64 			tsc_res_ns;
+	u64			tsc_res_ns;
 	raw_spinlock_t		lock;
 
 	u32			evt_mode;
 	u32			tsc_mode;
 
-	struct timer_list 	timer;
+	struct timer_list	timer;
 	volatile bool		timer_inited;
 
 	wait_queue_head_t	pps_event_queue;
-	struct fasync_struct 	*pps_event_async_queue;
+	struct fasync_struct	*pps_event_async_queue;
 
 #ifdef NVPPS_MAP_EQOS_REGS
 	u64			eqos_base_addr;
@@ -95,10 +95,17 @@ struct nvpps_file_data {
 #define MAC_STNSR_TSSS_HPOS 30
 
 #define GET_VALUE(data, lbit, hbit) ((data >> lbit) & (~(~0<<(hbit-lbit+1))))
-#define MAC_STNSR_OFFSET ((volatile u32 *)(BASE_ADDRESS + 0xb0c))
-#define MAC_STNSR_RD(data) (data) = ioread32((void *)MAC_STNSR_OFFSET);
-#define MAC_STSR_OFFSET ((volatile u32 *)(BASE_ADDRESS + 0xb08))
-#define MAC_STSR_RD(data) (data) = ioread32((void *)MAC_STSR_OFFSET);
+#define MAC_STNSR_OFFSET ((u32 *)(BASE_ADDRESS + 0xb0c))
+#define MAC_STNSR_RD(data) \
+	do { \
+		data = ioread32((void *)MAC_STNSR_OFFSET); \
+	} while(0)
+
+#define MAC_STSR_OFFSET ((u32 *)(BASE_ADDRESS + 0xb08))
+#define MAC_STSR_RD(data) \
+	do { \
+		data = ioread32((void *)MAC_STSR_OFFSET); \
+	} while(0)
 
 #endif /*NVPPS_MAP_EQOS_REGS*/
 
@@ -130,8 +137,10 @@ static inline u64 get_systime(struct nvpps_device_data *pdev_data, u64 *tsc)
 	/* read the nsec part of the PHC one more time */
 	MAC_STNSR_RD(varmac_stnsr2);
 
-	ns1 = GET_VALUE(varmac_stnsr1, MAC_STNSR_TSSS_LPOS, MAC_STNSR_TSSS_HPOS);
-	ns2 = GET_VALUE(varmac_stnsr2, MAC_STNSR_TSSS_LPOS, MAC_STNSR_TSSS_HPOS);
+	ns1 = GET_VALUE(varmac_stnsr1, MAC_STNSR_TSSS_LPOS,
+			MAC_STNSR_TSSS_HPOS);
+	ns2 = GET_VALUE(varmac_stnsr2, MAC_STNSR_TSSS_LPOS,
+			MAC_STNSR_TSSS_HPOS);
 
 	/* if ns1 is greater than ns2, it means nsec counter rollover
 	 * happened. In that case read the updated sec counter again
@@ -277,8 +286,11 @@ static int set_mode(struct nvpps_device_data *pdev_data, u32 mode)
 				}
 				if (!pdev_data->irq_registered) {
 					/* register IRQ handler */
-					err = request_irq(pdev_data->irq, nvpps_gpio_isr,
-							IRQF_TRIGGER_RISING | IRQF_NO_THREAD, "nvpps_isr", pdev_data);
+					err = devm_request_irq(&pdev_data->pdev->dev,
+					pdev_data->irq, nvpps_gpio_isr,
+					IRQF_TRIGGER_RISING | IRQF_NO_THREAD,
+					"nvpps_isr", pdev_data);
+
 					if (err) {
 						dev_err(pdev_data->dev, "failed to acquire IRQ %d\n", pdev_data->irq);
 					} else {
@@ -477,16 +489,7 @@ static const struct file_operations nvpps_fops = {
 
 static void nvpps_dev_release(struct device *dev)
 {
-	struct nvpps_device_data	*pdev_data = dev_get_drvdata(dev);
-
-	cdev_del(&pdev_data->cdev);
-
-	mutex_lock(&s_nvpps_lock);
-	idr_remove(&s_nvpps_idr, pdev_data->id);
-	mutex_unlock(&s_nvpps_lock);
-
 	kfree(dev);
-	kfree(pdev_data);
 }
 
 
@@ -505,7 +508,8 @@ static int nvpps_probe(struct platform_device *pdev)
 		return -EINVAL;
 	}
 
-	pdev_data = kzalloc(sizeof(struct nvpps_device_data), GFP_KERNEL);
+	pdev_data = devm_kzalloc(&pdev->dev, sizeof(struct nvpps_device_data),
+				GFP_KERNEL);
 	if (!pdev_data) {
 		return -ENOMEM;
 	}
@@ -586,6 +590,10 @@ static int nvpps_probe(struct platform_device *pdev)
 			err = -EBUSY;
 		}
 		mutex_unlock(&s_nvpps_lock);
+#ifndef NVPPS_NO_DT
+		unregister_chrdev_region(s_nvpps_devt, MAX_NVPPS_SOURCES);
+		class_destroy(s_nvpps_class);
+#endif
 		return err;
 	}
 	pdev_data->id = err;
@@ -611,7 +619,7 @@ static int nvpps_probe(struct platform_device *pdev)
 	if (err) {
 		dev_err(&pdev->dev, "nvpps: failed to add char device %d:%d\n",	MAJOR(s_nvpps_devt), pdev_data->id);
 		device_destroy(s_nvpps_class, pdev_data->dev->devt);
-		return err;
+		goto error_ret;
 	}
 
 	dev_info(&pdev->dev, "nvpps cdev(%d:%d)\n", MAJOR(s_nvpps_devt), pdev_data->id);
@@ -621,18 +629,22 @@ static int nvpps_probe(struct platform_device *pdev)
 	err = set_mode(pdev_data, NVPPS_DEF_MODE);
 	if (err) {
 		dev_err(&pdev->dev, "set_mode failed err = %d\n", err);
+		cdev_del(&pdev_data->cdev);
 		device_destroy(s_nvpps_class, pdev_data->dev->devt);
-		return err;
+		goto error_ret;
 	}
 	pdev_data->evt_mode = NVPPS_DEF_MODE;
 
 	return 0;
 
 error_ret:
-	cdev_del(&pdev_data->cdev);
 	mutex_lock(&s_nvpps_lock);
 	idr_remove(&s_nvpps_idr, pdev_data->id);
 	mutex_unlock(&s_nvpps_lock);
+#ifndef NVPPS_NO_DT
+	unregister_chrdev_region(s_nvpps_devt, MAX_NVPPS_SOURCES);
+	class_destroy(s_nvpps_class);
+#endif
 	return err;
 }
 
@@ -644,12 +656,6 @@ static int nvpps_remove(struct platform_device *pdev)
 	printk("%s\n", __FUNCTION__);
 
 	if (pdev_data) {
-		if (pdev_data->irq_registered) {
-			/* unregister IRQ handler */
-			free_irq(pdev_data->irq, pdev_data);
-			pdev_data->irq_registered = false;
-			dev_info(&pdev->dev, "removed IRQ %d for nvpps\n", pdev_data->irq);
-		}
 		if (pdev_data->timer_inited) {
 			pdev_data->timer_inited = false;
 			del_timer_sync(&pdev_data->timer);
@@ -660,13 +666,16 @@ static int nvpps_remove(struct platform_device *pdev)
 			dev_info(&pdev->dev, "unmap EQOS reg space %p for nvpps\n", (void *)pdev_data->eqos_base_addr);
 		}
 #endif /*NVPPS_MAP_EQOS_REGS*/
+		cdev_del(&pdev_data->cdev);
 		device_destroy(s_nvpps_class, pdev_data->dev->devt);
+		mutex_lock(&s_nvpps_lock);
+		idr_remove(&s_nvpps_idr, pdev_data->id);
+		mutex_unlock(&s_nvpps_lock);
 	}
 
 #ifndef NVPPS_NO_DT
-	class_unregister(s_nvpps_class);
-	class_destroy(s_nvpps_class);
 	unregister_chrdev_region(s_nvpps_devt, MAX_NVPPS_SOURCES);
+	class_destroy(s_nvpps_class);
 #endif /* !NVPPS_NO_DT */
 	return 0;
 }
@@ -749,8 +758,6 @@ static void __exit nvpps_exit(void)
 {
 	printk("%s\n", __FUNCTION__);
 	platform_driver_unregister(&nvpps_plat_driver);
-
-	class_unregister(s_nvpps_class);
 	class_destroy(s_nvpps_class);
 	unregister_chrdev_region(s_nvpps_devt, MAX_NVPPS_SOURCES);
 }

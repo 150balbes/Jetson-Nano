@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2016-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -356,6 +356,36 @@ exit_reschedule:
 exit_unlock:
 	nvgpu_mutex_release(&pmu->elpg_mutex);
 	nvgpu_log_fn(g, "done");
+	return ret;
+}
+
+int nvgpu_pmu_reenable_elpg(struct gk20a *g)
+{
+	struct nvgpu_pmu *pmu = &g->pmu;
+	int ret = 0;
+
+	nvgpu_log_fn(g, " ");
+
+	if (!g->support_pmu) {
+		return ret;
+	}
+
+	/* If pmu enabled, re-enable by first disabling, then
+	 * enabling
+	 */
+	if (pmu->elpg_refcnt != 0) {
+		ret = nvgpu_pmu_disable_elpg(g);
+		if (ret != 0) {
+			nvgpu_err(g, "failed disabling elpg");
+			goto exit;
+		}
+		ret = nvgpu_pmu_enable_elpg(g);
+		if (ret != 0) {
+			nvgpu_err(g, "failed enabling elpg");
+			goto exit;
+		}
+	}
+exit:
 	return ret;
 }
 

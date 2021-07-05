@@ -1,7 +1,7 @@
 /*
  * tegra210_iqc_alt.h - Definitions for Tegra210 IQC driver
  *
- * Copyright (c) 2014-2017 NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2014-2019 NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -73,18 +73,11 @@
 #define TEGRA210_IQC_DATA_OFFSET_SHIFT			0
 #define TEGRA210_IQC_DATA_OFFSET_MASK			(7 << TEGRA210_IQC_DATA_OFFSET_SHIFT)
 
-struct tegra210_iqc_soc_data {
-	void (*set_audio_cif)(struct regmap *map,
-			unsigned int reg,
-			struct tegra210_xbar_cif_conf *conf);
-};
-
 struct tegra210_iqc {
 	struct clk *clk_iqc;
 	struct regmap *regmap;
 	unsigned int timestamp_enable;
 	unsigned int data_offset;
-	const struct tegra210_iqc_soc_data *soc_data;
 };
 
 #endif

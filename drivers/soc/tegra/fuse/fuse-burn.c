@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2016-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -32,6 +32,8 @@
 #include <linux/sysfs.h>
 
 #include <soc/tegra/pmc.h>
+#include <soc/tegra/tegra_bpmp.h>
+#include <soc/tegra/bpmp_abi.h>
 
 #include "fuse.h"
 
@@ -44,6 +46,7 @@
 #define TEGRA_FUSE_CTRL_STATE_MASK		0x1f
 #define TEGRA_FUSE_CTRL_STATE_SHIFT		16
 #define TEGRA_FUSE_CTRL_PD			BIT(26)
+#define TEGRA_FUSE_CTRL_DISABLE_MIRROR		BIT(28)
 #define TEGRA_FUSE_CTRL_SENSE_DONE		BIT(30)
 #define TEGRA_FUSE_ADDR				0x4
 #define TEGRA_FUSE_RDATA			0x8
@@ -67,6 +70,8 @@
 #define FPERM_R					0440
 #define FPERM_RW				0660
 
+#define TEGRA_FUSE_SHUTDOWN_LIMIT_MODIFIER	2000
+
 struct fuse_burn_data {
 	char *name;
 	u32 start_offset;
@@ -82,6 +87,7 @@ struct fuse_burn_data {
 struct tegra_fuse_hw_feature {
 	bool power_down_mode;
 	bool mirroring_support;
+	bool fuse_ctrl_has_disable_mirror;
 	int pgm_time;
 	struct fuse_burn_data burn_data[TEGRA_FUSE_BURN_MAX_FUSES];
 };
@@ -93,8 +99,9 @@ struct tegra_fuse_burn_dev {
 	struct clk *pgm_clk;
 	u32 pgm_width;
 	struct thermal_zone_device *tz;
-	u32 min_temp;
-	u32 max_temp;
+	s32 min_temp;
+	s32 max_temp;
+	u32 thermal_zone;
 };
 
 static DEFINE_MUTEX(fuse_lock);
@@ -208,21 +215,64 @@ static int tegra_fuse_form_burn_data(struct fuse_burn_data *data,
 	return offset;
 }
 
+static int tegra_fuse_get_shutdown_limit(struct tegra_fuse_burn_dev *fuse_dev,
+					 int *shutdown_limit)
+{
+	struct mrq_thermal_host_to_bpmp_request req;
+	union mrq_thermal_bpmp_to_host_response reply;
+	int err = 0;
+
+	memset(&req, 0, sizeof(req));
+	req.type = CMD_THERMAL_GET_THERMTRIP;
+	req.get_thermtrip.zone = fuse_dev->thermal_zone;
+
+	err = tegra_bpmp_send_receive(MRQ_THERMAL, &req, sizeof(req), &reply,
+				      sizeof(reply));
+	if (err)
+		goto out;
+
+	*shutdown_limit = reply.get_thermtrip.thermtrip;
+out:
+	return err;
+}
+
 static int tegra_fuse_is_temp_under_range(struct tegra_fuse_burn_dev *fuse_dev)
 {
-	int temp, ret;
+	int temp, ret = 0;
+	int shutdown_limit = 0;
 
 	/* Check if temperature is under permissible range */
 	ret = thermal_zone_get_temp(fuse_dev->tz, &temp);
-	if (!ret) {
-		if (temp < fuse_dev->min_temp ||
-			temp > fuse_dev->max_temp) {
-			dev_err(fuse_dev->dev, "temp-%d is not under range\n",
-					temp);
-			return -EPERM;
-		}
+	if (ret)
+		goto out;
+
+	if (temp < fuse_dev->min_temp ||
+		temp > fuse_dev->max_temp) {
+		dev_err(fuse_dev->dev, "temp-%d is not under range\n",
+				temp);
+		ret = -EPERM;
+		goto out;
 	}
-	return 0;
+
+	if (!fuse_dev->thermal_zone)
+		goto out;
+
+	ret = tegra_fuse_get_shutdown_limit(fuse_dev, &shutdown_limit);
+	if (ret) {
+		dev_err(fuse_dev->dev, "unable to get shutdown limit: %d\n",
+			 ret);
+		ret = -EPERM;
+		goto out;
+	}
+
+	/* Check if current temperature is 2C degrees below shutdown limit*/
+	if (temp > (shutdown_limit - TEGRA_FUSE_SHUTDOWN_LIMIT_MODIFIER)) {
+		dev_err(fuse_dev->dev, "temp-%d close to shutdown limit\n",
+			temp);
+		ret = -EPERM;
+	}
+out:
+	return ret;
 }
 
 static int tegra_fuse_pre_burn_process(struct tegra_fuse_burn_dev *fuse_dev)
@@ -262,6 +312,15 @@ static int tegra_fuse_pre_burn_process(struct tegra_fuse_burn_dev *fuse_dev)
 	if (fuse_dev->hw->mirroring_support)
 		tegra_pmc_fuse_disable_mirroring();
 
+	if (fuse_dev->hw->fuse_ctrl_has_disable_mirror) {
+		if (tegra_pmc_fuse_is_redirection_enabled()) {
+			/* Sticky bit is already set, use fuse_ctrl */
+			tegra_fuse_control_read(TEGRA_FUSE_CTRL, &reg);
+			reg |= TEGRA_FUSE_CTRL_DISABLE_MIRROR;
+			tegra_fuse_control_write(reg, TEGRA_FUSE_CTRL);
+		}
+	}
+
 	tegra_pmc_fuse_control_ps18_latch_set();
 
 	/* Enable fuse program */
@@ -296,6 +355,14 @@ static void tegra_fuse_post_burn_process(struct tegra_fuse_burn_dev *fuse_dev)
 		tegra_fuse_control_write(reg, TEGRA_FUSE_CTRL);
 	}
 	tegra_pmc_fuse_control_ps18_latch_clear();
+
+	if (fuse_dev->hw->fuse_ctrl_has_disable_mirror) {
+		if (tegra_pmc_fuse_is_redirection_enabled()) {
+			tegra_fuse_control_read(TEGRA_FUSE_CTRL, &reg);
+			reg &= ~TEGRA_FUSE_CTRL_DISABLE_MIRROR;
+			tegra_fuse_control_write(reg, TEGRA_FUSE_CTRL);
+		}
+	}
 
 	if (fuse_dev->hw->mirroring_support)
 		tegra_pmc_fuse_enable_mirroring();
@@ -576,6 +643,7 @@ static ssize_t tegra_fuse_read_opt_tpc_disable(struct device *dev,
 static struct tegra_fuse_hw_feature tegra210_fuse_chip_data = {
 	.power_down_mode = true,
 	.mirroring_support = true,
+	.fuse_ctrl_has_disable_mirror = false,
 	.pgm_time = 5,
 	.burn_data = {
 		FUSE_BURN_DATA(reserved_odm0, 0x2e, 17, 32, 0xc8, true, false),
@@ -604,6 +672,7 @@ static struct tegra_fuse_hw_feature tegra210_fuse_chip_data = {
 static struct tegra_fuse_hw_feature tegra186_fuse_chip_data = {
 	.power_down_mode = true,
 	.mirroring_support = true,
+	.fuse_ctrl_has_disable_mirror = false,
 	.pgm_time = 5,
 	.burn_data = {
 		FUSE_BURN_DATA(reserved_odm0, 0x2, 2, 32, 0xc8, true, false),
@@ -635,6 +704,7 @@ static struct tegra_fuse_hw_feature tegra186_fuse_chip_data = {
 static struct tegra_fuse_hw_feature tegra210b01_fuse_chip_data = {
 	.power_down_mode = true,
 	.mirroring_support = true,
+	.fuse_ctrl_has_disable_mirror = false,
 	.pgm_time = 5,
 	.burn_data = {
 		FUSE_BURN_DATA(reserved_odm0, 0x62, 27, 32, 0xc8, true, false),
@@ -664,6 +734,7 @@ static struct tegra_fuse_hw_feature tegra210b01_fuse_chip_data = {
 static struct tegra_fuse_hw_feature tegra194_fuse_chip_data = {
 	.power_down_mode = true,
 	.mirroring_support = true,
+	.fuse_ctrl_has_disable_mirror = true,
 	.pgm_time = 5,
 	.burn_data = {
 		FUSE_BURN_DATA(reserved_odm0, 0x2, 2, 32, 0xc8, true, false),
@@ -678,15 +749,19 @@ static struct tegra_fuse_hw_feature tegra194_fuse_chip_data = {
 		FUSE_BURN_DATA(reserved_odm9, 0x18, 26, 32, 0x424, true, false),
 		FUSE_BURN_DATA(reserved_odm10, 0x1a, 26, 32, 0x428, true, false),
 		FUSE_BURN_DATA(reserved_odm11, 0x1c, 26, 32, 0x42c, true, false),
+		FUSE_BURN_DATA(reserved_sw, 0x65, 25, 24, 0xc0, false, false),
 		FUSE_BURN_DATA(odm_lock, 0, 6, 4, 0x8, true, false),
 		FUSE_BURN_DATA(arm_jtag_disable, 0x0, 12, 1, 0xb8, true, false),
 		FUSE_BURN_DATA(odm_production_mode, 0, 11, 1, 0xa0, true, false),
-		FUSE_BURN_DATA(secure_boot_key, 0x61, 1, 128, 0xa4, true, true),
-		FUSE_BURN_DATA(public_key, 0x59, 1, 256, 0x64, true, true),
-		FUSE_BURN_DATA(boot_security_info, 0x66, 21, 16, 0x168, true, false),
+		FUSE_BURN_DATA(secure_boot_key, 0x61, 1, 128, 0xa4, false, true),
+		FUSE_BURN_DATA(public_key, 0x59, 1, 256, 0x64, false, true),
+		FUSE_BURN_DATA(boot_security_info, 0x66, 21, 16, 0x168, false, false),
 		FUSE_BURN_DATA(debug_authentication, 0, 20, 5, 0x1e4, true, false),
 		FUSE_BURN_DATA(odm_info, 0x67, 5, 16, 0x19c, false, false),
 		FUSE_BURN_DATA(pdi, 0x40, 17, 64, 0x300, false, false),
+		FUSE_BURN_DATA(kek0, 0x6f, 30, 128, 0x2c0, false, true),
+		FUSE_BURN_DATA(kek1, 0x73, 30, 128, 0x2d0, false, true),
+		FUSE_BURN_DATA(kek2, 0x77, 30, 128, 0x2e0, false, true),
 		FUSE_SYSFS_DATA(opt_tpc_disable,
 				tegra_fuse_read_opt_tpc_disable, NULL, FPERM_R),
 		{},
@@ -789,6 +864,9 @@ static int tegra_fuse_burn_probe(struct platform_device *pdev)
 			"tegra-fuse"), "Unable to create symlink\n");
 
 	wakeup_source_init(&fuse_dev->wake_lock, "fuse_wake_lock");
+
+	if (of_property_read_u32(np, "thermal-zone", &fuse_dev->thermal_zone))
+		dev_info(fuse_dev->dev, "shutdown limit check disabled\n");
 
 	tz_np = of_parse_phandle(np, "nvidia,tz", 0);
 	if (tz_np) {

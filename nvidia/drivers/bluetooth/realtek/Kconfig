@@ -1,0 +1,9 @@
+config RTK_BTUSB
+	tristate "Realtek 8822C USB BT"
+	depends on BT
+	default n
+	---help---
+	  This module adds support for RTL8822CE chipset
+
+	  This driver module will be called rtl8822ce
+	  Use m if unsure

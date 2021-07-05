@@ -79,6 +79,21 @@
 		};
 	};
 
+	pinmux@700008d4 {
+		common {
+			motion_int_px2 {
+				nvidia,pins = "motion_int_px2";
+				nvidia,function = "rsvd0";
+				nvidia,pull = <TEGRA_PIN_PULL_UP>;
+				nvidia,tristate = <TEGRA_PIN_DISABLE>;
+				nvidia,enable-input = <TEGRA_PIN_ENABLE>;
+			};
+		};
+		unused_lowpower {
+			/delete-node/ motion_int_px2;
+		};
+	};
+
 	gpio: gpio@6000d000 {
 		camera-control-output-low {
 			gpio-hog;
@@ -95,6 +110,11 @@
 				CAM1_RST_L 0
 				>;
 			label = "cam1-rst";
+		};
+		camera-control-input {
+			gpio-hog;
+			gpios = <TEGRA_GPIO(X, 2)>;
+			input;
 		};
 	};
 

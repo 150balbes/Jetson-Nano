@@ -1,7 +1,7 @@
 /*
  * tegra186_asrc_alt.h - Definitions for Tegra186 ASRC driver
  *
- * Copyright (c) 2015-2017, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2015-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -158,12 +158,6 @@ enum asrc_task_event {
 
 struct tegra210_xbar_cif_conf;
 
-struct tegra186_asrc_soc_data {
-	void (*set_audio_cif)(struct regmap *map,
-			unsigned int reg,
-			struct tegra210_xbar_cif_conf *conf);
-};
-
 struct tegra186_asrc_lane {
 	unsigned int int_part;
 	unsigned int frac_part;
@@ -176,11 +170,9 @@ struct tegra186_asrc_lane {
 struct tegra186_asrc {
 	struct regmap *regmap;
 	struct tegra186_asrc_lane lane[6];
-	const struct tegra186_asrc_soc_data *soc_data;
 	struct tasklet_struct   tasklet;
 	struct list_head task_desc;
 	int active_dai_count;
-	bool is_shutdown;
 };
 int tegra186_asrc_set_source(int id, int source);
 int tegra186_asrc_event(int id, enum asrc_task_event event, int status);

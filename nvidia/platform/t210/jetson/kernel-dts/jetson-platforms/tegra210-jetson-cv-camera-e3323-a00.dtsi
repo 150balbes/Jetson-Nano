@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2017, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2015-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -42,11 +42,6 @@
 				vana-supply = <&en_vdd_cam_hv_2v8>;
 				vdig-supply = <&en_vdd_cam_1v2>;
 				vif-supply = <&en_vdd_cam>;
-				vvcm-suply = <&en_vdd_vcm_2v8>;
-			};
-			lc898212_1: lc898212@72 {
-				vvcm-supply = <&en_vdd_vcm_2v8>;
-				support_mfi = "true";
 			};
 		};
 	};
@@ -64,11 +59,6 @@
 			vana-supply = <&en_vdd_cam_hv_2v8>;
 			vdig-supply = <&en_vdd_cam_1v2>;
 			vif-supply = <&en_vdd_cam>;
-			vvcm-suply = <&en_vdd_vcm_2v8>;
-		};
-		lc898212_2: lc898212@72 {
-			vvcm-supply = <&en_vdd_vcm_2v8>;
-			support_mfi = "true";
 		};
 	};
 

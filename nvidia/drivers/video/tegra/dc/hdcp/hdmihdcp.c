@@ -1,7 +1,7 @@
 /*
  * hdmihdcp.c: hdmi hdcp functions.
  *
- * Copyright (c) 2014-2018, NVIDIA CORPORATION, All rights reserved.
+ * Copyright (c) 2014-2020, NVIDIA CORPORATION, All rights reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -34,7 +34,7 @@
 #include <linux/trusty/trusty_ipc.h>
 #include <linux/ote_protocol.h>
 
-#include <video/nvhdcp.h>
+#include <uapi/video/nvhdcp.h>
 
 #include "dc.h"
 #include "dc_reg.h"
@@ -128,6 +128,7 @@ static u8 g_fallback;
 static uint32_t hdcp_uuid[4] = HDCP_SERVICE_UUID;
 static uint32_t session_id;
 #endif
+static DEFINE_MUTEX(kfuse_lock);
 
 static struct tegra_dc *tegra_dc_hdmi_get_dc(struct tegra_hdmi *hdmi)
 {
@@ -151,7 +152,7 @@ static int nvhdcp_i2c_read(struct tegra_nvhdcp *nvhdcp, u8 reg,
 					size_t len, void *data)
 {
 	int status;
-	int retries = 11;
+	int retries = 10;
 	struct i2c_msg msg[] = {
 		{
 			.addr = 0x74 >> 1, /* primary link */
@@ -553,6 +554,7 @@ static int get_nvhdcp_state(struct tegra_nvhdcp *nvhdcp,
 		pkt->hdcp22 = nvhdcp->hdcp22;
 		pkt->port = TEGRA_NVHDCP_PORT_HDMI;
 	}
+	pkt->sor = nvhdcp->hdmi->sor->ctrl_num;
 	mutex_unlock(&nvhdcp->lock);
 	return 0;
 }
@@ -740,11 +742,12 @@ static int load_kfuse(struct tegra_hdmi *hdmi)
 	u32 tmp;
 	int retries;
 
+	mutex_lock(&kfuse_lock);
 	/* copy load kfuse into buffer - only needed for early Tegra parts */
 	e = tegra_kfuse_read(buf, sizeof(buf));
 	if (e) {
 		nvhdcp_err("Kfuse read failure\n");
-		return e;
+		goto err;
 	}
 
 	/* write the kfuse to HDMI SRAM */
@@ -759,7 +762,8 @@ static int load_kfuse(struct tegra_hdmi *hdmi)
 	e = wait_key_ctrl(hdmi, PKEY_LOADED, PKEY_LOADED);
 	if (e) {
 		nvhdcp_err("key reload timeout\n");
-		return -EIO;
+		e = -EIO;
+		goto err;
 	}
 
 	tegra_sor_writel_ext(hdmi->sor, NV_SOR_KEY_SKEY_INDEX, 0);
@@ -775,7 +779,8 @@ static int load_kfuse(struct tegra_hdmi *hdmi)
 	} while (--retries);
 	if (!retries) {
 		nvhdcp_err("key SRAM clear timeout\n");
-		return -EIO;
+		e = -EIO;
+		goto err;
 	}
 
 	for (i = 0; i < KFUSE_DATA_SZ / 4; i += 4) {
@@ -803,11 +808,17 @@ static int load_kfuse(struct tegra_hdmi *hdmi)
 		e = wait_key_ctrl(hdmi, 0x10, 0); /* WRITE16 */
 		if (e) {
 			nvhdcp_err("key write timeout\n");
-			return -EIO;
+			e = -EIO;
+			goto err;
 		}
 	}
 
+	mutex_unlock(&kfuse_lock);
 	return 0;
+
+err:
+	mutex_unlock(&kfuse_lock);
+	return e;
 }
 
 /* validate srm signature for hdcp 2.2 */
@@ -946,6 +957,16 @@ exit:
 	tsec_hdcp_free_context(hdcp_context);
 	kfree(pkt);
 	return e;
+}
+
+static void reset_repeater_info(struct tegra_nvhdcp *nvhdcp)
+{
+	nvhdcp_vdbg("reset repeater info\n");
+
+	memset(nvhdcp->v_prime, 0, sizeof(nvhdcp->v_prime));
+	nvhdcp->b_status = 0;
+	nvhdcp->num_bksv_list = 0;
+	memset(nvhdcp->bksv_list, 0, sizeof(nvhdcp->bksv_list));
 }
 
 static int get_repeater_info(struct tegra_nvhdcp *nvhdcp)
@@ -1515,7 +1536,7 @@ static void nvhdcp_fallback_worker(struct work_struct *work)
 	}
 }
 
-static void nvhdcp_downstream_worker(struct work_struct *work)
+static void nvhdcp1_downstream_worker(struct work_struct *work)
 {
 	struct tegra_nvhdcp *nvhdcp =
 		container_of(to_delayed_work(work), struct tegra_nvhdcp, work);
@@ -1825,6 +1846,10 @@ static void nvhdcp_downstream_worker(struct work_struct *work)
 			mutex_lock(&nvhdcp->lock);
 			goto failure;
 		}
+	} else {
+	    /* if not repeater reset repeater info, so it does not linger when a receiver
+	     * is connected */
+	    reset_repeater_info(nvhdcp);
 	}
 	/* T210/T210B01 vprime verification is handled in the upstream lib */
 	if (tegra_dc_is_nvdisplay()) {
@@ -1937,7 +1962,9 @@ static int link_integrity_check(struct tegra_nvhdcp *nvhdcp,
 	u16 rx_status = 0;
 	uint64_t *pkt = NULL;
 	int err = 0;
+#ifdef CONFIG_TRUSTED_LITTLE_KERNEL
 	unsigned char nonce[HDCP_NONCE_SIZE];
+#endif
 
 	pkt = kzalloc(PKT_SIZE, GFP_KERNEL);
 
@@ -2130,11 +2157,11 @@ failure:
 	nvhdcp->fail_count++;
 	if (nvhdcp->max_retries <= HDCP_INFINITE_RETRIES ||
 		nvhdcp->fail_count < nvhdcp->max_retries) {
-		nvhdcp_err("nvhdcp failure - renegotiating in 1 second\n");
+		nvhdcp_err("nvhdcp failure - renegotiating in 750ms\n");
 		if (!nvhdcp_is_plugged(nvhdcp))
 			goto lost_hdmi;
 		queue_delayed_work(nvhdcp->downstream_wq, &nvhdcp->work,
-						msecs_to_jiffies(1000));
+						msecs_to_jiffies(750));
 	} else
 		nvhdcp_err("nvhdcp failure - too many failures, giving up!\n");
 
@@ -2150,55 +2177,51 @@ err:
 	return;
 }
 
-static int tegra_nvhdcp_on(struct tegra_nvhdcp *nvhdcp)
+static void nvhdcp_downstream_worker(struct work_struct *work)
 {
+	struct tegra_nvhdcp *nvhdcp =
+		container_of(to_delayed_work(work), struct tegra_nvhdcp, work);
+
 	u8 hdcp2version = 0;
 	int e;
 	int val;
+
+	nvhdcp->fail_count = 0;
+	e = nvhdcp_i2c_read8(nvhdcp, HDCP_HDCP2_VERSION, &hdcp2version);
+	if (e)
+		nvhdcp_err("nvhdcp i2c HDCP22 version read failed\n");
+	/* Do not stop nauthentication if i2c version reads fail as  */
+	/* HDCP 1.x test 1A-04 expects reading HDCP regs */
+	if ((hdcp2version & HDCP_HDCP2_VERSION_HDCP22_YES) && !g_fallback) {
+		val = HDCP_EESS_ENABLE<<31|
+			HDCP22_EESS_START<<16|
+			HDCP22_EESS_END;
+		tegra_sor_writel_ext(nvhdcp->hdmi->sor,
+			HDMI_VSYNC_WINDOW, val);
+		nvhdcp->hdcp22 = HDCP22_PROTOCOL;
+		nvhdcp2_downstream_worker(work);
+	} else {
+		val = HDCP_EESS_ENABLE<<31|
+			HDCP1X_EESS_START<<16|
+			HDCP1X_EESS_END;
+		tegra_sor_writel_ext(nvhdcp->hdmi->sor, HDMI_VSYNC_WINDOW,
+					val);
+		nvhdcp->hdcp22 = HDCP1X_PROTOCOL;
+		nvhdcp1_downstream_worker(work);
+	}
+}
+
+static int tegra_nvhdcp_on(struct tegra_nvhdcp *nvhdcp)
+{
 	int delay = tegra_edid_get_quirks(nvhdcp->hdmi->edid) &
 			TEGRA_EDID_QUIRK_DELAY_HDCP ? 5000 : 100;
+
 	nvhdcp->state = STATE_UNAUTHENTICATED;
 	if (nvhdcp_is_plugged(nvhdcp) &&
 		atomic_read(&nvhdcp->policy) !=
 		TEGRA_DC_HDCP_POLICY_ALWAYS_OFF &&
 		!(tegra_edid_get_quirks(nvhdcp->hdmi->edid) &
 		  TEGRA_EDID_QUIRK_NO_HDCP)) {
-		nvhdcp->fail_count = 0;
-		e = nvhdcp_i2c_read8(nvhdcp, HDCP_HDCP2_VERSION, &hdcp2version);
-		if (e)
-			nvhdcp_err("nvhdcp i2c HDCP22 version read failed\n");
-		/* Do not stop nauthentication if i2c version reads fail as  */
-		/* HDCP 1.x test 1A-04 expects reading HDCP regs */
-		if (hdcp2version & HDCP_HDCP2_VERSION_HDCP22_YES) {
-			if (g_fallback) {
-				val = HDCP_EESS_ENABLE<<31|
-					HDCP1X_EESS_START<<16|
-					HDCP1X_EESS_END;
-				tegra_sor_writel_ext(nvhdcp->hdmi->sor,
-					HDMI_VSYNC_WINDOW, val);
-				INIT_DELAYED_WORK(&nvhdcp->work,
-				nvhdcp_downstream_worker);
-				nvhdcp->hdcp22 = HDCP1X_PROTOCOL;
-			} else {
-				val = HDCP_EESS_ENABLE<<31|
-					HDCP22_EESS_START<<16|
-					HDCP22_EESS_END;
-				tegra_sor_writel_ext(nvhdcp->hdmi->sor,
-					HDMI_VSYNC_WINDOW, val);
-				INIT_DELAYED_WORK(&nvhdcp->work,
-					nvhdcp2_downstream_worker);
-				nvhdcp->hdcp22 = HDCP22_PROTOCOL;
-			}
-		} else {
-			val = HDCP_EESS_ENABLE<<31|
-				HDCP1X_EESS_START<<16|
-				HDCP1X_EESS_END;
-			tegra_sor_writel_ext(nvhdcp->hdmi->sor, HDMI_VSYNC_WINDOW,
-						val);
-			INIT_DELAYED_WORK(&nvhdcp->work,
-				nvhdcp_downstream_worker);
-			nvhdcp->hdcp22 = HDCP1X_PROTOCOL;
-		}
 		queue_delayed_work(nvhdcp->downstream_wq, &nvhdcp->work,
 				msecs_to_jiffies(delay));
 	}
@@ -2315,16 +2338,23 @@ static long nvhdcp_dev_ioctl(struct file *filp,
 {
 	struct tegra_nvhdcp *nvhdcp = filp->private_data;
 	struct tegra_nvhdcp_packet *pkt;
+	struct tegra_hdmi *hdmi = nvhdcp->hdmi;
 	int e = -ENOTTY;
 
 	switch (cmd) {
 	case TEGRAIO_NVHDCP_ON:
+		mutex_lock(&nvhdcp->lock);
+		nvhdcp_set_plugged(nvhdcp, hdmi->enabled);
+		mutex_unlock(&nvhdcp->lock);
 		return tegra_nvhdcp_on(nvhdcp);
 
 	case TEGRAIO_NVHDCP_OFF:
 		return tegra_nvhdcp_off(nvhdcp);
 
 	case TEGRAIO_NVHDCP_SET_POLICY:
+		mutex_lock(&nvhdcp->lock);
+		nvhdcp_set_plugged(nvhdcp, hdmi->enabled);
+		mutex_unlock(&nvhdcp->lock);
 		return tegra_nvhdcp_set_policy(nvhdcp, arg);
 
 	case TEGRAIO_NVHDCP_READ_M:
@@ -2360,6 +2390,9 @@ static long nvhdcp_dev_ioctl(struct file *filp,
 		return e;
 
 	case TEGRAIO_NVHDCP_RENEGOTIATE:
+		mutex_lock(&nvhdcp->lock);
+		nvhdcp_set_plugged(nvhdcp, hdmi->enabled);
+		mutex_unlock(&nvhdcp->lock);
 		e = tegra_nvhdcp_renegotiate(nvhdcp);
 		break;
 
@@ -2485,6 +2518,7 @@ struct tegra_nvhdcp *tegra_nvhdcp_create(struct tegra_hdmi *hdmi,
 	nvhdcp->downstream_wq = create_singlethread_workqueue(nvhdcp->name);
 	nvhdcp->fallback_wq = create_singlethread_workqueue(nvhdcp->name);
 
+	INIT_DELAYED_WORK(&nvhdcp->work, nvhdcp_downstream_worker);
 	INIT_DELAYED_WORK(&nvhdcp->fallback_work, nvhdcp_fallback_worker);
 
 	nvhdcp->miscdev.minor = MISC_DYNAMIC_MINOR;

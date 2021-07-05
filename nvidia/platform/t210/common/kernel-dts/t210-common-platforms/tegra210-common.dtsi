@@ -28,6 +28,11 @@
 / {
 	nvidia,dtbbuildtime = __DATE__, __TIME__;
 
+	chosen {
+		plugin-manager {
+		};
+	};
+
 	serial@70006000 {
 		compatible = "nvidia,tegra210-uart", "nvidia,tegra114-hsuart";
 		console-port;

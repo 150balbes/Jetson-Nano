@@ -1,7 +1,7 @@
 /*
  * tegra_t210ref_alt.c - Tegra t210ref Machine driver
  *
- * Copyright (c) 2013-2017 NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2013-2019 NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -208,13 +208,6 @@ static int tegra_t210ref_ad1937_init(struct snd_soc_pcm_runtime *rtd)
 	int err;
 
 	mclk = dai_params->rate_min * 512;
-
-	err = tegra_alt_asoc_utils_set_extern_parent(&machine->audio_clock,
-							"pll_a_out0");
-	if (err < 0) {
-		dev_err(card->dev, "Failed to set extern clk parent\n");
-		return err;
-	}
 
 	/* initialize 256fs by default */
 	tegra_alt_asoc_utils_set_rate(&machine->audio_clock,

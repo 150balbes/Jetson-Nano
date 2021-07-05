@@ -12,9 +12,12 @@ interpolation between the maximum and minimum frequencies of the clock. The
 throttled frequency can then be calculated using the equation:
     throt_freq = max_freq - (cur_state * freq_step_size)
 
-The throttle driver queries the max\min frequencies using CCF and assumes a
-fixed frequency step size for each clock it throttles. It then uses mechanisms
-such as cpufreq and pmqos to set throttled frequency.
+The throttle driver queries the max/min frequencies using CCF for all clocks
+except the cpu clocks and assumes a fixed frequency step size for each clock it
+throttles. The max/min frequencies for the CPU clocks are obtained from the
+cpufreq subsystem. It then uses mechanisms such as cpufreq and pmqos to set
+throttled frequency. The driver throttles all the available CPUs and doesn't
+support individual CPU cluster throttling.
 
 The goal of passive cooling is to reduce power consumption for each cooling
 device cur state. The minimum frequency step size of clock depends on several

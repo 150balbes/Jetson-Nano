@@ -1,0 +1,150 @@
+From 321af88329075cf27d06e21bdc57706ca4972e39 Mon Sep 17 00:00:00 2001
+From: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+Date: Thu, 22 Jun 2017 17:53:34 +0200
+Subject: [PATCH 177/371] kernel/locking: use an exclusive wait_q for sleepers
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+X-NVConfidentiality: public
+
+If a task is queued as a sleeper for a wakeup and never goes to
+schedule() (because it just obtained the lock) then it will receive a
+spurious wake up which is not "bad", it is considered. Until that wake
+up happens this task can no be enqueued for any wake ups handled by the
+WAKE_Q infrastructure (because a task can only be enqueued once). This
+wouldn't be bad if we would use the same wakeup mechanism for the wake
+up of sleepers as we do for "normal" wake ups. But we don't…
+
+So.
+   T1			T2		T3
+   spin_lock(x)				spin_unlock(x);
+   					wake_q_add_sleeper(q1, T1)
+   spin_unlock(x)
+   set_state(TASK_INTERRUPTIBLE)
+   if (!condition)
+	schedule()
+			condition = true
+			wake_q_add(q2, T1)
+	                // T1 not added, still enqueued
+			wake_up_q(q2)
+					wake_up_q_sleeper(q1)
+					// T1 not woken up, wrong task state
+
+In order to solve this race this patch adds a wake_q_node for the
+sleeper case.
+
+Reported-by: Mike Galbraith <efault@gmx.de>
+Cc: stable-rt@vger.kernel.org
+Signed-off-by: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+---
+ include/linux/sched.h    | 17 +++++++++++++++--
+ kernel/fork.c            |  1 +
+ kernel/locking/rtmutex.c |  2 +-
+ kernel/sched/core.c      | 20 ++++++++++++++++----
+ 4 files changed, 33 insertions(+), 7 deletions(-)
+
+diff --git a/include/linux/sched.h b/include/linux/sched.h
+index d1e1f73..9a41087 100644
+--- a/include/linux/sched.h
++++ b/include/linux/sched.h
+@@ -1047,8 +1047,20 @@ struct wake_q_head {
+ #define WAKE_Q(name)					\
+ 	struct wake_q_head name = { WAKE_Q_TAIL, &name.first }
+ 
+-extern void wake_q_add(struct wake_q_head *head,
+-			      struct task_struct *task);
++extern void __wake_q_add(struct wake_q_head *head,
++			 struct task_struct *task, bool sleeper);
++static inline void wake_q_add(struct wake_q_head *head,
++			      struct task_struct *task)
++{
++	__wake_q_add(head, task, false);
++}
++
++static inline void wake_q_add_sleeper(struct wake_q_head *head,
++				      struct task_struct *task)
++{
++	__wake_q_add(head, task, true);
++}
++
+ extern void __wake_up_q(struct wake_q_head *head, bool sleeper);
+ 
+ static inline void wake_up_q(struct wake_q_head *head)
+@@ -1922,6 +1934,7 @@ struct task_struct {
+ 	raw_spinlock_t pi_lock;
+ 
+ 	struct wake_q_node wake_q;
++	struct wake_q_node wake_q_sleeper;
+ 
+ #ifdef CONFIG_RT_MUTEXES
+ 	/* PI waiters blocked on a rt_mutex held by this task */
+diff --git a/kernel/fork.c b/kernel/fork.c
+index 4c15731..d4a1dfb 100644
+--- a/kernel/fork.c
++++ b/kernel/fork.c
+@@ -572,6 +572,7 @@ static struct task_struct *dup_task_struct(struct task_struct *orig, int node)
+ 	tsk->splice_pipe = NULL;
+ 	tsk->task_frag.page = NULL;
+ 	tsk->wake_q.next = NULL;
++	tsk->wake_q_sleeper.next = NULL;
+ 
+ 	account_kernel_stack(tsk, 1);
+ 
+diff --git a/kernel/locking/rtmutex.c b/kernel/locking/rtmutex.c
+index 3fca489..f909d47 100644
+--- a/kernel/locking/rtmutex.c
++++ b/kernel/locking/rtmutex.c
+@@ -1463,7 +1463,7 @@ static void mark_wakeup_next_waiter(struct wake_q_head *wake_q,
+ 	 */
+ 	preempt_disable();
+ 	if (waiter->savestate)
+-		wake_q_add(wake_sleeper_q, waiter->task);
++		wake_q_add_sleeper(wake_sleeper_q, waiter->task);
+ 	else
+ 		wake_q_add(wake_q, waiter->task);
+ 	raw_spin_unlock(&current->pi_lock);
+diff --git a/kernel/sched/core.c b/kernel/sched/core.c
+index a5b124d..32dc9a0 100644
+--- a/kernel/sched/core.c
++++ b/kernel/sched/core.c
+@@ -445,9 +445,15 @@ static bool set_nr_if_polling(struct task_struct *p)
+ #endif
+ #endif
+ 
+-void wake_q_add(struct wake_q_head *head, struct task_struct *task)
++void __wake_q_add(struct wake_q_head *head, struct task_struct *task,
++		  bool sleeper)
+ {
+-	struct wake_q_node *node = &task->wake_q;
++	struct wake_q_node *node;
++
++	if (sleeper)
++		node = &task->wake_q_sleeper;
++	else
++		node = &task->wake_q;
+ 
+ 	/*
+ 	 * Atomically grab the task, if ->wake_q is !nil already it means
+@@ -476,11 +482,17 @@ void __wake_up_q(struct wake_q_head *head, bool sleeper)
+ 	while (node != WAKE_Q_TAIL) {
+ 		struct task_struct *task;
+ 
+-		task = container_of(node, struct task_struct, wake_q);
++		if (sleeper)
++			task = container_of(node, struct task_struct, wake_q_sleeper);
++		else
++			task = container_of(node, struct task_struct, wake_q);
+ 		BUG_ON(!task);
+ 		/* task can safely be re-inserted now */
+ 		node = node->next;
+-		task->wake_q.next = NULL;
++		if (sleeper)
++			task->wake_q_sleeper.next = NULL;
++		else
++			task->wake_q.next = NULL;
+ 
+ 		/*
+ 		 * wake_up_process() implies a wmb() to pair with the queueing
+-- 
+2.7.4
+

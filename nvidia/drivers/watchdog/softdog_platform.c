@@ -1,7 +1,7 @@
 /*
  * SoftDog-platform: A platform based Software Watchdog Device
  *
- * Copyright (c) 2014, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2014-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * Author: Laxman Dewangan <ldewangan@nvidia.com>
  *
@@ -92,6 +92,7 @@ static int softdog_platform_stop(struct watchdog_device *wdt)
 {
 	struct softdog_platform_wdt *swdt =  watchdog_get_drvdata(wdt);
 
+	del_timer_sync(&swdt->watchdog_ticktock);
 	swdt->is_stopped = true;
 	return 0;
 }
@@ -199,7 +200,7 @@ static int softdog_platform_probe(struct platform_device *pdev)
 reboot_unreg:
 	unregister_reboot_notifier(&swdt->nb);
 timer_del:
-	del_timer_sync(&swdt->watchdog_ticktock);
+	softdog_platform_stop(&swdt->wdt_dev);
 	return ret;
 }
 
@@ -207,7 +208,7 @@ static int softdog_platform_remove(struct platform_device *pdev)
 {
 	struct softdog_platform_wdt *swdt = platform_get_drvdata(pdev);
 
-	del_timer_sync(&swdt->watchdog_ticktock);
+	softdog_platform_stop(&swdt->wdt_dev);
 	watchdog_unregister_device(&swdt->wdt_dev);
 	unregister_reboot_notifier(&swdt->nb);
 	return 0;
@@ -217,7 +218,7 @@ static void softdog_platform_shutdown(struct platform_device *pdev)
 {
 	struct softdog_platform_wdt *swdt = platform_get_drvdata(pdev);
 
-	del_timer_sync(&swdt->watchdog_ticktock);
+	softdog_platform_stop(&swdt->wdt_dev);
 }
 
 #ifdef CONFIG_PM_SLEEP

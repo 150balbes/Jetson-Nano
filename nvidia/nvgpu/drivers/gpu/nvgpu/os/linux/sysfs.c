@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2011-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -259,16 +259,29 @@ static ssize_t railgate_enable_store(struct device *dev,
 	unsigned long railgate_enable = 0;
 	/* dev is guaranteed to be valid here. Ok to de-reference */
 	struct gk20a *g = get_gk20a(dev);
+	struct gk20a_platform *platform = dev_get_drvdata(dev);
 	bool enabled = nvgpu_is_enabled(g, NVGPU_CAN_RAILGATE);
 	int err;
 
 	if (kstrtoul(buf, 10, &railgate_enable) < 0)
 		return -EINVAL;
 
-	if (railgate_enable && !enabled) {
+	/* convert to boolean */
+	railgate_enable = !!railgate_enable;
+
+	/* writing same value should be treated as nop and successful */
+	if (railgate_enable == enabled)
+		goto out;
+
+	if (!platform->can_railgate_init) {
+		nvgpu_err(g, "Railgating is not supported");
+		return -EINVAL;
+	}
+
+	if (railgate_enable) {
 		__nvgpu_set_enabled(g, NVGPU_CAN_RAILGATE, true);
 		pm_runtime_set_autosuspend_delay(dev, g->railgate_delay);
-	} else if (railgate_enable == 0 && enabled) {
+	} else {
 		__nvgpu_set_enabled(g, NVGPU_CAN_RAILGATE, false);
 		pm_runtime_set_autosuspend_delay(dev, -1);
 	}
@@ -278,6 +291,7 @@ static ssize_t railgate_enable_store(struct device *dev,
 		return err;
 	gk20a_idle(g);
 
+out:
 	nvgpu_info(g, "railgate is %s.",
 			nvgpu_is_enabled(g, NVGPU_CAN_RAILGATE) ?
 			"enabled" : "disabled");

@@ -97,6 +97,9 @@ int gpiod_direction_input(struct gpio_desc *desc);
 int gpiod_direction_output(struct gpio_desc *desc, int value);
 int gpiod_direction_output_raw(struct gpio_desc *desc, int value);
 
+int gpiod_timestamp_control(struct gpio_desc *desc, int enable);
+int gpiod_timestamp_read(struct gpio_desc *desc, u64 *ts);
+
 /* Value get/set from non-sleeping context */
 int gpiod_get_value(const struct gpio_desc *desc);
 void gpiod_set_value(struct gpio_desc *desc, int value);
@@ -294,6 +297,19 @@ static inline int gpiod_direction_output_raw(struct gpio_desc *desc, int value)
 	return -ENOSYS;
 }
 
+static inline int gpiod_timestamp_control(struct gpio_desc *desc, int enable)
+{
+	/* GPIO can never have been requested */
+	WARN_ON(1);
+	return -ENOSYS;
+}
+
+static inline int gpiod_timestamp_read(struct gpio_desc *desc, u64 *ts)
+{
+	/* GPIO can never have been requested */
+	WARN_ON(1);
+	return -ENOSYS;
+}
 
 static inline int gpiod_get_value(const struct gpio_desc *desc)
 {

@@ -1,0 +1,36 @@
+From 5bf70f988420a34eacf4da0aba4ddb4de3517225 Mon Sep 17 00:00:00 2001
+From: Mike Galbraith <umgwanakikbuti@gmail.com>
+Date: Sun, 5 Jun 2016 08:11:13 +0200
+Subject: [PATCH 114/371] mm/memcontrol: mem_cgroup_migrate() - replace another
+ local_irq_disable() w. local_lock_irq()
+X-NVConfidentiality: public
+
+v4.6 grew a local_irq_disable() in mm/memcontrol.c::mem_cgroup_migrate().
+Convert it to use the existing local lock (event_lock) like the others.
+
+Signed-off-by: Mike Galbraith <umgwanakikbuti@gmail.com>
+Signed-off-by: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+---
+ mm/memcontrol.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/mm/memcontrol.c b/mm/memcontrol.c
+index 606e9d3..6f7b386 100644
+--- a/mm/memcontrol.c
++++ b/mm/memcontrol.c
+@@ -5761,10 +5761,10 @@ void mem_cgroup_migrate(struct page *oldpage, struct page *newpage)
+ 
+ 	commit_charge(newpage, memcg, false);
+ 
+-	local_irq_save(flags);
++	local_lock_irqsave(event_lock, flags);
+ 	mem_cgroup_charge_statistics(memcg, newpage, compound, nr_pages);
+ 	memcg_check_events(memcg, newpage);
+-	local_irq_restore(flags);
++	local_unlock_irqrestore(event_lock, flags);
+ }
+ 
+ DEFINE_STATIC_KEY_FALSE(memcg_sockets_enabled_key);
+-- 
+2.7.4
+

@@ -23,16 +23,13 @@
 #include <linux/platform_device.h>
 #include <linux/pm_runtime.h>
 #include <linux/regmap.h>
-#include <linux/slab.h>
 #include <sound/core.h>
 #include <sound/pcm.h>
 #include <sound/pcm_params.h>
 #include <sound/soc.h>
 #include <linux/delay.h>
-#include <linux/pinctrl/consumer.h>
 #include <linux/of_device.h>
 #include <linux/tegra186_ahc.h>
-#include <linux/version.h>
 
 #include "tegra210_xbar_alt.h"
 #include "tegra186_asrc_alt.h"
@@ -176,10 +173,6 @@ static int tegra186_asrc_runtime_resume(struct device *dev)
 	int lane_id;
 
 	regcache_cache_only(asrc->regmap, false);
-
-	if (asrc->is_shutdown)
-		return 0;
-
 	regcache_sync(asrc->regmap);
 
 	/* HW needs sw reset to make sure previous
@@ -255,7 +248,7 @@ static int tegra186_asrc_set_audio_cif(struct tegra186_asrc *asrc,
 	cif_conf.client_channels = channels;
 	cif_conf.audio_bits = audio_bits;
 	cif_conf.client_bits = audio_bits;
-	asrc->soc_data->set_audio_cif(asrc->regmap, reg, &cif_conf);
+	tegra210_xbar_set_cif(asrc->regmap, reg, &cif_conf);
 
 	return 0;
 }
@@ -585,15 +578,6 @@ static int tegra186_asrc_req_arad_ratio(struct snd_soc_dapm_widget *w,
 	return ret;
 }
 
-static int tegra186_asrc_codec_probe(struct snd_soc_codec *codec)
-{
-	struct tegra186_asrc *asrc = snd_soc_codec_get_drvdata(codec);
-
-	codec->control_data = asrc->regmap;
-
-	return 0;
-}
-
 static struct snd_soc_dai_ops tegra186_asrc_in_dai_ops = {
 	.hw_params	= tegra186_asrc_in_hw_params,
 };
@@ -893,7 +877,6 @@ static const struct snd_kcontrol_new tegra186_asrc_controls[] = {
 };
 
 static struct snd_soc_codec_driver tegra186_asrc_codec = {
-	.probe = tegra186_asrc_codec_probe,
 	.idle_bias_off = 1,
 	.component_driver = {
 		.dapm_widgets = tegra186_asrc_widgets,
@@ -1088,98 +1071,57 @@ static void tegra186_asrc_ahc_cb(void *data)
 }
 #endif
 
-static const struct tegra186_asrc_soc_data soc_data_tegra186 = {
-	.set_audio_cif = tegra210_xbar_set_cif,
-};
-
 static const struct of_device_id tegra186_asrc_of_match[] = {
-	{ .compatible = "nvidia,tegra186-asrc", .data = &soc_data_tegra186 },
+	{ .compatible = "nvidia,tegra186-asrc" },
 	{},
 };
 static int tegra186_asrc_platform_probe(struct platform_device *pdev)
 {
 	struct tegra186_asrc *asrc;
-	struct resource *mem, *memregion;
+	struct resource *mem;
 	void __iomem *regs;
 	int ret = 0;
 	const struct of_device_id *match;
-	struct tegra186_asrc_soc_data *soc_data;
 	unsigned int i = 0;
 
 	match = of_match_device(tegra186_asrc_of_match, &pdev->dev);
 	if (!match) {
 		dev_err(&pdev->dev, "Error: No device match found\n");
-		ret = -ENODEV;
-		goto err;
+		return -ENODEV;
 	}
-	soc_data = (struct tegra186_asrc_soc_data *)match->data;
 	asrc_dev = &pdev->dev;
-	asrc = devm_kzalloc(&pdev->dev,
-		sizeof(struct tegra186_asrc), GFP_KERNEL);
-	if (!asrc) {
-		dev_err(&pdev->dev, "Can't allocate asrc\n");
-		ret = -ENOMEM;
-		goto err;
-	}
+	asrc = devm_kzalloc(&pdev->dev, sizeof(*asrc), GFP_KERNEL);
+	if (!asrc)
+		return -ENOMEM;
 
-	asrc->soc_data = soc_data;
-	asrc->is_shutdown = false;
 	dev_set_drvdata(&pdev->dev, asrc);
 
 	mem = platform_get_resource(pdev, IORESOURCE_MEM, 0);
-	if (!mem) {
-		dev_err(&pdev->dev, "No memory resource\n");
-		ret = -ENODEV;
-		goto err;
-	}
-
-	memregion = devm_request_mem_region(&pdev->dev, mem->start,
-					    resource_size(mem), pdev->name);
-	if (!memregion) {
-		dev_err(&pdev->dev, "Memory region already claimed\n");
-		ret = -EBUSY;
-		goto err;
-	}
-
-	regs = devm_ioremap(&pdev->dev, mem->start, resource_size(mem));
-	if (!regs) {
-		dev_err(&pdev->dev, "ioremap failed\n");
-		ret = -ENOMEM;
-		goto err;
-	}
-
+	regs = devm_ioremap_resource(&pdev->dev, mem);
+	if (IS_ERR(regs))
+		return PTR_ERR(regs);
 	asrc->regmap = devm_regmap_init_mmio(&pdev->dev, regs,
-					    &tegra186_asrc_regmap_config);
+					     &tegra186_asrc_regmap_config);
 	if (IS_ERR(asrc->regmap)) {
 		dev_err(&pdev->dev, "regmap init failed\n");
-		ret = PTR_ERR(asrc->regmap);
-		goto err;
+		return PTR_ERR(asrc->regmap);
 	}
 	regcache_cache_only(asrc->regmap, true);
 
-	if (of_property_read_u32(pdev->dev.of_node,
-				"nvidia,ahub-asrc-id",
-				&pdev->dev.id) < 0) {
-		dev_err(&pdev->dev,
-			"Missing property nvidia,ahub-asrc-id\n");
-		ret = -ENODEV;
-		goto err;
+	ret = of_property_read_u32(pdev->dev.of_node, "nvidia,ahub-asrc-id",
+				   &pdev->dev.id);
+	if (ret < 0) {
+		dev_err(&pdev->dev, "Missing property nvidia,ahub-asrc-id\n");
+		return ret;
 	}
 
 #ifdef CONFIG_TEGRA186_AHC
-	tegra186_ahc_register_cb(tegra186_asrc_ahc_cb,
-			TEGRA186_AHC_ASRC1_CB, &pdev->dev);
+	tegra186_ahc_register_cb(tegra186_asrc_ahc_cb, TEGRA186_AHC_ASRC1_CB,
+				 &pdev->dev);
 #endif
 
-	pm_runtime_enable(&pdev->dev);
-	if (!pm_runtime_enabled(&pdev->dev)) {
-		ret = tegra186_asrc_runtime_resume(&pdev->dev);
-		if (ret)
-			goto err_pm_disable;
-	}
-
 	regmap_write(asrc->regmap, TEGRA186_ASRC_GLOBAL_CONFIG,
-		TEGRA186_ASRC_GLOBAL_CONFIG_FRAC_32BIT_PRECISION);
+		     TEGRA186_ASRC_GLOBAL_CONFIG_FRAC_32BIT_PRECISION);
 
 	/* initialize default output srate */
 	for (i = 0; i < 6; i++) {
@@ -1195,30 +1137,17 @@ static int tegra186_asrc_platform_probe(struct platform_device *pdev)
 			ASRC_STREAM_REG(TEGRA186_ASRC_STREAM1_CONFIG, i), 1, 1);
 	}
 
+	pm_runtime_enable(&pdev->dev);
 	ret = snd_soc_register_codec(&pdev->dev, &tegra186_asrc_codec,
 				     tegra186_asrc_dais,
 				     ARRAY_SIZE(tegra186_asrc_dais));
 	if (ret != 0) {
 		dev_err(&pdev->dev, "Could not register CODEC: %d\n", ret);
-		goto err_suspend;
+		pm_runtime_disable(&pdev->dev);
+		return ret;
 	}
 
 	return 0;
-
-err_suspend:
-	if (!pm_runtime_status_suspended(&pdev->dev))
-		tegra186_asrc_runtime_suspend(&pdev->dev);
-err_pm_disable:
-	pm_runtime_disable(&pdev->dev);
-err:
-	return ret;
-}
-
-static void tegra186_asrc_platform_shutdown(struct platform_device *pdev)
-{
-	struct tegra186_asrc *asrc = dev_get_drvdata(&pdev->dev);
-
-	asrc->is_shutdown = true;
 }
 
 static int tegra186_asrc_platform_remove(struct platform_device *pdev)
@@ -1248,7 +1177,6 @@ static struct platform_driver tegra186_asrc_driver = {
 	},
 	.probe = tegra186_asrc_platform_probe,
 	.remove = tegra186_asrc_platform_remove,
-	.shutdown = tegra186_asrc_platform_shutdown,
 };
 module_platform_driver(tegra186_asrc_driver)
 

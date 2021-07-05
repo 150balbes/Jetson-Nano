@@ -26,11 +26,6 @@
 		};
 	};
 
-	watchdog@60005100 {
-		status = "disabled";
-		dt-override-status-odm-data = <0x00010000 0x00010000>;
-	};
-
 	i2c@7000d000 {
 		max77620@3c {
 			watchdog {

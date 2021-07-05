@@ -19,6 +19,7 @@
 #include <linux/kthread.h>
 #include <linux/interrupt.h>
 #include <linux/ntb.h>
+#include <linux/nospec.h>
 
 MODULE_DESCRIPTION("Microsemi Switchtec(tm) NTB Driver");
 MODULE_VERSION("0.1");
@@ -366,11 +367,12 @@ static int switchtec_ntb_mw_set_trans(struct ntb_dev *ntb, int idx,
 	struct ntb_ctrl_regs __iomem *ctl = sndev->mmio_peer_ctrl;
 	int xlate_pos = ilog2(size);
 	int nr_direct_mw = sndev->peer_nr_direct_mw;
-	int rc;
+	int rc, ntb_mw_count;
 
 	dev_dbg(&sndev->stdev->dev, "MW %d: %016llx %016llx", idx, addr, size);
 
-	if (idx >= switchtec_ntb_mw_count(ntb))
+	ntb_mw_count = switchtec_ntb_mw_count(ntb);
+	if (idx >= ntb_mw_count)
 		return -EINVAL;
 
 	if (xlate_pos < 12)
@@ -381,14 +383,19 @@ static int switchtec_ntb_mw_set_trans(struct ntb_dev *ntb, int idx,
 	if (rc)
 		return rc;
 
+	idx = array_index_nospec(idx, ntb_mw_count);
 	if (addr == 0 || size == 0) {
-		if (idx < nr_direct_mw)
+		if (idx < nr_direct_mw) {
+			idx = array_index_nospec(idx, nr_direct_mw);
 			switchtec_ntb_mw_clr_direct(sndev, idx);
+		}
 		else
 			switchtec_ntb_mw_clr_lut(sndev, idx);
 	} else {
-		if (idx < nr_direct_mw)
+		if (idx < nr_direct_mw) {
+			idx = array_index_nospec(idx, nr_direct_mw);
 			switchtec_ntb_mw_set_direct(sndev, idx, addr, size);
+		}
 		else
 			switchtec_ntb_mw_set_lut(sndev, idx, addr, size);
 	}
@@ -401,8 +408,10 @@ static int switchtec_ntb_mw_set_trans(struct ntb_dev *ntb, int idx,
 			"Hardware reported an error configuring mw %d: %08x",
 			idx, ioread32(&ctl->bar_error));
 
-		if (idx < nr_direct_mw)
+		if (idx < nr_direct_mw) {
+			idx = array_index_nospec(idx, nr_direct_mw);
 			switchtec_ntb_mw_clr_direct(sndev, idx);
+		}
 		else
 			switchtec_ntb_mw_clr_lut(sndev, idx);
 
@@ -694,6 +703,8 @@ static u32 switchtec_ntb_spad_read(struct ntb_dev *ntb, int idx)
 	if (!sndev->self_shared)
 		return 0;
 
+	idx = array_index_nospec(idx, ARRAY_SIZE(sndev->self_shared->spad));
+
 	return sndev->self_shared->spad[idx];
 }
 
@@ -707,6 +718,7 @@ static int switchtec_ntb_spad_write(struct ntb_dev *ntb, int idx, u32 val)
 	if (!sndev->self_shared)
 		return -EIO;
 
+	idx = array_index_nospec(idx, ARRAY_SIZE(sndev->self_shared->spad));
 	sndev->self_shared->spad[idx] = val;
 
 	return 0;
@@ -722,6 +734,7 @@ static u32 switchtec_ntb_peer_spad_read(struct ntb_dev *ntb, int idx)
 	if (!sndev->peer_shared)
 		return 0;
 
+	idx = array_index_nospec(idx, ARRAY_SIZE(sndev->peer_shared->spad));
 	return ioread32(&sndev->peer_shared->spad[idx]);
 }
 
@@ -735,6 +748,7 @@ static int switchtec_ntb_peer_spad_write(struct ntb_dev *ntb, int idx, u32 val)
 	if (!sndev->peer_shared)
 		return -EIO;
 
+	idx = array_index_nospec(idx, ARRAY_SIZE(sndev->peer_shared->spad));
 	iowrite32(val, &sndev->peer_shared->spad[idx]);
 
 	return 0;

@@ -160,20 +160,12 @@ enum {
 	TEGRA210_ADX_TOTAL_STREAM
 };
 
-struct tegra210_adx_soc_data {
-	void (*set_audio_cif)(struct regmap *map,
-			unsigned int reg,
-			struct tegra210_xbar_cif_conf *conf);
-};
-
 struct tegra210_adx {
 	struct regmap *regmap;
 	unsigned int map[TEGRA210_ADX_RAM_DEPTH];
 	unsigned int byte_mask[2];
 	int input_channels;
 	int output_channels[TEGRA210_ADX_NUM_OUTPUTS];
-	const struct tegra210_adx_soc_data *soc_data;
-	bool is_shutdown;
 };
 
 #endif

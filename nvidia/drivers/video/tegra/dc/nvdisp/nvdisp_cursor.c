@@ -1,7 +1,7 @@
 /*
  * drivers/video/tegra/dc/nvdisp/nvdisp_cursor.c
  *
- * Copyright (c) 2015-2017, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2015-2019, NVIDIA CORPORATION. All rights reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -103,8 +103,9 @@ int nvdisp_set_cursor_position(struct tegra_dc *dc, s16 x, s16 y)
 		if ((x + cursor_width) > 0) {
 			point_in_x = 0 - x;
 			cursor_size_in_width -= point_in_x;
-		} else {
+		} else { /* entire cursor is offscreen on left edge */
 			point_in_x = 0;
+			cursor_size_in_width = 0; /* hw will disable cursor */
 		}
 		x = 0;
 	}
@@ -114,8 +115,9 @@ int nvdisp_set_cursor_position(struct tegra_dc *dc, s16 x, s16 y)
 		if ((y + cursor_height) > 0) {
 			point_in_y = 0 - y;
 			cursor_size_in_height -= point_in_y;
-		} else {
+		} else { /* entire cursor is offscreen above top edge */
 			point_in_y = 0;
+			cursor_size_in_height = 0; /* hw will disable cursor */
 		}
 		y = 0;
 	}

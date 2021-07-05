@@ -1,7 +1,7 @@
 /*
  * drivers/misc/tegra-profiler/armv7_pmu.c
  *
- * Copyright (c) 2014-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2014-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -536,10 +536,10 @@ static void pmu_stop(void)
 	qm_debug_stop_source(QUADD_EVENT_SOURCE_PMU);
 }
 
-static int __maybe_unused
-pmu_read(struct event_data *events, int max_events)
+static int
+pmu_read(struct quadd_event_data *events, int max_events)
 {
-	u32 val;
+	u32 val, prev_val, delta;
 	int idx = 0, i = 0;
 	struct quadd_pmu_info *pi = this_cpu_ptr(&cpu_pmu_info);
 	struct quadd_pmu_ctx *local_pmu_ctx = this_cpu_ptr(&pmu_ctx);
@@ -576,44 +576,23 @@ pmu_read(struct event_data *events, int max_events)
 
 		events->event_source = QUADD_EVENT_SOURCE_PMU;
 		events->event = ei->event;
+		events->max_count = U32_MAX;
+
+		prev_val = *prevp;
+
+		if (prev_val <= val)
+			delta = val - prev_val;
+		else
+			delta = events->max_count - prev_val + val;
 
 		events->val = val;
-		events->prev_val = *prevp;
+		events->prev_val = prev_val;
+		events->delta = delta;
 
 		*prevp = val;
 
 		qm_debug_read_counter(&events->event, events->prev_val,
 				      events->val);
-
-		if (++i >= max_events)
-			break;
-
-		events++;
-		prevp++;
-	}
-
-	return i;
-}
-
-static int __maybe_unused
-pmu_read_emulate(struct event_data *events, int max_events)
-{
-	int i = 0;
-	static u32 val = 100;
-	struct quadd_pmu_info *pi = this_cpu_ptr(&cpu_pmu_info);
-	struct quadd_pmu_ctx *local_pmu_ctx = this_cpu_ptr(&pmu_ctx);
-	u32 *prevp = pi->prev_vals;
-	struct quadd_pmu_event_info *ei;
-
-	list_for_each_entry(ei, &local_pmu_ctx->used_events, list) {
-		if (val > 200)
-			val = 100;
-
-		events->event.id = *prevp;
-		events->val = val;
-
-		*prevp = val;
-		val += 5;
 
 		if (++i >= max_events)
 			break;
@@ -751,8 +730,8 @@ out_free:
 }
 
 static int
-get_supported_events(int cpuid, struct quadd_event *events,
-		     int max_events, unsigned int *raw_event_mask)
+supported_events(int cpuid, struct quadd_event *events,
+		 int max_events, unsigned int *raw_event_mask)
 {
 	int i, nr_events = 0;
 	struct quadd_pmu_ctx *local_pmu_ctx = this_cpu_ptr(&pmu_ctx);
@@ -779,7 +758,7 @@ get_supported_events(int cpuid, struct quadd_event *events,
 }
 
 static int
-get_current_events(int cpuid, struct quadd_event *events, int max_events)
+current_events(int cpuid, struct quadd_event *events, int max_events)
 {
 	int i = 0;
 	struct quadd_pmu_event_info *ei;
@@ -802,21 +781,16 @@ static struct quadd_arch_info *get_arch(int cpuid)
 	return local_pmu_ctx->current_map ? &local_pmu_ctx->arch : NULL;
 }
 
-static struct quadd_event_source_interface pmu_armv7_int = {
+static struct quadd_event_source pmu_armv7_int = {
+	.name			= "armv7_pmu",
 	.enable			= pmu_enable,
 	.disable		= pmu_disable,
-
 	.start			= pmu_start,
 	.stop			= pmu_stop,
-
-#ifndef QUADD_USE_EMULATE_COUNTERS
 	.read			= pmu_read,
-#else
-	.read			= pmu_read_emulate,
-#endif
 	.set_events		= set_events,
-	.get_supported_events	= get_supported_events,
-	.get_current_events	= get_current_events,
+	.supported_events	= supported_events,
+	.current_events		= current_events,
 	.get_arch		= get_arch,
 };
 
@@ -885,7 +859,7 @@ static int quadd_armv7_pmu_init_for_cpu(int cpu)
 	return err;
 }
 
-struct quadd_event_source_interface *quadd_armv7_pmu_init(void)
+struct quadd_event_source *quadd_armv7_pmu_init(void)
 {
 	int cpuid, err;
 

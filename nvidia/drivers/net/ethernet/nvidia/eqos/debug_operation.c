@@ -29,7 +29,7 @@
  * DAMAGE.
  * ========================================================================= */
 /*
- * Copyright (c) 2015-2016, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2015-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -21777,7 +21777,7 @@ static ssize_t pre_padcal_err_regs_read(struct file *file,
 		"tx_underflow_error(0x748): %#lx\n"
 		"tx_carrier_error(0x760): %#lx\n"
 		"tx_excessdef(0x76c): %#lx\n"
-		"rx_crc_errror(0x794): %#lx\n"
+		"rx_crc_error(0x794): %#lx\n"
 		"rx_align_error(0x798): %#lx\n"
 		"rx_run_error(0x79c): %#lx\n"
 		"rx_jabber_error(0x7a0): %#lx\n"
@@ -21800,7 +21800,7 @@ static ssize_t pre_padcal_err_regs_read(struct file *file,
 		pdata->mmc.mmc_tx_underflow_error_pre_recalib,
 		pdata->mmc.mmc_tx_carrier_error_pre_recalib,
 		pdata->mmc.mmc_tx_excessdef_pre_recalib,
-		pdata->mmc.mmc_rx_crc_errror_pre_recalib,
+		pdata->mmc.mmc_rx_crc_error_pre_recalib,
 		pdata->mmc.mmc_rx_align_error_pre_recalib,
 		pdata->mmc.mmc_rx_run_error_pre_recalib,
 		pdata->mmc.mmc_rx_jabber_error_pre_recalib,
@@ -21825,7 +21825,7 @@ static ssize_t pre_padcal_err_regs_read(struct file *file,
 	pdata->mmc.mmc_tx_underflow_error_pre_recalib = 0;
 	pdata->mmc.mmc_tx_carrier_error_pre_recalib = 0;
 	pdata->mmc.mmc_tx_excessdef_pre_recalib = 0;
-	pdata->mmc.mmc_rx_crc_errror_pre_recalib = 0;
+	pdata->mmc.mmc_rx_crc_error_pre_recalib = 0;
 	pdata->mmc.mmc_rx_align_error_pre_recalib = 0;
 	pdata->mmc.mmc_rx_run_error_pre_recalib = 0;
 	pdata->mmc.mmc_rx_jabber_error_pre_recalib = 0;

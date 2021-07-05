@@ -1,7 +1,7 @@
 /*
  * FPDLink Serializer driver
  *
- * Copyright (C) 2014-2018 NVIDIA CORPORATION. All rights reserved.
+ * Copyright (C) 2014-2020, NVIDIA CORPORATION. All rights reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -222,13 +222,15 @@ void hdmi2fpd_destroy(struct tegra_dc *dc)
 static int ds90uh949_probe(struct i2c_client *client,
 					const struct i2c_device_id *id)
 {
-	struct i2c_client_list *new = (struct i2c_client_list *)
-				kzalloc(sizeof(*new), GFP_KERNEL);
+	struct i2c_client_list *new;
 	if (!i2c_check_functionality(client->adapter,
 					I2C_FUNC_SMBUS_BYTE_DATA)) {
 		dev_err(&client->dev, "SMBUS Byte Data not Supported\n");
 		return -EIO;
 	}
+	new = kzalloc(sizeof(*new), GFP_KERNEL);
+	if (new == NULL)
+		return -ENOMEM;
 
 	INIT_LIST_HEAD(&new->i2c_list);
 

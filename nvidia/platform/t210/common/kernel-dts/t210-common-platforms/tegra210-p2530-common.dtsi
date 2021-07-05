@@ -30,6 +30,8 @@
 
 	chosen {
 		fastboot-instructions = "Tap on power button to navigate menu options.\nHold down power button for 2 sec and release for selecting an option\n";
+		plugin-manager {
+		};
 	};
 
 	cpus {
@@ -160,7 +162,6 @@
 	aconnect@702c0000 {
 #endif
 	adma@702e2000  {
-		dma-channels = <10>;
 		status = "okay";
 	};
 

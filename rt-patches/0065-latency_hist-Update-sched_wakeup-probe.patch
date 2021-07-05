@@ -1,0 +1,47 @@
+From 6bb436359c86d15d57f5afdbd66815fc354fec38 Mon Sep 17 00:00:00 2001
+From: Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
+Date: Sun, 25 Oct 2015 18:06:05 -0400
+Subject: [PATCH 065/371] latency_hist: Update sched_wakeup probe
+X-NVConfidentiality: public
+
+"sched: Introduce the 'trace_sched_waking' tracepoint" introduces a
+prototype change for the sched_wakeup probe: the "success" argument is
+removed. Update the latency_hist probe following this change.
+
+Signed-off-by: Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
+Cc: Peter Zijlstra (Intel) <peterz@infradead.org>
+Cc: Julien Desfossez <jdesfossez@efficios.com>
+Cc: Francis Giraldeau <francis.giraldeau@gmail.com>
+Cc: Mike Galbraith <efault@gmx.de>
+Cc: Steven Rostedt <rostedt@goodmis.org>
+Link: http://lkml.kernel.org/r/1445810765-18732-1-git-send-email-mathieu.desnoyers@efficios.com
+Signed-off-by: Thomas Gleixner <tglx@linutronix.de>
+---
+ kernel/trace/latency_hist.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/kernel/trace/latency_hist.c b/kernel/trace/latency_hist.c
+index 66a69eb..b6c1d14 100644
+--- a/kernel/trace/latency_hist.c
++++ b/kernel/trace/latency_hist.c
+@@ -115,7 +115,7 @@ static DEFINE_PER_CPU(struct hist_data, wakeup_latency_hist_sharedprio);
+ static char *wakeup_latency_hist_dir = "wakeup";
+ static char *wakeup_latency_hist_dir_sharedprio = "sharedprio";
+ static notrace void probe_wakeup_latency_hist_start(void *v,
+-	struct task_struct *p, int success);
++	struct task_struct *p);
+ static notrace void probe_wakeup_latency_hist_stop(void *v,
+ 	struct task_struct *prev, struct task_struct *next);
+ static notrace void probe_sched_migrate_task(void *,
+@@ -869,7 +869,7 @@ static notrace void probe_sched_migrate_task(void *v, struct task_struct *task,
+ }
+ 
+ static notrace void probe_wakeup_latency_hist_start(void *v,
+-	struct task_struct *p, int success)
++	struct task_struct *p)
+ {
+ 	unsigned long flags;
+ 	struct task_struct *curr = current;
+-- 
+2.7.4
+

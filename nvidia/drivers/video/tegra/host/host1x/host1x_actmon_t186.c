@@ -1,7 +1,7 @@
 /*
  * Tegra Graphics Host Actmon support for T186
  *
- * Copyright (c) 2015-2017, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2015-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -181,6 +181,21 @@ static void __iomem *host1x_actmon_get_regs(struct host1x_actmon *actmon)
 	return NULL;
 }
 
+static unsigned long get_module_freq(struct host1x_actmon *actmon)
+{
+	unsigned long freq = 0;
+
+	struct platform_device *pdev = actmon->pdev;
+	struct nvhost_device_data *engine_pdata = platform_get_drvdata(pdev);
+	struct devfreq *df = engine_pdata->power_manager;
+	struct nvhost_device_data *pdata = dev_get_drvdata(df->dev.parent);
+	struct nvhost_device_profile *profile = pdata->power_profile;
+
+	freq = clk_get_rate(profile->clk);
+
+	return freq;
+}
+
 static int host1x_actmon_init(struct host1x_actmon *actmon)
 {
 	struct platform_device *host_pdev = actmon->host->dev;
@@ -225,6 +240,10 @@ static int host1x_actmon_init(struct host1x_actmon *actmon)
 	val |= actmon_local_ctrl_actmon_enable_f(1);
 	val |= actmon_local_ctrl_enb_cumulative_f(1);
 	actmon_writel(actmon, val, actmon_local_ctrl_r());
+
+	/* Set COUNT_WEIGHT @actmon */
+	actmon_writel(actmon, engine_pdata->actmon_weight_count,
+					actmon_local_count_weight_r());
 
 	/* Enable global interrupt */
 	if (engine_pdata->actmon_irq)
@@ -297,6 +316,8 @@ static int host1x_actmon_avg_norm(struct host1x_actmon *actmon, u32 *avg)
 {
 	long val;
 	int err;
+	unsigned long freq = 0;
+	u32 dev_cycle_per_sample = 0;
 
 	if (!(actmon->init == ACTMON_READY && actmon->clks_per_sample > 0 &&
 	    actmon->divider)) {
@@ -313,7 +334,11 @@ static int host1x_actmon_avg_norm(struct host1x_actmon *actmon, u32 *avg)
 	val = actmon_readl(actmon, actmon_local_avg_count_r());
 	nvhost_module_idle(actmon->host->dev);
 
-	*avg = (val * 1000) / (actmon->clks_per_sample * actmon->divider);
+	freq = get_module_freq(actmon);
+	dev_cycle_per_sample = ((freq / 1000) * actmon->usecs_per_sample)
+								/ 1000;
+
+	*avg = (val * 1000) / dev_cycle_per_sample;
 
 	return 0;
 }
@@ -366,12 +391,19 @@ static int host1x_actmon_count_norm(struct host1x_actmon *actmon, u32 *avg)
 
 static int host1x_set_high_wmark(struct host1x_actmon *actmon, u32 val_scaled)
 {
-	u32 val = (val_scaled < 1000) ?
-		((val_scaled * actmon->clks_per_sample * actmon->divider) /
-		1000) : actmon->clks_per_sample * actmon->divider;
+	u32 freq_khz = 0;
+	u32 dev_cycle_per_sample = 0;
+	u32 val = 0;
 
 	if (actmon->init != ACTMON_READY)
 		return 0;
+
+	freq_khz = get_module_freq(actmon) / 1000;
+	dev_cycle_per_sample = (actmon->usecs_per_sample * freq_khz) / 1000;
+
+	val = (val_scaled < 1000) ?
+		((val_scaled * dev_cycle_per_sample) / 1000) :
+		dev_cycle_per_sample;
 
 	/* write new watermark */
 	actmon_writel(actmon, val, actmon_local_avg_upper_wmark_r());
@@ -391,12 +423,19 @@ static int host1x_set_high_wmark(struct host1x_actmon *actmon, u32 val_scaled)
 
 static int host1x_set_low_wmark(struct host1x_actmon *actmon, u32 val_scaled)
 {
-	u32 val = (val_scaled < 1000) ?
-		((val_scaled * actmon->clks_per_sample * actmon->divider) /
-		1000) : actmon->clks_per_sample * actmon->divider;
+	u32 freq_khz = 0;
+	u32 dev_cycle_per_sample = 0;
+	u32 val = 0;
 
 	if (actmon->init != ACTMON_READY)
 		return 0;
+
+	freq_khz = get_module_freq(actmon) / 1000;
+	dev_cycle_per_sample = (actmon->usecs_per_sample * freq_khz) / 1000;
+
+	val = (val_scaled < 1000) ?
+		((val_scaled * dev_cycle_per_sample) / 1000) :
+		dev_cycle_per_sample;
 
 	/* write new watermark */
 	actmon_writel(actmon, val, actmon_local_avg_lower_wmark_r());
@@ -410,7 +449,6 @@ static int host1x_set_low_wmark(struct host1x_actmon *actmon, u32 val_scaled)
 	actmon_writel(actmon, val, actmon_local_intr_en_r());
 
 	host1x_actmon_dump_regs(actmon);
-
 	return 0;
 }
 

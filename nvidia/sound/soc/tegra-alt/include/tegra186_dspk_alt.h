@@ -171,24 +171,12 @@
 
 #define TEGRA186_DSPK_RX_FIFO_DEPTH			4
 
-struct tegra186_dspk_soc_data {
-        void (*set_audio_cif) (struct regmap *map,
-			unsigned int reg,
-			struct tegra210_xbar_cif_conf *conf);
-};
-
 struct tegra186_dspk {
         struct clk *clk_dspk;
-	struct clk *clk_pll_a_out0;
         struct regmap *regmap;
-        const struct tegra186_dspk_soc_data *soc_data;
-	struct pinctrl *pinctrl;
-	struct pinctrl_state *pin_active_state;
-	struct pinctrl_state *pin_idle_state;
 	const char *prod_name;
 	unsigned int rx_fifo_th; /* threshold in terms of frames */
 	unsigned int osr_val; /* osr value */
-	bool is_shutdown;
 };
 
 #endif

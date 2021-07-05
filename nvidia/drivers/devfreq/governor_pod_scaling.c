@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2012-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -61,6 +61,7 @@ static struct devfreq_governor nvhost_podgov;
 
 struct podgov_info_rec {
 	int			enable;
+	int                     suspended;
 	int			init;
 
 	ktime_t			last_scale;
@@ -559,6 +560,22 @@ static int nvhost_pod_estimate_freq(struct devfreq *df,
 	ktime_t now;
 	unsigned long long norm_load;
 
+	/* If the device is suspended, clear the history and set frequency to
+	 * min freq.
+	 */
+	if (pg->suspended) {
+		*freq = df->min_freq;
+		pg->last_scale = ktime_get();
+		i = 0;
+		for (; i < MAX_HISTORY_BUF_SIZE; i++)
+			pg->cycles_history_buf[i] = 0;
+		pg->history_count = 0;
+		pg->history_next = 0;
+		pg->recent_high = 0;
+		pg->freq_avg = 0;
+		return 0;
+	}
+
 	/* Ensure maximal clock when scaling is disabled */
 	if (!pg->enable) {
 		*freq = df->max_freq;
@@ -681,6 +698,7 @@ static int nvhost_pod_init(struct devfreq *df)
 
 	/* Set scaling parameter defaults */
 	podgov->enable = 1;
+	podgov->suspended = 0;
 
 	podgov->p_load_max = 900;
 	podgov->p_load_target = 700;
@@ -784,6 +802,46 @@ static void nvhost_pod_exit(struct devfreq *df)
 	kfree(podgov);
 }
 
+/******************************************************************************
+ * nvhost_pod_suspend(struct devfreq *df)
+ *
+ * Suspends the governor.
+ *****************************************************************************/
+
+static void nvhost_pod_suspend(struct devfreq *df)
+{
+	// Record suspension in our own data structure because we'll have to
+	// erase and restore devfreq's for this to work.
+	struct podgov_info_rec *pg = df->data;
+
+	pg->suspended = 1;
+
+	// Update frequency for the final time before going into suspension.
+	mutex_lock(&df->lock);
+	df->suspended = false;
+	update_devfreq(df);
+	df->suspended = true;
+	mutex_unlock(&df->lock);
+	devfreq_monitor_suspend(df);
+}
+
+/******************************************************************************
+ * nvhost_pod_resume(struct devfreq *df)
+ *
+ * Resumes the governor.
+ *****************************************************************************/
+
+static void nvhost_pod_resume(struct devfreq *df)
+{
+	// Update our data structure's suspension field
+	struct podgov_info_rec *pg = df->data;
+
+	pg->suspended = 0;
+
+	// Resume
+	devfreq_monitor_resume(df);
+}
+
 static int nvhost_pod_event_handler(struct devfreq *df,
 			unsigned int event, void *data)
 {
@@ -800,10 +858,10 @@ static int nvhost_pod_event_handler(struct devfreq *df,
 		devfreq_interval_update(df, (unsigned int *)data);
 		break;
 	case DEVFREQ_GOV_SUSPEND:
-		devfreq_monitor_suspend(df);
+		nvhost_pod_suspend(df);
 		break;
 	case DEVFREQ_GOV_RESUME:
-		devfreq_monitor_resume(df);
+		nvhost_pod_resume(df);
 		break;
 	default:
 		break;

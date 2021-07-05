@@ -1,7 +1,7 @@
 /*
  * hdmi2.0.c: hdmi2.0 driver.
  *
- * Copyright (c) 2014-2019, NVIDIA CORPORATION, All rights reserved.
+ * Copyright (c) 2014-2020, NVIDIA CORPORATION, All rights reserved.
  * Author: Animesh Kishore <ankishore@nvidia.com>
  *
  * This software is licensed under the terms of the GNU General Public
@@ -35,7 +35,7 @@
 #include <linux/of_address.h>
 #include <linux/of_gpio.h>
 #include <soc/tegra/tegra_powergate.h>
-#include <video/tegra_dc_ext.h>
+#include <uapi/video/tegra_dc_ext.h>
 
 #include "dc.h"
 #include "dc_reg.h"
@@ -155,7 +155,9 @@ static inline void _tegra_hdmi_ddc_enable(struct tegra_hdmi *hdmi)
 	if (hdmi->ddc_refcount++)
 		goto fail;
 	tegra_hdmi_get(hdmi->dc);
+	mutex_lock(&hdmi->dpaux->lock);
 	tegra_dpaux_get(hdmi->dpaux);
+	mutex_unlock(&hdmi->dpaux->lock);
 	/*
 	 * hdmi uses i2c lane muxed on dpaux1 pad.
 	 * Enable dpaux1 pads and configure the mux.
@@ -180,7 +182,9 @@ static inline void _tegra_hdmi_ddc_disable(struct tegra_hdmi *hdmi)
 	 * Disable dpaux1 pads.
 	 */
 	tegra_dpaux_pad_power(hdmi->dpaux, false);
+	mutex_lock(&hdmi->dpaux->lock);
 	tegra_dpaux_put(hdmi->dpaux);
+	mutex_unlock(&hdmi->dpaux->lock);
 	tegra_hdmi_put(hdmi->dc);
 
 fail:
@@ -371,12 +375,8 @@ static bool tegra_hdmi_fb_mode_filter(const struct tegra_dc *dc,
 		!tegra_edid_is_scdc_present(hdmi->edid)))
 		return false;
 
-	/*
-	 * Check if mode's pixel clock requirement can be satisfied. Note that
-	 * the pixclock value is in pico seconds.
-	 */
-	if (mode->pixclock && tegra_dc_get_out_max_pixclock(dc) &&
-		mode->pixclock < tegra_dc_get_out_max_pixclock(dc))
+	/* Check if the mode's pixel clock is more than the max rate*/
+	if (!tegra_dc_valid_pixclock(dc, mode))
 		return false;
 
 	/*
@@ -405,7 +405,7 @@ static bool tegra_hdmi_fb_mode_filter(const struct tegra_dc *dc,
 
 static int tegra_hdmi_get_mon_spec(struct tegra_hdmi *hdmi)
 {
-#define MAX_RETRY 100
+#define MAX_RETRY 10
 #define MIN_RETRY_DELAY_US 200
 #define MAX_RETRY_DELAY_US (MIN_RETRY_DELAY_US + 200)
 
@@ -548,7 +548,6 @@ static void tegra_hdmi_hotplug_notify(struct tegra_hdmi *hdmi,
 static int tegra_hdmi_edid_eld_setup(struct tegra_hdmi *hdmi)
 {
 	int err;
-	int dev_id;
 
 	tegra_unpowergate_partition(hdmi->sor->powergate_id);
 
@@ -568,9 +567,7 @@ static int tegra_hdmi_edid_eld_setup(struct tegra_hdmi *hdmi)
 	 * Try to write ELD data to SOR (needed only for boot
 	 * doesn't do anything during hotplug)
 	 */
-	/* Read the dev_id of the sor */
-	dev_id = tegra_hda_get_dev_id(hdmi->sor);
-	tegra_hdmi_setup_hda_presence(dev_id);
+	tegra_hdmi_setup_hda_presence(hdmi->sor->dev_id);
 
 	tegra_powergate_partition(hdmi->sor->powergate_id);
 
@@ -2070,7 +2067,6 @@ static u32 tegra_hdmi_get_ex_colorimetry(struct tegra_hdmi *hdmi)
 static u32 tegra_hdmi_get_rgb_quant(struct tegra_hdmi *hdmi)
 {
 	u32 vmode = hdmi->dc->mode.vmode;
-	u32 hdmi_quant = HDMI_AVI_RGB_QUANT_DEFAULT;
 
 	/*
 	 * For seamless HDMI, read Q0/Q1 from bootloader
@@ -2095,14 +2091,8 @@ static u32 tegra_hdmi_get_rgb_quant(struct tegra_hdmi *hdmi)
 		}
 	}
 
-	dev_info(&hdmi->dc->ndev->dev, "hdmi: get RGB quant from EDID.\n");
-	if (tegra_edid_is_rgb_quantization_selectable(hdmi->edid)) {
-		if (vmode & FB_VMODE_LIMITED_RANGE)
-			hdmi_quant = HDMI_AVI_RGB_QUANT_LIMITED;
-		else
-			hdmi_quant = HDMI_AVI_RGB_QUANT_FULL;
-	}
-	return hdmi_quant;
+	return (vmode & FB_VMODE_LIMITED_RANGE) ? HDMI_AVI_RGB_QUANT_LIMITED :
+		HDMI_AVI_RGB_QUANT_FULL;
 }
 
 static u32 tegra_hdmi_get_ycc_quant(struct tegra_hdmi *hdmi)
@@ -2169,7 +2159,7 @@ static void tegra_hdmi_avi_infoframe_update(struct tegra_hdmi *hdmi)
 		avi->ext_colorimetry = HDMI_AVI_EXT_COLORIMETRY_BT2020_YCC_RGB;
 		break;
 	case TEGRA_DC_EXT_AVI_COLORIMETRY_xvYCC709:
-		avi->colorimetry = HDMI_AVI_COLORIMETRY_DEFAULT;
+		avi->colorimetry = HDMI_AVI_COLORIMETRY_EXTENDED_VALID;
 		avi->ext_colorimetry = HDMI_AVI_EXT_COLORIMETRY_xvYCC709;
 		break;
 	default:
@@ -2489,6 +2479,8 @@ static int tegra_hdmi_scdc_read(struct tegra_hdmi *hdmi,
 					u8 offset_data[][2], u32 n_entries)
 {
 	u32 i;
+	int ret = 0;
+	struct i2c_adapter *i2c_adap = i2c_get_adapter(hdmi->dc->out->ddc_bus);
 	struct i2c_msg msg[] = {
 		{
 			.addr = 0x54,
@@ -2508,8 +2500,18 @@ static int tegra_hdmi_scdc_read(struct tegra_hdmi *hdmi,
 	for (i = 0; i < n_entries; i++) {
 		msg[0].buf = offset_data[i];
 		msg[1].buf = &offset_data[i][1];
-		tegra_hdmi_scdc_i2c_xfer(hdmi->dc, msg, ARRAY_SIZE(msg));
+		do {
+			ret = tegra_hdmi_scdc_i2c_xfer(hdmi->dc, msg,
+							ARRAY_SIZE(msg));
+		} while ((ret < 0)  && !tegra_edid_i2c_divide_rate(hdmi->edid));
 	}
+
+	/* Reset ddc i2c clock rate to original rate */
+	ret = tegra_edid_i2c_adap_change_rate(i2c_adap,
+				hdmi->ddc_i2c_original_rate);
+	if (ret < 0)
+		dev_info(&hdmi->dc->ndev->dev,
+			"Failed to reset DDC i2c clock rate for scdc read\n");
 
 	_tegra_hdmi_ddc_disable(hdmi);
 
@@ -2847,12 +2849,16 @@ static int tegra_hdmi_controller_enable(struct tegra_hdmi *hdmi)
 	else
 		tegra_dc_enable_disp_ctrl_mode(dc);
 
-	/* enable hdcp */
-	if (hdmi->edid_src == EDID_SRC_PANEL && !hdmi->dc->vedid)
+	/* enable hdcp only if valid edid */
+	if (hdmi->edid_src == EDID_SRC_PANEL && !hdmi->dc->vedid &&
+		(tegra_edid_get_monspecs(hdmi->edid, &hdmi->mon_spec) == 0))
 		tegra_nvhdcp_set_plug(hdmi->nvhdcp, true);
 
-	if (hdmi->dpaux)
+	if (hdmi->dpaux) {
+		mutex_lock(&hdmi->dpaux->lock);
 		tegra_dpaux_prod_set(hdmi->dpaux);
+		mutex_unlock(&hdmi->dpaux->lock);
+	}
 
 	if (tegra_dc_is_t21x()) {
 		tegra_dc_setup_clk(dc, dc->clk);
@@ -3063,6 +3069,9 @@ static inline void tegra_sor_set_ref_clk_rate(struct tegra_dc_sor_data *sor)
 static long tegra_dc_hdmi_setup_clk_nvdisplay(struct tegra_dc *dc,
 					      struct clk *clk)
 {
+#define MIN_PARENT_CLK	(27000000)
+#define DIVIDER_CAP	(128)
+
 	struct clk *parent_clk;
 	struct tegra_hdmi *hdmi = tegra_dc_get_outdata(dc);
 	struct tegra_dc_sor_data *sor = hdmi->sor;
@@ -3098,6 +3107,20 @@ static long tegra_dc_hdmi_setup_clk_nvdisplay(struct tegra_dc *dc,
 		if ((IS_RGB(yuv_flag) && (yuv_flag == FB_VMODE_Y36)) ||
 				(yuv_flag == (FB_VMODE_Y444 | FB_VMODE_Y36)))
 			parent_clk_rate *= 3;
+
+		/*
+		 * For t18x plldx cannot go below 27MHz.
+		 * Real HW limit is lesser though.
+		 * 27Mz is chosen to have a safe margin.
+		 */
+		if (parent_clk_rate < (MIN_PARENT_CLK/DIVIDER_CAP)) {
+			dev_err(&dc->ndev->dev, "hdmi: unsupported parent clock rate (%ld).\n",
+					parent_clk_rate);
+			return -EINVAL;
+		}
+
+		while (parent_clk_rate < MIN_PARENT_CLK)
+			parent_clk_rate += parent_clk_rate;
 
 		clk_set_rate(parent_clk, parent_clk_rate);
 

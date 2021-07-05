@@ -260,7 +260,6 @@ struct hdac_bus {
 	/* h/w resources */
 	unsigned long addr;
 	void __iomem *remap_addr;
-	void __iomem *remap_addr_fpci;
 	int irq;
 
 	void __iomem *ppcap;
@@ -401,24 +400,6 @@ void snd_hdac_bus_free_stream_pages(struct hdac_bus *bus);
 #define snd_hdac_chip_updateb(chip, reg, mask, val) \
 	snd_hdac_chip_writeb(chip, reg, \
 			     (snd_hdac_chip_readb(chip, reg) & ~(mask)) | (val))
-
-/* macros for read/write to AZX_FPCI registers */
-#define _snd_fpci_chip_write(type, chip, reg, value) \
-	((chip)->io_ops->reg_write ## type(value, \
-					(chip)->remap_addr_fpci + (reg)))
-#define _snd_fpci_chip_read(type, chip, reg) \
-	((chip)->io_ops->reg_read ## type((chip)->remap_addr_fpci + (reg)))
-
-/* read/write a register, pass without AZX_FPCI_ prefix */
-#define snd_fpci_chip_writel(chip, reg, value) \
-	_snd_fpci_chip_write(l, chip, AZX_FPCI_ ## reg, value)
-#define snd_fpci_chip_readl(chip, reg) \
-	_snd_fpci_chip_read(l, chip, AZX_FPCI_ ## reg)
-
-/* update a register, pass without AZX_FPCI_ prefix */
-#define snd_fpci_chip_updatel(chip, reg, mask, val) \
-	snd_fpci_chip_writel(chip, reg, \
-			     (snd_fpci_chip_readl(chip, reg) & ~(mask)) | (val))
 
 /*
  * HD-audio stream

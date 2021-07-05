@@ -29,6 +29,7 @@ struct gk20a;
 
 bool gv11b_is_pmu_supported(struct gk20a *g);
 int gv11b_pmu_bootstrap(struct nvgpu_pmu *pmu);
+void gv11b_pmu_init_perfmon_counter(struct gk20a *g);
 int gv11b_pg_gr_init(struct gk20a *g, u32 pg_engine_id);
 int gv11b_pg_set_subfeature_mask(struct gk20a *g, u32 pg_engine_id);
 bool gv11b_is_lazy_bootstrap(u32 falcon_id);

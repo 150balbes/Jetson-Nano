@@ -1,7 +1,7 @@
 /*
  * tegracam_v4l2 - tegra camera framework for v4l2 support
  *
- * Copyright (c) 2018-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2018-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -16,6 +16,7 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include <linux/types.h>
+#include <linux/module.h>
 #include <media/tegra-v4l2-camera.h>
 #include <media/tegracam_core.h>
 #include <media/tegracam_utils.h>
@@ -29,7 +30,7 @@ static int v4l2sd_stream(struct v4l2_subdev *sd, int enable)
 	struct tegracam_sensor_data *sensor_data = &s_data->tegracam_ctrl_hdl->sensor_data;
 	struct sensor_blob *ctrl_blob = &sensor_data->ctrls_blob;
 	struct sensor_blob *mode_blob = &sensor_data->mode_blob;
-	int err;
+	int err = 0;
 
 	dev_dbg(&client->dev, "%s++ enable %d\n", __func__, enable);
 
@@ -37,10 +38,14 @@ static int v4l2sd_stream(struct v4l2_subdev *sd, int enable)
 	memset(ctrl_blob, 0, sizeof(struct sensor_blob));
 	memset(mode_blob, 0, sizeof(struct sensor_blob));
 	if (enable) {
+		/* increase ref count so module can't be unloaded while streaming */
+		if (!try_module_get(s_data->owner))
+			return -ENODEV;
+
 		err = sensor_ops->set_mode(tc_dev);
 		if (err) {
 			dev_err(&client->dev, "Error writing mode\n");
-			return err;
+			goto error;
 		}
 
 		/* update control ranges based on mode settings*/
@@ -48,7 +53,7 @@ static int v4l2sd_stream(struct v4l2_subdev *sd, int enable)
 			s_data->tegracam_ctrl_hdl, (u32) s_data->mode);
 		if (err) {
 			dev_err(&client->dev, "Error updating control ranges\n");
-			return err;
+			goto error;
 		}
 
 		if (s_data->override_enable) {
@@ -57,15 +62,16 @@ static int v4l2sd_stream(struct v4l2_subdev *sd, int enable)
 			if (err) {
 				dev_err(&client->dev,
 					"overrides cannot be set\n");
-				return err;
+				goto error;
 			}
 		}
 
 		err = sensor_ops->start_streaming(tc_dev);
 		if (err) {
 			dev_err(&client->dev, "Error turning on streaming\n");
-			return err;
+			goto error;
 		}
+
 		/* add done command for blobs */
 		prepare_done_cmd(mode_blob);
 		prepare_done_cmd(ctrl_blob);
@@ -74,14 +80,21 @@ static int v4l2sd_stream(struct v4l2_subdev *sd, int enable)
 		err = sensor_ops->stop_streaming(tc_dev);
 		if (err) {
 			dev_err(&client->dev, "Error turning off streaming\n");
-			return err;
+			goto error;
 		}
+
 		/* add done command for blob */
 		prepare_done_cmd(ctrl_blob);
 		tc_dev->is_streaming = false;
+
+		module_put(s_data->owner);
 	}
 
 	return 0;
+
+error:
+	module_put(s_data->owner);
+	return err;
 }
 
 static int v4l2sd_g_input_status(struct v4l2_subdev *sd, u32 *status)
@@ -174,11 +187,6 @@ int tegracam_v4l2subdev_register(struct tegracam_device *tc_dev,
 		return -ENODEV;
 	}
 
-	if (!tc_dev->tcctrl_ops) {
-		dev_err(dev, "uninitialized control ops\n");
-		return -EINVAL;
-	}
-
 	v4l2_i2c_subdev_init(sd, tc_dev->client, &v4l2sd_ops);
 
 	ctrl_hdl->ctrl_ops = tc_dev->tcctrl_ops;
@@ -187,13 +195,19 @@ int tegracam_v4l2subdev_register(struct tegracam_device *tc_dev,
 		dev_err(dev, "Failed to init ctrls %s\n", tc_dev->name);
 		return err;
 	}
-	tc_dev->numctrls = ctrl_hdl->ctrl_ops->numctrls;
+	if (ctrl_hdl->ctrl_ops != NULL)
+		tc_dev->numctrls = ctrl_hdl->ctrl_ops->numctrls;
+	else
+		tc_dev->numctrls = 0;
 	s_data->numctrls = tc_dev->numctrls;
 	sd->ctrl_handler = s_data->ctrl_handler = &ctrl_hdl->ctrl_handler;
 	s_data->ctrls = ctrl_hdl->ctrls;
 	sd->internal_ops = tc_dev->v4l2sd_internal_ops;
 	sd->flags |= V4L2_SUBDEV_FL_HAS_DEVNODE |
 			V4L2_SUBDEV_FL_HAS_EVENTS;
+	s_data->owner = sd->owner;
+	/* Set owner to NULL so we can unload the driver module */
+	sd->owner = NULL;
 
 #if defined(CONFIG_MEDIA_CONTROLLER)
 	tc_dev->pad.flags = MEDIA_PAD_FL_SOURCE;

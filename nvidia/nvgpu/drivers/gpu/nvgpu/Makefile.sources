@@ -44,6 +44,7 @@ srcs :=	os/posix/nvgpu.c \
 	os/posix/nvlink.c \
 	os/posix/lock.c \
 	os/posix/stubs.c \
+	os/posix/posix-vpr.c \
 	common/mm/nvgpu_allocator.c \
 	common/mm/bitmap_allocator.c \
 	common/mm/buddy_allocator.c \

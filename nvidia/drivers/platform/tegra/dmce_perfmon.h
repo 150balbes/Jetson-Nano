@@ -125,4 +125,33 @@ struct dmce_perfmon_cnt_info {
 	uint8_t idx;		/* Physical Index */
 	uint8_t valid;		/* Valid info */
 };
+
+typedef enum {
+	ACTLR_EL3,
+	CPSR,
+	NV_PMCCFILTR_EL0,
+	NV_PMCCNTR_EL0,
+	NV_PMCEID0_EL0,
+	NV_PMCEID1_EL0,
+	NV_PMCNTENCLR_EL0,
+	NV_PMCNTENSET_EL0,
+	NV_PMCR_EL0,
+	NV_PMCRN_EL0,
+	NV_PMINTENCLR_EL1,
+	NV_PMINTENSET_EL1,
+	NV_PMOVSCLR_EL0,
+	NV_PMOVSSET_EL0,
+	NV_PMSELR_EL0,
+	NV_PMSWINC_EL0,
+	NV_PMUSERENR_EL0,
+	NV_PMEVCNTR0_EL0,
+	NV_PMEVCNTR1_EL0,
+	NV_PMEVTYPER0_EL0,
+	NV_PMEVTYPER1_EL0,
+	NV_PMEVCNTRn_EL0,
+	NV_PMEVTYPERn_EL0,
+
+
+} carmel_pmc_reg_t;
+
 #endif

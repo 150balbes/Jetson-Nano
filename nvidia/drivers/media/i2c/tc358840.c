@@ -2,7 +2,7 @@
  * tc358840.c - Toshiba UH2C/D HDMI-CSI bridge driver
  *
  * Copyright (c) 2015, Armin Weiss <weii@zhaw.ch>
- * Copyright (c) 2016 - 2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2016 - 2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is based on the tc358840 - Toshiba HDMI to CSI-2 bridge driver
  * from Cisco Systems, Inc.
@@ -2415,6 +2415,10 @@ static int tc358840_probe(struct i2c_client *client, const struct i2c_device_id 
 	sd->dev	= &client->dev;
 	sd->internal_ops = &tc358840_subdev_internal_ops;
 	sd->flags |= V4L2_SUBDEV_FL_HAS_DEVNODE | V4L2_SUBDEV_FL_HAS_EVENTS;
+
+	/* Set owner to NULL so we can unload the driver module */
+	sd->owner = NULL;
+
 #if defined(CONFIG_MEDIA_CONTROLLER)
 	state->pad[0].flags = MEDIA_PAD_FL_SOURCE;
 	state->pad[1].flags = MEDIA_PAD_FL_SOURCE;
@@ -2436,15 +2440,37 @@ err_hdl:
 	return err;
 }
 
+static void tc358840_shutdown(struct i2c_client *client)
+{
+	struct v4l2_subdev *sd = i2c_get_clientdata(client);
+	struct tc358840_state *state = to_state(sd);
+
+	v4l_dbg(1, debug, client, "%s()\n", __func__);
+
+	cancel_delayed_work_sync(&state->delayed_work_enable_hotplug);
+	cancel_delayed_work_sync(&state->delayed_work_enable_interrupt);
+	/*
+	 * Do this again since there is a race where delayed_work_stop_polling
+	 * was set when tc358840_delayed_work_poll was just scheduling the
+	 * next tc358840_delayed_work_poll call. So this second cancel will
+	 * prevent that rescheduled work from running.
+	 */
+	cancel_delayed_work_sync(&state->delayed_work_enable_interrupt);
+	v4l_info(client, "shutdown tc358840 instance\n");
+}
+
 static int tc358840_remove(struct i2c_client *client)
 {
 	struct v4l2_subdev *sd = i2c_get_clientdata(client);
 
 	v4l_dbg(1, debug, client, "%s()\n", __func__);
 
+	tc358840_shutdown(client);
+	v4l2_async_unregister_subdev(sd);
 #if defined(CONFIG_MEDIA_CONTROLLER)
 	media_entity_cleanup(&sd->entity);
 #endif
+	v4l_info(client, "removed tc358840 instance\n");
 	return 0;
 }
 
@@ -2471,6 +2497,7 @@ static struct i2c_driver tc358840_driver = {
 	},
 	.probe = tc358840_probe,
 	.remove = tc358840_remove,
+	.shutdown = tc358840_shutdown,
 	.id_table = tc358840_id,
 };
 module_i2c_driver(tc358840_driver);

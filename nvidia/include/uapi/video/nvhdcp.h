@@ -1,7 +1,9 @@
 /*
+ * include/uapi/video/nvhdcp.h
+ *
  * nvhdcp.h: tegra dc hdcp declarations.
  *
- * Copyright (c) 2010-2019, NVIDIA CORPORATION, All rights reserved.
+ * Copyright (c) 2016-2020, NVIDIA CORPORATION, All rights reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -17,9 +19,9 @@
 #ifndef __UAPI_LINUX_NVHDCP_H_
 #define __UAPI_LINUX_NVHDCP_H_
 
-#include <uapi/linux/fb.h>
-#include <uapi/linux/types.h>
-#include <uapi/asm-generic/ioctl.h>
+#include <linux/fb.h>
+#include <linux/types.h>
+#include <asm-generic/ioctl.h>
 
 /* maximum receivers and repeaters connected at a time */
 #define TEGRA_NVHDCP_MAX_DEVS	127
@@ -80,6 +82,8 @@ struct tegra_nvhdcp_packet {
 	__u32 port; /* (OUT) DP or HDMI */
 
 	__u32 binfo; /* (OUT) link/repeater status for DP */
+
+	__u32 sor; /* (OUT) SOR or SOR1 */
 };
 
 /* parameters to TEGRAIO_NVHDCP_SET_POLICY */

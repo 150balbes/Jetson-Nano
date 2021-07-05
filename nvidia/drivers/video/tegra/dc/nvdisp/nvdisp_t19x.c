@@ -1,7 +1,7 @@
 /*
  * drivers/video/tegra/dc/nvdisp/nvdisp_t19x.c
  *
- * Copyright (c) 2017, NVIDIA CORPORATION, All rights reserved.
+ * Copyright (c) 2017-2020, NVIDIA CORPORATION, All rights reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -212,6 +212,13 @@ inline void tegra_nvdisp_set_rg_unstall_t19x(struct tegra_dc *dc)
 			nvdisp_t19x_rg_status_r());
 }
 
+static struct tegra_dc_sor_info t19x_sor_info[] = {
+	{ .hdcp_supported = true },   /* SOR0 */
+	{ .hdcp_supported = true },   /* SOR1 */
+	{ .hdcp_supported = true },   /* SOR2 */
+	{ .hdcp_supported = true },   /* SOR3 */
+};
+
 void tegra_dc_populate_t19x_hw_data(struct tegra_dc_hw_data *hw_data)
 {
 	if (!hw_data)
@@ -220,6 +227,7 @@ void tegra_dc_populate_t19x_hw_data(struct tegra_dc_hw_data *hw_data)
 	hw_data->nheads = 4;
 	hw_data->nwins = 6;
 	hw_data->nsors = 4;
+	hw_data->sor_info = t19x_sor_info;
 	hw_data->pd_table = &t19x_disp_pd_table;
 	hw_data->valid = true;
 	hw_data->version = TEGRA_DC_HW_T19x;

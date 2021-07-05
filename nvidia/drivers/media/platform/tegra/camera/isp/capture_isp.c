@@ -3,7 +3,7 @@
  *
  * Tegra NvCapture ISP KMD
  *
- * Copyright (c) 2017-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * Author: Sudhir Vyas <svyas@nvidia.com>
  *
@@ -13,6 +13,7 @@
  */
 
 #include <linux/completion.h>
+#include <linux/nospec.h>
 #include <linux/nvhost.h>
 #include <linux/of_platform.h>
 #include <linux/printk.h>
@@ -757,6 +758,7 @@ int isp_capture_release(struct tegra_isp_channel *chan,
 		complete(&capture->capture_program_resp);
 		isp_capture_program_request_unpin(chan, i);
 	}
+	speculation_barrier();
 
 	capture_common_unpin_memory(&capture->program_desc_ctx.requests);
 	capture_common_unpin_memory(&capture->program_desc_ctx.requests_isp);
@@ -897,6 +899,7 @@ static int isp_capture_setup_inputfences(struct tegra_isp_channel *chan,
 			goto fail;
 		}
 	}
+	speculation_barrier(); /* break_spec_p#5_1 */
 
 fail:
 	kfree(inpfences_relocs);

@@ -1,0 +1,6 @@
+config	DUMMY_MEMORY_CARVEOUT
+	bool "Memory reservation specific to driver"
+	help
+	  Enable this option to integrate dummy driver to reserve memory
+	  carveout specific to driver.It is a an example to reserve memory
+	  carvout that will help to allocate buffers/block from carveout.

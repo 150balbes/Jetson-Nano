@@ -1347,25 +1347,5 @@
 				nvidia,pull-up-strength = <0x14>;
 			};
 		};
-
-		dvfs_pwm_active_state: dvfs_pwm_active {
-			dvfs_pwm_pbb1 {
-				nvidia,pins = "dvfs_pwm_pbb1";
-				nvidia,tristate = <TEGRA_PIN_DISABLE>;
-			};
-		};
-
-		dvfs_pwm_inactive_state: dvfs_pwm_inactive {
-			dvfs_pwm_pbb1 {
-				nvidia,pins = "dvfs_pwm_pbb1";
-				nvidia,tristate = <TEGRA_PIN_ENABLE>;
-			};
-		};
-	};
-
-	pwm@70110000 {
-		status = "okay";
-		pinctrl-0 = <&dvfs_pwm_active_state>;
-		pinctrl-1 = <&dvfs_pwm_inactive_state>;
 	};
 };

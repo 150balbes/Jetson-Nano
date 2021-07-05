@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2017, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2016-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -103,5 +103,13 @@ static inline u32 ce_intr_status_mthd_buffer_fault_reset_f(void)
 static inline u32 ce_pce_map_r(void)
 {
 	return 0x00104028U;
+}
+static inline u32 ce_lce_opt_r(u32 i)
+{
+	return 0x00104414U + i*128U;
+}
+static inline u32 ce_lce_opt_force_barriers_npl__prod_f(void)
+{
+	return 0x8U;
 }
 #endif

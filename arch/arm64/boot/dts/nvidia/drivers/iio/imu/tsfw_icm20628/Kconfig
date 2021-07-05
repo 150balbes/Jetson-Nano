@@ -1,5 +1,0 @@
-config TSFW_ICM
-	bool "Thunderstrike Accel/Gyro/Mag sensors"
-	depends on HID_SHIELD_REMOTE
-	help
-	  Enable Accelerometer, Gyro, and Magnetometer sensors on controller.

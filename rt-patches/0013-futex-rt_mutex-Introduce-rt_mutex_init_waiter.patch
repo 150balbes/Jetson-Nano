@@ -1,0 +1,90 @@
+From 3afb001c195c6c644c2fdff5e4dc03fe852590b0 Mon Sep 17 00:00:00 2001
+From: Peter Zijlstra <peterz@infradead.org>
+Date: Wed, 22 Mar 2017 11:35:56 +0100
+Subject: [PATCH 013/371] futex,rt_mutex: Introduce rt_mutex_init_waiter()
+X-NVConfidentiality: public
+
+Upstream commit 50809358dd7199aa7ce232f6877dd09ec30ef374
+
+Since there's already two copies of this code, introduce a helper now
+before adding a third one.
+
+Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Cc: juri.lelli@arm.com
+Cc: bigeasy@linutronix.de
+Cc: xlpang@redhat.com
+Cc: rostedt@goodmis.org
+Cc: mathieu.desnoyers@efficios.com
+Cc: jdesfossez@efficios.com
+Cc: dvhart@infradead.org
+Cc: bristot@redhat.com
+Link: http://lkml.kernel.org/r/20170322104151.950039479@infradead.org
+Signed-off-by: Thomas Gleixner <tglx@linutronix.de>
+Signed-off-by: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+---
+ kernel/futex.c                  |  5 +----
+ kernel/locking/rtmutex.c        | 12 +++++++++---
+ kernel/locking/rtmutex_common.h |  1 +
+ 3 files changed, 11 insertions(+), 7 deletions(-)
+
+diff --git a/kernel/futex.c b/kernel/futex.c
+index e464e03..a1934f8 100644
+--- a/kernel/futex.c
++++ b/kernel/futex.c
+@@ -3005,10 +3005,7 @@ static int futex_wait_requeue_pi(u32 __user *uaddr, unsigned int flags,
+ 	 * The waiter is allocated on our stack, manipulated by the requeue
+ 	 * code while we sleep on uaddr.
+ 	 */
+-	debug_rt_mutex_init_waiter(&rt_waiter);
+-	RB_CLEAR_NODE(&rt_waiter.pi_tree_entry);
+-	RB_CLEAR_NODE(&rt_waiter.tree_entry);
+-	rt_waiter.task = NULL;
++	rt_mutex_init_waiter(&rt_waiter);
+ 
+ 	ret = get_futex_key(uaddr2, flags & FLAGS_SHARED, &key2, VERIFY_WRITE);
+ 	if (unlikely(ret != 0))
+diff --git a/kernel/locking/rtmutex.c b/kernel/locking/rtmutex.c
+index de302c5..e1896ac 100644
+--- a/kernel/locking/rtmutex.c
++++ b/kernel/locking/rtmutex.c
+@@ -1176,6 +1176,14 @@ void rt_mutex_adjust_pi(struct task_struct *task)
+ 				   next_lock, NULL, task);
+ }
+ 
++void rt_mutex_init_waiter(struct rt_mutex_waiter *waiter)
++{
++	debug_rt_mutex_init_waiter(waiter);
++	RB_CLEAR_NODE(&waiter->pi_tree_entry);
++	RB_CLEAR_NODE(&waiter->tree_entry);
++	waiter->task = NULL;
++}
++
+ /**
+  * __rt_mutex_slowlock() - Perform the wait-wake-try-to-take loop
+  * @lock:		 the rt_mutex to take
+@@ -1258,9 +1266,7 @@ rt_mutex_slowlock(struct rt_mutex *lock, int state,
+ 	unsigned long flags;
+ 	int ret = 0;
+ 
+-	debug_rt_mutex_init_waiter(&waiter);
+-	RB_CLEAR_NODE(&waiter.pi_tree_entry);
+-	RB_CLEAR_NODE(&waiter.tree_entry);
++	rt_mutex_init_waiter(&waiter);
+ 
+ 	/*
+ 	 * Technically we could use raw_spin_[un]lock_irq() here, but this can
+diff --git a/kernel/locking/rtmutex_common.h b/kernel/locking/rtmutex_common.h
+index 882d84e..b550e9d 100644
+--- a/kernel/locking/rtmutex_common.h
++++ b/kernel/locking/rtmutex_common.h
+@@ -104,6 +104,7 @@ extern void rt_mutex_init_proxy_locked(struct rt_mutex *lock,
+ 				       struct task_struct *proxy_owner);
+ extern void rt_mutex_proxy_unlock(struct rt_mutex *lock,
+ 				  struct task_struct *proxy_owner);
++extern void rt_mutex_init_waiter(struct rt_mutex_waiter *waiter);
+ extern int rt_mutex_start_proxy_lock(struct rt_mutex *lock,
+ 				     struct rt_mutex_waiter *waiter,
+ 				     struct task_struct *task);
+-- 
+2.7.4
+

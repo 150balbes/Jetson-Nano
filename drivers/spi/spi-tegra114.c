@@ -1,7 +1,7 @@
 /*
  * SPI driver for NVIDIA's Tegra114 SPI Controller.
  *
- * Copyright (c) 2013-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2013-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -84,8 +84,7 @@
 #define SPI_RX_TAP_DELAY(x)			(((x) & 0x3F) << 0)
 
 #define SPI_CS_TIMING1				0x008
-#define SPI_SETUP_HOLD(setup, hold)		(((setup - 1) << 4) |	\
-						(hold - 1))
+#define SPI_SETUP_HOLD(setup, hold)		((setup << 4) | hold)
 #define SPI_CS_SETUP_HOLD(reg, cs, val)			\
 		((((val) & 0xFFu) << ((cs) * 8)) |	\
 		((reg) & ~(0xFFu << ((cs) * 8))))
@@ -185,6 +184,7 @@
 #define SPI_DEFAULT_RX_TAP_DELAY		10
 #define SPI_DEFAULT_TX_TAP_DELAY		0
 #define SPI_FIFO_FLUSH_MAX_DELAY		2000
+#define AUTOSUSPEND_TIMEOUT			300 /* in millisec */
 
 static bool prefer_last_used_cs;
 module_param_named(prefer_last_used_cs, prefer_last_used_cs, bool, 0644);
@@ -195,6 +195,7 @@ struct tegra_spi_chip_data {
 	bool intr_mask_reg;
 	bool set_rx_tap_delay;
 	bool slcg_support;
+	bool cs_active_delay_hw;
 };
 
 struct tegra_spi_client_ctl_state {
@@ -207,7 +208,7 @@ struct tegra_spi_client_ctl_data {
 	int cs_hold_clk_count;
 	int rx_clk_tap_delay;
 	int tx_clk_tap_delay;
-	int cs_inactive_cycles;
+	int is_cs_delay_inactive;
 	int clk_delay_between_packets;
 };
 
@@ -901,36 +902,33 @@ static void tegra_spi_set_timing2(struct spi_device *spi)
 	struct tegra_spi_client_ctl_data *cdata = spi->controller_data;
 	u32 spi_cs_timing2 = 0;
 
-	if (!cdata || tspi->prod_list)
+	if (!cdata)
 		return;
-	if (!cdata->clk_delay_between_packets)
-		return;
-	if (cdata->cs_inactive_cycles) {
+
+	if (cdata->is_cs_delay_inactive ||
+	    !tspi->chip_data->cs_active_delay_hw)
+		SPI_SET_CS_ACTIVE_BETWEEN_PACKETS(spi_cs_timing2,
+						  spi->chip_select, 0);
+	else
+		SPI_SET_CS_ACTIVE_BETWEEN_PACKETS(spi_cs_timing2,
+						  spi->chip_select, 1);
+
+	if (cdata->clk_delay_between_packets) {
 		u32 inactive_cycles;
 
-		SPI_SET_CS_ACTIVE_BETWEEN_PACKETS(spi_cs_timing2,
-						  spi->chip_select,
-						  0);
-		inactive_cycles = min(cdata->cs_inactive_cycles, 32);
+		inactive_cycles = min(cdata->clk_delay_between_packets, 32);
 		SPI_SET_CYCLES_BETWEEN_PACKETS(spi_cs_timing2,
 					       spi->chip_select,
 					       inactive_cycles);
-		if (tspi->spi_cs_timing2 != spi_cs_timing2) {
-			tspi->spi_cs_timing2 = spi_cs_timing2;
-			tegra_spi_writel(tspi, spi_cs_timing2,
-					 SPI_CS_TIMING2);
-		}
 		tspi->is_hw_based_cs = true;
 	} else {
-		SPI_SET_CS_ACTIVE_BETWEEN_PACKETS(spi_cs_timing2,
-						  spi->chip_select, 1);
 		SPI_SET_CYCLES_BETWEEN_PACKETS(spi_cs_timing2,
 					       spi->chip_select, 0);
-		if (tspi->spi_cs_timing2 != spi_cs_timing2) {
-			tspi->spi_cs_timing2 = spi_cs_timing2;
-			tegra_spi_writel(tspi, spi_cs_timing2,
-					 SPI_CS_TIMING2);
-		}
+	}
+
+	if (tspi->spi_cs_timing2 != spi_cs_timing2) {
+		tspi->spi_cs_timing2 = spi_cs_timing2;
+		tegra_spi_writel(tspi, spi_cs_timing2, SPI_CS_TIMING2);
 	}
 }
 
@@ -1208,10 +1206,17 @@ static struct tegra_spi_client_ctl_data
 			     &cdata->rx_clk_tap_delay);
 	of_property_read_u32(data_np, "nvidia,tx-clk-tap-delay",
 			     &cdata->tx_clk_tap_delay);
-	of_property_read_u32(data_np, "nvidia,cs-inactive-cycles",
-			     &cdata->cs_inactive_cycles);
-	of_property_read_u32(data_np, "nvidia,clk-delay-between-packets",
-			     &cdata->clk_delay_between_packets);
+	ret = of_property_read_u32(data_np, "nvidia,cs-inactive-cycles",
+				   &cdata->clk_delay_between_packets);
+	if (!ret)
+		cdata->is_cs_delay_inactive = 1;
+
+	/* clk_delay_between_packets is delay cycles active or inactive */
+	ret = of_property_read_u32(data_np, "nvidia,clk-delay-between-packets",
+				   &cdata->clk_delay_between_packets);
+	if (!ret)
+	/* is_cs_delay_inactive is used to decide cs active or inactive */
+		cdata->is_cs_delay_inactive = 0;
 
 	of_node_put(data_np);
 
@@ -1224,7 +1229,7 @@ static void tegra_spi_cleanup(struct spi_device *spi)
 	struct tegra_spi_client_ctl_state *cstate = spi->controller_state;
 
 	if (cdata && cdata->clk_delay_between_packets)
-		cdata->cs_inactive_cycles = 0;
+		cdata->clk_delay_between_packets = 0;
 	spi->controller_state = NULL;
 	if (cstate && cstate->cs_gpio_valid)
 		gpio_free(spi->cs_gpio);
@@ -1283,14 +1288,15 @@ static int tegra_spi_setup(struct spi_device *spi)
 		}
 	}
 
-	if (cdata && cdata->clk_delay_between_packets) {
-		if (cdata->cs_inactive_cycles || !cstate->cs_gpio_valid) {
+	if (cdata && cdata->clk_delay_between_packets &&
+	    !cdata->is_cs_delay_inactive &&
+	    !tspi->chip_data->cs_active_delay_hw) {
+		if (!cstate->cs_gpio_valid) {
 			dev_err(&spi->dev,
 				"Invalid cs packet delay config\n");
 			tegra_spi_cleanup(spi);
 			return -EINVAL;
 		}
-		cdata->cs_inactive_cycles = cdata->clk_delay_between_packets;
 	}
 
 	ret = pm_runtime_get_sync(tspi->dev);
@@ -1313,8 +1319,8 @@ static int tegra_spi_setup(struct spi_device *spi)
 	if (tspi->def_chip_select == spi->chip_select)
 		tegra_spi_set_cmd2(spi, spi->max_speed_hz);
 	spin_unlock_irqrestore(&tspi->lock, flags);
-
-	pm_runtime_put(tspi->dev);
+	pm_runtime_mark_last_busy(tspi->dev);
+	pm_runtime_put_autosuspend(tspi->dev);
 	return 0;
 }
 
@@ -1357,7 +1363,8 @@ static  int tegra_spi_cs_low(struct spi_device *spi, bool state)
 	}
 
 	spin_unlock_irqrestore(&tspi->lock, flags);
-	pm_runtime_put(tspi->dev);
+	pm_runtime_mark_last_busy(tspi->dev);
+	pm_runtime_put_autosuspend(tspi->dev);
 	return 0;
 }
 
@@ -1763,24 +1770,35 @@ static struct tegra_spi_chip_data tegra114_spi_chip_data = {
 	.intr_mask_reg = false,
 	.set_rx_tap_delay = false,
 	.slcg_support = false,
+	.cs_active_delay_hw = false,
 };
 
 static struct tegra_spi_chip_data tegra124_spi_chip_data = {
 	.intr_mask_reg = false,
 	.set_rx_tap_delay = true,
 	.slcg_support = false,
+	.cs_active_delay_hw = false,
 };
 
 static struct tegra_spi_chip_data tegra210_spi_chip_data = {
 	.intr_mask_reg = true,
 	.set_rx_tap_delay = false,
 	.slcg_support = false,
+	.cs_active_delay_hw = false,
 };
 
 static struct tegra_spi_chip_data tegra186_spi_chip_data = {
 	.intr_mask_reg = true,
 	.set_rx_tap_delay = false,
 	.slcg_support = false,
+	.cs_active_delay_hw = false,
+};
+
+static struct tegra_spi_chip_data tegra194_spi_chip_data = {
+	.intr_mask_reg = true,
+	.set_rx_tap_delay = false,
+	.slcg_support = false,
+	.cs_active_delay_hw = true,
 };
 
 static const struct of_device_id tegra_spi_of_match[] = {
@@ -1796,6 +1814,9 @@ static const struct of_device_id tegra_spi_of_match[] = {
 	}, {
 		.compatible = "nvidia,tegra186-spi",
 		.data       = &tegra186_spi_chip_data,
+	}, {
+		.compatible = "nvidia,tegra194-spi",
+		.data       = &tegra194_spi_chip_data,
 	},
 	{}
 };
@@ -1823,7 +1844,8 @@ static int tegra_spi_slcg_show(struct seq_file *s, void *unused)
 	else
 		seq_puts(s, "enabled\n");
 
-	pm_runtime_put(tspi->dev);
+	pm_runtime_mark_last_busy(tspi->dev);
+	pm_runtime_put_autosuspend(tspi->dev);
 
 	return 0;
 }
@@ -1969,6 +1991,8 @@ static int tegra_spi_probe(struct platform_device *pdev)
 		}
 	}
 
+	pm_runtime_set_autosuspend_delay(&pdev->dev, AUTOSUSPEND_TIMEOUT);
+	pm_runtime_use_autosuspend(&pdev->dev);
 	pm_runtime_enable(&pdev->dev);
 	if (!pm_runtime_enabled(&pdev->dev)) {
 		ret = tegra_spi_runtime_resume(&pdev->dev);
@@ -1992,7 +2016,9 @@ static int tegra_spi_probe(struct platform_device *pdev)
 	tegra_spi_writel(tspi, tspi->def_command1_reg, SPI_COMMAND1);
 	tspi->command2_reg = tegra_spi_readl(tspi, SPI_COMMAND2);
 	tegra_spi_set_slcg(tspi);
-	pm_runtime_put(&pdev->dev);
+
+	pm_runtime_mark_last_busy(&pdev->dev);
+	pm_runtime_put_autosuspend(&pdev->dev);
 
 	ret = request_threaded_irq(tspi->irq, tegra_spi_isr,
 				   tegra_spi_isr_thread, IRQF_ONESHOT,
@@ -2021,6 +2047,7 @@ exit_pm_disable:
 		tegra_spi_runtime_suspend(&pdev->dev);
 	if (tspi->clock_always_on)
 		clk_disable_unprepare(tspi->clk);
+	pm_runtime_dont_use_autosuspend(&pdev->dev);
 exit_tx_dma_free:
 	tegra_spi_deinit_dma_param(tspi, false);
 exit_rx_dma_free:
@@ -2094,7 +2121,9 @@ static int tegra_spi_resume(struct device *dev)
 	tspi->last_used_cs = master->num_chipselect + 1;
 	tegra_spi_set_intr_mask(tspi);
 	tegra_spi_set_slcg(tspi);
-	pm_runtime_put(dev);
+
+	pm_runtime_mark_last_busy(dev);
+	pm_runtime_put_autosuspend(dev);
 
 	return spi_master_resume(master);
 }
@@ -2107,7 +2136,6 @@ static int tegra_spi_runtime_suspend(struct device *dev)
 
 	/* Flush all write which are in PPSB queue by reading back */
 	tegra_spi_readl(tspi, SPI_COMMAND1);
-
 	if (!tspi->clock_always_on)
 		clk_disable_unprepare(tspi->clk);
 	return 0;
@@ -2118,7 +2146,6 @@ static int tegra_spi_runtime_resume(struct device *dev)
 	struct spi_master *master = dev_get_drvdata(dev);
 	struct tegra_spi_data *tspi = spi_master_get_devdata(master);
 	int ret;
-
 	if (!tspi->clock_always_on) {
 		ret = clk_prepare_enable(tspi->clk);
 		if (ret < 0) {

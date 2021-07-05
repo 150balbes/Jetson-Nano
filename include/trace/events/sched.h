@@ -664,7 +664,7 @@ TRACE_EVENT(sched_load_avg_task,
 	),
 
 	TP_printk("comm=%s pid=%d cpu=%d load_avg=%lu util_avg=%lu util_fast_avg=%lu"
-			"util_avg_pelt=%lu util_avg_walt=%u load_sum=%llu"
+			"util_avg_pelt=%lu util_avg_walt=%lu load_sum=%llu"
 		  " util_sum=%u period_contrib=%u",
 		  __entry->comm,
 		  __entry->pid,
@@ -713,7 +713,7 @@ TRACE_EVENT(sched_load_avg_cpu,
 	),
 
 	TP_printk("cpu=%d load_avg=%lu util_avg=%lu util_fast_avg=%lu "
-			  "util_avg_pelt=%lu util_avg_walt=%u",
+			  "util_avg_pelt=%lu util_avg_walt=%lu",
 		  __entry->cpu, __entry->load_avg, __entry->util_avg,
 		  __entry->util_fast_avg,
 		  __entry->util_avg_pelt, __entry->util_avg_walt)

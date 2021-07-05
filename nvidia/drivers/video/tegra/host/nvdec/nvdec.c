@@ -1,7 +1,7 @@
 /*
  * Tegra NVDEC Module Support
  *
- * Copyright (c) 2013-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2013-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -34,7 +34,7 @@
 #include <linux/version.h>
 
 #include <linux/tegra_pm_domains.h>
-#include <linux/nvhost_nvdec_ioctl.h>
+#include <uapi/linux/nvhost_nvdec_ioctl.h>
 
 #include <linux/platform/tegra/mc.h>
 
@@ -130,7 +130,7 @@ static int nvhost_nvdec_bl_init(struct platform_device *dev)
 {
 	u32 fb_data_offset = 0;
 	struct flcn **m = get_nvdec(dev);
-	struct nvdec_bl_shared_data shared_data;
+	struct nvdec_bl_shared_data shared_data = {0};
 	u32 debug = host1x_readl(dev,
 				nvdec_scp_ctl_stat_r()) &
 				nvdec_scp_ctl_stat_debug_mode_m();

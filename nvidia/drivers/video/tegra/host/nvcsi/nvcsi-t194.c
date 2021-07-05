@@ -1,7 +1,7 @@
 /*
  * NVCSI driver for T194
  *
- * Copyright (c) 2017-2018, NVIDIA Corporation.  All rights reserved.
+ * Copyright (c) 2017-2019, NVIDIA Corporation.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -17,7 +17,7 @@
  */
 
 #include "nvcsi-t194.h"
-#include <linux/nvhost_nvcsi_ioctl.h>
+#include <uapi/linux/nvhost_nvcsi_ioctl.h>
 #include <linux/tegra-camera-rtcpu.h>
 
 #include <asm/ioctls.h>

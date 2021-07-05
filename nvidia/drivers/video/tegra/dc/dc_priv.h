@@ -4,7 +4,7 @@
  * Copyright (C) 2010 Google, Inc.
  * Author: Erik Gilling <konkers@android.com>
  *
- * Copyright (c) 2010-2018, NVIDIA CORPORATION, All rights reserved.
+ * Copyright (c) 2010-2020, NVIDIA CORPORATION, All rights reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -20,14 +20,14 @@
 #ifndef __DRIVERS_VIDEO_TEGRA_DC_DC_PRIV_H
 #define __DRIVERS_VIDEO_TEGRA_DC_DC_PRIV_H
 
-#include <video/tegra_dc_ext.h>
+#include <uapi/video/tegra_dc_ext.h>
 #include "dc_priv_defs.h"
 #ifndef CREATE_TRACE_POINTS
 #include <trace/events/display.h>
 #define WIN_IS_BLOCKLINEAR(win)	((win)->flags & TEGRA_WIN_FLAG_BLOCKLINEAR)
 #endif
 #include <soc/tegra/tegra_powergate.h>
-#include <video/tegra_dc_ext.h>
+#include <uapi/video/tegra_dc_ext.h>
 #include <video/tegra_dc_ext_kernel.h>
 #include <soc/tegra/tegra_bpmp.h>
 
@@ -57,6 +57,13 @@
 #define YUV_MASK (FB_VMODE_Y420 | FB_VMODE_Y420_ONLY | \
 				FB_VMODE_Y422 | FB_VMODE_Y444)
 #define IS_RGB(yuv_flag) (!(yuv_flag & YUV_MASK))
+
+#define is_hotplug_supported(x) \
+({ \
+	tegra_dc_is_ext_panel(x->dc); \
+})
+
+#define TEGRA_DC_POLL_TIMEOUT_MS       50
 
 extern struct tegra_dc_out_ops tegra_dc_rgb_ops;
 extern struct tegra_dc_out_ops tegra_dc_dsi_ops;
@@ -243,7 +250,8 @@ int tegra_dc_cursor_image(struct tegra_dc *dc,
 	enum tegra_dc_cursor_blend_format blendfmt,
 	enum tegra_dc_cursor_size size,
 	u32 fg, u32 bg, dma_addr_t phys_addr,
-	enum tegra_dc_cursor_color_format colorfmt, u32 alpha, u32 flags);
+	enum tegra_dc_cursor_color_format colorfmt, u32 alpha, u32 flags,
+	bool wait_for_activation);
 int tegra_dc_cursor_set(struct tegra_dc *dc, bool enable, int x, int y);
 int tegra_dc_cursor_clip(struct tegra_dc *dc, unsigned clip);
 int tegra_dc_cursor_suspend(struct tegra_dc *dc);
@@ -257,6 +265,9 @@ int tegra_dc_slgc_disp0(struct notifier_block *nb, unsigned long unused0,
 
 /* defined in dc.c, used in dc_sysfs.c and ext/dev.c */
 int tegra_dc_update_winmask(struct tegra_dc *dc, unsigned long winmask);
+
+/* defined in dc.c, used in sor.c */
+struct tegra_dc_sor_info *tegra_dc_get_sor_cap(void);
 
 /* common display clock calls */
 struct clk *tegra_disp_clk_get(struct device *dev, const char *id);
@@ -659,6 +670,7 @@ static inline int tegra_dc_fmt_bpp(int fmt)
 	case TEGRA_DC_EXT_FMT_T_Y8___V8U8_N420:
 	case TEGRA_DC_EXT_FMT_T_Y8___V8U8_N422:
 	case TEGRA_DC_EXT_FMT_T_Y8___V8U8_N444:
+	case TEGRA_DC_EXT_FMT_T_Y8___U8V8_N420:
 	case TEGRA_DC_EXT_FMT_T_Y8___U8V8_N422:
 	case TEGRA_DC_EXT_FMT_T_Y8___U8V8_N444:
 	case TEGRA_DC_EXT_FMT_T_Y8___U8V8_N422R:
@@ -725,6 +737,7 @@ static inline bool tegra_dc_is_yuv(int fmt)
 	case TEGRA_DC_EXT_FMT_T_Y8___V8U8_N422:
 	case TEGRA_DC_EXT_FMT_T_Y8___V8U8_N420:
 	case TEGRA_DC_EXT_FMT_T_Y8___V8U8_N420_TRUE:
+	case TEGRA_DC_EXT_FMT_T_Y8___U8V8_N420:
 	case TEGRA_DC_EXT_FMT_T_Y8___U8V8_N422:
 	case TEGRA_DC_EXT_FMT_T_Y8___U8V8_N444:
 	case TEGRA_DC_EXT_FMT_T_Y8___U8V8_N422R:
@@ -830,6 +843,7 @@ static inline bool tegra_dc_is_yuv_semi_planar(int fmt)
 	case TEGRA_DC_EXT_FMT_T_Y8___V8U8_N420:
 	case TEGRA_DC_EXT_FMT_T_Y8___V8U8_N422:
 	case TEGRA_DC_EXT_FMT_T_Y8___V8U8_N422_TRUE:
+	case TEGRA_DC_EXT_FMT_T_Y8___U8V8_N420:
 	case TEGRA_DC_EXT_FMT_T_Y8___U8V8_N422:
 	case TEGRA_DC_EXT_FMT_T_Y8___U8V8_N444:
 	case TEGRA_DC_EXT_FMT_T_Y8___V8U8_N444:

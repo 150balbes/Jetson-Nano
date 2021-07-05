@@ -2,7 +2,7 @@
  * tegra210_adsp_virt_alt.c - Tegra ADSP audio driver
  *
  * Author: Sumit Bhattacharya <sumitb@nvidia.com>
- * Copyright (c) 2014-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2014-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -194,7 +194,7 @@ struct tegra210_adsp {
 		uint32_t rate;
 	} pcm_path[ADSP_FE_COUNT+1][2];
 	struct nvaudio_ivc_ctxt *hivc_client;
-	int32_t fe_to_admaif_map[ADSP_FE_END - ADSP_FE_START + 1][2];
+	int32_t fe_to_admaif_map[ADSP_FE_COUNT][2];
 	int32_t apm_to_admaif_map[APM_IN_END - APM_IN_START + 1][2];
 	struct tegra210_adsp_switch switches[MAX_ADSP_SWITCHES];
 	bool is_fe_set[ADSP_FE_COUNT];
@@ -364,16 +364,6 @@ static uint32_t tegra210_adsp_get_source(struct tegra210_adsp *adsp,
 	return source;
 }
 
-static uint32_t tegra210_adsp_get_sink(struct tegra210_adsp *adsp,
-					 uint32_t reg)
-{
-	uint32_t sink;
-
-	for (sink = ADSP_FE_START; sink <= PLUGIN_END; sink++)
-		if (tegra210_adsp_get_source(adsp, sink) == reg)
-			break;
-	return sink;
-}
 /* ADSP shared memory allocate/free functions */
 static int tegra210_adsp_preallocate_dma_buffer(struct device *dev, size_t size,
 				struct snd_dma_buffer *buf)
@@ -3286,7 +3276,47 @@ static int tegra210_adsp_init_put(struct snd_kcontrol *kcontrol,
 
 	return 1;
 }
+#ifdef CONFIG_TEGRA_ADSP_LPTHREAD
+static int tegra210_adsp_lpthread_init_get(struct snd_kcontrol *kcontrol,
+	struct snd_ctl_elem_value *ucontrol)
+{
+	struct snd_soc_component *cmpnt = snd_soc_kcontrol_component(kcontrol);
+	struct tegra210_adsp *adsp = snd_soc_component_get_drvdata(cmpnt);
 
+	if (!adsp->adsp_started)
+		goto exit;
+
+	ucontrol->value.enumerated.item[0] = adsp_usage_get();
+exit:
+	return 0;
+}
+
+static int tegra210_adsp_lpthread_init_put(struct snd_kcontrol *kcontrol,
+	struct snd_ctl_elem_value *ucontrol)
+{
+	struct snd_soc_component *cmpnt = snd_soc_kcontrol_component(kcontrol);
+	struct tegra210_adsp *adsp = snd_soc_component_get_drvdata(cmpnt);
+	unsigned int init = ucontrol->value.enumerated.item[0];
+
+	if (!adsp->init_done)
+		return -ENODEV;
+
+	if (init) {
+		pm_runtime_get_sync(adsp->dev);
+		if (!adsp->adsp_started)
+			goto exit;
+		adsp_usage_set(init);
+
+	} else {
+		if (!adsp->adsp_started)
+			goto exit;
+		adsp_usage_set(init);
+		pm_runtime_put_sync(adsp->dev);
+	}
+exit:
+	return 0;
+}
+#endif
 /*
  * ADSP FE DAPM Widget Event
  * Widget event allows realizing ADSP FE switch use cases
@@ -5180,87 +5210,6 @@ static int tegra210_adsp_apm_put(struct snd_kcontrol *kcontrol,
 	return ret;
 }
 
-enum fe_status {
-	fe_status_none,
-	fe_status_not_connected,
-	fe_status_connected_not_running,
-	fe_status_connected_running,
-
-	fe_status_max /* should be the last entry */
-};
-
-static int fe_get_status(struct snd_kcontrol *kcontrol,
-	struct snd_ctl_elem_value *ucontrol, int stream)
-{
-	int apm_in_reg, apm_out_reg;
-	int fe_reg, admaif_id;
-	unsigned long flags;
-	struct snd_soc_component *cmpnt = snd_soc_kcontrol_component(kcontrol);
-	struct tegra210_adsp *adsp = snd_soc_component_get_drvdata(cmpnt);
-	enum fe_status status = fe_status_not_connected;
-	struct tegra210_adsp_app *fe_apm;
-	struct tegra210_adsp_pcm_rtd *prtd;
-
-	(void) sscanf(kcontrol->id.name, "ADSP-FE%d status", &fe_reg);
-	fe_reg += TEGRA210_ADSP_FRONT_END1 - 1;
-
-	/* Check connection state -
-	 * APM-OUT <-> ADMAIF && FE <-> APM-IN -> PLAYBACK
-	 * APM-OUT <-> FE && APM-IN <-> ADMAIF -> CAPTURE
-	 */
-
-	if (stream == SNDRV_PCM_STREAM_PLAYBACK) {
-		apm_in_reg = tegra210_adsp_get_sink(adsp, fe_reg);
-		apm_out_reg = (apm_in_reg - TEGRA210_ADSP_APM_IN1) +
-						TEGRA210_ADSP_APM_OUT1;
-	} else {
-		apm_out_reg = tegra210_adsp_get_source(adsp, fe_reg);
-		apm_in_reg = apm_out_reg + TEGRA210_ADSP_APM_IN1 -
-						TEGRA210_ADSP_APM_OUT1;
-	}
-
-	if (!apm_in_reg || !apm_out_reg)
-		goto end;
-
-	if (stream == SNDRV_PCM_STREAM_PLAYBACK)
-		fe_apm = &adsp->apps[apm_in_reg];
-	else
-		fe_apm = &adsp->apps[apm_out_reg];
-
-	admaif_id = tegra_adsp_get_connected_be(adsp, fe_reg, stream);
-
-	if (admaif_id != 0)
-		status = fe_status_connected_not_running;
-	else
-		goto end;
-
-	/* Check data flow state */
-	spin_lock_irqsave(&fe_apm->lock, flags);
-
-	if (fe_apm->private_data != NULL) {
-		prtd = fe_apm->private_data;
-
-		if (prtd->substream->runtime->status->state ==
-					SNDRV_PCM_STATE_RUNNING)
-			status = fe_status_connected_running;
-	}
-
-	spin_unlock_irqrestore(&fe_apm->lock, flags);
-end:
-	return status;
-}
-
-static int tegra210_adsp_fe_get_status(struct snd_kcontrol *kcontrol,
-	struct snd_ctl_elem_value *ucontrol)
-{
-	ucontrol->value.integer.value[0] =
-		fe_get_status(kcontrol, ucontrol, SNDRV_PCM_STREAM_CAPTURE);
-	ucontrol->value.integer.value[1] =
-		fe_get_status(kcontrol, ucontrol, SNDRV_PCM_STREAM_PLAYBACK);
-
-	return 0;
-}
-
 /* Maximum 128 integers or 512 bytes allowed */
 #define SND_SOC_PARAM_EXT(xname, xbase)		\
 {	.iface = SNDRV_CTL_ELEM_IFACE_MIXER,	\
@@ -5333,10 +5282,6 @@ static const struct soc_enum tegra210_adsp_switch3 =
 #define SWITCH_CONTROL(xname, xreg)	\
 	SOC_ENUM_EXT(xname, tegra210_adsp_switch##xreg, \
 	tegra210_adsp_get_switch, tegra210_adsp_set_switch)
-
-#define ADSP_FE_STATUS_CTRL_DECL(name, reg) \
-	SOC_DOUBLE_EXT(name, reg, 0, 1, 7, 0, tegra210_adsp_fe_get_status, NULL)
-
 
 /* Any new addition of control should be added after PLUGIN controls otherwise
 * the index of PLUGIN needs to be changed with define PLUGIN_SET_PARAMS_IDX and
@@ -5491,22 +5436,10 @@ static struct snd_kcontrol_new tegra210_adsp_controls[] = {
 	SWITCH_CONTROL("MS_ENT", 1),
 	SWITCH_CONTROL("MS_PH_PHONE", 2),
 	SWITCH_CONTROL("MS_ANN", 3),
-
-	ADSP_FE_STATUS_CTRL_DECL("ADSP-FE1 status", TEGRA210_ADSP_FRONT_END1),
-	ADSP_FE_STATUS_CTRL_DECL("ADSP-FE2 status", TEGRA210_ADSP_FRONT_END2),
-	ADSP_FE_STATUS_CTRL_DECL("ADSP-FE3 status", TEGRA210_ADSP_FRONT_END3),
-	ADSP_FE_STATUS_CTRL_DECL("ADSP-FE4 status", TEGRA210_ADSP_FRONT_END4),
-	ADSP_FE_STATUS_CTRL_DECL("ADSP-FE5 status", TEGRA210_ADSP_FRONT_END5),
-	ADSP_FE_STATUS_CTRL_DECL("ADSP-FE6 status", TEGRA210_ADSP_FRONT_END6),
-	ADSP_FE_STATUS_CTRL_DECL("ADSP-FE7 status", TEGRA210_ADSP_FRONT_END7),
-	ADSP_FE_STATUS_CTRL_DECL("ADSP-FE8 status", TEGRA210_ADSP_FRONT_END8),
-	ADSP_FE_STATUS_CTRL_DECL("ADSP-FE9 status", TEGRA210_ADSP_FRONT_END9),
-	ADSP_FE_STATUS_CTRL_DECL("ADSP-FE10 status", TEGRA210_ADSP_FRONT_END10),
-	ADSP_FE_STATUS_CTRL_DECL("ADSP-FE11 status", TEGRA210_ADSP_FRONT_END11),
-	ADSP_FE_STATUS_CTRL_DECL("ADSP-FE12 status", TEGRA210_ADSP_FRONT_END12),
-	ADSP_FE_STATUS_CTRL_DECL("ADSP-FE13 status", TEGRA210_ADSP_FRONT_END13),
-	ADSP_FE_STATUS_CTRL_DECL("ADSP-FE14 status", TEGRA210_ADSP_FRONT_END14),
-	ADSP_FE_STATUS_CTRL_DECL("ADSP-FE15 status", TEGRA210_ADSP_FRONT_END15),
+#ifdef CONFIG_TEGRA_ADSP_LPTHREAD
+	SOC_SINGLE_BOOL_EXT("lpthread init", 0,
+	tegra210_adsp_lpthread_init_get, tegra210_adsp_lpthread_init_put),
+#endif
 };
 
 

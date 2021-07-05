@@ -1,7 +1,7 @@
 /*
  * gk20a clock scaling profile
  *
- * Copyright (c) 2013-2018, NVIDIA Corporation. All rights reserved.
+ * Copyright (c) 2013-2020, NVIDIA Corporation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -339,6 +339,8 @@ void gk20a_scale_init(struct device *dev)
 		return;
 
 	profile = nvgpu_kzalloc(g, sizeof(*profile));
+	if (!profile)
+		return;
 
 	profile->dev = dev;
 	profile->dev_stat.busy = false;

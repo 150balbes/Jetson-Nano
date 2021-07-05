@@ -1,7 +1,7 @@
 /*
  * Virtualized GPU Graphics
  *
- * Copyright (c) 2014-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2014-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -1373,6 +1373,24 @@ int vgpu_gr_update_pc_sampling(struct channel_gk20a *ch, bool enable)
 	else
 		p->mode = TEGRA_VGPU_DISABLE_SAMPLING;
 
+	err = vgpu_comm_sendrecv(&msg, sizeof(msg), sizeof(msg));
+	WARN_ON(err || msg.ret);
+
+	return err ? err : msg.ret;
+}
+
+int vgpu_gr_set_mmu_debug_mode(struct gk20a *g,
+		struct channel_gk20a *ch, bool enable)
+{
+	struct tegra_vgpu_cmd_msg msg = {};
+	struct tegra_vgpu_gr_set_mmu_debug_mode_params *p =
+					&msg.params.gr_set_mmu_debug_mode;
+	int err;
+
+	msg.cmd = TEGRA_VGPU_CMD_GR_SET_MMU_DEBUG_MODE;
+	msg.handle = vgpu_get_handle(g);
+	p->ch_handle = ch->virt_ctx;
+	p->enable = enable ? 1U : 0U;
 	err = vgpu_comm_sendrecv(&msg, sizeof(msg), sizeof(msg));
 	WARN_ON(err || msg.ret);
 

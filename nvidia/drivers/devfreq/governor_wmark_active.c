@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2017, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2014-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -25,16 +25,29 @@
 
 #include "governor.h"
 
+struct wmark_gov_param {
+	unsigned int		block_window;
+	unsigned int		load_target;
+	unsigned int		load_max;
+	unsigned int		smooth;
+	bool			freq_boost_en;
+};
+
 struct wmark_gov_info {
 	/* probed from the devfreq */
 	unsigned long		*freqlist;
 	int			freq_count;
 
 	/* algorithm parameters */
-	unsigned int		p_block_window;
-	unsigned int		p_load_target;
-	unsigned int		p_load_max;
-	unsigned int		p_smooth;
+	struct wmark_gov_param  param;
+
+	struct kobj_attribute	block_window_attr;
+	struct kobj_attribute	load_target_attr;
+	struct kobj_attribute	load_max_attr;
+	struct kobj_attribute	smooth_attr;
+	struct kobj_attribute	freq_boost_en_attr;
+
+	spinlock_t		param_lock;
 
 	/* common data */
 	struct devfreq		*df;
@@ -46,6 +59,9 @@ struct wmark_gov_info {
 
 	/* variable for keeping the average frequency request */
 	unsigned long long	average_target_freq;
+
+	/* devfreq notifier_block */
+	struct notifier_block nb;
 };
 
 static unsigned long freqlist_up(struct wmark_gov_info *wmarkinfo,
@@ -107,6 +123,15 @@ static void update_watermarks(struct devfreq *df,
 	struct wmark_gov_info *wmarkinfo = df->data;
 	unsigned long long relation = 0, next_freq = 0;
 	unsigned long long current_frequency_khz = current_frequency / 1000;
+	unsigned long flags;
+	struct wmark_gov_param param;
+
+	/* get governor parameters */
+	spin_lock_irqsave(&wmarkinfo->param_lock, flags);
+
+	param = wmarkinfo->param;
+
+	spin_unlock_irqrestore(&wmarkinfo->param_lock, flags);
 
 	if (ideal_frequency == wmarkinfo->freqlist[0]) {
 		/* disable the low watermark if we are at lowest clock */
@@ -117,7 +142,7 @@ static void update_watermarks(struct devfreq *df,
 		 * that we are running at the new frequency? */
 		next_freq = freqlist_down(wmarkinfo, ideal_frequency);
 		relation = ((next_freq / current_frequency_khz) *
-			wmarkinfo->p_load_target) / 1000;
+			param.load_target) / 1000;
 		df->profile->set_low_wmark(df->dev.parent, relation);
 	}
 
@@ -131,8 +156,8 @@ static void update_watermarks(struct devfreq *df,
 		 * that we are running at the new frequency? */
 		next_freq = freqlist_up(wmarkinfo, ideal_frequency);
 		relation = ((next_freq / current_frequency_khz) *
-			wmarkinfo->p_load_target) / 1000;
-		relation = min((unsigned long long)wmarkinfo->p_load_max,
+			param.load_target) / 1000;
+		relation = min_t(unsigned long long, param.load_max,
 			       relation);
 		df->profile->set_high_wmark(df->dev.parent, relation);
 	}
@@ -147,6 +172,9 @@ static int devfreq_watermark_target_freq(struct devfreq *df,
 	ktime_t current_time = ktime_get();
 	s64 dt = ktime_us_delta(current_time, wmarkinfo->last_frequency_update);
 	int err;
+	unsigned long flags;
+
+	struct wmark_gov_param param;
 
 	err = df->profile->get_dev_status(df->dev.parent, &dev_stat);
 	if (err < 0)
@@ -159,11 +187,18 @@ static int devfreq_watermark_target_freq(struct devfreq *df,
 	if (!dev_stat.total_time)
 		return 0;
 
-	/* calculate first load and relation load/p_load_target */
+	/* get governor parameters */
+	spin_lock_irqsave(&wmarkinfo->param_lock, flags);
+
+	param = wmarkinfo->param;
+
+	spin_unlock_irqrestore(&wmarkinfo->param_lock, flags);
+
+	/* calculate first load and relation load/load_target */
 	load = (dev_stat.busy_time * 1000) / dev_stat.total_time;
 
 	/* if we cross load max...  */
-	if (load >= wmarkinfo->p_load_max) {
+	if (param.freq_boost_en && load >= param.load_max) {
 		/* we go directly to the highest frequency. depending
 		 * on frequency table we might never go higher than
 		 * the current frequency (i.e. load should be over 100%
@@ -173,7 +208,7 @@ static int devfreq_watermark_target_freq(struct devfreq *df,
 		/* otherwise, based on relation between current load and
 		 * load target we calculate the "ideal" frequency
 		 * where we would be just at the target */
-		relation = (load * 1000) / wmarkinfo->p_load_target;
+		relation = (load * 1000) / param.load_target;
 		ideal_freq = relation * (dev_stat.current_frequency / 1000);
 
 		/* round this frequency */
@@ -182,14 +217,11 @@ static int devfreq_watermark_target_freq(struct devfreq *df,
 
 	/* update average target frequency */
 	wmarkinfo->average_target_freq =
-		(wmarkinfo->p_smooth * wmarkinfo->average_target_freq +
-		 ideal_freq) / (wmarkinfo->p_smooth + 1);
-
-	/* update watermarks to match the ideal frequency */
-	update_watermarks(df, dev_stat.current_frequency, ideal_freq);
+		(param.smooth * wmarkinfo->average_target_freq +
+		 ideal_freq) / (param.smooth + 1);
 
 	/* do not scale too often */
-	if (dt < wmarkinfo->p_block_window)
+	if (dt < param.block_window)
 		return 0;
 
 	/* update the frequency */
@@ -205,52 +237,310 @@ static int devfreq_watermark_target_freq(struct devfreq *df,
 	return 0;
 }
 
-static void devfreq_watermark_debug_start(struct devfreq *df)
+static ssize_t block_window_show(struct kobject *kobj,
+					struct kobj_attribute *attr,
+					char *buf)
 {
-	struct wmark_gov_info *wmarkinfo = df->data;
-	struct dentry *f;
-	char dirname[128];
+	struct wmark_gov_info *wmarkinfo = NULL;
+	ssize_t res;
+	unsigned int val;
+	unsigned long flags;
 
-	snprintf(dirname, sizeof(dirname), "%s_scaling",
-		to_platform_device(df->dev.parent)->name);
+	wmarkinfo = container_of(attr,
+			struct wmark_gov_info,
+			block_window_attr);
 
-	if (!wmarkinfo)
-		return;
+	spin_lock_irqsave(&wmarkinfo->param_lock, flags);
+	val = wmarkinfo->param.block_window;
+	spin_unlock_irqrestore(&wmarkinfo->param_lock, flags);
 
-	wmarkinfo->debugdir = debugfs_create_dir(dirname, NULL);
-	if (!wmarkinfo->debugdir) {
-		pr_warn("cannot create debugfs directory\n");
-		return;
-	}
+	res = snprintf(buf, PAGE_SIZE, "%u\n", val);
 
-#define CREATE_DBG_FILE(fname) \
-	do {\
-		f = debugfs_create_u32(#fname, S_IRUGO | S_IWUSR, \
-			wmarkinfo->debugdir, &wmarkinfo->p_##fname); \
-		if (NULL == f) { \
-			pr_warn("cannot create debug entry " #fname "\n"); \
-			return; \
-		} \
+	return res;
+}
+
+static ssize_t block_window_store(struct kobject *kobj,
+					struct kobj_attribute *attr,
+					const char *buf, size_t count)
+{
+	struct wmark_gov_info *wmarkinfo = NULL;
+	unsigned long val = 0;
+	unsigned long flags;
+
+	wmarkinfo = container_of(attr,
+			struct wmark_gov_info,
+			block_window_attr);
+
+	if (kstrtoul(buf, 10, &val) < 0)
+		return -EINVAL;
+
+	spin_lock_irqsave(&wmarkinfo->param_lock, flags);
+	wmarkinfo->param.block_window = val;
+	spin_unlock_irqrestore(&wmarkinfo->param_lock, flags);
+
+	return count;
+}
+
+static ssize_t load_target_show(struct kobject *kobj,
+					struct kobj_attribute *attr,
+					char *buf)
+{
+	struct wmark_gov_info *wmarkinfo = NULL;
+	ssize_t res;
+	unsigned int val;
+	unsigned long flags;
+
+	wmarkinfo = container_of(attr,
+			struct wmark_gov_info,
+			load_target_attr);
+
+	spin_lock_irqsave(&wmarkinfo->param_lock, flags);
+	val = wmarkinfo->param.load_target;
+	spin_unlock_irqrestore(&wmarkinfo->param_lock, flags);
+
+	res = snprintf(buf, PAGE_SIZE, "%u\n", val);
+
+	return res;
+}
+
+static ssize_t load_target_store(struct kobject *kobj,
+					struct kobj_attribute *attr,
+					const char *buf, size_t count)
+{
+	struct wmark_gov_info *wmarkinfo = NULL;
+	unsigned long val = 0;
+	unsigned long flags;
+
+	wmarkinfo = container_of(attr,
+			struct wmark_gov_info,
+			load_target_attr);
+
+	if (kstrtoul(buf, 10, &val) < 0)
+		return -EINVAL;
+
+	spin_lock_irqsave(&wmarkinfo->param_lock, flags);
+	wmarkinfo->param.load_target = val;
+	spin_unlock_irqrestore(&wmarkinfo->param_lock, flags);
+
+	return count;
+}
+
+static ssize_t load_max_show(struct kobject *kobj,
+					struct kobj_attribute *attr,
+					char *buf)
+{
+	struct wmark_gov_info *wmarkinfo = NULL;
+	ssize_t res;
+	unsigned int val;
+	unsigned long flags;
+
+	wmarkinfo = container_of(attr,
+			struct wmark_gov_info,
+			load_max_attr);
+
+	spin_lock_irqsave(&wmarkinfo->param_lock, flags);
+	val = wmarkinfo->param.load_max;
+	spin_unlock_irqrestore(&wmarkinfo->param_lock, flags);
+
+	res = snprintf(buf, PAGE_SIZE, "%u\n", val);
+
+	return res;
+}
+
+static ssize_t load_max_store(struct kobject *kobj,
+					struct kobj_attribute *attr,
+					const char *buf, size_t count)
+{
+	struct wmark_gov_info *wmarkinfo = NULL;
+	unsigned long val = 0;
+	unsigned long flags;
+
+	wmarkinfo = container_of(attr,
+			struct wmark_gov_info,
+			load_max_attr);
+
+	if (kstrtoul(buf, 10, &val) < 0)
+		return -EINVAL;
+
+	spin_lock_irqsave(&wmarkinfo->param_lock, flags);
+	wmarkinfo->param.load_max = val;
+	spin_unlock_irqrestore(&wmarkinfo->param_lock, flags);
+
+	return count;
+}
+
+static ssize_t smooth_show(struct kobject *kobj,
+					struct kobj_attribute *attr,
+					char *buf)
+{
+	struct wmark_gov_info *wmarkinfo = NULL;
+	ssize_t res;
+	unsigned int val;
+	unsigned long flags;
+
+	wmarkinfo = container_of(attr,
+			struct wmark_gov_info,
+			smooth_attr);
+
+	spin_lock_irqsave(&wmarkinfo->param_lock, flags);
+	val = wmarkinfo->param.smooth;
+	spin_unlock_irqrestore(&wmarkinfo->param_lock, flags);
+
+	res = snprintf(buf, PAGE_SIZE, "%u\n", val);
+
+	return res;
+}
+
+static ssize_t smooth_store(struct kobject *kobj,
+					struct kobj_attribute *attr,
+					const char *buf, size_t count)
+{
+	struct wmark_gov_info *wmarkinfo = NULL;
+	unsigned long val = 0;
+	unsigned long flags;
+
+	wmarkinfo = container_of(attr,
+			struct wmark_gov_info,
+			smooth_attr);
+
+	if (kstrtoul(buf, 10, &val) < 0)
+		return -EINVAL;
+
+	spin_lock_irqsave(&wmarkinfo->param_lock, flags);
+	wmarkinfo->param.smooth = val;
+	spin_unlock_irqrestore(&wmarkinfo->param_lock, flags);
+
+	return count;
+}
+
+static ssize_t freq_boost_en_show(struct kobject *kobj,
+					struct kobj_attribute *attr,
+					char *buf)
+{
+	struct wmark_gov_info *wmarkinfo = NULL;
+	ssize_t res;
+	bool val;
+	unsigned long flags;
+
+	wmarkinfo = container_of(attr,
+			struct wmark_gov_info,
+			freq_boost_en_attr);
+
+	spin_lock_irqsave(&wmarkinfo->param_lock, flags);
+	val = wmarkinfo->param.freq_boost_en;
+	spin_unlock_irqrestore(&wmarkinfo->param_lock, flags);
+
+	res = snprintf(buf, PAGE_SIZE, "%d\n", val);
+
+	return res;
+}
+
+static ssize_t freq_boost_en_store(struct kobject *kobj,
+					struct kobj_attribute *attr,
+					const char *buf, size_t count)
+{
+	struct wmark_gov_info *wmarkinfo = NULL;
+	unsigned long val = 0;
+	unsigned long flags;
+
+	wmarkinfo = container_of(attr,
+			struct wmark_gov_info,
+			freq_boost_en_attr);
+
+	if (kstrtoul(buf, 10, &val) < 0)
+		return -EINVAL;
+
+	spin_lock_irqsave(&wmarkinfo->param_lock, flags);
+	wmarkinfo->param.freq_boost_en = !!val;
+	spin_unlock_irqrestore(&wmarkinfo->param_lock, flags);
+
+	return count;
+}
+
+#define INIT_SYSFS_ATTR_RW(sysfs_name) \
+	do { \
+		attr->attr.name = #sysfs_name; \
+		attr->attr.mode = 0644; \
+		attr->show = sysfs_name##_show; \
+		attr->store = sysfs_name##_store; \
+		sysfs_attr_init(&attr->attr); \
 	} while (0)
 
-	CREATE_DBG_FILE(load_target);
-	CREATE_DBG_FILE(load_max);
-	CREATE_DBG_FILE(block_window);
-	CREATE_DBG_FILE(smooth);
-#undef CREATE_DBG_FILE
+static int devfreq_watermark_debug_start(struct devfreq *df)
+{
+	struct wmark_gov_info *wmarkinfo = df->data;
+	struct kobj_attribute *attr = NULL;
 
+	if (!wmarkinfo)
+		return 0;
+
+	spin_lock_init(&wmarkinfo->param_lock);
+
+	attr = &wmarkinfo->block_window_attr;
+	INIT_SYSFS_ATTR_RW(block_window);
+	if (sysfs_create_file(&df->dev.parent->kobj, &attr->attr))
+		goto err_create_block_window_sysfs_entry;
+
+	attr = &wmarkinfo->load_target_attr;
+	INIT_SYSFS_ATTR_RW(load_target);
+	if (sysfs_create_file(&df->dev.parent->kobj, &attr->attr))
+		goto err_create_load_target_sysfs_entry;
+
+	attr = &wmarkinfo->load_max_attr;
+	INIT_SYSFS_ATTR_RW(load_max);
+	if (sysfs_create_file(&df->dev.parent->kobj, &attr->attr))
+		goto err_create_load_max_sysfs_entry;
+
+	attr = &wmarkinfo->smooth_attr;
+	INIT_SYSFS_ATTR_RW(smooth);
+	if (sysfs_create_file(&df->dev.parent->kobj, &attr->attr))
+		goto err_create_smooth_sysfs_entry;
+
+	attr = &wmarkinfo->freq_boost_en_attr;
+	INIT_SYSFS_ATTR_RW(freq_boost_en);
+	if (sysfs_create_file(&df->dev.parent->kobj, &attr->attr))
+		goto err_create_freq_boost_en_sysfs_entry;
+
+	return 0;
+
+err_create_freq_boost_en_sysfs_entry:
+	sysfs_remove_file(&df->dev.parent->kobj,
+			&wmarkinfo->smooth_attr.attr);
+err_create_smooth_sysfs_entry:
+	sysfs_remove_file(&df->dev.parent->kobj,
+			&wmarkinfo->load_max_attr.attr);
+err_create_load_max_sysfs_entry:
+	sysfs_remove_file(&df->dev.parent->kobj,
+			&wmarkinfo->load_target_attr.attr);
+err_create_load_target_sysfs_entry:
+	sysfs_remove_file(&df->dev.parent->kobj,
+			&wmarkinfo->block_window_attr.attr);
+err_create_block_window_sysfs_entry:
+
+	return -ENOMEM;
 }
 
 static void devfreq_watermark_debug_stop(struct devfreq *df)
 {
 	struct wmark_gov_info *wmarkinfo = df->data;
-	debugfs_remove_recursive(wmarkinfo->debugdir);
+
+	sysfs_remove_file(&df->dev.parent->kobj,
+			&wmarkinfo->freq_boost_en_attr.attr);
+	sysfs_remove_file(&df->dev.parent->kobj,
+			&wmarkinfo->smooth_attr.attr);
+	sysfs_remove_file(&df->dev.parent->kobj,
+			&wmarkinfo->load_max_attr.attr);
+	sysfs_remove_file(&df->dev.parent->kobj,
+			&wmarkinfo->load_target_attr.attr);
+	sysfs_remove_file(&df->dev.parent->kobj,
+			&wmarkinfo->block_window_attr.attr);
 }
 
 static int devfreq_watermark_start(struct devfreq *df)
 {
 	struct wmark_gov_info *wmarkinfo;
 	struct platform_device *pdev = to_platform_device(df->dev.parent);
+	int ret;
 
 	if (!df->profile->freq_table) {
 		dev_err(&pdev->dev, "Frequency table missing\n");
@@ -264,16 +554,43 @@ static int devfreq_watermark_start(struct devfreq *df)
 	df->data = (void *)wmarkinfo;
 	wmarkinfo->freqlist = df->profile->freq_table;
 	wmarkinfo->freq_count = df->profile->max_state;
-	wmarkinfo->p_load_target = 700;
-	wmarkinfo->p_load_max = 900;
-	wmarkinfo->p_smooth = 10;
-	wmarkinfo->p_block_window = 50000;
+	wmarkinfo->param.load_target = 700;
+	wmarkinfo->param.load_max = 900;
+	wmarkinfo->param.smooth = 10;
+	wmarkinfo->param.block_window = 50000;
+	wmarkinfo->param.freq_boost_en = true;
 	wmarkinfo->df = df;
 	wmarkinfo->pdev = pdev;
 
-	devfreq_watermark_debug_start(df);
+	ret = devfreq_watermark_debug_start(df);
 
-	return 0;
+	return ret;
+}
+
+static int devfreq_watermark_notifier_call(struct notifier_block *nb,
+			unsigned long event, void *ptr)
+{
+	struct wmark_gov_info *data
+				= container_of(nb, struct wmark_gov_info, nb);
+	struct devfreq *df = (struct devfreq *)data->df;
+	unsigned long freq = 0;
+
+	switch (event) {
+	case DEVFREQ_PRECHANGE:
+		break;
+	case DEVFREQ_POSTCHANGE:
+		/* get device freq. */
+		df->profile->get_cur_freq(df->dev.parent, &freq);
+
+		/* update watermarks by current device freq. */
+		if (freq)
+			update_watermarks(df, freq, freq);
+		break;
+	default:
+		break;
+	}
+
+	return NOTIFY_DONE;
 }
 
 static int devfreq_watermark_event_handler(struct devfreq *df,
@@ -281,6 +598,7 @@ static int devfreq_watermark_event_handler(struct devfreq *df,
 {
 	struct wmark_gov_info *wmarkinfo;
 	int ret = 0;
+	struct notifier_block *nb;
 
 	switch (event) {
 	case DEVFREQ_GOV_START:
@@ -300,10 +618,27 @@ static int devfreq_watermark_event_handler(struct devfreq *df,
 
 		update_watermarks(df, dev_stat.current_frequency,
 					dev_stat.current_frequency);
+
+		nb = &wmarkinfo->nb;
+		nb->notifier_call = devfreq_watermark_notifier_call;
+		ret = devm_devfreq_register_notifier(df->dev.parent,
+				df, nb, DEVFREQ_TRANSITION_NOTIFIER);
 		break;
 	}
 	case DEVFREQ_GOV_STOP:
 		devfreq_watermark_debug_stop(df);
+
+		wmarkinfo = df->data;
+		nb = &wmarkinfo->nb;
+		devm_devfreq_unregister_notifier(df->dev.parent,
+				df, nb, DEVFREQ_TRANSITION_NOTIFIER);
+
+		/* free wmark_gov_info struct */
+		if (df->data != NULL) {
+			kfree(df->data);
+			df->data = NULL;
+		}
+
 		break;
 	case DEVFREQ_GOV_SUSPEND:
 		devfreq_monitor_suspend(df);
@@ -340,6 +675,7 @@ static struct devfreq_governor devfreq_watermark_active = {
 	.name = "wmark_active",
 	.get_target_freq = devfreq_watermark_target_freq,
 	.event_handler = devfreq_watermark_event_handler,
+	.interrupt_driven = true,
 };
 
 

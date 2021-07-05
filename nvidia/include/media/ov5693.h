@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2013-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -23,7 +23,7 @@
 
 #define OV5693_INVALID_COARSE_TIME  -1
 
-#define OV5693_EEPROM_ADDRESS		0x50
+#define OV5693_EEPROM_ADDRESS		0x54
 #define OV5693_EEPROM_SIZE		1024
 #define OV5693_EEPROM_STR_SIZE		(OV5693_EEPROM_SIZE * 2)
 #define OV5693_EEPROM_BLOCK_SIZE	(1 << 8)

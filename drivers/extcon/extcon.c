@@ -14,7 +14,7 @@
  * Copyright (C) 2008 Google, Inc.
  * Author: Mike Lockwood <lockwood@android.com>
  *
- * Copyright (c) 2018, NVIDIA CORPORATION, All rights reserved.
+ * Copyright (c) 2018-2020, NVIDIA CORPORATION, All rights reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -194,6 +194,16 @@ struct __extcon_info {
 		.type = EXTCON_TYPE_DISP,
 		.id = EXTCON_DISP_AUDIO_AUX3,
 		.name = "AUDIO_AUX3",
+	},
+	[EXTCON_DISP_DSIHPD] = {
+		.type = EXTCON_TYPE_DISP,
+		.id = EXTCON_DISP_DSIHPD,
+		.name = "DSIHPD",
+	},
+	[EXTCON_DISP_HDMI2] = {
+		.type = EXTCON_TYPE_DISP,
+		.id = EXTCON_DISP_HDMI2,
+		.name = "HDMI2",
 	},
 
 	/* Miscellaneous external connector */
@@ -591,7 +601,10 @@ int extcon_sync(struct extcon_dev *edev, unsigned int id)
 	}
 
 	state = !!(edev->state & BIT(index));
+
+	spin_unlock_irqrestore(&edev->lock, flags);
 	raw_notifier_call_chain(&edev->nh[index], state, edev);
+	spin_lock_irqsave(&edev->lock, flags);
 
 	/* This could be in interrupt handler */
 	prop_buf = (char *)get_zeroed_page(GFP_ATOMIC);
@@ -1254,7 +1267,6 @@ int extcon_dev_register(struct extcon_dev *edev)
 		char buf[10];
 		char *str;
 		struct extcon_cable *cable;
-		int namelen;
 
 		edev->cables = kzalloc(sizeof(struct extcon_cable) *
 				       edev->max_supported, GFP_KERNEL);
@@ -1265,9 +1277,8 @@ int extcon_dev_register(struct extcon_dev *edev)
 		for (index = 0; index < edev->max_supported; index++) {
 			cable = &edev->cables[index];
 
-			namelen = scnprintf(buf, 10, "cable.%d", index);
-			str = kzalloc(sizeof(char) * (namelen + 1),
-				      GFP_KERNEL);
+			snprintf(buf, 10, "cable.%d", index);
+			str = kstrdup(buf, GFP_KERNEL);
 			if (!str) {
 				for (index--; index >= 0; index--) {
 					cable = &edev->cables[index];
@@ -1277,7 +1288,6 @@ int extcon_dev_register(struct extcon_dev *edev)
 
 				goto err_alloc_cables;
 			}
-			memcpy(str, buf, namelen);
 
 			cable->edev = edev;
 			cable->cable_index = index;
@@ -1302,7 +1312,6 @@ int extcon_dev_register(struct extcon_dev *edev)
 	if (edev->max_supported && edev->mutually_exclusive) {
 		char buf[80];
 		char *name;
-		int namelen;
 
 		/* Count the size of mutually_exclusive array */
 		for (index = 0; edev->mutually_exclusive[index]; index++)
@@ -1324,10 +1333,8 @@ int extcon_dev_register(struct extcon_dev *edev)
 		}
 
 		for (index = 0; edev->mutually_exclusive[index]; index++) {
-			namelen = scnprintf(buf, sizeof(buf), "0x%x",
-					    edev->mutually_exclusive[index]);
-			name = kzalloc(sizeof(char) * (namelen + 1),
-				       GFP_KERNEL);
+			snprintf(buf, sizeof(buf), "0x%x", edev->mutually_exclusive[index]);
+			name = kstrdup(buf, GFP_KERNEL);
 			if (!name) {
 				for (index--; index >= 0; index--) {
 					kfree(edev->d_attrs_muex[index].attr.
@@ -1338,7 +1345,6 @@ int extcon_dev_register(struct extcon_dev *edev)
 				ret = -ENOMEM;
 				goto err_muex;
 			}
-			memcpy(name, buf, namelen);
 			sysfs_attr_init(&edev->d_attrs_muex[index].attr);
 			edev->d_attrs_muex[index].attr.name = name;
 			edev->d_attrs_muex[index].attr.mode = 0000;

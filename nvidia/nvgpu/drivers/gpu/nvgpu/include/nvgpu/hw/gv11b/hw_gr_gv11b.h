@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2016-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -4975,6 +4975,14 @@ static inline u32 gr_gpcs_pri_mmu_ctrl_mmu_vol_m(void)
 static inline u32 gr_gpcs_pri_mmu_ctrl_mmu_disable_m(void)
 {
 	return 0x1U << 31U;
+}
+static inline u32 gr_gpcs_pri_mmu_ctrl_atomic_capability_mode_m(void)
+{
+	return 0x3U << 24U;
+}
+static inline u32 gr_gpcs_pri_mmu_ctrl_atomic_capability_sys_ncoh_mode_m(void)
+{
+	return 0x1U << 27U;
 }
 static inline u32 gr_gpcs_pri_mmu_pm_unit_mask_r(void)
 {

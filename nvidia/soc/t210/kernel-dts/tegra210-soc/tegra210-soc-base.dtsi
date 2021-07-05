@@ -1521,9 +1521,20 @@
                               <GIC_SPI INT_ADMA_EOT6 IRQ_TYPE_LEVEL_HIGH ROUTE_TO_HOST>,
                               <GIC_SPI INT_ADMA_EOT7 IRQ_TYPE_LEVEL_HIGH ROUTE_TO_HOST>,
                               <GIC_SPI INT_ADMA_EOT8 IRQ_TYPE_LEVEL_HIGH ROUTE_TO_HOST>,
-                              <GIC_SPI INT_ADMA_EOT9 IRQ_TYPE_LEVEL_HIGH ROUTE_TO_HOST>;
+                              <GIC_SPI INT_ADMA_EOT9 IRQ_TYPE_LEVEL_HIGH ROUTE_TO_HOST>,
+                              <GIC_SPI INT_ADMA_EOT10 IRQ_TYPE_LEVEL_HIGH ROUTE_TO_HOST>,
+                              <GIC_SPI INT_ADMA_EOT11 IRQ_TYPE_LEVEL_HIGH ROUTE_TO_HOST>,
+                              <GIC_SPI INT_ADMA_EOT12 IRQ_TYPE_LEVEL_HIGH ROUTE_TO_HOST>,
+                              <GIC_SPI INT_ADMA_EOT13 IRQ_TYPE_LEVEL_HIGH ROUTE_TO_HOST>,
+                              <GIC_SPI INT_ADMA_EOT14 IRQ_TYPE_LEVEL_HIGH ROUTE_TO_HOST>,
+                              <GIC_SPI INT_ADMA_EOT15 IRQ_TYPE_LEVEL_HIGH ROUTE_TO_HOST>,
+                              <GIC_SPI INT_ADMA_EOT16 IRQ_TYPE_LEVEL_HIGH ROUTE_TO_HOST>,
+                              <GIC_SPI INT_ADMA_EOT17 IRQ_TYPE_LEVEL_HIGH ROUTE_TO_HOST>,
+                              <GIC_SPI INT_ADMA_EOT18 IRQ_TYPE_LEVEL_HIGH ROUTE_TO_HOST>,
+                              <GIC_SPI INT_ADMA_EOT19 IRQ_TYPE_LEVEL_HIGH ROUTE_TO_HOST>,
+                              <GIC_SPI INT_ADMA_EOT20 IRQ_TYPE_LEVEL_HIGH ROUTE_TO_HOST>,
+                              <GIC_SPI INT_ADMA_EOT21 IRQ_TYPE_LEVEL_HIGH ROUTE_TO_HOST>;
 		#dma-cells = <1>;
-		dma-channels = <10>;
 		status = "disabled";
         };
 
@@ -1535,7 +1546,10 @@
 				<&tegra_car TEGRA210_CLK_PLL_A_OUT0>,
 				<&tegra_car TEGRA210_CLK_APE>,
 				<&tegra_car TEGRA210_CLK_APB2APE>;
-		clock-names = "ahub", "pll_a_out0", "xbar.ape", "apb2ape";
+		clock-names = "ahub", "parent", "xbar.ape", "apb2ape";
+		assigned-clocks = <&tegra_car TEGRA210_CLK_D_AUDIO>;
+		assigned-clock-parents = <&tegra_car TEGRA210_CLK_PLL_P>;
+		assigned-clock-rates = <81600000>;
 		status = "disabled";
 
 		#address-cells = <1>;
@@ -1605,13 +1619,14 @@
 			nvidia,ahub-i2s-id = <0>;
 			status = "disabled";
 			clocks = <&tegra_car TEGRA210_CLK_I2S0>,
-					<&tegra_car TEGRA210_CLK_PLL_A_OUT0>,
-					<&tegra_car TEGRA210_CLK_I2S0_SYNC>,
-					<&tegra_car TEGRA210_CLK_AUDIO0_MUX>;
-			clock-names = "i2s0", "pll_a_out0", "ext_audio_sync",
-				"audio_sync";
-
+				 <&tegra_car TEGRA210_CLK_PLL_A_OUT0>,
+				 <&tegra_car TEGRA210_CLK_I2S0_SYNC>,
+				 <&tegra_car TEGRA210_CLK_AUDIO0_MUX>;
+			clock-names = "i2s", "i2s_clk_parent", "ext_audio_sync",
+				      "audio_sync";
 			assigned-clocks = <&tegra_car TEGRA210_CLK_I2S0>;
+			assigned-clock-parents =
+				<&tegra_car TEGRA210_CLK_PLL_A_OUT0>;
 			assigned-clock-rates = <1536000>;
 		};
 
@@ -1621,13 +1636,14 @@
 			nvidia,ahub-i2s-id = <1>;
 			status = "disabled";
 			clocks = <&tegra_car TEGRA210_CLK_I2S1>,
-					<&tegra_car TEGRA210_CLK_PLL_A_OUT0>,
-					<&tegra_car TEGRA210_CLK_I2S1_SYNC>,
-					<&tegra_car TEGRA210_CLK_AUDIO1_MUX>;
-			clock-names = "i2s1", "pll_a_out0", "ext_audio_sync",
-				"audio_sync";
-
+				 <&tegra_car TEGRA210_CLK_PLL_A_OUT0>,
+				 <&tegra_car TEGRA210_CLK_I2S1_SYNC>,
+				 <&tegra_car TEGRA210_CLK_AUDIO1_MUX>;
+			clock-names = "i2s", "i2s_clk_parent", "ext_audio_sync",
+				      "audio_sync";
 			assigned-clocks = <&tegra_car TEGRA210_CLK_I2S1>;
+			assigned-clock-parents =
+				<&tegra_car TEGRA210_CLK_PLL_A_OUT0>;
 			assigned-clock-rates = <1536000>;
 		};
 
@@ -1637,13 +1653,14 @@
 			nvidia,ahub-i2s-id = <2>;
 			status = "disabled";
 			clocks = <&tegra_car TEGRA210_CLK_I2S2>,
-					<&tegra_car TEGRA210_CLK_PLL_A_OUT0>,
-					<&tegra_car TEGRA210_CLK_I2S2_SYNC>,
-					<&tegra_car TEGRA210_CLK_AUDIO2_MUX>;
-			clock-names = "i2s2", "pll_a_out0", "ext_audio_sync",
-				"audio_sync";
-
+				 <&tegra_car TEGRA210_CLK_PLL_A_OUT0>,
+				 <&tegra_car TEGRA210_CLK_I2S2_SYNC>,
+				 <&tegra_car TEGRA210_CLK_AUDIO2_MUX>;
+			clock-names = "i2s", "i2s_clk_parent", "ext_audio_sync",
+				      "audio_sync";
 			assigned-clocks = <&tegra_car TEGRA210_CLK_I2S2>;
+			assigned-clock-parents =
+				<&tegra_car TEGRA210_CLK_PLL_A_OUT0>;
 			assigned-clock-rates = <1536000>;
 		};
 
@@ -1653,13 +1670,14 @@
 			nvidia,ahub-i2s-id = <3>;
 			status = "disabled";
 			clocks = <&tegra_car TEGRA210_CLK_I2S3>,
-					<&tegra_car TEGRA210_CLK_PLL_A_OUT0>,
-					<&tegra_car TEGRA210_CLK_I2S3_SYNC>,
-					<&tegra_car TEGRA210_CLK_AUDIO3_MUX>;
-			clock-names = "i2s3", "pll_a_out0", "ext_audio_sync",
-				"audio_sync";
-
+				 <&tegra_car TEGRA210_CLK_PLL_A_OUT0>,
+				 <&tegra_car TEGRA210_CLK_I2S3_SYNC>,
+				 <&tegra_car TEGRA210_CLK_AUDIO3_MUX>;
+			clock-names = "i2s", "i2s_clk_parent", "ext_audio_sync",
+				      "audio_sync";
 			assigned-clocks = <&tegra_car TEGRA210_CLK_I2S3>;
+			assigned-clock-parents =
+				<&tegra_car TEGRA210_CLK_PLL_A_OUT0>;
 			assigned-clock-rates = <1536000>;
 		};
 
@@ -1669,13 +1687,14 @@
 			nvidia,ahub-i2s-id = <4>;
 			status = "disabled";
 			clocks = <&tegra_car TEGRA210_CLK_I2S4>,
-					<&tegra_car TEGRA210_CLK_PLL_A_OUT0>,
-					<&tegra_car TEGRA210_CLK_I2S4_SYNC>,
-					<&tegra_car TEGRA210_CLK_AUDIO4_MUX>;
-			clock-names = "i2s4", "pll_a_out0", "ext_audio_sync",
-				"audio_sync";
-
+				 <&tegra_car TEGRA210_CLK_PLL_A_OUT0>,
+				 <&tegra_car TEGRA210_CLK_I2S4_SYNC>,
+				 <&tegra_car TEGRA210_CLK_AUDIO4_MUX>;
+			clock-names = "i2s", "i2s_clk_parent", "ext_audio_sync",
+				      "audio_sync";
 			assigned-clocks = <&tegra_car TEGRA210_CLK_I2S4>;
+			assigned-clock-parents =
+				<&tegra_car TEGRA210_CLK_PLL_A_OUT0>;
 			assigned-clock-rates = <1536000>;
 		};
 
@@ -1713,10 +1732,11 @@
 			nvidia,ahub-dmic-id = <0>;
 			status = "disabled";
 			clocks = <&tegra_car TEGRA210_CLK_DMIC1>,
-					<&tegra_car TEGRA210_CLK_PLL_A_OUT0>;
-			clock-names = "dmic1", "pll_a_out0";
-
+				 <&tegra_car TEGRA210_CLK_PLL_A_OUT0>;
+			clock-names = "dmic", "parent";
 			assigned-clocks = <&tegra_car TEGRA210_CLK_DMIC1>;
+			assigned-clock-parents =
+				<&tegra_car TEGRA210_CLK_PLL_A_OUT0>;
 			assigned-clock-rates = <3072000>;
 		};
 
@@ -1726,10 +1746,11 @@
 			nvidia,ahub-dmic-id = <1>;
 			status = "disabled";
 			clocks = <&tegra_car TEGRA210_CLK_DMIC2>,
-					<&tegra_car TEGRA210_CLK_PLL_A_OUT0>;
-			clock-names = "dmic2", "pll_a_out0";
-
+				 <&tegra_car TEGRA210_CLK_PLL_A_OUT0>;
+			clock-names = "dmic", "parent";
 			assigned-clocks = <&tegra_car TEGRA210_CLK_DMIC2>;
+			assigned-clock-parents =
+				<&tegra_car TEGRA210_CLK_PLL_A_OUT0>;
 			assigned-clock-rates = <3072000>;
 		};
 
@@ -1739,10 +1760,11 @@
 			nvidia,ahub-dmic-id = <2>;
 			status = "disabled";
 			clocks = <&tegra_car TEGRA210_CLK_DMIC3>,
-					<&tegra_car TEGRA210_CLK_PLL_A_OUT0>;
-			clock-names = "dmic3", "pll_a_out0";
-
+				 <&tegra_car TEGRA210_CLK_PLL_A_OUT0>;
+			clock-names = "dmic", "parent";
 			assigned-clocks = <&tegra_car TEGRA210_CLK_DMIC3>;
+			assigned-clock-parents =
+				<&tegra_car TEGRA210_CLK_PLL_A_OUT0>;
 			assigned-clock-rates = <3072000>;
 		};
 
@@ -1841,10 +1863,10 @@
 		iommus = <&smmu TEGRA_SWGROUP_APE>;
 		iommu-resv-regions = <0x0 0x0 0x0 0x70300000 0x0 0xFFF00000 0xffffffff 0xffffffff>;
 		iommu-group-id = <TEGRA_IOMMU_GROUP_APE>;
+		nvidia,adma_ch_start = <11>;
+		nvidia,adma_ch_cnt = <11>;
 		interrupt-parent = <&tegra_agic>;
-		interrupts = <GIC_SPI INT_ADMA_EOT10 IRQ_TYPE_LEVEL_HIGH
-				ROUTE_TO_ADSP>,
-			     <GIC_SPI INT_ADMA_EOT11 IRQ_TYPE_LEVEL_HIGH
+		interrupts = <GIC_SPI INT_ADMA_EOT11 IRQ_TYPE_LEVEL_HIGH
 				ROUTE_TO_ADSP>,
 			     <GIC_SPI INT_ADMA_EOT12 IRQ_TYPE_LEVEL_HIGH
 				ROUTE_TO_ADSP>,
@@ -1861,6 +1883,10 @@
 			     <GIC_SPI INT_ADMA_EOT18 IRQ_TYPE_LEVEL_HIGH
 				ROUTE_TO_ADSP>,
 			     <GIC_SPI INT_ADMA_EOT19 IRQ_TYPE_LEVEL_HIGH
+				ROUTE_TO_ADSP>,
+			     <GIC_SPI INT_ADMA_EOT20 IRQ_TYPE_LEVEL_HIGH
+				ROUTE_TO_ADSP>,
+			     <GIC_SPI INT_ADMA_EOT21 IRQ_TYPE_LEVEL_HIGH
 				ROUTE_TO_ADSP>;
 		clocks = <&tegra_car TEGRA210_CLK_D_AUDIO>,
 			     <&tegra_car TEGRA210_CLK_APE>;
@@ -2532,8 +2558,6 @@
 
 	nvpmodel {
 		compatible = "nvidia,nvpmodel";
-		clocks = <&tegra_car TEGRA210_CLK_EMC>;
-		clock-names = "emc";
 		status = "disabled";
 	};
 

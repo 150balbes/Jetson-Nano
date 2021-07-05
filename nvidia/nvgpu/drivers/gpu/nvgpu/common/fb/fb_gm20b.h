@@ -1,7 +1,7 @@
 /*
  * GM20B FB
  *
- * Copyright (c) 2014-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2014-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -49,5 +49,6 @@ void gm20b_fb_read_wpr_info(struct gk20a *g, struct wpr_carveout_info *inf);
 int gm20b_fb_vpr_info_fetch(struct gk20a *g);
 bool gm20b_fb_debug_mode_enabled(struct gk20a *g);
 void gm20b_fb_set_debug_mode(struct gk20a *g, bool enable);
+void gm20b_fb_set_mmu_debug_mode(struct gk20a *g, bool enable);
 
 #endif

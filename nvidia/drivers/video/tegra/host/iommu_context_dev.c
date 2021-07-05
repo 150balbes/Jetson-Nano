@@ -227,6 +227,8 @@ static int iommu_context_dev_probe(struct platform_device *pdev)
 		return -ENOSYS;
 	}
 
+	dma_set_mask_and_coherent(&pdev->dev, DMA_BIT_MASK(40));
+
 	ctx = devm_kzalloc(&pdev->dev, sizeof(*ctx), GFP_KERNEL);
 	if (!ctx) {
 		dev_err(&pdev->dev,

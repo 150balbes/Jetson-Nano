@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2017, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2016-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -181,52 +181,20 @@
 					proc-device-tree = "/proc/device-tree/i2c@7000c000/ov23850_c@36";
 				};
 			};
-			/* enable E3323 focuser 0 */
+			/* enable VI ports */
 			override@6 {
-				target = <&e3323_vcm0>;
+				target = <&vi_base>;
 				_overlay_ {
-					status = "okay";
+					num-channels=<2>;
 				};
 			};
 			override@7 {
-				target = <&cam_module0_drivernode1>;
-				_overlay_ {
-					status = "okay";
-					pcl_id = "v4l2_focuser";
-					devname = "lc898212 6-0072";
-					proc-device-tree = "/proc/device-tree/host1x/i2c@546c0000/lc898212@72";
-				};
-			};
-			/* enable E3323 focuser 1 */
-			override@8 {
-				target = <&e3323_vcm1>;
-				_overlay_ {
-					status = "okay";
-				};
-			};
-			override@9 {
-				target = <&cam_module1_drivernode1>;
-				_overlay_ {
-					status = "okay";
-					pcl_id = "v4l2_focuser";
-					devname = "lc898212 0-0072";
-					proc-device-tree = "/proc/device-tree/i2c@7000c000/lc898212@72";
-				};
-			};
-			/* enable VI ports */
-			override@10 {
-				target = <&vi_base>;
-				_overlay_ {
-					num-channels=<4>;
-				};
-			};
-			override@11 {
 				target = <&vi_port0>;
 				_overlay_ {
 					status = "okay";
 				};
 			};
-			override@12 {
+			override@8 {
 				target = <&e3323_vi_in0>;
 				_overlay_ {
 					status = "okay";
@@ -235,13 +203,13 @@
 					remote-endpoint = <&e3323_csi_out0>;
 				};
 			};
-			override@13 {
+			override@9 {
 				target = <&vi_port1>;
 				_overlay_ {
 					status = "okay";
 				};
 			};
-			override@14 {
+			override@10 {
 				target = <&e3323_vi_in1>;
 				_overlay_ {
 					status = "okay";
@@ -250,56 +218,38 @@
 					remote-endpoint = <&e3323_csi_out1>;
 				};
 			};
-			override@15 {
+			override@11 {
 				target = <&vi_port2>;
 				_overlay_ {
 					status = "okay";
 				};
 			};
-			override@16 {
-				target = <&e3323_vi_in2>;
-				_overlay_ {
-					status = "okay";
-					port-index = <0>;
-					bus-width = <4>;
-					remote-endpoint = <&e3323_lc898212_out0>;
-				};
-			};
-			override@17 {
+			override@12 {
 				target = <&vi_port3>;
 				_overlay_ {
 					status = "okay";
 				};
 			};
-			override@18 {
-				target = <&e3323_vi_in3>;
-				_overlay_ {
-					status = "okay";
-					port-index = <2>;
-					bus-width = <4>;
-					remote-endpoint = <&e3323_lc898212_out1>;
-				};
-			};
 			/* Enable CSI ports */
-			override@19 {
+			override@13 {
 				target = <&csi_base>;
 				_overlay_ {
 					num-channels=<2>;
 				};
 			};
-			override@20 {
+			override@14 {
 				target = <&csi_chan0>;
 				_overlay_ {
 					status = "okay";
 				};
 			};
-			override@21 {
+			override@15 {
 				target = <&csi_chan0_port0>;
 				_overlay_ {
 					status = "okay";
 				};
 			};
-			override@22 {
+			override@16 {
 				target = <&e3323_csi_in0>;
 				_overlay_ {
 					status = "okay";
@@ -308,32 +258,32 @@
 					remote-endpoint = <&e3323_ov23850_out0>;
 				};
 			};
-			override@23 {
+			override@17 {
 				target = <&csi_chan0_port1>;
 				_overlay_ {
 					status = "okay";
 				};
 			};
-			override@24 {
+			override@18 {
 				target = <&e3323_csi_out0>;
 				_overlay_ {
 					status = "okay";
 					remote-endpoint = <&e3323_vi_in0>;
 				};
 			};
-			override@25 {
+			override@19 {
 				target = <&csi_chan1>;
 				_overlay_ {
 					status = "okay";
 				};
 			};
-			override@26 {
+			override@20 {
 				target = <&csi_chan1_port0>;
 				_overlay_ {
 					status = "okay";
 				};
 			};
-			override@27 {
+			override@21 {
 				target = <&e3323_csi_in1>;
 				_overlay_ {
 					status = "okay";
@@ -342,13 +292,13 @@
 					remote-endpoint = <&e3323_ov23850_out1>;
 				};
 			};
-			override@28 {
+			override@22 {
 				target = <&csi_chan1_port1>;
 				_overlay_ {
 					status = "okay";
 				};
 			};
-			override@29 {
+			override@23 {
 				target = <&e3323_csi_out1>;
 				_overlay_ {
 					status = "okay";
@@ -356,7 +306,7 @@
 				};
 			};
 			/* tegra-camera-platform settings */
-			override@30 {
+			override@24 {
 				target = <&tcp>;
 				_overlay_ {
 					num_csi_lanes = <8>;

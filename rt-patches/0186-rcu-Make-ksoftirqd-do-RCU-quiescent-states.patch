@@ -1,0 +1,118 @@
+From 59ddedce1003fef8fe6b4a7146ad7b01f9790329 Mon Sep 17 00:00:00 2001
+From: "Paul E. McKenney" <paulmck@linux.vnet.ibm.com>
+Date: Wed, 5 Oct 2011 11:45:18 -0700
+Subject: [PATCH 186/371] rcu: Make ksoftirqd do RCU quiescent states
+X-NVConfidentiality: public
+
+Implementing RCU-bh in terms of RCU-preempt makes the system vulnerable
+to network-based denial-of-service attacks.  This patch therefore
+makes __do_softirq() invoke rcu_bh_qs(), but only when __do_softirq()
+is running in ksoftirqd context.  A wrapper layer in interposed so that
+other calls to __do_softirq() avoid invoking rcu_bh_qs().  The underlying
+function __do_softirq_common() does the actual work.
+
+The reason that rcu_bh_qs() is bad in these non-ksoftirqd contexts is
+that there might be a local_bh_enable() inside an RCU-preempt read-side
+critical section.  This local_bh_enable() can invoke __do_softirq()
+directly, so if __do_softirq() were to invoke rcu_bh_qs() (which just
+calls rcu_preempt_qs() in the PREEMPT_RT_FULL case), there would be
+an illegal RCU-preempt quiescent state in the middle of an RCU-preempt
+read-side critical section.  Therefore, quiescent states can only happen
+in cases where __do_softirq() is invoked directly from ksoftirqd.
+
+Signed-off-by: Paul E. McKenney <paulmck@linux.vnet.ibm.com>
+Link: http://lkml.kernel.org/r/20111005184518.GA21601@linux.vnet.ibm.com
+Signed-off-by: Thomas Gleixner <tglx@linutronix.de>
+---
+ include/linux/rcupdate.h | 4 ----
+ kernel/rcu/tree.c        | 9 ++++++++-
+ kernel/rcu/tree_plugin.h | 8 +++++++-
+ 3 files changed, 15 insertions(+), 6 deletions(-)
+
+diff --git a/include/linux/rcupdate.h b/include/linux/rcupdate.h
+index cd0f058..790740d 100644
+--- a/include/linux/rcupdate.h
++++ b/include/linux/rcupdate.h
+@@ -341,11 +341,7 @@ static inline int rcu_preempt_depth(void)
+ /* Internal to kernel */
+ void rcu_init(void);
+ void rcu_sched_qs(void);
+-#ifdef CONFIG_PREEMPT_RT_FULL
+-static inline void rcu_bh_qs(void) { }
+-#else
+ void rcu_bh_qs(void);
+-#endif
+ void rcu_check_callbacks(int user);
+ void rcu_report_dead(unsigned int cpu);
+ void rcu_cpu_starting(unsigned int cpu);
+diff --git a/kernel/rcu/tree.c b/kernel/rcu/tree.c
+index f698e55..6d8eca8 100644
+--- a/kernel/rcu/tree.c
++++ b/kernel/rcu/tree.c
+@@ -260,7 +260,14 @@ void rcu_sched_qs(void)
+ 			   this_cpu_ptr(&rcu_sched_data), true);
+ }
+ 
+-#ifndef CONFIG_PREEMPT_RT_FULL
++#ifdef CONFIG_PREEMPT_RT_FULL
++static void rcu_preempt_qs(void);
++
++void rcu_bh_qs(void)
++{
++	rcu_preempt_qs();
++}
++#else
+ void rcu_bh_qs(void)
+ {
+ 	if (__this_cpu_read(rcu_bh_data.cpu_no_qs.s)) {
+diff --git a/kernel/rcu/tree_plugin.h b/kernel/rcu/tree_plugin.h
+index 67894f9..7812de1 100644
+--- a/kernel/rcu/tree_plugin.h
++++ b/kernel/rcu/tree_plugin.h
+@@ -28,6 +28,7 @@
+ #include <linux/gfp.h>
+ #include <linux/oom.h>
+ #include <linux/smpboot.h>
++#include <linux/jiffies.h>
+ #include "../time/tick-internal.h"
+ 
+ #ifdef CONFIG_RCU_BOOST
+@@ -1250,7 +1251,7 @@ static void rcu_prepare_kthreads(int cpu)
+ 
+ #endif /* #else #ifdef CONFIG_RCU_BOOST */
+ 
+-#if !defined(CONFIG_RCU_FAST_NO_HZ)
++#if !defined(CONFIG_RCU_FAST_NO_HZ) || defined(CONFIG_PREEMPT_RT_FULL)
+ 
+ /*
+  * Check to see if any future RCU-related work will need to be done
+@@ -1267,7 +1268,9 @@ int rcu_needs_cpu(u64 basemono, u64 *nextevt)
+ 	return IS_ENABLED(CONFIG_RCU_NOCB_CPU_ALL)
+ 	       ? 0 : rcu_cpu_has_callbacks(NULL);
+ }
++#endif /* !defined(CONFIG_RCU_FAST_NO_HZ) || defined(CONFIG_PREEMPT_RT_FULL) */
+ 
++#if !defined(CONFIG_RCU_FAST_NO_HZ)
+ /*
+  * Because we do not have RCU_FAST_NO_HZ, don't bother cleaning up
+  * after it.
+@@ -1363,6 +1366,8 @@ static bool __maybe_unused rcu_try_advance_all_cbs(void)
+ 	return cbs_ready;
+ }
+ 
++#ifndef CONFIG_PREEMPT_RT_FULL
++
+ /*
+  * Allow the CPU to enter dyntick-idle mode unless it has callbacks ready
+  * to invoke.  If the CPU has callbacks, try to advance them.  Tell the
+@@ -1408,6 +1413,7 @@ int rcu_needs_cpu(u64 basemono, u64 *nextevt)
+ 	*nextevt = basemono + dj * TICK_NSEC;
+ 	return 0;
+ }
++#endif /* #ifndef CONFIG_PREEMPT_RT_FULL */
+ 
+ /*
+  * Prepare a CPU for idle from an RCU perspective.  The first major task
+-- 
+2.7.4
+

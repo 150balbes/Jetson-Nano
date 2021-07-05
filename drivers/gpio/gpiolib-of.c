@@ -42,6 +42,19 @@ static struct gpio_chip *of_find_gpiochip_by_xlate(
 	return gpiochip_find(gpiospec, of_gpiochip_match_node_and_xlate);
 }
 
+static int of_gpiochip_match_node(struct gpio_chip *chip, void *data)
+{
+	struct of_phandle_args *gpiospec = data;
+
+	return chip->gpiodev->dev.of_node == gpiospec->np;
+}
+
+static struct gpio_chip *of_find_gpiochip_by_node(
+					struct of_phandle_args *gpiospec)
+{
+	return gpiochip_find(gpiospec, of_gpiochip_match_node);
+}
+
 static struct gpio_desc *of_xlate_and_get_gpiod_flags(struct gpio_chip *chip,
 					struct of_phandle_args *gpiospec,
 					enum of_gpio_flags *flags)
@@ -104,6 +117,28 @@ out:
 
 	return desc;
 }
+
+/**
+ * of_get_chip_from_node() - Get a GPIO chip
+ * @np:		device node to get gpio chip
+ *
+ * Returns GPIO chip structure, this is simple API to retrieve chip
+ * structure from the device node.
+ */
+struct gpio_chip *of_get_chip_from_node(struct device_node *np)
+{
+	struct of_phandle_args gpiospec = {0};
+	struct gpio_chip *chip;
+
+	gpiospec.np = np;
+
+	chip = of_find_gpiochip_by_node(&gpiospec);
+	if (!chip)
+		return ERR_PTR(-EPROBE_DEFER);
+
+	return chip;
+}
+EXPORT_SYMBOL(of_get_chip_from_node);
 
 int of_get_named_gpio_flags(struct device_node *np, const char *list_name,
 			    int index, enum of_gpio_flags *flags)
@@ -661,7 +696,13 @@ int of_gpiochip_add(struct gpio_chip *chip)
 
 	of_node_get(chip->of_node);
 
-	return of_gpiochip_scan_gpios(chip);
+	status = of_gpiochip_scan_gpios(chip);
+	if (status) {
+		of_node_put(chip->of_node);
+		gpiochip_remove_pin_ranges(chip);
+	}
+
+	return status;
 }
 
 void of_gpiochip_remove(struct gpio_chip *chip)

@@ -113,14 +113,6 @@ enum { SDI0, SDI1, SDI2, SDI3, SDO0, SDO1, SDO2, SDO3 };
 /* PCI space */
 #define AZX_PCIREG_TCSEL		0x44
 
-/* FPCI_AZA range */
-#define AZX_FPCI_DBG_CFG_2		0xf4
-#define   AZX_FPCI_GCAP_NSDO	(3 << 18) /* No. of SDO lines */
-
-/* Watermark related registers */
-#define AZX_FPCI_FIFO_WATERMARK		0x7c
-#define AZX_FPCI_BUFSZ_NUM_OF_FRAMES	0x80
-
 /*
  * other constants
  */

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2015-2019 NVIDIA Corporation.  All rights reserved.
+ * Copyright (C) 2015-2020 NVIDIA Corporation.  All rights reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -306,9 +306,15 @@ static int tegra_bpmp_i2c_xfer(struct i2c_adapter *adap, struct i2c_msg msgs[],
 	ret = tegra_bpmp_i2c_req(i2c_dev->bpmp_adapter_id, &in, size, &out,
 			i2c_dev);
 	if (ret < 0) {
-		dev_err(&i2c_dev->adapter.dev, "tegra_bpmp_i2c_req ret %d\n",
-			ret);
-		dump_i2c_msgs(i2c_dev, msgs, num);
+		if (ret != -BPMP_ENXIO) {
+			dev_warn(&i2c_dev->adapter.dev,
+				"tegra_bpmp_i2c_req ret %d\n",
+				ret);
+			dump_i2c_msgs(i2c_dev, msgs, num);
+		} else
+			dev_dbg(&i2c_dev->adapter.dev,
+				"tegra_bpmp_i2c_req ret %d\n",
+				ret);
 		return ret;
 	}
 
@@ -412,7 +418,7 @@ static int tegra_bpmp_i2c_probe(struct platform_device *pdev)
 
 	i2c_set_adapdata(&i2c_dev->adapter, i2c_dev);
 	i2c_dev->adapter.owner = THIS_MODULE;
-	i2c_dev->adapter.class = I2C_CLASS_HWMON;
+	i2c_dev->adapter.class = I2C_CLASS_DEPRECATED;
 	strlcpy(i2c_dev->adapter.name, "Tegra BPMP I2C adapter",
 		sizeof(i2c_dev->adapter.name));
 	i2c_dev->adapter.algo = &tegra_bpmp_i2c_algo;

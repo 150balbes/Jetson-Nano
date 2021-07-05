@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -73,7 +73,7 @@ struct nvgpu_cond {
 		else if (_ret == -ERESTARTSYS) \
 			ret = -ERESTARTSYS; \
 	} else { \
-		wait_event_interruptible((c)->wq, condition); \
+		ret = wait_event_interruptible((c)->wq, condition); \
 	} \
 	ret; \
 })

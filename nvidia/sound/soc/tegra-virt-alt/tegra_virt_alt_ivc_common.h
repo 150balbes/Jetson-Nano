@@ -154,6 +154,8 @@ enum nvaudio_ivc_cmd_t {
 	NVAUDIO_AHUB_BLOCK_REGDUMP,
 	NVAUDIO_AMIXER_SET_FADE,
 	NVAUDIO_AMIXER_GET_FADE_STATUS,
+	NVAUDIO_AMX_SET_INPUT_IDLE_CNT,
+	NVAUDIO_ADMA_BLOCK_REGDUMP,
 	NVAUDIO_CMD_MAX,
 };
 
@@ -248,6 +250,10 @@ struct nvaudio_ivc_t210_amixer_fade_status {
 	int32_t		status[TEGRA210_MIXER_AXBAR_RX_MAX];
 };
 
+struct nvaudio_ivc_t210_adma_info {
+	uint32_t        channel_num;
+};
+
 struct nvaudio_ivc_msg {
 	int32_t			channel_id;
 	enum nvaudio_ivc_cmd_t	cmd;
@@ -264,6 +270,7 @@ struct nvaudio_ivc_msg {
 		struct nvaudio_ivc_ahub_block			ahub_block_info;
 		struct nvaudio_ivc_t210_amixer_fade_info	fade_info;
 		struct nvaudio_ivc_t210_amixer_fade_status	fade_status;
+		struct nvaudio_ivc_t210_adma_info		adma_info;
 	} params;
 	bool			ack_required;
 	int32_t			err;

@@ -2,7 +2,7 @@
  * Broadcom Dongle Host Driver (DHD), common DHD core.
  *
  * Copyright (C) 1999-2015, Broadcom Corporation
- * Copyright (c) 2017-2019, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2017-2020, NVIDIA CORPORATION. All rights reserved.
  * 
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -386,7 +386,7 @@ dhd_download_2_dongle(dhd_pub_t	*dhd, char *iovar, uint16 flag, uint16 dload_typ
 	dload_ptr->dload_type = dload_type;
 	dload_ptr->len = htod32(len - dload_data_offset);
 	dload_ptr->crc = 0;
-	len = len + 8 - (len%8);
+	len = ROUNDUP(len, 8);
 
 	iovar_len = bcm_mkiovar(iovar, dload_buf,
 		(uint)len, iovar_buf, sizeof(iovar_buf));
@@ -413,6 +413,7 @@ dhd_download_clm_blob(dhd_pub_t	*dhd, unsigned char *buf, uint32 len)
 
 	data_offset = OFFSETOF(wl_dload_data_t, data);
 	size2alloc = data_offset + MAX_CHUNK_LEN;
+	size2alloc = ROUNDUP(size2alloc, 8);
 
 	new_buf = (unsigned char *)MALLOCZ(dhd->osh, size2alloc);
 	if (new_buf != NULL) {
@@ -2294,7 +2295,7 @@ dhd_pktfilter_offload_enable(dhd_pub_t * dhd, char *arg, int enable, int master_
 	str = "pkt_filter_enable";
 	str_len = strlen(str);
 	bcm_strncpy_s(buf, sizeof(buf) - 1, str, sizeof(buf) - 1);
-	buf[ sizeof(buf) - 1 ] = '\0';
+	buf[ sizeof(buf) - 1] = '\0';
 	buf_len = str_len + 1;
 
 	pkt_filterp = (wl_pkt_filter_enable_t *)(buf + str_len + 1);

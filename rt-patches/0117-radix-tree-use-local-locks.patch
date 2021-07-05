@@ -1,0 +1,133 @@
+From 63da90c8d10a88714b86ef6022a0a8ed36c70ea4 Mon Sep 17 00:00:00 2001
+From: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+Date: Wed, 25 Jan 2017 16:34:27 +0100
+Subject: [PATCH 117/371] radix-tree: use local locks
+X-NVConfidentiality: public
+
+The preload functionality uses per-CPU variables and preempt-disable to
+ensure that it does not switch CPUs during its usage. This patch adds
+local_locks() instead preempt_disable() for the same purpose and to
+remain preemptible on -RT.
+
+Cc: stable-rt@vger.kernel.org
+Reported-and-debugged-by: Mike Galbraith <efault@gmx.de>
+Signed-off-by: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+---
+ include/linux/radix-tree.h |  7 ++-----
+ lib/radix-tree.c           | 22 +++++++++++++++-------
+ 2 files changed, 17 insertions(+), 12 deletions(-)
+
+diff --git a/include/linux/radix-tree.h b/include/linux/radix-tree.h
+index af3581b..2772950 100644
+--- a/include/linux/radix-tree.h
++++ b/include/linux/radix-tree.h
+@@ -292,6 +292,8 @@ unsigned int radix_tree_gang_lookup_slot(struct radix_tree_root *root,
+ int radix_tree_preload(gfp_t gfp_mask);
+ int radix_tree_maybe_preload(gfp_t gfp_mask);
+ int radix_tree_maybe_preload_order(gfp_t gfp_mask, int order);
++void radix_tree_preload_end(void);
++
+ void radix_tree_init(void);
+ void *radix_tree_tag_set(struct radix_tree_root *root,
+ 			unsigned long index, unsigned int tag);
+@@ -314,11 +316,6 @@ unsigned long radix_tree_range_tag_if_tagged(struct radix_tree_root *root,
+ int radix_tree_tagged(struct radix_tree_root *root, unsigned int tag);
+ unsigned long radix_tree_locate_item(struct radix_tree_root *root, void *item);
+ 
+-static inline void radix_tree_preload_end(void)
+-{
+-	preempt_enable();
+-}
+-
+ /**
+  * struct radix_tree_iter - radix tree iterator state
+  *
+diff --git a/lib/radix-tree.c b/lib/radix-tree.c
+index 8e6d552..741da5a 100644
+--- a/lib/radix-tree.c
++++ b/lib/radix-tree.c
+@@ -36,7 +36,7 @@
+ #include <linux/bitops.h>
+ #include <linux/rcupdate.h>
+ #include <linux/preempt.h>		/* in_interrupt() */
+-
++#include <linux/locallock.h>
+ 
+ /* Number of nodes in fully populated tree of given height */
+ static unsigned long height_to_maxnodes[RADIX_TREE_MAX_PATH + 1] __read_mostly;
+@@ -68,6 +68,7 @@ struct radix_tree_preload {
+ 	struct radix_tree_node *nodes;
+ };
+ static DEFINE_PER_CPU(struct radix_tree_preload, radix_tree_preloads) = { 0, };
++static DEFINE_LOCAL_IRQ_LOCK(radix_tree_preloads_lock);
+ 
+ static inline void *node_to_entry(void *ptr)
+ {
+@@ -290,13 +291,14 @@ radix_tree_node_alloc(struct radix_tree_root *root)
+ 		 * succeed in getting a node here (and never reach
+ 		 * kmem_cache_alloc)
+ 		 */
+-		rtp = this_cpu_ptr(&radix_tree_preloads);
++		rtp = &get_locked_var(radix_tree_preloads_lock, radix_tree_preloads);
+ 		if (rtp->nr) {
+ 			ret = rtp->nodes;
+ 			rtp->nodes = ret->private_data;
+ 			ret->private_data = NULL;
+ 			rtp->nr--;
+ 		}
++		put_locked_var(radix_tree_preloads_lock, radix_tree_preloads);
+ 		/*
+ 		 * Update the allocation stack trace as this is more useful
+ 		 * for debugging.
+@@ -357,14 +359,14 @@ static int __radix_tree_preload(gfp_t gfp_mask, int nr)
+ 	 */
+ 	gfp_mask &= ~__GFP_ACCOUNT;
+ 
+-	preempt_disable();
++	local_lock(radix_tree_preloads_lock);
+ 	rtp = this_cpu_ptr(&radix_tree_preloads);
+ 	while (rtp->nr < nr) {
+-		preempt_enable();
++		local_unlock(radix_tree_preloads_lock);
+ 		node = kmem_cache_alloc(radix_tree_node_cachep, gfp_mask);
+ 		if (node == NULL)
+ 			goto out;
+-		preempt_disable();
++		local_lock(radix_tree_preloads_lock);
+ 		rtp = this_cpu_ptr(&radix_tree_preloads);
+ 		if (rtp->nr < nr) {
+ 			node->private_data = rtp->nodes;
+@@ -406,7 +408,7 @@ int radix_tree_maybe_preload(gfp_t gfp_mask)
+ 	if (gfpflags_allow_blocking(gfp_mask))
+ 		return __radix_tree_preload(gfp_mask, RADIX_TREE_PRELOAD_SIZE);
+ 	/* Preloading doesn't help anything with this gfp mask, skip it */
+-	preempt_disable();
++	local_lock(radix_tree_preloads_lock);
+ 	return 0;
+ }
+ EXPORT_SYMBOL(radix_tree_maybe_preload);
+@@ -422,7 +424,7 @@ int radix_tree_maybe_preload_order(gfp_t gfp_mask, int order)
+ 
+ 	/* Preloading doesn't help anything with this gfp mask, skip it */
+ 	if (!gfpflags_allow_blocking(gfp_mask)) {
+-		preempt_disable();
++		local_lock(radix_tree_preloads_lock);
+ 		return 0;
+ 	}
+ 
+@@ -456,6 +458,12 @@ int radix_tree_maybe_preload_order(gfp_t gfp_mask, int order)
+ 	return __radix_tree_preload(gfp_mask, nr_nodes);
+ }
+ 
++void radix_tree_preload_end(void)
++{
++	local_unlock(radix_tree_preloads_lock);
++}
++EXPORT_SYMBOL(radix_tree_preload_end);
++
+ /*
+  * The maximum index which can be stored in a radix tree
+  */
+-- 
+2.7.4
+

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2016-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -128,12 +128,8 @@ int vgpu_tsg_unbind_channel(struct channel_gk20a *ch)
 
 	nvgpu_log_fn(g, " ");
 
-	err = gk20a_fifo_tsg_unbind_channel(ch);
-	if (err)
-		return err;
-
 	msg.cmd = TEGRA_VGPU_CMD_TSG_UNBIND_CHANNEL;
-	msg.handle = vgpu_get_handle(ch->g);
+	msg.handle = vgpu_get_handle(g);
 	p->ch_handle = ch->virt_ctx;
 	err = vgpu_comm_sendrecv(&msg, sizeof(msg), sizeof(msg));
 	err = err ? err : msg.ret;

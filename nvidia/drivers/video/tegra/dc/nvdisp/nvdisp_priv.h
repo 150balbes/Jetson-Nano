@@ -1,7 +1,7 @@
 /*
  * nvidia/drivers/video/tegra/nvdisp/nvdisp_priv.h
  *
- * Copyright (c) 2014 - 2017, NVIDIA CORPORATION, All rights reserved.
+ * Copyright (c) 2014-2018, NVIDIA CORPORATION, All rights reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -24,7 +24,7 @@
 #include <linux/tegra-powergate.h>
 #include "hw_win_nvdisp.h"
 #include "dc_priv.h"
-#include <video/tegra_dc_ext.h>
+#include <uapi/video/tegra_dc_ext.h>
 
 /* TODO: move to device tree */
 

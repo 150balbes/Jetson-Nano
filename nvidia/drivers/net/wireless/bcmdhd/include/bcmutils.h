@@ -28,7 +28,7 @@
 #define	_bcmutils_h_
 
 #define bcm_strcpy_s(dst, noOfElements, src)            strcpy((dst), (src))
-#define bcm_strncpy_s(dst, noOfElements, src, count)    strncpy((dst), (src), (count))
+#define bcm_strncpy_s(dst, noOfElements, src, count)    strncpy((dst), (src), (noOfElements))
 #define bcm_strcat_s(dst, noOfElements, src)            strcat((dst), (src))
 
 #ifdef __cplusplus

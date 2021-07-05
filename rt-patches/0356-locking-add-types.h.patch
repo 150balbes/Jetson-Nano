@@ -1,0 +1,33 @@
+From d699ba0c8834323f7f46a8c6418c9d13957c345b Mon Sep 17 00:00:00 2001
+From: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+Date: Tue, 9 Jan 2018 11:02:24 +0100
+Subject: [PATCH 356/371] locking: add types.h
+X-NVConfidentiality: public
+
+During the stable update the arm architecture did not compile anymore
+due to missing definition of u16/32.
+
+Cc: stable-rt@vger.kernel.org
+Signed-off-by: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+(cherry picked from commit 1289b06974d64f244a26455fab699c6a1332f4bc)
+Signed-off-by: Julia Cartwright <julia@ni.com>
+---
+ include/linux/spinlock_types_raw.h | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/include/linux/spinlock_types_raw.h b/include/linux/spinlock_types_raw.h
+index edffc4d..03235b4 100644
+--- a/include/linux/spinlock_types_raw.h
++++ b/include/linux/spinlock_types_raw.h
+@@ -1,6 +1,8 @@
+ #ifndef __LINUX_SPINLOCK_TYPES_RAW_H
+ #define __LINUX_SPINLOCK_TYPES_RAW_H
+ 
++#include <linux/types.h>
++
+ #if defined(CONFIG_SMP)
+ # include <asm/spinlock_types.h>
+ #else
+-- 
+2.7.4
+

@@ -3,7 +3,7 @@
  *
  * Deskew driver
  *
- * Copyright (c) 2018 NVIDIA Corporation.  All rights reserved.
+ * Copyright (c) 2018-2019 NVIDIA Corporation.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -23,7 +23,7 @@
 #define __DESKEW_H__
 
 #include <linux/completion.h>
-#include <linux/nvhost_nvcsi_ioctl.h>
+#include <uapi/linux/nvhost_nvcsi_ioctl.h>
 #include <media/csi.h>
 
 

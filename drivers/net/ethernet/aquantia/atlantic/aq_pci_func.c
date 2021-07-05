@@ -9,7 +9,6 @@
 
 /* File aq_pci_func.c: Definition of PCI functions. */
 
-#include <linux/interrupt.h>
 #include <linux/module.h>
 
 #include "aq_main.h"
@@ -138,43 +137,41 @@ err_exit:
 }
 
 int aq_pci_func_alloc_irq(struct aq_nic_s *self, unsigned int i,
-			  char *name, void *aq_vec, cpumask_t *affinity_mask)
+			  char *name, irq_handler_t irq_handler,
+			  void *irq_arg, cpumask_t *affinity_mask)
 {
 	struct pci_dev *pdev = self->pdev;
 	int err = 0;
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 8, 0)
 	if (pdev->msix_enabled)
-		err = request_irq(self->msix_entry[i].vector, aq_vec_isr, 0,
-				  name, aq_vec);
+		err = request_irq(self->msix_entry[i].vector, irq_handler, 0,
+				  name, irq_arg);
 	else if (pdev->msi_enabled)
-		err = request_irq(pdev->irq, aq_vec_isr, 0,
-				  name, aq_vec);
+		err = request_irq(pdev->irq, irq_handler, 0, name, irq_arg);
 	else
 		err = request_irq(pdev->irq, aq_vec_isr_legacy,
-				  IRQF_SHARED, name, aq_vec);
+				  IRQF_SHARED, name, irq_arg);
 
 	if (err >= 0) {
 		self->msix_entry_mask |= (1 << i);
-		self->aq_vec[i] = aq_vec;
 
-		if (pdev->msix_enabled)
+		if (pdev->msix_enabled && affinity_mask)
 			irq_set_affinity_hint(self->msix_entry[i].vector,
 					      affinity_mask);
 	}
 #else
 	if (pdev->msix_enabled || pdev->msi_enabled)
-		err = request_irq(pci_irq_vector(pdev, i), aq_vec_isr, 0,
-				  name, aq_vec);
+		err = request_irq(pci_irq_vector(pdev, i), irq_handler, 0,
+				  name, irq_arg);
 	else
 		err = request_irq(pci_irq_vector(pdev, i), aq_vec_isr_legacy,
-				  IRQF_SHARED, name, aq_vec);
+				  IRQF_SHARED, name, irq_arg);
 
 	if (err >= 0) {
 		self->msix_entry_mask |= (1 << i);
-		self->aq_vec[i] = aq_vec;
 
-		if (pdev->msix_enabled)
+		if (pdev->msix_enabled && affinity_mask)
 			irq_set_affinity_hint(pci_irq_vector(pdev, i),
 					      affinity_mask);
 	}
@@ -186,24 +183,33 @@ void aq_pci_func_free_irqs(struct aq_nic_s *self)
 {
 	struct pci_dev *pdev = self->pdev;
 	unsigned int i = 0U;
+	void *irq_data;
 
 	for (i = 32U; i--;) {
+
 		if (!((1U << i) & self->msix_entry_mask))
+			continue;
+		if (self->aq_nic_cfg.link_irq_vec &&
+		    i == self->aq_nic_cfg.link_irq_vec)
+			irq_data = self;
+		else if (i < AQ_CFG_VECS_MAX)
+			irq_data = self->aq_vec[i];
+		else
 			continue;
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 8, 0)
 		switch (aq_pci_func_get_irq_type(self)) {
 		case AQ_HW_IRQ_MSIX:
 			irq_set_affinity_hint(self->msix_entry[i].vector, NULL);
-			free_irq(self->msix_entry[i].vector, self->aq_vec[i]);
+			free_irq(self->msix_entry[i].vector, irq_data);
 			break;
 
 		case AQ_HW_IRQ_MSI:
-			free_irq(pdev->irq, self->aq_vec[i]);
+			free_irq(pdev->irq, irq_data);
 			break;
 
 		case AQ_HW_IRQ_LEGACY:
-			free_irq(pdev->irq, self->aq_vec[i]);
+			free_irq(pdev->irq, irq_data);
 			break;
 
 		default:
@@ -213,7 +219,7 @@ void aq_pci_func_free_irqs(struct aq_nic_s *self)
 #else
 		if (pdev->msix_enabled)
 			irq_set_affinity_hint(pci_irq_vector(pdev, i), NULL);
-		free_irq(pci_irq_vector(pdev, i), self->aq_vec[i]);
+		free_irq(pci_irq_vector(pdev, i), irq_data);
 #endif
 		self->msix_entry_mask &= ~(1U << i);
 	}
@@ -224,7 +230,7 @@ unsigned int aq_pci_func_get_irq_type(struct aq_nic_s *self)
 	if (self->pdev->msix_enabled)
 		return AQ_HW_IRQ_MSIX;
 	if (self->pdev->msi_enabled)
-		return AQ_HW_IRQ_MSIX;
+		return AQ_HW_IRQ_MSI;
 	return AQ_HW_IRQ_LEGACY;
 }
 
@@ -331,6 +337,9 @@ static int aq_pci_probe(struct pci_dev *pdev,
 	numvecs = min((u8)AQ_CFG_VECS_DEF,
 		      aq_nic_get_cfg(self)->aq_hw_caps->msix_irqs);
 	numvecs = min(numvecs, num_online_cpus());
+
+	numvecs += AQ_HW_SERVICE_IRQS;
+
 	/*enable interrupts */
 #if !AQ_CFG_FORCE_LEGACY_INT
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 7, 0)
@@ -346,14 +355,13 @@ static int aq_pci_probe(struct pci_dev *pdev,
 			goto err_hwinit;
 	}
 #else
-	numvecs = pci_alloc_irq_vectors(self->pdev, 1, numvecs,
-					PCI_IRQ_MSIX | PCI_IRQ_MSI |
-					PCI_IRQ_LEGACY);
+	err = pci_alloc_irq_vectors(self->pdev, 1, numvecs,
+				    PCI_IRQ_MSIX | PCI_IRQ_MSI |
+				    PCI_IRQ_LEGACY);
 
-	if (numvecs < 0) {
-		err = numvecs;
+	if (err < 0)
 		goto err_hwinit;
-	}
+	numvecs = err;
 #endif
 #endif
 	self->irqvecs = numvecs;

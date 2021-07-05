@@ -1,0 +1,81 @@
+From 9134f547665609f6fff640cb1b9d469460fb524b Mon Sep 17 00:00:00 2001
+From: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+Date: Mon, 21 Nov 2016 19:26:15 +0100
+Subject: [PATCH 042/371] locking/percpu-rwsem: use swait for the wating writer
+X-NVConfidentiality: public
+
+Use struct swait_queue_head instead of wait_queue_head_t for the waiting
+writer. The swait implementation is smaller and lightweight compared to
+wait_queue_head_t.
+
+Signed-off-by: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+---
+ include/linux/percpu-rwsem.h  | 6 +++---
+ kernel/locking/percpu-rwsem.c | 6 +++---
+ 2 files changed, 6 insertions(+), 6 deletions(-)
+
+diff --git a/include/linux/percpu-rwsem.h b/include/linux/percpu-rwsem.h
+index 5b2e615..82d54a4 100644
+--- a/include/linux/percpu-rwsem.h
++++ b/include/linux/percpu-rwsem.h
+@@ -4,7 +4,7 @@
+ #include <linux/atomic.h>
+ #include <linux/rwsem.h>
+ #include <linux/percpu.h>
+-#include <linux/wait.h>
++#include <linux/swait.h>
+ #include <linux/rcu_sync.h>
+ #include <linux/lockdep.h>
+ 
+@@ -12,7 +12,7 @@ struct percpu_rw_semaphore {
+ 	struct rcu_sync		rss;
+ 	unsigned int __percpu	*read_count;
+ 	struct rw_semaphore	rw_sem;
+-	wait_queue_head_t	writer;
++	struct swait_queue_head	writer;
+ 	int			readers_block;
+ };
+ 
+@@ -22,7 +22,7 @@ static struct percpu_rw_semaphore name = {				\
+ 	.rss = __RCU_SYNC_INITIALIZER(name.rss, RCU_SCHED_SYNC),	\
+ 	.read_count = &__percpu_rwsem_rc_##name,			\
+ 	.rw_sem = __RWSEM_INITIALIZER(name.rw_sem),			\
+-	.writer = __WAIT_QUEUE_HEAD_INITIALIZER(name.writer),		\
++	.writer = __SWAIT_QUEUE_HEAD_INITIALIZER(name.writer),		\
+ }
+ 
+ extern int __percpu_down_read(struct percpu_rw_semaphore *, int);
+diff --git a/kernel/locking/percpu-rwsem.c b/kernel/locking/percpu-rwsem.c
+index ce18259..2ad3a1e 100644
+--- a/kernel/locking/percpu-rwsem.c
++++ b/kernel/locking/percpu-rwsem.c
+@@ -18,7 +18,7 @@ int __percpu_init_rwsem(struct percpu_rw_semaphore *sem,
+ 	/* ->rw_sem represents the whole percpu_rw_semaphore for lockdep */
+ 	rcu_sync_init(&sem->rss, RCU_SCHED_SYNC);
+ 	__init_rwsem(&sem->rw_sem, name, rwsem_key);
+-	init_waitqueue_head(&sem->writer);
++	init_swait_queue_head(&sem->writer);
+ 	sem->readers_block = 0;
+ 	return 0;
+ }
+@@ -103,7 +103,7 @@ void __percpu_up_read(struct percpu_rw_semaphore *sem)
+ 	__this_cpu_dec(*sem->read_count);
+ 
+ 	/* Prod writer to recheck readers_active */
+-	wake_up(&sem->writer);
++	swake_up(&sem->writer);
+ }
+ EXPORT_SYMBOL_GPL(__percpu_up_read);
+ 
+@@ -160,7 +160,7 @@ void percpu_down_write(struct percpu_rw_semaphore *sem)
+ 	 */
+ 
+ 	/* Wait for all now active readers to complete. */
+-	wait_event(sem->writer, readers_active_check(sem));
++	swait_event(sem->writer, readers_active_check(sem));
+ }
+ EXPORT_SYMBOL_GPL(percpu_down_write);
+ 
+-- 
+2.7.4
+

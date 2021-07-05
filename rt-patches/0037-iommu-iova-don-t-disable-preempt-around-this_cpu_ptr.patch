@@ -1,0 +1,44 @@
+From e358e51283c7a8a8397b9c384fb1b7d81744d2dd Mon Sep 17 00:00:00 2001
+From: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+Date: Thu, 15 Sep 2016 16:58:19 +0200
+Subject: [PATCH 037/371] iommu/iova: don't disable preempt around
+ this_cpu_ptr()
+X-NVConfidentiality: public
+
+Commit 583248e6620a ("iommu/iova: Disable preemption around use of
+this_cpu_ptr()") disables preemption while accessing a per-CPU variable.
+This does keep lockdep quiet. However I don't see the point why it is
+bad if we get migrated after its access to another CPU.
+__iova_rcache_insert() and __iova_rcache_get() immediately locks the
+variable after obtaining it - before accessing its members.
+_If_ we get migrated away after retrieving the address of cpu_rcache
+before taking the lock then the *other* task on the same CPU will
+retrieve the same address of cpu_rcache and will spin on the lock.
+
+alloc_iova_fast() disables preemption while invoking
+free_cpu_cached_iovas() on each CPU. The function itself uses
+per_cpu_ptr() which does not trigger a warning (like this_cpu_ptr()
+does) because it assumes the caller knows what he does because he might
+access the data structure from a different CPU (which means he needs
+protection against concurrent access).
+
+Signed-off-by: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+---
+ drivers/iommu/iova.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/drivers/iommu/iova.c b/drivers/iommu/iova.c
+index 1abdd11..3ee073b 100644
+--- a/drivers/iommu/iova.c
++++ b/drivers/iommu/iova.c
+@@ -24,6 +24,7 @@
+ #include <linux/bitops.h>
+ #include <linux/cpu.h>
+ 
++
+ static bool iova_rcache_insert(struct iova_domain *iovad,
+ 			       unsigned long pfn,
+ 			       unsigned long size);
+-- 
+2.7.4
+

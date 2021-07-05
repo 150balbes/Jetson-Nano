@@ -244,6 +244,7 @@ int nvgpu_vidmem_buf_access_memory(struct gk20a *g, struct dma_buf *dmabuf,
 	vidmem_buf = dmabuf->priv;
 	mem = vidmem_buf->mem;
 
+	nvgpu_speculation_barrier();
 	switch (cmd) {
 	case NVGPU_DBG_GPU_IOCTL_ACCESS_FB_MEMORY_CMD_READ:
 		nvgpu_mem_rd_n(g, mem, offset, buffer, size);

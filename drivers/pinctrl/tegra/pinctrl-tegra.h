@@ -1,7 +1,7 @@
 /*
  * Driver for the NVIDIA Tegra pinmux
  *
- * Copyright (c) 2011-2017, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2011-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -232,7 +232,6 @@ struct tegra_pinctrl_soc_data {
 	bool is_gpio_reg_support;
 	int (*suspend)(u32 *pg_data);
 	void (*resume)(u32 *pg_data);
-	int (*gpio_request_enable)(unsigned pin);
 	bool hsm_in_mux;
 	bool schmitt_in_mux;
 	bool drvtype_in_mux;

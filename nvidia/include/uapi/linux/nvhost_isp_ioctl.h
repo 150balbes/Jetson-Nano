@@ -1,9 +1,9 @@
 /*
- * include/linux/nvhost_isp_ioctl.h
+ * include/uapi/linux/nvhost_isp_ioctl.h
  *
  * Tegra ISP Driver
  *
- * Copyright (c) 2013-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2016-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -23,7 +23,7 @@
 #define __UAPI_LINUX_NVHOST_ISP_IOCTL_H
 
 #include <linux/ioctl.h>
-#include <uapi/linux/types.h>
+#include <linux/types.h>
 
 #define ISP_SOFT_ISO_CLIENT 0
 #define ISP_HARD_ISO_CLIENT 1

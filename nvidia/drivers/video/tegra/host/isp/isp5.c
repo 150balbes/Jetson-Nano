@@ -1,7 +1,7 @@
 /*
  * ISP5 driver for T194
  *
- * Copyright (c) 2017-2018, NVIDIA Corporation.  All rights reserved.
+ * Copyright (c) 2017-2019, NVIDIA Corporation.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -46,7 +46,7 @@
 #include "nvhost_acm.h"
 #include "nvhost_syncpt_unit_interface.h"
 #include "t194/t194.h"
-#include <linux/nvhost_isp_ioctl.h>
+#include <uapi/linux/nvhost_isp_ioctl.h>
 
 #define ISP_PPC		2
 /* 20% overhead */

@@ -1,0 +1,56 @@
+From d293cdb9496f41d731a975895369ccfc73a1ea24 Mon Sep 17 00:00:00 2001
+From: "Darren Hart (VMware)" <dvhart@infradead.org>
+Date: Fri, 14 Apr 2017 15:46:08 -0700
+Subject: [PATCH 029/371] MAINTAINERS: Add FUTEX SUBSYSTEM
+X-NVConfidentiality: public
+
+Upstream commit 59cd42c29618c45cd3c56da43402b14f611888dd
+
+Add a MAINTAINERS block for the FUTEX SUBSYSTEM which includes the core
+kernel code, include headers, testing code, and Documentation. Excludes
+arch files, and higher level test code.
+
+I added tglx and mingo as M as they have made the tip commits and peterz
+and myself as R.
+
+Signed-off-by: Darren Hart (VMware) <dvhart@infradead.org>
+Cc: Peter Zijlstra <peterz@infradead.org>
+Cc: Shuah Khan <shuah@kernel.org>
+Cc: Arnaldo Carvalho de Melo <acme@kernel.org>
+Link: http://lkml.kernel.org/r/20170414224608.GA5180@fury
+Signed-off-by: Thomas Gleixner <tglx@linutronix.de>
+---
+ MAINTAINERS | 17 +++++++++++++++++
+ 1 file changed, 17 insertions(+)
+
+diff --git a/MAINTAINERS b/MAINTAINERS
+index beb51ae..7e24caa 100644
+--- a/MAINTAINERS
++++ b/MAINTAINERS
+@@ -5196,6 +5196,23 @@ F:	fs/fuse/
+ F:	include/uapi/linux/fuse.h
+ F:	Documentation/filesystems/fuse.txt
+ 
++FUTEX SUBSYSTEM
++M:	Thomas Gleixner <tglx@linutronix.de>
++M:	Ingo Molnar <mingo@redhat.com>
++R:	Peter Zijlstra <peterz@infradead.org>
++R:	Darren Hart <dvhart@infradead.org>
++L:	linux-kernel@vger.kernel.org
++T:	git git://git.kernel.org/pub/scm/linux/kernel/git/tip/tip.git locking/core
++S:	Maintained
++F:	kernel/futex.c
++F:	kernel/futex_compat.c
++F:	include/asm-generic/futex.h
++F:	include/linux/futex.h
++F:	include/uapi/linux/futex.h
++F:	tools/testing/selftests/futex/
++F:	tools/perf/bench/futex*
++F:	Documentation/*futex*
++
+ FUTURE DOMAIN TMC-16x0 SCSI DRIVER (16-bit)
+ M:	Rik Faith <faith@cs.unc.edu>
+ L:	linux-scsi@vger.kernel.org
+-- 
+2.7.4
+

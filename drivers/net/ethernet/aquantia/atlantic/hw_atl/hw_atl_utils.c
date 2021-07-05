@@ -39,7 +39,7 @@
 #define HW_ATL_MPI_DAISY_CHAIN_STATUS	0x704
 #define HW_ATL_MPI_BOOT_EXIT_CODE	0x388
 
-#define HW_ATL_MAC_PHY_CONTROL	0x4000
+#define HW_ATL_MAC_PHY_CONTROL	     0x4000
 #define HW_ATL_MAC_PHY_MPI_RESET_BIT 0x1D
 
 #define HW_ATL_FW_VER_1X 0x01050006U
@@ -69,10 +69,10 @@ int hw_atl_utils_initfw(struct aq_hw_s *self, const struct aq_fw_ops **fw_ops)
 				   self->fw_ver_actual) == 0) {
 		*fw_ops = &aq_fw_1x_ops;
 	} else if (hw_atl_utils_ver_match(HW_ATL_FW_VER_2X,
-					self->fw_ver_actual) == 0) {
+					  self->fw_ver_actual) == 0) {
 		*fw_ops = &aq_fw_2x_ops;
 	} else if (hw_atl_utils_ver_match(HW_ATL_FW_VER_3X,
-					self->fw_ver_actual) == 0) {
+					  self->fw_ver_actual) == 0) {
 		*fw_ops = &aq_fw_2x_ops;
 	} else {
 		aq_pr_err("Bad FW version detected: %x\n",
@@ -102,7 +102,10 @@ static int hw_atl_utils_soft_reset_flb(struct aq_hw_s *self)
 	/* Kickstart MAC */
 	aq_hw_write_reg(self, 0x404, 0x80e0);
 	aq_hw_write_reg(self, 0x32a8, 0x0);
-	aq_hw_write_reg(self, 0x520, 0x1);
+
+	if (!self->fast_start_enabled) {
+		aq_hw_write_reg(self, 0x520, 0x1);
+	}
 
 	/* Reset SPI again because of possible interrupted SPI burst */
 	val = aq_hw_read_reg(self, 0x53C);
@@ -111,25 +114,29 @@ static int hw_atl_utils_soft_reset_flb(struct aq_hw_s *self)
 	/* Clear SPI reset state */
 	aq_hw_write_reg(self, 0x53C, val & ~0x10);
 
-	aq_hw_write_reg(self, 0x404, 0x180e0);
+	/* MAC Kickstart */
+	if (!self->fast_start_enabled) {
+		aq_hw_write_reg(self, 0x404, 0x180e0);
 
-	for (k = 0; k < 1000; k++) {
-		u32 flb_status = aq_hw_read_reg(self,
-						HW_ATL_MPI_DAISY_CHAIN_STATUS);
+		for (k = 0; k < 1000; k++) {
+			u32 flb_status = aq_hw_read_reg(self,
+							HW_ATL_MPI_DAISY_CHAIN_STATUS);
 
-		flb_status = flb_status & 0x10;
-		if (flb_status)
-			break;
-		AQ_HW_SLEEP(10);
+			flb_status = flb_status & 0x10;
+			if (flb_status)
+				break;
+			AQ_HW_SLEEP(10);
+		}
+		if (k == 1000) {
+			aq_pr_err("MAC kickstart failed\n");
+			return -EIO;
+		}
+
+		/* FW reset */
+		aq_hw_write_reg(self, 0x404, 0x80e0);
+		AQ_HW_SLEEP(50);
 	}
-	if (k == 1000) {
-		aq_pr_err("MAC kickstart failed\n");
-		return -EIO;
-	}
 
-	/* FW reset */
-	aq_hw_write_reg(self, 0x404, 0x80e0);
-	AQ_HW_SLEEP(50);
 	aq_hw_write_reg(self, 0x3a0, 0x1);
 
 	/* Kickstart PHY - skipped */
@@ -233,6 +240,7 @@ int hw_atl_utils_soft_reset(struct aq_hw_s *self)
 {
 	int k;
 	u32 boot_exit_code = 0;
+	int ver = aq_hw_read_reg(self, HW_ATL_MPI_FW_VERSION);
 
 	for (k = 0; k < 1000; ++k) {
 		u32 flb_status = aq_hw_read_reg(self,
@@ -250,12 +258,25 @@ int hw_atl_utils_soft_reset(struct aq_hw_s *self)
 
 	self->rbl_enabled = (boot_exit_code != 0);
 
+	/* Having FW version 0 is an indicator that cold start
+	 * is in progress. This means two things:
+	 * 1) Driver have to wait for FW/HW to finish boot (500ms giveup)
+	 * 2) Driver may skip reset sequence and save time.
+	 */
+	if (self->fast_start_enabled && !ver) {
+		int err = 0;
+		AQ_HW_WAIT_FOR((ver = aq_hw_read_reg(self,
+						     HW_ATL_MPI_FW_VERSION)) != 0,
+			       500, 1000U);
+		/* Skip reset as it just completed */
+		if (!err)
+			return 0;
+	}
+
 	/* FW 1.x may bootup in an invalid POWER state (WOL feature).
 	 * We should work around this by forcing its state back to DEINIT
 	 */
-	if (!hw_atl_utils_ver_match(HW_ATL_FW_VER_1X,
-				    aq_hw_read_reg(self,
-						   HW_ATL_MPI_FW_VERSION))) {
+	if (!hw_atl_utils_ver_match(HW_ATL_FW_VER_1X, ver)) {
 		int err = 0;
 
 		hw_atl_utils_mpi_set_state(self, MPI_DEINIT);
@@ -451,9 +472,9 @@ int hw_atl_utils_fw_rpc_wait(struct aq_hw_s *self,
 		self->rpc_tid = sw.tid;
 
 		AQ_HW_WAIT_FOR(sw.tid ==
-				(fw.val =
-				aq_hw_read_reg(self, HW_ATL_RPC_STATE_ADR),
-				fw.tid), 1000U, 100U);
+			       (fw.val =
+			       aq_hw_read_reg(self, HW_ATL_RPC_STATE_ADR),
+			       fw.tid), 1000U, 100U);
 		if (err < 0)
 			goto err_exit;
 
@@ -581,6 +602,7 @@ int hw_atl_utils_mpi_set_state(struct aq_hw_s *self,
 	val |= state & HW_ATL_MPI_STATE_MSK;
 
 	aq_hw_write_reg(self, HW_ATL_MPI_CONTROL_ADR, val);
+
 err_exit:
 	return err;
 }
@@ -660,9 +682,9 @@ int hw_atl_utils_get_mac_permanent(struct aq_hw_s *self,
 
 	if ((mac[0] & 0x01U) || ((mac[0] | mac[1] | mac[2]) == 0x00U)) {
 		/* chip revision */
-		l = 0xE3000000U
-			| (0xFFFFU & aq_hw_read_reg(self, HW_ATL_UCP_0X370_REG))
-			| (0x00 << 16);
+		l = 0xE3000000U |
+		    (0xFFFFU & aq_hw_read_reg(self, HW_ATL_UCP_0X370_REG)) |
+		    (0x00 << 16);
 		h = 0x8001300EU;
 
 		mac[5] = (u8)(0xFFU & l);
@@ -719,20 +741,20 @@ void hw_atl_utils_hw_chip_features_init(struct aq_hw_s *self, u32 *p)
 
 	if ((0xFU & mif_rev) == 1U) {
 		chip_features |= HAL_ATLANTIC_UTILS_CHIP_REVISION_A0 |
-			HAL_ATLANTIC_UTILS_CHIP_MPI_AQ |
-			HAL_ATLANTIC_UTILS_CHIP_MIPS;
+				 HAL_ATLANTIC_UTILS_CHIP_MPI_AQ |
+				 HAL_ATLANTIC_UTILS_CHIP_MIPS;
 	} else if ((0xFU & mif_rev) == 2U) {
 		chip_features |= HAL_ATLANTIC_UTILS_CHIP_REVISION_B0 |
-			HAL_ATLANTIC_UTILS_CHIP_MPI_AQ |
-			HAL_ATLANTIC_UTILS_CHIP_MIPS |
-			HAL_ATLANTIC_UTILS_CHIP_TPO2 |
-			HAL_ATLANTIC_UTILS_CHIP_RPF2;
+				 HAL_ATLANTIC_UTILS_CHIP_MPI_AQ |
+				 HAL_ATLANTIC_UTILS_CHIP_MIPS |
+				 HAL_ATLANTIC_UTILS_CHIP_TPO2 |
+				 HAL_ATLANTIC_UTILS_CHIP_RPF2;
 	} else if ((0xFU & mif_rev) == 0xAU) {
 		chip_features |= HAL_ATLANTIC_UTILS_CHIP_REVISION_B1 |
-			HAL_ATLANTIC_UTILS_CHIP_MPI_AQ |
-			HAL_ATLANTIC_UTILS_CHIP_MIPS |
-			HAL_ATLANTIC_UTILS_CHIP_TPO2 |
-			HAL_ATLANTIC_UTILS_CHIP_RPF2;
+				 HAL_ATLANTIC_UTILS_CHIP_MPI_AQ |
+				 HAL_ATLANTIC_UTILS_CHIP_MIPS |
+				 HAL_ATLANTIC_UTILS_CHIP_TPO2 |
+				 HAL_ATLANTIC_UTILS_CHIP_RPF2;
 	}
 
 	*p = chip_features;
@@ -840,7 +862,7 @@ static int aq_fw1x_set_wol(struct aq_hw_s *self, bool wol_enabled, u8 *mac)
 
 	err = hw_atl_utils_fw_rpc_wait(self, &prpc);
 	if (err < 0)
-				goto err_exit;
+		goto err_exit;
 
 	memset(prpc, 0, sizeof *prpc);
 
@@ -861,8 +883,7 @@ static int aq_fw1x_set_wol(struct aq_hw_s *self, bool wol_enabled, u8 *mac)
 	}
 
 	err = hw_atl_utils_fw_rpc_call(self, rpc_size);
-	if (err < 0)
-		goto err_exit;
+
 err_exit:
 	return err;
 }
@@ -898,6 +919,7 @@ int aq_fw1x_set_power(struct aq_hw_s *self,unsigned int power_state,
 	}
 	hw_atl_utils_mpi_set_speed(self, 0);
 	hw_atl_utils_mpi_set_state(self, MPI_POWER);
+
 err_exit:
 	return err;
 }

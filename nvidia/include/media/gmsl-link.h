@@ -1,5 +1,5 @@
-/**
- * Copyright (c) 2018-2019, NVIDIA Corporation.  All rights reserved.
+/*
+ * Copyright (c) 2018-2020, NVIDIA Corporation.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -14,7 +14,24 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+/**
+ * @file
+ * <b>GMSL API: Gigabit Multimedia Serial Link protocol</b>
+ *
+ * @b Description: Defines elements used to set up and use a GMSL link.
+ */
+
 #ifndef __GMSL_LINK_H__
+/**
+ * \defgroup GMSL Gigabit Multimedia Serial Link (GMSL)
+ *
+ * Defines the interface used to control the MAX9295 serializer and
+ * MAX9296 deserializer modules.
+ *
+ * @ingroup serdes_group
+ * @{
+ */
+
 #define __GMSL_LINK_H__
 
 #define GMSL_CSI_1X4_MODE 0x1
@@ -39,28 +56,49 @@
 
 #define GMSL_ST_ID_UNUSED 0xFF
 
+/**
+ * Maximum number of data streams (\ref gmsl_stream elements) in a GMSL link
+ * (\ref gmsl_link_ctx).
+ */
 #define GMSL_DEV_MAX_NUM_DATA_STREAMS 4
 
+/**
+ * Holds information about a data stream in a GMSL link (\ref gmsl_link_ctx).
+ */
 struct gmsl_stream {
 	__u32 st_id_sel;
 	__u32 st_data_type;
 	__u32 des_pipe;
 };
 
+/**
+ * Holds the configuration of the GMSL links from a sensor to its serializer to
+ * its deserializer.
+ */
 struct gmsl_link_ctx {
-	__u32 st_vc;
-	__u32 dst_vc;
-	__u32 src_csi_port;
-	__u32 dst_csi_port;
-	__u32 serdes_csi_link;
-	__u32 num_streams;
-	__u32 num_csi_lanes;
-	__u32 csi_mode;
-	__u32 ser_reg;
-	__u32 sdev_reg;
-	__u32 sdev_def;
+	__u32 st_vc;            /**< Default sensor virtual channel. */
+	__u32 dst_vc;           /**< Destination virtual channel (user-defined). */
+	__u32 src_csi_port;     /**< Sensor to serializer CSI port connection. */
+	__u32 dst_csi_port;     /**< Deserializer to Jetson CSI port connection. */
+	__u32 serdes_csi_link;  /**< GMSL link between serializer and deserializer
+                                devices. */
+	__u32 num_streams;      /**< Number of active streams to be mapped
+                                from sensor. */
+	__u32 num_csi_lanes;    /**< Sensor's CSI lane configuration. */
+	__u32 csi_mode;         /**< Deserializer CSI mode. */
+	__u32 ser_reg;          /**< Serializer slave address. */
+	__u32 sdev_reg;         /**< Sensor proxy slave address. */
+	__u32 sdev_def;         /**< Sensor default slave address. */
+	bool serdev_found;      /**< Indicates whether the serializer device for
+                             the specified sensor source was found. Set by
+                             the serializer driver during setup; used by
+                             the deserializer driver to choose certain
+                             configuration settings during setup. */
 	struct gmsl_stream streams[GMSL_DEV_MAX_NUM_DATA_STREAMS];
-	struct device *s_dev;
+        /*< An array of information about the data streams in the link. */
+	struct device *s_dev;   /**< Sensor device handle. */
 };
+
+/** @} */
 
 #endif  /* __GMSL_LINK_H__ */

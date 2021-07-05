@@ -1,0 +1,59 @@
+From da5fe594ccb1051ce6b46d8bdb492ec72176dd1c Mon Sep 17 00:00:00 2001
+From: Thomas Gleixner <tglx@linutronix.de>
+Date: Mon, 10 Apr 2017 18:03:36 +0200
+Subject: [PATCH 026/371] futex: Avoid freeing an active timer
+X-NVConfidentiality: public
+
+Upstream commit 97181f9bd57405b879403763284537e27d46963d
+
+Alexander reported a hrtimer debug_object splat:
+
+  ODEBUG: free active (active state 0) object type: hrtimer hint: hrtimer_wakeup (kernel/time/hrtimer.c:1423)
+
+  debug_object_free (lib/debugobjects.c:603)
+  destroy_hrtimer_on_stack (kernel/time/hrtimer.c:427)
+  futex_lock_pi (kernel/futex.c:2740)
+  do_futex (kernel/futex.c:3399)
+  SyS_futex (kernel/futex.c:3447 kernel/futex.c:3415)
+  do_syscall_64 (arch/x86/entry/common.c:284)
+  entry_SYSCALL64_slow_path (arch/x86/entry/entry_64.S:249)
+
+Which was caused by commit:
+
+  cfafcd117da0 ("futex: Rework futex_lock_pi() to use rt_mutex_*_proxy_lock()")
+
+... losing the hrtimer_cancel() in the shuffle. Where previously the
+hrtimer_cancel() was done by rt_mutex_slowlock() we now need to do it
+manually.
+
+Reported-by: Alexander Levin <alexander.levin@verizon.com>
+Signed-off-by: Thomas Gleixner <tglx@linutronix.de>
+Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Cc: Linus Torvalds <torvalds@linux-foundation.org>
+Cc: Peter Zijlstra <peterz@infradead.org>
+Fixes: cfafcd117da0 ("futex: Rework futex_lock_pi() to use rt_mutex_*_proxy_lock()")
+Link: http://lkml.kernel.org/r/alpine.DEB.2.20.1704101802370.2906@nanos
+Signed-off-by: Ingo Molnar <mingo@kernel.org>
+---
+ kernel/futex.c | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/kernel/futex.c b/kernel/futex.c
+index d03dcdf..9f1148f 100644
+--- a/kernel/futex.c
++++ b/kernel/futex.c
+@@ -2785,8 +2785,10 @@ static int futex_lock_pi(u32 __user *uaddr, unsigned int flags,
+ out_put_key:
+ 	put_futex_key(&q.key);
+ out:
+-	if (to)
++	if (to) {
++		hrtimer_cancel(&to->timer);
+ 		destroy_hrtimer_on_stack(&to->timer);
++	}
+ 	return ret != -EINTR ? ret : -ERESTARTNOINTR;
+ 
+ uaddr_faulted:
+-- 
+2.7.4
+

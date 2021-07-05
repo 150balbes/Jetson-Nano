@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -38,6 +38,7 @@
 #include <linux/pm_qos.h>
 #include <linux/workqueue.h>
 #include <linux/tegra-cpufreq.h>
+#include "cpufreq_cpu_emc_table.h"
 
 /* cpufreq transisition latency */
 #define TEGRA_CPUFREQ_TRANSITION_LATENCY (300 * 1000) /* unit in nanoseconds */
@@ -53,15 +54,12 @@
 #define LOOP_FOR_EACH_CLUSTER(cl)	for (cl = 0; \
 					cl < MAX_CLUSTERS; cl++)
 
-struct cpu_emc_map {
-	uint32_t cpufreq; /* unit in KHz */
-	uint32_t emcfreq; /* unit in KHz */
-};
-static struct cpu_emc_map *cpu_emc_map_ptr;
-static uint16_t cpu_emc_map_num;
+static struct cpu_emc_mapping *cpu_emc_map_ptr;
 static uint8_t tegra_hypervisor_mode;
 
 static int cpufreq_single_policy;
+
+static enum cpuhp_state hp_online;
 
 enum cluster {
 	CLUSTER0,
@@ -239,29 +237,12 @@ static unsigned int tegra194_fast_get_speed(uint32_t cpu)
 	return tegra194_get_speed_common(cpu, US_DELAY_MIN);
 }
 
-/**
- * cluster_cpu_to_emc_freq - return emc freq in cpu_emc_map table corresponding
- *                           to cpu rate input
- * @cpu_rate - cpu rate in KHz
- * Returns emc freq in KHz
- */
-static unsigned long cluster_cpu_to_emc_freq(uint32_t cpu_rate)
-{
-	int i;
-
-	for (i = 0; i < cpu_emc_map_num; i++) {
-		if (cpu_rate >= cpu_emc_map_ptr[i].cpufreq)
-			return cpu_emc_map_ptr[i].emcfreq;
-	}
-	return 0;
-}
-
 /* Set emc clock by referring cpu_to_emc freq mapping */
 static void set_cpufreq_to_emcfreq(enum cluster cl, uint32_t cluster_freq)
 {
 	unsigned long emc_freq;
 
-	emc_freq = cluster_cpu_to_emc_freq(cluster_freq);
+	emc_freq = tegra_cpu_to_emc_freq(cluster_freq, cpu_emc_map_ptr);
 
 	tegra_bwmgr_set_emc(tfreq_data.pcluster[cl].bwmgr,
 		emc_freq * KHZ_TO_HZ, TEGRA_BWMGR_SET_EMC_FLOOR);
@@ -441,32 +422,6 @@ static int set_delay(void *data, u64 val)
 }
 DEFINE_SIMPLE_ATTRIBUTE(freq_compute_fops, get_delay, set_delay,
 	"%llu\n");
-
-static int show_cpu_emc_map(struct seq_file *s, void *data)
-{
-	int i;
-	seq_printf(s, "(cpufreq, emcfreq)\n");
-
-	for (i = 0; i < cpu_emc_map_num; i++) {
-		seq_printf(s, "%u %d\n", cpu_emc_map_ptr[i].cpufreq,
-					cpu_emc_map_ptr[i].emcfreq);
-	}
-
-	return 0;
-}
-
-static int cpu_emc_map_open(struct inode *inode, struct file *file)
-{
-	return single_open(file, show_cpu_emc_map,
-			inode->i_private);
-}
-
-static const struct file_operations cpu_emc_map_fops = {
-	.open = cpu_emc_map_open,
-	.read = seq_read,
-	.llseek = seq_lseek,
-	.release = single_release,
-};
 
 static int freq_get(void *data, u64 *val)
 {
@@ -713,10 +668,8 @@ static int __init tegra_cpufreq_debug_init(void)
 					&freq_compute_fops))
 		goto err_out;
 
-	if (!debugfs_create_file("cpu_emc_map", RO_MODE,
-				tegra_cpufreq_debugfs_root,
-					NULL,
-					&cpu_emc_map_fops))
+	if (!tegra_debugfs_create_cpu_emc_map(tegra_cpufreq_debugfs_root,
+					cpu_emc_map_ptr))
 		goto err_out;
 
 	if (cc3_debug_init())
@@ -875,6 +828,21 @@ static void __init pm_qos_register_notifier(void)
 		&cpu_freq_nb);
 	pm_qos_add_max_notifier(PM_QOS_CPU_FREQ_BOUNDS,
 		&cpu_freq_nb);
+}
+
+static int tegra194_cpufreq_offline(unsigned int cpu)
+{
+	struct cpufreq_frequency_table *ftbl;
+	uint32_t tgt_freq;
+
+	ftbl = get_freqtable(cpu);
+
+	tgt_freq = ftbl[0].frequency;
+	if (tgt_freq != CPUFREQ_ENTRY_INVALID
+			&& tgt_freq != CPUFREQ_TABLE_END)
+		tegra_update_cpu_speed(tgt_freq, cpu);
+
+	return 0;
 }
 
 static void free_resources(void)
@@ -1079,23 +1047,6 @@ err_out:
 	return ret;
 }
 
-static void tegra_cpufreq_cpu_emc_map_init(struct device_node *dn)
-{
-	struct property *prop;
-	int len;
-
-	prop = of_find_property(dn, "cpu_emc_map", &len);
-	if (prop) {
-		len = rounddown(len, sizeof(struct cpu_emc_map));
-		cpu_emc_map_ptr = kzalloc(len, GFP_KERNEL);
-		if (cpu_emc_map_ptr) {
-			of_property_read_u32_array(dn, "cpu_emc_map",
-				(u32 *)cpu_emc_map_ptr, len / sizeof(uint32_t));
-			cpu_emc_map_num = len / sizeof(struct cpu_emc_map);
-		}
-	}
-}
-
 static bool tegra_cpufreq_single_policy(struct device_node *dn)
 {
 	struct property *prop;
@@ -1114,7 +1065,7 @@ static int __init tegra194_cpufreq_probe(struct platform_device *pdev)
 	int ret = 0, cl = 0;
 
 	dn = pdev->dev.of_node;
-	tegra_cpufreq_cpu_emc_map_init(dn);
+	cpu_emc_map_ptr = tegra_cpufreq_cpu_emc_map_dt_init(dn);
 	cpufreq_single_policy = tegra_cpufreq_single_policy(dn);
 
 	mutex_init(&tfreq_data.mlock);
@@ -1172,6 +1123,17 @@ static int __init tegra194_cpufreq_probe(struct platform_device *pdev)
 	if (ret)
 		goto err_free_res;
 
+	ret = cpuhp_setup_state_nocalls(CPUHP_AP_ONLINE_DYN,
+						"tegra194_cpufreq:online",
+						NULL,
+						tegra194_cpufreq_offline);
+	if (ret < 0) {
+		pr_err("tegra19x-cpufreq: failed to register cpuhp state\n");
+		goto err_free_res;
+	}
+	hp_online = ret;
+	ret = 0;
+
 	pm_qos_register_notifier();
 
 	cpufreq_register_notifier(&tegra_boundaries_cpufreq_nb,
@@ -1193,6 +1155,7 @@ static int __exit tegra194_cpufreq_remove(struct platform_device *pdev)
 #ifdef CONFIG_DEBUG_FS
 	tegra_cpufreq_debug_exit();
 #endif
+	cpuhp_remove_state_nocalls(hp_online);
 	cpufreq_unregister_driver(&tegra_cpufreq_driver);
 	free_allocated_res_exit();
 	return 0;

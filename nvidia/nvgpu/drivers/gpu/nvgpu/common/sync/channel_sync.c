@@ -66,7 +66,6 @@ int channel_sync_syncpt_gen_wait_cmd(struct channel_gk20a *c,
 			err = gk20a_channel_alloc_priv_cmdbuf(c,
 				c->g->ops.fifo.get_syncpt_wait_cmd_size(), wait_cmd);
 			if (err != 0) {
-				nvgpu_err(c->g, "not enough priv cmd buffer space");
 				return err;
 			}
 		}
@@ -464,8 +463,6 @@ static int channel_sync_semaphore_incr_common(
 	incr_cmd_size = c->g->ops.fifo.get_sema_incr_cmd_size();
 	err = gk20a_channel_alloc_priv_cmdbuf(c, incr_cmd_size, incr_cmd);
 	if (err) {
-		nvgpu_err(c->g,
-				"not enough priv cmd buffer space");
 		goto clean_up_sema;
 	}
 

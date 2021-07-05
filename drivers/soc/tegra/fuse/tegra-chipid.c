@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2016-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -31,6 +31,7 @@
 #define TEGRAID_PATCH_SHIFT 8
 #define TEGRA210_INT_CID 5
 #define TEGRA186_INT_CID 6
+#define TEGRA194_INT_CID 7
 
 struct tegra_id {
 	enum tegra_chipid chipid;
@@ -55,6 +56,7 @@ static struct tegra_id tegra_id;
 static const char *tegra_platform_ptr;
 static const char *tegra_cpu_ptr;
 static u32 prod_mode;
+static u64 chip_uid;
 
 static int get_platform(char *val, const struct kernel_param *kp)
 {
@@ -220,6 +222,9 @@ unsigned long long tegra_chip_uid(void)
 	case TEGRA186:
 		cid = TEGRA186_INT_CID;
 		break;
+	case TEGRA194:
+		cid = TEGRA194_INT_CID;
+		break;
 	default:
 		cid = 0;
 		break;
@@ -262,3 +267,15 @@ unsigned long long tegra_chip_uid(void)
 	    | ((unsigned long long)y << 0ull);
 	return uid;
 }
+
+static int get_chip_uid(char *val, const struct kernel_param *kp)
+{
+	chip_uid = tegra_chip_uid();
+	return param_get_ulong(val, kp);
+}
+
+static struct kernel_param_ops tegra_chip_uid_ops = {
+	.get = get_chip_uid,
+};
+
+module_param_cb(tegra_chip_uid, &tegra_chip_uid_ops, &chip_uid, 0444);

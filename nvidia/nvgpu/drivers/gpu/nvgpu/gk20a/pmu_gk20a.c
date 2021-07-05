@@ -760,6 +760,10 @@ void gk20a_pmu_init_perfmon_counter(struct gk20a *g)
 		pwr_pmu_idle_mask_gr_enabled_f() |
 		pwr_pmu_idle_mask_ce_2_enabled_f());
 
+	/* assign same mask setting from GR ELPG to counter #3 */
+	data = gk20a_readl(g, pwr_pmu_idle_mask_1_supp_r(0));
+	gk20a_writel(g, pwr_pmu_idle_mask_1_r(3), data);
+
 	/* disable idle filtering for counters 3 and 6 */
 	data = gk20a_readl(g, pwr_pmu_idle_ctrl_r(3));
 	data = set_field(data, pwr_pmu_idle_ctrl_value_m() |

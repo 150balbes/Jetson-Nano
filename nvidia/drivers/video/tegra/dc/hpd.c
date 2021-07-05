@@ -1,7 +1,7 @@
 /*
  * hpd.c: hotplug detection functions.
  *
- * Copyright (c) 2015-2018, NVIDIA CORPORATION, All rights reserved.
+ * Copyright (c) 2015-2019, NVIDIA CORPORATION, All rights reserved.
  * Author: Animesh Kishore <ankishore@nvidia.com>
  *
  * This software is licensed under the terms of the GNU General Public
@@ -18,7 +18,7 @@
 #ifdef CONFIG_SWITCH
 #include <linux/switch.h>
 #endif
-#include <video/tegrafb.h>
+#include <uapi/video/tegrafb.h>
 #include "dc_priv.h"
 
 #include "dc.h"

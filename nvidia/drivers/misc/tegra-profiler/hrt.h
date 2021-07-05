@@ -1,7 +1,7 @@
 /*
  * drivers/misc/tegra-profiler/hrt.h
  *
- * Copyright (c) 2015-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2015-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -92,8 +92,6 @@ struct quadd_event_context {
 };
 
 #define QUADD_HRT_MIN_FREQ	100
-
-#define QUADD_U32_MAX (~(__u32)0)
 
 struct quadd_record_data;
 struct quadd_module_state;

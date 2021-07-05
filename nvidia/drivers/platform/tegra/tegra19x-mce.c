@@ -21,6 +21,8 @@
 #include <soc/tegra/chip-id.h>
 #include "tegra19x-mce.h"
 
+#include "dmce_perfmon.h"
+
 /* Issue a NVG request with data */
 static noinline notrace void nvg_send_req_data(uint64_t req, uint64_t data)
 {
@@ -256,6 +258,99 @@ int tegra19x_mce_write_l3_cache_ways(u64 data, u64 *value)
 
 	return 0;
 }
+
+int tegra19x_mce_read_rt_safe_mask(u64 *rt_safe_mask)
+{
+	if (!rt_safe_mask)
+		return -EINVAL;
+
+	/* disable preemption */
+	preempt_disable();
+
+	nvg_send_req(TEGRA_NVG_CHANNEL_RT_SAFE_MASK);
+	*rt_safe_mask = nvg_get_response();
+
+	/* enable preemption */
+	preempt_enable();
+
+	return 0;
+}
+
+int tegra19x_mce_write_rt_safe_mask(u64 rt_safe_mask)
+{
+	/* disable preemption */
+	preempt_disable();
+
+	nvg_send_req_data(TEGRA_NVG_CHANNEL_RT_SAFE_MASK, rt_safe_mask);
+
+	/* enable preemption */
+	preempt_enable();
+
+	return 0;
+}
+
+int tegra19x_mce_read_rt_window_us(u64 *rt_window_us)
+{
+	if (!rt_window_us)
+		return -EINVAL;
+
+	/* disable preemption */
+	preempt_disable();
+
+	nvg_send_req(TEGRA_NVG_CHANNEL_RT_WINDOW_US);
+	*rt_window_us = nvg_get_response();
+
+	/* enable preemption */
+	preempt_enable();
+
+	return 0;
+}
+
+int tegra19x_mce_write_rt_window_us(u64 rt_window_us)
+{
+	/* disable preemption */
+	preempt_disable();
+
+	nvg_send_req_data(TEGRA_NVG_CHANNEL_RT_WINDOW_US, rt_window_us);
+
+	/* enable preemption */
+	preempt_enable();
+
+	return 0;
+}
+
+
+int tegra19x_mce_read_rt_fwd_progress_us(u64 *rt_fwd_progress_us)
+{
+	if (!rt_fwd_progress_us)
+		return -EINVAL;
+
+	/* disable preemption */
+	preempt_disable();
+
+	nvg_send_req(TEGRA_NVG_CHANNEL_RT_FWD_PROGRESS_US);
+	*rt_fwd_progress_us = nvg_get_response();
+
+	/* enable preemption */
+	preempt_enable();
+
+	return 0;
+}
+
+int tegra19x_mce_write_rt_fwd_progress_us(u64 rt_fwd_progress_us)
+{
+	/* disable preemption */
+	preempt_disable();
+
+	nvg_send_req_data(TEGRA_NVG_CHANNEL_RT_FWD_PROGRESS_US,
+		rt_fwd_progress_us);
+
+	/* enable preemption */
+	preempt_enable();
+
+	return 0;
+}
+
 
 #ifdef CONFIG_DEBUG_FS
 /* Dummy functions below */

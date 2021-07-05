@@ -1,7 +1,7 @@
 /*
  * events.c: Event and Queue functions for tegradc ext interface.
  *
- * Copyright (c) 2011-2017, NVIDIA CORPORATION, All rights reserved.
+ * Copyright (c) 2011-2020, NVIDIA CORPORATION, All rights reserved.
  *
  * Author: Robert Morell <rmorell@nvidia.com>
  *
@@ -164,8 +164,9 @@ static int tegra_dc_ext_queue_event(struct tegra_dc_ext_control *control,
 			continue;
 		}
 
-		memcpy(&ev_list->event, event,
-			sizeof(*event) + event->data_size);
+		memcpy(&ev_list->event, event, sizeof(*event));
+		memcpy(&ev_list->data, (u8 *)event + sizeof(*event),
+		    min_t(u32, event->data_size, TEGRA_DC_EXT_EVENT_MAX_SZ));
 
 		list_add_tail(&ev_list->list, &user->event_list);
 

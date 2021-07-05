@@ -15,7 +15,7 @@
  * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
  *
  * Copyright (C) 2013 ARM Limited
- * Copyright (c) 2015-2019, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2015-2020, NVIDIA CORPORATION. All rights reserved.
  *
  * Author: Will Deacon <will.deacon@arm.com>
  *
@@ -1349,6 +1349,7 @@ static void arm_smmu_free_pgtables(struct arm_smmu_domain *smmu_domain)
 	int i;
 	struct arm_smmu_cfg *cfg = &smmu_domain->cfg;
 	pgd_t *pgd, *pgd_base = cfg->pgd;
+	unsigned long order;
 
 	/*
 	 * Recursively free the page tables for this domain. We don't
@@ -1363,7 +1364,8 @@ static void arm_smmu_free_pgtables(struct arm_smmu_domain *smmu_domain)
 		pgd++;
 	}
 
-	kfree(pgd_base);
+	order = get_order(PTRS_PER_PGD * sizeof(pgd_t));
+	free_pages((unsigned long)pgd_base, order);
 }
 
 static void arm_smmu_domain_free(struct iommu_domain *domain)
@@ -1817,13 +1819,6 @@ static int arm_smmu_attach_dev(struct iommu_domain *domain, struct device *dev)
 	if (!cfg)
 		return -ENODEV;
 
-	ret = arm_smmu_domain_add_master(smmu_domain, cfg);
-	if (!ret) {
-		dev->archdata.iommu = domain;
-		add_smmu_master_debugfs(domain, dev,
-				find_smmu_master(smmu, dev_get_dev_node(dev)));
-	}
-
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0)
 	if (iommu_dma_init_domain(domain,
 				domain->geometry.aperture_start,
@@ -1835,6 +1830,12 @@ static int arm_smmu_attach_dev(struct iommu_domain *domain, struct device *dev)
 
 	arm_smmu_do_linear_map(dev);
 
+	ret = arm_smmu_domain_add_master(smmu_domain, cfg);
+	if (!ret) {
+		dev->archdata.iommu = domain;
+		add_smmu_master_debugfs(domain, dev,
+				find_smmu_master(smmu, dev_get_dev_node(dev)));
+	}
 	/* Enable stream Id override, which enables SMMU translation for dev */
 	for (i = 0; i < cfg->num_streamids; i++)
 		platform_override_streamid(cfg->streamids[i]);

@@ -1,7 +1,7 @@
 /*
  * sor.c: Functions implementing tegra dc sor interface.
  *
- * Copyright (c) 2011-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2011-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -28,7 +28,7 @@
 #include <linux/uaccess.h>
 #include <linux/version.h>
 #include <linux/tegra_pm_domains.h>
-#include <video/tegra_dc_ext.h>
+#include <uapi/video/tegra_dc_ext.h>
 
 #include "dc.h"
 #include "sor.h"
@@ -761,6 +761,7 @@ struct tegra_dc_sor_data *tegra_dc_sor_init(struct tegra_dc *dc,
 	struct clk *pad_clk = NULL;
 	struct clk *ref_clk = NULL;
 	struct tegra_dc_sor_data *sor;
+	struct tegra_dc_sor_info *sor_cap;
 	struct device_node *sor_np;
 
 	if (!dc) {
@@ -907,6 +908,14 @@ bypass_pads:
 		sor->audio_support = false;
 	else
 		sor->audio_support = true;
+
+	sor_cap = tegra_dc_get_sor_cap();
+	if (IS_ERR_OR_NULL(sor_cap)) {
+		dev_info(&dc->ndev->dev, "sor: can't get sor cap.\n");
+		sor->hdcp_support = false;
+	} else {
+		sor->hdcp_support = sor_cap[sor->ctrl_num].hdcp_supported;
+	}
 
 	if (tegra_dc_is_nvdisplay()) {
 		sor->win_state_arr = devm_kzalloc(&dc->ndev->dev,

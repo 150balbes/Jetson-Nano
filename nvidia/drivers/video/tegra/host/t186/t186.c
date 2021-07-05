@@ -1,7 +1,7 @@
 /*
  * Tegra Graphics Init for T186 Architecture Chips
  *
- * Copyright (c) 2014-2018, NVIDIA Corporation. All rights reserved.
+ * Copyright (c) 2014-2019, NVIDIA Corporation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -48,6 +48,7 @@
 
 #include "streamid_regs.c"
 #include "cg_regs.c"
+#include "actmon_regs.c"
 
 #define HOST_EMC_FLOOR 204000000
 #define HOST_NVDEC_EMC_FLOOR 102000000
@@ -124,6 +125,7 @@ static struct host1x_device_info host1x04_info = {
 	.channel_policy	= MAP_CHANNEL_ON_SUBMIT,
 	.firmware_area_size = SZ_1M,
 	.nb_actmons = 1,
+	.dma_mask	= DMA_BIT_MASK(40),
 };
 
 struct nvhost_device_data t18_host1x_info = {
@@ -164,6 +166,7 @@ static struct host1x_device_info host1xb04_info = {
 	.syncpt_policy	= SYNCPT_PER_CHANNEL_INSTANCE,
 	.channel_policy	= MAP_CHANNEL_ON_SUBMIT,
 	.firmware_area_size = SZ_1M,
+	.dma_mask	= DMA_BIT_MASK(40),
 };
 
 struct nvhost_device_data t18_host1xb_info = {
@@ -239,6 +242,7 @@ struct nvhost_device_data t18_vi_info = {
 				   {0x30000 * 4, true} },
 	.num_ppc			= 8,
 	.aggregate_constraints	= nvhost_vi4_aggregate_constraints,
+	.no_platform_dma_mask	= true,
 };
 #endif
 
@@ -441,9 +445,11 @@ struct nvhost_device_data t18_vic_info = {
 	.scaling_deinit		= nvhost_scale_emc_deinit,
 	.scaling_post_cb	= &nvhost_scale_emc_callback,
 	.actmon_regs		= HOST1X_THOST_ACTMON_VIC,
-	.actmon_enabled         = false,
+	.actmon_enabled         = true,
 	.actmon_irq		= 3,
-	.devfreq_governor	= "wmark_active",
+	.actmon_weight_count	= 213,
+	.actmon_setting_regs	= t18x_vic_actmon_registers,
+	.devfreq_governor	= "userspace",
 	.freqs			= {100000000, 200000000, 300000000,
 					400000000, 500000000, 600000000},
 	.isolate_contexts	= true,
@@ -471,6 +477,7 @@ struct nvhost_device_data t18_nvcsi_info = {
 	.keepalive		= true,
 	.serialize		= 1,
 	.push_work_done		= 1,
+	.no_platform_dma_mask	= true,
 };
 #endif
 

@@ -30,7 +30,7 @@
  * =========================================================================
  */
 /*
- * Copyright (c) 2015-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2015-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -156,6 +156,11 @@ static INT eqos_mdio_read(struct mii_bus *bus, int phyaddr, int phyreg)
 	struct hw_if_struct *hw_if = &(pdata->hw_if);
 	int phydata = 0;
 
+	if (!pdata->clks_enable) {
+		pr_err("%s:No clks available, skipping PHY read\n", __func__);
+		return -ENODEV;
+	}
+
 	DBGPR_MDIO("--> eqos_mdio_read: phyaddr = %d, phyreg = %d\n",
 		   phyaddr, phyreg);
 
@@ -192,6 +197,11 @@ static INT eqos_mdio_write(struct mii_bus *bus, int phyaddr, int phyreg,
 	struct eqos_prv_data *pdata = netdev_priv(dev);
 	struct hw_if_struct *hw_if = &(pdata->hw_if);
 	INT ret = Y_SUCCESS;
+
+	if (!pdata->clks_enable) {
+		pr_err("%s:No clks available, skipping PHY write\n", __func__);
+		return -ENODEV;
+	}
 
 	DBGPR_MDIO("--> eqos_mdio_write\n");
 
@@ -351,14 +361,13 @@ static void eqos_adjust_link(struct net_device *dev)
 			pdata->oldlink = 1;
 			pdata->xstats.link_connect_count++;
 #ifndef DISABLE_TRISTATE
-			if (pdata->mac_ver == EQOS_MAC_CORE_4_10) {
-				ret = pinctrl_pm_select_default_state(&pdata->pdev->dev);
-				if (ret < 0) {
-					dev_err(&pdata->pdev->dev,
-						"setting tx_tristate_disable state failed\n");
-				}
-				tx_tristate_disable = 1;
+			ret = pinctrl_pm_select_default_state(
+							&pdata->pdev->dev);
+			if (ret < 0) {
+				dev_err(&pdata->pdev->dev,
+					"disable txrx tristate failed\n");
 			}
+			tx_tristate_disable = 1;
 #endif
 			schedule_work(&pdata->iso_work);
 		}
@@ -369,12 +378,10 @@ static void eqos_adjust_link(struct net_device *dev)
 		pdata->oldduplex = -1;
 		pdata->xstats.link_disconnect_count++;
 #ifndef DISABLE_TRISTATE
-		if (pdata->mac_ver == EQOS_MAC_CORE_4_10) {
-			ret = pinctrl_pm_select_idle_state(&pdata->pdev->dev);
-			if (ret < 0) {
-				dev_err(&pdata->pdev->dev,
-					"setting tx_tristate_enable state failed\n");
-			}
+		ret = pinctrl_pm_select_idle_state(&pdata->pdev->dev);
+		if (ret < 0) {
+			dev_err(&pdata->pdev->dev,
+				"enable txrx tristate failed\n");
 		}
 #endif
 		schedule_work(&pdata->iso_work);

@@ -1,0 +1,117 @@
+From 6a7c4f6cd3ef6126e38737f3def61b0a5727e3e5 Mon Sep 17 00:00:00 2001
+From: Peter Zijlstra <peterz@infradead.org>
+Date: Thu, 23 Mar 2017 15:56:12 +0100
+Subject: [PATCH 023/371] sched,tracing: Update trace_sched_pi_setprio()
+X-NVConfidentiality: public
+
+Upstream commit b91473ff6e979c0028f02f90e40c844959c736d8
+
+Pass the PI donor task, instead of a numerical priority.
+
+Numerical priorities are not sufficient to describe state ever since
+SCHED_DEADLINE.
+
+Annotate all sched tracepoints that are currently broken; fixing them
+will bork userspace. *hate*.
+
+Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Reviewed-by: Steven Rostedt <rostedt@goodmis.org>
+Cc: juri.lelli@arm.com
+Cc: bigeasy@linutronix.de
+Cc: xlpang@redhat.com
+Cc: mathieu.desnoyers@efficios.com
+Cc: jdesfossez@efficios.com
+Cc: bristot@redhat.com
+Link: http://lkml.kernel.org/r/20170323150216.353599881@infradead.org
+Signed-off-by: Thomas Gleixner <tglx@linutronix.de>
+---
+ include/trace/events/sched.h | 16 +++++++++-------
+ kernel/sched/core.c          |  2 +-
+ 2 files changed, 10 insertions(+), 8 deletions(-)
+
+diff --git a/include/trace/events/sched.h b/include/trace/events/sched.h
+index 5ab7a9b..531343ad 100644
+--- a/include/trace/events/sched.h
++++ b/include/trace/events/sched.h
+@@ -70,7 +70,7 @@ DECLARE_EVENT_CLASS(sched_wakeup_template,
+ 	TP_fast_assign(
+ 		memcpy(__entry->comm, p->comm, TASK_COMM_LEN);
+ 		__entry->pid		= p->pid;
+-		__entry->prio		= p->prio;
++		__entry->prio		= p->prio; /* XXX SCHED_DEADLINE */
+ 		__entry->success	= 1; /* rudiment, kill when possible */
+ 		__entry->target_cpu	= task_cpu(p);
+ 	),
+@@ -147,6 +147,7 @@ TRACE_EVENT(sched_switch,
+ 		memcpy(__entry->prev_comm, prev->comm, TASK_COMM_LEN);
+ 		__entry->next_pid	= next->pid;
+ 		__entry->next_prio	= next->prio;
++		/* XXX SCHED_DEADLINE */
+ 	),
+ 
+ 	TP_printk("prev_comm=%s prev_pid=%d prev_prio=%d prev_state=%s%s ==> next_comm=%s next_pid=%d next_prio=%d",
+@@ -181,7 +182,7 @@ TRACE_EVENT(sched_migrate_task,
+ 	TP_fast_assign(
+ 		memcpy(__entry->comm, p->comm, TASK_COMM_LEN);
+ 		__entry->pid		= p->pid;
+-		__entry->prio		= p->prio;
++		__entry->prio		= p->prio; /* XXX SCHED_DEADLINE */
+ 		__entry->orig_cpu	= task_cpu(p);
+ 		__entry->dest_cpu	= dest_cpu;
+ 	),
+@@ -206,7 +207,7 @@ DECLARE_EVENT_CLASS(sched_process_template,
+ 	TP_fast_assign(
+ 		memcpy(__entry->comm, p->comm, TASK_COMM_LEN);
+ 		__entry->pid		= p->pid;
+-		__entry->prio		= p->prio;
++		__entry->prio		= p->prio; /* XXX SCHED_DEADLINE */
+ 	),
+ 
+ 	TP_printk("comm=%s pid=%d prio=%d",
+@@ -253,7 +254,7 @@ TRACE_EVENT(sched_process_wait,
+ 	TP_fast_assign(
+ 		memcpy(__entry->comm, current->comm, TASK_COMM_LEN);
+ 		__entry->pid		= pid_nr(pid);
+-		__entry->prio		= current->prio;
++		__entry->prio		= current->prio; /* XXX SCHED_DEADLINE */
+ 	),
+ 
+ 	TP_printk("comm=%s pid=%d prio=%d",
+@@ -437,9 +438,9 @@ DEFINE_EVENT(sched_stat_runtime, sched_stat_runtime,
+  */
+ TRACE_EVENT(sched_pi_setprio,
+ 
+-	TP_PROTO(struct task_struct *tsk, int newprio),
++	TP_PROTO(struct task_struct *tsk, struct task_struct *pi_task),
+ 
+-	TP_ARGS(tsk, newprio),
++	TP_ARGS(tsk, pi_task),
+ 
+ 	TP_STRUCT__entry(
+ 		__array( char,	comm,	TASK_COMM_LEN	)
+@@ -452,7 +453,8 @@ TRACE_EVENT(sched_pi_setprio,
+ 		memcpy(__entry->comm, tsk->comm, TASK_COMM_LEN);
+ 		__entry->pid		= tsk->pid;
+ 		__entry->oldprio	= tsk->prio;
+-		__entry->newprio	= newprio;
++		__entry->newprio	= pi_task ? pi_task->prio : tsk->prio;
++		/* XXX SCHED_DEADLINE bits missing */
+ 	),
+ 
+ 	TP_printk("comm=%s pid=%d oldprio=%d newprio=%d",
+diff --git a/kernel/sched/core.c b/kernel/sched/core.c
+index 91e5aea..903c549 100644
+--- a/kernel/sched/core.c
++++ b/kernel/sched/core.c
+@@ -3831,7 +3831,7 @@ void rt_mutex_setprio(struct task_struct *p, struct task_struct *pi_task)
+ 		goto out_unlock;
+ 	}
+ 
+-	trace_sched_pi_setprio(p, prio); /* broken */
++	trace_sched_pi_setprio(p, pi_task);
+ 	oldprio = p->prio;
+ 
+ 	if (oldprio == prio)
+-- 
+2.7.4
+

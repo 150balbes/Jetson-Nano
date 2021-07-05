@@ -35,6 +35,7 @@ int gv11b_init_gpu_characteristics(struct gk20a *g)
 	__nvgpu_set_enabled(g, NVGPU_SUPPORT_RESCHEDULE_RUNLIST, true);
 	__nvgpu_set_enabled(g, NVGPU_SUPPORT_SYNCPOINT_ADDRESS, true);
 	__nvgpu_set_enabled(g, NVGPU_SUPPORT_USER_SYNCPOINT, true);
+	__nvgpu_set_enabled(g, NVGPU_SUPPORT_USERMODE_SUBMIT, true);
 
 	return 0;
 }

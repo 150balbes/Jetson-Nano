@@ -392,8 +392,10 @@ void nvgpu_dma_free_sys(struct gk20a *g, struct nvgpu_mem *mem)
 	if (mem->mem_flags & __NVGPU_MEM_FLAG_NO_DMA)
 		nvgpu_kfree(g, mem->priv.pages);
 
-	if (mem->priv.sgt)
+	if ((mem->mem_flags & NVGPU_MEM_FLAG_FOREIGN_SGT) == 0 &&
+			mem->priv.sgt != NULL) {
 		nvgpu_free_sgtable(g, &mem->priv.sgt);
+	}
 
 	dma_dbg_free_done(g, mem->size, "sysmem");
 

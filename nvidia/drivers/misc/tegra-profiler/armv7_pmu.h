@@ -1,7 +1,7 @@
 /*
  * drivers/misc/tegra-profiler/armv7_pmu.h
  *
- * Copyright (c) 2014, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2014-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -17,9 +17,9 @@
 #ifndef __ARMV7_PMU_H
 #define __ARMV7_PMU_H
 
-struct quadd_event_source_interface;
+struct quadd_event_source;
 
-extern struct quadd_event_source_interface *quadd_armv7_pmu_init(void);
+extern struct quadd_event_source *quadd_armv7_pmu_init(void);
 extern void quadd_armv7_pmu_deinit(void);
 
 void quadd_pmu_test(void);

@@ -1,5 +1,7 @@
 /*
- * Copyright (c) 2013-2019, NVIDIA CORPORATION.  All rights reserved.
+ * include/uapi/media/imx318.h
+ *
+ * Copyright (c) 2016-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -17,8 +19,8 @@
 #ifndef __UAPI_OV5693_H__
 #define __UAPI_OV5693_H__
 
-#include <uapi/media/nvc.h>
-#include <uapi/media/nvc_image.h>
+#include <media/nvc.h>
+#include "nvc_image.h"
 
 #define OV5693_IOCTL_SET_MODE               _IOW('o', 1, struct ov5693_mode)
 #define OV5693_IOCTL_SET_FRAME_LENGTH       _IOW('o', 2, __u32)

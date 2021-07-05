@@ -1,0 +1,63 @@
+From 34a900fc68aea4c3a533f7a1fdc5ee6e6d3e52db Mon Sep 17 00:00:00 2001
+From: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+Date: Tue, 10 Jul 2018 18:53:18 +0200
+Subject: [PATCH 352/371] sched, tracing: Fix trace_sched_pi_setprio() for
+ deboosting
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+X-NVConfidentiality: public
+
+[ Upstream commit 4ff648decf4712d39f184fc2df3163f43975575a ]
+
+Since the following commit:
+
+  b91473ff6e97 ("sched,tracing: Update trace_sched_pi_setprio()")
+
+the sched_pi_setprio trace point shows the "newprio" during a deboost:
+
+  |futex sched_pi_setprio: comm=futex_requeue_p pid"34 oldprio newprio=98
+  |futex sched_switch: prev_comm=futex_requeue_p prev_pid"34 prev_prio0
+
+This patch open codes __rt_effective_prio() in the tracepoint as the
+'newprio' to get the old behaviour back / the correct priority:
+
+  |futex sched_pi_setprio: comm=futex_requeue_p pid"20 oldprio newprio=120
+  |futex sched_switch: prev_comm=futex_requeue_p prev_pid"20 prev_prio0
+
+Peter suggested to open code the new priority so people using tracehook
+could get the deadline data out.
+
+Reported-by: Mansky Christian <man@keba.com>
+Signed-off-by: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Cc: Linus Torvalds <torvalds@linux-foundation.org>
+Cc: Peter Zijlstra <peterz@infradead.org>
+Cc: Steven Rostedt <rostedt@goodmis.org>
+Cc: Thomas Gleixner <tglx@linutronix.de>
+Fixes: b91473ff6e97 ("sched,tracing: Update trace_sched_pi_setprio()")
+Link: http://lkml.kernel.org/r/20180524132647.gg6ziuogczdmjjzu@linutronix.de
+Signed-off-by: Ingo Molnar <mingo@kernel.org>
+Signed-off-by: Julia Cartwright <julia@ni.com>
+---
+ include/trace/events/sched.h | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/include/trace/events/sched.h b/include/trace/events/sched.h
+index 531343ad..2d10f9d 100644
+--- a/include/trace/events/sched.h
++++ b/include/trace/events/sched.h
+@@ -453,7 +453,9 @@ TRACE_EVENT(sched_pi_setprio,
+ 		memcpy(__entry->comm, tsk->comm, TASK_COMM_LEN);
+ 		__entry->pid		= tsk->pid;
+ 		__entry->oldprio	= tsk->prio;
+-		__entry->newprio	= pi_task ? pi_task->prio : tsk->prio;
++		__entry->newprio	= pi_task ?
++				min(tsk->normal_prio, pi_task->prio) :
++				tsk->normal_prio;
+ 		/* XXX SCHED_DEADLINE bits missing */
+ 	),
+ 
+-- 
+2.7.4
+

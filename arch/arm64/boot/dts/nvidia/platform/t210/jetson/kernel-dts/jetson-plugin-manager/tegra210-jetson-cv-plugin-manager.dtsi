@@ -69,7 +69,7 @@
 			};
 
 			override@6 {
-				target = <&sound_card>;
+				target = <&tegra_sound>;
 				_overlay_ {
 					nvidia,audio-routing =
 						"x Headphone Jack",	"x HPO L Playback",
@@ -92,6 +92,7 @@
 						"m IN",			"m Mic",
 						"n IN",			"n Mic";
 					nvidia,dai-link-1 {
+						link-name = "rt565x-playback";
 						codec-dai-name = "rt5659-aif1";
 					};
 				};
@@ -171,7 +172,7 @@
 			};
 
 			override@1 {
-				target = <&sound_card>;
+				target = <&tegra_sound>;
 				_overlay_ {
 					nvidia,dai-link-1 {
 						codec-dai = <&rt5658_a00>;
@@ -197,7 +198,7 @@
 			};
 
 			override@1 {
-				target = <&sound_card>;
+				target = <&tegra_sound>;
 				_overlay_ {
 					nvidia,dai-link-1 {
 						codec-dai = <&rt5658_b00>;

@@ -1,6 +1,6 @@
 /*
  *
- * Copyright (c) 2018, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2018-2020, NVIDIA CORPORATION. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -72,6 +72,8 @@ static int tegra_throt_cpu_req;
 static LIST_HEAD(tegra_throt_cdev_list);
 static DEFINE_MUTEX(tegra_throt_lock);
 static struct dentry *tegra_throt_root;
+static unsigned long cpu_max_freq;
+static unsigned long cpu_min_freq;
 
 static char *cpu_clks[MAX_CPU_CLUSTERS] = { "cpu0", "cpu1", "cpu2", "cpu3" };
 
@@ -533,15 +535,31 @@ static int tegra_throt_clk_get(struct platform_device *pdev,
 				struct tegra_throt_clk *pclk)
 {
 	int i;
+	int ret = -EINVAL;
 
 	for (i = 0; i < pclk->num_clk_handles; i++) {
-		pclk->clk = devm_clk_get(&pdev->dev, pclk->clk_names[i]);
-		if (!IS_ERR(pclk->clk))
-			return 0;
+		if (!strncmp(pclk->clk_names[i], "cpu", 3)) {
+			/* non CCF controlled clock */
+			pclk->max_rate = cpu_max_freq * KHZ_TO_HZ;
+			pclk->min_rate = cpu_min_freq * KHZ_TO_HZ;
+			ret = 0;
+		} else {
+			/* CCF controlled clock */
+			pclk->clk = devm_clk_get(&pdev->dev,
+						pclk->clk_names[i]);
+			if (!IS_ERR(pclk->clk)) {
+				pclk->max_rate = clk_round_rate(pclk->clk,
+								UINT_MAX);
+				pclk->min_rate = clk_round_rate(pclk->clk, 0);
+				ret = 0;
+			}
+		}
 	}
 
-	dev_err(&pdev->dev, "failed to get clk:%s\n", pclk[i].name);
-	return -ENODEV;
+	if (ret)
+		dev_err(&pdev->dev, "failed to get clk:%s\n", pclk[i].name);
+
+	return ret;
 }
 
 static int tegra_throt_clk_init(struct platform_device *pdev,
@@ -560,8 +578,6 @@ static int tegra_throt_clk_init(struct platform_device *pdev,
 			continue;
 
 		INIT_LIST_HEAD(&pclks[i].cdev_clk_list);
-		pclks[i].max_rate = clk_round_rate(pclks[i].clk, UINT_MAX);
-		pclks[i].min_rate = clk_round_rate(pclks[i].clk, 0);
 		pclks[i].steps = DIV_ROUND_UP((pclks[i].max_rate -
 					pclks[i].min_rate), pclks[i].step_hz);
 		pclks[i].throt_rate = UINT_MAX;
@@ -575,6 +591,33 @@ static int tegra_throt_clk_init(struct platform_device *pdev,
 		dev_err(&pdev->dev, "missing clocks\n");
 
 	return ret;
+}
+
+static int tegra_throt_cpu_min_max(void)
+{
+	struct cpufreq_policy policy;
+	int cpu;
+	int cnt = 0;
+
+	cpu_max_freq = 0;
+	cpu_min_freq = UINT_MAX;
+	/* In cases when cpufreq_single_policy is not set,  the per cpu max/min
+	 * could differ. In such cases, choose the highest max frequency and
+	 * lowest min frequency to cover all frequency points. Throttling slope
+	 * could be increased if this is deemed too slow.
+	 */
+	for_each_online_cpu(cpu) {
+		if (!cpufreq_get_policy(&policy, cpu)) {
+			if (policy.cpuinfo.max_freq > cpu_max_freq)
+				cpu_max_freq = policy.cpuinfo.max_freq;
+			if (policy.cpuinfo.min_freq < cpu_min_freq)
+				cpu_min_freq = policy.cpuinfo.min_freq;
+			cnt++;
+		}
+	}
+
+	/* continue with probe as long as one cpu is online */
+	return (cnt) ? 0 : -ENODEV;
 }
 
 static int tegra_throt_remove(struct platform_device *pdev)
@@ -597,6 +640,12 @@ static int tegra_throt_probe(struct platform_device *pdev)
 	int ret = 0;
 	const struct of_device_id *match;
 	struct tegra_throt_clk *pclks;
+
+	ret = tegra_throt_cpu_min_max();
+	if (ret != 0) {
+		dev_info(&pdev->dev, "cpufreq policy is not ready defer\n");
+		return -EPROBE_DEFER;
+	}
 
 	match = of_match_node(tegra_throt_of_match, pdev->dev.of_node);
 	if (!match)

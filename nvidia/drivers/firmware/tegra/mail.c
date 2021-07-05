@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2013-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -100,7 +100,7 @@ static void bpmp_signal_thread(int ch)
 	if (!(p->flags & RING_DOORBELL))
 		return;
 
-	if (to_reclaim && m) {
+	if ((to_reclaim & m) != 0) {
 		mail_ops->free_master(mail_ops, ch);
 		to_reclaim &= ~m;
 		tch_free |= m;
@@ -463,7 +463,7 @@ int tegra_bpmp_suspend(void)
 		unsigned int i;
 		pr_err("%s() channels waiting (to_complete 0x%x)\n",
 				__func__, to_complete);
-		for (i = 0; i < 32; ++i) {
+		for (i = 0; i < NR_MAX_CHANNELS; ++i) {
 			if (to_complete & (1 << i)) {
 				bpmp_dump_req(i);
 			}

@@ -1,7 +1,7 @@
 /*
  * imx274.c - imx274 sensor driver
  *
- * Copyright (c) 2015-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2015-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -78,7 +78,6 @@ static const u32 ctrl_cid_list[] = {
 	TEGRA_CAMERA_CID_EXPOSURE,
 	TEGRA_CAMERA_CID_EXPOSURE_SHORT,
 	TEGRA_CAMERA_CID_FRAME_RATE,
-	TEGRA_CAMERA_CID_GROUP_HOLD,
 	TEGRA_CAMERA_CID_HDR_EN,
 	TEGRA_CAMERA_CID_FUSE_ID,
 };
@@ -826,11 +825,11 @@ static int imx274_power_put(struct tegracam_device *tc_dev)
 		return -EFAULT;
 
 	if (likely(pw->avdd))
-		regulator_put(pw->avdd);
+		devm_regulator_put(pw->avdd);
 	if (likely(pw->dvdd))
-		regulator_put(pw->dvdd);
+		devm_regulator_put(pw->dvdd);
 	if (likely(pw->iovdd))
-		regulator_put(pw->iovdd);
+		devm_regulator_put(pw->iovdd);
 
 	pw->avdd = NULL;
 	pw->dvdd = NULL;
@@ -852,7 +851,7 @@ static int imx274_power_get(struct tegracam_device *tc_dev)
 	const char *mclk_name;
 	const char *parentclk_name;
 	struct clk *parent;
-	int err = 0;
+	int err = 0, ret = 0;
 
 	mclk_name = pdata->mclk_name ?
 		    pdata->mclk_name : "cam_mclk1";
@@ -888,6 +887,21 @@ static int imx274_power_get(struct tegracam_device *tc_dev)
 		pw->af_gpio = pdata->af_gpio;
 		pw->pwdn_gpio = pdata->pwdn_gpio;
 	}
+
+	ret = gpio_request(pw->reset_gpio, "cam_reset_gpio");
+	if (ret < 0)
+		dev_dbg(dev, "%s can't request reset_gpio %d\n", __func__, ret);
+	gpio_direction_output(pw->reset_gpio, 1);
+
+	ret = gpio_request(pw->af_gpio, "cam_af_gpio");
+	if (ret < 0)
+		dev_dbg(dev, "%s can't request af_gpio %d\n", __func__, ret);
+	gpio_direction_output(pw->af_gpio, 1);
+
+	ret = gpio_request(pw->pwdn_gpio, "cam_pwdn_gpio");
+	if (ret < 0)
+		dev_dbg(dev, "%s can't request pwdn_gpio %d\n",	__func__, ret);
+	gpio_direction_output(pw->pwdn_gpio, 1);
 
 	pw->state = SWITCH_OFF;
 	return err;
@@ -1288,6 +1302,7 @@ static int imx274_probe(struct i2c_client *client,
 
 	err = imx274_board_setup(priv);
 	if (err) {
+		tegracam_device_unregister(tc_dev);
 		dev_err(dev, "board setup failed\n");
 		return err;
 	}
@@ -1319,6 +1334,7 @@ static int imx274_remove(struct i2c_client *client)
 
 	tegracam_v4l2subdev_unregister(priv->tc_dev);
 	tegracam_device_unregister(priv->tc_dev);
+	imx274_eeprom_device_release(priv);
 
 	mutex_destroy(&priv->streaming_lock);
 

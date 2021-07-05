@@ -3,7 +3,8 @@
  *
  * Tegra pulse-width-modulation controller driver
  *
- * Copyright (c) 2010-2017, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2010-2020, NVIDIA CORPORATION. All rights reserved.
+ *
  * Based on arch/arm/plat-mxc/pwm.c by Sascha Hauer <s.hauer@pengutronix.de>
  *
  * This program is free software; you can redistribute it and/or modify
@@ -95,10 +96,49 @@ static int tegra_pwm_config(struct pwm_chip *chip, struct pwm_device *pwm,
 	val = (u32)c << PWM_DUTY_SHIFT;
 
 	/*
+	 * Its okay to ignore the fraction part since we will be trying to set
+	 * slightly lower value to rate than the actual required rate
+	 */
+	rate = NSEC_PER_SEC/period_ns;
+
+	/*
+	 *  Period in nano second has to be <= highest allowed period
+	 *  based on the max clock rate of the pwm controller.
+	 *
+	 *  higher limit = max clock limit >> PWM_DUTY_WIDTH
+	 */
+	if (rate > (pc->max_clk_limit >> PWM_DUTY_WIDTH))
+		return -EINVAL;
+
+	/*
 	 * Compute the prescaler value for which (1 << PWM_DUTY_WIDTH)
 	 * cycles at the PWM clock rate will take period_ns nanoseconds.
 	 */
-	rate = pc->clk_rate >> PWM_DUTY_WIDTH;
+	if (pc->soc->num_channels == 1) {
+		/*
+		 * Rate is multiplied with 2^PWM_DUTY_WIDTH so that it matches with the
+		 * hieghest applicable rate that the controller can provide. Any further
+		 * lower value can be derived by setting PFM bits[0:12]
+		 * Higher mark is taken since BPMP has round-up mechanism implemented.
+		 */
+		rate = rate << PWM_DUTY_WIDTH;
+
+		err = clk_set_rate(pc->clk, rate);
+		if (err < 0)
+			return -EINVAL;
+
+		rate = clk_get_rate(pc->clk) >> PWM_DUTY_WIDTH;
+	} else {
+		/*
+		 * This is the case for SoCs who support multiple channels:
+		 *
+		 * clk_set_rate() can not be called again in config because T210
+		 * or any prior chip supports one pwm-controller and multiple channels.
+		 * Hence in this case cached clock rate will be considered which was
+		 * stored during probe.
+		 */
+		rate = pc->clk_rate >> PWM_DUTY_WIDTH;
+	}
 
 	/* Consider precision in PWM_SCALE_WIDTH rate calculation */
 	hz = DIV_ROUND_CLOSEST_ULL(100ULL * NSEC_PER_SEC, period_ns);

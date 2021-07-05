@@ -24,7 +24,7 @@
 #include <linux/i2c.h>
 #include <linux/wait.h>
 #include "dc.h"
-#include <video/tegra_dc_ext.h>
+#include <uapi/video/tegra_dc_ext.h>
 
 #define TEGRA_DC_Y420_30	1	/* YCbCr 4:2:0 deep color 30bpp */
 #define TEGRA_DC_Y420_36	2	/* YCbCr 4:2:0 deep color 36bpp */
@@ -207,6 +207,7 @@ void tegra_edid_put_data(struct tegra_dc_edid *data);
 int tegra_dc_edid_blob(struct tegra_dc *dc, struct i2c_msg *msgs, int num);
 
 int tegra_edid_underscan_supported(struct tegra_edid *edid);
+int tegra_edid_i2c_divide_rate(struct tegra_edid *edid);
 int tegra_edid_i2c_adap_change_rate(struct i2c_adapter *i2c_adap, int rate);
 int tegra_edid_read_block(struct tegra_edid *edid, int block, u8 *data);
 int tegra_edid_audio_supported(struct tegra_edid *edid);

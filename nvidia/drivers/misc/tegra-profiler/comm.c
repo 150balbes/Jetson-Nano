@@ -1,7 +1,7 @@
 /*
  * drivers/misc/tegra-profiler/comm.c
  *
- * Copyright (c) 2013-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2013-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -634,6 +634,7 @@ device_ioctl(struct file *file,
 		break;
 
 	case IOCTL_GET_STATE:
+		memset(&state, 0, sizeof(state));
 		comm_ctx.control->get_state(&state);
 
 		state.buffer_size = 0;

@@ -1,7 +1,7 @@
 /*
  * drivers/misc/tegra-cec/tegra_cec.h
  *
- * Copyright (c) 2012-2017, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2012-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -21,6 +21,7 @@
 
 #include <linux/pm.h>
 #include <asm/atomic.h>
+#include <uapi/misc/tegra_cec.h>
 
 #define TEGRA_CEC_FRAME_MAX_LENGTH  16
 
@@ -164,13 +165,5 @@ static int tegra_cec_remove(struct platform_device *pdev);
 #define TEGRA_CEC_HW_DEBUG_TX_TXDATABIT_SAMPLE_TIMER	(1<<26)
 
 #define TEGRA_CEC_NAME "tegra_cec"
-
-#define TEGRA_CEC_IOC_MAGIC 'C'
-
-#define TEGRA_CEC_IOCTL_ERROR_RECOVERY		_IO(TEGRA_CEC_IOC_MAGIC, 1)
-#define TEGRA_CEC_IOCTL_DUMP_REGISTERS		_IO(TEGRA_CEC_IOC_MAGIC, 2)
-#define TEGRA_CEC_IOCTL_SET_RX_SNOOP		_IO(TEGRA_CEC_IOC_MAGIC, 3)
-#define TEGRA_CEC_IOCTL_GET_RX_SNOOP		_IO(TEGRA_CEC_IOC_MAGIC, 4)
-#define TEGRA_CEC_IOCTL_GET_POST_RECOVERY	_IO(TEGRA_CEC_IOC_MAGIC, 5)
 
 #endif /* TEGRA_CEC_H */

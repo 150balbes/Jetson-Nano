@@ -9,12 +9,6 @@
 
 /* File aq_nic.c: Definition of common code for NIC. */
 
-#include "aq_nic.h"
-#include "aq_ring.h"
-#include "aq_vec.h"
-#include "aq_hw.h"
-#include "aq_pci_func.h"
-
 #include <linux/moduleparam.h>
 #include <linux/netdevice.h>
 #include <linux/etherdevice.h>
@@ -25,6 +19,12 @@
 #include <net/ip.h>
 #include <net/tcp.h>
 #include <net/ipv6.h>
+
+#include "aq_nic.h"
+#include "aq_ring.h"
+#include "aq_vec.h"
+#include "aq_hw.h"
+#include "aq_pci_func.h"
 
 static unsigned int aq_itr = AQ_CFG_INTERRUPT_MODERATION_AUTO;
 module_param_named(aq_itr, aq_itr, uint, 0644);
@@ -107,7 +107,8 @@ void aq_nic_cfg_start(struct aq_nic_s *self)
 	/*rss rings */
 	cfg->vecs = min(cfg->aq_hw_caps->vecs, AQ_CFG_VECS_DEF);
 	cfg->vecs = min(cfg->vecs, num_online_cpus());
-	cfg->vecs = min(cfg->vecs, self->irqvecs);
+	if (self->irqvecs > AQ_HW_SERVICE_IRQS)
+		cfg->vecs = min(cfg->vecs, self->irqvecs - AQ_HW_SERVICE_IRQS);
 	/* cfg->vecs should be power of 2 for RSS */
 	if (cfg->vecs >= 8U)
 		cfg->vecs = 8U;
@@ -128,6 +129,14 @@ void aq_nic_cfg_start(struct aq_nic_s *self)
 		cfg->is_rss = 0U;
 		cfg->vecs = 1U;
 	}
+	/* Check if we have enough vectors allocated for
+	 * link status IRQ. If no - we'll know link state from
+	 * slower service task.
+	 */
+	if (AQ_HW_SERVICE_IRQS > 0 && cfg->vecs+1 <= self->irqvecs)
+		cfg->link_irq_vec = cfg->vecs;
+	else
+		cfg->link_irq_vec = 0;
 
 	cfg->link_speed_msk &= cfg->aq_hw_caps->link_speed_msk;
 	cfg->hw_features = cfg->aq_hw_caps->hw_features;
@@ -136,6 +145,7 @@ void aq_nic_cfg_start(struct aq_nic_s *self)
 static int aq_nic_update_link_status(struct aq_nic_s *self)
 {
 	int err = self->aq_fw_ops->update_link_status(self->aq_hw);
+	u32 fc = 0;
 
 	if (err)
 		return err;
@@ -145,6 +155,15 @@ static int aq_nic_update_link_status(struct aq_nic_s *self)
 			AQ_CFG_DRV_NAME, self->link_status.mbps,
 			self->aq_hw->aq_link_status.mbps);
 		aq_nic_update_interrupt_moderation_settings(self);
+
+		/* Driver has to update flow control settings on RX block
+		 * on any link event.
+		 * We should query FW whether it negotiated FC.
+		 */
+		if (self->aq_fw_ops->get_flow_control)
+			self->aq_fw_ops->get_flow_control(self->aq_hw, &fc);
+		if (self->aq_hw_ops->hw_set_fc)
+			self->aq_hw_ops->hw_set_fc(self->aq_hw, fc, 0);
 	}
 
 	self->link_status = self->aq_hw->aq_link_status;
@@ -164,13 +183,32 @@ static int aq_nic_update_link_status(struct aq_nic_s *self)
 	return 0;
 }
 
+static void aq_nic_update_link_task_cb(struct work_struct *w)
+{
+	struct aq_nic_s *self = container_of(w, struct aq_nic_s, link_update_task);
+
+	aq_nic_update_link_status(self);
+
+	self->aq_hw_ops->hw_irq_enable(self->aq_hw,
+				       BIT(self->aq_nic_cfg.link_irq_vec));
+}
+
+static irqreturn_t aq_linkstate_isr(int irq, void *private)
+{
+	struct aq_nic_s *self = private;
+
+	if (!self)
+		return IRQ_NONE;
+
+	schedule_work(&self->link_update_task);
+	return IRQ_HANDLED;
+}
+
 static void aq_nic_service_timer_cb(struct timer_list *t)
 {
 	struct aq_nic_s *self = from_timer(self, t, service_timer);
 	int ctimer = AQ_CFG_SERVICE_TIMER_INTERVAL;
 	int err = 0;
-
-	spin_lock(&self->aq_spinlock);
 
 	if (aq_utils_obj_test(&self->flags, AQ_NIC_FLAGS_IS_NOT_READY))
 		goto err_exit;
@@ -189,7 +227,6 @@ static void aq_nic_service_timer_cb(struct timer_list *t)
 		ctimer = max(ctimer / 2, 1);
 
 err_exit:
-	spin_unlock(&self->aq_spinlock);
 	mod_timer(&self->service_timer, jiffies + ctimer);
 }
 
@@ -216,6 +253,9 @@ int aq_nic_ndev_register(struct aq_nic_s *self)
 		goto err_exit;
 	}
 
+#ifdef AQ_CFG_FAST_START
+	self->aq_hw->fast_start_enabled = true;
+#endif
 	err = hw_atl_utils_initfw(self->aq_hw, &self->aq_fw_ops);
 	if (err)
 		goto err_exit;
@@ -296,10 +336,13 @@ int aq_nic_init(struct aq_nic_s *self)
 	unsigned int i = 0U;
 
 	self->power_state = AQ_HW_POWER_STATE_D0;
+#ifdef AQ_CFG_FAST_START
+	self->aq_fw_ops->set_state(self->aq_hw, MPI_RESET);
+#else
 	err = self->aq_hw_ops->hw_reset(self->aq_hw);
 	if (err < 0)
 		goto err_exit;
-
+#endif
 	err = self->aq_hw_ops->hw_init(self->aq_hw,
 				       aq_nic_get_ndev(self)->dev_addr);
 	if (err < 0)
@@ -309,7 +352,7 @@ int aq_nic_init(struct aq_nic_s *self)
 		self->aq_vecs > i; ++i, aq_vec = self->aq_vec[i])
 		aq_vec_init(aq_vec, self->aq_hw_ops, self->aq_hw);
 
-	spin_lock_init(&self->aq_spinlock);
+	INIT_WORK(&self->link_update_task, aq_nic_update_link_task_cb);
 
 	netif_carrier_off(self->ndev);
 
@@ -320,17 +363,17 @@ err_exit:
 int aq_nic_start(struct aq_nic_s *self)
 {
 	struct aq_vec_s *aq_vec = NULL;
-	int err = 0;
 	unsigned int i = 0U;
+	int err = 0;
 
 	err = self->aq_hw_ops->hw_multicast_list_set(self->aq_hw,
-						    self->mc_list.ar,
-						    self->mc_list.count);
+						     self->mc_list.ar,
+						     self->mc_list.count);
 	if (err < 0)
 		goto err_exit;
 
 	err = self->aq_hw_ops->hw_packet_filter_set(self->aq_hw,
-						   self->packet_filter);
+						    self->packet_filter);
 	if (err < 0)
 		goto err_exit;
 
@@ -349,8 +392,7 @@ int aq_nic_start(struct aq_nic_s *self)
 	if (err)
 		goto err_exit;
 	timer_setup(&self->service_timer, aq_nic_service_timer_cb, 0);
-	mod_timer(&self->service_timer, jiffies +
-			AQ_CFG_SERVICE_TIMER_INTERVAL);
+	aq_nic_service_timer_cb(&self->service_timer);
 
 	if (self->aq_nic_cfg.is_polling) {
 		timer_setup(&self->polling_timer, aq_nic_polling_timer_cb, 0);
@@ -359,15 +401,25 @@ int aq_nic_start(struct aq_nic_s *self)
 	} else {
 		for (i = 0U, aq_vec = self->aq_vec[0];
 			self->aq_vecs > i; ++i, aq_vec = self->aq_vec[i]) {
-			err = aq_pci_func_alloc_irq(self, i,
-						    self->ndev->name, aq_vec,
+			err = aq_pci_func_alloc_irq(self, i, self->ndev->name,
+						    aq_vec_isr, aq_vec,
 						    aq_vec_get_affinity_mask(aq_vec));
 			if (err < 0)
 				goto err_exit;
 		}
 
+		if (self->aq_nic_cfg.link_irq_vec) {
+			err = aq_pci_func_alloc_irq(self,
+						    self->aq_nic_cfg.link_irq_vec,
+						    self->ndev->name,
+						    aq_linkstate_isr, self,
+						    NULL);
+			if (err < 0)
+				goto err_exit;
+		}
+
 		err = self->aq_hw_ops->hw_irq_enable(self->aq_hw,
-				    AQ_CFG_IRQ_MASK);
+				                     AQ_CFG_IRQ_MASK);
 		if (err < 0)
 			goto err_exit;
 	}
@@ -811,7 +863,9 @@ void aq_nic_get_link_ksettings(struct aq_nic_s *self,
 		ethtool_link_ksettings_add_link_mode(cmd, advertising,
 						     Pause);
 
-	if (self->aq_nic_cfg.flow_control & AQ_NIC_FC_TX)
+	/* Asym is when either RX or TX, but not both */
+	if (!!(self->aq_nic_cfg.flow_control & AQ_NIC_FC_TX) ^
+	    !!(self->aq_nic_cfg.flow_control & AQ_NIC_FC_RX))
 		ethtool_link_ksettings_add_link_mode(cmd, advertising,
 						     Asym_Pause);
 
@@ -1045,12 +1099,15 @@ int aq_nic_stop(struct aq_nic_s *self)
 
 	del_timer_sync(&self->service_timer);
 
+	cancel_work_sync(&self->link_update_task);
+
 	self->aq_hw_ops->hw_irq_disable(self->aq_hw, AQ_CFG_IRQ_MASK);
 
 	if (self->aq_nic_cfg.is_polling)
 		del_timer_sync(&self->polling_timer);
-	else
+	else {
 		aq_pci_func_free_irqs(self);
+	}
 
 	for (i = 0U, aq_vec = self->aq_vec[0];
 		self->aq_vecs > i; ++i, aq_vec = self->aq_vec[i])

@@ -150,7 +150,7 @@ int channel_gv11b_setup_ramfc(struct channel_gk20a *c,
 
 	nvgpu_memset(g, mem, 0, 0, ram_fc_size_val_v());
 
-	if ((flags & NVGPU_GPFIFO_FLAGS_REPLAYABLE_FAULTS_ENABLE) != 0) {
+	if ((flags & NVGPU_SETUP_BIND_FLAGS_REPLAYABLE_FAULTS_ENABLE) != 0) {
 		replayable = true;
 	}
 	gv11b_init_subcontext_pdb(c->vm, mem, replayable);
@@ -220,6 +220,10 @@ int channel_gv11b_setup_ramfc(struct channel_gk20a *c,
 	return channel_gp10b_commit_userd(c);
 }
 
+u64 gv11b_fifo_usermode_base(struct gk20a *g)
+{
+	return usermode_cfg0_r();
+}
 
 void gv11b_ring_channel_doorbell(struct channel_gk20a *c)
 {

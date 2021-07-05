@@ -1,7 +1,7 @@
 /*
  * dsi.h: Functions implementing tegra dsi interface.
  *
- * Copyright (c) 2011-2018, NVIDIA CORPORATION, All rights reserved.
+ * Copyright (c) 2011-2019, NVIDIA CORPORATION, All rights reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -18,6 +18,7 @@
 #define __DRIVERS_VIDEO_TEGRA_DC_DSI_H__
 
 #define BOARD_P1761   0x06E1
+#define MAX_XRES   4096
 #include "dc_priv_defs.h"
 #include <linux/reset.h>
 #ifdef CONFIG_TEGRA_SYS_EDP
@@ -25,6 +26,7 @@
 #endif
 #include "dsi_padctrl.h"
 #include "dc_priv.h"
+#include "hpd.h"
 
 #define DSI_PADCTRL_INDEX	4
 
@@ -108,6 +110,7 @@ struct tegra_dc_dsi_data {
 	/* data from board info */
 	struct tegra_dsi_out info;
 
+	struct tegra_hpd_data hpd_data;
 	struct dsi_status status;
 
 	struct dsi_phy_timing_inclk phy_timing;
@@ -651,4 +654,6 @@ static inline int tegra_dsi_get_max_active_instances_num(
 
 	return ret;
 }
+void tegra_dsi_pending_hpd(struct tegra_dc_dsi_data *dsi);
+void tegra_dsi_hpd_suspend(struct tegra_dc_dsi_data *dsi);
 #endif

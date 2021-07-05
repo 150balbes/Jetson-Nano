@@ -1,7 +1,7 @@
 /*
  * drivers/video/tegra/dc/dc_common.c
  *
- * Copyright (c) 2017-2018, NVIDIA CORPORATION, All rights reserved.
+ * Copyright (c) 2017-2020, NVIDIA CORPORATION, All rights reserved.
  * Author: Arun Swain <arswain@nvidia.com>
  *
  * This software is licensed under the terms of the GNU General Public
@@ -1140,9 +1140,6 @@ static int tegra_dc_common_probe(struct platform_device *pdev)
 		goto err_syncpt_drop;
 	}
 	dev_info(&dc_common->pdev->dev, "dma mapping done\n");
-
-
-	dc_common->channel->syncpts[0] = dc_common->syncpt_id;
 
 	mutex_init(&dc_common->lock);
 	init_waitqueue_head(&dc_common->prgrm_reg_reqs_wq);

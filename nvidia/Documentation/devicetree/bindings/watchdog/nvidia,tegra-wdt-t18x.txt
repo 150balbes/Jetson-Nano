@@ -22,7 +22,7 @@ Optional properties for recovery mode:
 - nvidia,shutdown-timeout: timeout in secs during shutdown before watchdog
 			reset occurs. same as heartbeat if not specified.
 - nvidia,expiry-count: total expiration levels supported by the watchdog.
-       Should be 1 if not specified.
+       Should be 1 if not specified. (Deprecated)
 - nvidia,extend-watchdog-suspend: Boolean. Extend the disable of watchdog
 	timer to syscore suspend and re-eanble on syscore resume. If this
 	is selected then do not disable watchdog timer in device suspend

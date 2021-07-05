@@ -29,7 +29,7 @@
  * DAMAGE.
  * ========================================================================= */
 /*
- * Copyright (c) 2015-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2015-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -684,11 +684,16 @@ static INT config_l2_da_perfect_inverse_match(INT perfect_inverse_match)
 
 static INT update_mac_addr32_127_low_high_reg(INT idx, UCHAR addr[])
 {
-
-	MAC_MA32_127HR_ADDRHI_AE_WR(idx, (addr[4] | (addr[5] << 8)), 0x1);
-	MAC_MA32_127LR_WR(idx,
-			  (addr[0] | (addr[1] << 8) | (addr[2] << 16) |
-			   (addr[3] << 24)));
+	if (!addr) {
+		MAC_MA32_127HR_ADDRHI_AE_WR(idx, 0x0, 0x0);
+		MAC_MA32_127LR_WR(idx, 0x0);
+	} else {
+		MAC_MA32_127HR_ADDRHI_AE_WR(idx,
+					    (addr[4] | (addr[5] << 8)), 0x1);
+		MAC_MA32_127LR_WR(idx,
+				  (addr[0] | (addr[1] << 8) | (addr[2] << 16) |
+				  (addr[3] << 24)));
+	}
 
 	return Y_SUCCESS;
 }
@@ -705,11 +710,16 @@ static INT update_mac_addr32_127_low_high_reg(INT idx, UCHAR addr[])
 
 static INT update_mac_addr1_31_low_high_reg(INT idx, UCHAR addr[])
 {
-
-	MAC_MA1_31HR_ADDRHI_AE_WR(idx, (addr[4] | (addr[5] << 8)), 0x1);
-	MAC_MA1_31LR_WR(idx,
-			(addr[0] | (addr[1] << 8) | (addr[2] << 16) |
-			 (addr[3] << 24)));
+	if (!addr) {
+		MAC_MA1_31HR_ADDRHI_AE_WR(idx, 0x0, 0x0);
+		MAC_MA1_31LR_WR(idx, 0x0);
+	} else {
+		MAC_MA1_31HR_ADDRHI_AE_WR(idx,
+					  (addr[4] | (addr[5] << 8)), 0x1);
+		MAC_MA1_31LR_WR(idx,
+				(addr[0] | (addr[1] << 8) | (addr[2] << 16) |
+				(addr[3] << 24)));
+	}
 
 	return Y_SUCCESS;
 }
@@ -2987,6 +2997,34 @@ static void pre_transmit(struct eqos_prv_data *pdata, UINT qinx)
 	/* set Interrupt on Completion for last descriptor */
 	TX_NORMAL_DESC_TDES2_IC_WR(plast_desc->tdes2, 0x1);
 
+	if (ptx_ring->frame_cnt < UINT_MAX) {
+		ptx_ring->frame_cnt++;
+	} else if (ptx_ring->use_tx_frames == EQOS_COAELSCING_ENABLE &&
+		   (ptx_ring->frame_cnt %
+					ptx_ring->tx_coal_frames) < UINT_MAX) {
+		/* make sure count for tx_frame interrupt logic is retained */
+		ptx_ring->frame_cnt =
+				(ptx_ring->frame_cnt % ptx_ring->tx_coal_frames)
+					+ 1U;
+	} else {
+		ptx_ring->frame_cnt = 1U;
+	}
+
+	if (ptx_ring->use_tx_usecs == EQOS_COAELSCING_ENABLE) {
+		TX_NORMAL_DESC_TDES2_IC_WR(plast_desc->tdes2, 0x0);
+
+		/* update IOC bit if tx_frames is enabled. Tx_frames
+		 * can be enabled only along with tx_usecs.
+		 */
+		if (ptx_ring->use_tx_frames == EQOS_COAELSCING_ENABLE) {
+			if ((ptx_ring->frame_cnt %
+					ptx_ring->tx_coal_frames) == 0) {
+				TX_NORMAL_DESC_TDES2_IC_WR(
+							plast_desc->tdes2, 0x1);
+			}
+		}
+	}
+
 	/* set OWN bit of FIRST descriptor at end to avoid race condition */
 	ptx_desc = GET_TX_DESC_PTR(qinx, start_index);
 	TX_NORMAL_DESC_TDES3_OWN_WR(ptx_desc->tdes3, 0x1);
@@ -3084,7 +3122,7 @@ static void eqos_read_err_counter(struct eqos_prv_data *pdata, bool save)
 		MMC_TXEXCESSDEF_RD(val);
 		pdata->mmc.mmc_tx_excessdef_pre_recalib += val;
 		MMC_RXCRCERROR_RD(val);
-		pdata->mmc.mmc_rx_crc_errror_pre_recalib += val;
+		pdata->mmc.mmc_rx_crc_error_pre_recalib += val;
 		MMC_RXALIGNMENTERROR_RD(val);
 		pdata->mmc.mmc_rx_align_error_pre_recalib += val;
 		MMC_RXRUNTERROR_RD(val);
@@ -3152,7 +3190,7 @@ static INT eqos_pad_calibrate(struct eqos_prv_data *pdata)
 	struct platform_device *pdev = pdata->pdev;
 	int ret;
 	int i;
-	u32 hwreg;
+	u32 hwreg = 0;
 
 	if (tegra_platform_is_unit_fpga())
 		return 0;
@@ -3167,12 +3205,17 @@ static INT eqos_pad_calibrate(struct eqos_prv_data *pdata)
 	/* 2. delay for 1 usec */
 	usleep_range(1, 3);
 
+	/* use platform specific ETHER_QOS_AUTO_CAL_CONFIG_0 register value if set */
+	if(pdata->dt_cfg.reg_auto_cal_config_0_val)
+		hwreg = pdata->dt_cfg.reg_auto_cal_config_0_val;
+	else
+		PAD_AUTO_CAL_CFG_RD(hwreg);
+
 	/* 3. Set AUTO_CAL_ENABLE and AUTO_CAL_START in
 	 * reg ETHER_QOS_AUTO_CAL_CONFIG_0.
 	 */
-	PAD_AUTO_CAL_CFG_RD(hwreg);
 	hwreg |=
-	    ((PAD_AUTO_CAL_CFG_START_MASK) | (PAD_AUTO_CAL_CFG_ENABLE_MASK));
+		(PAD_AUTO_CAL_CFG_START_MASK) | (PAD_AUTO_CAL_CFG_ENABLE_MASK);
 
 	PAD_AUTO_CAL_CFG_WR(hwreg);
 
@@ -3220,9 +3263,9 @@ static INT eqos_car_reset(struct eqos_prv_data *pdata)
 
 	ULONG dma_bmr;
 
-	/* Issue a CAR reset */
+	/* deassert rst line */
 	if (!IS_ERR_OR_NULL(pdata->eqos_rst))
-		reset_control_reset(pdata->eqos_rst);
+		reset_control_deassert(pdata->eqos_rst);
 
 	/* add delay of 10 usec */
 	udelay(10);

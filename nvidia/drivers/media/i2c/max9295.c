@@ -1,7 +1,7 @@
 /*
- * max9295.c - max9295 IO Expander driver
+ * max9295.c - max9295 GMSL Serializer driver
  *
- * Copyright (c) 2018-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2018-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -304,25 +304,32 @@ int max9295_setup_control(struct device *dev)
 	mutex_lock(&priv->lock);
 
 	if (!priv->g_client.g_ctx) {
-		dev_err(dev, "%s: no sdev client found\n", __func__);
+		dev_err(dev, "%s: no sensor dev client found\n", __func__);
 		err = -EINVAL;
 		goto error;
 	}
 
 	g_ctx = priv->g_client.g_ctx;
 
-	/* update address reassingment */
-	max9295_write_reg(&prim_priv__->i2c_client->dev,
-			MAX9295_DEV_ADDR, (g_ctx->ser_reg << 1));
-
+	if (prim_priv__) {
+		/* update address reassingment */
+		max9295_write_reg(&prim_priv__->i2c_client->dev,
+				MAX9295_DEV_ADDR, (g_ctx->ser_reg << 1));
+	}
 
 	if (g_ctx->serdes_csi_link == GMSL_SERDES_CSI_LINK_A)
-		max9295_write_reg(dev, MAX9295_CTRL0_ADDR, 0x21);
+		err = max9295_write_reg(dev, MAX9295_CTRL0_ADDR, 0x21);
 	else
-		max9295_write_reg(dev, MAX9295_CTRL0_ADDR, 0x22);
+		err = max9295_write_reg(dev, MAX9295_CTRL0_ADDR, 0x22);
+
+	/* check if serializer device exists */
+	if (err) {
+		dev_err(dev, "%s: ERROR: ser device not found\n", __func__);
+		goto error;
+	}
 
 	/* delay to settle link */
-	msleep(50);
+	msleep(100);
 
 	for (i = 0; i < ARRAY_SIZE(addr_offset); i += 3) {
 		if ((g_ctx->ser_reg << 1) == addr_offset[i]) {
@@ -333,7 +340,7 @@ int max9295_setup_control(struct device *dev)
 	}
 
 	if (i == ARRAY_SIZE(addr_offset)) {
-		dev_err(dev, "%s: invalid ser slave\n", __func__);
+		dev_err(dev, "%s: invalid ser slave address\n", __func__);
 		err = -EINVAL;
 		goto error;
 	}
@@ -343,15 +350,15 @@ int max9295_setup_control(struct device *dev)
 		i2c_ovrd[i+1] += (i < 4) ? offset1 : offset2;
 
 		/* i2c passthrough2 must be configured once for all devices */
-		if ((i2c_ovrd[i] == 0x8B) && prim_priv__->pst2_ref)
+		if ((i2c_ovrd[i] == 0x8B) && prim_priv__ && prim_priv__->pst2_ref)
 			continue;
 
 		max9295_write_reg(dev, i2c_ovrd[i], i2c_ovrd[i+1]);
 	}
 
 	/* dev addr pass-through2 ref */
-	prim_priv__->pst2_ref++;
-
+	if (prim_priv__)
+		prim_priv__->pst2_ref++;
 
 	max9295_write_reg(dev, MAX9295_I2C4_ADDR, (g_ctx->sdev_reg << 1));
 	max9295_write_reg(dev, MAX9295_I2C5_ADDR, (g_ctx->sdev_def << 1));
@@ -359,6 +366,8 @@ int max9295_setup_control(struct device *dev)
 	max9295_write_reg(dev, MAX9295_SRC_PWDN_ADDR, MAX9295_PWDN_GPIO);
 	max9295_write_reg(dev, MAX9295_SRC_CTRL_ADDR, MAX9295_RESET_SRC);
 	max9295_write_reg(dev, MAX9295_SRC_OUT_RCLK_ADDR, MAX9295_SRC_RCLK);
+
+	g_ctx->serdev_found = true;
 
 error:
 	mutex_unlock(&priv->lock);
@@ -378,13 +387,16 @@ int max9295_reset_control(struct device *dev)
 		goto error;
 	}
 
-	prim_priv__->pst2_ref--;
 	priv->g_client.st_done = false;
 
-	max9295_write_reg(dev, MAX9295_DEV_ADDR, (prim_priv__->def_addr << 1));
+	if (prim_priv__) {
+		prim_priv__->pst2_ref--;
 
-	max9295_write_reg(&prim_priv__->i2c_client->dev,
-				MAX9295_CTRL0_ADDR, MAX9295_RESET_ALL);
+		max9295_write_reg(dev, MAX9295_DEV_ADDR, (prim_priv__->def_addr << 1));
+
+		max9295_write_reg(&prim_priv__->i2c_client->dev,
+					MAX9295_CTRL0_ADDR, MAX9295_RESET_ALL);
+	}
 
 error:
 	mutex_unlock(&priv->lock);
@@ -468,7 +480,7 @@ static int max9295_probe(struct i2c_client *client,
 	int err = 0;
 	struct device_node *node = client->dev.of_node;
 
-	dev_info(&client->dev, "[MAX9295]: probing GMSL IO Expander\n");
+	dev_info(&client->dev, "[MAX9295]: probing GMSL Serializer\n");
 
 	priv = devm_kzalloc(&client->dev, sizeof(*priv), GFP_KERNEL);
 	priv->i2c_client = client;
@@ -500,6 +512,7 @@ static int max9295_probe(struct i2c_client *client,
 
 	dev_set_drvdata(&client->dev, priv);
 
+	/* dev communication gets validated when GMSL link setup is done */
 	dev_info(&client->dev, "%s:  success\n", __func__);
 
 	return err;
@@ -554,6 +567,6 @@ static void __exit max9295_exit(void)
 module_init(max9295_init);
 module_exit(max9295_exit);
 
-MODULE_DESCRIPTION("IO Expander driver max9295");
+MODULE_DESCRIPTION("GMSL Serializer driver max9295");
 MODULE_AUTHOR("Sudhir Vyas <svyas@nvidia.com>");
 MODULE_LICENSE("GPL v2");

@@ -2,7 +2,7 @@
  * tegra_alt_asoc_utils.h - Definitions for MCLK and DAP Utility driver
  *
  * Author: Stephen Warren <swarren@nvidia.com>
- * Copyright (c) 2011-2018 NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2011-2019 NVIDIA CORPORATION.	All rights reserved.
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -32,7 +32,10 @@ enum tegra_asoc_utils_soc {
 	TEGRA_ASOC_UTILS_SOC_TEGRA194,
 };
 
-/* Maintain same order in DT entry */
+/*
+ * Maintain same order in DT entry
+ * FIXME: (This would be removed going ahead)
+ */
 enum tegra_asoc_utils_clkrate {
 	PLLA_x11025_RATE,
 	AUD_MCLK_x11025_RATE,
@@ -49,43 +52,28 @@ struct tegra_asoc_audio_clock_info {
 	struct device *dev;
 	struct snd_soc_card *card;
 	enum tegra_asoc_utils_soc soc;
-	struct clk *clk_pll_a;
-	struct clk *clk_pll_a_out0;
-	struct clk *clk_cdev1;
-	struct clk *clk_ahub;
+	struct clk *clk_pll_base;
+	struct clk *clk_pll_out;
+	struct clk *clk_aud_mclk;
 	struct reset_control *clk_cdev1_rst;
 	int clk_cdev1_state;
-	struct clk *clk_m;
-	struct clk *clk_pll_p_out1;
-	int set_mclk;
-	int lock_count;
-	int set_baseclock;
-	int num_clk;
-	struct clk *clk_mclk_parent;
-	u32 set_clk_out_rate;
-	u32 mclk_rate;
+	unsigned int *pll_base_rate;
+	u32 set_pll_base_rate;
+	u32 set_pll_out_rate;
+	u32 set_aud_mclk_rate;
 	u32 mclk_scale;
+
+	/* FIXME: below would be removed going ahead */
 	u32 clk_rates[MAX_NUM_RATES];
+	u32 num_clk;
 };
 
 int tegra_alt_asoc_utils_set_rate(struct tegra_asoc_audio_clock_info *data,
-				int srate,
-				int mclk,
-				u32 clk_out_rate);
-void tegra_alt_asoc_utils_lock_clk_rate(
-				struct tegra_asoc_audio_clock_info *data,
-				int lock);
+				  unsigned int srate, unsigned int mclk,
+				  unsigned int clk_out_rate);
 int tegra_alt_asoc_utils_init(struct tegra_asoc_audio_clock_info *data,
-				struct device *dev, struct snd_soc_card *card);
-
-int tegra_alt_asoc_utils_set_extern_parent(
-	struct tegra_asoc_audio_clock_info *data, const char *parent);
-int tegra_alt_asoc_utils_set_parent(struct tegra_asoc_audio_clock_info *data,
-				int is_i2s_master);
+			      struct device *dev, struct snd_soc_card *card);
 int tegra_alt_asoc_utils_clk_enable(struct tegra_asoc_audio_clock_info *data);
 int tegra_alt_asoc_utils_clk_disable(struct tegra_asoc_audio_clock_info *data);
-int tegra_alt_asoc_utils_register_ctls(struct tegra_asoc_audio_clock_info *data);
-
-int tegra_alt_asoc_utils_tristate_dap(int id, bool tristate);
 
 #endif

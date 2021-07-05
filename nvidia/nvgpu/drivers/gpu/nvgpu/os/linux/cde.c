@@ -1312,7 +1312,7 @@ static int gk20a_cde_load(struct gk20a_cde_ctx *cde_ctx)
 	struct channel_gk20a *ch;
 	struct tsg_gk20a *tsg;
 	struct gr_gk20a *gr = &g->gr;
-	struct nvgpu_gpfifo_args gpfifo_args;
+	struct nvgpu_setup_bind_args setup_bind_args;
 	int err = 0;
 	u64 vaddr;
 
@@ -1351,17 +1351,16 @@ static int gk20a_cde_load(struct gk20a_cde_ctx *cde_ctx)
 	err = gk20a_tsg_bind_channel(tsg, ch);
 	if (err) {
 		nvgpu_err(g, "cde: unable to bind to tsg");
-		goto err_alloc_gpfifo;
+		goto err_setup_bind;
 	}
 
-	gpfifo_args.num_entries = 1024;
-	gpfifo_args.num_inflight_jobs = 0;
-	gpfifo_args.flags = 0;
-	/* allocate gpfifo (1024 should be more than enough) */
-	err = gk20a_channel_alloc_gpfifo(ch, &gpfifo_args);
+	setup_bind_args.num_gpfifo_entries = 1024;
+	setup_bind_args.num_inflight_jobs = 0;
+	setup_bind_args.flags = 0;
+	err = nvgpu_channel_setup_bind(ch, &setup_bind_args);
 	if (err) {
-		nvgpu_warn(g, "cde: unable to allocate gpfifo");
-		goto err_alloc_gpfifo;
+		nvgpu_warn(g, "cde: unable to setup channel");
+		goto err_setup_bind;
 	}
 
 	/* map backing store to gpu virtual space */
@@ -1399,7 +1398,7 @@ static int gk20a_cde_load(struct gk20a_cde_ctx *cde_ctx)
 err_init_cde_img:
 	nvgpu_gmmu_unmap(ch->vm, &g->gr.compbit_store.mem, vaddr);
 err_map_backingstore:
-err_alloc_gpfifo:
+err_setup_bind:
 	nvgpu_vm_put(ch->vm);
 err_commit_va:
 err_get_gk20a_channel:

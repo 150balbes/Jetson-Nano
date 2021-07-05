@@ -3,7 +3,7 @@
  *
  * Tegra Graphics Host Automatic Clock Management
  *
- * Copyright (c) 2010-2018, NVIDIA Corporation. All rights reserved.
+ * Copyright (c) 2010-2020, NVIDIA Corporation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -33,10 +33,12 @@
 #include <soc/tegra/chip-id.h>
 #include <trace/events/nvhost.h>
 #include <linux/tegra_pm_domains.h>
-#include <linux/nvhost_ioctl.h>
+#include <uapi/linux/nvhost_ioctl.h>
 #include <linux/version.h>
 #include <linux/clk/tegra.h>
 #include <linux/clk-provider.h>
+#include <linux/dma-mapping.h>
+#include <linux/nospec.h>
 
 #include <linux/platform/tegra/mc.h>
 #if defined(CONFIG_TEGRA_BWMGR)
@@ -58,6 +60,7 @@
 #define MAX_DEVID_LENGTH			32
 
 static void nvhost_module_load_regs(struct platform_device *pdev, bool prod);
+static void nvhost_module_set_actmon_regs(struct platform_device *pdev);
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0)
 static int nvhost_module_toggle_slcg(struct notifier_block *nb,
@@ -139,6 +142,9 @@ void nvhost_module_reset(struct platform_device *dev, bool reboot)
 	if (reboot) {
 		/* Load clockgating registers */
 		nvhost_module_load_regs(dev, pdata->engine_can_cg);
+
+		/* Set actmon registers */
+		nvhost_module_set_actmon_regs(dev);
 
 		/* initialize device vm */
 		nvhost_vm_init_device(dev);
@@ -333,6 +339,8 @@ int nvhost_module_get_rate(struct platform_device *dev, unsigned long *rate,
 {
 	struct nvhost_device_data *pdata = platform_get_drvdata(dev);
 
+	index = array_index_nospec(index, NVHOST_MODULE_MAX_CLOCKS);
+
 #if defined(CONFIG_TEGRA_BWMGR)
 	if (nvhost_is_bwmgr_clk(pdata, index)) {
 		*rate = tegra_bwmgr_get_emc_rate();
@@ -441,6 +449,8 @@ int nvhost_module_set_rate(struct platform_device *dev, void *priv,
 	struct nvhost_device_data *pdata = platform_get_drvdata(dev);
 
 	nvhost_dbg_fn("%s", dev->name);
+
+	index = array_index_nospec(index, NVHOST_MODULE_MAX_CLOCKS);
 
 	mutex_lock(&client_list_lock);
 	list_for_each_entry(m, &pdata->client_list, node) {
@@ -592,6 +602,54 @@ static ssize_t autosuspend_delay_show(struct kobject *kobj,
 	return ret;
 }
 
+static ssize_t clk_cap_store(struct kobject *kobj,
+	struct kobj_attribute *attr, const char *buf, size_t count)
+{
+	struct nvhost_device_data *pdata =
+		container_of(kobj, struct nvhost_device_data, clk_cap_kobj);
+	/* i is indeed 'index' here after type conversion */
+	int ret, i = attr - pdata->clk_cap_attrs;
+	struct clk *clk = pdata->clk[i];
+	unsigned long freq_cap;
+
+	ret = kstrtoul(buf, 0, &freq_cap);
+	if (ret)
+		return -EINVAL;
+
+	ret = clk_set_max_rate(clk, freq_cap);
+	if (ret < 0)
+		return ret;
+
+	return count;
+}
+
+static ssize_t clk_cap_show(struct kobject *kobj,
+	struct kobj_attribute *attr, char *buf)
+{
+	struct nvhost_device_data *pdata =
+		container_of(kobj, struct nvhost_device_data, clk_cap_kobj);
+	/* i is indeed 'index' here after type conversion */
+	int i = attr - pdata->clk_cap_attrs;
+	struct clk *clk = pdata->clk[i];
+	long max_rate;
+
+	max_rate = clk_round_rate(clk, UINT_MAX);
+	if (max_rate < 0)
+		return max_rate;
+
+	return snprintf(buf, PAGE_SIZE, "%ld\n", max_rate);
+}
+
+static void acm_kobj_release(struct kobject *kobj)
+{
+	sysfs_remove_dir(kobj);
+}
+
+static struct kobj_type acm_kobj_ktype = {
+	.release    = acm_kobj_release,
+	.sysfs_ops  = &kobj_sysfs_ops,
+};
+
 int nvhost_clk_get(struct platform_device *dev, char *name, struct clk **clk)
 {
 	int i;
@@ -636,6 +694,11 @@ int nvhost_module_init(struct platform_device *dev)
 	int i = 0, err = 0;
 	struct kobj_attribute *attr = NULL;
 	struct nvhost_device_data *pdata = platform_get_drvdata(dev);
+	struct nvhost_master *master = nvhost_get_host(dev);
+
+	if (!pdata->no_platform_dma_mask) {
+		dma_set_mask_and_coherent(&dev->dev, master->info.dma_mask);
+	}
 
 	/* initialize clocks to known state (=enabled) */
 	pdata->num_clks = 0;
@@ -807,7 +870,50 @@ int nvhost_module_init(struct platform_device *dev)
 		goto fail_force_idle;
 	}
 
+	err = kobject_init_and_add(&pdata->clk_cap_kobj, &acm_kobj_ktype,
+		pdata->power_kobj, "%s", "clk_cap");
+	if (err) {
+		dev_err(&dev->dev, "Could not add dir 'clk_cap'\n");
+		goto fail_clk_cap;
+	}
+
+	pdata->clk_cap_attrs = devm_kcalloc(&dev->dev, pdata->num_clks,
+		sizeof(*attr), GFP_KERNEL);
+	if (!pdata->clk_cap_attrs) {
+		err = -ENOMEM;
+		goto fail_clks;
+	}
+
+	for (i = 0; i < pdata->num_clks; ++i) {
+		struct clk *c;
+
+		c = pdata->clk[i];
+		if (!c)
+			continue;
+
+		attr = &pdata->clk_cap_attrs[i];
+		attr->attr.name = __clk_get_name(c);
+		/* octal permission is preferred nowadays */
+		attr->attr.mode = 0644;
+		attr->show = clk_cap_show;
+		attr->store = clk_cap_store;
+		sysfs_attr_init(&attr->attr);
+		if (sysfs_create_file(&pdata->clk_cap_kobj, &attr->attr)) {
+			dev_err(&dev->dev, "Could not create sysfs attribute %s\n",
+				__clk_get_name(c));
+			err = -EIO;
+			goto fail_clks;
+		}
+	}
+
 	return 0;
+
+fail_clks:
+	/* kobj of acm_kobj_ktype cleans up sysfs entries automatically */
+	kobject_put(&pdata->clk_cap_kobj);
+
+fail_clk_cap:
+	device_remove_file(&dev->dev, &dev_attr_force_idle);
 
 fail_force_idle:
 	attr = &pdata->power_attrib->power_attr[NVHOST_POWER_SYSFS_ATTRIB_FORCE_ON];
@@ -856,6 +962,9 @@ void nvhost_module_deinit(struct platform_device *dev)
 	if (pdata->bwmgr_handle)
 		tegra_bwmgr_unregister(pdata->bwmgr_handle);
 #endif
+
+	/* kobj of acm_kobj_ktype cleans up sysfs entries automatically */
+	kobject_put(&pdata->clk_cap_kobj);
 
 	if (pdata->power_kobj) {
 		for (i = 0; i < NVHOST_POWER_SYSFS_ATTRIB_MAX; i++) {
@@ -960,6 +1069,23 @@ static void nvhost_module_load_regs(struct platform_device *pdev, bool prod)
 			host1x_writel(pdev, regs->addr, regs->prod);
 		else
 			host1x_writel(pdev, regs->addr, regs->disable);
+		regs++;
+	}
+}
+
+static void nvhost_module_set_actmon_regs(struct platform_device *pdev)
+{
+	struct nvhost_device_data *pdata = platform_get_drvdata(pdev);
+	struct nvhost_actmon_register *regs = pdata->actmon_setting_regs;
+
+	if (!regs)
+		return;
+
+	if (nvhost_dev_is_virtual(pdev))
+		return;
+
+	while (regs->addr) {
+		host1x_writel(pdev, regs->addr, regs->val);
 		regs++;
 	}
 }
@@ -1186,11 +1312,17 @@ static int nvhost_module_finalize_poweron(struct device *dev)
 		goto out;
 	}
 
+
+	/* Set actmon registers */
+	nvhost_module_set_actmon_regs(pdev);
+
 	/* set default EMC rate to zero */
 	if (pdata->bwmgr_handle) {
 		for (i = 0; i < NVHOST_MODULE_MAX_CLOCKS; i++) {
 			if (nvhost_module_emc_clock(&pdata->clocks[i])) {
+				mutex_lock(&client_list_lock);
 				nvhost_module_update_rate(pdev, i);
+				mutex_unlock(&client_list_lock);
 				break;
 			}
 		}

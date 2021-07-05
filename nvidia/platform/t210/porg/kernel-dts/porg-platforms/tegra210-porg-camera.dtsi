@@ -14,47 +14,91 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
+#include "tegra210-porg-camera-rbpcv2-dual-imx219.dtsi"
+#include "tegra210-porg-camera-rbpcv2-imx219.dtsi"
 
 / {
 	tegra-camera-platform {
 		compatible = "nvidia, tegra-camera-platform";
 
-		status = "okay";
-
-		/**
-		* Physical settings to calculate max ISO BW
-		*
-		* num_csi_lanes = <>;
-		* Total number of CSI lanes when all cameras are active
-		*
-		* max_lane_speed = <>;
-		* Max lane speed in Kbit/s
-		*
-		* min_bits_per_pixel = <>;
-		* Min bits per pixel
-		*
-		* vi_peak_byte_per_pixel = <>;
-		* Max byte per pixel for the VI ISO case
-		*
-		* vi_bw_margin_pct = <>;
-		* Vi bandwidth margin in percentage
-		*
-		* max_pixel_rate = <>;
-		* Max pixel rate in Kpixel/s for the ISP ISO case
-		*
-		* isp_peak_byte_per_pixel = <>;
-		* Max byte per pixel for the ISP ISO case
-		*
-		* isp_bw_margin_pct = <>;
-		* Isp bandwidth margin in percentage
-		*/
-		num_csi_lanes = <4>;
-		max_lane_speed = <2500000>;
-		min_bits_per_pixel = <10>;
-		vi_peak_byte_per_pixel = <2>;
-		vi_bw_margin_pct = <25>;
-		max_pixel_rate = <160000>;
-		isp_peak_byte_per_pixel = <5>;
-		isp_bw_margin_pct = <25>;
+		modules {
+			cam_module0: module0 {
+				status = "disabled";
+				cam_module0_drivernode0: drivernode0 {
+					status = "disabled";
+				};
+				cam_module0_drivernode1: drivernode1 {
+					status = "disabled";
+					pcl_id = "v4l2_lens";
+				};
+			};
+			cam_module1: module1 {
+				status = "disabled";
+				cam_module1_drivernode0: drivernode0 {
+					status = "disabled";
+				};
+				cam_module1_drivernode1: drivernode1 {
+					status = "disabled";
+					pcl_id = "v4l2_lens";
+				};
+			};
+		};
 	};
+
+	/* all vi and csi ports are disabled by default */
+	host1x {
+		vi_base {
+			ports {
+				vi_port0 {
+					status = "disabled";
+					vi_in0: endpoint {
+						status = "disabled";
+					};
+				};
+				vi_port1 {
+					status = "disabled";
+					vi_in1: endpoint {
+						status = "disabled";
+					};
+				};
+			};
+		};
+		csi_base{
+			csi_chan0 {
+				status = "disabled";
+				ports {
+					csi_chan0_port0 {
+						status = "disabled";
+						csi_in0: endpoint@0 {
+							status = "disabled";
+						};
+					};
+					csi_chan0_port1 {
+						status = "disabled";
+						csi_out0: endpoint@1 {
+							status = "disabled";
+						};
+					};
+				};
+			};
+			csi_chan1 {
+				status = "disabled";
+				ports {
+					csi_chan1_port0 {
+						status = "disabled";
+						csi_in1: endpoint@2 {
+							status = "disabled";
+						};
+					};
+					csi_chan1_port1 {
+						status = "disabled";
+						csi_out1: endpoint@3 {
+							status = "disabled";
+						};
+					};
+				};
+			};
+		};
+	};
+
 };

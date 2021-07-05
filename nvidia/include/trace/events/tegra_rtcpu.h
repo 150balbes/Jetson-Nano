@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2019 NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2016-2020, NVIDIA CORPORATION. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -129,7 +129,7 @@ TRACE_EVENT(rtcpu_string,
 		__entry->tstamp = tstamp;
 		__entry->id = id;
 		__entry->len = len;
-		strncpy(__entry->data, data, sizeof(__entry->data));
+		strlcpy(__entry->data, data, sizeof(__entry->data));
 	),
 	TP_printk("tstamp:%llu id:0x%08x str:\"%.*s\"",
 		__entry->tstamp, __entry->id,

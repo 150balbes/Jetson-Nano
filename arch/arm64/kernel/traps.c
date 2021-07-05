@@ -283,11 +283,10 @@ void die(const char *str, struct pt_regs *regs, int err)
 	int ret;
 	unsigned long flags;
 
-	local_irq_save(flags);
+	raw_spin_lock_irqsave(&die_lock, flags);
 
 	oops_enter();
 
-	raw_spin_lock(&die_lock);
 	console_verbose();
 	bust_spinlocks(1);
 	ret = __die(str, err, regs);
@@ -297,7 +296,6 @@ void die(const char *str, struct pt_regs *regs, int err)
 
 	bust_spinlocks(0);
 	add_taint(TAINT_DIE, LOCKDEP_NOW_UNRELIABLE);
-	raw_spin_unlock(&die_lock);
 	oops_exit();
 
 	if (in_interrupt())
@@ -305,7 +303,7 @@ void die(const char *str, struct pt_regs *regs, int err)
 	if (panic_on_oops)
 		panic("Fatal exception");
 
-	local_irq_restore(flags);
+	raw_spin_unlock_irqrestore(&die_lock, flags);
 
 	if (ret != NOTIFY_STOP)
 		do_exit(SIGSEGV);
@@ -735,8 +733,8 @@ asmlinkage void handle_serr(unsigned long daif, unsigned long spsr,
 	asm volatile ("mrs %0, esr_el1" : "=r"(esr));
 
 	pr_crit("CPU%d: SError detected, daif=%lx, "
-	        "spsr=0x%lx, mpidr=%lx, esr=%lx\n",
-	        smp_processor_id(), daif, spsr, mpidr, esr);
+		"spsr=0x%lx, mpidr=%lx, esr=%lx\n",
+		raw_smp_processor_id(), daif, spsr, mpidr, esr);
 #ifdef CONFIG_SERROR_HANDLER
 	raw_spin_lock_irqsave(&serr_lock, flags);
 	list_for_each_entry(hook, &serr_hook, node)

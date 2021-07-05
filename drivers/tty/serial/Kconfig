@@ -14,12 +14,6 @@ config SERIAL_EARLYCON
 	  the console before standard serial driver is probed. The console is
 	  enabled when early_param is processed.
 
-config SERIAL_LOGLEVEL_PRINT
-	bool "Print LOG LEVEL info in kernel logs"
-	help
-	  Support for serial print consoles to prepend the kernel log
-	  information with kernel log level.
-
 source "drivers/tty/serial/8250/Kconfig"
 
 comment "Non-8250 serial port support"

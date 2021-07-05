@@ -1,0 +1,136 @@
+/*
+ * tegra210-p3448-0003-p3542-0000.dts
+ *
+ * Copyright (c) 2020, NVIDIA CORPORATION.  All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; version 2 of the License.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with this program; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+ *
+ */
+
+#include "../../porg/kernel-dts/tegra210-porg-p3448-common.dtsi"
+#include "batuu-platforms/tegra210-batuu-pinmux-p3448-0003.dtsi"
+#include "batuu-platforms/tegra210-batuu-gpio-p3448-0003.dtsi"
+#include "batuu-platforms/tegra210-batuu-p3448-emc-a00.dtsi"
+
+/ {
+	model = "NVIDIA Jetson Nano 2GB Developer Kit";
+	compatible = "nvidia,p3542-0000+p3448-0003", "nvidia,jetson-nano-2gb", "nvidia,jetson-nano", "nvidia,tegra210";
+	nvidia,dtsfilename = __FILE__;
+
+	reserved-memory {
+		vpr-carveout {
+			status = "disabled";
+		};
+	};
+
+	spi@70410000 {
+		status = "okay";
+		spiflash@0 {
+			controller-data {
+				nvidia,x1-len-limit = <16>;
+				nvidia,x4-bus-speed = <104000000>;
+				nvidia,x4-dymmy-cycle = <8>;
+			};
+		};
+	};
+
+	gpio@6000d000 {
+		/* gpio-name for 40-pin header, gpio-name given as COL(10) x ROW(20) */
+		gpio-line-names = "",   "",     "",     "",     "",     "",     "",     "",     "",     "",
+		"",     "",     "SPI1_MOSI",    "SPI1_MISO",    "SPI1_SCK",     "SPI1_CS0",     "SPI0_MOSI",    "SPI0_MISO",    "SPI0_SCK",     "SPI0_CS0",
+		"SPI0_CS1",     "",     "",     "",     "",     "",     "",     "",     "",     "",
+		"",     "",     "",     "",     "",     "",     "",     "",     "GPIO13",      "",
+		"",     "",     "",     "",     "",     "",     "",     "",     "",     "",
+		"UART1_RTS",    "UART1_CTS",    "",     "",     "",     "",     "",     "",     "",     "",
+		"",     "",     "",     "",     "",     "",     "",     "",     "",     "",
+		"",     "",     "",     "",     "",     "",     "I2S0_FS",    "I2S0_DIN",    "I2S0_DOUT",   "I2S0_SCLK",
+		"",     "",     "",     "",     "",     "",     "",     "",     "",     "",
+		"",     "",     "",     "",     "",     "",     "",     "",     "",     "",
+		"",     "",     "",     "",     "",     "",     "",     "",     "",     "",
+		"",     "",     "",     "",     "",     "",     "",     "",     "",     "",
+		"",     "",     "",     "",     "",     "",     "",     "",     "",     "",
+		"",     "",     "",     "",     "",     "",     "",     "",     "",     "",
+		"",     "",     "",     "",     "",     "",     "",     "",     "",     "GPIO01",
+		"",     "",     "",     "",     "",     "",     "",     "",     "",     "",
+		"",     "",     "",     "",     "",     "",     "",     "",     "GPIO07",   "",
+		"",     "",     "",     "",     "",     "",     "",     "",     "",     "",
+		"",     "",     "",     "",     "",     "",     "",     "",     "",     "",
+		"",     "",     "",     "",     "GPIO12",       "",     "",     "",     "",     "",
+		"GPIO11",      "",     "",     "",     "",     "",     "",     "",     "",     "",
+		"",     "",     "",     "",     "",     "",     "GPIO09",     "",     "",     "",
+		"",     "",     "",     "",     "",     "",     "",     "",     "",     "",
+		"",     "",     "SPI1_CS1",     "",     "",     "",     "",     "",     "",     "";
+	};
+
+	xudc@700d0000 {
+		status = "okay";
+	};
+
+	extcon {
+		extcon@0 {
+			status = "disabled";
+		};
+	};
+
+	external-memory-controller@7001b000 {
+		emc-table@0 {
+			nvidia,ram-code = <1>;
+		};
+	};
+
+	host1x {
+		dc@54240000 {
+			status = "disabled";
+		};
+		sor {
+			status = "disabled";
+			dp-display {
+				status = "disabled";
+			};
+		};
+		dpaux {
+			status = "disabled";
+		};
+		i2c@546c0000 {
+			ina3221x: ina3221x@40 {
+				status = "disabled";
+			};
+		};
+	};
+	xusb_padctl@7009f000 {
+		ports {
+			usb2-0 {
+				vbus-supply = <&battery_reg>;
+			};
+			usb2-1 {
+				vbus-supply = <&p3542_vdd_usb_vbus_en>;
+			};
+			usb2-2 {
+				vbus-supply = <&p3542_vdd_usb_vbus_en>;
+			};
+		};
+	};
+	regulators {
+		p3542_vdd_usb_vbus_en: regulator@11 {
+			compatible = "regulator-fixed";
+			reg = <11>;
+			regulator-name = "vdd-usb-vbus-en";
+			regulator-min-microvolt = <5000000>;
+			regulator-max-microvolt = <5000000>;
+			gpio = <&gpio TEGRA_GPIO(I, 2) 0>;
+			enable-active-high;
+			vin-supply = <&p3449_vdd_5v0_sys>;
+		};
+	};
+};

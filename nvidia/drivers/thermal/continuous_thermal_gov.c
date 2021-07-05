@@ -22,6 +22,7 @@
 #include <linux/pwm.h>
 #include <trace/events/thermal.h>
 #include <linux/platform_data/pwm_fan.h>
+#include <linux/therm_est.h>
 
 #include "thermal_core.h"
 
@@ -379,7 +380,7 @@ static int continuous_thermal_gov_bind(struct thermal_zone_device *tz)
 	if (params)
 		pr_info("%s: DTB IIR params used\n", DRV_NAME);
 	else
-		pr_warn("%s: Default IIR params used\n", DRV_NAME);
+		pr_info("%s: Default IIR params used\n", DRV_NAME);
 
 	if (!gov->pm.iir_upper_width)
 		gov->pm.iir_upper_width = UPPER_WIDTH;
@@ -513,6 +514,12 @@ continuous_thermal_gov_get_target(struct thermal_zone_device *tz,
 			gov->is_fan_on = false;
 	}
 
+#if IS_BUILTIN(CONFIG_PWM_FAN)
+	if (is_fan_always_on(cdev)) {
+		gov->is_fan_on = true;
+	}
+#endif
+
 	//check if doing step based fan control, or smooth ramp
 	if (gov->is_fan_on) {
 		//fan table lookup
@@ -588,8 +595,8 @@ static int continuous_thermal_gov_throttle(struct thermal_zone_device *tz, int t
 	return 0;
 }
 
-static int continuous_thermal_gov_of_parse(struct thermal_zone_params *tzp,
-					struct device_node *np)
+int continuous_thermal_gov_update_params(struct thermal_zone_params *tzp,
+		struct device_node *np)
 {
 	u32 val;
 	int of_err = 0;
@@ -620,6 +627,13 @@ static int continuous_thermal_gov_of_parse(struct thermal_zone_params *tzp,
 	pr_debug("GOV of parse\n");
 	tzp->governor_params = gpm;
 	return 0;
+}
+EXPORT_SYMBOL_GPL(continuous_thermal_gov_update_params);
+
+static int continuous_thermal_gov_of_parse(struct thermal_zone_params *tzp,
+					struct device_node *np)
+{
+	return continuous_thermal_gov_update_params(tzp, np);
 }
 
 static struct thermal_governor continuous_thermal_gov = {

@@ -1,0 +1,216 @@
+From c01ec9ea4ab673654851c7c9fb4514854c2c6f47 Mon Sep 17 00:00:00 2001
+From: Peter Zijlstra <peterz@infradead.org>
+Date: Wed, 22 Mar 2017 11:36:00 +0100
+Subject: [PATCH 017/371] futex: Drop hb->lock before enqueueing on the rtmutex
+X-NVConfidentiality: public
+
+Upstream commit 56222b212e8edb1cf51f5dd73ff645809b082b40
+
+When PREEMPT_RT_FULL does the spinlock -> rt_mutex substitution the PI
+chain code will (falsely) report a deadlock and BUG.
+
+The problem is that it hold hb->lock (now an rt_mutex) while doing
+task_blocks_on_rt_mutex on the futex's pi_state::rtmutex. This, when
+interleaved just right with futex_unlock_pi() leads it to believe to see an
+AB-BA deadlock.
+
+  Task1 (holds rt_mutex,	Task2 (does FUTEX_LOCK_PI)
+         does FUTEX_UNLOCK_PI)
+
+				lock hb->lock
+				lock rt_mutex (as per start_proxy)
+  lock hb->lock
+
+Which is a trivial AB-BA.
+
+It is not an actual deadlock, because it won't be holding hb->lock by the
+time it actually blocks on the rt_mutex, but the chainwalk code doesn't
+know that and it would be a nightmare to handle this gracefully.
+
+To avoid this problem, do the same as in futex_unlock_pi() and drop
+hb->lock after acquiring wait_lock. This still fully serializes against
+futex_unlock_pi(), since adding to the wait_list does the very same lock
+dance, and removing it holds both locks.
+
+Aside of solving the RT problem this makes the lock and unlock mechanism
+symetric and reduces the hb->lock held time.
+
+Reported-and-tested-by: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+Suggested-by: Thomas Gleixner <tglx@linutronix.de>
+Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Cc: juri.lelli@arm.com
+Cc: xlpang@redhat.com
+Cc: rostedt@goodmis.org
+Cc: mathieu.desnoyers@efficios.com
+Cc: jdesfossez@efficios.com
+Cc: dvhart@infradead.org
+Cc: bristot@redhat.com
+Link: http://lkml.kernel.org/r/20170322104152.161341537@infradead.org
+Signed-off-by: Thomas Gleixner <tglx@linutronix.de>
+Signed-off-by: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+---
+ kernel/futex.c                  | 30 +++++++++++++++++--------
+ kernel/locking/rtmutex.c        | 49 +++++++++++++++++++++++------------------
+ kernel/locking/rtmutex_common.h |  3 +++
+ 3 files changed, 52 insertions(+), 30 deletions(-)
+
+diff --git a/kernel/futex.c b/kernel/futex.c
+index 5f94c05..3b5ff61a 100644
+--- a/kernel/futex.c
++++ b/kernel/futex.c
+@@ -2703,20 +2703,33 @@ static int futex_lock_pi(u32 __user *uaddr, unsigned int flags,
+ 		goto no_block;
+ 	}
+ 
++	rt_mutex_init_waiter(&rt_waiter);
++
+ 	/*
+-	 * We must add ourselves to the rt_mutex waitlist while holding hb->lock
+-	 * such that the hb and rt_mutex wait lists match.
++	 * On PREEMPT_RT_FULL, when hb->lock becomes an rt_mutex, we must not
++	 * hold it while doing rt_mutex_start_proxy(), because then it will
++	 * include hb->lock in the blocking chain, even through we'll not in
++	 * fact hold it while blocking. This will lead it to report -EDEADLK
++	 * and BUG when futex_unlock_pi() interleaves with this.
++	 *
++	 * Therefore acquire wait_lock while holding hb->lock, but drop the
++	 * latter before calling rt_mutex_start_proxy_lock(). This still fully
++	 * serializes against futex_unlock_pi() as that does the exact same
++	 * lock handoff sequence.
+ 	 */
+-	rt_mutex_init_waiter(&rt_waiter);
+-	ret = rt_mutex_start_proxy_lock(&q.pi_state->pi_mutex, &rt_waiter, current);
++	raw_spin_lock_irq(&q.pi_state->pi_mutex.wait_lock);
++	spin_unlock(q.lock_ptr);
++	ret = __rt_mutex_start_proxy_lock(&q.pi_state->pi_mutex, &rt_waiter, current);
++	raw_spin_unlock_irq(&q.pi_state->pi_mutex.wait_lock);
++
+ 	if (ret) {
+ 		if (ret == 1)
+ 			ret = 0;
+ 
++		spin_lock(q.lock_ptr);
+ 		goto no_block;
+ 	}
+ 
+-	spin_unlock(q.lock_ptr);
+ 
+ 	if (unlikely(to))
+ 		hrtimer_start_expires(&to->timer, HRTIMER_MODE_ABS);
+@@ -2729,6 +2742,9 @@ static int futex_lock_pi(u32 __user *uaddr, unsigned int flags,
+ 	 * first acquire the hb->lock before removing the lock from the
+ 	 * rt_mutex waitqueue, such that we can keep the hb and rt_mutex
+ 	 * wait lists consistent.
++	 *
++	 * In particular; it is important that futex_unlock_pi() can not
++	 * observe this inconsistency.
+ 	 */
+ 	if (ret && !rt_mutex_cleanup_proxy_lock(&q.pi_state->pi_mutex, &rt_waiter))
+ 		ret = 0;
+@@ -2840,10 +2856,6 @@ static int futex_unlock_pi(u32 __user *uaddr, unsigned int flags)
+ 
+ 		get_pi_state(pi_state);
+ 		/*
+-		 * Since modifying the wait_list is done while holding both
+-		 * hb->lock and wait_lock, holding either is sufficient to
+-		 * observe it.
+-		 *
+ 		 * By taking wait_lock while still holding hb->lock, we ensure
+ 		 * there is no point where we hold neither; and therefore
+ 		 * wake_futex_pi() must observe a state consistent with what we
+diff --git a/kernel/locking/rtmutex.c b/kernel/locking/rtmutex.c
+index ef5cdcd..7f8ee5d 100644
+--- a/kernel/locking/rtmutex.c
++++ b/kernel/locking/rtmutex.c
+@@ -1684,31 +1684,14 @@ void rt_mutex_proxy_unlock(struct rt_mutex *lock,
+ 	rt_mutex_set_owner(lock, NULL);
+ }
+ 
+-/**
+- * rt_mutex_start_proxy_lock() - Start lock acquisition for another task
+- * @lock:		the rt_mutex to take
+- * @waiter:		the pre-initialized rt_mutex_waiter
+- * @task:		the task to prepare
+- *
+- * Returns:
+- *  0 - task blocked on lock
+- *  1 - acquired the lock for task, caller should wake it up
+- * <0 - error
+- *
+- * Special API call for FUTEX_REQUEUE_PI support.
+- */
+-int rt_mutex_start_proxy_lock(struct rt_mutex *lock,
++int __rt_mutex_start_proxy_lock(struct rt_mutex *lock,
+ 			      struct rt_mutex_waiter *waiter,
+ 			      struct task_struct *task)
+ {
+ 	int ret;
+ 
+-	raw_spin_lock_irq(&lock->wait_lock);
+-
+-	if (try_to_take_rt_mutex(lock, task, NULL)) {
+-		raw_spin_unlock_irq(&lock->wait_lock);
++	if (try_to_take_rt_mutex(lock, task, NULL))
+ 		return 1;
+-	}
+ 
+ 	/* We enforce deadlock detection for futexes */
+ 	ret = task_blocks_on_rt_mutex(lock, waiter, task,
+@@ -1727,14 +1710,38 @@ int rt_mutex_start_proxy_lock(struct rt_mutex *lock,
+ 	if (unlikely(ret))
+ 		remove_waiter(lock, waiter);
+ 
+-	raw_spin_unlock_irq(&lock->wait_lock);
+-
+ 	debug_rt_mutex_print_deadlock(waiter);
+ 
+ 	return ret;
+ }
+ 
+ /**
++ * rt_mutex_start_proxy_lock() - Start lock acquisition for another task
++ * @lock:		the rt_mutex to take
++ * @waiter:		the pre-initialized rt_mutex_waiter
++ * @task:		the task to prepare
++ *
++ * Returns:
++ *  0 - task blocked on lock
++ *  1 - acquired the lock for task, caller should wake it up
++ * <0 - error
++ *
++ * Special API call for FUTEX_REQUEUE_PI support.
++ */
++int rt_mutex_start_proxy_lock(struct rt_mutex *lock,
++			      struct rt_mutex_waiter *waiter,
++			      struct task_struct *task)
++{
++	int ret;
++
++	raw_spin_lock_irq(&lock->wait_lock);
++	ret = __rt_mutex_start_proxy_lock(lock, waiter, task);
++	raw_spin_unlock_irq(&lock->wait_lock);
++
++	return ret;
++}
++
++/**
+  * rt_mutex_next_owner - return the next owner of the lock
+  *
+  * @lock: the rt lock query
+diff --git a/kernel/locking/rtmutex_common.h b/kernel/locking/rtmutex_common.h
+index b620aaf..f4c34c4 100644
+--- a/kernel/locking/rtmutex_common.h
++++ b/kernel/locking/rtmutex_common.h
+@@ -105,6 +105,9 @@ extern void rt_mutex_init_proxy_locked(struct rt_mutex *lock,
+ extern void rt_mutex_proxy_unlock(struct rt_mutex *lock,
+ 				  struct task_struct *proxy_owner);
+ extern void rt_mutex_init_waiter(struct rt_mutex_waiter *waiter);
++extern int __rt_mutex_start_proxy_lock(struct rt_mutex *lock,
++				     struct rt_mutex_waiter *waiter,
++				     struct task_struct *task);
+ extern int rt_mutex_start_proxy_lock(struct rt_mutex *lock,
+ 				     struct rt_mutex_waiter *waiter,
+ 				     struct task_struct *task);
+-- 
+2.7.4
+

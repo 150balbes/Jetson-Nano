@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2015-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -309,6 +309,8 @@ struct ttcan_controller {
 	u32 intr_tt_enable_reg;
 	u32 ts_prescalar;
 	u32 tt_mem_elements;
+	u32 tdc;
+	u32 tdc_offset;
 	unsigned long tx_object;
 	unsigned long tx_obj_cancelled;
 	int rxq0_mem;

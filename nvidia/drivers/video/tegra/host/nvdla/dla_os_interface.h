@@ -1,7 +1,7 @@
 /*
  * NVDLA OS Interface
  *
- * Copyright (c) 2016-2018, NVIDIA Corporation.  All rights reserved.
+ * Copyright (c) 2016-2019, NVIDIA Corporation.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -74,18 +74,22 @@
 #define DLA_INT_ON_COMPLETE_SHIFT	8
 #define DLA_INT_ON_ERROR_SHIFT		9
 
-#define PREACTION_TERMINATE	0x0
-#define PREACTION_SEM_EQ	0x90
-#define PREACTION_SEM_GE	0x92
-#define PREACTION_GOS_EQ	0xB0
-#define PREACTION_GOS_GE	0xB2
-#define PREACTION_TASK_STATUS	0xC0
+/* control actions */
+#define ACTION_TERMINATE	0x0
 
-#define POSTACTION_TERMINATE	0x0
-#define POSTACTION_SEM		0x80
-#define POSTACTION_TS_SEM	0x83
-#define POSTACTION_GOS		0xA0
-#define POSTACTION_TASK_STATUS	0xC1
+/* conditional actions */
+#define ACTION_SEM_EQ	0x90
+#define ACTION_SEM_GE	0x92
+#define ACTION_GOS_EQ	0xB0
+#define ACTION_GOS_GE	0xB2
+#define ACTION_TASK_STATUS_EQ	0xC0
+
+/* write actions */
+#define ACTION_WRITE_SEM	0x80
+#define ACTION_WRITE_TS_SEM	0x83
+#define ACTION_WRITE_TIMESTAMP  	0x87
+#define ACTION_WRITE_GOS	0xA0
+#define ACTION_WRITE_TASK_STATUS	0xC1
 
 #define PING_DATA_SIZE		4
 #define BUFFER_MULTIPLIER	4
@@ -124,6 +128,7 @@
 #define DLA_ERR_RETRY			13
 #define DLA_ERR_TASK_STATUS_MISMATCH	14
 #define DLA_ERR_ENGINE_TIMEOUT		15
+#define DLA_ERR_DATA_MISMATCH		16
 
 #define DLA_MSG_CMD_ERROR		1
 #define DLA_MSG_CMD_COMPLETE		2
@@ -150,13 +155,10 @@
  * @address_list: IOVA address list for addresses used in surface descriptors
  *    Index references used in address list are as:
  *    address_list[0]:  address of a dla_network_desc
- *    address_list[net.operation_desc_index]   : start address of a list of dla_operation_container
- *    address_list[net.surface_desc_index]     : start address of a list of dla_surface_container
  *    address_list[net.dependency_graph_index] : start address of a list of dla_common_op_desc
  *    address_list[net.lut_data_index]         : start address of a list of dla_lut_param
  *    address_list[net.roi_array_index]        : start address of a list of dla_roi_desc, but the
  *                                               first entry has to be dla_roi_array_desc
- *    address_list[net.surface_index]          : start address of a list of dla_surface_container
  * @num_addresses: Number of addresses in address list
  * @status: Update task status here after completion
  */
@@ -228,6 +230,17 @@ struct dla_action_gos {
 struct dla_action_task_status {
 	uint64_t address;
 	uint16_t status;
+} __attribute__ ((packed));
+
+/**
+ * Timestamp update action structure
+ *
+ * OPCODE = 0x87
+ *
+ * @address: Address to write timestamp
+ */
+struct dla_action_timestamp {
+	uint64_t address;
 } __attribute__ ((packed));
 
 /**

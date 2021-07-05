@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2016, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2015-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -25,14 +25,27 @@
 #include <iomap.h>
 #include "tegra186-aowake.h"
 
+#define WAKE_AOWAKE_CNTRL_0	0x0
 #define WAKE_AOWAKE_CTRL_0	0x4F4
 #define WAKE_AOWAKE_CNTRL_24	0x60
 #define WAKE24_WAKE_LEVEL_MASK	BIT(3)
+
+struct tegra_aowake_cntrl_filters {
+	u32 wake;
+	u32 filter_mask;
+	u32 filter_val;
+};
+
+struct tegra_aowake_chip_data {
+	u32 num_wakes_filter;
+	const struct tegra_aowake_cntrl_filters *cntrl_filters;
+};
 
 struct tegra_aowake_info {
 	struct device *dev;
 	void __iomem *aobase;
 	bool invert_pmic_interrupt;
+	const struct tegra_aowake_chip_data *cdata;
 };
 
 static struct tegra_aowake_info *tegra186_aowake;
@@ -106,6 +119,27 @@ static void aowake_configure_pmic_polarity(struct device *dev,
 	dev_info(dev, "WAKE_AOWAKE_CNTRL_24(PMU_INT) = %lu\n", reg);
 }
 
+static void aowake_apply_cdata(struct device *dev,
+		struct tegra_aowake_info *taowake)
+{
+	const struct tegra_aowake_cntrl_filters *cntrl_filters;
+	u32 reg;
+	int i;
+
+	if (!taowake->cdata)
+		return;
+
+	cntrl_filters = taowake->cdata->cntrl_filters;
+	for (i = 0; i < taowake->cdata->num_wakes_filter; i++) {
+		reg = WAKE_AOWAKE_CNTRL_0 + (cntrl_filters[i].wake * 4);
+		tegra_aowake_update(reg,
+				cntrl_filters[i].filter_mask,
+				cntrl_filters[i].filter_val);
+		dev_info(dev, "WAKE_AOWAKE_CNTRL_%u = 0x%lx\n",
+			cntrl_filters[i].wake, tegra_aowake_read(reg));
+	}
+}
+
 static int tegra_aowake_probe(struct platform_device *pdev)
 {
 	struct device *dev  = &pdev->dev;
@@ -133,14 +167,31 @@ static int tegra_aowake_probe(struct platform_device *pdev)
 
 	taowake->dev = dev;
 	taowake->aobase = aobase;
-	aowake_configure_pmic_polarity(dev, taowake);
+	taowake->cdata = of_device_get_match_data(&pdev->dev);
 	tegra186_aowake = taowake;
+
+	aowake_apply_cdata(dev, taowake);
+	aowake_configure_pmic_polarity(dev, taowake);
+
 	return 0;
 }
 
+static const struct tegra_aowake_cntrl_filters tegra186_cntrl_filters[1] = {
+	/* SW Wake (wake83) needs SR_CAPTURE filter to be enabled*/
+	{ .wake = 83,
+	  .filter_mask = 0x7,
+	  .filter_val = 0x2,
+	},
+};
+
+static const struct tegra_aowake_chip_data tegra186_cdata = {
+	.num_wakes_filter = ARRAY_SIZE(tegra186_cntrl_filters),
+	.cntrl_filters = tegra186_cntrl_filters,
+};
+
 static struct of_device_id tegra_aowake_of_match[] = {
-	{ .compatible = "nvidia,tegra194-aowake", NULL },
-	{ .compatible = "nvidia,tegra186-aowake", NULL },
+	{ .compatible = "nvidia,tegra194-aowake", .data = &tegra186_cdata },
+	{ .compatible = "nvidia,tegra186-aowake", .data = &tegra186_cdata },
 	{ },
 };
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2018-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -26,6 +26,7 @@
 #include <nvgpu/os_sched.h>
 #include <nvgpu/utils.h>
 #include <nvgpu/channel_sync.h>
+#include <nvgpu/vpr.h>
 
 #include <nvgpu/hw/gk20a/hw_pbdma_gk20a.h>
 
@@ -59,13 +60,11 @@ static int nvgpu_submit_prepare_syncs(struct channel_gk20a *c,
 			c->sync = nvgpu_channel_sync_create(c, false);
 			if (!c->sync) {
 				err = -ENOMEM;
-				nvgpu_mutex_release(&c->sync_lock);
 				goto fail;
 			}
 			new_sync_created = true;
 		}
 		nvgpu_atomic_inc(&c->sync->refcount);
-		nvgpu_mutex_release(&c->sync_lock);
 	}
 
 	if (g->ops.fifo.resetup_ramfc && new_sync_created) {
@@ -151,6 +150,9 @@ static int nvgpu_submit_prepare_syncs(struct channel_gk20a *c,
 		goto clean_up_incr_cmd;
 	}
 
+	if (g->aggressive_sync_destroy_thresh) {
+		nvgpu_mutex_release(&c->sync_lock);
+	}
 	return 0;
 
 clean_up_incr_cmd:
@@ -169,6 +171,9 @@ clean_up_wait_cmd:
 		job->wait_cmd = NULL;
 	}
 fail:
+	if (g->aggressive_sync_destroy_thresh) {
+		nvgpu_mutex_release(&c->sync_lock);
+	}
 	*wait_cmd = NULL;
 	return err;
 }
@@ -207,6 +212,7 @@ static int nvgpu_submit_append_gpfifo_user_direct(struct channel_gk20a *c,
 	u32 end = start + len; /* exclusive */
 	int err;
 
+	nvgpu_speculation_barrier();
 	if (end > gpfifo_size) {
 		/* wrap-around */
 		int length0 = gpfifo_size - start;
@@ -383,6 +389,7 @@ static int nvgpu_submit_channel_gpfifo(struct channel_gk20a *c,
 	 *  - pre- or post-fence functionality
 	 *  - channel wdt
 	 *  - GPU rail-gating with non-deterministic channels
+	 *  - VPR resize enabled with non-deterministic channels
 	 *  - buffer refcounting
 	 *
 	 * If none of the conditions are met, then job tracking is not
@@ -392,8 +399,9 @@ static int nvgpu_submit_channel_gpfifo(struct channel_gk20a *c,
 	need_job_tracking = (flags & NVGPU_SUBMIT_FLAGS_FENCE_WAIT) ||
 			(flags & NVGPU_SUBMIT_FLAGS_FENCE_GET) ||
 			c->timeout.enabled ||
-			(nvgpu_is_enabled(g, NVGPU_CAN_RAILGATE)
-			 && !c->deterministic) ||
+			((nvgpu_is_enabled(g, NVGPU_CAN_RAILGATE) ||
+				nvgpu_is_vpr_resize_enabled()) &&
+				!c->deterministic) ||
 			!skip_buffer_refcounting;
 
 	if (need_job_tracking) {

@@ -81,15 +81,35 @@ static const struct of_device_id tegra_disb_pd[] = {
 #define HDA_IPFS_INTR_MASK        0x188
 #define HDA_IPFS_EN_INTR          (1 << 16)
 
+/* FPCI */
+#define FPCI_DBG_CFG_2		  0xF4
+#define FPCI_FIFO_WATERMARK	  0x7c
+#define FPCI_BUFSZ_NUM_OF_FRAMES  0x80
+
+#define FPCI_GCAP_NSDO_SHIFT	  18
+#define FPCI_GCAP_NSDO_MASK	  (0x3 << FPCI_GCAP_NSDO_SHIFT)
+
+/* default values for watermark registers */
+#define FIFO_WATERMARK_VAL	  0x07070707
+#define BUFSZ_NUM_FRAMES_VAL	  0x000a0a0a
+
 /* max number of SDs */
 #define NUM_CAPTURE_SD 1
 #define NUM_PLAYBACK_SD 1
 
 /* GSC_ID register */
 #define HDA_GSC_REG		0x1e0
+#define HDA_GSC_ID		10
 
 #define HDA_MAX_CODECS		8
 #define CHAR_BUF_SIZE_MAX	50
+
+struct tegra_hda_chip_data {
+	unsigned int war_sdo_lines;
+	bool set_watermark;
+	bool war_sdo_bw;
+	bool set_gsc_id;
+};
 
 struct hda_pcm_devices {
 	struct azx_pcm *apcm;
@@ -108,9 +128,11 @@ struct hda_tegra {
 	struct clk *hda2hdmi_clk;
 	int partition_id;
 	void __iomem *regs;
+	void __iomem *regs_fpci;
 	struct work_struct probe_work;
 	struct kobject *kobj;
 	struct hda_pcm_devices *hda_pcm_dev;
+	const struct tegra_hda_chip_data *cdata;
 };
 
 #ifdef CONFIG_PM
@@ -443,7 +465,7 @@ static int hda_tegra_init_chip(struct azx *chip, struct platform_device *pdev)
 
 	bus->remap_addr = hda->regs + HDA_BAR0;
 	bus->addr = res->start + HDA_BAR0;
-	bus->remap_addr_fpci = hda->regs + HDA_DFPCI_CFG;
+	hda->regs_fpci = hda->regs + HDA_DFPCI_CFG;
 
 	hda_tegra_init(hda);
 
@@ -452,6 +474,7 @@ static int hda_tegra_init_chip(struct azx *chip, struct platform_device *pdev)
 
 static int hda_tegra_first_init(struct azx *chip, struct platform_device *pdev)
 {
+	struct hda_tegra *hda = container_of(chip, struct hda_tegra, chip);
 	struct hdac_bus *bus = azx_bus(chip);
 	struct snd_card *card = chip->card;
 	int err;
@@ -476,15 +499,22 @@ static int hda_tegra_first_init(struct azx *chip, struct platform_device *pdev)
 
 	synchronize_irq(bus->irq);
 
-	/* WAR to override no. of SDO lines on T194    */
-	/* GCAP_NSDO is bits 19:18 in T_AZA_DBG_CFG_2  */
-	/* 0 for 1 SDO, 1 for 2 SDO, 2 for 4 SDO lines */
-	if (!of_property_read_u32(pdev->dev.of_node, "nvidia,num-sdo-stripe",
-			&num_sdo_lines)) {
+	/*
+	 * WAR to override no. of SDO lines on T194.
+	 * GCAP_NSDO is bits 19:18 in T_AZA_DBG_CFG_2
+	 * 0 for 1 SDO, 1 for 2 SDO, 2 for 4 SDO lines
+	 */
+	if (hda->cdata && hda->cdata->war_sdo_lines) {
+		u32 val;
+
+		num_sdo_lines = hda->cdata->war_sdo_lines;
 		dev_info(card->dev, "Override SDO lines to %u\n",
-			num_sdo_lines);
-		azx_fpci_updatel(chip, DBG_CFG_2, AZX_FPCI_GCAP_NSDO,
-				(((num_sdo_lines / 2) & 0x3) << 18));
+			 num_sdo_lines);
+		val = readl(hda->regs_fpci + FPCI_DBG_CFG_2);
+		val &= ~FPCI_GCAP_NSDO_MASK;
+		val |= ((num_sdo_lines >> 1) << FPCI_GCAP_NSDO_SHIFT) &
+		       FPCI_GCAP_NSDO_MASK;
+		writel(val, hda->regs_fpci + FPCI_DBG_CFG_2);
 	}
 
 	gcap = azx_readw(chip, GCAP);
@@ -592,8 +622,24 @@ static int hda_tegra_create(struct snd_card *card,
 	return 0;
 }
 
+static const struct tegra_hda_chip_data tegra194_cdata = {
+	/* GCAP reg shows 2 SDO lines which does not reflect true capability */
+	.war_sdo_lines		= 4,
+
+	/*
+	 * audio can support up to 4SDO lines, but 4SDO lines can not support
+	 * 32K/44.1K/48K 2 channel 16bps audio format due to legacy design
+	 * limitation. With below flag, following condition is avoided while
+	 * deciding number of SDO lines for audio stripe functionality.
+	 * { ((num_channels * bits_per_sample) / number of SDOs) = 8 }
+	 * Ref: Section 5.3.2.3 (Revision 1.0a: HD audio spec.)
+	 */
+	.war_sdo_bw		= true,
+};
+
 static const struct of_device_id hda_tegra_match[] = {
 	{ .compatible = "nvidia,tegra30-hda" },
+	{ .compatible = "nvidia,tegra194-hda", .data = &tegra194_cdata},
 	{},
 };
 MODULE_DEVICE_TABLE(of, hda_tegra_match);
@@ -615,6 +661,9 @@ static int hda_tegra_probe(struct platform_device *pdev)
 		return -ENOMEM;
 	hda->dev = &pdev->dev;
 	chip = &hda->chip;
+
+	/* chip data can be NULL for legacy hda devices */
+	hda->cdata = of_device_get_match_data(&pdev->dev);
 
 	hda->partition_id = tegra_pd_get_powergate_id(tegra_disb_pd);
 	if (hda->partition_id < 0) {
@@ -772,8 +821,6 @@ static void hda_tegra_probe_work(struct work_struct *work)
 	struct hda_tegra *hda = container_of(work, struct hda_tegra, probe_work);
 	struct azx *chip = &hda->chip;
 	struct platform_device *pdev = to_platform_device(hda->dev);
-	struct device_node *np = pdev->dev.of_node;
-	int gsc_id;
 	struct hdac_bus *bus = azx_bus(chip);
 	int err;
 
@@ -782,19 +829,23 @@ static void hda_tegra_probe_work(struct work_struct *work)
 	if (err < 0)
 		goto out_free;
 
-	bus->avoid_compact_sdo_bw = of_property_read_bool(np,
-		"nvidia,avoid-compact-sdo-bw");
+	if (hda->cdata)
+		bus->avoid_compact_sdo_bw = hda->cdata->war_sdo_bw;
 
-	/* Below code sets watermark registers to maximum   */
-	/* value (same as default); only applicable to T194 */
-	if (of_property_read_bool(np, "nvidia,set-watermark-reg")) {
-		azx_fpci_writel(chip, FIFO_WATERMARK, 0x07070707);
-		azx_fpci_writel(chip, BUFSZ_NUM_OF_FRAMES, 0x000a0a0a);
+	/*
+	 * Below code sets watermark registers to maximum
+	 * value (same as default); only applicable to T194
+	 */
+	if (hda->cdata && hda->cdata->set_watermark) {
+		writel(FIFO_WATERMARK_VAL,
+		       hda->regs_fpci + FPCI_FIFO_WATERMARK);
+		writel(BUFSZ_NUM_FRAMES_VAL,
+		       hda->regs_fpci + FPCI_BUFSZ_NUM_OF_FRAMES);
 	}
 
-	/* program HDA GSC_ID to get access to APR */
-	if (of_property_read_u32(np, "nvidia,apr-gsc-id", &gsc_id) >= 0)
-		hda_tegra_writel(gsc_id, hda->regs + HDA_GSC_REG);
+	/* program HDA_GSC_ID to get access to APR */
+	if (hda->cdata && hda->cdata->set_gsc_id)
+		hda_tegra_writel(HDA_GSC_ID, hda->regs + HDA_GSC_REG);
 
 	/* create codec instances */
 	err = azx_probe_codecs(chip, HDA_MAX_CODECS);

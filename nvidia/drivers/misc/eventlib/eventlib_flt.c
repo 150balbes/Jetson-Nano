@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2017, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2016-2020, NVIDIA CORPORATION. All rights reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -80,7 +80,7 @@ static void flt_writer_refresh(struct eventlib_flt_ctx *flt)
 	uint8_t n;
 	shmptr struct eventlib_flt_slot *slot;
 	uint32_t notify, dirty, seqlock, remaining;
-	bool fetched;
+	bool fetched = false;
 	unsigned int i;
 	uint32_t *s, *d, v;
 

@@ -702,6 +702,9 @@ int gr_gk20a_init_ctx_state(struct gk20a *g);
 int gr_gk20a_submit_fecs_method_op(struct gk20a *g,
 				   struct fecs_method_op_gk20a op,
 				   bool sleepduringwait);
+int gr_gk20a_submit_fecs_method_op_locked(struct gk20a *g,
+				   struct fecs_method_op_gk20a op,
+				   bool sleepduringwait);
 int gr_gk20a_submit_fecs_sideband_method_op(struct gk20a *g,
 		struct fecs_method_op_gk20a op);
 int gr_gk20a_alloc_gr_ctx(struct gk20a *g,
@@ -844,4 +847,5 @@ void gk20a_gr_destroy_ctx_buffer(struct gk20a *g,
 int gk20a_gr_alloc_ctx_buffer(struct gk20a *g,
 	struct gr_ctx_buffer_desc *desc, size_t size);
 void gk20a_gr_flush_channel_tlb(struct gr_gk20a *gr);
+int gr_gk20a_set_fecs_watchdog_timeout(struct gk20a *g);
 #endif /*__GR_GK20A_H__*/

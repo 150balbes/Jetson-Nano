@@ -1,0 +1,113 @@
+// SPDX-License-Identifier: GPL-2.0-only
+/*
+ * Jetson Device-tree overlay for FE-PI Audio V1 and Z V2.
+ *
+ * Copyright (c) 2019-20 NVIDIA CORPORATION. All rights reserved.
+ *
+ */
+
+#include <dt-bindings/pinctrl/pinctrl-tegra.h>
+
+/ {
+	overlay-name = "FE-PI Audio V1 and Z V2";
+	compatible = JETSON_COMPATIBLE;
+
+	fragment@0 {
+		target-path = "/";
+		__overlay__ {
+			clocks {
+				sgtl5000_mclk: sgtl5000_mclk {
+					compatible = "fixed-clock";
+					#clock-cells = <0>;
+					clock-frequency = <12288000>;
+					clock-output-names = "sgtl5000-mclk";
+					status = "okay";
+				};
+			};
+		};
+	};
+
+	fragment@1 {
+		target = <&hdr40_i2c1>;
+		__overlay__ {
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			sgtl5000: sgtl5000@0a {
+				compatible = "fsl,sgtl5000";
+				reg = <0x0a>;
+				clocks = <&sgtl5000_mclk>;
+				micbias-resistor-k-ohms = <2>;
+				micbias-voltage-m-volts = <3000>;
+				VDDA-supply = <&hdr40_vdd_3v3>;
+				VDDIO-supply = <&hdr40_vdd_3v3>;
+				status = "okay";
+			};
+		};
+	};
+
+	fragment@2 {
+		target = <&tegra_sound>;
+		__overlay__ {
+			nvidia,audio-routing =
+				"x Headphone",		"x HP_OUT",
+				"x MIC_IN",		"x Mic",
+				"x ADC",		"x Mic Bias",
+				"x LINE_IN",		"x Line In",
+				"x Line Out",		"x LINE_OUT";
+		};
+	};
+
+	fragment@3 {
+		target = <&hdr40_snd_link_i2s>;
+		__overlay__ {
+			link-name = "fe-pi-audio-z-v2";
+			codec-dai = <&sgtl5000>;
+			codec-dai-name = "sgtl5000";
+			bitclock-master;
+			frame-master;
+		};
+	};
+
+	fragment@4 {
+		target = <&pinmux>;
+		__overlay__ {
+			pinctrl-names = "default";
+			pinctrl-0 = <&hdr40_pinmux>;
+
+			hdr40_pinmux: header-40pin-pinmux {
+				pin12 {
+					nvidia,pins = HDR40_PIN12;
+					nvidia,function = HDR40_I2S;
+					nvidia,pull = <TEGRA_PIN_PULL_DOWN>;
+					nvidia,tristate = <TEGRA_PIN_DISABLE>;
+					nvidia,enable-input = <TEGRA_PIN_ENABLE>;
+				};
+
+				pin35 {
+					nvidia,pins = HDR40_PIN35;
+					nvidia,function = HDR40_I2S;
+					nvidia,pull = <TEGRA_PIN_PULL_DOWN>;
+					nvidia,tristate = <TEGRA_PIN_DISABLE>;
+					nvidia,enable-input = <TEGRA_PIN_ENABLE>;
+				};
+
+				pin38 {
+					nvidia,pins = HDR40_PIN38;
+					nvidia,function = HDR40_I2S;
+					nvidia,pull = <TEGRA_PIN_PULL_DOWN>;
+					nvidia,tristate = <TEGRA_PIN_ENABLE>;
+					nvidia,enable-input = <TEGRA_PIN_ENABLE>;
+				};
+
+				pin40 {
+					nvidia,pins = HDR40_PIN40;
+					nvidia,function = HDR40_I2S;
+					nvidia,pull = <TEGRA_PIN_PULL_DOWN>;
+					nvidia,tristate = <TEGRA_PIN_DISABLE>;
+					nvidia,enable-input = <TEGRA_PIN_DISABLE>;
+				};
+			};
+		};
+	};
+};

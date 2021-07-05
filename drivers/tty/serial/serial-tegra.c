@@ -3,7 +3,7 @@
  *
  * High-speed serial driver for NVIDIA Tegra SoCs
  *
- * Copyright (c) 2012-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2012-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * Author: Laxman Dewangan <ldewangan@nvidia.com>
  *
@@ -64,7 +64,7 @@
 #define TEGRA_UART_TX_PIO			1
 #define TEGRA_UART_TX_DMA			2
 #define TEGRA_UART_MIN_DMA			16
-#define TEGRA_UART_FIFO_SIZE			32
+#define TEGRA_UART_FIFO_SIZE			36
 
 /*
  * Tx fifo trigger level setting in tegra uart is in
@@ -1435,8 +1435,10 @@ static void tegra_uart_flush_buffer(struct uart_port *u)
 	struct tegra_uart_port *tup = to_tegra_uport(u);
 
 	tup->tx_bytes = 0;
-	if (tup->tx_dma_chan)
+	if (tup->tx_dma_chan) {
 		dmaengine_terminate_all(tup->tx_dma_chan);
+		tup->tx_in_progress = 0;
+	}
 }
 
 static void tegra_uart_shutdown(struct uart_port *u)
@@ -1837,7 +1839,7 @@ static int tegra_uart_probe(struct platform_device *pdev)
 	u->dev = &pdev->dev;
 	u->ops = &tegra_uart_ops;
 	u->type = PORT_TEGRA;
-	u->fifosize = 32;
+	u->fifosize = TEGRA_UART_FIFO_SIZE;
 	tup->cdata = cdata;
 
 	platform_set_drvdata(pdev, tup);

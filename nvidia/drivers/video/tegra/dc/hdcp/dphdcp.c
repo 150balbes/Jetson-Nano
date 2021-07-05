@@ -1,7 +1,7 @@
 /*
  * dphdcp.c: dp hdcp driver.
  *
- * Copyright (c) 2015-2018, NVIDIA CORPORATION, All rights reserved.
+ * Copyright (c) 2015-2020, NVIDIA CORPORATION, All rights reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -2016,7 +2016,9 @@ static int tegra_dphdcp_on(struct tegra_dphdcp *dphdcp)
 	struct tegra_dc_dp_data *dp = dphdcp->dp;
 
 	dphdcp->state = STATE_UNAUTHENTICATED;
-	if (dphdcp_is_plugged(dphdcp)) {
+	if (dphdcp_is_plugged(dphdcp) &&
+		atomic_read(&dphdcp->policy) !=
+		TEGRA_DC_HDCP_POLICY_ALWAYS_OFF) {
 		dphdcp->fail_count = 0;
 		e = tegra_dphdcp_read(dp, HDCP_HDCP2_VERSION,
 				&hdcp2version, 1, &status);
@@ -2074,7 +2076,30 @@ static int get_dphdcp_state(struct tegra_dphdcp *dphdcp,
 		pkt->hdcp22 = dphdcp->hdcp22;
 		pkt->port = TEGRA_NVHDCP_PORT_DP;
 	}
+	pkt->sor = dphdcp->dp->sor->ctrl_num;
 	mutex_unlock(&dphdcp->lock);
+	return 0;
+}
+
+int tegra_dphdcp_set_policy(struct tegra_dphdcp *dphdcp, int pol)
+{
+	if (pol == TEGRA_DC_HDCP_POLICY_ALWAYS_ON) {
+		dphdcp_info("using \"always on\" policy.\n");
+		if (atomic_xchg(&dphdcp->policy, pol) != pol) {
+			/* policy changed, start working */
+			tegra_dphdcp_on(dphdcp);
+		}
+	} else if (pol == TEGRA_DC_HDCP_POLICY_ALWAYS_OFF) {
+		dphdcp_info("using \"always off\" policy.\n");
+		if (atomic_xchg(&dphdcp->policy, pol) != pol) {
+			/* policy changed, stop working */
+			tegra_dphdcp_off(dphdcp);
+		}
+	} else {
+		/* unsupported policy */
+		return -EINVAL;
+	}
+
 	return 0;
 }
 
@@ -2116,20 +2141,35 @@ static long dphdcp_dev_ioctl(struct file *filp,
 {
 	struct tegra_dphdcp *dphdcp;
 	struct tegra_nvhdcp_packet *pkt;
+	struct tegra_dc_dp_data *dp;
 	int e = -ENOTTY;
 
 	if (!filp)
 		return -EINVAL;
 
 	dphdcp = filp->private_data;
+	dp = dphdcp->dp;
+
 	switch (cmd) {
 	case TEGRAIO_NVHDCP_ON:
+		mutex_lock(&dphdcp->lock);
+		dphdcp_set_plugged(dphdcp, dp->enabled);
+		mutex_unlock(&dphdcp->lock);
 		return tegra_dphdcp_on(dphdcp);
 
 	case TEGRAIO_NVHDCP_OFF:
 		return tegra_dphdcp_off(dphdcp);
 
+	case TEGRAIO_NVHDCP_SET_POLICY:
+		mutex_lock(&dphdcp->lock);
+		dphdcp_set_plugged(dphdcp, dp->enabled);
+		mutex_unlock(&dphdcp->lock);
+		return tegra_dphdcp_set_policy(dphdcp, arg);
+
 	case TEGRAIO_NVHDCP_RENEGOTIATE:
+		mutex_lock(&dphdcp->lock);
+		dphdcp_set_plugged(dphdcp, dp->enabled);
+		mutex_unlock(&dphdcp->lock);
 		e = tegra_dphdcp_renegotiate(dphdcp);
 		break;
 
@@ -2218,7 +2258,7 @@ struct tegra_dphdcp *tegra_dphdcp_create(struct tegra_dc_dp_data *dp,
 	dphdcp->fail_count = 0;
 	dphdcp->max_retries = HDCP_MAX_RETRIES;
 	dphdcp->hpd = 0;
-
+	atomic_set(&dphdcp->policy, dp->dc->pdata->default_out->hdcp_policy);
 
 	dphdcp->state = STATE_UNAUTHENTICATED;
 

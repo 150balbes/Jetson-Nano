@@ -187,6 +187,7 @@ static struct chip_revision tegra_chip_revisions[] = {
 	CHIP_REVISION(TEGRA186, 1, 2, 'p', A02p),
 	CHIP_REVISION(TEGRA194, 1, 1, 0, A01),
 	CHIP_REVISION(TEGRA194, 1, 2, 0, A02),
+	CHIP_REVISION(TEGRA194, 1, 2, 'p', A02p),
 };
 
 void tegra_init_revision(void)

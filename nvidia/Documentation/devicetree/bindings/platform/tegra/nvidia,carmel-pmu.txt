@@ -1,0 +1,46 @@
+NVIDIA Carmel Uncore PMU
+========================
+
+This driver supports hardware perfmon event counting for the 4 L2 clusters
+and for the L3. The supported events are standard ARM L2/L3 event numbering,
+but shifted and masked with a unit number for the sake of granular unit
+tracking. The event format is EEU, where 'EE' is the standard ARM event number
+and U is the unit (0-3 for the L2s, 4 for the L3).
+
+These standard ARM events are supported:
+
+Event				ID		Type
+L2D_CACHE			0x16		L2
+L2D_CACHE_REFILL		0x17		L2
+L2D_CACHE_WB			0x18		L2
+
+BUS_ACCESS			0x19		L3
+BUS_CYCLES			0x1D		L3
+L3D_CACHE_ALLOCATE		0x29		L3
+L3D_CACHE_REFILL		0x2A		L3
+L3D_CACHE			0x2B		L3
+L3D_CACHE_WB			0x2C		L3
+
+L2D_CACHE_LD			0x50		L2
+L2D_CACHE_ST			0x51		L2
+L2D_CACHE_REFILL_LD		0x52		L2
+L2D_CACHE_REFILL_ST		0x53		L2
+L2D_CACHE_REFILL_VICTIM		0x56		L2
+
+For example, to track L2 cache events (0x16) on clusters 0 and 2 as well as L3
+events (0x2b):
+
+perf stat -a -e r160,r162,r2b4
+
+Required properties:
+	- compatible : "nvidia,carmel-pmu"
+	- interrupts : single hardware-specified interrupt
+	- interrupt-affinity : this driver must be pinned to Carmel core 0 (cpu@0)
+		in order to correctly field PMU interrupts from the L2/L3 units.
+
+Example:
+	carmel-pmu {
+		compatible = "nvidia,carmel-pmu";
+		interrupts = <0 365 0x4>;
+		interrupt-affinity = <&{/cpus/cpu@0}>;
+	};

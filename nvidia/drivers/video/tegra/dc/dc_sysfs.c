@@ -1,7 +1,7 @@
 /*
  * dc_sysfs.c: dc driver sysfs interface.
  *
- * Copyright (c) 2011-2018, NVIDIA CORPORATION, All rights reserved.
+ * Copyright (c) 2011-2019, NVIDIA CORPORATION, All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -495,6 +495,18 @@ static ssize_t win_mask_store(struct device *dev,
 
 static DEVICE_ATTR(win_mask, 0600, win_mask_show, win_mask_store);
 
+
+static ssize_t panel_connected_show(struct device *device,
+	struct device_attribute *attr, char *buf)
+{
+	struct platform_device *ndev = to_platform_device(device);
+	struct tegra_dc *dc = platform_get_drvdata(ndev);
+
+	return snprintf(buf, PAGE_SIZE, "%d\n", dc->connected);
+}
+
+static DEVICE_ATTR(panel_connected, 0444, panel_connected_show, NULL);
+
 void tegra_dc_remove_sysfs(struct device *dev)
 {
 	struct platform_device *ndev = to_platform_device(dev);
@@ -517,6 +529,7 @@ void tegra_dc_remove_sysfs(struct device *dev)
 #ifdef CONFIG_TEGRA_ISOMGR
 	device_remove_file(dev, &dev_attr_reserved_bw);
 #endif
+	device_remove_file(dev, &dev_attr_panel_connected);
 
 	if (dc->out->stereo) {
 		device_remove_file(dev, &dev_attr_stereo_orientation);
@@ -563,6 +576,8 @@ void tegra_dc_create_sysfs(struct device *dev)
 		error |= device_create_file(dev, &dev_attr_stereo_orientation);
 		error |= device_create_file(dev, &dev_attr_stereo_mode);
 	}
+
+	error |= device_create_file(dev, &dev_attr_panel_connected);
 
 	if (vrr)
 #ifdef CONFIG_TEGRA_VRR

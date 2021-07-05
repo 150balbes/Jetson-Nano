@@ -1,7 +1,7 @@
 /*
  * tegracam_ctrls - control framework for tegra camera drivers
  *
- * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -15,6 +15,7 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
+#include <linux/nospec.h>
 #include <linux/types.h>
 #include <media/tegra-v4l2-camera.h>
 #include <media/camera_common.h>
@@ -29,6 +30,7 @@
 #define CTRL_S64_MIN 0x8000000000000000LL
 #define CTRL_S64_MAX 0x7FFFFFFFFFFFFFFFLL
 #define CTRL_MAX_STR_SIZE 4096
+#define STEREO_EEPROM_SIZE 4096
 
 #define TEGRACAM_DEF_CTRLS 1
 
@@ -162,6 +164,16 @@ static struct v4l2_ctrl_config ctrl_cfg_list[] = {
 		.max = CTRL_MAX_STR_SIZE,
 		.step = 2,
 	},
+	{
+		.ops = &tegracam_ctrl_ops,
+		.id = TEGRA_CAMERA_CID_STEREO_EEPROM,
+		.name = "Stereo EEPROM",
+		.type = V4L2_CTRL_COMPOUND_TYPES,
+		.flags = V4L2_CTRL_FLAG_READ_ONLY,
+		.min = 0,
+		.max = STEREO_EEPROM_SIZE,
+		.step = 2,
+	},
 };
 
 static int tegracam_get_ctrl_index(u32 cid)
@@ -197,14 +209,32 @@ static int tegracam_get_string_ctrl_size(u32 cid,
 
 	return ops->string_ctrl_size[index];
 }
+static int tegracam_get_compound_ctrl_size(u32 cid,
+		const struct tegracam_ctrl_ops *ops)
+{
+	u32 index = 0;
 
+	switch (cid) {
+	case TEGRA_CAMERA_CID_STEREO_EEPROM:
+			index = TEGRA_CAM_COMPOUND_CTRL_EEPROM_INDEX;
+			break;
+	default:
+		return -EINVAL;
+	}
+	return ops->compound_ctrl_size[index];
+}
 static int tegracam_setup_string_ctrls(struct tegracam_device *tc_dev,
 				struct tegracam_ctrl_handler *handler)
 {
 	const struct tegracam_ctrl_ops *ops = handler->ctrl_ops;
-	u32 numctrls = ops->numctrls;
+	u32 numctrls = 0;
 	int i;
 	int err = 0;
+
+	if (ops == NULL)
+		return 0;
+
+	numctrls = ops->numctrls;
 
 	for (i = 0; i < numctrls; i++) {
 		struct v4l2_ctrl *ctrl = handler->ctrls[i];
@@ -215,6 +245,34 @@ static int tegracam_setup_string_ctrls(struct tegracam_device *tc_dev,
 				return err;
 		}
 	}
+	speculation_barrier(); /* break_spec_#5_1 */
+
+	return 0;
+}
+
+static int tegracam_setup_compound_ctrls(struct tegracam_device *tc_dev,
+				struct tegracam_ctrl_handler *handler)
+{
+	const struct tegracam_ctrl_ops *ops = handler->ctrl_ops;
+	u32 numctrls = 0;
+	int i;
+	int err = 0;
+
+	if (ops == NULL)
+		return 0;
+
+	numctrls = ops->numctrls;
+
+	for (i = 0; i < numctrls; i++) {
+		struct v4l2_ctrl *ctrl = handler->ctrls[i];
+
+		if (ctrl->type == V4L2_CTRL_COMPOUND_TYPES) {
+			err = ops->fill_compound_ctrl(tc_dev, ctrl);
+			if (err)
+				return err;
+		}
+	}
+	speculation_barrier(); /* break_spec_#5_1 */
 
 	return 0;
 }
@@ -369,9 +427,14 @@ int tegracam_ctrl_set_overrides(struct tegracam_ctrl_handler *hdl)
 	const struct tegracam_ctrl_ops *ops = hdl->ctrl_ops;
 	struct tegracam_sensor_data *sensor_data = &hdl->sensor_data;
 	struct sensor_blob *blob = &sensor_data->ctrls_blob;
-	bool is_blob_supported = ops->is_blob_supported;
+	bool is_blob_supported = false;
 	int err, result = 0;
 	int i;
+
+	if (ops == NULL)
+		return 0;
+
+	is_blob_supported = ops->is_blob_supported;
 
 	/*
 	 * write list of override regs for the asking frame length,
@@ -445,6 +508,9 @@ int tegracam_init_ctrl_ranges_by_mode(
 	s64 default_short_exp_time = 0;
 	int i;
 
+	if (handler->numctrls == 0)
+		return 0;
+
 	if (modeidx >= s_data->sensor_props.num_modes)
 		return -EINVAL;
 
@@ -515,6 +581,7 @@ int tegracam_init_ctrl_ranges_by_mode(
 			return err;
 		}
 	}
+	speculation_barrier(); /* break spec_p#5_1 */
 
 	return 0;
 }
@@ -550,6 +617,7 @@ int tegracam_init_ctrl_ranges(struct tegracam_ctrl_handler *handler)
 			return err;
 		}
 	}
+	speculation_barrier();
 
 	/* Use mode 0 control ranges as default */
 	if (s_data->sensor_props.num_modes > 0)	{
@@ -566,6 +634,286 @@ int tegracam_init_ctrl_ranges(struct tegracam_ctrl_handler *handler)
 }
 EXPORT_SYMBOL_GPL(tegracam_init_ctrl_ranges);
 
+static int tegracam_check_ctrl_ops(
+	struct tegracam_ctrl_handler *handler, int *numctrls)
+{
+	struct tegracam_device *tc_dev = handler->tc_dev;
+	struct device *dev = tc_dev->dev;
+	const struct tegracam_ctrl_ops *ops = handler->ctrl_ops;
+	const u32 *cids = ops->ctrl_cid_list;
+	int sensor_ops = 0, sensor_ex_ops = 0, mode_ops = 0, string_ops = 0;
+	int compound_ops = 0;
+	int default_ops = 0, default_ex_ops = 0, total_ops = 0;
+	int i;
+
+	/* Find missing sensor controls */
+	for (i = 0; i < ops->numctrls; i++) {
+		switch (cids[i]) {
+		case TEGRA_CAMERA_CID_GAIN:
+			if (ops->set_gain == NULL && ops->set_gain_ex == NULL)
+				dev_err(dev,
+					"Missing TEGRA_CAMERA_CID_GAIN implementation\n");
+			if (ops->set_gain != NULL)
+				sensor_ops++;
+			if (ops->set_gain_ex != NULL)
+				sensor_ex_ops++;
+			break;
+		case TEGRA_CAMERA_CID_EXPOSURE:
+			if (ops->set_exposure == NULL &&
+				ops->set_exposure_ex == NULL)
+				dev_err(dev,
+					"Missing TEGRA_CAMERA_CID_EXPOSURE implementation\n");
+			if (ops->set_exposure != NULL)
+				sensor_ops++;
+			if (ops->set_exposure_ex != NULL)
+				sensor_ex_ops++;
+			break;
+		case TEGRA_CAMERA_CID_EXPOSURE_SHORT:
+			if (ops->set_exposure_short == NULL)
+				dev_err(dev,
+					"Missing TEGRA_CAMERA_CID_EXPOSURE_SHORT implementation\n");
+			else
+				sensor_ops++;
+			break;
+		case TEGRA_CAMERA_CID_FRAME_RATE:
+			if (ops->set_frame_rate == NULL &&
+				ops->set_frame_rate_ex == NULL)
+				dev_err(dev,
+					"Missing TEGRA_CAMERA_CID_FRAME_RATE implementation\n");
+			if (ops->set_frame_rate != NULL)
+				sensor_ops++;
+			if (ops->set_frame_rate_ex != NULL)
+				sensor_ex_ops++;
+			break;
+		case TEGRA_CAMERA_CID_GROUP_HOLD:
+			dev_err(dev,
+				"TEGRA_CAMERA_CID_GROUP_HOLD contorl is enabled in framework by default, no need to add it in driver\n");
+			return -EINVAL;
+		case TEGRA_CAMERA_CID_EEPROM_DATA:
+			if (tegracam_get_string_ctrl_size(
+					TEGRA_CAMERA_CID_EEPROM_DATA, ops) == 0)
+				dev_err(dev, "EEPROM size not specified\n");
+			else
+				string_ops++;
+			break;
+		case TEGRA_CAMERA_CID_FUSE_ID:
+			if (tegracam_get_string_ctrl_size(
+					TEGRA_CAMERA_CID_FUSE_ID, ops) == 0)
+				dev_err(dev, "Fuse ID size not specified\n");
+			else
+				string_ops++;
+			break;
+		case TEGRA_CAMERA_CID_OTP_DATA:
+			if (tegracam_get_string_ctrl_size(
+					TEGRA_CAMERA_CID_OTP_DATA, ops) == 0)
+				dev_err(dev, "OTP size not specified\n");
+			else
+				string_ops++;
+			break;
+		case TEGRA_CAMERA_CID_STEREO_EEPROM:
+			if (tegracam_get_compound_ctrl_size(
+				TEGRA_CAMERA_CID_STEREO_EEPROM, ops) == 0)
+				dev_err(dev, "Stereo EEPROM size not \
+						specified\n");
+			else
+				compound_ops++;
+			break;
+
+		/* The below controls are handled by framework */
+		case TEGRA_CAMERA_CID_SENSOR_MODE_ID:
+		case TEGRA_CAMERA_CID_HDR_EN:
+			mode_ops++;
+			break;
+		default:
+			break;
+		}
+	}
+
+	/* Find missing string controls */
+	if (string_ops > 0) {
+		if (ops->fill_string_ctrl == NULL) {
+			dev_err(dev, "Missing string control implementation\n");
+			string_ops = 0;
+		}
+	}
+
+	if (compound_ops > 0) {
+		if (ops->fill_compound_ctrl == NULL) {
+			dev_err(dev, "Missing compound control implementation\n");
+			compound_ops = 0;
+		}
+	}
+
+	/* Find missing default controls */
+	for (i = 0; i < TEGRACAM_DEF_CTRLS; i++) {
+		switch (tegracam_def_cids[i]) {
+		case TEGRA_CAMERA_CID_GROUP_HOLD:
+			if ((sensor_ops > 0 &&
+				ops->set_group_hold == NULL) ||
+				(sensor_ex_ops > 0 &&
+				ops->set_group_hold_ex == NULL))
+				dev_err(dev,
+					"Missing TEGRA_CAMERA_CID_GROUP_HOLD implementation\n");
+			if (ops->set_group_hold != NULL)
+				default_ops++;
+			if (ops->set_group_hold_ex != NULL)
+				default_ex_ops++;
+			break;
+		default:
+			break;
+		}
+	}
+
+	/* Don't use extended control when blob support is not enabled */
+	if (sensor_ex_ops > 0 && ops->is_blob_supported == false) {
+		dev_err(dev,
+			"ERROR: Extended controls only work when blob support is enabled\n");
+		return -EINVAL;
+	}
+
+	/* Should not mix normal and extended controls */
+	if ((sensor_ops + default_ops) > 0 &&
+		(sensor_ex_ops + default_ex_ops) > 0) {
+		dev_err(dev,
+			"ERROR: Can not mix normal and extended sensor controls\n");
+		return -EINVAL;
+	}
+	total_ops = sensor_ops + mode_ops + string_ops + default_ops + compound_ops;
+	total_ops += sensor_ex_ops + default_ex_ops;
+
+	if (total_ops != (ops->numctrls + TEGRACAM_DEF_CTRLS)) {
+		dev_err(dev,
+			"ERROR: %d controls registered with framework but missing implementation\n",
+			(ops->numctrls + TEGRACAM_DEF_CTRLS) - total_ops);
+		return -EINVAL;
+	}
+
+	*numctrls = sensor_ops + sensor_ex_ops + mode_ops + string_ops + compound_ops;
+
+	/* default controls are only needed if sensor controls are registered */
+	if (sensor_ops > 0)
+		*numctrls += default_ops;
+	if (sensor_ex_ops > 0)
+		*numctrls += default_ex_ops;
+
+	return 0;
+}
+
+static bool find_matching_cid(const u32 *ctrl_cid_list, u32 numctrls, u32 cid)
+{
+	int i;
+
+	for (i = 0; i < numctrls; i++) {
+		if (ctrl_cid_list[i] == cid)
+			return true;
+	}
+
+	return false;
+}
+
+static int tegracam_check_ctrl_cids(struct tegracam_ctrl_handler *handler)
+{
+	struct tegracam_device *tc_dev = handler->tc_dev;
+	struct device *dev = tc_dev->dev;
+	const struct tegracam_ctrl_ops *ops = handler->ctrl_ops;
+	int errors_found = 0;
+
+	/* Find missing sensor control IDs */
+	if (ops->set_gain != NULL || ops->set_gain_ex != NULL) {
+		if (!find_matching_cid(ops->ctrl_cid_list,
+			ops->numctrls,
+			TEGRA_CAMERA_CID_GAIN)) {
+			dev_err(dev, "Missing TEGRA_CAMERA_CID_GAIN registration\n");
+			errors_found++;
+		}
+	}
+
+	if (ops->set_exposure != NULL || ops->set_exposure_ex != NULL) {
+		if (!find_matching_cid(ops->ctrl_cid_list,
+			ops->numctrls,
+			TEGRA_CAMERA_CID_EXPOSURE)) {
+			dev_err(dev, "Missing TEGRA_CAMERA_CID_EXPOSURE registration\n");
+			errors_found++;
+		}
+	}
+
+	if (ops->set_exposure_short != NULL) {
+		if (!find_matching_cid(ops->ctrl_cid_list,
+			ops->numctrls,
+			TEGRA_CAMERA_CID_EXPOSURE_SHORT)) {
+			dev_err(dev,
+				"Missing TEGRA_CAMERA_CID_EXPOSURE_SHORT registration\n");
+			errors_found++;
+		}
+	}
+
+	if (ops->set_frame_rate != NULL || ops->set_frame_rate_ex != NULL) {
+		if (!find_matching_cid(ops->ctrl_cid_list,
+			ops->numctrls,
+			TEGRA_CAMERA_CID_FRAME_RATE)) {
+			dev_err(dev, "Missing TEGRA_CAMERA_CID_FRAME_RATE registration\n");
+			errors_found++;
+		}
+	}
+
+	/* Find missing string control IDs */
+	if (ops->fill_string_ctrl != NULL) {
+		if (tegracam_get_string_ctrl_size(
+				TEGRA_CAMERA_CID_EEPROM_DATA, ops) > 0) {
+			if (!find_matching_cid(ops->ctrl_cid_list,
+				ops->numctrls,
+				TEGRA_CAMERA_CID_EEPROM_DATA)) {
+				dev_err(dev,
+					"Missing TEGRA_CAMERA_CID_EEPROM_DATA registration\n");
+				errors_found++;
+			}
+		}
+
+		if (tegracam_get_string_ctrl_size(
+				TEGRA_CAMERA_CID_FUSE_ID, ops) > 0) {
+			if (!find_matching_cid(ops->ctrl_cid_list,
+				ops->numctrls,
+				TEGRA_CAMERA_CID_FUSE_ID)) {
+				dev_err(dev,
+					"Missing TEGRA_CAMERA_CID_FUSE_ID registration\n");
+				errors_found++;
+			}
+		}
+
+		if (tegracam_get_string_ctrl_size(
+				TEGRA_CAMERA_CID_OTP_DATA, ops) > 0) {
+			if (!find_matching_cid(ops->ctrl_cid_list,
+				ops->numctrls,
+				TEGRA_CAMERA_CID_OTP_DATA)) {
+				dev_err(dev,
+					"Missing TEGRA_CAMERA_CID_OTP_DATA registration\n");
+				errors_found++;
+			}
+		}
+	}
+
+	if (ops->fill_compound_ctrl != NULL) {
+		if (tegracam_get_compound_ctrl_size(
+				TEGRA_CAMERA_CID_STEREO_EEPROM, ops) > 0) {
+			if (!find_matching_cid(ops->ctrl_cid_list,
+				ops->numctrls,
+				TEGRA_CAMERA_CID_STEREO_EEPROM)) {
+				dev_err(dev,
+					"Missing TEGRA_CAMERA_CID_STEREO_EEPROM registration\n");
+				errors_found++;
+			}
+		}
+	}
+
+	if (errors_found > 0) {
+		dev_err(dev, "ERROR: %d controls implemented but not registered with framework\n",
+			errors_found);
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
 int tegracam_ctrl_handler_init(struct tegracam_ctrl_handler *handler)
 {
 	struct tegracam_device *tc_dev = handler->tc_dev;
@@ -573,11 +921,26 @@ int tegracam_ctrl_handler_init(struct tegracam_ctrl_handler *handler)
 	struct v4l2_ctrl_config *ctrl_cfg;
 	struct device *dev = tc_dev->dev;
 	const struct tegracam_ctrl_ops *ops = handler->ctrl_ops;
-	const u32 *cids = ops->ctrl_cid_list;
-	u32 numctrls = ops->numctrls + TEGRACAM_DEF_CTRLS;
+	const u32 *cids = NULL;
+	u32 numctrls = 0;
 	int i, j;
 	int err = 0;
 
+	if (ops != NULL) {
+		cids = ops->ctrl_cid_list;
+
+		err = tegracam_check_ctrl_ops(handler, &numctrls);
+		if (err) {
+			dev_err(dev, "Error %d in control ops setup\n", err);
+			goto ctrl_error;
+		}
+
+		err = tegracam_check_ctrl_cids(handler);
+		if (err) {
+			dev_err(dev, "Error %d in control cids setup\n", err);
+			goto ctrl_error;
+		}
+	}
 	err = v4l2_ctrl_handler_init(&handler->ctrl_handler, numctrls);
 
 	for (i = 0, j = 0; i < numctrls; i++) {
@@ -599,6 +962,17 @@ int tegracam_ctrl_handler_init(struct tegracam_ctrl_handler *handler)
 			}
 			ctrl_cfg->max = size;
 		}
+
+		if (ctrl_cfg->type == V4L2_CTRL_COMPOUND_TYPES) {
+			size = tegracam_get_compound_ctrl_size(ctrl_cfg->id,
+								ops);
+			if (size < 0) {
+				dev_err(dev, "Invalid compound ctrl size\n");
+				return -EINVAL;
+			}
+			ctrl_cfg->dims[0] = size;
+		}
+
 		ctrl = v4l2_ctrl_new_custom(&handler->ctrl_handler,
 			ctrl_cfg, NULL);
 		if (ctrl == NULL) {
@@ -612,8 +986,15 @@ int tegracam_ctrl_handler_init(struct tegracam_ctrl_handler *handler)
 			ctrl->p_new.p_char = devm_kzalloc(tc_dev->dev,
 				size + 1, GFP_KERNEL);
 		}
+
+		if ((ctrl_cfg->type == V4L2_CTRL_COMPOUND_TYPES) &&
+			ctrl_cfg->flags & V4L2_CTRL_FLAG_READ_ONLY)
+			ctrl->p_new.p = devm_kzalloc(tc_dev->dev,
+				ctrl_cfg->max, GFP_KERNEL);
+
 		handler->ctrls[i] = ctrl;
 	};
+	speculation_barrier(); /* break_spec_p#5_1 */
 
 	handler->numctrls = numctrls;
 	err = v4l2_ctrl_handler_setup(&handler->ctrl_handler);
@@ -634,6 +1015,12 @@ int tegracam_ctrl_handler_init(struct tegracam_ctrl_handler *handler)
 		goto error;
 	}
 
+	err = tegracam_setup_compound_ctrls(tc_dev, handler);
+	if (err) {
+		dev_err(dev, "setup compound controls failed\n");
+		goto error;
+	}
+
 	err = tegracam_init_ctrl_ranges(handler);
 	if (err) {
 		dev_err(dev, "Error %d updating control ranges\n", err);
@@ -642,6 +1029,7 @@ int tegracam_ctrl_handler_init(struct tegracam_ctrl_handler *handler)
 	return 0;
 error:
 	v4l2_ctrl_handler_free(&handler->ctrl_handler);
+ctrl_error:
 	return err;
 }
 EXPORT_SYMBOL_GPL(tegracam_ctrl_handler_init);

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -892,10 +892,29 @@ static void pex_ep_event_hot_rst_done(struct tegra_pcie_dw_ep *pcie)
 	writel(val, pcie->appl_base + APPL_CTRL);
 }
 
+static inline int find_width_index(unsigned long width)
+{
+	if (width & (width-1))
+		return -1;
+	switch (width) {
+	case PCIE_LNK_X1:
+		return 0;
+	case PCIE_LNK_X2:
+		return 1;
+	case PCIE_LNK_X4:
+		return 2;
+	case PCIE_LNK_X8:
+		return 3;
+	default :
+		return -1;
+	}
+}
+
 static void pex_ep_event_bme_change(struct tegra_pcie_dw_ep *pcie)
 {
-	u32 val = 0, width = 0, speed = 0;
-	unsigned long freq;
+	u32 val = 0, speed = 0;
+	unsigned long freq, width = 0;
+	int width_index;
 
 	/* If EP doesn't advertise L1SS, just return */
 	val = readl(pcie->dbi_base + pcie->cfg_link_cap_l1sub);
@@ -932,8 +951,13 @@ static void pex_ep_event_bme_change(struct tegra_pcie_dw_ep *pcie)
 	/* Make EMC FLOOR freq request based on link width and speed */
 	val = readl(pcie->dbi_base + CFG_LINK_STATUS_CONTROL);
 	width = ((val >> 16) & PCI_EXP_LNKSTA_NLW) >> 4;
-	width = find_first_bit((const unsigned long *)&width,
-			       sizeof(width));
+	width_index = find_width_index(width);
+	if (width_index == -1) {
+		dev_err(pcie->dev, "error in %s", __func__);
+		dev_err(pcie->dev, "width in CFG_LINK_STATUS_CONTROL is"
+			"wrong\n");
+		return;
+	}
 	speed = ((val >> 16) & PCI_EXP_LNKSTA_CLS);
 	freq = pcie->dvfs_tbl[width][speed - 1];
 	dev_dbg(pcie->dev, "EMC Freq requested = %lu\n", freq);

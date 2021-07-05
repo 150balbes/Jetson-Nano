@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -192,6 +192,26 @@ int tegra_hv_pm_ctl_trigger_guest_suspend(u32 vmid)
 	}
 
 	ret = hyp_guest_reset(GUEST_SUSPEND_REQ_CMD(vmid), NULL);
+	if (ret < 0) {
+		pr_err("%s: Failed to trigger guest%u suspend, %d\n",
+			__func__, vmid, ret);
+		return ret;
+	}
+
+	return 0;
+}
+
+int tegra_hv_pm_ctl_trigger_guest_reboot(u32 vmid)
+{
+	int ret;
+
+	if (!tegra_hv_pm_ctl_data) {
+		pr_err("%s: tegra_hv_pm_ctl driver is not probed, %d\n",
+			__func__, -ENXIO);
+		return -ENXIO;
+	}
+
+	ret = hyp_guest_reset(GUEST_REBOOT_INIT_CMD(vmid), NULL);
 	if (ret < 0) {
 		pr_err("%s: Failed to trigger guest%u suspend, %d\n",
 			__func__, vmid, ret);
@@ -525,6 +545,28 @@ static ssize_t trigger_guest_suspend_store(struct device *dev,
 	return count;
 }
 
+static ssize_t trigger_guest_reboot_store(struct device *dev,
+					struct device_attribute *attr,
+					const char *buf, size_t count)
+{
+	struct tegra_hv_pm_ctl *data = dev_get_drvdata(dev);
+	unsigned int val;
+	int ret;
+
+	ret = kstrtouint(buf, 0, &val);
+	if (ret) {
+		dev_err(data->dev, "%s: Failed to convert string to uint\n",
+			__func__);
+		return ret;
+	}
+
+	ret = tegra_hv_pm_ctl_trigger_guest_reboot(val);
+	if (ret < 0)
+		return ret;
+
+	return count;
+}
+
 static ssize_t trigger_guest_resume_store(struct device *dev,
 					struct device_attribute *attr,
 					const char *buf, size_t count)
@@ -611,6 +653,7 @@ static DEVICE_ATTR_RO(ivc_peer_vmid);
 static DEVICE_ATTR_WO(trigger_sys_suspend);
 static DEVICE_ATTR_WO(trigger_sys_shutdown);
 static DEVICE_ATTR_WO(trigger_sys_reboot);
+static DEVICE_ATTR_WO(trigger_guest_reboot);
 static DEVICE_ATTR_WO(trigger_guest_suspend);
 static DEVICE_ATTR_WO(trigger_guest_resume);
 static DEVICE_ATTR_RW(guest_state);
@@ -624,6 +667,7 @@ static struct attribute *tegra_hv_pm_ctl_attributes[] = {
 	&dev_attr_trigger_sys_suspend.attr,
 	&dev_attr_trigger_sys_shutdown.attr,
 	&dev_attr_trigger_sys_reboot.attr,
+	&dev_attr_trigger_guest_reboot.attr,
 	&dev_attr_trigger_guest_suspend.attr,
 	&dev_attr_trigger_guest_resume.attr,
 	&dev_attr_guest_state.attr,

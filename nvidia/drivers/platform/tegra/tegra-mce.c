@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2014-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -55,7 +55,12 @@ static int (*_tegra_mce_write_dda_ctrl)(u32 index, u64 value);
 static int (*_tegra_mce_read_dda_ctrl)(u32 index, u64 *value);
 static int (*_tegra_mce_read_l3_cache_ways)(u64 *value);
 static int (*_tegra_mce_write_l3_cache_ways)(u64 data, u64 *value);
-
+static int (*_tegra_mce_read_rt_safe_mask)(u64 *);
+static int (*_tegra_mce_write_rt_safe_mask)(u64);
+static int (*_tegra_mce_read_rt_window_us)(u64 *);
+static int (*_tegra_mce_write_rt_window_us)(u64);
+static int (*_tegra_mce_read_rt_fwd_progress_us)(u64 *);
+static int (*_tegra_mce_write_rt_fwd_progress_us)(u64);
 /**
  * Specify power state and wake time for entering upon STANDBYWFI
  *
@@ -225,6 +230,100 @@ int tegra_mce_read_versions(u32 *major, u32 *minor)
 	return _tegra_mce_read_versions(major, minor);
 }
 EXPORT_SYMBOL_GPL(tegra_mce_read_versions);
+
+/**
+ * Read out RT Safe Mask
+ *
+ * @rt_safe_mask: output for rt safe mask.
+ *
+ * Returns 0 if success.
+ */
+int tegra_mce_read_rt_safe_mask(u64 *rt_safe_mask)
+{
+	if (!_tegra_mce_read_rt_safe_mask)
+		return -ENOTSUPP;
+	return _tegra_mce_read_rt_safe_mask(rt_safe_mask);
+}
+EXPORT_SYMBOL_GPL(tegra_mce_read_rt_safe_mask);
+
+/**
+ * Write RT Safe Mask
+ *
+ * @rt_safe_mask: rt safe mask value to be written
+ *
+ * Returns 0 if success.
+ */
+int tegra_mce_write_rt_safe_mask(u64 rt_safe_mask)
+{
+	if (!_tegra_mce_write_rt_safe_mask)
+		return -ENOTSUPP;
+	return _tegra_mce_write_rt_safe_mask(rt_safe_mask);
+}
+EXPORT_SYMBOL_GPL(tegra_mce_write_rt_safe_mask);
+
+/**
+ * Read out RT Window US
+ *
+ * @rt_window_us: output for rt window us
+ *
+ * Returns 0 if success.
+ */
+int tegra_mce_read_rt_window_us(u64 *rt_window_us)
+{
+	if (!_tegra_mce_read_rt_window_us)
+		return -ENOTSUPP;
+	return _tegra_mce_read_rt_window_us(rt_window_us);
+}
+EXPORT_SYMBOL_GPL(tegra_mce_read_rt_window_us);
+
+
+/**
+ * Write RT Window US
+ *
+ * @rt_window_us: rt window us value to be written
+ *
+ * Returns 0 if success.
+ */
+int tegra_mce_write_rt_window_us(u64 rt_window_us)
+{
+	if (!_tegra_mce_write_rt_window_us)
+		return -ENOTSUPP;
+	return _tegra_mce_write_rt_window_us(rt_window_us);
+}
+EXPORT_SYMBOL_GPL(tegra_mce_write_rt_window_us);
+
+
+/**
+ * Read out RT Fwd Progress US
+ *
+ * @rt_fwd_progress_us: output for rt fwd progress us
+ *
+ * Returns 0 if success.
+ */
+int tegra_mce_read_rt_fwd_progress_us(u64 *rt_fwd_progress_us)
+{
+	if (!_tegra_mce_read_rt_fwd_progress_us)
+		return -ENOTSUPP;
+	return _tegra_mce_read_rt_fwd_progress_us(rt_fwd_progress_us);
+}
+EXPORT_SYMBOL_GPL(tegra_mce_read_rt_fwd_progress_us);
+
+
+/**
+ * Write RT Fwd Progress US
+ *
+ * @rt_fwd_progress_us: rt fwd progress us value to be written
+ *
+ * Returns 0 if success.
+ */
+int tegra_mce_write_rt_fwd_progress_us(u64 rt_fwd_progress_us)
+{
+	if (!_tegra_mce_write_rt_fwd_progress_us)
+		return -ENOTSUPP;
+	return _tegra_mce_write_rt_fwd_progress_us(rt_fwd_progress_us);
+}
+EXPORT_SYMBOL_GPL(tegra_mce_write_rt_fwd_progress_us);
+
 
 /**
  * Enumerate MCE API features
@@ -403,6 +502,63 @@ static int tegra_mce_versions_get(void *data, u64 *val)
 	return ret;
 }
 
+static int tegra_mce_rt_safe_mask_get(void *data, u64 *val)
+{
+	u64 rt_safe_mask;
+	int ret;
+
+	ret = tegra_mce_read_rt_safe_mask(&rt_safe_mask);
+	if (!ret)
+		*val = rt_safe_mask;
+	return ret;
+}
+
+static int tegra_mce_rt_safe_mask_set(void *data, u64 val)
+{
+	int ret;
+
+	ret = tegra_mce_write_rt_safe_mask(val);
+	return ret;
+}
+
+static int tegra_mce_rt_window_us_get(void *data, u64 *val)
+{
+	u64 rt_window_us;
+	int ret;
+
+	ret = tegra_mce_read_rt_window_us(&rt_window_us);
+	if (!ret)
+		*val = rt_window_us;
+	return ret;
+}
+
+static int tegra_mce_rt_window_us_set(void *data, u64 val)
+{
+	int ret;
+
+	ret = tegra_mce_write_rt_window_us(val);
+	return ret;
+}
+
+static int tegra_mce_rt_fwd_progress_us_get(void *data, u64 *val)
+{
+	u64 rt_fwd_progress_us;
+	int ret;
+
+	ret = tegra_mce_read_rt_fwd_progress_us(&rt_fwd_progress_us);
+	if (!ret)
+		*val = rt_fwd_progress_us;
+	return ret;
+}
+
+static int tegra_mce_rt_fwd_progress_us_set(void *data, u64 val)
+{
+	int ret;
+
+	ret = tegra_mce_write_rt_fwd_progress_us(val);
+	return ret;
+}
+
 #define TEGRA_MCE_DBGFS_FUNC(name, type1, param1, type2, param2)	\
 static int tegra_##name(type1 param1, type2 param2)			\
 {									\
@@ -463,6 +619,13 @@ DEFINE_SIMPLE_ATTRIBUTE(tegra_mce_coresight_cg_fops, NULL,
 			tegra_mce_coresight_cg_set, "%llu\n");
 DEFINE_SIMPLE_ATTRIBUTE(tegra_mce_edbgreq_fops, NULL,
 			tegra_mce_edbgreq_set, "%llu\n");
+DEFINE_SIMPLE_ATTRIBUTE(tegra_mce_rt_safe_mask_fops, tegra_mce_rt_safe_mask_get,
+			tegra_mce_rt_safe_mask_set, "%llu\n");
+DEFINE_SIMPLE_ATTRIBUTE(tegra_mce_rt_window_us_fops, tegra_mce_rt_window_us_get,
+			tegra_mce_rt_window_us_set, "%llu\n");
+DEFINE_SIMPLE_ATTRIBUTE(tegra_mce_rt_fwd_progress_us_fops,
+			tegra_mce_rt_fwd_progress_us_get,
+			tegra_mce_rt_fwd_progress_us_set, "%llu\n");
 
 struct debugfs_entry {
 	const char *name;
@@ -485,6 +648,9 @@ static struct debugfs_entry tegra18x_mce_attrs[] = {
 static struct debugfs_entry tegra19x_mce_attrs[] = {
 	{ "versions", &tegra_mce_versions_fops, 0444 },
 	{ "cstats", &tegra_mce_cstats_fops, 0444 },
+	{ "rt_safe_mask", &tegra_mce_rt_safe_mask_fops, 0644 },
+	{ "rt_window_us", &tegra_mce_rt_window_us_fops, 0644 },
+	{ "rt_fwd_progress_us", &tegra_mce_rt_fwd_progress_us_fops, 0644 },
 	{ NULL, NULL, 0 }
 };
 
@@ -662,6 +828,16 @@ static __init int tegra_mce_early_init(void)
 		_tegra_mce_read_l3_cache_ways = tegra19x_mce_read_l3_cache_ways;
 		_tegra_mce_write_l3_cache_ways =
 			tegra19x_mce_write_l3_cache_ways;
+#ifdef CONFIG_DEBUG_FS
+		_tegra_mce_read_rt_safe_mask = tegra19x_mce_read_rt_safe_mask;
+		_tegra_mce_write_rt_safe_mask = tegra19x_mce_write_rt_safe_mask;
+		_tegra_mce_read_rt_window_us = tegra19x_mce_read_rt_window_us;
+		_tegra_mce_write_rt_window_us = tegra19x_mce_write_rt_window_us;
+		_tegra_mce_read_rt_fwd_progress_us =
+			tegra19x_mce_read_rt_fwd_progress_us;
+		_tegra_mce_write_rt_fwd_progress_us =
+			tegra19x_mce_write_rt_fwd_progress_us;
+#endif /* CONFIG_DEBUG_FS */
 		break;
 	default:
 		/* Do not support any other platform */

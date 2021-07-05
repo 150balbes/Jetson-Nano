@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2014-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -76,6 +76,9 @@ struct tsg_gk20a {
 	bool tpc_num_initialized;
 	bool in_use;
 
+	/* MMU debug mode enabled if mmu_debug_mode_refcnt > 0 */
+	u32  mmu_debug_mode_refcnt;
+
 	struct nvgpu_tsg_sm_error_state *sm_error_states;
 
 #define NVGPU_SM_EXCEPTION_TYPE_MASK_NONE		(0x0U)
@@ -123,5 +126,7 @@ gk20a_event_id_data_from_event_id_node(struct nvgpu_list_node *node)
 	return (struct gk20a_event_id_data *)
 		((uintptr_t)node - offsetof(struct gk20a_event_id_data, event_id_node));
 };
+
+int nvgpu_tsg_set_mmu_debug_mode(struct channel_gk20a *ch, bool enable);
 
 #endif /* TSG_GK20A_H */

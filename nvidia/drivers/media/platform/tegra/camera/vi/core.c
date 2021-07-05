@@ -1,7 +1,7 @@
 /*
  * NVIDIA Tegra Video Input Device Driver Core Helpers
  *
- * Copyright (c) 2015-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2015-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * Author: Bryan Wu <pengw@nvidia.com>
  *
@@ -16,6 +16,7 @@
 #include <linux/platform_device.h>
 
 #include <media/mc_common.h>
+#include <linux/nospec.h>
 
 static const struct tegra_video_format tegra_default_format[] = {
 	{
@@ -46,6 +47,8 @@ u32 tegra_core_get_fourcc_by_idx(struct tegra_channel *chan,
 	/* return default fourcc format if the index out of bounds */
 	if (index > (chan->num_video_formats - 1))
 		return V4L2_PIX_FMT_SGRBG10;
+
+	index = array_index_nospec(index, chan->num_video_formats);
 
 	return chan->video_formats[index]->fourcc;
 }
@@ -100,6 +103,7 @@ int tegra_core_get_code_by_fourcc(struct tegra_channel *chan,
 		if (chan->video_formats[i]->fourcc == fourcc)
 			return chan->video_formats[i]->code;
 	}
+	speculation_barrier(); /* break_spec_p#5_1 */
 
 	return -1;
 }
@@ -134,6 +138,7 @@ tegra_core_get_format_by_code(struct tegra_channel *chan,
 		if (chan->video_formats[i]->code == code)
 			return chan->video_formats[i];
 	}
+	speculation_barrier(); /* break_spec_p#5_1 */
 
 	return NULL;
 }
@@ -155,6 +160,7 @@ tegra_core_get_format_by_fourcc(struct tegra_channel *chan, u32 fourcc)
 		if (chan->video_formats[i]->fourcc == fourcc)
 			return chan->video_formats[i];
 	}
+	speculation_barrier(); /* break_spec_p#5_1 */
 
 	return NULL;
 }

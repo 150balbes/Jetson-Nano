@@ -75,6 +75,16 @@ static inline int gpio_direction_output(unsigned gpio, int value)
 	return gpiod_direction_output_raw(gpio_to_desc(gpio), value);
 }
 
+static inline int gpio_timestamp_control(unsigned gpio, int enable)
+{
+	return gpiod_timestamp_control(gpio_to_desc(gpio), enable);
+}
+
+static inline int gpio_timestamp_read(unsigned gpio, u64 *ts)
+{
+	return gpiod_timestamp_read(gpio_to_desc(gpio), ts);
+}
+
 static inline int gpio_set_debounce(unsigned gpio, unsigned debounce)
 {
 	return gpiod_set_debounce(gpio_to_desc(gpio), debounce);

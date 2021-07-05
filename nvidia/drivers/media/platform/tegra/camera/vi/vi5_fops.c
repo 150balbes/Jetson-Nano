@@ -1,7 +1,7 @@
 /*
  * Tegra Video Input 5 device common APIs
  *
- * Copyright (c) 2016-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2016-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * Author: Frank Chen <frank@nvidia.com>
  *
@@ -138,7 +138,7 @@ static int tegra_vi5_s_ctrl(struct v4l2_ctrl *ctrl)
 		chan->write_ispformat = ctrl->val;
 		break;
 	default:
-		dev_err(&chan->video.dev, "%s:Not valid ctrl\n", __func__);
+		dev_err(&chan->video->dev, "%s:Not valid ctrl\n", __func__);
 		return -EINVAL;
 	}
 
@@ -466,7 +466,7 @@ static int vi5_channel_error_recover(struct tegra_channel *chan,
 	err = vi_capture_release(chan->tegra_vi_channel,
 		CAPTURE_CHANNEL_RESET_FLAG_IMMEDIATE);
 	if (err) {
-		dev_err(&chan->video.dev, "vi capture release failed\n");
+		dev_err(&chan->video->dev, "vi capture release failed\n");
 		goto done;
 	}
 
@@ -625,9 +625,9 @@ static int vi5_channel_start_kthreads(struct tegra_channel *chan)
 		goto done;
 	}
 	chan->kthread_capture_start = kthread_run(
-		tegra_channel_kthread_capture_enqueue, chan, chan->video.name);
+		tegra_channel_kthread_capture_enqueue, chan, chan->video->name);
 	if (IS_ERR(chan->kthread_capture_start)) {
-		dev_err(&chan->video.dev,
+		dev_err(&chan->video->dev,
 			"failed to run kthread for capture enqueue\n");
 		err = PTR_ERR(chan->kthread_capture_start);
 		goto done;
@@ -640,9 +640,9 @@ static int vi5_channel_start_kthreads(struct tegra_channel *chan)
 		goto done;
 	}
 	chan->kthread_capture_dequeue = kthread_run(
-		tegra_channel_kthread_capture_dequeue, chan, chan->video.name);
+		tegra_channel_kthread_capture_dequeue, chan, chan->video->name);
 	if (IS_ERR(chan->kthread_capture_dequeue)) {
-		dev_err(&chan->video.dev,
+		dev_err(&chan->video->dev,
 			"failed to run kthread for capture dequeue\n");
 		err = PTR_ERR(chan->kthread_capture_dequeue);
 		goto done;
@@ -677,7 +677,7 @@ static int vi5_channel_start_streaming(struct vb2_queue *vq, u32 count)
 	/* WAR: With newer version pipe init has some race condition */
 	/* TODO: resolve this issue to block userspace not to cleanup media */
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0)
-	struct media_pipeline *pipe = chan->video.entity.pipe;
+	struct media_pipeline *pipe = chan->video->entity.pipe;
 #endif
 	int ret = 0;
 	unsigned long flags;
@@ -688,106 +688,128 @@ static int vi5_channel_start_streaming(struct vb2_queue *vq, u32 count)
 	unsigned int emb_buf_size = 0;
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0)
-	ret = media_entity_pipeline_start(&chan->video.entity, pipe);
+	ret = media_entity_pipeline_start(&chan->video->entity, pipe);
 	if (ret < 0)
-		goto error_pipeline_start;
+		goto err_pipeline_start;
 #endif
 
+	/* Skip in bypass mode */
+	if (!chan->bypass) {
+		chan->tegra_vi_channel = vi_channel_open_ex(chan->id, false);
+		if (IS_ERR(chan->tegra_vi_channel)) {
+			ret = PTR_ERR(chan);
+			goto err_open_ex;
+		}
+
+		spin_lock_irqsave(&chan->capture_state_lock, flags);
+		chan->capture_state = CAPTURE_IDLE;
+		spin_unlock_irqrestore(&chan->capture_state_lock, flags);
+
+		if (!chan->pg_mode) {
+			sd = chan->subdev_on_csi;
+			node = sd->dev->of_node;
+			s_data = to_camera_common_data(sd->dev);
+
+			/* get sensor properties from DT */
+			if (s_data != NULL && node != NULL) {
+				int idx = s_data->mode_prop_idx;
+
+				emb_buf_size = 0;
+				if (idx < s_data->sensor_props.num_modes) {
+					sensor_mode =
+						&s_data->sensor_props.\
+						sensor_modes[idx];
+
+					chan->embedded_data_width =
+						sensor_mode->image_properties.\
+						width;
+					chan->embedded_data_height =
+						sensor_mode->image_properties.\
+						embedded_metadata_height;
+					/* rounding up to page size */
+					emb_buf_size =
+						round_up(chan->\
+						embedded_data_width *
+							chan->\
+							embedded_data_height *
+							BPP_MEM,
+							PAGE_SIZE);
+				}
+			}
+
+			/* Allocate buffer for Embedded Data if need to*/
+			if (emb_buf_size > chan->vi->emb_buf_size) {
+				/*
+				 * if old buffer is smaller than what we need,
+				 * release the old buffer and re-allocate a
+				 * bigger one below.
+				 */
+				if (chan->vi->emb_buf_size > 0) {
+					dma_free_coherent(chan->vi->dev,
+						chan->vi->emb_buf_size,
+						chan->vi->emb_buf_addr,
+						chan->vi->emb_buf);
+					chan->vi->emb_buf_size = 0;
+				}
+
+				chan->vi->emb_buf_addr =
+					dma_alloc_coherent(chan->vi->dev,
+						emb_buf_size,
+						&chan->vi->emb_buf, GFP_KERNEL);
+				if (!chan->vi->emb_buf_addr) {
+					dev_err(&chan->video->dev,
+							"Can't allocate memory"
+							"for embedded data\n");
+					goto err_setup;
+				}
+				chan->vi->emb_buf_size = emb_buf_size;
+			}
+		}
+
+		ret = tegra_channel_capture_setup(chan);
+		if (ret < 0)
+			goto err_setup;
+
+		chan->sequence = 0;
+		tegra_channel_init_ring_buffer(chan);
+
+		ret = vi5_channel_start_kthreads(chan);
+		if (ret != 0)
+			goto err_start_kthreads;
+	}
+
+	/* csi stream/sensor devices should be streamon post vi channel setup */
 	ret = tegra_channel_set_stream(chan, true);
 	if (ret < 0)
-		goto error_media_pipe;
+		goto err_set_stream;
 
 	ret = tegra_channel_write_blobs(chan);
 	if (ret < 0)
-		goto error_stream;
-
-	if (chan->bypass)
-		return 0;
-
-	chan->tegra_vi_channel = vi_channel_open_ex(chan->id, false);
-	if (IS_ERR(chan->tegra_vi_channel))
-		return PTR_ERR(chan);
-
-	spin_lock_irqsave(&chan->capture_state_lock, flags);
-	chan->capture_state = CAPTURE_IDLE;
-	spin_unlock_irqrestore(&chan->capture_state_lock, flags);
-
-	if (!chan->pg_mode) {
-		sd = chan->subdev_on_csi;
-		node = sd->dev->of_node;
-		s_data = to_camera_common_data(sd->dev);
-
-		/* get sensor properties from DT */
-		if (s_data != NULL && node != NULL) {
-			int idx = s_data->mode_prop_idx;
-
-			emb_buf_size = 0;
-			if (idx < s_data->sensor_props.num_modes) {
-				sensor_mode =
-					&s_data->sensor_props.sensor_modes[idx];
-
-				chan->embedded_data_width =
-					sensor_mode->image_properties.width;
-				chan->embedded_data_height =
-					sensor_mode->image_properties.\
-					embedded_metadata_height;
-				/* rounding up to page size */
-				emb_buf_size =
-					round_up(chan->embedded_data_width *
-						chan->embedded_data_height *
-						BPP_MEM,
-						PAGE_SIZE);
-			}
-		}
-
-		/* Allocate buffer for Embedded Data if need to*/
-		if (emb_buf_size > chan->vi->emb_buf_size) {
-			/*
-			 * if old buffer is smaller than what we need,
-			 * release the old buffer and re-allocate a bigger
-			 * one below
-			 */
-			if (chan->vi->emb_buf_size > 0) {
-				dma_free_coherent(chan->vi->dev,
-					chan->vi->emb_buf_size,
-					chan->vi->emb_buf_addr, chan->vi->emb_buf);
-				chan->vi->emb_buf_size = 0;
-			}
-
-			chan->vi->emb_buf_addr =
-				dma_alloc_coherent(chan->vi->dev,
-					emb_buf_size,
-					&chan->vi->emb_buf, GFP_KERNEL);
-			if (!chan->vi->emb_buf_addr) {
-				dev_err(&chan->video.dev,
-						"Can't allocate memory for embedded data\n");
-				goto error;
-			}
-			chan->vi->emb_buf_size = emb_buf_size;
-		}
-	}
-
-	ret = tegra_channel_capture_setup(chan);
-	if (ret < 0)
-		goto error;
-
-	chan->sequence = 0;
-	tegra_channel_init_ring_buffer(chan);
-
-	ret = vi5_channel_start_kthreads(chan);
-	if (ret != 0)
-		goto error;
+		goto err_write_blobs;
 
 	return 0;
 
-error:
-	vi5_channel_stop_kthreads(chan);
-error_stream:
+err_write_blobs:
 	tegra_channel_set_stream(chan, false);
-error_media_pipe:
+
+err_set_stream:
+	if (!chan->bypass)
+		vi5_channel_stop_kthreads(chan);
+
+err_start_kthreads:
+	if (!chan->bypass)
+		vi_capture_release(chan->tegra_vi_channel,
+			CAPTURE_CHANNEL_RESET_FLAG_IMMEDIATE);
+
+err_setup:
+	if (!chan->bypass)
+		vi_channel_close_ex(chan->id, chan->tegra_vi_channel);
+
+err_open_ex:
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0)
-	media_entity_pipeline_stop(&chan->video.entity);
-error_pipeline_start:
+	media_entity_pipeline_stop(&chan->video->entity);
+
+err_pipeline_start:
 #endif
 	vq->start_streaming_called = 0;
 	tegra_channel_queued_buf_done(chan, VB2_BUF_STATE_QUEUED, false);
@@ -807,9 +829,10 @@ static int vi5_channel_stop_streaming(struct vb2_queue *vq)
 	tegra_channel_set_stream(chan, false);
 
 	if (!chan->bypass) {
-		err = vi_capture_release(chan->tegra_vi_channel, 0);
+		err = vi_capture_release(chan->tegra_vi_channel,
+			CAPTURE_CHANNEL_RESET_FLAG_IMMEDIATE);
 		if (err)
-			dev_err(&chan->video.dev,
+			dev_err(&chan->video->dev,
 				"vi capture release failed\n");
 
 		vi_channel_close_ex(chan->id, chan->tegra_vi_channel);
@@ -819,7 +842,7 @@ static int vi5_channel_stop_streaming(struct vb2_queue *vq)
 	}
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0)
-	media_entity_pipeline_stop(&chan->video.entity);
+	media_entity_pipeline_stop(&chan->video->entity);
 #endif
 
 	return 0;

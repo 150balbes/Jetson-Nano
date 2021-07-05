@@ -1,0 +1,45 @@
+From d407468aa5b52bf65f93c8e141d3dae308887777 Mon Sep 17 00:00:00 2001
+From: Peter Zijlstra <peterz@infradead.org>
+Date: Wed, 22 Mar 2017 11:35:49 +0100
+Subject: [PATCH 006/371] futex: Use smp_store_release() in mark_wake_futex()
+X-NVConfidentiality: public
+
+Upstream commit  1b367ece0d7e696cab1c8501bab282cc6a538b3f
+
+Since the futex_q can dissapear the instruction after assigning NULL,
+this really should be a RELEASE barrier. That stops loads from hitting
+dead memory too.
+
+Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Cc: juri.lelli@arm.com
+Cc: bigeasy@linutronix.de
+Cc: xlpang@redhat.com
+Cc: rostedt@goodmis.org
+Cc: mathieu.desnoyers@efficios.com
+Cc: jdesfossez@efficios.com
+Cc: dvhart@infradead.org
+Cc: bristot@redhat.com
+Link: http://lkml.kernel.org/r/20170322104151.604296452@infradead.org
+Signed-off-by: Thomas Gleixner <tglx@linutronix.de>
+Signed-off-by: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+---
+ kernel/futex.c | 3 +--
+ 1 file changed, 1 insertion(+), 2 deletions(-)
+
+diff --git a/kernel/futex.c b/kernel/futex.c
+index 797d601..2bcd1d2 100644
+--- a/kernel/futex.c
++++ b/kernel/futex.c
+@@ -1289,8 +1289,7 @@ static void mark_wake_futex(struct wake_q_head *wake_q, struct futex_q *q)
+ 	 * memory barrier is required here to prevent the following
+ 	 * store to lock_ptr from getting ahead of the plist_del.
+ 	 */
+-	smp_wmb();
+-	q->lock_ptr = NULL;
++	smp_store_release(&q->lock_ptr, NULL);
+ }
+ 
+ static int wake_futex_pi(u32 __user *uaddr, u32 uval, struct futex_q *top_waiter,
+-- 
+2.7.4
+

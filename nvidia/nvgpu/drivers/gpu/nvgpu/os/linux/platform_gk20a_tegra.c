@@ -649,7 +649,7 @@ int gk20a_tegra_init_secure_alloc(struct gk20a_platform *platform)
 static struct clk *gk20a_clk_get(struct gk20a *g)
 {
 	if (!g->clk.tegra_clk) {
-		struct clk *clk;
+		struct clk *clk, *clk_parent;
 		char clk_dev_id[32];
 		struct device *dev = dev_from_gk20a(g);
 
@@ -661,7 +661,16 @@ static struct clk *gk20a_clk_get(struct gk20a *g)
 				  clk_dev_id);
 			return NULL;
 		}
+
+		clk_parent = clk_get_parent(clk);
+		if (IS_ERR_OR_NULL(clk_parent)) {
+			nvgpu_err(g, "fail to get tegra gpu clk parent%s/gpu\n",
+				  clk_dev_id);
+			return NULL;
+		}
+
 		g->clk.tegra_clk = clk;
+		g->clk.tegra_clk_parent = clk_parent;
 	}
 
 	return g->clk.tegra_clk;
@@ -790,6 +799,7 @@ static int gk20a_tegra_probe(struct device *dev)
 
 	if (joint_xpu_rail) {
 		nvgpu_log_info(g, "XPU rails are joint\n");
+		platform->can_railgate_init = false;
 		__nvgpu_set_enabled(g, NVGPU_CAN_RAILGATE, false);
 	}
 

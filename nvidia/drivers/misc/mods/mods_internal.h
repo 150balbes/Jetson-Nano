@@ -499,8 +499,10 @@ int esc_mods_pci_set_dma_mask(struct file             *pfile,
 			     struct MODS_PCI_DMA_MASK *dma_mask);
 #endif
 /* irq */
-#if defined(MODS_TEGRA) && defined(CONFIG_OF_IRQ) && defined(CONFIG_OF)
+#if defined(MODS_TEGRA) && defined(CONFIG_OF) && defined(CONFIG_OF_IRQ)
 int esc_mods_map_irq(struct file *fp, struct MODS_DT_INFO *p);
+int esc_mods_map_irq_to_gpio(struct file *fp,
+						struct MODS_GPIO_INFO *p);
 #endif
 int esc_mods_register_irq(struct file *fp, struct MODS_REGISTER_IRQ *p);
 int esc_mods_register_irq_2(struct file *fp,

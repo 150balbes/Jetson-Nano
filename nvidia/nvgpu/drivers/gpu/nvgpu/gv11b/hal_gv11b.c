@@ -1,7 +1,7 @@
 /*
  * GV11B Tegra HAL interface
  *
- * Copyright (c) 2016-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2016-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -278,6 +278,7 @@ static const struct gpu_ops gv11b_ops = {
 		.isr_stall = gv11b_ce_isr,
 		.isr_nonstall = gp10b_ce_nonstall_isr,
 		.get_num_pce = gv11b_ce_get_num_pce,
+		.init_prod_values = gv11b_ce_init_prod_values,
 	},
 	.gr = {
 		.get_patch_slots = gr_gv100_get_patch_slots,
@@ -355,6 +356,7 @@ static const struct gpu_ops gv11b_ops = {
 		.get_num_hwpm_perfmon = gr_gv100_get_num_hwpm_perfmon,
 		.set_pmm_register = gr_gv100_set_pmm_register,
 		.update_hwpm_ctxsw_mode = gr_gk20a_update_hwpm_ctxsw_mode,
+		.set_mmu_debug_mode = gm20b_gr_set_mmu_debug_mode,
 		.init_hwpm_pmm_register = gr_gv100_init_hwpm_pmm_register,
 		.record_sm_error_state = gv11b_gr_record_sm_error_state,
 		.clear_sm_error_state = gv11b_gr_clear_sm_error_state,
@@ -450,6 +452,7 @@ static const struct gpu_ops gv11b_ops = {
 		.get_offset_in_gpccs_segment =
 			gr_gk20a_get_offset_in_gpccs_segment,
 		.set_debug_mode = gm20b_gr_set_debug_mode,
+		.set_fecs_watchdog_timeout = gr_gv11b_set_fecs_watchdog_timeout,
 	},
 	.fb = {
 		.init_hw = gv11b_fb_init_hw,
@@ -471,6 +474,7 @@ static const struct gpu_ops gv11b_ops = {
 		.read_wpr_info = gm20b_fb_read_wpr_info,
 		.is_debug_mode_enabled = gm20b_fb_debug_mode_enabled,
 		.set_debug_mode = gm20b_fb_set_debug_mode,
+		.set_mmu_debug_mode = gm20b_fb_set_mmu_debug_mode,
 		.tlb_invalidate = gm20b_fb_tlb_invalidate,
 		.hub_isr = gv11b_fb_hub_isr,
 		.handle_replayable_fault = gv11b_fb_handle_replayable_mmu_fault,
@@ -527,6 +531,10 @@ static const struct gpu_ops gv11b_ops = {
 			gv11b_slcg_therm_load_gating_prod,
 		.slcg_xbar_load_gating_prod =
 			gv11b_slcg_xbar_load_gating_prod,
+		.slcg_hshub_load_gating_prod =
+			gv11b_slcg_hshub_load_gating_prod,
+		.slcg_acb_load_gating_prod =
+			gv11b_slcg_acb_load_gating_prod,
 		.blcg_bus_load_gating_prod =
 			gv11b_blcg_bus_load_gating_prod,
 		.blcg_ce_load_gating_prod =
@@ -547,6 +555,8 @@ static const struct gpu_ops gv11b_ops = {
 			gv11b_blcg_pmu_load_gating_prod,
 		.blcg_xbar_load_gating_prod =
 			gv11b_blcg_xbar_load_gating_prod,
+		.blcg_hshub_load_gating_prod =
+			gv11b_blcg_hshub_load_gating_prod,
 		.pg_gr_load_gating_prod =
 			gr_gv11b_pg_gr_load_gating_prod,
 	},
@@ -611,7 +621,7 @@ static const struct gpu_ops gv11b_ops = {
 		.deinit_eng_method_buffers =
 			gv11b_fifo_deinit_eng_method_buffers,
 		.tsg_bind_channel = gk20a_tsg_bind_channel,
-		.tsg_unbind_channel = gk20a_fifo_tsg_unbind_channel,
+		.tsg_unbind_channel = NULL,
 		.post_event_id = gk20a_tsg_event_id_post_event,
 		.ch_abort_clean_up = gk20a_channel_abort_clean_up,
 		.check_tsg_ctxsw_timeout = gk20a_fifo_check_tsg_ctxsw_timeout,
@@ -641,6 +651,7 @@ static const struct gpu_ops gv11b_ops = {
 		.get_sema_wait_cmd_size = gv11b_fifo_get_sema_wait_cmd_size,
 		.get_sema_incr_cmd_size = gv11b_fifo_get_sema_incr_cmd_size,
 		.add_sema_cmd = gv11b_fifo_add_sema_cmd,
+		.usermode_base = gv11b_fifo_usermode_base,
 	},
 	.gr_ctx = {
 		.get_netlist_name = gr_gv11b_get_netlist_name,
@@ -712,7 +723,7 @@ static const struct gpu_ops gv11b_ops = {
 		.pmu_mutex_release = gk20a_pmu_mutex_release,
 		.pmu_is_interrupted = gk20a_pmu_is_interrupted,
 		.pmu_isr = gk20a_pmu_isr,
-		.pmu_init_perfmon_counter = gk20a_pmu_init_perfmon_counter,
+		.pmu_init_perfmon_counter = gv11b_pmu_init_perfmon_counter,
 		.pmu_pg_idle_counter_config = gk20a_pmu_pg_idle_counter_config,
 		.pmu_read_idle_counter = gk20a_pmu_read_idle_counter,
 		.pmu_reset_idle_counter = gk20a_pmu_reset_idle_counter,
@@ -948,8 +959,11 @@ int gv11b_init_hal(struct gk20a *g)
 
 	__nvgpu_set_enabled(g, NVGPU_PMU_FECS_BOOTSTRAP_DONE, false);
 	__nvgpu_set_enabled(g, NVGPU_FECS_TRACE_VA, true);
+	__nvgpu_set_enabled(g, NVGPU_FECS_TRACE_FEATURE_CONTROL, true);
+	__nvgpu_set_enabled(g, NVGPU_SUPPORT_SET_CTX_MMU_DEBUG_MODE, true);
 
 	__nvgpu_set_enabled(g, NVGPU_SUPPORT_MULTIPLE_WPR, false);
+	__nvgpu_set_enabled(g, NVGPU_SUPPORT_PLATFORM_ATOMIC, true);
 
 	g->name = "gv11b";
 

@@ -1,0 +1,7 @@
+config TEGRA_HTS_GTE
+	bool "Generic hardware Timestamping Engine"
+	depends on ARCH_TEGRA_19x_SOC && !NVPPS
+	help
+	  Enable this option for integrated generic timestamping support on
+	  NVIDIA Tegra systems-on-chip. The driver supports LIC IRQs and AON
+	  GPIO monitoring for hardware timestamping.

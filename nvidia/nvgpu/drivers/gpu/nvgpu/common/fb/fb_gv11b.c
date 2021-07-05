@@ -1,7 +1,7 @@
 /*
  * GV11B FB
  *
- * Copyright (c) 2016-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2016-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -62,6 +62,34 @@ static void gv11b_init_nvlink_soc_credits(struct gk20a *g)
 	}
 }
 
+static void gv11b_fb_set_atomic_mode(struct gk20a *g)
+{
+	u32 reg_val;
+
+	/*
+	 * NV_PFB_PRI_MMU_CTRL_ATOMIC_CAPABILITY_MODE to RMW MODE
+	 * NV_PFB_PRI_MMU_CTRL_ATOMIC_CAPABILITY_SYS_NCOH_MODE to L2
+	 */
+	reg_val = nvgpu_readl(g, fb_mmu_ctrl_r());
+	reg_val = set_field(reg_val, fb_mmu_ctrl_atomic_capability_mode_m(),
+		fb_mmu_ctrl_atomic_capability_mode_rmw_f());
+	reg_val = set_field(reg_val, fb_mmu_ctrl_atomic_capability_sys_ncoh_mode_m(),
+		fb_mmu_ctrl_atomic_capability_sys_ncoh_mode_l2_f());
+	nvgpu_writel(g, fb_mmu_ctrl_r(), reg_val);
+
+	/* NV_PFB_HSHUB_NUM_ACTIVE_LTCS_HUB_SYS_ATOMIC_MODE to USE_RMW */
+	reg_val = nvgpu_readl(g, fb_hshub_num_active_ltcs_r());
+	reg_val = set_field(reg_val, fb_hshub_num_active_ltcs_hub_sys_atomic_mode_m(),
+		    fb_hshub_num_active_ltcs_hub_sys_atomic_mode_use_rmw_f());
+	nvgpu_writel(g, fb_hshub_num_active_ltcs_r(), reg_val);
+
+	nvgpu_log(g,  gpu_dbg_info, "fb_mmu_ctrl_r 0x%x",
+					gk20a_readl(g, fb_mmu_ctrl_r()));
+
+	nvgpu_log(g,   gpu_dbg_info, "fb_hshub_num_active_ltcs_r 0x%x",
+			gk20a_readl(g, fb_hshub_num_active_ltcs_r()));
+}
+
 void gv11b_fb_init_hw(struct gk20a *g)
 {
 	gm20b_fb_init_hw(g);
@@ -74,6 +102,8 @@ void gv11b_fb_init_fs_state(struct gk20a *g)
 	nvgpu_log(g, gpu_dbg_fn, "initialize gv11b fb");
 
 	gv11b_init_nvlink_soc_credits(g);
+
+	gv11b_fb_set_atomic_mode(g);
 
 	nvgpu_log(g, gpu_dbg_info, "fbhub active ltcs %x",
 			gk20a_readl(g, fb_fbhub_num_active_ltcs_r()));
@@ -1474,7 +1504,8 @@ int gv11b_fb_mmu_invalidate_replay(struct gk20a *g,
 		}
 		nvgpu_udelay(5);
 	} while (!nvgpu_timeout_expired_msg(&timeout,
-			    "invalidate replay failed on 0x%llx"));
+			"invalidate replay failed 0x%lx",
+			invalidate_replay_val));
 	if (err) {
 		nvgpu_err(g, "invalidate replay timedout");
 	}

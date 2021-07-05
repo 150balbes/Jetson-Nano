@@ -1,0 +1,108 @@
+From 530be3852cd3766dae3d69cecafdf47521d4af7e Mon Sep 17 00:00:00 2001
+From: Peter Zijlstra <peterz@infradead.org>
+Date: Thu, 23 Mar 2017 15:56:14 +0100
+Subject: [PATCH 024/371] rtmutex: Fix more prio comparisons
+X-NVConfidentiality: public
+
+Upstream commit 19830e55247cddb3f46f1bf60b8e245593491bea
+
+There was a pure ->prio comparison left in try_to_wake_rt_mutex(),
+convert it to use rt_mutex_waiter_less(), noting that greater-or-equal
+is not-less (both in kernel priority view).
+
+This necessitated the introduction of cmp_task() which creates a
+pointer to an unnamed stack variable of struct rt_mutex_waiter type to
+compare against tasks.
+
+With this, we can now also create and employ rt_mutex_waiter_equal().
+
+Reviewed-and-tested-by: Juri Lelli <juri.lelli@arm.com>
+Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Reviewed-by: Thomas Gleixner <tglx@linutronix.de>
+Cc: juri.lelli@arm.com
+Cc: bigeasy@linutronix.de
+Cc: xlpang@redhat.com
+Cc: rostedt@goodmis.org
+Cc: mathieu.desnoyers@efficios.com
+Cc: jdesfossez@efficios.com
+Cc: bristot@redhat.com
+Link: http://lkml.kernel.org/r/20170323150216.455584638@infradead.org
+Signed-off-by: Thomas Gleixner <tglx@linutronix.de>
+---
+ kernel/locking/rtmutex.c | 32 +++++++++++++++++++++++++++++---
+ 1 file changed, 29 insertions(+), 3 deletions(-)
+
+diff --git a/kernel/locking/rtmutex.c b/kernel/locking/rtmutex.c
+index e275b81..a8202c7 100644
+--- a/kernel/locking/rtmutex.c
++++ b/kernel/locking/rtmutex.c
+@@ -222,6 +222,12 @@ static inline bool unlock_rt_mutex_safe(struct rt_mutex *lock,
+ }
+ #endif
+ 
++/*
++ * Only use with rt_mutex_waiter_{less,equal}()
++ */
++#define task_to_waiter(p)	\
++	&(struct rt_mutex_waiter){ .prio = (p)->prio, .deadline = (p)->dl.deadline }
++
+ static inline int
+ rt_mutex_waiter_less(struct rt_mutex_waiter *left,
+ 		     struct rt_mutex_waiter *right)
+@@ -241,6 +247,25 @@ rt_mutex_waiter_less(struct rt_mutex_waiter *left,
+ 	return 0;
+ }
+ 
++static inline int
++rt_mutex_waiter_equal(struct rt_mutex_waiter *left,
++		      struct rt_mutex_waiter *right)
++{
++	if (left->prio != right->prio)
++		return 0;
++
++	/*
++	 * If both waiters have dl_prio(), we check the deadlines of the
++	 * associated tasks.
++	 * If left waiter has a dl_prio(), and we didn't return 0 above,
++	 * then right waiter has a dl_prio() too.
++	 */
++	if (dl_prio(left->prio))
++		return left->deadline == right->deadline;
++
++	return 1;
++}
++
+ static void
+ rt_mutex_enqueue(struct rt_mutex *lock, struct rt_mutex_waiter *waiter)
+ {
+@@ -551,7 +576,7 @@ static int rt_mutex_adjust_prio_chain(struct task_struct *task,
+ 	 * enabled we continue, but stop the requeueing in the chain
+ 	 * walk.
+ 	 */
+-	if (waiter->prio == task->prio && !dl_task(task)) {
++	if (rt_mutex_waiter_equal(waiter, task_to_waiter(task))) {
+ 		if (!detect_deadlock)
+ 			goto out_unlock_pi;
+ 		else
+@@ -854,7 +879,8 @@ static int try_to_take_rt_mutex(struct rt_mutex *lock, struct task_struct *task,
+ 			 * the top waiter priority (kernel view),
+ 			 * @task lost.
+ 			 */
+-			if (task->prio >= rt_mutex_top_waiter(lock)->prio)
++			if (!rt_mutex_waiter_less(task_to_waiter(task),
++						  rt_mutex_top_waiter(lock)))
+ 				return 0;
+ 
+ 			/*
+@@ -1117,7 +1143,7 @@ void rt_mutex_adjust_pi(struct task_struct *task)
+ 	raw_spin_lock_irqsave(&task->pi_lock, flags);
+ 
+ 	waiter = task->pi_blocked_on;
+-	if (!waiter || (waiter->prio == task->prio && !dl_prio(task->prio))) {
++	if (!waiter || rt_mutex_waiter_equal(waiter, task_to_waiter(task))) {
+ 		raw_spin_unlock_irqrestore(&task->pi_lock, flags);
+ 		return;
+ 	}
+-- 
+2.7.4
+

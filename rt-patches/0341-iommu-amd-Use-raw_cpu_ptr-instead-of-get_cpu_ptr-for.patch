@@ -1,0 +1,50 @@
+From 44f569d356efb2d859777e8a6ef1c9ecd394e69a Mon Sep 17 00:00:00 2001
+From: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+Date: Tue, 5 Sep 2017 14:11:41 +0200
+Subject: [PATCH 341/371] iommu/amd: Use raw_cpu_ptr() instead of get_cpu_ptr()
+ for ->flush_queue
+X-NVConfidentiality: public
+
+get_cpu_ptr() disabled preemption and returns the ->flush_queue object
+of the current CPU. raw_cpu_ptr() does the same except that it not
+disable preemption which means the scheduler can move it to another CPU
+after it obtained the per-CPU object.
+In this case this is not bad because the data structure itself is
+protected with a spin_lock. This change shouldn't matter however on RT
+it does because the sleeping lock can't be accessed with disabled
+preemption.
+
+Cc: stable-rt@vger.kernel.org
+Cc: Joerg Roedel <joro@8bytes.org>
+Cc: iommu@lists.linux-foundation.org
+Reported-by: Vinod Adhikary <vinadhy@gmail.com>
+Signed-off-by: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+---
+ drivers/iommu/amd_iommu.c | 4 +---
+ 1 file changed, 1 insertion(+), 3 deletions(-)
+
+diff --git a/drivers/iommu/amd_iommu.c b/drivers/iommu/amd_iommu.c
+index c70951f..3c9e356 100644
+--- a/drivers/iommu/amd_iommu.c
++++ b/drivers/iommu/amd_iommu.c
+@@ -2309,7 +2309,7 @@ static void queue_add(struct dma_ops_domain *dma_dom,
+ 	pages     = __roundup_pow_of_two(pages);
+ 	address >>= PAGE_SHIFT;
+ 
+-	queue = get_cpu_ptr(&flush_queue);
++	queue = raw_cpu_ptr(&flush_queue);
+ 	spin_lock_irqsave(&queue->lock, flags);
+ 
+ 	if (queue->next == FLUSH_QUEUE_SIZE)
+@@ -2326,8 +2326,6 @@ static void queue_add(struct dma_ops_domain *dma_dom,
+ 
+ 	if (atomic_cmpxchg(&queue_timer_on, 0, 1) == 0)
+ 		mod_timer(&queue_timer, jiffies + msecs_to_jiffies(10));
+-
+-	put_cpu_ptr(&flush_queue);
+ }
+ 
+ 
+-- 
+2.7.4
+

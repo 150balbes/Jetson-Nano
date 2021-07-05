@@ -3,7 +3,7 @@
  *
  * Copyright (C) 2010 Google, Inc.
  *
- * Copyright (c) 2010-2018, NVIDIA CORPORATION, All rights reserved.
+ * Copyright (c) 2010-2020, NVIDIA CORPORATION, All rights reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -41,7 +41,10 @@ static bool tegra_dc_windows_are_clean(struct tegra_dc_win *windows[],
 	int i;
 
 	for (i = 0; i < n; i++) {
-		if (windows[i]->dirty) {
+		struct tegra_dc *dc = windows[i]->dc;
+		struct tegra_dc_win *win =
+			tegra_dc_get_window(dc, windows[i]->idx);
+		if (win->dirty) {
 			return false;
 		}
 	}
@@ -318,7 +321,7 @@ static inline u32 compute_dda_inc(fixed20_12 in, unsigned out_int,
 	 * Where the value of MAX is as follows:
 	 * For V_DDA_INCREMENT: 15.0 (0xF000)
 	 * For H_DDA_INCREMENT:  4.0 (0x4000) for 4 Bytes/pix formats.
-	 *			 8.0 (0x8000) for 2 Bytes/pix formats.
+	 *			 8.0 (0x8000) for all other formats.
 	 */
 
 	fixed20_12 out = dfixed_init(out_int);
@@ -332,11 +335,12 @@ static inline u32 compute_dda_inc(fixed20_12 in, unsigned out_int,
 		default:
 			WARN_ON_ONCE(1);
 			/* fallthrough */
-		case 4:
-			max = 4;
-			break;
+		case 1:
 		case 2:
 			max = 8;
+			break;
+		case 4:
+			max = 4;
 			break;
 		}
 	}

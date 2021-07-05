@@ -684,11 +684,7 @@ static struct console univ8250_console = {
 	.device		= uart_console_device,
 	.setup		= univ8250_console_setup,
 	.match		= univ8250_console_match,
-#ifdef CONFIG_SERIAL_LOGLEVEL_PRINT
-	.flags		= CON_PRINTBUFFER | CON_ANYTIME | CON_FORCE_LEVEL,
-#else
 	.flags		= CON_PRINTBUFFER | CON_ANYTIME,
-#endif
 	.index		= -1,
 	.data		= &serial8250_reg,
 };

@@ -6,6 +6,8 @@ Properties :
  - tc1 : Coefficient 1 for thermal trend calculation.
  - tc2 : Coefficient 2 for thermal trend calculation.
  - node for subdev : Node for subdevice information. Required.
+ - use_tmargin : if tmargin algorithm should be used for calculating the
+   effective temp. Refer Tmargin section for more info.
 
 Properties in subdev node : Required.
  - subdev_names : list of strings. It contains list of the name of the therm
@@ -45,3 +47,91 @@ Example:
 			};
 		};
 	};
+
+Tmargin Algorithm:
+The native max temp algorithm lacks support for accomodating multiple thermal
+fan curves. Tmargin algorithm solves this by calculating the effective
+temperature as a difference from critical temperature of the therm fan est
+group. This allows us to take a union of two fan curves and satisfy the needs
+of both the therm-fan-est groups.
+The algorithm use the effective temperature(crit_temp - sensor_reading) to
+drive the cooling device.
+
+Properties rules for therm-fan-est dt entry:
+ - use_tmargin : To use the tmargin feature.
+ - profiles : New profile tmargin should be defined and chosen as default.
+	* The trip temperatures need to be given only in ascending order for the
+	  thermal framework to register therm-fan-est zone. Hence, the dt values
+	  for active trip temps should be given in ascending values of tmargin
+	  values.
+	* Hysterysis is used only in cooling scenario. Since tmargin is
+	  considered as a diff wrt crit_Temp, hysterysis values should be taken
+	  as -ve values.
+
+Properties rules for fan dt entry:
+ - profiles : New profile for tmargin should be defined and chosen as default.
+	* The trip temps are considered in a ascending order of tmargin temps.
+	  Hence, the pwm values should be considered in a descending order of
+	  pwms.
+	* active_steps - The tmargin trip values are considered in the ascending
+	  order(hence actual trip temps will be in descending order), so the
+	  pwm mapping should be in the reverse order starting from 255 for
+	  index 0.
+
+Example :
+
+        thermal-fan-est {
+                compatible = "thermal-fan-est";
+                name = "thermal-fan-est";
+                status = "okay";
+                num_resources = <0>;
+                shared_data = <&thermal_fan_est_shared_data>;
+                trip_length = <10>;
+                use_tmargin;
+
+                profiles {
+                        default = "tmargin";
+                        quiet {
+                                active_trip_temps = <0 50000 63000 72000 81000
+                                                140000 150000 160000 170000 180000>;
+                                active_hysteresis = <0 18000 8000 8000 8000
+                                                0 0 0 0 0>;
+                        };
+                        cool {
+                                active_trip_temps = <0 35000 53000 62000 73000
+                                                140000 150000 160000 170000 180000>;
+                                active_hysteresis = <0 9000 8000 8000 9000
+                                                0 0 0 0 0>;
+                        };
+                        tmargin {
+                                active_trip_temps = <0 10000 15000 25000 35000
+                                                45000 55000 65000 75000 105000>;
+                                active_hysteresis = <0 0 0 0 (-3000)
+                                                (-4000) (-4000) 0 0 0>;
+                        };
+                };
+        };
+
+        pwm-fan {
+                compatible = "pwm-fan";
+                status = "okay";
+                #pwm-cells = <1>;
+                pwms = <&tegra_pwm4 0 45334>;
+                shared_data = <&pwm_fan_shared_data>;
+                profiles {
+                        default = "tmargin";
+                        quiet {
+                                state_cap = <8>;
+                                active_pwm = <0 60 90 120 150 180 210 240 255 255>;
+                        };
+                        cool {
+                                state_cap = <4>;
+                                active_pwm = <0 77 120 160 255 255 255 255 255 255>;
+                        };
+                        tmargin {
+                                state_cap = <0>;
+                                active_pwm = <255 255 240 210 180 150 120 90 60 0>;
+                        };
+                };
+        };
+

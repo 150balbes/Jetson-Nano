@@ -1,7 +1,7 @@
 /*
  * GM20B GPC MMU
  *
- * Copyright (c) 2011-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2011-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -33,6 +33,7 @@
 #include <nvgpu/channel.h>
 
 #include "gk20a/gr_gk20a.h"
+#include "gk20a/regops_gk20a.h"
 
 #include "gr_gm20b.h"
 #include "pmu_gm20b.h"
@@ -1453,6 +1454,31 @@ void gm20a_gr_disable_rd_coalesce(struct gk20a *g)
 u32 gr_gm20b_get_pmm_per_chiplet_offset(void)
 {
 	return (perf_pmmsys_extent_v() - perf_pmmsys_base_v() + 1);
+}
+
+int gm20b_gr_set_mmu_debug_mode(struct gk20a *g,
+		struct channel_gk20a *ch, bool enable)
+{
+	struct nvgpu_dbg_reg_op ctx_ops = {
+		.op = REGOP(WRITE_32),
+		.type = REGOP(TYPE_GR_CTX),
+		.offset = gr_gpcs_pri_mmu_debug_ctrl_r(),
+		.value_lo = enable ?
+			gr_gpcs_pri_mmu_debug_ctrl_debug_enabled_f() :
+			gr_gpcs_pri_mmu_debug_ctrl_debug_disabled_f(),
+	};
+	int err;
+	struct tsg_gk20a *tsg = tsg_gk20a_from_ch(ch);
+
+	if (tsg == NULL) {
+		return enable ? -EINVAL : 0;
+	}
+
+	err = gr_gk20a_exec_ctx_ops(ch, &ctx_ops, 1, 1, 0, NULL);
+	if (err != 0) {
+		nvgpu_err(g, "update MMU debug mode failed");
+	}
+	return err;
 }
 
 void gm20b_gr_set_debug_mode(struct gk20a *g, bool enable)

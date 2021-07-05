@@ -1,7 +1,7 @@
 /*
  * drivers/video/tegra/nvmap/nvmap_cache_t19x.c
  *
- * Copyright (c) 2016-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2016-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -22,7 +22,7 @@
 
 struct static_key nvmap_updated_cache_config;
 
-void nvmap_handle_get_cacheability(struct nvmap_handle *h,
+static void nvmap_handle_get_cacheability(struct nvmap_handle *h,
 		bool *inner, bool *outer)
 {
 	struct nvmap_handle_t19x *handle_t19x;
@@ -66,6 +66,7 @@ static void nvmap_setup_t19x_cache_ops(struct nvmap_chip_cache_op *op)
 {
 	op->inner_flush_cache_all = nvmap_t19x_flush_cache;
 	op->inner_clean_cache_all = nvmap_t19x_clean_cache;
+	op->nvmap_get_cacheability = nvmap_handle_get_cacheability;
 	op->name = kstrdup("scf", GFP_KERNEL);
 }
 NVMAP_CACHE_OF_DECLARE("nvidia,carveouts-t19x", nvmap_setup_t19x_cache_ops);

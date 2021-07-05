@@ -1,7 +1,7 @@
 /*
  * VI NOTIFY driver for T186
  *
- * Copyright (c) 2015-2017 NVIDIA Corporation.  All rights reserved.
+ * Copyright (c) 2015-2019 NVIDIA Corporation.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -36,7 +36,7 @@
 #include "vi_notify.h"
 
 /* XXX: move ioctls to include/linux/ (after T18X merge) */
-#include <linux/nvhost_vi_ioctl.h>
+#include <uapi/linux/nvhost_vi_ioctl.h>
 
 #define NVHOST_VI_SET_IGN_MASK _IOW(NVHOST_VI_IOCTL_MAGIC, 10, u32)
 #define NVHOST_VI_SET_SYNCPTS \

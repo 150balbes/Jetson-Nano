@@ -1,7 +1,7 @@
 /*
  * Tegra Video Input device common APIs
  *
- * Copyright (c) 2015-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2015-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * Author: Bryan Wu <pengw@nvidia.com>
  *
@@ -114,7 +114,7 @@ static void tegra_vi_notify(struct v4l2_subdev *sd,
 	list_for_each_entry(chan, &vi->vi_chans, list) {
 		for (i = 0; i < chan->num_subdevs; i++)
 			if (sd == chan->subdev[i]) {
-				v4l2_event_queue(&chan->video, arg);
+				v4l2_event_queue(chan->video, arg);
 				if (ev->type == V4L2_EVENT_SOURCE_CHANGE &&
 						vb2_is_streaming(&chan->queue))
 					vb2_queue_error(&chan->queue);
@@ -131,6 +131,10 @@ int tegra_vi_v4l2_init(struct tegra_mc_vi *vi)
 		sizeof(vi->media_dev.model));
 	vi->media_dev.hw_revision = 3;
 
+#if LINUX_VERSION_CODE > KERNEL_VERSION(4, 9, 0)
+	media_device_init(&vi->media_dev);
+#endif
+
 	ret = media_device_register(&vi->media_dev);
 	if (ret < 0) {
 		dev_err(vi->dev,
@@ -138,9 +142,6 @@ int tegra_vi_v4l2_init(struct tegra_mc_vi *vi)
 			ret);
 		return ret;
 	}
-#if LINUX_VERSION_CODE > KERNEL_VERSION(4, 9, 0)
-	media_device_init(&vi->media_dev);
-#endif
 
 	mutex_init(&vi->bw_update_lock);
 	vi->v4l2_dev.mdev = &vi->media_dev;
@@ -228,10 +229,21 @@ int tpg_vi_media_controller_init(struct tegra_mc_vi *mc_vi, int pg_mode)
 			goto channel_init_error;
 		}
 
-		err = video_register_device(&item->video, VFL_TYPE_GRABBER, -1);
+		/* Allocate video_device */
+		err = tegra_channel_init_video(item);
 		if (err < 0) {
-			dev_err(&item->video.dev, "failed to register %s\n",
-				item->video.name);
+			devm_kfree(mc_vi->dev, item);
+			dev_err(&item->video->dev, "failed to allocate video device %s\n",
+				item->video->name);
+			goto channel_init_error;
+		}
+
+		err = video_register_device(item->video, VFL_TYPE_GRABBER, -1);
+		if (err < 0) {
+			devm_kfree(mc_vi->dev, item);
+			video_device_release(item->video);
+			dev_err(&item->video->dev, "failed to register %s\n",
+				item->video->name);
 			goto channel_init_error;
 		}
 
@@ -269,8 +281,8 @@ void tpg_vi_media_controller_cleanup(struct tegra_mc_vi *mc_vi)
 	list_for_each_entry_safe(item, itemn, &mc_vi->vi_chans, list) {
 		if (!item->pg_mode)
 			continue;
-		if (item->video.cdev != NULL)
-		      video_unregister_device(&item->video);
+		if (item->video->cdev != NULL)
+			video_unregister_device(item->video);
 		tegra_channel_cleanup(item);
 		list_del(&item->list);
 		devm_kfree(mc_vi->dev, item);

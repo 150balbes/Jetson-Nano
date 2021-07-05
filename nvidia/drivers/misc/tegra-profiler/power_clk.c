@@ -73,6 +73,8 @@ struct power_clk_context_s {
 	struct timer_list timer;
 	unsigned int period;
 
+	unsigned int is_cpufreq : 1;
+
 	struct quadd_ctx *quadd_ctx;
 };
 
@@ -386,8 +388,10 @@ read_all_sources_work_func(struct work_struct *work)
 	int cpu_id;
 	struct power_clk_source *s = &power_ctx.cpu;
 
-	for_each_possible_cpu(cpu_id)
-		read_source(s, cpu_id);
+	if (power_ctx.is_cpufreq) {
+		for_each_possible_cpu(cpu_id)
+			read_source(s, cpu_id);
+	}
 
 	read_source(&power_ctx.gpu, -1);
 	read_source(&power_ctx.emc, -1);
@@ -485,11 +489,11 @@ int quadd_power_clk_start(void)
 	power_ctx.period = 0;
 #else
 	power_ctx.period = MSEC_PER_SEC / param->power_rate_freq;
-	pr_info("clk: use timer\n");
+	pr_info("pclk: use timer, freq: %u\n", param->power_rate_freq);
 #endif
 
-	pr_info("power_clk: start, freq: %d\n",
-		param->power_rate_freq);
+	pr_info("pclk: start, cpufreq: %s\n",
+		power_ctx.is_cpufreq ? "yes" : "no");
 
 	/* setup gpu frequency */
 	s = &power_ctx.gpu;
@@ -500,11 +504,13 @@ int quadd_power_clk_start(void)
 	enable_clock(s, &s->nb[PCLK_NB_EMC], "cpu", "emc");
 
 	/* setup cpu frequency notifier */
-	s = &power_ctx.cpu;
-	mutex_lock(&s->lock);
-	reset_data(s);
-	atomic_set(&s->active, 1);
-	mutex_unlock(&s->lock);
+	if (power_ctx.is_cpufreq) {
+		s = &power_ctx.cpu;
+		mutex_lock(&s->lock);
+		reset_data(s);
+		atomic_set(&s->active, 1);
+		mutex_unlock(&s->lock);
+	}
 
 	if (power_ctx.period > 0) {
 		init_timer(timer);
@@ -536,17 +542,20 @@ void quadd_power_clk_stop(void)
 	s = &power_ctx.emc;
 	disable_clock(s, &s->nb[PCLK_NB_EMC]);
 
-	s = &power_ctx.cpu;
-	mutex_lock(&s->lock);
-	atomic_set(&s->active, 0);
-	s->clkp = NULL;
-	mutex_unlock(&s->lock);
+	if (power_ctx.is_cpufreq) {
+		s = &power_ctx.cpu;
+		mutex_lock(&s->lock);
+		atomic_set(&s->active, 0);
+		s->clkp = NULL;
+		mutex_unlock(&s->lock);
+	}
 
-	pr_info("power_clk: stop\n");
+	pr_info("pclk: stop\n");
 }
 
 int quadd_power_clk_init(struct quadd_ctx *quadd_ctx)
 {
+	int __maybe_unused ret;
 	struct power_clk_source *s;
 
 	s = &power_ctx.gpu;
@@ -564,8 +573,20 @@ int quadd_power_clk_init(struct quadd_ctx *quadd_ctx)
 
 	power_ctx.quadd_ctx = quadd_ctx;
 
-	cpufreq_register_notifier(&s->nb[PCLK_NB_CPU_FREQ],
-				  CPUFREQ_TRANSITION_NOTIFIER);
+#ifdef CONFIG_CPU_FREQ
+	ret = cpufreq_register_notifier(&s->nb[PCLK_NB_CPU_FREQ],
+					CPUFREQ_TRANSITION_NOTIFIER);
+	if (ret < 0) {
+		pr_warn("CPU freq registration failed: %d\n", ret);
+		power_ctx.is_cpufreq = 0;
+	} else {
+		power_ctx.is_cpufreq = 1;
+	}
+#else
+	power_ctx.is_cpufreq = 0;
+#endif
+	quadd_ctx->pclk_cpufreq = power_ctx.is_cpufreq;
+
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 10, 0)
 	register_cpu_notifier(&s->nb[PCLK_NB_CPU_HOTPLUG]);
 #endif
@@ -579,8 +600,12 @@ void quadd_power_clk_deinit(void)
 
 	quadd_power_clk_stop();
 
-	cpufreq_unregister_notifier(&s->nb[PCLK_NB_CPU_FREQ],
-				    CPUFREQ_TRANSITION_NOTIFIER);
+#ifdef CONFIG_CPU_FREQ
+	if (power_ctx.is_cpufreq)
+		cpufreq_unregister_notifier(&s->nb[PCLK_NB_CPU_FREQ],
+					    CPUFREQ_TRANSITION_NOTIFIER);
+#endif
+
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 10, 0)
 	unregister_cpu_notifier(&s->nb[PCLK_NB_CPU_HOTPLUG]);
 #endif

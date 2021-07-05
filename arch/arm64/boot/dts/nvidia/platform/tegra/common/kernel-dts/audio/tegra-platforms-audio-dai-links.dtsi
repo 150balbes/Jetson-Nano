@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -71,6 +71,26 @@
 
 		nvidia,xbar = <&tegra_axbar>;
 
+		nvidia,audio-routing =
+			"x Headphone",          "x OUT",
+			"x IN",                 "x Mic",
+			"y Headphone",          "y OUT",
+			"y IN",                 "y Mic",
+			"z Headphone",          "z OUT",
+			"z IN",                 "z Mic",
+			"m Headphone",          "m OUT",
+			"m IN",                 "m Mic",
+			"n Headphone",          "n OUT",
+			"n IN",                 "n Mic",
+			"o Headphone",          "o OUT",
+			"o IN",                 "o Mic",
+			"a IN",                 "a Mic",
+			"b IN",                 "b Mic",
+			"c IN",                 "c Mic",
+			"d IN",                 "d Mic",
+			"d1 Headphone",         "d1 OUT",
+			"d2 Headphone",         "d2 OUT";
+
 		nvidia,dai-link-1 {
 			link-name = "spdif-dit-0";
 			cpu-dai = <&tegra_i2s1>;
@@ -79,7 +99,6 @@
 			codec-dai-name = "dit-hifi";
 			format = "i2s";
 			bit-format = "s16_le";
-			bclk_ratio = <1>;
 			srate = <48000>;
 			num-channel = <2>;
 			ignore_suspend;
@@ -94,7 +113,6 @@
 			codec-dai-name = "dit-hifi";
 			format = "i2s";
 			bit-format = "s16_le";
-			bclk_ratio = <1>;
 			srate = <48000>;
 			num-channel = <2>;
 			ignore_suspend;
@@ -109,7 +127,6 @@
 			codec-dai-name = "dit-hifi";
 			format = "i2s";
 			bit-format = "s16_le";
-			bclk_ratio = <1>;
 			srate = <48000>;
 			num-channel = <2>;
 			ignore_suspend;
@@ -124,7 +141,6 @@
 			codec-dai-name = "dit-hifi";
 			format = "i2s";
 			bit-format = "s16_le";
-			bclk_ratio = <1>;
 			srate = <48000>;
 			num-channel = <2>;
 			ignore_suspend;
@@ -139,7 +155,6 @@
 			codec-dai-name = "dit-hifi";
 			format = "i2s";
 			bit-format = "s16_le";
-			bclk_ratio = <1>;
 			srate = <48000>;
 			num-channel = <2>;
 			ignore_suspend;
@@ -154,7 +169,6 @@
 			codec-dai-name = "dit-hifi";
 			format = "i2s";
 			bit-format = "s16_le";
-			bclk_ratio = <1>;
 			srate = <8000>;
 			num-channel = <1>;
 			ignore_suspend;
@@ -217,8 +231,8 @@
 			name-prefix = "d";
 			status = "okay";
 		};
-		dspk_1_dai_link: nvidia,dai-link-11 {
-			link-name = "dspk-playback-r";
+		nvidia,dai-link-11 {
+			link-name = "dspk1-playback";
 			cpu-dai = <&tegra_dspk1>;
 			codec-dai = <&spdif_dit11>;
 			cpu-dai-name = "DSPK1";
@@ -231,8 +245,8 @@
 			name-prefix = "d1";
 			status = "okay";
 		};
-		dspk_2_dai_link: nvidia,dai-link-12 {
-			link-name = "dspk-playback-l";
+		nvidia,dai-link-12 {
+			link-name = "dspk2-playback";
 			cpu-dai = <&tegra_dspk2>;
 			codec-dai = <&spdif_dit12>;
 			cpu-dai-name = "DSPK2";

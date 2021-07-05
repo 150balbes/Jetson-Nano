@@ -1,7 +1,7 @@
 /*
  * drivers/video/tegra/nvmap/nvmap_init_t19x.c
  *
- * Copyright (c) 2016-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2016-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -168,8 +168,9 @@ static int __init nvmap_gosmem_device_init(struct reserved_mem *rmem,
 				pr_err("sg_alloc_table failed:%d\n", ret);
 				goto free;
 			}
-			sg_set_buf(sgt->sgl,
-				(cpu_addr + i * SZ_4K), SZ_4K);
+			sg_set_page(sgt->sgl, virt_to_page(cpu_addr + i * SZ_4K),
+					      SZ_4K,
+					      offset_in_page(cpu_addr + i * SZ_4K));
 		}
 	}
 	rmem->priv = &gosmem;

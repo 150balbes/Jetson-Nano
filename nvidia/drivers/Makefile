@@ -11,6 +11,7 @@
 
 subdir-ccflags-y += -Werror
 
+obj-$(CONFIG_RTK_BTUSB)         += bluetooth/realtek/
 obj-$(CONFIG_NVPMODEL_EMC)      += nvpmodel/
 obj-$(CONFIG_TEGRA_NVLINK)	+= nvlink/
 obj-$(CONFIG_NVPPS)		+= nvpps/

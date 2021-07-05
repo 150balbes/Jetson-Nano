@@ -1,0 +1,115 @@
+From 3e038f3be3adffe6f88da04ef91d48b808c101db Mon Sep 17 00:00:00 2001
+From: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+Date: Thu, 29 Jan 2015 15:10:08 +0100
+Subject: [PATCH 214/371] block/mq: don't complete requests via IPI
+X-NVConfidentiality: public
+
+The IPI runs in hardirq context and there are sleeping locks. This patch
+moves the completion into a workqueue.
+
+Signed-off-by: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+---
+ block/blk-core.c       |  3 +++
+ block/blk-mq.c         | 20 ++++++++++++++++++++
+ include/linux/blk-mq.h |  2 +-
+ include/linux/blkdev.h |  1 +
+ 4 files changed, 25 insertions(+), 1 deletion(-)
+
+diff --git a/block/blk-core.c b/block/blk-core.c
+index 8f34951..cade8ff 100644
+--- a/block/blk-core.c
++++ b/block/blk-core.c
+@@ -127,6 +127,9 @@ void blk_rq_init(struct request_queue *q, struct request *rq)
+ 
+ 	INIT_LIST_HEAD(&rq->queuelist);
+ 	INIT_LIST_HEAD(&rq->timeout_list);
++#ifdef CONFIG_PREEMPT_RT_FULL
++	INIT_WORK(&rq->work, __blk_mq_complete_request_remote_work);
++#endif
+ 	rq->cpu = -1;
+ 	rq->q = q;
+ 	rq->__sector = (sector_t) -1;
+diff --git a/block/blk-mq.c b/block/blk-mq.c
+index 29a25ab..25c6919 100644
+--- a/block/blk-mq.c
++++ b/block/blk-mq.c
+@@ -184,6 +184,9 @@ static void blk_mq_rq_ctx_init(struct request_queue *q, struct blk_mq_ctx *ctx,
+ 	rq->resid_len = 0;
+ 	rq->sense = NULL;
+ 
++#ifdef CONFIG_PREEMPT_RT_FULL
++	INIT_WORK(&rq->work, __blk_mq_complete_request_remote_work);
++#endif
+ 	INIT_LIST_HEAD(&rq->timeout_list);
+ 	rq->timeout = 0;
+ 
+@@ -352,6 +355,17 @@ void blk_mq_end_request(struct request *rq, int error)
+ }
+ EXPORT_SYMBOL(blk_mq_end_request);
+ 
++#ifdef CONFIG_PREEMPT_RT_FULL
++
++void __blk_mq_complete_request_remote_work(struct work_struct *work)
++{
++	struct request *rq = container_of(work, struct request, work);
++
++	rq->q->softirq_done_fn(rq);
++}
++
++#else
++
+ static void __blk_mq_complete_request_remote(void *data)
+ {
+ 	struct request *rq = data;
+@@ -359,6 +373,8 @@ static void __blk_mq_complete_request_remote(void *data)
+ 	rq->q->softirq_done_fn(rq);
+ }
+ 
++#endif
++
+ static void blk_mq_ipi_complete_request(struct request *rq)
+ {
+ 	struct blk_mq_ctx *ctx = rq->mq_ctx;
+@@ -375,10 +391,14 @@ static void blk_mq_ipi_complete_request(struct request *rq)
+ 		shared = cpus_share_cache(cpu, ctx->cpu);
+ 
+ 	if (cpu != ctx->cpu && !shared && cpu_online(ctx->cpu)) {
++#ifdef CONFIG_PREEMPT_RT_FULL
++		schedule_work_on(ctx->cpu, &rq->work);
++#else
+ 		rq->csd.func = __blk_mq_complete_request_remote;
+ 		rq->csd.info = rq;
+ 		rq->csd.flags = 0;
+ 		smp_call_function_single_async(ctx->cpu, &rq->csd);
++#endif
+ 	} else {
+ 		rq->q->softirq_done_fn(rq);
+ 	}
+diff --git a/include/linux/blk-mq.h b/include/linux/blk-mq.h
+index 00b4043..4498f82 100644
+--- a/include/linux/blk-mq.h
++++ b/include/linux/blk-mq.h
+@@ -209,7 +209,7 @@ static inline u16 blk_mq_unique_tag_to_tag(u32 unique_tag)
+ 	return unique_tag & BLK_MQ_UNIQUE_TAG_MASK;
+ }
+ 
+-
++void __blk_mq_complete_request_remote_work(struct work_struct *work);
+ int blk_mq_request_started(struct request *rq);
+ void blk_mq_start_request(struct request *rq);
+ void blk_mq_end_request(struct request *rq, int error);
+diff --git a/include/linux/blkdev.h b/include/linux/blkdev.h
+index 657689d..7b18f20 100644
+--- a/include/linux/blkdev.h
++++ b/include/linux/blkdev.h
+@@ -89,6 +89,7 @@ struct request {
+ 	struct list_head queuelist;
+ 	union {
+ 		struct call_single_data csd;
++		struct work_struct work;
+ 		u64 fifo_time;
+ 	};
+ 
+-- 
+2.7.4
+

@@ -57,7 +57,12 @@ struct tegra210_pm_data {
 };
 static struct tegra210_pm_data t210_pm_data;
 
+#ifdef CONFIG_PREEMPT_RT_FULL
+static DEFINE_RAW_SPINLOCK(tegra210_cpu_pm_lock);
+#else
 static DEFINE_RWLOCK(tegra210_cpu_pm_lock);
+#endif
+
 static RAW_NOTIFIER_HEAD(tegra210_cpu_pm_chain);
 
 static void tegra210_bpmp_enable_suspend(int mode, int flags)
@@ -175,9 +180,18 @@ int tegra210_cpu_pm_enter(void *idle_idx)
 {
 	int ret = 0;
 
+#ifdef CONFIG_PREEMPT_RT_FULL
+	unsigned long flags;
+	raw_spin_lock_irqsave(&tegra210_cpu_pm_lock, flags);
+#else
 	read_lock(&tegra210_cpu_pm_lock);
+#endif
 	ret = tegra210_cpu_pm_notify(CPU_PM_ENTER, idle_idx, -1, NULL);
+#ifdef CONFIG_PREEMPT_RT_FULL
+	raw_spin_unlock_irqrestore(&tegra210_cpu_pm_lock, flags);
+#else
 	read_unlock(&tegra210_cpu_pm_lock);
+#endif
 
 	return ret;
 }
@@ -187,9 +201,18 @@ int tegra210_cpu_pm_exit(void *idle_idx)
 {
 	int ret;
 
+#ifdef CONFIG_PREEMPT_RT_FULL
+	unsigned long flags;
+	raw_spin_lock_irqsave(&tegra210_cpu_pm_lock, flags);
+#else
 	read_lock(&tegra210_cpu_pm_lock);
+#endif
 	ret = tegra210_cpu_pm_notify(CPU_PM_EXIT, idle_idx, -1, NULL);
+#ifdef CONFIG_PREEMPT_RT_FULL
+	raw_spin_unlock_irqrestore(&tegra210_cpu_pm_lock, flags);
+#else
 	read_unlock(&tegra210_cpu_pm_lock);
+#endif
 
 	return ret;
 }
@@ -200,9 +223,17 @@ static int tegra210_cpu_pm_register_notifier(struct notifier_block *nb)
 	unsigned long flags;
 	int ret;
 
+#ifdef CONFIG_PREEMPT_RT_FULL
+	raw_spin_lock_irqsave(&tegra210_cpu_pm_lock, flags);
+#else
 	write_lock_irqsave(&tegra210_cpu_pm_lock, flags);
+#endif
 	ret = raw_notifier_chain_register(&tegra210_cpu_pm_chain, nb);
+#ifdef CONFIG_PREEMPT_RT_FULL
+	raw_spin_unlock_irqrestore(&tegra210_cpu_pm_lock, flags);
+#else
 	write_unlock_irqrestore(&tegra210_cpu_pm_lock, flags);
+#endif
 
 	return ret;
 }

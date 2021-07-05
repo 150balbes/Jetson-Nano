@@ -1,0 +1,140 @@
+From 45702b8d5a8ad10a3e394cac7366f1b8af9e7eb9 Mon Sep 17 00:00:00 2001
+From: Thomas Gleixner <tglx@linutronix.de>
+Date: Mon, 6 Jun 2011 12:20:33 +0200
+Subject: [PATCH 131/371] sched: Move mmdrop to RCU on RT
+X-NVConfidentiality: public
+
+Takes sleeping locks and calls into the memory allocator, so nothing
+we want to do in task switch and oder atomic contexts.
+
+Signed-off-by: Thomas Gleixner <tglx@linutronix.de>
+---
+ include/linux/mm_types.h |  4 ++++
+ include/linux/sched.h    | 11 +++++++++++
+ kernel/fork.c            | 13 +++++++++++++
+ kernel/sched/core.c      | 19 +++++++++++++++++--
+ 4 files changed, 45 insertions(+), 2 deletions(-)
+
+diff --git a/include/linux/mm_types.h b/include/linux/mm_types.h
+index 2f51a85..04c9a55 100644
+--- a/include/linux/mm_types.h
++++ b/include/linux/mm_types.h
+@@ -11,6 +11,7 @@
+ #include <linux/completion.h>
+ #include <linux/cpumask.h>
+ #include <linux/uprobes.h>
++#include <linux/rcupdate.h>
+ #include <linux/page-flags-layout.h>
+ #include <linux/workqueue.h>
+ #include <asm/page.h>
+@@ -526,6 +527,9 @@ struct mm_struct {
+ 	bool tlb_flush_batched;
+ #endif
+ 	struct uprobes_state uprobes_state;
++#ifdef CONFIG_PREEMPT_RT_BASE
++	struct rcu_head delayed_drop;
++#endif
+ #ifdef CONFIG_X86_INTEL_MPX
+ 	/* address of the bounds directory */
+ 	void __user *bd_addr;
+diff --git a/include/linux/sched.h b/include/linux/sched.h
+index d8e36d7..8f66209 100644
+--- a/include/linux/sched.h
++++ b/include/linux/sched.h
+@@ -3109,6 +3109,17 @@ static inline void mmdrop(struct mm_struct *mm)
+ 		__mmdrop(mm);
+ }
+ 
++#ifdef CONFIG_PREEMPT_RT_BASE
++extern void __mmdrop_delayed(struct rcu_head *rhp);
++static inline void mmdrop_delayed(struct mm_struct *mm)
++{
++	if (atomic_dec_and_test(&mm->mm_count))
++		call_rcu(&mm->delayed_drop, __mmdrop_delayed);
++}
++#else
++# define mmdrop_delayed(mm)	mmdrop(mm)
++#endif
++
+ static inline void mmdrop_async_fn(struct work_struct *work)
+ {
+ 	struct mm_struct *mm = container_of(work, struct mm_struct, async_put_work);
+diff --git a/kernel/fork.c b/kernel/fork.c
+index 86296ac..1339415 100644
+--- a/kernel/fork.c
++++ b/kernel/fork.c
+@@ -890,6 +890,19 @@ void __mmdrop(struct mm_struct *mm)
+ }
+ EXPORT_SYMBOL_GPL(__mmdrop);
+ 
++#ifdef CONFIG_PREEMPT_RT_BASE
++/*
++ * RCU callback for delayed mm drop. Not strictly rcu, but we don't
++ * want another facility to make this work.
++ */
++void __mmdrop_delayed(struct rcu_head *rhp)
++{
++	struct mm_struct *mm = container_of(rhp, struct mm_struct, delayed_drop);
++
++	__mmdrop(mm);
++}
++#endif
++
+ static inline void __mmput(struct mm_struct *mm)
+ {
+ 	VM_BUG_ON(atomic_read(&mm->mm_users));
+diff --git a/kernel/sched/core.c b/kernel/sched/core.c
+index 12454f8..8f0ca60 100644
+--- a/kernel/sched/core.c
++++ b/kernel/sched/core.c
+@@ -2863,8 +2863,12 @@ static struct rq *finish_task_switch(struct task_struct *prev)
+ 	finish_arch_post_lock_switch();
+ 
+ 	fire_sched_in_preempt_notifiers(current);
++	/*
++	 * We use mmdrop_delayed() here so we don't have to do the
++	 * full __mmdrop() when we are the last user.
++	 */
+ 	if (mm)
+-		mmdrop(mm);
++		mmdrop_delayed(mm);
+ 	if (unlikely(prev_state == TASK_DEAD)) {
+ 		if (prev->sched_class->task_dead)
+ 			prev->sched_class->task_dead(prev);
+@@ -5714,6 +5718,8 @@ void sched_setnuma(struct task_struct *p, int nid)
+ #endif /* CONFIG_NUMA_BALANCING */
+ 
+ #ifdef CONFIG_HOTPLUG_CPU
++static DEFINE_PER_CPU(struct mm_struct *, idle_last_mm);
++
+ /*
+  * Ensures that the idle task is using init_mm right before its cpu goes
+  * offline.
+@@ -5728,7 +5734,12 @@ void idle_task_exit(void)
+ 		switch_mm(mm, &init_mm, current);
+ 		finish_arch_post_lock_switch();
+ 	}
+-	mmdrop(mm);
++	/*
++	 * Defer the cleanup to an alive cpu. On RT we can neither
++	 * call mmdrop() nor mmdrop_delayed() from here.
++	 */
++	per_cpu(idle_last_mm, smp_processor_id()) = mm;
++
+ }
+ 
+ /*
+@@ -7821,6 +7832,10 @@ int sched_cpu_dying(unsigned int cpu)
+ 	update_max_interval();
+ 	nohz_balance_exit_idle(cpu);
+ 	hrtick_clear(rq);
++	if (per_cpu(idle_last_mm, cpu)) {
++		mmdrop_delayed(per_cpu(idle_last_mm, cpu));
++		per_cpu(idle_last_mm, cpu) = NULL;
++	}
+ 	return 0;
+ }
+ #endif
+-- 
+2.7.4
+

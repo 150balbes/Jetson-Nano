@@ -1,0 +1,300 @@
+From f96b205b9971566c318274abbb4ad34eae940a05 Mon Sep 17 00:00:00 2001
+From: Thomas Gleixner <tglx@linutronix.de>
+Date: Fri, 17 Jun 2011 15:42:38 +0200
+Subject: [PATCH 077/371] Intrduce migrate_disable() + cpu_light()
+X-NVConfidentiality: public
+
+Introduce migrate_disable(). The task can't be pushed to another CPU but can
+be preempted.
+
+From: Peter Zijlstra <a.p.zijlstra@chello.nl>:
+|Make migrate_disable() be a preempt_disable() for !rt kernels. This
+|allows generic code to use it but still enforces that these code
+|sections stay relatively small.
+|
+|A preemptible migrate_disable() accessible for general use would allow
+|people growing arbitrary per-cpu crap instead of clean these things
+|up.
+
+From: Steven Rostedt <rostedt@goodmis.org>
+| The migrate_disable() can cause a bit of a overhead to the RT kernel,
+| as changing the affinity is expensive to do at every lock encountered.
+| As a running task can not migrate, the actual disabling of migration
+| does not need to occur until the task is about to schedule out.
+|
+| In most cases, a task that disables migration will enable it before
+| it schedules making this change improve performance tremendously.
+
+On top of this build get/put_cpu_light(). It is similar to get_cpu():
+it uses migrate_disable() instead of preempt_disable(). That means the user
+remains on the same CPU but the function using it may be preempted and
+invoked again from another caller on the same CPU.
+
+Change-Id: I671c9f8e5ea4d97174722179ae0da79173038b75
+Signed-off-by: Thomas Gleixner <tglx@linutronix.de>
+---
+ include/linux/cpu.h     |  3 +++
+ include/linux/preempt.h |  9 +++++++
+ include/linux/sched.h   | 39 +++++++++++++++++++++------
+ include/linux/smp.h     |  3 +++
+ kernel/sched/core.c     | 70 ++++++++++++++++++++++++++++++++++++++++++++++++-
+ kernel/sched/debug.c    |  7 +++++
+ lib/smp_processor_id.c  |  5 ++--
+ 7 files changed, 125 insertions(+), 11 deletions(-)
+
+diff --git a/include/linux/cpu.h b/include/linux/cpu.h
+index af3dde1..e52ddfd 100644
+--- a/include/linux/cpu.h
++++ b/include/linux/cpu.h
+@@ -186,6 +186,9 @@ static inline void cpu_notifier_register_done(void)
+ #endif /* CONFIG_SMP */
+ extern struct bus_type cpu_subsys;
+ 
++static inline void pin_current_cpu(void) { }
++static inline void unpin_current_cpu(void) { }
++
+ #ifdef CONFIG_HOTPLUG_CPU
+ /* Stop CPUs going up and down. */
+ 
+diff --git a/include/linux/preempt.h b/include/linux/preempt.h
+index 26e0eaa..64f1488 100644
+--- a/include/linux/preempt.h
++++ b/include/linux/preempt.h
+@@ -262,11 +262,20 @@ do { \
+ # define preempt_enable_rt()		preempt_enable()
+ # define preempt_disable_nort()		barrier()
+ # define preempt_enable_nort()		barrier()
++# ifdef CONFIG_SMP
++   extern void migrate_disable(void);
++   extern void migrate_enable(void);
++# else /* CONFIG_SMP */
++#  define migrate_disable()		barrier()
++#  define migrate_enable()		barrier()
++# endif /* CONFIG_SMP */
+ #else
+ # define preempt_disable_rt()		barrier()
+ # define preempt_enable_rt()		barrier()
+ # define preempt_disable_nort()		preempt_disable()
+ # define preempt_enable_nort()		preempt_enable()
++# define migrate_disable()		preempt_disable()
++# define migrate_enable()		preempt_enable()
+ #endif
+ 
+ #ifdef CONFIG_PREEMPT_NOTIFIERS
+diff --git a/include/linux/sched.h b/include/linux/sched.h
+index 7b66d3b..3d1d4a4 100644
+--- a/include/linux/sched.h
++++ b/include/linux/sched.h
+@@ -1691,6 +1691,12 @@ struct task_struct {
+ #endif
+ 
+ 	unsigned int policy;
++#ifdef CONFIG_PREEMPT_RT_FULL
++	int migrate_disable;
++# ifdef CONFIG_SCHED_DEBUG
++	int migrate_disable_atomic;
++# endif
++#endif
+ 	int nr_cpus_allowed;
+ 	cpumask_t cpus_allowed;
+ 
+@@ -2172,14 +2178,6 @@ static inline struct vm_struct *task_stack_vm_area(const struct task_struct *t)
+ }
+ #endif
+ 
+-/* Future-safe accessor for struct task_struct's cpus_allowed. */
+-#define tsk_cpus_allowed(tsk) (&(tsk)->cpus_allowed)
+-
+-static inline int tsk_nr_cpus_allowed(struct task_struct *p)
+-{
+-	return p->nr_cpus_allowed;
+-}
+-
+ #define TNF_MIGRATED	0x01
+ #define TNF_NO_GROUP	0x02
+ #define TNF_SHARED	0x04
+@@ -3744,6 +3742,31 @@ static inline void set_task_cpu(struct task_struct *p, unsigned int cpu)
+ extern void task_decayed_load(struct task_struct *p, struct sched_avg *avg);
+ #endif
+ 
++static inline int __migrate_disabled(struct task_struct *p)
++{
++#ifdef CONFIG_PREEMPT_RT_FULL
++	return p->migrate_disable;
++#else
++	return 0;
++#endif
++}
++
++/* Future-safe accessor for struct task_struct's cpus_allowed. */
++static inline const struct cpumask *tsk_cpus_allowed(struct task_struct *p)
++{
++	if (__migrate_disabled(p))
++		return cpumask_of(task_cpu(p));
++
++	return &p->cpus_allowed;
++}
++
++static inline int tsk_nr_cpus_allowed(struct task_struct *p)
++{
++	if (__migrate_disabled(p))
++		return 1;
++	return p->nr_cpus_allowed;
++}
++
+ extern long sched_setaffinity(pid_t pid, const struct cpumask *new_mask);
+ extern long sched_getaffinity(pid_t pid, struct cpumask *mask);
+ 
+diff --git a/include/linux/smp.h b/include/linux/smp.h
+index 68123c1..891c533 100644
+--- a/include/linux/smp.h
++++ b/include/linux/smp.h
+@@ -197,6 +197,9 @@ static inline int get_boot_cpu_id(void)
+ #define get_cpu()		({ preempt_disable(); smp_processor_id(); })
+ #define put_cpu()		preempt_enable()
+ 
++#define get_cpu_light()		({ migrate_disable(); smp_processor_id(); })
++#define put_cpu_light()		migrate_enable()
++
+ /*
+  * Callback to arch code if there's nosmp or maxcpus=0 on the
+  * boot command line:
+diff --git a/kernel/sched/core.c b/kernel/sched/core.c
+index 23a0031..954fc42 100644
+--- a/kernel/sched/core.c
++++ b/kernel/sched/core.c
+@@ -1141,6 +1141,11 @@ void do_set_cpus_allowed(struct task_struct *p, const struct cpumask *new_mask)
+ 
+ 	lockdep_assert_held(&p->pi_lock);
+ 
++	if (__migrate_disabled(p)) {
++		cpumask_copy(&p->cpus_allowed, new_mask);
++		return;
++	}
++
+ 	queued = task_on_rq_queued(p);
+ 	running = task_current(rq, p);
+ 
+@@ -1222,7 +1227,7 @@ static int __set_cpus_allowed_ptr(struct task_struct *p,
+ 	}
+ 
+ 	/* Can the task run on the task's current CPU? If so, we're done */
+-	if (cpumask_test_cpu(task_cpu(p), new_mask))
++	if (cpumask_test_cpu(task_cpu(p), new_mask) || __migrate_disabled(p))
+ 		goto out;
+ 
+ 	if (task_running(rq, p) || p->state == TASK_WAKING) {
+@@ -3366,6 +3371,69 @@ static inline void schedule_debug(struct task_struct *prev)
+ 	schedstat_inc(this_rq()->sched_count);
+ }
+ 
++#if defined(CONFIG_PREEMPT_RT_FULL) && defined(CONFIG_SMP)
++
++void migrate_disable(void)
++{
++	struct task_struct *p = current;
++
++	if (in_atomic()) {
++#ifdef CONFIG_SCHED_DEBUG
++		p->migrate_disable_atomic++;
++#endif
++		return;
++	}
++
++#ifdef CONFIG_SCHED_DEBUG
++	WARN_ON_ONCE(p->migrate_disable_atomic);
++#endif
++
++	if (p->migrate_disable) {
++		p->migrate_disable++;
++		return;
++	}
++
++	preempt_disable();
++	pin_current_cpu();
++	p->migrate_disable = 1;
++	preempt_enable();
++}
++EXPORT_SYMBOL(migrate_disable);
++
++void migrate_enable(void)
++{
++	struct task_struct *p = current;
++
++	if (in_atomic()) {
++#ifdef CONFIG_SCHED_DEBUG
++		p->migrate_disable_atomic--;
++#endif
++		return;
++	}
++
++#ifdef CONFIG_SCHED_DEBUG
++	WARN_ON_ONCE(p->migrate_disable_atomic);
++#endif
++	WARN_ON_ONCE(p->migrate_disable <= 0);
++
++	if (p->migrate_disable > 1) {
++		p->migrate_disable--;
++		return;
++	}
++
++	preempt_disable();
++	/*
++	 * Clearing migrate_disable causes tsk_cpus_allowed to
++	 * show the tasks original cpu affinity.
++	 */
++	p->migrate_disable = 0;
++
++	unpin_current_cpu();
++	preempt_enable();
++}
++EXPORT_SYMBOL(migrate_enable);
++#endif
++
+ /*
+  * Pick up the highest-prio task:
+  */
+diff --git a/kernel/sched/debug.c b/kernel/sched/debug.c
+index 59e38cd..a7edaab 100644
+--- a/kernel/sched/debug.c
++++ b/kernel/sched/debug.c
+@@ -621,6 +621,9 @@ void print_rt_rq(struct seq_file *m, int cpu, struct rt_rq *rt_rq)
+ 	P(rt_throttled);
+ 	PN(rt_time);
+ 	PN(rt_runtime);
++#ifdef CONFIG_SMP
++	P(rt_nr_migratory);
++#endif
+ 
+ #undef PN
+ #undef P
+@@ -1042,6 +1045,10 @@ void proc_sched_show_task(struct task_struct *p, struct seq_file *m)
+ #endif
+ 	P(policy);
+ 	P(prio);
++#ifdef CONFIG_PREEMPT_RT_FULL
++	P(migrate_disable);
++#endif
++	P(nr_cpus_allowed);
+ #undef PN_SCHEDSTAT
+ #undef PN
+ #undef __PN
+diff --git a/lib/smp_processor_id.c b/lib/smp_processor_id.c
+index 1afec32..11fa431 100644
+--- a/lib/smp_processor_id.c
++++ b/lib/smp_processor_id.c
+@@ -39,8 +39,9 @@ notrace static unsigned int check_preemption_disabled(const char *what1,
+ 	if (!printk_ratelimit())
+ 		goto out_enable;
+ 
+-	printk(KERN_ERR "BUG: using %s%s() in preemptible [%08x] code: %s/%d\n",
+-		what1, what2, preempt_count() - 1, current->comm, current->pid);
++	printk(KERN_ERR "BUG: using %s%s() in preemptible [%08x %08x] code: %s/%d\n",
++		what1, what2, preempt_count() - 1, __migrate_disabled(current),
++		current->comm, current->pid);
+ 
+ 	print_symbol("caller is %s\n", (long)__builtin_return_address(0));
+ 	dump_stack();
+-- 
+2.7.4
+

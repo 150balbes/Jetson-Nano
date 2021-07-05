@@ -1,0 +1,38 @@
+From 5280dcb971329a0024601158cce32f2d80731e50 Mon Sep 17 00:00:00 2001
+From: Sumit Gupta <sumitg@nvidia.com>
+Date: Mon, 14 Oct 2019 18:27:33 +0530
+Subject: [PATCH 370/371] irq: tegra: add IRQF_NO_THREAD flag for doorbell
+X-NVConfidentiality: public
+
+Doorbell irq's are used for communication with BPMP.
+Adding IRQF_NO_THREAD flag in request_irq() for doorbell
+interrupts to prevent converting irq hanlder to thread.
+Converting to thread was causing crash as kthread is not
+available during early kernel init.
+
+Bug 200511477
+
+Change-Id: Id927221ce9dd601ef5127f886f07eb34dfc27763
+Signed-off-by: Sumit Gupta <sumitg@nvidia.com>
+---
+ drivers/irqchip/irq-tegra.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/irqchip/irq-tegra.c b/drivers/irqchip/irq-tegra.c
+index 2311084..0e5f4fa 100644
+--- a/drivers/irqchip/irq-tegra.c
++++ b/drivers/irqchip/irq-tegra.c
+@@ -515,8 +515,8 @@ static int __init tegra_ictlr_init(struct device_node *node,
+ 			break;
+ 
+ 		doorbells[idx].hwirq = irq_to_desc(irq)->irq_data.hwirq - 32;
+-		err = request_irq(doorbells[idx].irq, doorbell_handler, 0,
+-				  "doorbell", &doorbells[idx]);
++		err = request_irq(doorbells[idx].irq, doorbell_handler,
++				IRQF_NO_THREAD, "doorbell", &doorbells[idx]);
+ 		if (err < 0) {
+ 			pr_err("doorbell %d irq %d request failure\n",
+ 				idx, irq);
+-- 
+2.7.4
+

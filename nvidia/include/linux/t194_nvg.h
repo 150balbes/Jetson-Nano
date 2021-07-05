@@ -2,7 +2,7 @@
 #define T194_NVG_H
 
 /*
- * Copyright (c) 2017-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -81,6 +81,11 @@ typedef enum {
 	TEGRA_NVG_CHANNEL_DDA_SNOC_GLOBAL_CTRL				= 77,
 	TEGRA_NVG_CHANNEL_DDA_SNOC_CLIENT_REQ_CTRL			= 78,
 	TEGRA_NVG_CHANNEL_DDA_SNOC_CLIENT_REPLENTISH_CTRL	= 79,
+
+	TEGRA_NVG_CHANNEL_RT_SAFE_MASK				= 80,
+	TEGRA_NVG_CHANNEL_RT_WINDOW_US				= 81,
+	TEGRA_NVG_CHANNEL_RT_FWD_PROGRESS_US			= 82,
+
 
 	TEGRA_NVG_CHANNEL_LAST_INDEX,
 } tegra_nvg_channel_id_t;

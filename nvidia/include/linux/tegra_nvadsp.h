@@ -1,7 +1,7 @@
 /*
  * A Header file for managing ADSP/APE
  *
- * Copyright (c) 2014-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2014-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -198,7 +198,8 @@ void nvadsp_os_stop(void);
 int __must_check nvadsp_os_suspend(void);
 void dump_adsp_sys(void);
 void nvadsp_get_os_version(char *, int);
-
+int adsp_usage_set(unsigned int  val);
+unsigned int adsp_usage_get(void);
 /*
  * ADSP TSC
  */

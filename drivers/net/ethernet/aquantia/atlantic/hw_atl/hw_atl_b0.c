@@ -100,12 +100,17 @@ static int hw_atl_b0_hw_reset(struct aq_hw_s *self)
 	return err;
 }
 
+static int hw_atl_b0_set_fc(struct aq_hw_s *self, u32 fc, u32 tc)
+{
+	hw_atl_rpb_rx_xoff_en_per_tc_set(self, !!(fc & AQ_NIC_FC_RX), tc);
+	return 0;
+}
+
 static int hw_atl_b0_hw_qos_set(struct aq_hw_s *self)
 {
 	u32 tc = 0U;
 	u32 buff_size = 0U;
 	unsigned int i_priority = 0U;
-	bool is_rx_flow_control = false;
 
 	/* TPS Descriptor rate init */
 	hw_atl_tps_tx_pkt_shed_desc_rate_curr_time_res_set(self, 0x0U);
@@ -138,7 +143,6 @@ static int hw_atl_b0_hw_qos_set(struct aq_hw_s *self)
 
 	/* QoS Rx buf size per TC */
 	tc = 0;
-	is_rx_flow_control = (AQ_NIC_FC_RX & self->aq_nic_cfg->flow_control);
 	buff_size = HW_ATL_B0_RXBUF_MAX;
 
 	hw_atl_rpb_rx_pkt_buff_size_per_tc_set(self, buff_size, tc);
@@ -150,7 +154,8 @@ static int hw_atl_b0_hw_qos_set(struct aq_hw_s *self)
 						   (buff_size *
 						   (1024U / 32U) * 50U) /
 						   100U, tc);
-	hw_atl_rpb_rx_xoff_en_per_tc_set(self, is_rx_flow_control ? 1U : 0U, tc);
+
+	hw_atl_b0_set_fc(self, self->aq_nic_cfg->flow_control, tc);
 
 	/* QoS 802.1p priority -> TC mapping */
 	for (i_priority = 8U; i_priority--;)
@@ -337,7 +342,19 @@ static int hw_atl_b0_hw_init_rx_path(struct aq_hw_s *self)
 	/* RSS hash type set for IP/TCP */
 	control_reg_val |= 0x1EU;
 
-	aq_hw_write_reg(self, 0x00005040U, control_reg_val);	
+	aq_hw_write_reg(self, 0x00005040U, control_reg_val);
+
+	/* HW bug workaround:
+	 * Disable RSS for UDP using rx flow filter 0.
+	 * HW does not track RSS stream for fragmenged UDP, 0x5040 control reg
+	 * does not work.
+	 */
+	hw_atl_rpf_l3_l4_enf_set(self, true, 0);
+	hw_atl_rpf_l4_protf_en_set(self, true, 0);
+	hw_atl_rpf_l3_l4_rxqf_en_set(self, true, 0);
+	hw_atl_rpf_l3_l4_actf_set(self, L2_FILTER_ACTION_HOST, 0);
+	hw_atl_rpf_l3_l4_rxqf_set(self, 0, 0);
+	hw_atl_rpf_l4_protf_set(self, HW_ATL_RX_UDP, 0);
 
 	hw_atl_rpfl2broadcast_flr_act_set(self, 1U);
 	hw_atl_rpfl2broadcast_count_threshold_set(self, 0xFFFFU & (~0U / 256U));
@@ -376,10 +393,10 @@ err_exit:
 static int hw_atl_b0_hw_init(struct aq_hw_s *self, u8 *mac_addr)
 {
 	static u32 aq_hw_atl_igcr_table_[4][2] = {
-		{ 0x20000000U, 0x20000000U }, /* AQ_IRQ_INVALID */
-		{ 0x20000080U, 0x20000080U }, /* AQ_IRQ_LEGACY */
-		{ 0x20000021U, 0x20000025U }, /* AQ_IRQ_MSI */
-		{ 0x20000022U, 0x20000026U }  /* AQ_IRQ_MSIX */
+		[AQ_HW_IRQ_INVALID] = { 0x20000000U, 0x20000000U },
+		[AQ_HW_IRQ_LEGACY]  = { 0x20000080U, 0x20000080U },
+		[AQ_HW_IRQ_MSI]     = { 0x20000021U, 0x20000025U },
+		[AQ_HW_IRQ_MSIX]    = { 0x20000022U, 0x20000026U },
 	};
 
 	int err = 0;
@@ -429,7 +446,11 @@ static int hw_atl_b0_hw_init(struct aq_hw_s *self, u8 *mac_addr)
 	/* Interrupts */
 	hw_atl_reg_gen_irq_map_set(self,
 				   ((HW_ATL_B0_ERR_INT << 0x18) | (1U << 0x1F)) |
-			    ((HW_ATL_B0_ERR_INT << 0x10) | (1U << 0x17)), 0U);
+				   ((HW_ATL_B0_ERR_INT << 0x10) | (1U << 0x17)), 0U);
+
+	/* Enable link interrupt */
+	if (aq_nic_cfg->link_irq_vec)
+		hw_atl_reg_gen_irq_map_set(self, BIT(7) | aq_nic_cfg->link_irq_vec, 3U);
 
 	hw_atl_b0_hw_offload_set(self, aq_nic_cfg);
 
@@ -772,7 +793,7 @@ static int hw_atl_b0_hw_packet_filter_set(struct aq_hw_s *self,
 
 	hw_atl_rpfl2promiscuous_mode_en_set(self, IS_FILTER_ENABLED(IFF_PROMISC));
 	hw_atl_rpfl2multicast_flr_en_set(self,
-					 IS_FILTER_ENABLED(IFF_MULTICAST), 0);
+					 IS_FILTER_ENABLED(IFF_ALLMULTI), 0);
 
 	hw_atl_rpfl2_accept_all_mc_packets_set(self,
 					       IS_FILTER_ENABLED(IFF_ALLMULTI));
@@ -923,6 +944,12 @@ static int hw_atl_b0_hw_interrupt_moderation_set(struct aq_hw_s *self)
 static int hw_atl_b0_hw_stop(struct aq_hw_s *self)
 {
 	hw_atl_b0_hw_irq_disable(self, HW_ATL_B0_INT_MASK);
+
+	/* Invalidate Descriptor Cache to prevent writing to the cached
+	 * descriptors and to the data pointer of those descriptors
+	 */
+	hw_atl_rdm_rx_dma_desc_cache_init_set(self, 1);
+
 	return aq_hw_err_from_flags(self);
 }
 
@@ -993,4 +1020,5 @@ const struct aq_hw_ops hw_atl_ops_b0 = {
 	.hw_get_hw_stats             = hw_atl_utils_get_hw_stats,
 	.hw_get_fw_version           = hw_atl_utils_get_fw_version,
 	.hw_set_loopback             = hw_atl_b0_set_loopback,
+	.hw_set_fc                   = hw_atl_b0_set_fc,
 };

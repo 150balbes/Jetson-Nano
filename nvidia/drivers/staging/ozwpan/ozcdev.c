@@ -1,5 +1,6 @@
 /* -----------------------------------------------------------------------------
  * Copyright (c) 2011 Ozmo Inc
+ * Copyright (c) 2020, NVIDIA CORPORATION. All rights reserved.
  * Released under the GNU General Public License Version 2 (GPLv2).
  * -----------------------------------------------------------------------------
  */
@@ -11,9 +12,9 @@
 #include <linux/etherdevice.h>
 #include <linux/poll.h>
 #include <linux/sched.h>
+#include <uapi/staging/ozappif.h>
 #include "ozprotocol.h"
 #include "oztrace.h"
-#include "ozappif.h"
 #include "ozeltbuf.h"
 #include "ozpd.h"
 #include "ozproto.h"

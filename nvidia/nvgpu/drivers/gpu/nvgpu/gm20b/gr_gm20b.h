@@ -1,7 +1,7 @@
 /*
  * GM20B GPC MMU
  *
- * Copyright (c) 2014-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2014-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -125,5 +125,7 @@ int gr_gm20b_get_preemption_mode_flags(struct gk20a *g,
 void gm20b_gr_clear_sm_hww(struct gk20a *g, u32 gpc, u32 tpc, u32 sm,
 			u32 global_esr);
 u32 gr_gm20b_get_pmm_per_chiplet_offset(void);
+int gm20b_gr_set_mmu_debug_mode(struct gk20a *g,
+		struct channel_gk20a *ch, bool enable);
 void gm20b_gr_set_debug_mode(struct gk20a *g, bool enable);
 #endif /* NVGPU_GM20B_GR_GM20B_H */

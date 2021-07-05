@@ -1,7 +1,7 @@
 /*
  * NVHOST queue management for T194
  *
- * Copyright (c) 2016-2018, NVIDIA Corporation.  All rights reserved.
+ * Copyright (c) 2016-2020, NVIDIA Corporation.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -337,7 +337,6 @@ struct nvhost_queue *nvhost_queue_alloc(struct nvhost_queue_pool *pool,
 		if (err < 0)
 			goto err_alloc_channel;
 
-		queue->channel->syncpts[0] = queue->syncpt_id;
 		queue->vm_pdev = queue->channel->vm->pdev;
 	} else {
 		queue->vm_pdev = pdev;

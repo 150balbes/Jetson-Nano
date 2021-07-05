@@ -59,9 +59,9 @@
 #define BIT64(nr) (1ULL << (nr))
 
 static struct host1x_device_info host1x04_info = {
-	.nb_channels	= T124_NVHOST_NUMCHANNELS,
+	.nb_channels	= T210_NVHOST_NUMCHANNELS,
 	.ch_base	= 0,
-	.ch_limit	= T124_NVHOST_NUMCHANNELS,
+	.ch_limit	= T210_NVHOST_NUMCHANNELS,
 	.nb_mlocks	= NV_HOST1X_NB_MLOCKS,
 	.initialize_chip_support = nvhost_init_t210_support,
 	.nb_hw_pts	= NV_HOST1X_SYNCPT_NB_PTS,
@@ -70,6 +70,7 @@ static struct host1x_device_info host1x04_info = {
 	.pts_limit	= NV_HOST1X_SYNCPT_NB_PTS,
 	.syncpt_policy	= SYNCPT_PER_CHANNEL,
 	.nb_actmons	= 1,
+	.dma_mask	= DMA_BIT_MASK(34),
 	/* firmware_area_size=0 as no isolate_contexts=y */
 };
 
@@ -214,7 +215,7 @@ struct nvhost_device_data t21_msenc_info = {
 	.borps_val		= 0x2008,
 	.actmon_enabled		= true,
 	.firmware_name		= "nvhost_nvenc050.fw",
-	.resource_policy	= RESOURCE_PER_CHANNEL_INSTANCE,
+	.resource_policy	= RESOURCE_PER_DEVICE,
 	.serialize		= true,
 	.bond_out_id		= BOND_OUT_NVENC,
 #if defined(CONFIG_TEGRA_BWMGR)
@@ -249,7 +250,7 @@ struct nvhost_device_data t21_nvdec_info = {
 	.borps_addr		= 0x00001650,
 	.borps_val		= 0x2008,
 	.actmon_enabled		= true,
-	.resource_policy	= RESOURCE_PER_CHANNEL_INSTANCE,
+	.resource_policy	= RESOURCE_PER_DEVICE,
 	.serialize		= true,
 	.bond_out_id		= BOND_OUT_NVDEC,
 #if defined(CONFIG_TEGRA_BWMGR)
@@ -289,7 +290,7 @@ struct nvhost_device_data t21_nvjpg_info = {
 	.borps_val		= 0x2008,
 	.actmon_enabled		= true,
 	.bond_out_id		= BOND_OUT_NVJPG,
-	.resource_policy	= RESOURCE_PER_CHANNEL_INSTANCE,
+	.resource_policy	= RESOURCE_PER_DEVICE,
 	.serialize		= true,
 	.firmware_name		= "nvhost_nvjpg010.fw",
 #if defined(CONFIG_TEGRA_BWMGR)
@@ -395,7 +396,7 @@ struct nvhost_device_data t21_vic_info = {
 	.firmware_name		= "vic04_ucode.bin",
 	.bond_out_id		= BOND_OUT_VIC,
 	.aggregate_constraints	= nvhost_vic_aggregate_constraints,
-	.resource_policy	= RESOURCE_PER_CHANNEL_INSTANCE,
+	.resource_policy	= RESOURCE_PER_DEVICE,
 	.num_ppc		= 8,
 #if defined(CONFIG_TEGRA_BWMGR)
 	.bwmgr_client_id	= TEGRA_BWMGR_CLIENT_VIC,

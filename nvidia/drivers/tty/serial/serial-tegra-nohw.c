@@ -3,7 +3,7 @@
  *
  * High-speed serial no hardware flow control driver for NVIDIA Tegra SoCs
  *
- * Copyright (c) 2017-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * Author: Laxman Dewangan <ldewangan@nvidia.com>
  *
@@ -698,7 +698,7 @@ static int tegra_uart_rx_buffer_push(struct tegra_uart_port *tup,
 	struct tty_struct *tty = tty_port_tty_get(port);
 	struct circ_buf *ring = &tup->rx_ring;
 	unsigned char *rx_buf;
-	int ret;
+	int ret = 0;
 
 	if (!count)
 		return 0;

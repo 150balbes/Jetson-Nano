@@ -1711,13 +1711,18 @@ int mmc_regulator_set_ocr(struct mmc_host *mmc,
 {
 	int			result = 0;
 	int			min_uV, max_uV;
+	int			reg_min_uV, reg_max_uV;
 
 	if (vdd_bit) {
 		mmc_ocrbitnum_to_vdd(vdd_bit, &min_uV, &max_uV);
 
 		if (mmc->ops->pre_regulator_config)
 			mmc->ops->pre_regulator_config(mmc, vdd_bit, true);
-		result = regulator_set_voltage(supply, min_uV, max_uV);
+
+		result = regulator_get_constraint_voltages(supply, &reg_min_uV,
+                                                           &reg_max_uV);
+		if ((result == 0) && (reg_min_uV != reg_max_uV))
+			result = regulator_set_voltage(supply, min_uV, max_uV);
 		if (result == 0 && !mmc->regulator_enabled) {
 			result = regulator_enable(supply);
 			if (!result)

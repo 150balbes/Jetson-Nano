@@ -23,9 +23,7 @@
 #include <linux/of_platform.h>
 #include <linux/platform_device.h>
 #include <linux/pm_runtime.h>
-#include <linux/tegra_pm_domains.h>
 #include <linux/regmap.h>
-#include <linux/slab.h>
 #include <soc/tegra/chip-id.h>
 #include <sound/soc.h>
 #include <linux/clk/tegra.h>
@@ -33,22 +31,6 @@
 #include "tegra210_xbar_utils_alt.h"
 
 static struct tegra_xbar *xbar;
-
-int tegra210_xbar_set_clock(unsigned long rate)
-{
-	int ret = 0;
-
-	ret = clk_set_rate(xbar->clk_parent, rate);
-	if (ret)
-		pr_info("Failed to set clock rate of pll_a_out0\n");
-
-	ret = clk_set_rate(xbar->clk, rate);
-	if (ret)
-		pr_info("Failed to set clock rate of ahub\n");
-
-	return 0;
-}
-EXPORT_SYMBOL_GPL(tegra210_xbar_set_clock);
 
 void tegra210_xbar_set_cif(struct regmap *regmap, unsigned int reg,
 			  struct tegra210_xbar_cif_conf *conf)
@@ -87,8 +69,7 @@ void tegra210_xbar_write_ahubram(struct regmap *regmap, unsigned int reg_ctrl,
 	unsigned int val = 0;
 	int i = 0;
 
-	val = (ram_offset << TEGRA210_AHUBRAMCTL_CTRL_RAM_ADDR_SHIFT) &
-		TEGRA210_AHUBRAMCTL_CTRL_RAM_ADDR_MASK;
+	val = ram_offset & TEGRA210_AHUBRAMCTL_CTRL_RAM_ADDR_MASK;
 	val |= TEGRA210_AHUBRAMCTL_CTRL_ADDR_INIT_EN;
 	val |= TEGRA210_AHUBRAMCTL_CTRL_SEQ_ACCESS_EN;
 	val |= TEGRA210_AHUBRAMCTL_CTRL_RW_WRITE;
@@ -108,8 +89,7 @@ void tegra210_xbar_read_ahubram(struct regmap *regmap, unsigned int reg_ctrl,
 	unsigned int val = 0;
 	int i = 0;
 
-	val = (ram_offset << TEGRA210_AHUBRAMCTL_CTRL_RAM_ADDR_SHIFT) &
-		TEGRA210_AHUBRAMCTL_CTRL_RAM_ADDR_MASK;
+	val = ram_offset & TEGRA210_AHUBRAMCTL_CTRL_RAM_ADDR_MASK;
 	val |= TEGRA210_AHUBRAMCTL_CTRL_ADDR_INIT_EN;
 	val |= TEGRA210_AHUBRAMCTL_CTRL_SEQ_ACCESS_EN;
 	val |= TEGRA210_AHUBRAMCTL_CTRL_RW_READ;
@@ -249,11 +229,9 @@ int tegra_xbar_runtime_suspend(struct device *dev)
 	regcache_cache_only(xbar->regmap, true);
 	regcache_mark_dirty(xbar->regmap);
 
-	if (!(tegra_platform_is_unit_fpga() || tegra_platform_is_fpga())) {
+	if (!(tegra_platform_is_unit_fpga() || tegra_platform_is_fpga()))
 		clk_disable_unprepare(xbar->clk);
-		clk_disable_unprepare(xbar->clk_ape);
-		clk_disable_unprepare(xbar->clk_apb2ape);
-	}
+
 	return 0;
 }
 EXPORT_SYMBOL_GPL(tegra_xbar_runtime_suspend);
@@ -263,18 +241,6 @@ int tegra_xbar_runtime_resume(struct device *dev)
 	int ret;
 
 	if (!(tegra_platform_is_unit_fpga() || tegra_platform_is_fpga())) {
-		ret = clk_prepare_enable(xbar->clk_ape);
-		if (ret) {
-			dev_err(dev, "clk_prepare_enable failed: %d\n", ret);
-			return ret;
-		}
-
-		ret = clk_prepare_enable(xbar->clk_apb2ape);
-		if (ret) {
-			dev_err(dev, "clk_prepare_enable failed: %d\n", ret);
-			return ret;
-		}
-
 		ret = clk_prepare_enable(xbar->clk);
 		if (ret) {
 			dev_err(dev, "clk_prepare_enable failed: %d\n", ret);
@@ -285,19 +251,11 @@ int tegra_xbar_runtime_resume(struct device *dev)
 	tegra186_setup_ahc_interrupts();
 #endif
 	regcache_cache_only(xbar->regmap, false);
-
-	if (!xbar->is_shutdown)
-		regcache_sync(xbar->regmap);
+	regcache_sync(xbar->regmap);
 
 	return 0;
 }
 EXPORT_SYMBOL_GPL(tegra_xbar_runtime_resume);
-
-void tegra_xbar_shutdown(struct platform_device *pdev)
-{
-	xbar->is_shutdown = true;
-}
-EXPORT_SYMBOL_GPL(tegra_xbar_shutdown);
 
 int tegra_xbar_remove(struct platform_device *pdev)
 {
@@ -307,134 +265,52 @@ int tegra_xbar_remove(struct platform_device *pdev)
 	if (!pm_runtime_status_suspended(&pdev->dev))
 		tegra_xbar_runtime_suspend(&pdev->dev);
 
-	tegra_pd_remove_device(&pdev->dev);
-
 	return 0;
 }
 EXPORT_SYMBOL_GPL(tegra_xbar_remove);
 
-int tegra_xbar_codec_probe(struct snd_soc_codec *codec)
-{
-	codec->control_data = xbar->regmap;
-
-	return 0;
-}
-EXPORT_SYMBOL_GPL(tegra_xbar_codec_probe);
-
-
 int tegra_xbar_probe(struct platform_device *pdev,
-					struct tegra_xbar_soc_data *soc_data)
+		     struct tegra_xbar_soc_data *soc_data)
 {
 	void __iomem *regs;
 	struct resource *res;
-	struct clk *parent_clk;
 	int ret;
 
 	xbar = devm_kzalloc(&pdev->dev, sizeof(*xbar), GFP_KERNEL);
-	if (!xbar) {
-		dev_err(&pdev->dev, "Can't allocate xbar\n");
-		ret = -ENOMEM;
-		goto err;
-	}
+	if (!xbar)
+		return -ENOMEM;
 
 	xbar->soc_data = soc_data;
-	xbar->is_shutdown = false;
-
 	platform_set_drvdata(pdev, xbar);
 
 	if (!(tegra_platform_is_unit_fpga() || tegra_platform_is_fpga())) {
 		xbar->clk = devm_clk_get(&pdev->dev, "ahub");
 		if (IS_ERR(xbar->clk)) {
 			dev_err(&pdev->dev, "Can't retrieve ahub clock\n");
-			ret = PTR_ERR(xbar->clk);
-			goto err;
-		}
-
-		xbar->clk_parent = devm_clk_get(&pdev->dev, "pll_a_out0");
-		if (IS_ERR(xbar->clk_parent)) {
-			dev_err(&pdev->dev, "Can't retrieve pll_a_out0 clock\n");
-			ret = PTR_ERR(xbar->clk_parent);
-			goto err;
-		}
-
-		xbar->clk_apb2ape = devm_clk_get(&pdev->dev, "apb2ape");
-		if (IS_ERR(xbar->clk_apb2ape)) {
-			dev_err(&pdev->dev, "Can't retrieve apb2ape clock\n");
-			ret = PTR_ERR(xbar->clk_apb2ape);
-			goto err;
-		}
-
-		xbar->clk_ape = devm_clk_get(&pdev->dev, "xbar.ape");
-		if (IS_ERR(xbar->clk_ape)) {
-			dev_err(&pdev->dev, "Can't retrieve ape clock\n");
-			ret = PTR_ERR(xbar->clk_ape);
-			goto err;
-		}
-	}
-
-	parent_clk = clk_get_parent(xbar->clk);
-	if (IS_ERR(parent_clk)) {
-		dev_err(&pdev->dev, "Can't get parent clock for xbar\n");
-		ret = PTR_ERR(parent_clk);
-		goto err;
-	}
-
-	if (!(tegra_platform_is_unit_fpga() || tegra_platform_is_fpga())) {
-		ret = clk_set_parent(xbar->clk, xbar->clk_parent);
-		if (ret) {
-			dev_err(&pdev->dev, "Failed to set parent clock with pll_a_out0\n");
-			goto err;
+			return PTR_ERR(xbar->clk);
 		}
 	}
 
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
-	if (!res) {
-		dev_err(&pdev->dev, "No memory resource for admaif\n");
-		ret = -ENODEV;
-		goto err;
-	}
-
 	regs = devm_ioremap_resource(&pdev->dev, res);
-	if (!regs) {
-		dev_err(&pdev->dev, "request/iomap region failed\n");
-		ret = -ENODEV;
-		goto err_clk_set_parent;
-	}
-
+	if (IS_ERR(regs))
+		return PTR_ERR(regs);
 	xbar->regmap = devm_regmap_init_mmio(&pdev->dev, regs,
 					     soc_data->regmap_config);
 	if (IS_ERR(xbar->regmap)) {
 		dev_err(&pdev->dev, "regmap init failed\n");
-		ret = PTR_ERR(xbar->regmap);
-		goto err_clk_set_parent;
+		return PTR_ERR(xbar->regmap);
 	}
 	regcache_cache_only(xbar->regmap, true);
 
-	tegra_pd_add_device(&pdev->dev);
-
 	pm_runtime_enable(&pdev->dev);
-	if (!pm_runtime_enabled(&pdev->dev)) {
-		ret = tegra_xbar_runtime_resume(&pdev->dev);
-		if (ret)
-			goto err_pm_disable;
+	ret = soc_data->xbar_registration(pdev);
+	if (ret) {
+		pm_runtime_disable(&pdev->dev);
+		return ret;
 	}
 
-	ret = soc_data->xbar_registration(pdev);
-	if (ret == -EBUSY)
-		goto err_suspend;
-
 	return 0;
-
-err_suspend:
-	if (!pm_runtime_status_suspended(&pdev->dev))
-		tegra_xbar_runtime_suspend(&pdev->dev);
-err_pm_disable:
-	pm_runtime_disable(&pdev->dev);
-	tegra_pd_remove_device(&pdev->dev);
-err_clk_set_parent:
-	clk_set_parent(xbar->clk, parent_clk);
-err:
-	return ret;
 }
 EXPORT_SYMBOL_GPL(tegra_xbar_probe);
 MODULE_LICENSE("GPL");

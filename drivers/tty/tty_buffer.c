@@ -26,7 +26,7 @@
  * Byte threshold to limit memory consumption for flip buffers.
  * The actual memory limit is > 2x this amount.
  */
-#define TTYB_DEFAULT_MEM_LIMIT	65536
+#define TTYB_DEFAULT_MEM_LIMIT	(640 * 1024UL)
 
 /*
  * We default to dicing tty buffer allocations to this many characters
@@ -403,14 +403,22 @@ void tty_schedule_flip(struct tty_port *port)
 {
 	struct tty_bufhead *buf = &port->buf;
 
-	if (port->tty_kthread) {
-		wake_up_process(port->tty_kthread);
-		return;
-	}
 	/* paired w/ acquire in flush_to_ldisc(); ensures
 	 * flush_to_ldisc() sees buffer data.
 	 */
 	smp_store_release(&buf->tail->commit, buf->tail->used);
+
+	/* if we're running the rt_flush thread, wake it up, it'll take care
+	 * of calling flush_to_ldisc
+	 */
+	if (port->tty_kthread) {
+		wake_up_process(port->tty_kthread);
+		return;
+	}
+
+	/* we're not running the rt_flush thread, just queue a call to
+	 * flush_to_ldisc instead
+	 */
 	queue_work(system_unbound_wq, &buf->work);
 }
 EXPORT_SYMBOL(tty_schedule_flip);
@@ -465,6 +473,8 @@ int tty_ldisc_receive_buf(struct tty_ldisc *ld, unsigned char *p,
 		if (count && ld->ops->receive_buf)
 			ld->ops->receive_buf(ld->tty, p, f, count);
 	}
+	if (count > 0)
+		memset(p, 0, count);
 	return count;
 }
 EXPORT_SYMBOL_GPL(tty_ldisc_receive_buf);

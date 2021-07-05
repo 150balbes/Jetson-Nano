@@ -43,6 +43,7 @@
 #include <linux/radix-tree.h>
 #include <linux/workqueue.h>
 #include <linux/interrupt.h>
+#include <linux/thermal.h>
 
 #include <linux/mlx5/device.h>
 #include <linux/mlx5/doorbell.h>
@@ -119,6 +120,7 @@ enum {
 	MLX5_REG_PMLP		 = 0x5002,
 	MLX5_REG_NODE_DESC	 = 0x6001,
 	MLX5_REG_HOST_ENDIANNESS = 0x7004,
+	MLX5_REG_MTMP		 = 0x900A,
 	MLX5_REG_MCIA		 = 0x9014,
 	MLX5_REG_MLCR		 = 0x902b,
 };
@@ -578,6 +580,8 @@ enum mlx5_pci_status {
 };
 
 struct mlx5_td {
+	/* protects tirs list changes while tirs refresh */
+	struct mutex     list_lock;
 	struct list_head tirs_list;
 	u32              tdn;
 };
@@ -589,6 +593,7 @@ struct mlx5e_resources {
 	struct mlx5_core_mkey      mkey;
 };
 
+struct mlx5_thermal;
 struct mlx5_core_dev {
 	struct pci_dev	       *pdev;
 	/* sync pci state */
@@ -617,6 +622,8 @@ struct mlx5_core_dev {
 #ifdef CONFIG_RFS_ACCEL
 	struct cpu_rmap         *rmap;
 #endif
+	struct mlx5_thermal	*thermal;
+
 };
 
 struct mlx5_db {
@@ -985,5 +992,26 @@ static inline bool mlx5_rl_is_supported(struct mlx5_core_dev *dev)
 enum {
 	MLX5_TRIGGERED_CMD_COMP = (u64)1 << 32,
 };
+
+struct mlx5_thermal {
+	struct mlx5_core_dev *core;
+	struct thermal_zone_device *tzdev;
+	enum thermal_device_mode mode;
+};
+
+#ifdef CONFIG_MLX5_CORE_THERMAL
+int mlx5_thermal_init(struct mlx5_core_dev *core);
+void mlx5_thermal_deinit(struct mlx5_core_dev *core);
+#else
+static inline int mlx5_thermal_init(struct mlx5_core_dev *core)
+{
+	core->thermal = NULL;
+	return 0;
+}
+
+static inline void mlx5_thermal_deinit(struct mlx5_core_dev *core)
+{
+}
+#endif
 
 #endif /* MLX5_DRIVER_H */

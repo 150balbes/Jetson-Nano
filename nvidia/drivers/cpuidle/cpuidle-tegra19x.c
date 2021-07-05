@@ -1,7 +1,7 @@
 /*
  * drivers/cpuidle/cpuidle-tegra19x.c
  *
- * Copyright (C) 2017-2018, NVIDIA Corporation. All rights reserved.
+ * Copyright (C) 2017-2019, NVIDIA Corporation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -65,7 +65,6 @@ static DEFINE_PER_CPU(u32, sleep_time);
 
 static u32 read_cluster_info(struct device_node *of_states);
 static u32 deepest_cc_state;
-static u32 deepest_cg_state;
 static u64 forced_idle_state;
 static u64 forced_cluster_idle_state;
 static u64 test_c6_exit_latency;
@@ -74,7 +73,6 @@ static u32 testmode;
 static struct cpuidle_driver t19x_cpu_idle_driver;
 static int crossover_init(void);
 static void program_cc_state(void *data);
-static void program_cg_state(void *data);
 static u32 tsc_per_sec, nsec_per_tsc_tick;
 static u32 tsc_per_usec;
 
@@ -83,7 +81,6 @@ static enum cpuhp_state hp_state;
 
 #define T19x_NVG_CROSSOVER_C6	TEGRA_NVG_CHANNEL_CROSSOVER_C6_LOWER_BOUND
 #define T19x_NVG_CROSSOVER_CC6	TEGRA_NVG_CHANNEL_CROSSOVER_CC6_LOWER_BOUND
-#define T19x_NVG_CROSSOVER_CG7	TEGRA_NVG_CHANNEL_CROSSOVER_CG7_LOWER_BOUND
 
 static bool check_mce_version(void)
 {
@@ -376,25 +373,16 @@ static int cc6_xover_write(void *data, u64 val)
 	return setup_crossover(T19x_NVG_CROSSOVER_CC6, (u32) val);
 }
 
-static int cg7_xover_write(void *data, u64 val)
-{
-	return setup_crossover(T19x_NVG_CROSSOVER_CG7, (u32) val);
-}
-
 static int set_testmode(void *data, u64 val)
 {
 	testmode = (u32)val;
 	if (testmode) {
 		setup_crossover(T19x_NVG_CROSSOVER_C6, 0);
 		setup_crossover(T19x_NVG_CROSSOVER_CC6, 0);
-		setup_crossover(T19x_NVG_CROSSOVER_CG7, 0);
 	} else {
 		/* Restore the cluster state */
 		on_each_cpu_mask(cpu_online_mask,
 			program_cc_state, &deepest_cc_state, 1);
-		/* Restore the cluster group state */
-		on_each_cpu_mask(cpu_online_mask,
-			program_cg_state, &deepest_cg_state, 1);
 		/* Restore the crossover values */
 		crossover_init();
 	}
@@ -415,30 +403,12 @@ static int cc_state_get(void *data, u64 *val)
 	return 0;
 }
 
-static int cg_state_set(void *data, u64 val)
-{
-	deepest_cg_state = (u32)val;
-	on_each_cpu_mask(cpu_online_mask, program_cg_state,
-			&deepest_cg_state, 1);
-	return 0;
-}
-
-static int cg_state_get(void *data, u64 *val)
-{
-	*val = (u64) deepest_cg_state;
-	return 0;
-}
-
 DEFINE_SIMPLE_ATTRIBUTE(duration_us_fops, NULL, forced_idle_write, "%llu\n");
 DEFINE_SIMPLE_ATTRIBUTE(xover_c6_fops, NULL, c6_xover_write, "%llu\n");
 DEFINE_SIMPLE_ATTRIBUTE(xover_cc6_fops, NULL,
 						cc6_xover_write, "%llu\n");
-DEFINE_SIMPLE_ATTRIBUTE(xover_cg7_fops, NULL,
-						cg7_xover_write, "%llu\n");
 DEFINE_SIMPLE_ATTRIBUTE(cc_state_fops, cc_state_get,
 						cc_state_set, "%llu\n");
-DEFINE_SIMPLE_ATTRIBUTE(cg_state_fops, cg_state_get,
-						cg_state_set, "%llu\n");
 DEFINE_SIMPLE_ATTRIBUTE(testmode_fops, NULL, set_testmode, "%llu\n");
 
 static int cpuidle_debugfs_init(void)
@@ -488,18 +458,8 @@ static int cpuidle_debugfs_init(void)
 	if (!dfs_file)
 		goto err_out;
 
-	dfs_file = debugfs_create_file("crossover_cc1_cg7", 0200,
-		cpuidle_debugfs_node, NULL, &xover_cg7_fops);
-	if (!dfs_file)
-		goto err_out;
-
 	dfs_file = debugfs_create_file("deepest_cc_state", 0644,
 		cpuidle_debugfs_node, NULL, &cc_state_fops);
-	if (!dfs_file)
-		goto err_out;
-
-	dfs_file = debugfs_create_file("deepest_cg_state", 0644,
-		cpuidle_debugfs_node, NULL, &cg_state_fops);
 	if (!dfs_file)
 		goto err_out;
 
@@ -568,7 +528,6 @@ static void send_crossover(void *data)
 	struct xover_table table1[] = {
 		{"crossover_c1_c6", T19x_NVG_CROSSOVER_C6},
 		{"crossover_cc1_cc6", T19x_NVG_CROSSOVER_CC6},
-		{"crossover_cc1_cg7", T19x_NVG_CROSSOVER_CG7},
 	};
 
 	for_each_child_of_node(of_states, child)
@@ -606,13 +565,6 @@ static void program_cc_state(void *data)
 	tegra_mce_update_cstate_info(*cc_state, 0, 0, 0, 0, 0);
 }
 
-static void program_cg_state(void *data)
-{
-	u32 *cg_state = (u32 *)data;
-
-	tegra_mce_update_cstate_info(0, *cg_state, 0, 0, 0, 0);
-}
-
 static int tegra_suspend_notify_callback(struct notifier_block *nb,
 	unsigned long action, void *pcpu)
 {
@@ -624,8 +576,6 @@ static int tegra_suspend_notify_callback(struct notifier_block *nb,
 	 */
 		on_each_cpu_mask(cpu_online_mask, program_cc_state,
 			&deepest_cc_state, 1);
-		on_each_cpu_mask(cpu_online_mask, program_cg_state,
-			&deepest_cg_state, 1);
 		break;
 	}
 	return NOTIFY_OK;
@@ -643,8 +593,6 @@ static int tegra_cpu_online(unsigned int cpu)
 	 */
 	smp_call_function_single(cpu, program_cc_state,
 		&deepest_cc_state, 1);
-	smp_call_function_single(cpu, program_cg_state,
-		&deepest_cg_state, 1);
 
 	return 0;
 }
@@ -652,7 +600,7 @@ static int tegra_cpu_online(unsigned int cpu)
 static int __init tegra19x_cpuidle_probe(struct platform_device *pdev)
 {
 	int cpu_number;
-	struct device_node *cpu_cc_states, *cpu_cg_states;
+	struct device_node *cpu_cc_states;
 	int err;
 	struct cpumask *cpumask;
 
@@ -682,8 +630,6 @@ static int __init tegra19x_cpuidle_probe(struct platform_device *pdev)
 
 	cpu_cc_states =
 		of_find_node_by_name(NULL, "cpu_cluster_power_states");
-	cpu_cg_states =
-		of_find_node_by_name(NULL, "cpu_cluster_group_power_states");
 
 	pr_info("cpuidle: Initializing cpuidle driver\n");
 	extended_ops.make_power_state = t19x_make_power_state;
@@ -692,10 +638,6 @@ static int __init tegra19x_cpuidle_probe(struct platform_device *pdev)
 	deepest_cc_state = read_cluster_info(cpu_cc_states);
 	on_each_cpu_mask(cpu_online_mask, program_cc_state,
 			&deepest_cc_state, 1);
-	/* read cluster group info from DT */
-	deepest_cg_state = read_cluster_info(cpu_cg_states);
-	on_each_cpu_mask(cpu_online_mask, program_cg_state,
-			&deepest_cg_state, 1);
 
 	t19x_cpu_idle_driver.cpumask = cpumask;
 	err = dt_init_idle_driver(&t19x_cpu_idle_driver,

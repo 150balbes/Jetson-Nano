@@ -1,7 +1,7 @@
 /*
  * hdmihdcp.h: hdmi hdcp interface.
  *
- * Copyright (c) 2015-2018, NVIDIA CORPORATION, All rights reserved.
+ * Copyright (c) 2015-2019, NVIDIA CORPORATION, All rights reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -16,7 +16,7 @@
 
 #ifndef __DRIVERS_VIDEO_TEGRA_DC_HDMIHDCP_H
 #define __DRIVERS_VIDEO_TEGRA_DC_HDMIHDCP_H
-#include <video/nvhdcp.h>
+#include <uapi/video/nvhdcp.h>
 #include <linux/version.h>
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0)
 #include <linux/miscdevice.h>

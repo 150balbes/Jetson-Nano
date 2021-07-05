@@ -30,6 +30,7 @@
 #include <nvgpu/utils.h>
 #include <nvgpu/gk20a.h>
 
+#include "gk20a/pmu_gk20a.h"
 #include "gp10b/pmu_gp10b.h"
 #include "gp106/pmu_gp106.h"
 
@@ -438,6 +439,17 @@ static void pmu_handle_pg_param_msg(struct gk20a *g, struct pmu_msg *msg,
 
 	gv11b_dbg_pmu(g, "GR PARAM is acknowledged from PMU %x\n",
 							msg->msg.pg.msg_type);
+}
+
+void gv11b_pmu_init_perfmon_counter(struct gk20a *g)
+{
+	u32 data;
+
+	gk20a_pmu_init_perfmon_counter(g);
+
+	/* assign same mask setting from GR ELPG to counter #3 */
+	data = gk20a_readl(g, pwr_pmu_idle_mask_2_supp_r(0));
+        gk20a_writel(g, pwr_pmu_idle_mask_2_r(3), data);
 }
 
 int gv11b_pg_gr_init(struct gk20a *g, u32 pg_engine_id)

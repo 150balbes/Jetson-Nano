@@ -1,7 +1,7 @@
 /*
  * nvhdcp_hdcp22_methods.c: hdcp 2.2 interface.
  *
- * Copyright (c) 2014-2018, NVIDIA CORPORATION, All rights reserved.
+ * Copyright (c) 2014-2019, NVIDIA CORPORATION, All rights reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -38,9 +38,13 @@
 #define hdcp_err(...) \
 		pr_err("hdcp: Error: " __VA_ARGS__)
 
+#if defined(CONFIG_ANDROID)
 #define HDCP22_SRM_PATH "vendor/etc/hdcpsrm/hdcp2x.srm"
-
 #define HDCP11_SRM_PATH "vendor/etc/hdcpsrm/hdcp1x.srm"
+#else
+#define HDCP22_SRM_PATH "/etc/hdcpsrm/hdcp2x.srm"
+#define HDCP11_SRM_PATH "/etc/hdcpsrm/hdcp1x.srm"
+#endif
 
 static u8 g_seq_num_init;
 

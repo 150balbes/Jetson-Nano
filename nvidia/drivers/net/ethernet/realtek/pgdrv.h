@@ -5,6 +5,7 @@
 # controllers with PCI-Express interface.
 #
 # Copyright(c) 2014-2018, Realtek Semiconductor Corp. All rights reserved.
+# Copyright (c) 2020, NVIDIA CORPORATION. All rights reserved.
 #
 # This program is free software; you can redistribute it and/or modify it
 # under the terms of the GNU General Public License as published by the Free
@@ -35,6 +36,7 @@
 #define _PG_DRV_H
 
 #include <linux/cdev.h>
+//#include <uapi/net/pgdrv.h>
 
 #define BYTE	__u8
 #define WORD	__u16

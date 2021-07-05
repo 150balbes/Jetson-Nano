@@ -1,0 +1,45 @@
+From 672c7697a2cea1dfcf6df032dc73d9b38ef655be Mon Sep 17 00:00:00 2001
+From: John Ogness <john.ogness@linutronix.de>
+Date: Mon, 30 Jan 2017 09:41:21 +0100
+Subject: [PATCH 044/371] x86/mm/cpa: avoid wbinvd() for PREEMPT
+X-NVConfidentiality: public
+
+Although wbinvd() is faster than flushing many individual pages, it
+blocks the memory bus for "long" periods of time (>100us), thus
+directly causing unusually large latencies on all CPUs, regardless
+of any CPU isolation features that may be active.
+
+For 1024 pages, flushing those pages individually can take up to
+2200us, but the task remains fully preemptible during that time.
+
+Cc: stable-rt@vger.kernel.org
+Acked-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Signed-off-by: John Ogness <john.ogness@linutronix.de>
+Signed-off-by: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+---
+ arch/x86/mm/pageattr.c | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/arch/x86/mm/pageattr.c b/arch/x86/mm/pageattr.c
+index 1271bc9..83d9fde 100644
+--- a/arch/x86/mm/pageattr.c
++++ b/arch/x86/mm/pageattr.c
+@@ -215,7 +215,15 @@ static void cpa_flush_array(unsigned long *start, int numpages, int cache,
+ 			    int in_flags, struct page **pages)
+ {
+ 	unsigned int i, level;
++#ifdef CONFIG_PREEMPT
++	/*
++	 * Avoid wbinvd() because it causes latencies on all CPUs,
++	 * regardless of any CPU isolation that may be in effect.
++	 */
++	unsigned long do_wbinvd = 0;
++#else
+ 	unsigned long do_wbinvd = cache && numpages >= 1024; /* 4M threshold */
++#endif
+ 
+ 	BUG_ON(irqs_disabled());
+ 
+-- 
+2.7.4
+

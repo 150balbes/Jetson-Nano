@@ -1,0 +1,240 @@
+From 8d8662780044b64eb72ea264d0dbf586ad0354e0 Mon Sep 17 00:00:00 2001
+From: Thomas Gleixner <tglx@linutronix.de>
+Date: Thu, 1 Nov 2012 11:03:47 +0100
+Subject: [PATCH 303/371] x86: Support for lazy preemption
+X-NVConfidentiality: public
+
+Implement the x86 pieces for lazy preempt.
+
+Signed-off-by: Thomas Gleixner <tglx@linutronix.de>
+---
+ arch/x86/Kconfig                   |  1 +
+ arch/x86/entry/common.c            |  4 ++--
+ arch/x86/entry/entry_32.S          | 17 +++++++++++++++++
+ arch/x86/entry/entry_64.S          | 16 ++++++++++++++++
+ arch/x86/include/asm/preempt.h     | 31 ++++++++++++++++++++++++++++++-
+ arch/x86/include/asm/thread_info.h | 11 +++++++++++
+ arch/x86/kernel/asm-offsets.c      |  2 ++
+ 7 files changed, 79 insertions(+), 3 deletions(-)
+
+diff --git a/arch/x86/Kconfig b/arch/x86/Kconfig
+index 40c0cda..fcab6ef 100644
+--- a/arch/x86/Kconfig
++++ b/arch/x86/Kconfig
+@@ -17,6 +17,7 @@ config X86_64
+ ### Arch settings
+ config X86
+ 	def_bool y
++	select HAVE_PREEMPT_LAZY
+ 	select ACPI_LEGACY_TABLES_LOOKUP	if ACPI
+ 	select ACPI_SYSTEM_POWER_STATES_SUPPORT	if ACPI
+ 	select ANON_INODES
+diff --git a/arch/x86/entry/common.c b/arch/x86/entry/common.c
+index 0b8da1c..ded0ae2 100644
+--- a/arch/x86/entry/common.c
++++ b/arch/x86/entry/common.c
+@@ -131,7 +131,7 @@ static long syscall_trace_enter(struct pt_regs *regs)
+ 
+ #define EXIT_TO_USERMODE_LOOP_FLAGS				\
+ 	(_TIF_SIGPENDING | _TIF_NOTIFY_RESUME | _TIF_UPROBE |	\
+-	 _TIF_NEED_RESCHED | _TIF_USER_RETURN_NOTIFY)
++	 _TIF_NEED_RESCHED_MASK | _TIF_USER_RETURN_NOTIFY)
+ 
+ static void exit_to_usermode_loop(struct pt_regs *regs, u32 cached_flags)
+ {
+@@ -147,7 +147,7 @@ static void exit_to_usermode_loop(struct pt_regs *regs, u32 cached_flags)
+ 		/* We have work to do. */
+ 		local_irq_enable();
+ 
+-		if (cached_flags & _TIF_NEED_RESCHED)
++		if (cached_flags & _TIF_NEED_RESCHED_MASK)
+ 			schedule();
+ 
+ #ifdef ARCH_RT_DELAYS_SIGNAL_SEND
+diff --git a/arch/x86/entry/entry_32.S b/arch/x86/entry/entry_32.S
+index 1cf1676..4adb23a 100644
+--- a/arch/x86/entry/entry_32.S
++++ b/arch/x86/entry/entry_32.S
+@@ -322,8 +322,25 @@ END(ret_from_exception)
+ ENTRY(resume_kernel)
+ 	DISABLE_INTERRUPTS(CLBR_ANY)
+ need_resched:
++	# preempt count == 0 + NEED_RS set?
+ 	cmpl	$0, PER_CPU_VAR(__preempt_count)
++#ifndef CONFIG_PREEMPT_LAZY
+ 	jnz	restore_all
++#else
++	jz test_int_off
++
++	# atleast preempt count == 0 ?
++	cmpl $_PREEMPT_ENABLED,PER_CPU_VAR(__preempt_count)
++	jne restore_all
++
++	movl    PER_CPU_VAR(current_task), %ebp
++	cmpl $0,TASK_TI_preempt_lazy_count(%ebp)	# non-zero preempt_lazy_count ?
++	jnz restore_all
++
++	testl $_TIF_NEED_RESCHED_LAZY, TASK_TI_flags(%ebp)
++	jz restore_all
++test_int_off:
++#endif
+ 	testl	$X86_EFLAGS_IF, PT_EFLAGS(%esp)	# interrupts off (exception path) ?
+ 	jz	restore_all
+ 	call	preempt_schedule_irq
+diff --git a/arch/x86/entry/entry_64.S b/arch/x86/entry/entry_64.S
+index 1dcfba5..dc7b6cb 100644
+--- a/arch/x86/entry/entry_64.S
++++ b/arch/x86/entry/entry_64.S
+@@ -493,7 +493,23 @@ retint_kernel:
+ 	btl	$9, EFLAGS(%rsp)		/* were interrupts off? */
+ 	jnc	1f
+ 0:	cmpl	$0, PER_CPU_VAR(__preempt_count)
++#ifndef CONFIG_PREEMPT_LAZY
+ 	jnz	1f
++#else
++	jz	do_preempt_schedule_irq
++
++	# atleast preempt count == 0 ?
++	cmpl $_PREEMPT_ENABLED,PER_CPU_VAR(__preempt_count)
++	jnz	1f
++
++	movq	PER_CPU_VAR(current_task), %rcx
++	cmpl	$0, TASK_TI_preempt_lazy_count(%rcx)
++	jnz	1f
++
++	bt	$TIF_NEED_RESCHED_LAZY,TASK_TI_flags(%rcx)
++	jnc	1f
++do_preempt_schedule_irq:
++#endif
+ 	call	preempt_schedule_irq
+ 	jmp	0b
+ 1:
+diff --git a/arch/x86/include/asm/preempt.h b/arch/x86/include/asm/preempt.h
+index 4939f6e..92622d47 100644
+--- a/arch/x86/include/asm/preempt.h
++++ b/arch/x86/include/asm/preempt.h
+@@ -79,17 +79,46 @@ static __always_inline void __preempt_count_sub(int val)
+  * a decrement which hits zero means we have no preempt_count and should
+  * reschedule.
+  */
+-static __always_inline bool __preempt_count_dec_and_test(void)
++static __always_inline bool ____preempt_count_dec_and_test(void)
+ {
+ 	GEN_UNARY_RMWcc("decl", __preempt_count, __percpu_arg(0), e);
+ }
+ 
++static __always_inline bool __preempt_count_dec_and_test(void)
++{
++	if (____preempt_count_dec_and_test())
++		return true;
++#ifdef CONFIG_PREEMPT_LAZY
++	if (current_thread_info()->preempt_lazy_count)
++		return false;
++	return test_thread_flag(TIF_NEED_RESCHED_LAZY);
++#else
++	return false;
++#endif
++}
++
+ /*
+  * Returns true when we need to resched and can (barring IRQ state).
+  */
+ static __always_inline bool should_resched(int preempt_offset)
+ {
++#ifdef CONFIG_PREEMPT_LAZY
++	u32 tmp;
++
++	tmp = raw_cpu_read_4(__preempt_count);
++	if (tmp == preempt_offset)
++		return true;
++
++	/* preempt count == 0 ? */
++	tmp &= ~PREEMPT_NEED_RESCHED;
++	if (tmp)
++		return false;
++	if (current_thread_info()->preempt_lazy_count)
++		return false;
++	return test_thread_flag(TIF_NEED_RESCHED_LAZY);
++#else
+ 	return unlikely(raw_cpu_read_4(__preempt_count) == preempt_offset);
++#endif
+ }
+ 
+ #ifdef CONFIG_PREEMPT
+diff --git a/arch/x86/include/asm/thread_info.h b/arch/x86/include/asm/thread_info.h
+index 0438f7f..32a8478 100644
+--- a/arch/x86/include/asm/thread_info.h
++++ b/arch/x86/include/asm/thread_info.h
+@@ -54,12 +54,15 @@ struct task_struct;
+ 
+ struct thread_info {
+ 	unsigned long		flags;		/* low level flags */
++	int                     preempt_lazy_count;     /* 0 => lazy preemptable
++							   <0 => BUG */
+ 	u32			status;		/* thread synchronous flags */
+ };
+ 
+ #define INIT_THREAD_INFO(tsk)			\
+ {						\
+ 	.flags		= 0,			\
++	.preempt_lazy_count = 0,		\
+ }
+ 
+ #define init_stack		(init_thread_union.stack)
+@@ -68,6 +71,10 @@ struct thread_info {
+ 
+ #include <asm/asm-offsets.h>
+ 
++#define GET_THREAD_INFO(reg) \
++	_ASM_MOV PER_CPU_VAR(cpu_current_top_of_stack),reg ; \
++	_ASM_SUB $(THREAD_SIZE),reg ;
++
+ #endif
+ 
+ /*
+@@ -93,6 +100,7 @@ struct thread_info {
+ #define TIF_UPROBE		12	/* breakpointed or singlestepping */
+ #define TIF_NOTSC		16	/* TSC is not accessible in userland */
+ #define TIF_IA32		17	/* IA32 compatibility process */
++#define TIF_NEED_RESCHED_LAZY	18	/* lazy rescheduling necessary */
+ #define TIF_NOHZ		19	/* in adaptive nohz mode */
+ #define TIF_MEMDIE		20	/* is terminating due to OOM killer */
+ #define TIF_POLLING_NRFLAG	21	/* idle is polling for TIF_NEED_RESCHED */
+@@ -119,6 +127,7 @@ struct thread_info {
+ #define _TIF_UPROBE		(1 << TIF_UPROBE)
+ #define _TIF_NOTSC		(1 << TIF_NOTSC)
+ #define _TIF_IA32		(1 << TIF_IA32)
++#define _TIF_NEED_RESCHED_LAZY	(1 << TIF_NEED_RESCHED_LAZY)
+ #define _TIF_NOHZ		(1 << TIF_NOHZ)
+ #define _TIF_POLLING_NRFLAG	(1 << TIF_POLLING_NRFLAG)
+ #define _TIF_IO_BITMAP		(1 << TIF_IO_BITMAP)
+@@ -160,6 +169,8 @@ struct thread_info {
+ #define _TIF_WORK_CTXSW_PREV (_TIF_WORK_CTXSW|_TIF_USER_RETURN_NOTIFY)
+ #define _TIF_WORK_CTXSW_NEXT (_TIF_WORK_CTXSW)
+ 
++#define _TIF_NEED_RESCHED_MASK	(_TIF_NEED_RESCHED | _TIF_NEED_RESCHED_LAZY)
++
+ #define STACK_WARN		(THREAD_SIZE/8)
+ 
+ /*
+diff --git a/arch/x86/kernel/asm-offsets.c b/arch/x86/kernel/asm-offsets.c
+index c62e015..0cc71257 100644
+--- a/arch/x86/kernel/asm-offsets.c
++++ b/arch/x86/kernel/asm-offsets.c
+@@ -36,6 +36,7 @@ void common(void) {
+ 
+ 	BLANK();
+ 	OFFSET(TASK_TI_flags, task_struct, thread_info.flags);
++	OFFSET(TASK_TI_preempt_lazy_count, task_struct, thread_info.preempt_lazy_count);
+ 	OFFSET(TASK_addr_limit, task_struct, thread.addr_limit);
+ 
+ 	BLANK();
+@@ -91,4 +92,5 @@ void common(void) {
+ 
+ 	BLANK();
+ 	DEFINE(PTREGS_SIZE, sizeof(struct pt_regs));
++	DEFINE(_PREEMPT_ENABLED, PREEMPT_ENABLED);
+ }
+-- 
+2.7.4
+

@@ -108,6 +108,7 @@
 			spmic_wdt: watchdog {
 				maxim,wdt-boot-timeout = <16>;
 				maxim,wdt-clear-time = <13>;
+				maxim,wdt-boot-init;
 				status = "disabled";
 				dt-override-status-odm-data = <0x00020000 0x00020000>;
 			};

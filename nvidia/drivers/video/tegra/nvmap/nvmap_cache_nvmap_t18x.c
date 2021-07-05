@@ -1,7 +1,7 @@
 /*
  * drivers/video/tegra/nvmap/nvmap_cache.c
  *
- * Copyright (c) 2015-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2015-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -55,10 +55,19 @@ static void nvmap_roc_clean_cache(void)
 	}
 }
 
+static void nvmap_handle_get_cacheability(struct nvmap_handle *h,
+		bool *inner, bool *outer)
+{
+	*inner = h->flags == NVMAP_HANDLE_CACHEABLE ||
+		 h->flags == NVMAP_HANDLE_INNER_CACHEABLE;
+	*outer = h->flags == NVMAP_HANDLE_CACHEABLE;
+}
+
 static void nvmap_setup_t18x_cache_ops(struct nvmap_chip_cache_op *op)
 {
 	op->inner_flush_cache_all = nvmap_roc_flush_cache;
 	op->inner_clean_cache_all = nvmap_roc_clean_cache;
+	op->nvmap_get_cacheability = nvmap_handle_get_cacheability;
 	op->name = kstrdup("roc", GFP_KERNEL);
 }
 NVMAP_CACHE_OF_DECLARE("nvidia,carveouts-t18x", nvmap_setup_t18x_cache_ops);

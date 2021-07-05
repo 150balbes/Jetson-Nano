@@ -1,7 +1,7 @@
 /*
  * ov5693_v4l2.c - ov5693 sensor driver
  *
- * Copyright (c) 2013-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2013-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -52,7 +52,6 @@ static const u32 ctrl_cid_list[] = {
 	TEGRA_CAMERA_CID_EXPOSURE,
 	TEGRA_CAMERA_CID_EXPOSURE_SHORT,
 	TEGRA_CAMERA_CID_FRAME_RATE,
-	TEGRA_CAMERA_CID_GROUP_HOLD,
 	TEGRA_CAMERA_CID_HDR_EN,
 	TEGRA_CAMERA_CID_EEPROM_DATA,
 	TEGRA_CAMERA_CID_OTP_DATA,
@@ -1196,6 +1195,7 @@ static int ov5693_probe(struct i2c_client *client,
 
 	err = ov5693_board_setup(priv);
 		if (err) {
+			tegracam_device_unregister(tc_dev);
 			dev_err(dev, "board setup failed\n");
 			return err;
 	}
@@ -1229,6 +1229,7 @@ ov5693_remove(struct i2c_client *client)
 	tegracam_v4l2subdev_unregister(priv->tc_dev);
 	ov5693_power_put(priv->tc_dev);
 	tegracam_device_unregister(priv->tc_dev);
+	ov5693_eeprom_device_release(priv);
 
 	mutex_destroy(&priv->streaming_lock);
 

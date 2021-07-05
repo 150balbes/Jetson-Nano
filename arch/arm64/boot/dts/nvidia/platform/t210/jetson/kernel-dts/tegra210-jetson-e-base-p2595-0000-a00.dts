@@ -116,7 +116,6 @@
 	};
 
 	adma@702e2000  {
-		dma-channels = <10>;
 		status = "okay";
 	};
 
@@ -146,6 +145,7 @@
 			vdd-1v8-spi-hv-supply = <&max77620_sd3>;
 			vdd-1v8-spi-hv-bias-supply = <&max77620_sd3>;
 			fsync-width = <0>;
+			bclk-ratio = <4>;
 		};
 	};
 
@@ -380,22 +380,12 @@
 		nvidia,ldo-gpios = <&gpio TEGRA_GPIO(BB, 3) GPIO_ACTIVE_HIGH>;
 		nvidia,hp-det-gpios = <&gpio TEGRA_GPIO(E, 6) GPIO_ACTIVE_HIGH>;
 
-		clocks = <&tegra_car TEGRA210_CLK_PLL_P_OUT1>,
-			<&tegra_car TEGRA210_CLK_PLL_A>,
-			<&tegra_car TEGRA210_CLK_PLL_A_OUT0>,
-			<&tegra_car TEGRA210_CLK_D_AUDIO>,
-			<&tegra_car TEGRA210_CLK_CLK_M>,
-			<&tegra_car TEGRA210_CLK_EXTERN1>;
-		clock-names = "pll_p_out1", "pll_a", "pll_a_out0", "ahub",
-			"clk_m", "extern1";
-
-
-		assigned-clocks = <&tegra_car TEGRA210_CLK_PLL_A>,
-			<&tegra_car TEGRA210_CLK_PLL_A_OUT0>,
-			<&tegra_car TEGRA210_CLK_D_AUDIO>,
-			<&tegra_car TEGRA210_CLK_EXTERN1>;
-		assigned-clock-rates = <368640000>, <36864000>,
-			<36864000>, <12288000>;
+		clocks = <&tegra_car TEGRA210_CLK_PLL_A>,
+			 <&tegra_car TEGRA210_CLK_PLL_A_OUT0>,
+			 <&tegra_car TEGRA210_CLK_EXTERN1>;
+		clock-names = "pll_a", "pll_a_out0", "extern1";
+		assigned-clocks = <&tegra_car TEGRA210_CLK_EXTERN1>;
+		assigned-clock-parents = <&tegra_car TEGRA210_CLK_PLL_A_OUT0>;
 
 		nvidia,num-codec-link = <3>;
 
@@ -418,6 +408,7 @@
 			"z IN",		"z OUT";
 
 		nvidia,xbar = <&tegra_axbar>;
+		mclk-fs = <256>;
 
 		nvidia,dai-link-1 {
 			link-name = "rt5640-playback";
@@ -427,7 +418,6 @@
 			codec-dai-name = "rt5640-aif1";
 			format = "i2s";
 			bit-format = "s16_le";
-			bclk_ratio = <0>;
 			srate = <48000>;
 			num-channel = <2>;
 			name-prefix = "x";
@@ -441,7 +431,6 @@
 			format = "dsp_a";
 			bitclock-inversion;
 			bit-format = "s16_le";
-			bclk_ratio = <4>;
 			srate = <8000>;
 			num-channel = <1>;
 			name-prefix = "y";
@@ -454,7 +443,6 @@
 			codec-dai-name = "dit-hifi";
 			format = "i2s";
 			bit-format = "s16_le";
-			bclk_ratio = <0>;
 			srate = <48000>;
 			num-channel = <2>;
 			name-prefix = "z";

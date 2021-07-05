@@ -1,7 +1,7 @@
 /*
  * NVIDIA Tegra SLVS(-EC) Subdevice for V4L2
  *
- * Copyright (c) 2017-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * Author: Pekka Pessi <ppessi@nvidia.com>
  *
@@ -13,6 +13,7 @@
 #include <linux/clk.h>
 #include <linux/device.h>
 #include <linux/module.h>
+#include <linux/nospec.h>
 #include <linux/of.h>
 #include <linux/of_graph.h>
 #include <linux/of_platform.h>
@@ -677,6 +678,7 @@ static void tegra_slvs_init_debugfs(struct tegra_mc_slvs *slvs)
 		slvs->streams[i].debugfs = dir;
 		tegra_slvs_debugfs_init_stream(&slvs->streams[i]);
 	}
+	speculation_barrier();
 }
 
 /*

@@ -1,4 +1,0 @@
-#
-# NVIDIA network device configuration
-#
-source "drivers/net/ethernet/nvidia/pcie/Kconfig"

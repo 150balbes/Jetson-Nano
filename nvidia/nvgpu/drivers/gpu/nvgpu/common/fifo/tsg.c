@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2014-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -158,7 +158,7 @@ int gk20a_tsg_unbind_channel(struct channel_gk20a *ch)
 		return -EINVAL;
 	}
 
-	err = g->ops.fifo.tsg_unbind_channel(ch);
+	err = gk20a_fifo_tsg_unbind_channel(ch);
 	if (err) {
 		nvgpu_err(g, "Channel %d unbind failed, tearing down TSG %d",
 			ch->chid, tsg->tsgid);
@@ -172,6 +172,11 @@ int gk20a_tsg_unbind_channel(struct channel_gk20a *ch)
 		ch->tsgid = NVGPU_INVALID_TSG_ID;
 		nvgpu_rwsem_up_write(&tsg->ch_list_lock);
 	}
+
+	if (g->ops.fifo.tsg_unbind_channel != NULL) {
+		err = g->ops.fifo.tsg_unbind_channel(ch);
+	}
+
 	nvgpu_log(g, gpu_dbg_fn, "UNBIND tsg:%d channel:%d",
 					tsg->tsgid, ch->chid);
 
@@ -214,6 +219,7 @@ int gk20a_tsg_set_runlist_interleave(struct tsg_gk20a *tsg, u32 level)
 
 	nvgpu_log(g, gpu_dbg_sched, "tsgid=%u interleave=%u", tsg->tsgid, level);
 
+	nvgpu_speculation_barrier();
 	switch (level) {
 	case NVGPU_FIFO_RUNLIST_INTERLEAVE_LEVEL_LOW:
 	case NVGPU_FIFO_RUNLIST_INTERLEAVE_LEVEL_MEDIUM:
@@ -444,4 +450,60 @@ void gk20a_tsg_update_sm_error_state_locked(struct tsg_gk20a *tsg,
 			sm_error_state->hww_global_esr_report_mask;
 	tsg_sm_error_states->hww_warp_esr_report_mask =
 			sm_error_state->hww_warp_esr_report_mask;
+}
+
+int nvgpu_tsg_set_mmu_debug_mode(struct channel_gk20a *ch, bool enable)
+{
+	struct gk20a *g;
+	int err = 0;
+	u32 ch_refcnt;
+	u32 tsg_refcnt;
+	u32 fb_refcnt;
+	struct tsg_gk20a *tsg = tsg_gk20a_from_ch(ch);
+
+	if ((ch == NULL) || (tsg == NULL)) {
+		return -EINVAL;
+	}
+	g = ch->g;
+
+	if ((g->ops.fb.set_mmu_debug_mode == NULL) &&
+		(g->ops.gr.set_mmu_debug_mode == NULL)) {
+		return -ENOSYS;
+	}
+
+	if (enable) {
+		ch_refcnt = ch->mmu_debug_mode_refcnt + 1U;
+		tsg_refcnt = tsg->mmu_debug_mode_refcnt + 1U;
+		fb_refcnt = g->mmu_debug_mode_refcnt + 1U;
+	} else {
+		ch_refcnt = ch->mmu_debug_mode_refcnt - 1U;
+		tsg_refcnt = tsg->mmu_debug_mode_refcnt - 1U;
+		fb_refcnt = g->mmu_debug_mode_refcnt - 1U;
+	}
+
+	if (g->ops.gr.set_mmu_debug_mode != NULL) {
+		/*
+		 * enable GPC MMU debug mode if it was requested for at
+		 * least one channel in the TSG
+		 */
+		err = g->ops.gr.set_mmu_debug_mode(g, ch, tsg_refcnt > 0U);
+		if (err != 0) {
+			nvgpu_err(g, "set mmu debug mode failed, err=%d", err);
+			return err;
+		}
+	}
+
+	if (g->ops.fb.set_mmu_debug_mode != NULL) {
+		/*
+		 * enable FB/HS MMU debug mode if it was requested for
+		 * at least one TSG
+		 */
+		g->ops.fb.set_mmu_debug_mode(g, fb_refcnt > 0U);
+	}
+
+	ch->mmu_debug_mode_refcnt = ch_refcnt;
+	tsg->mmu_debug_mode_refcnt = tsg_refcnt;
+	g->mmu_debug_mode_refcnt = fb_refcnt;
+
+	return err;
 }

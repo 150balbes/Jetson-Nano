@@ -2,7 +2,7 @@
 /* The industrial I/O core
  *
  * Copyright (c) 2008 Jonathan Cameron
- * Copyright (c) 2014-2016, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2014-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 as published by
@@ -641,7 +641,6 @@ static inline void *iio_device_get_drvdata(struct iio_dev *indio_dev)
 /* Can we make this smaller? */
 #define IIO_ALIGN L1_CACHE_BYTES
 struct iio_dev *iio_device_alloc(int sizeof_priv);
-struct iio_dev *nvs_device_alloc(int sizeof_priv, bool multi_link);
 
 static inline void *iio_priv(const struct iio_dev *indio_dev)
 {

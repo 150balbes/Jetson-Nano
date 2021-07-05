@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2016-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -512,11 +512,11 @@ send_ack:
 
 
 static const struct sched_param param = {
-	.sched_priority = 1,
+	.sched_priority = MAX_RT_PRIO - 1,
 };
 static struct task_struct *adspff_kthread;
-static struct semaphore adspff_kthread_sema;
 static struct list_head adspff_kthread_msgq_head;
+static wait_queue_head_t  wait_queue;
 
 struct adspff_kthread_msg {
 	uint32_t msg_id;
@@ -531,10 +531,13 @@ static int adspff_kthread_fn(void *data)
 	unsigned long flags;
 
 	while (1) {
+
+		ret = wait_event_interruptible(wait_queue, kthread_should_stop()
+				 || !list_empty(&adspff_kthread_msgq_head));
+
 		if (kthread_should_stop())
-			do_exit(ret);
-		if (down_interruptible(&adspff_kthread_sema))
-			return -ERESTARTSYS;
+			do_exit(0);
+
 		if (!list_empty(&adspff_kthread_msgq_head)) {
 			kmsg = list_first_entry(&adspff_kthread_msgq_head,
 					struct adspff_kthread_msg, list);
@@ -587,7 +590,8 @@ static int adspff_msg_handler(uint32_t msg, void *data)
 
 	kmsg->msg_id = msg;
 	list_add_tail(&kmsg->list, &adspff_kthread_msgq_head);
-	up(&adspff_kthread_sema);
+
+	wake_up(&wait_queue);
 	spin_unlock_irqrestore(&adspff_lock, flags);
 
 	return 0;
@@ -668,8 +672,9 @@ int adspff_init(struct platform_device *pdev)
 
 	INIT_LIST_HEAD(&adspff_kthread_msgq_head);
 	INIT_LIST_HEAD(&file_list);
-	sema_init(&adspff_kthread_sema, 0);
 
+	// kthread inIt
+	init_waitqueue_head(&wait_queue);
 	adspff_kthread = kthread_create(adspff_kthread_fn,
 		NULL, "adspp_kthread");
 	sched_setscheduler(adspff_kthread, SCHED_FIFO, &param);

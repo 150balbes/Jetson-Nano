@@ -86,13 +86,17 @@ EXPORT_SYMBOL(soc_is_tegra210_n_before);
 
 bool soc_is_tegra186_n_later(void)
 {
+	const struct of_device_id *match;
 	struct device_node *root;
 
 	root = of_find_node_by_path("/");
 	if (!root)
 		return false;
 
-	return of_match_node(tegra186_ge_machine_match, root) != NULL;
+	match = of_match_node(tegra186_ge_machine_match, root);
+	of_node_put(root);
+
+	return match != NULL;
 }
 EXPORT_SYMBOL(soc_is_tegra186_n_later);
 

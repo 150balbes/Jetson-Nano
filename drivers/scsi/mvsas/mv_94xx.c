@@ -26,6 +26,7 @@
 #include "mv_sas.h"
 #include "mv_94xx.h"
 #include "mv_chips.h"
+#include <linux/nospec.h>
 
 static void mvs_94xx_detect_porttype(struct mvs_info *mvi, int i)
 {
@@ -1125,17 +1126,19 @@ static int mvs_94xx_gpio_write(struct mvs_prv_info *mvs_prv,
 		return reg_count;
 
 	case SAS_GPIO_REG_TX:
-		if (reg_index + reg_count > mvs_prv->n_host)
-			return -EINVAL;
+		if (reg_index + reg_count <= mvs_prv->n_host) {
+			for (i = 0; i < reg_count; i++) {
+				int temp = array_index_nospec(i+reg_index, mvs_prv->n_host);
+				struct mvs_info *mvi = mvs_prv->mvi[temp];
+				void __iomem *regs = mvi->regs_ex - 0x10200;
 
-		for (i = 0; i < reg_count; i++) {
-			struct mvs_info *mvi = mvs_prv->mvi[i+reg_index];
-			void __iomem *regs = mvi->regs_ex - 0x10200;
-
-			mw32(MVS_SGPIO_DCTRL + MVS_SGPIO_HOST_OFFSET * mvi->id,
-				((u32 *) write_data)[i]);
+				mw32(MVS_SGPIO_DCTRL + MVS_SGPIO_HOST_OFFSET * mvi->id,
+					((u32 *) write_data)[i]);
+			}
+			return reg_count;
 		}
-		return reg_count;
+		else
+			return -EINVAL;
 	}
 	return -ENOSYS;
 }

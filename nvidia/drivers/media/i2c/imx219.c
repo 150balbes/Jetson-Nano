@@ -1,7 +1,7 @@
 /*
  * imx219.c - imx219 sensor driver
  *
- * Copyright (c) 2015-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2015-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -421,13 +421,13 @@ static int imx219_power_put(struct tegracam_device *tc_dev)
 		return -EFAULT;
 
 	if (likely(pw->dvdd))
-		regulator_disable(pw->dvdd);
+		devm_regulator_put(pw->dvdd);
 
 	if (likely(pw->avdd))
-		regulator_put(pw->avdd);
+		devm_regulator_put(pw->avdd);
 
 	if (likely(pw->iovdd))
-		regulator_put(pw->iovdd);
+		devm_regulator_put(pw->iovdd);
 
 	pw->dvdd = NULL;
 	pw->avdd = NULL;
@@ -728,6 +728,7 @@ static int imx219_probe(struct i2c_client *client,
 
 	err = imx219_board_setup(priv);
 	if (err) {
+		tegracam_device_unregister(tc_dev);
 		dev_err(dev, "board setup failed\n");
 		return err;
 	}

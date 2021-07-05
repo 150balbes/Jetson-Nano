@@ -3,7 +3,7 @@
  *
  * Userspace thermal alert cooling device.
  *
- * Copyright (C) 2016-2017 NVIDIA Corporation. All rights reserved.
+ * Copyright (C) 2016-2020 NVIDIA Corporation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -93,6 +93,9 @@ static int userspace_alert_cdev_set_state(struct thermal_cooling_device *tcd,
 	if (state == alert_data->cur_state)
 		return 0;
 
+	pr_notice("%s cooling state: %ld -> %lu\n",
+		tcd->type, alert_data->cur_state, state);
+
 	mutex_lock(&alert_data->alert_lock);
 	alert_data->cur_state = state;
 
@@ -135,19 +138,27 @@ static ssize_t thermal_alert_block_show(struct device *dev,
 {
 	uint32_t alert_timeout_ms;
 	struct usr_alrt_strct *alert_data = dev_get_drvdata(dev);
+	int ret;
 
 	if (!alert_data)
 		return -EINVAL;
 
 	alert_timeout_ms = alert_data->alert_timeout_ms;
 	if (alert_timeout_ms > 0)
-		wait_event_interruptible_timeout(alert_data->alert_wait_queue,
+		ret = wait_event_interruptible_timeout(alert_data->alert_wait_queue,
 			alert_data->therm_alert == ALERT,
 			msecs_to_jiffies(alert_timeout_ms));
 	else
-		wait_event_interruptible(
+		ret = wait_event_interruptible(
 				alert_data->alert_wait_queue,
 				alert_data->therm_alert == ALERT);
+
+	/*
+	 *-ERESTARTSYS is returned so as to avoid false alert and to
+	 * resume the call.
+	 */
+	if (ret < 0)
+		return ret;
 
 	return sprintf(buf, "%d\n", alert_data->therm_alert);
 }

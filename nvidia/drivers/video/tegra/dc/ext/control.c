@@ -1,7 +1,7 @@
 /*
  * control.c: tegradc ext control interface.
  *
- * Copyright (c) 2011-2018, NVIDIA CORPORATION, All rights reserved.
+ * Copyright (c) 2011-2019, NVIDIA CORPORATION, All rights reserved.
  *
  * Author: Robert Morell <rmorell@nvidia.com>
  *
@@ -84,7 +84,8 @@ get_output_properties(struct tegra_dc_ext_control_output_properties *properties)
 	case TEGRA_DC_OUT_FAKE_DSIB:
 	case TEGRA_DC_OUT_FAKE_DSI_GANGED:
 	case TEGRA_DC_OUT_DSI:
-		properties->type = TEGRA_DC_EXT_DSI;
+		properties->type = tegra_dc_is_ext_panel(dc) ?
+					TEGRA_DC_EXT_HDSI : TEGRA_DC_EXT_DSI;
 		break;
 	case TEGRA_DC_OUT_RGB:
 		properties->type = TEGRA_DC_EXT_LVDS;
@@ -97,7 +98,7 @@ get_output_properties(struct tegra_dc_ext_control_output_properties *properties)
 		break;
 	case TEGRA_DC_OUT_DP:
 	case TEGRA_DC_OUT_FAKE_DP:
-		properties->type = tegra_dc_is_ext_dp_panel(dc) ?
+		properties->type = tegra_dc_is_ext_panel(dc) ?
 					TEGRA_DC_EXT_DP : TEGRA_DC_EXT_EDP;
 		break;
 	case TEGRA_DC_OUT_NULL:

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2018-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -20,9 +20,41 @@
 #include <asm/uaccess.h>
 #include <asm-generic/bug.h>
 #include <linux/mmc/ioctl.h>
+#include <linux/mmc/core.h>
 #include "tegra_vblk.h"
 
 #define VBLK_MMC_MAX_IOC_SIZE (256 * 1024)
+
+static uint32_t vblk_get_response_type(uint32_t mmc_resp_type)
+{
+	uint32_t vblk_resp;
+	/* consider only respose types */
+	switch (mmc_resp_type & 0x1F) {
+	case MMC_RSP_NONE:
+		vblk_resp = RESP_TYPE_NO_RESP;
+		break;
+	case MMC_RSP_R1:
+		/*
+		 * MMC_RSP_R1, MMC_RSP_R6, MMC_RSP_R6, MMC_RSP_R7 have same
+		 * values
+		 */
+		vblk_resp = RESP_TYPE_R1;
+		break;
+	case MMC_RSP_R1B:
+		vblk_resp = RESP_TYPE_R1B;
+		break;
+	case MMC_RSP_R2:
+		vblk_resp = RESP_TYPE_R2;
+		break;
+	case MMC_RSP_R3:
+		/* MMC_RSP_R3 and MMC_RSP_R4 have same value */
+		vblk_resp = RESP_TYPE_R3;
+		break;
+	default:
+		vblk_resp = RESP_TYPE_NUM;
+	}
+	return vblk_resp;
+}
 
 int vblk_prep_mmc_multi_ioc(struct vblk_dev *vblkdev,
 		struct vblk_ioctl_req *ioctl_req,
@@ -42,8 +74,7 @@ int vblk_prep_mmc_multi_ioc(struct vblk_dev *vblkdev,
 	uint8_t *tmpaddr;
 	void *ioctl_buf;
 
-	ioctl_buf = kmalloc(ioctl_bytes,
-			GFP_KERNEL);
+	ioctl_buf = vmalloc(ioctl_bytes);
 	if (ioctl_buf == NULL) {
 		return -ENOMEM;
 	}
@@ -98,6 +129,7 @@ int vblk_prep_mmc_multi_ioc(struct vblk_dev *vblkdev,
 		}
 		combo_cmd->cmd = ic.opcode;
 		combo_cmd->arg = ic.arg;
+		combo_cmd->flags = vblk_get_response_type(ic.flags);
 		combo_cmd->write_flag = (uint32_t)ic.write_flag;
 		combo_cmd->data_len = (uint32_t)(ic.blksz * ic.blocks);
 		combo_cmd->buf_offset = combo_cmd_size;
@@ -133,7 +165,7 @@ int vblk_prep_mmc_multi_ioc(struct vblk_dev *vblkdev,
 
 free_ioc_buf:
 	if (err && ioctl_buf)
-		kfree (ioctl_buf);
+		vfree(ioctl_buf);
 
 	return err;
 }
@@ -206,7 +238,7 @@ int vblk_complete_mmc_multi_ioc(struct vblk_dev *vblkdev,
 
 free_ioc_buf:
 	if (ioctl_buf)
-		kfree(ioctl_buf);
+		vfree(ioctl_buf);
 
 	return err;
 }

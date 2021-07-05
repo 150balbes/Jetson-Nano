@@ -170,6 +170,7 @@ static int gk20a_as_ioctl_map_buffer_batch(
 		nvgpu_vm_unmap(as_share->vm, unmap_args.offset, &batch);
 	}
 
+	nvgpu_speculation_barrier();
 	if (err) {
 		nvgpu_vm_mapping_batch_finish(as_share->vm, &batch);
 
@@ -355,6 +356,7 @@ long gk20a_as_dev_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	if (err)
 		return err;
 
+	nvgpu_speculation_barrier();
 	switch (cmd) {
 	case NVGPU_AS_IOCTL_BIND_CHANNEL:
 		trace_gk20a_as_ioctl_bind_channel(g->name);

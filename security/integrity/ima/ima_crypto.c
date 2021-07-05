@@ -298,8 +298,11 @@ static int ima_calc_file_hash_atfm(struct file *file,
 		rbuf_len = min_t(loff_t, i_size - offset, rbuf_size[active]);
 		rc = integrity_kernel_read(file, offset, rbuf[active],
 					   rbuf_len);
-		if (rc != rbuf_len)
+		if (rc != rbuf_len) {
+			if (rc >= 0)
+				rc = -EINVAL;
 			goto out3;
+		}
 
 		if (rbuf[1] && offset) {
 			/* Using two buffers, and it is not the first
@@ -442,6 +445,16 @@ int ima_calc_file_hash(struct file *file, struct ima_digest_data *hash)
 {
 	loff_t i_size;
 	int rc;
+
+	/*
+	 * For consistency, fail file's opened with the O_DIRECT flag on
+	 * filesystems mounted with/without DAX option.
+	 */
+	if (file->f_flags & O_DIRECT) {
+		hash->length = hash_digest_size[ima_hash_algo];
+		hash->algo = ima_hash_algo;
+		return -EINVAL;
+	}
 
 	i_size = i_size_read(file_inode(file));
 

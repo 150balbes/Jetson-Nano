@@ -333,8 +333,12 @@ static void tegra_pwm_bl_ops_reg_based_on_disp_board_id(struct device *dev)
 		break;
 	case BOARD_PM363:
 	case BOARD_E1824:
-		if (of_machine_is_compatible("nvidia,jetson-cv"))
-			is_edp_s_2160p_15_6 = true;
+		if (of_machine_is_compatible("nvidia,jetson-cv")) {
+			if (display_board.sku == 0x123)
+				is_edp_a_1080p_14_0 = true;
+			else
+				is_edp_s_2160p_15_6 = true;
+		}
 		else if (display_board.sku == 1200)
 			is_edp_i_1080p_11_6 = true;
 		else

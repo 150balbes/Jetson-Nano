@@ -143,9 +143,6 @@ int __init early_serial8250_setup(struct earlycon_device *device,
 		init_port(device);
 
 	device->con->write = early_serial8250_write;
-#ifdef CONFIG_SERIAL_LOGLEVEL_PRINT
-	device->con->flags |= CON_FORCE_LEVEL;
-#endif
 	return 0;
 }
 EARLYCON_DECLARE(uart8250, early_serial8250_setup);

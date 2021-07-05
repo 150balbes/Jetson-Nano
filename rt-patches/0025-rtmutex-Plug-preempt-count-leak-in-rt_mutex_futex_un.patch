@@ -1,0 +1,49 @@
+From e7bd0a70255b1244f21c0470ee733251f1ede5b5 Mon Sep 17 00:00:00 2001
+From: Mike Galbraith <efault@gmx.de>
+Date: Wed, 5 Apr 2017 10:08:27 +0200
+Subject: [PATCH 025/371] rtmutex: Plug preempt count leak in
+ rt_mutex_futex_unlock()
+X-NVConfidentiality: public
+
+Upstream commit def34eaae5ce04b324e48e1bfac873091d945213
+
+mark_wakeup_next_waiter() already disables preemption, doing so again
+leaves us with an unpaired preempt_disable().
+
+Fixes: 2a1c60299406 ("rtmutex: Deboost before waking up the top waiter")
+Signed-off-by: Mike Galbraith <efault@gmx.de>
+Cc: Peter Zijlstra <peterz@infradead.org>
+Cc: xlpang@redhat.com
+Cc: rostedt@goodmis.org
+Link: http://lkml.kernel.org/r/1491379707.6538.2.camel@gmx.de
+Signed-off-by: Thomas Gleixner <tglx@linutronix.de>
+---
+ kernel/locking/rtmutex.c | 10 +++++-----
+ 1 file changed, 5 insertions(+), 5 deletions(-)
+
+diff --git a/kernel/locking/rtmutex.c b/kernel/locking/rtmutex.c
+index a8202c7..ed2755b 100644
+--- a/kernel/locking/rtmutex.c
++++ b/kernel/locking/rtmutex.c
+@@ -1579,13 +1579,13 @@ bool __sched __rt_mutex_futex_unlock(struct rt_mutex *lock,
+ 		return false; /* done */
+ 	}
+ 
+-	mark_wakeup_next_waiter(wake_q, lock);
+ 	/*
+-	 * We've already deboosted, retain preempt_disabled when dropping
+-	 * the wait_lock to avoid inversion until the wakeup. Matched
+-	 * by rt_mutex_postunlock();
++	 * We've already deboosted, mark_wakeup_next_waiter() will
++	 * retain preempt_disabled when we drop the wait_lock, to
++	 * avoid inversion prior to the wakeup.  preempt_disable()
++	 * therein pairs with rt_mutex_postunlock().
+ 	 */
+-	preempt_disable();
++	mark_wakeup_next_waiter(wake_q, lock);
+ 
+ 	return true; /* call postunlock() */
+ }
+-- 
+2.7.4
+

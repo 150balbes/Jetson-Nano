@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2014-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -58,8 +58,7 @@ static int gk20a_tsg_bind_channel_fd(struct tsg_gk20a *tsg, int ch_fd)
 static int gk20a_tsg_ioctl_bind_channel_ex(struct gk20a *g,
 	struct tsg_gk20a *tsg, struct nvgpu_tsg_bind_channel_ex_args *arg)
 {
-	struct nvgpu_os_linux *l = nvgpu_os_linux_from_gk20a(g);
-	struct gk20a_sched_ctrl *sched = &l->sched_ctrl;
+	struct nvgpu_sched_ctrl *sched = &g->sched_ctrl;
 	struct channel_gk20a *ch;
 	struct gr_gk20a *gr = &g->gr;
 	int err = 0;
@@ -362,6 +361,7 @@ static int gk20a_tsg_event_id_ctrl(struct gk20a *g, struct tsg_gk20a *tsg,
 	if (args->event_id >= NVGPU_IOCTL_CHANNEL_EVENT_ID_MAX)
 		return -EINVAL;
 
+	nvgpu_speculation_barrier();
 	switch (args->cmd) {
 	case NVGPU_IOCTL_CHANNEL_EVENT_ID_CMD_ENABLE:
 		err = gk20a_tsg_event_id_enable(tsg, args->event_id, &fd);
@@ -484,8 +484,7 @@ int nvgpu_ioctl_tsg_dev_release(struct inode *inode, struct file *filp)
 static int gk20a_tsg_ioctl_set_runlist_interleave(struct gk20a *g,
 	struct tsg_gk20a *tsg, struct nvgpu_runlist_interleave_args *arg)
 {
-	struct nvgpu_os_linux *l = nvgpu_os_linux_from_gk20a(g);
-	struct gk20a_sched_ctrl *sched = &l->sched_ctrl;
+	struct nvgpu_sched_ctrl *sched = &g->sched_ctrl;
 	u32 level = arg->level;
 	int err;
 
@@ -514,8 +513,7 @@ done:
 static int gk20a_tsg_ioctl_set_timeslice(struct gk20a *g,
 	struct tsg_gk20a *tsg, struct nvgpu_timeslice_args *arg)
 {
-	struct nvgpu_os_linux *l = nvgpu_os_linux_from_gk20a(g);
-	struct gk20a_sched_ctrl *sched = &l->sched_ctrl;
+	struct nvgpu_sched_ctrl *sched = &g->sched_ctrl;
 	int err;
 
 	nvgpu_log(g, gpu_dbg_fn | gpu_dbg_sched, "tsgid=%u", tsg->tsgid);
@@ -575,6 +573,7 @@ static int gk20a_tsg_ioctl_read_single_sm_error_state(struct gk20a *g,
 	if (args->record_size > 0) {
 		size_t write_size = sizeof(*sm_error_state);
 
+		nvgpu_speculation_barrier();
 		if (write_size > args->record_size)
 			write_size = args->record_size;
 
